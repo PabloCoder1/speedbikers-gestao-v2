@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -49,7 +50,68 @@ const statusPresentation: Record<
   },
 };
 
-export default async function AccountsPage() {
+type AccountsPageProps = {
+  searchParams: Promise<{
+    mlConnected?: string;
+    mlError?: string;
+  }>;
+};
+
+const oauthErrorMessages: Record<string, string> = {
+  invalid_account:
+    "A conta selecionada é inválida.",
+
+  account_not_found:
+    "A conta não foi encontrada.",
+
+  account_disabled:
+    "Esta conta está desativada.",
+
+  state_creation_failed:
+    "Não foi possível iniciar a autorização.",
+
+  authorization_denied:
+    "A autorização do Mercado Livre foi cancelada.",
+
+  missing_oauth_parameters:
+    "O Mercado Livre não retornou os parâmetros esperados.",
+
+  invalid_oauth_state:
+    "A tentativa de autorização expirou ou já foi utilizada.",
+
+  invalid_account_code:
+    "A configuração da aplicação Mercado Livre é inválida.",
+
+  pkce_decryption_failed:
+    "Não foi possível validar a autorização PKCE.",
+
+  token_exchange_failed:
+    "Não foi possível obter os tokens do Mercado Livre.",
+
+  seller_lookup_failed:
+    "O token foi obtido, mas não foi possível identificar o seller.",
+
+  seller_mismatch:
+    "A conta Mercado Livre autorizada é diferente do seller já vinculado.",
+
+  credential_lookup_failed:
+    "Não foi possível verificar as credenciais existentes.",
+
+  seller_store_failed:
+    "Não foi possível registrar o seller.",
+
+  credential_store_failed:
+    "Não foi possível armazenar as credenciais com segurança.",
+
+  connection_update_failed:
+    "As credenciais foram recebidas, mas o status da conexão não pôde ser atualizado.",
+};
+
+export default async function AccountsPage({
+  searchParams,
+}: AccountsPageProps) {
+  const params =
+    await searchParams;
   const {
     access,
     accounts,
@@ -69,6 +131,21 @@ export default async function AccountsPage() {
           title="Contas Mercado Livre"
           description="Gerencie as contas Mercado Livre disponíveis para sua organização e acompanhe o estado de cada conexão."
         />
+
+        {params.mlConnected ? (
+          <div className="mt-6 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+            Conta Mercado Livre conectada com sucesso.
+          </div>
+        ) : null}
+
+        {params.mlError ? (
+          <div className="mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {oauthErrorMessages[
+              params.mlError
+            ] ??
+              "Não foi possível concluir a conexão com o Mercado Livre."}
+          </div>
+        ) : null}
 
         {accounts.length === 0 ? (
           <section className="mt-8">
@@ -162,6 +239,21 @@ export default async function AccountsPage() {
                           </dd>
                         </div>
                       </dl>
+
+                      {access.role === "admin" &&
+                      account.isActive ? (
+                        <div className="mt-6 border-t border-gray-100 pt-5">
+                          <Link
+                            href={`/api/mercado-livre/connect?account=${account.code}`}
+                            className="inline-flex w-full items-center justify-center rounded-xl bg-gray-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-gray-800"
+                          >
+                            {account.connectionStatus ===
+                            "connected"
+                              ? "Reconectar"
+                              : "Conectar"}
+                          </Link>
+                        </div>
+                      ) : null}
                     </CardContent>
                   </Card>
                 );
