@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { CreateUserForm } from "@/components/admin/create-user-form";
+import { UserAccessForm } from "@/components/admin/user-access-form";
 import { getOrganizationUsers } from "@/features/admin/get-organization-users";
 import { ROLE_LABELS } from "@/features/auth/roles";
 
@@ -152,6 +153,10 @@ export default async function AdministrationPage() {
                         <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                           Vínculo criado
                         </th>
+
+                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          Acesso
+                        </th>
                       </tr>
                     </thead>
 
@@ -238,6 +243,19 @@ export default async function AdministrationPage() {
                                 {formatDate(
                                   user.createdAt,
                                 )}
+                              </td>
+
+                              <td className="px-6 py-4 align-top">
+                                <UserAccessForm
+                                  userId={user.userId}
+                                  currentUserId={
+                                    access.userId
+                                  }
+                                  role={user.role}
+                                  isActive={
+                                    user.isActive
+                                  }
+                                />
                               </td>
                             </tr>
                           );

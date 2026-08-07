@@ -235,3 +235,108 @@ export async function createOrganizationUser(
     temporaryPassword,
   };
 }
+
+export type UpdateUserAccessState = {
+  error: string | null;
+  success: string | null;
+};
+
+export async function updateOrganizationUserAccess(
+  targetUserId: string,
+  _previousState: UpdateUserAccessState,
+  formData: FormData,
+): Promise<UpdateUserAccessState> {
+  const access =
+    await requireAdminAccess();
+
+  if (targetUserId === access.userId) {
+    return {
+      error:
+        "Você não pode alterar seu próprio acesso por esta tela.",
+      success: null,
+    };
+  }
+
+  const rawRole =
+    formData.get("role");
+
+  const rawActive =
+    formData.get("isActive");
+
+  if (
+    typeof rawRole !== "string" ||
+    !isAppRole(rawRole)
+  ) {
+    return {
+      error:
+        "Selecione um papel válido.",
+      success: null,
+    };
+  }
+
+  const isActive =
+    rawActive === "true";
+
+  const admin =
+    createAdminClient();
+
+  const {
+    data: membership,
+    error: membershipLookupError,
+  } = await admin
+    .from("organization_members")
+    .select(
+      "id, organization_id, user_id, role, is_active",
+    )
+    .eq(
+      "organization_id",
+      access.organizationId,
+    )
+    .eq(
+      "user_id",
+      targetUserId,
+    )
+    .maybeSingle();
+
+  if (
+    membershipLookupError ||
+    !membership
+  ) {
+    return {
+      error:
+        "O usuário não pertence a esta organização.",
+      success: null,
+    };
+  }
+
+  const {
+    error: updateError,
+  } = await admin
+    .from("organization_members")
+    .update({
+      role: rawRole,
+      is_active: isActive,
+    })
+    .eq(
+      "id",
+      membership.id,
+    );
+
+  if (updateError) {
+    return {
+      error:
+        "Não foi possível atualizar o acesso do usuário.",
+      success: null,
+    };
+  }
+
+  revalidatePath(
+    "/administracao",
+  );
+
+  return {
+    error: null,
+    success:
+      "Acesso atualizado com sucesso.",
+  };
+}
