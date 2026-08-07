@@ -6,6 +6,12 @@ import { requireAdminAccess } from "@/features/auth/require-admin-access";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
+export type OrganizationAccount = {
+  id: string;
+  code: string;
+  displayName: string;
+};
+
 export type OrganizationUser = {
   userId: string;
   fullName: string | null;
@@ -16,6 +22,7 @@ export type OrganizationUser = {
   createdAt: string;
   lastSignInAt: string | null;
   emailConfirmedAt: string | null;
+  mlAccountIds: string[];
 };
 
 export async function getOrganizationUsers() {
@@ -47,6 +54,37 @@ export async function getOrganizationUsers() {
     );
   }
 
+  const {
+    data: accounts,
+    error: accountsError,
+  } = await supabase
+    .from("ml_accounts")
+    .select(
+      "id, code, display_name",
+    )
+    .eq(
+      "organization_id",
+      access.organizationId,
+    )
+    .eq("is_active", true)
+    .order("display_name");
+
+  if (accountsError) {
+    throw new Error(
+      "Não foi possível carregar as contas do Mercado Livre.",
+    );
+  }
+
+  const accountOptions: OrganizationAccount[] =
+    (accounts ?? []).map(
+      (account) => ({
+        id: account.id,
+        code: account.code,
+        displayName:
+          account.display_name,
+      }),
+    );
+
   if (
     !memberships ||
     memberships.length === 0
@@ -54,6 +92,7 @@ export async function getOrganizationUsers() {
     return {
       access,
       users: [] as OrganizationUser[],
+      accounts: accountOptions,
     };
   }
 
@@ -75,7 +114,26 @@ export async function getOrganizationUsers() {
 
   if (profilesError) {
     throw new Error(
-      "Não foi possível carregar os perfis dos usuários.",
+      "Não foi possível carregar os perfis.",
+    );
+  }
+
+  const {
+    data: permissions,
+    error: permissionsError,
+  } = await supabase
+    .from("user_account_permissions")
+    .select(
+      "user_id, ml_account_id",
+    )
+    .eq(
+      "organization_id",
+      access.organizationId,
+    );
+
+  if (permissionsError) {
+    throw new Error(
+      "Não foi possível carregar as permissões das contas.",
     );
   }
 
@@ -91,10 +149,11 @@ export async function getOrganizationUsers() {
     const {
       data,
       error,
-    } = await admin.auth.admin.listUsers({
-      page,
-      perPage,
-    });
+    } =
+      await admin.auth.admin.listUsers({
+        page,
+        perPage,
+      });
 
     if (error) {
       throw new Error(
@@ -102,10 +161,13 @@ export async function getOrganizationUsers() {
       );
     }
 
-    authUsers.push(...data.users);
+    authUsers.push(
+      ...data.users,
+    );
 
     if (
-      data.users.length < perPage
+      data.users.length <
+      perPage
     ) {
       break;
     }
@@ -132,6 +194,28 @@ export async function getOrganizationUsers() {
         ],
       ),
     );
+
+  const permissionIdsByUser =
+    new Map<string, string[]>();
+
+  for (
+    const permission
+    of permissions ?? []
+  ) {
+    const current =
+      permissionIdsByUser.get(
+        permission.user_id,
+      ) ?? [];
+
+    current.push(
+      permission.ml_account_id,
+    );
+
+    permissionIdsByUser.set(
+      permission.user_id,
+      current,
+    );
+  }
 
   const users: OrganizationUser[] =
     memberships.flatMap(
@@ -190,6 +274,11 @@ export async function getOrganizationUsers() {
               authUser
                 ?.email_confirmed_at ??
               null,
+
+            mlAccountIds:
+              permissionIdsByUser.get(
+                membership.user_id,
+              ) ?? [],
           },
         ];
       },
@@ -198,5 +287,6 @@ export async function getOrganizationUsers() {
   return {
     access,
     users,
+    accounts: accountOptions,
   };
 }

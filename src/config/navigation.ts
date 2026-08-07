@@ -22,7 +22,7 @@ export const navigationSections: NavigationSection[] =
         },
         {
           label: "Contas",
-          href: null,
+          href: "/contas",
         },
         {
           label: "Produtos",

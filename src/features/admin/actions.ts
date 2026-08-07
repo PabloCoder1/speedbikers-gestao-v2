@@ -11,6 +11,7 @@ import {
 } from "@/features/auth/roles";
 import { requireAdminAccess } from "@/features/auth/require-admin-access";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 
 export type CreateUserState = {
   error: string | null;
@@ -338,5 +339,105 @@ export async function updateOrganizationUserAccess(
     error: null,
     success:
       "Acesso atualizado com sucesso.",
+  };
+}
+
+export type UpdateAccountPermissionsState = {
+  error: string | null;
+  success: string | null;
+};
+
+export async function updateUserAccountPermissions(
+  targetUserId: string,
+  _previousState: UpdateAccountPermissionsState,
+  formData: FormData,
+): Promise<UpdateAccountPermissionsState> {
+  const access =
+    await requireAdminAccess();
+
+  const selectedAccountIds =
+    formData
+      .getAll("mlAccountIds")
+      .filter(
+        (value): value is string =>
+          typeof value ===
+            "string" &&
+          value.length > 0,
+      );
+
+  const supabase =
+    await createClient();
+
+  const {
+    data: targetMembership,
+    error: membershipError,
+  } = await supabase
+    .from("organization_members")
+    .select("role")
+    .eq(
+      "organization_id",
+      access.organizationId,
+    )
+    .eq(
+      "user_id",
+      targetUserId,
+    )
+    .maybeSingle();
+
+  if (
+    membershipError ||
+    !targetMembership
+  ) {
+    return {
+      error:
+        "O usuário não pertence a esta organização.",
+      success: null,
+    };
+  }
+
+  if (
+    targetMembership.role ===
+    "admin"
+  ) {
+    return {
+      error:
+        "Administradores já possuem acesso automático a todas as contas.",
+      success: null,
+    };
+  }
+
+  const { error } =
+    await supabase.rpc(
+      "set_user_account_permissions",
+      {
+        target_organization_id:
+          access.organizationId,
+
+        target_user_id:
+          targetUserId,
+
+        target_account_ids:
+          selectedAccountIds,
+      },
+    );
+
+  if (error) {
+    return {
+      error:
+        "Não foi possível atualizar as permissões das contas.",
+      success: null,
+    };
+  }
+
+  revalidatePath(
+    "/administracao",
+  );
+
+  revalidatePath("/contas");
+
+  return {
+    error: null,
+    success:
+      "Contas permitidas atualizadas.",
   };
 }

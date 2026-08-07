@@ -11,6 +11,7 @@ import { CreateUserForm } from "@/components/admin/create-user-form";
 import { UserAccessForm } from "@/components/admin/user-access-form";
 import { getOrganizationUsers } from "@/features/admin/get-organization-users";
 import { ROLE_LABELS } from "@/features/auth/roles";
+import { UserAccountPermissionsForm } from "@/components/admin/user-account-permissions-form";
 
 export const metadata: Metadata = {
   title: "Administração",
@@ -46,8 +47,11 @@ function formatDate(
 }
 
 export default async function AdministrationPage() {
-  const { access, users } =
-    await getOrganizationUsers();
+  const {
+    access,
+    users,
+    accounts,
+  } = await getOrganizationUsers();
 
   return (
     <div className="px-6 py-8 sm:px-8 lg:px-10">
@@ -157,6 +161,10 @@ export default async function AdministrationPage() {
                         <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                           Acesso
                         </th>
+
+                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          Contas ML
+                        </th>
                       </tr>
                     </thead>
 
@@ -254,6 +262,17 @@ export default async function AdministrationPage() {
                                   role={user.role}
                                   isActive={
                                     user.isActive
+                                  }
+                                />
+                              </td>
+
+                              <td className="min-w-80 px-6 py-4 align-top">
+                                <UserAccountPermissionsForm
+                                  userId={user.userId}
+                                  role={user.role}
+                                  accounts={accounts}
+                                  selectedAccountIds={
+                                    user.mlAccountIds
                                   }
                                 />
                               </td>
