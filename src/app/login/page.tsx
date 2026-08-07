@@ -7,7 +7,20 @@ export const metadata: Metadata = {
   title: "Entrar",
 };
 
-export default function LoginPage() {
+type LoginPageProps = {
+  searchParams: Promise<{
+    passwordChanged?: string;
+  }>;
+};
+
+export default async function LoginPage({
+  searchParams,
+}: LoginPageProps) {
+  const params = await searchParams;
+
+  const passwordChanged =
+    params.passwordChanged === "1";
+
   return (
     <main className="flex min-h-screen items-center justify-center p-6">
       <section className="w-full max-w-md">
@@ -22,10 +35,17 @@ export default function LoginPage() {
             </h1>
 
             <p className="mt-2 text-sm leading-6 text-gray-600">
-              Entre com seu acesso interno para continuar no{" "}
-              {appConfig.name}.
+              Entre com seu acesso interno para continuar
+              no {appConfig.name}.
             </p>
           </div>
+
+          {passwordChanged ? (
+            <div className="mb-6 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm leading-6 text-green-700">
+              Senha alterada com sucesso. Entre novamente
+              utilizando sua nova senha.
+            </div>
+          ) : null}
 
           <LoginForm />
         </div>

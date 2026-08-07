@@ -17,6 +17,23 @@ export default async function Home() {
   }
 
   const {
+    data: profile,
+    error: profileError,
+  } = await supabase
+    .from("profiles")
+    .select("must_change_password")
+    .eq("id", claims.sub)
+    .single();
+
+  if (profileError || !profile) {
+    redirect("/login");
+  }
+
+  if (profile.must_change_password) {
+    redirect("/trocar-senha");
+  }
+
+  const {
     data: membership,
     error: membershipError,
   } = await supabase
