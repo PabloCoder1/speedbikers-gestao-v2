@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 
-import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -19,10 +18,10 @@ export const metadata: Metadata = {
 type AccountStatusPresentation = {
   label: string;
   variant:
-    | "neutral"
-    | "success"
-    | "warning"
-    | "danger";
+  | "neutral"
+  | "success"
+  | "warning"
+  | "danger";
 };
 
 const statusPresentation: Record<
@@ -170,8 +169,8 @@ export default async function AccountsPage({
               (account) => {
                 const status =
                   statusPresentation[
-                    account
-                      .connectionStatus
+                  account
+                    .connectionStatus
                   ];
 
                 return (
@@ -241,17 +240,19 @@ export default async function AccountsPage({
                       </dl>
 
                       {access.role === "admin" &&
-                      account.isActive ? (
+                        account.isActive ? (
                         <div className="mt-6 border-t border-gray-100 pt-5">
-                          <Link
-                            href={`/api/mercado-livre/connect?account=${account.code}`}
+                          <a
+                            href={`/api/mercado-livre/connect?account=${encodeURIComponent(
+                              account.code,
+                            )}`}
                             className="inline-flex w-full items-center justify-center rounded-xl bg-gray-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-gray-800"
                           >
                             {account.connectionStatus ===
-                            "connected"
+                              "connected"
                               ? "Reconectar"
                               : "Conectar"}
-                          </Link>
+                          </a>
                         </div>
                       ) : null}
                     </CardContent>
