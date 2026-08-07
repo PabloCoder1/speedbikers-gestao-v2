@@ -1,3 +1,7 @@
+import {
+  isAppRole,
+  type AppRole,
+} from "@/features/auth/roles";
 import { createClient } from "@/lib/supabase/server";
 
 export type CurrentAccess = {
@@ -8,7 +12,7 @@ export type CurrentAccess = {
   organizationId: string;
   organizationName: string;
   organizationSlug: string;
-  role: string;
+  role: AppRole;
 };
 
 export async function getCurrentAccess(): Promise<
@@ -53,7 +57,11 @@ export async function getCurrentAccess(): Promise<
     .limit(1)
     .maybeSingle();
 
-  if (membershipError || !membership) {
+  if (
+    membershipError ||
+    !membership ||
+    !isAppRole(membership.role)
+  ) {
     return null;
   }
 
@@ -78,19 +86,26 @@ export async function getCurrentAccess(): Promise<
 
   return {
     userId: claims.sub,
+
     email:
       typeof claims.email === "string"
         ? claims.email
         : null,
+
     fullName: profile.full_name,
+
     mustChangePassword:
       profile.must_change_password,
+
     organizationId:
       membership.organization_id,
+
     organizationName:
       organization.name,
+
     organizationSlug:
       organization.slug,
+
     role: membership.role,
   };
 }
