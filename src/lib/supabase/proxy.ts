@@ -1,14 +1,20 @@
 import { createServerClient } from "@supabase/ssr";
-import { NextResponse, type NextRequest } from "next/server";
+import {
+  NextResponse,
+  type NextRequest,
+} from "next/server";
 
-export async function updateSession(request: NextRequest) {
+export async function updateSession(
+  request: NextRequest,
+) {
   let supabaseResponse = NextResponse.next({
     request,
   });
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+    process.env
+      .NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
     {
       cookies: {
         getAll() {
@@ -24,19 +30,45 @@ export async function updateSession(request: NextRequest) {
             request,
           });
 
-          cookiesToSet.forEach(({ name, value, options }) => {
-            supabaseResponse.cookies.set(name, value, options);
-          });
+          cookiesToSet.forEach(
+            ({ name, value, options }) => {
+              supabaseResponse.cookies.set(
+                name,
+                value,
+                options,
+              );
+            },
+          );
 
-          Object.entries(headers).forEach(([key, value]) => {
-            supabaseResponse.headers.set(key, value);
-          });
+          Object.entries(headers).forEach(
+            ([key, value]) => {
+              supabaseResponse.headers.set(
+                key,
+                value,
+              );
+            },
+          );
         },
       },
     },
   );
 
-  await supabase.auth.getClaims();
+  const { data } =
+    await supabase.auth.getClaims();
+
+  const claims = data?.claims;
+
+  const isPublicRoute =
+    request.nextUrl.pathname.startsWith("/login");
+
+  if (!claims && !isPublicRoute) {
+    const url = request.nextUrl.clone();
+
+    url.pathname = "/login";
+    url.search = "";
+
+    return NextResponse.redirect(url);
+  }
 
   return supabaseResponse;
 }
