@@ -38,7 +38,9 @@ export default async function DashboardPage() {
 
           <MetricCard
             label="Organização"
-            value={access.organizationName}
+            value={
+              access.organizationName
+            }
             description="Contexto organizacional ativo."
           />
 
@@ -77,11 +79,13 @@ export default async function DashboardPage() {
               </h2>
 
               <p className="mt-3 max-w-3xl text-sm leading-6 text-gray-600">
-                A partir de agora os módulos
-                utilizarão componentes visuais
+                A partir de agora os
+                módulos utilizarão
+                componentes visuais
                 reutilizáveis para manter
                 consistência de interface,
-                comportamento e manutenção.
+                comportamento e
+                manutenção.
               </p>
             </CardContent>
           </Card>

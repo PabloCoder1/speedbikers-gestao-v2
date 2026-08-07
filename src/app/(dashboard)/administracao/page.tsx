@@ -7,6 +7,7 @@ import {
   CardHeader,
 } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
+import { CreateUserForm } from "@/components/admin/create-user-form";
 import { getOrganizationUsers } from "@/features/admin/get-organization-users";
 import { ROLE_LABELS } from "@/features/auth/roles";
 
@@ -57,6 +58,30 @@ export default async function AdministrationPage() {
           title="Administração"
           description="Gerencie usuários internos, papéis e permissões de acesso ao Speed Bikers Gestão."
         />
+
+        <section className="mt-8">
+          <Card>
+            <CardHeader>
+              <div>
+                <h2 className="text-base font-semibold text-gray-950">
+                  Adicionar usuário
+                </h2>
+
+                <p className="mt-1 text-sm text-gray-500">
+                  Crie um novo acesso interno e
+                  defina o papel inicial na
+                  organização.
+                </p>
+              </div>
+            </CardHeader>
+
+            <CardContent>
+              <div className="max-w-xl">
+                <CreateUserForm />
+              </div>
+            </CardContent>
+          </Card>
+        </section>
 
         <section className="mt-8">
           <Card>
