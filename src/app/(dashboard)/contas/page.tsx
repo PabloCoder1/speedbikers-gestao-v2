@@ -12,6 +12,7 @@ import {
 } from "@/features/ml-accounts/get-ml-accounts";
 import { getListingsSyncProgress } from "@/features/ml-sync/get-listings-sync-progress";
 import { FullListingSyncForm } from "@/components/ml-accounts/full-listing-sync-form";
+import { OrdersSyncForm } from "@/features/ml-accounts/orders-sync-form";
 import { ListingsSyncProgress } from "@/components/ml-accounts/listings-sync-progress";
 
 export const metadata: Metadata = {
@@ -319,6 +320,15 @@ export default async function AccountsPage({
 
                               {!listingsSyncActive ? (
                                 <FullListingSyncForm
+                                  mlAccountId={
+                                    account.id
+                                  }
+                                />
+                              ) : null}
+
+                              {listingsSync?.status ===
+                              "succeeded" ? (
+                                <OrdersSyncForm
                                   mlAccountId={
                                     account.id
                                   }

@@ -6,6 +6,7 @@ import {
 
 import { requireAdminAccess } from "@/features/auth/require-admin-access";
 import { syncListingsPreview } from "@/features/ml-sync/sync-listings-preview";
+import { syncOrdersPreview } from "@/features/ml-sync/sync-orders-preview";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export type SyncListingsPreviewState = {
@@ -185,6 +186,56 @@ export async function syncListingsPreviewAction(
         error instanceof Error
           ? error.message
           : "Não foi possível sincronizar os anúncios.",
+
+      success: null,
+    };
+  }
+}
+
+export type SyncOrdersPreviewState = {
+  error: string | null;
+  success: string | null;
+};
+
+export async function syncOrdersPreviewAction(
+  mlAccountId: string,
+  _previousState: SyncOrdersPreviewState,
+  _formData: FormData,
+): Promise<SyncOrdersPreviewState> {
+  const access =
+    await requireAdminAccess();
+
+  try {
+    const result =
+      await syncOrdersPreview({
+        organizationId:
+          access.organizationId,
+
+        mlAccountId,
+      });
+
+    revalidatePath(
+      "/contas",
+    );
+
+    return {
+      error: null,
+
+      success:
+        [
+          `${result.importedOrders} pedidos importados.`,
+          `${result.importedItems} itens encontrados.`,
+          `${result.mappedItems} vinculados aos produtos.`,
+          `${result.unmappedItems} sem vínculo.`,
+          `Total informado pelo seller: ${result.sellerTotal}.`,
+        ].join(" "),
+    };
+  } catch (error) {
+    return {
+      error:
+        error instanceof Error
+          ? error.message
+          : "Não foi possível importar os pedidos.",
 
       success: null,
     };
