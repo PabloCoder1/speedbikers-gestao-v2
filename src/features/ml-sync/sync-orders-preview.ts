@@ -158,6 +158,84 @@ function normalizeSku(
         .toUpperCase();
 }
 
+const saoPauloDateFormatter =
+    new Intl.DateTimeFormat(
+        "en-US",
+        {
+            timeZone:
+                "America/Sao_Paulo",
+
+            year:
+                "numeric",
+
+            month:
+                "2-digit",
+
+            day:
+                "2-digit",
+        },
+    );
+
+
+function toSaoPauloDateKey(
+    value: string | null,
+) {
+    if (!value) {
+        return null;
+    }
+
+
+    const date =
+        new Date(value);
+
+
+    if (
+        Number.isNaN(
+            date.getTime(),
+        )
+    ) {
+        return null;
+    }
+
+
+    const parts =
+        saoPauloDateFormatter
+            .formatToParts(date);
+
+
+    const values =
+        new Map(
+            parts.map(
+                (part) => [
+                    part.type,
+                    part.value,
+                ],
+            ),
+        );
+
+
+    const year =
+        values.get("year");
+
+    const month =
+        values.get("month");
+
+    const day =
+        values.get("day");
+
+
+    if (
+        !year ||
+        !month ||
+        !day
+    ) {
+        return null;
+    }
+
+
+    return `${year}-${month}-${day}`;
+}
+
 type OrderProductCandidate = {
     sku: string;
     skuKey: string;
@@ -292,31 +370,31 @@ function extractOrderItemSku(
 
 
 export type OrdersSyncType =
-  | "orders_preview"
-  | "orders_recent"
-  | "orders_backfill";
+    | "orders_preview"
+    | "orders_recent"
+    | "orders_backfill";
 
 
 export async function syncOrdersPreview({
-  organizationId,
-  mlAccountId,
-  syncType = "orders_preview",
-  limit = PREVIEW_LIMIT,
-  offset = 0,
-  dateCreatedFrom = null,
-  dateCreatedTo = null,
-  existingSyncRunId = null,
-  manageRunLifecycle = true,
+    organizationId,
+    mlAccountId,
+    syncType = "orders_preview",
+    limit = PREVIEW_LIMIT,
+    offset = 0,
+    dateCreatedFrom = null,
+    dateCreatedTo = null,
+    existingSyncRunId = null,
+    manageRunLifecycle = true,
 }: {
-  organizationId: string;
-  mlAccountId: string;
-  syncType?: OrdersSyncType;
-  limit?: number;
-  offset?: number;
-  dateCreatedFrom?: string | null;
-  dateCreatedTo?: string | null;
-  existingSyncRunId?: string | null;
-  manageRunLifecycle?: boolean;
+    organizationId: string;
+    mlAccountId: string;
+    syncType?: OrdersSyncType;
+    limit?: number;
+    offset?: number;
+    dateCreatedFrom?: string | null;
+    dateCreatedTo?: string | null;
+    existingSyncRunId?: string | null;
+    manageRunLifecycle?: boolean;
 }) {
     const admin =
         createAdminClient();
@@ -458,12 +536,12 @@ export async function syncOrdersPreview({
                 metadata: {
                     mode:
                         syncType ===
-                        "orders_backfill"
+                            "orders_backfill"
                             ? "backfill"
                             : syncType ===
                                 "orders_recent"
-                              ? "incremental"
-                              : "preview",
+                                ? "incremental"
+                                : "preview",
 
                     limit,
 
@@ -513,7 +591,7 @@ export async function syncOrdersPreview({
 
                 sort:
                     syncType ===
-                    "orders_backfill"
+                        "orders_backfill"
                         ? "date_asc"
                         : "date_desc",
 
@@ -1272,6 +1350,65 @@ export async function syncOrdersPreview({
             }
         }
 
+        const affectedMetricDates =
+            orderRows
+                .map(
+                    (order) =>
+                        toSaoPauloDateKey(
+                            order.date_created,
+                        ),
+                )
+                .filter(
+                    (
+                        value,
+                    ): value is string =>
+                        Boolean(value),
+                )
+                .sort();
+
+
+        if (
+            affectedMetricDates.length >
+            0
+        ) {
+            const metricDateFrom =
+                affectedMetricDates[0];
+
+
+            const metricDateTo =
+                affectedMetricDates[
+                affectedMetricDates.length -
+                1
+                ];
+
+
+            const {
+                error:
+                metricsRebuildError,
+            } = await admin.rpc(
+                "rebuild_sales_metrics_for_account_range",
+                {
+                    target_ml_account_id:
+                        mlAccountId,
+
+                    target_date_from:
+                        metricDateFrom,
+
+                    target_date_to:
+                        metricDateTo,
+                },
+            );
+
+
+            if (
+                metricsRebuildError
+            ) {
+                throw new Error(
+                    "Os pedidos foram persistidos, mas as métricas analíticas não puderam ser atualizadas.",
+                );
+            }
+        }
+
 
         if (
             orderItemRows.length >
@@ -1327,7 +1464,7 @@ export async function syncOrdersPreview({
                     metadata: {
                         mode:
                             syncType ===
-                            "orders_recent"
+                                "orders_recent"
                                 ? "incremental"
                                 : "preview",
 
