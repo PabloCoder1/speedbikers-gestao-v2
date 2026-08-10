@@ -7,67 +7,120 @@ import {
 export async function updateSession(
   request: NextRequest,
 ) {
-  let supabaseResponse = NextResponse.next({
-    request,
-  });
+  let supabaseResponse =
+    NextResponse.next({
+      request,
+    });
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env
-      .NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
+  const supabase =
+    createServerClient(
+      process.env
+        .NEXT_PUBLIC_SUPABASE_URL!,
 
-        setAll(cookiesToSet, headers) {
-          cookiesToSet.forEach(({ name, value }) => {
-            request.cookies.set(name, value);
-          });
+      process.env
+        .NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
 
-          supabaseResponse = NextResponse.next({
-            request,
-          });
+      {
+        cookies: {
+          getAll() {
+            return request.cookies.getAll();
+          },
 
-          cookiesToSet.forEach(
-            ({ name, value, options }) => {
-              supabaseResponse.cookies.set(
+          setAll(
+            cookiesToSet,
+            headers,
+          ) {
+            cookiesToSet.forEach(
+              ({
+                name,
+                value,
+              }) => {
+                request.cookies.set(
+                  name,
+                  value,
+                );
+              },
+            );
+
+            supabaseResponse =
+              NextResponse.next({
+                request,
+              });
+
+            cookiesToSet.forEach(
+              ({
                 name,
                 value,
                 options,
-              );
-            },
-          );
+              }) => {
+                supabaseResponse.cookies.set(
+                  name,
+                  value,
+                  options,
+                );
+              },
+            );
 
-          Object.entries(headers).forEach(
-            ([key, value]) => {
-              supabaseResponse.headers.set(
+            Object.entries(
+              headers,
+            ).forEach(
+              ([
                 key,
                 value,
-              );
-            },
-          );
+              ]) => {
+                supabaseResponse.headers.set(
+                  key,
+                  value,
+                );
+              },
+            );
+          },
         },
       },
-    },
-  );
+    );
 
   const { data } =
     await supabase.auth.getClaims();
 
-  const claims = data?.claims;
+  const claims =
+    data?.claims;
 
+  const pathname =
+    request.nextUrl.pathname;
+
+  /*
+   * Rotas públicas especiais.
+   *
+   * /login:
+   * precisa funcionar sem sessão.
+   *
+   * /api/internal/ml-sync/worker:
+   * não utiliza sessão de usuário.
+   * Possui autenticação própria através de
+   * SYNC_WORKER_SECRET.
+   */
   const isPublicRoute =
-    request.nextUrl.pathname.startsWith("/login");
+    pathname.startsWith(
+      "/login",
+    ) ||
+    pathname ===
+      "/api/internal/ml-sync/worker";
 
-  if (!claims && !isPublicRoute) {
-    const url = request.nextUrl.clone();
+  if (
+    !claims &&
+    !isPublicRoute
+  ) {
+    const url =
+      request.nextUrl.clone();
 
-    url.pathname = "/login";
+    url.pathname =
+      "/login";
+
     url.search = "";
 
-    return NextResponse.redirect(url);
+    return NextResponse.redirect(
+      url,
+    );
   }
 
   return supabaseResponse;
