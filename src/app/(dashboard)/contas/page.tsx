@@ -10,7 +10,9 @@ import {
   getMlAccounts,
   type MlAccountConnectionStatus,
 } from "@/features/ml-accounts/get-ml-accounts";
+import { getListingsSyncProgress } from "@/features/ml-sync/get-listings-sync-progress";
 import { FullListingSyncForm } from "@/components/ml-accounts/full-listing-sync-form";
+import { ListingsSyncProgress } from "@/components/ml-accounts/listings-sync-progress";
 
 export const metadata: Metadata = {
   title: "Contas",
@@ -117,6 +119,14 @@ export default async function AccountsPage({
     accounts,
   } = await getMlAccounts();
 
+  const listingsSyncByAccount =
+    await getListingsSyncProgress(
+      accounts.map(
+        (account) =>
+          account.id,
+      ),
+    );
+
   if (!access) {
     return null;
   }
@@ -173,6 +183,17 @@ export default async function AccountsPage({
                   account
                     .connectionStatus
                   ];
+
+                const listingsSync =
+                  listingsSyncByAccount[
+                    account.id
+                  ] ?? null;
+
+                const listingsSyncActive =
+                  listingsSync?.status ===
+                    "queued" ||
+                  listingsSync?.status ===
+                    "running";
 
                 return (
                   <Card
@@ -287,11 +308,23 @@ export default async function AccountsPage({
                             account.code === "sb" &&
                             account.connectionStatus ===
                             "connected" ? (
-                            <FullListingSyncForm
-                              mlAccountId={
-                                account.id
-                              }
-                            />
+                            <>
+                              {listingsSync ? (
+                                <ListingsSyncProgress
+                                  progress={
+                                    listingsSync
+                                  }
+                                />
+                              ) : null}
+
+                              {!listingsSyncActive ? (
+                                <FullListingSyncForm
+                                  mlAccountId={
+                                    account.id
+                                  }
+                                />
+                              ) : null}
+                            </>
                           ) : null}
                         </div>
                       ) : null}
