@@ -12,8 +12,12 @@ import {
 } from "@/features/ml-accounts/get-ml-accounts";
 import { getListingsSyncProgress } from "@/features/ml-sync/get-listings-sync-progress";
 import { FullListingSyncForm } from "@/components/ml-accounts/full-listing-sync-form";
-import { OrdersSyncForm } from "@/features/ml-accounts/orders-sync-form";
 import { ListingsSyncProgress } from "@/components/ml-accounts/listings-sync-progress";
+
+import { OrdersBackfillForm } from "@/components/ml-accounts/orders-backfill-form";
+import { OrdersBackfillProgress } from "@/components/ml-accounts/orders-backfill-progress";
+
+import { getOrdersBackfillProgress } from "@/features/ml-sync/get-orders-backfill-progress";
 
 export const metadata: Metadata = {
   title: "Contas",
@@ -128,6 +132,14 @@ export default async function AccountsPage({
       ),
     );
 
+  const ordersBackfillByAccount =
+    await getOrdersBackfillProgress(
+      accounts.map(
+        (account) =>
+          account.id,
+      ),
+    );
+
   if (!access) {
     return null;
   }
@@ -189,6 +201,17 @@ export default async function AccountsPage({
                   listingsSyncByAccount[
                     account.id
                   ] ?? null;
+
+                const ordersBackfill =
+                  ordersBackfillByAccount[
+                    account.id
+                  ] ?? null;
+
+                const ordersBackfillActive =
+                  ordersBackfill?.status ===
+                    "queued" ||
+                  ordersBackfill?.status ===
+                    "running";
 
                 const listingsSyncActive =
                   listingsSync?.status ===
@@ -328,11 +351,23 @@ export default async function AccountsPage({
 
                               {listingsSync?.status ===
                               "succeeded" ? (
-                                <OrdersSyncForm
-                                  mlAccountId={
-                                    account.id
-                                  }
-                                />
+                                <>
+                                  {ordersBackfill ? (
+                                    <OrdersBackfillProgress
+                                      progress={
+                                        ordersBackfill
+                                      }
+                                    />
+                                  ) : null}
+
+                                  {!ordersBackfillActive ? (
+                                    <OrdersBackfillForm
+                                      mlAccountId={
+                                        account.id
+                                      }
+                                    />
+                                  ) : null}
+                                </>
                               ) : null}
                             </>
                           ) : null}

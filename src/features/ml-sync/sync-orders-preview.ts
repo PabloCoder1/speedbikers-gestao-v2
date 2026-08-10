@@ -2,14 +2,14 @@ import "server-only";
 
 import {
     getValidMercadoLivreAccessToken,
-} from "@/integrations/mercado-livre/access-token";
+} from "../../integrations/mercado-livre/access-token";
 
 import {
     searchSellerOrders,
     type MercadoLivreOrder,
-} from "@/integrations/mercado-livre/orders";
+} from "../../integrations/mercado-livre/orders";
 
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAdminClient } from "../../lib/supabase/admin";
 
 
 type MlAccountRow = {
@@ -292,18 +292,31 @@ function extractOrderItemSku(
 
 
 export type OrdersSyncType =
-    | "orders_preview"
-    | "orders_recent";
+  | "orders_preview"
+  | "orders_recent"
+  | "orders_backfill";
 
 
 export async function syncOrdersPreview({
-    organizationId,
-    mlAccountId,
-    syncType = "orders_preview",
+  organizationId,
+  mlAccountId,
+  syncType = "orders_preview",
+  limit = PREVIEW_LIMIT,
+  offset = 0,
+  dateCreatedFrom = null,
+  dateCreatedTo = null,
+  existingSyncRunId = null,
+  manageRunLifecycle = true,
 }: {
-    organizationId: string;
-    mlAccountId: string;
-    syncType?: OrdersSyncType;
+  organizationId: string;
+  mlAccountId: string;
+  syncType?: OrdersSyncType;
+  limit?: number;
+  offset?: number;
+  dateCreatedFrom?: string | null;
+  dateCreatedTo?: string | null;
+  existingSyncRunId?: string | null;
+  manageRunLifecycle?: boolean;
 }) {
     const admin =
         createAdminClient();
@@ -411,49 +424,71 @@ export async function syncOrdersPreview({
     }
 
 
-    const {
-        data: syncRun,
-        error: syncRunError,
-    } = await admin
-        .from("sync_runs")
-        .insert({
-            organization_id:
-                organizationId,
+    let syncRun: {
+        id: string;
+    };
 
-            ml_account_id:
-                mlAccountId,
+    if (existingSyncRunId) {
+        syncRun = {
+            id:
+                existingSyncRunId,
+        };
+    } else {
+        const {
+            data,
+            error,
+        } = await admin
+            .from("sync_runs")
+            .insert({
+                organization_id:
+                    organizationId,
 
-            sync_type:
-                syncType,
+                ml_account_id:
+                    mlAccountId,
 
-            status:
-                "running",
+                sync_type:
+                    syncType,
 
-            batch_size:
-                PREVIEW_LIMIT,
+                status:
+                    "running",
 
-            metadata: {
-                mode:
-                    syncType ===
-                        "orders_recent"
-                        ? "incremental"
-                        : "preview",
+                batch_size:
+                    limit,
 
-                limit:
-                    PREVIEW_LIMIT,
-            },
-        })
-        .select("id")
-        .single();
+                metadata: {
+                    mode:
+                        syncType ===
+                        "orders_backfill"
+                            ? "backfill"
+                            : syncType ===
+                                "orders_recent"
+                              ? "incremental"
+                              : "preview",
 
+                    limit,
 
-    if (
-        syncRunError ||
-        !syncRun
-    ) {
-        throw new Error(
-            "Não foi possível registrar a sincronização dos pedidos.",
-        );
+                    offset,
+
+                    date_created_from:
+                        dateCreatedFrom,
+
+                    date_created_to:
+                        dateCreatedTo,
+                },
+            })
+            .select("id")
+            .single();
+
+        if (
+            error ||
+            !data
+        ) {
+            throw new Error(
+                "Não foi possível registrar a sincronização dos pedidos.",
+            );
+        }
+
+        syncRun = data;
     }
 
 
@@ -472,11 +507,19 @@ export async function syncOrdersPreview({
                 accessToken:
                     validToken.accessToken,
 
-                limit:
-                    PREVIEW_LIMIT,
+                limit,
 
-                offset:
-                    0,
+                offset,
+
+                sort:
+                    syncType ===
+                    "orders_backfill"
+                        ? "date_asc"
+                        : "date_desc",
+
+                dateCreatedFrom,
+
+                dateCreatedTo,
             });
 
 
@@ -1255,28 +1298,6 @@ export async function syncOrdersPreview({
                     "Não foi possível persistir os itens dos pedidos.",
                 );
             }
-
-
-            const internalOrderIds =
-                Array.from(
-                    orderIdMap.values(),
-                );
-
-
-            await admin
-                .from("order_items")
-                .update({
-                    is_current:
-                        false,
-                })
-                .in(
-                    "order_id",
-                    internalOrderIds,
-                )
-                .neq(
-                    "last_seen_sync_run_id",
-                    syncRun.id,
-                );
         }
 
 
@@ -1284,67 +1305,82 @@ export async function syncOrdersPreview({
         // Finish sync run.
         // --------------------------------------------------------
 
-        const {
-            error:
-            finishError,
-        } = await admin
-            .from("sync_runs")
-            .update({
-                status:
-                    "succeeded",
+        if (manageRunLifecycle) {
+            const {
+                error:
+                finishError,
+            } = await admin
+                .from("sync_runs")
+                .update({
+                    status:
+                        "succeeded",
 
-                records_discovered:
-                    search.total,
-
-                records_processed:
-                    orderRows.length,
-
-                records_upserted:
-                    orderRows.length,
-
-                metadata: {
-                    mode:
-                        "preview",
-
-                    limit:
-                        PREVIEW_LIMIT,
-
-                    seller_total:
+                    records_discovered:
                         search.total,
 
-                    orders_imported:
+                    records_processed:
                         orderRows.length,
 
-                    order_items_imported:
-                        orderItemRows.length,
+                    records_upserted:
+                        orderRows.length,
 
-                    unmapped_order_items:
-                        unmappedItems,
+                    metadata: {
+                        mode:
+                            syncType ===
+                            "orders_recent"
+                                ? "incremental"
+                                : "preview",
 
-                    token_refreshed:
-                        validToken.refreshed,
-                },
+                        limit,
 
-                finished_at:
-                    new Date()
-                        .toISOString(),
-            })
-            .eq(
-                "id",
-                syncRun.id,
-            );
+                        offset,
+
+                        date_created_from:
+                            dateCreatedFrom,
+
+                        date_created_to:
+                            dateCreatedTo,
+
+                        seller_total:
+                            search.total,
+
+                        orders_imported:
+                            orderRows.length,
+
+                        order_items_imported:
+                            orderItemRows.length,
+
+                        unmapped_order_items:
+                            unmappedItems,
+
+                        token_refreshed:
+                            validToken.refreshed,
+                    },
+
+                    finished_at:
+                        new Date()
+                            .toISOString(),
+                })
+                .eq(
+                    "id",
+                    syncRun.id,
+                );
 
 
-        if (finishError) {
-            throw new Error(
-                "Os pedidos foram importados, mas o histórico da sincronização não pôde ser finalizado.",
-            );
+            if (finishError) {
+                throw new Error(
+                    "Os pedidos foram importados, mas o histórico da sincronização não pôde ser finalizado.",
+                );
+            }
         }
 
 
         return {
             sellerTotal:
                 search.total,
+
+            pageOrders:
+                search.orders.length,
 
             importedOrders:
                 orderRows.length,
@@ -1357,30 +1393,35 @@ export async function syncOrdersPreview({
                 unmappedItems,
 
             unmappedItems,
+
+            tokenRefreshed:
+                validToken.refreshed,
         };
     } catch (error) {
-        await admin
-            .from("sync_runs")
-            .update({
-                status:
-                    "failed",
+        if (manageRunLifecycle) {
+            await admin
+                .from("sync_runs")
+                .update({
+                    status:
+                        "failed",
 
-                error_code:
-                    "orders_preview_failed",
+                    error_code:
+                        "orders_sync_failed",
 
-                error_message:
-                    error instanceof Error
-                        ? error.message
-                        : "Erro desconhecido.",
+                    error_message:
+                        error instanceof Error
+                            ? error.message
+                            : "Erro desconhecido.",
 
-                finished_at:
-                    new Date()
-                        .toISOString(),
-            })
-            .eq(
-                "id",
-                syncRun.id,
-            );
+                    finished_at:
+                        new Date()
+                            .toISOString(),
+                })
+                .eq(
+                    "id",
+                    syncRun.id,
+                );
+        }
 
 
         throw error;

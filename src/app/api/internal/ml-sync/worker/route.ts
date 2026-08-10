@@ -8,6 +8,8 @@ import { processNextListingsSyncBatch } from "@/features/ml-sync/process-listing
 
 import { syncRecentSbOrdersIfDue } from "@/features/ml-sync/sync-recent-orders";
 
+import { processNextOrdersBackfillBatch } from "@/features/ml-sync/process-orders-backfill-worker";
+
 function isAuthorized(
   request: Request,
 ) {
@@ -114,16 +116,17 @@ export async function POST(
 
 
     if (
-      payload.task ===
-      "orders_recent"
-    ) {
-      const result =
-        await syncRecentSbOrdersIfDue();
+  payload.task ===
+  "orders_backfill"
+) {
+  const result =
+    await processNextOrdersBackfillBatch();
 
-      return NextResponse.json(
-        result,
-      );
-    }
+
+  return NextResponse.json(
+    result,
+  );
+}
 
 
     const result =
