@@ -10,6 +10,7 @@ import {
   getMlAccounts,
   type MlAccountConnectionStatus,
 } from "@/features/ml-accounts/get-ml-accounts";
+import { ListingSyncForm } from "@/features/ml-sync/listing-sync-form";
 
 export const metadata: Metadata = {
   title: "Contas",
@@ -237,6 +238,34 @@ export default async function AccountsPage({
                             }
                           </dd>
                         </div>
+
+                        <div>
+                          <dt className="text-xs font-medium uppercase tracking-wide text-gray-400">
+                            Última sincronização
+                          </dt>
+
+                          <dd className="mt-1 text-sm font-medium text-gray-800">
+                            {account.lastSyncedAt
+                              ? new Intl.DateTimeFormat(
+                                  "pt-BR",
+                                  {
+                                    dateStyle:
+                                      "short",
+
+                                    timeStyle:
+                                      "short",
+
+                                    timeZone:
+                                      "America/Sao_Paulo",
+                                  },
+                                ).format(
+                                  new Date(
+                                    account.lastSyncedAt,
+                                  ),
+                                )
+                              : "Nunca"}
+                          </dd>
+                        </div>
                       </dl>
 
                       {access.role === "admin" &&
@@ -253,6 +282,17 @@ export default async function AccountsPage({
                               ? "Reconectar"
                               : "Conectar"}
                           </a>
+
+                          {access.role === "admin" &&
+                          account.code === "sb" &&
+                          account.connectionStatus ===
+                            "connected" ? (
+                            <ListingSyncForm
+                              mlAccountId={
+                                account.id
+                              }
+                            />
+                          ) : null}
                         </div>
                       ) : null}
                     </CardContent>
