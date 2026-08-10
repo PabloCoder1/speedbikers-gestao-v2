@@ -10,7 +10,7 @@ import {
   getMlAccounts,
   type MlAccountConnectionStatus,
 } from "@/features/ml-accounts/get-ml-accounts";
-import { ListingSyncForm } from "@/features/ml-sync/listing-sync-form";
+import { FullListingSyncForm } from "@/components/ml-accounts/full-listing-sync-form";
 
 export const metadata: Metadata = {
   title: "Contas",
@@ -247,22 +247,22 @@ export default async function AccountsPage({
                           <dd className="mt-1 text-sm font-medium text-gray-800">
                             {account.lastSyncedAt
                               ? new Intl.DateTimeFormat(
-                                  "pt-BR",
-                                  {
-                                    dateStyle:
-                                      "short",
+                                "pt-BR",
+                                {
+                                  dateStyle:
+                                    "short",
 
-                                    timeStyle:
-                                      "short",
+                                  timeStyle:
+                                    "short",
 
-                                    timeZone:
-                                      "America/Sao_Paulo",
-                                  },
-                                ).format(
-                                  new Date(
-                                    account.lastSyncedAt,
-                                  ),
-                                )
+                                  timeZone:
+                                    "America/Sao_Paulo",
+                                },
+                              ).format(
+                                new Date(
+                                  account.lastSyncedAt,
+                                ),
+                              )
                               : "Nunca"}
                           </dd>
                         </div>
@@ -284,10 +284,10 @@ export default async function AccountsPage({
                           </a>
 
                           {access.role === "admin" &&
-                          account.code === "sb" &&
-                          account.connectionStatus ===
+                            account.code === "sb" &&
+                            account.connectionStatus ===
                             "connected" ? (
-                            <ListingSyncForm
+                            <FullListingSyncForm
                               mlAccountId={
                                 account.id
                               }

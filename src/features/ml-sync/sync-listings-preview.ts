@@ -299,9 +299,17 @@ function collectProductCandidates(
 export async function syncListingsPreview({
   organizationId,
   mlAccountId,
+  offset = 0,
+  limit = PREVIEW_LIMIT,
+  existingSyncRunId = null,
+  manageRunLifecycle = true,
 }: {
   organizationId: string;
   mlAccountId: string;
+  offset?: number;
+  limit?: number;
+  existingSyncRunId?: string | null;
+  manageRunLifecycle?: boolean;
 }) {
   const admin =
     createAdminClient();
@@ -360,41 +368,54 @@ export async function syncListingsPreview({
     );
   }
 
-  const {
-    data: syncRun,
-    error: syncRunError,
-  } = await admin
-    .from("sync_runs")
-    .insert({
-      organization_id:
-        organizationId,
+  let syncRun: {
+    id: string;
+  };
 
-      ml_account_id:
-        mlAccountId,
+  if (existingSyncRunId) {
+    syncRun = {
+      id: existingSyncRunId,
+    };
+  } else {
+    const {
+      data,
+      error,
+    } = await admin
+      .from("sync_runs")
+      .insert({
+        organization_id:
+          organizationId,
 
-      sync_type:
-        "listings_preview",
+        ml_account_id:
+          mlAccountId,
 
-      status:
-        "running",
+        sync_type:
+          "listings_preview",
 
-      metadata: {
-        mode:
-          "preview",
-        limit:
-          PREVIEW_LIMIT,
-      },
-    })
-    .select("id")
-    .single();
+        status:
+          "running",
 
-  if (
-    syncRunError ||
-    !syncRun
-  ) {
-    throw new Error(
-      "Não foi possível criar o registro da sincronização.",
-    );
+        metadata: {
+          mode:
+            "preview",
+
+          limit,
+          offset,
+        },
+      })
+      .select("id")
+      .single();
+
+    if (
+      error ||
+      !data
+    ) {
+      throw new Error(
+        "Não foi possível criar o registro da sincronização.",
+      );
+    }
+
+    syncRun = data;
   }
 
   try {
@@ -411,8 +432,8 @@ export async function syncListingsPreview({
         accessToken:
           validToken.accessToken,
 
-        limit:
-          PREVIEW_LIMIT,
+        limit,
+        offset,
       });
 
     const items =
@@ -934,76 +955,79 @@ export async function syncListingsPreview({
       }
     }
 
-    const {
-      error:
-        finishRunError,
-    } = await admin
-      .from("sync_runs")
-      .update({
-        status:
-          "succeeded",
+    if (manageRunLifecycle) {
+      const {
+        error:
+          finishRunError,
+      } = await admin
+        .from("sync_runs")
+        .update({
+          status:
+            "succeeded",
 
-        records_discovered:
-          search.total,
-
-        records_processed:
-          items.length,
-
-        records_upserted:
-          listingRows.length,
-
-        metadata: {
-          mode:
-            "preview",
-
-          limit:
-            PREVIEW_LIMIT,
-
-          seller_total:
+          records_discovered:
             search.total,
 
-          products_found:
-            productCandidates.size,
+          records_processed:
+            items.length,
 
-          variations_found:
-            variationRows.length,
+          records_upserted:
+            listingRows.length,
 
-          token_refreshed:
-            validToken.refreshed,
-        },
+          metadata: {
+            mode:
+              "preview",
 
-        finished_at:
-          new Date()
-            .toISOString(),
-      })
-      .eq(
-        "id",
-        syncRun.id,
-      );
+            limit,
+            offset,
 
-    if (
-      finishRunError
-    ) {
-      throw new Error(
-        "Os anúncios foram importados, mas não foi possível finalizar o histórico de sincronização.",
-      );
+            seller_total:
+              search.total,
+
+            products_found:
+              productCandidates.size,
+
+            variations_found:
+              variationRows.length,
+
+            token_refreshed:
+              validToken.refreshed,
+          },
+
+          finished_at:
+            new Date()
+              .toISOString(),
+        })
+        .eq(
+          "id",
+          syncRun.id,
+        );
+
+      if (finishRunError) {
+        throw new Error(
+          "Os anúncios foram importados, mas não foi possível finalizar o histórico de sincronização.",
+        );
+      }
+
+      await admin
+        .from("ml_accounts")
+        .update({
+          last_synced_at:
+            new Date()
+              .toISOString(),
+        })
+        .eq(
+          "id",
+          mlAccountId,
+        );
     }
-
-    await admin
-      .from("ml_accounts")
-      .update({
-        last_synced_at:
-          new Date()
-            .toISOString(),
-      })
-      .eq(
-        "id",
-        mlAccountId,
-      );
 
     return {
       sellerTotal:
         search.total,
+
+      pageItems:
+        search.itemIds.length,
 
       importedListings:
         listingRows.length,
@@ -1018,28 +1042,30 @@ export async function syncListingsPreview({
         validToken.refreshed,
     };
   } catch (error) {
-    await admin
-      .from("sync_runs")
-      .update({
-        status:
-          "failed",
+    if (manageRunLifecycle) {
+      await admin
+        .from("sync_runs")
+        .update({
+          status:
+            "failed",
 
-        error_code:
-          "listings_preview_failed",
+          error_code:
+            "listings_preview_failed",
 
-        error_message:
-          error instanceof Error
-            ? error.message
-            : "Erro desconhecido.",
+          error_message:
+            error instanceof Error
+              ? error.message
+              : "Erro desconhecido.",
 
-        finished_at:
-          new Date()
-            .toISOString(),
-      })
-      .eq(
-        "id",
-        syncRun.id,
-      );
+          finished_at:
+            new Date()
+              .toISOString(),
+        })
+        .eq(
+          "id",
+          syncRun.id,
+        );
+    }
 
     throw error;
   }
