@@ -59,6 +59,28 @@ export function ListingsSyncProgress({
     progress.status ===
       "running";
 
+  const displayedProcessed =
+    progress.recordsDiscovered >
+    0
+      ? Math.min(
+          progress.recordsProcessed,
+          progress.recordsDiscovered,
+        )
+      : progress.recordsProcessed;
+
+  const percentage =
+    progress.recordsDiscovered >
+    0
+      ? Math.min(
+          100,
+          Math.round(
+            (
+              displayedProcessed /
+              progress.recordsDiscovered
+            ) * 100,
+          ),
+        )
+      : 0;
 
   useEffect(() => {
     if (!isActive) {
@@ -85,22 +107,6 @@ export function ListingsSyncProgress({
     router,
   ]);
 
-
-  const percentage =
-    progress.recordsDiscovered >
-    0
-      ? Math.min(
-          100,
-          Math.round(
-            (
-              progress.recordsProcessed /
-              progress.recordsDiscovered
-            ) * 100,
-          ),
-        )
-      : 0;
-
-
   const badgeVariant =
     progress.status ===
     "succeeded"
@@ -126,11 +132,7 @@ export function ListingsSyncProgress({
           </p>
 
           <p className="mt-1 text-sm font-semibold text-gray-950">
-            {
-              progress
-                .recordsProcessed
-            }{" "}
-            /{" "}
+            {displayedProcessed}{" "}/{" "}
             {
               progress
                 .recordsDiscovered

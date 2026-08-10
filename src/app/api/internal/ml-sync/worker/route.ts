@@ -6,6 +6,8 @@ import { NextResponse } from "next/server";
 
 import { processNextListingsSyncBatch } from "@/features/ml-sync/process-listings-sync-worker";
 
+import { syncRecentSbOrdersIfDue } from "@/features/ml-sync/sync-recent-orders";
+
 function isAuthorized(
   request: Request,
 ) {
@@ -68,7 +70,9 @@ export async function POST(
 ) {
   try {
     if (
-      !isAuthorized(request)
+      !isAuthorized(
+        request,
+      )
     ) {
       return NextResponse.json(
         {
@@ -81,8 +85,50 @@ export async function POST(
       );
     }
 
+
+    let payload:
+      Record<string, unknown> =
+      {};
+
+
+    try {
+      const body =
+        await request.json();
+
+      if (
+        body &&
+        typeof body ===
+          "object" &&
+        !Array.isArray(body)
+      ) {
+        payload =
+          body as
+            Record<
+              string,
+              unknown
+            >;
+      }
+    } catch {
+      payload = {};
+    }
+
+
+    if (
+      payload.task ===
+      "orders_recent"
+    ) {
+      const result =
+        await syncRecentSbOrdersIfDue();
+
+      return NextResponse.json(
+        result,
+      );
+    }
+
+
     const result =
       await processNextListingsSyncBatch();
+
 
     return NextResponse.json(
       result,
@@ -94,6 +140,7 @@ export async function POST(
         ? error.message
         : "unknown error",
     );
+
 
     return NextResponse.json(
       {
