@@ -3,8 +3,8 @@ import "server-only";
 import {
   getMercadoLivreAppConfig,
   type MercadoLivreAppCode,
-} from "@/integrations/mercado-livre/config";
-import { MERCADO_LIVRE_URLS } from "@/integrations/mercado-livre/constants";
+} from "./config";
+import { MERCADO_LIVRE_URLS } from "./constants";
 
 export type MercadoLivreTokenResponse = {
   accessToken: string;

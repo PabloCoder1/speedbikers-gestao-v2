@@ -1,126 +1,278 @@
 import "server-only";
 
-import { MERCADO_LIVRE_URLS } from "@/integrations/mercado-livre/constants";
+import { MERCADO_LIVRE_URLS } from "./constants";
+
+
+export type MercadoLivreOrder =
+  Record<string, unknown>;
+
 
 export type MercadoLivreOrderSort =
-    | "date_desc"
-    | "date_asc";
-
-export type MercadoLivreOrder = Record<string, unknown>;
+  | "date_desc"
+  | "date_asc";
 
 
 type OrdersSearchResponse = {
-    results?: unknown;
+  results?: unknown;
 
-    paging?: {
-        total?: unknown;
-        offset?: unknown;
-        limit?: unknown;
-    };
+  paging?: {
+    total?: unknown;
+    offset?: unknown;
+    limit?: unknown;
+  };
+
+  sort?: unknown;
+
+  available_sorts?: unknown;
+
+  filters?: unknown;
+
+  available_filters?: unknown;
 };
 
 
+export type SearchSellerOrdersParams = {
+  sellerId: string;
+
+  accessToken: string;
+
+  limit?: number;
+
+  offset?: number;
+
+  sort?: MercadoLivreOrderSort;
+
+  dateCreatedFrom?: string | null;
+
+  dateCreatedTo?: string | null;
+};
+
+
+function assertValidIsoDate(
+  value: string,
+  fieldName: string,
+) {
+  const timestamp =
+    Date.parse(value);
+
+
+  if (
+    Number.isNaN(
+      timestamp,
+    )
+  ) {
+    throw new Error(
+      `${fieldName} possui uma data inválida.`,
+    );
+  }
+}
+
+
 export async function searchSellerOrders({
+  sellerId,
+  accessToken,
+  limit = 50,
+  offset = 0,
+  sort = "date_desc",
+  dateCreatedFrom = null,
+  dateCreatedTo = null,
+}: SearchSellerOrdersParams) {
+  if (
+    limit < 1 ||
+    limit > 50
+  ) {
+    throw new Error(
+      "O limite de pedidos deve ficar entre 1 e 50.",
+    );
+  }
+
+
+  if (offset < 0) {
+    throw new Error(
+      "O offset de pedidos não pode ser negativo.",
+    );
+  }
+
+
+  if (dateCreatedFrom) {
+    assertValidIsoDate(
+      dateCreatedFrom,
+      "dateCreatedFrom",
+    );
+  }
+
+
+  if (dateCreatedTo) {
+    assertValidIsoDate(
+      dateCreatedTo,
+      "dateCreatedTo",
+    );
+  }
+
+
+  if (
+    dateCreatedFrom &&
+    dateCreatedTo &&
+    Date.parse(
+      dateCreatedFrom,
+    ) >=
+      Date.parse(
+        dateCreatedTo,
+      )
+  ) {
+    throw new Error(
+      "A data inicial deve ser anterior à data final.",
+    );
+  }
+
+
+  const url =
+    new URL(
+      `${MERCADO_LIVRE_URLS.api}/orders/search`,
+    );
+
+
+  url.searchParams.set(
+    "seller",
     sellerId,
-    accessToken,
-    limit = 50,
-    offset = 0,
-    sort = "date_desc",
-}: {
-    sellerId: string;
-    accessToken: string;
-    limit?: number;
-    offset?: number;
-    sort?: MercadoLivreOrderSort;
-}) {
-    const url =
-        new URL(
-            `${MERCADO_LIVRE_URLS.api}/orders/search`,
-        );
+  );
 
 
+  url.searchParams.set(
+    "sort",
+    sort,
+  );
+
+
+  url.searchParams.set(
+    "limit",
+    String(limit),
+  );
+
+
+  url.searchParams.set(
+    "offset",
+    String(offset),
+  );
+
+
+  if (dateCreatedFrom) {
     url.searchParams.set(
-        "seller",
-        sellerId,
+      "order.date_created.from",
+      dateCreatedFrom,
+    );
+  }
+
+
+  if (dateCreatedTo) {
+    url.searchParams.set(
+      "order.date_created.to",
+      dateCreatedTo,
+    );
+  }
+
+
+  const response =
+    await fetch(
+      url,
+      {
+        headers: {
+          Authorization:
+            `Bearer ${accessToken}`,
+
+          Accept:
+            "application/json",
+        },
+
+        cache:
+          "no-store",
+      },
     );
 
-    url.searchParams.set(
-        "sort",
-        sort,
-    );
 
-    url.searchParams.set(
-        "limit",
-        String(limit),
-    );
-
-    url.searchParams.set(
-        "offset",
-        String(offset),
-    );
+  let payload:
+    | OrdersSearchResponse
+    | null = null;
 
 
-    const response =
-        await fetch(
-            url,
-            {
-                headers: {
-                    Authorization:
-                        `Bearer ${accessToken}`,
-
-                    Accept:
-                        "application/json",
-                },
-
-                cache:
-                    "no-store",
-            },
-        );
-
-
-    if (!response.ok) {
-        throw new Error(
-            `Falha ao consultar pedidos do seller. HTTP ${response.status}.`,
-        );
-    }
-
-
-    const payload =
-        (await response.json()) as
+  try {
+    payload =
+      (await response.json()) as
         OrdersSearchResponse;
+  } catch {
+    payload = null;
+  }
 
 
-    const results =
-        Array.isArray(
-            payload.results,
+  if (
+    !response.ok ||
+    !payload
+  ) {
+    throw new Error(
+      `Falha ao consultar pedidos do seller. HTTP ${response.status}.`,
+    );
+  }
+
+
+  const results =
+    Array.isArray(
+      payload.results,
+    )
+      ? payload.results.filter(
+          (
+            value,
+          ): value is MercadoLivreOrder =>
+            Boolean(
+              value &&
+              typeof value ===
+                "object" &&
+              !Array.isArray(
+                value,
+              ),
+            ),
         )
-            ? payload.results.filter(
-                (
-                    value,
-                ): value is MercadoLivreOrder =>
-                    Boolean(
-                        value &&
-                        typeof value ===
-                        "object" &&
-                        !Array.isArray(
-                            value,
-                        ),
-                    ),
-            )
-            : [];
+      : [];
 
 
-    const total =
+  const total =
+    typeof payload.paging
+      ?.total === "number"
+      ? payload.paging.total
+      : results.length;
+
+
+  return {
+    orders:
+      results,
+
+    total,
+
+    paging: {
+      offset:
         typeof payload.paging
-            ?.total === "number"
-            ? payload.paging.total
-            : results.length;
+          ?.offset === "number"
+          ? payload.paging.offset
+          : offset,
 
+      limit:
+        typeof payload.paging
+          ?.limit === "number"
+          ? payload.paging.limit
+          : limit,
+    },
 
-    return {
-        orders:
-            results,
+    filters:
+      Array.isArray(
+        payload.filters,
+      )
+        ? payload.filters
+        : [],
 
-        total,
-    };
+    availableFilters:
+      Array.isArray(
+        payload.available_filters,
+      )
+        ? payload.available_filters
+        : [],
+  };
 }

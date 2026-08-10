@@ -6,16 +6,16 @@ import {
 
 import {
   isMercadoLivreAppCode,
-} from "@/integrations/mercado-livre/config";
+} from "./config";
 import {
   MercadoLivreTokenRequestError,
   refreshAccessToken,
-} from "@/integrations/mercado-livre/token";
+} from "./token";
 import {
   decryptSecret,
   encryptSecret,
-} from "@/lib/security/encryption";
-import { createAdminClient } from "@/lib/supabase/admin";
+} from "../../lib/security/encryption";
+import { createAdminClient } from "../../lib/supabase/admin";
 
 const REFRESH_SAFETY_WINDOW_MS =
   30 * 60 * 1000;
