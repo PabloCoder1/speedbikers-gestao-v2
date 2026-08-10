@@ -158,6 +158,100 @@ function normalizeSku(
     .toUpperCase();
 }
 
+type OrderProductCandidate = {
+  sku: string;
+  skuKey: string;
+  name: string | null;
+};
+
+function collectOrderProductCandidates(
+  orders: unknown[],
+) {
+  const candidates =
+    new Map<
+      string,
+      OrderProductCandidate
+    >();
+
+  for (
+    const rawOrder
+    of orders
+  ) {
+    const order =
+      asObject(rawOrder);
+
+    if (!order) {
+      continue;
+    }
+
+    for (
+      const rawLine
+      of getArray(
+        order,
+        "order_items",
+      )
+    ) {
+      const line =
+        asObject(rawLine);
+
+      if (!line) {
+        continue;
+      }
+
+      const item =
+        asObject(
+          line.item,
+        );
+
+      if (!item) {
+        continue;
+      }
+
+      const sellerSku =
+        extractOrderItemSku(
+          line,
+          item,
+        );
+
+      if (!sellerSku) {
+        continue;
+      }
+
+      const skuKey =
+        normalizeSku(
+          sellerSku,
+        );
+
+      if (!candidates.has(
+        skuKey,
+      )) {
+        candidates.set(
+          skuKey,
+          {
+            sku:
+              sellerSku,
+
+            skuKey,
+
+            name:
+              getString(
+                item,
+                "title",
+              ) ??
+              getString(
+                line,
+                "title",
+              ) ??
+              null,
+          },
+        );
+      }
+    }
+  }
+
+  return candidates;
+}
+
 
 function extractOrderItemSku(
   line: JsonObject,
@@ -590,58 +684,64 @@ export async function syncOrdersPreview({
 
 
     // --------------------------------------------------------
-    // Collect SKUs from order payloads.
+    // Create / update canonical products from the real SKUs
+    // present in the Mercado Livre order payload.
     // --------------------------------------------------------
 
-    const skuKeys =
-      new Set<string>();
+    const productCandidates =
+      collectOrderProductCandidates(
+        orders,
+      );
 
-
-    for (
-      const rawOrder
-      of orders
+    if (
+      productCandidates.size >
+      0
     ) {
-      for (
-        const rawLine
-        of getArray(
-          rawOrder,
-          "order_items",
-        )
+      const productRows =
+        Array.from(
+          productCandidates.values(),
+        ).map(
+          (candidate) => ({
+            organization_id:
+              organizationId,
+
+            sku:
+              candidate.sku,
+
+            sku_key:
+              candidate.skuKey,
+
+            name:
+              candidate.name,
+          }),
+        );
+
+      const {
+        error:
+          productUpsertError,
+      } = await admin
+        .from("products")
+        .upsert(
+          productRows,
+          {
+            onConflict:
+              "organization_id,sku_key",
+          },
+        );
+
+      if (
+        productUpsertError
       ) {
-        const line =
-          asObject(rawLine);
-
-        if (!line) {
-          continue;
-        }
-
-
-        const item =
-          asObject(
-            line.item,
-          );
-
-        if (!item) {
-          continue;
-        }
-
-
-        const sellerSku =
-          extractOrderItemSku(
-            line,
-            item,
-          );
-
-
-        if (sellerSku) {
-          skuKeys.add(
-            normalizeSku(
-              sellerSku,
-            ),
-          );
-        }
+        throw new Error(
+          "Não foi possível persistir os produtos encontrados nos pedidos.",
+        );
       }
     }
+
+    const skuKeys =
+      Array.from(
+        productCandidates.keys(),
+      );
 
 
     const productIdBySku =
@@ -652,7 +752,7 @@ export async function syncOrdersPreview({
 
 
     if (
-      skuKeys.size > 0
+      skuKeys.length > 0
     ) {
       const {
         data: products,
@@ -668,13 +768,13 @@ export async function syncOrdersPreview({
         )
         .in(
           "sku_key",
-          Array.from(
-            skuKeys,
-          ),
+          skuKeys,
         );
 
 
-      if (productsError) {
+      if (
+        productsError
+      ) {
         throw new Error(
           "Não foi possível resolver os SKUs dos pedidos.",
         );
@@ -1012,20 +1112,21 @@ export async function syncOrdersPreview({
           null;
 
 
+        const productFromSku =
+          sellerSku
+            ? productIdBySku.get(
+                normalizeSku(
+                  sellerSku,
+                ),
+              ) ?? null
+            : null;
+
         const productId =
+          productFromSku ??
           variation
             ?.productId ??
           listing
             ?.productId ??
-          (
-            sellerSku
-              ? productIdBySku.get(
-                  normalizeSku(
-                    sellerSku,
-                  ),
-                )
-              : undefined
-          ) ??
           null;
 
 
