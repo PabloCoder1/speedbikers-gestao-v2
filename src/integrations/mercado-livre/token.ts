@@ -12,6 +12,7 @@ export type MercadoLivreTokenResponse = {
   tokenType: string;
   expiresIn: number;
   scope: string | null;
+  userId: string | null;
 };
 
 type RawTokenResponse = {
@@ -20,42 +21,27 @@ type RawTokenResponse = {
   token_type?: unknown;
   expires_in?: unknown;
   scope?: unknown;
+  user_id?: unknown;
+  error?: unknown;
+  error_description?: unknown;
 };
 
-export async function exchangeAuthorizationCode({
-  appCode,
-  code,
-  codeVerifier,
-}: {
-  appCode: MercadoLivreAppCode;
-  code: string;
-  codeVerifier: string;
-}): Promise<MercadoLivreTokenResponse> {
-  const config =
-    getMercadoLivreAppConfig(
-      appCode,
-    );
+export class MercadoLivreTokenRequestError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly code: string | null,
+    message: string,
+  ) {
+    super(message);
 
-  const body =
-    new URLSearchParams({
-      grant_type:
-        "authorization_code",
+    this.name =
+      "MercadoLivreTokenRequestError";
+  }
+}
 
-      client_id:
-        config.clientId,
-
-      client_secret:
-        config.clientSecret,
-
-      code,
-
-      redirect_uri:
-        config.redirectUri,
-
-      code_verifier:
-        codeVerifier,
-    });
-
+async function requestToken(
+  body: URLSearchParams,
+): Promise<MercadoLivreTokenResponse> {
   const response = await fetch(
     MERCADO_LIVRE_URLS.token,
     {
@@ -87,16 +73,30 @@ export async function exchangeAuthorizationCode({
     payload = null;
   }
 
-  if (
-    !response.ok ||
-    !payload
-  ) {
-    throw new Error(
-      "Mercado Livre recusou a troca do authorization code.",
+  if (!response.ok) {
+    const code =
+      typeof payload?.error ===
+      "string"
+        ? payload.error
+        : null;
+
+    const description =
+      typeof payload
+        ?.error_description ===
+      "string"
+        ? payload
+            .error_description
+        : "Mercado Livre recusou a solicitação de token.";
+
+    throw new MercadoLivreTokenRequestError(
+      response.status,
+      code,
+      description,
     );
   }
 
   if (
+    !payload ||
     typeof payload.access_token !==
       "string" ||
     typeof payload.refresh_token !==
@@ -105,10 +105,15 @@ export async function exchangeAuthorizationCode({
       "number" ||
     payload.expires_in <= 0
   ) {
-    throw new Error(
+    throw new MercadoLivreTokenRequestError(
+      response.status,
+      null,
       "Resposta de token do Mercado Livre inválida.",
     );
   }
+
+  const rawUserId =
+    payload.user_id;
 
   return {
     accessToken:
@@ -131,5 +136,78 @@ export async function exchangeAuthorizationCode({
       "string"
         ? payload.scope
         : null,
+
+    userId:
+      typeof rawUserId ===
+        "string" ||
+      typeof rawUserId ===
+        "number"
+        ? String(rawUserId)
+        : null,
   };
+}
+
+export async function exchangeAuthorizationCode({
+  appCode,
+  code,
+  codeVerifier,
+}: {
+  appCode: MercadoLivreAppCode;
+  code: string;
+  codeVerifier: string;
+}) {
+  const config =
+    getMercadoLivreAppConfig(
+      appCode,
+    );
+
+  return requestToken(
+    new URLSearchParams({
+      grant_type:
+        "authorization_code",
+
+      client_id:
+        config.clientId,
+
+      client_secret:
+        config.clientSecret,
+
+      code,
+
+      redirect_uri:
+        config.redirectUri,
+
+      code_verifier:
+        codeVerifier,
+    }),
+  );
+}
+
+export async function refreshAccessToken({
+  appCode,
+  refreshToken,
+}: {
+  appCode: MercadoLivreAppCode;
+  refreshToken: string;
+}) {
+  const config =
+    getMercadoLivreAppConfig(
+      appCode,
+    );
+
+  return requestToken(
+    new URLSearchParams({
+      grant_type:
+        "refresh_token",
+
+      client_id:
+        config.clientId,
+
+      client_secret:
+        config.clientSecret,
+
+      refresh_token:
+        refreshToken,
+    }),
+  );
 }
