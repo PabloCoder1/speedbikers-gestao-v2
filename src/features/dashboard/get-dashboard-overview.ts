@@ -383,6 +383,7 @@ export async function getDashboardOverview() {
   ) {
     const row =
       rawRow as
+        unknown as
         DailyAccountMetricRow;
 
 
@@ -594,8 +595,8 @@ export async function getDashboardOverview() {
       []
     ).map(
       (
-        rawRow,
-        index,
+        rawRow: unknown,
+        index: number,
       ) => {
         const row =
           rawRow as
