@@ -1,19 +1,13 @@
 import "server-only";
 
 import { processNextOrdersBackfillBatch } from "@/features/ml-sync/process-orders-backfill-worker";
+import { processNextOrdersDashboardBackfillBatch } from "@/features/ml-sync/process-orders-dashboard-backfill-worker";
 
 
 const MAX_BATCHES_PER_INVOCATION =
   5;
 
 
-/*
- * Safety budget.
- *
- * We do not want one HTTP invocation to remain
- * alive indefinitely even if the queue contains
- * thousands of pages.
- */
 const MAX_EXECUTION_TIME_MS =
   25_000;
 
@@ -23,11 +17,11 @@ export async function processOrdersBackfillBurst() {
     Date.now();
 
 
-  const results: Awaited<
-    ReturnType<
-      typeof processNextOrdersBackfillBatch
-    >
-  >[] = [];
+  const results:
+    Record<
+      string,
+      unknown
+    >[] = [];
 
 
   for (
@@ -36,10 +30,6 @@ export async function processOrdersBackfillBurst() {
     MAX_BATCHES_PER_INVOCATION;
     batch += 1
   ) {
-    /*
-     * Leave margin before continuing with
-     * another network/database batch.
-     */
     if (
       Date.now() -
         startedAt >=
@@ -49,62 +39,78 @@ export async function processOrdersBackfillBurst() {
     }
 
 
-    const result =
-      await processNextOrdersBackfillBatch();
-
-
-    results.push(
-      result,
-    );
-
-
     /*
-     * Nothing available anymore.
+     * Priority 1:
+     * complete the newest 90 days.
      */
+    const priority =
+      await processNextOrdersDashboardBackfillBatch();
+
+
     if (
-      !result.processed
+      priority.processed
     ) {
-      break;
+      results.push({
+        queue:
+          "dashboard_90d",
+
+        ...priority,
+      });
+
+
+      /*
+       * Next loop still checks priority first.
+       * This intentionally pauses the old
+       * historical backfill until recent
+       * coverage is completed.
+       */
+      continue;
     }
 
 
     /*
-     * Full historical backfill completed.
+     * Priority 2:
+     * resume the full historical backfill.
      */
+    const historical =
+      await processNextOrdersBackfillBatch();
+
+
+    results.push({
+      queue:
+        "historical",
+
+      ...historical,
+    });
+
+
     if (
-      "completed" in result &&
-      result.completed
+      !historical.processed
     ) {
       break;
     }
   }
 
 
-  const processedResults =
+  const processedCount =
     results.filter(
       (result) =>
-        result.processed,
-    );
-
-
-  const lastResult =
-    results[
-      results.length - 1
-    ] ?? null;
+        result.processed ===
+        true,
+    ).length;
 
 
   return {
     processed:
-      processedResults.length >
-      0,
+      processedCount > 0,
 
     batchesProcessed:
-      processedResults.length,
+      processedCount,
 
     executionTimeMs:
       Date.now() -
       startedAt,
 
-    lastResult,
+    results,
   };
 }

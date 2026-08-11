@@ -79,6 +79,68 @@ function earlierIsoDate(
     : right;
 }
 
+function getSaoPauloTodayKey() {
+  const formatter =
+    new Intl.DateTimeFormat(
+      "en-US",
+      {
+        timeZone:
+          "America/Sao_Paulo",
+
+        year:
+          "numeric",
+
+        month:
+          "2-digit",
+
+        day:
+          "2-digit",
+      },
+    );
+
+
+  const parts =
+    formatter
+      .formatToParts(
+        new Date(),
+      );
+
+
+  const values =
+    new Map(
+      parts.map(
+        (part) => [
+          part.type,
+          part.value,
+        ],
+      ),
+    );
+
+
+  const year =
+    values.get("year");
+
+  const month =
+    values.get("month");
+
+  const day =
+    values.get("day");
+
+
+  if (
+    !year ||
+    !month ||
+    !day
+  ) {
+    throw new Error(
+      "Não foi possível determinar a data atual de São Paulo.",
+    );
+  }
+
+
+  return `${year}-${month}-${day}`;
+}
+
 export type SyncListingsPreviewState = {
   error: string | null;
   success: string | null;
@@ -558,6 +620,244 @@ export async function startOrdersBackfillAction(
         error instanceof Error
           ? error.message
           : "Não foi possível iniciar a importação histórica.",
+
+      success:
+        null,
+    };
+  }
+}
+
+export type StartDashboardBackfillState = {
+  error: string | null;
+  success: string | null;
+};
+
+
+export async function startDashboardBackfillAction(
+  mlAccountId: string,
+  _previousState: StartDashboardBackfillState,
+  _formData: FormData,
+): Promise<StartDashboardBackfillState> {
+  const access =
+    await requireAdminAccess();
+
+
+  const admin =
+    createAdminClient();
+
+
+  const {
+    data: account,
+    error: accountError,
+  } = (await admin
+    .from("ml_accounts")
+    .select(
+      [
+        "id",
+        "code",
+        "connection_status",
+      ].join(","),
+    )
+    .eq(
+      "organization_id",
+      access.organizationId,
+    )
+    .eq(
+      "id",
+      mlAccountId,
+    )
+    .maybeSingle()) as {
+      data: MlAccountRow | null;
+      error: unknown;
+    };
+
+
+  if (
+    accountError ||
+    !account
+  ) {
+    return {
+      error:
+        "Conta Mercado Livre não encontrada.",
+
+      success:
+        null,
+    };
+  }
+
+
+  if (
+    account.code !== "sb"
+  ) {
+    return {
+      error:
+        "Nesta fase a priorização está habilitada somente para a SB.",
+
+      success:
+        null,
+    };
+  }
+
+
+  if (
+    account.connection_status !==
+    "connected"
+  ) {
+    return {
+      error:
+        "A conta SB não está conectada.",
+
+      success:
+        null,
+    };
+  }
+
+
+  try {
+    const today =
+      getSaoPauloTodayKey();
+
+
+    const todayStart =
+      `${today}T00:00:00.000Z`;
+
+
+    /*
+     * Half-open interval containing
+     * today + previous 89 days.
+     */
+    const rangeUntil =
+      addUtcDays(
+        todayStart,
+        1,
+      );
+
+
+    const rangeFrom =
+      addUtcDays(
+        rangeUntil,
+        -90,
+      );
+
+
+    const firstWindowTo =
+      rangeUntil;
+
+
+    const firstWindowFrom =
+      addUtcDays(
+        firstWindowTo,
+        -1,
+      );
+
+
+    const {
+      error:
+        insertError,
+    } = await admin
+      .from("sync_runs")
+      .insert({
+        organization_id:
+          access.organizationId,
+
+        ml_account_id:
+          account.id,
+
+        sync_type:
+          "orders_dashboard_backfill",
+
+        status:
+          "queued",
+
+        cursor_offset:
+          0,
+
+        batch_size:
+          50,
+
+        records_discovered:
+          0,
+
+        records_processed:
+          0,
+
+        records_upserted:
+          0,
+
+        retry_count:
+          0,
+
+        max_retries:
+          5,
+
+        requested_by:
+          access.userId,
+
+        metadata: {
+          mode:
+            "dashboard_priority",
+
+          range_from:
+            rangeFrom,
+
+          range_until:
+            rangeUntil,
+
+          window_from:
+            firstWindowFrom,
+
+          window_to:
+            firstWindowTo,
+
+          covered_from:
+            null,
+
+          target_windows:
+            90,
+
+          completed_windows:
+            0,
+        },
+      });
+
+
+    if (insertError) {
+      if (
+        insertError.code ===
+        "23505"
+      ) {
+        return {
+          error:
+            "Já existe uma sincronização prioritária dos últimos 90 dias em andamento.",
+
+          success:
+            null,
+        };
+      }
+
+
+      throw insertError;
+    }
+
+
+    revalidatePath(
+      "/contas",
+    );
+
+
+    return {
+      error:
+        null,
+
+      success:
+        "Os últimos 90 dias foram colocados na fila prioritária.",
+    };
+  } catch (error) {
+    return {
+      error:
+        error instanceof Error
+          ? error.message
+          : "Não foi possível iniciar a sincronização prioritária.",
 
       success:
         null,

@@ -372,7 +372,8 @@ function extractOrderItemSku(
 export type OrdersSyncType =
     | "orders_preview"
     | "orders_recent"
-    | "orders_backfill";
+    | "orders_backfill"
+    | "orders_dashboard_backfill";
 
 
 export async function syncOrdersPreview({
@@ -591,7 +592,9 @@ export async function syncOrdersPreview({
 
                 sort:
                     syncType ===
-                        "orders_backfill"
+                        "orders_backfill" ||
+                        syncType ===
+                        "orders_dashboard_backfill"
                         ? "date_asc"
                         : "date_desc",
 

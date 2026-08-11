@@ -16,6 +16,7 @@ import { ListingsSyncProgress } from "@/components/ml-accounts/listings-sync-pro
 
 import { OrdersBackfillForm } from "@/components/ml-accounts/orders-backfill-form";
 import { OrdersBackfillProgress } from "@/components/ml-accounts/orders-backfill-progress";
+import { DashboardBackfillForm } from "@/components/ml-accounts/dashboard-backfill-form";
 
 import { getOrdersBackfillProgress } from "@/features/ml-sync/get-orders-backfill-progress";
 
@@ -362,6 +363,17 @@ export default async function AccountsPage({
 
                                   {!ordersBackfillActive ? (
                                     <OrdersBackfillForm
+                                      mlAccountId={
+                                        account.id
+                                      }
+                                    />
+                                  ) : null}
+
+                                  {access.role === "admin" &&
+                                    account.code === "sb" &&
+                                    account.connectionStatus ===
+                                    "connected" ? (
+                                    <DashboardBackfillForm
                                       mlAccountId={
                                         account.id
                                       }
