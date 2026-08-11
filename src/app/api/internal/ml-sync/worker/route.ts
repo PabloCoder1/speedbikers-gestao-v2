@@ -8,7 +8,7 @@ import { processNextListingsSyncBatch } from "@/features/ml-sync/process-listing
 
 import { syncRecentSbOrdersIfDue } from "@/features/ml-sync/sync-recent-orders";
 
-import { processNextOrdersBackfillBatch } from "@/features/ml-sync/process-orders-backfill-worker";
+import { processOrdersBackfillBurst } from "@/features/ml-sync/process-orders-backfill-burst";
 
 function isAuthorized(
   request: Request,
@@ -120,7 +120,7 @@ export async function POST(
   "orders_backfill"
 ) {
   const result =
-    await processNextOrdersBackfillBatch();
+    await processOrdersBackfillBurst();
 
 
   return NextResponse.json(
