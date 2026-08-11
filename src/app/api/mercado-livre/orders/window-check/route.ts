@@ -7,20 +7,17 @@ import { getCurrentAccess } from "@/features/auth/get-current-access";
 import { checkOrdersHistoryWindow } from "@/features/ml-sync/check-orders-history-window";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-
 function startOfDayUtc(
   date: string,
 ) {
   return `${date}T00:00:00.000Z`;
 }
 
-
 export async function GET(
   request: NextRequest,
 ) {
   const access =
     await getCurrentAccess();
-
 
   if (!access) {
     return NextResponse.json(
@@ -33,7 +30,6 @@ export async function GET(
       },
     );
   }
-
 
   if (
     access.role !== "admin"
@@ -49,28 +45,22 @@ export async function GET(
     );
   }
 
-
   const accountCode =
     request.nextUrl
       .searchParams
       .get("account");
-
 
   const from =
     request.nextUrl
       .searchParams
       .get("from");
 
-
   const to =
     request.nextUrl
       .searchParams
       .get("to");
 
-
-  if (
-    accountCode !== "sb"
-  ) {
+  if (!accountCode) {
     return NextResponse.json(
       {
         error:
@@ -82,10 +72,8 @@ export async function GET(
     );
   }
 
-
   const datePattern =
     /^\d{4}-\d{2}-\d{2}$/;
-
 
   if (
     !from ||
@@ -103,7 +91,7 @@ export async function GET(
           "invalid_date_range",
 
         example:
-          "?account=sb&from=2025-08-10&to=2025-08-17",
+          "?account=speedbikers&from=2026-01-01&to=2026-01-08",
       },
       {
         status: 400,
@@ -111,10 +99,8 @@ export async function GET(
     );
   }
 
-
   const admin =
     createAdminClient();
-
 
   const {
     data: account,
@@ -128,10 +114,9 @@ export async function GET(
     )
     .eq(
       "code",
-      "sb",
+      accountCode,
     )
     .maybeSingle();
-
 
   if (
     accountError ||
@@ -147,7 +132,6 @@ export async function GET(
       },
     );
   }
-
 
   try {
     const result =
@@ -169,10 +153,8 @@ export async function GET(
           ),
       });
 
-
     return NextResponse.json({
       ok: true,
-
       ...result,
     });
   } catch (error) {
@@ -181,12 +163,10 @@ export async function GET(
         ? error.message
         : "Erro desconhecido.";
 
-
     console.error(
       "Orders window check failed:",
       message,
     );
-
 
     return NextResponse.json(
       {

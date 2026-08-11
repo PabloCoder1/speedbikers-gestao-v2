@@ -32,7 +32,7 @@ const LOCK_WAIT_MS =
 type MlAccountRow = {
   id: string;
   organization_id: string;
-  code: string;
+  oauth_app_code: string;
   seller_id: string | null;
   connection_status: string;
 };
@@ -177,12 +177,12 @@ export async function getValidMercadoLivreAccessToken(
     .from("ml_accounts")
     .select(
       [
-        "id",
-        "organization_id",
-        "code",
-        "seller_id",
-        "connection_status",
-      ].join(","),
+  "id",
+  "organization_id",
+  "oauth_app_code",
+  "seller_id",
+  "connection_status",
+].join(",")
     )
     .eq(
       "id",
@@ -221,14 +221,14 @@ export async function getValidMercadoLivreAccessToken(
   }
 
   if (
-    !isMercadoLivreAppCode(
-      typedAccount.code,
-    )
-  ) {
-    throw new Error(
-      "Aplicação Mercado Livre não configurada.",
-    );
-  }
+  !isMercadoLivreAppCode(
+    typedAccount.oauth_app_code,
+  )
+) {
+  throw new Error(
+    "Aplicação OAuth Mercado Livre não configurada.",
+  );
+}
 
   const credentials =
     await loadCredentials(
@@ -299,12 +299,12 @@ export async function getValidMercadoLivreAccessToken(
       );
 
     const newToken =
-      await refreshAccessToken({
-        appCode:
-          typedAccount.code,
+  await refreshAccessToken({
+    appCode:
+      typedAccount.oauth_app_code,
 
-        refreshToken,
-      });
+    refreshToken,
+  });
 
     // Proteção extra: o refresh deve
     // continuar pertencendo ao mesmo seller.

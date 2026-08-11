@@ -17,7 +17,6 @@ type OrderBoundary = {
 type MlAccountRow = {
   id: string;
   organization_id: string;
-  code: string;
   display_name: string;
   seller_id: string | null;
   connection_status: string;
@@ -102,7 +101,6 @@ export async function getOrdersHistoryRange({
       [
         "id",
         "organization_id",
-        "code",
         "display_name",
         "seller_id",
         "connection_status",
@@ -131,24 +129,13 @@ export async function getOrdersHistoryRange({
     );
   }
 
-
-  if (
-    account.code !==
-    "sb"
-  ) {
-    throw new Error(
-      "Nesta fase o histórico está habilitado somente para a SB.",
-    );
-  }
-
-
   if (
     account.connection_status !==
       "connected" ||
     !account.seller_id
   ) {
     throw new Error(
-      "A conta SB não está conectada corretamente.",
+      "A conta Mercado Livre não está conectada corretamente.",
     );
   }
 

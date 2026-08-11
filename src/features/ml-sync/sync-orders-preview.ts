@@ -15,7 +15,6 @@ import { createAdminClient } from "../../lib/supabase/admin";
 type MlAccountRow = {
     id: string;
     organization_id: string;
-    code: string;
     display_name: string;
     seller_id: string | null;
     connection_status: string;
@@ -410,7 +409,6 @@ export async function syncOrdersPreview({
             [
                 "id",
                 "organization_id",
-                "code",
                 "display_name",
                 "seller_id",
                 "connection_status",
@@ -439,21 +437,13 @@ export async function syncOrdersPreview({
         );
     }
 
-
-    if (account.code !== "sb") {
-        throw new Error(
-            "Nesta fase a importação de pedidos está liberada somente para a SB.",
-        );
-    }
-
-
     if (
         account.connection_status !==
         "connected" ||
         !account.seller_id
     ) {
         throw new Error(
-            "A conta SB não está conectada corretamente.",
+            "A conta Mercado Livre não está conectada corretamente.",
         );
     }
 
@@ -498,7 +488,7 @@ export async function syncOrdersPreview({
         "succeeded"
     ) {
         throw new Error(
-            "Aguarde a sincronização completa dos anúncios da SB terminar antes de importar pedidos.",
+            "Aguarde a sincronização completa dos anúncios desta conta terminar antes de importar pedidos.",
         );
     }
 

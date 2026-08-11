@@ -28,12 +28,12 @@ function getOrderSummary(
   if (
     (
       typeof rawId !==
-        "string" &&
+      "string" &&
       typeof rawId !==
-        "number"
+      "number"
     ) ||
     typeof rawDate !==
-      "string"
+    "string"
   ) {
     return null;
   }
@@ -67,7 +67,6 @@ export async function checkOrdersHistoryWindow({
   type MlAccountRow = {
     id: string;
     organization_id: string;
-    code: string;
     seller_id: string | null;
     connection_status: string;
   };
@@ -81,7 +80,6 @@ export async function checkOrdersHistoryWindow({
       [
         "id",
         "organization_id",
-        "code",
         "seller_id",
         "connection_status",
       ].join(","),
@@ -106,21 +104,13 @@ export async function checkOrdersHistoryWindow({
     );
   }
 
-
-  if (account.code !== "sb") {
-    throw new Error(
-      "O diagnóstico histórico está habilitado somente para a SB.",
-    );
-  }
-
-
   if (
     account.connection_status !==
-      "connected" ||
+    "connected" ||
     !account.seller_id
   ) {
     throw new Error(
-      "A conta SB não está conectada.",
+      "A conta Mercado Livre não está conectada corretamente.",
     );
   }
 

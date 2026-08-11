@@ -3,7 +3,6 @@ import "server-only";
 import { syncOrdersPreview } from "@/features/ml-sync/sync-orders-preview";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-
 type RecentOrdersAccountRow = {
   id: string;
   organization_id: string;
@@ -17,18 +16,37 @@ type RecentOrdersSyncRunRow = {
   started_at: string;
 };
 
+type ListingsSyncRunRow = {
+  status: string;
+};
+
+type DueAccount = {
+  account: RecentOrdersAccountRow;
+
+  lastStartedAt:
+    | number
+    | null;
+};
+
 const MINIMUM_INTERVAL_MS =
   4 * 60 * 1000;
 
-
-export async function syncRecentSbOrdersIfDue() {
+/*
+ * Processamos no máximo UMA conta por execução.
+ *
+ * Isso evita multiplicar chamadas à API do Mercado Livre
+ * quando tivermos SpeedBikers, SB, GMR e OffRacer
+ * conectadas simultaneamente.
+ *
+ * A conta há mais tempo sem sincronização tem prioridade.
+ */
+export async function syncRecentOrdersIfDue() {
   const admin =
     createAdminClient();
 
-
   const {
-    data: account,
-    error: accountError,
+    data: accounts,
+    error: accountsError,
   } = (await admin
     .from("ml_accounts")
     .select(
@@ -40,128 +58,278 @@ export async function syncRecentSbOrdersIfDue() {
       ].join(","),
     )
     .eq(
-      "code",
-      "sb",
-    )
-    .maybeSingle()) as {
-      data: RecentOrdersAccountRow | null;
-      error: unknown;
-    };
-
-
-  if (
-    accountError ||
-    !account
-  ) {
-    throw new Error(
-      "Conta SB não encontrada.",
-    );
-  }
-
-
-  if (
-    account.connection_status !==
-    "connected"
-  ) {
-    return {
-      processed: false,
-      reason:
-        "account_not_connected",
-    } as const;
-  }
-
-
-  const {
-    data: lastSync,
-    error: lastSyncError,
-  } = (await admin
-    .from("sync_runs")
-    .select(
-      [
-        "id",
-        "status",
-        "started_at",
-      ].join(","),
+      "connection_status",
+      "connected",
     )
     .eq(
-      "ml_account_id",
-      account.id,
-    )
-    .eq(
-      "sync_type",
-      "orders_recent",
+      "is_active",
+      true,
     )
     .order(
-      "started_at",
+      "code",
       {
-        ascending: false,
+        ascending: true,
       },
-    )
-    .limit(1)
-    .maybeSingle()) as {
-      data: RecentOrdersSyncRunRow | null;
+    )) as {
+      data:
+        | RecentOrdersAccountRow[]
+        | null;
+
       error: unknown;
     };
 
-
-  if (lastSyncError) {
+  if (accountsError) {
     throw new Error(
-      "Não foi possível verificar a última sincronização de pedidos.",
+      "Não foi possível carregar as contas Mercado Livre conectadas.",
     );
   }
 
-
   if (
-    lastSync?.status ===
-    "running"
+    !accounts ||
+    accounts.length === 0
   ) {
     return {
       processed: false,
+
       reason:
-        "already_running",
+        "no_connected_accounts",
     } as const;
   }
 
+  const dueAccounts:
+    DueAccount[] = [];
 
-  if (lastSync) {
+  for (
+    const account
+    of accounts
+  ) {
+    /*
+     * Pedidos só devem entrar depois que
+     * a sincronização completa dos anúncios
+     * desta mesma conta tiver sido concluída.
+     */
+    const {
+      data: listingsSync,
+      error: listingsSyncError,
+    } = (await admin
+      .from("sync_runs")
+      .select(
+        "status",
+      )
+      .eq(
+        "ml_account_id",
+        account.id,
+      )
+      .eq(
+        "sync_type",
+        "listings_full",
+      )
+      .order(
+        "started_at",
+        {
+          ascending: false,
+        },
+      )
+      .limit(1)
+      .maybeSingle()) as {
+        data:
+          | ListingsSyncRunRow
+          | null;
+
+        error: unknown;
+      };
+
+    if (listingsSyncError) {
+      throw new Error(
+        `Não foi possível verificar a sincronização de anúncios da conta ${account.code}.`,
+      );
+    }
+
+    /*
+     * Conta recém-conectada ainda sem anúncios
+     * completos não entra no sync incremental.
+     */
+    if (
+      !listingsSync ||
+      listingsSync.status !==
+        "succeeded"
+    ) {
+      continue;
+    }
+
+    const {
+      data: lastSync,
+      error: lastSyncError,
+    } = (await admin
+      .from("sync_runs")
+      .select(
+        [
+          "id",
+          "status",
+          "started_at",
+        ].join(","),
+      )
+      .eq(
+        "ml_account_id",
+        account.id,
+      )
+      .eq(
+        "sync_type",
+        "orders_recent",
+      )
+      .order(
+        "started_at",
+        {
+          ascending: false,
+        },
+      )
+      .limit(1)
+      .maybeSingle()) as {
+        data:
+          | RecentOrdersSyncRunRow
+          | null;
+
+        error: unknown;
+      };
+
+    if (lastSyncError) {
+      throw new Error(
+        `Não foi possível verificar a última sincronização de pedidos da conta ${account.code}.`,
+      );
+    }
+
+    /*
+     * Se já existe execução atual para esta
+     * conta, não criamos outra concorrente.
+     */
+    if (
+      lastSync?.status ===
+      "running"
+    ) {
+      continue;
+    }
+
+    if (!lastSync) {
+      dueAccounts.push({
+        account,
+
+        lastStartedAt:
+          null,
+      });
+
+      continue;
+    }
+
     const startedAt =
       Date.parse(
         lastSync.started_at,
       );
 
+    if (
+      Number.isNaN(
+        startedAt,
+      )
+    ) {
+      dueAccounts.push({
+        account,
+
+        lastStartedAt:
+          null,
+      });
+
+      continue;
+    }
 
     if (
-      !Number.isNaN(
-        startedAt,
-      ) &&
       Date.now() -
         startedAt <
-        MINIMUM_INTERVAL_MS
+      MINIMUM_INTERVAL_MS
     ) {
-      return {
-        processed: false,
-        reason:
-          "not_due_yet",
-      } as const;
+      continue;
     }
+
+    dueAccounts.push({
+      account,
+
+      lastStartedAt:
+        startedAt,
+    });
   }
 
+  if (
+    dueAccounts.length === 0
+  ) {
+    return {
+      processed: false,
+
+      reason:
+        "not_due_yet",
+    } as const;
+  }
+
+  /*
+   * null = nunca sincronizou:
+   * prioridade máxima.
+   *
+   * Depois vem a conta cujo último
+   * orders_recent é mais antigo.
+   */
+  dueAccounts.sort(
+    (left, right) => {
+      if (
+        left.lastStartedAt ===
+          null &&
+        right.lastStartedAt ===
+          null
+      ) {
+        return left.account.code
+          .localeCompare(
+            right.account.code,
+          );
+      }
+
+      if (
+        left.lastStartedAt ===
+        null
+      ) {
+        return -1;
+      }
+
+      if (
+        right.lastStartedAt ===
+        null
+      ) {
+        return 1;
+      }
+
+      return (
+        left.lastStartedAt -
+        right.lastStartedAt
+      );
+    },
+  );
+
+  const target =
+    dueAccounts[0];
 
   const result =
     await syncOrdersPreview({
       organizationId:
-        account.organization_id,
+        target.account
+          .organization_id,
 
       mlAccountId:
-        account.id,
+        target.account.id,
 
       syncType:
         "orders_recent",
     });
 
-
   return {
     processed: true,
+
+    accountCode:
+      target.account.code,
 
     importedOrders:
       result.importedOrders,
@@ -176,3 +344,13 @@ export async function syncRecentSbOrdersIfDue() {
       result.unmappedItems,
   } as const;
 }
+
+/*
+ * Compatibilidade temporária.
+ *
+ * O worker atual ainda importa este nome.
+ * Mantemos o alias para não quebrar produção
+ * antes de refatorarmos a rota do worker.
+ */
+export const syncRecentSbOrdersIfDue =
+  syncRecentOrdersIfDue;

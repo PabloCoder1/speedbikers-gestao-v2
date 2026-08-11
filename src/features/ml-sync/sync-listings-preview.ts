@@ -208,7 +208,6 @@ type ProductCandidate = {
 type MercadoLivreAccountRow = {
   id: string;
   organization_id: string;
-  code: string;
   display_name: string | null;
   seller_id: string | null;
   connection_status: string;
@@ -323,7 +322,6 @@ export async function syncListingsPreview({
       [
         "id",
         "organization_id",
-        "code",
         "display_name",
         "seller_id",
         "connection_status",
@@ -351,20 +349,13 @@ export async function syncListingsPreview({
   const typedAccount =
     account as MercadoLivreAccountRow;
 
-  // Deliberately restricted while SB is our pilot.
-  if (typedAccount.code !== "sb") {
-    throw new Error(
-      "Nesta fase a sincronização real está liberada apenas para a conta SB.",
-    );
-  }
-
   if (
     typedAccount.connection_status !==
       "connected" ||
     !typedAccount.seller_id
   ) {
     throw new Error(
-      "A conta SB não está conectada corretamente.",
+      "A conta Mercado Livre não está conectada corretamente.",
     );
   }
 

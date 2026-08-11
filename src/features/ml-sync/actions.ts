@@ -168,7 +168,7 @@ export async function startFullListingsSyncAction(
   } = await admin
     .from("ml_accounts")
     .select(
-      "id, code, connection_status",
+      "id, connection_status",
     )
     .eq(
       "organization_id",
@@ -192,22 +192,12 @@ export async function startFullListingsSyncAction(
   }
 
   if (
-    account.code !== "sb"
-  ) {
-    return {
-      error:
-        "Nesta fase a sincronização completa está liberada somente para a SB.",
-      success: null,
-    };
-  }
-
-  if (
     account.connection_status !==
     "connected"
   ) {
     return {
       error:
-        "A conta SB não está conectada.",
+        "A conta Mercado Livre não está conectada.",
       success: null,
     };
   }
@@ -257,7 +247,7 @@ export async function startFullListingsSyncAction(
     ) {
       return {
         error:
-          "Já existe uma sincronização completa em andamento para a SB.",
+          "Já existe uma sincronização completa em andamento para esta conta.",
         success: null,
       };
     }
@@ -276,7 +266,7 @@ export async function startFullListingsSyncAction(
   return {
     error: null,
     success:
-      "Sincronização completa da SB colocada na fila.",
+      "Sincronização completa colocada na fila.",
   };
 }
 
@@ -380,7 +370,6 @@ export type StartOrdersBackfillState = {
 
 type MlAccountRow = {
   id: string;
-  code: string;
   connection_status: string;
 };
 
@@ -405,7 +394,6 @@ export async function startOrdersBackfillAction(
     .select(
       [
         "id",
-        "code",
         "connection_status",
       ].join(","),
     )
@@ -436,27 +424,13 @@ export async function startOrdersBackfillAction(
     };
   }
 
-
-  if (
-    account.code !== "sb"
-  ) {
-    return {
-      error:
-        "Nesta fase o histórico está habilitado somente para a SB.",
-
-      success:
-        null,
-    };
-  }
-
-
   if (
     account.connection_status !==
     "connected"
   ) {
     return {
       error:
-        "A conta SB não está conectada.",
+        "A conta Mercado Livre não está conectada.",
 
       success:
         null,
@@ -654,7 +628,6 @@ export async function startDashboardBackfillAction(
     .select(
       [
         "id",
-        "code",
         "connection_status",
       ].join(","),
     )
@@ -687,25 +660,12 @@ export async function startDashboardBackfillAction(
 
 
   if (
-    account.code !== "sb"
-  ) {
-    return {
-      error:
-        "Nesta fase a priorização está habilitada somente para a SB.",
-
-      success:
-        null,
-    };
-  }
-
-
-  if (
     account.connection_status !==
     "connected"
   ) {
     return {
       error:
-        "A conta SB não está conectada.",
+        "A conta Mercado Livre não está conectada.",
 
       success:
         null,

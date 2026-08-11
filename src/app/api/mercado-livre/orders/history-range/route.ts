@@ -7,13 +7,11 @@ import { getCurrentAccess } from "@/features/auth/get-current-access";
 import { getOrdersHistoryRange } from "@/features/ml-sync/get-orders-history-range";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-
 export async function GET(
   request: NextRequest,
 ) {
   const access =
     await getCurrentAccess();
-
 
   if (!access) {
     return NextResponse.json(
@@ -26,7 +24,6 @@ export async function GET(
       },
     );
   }
-
 
   if (
     access.role !== "admin"
@@ -42,16 +39,12 @@ export async function GET(
     );
   }
 
-
   const accountCode =
     request.nextUrl
       .searchParams
       .get("account");
 
-
-  if (
-    accountCode !== "sb"
-  ) {
+  if (!accountCode) {
     return NextResponse.json(
       {
         error:
@@ -63,10 +56,8 @@ export async function GET(
     );
   }
 
-
   const admin =
     createAdminClient();
-
 
   const {
     data: account,
@@ -80,10 +71,9 @@ export async function GET(
     )
     .eq(
       "code",
-      "sb",
+      accountCode,
     )
     .maybeSingle();
-
 
   if (
     accountError ||
@@ -100,7 +90,6 @@ export async function GET(
     );
   }
 
-
   try {
     const range =
       await getOrdersHistoryRange({
@@ -110,7 +99,6 @@ export async function GET(
         mlAccountId:
           account.id,
       });
-
 
     return NextResponse.json({
       ok: true,
@@ -136,12 +124,10 @@ export async function GET(
         ? error.message
         : "Erro desconhecido.";
 
-
     console.error(
       "Orders history range failed:",
       message,
     );
-
 
     return NextResponse.json(
       {
