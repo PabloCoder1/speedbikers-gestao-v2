@@ -27,7 +27,19 @@ type MlOAuthState = {
 type MlAccount = {
   id: string;
   code: string;
-  seller_id: string | null;
+
+  oauth_app_code: string;
+
+  expected_seller_id:
+    | string
+    | number
+    | null;
+
+  seller_id:
+    | string
+    | number
+    | null;
+
   connection_status: string;
 };
 
@@ -184,13 +196,15 @@ export async function GET(
   } = await admin
     .from("ml_accounts")
     .select(
-      [
-        "id",
-        "code",
-        "seller_id",
-        "connection_status",
-      ].join(","),
-    )
+  [
+    "id",
+    "code",
+    "oauth_app_code",
+    "expected_seller_id",
+    "seller_id",
+    "connection_status",
+  ].join(","),
+)
     .eq(
       "id",
       oauthState.ml_account_id,
@@ -215,18 +229,18 @@ export async function GET(
   }
 
   if (
-    !isMercadoLivreAppCode(
-      account.code,
-    )
-  ) {
-    return redirectToAccounts(
-      request,
-      {
-        error:
-          "invalid_account_code",
-      },
-    );
-  }
+  !isMercadoLivreAppCode(
+    account.oauth_app_code,
+  )
+) {
+  return redirectToAccounts(
+    request,
+    {
+      error:
+        "invalid_oauth_app_code",
+    },
+  );
+}
 
   let codeVerifier: string;
 
@@ -250,14 +264,14 @@ export async function GET(
 
   try {
     token =
-      await exchangeAuthorizationCode({
-        appCode:
-          account.code,
+  await exchangeAuthorizationCode({
+    appCode:
+      account.oauth_app_code,
 
-        code,
+    code,
 
-        codeVerifier,
-      });
+    codeVerifier,
+  });
   } catch (error) {
     console.error(
       "Mercado Livre token exchange failed:",
@@ -299,11 +313,27 @@ export async function GET(
     );
   }
 
-  // Em uma reconexão, nunca permitimos trocar silenciosamente
-  // o seller vinculado à conta.
+  const currentSellerId =
+    account.seller_id === null
+      ? null
+      : String(
+          account.seller_id,
+        );
+
+  const expectedSellerId =
+    account.expected_seller_id === null
+      ? null
+      : String(
+          account.expected_seller_id,
+        );
+
+  /*
+   * Nunca permite que uma reconexão
+   * troque o seller real da conta.
+   */
   if (
-    account.seller_id &&
-    account.seller_id !==
+    currentSellerId &&
+    currentSellerId !==
       seller.id
   ) {
     return redirectToAccounts(
@@ -311,6 +341,73 @@ export async function GET(
       {
         error:
           "seller_mismatch",
+      },
+    );
+  }
+
+  /*
+   * Se já sabemos previamente qual
+   * seller esta conta representa,
+   * o OAuth também precisa retornar
+   * exatamente esse seller.
+   */
+  if (
+    expectedSellerId &&
+    expectedSellerId !==
+      seller.id
+  ) {
+    return redirectToAccounts(
+      request,
+      {
+        error:
+          "seller_mismatch",
+      },
+    );
+  }
+
+  const {
+    data: duplicatedSellerAccount,
+    error: duplicatedSellerError,
+  } = await admin
+    .from("ml_accounts")
+    .select(
+      [
+        "id",
+        "code",
+        "display_name",
+      ].join(","),
+    )
+    .eq(
+      "organization_id",
+      access.organizationId,
+    )
+    .eq(
+      "seller_id",
+      seller.id,
+    )
+    .neq(
+      "id",
+      account.id,
+    )
+    .limit(1)
+    .maybeSingle();
+
+  if (duplicatedSellerError) {
+    return redirectToAccounts(
+      request,
+      {
+        error:
+          "seller_validation_failed",
+      },
+    );
+  }
+
+  if (duplicatedSellerAccount) {
+    return redirectToAccounts(
+      request,
+      {
+        error:
+          "seller_already_connected",
       },
     );
   }
@@ -362,6 +459,10 @@ export async function GET(
     .from("ml_accounts")
     .update({
       seller_id:
+        seller.id,
+
+      expected_seller_id:
+        expectedSellerId ??
         seller.id,
 
       nickname:

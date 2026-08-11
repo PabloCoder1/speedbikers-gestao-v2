@@ -90,6 +90,9 @@ const oauthErrorMessages: Record<string, string> = {
   invalid_account_code:
     "A configuração da aplicação Mercado Livre é inválida.",
 
+  invalid_oauth_app_code:
+    "A aplicação OAuth configurada para esta conta é inválida.",
+
   pkce_decryption_failed:
     "Não foi possível validar a autorização PKCE.",
 
@@ -101,6 +104,12 @@ const oauthErrorMessages: Record<string, string> = {
 
   seller_mismatch:
     "A conta Mercado Livre autorizada é diferente do seller já vinculado.",
+
+  seller_validation_failed:
+    "Não foi possível validar se este seller já está vinculado a outra conta.",
+
+  seller_already_connected:
+    "Esta conta Mercado Livre já está vinculada a outro card da organização.",
 
   credential_lookup_failed:
     "Não foi possível verificar as credenciais existentes.",
