@@ -39,8 +39,8 @@ export async function searchSellerItemIds({
     );
 
     url.searchParams.set(
-        "offset",
-        "0",
+        "limit",
+        String(limit),
     );
 
     const response =
