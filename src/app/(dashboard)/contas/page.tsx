@@ -17,8 +17,10 @@ import { ListingsSyncProgress } from "@/components/ml-accounts/listings-sync-pro
 import { OrdersBackfillForm } from "@/components/ml-accounts/orders-backfill-form";
 import { OrdersBackfillProgress } from "@/components/ml-accounts/orders-backfill-progress";
 import { DashboardBackfillForm } from "@/components/ml-accounts/dashboard-backfill-form";
+import { DashboardBackfillProgress } from "@/components/ml-accounts/dashboard-backfill-progress";
 
 import { getOrdersBackfillProgress } from "@/features/ml-sync/get-orders-backfill-progress";
+import { getDashboardBackfillProgress } from "@/features/ml-sync/get-dashboard-backfill-progress";
 
 export const metadata: Metadata = {
   title: "Contas",
@@ -150,6 +152,14 @@ export default async function AccountsPage({
       ),
     );
 
+  const dashboardBackfillByAccount =
+    await getDashboardBackfillProgress(
+      accounts.map(
+        (account) =>
+          account.id,
+      ),
+    );
+
   if (!access) {
     return null;
   }
@@ -222,6 +232,11 @@ export default async function AccountsPage({
                     "queued" ||
                   ordersBackfill?.status ===
                     "running";
+
+                const dashboardBackfill =
+                  dashboardBackfillByAccount[
+                    account.id
+                  ] ?? null;
 
                 const listingsSyncActive =
                   listingsSync?.status ===
@@ -382,6 +397,14 @@ export default async function AccountsPage({
                                       account.id
                                     }
                                   />
+
+                                  {dashboardBackfill ? (
+                                    <DashboardBackfillProgress
+                                      progress={
+                                        dashboardBackfill
+                                      }
+                                    />
+                                  ) : null}
                                 </>
                               ) : null}
                             </>
