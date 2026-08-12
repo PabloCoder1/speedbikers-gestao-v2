@@ -32,6 +32,24 @@ const MINIMUM_INTERVAL_MS =
   4 * 60 * 1000;
 
 /*
+ * orders_recent não usa lease (diferente de listings_full /
+ * orders_backfill / orders_dashboard_backfill): roda uma conta
+ * por execução, serialmente. Se a Vercel matar a função no meio
+ * (timeout), a run fica presa em "running" para sempre e o
+ * índice único bloqueia qualquer run nova para essa conta. Após
+ * este limite, tratamos a run como abandonada e a destravamos.
+ */
+const STALE_RUN_THRESHOLD_MS =
+  10 * 60 * 1000;
+
+const RECENT_ORDERS_WINDOW_MS =
+  7 * 24 * 60 * 60 * 1000;
+
+const PAGE_SIZE = 50;
+
+const MAX_PAGES_PER_RUN = 40;
+
+/*
  * Processamos no máximo UMA conta por execução.
  *
  * Isso evita multiplicar chamadas à API do Mercado Livre
@@ -200,13 +218,60 @@ export async function syncRecentOrdersIfDue() {
 
     /*
      * Se já existe execução atual para esta
-     * conta, não criamos outra concorrente.
+     * conta, não criamos outra concorrente —
+     * a menos que ela esteja abandonada.
      */
     if (
       lastSync?.status ===
       "running"
     ) {
-      continue;
+      const runningStartedAt =
+        Date.parse(
+          lastSync.started_at,
+        );
+
+      const isStale =
+        Number.isNaN(
+          runningStartedAt,
+        ) ||
+        Date.now() -
+          runningStartedAt >
+          STALE_RUN_THRESHOLD_MS;
+
+      if (!isStale) {
+        continue;
+      }
+
+      const {
+        error: resetError,
+      } = await admin
+        .from("sync_runs")
+        .update({
+          status:
+            "failed",
+
+          error_code:
+            "stale_run_auto_reset",
+
+          error_message:
+            "Execução travada em 'running' foi resetada automaticamente.",
+
+          finished_at:
+            new Date()
+              .toISOString(),
+        })
+        .eq(
+          "id",
+          lastSync.id,
+        )
+        .eq(
+          "status",
+          "running",
+        );
+
+      if (resetError) {
+        continue;
+      }
     }
 
     if (!lastSync) {
@@ -312,18 +377,171 @@ export async function syncRecentOrdersIfDue() {
   const target =
     dueAccounts[0];
 
-  const result =
-    await syncOrdersPreview({
-      organizationId:
-        target.account
-          .organization_id,
+  const windowTo =
+    new Date();
 
-      mlAccountId:
-        target.account.id,
+  const windowFrom =
+    new Date(
+      windowTo.getTime() -
+        RECENT_ORDERS_WINDOW_MS,
+    );
 
-      syncType:
-        "orders_recent",
-    });
+  let syncRunId:
+    string | null = null;
+
+  let offset = 0;
+
+  let totalImportedOrders = 0;
+  let totalImportedItems = 0;
+  let totalMappedItems = 0;
+  let totalUnmappedItems = 0;
+  let sellerTotal = 0;
+
+  try {
+    for (
+      let page = 0;
+      page < MAX_PAGES_PER_RUN;
+      page++
+    ) {
+      const result =
+        await syncOrdersPreview({
+          organizationId:
+            target.account
+              .organization_id,
+
+          mlAccountId:
+            target.account.id,
+
+          syncType:
+            "orders_recent",
+
+          limit:
+            PAGE_SIZE,
+
+          offset,
+
+          dateCreatedFrom:
+            windowFrom.toISOString(),
+
+          dateCreatedTo:
+            windowTo.toISOString(),
+
+          existingSyncRunId:
+            syncRunId,
+
+          manageRunLifecycle:
+            false,
+        });
+
+      syncRunId =
+        result.syncRunId;
+
+      totalImportedOrders +=
+        result.importedOrders;
+
+      totalImportedItems +=
+        result.importedItems;
+
+      totalMappedItems +=
+        result.mappedItems;
+
+      totalUnmappedItems +=
+        result.unmappedItems;
+
+      sellerTotal =
+        result.sellerTotal;
+
+      if (
+        result.pageOrders <
+        PAGE_SIZE
+      ) {
+        break;
+      }
+
+      offset += PAGE_SIZE;
+    }
+
+    if (syncRunId) {
+      await admin
+        .from("sync_runs")
+        .update({
+          status:
+            "succeeded",
+
+          records_discovered:
+            sellerTotal,
+
+          records_processed:
+            totalImportedOrders,
+
+          records_upserted:
+            totalImportedOrders,
+
+          metadata: {
+            mode:
+              "incremental",
+
+            limit:
+              PAGE_SIZE,
+
+            offset,
+
+            date_created_from:
+              windowFrom.toISOString(),
+
+            date_created_to:
+              windowTo.toISOString(),
+
+            seller_total:
+              sellerTotal,
+
+            orders_imported:
+              totalImportedOrders,
+
+            order_items_imported:
+              totalImportedItems,
+
+            unmapped_order_items:
+              totalUnmappedItems,
+          },
+
+          finished_at:
+            new Date()
+              .toISOString(),
+        })
+        .eq(
+          "id",
+          syncRunId,
+        );
+    }
+  } catch (error) {
+    if (syncRunId) {
+      await admin
+        .from("sync_runs")
+        .update({
+          status:
+            "failed",
+
+          error_code:
+            "orders_sync_failed",
+
+          error_message:
+            error instanceof Error
+              ? error.message
+              : "Erro desconhecido.",
+
+          finished_at:
+            new Date()
+              .toISOString(),
+        })
+        .eq(
+          "id",
+          syncRunId,
+        );
+    }
+
+    throw error;
+  }
 
   return {
     processed: true,
@@ -332,16 +550,16 @@ export async function syncRecentOrdersIfDue() {
       target.account.code,
 
     importedOrders:
-      result.importedOrders,
+      totalImportedOrders,
 
     importedItems:
-      result.importedItems,
+      totalImportedItems,
 
     mappedItems:
-      result.mappedItems,
+      totalMappedItems,
 
     unmappedItems:
-      result.unmappedItems,
+      totalUnmappedItems,
   } as const;
 }
 

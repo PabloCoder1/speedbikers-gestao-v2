@@ -129,6 +129,20 @@ export async function POST(
 }
 
 
+    if (
+  payload.task ===
+  "orders_recent"
+) {
+  const result =
+    await syncRecentSbOrdersIfDue();
+
+
+  return NextResponse.json(
+    result,
+  );
+}
+
+
     const result =
       await processNextListingsSyncBatch();
 

@@ -1506,6 +1506,9 @@ export async function syncOrdersPreview({
 
 
         return {
+            syncRunId:
+                syncRun.id,
+
             sellerTotal:
                 search.total,
 
