@@ -5,12 +5,17 @@ import {
 } from "@/integrations/mercado-livre/access-token";
 import {
   getMercadoLivreItems,
+  scanSellerItemIds,
   searchSellerItemIds,
   type MercadoLivreJsonObject,
 } from "@/integrations/mercado-livre/items";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const PREVIEW_LIMIT = 20;
+
+type ListingsSearchMode =
+  | "offset"
+  | "scan";
 
 function asObject(
   value: unknown,
@@ -302,13 +307,26 @@ export async function syncListingsPreview({
   limit = PREVIEW_LIMIT,
   existingSyncRunId = null,
   manageRunLifecycle = true,
+  searchMode = "offset",
+  scrollId = null,
 }: {
   organizationId: string;
   mlAccountId: string;
   offset?: number;
   limit?: number;
-  existingSyncRunId?: string | null;
+
+  existingSyncRunId?:
+    | string
+    | null;
+
   manageRunLifecycle?: boolean;
+
+  searchMode?:
+    ListingsSearchMode;
+
+  scrollId?:
+    | string
+    | null;
 }) {
   const admin =
     createAdminClient();
@@ -415,17 +433,39 @@ export async function syncListingsPreview({
         mlAccountId,
       );
 
-    const search =
-      await searchSellerItemIds({
-        sellerId:
-          typedAccount.seller_id,
+    const search:
+      {
+        itemIds: string[];
+        total: number;
+        scrollId: string | null;
+      } =
+      searchMode === "scan"
+        ? await scanSellerItemIds({
+            sellerId:
+              typedAccount.seller_id,
 
-        accessToken:
-          validToken.accessToken,
+            accessToken:
+              validToken.accessToken,
 
-        limit,
-        offset,
-      });
+            limit,
+
+            scrollId,
+          })
+        : {
+            ...await searchSellerItemIds({
+              sellerId:
+                typedAccount.seller_id,
+
+              accessToken:
+                validToken.accessToken,
+
+              limit,
+              offset,
+            }),
+
+            scrollId:
+              null,
+          };
 
     const items =
       await getMercadoLivreItems({
@@ -745,6 +785,10 @@ export async function syncListingsPreview({
       );
     }
 
+    const persistedListingCount =
+      persistedListings?.length ??
+      0;
+
     const listingIdByItem =
       new Map<
         string,
@@ -963,7 +1007,7 @@ export async function syncListingsPreview({
             items.length,
 
           records_upserted:
-            listingRows.length,
+            persistedListingCount,
 
           metadata: {
             mode:
@@ -1020,8 +1064,11 @@ export async function syncListingsPreview({
       pageItems:
         search.itemIds.length,
 
+      nextScrollId:
+        search.scrollId,
+
       importedListings:
-        listingRows.length,
+        persistedListingCount,
 
       productsFound:
         productCandidates.size,

@@ -8,6 +8,8 @@ export type MercadoLivreJsonObject =
 type SellerItemsSearchResponse = {
     seller_id?: unknown;
     results?: unknown;
+    scroll_id?: unknown;
+
     paging?: {
         total?: unknown;
         offset?: unknown;
@@ -89,6 +91,113 @@ export async function searchSellerItemIds({
     return {
         itemIds: results,
         total,
+    };
+}
+
+
+export async function scanSellerItemIds({
+    sellerId,
+    accessToken,
+    limit = 50,
+    scrollId = null,
+}: {
+    sellerId: string;
+    accessToken: string;
+    limit?: number;
+    scrollId?: string | null;
+}) {
+    const url =
+        new URL(
+            `${MERCADO_LIVRE_URLS.api}/users/${encodeURIComponent(
+                sellerId,
+            )}/items/search`,
+        );
+
+    url.searchParams.set(
+        "search_type",
+        "scan",
+    );
+
+    url.searchParams.set(
+        "limit",
+        String(limit),
+    );
+
+    if (scrollId) {
+        url.searchParams.set(
+            "scroll_id",
+            scrollId,
+        );
+    }
+
+    const response =
+        await fetch(
+            url,
+            {
+                headers: {
+                    Authorization:
+                        `Bearer ${accessToken}`,
+
+                    Accept:
+                        "application/json",
+                },
+
+                cache:
+                    "no-store",
+            },
+        );
+
+    if (!response.ok) {
+        const body =
+            await response.text();
+
+        throw new Error(
+            `Falha ao percorrer anúncios do seller via scan. HTTP ${response.status}. ${body.slice(
+                0,
+                300,
+            )}`,
+        );
+    }
+
+    const payload =
+        (await response.json()) as
+        SellerItemsSearchResponse;
+
+    const results =
+        Array.isArray(
+            payload.results,
+        )
+            ? payload.results.filter(
+                (
+                    value,
+                ): value is string =>
+                    typeof value ===
+                    "string" &&
+                    value.length > 0,
+            )
+            : [];
+
+    const total =
+        typeof payload.paging
+            ?.total === "number"
+            ? payload.paging.total
+            : results.length;
+
+    const nextScrollId =
+        typeof payload.scroll_id ===
+            "string" &&
+        payload.scroll_id.length > 0
+            ? payload.scroll_id
+            : null;
+
+    return {
+        itemIds:
+            results,
+
+        total,
+
+        scrollId:
+            nextScrollId,
     };
 }
 

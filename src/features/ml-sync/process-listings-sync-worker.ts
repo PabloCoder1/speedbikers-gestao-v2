@@ -145,6 +145,22 @@ export async function processNextListingsSyncBatch() {
 
   const run = data;
 
+  const currentMetadata =
+    asMetadata(
+      run.metadata,
+    );
+
+  const currentScrollId =
+    typeof currentMetadata
+      .scan_scroll_id ===
+        "string" &&
+    currentMetadata
+      .scan_scroll_id
+      .length > 0
+      ? currentMetadata
+          .scan_scroll_id
+      : null;
+
   try {
     const result =
       await syncListingsPreview({
@@ -154,9 +170,6 @@ export async function processNextListingsSyncBatch() {
         mlAccountId:
           run.ml_account_id,
 
-        offset:
-          run.cursor_offset,
-
         limit:
           run.batch_size,
 
@@ -165,6 +178,12 @@ export async function processNextListingsSyncBatch() {
 
         manageRunLifecycle:
           false,
+
+        searchMode:
+          "scan",
+
+        scrollId:
+          currentScrollId,
       });
 
     const newOffset =
@@ -181,25 +200,43 @@ export async function processNextListingsSyncBatch() {
 
     const complete =
       result.pageItems === 0 ||
-      newOffset >=
+      newProcessed >=
         result.sellerTotal;
 
+    if (
+      !complete &&
+      !result.nextScrollId
+    ) {
+      throw new Error(
+        "O Mercado Livre não retornou scroll_id para continuar a sincronização completa.",
+      );
+    }
+
     const metadata = {
-      ...asMetadata(
-        run.metadata,
-      ),
+      ...currentMetadata,
 
       mode:
         "full",
 
+      pagination:
+        "scan",
+
+      scan_scroll_id:
+        complete
+          ? null
+          : result.nextScrollId,
+
       seller_total:
         result.sellerTotal,
 
-      last_batch_offset:
+      last_batch_progress_offset:
         run.cursor_offset,
 
       last_batch_items:
         result.pageItems,
+
+      last_batch_persisted:
+        result.importedListings,
 
       last_batch_products:
         result.productsFound,
