@@ -15,15 +15,21 @@ type AccountRow = {
   connection_status: string;
 };
 
+/*
+ * Somente offsets dentro da janela
+ * suportada pela paginação tradicional.
+ *
+ * 950 + 50 = 1000.
+ */
 const OFFSETS = [
   0,
   50,
   100,
+  150,
+  200,
   500,
-  1000,
-  1050,
-  1300,
-  1350,
+  900,
+  950,
 ];
 
 export async function GET(
@@ -117,71 +123,68 @@ export async function GET(
       account.id,
     );
 
-  const pages = [];
+  const pages: Array<{
+    requestedOffset: number;
+    sellerTotal?: number;
+    count?: number;
+    itemIds?: string[];
+    error?: string;
+  }> = [];
 
   for (
     const offset of OFFSETS
   ) {
-    const result =
-      await searchSellerItemIds({
-        sellerId:
-          account.seller_id,
+    try {
+      const result =
+        await searchSellerItemIds({
+          sellerId:
+            account.seller_id,
 
-        accessToken:
-          token.accessToken,
+          accessToken:
+            token.accessToken,
 
-        offset,
+          offset,
 
-        limit: 50,
-      });
+          limit: 50,
+        });
 
-    pages.push({
-      requestedOffset:
-        offset,
-
-      sellerTotal:
-        result.total,
-
-      count:
-        result.itemIds.length,
-
-      first10:
-        result.itemIds.slice(
-          0,
-          10,
-        ),
-
-      last10:
-        result.itemIds.slice(
-          -10,
-        ),
-    });
-  }
-
-  const baseIds =
-    new Set(
-      pages[0]?.first10 ??
-        [],
-    );
-
-  const comparison =
-    pages.map(
-      (page) => ({
+      pages.push({
         requestedOffset:
-          page.requestedOffset,
+          offset,
+
+        sellerTotal:
+          result.total,
 
         count:
-          page.count,
+          result.itemIds.length,
 
-        first10SameAsPageZero:
-          page.first10.filter(
-            (id) =>
-              baseIds.has(id),
-          ).length,
+        itemIds:
+          result.itemIds,
+      });
+    } catch (error) {
+      pages.push({
+        requestedOffset:
+          offset,
 
-        first10:
-          page.first10,
-      }),
+        error:
+          error instanceof Error
+            ? error.message
+            : "Erro desconhecido.",
+      });
+    }
+  }
+
+  const successfulIds =
+    pages.flatMap(
+      (page) =>
+        page.itemIds ?? [],
+    );
+
+  const uniqueIds =
+    Array.from(
+      new Set(
+        successfulIds,
+      ),
     );
 
   return NextResponse.json(
@@ -194,9 +197,48 @@ export async function GET(
           account.seller_id,
       },
 
-      pages,
+      summary: {
+        requestedPages:
+          OFFSETS.length,
 
-      comparison,
+        returnedIds:
+          successfulIds.length,
+
+        uniqueIds:
+          uniqueIds.length,
+
+        duplicatedIds:
+          successfulIds.length -
+          uniqueIds.length,
+      },
+
+      pages:
+        pages.map(
+          (page) => ({
+            requestedOffset:
+              page.requestedOffset,
+
+            sellerTotal:
+              page.sellerTotal,
+
+            count:
+              page.count,
+
+            error:
+              page.error,
+
+            first5:
+              page.itemIds?.slice(
+                0,
+                5,
+              ),
+
+            last5:
+              page.itemIds?.slice(
+                -5,
+              ),
+          }),
+        ),
     },
     {
       headers: {
