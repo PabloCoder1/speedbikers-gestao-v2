@@ -5,7 +5,10 @@ import {
 
 import { getCurrentAccess } from "@/features/auth/get-current-access";
 import { getValidMercadoLivreAccessToken } from "@/integrations/mercado-livre/access-token";
-import { searchSellerItemIds } from "@/integrations/mercado-livre/items";
+import {
+  getMercadoLivreItems,
+  searchSellerItemIds,
+} from "@/integrations/mercado-livre/items";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type AccountRow = {
@@ -25,11 +28,6 @@ const OFFSETS = [
   0,
   50,
   100,
-  150,
-  200,
-  500,
-  900,
-  950,
 ];
 
 export async function GET(
@@ -125,9 +123,25 @@ export async function GET(
 
   const pages: Array<{
     requestedOffset: number;
+
     sellerTotal?: number;
+
     count?: number;
+
     itemIds?: string[];
+
+    fetchedCount?: number;
+
+    uniqueSearchCount?: number;
+
+    uniqueFetchedCount?: number;
+
+    missingAfterFetch?: string[];
+
+    fetchedFirst5?: string[];
+
+    fetchedLast5?: string[];
+
     error?: string;
   }> = [];
 
@@ -148,6 +162,51 @@ export async function GET(
           limit: 50,
         });
 
+      const fetchedItems =
+        await getMercadoLivreItems({
+          itemIds:
+            result.itemIds,
+
+          accessToken:
+            token.accessToken,
+        });
+
+      const fetchedItemIds =
+        fetchedItems
+          .map((item) => {
+            const value =
+              item.id;
+
+            return typeof value ===
+              "string"
+              ? value
+              : null;
+          })
+          .filter(
+            (
+              value,
+            ): value is string =>
+              Boolean(value),
+          );
+
+      const uniqueSearchIds =
+        new Set(
+          result.itemIds,
+        );
+
+      const uniqueFetchedIds =
+        new Set(
+          fetchedItemIds,
+        );
+
+      const missingAfterFetch =
+        result.itemIds.filter(
+          (itemId) =>
+            !uniqueFetchedIds.has(
+              itemId,
+            ),
+        );
+
       pages.push({
         requestedOffset:
           offset,
@@ -160,6 +219,32 @@ export async function GET(
 
         itemIds:
           result.itemIds,
+
+        fetchedCount:
+          fetchedItemIds.length,
+
+        uniqueSearchCount:
+          uniqueSearchIds.size,
+
+        uniqueFetchedCount:
+          uniqueFetchedIds.size,
+
+        missingAfterFetch:
+          missingAfterFetch.slice(
+            0,
+            20,
+          ),
+
+        fetchedFirst5:
+          fetchedItemIds.slice(
+            0,
+            5,
+          ),
+
+        fetchedLast5:
+          fetchedItemIds.slice(
+            -5,
+          ),
       });
     } catch (error) {
       pages.push({
@@ -237,6 +322,24 @@ export async function GET(
               page.itemIds?.slice(
                 -5,
               ),
+
+            fetchedCount:
+              page.fetchedCount,
+
+            uniqueSearchCount:
+              page.uniqueSearchCount,
+
+            uniqueFetchedCount:
+              page.uniqueFetchedCount,
+
+            missingAfterFetch:
+              page.missingAfterFetch,
+
+            fetchedFirst5:
+              page.fetchedFirst5,
+
+            fetchedLast5:
+              page.fetchedLast5,
           }),
         ),
     },
