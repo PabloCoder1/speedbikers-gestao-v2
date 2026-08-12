@@ -10,6 +10,11 @@ import { syncRecentSbOrdersIfDue } from "@/features/ml-sync/sync-recent-orders";
 
 import { processOrdersBackfillBurst } from "@/features/ml-sync/process-orders-backfill-burst";
 
+export const maxDuration = 60;
+
+export const dynamic = "force-dynamic";
+
+
 function isAuthorized(
   request: Request,
 ) {

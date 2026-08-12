@@ -47,7 +47,7 @@ const RECENT_ORDERS_WINDOW_MS =
 
 const PAGE_SIZE = 50;
 
-const MAX_PAGES_PER_RUN = 40;
+const MAX_PAGES_PER_RUN = 80;
 
 /*
  * Processamos no máximo UMA conta por execução.
