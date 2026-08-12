@@ -339,7 +339,6 @@ export default async function AccountsPage({
                           </a>
 
                           {access.role === "admin" &&
-                            account.code === "sb" &&
                             account.connectionStatus ===
                             "connected" ? (
                             <>
@@ -378,16 +377,11 @@ export default async function AccountsPage({
                                     />
                                   ) : null}
 
-                                  {access.role === "admin" &&
-                                    account.code === "sb" &&
-                                    account.connectionStatus ===
-                                    "connected" ? (
-                                    <DashboardBackfillForm
-                                      mlAccountId={
-                                        account.id
-                                      }
-                                    />
-                                  ) : null}
+                                  <DashboardBackfillForm
+                                    mlAccountId={
+                                      account.id
+                                    }
+                                  />
                                 </>
                               ) : null}
                             </>
