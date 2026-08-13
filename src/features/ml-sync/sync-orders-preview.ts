@@ -1343,6 +1343,38 @@ export async function syncOrdersPreview({
             }
         }
 
+        if (
+            orderItemRows.length >
+            0
+        ) {
+            const {
+                error:
+                itemsUpsertError,
+            } = await admin
+                .from("order_items")
+                .upsert(
+                    orderItemRows,
+                    {
+                        onConflict:
+                            "order_id,line_key",
+                    },
+                );
+
+
+            if (
+                itemsUpsertError
+            ) {
+                throw new Error(
+                    "Não foi possível persistir os itens dos pedidos.",
+                );
+            }
+        }
+
+
+        /*
+         * The metrics rebuild joins orders with order_items,
+         * therefore it must run only after both upserts above.
+         */
         const affectedMetricDates =
             orderRows
                 .map(
@@ -1398,34 +1430,6 @@ export async function syncOrdersPreview({
             ) {
                 throw new Error(
                     "Os pedidos foram persistidos, mas as métricas analíticas não puderam ser atualizadas.",
-                );
-            }
-        }
-
-
-        if (
-            orderItemRows.length >
-            0
-        ) {
-            const {
-                error:
-                itemsUpsertError,
-            } = await admin
-                .from("order_items")
-                .upsert(
-                    orderItemRows,
-                    {
-                        onConflict:
-                            "order_id,line_key",
-                    },
-                );
-
-
-            if (
-                itemsUpsertError
-            ) {
-                throw new Error(
-                    "Não foi possível persistir os itens dos pedidos.",
                 );
             }
         }
