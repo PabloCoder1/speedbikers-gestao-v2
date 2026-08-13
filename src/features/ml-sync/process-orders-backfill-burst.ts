@@ -5,12 +5,10 @@ import { processNextOrdersDashboardBackfillBatch } from "@/features/ml-sync/proc
 
 
 const MAX_BATCHES_PER_INVOCATION =
-  5;
-
+  10;
 
 const MAX_EXECUTION_TIME_MS =
-  25_000;
-
+  45_000;
 
 export async function processOrdersBackfillBurst() {
   const startedAt =
