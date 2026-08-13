@@ -292,8 +292,9 @@ export async function getDashboardOverview() {
 
 
   /*
-   * Inclusive range:
-   * today + previous 29 days.
+   * Period cards include today while it is still accumulating,
+   * so they read live. They stay below the Mercado Livre
+   * reports until the day closes, which only count closed days.
    */
   const thirtyDaysAgo =
     shiftDate(

@@ -182,7 +182,7 @@ export default async function DashboardPage() {
             variation={
               revenueVariation
             }
-            helper="Pedidos com status pago"
+            helper="Vendas brutas (mesma regra do Mercado Livre)"
           />
 
 
@@ -244,7 +244,7 @@ export default async function DashboardPage() {
             }
             helper={`${integer.format(
               last7Days.unitsSold,
-            )} unidades`}
+            )} unidades · inclui hoje`}
           />
 
 
@@ -256,8 +256,8 @@ export default async function DashboardPage() {
               )
             }
             helper={`${integer.format(
-              last30Days.paidOrders,
-            )} pedidos pagos`}
+              last30Days.totalOrders,
+            )} vendas · inclui hoje`}
           />
 
 
