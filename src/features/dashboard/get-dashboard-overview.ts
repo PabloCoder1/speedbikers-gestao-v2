@@ -48,6 +48,15 @@ type TopProductRow = {
 };
 
 
+type DashboardAccountRow = {
+  id: string;
+  code: string;
+  display_name: string;
+  seller_id: string | null;
+  nickname: string | null;
+};
+
+
 type DailyMetric = {
   date: string;
 
@@ -266,7 +275,13 @@ function sumPeriod(
 }
 
 
-export async function getDashboardOverview() {
+export async function getDashboardOverview(
+  {
+    accountCode = null,
+  }: {
+    accountCode?: string | null;
+  } = {},
+) {
   const access =
     await getCurrentAccess();
 
@@ -278,6 +293,62 @@ export async function getDashboardOverview() {
 
   const supabase =
     await createClient();
+
+
+  const normalizedAccountCode =
+    accountCode
+      ?.trim()
+      .toLowerCase() ||
+    null;
+
+  let selectedAccount:
+    | DashboardAccountRow
+    | null = null;
+
+  if (normalizedAccountCode) {
+    const {
+      data: accountData,
+      error: accountError,
+    } = await supabase
+      .from("ml_accounts")
+      .select(
+        [
+          "id",
+          "code",
+          "display_name",
+          "seller_id",
+          "nickname",
+        ].join(","),
+      )
+      .eq(
+        "organization_id",
+        access.organizationId,
+      )
+      .eq(
+        "code",
+        normalizedAccountCode,
+      )
+      .eq(
+        "is_active",
+        true,
+      )
+      .maybeSingle<DashboardAccountRow>();
+
+    if (accountError) {
+      throw new Error(
+        "Não foi possível carregar a conta Mercado Livre do dashboard.",
+      );
+    }
+
+    if (!accountData) {
+      throw new Error(
+        "Conta Mercado Livre não encontrada ou sem permissão de acesso.",
+      );
+    }
+
+    selectedAccount =
+      accountData;
+  }
 
 
   const today =
@@ -321,41 +392,51 @@ export async function getDashboardOverview() {
     );
 
 
+  const dailyMetricsQuery =
+    supabase
+      .from(
+        "daily_account_metrics",
+      )
+      .select(
+        [
+          "metric_date",
+          "total_orders",
+          "paid_orders",
+          "cancelled_orders",
+          "units_sold",
+          "mapped_units",
+          "unmapped_units",
+          "gross_revenue",
+          "sale_fees",
+          "net_after_sale_fee",
+        ].join(","),
+      )
+      .eq(
+        "organization_id",
+        access.organizationId,
+      )
+      .gte(
+        "metric_date",
+        thirtyDaysAgo,
+      )
+      .lte(
+        "metric_date",
+        today,
+      );
+
+  if (selectedAccount) {
+    dailyMetricsQuery.eq(
+      "ml_account_id",
+      selectedAccount.id,
+    );
+  }
+
   const {
     data:
       dailyRows,
     error:
       dailyError,
-  } = await supabase
-    .from(
-      "daily_account_metrics",
-    )
-    .select(
-      [
-        "metric_date",
-        "total_orders",
-        "paid_orders",
-        "cancelled_orders",
-        "units_sold",
-        "mapped_units",
-        "unmapped_units",
-        "gross_revenue",
-        "sale_fees",
-        "net_after_sale_fee",
-      ].join(","),
-    )
-    .eq(
-      "organization_id",
-      access.organizationId,
-    )
-    .gte(
-      "metric_date",
-      thirtyDaysAgo,
-    )
-    .lte(
-      "metric_date",
-      today,
-    )
+  } = await dailyMetricsQuery
     .order(
       "metric_date",
       {
@@ -515,30 +596,40 @@ export async function getDashboardOverview() {
    * How many unique canonical SKUs
    * sold today?
    */
+  const soldProductsQuery =
+    supabase
+      .from(
+        "daily_product_metrics",
+      )
+      .select(
+        "product_id",
+      )
+      .eq(
+        "organization_id",
+        access.organizationId,
+      )
+      .eq(
+        "metric_date",
+        today,
+      )
+      .gt(
+        "units_sold",
+        0,
+      );
+
+  if (selectedAccount) {
+    soldProductsQuery.eq(
+      "ml_account_id",
+      selectedAccount.id,
+    );
+  }
+
   const {
     data:
       soldProductsToday,
     error:
       soldProductsError,
-  } = await supabase
-    .from(
-      "daily_product_metrics",
-    )
-    .select(
-      "product_id",
-    )
-    .eq(
-      "organization_id",
-      access.organizationId,
-    )
-    .eq(
-      "metric_date",
-      today,
-    )
-    .gt(
-      "units_sold",
-      0,
-    );
+  } = await soldProductsQuery;
 
 
   if (
@@ -562,27 +653,50 @@ export async function getDashboardOverview() {
     ).size;
 
 
+  const topProductsRequest =
+    selectedAccount
+      ? supabase.rpc(
+          "get_dashboard_top_products_for_account",
+          {
+            target_organization_id:
+              access.organizationId,
+
+            target_ml_account_id:
+              selectedAccount.id,
+
+            target_date_from:
+              thirtyDaysAgo,
+
+            target_date_to:
+              today,
+
+            target_limit:
+              10,
+          },
+        )
+      : supabase.rpc(
+          "get_dashboard_top_products",
+          {
+            target_organization_id:
+              access.organizationId,
+
+            target_date_from:
+              thirtyDaysAgo,
+
+            target_date_to:
+              today,
+
+            target_limit:
+              10,
+          },
+        );
+
   const {
     data:
       topProductsData,
     error:
       topProductsError,
-  } = await supabase.rpc(
-    "get_dashboard_top_products",
-    {
-      target_organization_id:
-        access.organizationId,
-
-      target_date_from:
-        thirtyDaysAgo,
-
-      target_date_to:
-        today,
-
-      target_limit:
-        10,
-    },
-  );
+  } = await topProductsRequest;
 
 
   if (
@@ -657,6 +771,28 @@ export async function getDashboardOverview() {
 
   return {
     access,
+
+    selectedAccount:
+      selectedAccount
+        ? {
+            id:
+              selectedAccount.id,
+
+            code:
+              selectedAccount.code,
+
+            displayName:
+              selectedAccount
+                .display_name,
+
+            sellerId:
+              selectedAccount
+                .seller_id,
+
+            nickname:
+              selectedAccount.nickname,
+          }
+        : null,
 
     today,
 
