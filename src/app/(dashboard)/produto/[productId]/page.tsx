@@ -11,6 +11,10 @@ import {
   getProductDashboard,
 } from "@/features/dashboard/get-product-dashboard";
 
+import {
+  getProductListings,
+} from "@/features/dashboard/get-product-listings";
+
 
 type ProductDashboardPageProps = {
   params:
@@ -30,10 +34,19 @@ export default async function ProductDashboardPage({
   } = await params;
 
 
-  const dashboard =
-    await getProductDashboard({
-      productId,
-    });
+  const [
+    dashboard,
+    productListings,
+  ] =
+    await Promise.all([
+      getProductDashboard({
+        productId,
+      }),
+
+      getProductListings({
+        productId,
+      }),
+    ]);
 
 
   if (!dashboard) {
@@ -52,6 +65,9 @@ export default async function ProductDashboardPage({
     <ProductDashboardView
       dashboard={
         dashboard
+      }
+      productListings={
+        productListings
       }
     />
   );

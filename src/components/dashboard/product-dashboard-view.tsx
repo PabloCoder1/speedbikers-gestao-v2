@@ -8,9 +8,17 @@ import {
   DashboardMetricCard,
 } from "@/components/dashboard/dashboard-metric-card";
 
+import {
+  ProductListingsPanel,
+} from "@/components/dashboard/product-listings-panel";
+
 import type {
   getProductDashboard,
 } from "@/features/dashboard/get-product-dashboard";
+
+import type {
+  getProductListings,
+} from "@/features/dashboard/get-product-listings";
 
 
 type ProductDashboardResult =
@@ -32,9 +40,20 @@ type ProductDashboard =
   >;
 
 
+type ProductListings =
+  Awaited<
+    ReturnType<
+      typeof getProductListings
+    >
+  >;
+
+
 type ProductDashboardViewProps = {
   dashboard:
     ProductDashboard;
+
+  productListings:
+    ProductListings;
 };
 
 
@@ -98,6 +117,7 @@ function formatPeriod(
 
 export function ProductDashboardView({
   dashboard,
+  productListings,
 }: ProductDashboardViewProps) {
   const {
     product,
@@ -508,6 +528,13 @@ export function ProductDashboardView({
         </div>
 
       </section>
+
+
+      <ProductListingsPanel
+        data={
+          productListings
+        }
+      />
 
     </div>
   );
