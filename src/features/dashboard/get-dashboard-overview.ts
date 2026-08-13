@@ -301,53 +301,68 @@ export async function getDashboardOverview(
       .toLowerCase() ||
     null;
 
-  let selectedAccount:
-    | DashboardAccountRow
-    | null = null;
-
-  if (normalizedAccountCode) {
-    const {
-      data: accountData,
-      error: accountError,
-    } = await supabase
-      .from("ml_accounts")
-      .select(
-        [
-          "id",
-          "code",
-          "display_name",
-          "seller_id",
-          "nickname",
-        ].join(","),
-      )
-      .eq(
-        "organization_id",
-        access.organizationId,
-      )
-      .eq(
+  const {
+    data:
+      availableAccountRows,
+    error:
+      availableAccountsError,
+  } = await supabase
+    .from(
+      "ml_accounts",
+    )
+    .select(
+      [
+        "id",
         "code",
-        normalizedAccountCode,
-      )
-      .eq(
-        "is_active",
-        true,
-      )
-      .maybeSingle<DashboardAccountRow>();
+        "display_name",
+        "seller_id",
+        "nickname",
+      ].join(","),
+    )
+    .eq(
+      "organization_id",
+      access.organizationId,
+    )
+    .eq(
+      "is_active",
+      true,
+    )
+    .order(
+      "display_name",
+      {
+        ascending: true,
+      },
+    )
+    .returns<DashboardAccountRow[]>();
 
-    if (accountError) {
-      throw new Error(
-        "Não foi possível carregar a conta Mercado Livre do dashboard.",
-      );
-    }
+  if (
+    availableAccountsError
+  ) {
+    throw new Error(
+      "Não foi possível carregar as contas disponíveis para o dashboard.",
+    );
+  }
 
-    if (!accountData) {
-      throw new Error(
-        "Conta Mercado Livre não encontrada ou sem permissão de acesso.",
-      );
-    }
+  const availableAccounts =
+    availableAccountRows ??
+    [];
 
-    selectedAccount =
-      accountData;
+  const selectedAccount =
+    normalizedAccountCode
+      ? availableAccounts.find(
+          (account) =>
+            account.code ===
+            normalizedAccountCode,
+        ) ?? null
+      : null;
+
+  if (
+    normalizedAccountCode &&
+    !selectedAccount
+  ) {
+    throw new Error(
+      "Conta Mercado Livre não encontrada ou sem permissão de acesso.",
+    );
   }
 
 
@@ -771,6 +786,26 @@ export async function getDashboardOverview(
 
   return {
     access,
+
+    availableAccounts:
+      availableAccounts.map(
+        (account) => ({
+          id:
+            account.id,
+
+          code:
+            account.code,
+
+          displayName:
+            account.display_name,
+
+          sellerId:
+            account.seller_id,
+
+          nickname:
+            account.nickname,
+        }),
+      ),
 
     selectedAccount:
       selectedAccount

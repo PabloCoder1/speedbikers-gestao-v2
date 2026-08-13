@@ -9,14 +9,25 @@ import {
   getDashboardOverview,
 } from "@/features/dashboard/get-dashboard-overview";
 
-export const metadata = {
-  title:
-    "Visão Geral",
+type AccountDashboardPageProps = {
+  params:
+    Promise<{
+      accountCode:
+        string;
+    }>;
 };
 
-export default async function DashboardPage() {
+export default async function AccountDashboardPage({
+  params,
+}: AccountDashboardPageProps) {
+  const {
+    accountCode,
+  } = await params;
+
   const dashboard =
-    await getDashboardOverview();
+    await getDashboardOverview({
+      accountCode,
+    });
 
   if (!dashboard) {
     redirect(
