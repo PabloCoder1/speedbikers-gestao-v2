@@ -1,3 +1,6 @@
+import Link from "next/link";
+
+
 type TopProduct = {
   position: number;
 
@@ -102,7 +105,7 @@ export function TopProductsTable({
                     key={
                       product.productId
                     }
-                    className="text-sm"
+                    className="text-sm transition hover:bg-gray-50"
                   >
                     <td className="px-5 py-4 font-semibold text-gray-400">
                       {
@@ -112,16 +115,21 @@ export function TopProductsTable({
 
 
                     <td className="max-w-[360px] px-5 py-4">
-                      <p className="font-semibold text-gray-950">
-                        {
-                          product.sku
-                        }
-                      </p>
+                      <Link
+                        href={`/produto/${product.productId}`}
+                        className="group block"
+                      >
+                        <p className="font-semibold text-gray-950 transition group-hover:text-gray-500">
+                          {
+                            product.sku
+                          }
+                        </p>
 
-                      <p className="mt-1 truncate text-xs text-gray-500">
-                        {product.name ??
-                          "Produto sem nome"}
-                      </p>
+                        <p className="mt-1 truncate text-xs text-gray-500 transition group-hover:text-gray-700">
+                          {product.name ??
+                            "Produto sem nome"}
+                        </p>
+                      </Link>
                     </td>
 
 
