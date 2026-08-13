@@ -292,21 +292,25 @@ export async function getDashboardOverview() {
 
 
   /*
-   * Period cards include today while it is still accumulating,
-   * so they read live. They stay below the Mercado Livre
-   * reports until the day closes, which only count closed days.
+   * Mercado Livre counts "últimos 7 dias" inclusively on both
+   * ends: from today minus 7 up to today, which spans 8 calendar
+   * dates. Matching that convention is what makes the period
+   * cards reconcile with the seller dashboard.
+   *
+   * Today is included while still accumulating, so the cards
+   * read live and only settle once the day closes.
    */
   const thirtyDaysAgo =
     shiftDate(
       today,
-      -29,
+      -30,
     );
 
 
   const sevenDaysAgo =
     shiftDate(
       today,
-      -6,
+      -7,
     );
 
 
@@ -443,7 +447,7 @@ export async function getDashboardOverview() {
 
 
   for (
-    let offset = -29;
+    let offset = -30;
     offset <= 0;
     offset += 1
   ) {
@@ -666,7 +670,13 @@ export async function getDashboardOverview() {
 
     last7Days,
 
+    last7DaysStart:
+      sevenDaysAgo,
+
     last30Days,
+
+    last30DaysStart:
+      thirtyDaysAgo,
 
     last14Days,
 

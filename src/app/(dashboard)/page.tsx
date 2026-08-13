@@ -31,6 +31,42 @@ const integer =
   );
 
 
+const dayMonth =
+  new Intl.DateTimeFormat(
+    "pt-BR",
+    {
+      day:
+        "2-digit",
+
+      month:
+        "2-digit",
+
+      timeZone:
+        "UTC",
+    },
+  );
+
+
+/*
+ * Metric dates are plain calendar keys, so they are read at
+ * noon UTC to stay on the intended day in any timezone.
+ */
+function formatRange(
+  from: string,
+  to: string,
+) {
+  return `${dayMonth.format(
+    new Date(
+      `${from}T12:00:00.000Z`,
+    ),
+  )} a ${dayMonth.format(
+    new Date(
+      `${to}T12:00:00.000Z`,
+    ),
+  )}`;
+}
+
+
 function percentageChange(
   current: number,
   previous: number,
@@ -85,11 +121,14 @@ export default async function DashboardPage() {
 
 
   const {
+    today,
     todayMetric,
     yesterdayMetric,
     soldSkuCount,
     last7Days,
+    last7DaysStart,
     last30Days,
+    last30DaysStart,
     last14Days,
     topProducts,
   } = dashboard;
@@ -244,7 +283,10 @@ export default async function DashboardPage() {
             }
             helper={`${integer.format(
               last7Days.unitsSold,
-            )} unidades · inclui hoje`}
+            )} unidades · ${formatRange(
+              last7DaysStart,
+              today,
+            )}`}
           />
 
 
@@ -257,7 +299,10 @@ export default async function DashboardPage() {
             }
             helper={`${integer.format(
               last30Days.totalOrders,
-            )} vendas · inclui hoje`}
+            )} vendas · ${formatRange(
+              last30DaysStart,
+              today,
+            )}`}
           />
 
 
