@@ -478,6 +478,102 @@ export async function syncRecentOrdersIfDue() {
   offset +
   result.pageOrders;
 
+if (syncRunId) {
+  const {
+    error:
+      checkpointError,
+  } = await admin
+    .from(
+      "sync_runs",
+    )
+    .update({
+      records_discovered:
+        sellerTotal,
+
+
+      records_processed:
+        totalImportedOrders,
+
+
+      records_upserted:
+        totalImportedOrders,
+
+
+      cursor_offset:
+        nextOffset,
+
+
+      metadata: {
+        mode:
+          "incremental",
+
+
+        limit:
+          PAGE_SIZE,
+
+
+        offset:
+          nextOffset,
+
+
+        date_created_from:
+          windowFrom
+            .toISOString(),
+
+
+        date_created_to:
+          windowTo
+            .toISOString(),
+
+
+        seller_total:
+          sellerTotal,
+
+
+        orders_imported:
+          totalImportedOrders,
+
+
+        order_items_imported:
+          totalImportedItems,
+
+
+        unmapped_order_items:
+          totalUnmappedItems,
+
+
+        last_page:
+          page + 1,
+
+
+        last_page_orders:
+          result.pageOrders,
+
+
+        last_page_finished_at:
+          new Date()
+            .toISOString(),
+      },
+    })
+    .eq(
+      "id",
+      syncRunId,
+    )
+    .eq(
+      "status",
+      "running",
+    );
+
+
+  if (
+    checkpointError
+  ) {
+    throw new Error(
+      "Os pedidos foram processados, mas não foi possível salvar o checkpoint da sincronização.",
+    );
+  }
+}
+
 if (
   result.pageOrders <
     PAGE_SIZE ||
@@ -575,6 +671,11 @@ offset += PAGE_SIZE;
         errorMessage,
       );
 
+    const isRequestTimeout =
+      /\bREQUEST_TIMEOUT\b/i.test(
+        errorMessage,
+      );
+
     if (syncRunId) {
       await admin
         .from("sync_runs")
@@ -585,7 +686,9 @@ offset += PAGE_SIZE;
           error_code:
             isRateLimited
               ? "orders_rate_limited"
-              : "orders_sync_failed",
+              : isRequestTimeout
+                ? "orders_request_timeout"
+                : "orders_sync_failed",
 
           error_message:
             errorMessage,

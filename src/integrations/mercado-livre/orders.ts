@@ -12,6 +12,10 @@ export type MercadoLivreOrderSort =
   | "date_asc";
 
 
+const ORDERS_REQUEST_TIMEOUT_MS =
+  15_000;
+
+
 type OrdersSearchResponse = {
   results?: unknown;
 
@@ -172,22 +176,21 @@ export async function searchSellerOrders({
   }
 
 
-  const response =
-    await fetch(
-      url,
-      {
-        headers: {
-          Authorization:
-            `Bearer ${accessToken}`,
+  const controller =
+    new AbortController();
 
-          Accept:
-            "application/json",
-        },
 
-        cache:
-          "no-store",
+  const timeout =
+    setTimeout(
+      () => {
+        controller.abort();
       },
+      ORDERS_REQUEST_TIMEOUT_MS,
     );
+
+
+  let response:
+    Response;
 
 
   let payload:
@@ -196,11 +199,54 @@ export async function searchSellerOrders({
 
 
   try {
-    payload =
-      (await response.json()) as
-        OrdersSearchResponse;
-  } catch {
-    payload = null;
+    response =
+      await fetch(
+        url,
+        {
+          headers: {
+            Authorization:
+              `Bearer ${accessToken}`,
+
+            Accept:
+              "application/json",
+          },
+
+          cache:
+            "no-store",
+
+          signal:
+            controller.signal,
+        },
+      );
+
+
+    try {
+      payload =
+        (await response.json()) as
+          OrdersSearchResponse;
+    } catch {
+      payload =
+        null;
+    }
+  } catch (error) {
+    const isAbort =
+      error instanceof Error &&
+      error.name ===
+        "AbortError";
+
+
+    if (isAbort) {
+      throw new Error(
+        `Falha ao consultar pedidos do seller. REQUEST_TIMEOUT após ${ORDERS_REQUEST_TIMEOUT_MS}ms.`,
+      );
+    }
+
+
+    throw error;
+  } finally {
+    clearTimeout(
+      timeout,
+    );
   }
 
 
