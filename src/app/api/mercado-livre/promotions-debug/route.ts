@@ -9,7 +9,10 @@ import {
 } from "@/integrations/mercado-livre/config";
 import { getValidMercadoLivreAccessToken } from "@/integrations/mercado-livre/access-token";
 import { getMercadoLivreCurrentUser } from "@/integrations/mercado-livre/users";
-import { getMercadoLivreItemPromotions } from "@/integrations/mercado-livre/promotions";
+import {
+  getMercadoLivreItemPromotions,
+  resolveMercadoLivrePromotionState,
+} from "@/integrations/mercado-livre/promotions";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type MercadoLivreAccountRow = {
@@ -248,6 +251,31 @@ export async function GET(
       });
 
 
+    const parsedBasePrice =
+      listing.price === null
+        ? null
+        : Number(
+            listing.price,
+          );
+
+
+    const basePrice =
+      parsedBasePrice !== null &&
+      Number.isFinite(
+        parsedBasePrice,
+      )
+        ? parsedBasePrice
+        : null;
+
+
+    const resolved =
+      resolveMercadoLivrePromotionState({
+        basePrice,
+        payload:
+          promotions,
+      });
+
+
     return NextResponse.json({
       ok: true,
 
@@ -275,6 +303,9 @@ export async function GET(
 
 
       promotions,
+
+
+      resolved,
     });
   } catch (error) {
     console.error(
