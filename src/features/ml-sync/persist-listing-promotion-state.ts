@@ -21,6 +21,159 @@ type PersistedPromotionState = {
   id: string;
 };
 
+function isJsonObject(
+  value: unknown,
+): value is Record<string, unknown> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value)
+  );
+}
+
+function readString(
+  value: unknown,
+): string | null {
+  return typeof value === "string"
+    ? value
+    : null;
+}
+
+function normalizeDate(
+  value: string | null,
+): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const timestamp =
+    Date.parse(value);
+
+  if (Number.isNaN(timestamp)) {
+    return null;
+  }
+
+  return new Date(
+    timestamp,
+  ).toISOString();
+}
+
+function getPromotionRows(
+  payload:
+    MercadoLivreItemPromotionsResponse,
+) {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (
+    Array.isArray(payload.results)
+  ) {
+    return payload.results.filter(
+      isJsonObject,
+    );
+  }
+
+  return [payload];
+}
+
+function findActivePromotionPayload({
+  promotions,
+  resolved,
+}: {
+  promotions:
+    MercadoLivreItemPromotionsResponse;
+
+  resolved:
+    MercadoLivreResolvedPromotionState;
+}) {
+  const active =
+    resolved.activePromotion;
+
+  if (!active) {
+    return null;
+  }
+
+  const rows =
+    getPromotionRows(
+      promotions,
+    );
+
+  return (
+    rows.find((row) => {
+      const id =
+        readString(row.id);
+
+      const type =
+        readString(row.type);
+
+      const status =
+        readString(row.status);
+
+      if (
+        status !== "started"
+      ) {
+        return false;
+      }
+
+      if (
+        active.id &&
+        id !== active.id
+      ) {
+        return false;
+      }
+
+      if (
+        active.type &&
+        type !== active.type
+      ) {
+        return false;
+      }
+
+      return true;
+    }) ?? null
+  );
+}
+
+function getDetailsDate(
+  details:
+    MercadoLivrePromotionDetailsResponse | null,
+  keys: string[],
+) {
+  if (!details) {
+    return null;
+  }
+
+  for (const key of keys) {
+    const value =
+      readString(
+        details[key],
+      );
+
+    if (value) {
+      return normalizeDate(
+        value,
+      );
+    }
+  }
+
+  return null;
+}
+
+function getDetailsString(
+  details:
+    MercadoLivrePromotionDetailsResponse | null,
+  key: string,
+) {
+  if (!details) {
+    return null;
+  }
+
+  return readString(
+    details[key],
+  );
+}
+
 export async function persistListingPromotionState({
   listing,
   resolved,
@@ -32,9 +185,74 @@ export async function persistListingPromotionState({
   promotions: MercadoLivreItemPromotionsResponse;
   activePromotionDetails: MercadoLivrePromotionDetailsResponse | null;
 }) {
-  const admin = createAdminClient();
-  const promotion = resolved.activePromotion;
-  const capturedAt = new Date().toISOString();
+  const admin =
+    createAdminClient();
+
+  const promotion =
+    resolved.activePromotion;
+
+  const capturedAt =
+    new Date()
+      .toISOString();
+
+  const activePromotionPayload =
+    findActivePromotionPayload({
+      promotions,
+      resolved,
+    });
+
+  const promotionStartedAt =
+    getDetailsDate(
+      activePromotionDetails,
+      [
+        "start_date",
+        "startDate",
+      ],
+    ) ??
+    normalizeDate(
+      promotion?.startDate ??
+        null,
+    );
+
+  const promotionEndsAt =
+    getDetailsDate(
+      activePromotionDetails,
+      [
+        "finish_date",
+        "end_date",
+        "finishDate",
+        "endDate",
+      ],
+    ) ??
+    normalizeDate(
+      promotion?.finishDate ??
+        null,
+    );
+
+  const promotionDeadlineAt =
+    getDetailsDate(
+      activePromotionDetails,
+      [
+        "deadline_date",
+        "deadlineDate",
+      ],
+    );
+
+  const promotionName =
+    getDetailsString(
+      activePromotionDetails,
+      "name",
+    ) ??
+    promotion?.name ??
+    null;
+
+  const promotionStatus =
+    getDetailsString(
+      activePromotionDetails,
+      "status",
+    ) ??
+    promotion?.status ??
+    null;
 
   const row = {
     organization_id: listing.organizationId,
@@ -56,8 +274,8 @@ export async function persistListingPromotionState({
     promotion_type: promotion?.type ?? null,
     promotion_sub_type: promotion?.subType ?? null,
     promotion_ref_id: promotion?.refId ?? null,
-    promotion_status: promotion?.status ?? null,
-    promotion_name: promotion?.name ?? null,
+    promotion_status: promotionStatus,
+    promotion_name: promotionName,
     promotion_original_price: promotion?.originalPrice ?? null,
     seller_percentage: promotion?.sellerPercentage ?? null,
     meli_percentage: promotion?.meliPercentage ?? null,
@@ -68,11 +286,11 @@ export async function persistListingPromotionState({
       promotion?.discountMeliBoostedAmount ?? null,
     total_price_for_boosted_offer:
       promotion?.totalPriceForBoostedOffer ?? null,
-    promotion_started_at: promotion?.startDate ?? null,
-    promotion_ends_at: promotion?.finishDate ?? null,
-    promotion_deadline_at: null,
+    promotion_started_at: promotionStartedAt,
+    promotion_ends_at: promotionEndsAt,
+    promotion_deadline_at: promotionDeadlineAt,
     promotion_checked_at: capturedAt,
-    active_promotion_payload: promotions,
+    active_promotion_payload: activePromotionPayload,
     active_promotion_details_payload: activePromotionDetails,
   };
 
