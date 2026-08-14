@@ -5,6 +5,7 @@ import {
 import { NextResponse } from "next/server";
 
 import { processNextListingsSyncBatch } from "@/features/ml-sync/process-listings-sync-worker";
+import { processNextOfferPricesBackfillBatch } from "@/features/ml-sync/process-offer-prices-backfill";
 
 import { syncRecentSbOrdersIfDue } from "@/features/ml-sync/sync-recent-orders";
 
@@ -148,13 +149,45 @@ export async function POST(
 }
 
 
-    const result =
+    if (
+      payload.task ===
+      "offer_prices_backfill"
+    ) {
+      const result =
+        await processNextOfferPricesBackfillBatch();
+
+      return NextResponse.json(
+        result,
+      );
+    }
+
+
+    const listingsResult =
       await processNextListingsSyncBatch();
 
 
-    return NextResponse.json(
-      result,
-    );
+    if (
+      listingsResult.processed
+    ) {
+      return NextResponse.json({
+        task:
+          "listings_full",
+
+        ...listingsResult,
+      });
+    }
+
+
+    const offerPricesResult =
+      await processNextOfferPricesBackfillBatch();
+
+
+    return NextResponse.json({
+      task:
+        "offer_prices_backfill",
+
+      ...offerPricesResult,
+    });
   } catch (error) {
     console.error(
       "ML sync worker failed:",
