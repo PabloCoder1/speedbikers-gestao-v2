@@ -150,20 +150,53 @@ export async function getProductListings({
         mlbs:
           0,
 
+
         offers:
           0,
+
 
         activeOffers:
           0,
 
+
+        pausedOffers:
+          0,
+
+
+        zeroStockOffers:
+          0,
+
+
         advertisedStock:
           0,
+
 
         accounts:
           0,
 
+
         catalogOffers:
           0,
+
+
+        minimumPrice:
+          null,
+
+
+        maximumPrice:
+          null,
+
+
+        priceSpreadPercent:
+          null,
+
+
+        averageHealth:
+          null,
+
+
+        minimumHealth:
+          null,
       },
     };
   }
@@ -825,19 +858,141 @@ export async function getProductListings({
     );
 
 
+  const activeListings =
+    listings.filter(
+      (listing) =>
+        listing.status ===
+        "active",
+    );
+
+
+  const pausedListings =
+    listings.filter(
+      (listing) =>
+        listing.status ===
+        "paused",
+    );
+
+
+  const zeroStockListings =
+    listings.filter(
+      (listing) =>
+        listing
+          .availableQuantity ===
+        0,
+    );
+
+
+  const validPrices =
+    listings
+      .map(
+        (listing) =>
+          listing.price,
+      )
+      .filter(
+        (
+          price,
+        ): price is number =>
+          price !== null,
+      );
+
+
+  const minimumPrice =
+    validPrices.length >
+    0
+      ? Math.min(
+          ...validPrices,
+        )
+      : null;
+
+
+  const maximumPrice =
+    validPrices.length >
+    0
+      ? Math.max(
+          ...validPrices,
+        )
+      : null;
+
+
+  const priceSpreadPercent =
+    minimumPrice !== null &&
+    maximumPrice !== null &&
+    minimumPrice > 0
+      ? (
+          (maximumPrice -
+            minimumPrice) /
+          minimumPrice
+        ) *
+        100
+      : null;
+
+
+  const validHealthValues =
+    listings
+      .map(
+        (listing) =>
+          listing.health,
+      )
+      .filter(
+        (
+          health,
+        ): health is number =>
+          health !== null,
+      );
+
+
+  // ==========================================================
+
+
+  const averageHealth =
+    validHealthValues.length >
+    0
+      ? (
+          validHealthValues.reduce(
+            (
+              total,
+              health,
+            ) =>
+              total +
+              health,
+
+            0,
+          ) /
+          validHealthValues.length
+        )
+      : null;
+
+
+  const minimumHealth =
+    validHealthValues.length >
+    0
+      ? Math.min(
+          ...validHealthValues,
+        )
+      : null;
+
+
   const summary = {
     mlbs:
       distinctMlbs.size,
 
+
     offers:
       listings.length,
 
+
     activeOffers:
-      listings.filter(
-        (listing) =>
-          listing.status ===
-          "active",
-      ).length,
+      activeListings.length,
+
+
+    pausedOffers:
+      pausedListings.length,
+
+
+    zeroStockOffers:
+      zeroStockListings.length,
+
 
     advertisedStock:
       listings.reduce(
@@ -849,12 +1004,15 @@ export async function getProductListings({
           listing
             .availableQuantity,
 
+
         0,
       ),
+
 
     accounts:
       accountsWithListings
         .size,
+
 
     catalogOffers:
       listings.filter(
@@ -862,6 +1020,21 @@ export async function getProductListings({
           listing
             .catalogListing,
       ).length,
+
+
+    minimumPrice,
+
+
+    maximumPrice,
+
+
+    priceSpreadPercent,
+
+
+    averageHealth,
+
+
+    minimumHealth,
   };
 
 

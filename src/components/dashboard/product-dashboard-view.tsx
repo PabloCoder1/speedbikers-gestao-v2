@@ -16,6 +16,10 @@ import {
   ProductOfferHistoryPanel,
 } from "@/components/dashboard/product-offer-history-panel";
 
+import {
+  ProductOperationalHealthPanel,
+} from "@/components/dashboard/product-operational-health-panel";
+
 import type {
   getProductDashboard,
 } from "@/features/dashboard/get-product-dashboard";
@@ -548,6 +552,13 @@ export function ProductDashboardView({
         </div>
 
       </section>
+
+
+      <ProductOperationalHealthPanel
+        data={
+          productListings
+        }
+      />
 
 
       <ProductListingsPanel
