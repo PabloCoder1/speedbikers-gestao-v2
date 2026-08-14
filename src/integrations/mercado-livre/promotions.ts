@@ -31,16 +31,64 @@ function isJsonObject(
 
 export type MercadoLivreNormalizedPromotion = {
   id: string | null;
+
+
   type: string | null;
   subType: string | null;
+
+
   refId: string | null;
+
+
   status: string | null;
+
+
+  /*
+   * Preço da oferta/campanha retornado pelo Mercado Livre.
+   * Não necessariamente é o preço final ao comprador caso
+   * exista boosted_offer.
+   */
   price: number | null;
+
+
+  /*
+   * Preço realmente considerado pelo resolver.
+   *
+   * boosted_offer = true
+   * → total_price_for_boosted_offer
+   *
+   * caso contrário
+   * → price
+   */
+  effectivePrice: number | null;
+
+
   originalPrice: number | null;
+
+
   sellerPercentage: number | null;
   meliPercentage: number | null;
+
+
+  boostedOffer: boolean | null;
+
+
+  discountMeliBoostedPercentage:
+    number | null;
+
+
+  discountMeliBoostedAmount:
+    number | null;
+
+
+  totalPriceForBoostedOffer:
+    number | null;
+
+
   startDate: string | null;
   finishDate: string | null;
+
+
   name: string | null;
 };
 
@@ -99,6 +147,15 @@ function readFiniteNumber(
 }
 
 
+function readBoolean(
+  value: unknown,
+): boolean | null {
+  return typeof value === "boolean"
+    ? value
+    : null;
+}
+
+
 function getPromotionPrice(
   promotion: Record<string, unknown>,
 ): number | null {
@@ -137,6 +194,46 @@ function getPromotionPrice(
     readFiniteNumber(activeOffer.new_price) ??
     readFiniteNumber(activeOffer.price) ??
     readFiniteNumber(activeOffer.deal_price)
+  );
+}
+
+
+function getPromotionEffectivePrice(
+  promotion: Record<string, unknown>,
+): number | null {
+  const boostedOffer =
+    readBoolean(
+      promotion.boosted_offer,
+    );
+
+
+  if (boostedOffer === true) {
+    const boostedPrice =
+      readFiniteNumber(
+        promotion.total_price_for_boosted_offer,
+      );
+
+
+    /*
+     * Se o Mercado Livre disser explicitamente que existe
+     * boost, mas não fornecer o preço final correspondente,
+     * não devemos fingir que o preço normal da campanha é
+     * o preço efetivo.
+     */
+    if (
+      boostedPrice === null ||
+      boostedPrice <= 0
+    ) {
+      return null;
+    }
+
+
+    return boostedPrice;
+  }
+
+
+  return getPromotionPrice(
+    promotion,
   );
 }
 
@@ -181,6 +278,12 @@ function normalizePromotion(
       ),
 
 
+    effectivePrice:
+      getPromotionEffectivePrice(
+        promotion,
+      ),
+
+
     originalPrice:
       readFiniteNumber(
         promotion.original_price,
@@ -196,6 +299,30 @@ function normalizePromotion(
     meliPercentage:
       readFiniteNumber(
         promotion.meli_percentage,
+      ),
+
+
+    boostedOffer:
+      readBoolean(
+        promotion.boosted_offer,
+      ),
+
+
+    discountMeliBoostedPercentage:
+      readFiniteNumber(
+        promotion.discount_meli_boosted_percentage,
+      ),
+
+
+    discountMeliBoostedAmount:
+      readFiniteNumber(
+        promotion.discount_meli_boost_amount,
+      ),
+
+
+    totalPriceForBoostedOffer:
+      readFiniteNumber(
+        promotion.total_price_for_boosted_offer,
       ),
 
 
@@ -259,9 +386,14 @@ export function resolveMercadoLivrePromotionState({
 
   const promotionsWithPrice =
     startedPromotions.filter(
-      (promotion): promotion is MercadoLivreNormalizedPromotion & {
-        price: number;
-      } => promotion.price !== null,
+      (
+        promotion,
+      ): promotion is
+        MercadoLivreNormalizedPromotion & {
+          effectivePrice: number;
+        } =>
+        promotion.effectivePrice !== null &&
+        promotion.effectivePrice > 0,
     );
 
 
@@ -284,7 +416,7 @@ export function resolveMercadoLivrePromotionState({
       new Set(
         promotionsWithPrice.map(
           (promotion) =>
-            promotion.price,
+            promotion.effectivePrice,
         ),
       ),
     );
@@ -310,7 +442,7 @@ export function resolveMercadoLivrePromotionState({
 
 
   const effectivePrice =
-    activePromotion.price;
+    activePromotion.effectivePrice;
 
 
   const discountPercent =
