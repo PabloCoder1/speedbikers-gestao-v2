@@ -54,9 +54,6 @@ const percent =
 const HEALTH_ATTENTION_THRESHOLD =
   0.8;
 
-const PRICE_SPREAD_ATTENTION_THRESHOLD_PERCENT =
-  20;
-
 
 type OperationalStatus =
   | "critical"
@@ -167,21 +164,6 @@ function buildSignals(
       message: `Health médio abaixo de ${HEALTH_ATTENTION_THRESHOLD.toFixed(
         2,
       )}`,
-    });
-  }
-
-
-  if (
-    summary.priceSpreadPercent !==
-    null &&
-    summary.priceSpreadPercent >
-    PRICE_SPREAD_ATTENTION_THRESHOLD_PERCENT
-  ) {
-    signals.push({
-      level:
-        "warning",
-
-      message: `Diferença de preço entre ofertas acima de ${PRICE_SPREAD_ATTENTION_THRESHOLD_PERCENT}%`,
     });
   }
 
