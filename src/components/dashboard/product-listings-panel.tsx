@@ -38,6 +38,47 @@ const integer =
   );
 
 
+const percent =
+  new Intl.NumberFormat(
+    "pt-BR",
+    {
+      maximumFractionDigits:
+        1,
+    },
+  );
+
+
+const PROMOTION_LABELS: Record<
+  string,
+  string
+> = {
+  SMART: "Smart",
+  SELLER_CAMPAIGN: "Campanha",
+  PRICE_DISCOUNT: "Desconto",
+  DEAL: "Oferta",
+  MARKETPLACE_CAMPAIGN: "Campanha ML",
+  LIGHTNING: "Relâmpago",
+};
+
+
+function promotionLabel(
+  promotionType:
+    | string
+    | null,
+) {
+  if (!promotionType) {
+    return "Promoção ativa";
+  }
+
+  return (
+    PROMOTION_LABELS[
+      promotionType
+    ] ??
+    promotionType
+  );
+}
+
+
 function statusLabel(
   status:
     | string
@@ -87,6 +128,15 @@ export function ProductListingsPanel({
     listings,
     summary,
   } = data;
+
+  const eligiblePriceOffers =
+    summary.validatedPriceOffers +
+    summary.pendingPriceOffers;
+
+  const lowestEffectiveListingIds =
+    new Set(
+      summary.lowestEffectiveListingIds,
+    );
 
 
   return (
@@ -184,6 +234,42 @@ export function ProductListingsPanel({
       </div>
 
 
+      {summary.pendingPriceOffers > 0 ||
+      summary.variationPriceOffers > 0 ? (
+
+        <div className="mb-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-600">
+
+          {summary.pendingPriceOffers > 0 ? (
+
+            <p>
+              Preço final validado em{" "}
+              <span className="font-semibold text-gray-800">
+                {integer.format(summary.validatedPriceOffers)} de{" "}
+                {integer.format(eligiblePriceOffers)}
+              </span>{" "}
+              anúncios elegíveis.
+            </p>
+
+          ) : null}
+
+
+          {summary.variationPriceOffers > 0 ? (
+
+            <p className={summary.pendingPriceOffers > 0 ? "mt-1" : undefined}>
+              {integer.format(summary.variationPriceOffers)}{" "}
+              {summary.variationPriceOffers === 1
+                ? "variação utiliza"
+                : "variações utilizam"}{" "}
+              preço próprio sem validação promocional.
+            </p>
+
+          ) : null}
+
+        </div>
+
+      ) : null}
+
+
       <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
 
         {listings.length ===
@@ -205,7 +291,7 @@ export function ProductListingsPanel({
 
           <div className="overflow-x-auto">
 
-            <table className="w-full min-w-[1100px] text-left">
+            <table className="w-full min-w-[1320px] text-left">
 
               <thead className="bg-gray-50 text-[11px] uppercase tracking-wide text-gray-400">
 
@@ -224,7 +310,15 @@ export function ProductListingsPanel({
                   </th>
 
                   <th className="px-5 py-3 text-right">
-                    Preço
+                    Preço base
+                  </th>
+
+                  <th className="px-5 py-3 text-right">
+                    Preço final
+                  </th>
+
+                  <th className="px-5 py-3 text-right">
+                    Desconto
                   </th>
 
                   <th className="px-5 py-3 text-right">
@@ -353,13 +447,109 @@ export function ProductListingsPanel({
                       </td>
 
 
-                      <td className="px-5 py-4 text-right font-semibold text-gray-950">
+                      <td className="px-5 py-4 text-right text-gray-600">
 
-                        {listing.price !==
+                        {listing.priceReady &&
+                        listing.basePrice !==
+                        null ? (
+
+                          <span
+                            className={
+                              listing.effectivePrice !== null &&
+                              listing.basePrice > listing.effectivePrice
+                                ? "line-through decoration-gray-300"
+                                : "font-medium text-gray-800"
+                            }
+                          >
+                            {
+                              currency.format(
+                                listing.basePrice,
+                              )
+                            }
+                          </span>
+
+                        ) : "—"}
+
+                      </td>
+
+
+                      <td className="px-5 py-4 text-right">
+
+                        <div className="flex items-center justify-end gap-2">
+
+                          <span
+                            className={
+                              listing.priceReady
+                                ? "font-bold text-gray-950"
+                                : "font-semibold text-gray-700"
+                            }
+                          >
+                            {listing.displayPrice !==
+                            null
+                              ? currency.format(
+                                  listing.displayPrice,
+                                )
+                              : "—"}
+                          </span>
+
+
+                          {listing.priceReady &&
+                          lowestEffectiveListingIds.has(
+                            listing.listingId,
+                          ) ? (
+
+                            <span className="whitespace-nowrap rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600">
+                              Menor final
+                            </span>
+
+                          ) : null}
+
+                        </div>
+
+
+                        {listing.priceReady &&
+                        listing.hasActivePromotion ? (
+
+                          <span
+                            title={listing.promotionName ?? undefined}
+                            className="mt-1 inline-flex max-w-[150px] truncate rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700"
+                          >
+                            {
+                              promotionLabel(
+                                listing.promotionType,
+                              )
+                            }
+                          </span>
+
+                        ) : listing.priceScope ===
+                          "listing_pending" ? (
+
+                            <p className="mt-1 text-[10px] font-normal text-gray-400">
+                              Aguardando validação
+                            </p>
+
+                          ) : listing.priceScope ===
+                            "variation_unvalidated" ? (
+
+                            <p
+                              title="Preço promocional ainda não validado para variações"
+                              className="mt-1 text-[10px] font-normal text-gray-400"
+                            >
+                              Preço da variação
+                            </p>
+
+                          ) : null}
+
+                      </td>
+
+
+                      <td className="px-5 py-4 text-right font-medium text-gray-700">
+
+                        {listing.discountPercent !==
                         null
-                          ? currency.format(
-                              listing.price,
-                            )
+                          ? `-${percent.format(
+                              listing.discountPercent,
+                            )}%`
                           : "—"}
 
                       </td>

@@ -344,13 +344,13 @@ export function ProductOperationalHealthPanel({
           <div>
 
             <p className="text-xs font-medium text-gray-500">
-              Preço
+              Preço final
             </p>
 
 
-            {summary.minimumPrice !==
+            {summary.effectiveMinimumPrice !==
             null &&
-            summary.maximumPrice !==
+            summary.effectiveMaximumPrice !==
             null ? (
 
               <>
@@ -358,7 +358,7 @@ export function ProductOperationalHealthPanel({
                 <p className="mt-2 text-2xl font-bold tracking-tight text-gray-950">
                   {
                     currency.format(
-                      summary.minimumPrice,
+                      summary.effectiveMinimumPrice,
                     )
                   }
                 </p>
@@ -368,13 +368,13 @@ export function ProductOperationalHealthPanel({
                   até{" "}
                   {
                     currency.format(
-                      summary.maximumPrice,
+                      summary.effectiveMaximumPrice,
                     )
                   }
                 </p>
 
 
-                {summary.priceSpreadPercent !==
+                {summary.effectivePriceSpreadPercent !==
                 null ? (
 
                   <p className="mt-2 text-xs text-gray-500">
@@ -383,7 +383,7 @@ export function ProductOperationalHealthPanel({
                     <span className="font-semibold text-gray-700">
                       {
                         percent.format(
-                          summary.priceSpreadPercent,
+                          summary.effectivePriceSpreadPercent,
                         )
                       }
                       %
@@ -392,13 +392,47 @@ export function ProductOperationalHealthPanel({
 
                 ) : null}
 
+
+                {summary.baseMinimumPrice !==
+                  null &&
+                summary.baseMaximumPrice !==
+                  null ? (
+
+                  <p className="mt-2 text-xs text-gray-500">
+                    Base:{" "}
+                    <span className="font-medium text-gray-700">
+                      {currency.format(summary.baseMinimumPrice)} até{" "}
+                      {currency.format(summary.baseMaximumPrice)}
+                    </span>
+                  </p>
+
+                ) : null}
+
+
+                {summary.pendingPriceOffers >
+                0 ? (
+
+                  <p className="mt-2 text-[11px] leading-4 text-amber-700">
+                    Comparação parcial — existem anúncios aguardando validação.
+                  </p>
+
+                ) : null}
+
               </>
 
             ) : (
 
-              <p className="mt-2 text-sm text-gray-500">
-                Sem preço disponível
-              </p>
+              <>
+
+                <p className="mt-2 text-sm font-medium text-gray-600">
+                  Preço final ainda em validação
+                </p>
+
+                <p className="mt-1 text-[11px] leading-4 text-gray-400">
+                  Os preços do anúncio continuam visíveis na tabela.
+                </p>
+
+              </>
 
             )}
 

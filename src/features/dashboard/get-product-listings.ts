@@ -108,6 +108,47 @@ type VariationRow = {
 };
 
 
+type PriceStateRow = {
+  ml_listing_id: string;
+  base_price: number | string | null;
+  effective_price: number | string | null;
+  has_active_promotion: boolean;
+  promotion_resolution: string | null;
+  promotion_id: string | null;
+  promotion_type: string | null;
+  promotion_sub_type: string | null;
+  promotion_name: string | null;
+  promotion_status: string | null;
+  promotion_match_method: string | null;
+  promotion_started_at: string | null;
+  promotion_ends_at: string | null;
+  price_checked_at: string | null;
+  promotions_fetch_status: string;
+};
+
+
+type PriceScope =
+  | "listing_validated"
+  | "listing_pending"
+  | "variation_unvalidated";
+
+
+type ListingPriceModel = {
+  legacyPrice: number | null;
+  priceReady: boolean;
+  basePrice: number | null;
+  effectivePrice: number | null;
+  displayPrice: number | null;
+  discountPercent: number | null;
+  hasActivePromotion: boolean;
+  promotionType: string | null;
+  promotionName: string | null;
+  promotionResolution: string | null;
+  priceCheckedAt: string | null;
+  priceScope: PriceScope;
+};
+
+
 function numericOrNull(
   value:
     | number
@@ -132,6 +173,65 @@ function numericOrNull(
   )
     ? parsed
     : null;
+}
+
+
+function listingPriceModel({
+  legacyPrice,
+  state,
+}: {
+  legacyPrice: number | null;
+  state: PriceStateRow | undefined;
+}): ListingPriceModel {
+  const basePrice = numericOrNull(state?.base_price);
+  const effectivePrice = numericOrNull(state?.effective_price);
+  const priceReady = Boolean(
+    state &&
+    basePrice !== null &&
+    effectivePrice !== null &&
+    state.price_checked_at,
+  );
+  const discountPercent =
+    priceReady &&
+    basePrice !== null &&
+    basePrice > 0 &&
+    effectivePrice !== null &&
+    effectivePrice < basePrice
+      ? Math.round((((basePrice - effectivePrice) / basePrice) * 100) * 100) / 100
+      : null;
+
+  return {
+    legacyPrice,
+    priceReady,
+    basePrice: priceReady ? basePrice : null,
+    effectivePrice: priceReady ? effectivePrice : null,
+    displayPrice: priceReady ? effectivePrice : legacyPrice,
+    discountPercent,
+    hasActivePromotion: priceReady ? state?.has_active_promotion ?? false : false,
+    promotionType: priceReady ? state?.promotion_type ?? null : null,
+    promotionName: priceReady ? state?.promotion_name ?? null : null,
+    promotionResolution: priceReady ? state?.promotion_resolution ?? null : null,
+    priceCheckedAt: state?.price_checked_at ?? null,
+    priceScope: priceReady ? "listing_validated" : "listing_pending",
+  };
+}
+
+
+function variationPriceModel(legacyPrice: number | null): ListingPriceModel {
+  return {
+    legacyPrice,
+    priceReady: false,
+    basePrice: null,
+    effectivePrice: null,
+    displayPrice: legacyPrice,
+    discountPercent: null,
+    hasActivePromotion: false,
+    promotionType: null,
+    promotionName: null,
+    promotionResolution: null,
+    priceCheckedAt: null,
+    priceScope: "variation_unvalidated",
+  };
 }
 
 
@@ -179,16 +279,40 @@ export async function getProductListings({
           0,
 
 
-        minimumPrice:
+        validatedPriceOffers:
+          0,
+
+
+        pendingPriceOffers:
+          0,
+
+
+        variationPriceOffers:
+          0,
+
+
+        effectiveMinimumPrice:
           null,
 
 
-        maximumPrice:
+        effectiveMaximumPrice:
           null,
 
 
-        priceSpreadPercent:
+        effectivePriceSpreadPercent:
           null,
+
+
+        baseMinimumPrice:
+          null,
+
+
+        baseMaximumPrice:
+          null,
+
+
+        lowestEffectiveListingIds:
+          [] as string[],
 
 
         averageHealth:
@@ -473,6 +597,54 @@ export async function getProductListings({
   }
 
 
+  const involvedListingIds = Array.from(
+    new Set([
+      ...directListings.map((listing) => listing.id),
+      ...parentListings.map((listing) => listing.id),
+    ]),
+  );
+
+  let priceStates: PriceStateRow[] = [];
+
+  if (involvedListingIds.length > 0) {
+    const { data: priceStateData, error: priceStateError } = await supabase
+      .from("ml_offer_price_states")
+      .select(
+        [
+          "ml_listing_id",
+          "base_price",
+          "effective_price",
+          "has_active_promotion",
+          "promotion_resolution",
+          "promotion_id",
+          "promotion_type",
+          "promotion_sub_type",
+          "promotion_name",
+          "promotion_status",
+          "promotion_match_method",
+          "promotion_started_at",
+          "promotion_ends_at",
+          "price_checked_at",
+          "promotions_fetch_status",
+        ].join(","),
+      )
+      .eq("organization_id", access.organizationId)
+      .eq("offer_scope", "listing")
+      .in("ml_listing_id", involvedListingIds)
+      .returns<PriceStateRow[]>();
+
+    if (priceStateError) {
+      throw new Error("Nao foi possivel carregar os precos validados dos anuncios.");
+    }
+
+    priceStates = priceStateData ?? [];
+  }
+
+  const priceStateByListingId = new Map(
+    priceStates.map((state) => [state.ml_listing_id, state]),
+  );
+
+
   const parentById =
     new Map(
       parentListings.map(
@@ -537,9 +709,47 @@ export async function getProductListings({
       | string
       | null;
 
-    price:
+    legacyPrice:
       | number
       | null;
+
+    priceReady: boolean;
+
+    basePrice:
+      | number
+      | null;
+
+    effectivePrice:
+      | number
+      | null;
+
+    displayPrice:
+      | number
+      | null;
+
+    discountPercent:
+      | number
+      | null;
+
+    hasActivePromotion: boolean;
+
+    promotionType:
+      | string
+      | null;
+
+    promotionName:
+      | string
+      | null;
+
+    promotionResolution:
+      | string
+      | null;
+
+    priceCheckedAt:
+      | string
+      | null;
+
+    priceScope: PriceScope;
 
     availableQuantity:
       number;
@@ -632,10 +842,17 @@ export async function getProductListings({
       status:
         listing.status,
 
-      price:
-        numericOrNull(
-          listing.price,
-        ),
+      ...listingPriceModel({
+        legacyPrice:
+          numericOrNull(
+            listing.price,
+          ),
+
+        state:
+          priceStateByListingId.get(
+            listing.id,
+          ),
+      }),
 
       availableQuantity:
         listing
@@ -740,11 +957,12 @@ export async function getProductListings({
       status:
         parent.status,
 
-      price:
+      ...variationPriceModel(
         numericOrNull(
           variation.price ??
           parent.price,
         ),
+      ),
 
       availableQuantity:
         variation
@@ -883,49 +1101,135 @@ export async function getProductListings({
     );
 
 
-  const validPrices =
-    listings
-      .map(
-        (listing) =>
-          listing.price,
-      )
-      .filter(
-        (
-          price,
-        ): price is number =>
-          price !== null,
-      );
+  const eligiblePriceListings =
+    listings.filter(
+      (listing) =>
+        listing.variationId ===
+        null,
+    );
 
 
-  const minimumPrice =
-    validPrices.length >
+  const validatedPriceOffers =
+    eligiblePriceListings.filter(
+      (listing) =>
+        listing.priceReady,
+    ).length;
+
+
+  const pendingPriceOffers =
+    eligiblePriceListings.length -
+    validatedPriceOffers;
+
+
+  const variationPriceOffers =
+    listings.length -
+    eligiblePriceListings.length;
+
+
+  const comparableListings =
+    eligiblePriceListings.filter(
+      (
+        listing,
+      ): listing is typeof listing & {
+        basePrice: number;
+        effectivePrice: number;
+      } =>
+        listing.status ===
+          "active" &&
+        listing.priceReady &&
+        listing.basePrice !==
+          null &&
+        listing.effectivePrice !==
+          null,
+    );
+
+
+  const effectivePrices =
+    comparableListings.map(
+      (listing) =>
+        listing.effectivePrice,
+    );
+
+
+  const basePrices =
+    comparableListings.map(
+      (listing) =>
+        listing.basePrice,
+    );
+
+
+  const effectiveMinimumPrice =
+    effectivePrices.length >
     0
       ? Math.min(
-          ...validPrices,
+          ...effectivePrices,
         )
       : null;
 
 
-  const maximumPrice =
-    validPrices.length >
+  const effectiveMaximumPrice =
+    effectivePrices.length >
     0
       ? Math.max(
-          ...validPrices,
+          ...effectivePrices,
         )
       : null;
 
 
-  const priceSpreadPercent =
-    minimumPrice !== null &&
-    maximumPrice !== null &&
-    minimumPrice > 0
+  const effectivePriceSpreadPercent =
+    effectiveMinimumPrice !==
+      null &&
+    effectiveMaximumPrice !==
+      null &&
+    effectiveMinimumPrice >
+      0
       ? (
-          (maximumPrice -
-            minimumPrice) /
-          minimumPrice
+          (effectiveMaximumPrice -
+            effectiveMinimumPrice) /
+          effectiveMinimumPrice
         ) *
         100
       : null;
+
+
+  const baseMinimumPrice =
+    basePrices.length >
+    0
+      ? Math.min(
+          ...basePrices,
+        )
+      : null;
+
+
+  const baseMaximumPrice =
+    basePrices.length >
+    0
+      ? Math.max(
+          ...basePrices,
+        )
+      : null;
+
+
+  const lowestEffectiveListingIds =
+    effectiveMinimumPrice ===
+    null
+      ? []
+      : comparableListings
+          .filter(
+            (listing) =>
+              Math.round(
+                listing.effectivePrice *
+                100,
+              ) ===
+              Math.round(
+                effectiveMinimumPrice *
+                100,
+              ),
+          )
+          .map(
+            (listing) =>
+              listing.listingId,
+          );
 
 
   const validHealthValues =
@@ -1022,13 +1326,31 @@ export async function getProductListings({
       ).length,
 
 
-    minimumPrice,
+    validatedPriceOffers,
 
 
-    maximumPrice,
+    pendingPriceOffers,
 
 
-    priceSpreadPercent,
+    variationPriceOffers,
+
+
+    effectiveMinimumPrice,
+
+
+    effectiveMaximumPrice,
+
+
+    effectivePriceSpreadPercent,
+
+
+    baseMinimumPrice,
+
+
+    baseMaximumPrice,
+
+
+    lowestEffectiveListingIds,
 
 
     averageHealth,
