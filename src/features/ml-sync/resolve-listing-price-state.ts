@@ -5,8 +5,10 @@ import {
   getMercadoLivreItemPromotions,
   getMercadoLivrePromotionDetails,
   getMercadoLivrePromotionOffer,
+  isMercadoLivrePromotionUnavailableForItemStatus,
   normalizeMercadoLivreItemPromotions,
   resolveMercadoLivrePromotionState,
+  type MercadoLivreItemPromotionsResponse,
   type MercadoLivreNormalizedPromotionOffer,
 } from "@/integrations/mercado-livre/promotions";
 import {
@@ -20,11 +22,22 @@ export async function resolveListingPriceState({ itemId, legacyListingPrice, acc
   legacyListingPrice: number | null;
   accessToken: string;
 }) {
-  const [pricesPayload, salePricePayload, promotionsPayload] = await Promise.all([
+  const [pricesPayload, salePricePayload] = await Promise.all([
     getMercadoLivreItemPrices({ itemId, accessToken }),
     getMercadoLivreItemSalePrice({ itemId, accessToken }),
-    getMercadoLivreItemPromotions({ itemId, accessToken }),
   ]);
+  let promotionsPayload: MercadoLivreItemPromotionsResponse = [];
+  let promotionsFetchStatus: "available" | "not_applicable" = "available";
+  let promotionsFetchError: string | null = null;
+  try {
+    promotionsPayload = await getMercadoLivreItemPromotions({ itemId, accessToken });
+  } catch (error) {
+    if (!isMercadoLivrePromotionUnavailableForItemStatus(error)) throw error;
+    promotionsFetchStatus = "not_applicable";
+    promotionsFetchError = error instanceof Error
+      ? error.message.slice(0, 500)
+      : "Promotion API not applicable";
+  }
   const normalizedSalePrice = normalizeMercadoLivreSalePrice(salePricePayload);
   const standardPrice = normalizeMercadoLivreStandardPrice({
     payload: pricesPayload,
@@ -91,6 +104,7 @@ export async function resolveListingPriceState({ itemId, legacyListingPrice, acc
     pricesPayload, standardPrice, basePriceDecision,
     salePricePayload, normalizedSalePrice,
     promotionsPayload, normalizedPromotions,
+    promotionsFetchStatus, promotionsFetchError,
     winningOffer, winningOfferPayload, winningOfferError,
     resolved, activePromotionDetails, promotionDetailsError,
   };

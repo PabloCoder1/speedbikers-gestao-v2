@@ -183,7 +183,7 @@ export async function processNextOfferRefreshJob() {
       },
       state,
       sourceSyncRunId: null,
-      refreshSource: "notification",
+      refreshSource: job.reason === "manual" ? "manual" : "notification",
       sourceRefreshJobId: job.id,
       notificationTopic: job.topic,
     });

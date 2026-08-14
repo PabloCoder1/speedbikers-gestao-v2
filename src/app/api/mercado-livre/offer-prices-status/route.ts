@@ -19,6 +19,7 @@ type PriceStateRow = {
   price_checked_at: string | null;
   has_active_promotion: boolean;
   promotion_resolution: string;
+  promotions_fetch_status: string;
 };
 type BackfillRow = {
   ml_account_id: string;
@@ -95,7 +96,7 @@ export async function GET() {
       admin
         .from("ml_offer_price_states")
         .select(
-          "ml_listing_id,base_price,effective_price,price_checked_at,has_active_promotion,promotion_resolution",
+          "ml_listing_id,base_price,effective_price,price_checked_at,has_active_promotion,promotion_resolution,promotions_fetch_status",
         )
         .eq("organization_id", access.organizationId)
         .eq("offer_scope", "listing")
@@ -139,6 +140,9 @@ export async function GET() {
     ).length;
     const priceExplanationUncertain = currentStates.filter((state) =>
       UNCERTAIN_RESOLUTIONS.has(state.promotion_resolution),
+    ).length;
+    const promotionDataNotApplicable = currentStates.filter(
+      (state) => state.promotions_fetch_status === "not_applicable",
     ).length;
 
     const { data: backfillData, error: backfillError } = await admin
@@ -191,6 +195,7 @@ export async function GET() {
         coveragePercent: coverage(priceReady, currentListings),
         activePromotions,
         priceExplanationUncertain,
+        promotionDataNotApplicable,
         readyForVisualSwitch: currentListings > 0 && missingPrice === 0,
       },
       accounts,

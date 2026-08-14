@@ -37,8 +37,18 @@ export async function POST(request: Request) {
   const input = body as Record<string, unknown>;
   const accountCode = typeof input.account === "string" ? input.account.trim() : "";
   const itemId = typeof input.item === "string" ? input.item.trim().toUpperCase() : "";
-  if (!accountCode || !/^MLB[0-9]+$/.test(itemId)) {
+  const topic = input.topic === undefined ? "items_prices" : input.topic;
+  const offerId = typeof input.offer === "string" ? input.offer.trim().toUpperCase() : "";
+  if (
+    !accountCode ||
+    !/^MLB[0-9]+$/.test(itemId) ||
+    (topic !== "items_prices" && topic !== "public_offers")
+  ) {
     return NextResponse.json({ error: "invalid_target" }, { status: 400 });
+  }
+  const offerItemId = offerId.match(/^OFFER-(MLB[0-9]+)-/)?.[1] ?? null;
+  if (topic === "public_offers" && (!offerItemId || offerItemId !== itemId)) {
+    return NextResponse.json({ error: "invalid_offer" }, { status: 400 });
   }
 
   const admin = createAdminClient();
@@ -75,8 +85,10 @@ export async function POST(request: Request) {
   const notificationTestId = `TEST-${randomUUID()}`;
   const config = getMercadoLivreConfig();
   const rawBody = JSON.stringify({
-    topic: "items_prices",
-    resource: `/items/${itemId}`,
+    topic,
+    resource: topic === "items_prices"
+      ? `/items/${itemId}`
+      : `/seller-promotions/offers/${offerId}`,
     user_id: account.seller_id,
     application_id: config.apps[account.oauth_app_code].clientId,
     _id: notificationTestId,

@@ -133,6 +133,8 @@ export async function persistListingPromotionState({
     total_price_for_boosted_offer: promotion?.totalPriceForBoostedOffer ?? null,
     promotion_started_at: promotionStartedAt, promotion_ends_at: promotionEndsAt,
     promotion_deadline_at: promotionDeadlineAt, promotion_checked_at: capturedAt,
+    promotions_fetch_status: state.promotionsFetchStatus,
+    promotions_fetch_error: state.promotionsFetchError,
     standard_price_resolution: state.standardPrice.resolution,
     standard_price_id: state.standardPrice.priceId,
     standard_price_last_updated: state.standardPrice.lastUpdated,

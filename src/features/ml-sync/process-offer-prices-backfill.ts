@@ -8,7 +8,8 @@ import { getValidMercadoLivreAccessToken } from "@/integrations/mercado-livre/ac
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const LEASE_SECONDS = 120;
-const FAIR_QUEUE_DELAY_MS = 5_000;
+const MAX_BATCHES_PER_INVOCATION = 4;
+const TIME_BUDGET_MS = 48_000;
 
 type SyncRunRow = {
   id: string; organization_id: string; ml_account_id: string;
@@ -78,6 +79,7 @@ export async function processNextOfferPricesBackfillBatch() {
   const run = data;
   const metadata = asMetadata(run.metadata);
   const refreshSource = metadata.mode === "reconcile" ? "reconcile" : "backfill";
+  const effectiveBatchSize = Math.min(Math.max(run.batch_size, 1), 8);
   const cursorListingId = typeof metadata.cursor_listing_id === "string" && metadata.cursor_listing_id.length > 0
     ? metadata.cursor_listing_id : null;
 
@@ -86,7 +88,7 @@ export async function processNextOfferPricesBackfillBatch() {
     let query = admin.from("ml_listings")
       .select("id,product_id,item_id,seller_sku,currency_id,price")
       .eq("organization_id", run.organization_id).eq("ml_account_id", run.ml_account_id)
-      .eq("is_current", true).order("id", { ascending: true }).limit(run.batch_size);
+      .eq("is_current", true).order("id", { ascending: true }).limit(effectiveBatchSize);
     if (cursorListingId) query = query.gt("id", cursorListingId);
     const { data: listingData, error: listingError } = await query.returns<ListingRow[]>();
     if (listingError) throw new Error("Não foi possível carregar o próximo lote de anúncios.");
@@ -151,13 +153,44 @@ export async function processNextOfferPricesBackfillBatch() {
       }
     }
 
+    if (failures.length > 0) {
+      const repairResults = await Promise.all(
+        failures.map(async (failure) => {
+          const listing = listings.find((candidate) => candidate.id === failure.listingId);
+          if (!listing) return null;
+          const { error: repairError } = await admin
+            .from("ml_offer_refresh_jobs")
+            .insert({
+              organization_id: run.organization_id,
+              ml_account_id: run.ml_account_id,
+              ml_listing_id: listing.id,
+              item_id: listing.item_id,
+              offer_id: null,
+              reason: "manual",
+              topic: null,
+              status: "queued",
+              attempt_count: 0,
+              max_attempts: 5,
+              next_attempt_at: new Date().toISOString(),
+            });
+          return repairError;
+        }),
+      );
+      const repairError = repairResults.find(
+        (error) => error && error.code !== "23505",
+      );
+      if (repairError) {
+        throw new Error(`Nao foi possivel enfileirar reparo do MLB: ${repairError.message}`);
+      }
+    }
+
     const existingFailureCount = metadataInteger(metadata, "failure_count");
     const newFailureCount = existingFailureCount + failures.length;
     const newOffset = run.cursor_offset + listings.length;
     const newProcessed = run.records_processed + listings.length;
     const newUpserted = run.records_upserted + successCount;
     const lastListing = listings[listings.length - 1];
-    const complete = listings.length < run.batch_size;
+    const complete = listings.length < effectiveBatchSize;
     const updatedMetadata = {
       ...metadata, cursor_listing_id: lastListing.id, failure_count: newFailureCount,
       failed_items: appendFailures(metadataFailures(metadata), failures),
@@ -184,7 +217,7 @@ export async function processNextOfferPricesBackfillBatch() {
       cursor_offset: newOffset, records_processed: newProcessed, records_upserted: newUpserted,
       retry_count: 0, error_code: null, error_message: null, metadata: updatedMetadata,
       status: "queued", lease_id: null, lease_expires_at: null,
-      next_attempt_at: new Date(Date.now() + FAIR_QUEUE_DELAY_MS).toISOString(),
+      next_attempt_at: new Date().toISOString(),
     }).eq("id", run.id).eq("lease_id", leaseId);
     if (progressError) throw new Error("O lote terminou, mas o checkpoint não pôde ser salvo.");
     return { processed: true, completed: false, syncRunId: run.id,
@@ -201,4 +234,39 @@ export async function processNextOfferPricesBackfillBatch() {
     }).eq("id", run.id).eq("lease_id", leaseId);
     throw error;
   }
+}
+
+export async function processOfferPricesBackfillBurst() {
+  const startedAt = Date.now();
+  const results: Awaited<ReturnType<typeof processNextOfferPricesBackfillBatch>>[] = [];
+  let stoppedReason: "max_batches" | "time_budget" | "queue_empty" | "retrying" =
+    "max_batches";
+
+  for (let batch = 0; batch < MAX_BATCHES_PER_INVOCATION; batch += 1) {
+    if (Date.now() - startedAt >= TIME_BUDGET_MS) {
+      stoppedReason = "time_budget";
+      break;
+    }
+
+    const result = await processNextOfferPricesBackfillBatch();
+    results.push(result);
+
+    if (!result.processed) {
+      stoppedReason = "queue_empty";
+      break;
+    }
+
+    if ("retrying" in result && result.retrying) {
+      stoppedReason = "retrying";
+      break;
+    }
+  }
+
+  return {
+    processed: results.some((result) => result.processed),
+    batchesProcessed: results.filter((result) => result.processed).length,
+    stoppedReason,
+    elapsedMs: Date.now() - startedAt,
+    results,
+  } as const;
 }

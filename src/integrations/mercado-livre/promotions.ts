@@ -21,6 +21,47 @@ export type MercadoLivreItemPromotionsResponse =
   | Record<string, unknown>[];
 
 
+export class MercadoLivrePromotionRequestError extends Error {
+  readonly status: number;
+  readonly responseMessage: string | null;
+  readonly responseCode: string | null;
+
+  constructor({
+    status,
+    responseMessage,
+    responseCode,
+    body,
+  }: {
+    status: number;
+    responseMessage: string | null;
+    responseCode: string | null;
+    body: string;
+  }) {
+    const responseDescription =
+      (responseMessage ?? responseCode ?? body.slice(0, 300)) ||
+      "Resposta sem detalhes";
+    super(`Falha ao consultar promoções. HTTP ${status}. ${responseDescription}`);
+    this.name = "MercadoLivrePromotionRequestError";
+    this.status = status;
+    this.responseMessage = responseMessage;
+    this.responseCode = responseCode;
+  }
+}
+
+
+export function isMercadoLivrePromotionUnavailableForItemStatus(
+  error: unknown,
+) {
+  return (
+    error instanceof MercadoLivrePromotionRequestError &&
+    error.status === 400 &&
+    error.responseMessage?.trim().toLowerCase().startsWith(
+      "item status is not allowed",
+    ) === true
+  );
+}
+
+
 function isJsonObject(
   value: unknown,
 ): value is Record<string, unknown> {
@@ -825,13 +866,20 @@ export async function getMercadoLivreItemPromotions({
 
     if (!response.ok) {
       const body = await response.text();
+      let errorPayload: Record<string, unknown> | null = null;
+      try {
+        const parsed: unknown = JSON.parse(body);
+        errorPayload = isJsonObject(parsed) ? parsed : null;
+      } catch {
+        errorPayload = null;
+      }
 
-
-      throw new Error(
-        `Falha ao consultar promoções de ${normalizedItemId}. HTTP ${
-          response.status
-        }. ${body.slice(0, 300)}`,
-      );
+      throw new MercadoLivrePromotionRequestError({
+        status: response.status,
+        responseMessage: errorPayload ? readString(errorPayload.message) : null,
+        responseCode: errorPayload ? readString(errorPayload.error) : null,
+        body,
+      });
     }
 
 
