@@ -1,6 +1,9 @@
 import "server-only";
 
 import { MERCADO_LIVRE_URLS } from "./constants";
+import type {
+  MercadoLivreNormalizedSalePrice,
+} from "./items";
 
 
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -349,33 +352,108 @@ function normalizePromotion(
 }
 
 
+function sameMoneyValue(
+  left: number,
+  right: number,
+) {
+  return (
+    Math.round(left * 100) ===
+    Math.round(right * 100)
+  );
+}
+
+
+function calculateDiscountPercent({
+  basePrice,
+  effectivePrice,
+}: {
+  basePrice: number | null;
+  effectivePrice: number | null;
+}) {
+  if (
+    basePrice === null ||
+    basePrice <= 0 ||
+    effectivePrice === null ||
+    effectivePrice >= basePrice
+  ) {
+    return null;
+  }
+
+  return (
+    Math.round(
+      (
+        (
+          (
+            basePrice -
+            effectivePrice
+          ) /
+          basePrice
+        ) *
+        100
+      ) *
+        100,
+    ) / 100
+  );
+}
+
+
 export function resolveMercadoLivrePromotionState({
   basePrice,
   payload,
+  salePrice = null,
 }: {
   basePrice: number | null;
-  payload: MercadoLivreItemPromotionsResponse;
+
+  payload:
+    MercadoLivreItemPromotionsResponse;
+
+  salePrice?:
+    MercadoLivreNormalizedSalePrice | null;
 }): MercadoLivreResolvedPromotionState {
-  const rawPromotions = Array.isArray(payload)
-    ? payload
-    : Array.isArray(payload.results)
-      ? payload.results.filter(isJsonObject)
-      : [payload];
+  const rawPromotions =
+    Array.isArray(payload)
+      ? payload
+      : Array.isArray(
+          payload.results,
+        )
+        ? payload.results.filter(
+            isJsonObject,
+          )
+        : [payload];
 
+  const startedPromotions =
+    rawPromotions
+      .map(
+        normalizePromotion,
+      )
+      .filter(
+        (promotion) =>
+          promotion.status ===
+          "started",
+      );
 
-  const startedPromotions = rawPromotions
-    .map(normalizePromotion)
-    .filter(
-      (promotion) =>
-        promotion.status === "started",
-    );
+  const saleAmount =
+    salePrice?.amount !== null &&
+    salePrice?.amount !== undefined &&
+    salePrice.amount > 0
+      ? salePrice.amount
+      : null;
 
+  if (
+    startedPromotions.length === 0
+  ) {
+    const effectivePrice =
+      saleAmount ??
+      basePrice;
 
-  if (startedPromotions.length === 0) {
     return {
       basePrice,
-      effectivePrice: basePrice,
-      discountPercent: null,
+      effectivePrice,
+      discountPercent:
+        calculateDiscountPercent({
+          basePrice,
+          effectivePrice,
+        }),
       hasActivePromotion: false,
       resolution: "no_active_promotion",
       activePromotion: null,
@@ -383,6 +461,110 @@ export function resolveMercadoLivrePromotionState({
     };
   }
 
+  let winningPromotion:
+    MercadoLivreNormalizedPromotion | null =
+      null;
+
+  if (
+    salePrice?.campaignId
+  ) {
+    winningPromotion =
+      startedPromotions.find(
+        (promotion) =>
+          promotion.id ===
+          salePrice.campaignId,
+      ) ??
+      null;
+  }
+
+  if (
+    !winningPromotion &&
+    salePrice?.promotionId
+  ) {
+    winningPromotion =
+      startedPromotions.find(
+        (promotion) =>
+          promotion.refId ===
+            salePrice.promotionId ||
+          promotion.id ===
+            salePrice.promotionId,
+      ) ??
+      null;
+  }
+
+  if (
+    !winningPromotion &&
+    saleAmount !== null
+  ) {
+    const priceMatches =
+      startedPromotions.filter(
+        (promotion) =>
+          promotion.effectivePrice !== null &&
+          sameMoneyValue(
+            promotion.effectivePrice,
+            saleAmount,
+          ),
+      );
+
+    if (
+      priceMatches.length === 1
+    ) {
+      winningPromotion =
+        priceMatches[0];
+    }
+  }
+
+  if (
+    !winningPromotion &&
+    startedPromotions.length === 1
+  ) {
+    winningPromotion =
+      startedPromotions[0];
+  }
+
+  if (winningPromotion) {
+    const effectivePrice =
+      saleAmount ??
+      winningPromotion.effectivePrice;
+
+    return {
+      basePrice,
+      effectivePrice,
+      discountPercent:
+        calculateDiscountPercent({
+          basePrice,
+          effectivePrice,
+        }),
+      hasActivePromotion: true,
+      resolution:
+        effectivePrice === null
+          ? "active_promotion_without_price"
+          : "active_promotion",
+      activePromotion: winningPromotion,
+      activePromotionCount:
+        startedPromotions.length,
+    };
+  }
+
+  if (
+    saleAmount !== null
+  ) {
+    return {
+      basePrice,
+      effectivePrice: saleAmount,
+      discountPercent:
+        calculateDiscountPercent({
+          basePrice,
+          effectivePrice: saleAmount,
+        }),
+      hasActivePromotion: true,
+      resolution:
+        "ambiguous_multiple_active_prices",
+      activePromotion: null,
+      activePromotionCount:
+        startedPromotions.length,
+    };
+  }
 
   const promotionsWithPrice =
     startedPromotions.filter(
@@ -396,20 +578,21 @@ export function resolveMercadoLivrePromotionState({
         promotion.effectivePrice > 0,
     );
 
-
-  if (promotionsWithPrice.length === 0) {
+  if (
+    promotionsWithPrice.length === 0
+  ) {
     return {
       basePrice,
       effectivePrice: null,
       discountPercent: null,
       hasActivePromotion: true,
-      resolution: "active_promotion_without_price",
+      resolution:
+        "active_promotion_without_price",
       activePromotion: null,
       activePromotionCount:
         startedPromotions.length,
     };
   }
-
 
   const uniquePrices =
     Array.from(
@@ -421,8 +604,9 @@ export function resolveMercadoLivrePromotionState({
       ),
     );
 
-
-  if (uniquePrices.length > 1) {
+  if (
+    uniquePrices.length > 1
+  ) {
     return {
       basePrice,
       effectivePrice: null,
@@ -436,32 +620,20 @@ export function resolveMercadoLivrePromotionState({
     };
   }
 
-
   const activePromotion =
     promotionsWithPrice[0];
-
 
   const effectivePrice =
     activePromotion.effectivePrice;
 
-
-  const discountPercent =
-    basePrice !== null &&
-    basePrice > 0 &&
-    effectivePrice < basePrice
-      ? Math.round(
-          (((basePrice - effectivePrice) /
-            basePrice) *
-            100) *
-            100,
-        ) / 100
-      : null;
-
-
   return {
     basePrice,
     effectivePrice,
-    discountPercent,
+    discountPercent:
+      calculateDiscountPercent({
+        basePrice,
+        effectivePrice,
+      }),
     hasActivePromotion: true,
     resolution: "active_promotion",
     activePromotion,

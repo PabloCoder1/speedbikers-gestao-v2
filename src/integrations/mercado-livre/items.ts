@@ -8,6 +8,126 @@ export type MercadoLivreJsonObject =
 export type MercadoLivreSalePriceResponse =
     Record<string, unknown>;
 
+export type MercadoLivreNormalizedSalePrice = {
+    priceId: string | null;
+
+    amount: number | null;
+    regularAmount: number | null;
+
+    currencyId: string | null;
+    referenceDate: string | null;
+
+    campaignId: string | null;
+    promotionId: string | null;
+    promotionType: string | null;
+};
+
+function isSalePriceObject(
+    value: unknown,
+): value is Record<string, unknown> {
+    return (
+        typeof value === "object" &&
+        value !== null &&
+        !Array.isArray(value)
+    );
+}
+
+
+function readSalePriceString(
+    value: unknown,
+): string | null {
+    return typeof value === "string"
+        ? value
+        : null;
+}
+
+
+function readSalePriceNumber(
+    value: unknown,
+): number | null {
+    if (
+        typeof value === "number" &&
+        Number.isFinite(value)
+    ) {
+        return value;
+    }
+
+    if (
+        typeof value === "string" &&
+        value.trim()
+    ) {
+        const parsed =
+            Number(value);
+
+        return Number.isFinite(parsed)
+            ? parsed
+            : null;
+    }
+
+    return null;
+}
+
+
+export function normalizeMercadoLivreSalePrice(
+    payload:
+        MercadoLivreSalePriceResponse,
+): MercadoLivreNormalizedSalePrice {
+    const metadata =
+        isSalePriceObject(
+            payload.metadata,
+        )
+            ? payload.metadata
+            : null;
+
+    return {
+        priceId:
+            readSalePriceString(
+                payload.price_id,
+            ),
+
+        amount:
+            readSalePriceNumber(
+                payload.amount,
+            ),
+
+        regularAmount:
+            readSalePriceNumber(
+                payload.regular_amount,
+            ),
+
+        currencyId:
+            readSalePriceString(
+                payload.currency_id,
+            ),
+
+        referenceDate:
+            readSalePriceString(
+                payload.reference_date,
+            ),
+
+        campaignId:
+            metadata
+                ? readSalePriceString(
+                    metadata.campaign_id,
+                )
+                : null,
+
+        promotionId:
+            metadata
+                ? readSalePriceString(
+                    metadata.promotion_id,
+                )
+                : null,
+
+        promotionType:
+            metadata
+                ? readSalePriceString(
+                    metadata.promotion_type,
+                )
+                : null,
+    };
+}
+
 type SellerItemsSearchResponse = {
     seller_id?: unknown;
     results?: unknown;

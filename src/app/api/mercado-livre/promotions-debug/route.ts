@@ -11,6 +11,7 @@ import { getValidMercadoLivreAccessToken } from "@/integrations/mercado-livre/ac
 import { getMercadoLivreCurrentUser } from "@/integrations/mercado-livre/users";
 import {
   getMercadoLivreItemSalePrice,
+  normalizeMercadoLivreSalePrice,
 } from "@/integrations/mercado-livre/items";
 import {
   getMercadoLivreItemPromotions,
@@ -296,6 +297,12 @@ async function handlePromotionsDebug(
       });
 
 
+    const normalizedSalePrice =
+      normalizeMercadoLivreSalePrice(
+        salePrice,
+      );
+
+
     const promotions =
       await getMercadoLivreItemPromotions({
         itemId: rawItemId,
@@ -324,8 +331,12 @@ async function handlePromotionsDebug(
     const resolved =
       resolveMercadoLivrePromotionState({
         basePrice,
+
         payload:
           promotions,
+
+        salePrice:
+          normalizedSalePrice,
       });
 
 
@@ -418,6 +429,9 @@ async function handlePromotionsDebug(
 
 
       salePrice,
+
+
+      normalizedSalePrice,
 
 
       promotions,
