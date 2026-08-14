@@ -5,6 +5,9 @@ import { MERCADO_LIVRE_URLS } from "@/integrations/mercado-livre/constants";
 export type MercadoLivreJsonObject =
     Record<string, unknown>;
 
+export type MercadoLivreSalePriceResponse =
+    Record<string, unknown>;
+
 type SellerItemsSearchResponse = {
     seller_id?: unknown;
     results?: unknown;
@@ -249,6 +252,88 @@ export async function getMercadoLivreItem({
 
     return payload as
         MercadoLivreJsonObject;
+}
+
+
+export async function getMercadoLivreItemSalePrice({
+    itemId,
+    accessToken,
+}: {
+    itemId: string;
+    accessToken: string;
+}): Promise<MercadoLivreSalePriceResponse> {
+    const normalizedItemId =
+        itemId.trim();
+
+    if (!normalizedItemId) {
+        throw new Error(
+            "Item Mercado Livre é obrigatório para consultar sale_price.",
+        );
+    }
+
+    if (!accessToken) {
+        throw new Error(
+            "Access token Mercado Livre é obrigatório para consultar sale_price.",
+        );
+    }
+
+    const url =
+        new URL(
+            `${MERCADO_LIVRE_URLS.api}/items/${encodeURIComponent(
+                normalizedItemId,
+            )}/sale_price`,
+        );
+
+    url.searchParams.set(
+        "context",
+        "channel_marketplace",
+    );
+
+    const response =
+        await fetch(
+            url,
+            {
+                method: "GET",
+
+                headers: {
+                    Authorization:
+                        `Bearer ${accessToken}`,
+
+                    Accept:
+                        "application/json",
+                },
+
+                cache:
+                    "no-store",
+            },
+        );
+
+    if (!response.ok) {
+        const body =
+            await response.text();
+
+        throw new Error(
+            `Falha ao consultar sale_price de ${normalizedItemId}. HTTP ${
+                response.status
+            }. ${body.slice(0, 300)}`,
+        );
+    }
+
+    const payload: unknown =
+        await response.json();
+
+    if (
+        !payload ||
+        typeof payload !== "object" ||
+        Array.isArray(payload)
+    ) {
+        throw new Error(
+            `Resposta inválida de sale_price para ${normalizedItemId}.`,
+        );
+    }
+
+    return payload as
+        MercadoLivreSalePriceResponse;
 }
 
 

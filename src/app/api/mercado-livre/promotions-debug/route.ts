@@ -10,6 +10,9 @@ import {
 import { getValidMercadoLivreAccessToken } from "@/integrations/mercado-livre/access-token";
 import { getMercadoLivreCurrentUser } from "@/integrations/mercado-livre/users";
 import {
+  getMercadoLivreItemSalePrice,
+} from "@/integrations/mercado-livre/items";
+import {
   getMercadoLivreItemPromotions,
   getMercadoLivrePromotionDetails,
   resolveMercadoLivrePromotionState,
@@ -283,6 +286,16 @@ async function handlePromotionsDebug(
     }
 
 
+    const salePrice =
+      await getMercadoLivreItemSalePrice({
+        itemId:
+          rawItemId,
+
+        accessToken:
+          validToken.accessToken,
+      });
+
+
     const promotions =
       await getMercadoLivreItemPromotions({
         itemId: rawItemId,
@@ -402,6 +415,9 @@ async function handlePromotionsDebug(
           listing.price,
         status: listing.status,
       },
+
+
+      salePrice,
 
 
       promotions,
