@@ -105,11 +105,34 @@ export type MercadoLivreResolvedPromotionState = {
     | "no_active_promotion"
     | "active_promotion_without_price"
     | "ambiguous_multiple_active_prices"
-    | "active_promotion";
+    | "active_promotion"
+    | "sale_price_promotion_unmatched"
+    | "started_promotion_not_winning";
+  effectivePriceSource:
+    | "sale_price"
+    | "promotion_fallback"
+    | "base_price_fallback"
+    | "unresolved";
+  promotionMatchMethod:
+    | "none"
+    | "campaign_id"
+    | "offer_lookup"
+    | "promotion_ref_id"
+    | "price_match"
+    | "single_started";
+  salePriceHasPromotionSignal: boolean;
   activePromotion:
     | MercadoLivreNormalizedPromotion
     | null;
   activePromotionCount: number;
+};
+
+export type MercadoLivreNormalizedPromotionOffer = {
+  id: string | null;
+  itemId: string | null;
+  promotionId: string | null;
+  type: string | null;
+  status: string | null;
 };
 
 
@@ -352,6 +375,18 @@ function normalizePromotion(
 }
 
 
+export function normalizeMercadoLivreItemPromotions(
+  payload: MercadoLivreItemPromotionsResponse,
+) {
+  const rawPromotions = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload.results)
+      ? payload.results.filter(isJsonObject)
+      : [payload];
+  return rawPromotions.map(normalizePromotion);
+}
+
+
 function sameMoneyValue(
   left: number,
   right: number,
@@ -401,6 +436,7 @@ export function resolveMercadoLivrePromotionState({
   basePrice,
   payload,
   salePrice = null,
+  winningOffer = null,
 }: {
   basePrice: number | null;
 
@@ -409,23 +445,11 @@ export function resolveMercadoLivrePromotionState({
 
   salePrice?:
     MercadoLivreNormalizedSalePrice | null;
+  winningOffer?:
+    MercadoLivreNormalizedPromotionOffer | null;
 }): MercadoLivreResolvedPromotionState {
-  const rawPromotions =
-    Array.isArray(payload)
-      ? payload
-      : Array.isArray(
-          payload.results,
-        )
-        ? payload.results.filter(
-            isJsonObject,
-          )
-        : [payload];
-
   const startedPromotions =
-    rawPromotions
-      .map(
-        normalizePromotion,
-      )
+    normalizeMercadoLivreItemPromotions(payload)
       .filter(
         (promotion) =>
           promotion.status ===
@@ -438,6 +462,13 @@ export function resolveMercadoLivrePromotionState({
     salePrice.amount > 0
       ? salePrice.amount
       : null;
+
+  const salePriceHasPromotionSignal = Boolean(
+    salePrice?.campaignId ||
+    salePrice?.promotionId ||
+    (salePrice?.regularAmount !== null && salePrice?.regularAmount !== undefined && saleAmount !== null && saleAmount < salePrice.regularAmount) ||
+    (basePrice !== null && saleAmount !== null && saleAmount < basePrice),
+  );
 
   if (
     startedPromotions.length === 0
@@ -454,8 +485,17 @@ export function resolveMercadoLivrePromotionState({
           basePrice,
           effectivePrice,
         }),
-      hasActivePromotion: false,
-      resolution: "no_active_promotion",
+      hasActivePromotion:
+        salePriceHasPromotionSignal,
+      resolution:
+        salePriceHasPromotionSignal
+          ? effectivePrice === null
+            ? "active_promotion_without_price"
+            : "sale_price_promotion_unmatched"
+          : "no_active_promotion",
+      effectivePriceSource: saleAmount !== null ? "sale_price" : basePrice !== null ? "base_price_fallback" : "unresolved",
+      promotionMatchMethod: "none",
+      salePriceHasPromotionSignal,
       activePromotion: null,
       activePromotionCount: 0,
     };
@@ -464,6 +504,7 @@ export function resolveMercadoLivrePromotionState({
   let winningPromotion:
     MercadoLivreNormalizedPromotion | null =
       null;
+  let promotionMatchMethod: MercadoLivreResolvedPromotionState["promotionMatchMethod"] = "none";
 
   if (
     salePrice?.campaignId
@@ -475,6 +516,7 @@ export function resolveMercadoLivrePromotionState({
           salePrice.campaignId,
       ) ??
       null;
+    if (winningPromotion) promotionMatchMethod = "campaign_id";
   }
 
   if (
@@ -490,6 +532,14 @@ export function resolveMercadoLivrePromotionState({
             salePrice.promotionId,
       ) ??
       null;
+    if (winningPromotion) promotionMatchMethod = "promotion_ref_id";
+  }
+
+  if (!winningPromotion && winningOffer?.promotionId) {
+    winningPromotion = startedPromotions.find(
+      (promotion) => promotion.id === winningOffer.promotionId || promotion.refId === winningOffer.promotionId,
+    ) ?? null;
+    if (winningPromotion) promotionMatchMethod = "offer_lookup";
   }
 
   if (
@@ -511,15 +561,18 @@ export function resolveMercadoLivrePromotionState({
     ) {
       winningPromotion =
         priceMatches[0];
+      promotionMatchMethod = "price_match";
     }
   }
 
   if (
     !winningPromotion &&
-    startedPromotions.length === 1
+    startedPromotions.length === 1 &&
+    (salePriceHasPromotionSignal || saleAmount === null)
   ) {
     winningPromotion =
       startedPromotions[0];
+    promotionMatchMethod = "single_started";
   }
 
   if (winningPromotion) {
@@ -540,6 +593,9 @@ export function resolveMercadoLivrePromotionState({
         effectivePrice === null
           ? "active_promotion_without_price"
           : "active_promotion",
+      effectivePriceSource: saleAmount !== null ? "sale_price" : effectivePrice !== null ? "promotion_fallback" : "unresolved",
+      promotionMatchMethod,
+      salePriceHasPromotionSignal,
       activePromotion: winningPromotion,
       activePromotionCount:
         startedPromotions.length,
@@ -547,7 +603,7 @@ export function resolveMercadoLivrePromotionState({
   }
 
   if (
-    saleAmount !== null
+    salePriceHasPromotionSignal
   ) {
     return {
       basePrice,
@@ -558,11 +614,28 @@ export function resolveMercadoLivrePromotionState({
           effectivePrice: saleAmount,
         }),
       hasActivePromotion: true,
-      resolution:
-        "ambiguous_multiple_active_prices",
+      resolution: saleAmount === null ? "active_promotion_without_price" : "sale_price_promotion_unmatched",
+      effectivePriceSource: saleAmount !== null ? "sale_price" : "unresolved",
+      promotionMatchMethod: "none",
+      salePriceHasPromotionSignal,
       activePromotion: null,
       activePromotionCount:
         startedPromotions.length,
+    };
+  }
+
+  if (saleAmount !== null) {
+    return {
+      basePrice,
+      effectivePrice: saleAmount,
+      discountPercent: calculateDiscountPercent({ basePrice, effectivePrice: saleAmount }),
+      hasActivePromotion: false,
+      resolution: "started_promotion_not_winning",
+      effectivePriceSource: "sale_price",
+      promotionMatchMethod: "none",
+      salePriceHasPromotionSignal,
+      activePromotion: null,
+      activePromotionCount: startedPromotions.length,
     };
   }
 
@@ -588,6 +661,9 @@ export function resolveMercadoLivrePromotionState({
       hasActivePromotion: true,
       resolution:
         "active_promotion_without_price",
+      effectivePriceSource: "unresolved",
+      promotionMatchMethod: "none",
+      salePriceHasPromotionSignal,
       activePromotion: null,
       activePromotionCount:
         startedPromotions.length,
@@ -614,6 +690,9 @@ export function resolveMercadoLivrePromotionState({
       hasActivePromotion: true,
       resolution:
         "ambiguous_multiple_active_prices",
+      effectivePriceSource: "unresolved",
+      promotionMatchMethod: "none",
+      salePriceHasPromotionSignal,
       activePromotion: null,
       activePromotionCount:
         startedPromotions.length,
@@ -636,6 +715,9 @@ export function resolveMercadoLivrePromotionState({
       }),
     hasActivePromotion: true,
     resolution: "active_promotion",
+    effectivePriceSource: "promotion_fallback",
+    promotionMatchMethod: "price_match",
+    salePriceHasPromotionSignal,
     activePromotion,
     activePromotionCount:
       startedPromotions.length,
@@ -750,6 +832,63 @@ export async function getMercadoLivreItemPromotions({
 
 export type MercadoLivrePromotionDetailsResponse =
   Record<string, unknown>;
+
+function readPromotionOfferStatus(
+  value: unknown,
+): string | null {
+  if (typeof value === "string") return value.toLowerCase();
+  if (isJsonObject(value)) {
+    const id = readString(value.id);
+    return id ? id.toLowerCase() : null;
+  }
+  return null;
+}
+
+export async function getMercadoLivrePromotionOffer({
+  offerId,
+  accessToken,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+}: {
+  offerId: string;
+  accessToken: string;
+  timeoutMs?: number;
+}): Promise<{
+  raw: Record<string, unknown>;
+  normalized: MercadoLivreNormalizedPromotionOffer;
+}> {
+  const normalizedOfferId = offerId.trim();
+  if (!normalizedOfferId) throw new Error("Offer ID Mercado Livre é obrigatório.");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const url = new URL(`${MERCADO_LIVRE_URLS.api}/seller-promotions/offers/${encodeURIComponent(normalizedOfferId)}`);
+    url.searchParams.set("app_version", "v2");
+    const response = await fetch(url, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`Falha ao consultar offer ${normalizedOfferId}. HTTP ${response.status}. ${body.slice(0, 300)}`);
+    }
+    const payload: unknown = await response.json();
+    if (!isJsonObject(payload)) throw new Error(`Resposta inválida para offer ${normalizedOfferId}.`);
+    return {
+      raw: payload,
+      normalized: {
+        id: readString(payload.id),
+        itemId: readString(payload.item_id),
+        promotionId: readString(payload.promotion_id),
+        type: readString(payload.type),
+        status: readPromotionOfferStatus(payload.status),
+      },
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 
 export async function getMercadoLivrePromotionDetails({

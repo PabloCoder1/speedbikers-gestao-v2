@@ -20,6 +20,7 @@ export type MercadoLivreNormalizedSalePrice = {
     campaignId: string | null;
     promotionId: string | null;
     promotionType: string | null;
+    isPricePerQuantity: boolean | null;
 };
 
 function isSalePriceObject(
@@ -65,6 +66,14 @@ function readSalePriceNumber(
     }
 
     return null;
+}
+
+function readSalePriceBoolean(
+    value: unknown,
+): boolean | null {
+    return typeof value === "boolean"
+        ? value
+        : null;
 }
 
 
@@ -123,6 +132,13 @@ export function normalizeMercadoLivreSalePrice(
             metadata
                 ? readSalePriceString(
                     metadata.promotion_type,
+                )
+                : null,
+
+        isPricePerQuantity:
+            metadata
+                ? readSalePriceBoolean(
+                    metadata.is_price_per_quantity,
                 )
                 : null,
     };
