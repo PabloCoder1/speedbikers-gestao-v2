@@ -11,6 +11,7 @@ import { getValidMercadoLivreAccessToken } from "@/integrations/mercado-livre/ac
 import { getMercadoLivreCurrentUser } from "@/integrations/mercado-livre/users";
 import {
   getMercadoLivreItemPromotions,
+  getMercadoLivrePromotionDetails,
   resolveMercadoLivrePromotionState,
 } from "@/integrations/mercado-livre/promotions";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -276,6 +277,24 @@ export async function GET(
       });
 
 
+    const activePromotionDetails =
+      resolved.activePromotion?.id &&
+      resolved.activePromotion.type
+        ? await getMercadoLivrePromotionDetails({
+            promotionId:
+              resolved.activePromotion.id,
+
+
+            promotionType:
+              resolved.activePromotion.type,
+
+
+            accessToken:
+              validToken.accessToken,
+          })
+        : null;
+
+
     return NextResponse.json({
       ok: true,
 
@@ -306,6 +325,9 @@ export async function GET(
 
 
       resolved,
+
+
+      activePromotionDetails,
     });
   } catch (error) {
     console.error(

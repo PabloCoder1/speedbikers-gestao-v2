@@ -32,10 +32,16 @@ function isJsonObject(
 export type MercadoLivreNormalizedPromotion = {
   id: string | null;
   type: string | null;
+  subType: string | null;
+  refId: string | null;
   status: string | null;
   price: number | null;
+  originalPrice: number | null;
+  sellerPercentage: number | null;
+  meliPercentage: number | null;
   startDate: string | null;
   finishDate: string | null;
+  name: string | null;
 };
 
 
@@ -139,14 +145,79 @@ function normalizePromotion(
   promotion: Record<string, unknown>,
 ): MercadoLivreNormalizedPromotion {
   return {
-    id: readString(promotion.id),
-    type: readString(promotion.type),
-    status: readString(promotion.status),
-    price: getPromotionPrice(promotion),
+    id:
+      readString(
+        promotion.id,
+      ),
+
+
+    type:
+      readString(
+        promotion.type,
+      ),
+
+
+    subType:
+      readString(
+        promotion.sub_type,
+      ),
+
+
+    refId:
+      readString(
+        promotion.ref_id,
+      ),
+
+
+    status:
+      readString(
+        promotion.status,
+      ),
+
+
+    price:
+      getPromotionPrice(
+        promotion,
+      ),
+
+
+    originalPrice:
+      readFiniteNumber(
+        promotion.original_price,
+      ),
+
+
+    sellerPercentage:
+      readFiniteNumber(
+        promotion.seller_percentage,
+      ),
+
+
+    meliPercentage:
+      readFiniteNumber(
+        promotion.meli_percentage,
+      ),
+
+
     startDate:
-      readString(promotion.start_date),
+      readString(
+        promotion.start_date,
+      ),
+
+
     finishDate:
-      readString(promotion.finish_date),
+      readString(
+        promotion.finish_date,
+      ) ??
+      readString(
+        promotion.end_date,
+      ),
+
+
+    name:
+      readString(
+        promotion.name,
+      ),
   };
 }
 
@@ -362,6 +433,149 @@ export async function getMercadoLivreItemPromotions({
     ) {
       throw new Error(
         `REQUEST_TIMEOUT: consulta de promoções de ${normalizedItemId} excedeu ${timeoutMs}ms.`,
+      );
+    }
+
+
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+
+export type MercadoLivrePromotionDetailsResponse =
+  Record<string, unknown>;
+
+
+export async function getMercadoLivrePromotionDetails({
+  promotionId,
+  promotionType,
+  accessToken,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+}: {
+  promotionId: string;
+  promotionType: string;
+  accessToken: string;
+  timeoutMs?: number;
+}): Promise<MercadoLivrePromotionDetailsResponse> {
+  const normalizedPromotionId =
+    promotionId.trim();
+
+
+  const normalizedPromotionType =
+    promotionType.trim();
+
+
+  if (!normalizedPromotionId) {
+    throw new Error(
+      "Promoção Mercado Livre é obrigatória para consultar detalhes.",
+    );
+  }
+
+
+  if (!normalizedPromotionType) {
+    throw new Error(
+      "Tipo da promoção Mercado Livre é obrigatório para consultar detalhes.",
+    );
+  }
+
+
+  if (!accessToken) {
+    throw new Error(
+      "Access token Mercado Livre é obrigatório para consultar a promoção.",
+    );
+  }
+
+
+  const controller =
+    new AbortController();
+
+
+  const timeout =
+    setTimeout(() => {
+      controller.abort();
+    }, timeoutMs);
+
+
+  try {
+    const url = new URL(
+      `${MERCADO_LIVRE_URLS.api}/seller-promotions/promotions/${encodeURIComponent(
+        normalizedPromotionId,
+      )}`,
+    );
+
+
+    url.searchParams.set(
+      "promotion_type",
+      normalizedPromotionType,
+    );
+
+
+    url.searchParams.set(
+      "app_version",
+      "v2",
+    );
+
+
+    const response =
+      await fetch(
+        url,
+        {
+          method: "GET",
+
+
+          headers: {
+            Authorization:
+              `Bearer ${accessToken}`,
+
+
+            Accept:
+              "application/json",
+          },
+
+
+          cache: "no-store",
+
+
+          signal:
+            controller.signal,
+        },
+      );
+
+
+    if (!response.ok) {
+      const body =
+        await response.text();
+
+
+      throw new Error(
+        `Falha ao consultar detalhes da promoção ${normalizedPromotionId}. HTTP ${
+          response.status
+        }. ${body.slice(0, 300)}`,
+      );
+    }
+
+
+    const payload: unknown =
+      await response.json();
+
+
+    if (!isJsonObject(payload)) {
+      throw new Error(
+        `Resposta inválida ao consultar detalhes da promoção ${normalizedPromotionId}.`,
+      );
+    }
+
+
+    return payload;
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.name === "AbortError"
+    ) {
+      throw new Error(
+        `REQUEST_TIMEOUT: consulta da promoção ${normalizedPromotionId} excedeu ${timeoutMs}ms.`,
       );
     }
 
