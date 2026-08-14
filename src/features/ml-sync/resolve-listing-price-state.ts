@@ -42,9 +42,24 @@ export async function resolveListingPriceState({ itemId, legacyListingPrice, acc
     salePrice: normalizedSalePrice,
   });
 
-  if (!resolved.activePromotion && normalizedSalePrice.promotionId?.startsWith("OFFER-")) {
+  const promotionOfferId =
+    normalizedSalePrice.promotionId;
+  const shouldResolveWinningOffer =
+    promotionOfferId?.startsWith("OFFER-") === true &&
+    (
+      !resolved.activePromotion ||
+      resolved.promotionMatchMethod === "price_match" ||
+      resolved.promotionMatchMethod === "single_started"
+    );
+
+  if (shouldResolveWinningOffer && promotionOfferId) {
     try {
-      const offer = await getMercadoLivrePromotionOffer({ offerId: normalizedSalePrice.promotionId, accessToken });
+      const offer = await getMercadoLivrePromotionOffer({ offerId: promotionOfferId, accessToken });
+      if (offer.normalized.itemId && offer.normalized.itemId !== itemId) {
+        throw new Error(
+          `OFFER_ITEM_MISMATCH: ${offer.normalized.id ?? promotionOfferId} pertence a ${offer.normalized.itemId}, não a ${itemId}.`,
+        );
+      }
       winningOffer = offer.normalized;
       winningOfferPayload = offer.raw;
       resolved = resolveMercadoLivrePromotionState({

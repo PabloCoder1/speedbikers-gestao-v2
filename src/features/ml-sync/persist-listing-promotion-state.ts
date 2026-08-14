@@ -21,6 +21,17 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function readString(value: unknown) { return typeof value === "string" ? value : null; }
+function readNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+function sameMoneyValue(left: number, right: number) {
+  return Math.round(left * 100) === Math.round(right * 100);
+}
 function normalizeDate(value: string | null) {
   if (!value) return null;
   const timestamp = Date.parse(value);
@@ -53,12 +64,33 @@ export async function persistListingPromotionState({
   const admin = createAdminClient();
   const promotion = state.resolved.activePromotion;
   const capturedAt = new Date().toISOString();
-  const activePromotionPayload = promotion
-    ? promotionRows(state.promotionsPayload).find((row) =>
-        readString(row.status) === "started" &&
-        (!promotion.id || readString(row.id) === promotion.id) &&
-        (!promotion.type || readString(row.type) === promotion.type)) ?? null
-    : null;
+  const promotionPayloadRows = promotionRows(state.promotionsPayload);
+  let activePromotionPayload: Record<string, unknown> | null = null;
+  if (promotion) {
+    activePromotionPayload = promotionPayloadRows.find((row) => {
+      const rowId = readString(row.id);
+      const rowRefId = readString(row.ref_id);
+      return readString(row.status) === "started" &&
+        (!promotion.type || readString(row.type) === promotion.type) &&
+        ((promotion.id !== null && rowId === promotion.id) ||
+          (promotion.refId !== null && rowRefId === promotion.refId));
+    }) ?? null;
+
+    if (!activePromotionPayload && promotion.type) {
+      const candidates = promotionPayloadRows.filter((row) =>
+        readString(row.status) === "started" && readString(row.type) === promotion.type,
+      );
+      const expectedPrice = promotion.effectivePrice ?? promotion.price;
+      if (expectedPrice !== null) {
+        const priceMatches = candidates.filter((row) => {
+          const rowPrice = readNumber(row.price);
+          return rowPrice !== null && sameMoneyValue(rowPrice, expectedPrice);
+        });
+        if (priceMatches.length === 1) activePromotionPayload = priceMatches[0];
+      }
+      if (!activePromotionPayload && candidates.length === 1) activePromotionPayload = candidates[0];
+    }
+  }
   const details = state.activePromotionDetails;
   const promotionStartedAt = detailsDate(details, ["start_date", "startDate"]) ?? normalizeDate(promotion?.startDate ?? null);
   const promotionEndsAt = detailsDate(details, ["finish_date", "end_date", "finishDate", "endDate"]) ?? normalizeDate(promotion?.finishDate ?? null);

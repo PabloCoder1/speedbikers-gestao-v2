@@ -2,6 +2,9 @@ import "server-only";
 
 import { MERCADO_LIVRE_URLS } from "@/integrations/mercado-livre/constants";
 
+const SALE_PRICE_TIMEOUT_MS =
+    15_000;
+
 export type MercadoLivreJsonObject =
     Record<string, unknown>;
 
@@ -394,9 +397,12 @@ export async function getMercadoLivreItem({
 export async function getMercadoLivreItemSalePrice({
     itemId,
     accessToken,
+    timeoutMs =
+        SALE_PRICE_TIMEOUT_MS,
 }: {
     itemId: string;
     accessToken: string;
+    timeoutMs?: number;
 }): Promise<MercadoLivreSalePriceResponse> {
     const normalizedItemId =
         itemId.trim();
@@ -425,51 +431,55 @@ export async function getMercadoLivreItemSalePrice({
         "channel_marketplace",
     );
 
-    const response =
-        await fetch(
-            url,
-            {
-                method: "GET",
-
-                headers: {
-                    Authorization:
-                        `Bearer ${accessToken}`,
-
-                    Accept:
-                        "application/json",
-                },
-
-                cache:
-                    "no-store",
+    const controller =
+        new AbortController();
+    const timeout =
+        setTimeout(
+            () => {
+                controller.abort();
             },
+            timeoutMs,
         );
 
-    if (!response.ok) {
-        const body =
-            await response.text();
-
-        throw new Error(
-            `Falha ao consultar sale_price de ${normalizedItemId}. HTTP ${
-                response.status
-            }. ${body.slice(0, 300)}`,
-        );
+    try {
+        const response =
+            await fetch(
+                url,
+                {
+                    method: "GET",
+                    headers: {
+                        Authorization:
+                            `Bearer ${accessToken}`,
+                        Accept:
+                            "application/json",
+                    },
+                    cache:
+                        "no-store",
+                    signal:
+                        controller.signal,
+                },
+            );
+        if (!response.ok) {
+            const body =
+                await response.text();
+            throw new Error(
+                `Falha ao consultar sale_price de ${normalizedItemId}. HTTP ${response.status}. ${body.slice(0, 300)}`,
+            );
+        }
+        const payload: unknown =
+            await response.json();
+        if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+            throw new Error(`Resposta inválida de sale_price para ${normalizedItemId}.`);
+        }
+        return payload as MercadoLivreSalePriceResponse;
+    } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+            throw new Error(`REQUEST_TIMEOUT: sale_price de ${normalizedItemId} excedeu ${timeoutMs}ms.`);
+        }
+        throw error;
+    } finally {
+        clearTimeout(timeout);
     }
-
-    const payload: unknown =
-        await response.json();
-
-    if (
-        !payload ||
-        typeof payload !== "object" ||
-        Array.isArray(payload)
-    ) {
-        throw new Error(
-            `Resposta inválida de sale_price para ${normalizedItemId}.`,
-        );
-    }
-
-    return payload as
-        MercadoLivreSalePriceResponse;
 }
 
 

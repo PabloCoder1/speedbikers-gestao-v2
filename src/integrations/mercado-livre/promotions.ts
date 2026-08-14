@@ -397,6 +397,21 @@ function sameMoneyValue(
   );
 }
 
+function enrichPromotionFromOffer({
+  promotion,
+  winningOffer,
+}: {
+  promotion: MercadoLivreNormalizedPromotion;
+  winningOffer: MercadoLivreNormalizedPromotionOffer;
+}): MercadoLivreNormalizedPromotion {
+  return {
+    ...promotion,
+    id: promotion.id ?? winningOffer.promotionId,
+    type: promotion.type ?? winningOffer.type,
+    refId: promotion.refId ?? winningOffer.id,
+  };
+}
+
 
 function calculateDiscountPercent({
   basePrice,
@@ -535,11 +550,26 @@ export function resolveMercadoLivrePromotionState({
     if (winningPromotion) promotionMatchMethod = "promotion_ref_id";
   }
 
-  if (!winningPromotion && winningOffer?.promotionId) {
-    winningPromotion = startedPromotions.find(
-      (promotion) => promotion.id === winningOffer.promotionId || promotion.refId === winningOffer.promotionId,
-    ) ?? null;
-    if (winningPromotion) promotionMatchMethod = "offer_lookup";
+  if (!winningPromotion && winningOffer) {
+    const promotionIdMatch = winningOffer.promotionId
+      ? startedPromotions.find(
+          (promotion) => promotion.id === winningOffer.promotionId || promotion.refId === winningOffer.promotionId,
+        ) ?? null
+      : null;
+    if (promotionIdMatch) {
+      winningPromotion = enrichPromotionFromOffer({ promotion: promotionIdMatch, winningOffer });
+      promotionMatchMethod = "offer_lookup";
+    }
+  }
+
+  if (!winningPromotion && winningOffer?.type) {
+    const typeMatches = startedPromotions.filter(
+      (promotion) => promotion.type === winningOffer.type,
+    );
+    if (typeMatches.length === 1) {
+      winningPromotion = enrichPromotionFromOffer({ promotion: typeMatches[0], winningOffer });
+      promotionMatchMethod = "offer_lookup";
+    }
   }
 
   if (
