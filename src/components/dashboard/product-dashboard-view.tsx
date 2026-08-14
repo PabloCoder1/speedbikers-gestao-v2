@@ -12,6 +12,10 @@ import {
   ProductListingsPanel,
 } from "@/components/dashboard/product-listings-panel";
 
+import {
+  ProductOfferHistoryPanel,
+} from "@/components/dashboard/product-offer-history-panel";
+
 import type {
   getProductDashboard,
 } from "@/features/dashboard/get-product-dashboard";
@@ -19,6 +23,10 @@ import type {
 import type {
   getProductListings,
 } from "@/features/dashboard/get-product-listings";
+
+import type {
+  getProductOfferHistory,
+} from "@/features/dashboard/get-product-offer-history";
 
 
 type ProductDashboardResult =
@@ -48,12 +56,23 @@ type ProductListings =
   >;
 
 
+type ProductOfferHistory =
+  Awaited<
+    ReturnType<
+      typeof getProductOfferHistory
+    >
+  >;
+
+
 type ProductDashboardViewProps = {
   dashboard:
     ProductDashboard;
 
   productListings:
     ProductListings;
+
+  offerHistory:
+    ProductOfferHistory;
 };
 
 
@@ -118,6 +137,7 @@ function formatPeriod(
 export function ProductDashboardView({
   dashboard,
   productListings,
+  offerHistory,
 }: ProductDashboardViewProps) {
   const {
     product,
@@ -533,6 +553,13 @@ export function ProductDashboardView({
       <ProductListingsPanel
         data={
           productListings
+        }
+      />
+
+
+      <ProductOfferHistoryPanel
+        data={
+          offerHistory
         }
       />
 

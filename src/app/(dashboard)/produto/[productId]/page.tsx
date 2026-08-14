@@ -15,6 +15,10 @@ import {
   getProductListings,
 } from "@/features/dashboard/get-product-listings";
 
+import {
+  getProductOfferHistory,
+} from "@/features/dashboard/get-product-offer-history";
+
 
 type ProductDashboardPageProps = {
   params:
@@ -37,15 +41,27 @@ export default async function ProductDashboardPage({
   const [
     dashboard,
     productListings,
+    offerHistory,
   ] =
     await Promise.all([
+
       getProductDashboard({
         productId,
       }),
 
+
       getProductListings({
         productId,
       }),
+
+
+      getProductOfferHistory({
+        productId,
+
+        limit:
+          100,
+      }),
+
     ]);
 
 
@@ -68,6 +84,9 @@ export default async function ProductDashboardPage({
       }
       productListings={
         productListings
+      }
+      offerHistory={
+        offerHistory
       }
     />
   );

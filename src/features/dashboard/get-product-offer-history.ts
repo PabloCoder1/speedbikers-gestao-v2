@@ -379,8 +379,10 @@ function detectOfferChanges(
 
 export async function getProductOfferHistory({
   productId,
+  limit = 100,
 }: {
   productId: string;
+  limit?: number;
 }) {
   const access =
     await getCurrentAccess();
@@ -697,6 +699,10 @@ export async function getProductOfferHistory({
       snapshots.length,
 
 
-    events,
+    events:
+      events.slice(
+        0,
+        limit,
+      ),
   };
 }
