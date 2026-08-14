@@ -139,8 +139,20 @@ export type MercadoLivreNormalizedPromotionOffer = {
 function readString(
   value: unknown,
 ): string | null {
-  return typeof value === "string"
-    ? value
+  if (
+    typeof value !==
+    "string"
+  ) {
+    return null;
+  }
+
+
+  const normalized =
+    value.trim();
+
+
+  return normalized
+    ? normalized
     : null;
 }
 
