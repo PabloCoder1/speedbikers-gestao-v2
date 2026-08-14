@@ -56,7 +56,9 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message.slice(0, 500) : "Erro desconhecido";
 }
 function retryDelaySeconds(retryCount: number) {
-  return Math.min(30 * Math.pow(2, Math.max(0, retryCount - 1)), 15 * 60);
+  const base = 30 * Math.pow(2, Math.max(0, retryCount - 1));
+  const jitter = Math.floor(Math.random() * 16);
+  return Math.min(base + jitter, 15 * 60);
 }
 
 export async function processNextOfferPricesBackfillBatch() {
@@ -75,6 +77,7 @@ export async function processNextOfferPricesBackfillBatch() {
   if (runError || !data) throw new Error("O backfill foi adquirido, mas não pôde ser carregado.");
   const run = data;
   const metadata = asMetadata(run.metadata);
+  const refreshSource = metadata.mode === "reconcile" ? "reconcile" : "backfill";
   const cursorListingId = typeof metadata.cursor_listing_id === "string" && metadata.cursor_listing_id.length > 0
     ? metadata.cursor_listing_id : null;
 
@@ -112,7 +115,9 @@ export async function processNextOfferPricesBackfillBatch() {
         listing: { id: listing.id, organizationId: run.organization_id, mlAccountId: run.ml_account_id,
           productId: listing.product_id, itemId: listing.item_id,
           sellerSku: listing.seller_sku, currencyId: listing.currency_id },
-        state, sourceSyncRunId: run.id,
+        state,
+        sourceSyncRunId: run.id,
+        refreshSource,
       });
     }));
     let successCount = 0;

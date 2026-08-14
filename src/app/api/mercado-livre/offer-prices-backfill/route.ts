@@ -49,7 +49,7 @@ export async function POST(request: Request) {
     const { error: insertError } = await admin.from("sync_runs").insert({
       organization_id: access.organizationId, ml_account_id: account.id,
       sync_type: "offer_prices_backfill", status: "queued", cursor_offset: 0,
-      batch_size: 4, records_discovered: total, records_processed: 0, records_upserted: 0,
+      batch_size: 8, records_discovered: total, records_processed: 0, records_upserted: 0,
       retry_count: 0, max_retries: 3, requested_by: access.userId,
       metadata: {
         mode: "offer_prices_backfill", cursor_listing_id: null,

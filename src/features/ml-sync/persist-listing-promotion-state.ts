@@ -16,6 +16,13 @@ type ListingInput = {
 };
 type PersistedPromotionState = { id: string };
 type Snapshot = { id: string; state_hash: string };
+export type OfferPriceRefreshSource =
+  | "unknown"
+  | "debug"
+  | "backfill"
+  | "notification"
+  | "reconcile"
+  | "manual";
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -56,14 +63,21 @@ export async function persistListingPromotionState({
   listing,
   state,
   sourceSyncRunId = null,
+  refreshSource,
+  sourceRefreshJobId = null,
+  notificationTopic = null,
 }: {
   listing: ListingInput;
   state: ResolvedListingPriceState;
   sourceSyncRunId?: string | null;
+  refreshSource?: OfferPriceRefreshSource;
+  sourceRefreshJobId?: string | null;
+  notificationTopic?: string | null;
 }) {
   const admin = createAdminClient();
   const promotion = state.resolved.activePromotion;
   const capturedAt = new Date().toISOString();
+  const resolvedRefreshSource = refreshSource ?? (sourceSyncRunId ? "backfill" : "debug");
   const promotionPayloadRows = promotionRows(state.promotionsPayload);
   let activePromotionPayload: Record<string, unknown> | null = null;
   if (promotion) {
@@ -141,6 +155,9 @@ export async function persistListingPromotionState({
     active_promotion_payload: activePromotionPayload,
     active_promotion_details_payload: state.activePromotionDetails,
     source_sync_run_id: sourceSyncRunId,
+    refresh_source: resolvedRefreshSource,
+    source_refresh_job_id: sourceRefreshJobId,
+    last_notification_topic: notificationTopic,
   };
 
   const { data: existing, error: existingError } = await admin.from("ml_offer_price_states")
@@ -202,9 +219,13 @@ export async function persistListingPromotionState({
       sale_price_promotion_type: state.normalizedSalePrice.promotionType,
       state_hash: stateHash, state_payload: materialState, captured_at: capturedAt,
       source_sync_run_id: sourceSyncRunId,
+      refresh_source: resolvedRefreshSource,
+      source_refresh_job_id: sourceRefreshJobId,
     });
-    if (snapshotError) throw new Error(`Não foi possível registrar o histórico promocional: ${snapshotError.message}`);
-    snapshotInserted = true;
+    if (snapshotError && snapshotError.code !== "23505") {
+      throw new Error(`Não foi possível registrar o histórico promocional: ${snapshotError.message}`);
+    }
+    snapshotInserted = !snapshotError;
   }
 
   return { id: data.id, operation: existing ? "updated" as const : "inserted" as const, snapshotInserted };

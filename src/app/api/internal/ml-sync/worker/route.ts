@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 
 import { processNextListingsSyncBatch } from "@/features/ml-sync/process-listings-sync-worker";
 import { processNextOfferPricesBackfillBatch } from "@/features/ml-sync/process-offer-prices-backfill";
+import { processNextOfferRefreshJob } from "@/features/ml-sync/process-offer-refresh-job";
 
 import { syncRecentSbOrdersIfDue } from "@/features/ml-sync/sync-recent-orders";
 
@@ -162,31 +163,28 @@ export async function POST(
     }
 
 
+    if (
+      payload.task ===
+      "offer_refresh"
+    ) {
+      const result =
+        await processNextOfferRefreshJob();
+
+      return NextResponse.json(
+        result,
+      );
+    }
+
+
     const listingsResult =
       await processNextListingsSyncBatch();
 
 
-    if (
-      listingsResult.processed
-    ) {
-      return NextResponse.json({
-        task:
-          "listings_full",
-
-        ...listingsResult,
-      });
-    }
-
-
-    const offerPricesResult =
-      await processNextOfferPricesBackfillBatch();
-
-
     return NextResponse.json({
       task:
-        "offer_prices_backfill",
+        "listings_full",
 
-      ...offerPricesResult,
+      ...listingsResult,
     });
   } catch (error) {
     console.error(
