@@ -5,8 +5,12 @@ import {
 import { NextResponse } from "next/server";
 
 import { processNextListingsSyncBatch } from "@/features/ml-sync/process-listings-sync-worker";
+import { processFulfillmentStockBackfillBurst } from "@/features/ml-sync/process-fulfillment-stock-backfill";
+import { processNextFulfillmentRefreshJob } from "@/features/ml-sync/process-fulfillment-refresh-job";
 import { processOfferPricesBackfillBurst } from "@/features/ml-sync/process-offer-prices-backfill";
 import { processNextOfferRefreshJob } from "@/features/ml-sync/process-offer-refresh-job";
+import { processNextOperationalAlertJob } from "@/features/stock/process-operational-alert-job";
+import { processNextUpsellerImportChunk } from "@/features/upseller/process-import-worker";
 
 import { syncRecentSbOrdersIfDue } from "@/features/ml-sync/sync-recent-orders";
 
@@ -15,6 +19,7 @@ import { processOrdersBackfillBurst } from "@/features/ml-sync/process-orders-ba
 export const maxDuration = 60;
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 
 function isAuthorized(
@@ -119,6 +124,46 @@ export async function POST(
       }
     } catch {
       payload = {};
+    }
+
+
+    if (
+      payload.task ===
+      "upseller_import"
+    ) {
+      return NextResponse.json(
+        await processNextUpsellerImportChunk(),
+      );
+    }
+
+
+    if (
+      payload.task ===
+      "fulfillment_stock_backfill"
+    ) {
+      return NextResponse.json(
+        await processFulfillmentStockBackfillBurst(),
+      );
+    }
+
+
+    if (
+      payload.task ===
+      "fulfillment_stock_refresh"
+    ) {
+      return NextResponse.json(
+        await processNextFulfillmentRefreshJob(),
+      );
+    }
+
+
+    if (
+      payload.task ===
+      "operational_alerts"
+    ) {
+      return NextResponse.json(
+        await processNextOperationalAlertJob(),
+      );
     }
 
 

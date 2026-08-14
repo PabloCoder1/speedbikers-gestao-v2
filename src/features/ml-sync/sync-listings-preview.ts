@@ -628,6 +628,12 @@ export async function syncListingsPreview({
                   "user_product_id",
                 ),
 
+              inventory_id:
+                getString(
+                  item,
+                  "inventory_id",
+                ),
+
               title:
                 getString(
                   item,
@@ -896,6 +902,18 @@ export async function syncListingsPreview({
 
           seller_sku:
             sellerSku,
+
+          inventory_id:
+            getString(
+              variation,
+              "inventory_id",
+            ),
+
+          user_product_id:
+            getString(
+              variation,
+              "user_product_id",
+            ),
 
           price:
             getNumber(

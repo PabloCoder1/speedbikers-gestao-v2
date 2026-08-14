@@ -11,6 +11,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 const SUPPORTED_TOPICS = new Set([
   "items_prices",
   "public_offers",
+  "fbm_stock_operations",
 ]);
 
 type EnqueueStatus =
@@ -91,9 +92,20 @@ function notificationKey({
 }
 
 function resourceTarget(topic: string, resource: string) {
+  if (topic === "fbm_stock_operations") {
+    const match = resource.match(/^\/stock\/fulfillment\/operations\/([^/?#]+)$/);
+    if (!match) return null;
+    try {
+      const operationId = decodeURIComponent(match[1]).trim();
+      return operationId ? { itemId: null, offerId: null, operationId } : null;
+    } catch {
+      return null;
+    }
+  }
+
   if (topic === "items_prices") {
     const match = resource.match(/^\/items\/(MLB[0-9]+)$/);
-    return match ? { itemId: match[1], offerId: null } : null;
+    return match ? { itemId: match[1], offerId: null, operationId: null } : null;
   }
 
   const match = resource.match(
@@ -108,7 +120,7 @@ function resourceTarget(topic: string, resource: string) {
   }
   if (!offerId) return null;
   const itemHint = offerId.match(/^OFFER-(MLB[0-9]+)-/i)?.[1]?.toUpperCase() ?? null;
-  return { itemId: itemHint, offerId };
+  return { itemId: itemHint, offerId, operationId: null };
 }
 
 export async function ingestMercadoLivreNotification({
@@ -162,6 +174,27 @@ export async function ingestMercadoLivreNotification({
     rawBody,
   });
   const admin = createAdminClient();
+  if (topic === "fbm_stock_operations") {
+    const { data, error } = await admin.rpc(
+      "enqueue_ml_fulfillment_refresh_notification",
+      {
+        requested_app_code: appCode,
+        requested_seller_id: sellerId,
+        requested_notification_key: key,
+        requested_notification_id: notificationId,
+        requested_operation_id: target.operationId,
+        requested_application_id: applicationId,
+        requested_resource: resource,
+        requested_raw_body: rawBody,
+      },
+    );
+    if (error) throw new Error(`FULFILLMENT_NOTIFICATION_ENQUEUE_FAILED: ${error.message}`);
+    if (data !== "queued" && data !== "duplicate" && data !== "unknown_account") {
+      throw new Error("FULFILLMENT_NOTIFICATION_ENQUEUE_INVALID_RESULT");
+    }
+    return { status: data as EnqueueStatus, notificationId };
+  }
+
   const { data, error } = await admin.rpc(
     "enqueue_ml_offer_refresh_notification",
     {
