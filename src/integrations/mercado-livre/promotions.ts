@@ -71,6 +71,9 @@ export async function getMercadoLivreItemPromotions({
     );
 
 
+    url.searchParams.set("app_version", "v2");
+
+
     const response = await fetch(url, {
       method: "GET",
       headers: {
