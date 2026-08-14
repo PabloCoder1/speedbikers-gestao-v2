@@ -15,6 +15,9 @@ import {
   resolveMercadoLivrePromotionState,
 } from "@/integrations/mercado-livre/promotions";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  persistListingPromotionState,
+} from "@/features/ml-sync/persist-listing-promotion-state";
 
 type MercadoLivreAccountRow = {
   id: string;
@@ -25,15 +28,21 @@ type MercadoLivreAccountRow = {
 };
 
 type MercadoLivreListingRow = {
+  id: string;
+  product_id:
+    string | null;
   item_id: string;
   title: string | null;
   seller_sku: string | null;
+  currency_id:
+    string | null;
   price: number | string | null;
   status: string | null;
 };
 
-export async function GET(
+async function handlePromotionsDebug(
   request: NextRequest,
+  persist: boolean,
 ) {
   const access =
     await getCurrentAccess();
@@ -101,6 +110,33 @@ export async function GET(
         status: 400,
       },
     );
+  }
+
+  if (persist) {
+    const confirmation =
+      request.nextUrl.searchParams.get(
+        "confirm",
+      );
+
+
+    if (
+      confirmation !==
+      rawItemId
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "persist_confirmation_required",
+
+
+          message:
+            "Para persistir, confirm deve ser igual ao MLB informado.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
   }
 
   const admin =
@@ -180,9 +216,12 @@ export async function GET(
     .from("ml_listings")
     .select(
       [
+        "id",
+        "product_id",
         "item_id",
         "title",
         "seller_sku",
+        "currency_id",
         "price",
         "status",
       ].join(","),
@@ -295,6 +334,50 @@ export async function GET(
         : null;
 
 
+    const persisted =
+      persist
+        ? await persistListingPromotionState({
+            listing: {
+              id:
+                listing.id,
+
+
+              organizationId:
+                access.organizationId,
+
+
+              mlAccountId:
+                typedAccount.id,
+
+
+              productId:
+                listing.product_id,
+
+
+              itemId:
+                listing.item_id,
+
+
+              sellerSku:
+                listing.seller_sku,
+
+
+              currencyId:
+                listing.currency_id,
+            },
+
+
+            resolved,
+
+
+            promotions,
+
+
+            activePromotionDetails,
+          })
+        : null;
+
+
     return NextResponse.json({
       ok: true,
 
@@ -328,6 +411,9 @@ export async function GET(
 
 
       activePromotionDetails,
+
+
+      persisted,
     });
   } catch (error) {
     console.error(
@@ -354,4 +440,24 @@ export async function GET(
       },
     );
   }
+}
+
+
+export async function GET(
+  request: NextRequest,
+) {
+  return handlePromotionsDebug(
+    request,
+    false,
+  );
+}
+
+
+export async function POST(
+  request: NextRequest,
+) {
+  return handlePromotionsDebug(
+    request,
+    true,
+  );
 }
