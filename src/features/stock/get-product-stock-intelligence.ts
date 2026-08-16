@@ -23,10 +23,20 @@ function latestIso(values: (string | null | undefined)[]) {
   return values.filter((value): value is string => Boolean(value)).sort().at(-1) ?? null;
 }
 
-export async function getProductStockIntelligence(productId: string) {
+export async function getProductStockIntelligence(
+  productId: string,
+  options: {
+    organizationId?: string;
+  } = {},
+) {
   const admin = createAdminClient();
-  const { data: product, error: productError } = await admin.from("products")
-    .select("id,organization_id,sku,sku_key,name").eq("id", productId).maybeSingle();
+  let productQuery = admin.from("products")
+    .select("id,organization_id,sku,sku_key,name")
+    .eq("id", productId);
+  if (options.organizationId) {
+    productQuery = productQuery.eq("organization_id", options.organizationId);
+  }
+  const { data: product, error: productError } = await productQuery.maybeSingle();
   if (productError) throw new Error(`STOCK_PRODUCT_LOOKUP_FAILED:${productError.message}`);
   if (!product) return null;
 

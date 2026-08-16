@@ -20,6 +20,10 @@ import {
   ProductOperationalHealthPanel,
 } from "@/components/dashboard/product-operational-health-panel";
 
+import {
+  ProductStockIntelligencePanel,
+} from "@/components/dashboard/product-stock-intelligence-panel";
+
 import type {
   getProductDashboard,
 } from "@/features/dashboard/get-product-dashboard";
@@ -31,6 +35,10 @@ import type {
 import type {
   getProductOfferHistory,
 } from "@/features/dashboard/get-product-offer-history";
+
+import type {
+  getProductStockIntelligence,
+} from "@/features/stock/get-product-stock-intelligence";
 
 
 type ProductDashboardResult =
@@ -68,6 +76,14 @@ type ProductOfferHistory =
   >;
 
 
+type ProductStockIntelligence =
+  Awaited<
+    ReturnType<
+      typeof getProductStockIntelligence
+    >
+  >;
+
+
 type ProductDashboardViewProps = {
   dashboard:
     ProductDashboard;
@@ -77,6 +93,9 @@ type ProductDashboardViewProps = {
 
   offerHistory:
     ProductOfferHistory;
+
+  stockIntelligence:
+    ProductStockIntelligence;
 };
 
 
@@ -142,6 +161,7 @@ export function ProductDashboardView({
   dashboard,
   productListings,
   offerHistory,
+  stockIntelligence,
 }: ProductDashboardViewProps) {
   const {
     product,
@@ -552,6 +572,13 @@ export function ProductDashboardView({
         </div>
 
       </section>
+
+
+      <ProductStockIntelligencePanel
+        data={
+          stockIntelligence
+        }
+      />
 
 
       <ProductOperationalHealthPanel

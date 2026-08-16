@@ -19,6 +19,10 @@ import {
   getProductOfferHistory,
 } from "@/features/dashboard/get-product-offer-history";
 
+import {
+  getProductStockIntelligence,
+} from "@/features/stock/get-product-stock-intelligence";
+
 
 type ProductDashboardPageProps = {
   params:
@@ -38,31 +42,10 @@ export default async function ProductDashboardPage({
   } = await params;
 
 
-  const [
-    dashboard,
-    productListings,
-    offerHistory,
-  ] =
-    await Promise.all([
-
-      getProductDashboard({
-        productId,
-      }),
-
-
-      getProductListings({
-        productId,
-      }),
-
-
-      getProductOfferHistory({
-        productId,
-
-        limit:
-          100,
-      }),
-
-    ]);
+  const dashboard =
+    await getProductDashboard({
+      productId,
+    });
 
 
   if (!dashboard) {
@@ -77,6 +60,50 @@ export default async function ProductDashboardPage({
   }
 
 
+  const [
+    productListings,
+    offerHistory,
+    stockIntelligence,
+  ] =
+    await Promise.all([
+
+      getProductListings({
+        productId,
+      }),
+
+
+      getProductOfferHistory({
+        productId,
+
+        limit:
+          100,
+      }),
+
+
+      getProductStockIntelligence(
+        productId,
+        {
+          organizationId:
+            dashboard
+              .access
+              .organizationId,
+        },
+      ).catch(
+        (
+          error,
+        ) => {
+          console.error(
+            "Product stock intelligence failed:",
+            error,
+          );
+
+          return null;
+        },
+      ),
+
+    ]);
+
+
   return (
     <ProductDashboardView
       dashboard={
@@ -87,6 +114,9 @@ export default async function ProductDashboardPage({
       }
       offerHistory={
         offerHistory
+      }
+      stockIntelligence={
+        stockIntelligence
       }
     />
   );
