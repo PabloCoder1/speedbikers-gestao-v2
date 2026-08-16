@@ -20,7 +20,7 @@ async function workbook(headers: string[], rows: unknown[][]) {
   return Buffer.from(await book.xlsx.writeBuffer());
 }
 
-test("fixture UpSeller 13014 preserves physical, master and official alias data", async () => {
+test("fixture UpSeller 13014 preserves physical, category-brand and official alias data", async () => {
   const stock = await workbook([
     "SKU", "Título", "Armazém", "Estante", "Estoque Baixo", "Em Trânsito(Compra)",
     "Em Trânsito(Transferência）", "Ocupado", "Disponível", "Estoque Atual", "Custo Médio", "Subtotal", "Criado",
@@ -76,7 +76,7 @@ test("fixture UpSeller 13014 preserves physical, master and official alias data"
   const master = parsed.products.rows[0];
   assert.equal(master.purchaseCost, 14.52);
   assert.equal(master.retailPrice, 49.99);
-  assert.equal(master.brand, "Plasmoto");
+  assert.equal(master.brand, "Elétrica");
   assert.deepEqual(master.barcodes, ["7898442101477", "7898667940301"]);
   assert.equal(parsed.summary.aliasRelationshipRows, 1);
   assert.deepEqual(

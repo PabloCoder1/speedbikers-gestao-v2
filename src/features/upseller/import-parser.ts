@@ -335,6 +335,7 @@ export async function parseProductWorkbook(buffer: Buffer): Promise<ParsedRows<P
       const value = text(record.normalized[`VARIANTE${index}`]);
       if (name || value) variantDimensions.push({ name: name ?? `Variante ${index}`, value: value ?? "" });
     }
+    const categoryBrand = text(record.normalized.CATEGORIAS);
     const row = {
       rowNumber: record.rowNumber,
       sourceSku,
@@ -344,7 +345,7 @@ export async function parseProductWorkbook(buffer: Buffer): Promise<ParsedRows<P
       title: text(record.normalized.TITULO),
       productAlias: text(record.normalized["APELIDO DO PRODUTO"]),
       invoiceAliasEnabled: parseBoolean(record.normalized["USAR O APELIDO DO PRODUTO NA NF E"]),
-      category: text(record.normalized.CATEGORIAS),
+      category: categoryBrand,
       variantDimensions,
       launchDateRaw: text(record.normalized["DATA DE LANCAMENTO"]),
       isActive: parseBoolean(record.normalized["O PRODUTO ESTA ATIVO"]),
@@ -352,7 +353,7 @@ export async function parseProductWorkbook(buffer: Buffer): Promise<ParsedRows<P
       retailPrice: parseDecimal(record.normalized["PRECO DE VAREJO"]),
       purchaseCost: parseDecimal(record.normalized["CUSTO DE COMPRA"]),
       description: text(record.normalized["DESCRICAO DO ANUNCIO"]),
-      brand: text(record.normalized.MARCA),
+      brand: categoryBrand,
       barcodes: splitValues(record.normalized["CODIGO DE BARRAS"]),
       skuAlias: text(record.normalized["APELIDO DE SKU"]),
       images: splitValues(record.normalized.IMAGEM),

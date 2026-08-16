@@ -12,6 +12,7 @@ import { UserAccessForm } from "@/components/admin/user-access-form";
 import { getOrganizationUsers } from "@/features/admin/get-organization-users";
 import { ROLE_LABELS } from "@/features/auth/roles";
 import { UserAccountPermissionsForm } from "@/components/admin/user-account-permissions-form";
+import { UpsellerImportForm } from "@/components/admin/upseller-import-form";
 
 export const metadata: Metadata = {
   title: "Administração",
@@ -61,8 +62,29 @@ export default async function AdministrationPage() {
             access.organizationName
           }
           title="Administração"
-          description="Gerencie usuários internos, papéis e permissões de acesso ao Speed Bikers Gestão."
+          description="Gerencie os dados operacionais, usuários e permissões de acesso ao Speed Bikers Gestão."
         />
+
+        <section className="mt-8">
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h2 className="text-base font-semibold text-gray-950">
+                    Importação do UpSeller
+                  </h2>
+                  <p className="mt-1 max-w-3xl text-sm leading-6 text-gray-500">
+                    Valide e publique estoque físico, catálogo, marcas, relações de SKU e composição dos kits.
+                  </p>
+                </div>
+                <Badge variant="info">Somente administradores</Badge>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <UpsellerImportForm />
+            </CardContent>
+          </Card>
+        </section>
 
         <section className="mt-8">
           <Card>
