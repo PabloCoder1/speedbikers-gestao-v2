@@ -20,8 +20,15 @@ export async function evaluateProductOperationalAlerts(productId: string) {
   const intelligence = await getProductStockIntelligence(productId);
   if (!intelligence) return { found: false, alerts: 0 } as const;
   const alerts: AlertCandidate[] = [];
-  const add = (alertType: string, severity: AlertCandidate["severity"], evidence: Record<string, unknown>, suggestedActionCode: string | null = null) => {
-    alerts.push({ alertType, severity, dedupeKey: `product:${productId}:${alertType}`, evidence, suggestedActionCode });
+  const add = (
+    alertType: string,
+    severity: AlertCandidate["severity"],
+    evidence: Record<string, unknown>,
+    suggestedActionCode: string | null = null,
+    dedupeScope: string | null = null,
+  ) => {
+    const suffix = dedupeScope ? `:${dedupeScope}` : "";
+    alerts.push({ alertType, severity, dedupeKey: `product:${productId}:${alertType}${suffix}`, evidence, suggestedActionCode });
   };
 
   const physical = intelligence.physical;
@@ -47,11 +54,38 @@ export async function evaluateProductOperationalAlerts(productId: string) {
   if (intelligence.mapping.status === "conflict") {
     add("STOCK_MAPPING_CONFLICT", "warning", { sku: intelligence.product.sku, candidates: intelligence.mapping.candidates }, "resolve_stock_mapping_conflict");
   }
-  if (intelligence.full.applicable && intelligence.full.ready && intelligence.full.available === 0) {
-    add("FULL_OUT_OF_STOCK", "critical", { inventoryCount: intelligence.full.inventoryCount, available: 0, checkedAt: intelligence.full.checkedAt }, "review_full_replenishment");
-  }
-  if (intelligence.full.notAvailable > 0) {
-    add("FULL_UNAVAILABLE_UNITS", "info", { notAvailable: intelligence.full.notAvailable, breakdown: intelligence.full.notAvailableByStatus }, "review_full_unavailable_units");
+  for (const account of intelligence.full.accounts) {
+    if (account.inventoryCount > 0 && account.pendingInventoryCount === 0 && account.available === 0) {
+      add(
+        "FULL_OUT_OF_STOCK",
+        "critical",
+        {
+          accountId: account.accountId,
+          accountCode: account.code,
+          accountName: account.displayName,
+          inventoryCount: account.inventoryCount,
+          available: 0,
+          checkedAt: account.checkedAt,
+        },
+        "review_full_replenishment",
+        `account:${account.accountId}`,
+      );
+    }
+    if (account.notAvailable > 0) {
+      add(
+        "FULL_UNAVAILABLE_UNITS",
+        "info",
+        {
+          accountId: account.accountId,
+          accountCode: account.code,
+          accountName: account.displayName,
+          notAvailable: account.notAvailable,
+          checkedAt: account.checkedAt,
+        },
+        "review_full_unavailable_units",
+        `account:${account.accountId}`,
+      );
+    }
   }
   const activeZero = intelligence.advertised.offers.filter((offer) => offer.status === "active" && offer.available === 0);
   if (activeZero.length > 0) {

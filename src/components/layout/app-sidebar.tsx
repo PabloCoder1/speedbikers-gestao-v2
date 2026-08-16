@@ -70,7 +70,7 @@ export function AppSidebar({
                   <section
                     key={section.label}
                   >
-                    <p className="px-3 text-xs font-semibold uppercase tracking-wider text-gray-400">
+                    <p className="px-3 text-xs font-semibold uppercase tracking-wider text-gray-500">
                       {section.label}
                     </p>
 
@@ -83,7 +83,7 @@ export function AppSidebar({
                                 key={
                                   item.label
                                 }
-                                className="flex cursor-not-allowed items-center justify-between rounded-xl px-3 py-2.5 text-sm text-gray-400"
+                                className="flex cursor-not-allowed items-center justify-between rounded-xl px-3 py-2.5 text-sm text-gray-500"
                               >
                                 <span>
                                   {
@@ -91,7 +91,7 @@ export function AppSidebar({
                                   }
                                 </span>
 
-                                <span className="rounded-md bg-gray-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-400">
+                                <span className="rounded-md bg-gray-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-600">
                                   Em breve
                                 </span>
                               </div>

@@ -309,33 +309,6 @@ export default async function AdministrationPage() {
             </CardContent>
           </Card>
         </section>
-
-        <section className="mt-6">
-          <Card>
-            <CardContent>
-              <Badge variant="neutral">
-                Próxima evolução
-              </Badge>
-
-              <h2 className="mt-4 text-base font-semibold text-gray-950">
-                Gerenciamento de
-                usuários
-              </h2>
-
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-600">
-                A listagem já utiliza
-                dados reais. Criação,
-                convite, alteração de
-                papel e ativação ou
-                bloqueio serão
-                adicionados depois que
-                esta camada de leitura e
-                autorização estiver
-                validada.
-              </p>
-            </CardContent>
-          </Card>
-        </section>
       </div>
     </div>
   );

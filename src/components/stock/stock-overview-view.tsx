@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
+import { NfeStockReceiptForm } from "@/components/stock/nfe-stock-receipt-form";
 import type {
   StockOverview,
   StockOverviewRow,
@@ -150,6 +151,41 @@ function StatusBadge({ status }: { status: StockOverviewStatus }) {
   );
 }
 
+function FullAccountBalances({
+  product,
+  compact = false,
+}: {
+  product: StockOverviewRow;
+  compact?: boolean;
+}) {
+  if (!product.fullApplicable) {
+    return <span className="text-gray-400">—</span>;
+  }
+
+  return (
+    <div className={compact ? "space-y-2" : "ml-auto w-fit min-w-36 space-y-2"}>
+      {product.fullAccounts.map((account) => (
+        <div
+          key={account.accountId}
+          className={`flex items-center justify-between gap-3 ${compact ? "text-xs" : "text-[11px]"}`}
+        >
+          <span className="max-w-32 truncate text-gray-500" title={account.accountName}>
+            {account.accountName}
+          </span>
+          <span className="font-bold text-gray-950">
+            {formatQuantity(account.available)}
+          </span>
+        </div>
+      ))}
+      {!product.fullReady ? (
+        <p className="text-[10px] font-medium text-amber-800">
+          {integer.format(product.fullPending)} leitura(s) pendente(s)
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function MobileProductCard({ product }: { product: StockOverviewRow }) {
   return (
     <article className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
@@ -173,9 +209,9 @@ function MobileProductCard({ product }: { product: StockOverviewRow }) {
         {product.sourceSku ? ` · ${product.sourceSku}` : ""}
       </p>
 
-      <dl className="mt-4 grid grid-cols-3 gap-2">
+      <dl className="mt-4 grid grid-cols-2 gap-2">
         <div className="rounded-xl bg-gray-50 p-3">
-          <dt className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+          <dt className="text-[10px] font-semibold uppercase tracking-wide text-gray-600">
             Físico
           </dt>
           <dd className="mt-2 text-lg font-bold text-gray-950">
@@ -183,19 +219,19 @@ function MobileProductCard({ product }: { product: StockOverviewRow }) {
           </dd>
         </div>
         <div className="rounded-xl bg-gray-50 p-3">
-          <dt className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-            Full
-          </dt>
-          <dd className="mt-2 text-lg font-bold text-gray-950">
-            {product.fullApplicable ? formatQuantity(product.fullAvailable) : "—"}
-          </dd>
-        </div>
-        <div className="rounded-xl bg-gray-50 p-3">
-          <dt className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+          <dt className="text-[10px] font-semibold uppercase tracking-wide text-gray-600">
             Anunciado
           </dt>
           <dd className="mt-2 text-lg font-bold text-gray-950">
             {formatQuantity(product.advertisedAvailable)}
+          </dd>
+        </div>
+        <div className="col-span-2 rounded-xl bg-emerald-50/70 p-3">
+          <dt className="text-[10px] font-semibold uppercase tracking-wide text-gray-600">
+            Full por conta
+          </dt>
+          <dd className="mt-3">
+            <FullAccountBalances product={product} compact />
           </dd>
         </div>
       </dl>
@@ -239,7 +275,7 @@ export function StockOverviewView({
     : 0;
 
   return (
-    <div className="mx-auto w-full max-w-[1500px]">
+    <div className="mx-auto w-full max-w-[1500px] overflow-x-clip px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
       <header className="mb-6">
         <p className="text-sm font-medium text-gray-500">
           Operação
@@ -250,7 +286,7 @@ export function StockOverviewView({
               Estoque
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">
-              Acompanhe a disponibilidade física, o Full e o estoque publicado de todos os produtos em um só lugar.
+              Acompanhe o estoque físico, o Full de cada conta e o saldo publicado de todos os produtos.
             </p>
           </div>
           <div className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-xs text-gray-500">
@@ -267,14 +303,30 @@ export function StockOverviewView({
                 Central de estoque pronta — aguardando o UpSeller
               </p>
               <p className="mt-1 text-xs leading-5 text-amber-800">
-                Você já pode consultar o Full e o estoque anunciado. Os saldos físicos, custos e kits serão conectados automaticamente quando decidir fazer a primeira importação.
+                Você já pode consultar o Full e o estoque anunciado. Importe os arquivos do UpSeller para conectar saldos físicos, custos, marcas e kits.
               </p>
             </div>
-            <Badge variant="warning" className="w-fit shrink-0">
-              Nenhum upload necessário agora
-            </Badge>
+            {overview.canImportUpseller ? (
+              <Link
+                href="/administracao"
+                className="w-fit shrink-0 rounded-xl bg-amber-950 px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-amber-900"
+              >
+                Abrir importação
+              </Link>
+            ) : (
+              <Badge variant="warning" className="w-fit shrink-0">
+                Importação pendente
+              </Badge>
+            )}
           </div>
         </section>
+      ) : null}
+
+      {overview.canReceiveStock ? (
+        <NfeStockReceiptForm
+          warehouses={overview.warehouses}
+          backendReady={overview.stockReceiptReady}
+        />
       ) : null}
 
       <section aria-label="Resumo do estoque" className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -414,13 +466,13 @@ export function StockOverviewView({
 
             <div className="mt-4 hidden overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm md:block">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[1120px] text-left">
-                  <thead className="bg-gray-50 text-[11px] uppercase tracking-wide text-gray-400">
+                <table className="w-full min-w-[1240px] text-left">
+                  <thead className="bg-gray-50 text-[11px] uppercase tracking-wide text-gray-600">
                     <tr>
                       <th className="px-5 py-3">Produto</th>
                       <th className="px-5 py-3">Situação</th>
                       <th className="px-5 py-3 text-right">Físico</th>
-                      <th className="px-5 py-3 text-right">Full</th>
+                      <th className="px-5 py-3 text-right">Full por conta</th>
                       <th className="px-5 py-3 text-right">Anunciado</th>
                       <th className="px-5 py-3 text-right">Alertas</th>
                       <th className="px-5 py-3 text-right">Atualização</th>
@@ -459,16 +511,7 @@ export function StockOverviewView({
                           </p>
                         </td>
                         <td className="px-5 py-4 text-right">
-                          <p className="font-bold text-gray-950">
-                            {product.fullApplicable ? formatQuantity(product.fullAvailable) : "—"}
-                          </p>
-                          <p className="mt-1 text-[11px] text-gray-400">
-                            {!product.fullApplicable
-                              ? "não utiliza"
-                              : product.fullReady
-                                ? "sincronizado"
-                                : `${integer.format(product.fullPending)} pendente(s)`}
-                          </p>
+                          <FullAccountBalances product={product} />
                         </td>
                         <td className="px-5 py-4 text-right">
                           <p className="font-bold text-gray-950">

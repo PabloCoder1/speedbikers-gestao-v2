@@ -3,6 +3,13 @@ import "server-only";
 import { calculateKitAvailability } from "@/features/stock/stock-domain";
 import { createAdminClient } from "@/lib/supabase/admin";
 
+type ReceiptAdjustmentRow = {
+  sku_key: string;
+  warehouse_key: string;
+  quantity: number | string;
+  applied_at: string;
+};
+
 function numberOrNull(value: unknown) {
   if (value === null || value === undefined) return null;
   const parsed = Number(value);
@@ -23,10 +30,67 @@ function latestIso(values: (string | null | undefined)[]) {
   return values.filter((value): value is string => Boolean(value)).sort().at(-1) ?? null;
 }
 
+async function getReceiptAdjustments(
+  admin: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  skuKeys: string[],
+) {
+  if (skuKeys.length === 0) return [] as ReceiptAdjustmentRow[];
+  const { data, error } = await admin
+    .from("current_stock_receipt_adjustments")
+    .select("sku_key,warehouse_key,quantity,applied_at")
+    .eq("organization_id", organizationId)
+    .in("sku_key", skuKeys)
+    .returns<ReceiptAdjustmentRow[]>();
+  if (error) {
+    if (
+      error.code === "42P01" ||
+      error.code === "PGRST205" ||
+      error.message.includes("current_stock_receipt_adjustments")
+    ) {
+      return [];
+    }
+    throw new Error(`STOCK_RECEIPT_ADJUSTMENTS_LOOKUP_FAILED:${error.message}`);
+  }
+  return data ?? [];
+}
+
+function applyReceiptAdjustments<
+  T extends {
+    sku_key: string;
+    warehouse_key: string;
+    available_quantity: unknown;
+    current_quantity: unknown;
+    checked_at: string;
+  },
+>(rows: T[], adjustments: ReceiptAdjustmentRow[]) {
+  const quantityByTarget = new Map<string, number>();
+  const datesByTarget = new Map<string, string[]>();
+  for (const adjustment of adjustments) {
+    const key = `${adjustment.sku_key}:${adjustment.warehouse_key}`;
+    quantityByTarget.set(key, (quantityByTarget.get(key) ?? 0) + (numberOrNull(adjustment.quantity) ?? 0));
+    const dates = datesByTarget.get(key);
+    if (dates) dates.push(adjustment.applied_at);
+    else datesByTarget.set(key, [adjustment.applied_at]);
+  }
+
+  return rows.map((row) => {
+    const key = `${row.sku_key}:${row.warehouse_key}`;
+    const adjustment = quantityByTarget.get(key) ?? 0;
+    return {
+      ...row,
+      available_quantity: (numberOrNull(row.available_quantity) ?? 0) + adjustment,
+      current_quantity: (numberOrNull(row.current_quantity) ?? 0) + adjustment,
+      checked_at: latestIso([row.checked_at, ...(datesByTarget.get(key) ?? [])]) ?? row.checked_at,
+    };
+  });
+}
+
 export async function getProductStockIntelligence(
   productId: string,
   options: {
     organizationId?: string;
+    allowedMlAccountIds?: string[];
   } = {},
 ) {
   const admin = createAdminClient();
@@ -79,12 +143,15 @@ export async function getProductStockIntelligence(
     if (catalogError) throw new Error("STOCK_CATALOG_LOOKUP_FAILED");
     const purchaseCost = numberOrNull(catalog?.purchase_cost);
     if (link.source_kind === "simple") {
-      const { data: states, error } = await admin.from("upseller_stock_states")
-        .select("warehouse_name,warehouse_key,shelf,low_stock_threshold,purchase_in_transit,transfer_in_transit,occupied_quantity,available_quantity,current_quantity,average_cost,stock_value,checked_at")
-        .eq("organization_id", product.organization_id).eq("sku_key", link.source_sku_key)
-        .order("warehouse_key");
+      const [{ data: states, error }, receiptAdjustments] = await Promise.all([
+        admin.from("upseller_stock_states")
+          .select("sku_key,warehouse_name,warehouse_key,shelf,low_stock_threshold,purchase_in_transit,transfer_in_transit,occupied_quantity,available_quantity,current_quantity,average_cost,stock_value,checked_at")
+          .eq("organization_id", product.organization_id).eq("sku_key", link.source_sku_key)
+          .order("warehouse_key"),
+        getReceiptAdjustments(admin, product.organization_id, [link.source_sku_key]),
+      ]);
       if (error) throw new Error("STOCK_STATES_LOOKUP_FAILED");
-      const rows = states ?? [];
+      const rows = applyReceiptAdjustments(states ?? [], receiptAdjustments);
       const averageCost = weightedAverage(rows);
       physical = {
         applicable: true,
@@ -116,7 +183,7 @@ export async function getProductStockIntelligence(
       if (componentsError) throw new Error("KIT_COMPONENTS_LOOKUP_FAILED");
       const componentRows = components ?? [];
       const componentKeys = componentRows.map((row) => row.component_sku_key);
-      const [{ data: nestedKits }, { data: states, error: statesError }, { data: catalogs }] = await Promise.all([
+      const [{ data: nestedKits }, { data: states, error: statesError }, { data: catalogs }, receiptAdjustments] = await Promise.all([
         componentKeys.length
           ? admin.from("upseller_kits").select("kit_sku_key").eq("organization_id", product.organization_id).eq("is_current", true).in("kit_sku_key", componentKeys)
           : Promise.resolve({ data: [], error: null }),
@@ -127,9 +194,10 @@ export async function getProductStockIntelligence(
         componentKeys.length
           ? admin.from("upseller_product_catalog").select("sku_key,purchase_cost").eq("organization_id", product.organization_id).in("sku_key", componentKeys)
           : Promise.resolve({ data: [], error: null }),
+        getReceiptAdjustments(admin, product.organization_id, componentKeys),
       ]);
       if (statesError) throw new Error("KIT_STOCK_LOOKUP_FAILED");
-      const stockRows = states ?? [];
+      const stockRows = applyReceiptAdjustments(states ?? [], receiptAdjustments);
       const availability = nestedKits?.length
         ? { ready: false, available: null, warehouses: [], missingComponents: [], conflict: "nested_kit_unsupported" as const }
         : calculateKitAvailability(
@@ -171,11 +239,26 @@ export async function getProductStockIntelligence(
     }
   }
 
+  let listingTargetsQuery = admin.from("ml_listings")
+    .select("id,ml_account_id,item_id,status,available_quantity,inventory_id")
+    .eq("organization_id", product.organization_id).eq("product_id", product.id).eq("is_current", true);
+  let variationTargetsQuery = admin.from("ml_listing_variations")
+    .select("id,ml_account_id,ml_listing_id,variation_id,available_quantity,inventory_id,ml_listings!inner(item_id,status)")
+    .eq("organization_id", product.organization_id).eq("product_id", product.id).eq("is_current", true);
+
+  if (options.allowedMlAccountIds) {
+    if (options.allowedMlAccountIds.length === 0) {
+      listingTargetsQuery = listingTargetsQuery.in("ml_account_id", ["00000000-0000-0000-0000-000000000000"]);
+      variationTargetsQuery = variationTargetsQuery.in("ml_account_id", ["00000000-0000-0000-0000-000000000000"]);
+    } else {
+      listingTargetsQuery = listingTargetsQuery.in("ml_account_id", options.allowedMlAccountIds);
+      variationTargetsQuery = variationTargetsQuery.in("ml_account_id", options.allowedMlAccountIds);
+    }
+  }
+
   const [{ data: listingTargets, error: listingError }, { data: variationTargets, error: variationError }] = await Promise.all([
-    admin.from("ml_listings").select("id,ml_account_id,item_id,status,available_quantity,inventory_id")
-      .eq("organization_id", product.organization_id).eq("product_id", product.id).eq("is_current", true),
-    admin.from("ml_listing_variations").select("id,ml_account_id,ml_listing_id,variation_id,available_quantity,inventory_id,ml_listings!inner(item_id,status)")
-      .eq("organization_id", product.organization_id).eq("product_id", product.id).eq("is_current", true),
+    listingTargetsQuery,
+    variationTargetsQuery,
   ]);
   if (listingError || variationError) throw new Error("STOCK_ML_TARGETS_LOOKUP_FAILED");
   const advertisedOffers = [

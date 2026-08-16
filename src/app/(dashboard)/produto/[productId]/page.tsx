@@ -87,6 +87,13 @@ export default async function ProductDashboardPage({
             dashboard
               .access
               .organizationId,
+          allowedMlAccountIds:
+            dashboard
+              .accounts
+              .map(
+                (account) =>
+                  account.id,
+              ),
         },
       ).catch(
         (

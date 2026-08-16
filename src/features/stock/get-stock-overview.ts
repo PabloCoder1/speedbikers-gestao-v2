@@ -26,11 +26,26 @@ type InventoryConflictRow = {
 
 type StockStateRow = {
   sku_key: string;
+  warehouse_name: string;
   warehouse_key: string;
   available_quantity: number | string;
   current_quantity: number | string;
   low_stock_threshold: number | string;
+  source_import_id: string;
   checked_at: string;
+};
+
+type ReceiptAdjustmentRow = {
+  sku_key: string;
+  warehouse_key: string;
+  quantity: number | string;
+  applied_at: string;
+};
+
+type MlAccountRow = {
+  id: string;
+  code: string;
+  display_name: string;
 };
 
 type KitRow = {
@@ -80,6 +95,7 @@ type AlertRow = {
 type QueryPage<T> = {
   data: T[] | null;
   error: {
+    code?: string;
     message: string;
   } | null;
 };
@@ -111,8 +127,17 @@ export type StockOverviewRow = {
   lowStockThreshold: number | null;
   fullApplicable: boolean;
   fullReady: boolean;
-  fullAvailable: number | null;
   fullPending: number;
+  fullAccounts: {
+    accountId: string;
+    accountCode: string | null;
+    accountName: string;
+    available: number | null;
+    inventoryCount: number;
+    checkedInventoryCount: number;
+    pendingInventoryCount: number;
+    ready: boolean;
+  }[];
   advertisedOffers: number;
   activeOffers: number;
   advertisedAvailable: number | null;
@@ -124,6 +149,13 @@ export type StockOverviewRow = {
 
 export type StockOverview = {
   sourceConnected: boolean;
+  canReceiveStock: boolean;
+  canImportUpseller: boolean;
+  stockReceiptReady: boolean;
+  warehouses: {
+    key: string;
+    name: string;
+  }[];
   summary: {
     totalProducts: number;
     listedProducts: number;
@@ -165,6 +197,33 @@ async function collectPages<T>(
   throw new Error(`${label}:result_limit_exceeded`);
 }
 
+async function collectReceiptAdjustments(
+  loadPage: (from: number, to: number) => PromiseLike<QueryPage<ReceiptAdjustmentRow>>,
+) {
+  const rows: ReceiptAdjustmentRow[] = [];
+
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const from = page * PAGE_SIZE;
+    const { data, error } = await loadPage(from, from + PAGE_SIZE - 1);
+    if (error) {
+      if (
+        error.code === "42P01" ||
+        error.code === "PGRST205" ||
+        error.message.includes("current_stock_receipt_adjustments")
+      ) {
+        return { rows: [], ready: false };
+      }
+      throw new Error(`STOCK_RECEIPT_ADJUSTMENTS_FAILED:${error.message}`);
+    }
+
+    const pageRows = data ?? [];
+    rows.push(...pageRows);
+    if (pageRows.length < PAGE_SIZE) return { rows, ready: true };
+  }
+
+  throw new Error("STOCK_RECEIPT_ADJUSTMENTS_FAILED:result_limit_exceeded");
+}
+
 function numberOrZero(value: number | string | null | undefined) {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -201,7 +260,7 @@ function classifyStatus({
   physicalAvailable,
   fullApplicable,
   fullReady,
-  fullAvailable,
+  fullHasZero,
   activeOffers,
   advertisedAvailable,
   alertSeverity,
@@ -212,15 +271,14 @@ function classifyStatus({
   | "physicalAvailable"
   | "fullApplicable"
   | "fullReady"
-  | "fullAvailable"
   | "activeOffers"
   | "advertisedAvailable"
   | "alertSeverity"
->): StockOverviewStatus {
+> & { fullHasZero: boolean }): StockOverviewStatus {
   if (
     alertSeverity === "critical" ||
     (physicalReady && physicalAvailable === 0) ||
-    (fullReady && fullAvailable === 0)
+    fullHasZero
   ) {
     return "critical";
   }
@@ -259,6 +317,8 @@ export async function getStockOverview(): Promise<StockOverview | null> {
     listings,
     variations,
     fulfillmentStates,
+    mlAccounts,
+    receiptAdjustmentsResult,
     alerts,
   ] = await Promise.all([
     collectPages<ProductRow>("STOCK_OVERVIEW_PRODUCTS_FAILED", (from, to) =>
@@ -295,7 +355,7 @@ export async function getStockOverview(): Promise<StockOverview | null> {
     collectPages<StockStateRow>("STOCK_OVERVIEW_PHYSICAL_FAILED", (from, to) =>
       supabase
         .from("upseller_stock_states")
-        .select("sku_key,warehouse_key,available_quantity,current_quantity,low_stock_threshold,checked_at")
+        .select("sku_key,warehouse_name,warehouse_key,available_quantity,current_quantity,low_stock_threshold,source_import_id,checked_at")
         .eq("organization_id", organizationId)
         .order("sku_key", { ascending: true })
         .order("warehouse_key", { ascending: true })
@@ -352,6 +412,25 @@ export async function getStockOverview(): Promise<StockOverview | null> {
         .range(from, to)
         .returns<FulfillmentStateRow[]>(),
     ),
+    collectPages<MlAccountRow>("STOCK_OVERVIEW_ACCOUNTS_FAILED", (from, to) =>
+      supabase
+        .from("ml_accounts")
+        .select("id,code,display_name")
+        .eq("organization_id", organizationId)
+        .order("display_name", { ascending: true })
+        .range(from, to)
+        .returns<MlAccountRow[]>(),
+    ),
+    collectReceiptAdjustments((from, to) =>
+      supabase
+        .from("current_stock_receipt_adjustments")
+        .select("sku_key,warehouse_key,quantity,applied_at")
+        .eq("organization_id", organizationId)
+        .order("sku_key", { ascending: true })
+        .order("warehouse_key", { ascending: true })
+        .range(from, to)
+        .returns<ReceiptAdjustmentRow[]>(),
+    ),
     collectPages<AlertRow>("STOCK_OVERVIEW_ALERTS_FAILED", (from, to) =>
       supabase
         .from("operational_alerts")
@@ -372,11 +451,20 @@ export async function getStockOverview(): Promise<StockOverview | null> {
   const listingsById = new Map(listings.map((listing) => [listing.id, listing]));
   const offersByProduct = new Map<string, Offer[]>();
   const alertsByProduct = new Map<string, AlertRow[]>();
+  const accountsById = new Map(mlAccounts.map((account) => [account.id, account]));
+  const receiptAdjustmentsByTarget = new Map<string, ReceiptAdjustmentRow[]>();
   const fulfillmentByTarget = new Map(
     fulfillmentStates.map((state) => [`${state.ml_account_id}:${state.inventory_id}`, state]),
   );
 
   for (const state of stockStates) pushToMap(stockBySku, state.sku_key, state);
+  for (const adjustment of receiptAdjustmentsResult.rows) {
+    pushToMap(
+      receiptAdjustmentsByTarget,
+      `${adjustment.sku_key}:${adjustment.warehouse_key}`,
+      adjustment,
+    );
+  }
   for (const component of kitComponents) pushToMap(componentsByKit, component.kit_sku_key, component);
   for (const alert of alerts) pushToMap(alertsByProduct, alert.product_id, alert);
 
@@ -419,10 +507,27 @@ export async function getStockOverview(): Promise<StockOverview | null> {
       const states = stockBySku.get(link.source_sku_key) ?? [];
       physicalReady = states.length > 0;
       if (physicalReady) {
-        physicalAvailable = states.reduce((sum, state) => sum + numberOrZero(state.available_quantity), 0);
-        physicalCurrent = states.reduce((sum, state) => sum + numberOrZero(state.current_quantity), 0);
+        physicalAvailable = states.reduce((sum, state) => {
+          const adjustments = receiptAdjustmentsByTarget.get(`${state.sku_key}:${state.warehouse_key}`) ?? [];
+          return sum + numberOrZero(state.available_quantity) + adjustments.reduce(
+            (adjustmentSum, adjustment) => adjustmentSum + numberOrZero(adjustment.quantity),
+            0,
+          );
+        }, 0);
+        physicalCurrent = states.reduce((sum, state) => {
+          const adjustments = receiptAdjustmentsByTarget.get(`${state.sku_key}:${state.warehouse_key}`) ?? [];
+          return sum + numberOrZero(state.current_quantity) + adjustments.reduce(
+            (adjustmentSum, adjustment) => adjustmentSum + numberOrZero(adjustment.quantity),
+            0,
+          );
+        }, 0);
         lowStockThreshold = states.reduce((sum, state) => sum + numberOrZero(state.low_stock_threshold), 0);
-        physicalUpdatedAt = latestIso(states.map((state) => state.checked_at));
+        physicalUpdatedAt = latestIso([
+          ...states.map((state) => state.checked_at),
+          ...states.flatMap((state) => (
+            receiptAdjustmentsByTarget.get(`${state.sku_key}:${state.warehouse_key}`) ?? []
+          ).map((adjustment) => adjustment.applied_at)),
+        ]);
       }
     }
 
@@ -440,14 +545,25 @@ export async function getStockOverview(): Promise<StockOverview | null> {
           componentStates.map((state) => ({
             skuKey: state.sku_key,
             warehouseKey: state.warehouse_key,
-            availableQuantity: numberOrZero(state.available_quantity),
+            availableQuantity:
+              numberOrZero(state.available_quantity) +
+              (receiptAdjustmentsByTarget.get(`${state.sku_key}:${state.warehouse_key}`) ?? [])
+                .reduce(
+                  (sum, adjustment) => sum + numberOrZero(adjustment.quantity),
+                  0,
+                ),
           })),
         );
         physicalReady = availability.ready;
         physicalAvailable = availability.available;
       }
 
-      physicalUpdatedAt = latestIso(componentStates.map((state) => state.checked_at));
+      physicalUpdatedAt = latestIso([
+        ...componentStates.map((state) => state.checked_at),
+        ...componentStates.flatMap((state) => (
+          receiptAdjustmentsByTarget.get(`${state.sku_key}:${state.warehouse_key}`) ?? []
+        ).map((adjustment) => adjustment.applied_at)),
+      ]);
     }
 
     const offers = offersByProduct.get(product.id) ?? [];
@@ -465,9 +581,30 @@ export async function getStockOverview(): Promise<StockOverview | null> {
     });
     const fullApplicable = inventoryTargets.length > 0;
     const fullReady = fullApplicable && fullStates.length === inventoryTargets.length;
-    const fullAvailable = fullStates.length
-      ? fullStates.reduce((sum, state) => sum + state.available_quantity, 0)
-      : null;
+    const fullAccounts = [...new Set(inventoryTargets.map((target) => target.accountId))]
+      .map((accountId) => {
+        const accountTargets = inventoryTargets.filter((target) => target.accountId === accountId);
+        const accountStates = accountTargets.flatMap((target) => {
+          const state = fulfillmentByTarget.get(`${target.accountId}:${target.inventoryId}`);
+          return state ? [state] : [];
+        });
+        const account = accountsById.get(accountId);
+        const ready = accountStates.length === accountTargets.length;
+        return {
+          accountId,
+          accountCode: account?.code ?? null,
+          accountName: account?.display_name ?? account?.code ?? "Conta Mercado Livre",
+          available: accountStates.length
+            ? accountStates.reduce((sum, state) => sum + state.available_quantity, 0)
+            : null,
+          inventoryCount: accountTargets.length,
+          checkedInventoryCount: accountStates.length,
+          pendingInventoryCount: Math.max(accountTargets.length - accountStates.length, 0),
+          ready,
+        };
+      })
+      .sort((left, right) => left.accountName.localeCompare(right.accountName, "pt-BR"));
+    const fullHasZero = fullAccounts.some((account) => account.ready && account.available === 0);
     const advertisedAvailable = offers.length
       ? offers.reduce((sum, offer) => sum + (offer.available ?? 0), 0)
       : null;
@@ -481,7 +618,7 @@ export async function getStockOverview(): Promise<StockOverview | null> {
       physicalAvailable,
       fullApplicable,
       fullReady,
-      fullAvailable,
+      fullHasZero,
       activeOffers,
       advertisedAvailable,
       alertSeverity,
@@ -500,8 +637,8 @@ export async function getStockOverview(): Promise<StockOverview | null> {
       lowStockThreshold,
       fullApplicable,
       fullReady,
-      fullAvailable,
       fullPending: Math.max(inventoryTargets.length - fullStates.length, 0),
+      fullAccounts,
       advertisedOffers: offers.length,
       activeOffers,
       advertisedAvailable,
@@ -534,6 +671,15 @@ export async function getStockOverview(): Promise<StockOverview | null> {
       conflicts.length > 0 ||
       stockStates.length > 0 ||
       kits.length > 0,
+    canReceiveStock: ["admin", "gestor", "operador"].includes(access.role),
+    canImportUpseller: access.role === "admin",
+    stockReceiptReady: receiptAdjustmentsResult.ready,
+    warehouses: [...new Map(
+      stockStates.map((state) => [state.warehouse_key, {
+        key: state.warehouse_key,
+        name: state.warehouse_name,
+      }]),
+    ).values()].sort((left, right) => left.name.localeCompare(right.name, "pt-BR")),
     summary: {
       totalProducts: rows.length,
       listedProducts: rows.filter((row) => row.advertisedOffers > 0).length,

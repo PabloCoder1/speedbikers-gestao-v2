@@ -191,6 +191,11 @@ function evidenceNumber(evidence: Record<string, unknown>, key: string) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function evidenceText(evidence: Record<string, unknown>, key: string) {
+  const value = evidence[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
 function evidenceArrayLength(evidence: Record<string, unknown>, key: string) {
   const value = evidence[key];
   return Array.isArray(value) ? value.length : null;
@@ -236,10 +241,19 @@ function buildDescription(
     }
   }
 
+  if (alertType === "FULL_OUT_OF_STOCK") {
+    const account = evidenceText(evidence, "accountName") ?? evidenceText(evidence, "accountCode");
+    if (account) {
+      return `${account} está sem unidades disponíveis no Full.`;
+    }
+  }
+
   if (alertType === "FULL_UNAVAILABLE_UNITS") {
     const unavailable = evidenceNumber(evidence, "notAvailable");
+    const account = evidenceText(evidence, "accountName") ?? evidenceText(evidence, "accountCode");
     if (unavailable !== null) {
-      return `${formatQuantity(unavailable)} unidade(s) estão indisponíveis no Full.`;
+      const prefix = account ? `${account}: ` : "";
+      return `${prefix}${formatQuantity(unavailable)} unidade(s) estão indisponíveis no Full.`;
     }
   }
 

@@ -196,7 +196,7 @@ function UnavailablePanel() {
             Estoque e disponibilidade
           </h2>
           <p className="mt-1 text-xs text-gray-500">
-            Visão consolidada do estoque físico, Full e publicado
+            Estoque físico, Full separado por conta e saldo publicado
           </p>
         </div>
         <Badge variant="warning">Temporariamente indisponível</Badge>
@@ -229,7 +229,6 @@ export function ProductStockIntelligencePanel({
   const isKit = physical.kind === "kit";
   const warehouses = readWarehouses(physical.warehouses);
   const kitComponents = readKitComponents(physical.limitingComponents);
-  const fullHasSnapshot = data.full.checkedInventoryCount > 0;
   const advertisedHasOffers = data.advertised.listingCount > 0;
 
   const readiness = data.mapping.status === "conflict"
@@ -248,7 +247,7 @@ export function ProductStockIntelligencePanel({
 
   const fullHelper = !data.full.applicable
     ? "Este produto não possui inventário Full identificado"
-    : `${integer.format(data.full.checkedInventoryCount)} de ${integer.format(data.full.inventoryCount)} inventário(s) validado(s)`;
+    : `${integer.format(data.full.accounts.length)} conta(s), sem somar os saldos entre elas`;
 
   const advertisedHelper = advertisedHasOffers
     ? `${integer.format(data.advertised.activeListingCount)} de ${integer.format(data.advertised.listingCount)} oferta(s) ativa(s)`
@@ -270,7 +269,7 @@ export function ProductStockIntelligencePanel({
             Estoque e disponibilidade
           </h2>
           <p className="mt-1 text-xs text-gray-500">
-            Visão consolidada do estoque físico, Full e publicado
+            Estoque físico, Full separado por conta e saldo publicado
           </p>
         </div>
         <Badge variant={readiness.variant}>
@@ -290,7 +289,7 @@ export function ProductStockIntelligencePanel({
               </p>
             </div>
             <span className="shrink-0 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-amber-800 ring-1 ring-inset ring-amber-200">
-              Nenhum upload necessário agora
+              Importação do UpSeller pendente
             </span>
           </div>
         </div>
@@ -317,8 +316,8 @@ export function ProductStockIntelligencePanel({
         />
         <MetricCard
           eyebrow="Mercado Livre"
-          label="Disponível no Full"
-          value={fullHasSnapshot ? formatQuantity(data.full.available) : "—"}
+          label="Contas no Full"
+          value={data.full.applicable ? integer.format(data.full.accounts.length) : "—"}
           helper={fullHelper}
           tone="emerald"
         />
@@ -361,12 +360,24 @@ export function ProductStockIntelligencePanel({
               value={physicalReady ? formatQuantity(physicalAvailable) : "Pendente"}
               state={physicalReady ? "ready" : data.mapping.status === "linked" ? "pending" : "inactive"}
             />
-            <AvailabilityRow
-              label="Fulfillment Full"
-              description={data.full.applicable ? formatCheckedAt(data.full.checkedAt) : "Sem inventário Full associado"}
-              value={fullHasSnapshot ? formatQuantity(data.full.available) : data.full.applicable ? "Pendente" : "N/A"}
-              state={data.full.ready ? "ready" : data.full.applicable ? "pending" : "inactive"}
-            />
+            {data.full.accounts.length > 0 ? data.full.accounts.map((account) => (
+              <AvailabilityRow
+                key={account.accountId}
+                label={`Full · ${account.displayName ?? account.code ?? "Conta Mercado Livre"}`}
+                description={account.checkedInventoryCount > 0
+                  ? `${formatCheckedAt(account.checkedAt)} · ${integer.format(account.checkedInventoryCount)}/${integer.format(account.inventoryCount)} inventário(s)`
+                  : "Aguardando a primeira leitura do Full desta conta"}
+                value={account.checkedInventoryCount > 0 ? formatQuantity(account.available) : "Pendente"}
+                state={account.pendingInventoryCount === 0 ? "ready" : "pending"}
+              />
+            )) : (
+              <AvailabilityRow
+                label="Fulfillment Full"
+                description="Sem inventário Full associado"
+                value="N/A"
+                state="inactive"
+              />
+            )}
             <AvailabilityRow
               label="Publicado nos anúncios"
               description={advertisedHelper}
@@ -546,7 +557,7 @@ export function ProductStockIntelligencePanel({
 
       {data.full.accounts.length > 0 ? (
         <div className="mt-4 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-100 px-5 py-4">
+          <div className="border-b border-gray-100 px-5 py-4">
             <div>
               <p className="text-sm font-semibold text-gray-950">
                 Full por conta
@@ -555,11 +566,6 @@ export function ProductStockIntelligencePanel({
                 Cobertura dos inventários vinculados em cada operação
               </p>
             </div>
-            {data.full.notAvailable > 0 ? (
-              <Badge variant="warning">
-                {formatQuantity(data.full.notAvailable)} indisponível(is)
-              </Badge>
-            ) : null}
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[680px] text-left">
@@ -602,16 +608,6 @@ export function ProductStockIntelligencePanel({
               </tbody>
             </table>
           </div>
-
-          {Object.keys(data.full.notAvailableByStatus).length > 0 ? (
-            <div className="flex flex-wrap gap-2 border-t border-gray-100 px-5 py-4">
-              {Object.entries(data.full.notAvailableByStatus).map(([status, quantity]) => (
-                <span key={status} className="rounded-lg bg-gray-50 px-2.5 py-1.5 text-xs text-gray-600 ring-1 ring-inset ring-gray-200">
-                  {status}: <strong className="text-gray-950">{formatQuantity(quantity)}</strong>
-                </span>
-              ))}
-            </div>
-          ) : null}
         </div>
       ) : null}
     </section>
