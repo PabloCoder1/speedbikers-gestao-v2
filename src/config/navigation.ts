@@ -35,7 +35,7 @@ export const navigationSections: NavigationSection[] =
       items: [
         {
           label: "Estoque",
-          href: null,
+          href: "/estoque",
         },
         {
           label: "Alertas",
