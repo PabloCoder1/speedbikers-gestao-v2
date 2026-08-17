@@ -12,6 +12,8 @@ type RecentOrdersAccountRow = {
 
 type RecentOrdersSyncRunRow = {
   id: string;
+  ml_account_id: string;
+  sync_type: string;
   status: string;
   started_at: string;
   error_code: string | null;
@@ -20,10 +22,6 @@ type RecentOrdersSyncRunRow = {
   records_processed: number;
   records_upserted: number;
   metadata: unknown;
-};
-
-type ListingsSyncRunRow = {
-  status: string;
 };
 
 type DueAccount = {
@@ -145,6 +143,46 @@ export async function syncRecentOrdersIfDue() {
     } as const;
   }
 
+  const accountIds = accounts.map((account) => account.id);
+  const { data: syncRunData, error: syncRunsError } = (await admin
+    .from("sync_runs")
+    .select([
+      "id",
+      "ml_account_id",
+      "sync_type",
+      "status",
+      "started_at",
+      "error_code",
+      "cursor_offset",
+      "records_discovered",
+      "records_processed",
+      "records_upserted",
+      "metadata",
+    ].join(","))
+    .in("ml_account_id", accountIds)
+    .in("sync_type", ["listings_full", "orders_recent"])
+    .order("started_at", { ascending: false })) as {
+      data: RecentOrdersSyncRunRow[] | null;
+      error: unknown;
+    };
+
+  if (syncRunsError) {
+    throw new Error(
+      "Não foi possível verificar as sincronizações das contas conectadas.",
+    );
+  }
+
+  const latestListingsSyncByAccount = new Map<string, RecentOrdersSyncRunRow>();
+  const latestOrdersSyncByAccount = new Map<string, RecentOrdersSyncRunRow>();
+  for (const syncRun of syncRunData ?? []) {
+    const target = syncRun.sync_type === "listings_full"
+      ? latestListingsSyncByAccount
+      : latestOrdersSyncByAccount;
+    if (!target.has(syncRun.ml_account_id)) {
+      target.set(syncRun.ml_account_id, syncRun);
+    }
+  }
+
   const dueAccounts:
     DueAccount[] = [];
 
@@ -157,42 +195,7 @@ export async function syncRecentOrdersIfDue() {
      * a sincronização completa dos anúncios
      * desta mesma conta tiver sido concluída.
      */
-    const {
-      data: listingsSync,
-      error: listingsSyncError,
-    } = (await admin
-      .from("sync_runs")
-      .select(
-        "status",
-      )
-      .eq(
-        "ml_account_id",
-        account.id,
-      )
-      .eq(
-        "sync_type",
-        "listings_full",
-      )
-      .order(
-        "started_at",
-        {
-          ascending: false,
-        },
-      )
-      .limit(1)
-      .maybeSingle()) as {
-        data:
-        | ListingsSyncRunRow
-        | null;
-
-        error: unknown;
-      };
-
-    if (listingsSyncError) {
-      throw new Error(
-        `Não foi possível verificar a sincronização de anúncios da conta ${account.code}.`,
-      );
-    }
+    const listingsSync = latestListingsSyncByAccount.get(account.id) ?? null;
 
     /*
      * Conta recém-conectada ainda sem anúncios
@@ -206,52 +209,7 @@ export async function syncRecentOrdersIfDue() {
       continue;
     }
 
-    const {
-      data: lastSync,
-      error: lastSyncError,
-    } = (await admin
-      .from("sync_runs")
-      .select(
-        [
-          "id",
-          "status",
-          "started_at",
-          "error_code",
-          "cursor_offset",
-          "records_discovered",
-          "records_processed",
-          "records_upserted",
-          "metadata",
-        ].join(","),
-      )
-      .eq(
-        "ml_account_id",
-        account.id,
-      )
-      .eq(
-        "sync_type",
-        "orders_recent",
-      )
-      .order(
-        "started_at",
-        {
-          ascending: false,
-        },
-      )
-      .limit(1)
-      .maybeSingle()) as {
-        data:
-        | RecentOrdersSyncRunRow
-        | null;
-
-        error: unknown;
-      };
-
-    if (lastSyncError) {
-      throw new Error(
-        `Não foi possível verificar a última sincronização de pedidos da conta ${account.code}.`,
-      );
-    }
+    const lastSync = latestOrdersSyncByAccount.get(account.id) ?? null;
 
     /*
      * Se já existe execução atual para esta
