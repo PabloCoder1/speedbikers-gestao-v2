@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --conditions=react-server --test src/lib/date/sao-paulo.test.ts src/lib/supabase/proxy.test.ts src/features/stock/stock-domain.test.ts src/features/stock/nfe-parser.test.ts src/features/upseller/import-parser.test.ts src/features/upseller/import-progress.test.ts src/features/upseller/link-candidate-dedup.test.ts src/features/upseller/inventory-reconciliation.test.ts"
+    "test": "tsx --conditions=react-server --test src/lib/date/sao-paulo.test.ts src/lib/supabase/proxy.test.ts src/features/ml-sync/current-row-sweep.test.ts src/features/stock/stock-domain.test.ts src/features/stock/nfe-parser.test.ts src/features/upseller/import-parser.test.ts src/features/upseller/import-progress.test.ts src/features/upseller/link-candidate-dedup.test.ts src/features/upseller/inventory-reconciliation.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

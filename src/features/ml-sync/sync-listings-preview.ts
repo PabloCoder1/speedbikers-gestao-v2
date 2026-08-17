@@ -1,5 +1,6 @@
 import "server-only";
 
+import { sweepTargets } from "@/features/ml-sync/current-row-sweep";
 import {
   getValidMercadoLivreAccessToken,
 } from "@/integrations/mercado-livre/access-token";
@@ -980,37 +981,47 @@ export async function syncListingsPreview({
           "Não foi possível persistir as variações.",
         );
       }
+    }
 
-      const listingIds =
-        Array.from(
-          listingIdByItem.values(),
+    /*
+     * A varredura roda para todo anúncio processado, mesmo quando o
+     * lote inteiro voltou sem variações. Um anúncio que deixou de ter
+     * variações produz zero linhas filhas, e é justamente esse o caso
+     * em que as variações antigas precisam sair de `is_current`.
+     */
+    const variationSweepTargets =
+      sweepTargets(
+        listingIdByItem.values(),
+      );
+
+    if (
+      variationSweepTargets.length > 0
+    ) {
+      const { error: staleVariationsError } = await admin
+        .from(
+          "ml_listing_variations",
+        )
+        .update({
+          is_current:
+            false,
+        })
+        .in(
+          "ml_listing_id",
+          variationSweepTargets,
+        )
+        .eq(
+          "is_current",
+          true,
+        )
+        .neq(
+          "last_seen_sync_run_id",
+          syncRun.id,
         );
 
-      if (
-        listingIds.length > 0
-      ) {
-        const { error: staleVariationsError } = await admin
-          .from(
-            "ml_listing_variations",
-          )
-          .update({
-            is_current:
-              false,
-          })
-          .in(
-            "ml_listing_id",
-            listingIds,
-          )
-          .neq(
-            "last_seen_sync_run_id",
-            syncRun.id,
-          );
-
-        if (staleVariationsError) {
-          throw new Error(
-            `Não foi possível invalidar variações antigas: ${staleVariationsError.message}`,
-          );
-        }
+      if (staleVariationsError) {
+        throw new Error(
+          `Não foi possível invalidar variações antigas: ${staleVariationsError.message}`,
+        );
       }
     }
 

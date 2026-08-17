@@ -9,6 +9,7 @@ import {
     type MercadoLivreOrder,
 } from "../../integrations/mercado-livre/orders";
 
+import { sweepTargets } from "./current-row-sweep";
 import { saoPauloDateKey } from "../../lib/date/sao-paulo";
 import { createAdminClient } from "../../lib/supabase/admin";
 
@@ -1317,6 +1318,59 @@ export async function syncOrdersPreview({
             ) {
                 throw new Error(
                     "Não foi possível persistir os itens dos pedidos.",
+                );
+            }
+        }
+
+
+        /*
+         * Linhas que existiam em uma versão anterior do pedido e não
+         * vieram mais precisam sair de `is_current`, senão continuam
+         * somando unidades e receita rateada de itens que já não
+         * compõem o pedido.
+         *
+         * A varredura usa os pedidos processados, não as linhas
+         * recebidas: um pedido que voltou sem nenhum item é exatamente
+         * o caso em que a linha antiga precisa ser invalidada.
+         *
+         * Roda antes do rebuild de métricas, que lê `is_current`.
+         */
+        const orderItemSweepTargets =
+            sweepTargets(
+                orderIdMap.values(),
+            );
+
+        if (
+            orderItemSweepTargets.length >
+            0
+        ) {
+            const {
+                error:
+                staleOrderItemsError,
+            } = await admin
+                .from("order_items")
+                .update({
+                    is_current:
+                        false,
+                })
+                .in(
+                    "order_id",
+                    orderItemSweepTargets,
+                )
+                .eq(
+                    "is_current",
+                    true,
+                )
+                .neq(
+                    "last_seen_sync_run_id",
+                    syncRun.id,
+                );
+
+            if (
+                staleOrderItemsError
+            ) {
+                throw new Error(
+                    `Não foi possível invalidar itens antigos dos pedidos: ${staleOrderItemsError.message}`,
                 );
             }
         }
