@@ -3,23 +3,11 @@ import { NextResponse } from "next/server";
 import { getCurrentAccess } from "@/features/auth/get-current-access";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-const PAGE_SIZE = 1_000;
-const UNCERTAIN_RESOLUTIONS = new Set([
-  "sale_price_promotion_unmatched",
-  "active_promotion_without_price",
-  "ambiguous_multiple_active_prices",
-]);
-
 type AccountRow = { id: string; code: string };
-type ListingRow = { id: string; ml_account_id: string };
-type PriceStateRow = {
-  ml_listing_id: string;
-  base_price: number | string | null;
-  effective_price: number | string | null;
-  price_checked_at: string | null;
-  has_active_promotion: boolean;
-  promotion_resolution: string;
-  promotions_fetch_status: string;
+type CoverageResult = {
+  summary: Record<string, number | boolean>;
+  accounts: { code: string }[];
+  refreshJobs: Record<string, number>;
 };
 type BackfillRow = {
   ml_account_id: string;
@@ -41,26 +29,6 @@ function metadataNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
-function coverage(ready: number, total: number) {
-  return total === 0 ? 0 : Math.round((ready / total) * 10_000) / 100;
-}
-
-async function loadPaged<T>(
-  load: (
-    from: number,
-    to: number,
-  ) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
-) {
-  const rows: T[] = [];
-  for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await load(from, from + PAGE_SIZE - 1);
-    if (error) throw new Error(error.message);
-    const page = data ?? [];
-    rows.push(...page);
-    if (page.length < PAGE_SIZE) return rows;
-  }
-}
-
 export async function GET() {
   const access = await getCurrentAccess();
   if (!access) return NextResponse.json({ error: "not_authenticated" }, { status: 401 });
@@ -80,70 +48,18 @@ export async function GET() {
     const accountRows = accountData ?? [];
     const accountIds = new Set(accountRows.map((account) => account.id));
 
-    const listings = await loadPaged<ListingRow>((from, to) =>
-      admin
-        .from("ml_listings")
-        .select("id,ml_account_id")
-        .eq("organization_id", access.organizationId)
-        .eq("is_current", true)
-        .order("id", { ascending: true })
-        .range(from, to)
-        .returns<ListingRow[]>(),
+    /*
+     * A cobertura é agregada no banco. Antes, esta rota carregava todos os
+     * ml_listings atuais e todos os ml_offer_price_states em páginas de
+     * 1.000 linhas só para produzir oito contagens: 10.286 linhas medidas
+     * por chamada. A RPC devolve os mesmos números em ~1 KB.
+     */
+    const { data: coverageData, error: coverageError } = await admin.rpc(
+      "get_offer_price_coverage",
+      { target_organization_id: access.organizationId },
     );
-    const currentListingIds = new Set(listings.map((listing) => listing.id));
-
-    const states = await loadPaged<PriceStateRow>((from, to) =>
-      admin
-        .from("ml_offer_price_states")
-        .select(
-          "ml_listing_id,base_price,effective_price,price_checked_at,has_active_promotion,promotion_resolution,promotions_fetch_status",
-        )
-        .eq("organization_id", access.organizationId)
-        .eq("offer_scope", "listing")
-        .order("ml_listing_id", { ascending: true })
-        .range(from, to)
-        .returns<PriceStateRow[]>(),
-    );
-    const currentStates = states.filter((state) => currentListingIds.has(state.ml_listing_id));
-    const readyListingIds = new Set(
-      currentStates
-        .filter(
-          (state) =>
-            state.base_price !== null &&
-            state.effective_price !== null &&
-            state.price_checked_at !== null,
-        )
-        .map((state) => state.ml_listing_id),
-    );
-
-    const accounts = accountRows.map((account) => {
-      const accountListings = listings.filter(
-        (listing) => listing.ml_account_id === account.id,
-      );
-      const priceReady = accountListings.filter((listing) =>
-        readyListingIds.has(listing.id),
-      ).length;
-      return {
-        code: account.code,
-        currentListings: accountListings.length,
-        priceReady,
-        missingPrice: accountListings.length - priceReady,
-        coveragePercent: coverage(priceReady, accountListings.length),
-      };
-    });
-
-    const currentListings = listings.length;
-    const priceReady = readyListingIds.size;
-    const missingPrice = currentListings - priceReady;
-    const activePromotions = currentStates.filter(
-      (state) => state.has_active_promotion,
-    ).length;
-    const priceExplanationUncertain = currentStates.filter((state) =>
-      UNCERTAIN_RESOLUTIONS.has(state.promotion_resolution),
-    ).length;
-    const promotionDataNotApplicable = currentStates.filter(
-      (state) => state.promotions_fetch_status === "not_applicable",
-    ).length;
+    if (coverageError) throw new Error(coverageError.message);
+    const coverage = coverageData as unknown as CoverageResult;
 
     const { data: backfillData, error: backfillError } = await admin
       .from("sync_runs")
@@ -173,34 +89,12 @@ export async function GET() {
         };
       });
 
-    const refreshStatuses = ["queued", "running", "succeeded", "failed", "ignored"] as const;
-    const refreshCounts = await Promise.all(
-      refreshStatuses.map(async (status) => {
-        const { count, error } = await admin
-          .from("ml_offer_refresh_jobs")
-          .select("id", { count: "exact", head: true })
-          .eq("organization_id", access.organizationId)
-          .eq("status", status);
-        if (error) throw new Error(error.message);
-        return [status, count ?? 0] as const;
-      }),
-    );
-
     return NextResponse.json({
       ok: true,
-      summary: {
-        currentListings,
-        priceReady,
-        missingPrice,
-        coveragePercent: coverage(priceReady, currentListings),
-        activePromotions,
-        priceExplanationUncertain,
-        promotionDataNotApplicable,
-        readyForVisualSwitch: currentListings > 0 && missingPrice === 0,
-      },
-      accounts,
+      summary: coverage.summary,
+      accounts: coverage.accounts,
       backfills,
-      refreshJobs: Object.fromEntries(refreshCounts),
+      refreshJobs: coverage.refreshJobs,
     });
   } catch (error) {
     console.error(
