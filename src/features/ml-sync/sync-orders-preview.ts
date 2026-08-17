@@ -456,6 +456,7 @@ export async function syncOrdersPreview({
      */
     const {
         data: listingSync,
+        error: listingSyncError,
     } = (await admin
         .from("sync_runs")
         .select(
@@ -481,6 +482,12 @@ export async function syncOrdersPreview({
             error: unknown;
         };
 
+
+    if (listingSyncError) {
+        throw new Error(
+            "Não foi possível verificar a sincronização completa dos anúncios.",
+        );
+    }
 
     if (
         !listingSync ||
@@ -1536,7 +1543,7 @@ export async function syncOrdersPreview({
         };
     } catch (error) {
         if (manageRunLifecycle) {
-            await admin
+            const { error: failureCheckpointError } = await admin
                 .from("sync_runs")
                 .update({
                     status:
@@ -1558,6 +1565,12 @@ export async function syncOrdersPreview({
                     "id",
                     syncRun.id,
                 );
+
+            if (failureCheckpointError) {
+                throw new Error(
+                    `A importação de pedidos falhou e o estado de falha não foi persistido: ${failureCheckpointError.message}`,
+                );
+            }
         }
 
 

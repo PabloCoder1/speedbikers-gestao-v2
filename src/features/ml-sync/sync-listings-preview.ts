@@ -989,7 +989,7 @@ export async function syncListingsPreview({
       if (
         listingIds.length > 0
       ) {
-        await admin
+        const { error: staleVariationsError } = await admin
           .from(
             "ml_listing_variations",
           )
@@ -1005,6 +1005,12 @@ export async function syncListingsPreview({
             "last_seen_sync_run_id",
             syncRun.id,
           );
+
+        if (staleVariationsError) {
+          throw new Error(
+            `Não foi possível invalidar variações antigas: ${staleVariationsError.message}`,
+          );
+        }
       }
     }
 
@@ -1062,7 +1068,7 @@ export async function syncListingsPreview({
         );
       }
 
-      await admin
+      const { error: accountCheckpointError } = await admin
         .from("ml_accounts")
         .update({
           last_synced_at:
@@ -1073,6 +1079,12 @@ export async function syncListingsPreview({
           "id",
           mlAccountId,
         );
+
+      if (accountCheckpointError) {
+        throw new Error(
+          `A sincronização terminou, mas a conta não foi atualizada: ${accountCheckpointError.message}`,
+        );
+      }
     }
 
     return {
@@ -1099,7 +1111,7 @@ export async function syncListingsPreview({
     };
   } catch (error) {
     if (manageRunLifecycle) {
-      await admin
+      const { error: failureCheckpointError } = await admin
         .from("sync_runs")
         .update({
           status:
@@ -1121,6 +1133,12 @@ export async function syncListingsPreview({
           "id",
           syncRun.id,
         );
+
+      if (failureCheckpointError) {
+        throw new Error(
+          `A sincronização de anúncios falhou e o estado de falha não foi persistido: ${failureCheckpointError.message}`,
+        );
+      }
     }
 
     throw error;
