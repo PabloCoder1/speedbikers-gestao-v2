@@ -68,7 +68,7 @@ export async function processFulfillmentStockBackfillBurst() {
       if (inventoryIds.length === 0) {
         const { error: completionError } = await admin.from("sync_runs").update({
           status: "succeeded", records_processed: processed, records_upserted: upserted,
-          retry_count: 0, lease_id: null, lease_expires_at: null, finished_at: new Date().toISOString(),
+          retry_count: 0, lease_reclaim_count: 0, lease_id: null, lease_expires_at: null, finished_at: new Date().toISOString(),
           metadata: { ...state, cursor_inventory_id: cursor, completed_at: new Date().toISOString() },
         }).eq("id", run.id).eq("lease_id", leaseId);
         if (completionError) throw new Error(`FULFILLMENT_COMPLETE_FAILED:${completionError.message}`);
@@ -104,7 +104,7 @@ export async function processFulfillmentStockBackfillBurst() {
       const { error: checkpointError } = await admin.from("sync_runs").update({
         records_processed: processed,
         records_upserted: upserted,
-        retry_count: 0,
+        retry_count: 0, lease_reclaim_count: 0,
         metadata: { ...state, cursor_inventory_id: cursor, last_batch_at: new Date().toISOString() },
       }).eq("id", run.id).eq("lease_id", leaseId);
       if (checkpointError) throw new Error(`FULFILLMENT_CHECKPOINT_FAILED:${checkpointError.message}`);
@@ -121,7 +121,7 @@ export async function processFulfillmentStockBackfillBurst() {
 
     const { error: releaseError } = await admin.from("sync_runs").update({
       status: "queued", lease_id: null, lease_expires_at: null,
-      next_attempt_at: new Date().toISOString(), retry_count: 0,
+      next_attempt_at: new Date().toISOString(), retry_count: 0, lease_reclaim_count: 0,
       metadata: { ...state, cursor_inventory_id: cursor, last_burst_at: new Date().toISOString() },
     }).eq("id", run.id).eq("lease_id", leaseId);
     if (releaseError) throw new Error(`FULFILLMENT_RELEASE_FAILED:${releaseError.message}`);

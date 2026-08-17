@@ -221,12 +221,12 @@ export async function processNextUpsellerImportChunk() {
     if (newCursor >= rows.length) {
       await release({
         status: "queued", phase: nextStagingPhase(phase), cursor_row: 0,
-        attempt_count: 0, next_attempt_at: new Date().toISOString(), error_code: null, error_message: null,
+        attempt_count: 0, lease_reclaim_count: 0, next_attempt_at: new Date().toISOString(), error_code: null, error_message: null,
       });
       return { processed: true, completed: false, importId: batch.id, phase, staged: stagedRows, phaseComplete: true } as const;
     }
     await release({
-      status: "queued", cursor_row: newCursor, attempt_count: 0,
+      status: "queued", cursor_row: newCursor, attempt_count: 0, lease_reclaim_count: 0,
       next_attempt_at: new Date().toISOString(), error_code: null, error_message: null,
     });
     return { processed: true, completed: false, importId: batch.id, phase, staged: stagedRows, cursorRow: newCursor } as const;

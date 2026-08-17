@@ -99,7 +99,7 @@ export async function processNextOfferPricesBackfillBatch() {
       const finalStatus = failureCount > 0 ? "partial" : "succeeded";
       const now = new Date().toISOString();
       const { error: finishError } = await admin.from("sync_runs").update({
-        status: finalStatus, lease_id: null, lease_expires_at: null, retry_count: 0,
+        status: finalStatus, lease_id: null, lease_expires_at: null, retry_count: 0, lease_reclaim_count: 0,
         finished_at: now, error_code: failureCount > 0 ? "offer_prices_partial" : null,
         error_message: failureCount > 0 ? `${failureCount} anúncio(s) não puderam ser resolvidos após as tentativas.` : null,
         metadata: { ...metadata, completed_at: now },
@@ -203,7 +203,7 @@ export async function processNextOfferPricesBackfillBatch() {
       const finalStatus = newFailureCount > 0 ? "partial" : "succeeded";
       const { error: finalizeError } = await admin.from("sync_runs").update({
         cursor_offset: newOffset, records_processed: newProcessed, records_upserted: newUpserted,
-        status: finalStatus, retry_count: 0, lease_id: null, lease_expires_at: null,
+        status: finalStatus, retry_count: 0, lease_reclaim_count: 0, lease_id: null, lease_expires_at: null,
         error_code: newFailureCount > 0 ? "offer_prices_partial" : null,
         error_message: newFailureCount > 0 ? `${newFailureCount} anúncio(s) não puderam ser resolvidos após as tentativas.` : null,
         metadata: updatedMetadata, finished_at: new Date().toISOString(),
@@ -215,7 +215,7 @@ export async function processNextOfferPricesBackfillBatch() {
 
     const { error: progressError } = await admin.from("sync_runs").update({
       cursor_offset: newOffset, records_processed: newProcessed, records_upserted: newUpserted,
-      retry_count: 0, error_code: null, error_message: null, metadata: updatedMetadata,
+      retry_count: 0, lease_reclaim_count: 0, error_code: null, error_message: null, metadata: updatedMetadata,
       status: "queued", lease_id: null, lease_expires_at: null,
       next_attempt_at: new Date().toISOString(),
     }).eq("id", run.id).eq("lease_id", leaseId);

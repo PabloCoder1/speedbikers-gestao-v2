@@ -356,6 +356,9 @@ export async function processNextOrdersBackfillBatch() {
           retry_count:
             0,
 
+          lease_reclaim_count:
+            0,
+
           next_attempt_at:
             new Date()
               .toISOString(),
@@ -455,6 +458,9 @@ export async function processNextOrdersBackfillBatch() {
           retry_count:
             0,
 
+          lease_reclaim_count:
+            0,
+
           lease_id:
             null,
 
@@ -540,6 +546,9 @@ export async function processNextOrdersBackfillBatch() {
           newUpserted,
 
         retry_count:
+          0,
+
+        lease_reclaim_count:
           0,
 
         next_attempt_at:

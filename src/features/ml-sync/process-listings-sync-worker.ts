@@ -264,6 +264,9 @@ export async function processNextListingsSyncBatch() {
         retry_count:
           0,
 
+        lease_reclaim_count:
+          0,
+
         metadata,
       })
       .eq(
