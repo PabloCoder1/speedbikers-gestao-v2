@@ -7,6 +7,11 @@ export type EquivalentLinkCandidate = {
   evidenceKey: string;
 };
 
+export type UserProductRelationship = {
+  channel: string;
+  listingExternalId: string | null;
+};
+
 function compareText(left: string, right: string) {
   if (left === right) return 0;
   return left < right ? -1 : 1;
@@ -34,4 +39,9 @@ export function deduplicateEquivalentLinkCandidates<T extends EquivalentLinkCand
     identities.add(identity);
     return true;
   });
+}
+
+export function isMercadoLivreUserProductRelationship(relationship: UserProductRelationship) {
+  return relationship.channel === "mercado_livre"
+    && relationship.listingExternalId?.startsWith("MLBU") === true;
 }
