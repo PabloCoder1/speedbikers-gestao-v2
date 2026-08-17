@@ -351,3 +351,118 @@ grant execute on function public.get_operational_alerts_page(
   uuid, text, integer, timestamptz, uuid
 ) to authenticated;
 
+
+
+-- ============================================================================
+-- 4. Limitar a reaquisicao de leases expirados (jobs que nunca falham)
+-- ============================================================================
+--
+-- Problema auditado:
+-- claim_next_listings_sync_run (20260810125948_add_resumable_listing_sync.sql:140-204),
+-- claim_next_orders_backfill_run (20260810181227_add_orders_backfill_queue.sql:105-158),
+-- claim_next_offer_prices_backfill_run (20260814172324_add_offer_prices_backfill_queue.sql:30-50)
+-- e claim_next_upseller_import_batch (20260814211000_add_stock_intelligence_workers.sql:21-38)
+-- readquirem um run cujo lease expirou SEM incrementar nenhum contador.
+--
+-- O incremento de retry_count so acontece no bloco catch do worker em Node,
+-- por exemplo src/features/ml-sync/process-listings-sync-worker.ts:378-450. Se a
+-- Function for morta pelo limite de 60 s (src/app/api/internal/ml-sync/worker/route.ts:20)
+-- antes do catch, nada e persistido. O lease expira em 120 s, o proximo dispatch
+-- readquire o mesmo run, e o ciclo se repete indefinidamente: o job fica preso em
+-- 'running' para sempre, sem nunca atingir max_retries e sem nunca aparecer como
+-- falha. ml_offer_refresh_jobs nao tem esse problema porque seu claim ja
+-- incrementa attempt_count (20260814175119_finalize_offer_price_background_pipeline.sql:381-386).
+--
+-- A correcao e contar a reaquisicao no proprio claim, no banco, onde ela sempre
+-- acontece. O exemplo abaixo e para listings; replicar o mesmo padrao nas outras
+-- tres funcoes antes de aplicar.
+--
+-- Passos de validacao antes de promover:
+-- 1. Conferir com o time se lease_reclaim_count deve compartilhar o teto de
+--    max_retries ou ter um teto proprio (sugestao: teto proprio, menor).
+-- 2. Aplicar em staging e simular a morte do worker (matar a Function no meio do
+--    lote) confirmando que apos N reaquisicoes o run vai para 'failed'.
+-- 3. Criar alerta sobre sync_runs em 'failed' com error_code
+--    'lease_reclaim_exhausted', que hoje seriam justamente os jobs invisiveis.
+
+alter table public.sync_runs
+  add column if not exists lease_reclaim_count integer not null default 0;
+
+create or replace function public.claim_next_listings_sync_run(
+  requested_lease_id uuid,
+  lease_duration_seconds integer default 120,
+  max_lease_reclaims integer default 5
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  claimed_run_id uuid;
+begin
+  if requested_lease_id is null then
+    raise exception 'lease_id_required';
+  end if;
+
+  if (lease_duration_seconds < 30 or lease_duration_seconds > 300) then
+    raise exception 'invalid_lease_duration';
+  end if;
+
+  -- Dead-letter: runs que ja esgotaram as reaquisicoes param de ser servidos e
+  -- passam a ser visiveis como falha, em vez de girar para sempre.
+  update public.sync_runs as sync_run
+  set
+    status = 'failed',
+    lease_id = null,
+    lease_expires_at = null,
+    error_code = 'lease_reclaim_exhausted',
+    error_message = format(
+      'O lease expirou %s vezes sem o worker concluir nem registrar falha.',
+      sync_run.lease_reclaim_count
+    ),
+    finished_at = now()
+  where sync_run.sync_type = 'listings_full'
+    and sync_run.status in ('queued', 'running')
+    and sync_run.lease_id is not null
+    and sync_run.lease_expires_at <= now()
+    and sync_run.lease_reclaim_count >= max_lease_reclaims;
+
+  with candidate as (
+    select sync_run.id
+    from public.sync_runs as sync_run
+    where sync_run.sync_type = 'listings_full'
+      and sync_run.status in ('queued', 'running')
+      and sync_run.next_attempt_at <= now()
+      and (
+        sync_run.lease_id is null
+        or sync_run.lease_expires_at <= now()
+      )
+    order by sync_run.started_at asc
+    for update skip locked
+    limit 1
+  )
+  update public.sync_runs as sync_run
+  set
+    status = 'running',
+    lease_id = requested_lease_id,
+    lease_expires_at = now() + make_interval(secs => lease_duration_seconds),
+
+    -- So conta quando estamos tomando um lease que outro processo abandonou.
+    lease_reclaim_count =
+      case
+        when sync_run.lease_id is not null and sync_run.lease_expires_at <= now()
+          then sync_run.lease_reclaim_count + 1
+        else sync_run.lease_reclaim_count
+      end
+  from candidate
+  where sync_run.id = candidate.id
+  returning sync_run.id into claimed_run_id;
+
+  return claimed_run_id;
+end;
+$$;
+
+-- O worker deve zerar o contador ao concluir um lote com sucesso, junto do
+-- retry_count que ele ja zera hoje:
+--   update public.sync_runs set lease_reclaim_count = 0, retry_count = 0 ...
