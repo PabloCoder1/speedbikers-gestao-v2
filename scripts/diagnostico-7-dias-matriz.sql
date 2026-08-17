@@ -30,8 +30,7 @@ with base as (
 items as (
   select
     oi.order_id,
-    sum(oi.quantity)                                as qty,
-    sum(coalesce(oi.unit_price, 0) * oi.quantity)    as rev,
+    sum(oi.quantity)                                  as qty,
     sum(coalesce(oi.full_unit_price, 0) * oi.quantity) as rev_cheio
   from public.order_items oi
   where oi.is_current = true
@@ -43,7 +42,6 @@ select
   count(distinct b.id)                              as vendas,
   count(distinct coalesce(b.pack_id, b.id::text))   as vendas_agrupando_pack,
   sum(i.qty)                                        as unidades,
-  round(sum(i.rev), 2)                              as receita_itens,
   round(sum(b.total_amount), 2)                     as receita_total_amount,
   round(sum(i.rev_cheio), 2)                        as receita_preco_cheio
 from (values
@@ -106,8 +104,7 @@ with base as (
 items as (
   select
     oi.order_id,
-    sum(oi.quantity)                              as qty,
-    sum(coalesce(oi.unit_price, 0) * oi.quantity)  as rev
+    sum(oi.quantity)                              as qty
   from public.order_items oi
   where oi.is_current = true
   group by 1
@@ -117,7 +114,6 @@ select
   r.nome                          as regra,
   count(distinct b.id)            as vendas,
   sum(i.qty)                      as unidades,
-  round(sum(i.rev), 2)            as receita_itens,
   round(sum(b.total_amount), 2)   as receita_total_amount
 from base b
 cross join (values

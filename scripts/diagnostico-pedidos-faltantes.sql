@@ -33,20 +33,24 @@ limit 20;
 --    Se "pedidos_sem_itens" for alto, o problema é sync de itens.
 --    Se os totais de pedidos forem baixos, faltam pedidos mesmo.
 -- ------------------------------------------------------------
+with item_totals as (
+  select order_id, sum(quantity) as unidades
+  from public.order_items
+  where is_current = true
+  group by order_id
+)
 select
   (o.date_created at time zone 'America/Sao_Paulo')::date as dia,
   count(distinct o.id)                                     as pedidos,
-  count(distinct o.id) filter (where oi.id is null)         as pedidos_sem_itens,
-  coalesce(sum(oi.quantity), 0)                            as unidades,
-  round(coalesce(sum(coalesce(oi.unit_price, 0) * oi.quantity), 0), 2) as receita,
+  count(*) filter (where items.order_id is null)            as pedidos_sem_itens,
+  coalesce(sum(items.unidades), 0)                          as unidades,
+  round(coalesce(sum(o.total_amount), 0), 2)                as receita,
   min(o.first_seen_at)                                     as primeiro_sync,
   max(o.last_seen_at)                                      as ultimo_sync
 from public.orders o
 join public.ml_accounts a
   on a.id = o.ml_account_id
-left join public.order_items oi
-  on oi.order_id = o.id
- and oi.is_current = true
+left join item_totals items on items.order_id = o.id
 where a.code = 'speedbikers'
   and (o.date_created at time zone 'America/Sao_Paulo')::date
       between '2026-08-07' and '2026-08-13'
@@ -57,20 +61,24 @@ order by 1;
 -- ------------------------------------------------------------
 -- 3) Total dos 7 dias, para comparar direto com o ML acima
 -- ------------------------------------------------------------
+with item_totals as (
+  select order_id, sum(quantity) as unidades
+  from public.order_items
+  where is_current = true
+  group by order_id
+)
 select
   count(distinct o.id)                                     as vendas,
-  coalesce(sum(oi.quantity), 0)                            as unidades,
-  round(coalesce(sum(coalesce(oi.unit_price, 0) * oi.quantity), 0), 2) as vendas_brutas,
+  coalesce(sum(items.unidades), 0)                         as unidades,
+  round(coalesce(sum(o.total_amount), 0), 2)               as vendas_brutas,
   round(
-    coalesce(sum(coalesce(oi.unit_price, 0) * oi.quantity), 0)
-    / nullif(sum(oi.quantity), 0)
+    coalesce(sum(o.total_amount), 0)
+    / nullif(sum(items.unidades), 0)
   , 2)                                                     as preco_medio_unidade
 from public.orders o
 join public.ml_accounts a
   on a.id = o.ml_account_id
-left join public.order_items oi
-  on oi.order_id = o.id
- and oi.is_current = true
+left join item_totals items on items.order_id = o.id
 where a.code = 'speedbikers'
   and (o.date_created at time zone 'America/Sao_Paulo')::date
       between '2026-08-07' and '2026-08-13';

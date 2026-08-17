@@ -137,13 +137,16 @@ union all
 
 select
   'orders/order_items (recalculado agora, status=paid)' as origem,
-  sum(coalesce(oi.unit_price, 0) * oi.quantity) as receita_bruta,
-  count(distinct o.id) as pedidos_pagos,
-  sum(oi.quantity) as unidades
+  sum(coalesce(o.total_amount, 0)) as receita_bruta,
+  count(*) as pedidos_pagos,
+  sum(items.unidades) as unidades
 from public.orders o
-join public.order_items oi
-  on oi.order_id = o.id
- and oi.is_current = true
+left join lateral (
+  select sum(oi.quantity) as unidades
+  from public.order_items oi
+  where oi.order_id = o.id
+    and oi.is_current = true
+) items on true
 join public.ml_accounts a
   on a.id = o.ml_account_id
 where a.code = 'speedbikers'

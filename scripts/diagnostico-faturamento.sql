@@ -33,38 +33,55 @@ select pg_get_functiondef(
 -- 5) DIAGNÓSTICO PRINCIPAL: faturamento por status de pedido,
 --    na semana de referência (04/08/2026 a 10/08/2026), conta SpeedBikers.
 --    Benchmark oficial ML: 1.445 vendas / 1.460 unidades / R$ 154.502,98
+with order_totals as (
+  select
+    o.id,
+    o.status,
+    o.total_amount,
+    coalesce(sum(oi.quantity), 0) as unidades
+  from public.orders o
+  left join public.order_items oi
+    on oi.order_id = o.id
+   and oi.is_current = true
+  join public.ml_accounts a
+    on a.id = o.ml_account_id
+  where a.code = 'speedbikers'
+    and (o.date_created at time zone 'America/Sao_Paulo')::date
+        between '2026-08-04' and '2026-08-10'
+  group by o.id, o.status, o.total_amount
+)
 select
-  o.status,
-  count(distinct o.id)                                    as pedidos,
-  sum(oi.quantity)                                         as unidades,
-  sum(coalesce(oi.unit_price, 0) * oi.quantity)             as receita_bruta
-from public.orders o
-join public.order_items oi
-  on oi.order_id = o.id
- and oi.is_current = true
-join public.ml_accounts a
-  on a.id = o.ml_account_id
-where a.code = 'speedbikers'
-  and (o.date_created at time zone 'America/Sao_Paulo')::date
-      between '2026-08-04' and '2026-08-10'
-group by o.status
+  status,
+  count(*)                                                 as pedidos,
+  sum(unidades)                                            as unidades,
+  sum(coalesce(total_amount, 0))                           as receita_bruta
+from order_totals
+group by status
 order by receita_bruta desc;
 
 -- 6) Total considerando TODOS os status (para comparar direto com o
 --    benchmark oficial R$ 154.502,98)
+with order_totals as (
+  select
+    o.id,
+    o.total_amount,
+    coalesce(sum(oi.quantity), 0) as unidades
+  from public.orders o
+  left join public.order_items oi
+    on oi.order_id = o.id
+   and oi.is_current = true
+  join public.ml_accounts a
+    on a.id = o.ml_account_id
+  where a.code = 'speedbikers'
+    and (o.date_created at time zone 'America/Sao_Paulo')::date
+        between '2026-08-04' and '2026-08-10'
+  group by o.id, o.total_amount
+)
 select
-  count(distinct o.id)                                    as total_pedidos,
-  sum(oi.quantity)                                         as total_unidades,
-  sum(coalesce(oi.unit_price, 0) * oi.quantity)             as total_receita_bruta
-from public.orders o
-join public.order_items oi
-  on oi.order_id = o.id
- and oi.is_current = true
-join public.ml_accounts a
-  on a.id = o.ml_account_id
-where a.code = 'speedbikers'
-  and (o.date_created at time zone 'America/Sao_Paulo')::date
-      between '2026-08-04' and '2026-08-10';
+  count(*)                                                 as total_pedidos,
+  sum(unidades)                                            as total_unidades,
+  sum(coalesce(total_amount, 0))                           as total_receita_bruta
+from order_totals;
 
 -- 7) Pedidos sem NENHUM item "current" no período (isso também causaria
 --    subcontagem de receita, independente do filtro de status)

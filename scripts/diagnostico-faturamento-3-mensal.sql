@@ -9,40 +9,53 @@
 --   Agosto: 170 vendas   / 177 unidades    / R$   17.753,40  (só até dia 13)
 -- ============================================================
 
+with order_totals as (
+  select
+    o.id,
+    date_trunc('month', o.date_created at time zone 'America/Sao_Paulo')::date as mes,
+    o.status,
+    o.total_amount,
+    coalesce(sum(oi.quantity), 0) as unidades
+  from public.orders o
+  left join public.order_items oi on oi.order_id = o.id and oi.is_current = true
+  join public.ml_accounts a on a.id = o.ml_account_id
+  where a.code = 'speedbikers'
+    and (o.date_created at time zone 'America/Sao_Paulo')::date
+        between '2026-05-13' and '2026-08-13'
+  group by o.id, o.date_created, o.status, o.total_amount
+)
 select
-  date_trunc('month', o.date_created at time zone 'America/Sao_Paulo')::date as mes,
-  o.status,
-  count(distinct o.id)                                     as pedidos,
-  sum(oi.quantity)                                          as unidades,
-  sum(coalesce(oi.unit_price, 0) * oi.quantity)              as receita_bruta
-from public.orders o
-join public.order_items oi
-  on oi.order_id = o.id
- and oi.is_current = true
-join public.ml_accounts a
-  on a.id = o.ml_account_id
-where a.code = 'speedbikers'
-  and (o.date_created at time zone 'America/Sao_Paulo')::date
-      between '2026-05-13' and '2026-08-13'
-group by 1, 2
+  mes,
+  status,
+  count(*)                                                  as pedidos,
+  sum(unidades)                                             as unidades,
+  sum(coalesce(total_amount, 0))                            as receita_bruta
+from order_totals
+group by mes, status
 order by 1, receita_bruta desc;
 
 -- Totais por mês, todos os status juntos (pra ver o tamanho total antes de filtrar)
+with order_totals as (
+  select
+    o.id,
+    date_trunc('month', o.date_created at time zone 'America/Sao_Paulo')::date as mes,
+    o.total_amount,
+    coalesce(sum(oi.quantity), 0) as unidades
+  from public.orders o
+  left join public.order_items oi on oi.order_id = o.id and oi.is_current = true
+  join public.ml_accounts a on a.id = o.ml_account_id
+  where a.code = 'speedbikers'
+    and (o.date_created at time zone 'America/Sao_Paulo')::date
+        between '2026-05-13' and '2026-08-13'
+  group by o.id, o.date_created, o.total_amount
+)
 select
-  date_trunc('month', o.date_created at time zone 'America/Sao_Paulo')::date as mes,
-  count(distinct o.id)                                     as pedidos,
-  sum(oi.quantity)                                          as unidades,
-  sum(coalesce(oi.unit_price, 0) * oi.quantity)              as receita_bruta
-from public.orders o
-join public.order_items oi
-  on oi.order_id = o.id
- and oi.is_current = true
-join public.ml_accounts a
-  on a.id = o.ml_account_id
-where a.code = 'speedbikers'
-  and (o.date_created at time zone 'America/Sao_Paulo')::date
-      between '2026-05-13' and '2026-08-13'
-group by 1
+  mes,
+  count(*)                                                  as pedidos,
+  sum(unidades)                                             as unidades,
+  sum(coalesce(total_amount, 0))                            as receita_bruta
+from order_totals
+group by mes
 order by 1;
 
 -- Confirma a identidade da conta 'speedbikers' no banco agora
