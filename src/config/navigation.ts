@@ -26,7 +26,7 @@ export const navigationSections: NavigationSection[] =
         },
         {
           label: "Produtos",
-          href: null,
+          href: "/produtos",
         },
       ],
     },

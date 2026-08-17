@@ -1,7 +1,10 @@
 import { redirect } from "next/navigation";
 
 import { StockOverviewView } from "@/components/stock/stock-overview-view";
-import { getStockOverview } from "@/features/stock/get-stock-overview";
+import {
+  getStockOverview,
+  type StockOverviewFilter,
+} from "@/features/stock/get-stock-overview";
 
 export const metadata = {
   title: "Estoque",
@@ -18,6 +21,7 @@ const allowedStatuses = new Set([
   "all",
   "attention",
   "unmapped",
+  "conflicts",
   "ready",
   "full",
   "kits",
@@ -26,14 +30,7 @@ const allowedStatuses = new Set([
 export default async function StockPage({
   searchParams,
 }: StockPageProps) {
-  const [overview, rawSearchParams] = await Promise.all([
-    getStockOverview(),
-    searchParams,
-  ]);
-
-  if (!overview) {
-    redirect("/login");
-  }
+  const rawSearchParams = await searchParams;
 
   const rawQuery = Array.isArray(rawSearchParams.q)
     ? rawSearchParams.q[0]
@@ -41,12 +38,21 @@ export default async function StockPage({
   const rawStatus = Array.isArray(rawSearchParams.status)
     ? rawSearchParams.status[0]
     : rawSearchParams.status;
+  const query = rawQuery?.trim().slice(0, 100) ?? "";
+  const status = (
+    allowedStatuses.has(rawStatus ?? "") ? rawStatus : "all"
+  ) as StockOverviewFilter;
+  const overview = await getStockOverview({ query, status, limit: 200 });
+
+  if (!overview) {
+    redirect("/login");
+  }
 
   return (
     <StockOverviewView
       overview={overview}
-      query={rawQuery?.trim().slice(0, 100) ?? ""}
-      status={allowedStatuses.has(rawStatus ?? "") ? rawStatus ?? "all" : "all"}
+      query={query}
+      status={status}
     />
   );
 }

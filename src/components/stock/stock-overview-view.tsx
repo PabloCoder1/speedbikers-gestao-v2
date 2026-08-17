@@ -18,11 +18,10 @@ type StockFilter =
   | "all"
   | "attention"
   | "unmapped"
+  | "conflicts"
   | "ready"
   | "full"
   | "kits";
-
-const MAX_VISIBLE_PRODUCTS = 200;
 
 const integer = new Intl.NumberFormat("pt-BR");
 
@@ -36,6 +35,7 @@ const filters: { value: StockFilter; label: string }[] = [
   { value: "all", label: "Todos" },
   { value: "attention", label: "Com atenção" },
   { value: "unmapped", label: "Sem vínculo" },
+  { value: "conflicts", label: "Conflitos" },
   { value: "ready", label: "Físico pronto" },
   { value: "full", label: "Com Full" },
   { value: "kits", label: "Kits" },
@@ -87,17 +87,6 @@ function filterHref(filter: StockFilter, query: string) {
   if (filter !== "all") params.set("status", filter);
   const suffix = params.toString();
   return suffix ? `/estoque?${suffix}` : "/estoque";
-}
-
-function matchesFilter(product: StockOverviewRow, filter: StockFilter) {
-  if (filter === "attention") {
-    return product.status === "critical" || product.status === "warning";
-  }
-  if (filter === "unmapped") return product.mappingStatus !== "linked";
-  if (filter === "ready") return product.physicalReady;
-  if (filter === "full") return product.fullApplicable;
-  if (filter === "kits") return product.sourceKind === "kit";
-  return true;
 }
 
 function mappingLabel(product: StockOverviewRow) {
@@ -261,15 +250,7 @@ export function StockOverviewView({
   const selectedFilter = filters.some((filter) => filter.value === status)
     ? status as StockFilter
     : "all";
-  const normalizedQuery = query.toLocaleLowerCase("pt-BR");
-  const filteredProducts = overview.products.filter((product) => {
-    const matchesQuery = !normalizedQuery ||
-      product.sku.toLocaleLowerCase("pt-BR").includes(normalizedQuery) ||
-      product.name?.toLocaleLowerCase("pt-BR").includes(normalizedQuery) ||
-      product.sourceSku?.toLocaleLowerCase("pt-BR").includes(normalizedQuery);
-    return Boolean(matchesQuery) && matchesFilter(product, selectedFilter);
-  });
-  const visibleProducts = filteredProducts.slice(0, MAX_VISIBLE_PRODUCTS);
+  const visibleProducts = overview.products;
   const mappingPercent = overview.summary.totalProducts > 0
     ? (overview.summary.mappedProducts / overview.summary.totalProducts) * 100
     : 0;
@@ -438,9 +419,9 @@ export function StockOverviewView({
 
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-gray-500">
           <p>
-            Exibindo {integer.format(visibleProducts.length)} de {integer.format(filteredProducts.length)} resultado(s)
+            Exibindo {integer.format(visibleProducts.length)} de {integer.format(overview.matchCount)} resultado(s)
           </p>
-          {filteredProducts.length > MAX_VISIBLE_PRODUCTS ? (
+          {overview.matchCount > visibleProducts.length ? (
             <p>
               Refine a busca para visualizar outros produtos.
             </p>
