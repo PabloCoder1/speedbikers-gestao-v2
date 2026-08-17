@@ -21,7 +21,7 @@ const dateTime = new Intl.DateTimeFormat("pt-BR", {
   timeStyle: "short",
   timeZone: "America/Sao_Paulo",
 });
-const MAX_VISIBLE_ALERTS = 250;
+
 
 const severityConfig: Record<
   OperationalAlertSeverity,
@@ -188,17 +188,11 @@ export function OperationalAlertsView({
   severity,
   scope,
 }: OperationalAlertsViewProps) {
-  const normalizedQuery = query.toLocaleLowerCase("pt-BR");
-  const filteredAlerts = overview.alerts.filter((alert) => {
-    const matchesSeverity = severity === "all" || alert.severity === severity;
-    const matchesQuery = !normalizedQuery ||
-      alert.sku.toLocaleLowerCase("pt-BR").includes(normalizedQuery) ||
-      alert.productName?.toLocaleLowerCase("pt-BR").includes(normalizedQuery) ||
-      alert.title.toLocaleLowerCase("pt-BR").includes(normalizedQuery) ||
-      alert.category.toLocaleLowerCase("pt-BR").includes(normalizedQuery);
-    return matchesSeverity && Boolean(matchesQuery);
-  });
-  const visibleAlerts = filteredAlerts.slice(0, MAX_VISIBLE_ALERTS);
+  /*
+   * Escopo, severidade e busca agora são aplicados na RPC, que também
+   * limita a página. A tela apenas renderiza o que recebeu.
+   */
+  const visibleAlerts = overview.alerts;
   const scopeLabel = scopeFilters.find((filter) => filter.value === scope)?.label ?? "Em aberto";
 
   return (
@@ -323,9 +317,9 @@ export function OperationalAlertsView({
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-gray-500">
         <p>
-          {scopeLabel}: exibindo {integer.format(visibleAlerts.length)} de {integer.format(filteredAlerts.length)} resultado(s)
+          {scopeLabel}: exibindo {integer.format(visibleAlerts.length)} de {integer.format(overview.totalMatching)} resultado(s)
         </p>
-        {filteredAlerts.length > MAX_VISIBLE_ALERTS ? (
+        {overview.totalMatching > visibleAlerts.length ? (
           <p>Refine a busca para visualizar outros alertas.</p>
         ) : null}
       </div>

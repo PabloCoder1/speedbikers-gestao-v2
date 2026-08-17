@@ -32,14 +32,21 @@ export default async function AlertsPage({ searchParams }: AlertsPageProps) {
   const rawSeverity = firstValue(rawSearchParams.severity);
   const scope = (allowedScopes.has(rawScope ?? "") ? rawScope : "open") as OperationalAlertScope;
   const severity = (allowedSeverities.has(rawSeverity ?? "") ? rawSeverity : "all") as OperationalAlertSeverity | "all";
-  const overview = await getOperationalAlerts(scope);
+  const query = firstValue(rawSearchParams.q)?.trim().slice(0, 100) ?? "";
+
+  /*
+   * Severidade e busca vão para o banco junto do escopo: a RPC filtra e
+   * limita antes de serializar, em vez de a tela receber a lista inteira
+   * e recortar em memória.
+   */
+  const overview = await getOperationalAlerts(scope, { severity, query });
 
   if (!overview) redirect("/login");
 
   return (
     <OperationalAlertsView
       overview={overview}
-      query={firstValue(rawSearchParams.q)?.trim().slice(0, 100) ?? ""}
+      query={query}
       severity={severity}
       scope={scope}
     />

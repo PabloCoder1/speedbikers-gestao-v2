@@ -57,7 +57,15 @@ export type OperationalAlertsOverview = {
     resolved: number;
   };
   alerts: OperationalAlertItem[];
+  /*
+   * Quantos alertas casam com escopo, severidade e busca no banco.
+   * Pode ser maior que alerts.length, que está limitado a ALERTS_PAGE_SIZE.
+   */
+  totalMatching: number;
+  pageSize: number;
 };
+
+export const ALERTS_PAGE_SIZE = 250;
 
 const ALERT_PRESENTATION: Record<string, AlertPresentation> = {
   PHYSICAL_OUT_OF_STOCK: {
@@ -301,17 +309,48 @@ function buildDescription(
   return fallback;
 }
 
+/*
+ * Título e categoria não existem no banco: são derivados de alert_type
+ * pelo mapa acima. Para que a busca por texto continue encontrando
+ * "Full", "Kits" ou "Compras" mesmo com o filtro aplicado no SQL,
+ * resolvemos aqui quais alert_type casam e enviamos a lista para a RPC.
+ */
+function alertTypesMatchingQuery(query: string) {
+  const normalized = query.trim().toLocaleLowerCase("pt-BR");
+  if (!normalized) return null;
+
+  const matches = Object.entries(ALERT_PRESENTATION)
+    .filter(([, presentation]) =>
+      presentation.title.toLocaleLowerCase("pt-BR").includes(normalized) ||
+      presentation.category.toLocaleLowerCase("pt-BR").includes(normalized)
+    )
+    .map(([alertType]) => alertType);
+
+  return matches.length > 0 ? matches : null;
+}
+
 export async function getOperationalAlerts(
   scope: OperationalAlertScope,
+  {
+    severity = "all",
+    query = "",
+  }: {
+    severity?: OperationalAlertSeverity | "all";
+    query?: string;
+  } = {},
 ): Promise<OperationalAlertsOverview | null> {
   const access = await getCurrentAccess();
   if (!access) return null;
 
   const supabase = await createClient();
   const organizationId = access.organizationId;
-  const { data, error } = await supabase.rpc("get_operational_alerts_data", {
+  const { data, error } = await supabase.rpc("get_operational_alerts_page", {
     target_organization_id: organizationId,
     requested_scope: scope,
+    requested_severity: severity,
+    requested_search: query.trim() || null,
+    matching_alert_types: alertTypesMatchingQuery(query),
+    requested_limit: ALERTS_PAGE_SIZE,
   });
   if (error || !data || typeof data !== "object") {
     throw new Error(`OPERATIONAL_ALERTS_READ_MODEL_FAILED:${error?.message ?? "empty_result"}`);
@@ -320,6 +359,7 @@ export async function getOperationalAlerts(
   const readModel = data as unknown as {
     summary?: Partial<OperationalAlertsOverview["summary"]>;
     alerts?: AlertRow[];
+    totalMatching?: number;
   };
   const alertRows = readModel.alerts ?? [];
   const alerts = alertRows.map((alert): OperationalAlertItem => {
@@ -360,5 +400,7 @@ export async function getOperationalAlerts(
       resolved: Number(readModel.summary?.resolved ?? 0),
     },
     alerts,
+    totalMatching: Number(readModel.totalMatching ?? alerts.length),
+    pageSize: ALERTS_PAGE_SIZE,
   };
 }
