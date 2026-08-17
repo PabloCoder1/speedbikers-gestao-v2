@@ -4,6 +4,10 @@ import {
   getCurrentAccess,
 } from "@/features/auth/get-current-access";
 import {
+  saoPauloDateKey,
+  shiftSaoPauloDateKey,
+} from "@/lib/date/sao-paulo";
+import {
   createClient,
 } from "@/lib/supabase/server";
 
@@ -79,86 +83,6 @@ function numeric(
   )
     ? parsed
     : 0;
-}
-
-
-const saoPauloFormatter =
-  new Intl.DateTimeFormat(
-    "en-US",
-    {
-      timeZone:
-        "America/Sao_Paulo",
-
-      year:
-        "numeric",
-
-      month:
-        "2-digit",
-
-      day:
-        "2-digit",
-    },
-  );
-
-
-function getSaoPauloToday() {
-  const parts =
-    saoPauloFormatter
-      .formatToParts(
-        new Date(),
-      );
-
-  const values =
-    new Map(
-      parts.map(
-        (part) => [
-          part.type,
-          part.value,
-        ],
-      ),
-    );
-
-  return [
-    values.get("year"),
-    values.get("month"),
-    values.get("day"),
-  ].join("-");
-}
-
-
-function shiftDate(
-  dateKey: string,
-  days: number,
-) {
-  const [
-    year,
-    month,
-    day,
-  ] =
-    dateKey
-      .split("-")
-      .map(Number);
-
-  const date =
-    new Date(
-      Date.UTC(
-        year,
-        month - 1,
-        day,
-      ),
-    );
-
-  date.setUTCDate(
-    date.getUTCDate() +
-      days,
-  );
-
-  return date
-    .toISOString()
-    .slice(
-      0,
-      10,
-    );
 }
 
 
@@ -261,10 +185,10 @@ export async function getProductDashboard({
   // ----------------------------------------------------------
 
   const today =
-    getSaoPauloToday();
+    saoPauloDateKey();
 
   const thirtyDaysAgo =
-    shiftDate(
+    shiftSaoPauloDateKey(
       today,
       -30,
     );
@@ -458,7 +382,7 @@ export async function getProductDashboard({
     offset += 1
   ) {
     const date =
-      shiftDate(
+      shiftSaoPauloDateKey(
         today,
         offset,
       );

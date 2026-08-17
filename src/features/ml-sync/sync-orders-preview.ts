@@ -9,6 +9,7 @@ import {
     type MercadoLivreOrder,
 } from "../../integrations/mercado-livre/orders";
 
+import { saoPauloDateKey } from "../../lib/date/sao-paulo";
 import { createAdminClient } from "../../lib/supabase/admin";
 
 
@@ -157,25 +158,6 @@ function normalizeSku(
         .toUpperCase();
 }
 
-const saoPauloDateFormatter =
-    new Intl.DateTimeFormat(
-        "en-US",
-        {
-            timeZone:
-                "America/Sao_Paulo",
-
-            year:
-                "numeric",
-
-            month:
-                "2-digit",
-
-            day:
-                "2-digit",
-        },
-    );
-
-
 function toSaoPauloDateKey(
     value: string | null,
 ) {
@@ -183,10 +165,8 @@ function toSaoPauloDateKey(
         return null;
     }
 
-
     const date =
         new Date(value);
-
 
     if (
         Number.isNaN(
@@ -196,43 +176,7 @@ function toSaoPauloDateKey(
         return null;
     }
 
-
-    const parts =
-        saoPauloDateFormatter
-            .formatToParts(date);
-
-
-    const values =
-        new Map(
-            parts.map(
-                (part) => [
-                    part.type,
-                    part.value,
-                ],
-            ),
-        );
-
-
-    const year =
-        values.get("year");
-
-    const month =
-        values.get("month");
-
-    const day =
-        values.get("day");
-
-
-    if (
-        !year ||
-        !month ||
-        !day
-    ) {
-        return null;
-    }
-
-
-    return `${year}-${month}-${day}`;
+    return saoPauloDateKey(date);
 }
 
 type OrderProductCandidate = {

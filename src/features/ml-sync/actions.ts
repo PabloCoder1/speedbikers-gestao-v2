@@ -26,68 +26,6 @@ function earlierIsoDate(
     : right;
 }
 
-function getSaoPauloTodayKey() {
-  const formatter =
-    new Intl.DateTimeFormat(
-      "en-US",
-      {
-        timeZone:
-          "America/Sao_Paulo",
-
-        year:
-          "numeric",
-
-        month:
-          "2-digit",
-
-        day:
-          "2-digit",
-      },
-    );
-
-
-  const parts =
-    formatter
-      .formatToParts(
-        new Date(),
-      );
-
-
-  const values =
-    new Map(
-      parts.map(
-        (part) => [
-          part.type,
-          part.value,
-        ],
-      ),
-    );
-
-
-  const year =
-    values.get("year");
-
-  const month =
-    values.get("month");
-
-  const day =
-    values.get("day");
-
-
-  if (
-    !year ||
-    !month ||
-    !day
-  ) {
-    throw new Error(
-      "Não foi possível determinar a data atual de São Paulo.",
-    );
-  }
-
-
-  return `${year}-${month}-${day}`;
-}
-
 export type SyncListingsPreviewState = {
   error: string | null;
   success: string | null;
@@ -615,7 +553,7 @@ export async function startDashboardBackfillAction(
 
   try {
     const today =
-      getSaoPauloTodayKey();
+      saoPauloDateKey();
 
 
     const todayStart =

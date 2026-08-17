@@ -6,6 +6,7 @@ import {
   calculateThirtyDaySalesVelocity,
   purchaseLeadTimeDays,
 } from "@/features/stock/stock-domain";
+import { saoPauloDateKey, shiftSaoPauloDateKey } from "@/lib/date/sao-paulo";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type ReceiptAdjustmentRow = {
@@ -35,19 +36,6 @@ function latestIso(values: (string | null | undefined)[]) {
   return values.filter((value): value is string => Boolean(value)).sort().at(-1) ?? null;
 }
 
-const saoPauloDateFormatter = new Intl.DateTimeFormat("en-CA", {
-  timeZone: "America/Sao_Paulo",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-});
-
-function shiftDate(dateKey: string, days: number) {
-  const [year, month, day] = dateKey.split("-").map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day));
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
-}
 
 async function getReceiptAdjustments(
   admin: ReturnType<typeof createAdminClient>,
@@ -348,9 +336,9 @@ export async function getProductStockIntelligence(
     };
   });
 
-  const today = saoPauloDateFormatter.format(new Date());
-  const periodFrom = shiftDate(today, -30);
-  const periodTo = shiftDate(today, -1);
+  const today = saoPauloDateKey();
+  const periodFrom = shiftSaoPauloDateKey(today, -30);
+  const periodTo = shiftSaoPauloDateKey(today, -1);
   const salesAccountIds = [...new Set(advertisedOffers.map((offer) => offer.accountId))];
   const [{ data: metricRows, error: metricError }, { data: coverageRuns, error: coverageError }] = salesAccountIds.length
     ? await Promise.all([
