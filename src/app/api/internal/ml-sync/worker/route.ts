@@ -10,7 +10,7 @@ import { processNextFulfillmentRefreshJob } from "@/features/ml-sync/process-ful
 import { processOfferPricesBackfillBurst } from "@/features/ml-sync/process-offer-prices-backfill";
 import { processNextOfferRefreshJob } from "@/features/ml-sync/process-offer-refresh-job";
 import { processNextOperationalAlertJob } from "@/features/stock/process-operational-alert-job";
-import { processNextUpsellerImportChunk } from "@/features/upseller/process-import-worker";
+import { processUpsellerImportBurst } from "@/features/upseller/process-import-worker";
 
 import { syncRecentSbOrdersIfDue } from "@/features/ml-sync/sync-recent-orders";
 
@@ -132,7 +132,7 @@ export async function POST(
       "upseller_import"
     ) {
       return NextResponse.json(
-        await processNextUpsellerImportChunk(),
+        await processUpsellerImportBurst(),
       );
     }
 

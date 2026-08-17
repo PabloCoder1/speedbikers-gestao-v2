@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -36,6 +36,13 @@ type ImportProgress = {
   phase: string | null;
   cursor_row: number;
   error_message: string | null;
+  progress: {
+    percent: number;
+    phaseProcessedRows: number;
+    phaseTotalRows: number;
+    elapsedSeconds: number;
+    estimatedSecondsRemaining: number | null;
+  };
 };
 
 type ImportStage =
@@ -49,7 +56,7 @@ type ImportStage =
 
 const integer = new Intl.NumberFormat("pt-BR");
 const POLL_INTERVAL_MS = 5_000;
-const MAX_POLL_ATTEMPTS = 360;
+const ACTIVE_IMPORT_STORAGE_KEY = "speedbikers:upseller-active-import-id";
 
 const errorMessages: Record<string, string> = {
   required_files_missing: "Selecione as quatro planilhas do UpSeller.",
@@ -92,8 +99,26 @@ function responseError(payload: unknown, fallback: string) {
   return fallback;
 }
 
-function pause(milliseconds: number) {
-  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+function pause(milliseconds: number, signal: AbortSignal) {
+  return new Promise<void>((resolve) => {
+    const timeout = window.setTimeout(resolve, milliseconds);
+    signal.addEventListener("abort", () => {
+      window.clearTimeout(timeout);
+      resolve();
+    }, { once: true });
+  });
+}
+
+function formatRemainingTime(seconds: number | null | undefined) {
+  if (seconds === null || seconds === undefined) return "Calculando tempo restante...";
+  if (seconds < 60) return "Menos de 1 minuto restante";
+  const minutes = Math.ceil(seconds / 60);
+  if (minutes < 60) return `Cerca de ${integer.format(minutes)} min restantes`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes > 0
+    ? `Cerca de ${integer.format(hours)}h ${integer.format(remainingMinutes)}min restantes`
+    : `Cerca de ${integer.format(hours)}h restantes`;
 }
 
 function FileField({
@@ -130,46 +155,72 @@ function FileField({
 
 export function UpsellerImportForm() {
   const router = useRouter();
+  const monitorAbortRef = useRef<AbortController | null>(null);
   const [stage, setStage] = useState<ImportStage>("idle");
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [progress, setProgress] = useState<ImportProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const busy = ["previewing", "queuing", "processing"].includes(stage);
 
-  async function monitorImport(importId: string) {
+  const monitorImport = useCallback(async (importId: string) => {
+    monitorAbortRef.current?.abort();
+    const controller = new AbortController();
+    monitorAbortRef.current = controller;
     setStage("processing");
 
-    for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt += 1) {
-      const response = await fetch(`/api/upseller/imports/${importId}`, {
-        method: "GET",
-        cache: "no-store",
-      });
-      const payload = await response.json() as ImportProgress & { error?: string };
+    try {
+      while (!controller.signal.aborted) {
+        const response = await fetch(`/api/upseller/imports/${importId}`, {
+          method: "GET",
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const payload = await response.json() as ImportProgress & { error?: string };
 
-      if (!response.ok) {
-        throw new Error(responseError(payload, "Não foi possível acompanhar a importação."));
+        if (!response.ok) {
+          throw new Error(responseError(payload, "Não foi possível acompanhar a importação."));
+        }
+
+        setProgress(payload);
+
+        if (payload.status === "applied") {
+          setStage("complete");
+          router.refresh();
+          return;
+        }
+
+        if (payload.status === "failed") {
+          throw new Error(payload.error_message ?? "A importação falhou durante o processamento.");
+        }
+
+        await pause(POLL_INTERVAL_MS, controller.signal);
       }
-
-      setProgress(payload);
-
-      if (payload.status === "applied") {
-        setStage("complete");
-        router.refresh();
-        return;
-      }
-
-      if (payload.status === "failed") {
-        throw new Error(payload.error_message ?? "A importação falhou durante o processamento.");
-      }
-
-      await pause(POLL_INTERVAL_MS);
+    } catch (caught) {
+      if (controller.signal.aborted) return;
+      throw caught;
+    } finally {
+      if (monitorAbortRef.current === controller) monitorAbortRef.current = null;
     }
+  }, [router]);
 
-    throw new Error("A importação continua em segundo plano. Consulte esta tela novamente em alguns minutos.");
-  }
+  useEffect(() => {
+    const activeImportId = window.localStorage.getItem(ACTIVE_IMPORT_STORAGE_KEY);
+    const resumeTimeout = activeImportId ? window.setTimeout(() => {
+      void monitorImport(activeImportId).catch((caught) => {
+        setError(caught instanceof Error ? caught.message : "Não foi possível acompanhar a importação.");
+        setStage("error");
+      });
+    }, 0) : null;
+    return () => {
+      if (resumeTimeout !== null) window.clearTimeout(resumeTimeout);
+      monitorAbortRef.current?.abort();
+    };
+  }, [monitorImport]);
 
   async function handlePreview(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    monitorAbortRef.current?.abort();
+    window.localStorage.removeItem(ACTIVE_IMPORT_STORAGE_KEY);
     setError(null);
     setPreview(null);
     setProgress(null);
@@ -205,11 +256,13 @@ export function UpsellerImportForm() {
       setPreview(payload);
 
       if (payload.status === "applied") {
+        window.localStorage.setItem(ACTIVE_IMPORT_STORAGE_KEY, payload.importId);
         setStage("complete");
         return;
       }
 
-      if (payload.status === "queued" || payload.status === "processing") {
+      if (payload.status === "queued" || payload.status === "running" || payload.status === "processing") {
+        window.localStorage.setItem(ACTIVE_IMPORT_STORAGE_KEY, payload.importId);
         await monitorImport(payload.importId);
         return;
       }
@@ -237,6 +290,7 @@ export function UpsellerImportForm() {
         throw new Error(responseError(payload, "Não foi possível iniciar a importação."));
       }
 
+      window.localStorage.setItem(ACTIVE_IMPORT_STORAGE_KEY, preview.importId);
       await monitorImport(preview.importId);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Não foi possível concluir a importação.");
@@ -380,14 +434,40 @@ export function UpsellerImportForm() {
 
       {stage === "processing" ? (
         <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 p-4">
-          <div className="flex items-center gap-3">
-            <span className="h-3 w-3 animate-pulse rounded-full bg-blue-600" aria-hidden="true" />
-            <div>
-              <p className="text-sm font-semibold text-blue-950">
-                {progress?.phase ? phaseLabels[progress.phase] ?? "Processando importação" : "Importação na fila"}
-              </p>
+          <div className="flex items-start gap-3">
+            <span className="mt-1 h-3 w-3 shrink-0 animate-pulse rounded-full bg-blue-600" aria-hidden="true" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-sm font-semibold text-blue-950">
+                  {progress?.phase ? phaseLabels[progress.phase] ?? "Processando importação" : "Importação na fila"}
+                </p>
+                <span className="text-sm font-bold tabular-nums text-blue-950">
+                  {progress ? `${progress.progress.percent.toFixed(1).replace(".", ",")}%` : "0,0%"}
+                </span>
+              </div>
+              <div
+                className="mt-3 h-3 overflow-hidden rounded-full bg-blue-100 ring-1 ring-inset ring-blue-200"
+                role="progressbar"
+                aria-label="Progresso da importação do UpSeller"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={progress?.progress.percent ?? 0}
+              >
+                <div
+                  className="h-full rounded-full bg-blue-600 transition-[width] duration-500 ease-out"
+                  style={{ width: `${progress?.progress.percent ?? 0}%` }}
+                />
+              </div>
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs leading-5 text-blue-800">
+                <span>
+                  {progress?.progress.phaseTotalRows
+                    ? `${integer.format(progress.progress.phaseProcessedRows)} de ${integer.format(progress.progress.phaseTotalRows)} nesta etapa`
+                    : "Preparando a primeira etapa"}
+                </span>
+                <span>{formatRemainingTime(progress?.progress.estimatedSecondsRemaining)}</span>
+              </div>
               <p className="mt-1 text-xs leading-5 text-blue-800">
-                O processamento continua mesmo se você sair desta página.
+                O tempo é aproximado e o processamento continua mesmo se você sair desta página.
               </p>
             </div>
           </div>

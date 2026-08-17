@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getAdminApiAccess } from "@/features/auth/get-admin-api-access";
+import { calculateUpsellerImportProgress } from "@/features/upseller/import-progress";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -19,5 +20,12 @@ export async function GET(_request: Request, context: { params: Promise<{ import
     .maybeSingle();
   if (error) return NextResponse.json({ error: "import_lookup_failed" }, { status: 500 });
   if (!data) return NextResponse.json({ error: "import_not_found" }, { status: 404 });
-  return NextResponse.json(data);
+  const progress = calculateUpsellerImportProgress({
+    status: data.status,
+    phase: data.phase,
+    cursorRow: data.cursor_row,
+    previewSummary: data.preview_summary,
+    createdAt: data.created_at,
+  });
+  return NextResponse.json({ ...data, progress });
 }

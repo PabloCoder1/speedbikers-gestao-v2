@@ -1,10 +1,12 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 
 import { getAdminApiAccess } from "@/features/auth/get-admin-api-access";
+import { processUpsellerImportBurst } from "@/features/upseller/process-import-worker";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export async function POST(_request: Request, context: { params: Promise<{ importId: string }> }) {
   const authorization = await getAdminApiAccess();
@@ -30,5 +32,12 @@ export async function POST(_request: Request, context: { params: Promise<{ impor
     .select("id,status,phase")
     .maybeSingle();
   if (queueError || !queued) return NextResponse.json({ error: "import_queue_failed" }, { status: 409 });
+  after(async () => {
+    try {
+      await processUpsellerImportBurst();
+    } catch {
+      console.error("UPS_IMPORT_BACKGROUND_BURST_FAILED");
+    }
+  });
   return NextResponse.json(queued, { status: 202 });
 }

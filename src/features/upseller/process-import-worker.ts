@@ -14,6 +14,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 const LEASE_SECONDS = 120;
 const CHUNK_SIZE = 1500;
+const MAX_STAGING_CHUNKS_PER_CLAIM = 8;
+const DEFAULT_BURST_RUNTIME_MS = 40_000;
+const DEFAULT_BURST_CHUNKS = 96;
 
 type StagingPhase = "stock" | "products" | "relationships" | "kits";
 type PromotionPhase =
@@ -204,24 +207,29 @@ export async function processNextUpsellerImportChunk() {
       }
     }
 
-    const chunk = rows.slice(batch.cursor_row, batch.cursor_row + CHUNK_SIZE);
-    if (chunk.length > 0) {
+    let newCursor = batch.cursor_row;
+    let stagedRows = 0;
+    for (let chunkIndex = 0; chunkIndex < MAX_STAGING_CHUNKS_PER_CLAIM; chunkIndex += 1) {
+      const chunk = rows.slice(newCursor, newCursor + CHUNK_SIZE);
+      if (chunk.length === 0) break;
       const { error: stageError } = await admin.from(table).upsert(chunk, { onConflict: "import_id,row_number" });
       if (stageError) throw new Error(`UPS_IMPORT_STAGE_FAILED:${stageError.message}`);
+      newCursor += chunk.length;
+      stagedRows += chunk.length;
+      if (chunk.length < CHUNK_SIZE) break;
     }
-    const newCursor = batch.cursor_row + chunk.length;
     if (newCursor >= rows.length) {
       await release({
         status: "queued", phase: nextStagingPhase(phase), cursor_row: 0,
         attempt_count: 0, next_attempt_at: new Date().toISOString(), error_code: null, error_message: null,
       });
-      return { processed: true, completed: false, importId: batch.id, phase, staged: chunk.length, phaseComplete: true } as const;
+      return { processed: true, completed: false, importId: batch.id, phase, staged: stagedRows, phaseComplete: true } as const;
     }
     await release({
       status: "queued", cursor_row: newCursor, attempt_count: 0,
       next_attempt_at: new Date().toISOString(), error_code: null, error_message: null,
     });
-    return { processed: true, completed: false, importId: batch.id, phase, staged: chunk.length, cursorRow: newCursor } as const;
+    return { processed: true, completed: false, importId: batch.id, phase, staged: stagedRows, cursorRow: newCursor } as const;
   } catch (error) {
     const attempt = batch.attempt_count + 1;
     const failed = attempt >= batch.max_attempts;
@@ -237,4 +245,34 @@ export async function processNextUpsellerImportChunk() {
     }).eq("id", batch.id).eq("lease_id", leaseId);
     throw error;
   }
+}
+
+export async function processUpsellerImportBurst({
+  maxRuntimeMs = DEFAULT_BURST_RUNTIME_MS,
+  maxChunks = DEFAULT_BURST_CHUNKS,
+}: {
+  maxRuntimeMs?: number;
+  maxChunks?: number;
+} = {}) {
+  const startedAt = Date.now();
+  let iterations = 0;
+  let completedImports = 0;
+  let lastResult: Awaited<ReturnType<typeof processNextUpsellerImportChunk>> | null = null;
+
+  while (iterations < maxChunks && Date.now() - startedAt < maxRuntimeMs) {
+    const result = await processNextUpsellerImportChunk();
+    lastResult = result;
+    if (!result.processed) break;
+    iterations += 1;
+    if (result.completed) completedImports += 1;
+  }
+
+  return {
+    processed: iterations > 0,
+    iterations,
+    completedImports,
+    durationMs: Date.now() - startedAt,
+    deadlineReached: Date.now() - startedAt >= maxRuntimeMs,
+    lastResult,
+  } as const;
 }
