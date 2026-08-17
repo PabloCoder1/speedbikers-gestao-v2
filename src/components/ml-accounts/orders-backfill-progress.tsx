@@ -62,7 +62,7 @@ function formatDate(
         "short",
 
       timeZone:
-        "UTC",
+        "America/Sao_Paulo",
     },
   ).format(
     new Date(

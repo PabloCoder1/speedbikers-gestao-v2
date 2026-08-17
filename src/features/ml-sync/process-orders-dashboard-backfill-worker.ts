@@ -5,6 +5,11 @@ import {
 } from "node:crypto";
 
 import { syncOrdersPreview } from "@/features/ml-sync/sync-orders-preview";
+import {
+  saoPauloDateKey,
+  saoPauloStartOfDayIso,
+  shiftSaoPauloDateKey,
+} from "@/lib/date/sao-paulo";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 
@@ -81,24 +86,6 @@ function getMetadataNumber(
     Number.isFinite(value)
     ? value
     : null;
-}
-
-
-function addUtcDays(
-  isoDate: string,
-  days: number,
-) {
-  const date =
-    new Date(
-      isoDate,
-    );
-
-  date.setUTCDate(
-    date.getUTCDate() +
-      days,
-  );
-
-  return date.toISOString();
 }
 
 
@@ -536,9 +523,8 @@ export async function processNextOrdersDashboardBackfillBatch() {
 
     const nextWindowFrom =
       laterDate(
-        addUtcDays(
-          nextWindowTo,
-          -1,
+        saoPauloStartOfDayIso(
+          shiftSaoPauloDateKey(saoPauloDateKey(nextWindowTo), -1),
         ),
 
         rangeFrom,

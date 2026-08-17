@@ -5,13 +5,8 @@ import {
 
 import { getCurrentAccess } from "@/features/auth/get-current-access";
 import { checkOrdersHistoryWindow } from "@/features/ml-sync/check-orders-history-window";
+import { saoPauloStartOfDayIso } from "@/lib/date/sao-paulo";
 import { createAdminClient } from "@/lib/supabase/admin";
-
-function startOfDayUtc(
-  date: string,
-) {
-  return `${date}T00:00:00.000Z`;
-}
 
 export async function GET(
   request: NextRequest,
@@ -143,12 +138,12 @@ export async function GET(
           account.id,
 
         dateFrom:
-          startOfDayUtc(
+          saoPauloStartOfDayIso(
             from,
           ),
 
         dateTo:
-          startOfDayUtc(
+          saoPauloStartOfDayIso(
             to,
           ),
       });

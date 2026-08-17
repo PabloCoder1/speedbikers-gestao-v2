@@ -9,65 +9,12 @@ import { syncListingsPreview } from "@/features/ml-sync/sync-listings-preview";
 import { syncOrdersPreview } from "@/features/ml-sync/sync-orders-preview";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getOrdersHistoryRange } from "@/features/ml-sync/get-orders-history-range";
-
-function startOfUtcDay(
-  value: string,
-) {
-  const date =
-    new Date(
-      value,
-    );
-
-
-  return new Date(
-    Date.UTC(
-      date.getUTCFullYear(),
-      date.getUTCMonth(),
-      date.getUTCDate(),
-    ),
-  ).toISOString();
-}
-
-
-function nextUtcDayStart(
-  value: string,
-) {
-  const start =
-    new Date(
-      startOfUtcDay(
-        value,
-      ),
-    );
-
-
-  start.setUTCDate(
-    start.getUTCDate() + 1,
-  );
-
-
-  return start.toISOString();
-}
-
-
-function addUtcDays(
-  value: string,
-  days: number,
-) {
-  const date =
-    new Date(
-      value,
-    );
-
-
-  date.setUTCDate(
-    date.getUTCDate() +
-      days,
-  );
-
-
-  return date.toISOString();
-}
-
+import {
+  nextSaoPauloDayStartIso,
+  saoPauloDateKey,
+  saoPauloStartOfDayIso,
+  shiftSaoPauloDateKey,
+} from "@/lib/date/sao-paulo";
 
 function earlierIsoDate(
   left: string,
@@ -450,9 +397,8 @@ export async function startOrdersBackfillAction(
 
 
     const historyFrom =
-      startOfUtcDay(
-        range.oldestOrder
-          .dateCreated,
+      saoPauloStartOfDayIso(
+        saoPauloDateKey(range.oldestOrder.dateCreated),
       );
 
 
@@ -464,18 +410,12 @@ export async function startOrdersBackfillAction(
      * newest order itself is included.
      */
     const historyUntil =
-      nextUtcDayStart(
-        range.newestOrder
-          .dateCreated,
-      );
+      nextSaoPauloDayStartIso(range.newestOrder.dateCreated);
 
 
     const firstWindowTo =
       earlierIsoDate(
-        addUtcDays(
-          historyFrom,
-          1,
-        ),
+        nextSaoPauloDayStartIso(historyFrom),
 
         historyUntil,
       );
@@ -679,9 +619,7 @@ export async function startDashboardBackfillAction(
 
 
     const todayStart =
-      new Date(
-        `${today}T00:00:00.000-03:00`,
-      ).toISOString();
+      saoPauloStartOfDayIso(today);
 
 
     /*
@@ -689,17 +627,11 @@ export async function startDashboardBackfillAction(
      * today + previous 89 days.
      */
     const rangeUntil =
-      addUtcDays(
-        todayStart,
-        1,
-      );
+      saoPauloStartOfDayIso(shiftSaoPauloDateKey(today, 1));
 
 
     const rangeFrom =
-      addUtcDays(
-        rangeUntil,
-        -90,
-      );
+      saoPauloStartOfDayIso(shiftSaoPauloDateKey(today, -89));
 
 
     const firstWindowTo =
@@ -707,10 +639,7 @@ export async function startDashboardBackfillAction(
 
 
     const firstWindowFrom =
-      addUtcDays(
-        firstWindowTo,
-        -1,
-      );
+      todayStart;
 
 
     const {
