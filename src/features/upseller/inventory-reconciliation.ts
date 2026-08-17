@@ -1,5 +1,6 @@
 export type InventoryLinkMethod =
   | "exact_sku"
+  | "mapped_listing_sku_relationship"
   | "ml_item_relationship"
   | "ml_variation_relationship"
   | "ml_user_product_relationship";
@@ -22,6 +23,31 @@ export type ExactInventorySource = {
   hasCatalog: boolean;
   kitDefinitionSource: "upseller_export" | "derived_dot" | null;
   unresolvedDotted: boolean;
+};
+
+export type MappedSkuRelationship = {
+  sourceSku: string;
+  sourceSkuKey: string;
+  sourceKind: InventorySourceKind;
+  mappedListingSkuKey: string | null;
+  mlAccountId: string | null;
+  channel: string;
+  isCurrent: boolean;
+};
+
+export type SellerSkuTarget = {
+  sellerSku: string | null;
+  mlAccountId: string;
+  isCurrent: boolean;
+  targetId: string;
+};
+
+export type InventorySourceSuggestion = {
+  candidateSourceSku: string;
+  candidateTitle: string | null;
+  similarity: null;
+  reason: "normalized_sku_candidate";
+  ambiguous: boolean;
 };
 
 export type InventoryReconciliationDecision =
@@ -59,6 +85,90 @@ export function buildExactInventoryCandidate(source: ExactInventorySource): Inve
       source.unresolvedDotted ? "unresolved_dot" : "",
     ].filter(Boolean).join(":"),
   };
+}
+
+export function normalizeDeterministicSku(value: string | null) {
+  return value?.trim().toUpperCase() ?? "";
+}
+
+export function buildMappedSkuCandidates({
+  productSkuKey,
+  listings,
+  variations,
+  relationships,
+}: {
+  productSkuKey: string;
+  listings: SellerSkuTarget[];
+  variations: SellerSkuTarget[];
+  relationships: MappedSkuRelationship[];
+}) {
+  const candidates: InventoryLinkCandidate[] = [];
+  const normalizedProductSku = normalizeDeterministicSku(productSkuKey);
+
+  for (const relationship of relationships) {
+    const mappedSkuKey = normalizeDeterministicSku(relationship.mappedListingSkuKey);
+    if (!relationship.isCurrent || relationship.channel !== "mercado_livre" || !mappedSkuKey) continue;
+
+    const evidenceKeys: string[] = [];
+    if (normalizedProductSku === mappedSkuKey) evidenceKeys.push("product_sku");
+
+    for (const listing of listings) {
+      if (listing.isCurrent
+        && listing.mlAccountId === relationship.mlAccountId
+        && normalizeDeterministicSku(listing.sellerSku) === mappedSkuKey) {
+        evidenceKeys.push(`listing_seller_sku:${listing.targetId}`);
+      }
+    }
+
+    for (const variation of variations) {
+      if (variation.isCurrent
+        && variation.mlAccountId === relationship.mlAccountId
+        && normalizeDeterministicSku(variation.sellerSku) === mappedSkuKey) {
+        evidenceKeys.push(`variation_seller_sku:${variation.targetId}`);
+      }
+    }
+
+    for (const evidenceKey of evidenceKeys) {
+      candidates.push({
+        sourceSku: relationship.sourceSku,
+        sourceSkuKey: relationship.sourceSkuKey,
+        sourceKind: relationship.sourceKind,
+        linkMethod: "mapped_listing_sku_relationship",
+        priority: 2,
+        evidenceKey,
+      });
+    }
+  }
+
+  return candidates;
+}
+
+export function normalizedSuggestionKey(value: string) {
+  return normalizeDeterministicSku(value).replace(/[^A-Z0-9]+/g, "");
+}
+
+export function buildNormalizedSkuSuggestions({
+  productSku,
+  sources,
+}: {
+  productSku: string;
+  sources: Array<{ sourceSku: string; title: string | null }>;
+}): InventorySourceSuggestion[] {
+  const productExactKey = normalizeDeterministicSku(productSku);
+  const productSearchKey = normalizedSuggestionKey(productSku);
+  const matching = sources
+    .filter((source) => normalizeDeterministicSku(source.sourceSku) !== productExactKey)
+    .filter((source) => normalizedSuggestionKey(source.sourceSku) === productSearchKey)
+    .sort((left, right) => compareText(left.sourceSku, right.sourceSku));
+  const distinct = [...new Map(matching.map((source) => [source.sourceSku, source])).values()];
+
+  return distinct.slice(0, 3).map((source) => ({
+    candidateSourceSku: source.sourceSku,
+    candidateTitle: source.title,
+    similarity: null,
+    reason: "normalized_sku_candidate",
+    ambiguous: distinct.length > 1,
+  }));
 }
 
 export function decideInventoryReconciliation({
