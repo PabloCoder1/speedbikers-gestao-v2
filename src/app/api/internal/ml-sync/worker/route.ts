@@ -11,6 +11,7 @@ import { processOfferPricesBackfillBurst } from "@/features/ml-sync/process-offe
 import { processNextOfferRefreshJob } from "@/features/ml-sync/process-offer-refresh-job";
 import { processNextOperationalAlertJob } from "@/features/stock/process-operational-alert-job";
 import { processUpsellerImportBurst } from "@/features/upseller/process-import-worker";
+import { processProductInventoryReconcileBurst } from "@/features/upseller/process-inventory-reconcile-worker";
 
 import { syncRecentSbOrdersIfDue } from "@/features/ml-sync/sync-recent-orders";
 
@@ -133,6 +134,16 @@ export async function POST(
     ) {
       return NextResponse.json(
         await processUpsellerImportBurst(),
+      );
+    }
+
+
+    if (
+      payload.task ===
+      "product_inventory_reconcile"
+    ) {
+      return NextResponse.json(
+        await processProductInventoryReconcileBurst(),
       );
     }
 
