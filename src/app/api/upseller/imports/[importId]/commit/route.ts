@@ -35,8 +35,11 @@ export async function POST(_request: Request, context: { params: Promise<{ impor
   after(async () => {
     try {
       await processUpsellerImportBurst();
-    } catch {
-      console.error("UPS_IMPORT_BACKGROUND_BURST_FAILED");
+    } catch (error) {
+      console.error(
+        "UPS_IMPORT_BACKGROUND_BURST_FAILED:",
+        error instanceof Error ? error.message.slice(0, 500) : "unknown_error",
+      );
     }
   });
   return NextResponse.json(queued, { status: 202 });
