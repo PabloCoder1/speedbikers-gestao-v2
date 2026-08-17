@@ -200,42 +200,105 @@ export async function getProductDashboard({
   // Esta consulta respeita RLS.
   // ----------------------------------------------------------
 
-  const {
-    data:
-      accountRows,
-    error:
-      accountsError,
-  } = await supabase
-    .from(
-      "ml_accounts",
-    )
-    .select(
-      [
-        "id",
-        "code",
+  // ----------------------------------------------------------
+  // DAILY PRODUCT METRICS
+  //
+  // RLS também limita automaticamente às contas
+  // permitidas para o usuário atual.
+  //
+  // As duas consultas são independentes entre si e são
+  // emitidas juntas para evitar um round-trip sequencial.
+  // ----------------------------------------------------------
+
+  const [
+    {
+      data:
+        accountRows,
+      error:
+        accountsError,
+    },
+    {
+      data:
+        metricRows,
+      error:
+        metricsError,
+    },
+  ] = await Promise.all([
+    supabase
+      .from(
+        "ml_accounts",
+      )
+      .select(
+        [
+          "id",
+          "code",
+          "display_name",
+          "seller_id",
+          "nickname",
+        ].join(","),
+      )
+      .eq(
+        "organization_id",
+        access.organizationId,
+      )
+      .eq(
+        "is_active",
+        true,
+      )
+      .order(
         "display_name",
-        "seller_id",
-        "nickname",
-      ].join(","),
-    )
-    .eq(
-      "organization_id",
-      access.organizationId,
-    )
-    .eq(
-      "is_active",
-      true,
-    )
-    .order(
-      "display_name",
-      {
-        ascending:
-          true,
-      },
-    )
-    .returns<
-      AccountRow[]
-    >();
+        {
+          ascending:
+            true,
+        },
+      )
+      .returns<
+        AccountRow[]
+      >(),
+
+    supabase
+      .from(
+        "daily_product_metrics",
+      )
+      .select(
+        [
+          "ml_account_id",
+          "metric_date",
+          "orders_count",
+          "units_sold",
+          "gross_revenue",
+          "sale_fees",
+          "net_after_sale_fee",
+          "average_unit_price",
+        ].join(","),
+      )
+      .eq(
+        "organization_id",
+        access.organizationId,
+      )
+      .eq(
+        "product_id",
+        productData.id,
+      )
+      .gte(
+        "metric_date",
+        thirtyDaysAgo,
+      )
+      .lte(
+        "metric_date",
+        today,
+      )
+      .order(
+        "metric_date",
+        {
+          ascending:
+            true,
+        },
+      )
+      .returns<
+        ProductMetricRow[]
+      >(),
+  ]);
 
 
   if (accountsError) {
@@ -248,62 +311,6 @@ export async function getProductDashboard({
   const accounts =
     accountRows ??
     [];
-
-
-  // ----------------------------------------------------------
-  // DAILY PRODUCT METRICS
-  //
-  // RLS também limita automaticamente às contas
-  // permitidas para o usuário atual.
-  // ----------------------------------------------------------
-
-  const {
-    data:
-      metricRows,
-    error:
-      metricsError,
-  } = await supabase
-    .from(
-      "daily_product_metrics",
-    )
-    .select(
-      [
-        "ml_account_id",
-        "metric_date",
-        "orders_count",
-        "units_sold",
-        "gross_revenue",
-        "sale_fees",
-        "net_after_sale_fee",
-        "average_unit_price",
-      ].join(","),
-    )
-    .eq(
-      "organization_id",
-      access.organizationId,
-    )
-    .eq(
-      "product_id",
-      productData.id,
-    )
-    .gte(
-      "metric_date",
-      thirtyDaysAgo,
-    )
-    .lte(
-      "metric_date",
-      today,
-    )
-    .order(
-      "metric_date",
-      {
-        ascending:
-          true,
-      },
-    )
-    .returns<
-      ProductMetricRow[]
-    >();
 
 
   if (metricsError) {

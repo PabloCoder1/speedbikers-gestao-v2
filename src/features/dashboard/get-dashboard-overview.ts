@@ -369,18 +369,116 @@ export async function getDashboardOverview(
     );
   }
 
-  const {
-    data:
-      dailyRows,
-    error:
-      dailyError,
-  } = await dailyMetricsQuery
-    .order(
-      "metric_date",
-      {
-        ascending: true,
-      },
+
+  /*
+   * How many unique canonical SKUs
+   * sold today?
+   */
+  const soldProductsQuery =
+    supabase
+      .from(
+        "daily_product_metrics",
+      )
+      .select(
+        "product_id",
+      )
+      .eq(
+        "organization_id",
+        access.organizationId,
+      )
+      .eq(
+        "metric_date",
+        today,
+      )
+      .gt(
+        "units_sold",
+        0,
+      );
+
+  if (selectedAccount) {
+    soldProductsQuery.eq(
+      "ml_account_id",
+      selectedAccount.id,
     );
+  }
+
+
+  const topProductsRequest =
+    selectedAccount
+      ? supabase.rpc(
+          "get_dashboard_top_products_for_account",
+          {
+            target_organization_id:
+              access.organizationId,
+
+            target_ml_account_id:
+              selectedAccount.id,
+
+            target_date_from:
+              thirtyDaysAgo,
+
+            target_date_to:
+              today,
+
+            target_limit:
+              10,
+          },
+        )
+      : supabase.rpc(
+          "get_dashboard_top_products",
+          {
+            target_organization_id:
+              access.organizationId,
+
+            target_date_from:
+              thirtyDaysAgo,
+
+            target_date_to:
+              today,
+
+            target_limit:
+              10,
+          },
+        );
+
+
+  /*
+   * As tres consultas abaixo sao independentes entre si;
+   * emiti-las juntas evita dois round-trips sequenciais
+   * ao Supabase no carregamento do dashboard.
+   */
+  const [
+    {
+      data:
+        dailyRows,
+      error:
+        dailyError,
+    },
+    {
+      data:
+        soldProductsToday,
+      error:
+        soldProductsError,
+    },
+    {
+      data:
+        topProductsData,
+      error:
+        topProductsError,
+    },
+  ] = await Promise.all([
+    dailyMetricsQuery
+      .order(
+        "metric_date",
+        {
+          ascending: true,
+        },
+      ),
+
+    soldProductsQuery,
+
+    topProductsRequest,
+  ]);
 
 
   if (dailyError) {
@@ -530,46 +628,6 @@ export async function getDashboardOverview(
     );
 
 
-  /*
-   * How many unique canonical SKUs
-   * sold today?
-   */
-  const soldProductsQuery =
-    supabase
-      .from(
-        "daily_product_metrics",
-      )
-      .select(
-        "product_id",
-      )
-      .eq(
-        "organization_id",
-        access.organizationId,
-      )
-      .eq(
-        "metric_date",
-        today,
-      )
-      .gt(
-        "units_sold",
-        0,
-      );
-
-  if (selectedAccount) {
-    soldProductsQuery.eq(
-      "ml_account_id",
-      selectedAccount.id,
-    );
-  }
-
-  const {
-    data:
-      soldProductsToday,
-    error:
-      soldProductsError,
-  } = await soldProductsQuery;
-
-
   if (
     soldProductsError
   ) {
@@ -589,52 +647,6 @@ export async function getDashboardOverview(
           row.product_id,
       ),
     ).size;
-
-
-  const topProductsRequest =
-    selectedAccount
-      ? supabase.rpc(
-          "get_dashboard_top_products_for_account",
-          {
-            target_organization_id:
-              access.organizationId,
-
-            target_ml_account_id:
-              selectedAccount.id,
-
-            target_date_from:
-              thirtyDaysAgo,
-
-            target_date_to:
-              today,
-
-            target_limit:
-              10,
-          },
-        )
-      : supabase.rpc(
-          "get_dashboard_top_products",
-          {
-            target_organization_id:
-              access.organizationId,
-
-            target_date_from:
-              thirtyDaysAgo,
-
-            target_date_to:
-              today,
-
-            target_limit:
-              10,
-          },
-        );
-
-  const {
-    data:
-      topProductsData,
-    error:
-      topProductsError,
-  } = await topProductsRequest;
 
 
   if (

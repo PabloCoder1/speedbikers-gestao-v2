@@ -336,34 +336,136 @@ export async function getProductListings({
   // A consulta respeita RLS.
   // ==========================================================
 
-  const {
-    data:
-      accountData,
+  // ==========================================================
+  // ANÚNCIOS E VARIAÇÕES VINCULADOS AO PRODUTO
+  //
+  // Uma variação pode carregar SKU próprio.
+  //
+  // As três consultas dependem apenas de access/productId,
+  // portanto são emitidas juntas em vez de encadeadas.
+  // ==========================================================
 
-    error:
-      accountError,
-  } = await supabase
-    .from(
-      "ml_accounts",
-    )
-    .select(
-      [
-        "id",
-        "code",
-        "display_name",
-      ].join(","),
-    )
-    .eq(
-      "organization_id",
-      access.organizationId,
-    )
-    .eq(
-      "is_active",
-      true,
-    )
-    .returns<
-      AccountRow[]
-    >();
+  const [
+    {
+      data:
+        accountData,
+
+      error:
+        accountError,
+    },
+    {
+      data:
+        directListingData,
+
+      error:
+        directListingError,
+    },
+    {
+      data:
+        variationData,
+
+      error:
+        variationError,
+    },
+  ] = await Promise.all([
+    supabase
+      .from(
+        "ml_accounts",
+      )
+      .select(
+        [
+          "id",
+          "code",
+          "display_name",
+        ].join(","),
+      )
+      .eq(
+        "organization_id",
+        access.organizationId,
+      )
+      .eq(
+        "is_active",
+        true,
+      )
+      .returns<
+        AccountRow[]
+      >(),
+
+    supabase
+      .from(
+        "ml_listings",
+      )
+      .select(
+        [
+          "id",
+          "ml_account_id",
+          "product_id",
+          "item_id",
+          "title",
+          "seller_sku",
+          "listing_type_id",
+          "status",
+          "price",
+          "available_quantity",
+          "sold_quantity",
+          "health",
+          "catalog_listing",
+          "permalink",
+          "thumbnail",
+          "is_current",
+          "ml_last_updated",
+        ].join(","),
+      )
+      .eq(
+        "organization_id",
+        access.organizationId,
+      )
+      .eq(
+        "product_id",
+        productId,
+      )
+      .eq(
+        "is_current",
+        true,
+      )
+      .returns<
+        ListingRow[]
+      >(),
+
+    supabase
+      .from(
+        "ml_listing_variations",
+      )
+      .select(
+        [
+          "id",
+          "ml_account_id",
+          "ml_listing_id",
+          "product_id",
+          "variation_id",
+          "seller_sku",
+          "price",
+          "available_quantity",
+          "sold_quantity",
+          "is_current",
+        ].join(","),
+      )
+      .eq(
+        "organization_id",
+        access.organizationId,
+      )
+      .eq(
+        "product_id",
+        productId,
+      )
+      .eq(
+        "is_current",
+        true,
+      )
+      .returns<
+        VariationRow[]
+      >(),
+  ]);
 
 
   if (accountError) {
@@ -387,110 +489,11 @@ export async function getProductListings({
     );
 
 
-  // ==========================================================
-  // ANÚNCIOS DIRETAMENTE VINCULADOS AO PRODUTO
-  // ==========================================================
-
-  const {
-    data:
-      directListingData,
-
-    error:
-      directListingError,
-  } = await supabase
-    .from(
-      "ml_listings",
-    )
-    .select(
-      [
-        "id",
-        "ml_account_id",
-        "product_id",
-        "item_id",
-        "title",
-        "seller_sku",
-        "listing_type_id",
-        "status",
-        "price",
-        "available_quantity",
-        "sold_quantity",
-        "health",
-        "catalog_listing",
-        "permalink",
-        "thumbnail",
-        "is_current",
-        "ml_last_updated",
-      ].join(","),
-    )
-    .eq(
-      "organization_id",
-      access.organizationId,
-    )
-    .eq(
-      "product_id",
-      productId,
-    )
-    .eq(
-      "is_current",
-      true,
-    )
-    .returns<
-      ListingRow[]
-    >();
-
-
   if (directListingError) {
     throw new Error(
       "Não foi possível carregar os anúncios vinculados ao produto.",
     );
   }
-
-
-  // ==========================================================
-  // VARIAÇÕES VINCULADAS AO PRODUTO
-  //
-  // Uma variação pode carregar SKU próprio.
-  // ==========================================================
-
-  const {
-    data:
-      variationData,
-
-    error:
-      variationError,
-  } = await supabase
-    .from(
-      "ml_listing_variations",
-    )
-    .select(
-      [
-        "id",
-        "ml_account_id",
-        "ml_listing_id",
-        "product_id",
-        "variation_id",
-        "seller_sku",
-        "price",
-        "available_quantity",
-        "sold_quantity",
-        "is_current",
-      ].join(","),
-    )
-    .eq(
-      "organization_id",
-      access.organizationId,
-    )
-    .eq(
-      "product_id",
-      productId,
-    )
-    .eq(
-      "is_current",
-      true,
-    )
-    .returns<
-      VariationRow[]
-    >();
 
 
   if (variationError) {
