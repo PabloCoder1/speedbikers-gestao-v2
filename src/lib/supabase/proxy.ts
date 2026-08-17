@@ -4,6 +4,41 @@ import {
   type NextRequest,
 } from "next/server";
 
+/*
+ * Rotas que precisam responder sem sessão de usuário.
+ *
+ * /login:
+ * precisa funcionar sem sessão.
+ *
+ * /api/internal/ml-sync/worker:
+ * não utiliza sessão de usuário. Possui autenticação
+ * própria através de SYNC_WORKER_SECRET.
+ *
+ * /api/mercado-livre/notifications:
+ * webhook chamado pelo Mercado Livre, que nunca envia
+ * cookie. Sem esta liberação o POST recebia redirect
+ * para /login e a notificação nunca chegava ao handler.
+ * O próprio handler limita o corpo a 64 KiB e valida
+ * application_id, seller e resource antes de enfileirar.
+ *
+ * A comparação é por caminho exato, de propósito: liberar
+ * um prefixo como /api/mercado-livre abriria também as
+ * rotas administrativas vizinhas.
+ */
+const PUBLIC_EXACT_PATHS = new Set([
+  "/api/internal/ml-sync/worker",
+  "/api/mercado-livre/notifications",
+]);
+
+export function isPublicProxyRoute(
+  pathname: string,
+) {
+  return (
+    pathname.startsWith("/login") ||
+    PUBLIC_EXACT_PATHS.has(pathname)
+  );
+}
+
 export async function updateSession(
   request: NextRequest,
 ) {
@@ -88,23 +123,10 @@ export async function updateSession(
   const pathname =
     request.nextUrl.pathname;
 
-  /*
-   * Rotas públicas especiais.
-   *
-   * /login:
-   * precisa funcionar sem sessão.
-   *
-   * /api/internal/ml-sync/worker:
-   * não utiliza sessão de usuário.
-   * Possui autenticação própria através de
-   * SYNC_WORKER_SECRET.
-   */
   const isPublicRoute =
-    pathname.startsWith(
-      "/login",
-    ) ||
-    pathname ===
-      "/api/internal/ml-sync/worker";
+    isPublicProxyRoute(
+      pathname,
+    );
 
   if (
     !claims &&
