@@ -65,17 +65,54 @@ export async function persistFulfillmentStockState(input: {
       admin.from("ml_listing_variations").select("product_id").eq("organization_id", input.organizationId)
         .eq("ml_account_id", input.mlAccountId).eq("inventory_id", input.inventoryId).eq("is_current", true).not("product_id", "is", null),
     ]);
+    if (listingResult.error || variationResult.error) {
+      throw new Error(
+        `FULFILLMENT_PRODUCTS_LOOKUP_FAILED:${listingResult.error?.message ?? variationResult.error?.message}`,
+      );
+    }
     const productIds = new Set<string>();
     for (const row of [...(listingResult.data ?? []), ...(variationResult.data ?? [])]) {
       if (typeof row.product_id === "string") productIds.add(row.product_id);
     }
-    for (const productId of productIds) {
-      const { error } = await admin.from("operational_alert_jobs").insert({
-        organization_id: input.organizationId,
-        product_id: productId,
-        reason: "fulfillment_state_changed",
-      });
-      if (error && error.code !== "23505") throw new Error(`ALERT_JOB_ENQUEUE_FAILED:${error.message}`);
+    if (productIds.size > 0) {
+      const productIdList = [...productIds];
+      const { data: activeJobs, error: activeJobsError } = await admin
+        .from("operational_alert_jobs")
+        .select("product_id")
+        .eq("organization_id", input.organizationId)
+        .in("product_id", productIdList)
+        .in("status", ["queued", "running"]);
+      if (activeJobsError) {
+        throw new Error(`ALERT_JOB_LOOKUP_FAILED:${activeJobsError.message}`);
+      }
+
+      const activeProductIds = new Set(
+        (activeJobs ?? []).map((job) => job.product_id as string),
+      );
+      const jobs = productIdList
+        .filter((productId) => !activeProductIds.has(productId))
+        .map((productId) => ({
+          organization_id: input.organizationId,
+          product_id: productId,
+          reason: "fulfillment_state_changed",
+        }));
+
+      if (jobs.length > 0) {
+        const { error } = await admin.from("operational_alert_jobs").insert(jobs);
+        if (error?.code === "23505") {
+          const retryResults = await Promise.all(
+            jobs.map((job) => admin.from("operational_alert_jobs").insert(job)),
+          );
+          const retryError = retryResults.find(
+            (result) => result.error && result.error.code !== "23505",
+          )?.error;
+          if (retryError) {
+            throw new Error(`ALERT_JOB_ENQUEUE_FAILED:${retryError.message}`);
+          }
+        } else if (error) {
+          throw new Error(`ALERT_JOB_ENQUEUE_FAILED:${error.message}`);
+        }
+      }
     }
   }
   return { stateHash, changed: previous?.state_hash !== stateHash };
