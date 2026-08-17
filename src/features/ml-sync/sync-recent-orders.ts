@@ -15,6 +15,11 @@ type RecentOrdersSyncRunRow = {
   status: string;
   started_at: string;
   error_code: string | null;
+  cursor_offset: number;
+  records_discovered: number;
+  records_processed: number;
+  records_upserted: number;
+  metadata: unknown;
 };
 
 type ListingsSyncRunRow = {
@@ -23,11 +28,23 @@ type ListingsSyncRunRow = {
 
 type DueAccount = {
   account: RecentOrdersAccountRow;
+  lastSync: RecentOrdersSyncRunRow | null;
 
   lastStartedAt:
   | number
   | null;
 };
+
+function asMetadata(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function metadataString(metadata: Record<string, unknown>, key: string) {
+  const value = metadata[key];
+  return typeof value === "string" ? value : null;
+}
 
 const MINIMUM_INTERVAL_MS =
   4 * 60 * 1000;
@@ -200,6 +217,11 @@ export async function syncRecentOrdersIfDue() {
           "status",
           "started_at",
           "error_code",
+          "cursor_offset",
+          "records_discovered",
+          "records_processed",
+          "records_upserted",
+          "metadata",
         ].join(","),
       )
       .eq(
@@ -292,6 +314,7 @@ export async function syncRecentOrdersIfDue() {
     if (!lastSync) {
       dueAccounts.push({
         account,
+        lastSync: null,
 
         lastStartedAt:
           null,
@@ -312,6 +335,7 @@ export async function syncRecentOrdersIfDue() {
     ) {
       dueAccounts.push({
         account,
+        lastSync,
 
         lastStartedAt:
           null,
@@ -336,6 +360,7 @@ export async function syncRecentOrdersIfDue() {
 
     dueAccounts.push({
       account,
+      lastSync,
 
       lastStartedAt:
         startedAt,
@@ -398,27 +423,58 @@ export async function syncRecentOrdersIfDue() {
   const target =
     dueAccounts[0];
 
-  const windowTo =
-    new Date();
+  const resumableRun = target.lastSync?.status === "partial"
+    ? target.lastSync
+    : null;
+  const resumableMetadata = asMetadata(resumableRun?.metadata);
+  const storedWindowFrom = metadataString(resumableMetadata, "date_created_from");
+  const storedWindowTo = metadataString(resumableMetadata, "date_created_to");
+  const windowTo = resumableRun && storedWindowTo
+    ? new Date(storedWindowTo)
+    : new Date();
+  const windowFrom = resumableRun && storedWindowFrom
+    ? new Date(storedWindowFrom)
+    : new Date(windowTo.getTime() - RECENT_ORDERS_WINDOW_MS);
 
-  const windowFrom =
-    new Date(
-      windowTo.getTime() -
-      RECENT_ORDERS_WINDOW_MS,
-    );
+  if (Number.isNaN(windowFrom.getTime()) || Number.isNaN(windowTo.getTime())) {
+    throw new Error("O checkpoint da janela recente possui datas invalidas.");
+  }
 
   let syncRunId:
-    string | null = null;
+    string | null = resumableRun?.id ?? null;
 
-  let offset = 0;
+  let offset = resumableRun?.cursor_offset ?? 0;
 
-  let totalImportedOrders = 0;
+  let totalImportedOrders = resumableRun?.records_processed ?? 0;
   let totalImportedItems = 0;
   let totalMappedItems = 0;
   let totalUnmappedItems = 0;
-  let sellerTotal = 0;
+  let sellerTotal = resumableRun?.records_discovered ?? 0;
   let completedWindow =
   false;
+
+  if (resumableRun) {
+    const { data: resumed, error: resumeError } = await admin
+      .from("sync_runs")
+      .update({
+        status: "running",
+        finished_at: null,
+        error_code: null,
+        error_message: null,
+        metadata: {
+          ...resumableMetadata,
+          resumed_at: new Date().toISOString(),
+        },
+      })
+      .eq("id", resumableRun.id)
+      .eq("status", "partial")
+      .select("id")
+      .maybeSingle();
+
+    if (resumeError || !resumed) {
+      throw new Error("Nao foi possivel retomar o checkpoint de pedidos recentes.");
+    }
+  }
 
   try {
     for (
@@ -595,16 +651,53 @@ offset += PAGE_SIZE;
     if (
       !completedWindow
     ) {
-      throw new Error(
-        [
-          "A janela recente contém mais pedidos",
-          "do que o limite seguro desta execução.",
-          `sellerTotal=${sellerTotal}.`,
-          `processed=${totalImportedOrders}.`,
-          "A sincronização foi interrompida",
-          "para evitar perda silenciosa de dados.",
-        ].join(" "),
-      );
+      if (!syncRunId) {
+        throw new Error("A paginacao recente terminou sem um sync_run persistido.");
+      }
+
+      const { data: partialCheckpoint, error: partialCheckpointError } = await admin
+        .from("sync_runs")
+        .update({
+          status: "partial",
+          records_discovered: sellerTotal,
+          records_processed: totalImportedOrders,
+          records_upserted: totalImportedOrders,
+          cursor_offset: offset,
+          error_code: null,
+          error_message: null,
+          finished_at: new Date().toISOString(),
+          metadata: {
+            ...resumableMetadata,
+            mode: "incremental",
+            limit: PAGE_SIZE,
+            offset,
+            date_created_from: windowFrom.toISOString(),
+            date_created_to: windowTo.toISOString(),
+            seller_total: sellerTotal,
+            orders_imported: totalImportedOrders,
+            order_items_imported: totalImportedItems,
+            unmapped_order_items: totalUnmappedItems,
+            continuation_required: true,
+          },
+        })
+        .eq("id", syncRunId)
+        .eq("status", "running")
+        .select("id")
+        .maybeSingle();
+
+      if (partialCheckpointError || !partialCheckpoint) {
+        throw new Error("Nao foi possivel salvar a continuacao dos pedidos recentes.");
+      }
+
+      return {
+        processed: true,
+        partial: true,
+        accountCode: target.account.code,
+        importedOrders: totalImportedOrders,
+        importedItems: totalImportedItems,
+        mappedItems: totalMappedItems,
+        unmappedItems: totalUnmappedItems,
+      } as const;
     }
 
     if (syncRunId) {
