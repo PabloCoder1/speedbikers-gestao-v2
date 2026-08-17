@@ -38,6 +38,10 @@ export const navigationSections: NavigationSection[] =
           href: "/estoque",
         },
         {
+          label: "Compras",
+          href: "/compras",
+        },
+        {
           label: "Alertas",
           href: "/alertas",
         },
