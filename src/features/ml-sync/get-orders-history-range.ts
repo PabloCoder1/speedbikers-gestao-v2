@@ -150,8 +150,8 @@ export async function getOrdersHistoryRange({
    * Consulta o primeiro pedido na ordenação
    * cronológica.
    */
-  const oldestSearch =
-    await searchSellerOrders({
+  const [oldestSearch, newestSearch] = await Promise.all([
+    searchSellerOrders({
       sellerId:
         account.seller_id,
 
@@ -166,15 +166,14 @@ export async function getOrdersHistoryRange({
 
       sort:
         "date_asc",
-    });
+    }),
 
 
   /*
    * Consulta o primeiro pedido na ordenação
    * cronológica inversa.
    */
-  const newestSearch =
-    await searchSellerOrders({
+    searchSellerOrders({
       sellerId:
         account.seller_id,
 
@@ -189,7 +188,8 @@ export async function getOrdersHistoryRange({
 
       sort:
         "date_desc",
-    });
+    }),
+  ]);
 
 
   const oldestOrder =

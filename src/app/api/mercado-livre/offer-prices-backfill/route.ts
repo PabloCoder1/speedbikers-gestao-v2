@@ -31,20 +31,16 @@ export async function POST(request: Request) {
     .select("id,code,display_name").eq("organization_id", access.organizationId)
     .eq("is_active", true).eq("connection_status", "connected").returns<AccountRow[]>();
   if (accountError) return NextResponse.json({ error: "accounts_query_failed" }, { status: 500 });
-  const results: Result[] = [];
-
-  for (const account of accountData ?? []) {
+  const results = await Promise.all((accountData ?? []).map(async (account): Promise<Result> => {
     const { count, error: countError } = await admin.from("ml_listings")
       .select("id", { count: "exact", head: true }).eq("organization_id", access.organizationId)
       .eq("ml_account_id", account.id).eq("is_current", true);
     if (countError) {
-      results.push({ accountCode: account.code, accountName: account.display_name, currentListings: 0, status: "failed" });
-      continue;
+      return { accountCode: account.code, accountName: account.display_name, currentListings: 0, status: "failed" };
     }
     const total = count ?? 0;
     if (total === 0) {
-      results.push({ accountCode: account.code, accountName: account.display_name, currentListings: 0, status: "empty" });
-      continue;
+      return { accountCode: account.code, accountName: account.display_name, currentListings: 0, status: "empty" };
     }
     const { error: insertError } = await admin.from("sync_runs").insert({
       organization_id: access.organizationId, ml_account_id: account.id,
@@ -58,8 +54,8 @@ export async function POST(request: Request) {
       },
     });
     const status: Result["status"] = insertError ? insertError.code === "23505" ? "already_running" : "failed" : "queued";
-    results.push({ accountCode: account.code, accountName: account.display_name, currentListings: total, status });
-  }
+    return { accountCode: account.code, accountName: account.display_name, currentListings: total, status };
+  }));
 
   return NextResponse.json({
     ok: true,

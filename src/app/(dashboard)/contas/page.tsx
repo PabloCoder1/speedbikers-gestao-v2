@@ -136,29 +136,16 @@ export default async function AccountsPage({
     accounts,
   } = await getMlAccounts();
 
-  const listingsSyncByAccount =
-    await getListingsSyncProgress(
-      accounts.map(
-        (account) =>
-          account.id,
-      ),
-    );
-
-  const ordersBackfillByAccount =
-    await getOrdersBackfillProgress(
-      accounts.map(
-        (account) =>
-          account.id,
-      ),
-    );
-
-  const dashboardBackfillByAccount =
-    await getDashboardBackfillProgress(
-      accounts.map(
-        (account) =>
-          account.id,
-      ),
-    );
+  const accountIds = accounts.map((account) => account.id);
+  const [
+    listingsSyncByAccount,
+    ordersBackfillByAccount,
+    dashboardBackfillByAccount,
+  ] = await Promise.all([
+    getListingsSyncProgress(accountIds),
+    getOrdersBackfillProgress(accountIds),
+    getDashboardBackfillProgress(accountIds),
+  ]);
 
   if (!access) {
     return null;

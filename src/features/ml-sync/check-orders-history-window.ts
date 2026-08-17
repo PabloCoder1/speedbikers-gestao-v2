@@ -121,8 +121,8 @@ export async function checkOrdersHistoryWindow({
     );
 
 
-  const oldest =
-    await searchSellerOrders({
+  const [oldest, newest] = await Promise.all([
+    searchSellerOrders({
       sellerId:
         account.seller_id,
 
@@ -143,11 +143,10 @@ export async function checkOrdersHistoryWindow({
 
       dateCreatedTo:
         dateTo,
-    });
+    }),
 
 
-  const newest =
-    await searchSellerOrders({
+    searchSellerOrders({
       sellerId:
         account.seller_id,
 
@@ -168,7 +167,8 @@ export async function checkOrdersHistoryWindow({
 
       dateCreatedTo:
         dateTo,
-    });
+    }),
+  ]);
 
 
   return {

@@ -29,33 +29,26 @@ export async function getCurrentAccess(): Promise<
     return null;
   }
 
-  const {
-    data: profile,
-    error: profileError,
-  } = await supabase
-    .from("profiles")
-    .select(
-      "full_name, must_change_password",
-    )
-    .eq("id", claims.sub)
-    .single();
+  const [profileResult, membershipResult] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("full_name, must_change_password")
+      .eq("id", claims.sub)
+      .single(),
+    supabase
+      .from("organization_members")
+      .select("organization_id, role")
+      .eq("user_id", claims.sub)
+      .eq("is_active", true)
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  const { data: profile, error: profileError } = profileResult;
+  const { data: membership, error: membershipError } = membershipResult;
 
   if (profileError || !profile) {
     return null;
   }
-
-  const {
-    data: membership,
-    error: membershipError,
-  } = await supabase
-    .from("organization_members")
-    .select(
-      "organization_id, role",
-    )
-    .eq("user_id", claims.sub)
-    .eq("is_active", true)
-    .limit(1)
-    .maybeSingle();
 
   if (
     membershipError ||
