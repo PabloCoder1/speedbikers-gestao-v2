@@ -1,6 +1,11 @@
 import "server-only";
 
-import { calculateKitAvailability } from "@/features/stock/stock-domain";
+import {
+  calculateCoverageDays,
+  calculateKitAvailability,
+  calculateThirtyDaySalesVelocity,
+  purchaseLeadTimeDays,
+} from "@/features/stock/stock-domain";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type ReceiptAdjustmentRow = {
@@ -28,6 +33,20 @@ function weightedAverage(rows: { average_cost: unknown; current_quantity: unknow
 
 function latestIso(values: (string | null | undefined)[]) {
   return values.filter((value): value is string => Boolean(value)).sort().at(-1) ?? null;
+}
+
+const saoPauloDateFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Sao_Paulo",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+function shiftDate(dateKey: string, days: number) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 async function getReceiptAdjustments(
@@ -104,19 +123,32 @@ export async function getProductStockIntelligence(
   if (productError) throw new Error(`STOCK_PRODUCT_LOOKUP_FAILED:${productError.message}`);
   if (!product) return null;
 
-  const [{ data: conflict, error: conflictError }, { data: link, error: linkError }] = await Promise.all([
+  const [
+    { data: conflict, error: conflictError },
+    { data: link, error: linkError },
+    { data: unresolvedKit, error: unresolvedKitError },
+  ] = await Promise.all([
     admin.from("product_inventory_link_conflicts").select("id,candidate_source_skus,evidence")
       .eq("organization_id", product.organization_id).eq("product_id", product.id).eq("source", "upseller").eq("is_current", true).maybeSingle(),
     admin.from("product_inventory_links").select("id,source_sku,source_sku_key,source_kind,link_method,confidence,evidence,source_import_id")
       .eq("organization_id", product.organization_id).eq("product_id", product.id).eq("source", "upseller").eq("is_active", true).maybeSingle(),
+    admin.from("upseller_unresolved_kits").select("source_sku,source_sku_key,missing_component_sku_keys,reason")
+      .eq("organization_id", product.organization_id).eq("source_sku_key", product.sku_key).eq("is_current", true).maybeSingle(),
   ]);
-  if (conflictError || linkError) throw new Error("STOCK_MAPPING_LOOKUP_FAILED");
+  if (conflictError || linkError || unresolvedKitError) throw new Error("STOCK_MAPPING_LOOKUP_FAILED");
 
   const mapping = conflict
     ? { status: "conflict" as const, sourceSku: null, sourceKind: null, method: null, candidates: conflict.candidate_source_skus }
     : link
       ? { status: "linked" as const, sourceSku: link.source_sku, sourceKind: link.source_kind as "simple" | "kit", method: link.link_method, candidates: null }
       : { status: "missing" as const, sourceSku: null, sourceKind: null, method: null, candidates: null };
+
+  const kitDefinitionIssue = unresolvedKit ? {
+    sourceSku: unresolvedKit.source_sku,
+    sourceSkuKey: unresolvedKit.source_sku_key,
+    missingComponentSkuKeys: unresolvedKit.missing_component_sku_keys,
+    reason: unresolvedKit.reason,
+  } : null;
 
   let physical: Record<string, unknown> = {
     applicable: Boolean(link) && !conflict,
@@ -135,12 +167,20 @@ export async function getProductStockIntelligence(
     warehouses: [],
     checkedAt: null,
   };
+  let brand: string | null = null;
 
   if (link && !conflict) {
-    const { data: catalog, error: catalogError } = await admin.from("upseller_product_catalog")
-      .select("purchase_cost,retail_price,brand,barcodes")
-      .eq("organization_id", product.organization_id).eq("sku_key", link.source_sku_key).maybeSingle();
-    if (catalogError) throw new Error("STOCK_CATALOG_LOOKUP_FAILED");
+    const [{ data: catalog, error: catalogError }, { data: kitMetadata, error: kitMetadataError }] = await Promise.all([
+      admin.from("upseller_product_catalog")
+        .select("purchase_cost,retail_price,brand,barcodes")
+        .eq("organization_id", product.organization_id).eq("sku_key", link.source_sku_key).maybeSingle(),
+      link.source_kind === "kit"
+        ? admin.from("upseller_kits").select("category")
+            .eq("organization_id", product.organization_id).eq("kit_sku_key", link.source_sku_key).eq("is_current", true).maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+    ]);
+    if (catalogError || kitMetadataError) throw new Error("STOCK_CATALOG_LOOKUP_FAILED");
+    brand = catalog?.brand ?? kitMetadata?.category ?? null;
     const purchaseCost = numberOrNull(catalog?.purchase_cost);
     if (link.source_kind === "simple") {
       const [{ data: states, error }, receiptAdjustments] = await Promise.all([
@@ -293,7 +333,7 @@ export async function getProductStockIntelligence(
       notAvailableByStatus[status] = (notAvailableByStatus[status] ?? 0) + (numberOrNull(record.quantity) ?? 0);
     }
   }
-  const accounts = accountIds.map((accountId) => {
+  const baseAccounts = accountIds.map((accountId) => {
     const targets = inventoryTargets.filter((target) => target.accountId === accountId);
     const rows = relevantFullRows.filter((row) => row.ml_account_id === accountId);
     const account = accountRows?.find((row) => row.id === accountId);
@@ -308,9 +348,58 @@ export async function getProductStockIntelligence(
     };
   });
 
+  const today = saoPauloDateFormatter.format(new Date());
+  const periodFrom = shiftDate(today, -30);
+  const periodTo = shiftDate(today, -1);
+  const salesAccountIds = [...new Set(advertisedOffers.map((offer) => offer.accountId))];
+  const [{ data: metricRows, error: metricError }, { data: coverageRuns, error: coverageError }] = salesAccountIds.length
+    ? await Promise.all([
+        admin.from("daily_product_metrics")
+          .select("ml_account_id,metric_date,units_sold")
+          .eq("organization_id", product.organization_id)
+          .eq("product_id", product.id)
+          .in("ml_account_id", salesAccountIds)
+          .gte("metric_date", periodFrom)
+          .lte("metric_date", periodTo),
+        admin.from("sync_runs")
+          .select("ml_account_id,metadata,finished_at")
+          .eq("organization_id", product.organization_id)
+          .eq("sync_type", "orders_dashboard_backfill")
+          .eq("status", "succeeded")
+          .in("ml_account_id", salesAccountIds)
+          .order("finished_at", { ascending: false }),
+      ])
+    : [{ data: [], error: null }, { data: [], error: null }];
+  if (metricError || coverageError) throw new Error("STOCK_SALES_VELOCITY_LOOKUP_FAILED");
+  const historyReady = salesAccountIds.length > 0 && salesAccountIds.every((accountId) =>
+    (coverageRuns ?? []).some((run) => {
+      if (run.ml_account_id !== accountId || !run.metadata || typeof run.metadata !== "object") return false;
+      const coveredFrom = (run.metadata as Record<string, unknown>).covered_from;
+      return typeof coveredFrom === "string" && coveredFrom <= periodFrom;
+    }),
+  );
+  const velocity = calculateThirtyDaySalesVelocity({
+    unitsSold30: (metricRows ?? []).reduce((sum, row) => sum + (numberOrNull(row.units_sold) ?? 0), 0),
+    historyReady,
+  });
+  const physicalAvailable = numberOrNull(physical.available);
+  const physicalCoverageDays = calculateCoverageDays(
+    physicalAvailable,
+    velocity.avgDailySales30,
+    velocity.salesVelocityReady,
+  );
+  const fullAvailable = relevantFullRows.reduce((sum, row) => sum + (numberOrNull(row.available_quantity) ?? 0), 0);
+  const fullCoverageDays = calculateCoverageDays(fullAvailable, velocity.avgDailySales30, velocity.salesVelocityReady);
+  const accounts = baseAccounts.map((account) => ({
+    ...account,
+    coverageDays: calculateCoverageDays(account.available, velocity.avgDailySales30, velocity.salesVelocityReady),
+  }));
+  physical = { ...physical, coverageDays: physicalCoverageDays };
+
   return {
     product: { id: product.id, organizationId: product.organization_id, sku: product.sku, skuKey: product.sku_key, name: product.name },
     mapping,
+    kitDefinitionIssue,
     physical,
     full: {
       applicable: inventoryTargets.length > 0,
@@ -318,11 +407,12 @@ export async function getProductStockIntelligence(
       inventoryCount: inventoryTargets.length,
       checkedInventoryCount: relevantFullRows.length,
       pendingInventoryCount: inventoryTargets.length - relevantFullRows.length,
-      available: relevantFullRows.reduce((sum, row) => sum + (numberOrNull(row.available_quantity) ?? 0), 0),
+      available: fullAvailable,
       total: relevantFullRows.reduce((sum, row) => sum + (numberOrNull(row.total_quantity) ?? 0), 0),
       notAvailable: relevantFullRows.reduce((sum, row) => sum + (numberOrNull(row.not_available_quantity) ?? 0), 0),
       notAvailableByStatus,
       accounts,
+      coverageDays: fullCoverageDays,
       checkedAt: latestIso(relevantFullRows.map((row) => row.checked_at)),
     },
     advertised: {
@@ -330,6 +420,18 @@ export async function getProductStockIntelligence(
       activeListingCount: advertisedOffers.filter((offer) => offer.status === "active").length,
       availabilityPublished: advertisedOffers.reduce((sum, offer) => sum + (offer.available ?? 0), 0),
       offers: advertisedOffers,
+    },
+    planning: {
+      brand,
+      purchaseLeadTimeDays: purchaseLeadTimeDays(brand),
+      periodFrom,
+      periodTo,
+      unitsSold30: velocity.unitsSold30,
+      avgDailySales30: velocity.avgDailySales30,
+      physicalCoverageDays,
+      fullCoverageDays,
+      salesVelocityReady: velocity.salesVelocityReady,
+      noSales: velocity.noSales,
     },
   };
 }

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getProductStockIntelligence } from "@/features/stock/get-product-stock-intelligence";
+import { buildReplenishmentAlerts } from "@/features/stock/stock-domain";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type AlertCandidate = {
@@ -34,12 +35,32 @@ export async function evaluateProductOperationalAlerts(productId: string) {
   const physical = intelligence.physical;
   const physicalReady = physical.ready === true;
   const physicalAvailable = numeric(physical.available);
-  const threshold = numeric(physical.lowStockThreshold);
-  if (physicalReady && physicalAvailable === 0) {
-    add("PHYSICAL_OUT_OF_STOCK", "critical", { sourceSku: intelligence.mapping.sourceSku, available: 0, checkedAt: physical.checkedAt }, "review_physical_replenishment");
-  }
-  if (physicalReady && physical.kind === "simple" && physicalAvailable !== null && threshold !== null && threshold > 0 && physicalAvailable < threshold) {
-    add("PHYSICAL_LOW_STOCK", "warning", { sourceSku: intelligence.mapping.sourceSku, available: physicalAvailable, lowStockThreshold: threshold }, "review_physical_replenishment");
+  for (const candidate of buildReplenishmentAlerts({
+    sourceSku: intelligence.mapping.sourceSku,
+    brand: intelligence.planning.brand,
+    physicalReady,
+    physicalAvailable,
+    unitsSold30: intelligence.planning.unitsSold30,
+    avgDailySales30: intelligence.planning.avgDailySales30,
+    salesVelocityReady: intelligence.planning.salesVelocityReady,
+    physicalCoverageDays: intelligence.planning.physicalCoverageDays,
+    fullAccounts: intelligence.full.accounts.map((account) => ({
+      accountId: account.accountId,
+      accountCode: account.code,
+      accountName: account.displayName,
+      inventoryCount: account.inventoryCount,
+      pendingInventoryCount: account.pendingInventoryCount,
+      available: account.available,
+      checkedAt: account.checkedAt,
+    })),
+  })) {
+    add(
+      candidate.alertType,
+      candidate.severity,
+      candidate.evidence,
+      candidate.suggestedActionCode,
+      candidate.dedupeScope ?? null,
+    );
   }
   if (physical.kind === "kit" && physical.applicable === true && !physicalReady) {
     add("KIT_COMPONENT_STOCK_UNKNOWN", "warning", {
@@ -48,29 +69,26 @@ export async function evaluateProductOperationalAlerts(productId: string) {
       conflict: physical.conflict ?? null,
     }, "review_kit_components");
   }
-  if (intelligence.advertised.listingCount > 0 && intelligence.mapping.status === "missing") {
+  if (intelligence.kitDefinitionIssue) {
+    add("KIT_DOTTED_COMPONENTS_UNRESOLVED", "warning", {
+      sourceSku: intelligence.kitDefinitionIssue.sourceSku,
+      missingComponentSkuKeys: intelligence.kitDefinitionIssue.missingComponentSkuKeys,
+      reason: intelligence.kitDefinitionIssue.reason,
+    }, "review_kit_components");
+  }
+  if (physical.kind === "simple" && physical.applicable === true && !physicalReady) {
+    add("PHYSICAL_STOCK_UNKNOWN", "warning", {
+      sourceSku: intelligence.mapping.sourceSku,
+      checkedAt: physical.checkedAt,
+    }, "review_stock_source");
+  }
+  if (intelligence.advertised.listingCount > 0 && intelligence.mapping.status === "missing" && !intelligence.kitDefinitionIssue) {
     add("STOCK_MAPPING_MISSING", "warning", { sku: intelligence.product.sku, listingCount: intelligence.advertised.listingCount }, "review_stock_mapping");
   }
   if (intelligence.mapping.status === "conflict") {
     add("STOCK_MAPPING_CONFLICT", "warning", { sku: intelligence.product.sku, candidates: intelligence.mapping.candidates }, "resolve_stock_mapping_conflict");
   }
   for (const account of intelligence.full.accounts) {
-    if (account.inventoryCount > 0 && account.pendingInventoryCount === 0 && account.available === 0) {
-      add(
-        "FULL_OUT_OF_STOCK",
-        "critical",
-        {
-          accountId: account.accountId,
-          accountCode: account.code,
-          accountName: account.displayName,
-          inventoryCount: account.inventoryCount,
-          available: 0,
-          checkedAt: account.checkedAt,
-        },
-        "review_full_replenishment",
-        `account:${account.accountId}`,
-      );
-    }
     if (account.notAvailable > 0) {
       add(
         "FULL_UNAVAILABLE_UNITS",

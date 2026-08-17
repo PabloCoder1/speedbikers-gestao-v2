@@ -4,9 +4,6 @@ import { getCurrentAccess } from "@/features/auth/get-current-access";
 import { calculateKitAvailability } from "@/features/stock/stock-domain";
 import { createClient } from "@/lib/supabase/server";
 
-const PAGE_SIZE = 800;
-const MAX_PAGES = 25;
-
 type ProductRow = {
   id: string;
   sku: string;
@@ -92,14 +89,6 @@ type AlertRow = {
   severity: "critical" | "warning" | "info";
 };
 
-type QueryPage<T> = {
-  data: T[] | null;
-  error: {
-    code?: string;
-    message: string;
-  } | null;
-};
-
 type Offer = {
   accountId: string;
   status: string | null;
@@ -169,60 +158,21 @@ export type StockOverview = {
   products: StockOverviewRow[];
 };
 
-async function collectPages<T>(
-  label: string,
-  loadPage: (
-    from: number,
-    to: number,
-  ) => PromiseLike<QueryPage<T>>,
-) {
-  const rows: T[] = [];
-
-  for (let page = 0; page < MAX_PAGES; page += 1) {
-    const from = page * PAGE_SIZE;
-    const { data, error } = await loadPage(from, from + PAGE_SIZE - 1);
-
-    if (error) {
-      throw new Error(`${label}:${error.message}`);
-    }
-
-    const pageRows = data ?? [];
-    rows.push(...pageRows);
-
-    if (pageRows.length < PAGE_SIZE) {
-      return rows;
-    }
-  }
-
-  throw new Error(`${label}:result_limit_exceeded`);
-}
-
-async function collectReceiptAdjustments(
-  loadPage: (from: number, to: number) => PromiseLike<QueryPage<ReceiptAdjustmentRow>>,
-) {
-  const rows: ReceiptAdjustmentRow[] = [];
-
-  for (let page = 0; page < MAX_PAGES; page += 1) {
-    const from = page * PAGE_SIZE;
-    const { data, error } = await loadPage(from, from + PAGE_SIZE - 1);
-    if (error) {
-      if (
-        error.code === "42P01" ||
-        error.code === "PGRST205" ||
-        error.message.includes("current_stock_receipt_adjustments")
-      ) {
-        return { rows: [], ready: false };
-      }
-      throw new Error(`STOCK_RECEIPT_ADJUSTMENTS_FAILED:${error.message}`);
-    }
-
-    const pageRows = data ?? [];
-    rows.push(...pageRows);
-    if (pageRows.length < PAGE_SIZE) return { rows, ready: true };
-  }
-
-  throw new Error("STOCK_RECEIPT_ADJUSTMENTS_FAILED:result_limit_exceeded");
-}
+type StockOverviewReadModel = {
+  stockReceiptReady: boolean;
+  products: ProductRow[];
+  links: InventoryLinkRow[];
+  conflicts: InventoryConflictRow[];
+  stockStates: StockStateRow[];
+  kits: KitRow[];
+  kitComponents: KitComponentRow[];
+  listings: ListingRow[];
+  variations: VariationRow[];
+  fulfillmentStates: FulfillmentStateRow[];
+  mlAccounts: MlAccountRow[];
+  receiptAdjustments: ReceiptAdjustmentRow[];
+  alerts: AlertRow[];
+};
 
 function numberOrZero(value: number | string | null | undefined) {
   const parsed = Number(value ?? 0);
@@ -307,141 +257,22 @@ export async function getStockOverview(): Promise<StockOverview | null> {
   const supabase = await createClient();
   const organizationId = access.organizationId;
 
-  const [
-    products,
-    links,
-    conflicts,
-    stockStates,
-    kits,
-    kitComponents,
-    listings,
-    variations,
-    fulfillmentStates,
-    mlAccounts,
-    receiptAdjustmentsResult,
-    alerts,
-  ] = await Promise.all([
-    collectPages<ProductRow>("STOCK_OVERVIEW_PRODUCTS_FAILED", (from, to) =>
-      supabase
-        .from("products")
-        .select("id,sku,name")
-        .eq("organization_id", organizationId)
-        .order("sku", { ascending: true })
-        .range(from, to)
-        .returns<ProductRow[]>(),
-    ),
-    collectPages<InventoryLinkRow>("STOCK_OVERVIEW_LINKS_FAILED", (from, to) =>
-      supabase
-        .from("product_inventory_links")
-        .select("product_id,source_sku,source_sku_key,source_kind")
-        .eq("organization_id", organizationId)
-        .eq("source", "upseller")
-        .eq("is_active", true)
-        .order("product_id", { ascending: true })
-        .range(from, to)
-        .returns<InventoryLinkRow[]>(),
-    ),
-    collectPages<InventoryConflictRow>("STOCK_OVERVIEW_CONFLICTS_FAILED", (from, to) =>
-      supabase
-        .from("product_inventory_link_conflicts")
-        .select("product_id")
-        .eq("organization_id", organizationId)
-        .eq("source", "upseller")
-        .eq("is_current", true)
-        .order("product_id", { ascending: true })
-        .range(from, to)
-        .returns<InventoryConflictRow[]>(),
-    ),
-    collectPages<StockStateRow>("STOCK_OVERVIEW_PHYSICAL_FAILED", (from, to) =>
-      supabase
-        .from("upseller_stock_states")
-        .select("sku_key,warehouse_name,warehouse_key,available_quantity,current_quantity,low_stock_threshold,source_import_id,checked_at")
-        .eq("organization_id", organizationId)
-        .order("sku_key", { ascending: true })
-        .order("warehouse_key", { ascending: true })
-        .range(from, to)
-        .returns<StockStateRow[]>(),
-    ),
-    collectPages<KitRow>("STOCK_OVERVIEW_KITS_FAILED", (from, to) =>
-      supabase
-        .from("upseller_kits")
-        .select("kit_sku_key")
-        .eq("organization_id", organizationId)
-        .eq("is_current", true)
-        .order("kit_sku_key", { ascending: true })
-        .range(from, to)
-        .returns<KitRow[]>(),
-    ),
-    collectPages<KitComponentRow>("STOCK_OVERVIEW_KIT_COMPONENTS_FAILED", (from, to) =>
-      supabase
-        .from("upseller_kit_components")
-        .select("kit_sku_key,component_sku_key,required_quantity")
-        .eq("organization_id", organizationId)
-        .eq("is_current", true)
-        .order("kit_sku_key", { ascending: true })
-        .range(from, to)
-        .returns<KitComponentRow[]>(),
-    ),
-    collectPages<ListingRow>("STOCK_OVERVIEW_LISTINGS_FAILED", (from, to) =>
-      supabase
-        .from("ml_listings")
-        .select("id,product_id,ml_account_id,status,available_quantity,inventory_id,ml_last_updated")
-        .eq("organization_id", organizationId)
-        .eq("is_current", true)
-        .order("id", { ascending: true })
-        .range(from, to)
-        .returns<ListingRow[]>(),
-    ),
-    collectPages<VariationRow>("STOCK_OVERVIEW_VARIATIONS_FAILED", (from, to) =>
-      supabase
-        .from("ml_listing_variations")
-        .select("id,product_id,ml_account_id,ml_listing_id,available_quantity,inventory_id,last_seen_at")
-        .eq("organization_id", organizationId)
-        .eq("is_current", true)
-        .order("id", { ascending: true })
-        .range(from, to)
-        .returns<VariationRow[]>(),
-    ),
-    collectPages<FulfillmentStateRow>("STOCK_OVERVIEW_FULL_FAILED", (from, to) =>
-      supabase
-        .from("ml_fulfillment_stock_states")
-        .select("ml_account_id,inventory_id,available_quantity,total_quantity,not_available_quantity,checked_at")
-        .eq("organization_id", organizationId)
-        .order("ml_account_id", { ascending: true })
-        .order("inventory_id", { ascending: true })
-        .range(from, to)
-        .returns<FulfillmentStateRow[]>(),
-    ),
-    collectPages<MlAccountRow>("STOCK_OVERVIEW_ACCOUNTS_FAILED", (from, to) =>
-      supabase
-        .from("ml_accounts")
-        .select("id,code,display_name")
-        .eq("organization_id", organizationId)
-        .order("display_name", { ascending: true })
-        .range(from, to)
-        .returns<MlAccountRow[]>(),
-    ),
-    collectReceiptAdjustments((from, to) =>
-      supabase
-        .from("current_stock_receipt_adjustments")
-        .select("sku_key,warehouse_key,quantity,applied_at")
-        .eq("organization_id", organizationId)
-        .order("sku_key", { ascending: true })
-        .order("warehouse_key", { ascending: true })
-        .range(from, to)
-        .returns<ReceiptAdjustmentRow[]>(),
-    ),
-    collectPages<AlertRow>("STOCK_OVERVIEW_ALERTS_FAILED", (from, to) =>
-      supabase
-        .from("operational_alerts")
-        .select("product_id,severity")
-        .eq("organization_id", organizationId)
-        .eq("status", "open")
-        .order("product_id", { ascending: true })
-        .range(from, to)
-        .returns<AlertRow[]>(),
-    ),
-  ]);
+  const { data, error } = await supabase.rpc("get_stock_overview_data", {
+    target_organization_id: organizationId,
+  });
+  if (error || !data || typeof data !== "object") {
+    throw new Error(`STOCK_OVERVIEW_READ_MODEL_FAILED:${error?.message ?? "empty_result"}`);
+  }
+  const readModel = data as unknown as StockOverviewReadModel;
+  const {
+    products = [], links = [], conflicts = [], stockStates = [], kits = [],
+    kitComponents = [], listings = [], variations = [], fulfillmentStates = [],
+    mlAccounts = [], receiptAdjustments = [], alerts = [],
+  } = readModel;
+  const receiptAdjustmentsResult = {
+    rows: receiptAdjustments,
+    ready: readModel.stockReceiptReady === true,
+  };
 
   const linksByProduct = new Map(links.map((link) => [link.product_id, link]));
   const conflictsByProduct = new Set(conflicts.map((conflict) => conflict.product_id));
@@ -604,7 +435,8 @@ export async function getStockOverview(): Promise<StockOverview | null> {
         };
       })
       .sort((left, right) => left.accountName.localeCompare(right.accountName, "pt-BR"));
-    const fullHasZero = fullAccounts.some((account) => account.ready && account.available === 0);
+    const fullHasZero = physicalReady && physicalAvailable !== null && physicalAvailable > 0 &&
+      fullAccounts.some((account) => account.ready && account.available === 0);
     const advertisedAvailable = offers.length
       ? offers.reduce((sum, offer) => sum + (offer.available ?? 0), 0)
       : null;

@@ -170,6 +170,153 @@ export function calculateKitAvailability(
   } as const;
 }
 
+export function purchaseLeadTimeDays(brand: string | null | undefined) {
+  const brandKey = normalizeKey(brand ?? "").replace(/\s+/g, "");
+  return brandKey === "OFFRACER" || brandKey === "NAVETEC" ? 90 : 15;
+}
+
+export function calculateThirtyDaySalesVelocity(input: {
+  unitsSold30: number;
+  historyReady: boolean;
+}) {
+  const unitsSold30 = Number.isFinite(input.unitsSold30) && input.unitsSold30 > 0
+    ? input.unitsSold30
+    : 0;
+  const avgDailySales30 = input.historyReady ? unitsSold30 / 30 : null;
+  return {
+    unitsSold30,
+    avgDailySales30,
+    salesVelocityReady: input.historyReady,
+    noSales: input.historyReady && unitsSold30 === 0,
+  };
+}
+
+export function calculateCoverageDays(
+  available: number | null,
+  avgDailySales30: number | null,
+  salesVelocityReady: boolean,
+) {
+  if (!salesVelocityReady || available === null || avgDailySales30 === null || avgDailySales30 <= 0) {
+    return null;
+  }
+  return available / avgDailySales30;
+}
+
+export type ReplenishmentAlertCandidate = {
+  alertType: string;
+  severity: "critical" | "warning" | "info";
+  evidence: JsonRecord;
+  suggestedActionCode: string;
+  dedupeScope?: string;
+};
+
+export function buildReplenishmentAlerts(input: {
+  sourceSku: string | null;
+  brand: string | null;
+  physicalReady: boolean;
+  physicalAvailable: number | null;
+  unitsSold30: number;
+  avgDailySales30: number | null;
+  salesVelocityReady: boolean;
+  physicalCoverageDays: number | null;
+  fullAccounts: {
+    accountId: string;
+    accountCode: string | null;
+    accountName: string | null;
+    inventoryCount: number;
+    pendingInventoryCount: number;
+    available: number;
+    checkedAt: string | null;
+  }[];
+}) {
+  const alerts: ReplenishmentAlertCandidate[] = [];
+  if (!input.physicalReady || input.physicalAvailable === null) return alerts;
+
+  const leadTime = purchaseLeadTimeDays(input.brand);
+  const purchaseEvidence = {
+    brand: input.brand,
+    purchaseLeadTimeDays: leadTime,
+    physicalAvailable: input.physicalAvailable,
+    unitsSold30: input.unitsSold30,
+    avgDailySales30: input.avgDailySales30,
+    physicalCoverageDays: input.physicalCoverageDays,
+  };
+
+  if (input.physicalAvailable <= 0) {
+    alerts.push({
+      alertType: "PHYSICAL_OUT_OF_STOCK",
+      severity: "critical",
+      evidence: { sourceSku: input.sourceSku, physicalAvailable: input.physicalAvailable },
+      suggestedActionCode: "review_physical_replenishment",
+    });
+    if (input.salesVelocityReady && input.avgDailySales30 !== null && input.avgDailySales30 > 0) {
+      alerts.push({
+        alertType: "PURCHASE_REPLENISHMENT_REQUIRED",
+        severity: "critical",
+        evidence: purchaseEvidence,
+        suggestedActionCode: "create_purchase_replenishment",
+      });
+    }
+    return alerts;
+  }
+
+  if (
+    input.salesVelocityReady &&
+    input.avgDailySales30 !== null &&
+    input.avgDailySales30 > 0 &&
+    input.physicalCoverageDays !== null &&
+    input.physicalCoverageDays <= leadTime
+  ) {
+    alerts.push({
+      alertType: "PURCHASE_REPLENISHMENT_DUE",
+      severity: "warning",
+      evidence: purchaseEvidence,
+      suggestedActionCode: "create_purchase_replenishment",
+    });
+  }
+
+  for (const account of input.fullAccounts) {
+    if (account.inventoryCount === 0 || account.pendingInventoryCount > 0 || account.available !== 0) continue;
+    alerts.push({
+      alertType: "FULL_REPLENISH_FROM_PHYSICAL",
+      severity: "warning",
+      evidence: {
+        physicalAvailable: input.physicalAvailable,
+        fullAvailable: account.available,
+        accountId: account.accountId,
+        accountCode: account.accountCode,
+        accountName: account.accountName,
+        unitsSold30: input.salesVelocityReady ? input.unitsSold30 : null,
+        avgDailySales30: input.salesVelocityReady ? input.avgDailySales30 : null,
+      },
+      suggestedActionCode: "replenish_full_from_physical",
+      dedupeScope: `account:${account.accountId}`,
+    });
+  }
+  return alerts;
+}
+
+export type InventoryLinkCandidate = {
+  sourceSkuKey: string;
+  priority: number;
+  linkMethod: string;
+};
+
+export function chooseInventoryLink(
+  manual: InventoryLinkCandidate | null,
+  candidates: InventoryLinkCandidate[],
+) {
+  if (manual) return { status: "manual" as const, selected: manual };
+  const sourceSkuKeys = [...new Set(candidates.map((candidate) => candidate.sourceSkuKey))].sort();
+  if (sourceSkuKeys.length > 1) return { status: "conflict" as const, selected: null };
+  const selected = [...candidates].sort((left, right) =>
+    left.priority - right.priority ||
+    left.sourceSkuKey.localeCompare(right.sourceSkuKey) ||
+    left.linkMethod.localeCompare(right.linkMethod),
+  )[0] ?? null;
+  return { status: selected ? "automatic" as const : "missing" as const, selected };
+}
+
 export type AlertLifecycleState = {
   dedupeKey: string;
   status: "open" | "resolved";

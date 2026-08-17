@@ -13,26 +13,43 @@ import {
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const LEASE_SECONDS = 120;
-const CHUNK_SIZE = 2500;
+const CHUNK_SIZE = 1500;
 
-type ImportPhase = "stock" | "products" | "relationships" | "kits" | "promote";
+type StagingPhase = "stock" | "products" | "relationships" | "kits";
+type PromotionPhase =
+  | "promote"
+  | "promote_catalog"
+  | "promote_stock"
+  | "promote_relationships"
+  | "promote_kits"
+  | "derive_kits"
+  | "build_links_exact"
+  | "build_links_item"
+  | "build_links_variation"
+  | "build_links_user_product"
+  | "promote_links"
+  | "finalize";
+type ImportPhase = StagingPhase | PromotionPhase;
+
 type ImportBatch = {
   id: string;
   organization_id: string;
   phase: ImportPhase | null;
   cursor_row: number;
-  stock_storage_path: string;
-  relationship_storage_path: string;
-  warehouse_zip_storage_path: string;
+  stock_storage_path: string | null;
+  relationship_storage_path: string | null;
+  product_storage_path: string | null;
+  kit_storage_path: string | null;
+  warehouse_zip_storage_path: string | null;
   attempt_count: number;
   max_attempts: number;
 };
 
-function nextPhase(phase: ImportPhase): ImportPhase {
+function nextStagingPhase(phase: StagingPhase): ImportPhase {
   if (phase === "stock") return "products";
   if (phase === "products") return "relationships";
   if (phase === "relationships") return "kits";
-  return "promote";
+  return "promote_catalog";
 }
 
 function retrySeconds(attempt: number) {
@@ -47,6 +64,19 @@ function ensureValid(issues: ImportIssue[]) {
   if (issues.length > 0) throw new Error(`UPS_STAGING_VALIDATION_FAILED:${issues[0].code}`);
 }
 
+function isStagingPhase(phase: ImportPhase): phase is StagingPhase {
+  return phase === "stock" || phase === "products" || phase === "relationships" || phase === "kits";
+}
+
+function promotionErrorCode(phase: ImportPhase) {
+  if (phase === "promote_stock") return "UPS_IMPORT_PROMOTE_STOCK_FAILED";
+  if (phase === "promote_relationships") return "UPS_IMPORT_PROMOTE_RELATIONSHIPS_FAILED";
+  if (phase.startsWith("build_links") || phase === "promote_links") return "UPS_IMPORT_LINK_BUILD_FAILED";
+  if (phase === "promote_kits" || phase === "derive_kits") return "UPS_IMPORT_PROMOTE_KITS_FAILED";
+  if (phase === "promote_catalog" || phase === "promote") return "UPS_IMPORT_PROMOTE_CATALOG_FAILED";
+  return "UPS_IMPORT_FINALIZE_FAILED";
+}
+
 export async function processNextUpsellerImportChunk() {
   const admin = createAdminClient();
   const leaseId = randomUUID();
@@ -59,7 +89,7 @@ export async function processNextUpsellerImportChunk() {
 
   const { data: batch, error: batchError } = await admin
     .from("upseller_import_batches")
-    .select("id,organization_id,phase,cursor_row,stock_storage_path,relationship_storage_path,warehouse_zip_storage_path,attempt_count,max_attempts")
+    .select("id,organization_id,phase,cursor_row,stock_storage_path,relationship_storage_path,product_storage_path,kit_storage_path,warehouse_zip_storage_path,attempt_count,max_attempts")
     .eq("id", importId)
     .eq("lease_id", leaseId)
     .maybeSingle<ImportBatch>();
@@ -74,20 +104,38 @@ export async function processNextUpsellerImportChunk() {
     if (error) throw new Error(`UPS_IMPORT_CHECKPOINT_FAILED:${error.message}`);
   };
 
+  const phase = batch.phase ?? "stock";
   try {
-    const phase = batch.phase ?? "stock";
-    if (phase === "promote") {
-      const { data, error } = await admin.rpc("promote_upseller_import", { target_import_id: batch.id });
-      if (error || !data) throw new Error(`UPS_IMPORT_PROMOTION_FAILED:${error?.message ?? "false"}`);
-      return { processed: true, completed: true, importId: batch.id } as const;
+    if (!isStagingPhase(phase)) {
+      const { data, error } = await admin.rpc("promote_upseller_import_chunk", {
+        target_import_id: batch.id,
+        requested_lease_id: leaseId,
+        chunk_size: CHUNK_SIZE,
+      });
+      if (error || !data) {
+        throw new Error(`${promotionErrorCode(phase)}:${error?.message ?? "empty_result"}`);
+      }
+      const result = data as { completed?: boolean; phase?: string; cursorRow?: number };
+      return {
+        processed: true,
+        completed: result.completed === true,
+        importId: batch.id,
+        phase: result.phase ?? phase,
+        cursorRow: result.cursorRow ?? 0,
+      } as const;
     }
 
-    const storagePath = phase === "stock"
+    const directStoragePath = phase === "stock"
       ? batch.stock_storage_path
       : phase === "relationships"
         ? batch.relationship_storage_path
-        : batch.warehouse_zip_storage_path;
+        : phase === "products"
+          ? batch.product_storage_path
+          : batch.kit_storage_path;
+    const legacyWarehouseFallback = (phase === "products" || phase === "kits") && !directStoragePath;
+    const storagePath = directStoragePath ?? (legacyWarehouseFallback ? batch.warehouse_zip_storage_path : null);
     if (!storagePath) throw new Error(`UPS_IMPORT_STORAGE_PATH_MISSING:${phase}`);
+
     const { data: file, error: downloadError } = await admin.storage.from("upseller-imports").download(storagePath);
     if (downloadError || !file) throw new Error(`UPS_IMPORT_DOWNLOAD_FAILED:${downloadError?.message ?? phase}`);
     const buffer = Buffer.from(await file.arrayBuffer());
@@ -123,8 +171,11 @@ export async function processNextUpsellerImportChunk() {
         source_updated_at_raw: row.sourceUpdatedAtRaw, row_hash: row.rowHash, raw_payload: row.rawPayload,
       }));
     } else {
-      const warehouse = await parseWarehouseZip(buffer);
-      const parsed = phase === "products" ? warehouse.products : warehouse.kits;
+      const parsed = legacyWarehouseFallback
+        ? (phase === "products" ? (await parseWarehouseZip(buffer)).products : (await parseWarehouseZip(buffer)).kits)
+        : phase === "products"
+          ? await parseProductWorkbook(buffer)
+          : await parseKitWorkbook(buffer);
       ensureValid(parsed.blockingIssues);
       if (phase === "products") {
         table = "upseller_product_import_rows";
@@ -148,7 +199,7 @@ export async function processNextUpsellerImportChunk() {
           invoice_alias_enabled: row.invoiceAliasEnabled, category: row.category, is_active: row.isActive,
           image_url: row.imageUrl, component_sku: row.componentSku,
           component_sku_key: row.componentSkuKey, required_quantity: row.requiredQuantity,
-          row_hash: row.rowHash, raw_payload: row.rawPayload,
+          definition_source: row.definitionSource, row_hash: row.rowHash, raw_payload: row.rawPayload,
         }));
       }
     }
@@ -161,7 +212,7 @@ export async function processNextUpsellerImportChunk() {
     const newCursor = batch.cursor_row + chunk.length;
     if (newCursor >= rows.length) {
       await release({
-        status: "queued", phase: nextPhase(phase), cursor_row: 0,
+        status: "queued", phase: nextStagingPhase(phase), cursor_row: 0,
         attempt_count: 0, next_attempt_at: new Date().toISOString(), error_code: null, error_message: null,
       });
       return { processed: true, completed: false, importId: batch.id, phase, staged: chunk.length, phaseComplete: true } as const;
@@ -174,14 +225,15 @@ export async function processNextUpsellerImportChunk() {
   } catch (error) {
     const attempt = batch.attempt_count + 1;
     const failed = attempt >= batch.max_attempts;
+    const phaseCode = isStagingPhase(phase) ? "UPS_IMPORT_STAGE_FAILED" : promotionErrorCode(phase);
     await admin.from("upseller_import_batches").update({
       status: failed ? "failed" : "queued",
       attempt_count: attempt,
       next_attempt_at: new Date(Date.now() + retrySeconds(attempt) * 1000).toISOString(),
       lease_id: null,
       lease_expires_at: null,
-      error_code: "upseller_import_chunk_failed",
-      error_message: compactError(error),
+      error_code: phaseCode,
+      error_message: `${phaseCode}:${compactError(error)}`.slice(0, 500),
     }).eq("id", batch.id).eq("lease_id", leaseId);
     throw error;
   }

@@ -2,15 +2,18 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import ExcelJS from "exceljs";
-import JSZip from "jszip";
 
 import {
+  buildReplenishmentAlerts,
+  calculateCoverageDays,
   calculateKitAvailability,
+  chooseInventoryLink,
   classifyStoreName,
   fulfillmentStateHash,
+  purchaseLeadTimeDays,
   reconcileAlertLifecycle,
 } from "./stock-domain";
-import { parseUpsellerPackage } from "../upseller/import-parser";
+import { deriveDottedKitDefinition, parseUpsellerPackage } from "../upseller/import-parser";
 
 async function workbook(headers: string[], rows: unknown[][]) {
   const book = new ExcelJS.Workbook();
@@ -58,11 +61,7 @@ test("fixture UpSeller 13014 preserves physical, category-brand and official ali
     ["13014.Lampada.de.Led.H4", "Kit", "", "Não", "Kits", "Sim", "kit.jpg", "13014", 1],
     ["13014.Lampada.de.Led.H4", "Kit", "", "Não", "Kits", "Sim", "kit.jpg", "1737", 1],
   ]);
-  const zip = new JSZip();
-  zip.file("arbitrary-a.xlsx", products);
-  zip.file("arbitrary-b.xlsx", kits);
-  const warehouseZip = await zip.generateAsync({ type: "nodebuffer" });
-  const parsed = await parseUpsellerPackage({ stock, relationships, warehouseZip });
+  const parsed = await parseUpsellerPackage({ stock, relationships, products, kits });
 
   assert.equal(parsed.summary.blockingIssues.length, 0);
   const row = parsed.stock.rows.find((candidate) => candidate.sourceSku === "13014");
@@ -125,4 +124,84 @@ test("alert lifecycle opens once, remains deduplicated and resolves", () => {
   const resolved = reconcileAlertLifecycle(unchanged, []);
   assert.equal(resolved.length, 1);
   assert.equal(resolved[0].status, "resolved");
+});
+
+test("dot kits are deterministic, count repetitions and reject incomplete definitions", () => {
+  const available = new Set(["13018", "1737", "AM0011"]);
+  const simple = deriveDottedKitDefinition("13018.1737", available);
+  assert.deepEqual(simple.definition?.components, [
+    { componentSku: "13018", componentSkuKey: "13018", requiredQuantity: 1 },
+    { componentSku: "1737", componentSkuKey: "1737", requiredQuantity: 1 },
+  ]);
+
+  const repeated = deriveDottedKitDefinition("AM0011.AM0011", available);
+  assert.deepEqual(repeated.definition?.components, [
+    { componentSku: "AM0011", componentSkuKey: "AM0011", requiredQuantity: 2 },
+  ]);
+
+  const missing = deriveDottedKitDefinition("13018.MISSING", available);
+  assert.equal(missing.definition, null);
+  assert.deepEqual(missing.unresolved?.missingComponentSkuKeys, ["MISSING"]);
+  assert.equal(deriveDottedKitDefinition("1057.", new Set(["1057"])).unresolved?.reason, "invalid_dot_pattern");
+  assert.equal(deriveDottedKitDefinition("13018-1737", available).definition, null);
+});
+
+test("purchase lead time follows the official brand rules", () => {
+  assert.equal(purchaseLeadTimeDays("OFFRACER"), 90);
+  assert.equal(purchaseLeadTimeDays("OFF RACER"), 90);
+  assert.equal(purchaseLeadTimeDays("navetec"), 90);
+  assert.equal(purchaseLeadTimeDays("PLASMOTO"), 15);
+});
+
+test("stock hierarchy buys from physical before replenishing Full", () => {
+  const base = {
+    sourceSku: "13014",
+    brand: "PLASMOTO",
+    unitsSold30: 60,
+    avgDailySales30: 2,
+    salesVelocityReady: true,
+    fullAccounts: [{
+      accountId: "account-1", accountCode: "speedbikers", accountName: "Speed Bikers",
+      inventoryCount: 1, pendingInventoryCount: 0, available: 0, checkedAt: "2026-08-17T00:00:00Z",
+    }],
+  };
+  const physicalZero = buildReplenishmentAlerts({
+    ...base, physicalReady: true, physicalAvailable: 0, physicalCoverageDays: 0,
+  });
+  assert.ok(physicalZero.some((alert) => alert.alertType === "PURCHASE_REPLENISHMENT_REQUIRED"));
+  assert.ok(!physicalZero.some((alert) => alert.alertType === "FULL_REPLENISH_FROM_PHYSICAL"));
+
+  const physicalAvailable = buildReplenishmentAlerts({
+    ...base, physicalReady: true, physicalAvailable: 20, physicalCoverageDays: 10,
+  });
+  assert.ok(physicalAvailable.some((alert) => alert.alertType === "FULL_REPLENISH_FROM_PHYSICAL"));
+  assert.ok(physicalAvailable.some((alert) => alert.alertType === "PURCHASE_REPLENISHMENT_DUE"));
+
+  const notReady = buildReplenishmentAlerts({
+    ...base, physicalReady: false, physicalAvailable: null, physicalCoverageDays: null,
+  });
+  assert.deepEqual(notReady, []);
+});
+
+test("no sales never creates coverage-based replenishment", () => {
+  assert.equal(calculateCoverageDays(100, 0, true), null);
+  const alerts = buildReplenishmentAlerts({
+    sourceSku: "SKU-1", brand: "NACIONAL", physicalReady: true, physicalAvailable: 100,
+    unitsSold30: 0, avgDailySales30: 0, salesVelocityReady: true, physicalCoverageDays: null,
+    fullAccounts: [],
+  });
+  assert.ok(!alerts.some((alert) => alert.alertType.startsWith("PURCHASE_")));
+});
+
+test("manual inventory links win and automatic retry is deterministic", () => {
+  const manual = { sourceSkuKey: "MANUAL", priority: 99, linkMethod: "manual" };
+  const candidates = [
+    { sourceSkuKey: "13014", priority: 2, linkMethod: "ml_item_relationship" },
+    { sourceSkuKey: "13014", priority: 1, linkMethod: "exact_sku" },
+  ];
+  assert.deepEqual(chooseInventoryLink(manual, candidates), { status: "manual", selected: manual });
+  const first = chooseInventoryLink(null, candidates);
+  const retry = chooseInventoryLink(null, [...candidates].reverse());
+  assert.deepEqual(retry, first);
+  assert.equal(first.selected?.linkMethod, "exact_sku");
 });

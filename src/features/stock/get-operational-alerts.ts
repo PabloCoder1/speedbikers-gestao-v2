@@ -3,8 +3,6 @@ import "server-only";
 import { getCurrentAccess } from "@/features/auth/get-current-access";
 import { createClient } from "@/lib/supabase/server";
 
-const PAGE_SIZE = 800;
-const MAX_PAGES = 25;
 const INTEGER_FORMATTER = new Intl.NumberFormat("pt-BR");
 const CURRENCY_FORMATTER = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -14,12 +12,6 @@ const CURRENCY_FORMATTER = new Intl.NumberFormat("pt-BR", {
 export type OperationalAlertSeverity = "critical" | "warning" | "info";
 export type OperationalAlertStatus = "open" | "resolved";
 export type OperationalAlertScope = OperationalAlertStatus | "all";
-
-type ProductRow = {
-  id: string;
-  sku: string;
-  name: string | null;
-};
 
 type AlertRow = {
   id: string;
@@ -31,16 +23,8 @@ type AlertRow = {
   suggested_action_code: string | null;
   last_seen_at: string;
   resolved_at: string | null;
-};
-
-type QueryPage<T> = {
-  data: T[] | null;
-  error: { message: string } | null;
-};
-
-type CountResult = {
-  count: number | null;
-  error: { message: string } | null;
+  sku: string;
+  product_name: string | null;
 };
 
 type AlertPresentation = {
@@ -91,6 +75,16 @@ const ALERT_PRESENTATION: Record<string, AlertPresentation> = {
     category: "Kits",
     defaultDescription: "Um ou mais componentes impedem o cálculo confiável do kit.",
   },
+  PHYSICAL_STOCK_UNKNOWN: {
+    title: "Saldo físico indisponível",
+    category: "Estoque físico",
+    defaultDescription: "O vínculo existe, mas a fonte física ainda não possui um saldo confiável.",
+  },
+  KIT_DOTTED_COMPONENTS_UNRESOLVED: {
+    title: "Kit por ponto não resolvido",
+    category: "Kits",
+    defaultDescription: "Um ou mais segmentos do SKU não existem no catálogo ou no estoque físico.",
+  },
   STOCK_MAPPING_MISSING: {
     title: "Produto sem vínculo de estoque",
     category: "Integração UpSeller",
@@ -105,6 +99,21 @@ const ALERT_PRESENTATION: Record<string, AlertPresentation> = {
     title: "Sem estoque no Full",
     category: "Mercado Livre Full",
     defaultDescription: "O inventário monitorado no Full chegou a zero.",
+  },
+  FULL_REPLENISH_FROM_PHYSICAL: {
+    title: "Repor Full a partir do estoque físico",
+    category: "Mercado Livre Full",
+    defaultDescription: "O Full está zerado e há saldo físico disponível para reposição.",
+  },
+  PURCHASE_REPLENISHMENT_REQUIRED: {
+    title: "Compra de reposição necessária",
+    category: "Compras",
+    defaultDescription: "O estoque físico zerou e existe velocidade de venda confiável.",
+  },
+  PURCHASE_REPLENISHMENT_DUE: {
+    title: "Compra de reposição no prazo",
+    category: "Compras",
+    defaultDescription: "A cobertura física está dentro do prazo de compra da marca.",
   },
   FULL_UNAVAILABLE_UNITS: {
     title: "Unidades indisponíveis no Full",
@@ -145,40 +154,17 @@ const ALERT_PRESENTATION: Record<string, AlertPresentation> = {
 
 const ACTION_LABELS: Record<string, string> = {
   review_physical_replenishment: "Revisar reposição física",
+  review_stock_source: "Revisar fonte de estoque",
   review_kit_components: "Revisar componentes do kit",
   review_stock_mapping: "Vincular produto ao UpSeller",
   resolve_stock_mapping_conflict: "Resolver conflito de vínculo",
   review_full_replenishment: "Revisar reposição do Full",
+  replenish_full_from_physical: "Planejar envio ao Full",
+  create_purchase_replenishment: "Planejar compra",
   review_full_unavailable_units: "Verificar unidades indisponíveis",
   review_advertised_availability: "Revisar disponibilidade anunciada",
   review_advertised_vs_physical: "Comparar anúncio e estoque físico",
 };
-
-async function collectPages<T>(
-  label: string,
-  loadPage: (from: number, to: number) => PromiseLike<QueryPage<T>>,
-) {
-  const rows: T[] = [];
-
-  for (let page = 0; page < MAX_PAGES; page += 1) {
-    const from = page * PAGE_SIZE;
-    const { data, error } = await loadPage(from, from + PAGE_SIZE - 1);
-
-    if (error) throw new Error(`${label}:${error.message}`);
-
-    const pageRows = data ?? [];
-    rows.push(...pageRows);
-
-    if (pageRows.length < PAGE_SIZE) return rows;
-  }
-
-  throw new Error(`${label}:result_limit_exceeded`);
-}
-
-function countOrThrow(label: string, result: CountResult) {
-  if (result.error) throw new Error(`${label}:${result.error.message}`);
-  return result.count ?? 0;
-}
 
 function asEvidence(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -248,6 +234,24 @@ function buildDescription(
     }
   }
 
+  if (alertType === "FULL_REPLENISH_FROM_PHYSICAL") {
+    const physical = evidenceNumber(evidence, "physicalAvailable");
+    const account = evidenceText(evidence, "accountName") ?? evidenceText(evidence, "accountCode");
+    if (physical !== null) {
+      return `${account ? `${account}: ` : ""}Full zerado com ${formatQuantity(physical)} unidade(s) disponíveis no estoque físico.`;
+    }
+  }
+
+  if (alertType === "PURCHASE_REPLENISHMENT_REQUIRED" || alertType === "PURCHASE_REPLENISHMENT_DUE") {
+    const physical = evidenceNumber(evidence, "physicalAvailable");
+    const coverage = evidenceNumber(evidence, "physicalCoverageDays");
+    const leadTime = evidenceNumber(evidence, "purchaseLeadTimeDays");
+    if (physical !== null && leadTime !== null) {
+      const coverageText = coverage === null ? "sem cobertura calculável" : `${coverage.toFixed(1)} dia(s) de cobertura`;
+      return `${formatQuantity(physical)} unidade(s) físicas, ${coverageText} e prazo de compra de ${formatQuantity(leadTime)} dia(s).`;
+    }
+  }
+
   if (alertType === "FULL_UNAVAILABLE_UNITS") {
     const unavailable = evidenceNumber(evidence, "notAvailable");
     const account = evidenceText(evidence, "accountName") ?? evidenceText(evidence, "accountCode");
@@ -305,75 +309,20 @@ export async function getOperationalAlerts(
 
   const supabase = await createClient();
   const organizationId = access.organizationId;
-  const loadAlerts = (from: number, to: number) => {
-    let query = supabase
-      .from("operational_alerts")
-      .select(
-        "id,product_id,alert_type,severity,status,evidence,suggested_action_code,last_seen_at,resolved_at",
-      )
-      .eq("organization_id", organizationId);
+  const { data, error } = await supabase.rpc("get_operational_alerts_data", {
+    target_organization_id: organizationId,
+    requested_scope: scope,
+  });
+  if (error || !data || typeof data !== "object") {
+    throw new Error(`OPERATIONAL_ALERTS_READ_MODEL_FAILED:${error?.message ?? "empty_result"}`);
+  }
 
-    if (scope !== "all") query = query.eq("status", scope);
-
-    return query
-      .order("last_seen_at", { ascending: false })
-      .order("id", { ascending: true })
-      .range(from, to)
-      .returns<AlertRow[]>();
+  const readModel = data as unknown as {
+    summary?: Partial<OperationalAlertsOverview["summary"]>;
+    alerts?: AlertRow[];
   };
-
-  const [
-    products,
-    alertRows,
-    openCount,
-    criticalCount,
-    warningCount,
-    infoCount,
-    resolvedCount,
-  ] = await Promise.all([
-    collectPages<ProductRow>("OPERATIONAL_ALERTS_PRODUCTS_FAILED", (from, to) =>
-      supabase
-        .from("products")
-        .select("id,sku,name")
-        .eq("organization_id", organizationId)
-        .order("id", { ascending: true })
-        .range(from, to)
-        .returns<ProductRow[]>(),
-    ),
-    collectPages<AlertRow>("OPERATIONAL_ALERTS_LIST_FAILED", loadAlerts),
-    supabase
-      .from("operational_alerts")
-      .select("id", { count: "exact", head: true })
-      .eq("organization_id", organizationId)
-      .eq("status", "open"),
-    supabase
-      .from("operational_alerts")
-      .select("id", { count: "exact", head: true })
-      .eq("organization_id", organizationId)
-      .eq("status", "open")
-      .eq("severity", "critical"),
-    supabase
-      .from("operational_alerts")
-      .select("id", { count: "exact", head: true })
-      .eq("organization_id", organizationId)
-      .eq("status", "open")
-      .eq("severity", "warning"),
-    supabase
-      .from("operational_alerts")
-      .select("id", { count: "exact", head: true })
-      .eq("organization_id", organizationId)
-      .eq("status", "open")
-      .eq("severity", "info"),
-    supabase
-      .from("operational_alerts")
-      .select("id", { count: "exact", head: true })
-      .eq("organization_id", organizationId)
-      .eq("status", "resolved"),
-  ]);
-
-  const productsById = new Map(products.map((product) => [product.id, product]));
+  const alertRows = readModel.alerts ?? [];
   const alerts = alertRows.map((alert): OperationalAlertItem => {
-    const product = productsById.get(alert.product_id);
     const presentation = ALERT_PRESENTATION[alert.alert_type] ?? {
       title: "Alerta operacional",
       category: "Operação",
@@ -383,8 +332,8 @@ export async function getOperationalAlerts(
     return {
       id: alert.id,
       productId: alert.product_id,
-      sku: product?.sku ?? "Produto removido",
-      productName: product?.name ?? null,
+      sku: alert.sku ?? "Produto removido",
+      productName: alert.product_name ?? null,
       title: presentation.title,
       category: presentation.category,
       description: buildDescription(
@@ -404,11 +353,11 @@ export async function getOperationalAlerts(
 
   return {
     summary: {
-      open: countOrThrow("OPERATIONAL_ALERTS_OPEN_COUNT_FAILED", openCount),
-      critical: countOrThrow("OPERATIONAL_ALERTS_CRITICAL_COUNT_FAILED", criticalCount),
-      warning: countOrThrow("OPERATIONAL_ALERTS_WARNING_COUNT_FAILED", warningCount),
-      info: countOrThrow("OPERATIONAL_ALERTS_INFO_COUNT_FAILED", infoCount),
-      resolved: countOrThrow("OPERATIONAL_ALERTS_RESOLVED_COUNT_FAILED", resolvedCount),
+      open: Number(readModel.summary?.open ?? 0),
+      critical: Number(readModel.summary?.critical ?? 0),
+      warning: Number(readModel.summary?.warning ?? 0),
+      info: Number(readModel.summary?.info ?? 0),
+      resolved: Number(readModel.summary?.resolved ?? 0),
     },
     alerts,
   };

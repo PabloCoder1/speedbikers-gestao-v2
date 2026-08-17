@@ -14,7 +14,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-function isZipSignature(buffer: Buffer) {
+function isXlsxSignature(buffer: Buffer) {
   return buffer.length >= 4 && buffer[0] === 0x50 && buffer[1] === 0x4b && [0x03, 0x05, 0x07].includes(buffer[2]);
 }
 
@@ -38,28 +38,31 @@ export async function POST(request: Request) {
 
   try {
     const form = await request.formData();
-    const files = [form.get("stock"), form.get("relationships"), form.get("warehouseZip")];
+    const files = [form.get("stock"), form.get("relationships"), form.get("products"), form.get("kits")];
     if (!files.every((value): value is File => value instanceof File && value.size > 0)) {
       return NextResponse.json({ error: "required_files_missing" }, { status: 400 });
     }
     if (files.some((file) => file.size > MAX_FILE_BYTES) || files.reduce((sum, file) => sum + file.size, 0) > MAX_TOTAL_BYTES) {
       return NextResponse.json({ error: "upload_too_large" }, { status: 413 });
     }
-    const [stock, relationships, warehouseZip] = await Promise.all(
+    const [stock, relationships, products, kits] = await Promise.all(
       files.map(async (file) => Buffer.from(await file.arrayBuffer())),
     );
-    if (![stock, relationships, warehouseZip].every(isZipSignature)) {
+    if (![stock, relationships, products, kits].every(isXlsxSignature)) {
       return NextResponse.json({ error: "invalid_office_or_zip_signature" }, { status: 400 });
     }
 
-    const [stockHash, relationshipHash, warehouseZipHash] = [stock, relationships, warehouseZip].map(sha256);
-    const importFingerprint = sha256(`${stockHash}:${relationshipHash}:${warehouseZipHash}`);
+    const [stockHash, relationshipHash, productHash, kitHash] = [stock, relationships, products, kits].map(sha256);
+    const importFingerprint = sha256([stockHash, relationshipHash, productHash, kitHash].join(":"));
     const admin = createAdminClient();
     const { data: duplicate, error: duplicateError } = await admin
       .from("upseller_import_batches")
       .select("id,status,preview_summary,validation_issues,created_at,applied_at")
       .eq("organization_id", authorization.access.organizationId)
       .eq("import_fingerprint", importFingerprint)
+      .in("status", ["previewed", "queued", "running", "applied"])
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
     if (duplicateError) throw new Error(`UPS_DUPLICATE_LOOKUP_FAILED:${duplicateError.message}`);
     if (duplicate) {
@@ -71,18 +74,20 @@ export async function POST(request: Request) {
       });
     }
 
-    const parsed = await parseUpsellerPackage({ stock, relationships, warehouseZip });
+    const parsed = await parseUpsellerPackage({ stock, relationships, products, kits });
     const importId = randomUUID();
     const basePath = `${authorization.access.organizationId}/${importId}`;
     const paths = {
       stock: `${basePath}/stock.xlsx`,
       relationships: `${basePath}/relationships.xlsx`,
-      warehouseZip: `${basePath}/warehouse.zip`,
+      products: `${basePath}/products.xlsx`,
+      kits: `${basePath}/kits.xlsx`,
     };
     const uploads = await Promise.all([
       admin.storage.from("upseller-imports").upload(paths.stock, stock, { contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", upsert: false }),
       admin.storage.from("upseller-imports").upload(paths.relationships, relationships, { contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", upsert: false }),
-      admin.storage.from("upseller-imports").upload(paths.warehouseZip, warehouseZip, { contentType: "application/zip", upsert: false }),
+      admin.storage.from("upseller-imports").upload(paths.products, products, { contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", upsert: false }),
+      admin.storage.from("upseller-imports").upload(paths.kits, kits, { contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", upsert: false }),
     ]);
     const uploadError = uploads.find((upload) => upload.error)?.error;
     if (uploadError) {
@@ -106,6 +111,8 @@ export async function POST(request: Request) {
       kitCount: parsed.summary.kitCount,
       kitComponentCount: parsed.summary.kitComponentCount,
       kitMissingStockComponents: parsed.summary.kitMissingStockComponents,
+      derivedKitCount: parsed.summary.derivedKitCount,
+      unresolvedDottedKitCount: parsed.summary.unresolvedDottedKitCount,
     };
     const validationIssues = {
       blockingIssues: parsed.summary.blockingIssues,
@@ -118,10 +125,12 @@ export async function POST(request: Request) {
       import_fingerprint: importFingerprint,
       stock_file_hash: stockHash,
       relationship_file_hash: relationshipHash,
-      warehouse_zip_hash: warehouseZipHash,
+      product_file_hash: productHash,
+      kit_file_hash: kitHash,
       stock_storage_path: paths.stock,
       relationship_storage_path: paths.relationships,
-      warehouse_zip_storage_path: paths.warehouseZip,
+      product_storage_path: paths.products,
+      kit_storage_path: paths.kits,
       phase: "preview",
       preview_summary: previewSummary,
       validation_issues: validationIssues,

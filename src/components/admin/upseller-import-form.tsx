@@ -40,7 +40,6 @@ type ImportProgress = {
 
 type ImportStage =
   | "idle"
-  | "preparing"
   | "previewing"
   | "ready"
   | "queuing"
@@ -67,6 +66,17 @@ const phaseLabels: Record<string, string> = {
   relationships: "Processando vínculos dos anúncios",
   kits: "Processando kits e componentes",
   promote: "Publicando o novo estoque",
+  promote_catalog: "Publicando o catálogo",
+  promote_stock: "Publicando os saldos físicos",
+  promote_relationships: "Publicando as relações de SKU",
+  promote_kits: "Publicando os kits exportados",
+  derive_kits: "Validando kits por ponto",
+  build_links_exact: "Vinculando SKUs exatos",
+  build_links_item: "Vinculando anúncios",
+  build_links_variation: "Vinculando variações",
+  build_links_user_product: "Vinculando produtos do canal",
+  promote_links: "Consolidando vínculos de estoque",
+  finalize: "Finalizando e reavaliando alertas",
 };
 
 function selectedFile(data: FormData, name: string) {
@@ -124,7 +134,7 @@ export function UpsellerImportForm() {
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [progress, setProgress] = useState<ImportProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const busy = ["preparing", "previewing", "queuing", "processing"].includes(stage);
+  const busy = ["previewing", "queuing", "processing"].includes(stage);
 
   async function monitorImport(importId: string) {
     setStage("processing");
@@ -175,26 +185,11 @@ export function UpsellerImportForm() {
         throw new Error(errorMessages.required_files_missing);
       }
 
-      setStage("preparing");
-      const { default: JSZip } = await import("jszip");
-      const archive = new JSZip();
-      archive.file("products.xlsx", products);
-      archive.file("kits.xlsx", kits);
-      const warehouseZip = await archive.generateAsync({
-        type: "blob",
-        compression: "DEFLATE",
-        compressionOptions: { level: 6 },
-      });
-
       const upload = new FormData();
       upload.append("stock", stock, stock.name);
       upload.append("relationships", relationships, relationships.name);
-      upload.append(
-        "warehouseZip",
-        new File([warehouseZip], "warehouse-products-and-kits.zip", {
-          type: "application/zip",
-        }),
-      );
+      upload.append("products", products, products.name);
+      upload.append("kits", kits, kits.name);
 
       setStage("previewing");
       const response = await fetch("/api/upseller/imports/preview", {
@@ -292,11 +287,7 @@ export function UpsellerImportForm() {
 
         <div className="mt-6 flex flex-wrap items-center gap-3">
           <Button type="submit" disabled={busy}>
-            {stage === "preparing"
-              ? "Preparando arquivos..."
-              : stage === "previewing"
-                ? "Validando planilhas..."
-                : "Validar planilhas"}
+            {stage === "previewing" ? "Validando planilhas..." : "Validar planilhas"}
           </Button>
           <p className="text-xs leading-5 text-gray-500">
             A validação não altera o estoque. Você confirma a importação no passo seguinte.

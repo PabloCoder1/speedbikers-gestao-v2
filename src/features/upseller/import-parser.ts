@@ -112,8 +112,22 @@ export type KitImportRow = {
   componentSku: string;
   componentSkuKey: string;
   requiredQuantity: number;
+  definitionSource: "upseller_export";
   rowHash: string;
   rawPayload: JsonRecord;
+};
+
+export type DerivedKitDefinition = {
+  kitSku: string;
+  kitSkuKey: string;
+  components: { componentSku: string; componentSkuKey: string; requiredQuantity: number }[];
+};
+
+export type UnresolvedDottedKit = {
+  sourceSku: string;
+  sourceSkuKey: string;
+  missingComponentSkuKeys: string[];
+  reason: "invalid_dot_pattern" | "components_missing";
 };
 
 type ParsedRows<T> = { rows: T[]; blockingIssues: ImportIssue[]; warnings: ImportIssue[] };
@@ -408,6 +422,7 @@ export async function parseKitWorkbook(buffer: Buffer): Promise<ParsedRows<KitIm
       componentSku,
       componentSkuKey,
       requiredQuantity: quantity && quantity > 0 ? Math.floor(quantity) : 1,
+      definitionSource: "upseller_export" as const,
       rowHash: sha256(stableJson(record.raw)),
       rawPayload: record.raw,
     }];
@@ -424,6 +439,64 @@ export async function parseKitWorkbook(buffer: Buffer): Promise<ParsedRows<KitIm
     }
   }
   return { rows, blockingIssues, warnings };
+}
+
+export function deriveDottedKitDefinition(
+  sourceSku: string,
+  availableSkuKeys: ReadonlySet<string>,
+): { definition: DerivedKitDefinition | null; unresolved: UnresolvedDottedKit | null } {
+  const sourceSkuKey = normalizeSku(sourceSku);
+  if (!sourceSku.includes(".")) return { definition: null, unresolved: null };
+
+  const rawSegments = sourceSku.split(".");
+  const segments = rawSegments.map((segment) => segment.trim()).filter(Boolean);
+  if (rawSegments.some((segment) => !segment.trim()) || segments.length < 2) {
+    return {
+      definition: null,
+      unresolved: { sourceSku, sourceSkuKey, missingComponentSkuKeys: [], reason: "invalid_dot_pattern" },
+    };
+  }
+
+  const componentByKey = new Map<string, { componentSku: string; componentSkuKey: string; requiredQuantity: number }>();
+  for (const segment of segments) {
+    const componentSkuKey = normalizeSku(segment);
+    const current = componentByKey.get(componentSkuKey);
+    if (current) current.requiredQuantity += 1;
+    else componentByKey.set(componentSkuKey, { componentSku: segment, componentSkuKey, requiredQuantity: 1 });
+  }
+  const missingComponentSkuKeys = [...componentByKey.keys()].filter((skuKey) => !availableSkuKeys.has(skuKey));
+  if (missingComponentSkuKeys.length > 0) {
+    return {
+      definition: null,
+      unresolved: { sourceSku, sourceSkuKey, missingComponentSkuKeys, reason: "components_missing" },
+    };
+  }
+
+  return {
+    definition: { kitSku: sourceSku, kitSkuKey: sourceSkuKey, components: [...componentByKey.values()] },
+    unresolved: null,
+  };
+}
+
+export function deriveDottedKitDefinitions(input: {
+  products: ProductImportRow[];
+  stock: StockImportRow[];
+  explicitKits: KitImportRow[];
+}) {
+  const explicitKitKeys = new Set(input.explicitKits.map((row) => row.kitSkuKey));
+  const availableSkuKeys = new Set([
+    ...input.products.map((row) => row.skuKey),
+    ...input.stock.map((row) => row.skuKey),
+  ]);
+  const definitions: DerivedKitDefinition[] = [];
+  const unresolved: UnresolvedDottedKit[] = [];
+  for (const product of input.products) {
+    if (explicitKitKeys.has(product.skuKey)) continue;
+    const result = deriveDottedKitDefinition(product.sourceSku, availableSkuKeys);
+    if (result.definition) definitions.push(result.definition);
+    if (result.unresolved) unresolved.push(result.unresolved);
+  }
+  return { definitions, unresolved };
 }
 
 function safeZipEntry(name: string) {
@@ -460,28 +533,30 @@ export async function parseWarehouseZip(buffer: Buffer) {
 export async function parseUpsellerPackage(input: {
   stock: Buffer;
   relationships: Buffer;
-  warehouseZip: Buffer;
+  products: Buffer;
+  kits: Buffer;
 }) {
-  const [stock, relationships, warehouse] = await Promise.all([
+  const [stock, relationships, products, kits] = await Promise.all([
     parseStockWorkbook(input.stock),
     parseRelationshipWorkbook(input.relationships),
-    parseWarehouseZip(input.warehouseZip),
+    parseProductWorkbook(input.products),
+    parseKitWorkbook(input.kits),
   ]);
   const blockingIssues = [
     ...stock.blockingIssues,
     ...relationships.blockingIssues,
-    ...warehouse.products.blockingIssues,
-    ...warehouse.kits.blockingIssues,
+    ...products.blockingIssues,
+    ...kits.blockingIssues,
   ];
   const warnings = [
     ...stock.warnings,
     ...relationships.warnings,
-    ...warehouse.products.warnings,
-    ...warehouse.kits.warnings,
+    ...products.warnings,
+    ...kits.warnings,
   ];
   const stockSkuKeys = new Set(stock.rows.map((row) => row.skuKey));
   const missingKitComponents = [...new Set(
-    warehouse.kits.rows
+    kits.rows
       .filter((row) => !stockSkuKeys.has(row.componentSkuKey))
       .map((row) => row.componentSku),
   )];
@@ -493,12 +568,28 @@ export async function parseUpsellerPackage(input: {
       .filter((row) => row.channel === "unknown" || (row.channel === "mercado_livre" && !row.accountCode))
       .map((row) => row.storeName),
   )].sort();
+  const dottedKits = deriveDottedKitDefinitions({
+    products: products.rows,
+    stock: stock.rows,
+    explicitKits: kits.rows,
+  });
+  for (const unresolved of dottedKits.unresolved) {
+    warnings.push({
+      code: "KIT_DOTTED_COMPONENTS_UNRESOLVED",
+      message: `Kit por ponto não resolvido: ${unresolved.sourceSku}.`,
+      details: {
+        sourceSku: unresolved.sourceSku,
+        missingComponentSkuKeys: unresolved.missingComponentSkuKeys,
+        reason: unresolved.reason,
+      },
+    });
+  }
   const summary = {
     stockRows: stock.rows.length,
     stockUniqueSkus: new Set(stock.rows.map((row) => row.skuKey)).size,
     warehouses: [...new Set(stock.rows.map((row) => row.warehouseName))].sort(),
-    productRows: warehouse.products.rows.length,
-    productUniqueSkus: new Set(warehouse.products.rows.map((row) => row.skuKey)).size,
+    productRows: products.rows.length,
+    productUniqueSkus: new Set(products.rows.map((row) => row.skuKey)).size,
     relationshipRows: relationships.rows.length,
     relationshipUniqueSkus: new Set(relationships.rows.map((row) => row.sourceSkuKey)).size,
     relationshipStoreNames: [...new Set(relationships.rows.map((row) => row.storeName))].sort(),
@@ -507,12 +598,14 @@ export async function parseUpsellerPackage(input: {
     aliasRelationshipRows: relationships.rows.filter(
       (row) => row.mappedListingSkuKey && row.mappedListingSkuKey !== row.sourceSkuKey,
     ).length,
-    kitRows: warehouse.kits.rows.length,
-    kitCount: new Set(warehouse.kits.rows.map((row) => row.kitSkuKey)).size,
-    kitComponentCount: warehouse.kits.rows.length,
+    kitRows: kits.rows.length,
+    kitCount: new Set(kits.rows.map((row) => row.kitSkuKey)).size,
+    kitComponentCount: kits.rows.length,
     kitMissingStockComponents: missingKitComponents,
+    derivedKitCount: dottedKits.definitions.length,
+    unresolvedDottedKitCount: dottedKits.unresolved.length,
     blockingIssues,
     warnings,
   };
-  return { stock, relationships, products: warehouse.products, kits: warehouse.kits, summary };
+  return { stock, relationships, products, kits, dottedKits, summary };
 }
