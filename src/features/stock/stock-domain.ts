@@ -202,6 +202,250 @@ export function calculateCoverageDays(
   return available / avgDailySales30;
 }
 
+export type PurchaseRecommendationStatus =
+  | "urgent"
+  | "due"
+  | "covered"
+  | "no_sales"
+  | "insufficient_data"
+  | "mapping_issue";
+
+export type PurchaseRecommendationReason =
+  | "no_recent_sales"
+  | "history_not_ready"
+  | "mapping_issue"
+  | null;
+
+export type PurchaseRecommendation = {
+  leadTimeDays: number;
+  targetReserve: number;
+  demandDuringLeadTime: number | null;
+  projectedStockAtArrival: number | null;
+  suggestedPurchaseQuantity: number | null;
+  purchaseRequired: boolean;
+  coverageDays: number | null;
+  projectedCoverageAtArrival: number | null;
+  status: PurchaseRecommendationStatus;
+  reason: PurchaseRecommendationReason;
+};
+
+/*
+ * Cálculo determinístico de reposição por SKU FÍSICO.
+ *
+ * A sugestão precisa cobrir a demanda que vai ocorrer enquanto a
+ * mercadoria está a caminho, mais a reserva mínima configurada, menos o
+ * que já existe disponível e o que já foi comprado e ainda não chegou:
+ *
+ *   demanda no lead time + reserva - disponível - compras em trânsito
+ *
+ * transfer_in_transit NÃO entra: é movimentação interna entre depósitos e
+ * não há evidência suficiente de que consolidar warehouses não gere dupla
+ * contagem. Full também não entra — físico e Full são pools separados.
+ */
+export function calculatePurchaseRecommendation(input: {
+  physicalAvailable: number | null;
+  purchaseInTransit: number | null;
+  lowStockThreshold: number | null;
+  avgDailySales30: number | null;
+  salesVelocityReady: boolean;
+  leadTimeDays: number;
+  mappingReliable?: boolean;
+}): PurchaseRecommendation {
+  const leadTimeDays = Number.isFinite(input.leadTimeDays) && input.leadTimeDays > 0
+    ? input.leadTimeDays
+    : 0;
+
+  // Sem threshold configurado a reserva é zero: não inventamos reserva.
+  const targetReserve = Math.max(
+    Number.isFinite(input.lowStockThreshold ?? NaN) ? (input.lowStockThreshold as number) : 0,
+    0,
+  );
+
+  const available = Number.isFinite(input.physicalAvailable ?? NaN)
+    ? (input.physicalAvailable as number)
+    : null;
+  const purchaseInTransit = Number.isFinite(input.purchaseInTransit ?? NaN)
+    ? (input.purchaseInTransit as number)
+    : 0;
+
+  const empty = {
+    leadTimeDays,
+    targetReserve,
+    demandDuringLeadTime: null,
+    projectedStockAtArrival: null,
+    suggestedPurchaseQuantity: null,
+    purchaseRequired: false,
+    coverageDays: null,
+    projectedCoverageAtArrival: null,
+  };
+
+  if (input.mappingReliable === false) {
+    return { ...empty, status: "mapping_issue", reason: "mapping_issue" };
+  }
+
+  // Sem cobertura comprovada de histórico não extrapolamos silenciosamente.
+  if (input.salesVelocityReady !== true || available === null) {
+    return { ...empty, status: "insufficient_data", reason: "history_not_ready" };
+  }
+
+  const avgDailySales30 = Number.isFinite(input.avgDailySales30 ?? NaN)
+    ? (input.avgDailySales30 as number)
+    : 0;
+
+  if (avgDailySales30 <= 0) {
+    return {
+      leadTimeDays,
+      targetReserve,
+      demandDuringLeadTime: 0,
+      projectedStockAtArrival: available + purchaseInTransit,
+      suggestedPurchaseQuantity: 0,
+      purchaseRequired: false,
+      coverageDays: null,
+      projectedCoverageAtArrival: null,
+      status: "no_sales",
+      reason: "no_recent_sales",
+    };
+  }
+
+  const demandDuringLeadTime = avgDailySales30 * leadTimeDays;
+  const projectedStockAtArrival = available + purchaseInTransit - demandDuringLeadTime;
+  const rawSuggested =
+    demandDuringLeadTime + targetReserve - available - purchaseInTransit;
+  const suggestedPurchaseQuantity = Math.ceil(Math.max(0, rawSuggested));
+  const purchaseRequired = suggestedPurchaseQuantity > 0;
+
+  return {
+    leadTimeDays,
+    targetReserve,
+    demandDuringLeadTime,
+    projectedStockAtArrival,
+    suggestedPurchaseQuantity,
+    purchaseRequired,
+    coverageDays: available / avgDailySales30,
+    projectedCoverageAtArrival: projectedStockAtArrival / avgDailySales30,
+    status: purchaseRequired
+      ? (available <= 0 ? "urgent" : "due")
+      : "covered",
+    reason: null,
+  };
+}
+
+export type PhysicalDemandContribution = {
+  productId: string;
+  sourceSkuKey: string;
+  sourceKind: "simple" | "kit";
+  unitsSold30: number;
+};
+
+export type PhysicalDemandKit = {
+  kitSkuKey: string;
+  components: KitComponentRequirement[];
+  /*
+   * false quando a composição não é confiável: componente faltando,
+   * kit aninhado não suportado ou definição não resolvida.
+   */
+  reliable: boolean;
+};
+
+export type PhysicalDemandRow = {
+  sourceSkuKey: string;
+  directUnitsSold30: number;
+  kitUnitsConsumed30: number;
+  physicalUnitsConsumed30: number;
+  contributingProductIds: string[];
+  planningIssues: string[];
+};
+
+/*
+ * Traduz vendas por product canônico em consumo por SKU FÍSICO.
+ *
+ * Regras que este cálculo precisa respeitar:
+ *
+ * - Vários products podem apontar para o mesmo source_sku_key; as vendas
+ *   somam, e o SKU aparece uma única vez.
+ * - Kit não é comprado: a demanda é distribuída entre os componentes,
+ *   multiplicada pela quantidade requerida de cada um.
+ * - Um componente pode ter venda direta E consumo via kit; os dois somam.
+ * - Kit sem composição confiável não distribui demanda automaticamente:
+ *   registra planningIssue e fica de fora da sugestão.
+ * - O mesmo product nunca entra duas vezes na árvore.
+ */
+export function buildPhysicalDemand(
+  contributions: PhysicalDemandContribution[],
+  kits: PhysicalDemandKit[],
+): PhysicalDemandRow[] {
+  const kitByKey = new Map(kits.map((kit) => [kit.kitSkuKey, kit] as const));
+  const rows = new Map<string, PhysicalDemandRow>();
+  const seenProducts = new Set<string>();
+
+  function rowFor(sourceSkuKey: string) {
+    const existing = rows.get(sourceSkuKey);
+    if (existing) return existing;
+    const created: PhysicalDemandRow = {
+      sourceSkuKey,
+      directUnitsSold30: 0,
+      kitUnitsConsumed30: 0,
+      physicalUnitsConsumed30: 0,
+      contributingProductIds: [],
+      planningIssues: [],
+    };
+    rows.set(sourceSkuKey, created);
+    return created;
+  }
+
+  for (const contribution of contributions) {
+    // Um product contribui uma única vez para a árvore de demanda.
+    if (seenProducts.has(contribution.productId)) continue;
+    seenProducts.add(contribution.productId);
+
+    const units = Number.isFinite(contribution.unitsSold30) && contribution.unitsSold30 > 0
+      ? contribution.unitsSold30
+      : 0;
+
+    if (contribution.sourceKind === "simple") {
+      const row = rowFor(contribution.sourceSkuKey);
+      row.directUnitsSold30 += units;
+      if (!row.contributingProductIds.includes(contribution.productId)) {
+        row.contributingProductIds.push(contribution.productId);
+      }
+      continue;
+    }
+
+    const kit = kitByKey.get(contribution.sourceSkuKey);
+    if (!kit || !kit.reliable || kit.components.length === 0) {
+      /*
+       * O kit em si não vira linha de compra — ele não tem estoque físico
+       * próprio. Registramos o problema no SKU do kit para a tela poder
+       * explicar por que aquela demanda não foi distribuída.
+       */
+      const row = rowFor(contribution.sourceSkuKey);
+      if (!row.planningIssues.includes("kit_components_unknown")) {
+        row.planningIssues.push("kit_components_unknown");
+      }
+      if (!row.contributingProductIds.includes(contribution.productId)) {
+        row.contributingProductIds.push(contribution.productId);
+      }
+      continue;
+    }
+
+    for (const component of kit.components) {
+      const row = rowFor(component.skuKey);
+      row.kitUnitsConsumed30 += units * component.requiredQuantity;
+      if (!row.contributingProductIds.includes(contribution.productId)) {
+        row.contributingProductIds.push(contribution.productId);
+      }
+    }
+  }
+
+  for (const row of rows.values()) {
+    row.physicalUnitsConsumed30 = row.directUnitsSold30 + row.kitUnitsConsumed30;
+  }
+
+  return [...rows.values()].sort((left, right) =>
+    left.sourceSkuKey.localeCompare(right.sourceSkuKey),
+  );
+}
+
 export type ReplenishmentAlertCandidate = {
   alertType: string;
   severity: "critical" | "warning" | "info";
