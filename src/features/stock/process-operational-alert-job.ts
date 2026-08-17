@@ -35,13 +35,16 @@ export async function processNextOperationalAlertJob() {
   } catch (error) {
     const failed = job.attempt_count >= job.max_attempts;
     const delay = Math.min(30 * 2 ** Math.max(0, job.attempt_count - 1) + Math.floor(Math.random() * 16), 900);
-    await admin.from("operational_alert_jobs").update({
+    const { error: retryCheckpointError } = await admin.from("operational_alert_jobs").update({
       status: failed ? "failed" : "queued", lease_id: null, lease_expires_at: null,
       next_attempt_at: new Date(Date.now() + delay * 1000).toISOString(),
       error_code: "operational_alert_evaluation_failed",
       error_message: (error instanceof Error ? error.message : "unknown_error").slice(0, 500),
       processed_at: failed ? new Date().toISOString() : null,
     }).eq("id", job.id).eq("lease_id", leaseId);
+    if (retryCheckpointError) {
+      throw new Error(`ALERT_JOB_RETRY_FAILED:${retryCheckpointError.message}`);
+    }
     throw error;
   }
 }

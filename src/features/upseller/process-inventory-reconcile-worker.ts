@@ -69,7 +69,7 @@ export async function processNextProductInventoryReconcileJob() {
       900,
     );
 
-    await admin
+    const { error: retryCheckpointError } = await admin
       .from("product_inventory_reconcile_jobs")
       .update({
         status: failed ? "failed" : "queued",
@@ -82,6 +82,10 @@ export async function processNextProductInventoryReconcileJob() {
       })
       .eq("id", job.id)
       .eq("lease_id", leaseId);
+
+    if (retryCheckpointError) {
+      throw new Error(`INVENTORY_RECONCILE_RETRY_FAILED:${retryCheckpointError.message}`);
+    }
 
     throw error;
   }

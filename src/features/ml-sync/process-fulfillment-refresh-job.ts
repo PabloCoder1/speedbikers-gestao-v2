@@ -95,7 +95,7 @@ export async function processNextFulfillmentRefreshJob() {
   } catch (error) {
     const retryable = !(error instanceof MercadoLivreFulfillmentRequestError) || error.retryable;
     const failed = !retryable || job.attempt_count >= job.max_attempts;
-    await admin.from("ml_fulfillment_stock_refresh_jobs").update({
+    const { error: retryCheckpointError } = await admin.from("ml_fulfillment_stock_refresh_jobs").update({
       status: failed ? "failed" : "queued",
       lease_id: null, lease_expires_at: null,
       next_attempt_at: new Date(Date.now() + retrySeconds(job.attempt_count) * 1000).toISOString(),
@@ -103,6 +103,9 @@ export async function processNextFulfillmentRefreshJob() {
       error_message: (error instanceof Error ? error.message : "unknown_error").slice(0, 500),
       processed_at: failed ? new Date().toISOString() : null,
     }).eq("id", job.id).eq("lease_id", leaseId);
+    if (retryCheckpointError) {
+      throw new Error(`FULFILLMENT_REFRESH_RETRY_FAILED:${retryCheckpointError.message}`);
+    }
     throw error;
   }
 }

@@ -234,7 +234,7 @@ export async function processNextUpsellerImportChunk() {
     const attempt = batch.attempt_count + 1;
     const failed = attempt >= batch.max_attempts;
     const phaseCode = isStagingPhase(phase) ? "UPS_IMPORT_STAGE_FAILED" : promotionErrorCode(phase);
-    await admin.from("upseller_import_batches").update({
+    const { error: retryCheckpointError } = await admin.from("upseller_import_batches").update({
       status: failed ? "failed" : "queued",
       attempt_count: attempt,
       next_attempt_at: new Date(Date.now() + retrySeconds(attempt) * 1000).toISOString(),
@@ -243,6 +243,9 @@ export async function processNextUpsellerImportChunk() {
       error_code: phaseCode,
       error_message: `${phaseCode}:${compactError(error)}`.slice(0, 500),
     }).eq("id", batch.id).eq("lease_id", leaseId);
+    if (retryCheckpointError) {
+      throw new Error(`UPS_IMPORT_RETRY_CHECKPOINT_FAILED:${retryCheckpointError.message}`);
+    }
     throw error;
   }
 }

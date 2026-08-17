@@ -647,7 +647,7 @@ export async function processNextOrdersDashboardBackfillBatch() {
       );
 
 
-    await admin
+    const { error: retryCheckpointError } = await admin
       .from("sync_runs")
       .update({
         status:
@@ -693,6 +693,12 @@ export async function processNextOrdersDashboardBackfillBatch() {
         "lease_id",
         leaseId,
       );
+
+    if (retryCheckpointError) {
+      throw new Error(
+        `O backfill prioritario falhou e o checkpoint de retry nao foi persistido: ${retryCheckpointError.message}`,
+      );
+    }
 
 
     throw error;

@@ -307,7 +307,9 @@ export async function syncRecentOrdersIfDue() {
         );
 
       if (resetError) {
-        continue;
+        throw new Error(
+          `Nao foi possivel liberar a sincronizacao travada da conta ${account.code}.`,
+        );
       }
     }
 
@@ -701,7 +703,7 @@ offset += PAGE_SIZE;
     }
 
     if (syncRunId) {
-      await admin
+      const { error: completionError } = await admin
         .from("sync_runs")
         .update({
           status:
@@ -752,6 +754,12 @@ offset += PAGE_SIZE;
           "id",
           syncRunId,
         );
+
+      if (completionError) {
+        throw new Error(
+          "Os pedidos foram importados, mas a conclusao da sincronizacao nao foi persistida.",
+        );
+      }
     }
   } catch (error) {
     const errorMessage =
@@ -770,7 +778,7 @@ offset += PAGE_SIZE;
       );
 
     if (syncRunId) {
-      await admin
+      const { error: failureCheckpointError } = await admin
         .from("sync_runs")
         .update({
           status:
@@ -794,6 +802,12 @@ offset += PAGE_SIZE;
           "id",
           syncRunId,
         );
+
+      if (failureCheckpointError) {
+        throw new Error(
+          `A sincronizacao falhou (${errorMessage}) e o estado de falha nao foi persistido.`,
+        );
+      }
     }
 
     throw error;

@@ -227,11 +227,14 @@ export async function processNextOfferPricesBackfillBatch() {
     const nextRetry = run.retry_count + 1;
     const failed = nextRetry > run.max_retries;
     const nextAttemptAt = new Date(Date.now() + retryDelaySeconds(nextRetry) * 1000).toISOString();
-    await admin.from("sync_runs").update({
+    const { error: failureCheckpointError } = await admin.from("sync_runs").update({
       status: failed ? "failed" : "queued", retry_count: nextRetry, next_attempt_at: nextAttemptAt,
       lease_id: null, lease_expires_at: null, error_code: "offer_prices_backfill_failed",
       error_message: errorMessage(error), finished_at: failed ? new Date().toISOString() : null,
     }).eq("id", run.id).eq("lease_id", leaseId);
+    if (failureCheckpointError) {
+      throw new Error(`O backfill de precos falhou e o retry nao foi salvo: ${failureCheckpointError.message}`);
+    }
     throw error;
   }
 }
