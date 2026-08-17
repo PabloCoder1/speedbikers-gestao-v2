@@ -134,15 +134,6 @@ export async function processNextListingsSyncBatch() {
     );
   }
 
-  if (
-    runError ||
-    !data
-  ) {
-    throw new Error(
-      "O trabalho foi adquirido, mas não pôde ser carregado.",
-    );
-  }
-
   const run = data;
 
   const currentMetadata =
@@ -404,7 +395,7 @@ export async function processNextListingsSyncBatch() {
             1000,
       ).toISOString();
 
-    await admin
+    const { data: retryCheckpoint, error: retryCheckpointError } = await admin
       .from("sync_runs")
       .update({
         status:
@@ -441,7 +432,22 @@ export async function processNextListingsSyncBatch() {
       .eq(
         "id",
         run.id,
+      )
+      .eq(
+        "lease_id",
+        leaseId,
+      )
+      .select("id")
+      .maybeSingle();
+
+    if (retryCheckpointError || !retryCheckpoint) {
+      const originalMessage = error instanceof Error
+        ? error.message
+        : "Erro desconhecido.";
+      throw new Error(
+        `Falha no lote (${originalMessage}) e o checkpoint de retry não foi persistido.`,
       );
+    }
 
     throw error;
   }
