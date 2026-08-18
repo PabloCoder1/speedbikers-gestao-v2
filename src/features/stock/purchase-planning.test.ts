@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   buildPhysicalDemand,
+  chooseInventoryLink,
   calculatePurchaseRecommendation,
   purchaseLeadTimeDays,
 } from "@/features/stock/stock-domain";
@@ -310,4 +311,91 @@ test("kit e componente combinados preservam a contagem de products", () => {
   assert.equal(a?.kitUnitsConsumed30, 6);
   assert.equal(a?.physicalUnitsConsumed30, 21);
   assert.deepEqual(a?.contributingProductIds.sort(), ["p1", "p2", "p3"]);
+});
+
+// ============================================================
+// DESEMPATE DE VÍNCULO POR SKU IDÊNTICO
+// ============================================================
+
+test("candidato identico ao SKU do produto resolve o conflito", () => {
+  // Caso real: BAU98 tinha candidatos ATRT0311 e BAU98.
+  const result = chooseInventoryLink(
+    null,
+    [
+      { sourceSkuKey: "ATRT0311", priority: 1, linkMethod: "relationship" },
+      { sourceSkuKey: "BAU98", priority: 2, linkMethod: "relationship" },
+    ],
+    "BAU98",
+  );
+
+  assert.equal(result.status, "exact_sku");
+  assert.equal(result.selected?.sourceSkuKey, "BAU98");
+});
+
+test("desempate ignora diferenca de caixa", () => {
+  const result = chooseInventoryLink(
+    null,
+    [
+      { sourceSkuKey: "4073", priority: 1, linkMethod: "relationship" },
+      { sourceSkuKey: "4073.LAMPADA.LED.H4", priority: 2, linkMethod: "relationship" },
+    ],
+    "4073.Lampada.Led.H4",
+  );
+
+  assert.equal(result.status, "exact_sku");
+  assert.equal(result.selected?.sourceSkuKey, "4073.LAMPADA.LED.H4");
+});
+
+test("sem candidato identico o conflito permanece", () => {
+  // 4070.Lampada.COMUM tinha candidatos 4070 e 4070.2160: nenhum identico.
+  const result = chooseInventoryLink(
+    null,
+    [
+      { sourceSkuKey: "4070", priority: 1, linkMethod: "relationship" },
+      { sourceSkuKey: "4070.2160", priority: 2, linkMethod: "relationship" },
+    ],
+    "4070.Lampada.COMUM",
+  );
+
+  assert.equal(result.status, "conflict");
+  assert.equal(result.selected, null);
+});
+
+test("dois candidatos identicos nao desempatam", () => {
+  const result = chooseInventoryLink(
+    null,
+    [
+      { sourceSkuKey: "BAU98", priority: 1, linkMethod: "relationship" },
+      { sourceSkuKey: "bau98", priority: 2, linkMethod: "alias" },
+      { sourceSkuKey: "OUTRO", priority: 3, linkMethod: "relationship" },
+    ],
+    "BAU98",
+  );
+
+  assert.equal(result.status, "conflict", "origem inconsistente volta a ser decisao humana");
+});
+
+test("vinculo manual continua tendo prioridade sobre o desempate", () => {
+  const result = chooseInventoryLink(
+    { sourceSkuKey: "ESCOLHIDO", priority: 0, linkMethod: "manual" },
+    [
+      { sourceSkuKey: "BAU98", priority: 1, linkMethod: "relationship" },
+      { sourceSkuKey: "OUTRO", priority: 2, linkMethod: "relationship" },
+    ],
+    "BAU98",
+  );
+
+  assert.equal(result.status, "manual");
+  assert.equal(result.selected?.sourceSkuKey, "ESCOLHIDO");
+});
+
+test("candidato unico segue automatico, sem precisar do desempate", () => {
+  const result = chooseInventoryLink(
+    null,
+    [{ sourceSkuKey: "QUALQUER", priority: 1, linkMethod: "relationship" }],
+    "OUTRO",
+  );
+
+  assert.equal(result.status, "automatic");
+  assert.equal(result.selected?.sourceSkuKey, "QUALQUER");
 });

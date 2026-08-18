@@ -546,13 +546,43 @@ export type InventoryLinkCandidate = {
   linkMethod: string;
 };
 
+/*
+ * Desempate por SKU idêntico.
+ *
+ * Quando um produto tem vários candidatos de vínculo, mas exatamente UM
+ * deles é igual ao próprio SKU do produto, esse é o vínculo — não há
+ * ambiguidade real. É o caso de BAU98, cujos candidatos eram ATRT0311 e
+ * BAU98.
+ *
+ * Exige exatamente um: se dois candidatos normalizarem para o mesmo SKU
+ * do produto, a origem está inconsistente e a decisão volta a ser humana.
+ */
+export function resolveExactSkuCandidate(
+  productSkuKey: string,
+  candidates: InventoryLinkCandidate[],
+) {
+  const normalized = normalizeSku(productSkuKey);
+  const exact = candidates.filter(
+    (candidate) => normalizeSku(candidate.sourceSkuKey) === normalized,
+  );
+  return exact.length === 1 ? exact[0] : null;
+}
+
 export function chooseInventoryLink(
   manual: InventoryLinkCandidate | null,
   candidates: InventoryLinkCandidate[],
+  productSkuKey?: string,
 ) {
   if (manual) return { status: "manual" as const, selected: manual };
+
   const sourceSkuKeys = [...new Set(candidates.map((candidate) => candidate.sourceSkuKey))].sort();
-  if (sourceSkuKeys.length > 1) return { status: "conflict" as const, selected: null };
+  if (sourceSkuKeys.length > 1) {
+    const exact = productSkuKey
+      ? resolveExactSkuCandidate(productSkuKey, candidates)
+      : null;
+    if (exact) return { status: "exact_sku" as const, selected: exact };
+    return { status: "conflict" as const, selected: null };
+  }
   const selected = [...candidates].sort((left, right) =>
     left.priority - right.priority ||
     left.sourceSkuKey.localeCompare(right.sourceSkuKey) ||
