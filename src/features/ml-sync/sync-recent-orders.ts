@@ -718,6 +718,32 @@ offset += PAGE_SIZE;
           "Os pedidos foram importados, mas a conclusao da sincronizacao nao foi persistida.",
         );
       }
+
+      /*
+       * Atualiza a baixa de estoque por venda.
+       *
+       * O calculo custa ~3 s porque precisa varrer o historico de pedidos,
+       * e por isso NAO pode ficar no caminho de leitura das telas: quando
+       * esteve la, /estoque e /produtos passaram de 250 ms para 15-22 s.
+       * Aqui o custo cabe: o worker tem 60 s de orcamento e isto roda uma
+       * vez por execucao, nao a cada carregamento de pagina.
+       *
+       * Falha aqui nao invalida a importacao dos pedidos, que ja esta
+       * persistida. O efeito de nao atualizar e o estoque exibido ficar
+       * defasado ate o proximo ciclo, entao registramos e seguimos.
+       */
+      if (totalImportedOrders > 0) {
+        const { error: refreshError } = await admin.rpc(
+          "refresh_stock_sale_deductions",
+        );
+
+        if (refreshError) {
+          console.error(
+            "Stock sale deductions refresh failed:",
+            refreshError.message.slice(0, 500),
+          );
+        }
+      }
     }
   } catch (error) {
     const errorMessage =
