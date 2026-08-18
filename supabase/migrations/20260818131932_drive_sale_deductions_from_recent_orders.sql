@@ -1,0 +1,12 @@
+-- Etapa 2 de 3. Superseded por 20260818132023.
+--
+-- Hipotese: materializar os pedidos recentes num CTE proprio obrigaria o
+-- planner a comecar pelo conjunto pequeno via orders_date_created_idx.
+--
+-- Parcialmente correto: recent_orders passou a resolver 1.113 linhas em
+-- 312 ms via Bitmap Index Scan. Mas o planner seguia varrendo order_items
+-- inteiro (329 mil) antes do join.
+--
+-- Resultado medido: 7.051 ms -> 3.869 ms. Ainda insuficiente.
+-- O corpo final da view esta na migration seguinte.
+select 1;
