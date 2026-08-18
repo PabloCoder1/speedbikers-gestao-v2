@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
+import { StockExitForm } from "@/components/stock/stock-exit-form";
 import { NfeStockReceiptForm } from "@/components/stock/nfe-stock-receipt-form";
 import type {
   StockOverview,
@@ -270,8 +271,12 @@ export function StockOverviewView({
               Acompanhe o estoque físico, o Full de cada conta e o saldo publicado de todos os produtos.
             </p>
           </div>
-          <div className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-xs text-gray-500">
-            Atualização baseada nas sincronizações disponíveis
+          <div className="flex flex-wrap items-center gap-2">
+            <StockExitForm />
+
+            <div className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-xs text-gray-500">
+              Atualização baseada nas sincronizações disponíveis
+            </div>
           </div>
         </div>
       </header>
