@@ -2,20 +2,7 @@ import "server-only";
 
 import { processNextOrderRefreshJob } from "./process-order-refresh-job";
 import { runOrderRefreshBurst } from "./run-order-refresh-burst";
-import { createAdminClient } from "@/lib/supabase/admin";
-
-async function refreshStockSaleDeductions() {
-  const admin = createAdminClient();
-  const { error: refreshError } = await admin.rpc(
-    "refresh_stock_sale_deductions",
-  );
-  if (refreshError) {
-    console.error(
-      "Stock sale deductions refresh failed:",
-      refreshError.message.slice(0, 500),
-    );
-  }
-}
+import { refreshStockSaleDeductions } from "@/features/stock/refresh-stock-sale-deductions";
 
 /*
  * Processes a bounded batch of ml_order_refresh_jobs per worker

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { syncOrdersPreview } from "@/features/ml-sync/sync-orders-preview";
+import { refreshStockSaleDeductions } from "@/features/stock/refresh-stock-sale-deductions";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type RecentOrdersAccountRow = {
@@ -740,16 +741,7 @@ offset += PAGE_SIZE;
        * defasado ate o proximo ciclo, entao registramos e seguimos.
        */
       if (totalImportedOrders > 0) {
-        const { error: refreshError } = await admin.rpc(
-          "refresh_stock_sale_deductions",
-        );
-
-        if (refreshError) {
-          console.error(
-            "Stock sale deductions refresh failed:",
-            refreshError.message.slice(0, 500),
-          );
-        }
+        await refreshStockSaleDeductions();
       }
     }
   } catch (error) {
