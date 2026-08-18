@@ -198,11 +198,23 @@ function sumPeriod(
 }
 
 
+export type DashboardRankingMetric = "revenue" | "units" | "orders";
+
+export const DASHBOARD_PERIOD_PRESETS = [7, 30, 90] as const;
+
 export async function getDashboardOverview(
   {
     accountCode = null,
+    periodDays = 30,
+    dateFrom = null,
+    dateTo = null,
+    rankingMetric = "revenue",
   }: {
     accountCode?: string | null;
+    periodDays?: number;
+    dateFrom?: string | null;
+    dateTo?: string | null;
+    rankingMetric?: DashboardRankingMetric;
   } = {},
 ) {
   const access =
@@ -330,6 +342,34 @@ export async function getDashboardOverview(
     );
 
 
+  /*
+   * Período do gráfico. Os presets contam dias completos anteriores a hoje
+   * e incluem hoje ainda acumulando, na mesma convenção dos cards. Um
+   * intervalo personalizado válido tem prioridade sobre o preset.
+   */
+  const isValidDateKey = (value: string | null) =>
+    typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+
+  const customRange =
+    isValidDateKey(dateFrom) && isValidDateKey(dateTo) && dateFrom! <= dateTo!;
+
+  const safePeriodDays = Math.min(
+    Math.max(Math.trunc(Number(periodDays) || 30), 1),
+    365,
+  );
+
+  const periodFrom = customRange
+    ? dateFrom!
+    : shiftSaoPauloDateKey(today, -(safePeriodDays - 1));
+
+  const periodTo = customRange && dateTo! < today ? dateTo! : today;
+
+  /*
+   * Uma única leitura cobre o período do gráfico e os 30 dias dos cards,
+   * em vez de duas consultas sobre a mesma tabela.
+   */
+  const rangeStart = periodFrom < thirtyDaysAgo ? periodFrom : thirtyDaysAgo;
+
   const dailyMetricsQuery =
     supabase
       .from(
@@ -355,7 +395,7 @@ export async function getDashboardOverview(
       )
       .gte(
         "metric_date",
-        thirtyDaysAgo,
+        rangeStart,
       )
       .lte(
         "metric_date",
@@ -442,9 +482,21 @@ export async function getDashboardOverview(
         );
 
 
+  const rankingRequest = supabase.rpc(
+    "get_dashboard_product_ranking",
+    {
+      target_organization_id: access.organizationId,
+      target_date_from: periodFrom,
+      target_date_to: periodTo,
+      target_metric: rankingMetric,
+      target_ml_account_id: selectedAccount?.id ?? null,
+      target_limit: 20,
+    },
+  );
+
   /*
-   * As tres consultas abaixo sao independentes entre si;
-   * emiti-las juntas evita dois round-trips sequenciais
+   * As consultas abaixo sao independentes entre si;
+   * emiti-las juntas evita round-trips sequenciais
    * ao Supabase no carregamento do dashboard.
    */
   const [
@@ -466,6 +518,12 @@ export async function getDashboardOverview(
       error:
         topProductsError,
     },
+    {
+      data:
+        rankingData,
+      error:
+        rankingError,
+    },
   ] = await Promise.all([
     dailyMetricsQuery
       .order(
@@ -478,7 +536,16 @@ export async function getDashboardOverview(
     soldProductsQuery,
 
     topProductsRequest,
+
+    rankingRequest,
   ]);
+
+
+  if (rankingError) {
+    throw new Error(
+      "Não foi possível carregar a curva ABC dos produtos.",
+    );
+  }
 
 
   if (dailyError) {
@@ -787,5 +854,101 @@ export async function getDashboardOverview(
     last14Days,
 
     topProducts,
+
+    /*
+     * Serie diaria do periodo escolhido, ja preenchida com dias sem venda
+     * para o grafico nao "pular" datas.
+     */
+    period: {
+      from: periodFrom,
+      to: periodTo,
+      days: safePeriodDays,
+      custom: customRange,
+      metric: rankingMetric,
+    },
+
+    series: buildSeries(dayMap, periodFrom, periodTo),
+
+    ranking: normalizeRanking(rankingData),
+  };
+}
+
+
+function buildSeries(
+  dayMap: Map<string, DailyMetric>,
+  from: string,
+  to: string,
+) {
+  const series: DailyMetric[] = [];
+  let cursor = from;
+  // Teto defensivo: evita laco infinito se as datas vierem invertidas.
+  for (let guard = 0; guard < 400 && cursor <= to; guard += 1) {
+    series.push(dayMap.get(cursor) ?? emptyDay(cursor));
+    cursor = shiftSaoPauloDateKey(cursor, 1);
+  }
+  return series;
+}
+
+
+type AbcClassRow = {
+  abc_class: "A" | "B" | "C";
+  products: number | string;
+  metric_value: number | string;
+  units_sold: number | string;
+  gross_revenue: number | string;
+  metric_share: number | string;
+};
+
+type RankingRow = {
+  position: number;
+  product_id: string;
+  sku: string;
+  product_name: string | null;
+  abc_class: "A" | "B" | "C";
+  units_sold: number | string;
+  orders_count: number | string;
+  gross_revenue: number | string;
+  net_after_sale_fee: number | string;
+  metric_value: number | string;
+  metric_share: number | string;
+  cumulative_share: number | string;
+  average_unit_price: number | string | null;
+};
+
+function normalizeRanking(raw: unknown) {
+  const model = (raw ?? {}) as {
+    metric?: string;
+    metricTotal?: number | string;
+    rankedProducts?: number | string;
+    abc?: AbcClassRow[];
+    top?: RankingRow[];
+  };
+
+  return {
+    metricTotal: numeric(model.metricTotal),
+    rankedProducts: numeric(model.rankedProducts),
+    abc: (model.abc ?? []).map((row) => ({
+      className: row.abc_class,
+      products: numeric(row.products),
+      metricValue: numeric(row.metric_value),
+      unitsSold: numeric(row.units_sold),
+      grossRevenue: numeric(row.gross_revenue),
+      metricShare: numeric(row.metric_share),
+    })),
+    top: (model.top ?? []).map((row) => ({
+      position: numeric(row.position),
+      productId: row.product_id,
+      sku: row.sku,
+      name: row.product_name,
+      abcClass: row.abc_class,
+      unitsSold: numeric(row.units_sold),
+      ordersCount: numeric(row.orders_count),
+      grossRevenue: numeric(row.gross_revenue),
+      netAfterSaleFee: numeric(row.net_after_sale_fee),
+      metricValue: numeric(row.metric_value),
+      metricShare: numeric(row.metric_share),
+      cumulativeShare: numeric(row.cumulative_share),
+      averageUnitPrice: numeric(row.average_unit_price),
+    })),
   };
 }

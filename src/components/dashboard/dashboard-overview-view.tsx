@@ -1,6 +1,8 @@
 import Link from "next/link";
 
 import { DailyRevenueBars } from "@/components/dashboard/daily-revenue-bars";
+import { ProductRankingPanel } from "@/components/dashboard/product-ranking-panel";
+import { SalesPeriodChart } from "@/components/dashboard/sales-period-chart";
 import { DashboardMetricCard } from "@/components/dashboard/dashboard-metric-card";
 import { TopProductsTable } from "@/components/dashboard/top-products-table";
 import type { getDashboardOverview } from "@/features/dashboard/get-dashboard-overview";
@@ -134,6 +136,15 @@ export function DashboardOverviewView({
     last14Days,
     topProducts,
   } = dashboard;
+
+
+  /*
+   * Os filtros de período e métrica viajam na URL, então precisam
+   * apontar para a rota atual — geral ou da conta selecionada.
+   */
+  const basePath = selectedAccount
+    ? `/conta/${selectedAccount.code}`
+    : "/";
 
 
   const revenueVariation =
@@ -400,6 +411,26 @@ export function DashboardOverviewView({
             helper="Ainda não representa lucro líquido"
           />
         </div>
+      </section>
+
+
+      <section className="mt-8">
+        <SalesPeriodChart
+          series={dashboard.series}
+          metric={dashboard.period.metric}
+          period={dashboard.period}
+          basePath={basePath}
+        />
+      </section>
+
+
+      <section className="mt-6">
+        <ProductRankingPanel
+          ranking={dashboard.ranking}
+          metric={dashboard.period.metric}
+          period={dashboard.period}
+          basePath={basePath}
+        />
       </section>
 
 
