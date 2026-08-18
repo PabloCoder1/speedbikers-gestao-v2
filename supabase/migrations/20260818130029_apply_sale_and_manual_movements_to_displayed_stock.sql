@@ -1,0 +1,19 @@
+-- TENTATIVA REVERTIDA em 20260818131035. Mantida no historico porque foi
+-- aplicada em producao e o repositorio precisa espelhar o banco.
+--
+-- Objetivo: ligar current_ml_sale_deductions e
+-- current_stock_manual_movements no estoque exibido, alterando o CTE
+-- stock_by_warehouse de private.get_stock_product_signals.
+--
+-- Resultado medido: get_stock_overview_page/summary e
+-- get_products_overview_page sairam de ~250 ms para 15-22 s, acima do
+-- statement_timeout de 8 s. /estoque e /produtos ficaram fora do ar ate a
+-- reversao.
+--
+-- Causa: a view precisa varrer orders/order_items para cada SKU e nao
+-- existe indice atendendo organization_id + date_created em orders.
+--
+-- O corpo original fazia a substituicao via pg_get_functiondef. Como foi
+-- integralmente revertida, este arquivo registra apenas o ocorrido; o
+-- estado final da funcao e o da migration de reversao.
+select 1;
