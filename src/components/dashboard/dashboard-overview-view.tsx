@@ -1,10 +1,8 @@
 import Link from "next/link";
 
-import { DailyRevenueBars } from "@/components/dashboard/daily-revenue-bars";
 import { ProductRankingPanel } from "@/components/dashboard/product-ranking-panel";
 import { SalesPeriodChart } from "@/components/dashboard/sales-period-chart";
 import { DashboardMetricCard } from "@/components/dashboard/dashboard-metric-card";
-import { TopProductsTable } from "@/components/dashboard/top-products-table";
 import type { getDashboardOverview } from "@/features/dashboard/get-dashboard-overview";
 
 
@@ -133,8 +131,6 @@ export function DashboardOverviewView({
     last7DaysStart,
     last30Days,
     last30DaysStart,
-    last14Days,
-    topProducts,
   } = dashboard;
 
 
@@ -434,34 +430,6 @@ export function DashboardOverviewView({
       </section>
 
 
-      <section className="mt-8 grid gap-6 xl:grid-cols-[0.9fr_1.4fr]">
-        <DailyRevenueBars
-          days={
-            last14Days.map(
-              (day) => ({
-                date:
-                  day.date,
-
-                grossRevenue:
-                  day.grossRevenue,
-
-                paidOrders:
-                  day.paidOrders,
-
-                unitsSold:
-                  day.unitsSold,
-              }),
-            )
-          }
-        />
-
-
-        <TopProductsTable
-          products={
-            topProducts
-          }
-        />
-      </section>
 
 
       <section className="mt-8 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">

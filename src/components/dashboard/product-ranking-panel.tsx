@@ -1,13 +1,14 @@
 import Link from "next/link";
 
-import { Badge } from "@/components/ui/badge";
 import {
   dashboardHref,
   type DashboardMetric,
 } from "@/components/dashboard/sales-period-chart";
 
+type AbcClassName = "A" | "B" | "C";
+
 type AbcClass = {
-  className: "A" | "B" | "C";
+  className: AbcClassName;
   products: number;
   metricValue: number;
   unitsSold: number;
@@ -20,7 +21,7 @@ type RankedProduct = {
   productId: string;
   sku: string;
   name: string | null;
-  abcClass: "A" | "B" | "C";
+  abcClass: AbcClassName;
   unitsSold: number;
   ordersCount: number;
   grossRevenue: number;
@@ -34,11 +35,18 @@ type ProductRankingPanelProps = {
   ranking: {
     metricTotal: number;
     rankedProducts: number;
+    listedProducts: number;
     abc: AbcClass[];
     top: RankedProduct[];
   };
   metric: DashboardMetric;
-  period: { from: string; to: string; days: number; custom: boolean };
+  period: {
+    from: string;
+    to: string;
+    days: number;
+    custom: boolean;
+    abcClass: AbcClassName | null;
+  };
   basePath: string;
 };
 
@@ -59,22 +67,25 @@ const METRIC_LABEL: Record<DashboardMetric, string> = {
 };
 
 const CLASS_STYLE: Record<
-  AbcClass["className"],
-  { badge: "success" | "warning" | "neutral"; bar: string; hint: string }
+  AbcClassName,
+  { bar: string; chip: string; activeChip: string; hint: string }
 > = {
   A: {
-    badge: "success",
     bar: "bg-emerald-500",
+    chip: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    activeChip: "border-emerald-600 bg-emerald-600 text-white",
     hint: "Concentram a maior parte do resultado. Nunca podem faltar.",
   },
   B: {
-    badge: "warning",
     bar: "bg-amber-500",
+    chip: "border-amber-200 bg-amber-50 text-amber-800",
+    activeChip: "border-amber-600 bg-amber-600 text-white",
     hint: "Peso intermediário. Reposição planejada, sem urgência.",
   },
   C: {
-    badge: "neutral",
     bar: "bg-gray-400",
+    chip: "border-gray-200 bg-gray-50 text-gray-700",
+    activeChip: "border-gray-700 bg-gray-700 text-white",
     hint: "Cauda longa. Muitos itens, pouco resultado.",
   },
 };
@@ -93,100 +104,168 @@ export function ProductRankingPanel({
     ? { de: period.from, ate: period.to }
     : { periodo: String(period.days) };
 
+  const metricParam = metric === "revenue" ? undefined : metric;
   const byClass = new Map(ranking.abc.map((row) => [row.className, row]));
-  const classes: AbcClass["className"][] = ["A", "B", "C"];
+  const classes: AbcClassName[] = ["A", "B", "C"];
+  const selected = period.abcClass;
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
-      <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-        <h2 className="text-base font-bold tracking-tight text-gray-950">Curva ABC</h2>
-        <p className="mt-1 text-xs leading-5 text-gray-500">
-          Classificação por {METRIC_LABEL[metric]} no período. A vai até 80% do
-          acumulado, B até 95%, C o restante. {integer.format(ranking.rankedProducts)}{" "}
-          produto(s) com venda.
-        </p>
-
-        {ranking.rankedProducts === 0 ? (
-          <p className="mt-5 rounded-xl bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
-            Nenhum produto vendeu no período.
+    <section className="rounded-2xl border border-gray-200 bg-white shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-gray-100 p-5">
+        <div>
+          <h2 className="text-base font-bold tracking-tight text-gray-950">
+            Curva ABC
+          </h2>
+          <p className="mt-1 max-w-2xl text-xs leading-5 text-gray-500">
+            Por {METRIC_LABEL[metric]}. A até 80% do acumulado, B até 95%, C o
+            restante. {integer.format(ranking.rankedProducts)} produto(s) com venda no
+            período — os que não venderam ficam fora da curva.
           </p>
-        ) : (
-          <div className="mt-4 space-y-4">
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1">
+          {(["revenue", "units", "orders"] as DashboardMetric[]).map((option) => (
+            <Link
+              key={option}
+              href={dashboardHref(basePath, {
+                ...periodParams,
+                metrica: option === "revenue" ? undefined : option,
+                classe: selected ?? undefined,
+              })}
+              aria-current={metric === option ? "page" : undefined}
+              className={
+                "rounded-lg px-2.5 py-1.5 text-xs font-medium transition " +
+                (metric === option
+                  ? "bg-gray-950 text-white"
+                  : "text-gray-500 hover:bg-gray-100")
+              }
+            >
+              {METRIC_LABEL[option]}
+            </Link>
+          ))}
+        </div>
+      </div>
+
+      {ranking.rankedProducts === 0 ? (
+        <p className="m-5 rounded-xl bg-gray-50 px-4 py-10 text-center text-sm text-gray-500">
+          Nenhum produto vendeu no período.
+        </p>
+      ) : (
+        <>
+          <div className="grid gap-3 border-b border-gray-100 p-5 md:grid-cols-3">
             {classes.map((className) => {
               const row = byClass.get(className);
               const style = CLASS_STYLE[className];
               const share = row?.metricShare ?? 0;
+              const active = selected === className;
+
               return (
-                <div key={className}>
+                <Link
+                  key={className}
+                  href={dashboardHref(basePath, {
+                    ...periodParams,
+                    metrica: metricParam,
+                    classe: active ? undefined : className,
+                  })}
+                  aria-current={active ? "page" : undefined}
+                  className={
+                    "rounded-xl border p-4 transition " +
+                    (active
+                      ? "border-gray-950 bg-gray-950 text-white"
+                      : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50")
+                  }
+                >
                   <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <Badge variant={style.badge}>Classe {className}</Badge>
-                      <span className="text-sm font-semibold text-gray-950">
-                        {integer.format(row?.products ?? 0)} produto(s)
-                      </span>
-                    </div>
-                    <span className="text-sm font-bold tracking-tight text-gray-950">
+                    <span
+                      className={
+                        "rounded-full border px-2 py-0.5 text-xs font-bold " +
+                        (active ? "border-white/30 bg-white/15 text-white" : style.chip)
+                      }
+                    >
+                      Classe {className}
+                    </span>
+                    <span
+                      className={
+                        "text-lg font-bold tracking-tight " +
+                        (active ? "text-white" : "text-gray-950")
+                      }
+                    >
                       {percent.format(share)}%
                     </span>
                   </div>
 
-                  <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-gray-100">
+                  <p
+                    className={
+                      "mt-3 text-2xl font-bold tracking-tight " +
+                      (active ? "text-white" : "text-gray-950")
+                    }
+                  >
+                    {integer.format(row?.products ?? 0)}
+                  </p>
+                  <p
+                    className={
+                      "text-[11px] " + (active ? "text-white/70" : "text-gray-500")
+                    }
+                  >
+                    produtos · {formatMetric(row?.metricValue ?? 0, metric)}
+                  </p>
+
+                  <div
+                    className={
+                      "mt-3 h-1.5 w-full overflow-hidden rounded-full " +
+                      (active ? "bg-white/20" : "bg-gray-100")
+                    }
+                  >
                     <div
-                      className={"h-full rounded-full " + style.bar}
+                      className={
+                        "h-full rounded-full " + (active ? "bg-white" : style.bar)
+                      }
                       style={{ width: String(Math.min(share, 100)) + "%" }}
                     />
                   </div>
 
-                  <p className="mt-1.5 text-[11px] leading-4 text-gray-500">
-                    {formatMetric(row?.metricValue ?? 0, metric)} · {style.hint}
+                  <p
+                    className={
+                      "mt-2 text-[11px] leading-4 " +
+                      (active ? "text-white/70" : "text-gray-500")
+                    }
+                  >
+                    {active ? "Mostrando estes produtos abaixo" : style.hint}
                   </p>
-                </div>
+                </Link>
               );
             })}
           </div>
-        )}
-      </section>
 
-      <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-base font-bold tracking-tight text-gray-950">
-              Top produtos
-            </h2>
-            <p className="mt-1 text-xs text-gray-500">
-              Ordenado por {METRIC_LABEL[metric]} · {period.from} a {period.to}
+          <div className="flex flex-wrap items-center justify-between gap-2 px-5 pt-4">
+            <p className="text-xs text-gray-500">
+              {selected
+                ? "Produtos da classe " +
+                  selected +
+                  " · " +
+                  integer.format(ranking.listedProducts) +
+                  " no total"
+                : "Todos os produtos, ordenados por " + METRIC_LABEL[metric]}
+              {ranking.top.length < ranking.listedProducts
+                ? " · exibindo os " + integer.format(ranking.top.length) + " primeiros"
+                : ""}
             </p>
-          </div>
 
-          <div className="flex flex-wrap gap-1.5">
-            {(["revenue", "units", "orders"] as DashboardMetric[]).map((option) => (
+            {selected ? (
               <Link
-                key={option}
                 href={dashboardHref(basePath, {
                   ...periodParams,
-                  metrica: option === "revenue" ? undefined : option,
+                  metrica: metricParam,
                 })}
-                aria-current={metric === option ? "page" : undefined}
-                className={
-                  "rounded-lg px-2.5 py-1.5 text-xs font-medium transition " +
-                  (metric === option
-                    ? "bg-gray-950 text-white"
-                    : "border border-gray-200 text-gray-600 hover:bg-gray-50")
-                }
+                className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-50"
               >
-                {METRIC_LABEL[option]}
+                Ver todas as classes
               </Link>
-            ))}
+            ) : null}
           </div>
-        </div>
 
-        {ranking.top.length === 0 ? (
-          <p className="mt-5 rounded-xl bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
-            Nenhum produto vendeu no período.
-          </p>
-        ) : (
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[640px] text-left">
+          <div className="overflow-x-auto p-5 pt-3">
+            <table className="w-full min-w-[720px] text-left">
               <thead className="border-b border-gray-200 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
                 <tr>
                   <th className="py-2 pr-2">#</th>
@@ -195,13 +274,17 @@ export function ProductRankingPanel({
                   <th className="py-2 pr-2 text-right">Faturamento</th>
                   <th className="py-2 pr-2 text-right">Unidades</th>
                   <th className="py-2 pr-2 text-right">Pedidos</th>
+                  <th className="py-2 pr-2 text-right">Participação</th>
                   <th className="py-2 text-right">Acumulado</th>
                 </tr>
               </thead>
               <tbody>
                 {ranking.top.map((product) => (
-                  <tr key={product.productId} className="border-b border-gray-100">
-                    <td className="py-2.5 pr-2 text-xs text-gray-400">
+                  <tr
+                    key={product.productId}
+                    className="border-b border-gray-100 last:border-0 hover:bg-gray-50"
+                  >
+                    <td className="py-2.5 pr-2 text-xs tabular-nums text-gray-400">
                       {product.position}
                     </td>
                     <td className="py-2.5 pr-2">
@@ -211,18 +294,23 @@ export function ProductRankingPanel({
                       >
                         {product.sku}
                       </Link>
-                      <p className="max-w-xs truncate text-[11px] text-gray-500">
+                      <p className="max-w-sm truncate text-[11px] text-gray-500">
                         {product.name ?? "Sem nome cadastrado"}
                       </p>
                     </td>
                     <td className="py-2.5 pr-2">
-                      <Badge variant={CLASS_STYLE[product.abcClass].badge}>
+                      <span
+                        className={
+                          "inline-flex h-6 w-6 items-center justify-center rounded-full border text-[11px] font-bold " +
+                          CLASS_STYLE[product.abcClass].chip
+                        }
+                      >
                         {product.abcClass}
-                      </Badge>
+                      </span>
                     </td>
                     <td
                       className={
-                        "py-2.5 pr-2 text-right text-sm " +
+                        "py-2.5 pr-2 text-right text-sm tabular-nums " +
                         (metric === "revenue"
                           ? "font-bold text-gray-950"
                           : "text-gray-600")
@@ -232,7 +320,7 @@ export function ProductRankingPanel({
                     </td>
                     <td
                       className={
-                        "py-2.5 pr-2 text-right text-sm " +
+                        "py-2.5 pr-2 text-right text-sm tabular-nums " +
                         (metric === "units"
                           ? "font-bold text-gray-950"
                           : "text-gray-600")
@@ -242,7 +330,7 @@ export function ProductRankingPanel({
                     </td>
                     <td
                       className={
-                        "py-2.5 pr-2 text-right text-sm " +
+                        "py-2.5 pr-2 text-right text-sm tabular-nums " +
                         (metric === "orders"
                           ? "font-bold text-gray-950"
                           : "text-gray-600")
@@ -250,7 +338,10 @@ export function ProductRankingPanel({
                     >
                       {integer.format(product.ordersCount)}
                     </td>
-                    <td className="py-2.5 text-right text-xs text-gray-500">
+                    <td className="py-2.5 pr-2 text-right text-xs tabular-nums text-gray-600">
+                      {percent.format(product.metricShare)}%
+                    </td>
+                    <td className="py-2.5 text-right text-xs tabular-nums text-gray-400">
                       {percent.format(product.cumulativeShare)}%
                     </td>
                   </tr>
@@ -258,8 +349,8 @@ export function ProductRankingPanel({
               </tbody>
             </table>
           </div>
-        )}
-      </section>
-    </div>
+        </>
+      )}
+    </section>
   );
 }

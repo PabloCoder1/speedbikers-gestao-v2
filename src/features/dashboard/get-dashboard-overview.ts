@@ -209,12 +209,14 @@ export async function getDashboardOverview(
     dateFrom = null,
     dateTo = null,
     rankingMetric = "revenue",
+    abcClass = null,
   }: {
     accountCode?: string | null;
     periodDays?: number;
     dateFrom?: string | null;
     dateTo?: string | null;
     rankingMetric?: DashboardRankingMetric;
+    abcClass?: "A" | "B" | "C" | null;
   } = {},
 ) {
   const access =
@@ -490,7 +492,8 @@ export async function getDashboardOverview(
       target_date_to: periodTo,
       target_metric: rankingMetric,
       target_ml_account_id: selectedAccount?.id ?? null,
-      target_limit: 20,
+      target_limit: 50,
+      target_abc_class: abcClass,
     },
   );
 
@@ -865,6 +868,7 @@ export async function getDashboardOverview(
       days: safePeriodDays,
       custom: customRange,
       metric: rankingMetric,
+      abcClass,
     },
 
     series: buildSeries(dayMap, periodFrom, periodTo),
@@ -920,6 +924,7 @@ function normalizeRanking(raw: unknown) {
     metric?: string;
     metricTotal?: number | string;
     rankedProducts?: number | string;
+    listedProducts?: number | string;
     abc?: AbcClassRow[];
     top?: RankingRow[];
   };
@@ -927,6 +932,7 @@ function normalizeRanking(raw: unknown) {
   return {
     metricTotal: numeric(model.metricTotal),
     rankedProducts: numeric(model.rankedProducts),
+    listedProducts: numeric(model.listedProducts),
     abc: (model.abc ?? []).map((row) => ({
       className: row.abc_class,
       products: numeric(row.products),

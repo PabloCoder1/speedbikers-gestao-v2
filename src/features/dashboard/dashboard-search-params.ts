@@ -8,6 +8,8 @@ const ALLOWED_METRICS = new Set<DashboardRankingMetric>([
 
 const ALLOWED_PERIODS = new Set([7, 30, 90]);
 
+const ALLOWED_CLASSES = new Set(["A", "B", "C"]);
+
 function firstValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
@@ -25,6 +27,7 @@ export function readDashboardSearchParams(
 ) {
   const rawPeriod = Number(firstValue(raw.periodo));
   const rawMetric = firstValue(raw.metrica) as DashboardRankingMetric | undefined;
+  const rawClass = (firstValue(raw.classe) ?? "").toUpperCase();
 
   return {
     periodDays: ALLOWED_PERIODS.has(rawPeriod) ? rawPeriod : 30,
@@ -32,5 +35,8 @@ export function readDashboardSearchParams(
     dateTo: dateKeyOrNull(firstValue(raw.ate)),
     rankingMetric:
       rawMetric && ALLOWED_METRICS.has(rawMetric) ? rawMetric : "revenue",
+    abcClass: ALLOWED_CLASSES.has(rawClass)
+      ? (rawClass as "A" | "B" | "C")
+      : null,
   } as const;
 }
