@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getCurrentAccess } from "@/features/auth/get-current-access";
+import { resolveDashboardPeriod } from "@/features/dashboard/resolve-dashboard-period";
 import {
   saoPauloDateKey,
   shiftSaoPauloDateKey,
@@ -349,28 +350,17 @@ export async function getDashboardOverview(
    * e incluem hoje ainda acumulando, na mesma convenção dos cards. Um
    * intervalo personalizado válido tem prioridade sobre o preset.
    */
-  const isValidDateKey = (value: string | null) =>
-    typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+  const resolvedPeriod = resolveDashboardPeriod({
+    today,
+    thirtyDaysAgo,
+    periodDays,
+    dateFrom,
+    dateTo,
+  });
 
-  const customRange =
-    isValidDateKey(dateFrom) && isValidDateKey(dateTo) && dateFrom! <= dateTo!;
-
-  const safePeriodDays = Math.min(
-    Math.max(Math.trunc(Number(periodDays) || 30), 1),
-    365,
-  );
-
-  const periodFrom = customRange
-    ? dateFrom!
-    : shiftSaoPauloDateKey(today, -(safePeriodDays - 1));
-
-  const periodTo = customRange && dateTo! < today ? dateTo! : today;
-
-  /*
-   * Uma única leitura cobre o período do gráfico e os 30 dias dos cards,
-   * em vez de duas consultas sobre a mesma tabela.
-   */
-  const rangeStart = periodFrom < thirtyDaysAgo ? periodFrom : thirtyDaysAgo;
+  const periodFrom = resolvedPeriod.from;
+  const periodTo = resolvedPeriod.to;
+  const rangeStart = resolvedPeriod.rangeStart;
 
   const dailyMetricsQuery =
     supabase
@@ -865,8 +855,8 @@ export async function getDashboardOverview(
     period: {
       from: periodFrom,
       to: periodTo,
-      days: safePeriodDays,
-      custom: customRange,
+      days: resolvedPeriod.days,
+      custom: resolvedPeriod.custom,
       metric: rankingMetric,
       abcClass,
     },
