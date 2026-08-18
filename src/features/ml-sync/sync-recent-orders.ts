@@ -523,6 +523,9 @@ if (syncRunId) {
         mode:
           "incremental",
 
+        origin:
+          "poll_reconcile",
+
 
         limit:
           PAGE_SIZE,
@@ -629,6 +632,7 @@ offset += PAGE_SIZE;
           metadata: {
             ...resumableMetadata,
             mode: "incremental",
+            origin: "poll_reconcile",
             limit: PAGE_SIZE,
             offset,
             date_created_from: windowFrom.toISOString(),
@@ -679,6 +683,9 @@ offset += PAGE_SIZE;
           metadata: {
             mode:
               "incremental",
+
+            origin:
+              "poll_reconcile",
 
             limit:
               PAGE_SIZE,
@@ -817,12 +824,3 @@ offset += PAGE_SIZE;
   } as const;
 }
 
-/*
- * Compatibilidade temporária.
- *
- * O worker atual ainda importa este nome.
- * Mantemos o alias para não quebrar produção
- * antes de refatorarmos a rota do worker.
- */
-export const syncRecentSbOrdersIfDue =
-  syncRecentOrdersIfDue;

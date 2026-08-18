@@ -5,6 +5,7 @@ import {
   calculatePurchaseRecommendation,
   type PurchaseRecommendationStatus,
 } from "@/features/stock/stock-domain";
+import { measureServerOperation } from "@/lib/observability/measure-server-operation";
 import { createClient } from "@/lib/supabase/server";
 
 export type PurchasePlanningFilter =
@@ -109,7 +110,18 @@ function numberOrZero(value: unknown) {
   return numberOrNull(value) ?? 0;
 }
 
-export async function getPurchasePlanning({
+export async function getPurchasePlanning(
+  params: {
+    filter?: PurchasePlanningFilter;
+    query?: string;
+  } = {},
+): Promise<PurchasePlanningOverview | null> {
+  return measureServerOperation("get_purchase_planning", () =>
+    getPurchasePlanningImpl(params),
+  );
+}
+
+async function getPurchasePlanningImpl({
   filter = "all",
   query = "",
 }: {

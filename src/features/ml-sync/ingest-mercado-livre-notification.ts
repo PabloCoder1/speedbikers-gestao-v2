@@ -6,12 +6,14 @@ import {
   getMercadoLivreConfig,
   type MercadoLivreAppCode,
 } from "@/integrations/mercado-livre/config";
+import { resourceTarget } from "@/features/ml-sync/notification-resource";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const SUPPORTED_TOPICS = new Set([
   "items_prices",
   "public_offers",
   "fbm_stock_operations",
+  "orders_v2",
 ]);
 
 type EnqueueStatus =
@@ -91,38 +93,6 @@ function notificationKey({
     .digest("hex");
 }
 
-function resourceTarget(topic: string, resource: string) {
-  if (topic === "fbm_stock_operations") {
-    const match = resource.match(/^\/stock\/fulfillment\/operations\/([^/?#]+)$/);
-    if (!match) return null;
-    try {
-      const operationId = decodeURIComponent(match[1]).trim();
-      return operationId ? { itemId: null, offerId: null, operationId } : null;
-    } catch {
-      return null;
-    }
-  }
-
-  if (topic === "items_prices") {
-    const match = resource.match(/^\/items\/(MLB[0-9]+)$/);
-    return match ? { itemId: match[1], offerId: null, operationId: null } : null;
-  }
-
-  const match = resource.match(
-    /^\/seller-promotions\/offers\/([^/?#]+)$/,
-  );
-  if (!match) return null;
-  let offerId: string;
-  try {
-    offerId = decodeURIComponent(match[1]).trim();
-  } catch {
-    return null;
-  }
-  if (!offerId) return null;
-  const itemHint = offerId.match(/^OFFER-(MLB[0-9]+)-/i)?.[1]?.toUpperCase() ?? null;
-  return { itemId: itemHint, offerId, operationId: null };
-}
-
 export async function ingestMercadoLivreNotification({
   rawBody,
   receivedAt = new Date().toISOString(),
@@ -191,6 +161,31 @@ export async function ingestMercadoLivreNotification({
     if (error) throw new Error(`FULFILLMENT_NOTIFICATION_ENQUEUE_FAILED: ${error.message}`);
     if (data !== "queued" && data !== "duplicate" && data !== "unknown_account") {
       throw new Error("FULFILLMENT_NOTIFICATION_ENQUEUE_INVALID_RESULT");
+    }
+    return { status: data as EnqueueStatus, notificationId };
+  }
+
+  if (topic === "orders_v2") {
+    // Lightweight by construction: this branch only ever calls
+    // admin.rpc(...) to enqueue a job. No Mercado Livre API call, no
+    // order persistence, no metrics rebuild happens in the webhook —
+    // that all runs later in process-order-refresh-job.ts.
+    const { data, error } = await admin.rpc(
+      "enqueue_ml_order_refresh_notification",
+      {
+        requested_app_code: appCode,
+        requested_seller_id: sellerId,
+        requested_order_id: target.orderId,
+        requested_notification_key: key,
+        requested_notification_id: notificationId,
+        requested_resource: resource,
+        requested_application_id: applicationId,
+        requested_raw_body: rawBody,
+      },
+    );
+    if (error) throw new Error(`ORDER_NOTIFICATION_ENQUEUE_FAILED: ${error.message}`);
+    if (data !== "queued" && data !== "duplicate" && data !== "unknown_account") {
+      throw new Error("ORDER_NOTIFICATION_ENQUEUE_INVALID_RESULT");
     }
     return { status: data as EnqueueStatus, notificationId };
   }

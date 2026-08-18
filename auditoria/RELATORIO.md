@@ -107,16 +107,20 @@ Também rebaixei o índice de `daily_account_metrics`, que eu havia proposto: co
 
 Não é dívida: a medição da seção 0 e o diff pós-aplicação provam que nenhum dia fechado muda. Não há o que executar.
 
-### 3.2 Defasagem do dia corrente (achado novo)
+### 3.2 Defasagem do dia corrente — **corrigido na ETAPA 32, ver §6**
 
-O sync recente processa **uma conta por invocação** com intervalo mínimo de 4 min. Com 4 contas, cada uma espera ~16 min. Entre execuções, o dashboard subestima o dia.
+~~O sync recente processa **uma conta por invocação** com intervalo mínimo de 4 min. Com 4 contas, cada uma espera ~16 min. Entre execuções, o dashboard subestima o dia.~~
+
+Resolvido por um caminho diferente do que as 3 opções abaixo propunham: em vez de acelerar o polling, o tópico `orders_v2` do webhook do Mercado Livre passou a ser o caminho principal de frescor (notificação → fila `ml_order_refresh_jobs` → GET /orders/{id} → persistência), com `orders_recent` rebaixado a rede de segurança de reconciliação, mantendo o mesmo intervalo de 5 min. Ver §6.
+
+<details><summary>Opções consideradas na auditoria anterior (não escolhidas)</summary>
 
 1. Decidir o alvo de frescor (ex.: no máximo 5 min de atraso).
 2. Opção A, barata: processar todas as contas devidas na mesma invocação, respeitando o orçamento de 48 s por burst.
 3. Opção B: aumentar a frequência do `pg_cron` para `orders_recent` e manter uma conta por vez.
-4. Instrumentar: registrar em `sync_runs.metadata` a distância entre `now()` e o `date_created` mais recente importado.
+4. Instrumentar: registrar em `sync_runs.metadata` a distância entre `now()` e o `date_created` mais recente importado (feito — campo `origin`).
 
-Não corrigi porque muda o desenho do agendamento — mudança de arquitetura.
+</details>
 
 ### 3.3 Histórico de ofertas paginado no Node
 
@@ -130,9 +134,11 @@ Definir prazo e necessidade legal. Se descartável, particionar/arquivar e limpa
 
 Persistir resultado explícito para contas bloqueadas pela pré-condição, em vez do `continue` de `sync-recent-orders.ts:198-210`. Sugestão: código `listings_prerequisite_pending` em um read model, sem criar `sync_run` falso.
 
-### 3.6 Consolidação dos despachantes
+### 3.6 Consolidação dos despachantes — **parcialmente corrigido na ETAPA 32, ver §6**
 
-Cinco despachantes por minuto com filas vazias. Consolidar apenas o dispatch/early-exit. Mudança arquitetural.
+~~Cinco despachantes por minuto com filas vazias. Consolidar apenas o dispatch/early-exit. Mudança arquitetural.~~
+
+O despachante de alertas passou de 1 job/chamada (4 chamadas/min) para até 20 jobs/chamada (2 chamadas/min) — mesma lógica de early-exit quando a fila está vazia, throughput teórico maior com menos invocações de Function. Os demais quatro despachantes (`upseller_import`, `fulfillment_stock_backfill`, `fulfillment_stock_refresh`, mais o novo `order_refresh`) continuam com a mesma cadência de 1 chamada/minuto cada — não fazem parte do escopo desta fase.
 
 ### 3.7 Dependências
 
@@ -186,8 +192,87 @@ Acrescentar `APP_ENCRYPTION_KEY`, presente no ambiente local e ausente do exempl
 
 As três ações críticas do diagnóstico anterior já foram executadas. O que resta, por retorno sobre esforço:
 
-1. **Reduzir a defasagem do dia corrente** — esforço médio, retorno alto. É o maior erro visível hoje no dashboard: 28 pedidos exibidos contra 110 reais. §3.2.
+1. ~~**Reduzir a defasagem do dia corrente**~~ — **corrigido na ETAPA 32**, §3.2/§6.
 2. **Definir retenção de `raw_payload`** — esforço alto, retorno alto. As duas maiores tabelas do banco, com limpezas históricas já entre as queries mais caras. §3.4.
 3. **Paginar o histórico de ofertas no SQL** — esforço médio, retorno alto e crescente. §3.3.
-4. **Consolidar os despachantes de polling** — esforço médio, retorno médio de custo SQL. §3.6.
+4. ~~**Consolidar os despachantes de polling**~~ — **parcialmente corrigido na ETAPA 32** (fila de alertas), §3.6/§6.
 5. **Resolver o alerta de `uuid`/`exceljs` com override testado** — esforço baixo, retorno de segurança. §3.7.
+
+---
+
+## 6. ETAPA 32 — CONSOLIDAÇÃO OPERACIONAL (18/08/2026)
+
+Pacote fechado antes de iniciar Pedidos de Compra (ETAPA 33): `orders_v2`, throughput da fila de alertas, observabilidade consolidada, e validação linha a linha da fórmula de compra. Migrations aplicadas em produção (`eeramcpouarfwagxigtz`), medidas antes e depois de aplicar.
+
+### 6.1 `orders_v2` — webhook leve, fila durável, refresh de pedido único
+
+- Novo tópico `orders_v2` em `ingest-mercado-livre-notification.ts`, roteado para a nova tabela `ml_order_refresh_jobs` via `enqueue_ml_order_refresh_notification`. O webhook continua sem nenhuma chamada de rede — só `admin.rpc(...)`.
+- `persist-orders-batch.ts`: a lógica de persistência de pedidos (resolução de anúncio/variação, upsert de produto/pedido/itens, varredura de `is_current`) foi extraída de `sync-orders-preview.ts` **sem reescrever**, para ser reaproveitada tanto pelo sync em lote quanto pelo refresh de pedido único. Confirmado sem regressão: os 91 testes existentes continuaram passando antes de qualquer código novo ser adicionado.
+- `getSellerOrder` (novo, `orders.ts`) faz `GET /orders/{id}` com classificação de erro (429/5xx retryable, 404 retryable com tolerância a consistência eventual, 401/403 não-retryable) e leitura de `Retry-After`.
+- Índice parcial `(ml_account_id, order_id) where status in ('queued','running')` garante um único job ativo por pedido; uma notificação nova durante o processamento incrementa `notification_revision` e o worker reprocessa em vez de perder a atualização.
+- Novo cron `order-refresh-workers-every-minute` (até 2 despachos/min quando há fila).
+- `ml-orders-recent-every-5-minutes` renomeado para `ml-orders-recent-reconcile-every-5-minutes` — mesmo intervalo de 5 min (a suposição do enunciado de que estava configurado como `*/15` não se sustentou: o arquivo original já dizia `*/5`). `orders_recent` passa a ser rede de segurança, não caminho principal de frescor.
+
+### 6.2 Fila de alertas operacionais em burst
+
+- `processOperationalAlertBurst`: até 20 jobs por invocação (era 1), orçamento de 40 s, falha de um produto não interrompe os demais.
+- Cron `operational-alert-workers-every-minute`: `dispatch_due_stock_workers('operational_alerts', 4)` → `..., 2)`. Capacidade teórica: 4 jobs/min → até 40 jobs/min.
+
+**Medido em produção (fila `operational_alert_jobs`):**
+
+| Momento | queued | critical (alerts) |
+|---|---|---|
+| Antes (baseline do enunciado) | ~4.100 | — |
+| Logo após aplicar (burst recém-ativado) | 3.894 | 825 |
+
+A fila estava drenando no momento da medição (bursts de 20 rodando a cada ~30 s); o efeito completo do throughput 10× maior aparece nas horas seguintes, não instantaneamente.
+
+### 6.3 Observabilidade consolidada
+
+- `get_operational_runtime_health(organization_id)`: uma única RPC reunindo frescor de pedidos por conta, fila de notificações `orders_v2`, fila de alertas, mapeamento, Full, preços e planejamento de compra — reaproveitando `get_stock_backend_status`/`get_purchase_planning_signals` em vez de duplicar contagens. Sem UI neste pacote. Medido contra produção: ~550-700 ms.
+- `measureServerOperation`: `getStockOverview`, `getProductsOverview` e `getPurchasePlanning` agora logam `{event:"slow_read_model", operation, elapsedMs}` quando passam de 1.500 ms. Sem persistência em banco — só `console.warn`, para os logs da Vercel já cobrirem.
+- Saúde da matview `stock_sale_deductions` incluída no health (contagem/soma/última venda) — lida direto da matview, nunca recalculando a view viva `current_ml_sale_deductions`.
+
+**Medido em produção (24h):** 17 HTTP 429 entre as 4 contas (gmr 4, offracer 6, sb 2, speedbikers 5) — confirma que 429 está ocorrendo hoje e reforça por que o backoff com jitter do `getSellerOrder` importa antes de habilitar `orders_v2`.
+
+### 6.4 Validação de `/compras` — encontrou e corrigiu uma divergência real
+
+`get_purchase_planning_validation_sample` comparou `suggested_purchase_quantity`/`status` calculados em SQL contra `calculatePurchaseRecommendation()` em TypeScript para uma amostra diversificada. **Primeira rodada: 25 de 76 linhas divergiram**, sempre por exatamente 1 unidade. Duas causas, ambas de representação numérica — não da fórmula:
+
+1. `avg_daily_sales_30` saía do SQL com toda a precisão decimal de `numeric`, que se perdia de forma inconsistente ao virar `double` em JavaScript via JSON. Corrigido em `20260818150000_stabilize_avg_daily_sales_precision.sql`: arredondado para 6 casas decimais dentro da própria função `private.get_purchase_planning_signals`, antes de alimentar o `ceil()` SQL e a serialização.
+2. Mesmo com (1) corrigido, restaram 2 divergências: multiplicação de `double` (`avgDailySales30 * leadTimeDays`, ex. `2.7 * 90`) pode cair uma fração de ponto flutuante acima de um inteiro exato, e `Math.ceil` transforma esse ruído em uma unidade extra — o SQL, com `numeric` decimal exato, não sofre disso. Corrigido em `calculatePurchaseRecommendation()` (`stock-domain.ts`): arredonda para 6 casas decimais antes do `ceil`.
+
+**Segunda rodada, após as duas correções: 0 divergências em 76 linhas.** Nenhum teste existente da fórmula (`stock-domain.test.ts`, `purchase-planning.test.ts`) regrediu — os 115 testes automatizados continuaram passando. Lead time, reserva mínima e a definição da fórmula em si não mudaram.
+
+SKU 13014 (citado no enunciado): presente no planejamento atual, status `covered`, `suggestedPurchaseQuantity: 0` (958 unidades de venda em 30 dias — direta + kit — cobertas por 930 disponíveis + projeção de chegada positiva).
+
+**Top outliers medidos (não alterados, apenas reportados):**
+
+| Top 5 por quantidade sugerida | Top 5 por valor estimado |
+|---|---|
+| PDM46.TM472 — 967 | 652105 — R$ 28.420,00 |
+| 699007 — 687 | LT97 — R$ 27.890,01 |
+| TC453 — 605 | PD70 — R$ 27.580,00 |
+| TM0505 — 587 | BAU98 — R$ 24.735,32 |
+| C957 — 498 | TP044 — R$ 23.462,06 |
+
+Nenhum destes foi alterado automaticamente — só reportados, como pedido no enunciado.
+
+### 6.5 Testes
+
+15 novos testes cobrindo: parsing de resource `orders_v2` (válido/inválido), classificação 429/404/401 e orçamento de retry, requeue por bump de revisão, burst de alertas (múltiplos jobs / falha isolada / orçamento de tempo), burst de order refresh (um único refresh de stock deductions por burst), verificação estrutural de que o webhook não importa clients HTTP do Mercado Livre, varredura `is_current` para pedido único, e equivalência SQL×TS de compras (condicionada a credenciais reais, pula em CI sem elas). Total: 115 passando, 1 pulado (sem credenciais neste ambiente de execução do relatório).
+
+### 6.6 Migrations aplicadas
+
+| Migration | O que faz |
+|---|---|
+| `20260818140000_add_order_refresh_queue.sql` | Tabela `ml_order_refresh_jobs`, claim RPC, enqueue RPC com merge de revisão |
+| `20260818141000_add_order_refresh_dispatcher_and_alert_burst.sql` | Dispatcher/cron do `order_refresh`, throughput do cron de alertas 4→2 |
+| `20260818142000_rename_orders_recent_cron.sql` | Rename do cron `orders_recent`, mesmo intervalo |
+| `20260818143000_add_operational_runtime_health.sql` | `get_operational_runtime_health` |
+| `20260818144000_add_purchase_planning_validation_sample.sql` | `get_purchase_planning_validation_sample` |
+| `20260818150000_stabilize_avg_daily_sales_precision.sql` | Corrige a divergência de precisão do §6.4 (`avg_daily_sales_30`) |
+
+### 6.7 Pendente — ação do usuário
+
+Backend pronto. O tópico `orders_v2` precisa ser habilitado manualmente nas quatro aplicações Mercado Livre (SpeedBikers, SB, GMR, OffRacer) antes de a fila `ml_order_refresh_jobs` receber notificações reais — hoje está em 0/0/0 porque o tópico ainda não está ativo.

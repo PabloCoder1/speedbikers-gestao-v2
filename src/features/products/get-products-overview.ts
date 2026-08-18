@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getCurrentAccess } from "@/features/auth/get-current-access";
+import { measureServerOperation } from "@/lib/observability/measure-server-operation";
 import { createClient } from "@/lib/supabase/server";
 
 export type ProductsFilter =
@@ -60,7 +61,20 @@ type ProductsReadModel = Omit<ProductsOverview, "page"> & {
   offset: number;
 };
 
-export async function getProductsOverview({
+export async function getProductsOverview(
+  params: {
+    query?: string;
+    status?: ProductsFilter;
+    page?: number;
+    limit?: number;
+  } = {},
+): Promise<ProductsOverview | null> {
+  return measureServerOperation("get_products_overview", () =>
+    getProductsOverviewImpl(params),
+  );
+}
+
+async function getProductsOverviewImpl({
   query = "",
   status = "all",
   page = 1,

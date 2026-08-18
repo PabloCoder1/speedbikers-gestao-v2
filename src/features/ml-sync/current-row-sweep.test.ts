@@ -62,3 +62,17 @@ test("ids ausentes ou vazios nao viram alvo", () => {
 test("nenhum pai processado resulta em nenhuma varredura", () => {
   assert.deepEqual(sweepTargets([]), []);
 });
+
+test("orders_v2: um pedido único sem nenhum item continua sendo varrido", () => {
+  /*
+   * process-order-refresh-job.ts chama persistOrdersBatch com um
+   * único pedido (orders: [order]). O alvo da varredura precisa
+   * continuar sendo o pedido processado, mesmo quando o Map de
+   * orderIdMap tem só uma entrada — não é um caso especial de lote.
+   */
+  const orderIdMap = new Map([
+    ["2000000000000099", "order-refresh-unico"],
+  ]);
+
+  assert.deepEqual(sweepTargets(orderIdMap.values()), ["order-refresh-unico"]);
+});

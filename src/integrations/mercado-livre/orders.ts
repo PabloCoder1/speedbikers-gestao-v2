@@ -1,10 +1,28 @@
 import "server-only";
 
 import { MERCADO_LIVRE_URLS } from "./constants";
+import {
+  classifyOrderFetchFailure,
+  MercadoLivreOrderRequestError,
+  parseRetryAfter,
+} from "./order-error-classification";
+
+export { MercadoLivreOrderRequestError };
 
 
 export type MercadoLivreOrder =
   Record<string, unknown>;
+
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readString(value: unknown) {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return null;
+}
 
 
 export type MercadoLivreOrderSort =
@@ -320,5 +338,111 @@ export async function searchSellerOrders({
       )
         ? payload.available_filters
         : [],
+  };
+}
+
+
+export type GetSellerOrderParams = {
+  orderId: string;
+
+  accessToken: string;
+
+  timeoutMs?: number;
+};
+
+
+/*
+ * GET /orders/{id} — the single-order fetch used by the orders_v2
+ * refresh path (process-order-refresh-job.ts). searchSellerOrders
+ * above stays list-only; nothing about it needed to change.
+ */
+export async function getSellerOrder({
+  orderId,
+  accessToken,
+  timeoutMs = ORDERS_REQUEST_TIMEOUT_MS,
+}: GetSellerOrderParams): Promise<{
+  order: MercadoLivreOrder;
+  raw: unknown;
+}> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  let response: Response;
+
+  try {
+    response = await fetch(
+      `${MERCADO_LIVRE_URLS.api}/orders/${encodeURIComponent(orderId)}`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: "application/json",
+        },
+        cache: "no-store",
+        signal: controller.signal,
+      },
+    );
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new MercadoLivreOrderRequestError(
+        `Falha ao consultar o pedido ${orderId}. REQUEST_TIMEOUT após ${timeoutMs}ms.`,
+        null,
+        "timeout",
+        error.message,
+        true,
+        false,
+        null,
+      );
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+
+  const retryAfterSeconds = parseRetryAfter(response.headers.get("retry-after"));
+
+  const body = await response.text();
+  let payload: unknown = null;
+  try {
+    payload = body ? JSON.parse(body) : null;
+  } catch {
+    payload = null;
+  }
+
+  if (!response.ok) {
+    const errorPayload = isObject(payload) ? payload : {};
+    const responseCode =
+      readString(errorPayload.error) ?? readString(errorPayload.code);
+    const responseMessage =
+      readString(errorPayload.message) ?? (body.slice(0, 300) || null);
+
+    const classification = classifyOrderFetchFailure(response.status);
+
+    throw new MercadoLivreOrderRequestError(
+      `ORDER_HTTP_${response.status}:${responseCode ?? "unknown"}`,
+      response.status,
+      responseCode,
+      responseMessage,
+      classification.retryable,
+      classification.notFound,
+      retryAfterSeconds,
+    );
+  }
+
+  if (!isObject(payload)) {
+    throw new MercadoLivreOrderRequestError(
+      "ORDER_INVALID_RESPONSE",
+      response.status,
+      null,
+      null,
+      false,
+      false,
+      null,
+    );
+  }
+
+  return {
+    order: payload,
+    raw: payload,
   };
 }

@@ -9,13 +9,14 @@ import { processFulfillmentStockBackfillBurst } from "@/features/ml-sync/process
 import { processNextFulfillmentRefreshJob } from "@/features/ml-sync/process-fulfillment-refresh-job";
 import { processOfferPricesBackfillBurst } from "@/features/ml-sync/process-offer-prices-backfill";
 import { processNextOfferRefreshJob } from "@/features/ml-sync/process-offer-refresh-job";
-import { processNextOperationalAlertJob } from "@/features/stock/process-operational-alert-job";
+import { processOperationalAlertBurst } from "@/features/stock/process-operational-alert-burst";
 import { processUpsellerImportBurst } from "@/features/upseller/process-import-worker";
 import { processProductInventoryReconcileBurst } from "@/features/upseller/process-inventory-reconcile-worker";
 
-import { syncRecentSbOrdersIfDue } from "@/features/ml-sync/sync-recent-orders";
+import { syncRecentOrdersIfDue } from "@/features/ml-sync/sync-recent-orders";
 
 import { processOrdersBackfillBurst } from "@/features/ml-sync/process-orders-backfill-burst";
+import { processOrderRefreshBurst } from "@/features/ml-sync/process-order-refresh-burst";
 
 export const maxDuration = 60;
 
@@ -173,7 +174,17 @@ export async function POST(
       "operational_alerts"
     ) {
       return NextResponse.json(
-        await processNextOperationalAlertJob(),
+        await processOperationalAlertBurst(),
+      );
+    }
+
+
+    if (
+      payload.task ===
+      "order_refresh"
+    ) {
+      return NextResponse.json(
+        await processOrderRefreshBurst(),
       );
     }
 
@@ -197,7 +208,7 @@ export async function POST(
   "orders_recent"
 ) {
   const result =
-    await syncRecentSbOrdersIfDue();
+    await syncRecentOrdersIfDue();
 
 
   return NextResponse.json(

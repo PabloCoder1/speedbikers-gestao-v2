@@ -311,7 +311,17 @@ export function calculatePurchaseRecommendation(input: {
   const projectedStockAtArrival = available + purchaseInTransit - demandDuringLeadTime;
   const rawSuggested =
     demandDuringLeadTime + targetReserve - available - purchaseInTransit;
-  const suggestedPurchaseQuantity = Math.ceil(Math.max(0, rawSuggested));
+  // Arredonda para 6 casas decimais antes do ceil: multiplicação de
+  // double (ex.: 2.7 * 90) pode cair uma fração de ponto flutuante
+  // acima de um inteiro exato mesmo quando o resultado matemático é
+  // exato (2.7 não tem representação binária exata). O SQL, que usa
+  // `numeric` decimal exato, não sofre disso — e Math.ceil é sensível
+  // o bastante para transformar esse ruído em uma unidade extra.
+  // Encontrado pela validação de /compras (ETAPA 32): SQL e TS
+  // divergiam por exatamente 1 unidade nesses casos.
+  const suggestedPurchaseQuantity = Math.ceil(
+    Math.max(0, Math.round(rawSuggested * 1_000_000) / 1_000_000),
+  );
   const purchaseRequired = suggestedPurchaseQuantity > 0;
 
   return {

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getCurrentAccess } from "@/features/auth/get-current-access";
+import { measureServerOperation } from "@/lib/observability/measure-server-operation";
 import { createClient } from "@/lib/supabase/server";
 
 export type StockOverviewStatus =
@@ -85,7 +86,19 @@ type StockOverviewPageReadModel = {
   matchCount: number;
 };
 
-export async function getStockOverview({
+export async function getStockOverview(
+  params: {
+    query?: string;
+    status?: StockOverviewFilter;
+    limit?: number;
+  } = {},
+): Promise<StockOverview | null> {
+  return measureServerOperation("get_stock_overview", () =>
+    getStockOverviewImpl(params),
+  );
+}
+
+async function getStockOverviewImpl({
   query = "",
   status = "all",
   limit = 200,
