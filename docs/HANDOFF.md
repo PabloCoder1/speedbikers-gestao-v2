@@ -110,11 +110,18 @@ Depois verificar branch, `git status` e commits recentes.
 - TypeScript fixado na 6.0.3 por restrição do `typescript-eslint` — ver **D-035**.
 - Telemetria anônima do Turborepo desativada.
 
-**Verificado:** `pnpm run check` verde (typecheck, lint e 10 testes), `pnpm run build` gerando `dist` com `.d.ts` e sourcemaps, e cache do Turborepo funcionando (segunda execução em 22 ms, FULL TURBO).
+**Verificado:** `pnpm run check` verde nas 14 tarefas, **64 testes passando**, build gerando `dist` com `.d.ts` e sourcemaps, cache do Turborepo funcionando.
+
+Verificado em execução, não só em teste: a `api` responde `GET /health` 200 e 404 no envelope padrão; o `worker` responde `system.ping` com 200 e tipo desconhecido com 400; ambiente inválido derruba o processo com exit 1 listando todos os problemas de uma vez.
 
 **Ambiente local:** Node 24.18.1, npm 11.16.0, pnpm 11.22.0, git 2.55. **Ausentes e ainda necessários:** Docker (Supabase local), gcloud (Cloud Run) e a CLI da Supabase, que entra como devDependency do repositório.
 
-**Falta nesta fase:** ESLint e configuração raiz do Vitest · `packages/domain`, `db`, `observability`, `mercado-livre`, `ui` · `apps/web`, `apps/api`, `apps/worker` · Supabase local · CI no GitHub Actions · projeto Vercel · scripts `infra/`.
+- `packages/observability`: log estruturado JSON com `severity`/`message` (formato que o Cloud Logging interpreta), redação de segredo por nome de chave, e `measure` que só loga acima de 1.500 ms ou em falha.
+- `apps/api` (Hono + Cloud Run): validação de ambiente com Zod no boot, `request_id` propagado do header ao log, `/health`, e envelope de erro padrão sem vazar interno.
+- `apps/worker` (Hono + Cloud Run): registro de handlers por tipo de job, validação do envelope e **classificação de retry pelo status HTTP** — 200 conclui, 400 e 422 descartam, 503 repete com backoff.
+- `esbuild` liberado explicitamente em `pnpm-workspace.yaml`: o pnpm 11 bloqueia scripts de instalação por padrão, e cada liberação ali é decisão de supply chain.
+
+**Falta nesta fase:** `apps/web` · `packages/db`, `domain`, `mercado-livre`, `ui` · `.env.example` · Supabase local · CI no GitHub Actions · projeto Vercel · scripts `infra/`.
 
 ## Próximo passo
 
