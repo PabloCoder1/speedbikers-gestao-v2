@@ -1,9 +1,17 @@
-<!-- BEGIN:nextjs-agent-rules -->
+# AGENTS — Speed Bikers Gestão V3
 
-# This is NOT the Next.js you know
+Antes de alterar qualquer código nesta branch:
 
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+1. Leia `README.md`.
+2. Leia `docs/HANDOFF.md`.
+3. Leia `docs/ROADMAP.md`.
+4. Leia `docs/ARCHITECTURE.md`.
+5. Leia `docs/PRODUCT_REQUIREMENTS.md`.
+6. Verifique branch atual e commits recentes.
+7. Consulte a `main` apenas como referência da V2; não copie código automaticamente.
+8. Não assuma que conversa anterior representa o estado atual do projeto.
+9. Toda mudança estrutural de banco deve ser migration versionada.
+10. Nunca exponha secrets no frontend ou no Git.
+11. Trabalhe em etapas pequenas, teste antes de avançar e atualize `docs/HANDOFF.md` ao final de cada etapa significativa.
 
-This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
-
-<!-- END:nextjs-agent-rules -->
+A fonte de verdade do estado atual é o repositório e sua documentação versionada.
