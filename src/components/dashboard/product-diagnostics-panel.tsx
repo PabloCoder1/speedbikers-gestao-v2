@@ -283,7 +283,7 @@ export function ProductDiagnosticsPanel({
   const limitations = v2?.limitations ?? v1?.limitations ?? [];
 
   return (
-    <section className="mt-8">
+    <section id="diagnostico-inteligente" className="mt-8 scroll-mt-6">
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold text-gray-950">Diagnostico inteligente</h2>

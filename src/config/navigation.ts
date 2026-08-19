@@ -55,7 +55,7 @@ export const navigationSections: NavigationSection[] =
         },
         {
           label: "Oportunidades",
-          href: null,
+          href: "/oportunidades",
         },
       ],
     },

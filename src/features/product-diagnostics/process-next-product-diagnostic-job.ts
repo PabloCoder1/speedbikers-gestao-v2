@@ -50,9 +50,22 @@ async function scheduleRetryOrFail(admin: ReturnType<typeof createAdminClient>, 
     .eq("id", job.id);
 }
 
-/** job.status='succeeded' only when a real diagnostic run (cache hit or new) actually succeeded — never when the run itself is 'failed'. Keeps job status a truthful observability signal instead of always reporting success once Claude was invoked. */
+/** job.status='succeeded' only when a real diagnostic run (cache hit or new) actually succeeded — never when the run itself is 'failed'. Keeps job status a truthful observability signal instead of always reporting success once Claude was invoked. Also links the run to any open/snoozed opportunities for this product (ETAPA 37) — covers both a fresh success and a cache hit, since both call this. */
 async function completeJobSucceeded(admin: ReturnType<typeof createAdminClient>, job: JobRow, diagnosticRunId: string) {
   await admin.from("product_diagnostic_jobs").update({ status: "succeeded", phase: "persist", diagnostic_run_id: diagnosticRunId, completed_at: new Date().toISOString() }).eq("id", job.id);
+
+  const { data: linked } = await admin
+    .from("product_opportunities")
+    .update({ latest_diagnostic_run_id: diagnosticRunId, updated_at: new Date().toISOString() })
+    .eq("organization_id", job.organization_id)
+    .eq("product_id", job.product_id)
+    .in("status", ["open", "snoozed"])
+    .select("id");
+  if (linked?.length) {
+    await admin
+      .from("product_opportunity_events")
+      .insert(linked.map((row) => ({ organization_id: job.organization_id, opportunity_id: row.id, event_type: "diagnostic_linked", detail: { diagnosticRunId } })));
+  }
 }
 
 /** A structural failure (bad schema/request, model-output problem) never succeeds on blind retry — fail the job immediately regardless of attempts remaining, still linking the failed run for observability. */
