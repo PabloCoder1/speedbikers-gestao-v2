@@ -104,9 +104,13 @@ Depois verificar branch, `git status` e commits recentes.
 
 - Monorepo pnpm 11.22 + Turborepo 2.10.11 no ar; `pnpm install` limpo.
 - `packages/config` com `tsconfig.base.json` estrito (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `verbatimModuleSyntax`).
-- `packages/contracts` com o envelope de job e `toTaskName`, base da deduplicação de fila. **10 testes passando, typecheck verde.**
+- `packages/contracts` com o envelope de job e `toTaskName`, base da deduplicação de fila.
+- ESLint 10.8.1 com `typescript-eslint` em modo `strictTypeChecked` e checagem com informação de tipos, no preset `@sb/config/eslint`.
+- Separação `tsconfig.json` (typecheck, inclui testes) e `tsconfig.build.json` (build, exclui testes).
 - TypeScript fixado na 6.0.3 por restrição do `typescript-eslint` — ver **D-035**.
 - Telemetria anônima do Turborepo desativada.
+
+**Verificado:** `pnpm run check` verde (typecheck, lint e 10 testes), `pnpm run build` gerando `dist` com `.d.ts` e sourcemaps, e cache do Turborepo funcionando (segunda execução em 22 ms, FULL TURBO).
 
 **Ambiente local:** Node 24.18.1, npm 11.16.0, pnpm 11.22.0, git 2.55. **Ausentes e ainda necessários:** Docker (Supabase local), gcloud (Cloud Run) e a CLI da Supabase, que entra como devDependency do repositório.
 

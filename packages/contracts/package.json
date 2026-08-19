@@ -10,8 +10,9 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint .",
     "test": "vitest run"
   },
   "dependencies": {
@@ -19,6 +20,7 @@
   },
   "devDependencies": {
     "@sb/config": "workspace:*",
+    "eslint": "10.8.1",
     "typescript": "6.0.3",
     "vitest": "4.1.11"
   }
