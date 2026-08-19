@@ -19,7 +19,13 @@ import { syncRecentOrdersIfDue } from "@/features/ml-sync/sync-recent-orders";
 import { processOrdersBackfillBurst } from "@/features/ml-sync/process-orders-backfill-burst";
 import { processOrderRefreshBurst } from "@/features/ml-sync/process-order-refresh-burst";
 
-export const maxDuration = 60;
+// product_diagnostic (ETAPA 36) does several real Mercado Livre API calls
+// plus up to 3 Anthropic calls (evidence's official-market fetch, external
+// web research, vision, then the main diagnostic call) — even parallelized,
+// this can run longer than the other, lighter tasks on this route. Vercel
+// clamps this to the account's plan cap if it's lower, so raising it here
+// is safe for every other task too.
+export const maxDuration = 180;
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

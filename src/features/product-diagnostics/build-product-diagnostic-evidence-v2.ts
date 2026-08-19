@@ -54,38 +54,44 @@ export async function buildProductDiagnosticEvidenceV2ForProduct(params: {
   const hasPriceReference = officialMarketData ? officialMarketData.priceSuggestions.some((entry) => entry.applicableSuggestion) : false;
   const internalAndOfficialDataExplainDrop = v1.facts.sales.trigger !== "SALES_DROP_7D" && v1.facts.sales.trigger !== "SALES_DROP_30D" && v1.facts.sales.trigger !== "NO_SALES_7D";
 
-  let externalEvidence: Evidence[] = [];
-  if (
-    shouldTriggerExternalMarketResearch({
-      hasCatalogProductId,
-      hasPriceReference,
-      internalAndOfficialDataExplainDrop,
-      userRequestedMarketResearch: params.userRequestedMarketResearch,
-    })
-  ) {
-    const externalData = await fetchExternalMarketResearch({
+  const shouldTriggerExternal = shouldTriggerExternalMarketResearch({
+    hasCatalogProductId,
+    hasPriceReference,
+    internalAndOfficialDataExplainDrop,
+    userRequestedMarketResearch: params.userRequestedMarketResearch,
+  });
+
+  // Neither depends on the other's result (vision only needs
+  // officialMarketData's reference thumbnails, already fetched above) —
+  // running them concurrently instead of sequentially materially cuts
+  // total latency, which matters here: evidence-gathering alone was
+  // observed exceeding the worker's maxDuration before this fix.
+  const [externalData, visionResult] = await Promise.all([
+    shouldTriggerExternal
+      ? fetchExternalMarketResearch({
+          organizationId: params.organizationId,
+          productId: params.productId,
+          product: {
+            brand: v1.stockIntelligence.planning.brand,
+            partNumber: null,
+            ean: null,
+            sku: v1.raw.product.sku,
+            skuCommerciallySignificant: false,
+            name: v1.raw.product.name,
+            compatibility: null,
+          },
+          forceRefresh: params.forceMarketRefresh,
+        })
+      : Promise.resolve(null),
+    buildVisionAssessmentForProduct({
       organizationId: params.organizationId,
       productId: params.productId,
-      product: {
-        brand: v1.stockIntelligence.planning.brand,
-        partNumber: null,
-        ean: null,
-        sku: v1.raw.product.sku,
-        skuCommerciallySignificant: false,
-        name: v1.raw.product.name,
-        compatibility: null,
-      },
-      forceRefresh: params.forceMarketRefresh,
-    });
-    if (externalData) externalEvidence = buildExternalMarketEvidence(externalData.externalResults);
-  }
+      allowedMlAccountIds: params.allowedMlAccountIds,
+      officialMarketData,
+    }),
+  ]);
 
-  const visionResult = await buildVisionAssessmentForProduct({
-    organizationId: params.organizationId,
-    productId: params.productId,
-    allowedMlAccountIds: params.allowedMlAccountIds,
-    officialMarketData,
-  });
+  const externalEvidence = externalData ? buildExternalMarketEvidence(externalData.externalResults) : [];
   const visionEvidence = visionResult ? buildVisionEvidence(visionResult) : [];
 
   const evidence = [...v1.evidence, ...officialEvidence, ...externalEvidence, ...visionEvidence];

@@ -106,48 +106,54 @@ export async function fetchOfficialMarketData(params: {
   const catalogProductIdByItemId: Record<string, string | null> = {};
   const fetchedAt = new Date().toISOString();
 
-  for (const target of targets) {
-    try {
-      const token = await getValidMercadoLivreAccessToken(target.mlAccountId);
-      const [priceToWinResult, suggestionResult, performanceResult] = await Promise.allSettled([
-        getMercadoLivrePriceToWin({ itemId: target.itemId, accessToken: token.accessToken }),
-        getMercadoLivrePriceSuggestion({ itemId: target.itemId, accessToken: token.accessToken }),
-        getMercadoLivreItemPerformance({ itemId: target.itemId, accessToken: token.accessToken }),
-      ]);
+  // Fetched across all targets (accounts) in parallel, not sequentially —
+  // sequential fetching across up to 4 accounts x 3 calls each was slow
+  // enough to blow past the worker's maxDuration (observed stuck in
+  // 'evidence' phase for minutes in production before this fix).
+  await Promise.all(
+    targets.map(async (target) => {
+      try {
+        const token = await getValidMercadoLivreAccessToken(target.mlAccountId);
+        const [priceToWinResult, suggestionResult, performanceResult] = await Promise.allSettled([
+          getMercadoLivrePriceToWin({ itemId: target.itemId, accessToken: token.accessToken }),
+          getMercadoLivrePriceSuggestion({ itemId: target.itemId, accessToken: token.accessToken }),
+          getMercadoLivreItemPerformance({ itemId: target.itemId, accessToken: token.accessToken }),
+        ]);
 
-      if (priceToWinResult.status === "fulfilled") {
-        const raw = priceToWinResult.value;
-        catalogProductIdByItemId[target.itemId] = raw.catalogProductId;
-        priceToWin.push({
-          itemId: raw.itemId, accountCode: target.accountCode, currentPrice: raw.currentPrice, currencyId: raw.currencyId,
-          priceToWin: raw.priceToWin, status: normalizeCompetitionStatus(raw.status), catalogProductId: raw.catalogProductId,
-          winnerPrice: raw.winnerPrice, boosts: raw.boosts, visitShare: raw.visitShare,
-          competitorsSharingFirstPlace: raw.competitorsSharingFirstPlace, reason: raw.reason, fetchedAt,
-        });
-      }
+        if (priceToWinResult.status === "fulfilled") {
+          const raw = priceToWinResult.value;
+          catalogProductIdByItemId[target.itemId] = raw.catalogProductId;
+          priceToWin.push({
+            itemId: raw.itemId, accountCode: target.accountCode, currentPrice: raw.currentPrice, currencyId: raw.currencyId,
+            priceToWin: raw.priceToWin, status: normalizeCompetitionStatus(raw.status), catalogProductId: raw.catalogProductId,
+            winnerPrice: raw.winnerPrice, boosts: raw.boosts, visitShare: raw.visitShare,
+            competitorsSharingFirstPlace: raw.competitorsSharingFirstPlace, reason: raw.reason, fetchedAt,
+          });
+        }
 
-      if (suggestionResult.status === "fulfilled") {
-        const raw = suggestionResult.value;
-        const contribution = computeKnownContribution({
-          suggestedPrice: raw.suggestedPriceAmount, averageCost: params.averageCost, sellingFees: raw.sellingFees, shippingFees: raw.shippingFees,
-        });
-        knownContributionByItemId[target.itemId] = contribution;
-        priceSuggestions.push({
-          itemId: raw.itemId, accountCode: target.accountCode, status: raw.status, currentPriceAmount: raw.currentPriceAmount,
-          suggestedPriceAmount: raw.suggestedPriceAmount, lowestPriceAmount: raw.lowestPriceAmount, internalPriceAmount: raw.internalPriceAmount,
-          percentDifference: raw.percentDifference, applicableSuggestion: raw.applicableSuggestion, sellingFees: raw.sellingFees,
-          shippingFees: raw.shippingFees, lastUpdated: raw.lastUpdated, fetchedAt,
-        });
-      }
+        if (suggestionResult.status === "fulfilled") {
+          const raw = suggestionResult.value;
+          const contribution = computeKnownContribution({
+            suggestedPrice: raw.suggestedPriceAmount, averageCost: params.averageCost, sellingFees: raw.sellingFees, shippingFees: raw.shippingFees,
+          });
+          knownContributionByItemId[target.itemId] = contribution;
+          priceSuggestions.push({
+            itemId: raw.itemId, accountCode: target.accountCode, status: raw.status, currentPriceAmount: raw.currentPriceAmount,
+            suggestedPriceAmount: raw.suggestedPriceAmount, lowestPriceAmount: raw.lowestPriceAmount, internalPriceAmount: raw.internalPriceAmount,
+            percentDifference: raw.percentDifference, applicableSuggestion: raw.applicableSuggestion, sellingFees: raw.sellingFees,
+            shippingFees: raw.shippingFees, lastUpdated: raw.lastUpdated, fetchedAt,
+          });
+        }
 
-      if (performanceResult.status === "fulfilled") {
-        const raw = performanceResult.value;
-        performance.push({ itemId: raw.itemId, accountCode: target.accountCode, score: raw.score, level: raw.level, levelWording: raw.levelWording, pendingBuckets: raw.pendingBuckets, fetchedAt });
+        if (performanceResult.status === "fulfilled") {
+          const raw = performanceResult.value;
+          performance.push({ itemId: raw.itemId, accountCode: target.accountCode, score: raw.score, level: raw.level, levelWording: raw.levelWording, pendingBuckets: raw.pendingBuckets, fetchedAt });
+        }
+      } catch (error) {
+        console.error(JSON.stringify({ event: "product_diagnostic_market_fetch_failed", itemId: target.itemId, error: error instanceof Error ? error.message.slice(0, 300) : "unknown" }));
       }
-    } catch (error) {
-      console.error(JSON.stringify({ event: "product_diagnostic_market_fetch_failed", itemId: target.itemId, error: error instanceof Error ? error.message.slice(0, 300) : "unknown" }));
-    }
-  }
+    }),
+  );
 
   const uniqueOwnSellerIdsQuery = await createAdminClient().from("ml_accounts").select("seller_id").eq("organization_id", params.organizationId);
   const ownSellerIds = (uniqueOwnSellerIdsQuery.data ?? []).map((row) => row.seller_id).filter((value): value is string => Boolean(value));
@@ -155,19 +161,21 @@ export async function fetchOfficialMarketData(params: {
   const uniqueCatalogProductIds = [...new Set(Object.values(catalogProductIdByItemId).filter((value): value is string => Boolean(value)))];
   const competitorStatsByCatalogProduct: Record<string, CompetitorStats> = {};
   const referenceThumbnailsByCatalogProduct: Record<string, string[]> = {};
-  for (const catalogProductId of uniqueCatalogProductIds) {
-    try {
-      const token = await getValidMercadoLivreAccessToken(targets[0].mlAccountId);
-      const offers = await getMercadoLivreCatalogItems({ catalogProductId, accessToken: token.accessToken });
-      const competitorOffers = filterOutOwnSellers(offers, ownSellerIds);
-      const ourPricesForCatalog = priceToWin.filter((entry) => entry.catalogProductId === catalogProductId).map((entry) => entry.currentPrice).filter((value): value is number => value !== null);
-      const ourLowest = ourPricesForCatalog.length ? Math.min(...ourPricesForCatalog) : null;
-      competitorStatsByCatalogProduct[catalogProductId] = computeCompetitorStats(ourLowest, competitorOffers.map((offer) => offer.price));
-      referenceThumbnailsByCatalogProduct[catalogProductId] = competitorOffers.map((offer) => offer.thumbnail).filter((value): value is string => Boolean(value)).slice(0, 3);
-    } catch (error) {
-      console.error(JSON.stringify({ event: "product_diagnostic_catalog_items_failed", catalogProductId, error: error instanceof Error ? error.message.slice(0, 300) : "unknown" }));
-    }
-  }
+  await Promise.all(
+    uniqueCatalogProductIds.map(async (catalogProductId) => {
+      try {
+        const token = await getValidMercadoLivreAccessToken(targets[0].mlAccountId);
+        const offers = await getMercadoLivreCatalogItems({ catalogProductId, accessToken: token.accessToken });
+        const competitorOffers = filterOutOwnSellers(offers, ownSellerIds);
+        const ourPricesForCatalog = priceToWin.filter((entry) => entry.catalogProductId === catalogProductId).map((entry) => entry.currentPrice).filter((value): value is number => value !== null);
+        const ourLowest = ourPricesForCatalog.length ? Math.min(...ourPricesForCatalog) : null;
+        competitorStatsByCatalogProduct[catalogProductId] = computeCompetitorStats(ourLowest, competitorOffers.map((offer) => offer.price));
+        referenceThumbnailsByCatalogProduct[catalogProductId] = competitorOffers.map((offer) => offer.thumbnail).filter((value): value is string => Boolean(value)).slice(0, 3);
+      } catch (error) {
+        console.error(JSON.stringify({ event: "product_diagnostic_catalog_items_failed", catalogProductId, error: error instanceof Error ? error.message.slice(0, 300) : "unknown" }));
+      }
+    }),
+  );
 
   const result: OfficialMarketData = { priceToWin, competitorStatsByCatalogProduct, priceSuggestions, performance, knownContributionByItemId, catalogProductIdByItemId, referenceThumbnailsByCatalogProduct };
   await writeCache(params.organizationId, params.productId, { status: "succeeded", data: result });
