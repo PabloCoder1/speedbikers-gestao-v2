@@ -34,6 +34,10 @@ export const navigationSections: NavigationSection[] =
       label: "Operação",
       items: [
         {
+          label: "Pedidos de venda",
+          href: "/pedidos",
+        },
+        {
           label: "Estoque",
           href: "/estoque",
         },

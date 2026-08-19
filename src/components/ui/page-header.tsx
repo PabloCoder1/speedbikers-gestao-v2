@@ -5,7 +5,7 @@ import type {
 type PageHeaderProps = {
   eyebrow?: string;
   title: string;
-  description?: string;
+  description?: ReactNode;
   actions?: ReactNode;
 };
 
