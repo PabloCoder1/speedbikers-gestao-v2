@@ -98,9 +98,23 @@ Depois verificar branch, `git status` e commits recentes.
 
 ---
 
+## Fase 1 em andamento
+
+**Concluído:**
+
+- Monorepo pnpm 11.22 + Turborepo 2.10.11 no ar; `pnpm install` limpo.
+- `packages/config` com `tsconfig.base.json` estrito (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `verbatimModuleSyntax`).
+- `packages/contracts` com o envelope de job e `toTaskName`, base da deduplicação de fila. **10 testes passando, typecheck verde.**
+- TypeScript fixado na 6.0.3 por restrição do `typescript-eslint` — ver **D-035**.
+- Telemetria anônima do Turborepo desativada.
+
+**Ambiente local:** Node 24.18.1, npm 11.16.0, pnpm 11.22.0, git 2.55. **Ausentes e ainda necessários:** Docker (Supabase local), gcloud (Cloud Run) e a CLI da Supabase, que entra como devDependency do repositório.
+
+**Falta nesta fase:** ESLint e configuração raiz do Vitest · `packages/domain`, `db`, `observability`, `mercado-livre`, `ui` · `apps/web`, `apps/api`, `apps/worker` · Supabase local · CI no GitHub Actions · projeto Vercel · scripts `infra/`.
+
 ## Próximo passo
 
-**Fase 1 — fundação técnica.** Monorepo pnpm e Turborepo, TypeScript estrito, lint, Vitest, CI, Supabase local, `apps/api` e `apps/worker` publicados no Cloud Run, projeto Vercel conectado à `v3`.
+**Concluir a Fase 1 — fundação técnica.** Monorepo pnpm e Turborepo, TypeScript estrito, lint, Vitest, CI, Supabase local, `apps/api` e `apps/worker` publicados no Cloud Run, projeto Vercel conectado à `v3`.
 
 A Fase 1 **não cria nenhuma tabela de domínio**. O objetivo é um pipeline verde ponta a ponta: um job atravessa `api -> Cloud Tasks -> worker -> Postgres` e o `web` mostra o resultado, sem nenhuma regra de negócio envolvida.
 
