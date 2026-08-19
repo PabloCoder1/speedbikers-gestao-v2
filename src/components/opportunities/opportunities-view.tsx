@@ -139,6 +139,7 @@ export function OpportunitiesView({
   const [actionState, setActionState] = useState<Record<string, string>>({});
   const [aiSettings, setAiSettings] = useState(initialAiSettings);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: "error" | "success" | "info"; message: string } | null>(null);
 
   async function reload(next: Filters) {
     setLoading(true);
@@ -163,22 +164,43 @@ export function OpportunitiesView({
   }
 
   async function handleSnooze(id: string, days: number) {
+    setFeedback(null);
     setActionState((state) => ({ ...state, [id]: "working" }));
-    await fetch(`/api/opportunities/${id}/snooze`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ days }) });
-    setOpportunities((rows) => rows.filter((row) => row.id !== id));
+    const response = await fetch(`/api/opportunities/${id}/snooze`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ days }) });
+    if (response.ok) {
+      setOpportunities((rows) => rows.filter((row) => row.id !== id));
+    } else {
+      setFeedback({ type: "error", message: "Não foi possível adiar esta oportunidade. Tente novamente." });
+    }
     setActionState((state) => ({ ...state, [id]: "" }));
   }
 
   async function handleDismiss(id: string) {
+    setFeedback(null);
     setActionState((state) => ({ ...state, [id]: "working" }));
-    await fetch(`/api/opportunities/${id}/dismiss`, { method: "POST" });
-    setOpportunities((rows) => rows.filter((row) => row.id !== id));
+    const response = await fetch(`/api/opportunities/${id}/dismiss`, { method: "POST" });
+    if (response.ok) {
+      setOpportunities((rows) => rows.filter((row) => row.id !== id));
+    } else {
+      setFeedback({ type: "error", message: "Não foi possível dispensar esta oportunidade. Tente novamente." });
+    }
     setActionState((state) => ({ ...state, [id]: "" }));
   }
 
   async function handleAnalyze(id: string) {
+    setFeedback(null);
     setActionState((state) => ({ ...state, [id]: "analyzing" }));
-    await fetch(`/api/opportunities/${id}/analyze`, { method: "POST" });
+    const response = await fetch(`/api/opportunities/${id}/analyze`, { method: "POST" });
+    const body = await response.json().catch(() => null);
+    if (response.status === 409) {
+      setFeedback({ type: "info", message: "Já existe uma análise em andamento para este produto. Aguarde ela terminar." });
+    } else if (response.ok && body?.status === "queued") {
+      setFeedback({ type: "success", message: "Análise enviada para o Claude. Acompanhe o resultado na página do produto." });
+    } else if (response.ok && body?.status === "anthropic_not_configured") {
+      setFeedback({ type: "error", message: "A integração com o Claude não está configurada nesta organização." });
+    } else {
+      setFeedback({ type: "error", message: "Não foi possível iniciar a análise. Tente novamente." });
+    }
     setActionState((state) => ({ ...state, [id]: "" }));
   }
 
@@ -198,6 +220,20 @@ export function OpportunitiesView({
   return (
     <div className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
       <PageHeader eyebrow="Operacao" title="Oportunidades" description="Prioridades comerciais e operacionais identificadas automaticamente." />
+
+      {feedback ? (
+        <div
+          className={`mt-6 rounded-2xl border p-4 text-sm ${
+            feedback.type === "error"
+              ? "border-red-200 bg-red-50 text-red-700"
+              : feedback.type === "success"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : "border-blue-200 bg-blue-50 text-blue-800"
+          }`}
+        >
+          {feedback.message}
+        </div>
+      ) : null}
 
       {summary ? (
         <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
