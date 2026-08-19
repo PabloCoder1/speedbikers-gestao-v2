@@ -47,6 +47,11 @@ export type ResolvedNfeReceiptItem = {
   stockStateId: string | null;
   baselineImportId: string | null;
   issue: string | null;
+  purchaseOrderItemId: string | null;
+  orderedQuantity: number | null;
+  outstandingBefore: number | null;
+  outstandingAfter: number | null;
+  overDelivery: number | null;
 };
 
 export type NfeStockReceiptResolution = {
@@ -59,6 +64,7 @@ export type NfeStockReceiptResolution = {
   } | null;
   items: ResolvedNfeReceiptItem[];
   blockingIssues: StockReceiptIssue[];
+  warnings: StockReceiptIssue[];
   totalQuantity: number;
   matchedItemCount: number;
 };
@@ -73,10 +79,12 @@ export async function resolveNfeStockReceipt({
   organizationId,
   warehouseKey,
   xmlBuffer,
+  purchaseOrderId,
 }: {
   organizationId: string;
   warehouseKey: string;
   xmlBuffer: Buffer;
+  purchaseOrderId?: string;
 }): Promise<NfeStockReceiptResolution> {
   const normalizedWarehouseKey = warehouseKey.trim().toUpperCase();
   if (!normalizedWarehouseKey || normalizedWarehouseKey.length > 160) {
@@ -146,7 +154,64 @@ export async function resolveNfeStockReceipt({
   }
   const productsById = new Map((productsResult.data ?? []).map((product) => [product.id, product]));
   const blockingIssues: StockReceiptIssue[] = [];
+  const warnings: StockReceiptIssue[] = [];
   const duplicate = (duplicateResult.data?.length ?? 0) > 0;
+
+  const purchaseOrderItemsBySku = new Map<
+    string,
+    { id: string; quantityOrdered: number; outstanding: number }
+  >();
+
+  if (purchaseOrderId) {
+    const { data: purchaseOrder, error: purchaseOrderError } = await admin
+      .from("purchase_orders")
+      .select("id, status, suppliers(document)")
+      .eq("id", purchaseOrderId)
+      .eq("organization_id", organizationId)
+      .maybeSingle();
+    if (purchaseOrderError) {
+      throw new Error(`stock_receipt_purchase_order_lookup_failed:${purchaseOrderError.message}`);
+    }
+
+    if (!purchaseOrder) {
+      blockingIssues.push({ code: "purchase_order_not_found", message: "Pedido de compra não encontrado." });
+    } else if (purchaseOrder.status !== "ordered" && purchaseOrder.status !== "partially_received") {
+      blockingIssues.push({
+        code: "purchase_order_not_receivable",
+        message: "Este pedido não está em trânsito e não pode receber uma NF-e.",
+      });
+    } else {
+      const supplier = Array.isArray(purchaseOrder.suppliers) ? purchaseOrder.suppliers[0] : purchaseOrder.suppliers;
+      const supplierDocument = supplier?.document ?? null;
+
+      if (supplierDocument && invoice.supplierDocument && supplierDocument !== invoice.supplierDocument) {
+        blockingIssues.push({
+          code: "purchase_order_supplier_mismatch",
+          message: "O fornecedor da NF-e não corresponde ao fornecedor cadastrado no pedido.",
+        });
+      } else if (!supplierDocument) {
+        warnings.push({
+          code: "purchase_order_supplier_document_missing",
+          message: "O fornecedor do pedido não possui CNPJ/CPF cadastrado; não foi possível conferir automaticamente.",
+        });
+      }
+
+      const { data: progressRows, error: progressError } = await admin
+        .from("purchase_order_item_progress")
+        .select("purchase_order_item_id, source_sku_key, quantity_ordered, outstanding_quantity")
+        .eq("purchase_order_id", purchaseOrderId)
+        .eq("organization_id", organizationId);
+      if (progressError) throw new Error(`stock_receipt_purchase_order_items_lookup_failed:${progressError.message}`);
+
+      for (const row of progressRows ?? []) {
+        purchaseOrderItemsBySku.set(row.source_sku_key, {
+          id: row.purchase_order_item_id,
+          quantityOrdered: row.quantity_ordered,
+          outstanding: row.outstanding_quantity,
+        });
+      }
+    }
+  }
 
   if (backendMissing) {
     blockingIssues.push({
@@ -190,6 +255,16 @@ export async function resolveNfeStockReceipt({
       });
     }
 
+    const purchaseOrderMatch = purchaseOrderId ? purchaseOrderItemsBySku.get(skuKey) ?? null : null;
+    if (purchaseOrderId && !issue && !purchaseOrderMatch) {
+      warnings.push({
+        code: "purchase_order_item_not_found",
+        message: "Item não consta no pedido selecionado.",
+        lineNumber: item.lineNumber,
+        supplierSku: item.supplierSku,
+      });
+    }
+
     return {
       ...item,
       skuKey,
@@ -200,6 +275,11 @@ export async function resolveNfeStockReceipt({
       stockStateId: issue ? null : state?.id ?? null,
       baselineImportId: issue ? null : state?.source_import_id ?? null,
       issue,
+      purchaseOrderItemId: purchaseOrderMatch?.id ?? null,
+      orderedQuantity: purchaseOrderMatch?.quantityOrdered ?? null,
+      outstandingBefore: purchaseOrderMatch?.outstanding ?? null,
+      outstandingAfter: purchaseOrderMatch ? Math.max(purchaseOrderMatch.outstanding - item.quantity, 0) : null,
+      overDelivery: purchaseOrderMatch ? Math.max(item.quantity - purchaseOrderMatch.outstanding, 0) : null,
     };
   });
 
@@ -213,6 +293,7 @@ export async function resolveNfeStockReceipt({
       : null,
     items,
     blockingIssues,
+    warnings,
     totalQuantity: items.reduce((sum, item) => sum + item.quantity, 0),
     matchedItemCount: items.filter((item) => item.matched).length,
   };

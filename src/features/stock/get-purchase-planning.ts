@@ -29,6 +29,8 @@ type PurchaseRow = {
   physicalCurrent: number | string | null;
   occupiedQuantity: number | string | null;
   purchaseInTransit: number | string | null;
+  upsellerPurchaseInTransit: number | string | null;
+  internalPurchaseInTransit: number | string | null;
   transferInTransit: number | string | null;
   lowStockThreshold: number | string | null;
   directUnitsSold30: number | string | null;
@@ -60,6 +62,8 @@ export type PurchasePlanningItem = {
   physicalCurrent: number | null;
   occupiedQuantity: number | null;
   purchaseInTransit: number;
+  upsellerPurchaseInTransit: number;
+  internalPurchaseInTransit: number;
   transferInTransit: number;
   lowStockThreshold: number | null;
   directUnitsSold30: number;
@@ -80,6 +84,13 @@ export type PurchasePlanningItem = {
   unitCost: number | null;
   estimatedPurchaseValue: number | null;
   consumesViaKits: boolean;
+  openOrders: OpenPurchaseOrderContext[];
+};
+
+export type OpenPurchaseOrderContext = {
+  purchaseOrderId: string;
+  orderNumber: string;
+  status: "draft" | "approved" | "ordered" | "partially_received";
 };
 
 export type PurchasePlanningOverview = {
@@ -165,6 +176,31 @@ async function getPurchasePlanningImpl({
     matchCount?: number;
   };
 
+  const sourceSkuKeys = (pageModel.items ?? []).map((row) => row.sourceSkuKey);
+  const openOrdersResult = sourceSkuKeys.length
+    ? await supabase.rpc("get_open_purchase_orders_by_sku", {
+        target_organization_id: access.organizationId,
+        source_sku_keys: sourceSkuKeys,
+      })
+    : { data: [] as unknown[], error: null };
+
+  if (openOrdersResult.error) {
+    throw new Error(`PURCHASE_PLANNING_OPEN_ORDERS_FAILED:${openOrdersResult.error.message}`);
+  }
+
+  const openOrdersBySku = new Map<string, OpenPurchaseOrderContext[]>();
+  for (const raw of (openOrdersResult.data ?? []) as Record<string, unknown>[]) {
+    const sourceSkuKey = raw.sourceSkuKey as string;
+    const context: OpenPurchaseOrderContext = {
+      purchaseOrderId: raw.purchaseOrderId as string,
+      orderNumber: raw.orderNumber as string,
+      status: raw.status as OpenPurchaseOrderContext["status"],
+    };
+    const existing = openOrdersBySku.get(sourceSkuKey);
+    if (existing) existing.push(context);
+    else openOrdersBySku.set(sourceSkuKey, [context]);
+  }
+
   const items = (pageModel.items ?? []).map((row): PurchasePlanningItem => {
     const physicalAvailable = numberOrNull(row.physicalAvailable);
     const purchaseInTransit = numberOrZero(row.purchaseInTransit);
@@ -199,6 +235,8 @@ async function getPurchasePlanningImpl({
       physicalCurrent: numberOrNull(row.physicalCurrent),
       occupiedQuantity: numberOrNull(row.occupiedQuantity),
       purchaseInTransit,
+      upsellerPurchaseInTransit: numberOrZero(row.upsellerPurchaseInTransit),
+      internalPurchaseInTransit: numberOrZero(row.internalPurchaseInTransit),
       transferInTransit: numberOrZero(row.transferInTransit),
       lowStockThreshold,
       directUnitsSold30: numberOrZero(row.directUnitsSold30),
@@ -219,6 +257,7 @@ async function getPurchasePlanningImpl({
       unitCost: numberOrNull(row.unitCost),
       estimatedPurchaseValue: numberOrNull(row.estimatedPurchaseValue),
       consumesViaKits: kitUnitsConsumed30 > 0,
+      openOrders: openOrdersBySku.get(row.sourceSkuKey) ?? [],
     };
   });
 

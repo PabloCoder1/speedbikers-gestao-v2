@@ -42,6 +42,10 @@ export const navigationSections: NavigationSection[] =
           href: "/compras",
         },
         {
+          label: "Pedidos de compra",
+          href: "/pedidos-compra",
+        },
+        {
           label: "Alertas",
           href: "/alertas",
         },

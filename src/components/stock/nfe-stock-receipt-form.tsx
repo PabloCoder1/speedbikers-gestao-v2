@@ -43,8 +43,14 @@ type ReceiptPreview = {
     productSku: string | null;
     productName: string | null;
     issue: string | null;
+    purchaseOrderItemId?: string | null;
+    orderedQuantity?: number | null;
+    outstandingBefore?: number | null;
+    outstandingAfter?: number | null;
+    overDelivery?: number | null;
   }[];
   blockingIssues: ReceiptIssue[];
+  warnings?: ReceiptIssue[];
   totalQuantity: number;
   matchedItemCount: number;
 };
@@ -79,6 +85,8 @@ const errorMessages: Record<string, string> = {
   recipient_confirmation_required: "Confirme que o CNPJ destinatário pertence à empresa.",
   stock_changed_since_preview: "O estoque mudou após a conferência. Valide o XML novamente.",
   stock_receipt_has_blocking_issues: "Existem itens que precisam ser corrigidos antes da entrada.",
+  purchase_order_not_found: "Pedido de compra não encontrado.",
+  purchase_order_not_receivable: "Este pedido não está em trânsito e não pode receber uma NF-e.",
 };
 
 function formatDocument(value: string | null) {
@@ -113,15 +121,19 @@ function maskAccessKey(value: string) {
 export function NfeStockReceiptForm({
   warehouses,
   backendReady,
+  purchaseOrderId,
+  defaultWarehouseKey,
 }: {
   warehouses: Warehouse[];
   backendReady: boolean;
+  purchaseOrderId?: string;
+  defaultWarehouseKey?: string;
 }) {
   const router = useRouter();
   const [stage, setStage] = useState<Stage>("closed");
   const [preview, setPreview] = useState<ReceiptPreview | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [selectedWarehouse, setSelectedWarehouse] = useState(warehouses[0]?.key ?? "");
+  const [selectedWarehouse, setSelectedWarehouse] = useState(defaultWarehouseKey ?? warehouses[0]?.key ?? "");
   const [recipientConfirmed, setRecipientConfirmed] = useState(false);
   const [fileInputKey, setFileInputKey] = useState(0);
   const [success, setSuccess] = useState<ReceiptSuccess | null>(null);
@@ -159,6 +171,8 @@ export function NfeStockReceiptForm({
     setSelectedWarehouse(warehouseKey);
     setStage("previewing");
 
+    if (purchaseOrderId) formData.set("purchaseOrderId", purchaseOrderId);
+
     try {
       const response = await fetch("/api/stock/receipts/nfe/preview", {
         method: "POST",
@@ -192,6 +206,7 @@ export function NfeStockReceiptForm({
       formData.append("xml", selectedFile, selectedFile.name);
       formData.append("warehouseKey", selectedWarehouse);
       formData.append("recipientConfirmed", "true");
+      if (purchaseOrderId) formData.append("purchaseOrderId", purchaseOrderId);
       const response = await fetch("/api/stock/receipts/nfe/commit", {
         method: "POST",
         body: formData,
@@ -361,6 +376,16 @@ export function NfeStockReceiptForm({
                         <td className="px-5 py-4">
                           <p className="font-semibold text-gray-950">{item.productSku ?? "—"}</p>
                           <p className="mt-1 max-w-80 truncate text-xs text-gray-500">{item.productName ?? item.issue ?? "Sem vínculo"}</p>
+                          {purchaseOrderId ? (
+                            item.purchaseOrderItemId ? (
+                              <p className="mt-1 text-[11px] text-blue-700">
+                                Pedido: {integer.format(item.orderedQuantity ?? 0)} · pendente antes {integer.format(item.outstandingBefore ?? 0)} · pendente depois {integer.format(item.outstandingAfter ?? 0)}
+                                {item.overDelivery ? ` · acima do pedido +${integer.format(item.overDelivery)}` : ""}
+                              </p>
+                            ) : (
+                              <p className="mt-1 text-[11px] text-amber-700">Item não consta no pedido selecionado.</p>
+                            )
+                          ) : null}
                         </td>
                         <td className="px-5 py-4 text-right font-semibold text-gray-950">
                           {integer.format(item.quantity)} {item.unit ?? ""}

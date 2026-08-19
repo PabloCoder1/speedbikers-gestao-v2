@@ -44,6 +44,8 @@ export async function POST(request: Request) {
     const formData = await request.formData();
     const file = formData.get("xml");
     const warehouseKey = formData.get("warehouseKey");
+    const purchaseOrderIdField = formData.get("purchaseOrderId");
+    const purchaseOrderId = typeof purchaseOrderIdField === "string" && purchaseOrderIdField ? purchaseOrderIdField : undefined;
 
     if (
       !(file instanceof File) ||
@@ -62,6 +64,7 @@ export async function POST(request: Request) {
       organizationId: authorization.access.organizationId,
       warehouseKey,
       xmlBuffer: Buffer.from(await file.arrayBuffer()),
+      purchaseOrderId,
     });
 
     return NextResponse.json({
@@ -80,8 +83,14 @@ export async function POST(request: Request) {
         productSku: item.productSku,
         productName: item.productName,
         issue: item.issue,
+        purchaseOrderItemId: item.purchaseOrderItemId,
+        orderedQuantity: item.orderedQuantity,
+        outstandingBefore: item.outstandingBefore,
+        outstandingAfter: item.outstandingAfter,
+        overDelivery: item.overDelivery,
       })),
       blockingIssues: resolution.blockingIssues,
+      warnings: resolution.warnings,
       totalQuantity: resolution.totalQuantity,
       matchedItemCount: resolution.matchedItemCount,
     });

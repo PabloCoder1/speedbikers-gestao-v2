@@ -1,11 +1,34 @@
+"use client";
+
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useMemo, useState, useTransition } from "react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { createPurchaseOrderFromPlanningAction } from "@/features/purchase-orders/actions";
 import type {
   PurchasePlanningFilter,
   PurchasePlanningItem,
   PurchasePlanningOverview,
 } from "@/features/stock/get-purchase-planning";
+
+const openOrderLabel: Record<string, string> = {
+  draft: "Em pedido pendente",
+  approved: "Em pedido pendente",
+  ordered: "Pedido em trânsito",
+  partially_received: "Pedido em trânsito",
+};
+
+function isSelectable(item: PurchasePlanningItem) {
+  return (
+    (item.status === "urgent" || item.status === "due") &&
+    (item.suggestedPurchaseQuantity ?? 0) > 0 &&
+    item.salesVelocityReady &&
+    item.planningIssue === null &&
+    item.openOrders.length === 0
+  );
+}
 
 type PurchasePlanningViewProps = {
   overview: PurchasePlanningOverview;
@@ -132,11 +155,29 @@ function SuggestionCell({ item }: { item: PurchasePlanningItem }) {
   );
 }
 
-function PurchaseRow({ item }: { item: PurchasePlanningItem }) {
+function PurchaseRow({
+  item,
+  selected,
+  onToggle,
+}: {
+  item: PurchasePlanningItem;
+  selected: boolean;
+  onToggle: () => void;
+}) {
   const config = statusConfig[item.status];
+  const selectable = isSelectable(item);
 
   return (
     <tr className={`border-b border-l-4 border-gray-100 ${config.border} align-top`}>
+      <td className="px-4 py-4">
+        <input
+          type="checkbox"
+          checked={selected}
+          disabled={!selectable}
+          onChange={onToggle}
+          aria-label={`Selecionar ${item.sourceSku}`}
+        />
+      </td>
       <td className="px-4 py-4">
         <p className="font-semibold text-gray-950">{item.sourceSku}</p>
         <p className="mt-0.5 max-w-xs truncate text-xs text-gray-500">
@@ -170,6 +211,10 @@ function PurchaseRow({ item }: { item: PurchasePlanningItem }) {
       <td className="px-4 py-4">
         <p className="text-sm text-gray-950">
           Compra: <span className="font-semibold">{integer.format(item.purchaseInTransit)}</span>
+        </p>
+        <p className="mt-0.5 text-[11px] text-gray-400">
+          UpSeller {integer.format(item.upsellerPurchaseInTransit)} · Interno{" "}
+          {integer.format(item.internalPurchaseInTransit)}
         </p>
         <p className="mt-0.5 text-xs text-gray-500">
           Transf.: {integer.format(item.transferInTransit)}
@@ -224,6 +269,14 @@ function PurchaseRow({ item }: { item: PurchasePlanningItem }) {
         {item.planningIssue === "kit_components_unknown" ? (
           <p className="mt-1 text-[11px] text-gray-500">Composição do kit incompleta</p>
         ) : null}
+        {item.openOrders[0] ? (
+          <Link
+            href={`/pedidos-compra/${item.openOrders[0].purchaseOrderId}`}
+            className="mt-2 block text-[11px] font-semibold text-blue-700 hover:underline"
+          >
+            {openOrderLabel[item.openOrders[0].status]} · Ver pedido
+          </Link>
+        ) : null}
         {item.sourceProductIds.length === 1 ? (
           <Link
             href={`/produto/${item.sourceProductIds[0]}`}
@@ -250,6 +303,44 @@ export function PurchasePlanningView({
   filter,
 }: PurchasePlanningViewProps) {
   const { summary, items } = overview;
+  const router = useRouter();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [isPending, startTransition] = useTransition();
+  const [creationFeedback, setCreationFeedback] = useState<{ type: "error" | "warning"; message: string } | null>(null);
+
+  const selectableCount = useMemo(() => items.filter(isSelectable).length, [items]);
+
+  function toggleRow(sourceSkuKey: string) {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(sourceSkuKey)) next.delete(sourceSkuKey);
+      else next.add(sourceSkuKey);
+      return next;
+    });
+  }
+
+  function handleCreateOrder() {
+    if (selected.size === 0) return;
+    setCreationFeedback(null);
+    startTransition(async () => {
+      const result = await createPurchaseOrderFromPlanningAction(Array.from(selected));
+      if (result.error) {
+        setCreationFeedback({ type: "error", message: result.error });
+        return;
+      }
+      if (result.created && result.purchaseOrderId) {
+        setSelected(new Set());
+        router.push(`/pedidos-compra/${result.purchaseOrderId}`);
+        return;
+      }
+      if (result.existingOpenOrders.length > 0) {
+        setCreationFeedback({
+          type: "warning",
+          message: "Todos os SKUs selecionados já estão em pedidos abertos. Abra o pedido existente para ajustá-lo.",
+        });
+      }
+    });
+  }
 
   return (
     <div className="mx-auto w-full max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
@@ -264,13 +355,40 @@ export function PurchasePlanningView({
               Planejamento de compra baseado em giro, estoque físico e prazo de reposição.
             </p>
           </div>
-          <Link
-            href="/estoque"
-            className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-xs font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50"
-          >
-            Ver visão de estoque
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/pedidos-compra"
+              className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-xs font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50"
+            >
+              Ver pedidos de compra
+            </Link>
+            <Link
+              href="/estoque"
+              className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-xs font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50"
+            >
+              Ver visão de estoque
+            </Link>
+            <Button onClick={handleCreateOrder} disabled={selected.size === 0 || isPending}>
+              {isPending ? "Criando pedido…" : `Criar pedido com selecionados (${selected.size})`}
+            </Button>
+          </div>
         </div>
+        {creationFeedback ? (
+          <div
+            className={`mt-4 rounded-xl border p-3 text-sm ${
+              creationFeedback.type === "error"
+                ? "border-red-200 bg-red-50 text-red-700"
+                : "border-amber-200 bg-amber-50 text-amber-800"
+            }`}
+          >
+            {creationFeedback.message}
+          </div>
+        ) : null}
+        {selectableCount > 0 ? (
+          <p className="mt-2 text-xs text-gray-400">
+            {selectableCount} SKU(s) elegível(is) para criação de pedido nesta página.
+          </p>
+        ) : null}
       </header>
 
       <section aria-label="Resumo de compras" className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
@@ -392,6 +510,7 @@ export function PurchasePlanningView({
           <table className="w-full min-w-[1200px] text-left">
             <thead className="border-b border-gray-200 bg-gray-50 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
               <tr>
+                <th className="w-10 px-4 py-3" />
                 <th className="px-4 py-3">Produto físico</th>
                 <th className="px-4 py-3">Marca</th>
                 <th className="px-4 py-3">Estoque</th>
@@ -406,7 +525,12 @@ export function PurchasePlanningView({
             </thead>
             <tbody>
               {items.map((item) => (
-                <PurchaseRow key={item.sourceSkuKey} item={item} />
+                <PurchaseRow
+                  key={item.sourceSkuKey}
+                  item={item}
+                  selected={selected.has(item.sourceSkuKey)}
+                  onToggle={() => toggleRow(item.sourceSkuKey)}
+                />
               ))}
             </tbody>
           </table>

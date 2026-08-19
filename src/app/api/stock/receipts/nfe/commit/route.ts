@@ -29,6 +29,8 @@ export async function POST(request: Request) {
     const file = formData.get("xml");
     const warehouseKey = formData.get("warehouseKey");
     const recipientConfirmed = formData.get("recipientConfirmed");
+    const purchaseOrderIdField = formData.get("purchaseOrderId");
+    const purchaseOrderId = typeof purchaseOrderIdField === "string" && purchaseOrderIdField ? purchaseOrderIdField : undefined;
     if (
       !(file instanceof File) ||
       file.size === 0 ||
@@ -46,6 +48,7 @@ export async function POST(request: Request) {
       organizationId: authorization.access.organizationId,
       warehouseKey,
       xmlBuffer,
+      purchaseOrderId,
     });
 
     if (resolution.blockingIssues.length > 0 || !resolution.warehouse) {
@@ -67,6 +70,7 @@ export async function POST(request: Request) {
             unitValue: item.unitValue,
             totalValue: item.totalValue,
             baselineImportId: item.baselineImportId,
+            purchaseOrderItemId: item.purchaseOrderItemId,
           }]
         : []
     ));
@@ -92,6 +96,7 @@ export async function POST(request: Request) {
         warehouseName: resolution.warehouse.name,
         warehouseKey: resolution.warehouse.key,
         sourceSha256: resolution.sourceSha256,
+        purchaseOrderId: purchaseOrderId ?? null,
       },
       items_payload: resolvedItems,
     });
@@ -99,11 +104,20 @@ export async function POST(request: Request) {
     if (error) {
       const duplicate = error.code === "23505" || error.message.includes("duplicate key");
       const changed = error.message.includes("stock_changed_since_receipt_preview");
+      const purchaseOrderNotFound = error.message.includes("purchase_order_not_found");
+      const purchaseOrderNotReceivable = error.message.includes("purchase_order_not_receivable");
       console.error("NF-e stock receipt commit failed:", error.message.slice(0, 500));
-      return NextResponse.json(
-        { error: duplicate ? "duplicate_invoice" : changed ? "stock_changed_since_preview" : "stock_receipt_commit_failed" },
-        { status: duplicate || changed ? 409 : 500 },
-      );
+      const code = duplicate
+        ? "duplicate_invoice"
+        : changed
+          ? "stock_changed_since_preview"
+          : purchaseOrderNotFound
+            ? "purchase_order_not_found"
+            : purchaseOrderNotReceivable
+              ? "purchase_order_not_receivable"
+              : "stock_receipt_commit_failed";
+      const status = duplicate || changed || purchaseOrderNotFound || purchaseOrderNotReceivable ? 409 : 500;
+      return NextResponse.json({ error: code }, { status });
     }
 
     return NextResponse.json({
