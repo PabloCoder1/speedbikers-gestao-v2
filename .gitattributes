@@ -1,0 +1,24 @@
+# Normaliza o fim de linha no repositório: LF sempre.
+# O checkout local no Windows pode usar CRLF, mas o que é versionado é LF.
+* text=auto eol=lf
+
+# Scripts que rodam em Linux (Cloud Run, CI, Docker) NUNCA podem ter CRLF:
+# shebang com \r quebra com "bad interpreter".
+*.sh    text eol=lf
+Dockerfile text eol=lf
+
+# Binários não sofrem conversão.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ico   binary
+*.pdf   binary
+*.xlsx  binary
+*.zip   binary
+*.woff  binary
+*.woff2 binary
+
+# Lockfile: diff enorme e sem valor de revisão linha a linha.
+pnpm-lock.yaml -diff linguist-generated=true
