@@ -64,7 +64,16 @@ export async function login(
     .limit(1)
     .maybeSingle();
 
-  if (membershipError || !membership) {
+  if (membershipError) {
+    await supabase.auth.signOut();
+
+    return {
+      error:
+        "Não foi possível verificar seu acesso agora. Tente novamente em instantes.",
+    };
+  }
+
+  if (!membership) {
     await supabase.auth.signOut();
 
     return {
