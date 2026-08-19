@@ -2,11 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getProductDiagnosticsAccess } from "@/features/auth/get-product-diagnostics-access";
 import { getProductDashboard } from "@/features/dashboard/get-product-dashboard";
-import { getAnthropicClient, isAnthropicConfigured, getProductDiagnosticModel } from "@/integrations/anthropic/client";
-import { buildProductDiagnosticEvidenceForProduct } from "@/features/product-diagnostics/build-product-diagnostic-evidence";
-import { PRODUCT_DIAGNOSTIC_EVIDENCE_VERSION, resolveDiagnosticCacheDecision } from "@/features/product-diagnostics/product-diagnostic-domain";
-import { PRODUCT_DIAGNOSTIC_PROMPT_VERSION } from "@/features/product-diagnostics/product-diagnostic-prompt";
-import { runProductDiagnostic } from "@/features/product-diagnostics/run-product-diagnostic";
+import { isAnthropicConfigured } from "@/integrations/anthropic/client";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -44,6 +40,7 @@ function shapeRun(row: RunRow) {
   };
 }
 
+/** Enqueues a product diagnostic job — the actual analysis runs async in the background worker (Parte H). Responds fast; the client polls GET for progress. */
 export async function POST(request: Request, { params }: { params: Promise<{ productId: string }> }) {
   const { productId } = await params;
 
@@ -68,49 +65,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
     force = false;
   }
 
-  const built = await buildProductDiagnosticEvidenceForProduct({
-    organizationId: access.organizationId,
-    productId,
-    allowedMlAccountIds: dashboard.accounts.map((account) => account.id),
-  });
-  if (!built) return NextResponse.json({ error: "product_not_found" }, { status: 404 });
-
-  const model = getProductDiagnosticModel();
   const admin = createAdminClient();
-
-  const { data: cached, error: cacheError } = await admin
-    .from("product_diagnostic_runs")
-    .select(RUN_SELECT_COLUMNS)
-    .eq("organization_id", access.organizationId)
-    .eq("product_id", productId)
-    .eq("evidence_hash", built.evidenceHash)
-    .eq("prompt_version", PRODUCT_DIAGNOSTIC_PROMPT_VERSION)
-    .eq("model", model)
-    .eq("status", "succeeded")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle<RunRow>();
-  if (cacheError) return NextResponse.json({ error: "internal_error" }, { status: 500 });
-
-  if (resolveDiagnosticCacheDecision({ hasCachedSuccess: Boolean(cached), force }) === "use_cache" && cached) {
-    console.log(JSON.stringify({ event: "product_diagnostic_cache_hit", productId, model }));
-    return NextResponse.json({ status: "succeeded", cached: true, run: shapeRun(cached) });
-  }
-
-  const { data: runningRow, error: insertError } = await admin
-    .from("product_diagnostic_runs")
-    .insert({
-      organization_id: access.organizationId,
-      product_id: productId,
-      requested_by: access.userId,
-      status: "running",
-      diagnostic_trigger: "manual",
-      evidence_version: PRODUCT_DIAGNOSTIC_EVIDENCE_VERSION,
-      evidence_hash: built.evidenceHash,
-      prompt_version: PRODUCT_DIAGNOSTIC_PROMPT_VERSION,
-      model,
-      evidence: built.evidence,
-    })
+  const { data: job, error: insertError } = await admin
+    .from("product_diagnostic_jobs")
+    .insert({ organization_id: access.organizationId, product_id: productId, requested_by: access.userId, force })
     .select("id")
     .single();
 
@@ -121,54 +79,49 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
     return NextResponse.json({ error: "internal_error" }, { status: 500 });
   }
 
-  console.log(JSON.stringify({ event: "product_diagnostic_started", productId, model }));
+  console.log(JSON.stringify({ event: "product_diagnostic_job_queued", productId, jobId: job.id }));
 
-  const outcome = await runProductDiagnostic({
-    evidence: built.evidence,
-    product: { sku: built.raw.product.sku, name: built.raw.product.name },
-    asOfDate: built.raw.asOfDate,
-    trigger: built.facts.sales.trigger,
-    model,
-    client: getAnthropicClient()?.messages,
-  });
+  // Fire-and-forget: the per-minute cron is the fallback if this fails.
+  admin.rpc("dispatch_ml_sync_worker_task", { worker_task: "product_diagnostic" }).then(
+    () => {},
+    () => {},
+  );
 
-  if (outcome.ok) {
-    const { data: updated, error: updateError } = await admin
-      .from("product_diagnostic_runs")
-      .update({
-        status: "succeeded",
-        result: outcome.result,
-        anthropic_message_id: outcome.messageId,
-        input_tokens: outcome.usage.inputTokens,
-        output_tokens: outcome.usage.outputTokens,
-        cache_creation_input_tokens: outcome.usage.cacheCreationInputTokens,
-        cache_read_input_tokens: outcome.usage.cacheReadInputTokens,
-        latency_ms: outcome.latencyMs,
-        completed_at: new Date().toISOString(),
-      })
-      .eq("id", runningRow.id)
-      .select(RUN_SELECT_COLUMNS)
-      .single<RunRow>();
-    if (updateError || !updated) return NextResponse.json({ error: "internal_error" }, { status: 500 });
+  return NextResponse.json({ status: "queued", jobId: job.id });
+}
 
-    console.log(JSON.stringify({ event: "product_diagnostic_succeeded", productId, model, latencyMs: outcome.latencyMs, inputTokens: outcome.usage.inputTokens, outputTokens: outcome.usage.outputTokens }));
-    return NextResponse.json({ status: "succeeded", cached: false, run: shapeRun(updated) });
+/** Polls a job's progress. Once the job is done, includes the persisted diagnostic run. */
+export async function GET(request: Request, { params }: { params: Promise<{ productId: string }> }) {
+  const { productId } = await params;
+  const { access } = await getProductDiagnosticsAccess();
+  if (!access) return NextResponse.json({ error: "not_authenticated" }, { status: 401 });
+
+  const requestUrl = new URL(request.url);
+  const jobId = requestUrl.searchParams.get("jobId");
+  if (!jobId) return NextResponse.json({ error: "job_id_required" }, { status: 400 });
+
+  const admin = createAdminClient();
+  const { data: job, error: jobError } = await admin
+    .from("product_diagnostic_jobs")
+    .select("id,status,phase,error_code,error_message,diagnostic_run_id")
+    .eq("organization_id", access.organizationId)
+    .eq("product_id", productId)
+    .eq("id", jobId)
+    .maybeSingle();
+  if (jobError) return NextResponse.json({ error: "internal_error" }, { status: 500 });
+  if (!job) return NextResponse.json({ error: "job_not_found" }, { status: 404 });
+
+  if (job.status === "queued" || job.status === "running") {
+    return NextResponse.json({ status: job.status, phase: job.phase });
   }
 
-  const { data: failedRow, error: failUpdateError } = await admin
-    .from("product_diagnostic_runs")
-    .update({
-      status: "failed",
-      error_code: outcome.errorCode,
-      error_message: outcome.errorMessage,
-      latency_ms: outcome.latencyMs,
-      completed_at: new Date().toISOString(),
-    })
-    .eq("id", runningRow.id)
-    .select(RUN_SELECT_COLUMNS)
-    .single<RunRow>();
-  if (failUpdateError || !failedRow) return NextResponse.json({ error: "internal_error" }, { status: 500 });
+  if (job.status === "failed") {
+    return NextResponse.json({ status: "failed", errorCode: job.error_code, errorMessage: job.error_message });
+  }
 
-  console.log(JSON.stringify({ event: "product_diagnostic_failed", productId, model, errorCode: outcome.errorCode, latencyMs: outcome.latencyMs }));
-  return NextResponse.json({ status: "failed", run: shapeRun(failedRow) });
+  if (!job.diagnostic_run_id) return NextResponse.json({ error: "internal_error" }, { status: 500 });
+  const { data: run, error: runError } = await admin.from("product_diagnostic_runs").select(RUN_SELECT_COLUMNS).eq("id", job.diagnostic_run_id).single<RunRow>();
+  if (runError || !run) return NextResponse.json({ error: "internal_error" }, { status: 500 });
+
+  return NextResponse.json({ status: "done", run: shapeRun(run) });
 }

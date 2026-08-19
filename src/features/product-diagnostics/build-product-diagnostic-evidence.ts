@@ -188,5 +188,5 @@ async function buildImpl(options: { organizationId: string; productId: string; a
   };
 
   const built = buildProductDiagnosticEvidence(raw);
-  return { ...built, raw };
+  return { ...built, raw, stockIntelligence };
 }

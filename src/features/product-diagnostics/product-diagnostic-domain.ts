@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { shiftSaoPauloDateKey } from "@/lib/date/sao-paulo";
 
 export const PRODUCT_DIAGNOSTIC_EVIDENCE_VERSION = "product-evidence-v1";
+export const PRODUCT_DIAGNOSTIC_EVIDENCE_VERSION_V2 = "product-evidence-v2";
 
 /** Today's partial day is never included — as_of_date is always the last complete Sao Paulo day. */
 export function resolveProductDiagnosticAsOfDate(todayDateKey: string): string {
@@ -263,6 +264,18 @@ class EvidenceCollector {
   }
 }
 
+/**
+ * Reusable so V2 can hash the combined evidence set (V1 evidence + market +
+ * external + vision) — if any market price/status changes, the hash
+ * changes and a diagnostic built on the old evidence is correctly flagged
+ * stale, per Parte "Hash" in the ETAPA 36 spec.
+ */
+export function computeEvidenceHash(evidence: Evidence[]): string {
+  return createHash("sha256")
+    .update(JSON.stringify(evidence.map((item) => [item.id, item.category, item.value, item.occurredAt, item.source])))
+    .digest("hex");
+}
+
 function normalizePromotionId(value: string | null) {
   return value === "" ? null : value;
 }
@@ -512,9 +525,7 @@ export function buildProductDiagnosticEvidence(raw: ProductDiagnosticRawFacts): 
   });
 
   const evidence = collector.all();
-  const evidenceHash = createHash("sha256")
-    .update(JSON.stringify(evidence.map((item) => [item.id, item.category, item.value, item.occurredAt, item.source])))
-    .digest("hex");
+  const evidenceHash = computeEvidenceHash(evidence);
 
   return {
     evidence,

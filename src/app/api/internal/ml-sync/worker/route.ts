@@ -12,6 +12,7 @@ import { processNextOfferRefreshJob } from "@/features/ml-sync/process-offer-ref
 import { processOperationalAlertBurst } from "@/features/stock/process-operational-alert-burst";
 import { processUpsellerImportBurst } from "@/features/upseller/process-import-worker";
 import { processProductInventoryReconcileBurst } from "@/features/upseller/process-inventory-reconcile-worker";
+import { processNextProductDiagnosticJob } from "@/features/product-diagnostics/process-next-product-diagnostic-job";
 
 import { syncRecentOrdersIfDue } from "@/features/ml-sync/sync-recent-orders";
 
@@ -175,6 +176,16 @@ export async function POST(
     ) {
       return NextResponse.json(
         await processOperationalAlertBurst(),
+      );
+    }
+
+
+    if (
+      payload.task ===
+      "product_diagnostic"
+    ) {
+      return NextResponse.json(
+        await processNextProductDiagnosticJob(),
       );
     }
 
