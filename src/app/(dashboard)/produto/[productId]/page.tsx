@@ -23,6 +23,18 @@ import {
   getProductStockIntelligence,
 } from "@/features/stock/get-product-stock-intelligence";
 
+import {
+  getProductDiagnosticsAccess,
+} from "@/features/auth/get-product-diagnostics-access";
+
+import {
+  getLatestProductDiagnostic,
+} from "@/features/product-diagnostics/get-product-diagnostic-latest";
+
+import {
+  buildProductDiagnosticEvidenceForProduct,
+} from "@/features/product-diagnostics/build-product-diagnostic-evidence";
+
 
 type ProductDashboardPageProps = {
   params:
@@ -64,6 +76,8 @@ export default async function ProductDashboardPage({
     productListings,
     offerHistory,
     stockIntelligence,
+    diagnosticsAccess,
+    latestDiagnostic,
   ] =
     await Promise.all([
 
@@ -108,8 +122,24 @@ export default async function ProductDashboardPage({
         },
       ),
 
+      getProductDiagnosticsAccess(),
+
+      getLatestProductDiagnostic(productId),
+
     ]);
 
+  // A hash comparison never calls Claude — it only rebuilds the same
+  // deterministic evidence the POST route would rebuild, so staleness can
+  // be shown on page load without spending any Anthropic cost.
+  const currentEvidenceHash = latestDiagnostic
+    ? await buildProductDiagnosticEvidenceForProduct({
+        organizationId: dashboard.access.organizationId,
+        productId,
+        allowedMlAccountIds: dashboard.accounts.map((account) => account.id),
+      })
+        .then((built) => built?.evidenceHash ?? null)
+        .catch(() => null)
+    : null;
 
   return (
     <ProductDashboardView
@@ -124,6 +154,13 @@ export default async function ProductDashboardPage({
       }
       stockIntelligence={
         stockIntelligence
+      }
+      diagnosticsCanGenerate={diagnosticsAccess.canGenerate}
+      latestDiagnostic={latestDiagnostic}
+      isDiagnosticStale={
+        latestDiagnostic
+          ? currentEvidenceHash !== null && currentEvidenceHash !== latestDiagnostic.evidenceHash
+          : false
       }
     />
   );

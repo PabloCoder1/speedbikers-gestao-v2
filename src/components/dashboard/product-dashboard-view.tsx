@@ -24,6 +24,14 @@ import {
   ProductStockIntelligencePanel,
 } from "@/components/dashboard/product-stock-intelligence-panel";
 
+import {
+  ProductDiagnosticsPanel,
+} from "@/components/dashboard/product-diagnostics-panel";
+
+import type {
+  ProductDiagnosticRunRecord,
+} from "@/features/product-diagnostics/get-product-diagnostic-latest";
+
 import type {
   getProductDashboard,
 } from "@/features/dashboard/get-product-dashboard";
@@ -96,6 +104,15 @@ type ProductDashboardViewProps = {
 
   stockIntelligence:
     ProductStockIntelligence;
+
+  diagnosticsCanGenerate:
+    boolean;
+
+  latestDiagnostic:
+    ProductDiagnosticRunRecord | null;
+
+  isDiagnosticStale:
+    boolean;
 };
 
 
@@ -162,6 +179,9 @@ export function ProductDashboardView({
   productListings,
   offerHistory,
   stockIntelligence,
+  diagnosticsCanGenerate,
+  latestDiagnostic,
+  isDiagnosticStale,
 }: ProductDashboardViewProps) {
   const {
     product,
@@ -577,6 +597,22 @@ export function ProductDashboardView({
       <ProductStockIntelligencePanel
         data={
           stockIntelligence
+        }
+      />
+
+
+      <ProductDiagnosticsPanel
+        productId={
+          product.id
+        }
+        canGenerate={
+          diagnosticsCanGenerate
+        }
+        initialDiagnostic={
+          latestDiagnostic
+        }
+        isStale={
+          isDiagnosticStale
         }
       />
 
