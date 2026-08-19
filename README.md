@@ -17,6 +17,21 @@ Leia, nesta ordem:
 7. `docs/AGENT_ROLES.md`
 8. `docs/DECISIONS.md`
 
+Depois, a documentação especializada do assunto da tarefa:
+
+| Documento | Assunto |
+|---|---|
+| `docs/DATABASE.md` | Modelo de dados, tabelas, constraints, índices, RLS, migrations |
+| `docs/API.md` | Fronteiras entre web/api/worker, rotas, jobs, eventos, erros |
+| `docs/METRICS.md` | Catálogo oficial de métricas (normativo) |
+| `docs/MERCADO_LIVRE.md` | Integração e estratégia de sincronização |
+| `docs/NOTIFICATIONS.md` | Eventos, severidade, agrupamento e tempo real |
+| `docs/COPILOT.md` | Copiloto, ferramentas determinísticas e uso de IA |
+| `docs/DEPLOYMENT.md` | Plataformas, ambientes, secrets, CI/CD |
+| `docs/TESTING.md` | Camadas de teste e regras obrigatórias |
+
+Cada assunto tem **um único dono documental**. Não duplicar regra entre documentos: `docs/ARCHITECTURE.md` é o mapa que decide e aponta; os documentos acima carregam a profundidade.
+
 > Não implemente funcionalidades antes de executar o protocolo de início definido em `AGENTS.md` e `docs/PROMPT_MASTER.md`.
 
 ## Regra central
