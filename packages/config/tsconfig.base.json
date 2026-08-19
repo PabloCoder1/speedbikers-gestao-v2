@@ -1,5 +1,15 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
+
+  // Cada package declara os próprios tipos ambientes com `types` no seu
+  // tsconfig.json — por exemplo `["node"]` na api e no worker, `["vite/client"]`
+  // ou nenhum no que for isomórfico.
+  //
+  // Não é preferência de estilo: caminhos relativos no tsconfig resolvem a
+  // partir do arquivo que os declara, e este arquivo mora em @sb/config. A
+  // descoberta automática de `node_modules/@types` procuraria a partir daqui e
+  // não acharia nada. Declarar no leaf também impede o `web` de herdar globais
+  // do Node por acidente.
   "compilerOptions": {
     "target": "ES2024",
     "lib": ["ES2024"],
