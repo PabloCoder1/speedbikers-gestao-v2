@@ -49,6 +49,38 @@ test("external results carry only title/url/domain/price/confidence — never ra
   }
 });
 
+// 5 (hotfix). external web empty = success, nunca falha tecnica
+test("an empty results list with an explanatory summary is a success, not a failure", async () => {
+  const client = mockAdapter(async () => ({
+    id: "msg_r3",
+    content: [{ type: "text", text: JSON.stringify({ results: [], summary: "Nao encontrei correspondencia confiavel para este produto." }) }],
+    usage: { input_tokens: 400, output_tokens: 40 },
+  }));
+  const outcome = await runMarketResearch({ query: "produto sem match", model: "claude-sonnet-5", client });
+  assert.equal(outcome.ok, true);
+  if (outcome.ok) {
+    assert.deepEqual(outcome.externalResults, []);
+    assert.match(outcome.summary, /nao encontrei/i);
+  }
+});
+
+// results/summary excess is cut, not rejected, since Structured Output can no longer enforce maxItems/maxLength
+test("more than 8 results or a summary over 300 chars is cut deterministically rather than rejected", async () => {
+  const manyResults = Array.from({ length: 12 }, (_, i) => ({ title: `r${i}`, url: `https://example.com/${i}`, domain: "example.com", priceObserved: null, currencyObserved: null, matchConfidence: "weak" as const }));
+  const longSummary = "a".repeat(400);
+  const client = mockAdapter(async () => ({
+    id: "msg_r4",
+    content: [{ type: "text", text: JSON.stringify({ results: manyResults, summary: longSummary }) }],
+    usage: { input_tokens: 400, output_tokens: 200 },
+  }));
+  const outcome = await runMarketResearch({ query: "x", model: "claude-sonnet-5", client });
+  assert.equal(outcome.ok, true);
+  if (outcome.ok) {
+    assert.equal(outcome.externalResults.length, 8);
+    assert.equal(outcome.summary.length, 300);
+  }
+});
+
 test("a missing Anthropic client resolves gracefully instead of throwing", async () => {
   const outcome = await runMarketResearch({ query: "x", model: "claude-sonnet-5", client: null });
   assert.equal(outcome.ok, false);

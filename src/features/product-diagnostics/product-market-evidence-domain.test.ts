@@ -103,6 +103,26 @@ test("official market facts (price_to_win, catalog competitors, price suggestion
   assert.equal(contributionEvidence!.value, 41.9);
 });
 
+// 8 (hotfix). priceToWin null (listing fora de competicao de catalogo) nunca vira "R$0,00" falso na evidence
+test("a null priceToWin (no real price context) never renders as a fabricated R$0,00 in evidence", () => {
+  const evidence = buildOfficialMarketEvidence({
+    priceToWin: [{
+      itemId: "MLB1", accountCode: "gmr", currentPrice: null, currencyId: null, priceToWin: null,
+      status: "unknown", catalogProductId: null, winnerPrice: null, boosts: [], visitShare: null,
+      competitorsSharingFirstPlace: null, reason: null, fetchedAt: "2026-08-20T10:00:00Z",
+    }],
+    competitorStatsByCatalogProduct: new Map(),
+    priceSuggestions: [],
+    performance: [],
+    knownContributionByItemId: new Map(),
+  });
+  const priceToWinEvidence = evidence.find((item) => item.id === "market.gmr.MLB1.price_to_win");
+  assert.ok(priceToWinEvidence);
+  assert.equal(priceToWinEvidence!.value, null);
+  assert.doesNotMatch(priceToWinEvidence!.displayText, /R\$\s?0[,.]00/);
+  assert.match(priceToWinEvidence!.displayText, /indisponivel/i);
+});
+
 // 15. performance picture pending => pode recomendar imagem (a evidência existe para Claude agir)
 test("a pending 'picture' performance bucket becomes its own evidence item", () => {
   const evidence = buildOfficialMarketEvidence({

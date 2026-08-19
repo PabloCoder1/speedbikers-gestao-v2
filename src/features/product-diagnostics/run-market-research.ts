@@ -4,6 +4,10 @@
  * caller, so this stays importable by node:test.
  */
 import type { ExternalMarketResult } from "@/features/product-diagnostics/product-market-evidence-domain";
+import { prepareAnthropicStructuredOutputSchema } from "@/integrations/anthropic/prepare-structured-output-schema";
+
+/** App-level rules the schema hint can no longer enforce (Anthropic rejects maxItems/maxLength) — applied server-side after parsing instead. */
+const MARKET_RESEARCH_LIMITS = { resultsMax: 8, summaryMaxChars: 300 } as const;
 
 export const MARKET_RESEARCH_PROMPT_VERSION = "product-market-research-v1";
 
@@ -81,12 +85,21 @@ export type MarketResearchSuccess = {
   latencyMs: number;
 };
 
-export type MarketResearchFailure = { ok: false; errorCode: string; errorMessage: string; latencyMs: number };
+/** retryable=true only for 429/5xx/timeout, matching run-product-diagnostic-v2.ts's classification. */
+export type MarketResearchFailure = { ok: false; errorCode: string; errorMessage: string; retryable: boolean; latencyMs: number };
 
 const MAX_WEB_SEARCHES = 3;
+const PREPARED_SCHEMA = prepareAnthropicStructuredOutputSchema(MARKET_RESEARCH_JSON_SCHEMA);
 
 function sanitize(message: string) {
   return message.slice(0, 500);
+}
+
+function classifyAnthropicErrorRetryable(error: unknown): boolean {
+  const status = (error as { status?: unknown } | null)?.status;
+  if (typeof status === "number") return status === 429 || status >= 500;
+  if (error instanceof Error && /timeout|timed out|ECONNRESET|ETIMEDOUT|ENOTFOUND|network/i.test(error.message)) return true;
+  return false;
 }
 
 export async function runMarketResearch(params: {
@@ -96,7 +109,7 @@ export async function runMarketResearch(params: {
 }): Promise<MarketResearchSuccess | MarketResearchFailure> {
   const startedAt = Date.now();
   if (!params.client) {
-    return { ok: false, errorCode: "ANTHROPIC_NOT_CONFIGURED", errorMessage: "ANTHROPIC_API_KEY is not configured.", latencyMs: Date.now() - startedAt };
+    return { ok: false, errorCode: "ANTHROPIC_NOT_CONFIGURED", errorMessage: "ANTHROPIC_API_KEY is not configured.", retryable: false, latencyMs: Date.now() - startedAt };
   }
 
   let response;
@@ -107,28 +120,32 @@ export async function runMarketResearch(params: {
       system: MARKET_RESEARCH_SYSTEM_PROMPT,
       messages: [{ role: "user", content: `Pesquise ofertas para: ${params.query}` }],
       tools: [{ type: "web_search_20260318", name: "web_search", max_uses: MAX_WEB_SEARCHES }],
-      output_config: { effort: "low", format: { type: "json_schema", schema: MARKET_RESEARCH_JSON_SCHEMA } },
+      output_config: { effort: "low", format: { type: "json_schema", schema: PREPARED_SCHEMA } },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown_error";
-    return { ok: false, errorCode: "ANTHROPIC_REQUEST_FAILED", errorMessage: sanitize(message), latencyMs: Date.now() - startedAt };
+    return { ok: false, errorCode: "ANTHROPIC_REQUEST_FAILED", errorMessage: sanitize(message), retryable: classifyAnthropicErrorRetryable(error), latencyMs: Date.now() - startedAt };
   }
 
   const latencyMs = Date.now() - startedAt;
   const textBlock = response.content.find((block) => block.type === "text") as { type: string; text?: string } | undefined;
   if (!textBlock?.text) {
-    return { ok: false, errorCode: "EMPTY_RESPONSE", errorMessage: "Anthropic response had no text content.", latencyMs };
+    return { ok: false, errorCode: "EMPTY_RESPONSE", errorMessage: "Anthropic response had no text content.", retryable: false, latencyMs };
   }
 
   let parsed: MarketResearchResult;
   try {
     parsed = JSON.parse(textBlock.text) as MarketResearchResult;
   } catch {
-    return { ok: false, errorCode: "INVALID_JSON_RESPONSE", errorMessage: "Anthropic response was not valid JSON.", latencyMs };
+    return { ok: false, errorCode: "INVALID_JSON_RESPONSE", errorMessage: "Anthropic response was not valid JSON.", retryable: false, latencyMs };
   }
 
+  // Schema can no longer enforce these (Structured Output rejects maxItems/maxLength) — cut the benign excess deterministically rather than reject a structurally valid response.
+  const boundedResults = parsed.results.slice(0, MARKET_RESEARCH_LIMITS.resultsMax);
+  const boundedSummary = parsed.summary.length > MARKET_RESEARCH_LIMITS.summaryMaxChars ? parsed.summary.slice(0, MARKET_RESEARCH_LIMITS.summaryMaxChars) : parsed.summary;
+
   const fetchedAt = new Date().toISOString();
-  const externalResults: ExternalMarketResult[] = parsed.results.map((result) => ({
+  const externalResults: ExternalMarketResult[] = boundedResults.map((result) => ({
     title: result.title,
     url: result.url,
     domain: result.domain,
@@ -141,7 +158,7 @@ export async function runMarketResearch(params: {
   return {
     ok: true,
     externalResults,
-    summary: parsed.summary,
+    summary: boundedSummary,
     messageId: response.id,
     usage: {
       inputTokens: response.usage.input_tokens,

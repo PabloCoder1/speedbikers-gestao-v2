@@ -14,6 +14,9 @@ import {
   PRODUCT_DIAGNOSTIC_V2_RESULT_JSON_SCHEMA,
   type ProductDiagnosticResultV2,
 } from "@/features/product-diagnostics/product-diagnostic-schema-v2";
+import { prepareAnthropicStructuredOutputSchema } from "@/integrations/anthropic/prepare-structured-output-schema";
+
+const PREPARED_SCHEMA = prepareAnthropicStructuredOutputSchema(PRODUCT_DIAGNOSTIC_V2_RESULT_JSON_SCHEMA);
 
 export type AnthropicMessagesAdapter = {
   create: (params: {
@@ -39,7 +42,16 @@ export type ProductDiagnosticV2RunSuccess = {
   latencyMs: number;
 };
 
-export type ProductDiagnosticV2RunFailure = { ok: false; errorCode: string; errorMessage: string; latencyMs: number };
+/** retryable=true only for 429/5xx/timeout — a structural 400 (bad request/schema) or a model-output problem never succeeds on blind retry, so the job queue must not keep spending API calls on it. */
+export type ProductDiagnosticV2RunFailure = { ok: false; errorCode: string; errorMessage: string; retryable: boolean; latencyMs: number };
+
+/** Anthropic SDK errors carry a numeric `.status`; network/timeout failures often don't and are classified by message instead. */
+function classifyAnthropicErrorRetryable(error: unknown): boolean {
+  const status = (error as { status?: unknown } | null)?.status;
+  if (typeof status === "number") return status === 429 || status >= 500;
+  if (error instanceof Error && /timeout|timed out|ECONNRESET|ETIMEDOUT|ENOTFOUND|network/i.test(error.message)) return true;
+  return false;
+}
 
 function truncate(text: string, maxChars: number) {
   return text.length > maxChars ? text.slice(0, maxChars) : text;
@@ -104,7 +116,7 @@ export async function runProductDiagnosticV2(params: {
   const startedAt = Date.now();
   const adapter = params.client;
   if (!adapter) {
-    return { ok: false, errorCode: "ANTHROPIC_NOT_CONFIGURED", errorMessage: "ANTHROPIC_API_KEY is not configured.", latencyMs: Date.now() - startedAt };
+    return { ok: false, errorCode: "ANTHROPIC_NOT_CONFIGURED", errorMessage: "ANTHROPIC_API_KEY is not configured.", retryable: false, latencyMs: Date.now() - startedAt };
   }
 
   const evidenceIds = new Set(params.evidence.map((item) => item.id));
@@ -117,30 +129,30 @@ export async function runProductDiagnosticV2(params: {
       max_tokens: 2000,
       system: PRODUCT_DIAGNOSTIC_SYSTEM_PROMPT_V2,
       messages: [{ role: "user", content: userMessage }],
-      output_config: { effort: "medium", format: { type: "json_schema", schema: PRODUCT_DIAGNOSTIC_V2_RESULT_JSON_SCHEMA } },
+      output_config: { effort: "medium", format: { type: "json_schema", schema: PREPARED_SCHEMA } },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown_error";
-    return { ok: false, errorCode: "ANTHROPIC_REQUEST_FAILED", errorMessage: sanitizeErrorMessage(message), latencyMs: Date.now() - startedAt };
+    return { ok: false, errorCode: "ANTHROPIC_REQUEST_FAILED", errorMessage: sanitizeErrorMessage(message), retryable: classifyAnthropicErrorRetryable(error), latencyMs: Date.now() - startedAt };
   }
 
   const latencyMs = Date.now() - startedAt;
   const textBlock = response.content.find((block) => block.type === "text") as { type: string; text?: string } | undefined;
   if (!textBlock?.text) {
-    return { ok: false, errorCode: "EMPTY_RESPONSE", errorMessage: "Anthropic response had no text content.", latencyMs };
+    return { ok: false, errorCode: "EMPTY_RESPONSE", errorMessage: "Anthropic response had no text content.", retryable: false, latencyMs };
   }
 
   let parsed: ProductDiagnosticResultV2;
   try {
     parsed = enforceLimits(JSON.parse(textBlock.text) as ProductDiagnosticResultV2);
   } catch {
-    return { ok: false, errorCode: "INVALID_JSON_RESPONSE", errorMessage: "Anthropic response was not valid JSON.", latencyMs };
+    return { ok: false, errorCode: "INVALID_JSON_RESPONSE", errorMessage: "Anthropic response was not valid JSON.", retryable: false, latencyMs };
   }
 
   const referencedIds = collectEvidenceRefs(parsed);
   const unknownRef = referencedIds.find((ref) => !evidenceIds.has(ref));
   if (unknownRef) {
-    return { ok: false, errorCode: "INVALID_EVIDENCE_REFERENCE", errorMessage: sanitizeErrorMessage(`Referenced evidence id does not exist: ${unknownRef}`), latencyMs };
+    return { ok: false, errorCode: "INVALID_EVIDENCE_REFERENCE", errorMessage: sanitizeErrorMessage(`Referenced evidence id does not exist: ${unknownRef}`), retryable: false, latencyMs };
   }
 
   const validTargetPrices = collectValidTargetPrices(params.evidence);
@@ -149,7 +161,7 @@ export async function runProductDiagnosticV2(params: {
     const parsedValue = parseMonetaryValue(action.suggestedValue);
     const matchesEvidence = parsedValue !== null && validTargetPrices.some((price) => Math.abs(price - parsedValue) < 0.01);
     if (!matchesEvidence) {
-      return { ok: false, errorCode: "INVALID_PRICE_TARGET", errorMessage: sanitizeErrorMessage(`ADJUST_PRICE suggestedValue does not match any price_to_win/suggested_price evidence: ${action.suggestedValue}`), latencyMs };
+      return { ok: false, errorCode: "INVALID_PRICE_TARGET", errorMessage: sanitizeErrorMessage(`ADJUST_PRICE suggestedValue does not match any price_to_win/suggested_price evidence: ${action.suggestedValue}`), retryable: false, latencyMs };
     }
   }
 

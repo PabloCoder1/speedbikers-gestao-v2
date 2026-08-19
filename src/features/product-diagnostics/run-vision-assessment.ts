@@ -11,6 +11,7 @@ import {
   type OurListingImage,
   type VisionAssessmentResult,
 } from "@/features/product-diagnostics/product-diagnostic-vision";
+import { prepareAnthropicStructuredOutputSchema } from "@/integrations/anthropic/prepare-structured-output-schema";
 
 export type AnthropicVisionAdapter = {
   create: (params: {
@@ -42,6 +43,7 @@ function sanitize(message: string) {
 
 const MAX_OUR_IMAGES = 4;
 const MAX_REFERENCE_IMAGES = 3;
+const PREPARED_SCHEMA = prepareAnthropicStructuredOutputSchema(VISION_ASSESSMENT_JSON_SCHEMA);
 
 export async function runVisionAssessment(params: {
   ourImages: OurListingImage[];
@@ -73,7 +75,7 @@ export async function runVisionAssessment(params: {
       max_tokens: 800,
       system: VISION_ASSESSMENT_SYSTEM_PROMPT,
       messages: [{ role: "user", content }],
-      output_config: { effort: "low", format: { type: "json_schema", schema: VISION_ASSESSMENT_JSON_SCHEMA } },
+      output_config: { effort: "low", format: { type: "json_schema", schema: PREPARED_SCHEMA } },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown_error";
@@ -92,6 +94,9 @@ export async function runVisionAssessment(params: {
   } catch {
     return { ok: false, errorCode: "INVALID_JSON_RESPONSE", errorMessage: "Anthropic response was not valid JSON.", latencyMs };
   }
+
+  // Schema can no longer enforce maxItems (Structured Output rejects it) — bound defensively even though we only ever sent <=4 of our images.
+  parsed = { images: parsed.images.slice(0, MAX_OUR_IMAGES) };
 
   return {
     ok: true,

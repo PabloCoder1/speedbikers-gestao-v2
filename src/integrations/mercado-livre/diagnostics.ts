@@ -1,6 +1,7 @@
 import "server-only";
 
 import { MERCADO_LIVRE_URLS } from "@/integrations/mercado-livre/constants";
+import { isPriceToWinContextValid } from "@/integrations/mercado-livre/price-to-win-normalization";
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
@@ -106,14 +107,23 @@ export async function getMercadoLivrePriceToWin({
 }): Promise<PriceToWinResponse> {
   const raw = (await mercadoLivreGet({ path: `/items/${encodeURIComponent(itemId)}/price_to_win?version=v2`, accessToken, timeoutMs })) as Record<string, unknown>;
   const winner = isObject(raw.winner) ? raw.winner : null;
+  const currencyId = readString(raw.currency_id);
+  const status = readString(raw.status) ?? "unknown";
+  // Production evidence: for a listing outside any catalog competition, the
+  // API can return status="unknown", currency_id=null, but current_price/
+  // price_to_win as literal 0 rather than omitting them. A real product
+  // never costs R$0 — 0 here is a placeholder, not a price. Only trust the
+  // monetary fields when the response's own context (currency + a real
+  // status) actually supports them; otherwise null, never a fabricated 0.
+  const priceContextValid = isPriceToWinContextValid({ currencyId, status });
   return {
     itemId: readString(raw.item_id) ?? itemId,
-    currentPrice: readNumber(raw.current_price),
-    currencyId: readString(raw.currency_id),
-    priceToWin: readNumber(raw.price_to_win),
-    status: readString(raw.status) ?? "unknown",
+    currentPrice: priceContextValid ? readNumber(raw.current_price) : null,
+    currencyId,
+    priceToWin: priceContextValid ? readNumber(raw.price_to_win) : null,
+    status,
     catalogProductId: readString(raw.catalog_product_id),
-    winnerPrice: winner ? readNumber(winner.price) : null,
+    winnerPrice: priceContextValid && winner ? readNumber(winner.price) : null,
     boosts: readStringArray(raw.boosts),
     visitShare: readNumber(raw.visit_share),
     competitorsSharingFirstPlace: readNumber(raw.competitors_sharing_first_place),

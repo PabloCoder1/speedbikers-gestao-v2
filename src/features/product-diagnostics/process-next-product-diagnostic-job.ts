@@ -8,7 +8,7 @@ import { PRODUCT_DIAGNOSTIC_EVIDENCE_VERSION_V2 } from "@/features/product-diagn
 import { PRODUCT_DIAGNOSTIC_PROMPT_VERSION_V2 } from "@/features/product-diagnostics/product-diagnostic-prompt-v2";
 import { resolveDiagnosticCacheDecision } from "@/features/product-diagnostics/product-diagnostic-domain";
 import { runProductDiagnosticV2 } from "@/features/product-diagnostics/run-product-diagnostic-v2";
-import { retryDelaySeconds } from "@/features/product-diagnostics/product-diagnostic-job-retry";
+import { retryDelaySeconds, resolveJobOutcomeAction } from "@/features/product-diagnostics/product-diagnostic-job-retry";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const LEASE_DURATION_SECONDS = 120;
@@ -41,9 +41,17 @@ async function scheduleRetryOrFail(admin: ReturnType<typeof createAdminClient>, 
     .eq("id", job.id);
 }
 
-/** Terminal outcome — Claude was actually invoked (cost spent), never auto-retried. The job itself still "succeeds": its purpose was to attempt an analysis and record the outcome, matching V1's status='failed'-is-not-an-error philosophy. */
-async function completeJobTerminal(admin: ReturnType<typeof createAdminClient>, job: JobRow, diagnosticRunId: string) {
+/** job.status='succeeded' only when a real diagnostic run (cache hit or new) actually succeeded — never when the run itself is 'failed'. Keeps job status a truthful observability signal instead of always reporting success once Claude was invoked. */
+async function completeJobSucceeded(admin: ReturnType<typeof createAdminClient>, job: JobRow, diagnosticRunId: string) {
   await admin.from("product_diagnostic_jobs").update({ status: "succeeded", phase: "persist", diagnostic_run_id: diagnosticRunId, completed_at: new Date().toISOString() }).eq("id", job.id);
+}
+
+/** A structural failure (bad schema/request, model-output problem) never succeeds on blind retry — fail the job immediately regardless of attempts remaining, still linking the failed run for observability. */
+async function completeJobFailedNonRetryable(admin: ReturnType<typeof createAdminClient>, job: JobRow, diagnosticRunId: string, errorCode: string, errorMessage: string) {
+  await admin
+    .from("product_diagnostic_jobs")
+    .update({ status: "failed", phase: "persist", diagnostic_run_id: diagnosticRunId, error_code: errorCode, error_message: errorMessage.slice(0, 500), completed_at: new Date().toISOString() })
+    .eq("id", job.id);
 }
 
 /** Claims and processes exactly one job. Single-job-per-invocation, matching the codebase's established "no concurrency" precedent (reduce_alert_dispatch_concurrency) — the worker route calls this once, not a burst loop. */
@@ -94,7 +102,7 @@ export async function processNextProductDiagnosticJob(): Promise<{ processed: bo
         .limit(1)
         .maybeSingle();
       if (resolveDiagnosticCacheDecision({ hasCachedSuccess: Boolean(cached), force: job.force }) === "use_cache" && cached) {
-        await completeJobTerminal(admin, job, cached.id);
+        await completeJobSucceeded(admin, job, cached.id);
         return { processed: true, jobId: job.id };
       }
     }
@@ -137,15 +145,27 @@ export async function processNextProductDiagnosticJob(): Promise<{ processed: bo
         })
         .eq("id", runningRow.id);
       console.log(JSON.stringify({ event: "product_diagnostic_v2_succeeded", productId: job.product_id, model, latencyMs: outcome.latencyMs }));
-    } else {
-      await admin
-        .from("product_diagnostic_runs")
-        .update({ status: "failed", error_code: outcome.errorCode, error_message: outcome.errorMessage, latency_ms: outcome.latencyMs, completed_at: new Date().toISOString() })
-        .eq("id", runningRow.id);
-      console.log(JSON.stringify({ event: "product_diagnostic_v2_failed", productId: job.product_id, model, errorCode: outcome.errorCode }));
+      await completeJobSucceeded(admin, job, runningRow.id);
+      return { processed: true, jobId: job.id };
     }
 
-    await completeJobTerminal(admin, job, runningRow.id);
+    await admin
+      .from("product_diagnostic_runs")
+      .update({ status: "failed", error_code: outcome.errorCode, error_message: outcome.errorMessage, latency_ms: outcome.latencyMs, completed_at: new Date().toISOString() })
+      .eq("id", runningRow.id);
+    console.log(JSON.stringify({ event: "product_diagnostic_v2_failed", productId: job.product_id, model, errorCode: outcome.errorCode, retryable: outcome.retryable }));
+
+    const action = resolveJobOutcomeAction({ diagnosticSucceeded: false, retryable: outcome.retryable });
+    if (action === "retry_or_fail") {
+      // 429/5xx/timeout — a fresh attempt (new evidence, new run row) may
+      // succeed. scheduleRetryOrFail itself fails the job once max_attempts
+      // is reached, so this never retries forever.
+      await scheduleRetryOrFail(admin, job, outcome.errorCode, outcome.errorMessage);
+    } else {
+      // Structural (bad schema/request) or a model-output problem — never
+      // retried, regardless of attempts remaining.
+      await completeJobFailedNonRetryable(admin, job, runningRow.id, outcome.errorCode, outcome.errorMessage);
+    }
     return { processed: true, jobId: job.id };
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown_error";
