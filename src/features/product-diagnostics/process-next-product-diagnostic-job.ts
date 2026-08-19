@@ -12,6 +12,15 @@ import { retryDelaySeconds, resolveJobOutcomeAction } from "@/features/product-d
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const LEASE_DURATION_SECONDS = 120;
+// product_diagnostic_runs has no lease/timeout column of its own (it's a
+// result cache + advisory lock, not a job queue) — if the worker function
+// that inserted a 'running' row gets killed by the platform timeout before
+// updating it to succeeded/failed, that row blocks every future attempt
+// for the same product forever via product_diagnostic_runs_running_lock_idx.
+// Real production evidence: two rows stuck 'running' with completed_at=null
+// after the worker's maxDuration was exceeded, both blocking retries with
+// PRODUCT_DIAGNOSTIC_RUN_LOCK_FAILED. Comfortably above maxDuration=180s.
+const STALE_RUNNING_DIAGNOSTIC_RUN_MS = 5 * 60 * 1000;
 
 type JobRow = {
   id: string;
@@ -106,6 +115,14 @@ export async function processNextProductDiagnosticJob(): Promise<{ processed: bo
         return { processed: true, jobId: job.id };
       }
     }
+
+    await admin
+      .from("product_diagnostic_runs")
+      .update({ status: "failed", error_code: "stale_running_timeout", error_message: "Worker did not complete within the expected time budget.", completed_at: new Date().toISOString() })
+      .eq("organization_id", job.organization_id)
+      .eq("product_id", job.product_id)
+      .eq("status", "running")
+      .lt("created_at", new Date(Date.now() - STALE_RUNNING_DIAGNOSTIC_RUN_MS).toISOString());
 
     const { data: runningRow, error: insertError } = await admin
       .from("product_diagnostic_runs")
