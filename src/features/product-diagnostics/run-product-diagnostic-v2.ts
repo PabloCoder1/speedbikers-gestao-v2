@@ -28,6 +28,7 @@ export type AnthropicMessagesAdapter = {
   }) => Promise<{
     id: string;
     content: Array<{ type: string; text?: string }>;
+    stop_reason?: string | null;
     usage: { input_tokens: number | null; output_tokens: number; cache_creation_input_tokens: number | null; cache_read_input_tokens: number | null };
   }>;
 };
@@ -126,7 +127,13 @@ export async function runProductDiagnosticV2(params: {
   try {
     response = await adapter.create({
       model: params.model,
-      max_tokens: 2000,
+      // 3000: raised from an initial 2000 after production evidence showed
+      // Claude Sonnet 5 hit max_tokens mid-JSON on this schema (22s latency,
+      // stop_reason="max_tokens", truncated/invalid JSON) — still well
+      // below V1's ~4096, but with enough headroom that the full
+      // primaryCause+secondaryHypotheses+marketAssessment+actions schema
+      // doesn't get cut off.
+      max_tokens: 3000,
       system: PRODUCT_DIAGNOSTIC_SYSTEM_PROMPT_V2,
       messages: [{ role: "user", content: userMessage }],
       output_config: { effort: "medium", format: { type: "json_schema", schema: PREPARED_SCHEMA } },
@@ -139,14 +146,20 @@ export async function runProductDiagnosticV2(params: {
   const latencyMs = Date.now() - startedAt;
   const textBlock = response.content.find((block) => block.type === "text") as { type: string; text?: string } | undefined;
   if (!textBlock?.text) {
-    return { ok: false, errorCode: "EMPTY_RESPONSE", errorMessage: "Anthropic response had no text content.", retryable: false, latencyMs };
+    return { ok: false, errorCode: "EMPTY_RESPONSE", errorMessage: `Anthropic response had no text content. stop_reason=${response.stop_reason ?? "unknown"}`, retryable: false, latencyMs };
   }
 
   let parsed: ProductDiagnosticResultV2;
   try {
     parsed = enforceLimits(JSON.parse(textBlock.text) as ProductDiagnosticResultV2);
   } catch {
-    return { ok: false, errorCode: "INVALID_JSON_RESPONSE", errorMessage: "Anthropic response was not valid JSON.", retryable: false, latencyMs };
+    return {
+      ok: false,
+      errorCode: "INVALID_JSON_RESPONSE",
+      errorMessage: sanitizeErrorMessage(`Anthropic response was not valid JSON. stop_reason=${response.stop_reason ?? "unknown"} textLength=${textBlock.text.length} tail="${textBlock.text.slice(-120)}"`),
+      retryable: false,
+      latencyMs,
+    };
   }
 
   const referencedIds = collectEvidenceRefs(parsed);

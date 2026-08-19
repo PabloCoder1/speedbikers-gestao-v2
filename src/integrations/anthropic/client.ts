@@ -12,8 +12,9 @@ export function getAnthropicClient(): Anthropic | null {
   return cachedClient;
 }
 
+/** Default fallback is Haiku 4.5 (fastest available) — Sonnet 5 was slow enough on the 3 Claude calls in the V2 pipeline (diagnostic, market research, vision) to contribute to worker timeouts in production. Override via ANTHROPIC_DIAGNOSTIC_MODEL if a stronger model is wanted for quality over latency. */
 export function getProductDiagnosticModel() {
-  return process.env.ANTHROPIC_DIAGNOSTIC_MODEL ?? "claude-sonnet-5";
+  return process.env.ANTHROPIC_DIAGNOSTIC_MODEL ?? "claude-haiku-4-5";
 }
 
 export function isAnthropicConfigured() {
