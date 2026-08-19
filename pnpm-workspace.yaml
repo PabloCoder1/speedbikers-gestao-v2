@@ -1,3 +1,11 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# O pnpm bloqueia scripts de instalação por padrão. Cada liberação aqui é uma
+# decisão de supply chain e precisa de justificativa — não adicionar por
+# conveniência para "fazer o install parar de reclamar".
+allowBuilds:
+  # Bundler por trás do Vitest e do tsx. O postinstall instala o binário nativo
+  # da plataforma; sem ele, nem teste nem dev server sobem.
+  esbuild: true
