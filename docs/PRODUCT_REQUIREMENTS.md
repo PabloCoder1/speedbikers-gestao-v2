@@ -1,6 +1,6 @@
 # Requisitos de Produto — V3
 
-Documento inicial. Será consolidado antes do primeiro desenvolvimento funcional.
+Documento oficial de requisitos funcionais e UX da reconstrução V3.
 
 ## Requisitos já definidos
 
@@ -21,6 +21,9 @@ Documento inicial. Será consolidado antes do primeiro desenvolvimento funcional
 - Dashboards Geral, Conta, SKU e Anúncio.
 - Central de Ações e Oportunidades priorizadas por impacto financeiro e confiança.
 - Diagnóstico baseado em evidências antes da camada de IA.
+- Home orientada a “o que precisa da minha atenção hoje?”.
+- Histórico de decisões e medição do resultado posterior quando aplicável.
+- Busca universal/Command Palette por entidades principais.
 
 ## Notificações em tempo real
 
@@ -49,9 +52,104 @@ Regras:
 - evitar avalanche de popups;
 - eventos repetidos devem ser agrupados quando necessário;
 - manter uma Central de Notificações com histórico e estado lido/não lido;
-- permitir níveis de severidade/prioridade;
+- permitir níveis informativo, importante e crítico;
 - o popup deve ser um resumo, com ação para abrir o produto/anúncio afetado;
-- alterações automáticas e manuais devem ser distinguíveis quando a origem puder ser identificada.
+- alterações automáticas e manuais devem ser distinguíveis quando a origem puder ser identificada;
+- permitir preferências individuais de notificação quando a feature for implementada.
+
+## Copiloto Speed Bikers
+
+A aplicação deve ter um assistente contextual integrado à interface, com acesso somente aos dados e ações permitidos para o usuário autenticado.
+
+Exemplos de perguntas:
+
+- “Como está o produto X?”
+- “Como está a conta Y?”
+- “Por que este produto caiu?”
+- “Quais produtos precisam de atenção?”
+- “Compare este SKU nas contas.”
+- “O que é mais urgente em compras?”
+
+O Copiloto deve conhecer, quando possível, o contexto da tela aberta, filtros e entidade selecionada.
+
+Regras:
+
+- consultar dados determinísticos antes de usar IA para interpretação;
+- informar o escopo/período analisado;
+- nunca inventar métricas ausentes;
+- respeitar RBAC e permissões por conta;
+- permitir abrir diretamente produto, anúncio, conta, ação ou relatório relacionado;
+- IA deve explicar evidências, não substituir consultas confiáveis.
+
+## Ação contextual “O que aconteceu?”
+
+KPIs, gráficos, produtos e contas relevantes poderão oferecer uma ação contextual para investigar alteração ou queda.
+
+A análise deve retornar, quando suportado pelos dados:
+
+- principal evidência;
+- fatores secundários;
+- relação temporal;
+- impacto;
+- nível de confiança;
+- próximos passos sugeridos.
+
+## Simulador de decisão
+
+Quando houver base matemática suficiente, permitir perguntas de cenário como:
+
+- cobertura com determinado estoque;
+- data estimada de ruptura conforme premissa explícita;
+- quantidade necessária para X dias de cobertura;
+- margem aproximada para determinado preço quando custos estiverem disponíveis.
+
+Toda simulação deve exibir as premissas e nunca ser apresentada como certeza.
+
+## Sugestões de features via Copiloto
+
+Usuários autorizados poderão enviar ideias de melhoria em linguagem natural pelo assistente.
+
+A IA deve preservar a mensagem original e gerar uma versão estruturada com, quando possível:
+
+- título;
+- problema;
+- objetivo;
+- usuários impactados;
+- fluxo sugerido;
+- benefício esperado;
+- critérios de aceite sugeridos;
+- dependências/riscos aparentes;
+- complexidade a avaliar;
+- autor e data.
+
+O painel administrativo terá uma Central de Sugestões com estados como:
+
+- Nova;
+- Em análise;
+- Aprovada;
+- Planejada;
+- Em desenvolvimento;
+- Entregue;
+- Recusada.
+
+## Memória de decisões operacionais
+
+A Central de Ações deve poder registrar decisões tomadas e, posteriormente, confrontá-las com o resultado observado.
+
+Exemplo:
+
+- problema detectado;
+- decisão tomada;
+- responsável;
+- data;
+- alteração aplicada;
+- resultado em período posterior quando mensurável.
+
+Objetivo: construir memória institucional sobre quais ações funcionam na operação.
+
+## Busca universal
+
+Planejar uma busca/Command Palette para localizar rapidamente SKU, produto, MLB, conta, pedido, fornecedor, ação e outras entidades importantes, sem exigir navegação por vários menus.
 
 ## Design System
 
