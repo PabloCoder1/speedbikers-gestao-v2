@@ -1,4 +1,7 @@
 export { AdminClientConfigError, createAdminClient } from "./admin-client.js";
 export type { AdminClient, AdminClientConfig } from "./admin-client.js";
 
-export type { Database } from "./types.js";
+export { recordJobRun } from "./job-runs.js";
+export type { JobRunInsert, RecordResult } from "./job-runs.js";
+
+export type { Database, Tables, TablesInsert } from "./types.js";

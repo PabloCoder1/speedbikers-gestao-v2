@@ -119,3 +119,26 @@ create trigger job_runs_no_delete
 -- ============================================================
 
 alter table public.job_runs enable row level security;
+
+-- ============================================================
+-- GRANTs
+--
+-- RLS NAO e a primeira barreira: o privilegio de tabela e. Uma tabela sem
+-- GRANT nega acesso a todos os papeis, inclusive a `service_role` — que ignora
+-- RLS, mas nao ignora a falta de privilegio.
+--
+-- Verificado localmente: sem os GRANTs abaixo, a leitura pela Data API responde
+-- 42501 "permission denied for table job_runs" ate para a service_role.
+--
+-- Concedido o minimo: a service_role insere e le. Nao ha UPDATE nem DELETE
+-- porque a tabela e append-only, e assim o privilegio acompanha o contrato em
+-- vez de depender so do trigger.
+--
+-- `anon` e `authenticated` NAO recebem nada. Quem for ler isto na Fase 2, ao
+-- adicionar as policies de leitura, precisara conceder SELECT explicitamente —
+-- e essa concessao e o momento certo de pensar em quem pode ver o que.
+-- ============================================================
+
+grant select, insert on public.job_runs to service_role;
+
+revoke all on public.job_runs from anon, authenticated;

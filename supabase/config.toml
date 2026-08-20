@@ -10,6 +10,14 @@
 #   [storage]     A V3 usa Cloud Storage do Google, não Supabase Storage.
 #                 Ver docs/DEPLOYMENT.md secao 9.
 #   [local_smtp]  Não há envio de e-mail no escopo. Ver docs/NOTIFICATIONS.md.
+#   [analytics]   Logflare local. Era o MAIOR consumidor da stack: 564 MB
+#                 medidos, num total de 2,8 GB. Os logs que importam são os do
+#                 Cloud Logging, em produção.
+#   [edge_runtime] A V3 não usa Supabase Edge Functions (docs/DEPLOYMENT.md
+#                 secao 1). Processamento pesado roda no Cloud Run.
+#
+# O container `vector` acompanha o analytics e entrava em crash loop com ele
+# ligado; desligar o analytics remove os dois.
 #
 # Ligados: [db] Postgres 17 (mesma major do projeto Dev, confirmado em
 # 2026-08-19), [auth] GoTrue e [api] PostgREST — os três necessários para
@@ -392,7 +400,7 @@ authorization_url_path = "/oauth/consent"
 allow_dynamic_registration = false
 
 [edge_runtime]
-enabled = true
+enabled = false
 # Supported request policies: `oneshot`, `per_worker`.
 # `per_worker` (default) — enables hot reload during local development.
 # `oneshot` — fallback mode if hot reload causes issues (e.g. in large repos or with symlinks).
@@ -406,7 +414,7 @@ deno_version = 2
 # secret_key = "env(SECRET_VALUE)"
 
 [analytics]
-enabled = true
+enabled = false
 port = 54327
 # Configure one of the supported backends: `postgres`, `bigquery`.
 backend = "postgres"

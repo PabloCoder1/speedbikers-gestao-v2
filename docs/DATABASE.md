@@ -203,6 +203,18 @@ assignee_id, status, created_by (system | user)
 
 **RLS habilitada em toda tabela exposta à Data API.** Nenhuma policy `using (true)` para `authenticated`.
 
+### A RLS não é a primeira barreira — o `GRANT` é
+
+Ordem real de avaliação: **privilégio de tabela primeiro, policy de RLS depois.** Uma tabela sem `GRANT` nega acesso a todos os papéis, inclusive à `service_role` — que ignora RLS, mas **não** ignora a falta de privilégio.
+
+*Verificado na prática ao criar `job_runs`:* sem `GRANT`, a leitura pela Data API respondeu `42501 permission denied for table job_runs` até para a `service_role`, e o worker teria falhado em produção.
+
+Consequências para toda tabela nova:
+
+- conceder explicitamente o mínimo — `grant select, insert on <tabela> to service_role`, sem `update`/`delete` quando a tabela for append-only, de modo que o privilégio acompanhe o contrato em vez de depender só do trigger;
+- `revoke all ... from anon, authenticated` por padrão. Quem for abrir leitura na Fase 2 precisará conceder `select` de forma deliberada — e essa concessão é o momento certo de decidir quem pode ver o quê;
+- **RLS habilitada sem nenhuma policy é uma configuração válida e segura**: significa que nada passa pela Data API, e só a `service_role` (com `GRANT`) escreve.
+
 Helpers, todos marcados `STABLE`:
 
 ```sql

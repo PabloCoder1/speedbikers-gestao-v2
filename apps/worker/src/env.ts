@@ -14,6 +14,16 @@ export const envSchema = z.object({
 
   /** O Cloud Run injeta `PORT`; localmente cai no padrão. */
   PORT: z.coerce.number().int().min(1).max(65_535).default(8080),
+
+  /** URL do projeto Supabase. Não é segredo. */
+  SUPABASE_URL: z.url(),
+
+  /**
+   * Chave `service_role`. É segredo: vem do Secret Manager, nunca de variável
+   * versionada. Ignora RLS, então é a credencial mais poderosa do sistema
+   * (docs/DEPLOYMENT.md secao 5).
+   */
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(20),
 });
 
 export type Env = z.infer<typeof envSchema>;

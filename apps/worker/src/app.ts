@@ -1,4 +1,6 @@
 import { jobEnvelopeSchema } from "@sb/contracts";
+import type { AdminClient } from "@sb/db";
+import { recordJobRun } from "@sb/db";
 import type { Logger } from "@sb/observability";
 import { measure } from "@sb/observability";
 import { Hono } from "hono";
@@ -11,6 +13,8 @@ export interface WorkerDependencies {
   logger: Logger;
   registry?: HandlerRegistry;
   startedAt?: Date;
+  /** Ausente nos testes de rota: gravar o histórico não é o que eles medem. */
+  db?: AdminClient;
 }
 
 /**
@@ -59,6 +63,8 @@ export function createWorkerApp(dependencies: WorkerDependencies): Hono {
       attempt: envelope.attempt,
     });
 
+    const startedProcessingAt = new Date();
+
     const outcome = await measure(
       { operation: `job:${envelope.jobType}`, logger },
       async () => {
@@ -73,6 +79,31 @@ export function createWorkerApp(dependencies: WorkerDependencies): Hono {
 
     if (outcome.status === "failed") {
       logger.error("job_failed", { retryable: outcome.retryable, reason: outcome.reason });
+    }
+
+    // Histórico em L2. Best-effort DE PROPÓSITO: se a gravação falhar, o job
+    // continua com o resultado que teve. Deixar a observabilidade derrubar a
+    // operação faria o Cloud Tasks repetir um trabalho que já deu certo.
+    if (dependencies.db !== undefined) {
+      const finishedAt = new Date();
+
+      const recorded = await recordJobRun(dependencies.db, {
+        organization_id: envelope.organizationId,
+        job_id: envelope.jobId,
+        job_type: envelope.jobType,
+        dedupe_key: envelope.dedupeKey,
+        attempt: envelope.attempt,
+        status: outcome.status,
+        retryable: outcome.status === "failed" ? outcome.retryable : null,
+        reason: outcome.status === "failed" ? outcome.reason : null,
+        processed: outcome.status === "done" ? (outcome.processed ?? null) : null,
+        started_at: startedProcessingAt.toISOString(),
+        finished_at: finishedAt.toISOString(),
+      });
+
+      if (!recorded.ok) {
+        logger.error("job_run_not_recorded", { reason: recorded.reason });
+      }
     }
 
     return context.json(outcome, toHttpStatus(outcome));

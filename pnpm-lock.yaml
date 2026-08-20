@@ -103,6 +103,9 @@ importers:
       '@sb/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@sb/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@sb/observability':
         specifier: workspace:*
         version: link:../../packages/observability
