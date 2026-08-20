@@ -15,6 +15,7 @@
     "check": "turbo run typecheck lint test"
   },
   "devDependencies": {
+    "supabase": "2.115.0",
     "turbo": "2.10.11",
     "typescript": "6.0.3"
   }

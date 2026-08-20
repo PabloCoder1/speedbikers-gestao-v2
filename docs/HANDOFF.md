@@ -136,7 +136,14 @@ Provisionado: filas `analytics-recompute` (10/s, 20), `backfill` (1/s, 2) e `mai
 - `infra/` com `lib.sh`, `setup-dev.sh`, `cloud-tasks-queues.sh`, `storage-buckets.sh` e `README.md` — idempotentes, **executados**.
 - **D-036**: uma fila do Cloud Tasks **por conta** do Mercado Livre. O limite de taxa do Cloud Tasks é por fila, não por conta, e a D-014 dependia disso.
 
-**Falta nesta fase:** Supabase local (Docker) · `packages/db` · projeto Vercel conectado à `v3` · deploy de `api` e `worker` no Cloud Run · um job real atravessando `api -> Cloud Tasks -> worker`.
+- Supabase local inicializado: `supabase/config.toml` com Postgres 17, mesma major do projeto Dev (confirmado em 2026-08-19). `realtime`, `studio`, `storage` e `local_smtp` **desligados**, com o motivo de cada um escrito no topo do arquivo — a stack completa não cabe em 3 GB.
+- CLI da Supabase 2.115.0 como devDependency do repositório, não global: a versão fica versionada junto com o schema.
+- `packages/db` com o cliente privilegiado (`service_role`), validação de configuração e teste garantindo que a chave **nunca** aparece em mensagem de erro.
+- Vercel: projeto `speedbikers-gestao-v2-m71j`, Root Directory `apps/web`.
+
+**Supabase V3 Dev inspecionado diretamente:** ref `nmgccyqquwxecqffsidr`, `sa-east-1`, Postgres 17.6.1.155, `ACTIVE_HEALTHY`, **zero tabelas no schema public** — a documentação estava correta.
+
+**Falta nesta fase:** subir a stack local (`supabase start`) · primeira migration (`job_runs`, infraestrutura, não domínio) · deploy de `api` e `worker` no Cloud Run · um job real atravessando `api -> Cloud Tasks -> worker -> Postgres`.
 
 `packages/domain`, `mercado-livre` e `ui` não entram na Fase 1: só ganham conteúdo quando houver domínio, e criar package vazio contraria a regra de só promover a package o que dois apps importam.
 
