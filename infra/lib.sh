@@ -45,21 +45,45 @@ resolve_gcloud() {
     return
   fi
 
-  local windows_path="/c/Program Files (x86)/Google/Cloud SDK/google-cloud-sdk/bin/gcloud.cmd"
+  # Testar com -f, não com -x: no MSYS/Git Bash um arquivo .cmd não carrega bit
+  # de execução, mas roda normalmente.
+  local candidates=(
+    "/c/Program Files (x86)/Google/Cloud SDK/google-cloud-sdk/bin/gcloud.cmd"
+    "/c/Program Files/Google/Cloud SDK/google-cloud-sdk/bin/gcloud.cmd"
+    "${LOCALAPPDATA:-}/Google/Cloud SDK/google-cloud-sdk/bin/gcloud.cmd"
+  )
 
-  if [ -x "${windows_path}" ]; then
-    echo "${windows_path}"
-  elif command -v gcloud >/dev/null 2>&1; then
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if [ -f "${candidate}" ]; then
+      echo "${candidate}"
+      return
+    fi
+  done
+
+  if command -v gcloud >/dev/null 2>&1; then
     command -v gcloud
-  else
-    fail "gcloud não encontrado. Instale o Google Cloud SDK ou defina GCLOUD_BIN."
+    return
   fi
+
+  fail "gcloud não encontrado. Instale o Google Cloud SDK ou defina GCLOUD_BIN."
 }
 
 GCLOUD="$(resolve_gcloud)"
 
+# Comandos que aceitam o projeto como FLAG.
 gc() {
   "${GCLOUD}" "$@" --project "${PROJECT_ID}"
+}
+
+# Comandos que recebem o projeto como ARGUMENTO POSICIONAL — `projects
+# describe` e `billing projects describe` são os casos. Passar `--project` para
+# eles falha com "argument PROJECT_ID_OR_NUMBER: Must be specified", que é
+# facilmente confundido com falta de permissão.
+gc_positional() {
+  local group=("$@")
+
+  "${GCLOUD}" "${group[@]}" "${PROJECT_ID}"
 }
 
 # ---------------------------------------------------------------------------
@@ -76,8 +100,14 @@ require_auth() {
 }
 
 require_project() {
-  gc projects describe --format='value(projectId)' >/dev/null 2>&1 \
-    || fail "Sem acesso ao projeto ${PROJECT_ID}."
+  local output
+
+  # Nunca descartar stderr numa pré-condição: a mensagem do gcloud é o
+  # diagnóstico. Capturar e reexibir em caso de falha.
+  if ! output="$(gc_positional projects describe --format='value(projectId)' 2>&1)"; then
+    printf '%s\n' "${output}" >&2
+    fail "Não foi possível descrever o projeto ${PROJECT_ID}. Mensagem do gcloud acima."
+  fi
 
   info "projeto: ${PROJECT_ID}"
   info "região: ${REGION}"

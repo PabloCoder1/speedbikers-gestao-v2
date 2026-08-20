@@ -13,7 +13,13 @@ require_auth
 require_project
 
 step "Billing"
-if [ "$(gc billing projects describe --format='value(billingEnabled)' 2>/dev/null)" = "True" ]; then
+# `billing projects describe` também recebe o projeto como posicional.
+if ! BILLING="$(gc_positional billing projects describe --format='value(billingEnabled)' 2>&1)"; then
+  printf '%s\n' "${BILLING}" >&2
+  fail "Não foi possível verificar o billing. Mensagem do gcloud acima."
+fi
+
+if [ "${BILLING}" = "True" ]; then
   ok "billing habilitado"
 else
   fail "Billing desabilitado no projeto ${PROJECT_ID}. Cloud Run e Cloud Tasks exigem billing."
