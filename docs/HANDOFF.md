@@ -9,8 +9,8 @@
 - V3 reconstruída como branch limpa, **sem código de aplicação e sem migrations**.
 - Supabase V3 Dev: criado em São Paulo (`sa-east-1`), mantido **sem tabelas de domínio**.
 - Google Cloud V3: fundação criada em São Paulo (`southamerica-east1`). Cloud Run, Cloud Tasks, Scheduler, Secret Manager e Storage ainda não provisionados.
-- Vercel V3: **ainda não criado**. Depende da fundação técnica da Fase 1.
-- Monorepo, CI e ambientes: **ainda não criados**.
+- Vercel V3: **criado e no ar**, branch `v3`.
+- Monorepo, CI e ambientes: criados. Falta o ambiente de produção (Fase 8).
 
 ## Última etapa concluída
 
@@ -139,7 +139,8 @@ Provisionado: filas `analytics-recompute` (10/s, 20), `backfill` (1/s, 2) e `mai
 - Supabase local inicializado: `supabase/config.toml` com Postgres 17, mesma major do projeto Dev (confirmado em 2026-08-19). `realtime`, `studio`, `storage` e `local_smtp` **desligados**, com o motivo de cada um escrito no topo do arquivo — a stack completa não cabe em 3 GB.
 - CLI da Supabase 2.115.0 como devDependency do repositório, não global: a versão fica versionada junto com o schema.
 - `packages/db` com o cliente privilegiado (`service_role`), validação de configuração e teste garantindo que a chave **nunca** aparece em mensagem de erro.
-- Vercel: projeto `speedbikers-gestao-v2-m71j`, Root Directory `apps/web`.
+- **Vercel no ar**: projeto `speedbikers-gestao-v2-m71j`, Root Directory `apps/web`, com "Include source files outside of the Root Directory" habilitado — sem isso a Vercel não enxerga `pnpm-lock.yaml` e cai para `npm`, que não entende `workspace:*`. Deploy `READY` em https://speedbikers-gestao-v2-m71j.vercel.app
+- Região das funções fixada em `gru1` por `apps/web/vercel.json`: o Supabase está em `sa-east-1` e o padrão da Vercel era `iad1`, ou seja, um salto EUA-Brasil em toda leitura.
 
 **Supabase V3 Dev inspecionado diretamente:** ref `nmgccyqquwxecqffsidr`, `sa-east-1`, Postgres 17.6.1.155, `ACTIVE_HEALTHY`, **zero tabelas no schema public** — a documentação estava correta.
 
