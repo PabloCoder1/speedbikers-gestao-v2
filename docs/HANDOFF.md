@@ -203,9 +203,14 @@ Provisionado: filas `analytics-recompute` (10/s, 20), `backfill` (1/s, 2) e `mai
 
 **A fazer agora, nesta ordem:**
 
-1. **Tela de upload** — formulário que envia o arquivo para `POST /v1/erp-imports` com o JWT do usuário, e acompanha o lote até `PARSED`.
-2. **Comando de aplicação** — transforma o lote conferido em catálogo, vínculo e saldo. É o primeiro código que **escreve em domínio**; até aqui tudo era staging.
-3. **ETL de carga inicial da V2** (D-027).
+1. **Comando de aplicação** — transforma o lote conferido em catálogo, vínculo e saldo. É o primeiro código que **escreve em domínio**; até aqui tudo era staging.
+2. **ETL de carga inicial da V2** (D-027).
+
+**Antes de usar em Dev**, três variáveis novas precisam existir:
+
+- `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` na Vercel.
+- `NEXT_PUBLIC_API_URL` na Vercel, apontando para a `api` no Cloud Run.
+- `WEB_ORIGINS` na `api`, com a origem da Vercel. Sem ela o CORS barra o upload — e do navegador isso é indistinguível de "servidor fora do ar".
 
 Ordem dentro da fase, do que não depende de nada para o que depende:
 
@@ -224,7 +229,9 @@ Ordem dentro da fase, do que não depende de nada para o que depende:
    - ✅ **Login no `web`**: `@supabase/ssr` com cliente de servidor e de navegador, proteção de rota, e papel lido do banco a cada renderização — nunca do token, que pode estar desatualizado depois de um rebaixamento.
    - ✅ **Tela de conferência**: lista de lotes e detalhe linha a linha, com filtro por `OK` / `Ignorada` / `Inválida`, paginação de 100 e resumo legível do que o parser entendeu de cada linha.
    - ✅ **Bootstrap do primeiro acesso**: migration com a organização Speed Bikers (UUID fixo) e `packages/db/src/bin/grant-role.ts` para conceder o primeiro papel. Ver `docs/DEPLOYMENT.md` secao 10.
-   - ⏳ Falta: tela de upload, comando de aplicação e o ETL da V2.
+   - ✅ **Tela de upload**: escolhe o tipo, envia direto do navegador para a `api` (CORS restrito a `/v1/*`, allowlist explícita), e leva para a conferência — inclusive quando o arquivo já tinha sido enviado antes, que é o caso mais útil de abrir.
+   - ✅ **Atualização automática** enquanto o lote está sendo lido: o parse é assíncrono, e uma tela "Lendo o arquivo" parada faz qualquer um achar que travou.
+   - ⏳ Falta: comando de aplicação e o ETL da V2.
 
 **Leitor de planilha escolhido:** `read-excel-file` (2,5 MB) em vez de `exceljs` (21,8 MB), porque o worker só lê. Medido nos arquivos reais: 23.925 linhas em 647 ms com 176 MB de RSS, folgado nos 512 MB do container. Usar `readSheet`, não o export padrão — na v9 o padrão devolve o array de planilhas.
 

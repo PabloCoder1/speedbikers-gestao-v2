@@ -176,3 +176,51 @@ describe("rotas /internal", () => {
     expect((await app.request("/health")).status).toBe(200);
   });
 });
+
+describe("CORS de /v1", () => {
+  const ORIGIN = "https://gestao.speedbikers.com.br";
+
+  function corsApp(): ReturnType<typeof createApp> {
+    return createApp({ logger: createLogger({}, { sink: () => undefined }), webOrigins: [ORIGIN] });
+  }
+
+  it("libera a origem que está na lista", async () => {
+    const response = await corsApp().request("/v1/erp-imports", {
+      method: "OPTIONS",
+      headers: { origin: ORIGIN, "access-control-request-method": "POST" },
+    });
+
+    expect(response.headers.get("access-control-allow-origin")).toBe(ORIGIN);
+  });
+
+  it("não libera origem de fora da lista", async () => {
+    const response = await corsApp().request("/v1/erp-imports", {
+      method: "OPTIONS",
+      headers: { origin: "https://site-de-terceiro.com", "access-control-request-method": "POST" },
+    });
+
+    expect(response.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  it("não libera CORS nas rotas internas", async () => {
+    // Cloud Tasks e Scheduler não são navegador. Liberar origem aqui só
+    // ampliaria a superfície de ataque sem serventia nenhuma.
+    const response = await corsApp().request("/internal/jobs/system.ping", {
+      method: "OPTIONS",
+      headers: { origin: ORIGIN, "access-control-request-method": "POST" },
+    });
+
+    expect(response.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  it("sem origem configurada, nenhum navegador é liberado", async () => {
+    const app = createApp({ logger: createLogger({}, { sink: () => undefined }) });
+
+    const response = await app.request("/v1/erp-imports", {
+      method: "OPTIONS",
+      headers: { origin: ORIGIN, "access-control-request-method": "POST" },
+    });
+
+    expect(response.headers.get("access-control-allow-origin")).toBeNull();
+  });
+});

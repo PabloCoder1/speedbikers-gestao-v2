@@ -38,6 +38,15 @@ export const envSchema = z.object({
 
   /** Bucket que recebe as exportações do UpSeller. */
   ERP_IMPORTS_BUCKET: z.string().min(1),
+
+  /**
+   * Origens do `web` autorizadas no CORS de `/v1/*`, separadas por vírgula.
+   *
+   * Opcional: sem ela, nenhuma origem de navegador é liberada — que é o
+   * comportamento correto para um ambiente que só recebe chamada servidor a
+   * servidor.
+   */
+  WEB_ORIGINS: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

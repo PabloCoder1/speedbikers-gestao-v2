@@ -45,7 +45,33 @@ export default async function ImportacoesPage(): Promise<ReactNode> {
 
   return (
     <Shell>
-      <h1 style={{ margin: "0 0 var(--sb-space-4)", fontSize: "1.375rem" }}>Importações</h1>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--sb-space-3)",
+          marginBottom: "var(--sb-space-4)",
+          flexWrap: "wrap",
+        }}
+      >
+        <h1 style={{ margin: 0, fontSize: "1.375rem" }}>Importações</h1>
+
+        <Link
+          href="/importacoes/nova"
+          style={{
+            marginLeft: "auto",
+            padding: "0.5rem 0.875rem",
+            borderRadius: "var(--sb-radius)",
+            background: "var(--sb-primary)",
+            color: "var(--sb-white)",
+            textDecoration: "none",
+            fontSize: "0.875rem",
+            fontWeight: 600,
+          }}
+        >
+          Nova importação
+        </Link>
+      </div>
 
       {error !== null && (
         <p role="alert" style={{ color: "var(--sb-danger)" }}>

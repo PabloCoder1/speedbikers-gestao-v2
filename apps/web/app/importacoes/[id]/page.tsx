@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { AutoRefresh } from "../../../components/auto-refresh";
 import { Shell } from "../../../components/shell";
 import { StatusPill } from "../../../components/status-pill";
 import { formatCount, formatDateTime } from "../../../lib/format";
@@ -121,8 +122,14 @@ export default async function ConferenciaPage({
     return qs === "" ? `/importacoes/${id}` : `/importacoes/${id}?${qs}`;
   }
 
+  // Estados de trabalho em curso. Fora deles nada muda sozinho, e recarregar
+  // seria so gasto.
+  const working = info.status === "UPLOADED" || info.status === "PARSING" || info.status === "APPLYING";
+
   return (
     <Shell>
+      {working && <AutoRefresh />}
+
       <p style={{ margin: 0, fontSize: "0.875rem" }}>
         <Link href="/importacoes">← Importações</Link>
       </p>

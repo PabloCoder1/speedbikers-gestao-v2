@@ -22,6 +22,10 @@ const enqueuer = createEnqueuer(env);
 const app = createApp({
   logger,
   enqueuer,
+  webOrigins: (env.WEB_ORIGINS ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter((origin) => origin !== ""),
   oidc: createOidcVerifier({
     audience: env.API_URL,
     allowedServiceAccounts: [env.SCHEDULER_INVOKER_SERVICE_ACCOUNT],

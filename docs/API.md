@@ -52,6 +52,16 @@ Todas as rotas são versionadas sob `/v1`, exceto webhook e callback do OAuth, c
 
 A `api` **verifica o JWT e reavalia a autorização no servidor**. Não confiar na interface para autorização.
 
+### CORS
+
+Liberado **apenas em `/v1/*`**, com allowlist explícita de origem vinda de `WEB_ORIGINS`. Nunca `*`.
+
+O webhook e as rotas `/internal/*` ficam de fora: Cloud Tasks, Cloud Scheduler e o Mercado Livre não são navegador, e liberar origem neles ampliaria a superfície sem serventia. Há teste negativo provando isso.
+
+`credentials` fica **desligado**: a autorização viaja no header `Authorization`, não em cookie. Sem cookie no jogo, não há CSRF a mitigar.
+
+O upload da planilha vai do navegador **direto** para a `api`, sem passar pela Vercel — o arquivo não atravessa a função de página só de passagem, e o limite de corpo dela deixa de importar.
+
 ### Internas, autenticadas por OIDC de service account
 
 | Rota | Chamada por | Descrição |

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { Logger } from "@sb/observability";
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 
 import type { Authenticator } from "./auth.js";
 import type { Enqueuer } from "./enqueue.js";
@@ -24,6 +25,16 @@ export interface AppEnv { Variables: AppVariables }
 
 export interface AppDependencies {
   logger: Logger;
+
+  /**
+   * Origens do `web` autorizadas a chamar `/v1/*` do navegador.
+   *
+   * Lista explícita, nunca `*`. O upload da planilha sai do navegador direto
+   * para cá — isso evita que o arquivo atravesse a Vercel só de passagem e
+   * esbarre no limite de corpo da função — e é o CORS que decide de onde ele
+   * pode sair.
+   */
+  webOrigins?: readonly string[];
   startedAt?: Date;
   enqueuer?: Enqueuer;
   oidc?: OidcVerifier;
@@ -51,6 +62,25 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
 
     await next();
   });
+
+  // CORS apenas em `/v1/*`. Webhook e `/internal/*` não são chamados por
+  // navegador: liberar origem neles só ampliaria a superfície à toa.
+  //
+  // `credentials` fica desligado de propósito: a autorização viaja no header
+  // `Authorization`, não em cookie. Sem cookie no jogo, não há CSRF a mitigar.
+  if (dependencies.webOrigins !== undefined && dependencies.webOrigins.length > 0) {
+    const allowed = new Set(dependencies.webOrigins);
+
+    app.use(
+      "/v1/*",
+      cors({
+        origin: (origin) => (allowed.has(origin) ? origin : null),
+        allowMethods: ["GET", "POST", "OPTIONS"],
+        allowHeaders: ["authorization", "content-type", "x-request-id"],
+        maxAge: 3600,
+      }),
+    );
+  }
 
   app.get("/health", (context) => {
     return context.json({
