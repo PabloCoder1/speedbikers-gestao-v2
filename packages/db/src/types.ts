@@ -357,6 +357,86 @@ export type Database = {
           },
         ]
       }
+      sku_listing_links: {
+        Row: {
+          channel_sku: string | null
+          confirmed_at: string | null
+          confirmed_by: string | null
+          created_at: string
+          id: string
+          item_id: string | null
+          ml_account_id: string
+          organization_id: string
+          ref_kind: string
+          sku_id: string
+          source: string
+          updated_at: string
+          user_product_id: string | null
+          variation_id: string | null
+        }
+        Insert: {
+          channel_sku?: string | null
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          created_at?: string
+          id?: string
+          item_id?: string | null
+          ml_account_id: string
+          organization_id: string
+          ref_kind: string
+          sku_id: string
+          source?: string
+          updated_at?: string
+          user_product_id?: string | null
+          variation_id?: string | null
+        }
+        Update: {
+          channel_sku?: string | null
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          created_at?: string
+          id?: string
+          item_id?: string | null
+          ml_account_id?: string
+          organization_id?: string
+          ref_kind?: string
+          sku_id?: string
+          source?: string
+          updated_at?: string
+          user_product_id?: string | null
+          variation_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sku_listing_links_confirmed_by_fkey"
+            columns: ["confirmed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sku_listing_links_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sku_listing_links_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sku_listing_links_sku_id_fkey"
+            columns: ["sku_id"]
+            isOneToOne: false
+            referencedRelation: "skus"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       skus: {
         Row: {
           barcode: string | null

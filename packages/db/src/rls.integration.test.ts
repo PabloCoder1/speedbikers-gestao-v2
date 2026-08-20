@@ -97,6 +97,10 @@ beforeAll(async () => {
 afterAll(async () => {
   // Componentes primeiro: `on delete restrict` impede apagar um produto que
   // compõe kit — que é justamente a garantia testada acima.
+  await client.query(`
+    delete from public.sku_listing_links
+    where sku_id in (select id from public.skus where sku like 'RLSTEST%')
+  `);
   await client.query("delete from public.ml_accounts where slug like 'rlstest%'");
   await client.query(`
     delete from public.sku_components
@@ -445,5 +449,98 @@ describe("credenciais são inalcançáveis pela Data API", () => {
     );
 
     expect(rows.rows).toHaveLength(1);
+  });
+});
+
+
+describe("vínculo SKU ↔ anúncio", () => {
+  const CONTA = "aaaa1111-0000-4000-8000-00000000aaaa";
+  let skuId = "";
+
+  beforeAll(async () => {
+    const r = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind) values ($1,'RLSTEST-link','PRODUTO')
+       returning id`,
+      [ORG_SB],
+    );
+    skuId = r.rows[0]?.id ?? "";
+  });
+
+  async function link(fields: string, values: string): Promise<unknown> {
+    return await client.query(
+      `insert into public.sku_listing_links (organization_id, ml_account_id, sku_id, ${fields})
+       values ($1,$2,$3,${values})`,
+      [ORG_SB, CONTA, skuId],
+    );
+  }
+
+  it("aceita anúncio sem variação", async () => {
+    await expect(link("ref_kind,item_id", "'ITEM','MLB900000001'")).resolves.toBeDefined();
+  });
+
+  it("recusa o MESMO anúncio sem variação duas vezes", async () => {
+    // A armadilha: NULL não colide com NULL num UNIQUE comum. Só o índice
+    // parcial pega este caso — e ele é 3.579 dos vínculos reais.
+    await expect(link("ref_kind,item_id", "'ITEM','MLB900000001'")).rejects.toThrow(
+      /sku_listing_links_item_only_unique/,
+    );
+  });
+
+  it("aceita o mesmo anúncio com variação", async () => {
+    await expect(
+      link("ref_kind,item_id,variation_id", "'ITEM','MLB900000001','205704879161'"),
+    ).resolves.toBeDefined();
+  });
+
+  it("recusa a mesma variação duas vezes", async () => {
+    await expect(
+      link("ref_kind,item_id,variation_id", "'ITEM','MLB900000001','205704879161'"),
+    ).rejects.toThrow(/sku_listing_links_item_variation_unique/);
+  });
+
+  it("recusa variação não numérica — o ERP repetindo o MLB", async () => {
+    await expect(
+      link("ref_kind,item_id,variation_id", "'ITEM','MLB900000002','MLB900000002'"),
+    ).rejects.toThrow(/variation_id_check/);
+  });
+
+  it("recusa USER_PRODUCT carregando item_id junto", async () => {
+    await expect(
+      link("ref_kind,item_id,user_product_id", "'USER_PRODUCT','MLB1','MLBU4818089142'"),
+    ).rejects.toThrow(/sku_listing_links_ref_shape/);
+  });
+
+  it("aceita user product isolado", async () => {
+    await expect(
+      link("ref_kind,user_product_id", "'USER_PRODUCT','MLBU4818089142'"),
+    ).resolves.toBeDefined();
+  });
+
+  it("recusa vínculo cruzando organizações", async () => {
+    const outro = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind) values ($1,'RLSTEST-outro','PRODUTO')
+       returning id`,
+      [ORG_OUTRA],
+    );
+
+    await expect(
+      client.query(
+        `insert into public.sku_listing_links (organization_id, ml_account_id, sku_id, ref_kind, item_id)
+         values ($1,$2,$3,'ITEM','MLB900000009')`,
+        [ORG_SB, CONTA, outro.rows[0]?.id],
+      ),
+    ).rejects.toThrow(/outra organizacao/);
+  });
+
+  it("ANALISTA sem permissão na conta não enxerga o vínculo", async () => {
+    const rows = await asUser(DE_OUTRA_ORG, "select id from public.sku_listing_links");
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("anon é recusado", async () => {
+    await expect(asAnon("select * from public.sku_listing_links")).rejects.toThrow(
+      /permission denied/i,
+    );
   });
 });

@@ -1,7 +1,7 @@
 # Integração Mercado Livre — Speed Bikers Gestão V3
 
 > Dono documental de: estratégia de sincronização, regras de integração e registro de endpoints.
-> Status: **estratégia aprovada. Endpoints e tópicos NÃO preenchidos.**
+> Status: **estratégia aprovada. Identificadores confirmados (secao 2.1). Tópicos de webhook, rate limit e autorização multi-conta ainda NÃO confirmados** — ver a lista da secao 1.
 
 ---
 
@@ -29,6 +29,7 @@ Precisa ser confirmado na documentação oficial **antes** da Fase 3:
 - [ ] Política de rate limit vigente: limites, janelas e cabeçalhos de resposta
 - [ ] Modelo de autorização multi-conta — **se a autorização centralizada pelo ADMIN é possível** (`docs/PROMPT_MASTER.md` §10)
 - [ ] Endpoints e paginação de pedidos
+- [x] Identificadores `MLB`, `variation_id` e `MLBU` — confirmados em 2026-08-20, ver secao 2.1
 - [ ] Endpoints e paginação de anúncios e variações
 - [ ] Endpoints de estoque Full
 - [ ] Endpoints de promoções e catálogo
@@ -46,7 +47,41 @@ A autorização centralizada é **restrição externa, não preferência de arqu
 
 | Recurso | Endpoint | Escopo | Paginação | Rate limit | Confirmado em |
 |---|---|---|---|---|---|
-| _(vazio — pendente de confirmação oficial)_ | | | | | |
+| Itens do vendedor | `/users/{user_id}/items/search` | privado | a confirmar | a confirmar | 2026-08-20 |
+| Item | `/items/{item_id}` | — | — | a confirmar | 2026-08-20 |
+| Filtro por user product | `/users/{seller_id}/items/search?user_product_id=MLBU1,MLBU2` | privado | — | — | 2026-08-20 |
+
+---
+
+## 2.1 Identificadores — CONFIRMADO na documentação oficial (2026-08-20)
+
+A hierarquia tem **três** identificadores distintos, e confundi-los produz vínculo errado:
+
+| Identificador | Formato | O que é |
+|---|---|---|
+| `item_id` | `MLB` + dígitos | O anúncio no marketplace |
+| `variation_id` | apenas dígitos | Variação dentro do anúncio |
+| `user_product_id` | `MLBU` + dígitos | Produto do catálogo **do vendedor**, que pode estar associado a **um ou mais** itens |
+
+Pontos que a documentação oficial estabelece e que valem para o nosso desenho:
+
+- Um `user_product` pode aparecer em **vários** itens, com preço ou parcelamento diferentes em cada um. Não é sinônimo de anúncio.
+- Para consultar estoque de um item é preciso obter o `user_product_id` pelo recurso `/items`; **se o item tiver variações, ele vive dentro do array `variations`**. Isso importa para o Full na Fase 4.
+- Cada `user_product` pertence a uma família (`family_id`), que agrupa vários UPs.
+
+### O que os dados reais mostraram
+
+A exportação do UpSeller **mistura `MLB` e `MLBU` na mesma coluna**. Medido nos 20.650 vínculos de Mercado Livre:
+
+| Forma | Vínculos | Interpretação |
+|---|---|---|
+| `MLB` + variação numérica | 13.299 | Anúncio com variação real |
+| `MLB` + variante repetindo o anúncio | 3.579 | Anúncio **sem** variação; o ERP repete o id |
+| `MLBU` + repetindo | 3.772 | Não é anúncio: é user product |
+
+Tratar as três formas como a mesma coisa produziria vínculo errado em **36% das linhas**. Por isso `sku_listing_links` tem `ref_kind` explícito e normaliza a variação repetida para `NULL`.
+
+Outros fatos medidos: um `MLB` chega a ter 8 ou mais variações (231 casos); **zero combinações ambíguas** em 20.650 vínculos, o que confirma que a chave única é compatível com a realidade; e o SKU declarado no anúncio difere do SKU interno em 463 linhas — guardado em `channel_sku` como pista de vinculação automática.
 
 ---
 
