@@ -12,6 +12,11 @@ set -euo pipefail
 PROJECT_ID="${PROJECT_ID:-speedbikers-gestao-v3}"
 REGION="${REGION:-southamerica-east1}"
 
+# Origens do `web` liberadas no CORS de /v1 da api. Allowlist explicita: o
+# upload da planilha sai do navegador direto para o Cloud Run, e e o CORS que
+# decide de onde ele pode sair. Varias origens separadas por virgula.
+WEB_ORIGINS="${WEB_ORIGINS:-https://speedbikers-gestao-v2-m71j.vercel.app}"
+
 # Service accounts. Uma identidade por responsabilidade — menor privilégio
 # possível, conforme docs/PROMPT_MASTER.md secao 31.
 #
