@@ -52,9 +52,14 @@ export function skuKey(sku: string): string {
  * abreviação de `PAR`.
  *
  * Sem normalizar, um filtro por unidade divide o mesmo grupo em três.
+ *
+ * `JOGO`/`JOGOS` e `CX` aparecem na exportação e NÃO são normalizados de
+ * propósito: um jogo e uma caixa são unidades de venda genuinamente distintas
+ * de `UN`. Fundir por parecerem próximas perderia informação real.
  */
 const UNIT_ALIASES: Readonly<Record<string, string>> = {
   UN: "UN",
+  UNI: "UN",
   UNID: "UN",
   UNIDADE: "UN",
   PC: "UN",

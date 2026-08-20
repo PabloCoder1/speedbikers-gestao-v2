@@ -47,6 +47,7 @@ describe("normalizeUnit", () => {
   it.each([
     ["UN", "UN"],
     ["UNID", "UN"],
+    ["UNI", "UN"],
     ["PC", "UN"],
     ["PECAS", "UN"],
     ["PAR", "PAR"],
@@ -58,6 +59,11 @@ describe("normalizeUnit", () => {
 
   it("unidade desconhecida sobe em caixa alta, sem inventar equivalência", () => {
     expect(normalizeUnit("caixa")).toBe("CAIXA");
+  });
+
+  it.each(["JOGOS", "CX"])("%s continua distinta: não é sinônimo de UN", (raw) => {
+    // Fundir por parecerem próximas perderia informação real de venda.
+    expect(normalizeUnit(raw)).not.toBe("UN");
   });
 
   it("vazio continua vazio", () => {

@@ -205,7 +205,11 @@ Ordem dentro da fase, do que não depende de nada para o que depende:
 4. **Vinculações** — `sku_listing_links` **concluído**, com os três índices parciais que resolvem a armadilha do `NULL` em `UNIQUE`. `listings` e `listing_variations` foram **adiados para a Fase 3**: não há fonte para eles até a sincronização existir, e o formato depende do que a API do ML devolve — criar agora seria adivinhar campo.
 5. **Importador do UpSeller** e **ETL de carga inicial da V2** (D-027) — **em andamento**.
    - ✅ `packages/domain` criado com os parsers puros do UpSeller: normalização de unidade, marca a partir de `Categorias`, código fiscal de origem, decimal com vírgula ou ponto, e a classificação `MLB` / `MLBU` / variação repetida.
-   - ⏳ Falta: tabelas de staging da importação, handler no worker, upload pelo bucket `erp-imports`, tela de conferência e o ETL da V2.
+   - ✅ Mapeadores de linha para os quatro arquivos, **por nome de coluna, nunca por posição**: se o UpSeller inserir uma coluna, o mapeamento posicional deslocaria tudo em silêncio.
+   - ✅ **Validado contra os arquivos reais**, não só contra fixture: 3.415 produtos, 272 componentes, 23.924 vínculos e 3.372 saldos processados com **zero linhas inválidas**. Todos os números conferem com a análise independente feita em Python.
+   - ⏳ Falta: tabelas de staging, handler no worker, upload pelo bucket `erp-imports`, tela de conferência e o ETL da V2.
+
+**Números conferidos na validação ponta a ponta:** 20.650 vínculos de ML (13.299 com variação, 3.579 sem, 3.772 user products) e 3.274 descartados por decisão (D-037); 4 contas derivadas — `ml-speedbikers-loja-1`, `ml-speedbikers-loja-2`, `ml-sbmotos`, `ml-gmr`; 138 kits; 184 produtos descontinuados; 296 importados; 64 categorias reduzidas a **19 marcas**.
 
 **Regra desta fase:** toda tabela nasce com RLS habilitada, GRANT mínimo explícito e **teste negativo** provando que quem não tem permissão não lê. Ver `docs/DATABASE.md` secao 5 e `docs/TESTING.md`.
 
