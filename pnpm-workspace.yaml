@@ -9,3 +9,7 @@ allowBuilds:
   # Bundler por trás do Vitest e do tsx. O postinstall instala o binário nativo
   # da plataforma; sem ele, nem teste nem dev server sobem.
   esbuild: true
+  # Dependência dos clientes oficiais do Google Cloud (@google-cloud/tasks).
+  # O postinstall gera o código estático dos protobufs; sem ele o cliente não
+  # carrega. Biblioteca do próprio ecossistema gRPC, amplamente usada.
+  protobufjs: true

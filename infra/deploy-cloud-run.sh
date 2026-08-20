@@ -18,6 +18,10 @@ if [ -n "$(git status --porcelain)" ]; then
   TAG="${TAG}-dirty"
 fi
 
+service_url() {
+  gc run services describe "$1" --region "${REGION}" --format='value(status.url)' 2>/dev/null || true
+}
+
 build_and_deploy() {
   local app="$1"
   local image="${REGISTRY}/${app}:${TAG}"
@@ -32,6 +36,13 @@ build_and_deploy() {
   step "Deploy: ${app}"
 
   if [ "${app}" = "api" ]; then
+    # A api precisa conhecer a própria URL (audience do OIDC) e a do worker.
+    # Ambas são estáveis por serviço; na primeira criação a de si mesma ainda
+    # não existe, então o deploy roda em duas fases.
+    local api_url worker_url
+    api_url="$(service_url api)"
+    worker_url="$(service_url worker)"
+
     # A `api` é superfície pública: o webhook do Mercado Livre precisa alcançá-la
     # e não envia credencial do Google. A autenticação é própria da rota
     # (docs/API.md secao 2).

@@ -14,6 +14,23 @@ export const envSchema = z.object({
 
   /** O Cloud Run injeta `PORT`; localmente cai no padrão. */
   PORT: z.coerce.number().int().min(1).max(65_535).default(8080),
+
+  // Cloud Tasks. Nenhuma destas é segredo — são identificadores de recurso —
+  // por isso ficam em variável de ambiente e não no Secret Manager.
+  GCP_PROJECT_ID: z.string().min(1),
+  GCP_REGION: z.string().min(1),
+
+  /** URL base do serviço worker. É também a audience do token OIDC. */
+  WORKER_URL: z.url(),
+
+  /** Identidade que o Cloud Tasks assume para invocar o worker (D-024). */
+  TASKS_INVOKER_SERVICE_ACCOUNT: z.email(),
+
+  /** URL pública desta api. É a audience esperada nos tokens OIDC recebidos. */
+  API_URL: z.url(),
+
+  /** Identidade autorizada a chamar as rotas `/internal/` desta api. */
+  SCHEDULER_INVOKER_SERVICE_ACCOUNT: z.email(),
 });
 
 export type Env = z.infer<typeof envSchema>;
