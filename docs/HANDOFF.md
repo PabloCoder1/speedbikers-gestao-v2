@@ -167,6 +167,24 @@ Provisionado: filas `analytics-recompute` (10/s, 20), `backfill` (1/s, 2) e `mai
 
 `packages/domain`, `mercado-livre` e `ui` não entram na Fase 1: só ganham conteúdo quando houver domínio, e criar package vazio contraria a regra de só promover a package o que dois apps importam.
 
+## Fase 2 em andamento
+
+**Concluído:**
+
+- **Identidade**: `organizations`, `profiles`, `organization_members` com papéis ADMIN/GESTOR/ANALISTA/OPERADOR/VISUALIZADOR. Aplicada no Dev pela CI.
+- **Helpers de RLS** em schema `private` (`current_org_id`, `is_member_of`, `has_role`, `shares_org_with`), todos `stable` + `security definer` + `search_path = ''`. As três marcações são deliberadas — ver o comentário na migration.
+- **Perfil criado automaticamente** por trigger em `auth.users`.
+- **14 testes de integração de RLS** contra Postgres real, cobrindo isolamento entre organizações, negativa para `anon`, concessão de papel restrita a ADMIN da própria organização, e edição de perfil limitada ao dono.
+- **CI sobe um Postgres real** e roda esses testes; o passo de migration no Dev depende deles.
+- Linter de segurança do Supabase rodado: um WARN de `search_path` mutável corrigido por migration nova (a original já estava no Dev).
+
+**Armadilhas já pagas, não repetir:**
+
+- `SET LOCAL` fora de transação é descartado em silêncio. Um teste de RLS escrito assim mede nada e passa — a primeira verificação manual reportou "todos veem tudo" por isso.
+- Helper de RLS que lê a própria tabela protegida **precisa** de `security definer`, senão a policy chama o helper que consulta a tabela que aplica a policy: recursão infinita.
+- `stable` em helper de RLS é decisão de performance: sem ela, a função é avaliada **por linha** em vez de por statement.
+- Falha de `supabase db push` com apenas "Connecting to remote database..." e exit 1 foi **transitória**. O passo já roda com `--debug 2>&1` para que a próxima traga a mensagem real.
+
 ## Próximo passo
 
 **Fase 2 — Core de dados.** Identidade, contas e catálogo, com RLS desde a primeira tabela.
