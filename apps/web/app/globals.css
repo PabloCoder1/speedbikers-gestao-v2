@@ -30,6 +30,13 @@
   --sb-space-5: 2.5rem;
 
   --sb-radius: 0.5rem;
+
+  /* Tons de texto para os estados do painel.
+     O accent oficial (#F8E523) é ilegível sobre branco — a D-007 diz para não
+     usar todas as cores com o mesmo peso, então o amarelo fica reservado a
+     destaque de fundo, e o texto usa uma variante escurecida. */
+  --sb-accent-ink: #8a7a00;
+  --sb-muted-ink: #7c7590;
 }
 
 *,
