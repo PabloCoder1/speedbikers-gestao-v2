@@ -119,6 +119,14 @@ infra/
 
 Projeto de desenvolvimento: **`speedbikers-gestao-v3`**, região `southamerica-east1`.
 
+### Vercel: `ignoreCommand` fica no repositório, não no dashboard
+
+`apps/web/vercel.json` define `"ignoreCommand": "exit 1"` — na Vercel a lógica é invertida: **saída 1 constrói, saída 0 pula**.
+
+Está versionado de propósito. Um *Ignored Build Step* configurado só no dashboard é invisível para quem lê o repositório e **cancela deploys em silêncio** — foi exatamente o que aconteceu em 2026-08-20, quando o comando destinado ao projeto antigo da V2 foi colado no projeto da V3 e cancelou cinco deploys seguidos sem nenhum sinal no código.
+
+O `vercel.json` sobrescreve a configuração do dashboard, então a regra passa a viver junto do código que ela afeta.
+
 Os scripts chamam `gcloud.cmd` no Windows — o wrapper `.ps1` esbarra na política de execução do PowerShell. Rodar pelo Git Bash.
 
 **Nenhum script define projeto padrão global no gcloud.** O projeto é sempre explícito, porque a mesma conta administra outros projetos e um padrão global erra silenciosamente.
