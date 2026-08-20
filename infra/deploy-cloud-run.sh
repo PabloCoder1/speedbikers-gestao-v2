@@ -95,6 +95,7 @@ YAML
       --timeout 60s \
       --cpu 1 --memory 512Mi \
       --env-vars-file "${env_file}" \
+      --set-secrets "SUPABASE_SERVICE_ROLE_KEY=${SECRET_SUPABASE_KEY}:latest" \
       --quiet
   else
     # O worker NÃO tem rota pública. Só o Cloud Tasks o invoca, com OIDC (D-024).
