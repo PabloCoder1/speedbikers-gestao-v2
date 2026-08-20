@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# Constrói e publica `apps/api` e `apps/worker` no Cloud Run.
+#
+# A imagem é construída pelo Cloud Build, não na máquina local: o build roda em
+# 4 vCPU na nuvem em vez de disputar os 3 GB do WSL.
+#
+# Uso:  bash infra/deploy-cloud-run.sh          # api e worker
+#       bash infra/deploy-cloud-run.sh api      # só um serviço
+
+source "$(dirname "$0")/lib.sh"
+
+REPO="speedbikers-v3"
+REGISTRY="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}"
+
+# Tag pelo commit: dá para responder "qual código está no ar" sem adivinhar.
+TAG="$(git rev-parse --short HEAD)"
+if [ -n "$(git status --porcelain)" ]; then
+  TAG="${TAG}-dirty"
+fi
+
+build_and_deploy() {
+  local app="$1"
+  local image="${REGISTRY}/${app}:${TAG}"
+
+  step "Build da imagem: ${app}"
+  info "${image}"
+  gc builds submit \
+    --config infra/cloudbuild.yaml \
+    --substitutions "_APP=${app},_IMAGE=${image}" \
+    .
+
+  step "Deploy: ${app}"
+
+  if [ "${app}" = "api" ]; then
+    # A `api` é superfície pública: o webhook do Mercado Livre precisa alcançá-la
+    # e não envia credencial do Google. A autenticação é própria da rota
+    # (docs/API.md secao 2).
+    #
+    # min-instances=1 não é otimização prematura: cold start atrasa o ACK do
+    # webhook e provoca reentrega.
+    gc run deploy "${app}" \
+      --image "${image}" \
+      --region "${REGION}" \
+      --service-account "$(sa_email "${SA_API}")" \
+      --allow-unauthenticated \
+      --min-instances 1 \
+      --max-instances 10 \
+      --concurrency 80 \
+      --timeout 60s \
+      --cpu 1 --memory 512Mi \
+      --set-env-vars "NODE_ENV=production" \
+      --quiet
+  else
+    # O worker NÃO tem rota pública. Só o Cloud Tasks o invoca, com OIDC (D-024).
+    # Timeout longo e concorrência baixa: perfil oposto ao da api, que é a razão
+    # de serem dois serviços (D-013).
+    gc run deploy "${app}" \
+      --image "${image}" \
+      --region "${REGION}" \
+      --service-account "$(sa_email "${SA_WORKER}")" \
+      --no-allow-unauthenticated \
+      --min-instances 0 \
+      --max-instances 5 \
+      --concurrency 4 \
+      --timeout 900s \
+      --cpu 1 --memory 512Mi \
+      --set-env-vars "NODE_ENV=production" \
+      --quiet
+  fi
+
+  local url
+  url="$(gc run services describe "${app}" --region "${REGION}" --format='value(status.url)')"
+  ok "${app}: ${url}"
+}
+
+step "Pré-condições"
+require_auth
+require_project
+info "registry: ${REGISTRY}"
+info "tag: ${TAG}"
+
+if [ -n "$(git status --porcelain)" ]; then
+  info "AVISO: árvore de trabalho suja; a tag recebe o sufixo -dirty"
+fi
+
+if [ "$#" -gt 0 ]; then
+  build_and_deploy "$1"
+else
+  build_and_deploy api
+  build_and_deploy worker
+fi
+
+step "Permissão de invocação do worker"
+# Menor privilégio: só o Cloud Tasks invoca o worker, e a permissão é dada no
+# serviço, não no projeto.
+if gc run services describe worker --region "${REGION}" >/dev/null 2>&1; then
+  binding="$(gc run services add-iam-policy-binding worker \
+    --region "${REGION}" \
+    --member "serviceAccount:$(sa_email "${SA_TASKS}")" \
+    --role roles/run.invoker 2>&1)" || {
+    printf '%s\n' "${binding}" >&2
+    fail "Falha ao conceder run.invoker no worker. Mensagem do gcloud acima."
+  }
+  ok "worker: run.invoker -> ${SA_TASKS}"
+fi
+
+step "Concluído"
+gc run services list --region "${REGION}" \
+  --format="table(metadata.name,status.url,status.conditions[0].status)"

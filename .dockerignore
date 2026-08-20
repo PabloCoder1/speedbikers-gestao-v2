@@ -1,0 +1,35 @@
+# O contexto de build é a raiz do repositório. Tudo que não for necessário
+# encarece o upload para o Cloud Build e o tempo de build.
+
+node_modules
+**/node_modules
+
+# Artefatos: são reconstruídos dentro da imagem.
+dist
+**/dist
+.next
+**/.next
+.turbo
+**/.turbo
+*.tsbuildinfo
+
+# Nunca entram na imagem.
+.env
+.env.*
+!.env.example
+
+.git
+.github
+.vercel
+
+# Não fazem parte do runtime dos serviços.
+#
+# `apps/web` NÃO entra nesta lista de propósito: o lockfile declara todos os
+# projetos do workspace, e `pnpm install --frozen-lockfile` falha se um deles
+# não existir no contexto. O custo de mantê-lo são alguns kilobytes.
+docs
+infra
+supabase
+coverage
+**/coverage
+*.log

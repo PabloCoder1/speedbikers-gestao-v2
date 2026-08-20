@@ -1,0 +1,24 @@
+# Build da imagem de um serviço a partir da raiz do repositório.
+#
+# O contexto precisa ser a raiz porque o pnpm resolve `workspace:*` olhando o
+# workspace inteiro. Ver o Dockerfile.
+#
+# Uso (via infra/deploy-cloud-run.sh):
+#   gcloud builds submit --config infra/cloudbuild.yaml \
+#     --substitutions=_APP=api,_IMAGE=<imagem>:<tag>
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --build-arg
+      - APP=${_APP}
+      - --tag
+      - ${_IMAGE}
+      - .
+
+images:
+  - ${_IMAGE}
+
+options:
+  logging: CLOUD_LOGGING_ONLY
