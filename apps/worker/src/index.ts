@@ -4,6 +4,7 @@ import { createLogger } from "@sb/observability";
 
 import { createWorkerApp } from "./app.js";
 import { loadEnv } from "./env.js";
+import { createErpImportApplyHandler } from "./handlers/erp-import-apply.js";
 import { createErpImportParseHandler } from "./handlers/erp-import-parse.js";
 import { withHandlers } from "./router.js";
 import { createSheetReader } from "./sheet-reader.js";
@@ -24,6 +25,7 @@ const app = createWorkerApp({
       db,
       reader: createSheetReader(env.ERP_IMPORTS_BUCKET),
     }),
+    "erp.import.apply": createErpImportApplyHandler({ db }),
   }),
 });
 

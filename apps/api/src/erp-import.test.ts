@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { Caller } from "./auth.js";
 import type { ImportDeps } from "./erp-import.js";
-import { isImportKind, MAX_UPLOAD_BYTES, receiveUpload } from "./erp-import.js";
+import { confirmApply, isImportKind, MAX_UPLOAD_BYTES, receiveUpload } from "./erp-import.js";
 
 const CALLER: Caller = {
   userId: "aaaaaaaa-0000-4000-8000-000000000001",
@@ -220,5 +220,131 @@ describe("receiveUpload", () => {
     expect(ctx.inserted).toHaveBeenCalledWith(
       expect.objectContaining({ uploaded_by: CALLER.userId, kind: "PRODUCTS" }),
     );
+  });
+});
+
+/**
+ * Banco falso para `confirmApply`: só a cadeia `select().eq().eq().maybeSingle()`
+ * e `update().eq().eq()`, que é o que o comando usa.
+ */
+function applyDb(options: { status?: string; missing?: boolean; updateFails?: boolean }): {
+  db: ImportDeps["db"];
+  updates: Record<string, unknown>[];
+} {
+  const updates: Record<string, unknown>[] = [];
+
+  const db = {
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          eq: () => ({
+            maybeSingle: () =>
+              Promise.resolve({
+                data: options.missing === true ? null : { id: "batch-1", status: options.status ?? "PARSED" },
+                error: null,
+              }),
+          }),
+        }),
+      }),
+      update: (values: Record<string, unknown>) => {
+        updates.push(values);
+
+        return {
+          eq: () => ({
+            eq: () =>
+              Promise.resolve(
+                options.updateFails === true ? { error: { message: "boom" } } : { error: null },
+              ),
+          }),
+        };
+      },
+    }),
+  } as unknown as ImportDeps["db"];
+
+  return { db, updates };
+}
+
+function applyDeps(
+  options: { status?: string; missing?: boolean; updateFails?: boolean } = {},
+): { deps: ImportDeps; enqueued: { dedupeKey: string; jobType: string }[]; updates: Record<string, unknown>[] } {
+  const { db, updates } = applyDb(options);
+  const enqueued: { dedupeKey: string; jobType: string }[] = [];
+
+  return {
+    updates,
+    enqueued,
+    deps: {
+      db,
+      logger: createLogger({}, { sink: () => undefined }),
+      store: { upload: () => Promise.resolve() },
+      enqueuer: {
+        enqueue: (request) => {
+          enqueued.push({ dedupeKey: request.dedupeKey, jobType: request.jobType });
+
+          return Promise.resolve({
+            taskName: "t",
+            deduplicated: false,
+            envelope: {
+              jobType: request.jobType,
+              jobId: "6f1d5f9c-6d0b-4a5f-9f4a-2c9a7a1f0b11",
+              organizationId: request.organizationId,
+              dedupeKey: request.dedupeKey,
+              attempt: 1,
+              enqueuedAt: "2026-08-20T12:00:00.000Z",
+            },
+          });
+        },
+      },
+    },
+  };
+}
+
+describe("confirmApply", () => {
+  it("confirma um lote PARSED: marca APPLYING, grava quem confirmou e enfileira", async () => {
+    const ctx = applyDeps();
+
+    const outcome = await confirmApply(ctx.deps, CALLER, "batch-1");
+
+    expect(outcome).toEqual({ status: "queued", batchId: "batch-1" });
+    expect(ctx.updates).toEqual([{ status: "APPLYING", applied_by: CALLER.userId }]);
+    expect(ctx.enqueued).toEqual([
+      { jobType: "erp.import.apply", dedupeKey: "erp-apply:batch-1" },
+    ]);
+  });
+
+  it("lote inexistente ou de outra organização não é confirmado", async () => {
+    const ctx = applyDeps({ missing: true });
+
+    const outcome = await confirmApply(ctx.deps, CALLER, "batch-1");
+
+    expect(outcome).toEqual({ status: "not_found" });
+    expect(ctx.enqueued).toHaveLength(0);
+  });
+
+  it("lote que não está PARSED é recusado — evita reiniciar aplicação em curso", async () => {
+    const ctx = applyDeps({ status: "APPLYING" });
+
+    const outcome = await confirmApply(ctx.deps, CALLER, "batch-1");
+
+    expect(outcome).toMatchObject({ status: "rejected" });
+    expect(ctx.enqueued).toHaveLength(0);
+  });
+
+  it("lote já aplicado é recusado — reconfirmar não reabre o que terminou", async () => {
+    const ctx = applyDeps({ status: "APPLIED" });
+
+    const outcome = await confirmApply(ctx.deps, CALLER, "batch-1");
+
+    expect(outcome).toMatchObject({ status: "rejected" });
+    expect(ctx.enqueued).toHaveLength(0);
+  });
+
+  it("falha ao gravar a confirmação não enfileira a aplicação", async () => {
+    const ctx = applyDeps({ updateFails: true });
+
+    const outcome = await confirmApply(ctx.deps, CALLER, "batch-1");
+
+    expect(outcome).toMatchObject({ status: "rejected" });
+    expect(ctx.enqueued).toHaveLength(0);
   });
 });

@@ -44,6 +44,7 @@ Todas as rotas são versionadas sob `/v1`, exceto webhook e callback do OAuth, c
 | `/v1/ml-accounts/connect` | POST | ADMIN | Inicia autorização de conta |
 | `/v1/sync/run` | POST | GESTOR | Dispara sincronização manual — **enfileira e responde** |
 | `/v1/erp-imports` | POST | GESTOR | Recebe o arquivo do UpSeller, guarda no bucket, registra o lote e **enfileira** o parse |
+| `/v1/erp-imports/:id/apply` | POST | GESTOR | Confirmação humana da conferência: move o lote `PARSED` para `APPLYING`, grava quem confirmou e **enfileira** a aplicação |
 | `/v1/documents/nfe/preview` | POST | OPERADOR | Parse do XML, sem movimentar estoque |
 | `/v1/documents/nfe/commit` | POST | OPERADOR | Confirma a conferência e gera movimentos |
 | `/v1/purchase-orders/:id/approve` | POST | GESTOR | Transição de ciclo |
@@ -89,6 +90,8 @@ Payloads tipados em `@sb/contracts/jobs`. Todo handler é **idempotente**.
 | `backfill.orders` | `backfill` | `backfill-orders:{conta}:{checkpoint}` |
 | `maintenance.reconcile-balances` | `maintenance` | `reconcile:{data}` |
 | `actions.measure-outcome` | `maintenance` | `outcome:{decision_id}:{offset}` |
+| `erp.import.parse` | `maintenance` | `erp-parse:{batch_id}` |
+| `erp.import.apply` | `maintenance` | `erp-apply:{batch_id}` |
 
 **O nome da task é o mecanismo de dedupe** e é o que faz a chave suja funcionar: cem vendas do mesmo SKU no mesmo dia produzem um recálculo.
 
@@ -179,4 +182,4 @@ Classificação para retry, aplicada pelo cliente do Mercado Livre e pelos handl
 - Rotas de visitas, conversão e Ads entram na Fase 5B (D-032).
 - Payloads exatos do Mercado Livre dependem da confirmação da documentação oficial — ver `docs/MERCADO_LIVRE.md`.
 - Exportação de pedido de compra: **Excel é o formato principal**, PDF secundário, XML adiado (D-034). Modelos a solicitar antes da Fase 4.
-- Rota de importação de planilha do UpSeller e de conciliação de estoque (D-028, D-029) a detalhar na Fase 2.
+- Rotas de importação do UpSeller (upload e aplicação) detalhadas. A conciliação contra `inventory_balances` (D-029) fica para a Fase 4 — o ledger ainda não existe.

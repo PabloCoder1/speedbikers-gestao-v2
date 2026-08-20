@@ -38,3 +38,4 @@ export type {
   UpsellerProduct,
   UpsellerStock,
 } from "./rows.js";
+export * from "./apply.js";

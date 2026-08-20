@@ -6,8 +6,9 @@ import { AutoRefresh } from "../../../components/auto-refresh";
 import { Shell } from "../../../components/shell";
 import { StatusPill } from "../../../components/status-pill";
 import { formatCount, formatDateTime } from "../../../lib/format";
-import { batchStatusLabel, kindLabel, rowStatusLabel } from "../../../lib/labels";
+import { applyStatusLabel, batchStatusLabel, kindLabel, rowStatusLabel } from "../../../lib/labels";
 import { createClient } from "../../../lib/supabase/server";
+import { ConfirmApplyForm } from "./confirm-apply-form";
 import { summarize } from "./summarize";
 
 export const dynamic = "force-dynamic";
@@ -77,7 +78,7 @@ export default async function ConferenciaPage({
   const batch = await supabase
     .from("erp_import_batches")
     .select(
-      "id, kind, status, file_name, total_rows, ok_rows, skipped_rows, invalid_rows, parsed_at, last_error",
+      "id, kind, status, file_name, total_rows, ok_rows, skipped_rows, invalid_rows, applied_rows, unresolved_rows, parsed_at, last_error",
     )
     .eq("id", id)
     .maybeSingle();
@@ -97,7 +98,7 @@ export default async function ConferenciaPage({
 
   let rowsQuery = supabase
     .from("erp_import_rows")
-    .select("row_number, status, reason, sku_key, payload", { count: "exact" })
+    .select("row_number, status, reason, sku_key, payload, apply_status, apply_reason", { count: "exact" })
     .eq("batch_id", id);
 
   if (filter !== "all") {
@@ -154,6 +155,12 @@ export default async function ConferenciaPage({
         <Stat label="Ignoradas" value={formatCount(info.skipped_rows)} />
         <Stat label="Inválidas" value={formatCount(info.invalid_rows)} />
         <Stat label="Lido em" value={formatDateTime(info.parsed_at)} />
+        {(info.status === "APPLYING" || info.status === "APPLIED") && (
+          <>
+            <Stat label="Aplicadas" value={formatCount(info.applied_rows)} />
+            <Stat label="Pendentes" value={formatCount(info.unresolved_rows)} />
+          </>
+        )}
       </div>
 
       {info.last_error !== null && (
@@ -161,6 +168,8 @@ export default async function ConferenciaPage({
           {info.last_error}
         </p>
       )}
+
+      {info.status === "PARSED" && <ConfirmApplyForm batchId={info.id} />}
 
       <div style={{ display: "flex", gap: "var(--sb-space-2)", marginBottom: "var(--sb-space-3)" }}>
         {FILTERS.map((option) => (
@@ -201,6 +210,7 @@ export default async function ConferenciaPage({
                 <th style={{ ...th, width: "7rem" }}>Estado</th>
                 <th style={th}>SKU</th>
                 <th style={th}>Conteúdo lido</th>
+                {info.status === "APPLIED" && <th style={{ ...th, width: "9rem" }}>Aplicação</th>}
               </tr>
             </thead>
 
@@ -222,6 +232,20 @@ export default async function ConferenciaPage({
                   >
                     {row.reason ?? summarize(info.kind, row.payload)}
                   </td>
+                  {info.status === "APPLIED" && (
+                    <td style={td}>
+                      {row.apply_status === null ? (
+                        "—"
+                      ) : (
+                        <StatusPill code={row.apply_status} label={applyStatusLabel(row.apply_status)} />
+                      )}
+                      {row.apply_reason !== null && (
+                        <div style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)", marginTop: "0.125rem" }}>
+                          {row.apply_reason}
+                        </div>
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

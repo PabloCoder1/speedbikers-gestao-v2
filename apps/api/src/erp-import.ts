@@ -147,3 +147,68 @@ export async function receiveUpload(
 
   return { status: "created", batchId, contentHash };
 }
+
+/**
+ * Confirmação humana: move o lote conferido para aplicação.
+ *
+ * Quinta peça do fluxo — `upload -> parse -> conferência -> CONFIRMAÇÃO ->
+ * aplicação`. É um comando, não um `UPDATE` direto do navegador: a transição
+ * de status fica num lugar só, com validação (docs/DATABASE.md secao 4).
+ *
+ * `applied_by` é gravado AQUI, não no worker: é o momento em que um humano
+ * decidiu. A constraint `erp_import_batches_applied_coherent` exige que ele já
+ * esteja preenchido quando o worker marcar o lote como `APPLIED`.
+ */
+
+export type ConfirmApplyOutcome =
+  | { status: "queued"; batchId: string }
+  | { status: "not_found" }
+  | { status: "rejected"; reason: string };
+
+export async function confirmApply(
+  deps: ImportDeps,
+  caller: Caller,
+  batchId: string,
+): Promise<ConfirmApplyOutcome> {
+  const batch = await deps.db
+    .from("erp_import_batches")
+    .select("id, status")
+    .eq("id", batchId)
+    .eq("organization_id", caller.organizationId)
+    .maybeSingle();
+
+  if (batch.error !== null || batch.data === null) {
+    return { status: "not_found" };
+  }
+
+  if (batch.data.status !== "PARSED") {
+    // `APPLYING`/`APPLIED` reentregues aqui reiniciariam uma aplicação em
+    // curso ou já concluída; os demais estados não têm conferência pronta.
+    return { status: "rejected", reason: `lote em ${batch.data.status}, não está pronto para aplicação` };
+  }
+
+  const updated = await deps.db
+    .from("erp_import_batches")
+    .update({ status: "APPLYING", applied_by: caller.userId })
+    .eq("id", batchId)
+    .eq("status", "PARSED");
+
+  if (updated.error !== null) {
+    deps.logger.error("erp_apply_not_confirmed", { batch_id: batchId, reason: updated.error.message });
+
+    return { status: "rejected", reason: "não foi possível confirmar a aplicação" };
+  }
+
+  await deps.enqueuer.enqueue({
+    jobType: "erp.import.apply",
+    organizationId: caller.organizationId,
+    // Uma aplicação por lote. Reconfirmar não duplica trabalho.
+    dedupeKey: `erp-apply:${batchId}`,
+    queue: "maintenance",
+    payload: { batchId },
+  });
+
+  deps.logger.info("erp_apply_confirmed", { batch_id: batchId, confirmed_by: caller.userId });
+
+  return { status: "queued", batchId };
+}

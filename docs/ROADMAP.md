@@ -54,13 +54,13 @@ Cada fase só é considerada concluída sob a Definition of Done do `docs/PROMPT
 
 **Objetivo:** identidade, contas e o esqueleto do catálogo, com RLS desde a primeira tabela.
 
-- [ ] Organizações, perfis, papéis e `user_account_permissions`
-- [ ] Helpers de RLS `STABLE` e policies com teste negativo obrigatório
-- [ ] Contas Mercado Livre, credenciais cifradas e estados de OAuth
-- [ ] SKUs, componentes de kit, marcas e fornecedores
-- [ ] Anúncios, variações e `sku_listing_links` com UNIQUE parcial para `variation_id` nulo
+- [x] Organizações, perfis, papéis e `user_account_permissions`
+- [x] Helpers de RLS `STABLE` e policies com teste negativo obrigatório
+- [x] Contas Mercado Livre, credenciais cifradas e estados de OAuth
+- [x] SKUs e componentes de kit (fornecedores adiados para a Fase 4 — a exportação do UpSeller não traz esse dado)
+- [x] `sku_listing_links` com UNIQUE parcial para `variation_id` nulo. Anúncios/variações (`listings`) ficam para a Fase 3
 - [ ] Central de Vinculações: candidatos, resolução por match exato, confirmação humana
-- [ ] Importador de planilhas do UpSeller: batches, linhas, promoção em chunks, catálogo e kits (D-028)
+- [x] Importador de planilhas do UpSeller: upload, parse, conferência, confirmação e aplicação — catálogo, kits, vínculos e saldo (D-028)
 - [ ] ETL de carga inicial a partir da V2: vínculos, estoque, NF-e e compras (D-027)
 - [ ] `sync_runs`, `sync_errors` e freshness por conta
 

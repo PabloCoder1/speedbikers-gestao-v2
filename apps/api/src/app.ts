@@ -7,7 +7,7 @@ import { cors } from "hono/cors";
 import type { Authenticator } from "./auth.js";
 import type { Enqueuer } from "./enqueue.js";
 import type { ImportDeps } from "./erp-import.js";
-import { isImportKind, receiveUpload } from "./erp-import.js";
+import { confirmApply, isImportKind, receiveUpload } from "./erp-import.js";
 import type { OidcVerifier } from "./oidc.js";
 
 /**
@@ -205,6 +205,49 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       { batchId: outcome.batchId, contentHash: outcome.contentHash, duplicate: outcome.status === "duplicate" },
       outcome.status === "created" ? 201 : 200,
     );
+  });
+
+  // --------------------------------------------------------------------
+  // Importação do UpSeller — confirmação humana da aplicação.
+  //
+  // Comando privilegiado: move o lote para APPLYING e ENFILEIRA a aplicação.
+  // Escrever em domínio a partir de 23.924 linhas é trabalho do worker; a
+  // `api` nunca faz trabalho longo inline (docs/ARCHITECTURE.md secao 5).
+  // --------------------------------------------------------------------
+  app.post("/v1/erp-imports/:id/apply", async (context) => {
+    const auth = dependencies.auth;
+    const importDeps = dependencies.importDeps;
+
+    if (auth === undefined || importDeps === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    // Mesmo papel mínimo do upload: aplicação reescreve o catálogo inteiro.
+    const authorized = await auth.authenticate(context.req.header("authorization"), [
+      "ADMIN",
+      "GESTOR",
+    ]);
+
+    if (!authorized.ok) {
+      dependencies.logger.warn("erp_apply_unauthorized", {
+        request_id: context.get("requestId"),
+        reason: authorized.reason,
+      });
+
+      return context.json({ error: { code: "unauthorized" } }, authorized.status);
+    }
+
+    const outcome = await confirmApply(importDeps, authorized.caller, context.req.param("id"));
+
+    if (outcome.status === "not_found") {
+      return context.json({ error: { code: "not_found" } }, 404);
+    }
+
+    if (outcome.status === "rejected") {
+      return context.json({ error: { code: "rejected", message: outcome.reason } }, 409);
+    }
+
+    return context.json({ batchId: outcome.batchId, queued: true });
   });
 
   app.notFound((context) => {

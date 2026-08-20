@@ -1,6 +1,6 @@
 # Handoff V3
 
-> Última atualização: 2026-08-20 — **Fase 1 concluída**: corrente completa até o Postgres, verificada em produção.
+> Última atualização: 2026-08-20 — **Fase 1 concluída**; na Fase 2, o importador do UpSeller está completo ponta a ponta (upload → parse → conferência → confirmação → aplicação), pendente apenas de commit/push.
 
 ## Estado atual
 
@@ -198,17 +198,19 @@ Provisionado: filas `analytics-recompute` (10/s, 20), `backfill` (1/s, 2) e `mai
 - `String(value)` sobre célula de planilha transforma objeto em `[object Object]` — texto que parece dado válido e não é. `cell()` trata string, número, booleano e `Date` explicitamente e devolve `null` para o resto.
 - O `slug` de `ml_accounts` nomeia a fila `ml-sync-<slug>` do Cloud Tasks (D-036). A constraint restringe o charset ao que o Cloud Tasks aceita — descobrir isso na hora de provisionar sairia caro.
 - Falha de `supabase db push` com apenas "Connecting to remote database..." e exit 1 foi **transitória**. O passo já roda com `--debug 2>&1` para que a próxima traga a mensagem real.
+- **`ON CONFLICT` não enxerga índice único parcial sem repetir o `WHERE` do índice** — e o PostgREST/`supabase-js` não expõe esse `WHERE` no `upsert()`. `sku_listing_links` tem três índices únicos parciais (a pegadinha do `variation_id` nulo, `docs/DATABASE.md` secao 4); um `upsert` comum contra eles falharia com "no unique or exclusion constraint matching". O comando de aplicação resolve por fora: `select` pela chave natural primeiro, depois `insert` (novo) ou `update` por `id` (existente) — nunca `upsert` direto nessa tabela. Verificado contra Postgres local: reaplicar o mesmo lote de vínculos duas vezes não duplica.
 
 ## Próximo passo
 
 **Fase 2 — Core de dados.** Identidade, contas e catálogo, com RLS desde a primeira tabela.
 
-**A fazer agora, nesta ordem:**
+**Concluído nesta sessão:** o comando de aplicação (upload → parse → conferência → confirmação → **aplicação**, ponta a ponta). O único item que falta para fechar a frente do importador é:
 
-1. **Comando de aplicação** — transforma o lote conferido em catálogo, vínculo e saldo. É o primeiro código que **escreve em domínio**; até aqui tudo era staging.
-2. **ETL de carga inicial da V2** (D-027).
+1. **ETL de carga inicial da V2** (D-027) — vínculos, estoque, NF-e e compras que não existem em nenhuma outra fonte.
 
-**Já no ar em Dev:** `api` publicada com a rota de importação e o CORS ativo. Verificado por `curl`: origem da Vercel recebe `access-control-allow-origin`, origem de terceiro não recebe nada, `/v1/erp-imports` sem token responde 401.
+**Ainda não commitado nesta máquina:** migration `20260820220000_erp_import_apply.sql`, os tipos regenerados de `packages/db/src/types.ts`, o comando de aplicação (`packages/domain/src/upseller/apply.ts` + `apps/worker/src/handlers/erp-import-apply.ts`), a rota `POST /v1/erp-imports/:id/apply` e o botão de confirmação no `web`. Migration já aplicada e testada localmente (integração de RLS verde, 60 testes) e via script pontual contra Postgres real — falta o commit e o push para a CI aplicar em Dev.
+
+**Já no ar em Dev:** `api` publicada com a rota de importação e o CORS ativo. Verificado por `curl`: origem da Vercel recebe `access-control-allow-origin`, origem de terceiro não recebe nada, `/v1/erp-imports` sem token responde 401. A rota de aplicação (`/v1/erp-imports/:id/apply`) ainda não foi publicada — entra no próximo deploy.
 
 **Falta configurar (manual, precisa do painel):**
 
@@ -236,7 +238,15 @@ Ordem dentro da fase, do que não depende de nada para o que depende:
    - ✅ **Bootstrap do primeiro acesso**: migration com a organização Speed Bikers (UUID fixo) e `packages/db/src/bin/grant-role.ts` para conceder o primeiro papel. Ver `docs/DEPLOYMENT.md` secao 10.
    - ✅ **Tela de upload**: escolhe o tipo, envia direto do navegador para a `api` (CORS restrito a `/v1/*`, allowlist explícita), e leva para a conferência — inclusive quando o arquivo já tinha sido enviado antes, que é o caso mais útil de abrir.
    - ✅ **Atualização automática** enquanto o lote está sendo lido: o parse é assíncrono, e uma tela "Lendo o arquivo" parada faz qualquer um achar que travou.
-   - ⏳ Falta: comando de aplicação e o ETL da V2.
+   - ✅ **Comando de aplicação** — primeiro código que escreve em domínio. Rota `POST /v1/erp-imports/:id/apply` (`ADMIN`/`GESTOR`) confirma a conferência: move o lote `PARSED` para `APPLYING`, grava `applied_by` e enfileira `erp.import.apply` (fila `maintenance`). O handler do worker processa só as linhas `OK`, por `kind`:
+     - **PRODUCTS**: upsert em `skus` por `(organization_id, sku_key)`. Se a chave já existe com outro `kind` (um PRODUTO virando KIT ou vice-versa), a linha falha em vez de trocar a natureza do SKU em silêncio.
+     - **KITS**: cria o SKU-contêiner do kit (`kind = 'KIT'`) uma vez por chave, resolve o componente por `sku_key` e grava `sku_components`. Componente ainda não importado vira `UNRESOLVED`, não erro.
+     - **STOCK**: upsert em `erp_stock_snapshots` por `(batch_id, sku_key, warehouse)`, com `sku_id` nulo quando o SKU ainda não existe — o saldo é registrado do mesmo jeito (D-038).
+     - **LINKS**: cria a conta ML em `PENDING`/`created_by_import=true` quando a loja ainda não existe, resolve o SKU e grava `sku_listing_links`. Vínculo com `source = MANUAL` ou `RULE` (decisão humana) **nunca é sobrescrito** por uma reimportação.
+     - Cada linha grava `apply_status` (`APPLIED`/`UNRESOLVED`/`FAILED`) e `apply_reason` em `erp_import_rows`; o lote grava `applied_rows`/`unresolved_rows` e vira `APPLIED`.
+     - **Idempotência verificada contra Postgres real** (não só teste com fake): rodar o mesmo lote de vínculos duas vezes produz uma linha em `sku_listing_links`, não duas.
+     - Tela de conferência ganhou o botão "Confirmar aplicação" (só aparece com o lote `PARSED`) e uma coluna de desfecho por linha depois de aplicado.
+   - ⏳ Falta: ETL de carga inicial da V2 (D-027).
 
 **Leitor de planilha escolhido:** `read-excel-file` (2,5 MB) em vez de `exceljs` (21,8 MB), porque o worker só lê. Medido nos arquivos reais: 23.925 linhas em 647 ms com 176 MB de RSS, folgado nos 512 MB do container. Usar `readSheet`, não o export padrão — na v9 o padrão devolve o array de planilhas.
 
@@ -248,6 +258,6 @@ Frente paralela, independente: confirmar a documentação oficial do Mercado Liv
 
 ## Bloqueios atuais
 
-- Nenhum bloqueio para os itens 2, 4 e 5 da Fase 2.
+- Nenhum bloqueio para o ETL de carga inicial da V2 (D-027), última pendência da Fase 2.
 - Confirmação da documentação oficial do Mercado Livre bloqueia a Fase 3.
 - Modelos de exportação do pedido de compra (Excel e PDF) precisam ser solicitados antes da Fase 4.

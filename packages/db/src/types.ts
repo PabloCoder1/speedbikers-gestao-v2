@@ -38,6 +38,7 @@ export type Database = {
         Row: {
           applied_at: string | null
           applied_by: string | null
+          applied_rows: number | null
           content_hash: string
           created_at: string
           file_name: string | null
@@ -52,12 +53,14 @@ export type Database = {
           status: string
           storage_path: string
           total_rows: number | null
+          unresolved_rows: number | null
           updated_at: string
           uploaded_by: string | null
         }
         Insert: {
           applied_at?: string | null
           applied_by?: string | null
+          applied_rows?: number | null
           content_hash: string
           created_at?: string
           file_name?: string | null
@@ -72,12 +75,14 @@ export type Database = {
           status?: string
           storage_path: string
           total_rows?: number | null
+          unresolved_rows?: number | null
           updated_at?: string
           uploaded_by?: string | null
         }
         Update: {
           applied_at?: string | null
           applied_by?: string | null
+          applied_rows?: number | null
           content_hash?: string
           created_at?: string
           file_name?: string | null
@@ -92,6 +97,7 @@ export type Database = {
           status?: string
           storage_path?: string
           total_rows?: number | null
+          unresolved_rows?: number | null
           updated_at?: string
           uploaded_by?: string | null
         }
@@ -121,6 +127,8 @@ export type Database = {
       }
       erp_import_rows: {
         Row: {
+          apply_reason: string | null
+          apply_status: string | null
           batch_id: string
           created_at: string
           id: number
@@ -131,6 +139,8 @@ export type Database = {
           status: string
         }
         Insert: {
+          apply_reason?: string | null
+          apply_status?: string | null
           batch_id: string
           created_at?: string
           id?: never
@@ -141,6 +151,8 @@ export type Database = {
           status: string
         }
         Update: {
+          apply_reason?: string | null
+          apply_status?: string | null
           batch_id?: string
           created_at?: string
           id?: never
@@ -285,6 +297,7 @@ export type Database = {
         Row: {
           connected_at: string | null
           created_at: string
+          created_by_import: boolean
           id: string
           label: string
           last_error: string | null
@@ -298,6 +311,7 @@ export type Database = {
         Insert: {
           connected_at?: string | null
           created_at?: string
+          created_by_import?: boolean
           id?: string
           label: string
           last_error?: string | null
@@ -311,6 +325,7 @@ export type Database = {
         Update: {
           connected_at?: string | null
           created_at?: string
+          created_by_import?: boolean
           id?: string
           label?: string
           last_error?: string | null

@@ -22,6 +22,18 @@ const ROW_STATUS: Record<string, string> = {
   INVALID: "Inválida",
 };
 
+/**
+ * Desfecho da APLICAÇÃO de uma linha (`apply_status`), diferente de
+ * `rowStatusLabel`, que traduz o desfecho da LEITURA (`status`). `NULL` no
+ * banco significa "ainda não aplicada" e nunca chega aqui — a tela só chama
+ * isto quando o valor existe.
+ */
+const APPLY_STATUS: Record<string, string> = {
+  APPLIED: "Aplicada",
+  UNRESOLVED: "Pendente",
+  FAILED: "Falhou",
+};
+
 const KIND: Record<string, string> = {
   PRODUCTS: "Produtos",
   KITS: "Kits",
@@ -35,12 +47,13 @@ function lookup(table: Record<string, string>, code: string): string {
 
 export const batchStatusLabel = (code: string): string => lookup(BATCH_STATUS, code);
 export const rowStatusLabel = (code: string): string => lookup(ROW_STATUS, code);
+export const applyStatusLabel = (code: string): string => lookup(APPLY_STATUS, code);
 export const kindLabel = (code: string): string => lookup(KIND, code);
 
 /** Cor de destaque por estado. `null` = sem destaque, o padrão da tabela. */
 export function statusTone(code: string): "ok" | "warn" | "bad" | null {
   if (code === "APPLIED" || code === "OK") return "ok";
-  if (code === "PARSED" || code === "SKIPPED" || code === "PARSING") return "warn";
+  if (code === "PARSED" || code === "SKIPPED" || code === "PARSING" || code === "UNRESOLVED") return "warn";
   if (code === "FAILED" || code === "INVALID" || code === "CANCELLED") return "bad";
 
   return null;
