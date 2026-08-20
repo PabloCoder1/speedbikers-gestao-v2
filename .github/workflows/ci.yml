@@ -47,6 +47,49 @@ jobs:
       - name: Build
         run: pnpm run build
 
+  migrations:
+    name: aplicar migrations no Supabase Dev
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # Só depois da esteira verde: migration aplicada a partir de código que não
+    # compila é como se corrompe um ambiente.
+    needs: [check, scripts]
+
+    # Só em push na branch de desenvolvimento. Pull request NÃO aplica migration
+    # — o Preview da Vercel aponta para o mesmo banco Dev (D-025), e uma
+    # migration de PR afetaria quem estivesse testando.
+    if: github.ref == 'refs/heads/v3' && github.event_name == 'push'
+
+    # Uma execução por vez. Duas aplicando migration no mesmo banco em paralelo
+    # é a receita para um schema em estado indefinido.
+    concurrency:
+      group: supabase-migrations-dev
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Ativar pnpm
+        run: corepack enable
+
+      - name: Instalar dependências
+        run: pnpm install --frozen-lockfile
+
+      # O ref do projeto não é segredo: aparece na URL do dashboard e nos
+      # hostnames públicos. O que é segredo são o token e a senha.
+      - name: Aplicar migrations
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          pnpm exec supabase link --project-ref nmgccyqquwxecqffsidr
+          pnpm exec supabase db push
+
   scripts:
     name: scripts de infraestrutura
     runs-on: ubuntu-latest
