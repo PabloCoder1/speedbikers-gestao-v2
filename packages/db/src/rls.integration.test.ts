@@ -101,6 +101,7 @@ afterAll(async () => {
     delete from public.sku_listing_links
     where sku_id in (select id from public.skus where sku like 'RLSTEST%')
   `);
+  await client.query("delete from public.erp_import_batches where file_name like 'rlstest%'");
   await client.query("delete from public.ml_accounts where slug like 'rlstest%'");
   await client.query(`
     delete from public.sku_components
@@ -540,6 +541,139 @@ describe("vínculo SKU ↔ anúncio", () => {
 
   it("anon é recusado", async () => {
     await expect(asAnon("select * from public.sku_listing_links")).rejects.toThrow(
+      /permission denied/i,
+    );
+  });
+});
+
+
+describe("importação do UpSeller", () => {
+  const HASH_A = "a".repeat(64);
+  const BATCH = "b1000000-0000-4000-8000-00000000000b";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.erp_import_batches (id, organization_id, kind, storage_path, content_hash, file_name)
+       values ($1,$2,'PRODUCTS','erp-imports/2026-08/p.xlsx',$3,'rlstest-export.xlsx')
+       on conflict do nothing`,
+      [BATCH, ORG_SB, HASH_A],
+    );
+  });
+
+  it("o MESMO arquivo não entra duas vezes", async () => {
+    // Sem isto, reenviar a planilha duplicaria vínculo e sobrescreveria o
+    // catálogo sem ninguém notar.
+    await expect(
+      client.query(
+        `insert into public.erp_import_batches (organization_id, kind, storage_path, content_hash, file_name)
+         values ($1,'KITS','outro/caminho.xlsx',$2,'rlstest-outro.xlsx')`,
+        [ORG_SB, HASH_A],
+      ),
+    ).rejects.toThrow(/erp_import_batches_hash_unique/);
+  });
+
+  it("o mesmo arquivo em OUTRA organização é permitido", async () => {
+    await expect(
+      client.query(
+        `insert into public.erp_import_batches (organization_id, kind, storage_path, content_hash, file_name)
+         values ($1,'PRODUCTS','x',$2,'rlstest-outraorg.xlsx')`,
+        [ORG_OUTRA, HASH_A],
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  it("APLICADO exige responsável — aplicação sem autor não é auditável", async () => {
+    await expect(
+      client.query(
+        `update public.erp_import_batches set status='APPLIED', applied_at=now() where id=$1`,
+        [BATCH],
+      ),
+    ).rejects.toThrow(/applied_coherent/);
+  });
+
+  it("hash fora do tamanho de um SHA-256 é recusado", async () => {
+    await expect(
+      client.query(
+        `insert into public.erp_import_batches (organization_id, kind, storage_path, content_hash, file_name)
+         values ($1,'STOCK','x','abc','rlstest-hash.xlsx')`,
+        [ORG_SB],
+      ),
+    ).rejects.toThrow(/content_hash/);
+  });
+
+  it("linha OK não pode carregar motivo de erro", async () => {
+    await expect(
+      client.query(
+        `insert into public.erp_import_rows (batch_id,row_number,status,reason,payload)
+         values ($1,1,'OK','deu ruim','{}')`,
+        [BATCH],
+      ),
+    ).rejects.toThrow(/reason_matches_status/);
+  });
+
+  it("distingue SKIPPED de INVALID — decisão versus erro", async () => {
+    const rows = await client.query(
+      `insert into public.erp_import_rows (batch_id,row_number,status,reason,payload) values
+         ($1,10,'SKIPPED','canal fora do Mercado Livre','{}'),
+         ($1,11,'INVALID','variação não numérica','{}')
+       returning status`,
+      [BATCH],
+    );
+
+    expect(rows.rows).toHaveLength(2);
+  });
+
+  it("snapshot de estoque aceita SKU que ainda não existe na V3", async () => {
+    // Saldo de SKU desconhecido continua sendo informação — é justamente o
+    // caso que a conferência precisa mostrar.
+    const rows = await client.query(
+      `insert into public.erp_stock_snapshots
+         (organization_id,batch_id,sku_key,warehouse,on_hand,available,captured_at)
+       values ($1,$2,'SKU-QUE-NAO-EXISTE','ESTOQUE LOJA',4,4,now())
+       returning sku_id`,
+      [ORG_SB, BATCH],
+    );
+
+    expect(rows.rows[0]).toMatchObject({ sku_id: null });
+  });
+
+  it("mesmo SKU e armazém não se repetem dentro do lote", async () => {
+    await expect(
+      client.query(
+        `insert into public.erp_stock_snapshots
+           (organization_id,batch_id,sku_key,warehouse,on_hand,available,captured_at)
+         values ($1,$2,'SKU-QUE-NAO-EXISTE','ESTOQUE LOJA',9,9,now())`,
+        [ORG_SB, BATCH],
+      ),
+    ).rejects.toThrow(/unique_per_batch/);
+  });
+});
+
+describe("RLS da importação", () => {
+  it("ADMIN enxerga os lotes", async () => {
+    const rows = await asUser(ADMIN_SB, "select id from public.erp_import_batches");
+
+    expect(rows.length).toBeGreaterThan(0);
+  });
+
+  it("ANALISTA não enxerga: importação é ato administrativo", async () => {
+    const rows = await asUser(ANALISTA_SB, "select id from public.erp_import_batches");
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("authenticated não escreve — a transição de status é comando na api", async () => {
+    await expect(
+      asUser(
+        ADMIN_SB,
+        `insert into public.erp_import_batches (organization_id,kind,storage_path,content_hash)
+         values ('${ORG_SB}','STOCK','x','${"c".repeat(64)}')`,
+      ),
+    ).rejects.toThrow(/permission denied|row-level security/i);
+  });
+
+  it("anon é recusado", async () => {
+    await expect(asAnon("select * from public.erp_import_batches")).rejects.toThrow(
       /permission denied/i,
     );
   });

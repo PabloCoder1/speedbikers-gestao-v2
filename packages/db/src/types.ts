@@ -34,6 +34,202 @@ export type Database = {
   }
   public: {
     Tables: {
+      erp_import_batches: {
+        Row: {
+          applied_at: string | null
+          applied_by: string | null
+          content_hash: string
+          created_at: string
+          file_name: string | null
+          id: string
+          invalid_rows: number | null
+          kind: string
+          last_error: string | null
+          ok_rows: number | null
+          organization_id: string
+          parsed_at: string | null
+          skipped_rows: number | null
+          status: string
+          storage_path: string
+          total_rows: number | null
+          updated_at: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          applied_at?: string | null
+          applied_by?: string | null
+          content_hash: string
+          created_at?: string
+          file_name?: string | null
+          id?: string
+          invalid_rows?: number | null
+          kind: string
+          last_error?: string | null
+          ok_rows?: number | null
+          organization_id: string
+          parsed_at?: string | null
+          skipped_rows?: number | null
+          status?: string
+          storage_path: string
+          total_rows?: number | null
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          applied_at?: string | null
+          applied_by?: string | null
+          content_hash?: string
+          created_at?: string
+          file_name?: string | null
+          id?: string
+          invalid_rows?: number | null
+          kind?: string
+          last_error?: string | null
+          ok_rows?: number | null
+          organization_id?: string
+          parsed_at?: string | null
+          skipped_rows?: number | null
+          status?: string
+          storage_path?: string
+          total_rows?: number | null
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "erp_import_batches_applied_by_fkey"
+            columns: ["applied_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "erp_import_batches_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "erp_import_batches_uploaded_by_fkey"
+            columns: ["uploaded_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      erp_import_rows: {
+        Row: {
+          batch_id: string
+          created_at: string
+          id: number
+          payload: Json
+          reason: string | null
+          row_number: number
+          sku_key: string | null
+          status: string
+        }
+        Insert: {
+          batch_id: string
+          created_at?: string
+          id?: never
+          payload: Json
+          reason?: string | null
+          row_number: number
+          sku_key?: string | null
+          status: string
+        }
+        Update: {
+          batch_id?: string
+          created_at?: string
+          id?: never
+          payload?: Json
+          reason?: string | null
+          row_number?: number
+          sku_key?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "erp_import_rows_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "erp_import_batches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      erp_stock_snapshots: {
+        Row: {
+          available: number
+          average_cost: number | null
+          batch_id: string
+          captured_at: string
+          created_at: string
+          id: number
+          in_transit: number
+          on_hand: number
+          organization_id: string
+          reserved: number
+          sku_id: string | null
+          sku_key: string
+          warehouse: string
+        }
+        Insert: {
+          available: number
+          average_cost?: number | null
+          batch_id: string
+          captured_at: string
+          created_at?: string
+          id?: never
+          in_transit?: number
+          on_hand: number
+          organization_id: string
+          reserved?: number
+          sku_id?: string | null
+          sku_key: string
+          warehouse: string
+        }
+        Update: {
+          available?: number
+          average_cost?: number | null
+          batch_id?: string
+          captured_at?: string
+          created_at?: string
+          id?: never
+          in_transit?: number
+          on_hand?: number
+          organization_id?: string
+          reserved?: number
+          sku_id?: string | null
+          sku_key?: string
+          warehouse?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "erp_stock_snapshots_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "erp_import_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "erp_stock_snapshots_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "erp_stock_snapshots_sku_id_fkey"
+            columns: ["sku_id"]
+            isOneToOne: false
+            referencedRelation: "skus"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       job_runs: {
         Row: {
           attempt: number
