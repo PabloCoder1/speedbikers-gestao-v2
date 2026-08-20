@@ -1,6 +1,6 @@
 # Handoff V3
 
-> Última atualização: 2026-08-20 — Fase 1: `web` na Vercel, `api` e `worker` no Cloud Run, corrente de filas fechada.
+> Última atualização: 2026-08-20 — **Fase 1 concluída**: corrente completa até o Postgres, verificada em produção.
 
 ## Estado atual
 
@@ -152,7 +152,18 @@ Provisionado: filas `analytics-recompute` (10/s, 20), `backfill` (1/s, 2) e `mai
 
 **Armadilha do ambiente, já resolvida nos scripts:** no Windows, usar o wrapper **POSIX** `gcloud`, nunca o `.cmd`. O `cmd.exe` trata `>`, `<`, `|`, `&` e espaço-com-asterisco como sintaxe mesmo entre aspas — destrói o cron `"0 * * * *"` e falha com uma mensagem sobre `'C:\Program'` que não aponta para a causa.
 
-**Falta nesta fase:** subir a stack local (`supabase start`) · primeira migration (`job_runs`, infraestrutura, não domínio) · o worker gravar em Postgres e o `web` exibir o resultado.
+- **Supabase local no ar**, enxugado para 4 containers (db, auth, rest, kong). Desligados também `analytics` — sozinho consumia 564 MB de 2,8 GB — e `edge_runtime`. O container `vector`, em crash loop, dependia do analytics e saiu junto.
+- **Primeira migration aplicada**: `job_runs` (L2, append-only imposto por trigger, RLS habilitada sem policies, GRANT mínimo para `service_role`). Validada localmente antes de ir ao Dev.
+- **CI aplica migrations** (`--yes` é obrigatório: os comandos da CLI da Supabase pedem confirmação e travam em runner sem terminal).
+- **Marco da Fase 1 atingido e verificado em produção**: `Cloud Scheduler -> api -> Cloud Tasks -> worker -> Postgres`, com a linha `system.ping / done / processed 1` no Supabase Dev.
+
+**Falta para fechar a Fase 1:** apenas `apps/web` com login Supabase — e isso depende de `organizations`/`profiles`, que são Fase 2. Na prática a Fase 1 está concluída e essa linha migra para a Fase 2.
+
+**Pendências conhecidas, não bloqueantes:**
+
+- A chave `service_role` guardada no Secret Manager é a que apareceu em texto no chat; a rotação foi recomendada e ainda não foi feita. Banco vazio hoje; a partir da Fase 2 o risco é real.
+- Os segredos da V2 (`MERCADO_LIVRE_*_CLIENT_SECRET`, `SYNC_WORKER_SECRET`, `ANTHROPIC_API_KEY`) continuam no projeto Vercel da V3, sem nenhum consumidor.
+- O projeto Vercel antigo (`speedbikers-gestao-v2`) também observa este repositório e falha em todo push na `v3`, gerando um X vermelho falso no GitHub.
 
 `packages/domain`, `mercado-livre` e `ui` não entram na Fase 1: só ganham conteúdo quando houver domínio, e criar package vazio contraria a regra de só promover a package o que dois apps importam.
 

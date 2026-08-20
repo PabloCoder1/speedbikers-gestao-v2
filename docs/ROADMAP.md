@@ -34,7 +34,7 @@ Cada fase só é considerada concluída sob a Definition of Done do `docs/PROMPT
 
 - [x] Monorepo pnpm + Turborepo com os três apps; packages criados conforme a necessidade (`config`, `contracts`, `observability`)
 - [x] TypeScript estrito, ESLint, Vitest, `.env.example` completo e validação com Zod no boot
-- [ ] Supabase local (CLI/Docker) subindo e aplicando migrations
+- [x] Supabase local (CLI/Docker) subindo e aplicando migrations
 - [ ] `apps/web` com login Supabase funcionando
 - [x] `apps/api` publicado no Cloud Run, com healthcheck e autenticação OIDC
 - [x] `apps/worker` publicado no Cloud Run, consumindo um job de teste via Cloud Tasks
@@ -42,7 +42,11 @@ Cada fase só é considerada concluída sob a Definition of Done do `docs/PROMPT
 - [x] CI no GitHub Actions: typecheck, lint, testes e build obrigatórios
 - [x] Scripts `infra/` versionados criando filas e buckets (Scheduler e secrets ficam para as Fases 3 e 2)
 
-**Marco:** um job atravessa `api -> Cloud Tasks -> worker -> Postgres` e o `web` mostra o resultado, sem nenhuma regra de negócio envolvida.
+- [ ] `apps/web` com login Supabase funcionando
+
+**Marco — ATINGIDO em 2026-08-20:** um job atravessa `Cloud Scheduler -> api -> Cloud Tasks -> worker -> Postgres`, sem nenhuma regra de negócio envolvida. Verificado em produção: linha `system.ping / done / processed 1` gravada no Supabase Dev.
+
+**Ressalva honesta:** a parte "e o `web` mostra o resultado" **não** foi entregue e foi movida para a Fase 2. Exibir `job_runs` hoje exigiria uma policy de leitura sem ninguém para autorizar — não existem usuários nem organizações ainda. Abrir leitura para `anon` só para cumprir o marco seria criar exatamente a brecha que a própria migration evita.
 
 ---
 
