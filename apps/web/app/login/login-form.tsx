@@ -3,7 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
-import { createClient } from "../../lib/supabase/browser";
+import { createClient, missingBrowserEnv } from "../../lib/supabase/browser";
 
 /**
  * Formulário de entrada.
@@ -14,6 +14,8 @@ import { createClient } from "../../lib/supabase/browser";
 export function LoginForm(): ReactNode {
   const router = useRouter();
   const params = useSearchParams();
+
+  const missing = missingBrowserEnv();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -48,6 +50,14 @@ export function LoginForm(): ReactNode {
     fontSize: "1rem",
     marginTop: "var(--sb-space-1)",
   };
+
+  if (missing.length > 0) {
+    return (
+      <p role="alert" style={{ color: "var(--sb-danger)", fontSize: "0.875rem" }}>
+        Ambiente incompleto. Falta definir na Vercel: {missing.join(", ")}.
+      </p>
+    );
+  }
 
   return (
     <form
