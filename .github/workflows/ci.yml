@@ -1,0 +1,74 @@
+name: CI
+
+# Nenhum merge na v3 sem esta esteira verde. Ver docs/DEPLOYMENT.md secao 7.
+on:
+  push:
+    branches: [v3, main]
+  pull_request:
+    branches: [v3]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: typecheck, lint, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # `corepack enable` lê o campo `packageManager` do package.json e ativa a
+      # versão exata do pnpm. Evita depender de uma action de terceiro só para
+      # instalar o gerenciador de pacotes.
+      - name: Ativar pnpm
+        run: corepack enable
+
+      # `--frozen-lockfile` falha se o lockfile estiver desatualizado em relação
+      # aos package.json. É o que impede uma dependência entrar sem revisão.
+      - name: Instalar dependências
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Testes
+        run: pnpm run test
+
+      - name: Build
+        run: pnpm run build
+
+  scripts:
+    name: scripts de infraestrutura
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Os scripts de infra/ rodam em bash e são versionados. Erro de sintaxe
+      # aqui só apareceria na hora de provisionar, no pior momento possível.
+      - name: Sintaxe dos scripts
+        run: |
+          for f in infra/*.sh; do
+            bash -n "$f" && echo "ok: $f"
+          done
+
+      # CRLF em shebang quebra com "bad interpreter" no Linux. O .gitattributes
+      # previne, mas a verificação torna a regra observável.
+      - name: Fim de linha LF
+        run: |
+          if grep -rlU $'\r' infra/ 2>/dev/null | grep -q .; then
+            echo "CRLF encontrado em infra/" >&2
+            exit 1
+          fi
+          echo "todos os arquivos em infra/ estão em LF"

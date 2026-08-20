@@ -122,14 +122,23 @@ Verificado em execução, não só em teste: a `api` responde `GET /health` 200 
 
 **Restrição de máquina:** 6,9 GB de RAM. A stack local completa do Supabase (cerca de dez containers) não cabe confortavelmente. Plano A: WSL limitado a 3 GB com 8 GB de swap e apenas os containers necessários. Plano B, se travar: testes de integração contra o Supabase V3 Dev na nuvem, em schema isolado. O conserto real é 16 GB de RAM — não bloqueia a Fase 1, mas vai pesar a partir da Fase 5.
 
-**Google Cloud (`speedbikers-gestao-v3`, `southamerica-east1`):** billing habilitado, ADC criada, e todas as APIs necessárias já habilitadas — Run, Tasks, Scheduler, Secret Manager, Storage, Artifact Registry, Build e Logging. Zero filas e zero buckets criados até agora.
+**Google Cloud (`speedbikers-gestao-v3`, `southamerica-east1`):** billing habilitado, ADC criada, APIs habilitadas.
+
+Provisionado: filas `analytics-recompute` (10/s, 20), `backfill` (1/s, 2) e `maintenance` (1/s, 1); buckets `raw-ml` (com ciclo STANDARD -> COLDLINE aos 90 dias), `erp-imports` e `documents`.
+
+**Service accounts já existiam no projeto** e a convenção delas foi adotada, em vez de criar identidades paralelas: `v3-api-runtime`, `v3-worker-runtime`, `v3-tasks-invoker`, `v3-scheduler-invoker`. Papéis são concedidos no recurso (fila, bucket), nunca no projeto.
 
 **No Windows:** usar `gcloud.cmd`, não `gcloud`. O wrapper `.ps1` é bloqueado pela política de execução do PowerShell (`Restricted` por padrão). Os scripts de `infra/` já tratam isso.
 
-- `infra/` com `lib.sh`, `setup-dev.sh`, `cloud-tasks-queues.sh`, `storage-buckets.sh` e `README.md` — idempotentes, sintaxe validada, **ainda não executados**.
+- `apps/web` (Next.js 16.3.1 + React 19.2.8): paleta oficial como tokens CSS, página de fundação, build estático verde.
+- `.env.example` completo e versionado, com as variáveis futuras listadas mas comentadas — declarar segredo antes do uso só impede o desenvolvimento local.
+- CI no GitHub Actions: `typecheck -> lint -> test -> build` mais um job que valida sintaxe e fim de linha dos scripts de `infra/`.
+- `infra/` com `lib.sh`, `setup-dev.sh`, `cloud-tasks-queues.sh`, `storage-buckets.sh` e `README.md` — idempotentes, **executados**.
 - **D-036**: uma fila do Cloud Tasks **por conta** do Mercado Livre. O limite de taxa do Cloud Tasks é por fila, não por conta, e a D-014 dependia disso.
 
-**Falta nesta fase:** executar os scripts de `infra/` · `apps/web` · `packages/db`, `domain`, `mercado-livre`, `ui` · `.env.example` · Supabase local · CI no GitHub Actions · projeto Vercel.
+**Falta nesta fase:** Supabase local (Docker) · `packages/db` · projeto Vercel conectado à `v3` · deploy de `api` e `worker` no Cloud Run · um job real atravessando `api -> Cloud Tasks -> worker`.
+
+`packages/domain`, `mercado-livre` e `ui` não entram na Fase 1: só ganham conteúdo quando houver domínio, e criar package vazio contraria a regra de só promover a package o que dois apps importam.
 
 ## Próximo passo
 

@@ -1,0 +1,59 @@
+/*
+ * Paleta oficial da Speed Bikers Gestão V3.
+ *
+ * Definida em docs/PRODUCT_REQUIREMENTS.md e na D-007. Fica aqui como token
+ * único: nenhuma cor literal deve aparecer em componente.
+ *
+ * Regra da D-007: não usar todas as cores com o mesmo peso. Primary e
+ * Secondary estruturam; Danger e Accent são pontuais e chamam atenção
+ * justamente porque são raros.
+ */
+
+:root {
+  --sb-white: #ffffff;
+  --sb-primary: #0f1158;
+  --sb-secondary: #373993;
+  --sb-danger: #e83736;
+  --sb-muted: #ccc5d5;
+  --sb-supporting: #655d89;
+  --sb-accent: #f8e523;
+
+  --sb-surface: var(--sb-white);
+  --sb-text: var(--sb-primary);
+  --sb-text-soft: var(--sb-supporting);
+  --sb-border: var(--sb-muted);
+
+  --sb-space-1: 0.25rem;
+  --sb-space-2: 0.5rem;
+  --sb-space-3: 1rem;
+  --sb-space-4: 1.5rem;
+  --sb-space-5: 2.5rem;
+
+  --sb-radius: 0.5rem;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--sb-surface);
+  color: var(--sb-text);
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}

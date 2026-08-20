@@ -32,15 +32,15 @@ Cada fase só é considerada concluída sob a Definition of Done do `docs/PROMPT
 
 **Objetivo:** pipeline verde ponta a ponta, com zero domínio.
 
-- [ ] Monorepo pnpm + Turborepo, três apps e sete packages vazios porém válidos
-- [ ] TypeScript estrito, ESLint, Vitest, `.env.example` completo e validação com Zod no boot
+- [x] Monorepo pnpm + Turborepo com os três apps; packages criados conforme a necessidade (`config`, `contracts`, `observability`)
+- [x] TypeScript estrito, ESLint, Vitest, `.env.example` completo e validação com Zod no boot
 - [ ] Supabase local (CLI/Docker) subindo e aplicando migrations
 - [ ] `apps/web` com login Supabase funcionando
 - [ ] `apps/api` publicado no Cloud Run, com healthcheck e autenticação OIDC
 - [ ] `apps/worker` publicado no Cloud Run, consumindo um job de teste via Cloud Tasks
 - [ ] Projeto Vercel V3 conectado à branch `v3`, com Preview apontando para o Supabase Dev
-- [ ] CI no GitHub Actions: typecheck, lint, testes e build obrigatórios
-- [ ] Scripts `infra/` versionados criando filas, Scheduler e secrets
+- [x] CI no GitHub Actions: typecheck, lint, testes e build obrigatórios
+- [x] Scripts `infra/` versionados criando filas e buckets (Scheduler e secrets ficam para as Fases 3 e 2)
 
 **Marco:** um job atravessa `api -> Cloud Tasks -> worker -> Postgres` e o `web` mostra o resultado, sem nenhuma regra de negócio envolvida.
 
