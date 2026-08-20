@@ -128,7 +128,7 @@ jobs:
         # reaplicaria migrations que o remoto já considera resolvidas.
         run: |
           pnpm exec supabase link --project-ref nmgccyqquwxecqffsidr --yes
-          pnpm exec supabase db push --yes
+          pnpm exec supabase db push --yes --debug 2>&1
 
   scripts:
     name: scripts de infraestrutura
