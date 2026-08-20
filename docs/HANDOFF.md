@@ -209,7 +209,11 @@ Ordem dentro da fase, do que não depende de nada para o que depende:
    - ✅ **Validado contra os arquivos reais**, não só contra fixture: 3.415 produtos, 272 componentes, 23.924 vínculos e 3.372 saldos processados com **zero linhas inválidas**. Todos os números conferem com a análise independente feita em Python.
    - ✅ **Fluxo completo escolhido** (upload → parse → conferência → confirmação → aplicação), não comando pontual.
    - ✅ Tabelas de staging: `erp_import_batches` (um lote por arquivo, com `content_hash` UNIQUE impedindo reaplicar o mesmo arquivo), `erp_import_rows` (linha normalizada, distinguindo `SKIPPED` de `INVALID`) e `erp_stock_snapshots` (fonte de alinhamento da D-029).
-   - ⏳ Falta: rota de upload na `api`, handler de parse no worker, tela de conferência, comando de aplicação e o ETL da V2.
+   - ✅ **Rota de upload** na `api`, com autenticação de usuário (papel vem do banco, nunca do token) e checagem de duplicata antes de tocar o bucket.
+   - ✅ **Handler de parse** no worker: baixa do bucket, roda os mapeadores, grava em `erp_import_rows` e marca o lote como `PARSED`. **Não altera catálogo, estoque nem vínculo** — a separação é o que torna a conferência possível.
+   - ⏳ Falta: tela de conferência, comando de aplicação e o ETL da V2.
+
+**Leitor de planilha escolhido:** `read-excel-file` (2,5 MB) em vez de `exceljs` (21,8 MB), porque o worker só lê. Medido nos arquivos reais: 23.925 linhas em 647 ms com 176 MB de RSS, folgado nos 512 MB do container. Usar `readSheet`, não o export padrão — na v9 o padrão devolve o array de planilhas.
 
 **Números conferidos na validação ponta a ponta:** 20.650 vínculos de ML (13.299 com variação, 3.579 sem, 3.772 user products) e 3.274 descartados por decisão (D-037); 4 contas derivadas — `ml-speedbikers-loja-1`, `ml-speedbikers-loja-2`, `ml-sbmotos`, `ml-gmr`; 138 kits; 184 produtos descontinuados; 296 importados; 64 categorias reduzidas a **19 marcas**.
 

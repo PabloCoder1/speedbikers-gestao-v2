@@ -34,7 +34,8 @@ export function createWorkerApp(dependencies: WorkerDependencies): Hono {
   );
 
   app.post("/internal/jobs", async (context) => {
-    const parsed = jobEnvelopeSchema.safeParse(await context.req.json().catch(() => null));
+    const body: unknown = await context.req.json().catch(() => null);
+    const parsed = jobEnvelopeSchema.safeParse(body);
 
     if (!parsed.success) {
       // Envelope inválido nunca melhora com repetição.
@@ -69,7 +70,13 @@ export function createWorkerApp(dependencies: WorkerDependencies): Hono {
       { operation: `job:${envelope.jobType}`, logger },
       async () => {
         try {
-          return await handler(envelope, { logger });
+          // O `in` já estreita o tipo; a asserção seria redundante.
+          const payload =
+            typeof body === "object" && body !== null && "payload" in body
+              ? body.payload
+              : undefined;
+
+          return await handler(envelope, { logger, payload });
         } catch (error) {
           // Diante da dúvida, repetir: descartar trabalho recuperável é pior.
           return toOutcome(error);

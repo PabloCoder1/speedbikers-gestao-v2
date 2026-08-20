@@ -24,6 +24,9 @@ export const envSchema = z.object({
    * (docs/DEPLOYMENT.md secao 5).
    */
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(20),
+
+  /** Bucket que guarda as exportações do UpSeller. */
+  ERP_IMPORTS_BUCKET: z.string().min(1),
 });
 
 export type Env = z.infer<typeof envSchema>;

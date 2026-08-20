@@ -5,6 +5,15 @@ import type { JobOutcome } from "./job-outcome.js";
 
 export interface HandlerContext {
   logger: Logger;
+
+  /**
+   * Payload específico do job, fora do envelope.
+   *
+   * O `jobEnvelopeSchema` remove chaves desconhecidas — comportamento padrão do
+   * Zod e desejável, porque impede um campo inesperado virar contrato por
+   * acidente. Por isso o payload trafega separado e cada handler valida o seu.
+   */
+  payload: unknown;
 }
 
 export type JobHandler = (envelope: JobEnvelope, context: HandlerContext) => Promise<JobOutcome>;
@@ -31,6 +40,14 @@ export const handlers: HandlerRegistry = {
     return Promise.resolve({ status: "done", processed: 1 });
   },
 };
+
+/**
+ * Handlers que precisam de dependência externa não podem viver na constante
+ * acima — eles são montados no boot, com banco e bucket já configurados.
+ */
+export function withHandlers(extra: HandlerRegistry): HandlerRegistry {
+  return { ...handlers, ...extra };
+}
 
 export function resolveHandler(
   jobType: string,

@@ -4,15 +4,26 @@ import { createLogger } from "@sb/observability";
 
 import { createWorkerApp } from "./app.js";
 import { loadEnv } from "./env.js";
+import { createErpImportParseHandler } from "./handlers/erp-import-parse.js";
+import { withHandlers } from "./router.js";
+import { createSheetReader } from "./sheet-reader.js";
 
 const env = loadEnv();
 const logger = createLogger({ service: "worker", env: env.NODE_ENV });
 
+const db = createAdminClient({
+  supabaseUrl: env.SUPABASE_URL,
+  serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
+});
+
 const app = createWorkerApp({
   logger,
-  db: createAdminClient({
-    supabaseUrl: env.SUPABASE_URL,
-    serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
+  db,
+  registry: withHandlers({
+    "erp.import.parse": createErpImportParseHandler({
+      db,
+      reader: createSheetReader(env.ERP_IMPORTS_BUCKET),
+    }),
   }),
 });
 

@@ -5,6 +5,7 @@ import { parseEnv } from "./env.js";
 const OBRIGATORIAS = {
   SUPABASE_URL: "https://nmgccyqquwxecqffsidr.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY: "sb_secret_chave_de_teste_longa_o_bastante",
+  ERP_IMPORTS_BUCKET: "speedbikers-gestao-v3-erp-imports",
 };
 
 describe("parseEnv", () => {
