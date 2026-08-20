@@ -176,7 +176,29 @@ A retenção do L0 é **regra declarativa do bucket**, não rotina de expurgo em
 
 ---
 
-## 10. Pendências
+## 10. Primeiro acesso (bootstrap)
+
+Problema de ovo e galinha: só ADMIN pode conceder papel (policy `organization_members_admin_writes`), e num ambiente novo não existe ADMIN nenhum.
+
+A organização Speed Bikers vem do migration `20260820210000_seed_organization.sql`, com **UUID fixo** (`00000000-0000-4000-8000-000000000001`). Fixo de propósito: o valor aparece em teste, em script de carga e em consulta manual, e sortear por ambiente transformaria cada um desses usos numa consulta prévia. Vai em migration e não em `supabase/seed.sql` porque `seed.sql` só roda no `db reset` local — a CI aplica o schema em Dev com `db push`, que o ignora.
+
+O usuário é criado **no painel do Supabase** (Authentication → Users → Add user), onde a própria pessoa define a senha. Senha não passa por script, por arquivo nem por log. O trigger `on_auth_user_created` cria o perfil sozinho.
+
+Falta só o vínculo com papel:
+
+```bash
+node packages/db/src/bin/grant-role.ts --email pessoa@exemplo.com --role ADMIN
+```
+
+O script usa `SUPABASE_URL` e `SUPABASE_SECRET_KEY` do ambiente e escreve com `service_role`, que ignora RLS — é o que quebra o ciclo. Depois do primeiro ADMIN, promoção sai pela interface e o script não é mais necessário.
+
+Papéis aceitos: `ADMIN`, `GESTOR`, `ANALISTA`, `OPERADOR`, `VISUALIZADOR`. `--org` aceita outro slug; o padrão é `speed-bikers`.
+
+Roda direto com `node`, sem passo de build: o Node 24 remove os tipos do `.ts` nativamente.
+
+---
+
+## 11. Pendências
 
 - Criação do projeto Vercel V3 conectado à branch `v3` (Fase 1).
 - Provisionamento de Cloud Run, Cloud Tasks, Scheduler, Secret Manager e Storage (Fase 1).

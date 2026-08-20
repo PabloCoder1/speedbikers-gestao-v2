@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 /**
@@ -49,7 +50,9 @@ const PHASES: readonly Phase[] = [
       { label: "Catálogo", detail: "SKUs e composição de kit", state: "pronto" },
       { label: "Vinculações", detail: "SKU ↔ anúncio do Mercado Livre", state: "pronto" },
       { label: "Parsers", detail: "normalização do UpSeller", state: "pronto" },
-      { label: "Importador", detail: "carga das planilhas", state: "andamento" },
+      { label: "Login", detail: "sessão, papéis e proteção de rota", state: "pronto" },
+      { label: "Conferência", detail: "ver o que o arquivo produziu antes de aplicar", state: "pronto" },
+      { label: "Importador", detail: "upload e aplicação da planilha", state: "andamento" },
       { label: "ETL da V2", detail: "vínculos, estoque, NF-e, compras", state: "pendente" },
     ],
   },
@@ -170,6 +173,10 @@ export default function Page(): ReactNode {
       >
         Sem dado de negócio ainda. A Home orientada a “o que precisa da minha atenção hoje?”
         chega na Fase 5A, quando houver venda real para mostrar.
+      </p>
+
+      <p style={{ fontSize: "0.875rem" }}>
+        <Link href="/importacoes">Entrar no sistema →</Link>
       </p>
     </main>
   );

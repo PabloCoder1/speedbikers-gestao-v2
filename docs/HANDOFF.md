@@ -188,6 +188,10 @@ Provisionado: filas `analytics-recompute` (10/s, 20), `backfill` (1/s, 2) e `mai
 - `SET LOCAL` fora de transação é descartado em silêncio. Um teste de RLS escrito assim mede nada e passa — a primeira verificação manual reportou "todos veem tudo" por isso.
 - Helper de RLS que lê a própria tabela protegida **precisa** de `security definer`, senão a policy chama o helper que consulta a tabela que aplica a policy: recursão infinita.
 - `stable` em helper de RLS é decisão de performance: sem ela, a função é avaliada **por linha** em vez de por statement.
+- **`middleware.ts` foi renomeado para `proxy.ts` no Next.js 16**, com o export chamado `proxy`. O arquivo antigo não roda e **não avisa** — toda rota ficaria desprotegida em silêncio. Confirmado na documentação empacotada em `node_modules/next/dist/docs`, como manda o `AGENTS.md`.
+- Heredoc de shell comeu uma barra invertida no matcher do `proxy`: o escape duplo virou escape simples, e o que era "ponto literal" na expressão regular passou a significar "qualquer caractere". O lint pegou. Regra: arquivo com escape vai pela ferramenta de escrita, nunca por heredoc.
+- `useSearchParams` sem limite de `<Suspense>` **quebra o build** do Next, não a execução. Só apareceu no `next build`, depois de `typecheck` e `lint` passarem — build faz parte da verificação.
+- TypeScript descarta o estreitamento de uma **propriedade** dentro de callback. `if (batch.data === null) notFound()` não vale dentro do `.map`; copiar para um `const` local resolve.
 - `parseDecimal` removia todo ponto como separador de milhar, transformando `174.90` em `17490` — cem vezes o valor, em silêncio, em todo preço e custo. A vírgula é quem decide: com vírgula presente ela é o decimal e o ponto é milhar; sem vírgula, o ponto É o decimal. Pego por teste antes de qualquer importação.
 - `String(value)` sobre célula de planilha transforma objeto em `[object Object]` — texto que parece dado válido e não é. `cell()` trata string, número, booleano e `Date` explicitamente e devolve `null` para o resto.
 - O `slug` de `ml_accounts` nomeia a fila `ml-sync-<slug>` do Cloud Tasks (D-036). A constraint restringe o charset ao que o Cloud Tasks aceita — descobrir isso na hora de provisionar sairia caro.
@@ -196,6 +200,12 @@ Provisionado: filas `analytics-recompute` (10/s, 20), `backfill` (1/s, 2) e `mai
 ## Próximo passo
 
 **Fase 2 — Core de dados.** Identidade, contas e catálogo, com RLS desde a primeira tabela.
+
+**A fazer agora, nesta ordem:**
+
+1. **Tela de upload** — formulário que envia o arquivo para `POST /v1/erp-imports` com o JWT do usuário, e acompanha o lote até `PARSED`.
+2. **Comando de aplicação** — transforma o lote conferido em catálogo, vínculo e saldo. É o primeiro código que **escreve em domínio**; até aqui tudo era staging.
+3. **ETL de carga inicial da V2** (D-027).
 
 Ordem dentro da fase, do que não depende de nada para o que depende:
 
@@ -211,7 +221,10 @@ Ordem dentro da fase, do que não depende de nada para o que depende:
    - ✅ Tabelas de staging: `erp_import_batches` (um lote por arquivo, com `content_hash` UNIQUE impedindo reaplicar o mesmo arquivo), `erp_import_rows` (linha normalizada, distinguindo `SKIPPED` de `INVALID`) e `erp_stock_snapshots` (fonte de alinhamento da D-029).
    - ✅ **Rota de upload** na `api`, com autenticação de usuário (papel vem do banco, nunca do token) e checagem de duplicata antes de tocar o bucket.
    - ✅ **Handler de parse** no worker: baixa do bucket, roda os mapeadores, grava em `erp_import_rows` e marca o lote como `PARSED`. **Não altera catálogo, estoque nem vínculo** — a separação é o que torna a conferência possível.
-   - ⏳ Falta: tela de conferência, comando de aplicação e o ETL da V2.
+   - ✅ **Login no `web`**: `@supabase/ssr` com cliente de servidor e de navegador, proteção de rota, e papel lido do banco a cada renderização — nunca do token, que pode estar desatualizado depois de um rebaixamento.
+   - ✅ **Tela de conferência**: lista de lotes e detalhe linha a linha, com filtro por `OK` / `Ignorada` / `Inválida`, paginação de 100 e resumo legível do que o parser entendeu de cada linha.
+   - ✅ **Bootstrap do primeiro acesso**: migration com a organização Speed Bikers (UUID fixo) e `packages/db/src/bin/grant-role.ts` para conceder o primeiro papel. Ver `docs/DEPLOYMENT.md` secao 10.
+   - ⏳ Falta: tela de upload, comando de aplicação e o ETL da V2.
 
 **Leitor de planilha escolhido:** `read-excel-file` (2,5 MB) em vez de `exceljs` (21,8 MB), porque o worker só lê. Medido nos arquivos reais: 23.925 linhas em 647 ms com 176 MB de RSS, folgado nos 512 MB do container. Usar `readSheet`, não o export padrão — na v9 o padrão devolve o array de planilhas.
 
