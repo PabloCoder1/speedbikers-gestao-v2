@@ -25,6 +25,7 @@ Depois, a documentação especializada do assunto da tarefa:
 | `docs/API.md` | Fronteiras entre web/api/worker, rotas, jobs, eventos, erros |
 | `docs/METRICS.md` | Catálogo oficial de métricas (normativo) |
 | `docs/MERCADO_LIVRE.md` | Integração e estratégia de sincronização |
+| `docs/UPSELLER.md` | ERP de origem: estrutura das exportações e qualidade dos dados |
 | `docs/NOTIFICATIONS.md` | Eventos, severidade, agrupamento e tempo real |
 | `docs/COPILOT.md` | Copiloto, ferramentas determinísticas e uso de IA |
 | `docs/DEPLOYMENT.md` | Plataformas, ambientes, secrets, CI/CD |

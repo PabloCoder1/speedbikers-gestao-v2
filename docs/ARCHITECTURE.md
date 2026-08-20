@@ -10,6 +10,7 @@
 | Contratos entre web/api/worker, rotas, jobs, eventos | `docs/API.md` |
 | Catálogo oficial de métricas | `docs/METRICS.md` |
 | Integração Mercado Livre e sincronização | `docs/MERCADO_LIVRE.md` |
+| ERP de origem (UpSeller): exportações e qualidade dos dados | `docs/UPSELLER.md` |
 | Eventos e notificações em tempo real | `docs/NOTIFICATIONS.md` |
 | Copiloto e uso de IA | `docs/COPILOT.md` |
 | Plataformas, ambientes, secrets, CI/CD | `docs/DEPLOYMENT.md` |

@@ -7,7 +7,7 @@ Antes de alterar qualquer código nesta branch:
 3. Leia `docs/ROADMAP.md`.
 4. Leia `docs/ARCHITECTURE.md`.
 5. Leia `docs/PRODUCT_REQUIREMENTS.md`.
-6. Leia `docs/DECISIONS.md` e a documentação especializada do assunto da tarefa (`DATABASE`, `API`, `METRICS`, `MERCADO_LIVRE`, `NOTIFICATIONS`, `COPILOT`, `DEPLOYMENT`, `TESTING`) — índice completo no `README.md`.
+6. Leia `docs/DECISIONS.md` e a documentação especializada do assunto da tarefa (`DATABASE`, `API`, `METRICS`, `MERCADO_LIVRE`, `UPSELLER`, `NOTIFICATIONS`, `COPILOT`, `DEPLOYMENT`, `TESTING`) — índice completo no `README.md`.
 7. Verifique branch atual e commits recentes.
 8. Consulte a `main` apenas como referência da V2; não copie código automaticamente.
 9. Não assuma que conversa anterior representa o estado atual do projeto.
