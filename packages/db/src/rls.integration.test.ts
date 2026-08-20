@@ -95,6 +95,14 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // Componentes primeiro: `on delete restrict` impede apagar um produto que
+  // compõe kit — que é justamente a garantia testada acima.
+  await client.query(`
+    delete from public.sku_components
+    where kit_sku_id in (select id from public.skus where sku like 'RLSTEST%')
+       or component_sku_id in (select id from public.skus where sku like 'RLSTEST%')
+  `);
+  await client.query("delete from public.skus where sku like 'RLSTEST%'");
   await client.query("delete from auth.users where email like '%@rls.test'");
   await client.query("delete from public.organizations where slug in ('speed-bikers-rls','outra-rls')");
   await client.end();
@@ -204,5 +212,126 @@ describe("job_runs permanece fechada", () => {
     await expect(asUser(ADMIN_SB, "select * from public.job_runs")).rejects.toThrow(
       /permission denied/i,
     );
+  });
+});
+
+
+describe("catálogo", () => {
+  it("normaliza sku_key e deriva is_imported do código fiscal", async () => {
+    const rows = await client.query<{ sku_key: string; is_imported: boolean }>(
+      `insert into public.skus (organization_id, sku, kind, origin_code)
+       values ($1,'RLSTEST-bau98','PRODUTO',1)
+       returning sku_key, is_imported`,
+      [ORG_SB],
+    );
+
+    expect(rows.rows[0]?.sku_key).toBe("RLSTEST-BAU98");
+    expect(rows.rows[0]?.is_imported).toBe(true);
+  });
+
+  it("recusa SKU duplicado que difere só na caixa", async () => {
+    await expect(
+      client.query(
+        `insert into public.skus (organization_id, sku, kind) values ($1,'rlstest-BAU98','PRODUTO')`,
+        [ORG_SB],
+      ),
+    ).rejects.toThrow(/skus_org_key_unique/);
+  });
+
+  it("origem nacional não marca importado", async () => {
+    const rows = await client.query<{ is_imported: boolean }>(
+      `insert into public.skus (organization_id, sku, kind, origin_code)
+       values ($1,'RLSTEST-nacional','PRODUTO',0) returning is_imported`,
+      [ORG_SB],
+    );
+
+    expect(rows.rows[0]?.is_imported).toBe(false);
+  });
+
+  it("recusa código de origem fora da tabela fiscal", async () => {
+    await expect(
+      client.query(
+        `insert into public.skus (organization_id, sku, kind, origin_code)
+         values ($1,'RLSTEST-invalida','PRODUTO',9)`,
+        [ORG_SB],
+      ),
+    ).rejects.toThrow(/origin_code/);
+  });
+});
+
+describe("composição de kit", () => {
+  it("PRODUTO não pode ter componente", async () => {
+    await client.query(
+      `insert into public.skus (organization_id, sku, kind) values ($1,'RLSTEST-comp','PRODUTO')`,
+      [ORG_SB],
+    );
+
+    await expect(
+      client.query(
+        `insert into public.sku_components (kit_sku_id, component_sku_id, quantity)
+         select a.id, b.id, 1 from public.skus a, public.skus b
+         where a.sku_key='RLSTEST-NACIONAL' and b.sku_key='RLSTEST-COMP'`,
+      ),
+    ).rejects.toThrow(/nao e KIT/);
+  });
+
+  it("componente precisa ser PRODUTO — kit aninhado é recusado", async () => {
+    await client.query(
+      `insert into public.skus (organization_id, sku, kind) values
+         ($1,'RLSTEST-kit1','KIT'), ($1,'RLSTEST-kit2','KIT')`,
+      [ORG_SB],
+    );
+
+    await expect(
+      client.query(
+        `insert into public.sku_components (kit_sku_id, component_sku_id, quantity)
+         select a.id, b.id, 1 from public.skus a, public.skus b
+         where a.sku_key='RLSTEST-KIT1' and b.sku_key='RLSTEST-KIT2'`,
+      ),
+    ).rejects.toThrow(/precisa ser PRODUTO/);
+  });
+
+  it("aceita componente válido com quantidade fracionária", async () => {
+    const rows = await client.query(
+      `insert into public.sku_components (kit_sku_id, component_sku_id, quantity)
+       select a.id, b.id, 2.5 from public.skus a, public.skus b
+       where a.sku_key='RLSTEST-KIT1' and b.sku_key='RLSTEST-COMP'
+       returning quantity`,
+    );
+
+    expect(rows.rows).toHaveLength(1);
+  });
+
+  it("apagar produto que compõe kit é recusado", async () => {
+    await expect(
+      client.query(`delete from public.skus where sku_key='RLSTEST-COMP'`),
+    ).rejects.toThrow(/violates foreign key/i);
+  });
+});
+
+describe("RLS do catálogo", () => {
+  it("membro da organização enxerga os SKUs", async () => {
+    const rows = await asUser(ADMIN_SB, "select id from public.skus");
+
+    expect(rows.length).toBeGreaterThan(0);
+  });
+
+  it("usuário de outra organização não enxerga nenhum", async () => {
+    const rows = await asUser(DE_OUTRA_ORG, "select id from public.skus");
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("anon é recusado no catálogo", async () => {
+    await expect(asAnon("select * from public.skus")).rejects.toThrow(/permission denied/i);
+  });
+
+  it("authenticated não escreve no catálogo: importação é do worker", async () => {
+    await expect(
+      asUser(
+        ADMIN_SB,
+        `insert into public.skus (organization_id, sku, kind) values ('${ORG_SB}','RLSTEST-hack','PRODUTO')`,
+      ),
+    ).rejects.toThrow(/permission denied|row-level security/i);
   });
 });

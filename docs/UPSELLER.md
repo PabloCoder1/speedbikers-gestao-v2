@@ -35,7 +35,7 @@ Toda a documentação da V3 fala em "operação multi-conta do **Mercado Livre**
 
 **Consequência de schema:** `sku_listing_links` foi desenhada como `(ml_account_id, mlb_id, variation_id)`. Se a V3 precisar enxergar os outros canais, a chave tem de ser genérica: `(channel, store, listing_id, variation_id)`.
 
-O custo de nascer genérico é praticamente zero. O custo de migrar depois, com dados dentro, não é. **Decisão pendente — ver seção 7.**
+**Decidido em D-037: apenas Mercado Livre.** Os 3.274 vínculos dos outros quatro marketplaces são descartados na importação. A desvantagem foi assumida por escrito: se a Shopee virar relevante, a tabela central de vínculos migra com dados dentro.
 
 ### Identificadores de anúncio
 
@@ -89,9 +89,15 @@ Todos os componentes de kit **existem** no catálogo — a integridade referenci
 
 ### Não confiável hoje
 
-**`Marca` está vazia em 90%** (3.086 de 3.415) e os 23 valores existentes têm duplicata por caixa: `Plasmoto` e `PLASMOTO`, `Off Racer` e variantes. Marca não serve como filtro até ser normalizada e preenchida.
+**A coluna `Marca` está vazia em 90%** (3.086 de 3.415) e os 23 valores existentes têm duplicata por caixa. **Ela não é a fonte de marca** — a marca vem de `Categorias` (D-039).
 
-**`Categorias` tem 64 valores** com hierarquia embutida por seta — `MANETE→XRE/BROS/TORNADO`, `MANETE→FAZER 250` — misturada com valores que não são categoria: `999`, `ESTOQUE INATIVO`. Na prática funciona como linha de produto, e a parte antes da seta é a categoria real.
+**`Categorias` tem 64 valores** e carrega três coisas diferentes ao mesmo tempo:
+
+1. **Marca** — `NAVETEC`, `OFFRACER`, `PLASMOTO`. É daqui que a marca sai (D-039), não da coluna `Marca`.
+2. **Linha de produto**, com hierarquia por seta — `MANETE→XRE/BROS/TORNADO`, `MANETE→FAZER 250`.
+3. **`ESTOQUE INATIVO`** — **não é lixo.** Marca produto em encerramento, cujo estoque está sendo zerado para deixar de ser trabalhado. Vira coluna própria (`is_discontinued`).
+
+Apenas as categorias puramente numéricas (`999`) são ruído.
 
 **`Unidade` tem 11 valores com duplicata semântica:** `UN` (2.492), `PAR` (441), `KIT` (275), `PC` (60), `UNID` (33), `PECAS` (16), `PA` (3). `UN`/`UNID` e `PC`/`PECAS`/`PA` são a mesma coisa escrita de formas diferentes. Precisa de normalização na importação.
 
@@ -119,9 +125,9 @@ AC1402Vermelha    15.920   Chave Honda
 
 Quatro retrovisores com ~10.993 unidades cada não é estoque real. O padrão é típico de **estoque artificial para manter o anúncio ativo** — prática comum em marketplace para item sob encomenda ou de giro contínuo.
 
-**Por que isso importa muito:** cobertura em dias, data estimada de ruptura e sugestão de compra são calculadas sobre o saldo. Num SKU com saldo sentinela, todas as três produzem número sem significado — e com aparência de certeza, que é pior que não ter número.
+**Por que isso importa:** cobertura em dias, data estimada de ruptura e sugestão de compra são calculadas sobre o saldo.
 
-**Decisão pendente — ver seção 7.**
+**Decidido em D-038: os saldos são tratados como estoque real**, sem marcação especial nem limiar. Fica registrado o sinal de reavaliação — sugestão de compra recomendando zero para item que precisa reposição, ou cobertura absurdamente alta em item de giro.
 
 ---
 
@@ -145,25 +151,19 @@ Um único armazém: `ESTOQUE LOJA`.
 
 ---
 
-## 7. Decisões pendentes que esta análise levantou
+## 7. Decisões que esta análise levantou
 
-### I — A V3 cobre os outros marketplaces?
+**Todas respondidas em 2026-08-20.** Ver `docs/DECISIONS.md`:
 
-14% dos vínculos são Shopee, Kwai, Temu e TikTok. Opções: modelar o vínculo genérico por canal desde já (custo quase zero agora); restringir ao Mercado Livre e ignorar o resto na importação; ou importar tudo mas só exibir Mercado Livre.
-
-### II — Como tratar o estoque sentinela?
-
-404 SKUs com saldo artificial. Opções: marcar SKU como "estoque não gerenciado" e suprimir cobertura/ruptura/compra nele; usar um limiar (por exemplo, acima de 1.000 unidades) como heurística; ou tratar tudo como real e aceitar métrica sem sentido nesses itens.
-
-### III — Marca
-
-90% vazia e com duplicata de caixa. Filtro por marca é requisito. Opções: derivar de `Categorias`, normalizar o que existe e conviver com lacuna, ou adiar o filtro até haver cadastro.
+- **D-037** — apenas Mercado Livre; os outros 4 marketplaces são descartados na importação.
+- **D-038** — os saldos são tratados como estoque real, sem marcação especial.
+- **D-039** — marca vem de `Categorias`, normalizada; `ESTOQUE INATIVO` vira coluna própria.
 
 ---
 
 ## 8. Mapeamento para o schema da V3
 
-O que já está decidido pelos dados, independente das pendências acima:
+As tabelas `skus` e `sku_components` já existem (migration `20260820170000_create_catalog.sql`).
 
 | Arquivo do UpSeller | Destino na V3 |
 |---|---|

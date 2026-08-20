@@ -85,6 +85,227 @@ export type Database = {
         }
         Relationships: []
       }
+      organization_members: {
+        Row: {
+          created_at: string
+          organization_id: string
+          role: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          organization_id: string
+          role: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          organization_id?: string
+          role?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_members_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organizations: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          slug: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          slug: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          slug?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          full_name: string | null
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          full_name?: string | null
+          id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          full_name?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      sku_components: {
+        Row: {
+          component_sku_id: string
+          created_at: string
+          kit_sku_id: string
+          quantity: number
+          updated_at: string
+        }
+        Insert: {
+          component_sku_id: string
+          created_at?: string
+          kit_sku_id: string
+          quantity: number
+          updated_at?: string
+        }
+        Update: {
+          component_sku_id?: string
+          created_at?: string
+          kit_sku_id?: string
+          quantity?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sku_components_component_sku_id_fkey"
+            columns: ["component_sku_id"]
+            isOneToOne: false
+            referencedRelation: "skus"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sku_components_kit_sku_id_fkey"
+            columns: ["kit_sku_id"]
+            isOneToOne: false
+            referencedRelation: "skus"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      skus: {
+        Row: {
+          barcode: string | null
+          brand: string | null
+          category_raw: string | null
+          cest: string | null
+          created_at: string
+          erp_product_code: string | null
+          erp_spu: string | null
+          height_cm: number | null
+          id: string
+          image_url: string | null
+          is_active: boolean
+          is_discontinued: boolean
+          is_imported: boolean | null
+          kind: string
+          length_cm: number | null
+          ncm: string | null
+          organization_id: string
+          origin_code: number | null
+          purchase_cost: number | null
+          retail_price: number | null
+          sku: string
+          sku_key: string
+          title: string | null
+          unit: string | null
+          updated_at: string
+          weight_g: number | null
+          width_cm: number | null
+        }
+        Insert: {
+          barcode?: string | null
+          brand?: string | null
+          category_raw?: string | null
+          cest?: string | null
+          created_at?: string
+          erp_product_code?: string | null
+          erp_spu?: string | null
+          height_cm?: number | null
+          id?: string
+          image_url?: string | null
+          is_active?: boolean
+          is_discontinued?: boolean
+          is_imported?: boolean | null
+          kind?: string
+          length_cm?: number | null
+          ncm?: string | null
+          organization_id: string
+          origin_code?: number | null
+          purchase_cost?: number | null
+          retail_price?: number | null
+          sku: string
+          sku_key?: string
+          title?: string | null
+          unit?: string | null
+          updated_at?: string
+          weight_g?: number | null
+          width_cm?: number | null
+        }
+        Update: {
+          barcode?: string | null
+          brand?: string | null
+          category_raw?: string | null
+          cest?: string | null
+          created_at?: string
+          erp_product_code?: string | null
+          erp_spu?: string | null
+          height_cm?: number | null
+          id?: string
+          image_url?: string | null
+          is_active?: boolean
+          is_discontinued?: boolean
+          is_imported?: boolean | null
+          kind?: string
+          length_cm?: number | null
+          ncm?: string | null
+          organization_id?: string
+          origin_code?: number | null
+          purchase_cost?: number | null
+          retail_price?: number | null
+          sku?: string
+          sku_key?: string
+          title?: string | null
+          unit?: string | null
+          updated_at?: string
+          weight_g?: number | null
+          width_cm?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "skus_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

@@ -178,6 +178,10 @@ Provisionado: filas `analytics-recompute` (10/s, 20), `backfill` (1/s, 2) e `mai
 - **CI sobe um Postgres real** e roda esses testes; o passo de migration no Dev depende deles.
 - Linter de segurança do Supabase rodado: um WARN de `search_path` mutável corrigido por migration nova (a original já estava no Dev).
 
+- **Catálogo**: `skus` (PRODUTO e KIT numa tabela só) e `sku_components`, modelados sobre a exportação real do UpSeller. `sku_key` normalizado por coluna gerada, `is_imported` derivado do código fiscal de origem, e triggers garantindo que só KIT tem componente e componente é sempre PRODUTO.
+- **26 testes de integração** cobrindo identidade, catálogo e composição de kit.
+- `docs/UPSELLER.md` documenta a estrutura real das quatro exportações e a qualidade medida de cada campo.
+
 **Armadilhas já pagas, não repetir:**
 
 - `SET LOCAL` fora de transação é descartado em silêncio. Um teste de RLS escrito assim mede nada e passa — a primeira verificação manual reportou "todos veem tudo" por isso.
@@ -193,7 +197,7 @@ Ordem dentro da fase, do que não depende de nada para o que depende:
 
 1. **Identidade** — `organizations`, `profiles`, `organization_members`, mais os helpers de RLS em schema `private`. Não depende de nada externo.
 2. **Contas Mercado Livre** — `ml_accounts`, credenciais cifradas, estados de OAuth, `user_account_permissions`.
-3. **Catálogo** — SKUs, kits, marcas, fornecedores. **Depende da amostra da planilha do UpSeller** (D-028), que define o parser e o tamanho do domínio.
+3. ~~**Catálogo**~~ — **concluído**. `skus` e `sku_components` aplicados. Fornecedores adiados: a exportação não traz nenhum dado de fornecedor (as colunas `Vendedor` e `Link do Fornecedor` vêm vazias), e a fonte real será a NF-e na Fase 4.
 4. **Anúncios e vinculações** — `listings`, `listing_variations`, `sku_listing_links` com UNIQUE parcial para `variation_id` nulo.
 5. **Importador do UpSeller** e **ETL de carga inicial da V2** (D-027).
 
@@ -203,6 +207,6 @@ Frente paralela, independente: confirmar a documentação oficial do Mercado Liv
 
 ## Bloqueios atuais
 
-- **Amostra real da planilha do UpSeller** bloqueia o domínio `catalog` (item 3 acima). Os itens 1 e 2 não dependem dela.
+- Nenhum bloqueio para os itens 2, 4 e 5 da Fase 2.
 - Confirmação da documentação oficial do Mercado Livre bloqueia a Fase 3.
 - Modelos de exportação do pedido de compra (Excel e PDF) precisam ser solicitados antes da Fase 4.
