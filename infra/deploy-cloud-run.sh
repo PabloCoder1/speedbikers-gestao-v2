@@ -111,7 +111,7 @@ YAML
       --concurrency 4 \
       --timeout 900s \
       --cpu 1 --memory 512Mi \
-      --set-env-vars "NODE_ENV=production,SUPABASE_URL=${SUPABASE_URL}" \
+      --set-env-vars "NODE_ENV=production,SUPABASE_URL=${SUPABASE_URL},ERP_IMPORTS_BUCKET=${PROJECT_ID}-erp-imports" \
       --set-secrets "SUPABASE_SERVICE_ROLE_KEY=${SECRET_SUPABASE_KEY}:latest" \
       --quiet
   fi

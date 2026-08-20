@@ -1,6 +1,6 @@
 # Handoff V3
 
-> Última atualização: 2026-08-20 — **Fase 1 concluída**; na Fase 2, o importador do UpSeller está completo ponta a ponta (upload → parse → conferência → confirmação → aplicação), pendente apenas de commit/push.
+> Última atualização: 2026-08-20 — **Fase 1 concluída**; na Fase 2, o importador do UpSeller está completo ponta a ponta (upload → parse → conferência → confirmação → aplicação), commitado (`6881cbc`), publicado em `origin/v3` e implantado no Cloud Run Dev.
 
 ## Estado atual
 
@@ -198,6 +198,7 @@ Provisionado: filas `analytics-recompute` (10/s, 20), `backfill` (1/s, 2) e `mai
 - `String(value)` sobre célula de planilha transforma objeto em `[object Object]` — texto que parece dado válido e não é. `cell()` trata string, número, booleano e `Date` explicitamente e devolve `null` para o resto.
 - O `slug` de `ml_accounts` nomeia a fila `ml-sync-<slug>` do Cloud Tasks (D-036). A constraint restringe o charset ao que o Cloud Tasks aceita — descobrir isso na hora de provisionar sairia caro.
 - Falha de `supabase db push` com apenas "Connecting to remote database..." e exit 1 foi **transitória**. O passo já roda com `--debug 2>&1` para que a próxima traga a mensagem real.
+- **Espelho do bug do segredo do Supabase, agora no `worker`:** `deploy-cloud-run.sh` setava `ERP_IMPORTS_BUCKET` só no ramo da `api`, nunca no do `worker` — mas é o `worker` quem lê essa variável (`apps/worker/src/env.ts`, exigida desde o handler de parse). O deploy do worker falhava com "container failed to start… PORT=8080… allocated timeout" — mensagem do Cloud Run que **não menciona a variável**; a causa real só apareceu no Cloud Logging (`invalid_environment`, `ERP_IMPORTS_BUCKET: expected string, received undefined`). Consequência séria: **a revisão que estava servindo era anterior a essa exigência** — o handler `erp.import.parse` nunca tinha rodado de fato em Dev, silenciosamente. Corrigido no script; verificar sempre os dois ramos (`api`/`worker`) juntos quando uma env var nova entra em qualquer um dos dois.
 - **`ON CONFLICT` não enxerga índice único parcial sem repetir o `WHERE` do índice** — e o PostgREST/`supabase-js` não expõe esse `WHERE` no `upsert()`. `sku_listing_links` tem três índices únicos parciais (a pegadinha do `variation_id` nulo, `docs/DATABASE.md` secao 4); um `upsert` comum contra eles falharia com "no unique or exclusion constraint matching". O comando de aplicação resolve por fora: `select` pela chave natural primeiro, depois `insert` (novo) ou `update` por `id` (existente) — nunca `upsert` direto nessa tabela. Verificado contra Postgres local: reaplicar o mesmo lote de vínculos duas vezes não duplica.
 
 ## Próximo passo
