@@ -277,20 +277,18 @@ O payload bruto não entra nessa conta porque não vive no Postgres (D-015).
 
 ## 10. Carga inicial a partir da V2
 
-Conforme D-027, pedidos e anúncios **não** são migrados — são rebaixados novamente do Mercado Livre. Vem da V2 por ETL versionado apenas o que não existe em nenhuma outra fonte:
+Conforme D-027, pedidos e anúncios **não** são migrados — são rebaixados novamente do Mercado Livre.
 
-| Migrado | Motivo |
+A D-027 também previa ETL de vínculos, estoque e NF-e da V2. A **D-040** descartou essa parte depois de inspecionar o banco real: `product_inventory_links` (vínculos) é 100% derivado do próprio UpSeller sem nenhuma curadoria humana distinta do que o importador da V3 já produz; `stock_movements`/`product_inventory_balances` (ledger) e `stock_receipts` (NF-e) estão vazios — funcionalidade que existia no schema da V2 e nunca foi usada.
+
+| Categoria | Situação |
 |---|---|
-| Vínculos SKU-MLB confirmados | Trabalho humano, irreproduzível |
-| Ledger e saldos de estoque | Não existe fora do banco da V2 |
-| NF-e aplicadas e seus itens | Histórico com implicação fiscal |
-| Pedidos de compra e seu histórico | Não existe fora do banco da V2 |
+| Vínculos SKU-MLB | Não migrado — sem dado irreprodutível (D-040) |
+| Ledger e saldos de estoque | Não migrado — tabelas vazias na V2 (D-040) |
+| NF-e aplicadas e seus itens | Não migrado — tabelas vazias na V2 (D-040) |
+| Pedidos de compra e seu histórico | Adiado para a Fase 4 — existe 1 pedido real na V2, mas as tabelas de destino (`purchase_orders` e afins) só nascem naquela fase |
 
-Regras do ETL:
-
-- cada linha migrada registra a **origem V2** (tabela e chave), permitindo auditoria e reversão;
-- as tabelas e scripts de migração são temporários e claramente marcados como tal;
-- o ETL é idempotente: rodar duas vezes não duplica.
+Se a migração de compras acontecer na Fase 4, a regra permanece: cada linha migrada registra a **origem V2** (tabela e chave), o script é temporário e claramente marcado como tal, e o ETL é idempotente.
 
 ---
 

@@ -156,7 +156,7 @@ typecheck -> lint -> testes unitários -> testes de integração -> build
 
 1. Migrar `infra/` para Terraform.
 2. Criar projeto Supabase de produção e serviços Cloud Run de produção.
-3. Executar a carga inicial conforme D-027: backfill do Mercado Livre para pedidos e anúncios, ETL da V2 para vínculos, estoque, NF-e e compras.
+3. Executar a carga inicial: backfill do Mercado Livre para pedidos e anúncios. ETL da V2 para vínculos/estoque/NF-e foi descartado por evidência medida (D-040); só resta, se ainda fizer sentido no momento, migrar o(s) pedido(s) de compra reais da V2.
 4. Verificar backup e restore — restore testado, não apenas backup configurado.
 5. Testes de carga e revisão de `pg_stat_statements`.
 6. Revisão de segurança e de secrets.

@@ -303,6 +303,27 @@ As decisões abaixo respondem os itens **A** a **H** que estavam pendentes ao fi
 
 ---
 
+## D-040 — ETL da V2 (D-027): descartado por evidência medida, exceto compras
+
+**Contexto:** a D-027 presumiu, sem consultar o banco real da V2, que vínculos SKU-MLB, ledger de estoque e NF-e eram "trabalho humano irreprodutível" ou "não existe fora do banco da V2". Ao iniciar a Fase 2 do ETL, a inspeção direta do projeto Supabase `speedbikers-gestao-v2` (ref `eeramcpouarfwagxigtz`) mostrou outra realidade:
+
+| Categoria | Suposição da D-027 | Medido na V2 em 2026-08-20 |
+|---|---|---|
+| Vínculos SKU-MLB | Trabalho humano, irreprodutível | `product_inventory_links`: 3.158 linhas, **100% `source = 'upseller'`, `confidence = 'exact'`** — zero linhas de origem manual. É a própria V2 reaplicando o export do UpSeller, a mesma fonte que o importador da V3 já lê (D-028), com mais cobertura (20.650 vínculos brutos de ML no export atual contra 3.158 aplicados na V2) |
+| Ledger de estoque | Não existe fora do banco da V2 | `stock_movements` e `product_inventory_balances`: **0 linhas** cada. A V2 nunca passou a usar o próprio ledger |
+| NF-e | Histórico com implicação fiscal | `stock_receipts`/`stock_receipt_items` (schema pronto: `access_key`, `invoice_number`, `protocol_status`): **0 linhas** cada. Funcionalidade nunca usada |
+| Pedidos de compra | Não existe fora do banco da V2 | **1 pedido real** (fornecedor Navetec, criado em 2026-08-19), 5 itens, 8 eventos |
+
+**Decisão:** a migração de vínculos, ledger e NF-e da V2 é **descartada** — não há nada de irreprodutível a trazer, e forçar a migração de `product_inventory_links` seria uma **regressão** (menos vínculos que o importador do UpSeller já produz na V3). A migração de pedidos de compra fica **adiada para a Fase 4**, quando `purchase_orders`/`purchase_order_items`/`purchase_order_events` existirem na V3 — o volume (1 pedido) é pequeno o suficiente para não justificar antecipar o schema.
+
+**Motivo:** a D-027 foi escrita como projeção, antes de qualquer consulta ao banco. `docs/PROMPT_MASTER.md` §9 e a prática desta arquitetura de "teste da dor medida" (`docs/ARCHITECTURE.md` secao 1) pedem decisão sobre evidência, não suposição — o mesmo princípio que já corrigiu D-037 a D-039 a partir da leitura real do UpSeller.
+
+**Impacto:** a Fase 2 não tem ETL da V2 para escrever. O item correspondente em `docs/ROADMAP.md` é encerrado por esta decisão, não por código. `docs/DEPLOYMENT.md` secao 8 (rollout da Fase 8) é ajustado para não prometer uma migração de vínculos/estoque/NF-e que não existe.
+
+**Alternativa rejeitada:** migrar `product_inventory_links` mesmo assim, "por segurança". Rejeitada porque não há como distinguir, dentro dele, alguma linha eventualmente ajustada à mão de uma puramente derivada — o campo `source` não registra essa diferença, e todas as 3.158 linhas amostradas têm `confidence = 'exact'` e `source = 'upseller'`. Não existe sinal de curadoria humana a preservar.
+
+---
+
 # Decisões de infraestrutura
 
 ## D-036 — Uma fila do Cloud Tasks por conta do Mercado Livre

@@ -61,7 +61,7 @@ Cada fase só é considerada concluída sob a Definition of Done do `docs/PROMPT
 - [x] `sku_listing_links` com UNIQUE parcial para `variation_id` nulo. Anúncios/variações (`listings`) ficam para a Fase 3
 - [ ] Central de Vinculações: candidatos, resolução por match exato, confirmação humana
 - [x] Importador de planilhas do UpSeller: upload, parse, conferência, confirmação e aplicação — catálogo, kits, vínculos e saldo (D-028)
-- [ ] ETL de carga inicial a partir da V2: vínculos, estoque, NF-e e compras (D-027)
+- [x] ETL de carga inicial a partir da V2 (D-027) — **descartado por evidência medida** (D-040): vínculos/estoque/NF-e sem dado irreprodutível na V2; compras (1 pedido) adiado para a Fase 4
 - [ ] `sync_runs`, `sync_errors` e freshness por conta
 
 **Marco:** o ADMIN conecta as contas e o sistema mostra SKU vinculado a MLB, com o catálogo carregado do UpSeller.

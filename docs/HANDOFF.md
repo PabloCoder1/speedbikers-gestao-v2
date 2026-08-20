@@ -1,6 +1,6 @@
 # Handoff V3
 
-> Última atualização: 2026-08-20 — **Fase 1 concluída**; na Fase 2, o importador do UpSeller está completo ponta a ponta (upload → parse → conferência → confirmação → aplicação), commitado (`6881cbc`), publicado em `origin/v3` e implantado no Cloud Run Dev.
+> Última atualização: 2026-08-20 — **Fase 1 concluída**; na Fase 2, o importador do UpSeller está completo ponta a ponta e implantado, e o ETL da V2 (D-027) foi encerrado por evidência medida (D-040). Restam a Central de Vinculações e o schema de `sync_runs`/`sync_errors`.
 
 ## Estado atual
 
@@ -205,11 +205,14 @@ Provisionado: filas `analytics-recompute` (10/s, 20), `backfill` (1/s, 2) e `mai
 
 **Fase 2 — Core de dados.** Identidade, contas e catálogo, com RLS desde a primeira tabela.
 
-**Concluído nesta sessão:** o comando de aplicação (upload → parse → conferência → confirmação → **aplicação**, ponta a ponta). O único item que falta para fechar a frente do importador é:
+**Concluído nesta sessão:** o comando de aplicação (upload → parse → conferência → confirmação → **aplicação**, ponta a ponta), commitado, publicado e implantado; e o ETL da V2 (D-027), encerrado por evidência medida (D-040) — não havia código a escrever.
 
-1. **ETL de carga inicial da V2** (D-027) — vínculos, estoque, NF-e e compras que não existem em nenhuma outra fonte.
+A frente do importador do UpSeller está **fechada**. Restam dois itens reais da Fase 2:
 
-**Ainda não commitado nesta máquina:** migration `20260820220000_erp_import_apply.sql`, os tipos regenerados de `packages/db/src/types.ts`, o comando de aplicação (`packages/domain/src/upseller/apply.ts` + `apps/worker/src/handlers/erp-import-apply.ts`), a rota `POST /v1/erp-imports/:id/apply` e o botão de confirmação no `web`. Migration já aplicada e testada localmente (integração de RLS verde, 60 testes) e via script pontual contra Postgres real — falta o commit e o push para a CI aplicar em Dev.
+1. **Central de Vinculações** — candidatos, resolução por match exato, confirmação humana. `product_inventory_link_conflicts` da V2 (275 linhas, 263 ainda não resolvidas) é uma referência útil do tipo de ambiguidade que a tela precisa tratar, mas não é dado a migrar.
+2. **`sync_runs`, `sync_errors` e freshness por conta** — schema pode ser criado agora; o preenchimento real só acontece na Fase 3.
+
+**Ainda não commitado nesta máquina:** nada — o comando de aplicação, o fix de infra do `worker` e a correção D-040 já foram commitados e publicados em `origin/v3`.
 
 **Já no ar em Dev, `api` e `worker` verificados após o deploy:** rota `/v1/erp-imports/:id/apply` responde 401 sem token e 404 nas rotas vizinhas; `worker` reiniciado com `ERP_IMPORTS_BUCKET` correto e log `worker_started` confirmado no Cloud Logging — ver a armadilha registrada acima.
 
@@ -226,7 +229,7 @@ Ordem dentro da fase, do que não depende de nada para o que depende:
 2. ~~**Contas Mercado Livre**~~ — **concluído**. Credenciais e states de OAuth ficam sem GRANT nenhum: inalcançáveis pela Data API em qualquer cenário.
 3. ~~**Catálogo**~~ — **concluído**. `skus` e `sku_components` aplicados. Fornecedores adiados: a exportação não traz nenhum dado de fornecedor (as colunas `Vendedor` e `Link do Fornecedor` vêm vazias), e a fonte real será a NF-e na Fase 4.
 4. **Vinculações** — `sku_listing_links` **concluído**, com os três índices parciais que resolvem a armadilha do `NULL` em `UNIQUE`. `listings` e `listing_variations` foram **adiados para a Fase 3**: não há fonte para eles até a sincronização existir, e o formato depende do que a API do ML devolve — criar agora seria adivinhar campo.
-5. **Importador do UpSeller** e **ETL de carga inicial da V2** (D-027) — **em andamento**.
+5. **Importador do UpSeller** e **ETL de carga inicial da V2** (D-027) — **concluído**.
    - ✅ `packages/domain` criado com os parsers puros do UpSeller: normalização de unidade, marca a partir de `Categorias`, código fiscal de origem, decimal com vírgula ou ponto, e a classificação `MLB` / `MLBU` / variação repetida.
    - ✅ Mapeadores de linha para os quatro arquivos, **por nome de coluna, nunca por posição**: se o UpSeller inserir uma coluna, o mapeamento posicional deslocaria tudo em silêncio.
    - ✅ **Validado contra os arquivos reais**, não só contra fixture: 3.415 produtos, 272 componentes, 23.924 vínculos e 3.372 saldos processados com **zero linhas inválidas**. Todos os números conferem com a análise independente feita em Python.
@@ -247,7 +250,7 @@ Ordem dentro da fase, do que não depende de nada para o que depende:
      - Cada linha grava `apply_status` (`APPLIED`/`UNRESOLVED`/`FAILED`) e `apply_reason` em `erp_import_rows`; o lote grava `applied_rows`/`unresolved_rows` e vira `APPLIED`.
      - **Idempotência verificada contra Postgres real** (não só teste com fake): rodar o mesmo lote de vínculos duas vezes produz uma linha em `sku_listing_links`, não duas.
      - Tela de conferência ganhou o botão "Confirmar aplicação" (só aparece com o lote `PARSED`) e uma coluna de desfecho por linha depois de aplicado.
-   - ⏳ Falta: ETL de carga inicial da V2 (D-027).
+   - ✅ **ETL de carga inicial da V2 (D-027) — encerrado por evidência medida, não por código.** Inspecionado o banco real da V2 (`speedbikers-gestao-v2`, ref `eeramcpouarfwagxigtz`): `product_inventory_links` (vínculos, 3.158 linhas) é 100% `source = 'upseller'`/`confidence = 'exact'` — sem curadoria humana distinta do que o importador da V3 já reproduz, e com **menos** cobertura (3.158 aplicados na V2 contra 20.650 vínculos brutos de ML no export atual). `stock_movements`, `product_inventory_balances` e `stock_receipts` (NF-e): **0 linhas** — funcionalidade que existia no schema da V2 e nunca foi usada. Único dado real: **1 pedido de compra**, 5 itens, 8 eventos — adiado para a Fase 4, quando `purchase_orders` existir na V3. Registrado como **D-040**, com a tabela completa em `docs/DECISIONS.md`.
 
 **Leitor de planilha escolhido:** `read-excel-file` (2,5 MB) em vez de `exceljs` (21,8 MB), porque o worker só lê. Medido nos arquivos reais: 23.925 linhas em 647 ms com 176 MB de RSS, folgado nos 512 MB do container. Usar `readSheet`, não o export padrão — na v9 o padrão devolve o array de planilhas.
 
@@ -259,6 +262,6 @@ Frente paralela, independente: confirmar a documentação oficial do Mercado Liv
 
 ## Bloqueios atuais
 
-- Nenhum bloqueio para o ETL de carga inicial da V2 (D-027), última pendência da Fase 2.
+- Nenhum bloqueio para a Central de Vinculações ou para o schema de `sync_runs`/`sync_errors`.
 - Confirmação da documentação oficial do Mercado Livre bloqueia a Fase 3.
 - Modelos de exportação do pedido de compra (Excel e PDF) precisam ser solicitados antes da Fase 4.
