@@ -86,9 +86,15 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        # `--yes` é obrigatório: os dois comandos pedem confirmação interativa
+        # por padrão e travam num runner sem terminal.
+        #
+        # `db push` sem `--include-all` aplica apenas o que está pendente no
+        # histórico remoto. É o comportamento desejado: incluir tudo às cegas
+        # reaplicaria migrations que o remoto já considera resolvidas.
         run: |
-          pnpm exec supabase link --project-ref nmgccyqquwxecqffsidr
-          pnpm exec supabase db push
+          pnpm exec supabase link --project-ref nmgccyqquwxecqffsidr --yes
+          pnpm exec supabase db push --yes
 
   scripts:
     name: scripts de infraestrutura
