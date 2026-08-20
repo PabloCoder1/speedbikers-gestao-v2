@@ -43,10 +43,19 @@ create_queue() {
 
   # Menor privilégio: a `api` enfileira, e a permissão é dada por fila, não no
   # projeto inteiro.
-  gc tasks queues add-iam-policy-binding "${name}" \
-    --location "${REGION}" \
-    --member "serviceAccount:$(sa_email "${SA_API}")" \
-    --role roles/cloudtasks.enqueuer >/dev/null 2>&1 || true
+  #
+  # Sem `|| true`: engolir a falha aqui esconderia exatamente o erro que
+  # importa — service account inexistente ou sem permissão de conceder papel.
+  local binding
+  if ! binding="$(gc tasks queues add-iam-policy-binding "${name}" \
+      --location "${REGION}" \
+      --member "serviceAccount:$(sa_email "${SA_API}")" \
+      --role roles/cloudtasks.enqueuer 2>&1)"; then
+    printf '%s\n' "${binding}" >&2
+    fail "Falha ao conceder cloudtasks.enqueuer em ${name}. Mensagem do gcloud acima."
+  fi
+
+  info "${name}: enqueuer -> ${SA_API}"
 }
 
 step "Pré-condições"

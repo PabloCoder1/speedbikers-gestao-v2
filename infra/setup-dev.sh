@@ -64,9 +64,10 @@ create_sa() {
   fi
 }
 
-create_sa "${SA_API}"    "Identidade do serviço apps/api no Cloud Run"
-create_sa "${SA_WORKER}" "Identidade do serviço apps/worker no Cloud Run"
-create_sa "${SA_TASKS}"  "Identidade usada pelo Cloud Tasks para invocar o worker via OIDC"
+create_sa "${SA_API}"       "Runtime do backend API Speed Bikers Gestao V3"
+create_sa "${SA_WORKER}"    "Runtime dos workers Speed Bikers Gestao V3"
+create_sa "${SA_TASKS}"     "Identidade usada pelo Cloud Tasks"
+create_sa "${SA_SCHEDULER}" "Identidade usada pelo Cloud Scheduler"
 
 step "Concluído"
 info "Próximo: bash infra/cloud-tasks-queues.sh"

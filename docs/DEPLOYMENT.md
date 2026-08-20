@@ -62,7 +62,20 @@
 | `backfill` | História | 1/s, 2 simultâneas — nunca disputa com o vivo |
 | `maintenance` | Conferência, expurgo, medição | 1/s, 1 simultânea |
 
-Permissão de enfileirar é concedida **por fila** à service account `sb-api`, não no projeto inteiro.
+Permissão de enfileirar é concedida **por fila** à service account `v3-api-runtime`, nunca no projeto inteiro.
+
+### Service accounts
+
+Uma identidade por responsabilidade, seguindo a convenção já existente no projeto:
+
+| Service account | Papel |
+|---|---|
+| `v3-api-runtime` | Runtime do `apps/api` no Cloud Run |
+| `v3-worker-runtime` | Runtime do `apps/worker` no Cloud Run |
+| `v3-tasks-invoker` | Identidade que o Cloud Tasks usa para invocar o worker via OIDC |
+| `v3-scheduler-invoker` | Identidade que o Cloud Scheduler usa para invocar a api via OIDC |
+
+Papéis são concedidos **no recurso** (fila, bucket, serviço), não no projeto.
 
 Cloud Scheduler dispara apenas reconciliação e manutenção. **Nunca despacha fila** — foi o que dominou o banco da V2 com polling.
 

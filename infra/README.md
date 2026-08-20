@@ -35,9 +35,9 @@ bash infra/storage-buckets.sh
 
 | Script | Recursos | Custo parado |
 |---|---|---|
-| `setup-dev.sh` | Habilita APIs, cria as service accounts `sb-api`, `sb-worker`, `sb-tasks` | Zero |
+| `setup-dev.sh` | Habilita APIs e garante as service accounts `v3-api-runtime`, `v3-worker-runtime`, `v3-tasks-invoker`, `v3-scheduler-invoker` | Zero |
 | `cloud-tasks-queues.sh` | Filas `analytics-recompute`, `backfill`, `maintenance`, mais `ml-sync-<conta>` sob demanda | Zero |
-| `storage-buckets.sh` | Buckets `raw-ml`, `erp-imports`, `documents`, com ciclo de vida de 90 dias no primeiro | Zero até haver objeto |
+| `storage-buckets.sh` | Buckets `raw-ml`, `erp-imports`, `documents`, ciclo de vida de 90 dias no primeiro, e IAM por bucket | Zero até haver objeto |
 
 Nenhum deles cria serviço do Cloud Run. Deploy é assunto do workflow de CI — ver `docs/DEPLOYMENT.md`.
 

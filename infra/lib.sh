@@ -14,9 +14,14 @@ REGION="${REGION:-southamerica-east1}"
 
 # Service accounts. Uma identidade por responsabilidade — menor privilégio
 # possível, conforme docs/PROMPT_MASTER.md secao 31.
-SA_API="sb-api"
-SA_WORKER="sb-worker"
-SA_TASKS="sb-tasks"
+#
+# Estes nomes seguem a convenção JÁ EXISTENTE no projeto, criada junto com a
+# fundação do Google Cloud. Não inventar nomes novos: identidade duplicada para
+# o mesmo papel divide as permissões entre as duas e ninguém descobre qual vale.
+SA_API="v3-api-runtime"
+SA_WORKER="v3-worker-runtime"
+SA_TASKS="v3-tasks-invoker"
+SA_SCHEDULER="v3-scheduler-invoker"
 
 sa_email() {
   echo "${1}@${PROJECT_ID}.iam.gserviceaccount.com"
