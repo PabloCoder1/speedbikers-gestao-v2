@@ -118,9 +118,18 @@ Depois verificar branch, `git status` e commits recentes.
 
 Verificado em execução, não só em teste: a `api` responde `GET /health` 200 e 404 no envelope padrão; o `worker` responde `system.ping` com 200 e tipo desconhecido com 400; ambiente inválido derruba o processo com exit 1 listando todos os problemas de uma vez.
 
-**Ambiente local:** Node 24.18.1, npm 11.16.0, pnpm 11.22.0, git 2.55. **Ausentes e ainda necessários:** Docker (Supabase local), gcloud (Cloud Run) e a CLI da Supabase, que entra como devDependency do repositório.
+**Ambiente local:** Node 24.18.1, npm 11.16.0, pnpm 11.22.0, git 2.55, **Docker Desktop 4.87 funcionando**, **Google Cloud SDK 581.0.0**. Falta só a CLI da Supabase, que entra como devDependency do repositório.
 
-**Falta nesta fase:** `apps/web` · `packages/db`, `domain`, `mercado-livre`, `ui` · `.env.example` · Supabase local · CI no GitHub Actions · projeto Vercel · scripts `infra/`.
+**Restrição de máquina:** 6,9 GB de RAM. A stack local completa do Supabase (cerca de dez containers) não cabe confortavelmente. Plano A: WSL limitado a 3 GB com 8 GB de swap e apenas os containers necessários. Plano B, se travar: testes de integração contra o Supabase V3 Dev na nuvem, em schema isolado. O conserto real é 16 GB de RAM — não bloqueia a Fase 1, mas vai pesar a partir da Fase 5.
+
+**Google Cloud (`speedbikers-gestao-v3`, `southamerica-east1`):** billing habilitado, ADC criada, e todas as APIs necessárias já habilitadas — Run, Tasks, Scheduler, Secret Manager, Storage, Artifact Registry, Build e Logging. Zero filas e zero buckets criados até agora.
+
+**No Windows:** usar `gcloud.cmd`, não `gcloud`. O wrapper `.ps1` é bloqueado pela política de execução do PowerShell (`Restricted` por padrão). Os scripts de `infra/` já tratam isso.
+
+- `infra/` com `lib.sh`, `setup-dev.sh`, `cloud-tasks-queues.sh`, `storage-buckets.sh` e `README.md` — idempotentes, sintaxe validada, **ainda não executados**.
+- **D-036**: uma fila do Cloud Tasks **por conta** do Mercado Livre. O limite de taxa do Cloud Tasks é por fila, não por conta, e a D-014 dependia disso.
+
+**Falta nesta fase:** executar os scripts de `infra/` · `apps/web` · `packages/db`, `domain`, `mercado-livre`, `ui` · `.env.example` · Supabase local · CI no GitHub Actions · projeto Vercel.
 
 ## Próximo passo
 

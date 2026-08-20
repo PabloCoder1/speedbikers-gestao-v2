@@ -303,6 +303,24 @@ As decisões abaixo respondem os itens **A** a **H** que estavam pendentes ao fi
 
 ---
 
+# Decisões de infraestrutura
+
+## D-036 — Uma fila do Cloud Tasks por conta do Mercado Livre
+
+**Decisão:** cada conta do Mercado Livre tem a própria fila, `ml-sync-<conta>`. Não existe uma fila `ml-sync` compartilhada.
+
+**Motivo:** o limite de taxa e de concorrência do Cloud Tasks é **por fila**, não por conta. A D-014 escolheu Cloud Tasks tendo o respeito ao rate limit por conta como uma das justificativas; realizar isso exige uma fila por conta. Uma fila compartilhada faria o backfill de uma conta consumir o orçamento de requisições das outras — e a V2 registrou 17 respostas HTTP 429 em 24 h entre 4 contas **sem backfill em execução**.
+
+**Precisão sobre a D-014:** a D-014 descrevia a fila base como `ml-sync`. Esta decisão substitui esse nome. As demais filas (`analytics-recompute`, `backfill`, `maintenance`) continuam únicas, porque não falam com API externa limitada por conta.
+
+**Impacto operacional:** conectar uma conta passa a incluir criar a fila dela. Executado por `bash infra/cloud-tasks-queues.sh <slug>`, e mais tarde pelo próprio fluxo de conexão de conta.
+
+**Custo:** fila vazia não custa nada. O custo do Cloud Tasks vem do despacho, não da existência.
+
+**Valores provisórios:** os limites de taxa das filas `ml-sync-*` estão provisórios até a confirmação da política de rate limit vigente do Mercado Livre — ver `docs/MERCADO_LIVRE.md` secao 1.
+
+---
+
 # Decisões de ferramental
 
 ## D-035 — TypeScript 6.0.3, não 7.x

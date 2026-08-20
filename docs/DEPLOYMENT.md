@@ -57,10 +57,12 @@
 
 | Fila | Papel | Configuração relevante |
 |---|---|---|
-| `ml-sync` | Sincronização | Limite de taxa e concorrência **por conta** |
-| `analytics-recompute` | Recálculo de métricas | Dedupe forte por nome de task |
-| `backfill` | História | Prioridade baixa, nunca disputa com o vivo |
-| `maintenance` | Conferência, expurgo, medição | Baixa frequência |
+| `ml-sync-<conta>` | Sincronização | **Uma fila por conta** (D-036); limites provisórios até confirmar o rate limit oficial do ML |
+| `analytics-recompute` | Recálculo de métricas | 10/s, 20 simultâneas, dedupe por nome de task |
+| `backfill` | História | 1/s, 2 simultâneas — nunca disputa com o vivo |
+| `maintenance` | Conferência, expurgo, medição | 1/s, 1 simultânea |
+
+Permissão de enfileirar é concedida **por fila** à service account `sb-api`, não no projeto inteiro.
 
 Cloud Scheduler dispara apenas reconciliação e manutenção. **Nunca despacha fila** — foi o que dominou o banco da V2 com polling.
 
@@ -92,12 +94,21 @@ Regras:
 
 ```text
 infra/
-  setup-dev.sh              projeto, serviços habilitados, service accounts
-  cloud-tasks-queues.sh     as 4 filas e suas configurações
-  cloud-scheduler.sh        reconciliação e manutenção
-  secrets.sh                criação dos segredos (valores nunca versionados)
+  lib.sh                    variáveis, helpers e pré-condições comuns
+  setup-dev.sh              APIs habilitadas e service accounts
+  cloud-tasks-queues.sh     filas base e fila por conta do Mercado Livre
+  storage-buckets.sh        buckets e ciclo de vida do payload bruto
   README.md                 ordem de execução e pré-requisitos
+  # pendentes:
+  # cloud-scheduler.sh      Fase 3, quando houver reconciliação a agendar
+  # secrets.sh              Fase 2, com o OAuth do Mercado Livre
 ```
+
+Projeto de desenvolvimento: **`speedbikers-gestao-v3`**, região `southamerica-east1`.
+
+Os scripts chamam `gcloud.cmd` no Windows — o wrapper `.ps1` esbarra na política de execução do PowerShell. Rodar pelo Git Bash.
+
+**Nenhum script define projeto padrão global no gcloud.** O projeto é sempre explícito, porque a mesma conta administra outros projetos e um padrão global erra silenciosamente.
 
 - *Motivo:* Terraform brilha com múltiplos ambientes e múltiplas pessoas. Com um ambiente e um operador, é uma linguagem a mais, um state a gerenciar e um modo novo de quebrar deploy — antes de existir uma linha de domínio.
 - *Desvantagem assumida:* script não detecta drift. Alteração feita pelo console não gera aviso.

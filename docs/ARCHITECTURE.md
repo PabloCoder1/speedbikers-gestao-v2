@@ -236,7 +236,7 @@ Cloud Tasks elimina lease, claim, contador de retry, despachante e dead-letter a
 
 | Fila | Papel | Característica |
 |---|---|---|
-| `ml-sync` | Sincronização com o Mercado Livre | Taxa limitada por conta |
+| `ml-sync-<conta>` | Sincronização com o Mercado Livre | **Uma fila por conta** — o limite do Cloud Tasks é por fila (D-036) |
 | `analytics-recompute` | Recálculo de métricas | Dedupe forte por nome |
 | `backfill` | História | Prioridade baixa, nunca disputa com o vivo |
 | `maintenance` | Conferência, expurgo, medição | Baixa frequência |
