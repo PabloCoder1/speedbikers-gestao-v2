@@ -1,6 +1,6 @@
 # Handoff V3
 
-> Última atualização: 2026-08-19 — Fase 1 em andamento: monorepo, observabilidade, `api` e `worker` no ar.
+> Última atualização: 2026-08-20 — Fase 1: `web` na Vercel, `api` e `worker` no Cloud Run, corrente de filas fechada.
 
 ## Estado atual
 
@@ -144,7 +144,15 @@ Provisionado: filas `analytics-recompute` (10/s, 20), `backfill` (1/s, 2) e `mai
 
 **Supabase V3 Dev inspecionado diretamente:** ref `nmgccyqquwxecqffsidr`, `sa-east-1`, Postgres 17.6.1.155, `ACTIVE_HEALTHY`, **zero tabelas no schema public** — a documentação estava correta.
 
-**Falta nesta fase:** subir a stack local (`supabase start`) · primeira migration (`job_runs`, infraestrutura, não domínio) · deploy de `api` e `worker` no Cloud Run · um job real atravessando `api -> Cloud Tasks -> worker -> Postgres`.
+- **`api` e `worker` no ar no Cloud Run**, São Paulo. Imagem única parametrizada, construída pelo Cloud Build e marcada com o sha curto do commit — dá para responder "qual código está no ar" sem adivinhar.
+  - `api`: pública (o webhook do Mercado Livre não envia credencial do Google), `min-instances=1`, rotas `/internal/` verificadas por OIDC na aplicação.
+  - `worker`: **privado**, verificado — 403 sem credencial, 200 com token de identidade. Só `v3-tasks-invoker` invoca.
+- **A corrente `Cloud Scheduler -> api -> Cloud Tasks -> worker` está fechada e comprovada em produção.** Job `v3-heartbeat` de hora em hora.
+- **Deduplicação comprovada:** quatro disparos na mesma janela produziram um enfileiramento e três colapsos. É o mecanismo da chave suja (`docs/ARCHITECTURE.md` secao 10).
+
+**Armadilha do ambiente, já resolvida nos scripts:** no Windows, usar o wrapper **POSIX** `gcloud`, nunca o `.cmd`. O `cmd.exe` trata `>`, `<`, `|`, `&` e espaço-com-asterisco como sintaxe mesmo entre aspas — destrói o cron `"0 * * * *"` e falha com uma mensagem sobre `'C:\Program'` que não aponta para a causa.
+
+**Falta nesta fase:** subir a stack local (`supabase start`) · primeira migration (`job_runs`, infraestrutura, não domínio) · o worker gravar em Postgres e o `web` exibir o resultado.
 
 `packages/domain`, `mercado-livre` e `ui` não entram na Fase 1: só ganham conteúdo quando houver domínio, e criar package vazio contraria a regra de só promover a package o que dois apps importam.
 
