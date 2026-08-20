@@ -50,6 +50,35 @@ async function asUser<T>(userId: string, sql: string): Promise<T[]> {
   }
 }
 
+/**
+ * Como `asUser`, mas COMMITA em vez de reverter.
+ *
+ * `asUser` reverte de propósito — é o que permite testar leitura sem
+ * `afterEach` de limpeza. Mas uma chamada de RPC como `resolve_link_candidate`
+ * só prova o que promete se o efeito (o vínculo criado, o candidato fechado)
+ * sobreviver à transação, porque a asserção seguinte lê com uma conexão nova
+ * — aqui, uma consulta direta sem `asUser`.
+ */
+async function asUserPersist<T>(userId: string, sql: string): Promise<T[]> {
+  await client.query("begin");
+
+  try {
+    await client.query("set local role authenticated");
+    await client.query("select set_config('request.jwt.claims', $1, true)", [
+      JSON.stringify({ sub: userId }),
+    ]);
+
+    const result = await client.query(sql);
+
+    await client.query("commit");
+
+    return result.rows as T[];
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  }
+}
+
 async function asAnon<T>(sql: string): Promise<T[]> {
   await client.query("begin");
 
@@ -95,6 +124,10 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // link_candidates antes: referencia erp_import_rows e ml_accounts, que os
+  // passos seguintes apagam.
+  await client.query(`delete from public.link_candidates where sku_key = 'RLSTEST-CANDIDATO'`);
+
   // Componentes primeiro: `on delete restrict` impede apagar um produto que
   // compõe kit — que é justamente a garantia testada acima.
   await client.query(`
@@ -676,5 +709,256 @@ describe("RLS da importação", () => {
     await expect(asAnon("select * from public.erp_import_batches")).rejects.toThrow(
       /permission denied/i,
     );
+  });
+});
+
+describe("Central de Vinculações", () => {
+  const CONTA = "aaaa1111-0000-4000-8000-00000000aaaa"; // ANALISTA_SB tem permissão aqui.
+  const HASH = "d".repeat(64);
+  let batchId = "";
+  let rowId = 0;
+  let skuId = "";
+  let otherOrgSkuId = "";
+
+  beforeAll(async () => {
+    const b = await client.query<{ id: string }>(
+      `insert into public.erp_import_batches (organization_id, kind, storage_path, content_hash, file_name)
+       values ($1,'LINKS','erp-imports/2026-08/l.xlsx',$2,'rlstest-links.xlsx')
+       returning id`,
+      [ORG_SB, HASH],
+    );
+    batchId = b.rows[0]?.id ?? "";
+
+    const r = await client.query<{ id: number }>(
+      `insert into public.erp_import_rows (batch_id, row_number, status, payload)
+       values ($1, 2, 'OK', '{}') returning id`,
+      [batchId],
+    );
+    rowId = r.rows[0]?.id ?? 0;
+
+    const s = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind) values ($1,'RLSTEST-candidato','PRODUTO')
+       returning id`,
+      [ORG_SB],
+    );
+    skuId = s.rows[0]?.id ?? "";
+
+    const o = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind) values ($1,'RLSTEST-candidato-outra','PRODUTO')
+       returning id`,
+      [ORG_OUTRA],
+    );
+    otherOrgSkuId = o.rows[0]?.id ?? "";
+  });
+
+  let nextRowNumber = 100;
+
+  /**
+   * Cada chamada usa uma linha de origem PRÓPRIA — `link_candidates` permite
+   * só um candidato por linha (`link_candidates_source_row_unique`), e testes
+   * independentes não podem depender da ordem de limpeza uns dos outros.
+   */
+  async function insertCandidate(): Promise<string> {
+    nextRowNumber += 1;
+
+    const r = await client.query<{ id: number }>(
+      `insert into public.erp_import_rows (batch_id, row_number, status, payload)
+       values ($1, $2, 'OK', '{}') returning id`,
+      [batchId, nextRowNumber],
+    );
+    const ownRowId = r.rows[0]?.id ?? 0;
+
+    const c = await client.query<{ id: string }>(
+      `insert into public.link_candidates
+         (organization_id, ml_account_id, source_row_id, sku_key, ref_kind, item_id, variation_id)
+       values ($1,$2,$3,'RLSTEST-CANDIDATO','ITEM','MLB900000777',null)
+       returning id`,
+      [ORG_SB, CONTA, ownRowId],
+    );
+
+    return c.rows[0]?.id ?? "";
+  }
+
+  it("linha de origem duplicada é recusada — um candidato por linha", async () => {
+    // Usa a linha do beforeAll diretamente: as duas tentativas precisam mirar
+    // o MESMO source_row_id, o que o helper insertCandidate (uma linha nova
+    // por chamada, de propósito) não serve para este caso.
+    await client.query(
+      `insert into public.link_candidates
+         (organization_id, ml_account_id, source_row_id, sku_key, ref_kind, item_id)
+       values ($1,$2,$3,'RLSTEST-CANDIDATO','ITEM','MLB900000777')`,
+      [ORG_SB, CONTA, rowId],
+    );
+
+    await expect(
+      client.query(
+        `insert into public.link_candidates
+           (organization_id, ml_account_id, source_row_id, sku_key, ref_kind, item_id)
+         values ($1,$2,$3,'RLSTEST-CANDIDATO','ITEM','MLB900000778')`,
+        [ORG_SB, CONTA, rowId],
+      ),
+    ).rejects.toThrow(/link_candidates_source_row_unique/);
+
+    await client.query("delete from public.link_candidates where source_row_id = $1", [rowId]);
+  });
+
+  describe("RLS de leitura", () => {
+    it("quem tem permissão na conta enxerga o candidato", async () => {
+      const id = await insertCandidate();
+
+      const rows = await asUser(ANALISTA_SB, "select id from public.link_candidates");
+
+      expect(rows.map((r) => (r as { id: string }).id)).toContain(id);
+
+      await client.query("delete from public.link_candidates where id = $1", [id]);
+    });
+
+    it("ADMIN enxerga qualquer conta da própria organização", async () => {
+      const id = await insertCandidate();
+
+      const rows = await asUser(ADMIN_SB, "select id from public.link_candidates");
+
+      expect(rows.map((r) => (r as { id: string }).id)).toContain(id);
+
+      await client.query("delete from public.link_candidates where id = $1", [id]);
+    });
+
+    it("usuário de outra organização não enxerga nada", async () => {
+      const id = await insertCandidate();
+
+      const rows = await asUser(DE_OUTRA_ORG, "select id from public.link_candidates");
+
+      expect(rows).toHaveLength(0);
+
+      await client.query("delete from public.link_candidates where id = $1", [id]);
+    });
+
+    it("anon é recusado", async () => {
+      await expect(asAnon("select * from public.link_candidates")).rejects.toThrow(
+        /permission denied/i,
+      );
+    });
+  });
+
+  describe("escrita direta é recusada — só pelas duas funções", () => {
+    it("authenticated não insere direto", async () => {
+      await expect(
+        asUser(
+          ADMIN_SB,
+          `insert into public.link_candidates
+             (organization_id, ml_account_id, source_row_id, sku_key, ref_kind, item_id)
+           values ('${ORG_SB}','${CONTA}',${String(rowId)},'RLSTEST-HACK','ITEM','MLB900000778')`,
+        ),
+      ).rejects.toThrow(/permission denied|row-level security/i);
+    });
+
+    it("authenticated não atualiza direto", async () => {
+      const id = await insertCandidate();
+
+      await expect(
+        asUser(
+          ADMIN_SB,
+          `update public.link_candidates set status='DISMISSED' where id='${id}' returning id`,
+        ),
+      ).rejects.toThrow(/permission denied/i);
+
+      await client.query("delete from public.link_candidates where id = $1", [id]);
+    });
+  });
+
+  describe("resolve_link_candidate", () => {
+    it("sem acesso à conta é recusado", async () => {
+      const id = await insertCandidate();
+
+      await expect(
+        asUser(DE_OUTRA_ORG, `select public.resolve_link_candidate('${id}','${skuId}')`),
+      ).rejects.toThrow(/sem permissao/);
+
+      await client.query("delete from public.link_candidates where id = $1", [id]);
+    });
+
+    it("SKU de outra organização é recusado", async () => {
+      const id = await insertCandidate();
+
+      await expect(
+        asUser(ADMIN_SB, `select public.resolve_link_candidate('${id}','${otherOrgSkuId}')`),
+      ).rejects.toThrow(/outra organizacao/);
+
+      await client.query("delete from public.link_candidates where id = $1", [id]);
+    });
+
+    it("quem tem acesso resolve: cria o vínculo e fecha o candidato na mesma transação", async () => {
+      const id = await insertCandidate();
+
+      // ANALISTA enxerga (RLS de leitura, acima), mas confirmar é ato de
+      // escrita — mesmos papéis de sku_listing_links_write_permitted.
+      await asUserPersist(ADMIN_SB, `select public.resolve_link_candidate('${id}','${skuId}')`);
+
+      const candidate = await client.query(
+        `select status, resolution_method, resolved_sku_id from public.link_candidates where id=$1`,
+        [id],
+      );
+
+      expect(candidate.rows[0]).toMatchObject({
+        status: "RESOLVED",
+        resolution_method: "MANUAL",
+        resolved_sku_id: skuId,
+      });
+
+      const link = await client.query(
+        `select sku_id, source from public.sku_listing_links where item_id='MLB900000777'`,
+      );
+
+      expect(link.rows[0]).toMatchObject({ sku_id: skuId, source: "MANUAL" });
+
+      await client.query("delete from public.sku_listing_links where item_id='MLB900000777'");
+      await client.query("delete from public.link_candidates where id = $1", [id]);
+    });
+
+    it("candidato já resolvido não pode ser resolvido de novo", async () => {
+      const id = await insertCandidate();
+
+      await asUserPersist(ADMIN_SB, `select public.resolve_link_candidate('${id}','${skuId}')`);
+
+      await expect(
+        asUserPersist(ADMIN_SB, `select public.resolve_link_candidate('${id}','${skuId}')`),
+      ).rejects.toThrow(/nao esta aberto/);
+
+      await client.query("delete from public.sku_listing_links where item_id='MLB900000777'");
+      await client.query("delete from public.link_candidates where id = $1", [id]);
+    });
+  });
+
+  describe("dismiss_link_candidate", () => {
+    it("sem acesso à conta é recusado", async () => {
+      const id = await insertCandidate();
+
+      await expect(
+        asUser(DE_OUTRA_ORG, `select public.dismiss_link_candidate('${id}')`),
+      ).rejects.toThrow(/sem permissao/);
+
+      await client.query("delete from public.link_candidates where id = $1", [id]);
+    });
+
+    it("quem tem acesso descarta, sem criar vínculo nenhum", async () => {
+      const id = await insertCandidate();
+
+      await asUserPersist(ADMIN_SB, `select public.dismiss_link_candidate('${id}')`);
+
+      const candidate = await client.query(
+        `select status, resolved_sku_id from public.link_candidates where id=$1`,
+        [id],
+      );
+
+      expect(candidate.rows[0]).toMatchObject({ status: "DISMISSED", resolved_sku_id: null });
+
+      const link = await client.query(
+        `select id from public.sku_listing_links where item_id='MLB900000777'`,
+      );
+
+      expect(link.rows).toHaveLength(0);
+
+      await client.query("delete from public.link_candidates where id = $1", [id]);
+    });
   });
 });

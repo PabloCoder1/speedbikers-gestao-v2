@@ -1,6 +1,6 @@
 # Handoff V3
 
-> Última atualização: 2026-08-20 — **Fase 1 concluída**; na Fase 2, o importador do UpSeller está completo ponta a ponta e implantado, e o ETL da V2 (D-027) foi encerrado por evidência medida (D-040). Restam a Central de Vinculações e o schema de `sync_runs`/`sync_errors`.
+> Última atualização: 2026-08-20 — **Fase 1 concluída**; na Fase 2, o importador do UpSeller está completo ponta a ponta e implantado, o ETL da V2 (D-027) foi encerrado por evidência medida (D-040), e a **Central de Vinculações** está no ar, verificada num navegador real. Resta só o schema de `sync_runs`/`sync_errors`.
 
 ## Estado atual
 
@@ -205,14 +205,21 @@ Provisionado: filas `analytics-recompute` (10/s, 20), `backfill` (1/s, 2) e `mai
 
 **Fase 2 — Core de dados.** Identidade, contas e catálogo, com RLS desde a primeira tabela.
 
-**Concluído nesta sessão:** o comando de aplicação (upload → parse → conferência → confirmação → **aplicação**, ponta a ponta), commitado, publicado e implantado; e o ETL da V2 (D-027), encerrado por evidência medida (D-040) — não havia código a escrever.
+**Concluído nesta sessão:** o comando de aplicação (upload → parse → conferência → confirmação → **aplicação**, ponta a ponta), commitado, publicado e implantado; o ETL da V2 (D-027), encerrado por evidência medida (D-040) — não havia código a escrever; e a Central de Vinculações, completa e verificada num navegador real.
 
-A frente do importador do UpSeller está **fechada**. Restam dois itens reais da Fase 2:
+A frente do importador do UpSeller e a Central de Vinculações estão **fechadas**. Resta um item real da Fase 2:
 
-1. **Central de Vinculações** — candidatos, resolução por match exato, confirmação humana. `product_inventory_link_conflicts` da V2 (275 linhas, 263 ainda não resolvidas) é uma referência útil do tipo de ambiguidade que a tela precisa tratar, mas não é dado a migrar.
-2. **`sync_runs`, `sync_errors` e freshness por conta** — schema pode ser criado agora; o preenchimento real só acontece na Fase 3.
+1. **`sync_runs`, `sync_errors` e freshness por conta** — schema pode ser criado agora; o preenchimento real só acontece na Fase 3.
 
-**Ainda não commitado nesta máquina:** nada — o comando de aplicação, o fix de infra do `worker` e a correção D-040 já foram commitados e publicados em `origin/v3`.
+**Central de Vinculações — concluída e verificada nesta sessão:**
+
+- Migration `20260821000000_create_link_candidates.sql`: tabela `link_candidates` (uma referência sem vínculo por linha de origem, `unique(source, source_row_id)`) e duas RPCs `security definer` — `resolve_link_candidate` (confirmação humana: cria `sku_listing_links` e fecha o candidato na mesma transação) e `dismiss_link_candidate`. As duas refazem a autorização internamente (`is_member_of` + `has_account_access` + `has_role(['ADMIN','GESTOR','OPERADOR'])`) porque `security definer` ignora GRANT e RLS — a função não pode conceder mais acesso do que a escrita direta já concederia.
+- `apps/worker/src/handlers/erp-import-apply.ts`: `applyLinks` registra um candidato sempre que uma linha fica `UNRESOLVED` por falta de SKU. Nova função `reconcileLinkCandidates`, chamada ao fim de **toda** aplicação (não só LINKS): relê os candidatos `OPEN` da organização sobre as mesmas linhas de origem — se um PRODUCTS/KITS recém-aplicado criou o SKU que faltava, o vínculo nasce sozinho, `resolution_method = 'EXACT_MATCH'`, sem tela nem humano. Best-effort: falhar a reconciliação não derruba o resultado do lote que já foi aplicado.
+- `apps/web/app/vinculacoes/`: tela lista candidatos `OPEN`; busca de SKU direto do navegador sob RLS; confirmar/descartar são **Server Actions** (`docs/ARCHITECTURE.md` secao 4 já previa "confirmar vínculo" como exemplo) chamando as RPCs — nunca escrita direta na tabela.
+- **2 testes novos no worker** (fake, cobrindo o registro do candidato e a resolução automática por match exato) e **13 na integração de RLS contra Postgres real** (73 no total, de 60) — incluindo os negativos obrigatórios (sem acesso à conta, sem o papel certo, escrita direta recusada) e a prova de que a confirmação é atômica.
+- **Verificado num navegador real**, não só em teste: usuário de teste criado via Admin API, login real, busca de SKU, clique em "Vincular" → `sku_listing_links` criado com `source = MANUAL`, candidato fechado com `resolved_by` do usuário logado; "Descartar" também verificado. Consultado direto no Postgres local depois, não só na tela.
+
+**Ainda não commitado nesta máquina:** a Central de Vinculações inteira (migration, mudanças no worker, `apps/web/app/vinculacoes/`, testes de worker e de integração). O comando de aplicação, o fix de infra do `worker` e a correção D-040 de sessões anteriores já estão em `origin/v3`.
 
 **Já no ar em Dev, `api` e `worker` verificados após o deploy:** rota `/v1/erp-imports/:id/apply` responde 401 sem token e 404 nas rotas vizinhas; `worker` reiniciado com `ERP_IMPORTS_BUCKET` correto e log `worker_started` confirmado no Cloud Logging — ver a armadilha registrada acima.
 
@@ -251,6 +258,7 @@ Ordem dentro da fase, do que não depende de nada para o que depende:
      - **Idempotência verificada contra Postgres real** (não só teste com fake): rodar o mesmo lote de vínculos duas vezes produz uma linha em `sku_listing_links`, não duas.
      - Tela de conferência ganhou o botão "Confirmar aplicação" (só aparece com o lote `PARSED`) e uma coluna de desfecho por linha depois de aplicado.
    - ✅ **ETL de carga inicial da V2 (D-027) — encerrado por evidência medida, não por código.** Inspecionado o banco real da V2 (`speedbikers-gestao-v2`, ref `eeramcpouarfwagxigtz`): `product_inventory_links` (vínculos, 3.158 linhas) é 100% `source = 'upseller'`/`confidence = 'exact'` — sem curadoria humana distinta do que o importador da V3 já reproduz, e com **menos** cobertura (3.158 aplicados na V2 contra 20.650 vínculos brutos de ML no export atual). `stock_movements`, `product_inventory_balances` e `stock_receipts` (NF-e): **0 linhas** — funcionalidade que existia no schema da V2 e nunca foi usada. Único dado real: **1 pedido de compra**, 5 itens, 8 eventos — adiado para a Fase 4, quando `purchase_orders` existir na V3. Registrado como **D-040**, com a tabela completa em `docs/DECISIONS.md`.
+6. **Central de Vinculações** — **concluído**. Tabela `link_candidates` + RPCs `resolve_link_candidate`/`dismiss_link_candidate` (`security definer`, autorização refeita internamente). O worker registra um candidato sempre que um vínculo fica pendente por falta de SKU, e reconcilia todos os candidatos abertos da organização ao fim de **toda** aplicação — match exato sem tela. Tela em `/vinculacoes` com busca de SKU sob RLS e confirmação/descarte por Server Action. Verificado num navegador real, login incluído, com o resultado conferido direto no Postgres.
 
 **Leitor de planilha escolhido:** `read-excel-file` (2,5 MB) em vez de `exceljs` (21,8 MB), porque o worker só lê. Medido nos arquivos reais: 23.925 linhas em 647 ms com 176 MB de RSS, folgado nos 512 MB do container. Usar `readSheet`, não o export padrão — na v9 o padrão devolve o array de planilhas.
 
@@ -262,6 +270,6 @@ Frente paralela, independente: confirmar a documentação oficial do Mercado Liv
 
 ## Bloqueios atuais
 
-- Nenhum bloqueio para a Central de Vinculações ou para o schema de `sync_runs`/`sync_errors`.
+- Nenhum bloqueio para o schema de `sync_runs`/`sync_errors`.
 - Confirmação da documentação oficial do Mercado Livre bloqueia a Fase 3.
 - Modelos de exportação do pedido de compra (Excel e PDF) precisam ser solicitados antes da Fase 4.

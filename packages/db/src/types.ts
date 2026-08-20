@@ -293,6 +293,105 @@ export type Database = {
         }
         Relationships: []
       }
+      link_candidates: {
+        Row: {
+          channel_sku: string | null
+          created_at: string
+          id: string
+          item_id: string | null
+          ml_account_id: string
+          organization_id: string
+          ref_kind: string
+          resolution_method: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          resolved_sku_id: string | null
+          sku_key: string
+          source: string
+          source_row_id: number
+          status: string
+          updated_at: string
+          user_product_id: string | null
+          variation_id: string | null
+        }
+        Insert: {
+          channel_sku?: string | null
+          created_at?: string
+          id?: string
+          item_id?: string | null
+          ml_account_id: string
+          organization_id: string
+          ref_kind: string
+          resolution_method?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          resolved_sku_id?: string | null
+          sku_key: string
+          source?: string
+          source_row_id: number
+          status?: string
+          updated_at?: string
+          user_product_id?: string | null
+          variation_id?: string | null
+        }
+        Update: {
+          channel_sku?: string | null
+          created_at?: string
+          id?: string
+          item_id?: string | null
+          ml_account_id?: string
+          organization_id?: string
+          ref_kind?: string
+          resolution_method?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          resolved_sku_id?: string | null
+          sku_key?: string
+          source?: string
+          source_row_id?: number
+          status?: string
+          updated_at?: string
+          user_product_id?: string | null
+          variation_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "link_candidates_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "link_candidates_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "link_candidates_resolved_by_fkey"
+            columns: ["resolved_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "link_candidates_resolved_sku_id_fkey"
+            columns: ["resolved_sku_id"]
+            isOneToOne: false
+            referencedRelation: "skus"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "link_candidates_source_row_id_fkey"
+            columns: ["source_row_id"]
+            isOneToOne: false
+            referencedRelation: "erp_import_rows"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ml_accounts: {
         Row: {
           connected_at: string | null
@@ -787,7 +886,60 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      dismiss_link_candidate: {
+        Args: { p_candidate_id: string }
+        Returns: {
+          channel_sku: string | null
+          created_at: string
+          id: string
+          item_id: string | null
+          ml_account_id: string
+          organization_id: string
+          ref_kind: string
+          resolution_method: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          resolved_sku_id: string | null
+          sku_key: string
+          source: string
+          source_row_id: number
+          status: string
+          updated_at: string
+          user_product_id: string | null
+          variation_id: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "link_candidates"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      resolve_link_candidate: {
+        Args: { p_candidate_id: string; p_sku_id: string }
+        Returns: {
+          channel_sku: string | null
+          confirmed_at: string | null
+          confirmed_by: string | null
+          created_at: string
+          id: string
+          item_id: string | null
+          ml_account_id: string
+          organization_id: string
+          ref_kind: string
+          sku_id: string
+          source: string
+          updated_at: string
+          user_product_id: string | null
+          variation_id: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "sku_listing_links"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
     }
     Enums: {
       [_ in never]: never

@@ -344,7 +344,7 @@ describe("aplicação — vínculos", () => {
     ]);
   });
 
-  it("SKU ainda não importado vira pendência", async () => {
+  it("SKU ainda não importado vira pendência e registra candidato para a Central de Vinculações", async () => {
     const { db, tables } = createFakeDb({
       erp_import_batches: [batch({ kind: "LINKS" })],
       erp_import_rows: [okRow(1, LINK_PAYLOAD)],
@@ -354,6 +354,64 @@ describe("aplicação — vínculos", () => {
 
     expect(tables.sku_listing_links ?? []).toHaveLength(0);
     expect(tables.erp_import_rows?.[0]).toMatchObject({ apply_status: "UNRESOLVED" });
+    expect(tables.link_candidates).toEqual([
+      expect.objectContaining({
+        source: "ERP_IMPORT",
+        source_row_id: 1,
+        sku_key: "PI150",
+        item_id: "MLB1722724235",
+        status: "OPEN",
+      }),
+    ]);
+  });
+
+  it("reprocessar a mesma linha não duplica o candidato", async () => {
+    const { db, tables } = createFakeDb({
+      erp_import_batches: [batch({ kind: "LINKS" })],
+      erp_import_rows: [okRow(1, LINK_PAYLOAD)],
+    });
+
+    await createErpImportApplyHandler({ db })(ENVELOPE, ctx({ batchId: BATCH }));
+
+    // O lote já está APPLIED; simula uma segunda rodada como a reconciliação faria.
+    tables.erp_import_batches![0]!.status = "APPLYING";
+    await createErpImportApplyHandler({ db })(ENVELOPE, ctx({ batchId: BATCH }));
+
+    expect(tables.link_candidates).toHaveLength(1);
+  });
+
+  it("um PRODUCTS aplicado depois resolve o candidato sozinho — match exato", async () => {
+    const PRODUCTS_BATCH = "b2000000-0000-4000-8000-00000000000b";
+
+    const { db, tables } = createFakeDb({
+      erp_import_batches: [batch({ kind: "LINKS" })],
+      erp_import_rows: [okRow(1, LINK_PAYLOAD)],
+    });
+
+    // 1. Lote de vínculos: SKU ainda não existe, vira candidato aberto.
+    await createErpImportApplyHandler({ db })(ENVELOPE, ctx({ batchId: BATCH }));
+
+    expect(tables.link_candidates?.[0]).toMatchObject({ status: "OPEN" });
+
+    // 2. Um lote de produtos, diferente, cria o SKU que faltava.
+    tables.erp_import_batches!.push({ ...batch({ kind: "PRODUCTS" }), id: PRODUCTS_BATCH });
+    tables.erp_import_rows!.push({ id: 2, batch_id: PRODUCTS_BATCH, status: "OK", payload: { sku: "PI150" } });
+
+    const outcome = await createErpImportApplyHandler({ db })(
+      ENVELOPE,
+      ctx({ batchId: PRODUCTS_BATCH }),
+    );
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+
+    // A reconciliação, no fim do apply de PRODUCTS, fechou o candidato sozinha.
+    expect(tables.link_candidates?.[0]).toMatchObject({
+      status: "RESOLVED",
+      resolution_method: "EXACT_MATCH",
+    });
+    expect(tables.sku_listing_links).toEqual([
+      expect.objectContaining({ item_id: "MLB1722724235", source: "IMPORT_UPSELLER" }),
+    ]);
   });
 
   it("não sobrescreve um vínculo confirmado manualmente", async () => {

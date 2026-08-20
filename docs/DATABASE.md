@@ -100,6 +100,22 @@ Atributos estruturados, não tags: `brand_id`, `supplier_id`, `origin` (enum `NA
 
 **Identificadores nativos do Mercado Livre a capturar desde o início:** os anúncios carregam `inventory_id` e `user_product_id`. A V2 os extraiu do payload e indexou; eles amarram anúncio a Full e agrupam variações, poupando trabalho manual de vinculação.
 
+### `link_candidates` — Central de Vinculações
+
+Referência de anúncio cujo SKU ainda não existe no catálogo (`docs/PROMPT_MASTER.md` secao 15). Hoje a única fonte é a importação do UpSeller (`source = 'ERP_IMPORT'`, `source_row_id` aponta para `erp_import_rows`); outras fontes (NF-e, código de fornecedor) entram quando existirem.
+
+```text
+sku_key, ref_kind, item_id, variation_id, user_product_id, channel_sku   -- mesma forma de sku_listing_links
+status (OPEN | RESOLVED | DISMISSED)
+resolved_sku_id, resolved_by, resolved_at, resolution_method (EXACT_MATCH | MANUAL)
+```
+
+As colunas de referência **duplicam** o que já está no `jsonb` de `erp_import_rows.payload`, de propósito — mesmo motivo de `erp_import_rows.sku_key`: permitir a confirmação sem reabrir o jsonb dentro de uma função SQL.
+
+**Duas RPCs `security definer`** (`resolve_link_candidate`, `dismiss_link_candidate`) são o único caminho de escrita. A confirmação é atômica em duas tabelas — cria a linha em `sku_listing_links` e fecha o candidato na mesma transação — e refaz a autorização internamente nos mesmos termos da policy de escrita de `sku_listing_links`, porque `security definer` ignora GRANT e RLS.
+
+**Match exato roda sozinho**, sem tela: depois de qualquer aplicação do importador, o worker relê os candidatos `OPEN` da organização sobre as mesmas linhas de origem — se o SKU passou a existir, o vínculo é criado e o candidato fecha com `resolution_method = 'EXACT_MATCH'`, sem intervenção humana.
+
 ### `orders` / `order_items` — vendas
 
 **Fato medido na V2 que define a modelagem:** o Mercado Livre **não entrega pedido multi-linha**. `orders` e `order_items` tinham exatamente 328.211 linhas cada. Uma compra de vários itens vira **vários pedidos** ligados por `pack_id`, e 189.158 pedidos tinham um.

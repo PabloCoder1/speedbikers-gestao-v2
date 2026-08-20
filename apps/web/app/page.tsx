@@ -43,7 +43,7 @@ const PHASES: readonly Phase[] = [
   },
   {
     title: "Fase 2 — Core de dados",
-    caption: "10 tabelas, todas com RLS, GRANT mínimo e teste negativo.",
+    caption: "14 tabelas, todas com RLS, GRANT mínimo e teste negativo.",
     items: [
       { label: "Identidade", detail: "organizações, perfis, papéis", state: "pronto" },
       { label: "Contas ML", detail: "credenciais cifradas + OAuth", state: "pronto" },
@@ -52,8 +52,9 @@ const PHASES: readonly Phase[] = [
       { label: "Parsers", detail: "normalização do UpSeller", state: "pronto" },
       { label: "Login", detail: "sessão, papéis e proteção de rota", state: "pronto" },
       { label: "Conferência", detail: "ver o que o arquivo produziu antes de aplicar", state: "pronto" },
-      { label: "Importador", detail: "upload e aplicação da planilha", state: "andamento" },
-      { label: "ETL da V2", detail: "vínculos, estoque, NF-e, compras", state: "pendente" },
+      { label: "Importador", detail: "upload, conferência e aplicação da planilha", state: "pronto" },
+      { label: "Central de Vinculações", detail: "candidato, match exato e confirmação humana", state: "pronto" },
+      { label: "ETL da V2", detail: "descartado por evidência medida (D-040)", state: "pronto" },
     ],
   },
   {

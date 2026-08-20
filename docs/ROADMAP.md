@@ -59,7 +59,7 @@ Cada fase só é considerada concluída sob a Definition of Done do `docs/PROMPT
 - [x] Contas Mercado Livre, credenciais cifradas e estados de OAuth
 - [x] SKUs e componentes de kit (fornecedores adiados para a Fase 4 — a exportação do UpSeller não traz esse dado)
 - [x] `sku_listing_links` com UNIQUE parcial para `variation_id` nulo. Anúncios/variações (`listings`) ficam para a Fase 3
-- [ ] Central de Vinculações: candidatos, resolução por match exato, confirmação humana
+- [x] Central de Vinculações: candidatos, resolução por match exato, confirmação humana
 - [x] Importador de planilhas do UpSeller: upload, parse, conferência, confirmação e aplicação — catálogo, kits, vínculos e saldo (D-028)
 - [x] ETL de carga inicial a partir da V2 (D-027) — **descartado por evidência medida** (D-040): vínculos/estoque/NF-e sem dado irreprodutível na V2; compras (1 pedido) adiado para a Fase 4
 - [ ] `sync_runs`, `sync_errors` e freshness por conta
