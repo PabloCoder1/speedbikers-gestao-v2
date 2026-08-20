@@ -73,6 +73,8 @@ WORKER_URL: "${worker_url}"
 API_URL: "${api_url}"
 TASKS_INVOKER_SERVICE_ACCOUNT: "$(sa_email "${SA_TASKS}")"
 SCHEDULER_INVOKER_SERVICE_ACCOUNT: "$(sa_email "${SA_SCHEDULER}")"
+SUPABASE_URL: "${SUPABASE_URL}"
+ERP_IMPORTS_BUCKET: "${PROJECT_ID}-erp-imports"
 YAML
 
     # A `api` é superfície pública: o webhook do Mercado Livre precisa alcançá-la

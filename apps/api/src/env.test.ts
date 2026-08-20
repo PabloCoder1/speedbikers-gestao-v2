@@ -10,6 +10,9 @@ const OBRIGATORIAS = {
   API_URL: "https://api-rrquw5upla-rj.a.run.app",
   SCHEDULER_INVOKER_SERVICE_ACCOUNT:
     "v3-scheduler-invoker@speedbikers-gestao-v3.iam.gserviceaccount.com",
+  SUPABASE_URL: "https://nmgccyqquwxecqffsidr.supabase.co",
+  SUPABASE_SERVICE_ROLE_KEY: "sb_secret_chave_de_teste_longa_o_bastante",
+  ERP_IMPORTS_BUCKET: "speedbikers-gestao-v3-erp-imports",
 };
 
 describe("parseEnv", () => {

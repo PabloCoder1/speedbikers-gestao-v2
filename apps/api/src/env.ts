@@ -31,6 +31,13 @@ export const envSchema = z.object({
 
   /** Identidade autorizada a chamar as rotas `/internal/` desta api. */
   SCHEDULER_INVOKER_SERVICE_ACCOUNT: z.email(),
+
+  /** Supabase. A chave é segredo e vem do Secret Manager. */
+  SUPABASE_URL: z.url(),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(20),
+
+  /** Bucket que recebe as exportações do UpSeller. */
+  ERP_IMPORTS_BUCKET: z.string().min(1),
 });
 
 export type Env = z.infer<typeof envSchema>;

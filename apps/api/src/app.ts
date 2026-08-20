@@ -3,7 +3,10 @@ import { randomUUID } from "node:crypto";
 import type { Logger } from "@sb/observability";
 import { Hono } from "hono";
 
+import type { Authenticator } from "./auth.js";
 import type { Enqueuer } from "./enqueue.js";
+import type { ImportDeps } from "./erp-import.js";
+import { isImportKind, receiveUpload } from "./erp-import.js";
 import type { OidcVerifier } from "./oidc.js";
 
 /**
@@ -24,6 +27,8 @@ export interface AppDependencies {
   startedAt?: Date;
   enqueuer?: Enqueuer;
   oidc?: OidcVerifier;
+  auth?: Authenticator;
+  importDeps?: ImportDeps;
 }
 
 /**
@@ -110,6 +115,66 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       deduplicated: result.deduplicated,
       jobId: result.envelope.jobId,
     });
+  });
+
+  // --------------------------------------------------------------------
+  // Importação do UpSeller — upload do arquivo.
+  //
+  // Comando privilegiado: a `api` guarda o arquivo, registra o lote e
+  // ENFILEIRA o parse. Interpretar 23.924 linhas é trabalho do worker; a `api`
+  // nunca faz trabalho longo inline (docs/ARCHITECTURE.md secao 5).
+  // --------------------------------------------------------------------
+  app.post("/v1/erp-imports", async (context) => {
+    const auth = dependencies.auth;
+    const importDeps = dependencies.importDeps;
+
+    if (auth === undefined || importDeps === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    // Importação reescreve o catálogo inteiro: só ADMIN e GESTOR.
+    const authorized = await auth.authenticate(context.req.header("authorization"), [
+      "ADMIN",
+      "GESTOR",
+    ]);
+
+    if (!authorized.ok) {
+      dependencies.logger.warn("erp_import_unauthorized", {
+        request_id: context.get("requestId"),
+        reason: authorized.reason,
+      });
+
+      return context.json({ error: { code: "unauthorized" } }, authorized.status);
+    }
+
+    const form = await context.req.parseBody();
+    const file = form.file;
+    const kind = form.kind;
+
+    if (!(file instanceof File)) {
+      return context.json({ error: { code: "file_required" } }, 400);
+    }
+
+    if (!isImportKind(kind)) {
+      return context.json({ error: { code: "invalid_kind" } }, 400);
+    }
+
+    const outcome = await receiveUpload(importDeps, authorized.caller, {
+      kind,
+      fileName: file.name,
+      contentType: file.type,
+      body: new Uint8Array(await file.arrayBuffer()),
+    });
+
+    if (outcome.status === "rejected") {
+      return context.json({ error: { code: "rejected", message: outcome.reason } }, 400);
+    }
+
+    // 200 e não 201 no duplicado: o lote já existe, nada foi criado agora.
+    return context.json(
+      { batchId: outcome.batchId, contentHash: outcome.contentHash, duplicate: outcome.status === "duplicate" },
+      outcome.status === "created" ? 201 : 200,
+    );
   });
 
   app.notFound((context) => {

@@ -43,6 +43,7 @@ Todas as rotas são versionadas sob `/v1`, exceto webhook e callback do OAuth, c
 |---|---|---|---|
 | `/v1/ml-accounts/connect` | POST | ADMIN | Inicia autorização de conta |
 | `/v1/sync/run` | POST | GESTOR | Dispara sincronização manual — **enfileira e responde** |
+| `/v1/erp-imports` | POST | GESTOR | Recebe o arquivo do UpSeller, guarda no bucket, registra o lote e **enfileira** o parse |
 | `/v1/documents/nfe/preview` | POST | OPERADOR | Parse do XML, sem movimentar estoque |
 | `/v1/documents/nfe/commit` | POST | OPERADOR | Confirma a conferência e gera movimentos |
 | `/v1/purchase-orders/:id/approve` | POST | GESTOR | Transição de ciclo |
