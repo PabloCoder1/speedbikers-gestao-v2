@@ -23,6 +23,12 @@ SA_WORKER="v3-worker-runtime"
 SA_TASKS="v3-tasks-invoker"
 SA_SCHEDULER="v3-scheduler-invoker"
 
+# Supabase Dev. O ref e a URL não são segredo — aparecem no dashboard e em
+# hostnames públicos. O segredo é a chave, que vive no Secret Manager.
+SUPABASE_PROJECT_REF="nmgccyqquwxecqffsidr"
+SUPABASE_URL="https://${SUPABASE_PROJECT_REF}.supabase.co"
+SECRET_SUPABASE_KEY="SUPABASE_SERVICE_ROLE_KEY"
+
 sa_email() {
   echo "${1}@${PROJECT_ID}.iam.gserviceaccount.com"
 }

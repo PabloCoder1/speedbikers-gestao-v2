@@ -92,6 +92,29 @@ grant_act_as() {
 
 grant_act_as "${SA_TASKS}" "${SA_API}"
 
+step "Acesso ao segredo do Supabase"
+# Concedido NO SEGREDO, não no projeto: cada identidade lê apenas o segredo de
+# que precisa. `secretAccessor` permite ler o valor, não alterá-lo nem apagá-lo.
+grant_secret_access() {
+  local sa="$1" output
+
+  if ! output="$(gc secrets add-iam-policy-binding "${SECRET_SUPABASE_KEY}" \
+      --member "serviceAccount:$(sa_email "${sa}")" \
+      --role roles/secretmanager.secretAccessor 2>&1)"; then
+    printf '%s\n' "${output}" >&2
+    fail "Falha ao conceder acesso ao segredo para ${sa}. Mensagem do gcloud acima."
+  fi
+
+  info "${sa} pode ler ${SECRET_SUPABASE_KEY}"
+}
+
+if gc secrets describe "${SECRET_SUPABASE_KEY}" >/dev/null 2>&1; then
+  grant_secret_access "${SA_API}"
+  grant_secret_access "${SA_WORKER}"
+else
+  info "AVISO: segredo ${SECRET_SUPABASE_KEY} ainda não existe; pulando"
+fi
+
 step "Concluído"
 info "Próximo: bash infra/cloud-tasks-queues.sh"
 info "Depois:  bash infra/storage-buckets.sh"
