@@ -47,6 +47,40 @@ jobs:
       - name: Build
         run: pnpm run build
 
+  integration:
+    name: integração — migrations e RLS contra Postgres real
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Ativar pnpm
+        run: corepack enable
+
+      - name: Instalar dependências
+        run: pnpm install --frozen-lockfile
+
+      # Sobe o Postgres real e aplica todas as migrations do zero. Isto valida
+      # duas coisas ao mesmo tempo: que as migrations aplicam numa base limpa,
+      # e que as policies se comportam como o esperado.
+      #
+      # Testar RLS contra mock não provaria nada — o que está sob teste é o
+      # comportamento do Postgres.
+      - name: Subir Supabase local
+        run: pnpm exec supabase start
+
+      - name: Testes de RLS
+        run: pnpm --filter @sb/db run test:integration
+
+      - name: Derrubar Supabase
+        if: always()
+        run: pnpm exec supabase stop --no-backup
+
   migrations:
     name: aplicar migrations no Supabase Dev
     runs-on: ubuntu-latest
@@ -54,7 +88,7 @@ jobs:
 
     # Só depois da esteira verde: migration aplicada a partir de código que não
     # compila é como se corrompe um ambiente.
-    needs: [check, scripts]
+    needs: [check, scripts, integration]
 
     # Só em push na branch de desenvolvimento. Pull request NÃO aplica migration
     # — o Preview da Vercel aponta para o mesmo banco Dev (D-025), e uma

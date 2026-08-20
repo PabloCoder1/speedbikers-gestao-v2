@@ -169,14 +169,22 @@ Provisionado: filas `analytics-recompute` (10/s, 20), `backfill` (1/s, 2) e `mai
 
 ## Próximo passo
 
-**Concluir a Fase 1 — fundação técnica.** Monorepo pnpm e Turborepo, TypeScript estrito, lint, Vitest, CI, Supabase local, `apps/api` e `apps/worker` publicados no Cloud Run, projeto Vercel conectado à `v3`.
+**Fase 2 — Core de dados.** Identidade, contas e catálogo, com RLS desde a primeira tabela.
 
-A Fase 1 **não cria nenhuma tabela de domínio**. O objetivo é um pipeline verde ponta a ponta: um job atravessa `api -> Cloud Tasks -> worker -> Postgres` e o `web` mostra o resultado, sem nenhuma regra de negócio envolvida.
+Ordem dentro da fase, do que não depende de nada para o que depende:
 
-Frente paralela, independente da Fase 1: confirmar a documentação oficial do Mercado Livre e preencher `docs/MERCADO_LIVRE.md`. Ela bloqueia a Fase 3, então quanto antes melhor.
+1. **Identidade** — `organizations`, `profiles`, `organization_members`, mais os helpers de RLS em schema `private`. Não depende de nada externo.
+2. **Contas Mercado Livre** — `ml_accounts`, credenciais cifradas, estados de OAuth, `user_account_permissions`.
+3. **Catálogo** — SKUs, kits, marcas, fornecedores. **Depende da amostra da planilha do UpSeller** (D-028), que define o parser e o tamanho do domínio.
+4. **Anúncios e vinculações** — `listings`, `listing_variations`, `sku_listing_links` com UNIQUE parcial para `variation_id` nulo.
+5. **Importador do UpSeller** e **ETL de carga inicial da V2** (D-027).
+
+**Regra desta fase:** toda tabela nasce com RLS habilitada, GRANT mínimo explícito e **teste negativo** provando que quem não tem permissão não lê. Ver `docs/DATABASE.md` secao 5 e `docs/TESTING.md`.
+
+Frente paralela, independente: confirmar a documentação oficial do Mercado Livre e preencher `docs/MERCADO_LIVRE.md`. Ela bloqueia a Fase 3.
 
 ## Bloqueios atuais
 
-- **Nenhum bloqueio para a Fase 1.**
+- **Amostra real da planilha do UpSeller** bloqueia o domínio `catalog` (item 3 acima). Os itens 1 e 2 não dependem dela.
 - Confirmação da documentação oficial do Mercado Livre bloqueia a Fase 3.
-- Modelos de exportação do pedido de compra (Excel e PDF) precisam ser solicitados ao usuário antes da Fase 4.
+- Modelos de exportação do pedido de compra (Excel e PDF) precisam ser solicitados antes da Fase 4.

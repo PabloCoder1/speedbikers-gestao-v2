@@ -13,8 +13,9 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint .",
-    "test": "vitest run",
-    "gen:types": "supabase gen types typescript --local > src/types.ts"
+    "test": "vitest run --exclude '**/node_modules/**' --exclude '**/*.integration.test.ts'",
+    "gen:types": "supabase gen types typescript --local > src/types.ts",
+    "test:integration": "vitest run integration"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.112.3",
@@ -23,7 +24,9 @@
   "devDependencies": {
     "@sb/config": "workspace:*",
     "@types/node": "26.2.0",
+    "@types/pg": "8.23.1",
     "eslint": "10.8.1",
+    "pg": "8.23.0",
     "typescript": "6.0.3",
     "vitest": "4.1.11"
   }
