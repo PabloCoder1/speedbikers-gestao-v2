@@ -211,7 +211,7 @@ Provisionado: filas `analytics-recompute` (10/s, 20), `backfill` (1/s, 2) e `mai
 
 **Ainda não commitado nesta máquina:** migration `20260820220000_erp_import_apply.sql`, os tipos regenerados de `packages/db/src/types.ts`, o comando de aplicação (`packages/domain/src/upseller/apply.ts` + `apps/worker/src/handlers/erp-import-apply.ts`), a rota `POST /v1/erp-imports/:id/apply` e o botão de confirmação no `web`. Migration já aplicada e testada localmente (integração de RLS verde, 60 testes) e via script pontual contra Postgres real — falta o commit e o push para a CI aplicar em Dev.
 
-**Já no ar em Dev:** `api` publicada com a rota de importação e o CORS ativo. Verificado por `curl`: origem da Vercel recebe `access-control-allow-origin`, origem de terceiro não recebe nada, `/v1/erp-imports` sem token responde 401. A rota de aplicação (`/v1/erp-imports/:id/apply`) ainda não foi publicada — entra no próximo deploy.
+**Já no ar em Dev, `api` e `worker` verificados após o deploy:** rota `/v1/erp-imports/:id/apply` responde 401 sem token e 404 nas rotas vizinhas; `worker` reiniciado com `ERP_IMPORTS_BUCKET` correto e log `worker_started` confirmado no Cloud Logging — ver a armadilha registrada acima.
 
 **Falta configurar (manual, precisa do painel):**
 
