@@ -179,7 +179,8 @@ Provisionado: filas `analytics-recompute` (10/s, 20), `backfill` (1/s, 2) e `mai
 - Linter de segurança do Supabase rodado: um WARN de `search_path` mutável corrigido por migration nova (a original já estava no Dev).
 
 - **Catálogo**: `skus` (PRODUTO e KIT numa tabela só) e `sku_components`, modelados sobre a exportação real do UpSeller. `sku_key` normalizado por coluna gerada, `is_imported` derivado do código fiscal de origem, e triggers garantindo que só KIT tem componente e componente é sempre PRODUTO.
-- **26 testes de integração** cobrindo identidade, catálogo e composição de kit.
+- **Contas Mercado Livre**: `ml_accounts`, `ml_credentials`, `ml_oauth_states` e `user_account_permissions`, mais o helper `has_account_access` (ADMIN alcança todas as contas da sua organização).
+- **38 testes de integração** cobrindo identidade, catálogo, composição de kit e contas ML.
 - `docs/UPSELLER.md` documenta a estrutura real das quatro exportações e a qualidade medida de cada campo.
 
 **Armadilhas já pagas, não repetir:**
@@ -187,6 +188,7 @@ Provisionado: filas `analytics-recompute` (10/s, 20), `backfill` (1/s, 2) e `mai
 - `SET LOCAL` fora de transação é descartado em silêncio. Um teste de RLS escrito assim mede nada e passa — a primeira verificação manual reportou "todos veem tudo" por isso.
 - Helper de RLS que lê a própria tabela protegida **precisa** de `security definer`, senão a policy chama o helper que consulta a tabela que aplica a policy: recursão infinita.
 - `stable` em helper de RLS é decisão de performance: sem ela, a função é avaliada **por linha** em vez de por statement.
+- O `slug` de `ml_accounts` nomeia a fila `ml-sync-<slug>` do Cloud Tasks (D-036). A constraint restringe o charset ao que o Cloud Tasks aceita — descobrir isso na hora de provisionar sairia caro.
 - Falha de `supabase db push` com apenas "Connecting to remote database..." e exit 1 foi **transitória**. O passo já roda com `--debug 2>&1` para que a próxima traga a mensagem real.
 
 ## Próximo passo
@@ -196,7 +198,7 @@ Provisionado: filas `analytics-recompute` (10/s, 20), `backfill` (1/s, 2) e `mai
 Ordem dentro da fase, do que não depende de nada para o que depende:
 
 1. **Identidade** — `organizations`, `profiles`, `organization_members`, mais os helpers de RLS em schema `private`. Não depende de nada externo.
-2. **Contas Mercado Livre** — `ml_accounts`, credenciais cifradas, estados de OAuth, `user_account_permissions`.
+2. ~~**Contas Mercado Livre**~~ — **concluído**. Credenciais e states de OAuth ficam sem GRANT nenhum: inalcançáveis pela Data API em qualquer cenário.
 3. ~~**Catálogo**~~ — **concluído**. `skus` e `sku_components` aplicados. Fornecedores adiados: a exportação não traz nenhum dado de fornecedor (as colunas `Vendedor` e `Link do Fornecedor` vêm vazias), e a fonte real será a NF-e na Fase 4.
 4. **Anúncios e vinculações** — `listings`, `listing_variations`, `sku_listing_links` com UNIQUE parcial para `variation_id` nulo.
 5. **Importador do UpSeller** e **ETL de carga inicial da V2** (D-027).

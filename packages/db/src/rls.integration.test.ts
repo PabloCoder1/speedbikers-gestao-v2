@@ -97,6 +97,7 @@ beforeAll(async () => {
 afterAll(async () => {
   // Componentes primeiro: `on delete restrict` impede apagar um produto que
   // compõe kit — que é justamente a garantia testada acima.
+  await client.query("delete from public.ml_accounts where slug like 'rlstest%'");
   await client.query(`
     delete from public.sku_components
     where kit_sku_id in (select id from public.skus where sku like 'RLSTEST%')
@@ -333,5 +334,116 @@ describe("RLS do catálogo", () => {
         `insert into public.skus (organization_id, sku, kind) values ('${ORG_SB}','RLSTEST-hack','PRODUTO')`,
       ),
     ).rejects.toThrow(/permission denied|row-level security/i);
+  });
+});
+
+
+describe("contas Mercado Livre", () => {
+  const CONTA_A = "aaaa1111-0000-4000-8000-00000000aaaa";
+  const CONTA_B = "bbbb2222-0000-4000-8000-00000000bbbb";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, seller_id, status, connected_at)
+       values ($1,$3,'Conta A','rlstest-conta-a',111,'CONNECTED',now()),
+              ($2,$3,'Conta B','rlstest-conta-b',222,'CONNECTED',now())
+       on conflict do nothing`,
+      [CONTA_A, CONTA_B, ORG_SB],
+    );
+
+    // O ANALISTA recebe permissão apenas na Conta A.
+    await client.query(
+      `insert into public.user_account_permissions (user_id, ml_account_id)
+       values ($1,$2) on conflict do nothing`,
+      [ANALISTA_SB, CONTA_A],
+    );
+  });
+
+  it("slug aceita só o charset que o Cloud Tasks permite em nome de fila", async () => {
+    await expect(
+      client.query(
+        `insert into public.ml_accounts (organization_id,label,slug) values ($1,'X','rlstest.ponto')`,
+        [ORG_SB],
+      ),
+    ).rejects.toThrow(/ml_accounts_slug_check/);
+  });
+
+  it("CONNECTED sem seller_id é recusado", async () => {
+    await expect(
+      client.query(
+        `insert into public.ml_accounts (organization_id,label,slug,status)
+         values ($1,'X','rlstest-incoerente','CONNECTED')`,
+        [ORG_SB],
+      ),
+    ).rejects.toThrow(/ml_accounts_status_coherent/);
+  });
+
+  it("ADMIN enxerga todas as contas da organização", async () => {
+    const rows = await asUser(ADMIN_SB, "select id from public.ml_accounts");
+
+    expect(rows.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("ANALISTA enxerga apenas a conta em que tem permissão", async () => {
+    const rows = await asUser<{ slug: string }>(ANALISTA_SB, "select slug from public.ml_accounts");
+
+    expect(rows.map((r) => r.slug)).toEqual(["rlstest-conta-a"]);
+  });
+
+  it("usuário de outra organização não enxerga conta nenhuma", async () => {
+    const rows = await asUser(DE_OUTRA_ORG, "select id from public.ml_accounts");
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("ANALISTA não concede permissão de conta a si mesmo", async () => {
+    await expect(
+      asUser(
+        ANALISTA_SB,
+        `insert into public.user_account_permissions (user_id, ml_account_id)
+         values ('${ANALISTA_SB}','${CONTA_B}')`,
+      ),
+    ).rejects.toThrow(/row-level security/i);
+  });
+});
+
+describe("credenciais são inalcançáveis pela Data API", () => {
+  it.each(["ml_credentials", "ml_oauth_states"])("authenticated é recusado em %s", async (t) => {
+    await expect(asUser(ADMIN_SB, `select * from public.${t}`)).rejects.toThrow(
+      /permission denied/i,
+    );
+  });
+
+  it.each(["ml_credentials", "ml_oauth_states"])("anon é recusado em %s", async (t) => {
+    await expect(asAnon(`select * from public.${t}`)).rejects.toThrow(/permission denied/i);
+  });
+
+  it("token em texto claro é recusado pelo banco", async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug)
+       values ('cccc3333-0000-4000-8000-00000000cccc',$1,'C','rlstest-claro')
+       on conflict do nothing`,
+      [ORG_SB],
+    );
+
+    // Guarda contra o erro óbvio: salvar o token do jeito que o ML devolve.
+    await expect(
+      client.query(
+        `insert into public.ml_credentials
+           (ml_account_id, access_token_ciphertext, refresh_token_ciphertext, access_token_expires_at)
+         values ('cccc3333-0000-4000-8000-00000000cccc','APP_USR-123456','TG-abc',now())`,
+      ),
+    ).rejects.toThrow(/ml_credentials_looks_encrypted/);
+  });
+
+  it("aceita ciphertext", async () => {
+    const rows = await client.query(
+      `insert into public.ml_credentials
+         (ml_account_id, access_token_ciphertext, refresh_token_ciphertext, access_token_expires_at)
+       values ('cccc3333-0000-4000-8000-00000000cccc','v1:9f8a7b...','v1:3c2d1e...',now())
+       returning ml_account_id`,
+    );
+
+    expect(rows.rows).toHaveLength(1);
   });
 });

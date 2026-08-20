@@ -85,6 +85,155 @@ export type Database = {
         }
         Relationships: []
       }
+      ml_accounts: {
+        Row: {
+          connected_at: string | null
+          created_at: string
+          id: string
+          label: string
+          last_error: string | null
+          nickname: string | null
+          organization_id: string
+          seller_id: number | null
+          slug: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          connected_at?: string | null
+          created_at?: string
+          id?: string
+          label: string
+          last_error?: string | null
+          nickname?: string | null
+          organization_id: string
+          seller_id?: number | null
+          slug: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          connected_at?: string | null
+          created_at?: string
+          id?: string
+          label?: string
+          last_error?: string | null
+          nickname?: string | null
+          organization_id?: string
+          seller_id?: number | null
+          slug?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_accounts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ml_credentials: {
+        Row: {
+          access_token_ciphertext: string
+          access_token_expires_at: string
+          created_at: string
+          encryption_key_version: number
+          ml_account_id: string
+          refresh_locked_until: string | null
+          refresh_token_ciphertext: string
+          scopes: string[] | null
+          updated_at: string
+        }
+        Insert: {
+          access_token_ciphertext: string
+          access_token_expires_at: string
+          created_at?: string
+          encryption_key_version?: number
+          ml_account_id: string
+          refresh_locked_until?: string | null
+          refresh_token_ciphertext: string
+          scopes?: string[] | null
+          updated_at?: string
+        }
+        Update: {
+          access_token_ciphertext?: string
+          access_token_expires_at?: string
+          created_at?: string
+          encryption_key_version?: number
+          ml_account_id?: string
+          refresh_locked_until?: string | null
+          refresh_token_ciphertext?: string
+          scopes?: string[] | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_credentials_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: true
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ml_oauth_states: {
+        Row: {
+          consumed_at: string | null
+          created_at: string
+          created_by: string | null
+          expires_at: string
+          ml_account_id: string
+          organization_id: string
+          redirect_to: string | null
+          state: string
+        }
+        Insert: {
+          consumed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          expires_at: string
+          ml_account_id: string
+          organization_id: string
+          redirect_to?: string | null
+          state: string
+        }
+        Update: {
+          consumed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string
+          ml_account_id?: string
+          organization_id?: string
+          redirect_to?: string | null
+          state?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_oauth_states_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ml_oauth_states_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ml_oauth_states_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organization_members: {
         Row: {
           created_at: string
@@ -302,6 +451,42 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_account_permissions: {
+        Row: {
+          created_at: string
+          ml_account_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          ml_account_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          ml_account_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_account_permissions_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_account_permissions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
