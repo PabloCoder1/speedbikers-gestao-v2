@@ -107,7 +107,8 @@ YAML
       --concurrency 4 \
       --timeout 900s \
       --cpu 1 --memory 512Mi \
-      --set-env-vars "NODE_ENV=production" \
+      --set-env-vars "NODE_ENV=production,SUPABASE_URL=${SUPABASE_URL}" \
+      --set-secrets "SUPABASE_SERVICE_ROLE_KEY=${SECRET_SUPABASE_KEY}:latest" \
       --quiet
   fi
 
