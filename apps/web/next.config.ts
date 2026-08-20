@@ -5,8 +5,10 @@ const nextConfig: NextConfig = {
   // Ver docs/DEPLOYMENT.md.
   reactStrictMode: true,
 
-  // Pacotes do workspace são transpilados a partir do fonte.
-  transpilePackages: ["@sb/contracts"],
+  // Sem `transpilePackages` por enquanto: o `web` ainda não importa nenhum
+  // package do workspace. Ao passar a importar `@sb/contracts` ou `@sb/ui`,
+  // declarar aqui E garantir que o build da Vercel construa a dependência
+  // antes — os packages exportam a partir de `dist/`.
 };
 
 export default nextConfig;
