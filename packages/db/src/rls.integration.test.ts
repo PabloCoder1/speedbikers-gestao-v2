@@ -143,7 +143,15 @@ afterAll(async () => {
   `);
   await client.query("delete from public.skus where sku like 'RLSTEST%'");
   await client.query("delete from auth.users where email like '%@rls.test'");
-  await client.query("delete from public.organizations where slug in ('speed-bikers-rls','outra-rls')");
+
+  // As duas organizações de teste NÃO são apagadas: a suíte de observabilidade
+  // de sincronização, acima, grava em `sync_runs`/`sync_errors` — append-only
+  // por desenho, com `ml_accounts.id` referenciado por `on delete restrict`.
+  // Uma vez que a conta de teste tem histórico, a cascata de `organizations`
+  // até `ml_accounts` fica bloqueada — exatamente a garantia que a suíte
+  // prova ("é append-only: nem um DELETE direto do dono passa"). É o preço
+  // correto de testar contra Postgres real: o ambiente local acumula até o
+  // próximo `supabase db reset --local`.
   await client.end();
 });
 
@@ -877,6 +885,20 @@ describe("Central de Vinculações", () => {
       await client.query("delete from public.link_candidates where id = $1", [id]);
     });
 
+    it("anon não tem EXECUTE — GRANT é a primeira barreira, não `auth.uid()` nulo", async () => {
+      // O Supabase concede EXECUTE a anon/authenticated por padrão em toda
+      // funcao nova do schema public — achado pelo linter de seguranca depois
+      // do deploy (docs/HANDOFF.md). Sem a revogacao explicita, esta chamada
+      // chegaria a rodar (e falhar só depois, por dentro).
+      const id = await insertCandidate();
+
+      await expect(
+        asAnon(`select public.resolve_link_candidate('${id}','${skuId}')`),
+      ).rejects.toThrow(/permission denied/i);
+
+      await client.query("delete from public.link_candidates where id = $1", [id]);
+    });
+
     it("SKU de outra organização é recusado", async () => {
       const id = await insertCandidate();
 
@@ -940,6 +962,16 @@ describe("Central de Vinculações", () => {
       await client.query("delete from public.link_candidates where id = $1", [id]);
     });
 
+    it("anon não tem EXECUTE", async () => {
+      const id = await insertCandidate();
+
+      await expect(asAnon(`select public.dismiss_link_candidate('${id}')`)).rejects.toThrow(
+        /permission denied/i,
+      );
+
+      await client.query("delete from public.link_candidates where id = $1", [id]);
+    });
+
     it("quem tem acesso descarta, sem criar vínculo nenhum", async () => {
       const id = await insertCandidate();
 
@@ -959,6 +991,120 @@ describe("Central de Vinculações", () => {
       expect(link.rows).toHaveLength(0);
 
       await client.query("delete from public.link_candidates where id = $1", [id]);
+    });
+  });
+});
+
+describe("observabilidade de sincronização", () => {
+  // Conta PRÓPRIA, fora do padrão `rlstest%` que o afterAll global apaga: uma
+  // vez que ela tiver um sync_runs, `on delete restrict` torna a conta
+  // permanentemente indeletável (de propósito — ver a migration). Reusar
+  // CONTA_A quebraria a limpeza das outras suítes.
+  const CONTA = "cccc9999-0000-4000-8000-00000000cccc";
+
+  let syncRunId = "";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$2,'Conta de observabilidade','syncobs-conta','PENDING')
+       on conflict do nothing`,
+      [CONTA, ORG_SB],
+    );
+
+    await client.query(
+      `insert into public.user_account_permissions (user_id, ml_account_id)
+       values ($1,$2) on conflict do nothing`,
+      [ANALISTA_SB, CONTA],
+    );
+
+    const run = await client.query<{ id: string }>(
+      `insert into public.sync_runs
+         (organization_id, ml_account_id, job_id, resource, channel, status, started_at, finished_at)
+       values ($1,$2,gen_random_uuid(),'orders','webhook','done',now(),now())
+       returning id`,
+      [ORG_SB, CONTA],
+    );
+    syncRunId = run.rows[0]?.id ?? "";
+
+    await client.query(
+      `insert into public.sync_errors
+         (organization_id, ml_account_id, sync_run_id, resource, error_class, message, occurred_at)
+       values ($1,$2,$3,'orders','retryable','rlstest timeout',now())`,
+      [ORG_SB, CONTA, syncRunId],
+    );
+  });
+
+  // Sem afterAll de limpeza: as duas tabelas são append-only por desenho — a
+  // própria suíte abaixo prova que nem um DELETE direto do dono passa. As
+  // linhas de teste ficam, como ficariam em produção; o ambiente local é
+  // recriado do zero por `supabase db reset` quando isso importar.
+
+  it("finished_at antes de started_at é recusado", async () => {
+    await expect(
+      client.query(
+        `insert into public.sync_runs
+           (organization_id, ml_account_id, job_id, resource, channel, status, started_at, finished_at)
+         values ($1,$2,gen_random_uuid(),'orders','webhook','done',now(),now() - interval '1 hour')`,
+        [ORG_SB, CONTA],
+      ),
+    ).rejects.toThrow(/finished_after_started/);
+  });
+
+  it("status done com motivo de falha é recusado", async () => {
+    await expect(
+      client.query(
+        `insert into public.sync_runs
+           (organization_id, ml_account_id, job_id, resource, channel, status, reason, started_at, finished_at)
+         values ($1,$2,gen_random_uuid(),'orders','webhook','done','deu ruim',now(),now())`,
+        [ORG_SB, CONTA],
+      ),
+    ).rejects.toThrow(/reason_matches_status/);
+  });
+
+  it("é append-only: nem um UPDATE direto do dono passa", async () => {
+    await expect(
+      client.query(`update public.sync_runs set status='failed' where id=$1`, [syncRunId]),
+    ).rejects.toThrow(/append-only/);
+  });
+
+  it("é append-only: nem um DELETE direto do dono passa", async () => {
+    await expect(
+      client.query(`delete from public.sync_runs where id=$1`, [syncRunId]),
+    ).rejects.toThrow(/append-only/);
+  });
+
+  describe("RLS", () => {
+    it("quem tem permissão na conta enxerga sync_runs e sync_errors", async () => {
+      const runs = await asUser(ANALISTA_SB, "select id from public.sync_runs");
+      const errors = await asUser(ANALISTA_SB, "select id from public.sync_errors");
+
+      expect(runs.map((r) => (r as { id: string }).id)).toContain(syncRunId);
+      expect(errors.length).toBeGreaterThan(0);
+    });
+
+    it("usuário de outra organização não enxerga nada", async () => {
+      const runs = await asUser(DE_OUTRA_ORG, "select id from public.sync_runs");
+      const errors = await asUser(DE_OUTRA_ORG, "select id from public.sync_errors");
+
+      expect(runs).toHaveLength(0);
+      expect(errors).toHaveLength(0);
+    });
+
+    it("anon é recusado nas duas tabelas", async () => {
+      await expect(asAnon("select * from public.sync_runs")).rejects.toThrow(/permission denied/i);
+      await expect(asAnon("select * from public.sync_errors")).rejects.toThrow(/permission denied/i);
+    });
+
+    it("authenticated não escreve — só service_role registra sincronização", async () => {
+      await expect(
+        asUser(
+          ADMIN_SB,
+          `insert into public.sync_runs
+             (organization_id, ml_account_id, job_id, resource, channel, status, started_at, finished_at)
+           values ('${ORG_SB}','${CONTA}',gen_random_uuid(),'orders','webhook','done',now(),now())`,
+        ),
+      ).rejects.toThrow(/permission denied|row-level security/i);
     });
   });
 });

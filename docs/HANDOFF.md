@@ -1,6 +1,6 @@
 # Handoff V3
 
-> Última atualização: 2026-08-20 — **Fase 1 concluída**; na Fase 2, o importador do UpSeller está completo ponta a ponta e implantado, o ETL da V2 (D-027) foi encerrado por evidência medida (D-040), e a **Central de Vinculações** está no ar, verificada num navegador real. Resta só o schema de `sync_runs`/`sync_errors`.
+> Última atualização: 2026-08-21 — **Fase 2 concluída.** Identidade, contas, catálogo, importador do UpSeller (upload → aplicação), Central de Vinculações e o schema de observabilidade de sincronização (`sync_runs`/`sync_errors`) estão todos no ar em Dev. A Fase 3 é a próxima e está **bloqueada** pela confirmação da documentação oficial do Mercado Livre.
 
 ## Estado atual
 
@@ -167,7 +167,7 @@ Provisionado: filas `analytics-recompute` (10/s, 20), `backfill` (1/s, 2) e `mai
 
 `packages/domain`, `mercado-livre` e `ui` não entram na Fase 1: só ganham conteúdo quando houver domínio, e criar package vazio contraria a regra de só promover a package o que dois apps importam.
 
-## Fase 2 em andamento
+## Fase 2 — concluída
 
 **Concluído:**
 
@@ -200,16 +200,24 @@ Provisionado: filas `analytics-recompute` (10/s, 20), `backfill` (1/s, 2) e `mai
 - Falha de `supabase db push` com apenas "Connecting to remote database..." e exit 1 foi **transitória**. O passo já roda com `--debug 2>&1` para que a próxima traga a mensagem real.
 - **Espelho do bug do segredo do Supabase, agora no `worker`:** `deploy-cloud-run.sh` setava `ERP_IMPORTS_BUCKET` só no ramo da `api`, nunca no do `worker` — mas é o `worker` quem lê essa variável (`apps/worker/src/env.ts`, exigida desde o handler de parse). O deploy do worker falhava com "container failed to start… PORT=8080… allocated timeout" — mensagem do Cloud Run que **não menciona a variável**; a causa real só apareceu no Cloud Logging (`invalid_environment`, `ERP_IMPORTS_BUCKET: expected string, received undefined`). Consequência séria: **a revisão que estava servindo era anterior a essa exigência** — o handler `erp.import.parse` nunca tinha rodado de fato em Dev, silenciosamente. Corrigido no script; verificar sempre os dois ramos (`api`/`worker`) juntos quando uma env var nova entra em qualquer um dos dois.
 - **`ON CONFLICT` não enxerga índice único parcial sem repetir o `WHERE` do índice** — e o PostgREST/`supabase-js` não expõe esse `WHERE` no `upsert()`. `sku_listing_links` tem três índices únicos parciais (a pegadinha do `variation_id` nulo, `docs/DATABASE.md` secao 4); um `upsert` comum contra eles falharia com "no unique or exclusion constraint matching". O comando de aplicação resolve por fora: `select` pela chave natural primeiro, depois `insert` (novo) ou `update` por `id` (existente) — nunca `upsert` direto nessa tabela. Verificado contra Postgres local: reaplicar o mesmo lote de vínculos duas vezes não duplica.
+- **O Supabase concede `EXECUTE` a `anon` e `authenticated` por padrão em toda função nova do schema `public`** — via default privileges do projeto, não via o pseudo-papel `PUBLIC`. `revoke ... from public` na migration original de `resolve_link_candidate`/`dismiss_link_candidate` não bastou: o linter de segurança (`get_advisors`) achou `anon` com `EXECUTE` nas duas, já em Dev, logo depois do deploy. Não era explorável — as duas reautenticam por dentro e `auth.uid()` é nulo para `anon` — mas GRANT é a primeira barreira, não a segunda (`docs/DATABASE.md` secao 5). Corrigido por migration nova: `revoke execute ... from anon, authenticated` explícito, seguido do `grant` só para `authenticated`. **Toda função nova em `public` precisa desse revoke explícito desde a primeira migration**; funções em `private` não têm esse risco porque o PostgREST não expõe esse schema.
+- **`ON DELETE CASCADE` numa tabela append-only é uma contradição que só aparece na hora de apagar.** `sync_runs`/`sync_errors` tinham `ml_account_id ... on delete cascade`; como a trigger append-only recusa TODO `DELETE` — inclusive o disparado por cascata de FK —, apagar a conta (ou a organização, em cascata mais acima) passou a falhar sempre que existisse pelo menos uma linha de histórico. Trocado para `on delete restrict`, que torna o bloqueio explícito em vez de a cascata quebrar no meio com um erro sem relação aparente com a causa. Pego pelos próprios testes de integração, não em produção.
 
 ## Próximo passo
 
-**Fase 2 — Core de dados.** Identidade, contas e catálogo, com RLS desde a primeira tabela.
+**Fase 2 — Core de dados: CONCLUÍDA.** Identidade, contas, catálogo, importador do UpSeller (upload → aplicação), Central de Vinculações e o schema de observabilidade de sincronização — todos os itens do checklist em `docs/ROADMAP.md` estão marcados.
 
-**Concluído nesta sessão:** o comando de aplicação (upload → parse → conferência → confirmação → **aplicação**, ponta a ponta), commitado, publicado e implantado; o ETL da V2 (D-027), encerrado por evidência medida (D-040) — não havia código a escrever; e a Central de Vinculações, completa e verificada num navegador real.
+**Concluído nesta sessão:** o comando de aplicação; o ETL da V2 (D-027), encerrado por evidência medida (D-040); a Central de Vinculações, verificada num navegador real; e o schema de `sync_runs`/`sync_errors` — a última pendência real da fase.
 
-A frente do importador do UpSeller e a Central de Vinculações estão **fechadas**. Resta um item real da Fase 2:
+**Schema de observabilidade de sincronização (`sync_runs`/`sync_errors`) — concluído nesta sessão:**
 
-1. **`sync_runs`, `sync_errors` e freshness por conta** — schema pode ser criado agora; o preenchimento real só acontece na Fase 3.
+- Migrations `20260821010000_create_sync_observability.sql` e `20260821020000_lock_down_link_candidate_rpcs.sql` (a segunda corrige um achado de segurança da Central de Vinculações — ver a armadilha registrada acima).
+- Mesmo padrão L2 append-only de `job_runs`, mas já com policy de leitura por `has_account_access`: é observabilidade **para o usuário** (`docs/ARCHITECTURE.md` secao 10), não só depuração interna.
+- `resource` (`orders`/`listings`/`fulfillment`) e `channel` (`webhook`/`reconciliation`/`backfill`) nomeiam só o que já está aprovado em `docs/ARCHITECTURE.md`/`docs/MERCADO_LIVRE.md` — nenhum campo de payload do Mercado Livre antecipado.
+- **Puramente schema**: nenhum código escreve nessas tabelas ainda. O sync do Mercado Livre é Fase 3.
+- **10 testes novos de integração de RLS** (83 no total, de 73): constraints (`finished_after_started`, `reason_matches_status`), o trigger append-only recusando `UPDATE` e `DELETE` mesmo do dono, RLS positiva/negativa nas duas tabelas, e os dois negativos novos de `anon` sem `EXECUTE` nas RPCs da Central de Vinculações.
+
+**Próximo passo real do projeto: Fase 3, e está bloqueada.** Depende da confirmação da documentação oficial do Mercado Livre (`docs/MERCADO_LIVRE.md` secao 1) — nenhuma linha de sincronização deve ser escrita antes disso (`docs/PROMPT_MASTER.md` §9). Essa confirmação é a única frente de trabalho disponível agora que não depende de mais nenhuma decisão de produto.
 
 **Central de Vinculações — concluída e verificada nesta sessão:**
 
@@ -219,7 +227,7 @@ A frente do importador do UpSeller e a Central de Vinculações estão **fechada
 - **2 testes novos no worker** (fake, cobrindo o registro do candidato e a resolução automática por match exato) e **13 na integração de RLS contra Postgres real** (73 no total, de 60) — incluindo os negativos obrigatórios (sem acesso à conta, sem o papel certo, escrita direta recusada) e a prova de que a confirmação é atômica.
 - **Verificado num navegador real**, não só em teste: usuário de teste criado via Admin API, login real, busca de SKU, clique em "Vincular" → `sku_listing_links` criado com `source = MANUAL`, candidato fechado com `resolved_by` do usuário logado; "Descartar" também verificado. Consultado direto no Postgres local depois, não só na tela.
 
-**Ainda não commitado nesta máquina:** a Central de Vinculações inteira (migration, mudanças no worker, `apps/web/app/vinculacoes/`, testes de worker e de integração). O comando de aplicação, o fix de infra do `worker` e a correção D-040 de sessões anteriores já estão em `origin/v3`.
+**Ainda não commitado nesta máquina:** as duas migrations de observabilidade de sincronização e os testes de integração associados. A Central de Vinculações, o comando de aplicação, o fix de infra do `worker` e a correção D-040 de sessões anteriores já estão em `origin/v3`.
 
 **Já no ar em Dev, `api` e `worker` verificados após o deploy:** rota `/v1/erp-imports/:id/apply` responde 401 sem token e 404 nas rotas vizinhas; `worker` reiniciado com `ERP_IMPORTS_BUCKET` correto e log `worker_started` confirmado no Cloud Logging — ver a armadilha registrada acima.
 
@@ -259,6 +267,9 @@ Ordem dentro da fase, do que não depende de nada para o que depende:
      - Tela de conferência ganhou o botão "Confirmar aplicação" (só aparece com o lote `PARSED`) e uma coluna de desfecho por linha depois de aplicado.
    - ✅ **ETL de carga inicial da V2 (D-027) — encerrado por evidência medida, não por código.** Inspecionado o banco real da V2 (`speedbikers-gestao-v2`, ref `eeramcpouarfwagxigtz`): `product_inventory_links` (vínculos, 3.158 linhas) é 100% `source = 'upseller'`/`confidence = 'exact'` — sem curadoria humana distinta do que o importador da V3 já reproduz, e com **menos** cobertura (3.158 aplicados na V2 contra 20.650 vínculos brutos de ML no export atual). `stock_movements`, `product_inventory_balances` e `stock_receipts` (NF-e): **0 linhas** — funcionalidade que existia no schema da V2 e nunca foi usada. Único dado real: **1 pedido de compra**, 5 itens, 8 eventos — adiado para a Fase 4, quando `purchase_orders` existir na V3. Registrado como **D-040**, com a tabela completa em `docs/DECISIONS.md`.
 6. **Central de Vinculações** — **concluído**. Tabela `link_candidates` + RPCs `resolve_link_candidate`/`dismiss_link_candidate` (`security definer`, autorização refeita internamente). O worker registra um candidato sempre que um vínculo fica pendente por falta de SKU, e reconcilia todos os candidatos abertos da organização ao fim de **toda** aplicação — match exato sem tela. Tela em `/vinculacoes` com busca de SKU sob RLS e confirmação/descarte por Server Action. Verificado num navegador real, login incluído, com o resultado conferido direto no Postgres.
+7. **Observabilidade de sincronização** (`sync_runs`/`sync_errors`) — **concluído**. Schema L2 append-only com policy de leitura por conta, pronto para a Fase 3 escrever. Nenhum código escreve ainda — é a última peça de schema da Fase 2, e fecha o checklist inteiro.
+
+**Fase 2 encerrada.** Ver `docs/ROADMAP.md` para o checklist completo e `docs/MERCADO_LIVRE.md` secao 1 para o que falta confirmar antes da Fase 3.
 
 **Leitor de planilha escolhido:** `read-excel-file` (2,5 MB) em vez de `exceljs` (21,8 MB), porque o worker só lê. Medido nos arquivos reais: 23.925 linhas em 647 ms com 176 MB de RSS, folgado nos 512 MB do container. Usar `readSheet`, não o export padrão — na v9 o padrão devolve o array de planilhas.
 
@@ -266,10 +277,7 @@ Ordem dentro da fase, do que não depende de nada para o que depende:
 
 **Regra desta fase:** toda tabela nasce com RLS habilitada, GRANT mínimo explícito e **teste negativo** provando que quem não tem permissão não lê. Ver `docs/DATABASE.md` secao 5 e `docs/TESTING.md`.
 
-Frente paralela, independente: confirmar a documentação oficial do Mercado Livre e preencher `docs/MERCADO_LIVRE.md`. Ela bloqueia a Fase 3.
-
 ## Bloqueios atuais
 
-- Nenhum bloqueio para o schema de `sync_runs`/`sync_errors`.
-- Confirmação da documentação oficial do Mercado Livre bloqueia a Fase 3.
+- **Fase 3 inteira** bloqueada pela confirmação da documentação oficial do Mercado Livre (`docs/MERCADO_LIVRE.md` secao 1).
 - Modelos de exportação do pedido de compra (Excel e PDF) precisam ser solicitados antes da Fase 4.

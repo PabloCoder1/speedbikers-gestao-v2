@@ -62,7 +62,7 @@ Cada fase só é considerada concluída sob a Definition of Done do `docs/PROMPT
 - [x] Central de Vinculações: candidatos, resolução por match exato, confirmação humana
 - [x] Importador de planilhas do UpSeller: upload, parse, conferência, confirmação e aplicação — catálogo, kits, vínculos e saldo (D-028)
 - [x] ETL de carga inicial a partir da V2 (D-027) — **descartado por evidência medida** (D-040): vínculos/estoque/NF-e sem dado irreprodutível na V2; compras (1 pedido) adiado para a Fase 4
-- [ ] `sync_runs`, `sync_errors` e freshness por conta
+- [x] `sync_runs`, `sync_errors` e freshness por conta — schema e RLS prontos; preenchimento real é Fase 3
 
 **Marco:** o ADMIN conecta as contas e o sistema mostra SKU vinculado a MLB, com o catálogo carregado do UpSeller.
 
@@ -191,6 +191,6 @@ A Fase 5A antecede a Fase 4 porque o dashboard de vendas não usa estoque, e a F
 
 ## Próximo passo imediato
 
-**Fase 1 — fundação técnica.** Não cria nenhuma tabela de domínio e não depende de nenhuma decisão pendente.
+**Fase 2 concluída** (2026-08-21) — identidade, contas, catálogo, importador do UpSeller com aplicação e Central de Vinculações, e o schema de observabilidade de sincronização. Ver `docs/HANDOFF.md` para o estado verificado.
 
-Frente paralela: confirmar a documentação oficial do Mercado Livre e preencher `docs/MERCADO_LIVRE.md`. Ela bloqueia a Fase 3.
+**Fase 3 — Mercado Livre e histórico** é a próxima, e está **bloqueada**: depende da confirmação da documentação oficial do Mercado Livre (`docs/MERCADO_LIVRE.md` secao 1) — tópicos de webhook, recuperação de notificação perdida, rate limit vigente e modelo de autorização multi-conta. Nenhuma linha de sincronização deve ser escrita antes disso (`docs/PROMPT_MASTER.md` §9).

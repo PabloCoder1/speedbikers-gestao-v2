@@ -845,6 +845,127 @@ export type Database = {
           },
         ]
       }
+      sync_errors: {
+        Row: {
+          created_at: string
+          error_class: string
+          id: string
+          message: string
+          ml_account_id: string
+          occurred_at: string
+          organization_id: string
+          resource: string
+          sync_run_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          error_class: string
+          id?: string
+          message: string
+          ml_account_id: string
+          occurred_at: string
+          organization_id: string
+          resource: string
+          sync_run_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          error_class?: string
+          id?: string
+          message?: string
+          ml_account_id?: string
+          occurred_at?: string
+          organization_id?: string
+          resource?: string
+          sync_run_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sync_errors_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sync_errors_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sync_errors_sync_run_id_fkey"
+            columns: ["sync_run_id"]
+            isOneToOne: false
+            referencedRelation: "sync_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sync_runs: {
+        Row: {
+          channel: string
+          created_at: string
+          finished_at: string
+          id: string
+          items_processed: number | null
+          job_id: string
+          latest_record_at: string | null
+          ml_account_id: string
+          organization_id: string
+          reason: string | null
+          resource: string
+          started_at: string
+          status: string
+        }
+        Insert: {
+          channel: string
+          created_at?: string
+          finished_at: string
+          id?: string
+          items_processed?: number | null
+          job_id: string
+          latest_record_at?: string | null
+          ml_account_id: string
+          organization_id: string
+          reason?: string | null
+          resource: string
+          started_at: string
+          status: string
+        }
+        Update: {
+          channel?: string
+          created_at?: string
+          finished_at?: string
+          id?: string
+          items_processed?: number | null
+          job_id?: string
+          latest_record_at?: string | null
+          ml_account_id?: string
+          organization_id?: string
+          reason?: string | null
+          resource?: string
+          started_at?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sync_runs_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sync_runs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_account_permissions: {
         Row: {
           created_at: string

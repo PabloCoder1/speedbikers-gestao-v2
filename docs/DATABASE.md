@@ -116,6 +116,24 @@ As colunas de referência **duplicam** o que já está no `jsonb` de `erp_import
 
 **Match exato roda sozinho**, sem tela: depois de qualquer aplicação do importador, o worker relê os candidatos `OPEN` da organização sobre as mesmas linhas de origem — se o SKU passou a existir, o vínculo é criado e o candidato fecha com `resolution_method = 'EXACT_MATCH'`, sem intervenção humana.
 
+### `sync_runs` / `sync_errors` — observabilidade de sincronização
+
+Schema criado na Fase 2; **preenchimento real é Fase 3**, quando o sync com o Mercado Livre existir. Mesmo padrão L2 append-only de `job_runs` (mesma migration de referência), com uma diferença deliberada: `job_runs` nasceu **sem política de leitura** porque `organizations` ainda não existia; `sync_runs`/`sync_errors` já nascem com policy de leitura, porque agora existe quem autorizar — é observabilidade **para o usuário** (`docs/ARCHITECTURE.md` secao 10), não só para depuração interna.
+
+```text
+sync_runs    organization_id, ml_account_id, job_id, resource, channel,
+             status, reason, items_processed, latest_record_at,
+             started_at, finished_at
+sync_errors  organization_id, ml_account_id, sync_run_id?, resource,
+             error_class, message, occurred_at
+```
+
+`resource` (`orders` | `listings` | `fulfillment`) e `channel` (`webhook` | `reconciliation` | `backfill`) só nomeiam o que já está aprovado em `docs/ARCHITECTURE.md` e `docs/MERCADO_LIVRE.md` secao 3 — nenhum campo de payload do Mercado Livre foi antecipado.
+
+`latest_record_at` é o dado que sustenta a tela de Saúde da Sincronização: a distância entre `now()` e o registro mais recente que uma execução efetivamente trouxe, não `finished_at` — uma sincronização pode terminar sem trazer nada novo.
+
+**Armadilha paga:** `ml_account_id` referencia `ml_accounts` com `on delete restrict`, não `cascade`. Numa tabela append-only, um `cascade` é fisicamente impossível de completar — o `DELETE` disparado pela cascata esbarra na mesma trigger que bloqueia `DELETE` direto, e a exclusão inteira falha. `restrict` torna isso explícito: apagar uma conta com histórico de sync falha alto, em vez de a cascata quebrar no meio com um erro que não aponta para a causa. Na prática nunca dispara — contas são desativadas por `status = 'REVOKED'`, nunca apagadas.
+
 ### `orders` / `order_items` — vendas
 
 **Fato medido na V2 que define a modelagem:** o Mercado Livre **não entrega pedido multi-linha**. `orders` e `order_items` tinham exatamente 328.211 linhas cada. Uma compra de vários itens vira **vários pedidos** ligados por `pack_id`, e 189.158 pedidos tinham um.
