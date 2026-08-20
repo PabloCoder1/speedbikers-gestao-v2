@@ -43,6 +43,16 @@ build_and_deploy() {
     api_url="$(service_url api)"
     worker_url="$(service_url worker)"
 
+    # URL vazia viraria variável vazia no container, o Zod recusaria no boot e
+    # o Cloud Run reportaria apenas "failed to start" — erro caro de diagnosticar.
+    # Falhar aqui, com a causa explícita, custa muito menos.
+    [ -n "${worker_url}" ] || fail "worker ainda não existe. Rode: bash infra/deploy-cloud-run.sh worker"
+
+    if [ -z "${api_url}" ]; then
+      info "api ainda não existe; primeiro deploy define a URL e o segundo a injeta"
+      api_url="https://placeholder.invalid"
+    fi
+
     # A `api` é superfície pública: o webhook do Mercado Livre precisa alcançá-la
     # e não envia credencial do Google. A autenticação é própria da rota
     # (docs/API.md secao 2).
@@ -59,7 +69,7 @@ build_and_deploy() {
       --concurrency 80 \
       --timeout 60s \
       --cpu 1 --memory 512Mi \
-      --set-env-vars "NODE_ENV=production" \
+      --set-env-vars "^|^NODE_ENV=production|GCP_PROJECT_ID=${PROJECT_ID}|GCP_REGION=${REGION}|WORKER_URL=${worker_url}|API_URL=${api_url}|TASKS_INVOKER_SERVICE_ACCOUNT=$(sa_email "${SA_TASKS}")|SCHEDULER_INVOKER_SERVICE_ACCOUNT=$(sa_email "${SA_SCHEDULER}")" \
       --quiet
   else
     # O worker NÃO tem rota pública. Só o Cloud Tasks o invoca, com OIDC (D-024).
