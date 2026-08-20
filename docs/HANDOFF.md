@@ -192,6 +192,8 @@ Provisionado: filas `analytics-recompute` (10/s, 20), `backfill` (1/s, 2) e `mai
 - Heredoc de shell comeu uma barra invertida no matcher do `proxy`: o escape duplo virou escape simples, e o que era "ponto literal" na expressão regular passou a significar "qualquer caractere". O lint pegou. Regra: arquivo com escape vai pela ferramenta de escrita, nunca por heredoc.
 - `useSearchParams` sem limite de `<Suspense>` **quebra o build** do Next, não a execução. Só apareceu no `next build`, depois de `typecheck` e `lint` passarem — build faz parte da verificação.
 - TypeScript descarta o estreitamento de uma **propriedade** dentro de callback. `if (batch.data === null) notFound()` não vale dentro do `.map`; copiar para um `const` local resolve.
+- **O ramo da `api` no `deploy-cloud-run.sh` não ligava o segredo do Supabase**; só o do worker ligava. A assimetria ficou invisível enquanto a `api` não precisava da chave. O container recusou subir, o Zod nomeou a variável que faltava e o Cloud Run manteve a revisão anterior servindo — é exatamente o que a validação no boot existe para produzir.
+- **O heredoc do shell come um nível de barra invertida.** `\` chega como `\`, e em Python uma barra no fim da linha é continuação de linha: o padrão de busca deixa de existir e o `replace` não casa nada, sem erro. Já custou duas vezes. Regra: edição com barra invertida usa a ferramenta de escrita, ou constrói o caractere com `chr(92)` e **verifica com `assert` que o padrão casou**.
 - `parseDecimal` removia todo ponto como separador de milhar, transformando `174.90` em `17490` — cem vezes o valor, em silêncio, em todo preço e custo. A vírgula é quem decide: com vírgula presente ela é o decimal e o ponto é milhar; sem vírgula, o ponto É o decimal. Pego por teste antes de qualquer importação.
 - `String(value)` sobre célula de planilha transforma objeto em `[object Object]` — texto que parece dado válido e não é. `cell()` trata string, número, booleano e `Date` explicitamente e devolve `null` para o resto.
 - O `slug` de `ml_accounts` nomeia a fila `ml-sync-<slug>` do Cloud Tasks (D-036). A constraint restringe o charset ao que o Cloud Tasks aceita — descobrir isso na hora de provisionar sairia caro.
@@ -206,11 +208,14 @@ Provisionado: filas `analytics-recompute` (10/s, 20), `backfill` (1/s, 2) e `mai
 1. **Comando de aplicação** — transforma o lote conferido em catálogo, vínculo e saldo. É o primeiro código que **escreve em domínio**; até aqui tudo era staging.
 2. **ETL de carga inicial da V2** (D-027).
 
-**Antes de usar em Dev**, três variáveis novas precisam existir:
+**Já no ar em Dev:** `api` publicada com a rota de importação e o CORS ativo. Verificado por `curl`: origem da Vercel recebe `access-control-allow-origin`, origem de terceiro não recebe nada, `/v1/erp-imports` sem token responde 401.
+
+**Falta configurar (manual, precisa do painel):**
 
 - `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` na Vercel.
 - `NEXT_PUBLIC_API_URL` na Vercel, apontando para a `api` no Cloud Run.
-- `WEB_ORIGINS` na `api`, com a origem da Vercel. Sem ela o CORS barra o upload — e do navegador isso é indistinguível de "servidor fora do ar".
+- ~~`WEB_ORIGINS` na `api`~~ — **feito**, publicado pelo `infra/deploy-cloud-run.sh`.
+- **Primeiro usuário**: criar no painel do Supabase e rodar `grant-role.ts`. Ver `docs/DEPLOYMENT.md` secao 10.
 
 Ordem dentro da fase, do que não depende de nada para o que depende:
 
