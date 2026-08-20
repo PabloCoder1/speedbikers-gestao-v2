@@ -50,12 +50,22 @@ resolve_gcloud() {
     return
   fi
 
-  # Testar com -f, não com -x: no MSYS/Git Bash um arquivo .cmd não carrega bit
-  # de execução, mas roda normalmente.
+  # Preferir o wrapper POSIX (sem extensão) ao `.cmd`.
+  #
+  # O `.cmd` é interpretado pelo cmd.exe, que trata `>`, `<`, `|`, `&` e a
+  # combinação de espaços com `*` como sintaxe — mesmo dentro de aspas. Isso
+  # destrói argumentos legítimos, como o cron `"0 * * * *"` do Cloud Scheduler,
+  # e a mensagem de erro fala de 'C:\Program', sem relação aparente com a causa.
+  #
+  # O wrapper POSIX roda direto no Git Bash e não tem essa camada.
+  #
+  # Testar com -f, não com -x: no MSYS nenhum dos dois carrega bit de execução.
   local candidates=(
+    "/c/Program Files (x86)/Google/Cloud SDK/google-cloud-sdk/bin/gcloud"
+    "/c/Program Files/Google/Cloud SDK/google-cloud-sdk/bin/gcloud"
+    "${LOCALAPPDATA:-}/Google/Cloud SDK/google-cloud-sdk/bin/gcloud"
     "/c/Program Files (x86)/Google/Cloud SDK/google-cloud-sdk/bin/gcloud.cmd"
     "/c/Program Files/Google/Cloud SDK/google-cloud-sdk/bin/gcloud.cmd"
-    "${LOCALAPPDATA:-}/Google/Cloud SDK/google-cloud-sdk/bin/gcloud.cmd"
   )
 
   local candidate

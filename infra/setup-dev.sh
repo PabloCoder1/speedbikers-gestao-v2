@@ -69,6 +69,29 @@ create_sa "${SA_WORKER}"    "Runtime dos workers Speed Bikers Gestao V3"
 create_sa "${SA_TASKS}"     "Identidade usada pelo Cloud Tasks"
 create_sa "${SA_SCHEDULER}" "Identidade usada pelo Cloud Scheduler"
 
+step "Delegação de identidade"
+# Ao criar uma task, a `api` declara qual identidade o Cloud Tasks vai assumir
+# para invocar o worker. Para isso ela precisa poder "agir como" essa
+# identidade — sem isso o enfileiramento falha com PERMISSION_DENIED em
+# `iam.serviceAccounts.actAs`.
+#
+# A permissão é concedida NA service account alvo, não no projeto: a `api` pode
+# agir como o invocador do Tasks e como nenhuma outra.
+grant_act_as() {
+  local target="$1" member="$2" output
+
+  if ! output="$(gc iam service-accounts add-iam-policy-binding "$(sa_email "${target}")" \
+      --member "serviceAccount:$(sa_email "${member}")" \
+      --role roles/iam.serviceAccountUser 2>&1)"; then
+    printf '%s\n' "${output}" >&2
+    fail "Falha ao conceder serviceAccountUser em ${target}. Mensagem do gcloud acima."
+  fi
+
+  info "${member} pode agir como ${target}"
+}
+
+grant_act_as "${SA_TASKS}" "${SA_API}"
+
 step "Concluído"
 info "Próximo: bash infra/cloud-tasks-queues.sh"
 info "Depois:  bash infra/storage-buckets.sh"

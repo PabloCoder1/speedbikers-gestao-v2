@@ -36,9 +36,9 @@ Cada fase só é considerada concluída sob a Definition of Done do `docs/PROMPT
 - [x] TypeScript estrito, ESLint, Vitest, `.env.example` completo e validação com Zod no boot
 - [ ] Supabase local (CLI/Docker) subindo e aplicando migrations
 - [ ] `apps/web` com login Supabase funcionando
-- [ ] `apps/api` publicado no Cloud Run, com healthcheck e autenticação OIDC
-- [ ] `apps/worker` publicado no Cloud Run, consumindo um job de teste via Cloud Tasks
-- [ ] Projeto Vercel V3 conectado à branch `v3`, com Preview apontando para o Supabase Dev
+- [x] `apps/api` publicado no Cloud Run, com healthcheck e autenticação OIDC
+- [x] `apps/worker` publicado no Cloud Run, consumindo um job de teste via Cloud Tasks
+- [x] Projeto Vercel V3 conectado à branch `v3`
 - [x] CI no GitHub Actions: typecheck, lint, testes e build obrigatórios
 - [x] Scripts `infra/` versionados criando filas e buckets (Scheduler e secrets ficam para as Fases 3 e 2)
 

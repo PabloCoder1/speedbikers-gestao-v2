@@ -53,6 +53,28 @@ build_and_deploy() {
       api_url="https://placeholder.invalid"
     fi
 
+    # Arquivo em vez de `--set-env-vars`: no Windows o wrapper gcloud.cmd é
+    # interpretado pelo cmd, que trata `^` como escape e engole o delimitador.
+    # O arquivo elimina a camada de quoting inteira.
+    #
+    # Nenhum segredo aqui — só identificadores de recurso. Segredo vai para o
+    # Secret Manager (docs/DEPLOYMENT.md secao 5).
+    # Caminho no diretório do repositório, não em /tmp: o gcloud.cmd é um
+    # programa Windows nativo e não entende o caminho MSYS `/tmp/...`.
+    # O nome casa com `.env.*` do .gitignore, então não há risco de versionar.
+    local env_file=".env.deploy.yaml"
+    trap 'rm -f "${env_file}"' RETURN
+
+    cat > "${env_file}" <<YAML
+NODE_ENV: production
+GCP_PROJECT_ID: "${PROJECT_ID}"
+GCP_REGION: "${REGION}"
+WORKER_URL: "${worker_url}"
+API_URL: "${api_url}"
+TASKS_INVOKER_SERVICE_ACCOUNT: "$(sa_email "${SA_TASKS}")"
+SCHEDULER_INVOKER_SERVICE_ACCOUNT: "$(sa_email "${SA_SCHEDULER}")"
+YAML
+
     # A `api` é superfície pública: o webhook do Mercado Livre precisa alcançá-la
     # e não envia credencial do Google. A autenticação é própria da rota
     # (docs/API.md secao 2).
@@ -69,7 +91,7 @@ build_and_deploy() {
       --concurrency 80 \
       --timeout 60s \
       --cpu 1 --memory 512Mi \
-      --set-env-vars "^|^NODE_ENV=production|GCP_PROJECT_ID=${PROJECT_ID}|GCP_REGION=${REGION}|WORKER_URL=${worker_url}|API_URL=${api_url}|TASKS_INVOKER_SERVICE_ACCOUNT=$(sa_email "${SA_TASKS}")|SCHEDULER_INVOKER_SERVICE_ACCOUNT=$(sa_email "${SA_SCHEDULER}")" \
+      --env-vars-file "${env_file}" \
       --quiet
   else
     # O worker NÃO tem rota pública. Só o Cloud Tasks o invoca, com OIDC (D-024).
