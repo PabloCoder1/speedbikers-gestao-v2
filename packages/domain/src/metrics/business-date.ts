@@ -34,6 +34,25 @@ export function toSalesMetricDate(value: string | Date): string {
   return `${year}-${month}-${day}`;
 }
 
+const BUSINESS_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/**
+ * Constrói uma data de negócio (`YYYY-MM-DD`) em UTC à meia-noite — só como
+ * representação interna para aritmética de calendário, nunca como fuso. Ver
+ * `shiftBusinessDate`.
+ */
+function parseBusinessDate(date: string): Date {
+  const match = BUSINESS_DATE_PATTERN.exec(date);
+
+  if (match === null) {
+    throw new RangeError("data de negócio inválida, esperado YYYY-MM-DD");
+  }
+
+  const [, year, month, day] = match as unknown as [string, string, string, string];
+
+  return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+}
+
 /**
  * Desloca uma data de negócio (`YYYY-MM-DD`) em N dias corridos.
  *
@@ -44,16 +63,38 @@ export function toSalesMetricDate(value: string | Date): string {
  * `toSalesMetricDate`, que converte instante -> dia civil).
  */
 export function shiftBusinessDate(date: string, days: number): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
-
-  if (match === null) {
-    throw new RangeError("data de negócio inválida, esperado YYYY-MM-DD");
-  }
-
-  const [, year, month, day] = match as unknown as [string, string, string, string];
-  const shifted = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  const shifted = parseBusinessDate(date);
 
   shifted.setUTCDate(shifted.getUTCDate() + days);
 
   return shifted.toISOString().slice(0, 10);
+}
+
+/**
+ * Dias corridos entre duas datas de negócio, inclusive nas duas pontas —
+ * "de 2026-08-01 a 2026-08-30" são 30 dias, não 29.
+ */
+export function businessDateRangeLength(from: string, to: string): number {
+  const fromDate = parseBusinessDate(from);
+  const toDate = parseBusinessDate(to);
+  const days = Math.round((toDate.getTime() - fromDate.getTime()) / 86_400_000) + 1;
+
+  if (days < 1) {
+    throw new RangeError("data final anterior à data inicial");
+  }
+
+  return days;
+}
+
+/**
+ * Janela imediatamente anterior a `[from, to]`, do mesmo tamanho — a base da
+ * comparação de períodos (`docs/PRODUCT_REQUIREMENTS.md`). Não sobrepõe o
+ * período atual: termina no dia anterior a `from`.
+ */
+export function previousBusinessDateRange(from: string, to: string): { from: string; to: string } {
+  const length = businessDateRangeLength(from, to);
+  const previousTo = shiftBusinessDate(from, -1);
+  const previousFrom = shiftBusinessDate(previousTo, -(length - 1));
+
+  return { from: previousFrom, to: previousTo };
 }

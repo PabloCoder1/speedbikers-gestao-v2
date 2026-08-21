@@ -1,6 +1,6 @@
 # Handoff V3
 
-> Última atualização: 2026-08-21 — **Dashboard Geral de vendas (primeira fatia da última etapa da Fase 5A) concluído e verificado rodando.** Janela fixa de 30 dias, grão organização, via a nova `get_sales_summary` (soma `daily_account_metrics` em SQL). **Próxima etapa de desenvolvimento: filtro de período + comparação de períodos, depois o Dashboard por Conta. O rebuild histórico no Dev continua proibido até os quatro backfills terminarem.**
+> Última atualização: 2026-08-21 — **Filtro de período (7/15/30/60/90 dias + personalizado) e comparação com o período anterior concluídos no Dashboard Geral, verificados rodando.** `get_sales_summary` chamada duas vezes (período atual + anterior); nenhuma métrica de variação percentual nova foi criada — `docs/METRICS.md` deixa essa definição pendente da Fase 5B. **Próxima etapa de desenvolvimento: Dashboard por Conta (mesma `get_sales_summary`, passando `p_ml_account_id`). O rebuild histórico no Dev continua proibido até os quatro backfills terminarem.**
 
 ## Estado atual
 
@@ -14,7 +14,18 @@
 
 ## Última etapa concluída
 
-**Dashboard Geral de vendas — primeira fatia da quarta etapa da Fase 5A.**
+**Filtro de período + comparação — segunda fatia do Dashboard Geral (Fase 5A).**
+
+- Escopo: presets 7/15/30/60/90 dias (`docs/PRODUCT_REQUIREMENTS.md`) mais período personalizado, e comparação com o período imediatamente anterior de mesmo tamanho. Dashboard por Conta continua para a próxima etapa.
+- **`packages/domain/src/metrics/business-date.ts`** ganhou duas funções puras novas: `businessDateRangeLength(from, to)` (dias corridos inclusive) e `previousBusinessDateRange(from, to)` (janela anterior do mesmo tamanho, sem sobrepor). `shiftBusinessDate` foi refatorada para compartilhar o parsing (`parseBusinessDate`) em vez de duplicar a regex. 13 testes novos, incluindo virada de ano/mês e ano bissexto.
+- **Decisão de escopo, documentada no próprio arquivo (`apps/web/app/vendas/page.tsx`)**: "comparação" mostra as mesmas seis métricas já aprovadas calculadas duas vezes (período atual e anterior) lado a lado — **não** introduz `variacao_percentual_periodo`/`comparacao_periodo_anterior` como métricas novas. `docs/METRICS.md` secao 5.4 lista essas duas com "definição pendente da Fase 5B"; sintetizar um "+12%" agora seria um número sem `metric_definitions` por trás, o que D-023 proíbe. Fica registrado aqui porque é uma leitura de documentação que poderia ter ido no sentido oposto (ROADMAP pede "comparação" na Fase 5A) — a resolução escolhida satisfaz as duas sem violar nenhuma.
+- **Filtro sem componente cliente**: pills de preset são `<Link>` (mesmo padrão de `apps/web/app/importacoes/[id]/page.tsx`), intervalo personalizado é um `<form method="get">` nativo com dois `<input type="date">`. Nenhum JavaScript de interação foi adicionado — consistente com o resto do `web`, que só usa componente cliente quando precisa mesmo (formulários com estado local, sessão).
+- **Entrada de usuário tratada sem confiar**: `from`/`to` da URL passam por regex + `from <= to` antes de chegar em `businessDateRangeLength`/`shiftBusinessDate` (que lançam em formato inválido). Combinação incompleta ou inválida cai para os 30 dias padrão com aviso visível, em vez de derrubar a página com 500. Verificado manualmente com `?from=2026-08-20&to=2026-08-01` (invertido) e `?from=lixo&to=abc` (lixo) — os dois caem no fallback, sem erro no servidor.
+- `daily_account_metrics` segue vazia no período atual E no anterior (backfill incompleto), então a tela mostra "Nunca calculado" para os dois — comportamento correto e esperado, não testado com dado real por decisão já registrada na etapa anterior.
+- **Verificado rodando**: login real, `/vendas` local contra o Supabase Dev real — troquei entre os cinco presets e testei um intervalo personalizado válido (01/08 a 10/08/2026, comparação calculada corretamente para 22/07–31/07) e dois inválidos, tudo sem erro no console além do WebSocket de HMR (irrelevante, ambiente de preview).
+- `pnpm run check` verde nas 29 tasks; `pnpm --filter @sb/web run build` verde.
+
+**Etapa anterior: Dashboard Geral de vendas — primeira fatia da quarta etapa da Fase 5A.**
 
 - Escopo deliberadamente pequeno, decidido com o usuário antes de codificar: janela fixa dos últimos 30 dias, grão organização, sem seletor de período nem comparação — ambos ficam para a próxima etapa, junto do Dashboard por Conta.
 - **`public.get_sales_summary(date_from, date_to, ml_account_id?)`** (migration `20260821190000_create_sales_summary_rpc.sql`): soma `daily_account_metrics` no grão organização. `docs/METRICS.md` já listava "organização" como granularidade válida de toda métrica de venda, mas as tabelas materializadas em `20260821182620` param no grão conta — esta função fecha o grão que faltava **sem duplicar cálculo**, só somando o rollup de conta que já está correto.
@@ -95,7 +106,7 @@
 - Verificação: `pnpm run check` verde nas 29 tasks; `@sb/domain` com 123 testes; `supabase db push --linked --dry-run` confirma o banco remoto atualizado. Os advisors foram relidos e não apontam achado causado por esta migration de dados; os avisos preexistentes seguem fora do escopo desta reparação.
 - Prevenção no repositório: `infra/deploy-cloud-run.sh` agora publica o consumidor (`worker`) antes do produtor (`api`) quando os dois são implantados juntos. Assim uma API nova não emite tipo de job para um worker antigo.
 
-**Próximo passo de desenvolvimento:** Dashboard Geral concluído (janela fixa de 30 dias, sem filtro). Falta: seletor de período + comparação com período anterior na mesma tela, depois o Dashboard por Conta (mesmo `get_sales_summary`, passando `p_ml_account_id`). Os quatro checkpoints de backfill seguem incompletos — não executar rebuild histórico até terminarem.
+**Próximo passo de desenvolvimento:** Dashboard Geral concluído (filtro de período + comparação). Falta: Dashboard por Conta (mesmo `get_sales_summary`, passando `p_ml_account_id`; provavelmente uma tela por conta ou um seletor de conta na mesma tela — decisão de UX ainda não tomada). Os quatro checkpoints de backfill seguem incompletos — não executar rebuild histórico até terminarem.
 
 ## Auditoria da V2 realizada nesta sessão
 
@@ -466,7 +477,7 @@ Também confirmados com detalhe de endpoint, paginação e payload: tópicos de 
 
 ## Bloqueios atuais
 
-- **Dashboard Geral concluído** (`/vendas`, janela fixa de 30 dias). Nenhum bloqueio para o próximo incremento (filtro de período, comparação, Dashboard por Conta). A visualização com dado histórico real depende do término dos quatro backfills e do rebuild explícito posterior.
+- **Dashboard Geral concluído** (`/vendas`, filtro de período + comparação). Nenhum bloqueio para o próximo incremento (Dashboard por Conta). A visualização com dado histórico real depende do término dos quatro backfills e do rebuild explícito posterior.
 - `domain_events` já é lido pela tela `/sincronizacao`, mas ainda não alimenta notificações (`docs/NOTIFICATIONS.md`) nem a Central de Ações. Esses consumos são Fase 6/7.
 - **As quatro contas Mercado Livre estão `CONNECTED` e reconciliaram pedidos reais.** O backfill de 12 meses segue em andamento na fila de baixa prioridade; não iniciar o rebuild histórico das métricas até os quatro checkpoints terminarem.
 - **Imports do UpSeller em 2026-08-21:** `PRODUCTS`, `KITS`, `LINKS` e `STOCK` estão `APPLIED`, todos com zero linhas não resolvidas. Os 20.650 vínculos apontam para as quatro contas manuais corretas; não há placeholders `ml-*` nem candidatos pendentes.

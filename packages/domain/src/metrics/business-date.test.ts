@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { shiftBusinessDate, toSalesMetricDate } from "./business-date.js";
+import {
+  businessDateRangeLength,
+  previousBusinessDateRange,
+  shiftBusinessDate,
+  toSalesMetricDate,
+} from "./business-date.js";
 
 describe("toSalesMetricDate", () => {
   it.each([
@@ -39,5 +44,45 @@ describe("shiftBusinessDate", () => {
 
   it("recusa formato inválido", () => {
     expect(() => shiftBusinessDate("21/08/2026", -1)).toThrow(/data de negócio inválida/);
+  });
+});
+
+describe("businessDateRangeLength", () => {
+  it.each([
+    ["2026-08-01", "2026-08-30", 30],
+    ["2026-08-21", "2026-08-21", 1],
+    ["2026-01-01", "2026-12-31", 365],
+    ["2024-01-01", "2024-12-31", 366],
+  ])("de %s a %s são %i dias", (from, to, expected) => {
+    expect(businessDateRangeLength(from, to)).toBe(expected);
+  });
+
+  it("recusa data final anterior à inicial", () => {
+    expect(() => businessDateRangeLength("2026-08-21", "2026-08-20")).toThrow(
+      /data final anterior à data inicial/,
+    );
+  });
+});
+
+describe("previousBusinessDateRange", () => {
+  it("janela anterior tem o mesmo tamanho e não sobrepõe", () => {
+    expect(previousBusinessDateRange("2026-07-23", "2026-08-21")).toEqual({
+      from: "2026-06-23",
+      to: "2026-07-22",
+    });
+  });
+
+  it("funciona para um único dia", () => {
+    expect(previousBusinessDateRange("2026-08-21", "2026-08-21")).toEqual({
+      from: "2026-08-20",
+      to: "2026-08-20",
+    });
+  });
+
+  it("atravessa virada de ano", () => {
+    expect(previousBusinessDateRange("2026-01-01", "2026-01-07")).toEqual({
+      from: "2025-12-25",
+      to: "2025-12-31",
+    });
   });
 });
