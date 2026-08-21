@@ -1,11 +1,13 @@
 import { serve } from "@hono/node-server";
 import { createAdminClient } from "@sb/db";
+import { createMercadoLivreClient, loadEncryptionKey } from "@sb/mercado-livre";
 import { createLogger } from "@sb/observability";
 
 import { createWorkerApp } from "./app.js";
 import { loadEnv } from "./env.js";
 import { createErpImportApplyHandler } from "./handlers/erp-import-apply.js";
 import { createErpImportParseHandler } from "./handlers/erp-import-parse.js";
+import { createSyncOrdersWindowHandler } from "./handlers/sync-orders-window.js";
 import { withHandlers } from "./router.js";
 import { createSheetReader } from "./sheet-reader.js";
 
@@ -26,6 +28,19 @@ const app = createWorkerApp({
       reader: createSheetReader(env.ERP_IMPORTS_BUCKET),
     }),
     "erp.import.apply": createErpImportApplyHandler({ db }),
+    "sync.orders.window": createSyncOrdersWindowHandler({
+      db,
+      mercadoLivre: createMercadoLivreClient(),
+      // `redirectUri` nunca é enviado pelo refresh (`grant_type=refresh_token`
+      // não carrega esse campo) — só a troca inicial do `code`, feita pela
+      // `api`, usa o valor de verdade.
+      oauth: {
+        clientId: env.MERCADO_LIVRE_CLIENT_ID,
+        clientSecret: env.MERCADO_LIVRE_CLIENT_SECRET,
+        redirectUri: "",
+      },
+      encryptionKey: loadEncryptionKey(env.ML_TOKEN_ENCRYPTION_KEY),
+    }),
   }),
 });
 

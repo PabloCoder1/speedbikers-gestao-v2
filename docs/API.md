@@ -91,10 +91,12 @@ O upload da planilha vai do navegador **direto** para a `api`, sem passar pela V
 | Rota | Chamada por | Descrição |
 |---|---|---|
 | `/internal/jobs/:type` | Cloud Tasks | Entrega de job ao `worker` |
-| `/internal/schedule/reconcile` | Cloud Scheduler | Janela de reconciliação |
+| `/internal/schedule/reconcile` | Cloud Scheduler | Janela de reconciliação — **implementado em 2026-08-21**, no máximo uma vez por hora útil (dedupe por hora cheia) |
 | `/internal/schedule/maintenance` | Cloud Scheduler | Conferência de saldo, expurgo |
 
 Sem segredo compartilhado (D-024).
+
+**`POST /internal/schedule/reconcile` — implementado em 2026-08-21** (`apps/api/src/reconcile.ts`). Lista `ml_accounts` com `status = 'CONNECTED'` (todas as organizações — rota de manutenção do sistema, não escopada por uma) e enfileira `sync.orders.window` para cada uma, dedupe por `sync-orders:{slug}:{hora-cheia-ISO}` — chamar mais de uma vez na mesma hora não gera trabalho extra. Devolve `{ accountsScanned, enqueued, deduplicated }`. O cálculo da janela em si (`from`/`to`, checkpoint) é do worker, não desta rota — ver `docs/MERCADO_LIVRE.md` secao "Reconciliação".
 
 ---
 
@@ -104,10 +106,10 @@ Payloads tipados em `@sb/contracts/jobs`. Todo handler é **idempotente**.
 
 | Tipo | Fila | Nome da task (dedupe) |
 |---|---|---|
-| `sync.orders.window` | `ml-sync` | `sync-orders:{conta}:{janela}` |
-| `sync.order.refresh` | `ml-sync` | `order:{conta}:{order_id}` |
-| `sync.listings.page` | `ml-sync` | `listings:{conta}:{cursor}` |
-| `sync.fulfillment.snapshot` | `ml-sync` | `full:{conta}:{inventory_id}` |
+| `sync.orders.window` | `ml-sync-<conta>` | `sync-orders:{conta}:{janela}` — **implementado em 2026-08-21** |
+| `sync.order.refresh` | `ml-sync-<conta>` | `order:{conta}:{order_id}` |
+| `sync.listings.page` | `ml-sync-<conta>` | `listings:{conta}:{cursor}` |
+| `sync.fulfillment.snapshot` | `ml-sync-<conta>` | `full:{conta}:{inventory_id}` |
 | `analytics.recompute` | `analytics-recompute` | `recompute:{conta}:{sku}:{data}` |
 | `events.detect` | `analytics-recompute` | `detect:{entidade}:{id}` |
 | `backfill.orders` | `backfill` | `backfill-orders:{conta}:{checkpoint}` |

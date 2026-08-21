@@ -35,6 +35,14 @@ build_and_deploy() {
 
   step "Deploy: ${app}"
 
+  # Os dois serviços chamam o Mercado Livre (api troca o code; worker renova
+  # com refresh_token) — checar aqui, para os DOIS ramos, e não só dentro do
+  # `if [ "${app}" = "api" ]`. É exatamente o tipo de vácuo que já causou
+  # incidente real neste projeto: ERP_IMPORTS_BUCKET setada só no ramo da api
+  # deixou o worker subir sem a variável, falhando em silêncio até alguém ler
+  # o Cloud Logging (ver docs/HANDOFF.md, achado registrado nesta sessão).
+  [ -n "${MERCADO_LIVRE_CLIENT_ID}" ] || fail "MERCADO_LIVRE_CLIENT_ID não definida. Ver .env.example."
+
   if [ "${app}" = "api" ]; then
     # A api precisa conhecer a própria URL (audience do OIDC) e a do worker.
     # Ambas são estáveis por serviço; na primeira criação a de si mesma ainda
@@ -57,7 +65,6 @@ build_and_deploy() {
     # Mercado Livre. Vazio antes do primeiro cadastro é aceitável no
     # placeholder acima; falhar aqui de verdade quando a api_url real existir
     # e a variável ainda não tiver sido configurada.
-    [ -n "${MERCADO_LIVRE_CLIENT_ID}" ] || fail "MERCADO_LIVRE_CLIENT_ID não definida. Ver .env.example."
     local ml_redirect_uri="${MERCADO_LIVRE_REDIRECT_URI:-${api_url}/oauth/mercado-livre/callback}"
 
     # Arquivo em vez de `--set-env-vars`: no Windows o wrapper gcloud.cmd é
@@ -120,8 +127,8 @@ YAML
       --concurrency 4 \
       --timeout 900s \
       --cpu 1 --memory 512Mi \
-      --set-env-vars "NODE_ENV=production,SUPABASE_URL=${SUPABASE_URL},ERP_IMPORTS_BUCKET=${PROJECT_ID}-erp-imports" \
-      --set-secrets "SUPABASE_SERVICE_ROLE_KEY=${SECRET_SUPABASE_KEY}:latest" \
+      --set-env-vars "NODE_ENV=production,SUPABASE_URL=${SUPABASE_URL},ERP_IMPORTS_BUCKET=${PROJECT_ID}-erp-imports,MERCADO_LIVRE_CLIENT_ID=${MERCADO_LIVRE_CLIENT_ID}" \
+      --set-secrets "SUPABASE_SERVICE_ROLE_KEY=${SECRET_SUPABASE_KEY}:latest,MERCADO_LIVRE_CLIENT_SECRET=${SECRET_ML_CLIENT_SECRET}:latest,ML_TOKEN_ENCRYPTION_KEY=${SECRET_ML_TOKEN_KEY}:latest" \
       --quiet
   fi
 

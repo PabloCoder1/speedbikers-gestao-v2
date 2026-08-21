@@ -140,7 +140,7 @@ Fluxo: o ADMIN cria a conta (`ml_accounts`) direto pelo `web`, sob RLS — é es
 
 ### `sync_runs` / `sync_errors` — observabilidade de sincronização
 
-Schema criado na Fase 2; **preenchimento real é Fase 3**, quando o sync com o Mercado Livre existir. Mesmo padrão L2 append-only de `job_runs` (mesma migration de referência), com uma diferença deliberada: `job_runs` nasceu **sem política de leitura** porque `organizations` ainda não existia; `sync_runs`/`sync_errors` já nascem com policy de leitura, porque agora existe quem autorizar — é observabilidade **para o usuário** (`docs/ARCHITECTURE.md` secao 10), não só para depuração interna.
+Schema criado na Fase 2; **preenchimento real começou em 2026-08-21**, com a reconciliação por janela (`sync.orders.window`, `apps/worker/src/handlers/sync-orders-window.ts`) — primeiro código a escrever nestas tabelas. Mesmo padrão L2 append-only de `job_runs` (mesma migration de referência), com uma diferença deliberada: `job_runs` nasceu **sem política de leitura** porque `organizations` ainda não existia; `sync_runs`/`sync_errors` já nascem com policy de leitura, porque agora existe quem autorizar — é observabilidade **para o usuário** (`docs/ARCHITECTURE.md` secao 10), não só para depuração interna.
 
 ```text
 sync_runs    organization_id, ml_account_id, job_id, resource, channel,

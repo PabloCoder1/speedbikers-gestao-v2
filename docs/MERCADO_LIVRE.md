@@ -45,6 +45,7 @@ Confirmado na documentação oficial (`developers.mercadolivre.com.br`, consulta
 |---|---|---|---|---|---|
 | Detalhe de pedido | `GET /orders/{order_id}` | `read`, "Vendas e envios" | — | secao 2.3 | 2026-08-21 |
 | Busca de pedidos | `GET /orders/search?seller={seller_id}&...` | `read` | `offset`/`limit` (padrão 50); **teto não documentado** | secao 2.3 | 2026-08-21 |
+| Filtro de pedidos por data | `order.date_last_updated.from`/`.to`, `order.date_created.from`/`.to`, `order.date_closed.from`/`.to` — ISO8601 com offset | `read` | mesma de busca de pedidos | secao 3 | 2026-08-21 |
 | Envios do pedido | `GET /orders/{order_id}/shipments` | `read` | — | secao 2.3 | 2026-08-21 (formato muda em set/2026, ver secao 7) |
 | Descontos do pedido | `GET /orders/{order_id}/discounts` | `read` | — | secao 2.3 | 2026-08-21 |
 | Itens do vendedor (recomendado) | `GET /users/{user_id}/items/search` | `read`, "Publicação e sincronização" | `offset`/`limit` padrão 50; `search_type=scan` + `scroll_id` acima de 1000, até 100/página, scroll expira em 5 min | secao 2.3 | 2026-08-21 |
@@ -331,6 +332,14 @@ A V3 nasce com o webhook como caminho principal e o cron rebaixado a reconcilia�
 - Janela por cursor, executada por Cloud Scheduler.
 - Compara o que existe localmente com a janela remota e enfileira apenas as diferenças.
 - Registra em `sync_runs` a distância entre `now()` e o registro mais recente importado — é o dado que alimenta a tela de Saúde da Sincronização.
+
+**Filtro por data confirmado por leitura direta** (`developers.mercadolivre.com.br`, "Gerencie vendas → Orders", 2026-08-21): `GET /orders/search?seller=$SELLER_ID&order.date_last_updated.from=...&order.date_last_updated.to=...`, formato ISO8601 com offset (ex.: `2015-07-01T00:00:00.000-00:00`). Texto oficial, citado literalmente: **"Usa até a hora e descarta a informação dos minutos, segundos e milissegundos."**
+
+Consequência direta para o desenho da janela: qualquer granularidade abaixo de 1 hora é ilusória — o Mercado Livre trunca por conta própria. A V3 nunca envia um `from`/`to` com minutos não-zero: `from` é sempre arredondado **para baixo** até a hora cheia (nunca perder um registro no limite) e `to` sempre **para cima** até a próxima hora cheia (nunca depender de qual direção o Mercado Livre arredonda um valor não documentado). Isso produz alguma sobreposição entre janelas consecutivas — aceitável, porque todo processamento é idempotente por natureza (`docs/API.md` secao 6); o oposto (perder um registro por arredondar errado) não é aceitável.
+
+`order.date_last_updated` (não `date_created`): reconciliação precisa pegar TRANSIÇÕES de status em pedidos já existentes (cancelamento, confirmação de pagamento), não só pedidos novos — é exatamente o que um `date_created` fixo não capturaria.
+
+Checkpoint entre execuções: `latest_record_at` do último `sync_run` bem-sucedido (`resource = 'orders'`, `channel = 'reconciliation'`) para aquela conta — não offset, não estado em memória do worker (regra geral da secao 4). Primeira execução de uma conta usa `ml_accounts.connected_at` como piso.
 
 ### Backfill
 

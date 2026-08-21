@@ -86,8 +86,8 @@ Cloud Scheduler dispara apenas reconciliação e manutenção. **Nunca despacha 
 | Segredo | Onde vive | Quem lê |
 |---|---|---|
 | `SUPABASE_SERVICE_ROLE_KEY` | Secret Manager | `api`, `worker` |
-| `MERCADO_LIVRE_CLIENT_SECRET` | Secret Manager | `api` |
-| `ML_TOKEN_ENCRYPTION_KEY` (AES-256, D-046) | Secret Manager | `api` |
+| `MERCADO_LIVRE_CLIENT_SECRET` | Secret Manager | `api` (troca o `code`), `worker` (renova por `refresh_token`) |
+| `ML_TOKEN_ENCRYPTION_KEY` (AES-256, D-046) | Secret Manager | `api`, `worker` |
 | Chave da API de IA | Secret Manager | `api` |
 | `NEXT_PUBLIC_SUPABASE_URL` e chave publicável | Vercel env | `web` |
 

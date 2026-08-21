@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 import { describe, expect, it } from "vitest";
 
 import { parseEnv } from "./env.js";
@@ -6,6 +8,9 @@ const OBRIGATORIAS = {
   SUPABASE_URL: "https://nmgccyqquwxecqffsidr.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY: "sb_secret_chave_de_teste_longa_o_bastante",
   ERP_IMPORTS_BUCKET: "speedbikers-gestao-v3-erp-imports",
+  MERCADO_LIVRE_CLIENT_ID: "APP_ID_123",
+  MERCADO_LIVRE_CLIENT_SECRET: "segredo-de-teste",
+  ML_TOKEN_ENCRYPTION_KEY: randomBytes(32).toString("base64"),
 };
 
 describe("parseEnv", () => {
@@ -57,5 +62,12 @@ describe("parseEnv", () => {
 
   it("recusa chave curta demais para ser uma service_role", () => {
     expect(parseEnv({ ...OBRIGATORIAS, SUPABASE_SERVICE_ROLE_KEY: "curta" }).ok).toBe(false);
+  });
+
+  it("recusa ML_TOKEN_ENCRYPTION_KEY com tamanho errado — morre no start, não no primeiro refresh", () => {
+    const result = parseEnv({ ...OBRIGATORIAS, ML_TOKEN_ENCRYPTION_KEY: "chave-curta-demais" });
+
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.issues.join()).toContain("ML_TOKEN_ENCRYPTION_KEY");
   });
 });

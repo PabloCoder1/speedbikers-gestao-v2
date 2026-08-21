@@ -1,3 +1,4 @@
+import { loadEncryptionKey } from "@sb/mercado-livre";
 import { z } from "zod";
 
 /**
@@ -27,6 +28,27 @@ export const envSchema = z.object({
 
   /** Bucket que guarda as exportações do UpSeller. */
   ERP_IMPORTS_BUCKET: z.string().min(1),
+
+  /**
+   * OAuth do Mercado Livre (D-041, D-046) — o worker só usa isto para
+   * RENOVAR (`refresh_token`) um `access_token` perto de expirar durante a
+   * reconciliação; a troca inicial do `code` é só da `api`.
+   */
+  MERCADO_LIVRE_CLIENT_ID: z.string().min(1),
+  MERCADO_LIVRE_CLIENT_SECRET: z.string().min(1),
+
+  /** Mesma chave que a `api` usa para cifrar — precisa decifrar o que ela gravou. */
+  ML_TOKEN_ENCRYPTION_KEY: z.string().refine(
+    (value) => {
+      try {
+        loadEncryptionKey(value);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    { message: "precisa decodificar em base64 para 32 bytes (AES-256)" },
+  ),
 });
 
 export type Env = z.infer<typeof envSchema>;

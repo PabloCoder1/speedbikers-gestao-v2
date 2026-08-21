@@ -62,5 +62,16 @@ upsert_job \
   "${API_URL}/internal/jobs/ping" \
   "Verificacao horaria da malha api para Cloud Tasks para worker"
 
+# Reconciliacao por janela: rede de seguranca do que o webhook perdeu
+# (docs/MERCADO_LIVRE.md secao 3), nao o caminho de frescor. Uma vez por hora
+# basta -- o filtro do Mercado Livre so tem granularidade de hora cheia
+# mesmo (confirmado na documentacao oficial, mesma secao), e o dedupe de
+# triggerOrdersReconciliation ja recusaria uma segunda chamada na mesma hora.
+upsert_job \
+  "v3-reconcile-orders" \
+  "0 * * * *" \
+  "${API_URL}/internal/schedule/reconcile" \
+  "Reconciliacao por janela de pedidos, por conta Mercado Livre CONNECTED"
+
 step "Concluído"
 gc scheduler jobs list --location "${REGION}" --format="table(name.basename(),schedule,state)"

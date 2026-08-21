@@ -12,6 +12,8 @@ import type { IpAllowlistVerifier } from "./ip-allowlist.js";
 import type { MlAccountsDeps } from "./ml-accounts.js";
 import { completeConnect, startConnect } from "./ml-accounts.js";
 import type { OidcVerifier } from "./oidc.js";
+import type { ReconcileDeps } from "./reconcile.js";
+import { triggerOrdersReconciliation } from "./reconcile.js";
 import type { WebhookDeps } from "./webhook.js";
 import { receiveWebhook } from "./webhook.js";
 
@@ -48,6 +50,7 @@ export interface AppDependencies {
   ipAllowlist?: IpAllowlistVerifier;
   webhook?: WebhookDeps;
   mlAccounts?: MlAccountsDeps;
+  reconcile?: ReconcileDeps;
 }
 
 /**
@@ -259,6 +262,23 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       deduplicated: result.deduplicated,
       jobId: result.envelope.jobId,
     });
+  });
+
+  // --------------------------------------------------------------------
+  // Reconciliação por janela — rede de segurança do que o webhook perdeu
+  // (docs/MERCADO_LIVRE.md secao 3). Chamada pelo Cloud Scheduler, no máximo
+  // uma vez por hora útil (dedupe por hora cheia dentro de triggerOrdersReconciliation).
+  // --------------------------------------------------------------------
+  app.post("/internal/schedule/reconcile", async (context) => {
+    const reconcile = dependencies.reconcile;
+
+    if (reconcile === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const outcome = await triggerOrdersReconciliation(reconcile);
+
+    return context.json(outcome);
   });
 
   // --------------------------------------------------------------------

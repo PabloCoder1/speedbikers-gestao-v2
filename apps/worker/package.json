@@ -17,6 +17,7 @@
     "@sb/contracts": "workspace:*",
     "@sb/db": "workspace:*",
     "@sb/domain": "workspace:*",
+    "@sb/mercado-livre": "workspace:*",
     "@sb/observability": "workspace:*",
     "hono": "4.13.3",
     "read-excel-file": "9.3.10",
