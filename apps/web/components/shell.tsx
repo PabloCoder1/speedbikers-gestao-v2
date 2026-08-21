@@ -50,6 +50,9 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
           <Link href="/vinculacoes" style={{ color: "var(--sb-text-soft)" }}>
             Vinculações
           </Link>
+          <Link href="/sincronizacao" style={{ color: "var(--sb-text-soft)" }}>
+            Sincronização
+          </Link>
         </nav>
 
         <div
