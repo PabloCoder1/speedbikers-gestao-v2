@@ -845,6 +845,109 @@ describe("métricas diárias de venda", () => {
       expect(rows[0]?.refreshed).toBe(5);
     });
   });
+
+  // get_sales_summary (20260821190000) e get_sales_daily_series
+  // (20260821210000, Dashboard de Vendas) nunca tinham teste de integração
+  // — reaproveitam este fixture porque é o mesmo formato de dado
+  // (organização com duas contas + uma conta de outra organização) que as
+  // duas RPCs somam.
+  describe("get_sales_summary e get_sales_daily_series", () => {
+    it("get_sales_summary soma o grão organização a partir do rollup de conta (CONTA_A + CONTA_B)", async () => {
+      const rows = await asUser<{
+        units_sold: string;
+        gross_revenue: string;
+        orders_count: string;
+        purchases_count: string;
+      }>(
+        ADMIN_SB,
+        `select units_sold, gross_revenue, orders_count, purchases_count
+         from public.get_sales_summary('2026-08-20','2026-08-20')`,
+      );
+
+      expect(rows[0]).toEqual({
+        units_sold: "5",
+        gross_revenue: "220.00",
+        orders_count: "4",
+        purchases_count: "3",
+      });
+    });
+
+    it("get_sales_summary filtra por conta quando informado", async () => {
+      const rows = await asUser<{ gross_revenue: string }>(
+        ADMIN_SB,
+        `select gross_revenue from public.get_sales_summary('2026-08-20','2026-08-20','${CONTA_A}')`,
+      );
+
+      expect(rows[0]?.gross_revenue).toBe("180.00");
+    });
+
+    it("get_sales_daily_series devolve uma linha por dia, sem fabricar dia zerado", async () => {
+      const rows = await asUser<{ metric_date: string; gross_revenue: string }>(
+        ADMIN_SB,
+        // `::text`: o driver pg devolve `date` como objeto Date por padrão;
+        // o cast evita comparar Date contra string no teste.
+        `select metric_date::text, gross_revenue
+         from public.get_sales_daily_series('2026-08-19','2026-08-21')
+         order by metric_date`,
+      );
+
+      // Só 2026-08-20 tem linha em daily_account_metrics — 19 e 21 ficam
+      // ausentes, não aparecem como R$ 0,00 fabricado.
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toEqual({ metric_date: "2026-08-20", gross_revenue: "220.00" });
+    });
+
+    it("get_sales_daily_series filtra por conta quando informado", async () => {
+      const rows = await asUser<{ metric_date: string; gross_revenue: string }>(
+        ADMIN_SB,
+        `select metric_date::text, gross_revenue
+         from public.get_sales_daily_series('2026-08-20','2026-08-20','${CONTA_A}')`,
+      );
+
+      expect(rows).toEqual([{ metric_date: "2026-08-20", gross_revenue: "180.00" }]);
+    });
+
+    it("usuário de outra organização só alcança os totais da própria organização", async () => {
+      const summary = await asUser<{ gross_revenue: string }>(
+        DE_OUTRA_ORG,
+        `select gross_revenue from public.get_sales_summary('2026-08-20','2026-08-20')`,
+      );
+      const series = await asUser<{ gross_revenue: string }>(
+        DE_OUTRA_ORG,
+        `select gross_revenue from public.get_sales_daily_series('2026-08-20','2026-08-20')`,
+      );
+
+      // CONTA_OUTRA (própria organização) tem venda real neste dia — a prova
+      // real é que o valor NUNCA é o total da Speed Bikers (220.00).
+      expect(summary[0]?.gross_revenue).toBe("20.00");
+      expect(series).toEqual([{ gross_revenue: "20.00" }]);
+    });
+
+    it("authenticated sem organização não alcança nenhuma linha", async () => {
+      const summary = await asUser<{ gross_revenue: string }>(
+        SEM_ORG,
+        `select gross_revenue from public.get_sales_summary('2026-08-20','2026-08-20')`,
+      );
+      const series = await asUser(
+        SEM_ORG,
+        `select * from public.get_sales_daily_series('2026-08-20','2026-08-20')`,
+      );
+
+      // Sem linha nenhuma para somar: coalesce cai no literal 0, sem a
+      // mesma escala decimal do round() — mesmo valor numérico, não é bug.
+      expect(summary[0]?.gross_revenue).toBe("0");
+      expect(series).toHaveLength(0);
+    });
+
+    it("anon é recusado nas duas RPCs", async () => {
+      await expect(
+        asAnon(`select * from public.get_sales_summary('2026-08-20','2026-08-20')`),
+      ).rejects.toThrow(/permission denied/i);
+      await expect(
+        asAnon(`select * from public.get_sales_daily_series('2026-08-20','2026-08-20')`),
+      ).rejects.toThrow(/permission denied/i);
+    });
+  });
 });
 
 describe("credenciais são inalcançáveis pela Data API", () => {

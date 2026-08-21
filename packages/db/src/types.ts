@@ -1619,6 +1619,20 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      get_sales_daily_series: {
+        Args: {
+          p_date_from: string
+          p_date_to: string
+          p_ml_account_id?: string
+        }
+        Returns: {
+          gross_revenue: number
+          metric_date: string
+          orders_count: number
+          purchases_count: number
+          units_sold: number
+        }[]
+      }
       get_sales_summary: {
         Args: {
           p_date_from: string

@@ -1,5 +1,6 @@
 import type { FreshnessLevel } from "@sb/domain";
 import {
+  businessDateRangeLength,
   classifySyncFreshness,
   previousBusinessDateRange,
   shiftBusinessDate,
@@ -11,6 +12,7 @@ import type { ReactNode } from "react";
 import { Shell } from "../../components/shell";
 import { formatBusinessDate, formatCount, formatCurrency, formatDateTime } from "../../lib/format";
 import { createClient } from "../../lib/supabase/server";
+import { SalesChart } from "./sales-chart";
 
 export const metadata = { title: "Dashboard de Vendas — Speed Bikers Gestão" };
 
@@ -288,7 +290,7 @@ export default async function VendasPage({
   // vez, em vez de atribuir `undefined` a um campo opcional.
   const accountFilter = selectedAccount === null ? {} : { p_ml_account_id: selectedAccount.id };
 
-  const [currentResult, previousResult] = await Promise.all([
+  const [currentResult, previousResult, seriesResult] = await Promise.all([
     supabase
       .rpc("get_sales_summary", { p_date_from: range.from, p_date_to: range.to, ...accountFilter })
       .single(),
@@ -299,10 +301,16 @@ export default async function VendasPage({
         ...accountFilter,
       })
       .single(),
+    supabase.rpc("get_sales_daily_series", {
+      p_date_from: range.from,
+      p_date_to: range.to,
+      ...accountFilter,
+    }),
   ]);
 
   const summary: SalesSummary | null = currentResult.data ?? null;
   const previousSummary: SalesSummary | null = previousResult.data ?? null;
+  const dailySeries = seriesResult.data ?? [];
   const error = currentResult.error;
 
   const lastComputedAt = summary?.last_computed_at ?? null;
@@ -456,6 +464,23 @@ export default async function VendasPage({
           {buildCards(summary, previousSummary).map((card) => (
             <MetricCard key={card.metricId} card={card} showPrevious={previousHasData} />
           ))}
+        </div>
+      )}
+
+      {error === null && dailySeries.length > 0 && (
+        <div style={{ marginTop: "var(--sb-space-5)" }}>
+          <h2 style={{ fontSize: "1.0625rem", margin: "0 0 var(--sb-space-2)" }}>
+            Receita bruta por dia
+          </h2>
+
+          {dailySeries.length < businessDateRangeLength(range.from, range.to) && (
+            <p style={{ margin: "0 0 var(--sb-space-2)", color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
+              Só {dailySeries.length} {dailySeries.length === 1 ? "dia tem" : "dias têm"} métrica calculada
+              dentro do período — o restante ainda não foi tocado pela reconciliação ou pelo backfill.
+            </p>
+          )}
+
+          <SalesChart points={dailySeries} />
         </div>
       )}
     </Shell>
