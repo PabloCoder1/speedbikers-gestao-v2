@@ -19,12 +19,15 @@ export const metadata = { title: "Dashboard de Vendas — Speed Bikers Gestão" 
 export const dynamic = "force-dynamic";
 
 /**
- * Dashboard Geral de vendas — tela âncora da V3 (D-033).
+ * Dashboard Geral e por Conta de vendas — tela âncora da V3 (D-033).
  *
- * Segunda fatia da Fase 5A: filtro de período (`docs/PRODUCT_REQUIREMENTS.md`
- * — 7/15/30/60/90 dias e período personalizado) e comparação com o período
- * imediatamente anterior. Grão organização; Dashboard por Conta fica para a
- * próxima etapa (mesma `get_sales_summary`, passando `p_ml_account_id`).
+ * Terceira fatia da Fase 5A: seletor de conta somado ao filtro de período
+ * (`docs/PRODUCT_REQUIREMENTS.md` — 7/15/30/60/90 dias e período
+ * personalizado) e à comparação com o período anterior. "Geral" e "por
+ * Conta" são a MESMA tela e a mesma `get_sales_summary` — o que muda é só
+ * `p_ml_account_id`: nulo soma o grão organização (RLS já filtra para as
+ * contas que o usuário alcança), preenchido restringe a uma conta. Duas
+ * telas seriam a mesma UI duplicada.
  *
  * Filtro por link/formulário GET, sem componente cliente — mesmo padrão de
  * `apps/web/app/importacoes/[id]/page.tsx`. Toda soma acontece em SQL
@@ -54,6 +57,22 @@ const FRESHNESS_TONE: Record<FreshnessLevel, { color: string; label: string }> =
   critico: { color: "var(--sb-danger)", label: "Cálculo desatualizado" },
   nunca_sincronizado: { color: "var(--sb-muted-ink)", label: "Nunca calculado" },
 };
+
+const PILL_BASE: React.CSSProperties = {
+  padding: "0.25rem 0.75rem",
+  borderRadius: "999px",
+  border: "1px solid var(--sb-border)",
+  fontSize: "0.8125rem",
+  textDecoration: "none",
+};
+
+function pillStyle(active: boolean): React.CSSProperties {
+  return {
+    ...PILL_BASE,
+    background: active ? "var(--sb-primary)" : "transparent",
+    color: active ? "var(--sb-white)" : "var(--sb-text-soft)",
+  };
+}
 
 interface SalesSummary {
   units_sold: number;
@@ -166,6 +185,8 @@ interface DateRange {
   to: string;
 }
 
+type Period = { days: number } | { from: string; to: string };
+
 /**
  * Resolve a janela pedida pela URL. `from`/`to` explícitos vencem um `days`
  * concorrente; formato ruim ou intervalo invertido caem para o padrão em vez
@@ -197,8 +218,40 @@ function resolveRange(
   return { range: { from: shiftBusinessDate(today, -(days - 1)), to: today }, days, invalidCustom: false };
 }
 
-function periodHref(days: number): string {
-  return days === DEFAULT_DAYS ? "/vendas" : `/vendas?days=${String(days)}`;
+interface AccountOption {
+  id: string;
+  slug: string;
+  label: string;
+}
+
+/**
+ * Monta a URL preservando a outra dimensão do filtro — trocar de conta não
+ * pode resetar o período, e vice-versa. Mesma ideia do `href()` de
+ * `apps/web/app/importacoes/[id]/page.tsx`, com duas dimensões em vez de uma.
+ */
+function buildHref(current: { period: Period; accountSlug: string | null }, override: {
+  period?: Period;
+  accountSlug?: string | null;
+}): string {
+  const period = override.period ?? current.period;
+  const accountSlug = override.accountSlug !== undefined ? override.accountSlug : current.accountSlug;
+
+  const search = new URLSearchParams();
+
+  if ("from" in period) {
+    search.set("from", period.from);
+    search.set("to", period.to);
+  } else if (period.days !== DEFAULT_DAYS) {
+    search.set("days", String(period.days));
+  }
+
+  if (accountSlug !== null) {
+    search.set("account", accountSlug);
+  }
+
+  const qs = search.toString();
+
+  return qs === "" ? "/vendas" : `/vendas?${qs}`;
 }
 
 export default async function VendasPage({
@@ -214,13 +267,37 @@ export default async function VendasPage({
   const { range, days, invalidCustom } = resolveRange(query, today);
   const previousRange = previousBusinessDateRange(range.from, range.to);
   const isCustom = days === null;
+  const period: Period = isCustom ? range : { days };
+
+  const accountsResult = await supabase
+    .from("ml_accounts")
+    .select("id, slug, label")
+    .order("label", { ascending: true });
+
+  const accounts: AccountOption[] = accountsResult.data ?? [];
+
+  const requestedSlug = typeof query.account === "string" ? query.account : null;
+  const selectedAccount = accounts.find((account) => account.slug === requestedSlug) ?? null;
+  // Slug desconhecido (conta removida, digitado à mão) cai em "todas as
+  // contas" em silêncio — mesmo tratamento de status desconhecido em
+  // apps/web/app/importacoes/[id]/page.tsx, não é erro de rede nem de dado.
+  const accountSlug = selectedAccount?.slug ?? null;
+
+  // `exactOptionalPropertyTypes` distingue "propriedade ausente" de
+  // "propriedade com undefined" — o spread condicional omite a chave de
+  // vez, em vez de atribuir `undefined` a um campo opcional.
+  const accountFilter = selectedAccount === null ? {} : { p_ml_account_id: selectedAccount.id };
 
   const [currentResult, previousResult] = await Promise.all([
     supabase
-      .rpc("get_sales_summary", { p_date_from: range.from, p_date_to: range.to })
+      .rpc("get_sales_summary", { p_date_from: range.from, p_date_to: range.to, ...accountFilter })
       .single(),
     supabase
-      .rpc("get_sales_summary", { p_date_from: previousRange.from, p_date_to: previousRange.to })
+      .rpc("get_sales_summary", {
+        p_date_from: previousRange.from,
+        p_date_to: previousRange.to,
+        ...accountFilter,
+      })
       .single(),
   ]);
 
@@ -260,9 +337,39 @@ export default async function VendasPage({
       </div>
 
       <p style={{ margin: "0 0 var(--sb-space-3)", color: "var(--sb-text-soft)", fontSize: "0.9375rem" }}>
-        Todas as contas conectadas, {formatBusinessDate(range.from)} até {formatBusinessDate(range.to)} —
-        comparado com {formatBusinessDate(previousRange.from)} até {formatBusinessDate(previousRange.to)}.
+        {selectedAccount === null ? "Todas as contas conectadas" : selectedAccount.label},{" "}
+        {formatBusinessDate(range.from)} até {formatBusinessDate(range.to)} — comparado com{" "}
+        {formatBusinessDate(previousRange.from)} até {formatBusinessDate(previousRange.to)}.
       </p>
+
+      {accountsResult.error === null && accounts.length > 0 && (
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: "var(--sb-space-2)",
+            marginBottom: "var(--sb-space-2)",
+          }}
+        >
+          <Link
+            href={buildHref({ period, accountSlug }, { accountSlug: null })}
+            style={pillStyle(selectedAccount === null)}
+          >
+            Todas as contas
+          </Link>
+
+          {accounts.map((account) => (
+            <Link
+              key={account.id}
+              href={buildHref({ period, accountSlug }, { accountSlug: account.slug })}
+              style={pillStyle(selectedAccount?.id === account.id)}
+            >
+              {account.label}
+            </Link>
+          ))}
+        </div>
+      )}
 
       <div
         style={{
@@ -276,16 +383,8 @@ export default async function VendasPage({
         {PRESET_DAYS.map((preset) => (
           <Link
             key={preset}
-            href={periodHref(preset)}
-            style={{
-              padding: "0.25rem 0.75rem",
-              borderRadius: "999px",
-              border: "1px solid var(--sb-border)",
-              fontSize: "0.8125rem",
-              textDecoration: "none",
-              background: !isCustom && days === preset ? "var(--sb-primary)" : "transparent",
-              color: !isCustom && days === preset ? "var(--sb-white)" : "var(--sb-text-soft)",
-            }}
+            href={buildHref({ period, accountSlug }, { period: { days: preset } })}
+            style={pillStyle(!isCustom && days === preset)}
           >
             {preset} dias
           </Link>
@@ -295,6 +394,7 @@ export default async function VendasPage({
           method="get"
           style={{ display: "flex", alignItems: "center", gap: "0.375rem", fontSize: "0.8125rem" }}
         >
+          {accountSlug !== null && <input type="hidden" name="account" value={accountSlug} />}
           <input
             type="date"
             name="from"
@@ -320,18 +420,7 @@ export default async function VendasPage({
               fontSize: "0.8125rem",
             }}
           />
-          <button
-            type="submit"
-            style={{
-              padding: "0.25rem 0.75rem",
-              borderRadius: "999px",
-              border: "1px solid var(--sb-border)",
-              background: isCustom ? "var(--sb-primary)" : "transparent",
-              color: isCustom ? "var(--sb-white)" : "var(--sb-text-soft)",
-              fontSize: "0.8125rem",
-              cursor: "pointer",
-            }}
-          >
+          <button type="submit" style={pillStyle(isCustom)}>
             Personalizado
           </button>
         </form>
@@ -351,8 +440,8 @@ export default async function VendasPage({
 
       {error === null && neverComputed && (
         <p style={{ color: "var(--sb-text-soft)" }}>
-          Nenhuma métrica calculada para este período ainda. As quatro contas conectadas ainda estão
-          trazendo o histórico (backfill) — o recálculo só materializa dias tocados pela reconciliação.
+          Nenhuma métrica calculada para este período ainda. As contas conectadas ainda estão trazendo o
+          histórico (backfill) — o recálculo só materializa dias tocados pela reconciliação.
         </p>
       )}
 

@@ -94,10 +94,12 @@ Cada fase só é considerada concluída sob a Definition of Done do `docs/PROMPT
 - [x] `metric_definitions` e as métricas de venda de `docs/METRICS.md` — concluído em 2026-08-21: seis definições canônicas, espelho imutável no banco e RLS de leitura para membros
 - [x] `daily_listing_metrics` e os dois rollups, com teste de equivalência — concluído em 2026-08-21: três projeções L3 sob RLS, bucket `sku_id IS NULL`, razões geradas em `numeric` e um único cálculo `GROUPING SETS` que refaz contagens distintas diretamente em cada grão; 98 testes de integração verdes
 - [x] Recálculo incremental por chave suja e rebuild completo — concluído em 2026-08-21: RPC transacional compartilhada, advisory lock por conta, handler `analytics.recompute`, dirty key conta/dia com janela de minuto (D-051), rebuild idempotente testado sem execução histórica no Dev enquanto o backfill estiver incompleto
-- [ ] Dashboards Geral e por Conta, com filtros de período e comparação
-- [ ] Design system e estados de loading, erro, vazio e stale
+- [x] Dashboards Geral e por Conta, com filtros de período e comparação — concluído em 2026-08-21: `/vendas` (única tela — Geral e por Conta são a mesma `get_sales_summary`, variando só `p_ml_account_id`), presets 7/15/30/60/90 dias + personalizado, comparação com o período anterior mostrando as mesmas seis métricas duas vezes (sem sintetizar `variacao_percentual_periodo`, pendente da Fase 5B)
+- [x] Design system e estados de loading, erro, vazio e stale — concluído em 2026-08-21, na mesma tela: `loading.tsx` (Suspense), banner de erro (`role="alert"`), vazio distinto de "nunca calculado" (não finge R$ 0,00), frescor reaproveitando `classifySyncFreshness`. Paleta e tokens `--sb-*` já usados desde a Fase 2; nenhum componente novo em `packages/ui` foi necessário (regra de contenção: só vira package quando dois apps importam)
 
-**Marco:** você abre a V3 em vez da V2 para olhar vendas.
+**Fase 5A CONCLUÍDA em 2026-08-21.** Os dois itens restantes do checklist prontos e verificados rodando (login real, Supabase Dev real, sem erro). Ver `docs/HANDOFF.md`.
+
+**Marco atingido, mecanicamente:** você abre a V3 em vez da V2 para olhar vendas — o caminho completo (filtro → RPC → RLS → tela) funciona ponta a ponta. **Ressalva honesta:** os quatro backfills de 12 meses ainda não terminaram, então nenhuma janela real tem dado histórico suficiente para comparar visualmente com a V2 ainda — isso é completude de dado, não de funcionalidade, e não bloqueava o fechamento da fase pelos mesmos critérios já usados para a Fase 3.
 
 **Depende de:** Fase 3. **Nenhuma métrica de estoque aparece aqui** — elas chegam na Fase 5B.
 
@@ -196,4 +198,6 @@ A Fase 5A antecede a Fase 4 porque o dashboard de vendas não usa estoque, e a F
 
 **Fase 3 — Mercado Livre e histórico — CONCLUÍDA** (2026-08-21). Os oito itens do checklist prontos: cliente `@sb/mercado-livre`, webhook, conexão OAuth de conta, reconciliação por janela, backfill retomável, persistência estruturada de pedidos, motor de diff/`domain_events` e a Tela de Saúde da Sincronização (`/sincronizacao`) — ver `docs/HANDOFF.md`.
 
-Pela ordem de execução da D-033 (`0 -> 1 -> 2 -> 3 -> 5A -> 4 -> 5B -> 6 -> 7 -> 8`), a próxima fase é **5A — Métricas de venda e dashboards Geral/Conta**, a tela âncora do produto: não depende de estoque, e a Fase 3 já entrega pedidos confiáveis para alimentá-la. Antes de começar a construir, vale reler `docs/METRICS.md` (regras canônicas já aprovadas, definições individuais ainda por preencher) e confirmar com o usuário — é a primeira vez nesta sessão que o trabalho passa de "sincronizar e persistir" para "calcular e mostrar métrica", e há decisões de design (grão, timezone, rollups) que valem confirmação antes de migrar schema novo.
+**Fase 5A — Métricas de venda e dashboards Geral/Conta — CONCLUÍDA** (2026-08-21). Os cinco itens do checklist prontos: `metric_definitions`, fato + rollups diários, recálculo incremental/rebuild, e o Dashboard `/vendas` (Geral e por Conta na mesma tela, filtro de período, comparação, os quatro estados) — ver `docs/HANDOFF.md`.
+
+Pela ordem de execução da D-033 (`0 -> 1 -> 2 -> 3 -> 5A -> 4 -> 5B -> 6 -> 7 -> 8`), a próxima fase é **4 — Estoque e compras**. **Bloqueio real, já registrado desde a sessão de arquitetura:** os pedidos de compra precisam de modelos de exportação em Excel e PDF fornecidos pelo usuário — "solicitar antes do início da Fase 4" (`docs/HANDOFF.md`, seção "Pendência operacional aberta"; D-034). O ledger de estoque (`stock_movements`, dedução por venda, reversão) não depende desses modelos e pode começar antes; a exportação do pedido de compra especificamente, sim.

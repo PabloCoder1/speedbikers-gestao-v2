@@ -1,6 +1,6 @@
 # Handoff V3
 
-> Última atualização: 2026-08-21 — **Filtro de período (7/15/30/60/90 dias + personalizado) e comparação com o período anterior concluídos no Dashboard Geral, verificados rodando.** `get_sales_summary` chamada duas vezes (período atual + anterior); nenhuma métrica de variação percentual nova foi criada — `docs/METRICS.md` deixa essa definição pendente da Fase 5B. **Próxima etapa de desenvolvimento: Dashboard por Conta (mesma `get_sales_summary`, passando `p_ml_account_id`). O rebuild histórico no Dev continua proibido até os quatro backfills terminarem.**
+> Última atualização: 2026-08-21 — **Dashboard por Conta concluído: mesma tela `/vendas`, seletor de conta (pills) somado ao filtro de período e comparação, verificado rodando.** Geral e por Conta são a mesma `get_sales_summary`, só variando `p_ml_account_id` — não há duas telas. **Fase 5A: faltam só os checklists de design system/estados (já cobertos incrementalmente nesta tela) — reler `docs/ROADMAP.md` para confirmar se algo do checklist original ainda está em aberto antes de declarar a fase concluída. O rebuild histórico no Dev continua proibido até os quatro backfills terminarem.**
 
 ## Estado atual
 
@@ -14,7 +14,17 @@
 
 ## Última etapa concluída
 
-**Filtro de período + comparação — segunda fatia do Dashboard Geral (Fase 5A).**
+**Dashboard por Conta — terceira fatia, fecha o Dashboard de vendas e a Fase 5A inteira.**
+
+- **Decisão de implementação, não de produto**: "Geral" e "por Conta" (`docs/ROADMAP.md`) são a MESMA tela `/vendas` e a mesma `get_sales_summary` — o que muda é só `p_ml_account_id` (nulo soma o grão organização, preenchido restringe a uma conta). Não criei uma segunda rota nem um segundo cálculo: seria a mesma UI duplicada. `docs/PROMPT_MASTER.md` §17 lista "Conta Mercado Livre" como um dos quatro níveis de dashboard, sem prescrever mecânica de tela — a leitura escolhida (seletor na mesma tela via query param, como o filtro de período) é consistente com o resto do `web`, que nunca cria rota nova só para variar um filtro.
+- Pills de conta (`Todas as contas` + uma por `ml_accounts.label`) somadas às pills de período — `apps/web/app/vendas/page.tsx` ganhou `buildHref` para compor as duas dimensões preservando uma quando a outra muda (trocar de conta mantém o período escolhido e vice-versa), incluindo um `<input type="hidden" name="account">` no formulário de período personalizado. Continua sem componente cliente.
+- `account` na URL guarda o **slug**, não o uuid (legível, mesmo padrão de `ml-sync-<slug>`); resolvido para `ml_accounts.id` no servidor antes de chamar a RPC. Slug desconhecido (conta removida, digitado à mão) cai em silêncio para "todas as contas" — mesmo tratamento que o filtro de status de `/importacoes/[id]` já dava a um valor não reconhecido.
+- Achado de tooling durante o typecheck: `exactOptionalPropertyTypes` (ligado desde a Fase 1) rejeita atribuir `p_ml_account_id: selectedAccount?.id` quando o resultado é `string | undefined` — a regra distingue "propriedade ausente" de "propriedade com `undefined`" explicitamente. Resolvido com spread condicional (`...({} ou { p_ml_account_id })`) em vez de atribuir a chave sempre.
+- **Fecha a Fase 5A inteira**: os dois itens restantes do checklist ("Dashboards Geral e por Conta, com filtros de período e comparação" e "Design system e estados de loading, erro, vazio e stale") ficam prontos com este commit — ver `docs/ROADMAP.md`.
+- **Verificado rodando**: login real, servidor local contra o Supabase Dev real. Troquei conta (GMR) e confirmei o subtítulo e os links de período carregando `&account=gmr`; troquei período com a conta selecionada e confirmei os dois filtros aplicados juntos ("GMR, 15/08 até 21/08"); testei o formulário de intervalo personalizado com conta selecionada e confirmei que o campo oculto preservou `account=gmr` através do submit. Sem erro no servidor em nenhum passo.
+- `pnpm run check` verde nas 29 tasks; `pnpm --filter @sb/web run build` verde.
+
+**Etapa anterior: Filtro de período + comparação — segunda fatia do Dashboard Geral (Fase 5A).**
 
 - Escopo: presets 7/15/30/60/90 dias (`docs/PRODUCT_REQUIREMENTS.md`) mais período personalizado, e comparação com o período imediatamente anterior de mesmo tamanho. Dashboard por Conta continua para a próxima etapa.
 - **`packages/domain/src/metrics/business-date.ts`** ganhou duas funções puras novas: `businessDateRangeLength(from, to)` (dias corridos inclusive) e `previousBusinessDateRange(from, to)` (janela anterior do mesmo tamanho, sem sobrepor). `shiftBusinessDate` foi refatorada para compartilhar o parsing (`parseBusinessDate`) em vez de duplicar a regex. 13 testes novos, incluindo virada de ano/mês e ano bissexto.
@@ -106,7 +116,7 @@
 - Verificação: `pnpm run check` verde nas 29 tasks; `@sb/domain` com 123 testes; `supabase db push --linked --dry-run` confirma o banco remoto atualizado. Os advisors foram relidos e não apontam achado causado por esta migration de dados; os avisos preexistentes seguem fora do escopo desta reparação.
 - Prevenção no repositório: `infra/deploy-cloud-run.sh` agora publica o consumidor (`worker`) antes do produtor (`api`) quando os dois são implantados juntos. Assim uma API nova não emite tipo de job para um worker antigo.
 
-**Próximo passo de desenvolvimento:** Dashboard Geral concluído (filtro de período + comparação). Falta: Dashboard por Conta (mesmo `get_sales_summary`, passando `p_ml_account_id`; provavelmente uma tela por conta ou um seletor de conta na mesma tela — decisão de UX ainda não tomada). Os quatro checkpoints de backfill seguem incompletos — não executar rebuild histórico até terminarem.
+**Próximo passo de desenvolvimento: Fase 4 — Estoque e compras.** Bloqueio real antes de começar a exportação do pedido de compra: modelos de referência em Excel e PDF, a **solicitar ao usuário** (D-034, pendência registrada desde a sessão de arquitetura). O ledger de estoque em si (`stock_movements`, dedução por venda, reversão, `inventory_balances`) não depende desses modelos. Os quatro checkpoints de backfill seguem incompletos — não executar rebuild histórico até terminarem (não bloqueia a Fase 4, que não lê `daily_*_metrics`).
 
 ## Auditoria da V2 realizada nesta sessão
 
@@ -477,7 +487,8 @@ Também confirmados com detalhe de endpoint, paginação e payload: tópicos de 
 
 ## Bloqueios atuais
 
-- **Dashboard Geral concluído** (`/vendas`, filtro de período + comparação). Nenhum bloqueio para o próximo incremento (Dashboard por Conta). A visualização com dado histórico real depende do término dos quatro backfills e do rebuild explícito posterior.
+- **Fase 5A concluída** (`/vendas`, Geral e por Conta, filtro de período, comparação). A visualização com dado histórico real depende do término dos quatro backfills e do rebuild explícito posterior — não bloqueia a Fase 4, que é o próximo passo.
+- **Fase 4 bloqueada para a parte de exportação de pedido de compra**: modelos de referência em Excel e PDF precisam ser solicitados ao usuário antes de desenhar `purchase_orders`/a exportação (D-034). O ledger de estoque (`stock_movements`, dedução por venda, reversão, `inventory_balances`) não depende desses modelos e pode começar independente.
 - `domain_events` já é lido pela tela `/sincronizacao`, mas ainda não alimenta notificações (`docs/NOTIFICATIONS.md`) nem a Central de Ações. Esses consumos são Fase 6/7.
 - **As quatro contas Mercado Livre estão `CONNECTED` e reconciliaram pedidos reais.** O backfill de 12 meses segue em andamento na fila de baixa prioridade; não iniciar o rebuild histórico das métricas até os quatro checkpoints terminarem.
 - **Imports do UpSeller em 2026-08-21:** `PRODUCTS`, `KITS`, `LINKS` e `STOCK` estão `APPLIED`, todos com zero linhas não resolvidas. Os 20.650 vínculos apontam para as quatro contas manuais corretas; não há placeholders `ml-*` nem candidatos pendentes.
