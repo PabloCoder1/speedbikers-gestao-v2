@@ -394,6 +394,7 @@ export type Database = {
       }
       ml_accounts: {
         Row: {
+          backfill_covered_until: string | null
           connected_at: string | null
           created_at: string
           created_by_import: boolean
@@ -408,6 +409,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          backfill_covered_until?: string | null
           connected_at?: string | null
           created_at?: string
           created_by_import?: boolean
@@ -422,6 +424,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          backfill_covered_until?: string | null
           connected_at?: string | null
           created_at?: string
           created_by_import?: boolean

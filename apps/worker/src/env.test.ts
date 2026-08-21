@@ -11,6 +11,10 @@ const OBRIGATORIAS = {
   MERCADO_LIVRE_CLIENT_ID: "APP_ID_123",
   MERCADO_LIVRE_CLIENT_SECRET: "segredo-de-teste",
   ML_TOKEN_ENCRYPTION_KEY: randomBytes(32).toString("base64"),
+  GCP_PROJECT_ID: "speedbikers-gestao-v3",
+  GCP_REGION: "southamerica-east1",
+  WORKER_URL: "https://worker-rrquw5upla-rj.a.run.app",
+  TASKS_INVOKER_SERVICE_ACCOUNT: "v3-tasks-invoker@speedbikers-gestao-v3.iam.gserviceaccount.com",
 };
 
 describe("parseEnv", () => {
@@ -69,5 +73,13 @@ describe("parseEnv", () => {
 
     expect(result.ok).toBe(false);
     expect(!result.ok && result.issues.join()).toContain("ML_TOKEN_ENCRYPTION_KEY");
+  });
+
+  it("recusa WORKER_URL que não é URL — o worker se reenfileira para essa URL", () => {
+    expect(parseEnv({ ...OBRIGATORIAS, WORKER_URL: "worker" }).ok).toBe(false);
+  });
+
+  it("recusa TASKS_INVOKER_SERVICE_ACCOUNT que não é e-mail", () => {
+    expect(parseEnv({ ...OBRIGATORIAS, TASKS_INVOKER_SERVICE_ACCOUNT: "v3-tasks" }).ok).toBe(false);
   });
 });

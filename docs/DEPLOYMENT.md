@@ -79,6 +79,8 @@ Papéis são concedidos **no recurso** (fila, bucket, serviço), não no projeto
 
 Cloud Scheduler dispara apenas reconciliação e manutenção. **Nunca despacha fila** — foi o que dominou o banco da V2 com polling.
 
+**Exceção registrada em 2026-08-21:** `v3-worker-runtime` também recebe `roles/cloudtasks.enqueuer`, mas só na fila `backfill` — o backfill retomável se reenfileira sozinho, pedaço a pedaço, até cobrir os 12 meses de histórico (`docs/HANDOFF.md`). É a única fila em que o `worker` enfileira; todas as outras continuam só a `api`.
+
 ---
 
 ## 5. Secrets

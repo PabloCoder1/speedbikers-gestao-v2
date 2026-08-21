@@ -6,6 +6,7 @@ import type { MercadoLivreOAuthConfig, RequestTokenOptions } from "@sb/mercado-l
 import { buildAuthorizationUrl, encryptToken, exchangeCodeForToken } from "@sb/mercado-livre";
 
 import type { Caller } from "./auth.js";
+import type { Enqueuer } from "./enqueue.js";
 
 /**
  * Conexão de conta Mercado Livre: `POST /v1/ml-accounts/connect` +
@@ -28,6 +29,7 @@ export interface MlAccountsDeps {
   oauth: MercadoLivreOAuthConfig;
   encryptionKey: Buffer;
   logger: Logger;
+  enqueuer: Enqueuer;
   now?: () => Date;
   requestOptions?: RequestTokenOptions;
 }
@@ -128,7 +130,7 @@ export async function completeConnect(
     return { status: "invalid_state" };
   }
 
-  const { ml_account_id: mlAccountId } = claimed.data;
+  const { organization_id: organizationId, ml_account_id: mlAccountId } = claimed.data;
 
   if (params.error !== undefined || params.code === undefined) {
     await markError(deps, mlAccountId, `autorização negada: ${params.error ?? "code ausente"}`);
@@ -181,18 +183,48 @@ export async function completeConnect(
       connected_at: now.toISOString(),
       last_error: null,
     })
-    .eq("id", mlAccountId);
+    .eq("id", mlAccountId)
+    .select("slug")
+    .maybeSingle();
 
-  if (accountUpdate.error !== null) {
+  if (accountUpdate.error !== null || accountUpdate.data === null) {
     deps.logger.error("ml_account_not_connected", {
       ml_account_id: mlAccountId,
-      reason: accountUpdate.error.message,
+      reason: accountUpdate.error?.message ?? "linha não encontrada após o update",
     });
 
     return { status: "rejected", reason: "credenciais gravadas, mas a conta não pôde ser marcada como conectada" };
   }
 
-  deps.logger.info("ml_account_connected", { ml_account_id: mlAccountId, seller_id: token.user_id });
+  // Dispara o backfill de história (fila `backfill`, prioridade baixa) assim
+  // que a conta conecta — sem isso, os pedidos anteriores à conexão nunca
+  // apareceriam: a reconciliação por janela só cobre dali para frente
+  // (`docs/MERCADO_LIVRE.md` secao 3). Best-effort: falhar em enfileirar não
+  // desfaz a conexão, que já está gravada — o próximo `POST .../connect`
+  // encontraria a conta CONNECTED e não tentaria de novo; registrado como
+  // pendência a resolver manualmente se acontecer (log de erro abaixo).
+  const backfillEnqueued = await deps.enqueuer
+    .enqueue({
+      jobType: "backfill.orders",
+      organizationId,
+      dedupeKey: `backfill-orders:${accountUpdate.data.slug}:start`,
+      queue: "backfill",
+      payload: { mlAccountId },
+    })
+    .catch((error: unknown) => {
+      deps.logger.error("backfill_not_triggered", {
+        ml_account_id: mlAccountId,
+        reason: error instanceof Error ? error.message : "erro desconhecido",
+      });
+
+      return null;
+    });
+
+  deps.logger.info("ml_account_connected", {
+    ml_account_id: mlAccountId,
+    seller_id: token.user_id,
+    backfill_enqueued: backfillEnqueued !== null,
+  });
 
   return { status: "connected", mlAccountId };
 }

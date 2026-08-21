@@ -244,6 +244,8 @@ Cloud Tasks elimina lease, claim, contador de retry, despachante e dead-letter a
 
 `pg_cron` permanece disponível **apenas para manutenção do banco** (conferência de saldo, expurgo, `ANALYZE`). Nunca para despachar fila.
 
+**Exceção registrada em 2026-08-21:** o `worker` também enfileira — mas só em `backfill`, e só para si mesmo. `backfill.orders` anda em pedaços de 7 dias (uma execução não percorre 12 meses de história dentro do timeout do worker); cada pedaço, ao terminar, enfileira o próximo. Continua verdade que a `api` é quem enfileira em toda outra fila — só aqui o job se auto-encadeia, porque é o próprio `worker` quem sabe se ainda falta pedaço (checkpoint em `ml_accounts.backfill_covered_until`), e esperar o Cloud Scheduler notar e disparar de novo prenderia o backfill a no máximo um pedaço por hora.
+
 ---
 
 ## 12. Estrutura de pastas

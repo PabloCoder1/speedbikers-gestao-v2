@@ -114,9 +114,18 @@ YAML
       --set-secrets "SUPABASE_SERVICE_ROLE_KEY=${SECRET_SUPABASE_KEY}:latest,MERCADO_LIVRE_CLIENT_SECRET=${SECRET_ML_CLIENT_SECRET}:latest,ML_TOKEN_ENCRYPTION_KEY=${SECRET_ML_TOKEN_KEY}:latest" \
       --quiet
   else
-    # O worker NÃO tem rota pública. Só o Cloud Tasks o invoca, com OIDC (D-024).
-    # Timeout longo e concorrência baixa: perfil oposto ao da api, que é a razão
-    # de serem dois serviços (D-013).
+    # O worker NÃO tem rota pública para fora — só o Cloud Tasks o invoca, com
+    # OIDC (D-024). Mas desde o backfill retomável (`docs/HANDOFF.md`), o
+    # worker também é CLIENTE do Cloud Tasks: cada pedaço se reenfileira para
+    # si mesmo, e por isso precisa conhecer a PRÓPRIA URL — mesma dança de
+    # duas fases que a api já faz para conhecer a URL uma da outra.
+    #
+    # Timeout longo e concorrência baixa: perfil oposto ao da api, que é a
+    # razão de serem dois serviços (D-013).
+    local self_url
+    self_url="$(service_url worker)"
+    [ -n "${self_url}" ] || self_url="https://placeholder.invalid"
+
     gc run deploy "${app}" \
       --image "${image}" \
       --region "${REGION}" \
@@ -127,9 +136,13 @@ YAML
       --concurrency 4 \
       --timeout 900s \
       --cpu 1 --memory 512Mi \
-      --set-env-vars "NODE_ENV=production,SUPABASE_URL=${SUPABASE_URL},ERP_IMPORTS_BUCKET=${PROJECT_ID}-erp-imports,MERCADO_LIVRE_CLIENT_ID=${MERCADO_LIVRE_CLIENT_ID}" \
+      --set-env-vars "NODE_ENV=production,SUPABASE_URL=${SUPABASE_URL},ERP_IMPORTS_BUCKET=${PROJECT_ID}-erp-imports,MERCADO_LIVRE_CLIENT_ID=${MERCADO_LIVRE_CLIENT_ID},GCP_PROJECT_ID=${PROJECT_ID},GCP_REGION=${REGION},WORKER_URL=${self_url},TASKS_INVOKER_SERVICE_ACCOUNT=$(sa_email "${SA_TASKS}")" \
       --set-secrets "SUPABASE_SERVICE_ROLE_KEY=${SECRET_SUPABASE_KEY}:latest,MERCADO_LIVRE_CLIENT_SECRET=${SECRET_ML_CLIENT_SECRET}:latest,ML_TOKEN_ENCRYPTION_KEY=${SECRET_ML_TOKEN_KEY}:latest" \
       --quiet
+
+    if [ "${self_url}" = "https://placeholder.invalid" ]; then
+      info "worker ainda não existe; primeiro deploy define a URL — rode este comando de novo para injetar WORKER_URL real"
+    fi
   fi
 
   local url

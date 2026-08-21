@@ -122,12 +122,15 @@ Schema criado na Fase 2; **conexão real (OAuth connect + callback) é Fase 3**,
 
 ```text
 ml_accounts       label, slug (nomeia a fila ml-sync-<slug>, D-036), seller_id?, nickname?,
-                  status (PENDING | CONNECTED | REVOKED | ERROR), connected_at?, last_error?
+                  status (PENDING | CONNECTED | REVOKED | ERROR), connected_at?, last_error?,
+                  backfill_covered_until?
 ml_credentials    access_token_ciphertext, refresh_token_ciphertext, encryption_key_version,
                   access_token_expires_at, scopes[], refresh_locked_until?
 ml_oauth_states   state (PK), organization_id, ml_account_id, created_by?, redirect_to?,
                   expires_at, consumed_at?
 ```
+
+`backfill_covered_until` (migration `20260821030000`) é o checkpoint do backfill retomável — L1, mutável, não pertence a `sync_runs` (L2, histórico de cada execução, não de onde a próxima deve começar). `NULL` = nunca começou; `>= connected_at` = terminou, porque a reconciliação por janela já cobre dali para frente. `docs/HANDOFF.md` tem o desenho completo (pedaços de 7 dias, auto-encadeamento pelo `worker`).
 
 Fluxo: o ADMIN cria a conta (`ml_accounts`) direto pelo `web`, sob RLS — é escrita simples de usuário, sem segredo envolvido. Conectar exige segredo (`client_secret` do Mercado Livre, chave de cifra dos tokens) e por isso passa pela `api`:
 

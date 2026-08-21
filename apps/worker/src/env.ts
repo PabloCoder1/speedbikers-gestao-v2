@@ -49,6 +49,16 @@ export const envSchema = z.object({
     },
     { message: "precisa decodificar em base64 para 32 bytes (AES-256)" },
   ),
+
+  /**
+   * Cloud Tasks — o worker se REENFILEIRA para si mesmo (`backfill.orders`
+   * avançando pedaço a pedaço, `docs/HANDOFF.md`). `WORKER_URL` é a própria
+   * URL deste serviço: alvo e audience OIDC do próximo pedaço.
+   */
+  GCP_PROJECT_ID: z.string().min(1),
+  GCP_REGION: z.string().min(1),
+  WORKER_URL: z.url(),
+  TASKS_INVOKER_SERVICE_ACCOUNT: z.email(),
 });
 
 export type Env = z.infer<typeof envSchema>;

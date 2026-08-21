@@ -608,7 +608,7 @@ describe("conexão de conta Mercado Livre", () => {
             return chain(claimedState === null ? { data: null, error: null } : { data: claimedState, error: null });
           }
 
-          return chain({ data: null, error: null });
+          return chain({ data: { slug: "acc-1" }, error: null });
         },
         upsert: () => chain({ data: null, error: null }),
       }),
@@ -651,6 +651,21 @@ describe("conexão de conta Mercado Livre", () => {
               oauth: OAUTH_CONFIG,
               encryptionKey: ENCRYPTION_KEY,
               logger: createLogger({}, { sink: () => undefined }),
+              enqueuer: {
+                enqueue: (request) =>
+                  Promise.resolve({
+                    taskName: "t",
+                    deduplicated: false,
+                    envelope: {
+                      jobType: request.jobType,
+                      jobId: "6f1d5f9c-6d0b-4a5f-9f4a-2c9a7a1f0b11",
+                      organizationId: request.organizationId,
+                      dedupeKey: request.dedupeKey,
+                      attempt: 1,
+                      enqueuedAt: "2026-08-21T15:00:00.000Z",
+                    },
+                  }),
+              },
               requestOptions: {
                 fetchImpl:
                   options.fetchImpl ??
@@ -820,6 +835,21 @@ describe("conexão de conta Mercado Livre", () => {
           oauth: OAUTH_CONFIG,
           encryptionKey: ENCRYPTION_KEY,
           logger: createLogger({}, { sink: () => undefined }),
+          enqueuer: {
+            enqueue: (request) =>
+              Promise.resolve({
+                taskName: "t",
+                deduplicated: false,
+                envelope: {
+                  jobType: request.jobType,
+                  jobId: "6f1d5f9c-6d0b-4a5f-9f4a-2c9a7a1f0b11",
+                  organizationId: request.organizationId,
+                  dedupeKey: request.dedupeKey,
+                  attempt: 1,
+                  enqueuedAt: "2026-08-21T15:00:00.000Z",
+                },
+              }),
+          },
           requestOptions: {
             fetchImpl: () =>
               Promise.resolve(

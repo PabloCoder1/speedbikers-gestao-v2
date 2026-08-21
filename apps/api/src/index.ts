@@ -44,6 +44,7 @@ const app = createApp({
   mlAccounts: {
     db,
     logger,
+    enqueuer,
     oauth: {
       clientId: env.MERCADO_LIVRE_CLIENT_ID,
       clientSecret: env.MERCADO_LIVRE_CLIENT_SECRET,

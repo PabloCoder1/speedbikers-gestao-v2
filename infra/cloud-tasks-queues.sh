@@ -79,6 +79,18 @@ create_queue "analytics-recompute" 10 20 5 5s 300s
 # tráfego vivo. Muitas tentativas porque o trabalho é longo e retomável.
 create_queue "backfill" 1 2 10 30s 3600s
 
+# Único caso em que o WORKER também enfileira, não só a api: cada pedaço do
+# backfill (`docs/HANDOFF.md`), ao terminar, enfileira o próximo pedaço
+# direto nesta fila. Menor privilégio: só nesta fila, não no projeto.
+binding_worker_backfill="$(gc tasks queues add-iam-policy-binding "backfill" \
+    --location "${REGION}" \
+    --member "serviceAccount:$(sa_email "${SA_WORKER}")" \
+    --role roles/cloudtasks.enqueuer 2>&1)" || {
+  printf '%s\n' "${binding_worker_backfill}" >&2
+  fail "Falha ao conceder cloudtasks.enqueuer em backfill para o worker. Mensagem do gcloud acima."
+}
+info "backfill: enqueuer -> ${SA_WORKER} (auto-encadeamento)"
+
 # maintenance: conferência de saldo, expurgo, medição. Baixa frequência.
 create_queue "maintenance" 1 1 3 60s 600s
 

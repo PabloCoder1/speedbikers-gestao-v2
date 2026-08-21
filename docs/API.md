@@ -112,7 +112,7 @@ Payloads tipados em `@sb/contracts/jobs`. Todo handler é **idempotente**.
 | `sync.fulfillment.snapshot` | `ml-sync-<conta>` | `full:{conta}:{inventory_id}` |
 | `analytics.recompute` | `analytics-recompute` | `recompute:{conta}:{sku}:{data}` |
 | `events.detect` | `analytics-recompute` | `detect:{entidade}:{id}` |
-| `backfill.orders` | `backfill` | `backfill-orders:{conta}:{checkpoint}` |
+| `backfill.orders` | `backfill` | `backfill-orders:{conta}:{checkpoint}` — **implementado em 2026-08-21**, `{conta}` é o slug e `{checkpoint}` é `start` no primeiro pedaço ou o `to` ISO do pedaço anterior |
 | `maintenance.reconcile-balances` | `maintenance` | `reconcile:{data}` |
 | `actions.measure-outcome` | `maintenance` | `outcome:{decision_id}:{offset}` |
 | `erp.import.parse` | `maintenance` | `erp-parse:{batch_id}` |

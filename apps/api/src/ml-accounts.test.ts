@@ -72,6 +72,7 @@ interface FakeDbOptions {
   claimedState?: { data: { organization_id: string; ml_account_id: string } | null; error: { message: string } | null };
   credentialsUpsertFails?: boolean;
   accountUpdateFails?: boolean;
+  slug?: string;
 }
 
 function fakeDb(options: FakeDbOptions = {}): {
@@ -110,7 +111,9 @@ function fakeDb(options: FakeDbOptions = {}): {
         }
 
         return chain(
-          options.accountUpdateFails === true ? { data: null, error: { message: "boom" } } : { data: null, error: null },
+          options.accountUpdateFails === true
+            ? { data: null, error: { message: "boom" } }
+            : { data: { slug: options.slug ?? "loja-1" }, error: null },
         );
       },
       upsert: (row: unknown) => {
@@ -128,17 +131,28 @@ function fakeDb(options: FakeDbOptions = {}): {
   return { db, inserted, updated, upserted };
 }
 
-function deps(overrides: Partial<MlAccountsDeps> & { dbOptions?: FakeDbOptions } = {}): {
+function deps(
+  overrides: Partial<MlAccountsDeps> & { dbOptions?: FakeDbOptions; enqueueFails?: boolean } = {},
+): {
   deps: MlAccountsDeps;
   lines: string[];
   db: ReturnType<typeof fakeDb>;
+  enqueued: { jobType: string; dedupeKey: string; queue: string; organizationId: string; payload?: Record<string, unknown> }[];
 } {
   const lines: string[] = [];
   const db = fakeDb(overrides.dbOptions);
+  const enqueued: {
+    jobType: string;
+    dedupeKey: string;
+    queue: string;
+    organizationId: string;
+    payload?: Record<string, unknown>;
+  }[] = [];
 
   return {
     lines,
     db,
+    enqueued,
     deps: {
       db: db.db,
       oauth: OAUTH_CONFIG,
@@ -146,6 +160,28 @@ function deps(overrides: Partial<MlAccountsDeps> & { dbOptions?: FakeDbOptions }
       logger: createLogger({}, { sink: (line) => lines.push(line) }),
       now: () => NOW,
       requestOptions: { fetchImpl: () => Promise.resolve(jsonResponse(200, TOKEN_RESPONSE_BODY)), sleep: () => Promise.resolve() },
+      enqueuer: {
+        enqueue: (request) => {
+          if (overrides.enqueueFails === true) {
+            return Promise.reject(new Error("Cloud Tasks fora do ar"));
+          }
+
+          enqueued.push(request);
+
+          return Promise.resolve({
+            taskName: "t",
+            deduplicated: false,
+            envelope: {
+              jobType: request.jobType,
+              jobId: "6f1d5f9c-6d0b-4a5f-9f4a-2c9a7a1f0b11",
+              organizationId: request.organizationId,
+              dedupeKey: request.dedupeKey,
+              attempt: 1,
+              enqueuedAt: NOW.toISOString(),
+            },
+          });
+        },
+      },
       ...overrides,
     },
   };
@@ -278,6 +314,31 @@ describe("completeConnect", () => {
       connected_at: NOW.toISOString(),
       last_error: null,
     });
+  });
+
+  it("dispara o backfill de história ao conectar — sem ele, pedidos anteriores à conexão nunca apareceriam", async () => {
+    const { deps: d, enqueued } = deps({ dbOptions: { slug: "sbmotos" } });
+
+    const outcome = await completeConnect(d, { state: "s", code: "code-valido" });
+
+    expect(outcome.status).toBe("connected");
+    expect(enqueued).toHaveLength(1);
+    expect(enqueued[0]).toMatchObject({
+      jobType: "backfill.orders",
+      organizationId: CALLER.organizationId,
+      queue: "backfill",
+      dedupeKey: "backfill-orders:sbmotos:start",
+      payload: { mlAccountId: "acc-1" },
+    });
+  });
+
+  it("falha ao enfileirar o backfill não desfaz a conexão já gravada", async () => {
+    const { deps: d, lines } = deps({ enqueueFails: true });
+
+    const outcome = await completeConnect(d, { state: "s", code: "code-valido" });
+
+    expect(outcome).toEqual({ status: "connected", mlAccountId: "acc-1" });
+    expect(lines.join()).toContain("backfill_not_triggered");
   });
 
   it("devolve rejected quando a gravação das credenciais falha", async () => {
