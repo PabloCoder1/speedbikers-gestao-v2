@@ -108,6 +108,11 @@ function fakeDb(options: FakeDbOptions = {}): {
           return chain({ data: account ?? null, error: null });
         }
 
+        if (table === "sku_listing_links") {
+          // Sem vínculo cadastrado no fake — persistOrder grava sku_id nulo.
+          return chain({ data: null, error: null });
+        }
+
         return chain({ data: credentials ?? null, error: null });
       },
       insert: () => chain({ data: { id: "run-1" }, error: null }),
@@ -116,6 +121,9 @@ function fakeDb(options: FakeDbOptions = {}): {
 
         return chain({ data: null, error: null });
       },
+      // persistOrder: upsert de `orders`, delete + insert de `order_items`.
+      upsert: () => Promise.resolve({ data: null, error: null }),
+      delete: () => ({ eq: () => Promise.resolve({ data: null, error: null }) }),
     }),
   } as unknown as BackfillOrdersDeps["db"];
 
@@ -124,7 +132,22 @@ function fakeDb(options: FakeDbOptions = {}): {
 
 interface FakePage {
   paging: { total: number; offset: number; limit: number };
-  results: { id: number; last_updated: string }[];
+  results: unknown[];
+}
+
+/** Order mínima, mas válida contra `orderSchema` — o que `/orders/search` devolve de verdade. */
+function fakeOrder(id: number, dateLastUpdated: string): unknown {
+  return {
+    id,
+    status: "paid",
+    date_created: dateLastUpdated,
+    date_last_updated: dateLastUpdated,
+    total_amount: 100,
+    currency_id: "BRL",
+    order_items: [
+      { item: { id: "MLB1", title: "Item" }, quantity: 1, unit_price: 100, currency_id: "BRL" },
+    ],
+  };
 }
 
 function fakeMercadoLivreClient(
@@ -333,8 +356,8 @@ describe("backfill.orders", () => {
       {
         paging: { total: 2, offset: 0, limit: 50 },
         results: [
-          { id: 1, last_updated: "2026-01-05T10:00:00.000-03:00" },
-          { id: 2, last_updated: "2026-01-06T10:00:00.000-03:00" },
+          fakeOrder(1, "2026-01-05T10:00:00.000-03:00"),
+          fakeOrder(2, "2026-01-06T10:00:00.000-03:00"),
         ],
       },
     ];

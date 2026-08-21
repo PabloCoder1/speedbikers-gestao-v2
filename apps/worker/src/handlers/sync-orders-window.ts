@@ -125,11 +125,15 @@ export function createSyncOrdersWindowHandler(deps: SyncOrdersWindowDeps): JobHa
 
     try {
       result = await fetchOrdersWindow({
+        db: deps.db,
+        organizationId,
+        mlAccountId,
         mercadoLivre: deps.mercadoLivre,
         accessToken: tokenResult.accessToken,
         sellerId,
         from: windowFrom,
         to: windowTo,
+        logger: context.logger,
       });
     } catch (error) {
       const finishedAt = deps.now?.() ?? new Date();
@@ -152,6 +156,7 @@ export function createSyncOrdersWindowHandler(deps: SyncOrdersWindowDeps): JobHa
     }
 
     const finishedAt = deps.now?.() ?? new Date();
+    const partial = result.itemsSkipped > 0;
 
     await recordSyncRunSuccess(deps.db, {
       organizationId,
@@ -163,6 +168,10 @@ export function createSyncOrdersWindowHandler(deps: SyncOrdersWindowDeps): JobHa
       latestRecordAt: result.latestRecordAt,
       startedAt: started,
       finishedAt,
+      status: partial ? "partial" : "done",
+      ...(partial
+        ? { reason: `${String(result.itemsSkipped)} order(s) com formato inesperado, ignoradas` }
+        : {}),
     });
 
     context.logger.info("sync_orders_window_done", {
@@ -170,6 +179,7 @@ export function createSyncOrdersWindowHandler(deps: SyncOrdersWindowDeps): JobHa
       window_from: windowFrom.toISOString(),
       window_to: windowTo.toISOString(),
       items_processed: result.itemsProcessed,
+      items_skipped: result.itemsSkipped,
     });
 
     return { status: "done", processed: result.itemsProcessed };

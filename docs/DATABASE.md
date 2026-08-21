@@ -161,6 +161,8 @@ sync_errors  organization_id, ml_account_id, sync_run_id?, resource,
 
 ### `orders` / `order_items` — vendas
 
+**Implementado em 2026-08-21** (migration `20260821040000_create_orders.sql`), gravado por `sync.orders.window` e `backfill.orders` — `apps/worker/src/handlers/persist-order.ts`.
+
 **Fato medido na V2 que define a modelagem:** o Mercado Livre **não entrega pedido multi-linha**. `orders` e `order_items` tinham exatamente 328.211 linhas cada. Uma compra de vários itens vira **vários pedidos** ligados por `pack_id`, e 189.158 pedidos tinham um.
 
 Consequências:
@@ -168,9 +170,27 @@ Consequências:
 1. **Não construir rateio de `total_amount` entre itens.** A auditoria mediu divergência exatamente zero entre `sum(total_amount)` e `sum(unit_price * quantity)` em R$ 5,8 milhões e 52 mil pedidos. O rateio é matematicamente um no-op.
 2. **`pack_id` é a unidade de compra real do cliente** e precisa ser cidadão de primeira classe. Frete, custo de embalagem e "quantos pedidos de verdade eu tive" só fazem sentido agrupados por pack. A V2 tinha o campo mas não a agregação.
 
-`order_items.sku_id` é **resolvido e gravado na persistência** (D-020), junto com o registro de qual vínculo foi usado. Revincular um MLB depois não reescreve o faturamento passado.
+```text
+orders       id (PK, id nativo do Mercado Livre — sem uuid surrogate), organization_id,
+             ml_account_id, pack_id?, status, status_detail?, date_created,
+             date_closed?, date_last_updated, last_updated?, total_amount,
+             paid_amount?, currency_id, buyer_id?, tags[], cancel_reason?
+order_items  id (uuid), order_id, organization_id, ml_account_id, position,
+             item_id, variation_id?, title, seller_sku?, quantity, unit_price,
+             sale_fee?, currency_id, sku_id?, sku_listing_link_id?
+```
 
-Cancelamento e devolução **não sofrem `UPDATE` destrutivo**: mudam o status em L1 e emitem evento em L2, e é o evento que reverte o ledger.
+`status` tem CHECK com os 9 valores confirmados na documentação oficial (`confirmed`, `payment_required`, `payment_in_process`, `partially_paid`, `paid`, `partially_refunded`, `pending_cancel`, `cancelled`, `invalid`).
+
+**`date_last_updated` × `last_updated` (D-048):** o exemplo oficial de `/orders/search` traz os dois campos na mesma order com valores diferentes, sem explicação na prosa. O checkpoint de sincronização (`sync_runs.latest_record_at`) usa `date_last_updated` — bate o nome com o filtro `order.date_last_updated.from/to`. `last_updated` é gravado à parte, sem função de checkpoint. Pendente de verificação empírica em Dev.
+
+`order_items` **não tem id próprio do Mercado Livre** — o array não traz identificador estável por linha. Reprocessar um pedido substitui TODAS as linhas (`delete` + `insert` por `order_id`), mesmo padrão de `erp_import_rows`; `position` (índice no array) sustenta a unicidade.
+
+`order_items.sku_id` é **resolvido e gravado na persistência** (D-020), junto com `sku_listing_link_id` — qual vínculo foi usado. Revincular um MLB depois não reescreve o faturamento passado.
+
+**Estado atual, honesto:** `orders` é **mutável** (L1) — um `UPDATE` em lugar quando o status muda, sem emitir evento ainda. "Cancelamento e devolução não sofrem `UPDATE` destrutivo: mudam o status em L1 e emitem evento em L2" é o desenho **alvo**, que o motor de diff/`domain_events` (próximo item do checklist da Fase 3) é quem constrói — persistir a estrutura veio primeiro de propósito, mesmo padrão incremental já usado em `sync_runs`.
+
+**Não atômico entre as duas tabelas** (upsert de `orders`, depois delete+insert de `order_items` — três chamadas separadas). Aceito: o pedido é reprocessado a cada janela de reconciliação, uma falha no meio se autocorrige na próxima varredura — não é o tipo de escrita humana única que precisa da atomicidade de uma RPC `security definer`.
 
 ### `stock_movements` — o ledger
 

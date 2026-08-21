@@ -341,6 +341,8 @@ Consequência direta para o desenho da janela: qualquer granularidade abaixo de 
 
 Checkpoint entre execuções: `latest_record_at` do último `sync_run` bem-sucedido (`resource = 'orders'`, `channel = 'reconciliation'`) para aquela conta — não offset, não estado em memória do worker (regra geral da secao 4). Primeira execução de uma conta usa `ml_accounts.connected_at` como piso.
 
+**Achado durante a implementação (2026-08-21, D-048): `date_last_updated` ≠ `last_updated`.** O exemplo oficial de resposta de `/orders/search` (mesma página, exemplo de busca por `q`) traz os DOIS campos na mesma order, com valores DIFERENTES: `"date_last_updated": "2020-02-14T02:55:49.811Z"` e `"last_updated": "2019-05-28T15:16:04.000-04:00"`. Nenhuma prosa da página explica a diferença — só a descrição do filtro (`order.date_last_updated.from/to: data da última modificação da order`). Decisão: o checkpoint da V3 lê `date_last_updated` (bate o nome com o filtro que a V3 já usa para selecionar a janela; usar o campo errado arriscaria o checkpoint avançar sem cobrir uma mudança real). `last_updated` também é gravado em `orders` (coluna separada), sem ser usado para checkpoint, até a diferença ficar clara. **Pendente de verificação empírica em Dev** — mesma disciplina de D-045.
+
 ### Backfill
 
 - Retomável por checkpoint.

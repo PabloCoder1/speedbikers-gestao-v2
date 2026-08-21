@@ -470,6 +470,18 @@ Levantadas pela pesquisa da documentação oficial que fecha a lista de verifica
 
 **Impacto:** `packages/mercado-livre/src/token-cipher.ts` (`encryptToken`/`decryptToken`/`loadEncryptionKey`) e `apps/api/src/ml-accounts.ts` (`startConnect`/`completeConnect`), implementados e testados nesta sessão — ver `docs/HANDOFF.md`. `ML_TOKEN_ENCRYPTION_KEY`, `MERCADO_LIVRE_CLIENT_ID`, `MERCADO_LIVRE_CLIENT_SECRET` e `MERCADO_LIVRE_REDIRECT_URI` entram no `.env.example` e no `envSchema` de `apps/api`.
 
+## D-048 — Checkpoint de pedidos usa `date_last_updated`, não `last_updated`
+
+**Contexto:** implementando a persistência estruturada de pedidos (`orders`/`order_items`), o exemplo oficial de resposta de `/orders/search` (`developers.mercadolivre.com.br`, "Gerencie vendas → Orders", 2026-08-21) mostrou os dois campos na MESMA order com valores diferentes: `date_last_updated: "2020-02-14T02:55:49.811Z"` e `last_updated: "2019-05-28T15:16:04.000-04:00"`. Nenhuma prosa da página explica a diferença — só a descrição do filtro `order.date_last_updated.from/to`.
+
+**Decisão:** o checkpoint de reconciliação/backfill (`sync_runs.latest_record_at`) usa `date_last_updated`, porque o nome bate com o filtro que a V3 já usa para selecionar a janela (`order.date_last_updated.from/to`). `last_updated` é gravado como coluna própria em `orders` (`docs/DATABASE.md`), sem função de checkpoint, até a diferença entre os dois campos ficar clara.
+
+**Motivo:** usar o campo errado no checkpoint é o tipo de erro que não quebra teste nenhum e só aparece como pedido "sumido" meses depois — o nome que bate com o filtro é a escolha defensável na ausência de documentação explícita.
+
+**Impacto:** corrigido em `apps/worker/src/handlers/ml-orders-fetch.ts` antes de qualquer deploy real ter rodado com o nome errado (achado durante o desenvolvimento, não em produção).
+
+**Risco aceito, registrado explicitamente:** mesma disciplina de D-045 — **pendente de verificação empírica em Dev** (inspecionar pedidos reais e comparar os dois campos) antes de considerar o checkpoint confiável em produção.
+
 ## Como adicionar nova decisão
 
 Registrar:

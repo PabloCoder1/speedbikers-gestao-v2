@@ -132,11 +132,15 @@ export function createBackfillOrdersHandler(deps: BackfillOrdersDeps): JobHandle
 
     try {
       result = await fetchOrdersWindow({
+        db: deps.db,
+        organizationId,
+        mlAccountId,
         mercadoLivre: deps.mercadoLivre,
         accessToken: tokenResult.accessToken,
         sellerId,
         from: chunkFrom,
         to: chunkTo,
+        logger: context.logger,
       });
     } catch (error) {
       const finishedAt = deps.now?.() ?? new Date();
@@ -162,6 +166,7 @@ export function createBackfillOrdersHandler(deps: BackfillOrdersDeps): JobHandle
     }
 
     const finishedAt = deps.now?.() ?? new Date();
+    const partial = result.itemsSkipped > 0;
 
     await recordSyncRunSuccess(deps.db, {
       organizationId,
@@ -173,6 +178,10 @@ export function createBackfillOrdersHandler(deps: BackfillOrdersDeps): JobHandle
       latestRecordAt: result.latestRecordAt,
       startedAt: started,
       finishedAt,
+      status: partial ? "partial" : "done",
+      ...(partial
+        ? { reason: `${String(result.itemsSkipped)} order(s) com formato inesperado, ignoradas` }
+        : {}),
     });
 
     await deps.db
@@ -197,6 +206,7 @@ export function createBackfillOrdersHandler(deps: BackfillOrdersDeps): JobHandle
       chunk_from: chunkFrom.toISOString(),
       chunk_to: chunkTo.toISOString(),
       items_processed: result.itemsProcessed,
+      items_skipped: result.itemsSkipped,
       has_more: hasMore,
     });
 

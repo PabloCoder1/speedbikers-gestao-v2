@@ -19,9 +19,21 @@ interface SyncRunBase {
   finishedAt: Date;
 }
 
+/**
+ * `status: "partial"` é para quando a execução terminou (não é falha
+ * retryable) mas nem tudo pôde ser processado — ex.: uma order com formato
+ * inesperado no meio da página (`ml-orders-fetch.ts`). A constraint
+ * `sync_runs_reason_matches_status` exige `reason` sempre que o status não
+ * for `done`.
+ */
 export async function recordSyncRunSuccess(
   db: AdminClient,
-  params: SyncRunBase & { itemsProcessed: number; latestRecordAt: Date | null },
+  params: SyncRunBase & {
+    itemsProcessed: number;
+    latestRecordAt: Date | null;
+    status?: "done" | "partial";
+    reason?: string;
+  },
 ): Promise<void> {
   await db.from("sync_runs").insert({
     organization_id: params.organizationId,
@@ -29,7 +41,8 @@ export async function recordSyncRunSuccess(
     job_id: params.jobId,
     resource: params.resource,
     channel: params.channel,
-    status: "done",
+    status: params.status ?? "done",
+    reason: params.reason?.slice(0, 2000) ?? null,
     items_processed: params.itemsProcessed,
     latest_record_at: params.latestRecordAt?.toISOString() ?? null,
     started_at: params.startedAt.toISOString(),

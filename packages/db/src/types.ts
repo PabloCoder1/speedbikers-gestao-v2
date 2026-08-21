@@ -547,6 +547,180 @@ export type Database = {
           },
         ]
       }
+      order_items: {
+        Row: {
+          created_at: string
+          currency_id: string
+          id: string
+          item_id: string
+          ml_account_id: string
+          order_id: number
+          organization_id: string
+          position: number
+          quantity: number
+          sale_fee: number | null
+          seller_sku: string | null
+          sku_id: string | null
+          sku_listing_link_id: string | null
+          title: string
+          unit_price: number
+          updated_at: string
+          variation_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          currency_id: string
+          id?: string
+          item_id: string
+          ml_account_id: string
+          order_id: number
+          organization_id: string
+          position: number
+          quantity: number
+          sale_fee?: number | null
+          seller_sku?: string | null
+          sku_id?: string | null
+          sku_listing_link_id?: string | null
+          title: string
+          unit_price: number
+          updated_at?: string
+          variation_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          currency_id?: string
+          id?: string
+          item_id?: string
+          ml_account_id?: string
+          order_id?: number
+          organization_id?: string
+          position?: number
+          quantity?: number
+          sale_fee?: number | null
+          seller_sku?: string | null
+          sku_id?: string | null
+          sku_listing_link_id?: string | null
+          title?: string
+          unit_price?: number
+          updated_at?: string
+          variation_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_items_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_items_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_items_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_items_sku_id_fkey"
+            columns: ["sku_id"]
+            isOneToOne: false
+            referencedRelation: "skus"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_items_sku_listing_link_id_fkey"
+            columns: ["sku_listing_link_id"]
+            isOneToOne: false
+            referencedRelation: "sku_listing_links"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      orders: {
+        Row: {
+          buyer_id: number | null
+          cancel_reason: string | null
+          created_at: string
+          currency_id: string
+          date_closed: string | null
+          date_created: string
+          date_last_updated: string
+          id: number
+          last_updated: string | null
+          ml_account_id: string
+          organization_id: string
+          pack_id: number | null
+          paid_amount: number | null
+          status: string
+          status_detail: string | null
+          tags: string[]
+          total_amount: number
+          updated_at: string
+        }
+        Insert: {
+          buyer_id?: number | null
+          cancel_reason?: string | null
+          created_at?: string
+          currency_id: string
+          date_closed?: string | null
+          date_created: string
+          date_last_updated: string
+          id: number
+          last_updated?: string | null
+          ml_account_id: string
+          organization_id: string
+          pack_id?: number | null
+          paid_amount?: number | null
+          status: string
+          status_detail?: string | null
+          tags?: string[]
+          total_amount: number
+          updated_at?: string
+        }
+        Update: {
+          buyer_id?: number | null
+          cancel_reason?: string | null
+          created_at?: string
+          currency_id?: string
+          date_closed?: string | null
+          date_created?: string
+          date_last_updated?: string
+          id?: number
+          last_updated?: string | null
+          ml_account_id?: string
+          organization_id?: string
+          pack_id?: number | null
+          paid_amount?: number | null
+          status?: string
+          status_detail?: string | null
+          tags?: string[]
+          total_amount?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "orders_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organization_members: {
         Row: {
           created_at: string
