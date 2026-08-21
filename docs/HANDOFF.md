@@ -1,6 +1,6 @@
 # Handoff V3
 
-> Última atualização: 2026-08-21 — **Fase 2 concluída.** Identidade, contas, catálogo, importador do UpSeller (upload → aplicação), Central de Vinculações e o schema de observabilidade de sincronização (`sync_runs`/`sync_errors`) estão todos no ar em Dev. A Fase 3 é a próxima e está **bloqueada** pela confirmação da documentação oficial do Mercado Livre.
+> Última atualização: 2026-08-21 — **Fase 2 concluída.** Identidade, contas, catálogo, importador do UpSeller (upload → aplicação), Central de Vinculações e o schema de observabilidade de sincronização (`sync_runs`/`sync_errors`) estão todos no ar em Dev. **A documentação oficial do Mercado Livre foi confirmada nesta mesma data e a Fase 3 está desbloqueada** — ver `docs/MERCADO_LIVRE.md` e as decisões D-041 a D-043.
 
 ## Estado atual
 
@@ -71,11 +71,11 @@ Os oito itens **A** a **H** foram respondidos e registrados como **D-027 a D-034
 
 ---
 
-## Pendência técnica externa
+## Pendência técnica externa — resolvida em 2026-08-21
 
-Antes de congelar o capítulo de sincronização é preciso **confirmar a documentação oficial atual do Mercado Livre**: tópicos de webhook disponíveis, mecanismo oficial de recuperação de notificação perdida, política de rate limit vigente e modelo de autorização multi-conta.
+~~Antes de congelar o capítulo de sincronização é preciso confirmar a documentação oficial atual do Mercado Livre: tópicos de webhook disponíveis, mecanismo oficial de recuperação de notificação perdida, política de rate limit vigente e modelo de autorização multi-conta.~~
 
-Conforme `docs/PROMPT_MASTER.md` §9, nada disso será inventado. `docs/MERCADO_LIVRE.md` contém a lista de verificação e está marcado como pendente nesses pontos.
+Confirmado. `docs/MERCADO_LIVRE.md` secoes 2.1 a 2.9 registram cada item com fonte e data de consulta. Três decisões novas fecham as consequências arquiteturais: **D-041** (autorização multi-conta é OAuth padrão repetido por conta, feito pelo ADMIN — não existe fluxo "autoriza todas de uma vez"), **D-042** (rate limit não tem número oficial publicado — filas mantêm valor conservador, ajustado por `429` observado) e **D-043** (validação de origem do webhook por allowlist de IP, sem HMAC). Único item da lista de verificação ainda aberto é visitas/Ads, necessário só na Fase 5B (D-032) e que não bloqueia a Fase 3.
 
 ---
 
@@ -217,7 +217,7 @@ Provisionado: filas `analytics-recompute` (10/s, 20), `backfill` (1/s, 2) e `mai
 - **Puramente schema**: nenhum código escreve nessas tabelas ainda. O sync do Mercado Livre é Fase 3.
 - **10 testes novos de integração de RLS** (83 no total, de 73): constraints (`finished_after_started`, `reason_matches_status`), o trigger append-only recusando `UPDATE` e `DELETE` mesmo do dono, RLS positiva/negativa nas duas tabelas, e os dois negativos novos de `anon` sem `EXECUTE` nas RPCs da Central de Vinculações.
 
-**Próximo passo real do projeto: Fase 3, e está bloqueada.** Depende da confirmação da documentação oficial do Mercado Livre (`docs/MERCADO_LIVRE.md` secao 1) — nenhuma linha de sincronização deve ser escrita antes disso (`docs/PROMPT_MASTER.md` §9). Essa confirmação é a única frente de trabalho disponível agora que não depende de mais nenhuma decisão de produto.
+**Próximo passo real do projeto: Fase 3, e está desbloqueada** (2026-08-21) — a documentação oficial do Mercado Livre foi confirmada e registrada em `docs/MERCADO_LIVRE.md` secoes 2.1 a 2.9, com as decisões D-041 a D-043. Ver a seção "Documentação do Mercado Livre confirmada" abaixo para o que foi pesquisado e o que ainda falta (só visitas/Ads, Fase 5B).
 
 **Central de Vinculações — concluída e verificada nesta sessão:**
 
@@ -227,7 +227,7 @@ Provisionado: filas `analytics-recompute` (10/s, 20), `backfill` (1/s, 2) e `mai
 - **2 testes novos no worker** (fake, cobrindo o registro do candidato e a resolução automática por match exato) e **13 na integração de RLS contra Postgres real** (73 no total, de 60) — incluindo os negativos obrigatórios (sem acesso à conta, sem o papel certo, escrita direta recusada) e a prova de que a confirmação é atômica.
 - **Verificado num navegador real**, não só em teste: usuário de teste criado via Admin API, login real, busca de SKU, clique em "Vincular" → `sku_listing_links` criado com `source = MANUAL`, candidato fechado com `resolved_by` do usuário logado; "Descartar" também verificado. Consultado direto no Postgres local depois, não só na tela.
 
-**Ainda não commitado nesta máquina:** as duas migrations de observabilidade de sincronização e os testes de integração associados. A Central de Vinculações, o comando de aplicação, o fix de infra do `worker` e a correção D-040 de sessões anteriores já estão em `origin/v3`.
+**Tudo commitado e em `origin/v3`:** as duas migrations de observabilidade de sincronização e os testes de integração associados foram commitados junto com a atualização deste documento (commit `bce81b3`). A Central de Vinculações, o comando de aplicação, o fix de infra do `worker` e a correção D-040 de sessões anteriores também já estavam em `origin/v3`.
 
 **Já no ar em Dev, `api` e `worker` verificados após o deploy:** rota `/v1/erp-imports/:id/apply` responde 401 sem token e 404 nas rotas vizinhas; `worker` reiniciado com `ERP_IMPORTS_BUCKET` correto e log `worker_started` confirmado no Cloud Logging — ver a armadilha registrada acima.
 
@@ -269,7 +269,7 @@ Ordem dentro da fase, do que não depende de nada para o que depende:
 6. **Central de Vinculações** — **concluído**. Tabela `link_candidates` + RPCs `resolve_link_candidate`/`dismiss_link_candidate` (`security definer`, autorização refeita internamente). O worker registra um candidato sempre que um vínculo fica pendente por falta de SKU, e reconcilia todos os candidatos abertos da organização ao fim de **toda** aplicação — match exato sem tela. Tela em `/vinculacoes` com busca de SKU sob RLS e confirmação/descarte por Server Action. Verificado num navegador real, login incluído, com o resultado conferido direto no Postgres.
 7. **Observabilidade de sincronização** (`sync_runs`/`sync_errors`) — **concluído**. Schema L2 append-only com policy de leitura por conta, pronto para a Fase 3 escrever. Nenhum código escreve ainda — é a última peça de schema da Fase 2, e fecha o checklist inteiro.
 
-**Fase 2 encerrada.** Ver `docs/ROADMAP.md` para o checklist completo e `docs/MERCADO_LIVRE.md` secao 1 para o que falta confirmar antes da Fase 3.
+**Fase 2 encerrada.** Ver `docs/ROADMAP.md` para o checklist completo. `docs/MERCADO_LIVRE.md` secao 1 — o que faltava confirmar antes da Fase 3 — foi resolvida na sequência desta mesma sessão, ver seção abaixo.
 
 **Leitor de planilha escolhido:** `read-excel-file` (2,5 MB) em vez de `exceljs` (21,8 MB), porque o worker só lê. Medido nos arquivos reais: 23.925 linhas em 647 ms com 176 MB de RSS, folgado nos 512 MB do container. Usar `readSheet`, não o export padrão — na v9 o padrão devolve o array de planilhas.
 
@@ -277,7 +277,21 @@ Ordem dentro da fase, do que não depende de nada para o que depende:
 
 **Regra desta fase:** toda tabela nasce com RLS habilitada, GRANT mínimo explícito e **teste negativo** provando que quem não tem permissão não lê. Ver `docs/DATABASE.md` secao 5 e `docs/TESTING.md`.
 
+## Documentação do Mercado Livre confirmada (2026-08-21)
+
+Pesquisa feita diretamente em `developers.mercadolivre.com.br` (PT-BR), com URL e data citadas para cada afirmação — nenhum comportamento foi presumido. Fechou 11 dos 12 itens da lista de verificação de `docs/MERCADO_LIVRE.md` secao 1; só visitas/Ads ficou de fora, porque só é necessário na Fase 5B (D-032).
+
+**Achado mais importante — autorização multi-conta (secao 2.2, D-041):** confirmado que não existe um fluxo OAuth diferente para múltiplas contas. É o Authorization Code Grant padrão, repetido **uma vez por loja**, e quem faz esse login precisa ser **administrador daquela conta ML específica** (colaborador recebe `invalid_operator_user_id`). Depois de autorizada uma vez, a conta nunca mais pede reautenticação — a aplicação guarda `access_token`/`refresh_token` no servidor e renova sozinha. Isso confirma que o schema de `ml_accounts`/`ml_credentials`/`ml_oauth_states` da Fase 2 já está certo, sem precisar de ajuste.
+
+**Segundo achado — rate limit sem número oficial (secao 2.3, D-042):** a documentação não publica RPM nem cabeçalhos `X-RateLimit-*`/`Retry-After` — só confirma controle por `client_id`+endpoint e recomendação de backoff com jitter. D-036 ficou "aguardando confirmação de um número" que **não existe**; os valores das filas `ml-sync-<conta>` continuam conservadores, ajustados por `429` observado em `sync_errors`.
+
+**Terceiro achado — validação de origem do webhook (secao 2.6, D-043):** só existe allowlist de 8 IPs publicados, nenhuma assinatura HMAC (essa existe só para Mercado Pago, produto diferente — risco real de confundir os dois, encontrado durante a própria pesquisa).
+
+Também confirmados com detalhe de endpoint, paginação e payload: tópicos de webhook e formato de notificação (secao 2.4), recuperação de notificação perdida via `missed_feeds` — retenção de só 2 dias (secao 2.5), endpoints/paginação de pedidos e itens (secao 2), estoque Full (secao 2.7), promoções e catálogo (secao 2.8), e escopos/permissões funcionais de OAuth (secao 2.9).
+
+**Avisos operacionais não bloqueantes, mas a não esquecer ao implementar:** a partir de 30/08/2026 o Mercado Livre exige aplicações separadas entre Mercado Livre e Mercado Pago; `GET /orders/{id}/shipments` muda de formato (vista única → sempre array) no fim de setembro/2026 — o parser do worker deve nascer já no formato novo.
+
 ## Bloqueios atuais
 
-- **Fase 3 inteira** bloqueada pela confirmação da documentação oficial do Mercado Livre (`docs/MERCADO_LIVRE.md` secao 1).
+- **Fase 3 desbloqueada** (2026-08-21) — não há mais bloqueio de documentação externa para começar.
 - Modelos de exportação do pedido de compra (Excel e PDF) precisam ser solicitados antes da Fase 4.

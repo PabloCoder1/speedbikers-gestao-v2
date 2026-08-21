@@ -1,7 +1,7 @@
 # Integração Mercado Livre — Speed Bikers Gestão V3
 
 > Dono documental de: estratégia de sincronização, regras de integração e registro de endpoints.
-> Status: **estratégia aprovada. Identificadores confirmados (secao 2.1). Tópicos de webhook, rate limit e autorização multi-conta ainda NÃO confirmados** — ver a lista da secao 1.
+> Status: **estratégia aprovada. Lista de verificação da secao 1 confirmada em 2026-08-21, exceto visitas/Ads (não bloqueia — necessários só na Fase 5B, D-032). Fase 3 desbloqueada.**
 
 ---
 
@@ -16,40 +16,58 @@ Antes de implementar qualquer integração que dependa de comportamento atual:
 3. considerar paginação, rate limit, erros e idempotência;
 4. escrever teste com fixture gravado.
 
-Este arquivo tem seções deliberadamente vazias. **Seção vazia é sinal de trabalho pendente, não de esquecimento.** Preenchê-la com suposição é pior que deixá-la vazia.
+Este arquivo tem seções deliberadamente vazias quando o item ainda não foi verificado. **Seção vazia é sinal de trabalho pendente, não de esquecimento.** Preenchê-la com suposição é pior que deixá-la vazia.
 
 ---
 
-## 1. Lista de verificação pendente
+## 1. Lista de verificação
 
-Precisa ser confirmado na documentação oficial **antes** da Fase 3:
+Confirmado na documentação oficial (`developers.mercadolivre.com.br`, consulta em 2026-08-21, salvo indicação em contrário):
 
-- [ ] Tópicos de webhook disponíveis atualmente e seus payloads
-- [ ] Mecanismo oficial de recuperação de notificações perdidas
-- [ ] Política de rate limit vigente: limites, janelas e cabeçalhos de resposta
-- [ ] Modelo de autorização multi-conta — **se a autorização centralizada pelo ADMIN é possível** (`docs/PROMPT_MASTER.md` §10)
-- [ ] Endpoints e paginação de pedidos
-- [x] Identificadores `MLB`, `variation_id` e `MLBU` — confirmados em 2026-08-20, ver secao 2.1
-- [ ] Endpoints e paginação de anúncios e variações
-- [ ] Endpoints de estoque Full
-- [ ] Endpoints de promoções e catálogo
-- [ ] Endpoints de visitas e de Ads — necessários apenas na Fase 5B (D-032)
-- [ ] Escopos de OAuth necessários por recurso
-- [ ] Política de validação de origem do webhook
-
-A autorização centralizada é **restrição externa, não preferência de arquitetura**. O schema previsto em `docs/DATABASE.md` atende aos dois cenários, portanto essa pendência não bloqueia a Fase 2.
+- [x] Tópicos de webhook disponíveis atualmente e seus payloads — secao 2.4
+- [x] Mecanismo oficial de recuperação de notificações perdidas — secao 2.5
+- [x] Política de rate limit vigente: limites, janelas e cabeçalhos de resposta — secao 2.3 (**sem números fixos publicados** — ver decisão associada)
+- [x] Modelo de autorização multi-conta — secao 2.2 (**confirma viabilidade da autorização centralizada pelo ADMIN**, `docs/PROMPT_MASTER.md` §10)
+- [x] Endpoints e paginação de pedidos — secao 2
+- [x] Identificadores `MLB`, `variation_id` e `MLBU` — confirmados em 2026-08-20, secao 2.1
+- [x] Endpoints e paginação de anúncios e variações — secao 2
+- [x] Endpoints de estoque Full — secao 2.7
+- [x] Endpoints de promoções e catálogo — secao 2.8
+- [ ] Endpoints de visitas e de Ads — necessários apenas na Fase 5B (D-032); ainda não pesquisados, **não bloqueia a Fase 3**
+- [x] Escopos de OAuth necessários por recurso — secao 2.9
+- [x] Política de validação de origem do webhook — secao 2.6 (allowlist de IP; **sem assinatura HMAC documentada** para este produto)
 
 ---
 
 ## 2. Registro de endpoints
 
-> A preencher conforme a lista de verificação for concluída. Cada linha deve citar a data da consulta à documentação oficial.
-
-| Recurso | Endpoint | Escopo | Paginação | Rate limit | Confirmado em |
+| Recurso | Endpoint | Escopo / permissão | Paginação | Rate limit | Confirmado em |
 |---|---|---|---|---|---|
-| Itens do vendedor | `/users/{user_id}/items/search` | privado | a confirmar | a confirmar | 2026-08-20 |
-| Item | `/items/{item_id}` | — | — | a confirmar | 2026-08-20 |
-| Filtro por user product | `/users/{seller_id}/items/search?user_product_id=MLBU1,MLBU2` | privado | — | — | 2026-08-20 |
+| Detalhe de pedido | `GET /orders/{order_id}` | `read`, "Vendas e envios" | — | secao 2.3 | 2026-08-21 |
+| Busca de pedidos | `GET /orders/search?seller={seller_id}&...` | `read` | `offset`/`limit` (padrão 50); **teto não documentado** | secao 2.3 | 2026-08-21 |
+| Envios do pedido | `GET /orders/{order_id}/shipments` | `read` | — | secao 2.3 | 2026-08-21 (formato muda em set/2026, ver secao 7) |
+| Descontos do pedido | `GET /orders/{order_id}/discounts` | `read` | — | secao 2.3 | 2026-08-21 |
+| Itens do vendedor (recomendado) | `GET /users/{user_id}/items/search` | `read`, "Publicação e sincronização" | `offset`/`limit` padrão 50; `search_type=scan` + `scroll_id` acima de 1000, até 100/página, scroll expira em 5 min | secao 2.3 | 2026-08-21 |
+| Itens do vendedor (legado) | `GET /sites/{site_id}/search?seller_id=...` | `read` | idem acima | secao 2.3 | 2026-08-21 — documentação indica substituição gradual pelo endpoint acima |
+| Filtro por user product | `GET /users/{seller_id}/items/search?user_product_id=MLBU1,MLBU2` | `read`, privado | — | secao 2.3 | 2026-08-20 |
+| Multiget de itens | `GET /items?ids=ID1,ID2&attributes=...` | `read` | até **20 ids** por chamada | secao 2.3 | 2026-08-21 |
+| Item único | `GET /items/{item_id}` | `read` | — | secao 2.3 | 2026-08-20 |
+| Variações de um item | `GET /items/{item_id}/variations` | `read` | — | secao 2.3 | 2026-08-21 |
+| Variação específica | `GET /items/{item_id}/variations/{variation_id}` | `read` | — | secao 2.3 | 2026-08-21 |
+| Estoque Full agregado | `GET /inventories/{inventory_id}/stock/fulfillment` | `read`, "Vendas e envios" | — | secao 2.3 | 2026-08-21 |
+| Operações de estoque Full | `GET /stock/fulfillment/operations/search?...` | `read` | `scroll` (expira 5 min); até **1000/página**; janela máx. **60 dias** | secao 2.3 | 2026-08-21 |
+| Estoque multi-origem próprio | `GET /user-products/{user_product_id}/stock` | `read` | — | secao 2.3 | 2026-08-21 |
+| Promoções ativas de um item | `GET /seller-promotions/items/{item_id}?app_version=v2` | `read`, "Promoções, cupons e descontos" | — | secao 2.3 | 2026-08-21 |
+| Promoções do vendedor | `GET /seller-promotions/users/{user_id}?app_version=v2` | `read` | — | secao 2.3 | 2026-08-21 |
+| Itens de uma campanha | `GET /seller-promotions/promotions/{promotion_id}/items?...` | `read` | `search_after` (TTL 5 min), limite **50** | secao 2.3 | 2026-08-21 |
+| Buscador de produtos de catálogo | `GET /products/search?product_identifier=/q=&site_id=` | `read` | `offset`/`limit` | secao 2.3 | 2026-08-21 |
+| Notificações perdidas | `GET /missed_feeds?app_id=&topic=&offset=&limit=` | — | padrão **10**; retenção **2 dias**; `site_id` obrigatório para `topic=items` | — | 2026-08-21 |
+| Autorização OAuth | `GET https://auth.mercadolivre.com.br/authorization?...` | — | — | — | 2026-08-21 |
+| Token OAuth | `POST https://api.mercadolibre.com/oauth/token` | — | — | — | 2026-08-21 |
+| Grants da aplicação | `GET /applications/{app_id}/grants` | — | — | — | 2026-08-21 |
+| Apps autorizados por usuário | `GET /users/{user_id}/applications` | — | — | — | 2026-08-21 |
+| Revogar autorização | `DELETE /users/{user_id}/applications/{app_id}` | — | — | — | 2026-08-21 |
+| Cota da aplicação | `GET /applications/{app_id}` (campo `max_requests_per_hour`) | — | — | secao 2.3 | 2026-08-21 |
 
 ---
 
@@ -85,6 +103,167 @@ Outros fatos medidos: um `MLB` chega a ter 8 ou mais variações (231 casos); **
 
 ---
 
+## 2.2 Autorização multi-conta — CONFIRMADO (2026-08-21)
+
+O fluxo é o **OAuth 2.0 Authorization Code Grant padrão** — **não existe um tipo de aplicação nem um fluxo diferente para múltiplas contas**. Uma aplicação (um `client_id`/`client_secret`) recebe um par `access_token`/`refresh_token` **distinto por cada conta de vendedor (`user_id`) que autoriza** — chamado de "Grant" na documentação.
+
+Fluxo:
+
+1. `GET https://auth.mercadolivre.com.br/authorization?response_type=code&client_id=...&redirect_uri=...` (+ PKCE, se habilitado na aplicação)
+2. O usuário loga na conta ML a ser conectada e aprova o app. Redireciona com `code`.
+3. `POST https://api.mercadolibre.com/oauth/token` (`grant_type=authorization_code`) → `access_token` (expira em **21600 s / 6 h**), `refresh_token`, `user_id`.
+4. `POST https://api.mercadolibre.com/oauth/token` (`grant_type=refresh_token`) → **cada refresh invalida o `refresh_token` anterior** (uso único).
+
+**Regra crítica confirmada pela documentação:** quem realiza o passo 1/2 precisa logar como **administrador daquela conta ML específica**. Um operador/colaborador da loja recebe o erro `invalid_operator_user_id` e o grant fica inválido.
+
+**O que isso significa para a V3 — fecha a pendência de `docs/ARCHITECTURE.md` secao 22 e `docs/PROMPT_MASTER.md` §10:** a autorização centralizada pelo ADMIN é **tecnicamente viável**, mas com uma nuance — **não é "um login autoriza todas as lojas"**. O ADMIN da Speed Bikers precisa logar, uma vez por loja, com a credencial de administrador daquela conta específica no Mercado Livre, e conceder o grant. **Feito isso uma única vez por conta, nenhum outro usuário interno do sistema jamais reautentica** — a aplicação guarda o par `access_token`/`refresh_token` por conta no servidor (`ml_credentials`) e renova sozinha. É exatamente o modelo que o schema da Fase 2 (`ml_accounts`, `ml_credentials`, `ml_oauth_states`) já suporta. Ver **D-041**.
+
+Endpoints de gestão do grant, úteis para a tela de administração de contas:
+
+- `GET /applications/{app_id}/grants` — lista todas as contas que autorizaram o app, com `scopes` e `date_created`.
+- `GET /users/{user_id}/applications` — apps autorizados por uma conta.
+- `DELETE /users/{user_id}/applications/{app_id}` — revoga.
+- Estados do grant: **Novo** (<24h), **Ativo** (chamada nos últimos 90 dias), **Inativo** (sem chamada nos últimos 90 dias).
+
+**Sobre o Developer Partner Program (DPP):** existe, mas é um **programa de certificação/benefícios comerciais** (medalhas por elegibilidade de GMV agregado), **não** um mecanismo técnico alternativo de autorização. Não relevante para o desenho técnico agora.
+
+**Fonte:** `developers.mercadolivre.com.br/pt_br/autenticacao-e-autorizacao`; `.../gerencie-seu-aplicativo`; `.../developer-partner-program`.
+
+---
+
+## 2.3 Rate limit — CONFIRMADO, sem números fixos publicados (2026-08-21)
+
+A documentação oficial **não publica** um teto numérico universal de requisições por minuto/hora, nem cabeçalhos de resposta do tipo `X-RateLimit-*` ou `Retry-After`. O que é confirmado:
+
+- Controle **por `client_id` (aplicação) e por endpoint** — não por conta de vendedor, nem pelo tamanho do payload.
+- Erro `429` ao exceder o limite; recomendação oficial explícita é backoff exponencial com jitter, redução de concorrência e consolidação de chamadas.
+- `GET /applications/{app_id}` retorna um campo `max_requests_per_hour` — a cota é consultável por aplicação, mas não há garantia documentada de qual valor a aplicação da Speed Bikers vai receber.
+- Aumento de cota é possível por canal comercial, mediante evidência de uso legítimo.
+- `scroll_id` expira e não pode ser combinado com `offset`/`limit` na mesma chamada.
+
+**Consequência para D-036:** os "valores provisórios" das filas `ml-sync-<conta>` não têm um número oficial para substituir — **não existe** esse número publicado. Permanecem como estimativa conservadora de engenharia, ajustada por observação real de `429` registrado em `sync_errors` durante a Fase 3. Ver **D-042**.
+
+**Fonte:** `developers.mercadolivre.com.br/pt_br/rate-limit-erro-429`; `.../gerencie-seu-aplicativo`.
+
+---
+
+## 2.4 Webhooks — tópicos e payload — CONFIRMADO (2026-08-21)
+
+Tópicos relevantes para o escopo atual da V3 (o portal lista mais tópicos, fora de escopo — ex. imóveis/veículos):
+
+| Categoria | Tópico | Relevância |
+|---|---|---|
+| Pedidos | `orders_v2` | Sync principal de vendas |
+| Itens | `items` | Preço, título, foto, status, catálogo |
+| Itens | `questions` | Perguntas/respostas |
+| Itens | `stock-location` | Estoque multi-origem |
+| Envios | `shipments` | Rastreio/entrega |
+| Envios | `fbm_stock_operations` | Movimentações Full |
+| Promoções | `public_offers`, `public_candidates` | Entrada/saída de promoção |
+| Preço | `price_suggestion` | Sugestão de preço |
+| Catálogo | `catalog_item_competition_status` (só AR/BR/MX), `catalog_suggestions` | Concorrência de catálogo |
+| Pós-venda | `post_purchase` (`claims`, `claims_actions` via `actions`) | Reclamações |
+
+Formato do payload (comum aos tópicos "simples"):
+
+```json
+{ "_id": "...", "resource": "/caminho_do_recurso", "user_id": "...", "topic": "...", "application_id": "...", "attempts": 1, "sent": "...", "received": "..." }
+```
+
+Tópicos "com subtópicos" (`messages`, `vis_leads`, `post_purchase`) trazem também `actions` (array) e às vezes `id` em vez de `_id`.
+
+**O corpo não traz o objeto de negócio — só um ponteiro `resource`.** A integração faz um GET subsequente para obter o detalhe. Confirma o desenho já previsto em `docs/ARCHITECTURE.md` secao 10 (worker busca no ML após receber a notificação).
+
+**Regra dura de tempo:** responder HTTP 200 em até **500 ms**, sem chamada de rede no handler — já é o desenho da `api`. Um tópico que falhar repetidamente pode ser **desativado por fallback**, exigindo reinscrição manual.
+
+**Avisos de depreciação já publicados** (nenhum bloqueia a V3 hoje, registrados para não implementar campo que vai sumir):
+
+- Subtópico `quotations` (dentro de `items`, leads imobiliários) descontinuado em 13/08/2026 — fora do domínio de bikes, citado só como sinal de que o portal deprecia webhooks ativamente.
+- `resource` de `claims`/`claims_actions` passou a incluir o prefixo `/post-purchase` no path.
+
+**Fonte:** `developers.mercadolivre.com.br/pt_br/produto-receba-notificacoes`.
+
+---
+
+## 2.5 Recuperação de notificações perdidas — CONFIRMADO (2026-08-21)
+
+- Reenvio automático do próprio Mercado Livre por até **1 hora** (até 8 tentativas) enquanto a aplicação não responder 200.
+- Recuperação manual: `GET /missed_feeds?app_id={app_id}&topic=&offset=&limit=` — **retenção de apenas 2 dias**, `limit` padrão 10. Para o tópico `items`, o parâmetro `site_id` é **obrigatório** (senão HTTP 400).
+- A resposta inclui `request` e `response` (com `http_code`) — permite auditar o que foi enviado e o que o servidor da Speed Bikers respondeu.
+
+**Consequência de desenho:** a reconciliação por janela (`docs/ARCHITECTURE.md` secao 10) continua sendo a rede de segurança real — `missed_feeds` cobre só 2 dias e não substitui a reconciliação por cursor já decidida.
+
+**Fonte:** `developers.mercadolivre.com.br/pt_br/produto-receba-notificacoes`, secao "Histórico das notificações".
+
+---
+
+## 2.6 Validação de origem do webhook — CONFIRMADO (2026-08-21)
+
+Único mecanismo documentado: **allowlist de IP de origem**.
+
+```
+54.88.218.97
+18.215.140.160
+18.213.114.129
+18.206.34.84
+35.236.253.169
+35.245.91.34
+35.245.20.104
+35.186.182.146
+```
+
+**Não existe assinatura HMAC documentada para webhooks do Mercado Livre (marketplace).** Existe HMAC (`x-signature`, `ts`/`v1`) documentado para **Mercado Pago** — produto/portal diferente. Risco real de confusão entre os dois confirmado durante a pesquisa (buscas por "assinatura de webhook" retornam material do Mercado Pago). Registrado aqui explicitamente para não ser repetido.
+
+**Decisão de implementação:** ver **D-043**.
+
+**Fonte:** `developers.mercadolivre.com.br/pt_br/produto-receba-notificacoes`.
+
+---
+
+## 2.7 Estoque Full (fulfillment) — CONFIRMADO (2026-08-21)
+
+- `inventory_id` vem do próprio item (`GET /items/{item_id}`); com variações, **cada variação tem seu próprio `inventory_id`**.
+- Estoque agregado: `GET /inventories/{inventory_id}/stock/fulfillment` → `total`, `available_quantity`, `not_available_quantity`, `not_available_detail[]` (`damage`/`damaged`, `lost`, `withdrawal`, `internal_process`, `transfer`, `noFiscalCoverage`, `not_supported`), `external_references`. Retenção de 12 meses.
+- Operações (histórico de movimento no Full): `GET /stock/fulfillment/operations/search?...` — janela máxima de consulta de **60 dias**, padrão 15 dias sem filtro de data; paginação por `scroll` (expira em 5 min), até **1000 registros/página**.
+- Disponível hoje apenas para **Argentina, Brasil, México, Chile e Colômbia**.
+
+**Fonte:** `developers.mercadolivre.com.br/pt_br/envios-fulfillment`; `.../estoque-multi-origem` (estoque próprio, distinto do Full).
+
+---
+
+## 2.8 Promoções e catálogo — CONFIRMADO (2026-08-21)
+
+- Promoções ativas de um item específico (caso de uso central para eventos de "entrou/saiu de promoção"): `GET /seller-promotions/items/{item_id}?app_version=v2`.
+- Tipos existentes: `DEAL`, `MARKETPLACE_CAMPAIGN`, `PRICE_DISCOUNT`, `LIGHTNING`, `DOD`, `VOLUME`, `PRE_NEGOTIATED`, `SELLER_CAMPAIGN`, `SMART`, `PRICE_MATCHING`, `UNHEALTHY_STOCK`, `SELLER_COUPON_CAMPAIGN`.
+- Catálogo: publicar direto (`POST /items` com `catalog_product_id` + `catalog_listing: true`) ou opt-in de item existente (`POST /items/catalog_listings`). **A sincronização de condições de venda entre item de marketplace e item de catálogo é automática e não pode ser desativada pelo vendedor.**
+- Diagnóstico de sincronização de catálogo: `GET /public/buybox/sync/{item_id}` (`status: SYNC|UNSYNC`).
+
+**Fonte:** `developers.mercadolivre.com.br/pt_br/gerenciar-ofertas`; `.../buscador-de-produtos`; `.../publicacao-no-catalogo`.
+
+---
+
+## 2.9 Escopos de OAuth e permissões funcionais — CONFIRMADO (2026-08-21)
+
+Escopos do OAuth: `read`, `write`, `offline_access` (necessário para manter acesso via `refresh_token` sem reautenticação constante — usar sempre).
+
+Além do scope, o DevCenter da aplicação exige habilitar **permissões funcionais** por recurso de negócio (senão `403 PA_UNAUTHORIZED_RESULT_FROM_POLICIES`). Relevantes para a V3 hoje:
+
+| Permissão funcional | Libera | Uso na V3 |
+|---|---|---|
+| Publicação e sincronização | `items`, `pictures`, `prices` | Catálogo/anúncios |
+| Vendas e envios | `orders`, `shipments`, `claims`, `returns` | Pedidos + estoque Full |
+| Promoções, cupons e descontos | `offers`, `deals` | Promoções |
+| Comunicação pré e pós-venda | `questions`, `messages`, `claims`, `returns` | Fase posterior |
+| Métricas do negócio | `trends`, `highlights`, `visits` | Fase 5B (D-032) |
+| Publicidade | Advertising | Fase 5B (D-032) |
+| Faturamento | `invoices`, `billing` | Fora de escopo hoje |
+
+Webhooks não têm permissão funcional própria — a assinatura de tópicos é configurada no gerenciador da aplicação (Callback URL + seleção de tópicos), não pelo OAuth scope.
+
+**Fonte:** `developers.mercadolivre.com.br/pt_br/autenticacao-e-autorizacao`; `.../permissoes-funcionais`.
+
+---
+
 ## 3. Estratégia de sincronização
 
 Aprovada e independente dos detalhes de endpoint. Três canais com papéis que nunca se confundem:
@@ -105,6 +284,7 @@ A V3 nasce com o webhook como caminho principal e o cron rebaixado a reconcilia�
 - Grava a notificação e cria uma Cloud Task com **nome derivado do recurso**, de modo que notificações repetidas do mesmo recurso colapsem numa só.
 - Superfície pública com autenticação própria e **caminho explicitamente liberado, com teste negativo nas rotas vizinhas**. *Motivo:* na V2, o proxy exigia sessão, o webhook não envia cookie, e as notificações de preço, promoção e Full morriam em silêncio num 307 para `/login` — por semanas, sem ninguém perceber.
 - Uma notificação nova enquanto o job do mesmo recurso está em execução deve provocar reprocessamento, não perda da atualização.
+- Autenticação de origem: allowlist de IP — ver secao 2.6 e **D-043**.
 
 ### Reconciliação
 
@@ -125,8 +305,8 @@ A V3 nasce com o webhook como caminho principal e o cron rebaixado a reconcilia�
 | Regra | Detalhe |
 |---|---|
 | **Paginação por cursor** | **Nunca por offset.** A V2 paginava por offset sobre resultado ordenado por data decrescente; pedidos novos durante a varredura deslocavam o offset, e sob pico um pedido podia escapar entre páginas |
-| **Rate limit** | Controlado pela fila `ml-sync`, com limite de taxa e concorrência **por conta** |
-| **429 e 5xx** | Backoff exponencial com jitter, honrando `Retry-After` |
+| **Rate limit** | Sem número oficial (secao 2.3). Controlado pela fila `ml-sync`, com limite de taxa e concorrência **por conta**, valor conservador ajustado por `429` observado |
+| **429 e 5xx** | Backoff exponencial com jitter, honrando `Retry-After` quando presente (não confirmado como padrão do Mercado Livre — implementar defensivamente mesmo assim) |
 | **Idempotência** | Toda persistência tem chave natural. O mesmo recurso processado duas vezes produz um efeito |
 | **Checkpoint** | Toda varredura longa é retomável |
 | **Classificação de erro** | Retryable, retryable com tolerância a consistência eventual, e não retryable. Ver `docs/API.md` |
@@ -152,12 +332,18 @@ A V2 operava **4 contas**, cada uma com credenciais próprias de aplicação. O 
 
 Na V3, credenciais ficam em `ml_credentials` cifradas, com chave no Secret Manager, e nunca em variável de ambiente por conta. Ver `docs/DEPLOYMENT.md`.
 
-O refresh de token usa lock para evitar corrida entre execuções concorrentes — desenho herdado da V2, que estava correto.
+O refresh de token usa lock para evitar corrida entre execuções concorrentes — desenho herdado da V2, que estava correto. **Atenção:** a documentação oficial confirma (secao 2.2) que cada `refresh_token` é de uso único — um refresh concorrente sem lock pode invalidar o token que a outra execução ainda vai tentar usar.
 
 ---
 
 ## 7. Pendências
 
-- Todo o conteúdo da seção 2. **Bloqueia a Fase 3.**
-- Confirmação da viabilidade da autorização centralizada pelo ADMIN.
-- Visitas e Ads são necessários apenas na Fase 5B (D-032), portanto podem ser confirmados depois.
+- ~~Todo o conteúdo da seção 2. Bloqueia a Fase 3.~~ — **Resolvido em 2026-08-21.** Ver secoes 2.1 a 2.9.
+- ~~Confirmação da viabilidade da autorização centralizada pelo ADMIN.~~ — **Confirmada em 2026-08-21** (secao 2.2): viável, com autorização feita conta por conta pelo ADMIN; usuários internos não reautenticam depois. Ver **D-041**.
+- **Endpoints de visitas e de Ads** — necessários apenas na Fase 5B (D-032). Ainda não pesquisados; não bloqueia a Fase 3.
+
+### Avisos operacionais encontrados na pesquisa, não bloqueantes hoje
+
+- A partir de **30/08/2026** o Mercado Livre exige aplicações separadas entre Mercado Livre e Mercado Pago (uma aplicação por unidade de negócio) — relevante se a V3 vier a usar a API do Mercado Pago para conciliação financeira.
+- A "vista atual" de `GET /orders/{order_id}/shipments` (retorna objeto único) será **descontinuada no fim de setembro/2026**, substituída pela "Hosted View" que **sempre** retorna array — desenhar o parser do worker já para o formato novo, não para o legado.
+- Header `X-Api-Version: 2` é necessário em `/orders/{order_id}/shipments` para obter PII completo do destinatário (`receiver_name`, `receiver_phone`).

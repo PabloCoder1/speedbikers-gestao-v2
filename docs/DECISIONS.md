@@ -394,6 +394,44 @@ Categorias puramente numéricas (`999`) são ruído e não viram marca.
 
 ---
 
+# Decisões de integração Mercado Livre — respondidas em 2026-08-21
+
+Levantadas pela pesquisa da documentação oficial que fecha a lista de verificação de `docs/MERCADO_LIVRE.md` secao 1 e desbloqueia a Fase 3.
+
+## D-041 — Autorização multi-conta confirmada: OAuth padrão por conta, feito pelo ADMIN
+
+**Contexto:** `docs/PROMPT_MASTER.md` §10 previa autorização centralizada pelo ADMIN "quando tecnicamente compatível com a integração", e `docs/ARCHITECTURE.md` secao 22 registrava isso como pendência de informação externa.
+
+**Decisão:** confirmado na documentação oficial (`docs/MERCADO_LIVRE.md` secao 2.2) que não existe fluxo OAuth diferenciado para múltiplas contas — é o Authorization Code Grant padrão, repetido uma vez por conta. O ADMIN da Speed Bikers deve logar, uma vez por loja, com a credencial de administrador daquela conta específica no Mercado Livre (um operador/colaborador recebe `invalid_operator_user_id` e o grant fica inválido). Feito isso, a aplicação guarda `access_token`/`refresh_token` por conta no servidor e nenhum outro usuário interno reautentica.
+
+**Motivo:** é exatamente o modelo que o schema da Fase 2 (`ml_accounts`, `ml_credentials`, `ml_oauth_states`) já suporta — a decisão fecha a pendência sem exigir mudança de schema.
+
+**Impacto:** a tela de "Conectar conta" (Fase 3) é, por design, uma ação repetida por loja, executada pelo ADMIN — não uma autorização única "para todas as contas de uma vez".
+
+## D-042 — Rate limit do Mercado Livre sem número oficial: filas mantêm valor conservador e ajustam por observação
+
+**Contexto:** D-036 fixou uma fila do Cloud Tasks por conta ML com "valores provisórios até a confirmação da política de rate limit vigente".
+
+**Decisão:** a documentação oficial (`docs/MERCADO_LIVRE.md` secao 2.3) confirma que o Mercado Livre não publica número fixo de requisições por minuto/hora nem cabeçalho de rate limit — o controle é por `client_id` + endpoint, com erro `429` e recomendação de backoff exponencial com jitter. Não há um valor a "confirmar" porque nenhum é publicado. As filas `ml-sync-<conta>` mantêm o valor conservador já provisionado, ajustado por observação real de `429` registrado em `sync_errors` durante a Fase 3.
+
+**Motivo:** esperar por um número que a documentação declaradamente não publica bloquearia a Fase 3 sem ganho — é o princípio de "teste da dor medida" (`docs/ARCHITECTURE.md` secao 1) aplicado ao inverso: sem dado publicado, decide-se pelo conservador e mede-se depois.
+
+**Impacto:** encerra a pendência de D-036. Nenhuma mudança de infraestrutura — os valores das filas continuam os já criados por `infra/cloud-tasks-queues.sh`.
+
+## D-043 — Validação de origem do webhook por allowlist de IP
+
+**Contexto:** `docs/ARCHITECTURE.md` secao 18 exige "caminho explicitamente liberado, com teste negativo nas rotas vizinhas" para o webhook público, sem definir o mecanismo de validação de origem.
+
+**Decisão:** validar a origem da notificação do Mercado Livre pela **allowlist dos 8 IPs publicados** (`docs/MERCADO_LIVRE.md` secao 2.6). Não implementar verificação de assinatura HMAC — não existe mecanismo desse tipo documentado para o Mercado Livre (existe para Mercado Pago, produto diferente; a pesquisa confirmou o risco real de confundir os dois ao buscar "assinatura de webhook").
+
+**Motivo:** é o único mecanismo de validação de origem que a documentação oficial oferece para este produto.
+
+**Alternativa rejeitada:** aceitar a notificação sem checar origem, confiando só no formato do payload — mais fraco, sem necessidade já que existe allowlist publicada.
+
+**Consequência aceita:** allowlist de IP é mais frágil que assinatura criptográfica (pode mudar sem aviso detalhado). Mitigação: revisar a lista periodicamente contra a documentação; a idempotência por `dedup_key`/dedupe de Cloud Tasks já limita o dano de um reprocessamento indevido, venha ele de origem legítima ou não.
+
+---
+
 ## Como adicionar nova decisão
 
 Registrar:

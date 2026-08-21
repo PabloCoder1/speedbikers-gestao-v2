@@ -21,10 +21,10 @@ Cada fase só é considerada concluída sob a Definition of Done do `docs/PROMPT
 - [x] Registrar decisões D-011 a D-026 em `docs/DECISIONS.md`
 - [x] Documentação especializada criada: `DATABASE`, `API`, `METRICS`, `MERCADO_LIVRE`, `NOTIFICATIONS`, `COPILOT`, `DEPLOYMENT`, `TESTING`
 - [x] Responder as decisões pendentes A a H — registradas como D-027 a D-034
-- [ ] Confirmar documentação oficial do Mercado Livre e preencher `docs/MERCADO_LIVRE.md`
-- [ ] Criar fundação técnica/monorepo
-- [ ] Criar projeto Vercel V3 conectado à branch `v3`
-- [ ] Conectar fundação técnica ao Supabase V3 Dev e Google Cloud sem criar domínio prematuramente
+- [x] Confirmar documentação oficial do Mercado Livre e preencher `docs/MERCADO_LIVRE.md` — concluído em 2026-08-21 (D-041 a D-043), exceto visitas/Ads (Fase 5B)
+- [x] Criar fundação técnica/monorepo
+- [x] Criar projeto Vercel V3 conectado à branch `v3`
+- [x] Conectar fundação técnica ao Supabase V3 Dev e Google Cloud sem criar domínio prematuramente
 
 ---
 
@@ -35,14 +35,12 @@ Cada fase só é considerada concluída sob a Definition of Done do `docs/PROMPT
 - [x] Monorepo pnpm + Turborepo com os três apps; packages criados conforme a necessidade (`config`, `contracts`, `observability`)
 - [x] TypeScript estrito, ESLint, Vitest, `.env.example` completo e validação com Zod no boot
 - [x] Supabase local (CLI/Docker) subindo e aplicando migrations
-- [ ] `apps/web` com login Supabase funcionando
+- [x] `apps/web` com login Supabase funcionando — entregue na Fase 2
 - [x] `apps/api` publicado no Cloud Run, com healthcheck e autenticação OIDC
 - [x] `apps/worker` publicado no Cloud Run, consumindo um job de teste via Cloud Tasks
 - [x] Projeto Vercel V3 conectado à branch `v3`
 - [x] CI no GitHub Actions: typecheck, lint, testes e build obrigatórios
 - [x] Scripts `infra/` versionados criando filas e buckets (Scheduler e secrets ficam para as Fases 3 e 2)
-
-- [ ] `apps/web` com login Supabase funcionando
 
 **Marco — ATINGIDO em 2026-08-20:** um job atravessa `Cloud Scheduler -> api -> Cloud Tasks -> worker -> Postgres`, sem nenhuma regra de negócio envolvida. Verificado em produção: linha `system.ping / done / processed 1` gravada no Supabase Dev.
 
@@ -82,7 +80,7 @@ Cada fase só é considerada concluída sob a Definition of Done do `docs/PROMPT
 
 **Marco:** pedidos frescos em minutos e linha do tempo do anúncio disponível.
 
-**Depende de:** confirmação da documentação oficial do Mercado Livre.
+**Desbloqueada em 2026-08-21** — documentação oficial do Mercado Livre confirmada (`docs/MERCADO_LIVRE.md`, D-041 a D-043).
 
 ---
 
@@ -193,4 +191,4 @@ A Fase 5A antecede a Fase 4 porque o dashboard de vendas não usa estoque, e a F
 
 **Fase 2 concluída** (2026-08-21) — identidade, contas, catálogo, importador do UpSeller com aplicação e Central de Vinculações, e o schema de observabilidade de sincronização. Ver `docs/HANDOFF.md` para o estado verificado.
 
-**Fase 3 — Mercado Livre e histórico** é a próxima, e está **bloqueada**: depende da confirmação da documentação oficial do Mercado Livre (`docs/MERCADO_LIVRE.md` secao 1) — tópicos de webhook, recuperação de notificação perdida, rate limit vigente e modelo de autorização multi-conta. Nenhuma linha de sincronização deve ser escrita antes disso (`docs/PROMPT_MASTER.md` §9).
+**Fase 3 — Mercado Livre e histórico** é a próxima e está **desbloqueada** (2026-08-21): a documentação oficial do Mercado Livre foi confirmada — tópicos de webhook, recuperação de notificação perdida, rate limit vigente e modelo de autorização multi-conta (`docs/MERCADO_LIVRE.md` secoes 2.1 a 2.9, decisões D-041 a D-043). Único item ainda não pesquisado é visitas/Ads, necessário só na Fase 5B (D-032) e que não bloqueia o início da Fase 3.
