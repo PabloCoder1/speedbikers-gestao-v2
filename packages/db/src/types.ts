@@ -455,6 +455,45 @@ export type Database = {
           },
         ]
       }
+      metric_definitions: {
+        Row: {
+          cancellation_treatment: string
+          definition_updated_on: string
+          exclusions: string
+          formula: string
+          granularities: string[]
+          id: string
+          inclusions: string
+          name: string
+          source: string
+          timezone: string
+        }
+        Insert: {
+          cancellation_treatment: string
+          definition_updated_on: string
+          exclusions: string
+          formula: string
+          granularities: string[]
+          id: string
+          inclusions: string
+          name: string
+          source: string
+          timezone: string
+        }
+        Update: {
+          cancellation_treatment?: string
+          definition_updated_on?: string
+          exclusions?: string
+          formula?: string
+          granularities?: string[]
+          id?: string
+          inclusions?: string
+          name?: string
+          source?: string
+          timezone?: string
+        }
+        Relationships: []
+      }
       ml_accounts: {
         Row: {
           backfill_covered_until: string | null

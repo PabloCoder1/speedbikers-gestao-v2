@@ -70,8 +70,9 @@ create_sa "${SA_TASKS}"     "Identidade usada pelo Cloud Tasks"
 create_sa "${SA_SCHEDULER}" "Identidade usada pelo Cloud Scheduler"
 
 step "Delegação de identidade"
-# Ao criar uma task, a `api` declara qual identidade o Cloud Tasks vai assumir
-# para invocar o worker. Para isso ela precisa poder "agir como" essa
+# Ao criar uma task, quem enfileira declara qual identidade o Cloud Tasks vai
+# assumir para invocar o worker. A `api` cria os jobs normais; o `worker` cria
+# o próximo pedaço do backfill retomável. Ambos precisam poder "agir como" essa
 # identidade — sem isso o enfileiramento falha com PERMISSION_DENIED em
 # `iam.serviceAccounts.actAs`.
 #
@@ -91,6 +92,7 @@ grant_act_as() {
 }
 
 grant_act_as "${SA_TASKS}" "${SA_API}"
+grant_act_as "${SA_TASKS}" "${SA_WORKER}"
 
 step "Acesso ao segredo do Supabase"
 # Concedido NO SEGREDO, não no projeto: cada identidade lê apenas o segredo de

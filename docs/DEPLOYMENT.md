@@ -87,6 +87,8 @@ Cloud Scheduler dispara apenas reconciliação e manutenção. **Nunca despacha 
 
 **Exceção registrada em 2026-08-21:** `v3-worker-runtime` também recebe `roles/cloudtasks.enqueuer`, mas só na fila `backfill` — o backfill retomável se reenfileira sozinho, pedaço a pedaço, até cobrir os 12 meses de histórico (`docs/HANDOFF.md`). É a única fila em que o `worker` enfileira; todas as outras continuam só a `api`.
 
+Como toda task usa `v3-tasks-invoker` no token OIDC, os dois produtores (`v3-api-runtime` e `v3-worker-runtime`) recebem `roles/iam.serviceAccountUser` **na própria service account invocadora**, nunca no projeto. O segundo vínculo é indispensável para o autoencadeamento do backfill.
+
 ---
 
 ## 5. Secrets
@@ -215,12 +217,18 @@ Antes do primeiro `POST /v1/ml-accounts/connect` em qualquer ambiente:
 3. PKCE pode permanecer habilitado no painel: a V3 usa sempre S256, guarda o verifier cifrado e o envia na troca do token (D-049). Desabilitá-lo para contornar erro de integração é proibido.
 4. Definir `MERCADO_LIVRE_CLIENT_ID` e `MERCADO_LIVRE_REDIRECT_URI` no ambiente antes de rodar `infra/deploy-cloud-run.sh` (não são segredo, mas precisam existir — o script falha cedo, com causa explícita, se `MERCADO_LIVRE_CLIENT_ID` estiver vazio).
 
-Depois disso, cada conta nova só passa pela tela do `web` (criar `ml_accounts`, clicar em conectar) — nenhum passo manual por conta.
+No ambiente atual, depois de criar a linha da conta no `web` e **antes** de conectá-la, o operador de infraestrutura ainda precisa provisionar a fila dedicada:
+
+```bash
+bash infra/cloud-tasks-queues.sh <slug-da-conta>
+```
+
+As quatro contas atuais já estão provisionadas. Automatizar essa criação exige uma identidade controlada com permissão de administrar filas e fica para o provisionamento da Fase 8; conceder `queueAdmin` ao runtime público da `api` violaria o menor privilégio. OAuth e backfill inicial usam a tela normalmente, mas a reconciliação/webhook da conta dependem da fila `ml-sync-<slug>` existir.
 
 ---
 
 ## 11. Pendências
 
 - Criar e validar o ambiente de produção na Fase 8.
-- Concluir e validar o primeiro OAuth real do Mercado Livre em Dev.
+- Automatizar, na Fase 8, o provisionamento da fila `ml-sync-<slug>` para contas novas; até lá usar o script versionado.
 - Migrar os scripts `gcloud` para Terraform na Fase 8.

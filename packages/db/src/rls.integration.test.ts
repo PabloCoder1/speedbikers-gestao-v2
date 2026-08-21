@@ -23,6 +23,7 @@ const ORG_OUTRA = "22222222-0000-4000-8000-000000000002";
 const ADMIN_SB = "aaaaaaaa-0000-4000-8000-000000000001";
 const ANALISTA_SB = "aaaaaaaa-0000-4000-8000-000000000002";
 const DE_OUTRA_ORG = "bbbbbbbb-0000-4000-8000-000000000003";
+const SEM_ORG = "cccccccc-0000-4000-8000-000000000004";
 
 let client: Client;
 
@@ -106,9 +107,11 @@ beforeAll(async () => {
       ($2,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',
        'analista@rls.test','x',now(),'{"full_name":"Analista"}',now(),now()),
       ($3,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',
-       'outra@rls.test','x',now(),'{"full_name":"Outra"}',now(),now())
+       'outra@rls.test','x',now(),'{"full_name":"Outra"}',now(),now()),
+      ($4,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',
+       'sem-org@rls.test','x',now(),'{"full_name":"Sem organização"}',now(),now())
     on conflict (id) do nothing
-  `, [ADMIN_SB, ANALISTA_SB, DE_OUTRA_ORG]);
+  `, [ADMIN_SB, ANALISTA_SB, DE_OUTRA_ORG, SEM_ORG]);
 
   await client.query(`
     insert into public.organizations (id, name, slug)
@@ -159,10 +162,39 @@ describe("perfil criado automaticamente", () => {
   it("todo usuário do Auth ganha uma linha em profiles", async () => {
     const rows = await client.query<{ count: string }>(
       "select count(*) from public.profiles where id = any($1)",
-      [[ADMIN_SB, ANALISTA_SB, DE_OUTRA_ORG]],
+      [[ADMIN_SB, ANALISTA_SB, DE_OUTRA_ORG, SEM_ORG]],
     );
 
-    expect(rows.rows[0]?.count).toBe("3");
+    expect(rows.rows[0]?.count).toBe("4");
+  });
+});
+
+describe("catálogo de métricas", () => {
+  it("membro autenticado lê as seis definições canônicas", async () => {
+    const rows = await asUser<{ id: string }>(ADMIN_SB, "select id from public.metric_definitions");
+
+    expect(rows).toHaveLength(6);
+  });
+
+  it("authenticated sem organização não lê definição nenhuma", async () => {
+    const rows = await asUser(SEM_ORG, "select id from public.metric_definitions");
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("anon não lê o catálogo", async () => {
+    await expect(asAnon("select * from public.metric_definitions")).rejects.toThrow(
+      /permission denied/i,
+    );
+  });
+
+  it("authenticated não altera o espelho da documentação", async () => {
+    await expect(
+      asUser(
+        ADMIN_SB,
+        "update public.metric_definitions set name = 'Alterada' where id = 'receita_bruta'",
+      ),
+    ).rejects.toThrow(/permission denied/i);
   });
 });
 

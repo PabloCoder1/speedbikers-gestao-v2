@@ -1,29 +1,45 @@
 # Handoff V3
 
-> Última atualização: 2026-08-21 — **reparo do OAuth Mercado Livre com PKCE S256 aplicado no Dev e publicado na API.** A causa comum das falhas das quatro contas foi isolada com alta confiança; falta somente repetir o consentimento com uma sessão ADMIN real para a prova ponta a ponta. **Próxima etapa de desenvolvimento: confirmar as definições individuais de `docs/METRICS.md` antes de criar schema analítico da Fase 5A.**
+> Última atualização: 2026-08-21 — **quatro conexões Mercado Livre validadas ponta a ponta, IAM/filas corrigidos e primeira etapa da Fase 5A concluída.** O catálogo `metric_definitions` já espelha as seis métricas de venda aprovadas. **Próxima etapa de desenvolvimento: criar `daily_listing_metrics` e os rollups `daily_sku_metrics`/`daily_account_metrics` pelo mesmo cálculo SQL, com teste de equivalência.**
 
 ## Estado atual
 
 - Branch: `v3`
 - Referência V2: commit `8573d971a5cd427702575b52ed249c53588ec5ca` da `main`
 - V3 reconstruída como monorepo com `web`, `api`, `worker`, packages compartilhados e migrations versionadas.
-- Supabase V3 Dev (`nmgccyqquwxecqffsidr`, `sa-east-1`): migrations aplicadas até `20260821180000_add_ml_oauth_pkce_verifier`.
-- Google Cloud V3 (`speedbikers-gestao-v3`, `southamerica-east1`): Cloud Run, Cloud Tasks, Scheduler, Secret Manager e Storage provisionados em Dev.
+- Supabase V3 Dev (`nmgccyqquwxecqffsidr`, `sa-east-1`): migrations aplicadas até `20260821181000_create_metric_definitions`.
+- Google Cloud V3 (`speedbikers-gestao-v3`, `southamerica-east1`): Cloud Run, sete filas Cloud Tasks (três base + quatro por conta), Scheduler, Secret Manager e Storage provisionados em Dev.
 - Vercel V3: **criado e no ar**, branch `v3`.
 - Monorepo e CI: criados e operacionais. Falta o ambiente de produção (Fase 8).
 
 ## Última etapa concluída
 
-**Reparo do OAuth Mercado Livre — PKCE S256 (D-049).**
+**Catálogo canônico das métricas de venda — primeira etapa da Fase 5A (D-023/D-050).**
+
+- `docs/METRICS.md` agora define, sem lacunas, `unidades_vendidas`, `receita_bruta`, `pedidos`, `pedidos_por_pack`, `ticket_medio` e `preco_medio_praticado`.
+- Semântica aprovada: `paid` + `partially_refunded`; bruto ancorado em `orders.total_amount`; compra por `pack_id` com fallback tipado para `order_id`; dia civil de `date_created` em `America/Sao_Paulo`; `sku_id IS NULL` permanece nos totais.
+- Migration `20260821181000_create_metric_definitions.sql` aplicada no Dev: seis definições globais, RLS de leitura somente para membro autenticado, `anon` sem GRANT e nenhum papel da aplicação com escrita. O gerador remoto confirmou que `packages/db/src/types.ts` coincide com o schema.
+- Verificação: `pnpm run check` verde (29/29 tasks), migration aplicada localmente sem reset, 87/87 testes de integração RLS, seis definições conferidas no Dev e advisors sem achado novo causado pela tabela.
+
+**Validação operacional das quatro contas e correção de infraestrutura pós-OAuth.**
+
+- As quatro contas estão `CONNECTED`, com `seller_id` distintos, credenciais cifradas e `last_error IS NULL`. Não reaproveitaram state antigo: os novos states continham verifier PKCE e foram consumidos corretamente.
+- Não aparecer novamente o botão azul de consentimento é compatível com autorização já concedida à aplicação; a prova real é a troca de token e o uso subsequente, ambos confirmados.
+- Primeiro problema pós-conexão encontrado nos logs: `v3-worker-runtime` tinha `cloudtasks.enqueuer` na fila `backfill`, mas não podia agir como `v3-tasks-invoker`; o lote inicial persistia dados e falhava ao criar o próximo. `infra/setup-dev.sh` agora concede `roles/iam.serviceAccountUser` ao worker na service account invocadora, além da API.
+- Segundo problema: as quatro filas `ml-sync-<slug>` ainda não existiam. Foram criadas por `infra/cloud-tasks-queues.sh`, com `v3-api-runtime` como enqueuer por fila. O Scheduler foi disparado de novo e as quatro execuções `sync.orders.window` terminaram `done` (518 pedidos processados no primeiro ciclo), zero falhas após o reparo.
+- O backfill retomou e segue encadeando em baixa prioridade; as quatro contas já têm pedidos reais. Falhas IAM históricas continuam em `job_runs` por ser L2 append-only e não devem ser apagadas.
+- D-048 foi confirmado empiricamente: `date_last_updated` difere de `last_updated` na maioria dos pedidos reais; manter o primeiro como checkpoint está correto.
+
+**Etapa anterior: reparo do OAuth Mercado Livre — PKCE S256 (D-049).**
 
 - Sintoma real: as 13 tentativas distribuídas pelas quatro contas chegaram ao callback público, mas todas terminaram em `400 rejected`; `ml_credentials` permaneceu vazia.
-- Causa isolada com alta confiança por Cloud Logging + estado do banco + documentação oficial: o endpoint de token recusava a troca com `invalid_request`; esse comportamento aponta para PKCE habilitado, enquanto a V3 não enviava `code_challenge` nem `code_verifier`. Redirect URI, client ID e referências dos secrets no Cloud Run estavam corretos. A nova autorização real é a prova final.
+- Causa confirmada por Cloud Logging + estado do banco + documentação oficial: o endpoint de token recusava a troca com `invalid_request` porque a V3 não enviava `code_challenge` nem `code_verifier`, embora PKCE estivesse habilitado. Redirect URI, client ID e referências dos secrets no Cloud Run estavam corretos.
 - `packages/mercado-livre/src/oauth.ts`: `createPkcePair()` gera verifier base64url novo por autorização e challenge SHA-256; o token endpoint já suportava `code_verifier` e agora recebe o valor em todo connect.
 - `apps/api/src/ml-accounts.ts`: o início grava o verifier cifrado com AES-256-GCM em `ml_oauth_states` e envia somente o challenge S256; o callback consome o state atomicamente, decifra o verifier e o usa na troca. State legado sem verifier falha fechado e pede para reiniciar a conexão.
 - Migration aditiva `20260821180000_add_ml_oauth_pkce_verifier.sql` aplicada no Supabase Dev. Os 13 states legados foram preservados; `anon` e `authenticated` continuam sem qualquer GRANT na tabela. Os tipos locais foram comparados com os tipos gerados do schema remoto e coincidem.
 - Código versionado no commit `cf2b25e` e publicado no Cloud Run como revisão `api-00010-hvz`, pronta e com 100% do tráfego. `GET /health` respondeu `200`; nenhum log `ERROR` surgiu na revisão após o deploy.
 - Verificação local: `pnpm run check` verde nas 29 tasks; 119 testes na API e 53 no pacote Mercado Livre. Testes novos provam a relação verifier/challenge, a cifra em repouso, o envio do verifier correto e a recusa de state legado sem chamar o token endpoint.
-- **Validação ainda pendente:** a sessão disponível no navegador caiu na tela de login da V3. Depois de autenticar, iniciar uma conexão nova em `/contas` e concluir o consentimento com usuário administrador da conta ML. Não reaproveitar uma das 13 URLs antigas.
+- **Validação concluída:** as quatro autorizações novas terminaram e as quatro contas executaram reconciliação real com sucesso.
 
 **Etapa anterior: aplicação completa dos quatro imports reais do UpSeller e reparação das contas ML no Dev.**
 
@@ -43,7 +59,7 @@
 - Verificação: `pnpm run check` verde nas 29 tasks; `@sb/domain` com 123 testes; `supabase db push --linked --dry-run` confirma o banco remoto atualizado. Os advisors foram relidos e não apontam achado causado por esta migration de dados; os avisos preexistentes seguem fora do escopo desta reparação.
 - Prevenção no repositório: `infra/deploy-cloud-run.sh` agora publica o consumidor (`worker`) antes do produtor (`api`) quando os dois são implantados juntos. Assim uma API nova não emite tipo de job para um worker antigo.
 
-**Próximo passo operacional:** concluir uma autorização real nova para fechar a prova ponta a ponta do reparo. Em paralelo, `docs/METRICS.md` foi relido integralmente; antes de criar qualquer migration analítica, confirmar com o usuário as definições individuais de status de venda, reembolso parcial, unidade do ticket e regra dos rollups da Fase 5A.
+**Próximo passo de desenvolvimento:** criar o fato `daily_listing_metrics` e os dois rollups a partir de um único cálculo SQL, preservando componentes aditivos para que razões e contagens distintas não sejam somadas incorretamente. O backfill pode continuar em paralelo; antes do rebuild histórico, aguardar os checkpoints cobrirem os 12 meses.
 
 ## Auditoria da V2 realizada nesta sessão
 
@@ -414,15 +430,13 @@ Também confirmados com detalhe de endpoint, paginação e payload: tópicos de 
 
 ## Bloqueios atuais
 
-- **Fase 3 concluída e base real aplicada.** Antes da Fase 5A, reler `docs/METRICS.md` e confirmar as decisões de design antes de migrar schema analítico novo.
+- **Nenhum bloqueio para a próxima etapa da Fase 5A.** As definições de venda estão aprovadas e o catálogo foi migrado.
 - `domain_events` já é lido pela tela `/sincronizacao`, mas ainda não alimenta notificações (`docs/NOTIFICATIONS.md`) nem a Central de Ações. Esses consumos são Fase 6/7.
-- **Nenhuma conta Mercado Livre está `CONNECTED` no banco Dev** — restam somente as quatro contas manuais, todas em `ERROR` após tentativas OAuth. A Tela de Saúde da Sincronização, a reconciliação e o backfill estão prontos e testados, mas nenhum rodou contra o Mercado Livre real.
+- **As quatro contas Mercado Livre estão `CONNECTED` e reconciliaram pedidos reais.** O backfill de 12 meses segue em andamento na fila de baixa prioridade; não iniciar o rebuild histórico das métricas até os quatro checkpoints terminarem.
 - **Imports do UpSeller em 2026-08-21:** `PRODUCTS`, `KITS`, `LINKS` e `STOCK` estão `APPLIED`, todos com zero linhas não resolvidas. Os 20.650 vínculos apontam para as quatro contas manuais corretas; não há placeholders `ml-*` nem candidatos pendentes.
-- **D-048 precisa de verificação empírica em Dev** (comparar `date_last_updated` e `last_updated` num pedido real) antes de considerar o checkpoint de pedidos confiável em produção — mesma disciplina de D-045, mesmo status: não bloqueia continuar a Fase 3 localmente, bloqueia declarar a sincronização de pedidos pronta para tráfego real.
-- **Tipos do banco conferidos em 2026-08-21:** o gerador remoto do Supabase foi executado após a migration de PKCE; o trecho gerado de `ml_oauth_states` coincide com `packages/db/src/types.ts`. A pendência antiga de conferir tipos editados manualmente deixa de bloquear, embora a geração completa continue devendo substituir o arquivo em uma etapa própria quando o script estiver disponível.
-- Backfill e reconciliação estão prontos e testados, mas **nenhum dos dois rodou contra o Mercado Livre real**. A permissão `roles/cloudtasks.enqueuer` do `v3-worker-runtime` na fila `backfill` foi verificada no IAM em 2026-08-21; falta uma conta `CONNECTED` para exercitar o fluxo.
-- O Scheduler `v3-reconcile-orders` está `ENABLED` e dispara a reconciliação de hora em hora; o Cloud Logging registra `reconcile_triggered` com zero contas enquanto nenhuma está `CONNECTED`.
-- **D-045 precisa de verificação empírica em Dev** (inspecionar o `X-Forwarded-For` real recebido pelo Cloud Run) antes de considerar a allowlist de IP confiável em produção — não bloqueia continuar a Fase 3 localmente/em Dev, mas bloqueia declarar o webhook pronto para tráfego real do Mercado Livre.
-- **Conexão real de conta ainda não concluída.** A causa comum das 13 falhas foi corrigida com PKCE (D-049), migration aplicada e API `api-00010-hvz` publicada a partir de `cf2b25e`; `ml_credentials` continua vazia até uma autorização NOVA ser concluída por usuário administrador da conta ML. Falta essa prova ponta a ponta — ver `docs/DEPLOYMENT.md` secao 10.1.
-- Tela `/contas` para criar/conectar conta concluída no commit `a9d2ee7`; fluxo corrigido e implantado, aguardando login/consentimento real para validação final.
+- **D-048 validada empiricamente em Dev:** os dois timestamps divergem na maioria dos pedidos reais e as quatro reconciliações terminaram usando `date_last_updated` como checkpoint.
+- **Tipos do banco conferidos em 2026-08-21:** o gerador remoto do Supabase foi executado após a migration de `metric_definitions`; o trecho gerado coincide com `packages/db/src/types.ts`. A geração completa do arquivo continua devendo ser feita em uma etapa própria quando o script remoto estiver disponível no fluxo normal.
+- **Provisionamento de conta nova ainda tem um passo de infraestrutura:** criar `ml-sync-<slug>` com `bash infra/cloud-tasks-queues.sh <slug>` antes do OAuth. As quatro filas atuais já existem. Automatização fica para a identidade de provisionamento da Fase 8; a API pública não recebe `queueAdmin`.
+- O Scheduler `v3-reconcile-orders` está `ENABLED`, dispara de hora em hora e já concluiu uma reconciliação real nas quatro contas.
+- **D-045 precisa de verificação empírica em Dev** (inspecionar o `X-Forwarded-For` real recebido pelo Cloud Run) antes de considerar a allowlist de IP confiável em produção — não bloqueia a Fase 5A, mas bloqueia declarar o webhook pronto para tráfego real do Mercado Livre.
 - Modelos de exportação do pedido de compra (Excel e PDF) precisam ser solicitados antes da Fase 4.

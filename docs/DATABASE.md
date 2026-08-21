@@ -2,7 +2,7 @@
 
 > Dono documental de: tabelas, colunas-chave, constraints, índices, RLS e regras de migration.
 > Arquitetura geral em `docs/ARCHITECTURE.md`. Métricas derivadas em `docs/METRICS.md`.
-> Status: **modelo conceitual aprovado e schema implementado até a Fase 3.** As tabelas de fases futuras continuam conceituais até sua migration correspondente.
+> Status: **modelo conceitual aprovado; schema implementado até a Fase 3 e catálogo de métricas da Fase 5A.** As demais tabelas de fases futuras continuam conceituais até sua migration correspondente.
 
 ---
 
@@ -41,6 +41,8 @@ notifications   notifications · notification_recipients · notification_prefere
 feedback        feature_suggestions
 meta            metric_definitions
 ```
+
+`metric_definitions` é a exceção global deliberada à D-031: metadado canônico, idêntico entre organizações, espelhado de `docs/METRICS.md` e alterado somente por migration. Usuário autenticado só lê se tiver vínculo com alguma organização; `anon` não lê e nenhum papel da aplicação escreve.
 
 ### L2 — Histórico (append-only)
 

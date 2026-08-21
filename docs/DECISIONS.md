@@ -336,6 +336,8 @@ As decisões abaixo respondem os itens **A** a **H** que estavam pendentes ao fi
 
 **Impacto operacional:** conectar uma conta passa a incluir criar a fila dela. Executado por `bash infra/cloud-tasks-queues.sh <slug>`, e mais tarde pelo próprio fluxo de conexão de conta.
 
+**Estado de implementação em 2026-08-21:** as quatro filas reais foram provisionadas pelo script. A criação automática permanece para a Fase 8, por uma identidade de provisionamento controlada; o runtime público da `api` não recebe `queueAdmin` só para eliminar esse passo raro.
+
 **Custo:** fila vazia não custa nada. O custo do Cloud Tasks vem do despacho, não da existência.
 
 **Valores provisórios:** os limites de taxa das filas `ml-sync-*` estão provisórios até a confirmação da política de rate limit vigente do Mercado Livre — ver `docs/MERCADO_LIVRE.md` secao 1.
@@ -480,11 +482,11 @@ Levantadas pela pesquisa da documentação oficial que fecha a lista de verifica
 
 **Impacto:** corrigido em `apps/worker/src/handlers/ml-orders-fetch.ts` antes de qualquer deploy real ter rodado com o nome errado (achado durante o desenvolvimento, não em produção).
 
-**Risco aceito, registrado explicitamente:** mesma disciplina de D-045 — **pendente de verificação empírica em Dev** (inspecionar pedidos reais e comparar os dois campos) antes de considerar o checkpoint confiável em produção.
+**Validação empírica concluída em Dev (2026-08-21):** depois das quatro conexões reais, milhares de pedidos apresentaram `date_last_updated` diferente de `last_updated` — a diferença ocorreu na grande maioria das linhas das quatro contas com dados. As quatro reconciliações por janela concluíram usando `date_last_updated` como checkpoint. A pendência deixa de bloquear produção; os dois campos continuam persistidos separadamente porque não são semanticamente intercambiáveis.
 
 ## D-049 — OAuth do Mercado Livre usa PKCE S256 e guarda o verifier cifrado
 
-**Contexto:** as treze tentativas reais de conectar as quatro contas em Dev chegaram ao callback, mas o endpoint de token recusou todas com `invalid_request`; `ml_credentials` permaneceu vazia. A URL de autorização e a troca de token da V3 não enviavam PKCE. Redirect URI, client ID e referências de secrets estavam corretos; pelo código de erro e pela documentação oficial — que torna `code_challenge`/`code_challenge_method` e `code_verifier` obrigatórios quando PKCE está habilitado — a ausência de PKCE é a causa isolada com alta confiança. A prova final depende de repetir uma autorização real nova.
+**Contexto:** as treze tentativas reais de conectar as quatro contas em Dev chegaram ao callback, mas o endpoint de token recusou todas com `invalid_request`; `ml_credentials` permaneceu vazia. A URL de autorização e a troca de token da V3 não enviavam PKCE. Redirect URI, client ID e referências de secrets estavam corretos; pelo código de erro e pela documentação oficial — que torna `code_challenge`/`code_challenge_method` e `code_verifier` obrigatórios quando PKCE está habilitado — a ausência de PKCE foi isolada como causa.
 
 **Decisão:** usar PKCE S256 em toda autorização. A `api` gera um verifier base64url novo (32 bytes aleatórios) por state, envia somente `SHA-256(verifier)` na URL, cifra o verifier com a mesma chave AES-256-GCM de D-046 e o persiste em `ml_oauth_states.code_verifier_ciphertext`. O callback consome o state atomicamente, decifra o verifier e o envia na troca do código. States anteriores à migration são recusados com instrução para reiniciar a conexão.
 
@@ -493,6 +495,20 @@ Levantadas pela pesquisa da documentação oficial que fecha a lista de verifica
 **Alternativas rejeitadas:** desabilitar PKCE no painel do Mercado Livre (reduz a proteção e depende de alteração manual externa) e embutir o verifier no próprio `state` ou gravá-lo em texto claro (mistura responsabilidades ou expõe um segredo transitório sem necessidade).
 
 **Impacto:** migration aditiva `20260821180000_add_ml_oauth_pkce_verifier.sql`; `packages/mercado-livre` passa a gerar o par PKCE e `apps/api/src/ml-accounts.ts` persiste/recupera o verifier. Nenhum token ou state existente é apagado; autorizações iniciadas antes da mudança precisam ser reiniciadas.
+
+**Validação empírica concluída em Dev (2026-08-21):** as quatro contas terminaram uma autorização nova, cada uma com `seller_id` próprio, credenciais cifradas presentes e `last_error IS NULL`. Os states novos continham verifier PKCE e foram consumidos; as quatro reconciliações reais terminaram com sucesso. O OAuth deixa de ser pendência.
+
+## D-050 — Métricas de venda usam status pago, receita bruta e compra por pack
+
+**Contexto:** a Fase 5A precisava fechar o significado dos seis números de venda antes de criar fatos e rollups. A estrutura do Mercado Livre tem uma order por linha e usa `pack_id` para reunir a compra do cliente; reembolso parcial existe como status, mas a V3 ainda não integrou a fonte detalhada de devoluções/estornos.
+
+**Decisão:** venda válida é `paid` ou `partially_refunded`; `receita_bruta` soma `orders.total_amount` e não desconta o reembolso parcial; a unidade de compra usa `pack_id` e cai para `order_id` quando o pack é nulo. A chave distinta é tipada (`pack:<id>`/`order:<id>`), o dia de negócio vem de `orders.date_created` em `America/Sao_Paulo`, e toda medida distinta ou razão é calculada diretamente no grão solicitado — nunca pela soma/média de rollups inferiores. Vendas com `sku_id IS NULL` continuam nos totais de conta e organização.
+
+**Motivo:** separa três conceitos que a interface precisa nomear sem ambiguidade: linha/pedido do ML, compra do cliente e receita bruta. Também evita apagar faturamento só porque o vínculo de SKU ainda não foi resolvido.
+
+**Alternativa rejeitada:** tratar `partially_refunded` como receita líquida sem persistir o valor e o momento do estorno. Isso inventaria precisão que a fonte atual não oferece. Receita líquida entra com outro ID quando a integração de devoluções/reembolsos existir.
+
+**Impacto:** as seis definições completas passam a viver em `docs/METRICS.md` e no espelho `metric_definitions`; os fatos e rollups da próxima etapa devem implementar exatamente essa semântica.
 
 ## Como adicionar nova decisão
 
