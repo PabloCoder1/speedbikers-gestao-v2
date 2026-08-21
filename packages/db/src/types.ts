@@ -7,6 +7,11 @@ export type Json =
   | Json[]
 
 export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "14.15"
+  }
   graphql_public: {
     Tables: {
       [_ in never]: never
@@ -1504,6 +1509,22 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      get_sales_summary: {
+        Args: {
+          p_date_from: string
+          p_date_to: string
+          p_ml_account_id?: string
+        }
+        Returns: {
+          average_selling_price: number
+          average_ticket: number
+          gross_revenue: number
+          last_computed_at: string
+          orders_count: number
+          purchases_count: number
+          units_sold: number
+        }[]
       }
       rebuild_daily_sales_metrics: {
         Args: {

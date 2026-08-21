@@ -44,6 +44,9 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
         </Link>
 
         <nav style={{ display: "flex", gap: "var(--sb-space-3)", fontSize: "0.9375rem" }}>
+          <Link href="/vendas" style={{ color: "var(--sb-text-soft)" }}>
+            Vendas
+          </Link>
           <Link href="/importacoes" style={{ color: "var(--sb-text-soft)" }}>
             Importações
           </Link>

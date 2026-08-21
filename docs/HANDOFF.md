@@ -1,20 +1,37 @@
 # Handoff V3
 
-> Última atualização: 2026-08-21 — **recálculo incremental por conta/dia e rebuild completo da Fase 5A concluídos e validados localmente.** A chave suja usa janela UTC de minuto para não perder atualizações posteriores no mesmo dia, e as três projeções são substituídas sob a mesma transação e snapshot. **Próxima etapa de desenvolvimento: Dashboard de vendas Geral e por Conta, com filtros de período e comparação. O rebuild histórico no Dev continua proibido até os quatro backfills terminarem.**
+> Última atualização: 2026-08-21 — **Dashboard Geral de vendas (primeira fatia da última etapa da Fase 5A) concluído e verificado rodando.** Janela fixa de 30 dias, grão organização, via a nova `get_sales_summary` (soma `daily_account_metrics` em SQL). **Próxima etapa de desenvolvimento: filtro de período + comparação de períodos, depois o Dashboard por Conta. O rebuild histórico no Dev continua proibido até os quatro backfills terminarem.**
 
 ## Estado atual
 
 - Branch: `v3`
 - Referência V2: commit `8573d971a5cd427702575b52ed249c53588ec5ca` da `main`
 - V3 reconstruída como monorepo com `web`, `api`, `worker`, packages compartilhados e migrations versionadas.
-- Supabase V3 Dev (`nmgccyqquwxecqffsidr`, `sa-east-1`): migrations aplicadas até `20260821182620_create_daily_sales_metrics`; `20260821184047_create_sales_metrics_recompute` está validada localmente e será aplicada pela CI após o push deste commit.
+- Supabase V3 Dev (`nmgccyqquwxecqffsidr`, `sa-east-1`): migrations aplicadas até `20260821190000_create_sales_summary_rpc`, `supabase migration list` confere local = remoto sem drift.
 - Google Cloud V3 (`speedbikers-gestao-v3`, `southamerica-east1`): Cloud Run, sete filas Cloud Tasks (três base + quatro por conta), Scheduler, Secret Manager e Storage provisionados em Dev.
 - Vercel V3: **criado e no ar**, branch `v3`.
 - Monorepo e CI: criados e operacionais. Falta o ambiente de produção (Fase 8).
 
 ## Última etapa concluída
 
-**Recálculo incremental e rebuild completo — terceira etapa da Fase 5A (D-017/D-051).**
+**Dashboard Geral de vendas — primeira fatia da quarta etapa da Fase 5A.**
+
+- Escopo deliberadamente pequeno, decidido com o usuário antes de codificar: janela fixa dos últimos 30 dias, grão organização, sem seletor de período nem comparação — ambos ficam para a próxima etapa, junto do Dashboard por Conta.
+- **`public.get_sales_summary(date_from, date_to, ml_account_id?)`** (migration `20260821190000_create_sales_summary_rpc.sql`): soma `daily_account_metrics` no grão organização. `docs/METRICS.md` já listava "organização" como granularidade válida de toda métrica de venda, mas as tabelas materializadas em `20260821182620` param no grão conta — esta função fecha o grão que faltava **sem duplicar cálculo**, só somando o rollup de conta que já está correto.
+- **Por que somar é seguro aqui e não repete o erro que D-017 evita** (nunca somar contagem distinta de grão inferior): um `pack_id`/`order_id` pertence a exatamente uma conta do Mercado Livre — packs atravessam anúncios/SKUs dentro da mesma conta, nunca duas contas diferentes. Os conjuntos de `purchase_key` por conta são disjuntos por construção, então `SUM(purchases_count)` entre contas equivale ao `COUNT(DISTINCT)` direto no grão organização. A mesma soma entre ANÚNCIOS seria inválida (é exatamente o que o teste de equivalência da etapa anterior prova: 3 anúncios podem somar 3 enquanto o grão da conta correto dá 2, porque um pack pode ligar dois anúncios).
+- `security invoker`, sem repetir `has_account_access` na função: a RLS de `daily_account_metrics` já filtra as linhas antes da soma — ADMIN vê todas as contas da organização, um papel com permissão restrita veria só o que tem acesso, automaticamente.
+- **`shiftBusinessDate`** (`packages/domain/src/metrics/business-date.ts`), pura: desloca uma data de negócio (`YYYY-MM-DD`) em N dias corridos, aritmética de calendário via UTC-meia-noite (não converte fuso — deslocar dia civil independe de fuso quando o fuso não muda no meio do cálculo). 6 testes novos, incluindo virada de mês/ano e ano bissexto.
+- **`apps/web/app/vendas/page.tsx`**: Server Component, Modelo A (D-012), lê `get_sales_summary` direto sob RLS. Os seis cartões batem exatamente com as seis métricas canônicas de `docs/METRICS.md` (receita bruta, unidades vendidas, pedidos, compras por pack, ticket médio, preço médio praticado). D-023 (todo número carrega o ID da sua definição): cada cartão mostra o `id` da métrica e o `title` (tooltip nativo) com a fórmula.
+- **Estado "nunca calculado" distinto de "calculado e zero"**: a tela só mostra os cartões quando `get_sales_summary` devolve `last_computed_at` não nulo. Como os quatro backfills ainda não terminaram e o backfill deliberadamente não suja dia para recálculo (D-051), a janela de 30 dias hoje devolve `last_computed_at IS NULL` — a tela mostra essa explicação em vez de fingir R$ 0,00 real. Verificado rodando localmente contra o Supabase Dev real: mensagem correta, sem erro no servidor.
+- **Estado "stale"**: reaproveita `classifySyncFreshness` (mesma função da Tela de Saúde da Sincronização, mesmos limiares 3h/12h) sobre `last_computed_at` em vez de duplicar uma segunda noção de frescor — o recálculo de métricas nasce do mesmo gatilho horário da reconciliação.
+- **`apps/web/app/vendas/loading.tsx`**: primeiro `loading.tsx` do `web` — fallback de Suspense do App Router, cobrindo o estado "loading" do checklist junto com este.
+- **`packages/db/src/types.ts` regenerado pela ferramenta oficial, não editado à mão** — pendência registrada repetidamente nas etapas anteriores desta sessão. `supabase gen types typescript --linked` funcionou (a máquina não tem Docker local confortável para `--local`, mas o CLI já estava autenticado e o projeto Dev já estava `linked`). Note: a saída da ferramenta não marca `average_ticket`/`average_selling_price`/`last_computed_at` de `get_sales_summary` como nulável mesmo podendo ser `NULL` em tempo de execução (limitação conhecida do gerador para `RETURNS TABLE` com agregação) — o código da página trata isso defensivamente mesmo sem o tipo forçar.
+- **Verificado rodando**, não só em teste: login real (`pablolima83352@gmail.com`), `/vendas` carregada localmente contra o Supabase Dev real, nenhum erro no servidor, mensagem de estado vazio correta, nav com o novo link "Vendas" como primeiro item (tela âncora, D-033).
+- `pnpm run check` verde nas 29 tasks; `pnpm --filter @sb/web run build` verde com `/vendas` como nova rota dinâmica.
+- **Não verificado com dado real populado** (cartões com número real): os quatro backfills ainda não cobriram um dia sequer de reconciliação completa dentro da janela de 30 dias. Verificação do layout populado fica pendente até existir dado real — decisão deliberada de não inserir linha de teste em `daily_account_metrics` no Dev só para validar layout, para não arriscar interferir com o backfill/recálculo real em andamento.
+- **Deliberadamente não feito**: seletor de período, comparação com período anterior, Dashboard por Conta. Ficam para a próxima etapa.
+
+**Etapa anterior: recálculo incremental e rebuild completo — terceira etapa da Fase 5A (D-017/D-051).**
 
 - A chave fixa diária antes documentada (`recompute:{conta}:{sku}:{data}`) era incorreta para Cloud Tasks: depois de executado ou excluído, um ID pode permanecer indisponível por até 24 horas e faria uma atualização posterior do mesmo dia desaparecer. D-051 substitui a chave por `recompute:{account-uuid}:{data-negocio}:{YYYY-MM-DDTHH:mmZ}`: o UUID evita colisão entre organizações com o mesmo slug, o burst do mesmo minuto converge, o seguinte sempre ganha ID novo e há atraso de 60 segundos.
 - A unidade de invalidação é `(conta, dia de negócio em America/Sao_Paulo)`, não SKU. `private.compute_daily_sales_metrics` já produz os três grãos juntos; recalcular uma vez por conta/dia evita repetir a leitura inteira de pedidos para cada SKU alterado.
@@ -78,7 +95,7 @@
 - Verificação: `pnpm run check` verde nas 29 tasks; `@sb/domain` com 123 testes; `supabase db push --linked --dry-run` confirma o banco remoto atualizado. Os advisors foram relidos e não apontam achado causado por esta migration de dados; os avisos preexistentes seguem fora do escopo desta reparação.
 - Prevenção no repositório: `infra/deploy-cloud-run.sh` agora publica o consumidor (`worker`) antes do produtor (`api`) quando os dois são implantados juntos. Assim uma API nova não emite tipo de job para um worker antigo.
 
-**Próximo passo de desenvolvimento:** construir o Dashboard de vendas Geral e por Conta consumindo os fatos diários sob RLS, com filtro de período e comparação. Antes de usar dados históricos, verificar os quatro checkpoints; se algum backfill ainda estiver incompleto, validar a interface com fixtures controladas e não executar o rebuild.
+**Próximo passo de desenvolvimento:** Dashboard Geral concluído (janela fixa de 30 dias, sem filtro). Falta: seletor de período + comparação com período anterior na mesma tela, depois o Dashboard por Conta (mesmo `get_sales_summary`, passando `p_ml_account_id`). Os quatro checkpoints de backfill seguem incompletos — não executar rebuild histórico até terminarem.
 
 ## Auditoria da V2 realizada nesta sessão
 
@@ -449,7 +466,7 @@ Também confirmados com detalhe de endpoint, paginação e payload: tópicos de 
 
 ## Bloqueios atuais
 
-- **Nenhum bloqueio para construir e validar o próximo Dashboard da Fase 5A com fixtures controladas.** A visualização de toda a história real depende do término dos quatro backfills e do rebuild explícito posterior.
+- **Dashboard Geral concluído** (`/vendas`, janela fixa de 30 dias). Nenhum bloqueio para o próximo incremento (filtro de período, comparação, Dashboard por Conta). A visualização com dado histórico real depende do término dos quatro backfills e do rebuild explícito posterior.
 - `domain_events` já é lido pela tela `/sincronizacao`, mas ainda não alimenta notificações (`docs/NOTIFICATIONS.md`) nem a Central de Ações. Esses consumos são Fase 6/7.
 - **As quatro contas Mercado Livre estão `CONNECTED` e reconciliaram pedidos reais.** O backfill de 12 meses segue em andamento na fila de baixa prioridade; não iniciar o rebuild histórico das métricas até os quatro checkpoints terminarem.
 - **Imports do UpSeller em 2026-08-21:** `PRODUCTS`, `KITS`, `LINKS` e `STOCK` estão `APPLIED`, todos com zero linhas não resolvidas. Os 20.650 vínculos apontam para as quatro contas manuais corretas; não há placeholders `ml-*` nem candidatos pendentes.

@@ -33,3 +33,27 @@ export function toSalesMetricDate(value: string | Date): string {
 
   return `${year}-${month}-${day}`;
 }
+
+/**
+ * Desloca uma data de negócio (`YYYY-MM-DD`) em N dias corridos.
+ *
+ * Aritmética de calendário, não de instante: constrói a data em UTC à
+ * meia-noite só como representação interna, nunca como fuso — deslocar dia
+ * civil em `America/Sao_Paulo` é o mesmo deslocar em qualquer fuso fixo,
+ * porque não há troca de fuso no meio do cálculo (diferente de
+ * `toSalesMetricDate`, que converte instante -> dia civil).
+ */
+export function shiftBusinessDate(date: string, days: number): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+
+  if (match === null) {
+    throw new RangeError("data de negócio inválida, esperado YYYY-MM-DD");
+  }
+
+  const [, year, month, day] = match as unknown as [string, string, string, string];
+  const shifted = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+
+  shifted.setUTCDate(shifted.getUTCDate() + days);
+
+  return shifted.toISOString().slice(0, 10);
+}
