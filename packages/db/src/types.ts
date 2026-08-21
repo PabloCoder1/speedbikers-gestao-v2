@@ -34,6 +34,69 @@ export type Database = {
   }
   public: {
     Tables: {
+      domain_events: {
+        Row: {
+          after: Json | null
+          before: Json | null
+          created_at: string
+          dedup_key: string
+          entity_id: string
+          entity_type: string
+          event_type: string
+          id: string
+          ml_account_id: string
+          occurred_at: string
+          organization_id: string
+          severity: string
+          source: string
+        }
+        Insert: {
+          after?: Json | null
+          before?: Json | null
+          created_at?: string
+          dedup_key: string
+          entity_id: string
+          entity_type: string
+          event_type: string
+          id?: string
+          ml_account_id: string
+          occurred_at: string
+          organization_id: string
+          severity: string
+          source: string
+        }
+        Update: {
+          after?: Json | null
+          before?: Json | null
+          created_at?: string
+          dedup_key?: string
+          entity_id?: string
+          entity_type?: string
+          event_type?: string
+          id?: string
+          ml_account_id?: string
+          occurred_at?: string
+          organization_id?: string
+          severity?: string
+          source?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "domain_events_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "domain_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       erp_import_batches: {
         Row: {
           applied_at: string | null

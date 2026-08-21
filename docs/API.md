@@ -111,7 +111,7 @@ Payloads tipados em `@sb/contracts/jobs`. Todo handler é **idempotente**.
 | `sync.listings.page` | `ml-sync-<conta>` | `listings:{conta}:{cursor}` |
 | `sync.fulfillment.snapshot` | `ml-sync-<conta>` | `full:{conta}:{inventory_id}` |
 | `analytics.recompute` | `analytics-recompute` | `recompute:{conta}:{sku}:{data}` |
-| `events.detect` | `analytics-recompute` | `detect:{entidade}:{id}` |
+| `events.detect` | `analytics-recompute` | `detect:{entidade}:{id}` — **não implementado**: o motor de diff hoje roda inline dentro de `sync.orders.window`/`backfill.orders` (`persist-order.ts`), não como job separado. Este tipo existiria para o caminho do webhook (`sync.webhook.received` decidir o que buscar e enfileirar `events.detect` por entidade) — trabalho futuro, ver `docs/HANDOFF.md` |
 | `backfill.orders` | `backfill` | `backfill-orders:{conta}:{checkpoint}` — **implementado em 2026-08-21**, `{conta}` é o slug e `{checkpoint}` é `start` no primeiro pedaço ou o `to` ISO do pedaço anterior |
 | `maintenance.reconcile-balances` | `maintenance` | `reconcile:{data}` |
 | `actions.measure-outcome` | `maintenance` | `outcome:{decision_id}:{offset}` |
@@ -146,12 +146,12 @@ Todo job registra em `job_runs`: início, fim, resultado, erro, itens processado
 | `stock.depleted` | crítico | ledger / snapshot |
 | `stock.replenished` | informativo | ledger / snapshot |
 | `stock.balance.diverged` | crítico | job de conferência |
-| `order.cancelled` | importante | sync |
-| `order.returned` | importante | sync |
+| `order.cancelled` | importante | sync — **implementado em 2026-08-21** |
+| `order.returned` | importante | sync — depende da API de Reclamações e Devoluções, ainda não integrada |
 | `sync.delayed` | importante | sync |
 | `sync.failed` | crítico | sync |
 
-A severidade final é calculada por **regra versionada** em `@sb/domain/events`, não fixada na interface. Consumo em `docs/NOTIFICATIONS.md`.
+A severidade final é calculada por **regra versionada** em `@sb/domain/events` (`packages/domain/src/events/catalog.ts`), não fixada na interface. Consumo em `docs/NOTIFICATIONS.md` — **ainda não construído**: `domain_events` emite, mas nada lê ainda (nem notificação, nem Central de Ações).
 
 ---
 

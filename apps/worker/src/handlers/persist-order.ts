@@ -1,16 +1,21 @@
 import type { AdminClient } from "@sb/db";
+import { detectOrderStatusEvents } from "@sb/domain";
+import type { Logger } from "@sb/observability";
 
+import { recordDomainEvents } from "./domain-events.js";
 import type { ParsedOrder } from "./order-schema.js";
 
 /**
  * Grava um pedido e seus itens — `orders`/`order_items`
- * (`docs/DATABASE.md`, migration `20260821040000_create_orders.sql`).
+ * (`docs/DATABASE.md`, migration `20260821040000_create_orders.sql`) — e
+ * roda o motor de diff (`@sb/domain/events`) comparando o status anterior
+ * contra o novo, emitindo `domain_events` quando cabível (D-016).
  *
- * Não é atômico entre as duas tabelas (upsert de `orders`, depois delete +
- * insert de `order_items` — três chamadas de rede separadas). Aceito de
- * propósito, mesmo padrão de `erp-import-apply.ts`: o pedido é reprocessado
- * a cada janela de reconciliação, então uma falha no meio se autocorrige na
- * próxima varredura — não é o tipo de escrita humana única que precisa da
+ * Não é atômico entre `orders`/`order_items`/`domain_events` (várias
+ * chamadas de rede separadas). Aceito de propósito, mesmo padrão de
+ * `erp-import-apply.ts`: o pedido é reprocessado a cada janela de
+ * reconciliação, então uma falha no meio se autocorrige na próxima
+ * varredura — não é o tipo de escrita humana única que precisa da
  * atomicidade de uma RPC `security definer` (essa é para confirmação
  * humana, como `resolve_link_candidate`).
  *
@@ -28,7 +33,14 @@ export async function persistOrder(
   db: AdminClient,
   context: PersistOrderContext,
   order: ParsedOrder,
+  logger: Logger,
 ): Promise<void> {
+  // Lido ANTES do upsert: é o "before" do motor de diff. Ausente (order
+  // nova para o V3) vira `null` — `detectOrderStatusEvents` trata os dois
+  // casos.
+  const existing = await db.from("orders").select("status").eq("id", order.id).maybeSingle();
+  const previousStatus = existing.data?.status ?? null;
+
   await db
     .from("orders")
     .upsert(
@@ -52,6 +64,16 @@ export async function persistOrder(
       },
       { onConflict: "id" },
     );
+
+  const events = detectOrderStatusEvents(
+    previousStatus,
+    { id: order.id, status: order.status },
+    new Date(order.date_last_updated),
+  );
+
+  if (events.length > 0) {
+    await recordDomainEvents(db, context, events, logger);
+  }
 
   await db.from("order_items").delete().eq("order_id", order.id);
 

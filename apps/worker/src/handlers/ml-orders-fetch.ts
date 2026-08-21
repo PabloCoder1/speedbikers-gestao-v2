@@ -121,7 +121,12 @@ export async function fetchOrdersWindow(params: FetchOrdersWindowParams): Promis
 
       const order = parsed.data;
 
-      await persistOrder(params.db, { organizationId: params.organizationId, mlAccountId: params.mlAccountId }, order);
+      await persistOrder(
+        params.db,
+        { organizationId: params.organizationId, mlAccountId: params.mlAccountId },
+        order,
+        params.logger,
+      );
 
       itemsProcessed += 1;
 

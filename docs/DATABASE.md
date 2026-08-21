@@ -253,15 +253,24 @@ O arquivo vai para o Storage privado, nunca para coluna `bytea`.
 
 ### `domain_events` — o event store
 
+**Implementado em 2026-08-21** (migration `20260821050000_create_domain_events.sql`). L2 append-only, mesmo mecanismo de `job_runs`/`sync_runs` (trigger recusa `UPDATE`/`DELETE`).
+
 ```text
 organization_id, ml_account_id, occurred_at,
 event_type, entity_type, entity_id,
 before jsonb, after jsonb,
-severity, source (webhook | sync | user | system),
+severity (informativo | importante | critico),
+source (webhook | sync | user | system),
 dedup_key UNIQUE
 ```
 
-Uma tabela, sem tabelas de snapshot separadas (D-016). O catálogo de `event_type` vive em `docs/API.md`.
+Uma tabela, sem tabelas de snapshot separadas (D-016). O catálogo de `event_type` vive em `docs/API.md` secao 4, espelhado executável em `packages/domain/src/events/catalog.ts` — divergência entre os dois é bug, mesma regra de `docs/METRICS.md`/`metric_definitions`.
+
+**Motor de diff — primeiro detector, `order.cancelled`** (`packages/domain/src/events/order-events.ts`, chamado por `apps/worker/src/handlers/persist-order.ts` a cada order persistida): compara o `status` gravado ANTES do upsert contra o novo. Transição para `cancelled`/`pending_cancel` emite evento; já estando cancelado, não reemite (idempotente por natureza, antes até do `UNIQUE` do banco). `occurred_at` usa `orders.date_last_updated` — quando a mudança aconteceu de verdade, não quando o V3 notou (pode ser um backfill de meses atrás).
+
+`order.returned` (do catálogo) fica de fora de propósito: devolução no Mercado Livre é modelada via `order_request.return`/API de Reclamações e Devoluções, que `orders` ainda não persiste — implementar exigiria essa API, fora do escopo desta etapa.
+
+`dedup_key` é determinístico por natureza do evento (ex.: `order.cancelled:{id}:{status}`), não por timestamp — a mesma transição detectada duas vezes (sobreposição de janela de reconciliação, corrida entre execuções) produz a mesma chave, e o `UNIQUE` absorve o reenvio sem duplicar.
 
 ### `actions` — Central de Ações
 

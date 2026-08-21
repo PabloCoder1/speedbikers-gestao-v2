@@ -363,9 +363,23 @@ Também confirmados com detalhe de endpoint, paginação e payload: tópicos de 
 - **31 testes novos** (9 em `persist-order.test.ts`, mais os ajustes de fixture em `sync-orders-window.test.ts`/`backfill-orders.test.ts` para o novo formato de order e os dois novos testes de persistência/`partial` em cada um). 89 testes no `worker` (de 78).
 - `pnpm run check` verde nas 29 tasks do monorepo depois da mudança.
 
+**Concluído em seguida, nesta sessão: motor de diff e `domain_events` com `dedup_key`.** Sétimo item do checklist da Fase 3 — falta só a Tela de Saúde da Sincronização.
+
+- **`domain_events`** (migration `20260821050000_create_domain_events.sql`): L2 append-only, `before`/`after` jsonb, `dedup_key` UNIQUE (D-016). Mesmo mecanismo de `job_runs`/`sync_runs` — trigger recusa `UPDATE`/`DELETE` mesmo para `service_role`. RLS de leitura por `has_account_access`, escrita só `service_role`.
+- **Catálogo de eventos espelhado em código**: `packages/domain/src/events/catalog.ts` transcreve a tabela de `docs/API.md` secao 4 — `listing.price.changed` fica de fora de propósito (severidade condicional à magnitude da mudança, regra ainda não definida; não adivinhar).
+- **Primeiro detector: `order.cancelled`** (`packages/domain/src/events/order-events.ts`, PURO — sem banco, sem rede, testável com objetos simples). Compara o `status` gravado antes do upsert contra o novo; emite só na transição PARA `cancelled`/`pending_cancel`, nunca reemite se já estava cancelado (idempotente por natureza, antes até do `UNIQUE` do banco fazer a mesma coisa na camada de baixo). `pending_cancel -> cancelled` não gera um SEGUNDO evento — mesma notícia, já contada.
+- **`order.returned` fica de fora, registrado explicitamente**: devolução no Mercado Livre é modelada via `order_request.return`/API de Reclamações e Devoluções, que `orders` ainda não persiste. Implementar exigiria essa API — fora do escopo desta etapa, não esquecido.
+- **`occurred_at` usa `orders.date_last_updated`**, não `now()` — quando a mudança aconteceu de verdade, relevante principalmente no backfill (pode estar processando um cancelamento de meses atrás).
+- `apps/worker/src/handlers/persist-order.ts`: lê o `status` existente ANTES do upsert (é o "before" do diff), chama `detectOrderStatusEvents` depois de upsertar, grava os rascunhos via `recordDomainEvents` (novo `apps/worker/src/handlers/domain-events.ts`) — best-effort DE PROPÓSITO, mesmo padrão de `job_runs`: falha ao gravar evento não derruba uma persistência de pedido que já deu certo. Conflito de `dedup_key` (Postgres `23505`) nem é logado como erro — é a deduplicação funcionando.
+- **Decisão de escopo, não uma nova decisão formal**: o diff roda INLINE dentro de `sync.orders.window`/`backfill.orders`, não como job `events.detect` separado (esse tipo de job, já documentado em `docs/API.md`, existiria para o caminho do webhook — decidir por `topic` o que buscar e enfileirar `events.detect` por entidade — trabalho futuro, que também depende de uma busca de pedido único (`GET /orders/{id}`) ainda não construída).
+- **`packages/db/src/types.ts` editado à mão pela terceira vez** — mesma pendência de `gen:types`.
+- **20 testes novos** (7 em `order-events.test.ts`, puro, em `packages/domain`; 6 a mais em `persist-order.test.ts` cobrindo emissão/não-emissão/idempotência/conflito; 4 em `domain-events.test.ts`). 99 testes no `worker` (de 89).
+- `pnpm run check` verde nas 29 tasks do monorepo depois da mudança.
+
 ## Bloqueios atuais
 
-- Nenhum bloqueio de documentação externa para a Fase 3 — o próximo item (motor de diff e `domain_events`) não depende de mais nenhuma confirmação.
+- Nenhum bloqueio de documentação externa para a Fase 3 — o próximo item (Tela de Saúde da Sincronização) não depende de mais nenhuma confirmação.
+- `domain_events` emite, mas **nada lê ainda** — nem notificação (`docs/NOTIFICATIONS.md`), nem Central de Ações. Consumo é Fase 6/7.
 - **D-048 precisa de verificação empírica em Dev** (comparar `date_last_updated` e `last_updated` num pedido real) antes de considerar o checkpoint de pedidos confiável em produção — mesma disciplina de D-045, mesmo status: não bloqueia continuar a Fase 3 localmente, bloqueia declarar a sincronização de pedidos pronta para tráfego real.
 - **`packages/db/src/types.ts` foi editado à mão** duas vezes agora (`backfill_covered_until` e `orders`/`order_items`) — Supabase CLI/Docker não estava disponível nesta sessão. Rodar `pnpm run gen:types` assim que possível.
 - **`packages/db/src/types.ts` foi editado à mão** para `ml_accounts.backfill_covered_until` — Supabase CLI/Docker não estava disponível nesta sessão. Rodar `pnpm run gen:types` (precisa de `supabase start` local) assim que possível para confirmar que o tipo gerado bate com o que foi escrito à mão.
