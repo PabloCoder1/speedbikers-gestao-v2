@@ -70,7 +70,7 @@ Cada fase só é considerada concluída sob a Definition of Done do `docs/PROMPT
 
 **Objetivo:** dados frescos e confiáveis, com linha do tempo.
 
-- [ ] Cliente `@sb/mercado-livre` com backoff, jitter, `Retry-After` e paginação por cursor
+- [x] Cliente `@sb/mercado-livre` com backoff, jitter, `Retry-After` e paginação por cursor — concluído em 2026-08-21: OAuth (authorize/exchange/refresh, confirmado contra a fonte oficial), cliente HTTP autenticado com backoff+jitter e classificação de erro (`retryable`/`retryable_eventual`/`not_retryable`), paginador offset genérico. 43 testes, `access_token`/`refresh_token`/`client_secret` nunca vazam em erro (verificado por teste)
 - [ ] Webhook com ACK rápido, zero chamada de rede e teste negativo nas rotas vizinhas
 - [ ] Reconciliação por janela via Cloud Scheduler
 - [ ] Backfill retomável em fila de prioridade baixa
@@ -191,4 +191,4 @@ A Fase 5A antecede a Fase 4 porque o dashboard de vendas não usa estoque, e a F
 
 **Fase 2 concluída** (2026-08-21) — identidade, contas, catálogo, importador do UpSeller com aplicação e Central de Vinculações, e o schema de observabilidade de sincronização. Ver `docs/HANDOFF.md` para o estado verificado.
 
-**Fase 3 — Mercado Livre e histórico** é a próxima e está **desbloqueada** (2026-08-21): a documentação oficial do Mercado Livre foi confirmada — tópicos de webhook, recuperação de notificação perdida, rate limit vigente e modelo de autorização multi-conta (`docs/MERCADO_LIVRE.md` secoes 2.1 a 2.9, decisões D-041 a D-043). Único item ainda não pesquisado é visitas/Ads, necessário só na Fase 5B (D-032) e que não bloqueia o início da Fase 3.
+**Fase 3 — Mercado Livre e histórico** está em andamento. Primeiro item do checklist concluído: cliente `@sb/mercado-livre` (OAuth, backoff/jitter, classificação de erro, paginação offset) — ver `docs/HANDOFF.md`. Próximo item: webhook com ACK rápido e teste negativo nas rotas vizinhas.

@@ -1,6 +1,6 @@
 # Handoff V3
 
-> Última atualização: 2026-08-21 — **Fase 2 concluída.** Identidade, contas, catálogo, importador do UpSeller (upload → aplicação), Central de Vinculações e o schema de observabilidade de sincronização (`sync_runs`/`sync_errors`) estão todos no ar em Dev. **A documentação oficial do Mercado Livre foi confirmada nesta mesma data e a Fase 3 está desbloqueada** — ver `docs/MERCADO_LIVRE.md` e as decisões D-041 a D-043.
+> Última atualização: 2026-08-21 — **Fase 2 concluída.** Identidade, contas, catálogo, importador do UpSeller (upload → aplicação), Central de Vinculações e o schema de observabilidade de sincronização (`sync_runs`/`sync_errors`) estão todos no ar em Dev. **A documentação oficial do Mercado Livre foi confirmada nesta mesma data e a Fase 3 está em andamento** — o cliente `@sb/mercado-livre` (OAuth, backoff/jitter, classificação de erro, paginação) já está pronto e testado.
 
 ## Estado atual
 
@@ -217,7 +217,7 @@ Provisionado: filas `analytics-recompute` (10/s, 20), `backfill` (1/s, 2) e `mai
 - **Puramente schema**: nenhum código escreve nessas tabelas ainda. O sync do Mercado Livre é Fase 3.
 - **10 testes novos de integração de RLS** (83 no total, de 73): constraints (`finished_after_started`, `reason_matches_status`), o trigger append-only recusando `UPDATE` e `DELETE` mesmo do dono, RLS positiva/negativa nas duas tabelas, e os dois negativos novos de `anon` sem `EXECUTE` nas RPCs da Central de Vinculações.
 
-**Próximo passo real do projeto: Fase 3, e está desbloqueada** (2026-08-21) — a documentação oficial do Mercado Livre foi confirmada e registrada em `docs/MERCADO_LIVRE.md` secoes 2.1 a 2.9, com as decisões D-041 a D-043. Ver a seção "Documentação do Mercado Livre confirmada" abaixo para o que foi pesquisado e o que ainda falta (só visitas/Ads, Fase 5B).
+**Fase 3 está em andamento** — a documentação oficial do Mercado Livre foi confirmada (D-041 a D-043) e o cliente `@sb/mercado-livre` já está pronto. Ver as seções "Documentação do Mercado Livre confirmada" e "Fase 3 em andamento" abaixo. Próximo item do checklist: webhook com ACK rápido.
 
 **Central de Vinculações — concluída e verificada nesta sessão:**
 
@@ -291,7 +291,20 @@ Também confirmados com detalhe de endpoint, paginação e payload: tópicos de 
 
 **Avisos operacionais não bloqueantes, mas a não esquecer ao implementar:** a partir de 30/08/2026 o Mercado Livre exige aplicações separadas entre Mercado Livre e Mercado Pago; `GET /orders/{id}/shipments` muda de formato (vista única → sempre array) no fim de setembro/2026 — o parser do worker deve nascer já no formato novo.
 
+## Fase 3 em andamento
+
+**Concluído nesta sessão: `packages/mercado-livre` (`@sb/mercado-livre`).** Primeiro item do checklist da Fase 3 (`docs/ROADMAP.md`).
+
+- `src/oauth.ts` — `buildAuthorizationUrl` (domínio `.com.br`, fixo — a Speed Bikers só opera contas MLB), `exchangeCodeForToken` e `refreshAccessToken`. Corpo `application/x-www-form-urlencoded` (não JSON) e schema de resposta/erro confirmados por leitura direta da página oficial (`docs/MERCADO_LIVRE.md` secao 2.2), não só pela pesquisa inicial — o Content-Type exato não estava na primeira pesquisa e valia a pena verificar antes de codificar, dado que é o mecanismo do qual a Fase 3 inteira depende.
+- `src/http-client.ts` — `createMercadoLivreClient`: **um cliente, N contas** — o `access_token` é passado por chamada (`request({ accessToken, ... })`), nunca preso na instância, porque o worker itera várias contas com o mesmo cliente.
+- `src/retry.ts` / `src/errors.ts` — backoff exponencial com "full jitter", honra `Retry-After` quando presente (a documentação não garante que ele exista — ver D-042), e classificação de erro em `retryable`/`retryable_eventual`/`not_retryable`, os mesmos três valores que `sync_errors.error_class` aceita no banco.
+- `src/pagination.ts` — `paginateOffset`, genérico para `/orders/search` e `/users/{id}/items/search`. Comentário explícito no código: isto é o mecanismo de UMA chamada, não a estratégia de checkpoint entre execuções — o checkpoint real do motor de sync (ainda não construído) deve ser por data/`date_last_updated`, nunca por offset persistido (é exatamente o bug que a V2 teve).
+- **Testes**: 43, incluindo — para OAuth e para o cliente HTTP — um teste dedicado provando que `access_token`, `refresh_token` e `client_secret` nunca aparecem na mensagem nem no corpo de um erro lançado (mesmo padrão de `packages/db/src/admin-client.test.ts`).
+- Package segue exatamente a convenção dos demais (`package.json`/`tsconfig.json`/`tsconfig.build.json`/`eslint.config.js` idênticos em forma a `packages/observability`); nenhuma mudança em `turbo.json` ou `pnpm-workspace.yaml` foi necessária.
+
+**Achado à parte, fora do escopo desta etapa:** a task `lint` do `turbo.json` não declara `dependsOn: ["^build"]` (diferente de `typecheck`/`test`, que declaram). Rodar `pnpm run check` do zero, antes de qualquer build local, falhou com uma avalanche de erros `@typescript-eslint/no-unsafe-*` no `apps/worker` — não por bug real, mas porque `@sb/domain` ainda não tinha `dist/` nesta máquina e o lint com checagem de tipo não esperou o build. `pnpm run build` seguido de `pnpm run check` confirma que está tudo verde (28 tasks). Registrado como sugestão separada, não corrigido aqui para não misturar com o commit do cliente ML.
+
 ## Bloqueios atuais
 
-- **Fase 3 desbloqueada** (2026-08-21) — não há mais bloqueio de documentação externa para começar.
+- Nenhum bloqueio de documentação externa para a Fase 3 — o próximo item (webhook) não depende de mais nenhuma confirmação.
 - Modelos de exportação do pedido de compra (Excel e PDF) precisam ser solicitados antes da Fase 4.

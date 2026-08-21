@@ -127,6 +127,46 @@ Endpoints de gestão do grant, úteis para a tela de administração de contas:
 
 **Sobre o Developer Partner Program (DPP):** existe, mas é um **programa de certificação/benefícios comerciais** (medalhas por elegibilidade de GMV agregado), **não** um mecanismo técnico alternativo de autorização. Não relevante para o desenho técnico agora.
 
+### Detalhe exato da troca de token — confirmado por leitura direta da página (2026-08-21)
+
+Requisição de troca de código (`grant_type=authorization_code`) e de refresh (`grant_type=refresh_token`) — **ambas** com:
+
+- `Content-Type: application/x-www-form-urlencoded` (não é JSON — a página mostra `curl -d 'campo=valor'` repetido, um por parâmetro).
+- Header `Accept: application/json`.
+
+Corpo (`authorization_code`): `grant_type`, `client_id`, `client_secret`, `code`, `redirect_uri`, `code_verifier` (só com PKCE).
+Corpo (`refresh_token`): `grant_type`, `client_id`, `client_secret`, `refresh_token`.
+
+Resposta (ambos os grants), campos exatos:
+```json
+{
+  "access_token": "APP_USR-...",
+  "token_type": "bearer",
+  "expires_in": 21600,
+  "scope": "offline_access read write",
+  "user_id": 1234567,
+  "refresh_token": "TG-..."
+}
+```
+
+Erro (exemplo real da página, para `invalid_grant`):
+```json
+{
+  "error_description": "Error validating grant. Your authorization code or refresh token may be expired or it was already used",
+  "error": "invalid_grant",
+  "status": 400,
+  "cause": []
+}
+```
+Campos do corpo de erro: `error` (código estável), `error_description` (texto), `status` (HTTP status repetido no corpo), `cause` (array, geralmente vazio nos exemplos vistos).
+
+Códigos de erro documentados: `invalid_client`, `invalid_grant`, `invalid_scope`, `invalid_request`, `unsupported_grant_type`, `forbidden` (403 — inclui IP bloqueado ou scope faltando), `local_rate_limited` (429 — **específico deste endpoint**, distinto do 429 genérico de rate limit da secao 2.3), `unauthorized_client`, `unauthorized_application`.
+
+**Prazos de validade, confirmados:**
+- `access_token`: 6 horas (`expires_in: 21600`), já registrado.
+- `refresh_token`: expira em **6 meses** se não for usado.
+- `access_token` também é invalidado antes do prazo se: o usuário trocar a senha, a aplicação atualizar o `client_secret`, o usuário revogar a permissão, **ou** a aplicação ficar 4 meses sem nenhuma chamada a `api.mercadolibre.com`.
+
 **Fonte:** `developers.mercadolivre.com.br/pt_br/autenticacao-e-autorizacao`; `.../gerencie-seu-aplicativo`; `.../developer-partner-program`.
 
 ---

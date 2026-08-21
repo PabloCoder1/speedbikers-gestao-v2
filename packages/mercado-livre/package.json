@@ -1,0 +1,28 @@
+{
+  "name": "@sb/mercado-livre",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@sb/config": "workspace:*",
+    "@types/node": "26.2.0",
+    "eslint": "10.8.1",
+    "typescript": "6.0.3",
+    "vitest": "4.1.11"
+  }
+}
