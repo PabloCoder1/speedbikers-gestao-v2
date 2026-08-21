@@ -127,19 +127,19 @@ ml_accounts       label, slug (nomeia a fila ml-sync-<slug>, D-036), seller_id?,
 ml_credentials    access_token_ciphertext, refresh_token_ciphertext, encryption_key_version,
                   access_token_expires_at, scopes[], refresh_locked_until?
 ml_oauth_states   state (PK), organization_id, ml_account_id, created_by?, redirect_to?,
-                  expires_at, consumed_at?
+                  code_verifier_ciphertext?, expires_at, consumed_at?
 ```
 
 `backfill_covered_until` (migration `20260821030000`) é o checkpoint do backfill retomável — L1, mutável, não pertence a `sync_runs` (L2, histórico de cada execução, não de onde a próxima deve começar). `NULL` = nunca começou; `>= connected_at` = terminou, porque a reconciliação por janela já cobre dali para frente. `docs/HANDOFF.md` tem o desenho completo (pedaços de 7 dias, auto-encadeamento pelo `worker`).
 
 Fluxo: o ADMIN cria a conta (`ml_accounts`) direto pelo `web`, sob RLS — é escrita simples de usuário, sem segredo envolvido. Conectar exige segredo (`client_secret` do Mercado Livre, chave de cifra dos tokens) e por isso passa pela `api`:
 
-1. `POST /v1/ml-accounts/connect` (ADMIN) grava um `state` de uso único em `ml_oauth_states` (expira em 15 min) e devolve a `authorizationUrl`.
+1. `POST /v1/ml-accounts/connect` (ADMIN) gera PKCE S256, grava um `state` de uso único e o `code_verifier` cifrado em `ml_oauth_states` (expira em 15 min), e devolve a `authorizationUrl` com somente o `code_challenge`.
 2. O navegador do ADMIN autoriza no Mercado Livre e é redirecionado para `GET /oauth/mercado-livre/callback` — rota pública, sem JWT nem OIDC, cuja única defesa é o `state` (mesmo espírito do webhook, D-043, mas com CSRF em vez de allowlist de IP).
 3. O callback **consome o `state` atomicamente**: um único `UPDATE ... WHERE state = $1 AND consumed_at IS NULL AND expires_at > now()`, não um `SELECT` seguido de `UPDATE` — duas chamadas concorrentes com o mesmo `state` (aba duplicada, retry do navegador) só deixam uma passar.
-4. Troca o `code`, cifra `access_token`/`refresh_token` (AES-256-GCM, D-046) e grava em `ml_credentials` (`upsert` por `ml_account_id` — PK **não parcial**, diferente da armadilha de `sku_listing_links` descrita abaixo). Marca a conta `CONNECTED`.
+4. Decifra o `code_verifier`, troca o `code` com PKCE, cifra `access_token`/`refresh_token` (AES-256-GCM, D-046) e grava em `ml_credentials` (`upsert` por `ml_account_id` — PK **não parcial**, diferente da armadilha de `sku_listing_links` descrita abaixo). Marca a conta `CONNECTED`.
 
-**`ml_credentials` nunca recebe GRANT nem para `authenticated`** — só `service_role` alcança, em qualquer cenário (mesmo padrão de `ml_oauth_states`). O texto claro do token nunca existe fora do processo da `api` entre a resposta do Mercado Livre e a chamada de `encryptToken`.
+**`ml_credentials` nunca recebe GRANT nem para `authenticated`** — só `service_role` alcança, em qualquer cenário (mesmo padrão de `ml_oauth_states`). O texto claro do token nunca existe fora do processo da `api` entre a resposta do Mercado Livre e a chamada de `encryptToken`; o verifier PKCE também fica cifrado e nunca vai ao navegador (D-049).
 
 ### `sync_runs` / `sync_errors` — observabilidade de sincronização
 

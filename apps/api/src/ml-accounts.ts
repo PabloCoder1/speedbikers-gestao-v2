@@ -3,7 +3,13 @@ import { randomBytes } from "node:crypto";
 import type { AdminClient } from "@sb/db";
 import type { Logger } from "@sb/observability";
 import type { MercadoLivreOAuthConfig, RequestTokenOptions } from "@sb/mercado-livre";
-import { buildAuthorizationUrl, encryptToken, exchangeCodeForToken } from "@sb/mercado-livre";
+import {
+  buildAuthorizationUrl,
+  createPkcePair,
+  decryptToken,
+  encryptToken,
+  exchangeCodeForToken,
+} from "@sb/mercado-livre";
 
 import type { Caller } from "./auth.js";
 import type { Enqueuer } from "./enqueue.js";
@@ -67,6 +73,7 @@ export async function startConnect(
   const expiresAt = new Date(now.getTime() + STATE_TTL_MS);
   // 32 bytes de entropia, sem caracteres que precisem de escape em querystring.
   const state = randomBytes(32).toString("base64url");
+  const pkce = createPkcePair();
 
   const inserted = await deps.db.from("ml_oauth_states").insert({
     state,
@@ -74,6 +81,10 @@ export async function startConnect(
     ml_account_id: mlAccountId,
     created_by: caller.userId,
     expires_at: expiresAt.toISOString(),
+    // O verifier prova na troca de token que foi esta api quem iniciou o
+    // fluxo. Fica cifrado e inacessível pela Data API; só o challenge vai ao
+    // navegador/Mercado Livre (D-049).
+    code_verifier_ciphertext: encryptToken(pkce.codeVerifier, deps.encryptionKey),
   });
 
   if (inserted.error !== null) {
@@ -87,7 +98,14 @@ export async function startConnect(
 
   deps.logger.info("ml_oauth_connect_started", { ml_account_id: mlAccountId });
 
-  return { status: "redirect", authorizationUrl: buildAuthorizationUrl(deps.oauth, { state }) };
+  return {
+    status: "redirect",
+    authorizationUrl: buildAuthorizationUrl(deps.oauth, {
+      state,
+      codeChallenge: pkce.codeChallenge,
+      codeChallengeMethod: pkce.codeChallengeMethod,
+    }),
+  };
 }
 
 export interface CallbackParams {
@@ -123,14 +141,18 @@ export async function completeConnect(
     .eq("state", params.state)
     .is("consumed_at", null)
     .gt("expires_at", now.toISOString())
-    .select("organization_id, ml_account_id")
+    .select("organization_id, ml_account_id, code_verifier_ciphertext")
     .maybeSingle();
 
   if (claimed.error !== null || claimed.data === null) {
     return { status: "invalid_state" };
   }
 
-  const { organization_id: organizationId, ml_account_id: mlAccountId } = claimed.data;
+  const {
+    organization_id: organizationId,
+    ml_account_id: mlAccountId,
+    code_verifier_ciphertext: codeVerifierCiphertext,
+  } = claimed.data;
 
   if (params.error !== undefined || params.code === undefined) {
     await markError(deps, mlAccountId, `autorização negada: ${params.error ?? "code ausente"}`);
@@ -138,10 +160,35 @@ export async function completeConnect(
     return { status: "rejected", reason: "autorização negada no Mercado Livre" };
   }
 
+  if (codeVerifierCiphertext === null) {
+    const reason = "state OAuth sem verificador PKCE; reinicie a conexão";
+    deps.logger.error("ml_oauth_pkce_verifier_missing", { ml_account_id: mlAccountId });
+    await markError(deps, mlAccountId, reason);
+
+    return { status: "rejected", reason: "autorização expirada; inicie a conexão novamente" };
+  }
+
+  let codeVerifier: string;
+
+  try {
+    codeVerifier = decryptToken(codeVerifierCiphertext, deps.encryptionKey);
+  } catch {
+    const reason = "verificador PKCE inválido ou ilegível; reinicie a conexão";
+    deps.logger.error("ml_oauth_pkce_verifier_invalid", { ml_account_id: mlAccountId });
+    await markError(deps, mlAccountId, reason);
+
+    return { status: "rejected", reason: "autorização expirada; inicie a conexão novamente" };
+  }
+
   let token;
 
   try {
-    token = await exchangeCodeForToken(deps.oauth, params.code, deps.requestOptions ?? {});
+    token = await exchangeCodeForToken(
+      deps.oauth,
+      params.code,
+      deps.requestOptions ?? {},
+      codeVerifier,
+    );
   } catch (error) {
     const reason = error instanceof Error ? error.message : "erro desconhecido";
 

@@ -110,10 +110,12 @@ O fluxo é o **OAuth 2.0 Authorization Code Grant padrão** — **não existe um
 
 Fluxo:
 
-1. `GET https://auth.mercadolivre.com.br/authorization?response_type=code&client_id=...&redirect_uri=...` (+ PKCE, se habilitado na aplicação)
+1. `GET https://auth.mercadolivre.com.br/authorization?response_type=code&client_id=...&redirect_uri=...&code_challenge=...&code_challenge_method=S256`
 2. O usuário loga na conta ML a ser conectada e aprova o app. Redireciona com `code`.
 3. `POST https://api.mercadolibre.com/oauth/token` (`grant_type=authorization_code`) → `access_token` (expira em **21600 s / 6 h**), `refresh_token`, `user_id`.
 4. `POST https://api.mercadolibre.com/oauth/token` (`grant_type=refresh_token`) → **cada refresh invalida o `refresh_token` anterior** (uso único).
+
+**PKCE na V3 (D-049):** treze tentativas reais sem `code_challenge`/`code_verifier`, distribuídas pelas quatro contas em 2026-08-21, chegaram ao callback mas foram recusadas na troca do token com `invalid_request`; nenhuma credencial foi criada. Depois de confirmar redirect URI, client ID e referências dos secrets, o comportamento aponta com alta confiança para PKCE habilitado na aplicação — a prova final depende de uma nova autorização real. A V3 usa sempre S256: gera um verifier aleatório por autorização, envia só o hash no passo 1, guarda o verifier cifrado em `ml_oauth_states` e o envia no passo 3. A documentação oficial define esses campos como obrigatórios quando PKCE está habilitado.
 
 **Regra crítica confirmada pela documentação:** quem realiza o passo 1/2 precisa logar como **administrador daquela conta ML específica**. Um operador/colaborador da loja recebe o erro `invalid_operator_user_id` e o grant fica inválido.
 
@@ -135,7 +137,7 @@ Requisição de troca de código (`grant_type=authorization_code`) e de refresh 
 - `Content-Type: application/x-www-form-urlencoded` (não é JSON — a página mostra `curl -d 'campo=valor'` repetido, um por parâmetro).
 - Header `Accept: application/json`.
 
-Corpo (`authorization_code`): `grant_type`, `client_id`, `client_secret`, `code`, `redirect_uri`, `code_verifier` (só com PKCE).
+Corpo (`authorization_code`): `grant_type`, `client_id`, `client_secret`, `code`, `redirect_uri`, `code_verifier` (**sempre na V3**, D-049).
 Corpo (`refresh_token`): `grant_type`, `client_id`, `client_secret`, `refresh_token`.
 
 Resposta (ambos os grants), campos exatos:

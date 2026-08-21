@@ -482,6 +482,18 @@ Levantadas pela pesquisa da documentação oficial que fecha a lista de verifica
 
 **Risco aceito, registrado explicitamente:** mesma disciplina de D-045 — **pendente de verificação empírica em Dev** (inspecionar pedidos reais e comparar os dois campos) antes de considerar o checkpoint confiável em produção.
 
+## D-049 — OAuth do Mercado Livre usa PKCE S256 e guarda o verifier cifrado
+
+**Contexto:** as treze tentativas reais de conectar as quatro contas em Dev chegaram ao callback, mas o endpoint de token recusou todas com `invalid_request`; `ml_credentials` permaneceu vazia. A URL de autorização e a troca de token da V3 não enviavam PKCE. Redirect URI, client ID e referências de secrets estavam corretos; pelo código de erro e pela documentação oficial — que torna `code_challenge`/`code_challenge_method` e `code_verifier` obrigatórios quando PKCE está habilitado — a ausência de PKCE é a causa isolada com alta confiança. A prova final depende de repetir uma autorização real nova.
+
+**Decisão:** usar PKCE S256 em toda autorização. A `api` gera um verifier base64url novo (32 bytes aleatórios) por state, envia somente `SHA-256(verifier)` na URL, cifra o verifier com a mesma chave AES-256-GCM de D-046 e o persiste em `ml_oauth_states.code_verifier_ciphertext`. O callback consome o state atomicamente, decifra o verifier e o envia na troca do código. States anteriores à migration são recusados com instrução para reiniciar a conexão.
+
+**Motivo:** corrige a causa observada sem enfraquecer a aplicação externa. O verifier precisa sobreviver ao redirecionamento, mas não precisa ficar em texto claro nem passar pelo navegador; a infraestrutura de cifra e a tabela inacessível pela Data API já existiam.
+
+**Alternativas rejeitadas:** desabilitar PKCE no painel do Mercado Livre (reduz a proteção e depende de alteração manual externa) e embutir o verifier no próprio `state` ou gravá-lo em texto claro (mistura responsabilidades ou expõe um segredo transitório sem necessidade).
+
+**Impacto:** migration aditiva `20260821180000_add_ml_oauth_pkce_verifier.sql`; `packages/mercado-livre` passa a gerar o par PKCE e `apps/api/src/ml-accounts.ts` persiste/recupera o verifier. Nenhum token ou state existente é apagado; autorizações iniciadas antes da mudança precisam ser reiniciadas.
+
 ## Como adicionar nova decisão
 
 Registrar:

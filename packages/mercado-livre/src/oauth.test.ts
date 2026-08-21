@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { MercadoLivreApiError } from "./errors.js";
-import { buildAuthorizationUrl, exchangeCodeForToken, refreshAccessToken } from "./oauth.js";
+import {
+  buildAuthorizationUrl,
+  createPkcePair,
+  exchangeCodeForToken,
+  refreshAccessToken,
+} from "./oauth.js";
 
 const CONFIG = {
   clientId: "APP_ID_123",
@@ -28,6 +33,23 @@ function jsonResponse(status: number, body: unknown, headers?: Record<string, st
 const NOOP_SLEEP = async (): Promise<void> => {
   /* sem atraso real em teste */
 };
+
+describe("createPkcePair", () => {
+  it("gera verifier/challenge base64url válidos e relacionados por SHA-256", async () => {
+    const { createHash } = await import("node:crypto");
+    const pair = createPkcePair();
+
+    expect(pair.codeVerifier).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(pair.codeChallenge).toBe(
+      createHash("sha256").update(pair.codeVerifier, "ascii").digest("base64url"),
+    );
+    expect(pair.codeChallengeMethod).toBe("S256");
+  });
+
+  it("não reutiliza verifier entre autorizações", () => {
+    expect(createPkcePair().codeVerifier).not.toBe(createPkcePair().codeVerifier);
+  });
+});
 
 describe("buildAuthorizationUrl", () => {
   it("monta a URL de autorização no domínio brasileiro com os parâmetros obrigatórios", () => {

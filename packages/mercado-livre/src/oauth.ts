@@ -1,3 +1,5 @@
+import { createHash, randomBytes } from "node:crypto";
+
 import { z } from "zod";
 
 import { MercadoLivreApiError } from "./errors.js";
@@ -25,6 +27,26 @@ export interface BuildAuthorizationUrlOptions {
   /** PKCE: obrigatório enviar os dois campos juntos, ou nenhum. */
   codeChallenge?: string;
   codeChallengeMethod?: "S256" | "plain";
+}
+
+export interface PkcePair {
+  codeVerifier: string;
+  codeChallenge: string;
+  codeChallengeMethod: "S256";
+}
+
+/**
+ * Gera o par PKCE S256 exigido pela aplicação do Mercado Livre.
+ *
+ * Os 32 bytes aleatórios viram 43 caracteres base64url — exatamente o mínimo
+ * permitido pelo RFC 7636, sem padding nem caracteres fora do conjunto
+ * `unreserved`. O verifier nunca deve ir ao navegador; só o hash (challenge).
+ */
+export function createPkcePair(): PkcePair {
+  const codeVerifier = randomBytes(32).toString("base64url");
+  const codeChallenge = createHash("sha256").update(codeVerifier, "ascii").digest("base64url");
+
+  return { codeVerifier, codeChallenge, codeChallengeMethod: "S256" };
 }
 
 /**

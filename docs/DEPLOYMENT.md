@@ -212,7 +212,8 @@ Antes do primeiro `POST /v1/ml-accounts/connect` em qualquer ambiente:
 
 1. Criar os secrets no Secret Manager: `MERCADO_LIVRE_CLIENT_SECRET` (vem do painel de aplicações do Mercado Livre) e `ML_TOKEN_ENCRYPTION_KEY` — gerar com `node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"`, nunca reaproveitar entre ambientes.
 2. Cadastrar a aplicação no painel de aplicações do Mercado Livre (`developers.mercadolivre.com.br`) com o `redirect_uri` **exatamente** igual a `MERCADO_LIVRE_REDIRECT_URI` — Mercado Livre recusa o callback se não bater caractere a caractere.
-3. Definir `MERCADO_LIVRE_CLIENT_ID` e `MERCADO_LIVRE_REDIRECT_URI` no ambiente antes de rodar `infra/deploy-cloud-run.sh` (não são segredo, mas precisam existir — o script falha cedo, com causa explícita, se `MERCADO_LIVRE_CLIENT_ID` estiver vazio).
+3. PKCE pode permanecer habilitado no painel: a V3 usa sempre S256, guarda o verifier cifrado e o envia na troca do token (D-049). Desabilitá-lo para contornar erro de integração é proibido.
+4. Definir `MERCADO_LIVRE_CLIENT_ID` e `MERCADO_LIVRE_REDIRECT_URI` no ambiente antes de rodar `infra/deploy-cloud-run.sh` (não são segredo, mas precisam existir — o script falha cedo, com causa explícita, se `MERCADO_LIVRE_CLIENT_ID` estiver vazio).
 
 Depois disso, cada conta nova só passa pela tela do `web` (criar `ml_accounts`, clicar em conectar) — nenhum passo manual por conta.
 

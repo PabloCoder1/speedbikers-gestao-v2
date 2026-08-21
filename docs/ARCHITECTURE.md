@@ -112,7 +112,7 @@ Servidor HTTP (Hono), `min-instances=1`, timeout curto, concorrência alta.
 **Faz:**
 
 - `POST /webhooks/mercado-livre` — ACK em milissegundos, **zero chamada de rede**, grava a notificação e enfileira.
-- OAuth do Mercado Livre: início, callback, guarda e refresh de token. É onde os segredos vivem.
+- OAuth do Mercado Livre: início e callback com PKCE S256, guarda e refresh de token. O verifier PKCE e os tokens ficam cifrados; é onde os segredos vivem (D-046, D-049).
 - **Comandos privilegiados** que o `web` não pode executar: disparar sync manual, confirmar NF-e, aprovar pedido de compra, disparar diagnóstico.
 - **Copiloto**: orquestra ferramentas determinísticas e faz streaming SSE.
 - Endpoints internos chamados por Cloud Scheduler e Cloud Tasks, autenticados por OIDC.

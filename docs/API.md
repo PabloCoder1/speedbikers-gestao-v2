@@ -48,7 +48,7 @@ Todas as rotas são versionadas sob `/v1`, exceto webhook e callback do OAuth, c
 
 400 em payload inválido é aceitável mesmo com o reenvio automático do Mercado Livre (até 1h): ou é ruído pontual e a próxima tentativa também falha sem custo real, ou é o schema desatualizado — caso em que os retries **ajudam** a expor o problema em vez de escondê-lo. Já "conta desconhecida" recebe 200 propositalmente: reenviar não cria a conta que falta, então retornar erro só gastaria o orçamento de 8 tentativas do Mercado Livre à toa (`docs/MERCADO_LIVRE.md` secao 2.5). Sem tabela de landing para a notificação crua — o corpo da própria Cloud Task é o registro durável (D-044). IP do cliente extraído do penúltimo elemento de `X-Forwarded-For` (D-045).
 
-**`GET /oauth/mercado-livre/callback` — implementado em 2026-08-21** (`apps/api/src/ml-accounts.ts`). Autenticação própria: `state` de CSRF, consumido atomicamente (um único `UPDATE ... WHERE consumed_at IS NULL`, não `SELECT` + `UPDATE`). Contrato de resposta:
+**`GET /oauth/mercado-livre/callback` — implementado em 2026-08-21** (`apps/api/src/ml-accounts.ts`). Autenticação própria: `state` de CSRF, consumido atomicamente (um único `UPDATE ... WHERE consumed_at IS NULL`, não `SELECT` + `UPDATE`). A autorização usa PKCE S256: `POST /v1/ml-accounts/connect` envia somente o `code_challenge`; o callback recupera o `code_verifier` cifrado e o inclui na troca do token (D-049). Contrato de resposta:
 
 | Situação | Status | Corpo |
 |---|---|---|
@@ -58,7 +58,7 @@ Todas as rotas são versionadas sob `/v1`, exceto webhook e callback do OAuth, c
 | Troca de `code` por token falhou | 400 | `{ error: { code: "rejected" } }` |
 | Sucesso — conta `CONNECTED`, credenciais cifradas gravadas | 200 | `{ connected: true, mlAccountId }` |
 
-Em qualquer falha depois da troca de código, a conta é marcada `status = 'ERROR'` com `last_error` preenchido — nunca fica presa em `PENDING` sem explicação. Tokens cifrados com AES-256-GCM antes de tocar o banco (D-046); nunca aparecem em log, mesmo em erro (`apps/api/src/ml-accounts.test.ts` prova isso).
+Em qualquer falha depois da troca de código, a conta é marcada `status = 'ERROR'` com `last_error` preenchido — nunca fica presa em `PENDING` sem explicação. Tokens e verifier PKCE são cifrados com AES-256-GCM antes de tocar o banco (D-046, D-049); nunca aparecem em log, mesmo em erro (`apps/api/src/ml-accounts.test.ts` prova isso). State criado antes de D-049 não tem verifier e é recusado com instrução para reiniciar a conexão.
 
 ### Autenticadas por JWT do usuário (Supabase)
 

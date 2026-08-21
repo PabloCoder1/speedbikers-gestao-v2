@@ -557,6 +557,7 @@ export type Database = {
       }
       ml_oauth_states: {
         Row: {
+          code_verifier_ciphertext: string | null
           consumed_at: string | null
           created_at: string
           created_by: string | null
@@ -567,6 +568,7 @@ export type Database = {
           state: string
         }
         Insert: {
+          code_verifier_ciphertext?: string | null
           consumed_at?: string | null
           created_at?: string
           created_by?: string | null
@@ -577,6 +579,7 @@ export type Database = {
           state: string
         }
         Update: {
+          code_verifier_ciphertext?: string | null
           consumed_at?: string | null
           created_at?: string
           created_by?: string | null
@@ -1436,4 +1439,3 @@ export const Constants = {
     Enums: {},
   },
 } as const
-

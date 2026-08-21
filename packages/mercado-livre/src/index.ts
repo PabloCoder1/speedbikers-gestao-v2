@@ -6,6 +6,7 @@ export type { BackoffOptions, ClassifyStatusOptions } from "./retry.js";
 
 export {
   buildAuthorizationUrl,
+  createPkcePair,
   exchangeCodeForToken,
   refreshAccessToken,
   tokenErrorBodySchema,
@@ -14,6 +15,7 @@ export {
 export type {
   BuildAuthorizationUrlOptions,
   MercadoLivreOAuthConfig,
+  PkcePair,
   RequestTokenOptions,
   TokenResponse,
 } from "./oauth.js";

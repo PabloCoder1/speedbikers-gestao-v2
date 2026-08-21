@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 
+import { encryptToken } from "@sb/mercado-livre";
 import { createLogger } from "@sb/observability";
 import { describe, expect, it } from "vitest";
 
@@ -566,6 +567,7 @@ describe("conexão de conta Mercado Livre", () => {
   };
 
   const ENCRYPTION_KEY = randomBytes(32);
+  const CODE_VERIFIER_CIPHERTEXT = encryptToken("A".repeat(43), ENCRYPTION_KEY);
 
   /** Mesmo espírito do `chain` de `ml-accounts.test.ts`: fake mínimo, encadeável e thenable. */
   function chain<T>(result: T): {
@@ -590,12 +592,20 @@ describe("conexão de conta Mercado Livre", () => {
 
   function fakeMlAccountsDb(options: {
     accountStatus?: string | null;
-    claimedState?: { organization_id: string; ml_account_id: string } | null;
+    claimedState?: {
+      organization_id: string;
+      ml_account_id: string;
+      code_verifier_ciphertext: string | null;
+    } | null;
   } = {}): MlAccountsDeps["db"] {
     const accountStatus = "accountStatus" in options ? options.accountStatus : "PENDING";
     const claimedState =
       options.claimedState === undefined
-        ? { organization_id: "org-1", ml_account_id: "acc-1" }
+        ? {
+            organization_id: "org-1",
+            ml_account_id: "acc-1",
+            code_verifier_ciphertext: CODE_VERIFIER_CIPHERTEXT,
+          }
         : options.claimedState;
 
     return {
@@ -617,7 +627,11 @@ describe("conexão de conta Mercado Livre", () => {
 
   function withMlAccounts(options: {
     accountStatus?: string | null;
-    claimedState?: { organization_id: string; ml_account_id: string } | null;
+    claimedState?: {
+      organization_id: string;
+      ml_account_id: string;
+      code_verifier_ciphertext: string | null;
+    } | null;
     role?: Role;
     withAuth?: boolean;
     withDeps?: boolean;

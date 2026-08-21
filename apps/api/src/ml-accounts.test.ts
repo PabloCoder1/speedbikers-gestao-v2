@@ -1,6 +1,6 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
-import { decryptToken } from "@sb/mercado-livre";
+import { decryptToken, encryptToken } from "@sb/mercado-livre";
 import { createLogger } from "@sb/observability";
 import { describe, expect, it } from "vitest";
 
@@ -21,6 +21,8 @@ const OAUTH_CONFIG = {
 };
 
 const ENCRYPTION_KEY = randomBytes(32);
+const CODE_VERIFIER = "A".repeat(43);
+const CODE_VERIFIER_CIPHERTEXT = encryptToken(CODE_VERIFIER, ENCRYPTION_KEY);
 const NOW = new Date("2026-08-21T12:00:00.000Z");
 
 const TOKEN_RESPONSE_BODY = {
@@ -69,7 +71,14 @@ function chain<T>(result: T): {
 interface FakeDbOptions {
   accountLookup?: { data: { id: string; status: string } | null; error: { message: string } | null };
   stateInsertFails?: boolean;
-  claimedState?: { data: { organization_id: string; ml_account_id: string } | null; error: { message: string } | null };
+  claimedState?: {
+    data: {
+      organization_id: string;
+      ml_account_id: string;
+      code_verifier_ciphertext: string | null;
+    } | null;
+    error: { message: string } | null;
+  };
   credentialsUpsertFails?: boolean;
   accountUpdateFails?: boolean;
   slug?: string;
@@ -106,7 +115,14 @@ function fakeDb(options: FakeDbOptions = {}): {
         if (table === "ml_oauth_states") {
           return chain(
             options.claimedState ??
-              { data: { organization_id: CALLER.organizationId, ml_account_id: "acc-1" }, error: null },
+              {
+                data: {
+                  organization_id: CALLER.organizationId,
+                  ml_account_id: "acc-1",
+                  code_verifier_ciphertext: CODE_VERIFIER_CIPHERTEXT,
+                },
+                error: null,
+              },
           );
         }
 
@@ -214,7 +230,7 @@ describe("startConnect", () => {
     }
   });
 
-  it("grava o state e devolve a URL de autorização com ele", async () => {
+  it("grava state + verifier cifrado e devolve a URL PKCE S256", async () => {
     const { deps: d, db } = deps();
 
     const outcome = await startConnect(d, CALLER, "acc-1");
@@ -236,6 +252,19 @@ describe("startConnect", () => {
         created_by: CALLER.userId,
       },
     });
+
+    const insertedRow = db.inserted[0]?.row as
+      | { code_verifier_ciphertext: string }
+      | undefined;
+    expect(insertedRow).toBeDefined();
+    if (insertedRow === undefined) return;
+
+    const verifier = decryptToken(insertedRow.code_verifier_ciphertext, ENCRYPTION_KEY);
+    expect(verifier).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(url.searchParams.get("code_challenge")).toBe(
+      createHash("sha256").update(verifier, "ascii").digest("base64url"),
+    );
+    expect(url.searchParams.get("code_challenge_method")).toBe("S256");
   });
 
   it("devolve rejected quando a gravação do state falha", async () => {
@@ -272,6 +301,54 @@ describe("completeConnect", () => {
     const outcome = await completeConnect(d, { state: "s" });
 
     expect(outcome.status).toBe("rejected");
+  });
+
+  it("rejeita state legado sem verifier PKCE antes de chamar o endpoint de token", async () => {
+    let tokenCalls = 0;
+    const { deps: d, db } = deps({
+      dbOptions: {
+        claimedState: {
+          data: {
+            organization_id: CALLER.organizationId,
+            ml_account_id: "acc-1",
+            code_verifier_ciphertext: null,
+          },
+          error: null,
+        },
+      },
+      requestOptions: {
+        fetchImpl: () => {
+          tokenCalls += 1;
+          return Promise.resolve(jsonResponse(200, TOKEN_RESPONSE_BODY));
+        },
+      },
+    });
+
+    const outcome = await completeConnect(d, { state: "state-legado", code: "code-valido" });
+
+    expect(outcome).toEqual({
+      status: "rejected",
+      reason: "autorização expirada; inicie a conexão novamente",
+    });
+    expect(tokenCalls).toBe(0);
+    const accountsUpdate = db.updated.find((entry) => entry.table === "ml_accounts");
+    expect(accountsUpdate?.row).toMatchObject({ status: "ERROR" });
+  });
+
+  it("envia ao token endpoint o verifier associado ao challenge da autorização", async () => {
+    const { deps: d } = deps({
+      requestOptions: {
+        fetchImpl: (_url, init) => {
+          const body = new URLSearchParams(init?.body as string);
+          expect(body.get("code_verifier")).toBe(CODE_VERIFIER);
+          return Promise.resolve(jsonResponse(200, TOKEN_RESPONSE_BODY));
+        },
+      },
+    });
+
+    const outcome = await completeConnect(d, { state: "s", code: "code-valido" });
+
+    expect(outcome.status).toBe("connected");
   });
 
   it("marca a conta em ERROR e rejeita quando a troca de token falha", async () => {
