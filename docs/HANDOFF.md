@@ -1,25 +1,29 @@
 # Handoff V3
 
-> Última atualização: 2026-08-21 — **Fase 2 concluída.** Identidade, contas, catálogo, importador do UpSeller (upload → aplicação), Central de Vinculações e o schema de observabilidade de sincronização (`sync_runs`/`sync_errors`) estão todos no ar em Dev. **A documentação oficial do Mercado Livre foi confirmada nesta mesma data e a Fase 3 está em andamento** — o cliente `@sb/mercado-livre` e o webhook `POST /webhooks/mercado-livre` já estão prontos e testados.
+> Última atualização: 2026-08-21 — **Fases 0 a 3 concluídas no código.** A tela de Contas Mercado Livre (`/contas`) já existe. Os quatro arquivos reais do UpSeller foram recuperados no Dev até o estado `PARSED`, com zero linhas inválidas. **Próxima ação: conferência humana e aplicação dos quatro batches; só depois iniciar a Fase 5A.**
 
 ## Estado atual
 
 - Branch: `v3`
 - Referência V2: commit `8573d971a5cd427702575b52ed249c53588ec5ca` da `main`
-- V3 reconstruída como branch limpa, **sem código de aplicação e sem migrations**.
-- Supabase V3 Dev: criado em São Paulo (`sa-east-1`), mantido **sem tabelas de domínio**.
-- Google Cloud V3: fundação criada em São Paulo (`southamerica-east1`). Cloud Run, Cloud Tasks, Scheduler, Secret Manager e Storage ainda não provisionados.
+- V3 reconstruída como monorepo com `web`, `api`, `worker`, packages compartilhados e migrations versionadas.
+- Supabase V3 Dev (`nmgccyqquwxecqffsidr`, `sa-east-1`): migrations aplicadas até `20260821050000_create_domain_events`.
+- Google Cloud V3 (`speedbikers-gestao-v3`, `southamerica-east1`): Cloud Run, Cloud Tasks, Scheduler, Secret Manager e Storage provisionados em Dev.
 - Vercel V3: **criado e no ar**, branch `v3`.
-- Monorepo, CI e ambientes: criados. Falta o ambiente de produção (Fase 8).
+- Monorepo e CI: criados e operacionais. Falta o ambiente de produção (Fase 8).
 
 ## Última etapa concluída
 
-**Arquitetura inicial da V3 aprovada** e registrada na documentação:
+**Recuperação dos quatro imports reais do UpSeller no Dev.**
 
-- `docs/ARCHITECTURE.md` — reescrito como mapa da arquitetura, com dono documental por assunto.
-- `docs/DECISIONS.md` — decisões **D-011 a D-026** registradas com motivo, alternativas e evidência medida na V2.
-- `docs/ROADMAP.md` — Fases 0 a 8 refinadas com entregáveis, marcos e dependências.
-- Documentação especializada criada: `DATABASE.md`, `API.md`, `METRICS.md`, `MERCADO_LIVRE.md`, `NOTIFICATIONS.md`, `COPILOT.md`, `DEPLOYMENT.md`, `TESTING.md`.
+- Causa confirmada no Cloud Logging: em 2026-08-20, a revisão `worker-00002-p4k` respondeu `400 unknown_job_type` para `erp.import.parse`; as três tentativas de cada Cloud Task se esgotaram antes de o worker com o handler ser publicado.
+- Os quatro objetos continuavam íntegros no bucket `speedbikers-gestao-v3-erp-imports`; nenhum reupload foi necessário.
+- Os parses foram reenfileirados para o worker atual e terminaram em `PARSED`: `PRODUCTS` 3.415/3.415 OK; `KITS` 272/272 OK; `LINKS` 20.650 OK + 3.274 `SKIPPED` por D-037; `STOCK` 3.372/3.372 OK; **zero `INVALID`**.
+- Nota de observabilidade da recuperação manual: as quatro tasks usaram IDs aleatórios distintos, mas o PowerShell interpolou o `dedupe_key` do envelope como `erp-parse:-20260821` nas quatro linhas de `job_runs`. Os `job_id`, payloads e batches permaneceram distintos e corretos; não houve impacto no parse. O histórico L2 não foi reescrito para maquiar a operação.
+- Nenhum batch foi aplicado automaticamente. Catálogo, kits, vínculos e snapshots continuam aguardando a conferência humana prevista no fluxo do produto.
+- Prevenção no repositório: `infra/deploy-cloud-run.sh` agora publica o consumidor (`worker`) antes do produtor (`api`) quando os dois são implantados juntos. Assim uma API nova não emite tipo de job para um worker antigo.
+
+**Próximo passo operacional:** abrir `/importacoes`, revisar e confirmar a aplicação preferencialmente em `PRODUCTS -> KITS -> LINKS -> STOCK`. Depois verificar as contagens de `skus`, `sku_components`, `sku_listing_links`, `erp_stock_snapshots` e candidatos pendentes. A Fase 5A começa somente após essa base estar aplicada e conferida.
 
 ## Auditoria da V2 realizada nesta sessão
 
@@ -390,16 +394,16 @@ Também confirmados com detalhe de endpoint, paginação e payload: tópicos de 
 
 ## Bloqueios atuais
 
-- **Fase 3 concluída — nenhum bloqueio para a Fase 5A.** Antes de migrar schema novo de métricas, reler `docs/METRICS.md` e confirmar decisões de design com o usuário (ver `docs/ROADMAP.md`, "Próximo passo imediato").
-- `domain_events` emite, mas **nada lê ainda** — nem notificação (`docs/NOTIFICATIONS.md`), nem Central de Ações. Consumo é Fase 6/7.
-- **Nenhuma conta Mercado Livre está `CONNECTED` no banco Dev** — a Tela de Saúde da Sincronização, a reconciliação e o backfill estão prontos e testados, mas nenhum rodou contra o Mercado Livre real. Depende das mesmas pendências manuais já registradas (secrets no Secret Manager, app cadastrada no painel do Mercado Livre, IAM do `worker` em `backfill`) mais, agora, uma tela no `web` para criar/conectar conta (pendência pequena, já registrada, ainda não construída).
-- **Lotes de importação do UpSeller aparentam nunca ter sido aplicados no banco Dev real** (achado incidental acima) — precisa de investigação própria antes da Fase 5A, já que dashboards de venda precisam do catálogo/vínculos aplicados para fazer sentido.
+- **Fase 3 concluída.** Antes da Fase 5A, os quatro batches reais do UpSeller, agora em `PARSED`, precisam de conferência e aplicação humana. Depois disso, reler `docs/METRICS.md` e confirmar as decisões de design antes de migrar schema analítico novo.
+- `domain_events` já é lido pela tela `/sincronizacao`, mas ainda não alimenta notificações (`docs/NOTIFICATIONS.md`) nem a Central de Ações. Esses consumos são Fase 6/7.
+- **Nenhuma conta Mercado Livre está `CONNECTED` no banco Dev** — a Tela de Saúde da Sincronização, a reconciliação e o backfill estão prontos e testados, mas nenhum rodou contra o Mercado Livre real. A tela `/contas` já existe; faltam concluir o OAuth real e validar as pendências manuais de secrets, painel do Mercado Livre e IAM do `worker` em `backfill`.
+- **Imports do UpSeller recuperados até `PARSED` em 2026-08-21**, com zero linhas inválidas. A aplicação no domínio continua pendente da conferência humana; sem ela, dashboards de venda não têm catálogo/vínculos reais para atribuir SKU.
 - **D-048 precisa de verificação empírica em Dev** (comparar `date_last_updated` e `last_updated` num pedido real) antes de considerar o checkpoint de pedidos confiável em produção — mesma disciplina de D-045, mesmo status: não bloqueia continuar a Fase 3 localmente, bloqueia declarar a sincronização de pedidos pronta para tráfego real.
 - **`packages/db/src/types.ts` foi editado à mão** duas vezes agora (`backfill_covered_until` e `orders`/`order_items`) — Supabase CLI/Docker não estava disponível nesta sessão. Rodar `pnpm run gen:types` assim que possível.
 - **`packages/db/src/types.ts` foi editado à mão** para `ml_accounts.backfill_covered_until` — Supabase CLI/Docker não estava disponível nesta sessão. Rodar `pnpm run gen:types` (precisa de `supabase start` local) assim que possível para confirmar que o tipo gerado bate com o que foi escrito à mão.
-- Backfill e reconciliação estão prontos e testados, mas **nenhum dos dois rodou contra o Mercado Livre real** — além da pendência manual da conexão OAuth (abaixo), o `worker` também precisa da nova permissão `cloudtasks.enqueuer` em `backfill` (rodar `bash infra/cloud-tasks-queues.sh`) antes do backfill conseguir se auto-encadear em produção.
-- A reconciliação por janela está pronta e testada, mas **nunca rodou contra o Mercado Livre real** — depende da mesma pendência manual da conexão OAuth (secao acima: secrets no Secret Manager, app cadastrada no painel) mais rodar `bash infra/cloud-scheduler.sh` para criar o job `v3-reconcile-orders`.
+- Backfill e reconciliação estão prontos e testados, mas **nenhum dos dois rodou contra o Mercado Livre real**. A permissão `roles/cloudtasks.enqueuer` do `v3-worker-runtime` na fila `backfill` foi verificada no IAM em 2026-08-21; falta uma conta `CONNECTED` para exercitar o fluxo.
+- O Scheduler `v3-reconcile-orders` está `ENABLED` e dispara a reconciliação de hora em hora; o Cloud Logging registra `reconcile_triggered` com zero contas enquanto todas permanecem `PENDING`.
 - **D-045 precisa de verificação empírica em Dev** (inspecionar o `X-Forwarded-For` real recebido pelo Cloud Run) antes de considerar a allowlist de IP confiável em produção — não bloqueia continuar a Fase 3 localmente/em Dev, mas bloqueia declarar o webhook pronto para tráfego real do Mercado Livre.
-- **Conexão real de conta ainda não testada contra o Mercado Livre de verdade** — precisa, antes de testar em Dev: (1) criar os secrets `MERCADO_LIVRE_CLIENT_SECRET`/`ML_TOKEN_ENCRYPTION_KEY` no Secret Manager, (2) cadastrar a aplicação e o `redirect_uri` exato no painel de aplicações do Mercado Livre, (3) definir `MERCADO_LIVRE_CLIENT_ID`/`MERCADO_LIVRE_REDIRECT_URI` antes do próximo deploy da `api` — ver `docs/DEPLOYMENT.md` secao 10.1. Tudo manual, precisa do painel; não bloqueia continuar construindo a reconciliação por janela, que pode ser testada com fakes até uma conta real existir.
-- Sem tela no `web` para criar/conectar conta — pendência pequena registrada acima, não bloqueia o próximo item do checklist.
+- **Conexão real de conta ainda não concluída.** A rota de início do OAuth responde e cria `ml_oauth_states`, mas as quatro contas continuam `PENDING` e `ml_credentials` está vazia. Falta completar o consentimento/callback com uma conta Mercado Livre real e validar o resultado — ver `docs/DEPLOYMENT.md` secao 10.1.
+- Tela `/contas` para criar/conectar conta concluída no commit `a9d2ee7`; falta validar o fluxo OAuth completo contra uma conta Mercado Livre real.
 - Modelos de exportação do pedido de compra (Excel e PDF) precisam ser solicitados antes da Fase 4.

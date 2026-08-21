@@ -2,7 +2,7 @@
 
 > Dono documental de: fronteiras entre os apps, rotas da `api`, tipos de job, catálogo de eventos e convenções de erro.
 > Arquitetura geral em `docs/ARCHITECTURE.md`. Tabelas em `docs/DATABASE.md`.
-> Status: **contratos conceituais aprovados.** Nenhuma rota foi implementada.
+> Status: **contratos aprovados; rotas e jobs das Fases 1 a 3 implementados conforme as marcações deste documento.** Itens de fases futuras continuam conceituais.
 
 ---
 

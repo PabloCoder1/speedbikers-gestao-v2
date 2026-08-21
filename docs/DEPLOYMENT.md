@@ -2,7 +2,7 @@
 
 > Dono documental de: ambientes, provisionamento, secrets, CI/CD e rollout.
 > Arquitetura geral em `docs/ARCHITECTURE.md`.
-> Status: **estratégia aprovada.** Nada provisionado além do Supabase V3 Dev e da fundação do Google Cloud.
+> Status: **estratégia aprovada e ambiente de desenvolvimento provisionado.** Produção permanece para a Fase 8.
 
 ---
 
@@ -50,6 +50,12 @@
 | Autenticação de entrada | JWT do usuário, OIDC interno, validação própria do webhook | OIDC apenas |
 
 **`min-instances=1` na `api` não é otimização prematura:** é requisito do webhook. Cold start atrasa o ACK e provoca reentrega pelo Mercado Livre. Custo estimado na ordem de poucos dólares por mês.
+
+### Ordem segura de deploy
+
+Quando `api` e `worker` são publicados juntos, `infra/deploy-cloud-run.sh` implanta **primeiro o `worker` e depois a `api`**. O worker é consumidor dos tipos de job que a api produz; publicar o produtor primeiro abre uma janela em que a api nova pode enfileirar um tipo que o worker antigo ainda recusa.
+
+Essa janela causou um incidente real em 2026-08-20: quatro tasks `erp.import.parse` chegaram à revisão antiga do worker, receberam `400 unknown_job_type` nas três tentativas e foram descartadas, deixando os batches em `UPLOADED`. Consumidor antes do produtor passa a ser regra de deploy, não convenção informal.
 
 ---
 
@@ -214,5 +220,6 @@ Depois disso, cada conta nova só passa pela tela do `web` (criar `ml_accounts`,
 
 ## 11. Pendências
 
-- Criação do projeto Vercel V3 conectado à branch `v3` (Fase 1).
-- Provisionamento de Cloud Run, Cloud Tasks, Scheduler, Secret Manager e Storage (Fase 1).
+- Criar e validar o ambiente de produção na Fase 8.
+- Concluir e validar o primeiro OAuth real do Mercado Livre em Dev.
+- Migrar os scripts `gcloud` para Terraform na Fase 8.

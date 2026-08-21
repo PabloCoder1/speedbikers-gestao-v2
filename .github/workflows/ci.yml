@@ -146,6 +146,17 @@ jobs:
             bash -n "$f" && echo "ok: $f"
           done
 
+      # Consumidor antes do produtor. Em 2026-08-20 a ordem inversa fez a api
+      # enfileirar erp.import.parse enquanto o worker antigo ainda recusava o
+      # tipo, deixando quatro batches presos em UPLOADED.
+      - name: Ordem segura do deploy Cloud Run
+        run: |
+          worker_line="$(grep -n '^  build_and_deploy worker$' infra/deploy-cloud-run.sh | cut -d: -f1)"
+          api_line="$(grep -n '^  build_and_deploy api$' infra/deploy-cloud-run.sh | cut -d: -f1)"
+          test -n "$worker_line"
+          test -n "$api_line"
+          test "$worker_line" -lt "$api_line"
+
       # CRLF em shebang quebra com "bad interpreter" no Linux. O .gitattributes
       # previne, mas a verificação torna a regra observável.
       - name: Fim de linha LF

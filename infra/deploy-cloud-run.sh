@@ -163,8 +163,12 @@ fi
 if [ "$#" -gt 0 ]; then
   build_and_deploy "$1"
 else
-  build_and_deploy api
+  # Consumidor antes do produtor: um deploy pode adicionar um tipo de job novo.
+  # Se a api entrar no ar primeiro, ela pode enfileirar esse tipo enquanto o
+  # worker antigo ainda o recusa como desconhecido. Foi exatamente o que
+  # deixou quatro imports do UpSeller presos em UPLOADED em 2026-08-20.
   build_and_deploy worker
+  build_and_deploy api
 fi
 
 step "Permissão de invocação do worker"

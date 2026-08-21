@@ -2,7 +2,7 @@
 
 > Dono documental de: tabelas, colunas-chave, constraints, índices, RLS e regras de migration.
 > Arquitetura geral em `docs/ARCHITECTURE.md`. Métricas derivadas em `docs/METRICS.md`.
-> Status: **modelo conceitual aprovado**, incorporando as decisões D-027 a D-034. Nenhuma migration foi criada.
+> Status: **modelo conceitual aprovado e schema implementado até a Fase 3.** As tabelas de fases futuras continuam conceituais até sua migration correspondente.
 
 ---
 
