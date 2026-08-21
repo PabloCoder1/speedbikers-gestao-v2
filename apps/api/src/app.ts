@@ -8,7 +8,10 @@ import type { Authenticator } from "./auth.js";
 import type { Enqueuer } from "./enqueue.js";
 import type { ImportDeps } from "./erp-import.js";
 import { confirmApply, isImportKind, receiveUpload } from "./erp-import.js";
+import type { IpAllowlistVerifier } from "./ip-allowlist.js";
 import type { OidcVerifier } from "./oidc.js";
+import type { WebhookDeps } from "./webhook.js";
+import { receiveWebhook } from "./webhook.js";
 
 /**
  * Variáveis carregadas no contexto do request.
@@ -40,6 +43,8 @@ export interface AppDependencies {
   oidc?: OidcVerifier;
   auth?: Authenticator;
   importDeps?: ImportDeps;
+  ipAllowlist?: IpAllowlistVerifier;
+  webhook?: WebhookDeps;
 }
 
 /**
@@ -88,6 +93,68 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       service: "api",
       startedAt: startedAt.toISOString(),
     });
+  });
+
+  // --------------------------------------------------------------------
+  // Webhook do Mercado Livre.
+  //
+  // Caminho liberado EXPLICITAMENTE E APENAS ELE (docs/API.md secao 2). Não
+  // exige JWT nem OIDC — o Mercado Livre não envia nenhum dos dois. É
+  // exatamente o oposto do bug da V2: lá, o proxy exigia sessão e o webhook
+  // morria num 307 para /login, em silêncio, por semanas (D-024).
+  //
+  // A única autenticação é a allowlist de IP (D-043): sem assinatura HMAC
+  // documentada para este produto.
+  // --------------------------------------------------------------------
+  app.use("/webhooks/*", async (context, next) => {
+    const ipAllowlist = dependencies.ipAllowlist;
+
+    if (ipAllowlist === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const result = ipAllowlist.verify(context.req.header("x-forwarded-for"));
+
+    if (!result.ok) {
+      dependencies.logger.warn("webhook_origin_rejected", {
+        request_id: context.get("requestId"),
+        path: context.req.path,
+        ip: result.ip,
+      });
+
+      // Resposta genérica: não confirmar ao chamador se o problema foi o IP
+      // ou outra coisa.
+      return context.json({ error: { code: "forbidden" } }, 403);
+    }
+
+    await next();
+  });
+
+  app.post("/webhooks/mercado-livre", async (context) => {
+    const webhook = dependencies.webhook;
+
+    if (webhook === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    let rawBody: unknown;
+
+    try {
+      rawBody = await context.req.json();
+    } catch {
+      return context.json({ error: { code: "invalid_payload", message: "corpo não é JSON" } }, 400);
+    }
+
+    const outcome = await receiveWebhook(webhook, rawBody);
+
+    if (outcome.status === "invalid_payload") {
+      return context.json({ error: { code: "invalid_payload", message: outcome.reason } }, 400);
+    }
+
+    // "unknown_account" também recebe 200: reenviar não vai criar a conta que
+    // falta, e devolver erro só faria o Mercado Livre gastar 8 tentativas em
+    // 1h à toa (docs/MERCADO_LIVRE.md secao 2.5).
+    return context.json({ received: true, processed: outcome.status === "enqueued" });
   });
 
   // --------------------------------------------------------------------

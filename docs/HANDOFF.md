@@ -1,6 +1,6 @@
 # Handoff V3
 
-> Última atualização: 2026-08-21 — **Fase 2 concluída.** Identidade, contas, catálogo, importador do UpSeller (upload → aplicação), Central de Vinculações e o schema de observabilidade de sincronização (`sync_runs`/`sync_errors`) estão todos no ar em Dev. **A documentação oficial do Mercado Livre foi confirmada nesta mesma data e a Fase 3 está em andamento** — o cliente `@sb/mercado-livre` (OAuth, backoff/jitter, classificação de erro, paginação) já está pronto e testado.
+> Última atualização: 2026-08-21 — **Fase 2 concluída.** Identidade, contas, catálogo, importador do UpSeller (upload → aplicação), Central de Vinculações e o schema de observabilidade de sincronização (`sync_runs`/`sync_errors`) estão todos no ar em Dev. **A documentação oficial do Mercado Livre foi confirmada nesta mesma data e a Fase 3 está em andamento** — o cliente `@sb/mercado-livre` e o webhook `POST /webhooks/mercado-livre` já estão prontos e testados.
 
 ## Estado atual
 
@@ -217,7 +217,7 @@ Provisionado: filas `analytics-recompute` (10/s, 20), `backfill` (1/s, 2) e `mai
 - **Puramente schema**: nenhum código escreve nessas tabelas ainda. O sync do Mercado Livre é Fase 3.
 - **10 testes novos de integração de RLS** (83 no total, de 73): constraints (`finished_after_started`, `reason_matches_status`), o trigger append-only recusando `UPDATE` e `DELETE` mesmo do dono, RLS positiva/negativa nas duas tabelas, e os dois negativos novos de `anon` sem `EXECUTE` nas RPCs da Central de Vinculações.
 
-**Fase 3 está em andamento** — a documentação oficial do Mercado Livre foi confirmada (D-041 a D-043) e o cliente `@sb/mercado-livre` já está pronto. Ver as seções "Documentação do Mercado Livre confirmada" e "Fase 3 em andamento" abaixo. Próximo item do checklist: webhook com ACK rápido.
+**Fase 3 está em andamento** — a documentação oficial do Mercado Livre foi confirmada (D-041 a D-043), o cliente `@sb/mercado-livre` e o webhook (D-044, D-045) já estão prontos. Ver as seções "Documentação do Mercado Livre confirmada" e "Fase 3 em andamento" abaixo. Próximo item do checklist: reconciliação por janela via Cloud Scheduler.
 
 **Central de Vinculações — concluída e verificada nesta sessão:**
 
@@ -304,7 +304,17 @@ Também confirmados com detalhe de endpoint, paginação e payload: tópicos de 
 
 **Achado à parte, fora do escopo desta etapa:** a task `lint` do `turbo.json` não declara `dependsOn: ["^build"]` (diferente de `typecheck`/`test`, que declaram). Rodar `pnpm run check` do zero, antes de qualquer build local, falhou com uma avalanche de erros `@typescript-eslint/no-unsafe-*` no `apps/worker` — não por bug real, mas porque `@sb/domain` ainda não tinha `dist/` nesta máquina e o lint com checagem de tipo não esperou o build. `pnpm run build` seguido de `pnpm run check` confirma que está tudo verde (28 tasks). Registrado como sugestão separada, não corrigido aqui para não misturar com o commit do cliente ML.
 
+**Concluído em seguida, nesta sessão: `POST /webhooks/mercado-livre`.** Segundo item do checklist da Fase 3.
+
+- `apps/api/src/ip-allowlist.ts` — allowlist dos 8 IPs do Mercado Livre (D-043). `extractClientIp` pega o **penúltimo** elemento de `X-Forwarded-For`, não o primeiro: confirmado na documentação oficial do Google Cloud HTTPS Load Balancing que o load balancer acrescenta `<client-ip>,<load-balancer-ip>` no fim da lista e não verifica nada antes disso — o primeiro IP é exatamente o que o próprio cliente forjaria. Nenhuma página do Cloud Run confirma isso especificamente; marcado como **D-045** com um comentário "PENDENTE" no código pedindo verificação contra o log real do Cloud Run em Dev antes de confiar nisso em produção.
+- `apps/api/src/webhook.ts` — `mercadoLivreNotificationSchema` (Zod, aceita `_id` ou `id` conforme o tópico), `receiveWebhook`: resolve a conta por `seller_id = notification.user_id` (busca indexada, não é a "chamada de rede" que a regra proíbe — essa é sobre não chamar o Mercado Livre, não sobre nunca tocar o próprio Postgres) e enfileira `sync.webhook.received` na fila `ml-sync-<conta>` (D-036), com `dedupeKey = ml-webhook:{resource}` — notificações repetidas do mesmo recurso colapsam numa só, **independente do tópico**, exatamente como `docs/ARCHITECTURE.md` secao 10 descreve.
+- **Sem tabela de landing para a notificação crua** — decisão nova, **D-044**: o corpo da própria Cloud Task é o registro durável, mesmo padrão de `erp.import.parse`/`erp.import.apply`. O handler que vai processar `sync.webhook.received` (decidir por `topic` o que buscar no Mercado Livre) é trabalho futuro — depende do "Motor de diff e domain_events", mais adiante no checklist da Fase 3.
+- `apps/api/src/app.ts`: `/webhooks/mercado-livre` **não passa** pelo middleware de OIDC (`/internal/*`) nem pelo de JWT (implícito em `/v1/*`) — só pela allowlist de IP, registrada como seu próprio `app.use("/webhooks/*", ...)`. Contrato de resposta completo em `docs/API.md` secao 2.
+- **25 testes novos** (9 em `ip-allowlist.test.ts`, 8 em `webhook.test.ts`, 8 adicionados a `app.test.ts` — 78 no total da `api`, de 53), incluindo o teste que evita repetir o bug da V2: prova que a allowlist de IP do webhook **não vaza** para `/internal` (Cloud Tasks continua exigindo OIDC) nem para `/v1` (upload continua exigindo JWT) mesmo com a allowlist configurada, e que `/webhooks/outra-coisa` (vizinha dentro do próprio namespace) continua 404.
+- `pnpm run check` verde nas 28 tasks do monorepo depois da mudança.
+
 ## Bloqueios atuais
 
-- Nenhum bloqueio de documentação externa para a Fase 3 — o próximo item (webhook) não depende de mais nenhuma confirmação.
+- Nenhum bloqueio de documentação externa para a Fase 3 — o próximo item (reconciliação por janela via Cloud Scheduler) não depende de mais nenhuma confirmação.
+- **D-045 precisa de verificação empírica em Dev** (inspecionar o `X-Forwarded-For` real recebido pelo Cloud Run) antes de considerar a allowlist de IP confiável em produção — não bloqueia continuar a Fase 3 localmente/em Dev, mas bloqueia declarar o webhook pronto para tráfego real do Mercado Livre.
 - Modelos de exportação do pedido de compra (Excel e PDF) precisam ser solicitados antes da Fase 4.

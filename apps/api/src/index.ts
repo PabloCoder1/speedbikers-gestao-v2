@@ -6,6 +6,7 @@ import { createApp } from "./app.js";
 import { createAuthenticator } from "./auth.js";
 import { createEnqueuer } from "./enqueue.js";
 import { loadEnv } from "./env.js";
+import { createIpAllowlistVerifier } from "./ip-allowlist.js";
 import { createOidcVerifier } from "./oidc.js";
 import { createFileStore } from "./storage.js";
 
@@ -37,6 +38,8 @@ const app = createApp({
     logger,
     store: createFileStore(env.ERP_IMPORTS_BUCKET),
   },
+  ipAllowlist: createIpAllowlistVerifier(),
+  webhook: { db, enqueuer, logger },
 });
 
 serve({ fetch: app.fetch, port: env.PORT }, (info) => {

@@ -432,6 +432,32 @@ Levantadas pela pesquisa da documentação oficial que fecha a lista de verifica
 
 ---
 
+# Decisões de implementação — webhook do Mercado Livre (2026-08-21)
+
+## D-044 — Webhook: sem tabela de landing; o corpo da Cloud Task é o registro da notificação
+
+**Contexto:** `docs/ARCHITECTURE.md` secao 10 e `docs/MERCADO_LIVRE.md` secao 3 descrevem o passo como "grava a notificação e cria uma Cloud Task", sem especificar onde a notificação é gravada. Nenhuma tabela para isso está documentada em `docs/DATABASE.md`.
+
+**Decisão:** não criar tabela de landing. O corpo da Cloud Task (envelope + payload da notificação) É o registro durável até o worker processar — o mesmo padrão já usado por `erp.import.parse`/`erp.import.apply`, que também não têm uma tabela "recebido" separada do próprio job. Criado um novo tipo de job, `sync.webhook.received` (fila `ml-sync-<conta>`, dedupe `ml-webhook:{resource}`), registrado em `docs/API.md` secao 3.
+
+**Motivo:** "zero chamada de rede" já é cumprido (nenhuma chamada ao Mercado Livre acontece no ACK); adicionar uma tabela extra só para guardar o que a própria fila já guarda de forma durável duplicaria estado sem necessidade — mesmo princípio de D-016 (sem tabela de snapshot quando o dado já existe em outro lugar).
+
+**Impacto:** o handler do worker para `sync.webhook.received` (ainda não construído — depende do "Motor de diff e domain_events", item posterior do checklist da Fase 3) decide por `topic` o que buscar no Mercado Livre, e é aí que `sync_runs`/`sync_errors` nascem — a observabilidade começa no processamento, não no recebimento.
+
+## D-045 — IP confiável do webhook é o penúltimo do `X-Forwarded-For`
+
+**Contexto:** D-043 decidiu allowlist de IP como validação de origem do webhook, mas não definiu COMO extrair o IP real do cliente a partir do Cloud Run — nenhuma documentação do projeto cobria isso, e a "regra de nunca inventar comportamento de plataforma" pedia verificação antes de codificar.
+
+**Decisão:** extrair o **penúltimo** IP da lista de `X-Forwarded-For` — o último é o próprio load balancer do Google, o primeiro é o que o cliente controla. Confirmado por leitura direta da documentação oficial do Google Cloud HTTPS Load Balancing (mesma infraestrutura de front-end que atende o Cloud Run): "the load balancer appends its values to the existing header" no formato `<existing>,<client-ip>,<load-balancer-ip>`, e "does not verify any IP addresses that precede" essa dupla.
+
+**Motivo:** é a confirmação oficial mais próxima disponível — a página "Container runtime contract" do Cloud Run e a de headers do Cloud Functions não mencionam tratamento de `X-Forwarded-For`.
+
+**Risco aceito, registrado explicitamente:** o texto confirmado é da documentação de HTTPS Load Balancing, não de uma página do Cloud Run rotulada como tal. `apps/api/src/ip-allowlist.ts` tem um comentário "PENDENTE" pedindo verificação contra o log real do Cloud Run em Dev (inspecionar o header numa chamada de teste real) antes de depender disto para bloquear tráfego em produção — mesma disciplina já usada em `packages/contracts/src/job.ts` para o limite de nome de task do Cloud Tasks.
+
+**Alternativa rejeitada:** usar o PRIMEIRO IP da lista — erro comum que usaria exatamente o valor que o cliente forja livremente, tornando a allowlist inútil.
+
+---
+
 ## Como adicionar nova decisão
 
 Registrar:

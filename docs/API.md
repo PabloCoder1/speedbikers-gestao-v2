@@ -37,6 +37,17 @@ Todas as rotas são versionadas sob `/v1`, exceto webhook e callback do OAuth, c
 
 **Regra crítica do webhook:** o caminho é liberado **explicitamente e apenas ele**, com teste negativo nas rotas vizinhas. *Motivo, medido na V2:* o proxy exigia sessão, o webhook não envia cookie, e as notificações de preço, promoção e Full morriam em silêncio num 307 para `/login`.
 
+**Implementado em 2026-08-21** (`apps/api/src/webhook.ts`, `apps/api/src/ip-allowlist.ts`). Contrato de resposta:
+
+| Situação | Status | Corpo |
+|---|---|---|
+| Origem fora da allowlist de IP (D-043) | 403 | `{ error: { code: "forbidden" } }` |
+| Payload não é JSON ou falha o schema | 400 | `{ error: { code: "invalid_payload" } }` |
+| `seller_id` sem conta correspondente | 200 | `{ received: true, processed: false }` |
+| Sucesso — resolvido e enfileirado | 200 | `{ received: true, processed: true }` |
+
+400 em payload inválido é aceitável mesmo com o reenvio automático do Mercado Livre (até 1h): ou é ruído pontual e a próxima tentativa também falha sem custo real, ou é o schema desatualizado — caso em que os retries **ajudam** a expor o problema em vez de escondê-lo. Já "conta desconhecida" recebe 200 propositalmente: reenviar não cria a conta que falta, então retornar erro só gastaria o orçamento de 8 tentativas do Mercado Livre à toa (`docs/MERCADO_LIVRE.md` secao 2.5). Sem tabela de landing para a notificação crua — o corpo da própria Cloud Task é o registro durável (D-044). IP do cliente extraído do penúltimo elemento de `X-Forwarded-For` (D-045).
+
 ### Autenticadas por JWT do usuário (Supabase)
 
 | Rota | Método | Papel mínimo | Descrição |
@@ -92,6 +103,7 @@ Payloads tipados em `@sb/contracts/jobs`. Todo handler é **idempotente**.
 | `actions.measure-outcome` | `maintenance` | `outcome:{decision_id}:{offset}` |
 | `erp.import.parse` | `maintenance` | `erp-parse:{batch_id}` |
 | `erp.import.apply` | `maintenance` | `erp-apply:{batch_id}` |
+| `sync.webhook.received` | `ml-sync-<conta>` | `ml-webhook:{resource}` |
 
 **O nome da task é o mecanismo de dedupe** e é o que faz a chave suja funcionar: cem vendas do mesmo SKU no mesmo dia produzem um recálculo.
 

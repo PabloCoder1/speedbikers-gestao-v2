@@ -71,7 +71,7 @@ Cada fase só é considerada concluída sob a Definition of Done do `docs/PROMPT
 **Objetivo:** dados frescos e confiáveis, com linha do tempo.
 
 - [x] Cliente `@sb/mercado-livre` com backoff, jitter, `Retry-After` e paginação por cursor — concluído em 2026-08-21: OAuth (authorize/exchange/refresh, confirmado contra a fonte oficial), cliente HTTP autenticado com backoff+jitter e classificação de erro (`retryable`/`retryable_eventual`/`not_retryable`), paginador offset genérico. 43 testes, `access_token`/`refresh_token`/`client_secret` nunca vazam em erro (verificado por teste)
-- [ ] Webhook com ACK rápido, zero chamada de rede e teste negativo nas rotas vizinhas
+- [x] Webhook com ACK rápido, zero chamada de rede e teste negativo nas rotas vizinhas — concluído em 2026-08-21: allowlist de IP (D-043/D-045), payload validado por Zod, resolve a conta por `seller_id` e enfileira `sync.webhook.received` na fila da conta. 25 testes novos, incluindo prova de que `/internal` e `/v1` continuam exigindo sua própria autenticação com a allowlist ativa
 - [ ] Reconciliação por janela via Cloud Scheduler
 - [ ] Backfill retomável em fila de prioridade baixa
 - [ ] Persistência de pedidos com `pack_id` como entidade de análise
@@ -191,4 +191,4 @@ A Fase 5A antecede a Fase 4 porque o dashboard de vendas não usa estoque, e a F
 
 **Fase 2 concluída** (2026-08-21) — identidade, contas, catálogo, importador do UpSeller com aplicação e Central de Vinculações, e o schema de observabilidade de sincronização. Ver `docs/HANDOFF.md` para o estado verificado.
 
-**Fase 3 — Mercado Livre e histórico** está em andamento. Primeiro item do checklist concluído: cliente `@sb/mercado-livre` (OAuth, backoff/jitter, classificação de erro, paginação offset) — ver `docs/HANDOFF.md`. Próximo item: webhook com ACK rápido e teste negativo nas rotas vizinhas.
+**Fase 3 — Mercado Livre e histórico** está em andamento. Dois itens do checklist concluídos: cliente `@sb/mercado-livre` (OAuth, backoff/jitter, classificação de erro, paginação offset) e o webhook `POST /webhooks/mercado-livre` (allowlist de IP, resolução de conta, enfileiramento em `ml-sync-<conta>`) — ver `docs/HANDOFF.md`. Próximo item: reconciliação por janela via Cloud Scheduler.

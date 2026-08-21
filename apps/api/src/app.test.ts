@@ -2,7 +2,10 @@ import { createLogger } from "@sb/observability";
 import { describe, expect, it } from "vitest";
 
 import { createApp } from "./app.js";
+import type { EnqueueRequest } from "./enqueue.js";
+import { createIpAllowlistVerifier } from "./ip-allowlist.js";
 import type { OidcVerifier } from "./oidc.js";
+import type { WebhookDeps } from "./webhook.js";
 
 function buildApp(): { app: ReturnType<typeof createApp>; lines: string[] } {
   const lines: string[] = [];
@@ -174,6 +177,253 @@ describe("rotas /internal", () => {
     const { app } = withOidc(recusaTudo);
 
     expect((await app.request("/health")).status).toBe(200);
+  });
+});
+
+describe("webhook do Mercado Livre", () => {
+  const ALLOWED_IP = "54.88.218.97";
+  const FORWARDED_ALLOWED = `${ALLOWED_IP},169.254.1.1`;
+  const FORWARDED_DISALLOWED = "203.0.113.10,169.254.1.1";
+
+  const NOTIFICATION = {
+    _id: "not-1",
+    resource: "/orders/2000003508426396",
+    user_id: 987654321,
+    topic: "orders_v2",
+  };
+
+  const ACCOUNT = {
+    id: "aaaaaaaa-0000-4000-8000-000000000001",
+    organization_id: "11111111-0000-4000-8000-000000000001",
+    slug: "speedbikers-loja-1",
+  };
+
+  function fakeWebhookDb(options: { accountExists?: boolean } = {}): WebhookDeps["db"] {
+    const accountExists = options.accountExists ?? true;
+
+    return {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            maybeSingle: () =>
+              Promise.resolve({ data: accountExists ? ACCOUNT : null, error: null }),
+          }),
+        }),
+      }),
+    } as unknown as WebhookDeps["db"];
+  }
+
+  function withWebhook(options: {
+    accountExists?: boolean;
+    withIpAllowlist?: boolean;
+    withWebhookDeps?: boolean;
+  } = {}): { app: ReturnType<typeof createApp>; lines: string[]; enqueued: unknown[] } {
+    const lines: string[] = [];
+    const enqueued: unknown[] = [];
+    const logger = createLogger({}, { sink: (line) => lines.push(line) });
+
+    const app = createApp({
+      logger,
+      ...(options.withIpAllowlist === false ? {} : { ipAllowlist: createIpAllowlistVerifier() }),
+      ...(options.withWebhookDeps === false
+        ? {}
+        : {
+            webhook: {
+              db: fakeWebhookDb(options),
+              logger,
+              enqueuer: {
+                enqueue: (request: EnqueueRequest) => {
+                  enqueued.push(request);
+
+                  return Promise.resolve({
+                    taskName: "t",
+                    deduplicated: false,
+                    envelope: {
+                      jobType: request.jobType,
+                      jobId: "6f1d5f9c-6d0b-4a5f-9f4a-2c9a7a1f0b11",
+                      organizationId: request.organizationId,
+                      dedupeKey: request.dedupeKey,
+                      attempt: 1,
+                      enqueuedAt: "2026-08-21T12:00:00.000Z",
+                    },
+                  });
+                },
+              },
+            },
+          }),
+    });
+
+    return { app, lines, enqueued };
+  }
+
+  it("aceita a notificação de um IP da allowlist, SEM Authorization nenhum", async () => {
+    const { app, enqueued } = withWebhook();
+
+    const response = await app.request("/webhooks/mercado-livre", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": FORWARDED_ALLOWED },
+      body: JSON.stringify(NOTIFICATION),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ received: true, processed: true });
+    expect(enqueued).toHaveLength(1);
+  });
+
+  it("recusa com 403 uma origem fora da allowlist, e não enfileira nada", async () => {
+    const { app, lines, enqueued } = withWebhook();
+
+    const response = await app.request("/webhooks/mercado-livre", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": FORWARDED_DISALLOWED },
+      body: JSON.stringify(NOTIFICATION),
+    });
+
+    expect(response.status).toBe(403);
+    expect(enqueued).toHaveLength(0);
+    expect(lines.join()).toContain("webhook_origin_rejected");
+  });
+
+  it("recusa quando não há X-Forwarded-For nenhum", async () => {
+    const { app } = withWebhook();
+
+    const response = await app.request("/webhooks/mercado-livre", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(NOTIFICATION),
+    });
+
+    expect(response.status).toBe(403);
+  });
+
+  it("responde 503 quando a allowlist de IP não está configurada", async () => {
+    const { app } = withWebhook({ withIpAllowlist: false });
+
+    const response = await app.request("/webhooks/mercado-livre", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": FORWARDED_ALLOWED },
+      body: JSON.stringify(NOTIFICATION),
+    });
+
+    expect(response.status).toBe(503);
+  });
+
+  it("passa da allowlist de IP mas responde 503 sem as dependências do webhook", async () => {
+    const { app } = withWebhook({ withWebhookDeps: false });
+
+    const response = await app.request("/webhooks/mercado-livre", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": FORWARDED_ALLOWED },
+      body: JSON.stringify(NOTIFICATION),
+    });
+
+    expect(response.status).toBe(503);
+  });
+
+  it("corpo que não é JSON responde 400, não 500", async () => {
+    const { app } = withWebhook();
+
+    const response = await app.request("/webhooks/mercado-livre", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": FORWARDED_ALLOWED },
+      body: "isto nao e json",
+    });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("payload que não bate o schema responde 400", async () => {
+    const { app, enqueued } = withWebhook();
+
+    const response = await app.request("/webhooks/mercado-livre", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": FORWARDED_ALLOWED },
+      body: JSON.stringify({ topic: "orders_v2" }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(enqueued).toHaveLength(0);
+  });
+
+  it("conta desconhecida responde 200 (não vale a pena o ML repetir), mas não enfileira", async () => {
+    const { app, enqueued } = withWebhook({ accountExists: false });
+
+    const response = await app.request("/webhooks/mercado-livre", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": FORWARDED_ALLOWED },
+      body: JSON.stringify(NOTIFICATION),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ received: true, processed: false });
+    expect(enqueued).toHaveLength(0);
+  });
+
+  it("rota vizinha dentro do próprio namespace (/webhooks/outra-coisa) continua 404", async () => {
+    const { app } = withWebhook();
+
+    const response = await app.request("/webhooks/outra-coisa", {
+      method: "POST",
+      headers: { "x-forwarded-for": FORWARDED_ALLOWED },
+    });
+
+    expect(response.status).toBe(404);
+  });
+
+  it("a allowlist de IP do webhook NÃO vaza para /internal — Cloud Tasks continua exigindo OIDC", async () => {
+    const lines: string[] = [];
+    const logger = createLogger({}, { sink: (line) => lines.push(line) });
+
+    const app = createApp({
+      logger,
+      ipAllowlist: createIpAllowlistVerifier(),
+      oidc: { verify: () => Promise.resolve({ ok: false, reason: "sem token" }) },
+    });
+
+    // Mesmo vindo de um IP da allowlist do Mercado Livre, /internal não é o
+    // webhook — continua exigindo o próprio OIDC.
+    const response = await app.request("/internal/jobs/ping", {
+      method: "POST",
+      headers: { "x-forwarded-for": FORWARDED_ALLOWED },
+    });
+
+    expect(response.status).toBe(401);
+  });
+
+  it("a allowlist de IP do webhook NÃO vaza para /v1 — upload continua exigindo JWT", async () => {
+    const app = createApp({
+      logger: createLogger({}, { sink: () => undefined }),
+      ipAllowlist: createIpAllowlistVerifier(),
+      auth: { authenticate: () => Promise.resolve({ ok: false, status: 401, reason: "sem token" }) },
+      // Presente só para passar da checagem de "not_configured" e provar que
+      // quem barra a chamada é a autenticação — não a ausência de dependência.
+      importDeps: { db: {} as never, store: { upload: () => Promise.resolve() }, enqueuer: { enqueue: () => Promise.reject(new Error("não deveria ser chamado")) }, logger: createLogger({}, { sink: () => undefined }) },
+    });
+
+    const response = await app.request("/v1/erp-imports", {
+      method: "POST",
+      headers: { "x-forwarded-for": FORWARDED_ALLOWED },
+    });
+
+    expect(response.status).toBe(401);
+  });
+
+  it("não libera CORS no webhook — Mercado Livre não é navegador", async () => {
+    const app = createApp({
+      logger: createLogger({}, { sink: () => undefined }),
+      webOrigins: ["https://gestao.speedbikers.com.br"],
+      ipAllowlist: createIpAllowlistVerifier(),
+    });
+
+    const response = await app.request("/webhooks/mercado-livre", {
+      method: "OPTIONS",
+      headers: {
+        origin: "https://gestao.speedbikers.com.br",
+        "access-control-request-method": "POST",
+      },
+    });
+
+    expect(response.headers.get("access-control-allow-origin")).toBeNull();
   });
 });
 
