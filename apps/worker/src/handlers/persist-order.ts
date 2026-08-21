@@ -1,27 +1,35 @@
 import type { AdminClient } from "@sb/db";
-import { detectOrderStatusEvents } from "@sb/domain";
+import { computeSaleDeductions, detectOrderStatusEvents } from "@sb/domain";
+import type { SaleDeductionItem } from "@sb/domain";
 import type { Logger } from "@sb/observability";
 
 import { recordDomainEvents } from "./domain-events.js";
 import type { ParsedOrder } from "./order-schema.js";
+import { recordStockMovements } from "./stock-movements.js";
 
 /**
  * Grava um pedido e seus itens — `orders`/`order_items`
- * (`docs/DATABASE.md`, migration `20260821040000_create_orders.sql`) — e
- * roda o motor de diff (`@sb/domain/events`) comparando o status anterior
- * contra o novo, emitindo `domain_events` quando cabível (D-016).
+ * (`docs/DATABASE.md`, migration `20260821040000_create_orders.sql`) — roda
+ * o motor de diff (`@sb/domain/events`) comparando o status anterior contra
+ * o novo, emitindo `domain_events` quando cabível (D-016), e deduz estoque
+ * local em `stock_movements` quando o pedido é venda válida (D-019,
+ * `@sb/domain/inventory`).
  *
- * Não é atômico entre `orders`/`order_items`/`domain_events` (várias
- * chamadas de rede separadas). Aceito de propósito, mesmo padrão de
- * `erp-import-apply.ts`: o pedido é reprocessado a cada janela de
- * reconciliação, então uma falha no meio se autocorrige na próxima
- * varredura — não é o tipo de escrita humana única que precisa da
+ * Não é atômico entre `orders`/`order_items`/`domain_events`/
+ * `stock_movements` (várias chamadas de rede separadas). Aceito de
+ * propósito, mesmo padrão de `erp-import-apply.ts`: o pedido é reprocessado
+ * a cada janela de reconciliação, então uma falha no meio se autocorrige na
+ * próxima varredura — não é o tipo de escrita humana única que precisa da
  * atomicidade de uma RPC `security definer` (essa é para confirmação
  * humana, como `resolve_link_candidate`).
  *
  * `order_items` não tem id próprio do Mercado Livre — o array não traz
  * identificador estável por linha. Reprocessar substitui TODAS as linhas
  * (delete + insert), mesmo padrão já usado em `erp_import_rows`.
+ *
+ * **Deliberadamente não feito aqui**: reversão de estoque por cancelamento
+ * ou devolução — próximo item do checklist da Fase 4, de propósito
+ * separado (`docs/ROADMAP.md`).
  */
 
 export interface PersistOrderContext {
@@ -106,6 +114,36 @@ export async function persistOrder(
   );
 
   await db.from("order_items").insert(items);
+
+  const deductionItems: SaleDeductionItem[] = await Promise.all(
+    items.map(async (item) => {
+      if (item.sku_id === null) {
+        return { position: item.position, quantity: item.quantity, skuId: null, skuKind: null, components: [] };
+      }
+
+      const { kind, components } = await loadSkuKindAndComponents(db, item.sku_id);
+
+      return { position: item.position, quantity: item.quantity, skuId: item.sku_id, skuKind: kind, components };
+    }),
+  );
+
+  const deductions = computeSaleDeductions({
+    id: order.id,
+    status: order.status,
+    occurredAt: new Date(order.date_last_updated),
+    items: deductionItems,
+  });
+
+  if (deductions.length > 0) {
+    await recordStockMovements(
+      db,
+      context,
+      deductions,
+      "VENDA_ML",
+      { type: "ORDER", id: String(order.id) },
+      logger,
+    );
+  }
 }
 
 /**
@@ -132,4 +170,36 @@ async function resolveSku(
   const result = await filtered.maybeSingle();
 
   return result.data;
+}
+
+/**
+ * `kind` decide se a dedução vai para o próprio SKU (PRODUTO) ou para os
+ * componentes (KIT, `docs/DATABASE.md` secao 4 — kit não tem saldo
+ * próprio). SKU não encontrado (não deveria acontecer: `sku_listing_links`
+ * referencia `skus` com FK) cai em PRODUTO sem componentes — a inserção
+ * seguinte falha por violação de FK em vez de deduzir contra um SKU
+ * inexistente, e `recordStockMovements` loga o que não é conflito de
+ * idempotência.
+ */
+async function loadSkuKindAndComponents(
+  db: AdminClient,
+  skuId: string,
+): Promise<{ kind: "PRODUTO" | "KIT"; components: { componentSkuId: string; quantity: number }[] }> {
+  const sku = await db.from("skus").select("kind").eq("id", skuId).maybeSingle();
+
+  if (sku.data?.kind !== "KIT") {
+    return { kind: "PRODUTO", components: [] };
+  }
+
+  const componentsResult = await db
+    .from("sku_components")
+    .select("component_sku_id, quantity")
+    .eq("kit_sku_id", skuId);
+
+  const components = (componentsResult.data ?? []).map((row) => ({
+    componentSkuId: row.component_sku_id,
+    quantity: row.quantity,
+  }));
+
+  return { kind: "KIT", components };
 }

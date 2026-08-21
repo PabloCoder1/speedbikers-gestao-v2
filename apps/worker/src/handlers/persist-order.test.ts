@@ -36,7 +36,13 @@ const BASE_ORDER: ParsedOrder = {
   ],
 };
 
-/** Chain genérica que acumula filtros por nome de coluna — o terminal decide a resposta a partir deles. */
+/**
+ * Chain genérica que acumula filtros por nome de coluna — o terminal decide
+ * a resposta a partir deles. Também é "thenable": `loadSkuKindAndComponents`
+ * consulta `sku_components` sem `.maybeSingle()` (o resultado é uma lista),
+ * então `await` direto na chain precisa resolver — mesmo formato do
+ * query builder real do supabase-js.
+ */
 function filterChain(
   filters: Record<string, unknown>,
   resolve: (filters: Record<string, unknown>) => { data: unknown; error: unknown },
@@ -45,12 +51,17 @@ function filterChain(
   is: (col: string, val: unknown) => ReturnType<typeof filterChain>;
   select: () => ReturnType<typeof filterChain>;
   maybeSingle: () => Promise<{ data: unknown; error: unknown }>;
+  then: <T>(
+    onFulfilled: (value: { data: unknown; error: unknown }) => T,
+  ) => Promise<T>;
 } {
   const self = {
     eq: (col: string, val: unknown) => filterChain({ ...filters, [col]: val }, resolve),
     is: (col: string) => filterChain({ ...filters, [col]: null }, resolve),
     select: () => self,
     maybeSingle: () => Promise.resolve(resolve(filters)),
+    then: <T>(onFulfilled: (value: { data: unknown; error: unknown }) => T) =>
+      Promise.resolve(resolve(filters)).then(onFulfilled),
   };
 
   return self;
@@ -64,6 +75,14 @@ interface FakeDbOptions {
   domainEventConflict?: boolean;
   /** Simula uma falha REAL (não-dedup) no insert de `domain_events`. */
   domainEventError?: boolean;
+  /** `kind` de cada SKU consultado por `loadSkuKindAndComponents` — default PRODUTO. */
+  skuKindById?: (skuId: string) => "PRODUTO" | "KIT";
+  /** Componentes de um SKU kit, por `kit_sku_id`. */
+  componentsByKitId?: (kitSkuId: string) => { component_sku_id: string; quantity: number }[];
+  /** Simula violação de `idempotency_key` (23505) no insert de `stock_movements`. */
+  stockMovementConflict?: boolean;
+  /** Simula uma falha REAL (não-dedup) no insert de `stock_movements`. */
+  stockMovementError?: boolean;
 }
 
 function fakeDb(options: FakeDbOptions = {}): {
@@ -101,8 +120,20 @@ function fakeDb(options: FakeDbOptions = {}): {
           return Promise.resolve({ data: null, error: { code: "42P01", message: "boom" } });
         }
 
+        if (table === "stock_movements" && options.stockMovementConflict === true) {
+          return Promise.resolve({ data: null, error: { code: "23505", message: "duplicate key" } });
+        }
+
+        if (table === "stock_movements" && options.stockMovementError === true) {
+          return Promise.resolve({ data: null, error: { code: "42P01", message: "boom" } });
+        }
+
         return Promise.resolve({ data: null, error: null });
       },
+      // Tabela importa: `skus`/`sku_components` (dedução de estoque) e
+      // `sku_listing_links` (resolução de vínculo) têm formas de filtro
+      // e resposta diferentes — misturar os três faria um passar pelo
+      // outro em silêncio.
       select: () => {
         if (table === "orders") {
           return filterChain(
@@ -112,6 +143,22 @@ function fakeDb(options: FakeDbOptions = {}): {
               error: null,
             }),
           );
+        }
+
+        if (table === "skus") {
+          return filterChain({}, (filters) => {
+            const skuId = filters.id as string;
+
+            return { data: { kind: options.skuKindById?.(skuId) ?? "PRODUTO" }, error: null };
+          });
+        }
+
+        if (table === "sku_components") {
+          return filterChain({}, (filters) => {
+            const kitSkuId = filters.kit_sku_id as string;
+
+            return { data: options.componentsByKitId?.(kitSkuId) ?? [], error: null };
+          });
         }
 
         return filterChain({}, (filters) => {
@@ -352,6 +399,102 @@ describe("persistOrder", () => {
 
       await expect(run(db, order, lines)).resolves.toBeUndefined();
       expect(lines.join()).toContain("domain_event_not_recorded");
+      expect(upserted.find((entry) => entry.table === "orders")).toBeDefined();
+    });
+  });
+
+  describe("dedução de estoque por venda (stock_movements)", () => {
+    it("PRODUTO vinculado e pedido pago: um movimento VENDA_ML com quantidade negativa", async () => {
+      const { db, inserted } = fakeDb({
+        linkForItem: () => ({ id: "link-1", sku_id: "sku-1" }),
+      });
+
+      await run(db, BASE_ORDER);
+
+      const movement = inserted.find((entry) => entry.table === "stock_movements")?.rows[0] as {
+        sku_id: string;
+        location_kind: string;
+        qty_delta: number;
+        movement_type: string;
+        source_type: string;
+        source_id: string;
+        idempotency_key: string;
+      };
+
+      expect(movement).toMatchObject({
+        sku_id: "sku-1",
+        location_kind: "LOCAL",
+        qty_delta: -1,
+        movement_type: "VENDA_ML",
+        source_type: "ORDER",
+        source_id: String(BASE_ORDER.id),
+        idempotency_key: `venda:${String(BASE_ORDER.id)}:0`,
+      });
+    });
+
+    it("KIT vinculado: um movimento por componente, quantidade multiplicada", async () => {
+      const { db, inserted } = fakeDb({
+        linkForItem: () => ({ id: "link-kit", sku_id: "sku-kit" }),
+        skuKindById: () => "KIT",
+        componentsByKitId: () => [
+          { component_sku_id: "sku-lampada", quantity: 2 },
+          { component_sku_id: "sku-suporte", quantity: 1 },
+        ],
+      });
+      const order: ParsedOrder = {
+        ...BASE_ORDER,
+        order_items: [{ ...BASE_ORDER.order_items[0]!, quantity: 3 }],
+      };
+
+      await run(db, order);
+
+      const movements = inserted
+        .filter((entry) => entry.table === "stock_movements")
+        .map((entry) => entry.rows[0]) as { sku_id: string; qty_delta: number }[];
+
+      expect(movements).toEqual([
+        expect.objectContaining({ sku_id: "sku-lampada", qty_delta: -6 }),
+        expect.objectContaining({ sku_id: "sku-suporte", qty_delta: -3 }),
+      ]);
+    });
+
+    it("status que não é venda válida não deduz estoque", async () => {
+      const { db, inserted } = fakeDb({ linkForItem: () => ({ id: "link-1", sku_id: "sku-1" }) });
+      const order: ParsedOrder = { ...BASE_ORDER, status: "confirmed" };
+
+      await run(db, order);
+
+      expect(inserted.find((entry) => entry.table === "stock_movements")).toBeUndefined();
+    });
+
+    it("item sem vínculo não deduz estoque", async () => {
+      const { db, inserted } = fakeDb();
+
+      await run(db, BASE_ORDER);
+
+      expect(inserted.find((entry) => entry.table === "stock_movements")).toBeUndefined();
+    });
+
+    it("conflito de idempotency_key (23505) é absorvido em silêncio — reprocessar não deduz duas vezes", async () => {
+      const { db } = fakeDb({
+        linkForItem: () => ({ id: "link-1", sku_id: "sku-1" }),
+        stockMovementConflict: true,
+      });
+      const lines: string[] = [];
+
+      await expect(run(db, BASE_ORDER, lines)).resolves.toBeUndefined();
+      expect(lines.join()).not.toContain("stock_movement_not_recorded");
+    });
+
+    it("uma falha de gravação REAL em stock_movements é logada, mas não derruba a persistência do pedido", async () => {
+      const { db, upserted } = fakeDb({
+        linkForItem: () => ({ id: "link-1", sku_id: "sku-1" }),
+        stockMovementError: true,
+      });
+      const lines: string[] = [];
+
+      await expect(run(db, BASE_ORDER, lines)).resolves.toBeUndefined();
+      expect(lines.join()).toContain("stock_movement_not_recorded");
       expect(upserted.find((entry) => entry.table === "orders")).toBeDefined();
     });
   });
