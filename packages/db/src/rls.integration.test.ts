@@ -1502,3 +1502,265 @@ describe("observabilidade de sincronização", () => {
     });
   });
 });
+
+describe("ledger de estoque", () => {
+  // Nome fora do padrão `RLSTEST%` que o afterAll global apaga: uma vez que
+  // o SKU tiver stock_movements, `on delete restrict` o torna indeletável —
+  // mesmo raciocínio já documentado para a conta de observabilidade de
+  // sincronização, acima.
+  const SKU_NOME = "STOCKTEST-cabo-freio";
+  let skuId = "";
+
+  // Usuário PRÓPRIO, e-mail fora do padrão `%@rls.test` que o afterAll
+  // global apaga: `stock_movements.created_by` é `on delete restrict` (a
+  // mesma proteção contra a armadilha do `cascade`/`set null` em tabela
+  // append-only), então apagar este perfil depois de um AJUSTE_MANUAL
+  // falharia — quebrando a limpeza de TODA a suíte, não só desta seção.
+  const RESPONSAVEL_AJUSTE = "dddddddd-0000-4000-8000-000000000005";
+
+  async function balanceOf(location: string): Promise<number> {
+    const rows = await client.query<{ quantity: string }>(
+      `select quantity from public.inventory_balances where sku_id=$1 and location_kind=$2`,
+      [skuId, location],
+    );
+
+    return rows.rows[0] === undefined ? 0 : Number(rows.rows[0].quantity);
+  }
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                              email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',
+               'responsavel@stocktest.local','x',now(),'{"full_name":"Responsavel Stocktest"}',now(),now())
+       on conflict (id) do nothing`,
+      [RESPONSAVEL_AJUSTE],
+    );
+
+    const sku = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind) values ($1,$2,'PRODUTO') returning id`,
+      [ORG_SB, SKU_NOME],
+    );
+    skuId = sku.rows[0]?.id ?? "";
+
+    await client.query(
+      `insert into public.stock_movements
+         (organization_id, sku_id, location_kind, qty_delta, movement_type, source_type, source_id, idempotency_key, occurred_at)
+       values ($1,$2,'LOCAL',100,'ENTRADA_NFE','DOCUMENT','stocktest-doc-inicial','stocktest:entrada-inicial',now())`,
+      [ORG_SB, skuId],
+    );
+  });
+
+  // Sem afterAll de limpeza: append-only por desenho, mesma razão da
+  // observabilidade de sincronização acima — o ambiente local acumula até o
+  // próximo `supabase db reset --local`.
+
+  it("a linha inicial já aparece na projeção, mantida pela trigger", async () => {
+    expect(await balanceOf("LOCAL")).toBe(100);
+  });
+
+  it("qty_delta zero é recusado", async () => {
+    await expect(
+      client.query(
+        `insert into public.stock_movements
+           (organization_id, sku_id, location_kind, qty_delta, movement_type, idempotency_key, occurred_at)
+         values ($1,$2,'LOCAL',0,'ENTRADA_NFE','stocktest:zero',now())`,
+        [ORG_SB, skuId],
+      ),
+    ).rejects.toThrow(/stock_movements_qty_delta_check/);
+  });
+
+  it("movement_type fora do catálogo aprovado é recusado", async () => {
+    await expect(
+      client.query(
+        `insert into public.stock_movements
+           (organization_id, sku_id, location_kind, qty_delta, movement_type, idempotency_key, occurred_at)
+         values ($1,$2,'LOCAL',1,'TIPO_INVENTADO','stocktest:tipo-invalido',now())`,
+        [ORG_SB, skuId],
+      ),
+    ).rejects.toThrow(/stock_movements_movement_type_check/);
+  });
+
+  it("location_kind fora dos três estados observados é recusado — Full não é ledger (D-018)", async () => {
+    await expect(
+      client.query(
+        `insert into public.stock_movements
+           (organization_id, sku_id, location_kind, qty_delta, movement_type, idempotency_key, occurred_at)
+         values ($1,$2,'FULL',1,'ENTRADA_NFE','stocktest:full-recusado',now())`,
+        [ORG_SB, skuId],
+      ),
+    ).rejects.toThrow(/stock_movements_location_kind_check/);
+  });
+
+  it("AJUSTE_MANUAL sem created_by é recusado", async () => {
+    await expect(
+      client.query(
+        `insert into public.stock_movements
+           (organization_id, sku_id, location_kind, qty_delta, movement_type, idempotency_key, occurred_at)
+         values ($1,$2,'LOCAL',1,'AJUSTE_MANUAL','stocktest:sem-responsavel',now())`,
+        [ORG_SB, skuId],
+      ),
+    ).rejects.toThrow(/stock_movements_manual_has_creator/);
+  });
+
+  it("é append-only: nem um UPDATE direto do dono passa", async () => {
+    await expect(
+      client.query(`update public.stock_movements set qty_delta = 999 where sku_id = $1`, [skuId]),
+    ).rejects.toThrow(/append-only/);
+  });
+
+  it("é append-only: nem um DELETE direto do dono passa", async () => {
+    await expect(
+      client.query(`delete from public.stock_movements where sku_id = $1`, [skuId]),
+    ).rejects.toThrow(/append-only/);
+  });
+
+  it("idempotency_key repetida: rode duas vezes, um efeito só (docs/TESTING.md regra 1)", async () => {
+    const key = "stocktest:idempotencia";
+
+    await client.query(
+      `insert into public.stock_movements
+         (organization_id, sku_id, location_kind, qty_delta, movement_type, created_by, idempotency_key, occurred_at)
+       values ($1,$2,'LOCAL',10,'AJUSTE_MANUAL',$3,$4,now())`,
+      [ORG_SB, skuId, RESPONSAVEL_AJUSTE, key],
+    );
+
+    const before = await balanceOf("LOCAL");
+
+    await expect(
+      client.query(
+        `insert into public.stock_movements
+           (organization_id, sku_id, location_kind, qty_delta, movement_type, created_by, idempotency_key, occurred_at)
+         values ($1,$2,'LOCAL',10,'AJUSTE_MANUAL',$3,$4,now())`,
+        [ORG_SB, skuId, RESPONSAVEL_AJUSTE, key],
+      ),
+    ).rejects.toThrow(/idempotency_key/);
+
+    expect(await balanceOf("LOCAL")).toBe(before);
+  });
+
+  it("a trigger mantém a projeção consistente com o delta de novos movimentos", async () => {
+    const before = await balanceOf("LOCAL");
+
+    await client.query(
+      `insert into public.stock_movements
+         (organization_id, sku_id, location_kind, qty_delta, movement_type, idempotency_key, occurred_at)
+       values ($1,$2,'LOCAL',25,'ENTRADA_NFE','stocktest:trigger-entrada',now())`,
+      [ORG_SB, skuId],
+    );
+    await client.query(
+      `insert into public.stock_movements
+         (organization_id, sku_id, location_kind, qty_delta, movement_type, idempotency_key, occurred_at)
+       values ($1,$2,'LOCAL',-5,'SAIDA_NFE','stocktest:trigger-saida',now())`,
+      [ORG_SB, skuId],
+    );
+
+    expect(await balanceOf("LOCAL")).toBe(before + 20);
+  });
+
+  it("location_kind diferentes não se misturam na projeção", async () => {
+    const localBefore = await balanceOf("LOCAL");
+
+    await client.query(
+      `insert into public.stock_movements
+         (organization_id, sku_id, location_kind, qty_delta, movement_type, idempotency_key, occurred_at)
+       values ($1,$2,'TRANSITO',7,'ENTRADA_TRANSITO','stocktest:transito-entrada',now())`,
+      [ORG_SB, skuId],
+    );
+
+    expect(await balanceOf("TRANSITO")).toBe(7);
+    expect(await balanceOf("LOCAL")).toBe(localBefore);
+  });
+
+  it("compute_inventory_balances_from_ledger (job de conferência) bate com a projeção mantida por trigger", async () => {
+    const recomputed = await asServiceRole<{ sku_id: string; location_kind: string; quantity: string }>(
+      `select sku_id, location_kind, quantity
+       from private.compute_inventory_balances_from_ledger('${ORG_SB}', '${skuId}')`,
+    );
+
+    const projected = await client.query<{ location_kind: string; quantity: string }>(
+      `select location_kind, quantity from public.inventory_balances where sku_id=$1`,
+      [skuId],
+    );
+
+    expect(recomputed.length).toBe(projected.rows.length);
+
+    for (const row of projected.rows) {
+      const match = recomputed.find((r) => r.location_kind === row.location_kind);
+
+      expect(match?.quantity).toBe(row.quantity);
+    }
+  });
+
+  it("authenticated não executa a função de conferência — só service_role", async () => {
+    await expect(
+      asUser(ADMIN_SB, `select * from private.compute_inventory_balances_from_ledger('${ORG_SB}')`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
+  describe("RLS", () => {
+    it("membro da organização enxerga stock_movements e inventory_balances", async () => {
+      const movements = await asUser(
+        ANALISTA_SB,
+        `select id from public.stock_movements where sku_id='${skuId}'`,
+      );
+      const balances = await asUser(
+        ANALISTA_SB,
+        `select id from public.inventory_balances where sku_id='${skuId}'`,
+      );
+
+      expect(movements.length).toBeGreaterThan(0);
+      expect(balances.length).toBeGreaterThan(0);
+    });
+
+    it("usuário de outra organização não enxerga nada", async () => {
+      const movements = await asUser(
+        DE_OUTRA_ORG,
+        `select id from public.stock_movements where sku_id='${skuId}'`,
+      );
+      const balances = await asUser(
+        DE_OUTRA_ORG,
+        `select id from public.inventory_balances where sku_id='${skuId}'`,
+      );
+
+      expect(movements).toHaveLength(0);
+      expect(balances).toHaveLength(0);
+    });
+
+    it("anon é recusado nas duas tabelas", async () => {
+      await expect(asAnon("select * from public.stock_movements")).rejects.toThrow(
+        /permission denied/i,
+      );
+      await expect(asAnon("select * from public.inventory_balances")).rejects.toThrow(
+        /permission denied/i,
+      );
+    });
+
+    it("authenticated não escreve — só service_role registra movimento", async () => {
+      await expect(
+        asUser(
+          ADMIN_SB,
+          `insert into public.stock_movements
+             (organization_id, sku_id, location_kind, qty_delta, movement_type, idempotency_key, occurred_at)
+           values ('${ORG_SB}','${skuId}','LOCAL',1,'ENTRADA_NFE','stocktest:authenticated-bloqueado',now())`,
+        ),
+      ).rejects.toThrow(/permission denied|row-level security/i);
+    });
+
+    it("service_role registra movimento (prova positiva do GRANT)", async () => {
+      await expect(
+        asServiceRole(
+          `insert into public.stock_movements
+             (organization_id, sku_id, location_kind, qty_delta, movement_type, idempotency_key, occurred_at)
+           values ('${ORG_SB}','${skuId}','LOCAL',1,'ENTRADA_NFE','stocktest:service-role-grava',now())`,
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    it("authenticated não atualiza inventory_balances diretamente — só a trigger escreve", async () => {
+      await expect(
+        asUser(ADMIN_SB, `update public.inventory_balances set quantity=9999 where sku_id='${skuId}'`),
+      ).rejects.toThrow(/permission denied/i);
+    });
+  });
+});

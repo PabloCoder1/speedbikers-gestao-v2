@@ -497,6 +497,48 @@ export type Database = {
           },
         ]
       }
+      inventory_balances: {
+        Row: {
+          id: string
+          location_kind: string
+          organization_id: string
+          quantity: number
+          sku_id: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          location_kind: string
+          organization_id: string
+          quantity?: number
+          sku_id: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          location_kind?: string
+          organization_id?: string
+          quantity?: number
+          sku_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inventory_balances_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_balances_sku_id_fkey"
+            columns: ["sku_id"]
+            isOneToOne: false
+            referencedRelation: "skus"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       job_runs: {
         Row: {
           attempt: number
@@ -1315,6 +1357,73 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stock_movements: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          idempotency_key: string
+          location_kind: string
+          movement_type: string
+          occurred_at: string
+          organization_id: string
+          qty_delta: number
+          sku_id: string
+          source_id: string | null
+          source_type: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          idempotency_key: string
+          location_kind: string
+          movement_type: string
+          occurred_at: string
+          organization_id: string
+          qty_delta: number
+          sku_id: string
+          source_id?: string | null
+          source_type?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          idempotency_key?: string
+          location_kind?: string
+          movement_type?: string
+          occurred_at?: string
+          organization_id?: string
+          qty_delta?: number
+          sku_id?: string
+          source_id?: string | null
+          source_type?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_movements_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_movements_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_movements_sku_id_fkey"
+            columns: ["sku_id"]
+            isOneToOne: false
+            referencedRelation: "skus"
             referencedColumns: ["id"]
           },
         ]

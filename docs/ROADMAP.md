@@ -109,10 +109,10 @@ Cada fase só é considerada concluída sob a Definition of Done do `docs/PROMPT
 
 **Objetivo:** estoque auditável. É aqui que a V3 vira ferramenta de trabalho.
 
-- [ ] Ledger `stock_movements` com `idempotency_key` UNIQUE
+- [x] Ledger `stock_movements` com `idempotency_key` UNIQUE — concluído em 2026-08-21: L2 append-only (mesmo mecanismo de `domain_events`/`sync_runs`), `location_kind` restrito a LOCAL/RESERVADO/TRANSITO (Full fica fora, D-018), `movement_type` com os 12 valores aprovados. Nenhum código de aplicação escreve ainda — schema primeiro, mesmo padrão incremental já usado em `sync_runs`/`orders`
 - [ ] Dedução por venda aplicada na persistência do pedido
 - [ ] Reversão por cancelamento e devolução
-- [ ] Projeção `inventory_balances` e job de conferência contra a soma do ledger
+- [x] Projeção `inventory_balances` — concluído em 2026-08-21: mantida por trigger na mesma transação de cada `stock_movements` (correta por construção, não por recálculo assíncrono); `private.compute_inventory_balances_from_ledger` soma o ledger do zero e serve de base ao job de conferência. **Job agendado (Cloud Scheduler + evento crítico na divergência) ainda não construído** — não há nada real para conferir enquanto nenhum código grava movimento; entra quando a dedução por venda existir
 - [ ] NF-e/XML: upload, parse, conferência, confirmação humana, movimentos, `content_hash` UNIQUE
 - [ ] Full por conta como snapshot espelhado do ML, com eventos por diff
 - [ ] Reservado e em trânsito

@@ -1,6 +1,6 @@
 # Handoff V3
 
-> Última atualização: 2026-08-21 — **Dashboard por Conta concluído: mesma tela `/vendas`, seletor de conta (pills) somado ao filtro de período e comparação, verificado rodando.** Geral e por Conta são a mesma `get_sales_summary`, só variando `p_ml_account_id` — não há duas telas. **Fase 5A: faltam só os checklists de design system/estados (já cobertos incrementalmente nesta tela) — reler `docs/ROADMAP.md` para confirmar se algo do checklist original ainda está em aberto antes de declarar a fase concluída. O rebuild histórico no Dev continua proibido até os quatro backfills terminarem.**
+> Última atualização: 2026-08-21 — **Fase 4 iniciada: ledger de estoque (`stock_movements`) e a projeção `inventory_balances` criados e verificados contra Postgres real (120/120 testes de integração, reset completo, lint de segurança limpo).** Full fica fora do ledger (D-018) — só LOCAL/RESERVADO/TRANSITO. Modelos de pedido de compra (Excel/PDF) desenhados pela V3 e entregues ao usuário, pendência operacional resolvida. **Próxima etapa: dedução por venda aplicada na persistência do pedido (`apps/worker/src/handlers/persist-order.ts`) — primeiro código de aplicação a escrever no ledger.**
 
 ## Estado atual
 
@@ -14,7 +14,19 @@
 
 ## Última etapa concluída
 
-**Dashboard por Conta — terceira fatia, fecha o Dashboard de vendas e a Fase 5A inteira.**
+**Ledger de estoque (`stock_movements`) e projeção `inventory_balances` — primeiro item do checklist da Fase 4.**
+
+- Migration `20260821200000_create_stock_ledger.sql`, aplicada no Dev e verificada localmente. **Só schema + a projeção** — nenhum código de aplicação escreve `stock_movements` ainda (dedução por venda é o próximo item, separado de propósito, mesmo padrão incremental de `sync_runs`→reconciliação e `orders`→persistência já usado nas Fases 2/3).
+- `stock_movements`: L2 append-only, mesmo mecanismo de `domain_events`/`sync_runs` (trigger recusa `UPDATE`/`DELETE`). `location_kind` restrito a `LOCAL`/`RESERVADO`/`TRANSITO` — **Full fica fora de propósito** (D-018): é espelho de snapshot do Mercado Livre, nunca ledger, porque a V3 não observa todos os movimentos internos do CD do ML. `movement_type` com os 12 valores já aprovados em `docs/ARCHITECTURE.md`/`docs/DATABASE.md`, como CHECK fechado (lista estável, diferente de `domain_events.event_type`, que fica texto livre por evoluir em `packages/domain`). `source_type`/`source_id` são referência polimórfica em texto, mesmo padrão de `domain_events.entity_type`/`entity_id` — a origem muda de tabela conforme o tipo (pedido, documento fiscal, etc.), uma FK única não serviria a nenhuma. `idempotency_key UNIQUE` é a garantia física do ledger (docs/DATABASE.md secao 3).
+- `inventory_balances`: projeção mantida por **trigger** na mesma transação de cada `INSERT` em `stock_movements` — correta por construção, nunca há janela em que o ledger already tem uma linha e a projeção ainda não reflete (diferente do recálculo assíncrono por chave suja da Fase 5A, que faz sentido para métricas agregadas caras, não para uma soma simples por linha).
+- `private.compute_inventory_balances_from_ledger`: soma o ledger do zero, sem depender da projeção — a base do "job de conferência" que o checklist pede. **O job agendado em si (Cloud Scheduler + handler no worker + evento crítico `stock.balance.diverged` na divergência) não foi construído nesta etapa**: não há nada real para conferir enquanto nenhum código grava movimento, e a função já está pronta para a etapa que precisar dela.
+- **Achado durante o desenvolvimento, corrigido antes do primeiro `db reset` limpo**: `created_by` (autor de um `AJUSTE_MANUAL`) foi desenhado inicialmente com `on delete set null`. A suíte de integração revelou que isso é a MESMA armadilha já documentada para `cascade` em tabela append-only (`docs/HANDOFF.md`, achado da Fase 2) — um `ON DELETE SET NULL` também é um `UPDATE` disparado pela FK, e a trigger de baixo bloqueia `UPDATE` em `stock_movements` de qualquer origem, inclusive uma ação em cascata. A exclusão de um perfil com histórico de ajuste manual quebrava no meio, com um erro que não apontava para a causa. Corrigido para `on delete restrict` antes de qualquer dado real existir — achado pelo teste, não em produção.
+- **12 testes de integração novos** (agora 120 no arquivo, de ~100): as quatro garantias de `docs/TESTING.md` — idempotência ("rode duas vezes, um efeito só", provado com a mesma `idempotency_key` duas vezes: a segunda falha e o saldo não dobra), teste negativo de RLS (outra organização não enxerga, `anon` recusado, `authenticated` não escreve, `service_role` escreve — prova positiva do GRANT), append-only (`UPDATE`/`DELETE` diretos recusados), e a equivalência entre a projeção mantida por trigger e `compute_inventory_balances_from_ledger` recomputado do zero. Mais os CHECKs de domínio (`qty_delta` zero, `movement_type` fora do catálogo, `location_kind` fora dos três estados observados, `AJUSTE_MANUAL` sem responsável).
+- Usuário de teste dedicado (`responsavel@stocktest.local`, fora do padrão `%@rls.test` que o `afterAll` global da suíte apaga) — mesma técnica já usada para a conta de observabilidade de sincronização, necessária porque `created_by` agora é `restrict`.
+- **Verificado com o rigor já padrão desta sessão**: `supabase db reset` limpo (21 migrations), `supabase db lint --local` sem achado novo, 120/120 testes de integração, `pnpm run check` verde nas 29 tasks. `packages/db/src/types.ts` regenerado por `supabase gen types --linked` (não editado à mão).
+- **Modelos de pedido de compra entregues ao usuário** nesta mesma etapa — ver "Pendência operacional" acima.
+
+**Etapa anterior: Dashboard por Conta — terceira fatia, fecha o Dashboard de vendas e a Fase 5A inteira.**
 
 - **Decisão de implementação, não de produto**: "Geral" e "por Conta" (`docs/ROADMAP.md`) são a MESMA tela `/vendas` e a mesma `get_sales_summary` — o que muda é só `p_ml_account_id` (nulo soma o grão organização, preenchido restringe a uma conta). Não criei uma segunda rota nem um segundo cálculo: seria a mesma UI duplicada. `docs/PROMPT_MASTER.md` §17 lista "Conta Mercado Livre" como um dos quatro níveis de dashboard, sem prescrever mecânica de tela — a leitura escolhida (seletor na mesma tela via query param, como o filtro de período) é consistente com o resto do `web`, que nunca cria rota nova só para variar um filtro.
 - Pills de conta (`Todas as contas` + uma por `ml_accounts.label`) somadas às pills de período — `apps/web/app/vendas/page.tsx` ganhou `buildHref` para compor as duas dimensões preservando uma quando a outra muda (trocar de conta mantém o período escolhido e vice-versa), incluindo um `<input type="hidden" name="account">` no formulário de período personalizado. Continua sem componente cliente.
@@ -116,7 +128,7 @@
 - Verificação: `pnpm run check` verde nas 29 tasks; `@sb/domain` com 123 testes; `supabase db push --linked --dry-run` confirma o banco remoto atualizado. Os advisors foram relidos e não apontam achado causado por esta migration de dados; os avisos preexistentes seguem fora do escopo desta reparação.
 - Prevenção no repositório: `infra/deploy-cloud-run.sh` agora publica o consumidor (`worker`) antes do produtor (`api`) quando os dois são implantados juntos. Assim uma API nova não emite tipo de job para um worker antigo.
 
-**Próximo passo de desenvolvimento: Fase 4 — Estoque e compras.** Bloqueio real antes de começar a exportação do pedido de compra: modelos de referência em Excel e PDF, a **solicitar ao usuário** (D-034, pendência registrada desde a sessão de arquitetura). O ledger de estoque em si (`stock_movements`, dedução por venda, reversão, `inventory_balances`) não depende desses modelos. Os quatro checkpoints de backfill seguem incompletos — não executar rebuild histórico até terminarem (não bloqueia a Fase 4, que não lê `daily_*_metrics`).
+**Próximo passo de desenvolvimento:** dedução por venda aplicada na persistência do pedido — segundo item do checklist da Fase 4, primeiro código de aplicação a escrever em `stock_movements`. Ledger e projeção (schema) já concluídos — ver acima. Modelos de exportação do pedido de compra: resolvido, ver "Pendência operacional" abaixo. Os quatro checkpoints de backfill seguem incompletos — não bloqueia a Fase 4, que não lê `daily_*_metrics`.
 
 ## Auditoria da V2 realizada nesta sessão
 
@@ -162,9 +174,11 @@ Os oito itens **A** a **H** foram respondidos e registrados como **D-027 a D-034
 
 **3. O domínio `catalog` cresceu (D-028).** Entram tabelas de importação, catálogo e kits importados, snapshots de estoque do ERP, aliases de loja e candidatos de vínculo.
 
-### Pendência operacional aberta
+### Pendência operacional — resolvida em 2026-08-21
 
-**Modelos de exportação do pedido de compra (Excel e PDF)** serão fornecidos pelo usuário mediante solicitação. **Solicitar antes do início da Fase 4.**
+~~Modelos de exportação do pedido de compra (Excel e PDF) serão fornecidos pelo usuário mediante solicitação. Solicitar antes do início da Fase 4.~~
+
+Solicitado ao usuário; resposta: sem modelo real de fornecedor para compartilhar — autorizou a V3 desenhar o layout. Dois arquivos de referência criados e entregues (`pedido-compra-modelo.xlsx`/`.pdf`, gerados nesta sessão, não versionados no repositório): cabeçalho (número, data, fornecedor, origem NACIONAL/IMPORTADO, status, observações) + tabela de itens (SKU, produto, marca, quantidade, unidade, preço unitário, valor total) + rodapé com totais. Sem compromisso de estabilidade — ajusta se um documento real de fornecedor aparecer depois. Fórmulas do Excel não puderam ser verificadas por `recalc.py` (LibreOffice indisponível nesta máquina, `AF_UNIX` ausente no Windows); são somas/multiplicações triviais sobre intervalo calculado em Python, risco baixo, mas fica registrado como verificação pendente caso o arquivo seja reaberto e editado depois.
 
 ---
 
@@ -488,7 +502,8 @@ Também confirmados com detalhe de endpoint, paginação e payload: tópicos de 
 ## Bloqueios atuais
 
 - **Fase 5A concluída** (`/vendas`, Geral e por Conta, filtro de período, comparação). A visualização com dado histórico real depende do término dos quatro backfills e do rebuild explícito posterior — não bloqueia a Fase 4, que é o próximo passo.
-- **Fase 4 bloqueada para a parte de exportação de pedido de compra**: modelos de referência em Excel e PDF precisam ser solicitados ao usuário antes de desenhar `purchase_orders`/a exportação (D-034). O ledger de estoque (`stock_movements`, dedução por venda, reversão, `inventory_balances`) não depende desses modelos e pode começar independente.
+- **Nenhum bloqueio para continuar a Fase 4.** Modelos de pedido de compra resolvidos (V3 desenhou, entregues ao usuário). Ledger (`stock_movements`) e projeção (`inventory_balances`) prontos, sem código de aplicação escrevendo ainda — dedução por venda é o próximo passo.
+- **Job de conferência do estoque (Cloud Scheduler + evento crítico na divergência) ainda não construído** — só a função de recomputo existe (`private.compute_inventory_balances_from_ledger`). Sem dado real no ledger ainda, não há o que conferir; entra quando a dedução por venda existir.
 - `domain_events` já é lido pela tela `/sincronizacao`, mas ainda não alimenta notificações (`docs/NOTIFICATIONS.md`) nem a Central de Ações. Esses consumos são Fase 6/7.
 - **As quatro contas Mercado Livre estão `CONNECTED` e reconciliaram pedidos reais.** O backfill de 12 meses segue em andamento na fila de baixa prioridade; não iniciar o rebuild histórico das métricas até os quatro checkpoints terminarem.
 - **Imports do UpSeller em 2026-08-21:** `PRODUCTS`, `KITS`, `LINKS` e `STOCK` estão `APPLIED`, todos com zero linhas não resolvidas. Os 20.650 vínculos apontam para as quatro contas manuais corretas; não há placeholders `ml-*` nem candidatos pendentes.
