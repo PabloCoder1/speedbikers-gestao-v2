@@ -1,20 +1,30 @@
 # Handoff V3
 
-> Última atualização: 2026-08-21 — **fato diário de vendas e os dois rollups da Fase 5A concluídos e validados localmente.** Os três grãos saem de um único cálculo SQL e têm RLS/teste de equivalência. **Próxima etapa de desenvolvimento: recálculo incremental por chave suja e rebuild completo, sem executar o rebuild histórico no Dev antes de os quatro backfills terminarem.**
+> Última atualização: 2026-08-21 — **recálculo incremental por conta/dia e rebuild completo da Fase 5A concluídos e validados localmente.** A chave suja usa janela UTC de minuto para não perder atualizações posteriores no mesmo dia, e as três projeções são substituídas sob a mesma transação e snapshot. **Próxima etapa de desenvolvimento: Dashboard de vendas Geral e por Conta, com filtros de período e comparação. O rebuild histórico no Dev continua proibido até os quatro backfills terminarem.**
 
 ## Estado atual
 
 - Branch: `v3`
 - Referência V2: commit `8573d971a5cd427702575b52ed249c53588ec5ca` da `main`
 - V3 reconstruída como monorepo com `web`, `api`, `worker`, packages compartilhados e migrations versionadas.
-- Supabase V3 Dev (`nmgccyqquwxecqffsidr`, `sa-east-1`): migrations aplicadas até `20260821181121_create_metric_definitions`; `20260821182620_create_daily_sales_metrics` está validada localmente e será aplicada pela CI após o push deste commit.
+- Supabase V3 Dev (`nmgccyqquwxecqffsidr`, `sa-east-1`): migrations aplicadas até `20260821182620_create_daily_sales_metrics`; `20260821184047_create_sales_metrics_recompute` está validada localmente e será aplicada pela CI após o push deste commit.
 - Google Cloud V3 (`speedbikers-gestao-v3`, `southamerica-east1`): Cloud Run, sete filas Cloud Tasks (três base + quatro por conta), Scheduler, Secret Manager e Storage provisionados em Dev.
 - Vercel V3: **criado e no ar**, branch `v3`.
 - Monorepo e CI: criados e operacionais. Falta o ambiente de produção (Fase 8).
 
 ## Última etapa concluída
 
-**Fato diário de vendas e dois rollups — segunda etapa da Fase 5A (D-017/D-050).**
+**Recálculo incremental e rebuild completo — terceira etapa da Fase 5A (D-017/D-051).**
+
+- A chave fixa diária antes documentada (`recompute:{conta}:{sku}:{data}`) era incorreta para Cloud Tasks: depois de executado ou excluído, um ID pode permanecer indisponível por até 24 horas e faria uma atualização posterior do mesmo dia desaparecer. D-051 substitui a chave por `recompute:{account-uuid}:{data-negocio}:{YYYY-MM-DDTHH:mmZ}`: o UUID evita colisão entre organizações com o mesmo slug, o burst do mesmo minuto converge, o seguinte sempre ganha ID novo e há atraso de 60 segundos.
+- A unidade de invalidação é `(conta, dia de negócio em America/Sao_Paulo)`, não SKU. `private.compute_daily_sales_metrics` já produz os três grãos juntos; recalcular uma vez por conta/dia evita repetir a leitura inteira de pedidos para cada SKU alterado.
+- Migration `20260821184047_create_sales_metrics_recompute.sql`: `private.refresh_daily_sales_metrics` substitui os três fatos no intervalo com um único `computed AS MATERIALIZED`; `recompute_daily_sales_metrics` expõe um dia e `rebuild_daily_sales_metrics` um intervalo. As RPCs são exclusivas de `service_role` e uma advisory lock por conta serializa incrementais concorrentes e rebuilds.
+- `analytics.recompute` foi registrado no worker com payload discriminado incremental/rebuild. `sync.orders.window` só publica as datas realmente persistidas depois de concluir a janela; falha ao publicar é retryable. O backfill **não** marca dias sujos para não materializar história parcial enquanto seus quatro checkpoints ainda avançam.
+- O dia de negócio foi centralizado em `toSalesMetricDate`, com testes nos limites UTC e no horário de verão histórico de São Paulo. O enqueuer do worker ganhou permissão somente na fila `analytics-recompute`; falta aplicar esse IAM e publicar o worker após a CI deste commit.
+- Verificação local: reset completo aplicou as 20 migrations; 102/102 testes de integração passaram, incluindo idempotência, remoção de fatos obsoletos, concorrência real em duas conexões e bloqueio das RPCs para usuário autenticado. `pnpm run check` passou nas 29/29 tasks (130 testes de domínio, 110 do worker), o diff de schema ficou vazio e os advisors não apontaram achado novo. `EXPLAIN (ANALYZE, BUFFERS)` na fixture local ficou em aproximadamente 1,4 ms com cache aquecido para o rebuild testado.
+- **Deliberadamente não feito:** nenhum rebuild histórico foi executado no Dev. O comando existe e está testado, mas continua bloqueado até as quatro contas cobrirem os 12 meses.
+
+**Etapa anterior: fato diário de vendas e dois rollups — segunda etapa da Fase 5A (D-017/D-050).**
 
 - Migration `20260821182620_create_daily_sales_metrics.sql`: cria `daily_listing_metrics` no grão aprovado `(conta, MLB, variação, dia)`, `daily_sku_metrics` em `(conta, SKU, dia)` e `daily_account_metrics` em `(conta, dia)`.
 - `private.compute_daily_sales_metrics` é o único cálculo das três projeções: usa `GROUPING SETS`, filtra `paid`/`partially_refunded`, converte `date_created` para `America/Sao_Paulo`, ancora receita em `total_amount` e refaz `COUNT(DISTINCT order/pack)` diretamente em cada grão.
@@ -68,7 +78,7 @@
 - Verificação: `pnpm run check` verde nas 29 tasks; `@sb/domain` com 123 testes; `supabase db push --linked --dry-run` confirma o banco remoto atualizado. Os advisors foram relidos e não apontam achado causado por esta migration de dados; os avisos preexistentes seguem fora do escopo desta reparação.
 - Prevenção no repositório: `infra/deploy-cloud-run.sh` agora publica o consumidor (`worker`) antes do produtor (`api`) quando os dois são implantados juntos. Assim uma API nova não emite tipo de job para um worker antigo.
 
-**Próximo passo de desenvolvimento:** construir o recálculo incremental por chave suja e o caminho de rebuild completo usando `private.compute_daily_sales_metrics`, com idempotência, teste e observabilidade. O mecanismo pode nascer agora; a execução do rebuild histórico no Dev deve aguardar os quatro checkpoints cobrirem os 12 meses.
+**Próximo passo de desenvolvimento:** construir o Dashboard de vendas Geral e por Conta consumindo os fatos diários sob RLS, com filtro de período e comparação. Antes de usar dados históricos, verificar os quatro checkpoints; se algum backfill ainda estiver incompleto, validar a interface com fixtures controladas e não executar o rebuild.
 
 ## Auditoria da V2 realizada nesta sessão
 
@@ -439,12 +449,12 @@ Também confirmados com detalhe de endpoint, paginação e payload: tópicos de 
 
 ## Bloqueios atuais
 
-- **Nenhum bloqueio para a próxima etapa da Fase 5A.** As definições de venda estão aprovadas e o catálogo foi migrado.
+- **Nenhum bloqueio para construir e validar o próximo Dashboard da Fase 5A com fixtures controladas.** A visualização de toda a história real depende do término dos quatro backfills e do rebuild explícito posterior.
 - `domain_events` já é lido pela tela `/sincronizacao`, mas ainda não alimenta notificações (`docs/NOTIFICATIONS.md`) nem a Central de Ações. Esses consumos são Fase 6/7.
 - **As quatro contas Mercado Livre estão `CONNECTED` e reconciliaram pedidos reais.** O backfill de 12 meses segue em andamento na fila de baixa prioridade; não iniciar o rebuild histórico das métricas até os quatro checkpoints terminarem.
 - **Imports do UpSeller em 2026-08-21:** `PRODUCTS`, `KITS`, `LINKS` e `STOCK` estão `APPLIED`, todos com zero linhas não resolvidas. Os 20.650 vínculos apontam para as quatro contas manuais corretas; não há placeholders `ml-*` nem candidatos pendentes.
 - **D-048 validada empiricamente em Dev:** os dois timestamps divergem na maioria dos pedidos reais e as quatro reconciliações terminaram usando `date_last_updated` como checkpoint.
-- **Tipos do banco conferidos em 2026-08-21:** o gerador remoto do Supabase foi executado após a migration de `metric_definitions`; o trecho gerado coincide com `packages/db/src/types.ts`. A geração completa do arquivo continua devendo ser feita em uma etapa própria quando o script remoto estiver disponível no fluxo normal.
+- **Tipos do banco regenerados em 2026-08-21:** `packages/db/src/types.ts` foi gerado novamente após as duas migrations de fatos e recálculo; reset completo e diff local sem alterações confirmam a cadeia versionada.
 - **Provisionamento de conta nova ainda tem um passo de infraestrutura:** criar `ml-sync-<slug>` com `bash infra/cloud-tasks-queues.sh <slug>` antes do OAuth. As quatro filas atuais já existem. Automatização fica para a identidade de provisionamento da Fase 8; a API pública não recebe `queueAdmin`.
 - O Scheduler `v3-reconcile-orders` está `ENABLED`, dispara de hora em hora e já concluiu uma reconciliação real nas quatro contas.
 - **D-045 precisa de verificação empírica em Dev** (inspecionar o `X-Forwarded-For` real recebido pelo Cloud Run) antes de considerar a allowlist de IP confiável em produção — não bloqueia a Fase 5A, mas bloqueia declarar o webhook pronto para tráfego real do Mercado Livre.

@@ -94,6 +94,20 @@ async function asAnon<T>(sql: string): Promise<T[]> {
   }
 }
 
+async function asServiceRole<T>(sql: string): Promise<T[]> {
+  await client.query("begin");
+
+  try {
+    await client.query("set local role service_role");
+
+    const result = await client.query(sql);
+
+    return result.rows as T[];
+  } finally {
+    await client.query("rollback");
+  }
+}
+
 beforeAll(async () => {
   client = new Client({ connectionString: DB_URL });
   await client.connect();
@@ -544,48 +558,12 @@ describe("métricas diárias de venda", () => {
     );
 
     await client.query(
-      `with computed as (
-         select * from private.compute_daily_sales_metrics($1,'2026-08-20','2026-08-20')
-         union all
-         select * from private.compute_daily_sales_metrics($2,'2026-08-20','2026-08-20')
-       )
-       insert into public.daily_listing_metrics
-         (organization_id, ml_account_id, mlb_id, variation_id, metric_date,
-          units_sold, gross_revenue, orders_count, purchases_count)
-       select organization_id, ml_account_id, mlb_id, variation_id, metric_date,
-              units_sold, gross_revenue, orders_count, purchases_count
-       from computed where metric_grain = 'listing'`,
-      [ORG_SB, ORG_OUTRA],
-    );
-
-    await client.query(
-      `with computed as (
-         select * from private.compute_daily_sales_metrics($1,'2026-08-20','2026-08-20')
-         union all
-         select * from private.compute_daily_sales_metrics($2,'2026-08-20','2026-08-20')
-       )
-       insert into public.daily_sku_metrics
-         (organization_id, ml_account_id, sku_id, metric_date,
-          units_sold, gross_revenue, orders_count, purchases_count)
-       select organization_id, ml_account_id, sku_id, metric_date,
-              units_sold, gross_revenue, orders_count, purchases_count
-       from computed where metric_grain = 'sku'`,
-      [ORG_SB, ORG_OUTRA],
-    );
-
-    await client.query(
-      `with computed as (
-         select * from private.compute_daily_sales_metrics($1,'2026-08-20','2026-08-20')
-         union all
-         select * from private.compute_daily_sales_metrics($2,'2026-08-20','2026-08-20')
-       )
-       insert into public.daily_account_metrics
-         (organization_id, ml_account_id, metric_date,
-          units_sold, gross_revenue, orders_count, purchases_count)
-       select organization_id, ml_account_id, metric_date,
-              units_sold, gross_revenue, orders_count, purchases_count
-       from computed where metric_grain = 'account'`,
-      [ORG_SB, ORG_OUTRA],
+      `select public.rebuild_daily_sales_metrics($1,$2,'2026-08-20','2026-08-20')
+       union all
+       select public.rebuild_daily_sales_metrics($1,$3,'2026-08-20','2026-08-20')
+       union all
+       select public.rebuild_daily_sales_metrics($4,$5,'2026-08-20','2026-08-20')`,
+      [ORG_SB, CONTA_A, CONTA_B, ORG_OUTRA, CONTA_OUTRA],
     );
   });
 
@@ -685,6 +663,92 @@ describe("métricas diárias de venda", () => {
     expect(result.rows[0]?.differences).toBe("0");
   });
 
+  it("rebuild completo é idempotente e retorna as linhas materializadas", async () => {
+    const first = await client.query<{ rebuilt: number }>(
+      `select public.rebuild_daily_sales_metrics($1,$2,'2026-08-20','2026-08-20') as rebuilt`,
+      [ORG_SB, CONTA_A],
+    );
+    const second = await client.query<{ rebuilt: number }>(
+      `select public.rebuild_daily_sales_metrics($1,$2,'2026-08-20','2026-08-20') as rebuilt`,
+      [ORG_SB, CONTA_A],
+    );
+
+    expect(first.rows[0]?.rebuilt).toBe(5);
+    expect(second.rows[0]?.rebuilt).toBe(5);
+
+    const counts = await client.query<{ total: string }>(
+      `select count(*)::text as total
+       from (
+         select id from public.daily_listing_metrics where ml_account_id = $1
+         union all
+         select id from public.daily_sku_metrics where ml_account_id = $1
+         union all
+         select id from public.daily_account_metrics where ml_account_id = $1
+       ) rows`,
+      [CONTA_A],
+    );
+
+    expect(counts.rows[0]?.total).toBe("5");
+  });
+
+  it("incremental apaga projeção obsoleta quando o dia fica sem venda válida", async () => {
+    try {
+      await client.query(
+        `update public.orders set status = 'cancelled' where id = any($1)`,
+        [ORDER_IDS.slice(0, 3)],
+      );
+
+      const refreshed = await client.query<{ refreshed: number }>(
+        `select public.recompute_daily_sales_metrics($1,$2,'2026-08-20') as refreshed`,
+        [ORG_SB, CONTA_A],
+      );
+
+      expect(refreshed.rows[0]?.refreshed).toBe(0);
+
+      const remaining = await client.query<{ total: string }>(
+        `select (
+           (select count(*) from public.daily_listing_metrics where ml_account_id = $1) +
+           (select count(*) from public.daily_sku_metrics where ml_account_id = $1) +
+           (select count(*) from public.daily_account_metrics where ml_account_id = $1)
+         )::text as total`,
+        [CONTA_A],
+      );
+
+      expect(remaining.rows[0]?.total).toBe("0");
+    } finally {
+      await client.query(
+        `update public.orders
+         set status = case when id = $2 then 'partially_refunded' else 'paid' end
+         where id = any($1)`,
+        [ORDER_IDS.slice(0, 3), ORDER_IDS[1]],
+      );
+      await client.query(
+        `select public.recompute_daily_sales_metrics($1,$2,'2026-08-20')`,
+        [ORG_SB, CONTA_A],
+      );
+    }
+  });
+
+  it("duas recomputações concorrentes da mesma conta são serializadas", async () => {
+    const otherClient = new Client({ connectionString: DB_URL });
+    await otherClient.connect();
+
+    try {
+      const sql = `select public.recompute_daily_sales_metrics(
+        '${ORG_SB}','${CONTA_A}','2026-08-20'
+      ) as refreshed`;
+      const [first, second] = await Promise.all([
+        client.query<{ refreshed: number }>(sql),
+        otherClient.query<{ refreshed: number }>(sql),
+      ]);
+
+      expect(first.rows[0]?.refreshed).toBe(5);
+      expect(second.rows[0]?.refreshed).toBe(5);
+    } finally {
+      await otherClient.end();
+    }
+  });
+
   it("mantém venda sem vínculo no bucket sku_id NULL", async () => {
     const result = await client.query<{ sku_id: string | null; gross_revenue: string }>(
       `select sku_id, gross_revenue
@@ -767,6 +831,18 @@ describe("métricas diárias de venda", () => {
            values ('${ORG_SB}','${CONTA_A}','2026-08-21',1,1,1,1)`,
         ),
       ).rejects.toThrow(/permission denied|row-level security/i);
+    });
+
+    it("somente service_role executa as RPCs de materialização", async () => {
+      const recomputeSql = `select public.recompute_daily_sales_metrics(
+        '${ORG_SB}','${CONTA_A}','2026-08-20'
+      ) as refreshed`;
+
+      await expect(asUser(ADMIN_SB, recomputeSql)).rejects.toThrow(/permission denied/i);
+      await expect(asAnon(recomputeSql)).rejects.toThrow(/permission denied/i);
+
+      const rows = await asServiceRole<{ refreshed: number }>(recomputeSql);
+      expect(rows[0]?.refreshed).toBe(5);
     });
   });
 });

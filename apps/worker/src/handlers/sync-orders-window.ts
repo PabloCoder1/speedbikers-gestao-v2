@@ -3,6 +3,7 @@ import type { MercadoLivreClient, MercadoLivreOAuthConfig } from "@sb/mercado-li
 import { MercadoLivreApiError } from "@sb/mercado-livre";
 import { z } from "zod";
 
+import type { Enqueuer } from "../enqueue.js";
 import type { JobOutcome } from "../job-outcome.js";
 import type { HandlerContext, JobHandler } from "../router.js";
 import { ceilToHour, fetchOrdersWindow, floorToHour } from "./ml-orders-fetch.js";
@@ -13,11 +14,9 @@ import { recordSyncRunFailure, recordSyncRunSuccess } from "./sync-runs.js";
  * Reconciliação por janela: rede de segurança do que o webhook perdeu
  * (`docs/MERCADO_LIVRE.md` secao 3, `docs/ARCHITECTURE.md` secao 10).
  *
- * Escopo desta etapa: buscar a janela no Mercado Livre e registrar o
- * resultado em `sync_runs`/`sync_errors` — a persistência estruturada dos
- * pedidos (`orders`/`order_items`, `pack_id`) é o PRÓXIMO item do checklist
- * da Fase 3, feito de propósito à parte (mesmo padrão incremental de
- * "schema primeiro, escrita depois" já usado em `sync_runs` na Fase 2).
+ * Busca a janela no Mercado Livre, persiste pedidos, registra observabilidade
+ * e, depois do lote bem-sucedido, marca os dias de negócio alterados para o
+ * recálculo incremental das métricas (D-051).
  */
 
 const payloadSchema = z.object({ mlAccountId: z.uuid() });
@@ -27,7 +26,13 @@ export interface SyncOrdersWindowDeps {
   mercadoLivre: MercadoLivreClient;
   oauth: MercadoLivreOAuthConfig;
   encryptionKey: Buffer;
+  enqueuer: Enqueuer;
   now?: () => Date;
+}
+
+/** Janela mutável da chave suja (D-051), em UTC e com precisão de minuto. */
+function recomputeWindow(date: Date): string {
+  return `${date.toISOString().slice(0, 16)}Z`;
 }
 
 /**
@@ -97,7 +102,11 @@ export function createSyncOrdersWindowHandler(deps: SyncOrdersWindowDeps): JobHa
     // Copiados para variáveis locais logo após a guarda: acesso repetido a
     // `account.data.seller_id` dentro do closure de `fetchOrdersWindow`,
     // abaixo, não preserva o estreitamento de tipo do `if` acima.
-    const { organization_id: organizationId, seller_id: sellerId, connected_at: connectedAt } = account.data;
+    const {
+      organization_id: organizationId,
+      seller_id: sellerId,
+      connected_at: connectedAt,
+    } = account.data;
 
     const started = now;
     const tokenResult = await ensureAccessToken(deps, mlAccountId, now);
@@ -135,6 +144,21 @@ export function createSyncOrdersWindowHandler(deps: SyncOrdersWindowDeps): JobHa
         to: windowTo,
         logger: context.logger,
       });
+
+      const dirtyWindow = recomputeWindow(deps.now?.() ?? new Date());
+
+      await Promise.all(
+        result.dirtyMetricDates.map((metricDate) =>
+          deps.enqueuer.enqueue({
+            jobType: "analytics.recompute",
+            organizationId,
+            dedupeKey: `recompute:${mlAccountId}:${metricDate}:${dirtyWindow}`,
+            queue: "analytics-recompute",
+            payload: { mode: "incremental", mlAccountId, metricDate },
+            delaySeconds: 60,
+          }),
+        ),
+      );
     } catch (error) {
       const finishedAt = deps.now?.() ?? new Date();
       const errorClass = error instanceof MercadoLivreApiError ? error.errorClass : "retryable";
@@ -180,6 +204,7 @@ export function createSyncOrdersWindowHandler(deps: SyncOrdersWindowDeps): JobHa
       window_to: windowTo.toISOString(),
       items_processed: result.itemsProcessed,
       items_skipped: result.itemsSkipped,
+      dirty_metric_dates: result.dirtyMetricDates.length,
     });
 
     return { status: "done", processed: result.itemsProcessed };

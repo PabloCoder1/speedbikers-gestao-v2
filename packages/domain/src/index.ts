@@ -10,3 +10,4 @@
 
 export * from "./upseller/index.js";
 export * from "./events/index.js";
+export * from "./metrics/index.js";

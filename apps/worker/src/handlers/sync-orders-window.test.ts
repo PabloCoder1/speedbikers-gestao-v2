@@ -197,20 +197,44 @@ function fakeMercadoLivreClient(
 function deps(
   dbOptions: FakeDbOptions,
   pages: FakePage[] | (() => Promise<never>),
-): { deps: SyncOrdersWindowDeps; db: ReturnType<typeof fakeDb>; requests: RequestOptions<unknown>[]; lines: string[] } {
+): {
+  deps: SyncOrdersWindowDeps;
+  db: ReturnType<typeof fakeDb>;
+  requests: RequestOptions<unknown>[];
+  enqueued: Parameters<SyncOrdersWindowDeps["enqueuer"]["enqueue"]>[0][];
+  lines: string[];
+} {
   const db = fakeDb(dbOptions);
   const { client, requests } = fakeMercadoLivreClient(pages);
+  const enqueued: Parameters<SyncOrdersWindowDeps["enqueuer"]["enqueue"]>[0][] = [];
   const lines: string[] = [];
 
   return {
     db,
     requests,
+    enqueued,
     lines,
     deps: {
       db: db.db,
       mercadoLivre: client,
       oauth: OAUTH_CONFIG,
       encryptionKey: ENCRYPTION_KEY,
+      enqueuer: {
+        enqueue: (request) => {
+          enqueued.push(request);
+
+          return Promise.resolve({
+            taskName: "t",
+            envelope: {
+              ...ENVELOPE,
+              jobType: request.jobType,
+              organizationId: request.organizationId,
+              dedupeKey: request.dedupeKey,
+            },
+            deduplicated: false,
+          });
+        },
+      },
       now: () => NOW,
     },
   };
@@ -359,13 +383,75 @@ describe("sync.orders.window", () => {
       },
     ];
 
-    const { deps: d, db, lines } = deps({}, pages);
+    const { deps: d, db, enqueued, lines } = deps({}, pages);
 
     const outcome = await run(d, lines);
 
     expect(outcome).toEqual({ status: "done", processed: 3 });
     const syncRun = db.inserted.find((e) => e.table === "sync_runs")?.row as { latest_record_at: string };
     expect(new Date(syncRun.latest_record_at)).toEqual(new Date("2026-08-21T15:20:00.000-03:00"));
+    expect(enqueued).toEqual([
+      {
+        jobType: "analytics.recompute",
+        organizationId: ORGANIZATION_ID,
+        dedupeKey: `recompute:${ML_ACCOUNT_ID}:2026-08-21:2026-08-21T15:37Z`,
+        queue: "analytics-recompute",
+        payload: {
+          mode: "incremental",
+          mlAccountId: ML_ACCOUNT_ID,
+          metricDate: "2026-08-21",
+        },
+        delaySeconds: 60,
+      },
+    ]);
+  });
+
+  it("a chave suja usa o dia civil de São Paulo, inclusive na fronteira UTC", async () => {
+    const { deps: d, enqueued, lines } = deps({}, [
+      {
+        paging: { total: 1, offset: 0, limit: 50 },
+        results: [fakeOrder(1, "2026-08-21T01:30:00.000Z")],
+      },
+    ]);
+
+    await run(d, lines);
+
+    expect(enqueued[0]?.payload).toMatchObject({ metricDate: "2026-08-20" });
+    expect(enqueued[0]?.dedupeKey).toContain(":2026-08-20:");
+  });
+
+  it("uma atualização em minuto posterior recebe outro ID de task", async () => {
+    const page: FakePage = {
+      paging: { total: 1, offset: 0, limit: 50 },
+      results: [fakeOrder(1, "2026-08-21T15:10:00.000-03:00")],
+    };
+    const first = deps({}, [page]);
+    const second = deps({}, [page]);
+    second.deps.now = () => new Date("2026-08-21T15:38:00.000Z");
+
+    await run(first.deps, first.lines);
+    await run(second.deps, second.lines);
+
+    expect(first.enqueued[0]?.dedupeKey).toContain(":2026-08-21T15:37Z");
+    expect(second.enqueued[0]?.dedupeKey).toContain(":2026-08-21T15:38Z");
+    expect(first.enqueued[0]?.dedupeKey).not.toBe(second.enqueued[0]?.dedupeKey);
+  });
+
+  it("falha ao marcar a chave suja torna a sincronização retryable", async () => {
+    const { deps: d, db, lines } = deps({}, [
+      {
+        paging: { total: 1, offset: 0, limit: 50 },
+        results: [fakeOrder(1, "2026-08-21T15:10:00.000-03:00")],
+      },
+    ]);
+    d.enqueuer.enqueue = () => Promise.reject(new Error("fila indisponível"));
+
+    const outcome = await run(d, lines);
+
+    expect(outcome).toEqual({ status: "failed", retryable: true, reason: "fila indisponível" });
+    expect(db.inserted.find((entry) => entry.table === "sync_errors")?.row).toMatchObject({
+      error_class: "retryable",
+    });
   });
 
   it("persiste cada order buscada em orders/order_items", async () => {

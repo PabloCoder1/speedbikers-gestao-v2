@@ -1505,6 +1505,23 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      rebuild_daily_sales_metrics: {
+        Args: {
+          p_date_from: string
+          p_date_to: string
+          p_ml_account_id: string
+          p_organization_id: string
+        }
+        Returns: number
+      }
+      recompute_daily_sales_metrics: {
+        Args: {
+          p_metric_date: string
+          p_ml_account_id: string
+          p_organization_id: string
+        }
+        Returns: number
+      }
       resolve_link_candidate: {
         Args: { p_candidate_id: string; p_sku_id: string }
         Returns: {

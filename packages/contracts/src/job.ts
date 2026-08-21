@@ -34,11 +34,9 @@ export const jobEnvelopeSchema = z.object({
 export type JobEnvelope = z.infer<typeof jobEnvelopeSchema>;
 
 /**
- * Limite conservador para o identificador da task.
- *
- * PENDENTE: confirmar o limite real do Cloud Tasks na documentação oficial
- * antes da integração (ver docs/MERCADO_LIVRE.md para a mesma regra aplicada
- * ao Mercado Livre: não presumir comportamento de API externa).
+ * Limite interno conservador para o identificador da task. A documentação
+ * oficial do Cloud Tasks permite 500 caracteres (confirmado em 2026-08-21);
+ * manter 200 deixa folga para o caminho completo do recurso e para logs.
  */
 const MAX_TASK_NAME_LENGTH = 200;
 

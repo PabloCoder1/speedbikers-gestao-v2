@@ -110,7 +110,7 @@ Payloads tipados em `@sb/contracts/jobs`. Todo handler é **idempotente**.
 | `sync.order.refresh` | `ml-sync-<conta>` | `order:{conta}:{order_id}` |
 | `sync.listings.page` | `ml-sync-<conta>` | `listings:{conta}:{cursor}` |
 | `sync.fulfillment.snapshot` | `ml-sync-<conta>` | `full:{conta}:{inventory_id}` |
-| `analytics.recompute` | `analytics-recompute` | `recompute:{conta}:{sku}:{data}` |
+| `analytics.recompute` | `analytics-recompute` | `recompute:{account-uuid}:{data-negocio}:{janela-minuto-UTC}` — **implementado em 2026-08-21**; payload incremental `{ mode, mlAccountId, metricDate }` ou rebuild `{ mode, mlAccountId, dateFrom, dateTo }` |
 | `events.detect` | `analytics-recompute` | `detect:{entidade}:{id}` — **não implementado**: o motor de diff hoje roda inline dentro de `sync.orders.window`/`backfill.orders` (`persist-order.ts`), não como job separado. Este tipo existiria para o caminho do webhook (`sync.webhook.received` decidir o que buscar e enfileirar `events.detect` por entidade) — trabalho futuro, ver `docs/HANDOFF.md` |
 | `backfill.orders` | `backfill` | `backfill-orders:{conta}:{checkpoint}` — **implementado em 2026-08-21**, `{conta}` é o slug e `{checkpoint}` é `start` no primeiro pedaço ou o `to` ISO do pedaço anterior |
 | `maintenance.reconcile-balances` | `maintenance` | `reconcile:{data}` |
@@ -119,7 +119,7 @@ Payloads tipados em `@sb/contracts/jobs`. Todo handler é **idempotente**.
 | `erp.import.apply` | `maintenance` | `erp-apply:{batch_id}` |
 | `sync.webhook.received` | `ml-sync-<conta>` | `ml-webhook:{resource}` |
 
-**O nome da task é o mecanismo de dedupe** e é o que faz a chave suja funcionar: cem vendas do mesmo SKU no mesmo dia produzem um recálculo.
+**O nome da task é o mecanismo de dedupe.** Para analytics, a janela de minuto é parte do ID (D-051): coalesce o burst por 60 segundos sem tentar reutilizar no mesmo dia um ID que o Cloud Tasks pode reter por até 24 horas.
 
 Todo job registra em `job_runs`: início, fim, resultado, erro, itens processados.
 

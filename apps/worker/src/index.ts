@@ -6,6 +6,7 @@ import { createLogger } from "@sb/observability";
 import { createWorkerApp } from "./app.js";
 import { loadEnv } from "./env.js";
 import { createEnqueuer } from "./enqueue.js";
+import { createAnalyticsRecomputeHandler } from "./handlers/analytics-recompute.js";
 import { createBackfillOrdersHandler } from "./handlers/backfill-orders.js";
 import { createErpImportApplyHandler } from "./handlers/erp-import-apply.js";
 import { createErpImportParseHandler } from "./handlers/erp-import-parse.js";
@@ -38,12 +39,19 @@ const app = createWorkerApp({
   logger,
   db,
   registry: withHandlers({
+    "analytics.recompute": createAnalyticsRecomputeHandler({ db }),
     "erp.import.parse": createErpImportParseHandler({
       db,
       reader: createSheetReader(env.ERP_IMPORTS_BUCKET),
     }),
     "erp.import.apply": createErpImportApplyHandler({ db }),
-    "sync.orders.window": createSyncOrdersWindowHandler({ db, mercadoLivre, oauth, encryptionKey }),
+    "sync.orders.window": createSyncOrdersWindowHandler({
+      db,
+      mercadoLivre,
+      oauth,
+      encryptionKey,
+      enqueuer,
+    }),
     "backfill.orders": createBackfillOrdersHandler({ db, mercadoLivre, oauth, encryptionKey, enqueuer }),
   }),
 });

@@ -41,8 +41,9 @@ create_queue() {
     ok "${name}  (${dispatches}/s, ${concurrent} simultâneas, ${attempts} tentativas)"
   fi
 
-  # Menor privilégio: a `api` enfileira, e a permissão é dada por fila, não no
-  # projeto inteiro.
+  # Menor privilégio: a `api` enfileira nas filas base, e a permissão é dada
+  # por fila, não no projeto inteiro. O worker recebe abaixo somente as duas
+  # exceções que produz: analytics-recompute e backfill.
   #
   # Sem `|| true`: engolir a falha aqui esconderia exatamente o erro que
   # importa — service account inexistente ou sem permissão de conceder papel.
@@ -75,13 +76,25 @@ step "Filas base"
 # derivado e recomputável — se falhar, a próxima venda do mesmo SKU reenfileira.
 create_queue "analytics-recompute" 10 20 5 5s 300s
 
+# O worker conhece os dias que ficaram sujos somente DEPOIS de persistir os
+# pedidos. Por isso ele e o produtor natural de analytics.recompute. Permissao
+# estreita nesta fila, nao cloudtasks.enqueuer no projeto.
+binding_worker_analytics="$(gc tasks queues add-iam-policy-binding "analytics-recompute" \
+    --location "${REGION}" \
+    --member "serviceAccount:$(sa_email "${SA_WORKER}")" \
+    --role roles/cloudtasks.enqueuer 2>&1)" || {
+  printf '%s\n' "${binding_worker_analytics}" >&2
+  fail "Falha ao conceder cloudtasks.enqueuer em analytics-recompute para o worker. Mensagem do gcloud acima."
+}
+info "analytics-recompute: enqueuer -> ${SA_WORKER} (chave suja pos-persistencia)"
+
 # backfill: prioridade baixa DE PROPÓSITO. Nunca pode disputar capacidade com o
 # tráfego vivo. Muitas tentativas porque o trabalho é longo e retomável.
 create_queue "backfill" 1 2 10 30s 3600s
 
-# Único caso em que o WORKER também enfileira, não só a api: cada pedaço do
-# backfill (`docs/HANDOFF.md`), ao terminar, enfileira o próximo pedaço
-# direto nesta fila. Menor privilégio: só nesta fila, não no projeto.
+# Segunda fila em que o WORKER também enfileira: cada pedaço do backfill
+# (`docs/HANDOFF.md`), ao terminar, enfileira o próximo pedaço direto nesta
+# fila. Menor privilégio: só nesta fila, não no projeto.
 binding_worker_backfill="$(gc tasks queues add-iam-policy-binding "backfill" \
     --location "${REGION}" \
     --member "serviceAccount:$(sa_email "${SA_WORKER}")" \

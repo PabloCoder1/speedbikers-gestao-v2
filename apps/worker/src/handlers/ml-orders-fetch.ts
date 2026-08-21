@@ -1,4 +1,5 @@
 import type { AdminClient } from "@sb/db";
+import { toSalesMetricDate } from "@sb/domain";
 import type { MercadoLivreClient } from "@sb/mercado-livre";
 import { paginateOffset } from "@sb/mercado-livre";
 import type { Logger } from "@sb/observability";
@@ -73,6 +74,8 @@ export interface FetchOrdersWindowResult {
   itemsSkipped: number;
   /** O `date_last_updated` mais recente visto NESTA busca, ou `null` se nada veio. */
   latestRecordAt: Date | null;
+  /** Dias de negócio que tiveram ao menos uma order persistida nesta janela. */
+  dirtyMetricDates: string[];
 }
 
 /**
@@ -104,6 +107,7 @@ export async function fetchOrdersWindow(params: FetchOrdersWindowParams): Promis
   let itemsProcessed = 0;
   let itemsSkipped = 0;
   let latestRecordAt: Date | null = null;
+  const dirtyMetricDates = new Set<string>();
 
   for await (const page of pages) {
     for (const raw of page) {
@@ -128,6 +132,8 @@ export async function fetchOrdersWindow(params: FetchOrdersWindowParams): Promis
         params.logger,
       );
 
+      dirtyMetricDates.add(toSalesMetricDate(order.date_created));
+
       itemsProcessed += 1;
 
       const updatedAt = new Date(order.date_last_updated);
@@ -138,5 +144,10 @@ export async function fetchOrdersWindow(params: FetchOrdersWindowParams): Promis
     }
   }
 
-  return { itemsProcessed, itemsSkipped, latestRecordAt };
+  return {
+    itemsProcessed,
+    itemsSkipped,
+    latestRecordAt,
+    dirtyMetricDates: [...dirtyMetricDates].sort(),
+  };
 }

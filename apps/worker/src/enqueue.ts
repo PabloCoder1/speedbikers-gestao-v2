@@ -14,9 +14,10 @@ import type { Env } from "./env.js";
  * (env vars, service account) sem um acoplar o outro, e o arquivo é pequeno
  * o bastante para a duplicação não doer.
  *
- * Único consumidor hoje: `backfill.orders` se reenfileirando (fila
- * `backfill`) até cobrir os 12 meses de histórico — `docs/HANDOFF.md`.
- * `reconciliação`/`webhook` continuam só a `api` enfileirando.
+ * Consumidores: `backfill.orders` se reenfileirando na fila `backfill` e a
+ * reconciliação marcando os dias sujos na fila `analytics-recompute`, depois
+ * que a persistência dos pedidos terminou. Em ambos os casos o worker é o
+ * único processo que sabe que o próximo trabalho passou a existir.
  */
 
 export interface EnqueueRequest {

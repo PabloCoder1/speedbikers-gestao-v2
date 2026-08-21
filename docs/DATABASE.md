@@ -212,6 +212,10 @@ As três tabelas guardam os mesmos componentes canônicos: `units_sold`, `gross_
 
 Authenticated tem somente `SELECT`, filtrado por `private.has_account_access(ml_account_id)` nas três tabelas. Escrita é exclusiva da `service_role`; o cálculo compartilhado fica no schema `private`, é `security invoker`, usa `search_path` vazio e não é exposto a `anon`/`authenticated`.
 
+**Materialização implementada em 2026-08-21** (migration `20260821184047_create_sales_metrics_recompute.sql`): `public.recompute_daily_sales_metrics` substitui atomicamente um dia de uma conta; `public.rebuild_daily_sales_metrics` faz o mesmo para um intervalo inclusivo. As duas são `security invoker`, executáveis somente por `service_role`, e chamam `private.refresh_daily_sales_metrics`.
+
+A função privada adquire advisory lock transacional por conta, apaga o intervalo e reinsere os três grãos a partir de um único CTE `MATERIALIZED`. Assim, duas dirty keys concorrentes não disputam UNIQUE e os três rollups enxergam o mesmo snapshot de L1. Se o intervalo deixa de ter venda válida, o DELETE permanece e nenhuma linha vazia é inventada — teste de integração cobre explicitamente a remoção da projeção obsoleta.
+
 ### `stock_movements` — o ledger
 
 ```text

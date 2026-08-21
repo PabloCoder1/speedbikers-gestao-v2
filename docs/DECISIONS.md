@@ -135,7 +135,7 @@ As decisões D-011 a D-026 foram aprovadas na sessão de arquitetura da Fase 0 e
 
 **Motivo:** o fato sozinho não atende dashboard de conta em 90 dias (~720 mil linhas por consulta). Rollups derivados do mesmo código evitam que as camadas divirjam.
 
-**Recálculo:** incremental por chave suja, com task nomeada `recompute:{conta}:{sku}:{data}` e dedupe da fila. Rebuild completo disponível e testado.
+**Recálculo:** incremental por chave suja de conta + dia, coalescida em janela de minuto conforme D-051. Rebuild completo disponível e testado.
 
 **Implementação em 2026-08-21:** os três grãos saem de `private.compute_daily_sales_metrics`, uma única consulta com `GROUPING SETS`. O rollup de SKU mantém `ml_account_id` para preservar a autorização por conta e aceita `sku_id NULL` como bucket válido; `COUNT(DISTINCT pack/order)` é refeito diretamente em cada grão, nunca somado do anúncio.
 
@@ -511,6 +511,18 @@ Levantadas pela pesquisa da documentação oficial que fecha a lista de verifica
 **Alternativa rejeitada:** tratar `partially_refunded` como receita líquida sem persistir o valor e o momento do estorno. Isso inventaria precisão que a fonte atual não oferece. Receita líquida entra com outro ID quando a integração de devoluções/reembolsos existir.
 
 **Impacto:** as seis definições completas passam a viver em `docs/METRICS.md` e no espelho `metric_definitions`; os fatos e rollups da próxima etapa devem implementar exatamente essa semântica.
+
+## D-051 — Chave suja usa janela de minuto; ID diário fixo perde atualizações
+
+**Contexto:** o desenho inicial nomeava a task como `recompute:{conta}:{sku}:{data}` e pretendia reutilizar esse mesmo ID ao longo do dia. A documentação oficial do Cloud Tasks, confirmada em 2026-08-21 (método `tasks.create`, atualizado em 2026-07-30), diz que o ID de uma task executada ou apagada pode levar **até 24 horas** para ficar disponível novamente. Depois do primeiro recálculo, uma venda posterior receberia `ALREADY_EXISTS` e desapareceria da fila — exatamente a classe de atraso que a chave suja deveria eliminar.
+
+**Decisão:** a unidade materializada é conta + dia de negócio, porque `private.compute_daily_sales_metrics` recalcula anúncio, SKU e conta juntos. O ID da task inclui o UUID estável da conta e uma janela UTC de minuto: `recompute:{account-uuid}:{data-negocio}:{YYYY-MM-DDTHH:mmZ}`, com execução atrasada em 60 segundos. O slug não serve aqui porque só é único dentro da organização e a fila é compartilhada. Eventos do mesmo minuto colapsam; evento de minuto posterior sempre ganha ID novo e não encontra o tombstone anterior.
+
+**Concorrência:** a RPC adquire `pg_advisory_xact_lock` por conta. Incrementais de minutos diferentes e rebuild da mesma conta são serializados; contas diferentes continuam paralelas. Os três INSERTs consomem um único CTE `MATERIALIZED`, portanto enxergam o mesmo snapshot de `orders`/`order_items`.
+
+**Produtor:** o `worker` marca o dia sujo somente depois de uma janela de reconciliação persistir com sucesso e recebe `cloudtasks.enqueuer` apenas em `analytics-recompute` e `backfill`. O backfill histórico não marca métricas enquanto está incompleto; ao final, a RPC de rebuild cobre todo o intervalo.
+
+**Impacto:** substitui somente a forma da chave de recálculo descrita originalmente em D-017; fato, rollups e semântica das métricas não mudam. `analytics.recompute` aceita modo incremental (um dia) e rebuild (intervalo), ambos idempotentes e baseados no mesmo cálculo SQL.
 
 ## Como adicionar nova decisão
 

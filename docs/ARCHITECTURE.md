@@ -202,7 +202,7 @@ Cloud Scheduler -> api --+ reconciliação por janela + backfill (fila de priori
                    2. grava L0 no Storage -> normaliza -> atualiza L1
                    3. diff contra estado anterior -> emite domain_events (L2)
                    4. aplica ledger quando cabível (idempotency_key)
-                   5. enfileira recompute:{conta}:{sku}:{data} com 60s de atraso
+                   5. marca conta + dia sujos; enfileira uma janela de minuto com 60s de atraso
                          v
                  recálculo incremental -> L3
                          v
@@ -213,7 +213,9 @@ Cloud Scheduler -> api --+ reconciliação por janela + backfill (fila de priori
 
 ### Chave suja
 
-Ao persistir um pedido, o worker enfileira uma task nomeada `recompute:{conta}:{sku}:{data}` com atraso de 60 s. **Tasks de mesmo nome são deduplicadas pela própria fila** — cem vendas do mesmo SKU no mesmo dia produzem **um** recálculo, um minuto depois do fato.
+Depois que uma janela de reconciliação termina de persistir seus pedidos, o worker enfileira uma task por conta + dia de negócio, com atraso de 60 s: `recompute:{account-uuid}:{data}:{janela-minuto-UTC}`. O UUID é obrigatório porque o slug só é único dentro da organização e a fila é compartilhada. **Tasks da mesma janela de minuto são deduplicadas pela própria fila** — um burst de cem vendas produz um recálculo; uma venda em minuto posterior produz outro ID e não é perdida.
+
+O sufixo de minuto é obrigatório (D-051): o Cloud Tasks pode reter por até 24 horas o ID de uma task já executada. O ID antigo, fixo por SKU/dia, aceitaria o primeiro recálculo e descartaria atualizações posteriores como `ALREADY_EXISTS`. A RPC recalcula os três grãos da conta/dia de uma vez e usa advisory lock por conta; `sku` deixou de ser parte da task porque não limita o trabalho SQL real.
 
 *Motivo, medido na V2:* o dashboard mostrava 28 pedidos / R$ 2.201 quando `orders` já tinha 110 pedidos / R$ 9.532 — 4x a menos. Não era erro de cálculo, era latência de agendamento (uma conta por invocação, ~16 min por conta). Fila com dedupe elimina a categoria inteira do problema.
 
@@ -244,7 +246,7 @@ Cloud Tasks elimina lease, claim, contador de retry, despachante e dead-letter a
 
 `pg_cron` permanece disponível **apenas para manutenção do banco** (conferência de saldo, expurgo, `ANALYZE`). Nunca para despachar fila.
 
-**Exceção registrada em 2026-08-21:** o `worker` também enfileira — mas só em `backfill`, e só para si mesmo. `backfill.orders` anda em pedaços de 7 dias (uma execução não percorre 12 meses de história dentro do timeout do worker); cada pedaço, ao terminar, enfileira o próximo. Continua verdade que a `api` é quem enfileira em toda outra fila — só aqui o job se auto-encadeia, porque é o próprio `worker` quem sabe se ainda falta pedaço (checkpoint em `ml_accounts.backfill_covered_until`), e esperar o Cloud Scheduler notar e disparar de novo prenderia o backfill a no máximo um pedaço por hora.
+**Exceções registradas em 2026-08-21:** o `worker` enfileira em duas filas, ambas porque só ele descobre que o trabalho passou a existir: em `backfill`, cada pedaço concluído cria o próximo; em `analytics-recompute`, uma reconciliação persistida marca os dias sujos. A service account recebe `cloudtasks.enqueuer` somente nessas duas filas, nunca no projeto. A `api` continua produtora de todas as demais tasks.
 
 ---
 
