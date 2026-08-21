@@ -485,6 +485,292 @@ describe("contas Mercado Livre", () => {
   });
 });
 
+describe("métricas diárias de venda", () => {
+  const CONTA_A = "aaaa1111-0000-4000-8000-00000000aaaa";
+  const CONTA_B = "bbbb2222-0000-4000-8000-00000000bbbb";
+  const CONTA_OUTRA = "dddd4444-0000-4000-8000-00000000dddd";
+  const ORDER_IDS = [9900001001, 9900001002, 9900001003, 9900001004, 9900001005, 9900001006];
+
+  let skuA = "";
+  let skuB = "";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts
+         (id, organization_id, label, slug, seller_id, status, connected_at)
+       values ($1,$2,'Conta de outra organização','rlstest-metrics-outra',333,'CONNECTED',now())
+       on conflict do nothing`,
+      [CONTA_OUTRA, ORG_OUTRA],
+    );
+
+    const skus = await client.query<{ id: string; sku_key: string }>(
+      `insert into public.skus (organization_id, sku, kind)
+       values ($1,'RLSTEST-METRIC-A','PRODUTO'), ($1,'RLSTEST-METRIC-B','PRODUTO')
+       on conflict on constraint skus_org_key_unique do update set sku = excluded.sku
+       returning id, sku_key`,
+      [ORG_SB],
+    );
+
+    skuA = skus.rows.find((row) => row.sku_key === "RLSTEST-METRIC-A")?.id ?? "";
+    skuB = skus.rows.find((row) => row.sku_key === "RLSTEST-METRIC-B")?.id ?? "";
+
+    await client.query(
+      `insert into public.orders
+         (id, organization_id, ml_account_id, pack_id, status, date_created,
+          date_last_updated, total_amount, currency_id)
+       values
+         ($1,$7,$8,770001,'paid','2026-08-20 13:00:00+00','2026-08-20 13:05:00+00',100,'BRL'),
+         ($2,$7,$8,770001,'partially_refunded','2026-08-20 13:10:00+00','2026-08-20 13:15:00+00',50,'BRL'),
+         -- 01:30 UTC do dia 21 ainda e 22:30 do dia 20 em Sao Paulo.
+         ($3,$7,$8,null,'paid','2026-08-21 01:30:00+00','2026-08-21 01:35:00+00',30,'BRL'),
+         ($4,$7,$8,null,'cancelled','2026-08-20 15:00:00+00','2026-08-20 15:05:00+00',999,'BRL'),
+         ($5,$7,$9,null,'paid','2026-08-20 16:00:00+00','2026-08-20 16:05:00+00',40,'BRL'),
+         ($6,$10,$11,null,'paid','2026-08-20 17:00:00+00','2026-08-20 17:05:00+00',20,'BRL')`,
+      [...ORDER_IDS, ORG_SB, CONTA_A, CONTA_B, ORG_OUTRA, CONTA_OUTRA],
+    );
+
+    await client.query(
+      `insert into public.order_items
+         (order_id, organization_id, ml_account_id, position, item_id, variation_id,
+          title, quantity, unit_price, currency_id, sku_id)
+       values
+         ($1,$7,$8,0,'MLB900001',null,'Métrica A',2,50,'BRL',$12),
+         ($2,$7,$8,0,'MLB900002','123','Métrica B',1,50,'BRL',$13),
+         ($3,$7,$8,0,'MLB900001',null,'Métrica A',1,30,'BRL',$12),
+         ($4,$7,$8,0,'MLB900001',null,'Cancelado',9,111,'BRL',$12),
+         ($5,$7,$9,0,'MLB900003',null,'Sem vínculo',1,40,'BRL',null),
+         ($6,$10,$11,0,'MLB900004',null,'Outra organização',1,20,'BRL',null)`,
+      [...ORDER_IDS, ORG_SB, CONTA_A, CONTA_B, ORG_OUTRA, CONTA_OUTRA, skuA, skuB],
+    );
+
+    await client.query(
+      `with computed as (
+         select * from private.compute_daily_sales_metrics($1,'2026-08-20','2026-08-20')
+         union all
+         select * from private.compute_daily_sales_metrics($2,'2026-08-20','2026-08-20')
+       )
+       insert into public.daily_listing_metrics
+         (organization_id, ml_account_id, mlb_id, variation_id, metric_date,
+          units_sold, gross_revenue, orders_count, purchases_count)
+       select organization_id, ml_account_id, mlb_id, variation_id, metric_date,
+              units_sold, gross_revenue, orders_count, purchases_count
+       from computed where metric_grain = 'listing'`,
+      [ORG_SB, ORG_OUTRA],
+    );
+
+    await client.query(
+      `with computed as (
+         select * from private.compute_daily_sales_metrics($1,'2026-08-20','2026-08-20')
+         union all
+         select * from private.compute_daily_sales_metrics($2,'2026-08-20','2026-08-20')
+       )
+       insert into public.daily_sku_metrics
+         (organization_id, ml_account_id, sku_id, metric_date,
+          units_sold, gross_revenue, orders_count, purchases_count)
+       select organization_id, ml_account_id, sku_id, metric_date,
+              units_sold, gross_revenue, orders_count, purchases_count
+       from computed where metric_grain = 'sku'`,
+      [ORG_SB, ORG_OUTRA],
+    );
+
+    await client.query(
+      `with computed as (
+         select * from private.compute_daily_sales_metrics($1,'2026-08-20','2026-08-20')
+         union all
+         select * from private.compute_daily_sales_metrics($2,'2026-08-20','2026-08-20')
+       )
+       insert into public.daily_account_metrics
+         (organization_id, ml_account_id, metric_date,
+          units_sold, gross_revenue, orders_count, purchases_count)
+       select organization_id, ml_account_id, metric_date,
+              units_sold, gross_revenue, orders_count, purchases_count
+       from computed where metric_grain = 'account'`,
+      [ORG_SB, ORG_OUTRA],
+    );
+  });
+
+  afterAll(async () => {
+    const accounts = [CONTA_A, CONTA_B, CONTA_OUTRA];
+
+    await client.query("delete from public.daily_listing_metrics where ml_account_id = any($1)", [
+      accounts,
+    ]);
+    await client.query("delete from public.daily_sku_metrics where ml_account_id = any($1)", [
+      accounts,
+    ]);
+    await client.query("delete from public.daily_account_metrics where ml_account_id = any($1)", [
+      accounts,
+    ]);
+    await client.query("delete from public.orders where id = any($1)", [ORDER_IDS]);
+    await client.query("delete from public.skus where id = any($1)", [[skuA, skuB]]);
+    await client.query("delete from public.ml_accounts where id = $1", [CONTA_OUTRA]);
+  });
+
+  it("calcula as seis métricas diretamente no grão da conta", async () => {
+    const result = await client.query<{
+      units_sold: string;
+      gross_revenue: string;
+      orders_count: string;
+      purchases_count: string;
+      average_ticket: string;
+      average_selling_price: string;
+    }>(
+      `select units_sold, gross_revenue, orders_count, purchases_count,
+              average_ticket, average_selling_price
+       from private.compute_daily_sales_metrics($1,'2026-08-20','2026-08-20',$2)
+       where metric_grain = 'account'`,
+      [ORG_SB, CONTA_A],
+    );
+
+    expect(result.rows[0]).toEqual({
+      units_sold: "4",
+      gross_revenue: "180.00",
+      orders_count: "3",
+      purchases_count: "2",
+      average_ticket: "90.00",
+      average_selling_price: "45.00",
+    });
+  });
+
+  it("conta pack no grão pedido, sem somar contagens dos anúncios", async () => {
+    const result = await client.query<{ account_purchases: string; listing_purchases: string }>(
+      `with computed as (
+         select *
+         from private.compute_daily_sales_metrics($1,'2026-08-20','2026-08-20',$2)
+       )
+       select
+         max(purchases_count) filter (where metric_grain = 'account') as account_purchases,
+         sum(purchases_count) filter (where metric_grain = 'listing') as listing_purchases
+       from computed`,
+      [ORG_SB, CONTA_A],
+    );
+
+    expect(result.rows[0]).toEqual({ account_purchases: "2", listing_purchases: "3" });
+  });
+
+  it("as três tabelas são equivalentes à saída do cálculo compartilhado", async () => {
+    const result = await client.query<{ differences: string }>(
+      `with computed as (
+         select metric_grain, organization_id, ml_account_id, mlb_id, variation_id, sku_id,
+                metric_date, units_sold, gross_revenue, orders_count, purchases_count,
+                average_ticket, average_selling_price
+         from private.compute_daily_sales_metrics($1,'2026-08-20','2026-08-20')
+       ),
+       persisted as (
+         select 'listing'::text as metric_grain, organization_id, ml_account_id,
+                mlb_id, variation_id, null::uuid as sku_id, metric_date, units_sold,
+                gross_revenue, orders_count, purchases_count, average_ticket,
+                average_selling_price
+         from public.daily_listing_metrics where organization_id = $1
+         union all
+         select 'sku'::text, organization_id, ml_account_id, null::text, null::text,
+                sku_id, metric_date, units_sold, gross_revenue, orders_count,
+                purchases_count, average_ticket, average_selling_price
+         from public.daily_sku_metrics where organization_id = $1
+         union all
+         select 'account'::text, organization_id, ml_account_id, null::text, null::text,
+                null::uuid, metric_date, units_sold, gross_revenue, orders_count,
+                purchases_count, average_ticket, average_selling_price
+         from public.daily_account_metrics where organization_id = $1
+       ),
+       differences as (
+         (select * from computed except all select * from persisted)
+         union all
+         (select * from persisted except all select * from computed)
+       )
+       select count(*)::text as differences from differences`,
+      [ORG_SB],
+    );
+
+    expect(result.rows[0]?.differences).toBe("0");
+  });
+
+  it("mantém venda sem vínculo no bucket sku_id NULL", async () => {
+    const result = await client.query<{ sku_id: string | null; gross_revenue: string }>(
+      `select sku_id, gross_revenue
+       from public.daily_sku_metrics
+       where ml_account_id = $1 and metric_date = '2026-08-20'`,
+      [CONTA_B],
+    );
+
+    expect(result.rows).toEqual([{ sku_id: null, gross_revenue: "40.00" }]);
+  });
+
+  it("NULL participa da unicidade do grão de anúncio e do bucket de SKU", async () => {
+    await expect(
+      client.query(
+        `insert into public.daily_listing_metrics
+           (organization_id, ml_account_id, mlb_id, variation_id, metric_date,
+            units_sold, gross_revenue, orders_count, purchases_count)
+         values ($1,$2,'MLB900001',null,'2026-08-20',1,1,1,1)`,
+        [ORG_SB, CONTA_A],
+      ),
+    ).rejects.toThrow(/daily_listing_metrics_grain_unique/);
+
+    await expect(
+      client.query(
+        `insert into public.daily_sku_metrics
+           (organization_id, ml_account_id, sku_id, metric_date,
+            units_sold, gross_revenue, orders_count, purchases_count)
+         values ($1,$2,null,'2026-08-20',1,1,1,1)`,
+        [ORG_SB, CONTA_B],
+      ),
+    ).rejects.toThrow(/daily_sku_metrics_grain_unique/);
+  });
+
+  describe("RLS", () => {
+    it("ANALISTA vê somente os três grãos da conta permitida", async () => {
+      const listing = await asUser<{ ml_account_id: string }>(
+        ANALISTA_SB,
+        "select ml_account_id from public.daily_listing_metrics",
+      );
+      const sku = await asUser<{ ml_account_id: string }>(
+        ANALISTA_SB,
+        "select ml_account_id from public.daily_sku_metrics",
+      );
+      const account = await asUser<{ ml_account_id: string }>(
+        ANALISTA_SB,
+        "select ml_account_id from public.daily_account_metrics",
+      );
+
+      expect(listing).toHaveLength(2);
+      expect(sku).toHaveLength(2);
+      expect(account).toHaveLength(1);
+      expect([...listing, ...sku, ...account].every((row) => row.ml_account_id === CONTA_A)).toBe(
+        true,
+      );
+    });
+
+    it("usuário de outra organização não enxerga métricas da Speed Bikers", async () => {
+      const rows = await asUser<{ ml_account_id: string }>(
+        DE_OUTRA_ORG,
+        "select ml_account_id from public.daily_account_metrics",
+      );
+
+      expect(rows).toEqual([{ ml_account_id: CONTA_OUTRA }]);
+    });
+
+    it.each(["daily_listing_metrics", "daily_sku_metrics", "daily_account_metrics"])(
+      "anon é recusado em %s",
+      async (table) => {
+        await expect(asAnon(`select * from public.${table}`)).rejects.toThrow(/permission denied/i);
+      },
+    );
+
+    it("authenticated não escreve nas projeções L3", async () => {
+      await expect(
+        asUser(
+          ADMIN_SB,
+          `insert into public.daily_account_metrics
+             (organization_id, ml_account_id, metric_date,
+              units_sold, gross_revenue, orders_count, purchases_count)
+           values ('${ORG_SB}','${CONTA_A}','2026-08-21',1,1,1,1)`,
+        ),
+      ).rejects.toThrow(/permission denied|row-level security/i);
+    });
+  });
+});
+
 describe("credenciais são inalcançáveis pela Data API", () => {
   it.each(["ml_credentials", "ml_oauth_states"])("authenticated é recusado em %s", async (t) => {
     await expect(asUser(ADMIN_SB, `select * from public.${t}`)).rejects.toThrow(

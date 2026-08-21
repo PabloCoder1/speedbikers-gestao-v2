@@ -194,6 +194,24 @@ order_items  id (uuid), order_id, organization_id, ml_account_id, position,
 
 **Não atômico entre as duas tabelas** (upsert de `orders`, depois delete+insert de `order_items` — três chamadas separadas). Aceito: o pedido é reprocessado a cada janela de reconciliação, uma falha no meio se autocorrige na próxima varredura — não é o tipo de escrita humana única que precisa da atomicidade de uma RPC `security definer`.
 
+### `daily_listing_metrics` / `daily_sku_metrics` / `daily_account_metrics` — vendas diárias
+
+**Implementado em 2026-08-21** (migration `20260821182620_create_daily_sales_metrics.sql`) como L3 recomputável, sem executar ainda o rebuild histórico enquanto o backfill de pedidos estiver incompleto.
+
+```text
+daily_listing_metrics  (ml_account_id, mlb_id, variation_id?, metric_date)
+daily_sku_metrics      (ml_account_id, sku_id?, metric_date)
+daily_account_metrics  (ml_account_id, metric_date)
+```
+
+As três tabelas guardam os mesmos componentes canônicos: `units_sold`, `gross_revenue`, `orders_count` e `purchases_count`. `average_ticket` e `average_selling_price` são colunas geradas com divisão em `numeric` e arredondamento explícito de duas casas — a aplicação não escreve nem agrega essas razões em JavaScript.
+
+`private.compute_daily_sales_metrics(organization_id, date_from, date_to, ml_account_id?)` produz os três grãos em uma única consulta com `GROUPING SETS`. Isso é a implementação física de D-017/D-050: `COUNT(DISTINCT order_id)` e a chave tipada `pack:<id>`/`order:<id>` são recalculados diretamente em cada grão. O teste de integração prova deliberadamente que somar `purchases_count` de anúncios pode dar `3`, enquanto o grão da conta correto dá `2` para as mesmas vendas.
+
+`daily_sku_metrics` mantém `ml_account_id` para a RLS continuar respeitando permissões por conta. `sku_id IS NULL` é um bucket válido, com `UNIQUE NULLS NOT DISTINCT`; faturamento sem vínculo nunca desaparece. Pelo mesmo motivo, `variation_id IS NULL` participa da unicidade do fato de anúncio.
+
+Authenticated tem somente `SELECT`, filtrado por `private.has_account_access(ml_account_id)` nas três tabelas. Escrita é exclusiva da `service_role`; o cálculo compartilhado fica no schema `private`, é `security invoker`, usa `search_path` vazio e não é exposto a `anon`/`authenticated`.
+
 ### `stock_movements` — o ledger
 
 ```text

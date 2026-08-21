@@ -24,7 +24,7 @@ Valem para todas as métricas, sem exceção.
 |---|---|
 | **Timezone** | Dia civil em `America/Sao_Paulo`, com helper canônico único e testado |
 | **Grão base** | `daily_listing_metrics` — `(ml_account_id, mlb_id, variation_id, metric_date)` |
-| **Rollups** | `daily_sku_metrics` e `daily_account_metrics`, gerados pelo **mesmo código**, com teste de equivalência na CI |
+| **Rollups** | `daily_sku_metrics` — `(ml_account_id, sku_id, metric_date)`, incluindo o bucket `sku_id IS NULL` — e `daily_account_metrics` — `(ml_account_id, metric_date)` — gerados pelo **mesmo código**, com teste de equivalência na CI |
 | **Aritmética** | `numeric` no Postgres, com arredondamento explícito antes de cruzar para o JavaScript |
 | **Agregação** | Sempre em SQL. **Zero agregação em JavaScript** |
 | **Recomputabilidade** | Toda métrica é reconstruível de L1+L2. L3 nunca é fonte única |

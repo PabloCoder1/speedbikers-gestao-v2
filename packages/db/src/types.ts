@@ -34,6 +34,193 @@ export type Database = {
   }
   public: {
     Tables: {
+      daily_account_metrics: {
+        Row: {
+          average_selling_price: number | null
+          average_ticket: number | null
+          computed_at: string
+          gross_revenue: number
+          id: string
+          metric_date: string
+          ml_account_id: string
+          orders_count: number
+          organization_id: string
+          purchases_count: number
+          units_sold: number
+        }
+        Insert: {
+          average_selling_price?: number | null
+          average_ticket?: number | null
+          computed_at?: string
+          gross_revenue: number
+          id?: string
+          metric_date: string
+          ml_account_id: string
+          orders_count: number
+          organization_id: string
+          purchases_count: number
+          units_sold: number
+        }
+        Update: {
+          average_selling_price?: number | null
+          average_ticket?: number | null
+          computed_at?: string
+          gross_revenue?: number
+          id?: string
+          metric_date?: string
+          ml_account_id?: string
+          orders_count?: number
+          organization_id?: string
+          purchases_count?: number
+          units_sold?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_account_metrics_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_account_metrics_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      daily_listing_metrics: {
+        Row: {
+          average_selling_price: number | null
+          average_ticket: number | null
+          computed_at: string
+          gross_revenue: number
+          id: string
+          metric_date: string
+          ml_account_id: string
+          mlb_id: string
+          orders_count: number
+          organization_id: string
+          purchases_count: number
+          units_sold: number
+          variation_id: string | null
+        }
+        Insert: {
+          average_selling_price?: number | null
+          average_ticket?: number | null
+          computed_at?: string
+          gross_revenue: number
+          id?: string
+          metric_date: string
+          ml_account_id: string
+          mlb_id: string
+          orders_count: number
+          organization_id: string
+          purchases_count: number
+          units_sold: number
+          variation_id?: string | null
+        }
+        Update: {
+          average_selling_price?: number | null
+          average_ticket?: number | null
+          computed_at?: string
+          gross_revenue?: number
+          id?: string
+          metric_date?: string
+          ml_account_id?: string
+          mlb_id?: string
+          orders_count?: number
+          organization_id?: string
+          purchases_count?: number
+          units_sold?: number
+          variation_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_listing_metrics_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_listing_metrics_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      daily_sku_metrics: {
+        Row: {
+          average_selling_price: number | null
+          average_ticket: number | null
+          computed_at: string
+          gross_revenue: number
+          id: string
+          metric_date: string
+          ml_account_id: string
+          orders_count: number
+          organization_id: string
+          purchases_count: number
+          sku_id: string | null
+          units_sold: number
+        }
+        Insert: {
+          average_selling_price?: number | null
+          average_ticket?: number | null
+          computed_at?: string
+          gross_revenue: number
+          id?: string
+          metric_date: string
+          ml_account_id: string
+          orders_count: number
+          organization_id: string
+          purchases_count: number
+          sku_id?: string | null
+          units_sold: number
+        }
+        Update: {
+          average_selling_price?: number | null
+          average_ticket?: number | null
+          computed_at?: string
+          gross_revenue?: number
+          id?: string
+          metric_date?: string
+          ml_account_id?: string
+          orders_count?: number
+          organization_id?: string
+          purchases_count?: number
+          sku_id?: string | null
+          units_sold?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_sku_metrics_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_sku_metrics_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_sku_metrics_sku_id_fkey"
+            columns: ["sku_id"]
+            isOneToOne: false
+            referencedRelation: "skus"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       domain_events: {
         Row: {
           after: Json | null

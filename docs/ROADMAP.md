@@ -92,7 +92,7 @@ Cada fase só é considerada concluída sob a Definition of Done do `docs/PROMPT
 **Executada antes da Fase 4.** É a tela âncora (D-033) e não depende do estoque.
 
 - [x] `metric_definitions` e as métricas de venda de `docs/METRICS.md` — concluído em 2026-08-21: seis definições canônicas, espelho imutável no banco e RLS de leitura para membros
-- [ ] `daily_listing_metrics` e os dois rollups, com teste de equivalência
+- [x] `daily_listing_metrics` e os dois rollups, com teste de equivalência — concluído em 2026-08-21: três projeções L3 sob RLS, bucket `sku_id IS NULL`, razões geradas em `numeric` e um único cálculo `GROUPING SETS` que refaz contagens distintas diretamente em cada grão; 98 testes de integração verdes
 - [ ] Recálculo incremental por chave suja e rebuild completo
 - [ ] Dashboards Geral e por Conta, com filtros de período e comparação
 - [ ] Design system e estados de loading, erro, vazio e stale

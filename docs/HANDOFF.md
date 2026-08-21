@@ -1,20 +1,29 @@
 # Handoff V3
 
-> Última atualização: 2026-08-21 — **quatro conexões Mercado Livre validadas ponta a ponta, IAM/filas corrigidos e primeira etapa da Fase 5A concluída.** O catálogo `metric_definitions` já espelha as seis métricas de venda aprovadas. **Próxima etapa de desenvolvimento: criar `daily_listing_metrics` e os rollups `daily_sku_metrics`/`daily_account_metrics` pelo mesmo cálculo SQL, com teste de equivalência.**
+> Última atualização: 2026-08-21 — **fato diário de vendas e os dois rollups da Fase 5A concluídos e validados localmente.** Os três grãos saem de um único cálculo SQL e têm RLS/teste de equivalência. **Próxima etapa de desenvolvimento: recálculo incremental por chave suja e rebuild completo, sem executar o rebuild histórico no Dev antes de os quatro backfills terminarem.**
 
 ## Estado atual
 
 - Branch: `v3`
 - Referência V2: commit `8573d971a5cd427702575b52ed249c53588ec5ca` da `main`
 - V3 reconstruída como monorepo com `web`, `api`, `worker`, packages compartilhados e migrations versionadas.
-- Supabase V3 Dev (`nmgccyqquwxecqffsidr`, `sa-east-1`): migrations aplicadas até `20260821181121_create_metric_definitions`.
+- Supabase V3 Dev (`nmgccyqquwxecqffsidr`, `sa-east-1`): migrations aplicadas até `20260821181121_create_metric_definitions`; `20260821182620_create_daily_sales_metrics` está validada localmente e será aplicada pela CI após o push deste commit.
 - Google Cloud V3 (`speedbikers-gestao-v3`, `southamerica-east1`): Cloud Run, sete filas Cloud Tasks (três base + quatro por conta), Scheduler, Secret Manager e Storage provisionados em Dev.
 - Vercel V3: **criado e no ar**, branch `v3`.
 - Monorepo e CI: criados e operacionais. Falta o ambiente de produção (Fase 8).
 
 ## Última etapa concluída
 
-**Catálogo canônico das métricas de venda — primeira etapa da Fase 5A (D-023/D-050).**
+**Fato diário de vendas e dois rollups — segunda etapa da Fase 5A (D-017/D-050).**
+
+- Migration `20260821182620_create_daily_sales_metrics.sql`: cria `daily_listing_metrics` no grão aprovado `(conta, MLB, variação, dia)`, `daily_sku_metrics` em `(conta, SKU, dia)` e `daily_account_metrics` em `(conta, dia)`.
+- `private.compute_daily_sales_metrics` é o único cálculo das três projeções: usa `GROUPING SETS`, filtra `paid`/`partially_refunded`, converte `date_created` para `America/Sao_Paulo`, ancora receita em `total_amount` e refaz `COUNT(DISTINCT order/pack)` diretamente em cada grão.
+- `sku_id IS NULL` permanece como bucket de SKU; `UNIQUE NULLS NOT DISTINCT` impede bucket duplicado e faz o mesmo para anúncio sem variação. O rollup de SKU mantém `ml_account_id`, portanto ANALISTA não ganha visibilidade sobre contas sem permissão.
+- As razões são colunas geradas em `numeric`, arredondadas para duas casas. `authenticated` só lê sob `has_account_access`; `service_role` é o único escritor. O cálculo privado é `security invoker`, tem `search_path` vazio e não é executável por `anon`/`authenticated`.
+- Verificação local: reset completo aplicou as 19 migrations; 98/98 testes de integração passaram. A fixture crítica prova que dois anúncios somam 3 ocorrências de compra, mas o grão direto da conta retorna 2 packs — o rollup não mascara a não aditividade. Advisors não apontaram achado novo; permanecem apenas avisos preexistentes.
+- **Deliberadamente não feito:** nenhum dado histórico foi materializado no Dev. O backfill de 12 meses continua sendo pré-condição para executar o rebuild, embora o mecanismo de recálculo possa ser construído e testado agora.
+
+**Etapa anterior: catálogo canônico das métricas de venda — primeira etapa da Fase 5A (D-023/D-050).**
 
 - `docs/METRICS.md` agora define, sem lacunas, `unidades_vendidas`, `receita_bruta`, `pedidos`, `pedidos_por_pack`, `ticket_medio` e `preco_medio_praticado`.
 - Semântica aprovada: `paid` + `partially_refunded`; bruto ancorado em `orders.total_amount`; compra por `pack_id` com fallback tipado para `order_id`; dia civil de `date_created` em `America/Sao_Paulo`; `sku_id IS NULL` permanece nos totais.
@@ -59,7 +68,7 @@
 - Verificação: `pnpm run check` verde nas 29 tasks; `@sb/domain` com 123 testes; `supabase db push --linked --dry-run` confirma o banco remoto atualizado. Os advisors foram relidos e não apontam achado causado por esta migration de dados; os avisos preexistentes seguem fora do escopo desta reparação.
 - Prevenção no repositório: `infra/deploy-cloud-run.sh` agora publica o consumidor (`worker`) antes do produtor (`api`) quando os dois são implantados juntos. Assim uma API nova não emite tipo de job para um worker antigo.
 
-**Próximo passo de desenvolvimento:** criar o fato `daily_listing_metrics` e os dois rollups a partir de um único cálculo SQL, preservando componentes aditivos para que razões e contagens distintas não sejam somadas incorretamente. O backfill pode continuar em paralelo; antes do rebuild histórico, aguardar os checkpoints cobrirem os 12 meses.
+**Próximo passo de desenvolvimento:** construir o recálculo incremental por chave suja e o caminho de rebuild completo usando `private.compute_daily_sales_metrics`, com idempotência, teste e observabilidade. O mecanismo pode nascer agora; a execução do rebuild histórico no Dev deve aguardar os quatro checkpoints cobrirem os 12 meses.
 
 ## Auditoria da V2 realizada nesta sessão
 

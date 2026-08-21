@@ -137,6 +137,8 @@ As decisões D-011 a D-026 foram aprovadas na sessão de arquitetura da Fase 0 e
 
 **Recálculo:** incremental por chave suja, com task nomeada `recompute:{conta}:{sku}:{data}` e dedupe da fila. Rebuild completo disponível e testado.
 
+**Implementação em 2026-08-21:** os três grãos saem de `private.compute_daily_sales_metrics`, uma única consulta com `GROUPING SETS`. O rollup de SKU mantém `ml_account_id` para preservar a autorização por conta e aceita `sku_id NULL` como bucket válido; `COUNT(DISTINCT pack/order)` é refeito diretamente em cada grão, nunca somado do anúncio.
+
 ## D-018 — Full é espelho do Mercado Livre, não ledger
 
 **Decisão:** o estoque Full é armazenado como snapshots reportados pelo ML (`fulfillment_stock_snapshots`), com histórico. Não existe ledger de Full.
