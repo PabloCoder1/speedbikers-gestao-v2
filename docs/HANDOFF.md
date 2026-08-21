@@ -7,7 +7,7 @@
 - Branch: `v3`
 - Referência V2: commit `8573d971a5cd427702575b52ed249c53588ec5ca` da `main`
 - V3 reconstruída como monorepo com `web`, `api`, `worker`, packages compartilhados e migrations versionadas.
-- Supabase V3 Dev (`nmgccyqquwxecqffsidr`, `sa-east-1`): migrations aplicadas até `20260821181000_create_metric_definitions`.
+- Supabase V3 Dev (`nmgccyqquwxecqffsidr`, `sa-east-1`): migrations aplicadas até `20260821181121_create_metric_definitions`.
 - Google Cloud V3 (`speedbikers-gestao-v3`, `southamerica-east1`): Cloud Run, sete filas Cloud Tasks (três base + quatro por conta), Scheduler, Secret Manager e Storage provisionados em Dev.
 - Vercel V3: **criado e no ar**, branch `v3`.
 - Monorepo e CI: criados e operacionais. Falta o ambiente de produção (Fase 8).
@@ -18,7 +18,7 @@
 
 - `docs/METRICS.md` agora define, sem lacunas, `unidades_vendidas`, `receita_bruta`, `pedidos`, `pedidos_por_pack`, `ticket_medio` e `preco_medio_praticado`.
 - Semântica aprovada: `paid` + `partially_refunded`; bruto ancorado em `orders.total_amount`; compra por `pack_id` com fallback tipado para `order_id`; dia civil de `date_created` em `America/Sao_Paulo`; `sku_id IS NULL` permanece nos totais.
-- Migration `20260821181000_create_metric_definitions.sql` aplicada no Dev: seis definições globais, RLS de leitura somente para membro autenticado, `anon` sem GRANT e nenhum papel da aplicação com escrita. O gerador remoto confirmou que `packages/db/src/types.ts` coincide com o schema.
+- Migration `20260821181121_create_metric_definitions.sql` aplicada no Dev: seis definições globais, RLS de leitura somente para membro autenticado, `anon` sem GRANT e nenhum papel da aplicação com escrita. O gerador remoto confirmou que `packages/db/src/types.ts` coincide com o schema.
 - Verificação: `pnpm run check` verde (29/29 tasks), migration aplicada localmente sem reset, 87/87 testes de integração RLS, seis definições conferidas no Dev e advisors sem achado novo causado pela tabela.
 
 **Validação operacional das quatro contas e correção de infraestrutura pós-OAuth.**
