@@ -33,7 +33,7 @@ Todas as rotas são versionadas sob `/v1`, exceto webhook e callback do OAuth, c
 | Rota | Método | Autenticação | Papel |
 |---|---|---|---|
 | `/webhooks/mercado-livre` | POST | Validação própria da origem | ACK rápido, grava notificação, enfileira. **Zero chamada de rede.** |
-| `/oauth/mercado-livre/callback` | GET | `state` de CSRF | Conclui a autorização da conta |
+| `/oauth/mercado-livre/callback` | GET | `state` de CSRF | Conclui a autorização da conta — **implementado em 2026-08-21** |
 
 **Regra crítica do webhook:** o caminho é liberado **explicitamente e apenas ele**, com teste negativo nas rotas vizinhas. *Motivo, medido na V2:* o proxy exigia sessão, o webhook não envia cookie, e as notificações de preço, promoção e Full morriam em silêncio num 307 para `/login`.
 
@@ -48,11 +48,23 @@ Todas as rotas são versionadas sob `/v1`, exceto webhook e callback do OAuth, c
 
 400 em payload inválido é aceitável mesmo com o reenvio automático do Mercado Livre (até 1h): ou é ruído pontual e a próxima tentativa também falha sem custo real, ou é o schema desatualizado — caso em que os retries **ajudam** a expor o problema em vez de escondê-lo. Já "conta desconhecida" recebe 200 propositalmente: reenviar não cria a conta que falta, então retornar erro só gastaria o orçamento de 8 tentativas do Mercado Livre à toa (`docs/MERCADO_LIVRE.md` secao 2.5). Sem tabela de landing para a notificação crua — o corpo da própria Cloud Task é o registro durável (D-044). IP do cliente extraído do penúltimo elemento de `X-Forwarded-For` (D-045).
 
+**`GET /oauth/mercado-livre/callback` — implementado em 2026-08-21** (`apps/api/src/ml-accounts.ts`). Autenticação própria: `state` de CSRF, consumido atomicamente (um único `UPDATE ... WHERE consumed_at IS NULL`, não `SELECT` + `UPDATE`). Contrato de resposta:
+
+| Situação | Status | Corpo |
+|---|---|---|
+| `state` ausente na querystring | 400 | `{ error: { code: "invalid_payload" } }` |
+| `state` desconhecido, expirado ou já consumido | 400 | `{ error: { code: "invalid_state" } }` |
+| ADMIN negou o consentimento no Mercado Livre (`?error=...`) | 400 | `{ error: { code: "rejected" } }` |
+| Troca de `code` por token falhou | 400 | `{ error: { code: "rejected" } }` |
+| Sucesso — conta `CONNECTED`, credenciais cifradas gravadas | 200 | `{ connected: true, mlAccountId }` |
+
+Em qualquer falha depois da troca de código, a conta é marcada `status = 'ERROR'` com `last_error` preenchido — nunca fica presa em `PENDING` sem explicação. Tokens cifrados com AES-256-GCM antes de tocar o banco (D-046); nunca aparecem em log, mesmo em erro (`apps/api/src/ml-accounts.test.ts` prova isso).
+
 ### Autenticadas por JWT do usuário (Supabase)
 
 | Rota | Método | Papel mínimo | Descrição |
 |---|---|---|---|
-| `/v1/ml-accounts/connect` | POST | ADMIN | Inicia autorização de conta |
+| `/v1/ml-accounts/connect` | POST | ADMIN | Inicia autorização de conta — **implementado em 2026-08-21**, devolve `{ authorizationUrl }` |
 | `/v1/sync/run` | POST | GESTOR | Dispara sincronização manual — **enfileira e responde** |
 | `/v1/erp-imports` | POST | GESTOR | Recebe o arquivo do UpSeller, guarda no bucket, registra o lote e **enfileira** o parse |
 | `/v1/erp-imports/:id/apply` | POST | GESTOR | Confirmação humana da conferência: move o lote `PARSED` para `APPLYING`, grava quem confirmou e **enfileira** a aplicação |

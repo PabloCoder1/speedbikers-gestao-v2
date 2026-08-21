@@ -53,6 +53,13 @@ build_and_deploy() {
       api_url="https://placeholder.invalid"
     fi
 
+    # Precisa bater exatamente com o cadastrado no painel de aplicações do
+    # Mercado Livre. Vazio antes do primeiro cadastro é aceitável no
+    # placeholder acima; falhar aqui de verdade quando a api_url real existir
+    # e a variável ainda não tiver sido configurada.
+    [ -n "${MERCADO_LIVRE_CLIENT_ID}" ] || fail "MERCADO_LIVRE_CLIENT_ID não definida. Ver .env.example."
+    local ml_redirect_uri="${MERCADO_LIVRE_REDIRECT_URI:-${api_url}/oauth/mercado-livre/callback}"
+
     # Arquivo em vez de `--set-env-vars`: no Windows o wrapper gcloud.cmd é
     # interpretado pelo cmd, que trata `^` como escape e engole o delimitador.
     # O arquivo elimina a camada de quoting inteira.
@@ -76,6 +83,8 @@ SCHEDULER_INVOKER_SERVICE_ACCOUNT: "$(sa_email "${SA_SCHEDULER}")"
 SUPABASE_URL: "${SUPABASE_URL}"
 ERP_IMPORTS_BUCKET: "${PROJECT_ID}-erp-imports"
 WEB_ORIGINS: "${WEB_ORIGINS}"
+MERCADO_LIVRE_CLIENT_ID: "${MERCADO_LIVRE_CLIENT_ID}"
+MERCADO_LIVRE_REDIRECT_URI: "${ml_redirect_uri}"
 YAML
 
     # A `api` é superfície pública: o webhook do Mercado Livre precisa alcançá-la
@@ -95,7 +104,7 @@ YAML
       --timeout 60s \
       --cpu 1 --memory 512Mi \
       --env-vars-file "${env_file}" \
-      --set-secrets "SUPABASE_SERVICE_ROLE_KEY=${SECRET_SUPABASE_KEY}:latest" \
+      --set-secrets "SUPABASE_SERVICE_ROLE_KEY=${SECRET_SUPABASE_KEY}:latest,MERCADO_LIVRE_CLIENT_SECRET=${SECRET_ML_CLIENT_SECRET}:latest,ML_TOKEN_ENCRYPTION_KEY=${SECRET_ML_TOKEN_KEY}:latest" \
       --quiet
   else
     # O worker NÃO tem rota pública. Só o Cloud Tasks o invoca, com OIDC (D-024).

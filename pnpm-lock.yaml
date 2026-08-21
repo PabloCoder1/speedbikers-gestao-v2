@@ -35,6 +35,9 @@ importers:
       '@sb/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@sb/mercado-livre':
+        specifier: workspace:*
+        version: link:../../packages/mercado-livre
       '@sb/observability':
         specifier: workspace:*
         version: link:../../packages/observability

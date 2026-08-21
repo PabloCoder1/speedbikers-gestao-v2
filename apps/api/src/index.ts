@@ -1,5 +1,6 @@
 import { serve } from "@hono/node-server";
 import { createAdminClient } from "@sb/db";
+import { loadEncryptionKey } from "@sb/mercado-livre";
 import { createLogger } from "@sb/observability";
 
 import { createApp } from "./app.js";
@@ -40,6 +41,16 @@ const app = createApp({
   },
   ipAllowlist: createIpAllowlistVerifier(),
   webhook: { db, enqueuer, logger },
+  mlAccounts: {
+    db,
+    logger,
+    oauth: {
+      clientId: env.MERCADO_LIVRE_CLIENT_ID,
+      clientSecret: env.MERCADO_LIVRE_CLIENT_SECRET,
+      redirectUri: env.MERCADO_LIVRE_REDIRECT_URI,
+    },
+    encryptionKey: loadEncryptionKey(env.ML_TOKEN_ENCRYPTION_KEY),
+  },
 });
 
 serve({ fetch: app.fetch, port: env.PORT }, (info) => {

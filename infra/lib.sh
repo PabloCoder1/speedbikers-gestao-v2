@@ -34,6 +34,15 @@ SUPABASE_PROJECT_REF="nmgccyqquwxecqffsidr"
 SUPABASE_URL="https://${SUPABASE_PROJECT_REF}.supabase.co"
 SECRET_SUPABASE_KEY="SUPABASE_SERVICE_ROLE_KEY"
 
+# OAuth do Mercado Livre (D-041, D-046). client_id e redirect_uri NÃO são
+# segredo — vão em --set-env-vars, junto dos demais identificadores de
+# recurso. client_secret e a chave de cifra dos tokens são segredo de
+# verdade e vivem no Secret Manager, como SUPABASE_SERVICE_ROLE_KEY.
+MERCADO_LIVRE_CLIENT_ID="${MERCADO_LIVRE_CLIENT_ID:-}"
+MERCADO_LIVRE_REDIRECT_URI="${MERCADO_LIVRE_REDIRECT_URI:-}"
+SECRET_ML_CLIENT_SECRET="MERCADO_LIVRE_CLIENT_SECRET"
+SECRET_ML_TOKEN_KEY="ML_TOKEN_ENCRYPTION_KEY"
+
 sa_email() {
   echo "${1}@${PROJECT_ID}.iam.gserviceaccount.com"
 }

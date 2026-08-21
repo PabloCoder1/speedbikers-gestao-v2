@@ -9,6 +9,8 @@ import type { Enqueuer } from "./enqueue.js";
 import type { ImportDeps } from "./erp-import.js";
 import { confirmApply, isImportKind, receiveUpload } from "./erp-import.js";
 import type { IpAllowlistVerifier } from "./ip-allowlist.js";
+import type { MlAccountsDeps } from "./ml-accounts.js";
+import { completeConnect, startConnect } from "./ml-accounts.js";
 import type { OidcVerifier } from "./oidc.js";
 import type { WebhookDeps } from "./webhook.js";
 import { receiveWebhook } from "./webhook.js";
@@ -45,6 +47,7 @@ export interface AppDependencies {
   importDeps?: ImportDeps;
   ipAllowlist?: IpAllowlistVerifier;
   webhook?: WebhookDeps;
+  mlAccounts?: MlAccountsDeps;
 }
 
 /**
@@ -155,6 +158,50 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     // falta, e devolver erro só faria o Mercado Livre gastar 8 tentativas em
     // 1h à toa (docs/MERCADO_LIVRE.md secao 2.5).
     return context.json({ received: true, processed: outcome.status === "enqueued" });
+  });
+
+  // --------------------------------------------------------------------
+  // Callback do OAuth do Mercado Livre.
+  //
+  // Caminho público, como o webhook — mas a autenticação própria aqui é o
+  // `state` de CSRF (`ml_oauth_states`), não a allowlist de IP: quem chega
+  // aqui é o NAVEGADOR do ADMIN sendo redirecionado pelo Mercado Livre, não
+  // o Mercado Livre chamando servidor a servidor. Nem JWT (o navegador ainda
+  // não tem sessão desta chamada) nem IP fixo (é o admin, de qualquer rede).
+  // --------------------------------------------------------------------
+  app.get("/oauth/mercado-livre/callback", async (context) => {
+    const mlAccounts = dependencies.mlAccounts;
+
+    if (mlAccounts === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const state = context.req.query("state");
+
+    if (state === undefined) {
+      return context.json({ error: { code: "invalid_payload", message: "state ausente" } }, 400);
+    }
+
+    const code = context.req.query("code");
+    const error = context.req.query("error");
+
+    // Com `exactOptionalPropertyTypes`, passar `code: undefined` não é o
+    // mesmo que omitir a chave (mesma regra já documentada em enqueue.ts).
+    const outcome = await completeConnect(mlAccounts, {
+      state,
+      ...(code === undefined ? {} : { code }),
+      ...(error === undefined ? {} : { error }),
+    });
+
+    if (outcome.status === "invalid_state") {
+      return context.json({ error: { code: "invalid_state" } }, 400);
+    }
+
+    if (outcome.status === "rejected") {
+      return context.json({ error: { code: "rejected", message: outcome.reason } }, 400);
+    }
+
+    return context.json({ connected: true, mlAccountId: outcome.mlAccountId });
   });
 
   // --------------------------------------------------------------------
@@ -315,6 +362,59 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     return context.json({ batchId: outcome.batchId, queued: true });
+  });
+
+  // --------------------------------------------------------------------
+  // Início da autorização de uma conta Mercado Livre.
+  //
+  // A conta em si (`ml_accounts`) já existe — criada pelo `web` direto sob
+  // RLS, só ADMIN escreve. Esta rota só cuida do que exige segredo: o
+  // `client_secret` do Mercado Livre nunca pode chegar ao navegador
+  // (docs/ARCHITECTURE.md secao 18).
+  // --------------------------------------------------------------------
+  app.post("/v1/ml-accounts/connect", async (context) => {
+    const auth = dependencies.auth;
+    const mlAccounts = dependencies.mlAccounts;
+
+    if (auth === undefined || mlAccounts === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    // Só ADMIN: quem autoriza no Mercado Livre precisa ser administrador
+    // daquela conta ML específica (D-041) — colaborador do lado de cá que não
+    // for ADMIN nem chegaria a essa tela real no Mercado Livre.
+    const authorized = await auth.authenticate(context.req.header("authorization"), ["ADMIN"]);
+
+    if (!authorized.ok) {
+      dependencies.logger.warn("ml_account_connect_unauthorized", {
+        request_id: context.get("requestId"),
+        reason: authorized.reason,
+      });
+
+      return context.json({ error: { code: "unauthorized" } }, authorized.status);
+    }
+
+    const body: unknown = await context.req.json().catch(() => null);
+    const mlAccountId =
+      typeof body === "object" && body !== null && "mlAccountId" in body && typeof body.mlAccountId === "string"
+        ? body.mlAccountId
+        : undefined;
+
+    if (mlAccountId === undefined) {
+      return context.json({ error: { code: "invalid_payload", message: "mlAccountId obrigatório" } }, 400);
+    }
+
+    const outcome = await startConnect(mlAccounts, authorized.caller, mlAccountId);
+
+    if (outcome.status === "not_found") {
+      return context.json({ error: { code: "not_found" } }, 404);
+    }
+
+    if (outcome.status === "rejected") {
+      return context.json({ error: { code: "rejected", message: outcome.reason } }, 409);
+    }
+
+    return context.json({ authorizationUrl: outcome.authorizationUrl });
   });
 
   app.notFound((context) => {

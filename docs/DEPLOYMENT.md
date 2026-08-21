@@ -86,8 +86,8 @@ Cloud Scheduler dispara apenas reconciliação e manutenção. **Nunca despacha 
 | Segredo | Onde vive | Quem lê |
 |---|---|---|
 | `SUPABASE_SERVICE_ROLE_KEY` | Secret Manager | `api`, `worker` |
-| Credenciais de aplicação do Mercado Livre | Secret Manager | `api` |
-| Chave de cifragem dos tokens ML | Secret Manager | `api` |
+| `MERCADO_LIVRE_CLIENT_SECRET` | Secret Manager | `api` |
+| `ML_TOKEN_ENCRYPTION_KEY` (AES-256, D-046) | Secret Manager | `api` |
 | Chave da API de IA | Secret Manager | `api` |
 | `NEXT_PUBLIC_SUPABASE_URL` e chave publicável | Vercel env | `web` |
 
@@ -195,6 +195,18 @@ O script usa `SUPABASE_URL` e `SUPABASE_SECRET_KEY` do ambiente e escreve com `s
 Papéis aceitos: `ADMIN`, `GESTOR`, `ANALISTA`, `OPERADOR`, `VISUALIZADOR`. `--org` aceita outro slug; o padrão é `speed-bikers`.
 
 Roda direto com `node`, sem passo de build: o Node 24 remove os tipos do `.ts` nativamente.
+
+---
+
+## 10.1 Conectar uma conta Mercado Livre (manual, precisa do painel)
+
+Antes do primeiro `POST /v1/ml-accounts/connect` em qualquer ambiente:
+
+1. Criar os secrets no Secret Manager: `MERCADO_LIVRE_CLIENT_SECRET` (vem do painel de aplicações do Mercado Livre) e `ML_TOKEN_ENCRYPTION_KEY` — gerar com `node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"`, nunca reaproveitar entre ambientes.
+2. Cadastrar a aplicação no painel de aplicações do Mercado Livre (`developers.mercadolivre.com.br`) com o `redirect_uri` **exatamente** igual a `MERCADO_LIVRE_REDIRECT_URI` — Mercado Livre recusa o callback se não bater caractere a caractere.
+3. Definir `MERCADO_LIVRE_CLIENT_ID` e `MERCADO_LIVRE_REDIRECT_URI` no ambiente antes de rodar `infra/deploy-cloud-run.sh` (não são segredo, mas precisam existir — o script falha cedo, com causa explícita, se `MERCADO_LIVRE_CLIENT_ID` estiver vazio).
+
+Depois disso, cada conta nova só passa pela tela do `web` (criar `ml_accounts`, clicar em conectar) — nenhum passo manual por conta.
 
 ---
 

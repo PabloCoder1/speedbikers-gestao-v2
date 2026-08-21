@@ -28,3 +28,5 @@ export type {
 
 export { paginateOffset } from "./pagination.js";
 export type { OffsetPage, PaginateOffsetOptions, PagingInfo } from "./pagination.js";
+
+export { decryptToken, encryptToken, loadEncryptionKey } from "./token-cipher.js";

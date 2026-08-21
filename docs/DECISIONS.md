@@ -458,6 +458,18 @@ Levantadas pela pesquisa da documentação oficial que fecha a lista de verifica
 
 ---
 
+## D-046 — Cifra dos tokens do Mercado Livre: AES-256-GCM, chave em variável de ambiente
+
+**Contexto:** `docs/ARCHITECTURE.md` secao 18 e a migration `20260820180000_create_ml_accounts.sql` já previam "tokens cifrados em repouso, chave no Secret Manager", mas nenhum documento escolhia o algoritmo nem o formato da coluna `text` de `ml_credentials.*_ciphertext`. Sem essa escolha, a conexão de conta (`POST /v1/ml-accounts/connect` + `GET /oauth/mercado-livre/callback`) não podia ser implementada — é o pré-requisito real da Fase 3 que nenhum item do checklist nomeava explicitamente.
+
+**Decisão:** AES-256-GCM (`node:crypto`, sem dependência externa). Formato da coluna: `base64(iv[12] || authTag[16] || ciphertext)`, um único campo `text`, compatível com o schema já existente. A chave (32 bytes, base64) vem de `ML_TOKEN_ENCRYPTION_KEY` — variável de ambiente comum, resolvida pelo Secret Manager em produção e por `.env.local` localmente, mesmo padrão já usado por `SUPABASE_SERVICE_ROLE_KEY`. Validada no boot da `api` (Zod, decodifica e confere 32 bytes) — chave com tamanho errado derruba o processo no start, não na primeira tentativa real de conectar uma conta.
+
+**Motivo:** GCM é AEAD — detecta chave errada ou ciphertext adulterado no próprio `decipher.final()`, sem exigir HMAC separado. IV aleatório por chamada (nunca reaproveitado) elimina a categoria de erro mais comum de cifra simétrica malfeita. `node:crypto` evita adicionar dependência para algo que a stdlib já cobre corretamente.
+
+**Alternativa rejeitada:** confiar no Secret Manager também para versionamento de chave por linha — `ml_credentials.encryption_key_version` já existe no schema (default 1) para isso; a rotação em si fica fora de escopo até haver uma segunda versão de chave para rotacionar de verdade.
+
+**Impacto:** `packages/mercado-livre/src/token-cipher.ts` (`encryptToken`/`decryptToken`/`loadEncryptionKey`) e `apps/api/src/ml-accounts.ts` (`startConnect`/`completeConnect`), implementados e testados nesta sessão — ver `docs/HANDOFF.md`. `ML_TOKEN_ENCRYPTION_KEY`, `MERCADO_LIVRE_CLIENT_ID`, `MERCADO_LIVRE_CLIENT_SECRET` e `MERCADO_LIVRE_REDIRECT_URI` entram no `.env.example` e no `envSchema` de `apps/api`.
+
 ## Como adicionar nova decisão
 
 Registrar:

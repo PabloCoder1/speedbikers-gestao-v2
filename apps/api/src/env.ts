@@ -1,3 +1,4 @@
+import { loadEncryptionKey } from "@sb/mercado-livre";
 import { z } from "zod";
 
 /**
@@ -38,6 +39,33 @@ export const envSchema = z.object({
 
   /** Bucket que recebe as exportações do UpSeller. */
   ERP_IMPORTS_BUCKET: z.string().min(1),
+
+  /**
+   * OAuth do Mercado Livre (D-041, D-046). `MERCADO_LIVRE_CLIENT_SECRET` é
+   * segredo, vem do Secret Manager. `MERCADO_LIVRE_REDIRECT_URI` precisa
+   * bater exatamente com o cadastrado no painel de aplicações do Mercado
+   * Livre — por isso é variável, não derivada de `API_URL` em código.
+   */
+  MERCADO_LIVRE_CLIENT_ID: z.string().min(1),
+  MERCADO_LIVRE_CLIENT_SECRET: z.string().min(1),
+  MERCADO_LIVRE_REDIRECT_URI: z.url(),
+
+  /**
+   * Chave AES-256 (base64) que cifra `ml_credentials.*_ciphertext` (D-046).
+   * Validada aqui, não só no primeiro uso: uma chave com tamanho errado deve
+   * derrubar o boot, não a primeira tentativa de conectar uma conta.
+   */
+  ML_TOKEN_ENCRYPTION_KEY: z.string().refine(
+    (value) => {
+      try {
+        loadEncryptionKey(value);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    { message: "precisa decodificar em base64 para 32 bytes (AES-256)" },
+  ),
 
   /**
    * Origens do `web` autorizadas no CORS de `/v1/*`, separadas por vírgula.

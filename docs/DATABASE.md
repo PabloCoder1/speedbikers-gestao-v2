@@ -116,6 +116,28 @@ As colunas de referência **duplicam** o que já está no `jsonb` de `erp_import
 
 **Match exato roda sozinho**, sem tela: depois de qualquer aplicação do importador, o worker relê os candidatos `OPEN` da organização sobre as mesmas linhas de origem — se o SKU passou a existir, o vínculo é criado e o candidato fecha com `resolution_method = 'EXACT_MATCH'`, sem intervenção humana.
 
+### `ml_accounts` / `ml_credentials` / `ml_oauth_states` — conexão Mercado Livre
+
+Schema criado na Fase 2; **conexão real (OAuth connect + callback) é Fase 3**, concluída em 2026-08-21 junto com a reconciliação por janela.
+
+```text
+ml_accounts       label, slug (nomeia a fila ml-sync-<slug>, D-036), seller_id?, nickname?,
+                  status (PENDING | CONNECTED | REVOKED | ERROR), connected_at?, last_error?
+ml_credentials    access_token_ciphertext, refresh_token_ciphertext, encryption_key_version,
+                  access_token_expires_at, scopes[], refresh_locked_until?
+ml_oauth_states   state (PK), organization_id, ml_account_id, created_by?, redirect_to?,
+                  expires_at, consumed_at?
+```
+
+Fluxo: o ADMIN cria a conta (`ml_accounts`) direto pelo `web`, sob RLS — é escrita simples de usuário, sem segredo envolvido. Conectar exige segredo (`client_secret` do Mercado Livre, chave de cifra dos tokens) e por isso passa pela `api`:
+
+1. `POST /v1/ml-accounts/connect` (ADMIN) grava um `state` de uso único em `ml_oauth_states` (expira em 15 min) e devolve a `authorizationUrl`.
+2. O navegador do ADMIN autoriza no Mercado Livre e é redirecionado para `GET /oauth/mercado-livre/callback` — rota pública, sem JWT nem OIDC, cuja única defesa é o `state` (mesmo espírito do webhook, D-043, mas com CSRF em vez de allowlist de IP).
+3. O callback **consome o `state` atomicamente**: um único `UPDATE ... WHERE state = $1 AND consumed_at IS NULL AND expires_at > now()`, não um `SELECT` seguido de `UPDATE` — duas chamadas concorrentes com o mesmo `state` (aba duplicada, retry do navegador) só deixam uma passar.
+4. Troca o `code`, cifra `access_token`/`refresh_token` (AES-256-GCM, D-046) e grava em `ml_credentials` (`upsert` por `ml_account_id` — PK **não parcial**, diferente da armadilha de `sku_listing_links` descrita abaixo). Marca a conta `CONNECTED`.
+
+**`ml_credentials` nunca recebe GRANT nem para `authenticated`** — só `service_role` alcança, em qualquer cenário (mesmo padrão de `ml_oauth_states`). O texto claro do token nunca existe fora do processo da `api` entre a resposta do Mercado Livre e a chamada de `encryptToken`.
+
 ### `sync_runs` / `sync_errors` — observabilidade de sincronização
 
 Schema criado na Fase 2; **preenchimento real é Fase 3**, quando o sync com o Mercado Livre existir. Mesmo padrão L2 append-only de `job_runs` (mesma migration de referência), com uma diferença deliberada: `job_runs` nasceu **sem política de leitura** porque `organizations` ainda não existia; `sync_runs`/`sync_errors` já nascem com policy de leitura, porque agora existe quem autorizar — é observabilidade **para o usuário** (`docs/ARCHITECTURE.md` secao 10), não só para depuração interna.

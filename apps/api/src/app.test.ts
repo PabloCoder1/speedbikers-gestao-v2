@@ -1,9 +1,13 @@
+import { randomBytes } from "node:crypto";
+
 import { createLogger } from "@sb/observability";
 import { describe, expect, it } from "vitest";
 
 import { createApp } from "./app.js";
+import type { AuthResult, Role } from "./auth.js";
 import type { EnqueueRequest } from "./enqueue.js";
 import { createIpAllowlistVerifier } from "./ip-allowlist.js";
+import type { MlAccountsDeps } from "./ml-accounts.js";
 import type { OidcVerifier } from "./oidc.js";
 import type { WebhookDeps } from "./webhook.js";
 
@@ -472,5 +476,294 @@ describe("CORS de /v1", () => {
     });
 
     expect(response.headers.get("access-control-allow-origin")).toBeNull();
+  });
+});
+
+describe("conexão de conta Mercado Livre", () => {
+  const OAUTH_CONFIG = {
+    clientId: "APP_ID_123",
+    clientSecret: "segredo-de-teste",
+    redirectUri: "https://api.speedbikers.example/oauth/mercado-livre/callback",
+  };
+
+  const ENCRYPTION_KEY = randomBytes(32);
+
+  /** Mesmo espírito do `chain` de `ml-accounts.test.ts`: fake mínimo, encadeável e thenable. */
+  function chain<T>(result: T): {
+    eq: () => ReturnType<typeof chain<T>>;
+    is: () => ReturnType<typeof chain<T>>;
+    gt: () => ReturnType<typeof chain<T>>;
+    select: () => ReturnType<typeof chain<T>>;
+    maybeSingle: () => Promise<T>;
+    then: <R>(resolve: (value: T) => R) => Promise<R>;
+  } {
+    const self = {
+      eq: () => self,
+      is: () => self,
+      gt: () => self,
+      select: () => self,
+      maybeSingle: () => Promise.resolve(result),
+      then: <R>(resolve: (value: T) => R) => Promise.resolve(result).then(resolve),
+    };
+
+    return self;
+  }
+
+  function fakeMlAccountsDb(options: {
+    accountStatus?: string | null;
+    claimedState?: { organization_id: string; ml_account_id: string } | null;
+  } = {}): MlAccountsDeps["db"] {
+    const accountStatus = "accountStatus" in options ? options.accountStatus : "PENDING";
+    const claimedState =
+      options.claimedState === undefined
+        ? { organization_id: "org-1", ml_account_id: "acc-1" }
+        : options.claimedState;
+
+    return {
+      from: (table: string) => ({
+        select: () =>
+          chain(accountStatus === null ? { data: null, error: null } : { data: { id: "acc-1", status: accountStatus }, error: null }),
+        insert: () => chain({ data: null, error: null }),
+        update: () => {
+          if (table === "ml_oauth_states") {
+            return chain(claimedState === null ? { data: null, error: null } : { data: claimedState, error: null });
+          }
+
+          return chain({ data: null, error: null });
+        },
+        upsert: () => chain({ data: null, error: null }),
+      }),
+    } as unknown as MlAccountsDeps["db"];
+  }
+
+  function withMlAccounts(options: {
+    accountStatus?: string | null;
+    claimedState?: { organization_id: string; ml_account_id: string } | null;
+    role?: Role;
+    withAuth?: boolean;
+    withDeps?: boolean;
+    fetchImpl?: typeof fetch;
+  } = {}): ReturnType<typeof createApp> {
+    const authenticate = (
+      _header: string | undefined,
+      allowed: readonly Role[],
+    ): Promise<AuthResult> => {
+      if (options.withAuth === false) {
+        return Promise.resolve({ ok: false, status: 401, reason: "sem token" });
+      }
+
+      const role = options.role ?? "ADMIN";
+
+      if (!allowed.includes(role)) {
+        return Promise.resolve({ ok: false, status: 403, reason: "papel sem permissão para esta ação" });
+      }
+
+      return Promise.resolve({ ok: true, caller: { userId: "u1", organizationId: "org-1", role } });
+    };
+
+    return createApp({
+      logger: createLogger({}, { sink: () => undefined }),
+      auth: { authenticate },
+      ...(options.withDeps === false
+        ? {}
+        : {
+            mlAccounts: {
+              db: fakeMlAccountsDb(options),
+              oauth: OAUTH_CONFIG,
+              encryptionKey: ENCRYPTION_KEY,
+              logger: createLogger({}, { sink: () => undefined }),
+              requestOptions: {
+                fetchImpl:
+                  options.fetchImpl ??
+                  (() =>
+                    Promise.resolve(
+                      new Response(
+                        JSON.stringify({
+                          access_token: "APP_USR-token",
+                          token_type: "bearer",
+                          expires_in: 21_600,
+                          scope: "offline_access read write",
+                          user_id: 987654321,
+                          refresh_token: "TG-refresh",
+                        }),
+                        { status: 200, headers: { "content-type": "application/json" } },
+                      ),
+                    )),
+              },
+            },
+          }),
+    });
+  }
+
+  describe("POST /v1/ml-accounts/connect", () => {
+    it("exige ADMIN — GESTOR é recusado", async () => {
+      const app = withMlAccounts({ role: "GESTOR" });
+
+      const response = await app.request("/v1/ml-accounts/connect", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mlAccountId: "acc-1" }),
+      });
+
+      expect(response.status).toBe(403);
+    });
+
+    it("recusa sem autenticação", async () => {
+      const app = withMlAccounts({ withAuth: false });
+
+      const response = await app.request("/v1/ml-accounts/connect", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mlAccountId: "acc-1" }),
+      });
+
+      expect(response.status).toBe(401);
+    });
+
+    it("responde 503 sem as dependências configuradas", async () => {
+      const app = withMlAccounts({ withDeps: false });
+
+      const response = await app.request("/v1/ml-accounts/connect", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mlAccountId: "acc-1" }),
+      });
+
+      expect(response.status).toBe(503);
+    });
+
+    it("responde 400 sem mlAccountId no corpo", async () => {
+      const app = withMlAccounts();
+
+      const response = await app.request("/v1/ml-accounts/connect", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      });
+
+      expect(response.status).toBe(400);
+    });
+
+    it("responde 404 quando a conta não existe", async () => {
+      const app = withMlAccounts({ accountStatus: null });
+
+      const response = await app.request("/v1/ml-accounts/connect", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mlAccountId: "acc-inexistente" }),
+      });
+
+      expect(response.status).toBe(404);
+    });
+
+    it("responde 409 quando a conta já está CONNECTED", async () => {
+      const app = withMlAccounts({ accountStatus: "CONNECTED" });
+
+      const response = await app.request("/v1/ml-accounts/connect", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mlAccountId: "acc-1" }),
+      });
+
+      expect(response.status).toBe(409);
+    });
+
+    it("devolve a authorizationUrl quando tudo está certo", async () => {
+      const app = withMlAccounts();
+
+      const response = await app.request("/v1/ml-accounts/connect", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mlAccountId: "acc-1" }),
+      });
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { authorizationUrl: string };
+      expect(new URL(body.authorizationUrl).origin).toBe("https://auth.mercadolivre.com.br");
+    });
+  });
+
+  describe("GET /oauth/mercado-livre/callback", () => {
+    it("responde 503 sem as dependências configuradas", async () => {
+      const app = withMlAccounts({ withDeps: false });
+
+      expect((await app.request("/oauth/mercado-livre/callback?state=s&code=c")).status).toBe(503);
+    });
+
+    it("responde 400 sem state", async () => {
+      const app = withMlAccounts();
+
+      expect((await app.request("/oauth/mercado-livre/callback?code=c")).status).toBe(400);
+    });
+
+    it("responde 400 quando o state é desconhecido, expirado ou já consumido", async () => {
+      const app = withMlAccounts({ claimedState: null });
+
+      const response = await app.request("/oauth/mercado-livre/callback?state=s&code=c");
+
+      expect(response.status).toBe(400);
+      expect((await response.json()) as { error: { code: string } }).toMatchObject({
+        error: { code: "invalid_state" },
+      });
+    });
+
+    it("responde 400 quando o Mercado Livre nega a autorização", async () => {
+      const app = withMlAccounts();
+
+      const response = await app.request("/oauth/mercado-livre/callback?state=s&error=access_denied");
+
+      expect(response.status).toBe(400);
+    });
+
+    it("conclui a conexão e devolve 200", async () => {
+      const app = withMlAccounts();
+
+      const response = await app.request("/oauth/mercado-livre/callback?state=s&code=c");
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ connected: true, mlAccountId: "acc-1" });
+    });
+
+    it("não exige Authorization — quem chega aqui é o navegador do ADMIN, sem sessão desta chamada", async () => {
+      const app = withMlAccounts({ withAuth: false });
+
+      const response = await app.request("/oauth/mercado-livre/callback?state=s&code=c");
+
+      expect(response.status).toBe(200);
+    });
+
+    it("não exige X-Forwarded-For de uma allowlist — não é o webhook", async () => {
+      const app = createApp({
+        logger: createLogger({}, { sink: () => undefined }),
+        ipAllowlist: createIpAllowlistVerifier(),
+        mlAccounts: {
+          db: fakeMlAccountsDb(),
+          oauth: OAUTH_CONFIG,
+          encryptionKey: ENCRYPTION_KEY,
+          logger: createLogger({}, { sink: () => undefined }),
+          requestOptions: {
+            fetchImpl: () =>
+              Promise.resolve(
+                new Response(
+                  JSON.stringify({
+                    access_token: "APP_USR-token",
+                    token_type: "bearer",
+                    expires_in: 21_600,
+                    scope: "offline_access read write",
+                    user_id: 987654321,
+                    refresh_token: "TG-refresh",
+                  }),
+                  { status: 200, headers: { "content-type": "application/json" } },
+                ),
+              ),
+          },
+        },
+      });
+
+      // Sem x-forwarded-for nenhum — a allowlist do webhook bloquearia isto.
+      const response = await app.request("/oauth/mercado-livre/callback?state=s&code=c");
+
+      expect(response.status).toBe(200);
+    });
   });
 });
