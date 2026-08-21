@@ -2,7 +2,7 @@
 
 > Dono documental de: estrutura das exportações do UpSeller, qualidade dos dados e regras de importação.
 > Decisão que o define: **D-028** (o UpSeller permanece como ERP) e **D-029** (em divergência de estoque, o UpSeller vence).
-> Status: **estrutura analisada e importador construído.** Os quatro arquivos reais foram processados no Dev em 2026-08-21 e aguardam conferência/aplicação humana.
+> Status: **estrutura analisada, importador construído e carga real aplicada.** Os quatro arquivos foram processados e aplicados no Dev em 2026-08-21, com zero linhas inválidas ou não resolvidas.
 
 Tudo neste documento veio da leitura dos quatro arquivos exportados, não de suposição.
 

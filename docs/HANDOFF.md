@@ -1,6 +1,6 @@
 # Handoff V3
 
-> Última atualização: 2026-08-21 — **Fases 0 a 3 concluídas no código.** Três dos quatro arquivos reais do UpSeller foram conferidos e aplicados no Dev (`PRODUCTS`, `KITS`, `LINKS`); `STOCK` continua em `PARSED` porque a sessão web expirou antes da última confirmação. A aplicação de `LINKS` revelou um defeito de normalização que criou quatro contas ML duplicadas. **Próxima ação: concluir `STOCK` e corrigir/reparar as contas antes da Fase 5A.**
+> Última atualização: 2026-08-21 — **Fases 0 a 3 concluídas no código e os quatro arquivos reais do UpSeller aplicados no Dev.** O defeito de normalização que duplicou as quatro contas ML foi corrigido no parser e reparado no banco por migration versionada. **Próxima ação: reler `docs/METRICS.md` e confirmar as decisões de design da Fase 5A antes de criar schema analítico.**
 
 ## Estado atual
 
@@ -14,7 +14,7 @@
 
 ## Última etapa concluída
 
-**Conferência e aplicação parcial dos quatro imports reais do UpSeller no Dev.**
+**Aplicação completa dos quatro imports reais do UpSeller e reparação das contas ML no Dev.**
 
 - Causa confirmada no Cloud Logging: em 2026-08-20, a revisão `worker-00002-p4k` respondeu `400 unknown_job_type` para `erp.import.parse`; as três tentativas de cada Cloud Task se esgotaram antes de o worker com o handler ser publicado.
 - Os quatro objetos continuavam íntegros no bucket `speedbikers-gestao-v3-erp-imports`; nenhum reupload foi necessário.
@@ -24,13 +24,15 @@
   - `PRODUCTS`: `APPLIED`, 3.415/3.415 aplicadas, zero não resolvidas; `skus = 3.416` (3.415 do arquivo + o SKU de teste já existente).
   - `KITS`: `APPLIED`, 272/272 aplicadas, zero não resolvidas; `sku_components = 272`.
   - `LINKS`: `APPLIED`, 20.650/20.650 aplicadas, zero não resolvidas; 3.274 `SKIPPED` por D-037; `sku_listing_links = 20.650` e `link_candidates = 0`.
-  - `STOCK`: continua `PARSED`, 3.372/3.372 OK, porque a sessão autenticada expirou antes da confirmação. Nenhuma aplicação de estoque foi enfileirada e `erp_stock_snapshots = 0`.
-- **Defeito encontrado na aplicação de `LINKS`:** `storeLabel()` promete remover o prefixo completo `mercado-ML-`, mas remove apenas o trecho até o primeiro hífen (`mercado-`). O código e os testes atuais, portanto, preservam `ML-`, em contradição com o comentário da função e com os quatro slugs documentados anteriormente neste HANDOFF.
-- Consequência no Dev: as quatro contas manuais existentes (`speedbikers-loja-1`, `speedbikers-loja-2`, `sbmotos`, `gmr`), todas em `ERROR` após tentativas OAuth e com oito `ml_oauth_states` ao todo, não foram reconhecidas. O import criou quatro placeholders `PENDING` (`ml-speedbikers-loja-1`, `ml-speedbikers-loja-2`, `ml-sbmotos`, `ml-gmr`) e os 20.650 vínculos apontam para eles, distribuídos em 6.160, 5.020, 4.742 e 4.728 linhas, respectivamente.
-- Não há credenciais, permissões, sync runs, erros, eventos ou pedidos em nenhuma das oito contas. Os quatro placeholders importados só têm os vínculos; as quatro contas manuais só têm os estados OAuth expirados. **Nenhuma conta foi apagada, fundida ou renomeada nesta sessão.**
+  - `STOCK`: `APPLIED`, 3.372/3.372 aplicadas, zero não resolvidas; `erp_stock_snapshots = 3.372`, todos com `sku_id` resolvido.
+- **Defeito encontrado e corrigido na aplicação de `LINKS`:** `storeLabel()` prometia remover o prefixo completo `mercado-ML-`, mas removia apenas o trecho até o primeiro hífen (`mercado-`). O parser e os testes agora removem o prefixo completo, produzindo os slugs `speedbikers-loja-1`, `speedbikers-loja-2`, `sbmotos` e `gmr`; os demais marketplaces mantêm a remoção simples do próprio prefixo.
+- Consequência original no Dev: o import havia criado quatro placeholders `PENDING` (`ml-speedbikers-loja-1`, `ml-speedbikers-loja-2`, `ml-sbmotos`, `ml-gmr`) e os 20.650 vínculos apontavam para eles, em vez das quatro contas manuais já usadas nas tentativas OAuth.
+- **Reparação versionada:** migration `20260821171728_repair_imported_ml_account_slugs.sql`, transacional e com asserções fail-closed. Moveu 6.160 + 5.020 + 4.742 + 4.728 vínculos para as contas manuais correspondentes e removeu somente os quatro placeholders vazios. Antes de aplicar, a migration foi executada inteira sob `BEGIN`/`ROLLBACK` contra o estado real; depois foi publicada por `supabase db push` e validada novamente.
+- Estado final conferido no banco: `skus = 3.554` (3.415 produtos + 138 kits + 1 SKU de teste), `sku_components = 272`, `sku_listing_links = 20.650`, `link_candidates = 0`, `erp_stock_snapshots = 3.372` e zero snapshots sem `sku_id`. Restam exatamente quatro `ml_accounts`, todas as manuais; os 13 estados OAuth existentes foram preservados, `ml_credentials` continua vazia e nenhuma conta está `CONNECTED`.
+- Verificação: `pnpm run check` verde nas 29 tasks; `@sb/domain` com 123 testes; `supabase db push --linked --dry-run` confirma o banco remoto atualizado. Os advisors foram relidos e não apontam achado causado por esta migration de dados; os avisos preexistentes seguem fora do escopo desta reparação.
 - Prevenção no repositório: `infra/deploy-cloud-run.sh` agora publica o consumidor (`worker`) antes do produtor (`api`) quando os dois são implantados juntos. Assim uma API nova não emite tipo de job para um worker antigo.
 
-**Próximo passo operacional:** autenticar novamente em `/importacoes` e confirmar somente o lote `STOCK`; validar `erp_stock_snapshots` e quantos snapshots ficaram sem `sku_id`. Em seguida, com aprovação explícita para a reparação destrutiva, corrigir a normalização de `storeLabel()`/`storeSlug()`, mover os 20.650 vínculos dos quatro placeholders `ml-*` para as quatro contas manuais correspondentes e remover os placeholders vazios. A Fase 5A começa somente após essa base estar aplicada, reparada e conferida.
+**Próximo passo operacional:** reler `docs/METRICS.md` e confirmar com o usuário as decisões de grão, timezone, cancelamentos/devoluções, rollups e latência da Fase 5A antes de criar qualquer migration analítica.
 
 ## Auditoria da V2 realizada nesta sessão
 
@@ -284,7 +286,7 @@ Ordem dentro da fase, do que não depende de nada para o que depende:
 
 **Leitor de planilha escolhido:** `read-excel-file` (2,5 MB) em vez de `exceljs` (21,8 MB), porque o worker só lê. Medido nos arquivos reais: 23.925 linhas em 647 ms com 176 MB de RSS, folgado nos 512 MB do container. Usar `readSheet`, não o export padrão — na v9 o padrão devolve o array de planilhas.
 
-**Números conferidos na validação ponta a ponta:** 20.650 vínculos de ML (13.299 com variação, 3.579 sem, 3.772 user products) e 3.274 descartados por decisão (D-037); 4 contas derivadas — `ml-speedbikers-loja-1`, `ml-speedbikers-loja-2`, `ml-sbmotos`, `ml-gmr`; 138 kits; 184 produtos descontinuados; 296 importados; 64 categorias reduzidas a **19 marcas**.
+**Números conferidos na validação ponta a ponta:** 20.650 vínculos de ML (13.299 com variação, 3.579 sem, 3.772 user products) e 3.274 descartados por decisão (D-037); 4 contas derivadas — `speedbikers-loja-1`, `speedbikers-loja-2`, `sbmotos`, `gmr`; 138 kits; 184 produtos descontinuados; 296 importados; 64 categorias reduzidas a **19 marcas**.
 
 **Regra desta fase:** toda tabela nasce com RLS habilitada, GRANT mínimo explícito e **teste negativo** provando que quem não tem permissão não lê. Ver `docs/DATABASE.md` secao 5 e `docs/TESTING.md`.
 
@@ -401,16 +403,16 @@ Também confirmados com detalhe de endpoint, paginação e payload: tópicos de 
 
 ## Bloqueios atuais
 
-- **Fase 3 concluída.** Antes da Fase 5A, falta aplicar o batch `STOCK` e reparar a duplicação de contas descoberta na aplicação de `LINKS`. Depois disso, reler `docs/METRICS.md` e confirmar as decisões de design antes de migrar schema analítico novo.
+- **Fase 3 concluída e base real aplicada.** Antes da Fase 5A, reler `docs/METRICS.md` e confirmar as decisões de design antes de migrar schema analítico novo.
 - `domain_events` já é lido pela tela `/sincronizacao`, mas ainda não alimenta notificações (`docs/NOTIFICATIONS.md`) nem a Central de Ações. Esses consumos são Fase 6/7.
-- **Nenhuma conta Mercado Livre está `CONNECTED` no banco Dev** — há quatro contas manuais em `ERROR` e quatro placeholders importados em `PENDING`, duplicados pelo defeito de normalização registrado acima. A Tela de Saúde da Sincronização, a reconciliação e o backfill estão prontos e testados, mas nenhum rodou contra o Mercado Livre real.
-- **Imports do UpSeller em 2026-08-21:** `PRODUCTS`, `KITS` e `LINKS` estão `APPLIED`, com zero linhas não resolvidas; `STOCK` continua `PARSED` aguardando nova autenticação e confirmação. Os vínculos existem, mas apontam provisoriamente para os quatro placeholders `ml-*` até a reparação aprovada.
+- **Nenhuma conta Mercado Livre está `CONNECTED` no banco Dev** — restam somente as quatro contas manuais, todas em `ERROR` após tentativas OAuth. A Tela de Saúde da Sincronização, a reconciliação e o backfill estão prontos e testados, mas nenhum rodou contra o Mercado Livre real.
+- **Imports do UpSeller em 2026-08-21:** `PRODUCTS`, `KITS`, `LINKS` e `STOCK` estão `APPLIED`, todos com zero linhas não resolvidas. Os 20.650 vínculos apontam para as quatro contas manuais corretas; não há placeholders `ml-*` nem candidatos pendentes.
 - **D-048 precisa de verificação empírica em Dev** (comparar `date_last_updated` e `last_updated` num pedido real) antes de considerar o checkpoint de pedidos confiável em produção — mesma disciplina de D-045, mesmo status: não bloqueia continuar a Fase 3 localmente, bloqueia declarar a sincronização de pedidos pronta para tráfego real.
 - **`packages/db/src/types.ts` foi editado à mão** duas vezes agora (`backfill_covered_until` e `orders`/`order_items`) — Supabase CLI/Docker não estava disponível nesta sessão. Rodar `pnpm run gen:types` assim que possível.
 - **`packages/db/src/types.ts` foi editado à mão** para `ml_accounts.backfill_covered_until` — Supabase CLI/Docker não estava disponível nesta sessão. Rodar `pnpm run gen:types` (precisa de `supabase start` local) assim que possível para confirmar que o tipo gerado bate com o que foi escrito à mão.
 - Backfill e reconciliação estão prontos e testados, mas **nenhum dos dois rodou contra o Mercado Livre real**. A permissão `roles/cloudtasks.enqueuer` do `v3-worker-runtime` na fila `backfill` foi verificada no IAM em 2026-08-21; falta uma conta `CONNECTED` para exercitar o fluxo.
 - O Scheduler `v3-reconcile-orders` está `ENABLED` e dispara a reconciliação de hora em hora; o Cloud Logging registra `reconcile_triggered` com zero contas enquanto todas permanecem `PENDING`.
 - **D-045 precisa de verificação empírica em Dev** (inspecionar o `X-Forwarded-For` real recebido pelo Cloud Run) antes de considerar a allowlist de IP confiável em produção — não bloqueia continuar a Fase 3 localmente/em Dev, mas bloqueia declarar o webhook pronto para tráfego real do Mercado Livre.
-- **Conexão real de conta ainda não concluída.** A rota de início do OAuth responde e criou estados para as quatro contas manuais, que terminaram em `ERROR`; `ml_credentials` continua vazia. Os quatro placeholders criados pelo import estão `PENDING` e não devem ser conectados antes da reparação. Falta completar o consentimento/callback com uma conta Mercado Livre real e validar o resultado — ver `docs/DEPLOYMENT.md` secao 10.1.
+- **Conexão real de conta ainda não concluída.** A rota de início do OAuth responde e criou 13 estados para as quatro contas manuais, que terminaram em `ERROR`; `ml_credentials` continua vazia. Falta completar o consentimento/callback com uma conta Mercado Livre real e validar o resultado — ver `docs/DEPLOYMENT.md` secao 10.1.
 - Tela `/contas` para criar/conectar conta concluída no commit `a9d2ee7`; falta validar o fluxo OAuth completo contra uma conta Mercado Livre real.
 - Modelos de exportação do pedido de compra (Excel e PDF) precisam ser solicitados antes da Fase 4.

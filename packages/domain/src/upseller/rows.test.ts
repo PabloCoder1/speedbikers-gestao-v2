@@ -201,7 +201,7 @@ describe("mapLinkRow", () => {
 
     expect(result.ok && result.value).toMatchObject({
       skuKey: "PI150",
-      storeSlug: "ml-speedbikers-loja-1",
+      storeSlug: "speedbikers-loja-1",
       ref: { kind: "ITEM", itemId: "MLB1722724235", variationId: "205704879161" },
     });
   });

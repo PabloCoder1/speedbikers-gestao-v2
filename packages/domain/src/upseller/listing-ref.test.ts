@@ -102,12 +102,16 @@ describe("filtro de canal (D-037)", () => {
 
 describe("rótulo e slug da loja", () => {
   it.each([
-    ["mercado-ML- Speedbikers (loja 1)", "ML- Speedbikers (loja 1)", "ml-speedbikers-loja-1"],
-    ["mercado-ML - SbMotos", "ML - SbMotos", "ml-sbmotos"],
-    ["mercado-ML - GMR", "ML - GMR", "ml-gmr"],
+    ["mercado-ML- Speedbikers (loja 1)", "Speedbikers (loja 1)", "speedbikers-loja-1"],
+    ["mercado-ML - SbMotos", "SbMotos", "sbmotos"],
+    ["mercado-ML - GMR", "GMR", "gmr"],
   ])("%s", (raw, label, slug) => {
     expect(storeLabel(raw)).toBe(label);
     expect(storeSlug(raw)).toBe(slug);
+  });
+
+  it("mantém a remoção simples do prefixo para os demais marketplaces", () => {
+    expect(storeLabel("shopee-Sbmotos")).toBe("Sbmotos");
   });
 
   it("slug respeita o charset exigido pelo Cloud Tasks", () => {

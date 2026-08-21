@@ -88,8 +88,16 @@ export function storeLabel(rawStore: unknown): string | null {
     return null;
   }
 
+  // O prefixo do Mercado Livre contém um hífen interno (`mercado-ML`).
+  // Cortar no primeiro hífen preservaria `ML-` no rótulo e criaria uma
+  // segunda conta para cada loja já cadastrada sem esse prefixo.
+  const mercadoLivrePrefix = /^mercado-ml\s*-\s*/i;
   const separator = store.indexOf("-");
-  const label = separator >= 0 ? store.slice(separator + 1) : store;
+  const label = mercadoLivrePrefix.test(store)
+    ? store.replace(mercadoLivrePrefix, "")
+    : separator >= 0
+      ? store.slice(separator + 1)
+      : store;
 
   return label.replace(/^[\s-]+/, "").trim() || null;
 }
