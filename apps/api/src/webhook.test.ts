@@ -60,6 +60,7 @@ function deps(options: { accountExists?: boolean } = {}): {
     deps: {
       db: fakeDb(options),
       logger: createLogger({}, { sink: (line) => lines.push(line) }),
+      now: () => new Date("2026-08-21T12:00:00.000Z"),
       enqueuer: {
         enqueue: (request) => {
           enqueued.push(request);
@@ -115,7 +116,7 @@ describe("receiveWebhook", () => {
       {
         jobType: "sync.webhook.received",
         organizationId: ACCOUNT.organization_id,
-        dedupeKey: "ml-webhook:/orders/2000003508426396",
+        dedupeKey: "ml-webhook:/orders/2000003508426396:2026-08-21T12:00",
         queue: `ml-sync-${ACCOUNT.slug}`,
         payload: { ...NOTIFICATION, mlAccountId: ACCOUNT.id },
       },
@@ -129,6 +130,19 @@ describe("receiveWebhook", () => {
     await receiveWebhook(ctx.deps, { ...NOTIFICATION, topic: "items", _id: "not-2" });
 
     expect(ctx.enqueued[0]?.dedupeKey).toBe(ctx.enqueued[1]?.dedupeKey);
+  });
+
+  it("mesmo recurso em minutos diferentes gera dedupeKey diferente — uma mudança de status real não é descartada (D-051)", async () => {
+    const ctx = deps();
+    let now = new Date("2026-08-21T12:00:30.000Z");
+    ctx.deps.now = () => now;
+
+    await receiveWebhook(ctx.deps, NOTIFICATION);
+
+    now = new Date("2026-08-21T12:05:00.000Z");
+    await receiveWebhook(ctx.deps, { ...NOTIFICATION, _id: "not-2" });
+
+    expect(ctx.enqueued[0]?.dedupeKey).not.toBe(ctx.enqueued[1]?.dedupeKey);
   });
 
   it("conta desconhecida não enfileira, só registra o aviso", async () => {

@@ -46,6 +46,7 @@ export interface WebhookDeps {
   db: AdminClient;
   enqueuer: Enqueuer;
   logger: Logger;
+  now?: () => Date;
 }
 
 export type WebhookOutcome =
@@ -86,12 +87,21 @@ export async function receiveWebhook(deps: WebhookDeps, rawBody: unknown): Promi
     return { status: "unknown_account" };
   }
 
+  // Sufixo de janela de minuto (D-051): sem ele, duas notificações do MESMO
+  // recurso — uma delas uma mudança de status real, não um reenvio — dentro
+  // das 24h em que o Cloud Tasks pode reter o nome de uma task já executada
+  // colidiriam, e a segunda seria descartada como ALREADY_EXISTS. Notificações
+  // repetidas do mesmo recurso ainda colapsam numa só DENTRO do mesmo minuto
+  // (o caso real de reenvio por falta de ACK a tempo); uma mudança de status
+  // seguinte, minutos depois, gera um job novo — achado em revisão, 2026-08-22.
+  const window = (deps.now?.() ?? new Date()).toISOString().slice(0, 16);
+
   const result = await deps.enqueuer.enqueue({
     jobType: "sync.webhook.received",
     organizationId: account.data.organization_id,
     // Nome derivado do recurso (docs/ARCHITECTURE.md secao 10): notificações
     // repetidas do mesmo recurso colapsam numa só, seja qual for o tópico.
-    dedupeKey: `ml-webhook:${notification.resource}`,
+    dedupeKey: `ml-webhook:${notification.resource}:${window}`,
     queue: `ml-sync-${account.data.slug}`,
     payload: { ...notification, mlAccountId: account.data.id },
   });
