@@ -142,6 +142,9 @@ importers:
       '@sb/observability':
         specifier: workspace:*
         version: link:../../packages/observability
+      fast-xml-parser:
+        specifier: 5.11.0
+        version: 5.11.0
       hono:
         specifier: 4.13.3
         version: 4.13.3

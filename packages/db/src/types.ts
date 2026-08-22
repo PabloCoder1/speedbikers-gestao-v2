@@ -201,6 +201,172 @@ export type Database = {
           },
         ]
       }
+      document_items: {
+        Row: {
+          cfop: string | null
+          created_at: string
+          description: string
+          document_id: string
+          ean: string | null
+          id: number
+          ncm: string | null
+          position: number
+          quantity: number
+          sku_id: string | null
+          supplier_code: string
+          total_value: number
+          unit: string
+          unit_value: number
+        }
+        Insert: {
+          cfop?: string | null
+          created_at?: string
+          description: string
+          document_id: string
+          ean?: string | null
+          id?: never
+          ncm?: string | null
+          position: number
+          quantity: number
+          sku_id?: string | null
+          supplier_code: string
+          total_value: number
+          unit: string
+          unit_value: number
+        }
+        Update: {
+          cfop?: string | null
+          created_at?: string
+          description?: string
+          document_id?: string
+          ean?: string | null
+          id?: never
+          ncm?: string | null
+          position?: number
+          quantity?: number
+          sku_id?: string | null
+          supplier_code?: string
+          total_value?: number
+          unit?: string
+          unit_value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_items_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "document_items_sku_id_fkey"
+            columns: ["sku_id"]
+            isOneToOne: false
+            referencedRelation: "skus"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      documents: {
+        Row: {
+          access_key: string | null
+          applied_at: string | null
+          applied_by: string | null
+          content_hash: string
+          created_at: string
+          document_number: string | null
+          document_type: string
+          file_name: string | null
+          id: string
+          issue_date: string | null
+          issuer_cnpj: string | null
+          issuer_name: string | null
+          last_error: string | null
+          operation_type: string | null
+          organization_id: string
+          parsed_at: string | null
+          resolved_items: number | null
+          series: string | null
+          status: string
+          storage_path: string
+          total_items: number | null
+          updated_at: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          access_key?: string | null
+          applied_at?: string | null
+          applied_by?: string | null
+          content_hash: string
+          created_at?: string
+          document_number?: string | null
+          document_type?: string
+          file_name?: string | null
+          id?: string
+          issue_date?: string | null
+          issuer_cnpj?: string | null
+          issuer_name?: string | null
+          last_error?: string | null
+          operation_type?: string | null
+          organization_id: string
+          parsed_at?: string | null
+          resolved_items?: number | null
+          series?: string | null
+          status?: string
+          storage_path: string
+          total_items?: number | null
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          access_key?: string | null
+          applied_at?: string | null
+          applied_by?: string | null
+          content_hash?: string
+          created_at?: string
+          document_number?: string | null
+          document_type?: string
+          file_name?: string | null
+          id?: string
+          issue_date?: string | null
+          issuer_cnpj?: string | null
+          issuer_name?: string | null
+          last_error?: string | null
+          operation_type?: string | null
+          organization_id?: string
+          parsed_at?: string | null
+          resolved_items?: number | null
+          series?: string | null
+          status?: string
+          storage_path?: string
+          total_items?: number | null
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "documents_applied_by_fkey"
+            columns: ["applied_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "documents_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "documents_uploaded_by_fkey"
+            columns: ["uploaded_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       domain_events: {
         Row: {
           after: Json | null

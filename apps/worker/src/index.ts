@@ -10,8 +10,10 @@ import { createAnalyticsRecomputeHandler } from "./handlers/analytics-recompute.
 import { createBackfillOrdersHandler } from "./handlers/backfill-orders.js";
 import { createErpImportApplyHandler } from "./handlers/erp-import-apply.js";
 import { createErpImportParseHandler } from "./handlers/erp-import-parse.js";
+import { createNfeImportParseHandler } from "./handlers/nfe-import-parse.js";
 import { createSyncFulfillmentSnapshotHandler } from "./handlers/sync-fulfillment-snapshot.js";
 import { createSyncOrdersWindowHandler } from "./handlers/sync-orders-window.js";
+import { createNfeXmlReader } from "./nfe-xml-reader.js";
 import { withHandlers } from "./router.js";
 import { createSheetReader } from "./sheet-reader.js";
 
@@ -36,6 +38,14 @@ const oauth = {
 const encryptionKey = loadEncryptionKey(env.ML_TOKEN_ENCRYPTION_KEY);
 const mercadoLivre = createMercadoLivreClient();
 
+// `DOCUMENTS_BUCKET` é opcional (env.ts) até o bucket real existir no GCP —
+// o handler de parse da NF-e só entra no registro quando ela está presente,
+// mesmo raciocínio de `dependencies?` opcionais em `apps/api/src/app.ts`.
+const nfeHandlers =
+  env.DOCUMENTS_BUCKET !== undefined
+    ? { "nfe.import.parse": createNfeImportParseHandler({ db, reader: createNfeXmlReader(env.DOCUMENTS_BUCKET) }) }
+    : {};
+
 const app = createWorkerApp({
   logger,
   db,
@@ -55,6 +65,7 @@ const app = createWorkerApp({
     }),
     "backfill.orders": createBackfillOrdersHandler({ db, mercadoLivre, oauth, encryptionKey, enqueuer }),
     "sync.fulfillment.snapshot": createSyncFulfillmentSnapshotHandler({ db, mercadoLivre, oauth, encryptionKey }),
+    ...nfeHandlers,
   }),
 });
 

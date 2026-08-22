@@ -274,11 +274,13 @@ Local, Full por conta, reservado e em trânsito são **quatro estados com quatro
 
 ### `documents` / `document_items` — NF-e
 
-`content_hash` UNIQUE impede que o mesmo XML entre duas vezes.
+**Schema + parser + parse implementados em 2026-08-22** (migration `20260822145800_create_documents.sql`, mesmo fluxo do importador do UpSeller: `upload -> PARSE -> conferência -> confirmação -> aplicação`). `content_hash` UNIQUE impede que o mesmo arquivo entre duas vezes; `access_key` UNIQUE (44 dígitos, quando presente) cobre o caso de dois ARQUIVOS diferentes carregando a mesma nota.
 
-Estados: `parsed` -> `applied`. **Parse e movimentação são atos distintos em momentos distintos.** Só a confirmação humana gera linhas do ledger, todas com `idempotency_key` derivada de `(document_id, item_index)`.
+Estados: `UPLOADED -> PARSING -> PARSED -> APPLYING -> APPLIED` (mais `FAILED`/`CANCELLED`, mesma forma de `erp_import_batches`). **Parse e movimentação são atos distintos em momentos distintos** — o parse (`nfe.import.parse`, `apps/worker/src/handlers/nfe-import-parse.ts`) só grava `document_items`, nunca `stock_movements`. Só a confirmação humana (próxima etapa) gera linhas do ledger.
 
-O arquivo vai para o Storage privado, nunca para coluna `bytea`.
+`document_items.sku_id` nasce sempre nulo — vínculo é humano, por documento, na tela de conferência (`docs/NFE.md` secao 3: sem cadastro fornecedor→SKU reutilizável ainda, limitação conhecida, não descuido).
+
+O arquivo vai para o Storage privado (`DOCUMENTS_BUCKET`, ainda não provisionado no GCP), nunca para coluna `bytea`. Parser: `packages/domain/src/nfe/parse.ts` (puro, recebe o objeto já convertido de XML, não a string bruta) + `fast-xml-parser` no worker (`apps/worker/src/nfe-xml-reader.ts`) — mesmo split de `read-excel-file`/`@sb/domain/upseller`.
 
 ### `domain_events` — o event store
 

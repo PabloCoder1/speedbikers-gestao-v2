@@ -30,6 +30,15 @@ export const envSchema = z.object({
   ERP_IMPORTS_BUCKET: z.string().min(1),
 
   /**
+   * Bucket que guarda os documentos fiscais (NF-e/XML, PDF/DANFE mais
+   * adiante). Opcional de propósito: o bucket real ainda não existe no GCP
+   * (`docs/HANDOFF.md`) — declarar como obrigatório derrubaria o worker no
+   * boot antes da infra existir. O handler de parse (`index.ts`) só é
+   * registrado quando esta variável está presente.
+   */
+  DOCUMENTS_BUCKET: z.string().min(1).optional(),
+
+  /**
    * OAuth do Mercado Livre (D-041, D-046) — o worker só usa isto para
    * RENOVAR (`refresh_token`) um `access_token` perto de expirar durante a
    * reconciliação; a troca inicial do `code` é só da `api`.

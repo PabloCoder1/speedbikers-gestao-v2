@@ -1,7 +1,7 @@
 # NF-e / XML — Speed Bikers Gestão V3
 
 > Dono documental de: layout oficial da Nota Fiscal Eletrônica, mapeamento de campos e regras de importação de documento fiscal.
-> Status: **pesquisa do layout oficial concluída em 2026-08-22. Aguardando arquivos XML reais do usuário (fonte: meudanfe.com.br) antes de desenhar `documents`/`document_items` e o parser.**
+> Status: **schema, parser e parse implementados em 2026-08-22, seguindo o layout oficial — decisão explícita do usuário de não esperar um XML real** ("não tenho o modelo real agora... segue"). Validação contra um XML real de fornecedor da Speed Bikers continua pendente; pode exigir ajuste quando aparecer (`docs/HANDOFF.md`).
 
 ---
 
@@ -28,9 +28,9 @@ Confirmado por pesquisa em fontes oficiais (Portal da NF-e `nfe.fazenda.gov.br`,
 - [x] Composição da chave de acesso (44 dígitos) — secao 2.1
 - [x] Campo que determina entrada vs. saída (`ide/tpNF`) — secao 2.2
 - [x] Impacto da reforma tributária 2026 (IBS/CBS/IS) na estrutura de impostos — secao 2.3
-- [ ] Validação contra XML real de fornecedor da Speed Bikers — **bloqueado, aguardando arquivo do usuário**
-- [ ] Como o código do produto do fornecedor (`det/prod/cProd`) deve mapear para `skus` — depende de ver exemplos reais (fornecedor tem `sku` próprio? usa `cEAN`?)
-- [ ] Encoding real dos arquivos (UTF-8 é o padrão oficial, mas fornecedores variam) — confirmar com arquivo real
+- [ ] Validação contra XML real de fornecedor da Speed Bikers — **decisão do usuário: seguir sem esperar (2026-08-22)**. Parser implementado contra o layout oficial; risco assumido, não ignorado — ver secao 3
+- [x] Como o código do produto do fornecedor (`det/prod/cProd`) deve mapear para `skus` — **resolvido**: vínculo humano por documento na tela de conferência (próxima etapa), sem cadastro fornecedor→SKU reutilizável ainda (limitação conhecida, secao 3)
+- [ ] Encoding real dos arquivos (UTF-8 é o padrão oficial, mas fornecedores variam) — confirmar com arquivo real quando aparecer
 - [ ] Layout de DANFE em PDF (fallback, só depois do XML estar sólido) — não pesquisado, não bloqueia o começo
 
 ---
@@ -96,9 +96,12 @@ A partir de 2026, o bloco `imposto` de cada item pode conter um grupo novo `IBSC
 
 ## 3. Pendências que só um XML real resolve
 
-- **Matching de item para SKU**: `det/prod/cProd` é o código do produto **do fornecedor**, texto livre, sem padrão entre emissores — precisa de mecanismo de vínculo humano (mesmo espírito de `sku_listing_links`/Central de Vinculações), não resolução automática por padrão. `cEAN` (código de barras) seria candidato a match automático, mas **`skus` hoje não tem coluna de EAN/GTIN** (conferido em `docs/DATABASE.md`, 2026-08-22) — matching por `cEAN` exigiria migration própria adicionando essa coluna, decisão que não deve ser tomada só por conveniência do parser de NF-e sem necessidade de produto mais ampla. Vínculo humano via tela de conferência é o caminho sem dependência nova.
-- **Múltiplos fornecedores, formatos variados**: cada emissor gera o próprio XML por sistema próprio (SAP, Bling, Omie, etc.) — o layout oficial é o mesmo, mas preenchimento de campos opcionais varia. Só dá para saber o que realmente varia vendo XMLs de mais de um fornecedor real.
-- **Volume esperado e cadência**: quantas NF-e por mês a Speed Bikers processa, se chegam por e-mail, por XML direto do fornecedor ou só por consulta em serviço como `meudanfe.com.br` (mencionado pelo usuário como fonte) — importa para decidir se o upload é sempre manual (um arquivo por vez) ou se compensa suporte a lote (múltiplos XML de uma vez, como o importador do UpSeller já faz com XLSX).
+**Decisão do usuário em 2026-08-22**: implementar o schema e o parser contra o layout oficial agora, sem esperar um arquivo real. Risco aceito conscientemente, não ignorado — os itens abaixo continuam pendentes e o parser (`packages/domain/src/nfe/parse.ts`) pode precisar de ajuste quando um XML real aparecer.
+
+- **Matching de item para SKU — resolvido, não como automação**: `det/prod/cProd` é o código do produto **do fornecedor**, texto livre, sem padrão entre emissores — implementado como vínculo humano por documento na tela de conferência (próxima etapa), mesmo espírito de `sku_listing_links`/Central de Vinculações mas SEM cadastro fornecedor→SKU reutilizável entre notas futuras do mesmo fornecedor. `cEAN` (código de barras) seria candidato a match automático, mas **`skus` hoje não tem coluna de EAN/GTIN** (conferido em `docs/DATABASE.md`, 2026-08-22) — matching por `cEAN` exigiria migration própria adicionando essa coluna, decisão que não deve ser tomada só por conveniência do parser de NF-e sem necessidade de produto mais ampla.
+- **Múltiplos fornecedores, formatos variados**: cada emissor gera o próprio XML por sistema próprio (SAP, Bling, Omie, etc.) — o layout oficial é o mesmo, mas preenchimento de campos opcionais varia. O parser trata `NCM`/`CFOP` como opcionais (`null` quando ausentes) por precaução, mas só um XML real de mais de um fornecedor mostra o que de fato varia.
+- **Encoding**: o parser assume UTF-8 (`buffer.toString("utf-8")`, `apps/worker/src/nfe-xml-reader.ts`) — padrão oficial, mas não confirmado contra um arquivo real. Um fornecedor que exporte em ISO-8859-1 (Latin-1, comum em sistemas legados brasileiros) produziria caracteres acentuados corrompidos, não um erro explícito — risco silencioso a observar no primeiro arquivo real.
+- **Volume esperado e cadência**: quantas NF-e por mês a Speed Bikers processa, se chegam por e-mail, por XML direto do fornecedor ou só por consulta em serviço como `meudanfe.com.br` (mencionado pelo usuário como fonte) — importa para decidir se o upload é sempre manual (um arquivo por vez) ou se compensa suporte a lote (múltiplos XML de uma vez, como o importador do UpSeller já faz com XLSX). Ainda não implementado: a rota de upload em si.
 
 ---
 
