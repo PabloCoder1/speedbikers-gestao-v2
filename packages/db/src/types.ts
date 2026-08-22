@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.15"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       daily_account_metrics: {
@@ -490,6 +465,67 @@ export type Database = {
           },
           {
             foreignKeyName: "erp_stock_snapshots_sku_id_fkey"
+            columns: ["sku_id"]
+            isOneToOne: false
+            referencedRelation: "skus"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fulfillment_stock_snapshots: {
+        Row: {
+          captured_at: string
+          created_at: string
+          id: number
+          inventory_id: string
+          item_id: string
+          ml_account_id: string
+          organization_id: string
+          quantity: number
+          sku_id: string
+          variation_id: string | null
+        }
+        Insert: {
+          captured_at: string
+          created_at?: string
+          id?: never
+          inventory_id: string
+          item_id: string
+          ml_account_id: string
+          organization_id: string
+          quantity: number
+          sku_id: string
+          variation_id?: string | null
+        }
+        Update: {
+          captured_at?: string
+          created_at?: string
+          id?: never
+          inventory_id?: string
+          item_id?: string
+          ml_account_id?: string
+          organization_id?: string
+          quantity?: number
+          sku_id?: string
+          variation_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fulfillment_stock_snapshots_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fulfillment_stock_snapshots_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fulfillment_stock_snapshots_sku_id_fkey"
             columns: ["sku_id"]
             isOneToOne: false
             referencedRelation: "skus"
@@ -1819,9 +1855,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {},
   },

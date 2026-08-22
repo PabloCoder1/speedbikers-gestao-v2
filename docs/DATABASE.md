@@ -259,11 +259,16 @@ planilha do UpSeller -> erp_import_batches / erp_import_rows
 
 ### `fulfillment_stock_snapshots` — Full
 
+**Schema implementado em 2026-08-22** (migration `20260822122526_create_fulfillment_stock_snapshots.sql`). Só schema — a busca na API do Mercado Livre, o job de captura e o detector de diff são a próxima etapa.
+
 ```text
-(ml_account_id, inventory_id, sku_id, quantity, captured_at)
+organization_id, ml_account_id,
+inventory_id, item_id, variation_id,
+sku_id (congelado na captura, D-020),
+quantity, captured_at
 ```
 
-**Full é espelho do Mercado Livre, não ledger** (D-018). A autoridade é o ML. Eventos de Full (entrou, saiu, rompeu, repôs) saem do **diff entre snapshots consecutivos**.
+**Full é espelho do Mercado Livre, não ledger** (D-018). A autoridade é o ML. Eventos de Full (entrou, saiu, rompeu, repôs) saem do **diff entre snapshots consecutivos**. `inventory_id` vem de `GET /items/{item_id}` (`docs/MERCADO_LIVRE.md` secao 2.7); a enumeração de quais `item_id`/`variation_id` existem por conta usa `sku_listing_links` (`ref_kind = 'ITEM'`), sem depender de uma tabela `listings` própria — essa continua fora do escopo da Fase 4. RLS por `has_account_access(ml_account_id)`, mesmo padrão de `domain_events`/`sync_runs` (Full é por conta, não por organização inteira — diferente de `stock_movements`, que é local e organização-wide).
 
 Local, Full por conta, reservado e em trânsito são **quatro estados com quatro autoridades diferentes**. A interface nunca os soma cegamente num "estoque total" sem dizer o que ele contém.
 

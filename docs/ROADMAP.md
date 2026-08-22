@@ -114,7 +114,7 @@ Cada fase só é considerada concluída sob a Definition of Done do `docs/PROMPT
 - [x] Reversão por cancelamento e devolução — concluído em 2026-08-22 para CANCELAMENTO (D-052): `computeCancellationReversals` (`@sb/domain/inventory`) reverte os movimentos `VENDA_ML` já gravados no ledger, não recalcula dos itens atuais — imune a vínculo trocado entre venda e cancelamento. DEVOLUÇÃO fica de fora de propósito, mesmo motivo já registrado para `order.returned`: depende da API de Reclamações e Devoluções, não integrada
 - [x] Projeção `inventory_balances` — concluído em 2026-08-21: mantida por trigger na mesma transação de cada `stock_movements` (correta por construção, não por recálculo assíncrono); `private.compute_inventory_balances_from_ledger` soma o ledger do zero e serve de base ao job de conferência. **Job agendado (Cloud Scheduler + evento crítico na divergência) ainda não construído** — não há nada real para conferir enquanto nenhum código grava movimento; entra quando a dedução por venda existir
 - [ ] NF-e/XML: upload, parse, conferência, confirmação humana, movimentos, `content_hash` UNIQUE
-- [ ] Full por conta como snapshot espelhado do ML, com eventos por diff
+- [ ] Full por conta como snapshot espelhado do ML, com eventos por diff — schema criado em 2026-08-22 (`fulfillment_stock_snapshots`, migration `20260822122526`); busca na API, job de captura e detector de diff (`listing.fulfillment.entered/exited`) seguem pendentes
 - [ ] Reservado e em trânsito
 - [ ] **Reconciliação contra o snapshot do UpSeller, com movimento `AJUSTE_RECONCILIACAO` e evento crítico** (D-029)
 - [ ] Pedidos de compra: ciclo, histórico por evento, nacional versus importado
