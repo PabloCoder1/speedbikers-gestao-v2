@@ -53,6 +53,7 @@ const app = createApp({
     encryptionKey: loadEncryptionKey(env.ML_TOKEN_ENCRYPTION_KEY),
   },
   reconcile: { db, enqueuer, logger },
+  fulfillmentSchedule: { db, enqueuer, logger },
 });
 
 serve({ fetch: app.fetch, port: env.PORT }, (info) => {

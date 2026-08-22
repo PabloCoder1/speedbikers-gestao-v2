@@ -8,6 +8,8 @@ import type { Authenticator } from "./auth.js";
 import type { Enqueuer } from "./enqueue.js";
 import type { ImportDeps } from "./erp-import.js";
 import { confirmApply, isImportKind, receiveUpload } from "./erp-import.js";
+import type { FulfillmentScheduleDeps } from "./fulfillment-schedule.js";
+import { triggerFulfillmentSnapshot } from "./fulfillment-schedule.js";
 import type { IpAllowlistVerifier } from "./ip-allowlist.js";
 import type { MlAccountsDeps } from "./ml-accounts.js";
 import { completeConnect, startConnect } from "./ml-accounts.js";
@@ -51,6 +53,7 @@ export interface AppDependencies {
   webhook?: WebhookDeps;
   mlAccounts?: MlAccountsDeps;
   reconcile?: ReconcileDeps;
+  fulfillmentSchedule?: FulfillmentScheduleDeps;
 }
 
 /**
@@ -277,6 +280,22 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     const outcome = await triggerOrdersReconciliation(reconcile);
+
+    return context.json(outcome);
+  });
+
+  // --------------------------------------------------------------------
+  // Captura de estoque Full por conta — mesmo formato de reconcile acima,
+  // cadência menor (`infra/cloud-scheduler.sh`: a cada 6h, não a cada hora).
+  // --------------------------------------------------------------------
+  app.post("/internal/schedule/fulfillment", async (context) => {
+    const fulfillmentSchedule = dependencies.fulfillmentSchedule;
+
+    if (fulfillmentSchedule === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const outcome = await triggerFulfillmentSnapshot(fulfillmentSchedule);
 
     return context.json(outcome);
   });

@@ -92,11 +92,14 @@ O upload da planilha vai do navegador **direto** para a `api`, sem passar pela V
 |---|---|---|
 | `/internal/jobs/:type` | Cloud Tasks | Entrega de job ao `worker` |
 | `/internal/schedule/reconcile` | Cloud Scheduler | Janela de reconciliação — **implementado em 2026-08-21**, no máximo uma vez por hora útil (dedupe por hora cheia) |
+| `/internal/schedule/fulfillment` | Cloud Scheduler | Captura de estoque Full por conta — **implementado em 2026-08-22**, a cada 6h (dedupe por hora cheia) |
 | `/internal/schedule/maintenance` | Cloud Scheduler | Conferência de saldo, expurgo |
 
 Sem segredo compartilhado (D-024).
 
 **`POST /internal/schedule/reconcile` — implementado em 2026-08-21** (`apps/api/src/reconcile.ts`). Lista `ml_accounts` com `status = 'CONNECTED'` (todas as organizações — rota de manutenção do sistema, não escopada por uma) e enfileira `sync.orders.window` para cada uma, dedupe por `sync-orders:{slug}:{hora-cheia-ISO}` — chamar mais de uma vez na mesma hora não gera trabalho extra. Devolve `{ accountsScanned, enqueued, deduplicated }`. O cálculo da janela em si (`from`/`to`, checkpoint) é do worker, não desta rota — ver `docs/MERCADO_LIVRE.md` secao "Reconciliação".
+
+**`POST /internal/schedule/fulfillment` — implementado em 2026-08-22** (`apps/api/src/fulfillment-schedule.ts`). Mesmo formato de `/internal/schedule/reconcile`: lista `ml_accounts` `CONNECTED` e enfileira `sync.fulfillment.snapshot` para cada uma, dedupe por `full:{slug}:{hora-cheia-ISO}`. Devolve `{ accountsScanned, enqueued, deduplicated }`. Cadência no Cloud Scheduler é a cada 6h (`infra/cloud-scheduler.sh`), não a cada hora como pedidos — Full muda mais devagar e cada execução do worker já varre todos os itens da conta (duas chamadas HTTP por item sem variação), então rodar com mais frequência gastaria orçamento de rate limit (D-042) sem necessidade real.
 
 ---
 

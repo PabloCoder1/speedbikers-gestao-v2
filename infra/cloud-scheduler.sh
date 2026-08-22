@@ -73,5 +73,15 @@ upsert_job \
   "${API_URL}/internal/schedule/reconcile" \
   "Reconciliacao por janela de pedidos, por conta Mercado Livre CONNECTED"
 
+# Captura de estoque Full por conta: cadencia menor que a de pedidos --
+# Full nao muda tao rapido, e cada execucao faz duas chamadas HTTP por item
+# sem variacao da conta. Mais conservador com o orcamento de rate limit nao
+# documentado (D-042) do que copiar a cadencia horaria sem necessidade.
+upsert_job \
+  "v3-fulfillment-snapshot" \
+  "0 */6 * * *" \
+  "${API_URL}/internal/schedule/fulfillment" \
+  "Captura de estoque Full, por conta Mercado Livre CONNECTED"
+
 step "Concluído"
 gc scheduler jobs list --location "${REGION}" --format="table(name.basename(),schedule,state)"
