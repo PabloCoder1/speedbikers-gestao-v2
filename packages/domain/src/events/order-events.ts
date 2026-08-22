@@ -34,6 +34,16 @@ export interface DomainEventDraft {
 const CANCELLED_STATUSES = new Set(["cancelled", "pending_cancel"]);
 
 /**
+ * Fonte única do que conta como "pedido cancelado" no domínio — usada aqui e
+ * por `@sb/domain/inventory` (`computeCancellationReversals`) para decidir
+ * quando reverter a dedução de estoque. Duas listas separadas divergiriam
+ * cedo ou tarde; uma função exportada evita isso.
+ */
+export function isCancelledOrderStatus(status: string): boolean {
+  return CANCELLED_STATUSES.has(status);
+}
+
+/**
  * Detecta a transição de um pedido PARA um status de cancelamento.
  *
  * Não reemite quando o pedido JÁ estava cancelado (reprocessamento

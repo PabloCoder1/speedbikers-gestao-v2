@@ -524,6 +524,20 @@ Levantadas pela pesquisa da documentação oficial que fecha a lista de verifica
 
 **Impacto:** substitui somente a forma da chave de recálculo descrita originalmente em D-017; fato, rollups e semântica das métricas não mudam. `analytics.recompute` aceita modo incremental (um dia) e rebuild (intervalo), ambos idempotentes e baseados no mesmo cálculo SQL.
 
+## D-052 — Reversão de estoque por cancelamento reverte o movimento gravado, não recalcula dos itens atuais
+
+**Contexto:** segundo item do checklist da Fase 4, depois de `computeSaleDeductions`. `sku_id` é resolvido fresco a cada persistência de pedido (D-020) — o vínculo de um item pode mudar entre o momento da venda e o momento do cancelamento (correção humana na Central de Vinculações, por exemplo).
+
+**Decisão:** `computeCancellationReversals` (`@sb/domain/inventory`) não recebe os itens do pedido. Recebe os movimentos `VENDA_ML` JÁ GRAVADOS em `stock_movements` para aquela order (`apps/worker/src/handlers/persist-order.ts` consulta antes de reverter) e produz um movimento `CANCELAMENTO_ML` por movimento existente, com `qty_delta` invertido e `idempotency_key` derivada (`cancelamento:{idempotency_key original}`). Quando o pedido está cancelado, a persistência pula inteiramente o recálculo de KIT/componentes — essa decomposição já está gravada no ledger, não precisa ser refeita.
+
+**Motivo:** se a reversão recalculasse a partir dos itens atuais (mesmo padrão de `computeSaleDeductions`), um vínculo trocado depois da venda geraria uma reversão para o SKU **novo**, nunca deduzido, deixando o SKU **antigo** (o que realmente foi deduzido) sem reversão — o ledger fecharia errado em dois SKUs ao mesmo tempo. Reverter o que foi de fato lançado é a única forma de garantir soma zero por order, independente de o catálogo ter mudado depois.
+
+**Alternativa rejeitada:** espelhar `computeSaleDeductions` (recalcular dos itens atuais, com chave de idempotência simétrica). Mais simples e mais parecida com a dedução, mas incorreta sempre que o vínculo mudou entre venda e cancelamento — cenário raro, mas real (é exatamente o que a Central de Vinculações existe para corrigir).
+
+**Fora de escopo, de propósito:** devolução (`order.returned`) continua sem tratamento — mesmo motivo já registrado para o detector de eventos (`packages/domain/src/events/order-events.ts`): o Mercado Livre modela devolução pela API de Reclamações e Devoluções, não integrada. Reprocessar um pedido que foi cancelado e depois "descancela" no Mercado Livre (`pending_cancel` revertido para `paid`) também não re-deduz — a chave de venda original (`venda:{order}:{position}`) já foi usada e o `UNIQUE` recusaria uma nova dedução; cenário considerado raro o bastante para não tratar nesta etapa.
+
+**Impacto:** `stock_movements` ganha `CANCELAMENTO_ML` como segundo tipo em uso (schema já previa desde a migration do ledger). `apps/worker/src/handlers/persist-order.ts` bifurca em duas rotas mutuamente exclusivas por status: cancelamento (reversão) ou venda válida (dedução) — nunca as duas na mesma chamada.
+
 ## Como adicionar nova decisão
 
 Registrar:

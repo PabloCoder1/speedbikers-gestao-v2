@@ -83,6 +83,8 @@ interface FakeDbOptions {
   stockMovementConflict?: boolean;
   /** Simula uma falha REAL (não-dedup) no insert de `stock_movements`. */
   stockMovementError?: boolean;
+  /** Movimentos `VENDA_ML` já gravados para a order — o que `loadSaleMovements` devolve. */
+  existingSaleMovements?: { sku_id: string; qty_delta: number; idempotency_key: string }[];
 }
 
 function fakeDb(options: FakeDbOptions = {}): {
@@ -159,6 +161,10 @@ function fakeDb(options: FakeDbOptions = {}): {
 
             return { data: options.componentsByKitId?.(kitSkuId) ?? [], error: null };
           });
+        }
+
+        if (table === "stock_movements") {
+          return filterChain({}, () => ({ data: options.existingSaleMovements ?? [], error: null }));
         }
 
         return filterChain({}, (filters) => {
@@ -494,6 +500,122 @@ describe("persistOrder", () => {
       const lines: string[] = [];
 
       await expect(run(db, BASE_ORDER, lines)).resolves.toBeUndefined();
+      expect(lines.join()).toContain("stock_movement_not_recorded");
+      expect(upserted.find((entry) => entry.table === "orders")).toBeDefined();
+    });
+  });
+
+  describe("reversão de estoque por cancelamento (stock_movements)", () => {
+    it("pedido cancelado com VENDA_ML gravado: reverte com CANCELAMENTO_ML e quantidade invertida", async () => {
+      const { db, inserted } = fakeDb({
+        existingSaleMovements: [{ sku_id: "sku-1", qty_delta: -1, idempotency_key: "venda:2032217210:0" }],
+      });
+      const order: ParsedOrder = { ...BASE_ORDER, status: "cancelled" };
+
+      await run(db, order);
+
+      const movement = inserted.find((entry) => entry.table === "stock_movements")?.rows[0] as {
+        sku_id: string;
+        location_kind: string;
+        qty_delta: number;
+        movement_type: string;
+        source_type: string;
+        source_id: string;
+        idempotency_key: string;
+      };
+
+      expect(movement).toMatchObject({
+        sku_id: "sku-1",
+        location_kind: "LOCAL",
+        qty_delta: 1,
+        movement_type: "CANCELAMENTO_ML",
+        source_type: "ORDER",
+        source_id: String(BASE_ORDER.id),
+        idempotency_key: "cancelamento:venda:2032217210:0",
+      });
+    });
+
+    it("pending_cancel também reverte — mesma semântica de 'cancelamento que já vale' do motor de diff", async () => {
+      const { db, inserted } = fakeDb({
+        existingSaleMovements: [{ sku_id: "sku-1", qty_delta: -1, idempotency_key: "venda:2032217210:0" }],
+      });
+      const order: ParsedOrder = { ...BASE_ORDER, status: "pending_cancel" };
+
+      await run(db, order);
+
+      const movement = inserted.find((entry) => entry.table === "stock_movements")?.rows[0] as {
+        movement_type: string;
+      };
+      expect(movement.movement_type).toBe("CANCELAMENTO_ML");
+    });
+
+    it("KIT: reverte um movimento por componente, na mesma forma gravada pela venda", async () => {
+      const { db, inserted } = fakeDb({
+        existingSaleMovements: [
+          { sku_id: "sku-lampada", qty_delta: -6, idempotency_key: "venda:2032217210:0:sku-lampada" },
+          { sku_id: "sku-suporte", qty_delta: -3, idempotency_key: "venda:2032217210:0:sku-suporte" },
+        ],
+      });
+      const order: ParsedOrder = { ...BASE_ORDER, status: "cancelled" };
+
+      await run(db, order);
+
+      const movements = inserted
+        .filter((entry) => entry.table === "stock_movements")
+        .map((entry) => entry.rows[0]) as { sku_id: string; qty_delta: number }[];
+
+      expect(movements).toEqual([
+        expect.objectContaining({ sku_id: "sku-lampada", qty_delta: 6 }),
+        expect.objectContaining({ sku_id: "sku-suporte", qty_delta: 3 }),
+      ]);
+    });
+
+    it("nenhum VENDA_ML gravado (item nunca vinculado): nada a reverter", async () => {
+      const { db, inserted } = fakeDb();
+      const order: ParsedOrder = { ...BASE_ORDER, status: "cancelled" };
+
+      await run(db, order);
+
+      expect(inserted.find((entry) => entry.table === "stock_movements")).toBeUndefined();
+    });
+
+    it("pedido cancelado NÃO recalcula dedução a partir dos itens atuais — só reversão, nunca VENDA_ML", async () => {
+      const { db, inserted } = fakeDb({
+        linkForItem: () => ({ id: "link-1", sku_id: "sku-1" }),
+        existingSaleMovements: [{ sku_id: "sku-1", qty_delta: -1, idempotency_key: "venda:2032217210:0" }],
+      });
+      const order: ParsedOrder = { ...BASE_ORDER, status: "cancelled" };
+
+      await run(db, order);
+
+      const movementTypes = inserted
+        .filter((entry) => entry.table === "stock_movements")
+        .map((entry) => (entry.rows[0] as { movement_type: string }).movement_type);
+
+      expect(movementTypes).toEqual(["CANCELAMENTO_ML"]);
+    });
+
+    it("conflito de idempotency_key (23505) na reversão é absorvido em silêncio — reprocessar não reverte duas vezes", async () => {
+      const { db } = fakeDb({
+        existingSaleMovements: [{ sku_id: "sku-1", qty_delta: -1, idempotency_key: "venda:2032217210:0" }],
+        stockMovementConflict: true,
+      });
+      const order: ParsedOrder = { ...BASE_ORDER, status: "cancelled" };
+      const lines: string[] = [];
+
+      await expect(run(db, order, lines)).resolves.toBeUndefined();
+      expect(lines.join()).not.toContain("stock_movement_not_recorded");
+    });
+
+    it("uma falha de gravação REAL na reversão é logada, mas não derruba a persistência do pedido", async () => {
+      const { db, upserted } = fakeDb({
+        existingSaleMovements: [{ sku_id: "sku-1", qty_delta: -1, idempotency_key: "venda:2032217210:0" }],
+        stockMovementError: true,
+      });
+      const order: ParsedOrder = { ...BASE_ORDER, status: "cancelled" };
+      const lines: string[] = [];
+
+      await expect(run(db, order, lines)).resolves.toBeUndefined();
       expect(lines.join()).toContain("stock_movement_not_recorded");
       expect(upserted.find((entry) => entry.table === "orders")).toBeDefined();
     });
