@@ -58,12 +58,50 @@ const PHASES: readonly Phase[] = [
     ],
   },
   {
+    title: "Fase 3 — Mercado Livre e histórico",
+    caption: "Concluída. Pedidos frescos em minutos, histórico com domain_events.",
+    items: [
+      { label: "Cliente ML", detail: "OAuth, backoff, paginação — @sb/mercado-livre", state: "pronto" },
+      { label: "Webhook", detail: "ACK rápido, allowlist de IP", state: "pronto" },
+      { label: "Conexão OAuth", detail: "connect + callback, tokens cifrados", state: "pronto" },
+      { label: "Reconciliação", detail: "por janela, a cada hora", state: "pronto" },
+      { label: "Backfill", detail: "12 meses de histórico, retomável", state: "pronto" },
+      { label: "Pedidos", detail: "orders/order_items com pack_id", state: "pronto" },
+      { label: "Motor de diff", detail: "domain_events, order.cancelled", state: "pronto" },
+      { label: "Saúde da Sincronização", detail: "frescor por conta + eventos", state: "pronto" },
+    ],
+  },
+  {
+    title: "Fase 5A — Dashboards de venda",
+    caption: "Concluída. A tela âncora — antes desta fase não havia dado de negócio nenhum.",
+    items: [
+      { label: "Métricas", detail: "catálogo oficial, docs/METRICS.md", state: "pronto" },
+      { label: "Fato + rollups", detail: "diário, por conta/SKU/anúncio", state: "pronto" },
+      { label: "Recálculo", detail: "incremental por chave suja + rebuild", state: "pronto" },
+      { label: "Dashboard /vendas", detail: "Geral e por Conta, período, comparação", state: "pronto" },
+    ],
+  },
+  {
+    title: "Fase 4 — Estoque e compras",
+    caption: "Em andamento. Aqui o estoque vira ferramenta de trabalho.",
+    items: [
+      { label: "Ledger", detail: "stock_movements, idempotente e auditável", state: "pronto" },
+      { label: "Dedução por venda", detail: "aplicada na persistência do pedido", state: "pronto" },
+      { label: "Reversão", detail: "por cancelamento (devolução fica para depois)", state: "pronto" },
+      { label: "Full por conta", detail: "captura + eventos por diff (sem variação)", state: "pronto" },
+      { label: "NF-e / XML", detail: "aguardando arquivo real para o parser", state: "pendente" },
+      { label: "Reservado / trânsito", detail: "dois dos quatro estados de estoque", state: "pendente" },
+      { label: "Reconciliação ERP", detail: "alinhamento com o snapshot do UpSeller", state: "pendente" },
+      { label: "Pedidos de compra", detail: "ciclo, histórico, nacional × importado", state: "pendente" },
+    ],
+  },
+  {
     title: "Adiante",
     caption: "Nada começado. A ordem está em docs/ROADMAP.md.",
     items: [
-      { label: "Fase 3", detail: "sincronização e histórico do ML", state: "pendente" },
-      { label: "Fase 5A", detail: "dashboards de venda — a tela âncora", state: "pendente" },
-      { label: "Fase 4", detail: "estoque, ledger e compras", state: "pendente" },
+      { label: "Fase 5B", detail: "cobertura, curva ABC, visitas, Ads", state: "pendente" },
+      { label: "Fase 6", detail: "diagnóstico e ações", state: "pendente" },
+      { label: "Fase 7", detail: "notificações e Copiloto", state: "pendente" },
     ],
   },
 ];
@@ -172,12 +210,13 @@ export default function Page(): ReactNode {
           fontSize: "0.875rem",
         }}
       >
-        Sem dado de negócio ainda. A Home orientada a “o que precisa da minha atenção hoje?”
-        chega na Fase 5A, quando houver venda real para mostrar.
+        O Dashboard de Vendas (/vendas) já é a tela âncora com dado real (D-033). A Home
+        orientada a “o que precisa da minha atenção hoje?” — cruzando venda, estoque e evento —
+        continua para uma fase futura, quando estoque e diagnóstico existirem também.
       </p>
 
       <p style={{ fontSize: "0.875rem" }}>
-        <Link href="/importacoes">Entrar no sistema →</Link>
+        <Link href="/vendas">Entrar no sistema →</Link>
       </p>
     </main>
   );
