@@ -146,9 +146,11 @@ Sem rota pública. Alvo das Cloud Tasks. Timeout de até 15 min, concorrência b
 | `@sb/domain` | **Lógica pura, sem I/O**: fórmulas de métrica, regras do ledger, sugestão de compra, motor de diff, severidade, confiança | web, api, worker |
 | `@sb/db` | Factories de client Supabase, tipos gerados do schema, helpers de query | web, api, worker |
 | `@sb/mercado-livre` | Cliente ML: OAuth, backoff, cursor, classificação de erro, parsing tipado | api, worker |
-| `@sb/ui` | Design system: paleta oficial, componentes, estados de loading/erro/vazio/stale | web |
+| `@sb/ui` | **Previsto, não criado ainda** — design system: paleta oficial, componentes, estados de loading/erro/vazio/stale | web (futuro) |
 | `@sb/observability` | Log estruturado, medição de operação, contexto de request | web, api, worker |
 | `@sb/config` | Presets de eslint, tsconfig, tailwind | todos |
+
+**Regra de contenção**: um package só nasce quando um SEGUNDO app precisa importar o mesmo código — antes disso, o código mora dentro do próprio app. É por isso que `@sb/ui` está na tabela acima mas não em `packages/`: `web` é o único app com UI hoje, então os tokens/componentes vivem em `apps/web` direto (ver `docs/HANDOFF.md`, achado registrado em 2026-08-22 corrigindo este drift).
 
 ### `@sb/domain` é a peça central do repositório
 
