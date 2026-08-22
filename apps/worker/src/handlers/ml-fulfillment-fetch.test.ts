@@ -1,5 +1,6 @@
 import { createLogger } from "@sb/observability";
 import type { MercadoLivreClient, RequestOptions } from "@sb/mercado-livre";
+import { MercadoLivreApiError } from "@sb/mercado-livre";
 import { describe, expect, it } from "vitest";
 
 import type { FetchFulfillmentSnapshotsParams } from "./ml-fulfillment-fetch.js";
@@ -187,7 +188,7 @@ describe("fetchFulfillmentSnapshots", () => {
 
     const result = await fetchFulfillmentSnapshots(baseParams(db, client));
 
-    expect(result).toEqual({ itemsProcessed: 0, itemsSkipped: 0 });
+    expect(result).toEqual({ itemsProcessed: 0, itemsSkipped: 0, itemsFailed: 0 });
     expect(requests).toHaveLength(0);
   });
 
@@ -197,7 +198,7 @@ describe("fetchFulfillmentSnapshots", () => {
 
     const result = await fetchFulfillmentSnapshots(baseParams(db, client));
 
-    expect(result).toEqual({ itemsProcessed: 0, itemsSkipped: 1 });
+    expect(result).toEqual({ itemsProcessed: 0, itemsSkipped: 1, itemsFailed: 0 });
     expect(inserted.find((e) => e.table === "fulfillment_stock_snapshots")).toBeUndefined();
   });
 
@@ -210,7 +211,7 @@ describe("fetchFulfillmentSnapshots", () => {
 
     const result = await fetchFulfillmentSnapshots(baseParams(db, client));
 
-    expect(result).toEqual({ itemsProcessed: 1, itemsSkipped: 0 });
+    expect(result).toEqual({ itemsProcessed: 1, itemsSkipped: 0, itemsFailed: 0 });
     const snapshot = inserted.find((e) => e.table === "fulfillment_stock_snapshots")?.row;
     expect(snapshot).toMatchObject({
       organization_id: ORGANIZATION_ID,
@@ -289,7 +290,7 @@ describe("fetchFulfillmentSnapshots", () => {
 
     const result = await fetchFulfillmentSnapshots(baseParams(db, client));
 
-    expect(result).toEqual({ itemsProcessed: 2, itemsSkipped: 0 });
+    expect(result).toEqual({ itemsProcessed: 2, itemsSkipped: 0, itemsFailed: 0 });
     const snapshots = inserted.filter((e) => e.table === "fulfillment_stock_snapshots").map((e) => e.row.sku_id);
     expect(snapshots).toEqual(["sku-1", "sku-2"]);
   });
@@ -300,7 +301,88 @@ describe("fetchFulfillmentSnapshots", () => {
 
     const result = await fetchFulfillmentSnapshots(baseParams(db, client));
 
-    expect(result).toEqual({ itemsProcessed: 0, itemsSkipped: 0 });
+    expect(result).toEqual({ itemsProcessed: 0, itemsSkipped: 0, itemsFailed: 0 });
     expect(requests).toHaveLength(0);
+  });
+
+  // Achado em produção (2026-08-22, primeiro disparo real do job): um
+  // vínculo em sku_listing_links apontando para um anúncio removido/pausado
+  // no Mercado Livre faz GET /items/{item_id} devolver 404. Sem o try/catch
+  // por item, essa exceção derrubava a captura da conta INTEIRA — nenhum
+  // outro item era processado, nem nas tentativas seguintes (o mesmo item
+  // quebra de novo). Os testes abaixo travam esse comportamento.
+  describe("erro do Mercado Livre em um item específico (achado em produção)", () => {
+    it("404 ao buscar /items/{id} (anúncio removido): pula só esse item, processa os demais", async () => {
+      const { db, inserted } = fakeDb({
+        links: [
+          { item_id: "MLB-removido", sku_id: "sku-1" },
+          { item_id: "MLB2", sku_id: "sku-2" },
+        ],
+      });
+      const requests: RequestOptions<unknown>[] = [];
+      const client = {
+        request: (options: RequestOptions<unknown>) => {
+          requests.push(options);
+
+          if (options.path === "/items/MLB-removido") {
+            return Promise.reject(
+              new MercadoLivreApiError("Mercado Livre respondeu 404 para GET /items/MLB-removido.", {
+                status: 404,
+                errorClass: "not_retryable",
+                url: "x",
+              }),
+            );
+          }
+
+          if (options.path === "/items/MLB2") {
+            return Promise.resolve({ id: "MLB2", inventory_id: "INV-2" });
+          }
+
+          return Promise.resolve({ inventory_id: "INV-2", available_quantity: 5 });
+        },
+      } as unknown as MercadoLivreClient;
+
+      const result = await fetchFulfillmentSnapshots(baseParams(db, client));
+
+      expect(result).toEqual({ itemsProcessed: 1, itemsSkipped: 0, itemsFailed: 1 });
+      expect(inserted.filter((e) => e.table === "fulfillment_stock_snapshots")).toHaveLength(1);
+      expect(inserted[0]?.row.sku_id).toBe("sku-2");
+    });
+
+    it("404 ao buscar o estoque (item some entre a resolução do inventory_id e a consulta): pula só esse item", async () => {
+      const { db, inserted } = fakeDb({ links: [{ item_id: "MLB1", sku_id: "sku-1" }] });
+      const client = {
+        request: (options: RequestOptions<unknown>) => {
+          if (options.path === "/items/MLB1") {
+            return Promise.resolve({ id: "MLB1", inventory_id: "INV-1" });
+          }
+
+          return Promise.reject(
+            new MercadoLivreApiError("Mercado Livre respondeu 404 para GET /inventories/INV-1/stock/fulfillment.", {
+              status: 404,
+              errorClass: "not_retryable",
+              url: "x",
+            }),
+          );
+        },
+      } as unknown as MercadoLivreClient;
+
+      const result = await fetchFulfillmentSnapshots(baseParams(db, client));
+
+      expect(result).toEqual({ itemsProcessed: 0, itemsSkipped: 0, itemsFailed: 1 });
+      expect(inserted.find((e) => e.table === "fulfillment_stock_snapshots")).toBeUndefined();
+    });
+
+    it("erro RETRYABLE (ex.: 503) num item propaga — não é engolido como itemsFailed", async () => {
+      const { db } = fakeDb({ links: [{ item_id: "MLB1", sku_id: "sku-1" }] });
+      const client = {
+        request: () =>
+          Promise.reject(
+            new MercadoLivreApiError("indisponível", { status: 503, errorClass: "retryable", url: "x" }),
+          ),
+      } as unknown as MercadoLivreClient;
+
+      await expect(fetchFulfillmentSnapshots(baseParams(db, client))).rejects.toThrow(MercadoLivreApiError);
+    });
   });
 });

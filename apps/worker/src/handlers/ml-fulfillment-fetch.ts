@@ -1,6 +1,7 @@
 import type { AdminClient } from "@sb/db";
 import { detectFulfillmentEvents } from "@sb/domain";
 import type { MercadoLivreClient } from "@sb/mercado-livre";
+import { MercadoLivreApiError } from "@sb/mercado-livre";
 import type { Logger } from "@sb/observability";
 import { z } from "zod";
 
@@ -29,6 +30,16 @@ import { recordDomainEvents } from "./domain-events.js";
  * menos que isso na categoria "sem variação" (D-020/secao 2.1), mas uma
  * conta que cresça além disso silenciosamente processaria só as primeiras
  * 1000 — ver se vira problema real antes de adicionar `.range()`.
+ *
+ * **Achado no primeiro disparo real em produção (2026-08-22)**: um
+ * `sku_listing_links` pode apontar para um `item_id` que não existe mais no
+ * Mercado Livre (anúncio removido/pausado) — `GET /items/{item_id}` devolve
+ * 404. Sem tratamento por item, essa exceção derrubava a captura da conta
+ * INTEIRA, e o mesmo item quebrava de novo em toda tentativa seguinte —
+ * nenhum outro item da conta era processado. Corrigido com try/catch por
+ * item: erro NÃO retryable (404/403 — problema DESTE item específico) conta
+ * em `itemsFailed` e segue para o próximo; erro retryable (503/429/rede —
+ * pode ser instabilidade afetando a conta inteira) continua propagando.
  */
 
 const itemResponseSchema = z.object({
@@ -57,6 +68,15 @@ export interface FetchFulfillmentSnapshotsResult {
   itemsProcessed: number;
   /** Item sem `inventory_id` (nunca foi ao Full) — contado, não é falha. */
   itemsSkipped: number;
+  /**
+   * Item que falhou com erro NÃO retryable do Mercado Livre (ex.: 404 —
+   * anúncio removido/pausado, mas o vínculo em `sku_listing_links` ainda
+   * aponta pra ele). Contado e logado, não derruba a varredura da conta —
+   * achado em produção: sem isso, um único item nesse estado impedia
+   * `sync.fulfillment.snapshot` de processar QUALQUER item da conta,
+   * inclusive nas tentativas seguintes (o mesmo item quebra de novo).
+   */
+  itemsFailed: number;
 }
 
 export async function fetchFulfillmentSnapshots(
@@ -73,6 +93,7 @@ export async function fetchFulfillmentSnapshots(
 
   let itemsProcessed = 0;
   let itemsSkipped = 0;
+  let itemsFailed = 0;
 
   for (const link of links.data ?? []) {
     if (link.item_id === null) {
@@ -81,24 +102,64 @@ export async function fetchFulfillmentSnapshots(
       continue;
     }
 
-    const item = await params.mercadoLivre.request({
-      method: "GET",
-      path: `/items/${link.item_id}`,
-      accessToken: params.accessToken,
-      schema: itemResponseSchema,
-    });
+    let item: z.infer<typeof itemResponseSchema>;
+
+    try {
+      item = await params.mercadoLivre.request({
+        method: "GET",
+        path: `/items/${link.item_id}`,
+        accessToken: params.accessToken,
+        schema: itemResponseSchema,
+      });
+    } catch (error) {
+      // Erro NÃO retryable é do ITEM (404 anúncio removido, 403 sem acesso a
+      // esse item específico) — pula só ele. Erro retryable (503/429/rede)
+      // pode ser instabilidade afetando a conta inteira: propaga para o
+      // handler decidir sobre reentrega do job inteiro, mesmo raciocínio já
+      // usado para erro de rede em `fetchOrdersWindow`.
+      if (error instanceof MercadoLivreApiError && error.errorClass === "not_retryable") {
+        itemsFailed += 1;
+        params.logger.warn("fulfillment_item_fetch_failed", {
+          ml_account_id: params.mlAccountId,
+          item_id: link.item_id,
+          reason: error.message,
+        });
+
+        continue;
+      }
+
+      throw error;
+    }
 
     if (item.inventory_id === null) {
       itemsSkipped += 1;
       continue;
     }
 
-    const stock = await params.mercadoLivre.request({
-      method: "GET",
-      path: `/inventories/${item.inventory_id}/stock/fulfillment`,
-      accessToken: params.accessToken,
-      schema: fulfillmentStockResponseSchema,
-    });
+    let stock: z.infer<typeof fulfillmentStockResponseSchema>;
+
+    try {
+      stock = await params.mercadoLivre.request({
+        method: "GET",
+        path: `/inventories/${item.inventory_id}/stock/fulfillment`,
+        accessToken: params.accessToken,
+        schema: fulfillmentStockResponseSchema,
+      });
+    } catch (error) {
+      if (error instanceof MercadoLivreApiError && error.errorClass === "not_retryable") {
+        itemsFailed += 1;
+        params.logger.warn("fulfillment_stock_fetch_failed", {
+          ml_account_id: params.mlAccountId,
+          item_id: link.item_id,
+          inventory_id: item.inventory_id,
+          reason: error.message,
+        });
+
+        continue;
+      }
+
+      throw error;
+    }
 
     const previousRow = await params.db
       .from("fulfillment_stock_snapshots")
@@ -151,5 +212,5 @@ export async function fetchFulfillmentSnapshots(
     itemsProcessed += 1;
   }
 
-  return { itemsProcessed, itemsSkipped };
+  return { itemsProcessed, itemsSkipped, itemsFailed };
 }

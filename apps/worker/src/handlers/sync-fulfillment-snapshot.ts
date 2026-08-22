@@ -115,12 +115,15 @@ export function createSyncFulfillmentSnapshotHandler(deps: SyncFulfillmentSnapsh
     }
 
     const finishedAt = deps.now?.() ?? new Date();
+    const partial = result.itemsFailed > 0;
 
     // `itemsSkipped` (item sem `inventory_id`, nunca foi ao Full) NÃO é
     // "partial" — diferente de sync.orders.window, onde uma order de
-    // formato inesperado é um problema de dado. Aqui é o estado normal e
+    // formato inesperado é um problema de dado. É o estado normal e
     // esperado de qualquer vendedor que não manda 100% do catálogo pro
-    // Full; `status: "done"` sempre que a varredura em si terminou.
+    // Full. `itemsFailed` (404/403 do Mercado Livre — achado em produção:
+    // vínculo apontando pra anúncio removido/pausado) É um sinal real de
+    // dado desatualizado, marca `partial` como o resto do sistema já faz.
     await recordSyncRunSuccess(deps.db, {
       organizationId,
       mlAccountId,
@@ -131,13 +134,17 @@ export function createSyncFulfillmentSnapshotHandler(deps: SyncFulfillmentSnapsh
       latestRecordAt: finishedAt,
       startedAt: started,
       finishedAt,
-      status: "done",
+      status: partial ? "partial" : "done",
+      ...(partial
+        ? { reason: `${String(result.itemsFailed)} item(ns) falharam ao consultar o Mercado Livre (404/403)` }
+        : {}),
     });
 
     context.logger.info("sync_fulfillment_snapshot_done", {
       ml_account_id: mlAccountId,
       items_processed: result.itemsProcessed,
       items_skipped: result.itemsSkipped,
+      items_failed: result.itemsFailed,
     });
 
     return { status: "done", processed: result.itemsProcessed };

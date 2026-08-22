@@ -243,14 +243,23 @@ describe("sync.fulfillment.snapshot", () => {
     expect(db.inserted.find((e) => e.table === "sync_errors")?.row).toMatchObject({ error_class: "retryable" });
   });
 
-  it("erro not_retryable do Mercado Livre: falha definitiva", async () => {
-    const { deps: d, lines } = deps({ links: [{ item_id: "MLB1", sku_id: "sku-1" }] });
+  it("404 num item específico (achado em produção): NÃO derruba o job — vira partial, itemsFailed no reason", async () => {
+    const { deps: d, db, lines } = deps({ links: [{ item_id: "MLB-removido", sku_id: "sku-1" }] });
     d.mercadoLivre.request = () =>
-      Promise.reject(new MercadoLivreApiError("não autorizado", { status: 401, errorClass: "not_retryable", url: "x" }));
+      Promise.reject(
+        new MercadoLivreApiError("Mercado Livre respondeu 404 para GET /items/MLB-removido.", {
+          status: 404,
+          errorClass: "not_retryable",
+          url: "x",
+        }),
+      );
 
     const outcome = await run(d, lines);
 
-    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(outcome).toEqual({ status: "done", processed: 0 });
+    const syncRun = db.inserted.find((e) => e.table === "sync_runs")?.row as { status: string; reason: string | null };
+    expect(syncRun.status).toBe("partial");
+    expect(syncRun.reason).toContain("1");
   });
 
   it("nunca loga access_token, refresh_token nem client_secret", async () => {
