@@ -10,6 +10,7 @@ import { createAnalyticsRecomputeHandler } from "./handlers/analytics-recompute.
 import { createBackfillOrdersHandler } from "./handlers/backfill-orders.js";
 import { createErpImportApplyHandler } from "./handlers/erp-import-apply.js";
 import { createErpImportParseHandler } from "./handlers/erp-import-parse.js";
+import { createNfeImportApplyHandler } from "./handlers/nfe-import-apply.js";
 import { createNfeImportParseHandler } from "./handlers/nfe-import-parse.js";
 import { createSyncFulfillmentSnapshotHandler } from "./handlers/sync-fulfillment-snapshot.js";
 import { createSyncOrdersWindowHandler } from "./handlers/sync-orders-window.js";
@@ -43,7 +44,10 @@ const mercadoLivre = createMercadoLivreClient();
 // mesmo raciocínio de `dependencies?` opcionais em `apps/api/src/app.ts`.
 const nfeHandlers =
   env.DOCUMENTS_BUCKET !== undefined
-    ? { "nfe.import.parse": createNfeImportParseHandler({ db, reader: createNfeXmlReader(env.DOCUMENTS_BUCKET) }) }
+    ? {
+        "nfe.import.parse": createNfeImportParseHandler({ db, reader: createNfeXmlReader(env.DOCUMENTS_BUCKET) }),
+        "nfe.import.apply": createNfeImportApplyHandler({ db }),
+      }
     : {};
 
 const app = createWorkerApp({

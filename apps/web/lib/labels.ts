@@ -41,6 +41,12 @@ const KIND: Record<string, string> = {
   STOCK: "Estoque",
 };
 
+/** `documents.operation_type` (docs/NFE.md secao 2.2) — nunca `ide/tpNF` sozinho, D-053. */
+const OPERATION_TYPE: Record<string, string> = {
+  ENTRADA: "Entrada",
+  SAIDA: "Saída",
+};
+
 function lookup(table: Record<string, string>, code: string): string {
   return table[code] ?? code;
 }
@@ -49,6 +55,7 @@ export const batchStatusLabel = (code: string): string => lookup(BATCH_STATUS, c
 export const rowStatusLabel = (code: string): string => lookup(ROW_STATUS, code);
 export const applyStatusLabel = (code: string): string => lookup(APPLY_STATUS, code);
 export const kindLabel = (code: string): string => lookup(KIND, code);
+export const operationTypeLabel = (code: string): string => lookup(OPERATION_TYPE, code);
 
 /** Cor de destaque por estado. `null` = sem destaque, o padrão da tabela. */
 export function statusTone(code: string): "ok" | "warn" | "bad" | null {

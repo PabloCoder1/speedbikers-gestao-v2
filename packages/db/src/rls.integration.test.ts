@@ -1492,6 +1492,142 @@ describe("Central de Vinculações", () => {
   });
 });
 
+describe("link_document_item", () => {
+  let skuId = "";
+  let otherOrgSkuId = "";
+  const createdDocumentIds: string[] = [];
+  let hashCounter = 0;
+
+  beforeAll(async () => {
+    const s = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind) values ($1,'RLSTEST-nfe-item','PRODUTO')
+       returning id`,
+      [ORG_SB],
+    );
+    skuId = s.rows[0]?.id ?? "";
+
+    const o = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind) values ($1,'RLSTEST-nfe-item-outra','PRODUTO')
+       returning id`,
+      [ORG_OUTRA],
+    );
+    otherOrgSkuId = o.rows[0]?.id ?? "";
+  });
+
+  afterAll(async () => {
+    // Cascata para document_items — mesmo raciocínio de link_candidates
+    // acima, mas aqui a FK já faz o trabalho (`on delete cascade`).
+    if (createdDocumentIds.length > 0) {
+      await client.query("delete from public.documents where id = any($1)", [createdDocumentIds]);
+    }
+  });
+
+  /** Cada chamada usa um `content_hash` PRÓPRIO — `documents_hash_unique` exige um por organização. */
+  async function insertDocument(
+    status: string,
+    itemCount = 1,
+  ): Promise<{ documentId: string; itemIds: number[] }> {
+    hashCounter += 1;
+    const hash = String(hashCounter).padStart(4, "0").repeat(16);
+
+    const d = await client.query<{ id: string }>(
+      `insert into public.documents
+         (organization_id, status, storage_path, file_name, content_hash, total_items, resolved_items)
+       values ($1,$2,'nfe/rlstest.xml','rlstest-nfe.xml',$3,$4,0)
+       returning id`,
+      [ORG_SB, status, hash, itemCount],
+    );
+    const documentId = d.rows[0]?.id ?? "";
+    createdDocumentIds.push(documentId);
+
+    const itemIds: number[] = [];
+
+    for (let position = 0; position < itemCount; position += 1) {
+      const r = await client.query<{ id: number }>(
+        `insert into public.document_items
+           (document_id, position, supplier_code, description, unit, quantity, unit_value, total_value)
+         values ($1,$2,'COD-1','Item de teste','UN',1,10,10)
+         returning id`,
+        [documentId, position],
+      );
+      itemIds.push(r.rows[0]?.id ?? 0);
+    }
+
+    return { documentId, itemIds };
+  }
+
+  it("sem permissão (outra organização) é recusado", async () => {
+    const { itemIds } = await insertDocument("PARSED");
+
+    await expect(
+      asUser(DE_OUTRA_ORG, `select public.link_document_item(${String(itemIds[0])},'${skuId}')`),
+    ).rejects.toThrow(/sem permissao/);
+  });
+
+  it("anon não tem EXECUTE", async () => {
+    const { itemIds } = await insertDocument("PARSED");
+
+    await expect(
+      asAnon(`select public.link_document_item(${String(itemIds[0])},'${skuId}')`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
+  it("SKU de outra organização é recusado", async () => {
+    const { itemIds } = await insertDocument("PARSED");
+
+    await expect(
+      asUser(ADMIN_SB, `select public.link_document_item(${String(itemIds[0])},'${otherOrgSkuId}')`),
+    ).rejects.toThrow(/outra organizacao/);
+  });
+
+  it("documento fora de conferência (não PARSED) é recusado", async () => {
+    const { itemIds } = await insertDocument("APPLYING");
+
+    await expect(
+      asUser(ADMIN_SB, `select public.link_document_item(${String(itemIds[0])},'${skuId}')`),
+    ).rejects.toThrow(/nao esta em conferencia/);
+  });
+
+  it("quem tem permissão vincula: grava sku_id e recalcula documents.resolved_items", async () => {
+    const { documentId, itemIds } = await insertDocument("PARSED", 2);
+
+    await asUserPersist(ADMIN_SB, `select public.link_document_item(${String(itemIds[0])},'${skuId}')`);
+
+    const item = await client.query(`select sku_id from public.document_items where id=$1`, [itemIds[0]]);
+
+    expect(item.rows[0]).toMatchObject({ sku_id: skuId });
+
+    // Só 1 dos 2 itens está vinculado — resolved_items reflete exatamente isso,
+    // não "todos" nem "zero".
+    const doc = await client.query(`select resolved_items from public.documents where id=$1`, [documentId]);
+
+    expect(doc.rows[0]).toMatchObject({ resolved_items: 1 });
+  });
+
+  it("p_sku_id omitido desvincula e recalcula resolved_items — mesma função, não duas", async () => {
+    const { documentId, itemIds } = await insertDocument("PARSED", 1);
+
+    await asUserPersist(ADMIN_SB, `select public.link_document_item(${String(itemIds[0])},'${skuId}')`);
+    await asUserPersist(ADMIN_SB, `select public.link_document_item(${String(itemIds[0])})`);
+
+    const item = await client.query(`select sku_id from public.document_items where id=$1`, [itemIds[0]]);
+
+    expect(item.rows[0]).toMatchObject({ sku_id: null });
+
+    const doc = await client.query(`select resolved_items from public.documents where id=$1`, [documentId]);
+
+    expect(doc.rows[0]).toMatchObject({ resolved_items: 0 });
+  });
+
+  it("authenticated não atualiza document_items direto — só pela função", async () => {
+    const { itemIds } = await insertDocument("PARSED");
+
+    await expect(
+      asUser(ADMIN_SB, `update public.document_items set sku_id='${skuId}' where id=${String(itemIds[0])} returning id`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+});
+
 describe("observabilidade de sincronização", () => {
   // Conta PRÓPRIA, fora do padrão `rlstest%` que o afterAll global apaga: uma
   // vez que ela tiver um sync_runs, `on delete restrict` torna a conta

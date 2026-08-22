@@ -3,3 +3,6 @@ export type { SaleDeductionItem, SaleDeductionOrder, StockMovementDraft } from "
 
 export { computeCancellationReversals } from "./cancellation-reversal.js";
 export type { CancellationReversalOrder, RecordedSaleMovement } from "./cancellation-reversal.js";
+
+export { computeNfeApplicationMovements } from "./nfe-application.js";
+export type { NfeApplicationDocument, NfeApplicationItem } from "./nfe-application.js";

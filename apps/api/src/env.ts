@@ -41,6 +41,15 @@ export const envSchema = z.object({
   ERP_IMPORTS_BUCKET: z.string().min(1),
 
   /**
+   * Bucket que recebe os XML de NF-e. Opcional de propósito: o bucket real
+   * ainda não existe no GCP (`docs/HANDOFF.md`) — declarar como obrigatório
+   * derrubaria a `api` no boot antes da infra existir. A rota de upload
+   * (`app.ts`) só é registrada quando esta variável está presente, mesmo
+   * raciocínio de `DOCUMENTS_BUCKET` em `apps/worker/src/env.ts`.
+   */
+  DOCUMENTS_BUCKET: z.string().min(1).optional(),
+
+  /**
    * OAuth do Mercado Livre (D-041, D-046). `MERCADO_LIVRE_CLIENT_SECRET` é
    * segredo, vem do Secret Manager. `MERCADO_LIVRE_REDIRECT_URI` precisa
    * bater exatamente com o cadastrado no painel de aplicações do Mercado

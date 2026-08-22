@@ -68,8 +68,8 @@ Em qualquer falha depois da troca de código, a conta é marcada `status = 'ERRO
 | `/v1/sync/run` | POST | GESTOR | Dispara sincronização manual — **enfileira e responde** |
 | `/v1/erp-imports` | POST | GESTOR | Recebe o arquivo do UpSeller, guarda no bucket, registra o lote e **enfileira** o parse |
 | `/v1/erp-imports/:id/apply` | POST | GESTOR | Confirmação humana da conferência: move o lote `PARSED` para `APPLYING`, grava quem confirmou e **enfileira** a aplicação |
-| `/v1/documents/nfe/preview` | POST | OPERADOR | Parse do XML, sem movimentar estoque |
-| `/v1/documents/nfe/commit` | POST | OPERADOR | Confirma a conferência e gera movimentos |
+| `/v1/nfe-imports` | POST | GESTOR | **Implementado em 2026-08-22** — recebe o XML da NF-e, guarda no bucket, registra o documento e **enfileira** o parse. Substitui o par `/v1/documents/nfe/preview`/`commit` do desenho original: mesmo papel mínimo do UpSeller (GESTOR, não OPERADOR — NF-e também reescreve o ledger), mesmo padrão de nomes (`erp-imports`) |
+| `/v1/nfe-imports/:id/apply` | POST | GESTOR | **Implementado em 2026-08-22** — confirmação humana: move o documento `PARSED` para `APPLYING` e **enfileira** a aplicação. Recusa se `resolved_items < total_items` — diferente do UpSeller, não tolera aplicação parcial (`apps/api/src/nfe-import.ts`, `confirmNfeApply`) |
 | `/v1/purchase-orders/:id/approve` | POST | GESTOR | Transição de ciclo |
 | `/v1/diagnostics/run` | POST | ANALISTA | Enfileira diagnóstico |
 | `/v1/copilot/query` | POST | qualquer autenticado | Streaming SSE, escopo limitado pelas permissões |
@@ -120,7 +120,9 @@ Payloads tipados em `@sb/contracts/jobs`. Todo handler é **idempotente**.
 | `actions.measure-outcome` | `maintenance` | `outcome:{decision_id}:{offset}` |
 | `erp.import.parse` | `maintenance` | `erp-parse:{batch_id}` |
 | `erp.import.apply` | `maintenance` | `erp-apply:{batch_id}` |
-| `sync.webhook.received` | `ml-sync-<conta>` | `ml-webhook:{resource}` |
+| `nfe.import.parse` | `maintenance` | `nfe-parse:{document_id}` — **implementado em 2026-08-22** (mesma etapa que corrigiu D-053). Handler condicional a `DOCUMENTS_BUCKET` estar configurado (`apps/worker/src/index.ts`), mesmo raciocínio de `erp.import.parse`/`ERP_IMPORTS_BUCKET` |
+| `nfe.import.apply` | `maintenance` | `nfe-apply:{document_id}` — **implementado em 2026-08-22**: gera `stock_movements` (`ENTRADA_NFE`/`SAIDA_NFE`) a partir dos itens já vinculados a um SKU (`computeNfeApplicationMovements`, `@sb/domain/inventory`). Recusa se `resolved_items < total_items` mesmo tendo sido checado na confirmação — dupla checagem, mesmo padrão das RPCs `security definer` |
+| `sync.webhook.received` | `ml-sync-<conta>` | `ml-webhook:{resource}` — enfileirado pelo webhook, mas **sem handler registrado no worker** ainda (achado em revisão, 2026-08-22; ver `docs/ROADMAP.md` Fase 3, "Fast Path do webhook") |
 
 **O nome da task é o mecanismo de dedupe.** Para analytics, a janela de minuto é parte do ID (D-051): coalesce o burst por 60 segundos sem tentar reutilizar no mesmo dia um ID que o Cloud Tasks pode reter por até 24 horas.
 

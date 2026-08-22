@@ -13,6 +13,8 @@ import { triggerFulfillmentSnapshot } from "./fulfillment-schedule.js";
 import type { IpAllowlistVerifier } from "./ip-allowlist.js";
 import type { MlAccountsDeps } from "./ml-accounts.js";
 import { completeConnect, startConnect } from "./ml-accounts.js";
+import type { NfeImportDeps } from "./nfe-import.js";
+import { confirmNfeApply, receiveNfeUpload } from "./nfe-import.js";
 import type { OidcVerifier } from "./oidc.js";
 import type { ReconcileDeps } from "./reconcile.js";
 import { triggerOrdersReconciliation } from "./reconcile.js";
@@ -49,6 +51,8 @@ export interface AppDependencies {
   oidc?: OidcVerifier;
   auth?: Authenticator;
   importDeps?: ImportDeps;
+  /** `undefined` até `DOCUMENTS_BUCKET` existir no ambiente (env.ts) — mesmo raciocínio de `importDeps`. */
+  nfeImportDeps?: NfeImportDeps;
   ipAllowlist?: IpAllowlistVerifier;
   webhook?: WebhookDeps;
   mlAccounts?: MlAccountsDeps;
@@ -401,6 +405,100 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     return context.json({ batchId: outcome.batchId, queued: true });
+  });
+
+  // --------------------------------------------------------------------
+  // NF-e/XML — upload.
+  //
+  // Mesmo raciocínio do upload do UpSeller: a `api` guarda o arquivo, registra
+  // o documento e ENFILEIRA o parse. Interpretar o XML é trabalho do worker.
+  // --------------------------------------------------------------------
+  app.post("/v1/nfe-imports", async (context) => {
+    const auth = dependencies.auth;
+    const nfeImportDeps = dependencies.nfeImportDeps;
+
+    if (auth === undefined || nfeImportDeps === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    // Mesmo papel mínimo do UpSeller: NF-e alimenta o ledger de estoque.
+    const authorized = await auth.authenticate(context.req.header("authorization"), [
+      "ADMIN",
+      "GESTOR",
+    ]);
+
+    if (!authorized.ok) {
+      dependencies.logger.warn("nfe_import_unauthorized", {
+        request_id: context.get("requestId"),
+        reason: authorized.reason,
+      });
+
+      return context.json({ error: { code: "unauthorized" } }, authorized.status);
+    }
+
+    const form = await context.req.parseBody();
+    const file = form.file;
+
+    if (!(file instanceof File)) {
+      return context.json({ error: { code: "file_required" } }, 400);
+    }
+
+    const outcome = await receiveNfeUpload(nfeImportDeps, authorized.caller, {
+      fileName: file.name,
+      contentType: file.type,
+      body: new Uint8Array(await file.arrayBuffer()),
+    });
+
+    if (outcome.status === "rejected") {
+      return context.json({ error: { code: "rejected", message: outcome.reason } }, 400);
+    }
+
+    // 200 e não 201 no duplicado: o documento já existe, nada foi criado agora.
+    return context.json(
+      { documentId: outcome.documentId, contentHash: outcome.contentHash, duplicate: outcome.status === "duplicate" },
+      outcome.status === "created" ? 201 : 200,
+    );
+  });
+
+  // --------------------------------------------------------------------
+  // NF-e/XML — confirmação humana da aplicação.
+  //
+  // Move o documento para APPLYING e ENFILEIRA `nfe.import.apply`. Exige
+  // 100% dos itens vinculados — ver `confirmNfeApply` em nfe-import.ts.
+  // --------------------------------------------------------------------
+  app.post("/v1/nfe-imports/:id/apply", async (context) => {
+    const auth = dependencies.auth;
+    const nfeImportDeps = dependencies.nfeImportDeps;
+
+    if (auth === undefined || nfeImportDeps === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const authorized = await auth.authenticate(context.req.header("authorization"), [
+      "ADMIN",
+      "GESTOR",
+    ]);
+
+    if (!authorized.ok) {
+      dependencies.logger.warn("nfe_apply_unauthorized", {
+        request_id: context.get("requestId"),
+        reason: authorized.reason,
+      });
+
+      return context.json({ error: { code: "unauthorized" } }, authorized.status);
+    }
+
+    const outcome = await confirmNfeApply(nfeImportDeps, authorized.caller, context.req.param("id"));
+
+    if (outcome.status === "not_found") {
+      return context.json({ error: { code: "not_found" } }, 404);
+    }
+
+    if (outcome.status === "rejected") {
+      return context.json({ error: { code: "rejected", message: outcome.reason } }, 409);
+    }
+
+    return context.json({ documentId: outcome.documentId, queued: true });
   });
 
   // --------------------------------------------------------------------

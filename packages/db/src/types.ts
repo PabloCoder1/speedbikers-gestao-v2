@@ -1860,6 +1860,31 @@ export type Database = {
           units_sold: number
         }[]
       }
+      link_document_item: {
+        Args: { p_item_id: number; p_sku_id?: string }
+        Returns: {
+          cfop: string | null
+          created_at: string
+          description: string
+          document_id: string
+          ean: string | null
+          id: number
+          ncm: string | null
+          position: number
+          quantity: number
+          sku_id: string | null
+          supplier_code: string
+          total_value: number
+          unit: string
+          unit_value: number
+        }
+        SetofOptions: {
+          from: "*"
+          to: "document_items"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       rebuild_daily_sales_metrics: {
         Args: {
           p_date_from: string

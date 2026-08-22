@@ -21,6 +21,14 @@ const db = createAdminClient({
 
 const enqueuer = createEnqueuer(env);
 
+// `DOCUMENTS_BUCKET` é opcional (env.ts) até o bucket real existir no GCP —
+// as rotas de NF-e só entram no registro quando ela está presente, mesmo
+// raciocínio do handler de parse em `apps/worker/src/index.ts`.
+const nfeImportDeps =
+  env.DOCUMENTS_BUCKET !== undefined
+    ? { db, enqueuer, logger, store: createFileStore(env.DOCUMENTS_BUCKET) }
+    : undefined;
+
 const app = createApp({
   logger,
   enqueuer,
@@ -39,6 +47,10 @@ const app = createApp({
     logger,
     store: createFileStore(env.ERP_IMPORTS_BUCKET),
   },
+  // Espalhado condicionalmente, não `nfeImportDeps` direto: com
+  // `exactOptionalPropertyTypes`, atribuir `undefined` a uma propriedade
+  // opcional é diferente de omitir a chave — só omitir satisfaz o tipo.
+  ...(nfeImportDeps !== undefined ? { nfeImportDeps } : {}),
   ipAllowlist: createIpAllowlistVerifier(),
   webhook: { db, enqueuer, logger },
   mlAccounts: {
