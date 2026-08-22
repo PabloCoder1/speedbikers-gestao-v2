@@ -11,6 +11,7 @@
 | Catálogo oficial de métricas | `docs/METRICS.md` |
 | Integração Mercado Livre e sincronização | `docs/MERCADO_LIVRE.md` |
 | ERP de origem (UpSeller): exportações e qualidade dos dados | `docs/UPSELLER.md` |
+| Layout da NF-e/XML e mapeamento de campos | `docs/NFE.md` |
 | Eventos e notificações em tempo real | `docs/NOTIFICATIONS.md` |
 | Copiloto e uso de IA | `docs/COPILOT.md` |
 | Plataformas, ambientes, secrets, CI/CD | `docs/DEPLOYMENT.md` |
