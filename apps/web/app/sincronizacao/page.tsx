@@ -22,9 +22,13 @@ export const dynamic = "force-dynamic";
  * e `domain_events` já existem e gravam desde a Fase 3; esta tela é o
  * primeiro consumidor.
  *
- * Só `resource = 'orders'` tem sincronização de verdade hoje — listings e
- * fulfillment ainda não foram construídos (`docs/ROADMAP.md`), então a tela
- * não finge frescor que não existe.
+ * O cartão de frescor por conta ainda é só `resource = 'orders'` —
+ * `listings` continua não construído (`docs/ROADMAP.md`). Full já existe
+ * (`sync.fulfillment.snapshot`, 2026-08-22) e já aparece nos "Eventos
+ * recentes" abaixo (a seção lê `domain_events` inteiro, sem filtrar por
+ * resource), mas ainda não ganhou cartão de frescor próprio — Full não tem
+ * um "atraso" no mesmo sentido de pedidos, é sempre uma fotografia do
+ * estado atual, não uma janela que pode ficar para trás.
  */
 
 const FRESHNESS_TONE: Record<FreshnessLevel, { color: string; label: string }> = {
@@ -54,6 +58,9 @@ const SEVERITY_TONE: Record<string, { color: string; label: string }> = {
  */
 const EVENT_LABEL: Record<string, string> = {
   "order.cancelled": "Pedido cancelado",
+  "listing.fulfillment.entered": "Anúncio entrou no Full",
+  "stock.depleted": "Estoque zerou",
+  "stock.replenished": "Estoque reposto",
 };
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
@@ -91,6 +98,16 @@ async function loadAccountHealth(
       .select("latest_record_at")
       .eq("ml_account_id", account.id)
       .eq("resource", "orders")
+      // Só reconciliação mede frescor. Backfill também grava sync_runs em
+      // 'orders', mas o `latest_record_at` dele é uma data de negócio
+      // HISTÓRICA (o pedido mais antigo daquele pedaço de 7 dias) — sem
+      // este filtro, um backfill que rodou HÁ POUCO (finished_at recente)
+      // "vence" a ordenação e a tela mostra uma data de meses atrás como
+      // se fosse o frescor real, mesmo com a reconciliação rodando em dia
+      // de hora em hora. Achado em produção (2026-08-22): a tela marcava
+      // "Sincronização atrasada" para uma conta cuja reconciliação nunca
+      // parou de funcionar.
+      .eq("channel", "reconciliation")
       .in("status", ["done", "partial"])
       .order("finished_at", { ascending: false })
       .limit(1)
@@ -235,8 +252,8 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
       <h1 style={{ margin: "0 0 var(--sb-space-1)", fontSize: "1.375rem" }}>Saúde da Sincronização</h1>
 
       <p style={{ margin: "0 0 var(--sb-space-4)", color: "var(--sb-text-soft)", fontSize: "0.9375rem" }}>
-        Frescor de pedidos por conta e os últimos eventos detectados. Só pedidos têm sincronização
-        hoje — anúncios e estoque Full ainda não foram construídos.
+        Frescor de pedidos por conta e os últimos eventos detectados. O cartão de frescor por conta
+        ainda é só de pedidos — anúncios (listings) seguem sem sincronização própria.
       </p>
 
       {accountsResult.error !== null && (
