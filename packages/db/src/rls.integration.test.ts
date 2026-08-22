@@ -2007,7 +2007,6 @@ describe("ledger de estoque", () => {
 describe("reconciliação de estoque contra o UpSeller (D-029, D-054)", () => {
   const SKU_NOME = "RLSTEST-reconciliacao-cabo";
   let skuId = "";
-  let batchId = "";
 
   beforeAll(async () => {
     const sku = await client.query<{ id: string }>(
@@ -2016,27 +2015,37 @@ describe("reconciliação de estoque contra o UpSeller (D-029, D-054)", () => {
     );
     skuId = sku.rows[0]?.id ?? "";
 
-    const batch = await client.query<{ id: string }>(
+    // DOIS lotes distintos (`erp_stock_snapshots_unique_per_batch` é
+    // `(batch_id, sku_key, warehouse)` — não inclui `captured_at`), mesmo
+    // sku/warehouse, valores diferentes: simula duas reimportações reais da
+    // planilha em momentos diferentes. Prova que a função pega o snapshot do
+    // lote MAIS RECENTE, não soma nem pega o mais antigo.
+    const oldBatch = await client.query<{ id: string }>(
       `insert into public.erp_import_batches (organization_id, kind, storage_path, content_hash, file_name)
-       values ($1,'STOCK','erp-imports/2026-08/reconciliacao.xlsx',$2,'rlstest-reconciliacao.xlsx')
+       values ($1,'STOCK','erp-imports/2026-08/reconciliacao-antigo.xlsx',$2,'rlstest-reconciliacao-antigo.xlsx')
        returning id`,
-      [ORG_SB, "f".repeat(64)],
+      [ORG_SB, "e".repeat(64)],
     );
-    batchId = batch.rows[0]?.id ?? "";
 
-    // Dois snapshots do MESMO sku/warehouse, captured_at diferentes — prova
-    // que a função pega o mais recente, não soma nem pega o mais antigo.
     await client.query(
       `insert into public.erp_stock_snapshots
          (organization_id, batch_id, sku_key, sku_id, warehouse, on_hand, available, reserved, captured_at)
        values ($1,$2,$3,$4,'ESTOQUE LOJA',100,90,10,now() - interval '2 days')`,
-      [ORG_SB, batchId, SKU_NOME.toUpperCase(), skuId],
+      [ORG_SB, oldBatch.rows[0]?.id ?? "", SKU_NOME.toUpperCase(), skuId],
     );
+
+    const newBatch = await client.query<{ id: string }>(
+      `insert into public.erp_import_batches (organization_id, kind, storage_path, content_hash, file_name)
+       values ($1,'STOCK','erp-imports/2026-08/reconciliacao-novo.xlsx',$2,'rlstest-reconciliacao-novo.xlsx')
+       returning id`,
+      [ORG_SB, "f".repeat(64)],
+    );
+
     await client.query(
       `insert into public.erp_stock_snapshots
          (organization_id, batch_id, sku_key, sku_id, warehouse, on_hand, available, reserved, captured_at)
        values ($1,$2,$3,$4,'ESTOQUE LOJA',60,50,10,now())`,
-      [ORG_SB, batchId, SKU_NOME.toUpperCase(), skuId],
+      [ORG_SB, newBatch.rows[0]?.id ?? "", SKU_NOME.toUpperCase(), skuId],
     );
   });
 
@@ -2058,9 +2067,14 @@ describe("reconciliação de estoque contra o UpSeller (D-029, D-054)", () => {
        where sku_id = '${skuId}' order by location_kind`,
     );
 
-    expect(rows.rows).toEqual([
-      { sku_id: skuId, location_kind: "LOCAL", quantity: "50" },
-      { sku_id: skuId, location_kind: "RESERVADO", quantity: "10" },
+    // `numeric` chega como string via `pg` (node-postgres não trunca casas
+    // decimais, ao contrário do PostgREST/produção) — Number() para comparar,
+    // mesmo padrão de `balanceOf` no describe "ledger de estoque" acima.
+    const parsed = rows.rows.map((r) => ({ ...r, quantity: Number(r.quantity) }));
+
+    expect(parsed).toEqual([
+      { sku_id: skuId, location_kind: "LOCAL", quantity: 50 },
+      { sku_id: skuId, location_kind: "RESERVADO", quantity: 10 },
     ]);
   });
 
