@@ -37,6 +37,13 @@ export interface StockMovementDraft {
   readonly qtyDelta: number;
   readonly idempotencyKey: string;
   readonly occurredAt: Date;
+  /**
+   * `undefined` para os casos existentes (venda, cancelamento, NF-e — todos
+   * sempre LOCAL). Explícito só quando o draft não é LOCAL, como a
+   * reconciliação contra o UpSeller gerando ajuste em RESERVADO
+   * (`@sb/domain/inventory`, `computeReconciliationAdjustments`).
+   */
+  readonly locationKind?: "LOCAL" | "RESERVADO" | "TRANSITO";
 }
 
 /**

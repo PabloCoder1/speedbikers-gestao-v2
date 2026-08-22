@@ -83,5 +83,15 @@ upsert_job \
   "${API_URL}/internal/schedule/fulfillment" \
   "Captura de estoque Full, por conta Mercado Livre CONNECTED"
 
+# Reconciliacao de estoque contra o snapshot do UpSeller (D-029) -- cadencia
+# DIARIA, nao horaria: o snapshot so muda quando alguem reimporta a planilha
+# manualmente, esporadico por natureza. Por ORGANIZACAO, nao por conta ML
+# (D-006) -- diferente dos dois jobs acima.
+upsert_job \
+  "v3-reconcile-balances" \
+  "0 6 * * *" \
+  "${API_URL}/internal/schedule/maintenance" \
+  "Reconciliacao de estoque (LOCAL/RESERVADO) contra o snapshot do UpSeller, por organizacao"
+
 step "Concluído"
 gc scheduler jobs list --location "${REGION}" --format="table(name.basename(),schedule,state)"

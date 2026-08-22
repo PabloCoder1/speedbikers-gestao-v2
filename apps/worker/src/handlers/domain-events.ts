@@ -18,7 +18,8 @@ const UNIQUE_VIOLATION = "23505";
 
 export interface RecordDomainEventsContext {
   organizationId: string;
-  mlAccountId: string;
+  /** `null`/ausente para eventos organizacionais sem conta associada (D-054, ex.: `stock.balance.diverged`). */
+  mlAccountId?: string | null;
 }
 
 export async function recordDomainEvents(
@@ -30,7 +31,7 @@ export async function recordDomainEvents(
   for (const draft of drafts) {
     const result = await db.from("domain_events").insert({
       organization_id: context.organizationId,
-      ml_account_id: context.mlAccountId,
+      ml_account_id: context.mlAccountId ?? null,
       occurred_at: draft.occurredAt.toISOString(),
       event_type: draft.eventType,
       entity_type: draft.entityType,

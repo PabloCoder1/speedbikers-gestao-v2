@@ -383,7 +383,7 @@ export type Database = {
           entity_type: string
           event_type: string
           id: string
-          ml_account_id: string
+          ml_account_id: string | null
           occurred_at: string
           organization_id: string
           severity: string
@@ -398,7 +398,7 @@ export type Database = {
           entity_type: string
           event_type: string
           id?: string
-          ml_account_id: string
+          ml_account_id?: string | null
           occurred_at: string
           organization_id: string
           severity: string
@@ -413,7 +413,7 @@ export type Database = {
           entity_type?: string
           event_type?: string
           id?: string
-          ml_account_id?: string
+          ml_account_id?: string | null
           occurred_at?: string
           organization_id?: string
           severity?: string
@@ -1801,6 +1801,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      compute_erp_snapshot_balances: {
+        Args: { p_organization_id: string }
+        Returns: {
+          location_kind: string
+          quantity: number
+          sku_id: string
+        }[]
+      }
       dismiss_link_candidate: {
         Args: { p_candidate_id: string }
         Returns: {

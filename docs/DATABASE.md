@@ -243,17 +243,24 @@ O UpSeller permanece como ERP (D-028) e movimentos manuais são lançados nos do
 
 **O princípio que sustenta o desenho:** o ledger da V3 é **completo e autossuficiente**, não é espelho do UpSeller. O ERP entra como **fonte de alinhamento por snapshot**, em tabelas próprias, e **nunca escreve direto em `inventory_balances`**. No dia em que a V3 assumir como ERP, o que sai é a importação e a conciliação — o modelo de estoque permanece intacto.
 
-Fluxo de conciliação:
+**Fluxo de conciliação — implementado em 2026-08-22** (migration `20260822193916_reconcile_balances.sql`, job `maintenance.reconcile-balances`):
 
 ```text
 planilha do UpSeller -> erp_import_batches / erp_import_rows
    -> erp_stock_snapshots (saldo do ERP por SKU, com captured_at)
-   -> comparação contra inventory_balances
+   -> compute_erp_snapshot_balances (snapshot mais recente por SKU, LOCAL/RESERVADO)
+   -> comparação contra inventory_balances (@sb/domain/inventory, computeReconciliationAdjustments)
    -> divergência? gera stock_movements tipo AJUSTE_RECONCILIACAO
-                    + domain_events 'stock.balance.diverged' (crítico)
+                    + domain_events 'stock.balance.diverged' (crítico, sem conta — D-054)
 ```
 
 **O UpSeller vence, mas o ajuste é uma linha de ledger, nunca um `UPDATE` silencioso** (D-029). O saldo passa a bater e a diferença fica auditável, com origem, data e responsável.
+
+**RESERVADO nasce inteiramente desta reconciliação** — nenhum outro código grava `location_kind = 'RESERVADO'` (venda/cancelamento/NF-e são sempre `LOCAL`). "Disponível" do UpSeller mapeia para LOCAL, "Ocupado" mapeia para RESERVADO (`docs/UPSELLER.md` secao 6). **TRANSITO fica de fora de propósito** — as colunas de trânsito do export real vêm zeradas em 100% das linhas (o recurso existe no ERP e não é usado); depende de Pedidos de Compra existir como fonte própria. Por isso "Reservado e em trânsito" e esta reconciliação são o MESMO item do checklist (`docs/ROADMAP.md`), não dois.
+
+`compute_erp_snapshot_balances` vive no schema **`public`**, não `private` — achado ao implementar: `supabase/config.toml` expõe só `schemas = ["public", "graphql_public"]` ao PostgREST, e o worker fala com o Postgres via `@supabase/supabase-js` (PostgREST), nunca conexão direta. Uma função em `private` é inalcançável dali, GRANT correto ou não. Segurança não depende do schema — `GRANT` restrito a `service_role` (`revoke ... from public, anon, authenticated`) já impede qualquer usuário. O mesmo problema afeta `private.compute_inventory_balances_from_ledger` (nunca usada — registrado em `docs/ROADMAP.md` para quando o job de conferência ledger×projeção for implementado).
+
+Gatilho: `POST /internal/schedule/maintenance` (`apps/api/src/balance-reconcile-schedule.ts`) + Cloud Scheduler diário (`infra/cloud-scheduler.sh`, job `v3-reconcile-balances`) — **por ORGANIZAÇÃO, não por conta ML** (D-006), diferente de `sync.orders.window`/`sync.fulfillment.snapshot`.
 
 **Uso operacional:** frequência e tamanho dos ajustes viram métrica de saúde. Ajuste grande e recorrente indica processo humano falhando, não erro de software — e é o sinal de que a V3 está pronta para assumir como ERP.
 
@@ -287,13 +294,15 @@ O arquivo vai para o Storage privado (`DOCUMENTS_BUCKET`, ainda não provisionad
 **Implementado em 2026-08-21** (migration `20260821050000_create_domain_events.sql`). L2 append-only, mesmo mecanismo de `job_runs`/`sync_runs` (trigger recusa `UPDATE`/`DELETE`).
 
 ```text
-organization_id, ml_account_id, occurred_at,
+organization_id, ml_account_id (nullable, D-054), occurred_at,
 event_type, entity_type, entity_id,
 before jsonb, after jsonb,
 severity (informativo | importante | critico),
 source (webhook | sync | user | system),
 dedup_key UNIQUE
 ```
+
+**`ml_account_id` aceita `NULL` desde 2026-08-22 (D-054)** — para eventos organizacionais sem conta ML associada (hoje só `stock.balance.diverged`, da reconciliação contra o UpSeller). A policy de leitura reflete isso: com conta, `has_account_access(ml_account_id)` como sempre; sem conta, `is_member_of(organization_id)`. Todo evento com conta real continua sempre preenchendo a coluna — não é opcional por escolha de quem grava.
 
 Uma tabela, sem tabelas de snapshot separadas (D-016). O catálogo de `event_type` vive em `docs/API.md` secao 4, espelhado executável em `packages/domain/src/events/catalog.ts` — divergência entre os dois é bug, mesma regra de `docs/METRICS.md`/`metric_definitions`.
 

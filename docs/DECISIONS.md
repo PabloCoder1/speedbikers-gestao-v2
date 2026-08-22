@@ -552,6 +552,18 @@ Levantadas pela pesquisa da documentação oficial que fecha a lista de verifica
 
 **Achado relacionado, mesmo XML real:** `packages/domain/src/nfe/parse.ts` usava `zod` sem declará-lo em `packages/domain/package.json` — funcionou localmente (resolução acidental do pnpm) e quebrou o CI (instalação limpa). Reescrito sem `zod`, com validação manual — `@sb/domain` continua com zero dependências de runtime (`docs/ARCHITECTURE.md` secao 7).
 
+## D-054 — `domain_events.ml_account_id` aceita NULL para eventos organizacionais
+
+**Contexto:** ao implementar a reconciliação de estoque contra o snapshot do UpSeller (D-029), o evento `stock.balance.diverged` (já catalogado desde a Fase 3, `packages/domain/src/events/catalog.ts`, nunca emitido até agora) precisava ser gravado em `domain_events` — mas a coluna `ml_account_id` era `NOT NULL` desde a migration original (`20260821050000_create_domain_events.sql`), e a policy de leitura (`domain_events_select_permitted`) usava exclusivamente `private.has_account_access(ml_account_id)`.
+
+**O problema:** estoque não pertence a uma conta Mercado Livre. `stock_movements`/`inventory_balances` são inteiramente organizacionais (D-006), e um SKU pode estar vinculado a várias contas ML, a nenhuma, ou ter chegado via NF-e antes de qualquer anúncio existir. Escolher uma conta "representativa" para o evento seria arbitrário — qual conta, entre várias vinculadas ao mesmo SKU? — e enganoso, sugerindo uma relação causal que não existe.
+
+**Decisão:** `domain_events.ml_account_id` passa a aceitar `NULL`. A policy de leitura ganha um segundo caminho: com conta, continua exigindo `has_account_access(ml_account_id)` como antes; sem conta, qualquer membro da organização vê (`is_member_of(organization_id)`, mesmo padrão já usado em `documents`/`stock_movements`). Todo evento hoje EXCETO `stock.balance.diverged` continua sempre preenchendo `ml_account_id` — a coluna aceita nulo, não passa a ser opcional por escolha de quem grava caso a caso.
+
+**Impacto na tela `/sincronizacao`:** a seção "Eventos recentes" fazia `event.ml_accounts.label` sem checagem de nulo — corrigido para `event.ml_accounts?.label ?? "Estoque"`, já que o embed do Supabase retorna `null` quando `ml_account_id` é nulo.
+
+**Alternativa rejeitada:** não gravar em `domain_events` para este caso, só no ledger (`stock_movements` com `AJUSTE_RECONCILIACAO`). Rejeitada porque D-029 e o catálogo já previam explicitamente um evento crítico para esta divergência — abandonar essa parte contradiria uma decisão já tomada sem motivo novo, só para evitar a migration.
+
 ## Como adicionar nova decisão
 
 Registrar:

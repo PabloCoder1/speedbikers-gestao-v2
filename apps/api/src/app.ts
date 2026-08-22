@@ -5,6 +5,8 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 
 import type { Authenticator } from "./auth.js";
+import type { BalanceReconcileScheduleDeps } from "./balance-reconcile-schedule.js";
+import { triggerBalanceReconciliation } from "./balance-reconcile-schedule.js";
 import type { Enqueuer } from "./enqueue.js";
 import type { ImportDeps } from "./erp-import.js";
 import { confirmApply, isImportKind, receiveUpload } from "./erp-import.js";
@@ -58,6 +60,7 @@ export interface AppDependencies {
   mlAccounts?: MlAccountsDeps;
   reconcile?: ReconcileDeps;
   fulfillmentSchedule?: FulfillmentScheduleDeps;
+  balanceReconcileSchedule?: BalanceReconcileScheduleDeps;
 }
 
 /**
@@ -300,6 +303,23 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     const outcome = await triggerFulfillmentSnapshot(fulfillmentSchedule);
+
+    return context.json(outcome);
+  });
+
+  // --------------------------------------------------------------------
+  // Reconciliação de estoque contra o snapshot do UpSeller (D-029) — por
+  // ORGANIZAÇÃO, não por conta ML (estoque não pertence a uma conta
+  // específica, D-006). Cadência diária: `infra/cloud-scheduler.sh`.
+  // --------------------------------------------------------------------
+  app.post("/internal/schedule/maintenance", async (context) => {
+    const balanceReconcileSchedule = dependencies.balanceReconcileSchedule;
+
+    if (balanceReconcileSchedule === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const outcome = await triggerBalanceReconciliation(balanceReconcileSchedule);
 
     return context.json(outcome);
   });

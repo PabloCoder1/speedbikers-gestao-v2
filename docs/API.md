@@ -93,7 +93,7 @@ O upload da planilha vai do navegador **direto** para a `api`, sem passar pela V
 | `/internal/jobs/:type` | Cloud Tasks | Entrega de job ao `worker` |
 | `/internal/schedule/reconcile` | Cloud Scheduler | Janela de reconciliação — **implementado em 2026-08-21**, no máximo uma vez por hora útil (dedupe por hora cheia) |
 | `/internal/schedule/fulfillment` | Cloud Scheduler | Captura de estoque Full por conta — **implementado em 2026-08-22**, a cada 6h (dedupe por hora cheia) |
-| `/internal/schedule/maintenance` | Cloud Scheduler | Conferência de saldo, expurgo |
+| `/internal/schedule/maintenance` | Cloud Scheduler | Reconciliação de estoque contra o UpSeller (D-029) — **implementado em 2026-08-22**, diário, por ORGANIZAÇÃO (não por conta ML). Expurgo continua sem dono |
 
 Sem segredo compartilhado (D-024).
 
@@ -116,7 +116,7 @@ Payloads tipados em `@sb/contracts/jobs`. Todo handler é **idempotente**.
 | `analytics.recompute` | `analytics-recompute` | `recompute:{account-uuid}:{data-negocio}:{janela-minuto-UTC}` — **implementado em 2026-08-21**; payload incremental `{ mode, mlAccountId, metricDate }` ou rebuild `{ mode, mlAccountId, dateFrom, dateTo }` |
 | `events.detect` | `analytics-recompute` | `detect:{entidade}:{id}` — **não implementado**: o motor de diff hoje roda inline dentro de `sync.orders.window`/`backfill.orders` (`persist-order.ts`), não como job separado. Este tipo existiria para o caminho do webhook (`sync.webhook.received` decidir o que buscar e enfileirar `events.detect` por entidade) — trabalho futuro, ver `docs/HANDOFF.md` |
 | `backfill.orders` | `backfill` | `backfill-orders:{conta}:{checkpoint}` — **implementado em 2026-08-21**, `{conta}` é o slug e `{checkpoint}` é `start` no primeiro pedaço ou o `to` ISO do pedaço anterior |
-| `maintenance.reconcile-balances` | `maintenance` | `reconcile:{data}` |
+| `maintenance.reconcile-balances` | `maintenance` | `reconcile-balances:{organization_id}:{data-negocio}` — **implementado em 2026-08-22**, por organização (não por conta ML). Payload `{ organizationId }`. Compara `compute_erp_snapshot_balances` contra `inventory_balances`, gera `AJUSTE_RECONCILIACAO` + `stock.balance.diverged` por divergência (D-029) |
 | `actions.measure-outcome` | `maintenance` | `outcome:{decision_id}:{offset}` |
 | `erp.import.parse` | `maintenance` | `erp-parse:{batch_id}` |
 | `erp.import.apply` | `maintenance` | `erp-apply:{batch_id}` |

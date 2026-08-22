@@ -183,7 +183,8 @@ interface EventRow {
   entity_id: string;
   severity: string;
   occurred_at: string;
-  ml_accounts: { label: string };
+  /** Nulo para eventos organizacionais sem conta associada (D-054). */
+  ml_accounts: { label: string } | null;
 }
 
 function EventLine({ event }: { event: EventRow }): ReactNode {
@@ -217,7 +218,8 @@ function EventLine({ event }: { event: EventRow }): ReactNode {
       <span style={{ color: "var(--sb-text-soft)", fontFamily: "ui-monospace, monospace", fontSize: "0.8125rem" }}>
         {event.entity_type} {event.entity_id}
       </span>
-      <span style={{ color: "var(--sb-text-soft)" }}>{event.ml_accounts.label}</span>
+      {/* Nulo para eventos organizacionais sem conta (D-054, ex.: stock.balance.diverged). */}
+      <span style={{ color: "var(--sb-text-soft)" }}>{event.ml_accounts?.label ?? "Estoque"}</span>
       <span style={{ color: "var(--sb-text-soft)", marginLeft: "auto", whiteSpace: "nowrap" }}>
         {formatDateTime(event.occurred_at)}
       </span>

@@ -6,3 +6,6 @@ export type { CancellationReversalOrder, RecordedSaleMovement } from "./cancella
 
 export { computeNfeApplicationMovements } from "./nfe-application.js";
 export type { NfeApplicationDocument, NfeApplicationItem } from "./nfe-application.js";
+
+export { computeReconciliationAdjustments } from "./reconciliation.js";
+export type { ReconciliationAdjustment, ReconciliationBalance } from "./reconciliation.js";

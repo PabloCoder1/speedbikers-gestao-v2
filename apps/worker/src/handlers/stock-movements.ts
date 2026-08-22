@@ -31,7 +31,7 @@ export async function recordStockMovements(
     const result = await db.from("stock_movements").insert({
       organization_id: context.organizationId,
       sku_id: draft.skuId,
-      location_kind: "LOCAL",
+      location_kind: draft.locationKind ?? "LOCAL",
       qty_delta: draft.qtyDelta,
       movement_type: movementType,
       source_type: source.type,

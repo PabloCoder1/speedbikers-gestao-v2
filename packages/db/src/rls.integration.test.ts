@@ -2003,3 +2003,106 @@ describe("ledger de estoque", () => {
     });
   });
 });
+
+describe("reconciliação de estoque contra o UpSeller (D-029, D-054)", () => {
+  const SKU_NOME = "RLSTEST-reconciliacao-cabo";
+  let skuId = "";
+  let batchId = "";
+
+  beforeAll(async () => {
+    const sku = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind) values ($1,$2,'PRODUTO') returning id`,
+      [ORG_SB, SKU_NOME],
+    );
+    skuId = sku.rows[0]?.id ?? "";
+
+    const batch = await client.query<{ id: string }>(
+      `insert into public.erp_import_batches (organization_id, kind, storage_path, content_hash, file_name)
+       values ($1,'STOCK','erp-imports/2026-08/reconciliacao.xlsx',$2,'rlstest-reconciliacao.xlsx')
+       returning id`,
+      [ORG_SB, "f".repeat(64)],
+    );
+    batchId = batch.rows[0]?.id ?? "";
+
+    // Dois snapshots do MESMO sku/warehouse, captured_at diferentes — prova
+    // que a função pega o mais recente, não soma nem pega o mais antigo.
+    await client.query(
+      `insert into public.erp_stock_snapshots
+         (organization_id, batch_id, sku_key, sku_id, warehouse, on_hand, available, reserved, captured_at)
+       values ($1,$2,$3,$4,'ESTOQUE LOJA',100,90,10,now() - interval '2 days')`,
+      [ORG_SB, batchId, SKU_NOME.toUpperCase(), skuId],
+    );
+    await client.query(
+      `insert into public.erp_stock_snapshots
+         (organization_id, batch_id, sku_key, sku_id, warehouse, on_hand, available, reserved, captured_at)
+       values ($1,$2,$3,$4,'ESTOQUE LOJA',60,50,10,now())`,
+      [ORG_SB, batchId, SKU_NOME.toUpperCase(), skuId],
+    );
+  });
+
+  it("anon não executa compute_erp_snapshot_balances", async () => {
+    await expect(
+      asAnon(`select * from public.compute_erp_snapshot_balances('${ORG_SB}')`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
+  it("authenticated não executa — só service_role, mesmo sendo ADMIN da organização", async () => {
+    await expect(
+      asUser(ADMIN_SB, `select * from public.compute_erp_snapshot_balances('${ORG_SB}')`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
+  it("service_role traz o snapshot MAIS RECENTE por SKU, decomposto em LOCAL/RESERVADO", async () => {
+    const rows = await client.query<{ sku_id: string; location_kind: string; quantity: string }>(
+      `select sku_id, location_kind, quantity from public.compute_erp_snapshot_balances('${ORG_SB}')
+       where sku_id = '${skuId}' order by location_kind`,
+    );
+
+    expect(rows.rows).toEqual([
+      { sku_id: skuId, location_kind: "LOCAL", quantity: "50" },
+      { sku_id: skuId, location_kind: "RESERVADO", quantity: "10" },
+    ]);
+  });
+
+  describe("domain_events com ml_account_id nulo (D-054)", () => {
+    let eventId = "";
+
+    beforeAll(async () => {
+      const event = await client.query<{ id: string }>(
+        `insert into public.domain_events
+           (organization_id, ml_account_id, occurred_at, event_type, entity_type, entity_id, severity, source, dedup_key)
+         values ($1, null, now(), 'stock.balance.diverged', 'sku', $2, 'critico', 'system', $3)
+         returning id`,
+        [ORG_SB, skuId, `rlstest:stock.balance.diverged:${skuId}`],
+      );
+      eventId = event.rows[0]?.id ?? "";
+    });
+
+    it("qualquer membro da organização vê, mesmo sem has_account_access nenhum", async () => {
+      const rows = await asUser(ANALISTA_SB, `select id from public.domain_events where id='${eventId}'`);
+
+      expect(rows.map((r) => (r as { id: string }).id)).toContain(eventId);
+    });
+
+    it("usuário de outra organização não vê", async () => {
+      const rows = await asUser(DE_OUTRA_ORG, `select id from public.domain_events where id='${eventId}'`);
+
+      expect(rows).toHaveLength(0);
+    });
+
+    it("anon não vê", async () => {
+      await expect(asAnon("select * from public.domain_events")).rejects.toThrow(/permission denied/i);
+    });
+
+    it("authenticated não insere direto — só service_role registra evento", async () => {
+      await expect(
+        asUser(
+          ADMIN_SB,
+          `insert into public.domain_events
+             (organization_id, ml_account_id, occurred_at, event_type, entity_type, entity_id, severity, source, dedup_key)
+           values ('${ORG_SB}', null, now(), 'stock.balance.diverged', 'sku', '${skuId}', 'critico', 'system', 'rlstest:hack')`,
+        ),
+      ).rejects.toThrow(/permission denied|row-level security/i);
+    });
+  });
+});
