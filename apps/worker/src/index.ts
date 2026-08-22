@@ -10,6 +10,7 @@ import { createAnalyticsRecomputeHandler } from "./handlers/analytics-recompute.
 import { createBackfillOrdersHandler } from "./handlers/backfill-orders.js";
 import { createErpImportApplyHandler } from "./handlers/erp-import-apply.js";
 import { createErpImportParseHandler } from "./handlers/erp-import-parse.js";
+import { createSyncFulfillmentSnapshotHandler } from "./handlers/sync-fulfillment-snapshot.js";
 import { createSyncOrdersWindowHandler } from "./handlers/sync-orders-window.js";
 import { withHandlers } from "./router.js";
 import { createSheetReader } from "./sheet-reader.js";
@@ -53,6 +54,7 @@ const app = createWorkerApp({
       enqueuer,
     }),
     "backfill.orders": createBackfillOrdersHandler({ db, mercadoLivre, oauth, encryptionKey, enqueuer }),
+    "sync.fulfillment.snapshot": createSyncFulfillmentSnapshotHandler({ db, mercadoLivre, oauth, encryptionKey }),
   }),
 });
 

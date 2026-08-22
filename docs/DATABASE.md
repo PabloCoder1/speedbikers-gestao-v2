@@ -259,7 +259,7 @@ planilha do UpSeller -> erp_import_batches / erp_import_rows
 
 ### `fulfillment_stock_snapshots` — Full
 
-**Schema implementado em 2026-08-22** (migration `20260822122526_create_fulfillment_stock_snapshots.sql`). Só schema — a busca na API do Mercado Livre, o job de captura e o detector de diff são a próxima etapa.
+**Schema implementado em 2026-08-22** (migration `20260822122526_create_fulfillment_stock_snapshots.sql`). Job de captura (`sync.fulfillment.snapshot`, `apps/worker/src/handlers/ml-fulfillment-fetch.ts`/`sync-fulfillment-snapshot.ts`) e detector de diff (`detectFulfillmentEvents`, `@sb/domain/events`) implementados na sequência, mesma sessão — ver `docs/HANDOFF.md`. **Escopo atual: só itens sem variação** (`sku_listing_links.variation_id IS NULL`) — itens com variação exigem confirmar contra a API real onde `inventory_id` aparece dentro de `variations[]`, ainda não verificado. **Sem disparo automático ainda**: o handler existe e está registrado no worker, mas nenhum Cloud Scheduler/rota da `api` o enfileira — é chamável manualmente, gatilho automático é a próxima etapa.
 
 ```text
 organization_id, ml_account_id,

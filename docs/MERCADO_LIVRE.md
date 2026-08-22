@@ -263,14 +263,26 @@ Tópicos "com subtópicos" (`messages`, `vis_leads`, `post_purchase`) trazem tam
 
 ---
 
-## 2.7 Estoque Full (fulfillment) — CONFIRMADO (2026-08-21)
+## 2.7 Estoque Full (fulfillment) — CONFIRMADO (2026-08-21, re-verificado ao vivo em 2026-08-22)
 
-- `inventory_id` vem do próprio item (`GET /items/{item_id}`); com variações, **cada variação tem seu próprio `inventory_id`**.
-- Estoque agregado: `GET /inventories/{inventory_id}/stock/fulfillment` → `total`, `available_quantity`, `not_available_quantity`, `not_available_detail[]` (`damage`/`damaged`, `lost`, `withdrawal`, `internal_process`, `transfer`, `noFiscalCoverage`, `not_supported`), `external_references`. Retenção de 12 meses.
-- Operações (histórico de movimento no Full): `GET /stock/fulfillment/operations/search?...` — janela máxima de consulta de **60 dias**, padrão 15 dias sem filtro de data; paginação por `scroll` (expira em 5 min), até **1000 registros/página**.
+- `inventory_id` vem do próprio item, campo raiz de `GET /items/{item_id}` (**não** um recurso separado). Exemplo real da documentação: `{"id": "MLB1557246024", ..., "inventory_id": "LCQI05831", ...}`. Com variações, **cada variação tem seu próprio `inventory_id`** (a doc não mostra o exemplo aninhado exato, mas confirma o comportamento em texto: "Quando o item possui variações, terá uma identificação de inventory_id por variação" — path exato dentro de `variations[]` fica para confirmar contra uma resposta real com variação, antes de codar esse ramo especificamente).
+- Estoque agregado: `GET /inventories/{inventory_id}/stock/fulfillment` (**sem** prefixo `/marketplace/` — isso é de Global Selling, produto diferente, não usar) →
+  ```json
+  {
+    "inventory_id": "LCQI05831",
+    "total": 20,
+    "available_quantity": 5,
+    "not_available_quantity": 15,
+    "not_available_detail": [{ "status": "damaged", "quantity": 2 }, ...],
+    "external_references": [{ "type": "item", "id": "MLB1557246024", "variation_id": 4742223403 }]
+  }
+  ```
+  `total = available_quantity + not_available_quantity`. `not_available_detail[].status` ∈ `damaged`/`lost`/`withdrawal`/`internal_process`/`transfer`/`noFiscalCoverage`/`not_supported`. `external_references` devolve o `item_id`/`variation_id` associado ao `inventory_id` **na própria resposta de estoque** — dá para conferir cruzado contra `sku_listing_links` sem uma segunda chamada. Retenção de 12 meses. **A V3 usa `available_quantity` como o `quantity` gravado em `fulfillment_stock_snapshots`** — é o número acionável (o que pode vender), não o total bruto incluindo avariado/perdido/em trânsito interno.
+  Erros confirmados: `404 seller_product_not_found`, `400 validation_error`, `403 forbidden`, `401 unauthorized`, `429 too_many_request`, `500 internal_error`.
+- Operações (histórico de movimento no Full): `GET /stock/fulfillment/operations/search?...` — janela máxima de consulta de **60 dias**, padrão 15 dias sem filtro de data; paginação por `scroll` (expira em 5 min), até **1000 registros/página**. Não usado nesta etapa (só o snapshot agregado).
 - Disponível hoje apenas para **Argentina, Brasil, México, Chile e Colômbia**.
 
-**Fonte:** `developers.mercadolivre.com.br/pt_br/envios-fulfillment`; `.../estoque-multi-origem` (estoque próprio, distinto do Full).
+**Fonte:** `developers.mercadolivre.com.br/pt_br/envios-fulfillment` (página com "Última atualização em 10/06/2026", lida ao vivo via browser em 2026-08-22 — `WebFetch` bloqueado por 403 nessas páginas, a leitura funcionou só via navegador real); `.../estoque-multi-origem` (estoque próprio, distinto do Full, não confundir).
 
 ---
 
