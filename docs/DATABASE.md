@@ -274,7 +274,7 @@ Local, Full por conta, reservado e em trânsito são **quatro estados com quatro
 
 ### `documents` / `document_items` — NF-e
 
-**Fluxo completo implementado em 2026-08-22** (migration `20260822145800_create_documents.sql` + `20260822160000_create_link_document_item_rpc.sql`): `upload -> PARSE -> conferência -> confirmação -> aplicação`, mesmo fluxo do importador do UpSeller de ponta a ponta. `content_hash` UNIQUE impede que o mesmo arquivo entre duas vezes; `access_key` UNIQUE (44 dígitos, quando presente) cobre o caso de dois ARQUIVOS diferentes carregando a mesma nota.
+**Fluxo completo implementado em 2026-08-22** (migration `20260822145800_create_documents.sql` + `20260822161237_create_link_document_item_rpc.sql`): `upload -> PARSE -> conferência -> confirmação -> aplicação`, mesmo fluxo do importador do UpSeller de ponta a ponta. `content_hash` UNIQUE impede que o mesmo arquivo entre duas vezes; `access_key` UNIQUE (44 dígitos, quando presente) cobre o caso de dois ARQUIVOS diferentes carregando a mesma nota.
 
 Estados: `UPLOADED -> PARSING -> PARSED -> APPLYING -> APPLIED` (mais `FAILED`/`CANCELLED`, mesma forma de `erp_import_batches`). **Parse e movimentação são atos distintos em momentos distintos** — o parse (`nfe.import.parse`, `apps/worker/src/handlers/nfe-import-parse.ts`) só grava `document_items`, nunca `stock_movements`. Só a confirmação humana gera linhas do ledger, via `nfe.import.apply` (`computeNfeApplicationMovements`, `@sb/domain/inventory`) — `ENTRADA_NFE` soma, `SAIDA_NFE` subtrai, `source_type = 'DOCUMENT'`.
 

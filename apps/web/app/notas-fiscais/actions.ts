@@ -11,7 +11,7 @@ import { createClient } from "../../lib/supabase/server";
  * escopo do usuário, sem segredo e sem trabalho longo. Só chama a RPC — toda
  * decisão de autorização e a atualização de `documents.resolved_items` vivem
  * dentro dela, na mesma transação
- * (`supabase/migrations/20260822160000_create_link_document_item_rpc.sql`).
+ * (`supabase/migrations/20260822161237_create_link_document_item_rpc.sql`).
  */
 
 export interface ActionResult {
