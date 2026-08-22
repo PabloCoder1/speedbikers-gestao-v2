@@ -538,6 +538,20 @@ Levantadas pela pesquisa da documentação oficial que fecha a lista de verifica
 
 **Impacto:** `stock_movements` ganha `CANCELAMENTO_ML` como segundo tipo em uso (schema já previa desde a migration do ledger). `apps/worker/src/handlers/persist-order.ts` bifurca em duas rotas mutuamente exclusivas por status: cancelamento (reversão) ou venda válida (dedução) — nunca as duas na mesma chamada.
 
+## D-053 — Direção da NF-e (ENTRADA/SAIDA) compara emit/dest contra o CNPJ da organização, nunca `ide/tpNF` sozinho
+
+**Contexto:** achado ao analisar o PRIMEIRO XML real de NF-e recebido do usuário (2026-08-22) — uma compra de fornecedor real, `natOp="VENDA P/FORA DO ESTADO"`, `tpNF=1`, `emit`=fornecedor, `dest`=Speed Bikers. A implementação original do parser (`packages/domain/src/nfe/parse.ts`) fazia `tpNF === "0" ? "ENTRADA" : "SAIDA"` direto, seguindo a documentação oficial ("0 = entrada, 1 = saída") ao pé da letra.
+
+**O erro:** `ide/tpNF` reflete a operação do **emitente** do documento, não da Speed Bikers. Uma nota de venda emitida por um fornecedor chega com `tpNF=1` ("saída" do lado de quem vendeu) — que é o OPOSTO de "entrada no nosso estoque". Usar `tpNF` direto classificaria toda compra de fornecedor como `SAIDA_NFE`, invertendo o sinal do movimento gerado no ledger. Este bug nunca chegou a gerar um `stock_movements` errado em produção — foi encontrado e corrigido antes da etapa de aplicação (que ainda não existe), mas seria uma inversão de estoque silenciosa se tivesse passado.
+
+**Decisão:** a direção é decidida comparando `emit/CNPJ` e `dest/CNPJ` do XML contra o CNPJ da PRÓPRIA organização (`organizations.cnpj`, coluna nova, migration `20260822151922_add_nfe_party_fields.sql`): `dest` bate → `ENTRADA`; `emit` bate → `SAIDA`; nem um nem outro bate → erro (documento rejeitado, não adivinha). `ide/tpNF` deixou de ser usado na decisão — continua sendo lido e validado (`'0'` ou `'1'`), mas só como campo do documento, não como fonte de direção.
+
+**Por que não usar os dois (tpNF E emit/dest) como conferência cruzada:** simplicidade, por ora — emit/dest é suficiente e inequívoco sozinho. Cruzar os dois exigiria decidir o que fazer numa divergência (log? erro? qual vence?), decisão sem evidência real para tomar ainda com um único XML de exemplo.
+
+**Impacto:** `organizations` ganhou coluna `cnpj` (nullable — nada além de NF-e precisa dela hoje); populada com o CNPJ real da Speed Bikers, confirmado pelo próprio XML de exemplo. `documents` ganhou `recipient_cnpj`/`recipient_name` (o parser já devolvia `recipientCnpj`/`recipientName` desde o início, mas a migration original esqueceu de persistir — corrigido junto, mesma causa raiz). `nfe.import.parse` falha definitivamente (`not_retryable`) se a organização não tiver CNPJ cadastrado — não há como decidir a direção com segurança sem ele.
+
+**Achado relacionado, mesmo XML real:** `packages/domain/src/nfe/parse.ts` usava `zod` sem declará-lo em `packages/domain/package.json` — funcionou localmente (resolução acidental do pnpm) e quebrou o CI (instalação limpa). Reescrito sem `zod`, com validação manual — `@sb/domain` continua com zero dependências de runtime (`docs/ARCHITECTURE.md` secao 7).
+
 ## Como adicionar nova decisão
 
 Registrar:

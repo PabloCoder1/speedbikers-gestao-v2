@@ -5,6 +5,7 @@ import type { NfeParseDeps } from "./nfe-import-parse.js";
 import { createNfeImportParseHandler } from "./nfe-import-parse.js";
 
 const DOCUMENT_ID = "d1000000-0000-4000-8000-00000000000d";
+const OWN_CNPJ = "98765432000110"; // CNPJ da organização — mesmo valor usado como dest/CNPJ no fixture padrão.
 
 const ENVELOPE = {
   jobType: "nfe.import.parse",
@@ -17,15 +18,15 @@ const ENVELOPE = {
 
 const ACCESS_KEY = "35260812345678000190550010000012345123456789";
 
-function fixtureXmlObject(overrides: { det?: unknown[] } = {}): unknown {
+function fixtureXmlObject(overrides: { det?: unknown[]; dest?: unknown } = {}): unknown {
   return {
     nfeProc: {
       NFe: {
         infNFe: {
           "@_Id": `NFe${ACCESS_KEY}`,
-          ide: { nNF: "12345", serie: "1", dhEmi: "2026-08-20T10:00:00-03:00", tpNF: "0" },
+          ide: { nNF: "12345", serie: "1", dhEmi: "2026-08-20T10:00:00-03:00", tpNF: "1" },
           emit: { CNPJ: "12345678000190", xNome: "Fornecedor Exemplo LTDA" },
-          dest: { CNPJ: "98765432000110", xNome: "Speed Bikers Comercio LTDA" },
+          dest: overrides.dest ?? { CNPJ: OWN_CNPJ, xNome: "Speed Bikers Comercio LTDA" },
           det: overrides.det ?? [
             {
               "@_nItem": "1",
@@ -57,16 +58,22 @@ function fakeDeps(options: {
   status?: string;
   documentMissing?: boolean;
   readFails?: boolean;
+  orgCnpj?: string | null;
 }): { deps: NfeParseDeps; captured: Captured; lines: string[] } {
   const captured: Captured = { updates: [], inserted: [], deletedTables: [] };
   const lines: string[] = [];
+  const orgCnpj = "orgCnpj" in options ? options.orgCnpj : OWN_CNPJ;
 
   const db = {
     from: (table: string) => ({
       select: () => ({
         eq: () => ({
-          maybeSingle: () =>
-            Promise.resolve({
+          maybeSingle: () => {
+            if (table === "organizations") {
+              return Promise.resolve({ data: { cnpj: orgCnpj }, error: null });
+            }
+
+            return Promise.resolve({
               data:
                 options.documentMissing === true
                   ? null
@@ -77,7 +84,8 @@ function fakeDeps(options: {
                       organization_id: ENVELOPE.organizationId,
                     },
               error: null,
-            }),
+            });
+          },
         }),
       }),
       update: (values: Record<string, unknown>) => {
@@ -133,6 +141,8 @@ describe("parse do XML da NF-e", () => {
       series: "1",
       issuer_cnpj: "12345678000190",
       issuer_name: "Fornecedor Exemplo LTDA",
+      recipient_cnpj: OWN_CNPJ,
+      recipient_name: "Speed Bikers Comercio LTDA",
       total_items: 1,
       resolved_items: 0,
     });
@@ -159,6 +169,59 @@ describe("parse do XML da NF-e", () => {
         sku_id: null,
       },
     ]);
+  });
+
+  it("organização sem CNPJ cadastrado: falha definitiva antes de ler o arquivo", async () => {
+    const { deps, captured, lines } = fakeDeps({ orgCnpj: null });
+
+    const outcome = await createNfeImportParseHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect("reason" in outcome ? outcome.reason : "").toContain("CNPJ");
+    expect(captured.inserted).toHaveLength(0);
+  });
+
+  it("achado real: fornecedor emite com tpNF=1 (saída dele) e Speed Bikers como dest — vira ENTRADA no nosso estoque", async () => {
+    const { deps, captured, lines } = fakeDeps({});
+
+    await createNfeImportParseHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(captured.updates.at(-1)).toMatchObject({ operation_type: "ENTRADA" });
+  });
+
+  it("Speed Bikers como emitente: SAIDA, mesmo com tpNF=1", async () => {
+    const { deps, captured, lines } = fakeDeps({
+      xmlObject: {
+        nfeProc: {
+          NFe: {
+            infNFe: {
+              "@_Id": `NFe${ACCESS_KEY}`,
+              ide: { nNF: "12345", serie: "1", dhEmi: "2026-08-20T10:00:00-03:00", tpNF: "1" },
+              emit: { CNPJ: OWN_CNPJ, xNome: "Speed Bikers Comercio LTDA" },
+              dest: { CNPJ: "12345678000190", xNome: "Cliente Qualquer" },
+              det: [
+                {
+                  "@_nItem": "1",
+                  prod: {
+                    cProd: "X",
+                    cEAN: "1",
+                    xProd: "Item",
+                    uCom: "UN",
+                    qCom: "1",
+                    vUnCom: "10",
+                    vProd: "10",
+                  },
+                },
+              ],
+            },
+          },
+        },
+      },
+    });
+
+    await createNfeImportParseHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(captured.updates.at(-1)).toMatchObject({ operation_type: "SAIDA" });
   });
 
   it("múltiplos itens: total_items reflete a quantidade", async () => {

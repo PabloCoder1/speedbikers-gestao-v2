@@ -1,7 +1,7 @@
 # NF-e / XML — Speed Bikers Gestão V3
 
 > Dono documental de: layout oficial da Nota Fiscal Eletrônica, mapeamento de campos e regras de importação de documento fiscal.
-> Status: **schema, parser e parse implementados em 2026-08-22, seguindo o layout oficial — decisão explícita do usuário de não esperar um XML real** ("não tenho o modelo real agora... segue"). Validação contra um XML real de fornecedor da Speed Bikers continua pendente; pode exigir ajuste quando aparecer (`docs/HANDOFF.md`).
+> Status: **schema, parser e parse implementados em 2026-08-22; validado contra o PRIMEIRO XML real de fornecedor no mesmo dia** — achado um erro real (direção do movimento, D-053) e corrigido antes de existir qualquer código de aplicação (nenhum `stock_movements` errado chegou a ser gravado). Falta validar contra um segundo fornecedor para separar "layout oficial" de "peculiaridade deste emissor".
 
 ---
 
@@ -28,7 +28,7 @@ Confirmado por pesquisa em fontes oficiais (Portal da NF-e `nfe.fazenda.gov.br`,
 - [x] Composição da chave de acesso (44 dígitos) — secao 2.1
 - [x] Campo que determina entrada vs. saída (`ide/tpNF`) — secao 2.2
 - [x] Impacto da reforma tributária 2026 (IBS/CBS/IS) na estrutura de impostos — secao 2.3
-- [ ] Validação contra XML real de fornecedor da Speed Bikers — **decisão do usuário: seguir sem esperar (2026-08-22)**. Parser implementado contra o layout oficial; risco assumido, não ignorado — ver secao 3
+- [x] Validação contra XML real de fornecedor da Speed Bikers — **primeiro fornecedor confirmado em 2026-08-22** (Plasmoto, compra de 19 itens). Achou e corrigiu um erro real de direção do movimento (D-053). Falta um segundo fornecedor para separar layout oficial de peculiaridade de emissor — secao 3
 - [x] Como o código do produto do fornecedor (`det/prod/cProd`) deve mapear para `skus` — **resolvido**: vínculo humano por documento na tela de conferência (próxima etapa), sem cadastro fornecedor→SKU reutilizável ainda (limitação conhecida, secao 3)
 - [ ] Encoding real dos arquivos (UTF-8 é o padrão oficial, mas fornecedores variam) — confirmar com arquivo real quando aparecer
 - [ ] Layout de DANFE em PDF (fallback, só depois do XML estar sólido) — não pesquisado, não bloqueia o começo
@@ -77,14 +77,19 @@ posição   tamanho   campo    significado
 
 O atributo `Id` de `infNFe` é `"NFe" + chave de 44 dígitos` — mesma chave que aparece em `ide/cNF`+outros campos compostos. **Candidato natural a `content_hash`? Não** — `content_hash` deve continuar sendo hash SHA-256 do ARQUIVO (mesmo padrão de `erp_import_batches.content_hash`, já com o comentário "mesma garantia que documents.content_hash dara para a NF-e" na migration `20260820200000_create_erp_import.sql`), não a chave de acesso. A chave de acesso é **outro** dado a guardar (identifica a nota no SEFAZ; útil para busca/exibição), mas não substitui o hash de conteúdo — dois arquivos poderiam teoricamente ter a mesma chave e bytes diferentes (correção, reenvio), e o hash é sobre o que foi de fato enviado ao V3.
 
-## 2.2 Direção do movimento — `ide/tpNF`
+## 2.2 Direção do movimento — CORRIGIDO em 2026-08-22 contra XML real (D-053)
 
-Fonte: documentação de mercado convergente sobre rejeições 518/519 da SEFAZ (que validam a consistência entre `tpNF` e o CFOP do item), consulta em 2026-08-22.
+**`ide/tpNF` sozinho NÃO decide a direção do movimento no estoque da Speed Bikers.** `tpNF` reflete a operação do **emitente** do documento — `0` = entrada para o emitente, `1` = saída para o emitente. A implementação original deste parser usava `tpNF` direto (`tpNF === "0" ? "ENTRADA" : "SAIDA"`), o que está tecnicamente certo sobre o que `tpNF` significa, mas ERRADO sobre como aplicá-lo: uma compra de fornecedor chega com `tpNF=1` (é saída do lado de quem vendeu), o que inverteria a direção se usado direto.
 
-- `tpNF = 0` → **Entrada** (compra, devolução recebida, ajuste de entrada) → `stock_movements.movement_type = 'ENTRADA_NFE'`
-- `tpNF = 1` → **Saída** (venda direta fora do ML, devolução ao fornecedor, ajuste de saída) → `stock_movements.movement_type = 'SAIDA_NFE'`
+**Confirmado pelo primeiro XML real de fornecedor recebido do usuário** (2026-08-22): `natOp="VENDA P/FORA DO ESTADO"` (nome da operação do ponto de vista de quem vende) + `tpNF=1` + `emit`=fornecedor + `dest`=Speed Bikers. Usar `tpNF` direto classificaria essa COMPRA como `SAIDA_NFE` — inverteria o sinal do movimento gerado no ledger.
 
-O CFOP de cada item (`det/prod/CFOP`) é consistente com `tpNF` por regra da própria SEFAZ (CFOP iniciado em 1/2/3 = entrada, 5/6/7 = saída) — pode servir de conferência cruzada, mas `tpNF` é a fonte primária por ser um campo único no nível do documento, não por item.
+**Regra correta**: comparar `emit/CNPJ` e `dest/CNPJ` contra o CNPJ da PRÓPRIA organização (`organizations.cnpj`):
+
+- `dest/CNPJ` = CNPJ da organização → **Entrada** (a Speed Bikers está recebendo) → `stock_movements.movement_type = 'ENTRADA_NFE'`
+- `emit/CNPJ` = CNPJ da organização → **Saída** (a Speed Bikers está emitindo) → `stock_movements.movement_type = 'SAIDA_NFE'`
+- nenhum dos dois bate → erro, documento rejeitado (não adivinha)
+
+`ide/tpNF` continua sendo lido e validado (precisa ser `'0'` ou `'1'`), mas não decide mais a direção — ver D-053 (`docs/DECISIONS.md`) para o raciocínio completo. O CFOP de cada item (`det/prod/CFOP`) é consistente com `tpNF` por regra da própria SEFAZ (CFOP iniciado em 1/2/3 = entrada, 5/6/7 = saída, do ponto de vista do emitente) — não usado como conferência cruzada por ora, decisão registrada em D-053.
 
 ## 2.3 Reforma tributária 2026 — IBS/CBS/IS
 
@@ -94,14 +99,16 @@ A partir de 2026, o bloco `imposto` de cada item pode conter um grupo novo `IBSC
 
 ---
 
-## 3. Pendências que só um XML real resolve
+## 3. Pendências que um XML real resolve
 
-**Decisão do usuário em 2026-08-22**: implementar o schema e o parser contra o layout oficial agora, sem esperar um arquivo real. Risco aceito conscientemente, não ignorado — os itens abaixo continuam pendentes e o parser (`packages/domain/src/nfe/parse.ts`) pode precisar de ajuste quando um XML real aparecer.
+**Primeiro XML real recebido do usuário em 2026-08-22** (compra de fornecedor, dados anonimizados nos testes) — revelou um erro real na direção do movimento (D-053, secao 2.2 acima) e confirmou vários pontos abaixo. Segue pendente até um SEGUNDO fornecedor aparecer, para saber o que é layout oficial e o que é peculiaridade de um emissor só.
 
-- **Matching de item para SKU — resolvido, não como automação**: `det/prod/cProd` é o código do produto **do fornecedor**, texto livre, sem padrão entre emissores — implementado como vínculo humano por documento na tela de conferência (próxima etapa), mesmo espírito de `sku_listing_links`/Central de Vinculações mas SEM cadastro fornecedor→SKU reutilizável entre notas futuras do mesmo fornecedor. `cEAN` (código de barras) seria candidato a match automático, mas **`skus` hoje não tem coluna de EAN/GTIN** (conferido em `docs/DATABASE.md`, 2026-08-22) — matching por `cEAN` exigiria migration própria adicionando essa coluna, decisão que não deve ser tomada só por conveniência do parser de NF-e sem necessidade de produto mais ampla.
-- **Múltiplos fornecedores, formatos variados**: cada emissor gera o próprio XML por sistema próprio (SAP, Bling, Omie, etc.) — o layout oficial é o mesmo, mas preenchimento de campos opcionais varia. O parser trata `NCM`/`CFOP` como opcionais (`null` quando ausentes) por precaução, mas só um XML real de mais de um fornecedor mostra o que de fato varia.
-- **Encoding**: o parser assume UTF-8 (`buffer.toString("utf-8")`, `apps/worker/src/nfe-xml-reader.ts`) — padrão oficial, mas não confirmado contra um arquivo real. Um fornecedor que exporte em ISO-8859-1 (Latin-1, comum em sistemas legados brasileiros) produziria caracteres acentuados corrompidos, não um erro explícito — risco silencioso a observar no primeiro arquivo real.
-- **Volume esperado e cadência**: quantas NF-e por mês a Speed Bikers processa, se chegam por e-mail, por XML direto do fornecedor ou só por consulta em serviço como `meudanfe.com.br` (mencionado pelo usuário como fonte) — importa para decidir se o upload é sempre manual (um arquivo por vez) ou se compensa suporte a lote (múltiplos XML de uma vez, como o importador do UpSeller já faz com XLSX). Ainda não implementado: a rota de upload em si.
+- **Matching de item para SKU — resolvido, não como automação**: `det/prod/cProd` é o código do produto **do fornecedor**, texto livre, sem padrão entre emissores — implementado como vínculo humano por documento na tela de conferência (próxima etapa), mesmo espírito de `sku_listing_links`/Central de Vinculações mas SEM cadastro fornecedor→SKU reutilizável entre notas futuras do mesmo fornecedor. `cEAN` (código de barras) seria candidato a match automático, mas **`skus` hoje não tem coluna de EAN/GTIN** (conferido em `docs/DATABASE.md`, 2026-08-22) — matching por `cEAN` exigiria migration própria adicionando essa coluna, decisão que não deve ser tomada só por conveniência do parser de NF-e sem necessidade de produto mais ampla. O XML real confirmou `cEAN` preenchido em 100% dos 19 itens — bom sinal para um futuro matching automático assistido.
+- **Ordem dos elementos no XML não é a do XSD oficial — confirmado, não afeta o parser**: o XML real trouxe `infAdic`/`infRespTec` ANTES de `ide`/`emit`/`det` (o XSD oficial exige a ordem inversa) e um elemento `<Id>` solto duplicando o atributo `Id` de `infNFe`. Provavelmente reformatado pelo serviço de consulta usado pelo usuário (`meudanfe.com.br`), não o XML original transmitido à SEFAZ. Sem efeito no parser: acesso é por nome de propriedade, nunca por posição.
+- **Bloco `imposto` por item é real e grande** (ICMS, IPI, PIS, COFINS, IBSCBS da reforma tributária) — confirmado, integralmente ignorado pelo parser (não afeta `stock_movements`, só dado fiscal).
+- **Múltiplos fornecedores, formatos variados**: só um fornecedor visto até agora (Plasmoto). O parser trata `NCM`/`CFOP` como opcionais (`null` quando ausentes) por precaução, mas só um SEGUNDO XML real de outro fornecedor mostra o que de fato varia entre sistemas emissores.
+- **Encoding**: o XML real recebido é UTF-8 (`<?xml version="1.0" encoding="UTF-8"?>`), confirmado. Um fornecedor que exporte em ISO-8859-1 (Latin-1, comum em sistemas legados brasileiros) ainda seria um risco não testado.
+- **Volume esperado e cadência**: quantas NF-e por mês a Speed Bikers processa, se chegam por e-mail, por XML direto do fornecedor ou só por consulta em serviço como `meudanfe.com.br` — importa para decidir se o upload é sempre manual (um arquivo por vez) ou se compensa suporte a lote (múltiplos XML de uma vez, como o importador do UpSeller já faz com XLSX). Ainda não implementado: a rota de upload em si.
 
 ---
 

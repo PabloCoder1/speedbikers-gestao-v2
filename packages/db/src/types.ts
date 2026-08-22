@@ -285,6 +285,8 @@ export type Database = {
           operation_type: string | null
           organization_id: string
           parsed_at: string | null
+          recipient_cnpj: string | null
+          recipient_name: string | null
           resolved_items: number | null
           series: string | null
           status: string
@@ -310,6 +312,8 @@ export type Database = {
           operation_type?: string | null
           organization_id: string
           parsed_at?: string | null
+          recipient_cnpj?: string | null
+          recipient_name?: string | null
           resolved_items?: number | null
           series?: string | null
           status?: string
@@ -335,6 +339,8 @@ export type Database = {
           operation_type?: string | null
           organization_id?: string
           parsed_at?: string | null
+          recipient_cnpj?: string | null
+          recipient_name?: string | null
           resolved_items?: number | null
           series?: string | null
           status?: string
@@ -1303,6 +1309,7 @@ export type Database = {
       }
       organizations: {
         Row: {
+          cnpj: string | null
           created_at: string
           id: string
           name: string
@@ -1310,6 +1317,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          cnpj?: string | null
           created_at?: string
           id?: string
           name: string
@@ -1317,6 +1325,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          cnpj?: string | null
           created_at?: string
           id?: string
           name?: string

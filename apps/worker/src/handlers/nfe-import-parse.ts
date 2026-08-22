@@ -62,6 +62,28 @@ export function createNfeImportParseHandler(deps: NfeParseDeps): JobHandler {
       return { status: "failed", retryable: false, reason: "documento já aplicado" };
     }
 
+    // CNPJ da própria organização decide ENTRADA/SAIDA (não `ide/tpNF`
+    // sozinho — ver `packages/domain/src/nfe/parse.ts`). Sem ele, não há
+    // como interpretar a nota com segurança: falha definitiva, não é algo
+    // que se resolve reprocessando.
+    const organization = await deps.db
+      .from("organizations")
+      .select("cnpj")
+      .eq("id", document.data.organization_id)
+      .maybeSingle();
+
+    if (organization.error !== null) {
+      return { status: "failed", retryable: true, reason: organization.error.message };
+    }
+
+    if (organization.data?.cnpj === null || organization.data?.cnpj === undefined) {
+      const reason = "organização sem CNPJ cadastrado — não é possível decidir entrada/saída da NF-e";
+
+      await deps.db.from("documents").update({ status: "FAILED", last_error: reason }).eq("id", documentId);
+
+      return { status: "failed", retryable: false, reason };
+    }
+
     await deps.db.from("documents").update({ status: "PARSING" }).eq("id", documentId);
 
     let xmlObject: unknown;
@@ -77,7 +99,7 @@ export function createNfeImportParseHandler(deps: NfeParseDeps): JobHandler {
       return { status: "failed", retryable: true, reason };
     }
 
-    const result = parseNfeXmlObject(xmlObject);
+    const result = parseNfeXmlObject(xmlObject, organization.data.cnpj);
 
     if (!result.ok) {
       await deps.db
@@ -132,6 +154,8 @@ export function createNfeImportParseHandler(deps: NfeParseDeps): JobHandler {
         issue_date: nfe.issueDate.toISOString(),
         issuer_cnpj: nfe.issuerCnpj,
         issuer_name: nfe.issuerName,
+        recipient_cnpj: nfe.recipientCnpj,
+        recipient_name: nfe.recipientName,
         total_items: rows.length,
         resolved_items: 0,
         parsed_at: (deps.now?.() ?? new Date()).toISOString(),
