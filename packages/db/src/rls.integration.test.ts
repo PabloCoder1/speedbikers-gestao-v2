@@ -2304,3 +2304,167 @@ describe("pedidos de compra (fornecedores, ciclo, histórico por evento)", () =>
     expect(rows).toHaveLength(0);
   });
 });
+
+describe("estoque em trânsito a partir do ciclo do pedido de compra (D-055)", () => {
+  // Nome fora do padrão `RLSTEST%` que o afterAll global apaga: uma vez que
+  // o SKU tiver stock_movements, `on delete restrict` o torna indeletável —
+  // mesmo raciocínio já documentado para o SKU do ledger de estoque, acima.
+  const SKU_NOME = "COMPRASTEST-parafuso";
+  let skuId = "";
+
+  // Usuário PRÓPRIO, mesma razão do describe de pedidos de compra acima:
+  // uma vez com purchase_orders no created_by, fica permanentemente
+  // indeletável — reusar ADMIN_SB quebraria a limpeza global.
+  const ADMIN_TRANSITO = "dddd2222-0000-4000-8000-000000000022";
+
+  async function balanceOf(location: string): Promise<number> {
+    const rows = await client.query<{ quantity: string }>(
+      `select quantity from public.inventory_balances where sku_id=$1 and location_kind=$2`,
+      [skuId, location],
+    );
+
+    return rows.rows[0] === undefined ? 0 : Number(rows.rows[0].quantity);
+  }
+
+  async function movementCount(orderId: string): Promise<number> {
+    const rows = await client.query<{ count: string }>(
+      `select count(*)::text as count from public.stock_movements where source_type='PURCHASE_ORDER' and source_id=$1`,
+      [orderId],
+    );
+
+    return Number(rows.rows[0]?.count ?? "0");
+  }
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                              email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',
+               'admin@transitotest.internal','x',now(),'{"full_name":"Admin de transito"}',now(),now())
+       on conflict (id) do nothing`,
+      [ADMIN_TRANSITO],
+    );
+
+    await client.query(
+      `insert into public.organization_members (organization_id, user_id, role)
+       values ($1,$2,'ADMIN') on conflict do nothing`,
+      [ORG_SB, ADMIN_TRANSITO],
+    );
+
+    const sku = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind) values ($1,$2,'PRODUTO') returning id`,
+      [ORG_SB, SKU_NOME],
+    );
+    skuId = sku.rows[0]?.id ?? "";
+  });
+
+  // Sem afterAll de limpeza: mesma razão do ledger de estoque acima — uma
+  // vez que o SKU/pedido tiver stock_movements, ficam permanentemente
+  // indeletáveis por desenho. O ambiente local acumula até o próximo
+  // `supabase db reset --local`.
+
+  it("ORDERED gera ENTRADA_TRANSITO com a quantidade pedida, sem tocar LOCAL", async () => {
+    const localBefore = await balanceOf("LOCAL");
+    const transitoBefore = await balanceOf("TRANSITO");
+
+    const items = `'[{"skuId":"${skuId}","skuSnapshot":"${SKU_NOME}","titleSnapshot":"Parafuso","quantityOrdered":10,"unitCost":2.5}]'::jsonb`;
+
+    const order = await asUserPersist<{ id: string }>(
+      ADMIN_TRANSITO,
+      `select * from public.create_purchase_order('${ORG_SB}',${items})`,
+    );
+    const orderId = order[0]?.id ?? "";
+
+    await asUserPersist(ADMIN_TRANSITO, `select * from public.approve_purchase_order('${orderId}')`);
+    await asUserPersist(ADMIN_TRANSITO, `select * from public.mark_purchase_order_ordered('${orderId}')`);
+
+    expect(await balanceOf("TRANSITO")).toBe(transitoBefore + 10);
+    expect(await balanceOf("LOCAL")).toBe(localBefore);
+
+    const movement = await client.query<{ movement_type: string; qty_delta: string }>(
+      `select movement_type, qty_delta from public.stock_movements where source_type='PURCHASE_ORDER' and source_id=$1`,
+      [orderId],
+    );
+    expect(movement.rows).toHaveLength(1);
+    expect(movement.rows[0]?.movement_type).toBe("ENTRADA_TRANSITO");
+    expect(Number(movement.rows[0]?.qty_delta)).toBe(10);
+  });
+
+  it("RECEIVED fecha o TRANSITO com RECEBIMENTO_TRANSITO, sem gerar LOCAL — isso é responsabilidade da NF-e", async () => {
+    const items = `'[{"skuId":"${skuId}","skuSnapshot":"${SKU_NOME}","titleSnapshot":"Parafuso","quantityOrdered":4,"unitCost":2.5}]'::jsonb`;
+
+    const order = await asUserPersist<{ id: string }>(
+      ADMIN_TRANSITO,
+      `select * from public.create_purchase_order('${ORG_SB}',${items})`,
+    );
+    const orderId = order[0]?.id ?? "";
+
+    await asUserPersist(ADMIN_TRANSITO, `select * from public.approve_purchase_order('${orderId}')`);
+    await asUserPersist(ADMIN_TRANSITO, `select * from public.mark_purchase_order_ordered('${orderId}')`);
+
+    const transitoAfterOrdered = await balanceOf("TRANSITO");
+    const localBefore = await balanceOf("LOCAL");
+
+    await asUserPersist(ADMIN_TRANSITO, `select * from public.receive_purchase_order('${orderId}')`);
+
+    expect(await balanceOf("TRANSITO")).toBe(transitoAfterOrdered - 4);
+    expect(await balanceOf("LOCAL")).toBe(localBefore);
+    expect(await movementCount(orderId)).toBe(2);
+
+    const received = await client.query<{ movement_type: string; qty_delta: string }>(
+      `select movement_type, qty_delta from public.stock_movements
+       where source_type='PURCHASE_ORDER' and source_id=$1 and movement_type='RECEBIMENTO_TRANSITO'`,
+      [orderId],
+    );
+    expect(Number(received.rows[0]?.qty_delta)).toBe(-4);
+  });
+
+  it("cancelar um pedido ORDERED fecha o TRANSITO aberto", async () => {
+    const items = `'[{"skuId":"${skuId}","skuSnapshot":"${SKU_NOME}","titleSnapshot":"Parafuso","quantityOrdered":6,"unitCost":2.5}]'::jsonb`;
+
+    const order = await asUserPersist<{ id: string }>(
+      ADMIN_TRANSITO,
+      `select * from public.create_purchase_order('${ORG_SB}',${items})`,
+    );
+    const orderId = order[0]?.id ?? "";
+
+    await asUserPersist(ADMIN_TRANSITO, `select * from public.approve_purchase_order('${orderId}')`);
+    await asUserPersist(ADMIN_TRANSITO, `select * from public.mark_purchase_order_ordered('${orderId}')`);
+
+    const transitoAfterOrdered = await balanceOf("TRANSITO");
+
+    await asUserPersist(ADMIN_TRANSITO, `select * from public.cancel_purchase_order('${orderId}','trânsito cancelado')`);
+
+    expect(await balanceOf("TRANSITO")).toBe(transitoAfterOrdered - 6);
+    expect(await movementCount(orderId)).toBe(2);
+  });
+
+  it("cancelar um pedido em DRAFT não gera nenhum stock_movements — TRANSITO nunca abriu", async () => {
+    const items = `'[{"skuId":"${skuId}","skuSnapshot":"${SKU_NOME}","titleSnapshot":"Parafuso","quantityOrdered":3,"unitCost":2.5}]'::jsonb`;
+
+    const order = await asUserPersist<{ id: string }>(
+      ADMIN_TRANSITO,
+      `select * from public.create_purchase_order('${ORG_SB}',${items})`,
+    );
+    const orderId = order[0]?.id ?? "";
+
+    await asUserPersist(ADMIN_TRANSITO, `select * from public.cancel_purchase_order('${orderId}','cancelado ainda em rascunho')`);
+
+    expect(await movementCount(orderId)).toBe(0);
+  });
+
+  it("item sem SKU vinculado não gera stock_movements — resolve sozinho quando o vínculo nascer", async () => {
+    const items = `'[{"skuId":null,"skuSnapshot":"COMPRASTEST-sem-vinculo","titleSnapshot":"Sem vinculo","quantityOrdered":5,"unitCost":1}]'::jsonb`;
+
+    const order = await asUserPersist<{ id: string }>(
+      ADMIN_TRANSITO,
+      `select * from public.create_purchase_order('${ORG_SB}',${items})`,
+    );
+    const orderId = order[0]?.id ?? "";
+
+    await asUserPersist(ADMIN_TRANSITO, `select * from public.approve_purchase_order('${orderId}')`);
+    await asUserPersist(ADMIN_TRANSITO, `select * from public.mark_purchase_order_ordered('${orderId}')`);
+
+    expect(await movementCount(orderId)).toBe(0);
+  });
+});
