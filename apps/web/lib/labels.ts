@@ -66,6 +66,13 @@ const PURCHASE_ORDER_EVENT: Record<string, string> = {
   CANCELLED: "Cancelado",
 };
 
+/** `stock_movements.location_kind` — Full (D-018) fica fora, é snapshot, não ledger. */
+const LOCATION_KIND: Record<string, string> = {
+  LOCAL: "Local",
+  RESERVADO: "Reservado",
+  TRANSITO: "Em trânsito",
+};
+
 function lookup(table: Record<string, string>, code: string): string {
   return table[code] ?? code;
 }
@@ -77,6 +84,7 @@ export const kindLabel = (code: string): string => lookup(KIND, code);
 export const operationTypeLabel = (code: string): string => lookup(OPERATION_TYPE, code);
 export const purchaseOrderStatusLabel = (code: string): string => lookup(PURCHASE_ORDER_STATUS, code);
 export const purchaseOrderEventLabel = (code: string): string => lookup(PURCHASE_ORDER_EVENT, code);
+export const locationKindLabel = (code: string): string => lookup(LOCATION_KIND, code);
 
 /** Cor de destaque por estado. `null` = sem destaque, o padrão da tabela. */
 export function statusTone(code: string): "ok" | "warn" | "bad" | null {

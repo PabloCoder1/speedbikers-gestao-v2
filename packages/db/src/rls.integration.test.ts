@@ -1776,6 +1776,12 @@ describe("ledger de estoque", () => {
       [RESPONSAVEL_AJUSTE],
     );
 
+    await client.query(
+      `insert into public.organization_members (organization_id, user_id, role)
+       values ($1,$2,'ADMIN') on conflict do nothing`,
+      [ORG_SB, RESPONSAVEL_AJUSTE],
+    );
+
     const sku = await client.query<{ id: string }>(
       `insert into public.skus (organization_id, sku, kind) values ($1,$2,'PRODUTO') returning id`,
       [ORG_SB, SKU_NOME],
@@ -2000,6 +2006,63 @@ describe("ledger de estoque", () => {
       await expect(
         asUser(ADMIN_SB, `update public.inventory_balances set quantity=9999 where sku_id='${skuId}'`),
       ).rejects.toThrow(/permission denied/i);
+    });
+  });
+
+  describe("create_manual_stock_adjustment", () => {
+    it("anon não executa", async () => {
+      await expect(
+        asAnon(`select * from public.create_manual_stock_adjustment('${ORG_SB}','${skuId}','LOCAL',1,'teste')`),
+      ).rejects.toThrow(/permission denied/i);
+    });
+
+    it("ANALISTA (autenticado, sem ADMIN/GESTOR) é recusado", async () => {
+      await expect(
+        asUser(
+          ANALISTA_SB,
+          `select * from public.create_manual_stock_adjustment('${ORG_SB}','${skuId}','LOCAL',1,'teste')`,
+        ),
+      ).rejects.toThrow(/sem permissao/);
+    });
+
+    it("recusa SKU de outra organização", async () => {
+      const other = await client.query<{ id: string }>(
+        `insert into public.skus (organization_id, sku, kind) values ($1,'STOCKTEST-outra-org','PRODUTO') returning id`,
+        [ORG_OUTRA],
+      );
+      const otherSkuId = other.rows[0]?.id ?? "";
+
+      await expect(
+        asUser(
+          RESPONSAVEL_AJUSTE,
+          `select * from public.create_manual_stock_adjustment('${ORG_SB}','${otherSkuId}','LOCAL',1,'teste')`,
+        ),
+      ).rejects.toThrow(/outra organizacao/);
+    });
+
+    it("recusa sem motivo", async () => {
+      await expect(
+        asUser(
+          RESPONSAVEL_AJUSTE,
+          `select * from public.create_manual_stock_adjustment('${ORG_SB}','${skuId}','LOCAL',1,'')`,
+        ),
+      ).rejects.toThrow(/exige um motivo/);
+    });
+
+    it("ADMIN registra o ajuste, grava reason e created_by, e a projeção reflete o delta", async () => {
+      const before = await balanceOf("LOCAL");
+
+      const adjustment = await asUserPersist<{ qty_delta: string; reason: string; created_by: string }>(
+        RESPONSAVEL_AJUSTE,
+        `select * from public.create_manual_stock_adjustment('${ORG_SB}','${skuId}','LOCAL',3,'contagem fisica divergente')`,
+      );
+
+      expect(adjustment[0]).toMatchObject({
+        qty_delta: "3.000",
+        reason: "contagem fisica divergente",
+        created_by: RESPONSAVEL_AJUSTE,
+      });
+      expect(await balanceOf("LOCAL")).toBe(before + 3);
     });
   });
 });

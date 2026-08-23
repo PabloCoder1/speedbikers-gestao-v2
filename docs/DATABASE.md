@@ -229,6 +229,8 @@ Tipos: `ENTRADA_NFE` · `SAIDA_NFE` · `VENDA_ML` · `CANCELAMENTO_ML` · `DEVOL
 
 `AJUSTE_RECONCILIACAO` é gerado automaticamente pela conciliação contra o ERP (D-029) e nunca por ação direta de usuário.
 
+`AJUSTE_MANUAL` — implementado em 2026-08-23, único caminho: RPC `create_manual_stock_adjustment` (`security definer`, ADMIN/GESTOR — mesmo nível de NF-e, que mexe direto no ledger), UI em `/estoque/[skuId]/ajuste`. `reason` (coluna nova, `stock_movements_manual_has_reason` exige preenchimento só para este tipo) guarda o motivo — nenhum movimento automático tem `reason`, `source_type`/`source_id` continuam sendo o mecanismo deles.
+
 **A venda vira linha no ledger no momento em que o pedido é persistido**, não calculada na leitura. *Motivo, medido na V2:* a dedução calculada na leitura consumiu seis migrations em dois dias brigando com timeout (`materialize_stock_movement_views_to_fix_timeout`, `revert_sale_deductions_from_stock_signals_exact`, `push_date_filter_into_sale_deductions`, `drive_sale_deductions_from_recent_orders`, `materialize_stock_sale_deductions`, `serialize_stock_sale_deductions_refresh`). O custo é pago uma vez na escrita e a leitura vira soma indexada.
 
 Venda de SKU de kit gera movimentos dos componentes.

@@ -1818,6 +1818,7 @@ export type Database = {
           occurred_at: string
           organization_id: string
           qty_delta: number
+          reason: string | null
           sku_id: string
           source_id: string | null
           source_type: string | null
@@ -1832,6 +1833,7 @@ export type Database = {
           occurred_at: string
           organization_id: string
           qty_delta: number
+          reason?: string | null
           sku_id: string
           source_id?: string | null
           source_type?: string | null
@@ -1846,6 +1848,7 @@ export type Database = {
           occurred_at?: string
           organization_id?: string
           qty_delta?: number
+          reason?: string | null
           sku_id?: string
           source_id?: string | null
           source_type?: string | null
@@ -2184,6 +2187,36 @@ export type Database = {
           quantity: number
           sku_id: string
         }[]
+      }
+      create_manual_stock_adjustment: {
+        Args: {
+          p_location_kind: string
+          p_organization_id: string
+          p_qty_delta: number
+          p_reason: string
+          p_sku_id: string
+        }
+        Returns: {
+          created_at: string
+          created_by: string | null
+          id: string
+          idempotency_key: string
+          location_kind: string
+          movement_type: string
+          occurred_at: string
+          organization_id: string
+          qty_delta: number
+          reason: string | null
+          sku_id: string
+          source_id: string | null
+          source_type: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "stock_movements"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       create_purchase_order: {
         Args: {
