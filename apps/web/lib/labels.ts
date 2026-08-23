@@ -73,6 +73,18 @@ const LOCATION_KIND: Record<string, string> = {
   TRANSITO: "Em trânsito",
 };
 
+/**
+ * `listings.status` — só os dois valores confirmados nesta sessão
+ * (`docs/MERCADO_LIVRE.md` secao 2, "Items & Searches": `?status=active` e a
+ * menção a pausar um anúncio). Outros valores possíveis do Mercado Livre
+ * (`closed`, `under_review`, `inactive`) caem no fallback de `lookup()` — o
+ * código bruto aparece em vez de travar, mesmo raciocínio do resto do mapa.
+ */
+const LISTING_STATUS: Record<string, string> = {
+  active: "Ativo",
+  paused: "Pausado",
+};
+
 function lookup(table: Record<string, string>, code: string): string {
   return table[code] ?? code;
 }
@@ -85,6 +97,7 @@ export const operationTypeLabel = (code: string): string => lookup(OPERATION_TYP
 export const purchaseOrderStatusLabel = (code: string): string => lookup(PURCHASE_ORDER_STATUS, code);
 export const purchaseOrderEventLabel = (code: string): string => lookup(PURCHASE_ORDER_EVENT, code);
 export const locationKindLabel = (code: string): string => lookup(LOCATION_KIND, code);
+export const listingStatusLabel = (code: string): string => lookup(LISTING_STATUS, code);
 
 /** Cor de destaque por estado. `null` = sem destaque, o padrão da tabela. */
 export function statusTone(code: string): "ok" | "warn" | "bad" | null {
@@ -101,6 +114,8 @@ export function statusTone(code: string): "ok" | "warn" | "bad" | null {
     return "warn";
   }
 
+  if (code === "active") return "ok";
+  if (code === "paused") return "warn";
   if (code === "FAILED" || code === "INVALID" || code === "CANCELLED") return "bad";
 
   return null;

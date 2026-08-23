@@ -137,7 +137,7 @@ Cada fase só é considerada concluída sob a Definition of Done do `docs/PROMPT
 - [x] **Sincronização de listings/anúncios** — concluído em 2026-08-23 (D-058): tabela `listings` ÚNICA (não as três originalmente conceituadas — achado ao inspecionar o banco real da V2: o espelho completo de anúncio nunca teve uso real lá, só a versão focada em preço), job `sync.listings.snapshot` (Cloud Scheduler a cada 6h, por conta), enumeração via `sku_listing_links` (itens já vinculados a SKU, sem variação). "Dashboards de SKU e de Anúncio" abaixo continua pendente — este item era só a sincronização, o pré-requisito
 - [ ] Cobertura, ruptura, vendas perdidas estimadas
 - [ ] Curva ABC e filtros de Full
-- [ ] Dashboards de SKU e de Anúncio
+- [ ] Dashboards de SKU e de Anúncio — **primeira fatia concluída em 2026-08-23**: `/anuncios` mostra o estado atual de cada anúncio sincronizado (título, estado, preço, disponível, SKU). Cruzamento com `daily_listing_metrics` (vendas por anúncio, já existente desde a Fase 5A) e "Dashboard de SKU" propriamente dito ficam para a próxima etapa
 - [ ] Visitas, conversão e Ads (D-032)
 - [ ] **Busca Universal / Command Palette** e **Filtros salvos** — requisitos formais em `docs/PRODUCT_REQUIREMENTS.md` (linhas 20, 26, 150-152) que nunca tinham sido copiados para o roadmap; achado em revisão, 2026-08-22
 - [ ] Playwright nos fluxos críticos
