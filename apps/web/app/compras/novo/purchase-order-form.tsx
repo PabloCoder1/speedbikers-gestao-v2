@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
-import { createPurchaseOrder } from "../actions";
+import { createPurchaseOrder, updatePurchaseOrderDraft } from "../actions";
 import { ItemRow } from "./item-row";
 import type { DraftItem } from "./item-row";
 
@@ -42,14 +42,35 @@ function emptyItem(): DraftItem {
   };
 }
 
-export function PurchaseOrderForm({ suppliers }: { suppliers: { id: string; name: string }[] }): ReactNode {
-  const router = useRouter();
+export interface PurchaseOrderFormInitial {
+  supplierId: string | null;
+  destinationWarehouseName: string | null;
+  notes: string | null;
+  /** Data de negócio `YYYY-MM-DD` — já vem cortada de `expected_at`, nunca `new Date(...)` aqui (mesmo raciocínio de `formatBusinessDate`). */
+  expectedAt: string | null;
+  items: DraftItem[];
+}
 
-  const [supplierId, setSupplierId] = useState("");
-  const [destinationWarehouseName, setDestinationWarehouseName] = useState("");
-  const [notes, setNotes] = useState("");
-  const [expectedAt, setExpectedAt] = useState("");
-  const [items, setItems] = useState<DraftItem[]>([emptyItem()]);
+export function PurchaseOrderForm({
+  suppliers,
+  orderId,
+  initial,
+}: {
+  suppliers: { id: string; name: string }[];
+  /** Presente = editando um rascunho existente; ausente = criando um pedido novo. */
+  orderId?: string;
+  initial?: PurchaseOrderFormInitial;
+}): ReactNode {
+  const router = useRouter();
+  const isEditing = orderId !== undefined;
+
+  const [supplierId, setSupplierId] = useState(initial?.supplierId ?? "");
+  const [destinationWarehouseName, setDestinationWarehouseName] = useState(
+    initial?.destinationWarehouseName ?? "",
+  );
+  const [notes, setNotes] = useState(initial?.notes ?? "");
+  const [expectedAt, setExpectedAt] = useState(initial?.expectedAt ?? "");
+  const [items, setItems] = useState<DraftItem[]>(initial?.items ?? [emptyItem()]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -74,7 +95,7 @@ export function PurchaseOrderForm({ suppliers }: { suppliers: { id: string; name
       return;
     }
 
-    const result = await createPurchaseOrder({
+    const input = {
       supplierId: supplierId === "" ? null : supplierId,
       destinationWarehouseName: destinationWarehouseName.trim() === "" ? null : destinationWarehouseName.trim(),
       currency: "BRL",
@@ -87,7 +108,24 @@ export function PurchaseOrderForm({ suppliers }: { suppliers: { id: string; name
         quantityOrdered: Number(item.quantityOrdered),
         unitCost: item.unitCost.trim() === "" ? null : Number(item.unitCost),
       })),
-    });
+    };
+
+    if (isEditing) {
+      const result = await updatePurchaseOrderDraft(orderId, input);
+
+      if (!result.ok) {
+        setError(result.message ?? "Não foi possível salvar as alterações.");
+        setBusy(false);
+
+        return;
+      }
+
+      router.push(`/compras/${orderId}`);
+
+      return;
+    }
+
+    const result = await createPurchaseOrder(input);
 
     if (!result.ok || result.id === undefined) {
       setError(result.message ?? "Não foi possível criar o pedido.");
@@ -235,7 +273,7 @@ export function PurchaseOrderForm({ suppliers }: { suppliers: { id: string; name
           justifySelf: "start",
         }}
       >
-        {busy ? "Salvando…" : "Criar pedido (rascunho)"}
+        {busy ? "Salvando…" : isEditing ? "Salvar alterações" : "Criar pedido (rascunho)"}
       </button>
     </form>
   );

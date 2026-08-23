@@ -116,6 +116,22 @@ export default async function PedidoDeCompraPage({
         <Stat label="Valor estimado" value={formatCurrency(totalValue)} />
 
         <div style={{ display: "flex", gap: "var(--sb-space-2)", marginLeft: "auto" }}>
+          {info.status === "DRAFT" && (
+            <Link
+              href={`/compras/${info.id}/editar`}
+              style={{
+                padding: "0.375rem 0.75rem",
+                borderRadius: "var(--sb-radius)",
+                border: "1px solid var(--sb-border)",
+                fontSize: "0.8125rem",
+                textDecoration: "none",
+                color: "var(--sb-text)",
+              }}
+            >
+              Editar
+            </Link>
+          )}
+
           <a
             href={`/compras/${info.id}/export/xlsx`}
             style={{
