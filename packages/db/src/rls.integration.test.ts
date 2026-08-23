@@ -2655,3 +2655,140 @@ describe("get_stock_coverage (D-058, Fase 5B)", () => {
     expect(rows).toHaveLength(0);
   });
 });
+
+describe("get_sku_abc_curve (D-058, Fase 5B)", () => {
+  // Mesmo raciocínio de nomes fora dos padrões de limpeza global, e mesma
+  // ausência de afterAll — ver comentário equivalente no describe de
+  // get_stock_coverage, acima.
+  const CONTA_ABC = "dddd4444-0000-4000-8000-000000000044";
+  const TODAY = "2026-08-23";
+  const WINDOW_START = "2026-05-25"; // 90 dias antes, janela usada pela tela /curva-abc
+
+  let skuAltaId = "";
+  let skuBaixaId = "";
+  let skuForaDaJanelaId = "";
+  let skuComFullId = "";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$2,'Conta da curva ABC','abctest-conta','PENDING')
+       on conflict do nothing`,
+      [CONTA_ABC, ORG_SB],
+    );
+
+    const skus = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind)
+       values
+         ($1,'ABCTEST-alta-receita','PRODUTO'),
+         ($1,'ABCTEST-baixa-receita','PRODUTO'),
+         ($1,'ABCTEST-fora-da-janela','PRODUTO'),
+         ($1,'ABCTEST-com-full','PRODUTO')
+       returning id`,
+      [ORG_SB],
+    );
+    skuAltaId = skus.rows[0]?.id ?? "";
+    skuBaixaId = skus.rows[1]?.id ?? "";
+    skuForaDaJanelaId = skus.rows[2]?.id ?? "";
+    skuComFullId = skus.rows[3]?.id ?? "";
+
+    await client.query(
+      `insert into public.daily_sku_metrics
+         (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values
+         ($1,$2,$3,$5,10,100000,10,10),
+         ($1,$2,$4,$5,1,100,1,1),
+         ($1,$2,$6,$5,2,200,2,2)`,
+      [ORG_SB, CONTA_ABC, skuAltaId, skuBaixaId, TODAY, skuComFullId],
+    );
+
+    // Fora da janela de propósito: 2020, bem antes de WINDOW_START.
+    await client.query(
+      `insert into public.daily_sku_metrics
+         (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values ($1,$2,$3,'2020-01-02',5,5000,5,5)`,
+      [ORG_SB, CONTA_ABC, skuForaDaJanelaId],
+    );
+
+    await client.query(
+      `insert into public.fulfillment_stock_snapshots
+         (organization_id, ml_account_id, inventory_id, item_id, sku_id, quantity, captured_at)
+       values ($1,$2,'abctest-inventory','MLB999999001',$3,42,now())`,
+      [ORG_SB, CONTA_ABC, skuComFullId],
+    );
+  });
+
+  // Sem afterAll de limpeza: mesma razão do ledger de estoque acima.
+
+  it("SKU dominante (quase toda a receita) entra na curva como classe A", async () => {
+    // Prova o motivo de existir cumulative_share_before na função: usar o
+    // percentual acumulado APÓS somar o próprio SKU classificaria um SKU
+    // dominante como C (seu acumulado sozinho já passa de 95%), quando ele é
+    // justamente o item mais importante. ALTA (100000) domina a receita da
+    // janela por uma ordem de grandeza sobre qualquer outro fixture do
+    // arquivo — robusto mesmo com o resto do describe "cobertura" (acima)
+    // deixando linhas de daily_sku_metrics sem limpeza na mesma organização.
+    const rows = await asUser<{ sku_id: string; abc_class: string; cumulative_share: string }>(
+      ADMIN_SB,
+      `select * from public.get_sku_abc_curve('${ORG_SB}','${WINDOW_START}','${TODAY}') where sku_id='${skuAltaId}'`,
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.abc_class).toBe("A");
+    expect(Number(rows[0]?.cumulative_share)).toBeGreaterThan(95);
+  });
+
+  it("SKUs de contribuição marginal ficam na classe C, ordenados por percentual acumulado crescente", async () => {
+    const rows = await asUser<{ sku_id: string; abc_class: string; cumulative_share: string; full_quantity: string }>(
+      ADMIN_SB,
+      `select * from public.get_sku_abc_curve('${ORG_SB}','${WINDOW_START}','${TODAY}')`,
+    );
+
+    const alta = rows.find((row) => row.sku_id === skuAltaId);
+    const baixa = rows.find((row) => row.sku_id === skuBaixaId);
+    const comFull = rows.find((row) => row.sku_id === skuComFullId);
+
+    expect(alta).toBeDefined();
+    expect(baixa).toBeDefined();
+    expect(comFull).toBeDefined();
+    expect(baixa?.abc_class).toBe("C");
+    expect(comFull?.abc_class).toBe("C");
+    expect(Number(alta?.cumulative_share)).toBeLessThan(Number(baixa?.cumulative_share));
+    expect(Number(alta?.full_quantity)).toBe(0);
+    expect(Number(baixa?.full_quantity)).toBe(0);
+  });
+
+  it("fora da janela de datas, o SKU nem aparece na curva — sem venda no período, não há o que classificar", async () => {
+    const rows = await asUser<{ sku_id: string }>(
+      ADMIN_SB,
+      `select * from public.get_sku_abc_curve('${ORG_SB}','${WINDOW_START}','${TODAY}') where sku_id='${skuForaDaJanelaId}'`,
+    );
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("estoque em Full aparece no full_quantity do SKU vinculado", async () => {
+    const rows = await asUser<{ full_quantity: string }>(
+      ADMIN_SB,
+      `select * from public.get_sku_abc_curve('${ORG_SB}','${WINDOW_START}','${TODAY}') where sku_id='${skuComFullId}'`,
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0]?.full_quantity)).toBe(42);
+  });
+
+  it("anon não executa", async () => {
+    await expect(
+      asAnon(`select * from public.get_sku_abc_curve('${ORG_SB}','${WINDOW_START}','${TODAY}')`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
+  it("usuário de outra organização não vê o SKU desta organização na curva", async () => {
+    const rows = await asUser<{ sku_id: string }>(
+      DE_OUTRA_ORG,
+      `select * from public.get_sku_abc_curve('${ORG_SB}','${WINDOW_START}','${TODAY}') where sku_id='${skuAltaId}'`,
+    );
+
+    expect(rows).toHaveLength(0);
+  });
+});

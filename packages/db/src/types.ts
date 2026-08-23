@@ -2427,6 +2427,23 @@ export type Database = {
           units_sold: number
         }[]
       }
+      get_sku_abc_curve: {
+        Args: {
+          p_date_from: string
+          p_date_to: string
+          p_organization_id: string
+        }
+        Returns: {
+          abc_class: string
+          cumulative_share: number
+          full_quantity: number
+          gross_revenue: number
+          revenue_share: number
+          sku: string
+          sku_id: string
+          title: string
+        }[]
+      }
       get_stock_coverage: {
         Args: {
           p_date_from: string
