@@ -3129,7 +3129,17 @@ describe("search_entities (Fase 5B, Busca universal)", () => {
     orderNumber = po.rows[0]?.order_number ?? "";
   });
 
-  // Sem afterAll de limpeza: mesma razão do ledger de estoque acima.
+  // SKU/listing/fornecedor/ml_account seguem sem afterAll de limpeza, mesma
+  // razão do ledger de estoque acima. `purchase_orders`, aqui, É apagado: seu
+  // `created_by` referencia `ADMIN_SB` (usuário `%@rls.test` COMPARTILHADO
+  // entre describes) — sem apagar essa linha, o `delete from auth.users`
+  // do afterAll GLOBAL do arquivo falha com FK violation
+  // (`purchase_orders_created_by_fkey`), derrubando a suíte inteira. Sem
+  // `purchase_order_events` associado (INSERT direto, não passou pela RPC de
+  // negócio), então apagar é seguro — nenhum gatilho append-only bloqueia.
+  afterAll(async () => {
+    await client.query("delete from public.purchase_orders where id = $1", [purchaseOrderId]);
+  });
 
   it("encontra SKU pelo código, com destino de navegação real (/skus/{id})", async () => {
     const rows = await asUser<{ entity_type: string; label: string; href: string }>(
