@@ -36,6 +36,7 @@ Confirmado na documentação oficial (`developers.mercadolivre.com.br`, consulta
 - [ ] Endpoints de visitas e de Ads — necessários apenas na Fase 5B (D-032); ainda não pesquisados, **não bloqueia a Fase 3**
 - [x] Escopos de OAuth necessários por recurso — secao 2.9
 - [x] Política de validação de origem do webhook — secao 2.6 (allowlist de IP; **sem assinatura HMAC documentada** para este produto)
+- [x] Endpoints de pós-venda (Claims/Returns) — secao 2.10 (D-057)
 
 ---
 
@@ -63,6 +64,8 @@ Confirmado na documentação oficial (`developers.mercadolivre.com.br`, consulta
 | Itens de uma campanha | `GET /seller-promotions/promotions/{promotion_id}/items?...` | `read` | `search_after` (TTL 5 min), limite **50** | secao 2.3 | 2026-08-21 |
 | Buscador de produtos de catálogo | `GET /products/search?product_identifier=/q=&site_id=` | `read` | `offset`/`limit` | secao 2.3 | 2026-08-21 |
 | Notificações perdidas | `GET /missed_feeds?app_id=&topic=&offset=&limit=` | — | padrão **10**; retenção **2 dias**; `site_id` obrigatório para `topic=items` | — | 2026-08-21 |
+| Detalhe de claim | `GET /post-purchase/v1/claims/{claim_id}` | `read`, "Vendas e envios" ou "Comunicação pré e pós-venda" | — | secao 2.3 | 2026-08-23 |
+| Detalhe de devolução | `GET /post-purchase/v2/claims/{claim_id}/returns` | `read`, mesma acima | — | secao 2.3 | 2026-08-23 |
 | Autorização OAuth | `GET https://auth.mercadolivre.com.br/authorization?...` | — | — | — | 2026-08-21 |
 | Token OAuth | `POST https://api.mercadolibre.com/oauth/token` | — | — | — | 2026-08-21 |
 | Grants da aplicação | `GET /applications/{app_id}/grants` | — | — | — | 2026-08-21 |
@@ -306,9 +309,9 @@ Além do scope, o DevCenter da aplicação exige habilitar **permissões funcion
 | Permissão funcional | Libera | Uso na V3 |
 |---|---|---|
 | Publicação e sincronização | `items`, `pictures`, `prices` | Catálogo/anúncios |
-| Vendas e envios | `orders`, `shipments`, `claims`, `returns` | Pedidos + estoque Full |
+| Vendas e envios | `orders`, `shipments`, `claims`, `returns` | Pedidos + estoque Full + Claims/Returns (D-057, secao 2.10) |
 | Promoções, cupons e descontos | `offers`, `deals` | Promoções |
-| Comunicação pré e pós-venda | `questions`, `messages`, `claims`, `returns` | Fase posterior |
+| Comunicação pré e pós-venda | `questions`, `messages`, `claims`, `returns` | `claims`/`returns` já usados (D-057); `questions`/`messages` seguem Fase posterior |
 | Métricas do negócio | `trends`, `highlights`, `visits` | Fase 5B (D-032) |
 | Publicidade | Advertising | Fase 5B (D-032) |
 | Faturamento | `invoices`, `billing` | Fora de escopo hoje |
@@ -316,6 +319,31 @@ Além do scope, o DevCenter da aplicação exige habilitar **permissões funcion
 Webhooks não têm permissão funcional própria — a assinatura de tópicos é configurada no gerenciador da aplicação (Callback URL + seleção de tópicos), não pelo OAuth scope.
 
 **Fonte:** `developers.mercadolivre.com.br/pt_br/autenticacao-e-autorizacao`; `.../permissoes-funcionais`.
+
+---
+
+## 2.10 Pós-venda — Claims e Returns — CONFIRMADO (leitura ao vivo, 2026-08-23)
+
+Notificação chega pelo tópico `post_purchase` (modelo com subtópicos, secao 2.4) com `actions: ["claims"]` ou `["claims_actions"]` — as duas apontam para o MESMO recurso de detalhe; o array só diz qual tipo de novidade motivou o envio, não muda o que buscar.
+
+```json
+{
+  "id": "5e2827f2-...",
+  "resource": "/post-purchase/v1/claims/5108684499",
+  "user_id": 123456789,
+  "topic": "post_purchase",
+  "actions": ["claims"],
+  ...
+}
+```
+
+**Detalhe do claim** — `GET /post-purchase/v1/claims/{claim_id}`. Campos usados: `resource` (`"order"` | `"payment"` | `"shipment"` | `"purchase"` — só `"order"` interessa à V3), `resource_id` (o `order_id`), `status` (`opened`/`closed`), `type` (`mediations`/`return`/`fulfillment`/`ml_case`/`cancel_sale`/`cancel_purchase`/`change`/`service`), `related_entities` (array de strings — **mecanismo oficialmente recomendado** para detectar devolução física: "se existir o valor 'return', significa que há uma devolução associada a esta reclamação". Não confiar em `type === "return"` sozinho — a doc mostra `type` como algo mais amplo (ex.: `mediations` também pode ter devolução associada via `related_entities`).
+
+**Detalhe da devolução** — `GET /post-purchase/v2/claims/{claim_id}/returns`. Campos usados: `status` (**`"delivered"` é o gatilho de reversão de estoque** — produto fisicamente de volta; `status_money` é um campo SEPARADO para o dinheiro, não usado aqui — reversão de estoque segue a física, não o financeiro), `orders[]` (`order_id`, `item_id`, `variation_id`, `context_type` — `total`/`partial`/`incomplete`, `total_quantity`, `return_quantity` — ambas chegam como STRING, convertidas com `z.coerce.number()`).
+
+**Mapeamento para `order_items` da V3**: `orders[].item_id`/`variation_id` batem direto com `order_items.item_id`/`variation_id` (mesmo formato — MLB + variation numérica) — dá pra localizar a POSIÇÃO do item sem depender de `sku_listing_links`.
+
+**Fonte:** `developers.mercadolivre.com.br/pt_br/gerenciar-reclamacoes`, `.../gerenciar-devolucoes`, `.../produto-receba-notificacoes`.
 
 ---
 

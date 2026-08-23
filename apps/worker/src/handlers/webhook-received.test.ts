@@ -227,4 +227,34 @@ describe("sync.webhook.received — Fast Path", () => {
 
     expect(outcome).toMatchObject({ status: "failed", retryable: false });
   });
+
+  describe("post_purchase (D-057) — só o roteamento; o processamento em si é testado em claim-return.test.ts", () => {
+    const POST_PURCHASE_PAYLOAD = {
+      mlAccountId: ML_ACCOUNT_ID,
+      resource: "/post-purchase/v1/claims/5298178312",
+      topic: "post_purchase",
+    };
+
+    it("resource fora do formato /post-purchase/v1/claims/{id} falha sem retry", async () => {
+      const { deps: d, lines } = deps({});
+
+      const outcome = await run(d, lines, { ...POST_PURCHASE_PAYLOAD, resource: "/post-purchase/v1/other/1" });
+
+      expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    });
+
+    it("busca o claim certo — claim sem devolução associada processa zero", async () => {
+      const { deps: d, requests, lines } = deps(
+        {},
+        { id: 5298312, resource: "order", resource_id: 1, status: "closed", type: "mediations", related_entities: [] },
+      );
+
+      const outcome = await run(d, lines, POST_PURCHASE_PAYLOAD);
+
+      expect(outcome).toEqual({ status: "done", processed: 0 });
+      expect(requests).toEqual([
+        expect.objectContaining({ method: "GET", path: "/post-purchase/v1/claims/5298178312" }),
+      ]);
+    });
+  });
 });

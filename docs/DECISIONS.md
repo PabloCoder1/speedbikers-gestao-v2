@@ -592,6 +592,22 @@ Levantadas pela pesquisa da documentação oficial que fecha a lista de verifica
 
 **Impacto:** `apps/worker/src/handlers/verify-ledger-integrity.ts` (job `maintenance.verify-ledger-integrity`), `apps/api/src/ledger-integrity-schedule.ts` (gatilho, por organização) + rota `POST /internal/schedule/ledger-integrity`, Cloud Scheduler diário (`v3-verify-ledger-integrity`, 30 minutos depois de `v3-reconcile-balances` para não competir por recurso). Fecha o item "Conferência automática ledger × projeção" do checklist da Fase 4.
 
+## D-057 — Pós-venda (Claims/Returns): reversão só quando devolução TOTAL do item; parcial vira alerta, não cálculo
+
+**Contexto:** `order.returned` era, desde a Fase 3, uma nota solta em `@sb/domain/events` ("depende da API de Reclamações e Devoluções, não integrada") — item próprio do checklist da Fase 4, último a fechar. A pesquisa ao vivo (`docs/MERCADO_LIVRE.md` secao 2.10, 2026-08-23) revelou um modelo mais rico do que a nota original presumia: claims e returns são dois recursos DISTINTOS, ligados por `related_entities`, com devolução podendo ser PARCIAL (por item, não só por pedido).
+
+**Decisão 1 — reversão escopada ao ITEM, não ao pedido inteiro:** diferente de `computeCancellationReversals` (D-052, reverte TODOS os movimentos `VENDA_ML` de uma order), a devolução do Mercado Livre é por `item_id`/`variation_id` dentro de um pedido — `orders[].item_id` do recurso de devolução bate direto com `order_items.item_id`/`variation_id` (mesmo formato), permitindo localizar a POSIÇÃO do item sem depender de `sku_listing_links`. A chave de idempotência da venda original já é escopada por posição (`venda:{orderId}:{position}` — PRODUTO — ou `venda:{orderId}:{position}:{componentSkuId}` — KIT, `sale-deduction.ts`), então filtrar por prefixo dessa chave isola exatamente os movimentos daquele item (todos os componentes de um KIT juntos, nenhum de outra posição), sem precisar de nenhuma lógica nova de KIT no código de reversão — mesmo raciocínio de reuso já usado em D-052.
+
+**Decisão 2 — devolução PARCIAL de um item não é revertida automaticamente:** reverter proporcionalmente (ex.: 2 de 5 unidades devolvidas, ou pior, um KIT com componentes de quantidades diferentes) exigiria uma regra de arredondamento/rateio sem nenhum caso real para calibrar — mesmo princípio de evidência medida já usado em D-037/D-039/D-053. Em vez de inventar a proporção, `computeReturnReversal` sai com `fullReversal: false`, zero movimentos gravados, e o evento `order.returned` carrega `needsManualReview: true` — o ajuste manual de estoque (`/estoque`, já implementado nesta mesma sessão) é o caminho até essa regra ter dado real para se basear. Reversão só acontece quando `return_quantity >= total_quantity` do item.
+
+**Decisão 3 — gatilho é a FÍSICA (`status = "delivered"` da devolução), não o dinheiro:** o recurso de devolução separa `status` (do envio de volta) de `status_money` (retained/refunded/available). A V3 reverte estoque quando o produto **fisicamente retorna**, nunca quando o pagamento é devolvido — o dinheiro pode ser reembolsado antes (ex.: `refund_at: "shipped"`) sem o produto ainda ter chegado, e reverter estoque nesse momento inflaria o saldo local de algo que ainda está em trânsito de volta.
+
+**Decisão 4 — reusa `stock.movement_type = DEVOLUCAO_ML` e `event_type = order.returned`, ambos já catalogados desde a Fase 4/3 original**, sem necessidade de migration nem de novo tipo — os dois já existiam no vocabulário fechado, só sem código que os gerasse.
+
+**Detecção de devolução associada a um claim**: segue o mecanismo que a própria documentação oficial recomenda — checar `related_entities` do claim por `"return"` (não `claim.type === "return"`, que é mais restrito e não cobre `mediations` com devolução associada).
+
+**Impacto:** `apps/worker/src/handlers/webhook-received.ts` ganha `post_purchase` como segundo tópico com consumidor (`orders_v2` era o único); `apps/worker/src/handlers/claim-return.ts` (novo) orquestra claim → return → reversão; `packages/domain/src/inventory/return-reversal.ts` (novo, puro) decide o quê reverter. Fecha o último item real do checklist da Fase 4 (recebimento parcial de pedido de compra segue adiado por decisão deliberada separada, não é bloqueio).
+
 ## Como adicionar nova decisão
 
 Registrar:

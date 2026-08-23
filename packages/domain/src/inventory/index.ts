@@ -12,3 +12,6 @@ export type { ReconciliationAdjustment, ReconciliationBalance } from "./reconcil
 
 export { computeLedgerIntegrityDivergences } from "./ledger-integrity.js";
 export type { LedgerBalance } from "./ledger-integrity.js";
+
+export { computeReturnReversal } from "./return-reversal.js";
+export type { ReturnedOrderItem, ReturnReversal } from "./return-reversal.js";

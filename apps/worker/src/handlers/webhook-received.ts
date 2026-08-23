@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import type { JobOutcome } from "../job-outcome.js";
 import type { HandlerContext, JobHandler } from "../router.js";
+import { processClaimReturn } from "./claim-return.js";
 import { ensureAccessToken } from "./ml-token.js";
 import { orderSchema } from "./order-schema.js";
 import { persistOrder } from "./persist-order.js";
@@ -19,11 +20,11 @@ import { persistOrder } from "./persist-order.js";
  * principal e o cron rebaixado a reconciliação") — não era uma feature
  * nova, era uma peça que faltava.
  *
- * Só `orders_v2` está implementado: é o único tópico com persistência de
- * entidade pronta (`persistOrder`). Outros tópicos (`items`, `shipments`,
- * `questions`, `stock-location`, etc.) fazem ACK sem trabalho — mesmo
- * raciocínio de "conta desconhecida" em `webhook.ts`: não é erro, só não
- * há consumidor ainda.
+ * `orders_v2` e `post_purchase` estão implementados — os únicos dois
+ * tópicos com consumidor pronto (`persistOrder`, `processClaimReturn`).
+ * Outros tópicos (`items`, `shipments`, `questions`, `stock-location`,
+ * etc.) fazem ACK sem trabalho — mesmo raciocínio de "conta desconhecida"
+ * em `webhook.ts`: não é erro, só não há consumidor ainda.
  *
  * Reconciliação por janela continua como rede de segurança (papel que já
  * tem hoje) — este handler não a substitui, só reduz o frescor do caminho
@@ -47,6 +48,9 @@ export interface WebhookReceivedDeps {
 /** `/orders/{order_id}` — confirmado em `docs/MERCADO_LIVRE.md` secao 2.4 e nos fixtures reais de `webhook.test.ts`. */
 const ORDER_RESOURCE_PATTERN = /^\/orders\/(\d+)$/;
 
+/** `/post-purchase/v1/claims/{claim_id}` — confirmado em `docs/MERCADO_LIVRE.md` secao 2.10 (leitura ao vivo, 2026-08-23). */
+const CLAIM_RESOURCE_PATTERN = /^\/post-purchase\/v1\/claims\/(\d+)$/;
+
 export function createWebhookReceivedHandler(deps: WebhookReceivedDeps): JobHandler {
   return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
     const parsed = payloadSchema.safeParse(context.payload);
@@ -57,20 +61,21 @@ export function createWebhookReceivedHandler(deps: WebhookReceivedDeps): JobHand
 
     const { mlAccountId, resource, topic } = parsed.data;
 
-    if (topic !== "orders_v2") {
+    if (topic !== "orders_v2" && topic !== "post_purchase") {
       // Sem consumidor para este tópico ainda — ACK sem trabalho, não é erro.
       return { status: "done", processed: 0 };
     }
 
-    const match = ORDER_RESOURCE_PATTERN.exec(resource);
+    const resourcePattern = topic === "orders_v2" ? ORDER_RESOURCE_PATTERN : CLAIM_RESOURCE_PATTERN;
+    const match = resourcePattern.exec(resource);
 
     if (match === null) {
-      // `orders_v2` sempre traz `/orders/{id}` — um formato diferente é
-      // inesperado o bastante para não valer retry.
+      // Cada tópico tem um formato fixo de `resource` — um formato diferente
+      // é inesperado o bastante para não valer retry.
       return { status: "failed", retryable: false, reason: `resource fora do formato esperado: ${resource}` };
     }
 
-    const orderId = match[1] ?? "";
+    const resourceId = match[1] ?? "";
 
     const account = await deps.db
       .from("ml_accounts")
@@ -97,12 +102,36 @@ export function createWebhookReceivedHandler(deps: WebhookReceivedDeps): JobHand
       return { status: "failed", retryable: tokenResult.retryable, reason: tokenResult.reason };
     }
 
+    if (topic === "post_purchase") {
+      let processed: number;
+
+      try {
+        processed = await processClaimReturn(
+          deps,
+          { organizationId: account.data.organization_id, mlAccountId },
+          tokenResult.accessToken,
+          resourceId,
+          now,
+          context.logger,
+        );
+      } catch (error) {
+        const errorClass = error instanceof MercadoLivreApiError ? error.errorClass : "retryable";
+        const reason = error instanceof Error ? error.message : "erro desconhecido ao buscar a reclamação";
+
+        return { status: "failed", retryable: errorClass !== "not_retryable", reason };
+      }
+
+      context.logger.info("webhook_fast_path_claim_done", { ml_account_id: mlAccountId, claim_id: resourceId });
+
+      return { status: "done", processed };
+    }
+
     let order;
 
     try {
       order = await deps.mercadoLivre.request({
         method: "GET",
-        path: `/orders/${orderId}`,
+        path: `/orders/${resourceId}`,
         accessToken: tokenResult.accessToken,
         schema: orderSchema,
       });
@@ -120,7 +149,7 @@ export function createWebhookReceivedHandler(deps: WebhookReceivedDeps): JobHand
       context.logger,
     );
 
-    context.logger.info("webhook_fast_path_done", { ml_account_id: mlAccountId, order_id: orderId });
+    context.logger.info("webhook_fast_path_done", { ml_account_id: mlAccountId, order_id: resourceId });
 
     return { status: "done", processed: 1 };
   };
