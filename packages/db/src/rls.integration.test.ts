@@ -2120,3 +2120,174 @@ describe("reconciliação de estoque contra o UpSeller (D-029, D-054)", () => {
     });
   });
 });
+
+describe("pedidos de compra (fornecedores, ciclo, histórico por evento)", () => {
+  const ITEMS = `'[{"skuId":null,"skuSnapshot":"RLSTEST-compras-item","titleSnapshot":"Item de teste","quantityOrdered":10,"unitCost":5.5}]'::jsonb`;
+
+  // asUserPersist COMMITA de verdade (diferente de asUser, que reverte) —
+  // uma transição de estado precisa sobreviver para o próximo passo do
+  // ciclo (aprovar, depois marcar como enviado) fazer sentido. Por isso,
+  // ao contrário da maior parte deste arquivo, este describe rastreia os
+  // pedidos criados e limpa no afterAll — mesmo raciocínio de
+  // "link_document_item". `purchase_orders` primeiro (FK `on delete
+  // restrict` de `suppliers`), fornecedores depois, por nome — todos usam
+  // prefixo `RLSTEST`, não precisam de tracking individual.
+  const createdOrderIds: string[] = [];
+
+  afterAll(async () => {
+    if (createdOrderIds.length > 0) {
+      await client.query("delete from public.purchase_orders where id = any($1)", [createdOrderIds]);
+    }
+    await client.query("delete from public.suppliers where name like 'RLSTEST%'");
+  });
+
+  it("anon não vê suppliers/purchase_orders/purchase_order_items/purchase_order_events", async () => {
+    await expect(asAnon("select * from public.suppliers")).rejects.toThrow(/permission denied/i);
+    await expect(asAnon("select * from public.purchase_orders")).rejects.toThrow(/permission denied/i);
+    await expect(asAnon("select * from public.purchase_order_items")).rejects.toThrow(/permission denied/i);
+    await expect(asAnon("select * from public.purchase_order_events")).rejects.toThrow(/permission denied/i);
+  });
+
+  it("anon não executa nenhuma das RPCs de escrita", async () => {
+    await expect(
+      asAnon(`select * from public.create_supplier('${ORG_SB}','RLSTEST anon fornecedor')`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
+  it("ANALISTA (autenticado, sem ADMIN/GESTOR) é recusado ao criar fornecedor", async () => {
+    await expect(
+      asUser(ANALISTA_SB, `select * from public.create_supplier('${ORG_SB}','RLSTEST analista fornecedor')`),
+    ).rejects.toThrow(/sem permissao/);
+  });
+
+  it("ANALISTA é recusado ao criar pedido de compra", async () => {
+    await expect(
+      asUser(ANALISTA_SB, `select * from public.create_purchase_order('${ORG_SB}',${ITEMS})`),
+    ).rejects.toThrow(/sem permissao/);
+  });
+
+  it("create_purchase_order recusa fornecedor de outra organização", async () => {
+    const other = await client.query<{ id: string }>(
+      `insert into public.suppliers (organization_id, name) values ($1,'RLSTEST fornecedor outra org') returning id`,
+      [ORG_OUTRA],
+    );
+    const otherSupplierId = other.rows[0]?.id ?? "";
+
+    await expect(
+      asUser(ADMIN_SB, `select * from public.create_purchase_order('${ORG_SB}',${ITEMS},'${otherSupplierId}')`),
+    ).rejects.toThrow(/outra organizacao/);
+  });
+
+  it("create_purchase_order recusa pedido sem nenhum item", async () => {
+    await expect(
+      asUser(ADMIN_SB, `select * from public.create_purchase_order('${ORG_SB}','[]'::jsonb)`),
+    ).rejects.toThrow(/ao menos um item/);
+  });
+
+  it("ADMIN percorre o ciclo completo: criar -> aprovar -> marcar como enviado -> receber, com histórico por evento", async () => {
+    const supplier = await asUserPersist<{ id: string }>(
+      ADMIN_SB,
+      `select * from public.create_supplier('${ORG_SB}','RLSTEST fornecedor ciclo completo')`,
+    );
+    const supplierId = supplier[0]?.id ?? "";
+
+    const order = await asUserPersist<{ id: string; status: string }>(
+      ADMIN_SB,
+      `select * from public.create_purchase_order('${ORG_SB}',${ITEMS},'${supplierId}')`,
+    );
+    const orderId = order[0]?.id ?? "";
+    createdOrderIds.push(orderId);
+
+    expect(order[0]?.status).toBe("DRAFT");
+
+    const approved = await asUserPersist<{ status: string }>(
+      ADMIN_SB,
+      `select * from public.approve_purchase_order('${orderId}')`,
+    );
+    expect(approved[0]?.status).toBe("APPROVED");
+
+    const ordered = await asUserPersist<{ status: string }>(
+      ADMIN_SB,
+      `select * from public.mark_purchase_order_ordered('${orderId}')`,
+    );
+    expect(ordered[0]?.status).toBe("ORDERED");
+
+    const received = await asUserPersist<{ status: string }>(
+      ADMIN_SB,
+      `select * from public.receive_purchase_order('${orderId}')`,
+    );
+    expect(received[0]?.status).toBe("RECEIVED");
+
+    const events = await client.query<{ event_type: string }>(
+      `select event_type from public.purchase_order_events where purchase_order_id=$1 order by occurred_at`,
+      [orderId],
+    );
+    expect(events.rows.map((r) => r.event_type)).toEqual(["CREATED", "APPROVED", "ORDERED", "RECEIVED"]);
+  });
+
+  it("aprovar um pedido que não está em rascunho é recusado", async () => {
+    const order = await asUserPersist<{ id: string }>(
+      ADMIN_SB,
+      `select * from public.create_purchase_order('${ORG_SB}',${ITEMS})`,
+    );
+    const orderId = order[0]?.id ?? "";
+    createdOrderIds.push(orderId);
+
+    await asUserPersist(ADMIN_SB, `select * from public.approve_purchase_order('${orderId}')`);
+
+    await expect(
+      asUserPersist(ADMIN_SB, `select * from public.approve_purchase_order('${orderId}')`),
+    ).rejects.toThrow(/nao esta em rascunho/);
+  });
+
+  it("cancelar um pedido já recebido (estado terminal) é recusado", async () => {
+    const order = await asUserPersist<{ id: string }>(
+      ADMIN_SB,
+      `select * from public.create_purchase_order('${ORG_SB}',${ITEMS})`,
+    );
+    const orderId = order[0]?.id ?? "";
+    createdOrderIds.push(orderId);
+
+    await asUserPersist(ADMIN_SB, `select * from public.approve_purchase_order('${orderId}')`);
+    await asUserPersist(ADMIN_SB, `select * from public.mark_purchase_order_ordered('${orderId}')`);
+    await asUserPersist(ADMIN_SB, `select * from public.receive_purchase_order('${orderId}')`);
+
+    await expect(
+      asUserPersist(ADMIN_SB, `select * from public.cancel_purchase_order('${orderId}','motivo qualquer')`),
+    ).rejects.toThrow(/estado terminal/);
+  });
+
+  it("cancelar um rascunho funciona e grava o motivo no evento", async () => {
+    const order = await asUserPersist<{ id: string }>(
+      ADMIN_SB,
+      `select * from public.create_purchase_order('${ORG_SB}',${ITEMS})`,
+    );
+    const orderId = order[0]?.id ?? "";
+    createdOrderIds.push(orderId);
+
+    const cancelled = await asUserPersist<{ status: string; cancel_reason: string }>(
+      ADMIN_SB,
+      `select * from public.cancel_purchase_order('${orderId}','RLSTEST motivo do cancelamento')`,
+    );
+
+    expect(cancelled[0]).toMatchObject({ status: "CANCELLED", cancel_reason: "RLSTEST motivo do cancelamento" });
+
+    const event = await client.query<{ metadata: { reason?: string } }>(
+      `select metadata from public.purchase_order_events where purchase_order_id=$1 and event_type='CANCELLED'`,
+      [orderId],
+    );
+    expect(event.rows[0]?.metadata).toEqual({ reason: "RLSTEST motivo do cancelamento" });
+  });
+
+  it("usuário de outra organização não vê o fornecedor nem o pedido criados", async () => {
+    const supplier = await asUserPersist<{ id: string }>(
+      ADMIN_SB,
+      `select * from public.create_supplier('${ORG_SB}','RLSTEST fornecedor isolamento')`,
+    );
+    const supplierId = supplier[0]?.id ?? "";
+
+    const rows = await asUser(DE_OUTRA_ORG, `select id from public.suppliers where id='${supplierId}'`);
+
+    expect(rows).toHaveLength(0);
+  });
+});

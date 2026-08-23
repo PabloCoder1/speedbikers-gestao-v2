@@ -1355,6 +1355,241 @@ export type Database = {
         }
         Relationships: []
       }
+      purchase_order_events: {
+        Row: {
+          actor_user_id: string | null
+          event_type: string
+          id: string
+          metadata: Json
+          occurred_at: string
+          organization_id: string
+          purchase_order_id: string
+        }
+        Insert: {
+          actor_user_id?: string | null
+          event_type: string
+          id?: string
+          metadata?: Json
+          occurred_at?: string
+          organization_id: string
+          purchase_order_id: string
+        }
+        Update: {
+          actor_user_id?: string | null
+          event_type?: string
+          id?: string
+          metadata?: Json
+          occurred_at?: string
+          organization_id?: string
+          purchase_order_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purchase_order_events_actor_user_id_fkey"
+            columns: ["actor_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_order_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_order_events_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      purchase_order_items: {
+        Row: {
+          created_at: string
+          id: string
+          organization_id: string
+          position: number
+          purchase_order_id: string
+          quantity_ordered: number
+          sku_id: string | null
+          sku_snapshot: string
+          title_snapshot: string | null
+          unit_cost: number | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          organization_id: string
+          position: number
+          purchase_order_id: string
+          quantity_ordered: number
+          sku_id?: string | null
+          sku_snapshot: string
+          title_snapshot?: string | null
+          unit_cost?: number | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          organization_id?: string
+          position?: number
+          purchase_order_id?: string
+          quantity_ordered?: number
+          sku_id?: string | null
+          sku_snapshot?: string
+          title_snapshot?: string | null
+          unit_cost?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purchase_order_items_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_order_items_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_order_items_sku_id_fkey"
+            columns: ["sku_id"]
+            isOneToOne: false
+            referencedRelation: "skus"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      purchase_orders: {
+        Row: {
+          approved_at: string | null
+          approved_by: string | null
+          cancel_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          created_at: string
+          created_by: string
+          currency: string
+          destination_warehouse_name: string | null
+          expected_at: string | null
+          id: string
+          notes: string | null
+          order_number: number
+          ordered_at: string | null
+          ordered_by: string | null
+          organization_id: string
+          received_at: string | null
+          received_by: string | null
+          status: string
+          supplier_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          created_at?: string
+          created_by: string
+          currency?: string
+          destination_warehouse_name?: string | null
+          expected_at?: string | null
+          id?: string
+          notes?: string | null
+          order_number?: never
+          ordered_at?: string | null
+          ordered_by?: string | null
+          organization_id: string
+          received_at?: string | null
+          received_by?: string | null
+          status?: string
+          supplier_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          created_at?: string
+          created_by?: string
+          currency?: string
+          destination_warehouse_name?: string | null
+          expected_at?: string | null
+          id?: string
+          notes?: string | null
+          order_number?: never
+          ordered_at?: string | null
+          ordered_by?: string | null
+          organization_id?: string
+          received_at?: string | null
+          received_by?: string | null
+          status?: string
+          supplier_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purchase_orders_approved_by_fkey"
+            columns: ["approved_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_orders_cancelled_by_fkey"
+            columns: ["cancelled_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_orders_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_orders_ordered_by_fkey"
+            columns: ["ordered_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_orders_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_orders_received_by_fkey"
+            columns: ["received_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_orders_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sku_components: {
         Row: {
           component_sku_id: string
@@ -1639,6 +1874,75 @@ export type Database = {
           },
         ]
       }
+      suppliers: {
+        Row: {
+          contact_name: string | null
+          created_at: string
+          created_by: string | null
+          document: string | null
+          email: string | null
+          id: string
+          is_active: boolean
+          legal_name: string | null
+          name: string
+          notes: string | null
+          organization_id: string
+          phone: string | null
+          updated_at: string
+          website: string | null
+          whatsapp: string | null
+        }
+        Insert: {
+          contact_name?: string | null
+          created_at?: string
+          created_by?: string | null
+          document?: string | null
+          email?: string | null
+          id?: string
+          is_active?: boolean
+          legal_name?: string | null
+          name: string
+          notes?: string | null
+          organization_id: string
+          phone?: string | null
+          updated_at?: string
+          website?: string | null
+          whatsapp?: string | null
+        }
+        Update: {
+          contact_name?: string | null
+          created_at?: string
+          created_by?: string | null
+          document?: string | null
+          email?: string | null
+          id?: string
+          is_active?: boolean
+          legal_name?: string | null
+          name?: string
+          notes?: string | null
+          organization_id?: string
+          phone?: string | null
+          updated_at?: string
+          website?: string | null
+          whatsapp?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "suppliers_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "suppliers_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sync_errors: {
         Row: {
           created_at: string
@@ -1801,6 +2105,70 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      approve_purchase_order: {
+        Args: { p_id: string }
+        Returns: {
+          approved_at: string | null
+          approved_by: string | null
+          cancel_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          created_at: string
+          created_by: string
+          currency: string
+          destination_warehouse_name: string | null
+          expected_at: string | null
+          id: string
+          notes: string | null
+          order_number: number
+          ordered_at: string | null
+          ordered_by: string | null
+          organization_id: string
+          received_at: string | null
+          received_by: string | null
+          status: string
+          supplier_id: string | null
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "purchase_orders"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      cancel_purchase_order: {
+        Args: { p_id: string; p_reason?: string }
+        Returns: {
+          approved_at: string | null
+          approved_by: string | null
+          cancel_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          created_at: string
+          created_by: string
+          currency: string
+          destination_warehouse_name: string | null
+          expected_at: string | null
+          id: string
+          notes: string | null
+          order_number: number
+          ordered_at: string | null
+          ordered_by: string | null
+          organization_id: string
+          received_at: string | null
+          received_by: string | null
+          status: string
+          supplier_id: string | null
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "purchase_orders"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       compute_erp_snapshot_balances: {
         Args: { p_organization_id: string }
         Returns: {
@@ -1808,6 +2176,83 @@ export type Database = {
           quantity: number
           sku_id: string
         }[]
+      }
+      create_purchase_order: {
+        Args: {
+          p_currency?: string
+          p_destination_warehouse_name?: string
+          p_expected_at?: string
+          p_items: Json
+          p_notes?: string
+          p_organization_id: string
+          p_supplier_id?: string
+        }
+        Returns: {
+          approved_at: string | null
+          approved_by: string | null
+          cancel_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          created_at: string
+          created_by: string
+          currency: string
+          destination_warehouse_name: string | null
+          expected_at: string | null
+          id: string
+          notes: string | null
+          order_number: number
+          ordered_at: string | null
+          ordered_by: string | null
+          organization_id: string
+          received_at: string | null
+          received_by: string | null
+          status: string
+          supplier_id: string | null
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "purchase_orders"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      create_supplier: {
+        Args: {
+          p_contact_name?: string
+          p_document?: string
+          p_email?: string
+          p_legal_name?: string
+          p_name: string
+          p_notes?: string
+          p_organization_id: string
+          p_phone?: string
+          p_website?: string
+          p_whatsapp?: string
+        }
+        Returns: {
+          contact_name: string | null
+          created_at: string
+          created_by: string | null
+          document: string | null
+          email: string | null
+          id: string
+          is_active: boolean
+          legal_name: string | null
+          name: string
+          notes: string | null
+          organization_id: string
+          phone: string | null
+          updated_at: string
+          website: string | null
+          whatsapp: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "suppliers"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       dismiss_link_candidate: {
         Args: { p_candidate_id: string }
@@ -1893,6 +2338,38 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      mark_purchase_order_ordered: {
+        Args: { p_expected_at?: string; p_id: string }
+        Returns: {
+          approved_at: string | null
+          approved_by: string | null
+          cancel_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          created_at: string
+          created_by: string
+          currency: string
+          destination_warehouse_name: string | null
+          expected_at: string | null
+          id: string
+          notes: string | null
+          order_number: number
+          ordered_at: string | null
+          ordered_by: string | null
+          organization_id: string
+          received_at: string | null
+          received_by: string | null
+          status: string
+          supplier_id: string | null
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "purchase_orders"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       rebuild_daily_sales_metrics: {
         Args: {
           p_date_from: string
@@ -1901,6 +2378,38 @@ export type Database = {
           p_organization_id: string
         }
         Returns: number
+      }
+      receive_purchase_order: {
+        Args: { p_id: string }
+        Returns: {
+          approved_at: string | null
+          approved_by: string | null
+          cancel_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          created_at: string
+          created_by: string
+          currency: string
+          destination_warehouse_name: string | null
+          expected_at: string | null
+          id: string
+          notes: string | null
+          order_number: number
+          ordered_at: string | null
+          ordered_by: string | null
+          organization_id: string
+          received_at: string | null
+          received_by: string | null
+          status: string
+          supplier_id: string | null
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "purchase_orders"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       recompute_daily_sales_metrics: {
         Args: {
@@ -1931,6 +2440,84 @@ export type Database = {
         SetofOptions: {
           from: "*"
           to: "sku_listing_links"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      update_purchase_order_draft: {
+        Args: {
+          p_currency?: string
+          p_destination_warehouse_name?: string
+          p_expected_at?: string
+          p_id: string
+          p_items: Json
+          p_notes?: string
+          p_supplier_id?: string
+        }
+        Returns: {
+          approved_at: string | null
+          approved_by: string | null
+          cancel_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          created_at: string
+          created_by: string
+          currency: string
+          destination_warehouse_name: string | null
+          expected_at: string | null
+          id: string
+          notes: string | null
+          order_number: number
+          ordered_at: string | null
+          ordered_by: string | null
+          organization_id: string
+          received_at: string | null
+          received_by: string | null
+          status: string
+          supplier_id: string | null
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "purchase_orders"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      update_supplier: {
+        Args: {
+          p_contact_name?: string
+          p_document?: string
+          p_email?: string
+          p_id: string
+          p_is_active?: boolean
+          p_legal_name?: string
+          p_name: string
+          p_notes?: string
+          p_phone?: string
+          p_website?: string
+          p_whatsapp?: string
+        }
+        Returns: {
+          contact_name: string | null
+          created_at: string
+          created_by: string | null
+          document: string | null
+          email: string | null
+          id: string
+          is_active: boolean
+          legal_name: string | null
+          name: string
+          notes: string | null
+          organization_id: string
+          phone: string | null
+          updated_at: string
+          website: string | null
+          whatsapp: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "suppliers"
           isOneToOne: true
           isSetofReturn: false
         }

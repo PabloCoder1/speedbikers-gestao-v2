@@ -29,13 +29,13 @@ ml-accounts     ml_accounts · ml_credentials (cifrado) · ml_oauth_states
 catalog         skus · sku_components · brands
 erp-sync        erp_import_batches · erp_import_rows · erp_product_catalog · erp_kits
                 erp_stock_snapshots · erp_store_aliases        (UpSeller — D-028)
-suppliers       suppliers · supplier_product_links
+suppliers       suppliers (implementada 2026-08-22) · supplier_product_links (conceitual, fora de escopo por ora)
 listings        listings · listing_variations · listing_price_states
 linking         sku_listing_links · link_candidates
 sales           orders · order_items
 inventory       inventory_balances · fulfillment_stock_snapshots
 documents       documents · document_items
-purchasing      purchase_orders · purchase_order_items
+purchasing      purchase_orders · purchase_order_items (implementadas 2026-08-22)
 actions         actions · action_decisions · action_outcomes
 notifications   notifications · notification_recipients · notification_preferences
 feedback        feature_suggestions
@@ -86,7 +86,7 @@ São garantias **físicas**, não validações de aplicação:
 
 Identidade: `(organization_id, sku_key)` UNIQUE, com `sku_key = upper(btrim(sku))`. O SKU original é preservado em `sku` e a chave normalizada em `sku_key`. Esse desenho vem da V2 e está correto.
 
-Atributos estruturados, não tags: `brand_id`, `supplier_id`, `origin` (enum `NACIONAL` / `IMPORTADO`), custos. O lead time de compra é **função da origem**.
+**Drift corrigido em 2026-08-22**: esta seção dizia `brand_id`, `supplier_id`, `origin` (enum `NACIONAL`/`IMPORTADO`) — conceituado antes de qualquer dado real existir. O que foi de fato implementado (migration `20260820170000_create_catalog.sql`) é mais preciso: `origin_code` (tabela fiscal padrão da NF-e, 0-8, já 98% preenchida no catálogo real) + `is_imported` (`generated always as (origin_code in (1,2,6,7)) stored`) — dado estruturado real, não um enum próprio inventado. `brand` é texto livre normalizado da coluna `Categorias` do UpSeller (D-039), não `brand_id`/tabela `brands`. `supplier_id` não vive em `skus` — fornecedor é entidade própria (`suppliers`, Fase 4, ver abaixo) sem vínculo obrigatório por SKU.
 
 `sku_components` modela kits: um SKU de kit referencia SKUs componentes com quantidade.
 
@@ -288,6 +288,24 @@ Estados: `UPLOADED -> PARSING -> PARSED -> APPLYING -> APPLIED` (mais `FAILED`/`
 `document_items.sku_id` nasce sempre nulo — vínculo é humano, por documento, na tela de conferência (`/notas-fiscais/:id`, `docs/NFE.md` secao 3: sem cadastro fornecedor→SKU reutilizável ainda, limitação conhecida, não descuido). O vínculo passa pela RPC `security definer` `link_document_item` (mesmo padrão de `resolve_link_candidate`) — `authenticated` só tem `SELECT` direto nas duas tabelas. **Diferente do importador do UpSeller: a confirmação da aplicação (`confirmNfeApply`, `apps/api/src/nfe-import.ts`) exige `resolved_items === total_items`** — uma NF-e é documento fiscal fechado, aplicar parcialmente deixaria estoque físico recebido/enviado sem registro, em silêncio, e sem o mecanismo de resolução automática futura que a Central de Vinculações tem para o UpSeller.
 
 O arquivo vai para o Storage privado (`DOCUMENTS_BUCKET`, ainda não provisionado no GCP), nunca para coluna `bytea`. Parser: `packages/domain/src/nfe/parse.ts` (puro, recebe o objeto já convertido de XML, não a string bruta) + `fast-xml-parser` no worker (`apps/worker/src/nfe-xml-reader.ts`) — mesmo split de `read-excel-file`/`@sb/domain/upseller`.
+
+### `suppliers` / `purchase_orders` / `purchase_order_items` / `purchase_order_events` — pedidos de compra
+
+**Ciclo, histórico por evento — implementado em 2026-08-22** (migration `20260822234353_create_purchasing.sql`). Fecha o item "Pedidos de compra: ciclo, histórico por evento, nacional versus importado" da Fase 4.
+
+`suppliers`: entidade própria, nunca inferida de `brand` — nome, razão social, documento, contatos. Mutação só via RPC (`create_supplier`/`update_supplier`).
+
+`purchase_orders`: ciclo `DRAFT -> APPROVED -> ORDERED -> RECEIVED`, com `CANCELLED` alcançável de qualquer estado não-terminal. `order_number` é sequencial legível por humano, distinto do `id` (uuid). **Recebimento é tudo-ou-nada nesta primeira fatia** (sem `PARTIALLY_RECEIVED`) — decisão de escopo deliberada, não limitação técnica; recebimento parcial fica para quando o volume real de uso mostrar que vale a pena, mesmo raciocínio já usado para adiar vínculo fornecedor→SKU reutilizável (`docs/NFE.md` secao 3).
+
+`purchase_order_items`: `sku_id` nulo permitido, `sku_snapshot`/`title_snapshot` sempre presentes — mesmo padrão de `erp_stock_snapshots`/`document_items`: um item para um produto ainda não catalogado continua sendo informação. "Nacional versus importado" (o outro requisito do item do checklist) **não ganhou coluna nova** — a tela puxa `skus.is_imported`, já existente desde a Fase 2.
+
+`purchase_order_events`: L2 append-only, mesmo mecanismo de `domain_events`/`sync_runs` — uma linha por transição de estado (`CREATED`, `UPDATED`, `APPROVED`, `ORDERED`, `RECEIVED`, `CANCELLED`).
+
+Todas as mutações passam por RPC `security definer` (`create_purchase_order`, `update_purchase_order_draft` — só em `DRAFT`, `approve_purchase_order`, `mark_purchase_order_ordered`, `receive_purchase_order`, `cancel_purchase_order`), mesmo padrão de `resolve_link_candidate`/`link_document_item`: autorização (ADMIN/GESTOR) refeita internamente, pedido + itens + evento gravados na mesma transação. `authenticated` só tem `SELECT` direto nas quatro tabelas.
+
+**Referência real usada no desenho**: o banco da V2 tinha um schema maduro para isto (1 pedido real, fornecedor Navetec, 5 itens, 8 eventos — D-040), inspecionado diretamente antes de desenhar esta migration, mesmo princípio de "evidência medida" já usado em D-037/D-039/D-048/D-053. Não copiado ao pé da letra: os campos de sugestão automática de compra (`suggested_quantity_snapshot`, `avg_daily_sales_30_snapshot`, etc.) são Fase 6 (Diagnóstico), fora de escopo aqui.
+
+**Deliberadamente fora desta etapa**: exportação Excel/PDF (D-034 exige os modelos de referência do usuário, ainda não recebidos); geração de `stock_movements` (`ENTRADA_TRANSITO`/`RECEBIMENTO_TRANSITO`, já aprovados no vocabulário fechado desde `20260821200000` — schema e ciclo primeiro, código de aplicação depois, mesmo padrão incremental do resto do ledger); tela de edição do rascunho (a RPC `update_purchase_order_draft` já existe e funciona, só falta a UI).
 
 ### `domain_events` — o event store
 

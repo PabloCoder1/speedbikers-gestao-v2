@@ -47,6 +47,25 @@ const OPERATION_TYPE: Record<string, string> = {
   SAIDA: "Saída",
 };
 
+/** `purchase_orders.status` — ciclo DRAFT->APPROVED->ORDERED->RECEIVED, CANCELLED de qualquer estado não-terminal. */
+const PURCHASE_ORDER_STATUS: Record<string, string> = {
+  DRAFT: "Rascunho",
+  APPROVED: "Aprovado",
+  ORDERED: "Pedido enviado",
+  RECEIVED: "Recebido",
+  CANCELLED: "Cancelado",
+};
+
+/** `purchase_order_events.event_type`. */
+const PURCHASE_ORDER_EVENT: Record<string, string> = {
+  CREATED: "Criado",
+  UPDATED: "Atualizado",
+  APPROVED: "Aprovado",
+  ORDERED: "Marcado como pedido",
+  RECEIVED: "Recebido",
+  CANCELLED: "Cancelado",
+};
+
 function lookup(table: Record<string, string>, code: string): string {
   return table[code] ?? code;
 }
@@ -56,11 +75,24 @@ export const rowStatusLabel = (code: string): string => lookup(ROW_STATUS, code)
 export const applyStatusLabel = (code: string): string => lookup(APPLY_STATUS, code);
 export const kindLabel = (code: string): string => lookup(KIND, code);
 export const operationTypeLabel = (code: string): string => lookup(OPERATION_TYPE, code);
+export const purchaseOrderStatusLabel = (code: string): string => lookup(PURCHASE_ORDER_STATUS, code);
+export const purchaseOrderEventLabel = (code: string): string => lookup(PURCHASE_ORDER_EVENT, code);
 
 /** Cor de destaque por estado. `null` = sem destaque, o padrão da tabela. */
 export function statusTone(code: string): "ok" | "warn" | "bad" | null {
-  if (code === "APPLIED" || code === "OK") return "ok";
-  if (code === "PARSED" || code === "SKIPPED" || code === "PARSING" || code === "UNRESOLVED") return "warn";
+  if (code === "APPLIED" || code === "OK" || code === "RECEIVED") return "ok";
+  if (
+    code === "PARSED" ||
+    code === "SKIPPED" ||
+    code === "PARSING" ||
+    code === "UNRESOLVED" ||
+    code === "DRAFT" ||
+    code === "APPROVED" ||
+    code === "ORDERED"
+  ) {
+    return "warn";
+  }
+
   if (code === "FAILED" || code === "INVALID" || code === "CANCELLED") return "bad";
 
   return null;
