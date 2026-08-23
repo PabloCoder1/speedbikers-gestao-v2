@@ -2967,3 +2967,116 @@ describe("get_sku_dashboard (Fase 5B, Dashboards de SKU e de Anúncio)", () => {
     expect(Number(rows[0]?.units_sold)).toBe(0);
   });
 });
+
+describe("daily_listing_visits e get_listing_traffic (D-032, Fase 5B)", () => {
+  // Mesmo raciocínio de nomes fora dos padrões de limpeza global, e mesma
+  // ausência de afterAll — ver comentário equivalente no describe de
+  // get_stock_coverage, acima.
+  const CONTA_TRAFEGO = "dddd8888-0000-4000-8000-000000000088";
+  const ITEM_ID = "MLB900100500";
+  const ITEM_SO_PEDIDO = "MLB900100501"; // tem pedido, mas nenhuma visita registrada.
+  const TODAY = "2026-08-23";
+  const WINDOW_START = "2026-07-25"; // 30 dias antes, janela usada pela tela /anuncios
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$2,'Conta de tráfego','trafegotest-conta','PENDING')
+       on conflict do nothing`,
+      [CONTA_TRAFEGO, ORG_SB],
+    );
+
+    await client.query(
+      `insert into public.daily_listing_visits
+         (organization_id, ml_account_id, item_id, metric_date, visits, synced_at)
+       values
+         ($1,$2,$3,'2026-08-20',20,now()),
+         ($1,$2,$3,$4,30,now()),
+         ($1,$2,$3,'2020-01-02',999,now())`,
+      [ORG_SB, CONTA_TRAFEGO, ITEM_ID, TODAY],
+    );
+
+    await client.query(
+      `insert into public.daily_listing_metrics
+         (organization_id, ml_account_id, mlb_id, variation_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values
+         ($1,$2,$3,null,$4,5,500,5,5),
+         ($1,$2,$5,null,$4,2,200,2,2)`,
+      [ORG_SB, CONTA_TRAFEGO, ITEM_ID, TODAY, ITEM_SO_PEDIDO],
+    );
+  });
+
+  // Sem afterAll de limpeza: mesma razão do ledger de estoque acima.
+
+  it("RLS da tabela: authenticated com acesso à conta lê, usuário de outra organização não vê nada", async () => {
+    const own = await asUser<{ item_id: string }>(
+      ADMIN_SB,
+      `select * from public.daily_listing_visits where ml_account_id='${CONTA_TRAFEGO}'`,
+    );
+    expect(own.length).toBeGreaterThan(0);
+
+    const outra = await asUser<{ item_id: string }>(
+      DE_OUTRA_ORG,
+      `select * from public.daily_listing_visits where ml_account_id='${CONTA_TRAFEGO}'`,
+    );
+    expect(outra).toHaveLength(0);
+  });
+
+  it("anon não lê daily_listing_visits", async () => {
+    await expect(asAnon("select * from public.daily_listing_visits")).rejects.toThrow(/permission denied/i);
+  });
+
+  it("get_listing_traffic soma visitas no intervalo e calcula conversão (pedidos / visitas)", async () => {
+    const rows = await asUser<{
+      item_id: string;
+      visits: string;
+      orders_count: string;
+      conversion_rate: string;
+    }>(
+      ADMIN_SB,
+      `select * from public.get_listing_traffic('${ORG_SB}','${WINDOW_START}','${TODAY}') where item_id='${ITEM_ID}'`,
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0]?.visits)).toBe(50);
+    expect(Number(rows[0]?.orders_count)).toBe(5);
+    expect(Number(rows[0]?.conversion_rate)).toBe(10);
+  });
+
+  it("item com pedido mas sem visita no período: conversion_rate nulo, não Infinity", async () => {
+    const rows = await asUser<{ visits: string; orders_count: string; conversion_rate: string | null }>(
+      ADMIN_SB,
+      `select * from public.get_listing_traffic('${ORG_SB}','${WINDOW_START}','${TODAY}') where item_id='${ITEM_SO_PEDIDO}'`,
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0]?.visits)).toBe(0);
+    expect(Number(rows[0]?.orders_count)).toBe(2);
+    expect(rows[0]?.conversion_rate).toBeNull();
+  });
+
+  it("visita fora da janela de datas não conta na soma", async () => {
+    const rows = await asUser<{ visits: string }>(
+      ADMIN_SB,
+      `select * from public.get_listing_traffic('${ORG_SB}','${WINDOW_START}','${TODAY}') where item_id='${ITEM_ID}'`,
+    );
+
+    // 20 + 30 = 50, sem contar as 999 de 2020-01-02.
+    expect(Number(rows[0]?.visits)).toBe(50);
+  });
+
+  it("anon não executa get_listing_traffic", async () => {
+    await expect(
+      asAnon(`select * from public.get_listing_traffic('${ORG_SB}','${WINDOW_START}','${TODAY}')`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
+  it("usuário de outra organização não vê o anúncio desta organização em get_listing_traffic", async () => {
+    const rows = await asUser<{ item_id: string }>(
+      DE_OUTRA_ORG,
+      `select * from public.get_listing_traffic('${ORG_SB}','${WINDOW_START}','${TODAY}') where item_id='${ITEM_ID}'`,
+    );
+
+    expect(rows).toHaveLength(0);
+  });
+});

@@ -6,7 +6,7 @@ import type { AdminClient } from "@sb/db";
  */
 
 export type SyncChannel = "webhook" | "reconciliation" | "backfill";
-export type SyncResource = "orders" | "listings" | "fulfillment";
+export type SyncResource = "orders" | "listings" | "fulfillment" | "visits";
 export type SyncErrorClass = "retryable" | "retryable_eventual" | "not_retryable";
 
 interface SyncRunBase {

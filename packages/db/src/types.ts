@@ -134,6 +134,54 @@ export type Database = {
           },
         ]
       }
+      daily_listing_visits: {
+        Row: {
+          created_at: string
+          id: string
+          item_id: string
+          metric_date: string
+          ml_account_id: string
+          organization_id: string
+          synced_at: string
+          visits: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          item_id: string
+          metric_date: string
+          ml_account_id: string
+          organization_id: string
+          synced_at: string
+          visits: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          item_id?: string
+          metric_date?: string
+          ml_account_id?: string
+          organization_id?: string
+          synced_at?: string
+          visits?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_listing_visits_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_listing_visits_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       daily_sku_metrics: {
         Row: {
           average_selling_price: number | null
@@ -2408,6 +2456,20 @@ export type Database = {
           ml_account_id: string
           mlb_id: string
           units_sold: number
+        }[]
+      }
+      get_listing_traffic: {
+        Args: {
+          p_date_from: string
+          p_date_to: string
+          p_organization_id: string
+        }
+        Returns: {
+          conversion_rate: number
+          item_id: string
+          ml_account_id: string
+          orders_count: number
+          visits: number
         }[]
       }
       get_sales_daily_series: {

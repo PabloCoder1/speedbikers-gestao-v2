@@ -15,6 +15,8 @@ import { triggerFulfillmentSnapshot } from "./fulfillment-schedule.js";
 import type { IpAllowlistVerifier } from "./ip-allowlist.js";
 import type { LedgerIntegrityScheduleDeps } from "./ledger-integrity-schedule.js";
 import { triggerLedgerIntegrityCheck } from "./ledger-integrity-schedule.js";
+import type { ListingVisitsScheduleDeps } from "./listing-visits-schedule.js";
+import { triggerListingVisitsSnapshot } from "./listing-visits-schedule.js";
 import type { ListingsScheduleDeps } from "./listings-schedule.js";
 import { triggerListingsSnapshot } from "./listings-schedule.js";
 import type { MlAccountsDeps } from "./ml-accounts.js";
@@ -67,6 +69,7 @@ export interface AppDependencies {
   balanceReconcileSchedule?: BalanceReconcileScheduleDeps;
   ledgerIntegritySchedule?: LedgerIntegrityScheduleDeps;
   listingsSchedule?: ListingsScheduleDeps;
+  listingVisitsSchedule?: ListingVisitsScheduleDeps;
 }
 
 /**
@@ -360,6 +363,23 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     const outcome = await triggerListingsSnapshot(listingsSchedule);
+
+    return context.json(outcome);
+  });
+
+  // --------------------------------------------------------------------
+  // Sincronização de visitas por anúncio (D-032) — mesmo formato de
+  // /internal/schedule/listings acima, por CONTA. Cadência diária:
+  // `infra/cloud-scheduler.sh`.
+  // --------------------------------------------------------------------
+  app.post("/internal/schedule/listing-visits", async (context) => {
+    const listingVisitsSchedule = dependencies.listingVisitsSchedule;
+
+    if (listingVisitsSchedule === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const outcome = await triggerListingVisitsSnapshot(listingVisitsSchedule);
 
     return context.json(outcome);
   });

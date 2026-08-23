@@ -114,5 +114,15 @@ upsert_job \
   "${API_URL}/internal/schedule/listings" \
   "Sincronizacao de listings/anuncios, por conta Mercado Livre CONNECTED"
 
+# Sincronizacao de visitas por anuncio (D-032) -- cadencia DIARIA, mais
+# conservadora que listings/Full: visita nao e dado operacional urgente como
+# estoque, e fetchListingVisits ja busca last=3 dias a cada rodada (absorve
+# uma rodada perdida sem esperar o dia seguinte). Por CONTA.
+upsert_job \
+  "v3-listing-visits-snapshot" \
+  "0 7 * * *" \
+  "${API_URL}/internal/schedule/listing-visits" \
+  "Sincronizacao de visitas por anuncio, por conta Mercado Livre CONNECTED"
+
 step "Concluído"
 gc scheduler jobs list --location "${REGION}" --format="table(name.basename(),schedule,state)"

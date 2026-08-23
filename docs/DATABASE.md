@@ -255,6 +255,24 @@ Projeção recomputável do ledger. Existe um **job de conferência** (D-056, im
 
 `get_sku_dashboard` sempre devolve UMA linha (agregados sem `GROUP BY`, mesmo padrão de `get_sales_summary`), mesmo para um SKU sem movimento nenhum — zeros, não linha ausente. Reúne quatro fontes num resumo só: `inventory_balances` (LOCAL/RESERVADO/TRANSITO, projeção atual, sem filtro de data), o último snapshot conhecido de `fulfillment_stock_snapshots` (mesmo `distinct on` de `get_sku_abc_curve`) e venda somada de `daily_sku_metrics` no intervalo. Consumida por `/skus/[skuId]` ("Dashboard de SKU"), que também lista os `listings` vinculados ao SKU num select à parte, sem agregação. Como `organization_id` é PARÂMETRO (não vem da sessão), um usuário de outra organização que chame a função com o `organization_id` de outra empresa recebe uma linha de ZEROS, não um erro — a RLS de cada tabela por trás filtra silenciosamente, provando o isolamento na prática (coberto por teste de integração).
 
+### `daily_listing_visits` — visitas por anúncio (D-032/D-059)
+
+**Schema implementado em 2026-08-23** (migration `20260823184120_create_daily_listing_visits.sql`), pré-requisito de "Visitas, conversão e Ads" (`docs/ROADMAP.md`, Fase 5B — Ads ADIADO, ver D-059). Espelho diário direto da API de Visitas do Mercado Livre (`GET /items/{item_id}/visits/time_window`, `docs/MERCADO_LIVRE.md` secao 2.11) — **não é recomputado do nosso lado**, é o valor que o ML devolve, gravado como chegou.
+
+```text
+organization_id, ml_account_id,
+item_id, metric_date,
+visits, synced_at
+```
+
+Grão `(ml_account_id, item_id, metric_date)`, mesmo escopo de `listings`/Full: só itens sem variação (`sku_listing_links.ref_kind = 'ITEM'`, `variation_id is null`). RLS por `has_account_access(ml_account_id)`, mesmo padrão de `fulfillment_stock_snapshots`/`listings`.
+
+**`sync_runs.resource`/`sync_errors.resource` alargados**: o CHECK constraint desde a Fase 2 só previa `orders`/`listings`/`fulfillment` — primeira vez nesta sessão que esse enum precisou crescer de verdade (`alter table ... drop/add constraint`) para caber `'visits'`.
+
+**`get_listing_traffic(organization_id, date_from, date_to)`** — RPC `security invoker`, mesma migration. `full outer join` entre `daily_listing_visits` (visitas somadas por item) e `daily_listing_metrics` (pedidos somados por item, `variation_id is null`), por `(ml_account_id, item_id)` — mesmo padrão de `get_stock_coverage`. `conversion_rate = pedidos ÷ visitas × 100`, devolve `NULL` (não `Infinity`) quando não há visita no período. Consumida por `/anuncios`, cruzada com `listings`/`get_listing_sales` por chave em JS (junção, não agregação — a soma já veio pronta dos RPCs).
+
+**Cadência DIÁRIA** (não 6h como listings/Full) — visita é contador de baixa urgência operacional; `fetchListingVisits` busca `last=3` dias a cada rodada, absorvendo uma execução perdida sem esperar o dia seguinte (`docs/API.md`, `job v3-listing-visits-snapshot`).
+
 ### `erp_stock_snapshots` — alinhamento com o UpSeller
 
 O UpSeller permanece como ERP (D-028) e movimentos manuais são lançados nos dois sistemas. Isso exige um mecanismo de alinhamento explícito, porque uma hora alguém esquece um lado.

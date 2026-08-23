@@ -69,6 +69,7 @@ const app = createApp({
   balanceReconcileSchedule: { db, enqueuer, logger },
   ledgerIntegritySchedule: { db, enqueuer, logger },
   listingsSchedule: { db, enqueuer, logger },
+  listingVisitsSchedule: { db, enqueuer, logger },
 });
 
 serve({ fetch: app.fetch, port: env.PORT }, (info) => {

@@ -1,7 +1,7 @@
 # Integração Mercado Livre — Speed Bikers Gestão V3
 
 > Dono documental de: estratégia de sincronização, regras de integração e registro de endpoints.
-> Status: **estratégia aprovada. Lista de verificação da secao 1 confirmada em 2026-08-21, exceto visitas/Ads (não bloqueia — necessários só na Fase 5B, D-032). Fase 3 desbloqueada.**
+> Status: **estratégia aprovada. Lista de verificação da secao 1 confirmada — visitas em 2026-08-23 (secao 2.11), Ads pesquisado mas ADIADO (D-059). Fase 3 desbloqueada.**
 
 ---
 
@@ -33,7 +33,7 @@ Confirmado na documentação oficial (`developers.mercadolivre.com.br`, consulta
 - [x] Endpoints e paginação de anúncios e variações — secao 2
 - [x] Endpoints de estoque Full — secao 2.7
 - [x] Endpoints de promoções e catálogo — secao 2.8
-- [ ] Endpoints de visitas e de Ads — necessários apenas na Fase 5B (D-032); ainda não pesquisados, **não bloqueia a Fase 3**
+- [x] Endpoints de visitas — secao 2.11 (D-032, implementado 2026-08-23). Ads pesquisado (mesma seção), mas ADIADO por D-059 — exige `advertiser_id` com elegibilidade própria, sem evidência de a conta ter o produto habilitado
 - [x] Escopos de OAuth necessários por recurso — secao 2.9
 - [x] Política de validação de origem do webhook — secao 2.6 (allowlist de IP; **sem assinatura HMAC documentada** para este produto)
 - [x] Endpoints de pós-venda (Claims/Returns) — secao 2.10 (D-057)
@@ -312,8 +312,8 @@ Além do scope, o DevCenter da aplicação exige habilitar **permissões funcion
 | Vendas e envios | `orders`, `shipments`, `claims`, `returns` | Pedidos + estoque Full + Claims/Returns (D-057, secao 2.10) |
 | Promoções, cupons e descontos | `offers`, `deals` | Promoções |
 | Comunicação pré e pós-venda | `questions`, `messages`, `claims`, `returns` | `claims`/`returns` já usados (D-057); `questions`/`messages` seguem Fase posterior |
-| Métricas do negócio | `trends`, `highlights`, `visits` | Fase 5B (D-032) |
-| Publicidade | Advertising | Fase 5B (D-032) |
+| Métricas do negócio | `trends`, `highlights`, `visits` | `visits` em uso desde 2026-08-23 (secao 2.11); `trends`/`highlights` seguem sem uso |
+| Publicidade | Advertising | ADIADO (D-059) — exige `advertiser_id` com elegibilidade própria, sem evidência de a conta ter o produto habilitado |
 | Faturamento | `invoices`, `billing` | Fora de escopo hoje |
 
 Webhooks não têm permissão funcional própria — a assinatura de tópicos é configurada no gerenciador da aplicação (Callback URL + seleção de tópicos), não pelo OAuth scope.
@@ -344,6 +344,20 @@ Notificação chega pelo tópico `post_purchase` (modelo com subtópicos, secao 
 **Mapeamento para `order_items` da V3**: `orders[].item_id`/`variation_id` batem direto com `order_items.item_id`/`variation_id` (mesmo formato — MLB + variation numérica) — dá pra localizar a POSIÇÃO do item sem depender de `sku_listing_links`.
 
 **Fonte:** `developers.mercadolivre.com.br/pt_br/gerenciar-reclamacoes`, `.../gerenciar-devolucoes`, `.../produto-receba-notificacoes`.
+
+---
+
+## 2.11 Visitas — CONFIRMADO (leitura ao vivo, 2026-08-23); Ads — pesquisado, ADIADO (D-059)
+
+**Visitas por anúncio, em janela de dias**: `GET /items/{item_id}/visits/time_window?last=$LAST&unit=day&ending=$ENDING` — devolve `results: [{date, total, visits_detail}]`, um total por dia. `date` chega como datetime ISO completo (`"2021-08-04T00:00:00Z"`), convertido para `YYYY-MM-DD` por corte de string (`entry.date.slice(0, 10)`), nunca `new Date(...)` — mesmo raciocínio de `formatBusinessDate`. Sem `ending`, a amostra termina na data/hora atual. Máximo de janela: **150 dias** entre `date_from`/`date_to` nas variantes que usam essas datas; `time_window` não documenta um teto explícito para `last`, mas a V3 usa `last=3` (bem abaixo de qualquer limite plausível).
+
+Existe também uma variante por CONTA inteira (`GET /users/{user_id}/items_visits/time_window`, sem quebra por item) — não usada: a V3 precisa do detalhe por anúncio para cruzar com `daily_listing_metrics` e calcular conversão por item, não só o total da conta.
+
+**Fonte:** `developers.mercadolivre.com.br/pt_br/recurso-visits`.
+
+**Product Ads (Mercado Ads) — pesquisado, mas ADIADO por D-059**: a API exige um `advertiser_id` PRÓPRIO por conta e por tipo de produto (`PADS`/`DISPLAY`/`BADS`, consultado via `GET /advertising/advertisers?product_id=...`), com elegibilidade condicionada (reputação amarela+, 15+ dias de conta, mínimo de vendas, sem fatura vencida — erro `404 No permissions found` quando o usuário não tem o produto habilitado). Cadeia de consulta: `advertisers` → `campaigns` → `ads` → `metrics`, quatro recursos hierárquicos com um header `api-version` próprio — integração do tamanho de Claims/Returns ou listings, não um adendo a Visitas. **Nota de manutenção da própria doc**: os endpoints legados de Product Ads (`/advertising/product_ads/...`) foram desativados em 26/02/2026 — se algum dia isso for retomado, usar SÓ os endpoints atuais (`/advertising/{site}/product_ads/...`), nunca os legados citados como descontinuados.
+
+**Fonte:** `developers.mercadolivre.com.br/pt_br/product-ads-leitura`.
 
 ---
 
@@ -433,7 +447,7 @@ O refresh de token usa lock para evitar corrida entre execuções concorrentes �
 
 - ~~Todo o conteúdo da seção 2. Bloqueia a Fase 3.~~ — **Resolvido em 2026-08-21.** Ver secoes 2.1 a 2.9.
 - ~~Confirmação da viabilidade da autorização centralizada pelo ADMIN.~~ — **Confirmada em 2026-08-21** (secao 2.2): viável, com autorização feita conta por conta pelo ADMIN; usuários internos não reautenticam depois. Ver **D-041**.
-- **Endpoints de visitas e de Ads** — necessários apenas na Fase 5B (D-032). Ainda não pesquisados; não bloqueia a Fase 3.
+- ~~Endpoints de visitas e de Ads~~ — **Visitas pesquisado e implementado em 2026-08-23** (secao 2.11). **Ads pesquisado, mas ADIADO por D-059**: exige `advertiser_id` próprio com elegibilidade condicionada (reputação, tempo de conta, mínimo de vendas) — sem evidência de que a conta Mercado Livre da Speed Bikers tenha o produto habilitado; integração maior que um adendo a visitas, escopo próprio quando houver evidência real de necessidade.
 
 ### Avisos operacionais encontrados na pesquisa, não bloqueantes hoje
 
