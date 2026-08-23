@@ -2580,7 +2580,7 @@ describe("get_stock_coverage (D-058, Fase 5B)", () => {
   // vez que o SKU/conta tiver stock_movements/daily_sku_metrics, ficam
   // permanentemente indeletáveis por desenho.
 
-  it("calcula cobertura: 20 em estoque / (10 vendidos em 10 dias) = 10 dias de cobertura", async () => {
+  it("calcula cobertura: 20 em estoque / (10 vendidos em 10 dias = 1/dia) = 20 dias de cobertura", async () => {
     const rows = await asUser<{
       sku_id: string;
       local_quantity: string;
@@ -2597,17 +2597,23 @@ describe("get_stock_coverage (D-058, Fase 5B)", () => {
     expect(Number(rows[0]?.local_quantity)).toBe(20);
     expect(Number(rows[0]?.units_sold)).toBe(10);
     expect(Number(rows[0]?.avg_daily_sales)).toBe(1);
-    expect(Number(rows[0]?.days_of_coverage)).toBe(10);
+    expect(Number(rows[0]?.days_of_coverage)).toBe(20);
     expect(rows[0]?.is_ruptura).toBe(false);
   });
 
-  it("fora da janela de datas, a venda não conta — sem histórico no período, cobertura nula", async () => {
+  it("fora da janela de datas, a venda não conta — SKU ainda aparece pelo estoque, cobertura nula", async () => {
+    // O SKU tem estoque LOCAL atual (sem filtro de data — projeção viva, não
+    // histórico), então continua aparecendo mesmo sem venda na janela: é
+    // item parado, não ausência de linha. `units_sold=0` -> `days_of_coverage`
+    // nulo (CASE da função), não "Infinity".
     const rows = await asUser<{ units_sold: string; days_of_coverage: string | null }>(
       ADMIN_SB,
       `select * from public.get_stock_coverage('${ORG_SB}','2020-01-01','2020-01-02') where sku_id='${skuId}'`,
     );
 
-    expect(rows).toHaveLength(0);
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0]?.units_sold)).toBe(0);
+    expect(rows[0]?.days_of_coverage).toBeNull();
   });
 
   it("estoque zerado com venda no período: ruptura", async () => {
