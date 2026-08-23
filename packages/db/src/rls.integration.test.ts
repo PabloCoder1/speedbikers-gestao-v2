@@ -3080,3 +3080,122 @@ describe("daily_listing_visits e get_listing_traffic (D-032, Fase 5B)", () => {
     expect(rows).toHaveLength(0);
   });
 });
+
+describe("search_entities (Fase 5B, Busca universal)", () => {
+  // Mesmo raciocínio de nomes fora dos padrões de limpeza global, e mesma
+  // ausência de afterAll — ver comentário equivalente no describe de
+  // get_stock_coverage, acima.
+  const CONTA_BUSCA = "dddd9999-0000-4000-8000-000000000099";
+  const SKU_NOME = "SEARCHTEST-guidao";
+  const TERMO = "SEARCHTEST";
+
+  let skuId = "";
+  let purchaseOrderId = "";
+  let orderNumber = "";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$2,'Loja Speedbikers Busca','buscatest-conta','PENDING')
+       on conflict do nothing`,
+      [CONTA_BUSCA, ORG_SB],
+    );
+
+    const sku = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind) values ($1,$2,'PRODUTO') returning id`,
+      [ORG_SB, SKU_NOME],
+    );
+    skuId = sku.rows[0]?.id ?? "";
+
+    await client.query(
+      `insert into public.listings
+         (organization_id, ml_account_id, item_id, sku_id, title, status, price, currency_id, available_quantity, synced_at)
+       values ($1,$2,'MLB900100600',$3,'Guidão Esportivo Titan SEARCHTEST','active',99.9,'BRL',10,now())`,
+      [ORG_SB, CONTA_BUSCA, skuId],
+    );
+
+    await client.query(
+      `insert into public.suppliers (organization_id, name) values ($1,'SEARCHTEST Distribuidora')`,
+      [ORG_SB],
+    );
+
+    const po = await client.query<{ id: string; order_number: string }>(
+      `insert into public.purchase_orders (organization_id, created_by)
+       values ($1,$2)
+       returning id, order_number`,
+      [ORG_SB, ADMIN_SB],
+    );
+    purchaseOrderId = po.rows[0]?.id ?? "";
+    orderNumber = po.rows[0]?.order_number ?? "";
+  });
+
+  // Sem afterAll de limpeza: mesma razão do ledger de estoque acima.
+
+  it("encontra SKU pelo código, com destino de navegação real (/skus/{id})", async () => {
+    const rows = await asUser<{ entity_type: string; label: string; href: string }>(
+      ADMIN_SB,
+      `select * from public.search_entities('${ORG_SB}','${TERMO}') where entity_type='sku'`,
+    );
+
+    expect(rows.some((row) => row.label === SKU_NOME && row.href === `/skus/${skuId}`)).toBe(true);
+  });
+
+  it("encontra anúncio pelo título", async () => {
+    const rows = await asUser<{ entity_type: string; label: string; href: string }>(
+      ADMIN_SB,
+      `select * from public.search_entities('${ORG_SB}','${TERMO}') where entity_type='anuncio'`,
+    );
+
+    expect(rows.some((row) => row.label.includes(TERMO) && row.href === "/anuncios")).toBe(true);
+  });
+
+  it("encontra fornecedor pelo nome", async () => {
+    const rows = await asUser<{ entity_type: string; label: string; href: string }>(
+      ADMIN_SB,
+      `select * from public.search_entities('${ORG_SB}','${TERMO}') where entity_type='fornecedor'`,
+    );
+
+    expect(rows.some((row) => row.label === "SEARCHTEST Distribuidora" && row.href === "/fornecedores")).toBe(true);
+  });
+
+  it("encontra conta pelo label ou slug", async () => {
+    const rows = await asUser<{ entity_type: string; label: string; href: string }>(
+      ADMIN_SB,
+      `select * from public.search_entities('${ORG_SB}','Speedbikers Busca') where entity_type='conta'`,
+    );
+
+    expect(rows.some((row) => row.label === "Loja Speedbikers Busca" && row.href === "/contas")).toBe(true);
+  });
+
+  it("encontra pedido de compra pelo número, com destino de navegação real (/compras/{id})", async () => {
+    const rows = await asUser<{ entity_type: string; label: string; href: string }>(
+      ADMIN_SB,
+      `select * from public.search_entities('${ORG_SB}','${orderNumber}') where entity_type='pedido_compra'`,
+    );
+
+    expect(
+      rows.some((row) => row.label === `Pedido #${orderNumber}` && row.href === `/compras/${purchaseOrderId}`),
+    ).toBe(true);
+  });
+
+  it("busca vazia não devolve nada", async () => {
+    const rows = await asUser(ADMIN_SB, `select * from public.search_entities('${ORG_SB}','')`);
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("anon não executa", async () => {
+    await expect(asAnon(`select * from public.search_entities('${ORG_SB}','${TERMO}')`)).rejects.toThrow(
+      /permission denied/i,
+    );
+  });
+
+  it("usuário de outra organização não vê o SKU desta organização na busca", async () => {
+    const rows = await asUser<{ label: string }>(
+      DE_OUTRA_ORG,
+      `select * from public.search_entities('${ORG_SB}','${TERMO}') where entity_type='sku'`,
+    );
+
+    expect(rows.some((row) => row.label === SKU_NOME)).toBe(false);
+  });
+});

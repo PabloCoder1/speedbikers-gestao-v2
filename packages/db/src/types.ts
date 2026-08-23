@@ -2683,6 +2683,15 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      search_entities: {
+        Args: { p_organization_id: string; p_query: string }
+        Returns: {
+          entity_type: string
+          href: string
+          label: string
+          sublabel: string
+        }[]
+      }
       update_purchase_order_draft: {
         Args: {
           p_currency?: string

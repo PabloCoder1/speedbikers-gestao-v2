@@ -398,6 +398,14 @@ assignee_id, status, created_by (system | user)
 
 `action_decisions` guarda `baseline_snapshot jsonb` **capturado no momento da decisão** — sem ele a medição posterior é impossível. `action_outcomes` é preenchida por job agendado em 7, 15 e 30 dias.
 
+### `search_entities(organization_id, query)` — Busca Universal / Command Palette (D-060)
+
+**Implementado em 2026-08-23**, migration `20260823210917_create_search_entities_rpc.sql`, fecha a metade "Busca Universal" do item "Busca Universal / Command Palette e Filtros salvos" (`docs/ROADMAP.md`, Fase 5B — "Filtros salvos" segue como item separado, ver D-060). RPC `security invoker`, `UNION ALL` de cinco subconsultas independentes (`ilike`, `limit 5` cada), sem full-text search — o catálogo é pequeno o bastante hoje para não justificar `tsvector`.
+
+Cinco entidades, cada uma com o destino de navegação REAL que existe hoje na V3: `sku` (`skus.sku`/`title` → `/skus/{id}`), `anuncio` (`listings.title`/`item_id` → `/anuncios`, sem página por item ainda), `conta` (`ml_accounts.label`/`slug` → `/contas`), `fornecedor` (`suppliers.name`/`document` → `/fornecedores`), `pedido_compra` (`purchase_orders.order_number` → `/compras/{id}`). **Pedido de VENDA do Mercado Livre (`orders`) fica de fora** — não existe página de detalhe nem de lista por pedido na V3 (`/vendas` é dashboard agregado), então não haveria destino para o resultado. "Ação"/Central de Ações também fica de fora — não existe ainda (Fase 6/7).
+
+Consumida por `apps/web/components/command-palette.tsx` (componente cliente, `Ctrl+K`/`Cmd+K` ou clique, busca a cada tecla sem debounce — mesmo padrão já usado em `apps/web/app/compras/novo/item-row.tsx`), montado em `Shell` e por isso disponível em toda tela autenticada.
+
 ---
 
 ## 5. RLS

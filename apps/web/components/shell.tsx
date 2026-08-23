@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { createClient } from "../lib/supabase/server";
+import { CommandPalette } from "./command-palette";
 
 /**
  * Moldura das telas autenticadas: cabeçalho, navegação e identificação.
@@ -18,11 +19,12 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
 
   const membership = await supabase
     .from("organization_members")
-    .select("role, organizations(name)")
+    .select("role, organization_id, organizations(name)")
     .maybeSingle();
 
   const role = membership.data?.role ?? null;
   const orgName = membership.data?.organizations.name ?? "Speed Bikers";
+  const organizationId = membership.data?.organization_id ?? null;
 
   return (
     <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column" }}>
@@ -42,6 +44,8 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
         >
           {orgName}
         </Link>
+
+        <CommandPalette organizationId={organizationId} />
 
         <nav style={{ display: "flex", gap: "var(--sb-space-3)", fontSize: "0.9375rem" }}>
           <Link href="/vendas" style={{ color: "var(--sb-text-soft)" }}>

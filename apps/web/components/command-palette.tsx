@@ -1,0 +1,211 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useEffect, useState, type ReactNode } from "react";
+
+import { createClient } from "../lib/supabase/browser";
+
+/**
+ * Busca universal / Command Palette (Fase 5B, `docs/PRODUCT_REQUIREMENTS.md`
+ * secao "Busca universal") — `Ctrl+K`/`Cmd+K` abre, digita, `Enter` ou clique
+ * navega. Mesmo padrão de busca-enquanto-digita já usado em
+ * `apps/web/app/compras/novo/item-row.tsx` (sem debounce, mínimo de 2
+ * caracteres antes de consultar) — `search_entities` já limita 5 por tipo,
+ * então o resultado nunca é grande o bastante para justificar debounce.
+ *
+ * "Filtros salvos" (mesma linha do checklist original) fica de fora desta
+ * fatia — ver decisão. `organizationId` vem do `Shell` (resolvido no
+ * servidor), não é buscado de novo aqui.
+ */
+
+interface SearchResult {
+  entity_type: string;
+  label: string;
+  sublabel: string;
+  href: string;
+}
+
+const ENTITY_LABEL: Record<string, string> = {
+  sku: "SKU",
+  anuncio: "Anúncio",
+  conta: "Conta",
+  fornecedor: "Fornecedor",
+  pedido_compra: "Pedido de compra",
+};
+
+export function CommandPalette({ organizationId }: { organizationId: string | null }): ReactNode {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<SearchResult[]>([]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent): void {
+      if ((event.metaKey || event.ctrlKey) && event.key === "k") {
+        event.preventDefault();
+        setOpen(true);
+
+        return;
+      }
+
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, []);
+
+  async function search(value: string): Promise<void> {
+    setQuery(value);
+
+    if (organizationId === null || value.trim().length < 2) {
+      setResults([]);
+
+      return;
+    }
+
+    const supabase = createClient();
+
+    const { data } = await supabase.rpc("search_entities", {
+      p_organization_id: organizationId,
+      p_query: value.trim(),
+    });
+
+    setResults(data ?? []);
+  }
+
+  function go(href: string): void {
+    setOpen(false);
+    setQuery("");
+    setResults([]);
+    router.push(href);
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          setOpen(true);
+        }}
+        style={{
+          border: "1px solid var(--sb-border)",
+          borderRadius: "var(--sb-radius)",
+          padding: "0.25rem 0.625rem",
+          fontSize: "0.8125rem",
+          background: "transparent",
+          color: "var(--sb-text-soft)",
+          cursor: "pointer",
+        }}
+      >
+        Buscar… <span style={{ opacity: 0.7 }}>Ctrl+K</span>
+      </button>
+    );
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={() => {
+        setOpen(false);
+      }}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.4)",
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "center",
+        paddingTop: "10vh",
+        zIndex: 100,
+      }}
+    >
+      <div
+        onClick={(event) => {
+          event.stopPropagation();
+        }}
+        style={{
+          background: "var(--sb-surface)",
+          borderRadius: "var(--sb-radius)",
+          width: "32rem",
+          maxWidth: "90vw",
+          maxHeight: "70vh",
+          overflowY: "auto",
+          boxShadow: "0 8px 30px rgba(0,0,0,0.2)",
+        }}
+      >
+        <input
+          type="text"
+          autoFocus
+          value={query}
+          onChange={(event) => {
+            void search(event.target.value);
+          }}
+          placeholder="Buscar SKU, anúncio, conta, fornecedor, pedido de compra…"
+          style={{
+            width: "100%",
+            padding: "0.75rem 1rem",
+            border: "none",
+            borderBottom: "1px solid var(--sb-border)",
+            fontSize: "0.9375rem",
+            outline: "none",
+            background: "transparent",
+            color: "inherit",
+          }}
+        />
+
+        {query.trim().length >= 2 && results.length === 0 && (
+          <p style={{ padding: "1rem", margin: 0, color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
+            Nada encontrado.
+          </p>
+        )}
+
+        {results.length > 0 && (
+          <ul style={{ listStyle: "none", margin: 0, padding: "0.5rem 0" }}>
+            {results.map((result, index) => (
+              <li key={`${result.entity_type}:${result.href}:${String(index)}`}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    go(result.href);
+                  }}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "0.5rem 1rem",
+                    border: "none",
+                    background: "transparent",
+                    cursor: "pointer",
+                    color: "inherit",
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: "0.6875rem",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.04em",
+                      color: "var(--sb-text-soft)",
+                    }}
+                  >
+                    {ENTITY_LABEL[result.entity_type] ?? result.entity_type}
+                  </span>
+                  <div style={{ fontSize: "0.875rem" }}>{result.label}</div>
+                  {result.sublabel !== "" && (
+                    <div style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>{result.sublabel}</div>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
