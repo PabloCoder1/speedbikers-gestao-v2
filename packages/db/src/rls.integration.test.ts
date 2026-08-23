@@ -1865,8 +1865,8 @@ describe("ledger de estoque", () => {
 
     await client.query(
       `insert into public.stock_movements
-         (organization_id, sku_id, location_kind, qty_delta, movement_type, created_by, idempotency_key, occurred_at)
-       values ($1,$2,'LOCAL',10,'AJUSTE_MANUAL',$3,$4,now())`,
+         (organization_id, sku_id, location_kind, qty_delta, movement_type, reason, created_by, idempotency_key, occurred_at)
+       values ($1,$2,'LOCAL',10,'AJUSTE_MANUAL','teste de idempotencia',$3,$4,now())`,
       [ORG_SB, skuId, RESPONSAVEL_AJUSTE, key],
     );
 
@@ -1875,8 +1875,8 @@ describe("ledger de estoque", () => {
     await expect(
       client.query(
         `insert into public.stock_movements
-           (organization_id, sku_id, location_kind, qty_delta, movement_type, created_by, idempotency_key, occurred_at)
-         values ($1,$2,'LOCAL',10,'AJUSTE_MANUAL',$3,$4,now())`,
+           (organization_id, sku_id, location_kind, qty_delta, movement_type, reason, created_by, idempotency_key, occurred_at)
+         values ($1,$2,'LOCAL',10,'AJUSTE_MANUAL','teste de idempotencia',$3,$4,now())`,
         [ORG_SB, skuId, RESPONSAVEL_AJUSTE, key],
       ),
     ).rejects.toThrow(/idempotency_key/);
