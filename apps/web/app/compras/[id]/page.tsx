@@ -114,7 +114,40 @@ export default async function PedidoDeCompraPage({
         <Stat label="Previsão" value={info.expected_at === null ? "—" : formatDateTime(info.expected_at)} />
         <Stat label="Itens" value={String(items.data?.length ?? 0)} />
         <Stat label="Valor estimado" value={formatCurrency(totalValue)} />
+
+        <div style={{ display: "flex", gap: "var(--sb-space-2)", marginLeft: "auto" }}>
+          <a
+            href={`/compras/${info.id}/export/xlsx`}
+            style={{
+              padding: "0.375rem 0.75rem",
+              borderRadius: "var(--sb-radius)",
+              border: "1px solid var(--sb-border)",
+              fontSize: "0.8125rem",
+              textDecoration: "none",
+              color: "var(--sb-text)",
+            }}
+          >
+            Exportar Excel
+          </a>
+          <a
+            href={`/compras/${info.id}/export/pdf`}
+            style={{
+              padding: "0.375rem 0.75rem",
+              borderRadius: "var(--sb-radius)",
+              border: "1px solid var(--sb-border)",
+              fontSize: "0.8125rem",
+              textDecoration: "none",
+              color: "var(--sb-text)",
+            }}
+          >
+            Exportar PDF
+          </a>
+        </div>
       </div>
+
+      <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
+        A exportação usa um layout provisório — será ajustado quando o modelo de referência oficial chegar.
+      </p>
 
       {info.notes !== null && (
         <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.875rem", color: "var(--sb-text-soft)" }}>
