@@ -13,6 +13,8 @@ import { confirmApply, isImportKind, receiveUpload } from "./erp-import.js";
 import type { FulfillmentScheduleDeps } from "./fulfillment-schedule.js";
 import { triggerFulfillmentSnapshot } from "./fulfillment-schedule.js";
 import type { IpAllowlistVerifier } from "./ip-allowlist.js";
+import type { LedgerIntegrityScheduleDeps } from "./ledger-integrity-schedule.js";
+import { triggerLedgerIntegrityCheck } from "./ledger-integrity-schedule.js";
 import type { MlAccountsDeps } from "./ml-accounts.js";
 import { completeConnect, startConnect } from "./ml-accounts.js";
 import type { NfeImportDeps } from "./nfe-import.js";
@@ -61,6 +63,7 @@ export interface AppDependencies {
   reconcile?: ReconcileDeps;
   fulfillmentSchedule?: FulfillmentScheduleDeps;
   balanceReconcileSchedule?: BalanceReconcileScheduleDeps;
+  ledgerIntegritySchedule?: LedgerIntegrityScheduleDeps;
 }
 
 /**
@@ -320,6 +323,23 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     const outcome = await triggerBalanceReconciliation(balanceReconcileSchedule);
+
+    return context.json(outcome);
+  });
+
+  // --------------------------------------------------------------------
+  // Conferência automática ledger × projeção (D-056) — mesmo formato de
+  // /internal/schedule/maintenance acima, por ORGANIZAÇÃO. Cadência diária:
+  // `infra/cloud-scheduler.sh`.
+  // --------------------------------------------------------------------
+  app.post("/internal/schedule/ledger-integrity", async (context) => {
+    const ledgerIntegritySchedule = dependencies.ledgerIntegritySchedule;
+
+    if (ledgerIntegritySchedule === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const outcome = await triggerLedgerIntegrityCheck(ledgerIntegritySchedule);
 
     return context.json(outcome);
   });

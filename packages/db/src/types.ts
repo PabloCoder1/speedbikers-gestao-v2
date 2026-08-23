@@ -2177,6 +2177,14 @@ export type Database = {
           sku_id: string
         }[]
       }
+      compute_inventory_balances_from_ledger: {
+        Args: { p_organization_id: string; p_sku_id?: string }
+        Returns: {
+          location_kind: string
+          quantity: number
+          sku_id: string
+        }[]
+      }
       create_purchase_order: {
         Args: {
           p_currency?: string

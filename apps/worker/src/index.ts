@@ -15,6 +15,7 @@ import { createNfeImportParseHandler } from "./handlers/nfe-import-parse.js";
 import { createReconcileBalancesHandler } from "./handlers/reconcile-balances.js";
 import { createSyncFulfillmentSnapshotHandler } from "./handlers/sync-fulfillment-snapshot.js";
 import { createSyncOrdersWindowHandler } from "./handlers/sync-orders-window.js";
+import { createVerifyLedgerIntegrityHandler } from "./handlers/verify-ledger-integrity.js";
 import { createWebhookReceivedHandler } from "./handlers/webhook-received.js";
 import { createNfeXmlReader } from "./nfe-xml-reader.js";
 import { withHandlers } from "./router.js";
@@ -73,6 +74,7 @@ const app = createWorkerApp({
     "sync.fulfillment.snapshot": createSyncFulfillmentSnapshotHandler({ db, mercadoLivre, oauth, encryptionKey }),
     "sync.webhook.received": createWebhookReceivedHandler({ db, mercadoLivre, oauth, encryptionKey }),
     "maintenance.reconcile-balances": createReconcileBalancesHandler({ db }),
+    "maintenance.verify-ledger-integrity": createVerifyLedgerIntegrityHandler({ db }),
     ...nfeHandlers,
   }),
 });

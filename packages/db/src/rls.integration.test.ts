@@ -1914,7 +1914,7 @@ describe("ledger de estoque", () => {
   it("compute_inventory_balances_from_ledger (job de conferência) bate com a projeção mantida por trigger", async () => {
     const recomputed = await asServiceRole<{ sku_id: string; location_kind: string; quantity: string }>(
       `select sku_id, location_kind, quantity
-       from private.compute_inventory_balances_from_ledger('${ORG_SB}', '${skuId}')`,
+       from public.compute_inventory_balances_from_ledger('${ORG_SB}', '${skuId}')`,
     );
 
     const projected = await client.query<{ location_kind: string; quantity: string }>(
@@ -1933,7 +1933,7 @@ describe("ledger de estoque", () => {
 
   it("authenticated não executa a função de conferência — só service_role", async () => {
     await expect(
-      asUser(ADMIN_SB, `select * from private.compute_inventory_balances_from_ledger('${ORG_SB}')`),
+      asUser(ADMIN_SB, `select * from public.compute_inventory_balances_from_ledger('${ORG_SB}')`),
     ).rejects.toThrow(/permission denied/i);
   });
 

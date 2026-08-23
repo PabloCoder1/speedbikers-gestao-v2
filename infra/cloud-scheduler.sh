@@ -93,5 +93,16 @@ upsert_job \
   "${API_URL}/internal/schedule/maintenance" \
   "Reconciliacao de estoque (LOCAL/RESERVADO) contra o snapshot do UpSeller, por organizacao"
 
+# Conferencia automatica ledger x projecao (D-056) -- as duas fontes sao
+# internas (stock_movements x inventory_balances) e so divergem por bug
+# (trigger pulado, escrita direta na projecao), nunca por processo humano --
+# diferente do job acima. Cadencia diaria, horario escalonado (30min depois)
+# para nao competir por recurso com a reconciliacao do UpSeller.
+upsert_job \
+  "v3-verify-ledger-integrity" \
+  "30 6 * * *" \
+  "${API_URL}/internal/schedule/ledger-integrity" \
+  "Conferencia ledger (stock_movements) contra a projecao (inventory_balances), por organizacao"
+
 step "Concluído"
 gc scheduler jobs list --location "${REGION}" --format="table(name.basename(),schedule,state)"

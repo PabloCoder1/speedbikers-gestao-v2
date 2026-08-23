@@ -117,6 +117,7 @@ Payloads tipados em `@sb/contracts/jobs`. Todo handler é **idempotente**.
 | `events.detect` | `analytics-recompute` | `detect:{entidade}:{id}` — **não implementado**: o motor de diff hoje roda inline dentro de `sync.orders.window`/`backfill.orders` (`persist-order.ts`), não como job separado. Este tipo existiria para o caminho do webhook (`sync.webhook.received` decidir o que buscar e enfileirar `events.detect` por entidade) — trabalho futuro, ver `docs/HANDOFF.md` |
 | `backfill.orders` | `backfill` | `backfill-orders:{conta}:{checkpoint}` — **implementado em 2026-08-21**, `{conta}` é o slug e `{checkpoint}` é `start` no primeiro pedaço ou o `to` ISO do pedaço anterior |
 | `maintenance.reconcile-balances` | `maintenance` | `reconcile-balances:{organization_id}:{data-negocio}` — **implementado em 2026-08-22**, por organização (não por conta ML). Payload `{ organizationId }`. Compara `compute_erp_snapshot_balances` contra `inventory_balances`, gera `AJUSTE_RECONCILIACAO` + `stock.balance.diverged` por divergência (D-029) |
+| `maintenance.verify-ledger-integrity` | `maintenance` | `verify-ledger-integrity:{organization_id}:{data-negocio}` — **implementado em 2026-08-23**, por organização. Payload `{ organizationId }`. Compara `compute_inventory_balances_from_ledger` (recomputo do zero) contra `inventory_balances` (projeção mantida por trigger); só emite `stock.balance.diverged`, NUNCA grava `stock_movements` — divergência aqui é bug, não drift de processo (D-056) |
 | `actions.measure-outcome` | `maintenance` | `outcome:{decision_id}:{offset}` |
 | `erp.import.parse` | `maintenance` | `erp-parse:{batch_id}` |
 | `erp.import.apply` | `maintenance` | `erp-apply:{batch_id}` |
@@ -150,7 +151,7 @@ Todo job registra em `job_runs`: início, fim, resultado, erro, itens processado
 | `listing.fulfillment.exited` | importante | diff |
 | `stock.depleted` | crítico | ledger / snapshot |
 | `stock.replenished` | informativo | ledger / snapshot |
-| `stock.balance.diverged` | crítico | job de conferência |
+| `stock.balance.diverged` | crítico | job de conferência — reconciliação contra o UpSeller (D-029) OU integridade ledger×projeção (D-056); `before`/`after.checkedAgainst` distingue as duas origens |
 | `order.cancelled` | importante | sync — **implementado em 2026-08-21** |
 | `order.returned` | importante | sync — depende da API de Reclamações e Devoluções, ainda não integrada |
 | `sync.delayed` | importante | sync |

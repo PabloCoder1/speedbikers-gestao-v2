@@ -9,3 +9,6 @@ export type { NfeApplicationDocument, NfeApplicationItem } from "./nfe-applicati
 
 export { computeReconciliationAdjustments } from "./reconciliation.js";
 export type { ReconciliationAdjustment, ReconciliationBalance } from "./reconciliation.js";
+
+export { computeLedgerIntegrityDivergences } from "./ledger-integrity.js";
+export type { LedgerBalance } from "./ledger-integrity.js";
