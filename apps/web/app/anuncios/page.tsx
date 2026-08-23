@@ -1,8 +1,9 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { Shell } from "../../components/shell";
 import { StatusPill } from "../../components/status-pill";
-import { formatCurrency, formatDateTime } from "../../lib/format";
+import { formatCount, formatCurrency, formatDateTime } from "../../lib/format";
 import { listingStatusLabel } from "../../lib/labels";
 import { createClient } from "../../lib/supabase/server";
 
@@ -13,13 +14,14 @@ export const metadata = { title: "Anúncios — Speed Bikers Gestão" };
 export const dynamic = "force-dynamic";
 
 /**
- * Primeira fatia de "Dashboards de SKU e de Anúncio" (Fase 5B,
- * docs/ROADMAP.md) — o estado atual de cada anúncio sincronizado (D-058).
- * Métricas de venda por anúncio (`daily_listing_metrics`, já existente
- * desde a Fase 5A) ficam para uma próxima etapa: esta tela já entrega valor
- * sozinha (é a primeira vez que `listings` aparece em alguma tela) sem
- * esperar o cruzamento pronto.
+ * "Dashboards de SKU e de Anúncio" (Fase 5B, docs/ROADMAP.md) — a metade de
+ * anúncio: estado atual (D-058) cruzado com venda somada dos últimos 30
+ * dias (`get_listing_sales`, soma em SQL — docs/ARCHITECTURE.md secao 21).
+ * Cruzamento feito em JS por CHAVE (ml_account_id + item_id/mlb_id), não é
+ * agregação — a soma em si já veio pronta do RPC.
  */
+
+const LOOKBACK_DAYS = 30;
 
 const th: React.CSSProperties = {
   textAlign: "left",
@@ -43,11 +45,46 @@ const tdNumber: React.CSSProperties = { ...td, textAlign: "right", fontVariantNu
 export default async function AnunciosPage(): Promise<ReactNode> {
   const supabase = await createClient();
 
+  const membership = await supabase.from("organization_members").select("organization_id").maybeSingle();
+  const organizationId = membership.data?.organization_id ?? null;
+
+  if (organizationId === null) {
+    return (
+      <Shell>
+        <h1 style={{ margin: "0 0 var(--sb-space-3)", fontSize: "1.375rem" }}>Anúncios</h1>
+        <p style={{ color: "var(--sb-text-soft)" }}>Sua conta não está associada a nenhuma organização.</p>
+      </Shell>
+    );
+  }
+
+  const now = new Date();
+  const dateTo = now.toISOString().slice(0, 10);
+  const dateFrom = new Date(now.getTime() - (LOOKBACK_DAYS - 1) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
   // Sem filtro por conta: a policy já restringe (listings_select_own_account).
-  const { data, error } = await supabase
-    .from("listings")
-    .select("id, item_id, title, status, price, available_quantity, synced_at, skus(sku), ml_accounts(label)")
-    .order("title");
+  const [listingsResult, salesResult] = await Promise.all([
+    supabase
+      .from("listings")
+      .select(
+        "id, item_id, sku_id, ml_account_id, title, status, price, available_quantity, synced_at, skus(sku), ml_accounts(label)",
+      )
+      .order("title"),
+    supabase.rpc("get_listing_sales", {
+      p_organization_id: organizationId,
+      p_date_from: dateFrom,
+      p_date_to: dateTo,
+    }),
+  ]);
+
+  const { data, error } = listingsResult;
+
+  // Chave de junção: (ml_account_id, item_id) — mesmo par único de `listings`
+  // e o mesmo espaço de valores de `daily_listing_metrics.mlb_id`. Junção por
+  // chave em JS, não agregação — a soma já veio pronta do RPC.
+  const salesByListing = new Map<string, { units_sold: number; gross_revenue: number }>();
+  for (const row of salesResult.data ?? []) {
+    salesByListing.set(`${row.ml_account_id}:${row.mlb_id}`, row);
+  }
 
   return (
     <Shell>
@@ -64,8 +101,9 @@ export default async function AnunciosPage(): Promise<ReactNode> {
       </div>
 
       <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
-        Estado atual de cada anúncio já vinculado a um SKU, sincronizado do Mercado Livre a cada 6h. Anúncio ainda
-        sem vínculo não aparece aqui — a Central de Vinculações cuida disso.
+        Estado atual de cada anúncio já vinculado a um SKU, sincronizado do Mercado Livre a cada 6h, com venda dos
+        últimos {LOOKBACK_DAYS} dias. Anúncio ainda sem vínculo não aparece aqui — a Central de Vinculações cuida
+        disso.
       </p>
 
       {error !== null && (
@@ -80,7 +118,7 @@ export default async function AnunciosPage(): Promise<ReactNode> {
 
       {error === null && data.length > 0 && (
         <div style={{ overflowX: "auto" }}>
-          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "48rem" }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "54rem" }}>
             <thead>
               <tr>
                 <th style={th}>Anúncio</th>
@@ -89,35 +127,49 @@ export default async function AnunciosPage(): Promise<ReactNode> {
                 <th style={th}>Estado</th>
                 <th style={th}>Preço</th>
                 <th style={th}>Disponível</th>
+                <th style={th}>Vendido ({LOOKBACK_DAYS}d)</th>
+                <th style={th}>Receita ({LOOKBACK_DAYS}d)</th>
                 <th style={th}>Sincronizado em</th>
               </tr>
             </thead>
 
             <tbody>
-              {data.map((listing) => (
-                <tr key={listing.id}>
-                  <td style={td}>
-                    {listing.title}
-                    <div
-                      style={{
-                        fontFamily: "ui-monospace, monospace",
-                        color: "var(--sb-text-soft)",
-                        fontSize: "0.75rem",
-                      }}
-                    >
-                      {listing.item_id}
-                    </div>
-                  </td>
-                  <td style={{ ...td, fontFamily: "ui-monospace, monospace" }}>{listing.skus?.sku ?? "—"}</td>
-                  <td style={td}>{listing.ml_accounts.label}</td>
-                  <td style={td}>
-                    <StatusPill code={listing.status} label={listingStatusLabel(listing.status)} />
-                  </td>
-                  <td style={tdNumber}>{formatCurrency(listing.price)}</td>
-                  <td style={tdNumber}>{listing.available_quantity}</td>
-                  <td style={td}>{formatDateTime(listing.synced_at)}</td>
-                </tr>
-              ))}
+              {data.map((listing) => {
+                const sales = salesByListing.get(`${listing.ml_account_id}:${listing.item_id}`) ?? null;
+
+                return (
+                  <tr key={listing.id}>
+                    <td style={td}>
+                      {listing.title}
+                      <div
+                        style={{
+                          fontFamily: "ui-monospace, monospace",
+                          color: "var(--sb-text-soft)",
+                          fontSize: "0.75rem",
+                        }}
+                      >
+                        {listing.item_id}
+                      </div>
+                    </td>
+                    <td style={{ ...td, fontFamily: "ui-monospace, monospace" }}>
+                      {listing.sku_id !== null && listing.skus !== null ? (
+                        <Link href={`/skus/${listing.sku_id}`}>{listing.skus.sku}</Link>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td style={td}>{listing.ml_accounts.label}</td>
+                    <td style={td}>
+                      <StatusPill code={listing.status} label={listingStatusLabel(listing.status)} />
+                    </td>
+                    <td style={tdNumber}>{formatCurrency(listing.price)}</td>
+                    <td style={tdNumber}>{listing.available_quantity}</td>
+                    <td style={tdNumber}>{sales === null ? "—" : formatCount(sales.units_sold)}</td>
+                    <td style={tdNumber}>{sales === null ? "—" : formatCurrency(sales.gross_revenue)}</td>
+                    <td style={td}>{formatDateTime(listing.synced_at)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

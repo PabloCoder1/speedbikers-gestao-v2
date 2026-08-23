@@ -2397,6 +2397,19 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      get_listing_sales: {
+        Args: {
+          p_date_from: string
+          p_date_to: string
+          p_organization_id: string
+        }
+        Returns: {
+          gross_revenue: number
+          ml_account_id: string
+          mlb_id: string
+          units_sold: number
+        }[]
+      }
       get_sales_daily_series: {
         Args: {
           p_date_from: string
@@ -2442,6 +2455,22 @@ export type Database = {
           sku: string
           sku_id: string
           title: string
+        }[]
+      }
+      get_sku_dashboard: {
+        Args: {
+          p_date_from: string
+          p_date_to: string
+          p_organization_id: string
+          p_sku_id: string
+        }
+        Returns: {
+          full_quantity: number
+          gross_revenue: number
+          local_quantity: number
+          reservado_quantity: number
+          transito_quantity: number
+          units_sold: number
         }[]
       }
       get_stock_coverage: {

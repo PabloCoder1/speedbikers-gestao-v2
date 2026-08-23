@@ -249,6 +249,12 @@ Projeção recomputável do ledger. Existe um **job de conferência** (D-056, im
 
 **Janela FIXA de 90 dias** na tela — mais longa que os 30 dias de `/cobertura`, de propósito: classificação ABC precisa de um sinal mais estável, 30 dias tem ruído demais para SKU de venda mais espaçada.
 
+**`get_listing_sales(organization_id, date_from, date_to)`** e **`get_sku_dashboard(organization_id, sku_id, date_from, date_to)`** — implementados em 2026-08-23, migration `20260823182544_create_listing_sales_and_sku_dashboard_rpcs.sql`, fecham "Dashboards de SKU e de Anúncio" (`docs/ROADMAP.md`, Fase 5B). Ambos `security invoker`, ambos somam em SQL (`docs/ARCHITECTURE.md` seção 21).
+
+`get_listing_sales` soma `daily_listing_metrics.units_sold`/`gross_revenue` por `(ml_account_id, mlb_id)` no intervalo, filtrando `variation_id is null` — mesmo espaço de valores e a mesma restrição de escopo de `listings.item_id` (só itens sem variação, igual `sync.listings.snapshot`). Consumida por `/anuncios`, que junta o resultado às linhas de `listings` por chave em JS — não é agregação (a soma já veio pronta do RPC), é o mesmo tipo de junção por chave já usado em outras telas.
+
+`get_sku_dashboard` sempre devolve UMA linha (agregados sem `GROUP BY`, mesmo padrão de `get_sales_summary`), mesmo para um SKU sem movimento nenhum — zeros, não linha ausente. Reúne quatro fontes num resumo só: `inventory_balances` (LOCAL/RESERVADO/TRANSITO, projeção atual, sem filtro de data), o último snapshot conhecido de `fulfillment_stock_snapshots` (mesmo `distinct on` de `get_sku_abc_curve`) e venda somada de `daily_sku_metrics` no intervalo. Consumida por `/skus/[skuId]` ("Dashboard de SKU"), que também lista os `listings` vinculados ao SKU num select à parte, sem agregação. Como `organization_id` é PARÂMETRO (não vem da sessão), um usuário de outra organização que chame a função com o `organization_id` de outra empresa recebe uma linha de ZEROS, não um erro — a RLS de cada tabela por trás filtra silenciosamente, provando o isolamento na prática (coberto por teste de integração).
+
 ### `erp_stock_snapshots` — alinhamento com o UpSeller
 
 O UpSeller permanece como ERP (D-028) e movimentos manuais são lançados nos dois sistemas. Isso exige um mecanismo de alinhamento explícito, porque uma hora alguém esquece um lado.

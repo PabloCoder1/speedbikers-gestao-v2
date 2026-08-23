@@ -109,6 +109,7 @@ export default async function EstoquePage(): Promise<ReactNode> {
                 <th style={th}>Reservado</th>
                 <th style={th}>Em trânsito</th>
                 <th style={th}></th>
+                <th style={th}></th>
               </tr>
             </thead>
 
@@ -126,6 +127,9 @@ export default async function EstoquePage(): Promise<ReactNode> {
                   <td style={tdNumber}>{formatCount(balance.local)}</td>
                   <td style={tdNumber}>{formatCount(balance.reservado)}</td>
                   <td style={tdNumber}>{formatCount(balance.transito)}</td>
+                  <td style={{ ...td, textAlign: "right" }}>
+                    <Link href={`/skus/${balance.skuId}`}>Detalhes</Link>
+                  </td>
                   <td style={{ ...td, textAlign: "right" }}>
                     <Link href={`/estoque/${balance.skuId}/ajuste`}>Ajustar</Link>
                   </td>

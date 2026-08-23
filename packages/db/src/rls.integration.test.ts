@@ -2792,3 +2792,178 @@ describe("get_sku_abc_curve (D-058, Fase 5B)", () => {
     expect(rows).toHaveLength(0);
   });
 });
+
+describe("get_listing_sales (Fase 5B, Dashboards de SKU e de Anúncio)", () => {
+  // Mesmo raciocínio de nomes fora dos padrões de limpeza global, e mesma
+  // ausência de afterAll — ver comentário equivalente no describe de
+  // get_stock_coverage, acima.
+  const CONTA_ANUNCIO = "dddd6666-0000-4000-8000-000000000066";
+  const MLB_ID = "MLB900100200";
+  const MLB_FORA_DA_JANELA = "MLB900100201";
+  const TODAY = "2026-08-23";
+  const WINDOW_START = "2026-07-25"; // 30 dias antes, janela usada pela tela /anuncios
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$2,'Conta de venda por anúncio','anunciotest-conta','PENDING')
+       on conflict do nothing`,
+      [CONTA_ANUNCIO, ORG_SB],
+    );
+
+    await client.query(
+      `insert into public.daily_listing_metrics
+         (organization_id, ml_account_id, mlb_id, variation_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values
+         ($1,$2,$3,null,'2026-08-20',2,200,2,2),
+         ($1,$2,$3,null,'2026-08-23',3,300,3,3),
+         ($1,$2,$3,'123456','2026-08-23',9,900,9,9),
+         ($1,$2,$4,null,'2020-01-02',5,500,5,5)`,
+      [ORG_SB, CONTA_ANUNCIO, MLB_ID, MLB_FORA_DA_JANELA],
+    );
+  });
+
+  // Sem afterAll de limpeza: mesma razão do ledger de estoque acima.
+
+  it("soma venda por (conta, anúncio) no intervalo, ignorando a linha com variação", async () => {
+    const rows = await asUser<{ ml_account_id: string; mlb_id: string; units_sold: string; gross_revenue: string }>(
+      ADMIN_SB,
+      `select * from public.get_listing_sales('${ORG_SB}','${WINDOW_START}','${TODAY}') where mlb_id='${MLB_ID}'`,
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0]?.units_sold)).toBe(5);
+    expect(Number(rows[0]?.gross_revenue)).toBe(500);
+  });
+
+  it("fora da janela de datas, o anúncio nem aparece", async () => {
+    const rows = await asUser<{ mlb_id: string }>(
+      ADMIN_SB,
+      `select * from public.get_listing_sales('${ORG_SB}','${WINDOW_START}','${TODAY}') where mlb_id='${MLB_FORA_DA_JANELA}'`,
+    );
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("anon não executa", async () => {
+    await expect(
+      asAnon(`select * from public.get_listing_sales('${ORG_SB}','${WINDOW_START}','${TODAY}')`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
+  it("usuário de outra organização não vê o anúncio desta organização", async () => {
+    const rows = await asUser<{ mlb_id: string }>(
+      DE_OUTRA_ORG,
+      `select * from public.get_listing_sales('${ORG_SB}','${WINDOW_START}','${TODAY}') where mlb_id='${MLB_ID}'`,
+    );
+
+    expect(rows).toHaveLength(0);
+  });
+});
+
+describe("get_sku_dashboard (Fase 5B, Dashboards de SKU e de Anúncio)", () => {
+  // Mesmo raciocínio de nomes fora dos padrões de limpeza global, e mesma
+  // ausência de afterAll — ver comentário equivalente no describe de
+  // get_stock_coverage, acima.
+  const CONTA_DASH = "dddd7777-0000-4000-8000-000000000077";
+  const TODAY = "2026-08-23";
+  const WINDOW_START = "2026-07-25"; // 30 dias antes, janela usada pela tela /skus/[skuId]
+
+  let skuCompletoId = "";
+  let skuSemMovimentoId = "";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$2,'Conta do dashboard de SKU','dashtest-conta','PENDING')
+       on conflict do nothing`,
+      [CONTA_DASH, ORG_SB],
+    );
+
+    const skus = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind)
+       values ($1,'DASHTEST-produto-completo','PRODUTO'), ($1,'DASHTEST-sem-movimento','PRODUTO')
+       returning id`,
+      [ORG_SB],
+    );
+    skuCompletoId = skus.rows[0]?.id ?? "";
+    skuSemMovimentoId = skus.rows[1]?.id ?? "";
+
+    await client.query(
+      `insert into public.inventory_balances (organization_id, sku_id, location_kind, quantity)
+       values
+         ($1,$2,'LOCAL',15),
+         ($1,$2,'RESERVADO',3),
+         ($1,$2,'TRANSITO',8)`,
+      [ORG_SB, skuCompletoId],
+    );
+
+    await client.query(
+      `insert into public.daily_sku_metrics
+         (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values ($1,$2,$3,$4,4,400,4,4)`,
+      [ORG_SB, CONTA_DASH, skuCompletoId, TODAY],
+    );
+
+    await client.query(
+      `insert into public.fulfillment_stock_snapshots
+         (organization_id, ml_account_id, inventory_id, item_id, sku_id, quantity, captured_at)
+       values ($1,$2,'dashtest-inventory','MLB900100300',$3,7,now())`,
+      [ORG_SB, CONTA_DASH, skuCompletoId],
+    );
+  });
+
+  // Sem afterAll de limpeza: mesma razão do ledger de estoque acima.
+
+  it("resume estoque LOCAL/RESERVADO/TRANSITO, Full e venda somada no intervalo", async () => {
+    const rows = await asUser<{
+      local_quantity: string;
+      reservado_quantity: string;
+      transito_quantity: string;
+      full_quantity: string;
+      units_sold: string;
+      gross_revenue: string;
+    }>(
+      ADMIN_SB,
+      `select * from public.get_sku_dashboard('${ORG_SB}','${skuCompletoId}','${WINDOW_START}','${TODAY}')`,
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0]?.local_quantity)).toBe(15);
+    expect(Number(rows[0]?.reservado_quantity)).toBe(3);
+    expect(Number(rows[0]?.transito_quantity)).toBe(8);
+    expect(Number(rows[0]?.full_quantity)).toBe(7);
+    expect(Number(rows[0]?.units_sold)).toBe(4);
+    expect(Number(rows[0]?.gross_revenue)).toBe(400);
+  });
+
+  it("SKU sem movimento nenhum devolve uma linha com zeros, não linha ausente", async () => {
+    const rows = await asUser<{ local_quantity: string; units_sold: string }>(
+      ADMIN_SB,
+      `select * from public.get_sku_dashboard('${ORG_SB}','${skuSemMovimentoId}','${WINDOW_START}','${TODAY}')`,
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0]?.local_quantity)).toBe(0);
+    expect(Number(rows[0]?.units_sold)).toBe(0);
+  });
+
+  it("anon não executa", async () => {
+    await expect(
+      asAnon(
+        `select * from public.get_sku_dashboard('${ORG_SB}','${skuCompletoId}','${WINDOW_START}','${TODAY}')`,
+      ),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
+  it("usuário de outra organização vê zeros, não o dado real desta organização", async () => {
+    const rows = await asUser<{ local_quantity: string; units_sold: string }>(
+      DE_OUTRA_ORG,
+      `select * from public.get_sku_dashboard('${ORG_SB}','${skuCompletoId}','${WINDOW_START}','${TODAY}')`,
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0]?.local_quantity)).toBe(0);
+    expect(Number(rows[0]?.units_sold)).toBe(0);
+  });
+});
