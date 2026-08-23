@@ -135,7 +135,7 @@ Cada fase só é considerada concluída sob a Definition of Done do `docs/PROMPT
 ## Fase 5B — Analytics de estoque, sortimento e tráfego
 
 - [x] **Sincronização de listings/anúncios** — concluído em 2026-08-23 (D-058): tabela `listings` ÚNICA (não as três originalmente conceituadas — achado ao inspecionar o banco real da V2: o espelho completo de anúncio nunca teve uso real lá, só a versão focada em preço), job `sync.listings.snapshot` (Cloud Scheduler a cada 6h, por conta), enumeração via `sku_listing_links` (itens já vinculados a SKU, sem variação). "Dashboards de SKU e de Anúncio" abaixo continua pendente — este item era só a sincronização, o pré-requisito
-- [ ] Cobertura, ruptura, vendas perdidas estimadas
+- [ ] Cobertura, ruptura, vendas perdidas estimadas — **cobertura e ruptura concluídas em 2026-08-23**: `/cobertura` lista todo SKU com estoque local ou venda nos últimos 30 dias (janela fixa, sem seletor nesta fatia), com dias de cobertura (`estoque local ÷ venda média diária`) e sinalização de ruptura (sem estoque local, mas com venda no período). Tudo somado em SQL (`get_stock_coverage`, RPC `security invoker`), nunca em JS, por `docs/ARCHITECTURE.md` seção 21. "Vendas perdidas estimadas" fica de fora — exige detectar período de ruptura contínua, não só o instante atual; ver comentário na migration
 - [ ] Curva ABC e filtros de Full
 - [ ] Dashboards de SKU e de Anúncio — **primeira fatia concluída em 2026-08-23**: `/anuncios` mostra o estado atual de cada anúncio sincronizado (título, estado, preço, disponível, SKU). Cruzamento com `daily_listing_metrics` (vendas por anúncio, já existente desde a Fase 5A) e "Dashboard de SKU" propriamente dito ficam para a próxima etapa
 - [ ] Visitas, conversão e Ads (D-032)

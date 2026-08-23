@@ -2427,6 +2427,23 @@ export type Database = {
           units_sold: number
         }[]
       }
+      get_stock_coverage: {
+        Args: {
+          p_date_from: string
+          p_date_to: string
+          p_organization_id: string
+        }
+        Returns: {
+          avg_daily_sales: number
+          days_of_coverage: number
+          is_ruptura: boolean
+          local_quantity: number
+          sku: string
+          sku_id: string
+          title: string
+          units_sold: number
+        }[]
+      }
       link_document_item: {
         Args: { p_item_id: number; p_sku_id?: string }
         Returns: {

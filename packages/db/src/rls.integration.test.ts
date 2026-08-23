@@ -2531,3 +2531,121 @@ describe("estoque em trânsito a partir do ciclo do pedido de compra (D-055)", (
     expect(await movementCount(orderId)).toBe(0);
   });
 });
+
+describe("get_stock_coverage (D-058, Fase 5B)", () => {
+  // Nome fora dos padrões que os afterAll apagam ('RLSTEST%' para skus,
+  // 'rlstest%' para ml_accounts): uma vez com stock_movements/
+  // daily_sku_metrics, `on delete restrict` torna os dois indeletáveis —
+  // mesmo raciocínio já documentado para o SKU do ledger de estoque e a
+  // conta de observabilidade de sincronização, acima.
+  const SKU_NOME = "COVERAGETEST-freio-traseiro";
+  const CONTA = "dddd3333-0000-4000-8000-000000000033";
+  let skuId = "";
+
+  const TODAY = "2026-08-23";
+  const WINDOW_START = "2026-08-14"; // 10 dias antes, janela de 10 dias inclusive
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$2,'Conta de cobertura','coveragetest-conta','PENDING')
+       on conflict do nothing`,
+      [CONTA, ORG_SB],
+    );
+
+    const sku = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind) values ($1,$2,'PRODUTO') returning id`,
+      [ORG_SB, SKU_NOME],
+    );
+    skuId = sku.rows[0]?.id ?? "";
+
+    // 20 unidades em LOCAL.
+    await client.query(
+      `insert into public.stock_movements
+         (organization_id, sku_id, location_kind, qty_delta, movement_type, source_type, source_id, idempotency_key, occurred_at)
+       values ($1,$2,'LOCAL',20,'ENTRADA_NFE','DOCUMENT','coveragetest-doc','coveragetest:entrada',now())`,
+      [ORG_SB, skuId],
+    );
+
+    // 10 unidades vendidas na janela de 10 dias (2026-08-14 a 2026-08-23) — média 1/dia.
+    await client.query(
+      `insert into public.daily_sku_metrics
+         (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values ($1,$2,$3,$4,10,500,5,5)`,
+      [ORG_SB, CONTA, skuId, TODAY],
+    );
+  });
+
+  // Sem afterAll de limpeza: mesma razão do ledger de estoque acima — uma
+  // vez que o SKU/conta tiver stock_movements/daily_sku_metrics, ficam
+  // permanentemente indeletáveis por desenho.
+
+  it("calcula cobertura: 20 em estoque / (10 vendidos em 10 dias) = 10 dias de cobertura", async () => {
+    const rows = await asUser<{
+      sku_id: string;
+      local_quantity: string;
+      units_sold: string;
+      avg_daily_sales: string;
+      days_of_coverage: string;
+      is_ruptura: boolean;
+    }>(
+      ADMIN_SB,
+      `select * from public.get_stock_coverage('${ORG_SB}','${WINDOW_START}','${TODAY}') where sku_id='${skuId}'`,
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0]?.local_quantity)).toBe(20);
+    expect(Number(rows[0]?.units_sold)).toBe(10);
+    expect(Number(rows[0]?.avg_daily_sales)).toBe(1);
+    expect(Number(rows[0]?.days_of_coverage)).toBe(10);
+    expect(rows[0]?.is_ruptura).toBe(false);
+  });
+
+  it("fora da janela de datas, a venda não conta — sem histórico no período, cobertura nula", async () => {
+    const rows = await asUser<{ units_sold: string; days_of_coverage: string | null }>(
+      ADMIN_SB,
+      `select * from public.get_stock_coverage('${ORG_SB}','2020-01-01','2020-01-02') where sku_id='${skuId}'`,
+    );
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("estoque zerado com venda no período: ruptura", async () => {
+    const skuRuptura = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind) values ($1,'COVERAGETEST-em-ruptura','PRODUTO') returning id`,
+      [ORG_SB],
+    );
+    const rupturaSkuId = skuRuptura.rows[0]?.id ?? "";
+
+    await client.query(
+      `insert into public.daily_sku_metrics
+         (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values ($1,$2,$3,$4,3,150,2,2)`,
+      [ORG_SB, CONTA, rupturaSkuId, TODAY],
+    );
+
+    const rows = await asUser<{ is_ruptura: boolean; local_quantity: string }>(
+      ADMIN_SB,
+      `select * from public.get_stock_coverage('${ORG_SB}','${WINDOW_START}','${TODAY}') where sku_id='${rupturaSkuId}'`,
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0]?.local_quantity)).toBe(0);
+    expect(rows[0]?.is_ruptura).toBe(true);
+  });
+
+  it("anon não executa", async () => {
+    await expect(
+      asAnon(`select * from public.get_stock_coverage('${ORG_SB}','${WINDOW_START}','${TODAY}')`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
+  it("usuário de outra organização não vê o SKU de cobertura desta organização", async () => {
+    const rows = await asUser<{ sku_id: string }>(
+      DE_OUTRA_ORG,
+      `select * from public.get_stock_coverage('${ORG_SB}','${WINDOW_START}','${TODAY}') where sku_id='${skuId}'`,
+    );
+
+    expect(rows).toHaveLength(0);
+  });
+});
