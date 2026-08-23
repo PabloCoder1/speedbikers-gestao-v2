@@ -608,6 +608,24 @@ Levantadas pela pesquisa da documentação oficial que fecha a lista de verifica
 
 **Impacto:** `apps/worker/src/handlers/webhook-received.ts` ganha `post_purchase` como segundo tópico com consumidor (`orders_v2` era o único); `apps/worker/src/handlers/claim-return.ts` (novo) orquestra claim → return → reversão; `packages/domain/src/inventory/return-reversal.ts` (novo, puro) decide o quê reverter. Fecha o último item real do checklist da Fase 4 (recebimento parcial de pedido de compra segue adiado por decisão deliberada separada, não é bloqueio).
 
+## D-058 — `listings` é UMA tabela (não três), projeção mutável — achado ao inspecionar o banco real da V2
+
+**Contexto:** "Sincronização de listings/anúncios" era o pré-requisito não nomeado da Fase 5B ("Dashboards de SKU e de Anúncio" depende disso existir primeiro). O desenho conceitual original (`docs/ARCHITECTURE.md`/`docs/DATABASE.md` secao 2, escrito na Fase 0) previa TRÊS tabelas: `listings`, `listing_variations`, `listing_price_states` — nunca elaboradas em colunas, só citadas por nome.
+
+**Achado, evidência medida (mesmo princípio de D-037/D-039/D-040/D-048/D-053/D-057):** antes de desenhar, inspecionei o banco real da V2 (`speedbikers-gestao-v2`, ref `eeramcpouarfwagxigtz`). Ela tinha justamente esse desenho ambicioso — `ml_listings`/`ml_listing_variations` (título, categoria, `health`, permalink, thumbnail, `raw_payload`, ~20 colunas cada) — e as duas tabelas tinham **ZERO linhas**: nunca chegaram a ser populadas de verdade. Em contraste, `ml_offer_price_states` (uma tabela MUITO mais estreita e focada — 40+ colunas, mas TODAS de mecânica de preço/promoção: `base_price`, `effective_price`, `winning_offer`, campos de promoção) tinha uso real (5.143 linhas, "price divergence diagnostics"). Uma terceira tentativa intermediária, `ml_offer_state_snapshots` (item_id/variation_id/seller_sku/title/status/price/quantities/health, sem o `raw_payload`/permalink/thumbnail pesados), também tinha zero linhas.
+
+**Leitura do padrão:** a V2 tentou um espelho completo do anúncio DUAS vezes (uma ambiciosa, uma mais enxuta) e nenhuma das duas foi usada — só a tabela estritamente focada em PREÇO teve tração real. Isso sugere que o valor de negócio comprovado é rastrear preço/estado básico, não um espelho completo de metadado de anúncio.
+
+**Decisão 1 — UMA tabela `listings`, não três:** grão `(ml_account_id, item_id)`, mesma granularidade já usada por `sku_listing_links`/`fulfillment_stock_snapshots` para o mesmo conceito (item + variação opcional) — evita o split em `listings`/`listing_variations` que a V2 tinha e nunca populou. Colunas enxutas: `item_id`, `sku_id` (resolvido no sync), `title`, `status`, `price`, `currency_id`, `available_quantity`, `category_id` — o suficiente para "Dashboard de Anúncio" e Curva ABC, sem replicar a tabela de 40 colunas de promoção (essa é diagnóstico, Fase 6/7, não dashboard, Fase 5B).
+
+**Decisão 2 — projeção MUTÁVEL (upsert), não ledger append-only:** diferente de `stock_movements`/`domain_events`, não há evidência ainda de que histórico de MUDANÇA de listing (quando o título mudou, quando o preço mudou) seja necessário — isso vira relevante quando `domain_events` datados alimentar diagnóstico (Fase 6), momento em que os `event_type` já catalogados desde a Fase 0 (`listing.title.changed`, `listing.status.paused`, etc., ainda não emitidos por código nenhum) fariam sentido. Implementar o diff agora seria especular sem caso de uso concreto.
+
+**Decisão 3 — enumeração via `sku_listing_links`, não `/users/{id}/items/search`:** mesmo mecanismo já usado por Full (D-047-adjacent) — sincroniza só itens JÁ vinculados a um SKU, não o catálogo completo do vendedor. "Descobrir anúncio novo automaticamente" é uma funcionalidade genuinamente diferente (mais próxima da Central de Vinculações) sem evidência ainda de ser o problema real.
+
+**Decisão 4 — escopo limitado a itens SEM variação**, mesmo raciocínio já usado em Full (D-047-adjacent): a documentação oficial não mostra o formato exato de variação dentro da resposta de `/items` para codar esse ramo sem adivinhar (REGRA ABSOLUTA).
+
+**Impacto:** `apps/worker/src/handlers/ml-listings-fetch.ts`/`sync-listings-snapshot.ts` (job `sync.listings.snapshot`), `apps/api/src/listings-schedule.ts` + rota `POST /internal/schedule/listings`, Cloud Scheduler a cada 6h (`v3-listings-snapshot`, mesmo raciocínio de rate limit conservador de Full, D-042). Migration `20260823172938_create_listings.sql`. UI/dashboard de anúncio propriamente dito (o item de checklist original da Fase 5B) fica para depois — este item era só a sincronização, o pré-requisito.
+
 ## Como adicionar nova decisão
 
 Registrar:

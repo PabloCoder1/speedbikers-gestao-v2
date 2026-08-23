@@ -897,6 +897,79 @@ export type Database = {
           },
         ]
       }
+      listings: {
+        Row: {
+          available_quantity: number
+          category_id: string | null
+          created_at: string
+          currency_id: string
+          id: string
+          item_id: string
+          ml_account_id: string
+          organization_id: string
+          price: number
+          sku_id: string | null
+          status: string
+          synced_at: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          available_quantity: number
+          category_id?: string | null
+          created_at?: string
+          currency_id: string
+          id?: string
+          item_id: string
+          ml_account_id: string
+          organization_id: string
+          price: number
+          sku_id?: string | null
+          status: string
+          synced_at?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          available_quantity?: number
+          category_id?: string | null
+          created_at?: string
+          currency_id?: string
+          id?: string
+          item_id?: string
+          ml_account_id?: string
+          organization_id?: string
+          price?: number
+          sku_id?: string | null
+          status?: string
+          synced_at?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "listings_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "listings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "listings_sku_id_fkey"
+            columns: ["sku_id"]
+            isOneToOne: false
+            referencedRelation: "skus"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       metric_definitions: {
         Row: {
           cancellation_treatment: string

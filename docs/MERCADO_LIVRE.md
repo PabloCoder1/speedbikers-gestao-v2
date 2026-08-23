@@ -53,7 +53,7 @@ Confirmado na documentação oficial (`developers.mercadolivre.com.br`, consulta
 | Itens do vendedor (legado) | `GET /sites/{site_id}/search?seller_id=...` | `read` | idem acima | secao 2.3 | 2026-08-21 — documentação indica substituição gradual pelo endpoint acima |
 | Filtro por user product | `GET /users/{seller_id}/items/search?user_product_id=MLBU1,MLBU2` | `read`, privado | — | secao 2.3 | 2026-08-20 |
 | Multiget de itens | `GET /items?ids=ID1,ID2&attributes=...` | `read` | até **20 ids** por chamada | secao 2.3 | 2026-08-21 |
-| Item único | `GET /items/{item_id}` | `read` | — | secao 2.3 | 2026-08-20 |
+| Item único | `GET /items/{item_id}` | `read` | — | secao 2.3 | 2026-08-20, campos de listing (`title`/`status`/`price`/`available_quantity`/`category_id`) confirmados em 2026-08-23 (D-058) |
 | Variações de um item | `GET /items/{item_id}/variations` | `read` | — | secao 2.3 | 2026-08-21 |
 | Variação específica | `GET /items/{item_id}/variations/{variation_id}` | `read` | — | secao 2.3 | 2026-08-21 |
 | Estoque Full agregado | `GET /inventories/{inventory_id}/stock/fulfillment` | `read`, "Vendas e envios" | — | secao 2.3 | 2026-08-21 |

@@ -134,7 +134,7 @@ Cada fase só é considerada concluída sob a Definition of Done do `docs/PROMPT
 
 ## Fase 5B — Analytics de estoque, sortimento e tráfego
 
-- [ ] **Sincronização de listings/anúncios** (pré-requisito não nomeado explicitamente até 2026-08-22, achado em revisão) — `docs/DATABASE.md` já modela `listings`/`listing_variations`/`listing_price_states`, mas nenhum job os popula a partir do Mercado Livre; "Dashboards de SKU e de Anúncio" abaixo depende disso existir primeiro
+- [x] **Sincronização de listings/anúncios** — concluído em 2026-08-23 (D-058): tabela `listings` ÚNICA (não as três originalmente conceituadas — achado ao inspecionar o banco real da V2: o espelho completo de anúncio nunca teve uso real lá, só a versão focada em preço), job `sync.listings.snapshot` (Cloud Scheduler a cada 6h, por conta), enumeração via `sku_listing_links` (itens já vinculados a SKU, sem variação). "Dashboards de SKU e de Anúncio" abaixo continua pendente — este item era só a sincronização, o pré-requisito
 - [ ] Cobertura, ruptura, vendas perdidas estimadas
 - [ ] Curva ABC e filtros de Full
 - [ ] Dashboards de SKU e de Anúncio

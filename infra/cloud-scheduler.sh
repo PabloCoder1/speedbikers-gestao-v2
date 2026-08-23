@@ -104,5 +104,15 @@ upsert_job \
   "${API_URL}/internal/schedule/ledger-integrity" \
   "Conferencia ledger (stock_movements) contra a projecao (inventory_balances), por organizacao"
 
+# Sincronizacao de listings/anuncios (D-058) -- cadencia menor que pedidos,
+# mesmo raciocinio de Full (nao muda tao rapido, mais conservador com o
+# orcamento de rate limit nao documentado, D-042). Por CONTA, nao por
+# organizacao -- listing pertence a uma conta Mercado Livre especifica.
+upsert_job \
+  "v3-listings-snapshot" \
+  "0 */6 * * *" \
+  "${API_URL}/internal/schedule/listings" \
+  "Sincronizacao de listings/anuncios, por conta Mercado Livre CONNECTED"
+
 step "Concluído"
 gc scheduler jobs list --location "${REGION}" --format="table(name.basename(),schedule,state)"

@@ -30,7 +30,7 @@ catalog         skus · sku_components · brands
 erp-sync        erp_import_batches · erp_import_rows · erp_product_catalog · erp_kits
                 erp_stock_snapshots · erp_store_aliases        (UpSeller — D-028)
 suppliers       suppliers (implementada 2026-08-22) · supplier_product_links (conceitual, fora de escopo por ora)
-listings        listings · listing_variations · listing_price_states
+listings        listings (implementada 2026-08-23, D-058 — UMA tabela, não três; secao 6)
 linking         sku_listing_links · link_candidates
 sales           orders · order_items
 inventory       inventory_balances · fulfillment_stock_snapshots
@@ -277,9 +277,28 @@ sku_id (congelado na captura, D-020),
 quantity, captured_at
 ```
 
-**Full é espelho do Mercado Livre, não ledger** (D-018). A autoridade é o ML. Eventos de Full (entrou, saiu, rompeu, repôs) saem do **diff entre snapshots consecutivos**. `inventory_id` vem de `GET /items/{item_id}` (`docs/MERCADO_LIVRE.md` secao 2.7); a enumeração de quais `item_id`/`variation_id` existem por conta usa `sku_listing_links` (`ref_kind = 'ITEM'`), sem depender de uma tabela `listings` própria — essa continua fora do escopo da Fase 4. RLS por `has_account_access(ml_account_id)`, mesmo padrão de `domain_events`/`sync_runs` (Full é por conta, não por organização inteira — diferente de `stock_movements`, que é local e organização-wide).
+**Full é espelho do Mercado Livre, não ledger** (D-018). A autoridade é o ML. Eventos de Full (entrou, saiu, rompeu, repôs) saem do **diff entre snapshots consecutivos**. `inventory_id` vem de `GET /items/{item_id}` (`docs/MERCADO_LIVRE.md` secao 2.7); a enumeração de quais `item_id`/`variation_id` existem por conta usa `sku_listing_links` (`ref_kind = 'ITEM'`), sem depender da tabela `listings` (secao seguinte) — as duas enumeram do mesmo lugar, mas com propósitos diferentes (Full: estoque espelhado; `listings`: estado do anúncio). RLS por `has_account_access(ml_account_id)`, mesmo padrão de `domain_events`/`sync_runs` (Full é por conta, não por organização inteira — diferente de `stock_movements`, que é local e organização-wide).
 
 Local, Full por conta, reservado e em trânsito são **quatro estados com quatro autoridades diferentes**. A interface nunca os soma cegamente num "estoque total" sem dizer o que ele contém.
+
+### `listings` — estado atual do anúncio
+
+**Schema implementado em 2026-08-23** (D-058, migration `20260823172938_create_listings.sql`), pré-requisito da Fase 5B ("Dashboards de SKU e de Anúncio", `docs/ROADMAP.md`). Job de sincronização (`sync.listings.snapshot`, `apps/worker/src/handlers/ml-listings-fetch.ts`/`sync-listings-snapshot.ts`) + disparo automático (`POST /internal/schedule/listings` + Cloud Scheduler a cada 6h, `v3-listings-snapshot`).
+
+```text
+organization_id, ml_account_id,
+item_id, sku_id (resolvido no sync, D-020),
+title, status, price, currency_id, available_quantity, category_id,
+synced_at
+```
+
+**Escopo DELIBERADAMENTE menor que o desenho conceitual original** (`listings`/`listing_variations`/`listing_price_states`, três tabelas) — achado ao inspecionar o banco real da V2 antes de desenhar (evidência medida, D-037/D-039/D-040/D-048/D-053/D-057): as tabelas equivalentes na V2 (`ml_listings`/`ml_listing_variations`, um espelho completo — título, categoria, health, permalink, thumbnail, `raw_payload`) **existiam mas tinham ZERO linhas** — nunca chegaram a ser usadas de verdade. A tabela mais estreita focada em preço (`ml_offer_price_states`, 40+ colunas de mecânica de promoção) teve uso real (5.143 linhas), mas seu escopo é mais Fase 6/7 (diagnóstico) que Fase 5B (dashboards).
+
+UMA tabela só, grão `(ml_account_id, item_id)` — mesma granularidade de `sku_listing_links`/`fulfillment_stock_snapshots` para o mesmo conceito, evitando o split que a V2 tinha e nunca populou. **Projeção MUTÁVEL (upsert), não ledger** — sem evidência ainda de que histórico de mudança de listing seja necessário; isso é diagnóstico (Fase 6), quando `domain_events` datados fizer sentido para isso. `sku_id` é `on delete set null`, não `restrict` — diferente de `order_items`/`stock_movements` (histórico imutável), esta linha é projeção viva, refeita a cada sync.
+
+Enumeração via `sku_listing_links` (`ref_kind='ITEM'`, mesmo mecanismo de Full) — só itens JÁ vinculados a um SKU, não o catálogo completo do vendedor (`/users/{id}/items/search`, mais amplo, fica para quando houver evidência de que "descobrir anúncio novo" é o problema real). **Escopo desta etapa, mesmo limite de Full: só itens SEM variação.**
+
+RLS por `has_account_access(ml_account_id)`, mesmo padrão de `fulfillment_stock_snapshots`/`domain_events`/`sync_runs`.
 
 ### `documents` / `document_items` — NF-e
 

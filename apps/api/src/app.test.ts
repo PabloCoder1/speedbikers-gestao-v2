@@ -10,6 +10,7 @@ import type { EnqueueRequest } from "./enqueue.js";
 import type { FulfillmentScheduleDeps } from "./fulfillment-schedule.js";
 import { createIpAllowlistVerifier } from "./ip-allowlist.js";
 import type { LedgerIntegrityScheduleDeps } from "./ledger-integrity-schedule.js";
+import type { ListingsScheduleDeps } from "./listings-schedule.js";
 import type { MlAccountsDeps } from "./ml-accounts.js";
 import type { OidcVerifier } from "./oidc.js";
 import type { ReconcileDeps } from "./reconcile.js";
@@ -415,6 +416,85 @@ describe("POST /internal/schedule/ledger-integrity", () => {
     expect(enqueued).toHaveLength(1);
     expect(enqueued[0]?.jobType).toBe("maintenance.verify-ledger-integrity");
     expect(enqueued[0]?.queue).toBe("maintenance");
+  });
+});
+
+describe("POST /internal/schedule/listings", () => {
+  const aceitaTudo: OidcVerifier = {
+    verify: () => Promise.resolve({ ok: true, email: "scheduler@exemplo.com" }),
+  };
+
+  const recusaTudo: OidcVerifier = {
+    verify: () => Promise.resolve({ ok: false, reason: "token inválido" }),
+  };
+
+  function fakeAccountsDb(): ListingsScheduleDeps["db"] {
+    return {
+      from: () => ({
+        select: () => ({
+          eq: () =>
+            Promise.resolve({
+              data: [{ id: "acc-1", organization_id: "org-1", slug: "speedbikers-loja-1" }],
+              error: null,
+            }),
+        }),
+      }),
+    } as unknown as ListingsScheduleDeps["db"];
+  }
+
+  it("exige OIDC, como as demais rotas /internal", async () => {
+    const app = createApp({ logger: createLogger({}, { sink: () => undefined }), oidc: recusaTudo });
+
+    const response = await app.request("/internal/schedule/listings", { method: "POST" });
+
+    expect(response.status).toBe(401);
+  });
+
+  it("responde 503 sem as dependências da sincronização", async () => {
+    const app = createApp({ logger: createLogger({}, { sink: () => undefined }), oidc: aceitaTudo });
+
+    const response = await app.request("/internal/schedule/listings", { method: "POST" });
+
+    expect(response.status).toBe(503);
+  });
+
+  it("dispara a sincronização e devolve o resumo", async () => {
+    const enqueued: EnqueueRequest[] = [];
+
+    const app = createApp({
+      logger: createLogger({}, { sink: () => undefined }),
+      oidc: aceitaTudo,
+      listingsSchedule: {
+        db: fakeAccountsDb(),
+        logger: createLogger({}, { sink: () => undefined }),
+        enqueuer: {
+          enqueue: (request) => {
+            enqueued.push(request);
+
+            return Promise.resolve({
+              taskName: "t",
+              deduplicated: false,
+              envelope: {
+                jobType: request.jobType,
+                jobId: "6f1d5f9c-6d0b-4a5f-9f4a-2c9a7a1f0b11",
+                organizationId: request.organizationId,
+                dedupeKey: request.dedupeKey,
+                attempt: 1,
+                enqueuedAt: "2026-08-23T18:00:00.000Z",
+              },
+            });
+          },
+        },
+      },
+    });
+
+    const response = await app.request("/internal/schedule/listings", { method: "POST" });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ accountsScanned: 1, enqueued: 1, deduplicated: 0 });
+    expect(enqueued).toHaveLength(1);
+    expect(enqueued[0]?.jobType).toBe("sync.listings.snapshot");
+    expect(enqueued[0]?.queue).toBe("ml-sync-speedbikers-loja-1");
   });
 });
 

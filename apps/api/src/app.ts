@@ -15,6 +15,8 @@ import { triggerFulfillmentSnapshot } from "./fulfillment-schedule.js";
 import type { IpAllowlistVerifier } from "./ip-allowlist.js";
 import type { LedgerIntegrityScheduleDeps } from "./ledger-integrity-schedule.js";
 import { triggerLedgerIntegrityCheck } from "./ledger-integrity-schedule.js";
+import type { ListingsScheduleDeps } from "./listings-schedule.js";
+import { triggerListingsSnapshot } from "./listings-schedule.js";
 import type { MlAccountsDeps } from "./ml-accounts.js";
 import { completeConnect, startConnect } from "./ml-accounts.js";
 import type { NfeImportDeps } from "./nfe-import.js";
@@ -64,6 +66,7 @@ export interface AppDependencies {
   fulfillmentSchedule?: FulfillmentScheduleDeps;
   balanceReconcileSchedule?: BalanceReconcileScheduleDeps;
   ledgerIntegritySchedule?: LedgerIntegrityScheduleDeps;
+  listingsSchedule?: ListingsScheduleDeps;
 }
 
 /**
@@ -340,6 +343,23 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     const outcome = await triggerLedgerIntegrityCheck(ledgerIntegritySchedule);
+
+    return context.json(outcome);
+  });
+
+  // --------------------------------------------------------------------
+  // Sincronização de listings/anúncios (D-058) — mesmo formato de
+  // /internal/schedule/fulfillment acima, por CONTA. Cadência a cada 6h:
+  // `infra/cloud-scheduler.sh`.
+  // --------------------------------------------------------------------
+  app.post("/internal/schedule/listings", async (context) => {
+    const listingsSchedule = dependencies.listingsSchedule;
+
+    if (listingsSchedule === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const outcome = await triggerListingsSnapshot(listingsSchedule);
 
     return context.json(outcome);
   });
