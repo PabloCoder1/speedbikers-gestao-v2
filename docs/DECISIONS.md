@@ -654,6 +654,20 @@ Levantadas pela pesquisa da documentação oficial que fecha a lista de verifica
 
 **Impacto:** migration `20260823210917_create_search_entities_rpc.sql`. `apps/web/components/command-palette.tsx` (novo), `apps/web/components/shell.tsx` ganha a busca no cabeçalho (a organização já era resolvida ali, só passou a incluir `organization_id` na seleção, sem consulta nova). **"Filtros salvos" segue como item de checklist separado, sem escopo definido ainda** — precisa de uma tabela de presets por usuário/tela e mudança em cada tela filtrada existente, feito quando houver essa etapa dedicada.
 
+## D-061 — "Vendas perdidas estimadas" fica ADIADO — o ledger não tem entrada de saldo inicial, então não há como detectar QUANDO uma ruptura começou
+
+**Contexto:** último pedaço pendente de "Cobertura, ruptura, vendas perdidas estimadas" (`docs/ROADMAP.md`, Fase 5B) — a Cobertura/ruptura em si (`get_stock_coverage`) já estava concluída; faltava só estimar quanto se deixou de vender durante um período de ruptura contínua. A migration de Cobertura já registrava essa lacuna: "exige detectar período de ruptura contínua, não só o instante atual".
+
+**Desenho original considerado**: reconstruir o saldo LOCAL histórico de cada SKU a partir do ledger (`stock_movements`, `sum(qty_delta) over (partition by sku_id order by occurred_at)`), achar o movimento mais recente em que o saldo cruzou de positivo para `<= 0` e nunca mais voltou a subir (início da ruptura em curso), e multiplicar a venda média diária ANTES desse ponto pelo número de dias em ruptura dentro da janela pedida — mesmo padrão de `full outer join`/janela já usado em outros RPCs desta sessão.
+
+**Achado, evidência medida contra o banco real (mesmo princípio de D-037/D-039/D-040/D-048/D-053/D-057/D-058/D-059)**: antes de implementar, testei a consulta de "saldo histórico" contra a organização de demonstração (backfill real da V2). Resultado: **as 2.194 SKUs com movimento LOCAL na organização estão TODAS em ruptura hoje, e NENHUMA delas jamais teve saldo LOCAL positivo em nenhum ponto do ledger** — `max(running_balance) <= 0` para 100% do catálogo. Confirmando a causa: `select movement_type, count(*) from stock_movements where location_kind='LOCAL'` devolve só `VENDA_ML` (194.988) e `CANCELAMENTO_ML` (42) — **nenhuma entrada positiva existe no ledger** (`ENTRADA_NFE` ou qualquer outra). O backfill trouxe o HISTÓRICO DE VENDAS, mas nunca um saldo inicial/de abertura por SKU.
+
+**Consequência para o algoritmo**: "quando a ruptura começou" é matematicamente indefinido quando o ledger nunca teve um ponto positivo — a única resposta possível seria "desde o primeiro movimento já registrado", que é a data do BACKFILL, não a data real em que o estoque zerou fisicamente. Implementar mesmo assim produziria um número tecnicamente calculável mas sem significado operacional nenhum (extrapolar venda perdida "desde novembro de 2025" para um SKU cujo saldo real de abertura nunca foi importado) — pior que não mostrar nada, porque parece dado real.
+
+**Decisão: ADIADO, não implementado.** Isto não é uma lacuna de código da V3 — é uma lacuna de COMPLETUDE DE DADO no backfill (D-037/D-040 já registraram que os backfills de histórico não terminaram). Duas saídas possíveis no futuro, nenhuma delas de responsabilidade desta etapa: (1) um saldo inicial/de abertura ser importado por SKU (uma migration de dado, não de schema — a coluna/tipo de movimento já poderia reusar `AJUSTE_MANUAL` ou um novo tipo dedicado, mas SEM o dado de origem confiável isso seria advinhar), ou (2) esperar o ledger acumular histórico orgânico suficiente em produção real (a partir do primeiro `ENTRADA_NFE`/`AJUSTE_MANUAL` de cada SKU, transições reais de positivo→zero começam a existir e o algoritmo acima passa a fazer sentido).
+
+**Impacto:** nenhuma migration, nenhum código novo — decisão de NÃO implementar, documentada para a próxima sessão não repetir a mesma investigação. `docs/ROADMAP.md` mantém o item com a razão específica em vez de "não iniciado".
+
 ## Como adicionar nova decisão
 
 Registrar:
