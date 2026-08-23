@@ -2124,22 +2124,39 @@ describe("reconciliação de estoque contra o UpSeller (D-029, D-054)", () => {
 describe("pedidos de compra (fornecedores, ciclo, histórico por evento)", () => {
   const ITEMS = `'[{"skuId":null,"skuSnapshot":"RLSTEST-compras-item","titleSnapshot":"Item de teste","quantityOrdered":10,"unitCost":5.5}]'::jsonb`;
 
-  // asUserPersist COMMITA de verdade (diferente de asUser, que reverte) —
-  // uma transição de estado precisa sobreviver para o próximo passo do
-  // ciclo (aprovar, depois marcar como enviado) fazer sentido. Por isso,
-  // ao contrário da maior parte deste arquivo, este describe rastreia os
-  // pedidos criados e limpa no afterAll — mesmo raciocínio de
-  // "link_document_item". `purchase_orders` primeiro (FK `on delete
-  // restrict` de `suppliers`), fornecedores depois, por nome — todos usam
-  // prefixo `RLSTEST`, não precisam de tracking individual.
-  const createdOrderIds: string[] = [];
+  // Usuário PRÓPRIO, e-mail fora do padrão `%@rls.test` que o afterAll
+  // global apaga: uma vez que ele tiver um purchase_orders no created_by
+  // (`on delete restrict`), fica permanentemente indeletável — e o próprio
+  // purchase_orders nunca sai, porque cascateia para purchase_order_events
+  // (L2 append-only, DELETE sempre rejeitado pelo trigger). Reusar ADMIN_SB
+  // quebraria a limpeza global das outras suítes deste arquivo — mesmo
+  // raciocínio já documentado para a conta de observabilidade de
+  // sincronização e para o SKU do ledger de estoque, acima.
+  const ADMIN_COMPRAS = "dddd1111-0000-4000-8000-000000000011";
 
-  afterAll(async () => {
-    if (createdOrderIds.length > 0) {
-      await client.query("delete from public.purchase_orders where id = any($1)", [createdOrderIds]);
-    }
-    await client.query("delete from public.suppliers where name like 'RLSTEST%'");
+  beforeAll(async () => {
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                              email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',
+               'admin@comprastest.internal','x',now(),'{"full_name":"Admin de compras"}',now(),now())
+       on conflict (id) do nothing`,
+      [ADMIN_COMPRAS],
+    );
+
+    await client.query(
+      `insert into public.organization_members (organization_id, user_id, role)
+       values ($1,$2,'ADMIN') on conflict do nothing`,
+      [ORG_SB, ADMIN_COMPRAS],
+    );
   });
+
+  // Sem afterAll de limpeza: pedido de compra aprovado tem
+  // purchase_order_events (append-only), então nem ele nem o fornecedor
+  // referenciado (`on delete restrict`) saem — mesmo raciocínio de
+  // sync_runs/stock_movements acima. As linhas de teste ficam, como
+  // ficariam em produção; o ambiente local é recriado por
+  // `supabase db reset` quando isso importar.
 
   it("anon não vê suppliers/purchase_orders/purchase_order_items/purchase_order_events", async () => {
     await expect(asAnon("select * from public.suppliers")).rejects.toThrow(/permission denied/i);
@@ -2186,34 +2203,33 @@ describe("pedidos de compra (fornecedores, ciclo, histórico por evento)", () =>
 
   it("ADMIN percorre o ciclo completo: criar -> aprovar -> marcar como enviado -> receber, com histórico por evento", async () => {
     const supplier = await asUserPersist<{ id: string }>(
-      ADMIN_SB,
+      ADMIN_COMPRAS,
       `select * from public.create_supplier('${ORG_SB}','RLSTEST fornecedor ciclo completo')`,
     );
     const supplierId = supplier[0]?.id ?? "";
 
     const order = await asUserPersist<{ id: string; status: string }>(
-      ADMIN_SB,
+      ADMIN_COMPRAS,
       `select * from public.create_purchase_order('${ORG_SB}',${ITEMS},'${supplierId}')`,
     );
     const orderId = order[0]?.id ?? "";
-    createdOrderIds.push(orderId);
 
     expect(order[0]?.status).toBe("DRAFT");
 
     const approved = await asUserPersist<{ status: string }>(
-      ADMIN_SB,
+      ADMIN_COMPRAS,
       `select * from public.approve_purchase_order('${orderId}')`,
     );
     expect(approved[0]?.status).toBe("APPROVED");
 
     const ordered = await asUserPersist<{ status: string }>(
-      ADMIN_SB,
+      ADMIN_COMPRAS,
       `select * from public.mark_purchase_order_ordered('${orderId}')`,
     );
     expect(ordered[0]?.status).toBe("ORDERED");
 
     const received = await asUserPersist<{ status: string }>(
-      ADMIN_SB,
+      ADMIN_COMPRAS,
       `select * from public.receive_purchase_order('${orderId}')`,
     );
     expect(received[0]?.status).toBe("RECEIVED");
@@ -2227,46 +2243,43 @@ describe("pedidos de compra (fornecedores, ciclo, histórico por evento)", () =>
 
   it("aprovar um pedido que não está em rascunho é recusado", async () => {
     const order = await asUserPersist<{ id: string }>(
-      ADMIN_SB,
+      ADMIN_COMPRAS,
       `select * from public.create_purchase_order('${ORG_SB}',${ITEMS})`,
     );
     const orderId = order[0]?.id ?? "";
-    createdOrderIds.push(orderId);
 
-    await asUserPersist(ADMIN_SB, `select * from public.approve_purchase_order('${orderId}')`);
+    await asUserPersist(ADMIN_COMPRAS, `select * from public.approve_purchase_order('${orderId}')`);
 
     await expect(
-      asUserPersist(ADMIN_SB, `select * from public.approve_purchase_order('${orderId}')`),
+      asUserPersist(ADMIN_COMPRAS, `select * from public.approve_purchase_order('${orderId}')`),
     ).rejects.toThrow(/nao esta em rascunho/);
   });
 
   it("cancelar um pedido já recebido (estado terminal) é recusado", async () => {
     const order = await asUserPersist<{ id: string }>(
-      ADMIN_SB,
+      ADMIN_COMPRAS,
       `select * from public.create_purchase_order('${ORG_SB}',${ITEMS})`,
     );
     const orderId = order[0]?.id ?? "";
-    createdOrderIds.push(orderId);
 
-    await asUserPersist(ADMIN_SB, `select * from public.approve_purchase_order('${orderId}')`);
-    await asUserPersist(ADMIN_SB, `select * from public.mark_purchase_order_ordered('${orderId}')`);
-    await asUserPersist(ADMIN_SB, `select * from public.receive_purchase_order('${orderId}')`);
+    await asUserPersist(ADMIN_COMPRAS, `select * from public.approve_purchase_order('${orderId}')`);
+    await asUserPersist(ADMIN_COMPRAS, `select * from public.mark_purchase_order_ordered('${orderId}')`);
+    await asUserPersist(ADMIN_COMPRAS, `select * from public.receive_purchase_order('${orderId}')`);
 
     await expect(
-      asUserPersist(ADMIN_SB, `select * from public.cancel_purchase_order('${orderId}','motivo qualquer')`),
+      asUserPersist(ADMIN_COMPRAS, `select * from public.cancel_purchase_order('${orderId}','motivo qualquer')`),
     ).rejects.toThrow(/estado terminal/);
   });
 
   it("cancelar um rascunho funciona e grava o motivo no evento", async () => {
     const order = await asUserPersist<{ id: string }>(
-      ADMIN_SB,
+      ADMIN_COMPRAS,
       `select * from public.create_purchase_order('${ORG_SB}',${ITEMS})`,
     );
     const orderId = order[0]?.id ?? "";
-    createdOrderIds.push(orderId);
 
     const cancelled = await asUserPersist<{ status: string; cancel_reason: string }>(
-      ADMIN_SB,
+      ADMIN_COMPRAS,
       `select * from public.cancel_purchase_order('${orderId}','RLSTEST motivo do cancelamento')`,
     );
 
@@ -2281,7 +2294,7 @@ describe("pedidos de compra (fornecedores, ciclo, histórico por evento)", () =>
 
   it("usuário de outra organização não vê o fornecedor nem o pedido criados", async () => {
     const supplier = await asUserPersist<{ id: string }>(
-      ADMIN_SB,
+      ADMIN_COMPRAS,
       `select * from public.create_supplier('${ORG_SB}','RLSTEST fornecedor isolamento')`,
     );
     const supplierId = supplier[0]?.id ?? "";
