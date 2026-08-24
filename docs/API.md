@@ -227,3 +227,41 @@ Classificação para retry, aplicada pelo cliente do Mercado Livre e pelos handl
 - Payloads exatos do Mercado Livre dependem da confirmação da documentação oficial — ver `docs/MERCADO_LIVRE.md`.
 - Exportação de pedido de compra: **Excel é o formato principal**, PDF secundário, XML adiado (D-034). Modelos a solicitar antes da Fase 4.
 - Rotas de importação do UpSeller (upload e aplicação) detalhadas. A conciliação contra `inventory_balances` (D-029) fica para a Fase 4 — o ledger ainda não existe.
+
+---
+
+## 9. Central de Atendimento / SAC (Fase 7B, conceitual)
+
+> Registrado em 2026-08-24 (D-071). Nada nesta seção está implementado; nenhum payload é presumido — depende da pesquisa oficial de `docs/MERCADO_LIVRE.md` secao 2.12 (hoje vazia de propósito).
+
+Rotas prováveis, seguindo as três regras de fronteira da secao 1 — responder ao Mercado Livre exige segredo (credencial da conta) e pode ter latência, então é comando privilegiado da `api`, nunca escrita direta do `web`:
+
+| Rota (provável) | Método | Papel mínimo | Descrição |
+|---|---|---|---|
+| `POST /v1/support/cases/:id/reply` | POST | a confirmar (GESTOR ou OPERADOR com acesso à conta) | Envia a resposta confirmada pelo humano — **comando privilegiado**, mesmo padrão de `/v1/nfe-imports/:id/apply` |
+| `POST /v1/support/knowledge` | POST | a confirmar | Confirma um item de conhecimento sugerido como `VALIDADO` |
+
+Jobs prováveis, mesmo formato de `sync.listings.snapshot`/`sync.listing-visits.snapshot` — ingestão read-only primeiro, resposta depois:
+
+| Tipo (provável) | Fila | Descrição |
+|---|---|---|
+| `sync.support.questions` | `ml-sync-<conta>` | Sincroniza perguntas — payload exato depende da pesquisa oficial |
+| `sync.support.messages` | `ml-sync-<conta>` | Sincroniza mensagens pós-venda — idem |
+| `sync.support.claims` | `ml-sync-<conta>` | Reaproveita o que D-057/secao 2.10 já confirmou (claims/returns), estendendo para persistência de UI, não só reversão de estoque |
+
+Catálogo de eventos proposto, seguindo `dominio.entidade.acao` (secao 4) — nomes conceituais, a confirmar contra os estados reais que a API devolver:
+
+| Evento (proposto) | Severidade padrão |
+|---|---|
+| `support.question.received` | informativo |
+| `support.message.received` | informativo / importante |
+| `support.claim.opened` | importante |
+| `support.claim.updated` | informativo |
+| `support.mediation.opened` | crítico |
+| `support.return.updated` | importante |
+| `support.customer_replied` | importante |
+| `support.sla_at_risk` | crítico |
+
+Antes de congelar este catálogo: verificar as APIs reais, os estados reais, a diferença entre mensagem/claim/mediação/devolução, e documentar em `docs/MERCADO_LIVRE.md`.
+
+`sync_runs.resource`/`sync_errors.resource` (hoje `orders`/`listings`/`fulfillment`/`visits`) precisaria crescer de novo para acomodar sincronização de SAC — mesmo CHECK que já cresceu uma vez para caber `visits` (`docs/DATABASE.md`).

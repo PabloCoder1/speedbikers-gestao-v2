@@ -166,9 +166,11 @@ Sub-domínios são *subpath exports* (`@sb/domain/stock`), não packages separad
 
 ## 8. Domínios
 
-Dezoito contextos. Cada um é dono das suas tabelas. **Escrita cruzada é proibida**; leitura cruzada só por read model declarado.
+Dezenove contextos. Cada um é dono das suas tabelas. **Escrita cruzada é proibida**; leitura cruzada só por read model declarado.
 
-`identity` · `ml-accounts` · `catalog` · `listings` · `sales` · `inventory` · `documents` · `purchasing` · `suppliers` · `linking` · `sync` · `events` · `analytics` · `diagnostics` · `actions` · `notifications` · `copilot` · `feedback`
+`identity` · `ml-accounts` · `catalog` · `listings` · `sales` · `inventory` · `documents` · `purchasing` · `suppliers` · `linking` · `sync` · `events` · `analytics` · `diagnostics` · `actions` · `notifications` · `copilot` · `feedback` · `support`
+
+**`support` (Fase 7B, D-071, conceitual — nenhuma tabela existe ainda):** Central de Atendimento/SAC — perguntas, mensagens, reclamações, devoluções, mediações e a Base de Conhecimento Validada. Lê `orders`/`skus`/`listings` só por read model declarado, como qualquer outro domínio; nunca escreve neles. Ver `docs/PRODUCT_REQUIREMENTS.md` e `docs/DATABASE.md`.
 
 Na prática, um domínio é um diretório em `@sb/domain/<nome>` mais um prefixo de tabela. **A fronteira que precisa ser real é quem escreve na tabela** — imposta por `GRANT` no banco, não por convenção de pasta. Ver `docs/DATABASE.md`.
 

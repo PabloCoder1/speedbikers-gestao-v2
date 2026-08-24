@@ -39,6 +39,8 @@ purchasing      purchase_orders · purchase_order_items (implementadas 2026-08-2
 actions         actions (implementada 2026-08-24, D-064) · action_decisions · action_outcomes (implementadas 2026-08-24, D-065)
 notifications   notifications · notification_recipients · notification_preferences
 feedback        feature_suggestions
+support         support_cases · support_messages · support_case_events · knowledge_entries
+                reply_templates                 (Fase 7B, D-071 — conceitual, nomes a confirmar)
 meta            metric_definitions
 ```
 
@@ -565,5 +567,6 @@ Se a migração de compras acontecer na Fase 4, a regra permanece: cada linha mi
 | Tabelas de visitas, conversão e Ads | Fase 5B (D-032) | Modelagem adiada por decisão, não por falta de definição |
 | Estrutura exata das planilhas do UpSeller | Amostra real do arquivo | Necessária antes da Fase 2 |
 | Campos do Mercado Livre em cada recurso | `docs/MERCADO_LIVRE.md` | Necessária antes da Fase 3 |
+| Tabelas do domínio `support` (`support_cases`/`support_messages`/`support_case_events`/`knowledge_entries`/`reply_templates`) | Fase 7B (D-071) e pesquisa oficial de Perguntas/Mensagens (`docs/MERCADO_LIVRE.md` secao 2.12) | Nomes e colunas conceituais, propositalmente sem migration ainda |
 
-Nenhuma decisão de produto segue aberta. Ver `docs/DECISIONS.md` D-027 a D-034.
+Nenhuma decisão de produto segue aberta. Ver `docs/DECISIONS.md` D-027 a D-034 (e D-071 para o registro da Fase 7B).

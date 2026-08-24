@@ -28,6 +28,7 @@ A fonte de verdade continua sendo:
 - Fase 6: concluída com D-063, D-064 e D-065.
 - Próxima camada funcional principal: Fase 7 — Notificações e Copiloto.
 - Antes de aprofundar a Fase 7 existe um Checkpoint de Consolidação Pré-Fase 7 registrado no `docs/ROADMAP.md`.
+- **Fase 7B — Central de Atendimento/SAC Mercado Livre registrada em 2026-08-24 (D-071)**, só documentação — nenhum código, migration ou infraestrutura. Depende da Fase 7 concluída e de pesquisa oficial das APIs de Perguntas/Mensagens (`docs/MERCADO_LIVRE.md` secao 2.12, hoje vazia de propósito) antes de qualquer implementação. Detalhe completo em `docs/PRODUCT_REQUIREMENTS.md`, `docs/ROADMAP.md`, `docs/COPILOT.md` secao 11, `docs/API.md` secao 9, `docs/DATABASE.md`.
 
 ### Estado de infraestrutura que NÃO deve ser presumido
 

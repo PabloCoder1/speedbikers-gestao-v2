@@ -37,6 +37,7 @@ Confirmado na documentação oficial (`developers.mercadolivre.com.br`, consulta
 - [x] Escopos de OAuth necessários por recurso — secao 2.9
 - [x] Política de validação de origem do webhook — secao 2.6 (allowlist de IP; **sem assinatura HMAC documentada** para este produto)
 - [x] Endpoints de pós-venda (Claims/Returns) — secao 2.10 (D-057)
+- [ ] Endpoints de Perguntas e Mensagens pós-venda (Central de Atendimento/SAC, Fase 7B, D-071) — secao 2.12, **vazia de propósito**. Não bloqueia a Fase 3 (já desbloqueada); bloqueia o início real da Fase 7B
 
 ---
 
@@ -361,6 +362,30 @@ Existe também uma variante por CONTA inteira (`GET /users/{user_id}/items_visit
 
 ---
 
+## 2.12 Perguntas e Mensagens pós-venda — PENDENTE (Fase 7B, D-071)
+
+**Vazia de propósito** — nenhuma pesquisa oficial foi feita ainda para `questions` (perguntas pré-venda) nem `messages` (mensagens pós-venda). Preenchê-la com suposição é pior que deixá-la vazia (REGRA ABSOLUTA, topo deste arquivo).
+
+O que já se sabe, de fontes JÁ confirmadas neste arquivo, sem constituir pesquisa própria destes dois recursos:
+
+- `questions` já aparece como tópico de webhook confirmado (secao 2.4, "Perguntas/respostas"), mas sem payload nem endpoint de leitura/resposta detalhado.
+- `messages` é citado só de passagem (secao 2.4) como um dos tópicos "com subtópicos" (junto de `vis_leads`/`post_purchase`), sem nenhum detalhe de payload, endpoint ou permissão.
+- A permissão funcional "Comunicação pré e pós-venda" (secao 2.9) já lista `questions`/`messages` como recursos que ela libera — mas a tabela da mesma seção marca os dois como "seguem Fase posterior", ou seja: o escopo provavelmente certo, nunca testado.
+- Claims/Returns/Mediações **já estão confirmados** (secao 2.10, D-057) — reaproveitar aquela pesquisa para a parte de leitura; falta confirmar especificamente a permissão de **resposta/ação** sobre claims (hoje só leitura foi usada, para reversão de estoque, não para atendimento).
+
+Antes de qualquer código de sincronização ou UI de atendimento para perguntas/mensagens, pesquisar e registrar aqui:
+
+- endpoint de leitura de perguntas por item/conta e seu payload real;
+- endpoint de resposta a uma pergunta, permissão exigida, limites (tamanho, prazo);
+- endpoint de leitura de mensagens de um `pack`/pedido e payload real;
+- endpoint de resposta a uma mensagem, anexos permitidos, permissão exigida;
+- payload completo do webhook `messages` (hoje só citado por nome);
+- se existe campo de prazo/SLA exposto pela API para perguntas/mensagens/claims, ou se é regra própria da V3;
+- rate limit específico desses endpoints (secao 2.3 é o padrão geral, sem número — confirmar se estes recursos têm exceção);
+- se "mediação" é um `type` dentro de Claims (já visto: `type: mediations`, secao 2.10) ou um recurso com endpoint de detalhe próprio.
+
+---
+
 ## 3. Estratégia de sincronização
 
 Aprovada e independente dos detalhes de endpoint. Três canais com papéis que nunca se confundem:
@@ -448,6 +473,7 @@ O refresh de token usa lock para evitar corrida entre execuções concorrentes �
 - ~~Todo o conteúdo da seção 2. Bloqueia a Fase 3.~~ — **Resolvido em 2026-08-21.** Ver secoes 2.1 a 2.9.
 - ~~Confirmação da viabilidade da autorização centralizada pelo ADMIN.~~ — **Confirmada em 2026-08-21** (secao 2.2): viável, com autorização feita conta por conta pelo ADMIN; usuários internos não reautenticam depois. Ver **D-041**.
 - ~~Endpoints de visitas e de Ads~~ — **Visitas pesquisado e implementado em 2026-08-23** (secao 2.11). **Ads pesquisado, mas ADIADO por D-059**: exige `advertiser_id` próprio com elegibilidade condicionada (reputação, tempo de conta, mínimo de vendas) — sem evidência de que a conta Mercado Livre da Speed Bikers tenha o produto habilitado; integração maior que um adendo a visitas, escopo próprio quando houver evidência real de necessidade.
+- **Endpoints de Perguntas e Mensagens pós-venda (secao 2.12)** — registrado em 2026-08-24 (D-071), Fase 7B (Central de Atendimento/SAC). Não bloqueia nenhuma fase já em andamento; bloqueia o início real da Fase 7B.
 
 ### Avisos operacionais encontrados na pesquisa, não bloqueantes hoje
 

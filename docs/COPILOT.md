@@ -124,3 +124,28 @@ Estados na Central de Sugestões: `nova` -> `em_analise` -> `aprovada` -> `plane
 
 - Escolha do modelo e orçamento de custo por período.
 - As primeiras ferramentas acompanham a tela âncora, o Dashboard de vendas Geral e por Conta (D-033): vendas por período, comparação entre períodos e comparação entre contas.
+
+---
+
+## 11. Sugestão de resposta de atendimento (Fase 7B, conceitual)
+
+> Registrado em 2026-08-24 (D-071), junto com a Central de Atendimento/SAC — `docs/PRODUCT_REQUIREMENTS.md`, `docs/ROADMAP.md` Fase 7B. Nada aqui está implementado.
+
+Categoria de ferramenta nova: gera o **texto** de uma resposta a pergunta, mensagem, reclamação ou mediação — mesma família de "Estruturação" (secao 4, "transforma ideia em sugestão de feature estruturada"), **não** uma ferramenta de escrita. A regra da secao 6 ("sem ferramenta de escrita") continua valendo sem exceção: o Copiloto nunca chama uma tool que envia mensagem ao Mercado Livre.
+
+Fluxo:
+
+```text
+ATENDIMENTO + contexto determinístico
+   -> ferramentas registradas buscam evidências (SKU, anúncio, pedido,
+      compatibilidade, histórico, Base de Conhecimento Validada)
+   -> Copiloto sugere o texto da resposta
+   -> usuário revisa, edita se quiser, confirma
+   -> SOMENTE ENTÃO um comando privilegiado da `api` envia
+      (mesmo padrão de "confirmar NF-e"/"aprovar pedido de compra",
+      docs/API.md secao 2) — nunca uma tool que o Copiloto executa
+```
+
+Sem evidência confiável, a resposta sugerida diz isso explicitamente — nunca inventa compatibilidade nem confirma o que não pode confirmar (mesma regra da secao 5, "nunca inventar dado ausente").
+
+**Base de Conhecimento Validada é consultada por ferramenta de SQL determinística, como qualquer outra ferramenta de consulta pontual — não é RAG.** Continua valendo a secao 6: sem embeddings, sem pgvector. Um item de conhecimento é um fato estruturado (`sku_id`, tipo, conteúdo, fonte, status `VALIDADO`/`SUGERIDO`/`REJEITADO`/`OBSOLETO`) gravado só com confirmação humana explícita — nunca o modelo "aprendendo sozinho" a partir de uma resposta anterior.

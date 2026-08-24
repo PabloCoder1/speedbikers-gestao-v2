@@ -38,6 +38,7 @@ snapshot/estado anterior confiável
    -> regra de notificação
    -> notification / recipients
    -> entrega em tempo real
+```
 
 ## 2. Severidade
 
@@ -125,3 +126,9 @@ Notificação e ação são coisas diferentes e não devem se confundir:
 Um evento crítico pode gerar as duas. A maioria dos eventos gera apenas notificação, e muitos não geram nem isso.
 
 *Motivo:* a V2 chegou a 5.243 alertas abertos. Cinco mil alertas não são cinco mil problemas — são uma tela que ninguém abre.
+
+---
+
+## 10. Central de Atendimento / SAC (Fase 7B, conceitual)
+
+Registrado em 2026-08-24 (D-071). A cadeia desta seção 1 não muda: os eventos de atendimento (`support.question.received`, `support.claim.opened`, etc. — catálogo proposto em `docs/API.md` secao 9) são só mais `event_type` passando pela MESMA regra de severidade, permissão por conta e agrupamento já descritas acima. Nenhuma arquitetura nova. Detalhe do requisito em `docs/PRODUCT_REQUIREMENTS.md`.

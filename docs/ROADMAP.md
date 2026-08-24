@@ -250,6 +250,45 @@ Itens P1 e P2 podem continuar evoluindo incrementalmente sem reabrir ou invalida
 
 ---
 
+## Fase 7B — Central de Atendimento / SAC Mercado Livre
+
+Extensão da Fase 7 (D-071): reaproveita a arquitetura de notificações e o
+Copiloto já aprovados ali, em vez de reabri-los. Registrada como subfase
+própria — não é um item de checklist da Fase 7 — por volume: novo domínio
+(`support`), integração ML nova em boa parte (perguntas e mensagens nunca
+pesquisadas; claims/returns já confirmado, D-057, `docs/MERCADO_LIVRE.md`
+secao 2.10), um caso de uso novo do Copiloto (sugestão de resposta) e uma
+feature sem precedente direto no projeto (Base de Conhecimento Validada).
+
+Ordem incremental recomendada (a confirmar/ajustar quando a fase começar de
+verdade):
+
+- [ ] Pesquisa oficial das APIs de Perguntas e Mensagens (`docs/MERCADO_LIVRE.md` secao 2.12, hoje vazia de propósito)
+- [ ] Modelo unificado de atendimento (schema conceitual antes de qualquer migration)
+- [ ] Ingestão read-only (perguntas, mensagens, reclamações, devoluções, mediações)
+- [ ] Caixa de entrada unificada, com filtros por conta/tipo/status/prioridade/SLA
+- [ ] Notificações de atendimento — mesma cadeia `domain_events -> severidade -> notifications` da Fase 7, novos `event_type` prefixados `support.*`
+- [ ] Resposta manual pelo sistema (comando privilegiado via `apps/api`, nunca pelo `web` direto — mesmo padrão de "confirmar NF-e"/"aprovar pedido de compra")
+- [ ] Templates e respostas rápidas
+- [ ] Copiloto sugerindo respostas — geração de texto revisável, aprovação humana obrigatória antes do envio (D-071: não é ferramenta de escrita)
+- [ ] Base de Conhecimento Validada — consulta determinística (SQL), não RAG/embeddings (D-071)
+- [ ] Métricas de SAC, com definição canônica antes de exibir (mesmo princípio de `docs/METRICS.md`)
+- [ ] Detecção de padrões -> Central de Ações — agregado, nunca por atendimento individual
+- [ ] Integração com Diagnóstico como fonte de evidência adicional
+
+**Automação autônoma de resposta está explicitamente fora desta fase.** Só
+seria avaliada no futuro para casos extremamente seguros e repetitivos, com
+decisão arquitetural própria e métricas de confiança — não nesta etapa.
+
+**Marco:** o usuário atende as contas Mercado Livre sem sair da Speed Bikers
+Gestão, com sugestão de resposta revisável pelo Copiloto e conhecimento
+operacional reutilizável.
+
+**Depende de:** Fase 7 concluída (notificações e Copiloto) e pesquisa oficial
+das APIs de Perguntas/Mensagens antes de qualquer código de integração.
+
+---
+
 ## Fase 8 — Hardening e produção
 
 - [ ] Migrar `infra/` de scripts para Terraform
@@ -267,7 +306,7 @@ Não iniciar features de domínio antes de concluir a arquitetura detalhada e re
 
 Não inverter a ordem **confiabilidade dos dados -> métricas corretas -> histórico/eventos -> analytics -> diagnóstico -> ações -> IA** para produzir interface inteligente sobre dados frágeis.
 
-A ordem de execução é **0 -> 1 -> 2 -> 3 -> 5A -> 4 -> 5B -> 6 -> 7 -> 8** (D-033).
+A ordem de execução é **0 -> 1 -> 2 -> 3 -> 5A -> 4 -> 5B -> 6 -> 7 -> 7B -> 8** (D-033, 7B acrescentada por D-071).
 
 A Fase 5A antecede a Fase 4 porque o dashboard de vendas não usa estoque, e a Fase 3 já entrega pedidos confiáveis. A Fase 5B só vem depois da Fase 4 pelo motivo oposto: **dashboard sobre estoque não confiável é pior que dashboard nenhum**, porque produz decisão errada com aparência de certeza.
 

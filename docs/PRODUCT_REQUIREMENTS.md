@@ -382,6 +382,14 @@ Estrutura conceitual desejada:
   - Diagnóstico;
   - Ações;
 
+- Atendimento (Fase 7B, registrado em 2026-08-24 — ver seção própria abaixo):
+  - Caixa de Entrada;
+  - Perguntas;
+  - Mensagens;
+  - Reclamações;
+  - Mediações;
+  - Base de Conhecimento;
+
 - Gestão:
   - Vinculações;
   - Fornecedores;
@@ -413,6 +421,219 @@ Idealmente a área administrativa deverá permitir visualizar:
 Documentação afirmando que um serviço está publicado não substitui verificação contra a infraestrutura real.
 
 Essa regra nasce do incidente em que API/Worker ficaram dezenas de commits atrás do HEAD e schedulers documentados como existentes ainda não haviam sido provisionados.
+
+## Central de Atendimento / SAC Mercado Livre (Fase 7B) — registrado em 2026-08-24
+
+Requisito novo. Posicionamento e decisões de arquitetura em D-071
+(`docs/DECISIONS.md`). Detalhe técnico em `docs/ARCHITECTURE.md` (domínio
+`support`), `docs/COPILOT.md` (sugestão de resposta), `docs/API.md` e
+`docs/DATABASE.md` (conceituais, sem migration) e `docs/MERCADO_LIVRE.md`
+(pesquisa oficial pendente). Nada aqui está implementado — ver `docs/ROADMAP.md`
+Fase 7B.
+
+### Objetivo
+
+Administrar, dentro da Speed Bikers Gestão, o atendimento das diferentes
+contas Mercado Livre sem alternar entre contas e telas do próprio Mercado
+Livre.
+
+### Caixa de entrada unificada
+
+Perguntas pré-venda, mensagens pós-venda, reclamações/claims, devoluções,
+mediações e outros tipos de atendimento, conforme a API oficial realmente
+disponibilizar — nenhum endpoint, payload, permissão, webhook, status, SLA
+ou regra de mediação deve ser presumido antes da pesquisa oficial
+(`docs/PROMPT_MASTER.md` §9).
+
+### Notificações de atendimento
+
+Reaproveitam integralmente a cadeia já aprovada na Fase 7
+(`domain_events -> severidade -> notifications`, `docs/NOTIFICATIONS.md`).
+Devem: respeitar permissão por conta; indicar de qual conta vieram; informar
+o tipo de atendimento; abrir o atendimento relacionado; persistir na Central
+de Notificações; poder gerar toast; manter lido/não lido; evitar avalanche;
+agrupar quando fizer sentido; usar severidade.
+
+Exemplos de severidade — regras conceituais iniciais, a calibrar depois com
+dado real e regras confirmadas do Mercado Livre:
+
+- **Informativo**: nova pergunta comum; nova mensagem sem urgência.
+- **Importante**: nova reclamação; cliente respondeu conversa pendente;
+  pergunta aguardando resposta há muito tempo.
+- **Crítico**: nova mediação; atendimento próximo de prazo crítico;
+  reclamação com risco operacional relevante.
+
+### Estrutura da Central
+
+Grupos: Todos, Perguntas, Mensagens, Reclamações, Devoluções, Mediações.
+
+Filtros desejados: conta Mercado Livre; tipo; status; prioridade;
+responsável; SKU; MLB/anúncio; pedido; período; aguardando resposta; próximo
+do SLA/prazo; resolvido/não resolvido.
+
+Cada atendimento deve mostrar, quando os dados estiverem disponíveis: conta
+Mercado Livre; comprador/cliente; pedido; `pack_id` quando aplicável; SKU;
+MLB/`item_id`; `variation_id`; título do produto; histórico da conversa;
+tipo do atendimento; status do Mercado Livre; status interno; responsável
+interno; datas; prazo/SLA; prioridade; links para SKU, anúncio, pedido e
+demais entidades relacionadas.
+
+### Status e responsável interno
+
+Além do status externo do Mercado Livre, um status operacional interno —
+nomes a confirmar durante a arquitetura, exemplos de partida: `NOVO`,
+`EM_ATENDIMENTO`, `AGUARDANDO_CLIENTE`, `AGUARDANDO_MERCADO_LIVRE`,
+`RESOLVIDO`.
+
+Permitir atribuição de responsável interno. Registrar histórico de quem
+assumiu, quem respondeu, quando respondeu, mudança de status, resolução e
+reabertura quando aplicável. Nada importante deve depender apenas do estado
+visual da interface.
+
+### Copiloto sugerindo respostas
+
+Detalhe arquitetural em `docs/COPILOT.md` secao 11. O Copiloto sugere
+respostas para perguntas, mensagens, reclamações e mediações quando existir
+informação suficiente e a API permitir resposta. **A primeira versão não
+responde automaticamente** — aprovação humana é obrigatória:
+
+```
+ATENDIMENTO -> buscar contexto determinístico -> montar evidências
+   -> Copiloto gera sugestão -> usuário revisa -> usuário edita se quiser
+   -> usuário confirma -> somente então a resposta é enviada
+```
+
+**Isto não é uma ferramenta de escrita do Copiloto** (D-071) — a sugestão é
+geração de texto, mesma categoria já aprovada de "estruturar ideia de
+feature" (`docs/COPILOT.md`). O envio em si é um comando privilegiado
+separado, executado por `apps/api` após confirmação humana explícita, nunca
+uma ação que o Copiloto executa sozinho.
+
+Contexto que o Copiloto deve consultar via ferramentas determinísticas,
+quando aplicável: conta Mercado Livre; anúncio; título atual; SKU;
+`variation_id`; informações cadastradas do SKU; compatibilidades conhecidas;
+histórico de vendas do SKU; histórico do anúncio; pedido do cliente; item
+efetivamente comprado; quantidade; status da venda; status da entrega;
+reclamação/devolução/mediação relacionada; mensagens e respostas anteriores;
+histórico de atendimentos semelhantes; Base de Conhecimento Validada. A IA
+não recebe acesso livre ao banco nem escreve SQL — mesma regra já aplicada a
+todo o Copiloto.
+
+**Perguntas de compatibilidade merecem atenção especial.** Com evidência
+confiável, sugerir algo como "Sugerimos responder que sim, pois o SKU X
+possui compatibilidade confirmada com X-ADV 2025." Sem evidência suficiente,
+responder isso explicitamente ("Não encontrei informação suficiente para
+confirmar"). Nunca inventar compatibilidade.
+
+### Base de Conhecimento Validada (aprendizado operacional)
+
+Quando o Copiloto sugerir algo incorreto ou incompleto e um funcionário
+corrigir com conhecimento real da empresa, essa correção pode virar
+conhecimento reutilizável. **O sistema não deve fazer o modelo de IA
+"aprender sozinho"** — existe uma memória operacional própria, com
+confirmação humana explícita em cada item (D-071: é uma tabela relacional
+consultada por ferramenta determinística, não RAG/embeddings/pgvector —
+`docs/COPILOT.md` continua excluindo isso).
+
+Fluxo conceitual: Copiloto sugere → humano corrige → sistema percebe
+divergência ou usuário marca informação útil → oferece registrar como
+conhecimento → humano confirma → conhecimento estruturado é salvo → futuras
+respostas consultam esse conhecimento.
+
+Exemplo de conhecimento:
+
+```
+SKU: 5821
+Tipo: COMPATIBILIDADE
+Marca: Honda
+Modelo: X-ADV 750
+Ano inicial: 2022
+Ano final: 2025
+Resultado: COMPATÍVEL
+Fonte: CONFIRMAÇÃO_INTERNA
+Observação: "Compatibilidade confirmada pela equipe."
+Confirmado por: usuário X
+Confirmado em: data/hora
+```
+
+Cada conhecimento deve possuir, quando aplicável: `organization_id`;
+`sku_id`; tipo; conteúdo estruturado; texto livre complementar; fonte;
+confidence/status; criado_por; confirmado_por; `created_at`; `confirmed_at`;
+`updated_at`; ativo/inativo. Estados possíveis: `SUGERIDO`, `VALIDADO`,
+`REJEITADO`, `OBSOLETO`. Somente conhecimento `VALIDADO` deve ser tratado
+pelo Copiloto como informação operacional confirmada.
+
+Não sobrescrever silenciosamente conhecimento antigo. Se houver conflito
+("SKU X compatível com Y" versus "SKU X NÃO compatível com Y"), sinalizar
+para revisão humana.
+
+**Histórico de resposta não é automaticamente verdade.** Separar histórico
+de resposta (contexto) de conhecimento validado (fato confirmado) —
+conhecimento reutilizável exige confirmação explícita ou regra
+determinística confiável, nunca "alguém já respondeu isso uma vez".
+
+### Respostas rápidas e templates
+
+Templates, respostas rápidas, mensagens favoritas, assinatura por conta
+quando necessário, placeholders seguros (ex.: `"Olá, {nome}. Obrigado pelo
+contato..."`). Templates não devem substituir o contexto específico do
+atendimento.
+
+### Métricas de SAC
+
+Exemplos: novos atendimentos; atendimentos pendentes; perguntas/mensagens
+sem resposta; reclamações/mediações abertas; devoluções; tempo médio de
+primeira resposta; tempo médio de resolução; atendimentos por
+conta/tipo/SKU; reclamações por SKU e por quantidade vendida (quando
+matematicamente correto); principais motivos; reincidência; atendimentos
+próximos do prazo; produtividade por responsável quando fizer sentido
+operacionalmente. Definição canônica obrigatória antes de exibir qualquer
+métrica — mesmo princípio de `docs/METRICS.md`.
+
+### SAC como fonte de diagnóstico e Central de Ações
+
+SAC vira evidência adicional do pipeline determinístico já aprovado
+(`docs/ARCHITECTURE.md` secao 16: `DADOS -> EVIDÊNCIAS -> REGRAS -> DIAGNÓSTICO
+-> IA EXPLICA`) — nunca conclusão automática só por palavra solta na
+mensagem; primeiro coletar sinal e evidência.
+
+Um atendimento individual geralmente não precisa virar ação, mas um padrão
+relevante pode: muitas reclamações semelhantes no mesmo SKU, aumento
+anormal de mediações, dúvidas recorrentes sobre compatibilidade, perguntas
+repetidas indicando descrição insuficiente, devoluções recorrentes pelo
+mesmo motivo. Pipeline: atendimentos → agregação determinística → sinal →
+diagnóstico → Central de Ações (a mesma já existente, D-064) → humano
+decide.
+
+### Auditoria de resposta
+
+Toda resposta enviada deve registrar: atendimento; conta; usuário
+responsável; conteúdo efetivamente enviado; data/hora; se houve sugestão de
+IA; texto originalmente sugerido pela IA quando necessário para auditoria;
+texto final enviado pelo humano; sucesso/falha de envio; identificador
+retornado pelo Mercado Livre quando existir.
+
+### Permissões
+
+Respeitar integralmente organização, conta Mercado Livre, RBAC e
+`user_account_permissions` — mesma regra já aplicada em toda a V3. Usuário
+sem acesso a uma conta não pode ver mensagens dela, receber notificação
+dela, consultar seu SAC pelo Copiloto, nem responder atendimento dela.
+Autorização no backend/RLS, nunca só escondendo componente de interface.
+
+### UX conceitual
+
+Três áreas, se fizer sentido na implementação: lista/filtros dos
+atendimentos; conversa/histórico do atendimento selecionado; contexto do
+pedido/produto + Copiloto + conhecimento relacionado (coluna ou drawer). A
+interface deve priorizar rapidez de atendimento.
+
+### Automação futura
+
+Primeira versão: `COPILOTO SUGERE -> HUMANO CONFIRMA -> SISTEMA ENVIA`.
+Resposta automática autônoma não entra nesta etapa. No futuro, automação
+parcial só seria avaliada para casos extremamente seguros e repetitivos,
+com decisão arquitetural explícita e métricas de confiança.
 
 ## Design System
 
