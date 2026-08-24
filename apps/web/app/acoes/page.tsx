@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { Shell } from "../../components/shell";
 import { formatCount } from "../../lib/format";
 import { createClient } from "../../lib/supabase/server";
-import type { ActionEvidence, ActionRowData } from "./action-row";
+import type { ActionEvidence, ActionRowData, DecisionData, OutcomeData } from "./action-row";
 import { ActionRow } from "./action-row";
 
 export const metadata = { title: "Central de Ações — Speed Bikers Gestão" };
@@ -72,6 +72,57 @@ export default async function AcoesPage(): Promise<ReactNode> {
     .in("status", ["novo", "em_andamento"])
     .order("estimated_impact_brl", { ascending: false, nullsFirst: false });
 
+  const actionIds = (data ?? []).map((row) => row.id);
+
+  // Memória de decisões (Fase 6, PROMPT_MASTER secao 29) — decisões e
+  // resultados medidos das ações listadas acima. Ação sem decisão registrada
+  // simplesmente não aparece nos dois mapas abaixo.
+  const decisionsResult =
+    actionIds.length > 0
+      ? await supabase
+          .from("action_decisions")
+          .select("id, action_id, decision, baseline_snapshot, created_at")
+          .in("action_id", actionIds)
+          .order("created_at", { ascending: false })
+      : { data: [] };
+
+  const decisionRows = decisionsResult.data ?? [];
+  const decisionIds = decisionRows.map((row) => row.id);
+
+  const outcomesResult =
+    decisionIds.length > 0
+      ? await supabase
+          .from("action_outcomes")
+          .select("action_decision_id, window_days, outcome_snapshot, measured_at")
+          .in("action_decision_id", decisionIds)
+      : { data: [] };
+
+  const outcomesByDecision = new Map<string, OutcomeData[]>();
+
+  for (const row of outcomesResult.data ?? []) {
+    const list = outcomesByDecision.get(row.action_decision_id) ?? [];
+    list.push({
+      windowDays: row.window_days,
+      outcomeSnapshot: row.outcome_snapshot as Record<string, unknown>,
+      measuredAt: row.measured_at,
+    });
+    outcomesByDecision.set(row.action_decision_id, list);
+  }
+
+  const decisionsByAction = new Map<string, DecisionData[]>();
+
+  for (const row of decisionRows) {
+    const list = decisionsByAction.get(row.action_id) ?? [];
+    list.push({
+      id: row.id,
+      decision: row.decision,
+      baselineSnapshot: row.baseline_snapshot as Record<string, unknown>,
+      createdAt: row.created_at,
+      outcomes: (outcomesByDecision.get(row.id) ?? []).sort((a, b) => a.windowDays - b.windowDays),
+    });
+    decisionsByAction.set(row.action_id, list);
+  }
+
   const rows = ((data ?? []) as ActionQueryRow[]).map(
     (row): ActionRowData => ({
       id: row.id,
@@ -84,6 +135,7 @@ export default async function AcoesPage(): Promise<ReactNode> {
       recommendation: row.recommendation,
       status: row.status,
       assignee_id: row.assignee_id,
+      decisions: decisionsByAction.get(row.id) ?? [],
     }),
   );
 

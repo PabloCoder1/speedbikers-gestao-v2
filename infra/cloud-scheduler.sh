@@ -135,5 +135,16 @@ upsert_job \
   "${API_URL}/internal/schedule/sales-anomaly-actions" \
   "Deteccao de anomalia de venda (baseline/desvio) e gravacao em actions, por organizacao"
 
+# Memoria de decisoes operacionais -- Fase 6, ultimo item do checklist
+# (PROMPT_MASTER secao 29). Cadencia DIARIA, depois de detect-sales-anomalies
+# (8h): so precisa rodar depois que decisoes do dia ja foram tomadas, sem
+# vantagem em rodar mais cedo -- mesmo raciocinio de dado de ONTEM ja
+# completo. Por ORGANIZACAO (D-006).
+upsert_job \
+  "v3-measure-decision-outcomes" \
+  "30 8 * * *" \
+  "${API_URL}/internal/schedule/decision-outcomes" \
+  "Medicao de resultado de decisoes (7/15/30 dias) contra o baseline_snapshot, por organizacao"
+
 step "Concluído"
 gc scheduler jobs list --location "${REGION}" --format="table(name.basename(),schedule,state)"

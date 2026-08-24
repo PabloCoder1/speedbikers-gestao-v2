@@ -36,7 +36,7 @@ sales           orders · order_items
 inventory       inventory_balances · fulfillment_stock_snapshots
 documents       documents · document_items
 purchasing      purchase_orders · purchase_order_items (implementadas 2026-08-22)
-actions         actions (implementada 2026-08-24, D-064) · action_decisions · action_outcomes (pendentes)
+actions         actions (implementada 2026-08-24, D-064) · action_decisions · action_outcomes (implementadas 2026-08-24, D-065)
 notifications   notifications · notification_recipients · notification_preferences
 feedback        feature_suggestions
 meta            metric_definitions
@@ -405,7 +405,26 @@ RLS só permite SELECT (`is_member_of`) — nem `authenticated` grava direto (`r
 
 Job `diagnostics.detect-sales-anomalies` (`apps/worker/src/handlers/detect-sales-anomaly-actions.ts`), por ORGANIZAÇÃO (SKU é organizacional, D-006), disparado diariamente via `/internal/schedule/sales-anomaly-actions`. Tela `/acoes` (`apps/web/app/acoes/`): só itens abertos (`novo`/`em_andamento`), ordenados por impacto financeiro — nunca por contagem (`docs/ARCHITECTURE.md` secao 16).
 
-`action_decisions`/`action_outcomes` (`baseline_snapshot jsonb` **capturado no momento da decisão**, preenchida por job agendado em 7/15/30 dias) ficam para a próxima fatia da Fase 6 — dependem de `actions` existir primeiro, que é o que esta migration entrega.
+### `action_decisions` / `action_outcomes` — Memória de decisões operacionais (D-065)
+
+**Implementado em 2026-08-24**, migration `20260824123358_create_action_decisions.sql`, fecha o Marco da Fase 6 (`docs/ROADMAP.md`: "o sistema responde 'por quê', com evidência e nível de confiança") — `docs/PROMPT_MASTER.md` secao 29.
+
+```text
+action_decisions: organization_id, action_id, decision, baseline_snapshot jsonb,
+                   created_by, created_at
+action_outcomes:  organization_id, action_decision_id, window_days (7|15|30),
+                   outcome_snapshot jsonb, measured_at, unique (action_decision_id, window_days)
+```
+
+`get_sku_decision_snapshot(organization_id, sku_id, as_of)` (`security invoker`, só agrega em SQL) é a MESMA função usada pro baseline (na hora da decisão) e pra cada outcome (7/15/30 dias depois) — só muda `as_of`. Devolve `jsonb`: `units_sold_7d`/`avg_daily_units_7d` (soma/média de `daily_sku_metrics` nos 7 dias terminando em `as_of`), `avg_price_7d` (receita/unidades no período — preço médio PONDERADO, não média de médias diárias, mesmo raciocínio de `average_selling_price` gerada; `null` sem venda no período, nunca `0` inventado), `stock_local` (`inventory_balances`, `0` sem linha).
+
+`create_action_decision(p_action_id, p_decision)` (`security definer`) é o único caminho de escrita em `action_decisions` pelo navegador — confere `is_member_of` internamente, rejeita decisão vazia, captura `baseline_snapshot` chamando `get_sku_decision_snapshot` com `as_of = ontem` (mesmo raciocínio de frescor de `/vendas`/`/diagnostico`). Ação sem `sku_id` grava snapshot vazio (`{}`) em vez de falhar.
+
+`action_outcomes` é escrito só pelo worker (`service_role`, sem RPC — mesmo padrão de `actions`): job `diagnostics.measure-decision-outcomes`, disparado diariamente via `/internal/schedule/decision-outcomes`, decide QUAIS janelas (7/15/30) já amadureceram para cada decisão (`computePendingOutcomeWindows`, pura, `packages/domain/src/diagnostics/decision-outcomes.ts`) e grava o `outcome_snapshot` correspondente. Medição histórica FIXA — `unique (action_decision_id, window_days)` + upsert com `ignoreDuplicates` garante que uma janela já medida nunca é recalculada, mesmo que o job rode mais de uma vez no mesmo dia.
+
+Tela `/acoes` ganhou botão "Registrar decisão" (`window.prompt`, mesmo padrão de escopo menor de `saved_filters.tsx`) e uma linha por ação mostrando a decisão registrada com o baseline e os outcomes disponíveis — comparação BRUTA lado a lado, nunca uma % sintetizada (mesmo raciocínio de `/vendas`).
+
+Mesmo achado de GRANT do D-062/D-064 (`revoke all ... from anon, authenticated` desde a criação) nas duas tabelas.
 
 ### `search_entities(organization_id, query)` — Busca Universal / Command Palette (D-060)
 
@@ -442,7 +461,7 @@ Causas candidatas vêm de `domain_events` com `entity_type = 'sku'` (`entity_id 
 
 Consumida por `/diagnostico` (novo): busca o baseline de TODOS os SKUs para ontem (`as_of`, mesmo raciocínio de frescor de `/vendas`), roda `diagnoseSalesAnomaly` em duas passadas — uma sem eventos para achar quais SKUs são anomalia, uma segunda só para esses (já com os eventos correlacionados) — evita N+1 de consulta a `domain_events`.
 
-**"Central de Ações" (persistir como item acionável)** — ver `actions` (D-064), acima. **"Decisões com `baseline_snapshot`"** fica para a próxima fatia da Fase 6.
+**"Central de Ações" (persistir como item acionável)** — ver `actions` (D-064), acima. **"Decisões com `baseline_snapshot`"** — ver `action_decisions`/`action_outcomes` (D-065), acima. Os três itens fecham o checklist da Fase 6.
 
 ---
 

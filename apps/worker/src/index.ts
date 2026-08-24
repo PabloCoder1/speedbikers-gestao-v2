@@ -11,6 +11,7 @@ import { createBackfillOrdersHandler } from "./handlers/backfill-orders.js";
 import { createDetectSalesAnomalyActionsHandler } from "./handlers/detect-sales-anomaly-actions.js";
 import { createErpImportApplyHandler } from "./handlers/erp-import-apply.js";
 import { createErpImportParseHandler } from "./handlers/erp-import-parse.js";
+import { createMeasureDecisionOutcomesHandler } from "./handlers/measure-decision-outcomes.js";
 import { createNfeImportApplyHandler } from "./handlers/nfe-import-apply.js";
 import { createNfeImportParseHandler } from "./handlers/nfe-import-parse.js";
 import { createReconcileBalancesHandler } from "./handlers/reconcile-balances.js";
@@ -86,6 +87,7 @@ const app = createWorkerApp({
     "maintenance.reconcile-balances": createReconcileBalancesHandler({ db }),
     "maintenance.verify-ledger-integrity": createVerifyLedgerIntegrityHandler({ db }),
     "diagnostics.detect-sales-anomalies": createDetectSalesAnomalyActionsHandler({ db }),
+    "diagnostics.measure-decision-outcomes": createMeasureDecisionOutcomesHandler({ db }),
     ...nfeHandlers,
   }),
 });

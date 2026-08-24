@@ -12,8 +12,120 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.15"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
+      action_decisions: {
+        Row: {
+          action_id: string
+          baseline_snapshot: Json
+          created_at: string
+          created_by: string
+          decision: string
+          id: string
+          organization_id: string
+        }
+        Insert: {
+          action_id: string
+          baseline_snapshot: Json
+          created_at?: string
+          created_by: string
+          decision: string
+          id?: string
+          organization_id: string
+        }
+        Update: {
+          action_id?: string
+          baseline_snapshot?: Json
+          created_at?: string
+          created_by?: string
+          decision?: string
+          id?: string
+          organization_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "action_decisions_action_id_fkey"
+            columns: ["action_id"]
+            isOneToOne: false
+            referencedRelation: "actions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "action_decisions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      action_outcomes: {
+        Row: {
+          action_decision_id: string
+          id: string
+          measured_at: string
+          organization_id: string
+          outcome_snapshot: Json
+          window_days: number
+        }
+        Insert: {
+          action_decision_id: string
+          id?: string
+          measured_at?: string
+          organization_id: string
+          outcome_snapshot: Json
+          window_days: number
+        }
+        Update: {
+          action_decision_id?: string
+          id?: string
+          measured_at?: string
+          organization_id?: string
+          outcome_snapshot?: Json
+          window_days?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "action_outcomes_action_decision_id_fkey"
+            columns: ["action_decision_id"]
+            isOneToOne: false
+            referencedRelation: "action_decisions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "action_outcomes_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       actions: {
         Row: {
           assignee_id: string | null
@@ -2429,6 +2541,24 @@ export type Database = {
           sku_id: string
         }[]
       }
+      create_action_decision: {
+        Args: { p_action_id: string; p_decision: string }
+        Returns: {
+          action_id: string
+          baseline_snapshot: Json
+          created_at: string
+          created_by: string
+          decision: string
+          id: string
+          organization_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "action_decisions"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       create_manual_stock_adjustment: {
         Args: {
           p_location_kind: string
@@ -2690,6 +2820,10 @@ export type Database = {
           transito_quantity: number
           units_sold: number
         }[]
+      }
+      get_sku_decision_snapshot: {
+        Args: { p_as_of: string; p_organization_id: string; p_sku_id: string }
+        Returns: Json
       }
       get_sku_sales_baseline: {
         Args: { p_as_of: string; p_organization_id: string }
@@ -3095,6 +3229,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {},
   },

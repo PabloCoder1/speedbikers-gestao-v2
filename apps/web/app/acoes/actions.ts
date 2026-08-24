@@ -46,3 +46,27 @@ export async function resolveAction(id: string): Promise<ActionResult> {
 export async function dismissAction(id: string): Promise<ActionResult> {
   return updateStatus(id, "descartado");
 }
+
+/**
+ * Memória de decisões operacionais (Fase 6, `docs/PROMPT_MASTER.md` secao
+ * 29) — chama `create_action_decision` (security definer), que captura o
+ * `baseline_snapshot` na hora. Sem RPC de leitura própria: a página busca
+ * `action_decisions`/`action_outcomes` direto sob RLS, mesmo padrão do resto
+ * do produto (Modelo A, D-012).
+ */
+export async function registerDecision(actionId: string, decision: string): Promise<ActionResult> {
+  const supabase = await createClient();
+
+  const { error } = await supabase.rpc("create_action_decision", {
+    p_action_id: actionId,
+    p_decision: decision,
+  });
+
+  if (error !== null) {
+    return { ok: false, message: "Não foi possível registrar a decisão." };
+  }
+
+  revalidatePath("/acoes");
+
+  return { ok: true, message: null };
+}

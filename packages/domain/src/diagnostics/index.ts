@@ -8,3 +8,6 @@ export type {
   SalesAnomalyDiagnosis,
   SalesBaselineSignal,
 } from "./sales-anomaly.js";
+
+export { computePendingOutcomeWindows, OUTCOME_WINDOWS_DAYS } from "./decision-outcomes.js";
+export type { OutcomeWindowDays } from "./decision-outcomes.js";

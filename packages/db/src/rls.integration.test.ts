@@ -3631,3 +3631,234 @@ describe("actions / update_action_status / get_sku_average_prices (Fase 6, Centr
     });
   });
 });
+
+describe("action_decisions / action_outcomes / create_action_decision / get_sku_decision_snapshot (Fase 6, Memória de decisões, D-065)", () => {
+  const CONTA_DECISOES = "ddddaaaa-0000-4000-8000-0000000000cc";
+
+  let skuId = "";
+  let actionId = "";
+  let decisionId = "";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$2,'Conta de decisões','decisoestest-conta','PENDING')
+       on conflict do nothing`,
+      [CONTA_DECISOES, ORG_SB],
+    );
+
+    const skus = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind)
+       values ($1,'DECISAOTEST-sku','PRODUTO')
+       returning id`,
+      [ORG_SB],
+    );
+    skuId = skus.rows[0]?.id ?? "";
+
+    // Janela de 7 dias terminando em 2026-06-03 (05-28 a 06-03): pega as duas
+    // datas dentro (2 + 1 = 3 unidades, R$100 + R$60 = R$160).
+    await client.query(
+      `insert into public.daily_sku_metrics
+         (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values
+         ($1,$2,$3,'2026-06-01',2,100,1,1),
+         ($1,$2,$3,'2026-06-03',1,60,1,1)`,
+      [ORG_SB, CONTA_DECISOES, skuId],
+    );
+
+    // Fora da janela de 7 dias — nunca deve entrar na soma.
+    await client.query(
+      `insert into public.daily_sku_metrics
+         (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values ($1,$2,$3,'2026-05-01',1,999,1,1)`,
+      [ORG_SB, CONTA_DECISOES, skuId],
+    );
+
+    await client.query(
+      `insert into public.inventory_balances (organization_id, sku_id, location_kind, quantity)
+       values ($1,$2,'LOCAL',12)`,
+      [ORG_SB, skuId],
+    );
+
+    const action = await client.query<{ id: string }>(
+      `insert into public.actions
+         (organization_id, kind, severity, confidence, estimated_impact_brl, sku_id, evidence, recommendation, created_by, dedup_key)
+       values ($1,'venda_anomala','alta','alta',150,$2,'{}'::jsonb,'Revisar.','system','decisoestest:sku:2026-06-05')
+       returning id`,
+      [ORG_SB, skuId],
+    );
+    actionId = action.rows[0]?.id ?? "";
+  });
+
+  // Sem afterAll de limpeza: mesmo raciocínio do describe de D-064, acima —
+  // e `action_decisions.created_by`/`action_outcomes.organization_id` têm
+  // `on delete cascade`/`on delete restrict` que não bloqueiam a limpeza
+  // global de `auth.users`, porque `created_by` referencia `ADMIN_SB`, um
+  // usuário FORA do padrão `%@rls.test` de limpeza.
+
+  describe("get_sku_decision_snapshot", () => {
+    it("soma vendas de 7 dias terminando em as_of, ignora data fora da janela e traz o estoque local", async () => {
+      const rows = await asUser<{ snapshot: Record<string, unknown> }>(
+        ADMIN_SB,
+        `select public.get_sku_decision_snapshot('${ORG_SB}', '${skuId}', '2026-06-03') as snapshot`,
+      );
+
+      expect(rows[0]?.snapshot).toMatchObject({
+        as_of: "2026-06-03",
+        units_sold_7d: 3,
+        avg_daily_units_7d: 0.43,
+        avg_price_7d: 53.33,
+        stock_local: 12,
+      });
+    });
+
+    it("SKU sem venda nenhuma na janela: contadores zerados, avg_price_7d nulo (nunca zero inventado)", async () => {
+      const skus = await client.query<{ id: string }>(
+        `insert into public.skus (organization_id, sku, kind) values ($1,'DECISAOTEST-sem-venda','PRODUTO') returning id`,
+        [ORG_SB],
+      );
+      const semVendaId = skus.rows[0]?.id ?? "";
+
+      const rows = await asUser<{ snapshot: Record<string, unknown> }>(
+        ADMIN_SB,
+        `select public.get_sku_decision_snapshot('${ORG_SB}', '${semVendaId}', '2026-06-03') as snapshot`,
+      );
+
+      expect(rows[0]?.snapshot).toEqual({
+        as_of: "2026-06-03",
+        units_sold_7d: 0,
+        avg_daily_units_7d: 0,
+        avg_price_7d: null,
+        stock_local: 0,
+      });
+    });
+  });
+
+  describe("create_action_decision", () => {
+    it("membro da organização registra uma decisão — baseline_snapshot capturado na hora", async () => {
+      const rows = await asUserPersist<{
+        id: string;
+        decision: string;
+        action_id: string;
+        created_by: string;
+        baseline_snapshot: Record<string, unknown>;
+      }>(ADMIN_SB, `select * from public.create_action_decision('${actionId}', 'Repor estoque via fornecedor PLASMOTO')`);
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.decision).toBe("Repor estoque via fornecedor PLASMOTO");
+      expect(rows[0]?.action_id).toBe(actionId);
+      expect(rows[0]?.created_by).toBe(ADMIN_SB);
+      expect(rows[0]?.baseline_snapshot).toHaveProperty("as_of");
+      expect(rows[0]?.baseline_snapshot).toHaveProperty("stock_local", 12);
+
+      decisionId = rows[0]?.id ?? "";
+    });
+
+    it("membro de outra organização não pode registrar decisão nesta ação", async () => {
+      await expect(
+        asUser(DE_OUTRA_ORG, `select * from public.create_action_decision('${actionId}', 'tentativa')`),
+      ).rejects.toThrow(/sem permissao/i);
+    });
+
+    it("decisão vazia (só espaço) é rejeitada", async () => {
+      await expect(
+        asUser(ADMIN_SB, `select * from public.create_action_decision('${actionId}', '   ')`),
+      ).rejects.toThrow(/nao pode ser vazia/i);
+    });
+
+    it("ação inexistente é rejeitada", async () => {
+      await expect(
+        asUser(ADMIN_SB, `select * from public.create_action_decision(gen_random_uuid(), 'x')`),
+      ).rejects.toThrow(/não encontrada/i);
+    });
+
+    it("anon não executa", async () => {
+      await expect(asAnon(`select * from public.create_action_decision('${actionId}', 'x')`)).rejects.toThrow(
+        /permission denied/i,
+      );
+    });
+  });
+
+  describe("action_decisions", () => {
+    it("membro da organização vê a própria decisão", async () => {
+      const rows = await asUser<{ id: string }>(
+        ADMIN_SB,
+        `select id from public.action_decisions where id = '${decisionId}'`,
+      );
+
+      expect(rows).toHaveLength(1);
+    });
+
+    it("membro de outra organização não vê", async () => {
+      const rows = await asUser<{ id: string }>(
+        DE_OUTRA_ORG,
+        `select id from public.action_decisions where id = '${decisionId}'`,
+      );
+
+      expect(rows).toHaveLength(0);
+    });
+
+    it("anon não vê nada", async () => {
+      await expect(
+        asAnon(`select id from public.action_decisions where id = '${decisionId}'`),
+      ).rejects.toThrow(/permission denied/i);
+    });
+
+    it("authenticated não escreve direto — só via create_action_decision", async () => {
+      await expect(
+        asUser(ADMIN_SB, `update public.action_decisions set decision = 'x' where id = '${decisionId}'`),
+      ).rejects.toThrow(/permission denied/i);
+    });
+  });
+
+  describe("action_outcomes", () => {
+    // Sem RPC de escrita: só o worker grava (service_role), testado com fake
+    // db em `apps/worker/src/handlers/measure-decision-outcomes.test.ts` —
+    // aqui só a RLS de leitura, mesmo padrão de `actions`.
+    let outcomeId = "";
+
+    beforeAll(async () => {
+      const outcome = await client.query<{ id: string }>(
+        `insert into public.action_outcomes (organization_id, action_decision_id, window_days, outcome_snapshot)
+         values ($1,$2,7,'{"as_of":"2026-06-10","units_sold_7d":5,"avg_daily_units_7d":0.71,"avg_price_7d":40,"stock_local":8}'::jsonb)
+         returning id`,
+        [ORG_SB, decisionId],
+      );
+      outcomeId = outcome.rows[0]?.id ?? "";
+    });
+
+    it("membro da organização vê", async () => {
+      const rows = await asUser<{ id: string }>(
+        ADMIN_SB,
+        `select id from public.action_outcomes where id = '${outcomeId}'`,
+      );
+
+      expect(rows).toHaveLength(1);
+    });
+
+    it("membro de outra organização não vê", async () => {
+      const rows = await asUser<{ id: string }>(
+        DE_OUTRA_ORG,
+        `select id from public.action_outcomes where id = '${outcomeId}'`,
+      );
+
+      expect(rows).toHaveLength(0);
+    });
+
+    it("anon não vê nada", async () => {
+      await expect(asAnon(`select id from public.action_outcomes where id = '${outcomeId}'`)).rejects.toThrow(
+        /permission denied/i,
+      );
+    });
+
+    it("authenticated não escreve direto — só service_role (worker)", async () => {
+      await expect(
+        asUser(
+          ADMIN_SB,
+          `insert into public.action_outcomes (organization_id, action_decision_id, window_days, outcome_snapshot)
+           values ('${ORG_SB}','${decisionId}',15,'{}'::jsonb)`,
+        ),
+      ).rejects.toThrow(/permission denied/i);
+    });
+  });
+});

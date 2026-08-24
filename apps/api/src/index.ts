@@ -71,6 +71,7 @@ const app = createApp({
   listingsSchedule: { db, enqueuer, logger },
   listingVisitsSchedule: { db, enqueuer, logger },
   salesAnomalyActionsSchedule: { db, enqueuer, logger },
+  decisionOutcomesSchedule: { db, enqueuer, logger },
 });
 
 serve({ fetch: app.fetch, port: env.PORT }, (info) => {

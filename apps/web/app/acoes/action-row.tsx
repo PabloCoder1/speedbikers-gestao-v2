@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from "react";
 
 import { formatCurrency } from "../../lib/format";
-import { claimAction, dismissAction, resolveAction } from "./actions";
+import { claimAction, dismissAction, registerDecision, resolveAction } from "./actions";
 
 /**
  * Uma linha da Central de Ações (Fase 6, D-064) — mesmo padrão de
@@ -30,6 +30,20 @@ export interface ActionEvidence {
   causas_candidatas: CandidateCause[];
 }
 
+export interface OutcomeData {
+  windowDays: number;
+  outcomeSnapshot: Record<string, unknown>;
+  measuredAt: string;
+}
+
+export interface DecisionData {
+  id: string;
+  decision: string;
+  baselineSnapshot: Record<string, unknown>;
+  createdAt: string;
+  outcomes: OutcomeData[];
+}
+
 export interface ActionRowData {
   id: string;
   sku: string | null;
@@ -41,6 +55,7 @@ export interface ActionRowData {
   recommendation: string;
   status: string;
   assignee_id: string | null;
+  decisions: DecisionData[];
 }
 
 const td: React.CSSProperties = {
@@ -75,6 +90,31 @@ function statusLabel(status: string): string {
   }
 }
 
+function windowLabel(days: number): string {
+  return `${String(days)} dias depois`;
+}
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("pt-BR");
+}
+
+/**
+ * Comparação BRUTA lado a lado, nunca uma % sintetizada — mesmo raciocínio
+ * já usado em `/vendas` (D-050-adjacent): `avg_price_7d`/outros podem faltar
+ * (SKU sem venda no período), `—` em vez de inventar zero.
+ */
+function formatSnapshot(snapshot: Record<string, unknown>): string {
+  if (Object.keys(snapshot).length === 0) return "Sem dado (ação sem SKU vinculado).";
+
+  const unitsSold = snapshot.units_sold_7d;
+  const avgPrice = snapshot.avg_price_7d;
+  const stockLocal = snapshot.stock_local;
+
+  const priceText = typeof avgPrice === "number" ? formatCurrency(avgPrice) : "—";
+
+  return `Vendido (7d): ${String(unitsSold)} · Preço médio: ${priceText} · Estoque local: ${String(stockLocal)}`;
+}
+
 export function ActionRow({ action, userId }: { action: ActionRowData; userId: string }): ReactNode {
   const [status, setStatus] = useState(action.status);
   const [assigneeId, setAssigneeId] = useState(action.assignee_id);
@@ -103,7 +143,25 @@ export function ActionRow({ action, userId }: { action: ActionRowData; userId: s
     setBusy(false);
   }
 
+  async function handleRegisterDecision(): Promise<void> {
+    const decision = window.prompt("Qual foi a decisão para esta ação?");
+
+    if (decision === null || decision.trim() === "") return;
+
+    setBusy(true);
+    setError(null);
+
+    const result = await registerDecision(action.id, decision.trim());
+
+    setBusy(false);
+
+    if (!result.ok) {
+      setError(result.message);
+    }
+  }
+
   return (
+    <>
     <tr style={action.evidence.direcao === "queda" ? { background: "#fdeaea" } : { background: "#e6f4ea" }}>
       <td style={{ ...td, fontFamily: "ui-monospace, monospace" }}>
         {action.sku ?? "—"}
@@ -170,6 +228,16 @@ export function ActionRow({ action, userId }: { action: ActionRowData; userId: s
             >
               Descartar
             </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                void handleRegisterDecision();
+              }}
+              style={buttonStyle}
+            >
+              Registrar decisão
+            </button>
           </div>
         )}
         {error !== null && (
@@ -179,5 +247,32 @@ export function ActionRow({ action, userId }: { action: ActionRowData; userId: s
         )}
       </td>
     </tr>
+
+    {action.decisions.length > 0 && (
+      <tr style={{ background: "var(--sb-bg-soft, #f7f7f8)" }}>
+        <td colSpan={8} style={{ ...td, fontSize: "0.8125rem" }}>
+          {action.decisions.map((decision) => (
+            <div key={decision.id} style={{ marginBottom: "0.5rem" }}>
+              <div>
+                <strong>Decisão ({formatDate(decision.createdAt)}):</strong> {decision.decision}
+              </div>
+              <div style={{ color: "var(--sb-text-soft)", marginTop: "0.125rem" }}>
+                No momento da decisão — {formatSnapshot(decision.baselineSnapshot)}
+              </div>
+              {decision.outcomes.map((outcome) => (
+                <div
+                  key={outcome.windowDays}
+                  style={{ color: "var(--sb-text-soft)", marginTop: "0.125rem" }}
+                >
+                  {windowLabel(outcome.windowDays)} ({formatDate(outcome.measuredAt)}) —{" "}
+                  {formatSnapshot(outcome.outcomeSnapshot)}
+                </div>
+              ))}
+            </div>
+          ))}
+        </td>
+      </tr>
+    )}
+    </>
   );
 }

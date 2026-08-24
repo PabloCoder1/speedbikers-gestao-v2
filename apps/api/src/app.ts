@@ -7,6 +7,8 @@ import { cors } from "hono/cors";
 import type { Authenticator } from "./auth.js";
 import type { BalanceReconcileScheduleDeps } from "./balance-reconcile-schedule.js";
 import { triggerBalanceReconciliation } from "./balance-reconcile-schedule.js";
+import type { DecisionOutcomesScheduleDeps } from "./decision-outcomes-schedule.js";
+import { triggerDecisionOutcomesMeasurement } from "./decision-outcomes-schedule.js";
 import type { Enqueuer } from "./enqueue.js";
 import type { ImportDeps } from "./erp-import.js";
 import { confirmApply, isImportKind, receiveUpload } from "./erp-import.js";
@@ -73,6 +75,7 @@ export interface AppDependencies {
   listingsSchedule?: ListingsScheduleDeps;
   listingVisitsSchedule?: ListingVisitsScheduleDeps;
   salesAnomalyActionsSchedule?: SalesAnomalyActionsScheduleDeps;
+  decisionOutcomesSchedule?: DecisionOutcomesScheduleDeps;
 }
 
 /**
@@ -400,6 +403,23 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     const outcome = await triggerSalesAnomalyActionsDetection(salesAnomalyActionsSchedule);
+
+    return context.json(outcome);
+  });
+
+  // --------------------------------------------------------------------
+  // Medição de resultado de decisões (Fase 6, Memória de decisões
+  // operacionais) — mesmo formato de /internal/schedule/sales-anomaly-actions
+  // acima, por ORGANIZAÇÃO. Cadência diária: `infra/cloud-scheduler.sh`.
+  // --------------------------------------------------------------------
+  app.post("/internal/schedule/decision-outcomes", async (context) => {
+    const decisionOutcomesSchedule = dependencies.decisionOutcomesSchedule;
+
+    if (decisionOutcomesSchedule === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const outcome = await triggerDecisionOutcomesMeasurement(decisionOutcomesSchedule);
 
     return context.json(outcome);
   });
