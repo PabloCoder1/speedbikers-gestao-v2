@@ -39,16 +39,19 @@ interface LedgerRow {
 async function loadLedgerBalances(
   db: AdminClient,
   organizationId: string,
-  skuIds: readonly string[],
 ): Promise<ReconciliationBalance[]> {
-  if (skuIds.length === 0) return [];
-
+  // Sem `.in("sku_id", skuIds)`: com o catálogo real (milhares de SKUs,
+  // D-061), essa lista estourava o limite de tamanho de URL do PostgREST e
+  // derrubava o job inteiro com "Bad Request" — achado medido em produção
+  // (primeira execução real do job, 2026-08-24). Trazer o ledger inteiro da
+  // organização é seguro: `computeReconciliationAdjustments` só itera sobre
+  // `snapshotBalances` (ver docstring), então SKU do ledger sem contrapartida
+  // no snapshot nunca é visitado — a entrada extra no Map é inofensiva.
   const result = await db
     .from("inventory_balances")
     .select("sku_id, location_kind, quantity")
     .eq("organization_id", organizationId)
-    .in("location_kind", ["LOCAL", "RESERVADO"])
-    .in("sku_id", skuIds);
+    .in("location_kind", ["LOCAL", "RESERVADO"]);
 
   if (result.error !== null) {
     throw new Error(`falha ao consultar inventory_balances: ${result.error.message}`);
@@ -98,7 +101,7 @@ export function createReconcileBalancesHandler(deps: ReconcileBalancesDeps): Job
     let ledgerBalances: ReconciliationBalance[];
 
     try {
-      ledgerBalances = await loadLedgerBalances(deps.db, organizationId, skuIds);
+      ledgerBalances = await loadLedgerBalances(deps.db, organizationId);
     } catch (error) {
       const reason = error instanceof Error ? error.message : "falha ao consultar o ledger";
 

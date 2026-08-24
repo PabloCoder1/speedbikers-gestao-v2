@@ -52,14 +52,12 @@ function fakeDeps(options: {
         return {
           select: () => ({
             eq: () => ({
-              in: () => ({
-                in: () =>
-                  Promise.resolve(
-                    options.ledgerFails === true
-                      ? { data: null, error: { message: "boom" } }
-                      : { data: ledger, error: null },
-                  ),
-              }),
+              in: () =>
+                Promise.resolve(
+                  options.ledgerFails === true
+                    ? { data: null, error: { message: "boom" } }
+                    : { data: ledger, error: null },
+                ),
             }),
           }),
         };
@@ -147,6 +145,26 @@ describe("reconciliação de estoque contra o UpSeller", () => {
     expect(outcome).toEqual({ status: "done", processed: 0 });
     expect(captured.movements).toHaveLength(0);
     expect(captured.events).toHaveLength(0);
+  });
+
+  it("ledger sem filtro por SKU: linha extra sem contrapartida no snapshot é ignorada, não vira ajuste", async () => {
+    // Achado em produção (2026-08-24): a query do ledger deixou de filtrar por
+    // sku_id (URL longa demais com o catálogo real, `Bad Request` do
+    // PostgREST) — o ledger inteiro da organização volta, e SKU sem linha no
+    // snapshot precisa continuar não gerando ajuste (docstring de
+    // computeReconciliationAdjustments).
+    const { deps, captured, lines } = fakeDeps({
+      snapshot: [{ sku_id: "sku-a", location_kind: "LOCAL", quantity: 42 }],
+      ledger: [
+        { sku_id: "sku-a", location_kind: "LOCAL", quantity: 42 },
+        { sku_id: "sku-fora-do-snapshot", location_kind: "LOCAL", quantity: 999 },
+      ],
+    });
+
+    const outcome = await createReconcileBalancesHandler(deps)(ENVELOPE, ctx(lines, { organizationId: ORG_ID }));
+
+    expect(outcome).toEqual({ status: "done", processed: 0 });
+    expect(captured.movements).toHaveLength(0);
   });
 
   it("organização sem nenhum snapshot do UpSeller: done com zero, não é erro", async () => {
