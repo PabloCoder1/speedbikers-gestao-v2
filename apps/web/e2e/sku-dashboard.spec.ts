@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { login } from "./helpers.js";
+import { login, statValue } from "./helpers.js";
 import { readSeedOutput } from "./seed-output.js";
 
 /**
@@ -18,9 +18,7 @@ test("dashboard de SKU mostra saldo local do seed", async ({ page }) => {
   await expect(page).toHaveURL(new RegExp(`/skus/${seed.skuId}$`));
   await expect(page.getByRole("heading", { level: 1, name: seed.skuCode })).toBeVisible();
 
-  const localValue = page.getByText("Local", { exact: true }).locator("xpath=following-sibling::*[1]");
-
-  await expect(localValue).toContainText("50");
+  await expect(statValue(page, "Local")).toContainText("50");
 
   await expect(page.getByText("Nenhum anúncio vinculado a este SKU.")).toBeVisible();
 });

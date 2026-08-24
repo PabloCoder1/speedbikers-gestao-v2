@@ -16,7 +16,11 @@ test.describe("login", () => {
     await page.getByLabel("Senha").fill("senha-errada-de-proposito");
     await page.getByRole("button", { name: "Entrar" }).click();
 
-    await expect(page.getByRole("alert")).toHaveText("E-mail ou senha incorretos.");
+    // `getByRole("alert")` sozinho pegaria também o route announcer do
+    // próprio Next.js (`#__next-route-announcer__`, também role="alert",
+    // sempre presente no DOM) — o erro do formulário é especificamente um
+    // `<p role="alert">`.
+    await expect(page.locator('p[role="alert"]')).toHaveText("E-mail ou senha incorretos.");
     await expect(page).toHaveURL(/\/login$/);
   });
 

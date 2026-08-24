@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { login } from "./helpers.js";
+import { login, statValue } from "./helpers.js";
 
 /**
  * "Pedido de compra" (docs/TESTING.md) — cria um rascunho do zero pela UI.
@@ -29,11 +29,6 @@ test("cria um pedido de compra com item em texto livre e mostra o resumo certo",
 
   await expect(page).toHaveURL(/\/compras\/[0-9a-f-]{36}$/);
 
-  const itensValue = page.getByText("Itens", { exact: true }).locator("xpath=following-sibling::*[1]");
-
-  await expect(itensValue).toContainText("1");
-
-  const valorValue = page.getByText("Valor estimado", { exact: true }).locator("xpath=following-sibling::*[1]");
-
-  await expect(valorValue).toContainText("52,50");
+  await expect(statValue(page, "Itens")).toContainText("1");
+  await expect(statValue(page, "Valor estimado")).toContainText("52,50");
 });
