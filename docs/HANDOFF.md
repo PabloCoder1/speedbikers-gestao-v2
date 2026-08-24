@@ -57,6 +57,13 @@ Antes de declarar qualquer mudança operacional como implantada, verificar quand
 
 Publicado e verificado em 2026-08-24, depois do resumo acima ter sido escrito: `worker-00016-5t4`/`api-00013-n55` no ar (commit `9246e56`), job `v3-measure-decision-outcomes` criado no Cloud Scheduler (diário, 8h30) e disparado manualmente uma vez — `measure_decision_outcomes_done, measured: 0` (esperado, única decisão registrada até agora tem poucos minutos de idade). `create_action_decision` testado ponta a ponta pelo navegador contra o Dev real (não só fixture): decisão registrada em `/acoes`, `baseline_snapshot` calculado corretamente contra `daily_sku_metrics`/`inventory_balances` reais. Ver entrada detalhada no HISTÓRICO abaixo.
 
+### Checkpoint pré-Fase 7 — progresso nos itens P0 (2026-08-24, mesma sessão da D-065)
+
+- **Corrigido**: documentação de deploy (`docs/DEPLOYMENT.md` não afirma mais CI/CD automático de Cloud Run — nunca existiu).
+- **Corrigido (D-066)**: auditoria de GRANTs — 23 tabelas antigas tinham INSERT/UPDATE/DELETE concedido a `authenticated` por padrão (RLS já protegia, mas era superfície desnecessária); revogado, migration `20260824132723_revoke_excess_authenticated_grants.sql`, testada em transação `begin/rollback` antes de aplicar, CI confirmou que nenhum fluxo de escrita via RPC quebrou.
+- **Corrigido parcialmente (D-067)**: auditoria de `.error` do Supabase client não checado — agente de busca achou 34 pontos; os 9 que arriscavam corromper dado de negócio real foram corrigidos e **deployados** (`worker-00017-q4x`, commit `2c15178`, zero linha ERROR nos logs pós-deploy): `persist-order.ts` (4 pontos — status anterior da order, reversão de cancelamento, resolução de SKU, kind/componentes de KIT, cada um indistinguível de "não encontrado" sem a correção, cada um capaz de deixar o estoque silenciosamente errado), `claim-return.ts` (2 pontos, mesmo padrão pra devolução física), `compras/[id]/editar`+`export/load.ts`+`page.tsx` (3 pontos — falha de leitura virava formulário/documento/resumo com itens zerados). Os 25 pontos restantes (UI mostra "sem dado" em vez de erro em telas de leitura — `/vendas`, `/anuncios`, `/diagnostico`, `/acoes`, `/sincronizacao` — e buscas client-side) ficam registrados, não corrompem dado.
+- **Ainda pendente** (dependem de tempo passar ou de escopo maior): confirmar `reconcile-balances`/`listing-visits` no ciclo natural, Playwright dos fluxos críticos, os 25 pontos restantes de D-067.
+
 ### Pendências técnicas imediatas
 
 1. Confirmar `maintenance.reconcile-balances` no ciclo natural seguinte ao fix de volume.
