@@ -3220,8 +3220,17 @@ describe("saved_filters / create_saved_filter / delete_saved_filter (Fase 5B, Fi
   // nada para limpar.
   const SCREEN = "/rlstest-tela";
 
+  // `create_saved_filter`/`delete_saved_filter` usam `asUserPersist`, não
+  // `asUser`: `asUser` reverte de propósito (comentário do próprio helper,
+  // acima) — usá-lo para a escrita faz o INSERT nunca sobreviver até a
+  // chamada seguinte, e o "upsert por nome" nunca encontra o conflito
+  // (achado em CI: `overwritten.id` vinha diferente de `created.id`, cada
+  // chamada criava uma linha nova numa transação que era desfeita na
+  // sequência). Leituras de verificação continuam em `asUser` (não precisam
+  // sobreviver à própria chamada).
+
   it("cria um filtro salvo; salvar de novo com o mesmo nome sobrescreve (upsert)", async () => {
-    const created = await asUser<{ id: string; name: string; params: Record<string, string> }>(
+    const created = await asUserPersist<{ id: string; name: string; params: Record<string, string> }>(
       ADMIN_SB,
       `select * from public.create_saved_filter('${ORG_SB}','${SCREEN}','Meu filtro','{"days":"30"}'::jsonb)`,
     );
@@ -3229,7 +3238,7 @@ describe("saved_filters / create_saved_filter / delete_saved_filter (Fase 5B, Fi
     expect(created).toHaveLength(1);
     expect(created[0]?.params).toEqual({ days: "30" });
 
-    const overwritten = await asUser<{ id: string; params: Record<string, string> }>(
+    const overwritten = await asUserPersist<{ id: string; params: Record<string, string> }>(
       ADMIN_SB,
       `select * from public.create_saved_filter('${ORG_SB}','${SCREEN}','Meu filtro','{"days":"60"}'::jsonb)`,
     );
@@ -3237,15 +3246,15 @@ describe("saved_filters / create_saved_filter / delete_saved_filter (Fase 5B, Fi
     expect(overwritten[0]?.id).toBe(created[0]?.id);
     expect(overwritten[0]?.params).toEqual({ days: "60" });
 
-    await asUser(ADMIN_SB, `select public.delete_saved_filter('${created[0]?.id ?? ""}')`);
+    await asUserPersist(ADMIN_SB, `select public.delete_saved_filter('${created[0]?.id ?? ""}')`);
   });
 
   it("authenticated só vê os próprios filtros salvos (RLS por created_by)", async () => {
-    const mine = await asUser<{ id: string }>(
+    const mine = await asUserPersist<{ id: string }>(
       ADMIN_SB,
       `select * from public.create_saved_filter('${ORG_SB}','${SCREEN}','Filtro do admin','{"a":"1"}'::jsonb)`,
     );
-    const theirs = await asUser<{ id: string }>(
+    const theirs = await asUserPersist<{ id: string }>(
       ANALISTA_SB,
       `select * from public.create_saved_filter('${ORG_SB}','${SCREEN}','Filtro do analista','{"b":"2"}'::jsonb)`,
     );
@@ -3257,18 +3266,18 @@ describe("saved_filters / create_saved_filter / delete_saved_filter (Fase 5B, Fi
     expect(adminSees.map((r) => r.id)).toContain(mine[0]?.id);
     expect(adminSees.map((r) => r.id)).not.toContain(theirs[0]?.id);
 
-    await asUser(ADMIN_SB, `select public.delete_saved_filter('${mine[0]?.id ?? ""}')`);
-    await asUser(ANALISTA_SB, `select public.delete_saved_filter('${theirs[0]?.id ?? ""}')`);
+    await asUserPersist(ADMIN_SB, `select public.delete_saved_filter('${mine[0]?.id ?? ""}')`);
+    await asUserPersist(ANALISTA_SB, `select public.delete_saved_filter('${theirs[0]?.id ?? ""}')`);
   });
 
   it("delete_saved_filter só apaga se o dono chamar — outro usuário não afeta nada", async () => {
-    const created = await asUser<{ id: string }>(
+    const created = await asUserPersist<{ id: string }>(
       ADMIN_SB,
       `select * from public.create_saved_filter('${ORG_SB}','${SCREEN}','Só o admin apaga','{}'::jsonb)`,
     );
     const filterId = created[0]?.id ?? "";
 
-    await asUser(ANALISTA_SB, `select public.delete_saved_filter('${filterId}')`);
+    await asUserPersist(ANALISTA_SB, `select public.delete_saved_filter('${filterId}')`);
 
     const stillThere = await asUser<{ id: string }>(
       ADMIN_SB,
@@ -3276,7 +3285,7 @@ describe("saved_filters / create_saved_filter / delete_saved_filter (Fase 5B, Fi
     );
     expect(stillThere).toHaveLength(1);
 
-    await asUser(ADMIN_SB, `select public.delete_saved_filter('${filterId}')`);
+    await asUserPersist(ADMIN_SB, `select public.delete_saved_filter('${filterId}')`);
 
     const gone = await asUser<{ id: string }>(
       ADMIN_SB,
