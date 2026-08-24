@@ -3887,11 +3887,17 @@ describe("action_decisions / action_outcomes / create_action_decision / get_sku_
 });
 
 describe("notificações (fan-out de domain_events, D-073)", () => {
-  // Mesmas contas de "contas Mercado Livre": ANALISTA_SB tem permissão só
-  // na Conta A. Reinserido `on conflict do nothing` por autocontenção, sem
-  // depender da ordem de execução entre describes.
-  const CONTA_A = "aaaa1111-0000-4000-8000-00000000aaaa";
-  const CONTA_B = "bbbb2222-0000-4000-8000-00000000bbbb";
+  // Contas PRÓPRIAS desta suíte, não as de "contas Mercado Livre" —
+  // `domain_events` é append-only de verdade (nem o `client` superusuário
+  // consegue apagar, `domain_events_reject_mutation` recusa incondicional).
+  // Reusar CONTA_A/CONTA_B (slug `rlstest-conta-a/b`) prenderia essas contas
+  // para sempre via `on delete restrict`, e o `afterAll` GLOBAL deste
+  // arquivo tenta apagar `ml_accounts` com slug `rlstest%` — quebraria a
+  // suíte inteira. Slug sem esse prefixo evita a colisão por completo, sem
+  // precisar de nenhuma limpeza (mesmo padrão já aceito para outras contas
+  // de teste deste arquivo que também nunca são apagadas).
+  const CONTA_A = "eeee1111-0000-4000-8000-00000000eee1";
+  const CONTA_B = "eeee2222-0000-4000-8000-00000000eee2";
 
   let orgWideEventId = "";
   let contaAEventId = "";
@@ -3900,8 +3906,8 @@ describe("notificações (fan-out de domain_events, D-073)", () => {
   beforeAll(async () => {
     await client.query(
       `insert into public.ml_accounts (id, organization_id, label, slug, seller_id, status, connected_at)
-       values ($1,$3,'Conta A','rlstest-conta-a',111,'CONNECTED',now()),
-              ($2,$3,'Conta B','rlstest-conta-b',222,'CONNECTED',now())
+       values ($1,$3,'Conta A (notificações)','notify-conta-a',444,'CONNECTED',now()),
+              ($2,$3,'Conta B (notificações)','notify-conta-b',555,'CONNECTED',now())
        on conflict do nothing`,
       [CONTA_A, CONTA_B, ORG_SB],
     );
@@ -3943,17 +3949,12 @@ describe("notificações (fan-out de domain_events, D-073)", () => {
     contaBEventId = contaB.rows[0]?.id ?? "";
   });
 
-  // `domain_events.ml_account_id` referencia `ml_accounts` com `on delete
-  // restrict` (mesma garantia de append-only já usada por sync_runs) — o
-  // `afterAll` GLOBAL deste arquivo tenta apagar `ml_accounts` com slug
-  // `rlstest%`, o que inclui CONTA_A/CONTA_B. Sem limpar os eventos desta
-  // suíte primeiro, essa exclusão falharia e derrubaria o arquivo inteiro.
-  // `on delete cascade` de `notifications`/`notification_recipients` para
-  // `domain_events` cuida do resto sozinho.
-  afterAll(async () => {
-    await client.query("delete from public.domain_events where dedup_key like 'rlstest-notify:%'");
-  });
-
+  // Sem `afterAll` de limpeza — `domain_events` é append-only de verdade
+  // (nem o `client` superusuário apaga, `domain_events_reject_mutation`
+  // recusa incondicional). As contas/eventos desta suíte ficam, como
+  // ficariam em produção; mesmo raciocínio já aceito para outras contas de
+  // teste deste arquivo (`docs/DATABASE.md`: "o ambiente local acumula até
+  // o próximo `supabase db reset --local`").
   async function recipientsOf(domainEventId: string): Promise<string[]> {
     const rows = await client.query<{ user_id: string }>(
       `select nr.user_id from public.notification_recipients nr
