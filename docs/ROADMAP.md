@@ -196,7 +196,7 @@ Nenhuma funcionalidade concluída das Fases 0 a 6 deve ser removida ou reimpleme
 - [ ] Criar fluxo de vinculação manual `Conta + MLB + variation_id? -> SKU` sem exigir `link_candidate` prévio.
 - [ ] Criar alias reutilizável `Fornecedor + código do produto -> SKU` quando um vínculo for confirmado.
 - [ ] Evoluir o Dashboard de SKU para abas/progressive disclosure.
-- [ ] Reorganizar a navegação em grupos, evitando todas as telas no mesmo nível.
+- [x] Reorganizar a navegação em grupos, evitando todas as telas no mesmo nível — feito em 2026-08-24 (`e1ea084`, ver D-068): COMERCIAL, ESTOQUE, INTELIGÊNCIA, GESTÃO. ADMINISTRAÇÃO e "Produtos" ficam de fora até existirem páginas reais.
 - [ ] Substituir a Home de construção pela Home orientada a “o que precisa da minha atenção hoje?”.
 - [ ] Adicionar as entidades novas que já possuem destino real à Busca Universal, incluindo Central de Ações quando aplicável.
 
