@@ -1409,6 +1409,126 @@ export type Database = {
           },
         ]
       }
+      notification_preferences: {
+        Row: {
+          created_at: string
+          enabled: boolean
+          event_type: string | null
+          id: string
+          min_severity: string
+          ml_account_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          enabled?: boolean
+          event_type?: string | null
+          id?: string
+          min_severity?: string
+          ml_account_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          enabled?: boolean
+          event_type?: string | null
+          id?: string
+          min_severity?: string
+          ml_account_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_preferences_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notification_preferences_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notification_recipients: {
+        Row: {
+          created_at: string
+          notification_id: string
+          read_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          notification_id: string
+          read_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          notification_id?: string
+          read_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_recipients_notification_id_fkey"
+            columns: ["notification_id"]
+            isOneToOne: false
+            referencedRelation: "notifications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notification_recipients_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notifications: {
+        Row: {
+          created_at: string
+          domain_event_id: string
+          id: string
+          organization_id: string
+        }
+        Insert: {
+          created_at?: string
+          domain_event_id: string
+          id?: string
+          organization_id: string
+        }
+        Update: {
+          created_at?: string
+          domain_event_id?: string
+          id?: string
+          organization_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_domain_event_id_fkey"
+            columns: ["domain_event_id"]
+            isOneToOne: true
+            referencedRelation: "domain_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       order_items: {
         Row: {
           created_at: string

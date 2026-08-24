@@ -491,7 +491,7 @@ notification_preferences user_id, event_type?, ml_account_id?, min_severity, ena
 
 **Verificação**: `packages/db/src/rls.integration.test.ts`, describe `"notificações (fan-out de domain_events, D-073)"` — regra de destinatário (organizacional, conta com/sem permissão), RLS de leitura/escrita, `notification_preferences` suprimindo por `enabled=false` e por severidade abaixo do mínimo, autogestão de preferência. Não executável nesta máquina (sem Docker) — verificado pela CI (`integration` job).
 
-**Pendência registrada**: `packages/db/src/types.ts` (gerado via `supabase gen types typescript --local`) ainda não foi regenerado para incluir as três tabelas novas — exige Supabase local rodando (Docker), indisponível nesta máquina. Regenerar antes de escrever código de aplicação que consulte estas tabelas (item 4, Central de Notificações).
+**`packages/db/src/types.ts` regenerado** contra o Supabase Dev (`supabase gen types typescript --project-id`, sem Docker/`--local` disponível nesta máquina) depois que a migration aplicou lá — diff conferido antes de sobrescrever: só as três tabelas novas, nada mais mudou.
 
 ---
 
