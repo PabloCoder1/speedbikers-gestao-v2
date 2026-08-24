@@ -3502,13 +3502,9 @@ describe("actions / update_action_status / get_sku_average_prices (Fase 6, Centr
        values ($1,$2,$3,'2026-05-01',1,999,1,1)`,
       [ORG_SB, CONTA_ACOES, skuPrecoId],
     );
-    // units_sold=0 -> average_selling_price gerado é NULL (nullif) — sku não deve aparecer no resultado.
-    await client.query(
-      `insert into public.daily_sku_metrics
-         (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
-       values ($1,$2,$3,'2026-06-02',0,0,0,0)`,
-      [ORG_SB, CONTA_ACOES, skuSemVendaId],
-    );
+    // skuSemVendaId nunca ganha linha em daily_sku_metrics: dia sem venda não gera
+    // linha (orders_count > 0 é invariante da tabela, `20260821182620_create_daily_sales_metrics.sql`),
+    // e é exatamente por isso que o SKU não deve aparecer no resultado.
 
     const action = await client.query<{ id: string }>(
       `insert into public.actions
