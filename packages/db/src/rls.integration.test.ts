@@ -3538,9 +3538,13 @@ describe("actions / update_action_status / get_sku_average_prices (Fase 6, Centr
     });
 
     it("anon não vê nada", async () => {
-      const rows = await asAnon<{ id: string }>(`select id from public.actions where id = '${actionId}'`);
-
-      expect(rows).toHaveLength(0);
+      // Mesmo padrão de saved_filters (D-062): anon não tem GRANT SELECT
+      // nenhum na tabela (`revoke all ... from anon, authenticated`), então o
+      // Postgres barra em "permission denied" antes de chegar na RLS — não é
+      // resultado vazio.
+      await expect(asAnon(`select id from public.actions where id = '${actionId}'`)).rejects.toThrow(
+        /permission denied/i,
+      );
     });
 
     it("authenticated não escreve direto — só via update_action_status", async () => {
