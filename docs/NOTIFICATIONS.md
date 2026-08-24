@@ -2,7 +2,7 @@
 
 > Dono documental de: regra evento -> notificação, severidade, agrupamento, transporte e preferências.
 > Catálogo de `event_type` em `docs/API.md`. Schema em `docs/DATABASE.md`.
-> Status: **estratégia aprovada. Persistência + regra de destinatário implementadas em 2026-08-24 (D-073)** — `notifications`/`notification_recipients`/`notification_preferences`, migration `20260824190000_create_notifications.sql`. Realtime, toasts, Central de Notificações (UI) e a interface de preferências continuam pendentes (`docs/HANDOFF.md`, itens 4/5/6).
+> Status: **estratégia aprovada. Persistência + regra de destinatário implementadas em 2026-08-24 (D-073)** — `notifications`/`notification_recipients`/`notification_preferences`, migration `20260824190000_create_notifications.sql`. **Central de Notificações (lista + lido/não lido) implementada em 2026-08-24 (D-074)** — `apps/web/app/notificacoes`. Realtime, toasts e a interface de preferências continuam pendentes (`docs/HANDOFF.md`, itens 5/6).
 
 ---
 
@@ -15,7 +15,8 @@ mudança detectada pelo worker (diff, ledger, sync)
    -> regra de destinatário    permissão por conta + preferências     [implementado, D-073]
    -> notifications + notification_recipients                        [implementado, D-073]
    -> Supabase Realtime                                               [pendente]
-   -> toast (canto inferior direito) + Central de Notificações        [pendente]
+   -> toast (canto inferior direito)                                  [pendente]
+   -> Central de Notificações (lista + lido/não lido)                 [implementado, D-074]
 ```
 
 **O evento é sempre persistido.** Todo `domain_event` catalogado (já tem severidade atribuída por natureza) gera exatamente uma `notification`, com fan-out para quem tem acesso — "nem toda mudança precisa interromper alguém" acontece via `notification_preferences` (por usuário), não por deixar de criar a notificação: o registro na Central de Notificações continua existindo para consulta, só o alerta em tempo real é que respeita a preferência de cada um.
@@ -105,10 +106,13 @@ Granularidade: por usuário, por `event_type`, por severidade mínima e por cont
 
 ## 7. Central de Notificações
 
-- Histórico completo, com estado lido / não lido por usuário.
-- Filtro por severidade, conta e período.
-- Link para a entidade afetada.
-- Distinção entre alteração automática e manual **quando a origem puder ser identificada** — o campo `source` de `domain_events` carrega isso.
+**Lista + estado lido/não lido implementados em 2026-08-24 (D-074)** — `apps/web/app/notificacoes`, últimas 100 notificações do usuário, ordenadas por mais recente. "Marcar como lida" (por item) e "marcar todas como lidas" escrevem direto em `notification_recipients` sob RLS (`docs/ARCHITECTURE.md` secao 4 cita este caso nominalmente), sem RPC. Emblema de não lidas no cabeçalho (`Shell`).
+
+- Histórico completo, com estado lido / não lido por usuário. **Feito.**
+- Link para a entidade afetada **quando a rota existe** — hoje só `entity_type = "sku"` (`/skus/[skuId]`); `listing`/`order` ainda não têm tela de detalhe própria, aparecem como texto.
+- Diff legível (`antes → depois`) só para os quatro tipos de evento com formato de `before`/`after` já documentado (`listing.price/title/available_quantity.changed`, `listing.status.paused`/`.reactivated`) — os demais mostram só o rótulo do evento.
+- **Pendente:** filtro por severidade, conta e período (a lista de hoje é só cronológica); agrupamento por janela (item 5, é concern de toast/exibição em tempo real, não da lista histórica).
+- Distinção entre alteração automática e manual **quando a origem puder ser identificada** — o campo `source` de `domain_events` carrega isso, ainda não exibido na lista (não pedido em D-074, cabe numa iteração de filtro).
 
 ---
 

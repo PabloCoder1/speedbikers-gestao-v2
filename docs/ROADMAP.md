@@ -238,7 +238,7 @@ Itens P1 e P2 podem continuar evoluindo incrementalmente sem reabrir ou invalida
 ## Fase 7 — Notificações e Copiloto
 
 - [ ] **Regras evento -> notificação, severidade e agrupamento por janela** — persistência e regra de destinatário concluídas em 2026-08-24 (D-073): `notifications`/`notification_recipients`, fan-out via trigger em `domain_events`, permissão por conta aplicada na geração. Severidade já vinha de `@sb/domain/events` desde a Fase 0. **Agrupamento por janela continua pendente** — é concern de exibição (toast), não de persistência.
-- [ ] Realtime, toasts no canto inferior direito e Central de Notificações
+- [ ] **Realtime, toasts no canto inferior direito e Central de Notificações** — **Central de Notificações (lista + lido/não lido) concluída em 2026-08-24 (D-074)**, `apps/web/app/notificacoes`. **Realtime e toasts continuam pendentes** — sem eles, notificação só aparece ao visitar a Central (sem entrega em tempo real ainda).
 - [ ] **Preferências por usuário** — schema (`notification_preferences`) e regra de aplicação (mais específica vence, `enabled`/`min_severity`) concluídos em 2026-08-24 (D-073). **UI para configurar continua pendente** — a tabela nasce vazia.
 - [ ] Registro de ferramentas do Copiloto e orquestração com streaming
 - [ ] `ai_runs` com custo e escopo

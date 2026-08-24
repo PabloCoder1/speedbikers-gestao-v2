@@ -85,6 +85,42 @@ const LISTING_STATUS: Record<string, string> = {
   paused: "Pausado",
 };
 
+/**
+ * `domain_events.event_type` (docs/API.md secao 4) — mesmo texto do catálogo,
+ * só traduzido. Código sem tradução cai no fallback de `lookup()`: mostra o
+ * `dominio.entidade.acao` bruto em vez de travar, mesmo raciocínio do resto
+ * do mapa — um `event_type` novo aparece feio antes de aparecer quebrado.
+ */
+const EVENT_TYPE: Record<string, string> = {
+  "listing.price.changed": "Preço do anúncio alterado",
+  "listing.title.changed": "Título do anúncio alterado",
+  "listing.picture.changed": "Foto do anúncio alterada",
+  "listing.description.changed": "Descrição do anúncio alterada",
+  "listing.available_quantity.changed": "Quantidade disponível alterada",
+  "listing.status.paused": "Anúncio pausado",
+  "listing.status.reactivated": "Anúncio reativado",
+  "listing.promotion.started": "Promoção iniciada",
+  "listing.promotion.ended": "Promoção encerrada",
+  "listing.catalog.won": "Ganhou o catálogo (buy box)",
+  "listing.catalog.lost": "Perdeu o catálogo (buy box)",
+  "listing.fulfillment.entered": "Entrou no Full",
+  "listing.fulfillment.exited": "Saiu do Full",
+  "stock.depleted": "Estoque zerado",
+  "stock.replenished": "Estoque reabastecido",
+  "stock.balance.diverged": "Divergência de saldo de estoque",
+  "order.cancelled": "Pedido cancelado",
+  "order.returned": "Pedido devolvido",
+  "sync.delayed": "Sincronização atrasada",
+  "sync.failed": "Sincronização falhou",
+};
+
+/** `domain_events.severity` — três níveis fixos (docs/NOTIFICATIONS.md secao 2). */
+const SEVERITY: Record<string, string> = {
+  informativo: "Informativo",
+  importante: "Importante",
+  critico: "Crítico",
+};
+
 function lookup(table: Record<string, string>, code: string): string {
   return table[code] ?? code;
 }
@@ -98,6 +134,8 @@ export const purchaseOrderStatusLabel = (code: string): string => lookup(PURCHAS
 export const purchaseOrderEventLabel = (code: string): string => lookup(PURCHASE_ORDER_EVENT, code);
 export const locationKindLabel = (code: string): string => lookup(LOCATION_KIND, code);
 export const listingStatusLabel = (code: string): string => lookup(LISTING_STATUS, code);
+export const eventTypeLabel = (code: string): string => lookup(EVENT_TYPE, code);
+export const severityLabel = (code: string): string => lookup(SEVERITY, code);
 
 /** Cor de destaque por estado. `null` = sem destaque, o padrão da tabela. */
 export function statusTone(code: string): "ok" | "warn" | "bad" | null {
@@ -109,14 +147,17 @@ export function statusTone(code: string): "ok" | "warn" | "bad" | null {
     code === "UNRESOLVED" ||
     code === "DRAFT" ||
     code === "APPROVED" ||
-    code === "ORDERED"
+    code === "ORDERED" ||
+    code === "importante"
   ) {
     return "warn";
   }
 
   if (code === "active") return "ok";
   if (code === "paused") return "warn";
-  if (code === "FAILED" || code === "INVALID" || code === "CANCELLED") return "bad";
+  if (code === "FAILED" || code === "INVALID" || code === "CANCELLED" || code === "critico") return "bad";
 
+  // "informativo" cai no padrão (null, sem destaque) de propósito — é o
+  // nível que não deve competir visualmente com importante/crítico.
   return null;
 }

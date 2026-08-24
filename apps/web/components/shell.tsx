@@ -16,7 +16,8 @@ import { CommandPalette } from "./command-palette";
  * — "não fica só colocando solto, fica bagunça"), `<details>`/`<summary>`
  * nativo — dropdown sem JS, acessível de graça. Estrutura alvo completa:
  *
- *   VISÃO GERAL (item solto, sem grupo)
+ *   VISÃO GERAL, NOTIFICAÇÕES (itens soltos, sem grupo — notificações é
+ *   transversal a todas as categorias, não pertence a nenhuma)
  *   COMERCIAL: Vendas, Produtos, Anúncios
  *   ESTOQUE: Estoque, Cobertura, Curva ABC, Notas Fiscais, Compras
  *   INTELIGÊNCIA: Diagnóstico, Ações
@@ -147,6 +148,17 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
   // numa tela que roda em TODA página autenticada (D-067, Nível 3).
   const membershipError = membership.error !== null;
 
+  // Badge de não lidas (Fase 7, item 4) — `notification_recipients_select_own`
+  // já restringe a própria linha, sem precisar filtrar por user_id aqui.
+  // Falha na contagem degrada pro emblema simplesmente não aparecer: não é
+  // dado de negócio (D-067 mirava corrupção de estoque/pedido, não um
+  // contador de UI), então sem `⚠` — só some.
+  const unread = await supabase
+    .from("notification_recipients")
+    .select("*", { count: "exact", head: true })
+    .is("read_at", null);
+  const unreadCount = unread.count ?? 0;
+
   return (
     <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column" }}>
       <header
@@ -171,6 +183,32 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
         <nav style={{ display: "flex", alignItems: "center", gap: "var(--sb-space-3)", fontSize: "0.9375rem" }}>
           <Link href="/" style={{ color: "var(--sb-text-soft)", textDecoration: "none" }}>
             Visão Geral
+          </Link>
+
+          <Link
+            href="/notificacoes"
+            style={{ color: "var(--sb-text-soft)", textDecoration: "none", position: "relative" }}
+          >
+            Notificações
+            {unreadCount > 0 && (
+              <span
+                style={{
+                  marginLeft: "0.375rem",
+                  display: "inline-block",
+                  minWidth: "1.125rem",
+                  padding: "0 0.25rem",
+                  borderRadius: "999px",
+                  background: "var(--sb-danger)",
+                  color: "#fff",
+                  fontSize: "0.6875rem",
+                  fontWeight: 700,
+                  textAlign: "center",
+                  lineHeight: "1.125rem",
+                }}
+              >
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </span>
+            )}
           </Link>
 
           {NAV_GROUPS.map((group) => (
