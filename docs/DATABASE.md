@@ -37,7 +37,7 @@ inventory       inventory_balances · fulfillment_stock_snapshots
 documents       documents · document_items
 purchasing      purchase_orders · purchase_order_items (implementadas 2026-08-22)
 actions         actions (implementada 2026-08-24, D-064) · action_decisions · action_outcomes (implementadas 2026-08-24, D-065)
-notifications   notifications · notification_recipients · notification_preferences
+notifications   notifications · notification_recipients · notification_preferences (implementadas 2026-08-24, D-073)
 feedback        feature_suggestions
 support         support_cases · support_messages · support_case_events · knowledge_entries
                 reply_templates                 (Fase 7B, D-071 — conceitual, nomes a confirmar)
@@ -461,11 +461,37 @@ Integrado em `/vendas` (a tela com o filtro mais rico — período + conta) via 
 
 A INTERPRETAÇÃO (é anomalia? direção? confiança? causa candidata?) não vive em SQL — é `diagnoseSalesAnomaly` em `packages/domain/src/diagnostics/sales-anomaly.ts`, pura, produzindo o contrato de diagnóstico fixo (`docs/ARCHITECTURE.md` secao 16): `{escopo, periodo, direcao, confianca, zScore, evidencias[], causasCandidatas[], proximosPassos[]}`. `|z| >= 2` é o limiar de anomalia, `|z| >= 3` sobe a confiança para "alta" — convenção estatística padrão, não calibrada com dado real ainda (D-063).
 
-Causas candidatas vêm de `domain_events` com `entity_type = 'sku'` (`entity_id = sku_id` direto, sem join) — hoje só `stock.depleted`/`stock.replenished` têm essa forma com dado real (1.043 e 33 linhas na organização de demonstração); `order.*` (entity_type='order') e `listing.*` (catalogados, nunca emitidos) ficam de fora desta fatia.
+Causas candidatas vêm de `domain_events` com `entity_type = 'sku'` (`entity_id = sku_id` direto, sem join) — hoje só `stock.depleted`/`stock.replenished` têm essa forma com dado real (1.043 e 33 linhas na organização de demonstração); `order.*` (entity_type='order') fica de fora desta fatia. `listing.*` (`entity_type = 'listing'`, D-072) também fica de fora — emitido desde 2026-08-24, mas correlacionar por SKU exigiria resolver `sku_listing_links` a partir do `entity_id` (item_id), não implementado aqui.
 
 Consumida por `/diagnostico` (novo): busca o baseline de TODOS os SKUs para ontem (`as_of`, mesmo raciocínio de frescor de `/vendas`), roda `diagnoseSalesAnomaly` em duas passadas — uma sem eventos para achar quais SKUs são anomalia, uma segunda só para esses (já com os eventos correlacionados) — evita N+1 de consulta a `domain_events`.
 
 **"Central de Ações" (persistir como item acionável)** — ver `actions` (D-064), acima. **"Decisões com `baseline_snapshot`"** — ver `action_decisions`/`action_outcomes` (D-065), acima. Os três itens fecham o checklist da Fase 6.
+
+### `notifications` / `notification_recipients` / `notification_preferences` — persistência e regra de destinatário (D-073)
+
+**Implementado em 2026-08-24**, migration `20260824190000_create_notifications.sql`, fecha o item 3 da "Próxima sequência recomendada" (`docs/HANDOFF.md`) — persistência e regra de destinatário. Realtime, toasts, Central de Notificações (UI) e a interface de preferências são etapas separadas e posteriores (itens 4/5/6).
+
+```text
+notifications            organization_id, domain_event_id (unique, fk domain_events)
+notification_recipients  notification_id, user_id, read_at? (nulo = não lida)
+notification_preferences user_id, event_type?, ml_account_id?, min_severity, enabled
+```
+
+`notifications` não duplica `event_type`/`before`/`after`/`severity` — isso já vive em `domain_events`, e a leitura faz `join` por `domain_event_id`. Uma linha por evento (`unique (domain_event_id)`); `notification_recipients` é o fan-out por usuário, `read_at` na mesma convenção de `connected_at`/`resolved_at` do resto do schema.
+
+**Fan-out por trigger `AFTER INSERT` em `domain_events`, não RPC nem código de aplicação** (`private.fan_out_notification`, mesmo raciocínio de `private.apply_stock_movement`): toda linha nova em `domain_events`, de QUALQUER chamador presente ou futuro, fica coberta sem que cada handler do worker precise lembrar de notificar. Sem `security definer` — o worker já grava `domain_events` como `service_role`, privilégio suficiente para as duas tabelas novas (mesmo padrão de `apply_stock_movement`).
+
+**Regra de destinatário** (`docs/NOTIFICATIONS.md` secao 5, "permissão por conta"): evento organizacional (`ml_account_id` nulo) alcança todo membro da organização; evento de conta alcança ADMIN (sempre, mesmo raciocínio de `private.has_account_access`) mais quem tiver `user_account_permissions` para aquela conta especificamente — mesma regra já usada para leitura de `domain_events` (D-054), expressa como conjunto em vez de checagem do usuário corrente.
+
+**`notification_preferences` nasce vazia** — sem UI para criar linha nenhuma ainda (item 6, posterior). `event_type`/`ml_account_id` nulos são curingas ("aplica a todos"); quando mais de uma linha bate, a mais específica vence (`order by (event_type is not null)::int + (ml_account_id is not null)::int desc limit 1`). `enabled = false` ou severidade do evento abaixo do `min_severity` pedido suprime o destinatário; **sem nenhuma linha, o fan-out notifica por padrão** — comportamento seguro enquanto não existir UI para configurar. Mesma pegadinha já documentada para `sku_listing_links` (secao 4, acima): `NULL` não colide em `UNIQUE` simples, por isso os quatro índices únicos parciais (um por combinação de curinga) em vez de um `unique (user_id, event_type, ml_account_id)` ingênuo.
+
+**Deliberadamente sem backfill**: `domain_events` já tinha linhas reais desde a Fase 3 (`order.cancelled`, `stock.depleted`/`replenished`, etc.) antes desta migration. Sem Central de Notificações para consumir ainda, backfilar histórico não tinha benefício visível e arriscava uma migration pesada contra tabela de produção real — a partir desta migration, todo `domain_event` NOVO gera notificação; histórico anterior fica só em `domain_events`.
+
+**RLS**: leitura de `notifications` amarrada a existir uma linha em `notification_recipients` para o usuário — não repete `has_account_access`, a regra de acesso já foi resolvida no momento do fan-out. `notification_recipients` ganha `UPDATE` para `authenticated` (marcar lida é Server Action de escopo do usuário, citada nominalmente em `docs/ARCHITECTURE.md` secao 4 como exemplo — direto sob RLS, sem RPC). `notification_preferences` é autoatendida (CRUD completo, `using/with check user_id = auth.uid()`), mesmo raciocínio de `profiles_update_self`.
+
+**Verificação**: `packages/db/src/rls.integration.test.ts`, describe `"notificações (fan-out de domain_events, D-073)"` — regra de destinatário (organizacional, conta com/sem permissão), RLS de leitura/escrita, `notification_preferences` suprimindo por `enabled=false` e por severidade abaixo do mínimo, autogestão de preferência. Não executável nesta máquina (sem Docker) — verificado pela CI (`integration` job).
+
+**Pendência registrada**: `packages/db/src/types.ts` (gerado via `supabase gen types typescript --local`) ainda não foi regenerado para incluir as três tabelas novas — exige Supabase local rodando (Docker), indisponível nesta máquina. Regenerar antes de escrever código de aplicação que consulte estas tabelas (item 4, Central de Notificações).
 
 ---
 

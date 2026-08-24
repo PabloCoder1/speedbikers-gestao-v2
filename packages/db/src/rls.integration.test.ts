@@ -3885,3 +3885,249 @@ describe("action_decisions / action_outcomes / create_action_decision / get_sku_
     });
   });
 });
+
+describe("notificações (fan-out de domain_events, D-073)", () => {
+  // Mesmas contas de "contas Mercado Livre": ANALISTA_SB tem permissão só
+  // na Conta A. Reinserido `on conflict do nothing` por autocontenção, sem
+  // depender da ordem de execução entre describes.
+  const CONTA_A = "aaaa1111-0000-4000-8000-00000000aaaa";
+  const CONTA_B = "bbbb2222-0000-4000-8000-00000000bbbb";
+
+  let orgWideEventId = "";
+  let contaAEventId = "";
+  let contaBEventId = "";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, seller_id, status, connected_at)
+       values ($1,$3,'Conta A','rlstest-conta-a',111,'CONNECTED',now()),
+              ($2,$3,'Conta B','rlstest-conta-b',222,'CONNECTED',now())
+       on conflict do nothing`,
+      [CONTA_A, CONTA_B, ORG_SB],
+    );
+
+    await client.query(
+      `insert into public.user_account_permissions (user_id, ml_account_id)
+       values ($1,$2) on conflict do nothing`,
+      [ANALISTA_SB, CONTA_A],
+    );
+
+    // Evento organizacional (sem conta) — mesmo padrão de stock.balance.diverged (D-054).
+    const orgWide = await client.query<{ id: string }>(
+      `insert into public.domain_events
+         (organization_id, ml_account_id, occurred_at, event_type, entity_type, entity_id, severity, source, dedup_key)
+       values ($1, null, now(), 'stock.balance.diverged', 'sku', 'rlstest-notify-sku', 'critico', 'system', $2)
+       returning id`,
+      [ORG_SB, `rlstest-notify:org-wide:${String(Date.now())}`],
+    );
+    orgWideEventId = orgWide.rows[0]?.id ?? "";
+
+    // Evento na Conta A — ANALISTA_SB tem permissão explícita ali.
+    const contaA = await client.query<{ id: string }>(
+      `insert into public.domain_events
+         (organization_id, ml_account_id, occurred_at, event_type, entity_type, entity_id, severity, source, dedup_key)
+       values ($1, $2, now(), 'listing.price.changed', 'listing', 'MLB-rlstest-a', 'informativo', 'sync', $3)
+       returning id`,
+      [ORG_SB, CONTA_A, `rlstest-notify:conta-a:${String(Date.now())}`],
+    );
+    contaAEventId = contaA.rows[0]?.id ?? "";
+
+    // Evento na Conta B — ANALISTA_SB NÃO tem permissão ali.
+    const contaB = await client.query<{ id: string }>(
+      `insert into public.domain_events
+         (organization_id, ml_account_id, occurred_at, event_type, entity_type, entity_id, severity, source, dedup_key)
+       values ($1, $2, now(), 'listing.price.changed', 'listing', 'MLB-rlstest-b', 'informativo', 'sync', $3)
+       returning id`,
+      [ORG_SB, CONTA_B, `rlstest-notify:conta-b:${String(Date.now())}`],
+    );
+    contaBEventId = contaB.rows[0]?.id ?? "";
+  });
+
+  async function recipientsOf(domainEventId: string): Promise<string[]> {
+    const rows = await client.query<{ user_id: string }>(
+      `select nr.user_id from public.notification_recipients nr
+       join public.notifications n on n.id = nr.notification_id
+       where n.domain_event_id = $1`,
+      [domainEventId],
+    );
+
+    return rows.rows.map((r) => r.user_id).sort();
+  }
+
+  describe("regra de destinatário (fan-out via trigger, sem RPC nem código de aplicação)", () => {
+    it("evento organizacional (ml_account_id nulo) notifica qualquer membro da organização", async () => {
+      expect(await recipientsOf(orgWideEventId)).toEqual([ADMIN_SB, ANALISTA_SB].sort());
+    });
+
+    it("evento de conta COM permissão: ADMIN (alcança tudo) e quem tem permissão explícita são notificados", async () => {
+      expect(await recipientsOf(contaAEventId)).toEqual([ADMIN_SB, ANALISTA_SB].sort());
+    });
+
+    it("evento de conta SEM permissão: só ADMIN é notificado — quem não tem acesso à conta fica de fora", async () => {
+      expect(await recipientsOf(contaBEventId)).toEqual([ADMIN_SB]);
+    });
+
+    it("uma notificação por domain_event — UNIQUE em domain_event_id", async () => {
+      const rows = await client.query<{ count: string }>(
+        `select count(*) from public.notifications where domain_event_id = $1`,
+        [orgWideEventId],
+      );
+
+      expect(rows.rows[0]?.count).toBe("1");
+    });
+  });
+
+  describe("RLS de leitura", () => {
+    it("ANALISTA vê a própria notificação (evento organizacional)", async () => {
+      const rows = await asUser<{ id: string }>(
+        ANALISTA_SB,
+        `select n.id from public.notifications n
+         join public.notification_recipients nr on nr.notification_id = n.id
+         where n.domain_event_id = '${orgWideEventId}' and nr.user_id = '${ANALISTA_SB}'`,
+      );
+
+      expect(rows).toHaveLength(1);
+    });
+
+    it("ANALISTA não vê a notificação da Conta B — nunca virou destinatário", async () => {
+      const rows = await asUser<{ id: string }>(
+        ANALISTA_SB,
+        `select n.id from public.notifications n where n.domain_event_id = '${contaBEventId}'`,
+      );
+
+      expect(rows).toHaveLength(0);
+    });
+
+    it("usuário de outra organização não vê nada", async () => {
+      const rows = await asUser<{ id: string }>(
+        DE_OUTRA_ORG,
+        `select n.id from public.notifications n where n.domain_event_id = '${orgWideEventId}'`,
+      );
+
+      expect(rows).toHaveLength(0);
+    });
+
+    it("anon não vê notifications nem notification_recipients", async () => {
+      await expect(asAnon("select * from public.notifications")).rejects.toThrow(/permission denied/i);
+      await expect(asAnon("select * from public.notification_recipients")).rejects.toThrow(
+        /permission denied/i,
+      );
+    });
+
+    it("authenticated não insere direto em notifications — só o trigger, via service_role", async () => {
+      await expect(
+        asUser(
+          ADMIN_SB,
+          `insert into public.notifications (organization_id, domain_event_id)
+           values ('${ORG_SB}','${orgWideEventId}')`,
+        ),
+      ).rejects.toThrow(/permission denied/i);
+    });
+  });
+
+  describe("marcar como lida — Server Action de escopo do usuário (ARCHITECTURE.md secao 4)", () => {
+    it("usuário marca a própria notificação como lida", async () => {
+      const rows = await asUserPersist<{ read_at: string | null }>(
+        ANALISTA_SB,
+        `update public.notification_recipients set read_at = now()
+         where notification_id = (select id from public.notifications where domain_event_id = '${orgWideEventId}')
+           and user_id = '${ANALISTA_SB}'
+         returning read_at`,
+      );
+
+      expect(rows[0]?.read_at).not.toBeNull();
+    });
+
+    it("usuário não marca a notificação de outro usuário como lida", async () => {
+      const rows = await asUser<{ read_at: string | null }>(
+        ANALISTA_SB,
+        `update public.notification_recipients set read_at = now()
+         where notification_id = (select id from public.notifications where domain_event_id = '${orgWideEventId}')
+           and user_id = '${ADMIN_SB}'
+         returning read_at`,
+      );
+
+      expect(rows).toHaveLength(0);
+    });
+  });
+
+  describe("notification_preferences suprime o fan-out", () => {
+    let suppressedEventId = "";
+    let belowThresholdEventId = "";
+
+    beforeAll(async () => {
+      // ANALISTA desativa listing.price.changed por completo.
+      await client.query(
+        `insert into public.notification_preferences (user_id, event_type, enabled)
+         values ($1, 'listing.price.changed', false)
+         on conflict do nothing`,
+        [ANALISTA_SB],
+      );
+
+      const suppressed = await client.query<{ id: string }>(
+        `insert into public.domain_events
+           (organization_id, ml_account_id, occurred_at, event_type, entity_type, entity_id, severity, source, dedup_key)
+         values ($1, $2, now(), 'listing.price.changed', 'listing', 'MLB-rlstest-suprimido', 'informativo', 'sync', $3)
+         returning id`,
+        [ORG_SB, CONTA_A, `rlstest-notify:suprimido:${String(Date.now())}`],
+      );
+      suppressedEventId = suppressed.rows[0]?.id ?? "";
+
+      // ADMIN pede severidade mínima "importante" para listing.title.changed na Conta A.
+      await client.query(
+        `insert into public.notification_preferences (user_id, event_type, ml_account_id, min_severity)
+         values ($1, 'listing.title.changed', $2, 'importante')
+         on conflict do nothing`,
+        [ADMIN_SB, CONTA_A],
+      );
+
+      const belowThreshold = await client.query<{ id: string }>(
+        `insert into public.domain_events
+           (organization_id, ml_account_id, occurred_at, event_type, entity_type, entity_id, severity, source, dedup_key)
+         values ($1, $2, now(), 'listing.title.changed', 'listing', 'MLB-rlstest-severidade', 'informativo', 'sync', $3)
+         returning id`,
+        [ORG_SB, CONTA_A, `rlstest-notify:severidade:${String(Date.now())}`],
+      );
+      belowThresholdEventId = belowThreshold.rows[0]?.id ?? "";
+    });
+
+    it("enabled=false suprime o event_type inteiro para quem desativou, mesmo com permissão na conta", async () => {
+      expect(await recipientsOf(suppressedEventId)).toEqual([ADMIN_SB]);
+    });
+
+    it("severidade abaixo do mínimo pedido suprime só para quem pediu — o resto continua recebendo", async () => {
+      expect(await recipientsOf(belowThresholdEventId)).toEqual([ANALISTA_SB]);
+    });
+  });
+
+  describe("notification_preferences é autoatendida (sem RPC)", () => {
+    it("usuário gerencia a própria preferência", async () => {
+      const rows = await asUserPersist<{ id: string }>(
+        ANALISTA_SB,
+        `insert into public.notification_preferences (user_id, min_severity)
+         values ('${ANALISTA_SB}', 'critico') returning id`,
+      );
+
+      expect(rows).toHaveLength(1);
+    });
+
+    it("usuário não cria preferência para outro usuário", async () => {
+      await expect(
+        asUser(
+          ANALISTA_SB,
+          `insert into public.notification_preferences (user_id, min_severity)
+           values ('${ADMIN_SB}', 'critico')`,
+        ),
+      ).rejects.toThrow(/row-level security/i);
+    });
+
+    it("usuário não vê preferência de outro", async () => {
+      const rows = await asUser(
+        ANALISTA_SB,
+        `select id from public.notification_preferences where user_id = '${ADMIN_SB}'`,
+      );
+
+      expect(rows).toHaveLength(0);
+    });
+  });
+});

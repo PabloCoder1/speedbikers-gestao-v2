@@ -112,7 +112,7 @@ O registro durável no banco/evento continua sendo a fonte de verdade; Realtime 
 
 1. finalizar o Checkpoint Pré-Fase 7 aplicável;
 2. ~~construir os `domain_events` de alteração de anúncio~~ — **concluído em 2026-08-24 (D-072)**, ver acima;
-3. implementar persistência/regras de notificação;
+3. ~~implementar persistência/regras de notificação~~ — **concluído em 2026-08-24 (D-073)**: `notifications`/`notification_recipients`/`notification_preferences` (migration `20260824190000_create_notifications.sql`), fan-out via trigger `AFTER INSERT` em `domain_events` (não RPC), regra de destinatário por permissão de conta (mesma de D-054), preferência por usuário aplicada (schema pronto, sem UI ainda). Testes de RLS em `packages/db/src/rls.integration.test.ts` — não verificável nesta máquina (sem Docker), aguardando confirmação da CI. **Pendência**: `packages/db/src/types.ts` não regenerado (exige Supabase local); regenerar antes do item 4 escrever código de aplicação contra estas tabelas. Ver D-073 em `docs/DECISIONS.md`.
 4. implementar Central de Notificações + estado lido/não lido;
 5. implementar Realtime/toasts;
 6. implementar preferências por usuário;
