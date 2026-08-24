@@ -38,6 +38,7 @@ export function CommandPalette({ organizationId }: { organizationId: string | nu
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
@@ -62,6 +63,7 @@ export function CommandPalette({ organizationId }: { organizationId: string | nu
 
   async function search(value: string): Promise<void> {
     setQuery(value);
+    setSearchError(null);
 
     if (organizationId === null || value.trim().length < 2) {
       setResults([]);
@@ -71,12 +73,21 @@ export function CommandPalette({ organizationId }: { organizationId: string | nu
 
     const supabase = createClient();
 
-    const { data } = await supabase.rpc("search_entities", {
+    const { data, error } = await supabase.rpc("search_entities", {
       p_organization_id: organizationId,
       p_query: value.trim(),
     });
 
-    setResults(data ?? []);
+    if (error !== null) {
+      // Sem isto, falha de rede/RLS virava "Nada encontrado" — igual a uma
+      // busca genuinamente vazia (D-067, Nível 3).
+      setResults([]);
+      setSearchError("Não foi possível buscar — tente de novo.");
+
+      return;
+    }
+
+    setResults(data);
   }
 
   function go(href: string): void {
@@ -160,7 +171,13 @@ export function CommandPalette({ organizationId }: { organizationId: string | nu
           }}
         />
 
-        {query.trim().length >= 2 && results.length === 0 && (
+        {searchError !== null && (
+          <p role="alert" style={{ padding: "1rem", margin: 0, color: "var(--sb-danger)", fontSize: "0.8125rem" }}>
+            {searchError}
+          </p>
+        )}
+
+        {searchError === null && query.trim().length >= 2 && results.length === 0 && (
           <p style={{ padding: "1rem", margin: 0, color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
             Nada encontrado.
           </p>

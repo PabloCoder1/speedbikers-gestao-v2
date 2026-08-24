@@ -29,6 +29,12 @@ export default async function NovoPedidoDeCompraPage(): Promise<ReactNode> {
         Novo pedido de compra
       </h1>
 
+      {suppliers.error !== null && (
+        <p role="alert" style={{ color: "var(--sb-danger)", fontSize: "0.875rem" }}>
+          Não foi possível carregar os fornecedores: {suppliers.error.message}. A lista abaixo pode estar vazia.
+        </p>
+      )}
+
       <PurchaseOrderForm suppliers={suppliers.data ?? []} />
     </Shell>
   );

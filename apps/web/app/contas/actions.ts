@@ -49,6 +49,10 @@ export async function createMlAccount(label: string, slug: string): Promise<Acti
 
   const membership = await supabase.from("organization_members").select("organization_id").maybeSingle();
 
+  if (membership.error !== null) {
+    return { ok: false, message: "Não foi possível confirmar sua organização — tente de novo." };
+  }
+
   if (membership.data === null) {
     return { ok: false, message: "Sua conta não está associada a nenhuma organização." };
   }

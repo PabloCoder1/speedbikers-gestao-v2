@@ -58,9 +58,11 @@ export function ItemRow({
   onRemove: () => void;
 }): ReactNode {
   const [results, setResults] = useState<SkuResult[]>([]);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   async function search(value: string): Promise<void> {
     onChange({ ...item, skuSnapshot: value, skuId: null, titleSnapshot: null, isImported: null });
+    setSearchError(null);
 
     if (value.trim().length < 2) {
       setResults([]);
@@ -70,14 +72,22 @@ export function ItemRow({
 
     const supabase = createClient();
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("skus")
       .select("id, sku, title, is_imported")
       .ilike("sku_key", `%${value.trim().toUpperCase()}%`)
       .order("sku")
       .limit(8);
 
-    setResults(data ?? []);
+    if (error !== null) {
+      // Sem isto, falha de rede/RLS virava "nenhum SKU encontrado" — igual
+      // a uma busca genuinamente vazia (D-067, Nível 3).
+      setSearchError("Não foi possível buscar SKUs — tente de novo.");
+
+      return;
+    }
+
+    setResults(data);
   }
 
   function select(sku: SkuResult): void {
@@ -154,9 +164,15 @@ export function ItemRow({
           </div>
         )}
 
-        {item.skuId === null && item.skuSnapshot.trim() !== "" && (
+        {item.skuId === null && item.skuSnapshot.trim() !== "" && searchError === null && (
           <div style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)", marginTop: "0.25rem" }}>
             Sem SKU catalogado — vínculo fica pendente.
+          </div>
+        )}
+
+        {searchError !== null && (
+          <div role="alert" style={{ fontSize: "0.75rem", color: "var(--sb-danger)", marginTop: "0.25rem" }}>
+            {searchError}
           </div>
         )}
       </td>

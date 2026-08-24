@@ -82,6 +82,19 @@ export default async function CurvaAbcPage({
   const membership = await supabase.from("organization_members").select("organization_id").maybeSingle();
   const organizationId = membership.data?.organization_id ?? null;
 
+  if (membership.error !== null) {
+    // Distinto de "sem organização": aquela mensagem sugere problema de
+    // cadastro; isto é falha de leitura transitória (D-067, Nível 3).
+    return (
+      <Shell>
+        <h1 style={{ margin: "0 0 var(--sb-space-3)", fontSize: "1.375rem" }}>Curva ABC</h1>
+        <p role="alert" style={{ color: "var(--sb-danger)" }}>
+          Não foi possível confirmar sua organização: {membership.error.message}
+        </p>
+      </Shell>
+    );
+  }
+
   if (organizationId === null) {
     return (
       <Shell>

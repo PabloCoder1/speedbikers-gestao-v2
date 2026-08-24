@@ -98,15 +98,25 @@ function describeRpcError(error: { message: string } | null): string | null {
 
 async function currentOrganizationId(
   supabase: Awaited<ReturnType<typeof createClient>>,
-): Promise<string | null> {
+): Promise<{ organizationId: string | null; failed: boolean }> {
   const membership = await supabase.from("organization_members").select("organization_id").maybeSingle();
 
-  return membership.data?.organization_id ?? null;
+  if (membership.error !== null) {
+    // Distinto de "sem organização" — falha de leitura transitória, não
+    // problema de cadastro (D-067, Nível 3).
+    return { organizationId: null, failed: true };
+  }
+
+  return { organizationId: membership.data?.organization_id ?? null, failed: false };
 }
 
 export async function createSupplier(input: SupplierInput): Promise<ActionResult & { id?: string }> {
   const supabase = await createClient();
-  const organizationId = await currentOrganizationId(supabase);
+  const { organizationId, failed } = await currentOrganizationId(supabase);
+
+  if (failed) {
+    return { ok: false, message: "Não foi possível confirmar sua organização — tente de novo." };
+  }
 
   if (organizationId === null) {
     return { ok: false, message: "Sua conta não está associada a nenhuma organização." };
@@ -178,7 +188,11 @@ export async function createPurchaseOrder(
   input: PurchaseOrderDraftInput,
 ): Promise<ActionResult & { id?: string }> {
   const supabase = await createClient();
-  const organizationId = await currentOrganizationId(supabase);
+  const { organizationId, failed } = await currentOrganizationId(supabase);
+
+  if (failed) {
+    return { ok: false, message: "Não foi possível confirmar sua organização — tente de novo." };
+  }
 
   if (organizationId === null) {
     return { ok: false, message: "Sua conta não está associada a nenhuma organização." };

@@ -25,6 +25,11 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
   const role = membership.data?.role ?? null;
   const orgName = membership.data?.organizations.name ?? "Speed Bikers";
   const organizationId = membership.data?.organization_id ?? null;
+  // Falha aqui (não "sem organização" — isso já é tratado explicitamente em
+  // cada página) degradava em silêncio: nome genérico, busca desabilitada
+  // (organizationId null), papel sumindo do cabeçalho, sem nenhum sinal —
+  // numa tela que roda em TODA página autenticada (D-067, Nível 3).
+  const membershipError = membership.error !== null;
 
   return (
     <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column" }}>
@@ -105,6 +110,15 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
           <span>
             {auth.user?.email ?? "—"}
             {role === null ? "" : ` · ${role}`}
+            {membershipError && (
+              <span
+                role="alert"
+                title="Não foi possível confirmar sua organização — busca e alguns dados podem estar incompletos nesta página."
+                style={{ color: "var(--sb-danger)", marginLeft: "0.375rem", cursor: "help" }}
+              >
+                ⚠
+              </span>
+            )}
           </span>
 
           <form action="/auth/sign-out" method="post">

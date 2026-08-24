@@ -46,7 +46,14 @@ export default async function AjusteEstoquePage({
         <p style={{ margin: "0 0 var(--sb-space-3)", color: "var(--sb-text-soft)" }}>{sku.data.title}</p>
       )}
 
-      {balances.data !== null && balances.data.length > 0 && (
+      {balances.error !== null && (
+        <p role="alert" style={{ color: "var(--sb-danger)", fontSize: "0.875rem", marginBottom: "var(--sb-space-3)" }}>
+          Não foi possível carregar o saldo atual: {balances.error.message}. Confira o saldo em{" "}
+          <Link href="/estoque">/estoque</Link> antes de ajustar.
+        </p>
+      )}
+
+      {balances.error === null && balances.data.length > 0 && (
         <ul style={{ listStyle: "none", margin: "0 0 var(--sb-space-4)", padding: 0, display: "flex", gap: "var(--sb-space-4)" }}>
           {balances.data.map((balance) => (
             <li key={balance.location_kind} style={{ fontSize: "0.875rem" }}>

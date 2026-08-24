@@ -70,14 +70,22 @@ export function DocumentItemRow({
 
     const supabase = createClient();
 
-    const { data } = await supabase
+    const { data, error: searchError } = await supabase
       .from("skus")
       .select("id, sku, title")
       .ilike("sku_key", `%${value.trim().toUpperCase()}%`)
       .order("sku")
       .limit(8);
 
-    setResults(data ?? []);
+    if (searchError !== null) {
+      // Sem isto, falha de rede/RLS virava "nenhum SKU encontrado" — igual
+      // a uma busca genuinamente vazia (D-067, Nível 3).
+      setError("Não foi possível buscar SKUs — tente de novo.");
+
+      return;
+    }
+
+    setResults(data);
   }
 
   async function confirm(): Promise<void> {
