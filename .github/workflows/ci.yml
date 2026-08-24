@@ -81,6 +81,64 @@ jobs:
         if: always()
         run: pnpm exec supabase stop --no-backup
 
+  e2e:
+    name: e2e — fluxos criticos (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Ativar pnpm
+        run: corepack enable
+
+      - name: Instalar dependências
+        run: pnpm install --frozen-lockfile
+
+      - name: Instalar navegador do Playwright
+        run: pnpm --filter web exec playwright install --with-deps chromium
+
+      # Job proprio (nao reusa o Supabase do job "integracao"): jobs do
+      # GitHub Actions nao compartilham processo, cada um sobe o seu.
+      - name: Subir Supabase local
+        run: pnpm exec supabase start
+
+      # `NEXT_PUBLIC_*` sao embutidas NO BUILD do Next.js, entao precisam
+      # estar no ambiente ANTES do passo de build, nao so no de teste.
+      - name: Configurar variaveis do Supabase local
+        run: |
+          eval "$(pnpm exec supabase status -o env)"
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=$API_URL"
+            echo "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$ANON_KEY"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY"
+          } >> "$GITHUB_ENV"
+
+      - name: Build web
+        run: pnpm --filter web run build
+
+      - name: Seed de dados do E2E
+        run: pnpm --filter web run e2e:seed
+
+      - name: Testes E2E
+        run: pnpm --filter web run e2e
+
+      - name: Relatorio do Playwright em caso de falha
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 7
+
+      - name: Derrubar Supabase
+        if: always()
+        run: pnpm exec supabase stop --no-backup
+
   migrations:
     name: aplicar migrations no Supabase Dev
     runs-on: ubuntu-latest
@@ -88,7 +146,7 @@ jobs:
 
     # Só depois da esteira verde: migration aplicada a partir de código que não
     # compila é como se corrompe um ambiente.
-    needs: [check, scripts, integration]
+    needs: [check, scripts, integration, e2e]
 
     # Só em push na branch de desenvolvimento. Pull request NÃO aplica migration
     # — o Preview da Vercel aponta para o mesmo banco Dev (D-025), e uma

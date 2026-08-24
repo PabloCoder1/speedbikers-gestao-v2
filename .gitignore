@@ -24,6 +24,11 @@ coverage/
 supabase/.branches/
 supabase/.temp/
 
+# Playwright (apps/web/e2e) — saida de teste e IDs gerados pelo seed
+playwright-report/
+test-results/
+apps/web/e2e/.seed-output.json
+
 # editor e sistema
 .DS_Store
 Thumbs.db
