@@ -9,7 +9,7 @@
     "start": "next start",
     "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint .",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run --passWithNoTests --exclude '**/node_modules/**' --exclude 'e2e/**'",
     "e2e:seed": "tsx e2e/seed.ts",
     "e2e": "playwright test"
   },
