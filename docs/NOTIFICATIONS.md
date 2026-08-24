@@ -22,6 +22,23 @@ mudança detectada pelo worker (diff, ledger, sync)
 
 ---
 
+## 1.1 Pré-requisito — detectar a mudança antes de notificar
+
+A camada de notificações NÃO é responsável por descobrir que um anúncio mudou.
+
+Ela consome `domain_events` já confiáveis.
+
+Para alterações de anúncio, o pipeline obrigatório é:
+
+```text
+snapshot/estado anterior confiável
+   -> captura do estado atual
+   -> diff determinístico
+   -> domain_event durável
+   -> regra de notificação
+   -> notification / recipients
+   -> entrega em tempo real
+
 ## 2. Severidade
 
 Três níveis: **informativo**, **importante**, **crítico**.

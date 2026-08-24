@@ -162,6 +162,79 @@ Cada fase só é considerada concluída sob a Definition of Done do `docs/PROMPT
 
 ---
 
+## Checkpoint de consolidação pré-Fase 7 — 2026-08-24
+
+Este checkpoint NÃO é uma nova fase e NÃO altera a numeração definida pela D-033.
+
+Objetivo: consolidar lacunas identificadas durante a revisão da implementação real antes de aprofundar a camada de IA.
+
+Nenhuma funcionalidade concluída das Fases 0 a 6 deve ser removida ou reimplementada do zero.
+
+### P0 — Confiabilidade antes da Fase 7
+
+- [ ] Confirmar `maintenance.reconcile-balances` no próximo ciclo natural depois do fix que eliminou a lista excessiva de UUIDs no PostgREST.
+- [ ] Confirmar `sync.listing-visits.snapshot` com dado real e cadência normal, sem disparar jobs pesados simultaneamente.
+- [ ] Criar/fechar Playwright para os fluxos críticos que continuam pendentes da Fase 5B.
+- [ ] Auditar os serviços implantados contra a infraestrutura real antes de declarar deploy concluído: Web, API, Worker, migrations e Cloud Scheduler.
+- [ ] Corrigir documentação de deploy para refletir exatamente o mecanismo real utilizado; não afirmar CI/CD automático de Cloud Run enquanto ele não existir.
+- [ ] Revisar GRANTs das tabelas antigas de escrita exclusiva por RPC/service_role, seguindo o achado D-062.
+- [ ] Corrigir tratamento explícito de `.error` em persistências críticas onde o Supabase client puder continuar o fluxo depois de falha.
+
+### P0 — Pré-requisito das notificações
+
+- [ ] Implementar motor determinístico de diff de estado de anúncio antes de criar notificações de mudanças.
+- [ ] Emitir inicialmente `domain_events` para mudanças comprovadamente observáveis: preço, título, status e quantidade disponível.
+- [ ] Pesquisar documentação oficial atual antes de adicionar foto principal, descrição, promoção, catálogo ou outros estados.
+- [ ] Garantir `dedup_key` e idempotência dos eventos de anúncio.
+- [ ] Garantir que reprocessamento do mesmo snapshot não gere mudança falsa.
+- [ ] Somente depois conectar esses eventos a `notifications`.
+
+### P1 — Alinhamento com requisitos funcionais já aprovados
+
+- [ ] Implementar filtros de Conta / Origem / Marca nas telas em que fizerem sentido, preservando a distinção entre estoque físico compartilhado e Full por conta.
+- [ ] Impedir mistura de SKU Nacional e Importado no mesmo pedido de compra.
+- [ ] Criar fluxo de vinculação manual `Conta + MLB + variation_id? -> SKU` sem exigir `link_candidate` prévio.
+- [ ] Criar alias reutilizável `Fornecedor + código do produto -> SKU` quando um vínculo for confirmado.
+- [ ] Evoluir o Dashboard de SKU para abas/progressive disclosure.
+- [ ] Reorganizar a navegação em grupos, evitando todas as telas no mesmo nível.
+- [ ] Substituir a Home de construção pela Home orientada a “o que precisa da minha atenção hoje?”.
+- [ ] Adicionar as entidades novas que já possuem destino real à Busca Universal, incluindo Central de Ações quando aplicável.
+
+### P2 — Backlog registrado, sem bloquear a Fase 7
+
+- [ ] Avaliar exportação XML estruturada própria do pedido de compra, mantendo Excel/PDF já implementados e sem confundir XML interno com NF-e.
+- [ ] Implementar DANFE/PDF como fallback de NF-e quando houver necessidade real e fonte confiável.
+- [ ] Reavaliar recebimento parcial de pedido de compra quando o uso real justificar.
+- [ ] Reavaliar vendas perdidas estimadas quando o ledger tiver saldo inicial/histórico positivo confiável.
+- [ ] Reavaliar Ads somente quando uma conta real comprovar elegibilidade e necessidade.
+
+### Evolução contínua do diagnóstico
+
+A conclusão da Fase 6 representa a primeira versão operacional do motor, não o fim da evolução das evidências.
+
+Depois que novas fontes estiverem disponíveis, expandir gradualmente a correlação para:
+
+- visitas;
+- conversão;
+- preço;
+- mudanças de listing;
+- Full;
+- promoções;
+- catálogo;
+- Ads quando disponível.
+
+Manter sempre:
+
+`confiabilidade dos dados -> métricas -> eventos -> diagnóstico -> ação -> IA`
+
+### Critério para iniciar a Fase 7
+
+A implementação da Fase 7 pode começar quando os itens P0 necessários ao recurso escolhido estiverem confiáveis.
+
+Em especial, notificações de alteração de anúncio NÃO devem ser implementadas antes do motor de diff/eventos correspondente.
+
+Itens P1 e P2 podem continuar evoluindo incrementalmente sem reabrir ou invalidar fases anteriores.
+
 ## Fase 7 — Notificações e Copiloto
 
 - [ ] Regras evento -> notificação, severidade e agrupamento por janela
