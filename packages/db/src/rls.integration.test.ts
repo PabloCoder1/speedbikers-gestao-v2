@@ -3634,12 +3634,32 @@ describe("actions / update_action_status / get_sku_average_prices (Fase 6, Centr
 
 describe("action_decisions / action_outcomes / create_action_decision / get_sku_decision_snapshot (Fase 6, Memória de decisões, D-065)", () => {
   const CONTA_DECISOES = "ddddaaaa-0000-4000-8000-0000000000cc";
+  // `action_decisions.created_by references auth.users on delete restrict`
+  // (append-only por natureza, mesmo raciocínio de `stock_movements.created_by`)
+  // — precisa de um usuário FORA do padrão `%@rls.test` que o afterAll global
+  // apaga, senão o DELETE bate na FK. Mesma técnica de `RESPONSAVEL_AJUSTE`.
+  const RESPONSAVEL_DECISAO = "dddddddd-0000-4000-8000-000000000007";
 
   let skuId = "";
   let actionId = "";
   let decisionId = "";
 
   beforeAll(async () => {
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                              email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',
+               'responsavel@decisionstest.local','x',now(),'{"full_name":"Responsavel Decisionstest"}',now(),now())
+       on conflict (id) do nothing`,
+      [RESPONSAVEL_DECISAO],
+    );
+
+    await client.query(
+      `insert into public.organization_members (organization_id, user_id, role)
+       values ($1,$2,'ADMIN') on conflict do nothing`,
+      [ORG_SB, RESPONSAVEL_DECISAO],
+    );
+
     await client.query(
       `insert into public.ml_accounts (id, organization_id, label, slug, status)
        values ($1,$2,'Conta de decisões','decisoestest-conta','PENDING')
@@ -3691,10 +3711,10 @@ describe("action_decisions / action_outcomes / create_action_decision / get_sku_
   });
 
   // Sem afterAll de limpeza: mesmo raciocínio do describe de D-064, acima —
-  // e `action_decisions.created_by`/`action_outcomes.organization_id` têm
-  // `on delete cascade`/`on delete restrict` que não bloqueiam a limpeza
-  // global de `auth.users`, porque `created_by` referencia `ADMIN_SB`, um
-  // usuário FORA do padrão `%@rls.test` de limpeza.
+  // e a decisão criada abaixo usa RESPONSAVEL_DECISAO (fora do padrão
+  // `%@rls.test`) como `created_by`, então não bloqueia a limpeza global de
+  // `auth.users` (mesma técnica de `RESPONSAVEL_AJUSTE`, achado original em
+  // `stock_movements.created_by`).
 
   describe("get_sku_decision_snapshot", () => {
     it("soma vendas de 7 dias terminando em as_of, ignora data fora da janela e traz o estoque local", async () => {
@@ -3742,12 +3762,15 @@ describe("action_decisions / action_outcomes / create_action_decision / get_sku_
         action_id: string;
         created_by: string;
         baseline_snapshot: Record<string, unknown>;
-      }>(ADMIN_SB, `select * from public.create_action_decision('${actionId}', 'Repor estoque via fornecedor PLASMOTO')`);
+      }>(
+        RESPONSAVEL_DECISAO,
+        `select * from public.create_action_decision('${actionId}', 'Repor estoque via fornecedor PLASMOTO')`,
+      );
 
       expect(rows).toHaveLength(1);
       expect(rows[0]?.decision).toBe("Repor estoque via fornecedor PLASMOTO");
       expect(rows[0]?.action_id).toBe(actionId);
-      expect(rows[0]?.created_by).toBe(ADMIN_SB);
+      expect(rows[0]?.created_by).toBe(RESPONSAVEL_DECISAO);
       expect(rows[0]?.baseline_snapshot).toHaveProperty("as_of");
       expect(rows[0]?.baseline_snapshot).toHaveProperty("stock_local", 12);
 
