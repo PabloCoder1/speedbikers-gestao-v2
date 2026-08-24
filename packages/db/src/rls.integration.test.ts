@@ -4078,7 +4078,14 @@ describe("notificações (fan-out de domain_events, D-073)", () => {
     });
   });
 
-  describe("notification_preferences suprime o fan-out", () => {
+  describe("notification_preferences NÃO suprime o fan-out — recipient sempre criado (correção 2026-08-24, D-076)", () => {
+    // Até a correção D-076, a preferência filtrava a criação de
+    // notification_recipients aqui mesmo — contradizia docs/NOTIFICATIONS.md
+    // secao 1 ("o registro na Central de Notificações continua existindo
+    // para consulta, só o alerta em tempo real é que respeita a
+    // preferência"). Agora o recipient é sempre criado; a preferência só é
+    // consultada pelo cliente (apps/web/lib/notification-preferences.ts) na
+    // hora de decidir se mostra o toast, nunca aqui na trigger.
     let suppressedEventId = "";
     let belowThresholdEventId = "";
 
@@ -4118,18 +4125,18 @@ describe("notificações (fan-out de domain_events, D-073)", () => {
       belowThresholdEventId = belowThreshold.rows[0]?.id ?? "";
     });
 
-    it("enabled=false suprime o event_type inteiro para quem desativou, mesmo com permissão na conta", async () => {
+    it("enabled=false NÃO impede o recipient — o histórico continua existindo mesmo silenciado", async () => {
       const recipients = await recipientsOf(suppressedEventId);
 
       expect(recipients).toContain(ADMIN_SB);
-      expect(recipients).not.toContain(ANALISTA_SB);
+      expect(recipients).toContain(ANALISTA_SB);
     });
 
-    it("severidade abaixo do mínimo pedido suprime só para quem pediu — o resto continua recebendo", async () => {
+    it("severidade abaixo do mínimo pedido também NÃO impede o recipient", async () => {
       const recipients = await recipientsOf(belowThresholdEventId);
 
       expect(recipients).toContain(ANALISTA_SB);
-      expect(recipients).not.toContain(ADMIN_SB);
+      expect(recipients).toContain(ADMIN_SB);
     });
   });
 

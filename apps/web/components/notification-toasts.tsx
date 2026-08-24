@@ -7,6 +7,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { entityHref, entityLabel, formatEventDiff } from "../lib/event-format";
 import { eventTypeLabel, severityLabel } from "../lib/labels";
+import { shouldNotify, type NotificationPreferenceRule } from "../lib/notification-preferences";
 import { createClient } from "../lib/supabase/browser";
 
 /**
@@ -33,6 +34,17 @@ import { createClient } from "../lib/supabase/browser";
  * que está visível agora: cada toast fecha sozinho `DISMISS_MS` depois do
  * ÚLTIMO evento do grupo (reabre/atualiza se um evento novo chegar depois
  * de já ter sumido), ou fecha manualmente pelo "×" sem afetar o contador.
+ *
+ * `notification_preferences` (Fase 7, item 6, D-076) é consultada AQUI,
+ * client-side, via `shouldNotify` (`lib/notification-preferences.ts`) — e
+ * só aqui. A linha em `notification_recipients` (e portanto a visibilidade
+ * na Central de Notificações) NUNCA é filtrada por preferência desde a
+ * correção de D-076 (`docs/NOTIFICATIONS.md` secao 1: "o registro na
+ * Central continua existindo para consulta, só o alerta em tempo real é
+ * que respeita a preferência"). Preferências carregadas uma vez por
+ * montagem — tolerável não recarregar se o usuário mudar a preferência
+ * numa aba enquanto esta está aberta, mesma tolerância já aceita pro resto
+ * do Realtime não ser fonte de verdade.
  */
 
 type NotificationRecipientRow = Database["public"]["Tables"]["notification_recipients"]["Row"];
@@ -79,7 +91,13 @@ export function NotificationToasts({ userId }: { userId: string | null }): React
   useEffect(() => {
     if (userId === null) return;
 
+    // Reatribuído a uma const própria: `userId` (parâmetro) não narrowa de
+    // forma confiável dentro das funções aninhadas abaixo.
+    const uid = userId;
     const supabase = createClient();
+    let preferenceRules: NotificationPreferenceRule[] = [];
+    let cancelled = false;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
 
     function scheduleDismiss(key: string): void {
       const existingTimer = dismissTimers.current.get(key);
@@ -105,6 +123,13 @@ export function NotificationToasts({ userId }: { userId: string | null }): React
       const event = (data as ToastNotificationRow | null)?.domain_events ?? null;
 
       if (event === null) return;
+
+      // O recipient já existe (é por isso que este evento chegou aqui) —
+      // a preferência só decide se aparece como toast, nunca se some da
+      // Central de Notificações.
+      if (!shouldNotify(preferenceRules, { eventType: event.event_type, mlAccountId: event.ml_account_id, severity: event.severity })) {
+        return;
+      }
 
       const key = `${event.event_type}:${event.ml_account_id ?? "org"}`;
       const now = Date.now();
@@ -144,24 +169,42 @@ export function NotificationToasts({ userId }: { userId: string | null }): React
       scheduleDismiss(key);
     }
 
-    const channel = supabase
-      .channel(`notification-toasts:${userId}`)
-      .on<NotificationRecipientRow>(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "notification_recipients",
-          filter: `user_id=eq.${userId}`,
-        },
-        (payload) => {
-          void handleInsert(payload);
-        },
-      )
-      .subscribe();
+    async function setup(): Promise<void> {
+      const { data } = await supabase
+        .from("notification_preferences")
+        .select("event_type, ml_account_id, min_severity, enabled");
+
+      if (cancelled) return;
+
+      preferenceRules = (data ?? []).map((row) => ({
+        eventType: row.event_type,
+        mlAccountId: row.ml_account_id,
+        minSeverity: row.min_severity,
+        enabled: row.enabled,
+      }));
+
+      channel = supabase
+        .channel(`notification-toasts:${uid}`)
+        .on<NotificationRecipientRow>(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "notification_recipients",
+            filter: `user_id=eq.${uid}`,
+          },
+          (payload) => {
+            void handleInsert(payload);
+          },
+        )
+        .subscribe();
+    }
+
+    void setup();
 
     return () => {
-      void supabase.removeChannel(channel);
+      cancelled = true;
+      if (channel !== null) void supabase.removeChannel(channel);
 
       for (const timer of dismissTimers.current.values()) clearTimeout(timer);
       dismissTimers.current.clear();

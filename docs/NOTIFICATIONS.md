@@ -2,7 +2,7 @@
 
 > Dono documental de: regra evento -> notificação, severidade, agrupamento, transporte e preferências.
 > Catálogo de `event_type` em `docs/API.md`. Schema em `docs/DATABASE.md`.
-> Status: **estratégia aprovada. Persistência + regra de destinatário implementadas em 2026-08-24 (D-073)** — `notifications`/`notification_recipients`/`notification_preferences`, migration `20260824190000_create_notifications.sql`. **Central de Notificações (lista + lido/não lido) implementada em 2026-08-24 (D-074)** — `apps/web/app/notificacoes`. **Realtime + toasts implementados em 2026-08-24 (D-075)** — `apps/web/components/notification-toasts.tsx`, migration `20260824200000_enable_realtime_notification_recipients.sql`. A interface de preferências continua pendente (`docs/HANDOFF.md`, item 6).
+> Status: **estratégia aprovada e completa (Fase 7, notificações)**. Persistência + regra de destinatário (D-073), Central de Notificações (D-074), Realtime + toasts (D-075), preferências por usuário (D-076) — todos implementados em 2026-08-24. **Correção D-076 importante**: `notification_preferences` NÃO filtra mais `notification_recipients` (bug de D-073, corrigido antes de qualquer preferência real existir) — a Central de Notificações sempre mostra tudo, a preferência só controla o toast em tempo real, exatamente como a secao 1 abaixo sempre descreveu.
 
 ---
 
@@ -98,15 +98,17 @@ O contador é da JANELA inteira (5 min desde o primeiro evento do grupo), não s
 
 **Implementado em 2026-08-24 (D-073):** o fan-out (trigger `AFTER INSERT` em `domain_events`, `private.fan_out_notification`) já aplica esta regra na GERAÇÃO — evento organizacional alcança todo membro da organização, evento de conta alcança ADMIN (sempre) mais quem tiver `user_account_permissions` para aquela conta, mesma regra já usada para leitura de `domain_events` (D-054). A policy de leitura de `notifications` amarra a existir uma linha em `notification_recipients` — a defesa em profundidade descrita acima. Teste negativo em `packages/db/src/rls.integration.test.ts`.
 
+Esta é a única regra que ainda filtra a CRIAÇÃO do `notification_recipients` — `notification_preferences` (secao 6) NÃO filtra mais desde D-076, só a permissão por conta acima.
+
 ---
 
 ## 6. Preferências
 
-`notification_preferences` entra no schema **desde a Fase 2**, mesmo que a interface só apareça na Fase 7. É coluna barata agora e migration chata depois. **Schema criado em 2026-08-24 (D-073)** — atrasado da Fase 2 até agora, corrigido junto com a persistência de `notifications`.
+`notification_preferences` entra no schema **desde a Fase 2**, mesmo que a interface só apareça na Fase 7. É coluna barata agora e migration chata depois. **Schema criado em 2026-08-24 (D-073)**, **UI implementada em 2026-08-24 (D-076)** — `apps/web/app/notificacoes/preferencias`.
 
-Granularidade: por usuário, por `event_type`, por severidade mínima e por conta — as quatro dimensões já existem em `notification_preferences` (`event_type`/`ml_account_id` nuláveis como curinga, linha mais específica vence).
+Granularidade: por usuário, por `event_type`, por severidade mínima e por conta — as quatro dimensões existem em `notification_preferences` (`event_type`/`ml_account_id` nuláveis como curinga, linha mais específica vence). Identidade da regra (evento + conta) é fixa depois de criada; severidade mínima e estado ativo/desativado são editáveis, o resto é apagar e recriar.
 
-**Sem UI ainda** (Fase 7, item 6, `docs/HANDOFF.md`) — a tabela nasce vazia, e o fan-out trata "sem preferência" como "notificar" por padrão. Quando a UI existir, cada usuário gerencia a própria preferência direto sob RLS (`notification_preferences_all_own`), sem RPC.
+**Controla só o alerta em tempo real (toast) — nunca a Central de Notificações.** Correção importante feita em D-076: até então a trigger de fan-out (D-073) filtrava a criação de `notification_recipients` pela preferência, o que também apagava o item da Central pra quem desativou aquele tipo de evento — contradizia este mesmo parágrafo desde que foi escrito na Fase 0. Como a tabela nascia vazia (sem UI), o bug nunca teve efeito real; corrigido antes da primeira preferência de verdade existir. A avaliação da preferência mora inteiramente no cliente hoje (`apps/web/lib/notification-preferences.ts`, `shouldNotify`, consumida por `notification-toasts.tsx`) — sem nenhuma regra, tudo vira toast por padrão. Cada usuário gerencia a própria preferência direto sob RLS (`notification_preferences_all_own`), sem RPC.
 
 ---
 

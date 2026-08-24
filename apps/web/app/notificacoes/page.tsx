@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { Shell } from "../../components/shell";
@@ -92,7 +93,13 @@ export default async function NotificacoesPage(): Promise<ReactNode> {
           </p>
         </div>
 
-        {unreadCount > 0 && <MarkAllButton />}
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--sb-space-3)" }}>
+          <Link href="/notificacoes/preferencias" style={{ fontSize: "0.8125rem", color: "var(--sb-primary)" }}>
+            Preferências
+          </Link>
+
+          {unreadCount > 0 && <MarkAllButton />}
+        </div>
       </div>
 
       {error !== null && (
