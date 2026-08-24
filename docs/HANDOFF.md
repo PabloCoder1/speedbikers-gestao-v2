@@ -100,7 +100,7 @@ Os quatro primeiros eventos candidatos foram implementados com os nomes corretos
 - `listing.status.paused` / `listing.status.reactivated` (só essas duas transições, não um "status_changed" genérico);
 - `listing.available_quantity.changed` (catálogo novo, não existia antes de D-072).
 
-Detalhe completo em D-072 (`docs/DECISIONS.md`), `packages/domain/src/events/listing-events.ts`, `apps/worker/src/handlers/ml-listings-fetch.ts`.
+Detalhe completo em D-072 (`docs/DECISIONS.md`), `packages/domain/src/events/listing-events.ts`, `apps/worker/src/handlers/ml-listings-fetch.ts`. **Deployado e confirmado** (`worker-00019-9jk`, commit `b23a8ae`, 100% do tráfego, zero linha ERROR nos logs pós-deploy) — `sync.listings.snapshot` já emite os quatro eventos em produção.
 
 Foto, descrição, promoção, catálogo e outros tipos devem ser implementados somente depois de confirmar as fontes oficiais necessárias.
 

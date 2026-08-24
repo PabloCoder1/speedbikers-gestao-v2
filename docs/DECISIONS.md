@@ -864,6 +864,8 @@ Também achado, sem virar bug: os nomes de variável do `supabase status -o env`
 
 **Impacto:** `packages/domain/src/events/listing-events.ts` (novo) + teste, `packages/domain/src/events/catalog.ts` (`listing.available_quantity.changed`), `packages/domain/src/events/index.ts` (export). `apps/worker/src/handlers/ml-listings-fetch.ts` + teste. `docs/API.md` secao 4 (catálogo atualizado, `order.returned` também corrigido — estava marcado "ainda não integrada" apesar de implementado desde D-057), `docs/DATABASE.md` (`listings`), `docs/ROADMAP.md` (P0 "Pré-requisito das notificações"), `docs/HANDOFF.md` (resumo operacional), `docs/MERCADO_LIVRE.md` (secao 2.13, nova). Fecha o pré-requisito crítico da Fase 7 até `domain_event` inclusive — falta só conectar a `notifications` (schema ainda não implementado).
 
+**Deploy confirmado, não só codificado:** commit `b23a8ae` publicado no worker (`infra/deploy-cloud-run.sh worker`) — `worker-00019-9jk`, servindo 100% do tráfego, imagem confirmada via `gcloud run revisions describe`. Zero linha `ERROR` nos logs nos 15 minutos seguintes ao deploy. `apps/api` não mudou nesta etapa, sem deploy necessário ali.
+
 ## Como adicionar nova decisão
 
 Registrar:
