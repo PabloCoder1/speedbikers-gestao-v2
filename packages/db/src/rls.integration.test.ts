@@ -3943,6 +3943,17 @@ describe("notificações (fan-out de domain_events, D-073)", () => {
     contaBEventId = contaB.rows[0]?.id ?? "";
   });
 
+  // `domain_events.ml_account_id` referencia `ml_accounts` com `on delete
+  // restrict` (mesma garantia de append-only já usada por sync_runs) — o
+  // `afterAll` GLOBAL deste arquivo tenta apagar `ml_accounts` com slug
+  // `rlstest%`, o que inclui CONTA_A/CONTA_B. Sem limpar os eventos desta
+  // suíte primeiro, essa exclusão falharia e derrubaria o arquivo inteiro.
+  // `on delete cascade` de `notifications`/`notification_recipients` para
+  // `domain_events` cuida do resto sozinho.
+  afterAll(async () => {
+    await client.query("delete from public.domain_events where dedup_key like 'rlstest-notify:%'");
+  });
+
   async function recipientsOf(domainEventId: string): Promise<string[]> {
     const rows = await client.query<{ user_id: string }>(
       `select nr.user_id from public.notification_recipients nr
@@ -3955,16 +3966,31 @@ describe("notificações (fan-out de domain_events, D-073)", () => {
   }
 
   describe("regra de destinatário (fan-out via trigger, sem RPC nem código de aplicação)", () => {
+    // `toContain`, não `toEqual`: outras suítes deste arquivo criam usuários
+    // ADMIN próprios em ORG_SB sem limpeza (mesmo padrão já documentado, ex.
+    // ADMIN_COMPRAS) — eles legitimamente também são destinatários de
+    // qualquer evento que ADMIN alcança. O que importa provar aqui é conter
+    // (ou não) os dois usuários específicos deste teste, não o conjunto
+    // fechado.
     it("evento organizacional (ml_account_id nulo) notifica qualquer membro da organização", async () => {
-      expect(await recipientsOf(orgWideEventId)).toEqual([ADMIN_SB, ANALISTA_SB].sort());
+      const recipients = await recipientsOf(orgWideEventId);
+
+      expect(recipients).toContain(ADMIN_SB);
+      expect(recipients).toContain(ANALISTA_SB);
     });
 
     it("evento de conta COM permissão: ADMIN (alcança tudo) e quem tem permissão explícita são notificados", async () => {
-      expect(await recipientsOf(contaAEventId)).toEqual([ADMIN_SB, ANALISTA_SB].sort());
+      const recipients = await recipientsOf(contaAEventId);
+
+      expect(recipients).toContain(ADMIN_SB);
+      expect(recipients).toContain(ANALISTA_SB);
     });
 
-    it("evento de conta SEM permissão: só ADMIN é notificado — quem não tem acesso à conta fica de fora", async () => {
-      expect(await recipientsOf(contaBEventId)).toEqual([ADMIN_SB]);
+    it("evento de conta SEM permissão: quem não tem acesso à conta fica de fora, mesmo sendo membro da organização", async () => {
+      const recipients = await recipientsOf(contaBEventId);
+
+      expect(recipients).toContain(ADMIN_SB);
+      expect(recipients).not.toContain(ANALISTA_SB);
     });
 
     it("uma notificação por domain_event — UNIQUE em domain_event_id", async () => {
@@ -4092,11 +4118,17 @@ describe("notificações (fan-out de domain_events, D-073)", () => {
     });
 
     it("enabled=false suprime o event_type inteiro para quem desativou, mesmo com permissão na conta", async () => {
-      expect(await recipientsOf(suppressedEventId)).toEqual([ADMIN_SB]);
+      const recipients = await recipientsOf(suppressedEventId);
+
+      expect(recipients).toContain(ADMIN_SB);
+      expect(recipients).not.toContain(ANALISTA_SB);
     });
 
     it("severidade abaixo do mínimo pedido suprime só para quem pediu — o resto continua recebendo", async () => {
-      expect(await recipientsOf(belowThresholdEventId)).toEqual([ANALISTA_SB]);
+      const recipients = await recipientsOf(belowThresholdEventId);
+
+      expect(recipients).toContain(ANALISTA_SB);
+      expect(recipients).not.toContain(ADMIN_SB);
     });
   });
 
