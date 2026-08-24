@@ -121,9 +121,11 @@ infra/
   setup-dev.sh              APIs habilitadas e service accounts
   cloud-tasks-queues.sh     filas base e fila por conta do Mercado Livre
   storage-buckets.sh        buckets e ciclo de vida do payload bruto
+  cloudbuild.yaml           receita do Cloud Build usada por deploy-cloud-run.sh
+  deploy-cloud-run.sh       build + deploy de `api`/`worker` — MANUAL, ver secao 7
+  cloud-scheduler.sh        cria/atualiza todos os jobs do Cloud Scheduler — idempotente, MANUAL
   README.md                 ordem de execução e pré-requisitos
-  # pendentes:
-  # cloud-scheduler.sh      Fase 3, quando houver reconciliação a agendar
+  # pendente:
   # secrets.sh              Fase 2, com o OAuth do Mercado Livre
 ```
 
@@ -149,16 +151,28 @@ Os scripts chamam `gcloud.cmd` no Windows — o wrapper `.ps1` esbarra na polít
 
 ## 7. CI/CD
 
-**GitHub Actions**, obrigatório antes de entrar na `v3`:
+**GitHub Actions** (`.github/workflows/ci.yml`), obrigatório antes de entrar na `v3`:
 
 ```text
-typecheck -> lint -> testes unitários -> testes de integração -> build
+typecheck -> lint -> testes unitários -> testes de integração -> build -> aplicar migrations no Dev
 ```
 
-- Migrations aplicadas **por CI**, nunca à mão, nunca pelo dashboard.
-- Deploy do `web` pela integração nativa da Vercel com a branch.
-- Deploy de `api` e `worker` por workflow que constrói a imagem e publica no Cloud Run.
-- Nenhum deploy sem CI verde.
+- Migrations aplicadas **por CI** (`supabase db push`, job `migrations`), nunca à mão, nunca pelo dashboard — só em push na `v3`, depois de `check`/`scripts`/`integration` verdes.
+- Deploy do `web` pela integração nativa da Vercel com a branch — esse sim é automático.
+- **Deploy de `api` e `worker` é MANUAL** — `bash infra/deploy-cloud-run.sh` (worker primeiro, depois api — secao 3). Não existe workflow do GitHub Actions que publique no Cloud Run. Quem roda o deploy é responsável por conferir CI verde antes ("nenhum deploy sem CI verde" é regra de operador, não trava automática).
+
+**Achado real em 2026-08-24, D-065:** o `worker`/`api` de produção ficaram 36 commits atrás do HEAD e 5 jobs do Cloud Scheduler documentados como "rodando" nunca tinham sido criados de fato — ninguém rodou `deploy-cloud-run.sh`/`cloud-scheduler.sh` depois de várias sessões de trabalho de features. Nasceu daí a regra abaixo, agora also em `docs/HANDOFF.md`.
+
+### Documentação não comprova deploy
+
+Antes de declarar qualquer mudança operacional como implantada, verificar contra a infraestrutura real, nunca contra o texto do HANDOFF/ROADMAP:
+
+- `gcloud run services describe api/worker --format='value(status.latestReadyRevisionName)'` e comparar a tag da imagem (`git rev-parse --short HEAD` no momento do deploy) contra o commit atual;
+- `gcloud scheduler jobs list --location southamerica-east1` contra os jobs esperados (`infra/cloud-scheduler.sh` é a lista canônica);
+- `pnpm exec supabase migration list --linked` (local == remoto, sem drift);
+- CI do commit exato verde (`gh run list`/`gh run view`), não presumido;
+- logs de boot sem `ERROR` (`gcloud logging read ... severity>=ERROR`) depois de um deploy novo;
+- para um job que nunca rodou de verdade em produção, disparar manualmente uma vez (`gcloud scheduler jobs run <nome>`) e conferir o log de conclusão antes de confiar na cadência automática.
 
 ---
 

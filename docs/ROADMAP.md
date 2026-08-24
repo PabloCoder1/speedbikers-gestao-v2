@@ -177,7 +177,7 @@ Nenhuma funcionalidade concluída das Fases 0 a 6 deve ser removida ou reimpleme
 - [ ] Criar/fechar Playwright para os fluxos críticos que continuam pendentes da Fase 5B.
 - [ ] Auditar os serviços implantados contra a infraestrutura real antes de declarar deploy concluído: Web, API, Worker, migrations e Cloud Scheduler.
 - [ ] Corrigir documentação de deploy para refletir exatamente o mecanismo real utilizado; não afirmar CI/CD automático de Cloud Run enquanto ele não existir.
-- [ ] Revisar GRANTs das tabelas antigas de escrita exclusiva por RPC/service_role, seguindo o achado D-062.
+- [x] **Revisar GRANTs das tabelas antigas de escrita exclusiva por RPC/service_role, seguindo o achado D-062** — concluído em 2026-08-24 (D-066): 23 tabelas tinham INSERT/UPDATE/DELETE concedido a `authenticated` por padrão (achado medido via `has_table_privilege`, não presumido) — RLS já protegia (nenhuma tinha policy de escrita para `authenticated`), mas o GRANT em si era superfície desnecessária. Corrigido, testado em transação `begin/rollback` antes de aplicar. 5 tabelas com escrita legítima (`ml_accounts`, `organization_members`, `profiles`, `sku_listing_links`, `user_account_permissions`) ficaram de fora de propósito.
 - [ ] Corrigir tratamento explícito de `.error` em persistências críticas onde o Supabase client puder continuar o fluxo depois de falha.
 
 ### P0 — Pré-requisito das notificações
