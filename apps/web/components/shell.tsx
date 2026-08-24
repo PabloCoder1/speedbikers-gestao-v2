@@ -11,7 +11,123 @@ import { CommandPalette } from "./command-palette";
  * rebaixado de ADMIN para VISUALIZADOR continuaria vendo o menu de ADMIN até o
  * token expirar. Ler de `organization_members` custa uma consulta e elimina a
  * janela.
+ *
+ * Navegação agrupada por categoria (pedido explícito do usuário, 2026-08-24
+ * — "não fica só colocando solto, fica bagunça"), `<details>`/`<summary>`
+ * nativo — dropdown sem JS, acessível de graça. Estrutura alvo completa:
+ *
+ *   VISÃO GERAL (item solto, sem grupo)
+ *   COMERCIAL: Vendas, Produtos, Anúncios
+ *   ESTOQUE: Estoque, Cobertura, Curva ABC, Notas Fiscais, Compras
+ *   INTELIGÊNCIA: Diagnóstico, Ações
+ *   GESTÃO: Vinculações, Fornecedores, Contas ML, Sincronização
+ *   ADMINISTRAÇÃO: Usuários, Integrações, Saúde do Sistema, Sugestões, Configurações
+ *
+ * Um grupo só aparece aqui quando tem pelo menos UMA página real — dropdown
+ * vazio não serve pra nada. Hoje: ADMINISTRAÇÃO inteira ainda não existe
+ * (nenhuma das cinco páginas foi construída) e "Produtos" (catálogo de SKU
+ * como tela própria, distinta de `/skus/{id}`) também não — ficam de fora
+ * até nascerem, não como esquecimento. Regra para quem adicionar uma tela
+ * nova: ela entra no grupo certo aqui, nunca solta no nível de cima.
+ *
+ * "Importações" (UpSeller) não estava na lista original do usuário, mas já
+ * existe e funciona — entrou em ESTOQUE por ser fluxo de catálogo/saldo.
  */
+interface NavItem {
+  label: string;
+  href: string;
+}
+
+interface NavGroup {
+  title: string;
+  items: NavItem[];
+}
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    title: "Comercial",
+    items: [
+      { label: "Vendas", href: "/vendas" },
+      { label: "Anúncios", href: "/anuncios" },
+    ],
+  },
+  {
+    title: "Estoque",
+    items: [
+      { label: "Estoque", href: "/estoque" },
+      { label: "Cobertura", href: "/cobertura" },
+      { label: "Curva ABC", href: "/curva-abc" },
+      { label: "Notas Fiscais", href: "/notas-fiscais" },
+      { label: "Compras", href: "/compras" },
+      { label: "Importações", href: "/importacoes" },
+    ],
+  },
+  {
+    title: "Inteligência",
+    items: [
+      { label: "Diagnóstico", href: "/diagnostico" },
+      { label: "Ações", href: "/acoes" },
+    ],
+  },
+  {
+    title: "Gestão",
+    items: [
+      { label: "Vinculações", href: "/vinculacoes" },
+      { label: "Fornecedores", href: "/fornecedores" },
+      { label: "Contas ML", href: "/contas" },
+      { label: "Sincronização", href: "/sincronizacao" },
+    ],
+  },
+];
+
+const navLinkStyle: React.CSSProperties = {
+  display: "block",
+  padding: "0.375rem 0.75rem",
+  color: "var(--sb-text)",
+  textDecoration: "none",
+  fontSize: "0.875rem",
+  whiteSpace: "nowrap",
+};
+
+const navGroupSummaryStyle: React.CSSProperties = {
+  cursor: "pointer",
+  color: "var(--sb-text-soft)",
+  fontSize: "0.9375rem",
+  listStyle: "none",
+  userSelect: "none",
+};
+
+function NavGroupDropdown({ group }: { group: NavGroup }): ReactNode {
+  return (
+    <details className="sb-nav-group" style={{ position: "relative" }}>
+      <summary style={navGroupSummaryStyle}>{group.title.toUpperCase()} ▾</summary>
+
+      <div
+        className="sb-nav-group-menu"
+        style={{
+          position: "absolute",
+          top: "100%",
+          left: 0,
+          marginTop: "0.375rem",
+          background: "var(--sb-surface)",
+          border: "1px solid var(--sb-border)",
+          borderRadius: "var(--sb-radius)",
+          boxShadow: "0 8px 20px rgba(0,0,0,0.12)",
+          padding: "0.25rem",
+          minWidth: "10rem",
+          zIndex: 50,
+        }}
+      >
+        {group.items.map((item) => (
+          <Link key={item.href} href={item.href} style={navLinkStyle}>
+            {item.label}
+          </Link>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 export async function Shell({ children }: { children: ReactNode }): Promise<ReactNode> {
   const supabase = await createClient();
 
@@ -52,49 +168,14 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
 
         <CommandPalette organizationId={organizationId} />
 
-        <nav style={{ display: "flex", gap: "var(--sb-space-3)", fontSize: "0.9375rem" }}>
-          <Link href="/vendas" style={{ color: "var(--sb-text-soft)" }}>
-            Vendas
+        <nav style={{ display: "flex", alignItems: "center", gap: "var(--sb-space-3)", fontSize: "0.9375rem" }}>
+          <Link href="/" style={{ color: "var(--sb-text-soft)", textDecoration: "none" }}>
+            Visão Geral
           </Link>
-          <Link href="/importacoes" style={{ color: "var(--sb-text-soft)" }}>
-            Importações
-          </Link>
-          <Link href="/notas-fiscais" style={{ color: "var(--sb-text-soft)" }}>
-            Notas Fiscais
-          </Link>
-          <Link href="/estoque" style={{ color: "var(--sb-text-soft)" }}>
-            Estoque
-          </Link>
-          <Link href="/anuncios" style={{ color: "var(--sb-text-soft)" }}>
-            Anúncios
-          </Link>
-          <Link href="/cobertura" style={{ color: "var(--sb-text-soft)" }}>
-            Cobertura
-          </Link>
-          <Link href="/curva-abc" style={{ color: "var(--sb-text-soft)" }}>
-            Curva ABC
-          </Link>
-          <Link href="/diagnostico" style={{ color: "var(--sb-text-soft)" }}>
-            Diagnóstico
-          </Link>
-          <Link href="/acoes" style={{ color: "var(--sb-text-soft)" }}>
-            Ações
-          </Link>
-          <Link href="/compras" style={{ color: "var(--sb-text-soft)" }}>
-            Pedidos de Compra
-          </Link>
-          <Link href="/fornecedores" style={{ color: "var(--sb-text-soft)" }}>
-            Fornecedores
-          </Link>
-          <Link href="/vinculacoes" style={{ color: "var(--sb-text-soft)" }}>
-            Vinculações
-          </Link>
-          <Link href="/contas" style={{ color: "var(--sb-text-soft)" }}>
-            Contas Mercado Livre
-          </Link>
-          <Link href="/sincronizacao" style={{ color: "var(--sb-text-soft)" }}>
-            Sincronização
-          </Link>
+
+          {NAV_GROUPS.map((group) => (
+            <NavGroupDropdown key={group.title} group={group} />
+          ))}
         </nav>
 
         <div

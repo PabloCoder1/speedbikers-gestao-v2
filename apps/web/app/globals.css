@@ -64,3 +64,18 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
+
+/*
+ * Dropdown da navegação (Shell) usa <details>/<summary> nativo para não
+ * precisar de JS nem de "use client". O colapso do conteúdo quando fechado
+ * normalmente vem de graça da UA stylesheet (details:not([open]) > *), mas
+ * isso não é garantido em todo motor de renderização — regra explícita aqui
+ * remove a dependência de comportamento implícito do navegador.
+ */
+.sb-nav-group > .sb-nav-group-menu {
+  display: none;
+}
+
+.sb-nav-group[open] > .sb-nav-group-menu {
+  display: block;
+}
