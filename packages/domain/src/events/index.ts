@@ -7,5 +7,8 @@ export type { DomainEventDraft } from "./order-events.js";
 export { detectFulfillmentEvents } from "./fulfillment-events.js";
 export type { FulfillmentCapture } from "./fulfillment-events.js";
 
+export { detectListingEvents } from "./listing-events.js";
+export type { ListingSnapshot } from "./listing-events.js";
+
 export { classifySyncFreshness } from "./freshness.js";
 export type { FreshnessLevel } from "./freshness.js";

@@ -1,8 +1,11 @@
 import type { AdminClient } from "@sb/db";
+import { detectListingEvents } from "@sb/domain";
+import type { ListingSnapshot } from "@sb/domain";
 import type { MercadoLivreClient } from "@sb/mercado-livre";
 import { MercadoLivreApiError } from "@sb/mercado-livre";
 import type { Logger } from "@sb/observability";
 
+import { recordDomainEvents } from "./domain-events.js";
 import { listingItemSchema } from "./listing-schema.js";
 
 /**
@@ -20,6 +23,15 @@ import { listingItemSchema } from "./listing-schema.js";
  * (mesmo raciocínio, mesma limitação de `ml-fulfillment-fetch.ts`): a doc
  * oficial não mostra o formato exato de variação dentro da resposta de
  * `/items` para codar esse ramo sem adivinhar.
+ *
+ * **Motor de diff (D-072, pré-requisito crítico da Fase 7,
+ * `docs/HANDOFF.md`):** a linha ANTERIOR de `listings` é lida antes do
+ * upsert sobrescrevê-la — `listings` é projeção MUTÁVEL, não ledger
+ * (`docs/DATABASE.md`), então o "antes" só existe até este momento.
+ * `detectListingEvents` (`@sb/domain`) compara e emite `domain_events` para
+ * preço, título, status (só `paused`/`reactivated`, catalogadas desde a
+ * Fase 0) e quantidade disponível — best-effort via `recordDomainEvents`,
+ * nunca derruba a sincronização se a gravação do evento falhar.
  */
 
 export interface FetchListingsParams {
@@ -89,6 +101,24 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
       throw error;
     }
 
+    const previousRow = await params.db
+      .from("listings")
+      .select("title, status, price, available_quantity")
+      .eq("ml_account_id", params.mlAccountId)
+      .eq("item_id", item.id)
+      .maybeSingle();
+
+    const previous: ListingSnapshot | null =
+      previousRow.data === null
+        ? null
+        : {
+            itemId: item.id,
+            title: previousRow.data.title,
+            status: previousRow.data.status,
+            price: previousRow.data.price,
+            availableQuantity: previousRow.data.available_quantity,
+          };
+
     const result = await params.db
       .from("listings")
       .upsert(
@@ -116,6 +146,25 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
       });
 
       continue;
+    }
+
+    const current: ListingSnapshot = {
+      itemId: item.id,
+      title: item.title,
+      status: item.status,
+      price: item.price,
+      availableQuantity: item.available_quantity,
+    };
+
+    const events = detectListingEvents(previous, current, syncedAt);
+
+    if (events.length > 0) {
+      await recordDomainEvents(
+        params.db,
+        { organizationId: params.organizationId, mlAccountId: params.mlAccountId },
+        events,
+        params.logger,
+      );
     }
 
     itemsProcessed += 1;

@@ -22,6 +22,7 @@ export const EVENT_SEVERITY: Readonly<Record<string, EventSeverity>> = {
   "listing.title.changed": "informativo",
   "listing.picture.changed": "informativo",
   "listing.description.changed": "informativo",
+  "listing.available_quantity.changed": "informativo",
   "listing.status.paused": "importante",
   "listing.status.reactivated": "informativo",
   "listing.promotion.started": "importante",

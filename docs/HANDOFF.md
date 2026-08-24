@@ -91,22 +91,16 @@ Os itens abaixo são requisitos existentes que NÃO devem ser considerados concl
 
 ### Pré-requisito crítico da Fase 7
 
-Notificação de alteração de anúncio depende de um evento confiável.
+**Concluído em 2026-08-24 (D-072).** Notificação de alteração de anúncio dependia de um evento confiável — o pipeline `estado anterior -> estado atual -> diff determinístico -> domain_event -> notification` agora existe até `domain_event` inclusive (falta só a camada de notificação, item 3 da sequência abaixo).
 
-Antes de implementar toast como:
+Os quatro primeiros eventos candidatos foram implementados com os nomes corretos do catálogo (`docs/API.md` secao 4 — a lista original abaixo usava `_` por engano; o catálogo real desde a Fase 0 sempre foi `dominio.entidade.acao`):
 
-`OffRacer alterou o preço do SKU 5821`
+- `listing.price.changed`;
+- `listing.title.changed`;
+- `listing.status.paused` / `listing.status.reactivated` (só essas duas transições, não um "status_changed" genérico);
+- `listing.available_quantity.changed` (catálogo novo, não existia antes de D-072).
 
-o pipeline deve existir:
-
-`estado anterior -> estado atual -> diff determinístico -> domain_event -> notification`
-
-Primeiros eventos candidatos:
-
-- `listing.price_changed`;
-- `listing.title_changed`;
-- `listing.status_changed`;
-- `listing.available_quantity_changed`.
+Detalhe completo em D-072 (`docs/DECISIONS.md`), `packages/domain/src/events/listing-events.ts`, `apps/worker/src/handlers/ml-listings-fetch.ts`.
 
 Foto, descrição, promoção, catálogo e outros tipos devem ser implementados somente depois de confirmar as fontes oficiais necessárias.
 
@@ -117,7 +111,7 @@ O registro durável no banco/evento continua sendo a fonte de verdade; Realtime 
 ### Próxima sequência recomendada
 
 1. finalizar o Checkpoint Pré-Fase 7 aplicável;
-2. construir os `domain_events` de alteração de anúncio;
+2. ~~construir os `domain_events` de alteração de anúncio~~ — **concluído em 2026-08-24 (D-072)**, ver acima;
 3. implementar persistência/regras de notificação;
 4. implementar Central de Notificações + estado lido/não lido;
 5. implementar Realtime/toasts;

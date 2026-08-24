@@ -16,24 +16,41 @@ interface Link {
 }
 
 /** Fake mínimo, encadeável — mesmo espírito de ml-fulfillment-fetch.test.ts. */
-function chain<T>(result: T): { eq: () => ReturnType<typeof chain<T>>; is: () => ReturnType<typeof chain<T>> } & Promise<T> {
+function chain<T>(
+  result: T,
+): {
+  eq: () => ReturnType<typeof chain<T>>;
+  is: () => ReturnType<typeof chain<T>>;
+  maybeSingle: () => Promise<T>;
+} & Promise<T> {
   const self = {
     eq: () => self,
     is: () => self,
+    maybeSingle: () => Promise.resolve(result),
     then: (resolve: (value: T) => unknown) => Promise.resolve(result).then(resolve),
   };
 
-  return self as unknown as { eq: () => ReturnType<typeof chain<T>>; is: () => ReturnType<typeof chain<T>> } &
-    Promise<T>;
+  return self as unknown as {
+    eq: () => ReturnType<typeof chain<T>>;
+    is: () => ReturnType<typeof chain<T>>;
+    maybeSingle: () => Promise<T>;
+  } & Promise<T>;
 }
 
 function fakeDb(options: {
   links?: Link[];
   upsertFails?: boolean;
   linksError?: boolean;
-}): { db: FetchListingsParams["db"]; upserted: Record<string, unknown>[] } {
+  /** Linha anterior de `listings`, por `item_id` — ausente = primeira sincronização (`previous: null`). */
+  previousListings?: Record<string, { title: string; status: string; price: number; available_quantity: number }>;
+}): {
+  db: FetchListingsParams["db"];
+  upserted: Record<string, unknown>[];
+  domainEvents: Record<string, unknown>[];
+} {
   const links = options.links ?? [];
   const upserted: Record<string, unknown>[] = [];
+  const domainEvents: Record<string, unknown>[] = [];
 
   const db = {
     from: (table: string) => ({
@@ -42,6 +59,30 @@ function fakeDb(options: {
           return chain(
             options.linksError === true ? { data: null, error: { message: "boom" } } : { data: links, error: null },
           );
+        }
+
+        if (table === "listings") {
+          // Encadeia dois `.eq()` (ml_account_id, item_id) antes de resolver —
+          // resolução preguiçosa em `.maybeSingle()`, para não fixar o
+          // resultado antes do segundo `.eq()` (item_id) ser aplicado.
+          let itemId: string | null = null;
+
+          const builder = {
+            eq: (column: string, value: string) => {
+              if (column === "item_id") {
+                itemId = value;
+              }
+
+              return builder;
+            },
+            maybeSingle: () =>
+              Promise.resolve({
+                data: options.previousListings?.[itemId ?? ""] ?? null,
+                error: null,
+              }),
+          };
+
+          return builder;
         }
 
         return chain({ data: null, error: null });
@@ -53,10 +94,17 @@ function fakeDb(options: {
           options.upsertFails === true ? { data: null, error: { message: "boom" } } : { data: null, error: null },
         );
       },
+      insert: (row: Record<string, unknown>) => {
+        if (table === "domain_events") {
+          domainEvents.push(row);
+        }
+
+        return Promise.resolve({ data: null, error: null });
+      },
     }),
   } as unknown as FetchListingsParams["db"];
 
-  return { db, upserted };
+  return { db, upserted, domainEvents };
 }
 
 function fakeMercadoLivreClient(
@@ -236,5 +284,88 @@ describe("fetchListings (D-058)", () => {
     const { client } = fakeMercadoLivreClient({});
 
     await expect(fetchListings(baseParams(db, client))).rejects.toThrow(/sku_listing_links/);
+  });
+
+  describe("motor de diff (D-072, pré-requisito crítico da Fase 7)", () => {
+    it("primeira sincronização (sem linha anterior): nenhum domain_event gravado", async () => {
+      const { db, domainEvents } = fakeDb({ links: [{ item_id: "MLB1", sku_id: "sku-1" }] });
+      const { client } = fakeMercadoLivreClient({ MLB1: ITEM_MLB1 });
+
+      await fetchListings(baseParams(db, client));
+
+      expect(domainEvents).toHaveLength(0);
+    });
+
+    it("preço mudou desde a última sincronização: grava listing.price.changed", async () => {
+      const { db, domainEvents } = fakeDb({
+        links: [{ item_id: "MLB1", sku_id: "sku-1" }],
+        previousListings: { MLB1: { title: ITEM_MLB1.title, status: "active", price: 39.9, available_quantity: 12 } },
+      });
+      const { client } = fakeMercadoLivreClient({ MLB1: ITEM_MLB1 });
+
+      await fetchListings(baseParams(db, client));
+
+      expect(domainEvents).toHaveLength(1);
+      expect(domainEvents[0]).toMatchObject({
+        organization_id: ORGANIZATION_ID,
+        ml_account_id: ML_ACCOUNT_ID,
+        event_type: "listing.price.changed",
+        entity_type: "listing",
+        entity_id: "MLB1",
+        before: { price: 39.9 },
+        after: { price: 29.9 },
+        severity: "informativo",
+      });
+    });
+
+    it("nada mudou desde a última sincronização: nenhum domain_event gravado", async () => {
+      const { db, domainEvents } = fakeDb({
+        links: [{ item_id: "MLB1", sku_id: "sku-1" }],
+        previousListings: {
+          MLB1: {
+            title: ITEM_MLB1.title,
+            status: ITEM_MLB1.status,
+            price: ITEM_MLB1.price,
+            available_quantity: ITEM_MLB1.available_quantity,
+          },
+        },
+      });
+      const { client } = fakeMercadoLivreClient({ MLB1: ITEM_MLB1 });
+
+      await fetchListings(baseParams(db, client));
+
+      expect(domainEvents).toHaveLength(0);
+    });
+
+    it("status active -> paused: grava listing.status.paused com severidade importante", async () => {
+      const { db, domainEvents } = fakeDb({
+        links: [{ item_id: "MLB1", sku_id: "sku-1" }],
+        previousListings: { MLB1: { title: ITEM_MLB1.title, status: "active", price: 29.9, available_quantity: 12 } },
+      });
+      const { client } = fakeMercadoLivreClient({ MLB1: { ...ITEM_MLB1, status: "paused" } });
+
+      await fetchListings(baseParams(db, client));
+
+      expect(domainEvents).toHaveLength(1);
+      expect(domainEvents[0]).toMatchObject({
+        event_type: "listing.status.paused",
+        before: { status: "active" },
+        after: { status: "paused" },
+        severity: "importante",
+      });
+    });
+
+    it("falha ao gravar o listing: não tenta emitir evento para esse item", async () => {
+      const { db, domainEvents } = fakeDb({
+        links: [{ item_id: "MLB1", sku_id: "sku-1" }],
+        previousListings: { MLB1: { title: ITEM_MLB1.title, status: "active", price: 39.9, available_quantity: 12 } },
+        upsertFails: true,
+      });
+      const { client } = fakeMercadoLivreClient({ MLB1: ITEM_MLB1 });
+
+      await fetchListings(baseParams(db, client));
+
+      expect(domainEvents).toHaveLength(0);
+    });
   });
 });

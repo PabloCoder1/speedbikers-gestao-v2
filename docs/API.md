@@ -149,12 +149,13 @@ Todo job registra em `job_runs`: início, fim, resultado, erro, itens processado
 
 | Evento | Severidade padrão | Origem |
 |---|---|---|
-| `listing.price.changed` | informativo / importante | diff |
-| `listing.title.changed` | informativo | diff |
+| `listing.price.changed` | informativo (fixo nesta etapa) | diff — **implementado em 2026-08-24 (D-072)**. Elevar por magnitude fica para quando houver dado real de variação de preço — ver `packages/domain/src/events/listing-events.ts` |
+| `listing.title.changed` | informativo | diff — **implementado em 2026-08-24 (D-072)** |
 | `listing.picture.changed` | informativo | diff |
 | `listing.description.changed` | informativo | diff |
-| `listing.status.paused` | importante | diff |
-| `listing.status.reactivated` | informativo | diff |
+| `listing.available_quantity.changed` | informativo | diff — **implementado em 2026-08-24 (D-072)**, catálogo novo (não existia antes) |
+| `listing.status.paused` | importante | diff — **implementado em 2026-08-24 (D-072)**. Só a transição PARA `paused`; outras transições de status (`closed`, `under_review`, etc.) não têm evento ainda |
+| `listing.status.reactivated` | informativo | diff — **implementado em 2026-08-24 (D-072)**. Só `paused -> active` |
 | `listing.promotion.started` | importante | diff |
 | `listing.promotion.ended` | importante | diff |
 | `listing.catalog.won` | importante | diff |
@@ -165,11 +166,11 @@ Todo job registra em `job_runs`: início, fim, resultado, erro, itens processado
 | `stock.replenished` | informativo | ledger / snapshot |
 | `stock.balance.diverged` | crítico | job de conferência — reconciliação contra o UpSeller (D-029) OU integridade ledger×projeção (D-056); `before`/`after.checkedAgainst` distingue as duas origens |
 | `order.cancelled` | importante | sync — **implementado em 2026-08-21** |
-| `order.returned` | importante | sync — depende da API de Reclamações e Devoluções, ainda não integrada |
+| `order.returned` | importante | sync — **implementado em 2026-08-23 (D-057)**, `apps/worker/src/handlers/claim-return.ts` |
 | `sync.delayed` | importante | sync |
 | `sync.failed` | crítico | sync |
 
-A severidade final é calculada por **regra versionada** em `@sb/domain/events` (`packages/domain/src/events/catalog.ts`), não fixada na interface. Consumo em `docs/NOTIFICATIONS.md` — **ainda não construído**: `domain_events` emite, mas nada lê ainda (nem notificação, nem Central de Ações).
+A severidade final é calculada por **regra versionada** em `@sb/domain/events` (`packages/domain/src/events/catalog.ts`), não fixada na interface. Consumo em `docs/NOTIFICATIONS.md` — **ainda não construído**: `domain_events` emite, mas nada lê ainda (nem notificação, nem Central de Ações). Os quatro eventos de `listing.*` (preço, título, status, quantidade disponível) fecham o pré-requisito crítico da Fase 7 registrado em `docs/HANDOFF.md` — a emissão existe, falta só a camada de notificação em cima.
 
 ---
 

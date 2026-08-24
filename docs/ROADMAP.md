@@ -182,12 +182,12 @@ Nenhuma funcionalidade concluída das Fases 0 a 6 deve ser removida ou reimpleme
 
 ### P0 — Pré-requisito das notificações
 
-- [ ] Implementar motor determinístico de diff de estado de anúncio antes de criar notificações de mudanças.
-- [ ] Emitir inicialmente `domain_events` para mudanças comprovadamente observáveis: preço, título, status e quantidade disponível.
+- [x] **Implementar motor determinístico de diff de estado de anúncio antes de criar notificações de mudanças** — concluído em 2026-08-24 (D-072): `detectListingEvents` (`packages/domain/src/events/listing-events.ts`), pura, testada sem banco — mesmo padrão de `detectFulfillmentEvents`.
+- [x] **Emitir inicialmente `domain_events` para mudanças comprovadamente observáveis: preço, título, status e quantidade disponível** — concluído em 2026-08-24 (D-072): `listing.price.changed`, `listing.title.changed`, `listing.status.paused`/`.reactivated` (as duas únicas transições catalogadas), `listing.available_quantity.changed` (catálogo novo). Wiring em `ml-listings-fetch.ts`.
 - [ ] Pesquisar documentação oficial atual antes de adicionar foto principal, descrição, promoção, catálogo ou outros estados.
-- [ ] Garantir `dedup_key` e idempotência dos eventos de anúncio.
-- [ ] Garantir que reprocessamento do mesmo snapshot não gere mudança falsa.
-- [ ] Somente depois conectar esses eventos a `notifications`.
+- [x] **Garantir `dedup_key` e idempotência dos eventos de anúncio** — concluído em 2026-08-24 (D-072): chave leva `syncedAt` (os quatro campos oscilam livremente ao longo da vida do anúncio, diferente de `order.cancelled`), testado que reprocessar o mesmo par de estados produz a mesma chave.
+- [x] **Garantir que reprocessamento do mesmo snapshot não gere mudança falsa** — concluído em 2026-08-24 (D-072): testado que "nada mudou" produz zero eventos, e a UNIQUE de `domain_events.dedup_key` absorve qualquer reenvio da mesma transição.
+- [ ] Somente depois conectar esses eventos a `notifications` — `notifications`/`notification_recipients` ainda não têm migration (`docs/DATABASE.md`).
 
 ### P1 — Alinhamento com requisitos funcionais já aprovados
 

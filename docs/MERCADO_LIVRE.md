@@ -38,6 +38,7 @@ Confirmado na documentação oficial (`developers.mercadolivre.com.br`, consulta
 - [x] Política de validação de origem do webhook — secao 2.6 (allowlist de IP; **sem assinatura HMAC documentada** para este produto)
 - [x] Endpoints de pós-venda (Claims/Returns) — secao 2.10 (D-057)
 - [ ] Endpoints de Perguntas e Mensagens pós-venda (Central de Atendimento/SAC, Fase 7B, D-071) — secao 2.12, **vazia de propósito**. Não bloqueia a Fase 3 (já desbloqueada); bloqueia o início real da Fase 7B
+- [x] Valores de `status` do item e ciclo de vida da publicação — secao 2.13 (2026-08-24, pré-requisito crítico da Fase 7 — `listing.status.paused`/`.reactivated`)
 
 ---
 
@@ -383,6 +384,27 @@ Antes de qualquer código de sincronização ou UI de atendimento para perguntas
 - se existe campo de prazo/SLA exposto pela API para perguntas/mensagens/claims, ou se é regra própria da V3;
 - rate limit específico desses endpoints (secao 2.3 é o padrão geral, sem número — confirmar se estes recursos têm exceção);
 - se "mediação" é um `type` dentro de Claims (já visto: `type: mediations`, secao 2.10) ou um recurso com endpoint de detalhe próprio.
+
+---
+
+## 2.13 Status e ciclo de vida do item — CONFIRMADO (leitura ao vivo, 2026-08-24)
+
+Pesquisado para implementar `listing.status.paused`/`listing.status.reactivated` (`docs/HANDOFF.md`, "Pré-requisito crítico da Fase 7") — o catálogo de eventos já tinha essas duas linhas desde a Fase 0, mas os valores reais de `status` nunca tinham sido confirmados (`listing-schema.ts` só validava `status: z.string()`, sem enum).
+
+**Valores de topo do campo `status`** (case-sensitive, sempre minúsculo ao ENVIAR — a V3 só LÊ hoje):
+
+- `active` — anúncio ativo, visível.
+- `paused` — pausado, com dois motivos distintos (sem substatus próprio hoje em `listings`, ver achado abaixo): `out_of_stock` (automático, `available_quantity` chegou a 0) e `paused_by_seller` (decisão do vendedor).
+- `under_review` — em revisão (`warning`, `waiting_for_patch`, `held`, `pending_documentation`, `forbidden`).
+- `closed` — status final (`waiting_for_patch`, `held`, `expired`, `deleted`, `suspended`, `freezed`).
+- `payment_required` — vendedor com dívida/baixa política de crédito; reativa sozinho após o pagamento.
+- `inactive` — correção de `under_review` não feita a tempo.
+
+**Achado crítico — `available_quantity` e `status` NÃO são independentes:** "Ao fazer o PUT do `available_quantity = 0`, mudará o estado para 'paused' com subestado `out_of_stock`. Ao fazer o PUT do `available_quantity` superior a 0 e o subestado sendo `out_of_stock`, mudará o estado para ativo sem subestado `out_of_stock`." — citação literal da página. Ou seja: estoque zerar PAUSA o anúncio sozinho, e repor estoque REATIVA sozinho (só quando o motivo da pausa era `out_of_stock` — pausa manual do vendedor, `paused_by_seller`, **não** reativa sozinha ao repor estoque). Consequência para o motor de diff: `listing.available_quantity.changed` e `listing.status.paused`/`.reactivated` podem disparar juntos para a MESMA causa raiz — não é duplicidade, são duas perguntas diferentes respondidas ("quanto mudou" e "o anúncio saiu do ar"), mesmo padrão já aceito em `stock.depleted` + `listing.fulfillment.entered` (`packages/domain/src/events/fulfillment-events.ts`).
+
+**Achado, sem virar migration agora:** `listings.status` (`docs/DATABASE.md`) grava só o status de TOPO, sem o substatus (`out_of_stock` vs `paused_by_seller`) — a V3 hoje não distingue as duas causas de pausa. Fica registrado como limitação conhecida; capturar substatus exigiria estender `listingItemSchema`/a migration de `listings`, fora do escopo de implementar o motor de diff com o dado já coletado.
+
+**Fonte:** `developers.mercadolivre.com.br/pt_br/produto-sincronizacao-de-publicacoes` ("Sincronização e modificação de publicações", última atualização 24/03/2026).
 
 ---
 
