@@ -59,6 +59,15 @@ async function resolveWindowFrom(
     .limit(1)
     .maybeSingle();
 
+  if (lastRun.error !== null) {
+    // Não tratar como "primeira sincronização desta conta": cairia no
+    // fallback de janela larga (connectedAt ou 24h atrás) em vez de repetir
+    // com o checkpoint real — melhor deixar o job inteiro falhar como
+    // retryable (capturado pelo try/catch do app.ts do worker) do que
+    // arriscar reprocessar uma janela maior que o necessário.
+    throw new Error(`falha ao ler o checkpoint de sync_runs: ${lastRun.error.message}`);
+  }
+
   if (lastRun.data !== null) {
     return floorToHour(new Date(lastRun.data.latest_record_at ?? lastRun.data.started_at));
   }
@@ -122,7 +131,7 @@ export function createSyncOrdersWindowHandler(deps: SyncOrdersWindowDeps): JobHa
         finishedAt: deps.now?.() ?? new Date(),
         reason: tokenResult.reason,
         errorClass: tokenResult.retryable ? "retryable" : "not_retryable",
-      });
+      }, context.logger);
 
       return { status: "failed", retryable: tokenResult.retryable, reason: tokenResult.reason };
     }
@@ -174,7 +183,7 @@ export function createSyncOrdersWindowHandler(deps: SyncOrdersWindowDeps): JobHa
         finishedAt,
         reason,
         errorClass,
-      });
+      }, context.logger);
 
       return { status: "failed", retryable: errorClass !== "not_retryable", reason };
     }
@@ -196,7 +205,7 @@ export function createSyncOrdersWindowHandler(deps: SyncOrdersWindowDeps): JobHa
       ...(partial
         ? { reason: `${String(result.itemsSkipped)} order(s) com formato inesperado, ignoradas` }
         : {}),
-    });
+    }, context.logger);
 
     context.logger.info("sync_orders_window_done", {
       ml_account_id: mlAccountId,

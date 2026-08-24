@@ -756,6 +756,15 @@ Levantadas pela pesquisa da documentação oficial que fecha a lista de verifica
 
 **Impacto:** `apps/worker/src/handlers/persist-order.ts`, `persist-order.test.ts` (+5 testes), `claim-return.ts`, `claim-return.test.ts` (+2 testes). `apps/web/app/compras/[id]/editar/page.tsx`, `apps/web/app/compras/[id]/export/load.ts`, `apps/web/app/compras/[id]/page.tsx`.
 
+**Atualização, mesma sessão: Nível 2 fechado.** Os 10 pontos de "UI enganosa em tela de decisão" (achados #10–19 do levantamento original) foram corrigidos:
+
+- **Worker**: `sync-runs.ts` (`recordSyncRunSuccess`/`recordSyncRunFailure` ganharam um `Logger` — falha ao gravar `sync_runs`/`sync_errors` agora é LOGADA, nunca lançada: é observabilidade da sincronização, não o resultado dela, então abortar um job cuja sincronização já terminou só porque o LOG falhou trocaria um problema pequeno por um maior; 15 pontos de chamada atualizados). `ml-listings-fetch.ts`/`ml-listing-visits-fetch.ts`/`ml-fulfillment-fetch.ts` (falha ao ler `sku_listing_links` agora lança — sem isso virava "done, 0 processados", indistinguível de conta sem anúncio vinculado; o `try/catch` que já existia em cada `sync-*-snapshot.ts` chamador converte em falha de verdade). `sync-orders-window.ts` (`resolveWindowFrom`: falha ao ler o checkpoint agora lança, em vez de cair no fallback de janela larga — reprocessar mais que o necessário é pior que um retry).
+- **Web**: `/vendas`, `/anuncios`, `/diagnostico`, `/acoes` — erro de uma query secundária (comparação de período, série diária, vendas/tráfego por anúncio, correlação de eventos, decisões/outcomes) agora se junta ao erro principal da página via `??`, em vez de description degradar silenciosamente pra "sem dado". `/sincronizacao` ganhou `healthCheckError` em `AccountHealth` — falha ao MEDIR frescor/contagem de erro não vira mais "Nunca sincronizado"/"0 erro(s)" (o oposto do que uma tela de saúde deveria fazer), mostra um alerta explícito.
+
+Nível 3 (11 pontos, busca client-side/dropdown/membership lookup) continua adiado — degrada pra "nada encontrado", já é o comportamento visível de uma busca vazia de verdade.
+
+**Impacto (Nível 2):** `apps/worker/src/handlers/sync-runs.ts`+`sync-runs.test.ts` (novo), `ml-listings-fetch.ts`+test, `ml-listing-visits-fetch.ts`+test, `ml-fulfillment-fetch.ts`+test, `sync-orders-window.ts`+test, `backfill-orders.ts`, `sync-listings-snapshot.ts`, `sync-listing-visits-snapshot.ts`, `sync-fulfillment-snapshot.ts`. `apps/web/app/vendas/page.tsx`, `apps/web/app/anuncios/page.tsx`, `apps/web/app/diagnostico/page.tsx`, `apps/web/app/acoes/page.tsx`, `apps/web/app/sincronizacao/page.tsx`.
+
 ## Como adicionar nova decisão
 
 Registrar:

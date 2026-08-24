@@ -84,7 +84,7 @@ export default async function DiagnosticoPage(): Promise<ReactNode> {
 
   const asOf = shiftBusinessDate(toSalesMetricDate(new Date()), -1);
 
-  const { data, error } = await supabase.rpc("get_sku_sales_baseline", {
+  const { data, error: baselineError } = await supabase.rpc("get_sku_sales_baseline", {
     p_organization_id: organizationId,
     p_as_of: asOf,
   });
@@ -115,6 +115,7 @@ export default async function DiagnosticoPage(): Promise<ReactNode> {
     .map((row) => row.sku_id);
 
   const eventsBySku = new Map<string, CorrelatedEvent[]>();
+  let eventsError: { message: string } | null = null;
 
   if (candidateSkuIds.length > 0) {
     const windowStart = shiftBusinessDate(asOf, -CORRELATION_WINDOW_DAYS_BEFORE);
@@ -129,12 +130,19 @@ export default async function DiagnosticoPage(): Promise<ReactNode> {
       .gte("occurred_at", windowStart)
       .lt("occurred_at", windowEnd);
 
+    eventsError = eventsResult.error;
+
     for (const event of eventsResult.data ?? []) {
       const list = eventsBySku.get(event.entity_id) ?? [];
       list.push({ eventType: event.event_type, occurredAt: new Date(event.occurred_at) });
       eventsBySku.set(event.entity_id, list);
     }
   }
+
+  // Falha ao ler domain_events ficava invisível antes: o diagnóstico
+  // reportava "nenhuma causa candidata encontrada" com confiança normal,
+  // quando a causa real podia existir e só não foi lida (D-067).
+  const error = baselineError ?? eventsError;
 
   const diagnoses: SalesAnomalyDiagnosis[] = [];
 

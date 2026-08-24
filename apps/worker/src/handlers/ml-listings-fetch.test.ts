@@ -30,6 +30,7 @@ function chain<T>(result: T): { eq: () => ReturnType<typeof chain<T>>; is: () =>
 function fakeDb(options: {
   links?: Link[];
   upsertFails?: boolean;
+  linksError?: boolean;
 }): { db: FetchListingsParams["db"]; upserted: Record<string, unknown>[] } {
   const links = options.links ?? [];
   const upserted: Record<string, unknown>[] = [];
@@ -38,7 +39,9 @@ function fakeDb(options: {
     from: (table: string) => ({
       select: () => {
         if (table === "sku_listing_links") {
-          return chain({ data: links, error: null });
+          return chain(
+            options.linksError === true ? { data: null, error: { message: "boom" } } : { data: links, error: null },
+          );
         }
 
         return chain({ data: null, error: null });
@@ -226,5 +229,12 @@ describe("fetchListings (D-058)", () => {
 
     expect(result).toEqual({ itemsProcessed: 0, itemsFailed: 0 });
     expect(upserted).toHaveLength(2);
+  });
+
+  it("falha ao ler sku_listing_links rejeita — sem isto viraria 'done, 0 processados', igual a uma conta sem anúncio", async () => {
+    const { db } = fakeDb({ linksError: true });
+    const { client } = fakeMercadoLivreClient({});
+
+    await expect(fetchListings(baseParams(db, client))).rejects.toThrow(/sku_listing_links/);
   });
 });

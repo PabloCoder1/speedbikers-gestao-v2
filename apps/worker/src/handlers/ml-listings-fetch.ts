@@ -48,10 +48,18 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
     .eq("ref_kind", "ITEM")
     .is("variation_id", null);
 
+  if (links.error !== null) {
+    // Não tratar como "conta sem anúncio vinculado nenhum": o chamador
+    // (sync-listings-snapshot.ts) já tem try/catch em volta desta função e
+    // registra falha de verdade — sem isto, uma falha de leitura virava
+    // "done, 0 processados", indistinguível de sincronização bem-sucedida.
+    throw new Error(`falha ao ler sku_listing_links: ${links.error.message}`);
+  }
+
   let itemsProcessed = 0;
   let itemsFailed = 0;
 
-  for (const link of links.data ?? []) {
+  for (const link of links.data) {
     if (link.item_id === null) {
       // Não deveria acontecer (constraint sku_listing_links_ref_shape) — defesa.
       continue;

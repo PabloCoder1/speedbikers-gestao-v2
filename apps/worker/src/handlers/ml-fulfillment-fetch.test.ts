@@ -43,6 +43,7 @@ function chain<T>(result: T): {
 
 function fakeDb(options: {
   links?: Link[];
+  linksError?: boolean;
 }): {
   db: FetchFulfillmentSnapshotsParams["db"];
   inserted: { table: string; row: Record<string, unknown> }[];
@@ -54,7 +55,9 @@ function fakeDb(options: {
     from: (table: string) => ({
       select: () => {
         if (table === "sku_listing_links") {
-          return chain({ data: links, error: null });
+          return chain(
+            options.linksError === true ? { data: null, error: { message: "boom" } } : { data: links, error: null },
+          );
         }
 
         // fulfillment_stock_snapshots (previous lookup): capturado pelo
@@ -384,5 +387,12 @@ describe("fetchFulfillmentSnapshots", () => {
 
       await expect(fetchFulfillmentSnapshots(baseParams(db, client))).rejects.toThrow(MercadoLivreApiError);
     });
+  });
+
+  it("falha ao ler sku_listing_links rejeita — sem isto viraria 'done, 0 processados', igual a uma conta sem anúncio", async () => {
+    const { db } = fakeDb({ linksError: true });
+    const { client } = fakeMercadoLivreClient({}, {});
+
+    await expect(fetchFulfillmentSnapshots(baseParams(db, client))).rejects.toThrow(/sku_listing_links/);
   });
 });

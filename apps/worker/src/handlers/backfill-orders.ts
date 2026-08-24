@@ -123,7 +123,7 @@ export function createBackfillOrdersHandler(deps: BackfillOrdersDeps): JobHandle
         finishedAt: deps.now?.() ?? new Date(),
         reason: tokenResult.reason,
         errorClass: tokenResult.retryable ? "retryable" : "not_retryable",
-      });
+      }, context.logger);
 
       return { status: "failed", retryable: tokenResult.retryable, reason: tokenResult.reason };
     }
@@ -157,7 +157,7 @@ export function createBackfillOrdersHandler(deps: BackfillOrdersDeps): JobHandle
         finishedAt,
         reason,
         errorClass,
-      });
+      }, context.logger);
 
       // Cloud Tasks repete O MESMO pedaço (mesma task, mesmo checkpoint) —
       // `backfill_covered_until` só avança depois de sucesso, então nada é
@@ -182,7 +182,7 @@ export function createBackfillOrdersHandler(deps: BackfillOrdersDeps): JobHandle
       ...(partial
         ? { reason: `${String(result.itemsSkipped)} order(s) com formato inesperado, ignoradas` }
         : {}),
-    });
+    }, context.logger);
 
     await deps.db
       .from("ml_accounts")

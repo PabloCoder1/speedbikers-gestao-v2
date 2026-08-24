@@ -95,7 +95,16 @@ export default async function AnunciosPage(): Promise<ReactNode> {
     }),
   ]);
 
-  const { data, error } = listingsResult;
+  const { data, error: listingsError } = listingsResult;
+  // Falha em vendas/tráfego isolada ficava invisível antes (só o erro de
+  // listingsResult era checado) — toda linha mostraria "—" em vendido/
+  // receita/visitas/conversão, indistinguível de "sem venda no período"
+  // (D-067).
+  const error = listingsError ?? salesResult.error ?? trafficResult.error;
+  // `error === null` não estreita `data` aqui (a checagem combina três
+  // resultados) — `rows` é o array garantido, `data` original só sobrevive
+  // pra nada mais ser lido dele abaixo.
+  const rows = data ?? [];
 
   // Chave de junção: (ml_account_id, item_id) — mesmo par único de `listings`
   // e o mesmo espaço de valores de `daily_listing_metrics.mlb_id`. Junção por
@@ -136,11 +145,11 @@ export default async function AnunciosPage(): Promise<ReactNode> {
         </p>
       )}
 
-      {error === null && data.length === 0 && (
+      {error === null && rows.length === 0 && (
         <p style={{ color: "var(--sb-text-soft)" }}>Nenhum anúncio sincronizado ainda.</p>
       )}
 
-      {error === null && data.length > 0 && (
+      {error === null && rows.length > 0 && (
         <div style={{ overflowX: "auto" }}>
           <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "68rem" }}>
             <thead>
@@ -160,7 +169,7 @@ export default async function AnunciosPage(): Promise<ReactNode> {
             </thead>
 
             <tbody>
-              {data.map((listing) => {
+              {rows.map((listing) => {
                 const sales = salesByListing.get(`${listing.ml_account_id}:${listing.item_id}`) ?? null;
                 const traffic = trafficByListing.get(`${listing.ml_account_id}:${listing.item_id}`) ?? null;
 

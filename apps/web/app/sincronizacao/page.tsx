@@ -77,6 +77,13 @@ interface AccountHealth extends AccountRow {
   freshness: FreshnessLevel | null;
   latestRecordAt: string | null;
   errorCount24h: number;
+  /**
+   * Falha ao MEDIR o frescor/contagem de erros — distinto de `null`
+   * (frescor genuinamente não aplicável). Sem isto, uma falha de leitura
+   * virava "Nunca sincronizado"/"0 erro(s) nas últimas 24h" numa tela que
+   * existe justamente pra pegar esse tipo de problema (D-067).
+   */
+  healthCheckError: string | null;
 }
 
 async function loadAccountHealth(
@@ -87,7 +94,7 @@ async function loadAccountHealth(
   if (account.status !== "CONNECTED") {
     // Conta que nunca chegou a sincronizar não tem frescor a medir — mostrar
     // "0h de atraso" seria fingir um dado que não existe.
-    return { ...account, freshness: null, latestRecordAt: null, errorCount24h: 0 };
+    return { ...account, freshness: null, latestRecordAt: null, errorCount24h: 0, healthCheckError: null };
   }
 
   const since = new Date(now.getTime() - 24 * 3_600_000).toISOString();
@@ -119,6 +126,12 @@ async function loadAccountHealth(
       .gte("occurred_at", since),
   ]);
 
+  const healthCheckError = lastRun.error?.message ?? errorCount.error?.message ?? null;
+
+  if (healthCheckError !== null) {
+    return { ...account, freshness: null, latestRecordAt: null, errorCount24h: 0, healthCheckError };
+  }
+
   const latestRecordAt = lastRun.data?.latest_record_at ?? null;
 
   return {
@@ -126,6 +139,7 @@ async function loadAccountHealth(
     freshness: classifySyncFreshness(latestRecordAt === null ? null : new Date(latestRecordAt), now),
     latestRecordAt,
     errorCount24h: errorCount.count ?? 0,
+    healthCheckError: null,
   };
 }
 
@@ -157,6 +171,12 @@ function AccountCard({ account }: { account: AccountHealth }): ReactNode {
 
       {account.status === "ERROR" && account.last_error !== null && (
         <span style={{ color: "var(--sb-danger)", fontSize: "0.8125rem" }}>{account.last_error}</span>
+      )}
+
+      {account.healthCheckError !== null && (
+        <span role="alert" style={{ color: "var(--sb-danger)", fontSize: "0.8125rem" }}>
+          Não foi possível medir o frescor desta conta: {account.healthCheckError}
+        </span>
       )}
 
       {freshnessTone !== null && (

@@ -320,7 +320,11 @@ export default async function VendasPage({
   const summary: SalesSummary | null = currentResult.data ?? null;
   const previousSummary: SalesSummary | null = previousResult.data ?? null;
   const dailySeries = seriesResult.data ?? [];
-  const error = currentResult.error;
+  // Falha em QUALQUER uma das três: mostrar erro, nunca "sem dado" — uma
+  // falha em previousResult/seriesResult isolada ficava invisível antes
+  // (só currentResult.error era checado), e a comparação de período/gráfico
+  // silenciosamente pareciam legítimos com dado incompleto (D-067).
+  const error = currentResult.error ?? previousResult.error ?? seriesResult.error;
 
   const lastComputedAt = summary?.last_computed_at ?? null;
   const freshness = classifySyncFreshness(lastComputedAt === null ? null : new Date(lastComputedAt), now);
@@ -358,6 +362,20 @@ export default async function VendasPage({
         {formatBusinessDate(range.from)} até {formatBusinessDate(range.to)} — comparado com{" "}
         {formatBusinessDate(previousRange.from)} até {formatBusinessDate(previousRange.to)}.
       </p>
+
+      {(accountsResult.error !== null || membershipResult.error !== null || savedFiltersResult.error !== null) && (
+        <p role="alert" style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-danger)" }}>
+          Alguns filtros podem estar incompletos — não foi possível carregar{" "}
+          {[
+            accountsResult.error !== null ? "contas" : null,
+            membershipResult.error !== null ? "organização" : null,
+            savedFiltersResult.error !== null ? "filtros salvos" : null,
+          ]
+            .filter((item): item is string => item !== null)
+            .join(", ")}
+          .
+        </p>
+      )}
 
       {accountsResult.error === null && accounts.length > 0 && (
         <div

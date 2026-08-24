@@ -69,6 +69,7 @@ interface FakeDbOptions {
   } | null;
   lastRun?: { latest_record_at: string | null; started_at: string } | null;
   claimLockFails?: boolean;
+  lastRunError?: boolean;
 }
 
 const DEFAULT_ACCOUNT = {
@@ -116,7 +117,9 @@ function fakeDb(options: FakeDbOptions = {}): {
         }
 
         // sync_runs (checkpoint lookup)
-        return chain({ data: lastRun ?? null, error: null });
+        return chain(
+          options.lastRunError === true ? { data: null, error: { message: "boom" } } : { data: lastRun ?? null, error: null },
+        );
       },
       insert: (row: unknown) => {
         inserted.push({ table, row });
@@ -554,6 +557,12 @@ describe("sync.orders.window", () => {
     const outcome = await run(d, lines);
 
     expect(outcome).toMatchObject({ status: "failed", retryable: false });
+  });
+
+  it("falha ao ler o checkpoint de sync_runs: rejeita, não cai no fallback de janela larga (app.ts converte pra retryable)", async () => {
+    const { deps: d, lines } = deps({ lastRunError: true }, []);
+
+    await expect(run(d, lines)).rejects.toThrow(/checkpoint/);
   });
 
   it("nunca loga access_token, refresh_token nem client_secret", async () => {

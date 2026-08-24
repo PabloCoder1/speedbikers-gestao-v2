@@ -75,7 +75,7 @@ export function createSyncListingVisitsSnapshotHandler(
         finishedAt: deps.now?.() ?? new Date(),
         reason: tokenResult.reason,
         errorClass: tokenResult.retryable ? "retryable" : "not_retryable",
-      });
+      }, context.logger);
 
       return { status: "failed", retryable: tokenResult.retryable, reason: tokenResult.reason };
     }
@@ -107,7 +107,7 @@ export function createSyncListingVisitsSnapshotHandler(
         finishedAt,
         reason,
         errorClass,
-      });
+      }, context.logger);
 
       return { status: "failed", retryable: errorClass !== "not_retryable", reason };
     }
@@ -129,7 +129,7 @@ export function createSyncListingVisitsSnapshotHandler(
       ...(partial
         ? { reason: `${String(result.itemsFailed)} item(ns) falharam ao consultar o Mercado Livre (404/403)` }
         : {}),
-    });
+    }, context.logger);
 
     context.logger.info("sync_listing_visits_snapshot_done", {
       ml_account_id: mlAccountId,

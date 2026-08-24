@@ -1,8 +1,16 @@
 import type { AdminClient } from "@sb/db";
+import type { Logger } from "@sb/observability";
 
 /**
  * Gravação em `sync_runs`/`sync_errors`, compartilhada por todo handler de
  * sincronização — L2 append-only, `docs/DATABASE.md` secao 4.
+ *
+ * Falha ao gravar aqui é logada, nunca lançada: isto é observabilidade da
+ * sincronização, não o resultado dela — abortar um job cuja sincronização
+ * já terminou (bem ou mal) só porque o LOG dela falhou trocaria um problema
+ * pequeno (Sync Health incompleto) por um maior (job retryable reprocessando
+ * trabalho que já tinha terminado). D-067 (achado: a falha aqui era
+ * completamente invisível antes, nem logada).
  */
 
 export type SyncChannel = "webhook" | "reconciliation" | "backfill";
@@ -34,8 +42,9 @@ export async function recordSyncRunSuccess(
     status?: "done" | "partial";
     reason?: string;
   },
+  logger: Logger,
 ): Promise<void> {
-  await db.from("sync_runs").insert({
+  const result = await db.from("sync_runs").insert({
     organization_id: params.organizationId,
     ml_account_id: params.mlAccountId,
     job_id: params.jobId,
@@ -48,6 +57,14 @@ export async function recordSyncRunSuccess(
     started_at: params.startedAt.toISOString(),
     finished_at: params.finishedAt.toISOString(),
   });
+
+  if (result.error !== null) {
+    logger.error("sync_run_not_recorded", {
+      job_id: params.jobId,
+      resource: params.resource,
+      reason: result.error.message,
+    });
+  }
 }
 
 /**
@@ -59,6 +76,7 @@ export async function recordSyncRunSuccess(
 export async function recordSyncRunFailure(
   db: AdminClient,
   params: SyncRunBase & { reason: string; errorClass: SyncErrorClass },
+  logger: Logger,
 ): Promise<void> {
   const reason = params.reason.slice(0, 2000);
 
@@ -78,7 +96,15 @@ export async function recordSyncRunFailure(
     .select("id")
     .maybeSingle();
 
-  await db.from("sync_errors").insert({
+  if (run.error !== null) {
+    logger.error("sync_run_failure_not_recorded", {
+      job_id: params.jobId,
+      resource: params.resource,
+      reason: run.error.message,
+    });
+  }
+
+  const errorInsert = await db.from("sync_errors").insert({
     organization_id: params.organizationId,
     ml_account_id: params.mlAccountId,
     sync_run_id: run.data?.id ?? null,
@@ -87,4 +113,12 @@ export async function recordSyncRunFailure(
     message: reason,
     occurred_at: params.finishedAt.toISOString(),
   });
+
+  if (errorInsert.error !== null) {
+    logger.error("sync_error_not_recorded", {
+      job_id: params.jobId,
+      resource: params.resource,
+      reason: errorInsert.error.message,
+    });
+  }
 }

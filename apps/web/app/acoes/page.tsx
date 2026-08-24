@@ -64,7 +64,7 @@ export default async function AcoesPage(): Promise<ReactNode> {
     );
   }
 
-  const { data, error } = await supabase
+  const { data, error: actionsError } = await supabase
     .from("actions")
     .select(
       "id, severity, confidence, estimated_impact_brl, evidence, recommendation, status, assignee_id, skus(sku, title)",
@@ -108,6 +108,14 @@ export default async function AcoesPage(): Promise<ReactNode> {
     });
     outcomesByDecision.set(row.action_decision_id, list);
   }
+
+  // Falha ao ler decisões/outcomes ficava invisível antes: a Central de
+  // Ações mostraria cada ação sem nenhuma decisão registrada, indistinguível
+  // de "ninguém registrou uma decisão ainda" (D-067).
+  const error =
+    actionsError ??
+    ("error" in decisionsResult ? decisionsResult.error : null) ??
+    ("error" in outcomesResult ? outcomesResult.error : null);
 
   const decisionsByAction = new Map<string, DecisionData[]>();
 

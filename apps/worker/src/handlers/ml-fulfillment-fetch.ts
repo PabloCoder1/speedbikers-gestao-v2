@@ -91,11 +91,18 @@ export async function fetchFulfillmentSnapshots(
     .eq("ref_kind", "ITEM")
     .is("variation_id", null);
 
+  if (links.error !== null) {
+    // Mesmo raciocínio de ml-listings-fetch.ts: o chamador
+    // (sync-fulfillment-snapshot.ts) já tem try/catch em volta e registra
+    // falha de verdade — sem isto, virava "done, 0 processados".
+    throw new Error(`falha ao ler sku_listing_links: ${links.error.message}`);
+  }
+
   let itemsProcessed = 0;
   let itemsSkipped = 0;
   let itemsFailed = 0;
 
-  for (const link of links.data ?? []) {
+  for (const link of links.data) {
     if (link.item_id === null) {
       // Não deveria acontecer (ref_kind='ITEM' garante item_id no banco,
       // constraint sku_listing_links_ref_shape) — defesa, não caminho normal.
