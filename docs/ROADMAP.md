@@ -150,9 +150,9 @@ Cada fase só é considerada concluída sob a Definition of Done do `docs/PROMPT
 
 ## Fase 6 — Diagnóstico e Ações
 
-- [ ] Baseline, desvio e detecção estatística sem machine learning
-- [ ] Correlação com `domain_events` datados
-- [ ] Contrato de diagnóstico com evidências e confiança
+- [x] **Baseline, desvio e detecção estatística sem machine learning** — concluído em 2026-08-24 (D-063): `get_sku_sales_baseline` unifica os três métodos aprovados (média móvel, desvio padrão, mesmo dia da semana) num só cálculo — baseline por SKU é a média/desvio de `units_sold` nas últimas 8 ocorrências do MESMO dia da semana, amostra mínima de 4. Testado contra o catálogo real antes de implementar (anomalias reais encontradas: SKU `630006` alta, SKU `220201` queda)
+- [x] **Correlação com `domain_events` datados** — concluído em 2026-08-24 (D-063): causas candidatas vêm de eventos com `entity_type='sku'` (hoje só `stock.depleted`/`stock.replenished` têm essa forma com dado real — `order.*`/`listing.*` ficam de fora, sem correlação direta disponível ainda)
+- [x] **Contrato de diagnóstico com evidências e confiança** — concluído em 2026-08-24 (D-063): `diagnoseSalesAnomaly` (`packages/domain/src/diagnostics`) produz o contrato fixo de `docs/ARCHITECTURE.md` secao 16 (`escopo, periodo, direcao, confianca, evidencias[], causas_candidatas[], proximos_passos[]`), consumido por `/diagnostico` (novo)
 - [ ] Central de Ações unificando problema e oportunidade
 - [ ] Decisões com `baseline_snapshot` e medição posterior em 7/15/30 dias
 

@@ -3307,3 +3307,157 @@ describe("saved_filters / create_saved_filter / delete_saved_filter (Fase 5B, Fi
     ).rejects.toThrow(/permission denied/i);
   });
 });
+
+describe("get_sku_sales_baseline (Fase 6, Diagnóstico)", () => {
+  // Mesmo raciocínio de nomes fora dos padrões de limpeza global, e mesma
+  // ausência de afterAll — ver comentário equivalente no describe de
+  // get_stock_coverage, acima.
+  const CONTA_DIAG = "ddddaaaa-0000-4000-8000-0000000000aa";
+  const AS_OF = "2026-08-23"; // domingo (dow=0) — confirmado contra o Dev antes de escrever o teste.
+
+  // Todas as datas abaixo caem no MESMO dia da semana que AS_OF (7 em 7 dias).
+  const SAME_WEEKDAY = [
+    "2026-08-16",
+    "2026-08-09",
+    "2026-08-02",
+    "2026-07-26",
+    "2026-07-19",
+    "2026-07-12",
+    "2026-07-05",
+    "2026-06-28",
+    "2026-06-21",
+    "2026-06-14",
+  ];
+  const OTHER_WEEKDAY = "2026-08-19"; // quarta-feira — nunca deve entrar no baseline.
+
+  let skuComAmostraId = "";
+  let skuAmostraCurtaId = "";
+  let skuDezOcorrenciasId = "";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$2,'Conta de diagnóstico','diagtest-conta','PENDING')
+       on conflict do nothing`,
+      [CONTA_DIAG, ORG_SB],
+    );
+
+    const skus = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind)
+       values
+         ($1,'DIAGTEST-com-amostra','PRODUTO'),
+         ($1,'DIAGTEST-amostra-curta','PRODUTO'),
+         ($1,'DIAGTEST-dez-ocorrencias','PRODUTO')
+       returning id`,
+      [ORG_SB],
+    );
+    skuComAmostraId = skus.rows[0]?.id ?? "";
+    skuAmostraCurtaId = skus.rows[1]?.id ?? "";
+    skuDezOcorrenciasId = skus.rows[2]?.id ?? "";
+
+    // SKU com amostra suficiente: 4 ocorrências do mesmo dia da semana
+    // (1,2,3,4 — média 2.5), mais uma linha de OUTRO dia da semana com valor
+    // extremo (nunca deve entrar no cálculo), mais o valor do dia atual.
+    const sameWeekdayValues = [1, 2, 3, 4];
+    for (const [index, metricDate] of SAME_WEEKDAY.slice(0, 4).entries()) {
+      await client.query(
+        `insert into public.daily_sku_metrics
+           (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+         values ($1,$2,$3,$4,$5,100,1,1)`,
+        [ORG_SB, CONTA_DIAG, skuComAmostraId, metricDate, sameWeekdayValues[index]],
+      );
+    }
+    await client.query(
+      `insert into public.daily_sku_metrics
+         (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values ($1,$2,$3,$4,999,1,1,1)`,
+      [ORG_SB, CONTA_DIAG, skuComAmostraId, OTHER_WEEKDAY],
+    );
+    await client.query(
+      `insert into public.daily_sku_metrics
+         (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values ($1,$2,$3,$4,7,100,1,1)`,
+      [ORG_SB, CONTA_DIAG, skuComAmostraId, AS_OF],
+    );
+
+    // SKU com amostra curta: só 3 ocorrências do mesmo dia da semana —
+    // abaixo do mínimo de 4, não deve aparecer no resultado.
+    for (const metricDate of SAME_WEEKDAY.slice(0, 3)) {
+      await client.query(
+        `insert into public.daily_sku_metrics
+           (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+         values ($1,$2,$3,$4,5,100,1,1)`,
+        [ORG_SB, CONTA_DIAG, skuAmostraCurtaId, metricDate],
+      );
+    }
+
+    // SKU com DEZ ocorrências do mesmo dia da semana: as duas mais ANTIGAS
+    // (índices 8 e 9, fora das 8 mais recentes) têm valor extremo (1000) —
+    // se entrassem no cálculo, a média dispararia. As 8 mais recentes valem
+    // 10 cada (média 10, desvio 0).
+    for (const [index, metricDate] of SAME_WEEKDAY.entries()) {
+      const value = index < 8 ? 10 : 1000;
+      await client.query(
+        `insert into public.daily_sku_metrics
+           (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+         values ($1,$2,$3,$4,$5,100,1,1)`,
+        [ORG_SB, CONTA_DIAG, skuDezOcorrenciasId, metricDate, value],
+      );
+    }
+  });
+
+  // Sem afterAll de limpeza: mesma razão do ledger de estoque acima.
+
+  it("calcula baseline sobre o MESMO dia da semana — ignora linha de outro dia da semana", async () => {
+    const rows = await asUser<{
+      current_units_sold: string;
+      baseline_mean: string;
+      baseline_stddev: string;
+      sample_count: string;
+    }>(
+      ADMIN_SB,
+      `select * from public.get_sku_sales_baseline('${ORG_SB}','${AS_OF}') where sku_id='${skuComAmostraId}'`,
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0]?.current_units_sold)).toBe(7);
+    expect(Number(rows[0]?.baseline_mean)).toBe(2.5);
+    expect(Number(rows[0]?.sample_count)).toBe(4);
+    expect(Number(rows[0]?.baseline_stddev)).toBeGreaterThan(0);
+  });
+
+  it("amostra abaixo de 4 ocorrências do mesmo dia da semana: SKU nem aparece", async () => {
+    const rows = await asUser<{ sku_id: string }>(
+      ADMIN_SB,
+      `select * from public.get_sku_sales_baseline('${ORG_SB}','${AS_OF}') where sku_id='${skuAmostraCurtaId}'`,
+    );
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("limita a 8 ocorrências mais recentes do mesmo dia da semana — mais antigas não entram na média", async () => {
+    const rows = await asUser<{ baseline_mean: string; sample_count: string }>(
+      ADMIN_SB,
+      `select * from public.get_sku_sales_baseline('${ORG_SB}','${AS_OF}') where sku_id='${skuDezOcorrenciasId}'`,
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0]?.sample_count)).toBe(8);
+    expect(Number(rows[0]?.baseline_mean)).toBe(10);
+  });
+
+  it("anon não executa", async () => {
+    await expect(
+      asAnon(`select * from public.get_sku_sales_baseline('${ORG_SB}','${AS_OF}')`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
+  it("usuário de outra organização não vê o SKU desta organização", async () => {
+    const rows = await asUser<{ sku_id: string }>(
+      DE_OUTRA_ORG,
+      `select * from public.get_sku_sales_baseline('${ORG_SB}','${AS_OF}') where sku_id='${skuComAmostraId}'`,
+    );
+
+    expect(rows).toHaveLength(0);
+  });
+});

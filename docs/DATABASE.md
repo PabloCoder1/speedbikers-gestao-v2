@@ -423,6 +423,18 @@ created_at
 
 Integrado em `/vendas` (a tela com o filtro mais rico — período + conta) via `apps/web/components/saved-filters.tsx` + `saved-filters-actions.ts` (Server Actions, D-012).
 
+### `get_sku_sales_baseline(organization_id, as_of)` — Diagnóstico, primeira peça da Fase 6 (D-063)
+
+**Implementado em 2026-08-24**, migration `20260824013329_create_sku_sales_baseline_rpc.sql`. Pipeline determinístico de `docs/ARCHITECTURE.md` secao 16 — RPC `security invoker`, só agrega (docs/ARCHITECTURE.md secao 21): para cada SKU com histórico suficiente, devolve `units_sold` do dia pedido e a média/desvio padrão de `units_sold` no MESMO DIA DA SEMANA (últimas 8 ocorrências) — unifica os "três métodos aprovados" (média móvel, desvio padrão, mesmo dia da semana) num só cálculo, controlando sazonalidade semanal automaticamente. Amostra mínima de 4 ocorrências — abaixo disso o SKU nem aparece no resultado.
+
+A INTERPRETAÇÃO (é anomalia? direção? confiança? causa candidata?) não vive em SQL — é `diagnoseSalesAnomaly` em `packages/domain/src/diagnostics/sales-anomaly.ts`, pura, produzindo o contrato de diagnóstico fixo (`docs/ARCHITECTURE.md` secao 16): `{escopo, periodo, direcao, confianca, zScore, evidencias[], causasCandidatas[], proximosPassos[]}`. `|z| >= 2` é o limiar de anomalia, `|z| >= 3` sobe a confiança para "alta" — convenção estatística padrão, não calibrada com dado real ainda (D-063).
+
+Causas candidatas vêm de `domain_events` com `entity_type = 'sku'` (`entity_id = sku_id` direto, sem join) — hoje só `stock.depleted`/`stock.replenished` têm essa forma com dado real (1.043 e 33 linhas na organização de demonstração); `order.*` (entity_type='order') e `listing.*` (catalogados, nunca emitidos) ficam de fora desta fatia.
+
+Consumida por `/diagnostico` (novo): busca o baseline de TODOS os SKUs para ontem (`as_of`, mesmo raciocínio de frescor de `/vendas`), roda `diagnoseSalesAnomaly` em duas passadas — uma sem eventos para achar quais SKUs são anomalia, uma segunda só para esses (já com os eventos correlacionados) — evita N+1 de consulta a `domain_events`.
+
+**"Central de Ações" (persistir como item acionável) e "Decisões com `baseline_snapshot`"** — os dois itens seguintes do checklist da Fase 6 — dependem desta peça existir primeiro; ficam para as próximas fatias.
+
 ---
 
 ## 5. RLS

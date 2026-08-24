@@ -69,6 +69,9 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
           <Link href="/curva-abc" style={{ color: "var(--sb-text-soft)" }}>
             Curva ABC
           </Link>
+          <Link href="/diagnostico" style={{ color: "var(--sb-text-soft)" }}>
+            Diagnóstico
+          </Link>
           <Link href="/compras" style={{ color: "var(--sb-text-soft)" }}>
             Pedidos de Compra
           </Link>

@@ -1,0 +1,143 @@
+/**
+ * Diagnóstico e Central de Ações (Fase 6, `docs/ARCHITECTURE.md` secao 16) —
+ * primeira peça: "Baseline, desvio e detecção estatística sem machine
+ * learning". Pipeline: `janela+escopo -> coleta de sinais -> baseline e
+ * desvio (SQL, get_sku_sales_baseline) -> candidatos a causa correlacionados
+ * com domain_events datados -> confiança calculada por regra` — tudo AQUI,
+ * puro, sem IA (que só narraria no fim, Fase 7, fora de escopo).
+ *
+ * `get_sku_sales_baseline` já filtra amostra mínima e traz os números
+ * agregados (`docs/ARCHITECTURE.md` secao 21: zero agregação em JS) — esta
+ * função só INTERPRETA um sinal já pronto, a mesma divisão de trabalho de
+ * `computeLedgerIntegrityDivergences` (SQL recomputa, TS decide o que é
+ * divergência/anomalia).
+ */
+
+export interface SalesBaselineSignal {
+  readonly skuId: string;
+  readonly sku: string;
+  readonly title: string | null;
+  /** `extract(dow from ...)`: 0 = domingo .. 6 = sábado. */
+  readonly weekday: number;
+  readonly currentUnitsSold: number;
+  readonly baselineMean: number;
+  readonly baselineStddev: number;
+  readonly sampleCount: number;
+}
+
+export interface CorrelatedEvent {
+  readonly eventType: string;
+  readonly occurredAt: Date;
+}
+
+export type AnomalyDirection = "queda" | "alta";
+export type DiagnosisConfidence = "media" | "alta";
+
+export interface DiagnosisEvidence {
+  readonly tipo: string;
+  readonly descricao: string;
+}
+
+export interface DiagnosisCandidateCause {
+  readonly eventType: string;
+  readonly occurredAt: Date;
+  readonly descricao: string;
+}
+
+/**
+ * Contrato de saída fixo (`docs/ARCHITECTURE.md` secao 16): `{ evidencias[],
+ * causas_candidatas[], confianca, escopo, periodo, proximos_passos[] }` —
+ * nomes de campo em português/snake_case no documento, mapeados aqui para
+ * camelCase (convenção do resto do domínio) sem mudar o formato.
+ */
+export interface SalesAnomalyDiagnosis {
+  readonly escopo: { readonly organizationId: string; readonly skuId: string };
+  readonly periodo: { readonly asOf: string };
+  readonly direcao: AnomalyDirection;
+  readonly confianca: DiagnosisConfidence;
+  readonly zScore: number;
+  readonly evidencias: readonly DiagnosisEvidence[];
+  readonly causasCandidatas: readonly DiagnosisCandidateCause[];
+  readonly proximosPassos: readonly string[];
+}
+
+/** |z| >= 2 é o limiar de anomalia (regra própria "sem machine learning", ARCHITECTURE.md secao 16); |z| >= 3 sobe a confiança. */
+const ANOMALY_Z_THRESHOLD = 2;
+const HIGH_CONFIDENCE_Z_THRESHOLD = 3;
+
+function describeCandidateCause(eventType: string): string {
+  switch (eventType) {
+    case "stock.depleted":
+      return "Estoque zerou perto desta data — pode explicar a queda.";
+    case "stock.replenished":
+      return "Estoque foi reposto perto desta data — pode explicar a retomada.";
+    case "order.cancelled":
+      return "Houve cancelamento de pedido perto desta data.";
+    case "order.returned":
+      return "Houve devolução perto desta data.";
+    case "stock.balance.diverged":
+      return "Divergência de saldo detectada perto desta data — o dado de estoque pode estar incorreto.";
+    default:
+      return `Evento "${eventType}" registrado perto desta data.`;
+  }
+}
+
+/**
+ * Diagnostica UM sinal já agregado (`get_sku_sales_baseline`). Devolve
+ * `null` quando não há anomalia (ou quando o sinal não é confiável o
+ * bastante para julgar) — a ausência de diagnóstico é uma resposta válida,
+ * não um erro.
+ *
+ * Guardas revalidadas aqui mesmo já filtradas em SQL: a função é o contrato
+ * público de `@sb/domain/diagnostics` — correta sozinha, sem depender de
+ * quem chama lembrar do `WHERE` da RPC.
+ */
+export function diagnoseSalesAnomaly(
+  organizationId: string,
+  signal: SalesBaselineSignal,
+  asOf: string,
+  relatedEvents: readonly CorrelatedEvent[],
+): SalesAnomalyDiagnosis | null {
+  if (signal.sampleCount < 4) return null;
+  if (signal.baselineMean <= 0) return null;
+  if (signal.baselineStddev <= 0) return null;
+
+  const zScore = (signal.currentUnitsSold - signal.baselineMean) / signal.baselineStddev;
+
+  if (Math.abs(zScore) < ANOMALY_Z_THRESHOLD) return null;
+
+  const direcao: AnomalyDirection = zScore < 0 ? "queda" : "alta";
+  const confianca: DiagnosisConfidence = Math.abs(zScore) >= HIGH_CONFIDENCE_Z_THRESHOLD ? "alta" : "media";
+
+  const evidencias: DiagnosisEvidence[] = [
+    {
+      tipo: "venda_vs_baseline",
+      descricao:
+        `${signal.sku} vendeu ${String(signal.currentUnitsSold)} unidade(s) — ` +
+        `baseline de ${signal.baselineMean.toFixed(1)} ± ${signal.baselineStddev.toFixed(1)} ` +
+        `(últimas ${String(signal.sampleCount)} ocorrências do mesmo dia da semana)`,
+    },
+  ];
+
+  const causasCandidatas: DiagnosisCandidateCause[] = relatedEvents.map((event) => ({
+    eventType: event.eventType,
+    occurredAt: event.occurredAt,
+    descricao: describeCandidateCause(event.eventType),
+  }));
+
+  const proximosPassos: string[] =
+    causasCandidatas.length > 0
+      ? ["Revisar o evento correlato listado acima antes de agir."]
+      : ["Nenhum evento correlato encontrado — investigar preço, concorrência ou sazonalidade fora do baseline."];
+
+  return {
+    escopo: { organizationId, skuId: signal.skuId },
+    periodo: { asOf },
+    direcao,
+    confianca,
+    zScore: Math.round(zScore * 100) / 100,
+    evidencias,
+    causasCandidatas,
+    proximosPassos,
+  };
+}

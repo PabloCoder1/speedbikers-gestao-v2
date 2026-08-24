@@ -2597,6 +2597,19 @@ export type Database = {
           units_sold: number
         }[]
       }
+      get_sku_sales_baseline: {
+        Args: { p_as_of: string; p_organization_id: string }
+        Returns: {
+          baseline_mean: number
+          baseline_stddev: number
+          current_units_sold: number
+          sample_count: number
+          sku: string
+          sku_id: string
+          title: string
+          weekday: number
+        }[]
+      }
       get_stock_coverage: {
         Args: {
           p_date_from: string

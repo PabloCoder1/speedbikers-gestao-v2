@@ -682,6 +682,22 @@ Levantadas pela pesquisa da documentação oficial que fecha a lista de verifica
 
 **Impacto:** migration `20260823235730_create_saved_filters.sql` (tabela `saved_filters` + as duas RPCs). `apps/web/components/saved-filters.tsx` (componente cliente reaproveitável) + `saved-filters-actions.ts` (Server Actions, D-012, mesmo padrão de `apps/web/app/vinculacoes/actions.ts`). Integrado em `/vendas` nesta etapa — a tela com o filtro mais rico (período + conta); outras telas filtradas (`/curva-abc`) podem adotar o mesmo componente depois, sem mudança de schema.
 
+## D-063 — Diagnóstico de anomalia de venda: baseline por MESMO dia da semana, |z|>=2, correlação com `domain_events` de SKU
+
+**Contexto:** primeira peça da Fase 6 (Diagnóstico e Ações) — `docs/ARCHITECTURE.md` secao 16 já especificava o pipeline (`janela+escopo -> coleta de sinais -> baseline e desvio -> candidatos a causa correlacionados com domain_events datados -> confiança -> [IA só no fim]`) e o contrato de saída (`{evidencias[], causas_candidatas[], confianca, escopo, periodo, proximos_passos[]}`) — não foi preciso inventar a forma, só implementar contra o que já estava aprovado.
+
+**Decisão 1 — os "três métodos aprovados" (média móvel, desvio padrão, mesmo dia da semana anterior) viram UM método só:** baseline de um SKU num dia é a média + desvio padrão de `units_sold` no MESMO dia da semana, últimas 8 ocorrências. Isso controla sazonalidade semanal automaticamente (sábado nunca compara contra terça) sem precisar reconciliar três sinais paralelos — testado contra o catálogo real antes de implementar (achados concretos: SKU `630006` vendeu 4 unidades num domingo com baseline 1.17±0.41 — anomalia real de alta; SKU `220201` vendeu 0 com baseline 2.25±0.50 — queda real).
+
+**Decisão 2 — amostra mínima de 4 ocorrências do mesmo dia da semana:** abaixo disso o desvio padrão é ruído, não sinal — o SKU nem aparece no resultado da RPC (não é "sem anomalia", é "sem base para julgar"). Limiar de anomalia `|z| >= 2` (confiança "média") e `|z| >= 3` (confiança "alta") — convenção estatística padrão (regra empírica ~95%/~99.7%), não um número calibrado com dado real desta sessão; revisitar se a prática mostrar muito falso positivo/negativo.
+
+**Decisão 3 — divisão SQL agrega, domínio interpreta:** `get_sku_sales_baseline` (RPC, `security invoker`) só devolve números já agregados — média, desvio, amostra, valor atual (`docs/ARCHITECTURE.md` secao 21, zero agregação em JS). A decisão "isto é anomalia? qual a direção? qual a causa?" é `diagnoseSalesAnomaly`, pura, em `@sb/domain/diagnostics` — mesma divisão de trabalho já usada em `computeLedgerIntegrityDivergences` (D-056): SQL recomputa, TypeScript decide.
+
+**Decisão 4 — correlação com `domain_events` escopada a eventos com `entity_type='sku'`:** verificado contra o banco real quais `event_type` têm essa forma hoje — `stock.depleted`/`stock.replenished` (`entity_id` = `sku_id`, 1.043 e 33 linhas reais respectivamente). `order.cancelled`/`order.returned` têm `entity_type='order'` (seria preciso um join via `order_items` para chegar ao SKU) e os `listing.*` estão catalogados mas NUNCA emitidos (D-058) — ambos ficam de fora desta fatia, não por decisão de escopo arbitrária, mas porque a correlação direta (`entity_id` já é o `sku_id`) é o que existe e tem dado real hoje. Janela de correlação: 3 dias antes até 1 dia depois do `as_of` — não calibrada com dado real, ajustável.
+
+**Decisão 5 — `as_of` é ONTEM, não hoje:** mesmo raciocínio de frescor já usado em `/vendas` — `daily_sku_metrics` do dia corrente ainda está incompleto.
+
+**Impacto:** migration `20260824013329_create_sku_sales_baseline_rpc.sql`. `packages/domain/src/diagnostics/sales-anomaly.ts` (novo módulo, `diagnoseSalesAnomaly` + tipos do contrato). `apps/web/app/diagnostico/page.tsx` (novo) — busca `get_sku_sales_baseline`, roda `diagnoseSalesAnomaly` em duas passadas (uma sem eventos para achar quais SKUs são anomalia, uma segunda só para esses SKUs já com os `domain_events` correlacionados — evita N+1). **"Central de Ações" (persistir o diagnóstico como item acionável) e "Decisões com `baseline_snapshot`" ficam para as próximas fatias da Fase 6** — dependem desta peça existir primeiro, é a ordem natural do checklist da própria fase.
+
 ## Como adicionar nova decisão
 
 Registrar:
