@@ -1,0 +1,25 @@
+-- Realtime para toasts (Fase 7, item 5, docs/NOTIFICATIONS.md secao 4).
+--
+-- Pesquisa oficial confirmada em 2026-08-24 (D-075, docs.supabase.com/guides/
+-- realtime/postgres-changes, verificado ao vivo antes de implementar --
+-- a secao 4 do NOTIFICATIONS.md marcava isso como pendencia explicita, "API
+-- mudou em ciclos recentes, nao sera assumida de memoria"):
+--
+--   * Postgres Changes autoriza CADA evento contra a RLS da tabela de
+--     origem, por assinante -- nao precisa de policy adicional em
+--     `realtime.messages` (isso e' so para Broadcast/Presence, que este
+--     projeto nao usa). `notification_recipients_select_own` (D-073) ja e'
+--     a autorizacao usada aqui, sem mudanca de RLS.
+--   * A tabela precisa estar na publication `supabase_realtime` -- e' o
+--     unico passo de infraestrutura que falta.
+--   * RLS NAO se aplica a DELETE (sem "old row" pra checar) -- irrelevante
+--     aqui, so escutamos INSERT.
+--   * Ate ~3000 assinantes concorrentes, postgres_changes e' a opcao
+--     recomendada pela propria Supabase -- muito acima do "punhado de
+--     usuarios internos" deste produto (docs/NOTIFICATIONS.md secao 4, ja
+--     decidido antes desta sessao).
+--
+-- Filtro por usuario (`user_id=eq.<uid>`) fica do lado do cliente
+-- (apps/web/components/notification-toasts.tsx) -- aqui so habilita a
+-- replicacao da tabela.
+alter publication supabase_realtime add table public.notification_recipients;

@@ -469,7 +469,7 @@ Consumida por `/diagnostico` (novo): busca o baseline de TODOS os SKUs para onte
 
 ### `notifications` / `notification_recipients` / `notification_preferences` — persistência e regra de destinatário (D-073)
 
-**Implementado em 2026-08-24**, migration `20260824190000_create_notifications.sql`, fecha o item 3 da "Próxima sequência recomendada" (`docs/HANDOFF.md`) — persistência e regra de destinatário. Realtime, toasts, Central de Notificações (UI) e a interface de preferências são etapas separadas e posteriores (itens 4/5/6).
+**Implementado em 2026-08-24**, migration `20260824190000_create_notifications.sql`, fecha o item 3 da "Próxima sequência recomendada" (`docs/HANDOFF.md`) — persistência e regra de destinatário. Central de Notificações (D-074, item 4) e Realtime/toasts (D-075, item 5) — abaixo. A interface de preferências (item 6) continua pendente.
 
 ```text
 notifications            organization_id, domain_event_id (unique, fk domain_events)
@@ -492,6 +492,8 @@ notification_preferences user_id, event_type?, ml_account_id?, min_severity, ena
 **Verificação**: `packages/db/src/rls.integration.test.ts`, describe `"notificações (fan-out de domain_events, D-073)"` — regra de destinatário (organizacional, conta com/sem permissão), RLS de leitura/escrita, `notification_preferences` suprimindo por `enabled=false` e por severidade abaixo do mínimo, autogestão de preferência. Não executável nesta máquina (sem Docker) — verificado pela CI (`integration` job).
 
 **`packages/db/src/types.ts` regenerado** contra o Supabase Dev (`supabase gen types typescript --project-id`, sem Docker/`--local` disponível nesta máquina) depois que a migration aplicou lá — diff conferido antes de sobrescrever: só as três tabelas novas, nada mais mudou.
+
+**Realtime habilitado em `notification_recipients` (D-075, 2026-08-24)**, migration `20260824200000_enable_realtime_notification_recipients.sql`: `alter publication supabase_realtime add table public.notification_recipients;` — único passo de infraestrutura necessário. Pesquisa oficial confirmada ao vivo antes de implementar (`docs/NOTIFICATIONS.md` secao 4 marcava isso como pendência explícita): `postgres_changes` autoriza CADA evento contra a RLS da tabela de origem, por assinante — `notification_recipients_select_own` já é a autorização usada, sem policy nova em `realtime.messages` (isso é só para Broadcast/Presence, que este projeto não usa). Sem mudança de schema — não precisou regenerar `types.ts`.
 
 ---
 

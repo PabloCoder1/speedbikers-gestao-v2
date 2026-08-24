@@ -2,7 +2,7 @@
 
 > Dono documental de: regra evento -> notificação, severidade, agrupamento, transporte e preferências.
 > Catálogo de `event_type` em `docs/API.md`. Schema em `docs/DATABASE.md`.
-> Status: **estratégia aprovada. Persistência + regra de destinatário implementadas em 2026-08-24 (D-073)** — `notifications`/`notification_recipients`/`notification_preferences`, migration `20260824190000_create_notifications.sql`. **Central de Notificações (lista + lido/não lido) implementada em 2026-08-24 (D-074)** — `apps/web/app/notificacoes`. Realtime, toasts e a interface de preferências continuam pendentes (`docs/HANDOFF.md`, itens 5/6).
+> Status: **estratégia aprovada. Persistência + regra de destinatário implementadas em 2026-08-24 (D-073)** — `notifications`/`notification_recipients`/`notification_preferences`, migration `20260824190000_create_notifications.sql`. **Central de Notificações (lista + lido/não lido) implementada em 2026-08-24 (D-074)** — `apps/web/app/notificacoes`. **Realtime + toasts implementados em 2026-08-24 (D-075)** — `apps/web/components/notification-toasts.tsx`, migration `20260824200000_enable_realtime_notification_recipients.sql`. A interface de preferências continua pendente (`docs/HANDOFF.md`, item 6).
 
 ---
 
@@ -14,8 +14,8 @@ mudança detectada pelo worker (diff, ledger, sync)
    -> regra de severidade      @sb/domain/events, versionada, gravada na própria linha
    -> regra de destinatário    permissão por conta + preferências     [implementado, D-073]
    -> notifications + notification_recipients                        [implementado, D-073]
-   -> Supabase Realtime                                               [pendente]
-   -> toast (canto inferior direito)                                  [pendente]
+   -> Supabase Realtime                                               [implementado, D-075]
+   -> toast (canto inferior direito)                                  [implementado, D-075]
    -> Central de Notificações (lista + lido/não lido)                 [implementado, D-074]
 ```
 
@@ -53,34 +53,40 @@ A severidade padrão por tipo de evento está no catálogo de `docs/API.md`. A r
 
 ## 3. Agrupamento — requisito, não enfeite
 
-Janela de agrupamento por `(event_type, ml_account_id)`.
+**Implementado em 2026-08-24 (D-075)** — `apps/web/components/notification-toasts.tsx`. Janela de agrupamento por `(event_type, ml_account_id)`, 5 minutos (`WINDOW_MS`, mesmo número deste exemplo).
 
 Trinta alterações de preço da mesma conta em cinco minutos viram **um** toast com contador, não trinta popups.
 
 **Sem agrupamento, o primeiro backfill vira uma avalanche e o usuário desliga a feature no primeiro dia.** É o modo mais provável de a funcionalidade nascer morta.
 
-O toast é **resumo com ação**, exemplo:
+O toast é **resumo com ação**, exemplo real (rótulo de evento + diff, mesma leitura de `before`/`after` da Central de Notificações — `lib/event-format.ts`):
 
 ```text
-OffRacer alterou o preço do SKU 5821 de R$ 399,90 para R$ 379,90.
+Preço do anúncio alterado
+OffRacer — Anúncio MLB123456789
+R$ 399,90 → R$ 379,90
 ```
 
-Com link direto para o produto ou anúncio afetado. O histórico completo fica na Central de Notificações.
+Com link direto pra entidade afetada quando a rota existe hoje (`sku` -> `/skus/[skuId]`; sem link morto pra `listing`/`order`, que ainda não têm tela própria — mesma regra de `docs/HANDOFF.md`, item 4). O histórico completo fica na Central de Notificações — todo toast agrupado (`count > 1`) linka pra lá em vez de uma entidade específica, já que representa vários eventos.
+
+O contador é da JANELA inteira (5 min desde o primeiro evento do grupo), não só do que está visível: o toast individual some sozinho 8s depois do último evento (`DISMISS_MS`), mas reaparece atualizado se outro evento do mesmo grupo chegar depois — o contador nunca "esquece" um evento só porque o card sumiu da tela.
+
+**Fora de escopo desta primeira versão, registrado para quando houver necessidade real**: dismiss diferenciado por severidade (crítico não expirar sozinho, por exemplo) — não implementado por não ser pedido explícito nem ter comportamento correto óbvio sem medir uso real primeiro.
 
 ---
 
 ## 4. Transporte
 
-**Supabase Realtime**, começando com `postgres_changes` filtrado por `user_id` sobre `notification_recipients`.
+**Implementado em 2026-08-24 (D-075)** — **Supabase Realtime**, `postgres_changes` filtrado por `user_id` sobre `notification_recipients` (migration `20260824200000_enable_realtime_notification_recipients.sql`).
 
 | Opção | Vantagem | Desvantagem |
 |---|---|---|
 | `postgres_changes` filtrado por usuário **(escolhida)** | Respeita RLS nativamente, zero infraestrutura nova, funciona no primeiro dia | Escala pior com muitos assinantes — irrelevante com um punhado de usuários internos |
 | `broadcast` disparado por trigger | Mais eficiente em volume alto | Exige gerenciar canal e autorização manualmente |
 
-**Migrar para `broadcast` somente se medir necessidade.**
+**Migrar para `broadcast` somente se medir necessidade** — a documentação oficial da Supabase recomenda `broadcast` só acima de ~3000 assinantes concorrentes na mesma mudança, muito acima da realidade deste produto.
 
-> **Pendência:** confirmar a recomendação atual da Supabase para Realtime antes de implementar. A API mudou em ciclos recentes e não será assumida de memória.
+**Pendência resolvida (D-075)**: pesquisa confirmada ao vivo contra `docs.supabase.com/guides/realtime/postgres-changes` antes de implementar, não assumida de memória. `postgres_changes` autoriza CADA evento contra a RLS da tabela de origem, por assinante — a mesma `notification_recipients_select_own` (D-073) já usada na Central, sem policy nova em `realtime.messages` (isso é só pra Broadcast/Presence, que este projeto não usa). Único passo de infraestrutura: a tabela entrar na publication `supabase_realtime`.
 
 ---
 

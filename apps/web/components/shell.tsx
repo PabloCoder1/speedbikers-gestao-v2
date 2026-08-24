@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import { createClient } from "../lib/supabase/server";
 import { CommandPalette } from "./command-palette";
+import { NotificationToasts } from "./notification-toasts";
 
 /**
  * Moldura das telas autenticadas: cabeçalho, navegação e identificação.
@@ -260,6 +261,8 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
       </header>
 
       <main style={{ padding: "var(--sb-space-4)", flex: 1 }}>{children}</main>
+
+      <NotificationToasts userId={auth.user?.id ?? null} />
     </div>
   );
 }
