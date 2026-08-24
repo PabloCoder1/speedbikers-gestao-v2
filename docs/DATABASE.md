@@ -36,7 +36,7 @@ sales           orders · order_items
 inventory       inventory_balances · fulfillment_stock_snapshots
 documents       documents · document_items
 purchasing      purchase_orders · purchase_order_items (implementadas 2026-08-22)
-actions         actions · action_decisions · action_outcomes
+actions         actions (implementada 2026-08-24, D-064) · action_decisions · action_outcomes (pendentes)
 notifications   notifications · notification_recipients · notification_preferences
 feedback        feature_suggestions
 meta            metric_definitions
@@ -385,18 +385,27 @@ Uma tabela, sem tabelas de snapshot separadas (D-016). O catálogo de `event_typ
 
 `dedup_key` é determinístico por natureza do evento (ex.: `order.cancelled:{id}:{status}`), não por timestamp — a mesma transição detectada duas vezes (sobreposição de janela de reconciliação, corrida entre execuções) produz a mesma chave, e o `UNIQUE` absorve o reenvio sem duplicar.
 
-### `actions` — Central de Ações
+### `actions` — Central de Ações (D-064)
 
-Problema e oportunidade são o mesmo objeto com sinal invertido; separar duplicaria toda a UI.
+**Implementado em 2026-08-24**, migration `20260824014953_create_actions.sql`. Problema e oportunidade são o mesmo objeto com sinal invertido; separar duplicaria toda a UI.
 
 ```text
 kind, severity, confidence, estimated_impact_brl,
 scope (ml_account_id, sku_id, mlb_id),
 evidence jsonb, recommendation,
-assignee_id, status, created_by (system | user)
+assignee_id, status, created_by (system | user),
+dedup_key unique (organization_id, dedup_key)
 ```
 
-`action_decisions` guarda `baseline_snapshot jsonb` **capturado no momento da decisão** — sem ele a medição posterior é impossível. `action_outcomes` é preenchida por job agendado em 7, 15 e 30 dias.
+RLS só permite SELECT (`is_member_of`) — nem `authenticated` grava direto (`revoke all ... from anon, authenticated`, mesmo achado de GRANT do D-062). Duas formas de escrita: o worker (`service_role`, sem RPC — mesmo padrão de `recordDomainEvents`) grava o diagnóstico detectado; `update_action_status(p_id, p_status, p_assignee_id)` (`security definer`, refaz `is_member_of` internamente) é o único caminho para um humano mudar status/assignee pelo navegador. `p_assignee_id` omitido mantém o responsável atual — não existe "desatribuir" nesta fatia.
+
+`get_sku_average_prices(organization_id, sku_ids[], date_from, date_to)` (`security invoker`) é o preço médio por SKU usado para estimar `estimated_impact_brl = |unitsDelta| x preço médio` — só busca os SKUs já confirmados como anomalia (evita varrer o catálogo inteiro), janela de 30 dias terminando em `as_of`. Severidade espelha confiança nesta primeira fatia (D-064, decisão 1) — sem base evidencial ainda para um limiar por valor em R$.
+
+`ON CONFLICT (organization_id, dedup_key) DO UPDATE` reprocessa o mesmo dia sem duplicar; `status`/`assignee_id` ficam de fora do payload do upsert, então reprocessar nunca reabre nem desatribui uma ação que um humano já moveu.
+
+Job `diagnostics.detect-sales-anomalies` (`apps/worker/src/handlers/detect-sales-anomaly-actions.ts`), por ORGANIZAÇÃO (SKU é organizacional, D-006), disparado diariamente via `/internal/schedule/sales-anomaly-actions`. Tela `/acoes` (`apps/web/app/acoes/`): só itens abertos (`novo`/`em_andamento`), ordenados por impacto financeiro — nunca por contagem (`docs/ARCHITECTURE.md` secao 16).
+
+`action_decisions`/`action_outcomes` (`baseline_snapshot jsonb` **capturado no momento da decisão**, preenchida por job agendado em 7/15/30 dias) ficam para a próxima fatia da Fase 6 — dependem de `actions` existir primeiro, que é o que esta migration entrega.
 
 ### `search_entities(organization_id, query)` — Busca Universal / Command Palette (D-060)
 
@@ -433,7 +442,7 @@ Causas candidatas vêm de `domain_events` com `entity_type = 'sku'` (`entity_id 
 
 Consumida por `/diagnostico` (novo): busca o baseline de TODOS os SKUs para ontem (`as_of`, mesmo raciocínio de frescor de `/vendas`), roda `diagnoseSalesAnomaly` em duas passadas — uma sem eventos para achar quais SKUs são anomalia, uma segunda só para esses (já com os eventos correlacionados) — evita N+1 de consulta a `domain_events`.
 
-**"Central de Ações" (persistir como item acionável) e "Decisões com `baseline_snapshot`"** — os dois itens seguintes do checklist da Fase 6 — dependem desta peça existir primeiro; ficam para as próximas fatias.
+**"Central de Ações" (persistir como item acionável)** — ver `actions` (D-064), acima. **"Decisões com `baseline_snapshot`"** fica para a próxima fatia da Fase 6.
 
 ---
 

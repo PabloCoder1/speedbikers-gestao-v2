@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { diagnoseSalesAnomaly } from "./sales-anomaly.js";
+import { diagnoseSalesAnomaly, estimateImpactBrl } from "./sales-anomaly.js";
 import type { CorrelatedEvent, SalesBaselineSignal } from "./sales-anomaly.js";
 
 const ORG_ID = "11111111-0000-4000-8000-000000000001";
@@ -152,5 +152,42 @@ describe("diagnoseSalesAnomaly", () => {
     expect(result?.evidencias[0]?.descricao).toContain("SKU-XYZ");
     expect(result?.evidencias[0]?.descricao).toContain("0 unidade");
     expect(result?.evidencias[0]?.descricao).toContain("3.0");
+  });
+
+  it("unitsDelta é currentUnitsSold - baselineMean, com sinal", () => {
+    const queda = diagnoseSalesAnomaly(
+      ORG_ID,
+      signal({ currentUnitsSold: 0, baselineMean: 3, baselineStddev: 0.5 }),
+      AS_OF,
+      [],
+    );
+    const alta = diagnoseSalesAnomaly(
+      ORG_ID,
+      signal({ currentUnitsSold: 10, baselineMean: 2, baselineStddev: 1 }),
+      AS_OF,
+      [],
+    );
+
+    expect(queda?.unitsDelta).toBe(-3);
+    expect(alta?.unitsDelta).toBe(8);
+  });
+});
+
+describe("estimateImpactBrl", () => {
+  it("multiplica o valor absoluto do delta pelo preço médio", () => {
+    expect(estimateImpactBrl(-3, 50)).toBe(150);
+    expect(estimateImpactBrl(8, 12.5)).toBe(100);
+  });
+
+  it("arredonda para 2 casas decimais", () => {
+    expect(estimateImpactBrl(-1, 19.999)).toBe(20);
+  });
+
+  it("preço médio nulo (sem venda com preço no período): impacto desconhecido, não zero", () => {
+    expect(estimateImpactBrl(-5, null)).toBeNull();
+  });
+
+  it("delta zero com preço conhecido: impacto zero (não nulo)", () => {
+    expect(estimateImpactBrl(0, 30)).toBe(0);
   });
 });

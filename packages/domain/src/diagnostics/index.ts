@@ -1,4 +1,4 @@
-export { diagnoseSalesAnomaly } from "./sales-anomaly.js";
+export { diagnoseSalesAnomaly, estimateImpactBrl } from "./sales-anomaly.js";
 export type {
   AnomalyDirection,
   CorrelatedEvent,

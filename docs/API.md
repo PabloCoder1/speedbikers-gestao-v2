@@ -97,6 +97,7 @@ O upload da planilha vai do navegador **direto** para a `api`, sem passar pela V
 | `/internal/schedule/ledger-integrity` | Cloud Scheduler | Conferência ledger × projeção (D-056) — **implementado em 2026-08-23**, diário, por ORGANIZAÇÃO |
 | `/internal/schedule/listings` | Cloud Scheduler | Sincronização de listings/anúncios (D-058) — **implementado em 2026-08-23**, a cada 6h, por CONTA |
 | `/internal/schedule/listing-visits` | Cloud Scheduler | Sincronização de visitas por anúncio (D-032/D-059) — **implementado em 2026-08-23**, DIÁRIO (não 6h — visita não é dado operacional urgente), por CONTA |
+| `/internal/schedule/sales-anomaly-actions` | Cloud Scheduler | Detecção de anomalia de venda, Central de Ações (D-064) — **implementado em 2026-08-24**, DIÁRIO, por ORGANIZAÇÃO |
 
 Sem segredo compartilhado (D-024).
 
@@ -107,6 +108,8 @@ Sem segredo compartilhado (D-024).
 **`POST /internal/schedule/listings` — implementado em 2026-08-23** (D-058, `apps/api/src/listings-schedule.ts`). Mesmo formato de `/internal/schedule/fulfillment`: lista `ml_accounts` `CONNECTED` e enfileira `sync.listings.snapshot` para cada uma, dedupe por `listings:{slug}:{hora-cheia-ISO}`, cadência a cada 6h.
 
 **`POST /internal/schedule/listing-visits` — implementado em 2026-08-23** (D-032/D-059, `apps/api/src/listing-visits-schedule.ts`). Mesmo formato de `/internal/schedule/listings`, mas dedupe por `listing-visits:{slug}:{dia-de-negócio}` (não hora cheia) — cadência DIÁRIA: visita não é dado operacional urgente como estoque/preço, e `fetchListingVisits` já busca `last=3` dias a cada rodada, absorvendo uma execução perdida sem esperar o dia seguinte.
+
+**`POST /internal/schedule/sales-anomaly-actions` — implementado em 2026-08-24** (D-064, `apps/api/src/sales-anomaly-actions-schedule.ts`). Mesmo formato de `/internal/schedule/ledger-integrity`: lista `organizations` e enfileira `diagnostics.detect-sales-anomalies` para cada uma, dedupe por `detect-sales-anomalies:{organization_id}:{dia-de-negócio}` — por ORGANIZAÇÃO (SKU é organizacional, D-006), não por conta ML.
 
 ---
 
@@ -126,6 +129,7 @@ Payloads tipados em `@sb/contracts/jobs`. Todo handler é **idempotente**.
 | `backfill.orders` | `backfill` | `backfill-orders:{conta}:{checkpoint}` — **implementado em 2026-08-21**, `{conta}` é o slug e `{checkpoint}` é `start` no primeiro pedaço ou o `to` ISO do pedaço anterior |
 | `maintenance.reconcile-balances` | `maintenance` | `reconcile-balances:{organization_id}:{data-negocio}` — **implementado em 2026-08-22**, por organização (não por conta ML). Payload `{ organizationId }`. Compara `compute_erp_snapshot_balances` contra `inventory_balances`, gera `AJUSTE_RECONCILIACAO` + `stock.balance.diverged` por divergência (D-029) |
 | `maintenance.verify-ledger-integrity` | `maintenance` | `verify-ledger-integrity:{organization_id}:{data-negocio}` — **implementado em 2026-08-23**, por organização. Payload `{ organizationId }`. Compara `compute_inventory_balances_from_ledger` (recomputo do zero) contra `inventory_balances` (projeção mantida por trigger); só emite `stock.balance.diverged`, NUNCA grava `stock_movements` — divergência aqui é bug, não drift de processo (D-056) |
+| `diagnostics.detect-sales-anomalies` | `maintenance` | `detect-sales-anomalies:{organization_id}:{data-negocio}` — **implementado em 2026-08-24** (D-064), por organização. Payload `{ organizationId }`. Roda `get_sku_sales_baseline` + `diagnoseSalesAnomaly` em duas passadas (mesmo padrão de `/diagnostico`), busca `get_sku_average_prices` só para os SKUs em anomalia, e grava/atualiza em `actions` (`ON CONFLICT (organization_id, dedup_key) DO UPDATE`, `dedup_key = "sales_anomaly:{sku_id}:{as_of}"`) direto via `service_role`, sem RPC |
 | `actions.measure-outcome` | `maintenance` | `outcome:{decision_id}:{offset}` |
 | `erp.import.parse` | `maintenance` | `erp-parse:{batch_id}` |
 | `erp.import.apply` | `maintenance` | `erp-apply:{batch_id}` |

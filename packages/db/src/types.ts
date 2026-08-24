@@ -14,6 +14,88 @@ export type Database = {
   }
   public: {
     Tables: {
+      actions: {
+        Row: {
+          assignee_id: string | null
+          confidence: string
+          created_at: string
+          created_by: string
+          dedup_key: string
+          estimated_impact_brl: number | null
+          evidence: Json
+          id: string
+          kind: string
+          ml_account_id: string | null
+          mlb_id: string | null
+          organization_id: string
+          recommendation: string
+          severity: string
+          sku_id: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          assignee_id?: string | null
+          confidence: string
+          created_at?: string
+          created_by: string
+          dedup_key: string
+          estimated_impact_brl?: number | null
+          evidence: Json
+          id?: string
+          kind: string
+          ml_account_id?: string | null
+          mlb_id?: string | null
+          organization_id: string
+          recommendation: string
+          severity: string
+          sku_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          assignee_id?: string | null
+          confidence?: string
+          created_at?: string
+          created_by?: string
+          dedup_key?: string
+          estimated_impact_brl?: number | null
+          evidence?: Json
+          id?: string
+          kind?: string
+          ml_account_id?: string | null
+          mlb_id?: string | null
+          organization_id?: string
+          recommendation?: string
+          severity?: string
+          sku_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "actions_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "actions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "actions_sku_id_fkey"
+            columns: ["sku_id"]
+            isOneToOne: false
+            referencedRelation: "skus"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       daily_account_metrics: {
         Row: {
           average_selling_price: number | null
@@ -2581,6 +2663,18 @@ export type Database = {
           title: string
         }[]
       }
+      get_sku_average_prices: {
+        Args: {
+          p_date_from: string
+          p_date_to: string
+          p_organization_id: string
+          p_sku_ids: string[]
+        }
+        Returns: {
+          average_price: number
+          sku_id: string
+        }[]
+      }
       get_sku_dashboard: {
         Args: {
           p_date_from: string
@@ -2766,6 +2860,34 @@ export type Database = {
           label: string
           sublabel: string
         }[]
+      }
+      update_action_status: {
+        Args: { p_assignee_id?: string; p_id: string; p_status: string }
+        Returns: {
+          assignee_id: string | null
+          confidence: string
+          created_at: string
+          created_by: string
+          dedup_key: string
+          estimated_impact_brl: number | null
+          evidence: Json
+          id: string
+          kind: string
+          ml_account_id: string | null
+          mlb_id: string | null
+          organization_id: string
+          recommendation: string
+          severity: string
+          sku_id: string | null
+          status: string
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "actions"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       update_purchase_order_draft: {
         Args: {

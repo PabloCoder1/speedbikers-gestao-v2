@@ -124,5 +124,16 @@ upsert_job \
   "${API_URL}/internal/schedule/listing-visits" \
   "Sincronizacao de visitas por anuncio, por conta Mercado Livre CONNECTED"
 
+# Deteccao de anomalia de venda -- Central de Acoes (Fase 6, D-064). Cadencia
+# DIARIA, depois dos jobs acima: o diagnostico usa daily_sku_metrics/
+# domain_events de ONTEM, que ja estao completos a qualquer hora do dia
+# seguinte -- 8h so evita competir por recurso com reconcile-balances (6h) e
+# verify-ledger-integrity (6h30). Por ORGANIZACAO (D-006).
+upsert_job \
+  "v3-detect-sales-anomalies" \
+  "0 8 * * *" \
+  "${API_URL}/internal/schedule/sales-anomaly-actions" \
+  "Deteccao de anomalia de venda (baseline/desvio) e gravacao em actions, por organizacao"
+
 step "Concluído"
 gc scheduler jobs list --location "${REGION}" --format="table(name.basename(),schedule,state)"

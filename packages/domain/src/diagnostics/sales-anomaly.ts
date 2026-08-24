@@ -56,6 +56,8 @@ export interface SalesAnomalyDiagnosis {
   readonly direcao: AnomalyDirection;
   readonly confianca: DiagnosisConfidence;
   readonly zScore: number;
+  /** `currentUnitsSold - baselineMean` — negativo em queda, positivo em alta. Insumo de `estimateImpactBrl`. */
+  readonly unitsDelta: number;
   readonly evidencias: readonly DiagnosisEvidence[];
   readonly causasCandidatas: readonly DiagnosisCandidateCause[];
   readonly proximosPassos: readonly string[];
@@ -136,8 +138,24 @@ export function diagnoseSalesAnomaly(
     direcao,
     confianca,
     zScore: Math.round(zScore * 100) / 100,
+    unitsDelta: signal.currentUnitsSold - signal.baselineMean,
     evidencias,
     causasCandidatas,
     proximosPassos,
   };
+}
+
+/**
+ * Impacto financeiro estimado de um diagnóstico (Central de Ações, D-064):
+ * `|unitsDelta| * preço médio`. Preço vem de `get_sku_average_prices`,
+ * buscado só para os SKUs já confirmados como anomalia (evita N+1 no
+ * catálogo inteiro) — por isso é uma função separada de
+ * `diagnoseSalesAnomaly`, chamada depois, não durante.
+ *
+ * `null` quando não há preço médio no período (SKU sem venda registrada
+ * com preço) — impacto desconhecido é diferente de impacto zero.
+ */
+export function estimateImpactBrl(unitsDelta: number, averagePrice: number | null): number | null {
+  if (averagePrice === null) return null;
+  return Math.round(Math.abs(unitsDelta) * averagePrice * 100) / 100;
 }

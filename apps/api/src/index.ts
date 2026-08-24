@@ -70,6 +70,7 @@ const app = createApp({
   ledgerIntegritySchedule: { db, enqueuer, logger },
   listingsSchedule: { db, enqueuer, logger },
   listingVisitsSchedule: { db, enqueuer, logger },
+  salesAnomalyActionsSchedule: { db, enqueuer, logger },
 });
 
 serve({ fetch: app.fetch, port: env.PORT }, (info) => {

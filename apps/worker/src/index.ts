@@ -8,6 +8,7 @@ import { loadEnv } from "./env.js";
 import { createEnqueuer } from "./enqueue.js";
 import { createAnalyticsRecomputeHandler } from "./handlers/analytics-recompute.js";
 import { createBackfillOrdersHandler } from "./handlers/backfill-orders.js";
+import { createDetectSalesAnomalyActionsHandler } from "./handlers/detect-sales-anomaly-actions.js";
 import { createErpImportApplyHandler } from "./handlers/erp-import-apply.js";
 import { createErpImportParseHandler } from "./handlers/erp-import-parse.js";
 import { createNfeImportApplyHandler } from "./handlers/nfe-import-apply.js";
@@ -84,6 +85,7 @@ const app = createWorkerApp({
     "sync.webhook.received": createWebhookReceivedHandler({ db, mercadoLivre, oauth, encryptionKey }),
     "maintenance.reconcile-balances": createReconcileBalancesHandler({ db }),
     "maintenance.verify-ledger-integrity": createVerifyLedgerIntegrityHandler({ db }),
+    "diagnostics.detect-sales-anomalies": createDetectSalesAnomalyActionsHandler({ db }),
     ...nfeHandlers,
   }),
 });

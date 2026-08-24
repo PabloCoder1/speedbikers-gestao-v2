@@ -3461,3 +3461,173 @@ describe("get_sku_sales_baseline (Fase 6, Diagnóstico)", () => {
     expect(rows).toHaveLength(0);
   });
 });
+
+describe("actions / update_action_status / get_sku_average_prices (Fase 6, Central de Ações, D-064)", () => {
+  const CONTA_ACOES = "ddddaaaa-0000-4000-8000-0000000000bb";
+
+  let skuPrecoId = "";
+  let skuSemVendaId = "";
+  let actionId = "";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$2,'Conta de ações','acoestest-conta','PENDING')
+       on conflict do nothing`,
+      [CONTA_ACOES, ORG_SB],
+    );
+
+    const skus = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind)
+       values ($1,'ACOESTEST-com-preco','PRODUTO'), ($1,'ACOESTEST-sem-venda','PRODUTO')
+       returning id`,
+      [ORG_SB],
+    );
+    skuPrecoId = skus.rows[0]?.id ?? "";
+    skuSemVendaId = skus.rows[1]?.id ?? "";
+
+    // Duas datas DENTRO da janela: preço médio esperado (100/2 + 60/1) / 2 = 55.
+    await client.query(
+      `insert into public.daily_sku_metrics
+         (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values
+         ($1,$2,$3,'2026-06-01',2,100,1,1),
+         ($1,$2,$3,'2026-06-03',1,60,1,1)`,
+      [ORG_SB, CONTA_ACOES, skuPrecoId],
+    );
+    // Fora da janela — nunca deve entrar na média.
+    await client.query(
+      `insert into public.daily_sku_metrics
+         (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values ($1,$2,$3,'2026-05-01',1,999,1,1)`,
+      [ORG_SB, CONTA_ACOES, skuPrecoId],
+    );
+    // units_sold=0 -> average_selling_price gerado é NULL (nullif) — sku não deve aparecer no resultado.
+    await client.query(
+      `insert into public.daily_sku_metrics
+         (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values ($1,$2,$3,'2026-06-02',0,0,0,0)`,
+      [ORG_SB, CONTA_ACOES, skuSemVendaId],
+    );
+
+    const action = await client.query<{ id: string }>(
+      `insert into public.actions
+         (organization_id, kind, severity, confidence, estimated_impact_brl, sku_id, evidence, recommendation, created_by, dedup_key)
+       values ($1,'venda_anomala','alta','alta',150,$2,'{}'::jsonb,'Revisar.','system','acoestest:sku-preco:2026-06-05')
+       returning id`,
+      [ORG_SB, skuPrecoId],
+    );
+    actionId = action.rows[0]?.id ?? "";
+  });
+
+  // Sem afterAll de limpeza: mesmo raciocínio do describe de get_sku_sales_baseline,
+  // acima — e `actions.assignee_id`/`actions.organization_id` têm `on delete cascade`
+  // (deliberado, ver migration), então nem a limpeza global de auth.users fica
+  // bloqueada por este fixture.
+
+  describe("actions", () => {
+    it("membro da organização vê as próprias ações", async () => {
+      const rows = await asUser<{ id: string }>(ADMIN_SB, `select id from public.actions where id = '${actionId}'`);
+
+      expect(rows).toHaveLength(1);
+    });
+
+    it("membro de outra organização não vê", async () => {
+      const rows = await asUser<{ id: string }>(
+        DE_OUTRA_ORG,
+        `select id from public.actions where id = '${actionId}'`,
+      );
+
+      expect(rows).toHaveLength(0);
+    });
+
+    it("anon não vê nada", async () => {
+      const rows = await asAnon<{ id: string }>(`select id from public.actions where id = '${actionId}'`);
+
+      expect(rows).toHaveLength(0);
+    });
+
+    it("authenticated não escreve direto — só via update_action_status", async () => {
+      await expect(
+        asUser(ADMIN_SB, `update public.actions set status = 'resolvido' where id = '${actionId}'`),
+      ).rejects.toThrow(/permission denied/i);
+    });
+  });
+
+  describe("update_action_status", () => {
+    it("membro assume a ação: status e assignee mudam e persistem", async () => {
+      const rows = await asUserPersist<{ status: string; assignee_id: string }>(
+        ADMIN_SB,
+        `select * from public.update_action_status('${actionId}','em_andamento','${ADMIN_SB}')`,
+      );
+
+      expect(rows[0]?.status).toBe("em_andamento");
+      expect(rows[0]?.assignee_id).toBe(ADMIN_SB);
+
+      const persisted = await asUser<{ status: string }>(
+        ADMIN_SB,
+        `select status from public.actions where id = '${actionId}'`,
+      );
+
+      expect(persisted[0]?.status).toBe("em_andamento");
+    });
+
+    it("assignee omitido mantém o responsável já atribuído", async () => {
+      const rows = await asUserPersist<{ status: string; assignee_id: string }>(
+        ADMIN_SB,
+        `select * from public.update_action_status('${actionId}','resolvido')`,
+      );
+
+      expect(rows[0]?.status).toBe("resolvido");
+      expect(rows[0]?.assignee_id).toBe(ADMIN_SB);
+    });
+
+    it("membro de outra organização não pode atualizar", async () => {
+      await expect(
+        asUser(DE_OUTRA_ORG, `select * from public.update_action_status('${actionId}','descartado')`),
+      ).rejects.toThrow(/sem permissao/i);
+    });
+
+    it("status inválido é rejeitado", async () => {
+      await expect(
+        asUser(ADMIN_SB, `select * from public.update_action_status('${actionId}','lixo')`),
+      ).rejects.toThrow(/status invalido/i);
+    });
+
+    it("anon não executa", async () => {
+      await expect(
+        asAnon(`select * from public.update_action_status('${actionId}','resolvido')`),
+      ).rejects.toThrow(/permission denied/i);
+    });
+  });
+
+  describe("get_sku_average_prices", () => {
+    it("calcula a média por SKU dentro da janela — ignora datas fora e dias sem venda", async () => {
+      const rows = await asUser<{ sku_id: string; average_price: string }>(
+        ADMIN_SB,
+        `select * from public.get_sku_average_prices('${ORG_SB}', array['${skuPrecoId}','${skuSemVendaId}']::uuid[], '2026-06-01', '2026-06-05')`,
+      );
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.sku_id).toBe(skuPrecoId);
+      expect(Number(rows[0]?.average_price)).toBe(55);
+    });
+
+    it("anon não executa", async () => {
+      await expect(
+        asAnon(
+          `select * from public.get_sku_average_prices('${ORG_SB}', array['${skuPrecoId}']::uuid[], '2026-06-01', '2026-06-05')`,
+        ),
+      ).rejects.toThrow(/permission denied/i);
+    });
+
+    it("usuário de outra organização não vê o preço desta organização", async () => {
+      const rows = await asUser<{ sku_id: string }>(
+        DE_OUTRA_ORG,
+        `select * from public.get_sku_average_prices('${ORG_SB}', array['${skuPrecoId}']::uuid[], '2026-06-01', '2026-06-05')`,
+      );
+
+      expect(rows).toHaveLength(0);
+    });
+  });
+});

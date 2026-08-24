@@ -26,6 +26,8 @@ import { confirmNfeApply, receiveNfeUpload } from "./nfe-import.js";
 import type { OidcVerifier } from "./oidc.js";
 import type { ReconcileDeps } from "./reconcile.js";
 import { triggerOrdersReconciliation } from "./reconcile.js";
+import type { SalesAnomalyActionsScheduleDeps } from "./sales-anomaly-actions-schedule.js";
+import { triggerSalesAnomalyActionsDetection } from "./sales-anomaly-actions-schedule.js";
 import type { WebhookDeps } from "./webhook.js";
 import { receiveWebhook } from "./webhook.js";
 
@@ -70,6 +72,7 @@ export interface AppDependencies {
   ledgerIntegritySchedule?: LedgerIntegrityScheduleDeps;
   listingsSchedule?: ListingsScheduleDeps;
   listingVisitsSchedule?: ListingVisitsScheduleDeps;
+  salesAnomalyActionsSchedule?: SalesAnomalyActionsScheduleDeps;
 }
 
 /**
@@ -380,6 +383,23 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     const outcome = await triggerListingVisitsSnapshot(listingVisitsSchedule);
+
+    return context.json(outcome);
+  });
+
+  // --------------------------------------------------------------------
+  // Detecção de anomalia de venda (Fase 6, D-064) — mesmo formato de
+  // /internal/schedule/ledger-integrity acima, por ORGANIZAÇÃO. Cadência
+  // diária: `infra/cloud-scheduler.sh`.
+  // --------------------------------------------------------------------
+  app.post("/internal/schedule/sales-anomaly-actions", async (context) => {
+    const salesAnomalyActionsSchedule = dependencies.salesAnomalyActionsSchedule;
+
+    if (salesAnomalyActionsSchedule === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const outcome = await triggerSalesAnomalyActionsDetection(salesAnomalyActionsSchedule);
 
     return context.json(outcome);
   });
