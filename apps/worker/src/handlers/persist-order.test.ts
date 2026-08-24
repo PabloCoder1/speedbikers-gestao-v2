@@ -85,6 +85,16 @@ interface FakeDbOptions {
   stockMovementError?: boolean;
   /** Movimentos `VENDA_ML` já gravados para a order — o que `loadSaleMovements` devolve. */
   existingSaleMovements?: { sku_id: string; qty_delta: number; idempotency_key: string }[];
+  /** Simula falha (não conflito) ao ler o status anterior da order. */
+  previousStatusError?: boolean;
+  /** Simula falha ao ler stock_movements existentes (loadSaleMovements). */
+  saleMovementsError?: boolean;
+  /** Simula falha ao resolver sku_listing_links (resolveSku). */
+  linkLookupError?: boolean;
+  /** Simula falha ao ler o kind do SKU (loadSkuKindAndComponents, primeira query). */
+  skuKindError?: boolean;
+  /** Simula falha ao ler os componentes do kit (loadSkuKindAndComponents, segunda query). */
+  componentsError?: boolean;
 }
 
 function fakeDb(options: FakeDbOptions = {}): {
@@ -138,17 +148,24 @@ function fakeDb(options: FakeDbOptions = {}): {
       // outro em silêncio.
       select: () => {
         if (table === "orders") {
-          return filterChain(
-            {},
-            () => ({
+          return filterChain({}, () => {
+            if (options.previousStatusError === true) {
+              return { data: null, error: { code: "42P01", message: "boom" } };
+            }
+
+            return {
               data: "previousStatus" in options ? { status: options.previousStatus } : null,
               error: null,
-            }),
-          );
+            };
+          });
         }
 
         if (table === "skus") {
           return filterChain({}, (filters) => {
+            if (options.skuKindError === true) {
+              return { data: null, error: { code: "42P01", message: "boom" } };
+            }
+
             const skuId = filters.id as string;
 
             return { data: { kind: options.skuKindById?.(skuId) ?? "PRODUTO" }, error: null };
@@ -157,6 +174,10 @@ function fakeDb(options: FakeDbOptions = {}): {
 
         if (table === "sku_components") {
           return filterChain({}, (filters) => {
+            if (options.componentsError === true) {
+              return { data: null, error: { code: "42P01", message: "boom" } };
+            }
+
             const kitSkuId = filters.kit_sku_id as string;
 
             return { data: options.componentsByKitId?.(kitSkuId) ?? [], error: null };
@@ -164,10 +185,20 @@ function fakeDb(options: FakeDbOptions = {}): {
         }
 
         if (table === "stock_movements") {
-          return filterChain({}, () => ({ data: options.existingSaleMovements ?? [], error: null }));
+          return filterChain({}, () => {
+            if (options.saleMovementsError === true) {
+              return { data: null, error: { code: "42P01", message: "boom" } };
+            }
+
+            return { data: options.existingSaleMovements ?? [], error: null };
+          });
         }
 
         return filterChain({}, (filters) => {
+          if (options.linkLookupError === true) {
+            return { data: null, error: { code: "42P01", message: "boom" } };
+          }
+
           const itemId = filters.item_id as string;
           const variationId = (filters.variation_id as string | null | undefined) ?? null;
           const link = options.linkForItem?.(itemId, variationId) ?? null;
@@ -618,6 +649,43 @@ describe("persistOrder", () => {
       await expect(run(db, order, lines)).resolves.toBeUndefined();
       expect(lines.join()).toContain("stock_movement_not_recorded");
       expect(upserted.find((entry) => entry.table === "orders")).toBeDefined();
+    });
+  });
+
+  describe("falha de LEITURA não é engolida em silêncio — sempre rejeita, nunca segue com dado incompleto", () => {
+    it("falha ao ler o status anterior da order rejeita, em vez de tratar como order nova", async () => {
+      const { db } = fakeDb({ previousStatusError: true });
+
+      await expect(run(db, BASE_ORDER)).rejects.toThrow(/status anterior/);
+    });
+
+    it("falha ao ler stock_movements existentes numa reversão rejeita, em vez de reverter zero movimentos", async () => {
+      const { db } = fakeDb({ saleMovementsError: true });
+      const order: ParsedOrder = { ...BASE_ORDER, status: "cancelled" };
+
+      await expect(run(db, order)).rejects.toThrow(/stock_movements/);
+    });
+
+    it("falha ao resolver sku_listing_links rejeita, em vez de gravar o item sem SKU (puparia a dedução)", async () => {
+      const { db } = fakeDb({ linkLookupError: true });
+
+      await expect(run(db, BASE_ORDER)).rejects.toThrow(/sku_listing_link/);
+    });
+
+    it("falha ao ler o kind do SKU rejeita, em vez de tratar um KIT real como PRODUTO sem componentes", async () => {
+      const { db } = fakeDb({ linkForItem: () => ({ id: "link-1", sku_id: "sku-1" }), skuKindError: true });
+
+      await expect(run(db, BASE_ORDER)).rejects.toThrow(/kind do sku/);
+    });
+
+    it("falha ao ler os componentes de um KIT rejeita, em vez de deduzir sem componente nenhum", async () => {
+      const { db } = fakeDb({
+        linkForItem: () => ({ id: "link-kit", sku_id: "sku-kit" }),
+        skuKindById: () => "KIT",
+        componentsError: true,
+      });
+
+      await expect(run(db, BASE_ORDER)).rejects.toThrow(/componentes do kit/);
     });
   });
 });

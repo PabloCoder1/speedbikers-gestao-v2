@@ -47,7 +47,13 @@ async function loadSaleMovements(
     .eq("source_id", String(orderId))
     .eq("movement_type", "VENDA_ML");
 
-  return (result.data ?? []).map((row) => ({
+  if (result.error !== null) {
+    // Não tratar como "nenhum movimento": a devolução física reverteria
+    // zero, o estoque devolvido nunca voltaria pro saldo.
+    throw new Error(`falha ao ler stock_movements da order ${String(orderId)}: ${result.error.message}`);
+  }
+
+  return result.data.map((row) => ({
     skuId: row.sku_id,
     qtyDelta: row.qty_delta,
     idempotencyKey: row.idempotency_key,
@@ -66,6 +72,16 @@ async function loadOrderItemPosition(
   const filtered = variationId === null ? query.is("variation_id", null) : query.eq("variation_id", variationId);
 
   const result = await filtered.maybeSingle();
+
+  if (result.error !== null) {
+    // Não tratar como "item não encontrado" (que vira `continue`, silencioso
+    // por natureza): uma devolução física real ficaria sem reversão de
+    // estoque por causa de uma falha transitória, indistinguível de "não
+    // achou o item".
+    throw new Error(
+      `falha ao ler order_items (order ${String(orderId)}, item ${itemId}): ${result.error.message}`,
+    );
+  }
 
   return result.data?.position ?? null;
 }

@@ -60,6 +60,11 @@ export async function persistOrder(
   // nova para o V3) vira `null` — `detectOrderStatusEvents` trata os dois
   // casos.
   const existing = await db.from("orders").select("status").eq("id", order.id).maybeSingle();
+
+  if (existing.error !== null) {
+    throw new Error(`falha ao ler status anterior da order ${String(order.id)}: ${existing.error.message}`);
+  }
+
   const previousStatus = existing.data?.status ?? null;
 
   await db
@@ -198,7 +203,14 @@ async function loadSaleMovements(
     .eq("source_id", String(orderId))
     .eq("movement_type", "VENDA_ML");
 
-  return (result.data ?? []).map((row) => ({
+  if (result.error !== null) {
+    // Não tratar como "nenhum movimento": numa order cancelada, isso faria
+    // computeCancellationReversals reverter zero — a dedução original da
+    // venda ficaria de pé, estoque silenciosamente incorreto.
+    throw new Error(`falha ao ler stock_movements da order ${String(orderId)}: ${result.error.message}`);
+  }
+
+  return result.data.map((row) => ({
     skuId: row.sku_id,
     qtyDelta: row.qty_delta,
     idempotencyKey: row.idempotency_key,
@@ -228,6 +240,14 @@ async function resolveSku(
 
   const result = await filtered.maybeSingle();
 
+  if (result.error !== null) {
+    // Não tratar como "sem vínculo": isso gravaria sku_id null numa venda
+    // real e puparia a dedução de estoque inteira — overselling silencioso.
+    throw new Error(
+      `falha ao resolver sku_listing_link (item ${itemId}, variation ${variationId ?? "null"}): ${result.error.message}`,
+    );
+  }
+
   return result.data;
 }
 
@@ -246,6 +266,13 @@ async function loadSkuKindAndComponents(
 ): Promise<{ kind: "PRODUTO" | "KIT"; components: { componentSkuId: string; quantity: number }[] }> {
   const sku = await db.from("skus").select("kind").eq("id", skuId).maybeSingle();
 
+  if (sku.error !== null) {
+    // Não tratar como PRODUTO sem componentes: um KIT real cairia sem
+    // decompor, deduzindo contra a própria linha do kit (sem saldo) em vez
+    // dos componentes — estoque dos componentes nunca seria reduzido.
+    throw new Error(`falha ao ler kind do sku ${skuId}: ${sku.error.message}`);
+  }
+
   if (sku.data?.kind !== "KIT") {
     return { kind: "PRODUTO", components: [] };
   }
@@ -255,7 +282,11 @@ async function loadSkuKindAndComponents(
     .select("component_sku_id, quantity")
     .eq("kit_sku_id", skuId);
 
-  const components = (componentsResult.data ?? []).map((row) => ({
+  if (componentsResult.error !== null) {
+    throw new Error(`falha ao ler componentes do kit ${skuId}: ${componentsResult.error.message}`);
+  }
+
+  const components = componentsResult.data.map((row) => ({
     componentSkuId: row.component_sku_id,
     quantity: row.quantity,
   }));

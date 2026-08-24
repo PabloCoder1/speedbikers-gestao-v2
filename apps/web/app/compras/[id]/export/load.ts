@@ -53,6 +53,14 @@ export async function loadPurchaseOrderExportData(
     .eq("purchase_order_id", id)
     .order("position");
 
+  // Nunca gerar um PDF/XLSX com "0 itens" por causa de uma falha de leitura
+  // — esse documento pode ser enviado a um fornecedor ou usado pra
+  // conferência. `null` aqui vira 404 no route.ts (mesma convenção do
+  // `order` acima) — pior que um 404 impreciso é um documento errado.
+  if (items.error !== null) {
+    return null;
+  }
+
   const info = order.data;
 
   return {
@@ -70,7 +78,7 @@ export async function loadPurchaseOrderExportData(
     orderedAt: info.ordered_at,
     receivedAt: info.received_at,
     createdAt: info.created_at,
-    items: (items.data ?? []).map((item) => ({
+    items: items.data.map((item) => ({
       skuSnapshot: item.sku_snapshot,
       titleSnapshot: item.title_snapshot,
       isImported: item.skus?.is_imported ?? null,

@@ -48,6 +48,8 @@ function returnPayload(overrides: {
 interface FakeDbOptions {
   orderItemPosition?: number | null;
   saleMovements?: { sku_id: string; qty_delta: number; idempotency_key: string }[];
+  orderItemsError?: boolean;
+  saleMovementsError?: boolean;
 }
 
 interface Captured {
@@ -64,7 +66,12 @@ function fakeDb(options: FakeDbOptions, captured: Captured): ProcessClaimReturnD
     from: (table: string) => {
       if (table === "order_items") {
         const terminal = {
-          maybeSingle: () => Promise.resolve({ data: position === null ? null : { position }, error: null }),
+          maybeSingle: () =>
+            Promise.resolve(
+              options.orderItemsError === true
+                ? { data: null, error: { code: "42P01", message: "boom" } }
+                : { data: position === null ? null : { position }, error: null },
+            ),
         };
 
         return {
@@ -85,7 +92,12 @@ function fakeDb(options: FakeDbOptions, captured: Captured): ProcessClaimReturnD
             eq: () => ({
               eq: () => ({
                 eq: () => ({
-                  eq: () => Promise.resolve({ data: movements, error: null }),
+                  eq: () =>
+                    Promise.resolve(
+                      options.saleMovementsError === true
+                        ? { data: null, error: { code: "42P01", message: "boom" } }
+                        : { data: movements, error: null },
+                    ),
                 }),
               }),
             }),
@@ -250,5 +262,41 @@ describe("processClaimReturn (D-057)", () => {
     expect(processed).toBe(0);
     expect(captured.movements).toHaveLength(0);
     expect(captured.events).toHaveLength(0);
+  });
+
+  it("falha ao ler order_items rejeita — indistinguível de 'não encontrado' seria pior: pularia uma devolução real", async () => {
+    const captured: Captured = { movements: [], events: [] };
+    const { client } = fakeMercadoLivre({});
+
+    await expect(
+      processClaimReturn(
+        { db: fakeDb({ orderItemsError: true }, captured), mercadoLivre: client },
+        { organizationId: ORGANIZATION_ID, mlAccountId: ML_ACCOUNT_ID },
+        "token",
+        CLAIM_ID,
+        NOW,
+        logger,
+      ),
+    ).rejects.toThrow(/order_items/);
+
+    expect(captured.movements).toHaveLength(0);
+  });
+
+  it("falha ao ler stock_movements existentes rejeita, em vez de reverter zero", async () => {
+    const captured: Captured = { movements: [], events: [] };
+    const { client } = fakeMercadoLivre({});
+
+    await expect(
+      processClaimReturn(
+        { db: fakeDb({ saleMovementsError: true }, captured), mercadoLivre: client },
+        { organizationId: ORGANIZATION_ID, mlAccountId: ML_ACCOUNT_ID },
+        "token",
+        CLAIM_ID,
+        NOW,
+        logger,
+      ),
+    ).rejects.toThrow(/stock_movements/);
+
+    expect(captured.movements).toHaveLength(0);
   });
 });

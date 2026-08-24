@@ -742,6 +742,20 @@ Levantadas pela pesquisa da documentação oficial que fecha a lista de verifica
 
 **Impacto:** migration `20260824132723_revoke_excess_authenticated_grants.sql`. Fecha o item "Revisar GRANTs das tabelas antigas de escrita exclusiva por RPC/service_role" do Checkpoint pré-Fase 7.
 
+## D-067 — Auditoria de erro `.error` do Supabase client não abortado (item P0 do Checkpoint pré-Fase 7): 34 pontos achados, corrigidos os que arriscavam corromper dado de negócio
+
+**Contexto:** item P0 do Checkpoint de Consolidação pré-Fase 7 (`docs/ROADMAP.md`): "corrigir pontos conhecidos onde `.error` do Supabase client não é explicitamente abortado antes de continuar a operação." Levantamento sistemático via agente de busca em `apps/web/app/**`, `apps/web/components/**`, `apps/web/lib/**`, `apps/api/src/**`, `apps/worker/src/handlers/**` — 74 arquivos que chamam `.from()`/`.rpc()`.
+
+**Achado:** 34 pontos reais (agrupando padrões repetidos), quase todos concentrados fora de `apps/api/src` (que já checa erro em 100% dos casos). Priorizados em três níveis por impacto real:
+
+- **Nível 1 — corrupção de dado de negócio (corrigido nesta etapa):** `apps/worker/src/handlers/persist-order.ts` (4 pontos: status anterior da order, `stock_movements` de uma reversão de cancelamento, resolução de `sku_listing_links`, `kind`/componentes de um KIT) e `claim-return.ts` (2 pontos: `stock_movements`/`order_items` de uma devolução) — uma falha de LEITURA nessas consultas, sem checagem, era indistinguível de "nada encontrado"/"lista vazia", e cada uma delas alimenta diretamente uma decisão de estoque: dedução pulada (overselling), reversão de cancelamento/devolução computada contra zero movimentos (estoque nunca creditado de volta), KIT tratado como PRODUTO sem componentes (componentes nunca deduzidos). `apps/web/app/compras/[id]/editar/page.tsx` (falha ao ler itens virava formulário com UM item em branco — salvar chama `update_purchase_order_draft`, que SUBSTITUI todos os itens, apagando os reais), `apps/web/app/compras/[id]/export/load.ts` (PDF/XLSX gerado com "0 itens" silenciosamente — documento que pode ir a um fornecedor), `apps/web/app/compras/[id]/page.tsx` (resumo do topo mostrava "0 itens, R$ 0,00" indistinguível de pedido vazio de verdade).
+- **Nível 2 — UI enganosa em tela de decisão, sem escrita de dado errado:** `/vendas`, `/anuncios`, `/diagnostico`, `/acoes`, `/sincronizacao`, mais dois pontos em `apps/worker/src/handlers/sync-runs.ts` e três em `ml-*-fetch.ts` (falha de leitura reportada como sync bem-sucedida de 0 itens). **Adiado para uma próxima etapa** — real, mas não corrompe dado, só mostra "sem dado" em vez de "erro ao carregar".
+- **Nível 3 — baixo impacto (busca client-side, dropdown, membership lookup):** 11 pontos, mesmo padrão repetido (`error` não desestruturado numa busca por texto). **Adiado** — degrada para "nada encontrado", já é o comportamento visível de uma busca vazia de verdade.
+
+**Decisão — corrigir Nível 1 primeiro, nesta etapa; Níveis 2 e 3 ficam registrados para depois:** escopo de uma sessão não é infinito, e o critério de priorização do próprio produto (`docs/ARCHITECTURE.md`) é sempre corrigir o que decide errado antes do que só informa errado. `throw new Error(...)` nos handlers do worker (mesmo padrão de erro por exceção — `app.ts` do worker já converte qualquer exceção não capturada em `{status: "failed", retryable: true}`, `toOutcome`); retorno `null`/mensagem de erro explícita nas páginas/rotas do `web`, nunca um "0" ou lista vazia que pareça dado real.
+
+**Impacto:** `apps/worker/src/handlers/persist-order.ts`, `persist-order.test.ts` (+5 testes), `claim-return.ts`, `claim-return.test.ts` (+2 testes). `apps/web/app/compras/[id]/editar/page.tsx`, `apps/web/app/compras/[id]/export/load.ts`, `apps/web/app/compras/[id]/page.tsx`.
+
 ## Como adicionar nova decisão
 
 Registrar:

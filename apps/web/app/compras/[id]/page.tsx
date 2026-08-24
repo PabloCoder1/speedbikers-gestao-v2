@@ -84,10 +84,13 @@ export default async function PedidoDeCompraPage({
       .order("occurred_at", { ascending: false }),
   ]);
 
-  const totalValue = (items.data ?? []).reduce(
-    (sum, item) => sum + item.quantity_ordered * (item.unit_cost ?? 0),
-    0,
-  );
+  // `null` distinto de 0: uma falha de leitura não pode aparecer como "0
+  // itens, R$ 0,00" no topo — parece um pedido vazio de verdade em vez de
+  // um erro (a tabela abaixo já mostra o erro explícito, isso é só o resumo).
+  const totalValue =
+    items.error !== null
+      ? null
+      : items.data.reduce((sum, item) => sum + item.quantity_ordered * (item.unit_cost ?? 0), 0);
 
   return (
     <Shell>
@@ -112,7 +115,7 @@ export default async function PedidoDeCompraPage({
         <StatusPill code={info.status} label={purchaseOrderStatusLabel(info.status)} />
         <Stat label="Destino" value={info.destination_warehouse_name ?? "—"} />
         <Stat label="Previsão" value={info.expected_at === null ? "—" : formatDateTime(info.expected_at)} />
-        <Stat label="Itens" value={String(items.data?.length ?? 0)} />
+        <Stat label="Itens" value={items.error !== null ? "—" : String(items.data.length)} />
         <Stat label="Valor estimado" value={formatCurrency(totalValue)} />
 
         <div style={{ display: "flex", gap: "var(--sb-space-2)", marginLeft: "auto" }}>

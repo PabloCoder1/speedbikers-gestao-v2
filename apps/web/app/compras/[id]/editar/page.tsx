@@ -50,6 +50,25 @@ export default async function EditarPedidoDeCompraPage({
 
   const info = order.data;
 
+  // Distinto de "sem itens ainda": uma falha de leitura aqui não pode virar
+  // silenciosamente "formulário com um item em branco" — salvar esse
+  // formulário chama update_purchase_order_draft, que SUBSTITUI todos os
+  // itens do pedido, apagando os itens reais que só não foram lidos.
+  if (items.error !== null) {
+    return (
+      <Shell>
+        <p style={{ margin: 0, fontSize: "0.875rem" }}>
+          <Link href={`/compras/${id}`}>← Voltar ao pedido</Link>
+        </p>
+
+        <p role="alert" style={{ marginTop: "var(--sb-space-3)", color: "var(--sb-danger)" }}>
+          Não foi possível carregar os itens deste pedido: {items.error.message}. Edite novamente mais tarde — editar
+          agora apagaria os itens reais.
+        </p>
+      </Shell>
+    );
+  }
+
   if (info.status !== "DRAFT") {
     return (
       <Shell>
@@ -70,7 +89,7 @@ export default async function EditarPedidoDeCompraPage({
     notes: info.notes,
     expectedAt: info.expected_at === null ? null : info.expected_at.slice(0, 10),
     items:
-      items.data === null || items.data.length === 0
+      items.data.length === 0
         ? [
             {
               key: "item-1",
