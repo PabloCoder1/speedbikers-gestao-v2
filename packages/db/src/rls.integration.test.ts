@@ -3209,3 +3209,92 @@ describe("search_entities (Fase 5B, Busca universal)", () => {
     expect(rows.some((row) => row.label === SKU_NOME)).toBe(false);
   });
 });
+
+describe("saved_filters / create_saved_filter / delete_saved_filter (Fase 5B, Filtros salvos)", () => {
+  // `created_by` referencia `auth.users(id) on delete cascade` (diferente de
+  // `purchase_orders.created_by`, que é RESTRICT por padrão) — usar ADMIN_SB/
+  // ANALISTA_SB aqui é seguro: o afterAll global apagaria a linha em cascata
+  // junto com o usuário, sem bloquear o DELETE de auth.users. Mesmo assim,
+  // sem afterAll próprio: apagamos os filtros nós mesmos dentro dos testes
+  // (é exatamente o que create/delete_saved_filter fazem), então não sobra
+  // nada para limpar.
+  const SCREEN = "/rlstest-tela";
+
+  it("cria um filtro salvo; salvar de novo com o mesmo nome sobrescreve (upsert)", async () => {
+    const created = await asUser<{ id: string; name: string; params: Record<string, string> }>(
+      ADMIN_SB,
+      `select * from public.create_saved_filter('${ORG_SB}','${SCREEN}','Meu filtro','{"days":"30"}'::jsonb)`,
+    );
+
+    expect(created).toHaveLength(1);
+    expect(created[0]?.params).toEqual({ days: "30" });
+
+    const overwritten = await asUser<{ id: string; params: Record<string, string> }>(
+      ADMIN_SB,
+      `select * from public.create_saved_filter('${ORG_SB}','${SCREEN}','Meu filtro','{"days":"60"}'::jsonb)`,
+    );
+
+    expect(overwritten[0]?.id).toBe(created[0]?.id);
+    expect(overwritten[0]?.params).toEqual({ days: "60" });
+
+    await asUser(ADMIN_SB, `select public.delete_saved_filter('${created[0]?.id ?? ""}')`);
+  });
+
+  it("authenticated só vê os próprios filtros salvos (RLS por created_by)", async () => {
+    const mine = await asUser<{ id: string }>(
+      ADMIN_SB,
+      `select * from public.create_saved_filter('${ORG_SB}','${SCREEN}','Filtro do admin','{"a":"1"}'::jsonb)`,
+    );
+    const theirs = await asUser<{ id: string }>(
+      ANALISTA_SB,
+      `select * from public.create_saved_filter('${ORG_SB}','${SCREEN}','Filtro do analista','{"b":"2"}'::jsonb)`,
+    );
+
+    const adminSees = await asUser<{ id: string }>(
+      ADMIN_SB,
+      `select id from public.saved_filters where screen = '${SCREEN}'`,
+    );
+    expect(adminSees.map((r) => r.id)).toContain(mine[0]?.id);
+    expect(adminSees.map((r) => r.id)).not.toContain(theirs[0]?.id);
+
+    await asUser(ADMIN_SB, `select public.delete_saved_filter('${mine[0]?.id ?? ""}')`);
+    await asUser(ANALISTA_SB, `select public.delete_saved_filter('${theirs[0]?.id ?? ""}')`);
+  });
+
+  it("delete_saved_filter só apaga se o dono chamar — outro usuário não afeta nada", async () => {
+    const created = await asUser<{ id: string }>(
+      ADMIN_SB,
+      `select * from public.create_saved_filter('${ORG_SB}','${SCREEN}','Só o admin apaga','{}'::jsonb)`,
+    );
+    const filterId = created[0]?.id ?? "";
+
+    await asUser(ANALISTA_SB, `select public.delete_saved_filter('${filterId}')`);
+
+    const stillThere = await asUser<{ id: string }>(
+      ADMIN_SB,
+      `select id from public.saved_filters where id = '${filterId}'`,
+    );
+    expect(stillThere).toHaveLength(1);
+
+    await asUser(ADMIN_SB, `select public.delete_saved_filter('${filterId}')`);
+
+    const gone = await asUser<{ id: string }>(
+      ADMIN_SB,
+      `select id from public.saved_filters where id = '${filterId}'`,
+    );
+    expect(gone).toHaveLength(0);
+  });
+
+  it("create_saved_filter recusa organização da qual o usuário não é membro", async () => {
+    await expect(
+      asUser(ADMIN_SB, `select public.create_saved_filter('${ORG_OUTRA}','${SCREEN}','x','{}'::jsonb)`),
+    ).rejects.toThrow(/sem permissao/i);
+  });
+
+  it("anon não lê nem escreve", async () => {
+    await expect(asAnon(`select * from public.saved_filters`)).rejects.toThrow(/permission denied/i);
+    await expect(
+      asAnon(`select public.create_saved_filter('${ORG_SB}','${SCREEN}','x','{}'::jsonb)`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+});

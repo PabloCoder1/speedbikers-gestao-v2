@@ -406,6 +406,23 @@ Cinco entidades, cada uma com o destino de navegação REAL que existe hoje na V
 
 Consumida por `apps/web/components/command-palette.tsx` (componente cliente, `Ctrl+K`/`Cmd+K` ou clique, busca a cada tecla sem debounce — mesmo padrão já usado em `apps/web/app/compras/novo/item-row.tsx`), montado em `Shell` e por isso disponível em toda tela autenticada.
 
+### `saved_filters` — Filtros salvos (D-062)
+
+**Implementado em 2026-08-23**, migration `20260823235730_create_saved_filters.sql`, fecha a metade "Filtros salvos" do mesmo item de checklist de `search_entities` acima (D-060 separou as duas por tamanho). Presets de filtro POR USUÁRIO (não compartilhados na organização) e por TELA:
+
+```text
+organization_id, created_by,
+screen (pathname da tela, ex.: "/vendas"),
+name, params jsonb,
+created_at
+```
+
+`params` é literalmente os query params atuais da URL da tela (`Object.fromEntries(searchParams.entries())`), sem schema próprio por tela — reaproveitável em qualquer tela filtrada por query string sem migration nova. RLS só permite SELECT das próprias linhas (`created_by = auth.uid()`); escrita exclusivamente via `create_saved_filter`/`delete_saved_filter` (`security definer`, autorização refeita internamente — `create_saved_filter` confere `is_member_of`, `delete_saved_filter` só apaga se `created_by` bater com quem chama). `create_saved_filter` faz `INSERT ... ON CONFLICT (created_by, screen, name) DO UPDATE` — salvar de novo com o mesmo nome sobrescreve.
+
+**Achado ao conferir o GRANT desta tabela**: `has_table_privilege('authenticated', 'public.saved_filters', 'INSERT')` devolveu `true` mesmo sem nenhum `grant insert` explícito — privilégios padrão deste projeto Supabase concedem INSERT/UPDATE/DELETE a `authenticated` em tabela nova. Conferido também em `stock_movements` (tabela já existente com o mesmo padrão "só RPC escreve"): o mesmo é verdade lá. Os dados continuam seguros porque a RLS não tem policy de escrita para `authenticated` em nenhuma das duas (RLS nega por padrão sem policy correspondente ao comando), mas o GRANT em si nunca tinha sido apertado para `authenticated`, só para `anon`. `saved_filters` já nasce com `revoke all on ... from anon, authenticated` antes do `grant select` — as tabelas mais antigas com este padrão ficam para uma auditoria separada (sinalizada, fora do escopo desta etapa).
+
+Integrado em `/vendas` (a tela com o filtro mais rico — período + conta) via `apps/web/components/saved-filters.tsx` + `saved-filters-actions.ts` (Server Actions, D-012).
+
 ---
 
 ## 5. RLS

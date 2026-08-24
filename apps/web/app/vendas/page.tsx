@@ -9,6 +9,8 @@ import {
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import type { SavedFilter } from "../../components/saved-filters";
+import { SavedFilters } from "../../components/saved-filters";
 import { Shell } from "../../components/shell";
 import { formatBusinessDate, formatCount, formatCurrency, formatDateTime } from "../../lib/format";
 import { createClient } from "../../lib/supabase/server";
@@ -271,12 +273,19 @@ export default async function VendasPage({
   const isCustom = days === null;
   const period: Period = isCustom ? range : { days };
 
-  const accountsResult = await supabase
-    .from("ml_accounts")
-    .select("id, slug, label")
-    .order("label", { ascending: true });
+  const [accountsResult, membershipResult, savedFiltersResult] = await Promise.all([
+    supabase.from("ml_accounts").select("id, slug, label").order("label", { ascending: true }),
+    supabase.from("organization_members").select("organization_id").maybeSingle(),
+    supabase.from("saved_filters").select("id, name, params").eq("screen", "/vendas").order("name"),
+  ]);
 
   const accounts: AccountOption[] = accountsResult.data ?? [];
+  const organizationId = membershipResult.data?.organization_id ?? null;
+  const savedFilters: SavedFilter[] = (savedFiltersResult.data ?? []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    params: row.params as Record<string, string>,
+  }));
 
   const requestedSlug = typeof query.account === "string" ? query.account : null;
   const selectedAccount = accounts.find((account) => account.slug === requestedSlug) ?? null;
@@ -433,6 +442,12 @@ export default async function VendasPage({
           </button>
         </form>
       </div>
+
+      {organizationId !== null && (
+        <div style={{ marginBottom: "var(--sb-space-4)" }}>
+          <SavedFilters screen="/vendas" organizationId={organizationId} filters={savedFilters} />
+        </div>
+      )}
 
       {invalidCustom && (
         <p role="alert" style={{ color: "var(--sb-danger)" }}>

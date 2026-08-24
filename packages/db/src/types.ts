@@ -1711,6 +1711,44 @@ export type Database = {
           },
         ]
       }
+      saved_filters: {
+        Row: {
+          created_at: string
+          created_by: string
+          id: string
+          name: string
+          organization_id: string
+          params: Json
+          screen: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          id?: string
+          name: string
+          organization_id: string
+          params: Json
+          screen: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          id?: string
+          name?: string
+          organization_id?: string
+          params?: Json
+          screen?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "saved_filters_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sku_components: {
         Row: {
           component_sku_id: string
@@ -2379,6 +2417,29 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      create_saved_filter: {
+        Args: {
+          p_name: string
+          p_organization_id: string
+          p_params: Json
+          p_screen: string
+        }
+        Returns: {
+          created_at: string
+          created_by: string
+          id: string
+          name: string
+          organization_id: string
+          params: Json
+          screen: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "saved_filters"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       create_supplier: {
         Args: {
           p_contact_name?: string
@@ -2416,6 +2477,7 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      delete_saved_filter: { Args: { p_id: string }; Returns: undefined }
       dismiss_link_candidate: {
         Args: { p_candidate_id: string }
         Returns: {

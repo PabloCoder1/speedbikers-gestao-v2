@@ -668,6 +668,20 @@ Levantadas pela pesquisa da documentação oficial que fecha a lista de verifica
 
 **Impacto:** nenhuma migration, nenhum código novo — decisão de NÃO implementar, documentada para a próxima sessão não repetir a mesma investigação. `docs/ROADMAP.md` mantém o item com a razão específica em vez de "não iniciado".
 
+## D-062 — Filtros salvos: por USUÁRIO, jsonb genérico, escrita só via RPC — achado de GRANT no caminho
+
+**Contexto:** metade restante de "Busca Universal / Command Palette e Filtros salvos" (D-060 separou as duas por tamanho — Busca Universal ficou pronta primeiro). Nenhum requisito formal detalha o comportamento além de "Filtros salvos" citado como recurso obrigatório (`docs/PRODUCT_REQUIREMENTS.md`).
+
+**Decisão 1 — presets são POR USUÁRIO, não compartilhados na organização:** é preferência pessoal (cada pessoa filtra `/vendas` do jeito que faz sentido pro que ela acompanha), sem necessidade de coordenar nomes entre pessoas diferentes nem de um dono/permissão de edição compartilhada. RLS filtra só por `created_by = auth.uid()`; `organization_id` na tabela é defesa em profundidade e futura auditoria, não o mecanismo de isolamento em si.
+
+**Decisão 2 — `params jsonb` genérico, `screen` é o PATHNAME da tela:** um preset é literalmente os query params atuais da URL (`Object.fromEntries(searchParams.entries())`), guardados como estão — sem schema próprio por tela. `screen` (ex.: `/vendas`) dobra como chave de agrupamento e como alvo de `revalidatePath`, sem precisar de um mapa tela→rota separado. Reaproveitável em qualquer tela filtrada por query string sem migration nova — só chamar o mesmo componente com um `screen` diferente.
+
+**Decisão 3 — escrita só via RPC (`create_saved_filter`/`delete_saved_filter`, `security definer`), leitura direta sob RLS:** mesmo padrão já estabelecido no resto do app (`create_supplier`, `resolve_link_candidate`, etc.) — mutação sempre por RPC com autorização refeita dentro da função, leitura simples de tabela direto do navegador/servidor sob RLS. `create_saved_filter` faz `INSERT ... ON CONFLICT (created_by, screen, name) DO UPDATE` — salvar de novo com o mesmo nome sobrescreve em vez de duplicar, sem precisar de uma RPC de "editar" separada.
+
+**Achado — GRANT de tabela não é tão apertado quanto os comentários de outras migrations desta sessão presumiam:** ao verificar `has_table_privilege('authenticated', 'public.saved_filters', 'INSERT')` depois de só fazer `grant select ... to authenticated`, o resultado veio `true` — privilégios padrão deste projeto Supabase concedem INSERT/UPDATE/DELETE a `authenticated` em tabela nova, mesmo sem GRANT explícito nenhum. Conferido em `stock_movements` (tabela já existente, mesmo padrão de "só RPC escreve"): o mesmo é verdade lá — `has_table_privilege('authenticated', 'public.stock_movements', 'INSERT')` também é `true`, e a única RLS policy de lá é de SELECT. **Os dados continuam seguros** (RLS sem policy de escrita bloqueia por padrão, na prática, confirmado), mas o GRANT em si nunca foi apertado — `docs/DATABASE.md` §5 descreve o GRANT como a PRIMEIRA barreira, e isso não era verdade para `authenticated` em nenhuma tabela só-RPC-escreve desta sessão. Corrigido aqui com `revoke all on public.saved_filters from anon, authenticated` antes do `grant select`; uma tarefa de auditoria foi sinalizada (`spawn_task`) para revisar as tabelas já existentes com o mesmo padrão, fora do escopo desta etapa.
+
+**Impacto:** migration `20260823235730_create_saved_filters.sql` (tabela `saved_filters` + as duas RPCs). `apps/web/components/saved-filters.tsx` (componente cliente reaproveitável) + `saved-filters-actions.ts` (Server Actions, D-012, mesmo padrão de `apps/web/app/vinculacoes/actions.ts`). Integrado em `/vendas` nesta etapa — a tela com o filtro mais rico (período + conta); outras telas filtradas (`/curva-abc`) podem adotar o mesmo componente depois, sem mudança de schema.
+
 ## Como adicionar nova decisão
 
 Registrar:
