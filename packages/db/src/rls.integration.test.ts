@@ -3336,6 +3336,7 @@ describe("get_sku_sales_baseline (Fase 6, Diagnóstico)", () => {
   // ausência de afterAll — ver comentário equivalente no describe de
   // get_stock_coverage, acima.
   const CONTA_DIAG = "ddddaaaa-0000-4000-8000-0000000000aa";
+  const CONTA_DIAG_2 = "ddddaaaa-0000-4000-8000-0000000000dd"; // segunda conta, só para o SKU multi-conta (D-081)
   const AS_OF = "2026-08-23"; // domingo (dow=0) — confirmado contra o Dev antes de escrever o teste.
 
   // Todas as datas abaixo caem no MESMO dia da semana que AS_OF (7 em 7 dias).
@@ -3356,13 +3357,16 @@ describe("get_sku_sales_baseline (Fase 6, Diagnóstico)", () => {
   let skuComAmostraId = "";
   let skuAmostraCurtaId = "";
   let skuDezOcorrenciasId = "";
+  let skuMultiContaId = "";
 
   beforeAll(async () => {
     await client.query(
       `insert into public.ml_accounts (id, organization_id, label, slug, status)
-       values ($1,$2,'Conta de diagnóstico','diagtest-conta','PENDING')
+       values
+         ($1,$3,'Conta de diagnóstico','diagtest-conta','PENDING'),
+         ($2,$3,'Conta de diagnóstico 2','diagtest-conta-2','PENDING')
        on conflict do nothing`,
-      [CONTA_DIAG, ORG_SB],
+      [CONTA_DIAG, CONTA_DIAG_2, ORG_SB],
     );
 
     const skus = await client.query<{ id: string }>(
@@ -3370,13 +3374,15 @@ describe("get_sku_sales_baseline (Fase 6, Diagnóstico)", () => {
        values
          ($1,'DIAGTEST-com-amostra','PRODUTO'),
          ($1,'DIAGTEST-amostra-curta','PRODUTO'),
-         ($1,'DIAGTEST-dez-ocorrencias','PRODUTO')
+         ($1,'DIAGTEST-dez-ocorrencias','PRODUTO'),
+         ($1,'DIAGTEST-multi-conta','PRODUTO')
        returning id`,
       [ORG_SB],
     );
     skuComAmostraId = skus.rows[0]?.id ?? "";
     skuAmostraCurtaId = skus.rows[1]?.id ?? "";
     skuDezOcorrenciasId = skus.rows[2]?.id ?? "";
+    skuMultiContaId = skus.rows[3]?.id ?? "";
 
     // SKU com amostra suficiente: 4 ocorrências do mesmo dia da semana
     // (1,2,3,4 — média 2.5), mais uma linha de OUTRO dia da semana com valor
@@ -3427,6 +3433,47 @@ describe("get_sku_sales_baseline (Fase 6, Diagnóstico)", () => {
         [ORG_SB, CONTA_DIAG, skuDezOcorrenciasId, metricDate, value],
       );
     }
+
+    // SKU vendido em DUAS contas no mesmo dia (D-081, regressão do bug real
+    // de produção): daily_sku_metrics tem grão POR CONTA, então uma venda
+    // multi-conta insere DUAS linhas para o mesmo (sku_id, metric_date). A
+    // função precisa somar as duas ANTES de contar ocorrências/juntar com
+    // o dia atual — do contrário devolve DUAS linhas para o mesmo SKU
+    // (exatamente o que quebrou o upsert de `actions` em produção) e infla
+    // a amostra do baseline. Primeira data do mesmo dia da semana (índice 0)
+    // é dividida entre as duas contas (6+4=10); as outras três, uma conta só
+    // (10 cada) — todas devem valer 10 no baseline. O dia atual (AS_OF)
+    // também é dividido (5+3=8).
+    const [multiContaDate, ...restoDatas] = SAME_WEEKDAY;
+
+    if (multiContaDate !== undefined) {
+      await client.query(
+        `insert into public.daily_sku_metrics
+           (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+         values
+           ($1,$2,$4,$5,6,100,1,1),
+           ($1,$3,$4,$5,4,100,1,1)`,
+        [ORG_SB, CONTA_DIAG, CONTA_DIAG_2, skuMultiContaId, multiContaDate],
+      );
+    }
+
+    for (const metricDate of restoDatas.slice(0, 3)) {
+      await client.query(
+        `insert into public.daily_sku_metrics
+           (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+         values ($1,$2,$3,$4,10,100,1,1)`,
+        [ORG_SB, CONTA_DIAG, skuMultiContaId, metricDate],
+      );
+    }
+
+    await client.query(
+      `insert into public.daily_sku_metrics
+         (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values
+         ($1,$2,$4,$5,5,100,1,1),
+         ($1,$3,$4,$5,3,100,1,1)`,
+      [ORG_SB, CONTA_DIAG, CONTA_DIAG_2, skuMultiContaId, AS_OF],
+    );
   });
 
   // Sem afterAll de limpeza: mesma razão do ledger de estoque acima.
@@ -3517,6 +3564,27 @@ describe("get_sku_sales_baseline (Fase 6, Diagnóstico)", () => {
     expect(skuIds).toContain(skuComAmostraId);
     expect(skuIds).toContain(skuDezOcorrenciasId);
     expect(skuIds).not.toContain(skuAmostraCurtaId);
+  });
+
+  // Regressão do bug real de produção (D-081): get_sku_sales_baseline
+  // devolvia DUAS linhas para um SKU vendido em duas contas no mesmo dia,
+  // quebrando o upsert de `actions` em detect-sales-anomaly-actions.ts
+  // ("ON CONFLICT DO UPDATE command cannot affect row a second time").
+  it("SKU vendido em duas contas no mesmo dia: uma linha só, somada entre contas (D-081)", async () => {
+    const rows = await asUser<{
+      sku_id: string;
+      current_units_sold: string;
+      baseline_mean: string;
+      sample_count: string;
+    }>(
+      ADMIN_SB,
+      `select * from public.get_sku_sales_baseline('${ORG_SB}','${AS_OF}') where sku_id='${skuMultiContaId}'`,
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0]?.current_units_sold)).toBe(8);
+    expect(Number(rows[0]?.baseline_mean)).toBe(10);
+    expect(Number(rows[0]?.sample_count)).toBe(4);
   });
 });
 
