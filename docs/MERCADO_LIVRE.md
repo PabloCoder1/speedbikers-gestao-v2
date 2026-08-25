@@ -1,7 +1,7 @@
 # Integração Mercado Livre — Speed Bikers Gestão V3
 
 > Dono documental de: estratégia de sincronização, regras de integração e registro de endpoints.
-> Status: **estratégia aprovada. Lista de verificação da secao 1 confirmada — visitas em 2026-08-23 (secao 2.11), Ads pesquisado mas ADIADO (D-059). Fase 3 desbloqueada.**
+> Status: **estratégia aprovada. Lista de verificação da secao 1 confirmada por completo — Perguntas/Mensagens pesquisadas em 2026-08-25 (secao 2.12, D-083), visitas em 2026-08-23 (secao 2.11), Ads pesquisado mas ADIADO (D-059).**
 
 ---
 
@@ -37,7 +37,7 @@ Confirmado na documentação oficial (`developers.mercadolivre.com.br`, consulta
 - [x] Escopos de OAuth necessários por recurso — secao 2.9
 - [x] Política de validação de origem do webhook — secao 2.6 (allowlist de IP; **sem assinatura HMAC documentada** para este produto)
 - [x] Endpoints de pós-venda (Claims/Returns) — secao 2.10 (D-057)
-- [ ] Endpoints de Perguntas e Mensagens pós-venda (Central de Atendimento/SAC, Fase 7B, D-071) — secao 2.12, **vazia de propósito**. Não bloqueia a Fase 3 (já desbloqueada); bloqueia o início real da Fase 7B
+- [x] Endpoints de Perguntas e Mensagens pós-venda (Central de Atendimento/SAC, Fase 7B) — secao 2.12, pesquisa oficial concluída em 2026-08-25 (D-083)
 - [x] Valores de `status` do item e ciclo de vida da publicação — secao 2.13 (2026-08-24, pré-requisito crítico da Fase 7 — `listing.status.paused`/`.reactivated`)
 
 ---
@@ -66,8 +66,20 @@ Confirmado na documentação oficial (`developers.mercadolivre.com.br`, consulta
 | Itens de uma campanha | `GET /seller-promotions/promotions/{promotion_id}/items?...` | `read` | `search_after` (TTL 5 min), limite **50** | secao 2.3 | 2026-08-21 |
 | Buscador de produtos de catálogo | `GET /products/search?product_identifier=/q=&site_id=` | `read` | `offset`/`limit` | secao 2.3 | 2026-08-21 |
 | Notificações perdidas | `GET /missed_feeds?app_id=&topic=&offset=&limit=` | — | padrão **10**; retenção **2 dias**; `site_id` obrigatório para `topic=items` | — | 2026-08-21 |
+| Perguntas recebidas pela conta | `GET /my/received_questions/search?api_version=4` | Comunicação pré e pós-venda | `offset`/`limit`, padrão 50; `scan` não confirmado para esta variante | secao 2.12 | 2026-08-25 |
+| Busca/detalhe de pergunta | `GET /questions/search?seller_id=...&api_version=4`; `GET /questions/{question_id}?api_version=4` | Comunicação pré e pós-venda | busca por `offset`/`limit`; `search_type=scan` acima de 1000, scroll de 5 min; detalhe sem paginação | secao 2.12 | 2026-08-25 |
+| Responder pergunta | `POST /answers` | Comunicação pré e pós-venda, escrita | — | secao 2.12 | 2026-08-25 |
+| Tempo médio de resposta a perguntas | `GET /users/{user_id}/questions/response_time` | Comunicação pré e pós-venda | — | secao 2.12 | 2026-08-25 |
+| Mensagens de um pack/pedido | `GET /messages/packs/{pack_id}/sellers/{seller_id}?tag=post_sale&mark_as_read=false` | Comunicação pré e pós-venda | `offset`/`limit` | **500 rpm compartilhados entre GETs** | 2026-08-25 |
+| Detalhe de mensagem | `GET /messages/{message_id}?tag=post_sale` | Comunicação pré e pós-venda | — | **500 rpm compartilhados entre GETs** | 2026-08-25 |
+| Enviar mensagem pós-venda | `POST /messages/packs/{pack_id}/sellers/{seller_id}?tag=post_sale` | Comunicação pré e pós-venda, escrita | uma mensagem por chamada | **500 rpm compartilhados entre POST/PUT** | 2026-08-25 |
+| Conversas não lidas | `GET /messages/unread?role=seller&tag=post_sale`; `GET /messages/unread/{resource}?tag=post_sale` | Comunicação pré e pós-venda | até **500 conversas por chamada** | **500 rpm compartilhados entre GETs** | 2026-08-25 |
+| Anexo de mensagem | `POST /messages/attachments?tag=post_sale&site_id=MLB`; `GET /messages/attachments/{attachment_id}?tag=post_sale&site_id=MLB` | Comunicação pré e pós-venda | — | pool de leitura ou escrita conforme método | 2026-08-25 |
 | Detalhe de claim | `GET /post-purchase/v1/claims/{claim_id}` | `read`, "Vendas e envios" ou "Comunicação pré e pós-venda" | — | secao 2.3 | 2026-08-23 |
 | Detalhe de devolução | `GET /post-purchase/v2/claims/{claim_id}/returns` | `read`, mesma acima | — | secao 2.3 | 2026-08-23 |
+| Detalhe/SLA do claim | `GET /post-purchase/v1/claims/{claim_id}/detail` | Comunicação pré e pós-venda | — | secao 2.3 | 2026-08-25 |
+| Mensagens do claim | `GET /post-purchase/v1/claims/{claim_id}/messages` | Comunicação pré e pós-venda | — | secao 2.3 | 2026-08-25 |
+| Responder mensagem do claim | `POST /post-purchase/v1/claims/{claim_id}/actions/send-message` | Comunicação pré e pós-venda, ação disponível ao player | — | secao 2.3 | 2026-08-25 |
 | Autorização OAuth | `GET https://auth.mercadolivre.com.br/authorization?...` | — | — | — | 2026-08-21 |
 | Token OAuth | `POST https://api.mercadolibre.com/oauth/token` | — | — | — | 2026-08-21 |
 | Grants da aplicação | `GET /applications/{app_id}/grants` | — | — | — | 2026-08-21 |
@@ -313,7 +325,7 @@ Além do scope, o DevCenter da aplicação exige habilitar **permissões funcion
 | Publicação e sincronização | `items`, `pictures`, `prices` | Catálogo/anúncios |
 | Vendas e envios | `orders`, `shipments`, `claims`, `returns` | Pedidos + estoque Full + Claims/Returns (D-057, secao 2.10) |
 | Promoções, cupons e descontos | `offers`, `deals` | Promoções |
-| Comunicação pré e pós-venda | `questions`, `messages`, `claims`, `returns` | `claims`/`returns` já usados (D-057); `questions`/`messages` seguem Fase posterior |
+| Comunicação pré e pós-venda | `questions`, `messages`, `claims`, `returns` | `claims`/`returns` já usados (D-057); `questions`/`messages` confirmados para a Fase 7B (D-083), ainda sem implementação |
 | Métricas do negócio | `trends`, `highlights`, `visits` | `visits` em uso desde 2026-08-23 (secao 2.11); `trends`/`highlights` seguem sem uso |
 | Publicidade | Advertising | ADIADO (D-059) — exige `advertiser_id` com elegibilidade própria, sem evidência de a conta ter o produto habilitado |
 | Faturamento | `invoices`, `billing` | Fora de escopo hoje |
@@ -363,27 +375,53 @@ Existe também uma variante por CONTA inteira (`GET /users/{user_id}/items_visit
 
 ---
 
-## 2.12 Perguntas e Mensagens pós-venda — PENDENTE (Fase 7B, D-071)
+## 2.12 Perguntas e Mensagens pós-venda — CONFIRMADO (leitura oficial, 2026-08-25, D-083)
 
-**Vazia de propósito** — nenhuma pesquisa oficial foi feita ainda para `questions` (perguntas pré-venda) nem `messages` (mensagens pós-venda). Preenchê-la com suposição é pior que deixá-la vazia (REGRA ABSOLUTA, topo deste arquivo).
+Pesquisa feita exclusivamente na documentação oficial vigente. A permissão funcional **Comunicação pré e pós-venda** permite ler e enviar comunicação pré/pós-compra e libera acesso aos recursos `questions`, `messages`, `claims` e `returns`. As ações efetivamente disponíveis continuam sendo definidas por cada recurso e, em claims, por `players[].available_actions`. Isso confirma a viabilidade técnica da Fase 7B com as mesmas credenciais por conta já usadas pela V3; não cria autorização autônoma para responder — a confirmação humana de D-071 continua obrigatória.
 
-O que já se sabe, de fontes JÁ confirmadas neste arquivo, sem constituir pesquisa própria destes dois recursos:
+### Perguntas pré-venda (`questions`)
 
-- `questions` já aparece como tópico de webhook confirmado (secao 2.4, "Perguntas/respostas"), mas sem payload nem endpoint de leitura/resposta detalhado.
-- `messages` é citado só de passagem (secao 2.4) como um dos tópicos "com subtópicos" (junto de `vis_leads`/`post_purchase`), sem nenhum detalhe de payload, endpoint ou permissão.
-- A permissão funcional "Comunicação pré e pós-venda" (secao 2.9) já lista `questions`/`messages` como recursos que ela libera — mas a tabela da mesma seção marca os dois como "seguem Fase posterior", ou seja: o escopo provavelmente certo, nunca testado.
-- Claims/Returns/Mediações **já estão confirmados** (secao 2.10, D-057) — reaproveitar aquela pesquisa para a parte de leitura; falta confirmar especificamente a permissão de **resposta/ação** sobre claims (hoje só leitura foi usada, para reversão de estoque, não para atendimento).
+- **Reconciliação da conta autenticada:** `GET /my/received_questions/search?api_version=4`. A busca alternativa `GET /questions/search?seller_id={seller_id}&api_version=4` permite filtrar por vendedor; há também busca por item e detalhe `GET /questions/{question_id}?api_version=4`.
+- **Payload relevante:** `id`, `seller_id`, `item_id`, `status`, `text`, `date_created`, `last_updated`, `deleted_from_listing`, `suspected_spam`, `hold`, comprador em `from.id`/`buyer_id` e `answer` (`text`, `status`, `date_created`). Texto de pergunta/resposta com status `BANNED` chega vazio — a V3 não deve interpretar vazio como ausência de conteúdo original.
+- **Estados documentados:** `ANSWERED`, `BANNED`, `CLOSED_UNANSWERED`, `DELETED`, `DISABLED`, `UNANSWERED`, `UNDER_REVIEW`.
+- **Resposta:** `POST /answers`, JSON `{ "question_id": number, "text": string }`. Pergunta e resposta aceitam no máximo **2.000 caracteres**; a documentação pede UTF-8.
+- **Paginação:** padrão 50. Em `/questions/search`, para mais de 1.000 registros, usar `search_type=scan`, atualizando o `scroll_id` a cada chamada; o scroll expira em 5 minutos. A documentação geral de busca registra limite máximo de 100 por página. Esse modo não foi explicitamente confirmado para `/my/received_questions/search`; não presumir equivalência na implementação.
+- **Webhook:** tópico geral `questions`, disparado para perguntas **e respostas**, com `resource: "/questions/{question_id}"`; o worker deve buscar o detalhe pelo `resource`. Não tem array `actions`.
+- **SLA:** não há `due_date` por pergunta documentado. Existe `GET /users/{user_id}/questions/response_time`, métrica agregada dos últimos 14 dias por faixas de horário, atualizada uma vez por dia, incluindo projeção de aumento de vendas quando a resposta excede 60 minutos. Isso serve como métrica; qualquer prazo operacional por pergunta da V3 será regra interna, não campo remoto. Perguntas sem resposta há mais de 7 meses são removidas automaticamente.
 
-Antes de qualquer código de sincronização ou UI de atendimento para perguntas/mensagens, pesquisar e registrar aqui:
+### Mensagens pós-venda (`messages`)
 
-- endpoint de leitura de perguntas por item/conta e seu payload real;
-- endpoint de resposta a uma pergunta, permissão exigida, limites (tamanho, prazo);
-- endpoint de leitura de mensagens de um `pack`/pedido e payload real;
-- endpoint de resposta a uma mensagem, anexos permitidos, permissão exigida;
-- payload completo do webhook `messages` (hoje só citado por nome);
-- se existe campo de prazo/SLA exposto pela API para perguntas/mensagens/claims, ou se é regra própria da V3;
-- rate limit específico desses endpoints (secao 2.3 é o padrão geral, sem número — confirmar se estes recursos têm exceção);
-- se "mediação" é um `type` dentro de Claims (já visto: `type: mediations`, secao 2.10) ou um recurso com endpoint de detalhe próprio.
+- **Leitura de uma conversa:** `GET /messages/packs/{pack_id}/sellers/{seller_id}?tag=post_sale&mark_as_read=false&limit=&offset=`. Se `pack_id` for nulo, usar o `order_id` no mesmo segmento `/packs`. `mark_as_read=false` é obrigatório na ingestão: sem ele, esse GET marca as mensagens como lidas no Mercado Livre.
+- **Payload relevante:** `paging`, `conversation_status` (`path`, `status`, `substatus`, `status_date`, `claim_id`, `shipping_id`), `messages[]` (`id`, `from.user_id`, `to.user_id`, `status`, `text`, datas, moderação, anexos e `message_resources`) e `seller_max_message_length`.
+- **Detalhe:** `GET /messages/{message_id}?tag=post_sale`.
+- **Resposta:** `POST /messages/packs/{pack_id}/sellers/{seller_id}?tag=post_sale`, JSON com `from.user_id`, `to.user_id`, `text` e `attachments` quando houver. Limite do vendedor: **350 caracteres** e uma mensagem por chamada.
+- **Arquitetura vigente no MLB desde 02/02/2026:** quando a conversa passa pelo Agente de Mensageria, `to.user_id` no POST e `from.user_id` no GET representam o agente, não o comprador real. O ID documentado para MLB é `3037675074`. A associação ao pedido/pack e à conta, não o `user_id` remoto isolado, deve governar identidade e autorização na V3.
+- **Início de conversa:** a resposta livre normal pressupõe conversa iniciada pelo comprador. Contato iniciado pelo vendedor usa o fluxo separado de motivos permitidos (`GET /messages/action_guide/packs/{pack_id}` e opções/capacidade disponíveis), nunca um POST livre inventado pela V3.
+- **Não lidas/reconciliação:** `GET /messages/unread?role=seller&tag=post_sale` retorna recursos com contagem e até **500 conversas por chamada**; a própria documentação o recomenda como redundância para perdas do webhook. Existe forma filtrada `GET /messages/unread/{resource}?tag=post_sale`.
+- **Webhook:** tópico tipificado `messages`, `resource` é o ID da mensagem (sem barra de path) e `actions` vale `created` ou `read`; buscar com `GET /messages/{resource}`. O tópico está documentado para Argentina, Brasil e México.
+- **Rate limit específico:** GETs de mensageria compartilham um pool de **500 rpm**; POST/PUT compartilham outro pool de **500 rpm**. Continua obrigatório tratar 429 com backoff/jitter.
+- **Bloqueios/prazo:** no fluxo intermediado por agente, o vendedor tem **48 horas úteis** para resolver antes de a conversa ser bloqueada. Ordens canceladas bloqueiam a mensageria; mediação em andamento também pode bloquear o endpoint pós-venda comum. A V3 deve persistir `conversation_status` e nunca prometer envio só porque o caso está aberto localmente.
+- **Anexos:** upload por `POST /messages/attachments?tag=post_sale&site_id=MLB`, depois o ID entra em `attachments`; máximo **25 MB**, formatos JPG/PNG/PDF/TXT, até 25 anexos conforme a tabela de erros. Anexo órfão expira em 48 horas; nome original tem limite de 200 caracteres.
+
+### Claims, devoluções e mediações
+
+- `type: "mediations"` é um tipo/estado do próprio **claim**, não um recurso raiz separado. O detalhe continua em `GET /post-purchase/v1/claims/{claim_id}`; `stage` e `players[].available_actions` dizem o que cada participante pode fazer.
+- `GET /post-purchase/v1/claims/{claim_id}/detail` expõe `due_date`, `action_responsible`, título, descrição e problema. `players[].available_actions[].due_date` é outra fonte de prazo por ação. Para claims, a V3 deve usar o prazo remoto quando presente, não inventar um SLA concorrente.
+- Mensagens do claim: `GET /post-purchase/v1/claims/{claim_id}/messages`. Resposta: `POST /post-purchase/v1/claims/{claim_id}/actions/send-message`, com `receiver_role` (`complainant`, `mediator` ou `respondent`), `message` e anexos opcionais. O envio só é válido quando a ação correspondente aparece em `available_actions`; status de sucesso documentado: 201.
+- O webhook permanece `post_purchase`, com `actions: ["claims"]` ou `["claims_actions"]` e `resource` apontando para `/post-purchase/v1/claims/{claim_id}`.
+
+### Consequência para a Fase 7B
+
+O primeiro corte continua **read-only**: webhook como caminho principal, reconciliação para perguntas e mensagens não lidas, persistência idempotente e UI sem envio. D-084 fechou o mapeamento local: case por pergunta, conversa por pack/pedido ou claim; mediação e devolução são facetas do claim, e mensagens do claim ficam no transcript desse claim. Identidade usa conta + recurso/chave remota, nunca `from/to`.
+
+A escrita entra depois, por comando privilegiado da `apps/api`, com confirmação humana, validação de permissão da conta, refresh do estado remoto e `available_actions` quando aplicável. A pesquisa D-083 e o modelo D-084 não criaram integração; D-085 criou o núcleo local de banco. D-086 implementou o contrato v4, fixtures documentadas, mapper puro e persistência idempotente somente de Perguntas: `BANNED` preserva a existência da mensagem sem expor texto, `UNDER_REVIEW` vira conteúdo moderado e uma resposta já existente materializa a mensagem outbound. Essa porta ainda não chama o Mercado Livre, não está registrada em job/router e não recebe webhook.
+
+Próxima fatia: detalhe `GET /questions/{question_id}?api_version=4` e handler
+`sync.support.questions` para um `questionId`, reutilizando o mecanismo vigente
+de token/retry. O produtor de webhook `questions`, a busca de reconciliação e
+qualquer envio continuam separados.
+
+**Fontes oficiais consultadas:** `developers.mercadolivre.com.br/pt_br/perguntas-e-respostas`; `.../itens-e-buscas`; `.../pt_br/mensagens-post-venda`; `.../pt_br/mensagens-pendentes`; `.../pt_br/motivos-para-se-comunicar`; `.../pt_br/mensagens-post-venda/produto-receba-notificacoes`; `.../pt_br/permissoes-funcionais/`; `.../pt_br/gerenciar-reclamacoes`; `.../pt_br/gerenciar-mensagem-de-uma-eclamacao`.
 
 ---
 
@@ -495,7 +533,7 @@ O refresh de token usa lock para evitar corrida entre execuções concorrentes �
 - ~~Todo o conteúdo da seção 2. Bloqueia a Fase 3.~~ — **Resolvido em 2026-08-21.** Ver secoes 2.1 a 2.9.
 - ~~Confirmação da viabilidade da autorização centralizada pelo ADMIN.~~ — **Confirmada em 2026-08-21** (secao 2.2): viável, com autorização feita conta por conta pelo ADMIN; usuários internos não reautenticam depois. Ver **D-041**.
 - ~~Endpoints de visitas e de Ads~~ — **Visitas pesquisado e implementado em 2026-08-23** (secao 2.11). **Ads pesquisado, mas ADIADO por D-059**: exige `advertiser_id` próprio com elegibilidade condicionada (reputação, tempo de conta, mínimo de vendas) — sem evidência de que a conta Mercado Livre da Speed Bikers tenha o produto habilitado; integração maior que um adendo a visitas, escopo próprio quando houver evidência real de necessidade.
-- **Endpoints de Perguntas e Mensagens pós-venda (secao 2.12)** — registrado em 2026-08-24 (D-071), Fase 7B (Central de Atendimento/SAC). Não bloqueia nenhuma fase já em andamento; bloqueia o início real da Fase 7B.
+- ~~Endpoints de Perguntas e Mensagens pós-venda (secao 2.12)~~ — **pesquisa oficial concluída em 2026-08-25 (D-083)**; modelo fechado em D-084, núcleo de banco criado em D-085 e contrato/mapper/persistência isolada de Perguntas concluídos em D-086. Próximo passo da Fase 7B: adaptador de detalhe + handler por `questionId`, ainda sem produtor de webhook/reconciliação/UI/resposta.
 
 ### Avisos operacionais encontrados na pesquisa, não bloqueantes hoje
 

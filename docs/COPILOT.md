@@ -144,7 +144,7 @@ Estados na Central de Sugestões: `nova` -> `em_analise` -> `aprovada` -> `plane
 
 ## 11. Sugestão de resposta de atendimento (Fase 7B, conceitual)
 
-> Registrado em 2026-08-24 (D-071), junto com a Central de Atendimento/SAC — `docs/PRODUCT_REQUIREMENTS.md`, `docs/ROADMAP.md` Fase 7B. Nada aqui está implementado.
+> Registrado em 2026-08-24 (D-071), junto com a Central de Atendimento/SAC — `docs/PRODUCT_REQUIREMENTS.md`, `docs/ROADMAP.md` Fase 7B. Pesquisa oficial concluída em D-083, modelo unificado aprovado em D-084 e núcleo read-only de banco criado em D-085; nada desta sugestão de resposta está implementado. A próxima fatia é normalizar e persistir Perguntas, não sugerir nem enviar texto.
 
 Categoria de ferramenta nova: gera o **texto** de uma resposta a pergunta, mensagem, reclamação ou mediação — mesma família de "Estruturação" (secao 4, "transforma ideia em sugestão de feature estruturada"), **não** uma ferramenta de escrita. A regra da secao 6 ("sem ferramenta de escrita") continua valendo sem exceção: o Copiloto nunca chama uma tool que envia mensagem ao Mercado Livre.
 
@@ -164,3 +164,5 @@ ATENDIMENTO + contexto determinístico
 Sem evidência confiável, a resposta sugerida diz isso explicitamente — nunca inventa compatibilidade nem confirma o que não pode confirmar (mesma regra da secao 5, "nunca inventar dado ausente").
 
 **Base de Conhecimento Validada é consultada por ferramenta de SQL determinística, como qualquer outra ferramenta de consulta pontual — não é RAG.** Continua valendo a secao 6: sem embeddings, sem pgvector. Um item de conhecimento é um fato estruturado (`sku_id`, tipo, conteúdo, fonte, status `VALIDADO`/`SUGERIDO`/`REJEITADO`/`OBSOLETO`) gravado só com confirmação humana explícita — nunca o modelo "aprendendo sozinho" a partir de uma resposta anterior.
+
+O contexto do Copiloto parte de um `support_case_id` autorizado e atravessa somente os vínculos declarados em `support_case_links`. Nunca usa `buyer_id`/`from/to` como fronteira de acesso nem consulta outra conta por coincidência de pedido, SKU ou texto. O texto sugerido e o texto final confirmado serão auditados em `support_reply_attempts`; tentativa falha não vira mensagem outbound fictícia (D-084).

@@ -147,4 +147,6 @@ Um evento crítico pode gerar as duas. A maioria dos eventos gera apenas notific
 
 ## 10. Central de Atendimento / SAC (Fase 7B, conceitual)
 
-Registrado em 2026-08-24 (D-071). A cadeia desta seção 1 não muda: os eventos de atendimento (`support.question.received`, `support.claim.opened`, etc. — catálogo proposto em `docs/API.md` secao 9) são só mais `event_type` passando pela MESMA regra de severidade, permissão por conta e agrupamento já descritas acima. Nenhuma arquitetura nova. Detalhe do requisito em `docs/PRODUCT_REQUIREMENTS.md`.
+Registrado em 2026-08-24 (D-071), com fronteira fechada em D-084 e núcleo read-only de banco criado em D-085. A cadeia desta seção 1 não muda: eventos de atendimento selecionados (`support.question.received`, `support.claim.opened`, etc. — catálogo proposto em `docs/API.md` secao 9) são só mais `event_type` passando pela MESMA regra de severidade, permissão por conta e agrupamento já descritas acima. Nenhum produtor `support.*` foi implementado ainda.
+
+`support_case_events` é auditoria detalhada e **não** alimenta notificações diretamente. Só uma transição de negócio promovida explicitamente a `domain_events support.*`, com `dedup_key`, entra no fan-out. Essa fronteira impede que refresh de status, leitura ou prazo técnico gere avalanche de toasts. Mediação/devolução preservam o mesmo `support_case_id` do claim; o link da notificação abre esse case único. Detalhe em `docs/DATABASE.md` e `docs/PRODUCT_REQUIREMENTS.md`.

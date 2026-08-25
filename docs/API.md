@@ -243,24 +243,32 @@ Classificação para retry, aplicada pelo cliente do Mercado Livre e pelos handl
 
 ---
 
-## 9. Central de Atendimento / SAC (Fase 7B, conceitual)
+## 9. Central de Atendimento / SAC (Fase 7B, integração externa ainda pendente)
 
-> Registrado em 2026-08-24 (D-071). Nada nesta seção está implementado; nenhum payload é presumido — depende da pesquisa oficial de `docs/MERCADO_LIVRE.md` secao 2.12 (hoje vazia de propósito).
+> Registrado em 2026-08-24 (D-071). A pesquisa oficial foi concluída em D-083, o modelo unificado foi aprovado em D-084 e o núcleo de banco foi implementado localmente em D-085 (`docs/DATABASE.md`). D-086 implementou contrato/mapper e a porta de persistência de Perguntas, mas não registrou rota/job. Ainda não há chamada externa, webhook de SAC, UI ou resposta.
 
 Rotas prováveis, seguindo as três regras de fronteira da secao 1 — responder ao Mercado Livre exige segredo (credencial da conta) e pode ter latência, então é comando privilegiado da `api`, nunca escrita direta do `web`:
 
 | Rota (provável) | Método | Papel mínimo | Descrição |
 |---|---|---|---|
-| `POST /v1/support/cases/:id/reply` | POST | a confirmar (GESTOR ou OPERADOR com acesso à conta) | Envia a resposta confirmada pelo humano — **comando privilegiado**, mesmo padrão de `/v1/nfe-imports/:id/apply` |
+| `POST /v1/support/cases/:id/reply` | POST | ADMIN, GESTOR ou OPERADOR com acesso à conta | Envia a resposta confirmada pelo humano — **comando privilegiado**, revalida estado/ações do Mercado Livre e grava `support_reply_attempts`; mesmo padrão de `/v1/nfe-imports/:id/apply` |
 | `POST /v1/support/knowledge` | POST | a confirmar | Confirma um item de conhecimento sugerido como `VALIDADO` |
+
+Triagem local (assumir, atribuir responsável, mudar status, resolver/reabrir) não chama o Mercado Livre e deve ser uma RPC transacional sob RLS/autorização — atualiza `support_cases` e acrescenta `support_case_events` juntos. Não precisa de uma rota HTTP própria na primeira fatia.
 
 Jobs prováveis, mesmo formato de `sync.listings.snapshot`/`sync.listing-visits.snapshot` — ingestão read-only primeiro, resposta depois:
 
 | Tipo (provável) | Fila | Descrição |
 |---|---|---|
-| `sync.support.questions` | `ml-sync-<conta>` | Sincroniza perguntas — payload exato depende da pesquisa oficial |
-| `sync.support.messages` | `ml-sync-<conta>` | Sincroniza mensagens pós-venda — idem |
+| `sync.support.questions` | `ml-sync-<conta>` | Consome webhook `questions` (`resource=/questions/{id}`) e reconcilia por `GET /my/received_questions/search?api_version=4` |
+| `sync.support.messages` | `ml-sync-<conta>` | Consome webhook `messages` (`actions=created/read`, `resource=message_id`) e reconcilia por `GET /messages/unread?role=seller&tag=post_sale` |
 | `sync.support.claims` | `ml-sync-<conta>` | Reaproveita o que D-057/secao 2.10 já confirmou (claims/returns), estendendo para persistência de UI, não só reversão de estoque |
+
+O primeiro job a sair do estado provável será `sync.support.questions`, em uma
+fatia restrita a um `questionId`: detalhe remoto, validação pelo contrato D-086,
+mapper e persistência já existentes. Registrar produtor via webhook e implementar
+reconciliação por busca permanecem etapas próprias; nenhuma delas deve ser
+simulada no mesmo handler.
 
 Catálogo de eventos proposto, seguindo `dominio.entidade.acao` (secao 4) — nomes conceituais, a confirmar contra os estados reais que a API devolver:
 
@@ -275,6 +283,6 @@ Catálogo de eventos proposto, seguindo `dominio.entidade.acao` (secao 4) — no
 | `support.customer_replied` | importante |
 | `support.sla_at_risk` | crítico |
 
-Antes de congelar este catálogo: verificar as APIs reais, os estados reais, a diferença entre mensagem/claim/mediação/devolução, e documentar em `docs/MERCADO_LIVRE.md`.
+Este catálogo continua propositalmente menor que `support_case_events`: auditoria interna (`ASSIGNEE_CHANGED`, `INTERNAL_STATUS_CHANGED`, refresh técnico de prazo etc.) não gera automaticamente `domain_events`/notificações. Antes de implementar cada linha, definir a transição exata e a `dedup_key` correspondente. Mediação é faceta de claim (`type: mediations`); devolução é outra faceta possível; mensagem comum e mensagem de claim continuam transcripts de cases distintos (D-084).
 
 `sync_runs.resource`/`sync_errors.resource` (hoje `orders`/`listings`/`fulfillment`/`visits`) precisaria crescer de novo para acomodar sincronização de SAC — mesmo CHECK que já cresceu uma vez para caber `visits` (`docs/DATABASE.md`).

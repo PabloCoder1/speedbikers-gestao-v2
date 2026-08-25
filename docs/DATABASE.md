@@ -2,7 +2,7 @@
 
 > Dono documental de: tabelas, colunas-chave, constraints, índices, RLS e regras de migration.
 > Arquitetura geral em `docs/ARCHITECTURE.md`. Métricas derivadas em `docs/METRICS.md`.
-> Status: **modelo conceitual aprovado; schema implementado até a Fase 3 e catálogo de métricas da Fase 5A.** As demais tabelas de fases futuras continuam conceituais até sua migration correspondente.
+> Status: **schema implementado para as fases entregues; núcleo read-only do domínio `support` implementado localmente em 2026-08-25 (D-085), conforme o modelo D-084.** Tabelas de resposta, conhecimento e templates continuam futuras e só existem após sua migration correspondente.
 
 ---
 
@@ -39,8 +39,9 @@ purchasing      purchase_orders · purchase_order_items (implementadas 2026-08-2
 actions         actions (implementada 2026-08-24, D-064) · action_decisions · action_outcomes (implementadas 2026-08-24, D-065)
 notifications   notifications · notification_recipients · notification_preferences (implementadas 2026-08-24, D-073)
 feedback        feature_suggestions
-support         support_cases · support_messages · support_case_events · knowledge_entries
-                reply_templates                 (Fase 7B, D-071 — conceitual, nomes a confirmar)
+support         support_cases · support_messages · support_case_links · support_case_deadlines
+                support_attachments                       (Fase 7B, D-085 — implementadas)
+                knowledge_entries · reply_templates       (Fase 7B — conceituais)
 meta            metric_definitions
 ```
 
@@ -52,6 +53,8 @@ meta            metric_definitions
 domain_events          before/after, dedup_key UNIQUE, severity, source
 stock_movements        idempotency_key UNIQUE — único escritor do estoque local
 purchase_order_events
+support_case_events       (Fase 7B, D-085 — implementada)
+support_reply_attempts    (Fase 7B — conceitual, nasce com resposta manual)
 sync_runs · sync_errors · job_runs · ai_runs
 ```
 
@@ -533,6 +536,159 @@ feature_suggestions   organization_id, created_by, original_text, [nove campos e
 
 **Verificação**: `packages/db/src/rls.integration.test.ts`, describe `"feature_suggestions (Sugestões de features, D-079)"` — inserção com texto preservado, usuário não insere em nome de outro, leitura compartilhada na organização, isolamento entre organizações, ANALISTA não muda status, ADMIN muda status de sugestão de outro membro, `anon` sem acesso nenhum. Não executável nesta máquina (sem Docker) — verificado pela CI (`integration` job).
 
+### Domínio `support` — modelo D-084 materializado no núcleo read-only (D-085/D-086)
+
+O modelo abaixo fechou a etapa conceitual da Fase 7B em D-084 e seu núcleo read-only foi criado pela migration `20260825170000_create_support_read_model.sql` em D-085. D-086 acrescentou, sem nova migration, o primeiro escritor isolado: contrato/mapper/persistência de Perguntas ainda sem adaptador de rede. Ele **não cria uma entidade remota fictícia**: a caixa de entrada é unificada pela projeção local `support_cases`, mas cada recurso continua obedecendo à identidade e ao ciclo de vida do Mercado Livre. `knowledge_entries`, `reply_templates` e `support_reply_attempts` permanecem conceituais e fora desta migration.
+
+#### Grão e fronteiras
+
+| `channel` | Uma linha de `support_cases` representa | `external_case_key` determinística |
+|---|---|---|
+| `QUESTION` | uma pergunta pré-venda | `question:{question_id}` |
+| `POST_SALE_MESSAGE` | uma conversa pós-venda da conta em um pack; sem `pack_id`, no pedido usado pelo endpoint | `message:pack:{pack_id}` ou `message:order:{order_id}` |
+| `CLAIM` | um claim | `claim:{claim_id}` |
+
+Identidade física: `unique (organization_id, ml_account_id, channel, external_case_key)`. `buyer_id`, `from.user_id` e `to.user_id` são somente atributos observados — nunca participam da identidade (D-083, Agente de Mensageria do MLB).
+
+Mediação (`claim.type = 'mediations'`) e devolução (`related_entities` contém `return`) são **facetas do mesmo case `CLAIM`**, não novos cases. Um claim pode ser mediação e ter devolução ao mesmo tempo; por isso os filtros “Mediações” e “Devoluções” podem retornar a mesma linha. Mensagens do endpoint de claim pertencem ao case `CLAIM`; não são misturadas com a conversa `POST_SALE_MESSAGE` do mesmo pedido. Cases diferentes se relacionam pelo pedido/pack, sem fundir seus prazos ou ações disponíveis.
+
+#### Tabelas e responsabilidades
+
+```text
+support_cases
+  organization_id, ml_account_id, channel, external_case_key,
+  external_case_id, pack_id?, external_status?, external_substatus?,
+  external_stage?, external_type?, is_mediation, has_return,
+  customer_external_id?, conversation_path?, remote_unread_count,
+  remote_reply_state, remote_reply_block_reason?,
+  internal_status, priority, assignee_id?,
+  last_activity_at, last_inbound_at?, last_outbound_at?, resolved_at?,
+  created_at, updated_at
+
+support_messages
+  organization_id, ml_account_id, support_case_id,
+  external_message_key, external_message_id?, direction, sender_kind,
+  remote_from_user_id?, remote_to_user_id?, body?, body_state,
+  remote_status?, occurred_at, observed_at, created_at, updated_at
+
+support_case_links
+  organization_id, ml_account_id, support_case_id,
+  order_id? | sku_id? | listing_id? | (external_entity_kind, external_entity_id),
+  link_source, created_at
+
+support_case_deadlines
+  organization_id, ml_account_id, support_case_id,
+  deadline_kind, source, source_reference?, policy_key?,
+  started_at?, due_at?, status, met_at?, created_at, updated_at
+
+support_attachments
+  organization_id, ml_account_id, support_message_id,
+  external_attachment_key, file_name?, mime_type?, size_bytes?,
+  remote_reference?, cached_object_path?, created_at, updated_at
+
+support_case_events                         -- L2, append-only
+  organization_id, ml_account_id, support_case_id,
+  event_type, source, actor_user_id?, before?, after?,
+  occurred_at, dedup_key, created_at
+
+support_reply_attempts                      -- L2, fase posterior de resposta
+  organization_id, ml_account_id, support_case_id,
+  requested_by, client_request_id, suggested_text?, final_text,
+  outcome, external_message_id?, error_code?, attempted_at
+```
+
+`support_cases` e `support_messages` são projeções L1 mutáveis do estado remoto atual. Isso permite refletir moderação, status de leitura e bloqueio sem apresentar conteúdo obsoleto; mudanças relevantes entram em `support_case_events`. Payload bruto continua em L0/GCS com lifecycle, nunca como `jsonb` indiscriminado no Postgres.
+
+`remote_reply_state` usa `UNKNOWN | ALLOWED | BLOCKED` e serve apenas para apresentação/triagem. Mesmo `ALLOWED` fica sujeito a refresh na hora do envio; não é autorização persistente para responder.
+
+`support_case_links` aceita múltiplos pedidos, SKUs e anúncios por case. Isso é obrigatório porque um pack pode reunir mais de um pedido/SKU. D-085 implementou FKs tipadas reais e indexadas (`order_id`, `sku_id`, `listing_id`), mais o par explícito `external_entity_kind`/`external_entity_id` para referência ainda sem tabela local. Constraint exige exatamente um alvo por linha; índices únicos parciais impedem duplicidade por tipo; trigger privado garante coerência de organização/conta dos alvos tipados — nenhum FK polimórfico textual substitui as relações existentes.
+
+`support_attachments` guarda metadados e ponteiro seguro, nunca o binário no Postgres nem URL pública permanente. O primeiro corte read-only não faz upload; cache/download, se necessário, terá autorização por conta no backend e lifecycle próprio.
+
+#### Estado interno e prioridade
+
+Vocabulário aprovado de `internal_status`:
+
+```text
+NOVO -> EM_ATENDIMENTO -> AGUARDANDO_CLIENTE
+                      -> AGUARDANDO_MERCADO_LIVRE
+                      -> RESOLVIDO
+```
+
+- `NOVO`: atividade que ainda exige triagem humana;
+- `EM_ATENDIMENTO`: ação interna em andamento;
+- `AGUARDANDO_CLIENTE`: última ação útil foi da empresa e a continuação depende do comprador;
+- `AGUARDANDO_MERCADO_LIVRE`: ação depende do agente/mediador/plataforma;
+- `RESOLVIDO`: não há ação interna pendente; pode reabrir.
+
+Não existe `FECHADO` interno: fechamento do Mercado Livre permanece em `external_status`. Na primeira projeção, um recurso já respondido/encerrado pode nascer `RESOLVIDO`; atividade inbound nova reabre `RESOLVIDO` para `NOVO` e registra `REOPENED`. Fora dessas duas regras determinísticas, sincronização nunca sobrescreve uma decisão humana de status.
+
+`priority` usa `NORMAL | ALTA | CRITICA`, separada de `domain_events.severity`. A prioridade inicial pode ser derivada de canal/prazo (mediação crítica; claim alta; pergunta/mensagem normal), mas toda regra precisa ser determinística e calibrada com dado real antes de implementação.
+
+Assumir, mudar status, atribuir responsável, resolver ou reabrir deve atualizar `support_cases` e inserir `support_case_events` **na mesma transação**. Escrita humana direta nas tabelas fica proibida; a futura RPC/comando refaz autorização para `ADMIN`, `GESTOR` ou `OPERADOR` com acesso à conta. `ANALISTA` e `VISUALIZADOR` permanecem leitura apenas. Enviar resposta usa a mesma lista de papéis, mas sempre pela `apps/api`, que revalida o estado remoto e as ações disponíveis imediatamente antes do POST.
+
+#### Prazos e SLA
+
+Um case pode ter mais de um prazo, logo SLA não cabe em uma única coluna de `support_cases`:
+
+- pergunta: nenhum prazo individual remoto; só nasce deadline quando houver política interna aprovada, com `source = INTERNAL_POLICY`;
+- mensagem intermediada: `source = ML_MESSAGE_RULE`, `policy_key = MLB_AGENT_48_BUSINESS_HOURS`; **não calcular `due_at` somando 48 horas corridas**. Até existir calendário canônico de horas úteis, preservar início/regra e deixar `due_at` nulo;
+- claim: `source = ML_CLAIM_DETAIL` ou `ML_AVAILABLE_ACTION`, usando o `due_date` remoto exato quando presente.
+
+`deadline_kind` distingue ao menos `FIRST_RESPONSE`, `NEXT_ACTION` e `RESOLUTION`; `status` usa `ACTIVE | MET | BREACHED | CANCELLED`. Identidade: `unique nulls not distinct (support_case_id, deadline_kind, source, source_reference)` — `source_reference` nula também precisa colidir. A caixa de entrada ordena/filtra pelo menor `due_at` ativo; a ausência de `due_at` nunca vira prazo inventado.
+
+#### Mensagens, auditoria e idempotência
+
+Uma linha de `support_messages` é uma unidade de comunicação, não a conversa inteira. Chaves:
+
+- pergunta recebida: `question:{id}:question`;
+- resposta da pergunta: `question:{id}:answer`;
+- mensageria comum: `message:{message_id}`;
+- mensagem de claim: ID remoto quando existir; se o payload oficial não trouxer ID estável, a implementação deve confirmar a forma real e usar fingerprint determinístico documentado — nunca índice do array.
+
+Identidade física: `unique (support_case_id, external_message_key)`. `body_state` distingue `AVAILABLE | EMPTY | BANNED | MODERATED | UNAVAILABLE`; texto vazio com estado `BANNED` não significa “mensagem inexistente”. `sender_kind` usa `CUSTOMER | SELLER | MERCADO_LIVRE_AGENT | MEDIATOR | SYSTEM | UNKNOWN`; `direction` (`INBOUND | OUTBOUND | SYSTEM`) é derivada pela conta/contexto, não apenas por `from/to`.
+
+Webhook e reconciliação fazem `INSERT ... ON CONFLICT DO UPDATE` das projeções L1. As garantias físicas são:
+
+```text
+support_cases          unique (organization_id, ml_account_id, channel, external_case_key)
+support_messages       unique (support_case_id, external_message_key)
+support_case_deadlines unique nulls not distinct (support_case_id, deadline_kind, source, source_reference)
+support_case_events    unique (organization_id, dedup_key)
+support_reply_attempts unique (organization_id, client_request_id)
+support_attachments    unique (support_message_id, external_attachment_key)
+```
+
+O primeiro escritor concreto, `persistSupportQuestion` (D-086), usa exatamente
+as duas primeiras chaves. A criação do case usa UPSERT `ignoreDuplicates` e a
+etapa seguinte atualiza somente campos externos; assim preserva os campos de
+triagem humana (`internal_status`, `priority`, `assignee_id`, `resolved_at`) até
+sob concorrência. O `item_id` nasce como link externo `LISTING` quando o anúncio
+ainda não existe no catálogo local e converge para `listing_id`/`sku_id` tipados
+quando a resolução passa a ser possível. Os índices únicos dos links são parciais;
+por isso essa escrita usa `INSERT` e absorve somente colisão `23505`, em vez de
+fingir um alvo `onConflict` sem predicado na Data API. Cases e mensagens usam
+UPSERT normal e reprocessamento atualiza o snapshot sem duplicar linhas.
+
+`support_case_events` é o histórico detalhado de auditoria (`REMOTE_STATUS_CHANGED`, `INTERNAL_STATUS_CHANGED`, `ASSIGNEE_CHANGED`, `DEADLINE_CHANGED`, `REOPENED`, etc.). Ele **não** gera notificação automaticamente. Só transições selecionadas e deduplicadas são promovidas a `domain_events` `support.*`; isso preserva a cadeia existente sem transformar cada atualização técnica em toast.
+
+Na fase de resposta, cada confirmação humana cria um `client_request_id` e uma linha imutável de `support_reply_attempts`, inclusive em falha ou resultado incerto. Sucesso também materializa a mensagem outbound em `support_messages`. Assim o conteúdo sugerido, o texto final, o usuário, o resultado e o ID remoto ficam auditáveis sem fingir que tentativa falha foi mensagem enviada.
+
+#### RLS, GRANTs e índices do núcleo implementado
+
+Todas as tabelas duplicam `organization_id` e `ml_account_id` para RLS direta por `private.has_account_access(ml_account_id)`. `support_cases` tem `unique (id, organization_id, ml_account_id)` e os filhos usam essa chave em FKs compostas, impedindo que declarem conta/organização diferente do pai. `authenticated` recebe somente `SELECT`; `service_role` faz CRUD nas projeções L1 e apenas `SELECT`/`INSERT` em `support_case_events`; `anon` não recebe acesso. GRANTs são explícitos por tabela/papel — nunca dependem do default da plataforma. Mutações humanas continuam futuras e passarão por RPC/comando transacional.
+
+Índices mínimos implementados (validar e ajustar com `EXPLAIN` quando houver volume real):
+
+- inbox org-wide aberta: `(organization_id, internal_status, last_activity_at desc)` parcial onde `internal_status <> 'RESOLVIDO'`;
+- inbox por conta: `(ml_account_id, internal_status, last_activity_at desc)`;
+- responsável: `(organization_id, assignee_id, internal_status)` parcial para casos não resolvidos;
+- prazo ativo: `(organization_id, due_at)` parcial onde `status = 'ACTIVE' and due_at is not null`;
+- toda FK de `support_messages`, links, deadlines, anexos e eventos;
+- índices parciais/únicos dos alvos tipados de `support_case_links`.
+
+`knowledge_entries` e `reply_templates` continuam aprovados conceitualmente por D-071, mas ficaram fora da primeira migration read-only. `support_reply_attempts` também só nasce junto da resposta manual. D-085 limitou-se às seis tabelas necessárias para ingestão/read model; `packages/db/src/types.ts` foi regenerado e 38 testes de integração cobrem RLS, GRANTs, coerência, idempotência e append-only.
+
 ---
 
 ## 5. RLS
@@ -635,6 +791,6 @@ Se a migração de compras acontecer na Fase 4, a regra permanece: cada linha mi
 | Tabelas de visitas, conversão e Ads | Fase 5B (D-032) | Modelagem adiada por decisão, não por falta de definição |
 | Estrutura exata das planilhas do UpSeller | Amostra real do arquivo | Necessária antes da Fase 2 |
 | Campos do Mercado Livre em cada recurso | `docs/MERCADO_LIVRE.md` | Necessária antes da Fase 3 |
-| Tabelas do domínio `support` (`support_cases`/`support_messages`/`support_case_events`/`knowledge_entries`/`reply_templates`) | Fase 7B (D-071) e pesquisa oficial de Perguntas/Mensagens (`docs/MERCADO_LIVRE.md` secao 2.12) | Nomes e colunas conceituais, propositalmente sem migration ainda |
+| Adaptador de detalhe e handler por `questionId` | Fase 7B (D-086) | Próxima pequena etapa; conecta `GET /questions/{id}?api_version=4` ao mapper/persistência, ainda sem produtor de webhook, reconciliação, UI ou resposta |
 
-Nenhuma decisão de produto segue aberta. Ver `docs/DECISIONS.md` D-027 a D-034 (e D-071 para o registro da Fase 7B).
+Nenhuma decisão de produto das fases já implantadas segue aberta. O modelo, estados internos e papel de resposta da Fase 7B foram fechados em D-084; o núcleo read-only existe localmente desde D-085 e a persistência isolada de Perguntas desde D-086. Ainda faltam ingestão externa, UI, triagem, notificação e resposta em etapas próprias.

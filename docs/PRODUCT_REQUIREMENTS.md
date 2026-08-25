@@ -138,7 +138,7 @@ O painel administrativo terá uma Central de Sugestões com estados como:
 - Entregue;
 - Recusada.
 
-**Implementado em 2026-08-25 (D-079)**: qualquer membro da organização envia uma sugestão em texto livre (`/sugestoes`), preservado íntegro (`feature_suggestions.original_text`, nunca sobrescrito); ADMIN/GESTOR muda o estado nos sete valores acima. **Pendente**: os campos estruturados (título, problema, objetivo, usuários impactados, fluxo sugerido, benefício esperado, critérios de aceite, dependências/riscos, complexidade) — o schema já os tem, mas "a IA deve gerar" e o Copiloto ainda não tem modelo/orçamento decidido (`docs/COPILOT.md` secao 10). Autor e data já aparecem na Central via `created_by`/`created_at`, sem depender de IA.
+**Implementado em 2026-08-25 (D-079)**: qualquer membro da organização envia uma sugestão em texto livre (`/sugestoes`), preservado íntegro (`feature_suggestions.original_text`, nunca sobrescrito); ADMIN/GESTOR muda o estado nos sete valores acima. **Pendente**: a estruturação por IA dos campos título, problema, objetivo, usuários impactados, fluxo sugerido, benefício esperado, critérios de aceite, dependências/riscos e complexidade. O schema já possui as colunas e o modelo/orçamento foram decididos em D-082; falta implementar o fluxo. Autor e data já aparecem na Central via `created_by`/`created_at`, sem depender de IA.
 
 ## Memória de decisões operacionais
 
@@ -350,10 +350,10 @@ Fluxo conceitual:
 
 Primeiros eventos esperados, quando os campos estiverem disponíveis:
 
-- `listing.price_changed`;
-- `listing.title_changed`;
-- `listing.status_changed`;
-- `listing.available_quantity_changed`.
+- `listing.price.changed`;
+- `listing.title.changed`;
+- `listing.status.paused` / `listing.status.reactivated`;
+- `listing.available_quantity.changed`.
 
 Eventos posteriores, somente depois de confirmar as fontes oficiais necessárias:
 
@@ -435,9 +435,12 @@ Essa regra nasce do incidente em que API/Worker ficaram dezenas de commits atrá
 Requisito novo. Posicionamento e decisões de arquitetura em D-071
 (`docs/DECISIONS.md`). Detalhe técnico em `docs/ARCHITECTURE.md` (domínio
 `support`), `docs/COPILOT.md` (sugestão de resposta), `docs/API.md` e
-`docs/DATABASE.md` (conceituais, sem migration) e `docs/MERCADO_LIVRE.md`
-(pesquisa oficial pendente). Nada aqui está implementado — ver `docs/ROADMAP.md`
-Fase 7B.
+`docs/DATABASE.md` (modelo aprovado em D-084, núcleo de banco criado em D-085 e
+persistência isolada de Perguntas concluída em D-086) e
+`docs/MERCADO_LIVRE.md` (pesquisa oficial concluída em D-083). A infraestrutura
+read-only e a transformação/persistência local de Perguntas estão implementadas;
+o adaptador de rede e, portanto, a ingestão externa ainda não. Caixa de entrada,
+notificações de SAC, triagem e resposta continuam pendentes — ver `docs/ROADMAP.md` Fase 7B.
 
 ### Objetivo
 
@@ -474,6 +477,10 @@ dado real e regras confirmadas do Mercado Livre:
 ### Estrutura da Central
 
 Grupos: Todos, Perguntas, Mensagens, Reclamações, Devoluções, Mediações.
+Conforme D-084, “Devoluções” e “Mediações” são filtros/facetas de claim e
+podem mostrar o mesmo atendimento; não são cases duplicados. Pergunta,
+conversa pós-venda e claim ligados ao mesmo pedido continuam cases separados,
+relacionados pelo pedido/pack, porque têm status, ações e prazos diferentes.
 
 Filtros desejados: conta Mercado Livre; tipo; status; prioridade;
 responsável; SKU; MLB/anúncio; pedido; período; aguardando resposta; próximo
@@ -488,15 +495,48 @@ demais entidades relacionadas.
 
 ### Status e responsável interno
 
-Além do status externo do Mercado Livre, um status operacional interno —
-nomes a confirmar durante a arquitetura, exemplos de partida: `NOVO`,
-`EM_ATENDIMENTO`, `AGUARDANDO_CLIENTE`, `AGUARDANDO_MERCADO_LIVRE`,
-`RESOLVIDO`.
+Além do status externo do Mercado Livre, o status operacional interno aprovado
+em D-084 usa: `NOVO`, `EM_ATENDIMENTO`, `AGUARDANDO_CLIENTE`,
+`AGUARDANDO_MERCADO_LIVRE`, `RESOLVIDO`. Não existe `FECHADO` interno: o
+fechamento remoto permanece no status do Mercado Livre. Atividade inbound nova
+reabre um item resolvido para `NOVO`; sincronização não pode sobrescrever outra
+decisão humana de status.
 
 Permitir atribuição de responsável interno. Registrar histórico de quem
 assumiu, quem respondeu, quando respondeu, mudança de status, resolução e
 reabertura quando aplicável. Nada importante deve depender apenas do estado
 visual da interface.
+
+Prioridade interna: `NORMAL`, `ALTA`, `CRITICA`, separada da severidade da
+notificação. Na primeira regra determinística, mediação parte crítica, claim
+parte alta e pergunta/mensagem parte normal; prazo em risco pode elevar a
+prioridade. Calibrar com dado real antes de automatizar qualquer regra além
+dessas classificações iniciais.
+
+### Prazo/SLA por fonte
+
+O modelo aceita vários prazos por atendimento. Pergunta não possui prazo
+individual remoto e só recebe SLA após uma política interna aprovada. Mensagem
+intermediada preserva a regra documentada de 48 horas úteis, mas não calcula
+`due_at` somando horas corridas; isso exige calendário canônico de horas úteis.
+Claim usa `detail.due_date`/`available_actions[].due_date` quando presentes.
+Toda exibição deve informar a fonte (`INTERNAL_POLICY`, regra de mensageria ou
+prazo remoto do claim); prazo ausente nunca vira estimativa apresentada como
+oficial.
+
+### Identidade, vínculos e auditoria
+
+Identidade de atendimento usa organização + conta + canal + chave remota:
+pergunta por `question_id`, conversa por pack (ou pedido fallback) e claim por
+`claim_id`. `buyer_id` e `from/to` são atributos, não identidade, pois o Agente
+de Mensageria do MLB pode ocupar esses campos. Um atendimento pode vincular
+múltiplos pedidos, SKUs e anúncios; os filtros devem usar esses vínculos, sem
+escolher um “SKU principal” arbitrário.
+
+Webhook e reconciliação precisam convergir para as mesmas linhas por
+constraints únicas. O histórico operacional detalhado é append-only; somente
+transições relevantes viram `domain_events support.*`, evitando notificação a
+cada atualização técnica. Detalhe físico e chaves em `docs/DATABASE.md`.
 
 ### Copiloto sugerindo respostas
 

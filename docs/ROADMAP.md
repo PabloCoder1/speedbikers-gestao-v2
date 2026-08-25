@@ -255,16 +255,19 @@ Itens P1 e P2 podem continuar evoluindo incrementalmente sem reabrir ou invalida
 Extensão da Fase 7 (D-071): reaproveita a arquitetura de notificações e o
 Copiloto já aprovados ali, em vez de reabri-los. Registrada como subfase
 própria — não é um item de checklist da Fase 7 — por volume: novo domínio
-(`support`), integração ML nova em boa parte (perguntas e mensagens nunca
-pesquisadas; claims/returns já confirmado, D-057, `docs/MERCADO_LIVRE.md`
-secao 2.10), um caso de uso novo do Copiloto (sugestão de resposta) e uma
+(`support`), integração ML nova em boa parte (perguntas/mensagens pesquisadas
+em D-083; claims/returns confirmados em D-057, `docs/MERCADO_LIVRE.md`
+seções 2.10/2.12), um caso de uso novo do Copiloto (sugestão de resposta) e uma
 feature sem precedente direto no projeto (Base de Conhecimento Validada).
 
-Ordem incremental recomendada (a confirmar/ajustar quando a fase começar de
-verdade):
+Ordem incremental vigente (pesquisa iniciada em 2026-08-25; ajustar só com
+nova decisão registrada):
 
-- [ ] Pesquisa oficial das APIs de Perguntas e Mensagens (`docs/MERCADO_LIVRE.md` secao 2.12, hoje vazia de propósito)
-- [ ] Modelo unificado de atendimento (schema conceitual antes de qualquer migration)
+- [x] Pesquisa oficial das APIs de Perguntas e Mensagens — concluída em 2026-08-25 (D-083, `docs/MERCADO_LIVRE.md` secao 2.12): leitura/resposta, payloads, webhooks, paginação, rate limits, anexos e fontes de SLA confirmados; nenhum código/migration
+- [x] Modelo unificado de atendimento — concluído em 2026-08-25 (D-084, `docs/DATABASE.md`): case por pergunta/conversa pós-venda/claim; mediação e devolução como facetas do claim; transcript, vínculos múltiplos, deadlines por fonte, estados internos, auditoria, RLS e idempotência definidos; nenhum código/migration
+- [x] Núcleo read-only de banco — concluído localmente em 2026-08-25 (D-085): seis tabelas `support_*`, RLS/GRANTs, constraints, índices, tipos gerados e 38 testes de integração; sem migration remota, integração externa, webhook ou UI
+- [x] Núcleo isolado de Perguntas — concluído localmente em 2026-08-25 (D-086): contratos/fixtures documentados, mapper puro e persistência idempotente de case/mensagens/links; cobre respondida, banida, moderada, atualização e reprocessamento; ainda sem rede/job/webhook/UI/evento/resposta
+- [x] Handler unitário de detalhe de Pergunta — concluído localmente em 2026-08-25 (D-087): `GET /questions/{id}?api_version=4`, token/retry existentes, validação de organização+seller e job `sync.support.questions`; sem produtor de webhook/reconciliação/UI/evento/resposta
 - [ ] Ingestão read-only (perguntas, mensagens, reclamações, devoluções, mediações)
 - [ ] Caixa de entrada unificada, com filtros por conta/tipo/status/prioridade/SLA
 - [ ] Notificações de atendimento — mesma cadeia `domain_events -> severidade -> notifications` da Fase 7, novos `event_type` prefixados `support.*`
@@ -314,18 +317,6 @@ A Fase 5A antecede a Fase 4 porque o dashboard de vendas não usa estoque, e a F
 
 ## Próximo passo imediato
 
-**Fase 2 concluída** (2026-08-21) — identidade, contas, catálogo, importador do UpSeller com aplicação e Central de Vinculações, e o schema de observabilidade de sincronização. Ver `docs/HANDOFF.md` para o estado verificado.
+**Fase 7B com pesquisa, modelo conceitual, núcleo read-only de banco e caminho unitário de uma Pergunta concluídos localmente.** D-083 confirmou as APIs, D-084 fechou o modelo, D-085 criou/validou as seis tabelas `support_*`, D-086 provou contrato/mapper/UPSERT e D-087 conectou um `questionId` ao detalhe remoto pelo job `sync.support.questions`. O job ainda não tem produtor, logo não há ingestão automática, webhook de SAC ativo, UI ou resposta; a migration não foi aplicada remotamente.
 
-**Fase 3 — Mercado Livre e histórico — CONCLUÍDA** (2026-08-21). Os oito itens do checklist prontos: cliente `@sb/mercado-livre`, webhook, conexão OAuth de conta, reconciliação por janela, backfill retomável, persistência estruturada de pedidos, motor de diff/`domain_events` e a Tela de Saúde da Sincronização (`/sincronizacao`) — ver `docs/HANDOFF.md`.
-
-**Fase 5A — Métricas de venda e dashboards Geral/Conta — CONCLUÍDA** (2026-08-21). Os cinco itens do checklist prontos: `metric_definitions`, fato + rollups diários, recálculo incremental/rebuild, e o Dashboard `/vendas` (Geral e por Conta na mesma tela, filtro de período, comparação, os quatro estados) — ver `docs/HANDOFF.md`.
-
-**Fase 4 — Estoque e compras — CONCLUÍDA** (2026-08-23). Todos os itens reais do checklist prontos: ledger auditável, dedução/reversão por venda e cancelamento, NF-e, Full por conta, reservado e em trânsito, reconciliação contra o UpSeller (D-029), conferência automática ledger×projeção (D-056), ajuste manual de estoque, pedidos de compra completos (ciclo, TRANSITO, exportação Excel/PDF — D-034, o usuário liberou layout próprio — edição de rascunho) e pós-venda Claims/Returns (D-057). Recebimento parcial de pedido de compra segue fora de escopo por decisão deliberada (D-040), não bloqueio — ver `docs/HANDOFF.md`.
-
-Pela ordem de execução da D-033 (`0 -> 1 -> 2 -> 3 -> 5A -> 4 -> 5B -> 6 -> 7 -> 8`), a próxima fase é **5B — Analytics de estoque, sortimento e tráfego**. Pré-requisito não nomeado explicitamente até 2026-08-22: sincronização de listings/anúncios — `docs/DATABASE.md` já modela `listings`/`listing_variations`/`listing_price_states`, mas nenhum job os popula a partir do Mercado Livre ainda.
-
-**Fase 5B — quase concluída, mas com itens reais em aberto** (2026-08-23/24): sincronização de listings, cobertura/ruptura, Curva ABC, dashboards de SKU/anúncio, Busca Universal e Filtros salvos — todos prontos. "Vendas perdidas estimadas" e "Ads" ficam ADIADOS por decisão deliberada (D-061/D-059), não são bloqueio. Restam de verdade: **Playwright nos fluxos críticos** (não iniciado) e a confirmação do Marco da fase ("o diagnóstico passa a distinguir queda de tráfego de queda de conversão") com dado real de uma conta conectada rodando a sincronização de visitas de ponta a ponta.
-
-**Fase 6 — Diagnóstico e Ações — CONCLUÍDA** (2026-08-24). Os três itens do checklist prontos: diagnóstico estatístico com evidência e confiança (D-063), Central de Ações unificando problema/oportunidade por impacto financeiro (D-064), e Memória de decisões operacionais com `baseline_snapshot`/medição em 7/15/30 dias (D-065). Antes de começar D-065, um achado sério: o deploy de produção (`worker`/`api`) estava 36 commits atrasado e 5 jobs do Cloud Scheduler documentados como "rodando" nunca tinham sido criados de fato — corrigido (deploy + jobs + 2 bugs de CI + 1 bug real de produção em `reconcile-balances`) antes de prosseguir; ver header do `docs/HANDOFF.md`.
-
-A Fase 6 foi executada antes de Playwright (item real ainda aberto da Fase 5B) por ser trabalho de PRODUTO na ordem natural do checklist já em andamento pela sessão anterior — a ordem D-033 é sobre a sequência das FASES, o item de teste E2E pendente não bloqueia diagnóstico/ações (dados diferentes, sem dependência real). Próximo passo pela ordem: **Fase 7 — Notificações e Copiloto**, ou fechar o Playwright pendente da Fase 5B primeiro, dependendo da prioridade do usuário.
+**Próxima pequena etapa:** fazer somente o tópico `questions` do receptor de webhook existente enfileirar `sync.support.questions` após validar `/questions/{id}`, preservando ACK rápido e dedupe por minuto. Ainda sem reconciliação por busca, Scheduler, UI, `domain_events` ou resposta. Melhorias incrementais ainda abertas na Fase 7 (planner/streaming, expansão de “O que aconteceu?” e estruturação de sugestões por IA) continuam registradas no checklist e não devem ser declaradas concluídas.

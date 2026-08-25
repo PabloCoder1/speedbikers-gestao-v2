@@ -57,7 +57,7 @@ Nenhum passa nos três testes hoje. Reavaliar somente com gargalo medido, regist
    |  ACK <200ms · OAuth · comandos · Copiloto    |
    |  NUNCA trabalho longo inline -> enfileira    |
    +------------------+---------------------------+
-                      | Cloud Tasks (4 filas)
+                      | Cloud Tasks (7 filas)
                       v
    +----------------------------------------------+
    |  apps/worker         Cloud Run               |
@@ -115,7 +115,7 @@ Servidor HTTP (Hono), `min-instances=1`, timeout curto, concorrência alta.
 - `POST /webhooks/mercado-livre` — ACK em milissegundos, **zero chamada de rede**, grava a notificação e enfileira.
 - OAuth do Mercado Livre: início e callback com PKCE S256, guarda e refresh de token. O verifier PKCE e os tokens ficam cifrados; é onde os segredos vivem (D-046, D-049).
 - **Comandos privilegiados** que o `web` não pode executar: disparar sync manual, confirmar NF-e, aprovar pedido de compra, disparar diagnóstico.
-- **Copiloto**: orquestra ferramentas determinísticas (streaming SSE ainda não implementado — D-077 só tem o caminho de curto-circuito, síncrono, sem LLM narrando nada ainda).
+- **Copiloto**: orquestra ferramentas determinísticas; desde D-082, `narrate_sku_diagnosis` usa Claude Haiku 4.5 para narrar um contrato já calculado. Planner por linguagem natural, streaming SSE real e UI de chat ainda não estão implementados.
 - Endpoints internos chamados por Cloud Scheduler e Cloud Tasks, autenticados por OIDC.
 
 **Nunca:** trabalho longo inline. Se pode passar de ~5 s, **enfileira e responde**.
@@ -172,7 +172,19 @@ Dezenove contextos. Cada um é dono das suas tabelas. **Escrita cruzada é proib
 
 `identity` · `ml-accounts` · `catalog` · `listings` · `sales` · `inventory` · `documents` · `purchasing` · `suppliers` · `linking` · `sync` · `events` · `analytics` · `diagnostics` · `actions` · `notifications` · `copilot` · `feedback` · `support`
 
-**`support` (Fase 7B, D-071, conceitual — nenhuma tabela existe ainda):** Central de Atendimento/SAC — perguntas, mensagens, reclamações, devoluções, mediações e a Base de Conhecimento Validada. Lê `orders`/`skus`/`listings` só por read model declarado, como qualquer outro domínio; nunca escreve neles. Ver `docs/PRODUCT_REQUIREMENTS.md` e `docs/DATABASE.md`.
+**`support` (Fase 7B, D-071/D-084/D-085/D-086 — núcleo de banco e primeira porta de persistência implementados):** Central de Atendimento/SAC. `support_cases` é a projeção unificada da caixa de entrada, sem apagar a semântica externa: um case é uma pergunta, uma conversa pós-venda por pack/pedido ou um claim; mediação e devolução são facetas do claim, nunca recursos raiz inventados. `support_messages` mantém o transcript atual; `support_case_events` é auditoria append-only; somente transições escolhidas serão promovidas a `domain_events support.*` para notificação/diagnóstico. As seis tabelas do núcleo read-only existem desde D-085. D-086 acrescentou contrato/mapper puro no pacote Mercado Livre e persistência idempotente de Perguntas no worker, ainda sem registrar handler, chamar rede ou receber webhook. Ingestão externa, triagem, UI e resposta continuam pendentes.
+
+O domínio lê `orders`/`order_items`/`skus`/`listings` exclusivamente pelo read model `support_case_links`, populado pelo worker a partir de FKs reais e referências externas explícitas. Pode haver vários pedidos/SKUs por case; por isso não existe um único `order_id`/`sku_id` “principal” em `support_cases`. `support` nunca escreve nos domínios lidos. O caminho inverso também é proibido: estoque e venda não alteram status do atendimento.
+
+Fronteiras de escrita:
+
+- ingestão do Mercado Livre: `worker`/`service_role`, idempotente por chaves remotas;
+- triagem interna (status, responsável, resolução/reabertura): RPC transacional, `ADMIN`/`GESTOR`/`OPERADOR` com acesso à conta;
+- resposta externa: comando privilegiado da `apps/api`, depois de confirmação humana e nova validação do estado/ações remotas;
+- leitura da caixa: `web` direto sob RLS por `has_account_access(ml_account_id)`;
+- Copiloto: apenas lê contexto determinístico e sugere texto; nunca executa o envio.
+
+Detalhe completo de grão, status, SLA, links, idempotência e índices em `docs/DATABASE.md` (D-084/D-085). Requisitos em `docs/PRODUCT_REQUIREMENTS.md`.
 
 Na prática, um domínio é um diretório em `@sb/domain/<nome>` mais um prefixo de tabela. **A fronteira que precisa ser real é quem escreve na tabela** — imposta por `GRANT` no banco, não por convenção de pasta. Ver `docs/DATABASE.md`.
 
@@ -413,7 +425,7 @@ Detalhamento em `docs/DATABASE.md` (policies) e `docs/DEPLOYMENT.md` (secrets).
 |---|---|---|
 | **Vercel** | `apps/web`, região `gru1` | Nenhum worker, nenhum trabalho longo |
 | **Supabase** | Postgres, Auth, RLS, Realtime, Storage | **Sem Edge Functions** |
-| **Google Cloud** | Cloud Run (2), Cloud Tasks (4 filas), Scheduler, Secret Manager, Storage, Logging | Sem GKE, Compute Engine, Cloud SQL, Load Balancer, VPC customizada |
+| **Google Cloud** | Cloud Run (2), Cloud Tasks (7 filas: 3 base + 4 por conta ML), Scheduler, Secret Manager, Storage, Logging | Sem GKE, Compute Engine, Cloud SQL, Load Balancer, VPC customizada |
 
 Três ambientes: **local · development · production**. Preview da Vercel aponta para o Supabase Dev. Detalhes, secrets, CI/CD e infraestrutura como código em `docs/DEPLOYMENT.md`.
 
