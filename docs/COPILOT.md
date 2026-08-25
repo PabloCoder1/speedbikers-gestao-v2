@@ -1,7 +1,7 @@
 # Copiloto Speed Bikers
 
 > Dono documental de: arquitetura do assistente, registro de ferramentas, guardrails e uso de IA.
-> Status: **estratégia aprovada. Ferramentas determinísticas + `ai_runs` implementados em 2026-08-25 (D-077)** — `POST /v1/copilot/query`, `apps/api/src/copilot.ts`, schemas em `@sb/contracts`. Planner por linguagem natural, LLM, streaming SSE de verdade e UI de chat continuam pendentes — dependem da escolha de modelo/orçamento (secao 10, pendência ainda aberta).
+> Status: **estratégia aprovada. Ferramentas determinísticas + `ai_runs` implementados em 2026-08-25 (D-077)** — `POST /v1/copilot/query`, `apps/api/src/copilot.ts`, schemas em `@sb/contracts`. Modelo/orçamento decididos em 2026-08-25 (D-082, secao 10) — planner por linguagem natural, LLM, streaming SSE de verdade e UI de chat destravados, implementação ainda não iniciada.
 
 ---
 
@@ -128,13 +128,13 @@ Estados na Central de Sugestões: `nova` -> `em_analise` -> `aprovada` -> `plane
 - Streaming SSE a partir de `apps/api` — **ainda não implementado**. `POST /v1/copilot/query` (D-077) devolve JSON síncrono porque só o caminho de curto-circuito existe hoje: sem LLM narrando nada, não há token a transmitir em stream. Streaming entra quando o LLM existir.
 - **Toda chamada é rastreável desde D-077** — `ai_runs` grava ferramenta(s), escopo e latência de toda chamada, `llm_used`/`cost_usd` prontos para quando o LLM existir. "Quando pesadas, assíncronas" continua pendente (não há chamada pesada ainda — ferramentas determinísticas respondem em milissegundos).
 - **A interface nunca dispara chamada de IA no carregamento da página.** A V2 precisou de um teste dedicado para garantir isso, e a ideia vale ser mantida. Não se aplica ainda: nenhuma UI consome `/v1/copilot/query` nesta fatia.
-- Modelo e limites de custo são configuráveis por organização — pendente, ver secao 10.
+- **Modelo e orçamento decididos em 2026-08-25 (D-082)**: Anthropic Claude Haiku 4.5, teto de R$100/mês, política de AVISAR (não bloquear) ao ultrapassar — ver secao 10. "Configurável por organização" continua aspiração futura — só existe uma organização real hoje, o teto nasce como valor único, não por organização.
 
 ---
 
 ## 10. Pendências
 
-- **Escolha do modelo e orçamento de custo por período — continua em aberto.** É a decisão que bloqueia tudo que depende de LLM: o planner que escolhe a ferramenta a partir de linguagem natural, a narração de evidências ("Por que este produto caiu?"), streaming SSE de verdade, e a UI de chat. Decisão de custo recorrente real — não deve ser tomada sem confirmação explícita, mesmo em sessão autônoma.
+- ~~Escolha do modelo e orçamento de custo por período~~ — **decidido em 2026-08-25 (D-082)**: Anthropic Claude Haiku 4.5 (narração curta + planner simples não exigem um modelo maior), teto de R$100/mês, avisa o ADMIN ao ultrapassar mas continua permitindo chamadas (não bloqueia). Chave nova no Secret Manager do GCP para `apps/api` — a `ANTHROPIC_API_KEY` herdada da V2 (projeto Vercel, sem consumidor) não é reaproveitada, por estar no lugar errado e ter validade incerta. **Isso destrava**: o planner que escolhe a ferramenta a partir de linguagem natural, a narração de evidências ("Por que este produto caiu?"), streaming SSE de verdade, a UI de chat, e a estruturação por IA das sugestões de feature (secao 8, D-079). Nenhum desses tem código ainda — a decisão foi só o que faltava para poder começar. Ver D-082 em `docs/DECISIONS.md`.
 - ~~As primeiras ferramentas acompanham a tela âncora, o Dashboard de vendas Geral e por Conta (D-033): vendas por período, comparação entre períodos e comparação entre contas.~~ **Implementadas em 2026-08-25 (D-077)** — ver secao 4.
 
 ---
