@@ -39,6 +39,7 @@ A fonte de verdade continua sendo:
 - **A tela foi exercitada de verdade, ao contrário de D-074/D-075/D-076** (que fecharam com a ressalva "a tela não é visitada por nenhum spec"): 3 specs Playwright novos contra Postgres real com login real, seed ganhou conta ML + dois `support_cases`. **8/8 specs verdes** (3 novos + os 5 de D-069, sem regressão). O embed via FK COMPOSTA foi conferido por `curl` no PostgREST local antes de escrever a tela.
 - Armadilha registrada: `getByRole("alert")).toHaveCount(0)` nunca vale num app Next.js — o `#__next-route-announcer__` do framework tem `role="alert"` em toda página.
 - 17 testes de unidade novos, `check` 29/29, `build` 8/8. **Só `apps/web`** — deploy automático pela Vercel, sem Cloud Run.
+- **Confirmado em produção em 2026-08-25**, medido e não presumido: `GET /atendimento?status=RESOLVIDO` sem sessão devolve `307` para `/login?next=%2Fatendimento%3Fstatus%3DRESOLVIDO`. Prova as duas coisas de uma vez — a rota existe no ar (Vercel publicou o push) e a correção do redirect funciona lá também: a query string sobrevive no `next`, e os params da origem NÃO vazam soltos na URL de login.
 
 ### Etapa anterior — D-089 (reconciliação de Perguntas)
 
