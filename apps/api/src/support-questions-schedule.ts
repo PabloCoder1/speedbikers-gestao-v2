@@ -25,11 +25,11 @@ import type { Enqueuer } from "./enqueue.js";
  * dia de negócio é o mesmo de todo o resto do projeto (`toSalesMetricDate`,
  * `docs/METRICS.md`); o bloco só precisa separar as quatro rodadas diárias
  * entre si, e UTC é a base estável para isso. O cron real
- * (`20 */6 * * *` em `America/Sao_Paulo`, `infra/cloud-scheduler.sh`) dispara
- * às 00h20/06h20/12h20/18h20 de SP = 03/09/15/21 UTC, que caem em quatro
- * blocos UTC distintos — e, como SP é UTC-3, nenhuma dessas quatro horas
- * cruza a virada do dia, então a data de negócio e a data UTC coincidem em
- * todas elas. Nenhuma rodada colide com outra nem some.
+ * (`infra/cloud-scheduler.sh`, de 6 em 6 horas no minuto 20, fuso
+ * `America/Sao_Paulo`) dispara às 00h20/06h20/12h20/18h20 de SP = 03/09/15/21
+ * UTC, que caem em quatro blocos UTC distintos — e, como SP é UTC-3, nenhuma
+ * dessas quatro horas cruza a virada do dia, então a data de negócio e a data
+ * UTC coincidem em todas elas. Nenhuma rodada colide com outra nem some.
  */
 
 const BLOCK_HOURS = 6;
