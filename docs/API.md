@@ -32,7 +32,7 @@ Todas as rotas são versionadas sob `/v1`, exceto webhook e callback do OAuth, c
 
 | Rota | Método | Autenticação | Papel |
 |---|---|---|---|
-| `/webhooks/mercado-livre` | POST | Validação própria da origem | ACK rápido, grava notificação, enfileira. **Zero chamada de rede.** |
+| `/webhooks/mercado-livre` | POST | Validação própria da origem | ACK rápido, grava notificação, enfileira. **Zero chamada de rede.** Desde 2026-08-25 (D-088) o ACK roteia por tópico: `questions` vira `sync.support.questions` com `{ mlAccountId, questionId }`; todo o resto continua em `sync.webhook.received`. Uma regra de dedupe só (`ml-webhook:{resource}:{janela-minuto}`) para os dois. `questions` com `resource` fora de `/questions/{id}` responde 200 sem enfileirar e sai como `ml_webhook_unroutable_resource` no log |
 | `/oauth/mercado-livre/callback` | GET | `state` de CSRF | Conclui a autorização da conta — **implementado em 2026-08-21** |
 
 **Regra crítica do webhook:** o caminho é liberado **explicitamente e apenas ele**, com teste negativo nas rotas vizinhas. *Motivo, medido na V2:* o proxy exigia sessão, o webhook não envia cookie, e as notificações de preço, promoção e Full morriam em silêncio num 307 para `/login`.
@@ -147,7 +147,8 @@ Payloads tipados em `@sb/contracts/jobs`. Todo handler é **idempotente**.
 | `erp.import.apply` | `maintenance` | `erp-apply:{batch_id}` |
 | `nfe.import.parse` | `maintenance` | `nfe-parse:{document_id}` — **implementado em 2026-08-22** (mesma etapa que corrigiu D-053). Handler condicional a `DOCUMENTS_BUCKET` estar configurado (`apps/worker/src/index.ts`), mesmo raciocínio de `erp.import.parse`/`ERP_IMPORTS_BUCKET` |
 | `nfe.import.apply` | `maintenance` | `nfe-apply:{document_id}` — **implementado em 2026-08-22**: gera `stock_movements` (`ENTRADA_NFE`/`SAIDA_NFE`) a partir dos itens já vinculados a um SKU (`computeNfeApplicationMovements`, `@sb/domain/inventory`). Recusa se `resolved_items < total_items` mesmo tendo sido checado na confirmação — dupla checagem, mesmo padrão das RPCs `security definer` |
-| `sync.webhook.received` | `ml-sync-<conta>` | `ml-webhook:{resource}:{janela-minuto-UTC}` — **implementado em 2026-08-22** (Fast Path). Só `topic = orders_v2` tem consumidor hoje: extrai `order_id` de `resource` (`/orders/{id}`), busca `GET /orders/{order_id}` e persiste (`persistOrder`, reaproveitado de `sync.orders.window`). Outros tópicos fazem ACK sem trabalho. Sufixo de janela de minuto (D-051) — sem ele, a mudança de status seguinte no MESMO recurso, minutos depois, colidiria com o nome de task que o Cloud Tasks reteve por até 24h e seria descartada |
+| `sync.webhook.received` | `ml-sync-<conta>` | `ml-webhook:{resource}:{janela-minuto-UTC}` — **implementado em 2026-08-22** (Fast Path). Dois tópicos têm consumidor: `orders_v2` (extrai `order_id` de `/orders/{id}`, busca `GET /orders/{order_id}` e persiste com `persistOrder`, reaproveitado de `sync.orders.window`) e `post_purchase` (claims/devoluções, D-057 — a menção a "só `orders_v2`" ficou desatualizada de 2026-08-23 até ser corrigida em D-088). Outros tópicos fazem ACK sem trabalho. **`questions` deixou de passar por aqui em 2026-08-25 (D-088)** — o ACK roteia direto para `sync.support.questions`. Sufixo de janela de minuto (D-051) — sem ele, a mudança de status seguinte no MESMO recurso, minutos depois, colidiria com o nome de task que o Cloud Tasks reteve por até 24h e seria descartada |
+| `sync.support.questions` | `ml-sync-<conta>` | `ml-webhook:{resource}:{janela-minuto-UTC}` — **implementado em 2026-08-25** (D-087 o handler, D-088 o produtor). Payload `{ mlAccountId, questionId }`. Busca `GET /questions/{question_id}?api_version=4`, valida organização do envelope + `seller_id` remoto, mapeia (D-086) e persiste em `support_cases`/`support_messages`/`support_case_links` idempotentemente. Produtor único hoje é o webhook `questions`; a reconciliação por `GET /my/received_questions/search` continua etapa própria. Compartilha a regra de dedupe do ACK: pergunta e resposta do mesmo `question_id` no mesmo minuto colapsam numa busca só (o detalhe traz os dois) |
 
 **O nome da task é o mecanismo de dedupe.** Para analytics, a janela de minuto é parte do ID (D-051): coalesce o burst por 60 segundos sem tentar reutilizar no mesmo dia um ID que o Cloud Tasks pode reter por até 24 horas.
 
@@ -260,15 +261,16 @@ Jobs prováveis, mesmo formato de `sync.listings.snapshot`/`sync.listing-visits.
 
 | Tipo (provável) | Fila | Descrição |
 |---|---|---|
-| `sync.support.questions` | `ml-sync-<conta>` | Consome webhook `questions` (`resource=/questions/{id}`) e reconcilia por `GET /my/received_questions/search?api_version=4` |
+| ~~`sync.support.questions`~~ | `ml-sync-<conta>` | **Saiu do estado provável em 2026-08-25** — ver a linha real na secao 3. Consome o webhook `questions` desde D-088; a reconciliação por `GET /my/received_questions/search?api_version=4` continua não implementada |
 | `sync.support.messages` | `ml-sync-<conta>` | Consome webhook `messages` (`actions=created/read`, `resource=message_id`) e reconcilia por `GET /messages/unread?role=seller&tag=post_sale` |
 | `sync.support.claims` | `ml-sync-<conta>` | Reaproveita o que D-057/secao 2.10 já confirmou (claims/returns), estendendo para persistência de UI, não só reversão de estoque |
 
-O primeiro job a sair do estado provável será `sync.support.questions`, em uma
-fatia restrita a um `questionId`: detalhe remoto, validação pelo contrato D-086,
-mapper e persistência já existentes. Registrar produtor via webhook e implementar
-reconciliação por busca permanecem etapas próprias; nenhuma delas deve ser
-simulada no mesmo handler.
+`sync.support.questions` foi o primeiro a sair do estado provável: D-087
+implementou a fatia restrita a um `questionId` (detalhe remoto, contrato D-086,
+mapper e persistência) e D-088 registrou o produtor via webhook. **A
+reconciliação por busca continua etapa própria** e não deve ser simulada dentro
+do mesmo handler — sem ela, uma notificação perdida pelo Mercado Livre é uma
+pergunta que a V3 nunca vê.
 
 Catálogo de eventos proposto, seguindo `dominio.entidade.acao` (secao 4) — nomes conceituais, a confirmar contra os estados reais que a API devolver:
 

@@ -416,10 +416,20 @@ O primeiro corte continua **read-only**: webhook como caminho principal, reconci
 
 A escrita entra depois, por comando privilegiado da `apps/api`, com confirmação humana, validação de permissão da conta, refresh do estado remoto e `available_actions` quando aplicável. A pesquisa D-083 e o modelo D-084 não criaram integração; D-085 criou o núcleo local de banco. D-086 implementou o contrato v4, fixtures documentadas, mapper puro e persistência idempotente somente de Perguntas: `BANNED` preserva a existência da mensagem sem expor texto, `UNDER_REVIEW` vira conteúdo moderado e uma resposta já existente materializa a mensagem outbound. Essa porta ainda não chama o Mercado Livre, não está registrada em job/router e não recebe webhook.
 
-Próxima fatia: detalhe `GET /questions/{question_id}?api_version=4` e handler
-`sync.support.questions` para um `questionId`, reutilizando o mecanismo vigente
-de token/retry. O produtor de webhook `questions`, a busca de reconciliação e
-qualquer envio continuam separados.
+Detalhe `GET /questions/{question_id}?api_version=4` e handler
+`sync.support.questions` para um `questionId` implementados em D-087,
+reutilizando o mecanismo vigente de token/retry. **O produtor entrou em D-088**:
+o ACK do webhook (`apps/api/src/webhook.ts`) reconhece `topic=questions`,
+extrai o ID de `/questions/{question_id}` e enfileira o job na fila da conta.
+Como o tópico dispara para pergunta E resposta com o mesmo `resource`, e o
+detalhe traz as duas, o dedupe por recurso + janela de minuto faz as duas
+notificações colapsarem numa busca só.
+
+**Ainda não existe reconciliação.** `GET /my/received_questions/search` continua
+não implementado, então uma notificação que o Mercado Livre não entregue é uma
+pergunta que a V3 não vê — a própria documentação oficial recomenda a busca como
+redundância do webhook (mesma lógica de `/messages/unread` para mensagens).
+Nenhum envio de resposta foi implementado.
 
 **Fontes oficiais consultadas:** `developers.mercadolivre.com.br/pt_br/perguntas-e-respostas`; `.../itens-e-buscas`; `.../pt_br/mensagens-post-venda`; `.../pt_br/mensagens-pendentes`; `.../pt_br/motivos-para-se-comunicar`; `.../pt_br/mensagens-post-venda/produto-receba-notificacoes`; `.../pt_br/permissoes-funcionais/`; `.../pt_br/gerenciar-reclamacoes`; `.../pt_br/gerenciar-mensagem-de-uma-eclamacao`.
 

@@ -757,6 +757,36 @@ describe("webhook do Mercado Livre", () => {
     expect(enqueued).toHaveLength(0);
   });
 
+  it("notificação do tópico questions atravessa a rota e vira sync.support.questions", async () => {
+    const { app, enqueued } = withWebhook();
+
+    const response = await app.request("/webhooks/mercado-livre", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": FORWARDED_ALLOWED },
+      body: JSON.stringify({ ...NOTIFICATION, topic: "questions", resource: "/questions/12345678901" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ received: true, processed: true });
+    expect(enqueued).toMatchObject([
+      { jobType: "sync.support.questions", payload: { questionId: 12345678901 } },
+    ]);
+  });
+
+  it("questions com resource fora do formato responde 200 sem enfileirar — ACK rápido, sem retry do ML", async () => {
+    const { app, enqueued } = withWebhook();
+
+    const response = await app.request("/webhooks/mercado-livre", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": FORWARDED_ALLOWED },
+      body: JSON.stringify({ ...NOTIFICATION, topic: "questions", resource: "/questions/nao-numerico" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ received: true, processed: false });
+    expect(enqueued).toHaveLength(0);
+  });
+
   it("rota vizinha dentro do próprio namespace (/webhooks/outra-coisa) continua 404", async () => {
     const { app } = withWebhook();
 

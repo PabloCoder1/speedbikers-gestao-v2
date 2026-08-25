@@ -2,7 +2,7 @@
 
 ## RESUMO OPERACIONAL ATUAL — LEIA PRIMEIRO
 
-> Atualizado em 2026-08-25 após a criação e validação local do primeiro handler de rede de Perguntas da Fase 7B (D-087).
+> Atualizado em 2026-08-25 após ligar o produtor do webhook `questions` (D-088) e versionar D-083 a D-087, que estavam inteiramente fora do Git.
 
 Este bloco é o ponto de entrada atual para qualquer nova sessão.
 
@@ -28,9 +28,18 @@ A fonte de verdade continua sendo:
 - Fase 6: concluída com D-063, D-064 e D-065.
 - **Fase 7 com núcleo funcional entregue, mas checklist incremental ainda aberto.** Notificações/Realtime/preferências estão concluídos; o Copiloto determinístico e a primeira narração LLM estão implantados. **Modelo/orçamento decididos em D-082**: Claude Haiku 4.5, teto R$100/mês, avisa mas não bloqueia. Pendentes sem bloqueio de produto: planner por linguagem natural, streaming/UI de chat, estruturação de sugestões por IA, expansão de “O que aconteceu?” e mecanismo de aviso de orçamento. Portanto, não tratar a Fase 7 como “fechada por completo” enquanto os três itens parciais do checklist permanecem abertos no ROADMAP.
 - O Checkpoint de Consolidação Pré-Fase 7 está fechado por completo desde 2026-08-25.
-- **Fase 7B — Central de Atendimento/SAC Mercado Livre com pesquisa, modelo conceitual, núcleo de banco, transformação/persistência e primeiro handler de rede de Perguntas concluídos.** D-083 confirmou endpoints/payloads; D-084 aprovou o modelo; D-085 materializou seis tabelas; D-086 acrescentou contrato/mapper/persistência idempotente; D-087 registrou `sync.support.questions`, que busca e persiste um `questionId` com token/retry existentes e valida organização+seller. Nenhum produtor chama esse handler ainda, portanto não há ingestão automática, webhook de SAC ativo, reconciliação, UI, triagem humana ou envio de resposta. **Próxima etapa registrada: fazer somente o tópico `questions` do webhook enfileirar o job já pronto.**
+- **Fase 7B — Central de Atendimento/SAC Mercado Livre com pesquisa, modelo, núcleo de banco, persistência, handler de rede e o primeiro produtor concluídos.** D-083 confirmou endpoints/payloads; D-084 aprovou o modelo; D-085 materializou seis tabelas; D-086 acrescentou contrato/mapper/persistência idempotente; D-087 registrou `sync.support.questions`; **D-088 ligou o produtor** — o ACK do webhook roteia `topic=questions` direto para esse job. Continua sem reconciliação por busca, UI, triagem humana, `domain_events` de SAC ou envio de resposta. **Nada de SAC roda em produção ainda: `api` e `worker` precisam de deploy manual do Cloud Run.**
 
-### Última etapa concluída — D-087
+### Última etapa concluída — D-088 (produtor do webhook `questions`)
+
+- `apps/api/src/webhook.ts` ganhou `routeJob`: `topic=questions` com `resource` casando `^/questions/(\d+)$` enfileira `sync.support.questions` com `{ mlAccountId, questionId }` na fila `ml-sync-<conta>`; todo o resto continua em `sync.webhook.received`, sem regressão.
+- **Onde a etapa foi implementada não era óbvio e a escolha errada só falharia em produção.** O worker (`webhook-received.ts`) também roteia por tópico e parecia o lugar natural, mas só recebe `cloudtasks.enqueuer` em `backfill`/`analytics-recompute` — nunca em `ml-sync-<conta>`. Passaria em todo teste de unidade e quebraria contra o Cloud Tasks real. Ver D-088, decisão 1.
+- Uma regra de dedupe só (`ml-webhook:{resource}:{janela-minuto}`) para os dois tipos de job. Efeito bom: como o tópico dispara para pergunta E resposta com o mesmo `resource`, e o detalhe traz as duas, as duas notificações no mesmo minuto viram uma busca só; a resposta que chega minutos depois ainda gera task nova (D-051).
+- `resource` fora do formato responde 200 e sai como `ml_webhook_unroutable_resource` no log, em vez de virar job que "termina com sucesso" processando zero itens. ID grande demais para inteiro seguro é recusado, nunca truncado em silêncio.
+- 19 testes novos (17 em `webhook.test.ts`, 2 atravessando a rota real em `app.test.ts`), `pnpm run check` 29/29 e `pnpm run build` 8/8 verdes. Nenhuma chamada real ao Mercado Livre.
+- **NÃO deployado.** `api` e `worker` mudaram desde a última revisão publicada; até `infra/deploy-cloud-run.sh` rodar, nenhuma pergunta real é ingerida.
+
+### Etapa anterior — D-087
 
 - `fetchReceivedQuestion` fixa `GET /questions/{question_id}?api_version=4`, usa Authorization pelo cliente comum e valida a resposta pelo schema D-086; HTTP mock prova o contrato sem chamar o Mercado Livre real.
 - `apps/worker/src/handlers/sync-support-question.ts`: payload `{ mlAccountId, questionId }`, conta `CONNECTED`, token/refresh existente, mapper e persistência idempotente. Organização do envelope e `seller_id` remoto são conferidos antes da escrita.
@@ -42,7 +51,9 @@ A fonte de verdade continua sendo:
 
 ### Próxima etapa registrada
 
-Integrar somente o **tópico `questions` no receptor de webhook já existente**: validar `resource=/questions/{question_id}` e enfileirar `sync.support.questions` com `{ mlAccountId, questionId }` na fila da conta, preservando ACK rápido e dedupe por recurso+janela de minuto. Cobrir tópico/resource válido, resource inválido e rotas/tópicos vizinhos. Ainda **não** implementar `/my/received_questions/search`, reconciliação, Scheduler, UI, `domain_events` ou resposta.
+**Primeiro, o deploy pendente** — `api` e `worker` têm código não publicado desde D-087/D-088 (`git log <commit-da-revisão>..HEAD -- apps/api apps/worker` para confirmar antes de pedir). Exige `infra/deploy-cloud-run.sh` manual e confirmação explícita do usuário. Sem isso, a Fase 7B inteira existe só no repositório.
+
+**Depois, a reconciliação de Perguntas** por `GET /my/received_questions/search?api_version=4`: hoje o webhook é o único caminho, então uma notificação que o Mercado Livre não entregue é uma pergunta perdida para sempre — a própria documentação oficial recomenda a busca como redundância (mesma lógica de `/messages/unread`). A etapa envolve alargar o CHECK de `sync_runs.resource` para `questions` (D-087 deixou isso explicitamente para quando existisse execução com janela, contagem e frescor reais), paginação por `offset`/`limit` (**não presumir `search_type=scan`** — D-083 registra que esse modo não foi confirmado para `/my/received_questions/search`), gatilho por Cloud Scheduler e reuso do mesmo contrato `{ mlAccountId, questionId }` já enfileirado pelo webhook. Ainda **não** implementar UI, triagem, `domain_events` de SAC ou envio de resposta.
 
 ### Estado de infraestrutura que NÃO deve ser presumido
 
@@ -88,8 +99,9 @@ Publicado e verificado em 2026-08-24, depois do resumo acima ter sido escrito: `
 
 1. ~~Confirmar `maintenance.reconcile-balances` no ciclo natural~~ — confirmado em 2026-08-25, via disparo manual autorizado pelo usuário (ver "Checkpoint pré-Fase 7" acima).
 2. ~~Confirmar sincronização de visitas/conversão com dado real e cadência normal~~ — confirmado em 2026-08-25.
-
-Nenhuma pendência técnica imediata restante.
+3. **Deploy do Cloud Run pendente (aberto em 2026-08-25)** — `apps/api` (D-088) e `apps/worker` (D-087) têm código não publicado. Exige `infra/deploy-cloud-run.sh` manual com confirmação do usuário. **Enquanto não rodar, a Fase 7B inteira existe só no repositório**: nenhuma pergunta real é ingerida.
+4. **D-083 a D-087 ficaram inteiramente fora do Git até 2026-08-25** — cinco decisões, uma migration, três módulos e ~465 linhas de teste viviam só no working tree de uma máquina, contrariando a regra central do projeto ("o repositório versionado é a memória oficial"). Versionadas em quatro commits lógicos, CI verde, migration confirmada no Supabase Dev (52/52 pares, sem drift). **Regra reforçada**: uma etapa não está concluída enquanto não estiver commitada e com CI verde — "validação completa fica para o fechamento" não pode virar "fica para a próxima sessão".
+5. **Mecanismo de aviso de orçamento de IA não existe** — D-082 decidiu teto de R$100/mês com política "avisa, não bloqueia", mas o job que soma `ai_runs.cost_usd` e avisa o ADMIN nunca foi implementado. Na prática o gasto com a Anthropic hoje é ilimitado e não observado. Registrado como item do checklist da Fase 7, não como bloqueio.
 
 ### Lacunas funcionais confirmadas na revisão
 

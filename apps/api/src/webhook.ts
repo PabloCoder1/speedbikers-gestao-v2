@@ -42,6 +42,15 @@ export const mercadoLivreNotificationSchema = z.object({
 
 export type MercadoLivreNotification = z.infer<typeof mercadoLivreNotificationSchema>;
 
+/**
+ * `/questions/{question_id}` — tópico geral `questions`, confirmado por
+ * leitura oficial em D-083 (`docs/MERCADO_LIVRE.md` secao 2.12). Ele dispara
+ * tanto para PERGUNTA quanto para RESPOSTA e não traz array `actions`; o
+ * detalhe é sempre buscado pelo `resource`, então as duas notificações
+ * convergem para o mesmo job.
+ */
+const QUESTION_RESOURCE_PATTERN = /^\/questions\/(\d+)$/;
+
 export interface WebhookDeps {
   db: AdminClient;
   enqueuer: Enqueuer;
@@ -50,9 +59,52 @@ export interface WebhookDeps {
 }
 
 export type WebhookOutcome =
-  | { status: "enqueued"; jobId: string; deduplicated: boolean }
+  | { status: "enqueued"; jobId: string; jobType: string; deduplicated: boolean }
   | { status: "unknown_account" }
+  | { status: "unroutable_resource" }
   | { status: "invalid_payload"; reason: string };
+
+interface RoutedJob {
+  jobType: string;
+  payload: Record<string, unknown>;
+}
+
+/**
+ * Decide QUAL job a notificação vira. É a única parte do ACK que conhece
+ * tópico — o resto (resolver a conta, dedupe, fila) é igual para todos.
+ *
+ * `questions` é o primeiro tópico a ganhar job próprio em vez de cair no
+ * `sync.webhook.received` genérico (D-087/Fase 7B): o handler de Perguntas já
+ * recebe `{ mlAccountId, questionId }` tipado, então extrair o ID aqui evita
+ * um segundo parse do mesmo `resource` do outro lado da fila. Enfileirar a
+ * partir da `api`, e não do worker que consome `sync.webhook.received`, não é
+ * preferência de estilo: o worker só recebe `cloudtasks.enqueuer` em
+ * `backfill` e `analytics-recompute` (`docs/ARCHITECTURE.md` secao 11), nunca
+ * em `ml-sync-<conta>`, que é a fila onde este job precisa entrar para
+ * respeitar o rate limit por conta (D-036).
+ *
+ * Devolve `null` quando o tópico é conhecido mas o `resource` não tem o
+ * formato documentado — não há o que buscar, e mandar para o caminho genérico
+ * esconderia a anomalia atrás de um ACK sem trabalho.
+ */
+function routeJob(notification: MercadoLivreNotification, mlAccountId: string): RoutedJob | null {
+  if (notification.topic === "questions") {
+    const match = QUESTION_RESOURCE_PATTERN.exec(notification.resource);
+    const questionId = match === null ? Number.NaN : Number(match[1]);
+
+    // `Number.isSafeInteger` não é paranoia decorativa: o payload do job
+    // valida `questionId` como inteiro positivo, e um `resource` com dígitos
+    // demais passaria nessa validação já tendo perdido precisão — viraria uma
+    // busca por uma pergunta que não existe, sem erro visível em lugar nenhum.
+    if (!Number.isSafeInteger(questionId)) {
+      return null;
+    }
+
+    return { jobType: "sync.support.questions", payload: { mlAccountId, questionId } };
+  }
+
+  return { jobType: "sync.webhook.received", payload: { ...notification, mlAccountId } };
+}
 
 export async function receiveWebhook(deps: WebhookDeps, rawBody: unknown): Promise<WebhookOutcome> {
   const parsed = mercadoLivreNotificationSchema.safeParse(rawBody);
@@ -96,23 +148,47 @@ export async function receiveWebhook(deps: WebhookDeps, rawBody: unknown): Promi
   // seguinte, minutos depois, gera um job novo — achado em revisão, 2026-08-22.
   const window = (deps.now?.() ?? new Date()).toISOString().slice(0, 16);
 
+  const job = routeJob(notification, account.data.id);
+
+  if (job === null) {
+    // Não é transitório: reenviar o mesmo `resource` malformado não muda o
+    // formato. ACK mesmo assim, pelo mesmo motivo de "conta desconhecida" —
+    // só logar, para a anomalia ficar visível em vez de virar um job vazio.
+    deps.logger.warn("ml_webhook_unroutable_resource", {
+      resource: notification.resource,
+      topic: notification.topic,
+      ml_account_id: account.data.id,
+    });
+
+    return { status: "unroutable_resource" };
+  }
+
   const result = await deps.enqueuer.enqueue({
-    jobType: "sync.webhook.received",
+    jobType: job.jobType,
     organizationId: account.data.organization_id,
     // Nome derivado do recurso (docs/ARCHITECTURE.md secao 10): notificações
     // repetidas do mesmo recurso colapsam numa só, seja qual for o tópico.
+    // Uma regra de dedupe só, mesmo com mais de um `jobType` — dois tópicos
+    // nunca disputam o mesmo `resource`, porque é justamente o formato do
+    // `resource` que identifica o tópico.
     dedupeKey: `ml-webhook:${notification.resource}:${window}`,
     queue: `ml-sync-${account.data.slug}`,
-    payload: { ...notification, mlAccountId: account.data.id },
+    payload: job.payload,
   });
 
   deps.logger.info("ml_webhook_enqueued", {
     job_id: result.envelope.jobId,
+    job_type: job.jobType,
     resource: notification.resource,
     topic: notification.topic,
     ml_account_id: account.data.id,
     deduplicated: result.deduplicated,
   });
 
-  return { status: "enqueued", jobId: result.envelope.jobId, deduplicated: result.deduplicated };
+  return {
+    status: "enqueued",
+    jobId: result.envelope.jobId,
+    jobType: job.jobType,
+    deduplicated: result.deduplicated,
+  };
 }
