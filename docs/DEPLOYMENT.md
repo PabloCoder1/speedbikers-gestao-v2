@@ -98,7 +98,7 @@ Como toda task usa `v3-tasks-invoker` no token OIDC, os dois produtores (`v3-api
 | `SUPABASE_SERVICE_ROLE_KEY` | Secret Manager | `api`, `worker` |
 | `MERCADO_LIVRE_CLIENT_SECRET` | Secret Manager | `api` (troca o `code`), `worker` (renova por `refresh_token`) |
 | `ML_TOKEN_ENCRYPTION_KEY` (AES-256, D-046) | Secret Manager | `api`, `worker` |
-| Chave da API de IA | Secret Manager | `api` |
+| `ANTHROPIC_API_KEY` (Claude Haiku 4.5, D-082) | Secret Manager | `api` (Copiloto — o `worker` nunca chama a Anthropic) |
 | `NEXT_PUBLIC_SUPABASE_URL` e chave publicável | Vercel env | `web` |
 
 Regras:

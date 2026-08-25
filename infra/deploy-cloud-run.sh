@@ -112,7 +112,7 @@ YAML
       --timeout 60s \
       --cpu 1 --memory 512Mi \
       --env-vars-file "${env_file}" \
-      --set-secrets "SUPABASE_SERVICE_ROLE_KEY=${SECRET_SUPABASE_KEY}:latest,MERCADO_LIVRE_CLIENT_SECRET=${SECRET_ML_CLIENT_SECRET}:latest,ML_TOKEN_ENCRYPTION_KEY=${SECRET_ML_TOKEN_KEY}:latest" \
+      --set-secrets "SUPABASE_SERVICE_ROLE_KEY=${SECRET_SUPABASE_KEY}:latest,MERCADO_LIVRE_CLIENT_SECRET=${SECRET_ML_CLIENT_SECRET}:latest,ML_TOKEN_ENCRYPTION_KEY=${SECRET_ML_TOKEN_KEY}:latest,ANTHROPIC_API_KEY=${SECRET_ANTHROPIC_KEY}:latest" \
       --quiet
   else
     # O worker NÃO tem rota pública para fora — só o Cloud Tasks o invoca, com

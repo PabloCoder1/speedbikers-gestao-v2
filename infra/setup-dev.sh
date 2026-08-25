@@ -117,6 +117,27 @@ else
   info "AVISO: segredo ${SECRET_SUPABASE_KEY} ainda não existe; pulando"
 fi
 
+step "Acesso ao segredo do Copiloto (D-082)"
+# Só a api — o worker nunca chama a Anthropic.
+grant_secret_access_anthropic() {
+  local sa="$1" output
+
+  if ! output="$(gc secrets add-iam-policy-binding "${SECRET_ANTHROPIC_KEY}" \
+      --member "serviceAccount:$(sa_email "${sa}")" \
+      --role roles/secretmanager.secretAccessor 2>&1)"; then
+    printf '%s\n' "${output}" >&2
+    fail "Falha ao conceder acesso ao segredo para ${sa}. Mensagem do gcloud acima."
+  fi
+
+  info "${sa} pode ler ${SECRET_ANTHROPIC_KEY}"
+}
+
+if gc secrets describe "${SECRET_ANTHROPIC_KEY}" >/dev/null 2>&1; then
+  grant_secret_access_anthropic "${SA_API}"
+else
+  info "AVISO: segredo ${SECRET_ANTHROPIC_KEY} ainda não existe; pulando"
+fi
+
 step "Concluído"
 info "Próximo: bash infra/cloud-tasks-queues.sh"
 info "Depois:  bash infra/storage-buckets.sh"

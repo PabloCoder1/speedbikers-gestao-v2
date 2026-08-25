@@ -51,6 +51,13 @@ MERCADO_LIVRE_REDIRECT_URI="${MERCADO_LIVRE_REDIRECT_URI:-}"
 SECRET_ML_CLIENT_SECRET="MERCADO_LIVRE_CLIENT_SECRET"
 SECRET_ML_TOKEN_KEY="ML_TOKEN_ENCRYPTION_KEY"
 
+# Copiloto (D-082): Claude Haiku 4.5. Só a api consome — o Copiloto roda
+# inteiro em apps/api (POST /v1/copilot/query), o worker nunca chama a
+# Anthropic. Chave nova, provisionada direto no Secret Manager em
+# 2026-08-25 — não reaproveita a ANTHROPIC_API_KEY herdada da V2 (projeto
+# Vercel, sem consumidor, validade incerta).
+SECRET_ANTHROPIC_KEY="ANTHROPIC_API_KEY"
+
 sa_email() {
   echo "${1}@${PROJECT_ID}.iam.gserviceaccount.com"
 }

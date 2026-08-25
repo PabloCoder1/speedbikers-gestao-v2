@@ -1048,9 +1048,11 @@ Também achado, sem virar bug: os nomes de variável do `supabase status -o env`
 
 **Ainda por decidir na implementação (design técnico, não pendência de produto):** onde o teto fica configurado (env var simples, dado que só existe uma organização real hoje — "configurável por organização" continua sendo aspiração futura, não requisito atual), como o aviso chega ao ADMIN (candidato natural: reaproveitar `notifications`/`notification_recipients`, D-073, com um `domain_event` novo no catálogo — evita inventar um canal de alerta paralelo), e como evitar notificar repetidamente a cada chamada depois do teto já ultrapassado no mesmo período.
 
-**Verificação:** nenhuma — esta é uma decisão de produto, não uma mudança de código. A implementação (planner, integração com a SDK da Anthropic, mecanismo de orçamento/aviso) é trabalho subsequente, ainda não iniciado.
+**Chave provisionada em 2026-08-25**, mesmo dia da decisão: `ANTHROPIC_API_KEY` criada no Secret Manager do projeto `speedbikers-gestao-v3` (`gcloud secrets create`, réplica automática), acesso concedido a `v3-api-runtime` (`roles/secretmanager.secretAccessor`) — só a `api`, o `worker` nunca chama a Anthropic. Reproduzível: `infra/lib.sh` ganhou `SECRET_ANTHROPIC_KEY`, `infra/setup-dev.sh` ganhou a concessão de IAM (mesmo padrão de `SECRET_SUPABASE_KEY`), `infra/deploy-cloud-run.sh` inclui o secret no `--set-secrets` do deploy da `api`. A chave em si nunca foi escrita em nenhum arquivo do repositório nem em texto persistente fora do Secret Manager.
 
-**Impacto:** `docs/COPILOT.md` secao 9/10 atualizadas. Destrava a implementação do planner por linguagem natural, narração de evidências, streaming e estruturação por IA (D-079) — nenhum desses tem código ainda; este registro documenta só a decisão que os libera.
+**Verificação:** `bash -n` limpo nos três scripts editados (`infra/lib.sh`, `infra/setup-dev.sh`, `infra/deploy-cloud-run.sh`), ordem `worker` antes de `api` em `deploy-cloud-run.sh` inalterada, sem CRLF — mesmas checagens do job `scripts de infraestrutura` da CI. Nenhuma mudança de código de aplicação ainda — o planner/narração/streaming em si são trabalho subsequente, ainda não iniciado.
+
+**Impacto:** `docs/COPILOT.md` secao 9/10, `docs/DEPLOYMENT.md` (tabela de segredos) atualizados. `infra/lib.sh`, `infra/setup-dev.sh`, `infra/deploy-cloud-run.sh` (novo secret provisionável/deployável). Destrava a implementação do planner por linguagem natural, narração de evidências, streaming e estruturação por IA (D-079) — nenhum desses tem código ainda; este registro documenta a decisão e o provisionamento que os libera.
 
 ## Como adicionar nova decisão
 
