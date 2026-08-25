@@ -472,8 +472,10 @@ Duas dessas respostas alteraram o desenho e estão refletidas neste documento:
 - **O UpSeller permanece como ERP** (D-028) e movimentos manuais são lançados nos dois sistemas. A reconciliação passa a fazer parte do núcleo do estoque, com o ERP vencendo em divergência através de um movimento `AJUSTE_RECONCILIACAO` auditável (D-029). O ledger da V3 nasce completo e autossuficiente, preservando o caminho para a V3 assumir como ERP sem reescrita.
 - **A Fase 5 foi dividida** (D-033). A tela âncora é o Dashboard de vendas, que não depende do estoque; a Fase 5A roda antes da Fase 4 e a 5B depois. Ver `docs/ROADMAP.md`.
 
-Permanecem abertas apenas pendências de **informação externa**, não de decisão:
+**As três pendências de informação externa que esta seção listava também estão resolvidas** (o texto ficou congelado em 2026-08-19 e foi corrigido em 2026-08-25, ao ser lido numa revisão de início de sessão — este documento é o mapa, e um mapa que aponta para bloqueios inexistentes desorienta):
 
-- confirmação da documentação oficial do Mercado Livre antes de congelar o capítulo de sincronização (`docs/MERCADO_LIVRE.md`), que bloqueia a Fase 3;
-- amostra real das planilhas do UpSeller, necessária antes da Fase 2;
-- modelos de exportação do pedido de compra em Excel e PDF, a solicitar antes da Fase 4.
+- ~~documentação oficial do Mercado Livre antes de congelar o capítulo de sincronização~~ — confirmada em 2026-08-21 (D-041 a D-043), Fase 3 desbloqueada e concluída no mesmo dia; Perguntas/Mensagens fecharam a lista em 2026-08-25 (D-083);
+- ~~amostra real das planilhas do UpSeller~~ — recebida e analisada em 2026-08-20, gerando D-037 a D-039 e `docs/UPSELLER.md`;
+- ~~modelos de exportação do pedido de compra em Excel e PDF~~ — o usuário liberou layout próprio em 2026-08-23 ("faça do jeito que você achar bem profissional"), a ajustar se o modelo oficial chegar; Fase 4 concluída.
+
+Pendências reais hoje não são de decisão nem de informação externa, e sim de execução — estão em `docs/ROADMAP.md` (checklist da Fase 7, Fase 7B, P1/P2 do Checkpoint e Fase 8) e em `docs/HANDOFF.md` ("Pendências técnicas imediatas").
