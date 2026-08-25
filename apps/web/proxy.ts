@@ -57,8 +57,19 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   if (data.user === null && !isPublic) {
     const login = request.nextUrl.clone();
 
+    // `next` precisa levar a QUERY STRING junto, não só o caminho (achado em
+    // 2026-08-25, D-090). Toda tela filtrada guarda o filtro em query param —
+    // `/vendas?days=90&account=x`, `/atendimento?status=RESOLVIDO`, e os
+    // presets de "Filtros salvos" (D-062) são literalmente isso. Sem a query,
+    // abrir um link filtrado sem sessão levava a pessoa para a tela SEM o
+    // filtro depois de entrar, sem nenhum sinal de que algo se perdeu.
+    const target = `${pathname}${request.nextUrl.search}`;
+
     login.pathname = "/login";
-    login.searchParams.set("next", pathname);
+    // `clone()` traz os params da tela de origem junto; zerar antes evita que
+    // eles apareçam soltos na URL de login, misturados com `next`.
+    login.search = "";
+    login.searchParams.set("next", target);
 
     return NextResponse.redirect(login);
   }

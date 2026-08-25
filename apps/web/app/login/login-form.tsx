@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
+import { safeNext } from "../../lib/safe-next";
 import { createClient, missingBrowserEnv } from "../../lib/supabase/browser";
 
 /**
@@ -38,7 +39,7 @@ export function LoginForm(): ReactNode {
       return;
     }
 
-    router.replace(params.get("next") ?? "/");
+    router.replace(safeNext(params.get("next")));
     router.refresh();
   }
 
