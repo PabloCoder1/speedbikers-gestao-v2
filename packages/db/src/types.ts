@@ -7,11 +7,6 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
-  __InternalSupabase: {
-    PostgrestVersion: "14.15"
-  }
   graphql_public: {
     Tables: {
       [_ in never]: never
@@ -204,6 +199,57 @@ export type Database = {
             columns: ["sku_id"]
             isOneToOne: false
             referencedRelation: "skus"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_runs: {
+        Row: {
+          cost_usd: number | null
+          created_at: string
+          id: string
+          latency_ms: number
+          llm_used: boolean
+          organization_id: string
+          scope: Json
+          tool_names: string[]
+          user_id: string
+        }
+        Insert: {
+          cost_usd?: number | null
+          created_at?: string
+          id?: string
+          latency_ms: number
+          llm_used?: boolean
+          organization_id: string
+          scope: Json
+          tool_names: string[]
+          user_id: string
+        }
+        Update: {
+          cost_usd?: number | null
+          created_at?: string
+          id?: string
+          latency_ms?: number
+          llm_used?: boolean
+          organization_id?: string
+          scope?: Json
+          tool_names?: string[]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_runs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_runs_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -882,6 +928,78 @@ export type Database = {
             columns: ["sku_id"]
             isOneToOne: false
             referencedRelation: "skus"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      feature_suggestions: {
+        Row: {
+          acceptance_criteria: string | null
+          complexity: string | null
+          created_at: string
+          created_by: string
+          dependencies_risks: string | null
+          expected_benefit: string | null
+          id: string
+          impacted_users: string | null
+          objective: string | null
+          organization_id: string
+          original_text: string
+          problem: string | null
+          status: string
+          suggested_flow: string | null
+          title: string | null
+          updated_at: string
+        }
+        Insert: {
+          acceptance_criteria?: string | null
+          complexity?: string | null
+          created_at?: string
+          created_by: string
+          dependencies_risks?: string | null
+          expected_benefit?: string | null
+          id?: string
+          impacted_users?: string | null
+          objective?: string | null
+          organization_id: string
+          original_text: string
+          problem?: string | null
+          status?: string
+          suggested_flow?: string | null
+          title?: string | null
+          updated_at?: string
+        }
+        Update: {
+          acceptance_criteria?: string | null
+          complexity?: string | null
+          created_at?: string
+          created_by?: string
+          dependencies_risks?: string | null
+          expected_benefit?: string | null
+          id?: string
+          impacted_users?: string | null
+          objective?: string | null
+          organization_id?: string
+          original_text?: string
+          problem?: string | null
+          status?: string
+          suggested_flow?: string | null
+          title?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "feature_suggestions_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "feature_suggestions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
@@ -2419,6 +2537,429 @@ export type Database = {
           },
         ]
       }
+      support_attachments: {
+        Row: {
+          cached_object_path: string | null
+          created_at: string
+          external_attachment_key: string
+          file_name: string | null
+          id: string
+          mime_type: string | null
+          ml_account_id: string
+          organization_id: string
+          remote_reference: string | null
+          size_bytes: number | null
+          support_message_id: string
+          updated_at: string
+        }
+        Insert: {
+          cached_object_path?: string | null
+          created_at?: string
+          external_attachment_key: string
+          file_name?: string | null
+          id?: string
+          mime_type?: string | null
+          ml_account_id: string
+          organization_id: string
+          remote_reference?: string | null
+          size_bytes?: number | null
+          support_message_id: string
+          updated_at?: string
+        }
+        Update: {
+          cached_object_path?: string | null
+          created_at?: string
+          external_attachment_key?: string
+          file_name?: string | null
+          id?: string
+          mime_type?: string | null
+          ml_account_id?: string
+          organization_id?: string
+          remote_reference?: string | null
+          size_bytes?: number | null
+          support_message_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "support_attachments_message_scope_fkey"
+            columns: ["support_message_id", "organization_id", "ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "support_messages"
+            referencedColumns: ["id", "organization_id", "ml_account_id"]
+          },
+        ]
+      }
+      support_case_deadlines: {
+        Row: {
+          created_at: string
+          deadline_kind: string
+          due_at: string | null
+          id: string
+          met_at: string | null
+          ml_account_id: string
+          organization_id: string
+          policy_key: string | null
+          source: string
+          source_reference: string | null
+          started_at: string | null
+          status: string
+          support_case_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          deadline_kind: string
+          due_at?: string | null
+          id?: string
+          met_at?: string | null
+          ml_account_id: string
+          organization_id: string
+          policy_key?: string | null
+          source: string
+          source_reference?: string | null
+          started_at?: string | null
+          status?: string
+          support_case_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          deadline_kind?: string
+          due_at?: string | null
+          id?: string
+          met_at?: string | null
+          ml_account_id?: string
+          organization_id?: string
+          policy_key?: string | null
+          source?: string
+          source_reference?: string | null
+          started_at?: string | null
+          status?: string
+          support_case_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "support_case_deadlines_case_scope_fkey"
+            columns: ["support_case_id", "organization_id", "ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "support_cases"
+            referencedColumns: ["id", "organization_id", "ml_account_id"]
+          },
+        ]
+      }
+      support_case_events: {
+        Row: {
+          actor_user_id: string | null
+          after: Json | null
+          before: Json | null
+          created_at: string
+          dedup_key: string
+          event_type: string
+          id: string
+          ml_account_id: string
+          occurred_at: string
+          organization_id: string
+          source: string
+          support_case_id: string
+        }
+        Insert: {
+          actor_user_id?: string | null
+          after?: Json | null
+          before?: Json | null
+          created_at?: string
+          dedup_key: string
+          event_type: string
+          id?: string
+          ml_account_id: string
+          occurred_at: string
+          organization_id: string
+          source: string
+          support_case_id: string
+        }
+        Update: {
+          actor_user_id?: string | null
+          after?: Json | null
+          before?: Json | null
+          created_at?: string
+          dedup_key?: string
+          event_type?: string
+          id?: string
+          ml_account_id?: string
+          occurred_at?: string
+          organization_id?: string
+          source?: string
+          support_case_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "support_case_events_actor_user_id_fkey"
+            columns: ["actor_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "support_case_events_case_scope_fkey"
+            columns: ["support_case_id", "organization_id", "ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "support_cases"
+            referencedColumns: ["id", "organization_id", "ml_account_id"]
+          },
+        ]
+      }
+      support_case_links: {
+        Row: {
+          created_at: string
+          external_entity_id: string | null
+          external_entity_kind: string | null
+          id: string
+          link_source: string
+          listing_id: string | null
+          ml_account_id: string
+          order_id: number | null
+          organization_id: string
+          sku_id: string | null
+          support_case_id: string
+        }
+        Insert: {
+          created_at?: string
+          external_entity_id?: string | null
+          external_entity_kind?: string | null
+          id?: string
+          link_source: string
+          listing_id?: string | null
+          ml_account_id: string
+          order_id?: number | null
+          organization_id: string
+          sku_id?: string | null
+          support_case_id: string
+        }
+        Update: {
+          created_at?: string
+          external_entity_id?: string | null
+          external_entity_kind?: string | null
+          id?: string
+          link_source?: string
+          listing_id?: string | null
+          ml_account_id?: string
+          order_id?: number | null
+          organization_id?: string
+          sku_id?: string | null
+          support_case_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "support_case_links_case_scope_fkey"
+            columns: ["support_case_id", "organization_id", "ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "support_cases"
+            referencedColumns: ["id", "organization_id", "ml_account_id"]
+          },
+          {
+            foreignKeyName: "support_case_links_listing_id_fkey"
+            columns: ["listing_id"]
+            isOneToOne: false
+            referencedRelation: "listings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "support_case_links_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "support_case_links_sku_id_fkey"
+            columns: ["sku_id"]
+            isOneToOne: false
+            referencedRelation: "skus"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      support_cases: {
+        Row: {
+          assignee_id: string | null
+          channel: string
+          conversation_path: string | null
+          created_at: string
+          customer_external_id: number | null
+          external_case_id: string
+          external_case_key: string
+          external_stage: string | null
+          external_status: string | null
+          external_substatus: string | null
+          external_type: string | null
+          has_return: boolean
+          id: string
+          internal_status: string
+          is_mediation: boolean
+          last_activity_at: string
+          last_inbound_at: string | null
+          last_outbound_at: string | null
+          ml_account_id: string
+          organization_id: string
+          pack_id: number | null
+          priority: string
+          remote_reply_block_reason: string | null
+          remote_reply_state: string
+          remote_unread_count: number
+          resolved_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          assignee_id?: string | null
+          channel: string
+          conversation_path?: string | null
+          created_at?: string
+          customer_external_id?: number | null
+          external_case_id: string
+          external_case_key: string
+          external_stage?: string | null
+          external_status?: string | null
+          external_substatus?: string | null
+          external_type?: string | null
+          has_return?: boolean
+          id?: string
+          internal_status?: string
+          is_mediation?: boolean
+          last_activity_at: string
+          last_inbound_at?: string | null
+          last_outbound_at?: string | null
+          ml_account_id: string
+          organization_id: string
+          pack_id?: number | null
+          priority?: string
+          remote_reply_block_reason?: string | null
+          remote_reply_state?: string
+          remote_unread_count?: number
+          resolved_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          assignee_id?: string | null
+          channel?: string
+          conversation_path?: string | null
+          created_at?: string
+          customer_external_id?: number | null
+          external_case_id?: string
+          external_case_key?: string
+          external_stage?: string | null
+          external_status?: string | null
+          external_substatus?: string | null
+          external_type?: string | null
+          has_return?: boolean
+          id?: string
+          internal_status?: string
+          is_mediation?: boolean
+          last_activity_at?: string
+          last_inbound_at?: string | null
+          last_outbound_at?: string | null
+          ml_account_id?: string
+          organization_id?: string
+          pack_id?: number | null
+          priority?: string
+          remote_reply_block_reason?: string | null
+          remote_reply_state?: string
+          remote_unread_count?: number
+          resolved_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "support_cases_assignee_id_fkey"
+            columns: ["assignee_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "support_cases_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "support_cases_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      support_messages: {
+        Row: {
+          body: string | null
+          body_state: string
+          created_at: string
+          direction: string
+          external_message_id: string | null
+          external_message_key: string
+          id: string
+          ml_account_id: string
+          observed_at: string
+          occurred_at: string
+          organization_id: string
+          remote_from_user_id: number | null
+          remote_status: string | null
+          remote_to_user_id: number | null
+          sender_kind: string
+          support_case_id: string
+          updated_at: string
+        }
+        Insert: {
+          body?: string | null
+          body_state?: string
+          created_at?: string
+          direction: string
+          external_message_id?: string | null
+          external_message_key: string
+          id?: string
+          ml_account_id: string
+          observed_at?: string
+          occurred_at: string
+          organization_id: string
+          remote_from_user_id?: number | null
+          remote_status?: string | null
+          remote_to_user_id?: number | null
+          sender_kind: string
+          support_case_id: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string | null
+          body_state?: string
+          created_at?: string
+          direction?: string
+          external_message_id?: string | null
+          external_message_key?: string
+          id?: string
+          ml_account_id?: string
+          observed_at?: string
+          occurred_at?: string
+          organization_id?: string
+          remote_from_user_id?: number | null
+          remote_status?: string | null
+          remote_to_user_id?: number | null
+          sender_kind?: string
+          support_case_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "support_messages_case_scope_fkey"
+            columns: ["support_case_id", "organization_id", "ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "support_cases"
+            referencedColumns: ["id", "organization_id", "ml_account_id"]
+          },
+        ]
+      }
       sync_errors: {
         Row: {
           created_at: string
@@ -2946,7 +3487,7 @@ export type Database = {
         Returns: Json
       }
       get_sku_sales_baseline: {
-        Args: { p_as_of: string; p_organization_id: string }
+        Args: { p_as_of: string; p_organization_id: string; p_sku_id?: string }
         Returns: {
           baseline_mean: number
           baseline_stddev: number
@@ -2963,6 +3504,7 @@ export type Database = {
           p_date_from: string
           p_date_to: string
           p_organization_id: string
+          p_sku_id?: string
         }
         Returns: {
           avg_daily_sales: number

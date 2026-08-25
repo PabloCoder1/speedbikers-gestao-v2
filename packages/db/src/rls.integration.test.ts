@@ -4460,3 +4460,468 @@ describe("feature_suggestions (Sugestões de features, D-079)", () => {
     ).rejects.toThrow(/permission denied/i);
   });
 });
+
+describe("support read model (Fase 7B, D-085; modelo D-084)", () => {
+  const ACCOUNT_A = "f7011111-0000-4000-8000-000000000001";
+  const ACCOUNT_B = "f7022222-0000-4000-8000-000000000002";
+  const ACCOUNT_OTHER = "f7033333-0000-4000-8000-000000000003";
+
+  const CASE_A = "f7111111-0000-4000-8000-000000000001";
+  const CASE_B = "f7122222-0000-4000-8000-000000000002";
+  const CASE_OTHER = "f7133333-0000-4000-8000-000000000003";
+  const MESSAGE_A = "f7211111-0000-4000-8000-000000000001";
+  const MESSAGE_B = "f7222222-0000-4000-8000-000000000002";
+  const EVENT_A = "f7311111-0000-4000-8000-000000000001";
+  const EVENT_B = "f7322222-0000-4000-8000-000000000002";
+  const SKU_B = "f7411111-0000-4000-8000-000000000001";
+  const LISTING_B = "f7511111-0000-4000-8000-000000000001";
+  const ORDER_B = 9984002002;
+
+  const SUPPORT_TABLES = [
+    "support_cases",
+    "support_messages",
+    "support_case_links",
+    "support_case_deadlines",
+    "support_attachments",
+    "support_case_events",
+  ] as const;
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts
+         (id, organization_id, label, slug, seller_id, status, connected_at)
+       values
+         ($1, $4, 'Support A', 'supporttest-conta-a', 840001, 'CONNECTED', now()),
+         ($2, $4, 'Support B', 'supporttest-conta-b', 840002, 'CONNECTED', now()),
+         ($3, $5, 'Support Other', 'supporttest-conta-other', 840003, 'CONNECTED', now())
+       on conflict (id) do nothing`,
+      [ACCOUNT_A, ACCOUNT_B, ACCOUNT_OTHER, ORG_SB, ORG_OUTRA],
+    );
+
+    await client.query(
+      `insert into public.user_account_permissions (user_id, ml_account_id)
+       values ($1, $2)
+       on conflict do nothing`,
+      [ANALISTA_SB, ACCOUNT_A],
+    );
+
+    await client.query(
+      `insert into public.skus (id, organization_id, sku, kind, title)
+       values ($1, $2, 'SUPPORTTEST-SKU-B', 'PRODUTO', 'SKU de suporte B')
+       on conflict (id) do nothing`,
+      [SKU_B, ORG_SB],
+    );
+
+    await client.query(
+      `insert into public.orders
+         (id, organization_id, ml_account_id, status, date_created,
+          date_last_updated, total_amount, paid_amount, currency_id)
+       values ($1, $2, $3, 'paid', now(), now(), 100, 100, 'BRL')
+       on conflict (id) do nothing`,
+      [ORDER_B, ORG_SB, ACCOUNT_B],
+    );
+
+    await client.query(
+      `insert into public.listings
+         (id, organization_id, ml_account_id, item_id, sku_id, title,
+          status, price, currency_id, available_quantity)
+       values ($1, $2, $3, 'MLB9984002002', $4, 'Anúncio suporte B',
+               'active', 100, 'BRL', 10)
+       on conflict (id) do nothing`,
+      [LISTING_B, ORG_SB, ACCOUNT_B, SKU_B],
+    );
+
+    await client.query(
+      `insert into public.support_cases
+         (id, organization_id, ml_account_id, channel, external_case_key,
+          external_case_id, external_status, internal_status, priority,
+          remote_unread_count, last_activity_at)
+       values
+         ($1, $4, $5, 'POST_SALE_MESSAGE', 'message:order:9984001001',
+          '9984001001', 'active', 'NOVO', 'NORMAL', 1, now()),
+         ($2, $4, $6, 'CLAIM', 'claim:840002',
+          '840002', 'opened', 'NOVO', 'CRITICA', 1, now()),
+         ($3, $7, $8, 'QUESTION', 'question:840003',
+          '840003', 'UNANSWERED', 'NOVO', 'NORMAL', 1, now())
+       on conflict (id) do nothing`,
+      [CASE_A, CASE_B, CASE_OTHER, ORG_SB, ACCOUNT_A, ACCOUNT_B, ORG_OUTRA, ACCOUNT_OTHER],
+    );
+
+    await client.query(
+      `insert into public.support_messages
+         (id, organization_id, ml_account_id, support_case_id,
+          external_message_key, external_message_id, direction, sender_kind,
+          body, body_state, occurred_at)
+       values
+         ($1, $5, $6, $3, 'message:mlb-support-a-1', 'mlb-support-a-1',
+          'INBOUND', 'CUSTOMER', 'Mensagem A', 'AVAILABLE', now()),
+         ($2, $5, $7, $4, 'claim-message:mlb-support-b-1', 'mlb-support-b-1',
+          'INBOUND', 'CUSTOMER', 'Mensagem B', 'AVAILABLE', now())
+       on conflict (id) do nothing`,
+      [MESSAGE_A, MESSAGE_B, CASE_A, CASE_B, ORG_SB, ACCOUNT_A, ACCOUNT_B],
+    );
+
+    await client.query(
+      `insert into public.support_case_links
+         (organization_id, ml_account_id, support_case_id,
+          external_entity_kind, external_entity_id, link_source)
+       values
+         ($1, $2, $3, 'ORDER', '9984001001', 'REMOTE'),
+         ($1, $4, $5, 'RETURN', 'return-840002', 'REMOTE')
+       on conflict do nothing`,
+      [ORG_SB, ACCOUNT_A, CASE_A, ACCOUNT_B, CASE_B],
+    );
+
+    await client.query(
+      `insert into public.support_case_links
+         (organization_id, ml_account_id, support_case_id, order_id, link_source)
+       values ($1, $2, $3, $4, 'REMOTE')
+       on conflict do nothing`,
+      [ORG_SB, ACCOUNT_B, CASE_B, ORDER_B],
+    );
+
+    await client.query(
+      `insert into public.support_case_links
+         (organization_id, ml_account_id, support_case_id, sku_id, link_source)
+       values ($1, $2, $3, $4, 'ORDER_DERIVED')
+       on conflict do nothing`,
+      [ORG_SB, ACCOUNT_B, CASE_B, SKU_B],
+    );
+
+    await client.query(
+      `insert into public.support_case_links
+         (organization_id, ml_account_id, support_case_id, listing_id, link_source)
+       values ($1, $2, $3, $4, 'LISTING_DERIVED')
+       on conflict do nothing`,
+      [ORG_SB, ACCOUNT_B, CASE_B, LISTING_B],
+    );
+
+    await client.query(
+      `insert into public.support_case_deadlines
+         (organization_id, ml_account_id, support_case_id, deadline_kind,
+          source, policy_key, started_at, status)
+       values ($1, $2, $3, 'NEXT_ACTION', 'ML_MESSAGE_RULE',
+               'MLB_AGENT_48_BUSINESS_HOURS', now(), 'ACTIVE')
+       on conflict do nothing`,
+      [ORG_SB, ACCOUNT_A, CASE_A],
+    );
+
+    await client.query(
+      `insert into public.support_case_deadlines
+         (organization_id, ml_account_id, support_case_id, deadline_kind,
+          source, source_reference, due_at, status)
+       values ($1, $2, $3, 'NEXT_ACTION', 'ML_AVAILABLE_ACTION',
+               'respond', now() + interval '1 day', 'ACTIVE')
+       on conflict do nothing`,
+      [ORG_SB, ACCOUNT_B, CASE_B],
+    );
+
+    await client.query(
+      `insert into public.support_attachments
+         (organization_id, ml_account_id, support_message_id,
+          external_attachment_key, file_name, mime_type, size_bytes)
+       values
+         ($1, $2, $3, 'attachment-a', 'a.pdf', 'application/pdf', 100),
+         ($1, $4, $5, 'attachment-b', 'b.txt', 'text/plain', 20)
+       on conflict do nothing`,
+      [ORG_SB, ACCOUNT_A, MESSAGE_A, ACCOUNT_B, MESSAGE_B],
+    );
+
+    await client.query(
+      `insert into public.support_case_events
+         (id, organization_id, ml_account_id, support_case_id,
+          event_type, source, after, occurred_at, dedup_key)
+       values
+         ($1, $3, $4, $5, 'CASE_CREATED', 'RECONCILIATION',
+          '{"status":"NOVO"}'::jsonb, now(), 'supporttest:event:a'),
+         ($2, $3, $6, $7, 'CASE_CREATED', 'WEBHOOK',
+          '{"status":"NOVO"}'::jsonb, now(), 'supporttest:event:b')
+       on conflict (id) do nothing`,
+      [EVENT_A, EVENT_B, ORG_SB, ACCOUNT_A, CASE_A, ACCOUNT_B, CASE_B],
+    );
+  });
+
+  describe("RLS e GRANTs", () => {
+    it.each(SUPPORT_TABLES)("ANALISTA vê somente a Conta A em %s", async (table) => {
+      const rows = await asUser<{ ml_account_id: string }>(
+        ANALISTA_SB,
+        `select distinct ml_account_id from public.${table}
+         where organization_id = '${ORG_SB}'
+           and ml_account_id in ('${ACCOUNT_A}', '${ACCOUNT_B}')
+         order by ml_account_id`,
+      );
+
+      expect(rows).toEqual([{ ml_account_id: ACCOUNT_A }]);
+    });
+
+    it.each(SUPPORT_TABLES)("ADMIN vê as duas contas da organização em %s", async (table) => {
+      const rows = await asUser<{ ml_account_id: string }>(
+        ADMIN_SB,
+        `select distinct ml_account_id from public.${table}
+         where organization_id = '${ORG_SB}'
+           and ml_account_id in ('${ACCOUNT_A}', '${ACCOUNT_B}')
+         order by ml_account_id`,
+      );
+
+      expect(rows).toEqual([{ ml_account_id: ACCOUNT_A }, { ml_account_id: ACCOUNT_B }]);
+    });
+
+    it.each(SUPPORT_TABLES)("ADMIN de outra organização não vê a Speed Bikers em %s", async (table) => {
+      const rows = await asUser(
+        DE_OUTRA_ORG,
+        `select id from public.${table} where organization_id = '${ORG_SB}'`,
+      );
+
+      expect(rows).toHaveLength(0);
+    });
+
+    it.each(SUPPORT_TABLES)("anon não lê %s", async (table) => {
+      await expect(asAnon(`select * from public.${table}`)).rejects.toThrow(/permission denied/i);
+    });
+
+    it("authenticated tem SELECT e nenhum privilégio de escrita nas seis tabelas", async () => {
+      const rows = await client.query<{
+        table_name: string;
+        can_select: boolean;
+        can_insert: boolean;
+        can_update: boolean;
+        can_delete: boolean;
+      }>(`
+        select table_name,
+               has_table_privilege('authenticated', 'public.' || table_name, 'select') as can_select,
+               has_table_privilege('authenticated', 'public.' || table_name, 'insert') as can_insert,
+               has_table_privilege('authenticated', 'public.' || table_name, 'update') as can_update,
+               has_table_privilege('authenticated', 'public.' || table_name, 'delete') as can_delete
+        from unnest(array[${SUPPORT_TABLES.map((table) => `'${table}'`).join(",")}]) as table_name
+      `);
+
+      expect(rows.rows).toHaveLength(SUPPORT_TABLES.length);
+      expect(rows.rows.every((row) => row.can_select)).toBe(true);
+      expect(rows.rows.every((row) => !row.can_insert && !row.can_update && !row.can_delete)).toBe(true);
+    });
+
+    it("service_role não tem UPDATE/DELETE em support_case_events", async () => {
+      const rows = await client.query<{ can_insert: boolean; can_update: boolean; can_delete: boolean }>(`
+        select
+          has_table_privilege('service_role', 'public.support_case_events', 'insert') as can_insert,
+          has_table_privilege('service_role', 'public.support_case_events', 'update') as can_update,
+          has_table_privilege('service_role', 'public.support_case_events', 'delete') as can_delete
+      `);
+
+      expect(rows.rows[0]).toEqual({ can_insert: true, can_update: false, can_delete: false });
+    });
+
+    it("authenticated não insere case direto", async () => {
+      await expect(
+        asUser(
+          ADMIN_SB,
+          `insert into public.support_cases
+             (organization_id, ml_account_id, channel, external_case_key,
+              external_case_id, last_activity_at)
+           values ('${ORG_SB}', '${ACCOUNT_A}', 'QUESTION',
+                   'question:999999', '999999', now())`,
+        ),
+      ).rejects.toThrow(/permission denied/i);
+    });
+  });
+
+  describe("coerência e idempotência físicas", () => {
+    it("FK composta recusa mensagem que declara conta diferente do case", async () => {
+      await expect(
+        client.query(
+          `insert into public.support_messages
+             (organization_id, ml_account_id, support_case_id,
+              external_message_key, direction, sender_kind, occurred_at)
+           values ($1, $2, $3, 'message:wrong-scope', 'INBOUND', 'CUSTOMER', now())`,
+          [ORG_SB, ACCOUNT_B, CASE_A],
+        ),
+      ).rejects.toThrow(/support_messages_case_scope_fkey/i);
+    });
+
+    it("link tipado recusa pedido de outra conta", async () => {
+      await expect(
+        client.query(
+          `insert into public.support_case_links
+             (organization_id, ml_account_id, support_case_id, order_id, link_source)
+           values ($1, $2, $3, $4, 'REMOTE')`,
+          [ORG_SB, ACCOUNT_A, CASE_A, ORDER_B],
+        ),
+      ).rejects.toThrow(/pedido fora da organização\/conta/i);
+    });
+
+    it("link exige exatamente um alvo", async () => {
+      await expect(
+        client.query(
+          `insert into public.support_case_links
+             (organization_id, ml_account_id, support_case_id,
+              external_entity_kind, external_entity_id, order_id, link_source)
+           values ($1, $2, $3, 'ORDER', 'duplicado', $4, 'REMOTE')`,
+          [ORG_SB, ACCOUNT_B, CASE_B, ORDER_B],
+        ),
+      ).rejects.toThrow(/support_case_links_exactly_one_target/i);
+    });
+
+    it("faceta de mediação/devolução só existe em CLAIM", async () => {
+      await expect(
+        client.query(
+          `insert into public.support_cases
+             (organization_id, ml_account_id, channel, external_case_key,
+              external_case_id, is_mediation, last_activity_at)
+           values ($1, $2, 'QUESTION', 'question:999998', '999998', true, now())`,
+          [ORG_SB, ACCOUNT_A],
+        ),
+      ).rejects.toThrow(/support_cases_claim_facets_coherent/i);
+    });
+
+    it("mesma chave externa não cria dois cases", async () => {
+      await expect(
+        client.query(
+          `insert into public.support_cases
+             (organization_id, ml_account_id, channel, external_case_key,
+              external_case_id, last_activity_at)
+           values ($1, $2, 'POST_SALE_MESSAGE',
+                   'message:order:9984001001', '9984001001', now())`,
+          [ORG_SB, ACCOUNT_A],
+        ),
+      ).rejects.toThrow(/support_cases_external_identity_unique/i);
+    });
+
+    it("mesma chave externa não cria duas mensagens no case", async () => {
+      await expect(
+        client.query(
+          `insert into public.support_messages
+             (organization_id, ml_account_id, support_case_id,
+              external_message_key, direction, sender_kind, occurred_at)
+           values ($1, $2, $3, 'message:mlb-support-a-1',
+                   'INBOUND', 'CUSTOMER', now())`,
+          [ORG_SB, ACCOUNT_A, CASE_A],
+        ),
+      ).rejects.toThrow(/support_messages_external_identity_unique/i);
+    });
+
+    it("deadline com source_reference NULL também é idempotente", async () => {
+      await expect(
+        client.query(
+          `insert into public.support_case_deadlines
+             (organization_id, ml_account_id, support_case_id,
+              deadline_kind, source, policy_key, status)
+           values ($1, $2, $3, 'NEXT_ACTION', 'ML_MESSAGE_RULE',
+                   'MLB_AGENT_48_BUSINESS_HOURS', 'ACTIVE')`,
+          [ORG_SB, ACCOUNT_A, CASE_A],
+        ),
+      ).rejects.toThrow(/support_case_deadlines_identity_unique/i);
+    });
+
+    it("mesma chave de anexo não duplica metadado", async () => {
+      await expect(
+        client.query(
+          `insert into public.support_attachments
+             (organization_id, ml_account_id, support_message_id,
+              external_attachment_key)
+           values ($1, $2, $3, 'attachment-a')`,
+          [ORG_SB, ACCOUNT_A, MESSAGE_A],
+        ),
+      ).rejects.toThrow(/support_attachments_external_identity_unique/i);
+    });
+
+    it("mesma dedup_key não duplica evento", async () => {
+      await expect(
+        client.query(
+          `insert into public.support_case_events
+             (organization_id, ml_account_id, support_case_id,
+              event_type, source, occurred_at, dedup_key)
+           values ($1, $2, $3, 'CASE_CREATED', 'RECONCILIATION',
+                   now(), 'supporttest:event:a')`,
+          [ORG_SB, ACCOUNT_A, CASE_A],
+        ),
+      ).rejects.toThrow(/support_case_events_dedup_unique/i);
+    });
+
+    it("support_case_events é append-only até para o dono da tabela", async () => {
+      await expect(
+        client.query(
+          `update public.support_case_events
+           set event_type = 'TAMPERED'
+           where id = $1`,
+          [EVENT_A],
+        ),
+      ).rejects.toThrow(/append-only/i);
+
+      await expect(
+        client.query("delete from public.support_case_events where id = $1", [EVENT_B]),
+      ).rejects.toThrow(/append-only/i);
+    });
+
+    it("UPSERT repetido de Pergunta converge para o mesmo case e a mesma mensagem", async () => {
+      const firstCase = await client.query<{ id: string }>(
+        `insert into public.support_cases
+           (organization_id, ml_account_id, channel, external_case_key,
+            external_case_id, external_status, internal_status, priority,
+            last_activity_at)
+         values ($1, $2, 'QUESTION', 'question:8499001', '8499001',
+                 'UNANSWERED', 'NOVO', 'NORMAL', '2026-08-25T18:00:00Z')
+         on conflict (organization_id, ml_account_id, channel, external_case_key)
+         do update set external_status = excluded.external_status,
+                       last_activity_at = excluded.last_activity_at
+         returning id`,
+        [ORG_SB, ACCOUNT_A],
+      );
+
+      const secondCase = await client.query<{ id: string }>(
+        `insert into public.support_cases
+           (organization_id, ml_account_id, channel, external_case_key,
+            external_case_id, external_status, internal_status, priority,
+            last_activity_at)
+         values ($1, $2, 'QUESTION', 'question:8499001', '8499001',
+                 'ANSWERED', 'NOVO', 'NORMAL', '2026-08-25T18:05:00Z')
+         on conflict (organization_id, ml_account_id, channel, external_case_key)
+         do update set external_status = excluded.external_status,
+                       last_activity_at = excluded.last_activity_at
+         returning id`,
+        [ORG_SB, ACCOUNT_A],
+      );
+
+      expect(secondCase.rows[0]?.id).toBe(firstCase.rows[0]?.id);
+
+      const supportCaseId = firstCase.rows[0]?.id;
+      await client.query(
+        `insert into public.support_messages
+           (organization_id, ml_account_id, support_case_id,
+            external_message_key, external_message_id, direction, sender_kind,
+            body, body_state, remote_status, occurred_at)
+         values ($1, $2, $3, 'question:8499001:question', '8499001',
+                 'INBOUND', 'CUSTOMER', 'texto inicial', 'AVAILABLE',
+                 'UNANSWERED', '2026-08-25T18:00:00Z')
+         on conflict (support_case_id, external_message_key)
+         do update set body = excluded.body,
+                       remote_status = excluded.remote_status`,
+        [ORG_SB, ACCOUNT_A, supportCaseId],
+      );
+      await client.query(
+        `insert into public.support_messages
+           (organization_id, ml_account_id, support_case_id,
+            external_message_key, external_message_id, direction, sender_kind,
+            body, body_state, remote_status, occurred_at)
+         values ($1, $2, $3, 'question:8499001:question', '8499001',
+                 'INBOUND', 'CUSTOMER', 'texto atualizado', 'AVAILABLE',
+                 'ANSWERED', '2026-08-25T18:00:00Z')
+         on conflict (support_case_id, external_message_key)
+         do update set body = excluded.body,
+                       remote_status = excluded.remote_status`,
+        [ORG_SB, ACCOUNT_A, supportCaseId],
+      );
+
+      const result = await client.query<{ count: string; body: string; remote_status: string }>(
+        `select count(*) over ()::text as count, body, remote_status
+         from public.support_messages
+         where support_case_id = $1
+           and external_message_key = 'question:8499001:question'`,
+        [supportCaseId],
+      );
+
+      expect(result.rows).toEqual([
+        { count: "1", body: "texto atualizado", remote_status: "ANSWERED" },
+      ]);
+    });
+  });
+});
