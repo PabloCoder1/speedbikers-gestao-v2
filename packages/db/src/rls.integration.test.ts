@@ -3460,6 +3460,41 @@ describe("get_sku_sales_baseline (Fase 6, Diagnóstico)", () => {
 
     expect(rows).toHaveLength(0);
   });
+
+  // p_sku_id (D-078, "O que aconteceu?" — ação contextual no Dashboard de
+  // SKU): filtro OPCIONAL adicionado à assinatura existente, chamada sem
+  // ele continua varrendo todos os SKUs (testes acima, inalterados).
+  it("p_sku_id filtra para UM SKU só, sem precisar de WHERE do lado do cliente", async () => {
+    const rows = await asUser<{ sku_id: string; sample_count: string }>(
+      ADMIN_SB,
+      `select * from public.get_sku_sales_baseline('${ORG_SB}','${AS_OF}','${skuComAmostraId}')`,
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.sku_id).toBe(skuComAmostraId);
+  });
+
+  it("p_sku_id de um SKU sem amostra suficiente devolve zero linhas — mesma regra do filtro geral", async () => {
+    const rows = await asUser<{ sku_id: string }>(
+      ADMIN_SB,
+      `select * from public.get_sku_sales_baseline('${ORG_SB}','${AS_OF}','${skuAmostraCurtaId}')`,
+    );
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("p_sku_id nulo (omitido) continua varrendo todos os SKUs elegíveis da organização", async () => {
+    const rows = await asUser<{ sku_id: string }>(
+      ADMIN_SB,
+      `select sku_id from public.get_sku_sales_baseline('${ORG_SB}','${AS_OF}')`,
+    );
+
+    const skuIds = rows.map((row) => row.sku_id);
+
+    expect(skuIds).toContain(skuComAmostraId);
+    expect(skuIds).toContain(skuDezOcorrenciasId);
+    expect(skuIds).not.toContain(skuAmostraCurtaId);
+  });
 });
 
 describe("actions / update_action_status / get_sku_average_prices (Fase 6, Central de Ações, D-064)", () => {

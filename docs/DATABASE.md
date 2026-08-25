@@ -455,15 +455,17 @@ created_at
 
 Integrado em `/vendas` (a tela com o filtro mais rico — período + conta) via `apps/web/components/saved-filters.tsx` + `saved-filters-actions.ts` (Server Actions, D-012).
 
-### `get_sku_sales_baseline(organization_id, as_of)` — Diagnóstico, primeira peça da Fase 6 (D-063)
+### `get_sku_sales_baseline(organization_id, as_of, sku_id?)` — Diagnóstico, primeira peça da Fase 6 (D-063)
 
 **Implementado em 2026-08-24**, migration `20260824013329_create_sku_sales_baseline_rpc.sql`. Pipeline determinístico de `docs/ARCHITECTURE.md` secao 16 — RPC `security invoker`, só agrega (docs/ARCHITECTURE.md secao 21): para cada SKU com histórico suficiente, devolve `units_sold` do dia pedido e a média/desvio padrão de `units_sold` no MESMO DIA DA SEMANA (últimas 8 ocorrências) — unifica os "três métodos aprovados" (média móvel, desvio padrão, mesmo dia da semana) num só cálculo, controlando sazonalidade semanal automaticamente. Amostra mínima de 4 ocorrências — abaixo disso o SKU nem aparece no resultado.
+
+**`p_sku_id` opcional desde 2026-08-25 (D-078, migration `20260825130000_add_sku_filter_to_sales_baseline.sql`)**: nulo continua varrendo todos os SKUs da organização (uso de `/diagnostico` e do job diário da Central de Ações, inalterado); preenchido filtra para UM SKU só, sem rodar a agregação inteira à toa — a ação contextual "O que aconteceu?" (item 8) usa esse filtro sob demanda a partir do Dashboard de SKU. Mudança de assinatura, não `create or replace` simples: `drop function` explícito antes de recriar (mesma pegadinha já resolvida em `20260823163058_move_ledger_integrity_function_public.sql`) — acrescentar parâmetro sem dropar deixaria duas funções sobrecarregadas coexistindo no banco.
 
 A INTERPRETAÇÃO (é anomalia? direção? confiança? causa candidata?) não vive em SQL — é `diagnoseSalesAnomaly` em `packages/domain/src/diagnostics/sales-anomaly.ts`, pura, produzindo o contrato de diagnóstico fixo (`docs/ARCHITECTURE.md` secao 16): `{escopo, periodo, direcao, confianca, zScore, evidencias[], causasCandidatas[], proximosPassos[]}`. `|z| >= 2` é o limiar de anomalia, `|z| >= 3` sobe a confiança para "alta" — convenção estatística padrão, não calibrada com dado real ainda (D-063).
 
 Causas candidatas vêm de `domain_events` com `entity_type = 'sku'` (`entity_id = sku_id` direto, sem join) — hoje só `stock.depleted`/`stock.replenished` têm essa forma com dado real (1.043 e 33 linhas na organização de demonstração); `order.*` (entity_type='order') fica de fora desta fatia. `listing.*` (`entity_type = 'listing'`, D-072) também fica de fora — emitido desde 2026-08-24, mas correlacionar por SKU exigiria resolver `sku_listing_links` a partir do `entity_id` (item_id), não implementado aqui.
 
-Consumida por `/diagnostico` (novo): busca o baseline de TODOS os SKUs para ontem (`as_of`, mesmo raciocínio de frescor de `/vendas`), roda `diagnoseSalesAnomaly` em duas passadas — uma sem eventos para achar quais SKUs são anomalia, uma segunda só para esses (já com os eventos correlacionados) — evita N+1 de consulta a `domain_events`.
+Consumida por `/diagnostico`: busca o baseline de TODOS os SKUs para ontem (`as_of`, mesmo raciocínio de frescor de `/vendas`), roda `diagnoseSalesAnomaly` em duas passadas — uma sem eventos para achar quais SKUs são anomalia, uma segunda só para esses (já com os eventos correlacionados) — evita N+1 de consulta a `domain_events`. **Desde D-078**, também consumida pelo Dashboard de SKU (`/skus/[skuId]`, botão "O que aconteceu?") — mesmo pipeline, `p_sku_id` preenchido, um SKU só, sob demanda.
 
 **"Central de Ações" (persistir como item acionável)** — ver `actions` (D-064), acima. **"Decisões com `baseline_snapshot`"** — ver `action_decisions`/`action_outcomes` (D-065), acima. Os três itens fecham o checklist da Fase 6.
 

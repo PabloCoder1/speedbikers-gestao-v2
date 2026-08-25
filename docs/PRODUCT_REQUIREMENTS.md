@@ -94,6 +94,8 @@ A análise deve retornar, quando suportado pelos dados:
 - nível de confiança;
 - próximos passos sugeridos.
 
+**Primeira fatia implementada em 2026-08-25 (D-078)** — botão "O que aconteceu?" no Dashboard de SKU (`/skus/[skuId]`), reaproveitando o mesmo motor de `/diagnostico`/Central de Ações (`diagnoseSalesAnomaly`, `docs/ARCHITECTURE.md` secao 16): principal evidência (venda vs. baseline), fator secundário (evento correlato, quando existe), impacto estimado em R$, confiança e próximos passos — todos os seis itens listados acima, cobertos pelo sinal de vendas que já existe. **Não implementado ainda**: KPIs/gráficos do Dashboard de Vendas (`/vendas`) e nível de conta — o motor de diagnóstico hoje só cobre sinal de vendas por SKU; expandir para outros sinais (visitas, conversão, preço, estoque, Full, promoção, Ads, catálogo) é trabalho incremental separado, já registrado em `docs/HANDOFF.md` ("Lacunas funcionais confirmadas na revisão").
+
 ## Simulador de decisão
 
 Quando houver base matemática suficiente, permitir perguntas de cenário como:

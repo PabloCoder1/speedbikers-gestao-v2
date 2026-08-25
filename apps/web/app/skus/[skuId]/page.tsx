@@ -7,6 +7,7 @@ import { StatusPill } from "../../../components/status-pill";
 import { formatCount, formatCurrency } from "../../../lib/format";
 import { listingStatusLabel } from "../../../lib/labels";
 import { createClient } from "../../../lib/supabase/server";
+import { DiagnosisPanel } from "./diagnosis-panel";
 
 export const metadata = { title: "Dashboard de SKU — Speed Bikers Gestão" };
 
@@ -153,6 +154,8 @@ export default async function SkuDashboardPage({
               <div style={statValue}>{formatCurrency(dashboard.gross_revenue)}</div>
             </div>
           </div>
+
+          <DiagnosisPanel skuId={sku.data.id} />
         </>
       )}
 
