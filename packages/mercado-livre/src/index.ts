@@ -31,4 +31,22 @@ export type {
 export { paginateOffset } from "./pagination.js";
 export type { OffsetPage, PaginateOffsetOptions, PagingInfo } from "./pagination.js";
 
+export {
+  fetchReceivedQuestion,
+  mapQuestionToSupportProjection,
+  questionAnswerStatusSchema,
+  questionStatusSchema,
+  receivedQuestionSchema,
+  receivedQuestionsPageSchema,
+} from "./questions.js";
+export type {
+  FetchReceivedQuestionOptions,
+  ReceivedQuestion,
+  ReceivedQuestionsPage,
+  SupportQuestionBodyState,
+  SupportQuestionCaseProjection,
+  SupportQuestionMessageProjection,
+  SupportQuestionProjection,
+} from "./questions.js";
+
 export { decryptToken, encryptToken, loadEncryptionKey } from "./token-cipher.js";

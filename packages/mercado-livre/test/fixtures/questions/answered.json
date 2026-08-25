@@ -1,0 +1,20 @@
+{
+  "date_created": "2020-04-14T16:30:02.000-04:00",
+  "last_updated": "2020-04-14T19:53:43.069-04:00",
+  "item_id": "MLB1494945960",
+  "seller_id": 447594313,
+  "status": "ANSWERED",
+  "text": "O produto possui filtro interno?",
+  "id": 6940134223,
+  "deleted_from_listing": false,
+  "hold": false,
+  "suspected_spam": false,
+  "answer": {
+    "text": "Sim, possui filtro interno.",
+    "status": "ACTIVE",
+    "date_created": "2020-04-14T19:53:43.069-04:00"
+  },
+  "from": {
+    "id": 546874560
+  }
+}

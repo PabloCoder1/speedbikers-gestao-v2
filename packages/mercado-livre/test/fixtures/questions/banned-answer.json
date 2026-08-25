@@ -1,0 +1,20 @@
+{
+  "date_created": "2021-02-16T14:50:27.938-04:00",
+  "last_updated": "2021-02-16T14:52:13.580-04:00",
+  "item_id": "MLB9032180230",
+  "seller_id": 189394110,
+  "status": "ANSWERED",
+  "text": "Texto da pergunta.",
+  "id": 11764931832,
+  "deleted_from_listing": false,
+  "hold": false,
+  "suspected_spam": false,
+  "answer": {
+    "text": "",
+    "status": "BANNED",
+    "date_created": "2021-02-16T14:52:13.580-04:00"
+  },
+  "from": {
+    "id": 162981404
+  }
+}
