@@ -109,6 +109,8 @@ Toda simulação deve exibir as premissas e nunca ser apresentada como certeza.
 
 ## Sugestões de features via Copiloto
 
+**Captura + Central de Sugestões implementadas em 2026-08-25 (D-079)** — `apps/web/app/sugestoes`. Estruturação por IA continua pendente (ver abaixo).
+
 Usuários autorizados poderão enviar ideias de melhoria em linguagem natural pelo assistente.
 
 A IA deve preservar a mensagem original e gerar uma versão estruturada com, quando possível:
@@ -133,6 +135,8 @@ O painel administrativo terá uma Central de Sugestões com estados como:
 - Em desenvolvimento;
 - Entregue;
 - Recusada.
+
+**Implementado em 2026-08-25 (D-079)**: qualquer membro da organização envia uma sugestão em texto livre (`/sugestoes`), preservado íntegro (`feature_suggestions.original_text`, nunca sobrescrito); ADMIN/GESTOR muda o estado nos sete valores acima. **Pendente**: os campos estruturados (título, problema, objetivo, usuários impactados, fluxo sugerido, benefício esperado, critérios de aceite, dependências/riscos, complexidade) — o schema já os tem, mas "a IA deve gerar" e o Copiloto ainda não tem modelo/orçamento decidido (`docs/COPILOT.md` secao 10). Autor e data já aparecem na Central via `created_by`/`created_at`, sem depender de IA.
 
 ## Memória de decisões operacionais
 

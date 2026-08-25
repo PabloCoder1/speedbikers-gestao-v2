@@ -513,6 +513,22 @@ Grava TODA chamada a `POST /v1/copilot/query`, mesmo no caminho de curto-circuit
 
 **Verificação**: `packages/db/src/rls.integration.test.ts`, describe `"ai_runs (observabilidade de custo do Copiloto, D-077)"` — próprio usuário, ADMIN da organização, usuário sem papel elevado, outra organização, `anon`, `authenticated` tentando inserir direto. Não executável nesta máquina (sem Docker) — verificado pela CI (`integration` job).
 
+### `feature_suggestions` — Sugestões de features via Copiloto (D-079)
+
+**Implementado em 2026-08-25**, migration `20260825140000_create_feature_suggestions.sql`, fecha a captura do item 9 da "Próxima sequência recomendada" (`docs/HANDOFF.md`) — `docs/PRODUCT_REQUIREMENTS.md`/`docs/COPILOT.md` secao 8.
+
+```text
+feature_suggestions   organization_id, created_by, original_text, [nove campos estruturados null], status
+```
+
+`original_text` **nunca é sobrescrito** — é a única coisa que esta fatia grava de verdade. Os nove campos estruturados (`title`, `problem`, `objective`, `impacted_users`, `suggested_flow`, `expected_benefit`, `acceptance_criteria`, `dependencies_risks`, `complexity`) nascem `null`: o requisito atribui essa estruturação à IA ("a IA deve gerar, quando possível"), e o Copiloto ainda não tem modelo/orçamento decidido (`docs/COPILOT.md` secao 10) — mesmo raciocínio já usado para `notification_preferences` (Fase 2) e `ai_runs` (D-077): schema pronto agora, funcionalidade completa depois, sem migration chata quando o LLM existir.
+
+`status` — sete valores, ordem e nomes exatos do requisito: `nova` -> `em_analise` -> `aprovada` -> `planejada` -> `em_desenvolvimento` -> `entregue` -> `recusada`.
+
+**RLS**: qualquer membro da organização insere a própria sugestão (`created_by = auth.uid()`) e lê todas as sugestões da organização — é um canal de feedback compartilhado, não um dado privado por usuário. Só ADMIN/GESTOR atualiza (`status`, e os campos estruturados quando existirem) — mesma granularidade já usada em `purchase_orders`/`actions`.
+
+**Verificação**: `packages/db/src/rls.integration.test.ts`, describe `"feature_suggestions (Sugestões de features, D-079)"` — inserção com texto preservado, usuário não insere em nome de outro, leitura compartilhada na organização, isolamento entre organizações, ANALISTA não muda status, ADMIN muda status de sugestão de outro membro, `anon` sem acesso nenhum. Não executável nesta máquina (sem Docker) — verificado pela CI (`integration` job).
+
 ---
 
 ## 5. RLS

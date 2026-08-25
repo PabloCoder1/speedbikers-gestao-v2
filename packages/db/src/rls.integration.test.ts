@@ -4279,3 +4279,88 @@ describe("ai_runs (observabilidade de custo do Copiloto, D-077)", () => {
     ).rejects.toThrow(/permission denied/i);
   });
 });
+
+describe("feature_suggestions (Sugestões de features, D-079)", () => {
+  // Linhas próprias desta suíte, sem afterAll de limpeza — mesma convenção
+  // já aceita no resto do arquivo.
+  let analistaSuggestionId = "";
+
+  beforeAll(async () => {
+    const inserted = await client.query<{ id: string }>(
+      `insert into public.feature_suggestions (organization_id, created_by, original_text)
+       values ($1, $2, 'Seria ótimo ter um filtro por marca na tela de estoque.')
+       returning id`,
+      [ORG_SB, ANALISTA_SB],
+    );
+    analistaSuggestionId = inserted.rows[0]?.id ?? "";
+  });
+
+  it("qualquer membro insere a própria sugestão, com o texto original preservado", async () => {
+    const rows = await asUserPersist<{ id: string; original_text: string; status: string }>(
+      ANALISTA_SB,
+      `insert into public.feature_suggestions (organization_id, created_by, original_text)
+       values ('${ORG_SB}', '${ANALISTA_SB}', 'Outra ideia de melhoria, em texto livre.')
+       returning id, original_text, status`,
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.original_text).toBe("Outra ideia de melhoria, em texto livre.");
+    expect(rows[0]?.status).toBe("nova");
+  });
+
+  it("usuário não insere sugestão em nome de outro usuário", async () => {
+    await expect(
+      asUser(
+        ANALISTA_SB,
+        `insert into public.feature_suggestions (organization_id, created_by, original_text)
+         values ('${ORG_SB}', '${ADMIN_SB}', 'Tentando enviar como outro usuário.')`,
+      ),
+    ).rejects.toThrow(/row-level security/i);
+  });
+
+  it("qualquer membro da organização vê as sugestões de todos, não só as próprias", async () => {
+    const rows = await asUser<{ id: string }>(
+      ADMIN_SB,
+      `select id from public.feature_suggestions where id = '${analistaSuggestionId}'`,
+    );
+
+    expect(rows).toHaveLength(1);
+  });
+
+  it("usuário de outra organização não vê nada", async () => {
+    const rows = await asUser<{ id: string }>(
+      DE_OUTRA_ORG,
+      `select id from public.feature_suggestions where id = '${analistaSuggestionId}'`,
+    );
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("ANALISTA não muda o status — só ADMIN/GESTOR pode triar", async () => {
+    await expect(
+      asUser(
+        ANALISTA_SB,
+        `update public.feature_suggestions set status = 'em_analise' where id = '${analistaSuggestionId}'`,
+      ),
+    ).rejects.toThrow(/row-level security|permission denied/i);
+  });
+
+  it("ADMIN muda o status de uma sugestão de outro membro", async () => {
+    const rows = await asUserPersist<{ status: string }>(
+      ADMIN_SB,
+      `update public.feature_suggestions set status = 'em_analise' where id = '${analistaSuggestionId}' returning status`,
+    );
+
+    expect(rows[0]?.status).toBe("em_analise");
+  });
+
+  it("anon não vê nem insere", async () => {
+    await expect(asAnon("select * from public.feature_suggestions")).rejects.toThrow(/permission denied/i);
+    await expect(
+      asAnon(
+        `insert into public.feature_suggestions (organization_id, created_by, original_text)
+         values ('${ORG_SB}', '${ANALISTA_SB}', 'anon tentando inserir')`,
+      ),
+    ).rejects.toThrow(/permission denied/i);
+  });
+});

@@ -121,6 +121,17 @@ const SEVERITY: Record<string, string> = {
   critico: "Crítico",
 };
 
+/** `feature_suggestions.status` — sete estados, ordem e nomes do requisito (docs/PRODUCT_REQUIREMENTS.md, D-079). */
+const FEATURE_SUGGESTION_STATUS: Record<string, string> = {
+  nova: "Nova",
+  em_analise: "Em análise",
+  aprovada: "Aprovada",
+  planejada: "Planejada",
+  em_desenvolvimento: "Em desenvolvimento",
+  entregue: "Entregue",
+  recusada: "Recusada",
+};
+
 function lookup(table: Record<string, string>, code: string): string {
   return table[code] ?? code;
 }
@@ -136,10 +147,13 @@ export const locationKindLabel = (code: string): string => lookup(LOCATION_KIND,
 export const listingStatusLabel = (code: string): string => lookup(LISTING_STATUS, code);
 export const eventTypeLabel = (code: string): string => lookup(EVENT_TYPE, code);
 export const severityLabel = (code: string): string => lookup(SEVERITY, code);
+export const featureSuggestionStatusLabel = (code: string): string => lookup(FEATURE_SUGGESTION_STATUS, code);
 
 /** Cor de destaque por estado. `null` = sem destaque, o padrão da tabela. */
 export function statusTone(code: string): "ok" | "warn" | "bad" | null {
-  if (code === "APPLIED" || code === "OK" || code === "RECEIVED") return "ok";
+  if (code === "APPLIED" || code === "OK" || code === "RECEIVED" || code === "entregue" || code === "aprovada") {
+    return "ok";
+  }
   if (
     code === "PARSED" ||
     code === "SKIPPED" ||
@@ -148,14 +162,25 @@ export function statusTone(code: string): "ok" | "warn" | "bad" | null {
     code === "DRAFT" ||
     code === "APPROVED" ||
     code === "ORDERED" ||
-    code === "importante"
+    code === "importante" ||
+    code === "em_analise" ||
+    code === "planejada" ||
+    code === "em_desenvolvimento"
   ) {
     return "warn";
   }
 
   if (code === "active") return "ok";
   if (code === "paused") return "warn";
-  if (code === "FAILED" || code === "INVALID" || code === "CANCELLED" || code === "critico") return "bad";
+  if (
+    code === "FAILED" ||
+    code === "INVALID" ||
+    code === "CANCELLED" ||
+    code === "critico" ||
+    code === "recusada"
+  ) {
+    return "bad";
+  }
 
   // "informativo" cai no padrão (null, sem destaque) de propósito — é o
   // nível que não deve competir visualmente com importante/crítico.

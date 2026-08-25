@@ -111,13 +111,15 @@ Mesmo contrato, mesmas evidências, consumido também pela Central de Ações.
 
 ## 8. Sugestões de features
 
-Ferramenta dedicada. **O texto original do usuário é preservado íntegro**, em coluna separada da versão estruturada.
+**Captura + Central de Sugestões implementadas em 2026-08-25 (D-079)** — `apps/web/app/sugestoes`, `feature_suggestions` (`docs/DATABASE.md`). "Ferramenta dedicada" ainda não existe como ferramenta do Copiloto (secao 4) — nesta fatia o envio é um formulário comum, sem passar por `POST /v1/copilot/query`; virar ferramenta registrada é trabalho de quando o planner por linguagem natural existir (secao 10).
 
-A IA gera, quando possível: título, problema, objetivo, usuários impactados, fluxo sugerido, benefício esperado, critérios de aceite, dependências e riscos aparentes, complexidade a avaliar, autor e data.
+**O texto original do usuário é preservado íntegro**, em coluna separada da versão estruturada.
+
+A IA gera, quando possível: título, problema, objetivo, usuários impactados, fluxo sugerido, benefício esperado, critérios de aceite, dependências e riscos aparentes, complexidade a avaliar, autor e data. **Pendente** — colunas já existem em `feature_suggestions`, nascem `null`; sem UI de preenchimento manual nesta fatia (o requisito atribui a estruturação à IA, não a um humano preenchendo à mão). Autor e data não dependem de IA — já aparecem na Central via `created_by`/`created_at`.
 
 *Motivo de preservar o original:* a estruturação pode errar a intenção. Quando a sugestão for lida três semanas depois, o que o usuário realmente escreveu é a única fonte confiável. Sobrescrever perde informação de forma irreversível.
 
-Estados na Central de Sugestões: `nova` -> `em_analise` -> `aprovada` -> `planejada` -> `em_desenvolvimento` -> `entregue` -> `recusada`.
+Estados na Central de Sugestões: `nova` -> `em_analise` -> `aprovada` -> `planejada` -> `em_desenvolvimento` -> `entregue` -> `recusada`. Qualquer membro da organização envia e vê todas as sugestões; só ADMIN/GESTOR muda o estado (mesma granularidade de `purchase_orders`/`actions`).
 
 ---
 

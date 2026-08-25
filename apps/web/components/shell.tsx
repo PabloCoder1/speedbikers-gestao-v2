@@ -17,8 +17,8 @@ import { NotificationToasts } from "./notification-toasts";
  * — "não fica só colocando solto, fica bagunça"), `<details>`/`<summary>`
  * nativo — dropdown sem JS, acessível de graça. Estrutura alvo completa:
  *
- *   VISÃO GERAL, NOTIFICAÇÕES (itens soltos, sem grupo — notificações é
- *   transversal a todas as categorias, não pertence a nenhuma)
+ *   VISÃO GERAL, NOTIFICAÇÕES, SUGESTÕES (itens soltos, sem grupo — ambos
+ *   são transversais a todas as categorias, não pertencem a nenhuma)
  *   COMERCIAL: Vendas, Produtos, Anúncios
  *   ESTOQUE: Estoque, Cobertura, Curva ABC, Notas Fiscais, Compras
  *   INTELIGÊNCIA: Diagnóstico, Ações
@@ -210,6 +210,10 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
                 {unreadCount > 99 ? "99+" : unreadCount}
               </span>
             )}
+          </Link>
+
+          <Link href="/sugestoes" style={{ color: "var(--sb-text-soft)", textDecoration: "none" }}>
+            Sugestões
           </Link>
 
           {NAV_GROUPS.map((group) => (
