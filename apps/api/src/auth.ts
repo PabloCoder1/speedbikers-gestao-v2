@@ -24,6 +24,18 @@ export type AuthResult =
 
 const BEARER = /^Bearer (.+)$/i;
 
+/**
+ * Extrai o token cru do header `Authorization: Bearer <token>`.
+ *
+ * Exportado separado de `authenticate` porque o Copiloto (`docs/COPILOT.md`
+ * secao 3) precisa do MESMO token pra criar um `UserClient` (`@sb/db`) que
+ * lê sob a RLS do usuário — sem isso, cada chamador reimplementaria a
+ * mesma regex.
+ */
+export function extractBearerToken(authorizationHeader: string | undefined): string | undefined {
+  return BEARER.exec(authorizationHeader ?? "")?.[1];
+}
+
 export interface Authenticator {
   authenticate: (
     authorizationHeader: string | undefined,
@@ -34,8 +46,7 @@ export interface Authenticator {
 export function createAuthenticator(db: AdminClient): Authenticator {
   return {
     authenticate: async (authorizationHeader, allowed) => {
-      const match = BEARER.exec(authorizationHeader ?? "");
-      const token = match?.[1];
+      const token = extractBearerToken(authorizationHeader);
 
       if (token === undefined) {
         return { ok: false, status: 401, reason: "authorization ausente ou malformado" };

@@ -115,10 +115,12 @@ Servidor HTTP (Hono), `min-instances=1`, timeout curto, concorrência alta.
 - `POST /webhooks/mercado-livre` — ACK em milissegundos, **zero chamada de rede**, grava a notificação e enfileira.
 - OAuth do Mercado Livre: início e callback com PKCE S256, guarda e refresh de token. O verifier PKCE e os tokens ficam cifrados; é onde os segredos vivem (D-046, D-049).
 - **Comandos privilegiados** que o `web` não pode executar: disparar sync manual, confirmar NF-e, aprovar pedido de compra, disparar diagnóstico.
-- **Copiloto**: orquestra ferramentas determinísticas e faz streaming SSE.
+- **Copiloto**: orquestra ferramentas determinísticas (streaming SSE ainda não implementado — D-077 só tem o caminho de curto-circuito, síncrono, sem LLM narrando nada ainda).
 - Endpoints internos chamados por Cloud Scheduler e Cloud Tasks, autenticados por OIDC.
 
 **Nunca:** trabalho longo inline. Se pode passar de ~5 s, **enfileira e responde**.
+
+**Segundo tipo de cliente Supabase, desde D-077**: além do `AdminClient` (`service_role`, usado por todo comando privilegiado — bypassa RLS, autorização é RBAC em código a partir do `Caller` resolvido em `auth.ts`), a `api` agora também instancia um `UserClient` (`@sb/db`, `createUserClient`) para as ferramentas do Copiloto — a chave publicável + o mesmo JWT do request, lendo sob a RLS real do usuário, mesmo modelo do `web`. Necessário porque RPCs `security invoker` como `get_sales_summary` dependem de `auth.uid()`: chamadas via `service_role` devolveriam dado de todas as organizações. Usar qual cliente é decisão por rota: comando privilegiado (grava, muda estado) continua `AdminClient`+RBAC manual; leitura pura que já existe sob RLS em outro lugar (`web`) usa `UserClient`, sem duplicar a autorização.
 
 **`min-instances=1` não é otimização prematura:** é requisito do webhook. Cold start atrasa o ACK e provoca reentrega pelo Mercado Livre.
 

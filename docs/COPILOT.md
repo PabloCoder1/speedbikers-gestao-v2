@@ -1,7 +1,7 @@
 # Copiloto Speed Bikers
 
 > Dono documental de: arquitetura do assistente, registro de ferramentas, guardrails e uso de IA.
-> Status: **estratégia aprovada.** Implementação na Fase 7.
+> Status: **estratégia aprovada. Ferramentas determinísticas + `ai_runs` implementados em 2026-08-25 (D-077)** — `POST /v1/copilot/query`, `apps/api/src/copilot.ts`, schemas em `@sb/contracts`. Planner por linguagem natural, LLM, streaming SSE de verdade e UI de chat continuam pendentes — dependem da escolha de modelo/orçamento (secao 10, pendência ainda aberta).
 
 ---
 
@@ -63,6 +63,16 @@ Ferramentas são definidas em `@sb/contracts/copilot-tools` com schema Zod de en
 
 Ferramenta nova exige: schema tipado, verificação de permissão, teste, e entrada neste documento.
 
+**Implementadas em 2026-08-25 (D-077)** — as três primeiras da tela âncora (secao 10), categoria "Série temporal"/"Comparação", `packages/contracts/src/copilot-tools.ts` + `apps/api/src/copilot.ts`:
+
+| Ferramenta | Categoria | O que faz |
+|---|---|---|
+| `sales_summary` | Série temporal | Vendas de um período — mesma `get_sales_summary` de `/vendas`, geral ou por conta |
+| `sales_period_comparison` | Comparação | O mesmo período contra o período anterior de igual tamanho (`previousBusinessDateRange`, `@sb/domain`) |
+| `sales_account_comparison` | Comparação | O mesmo período, lado a lado entre 2 e 10 contas |
+
+Verificação de permissão: RLS de verdade, não RBAC reimplementado — cada ferramenta roda com um `UserClient` (`@sb/db`) autenticado como o próprio usuário, então `has_account_access`/`get_sales_summary security invoker` já filtram sem código extra (secao 3, regra 2). Nenhuma ferramenta de escrita, nenhuma ferramenta de diagnóstico/prioridade/estruturação ainda — essas dependem de trabalho que não está nesta fatia (`docs/HANDOFF.md` itens 8/9).
+
 ---
 
 ## 5. Contexto de tela
@@ -113,17 +123,17 @@ Estados na Central de Sugestões: `nova` -> `em_analise` -> `aprovada` -> `plane
 
 ## 9. Custo e transporte
 
-- Streaming SSE a partir de `apps/api`.
-- Chamadas de IA são rastreáveis e, quando pesadas, assíncronas.
-- **A interface nunca dispara chamada de IA no carregamento da página.** A V2 precisou de um teste dedicado para garantir isso, e a ideia vale ser mantida.
-- Modelo e limites de custo são configuráveis por organização.
+- Streaming SSE a partir de `apps/api` — **ainda não implementado**. `POST /v1/copilot/query` (D-077) devolve JSON síncrono porque só o caminho de curto-circuito existe hoje: sem LLM narrando nada, não há token a transmitir em stream. Streaming entra quando o LLM existir.
+- **Toda chamada é rastreável desde D-077** — `ai_runs` grava ferramenta(s), escopo e latência de toda chamada, `llm_used`/`cost_usd` prontos para quando o LLM existir. "Quando pesadas, assíncronas" continua pendente (não há chamada pesada ainda — ferramentas determinísticas respondem em milissegundos).
+- **A interface nunca dispara chamada de IA no carregamento da página.** A V2 precisou de um teste dedicado para garantir isso, e a ideia vale ser mantida. Não se aplica ainda: nenhuma UI consome `/v1/copilot/query` nesta fatia.
+- Modelo e limites de custo são configuráveis por organização — pendente, ver secao 10.
 
 ---
 
 ## 10. Pendências
 
-- Escolha do modelo e orçamento de custo por período.
-- As primeiras ferramentas acompanham a tela âncora, o Dashboard de vendas Geral e por Conta (D-033): vendas por período, comparação entre períodos e comparação entre contas.
+- **Escolha do modelo e orçamento de custo por período — continua em aberto.** É a decisão que bloqueia tudo que depende de LLM: o planner que escolhe a ferramenta a partir de linguagem natural, a narração de evidências ("Por que este produto caiu?"), streaming SSE de verdade, e a UI de chat. Decisão de custo recorrente real — não deve ser tomada sem confirmação explícita, mesmo em sessão autônoma.
+- ~~As primeiras ferramentas acompanham a tela âncora, o Dashboard de vendas Geral e por Conta (D-033): vendas por período, comparação entre períodos e comparação entre contas.~~ **Implementadas em 2026-08-25 (D-077)** — ver secao 4.
 
 ---
 

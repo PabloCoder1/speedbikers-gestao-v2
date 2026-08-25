@@ -14,6 +14,7 @@ const OBRIGATORIAS = {
     "v3-scheduler-invoker@speedbikers-gestao-v3.iam.gserviceaccount.com",
   SUPABASE_URL: "https://nmgccyqquwxecqffsidr.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY: "sb_secret_chave_de_teste_longa_o_bastante",
+  SUPABASE_PUBLISHABLE_KEY: "sb_publishable_chave_de_teste_longa_o_bastante",
   ERP_IMPORTS_BUCKET: "speedbikers-gestao-v3-erp-imports",
   MERCADO_LIVRE_CLIENT_ID: "APP_ID_123",
   MERCADO_LIVRE_CLIENT_SECRET: "segredo-de-teste",

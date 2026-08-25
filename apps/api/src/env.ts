@@ -33,9 +33,19 @@ export const envSchema = z.object({
   /** Identidade autorizada a chamar as rotas `/internal/` desta api. */
   SCHEDULER_INVOKER_SERVICE_ACCOUNT: z.email(),
 
-  /** Supabase. A chave é segredo e vem do Secret Manager. */
+  /** Supabase. A chave de service role é segredo e vem do Secret Manager. */
   SUPABASE_URL: z.url(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(20),
+
+  /**
+   * Chave PUBLICÁVEL do Supabase — a mesma que `apps/web` embute no bundle
+   * do navegador (`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`), não é segredo.
+   * Usada só por `createUserClient` (`@sb/db`): o Copiloto (`docs/COPILOT.md`
+   * secao 3) lê sob a RLS do usuário, não com `service_role` — precisa de
+   * um cliente instanciado com a chave pública + o JWT do chamador, mesmo
+   * modelo do `web`.
+   */
+  SUPABASE_PUBLISHABLE_KEY: z.string().min(20),
 
   /** Bucket que recebe as exportações do UpSeller. */
   ERP_IMPORTS_BUCKET: z.string().min(1),

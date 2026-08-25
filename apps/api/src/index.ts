@@ -1,5 +1,5 @@
 import { serve } from "@hono/node-server";
-import { createAdminClient } from "@sb/db";
+import { createAdminClient, createUserClient } from "@sb/db";
 import { loadEncryptionKey } from "@sb/mercado-livre";
 import { createLogger } from "@sb/observability";
 
@@ -72,6 +72,12 @@ const app = createApp({
   listingVisitsSchedule: { db, enqueuer, logger },
   salesAnomalyActionsSchedule: { db, enqueuer, logger },
   decisionOutcomesSchedule: { db, enqueuer, logger },
+  copilot: {
+    db,
+    logger,
+    createUserClient: (accessToken) =>
+      createUserClient({ supabaseUrl: env.SUPABASE_URL, publishableKey: env.SUPABASE_PUBLISHABLE_KEY }, accessToken),
+  },
 });
 
 serve({ fetch: app.fetch, port: env.PORT }, (info) => {

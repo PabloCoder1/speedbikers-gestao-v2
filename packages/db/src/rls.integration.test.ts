@@ -4171,3 +4171,76 @@ describe("notificações (fan-out de domain_events, D-073)", () => {
     });
   });
 });
+
+describe("ai_runs (observabilidade de custo do Copiloto, D-077)", () => {
+  // Linhas próprias desta suíte, sem afterAll de limpeza — mesma convenção
+  // já aceita no resto do arquivo ("o ambiente local acumula até o
+  // próximo supabase db reset --local").
+  let analistaRunId = "";
+  let adminRunId = "";
+
+  beforeAll(async () => {
+    const analistaRun = await client.query<{ id: string }>(
+      `insert into public.ai_runs (organization_id, user_id, tool_names, scope, latency_ms)
+       values ($1, $2, array['sales_summary'], '{"dateFrom":"2026-08-01","dateTo":"2026-08-24"}'::jsonb, 42)
+       returning id`,
+      [ORG_SB, ANALISTA_SB],
+    );
+    analistaRunId = analistaRun.rows[0]?.id ?? "";
+
+    const adminRun = await client.query<{ id: string }>(
+      `insert into public.ai_runs (organization_id, user_id, tool_names, scope, latency_ms)
+       values ($1, $2, array['sales_period_comparison'], '{"dateFrom":"2026-08-01","dateTo":"2026-08-24"}'::jsonb, 88)
+       returning id`,
+      [ORG_SB, ADMIN_SB],
+    );
+    adminRunId = adminRun.rows[0]?.id ?? "";
+  });
+
+  it("usuário vê a própria execução", async () => {
+    const rows = await asUser<{ id: string }>(
+      ANALISTA_SB,
+      `select id from public.ai_runs where id = '${analistaRunId}'`,
+    );
+
+    expect(rows).toHaveLength(1);
+  });
+
+  it("usuário sem ADMIN/GESTOR não vê a execução de outro", async () => {
+    const rows = await asUser<{ id: string }>(ANALISTA_SB, `select id from public.ai_runs where id = '${adminRunId}'`);
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("ADMIN vê a execução de qualquer membro da própria organização", async () => {
+    const rows = await asUser<{ id: string }>(
+      ADMIN_SB,
+      `select id from public.ai_runs where id = '${analistaRunId}'`,
+    );
+
+    expect(rows).toHaveLength(1);
+  });
+
+  it("usuário de outra organização não vê nada, nem sendo ADMIN lá", async () => {
+    const rows = await asUser<{ id: string }>(
+      DE_OUTRA_ORG,
+      `select id from public.ai_runs where organization_id = '${ORG_SB}'`,
+    );
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("anon não vê ai_runs", async () => {
+    await expect(asAnon("select * from public.ai_runs")).rejects.toThrow(/permission denied/i);
+  });
+
+  it("authenticated não insere direto — só o service_role (a api grava depois de cada chamada)", async () => {
+    await expect(
+      asUser(
+        ADMIN_SB,
+        `insert into public.ai_runs (organization_id, user_id, tool_names, scope, latency_ms)
+         values ('${ORG_SB}', '${ADMIN_SB}', array['sales_summary'], '{}'::jsonb, 1)`,
+      ),
+    ).rejects.toThrow(/permission denied/i);
+  });
+});

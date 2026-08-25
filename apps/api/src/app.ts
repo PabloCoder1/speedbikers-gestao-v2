@@ -1,12 +1,16 @@
 import { randomUUID } from "node:crypto";
 
+import { copilotQueryRequestSchema } from "@sb/contracts";
 import type { Logger } from "@sb/observability";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 
 import type { Authenticator } from "./auth.js";
+import { extractBearerToken } from "./auth.js";
 import type { BalanceReconcileScheduleDeps } from "./balance-reconcile-schedule.js";
 import { triggerBalanceReconciliation } from "./balance-reconcile-schedule.js";
+import type { CopilotDeps } from "./copilot.js";
+import { handleCopilotQuery } from "./copilot.js";
 import type { DecisionOutcomesScheduleDeps } from "./decision-outcomes-schedule.js";
 import { triggerDecisionOutcomesMeasurement } from "./decision-outcomes-schedule.js";
 import type { Enqueuer } from "./enqueue.js";
@@ -68,6 +72,7 @@ export interface AppDependencies {
   ipAllowlist?: IpAllowlistVerifier;
   webhook?: WebhookDeps;
   mlAccounts?: MlAccountsDeps;
+  copilot?: CopilotDeps;
   reconcile?: ReconcileDeps;
   fulfillmentSchedule?: FulfillmentScheduleDeps;
   balanceReconcileSchedule?: BalanceReconcileScheduleDeps;
@@ -672,6 +677,57 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     return context.json({ authorizationUrl: outcome.authorizationUrl });
+  });
+
+  app.post("/v1/copilot/query", async (context) => {
+    const auth = dependencies.auth;
+    const copilot = dependencies.copilot;
+
+    if (auth === undefined || copilot === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    // "Qualquer autenticado" (docs/API.md secao 2) — o escopo real de cada
+    // resposta é a RLS da RPC chamada, não um papel mínimo aqui.
+    const authorized = await auth.authenticate(context.req.header("authorization"), [
+      "ADMIN",
+      "GESTOR",
+      "ANALISTA",
+      "OPERADOR",
+      "VISUALIZADOR",
+    ]);
+
+    if (!authorized.ok) {
+      dependencies.logger.warn("copilot_query_unauthorized", {
+        request_id: context.get("requestId"),
+        reason: authorized.reason,
+      });
+
+      return context.json({ error: { code: "unauthorized" } }, authorized.status);
+    }
+
+    // `createUserClient` (`@sb/db`) precisa do token cru, não só do
+    // `caller` já resolvido — é o que faz a ferramenta ler sob a RLS do
+    // usuário de verdade (`docs/COPILOT.md` secao 3).
+    const accessToken = extractBearerToken(context.req.header("authorization"));
+
+    if (accessToken === undefined) {
+      return context.json({ error: { code: "unauthorized" } }, 401);
+    }
+
+    const rawBody: unknown = await context.req.json().catch(() => null);
+    const parsedRequest = copilotQueryRequestSchema.safeParse(rawBody);
+
+    if (!parsedRequest.success) {
+      return context.json(
+        { error: { code: "invalid_payload", message: "corpo precisa de { tool, input }" } },
+        400,
+      );
+    }
+
+    const outcome = await handleCopilotQuery(copilot, authorized.caller, accessToken, parsedRequest.data);
+
+    return context.json(outcome.body, outcome.status);
   });
 
   app.notFound((context) => {

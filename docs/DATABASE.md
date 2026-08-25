@@ -497,6 +497,20 @@ notification_preferences user_id, event_type?, ml_account_id?, min_severity, ena
 
 **Realtime habilitado em `notification_recipients` (D-075, 2026-08-24)**, migration `20260824200000_enable_realtime_notification_recipients.sql`: `alter publication supabase_realtime add table public.notification_recipients;` — único passo de infraestrutura necessário. Pesquisa oficial confirmada ao vivo antes de implementar (`docs/NOTIFICATIONS.md` secao 4 marcava isso como pendência explícita): `postgres_changes` autoriza CADA evento contra a RLS da tabela de origem, por assinante — `notification_recipients_select_own` já é a autorização usada, sem policy nova em `realtime.messages` (isso é só para Broadcast/Presence, que este projeto não usa). Sem mudança de schema — não precisou regenerar `types.ts`.
 
+### `ai_runs` — observabilidade de custo/uso do Copiloto (D-077)
+
+**Implementado em 2026-08-25**, migration `20260825120000_create_ai_runs.sql`, fecha o item 7 da "Próxima sequência recomendada" (`docs/HANDOFF.md`) na parte determinística. `docs/COPILOT.md` secao 3: "toda chamada é registrada em `ai_runs` com custo, latência, ferramentas usadas, escopo e período. Sem isso, o custo é descoberto na fatura."
+
+```text
+ai_runs   organization_id, user_id, tool_names[], scope jsonb, llm_used, cost_usd?, latency_ms
+```
+
+Grava TODA chamada a `POST /v1/copilot/query`, mesmo no caminho de curto-circuito (`llm_used = false` nesta fase inteira — nenhuma ferramenta chama LLM ainda). `cost_usd` fica `null` enquanto `llm_used = false`: custo de chamada determinística é zero de verdade, não "zero desconhecido". Escrita só por `service_role` — a `api` grava depois de cada chamada (`recordAiRun`, `@sb/db`, nunca lança: mesmo raciocínio de `recordJobRun`, uma falha ao registrar custo não pode fazer uma consulta que já funcionou virar erro pro usuário).
+
+**RLS**: o próprio usuário vê o próprio histórico; ADMIN/GESTOR veem o uso de toda a organização (são quem responde pela fatura) — `private.is_member_of`/`private.has_role`, mesmo padrão do resto do schema.
+
+**Verificação**: `packages/db/src/rls.integration.test.ts`, describe `"ai_runs (observabilidade de custo do Copiloto, D-077)"` — próprio usuário, ADMIN da organização, usuário sem papel elevado, outra organização, `anon`, `authenticated` tentando inserir direto. Não executável nesta máquina (sem Docker) — verificado pela CI (`integration` job).
+
 ---
 
 ## 5. RLS

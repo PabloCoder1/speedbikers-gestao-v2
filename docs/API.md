@@ -72,9 +72,19 @@ Em qualquer falha depois da troca de código, a conta é marcada `status = 'ERRO
 | `/v1/nfe-imports/:id/apply` | POST | GESTOR | **Implementado em 2026-08-22** — confirmação humana: move o documento `PARSED` para `APPLYING` e **enfileira** a aplicação. Recusa se `resolved_items < total_items` — diferente do UpSeller, não tolera aplicação parcial (`apps/api/src/nfe-import.ts`, `confirmNfeApply`) |
 | `/v1/purchase-orders/:id/approve` | POST | GESTOR | Transição de ciclo |
 | `/v1/diagnostics/run` | POST | ANALISTA | Enfileira diagnóstico |
-| `/v1/copilot/query` | POST | qualquer autenticado | Streaming SSE, escopo limitado pelas permissões |
+| `/v1/copilot/query` | POST | qualquer autenticado | **Implementado em 2026-08-25 (D-077), só o caminho de curto-circuito** — `{ tool, input }`, devolve `{ tool, escopo, confianca, data }`. Streaming SSE e o planner por linguagem natural ainda não existem, ver detalhe abaixo |
 
 A `api` **verifica o JWT e reavalia a autorização no servidor**. Não confiar na interface para autorização.
+
+**`POST /v1/copilot/query` — implementado em 2026-08-25 (D-077)** (`apps/api/src/copilot.ts`). Corpo `{ tool: "sales_summary" | "sales_period_comparison" | "sales_account_comparison", input: {...} }` — schemas em `@sb/contracts` (`docs/COPILOT.md` secao 4). Resposta de sucesso: `{ tool, escopo, confianca: "alta", data }`, onde `escopo` é o `input` já validado (`docs/COPILOT.md` secao 5: "a resposta sempre mostra o escopo e o período efetivamente usados") e `data` é a saída tipada da ferramenta.
+
+Cada ferramenta lê sob a RLS do usuário de verdade — `apps/api` ganhou um segundo tipo de cliente Supabase (`UserClient`, `@sb/db`, `createUserClient`), instanciado com a chave publicável + o mesmo JWT do request, não `service_role`. `get_sales_summary` é `security invoker`: rodar via `service_role` devolveria dado de todas as organizações (RLS bypassada), e reimplementar `has_account_access` em código seria a duplicação que `docs/ARCHITECTURE.md` secao 7 já proíbe para fórmulas de métrica — ver `docs/DECISIONS.md` D-077.
+
+Contrato de erro: `400 invalid_payload` (input não bate com o schema da ferramenta), `502 tool_failed` (a RPC falhou), `401`/`403` iguais ao resto da `api`.
+
+**Só o caminho de curto-circuito desta primeira fatia** (`docs/COPILOT.md` secao 2: "se a ferramenta já respondeu por completo... o LLM NÃO é chamado") — o chamador informa `tool` explicitamente, não existe planner que escolha a ferramenta a partir de linguagem natural. Resposta é JSON síncrono, não SSE: sem LLM narrando nada nesta fatia, não há token a transmitir em stream. Planner, streaming de verdade e UI de chat ficam para quando o modelo/orçamento forem decididos (`docs/COPILOT.md` secao 10, pendência que continua aberta).
+
+Toda chamada grava `ai_runs` (`docs/DATABASE.md`) — `llm_used: false` e `cost_usd: null` em toda linha desta fase, campos prontos para quando o LLM existir.
 
 ### CORS
 
