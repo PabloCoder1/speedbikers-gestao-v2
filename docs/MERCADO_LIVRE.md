@@ -386,6 +386,12 @@ Pesquisa feita exclusivamente na documentação oficial vigente. A permissão fu
 - **Estados documentados:** `ANSWERED`, `BANNED`, `CLOSED_UNANSWERED`, `DELETED`, `DISABLED`, `UNANSWERED`, `UNDER_REVIEW`.
 - **Resposta:** `POST /answers`, JSON `{ "question_id": number, "text": string }`. Pergunta e resposta aceitam no máximo **2.000 caracteres**; a documentação pede UTF-8.
 - **Paginação:** padrão 50. Em `/questions/search`, para mais de 1.000 registros, usar `search_type=scan`, atualizando o `scroll_id` a cada chamada; o scroll expira em 5 minutos. A documentação geral de busca registra limite máximo de 100 por página. Esse modo não foi explicitamente confirmado para `/my/received_questions/search`; não presumir equivalência na implementação.
+- **Filtros e ordenação de `/my/received_questions/search` — CONFIRMADO por leitura oficial em 2026-08-25 (D-089), lendo o payload de exemplo da própria página:**
+  - a resposta declara `available_filters` = `item`, `from`, `totalDivisions`, `division` e **`status`** (com exatamente os sete valores acima). **Não existe filtro por data neste endpoint** — nem `date_created.from/to`, nem equivalente. Consequência direta: reconciliação "dos últimos N dias" é impossível de expressar aqui;
+  - `available_sorts` = `item_id`, `from_id`, `date_created`, `seller_id` — mas a resposta padrão traz `"sorts": []`, ou seja, **a ordenação default não é documentada**. Nenhuma lógica pode depender de "as mais recentes vêm primeiro";
+  - a resposta traz `total`, `limit` e `questions[]` no topo; **`offset` vive dentro de `filters`, não no topo**;
+  - cada entrada de `questions[]` tem o MESMO formato do detalhe (`id`, `seller_id`, `item_id`, `status`, `text`, `date_created`, `deleted_from_listing`, `hold`, `answer`, `from.id`) — um único contrato serve aos dois, que é como `receivedQuestionSchema` foi escrito em D-086. `suspected_spam` não aparece no exemplo da busca, então o contrato o trata como opcional com default `false`;
+  - `search_type=scan` continua sem aparecer documentado para este endpoint.
 - **Webhook:** tópico geral `questions`, disparado para perguntas **e respostas**, com `resource: "/questions/{question_id}"`; o worker deve buscar o detalhe pelo `resource`. Não tem array `actions`.
 - **SLA:** não há `due_date` por pergunta documentado. Existe `GET /users/{user_id}/questions/response_time`, métrica agregada dos últimos 14 dias por faixas de horário, atualizada uma vez por dia, incluindo projeção de aumento de vendas quando a resposta excede 60 minutos. Isso serve como métrica; qualquer prazo operacional por pergunta da V3 será regra interna, não campo remoto. Perguntas sem resposta há mais de 7 meses são removidas automaticamente.
 
@@ -425,10 +431,24 @@ Como o tópico dispara para pergunta E resposta com o mesmo `resource`, e o
 detalhe traz as duas, o dedupe por recurso + janela de minuto faz as duas
 notificações colapsarem numa busca só.
 
-**Ainda não existe reconciliação.** `GET /my/received_questions/search` continua
-não implementado, então uma notificação que o Mercado Livre não entregue é uma
-pergunta que a V3 não vê — a própria documentação oficial recomenda a busca como
-redundância do webhook (mesma lógica de `/messages/unread` para mensagens).
+**Reconciliação implementada em D-089**, fechando a lacuna acima:
+`sync.support.questions.reconcile` varre `GET /my/received_questions/search`
+por conta, a cada 6h, e persiste pela mesma porta idempotente de D-086.
+
+**O recorte é `status=UNANSWERED`, e o motivo é a própria API.** Sem filtro por
+data e sem ordenação garantida (ver a lista de filtros/sorts confirmados
+acima), "reconciliar a última janela" não é expressável — a alternativa seria
+varrer o histórico inteiro da conta a cada rodada. `status` é filtro oficial, e
+pergunta não respondida é exatamente o caso operacional que importa: alguém
+esperando resposta que a V3 nunca viu. O conjunto ainda é limitado pelo próprio
+Mercado Livre, que remove perguntas sem resposta há mais de 7 meses.
+
+**Lacuna conhecida, registrada e não escondida:** uma pergunta que o webhook
+perdeu E que alguém respondeu pelo app do Mercado Livre não é recuperada — ela
+não está mais `UNANSWERED`. É buraco de histórico, não de operação; fechá-lo
+exigiria varrer os sete status a cada rodada, custo que só se justifica com
+evidência real de que acontece.
+
 Nenhum envio de resposta foi implementado.
 
 **Fontes oficiais consultadas:** `developers.mercadolivre.com.br/pt_br/perguntas-e-respostas`; `.../itens-e-buscas`; `.../pt_br/mensagens-post-venda`; `.../pt_br/mensagens-pendentes`; `.../pt_br/motivos-para-se-comunicar`; `.../pt_br/mensagens-post-venda/produto-receba-notificacoes`; `.../pt_br/permissoes-funcionais/`; `.../pt_br/gerenciar-reclamacoes`; `.../pt_br/gerenciar-mensagem-de-uma-eclamacao`.

@@ -1684,6 +1684,43 @@ describe("observabilidade de sincronização", () => {
     ).rejects.toThrow(/finished_after_started/);
   });
 
+  it("aceita resource 'questions' — a reconciliação de Perguntas grava aqui (D-089)", async () => {
+    // D-087 deixou o CHECK sem 'questions' de propósito: um fetch por ID vindo
+    // do webhook não tem janela, contagem nem frescor. A reconciliação tem, e
+    // `20260825180000_add_questions_sync_resource.sql` alargou o CHECK.
+    const run = await client.query<{ id: string }>(
+      `insert into public.sync_runs
+         (organization_id, ml_account_id, job_id, resource, channel, status, items_processed, started_at, finished_at)
+       values ($1,$2,gen_random_uuid(),'questions','reconciliation','done',7,now(),now())
+       returning id`,
+      [ORG_SB, CONTA],
+    );
+
+    expect(run.rows).toHaveLength(1);
+
+    await expect(
+      client.query(
+        `insert into public.sync_errors
+           (organization_id, ml_account_id, sync_run_id, resource, error_class, message, occurred_at)
+         values ($1,$2,$3,'questions','retryable','rlstest 429',now())`,
+        [ORG_SB, CONTA, run.rows[0]?.id],
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  it("resource fora do vocabulário fechado continua recusado", async () => {
+    // O CHECK ainda é uma lista fechada — alargar para 'questions' não o
+    // transformou em texto livre.
+    await expect(
+      client.query(
+        `insert into public.sync_runs
+           (organization_id, ml_account_id, job_id, resource, channel, status, started_at, finished_at)
+         values ($1,$2,gen_random_uuid(),'inventado','reconciliation','done',now(),now())`,
+        [ORG_SB, CONTA],
+      ),
+    ).rejects.toThrow(/resource_check/);
+  });
+
   it("status done com motivo de falha é recusado", async () => {
     await expect(
       client.query(

@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createMercadoLivreClient } from "./http-client.js";
 import {
   fetchReceivedQuestion,
+  fetchReceivedQuestionsPage,
   mapQuestionToSupportProjection,
   receivedQuestionSchema,
   receivedQuestionsPageSchema,
@@ -80,6 +81,103 @@ describe("fetchReceivedQuestion", () => {
 
     expect(question).toMatchObject({ id: 11_436_370_259, status: "UNANSWERED" });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("fetchReceivedQuestionsPage", () => {
+  it("fixa endpoint, api_version, status, offset e limit exatamente como a documentação oficial declara", async () => {
+    const fixture = await loadFixture("unanswered");
+    const fetchImpl = vi.fn((url: string | URL | Request, init?: RequestInit) => {
+      const parsed = new URL(url as string | URL);
+      const headers = init?.headers as Record<string, string>;
+
+      expect(parsed.pathname).toBe("/my/received_questions/search");
+      expect(parsed.searchParams.get("api_version")).toBe("4");
+      // `status` é um dos `available_filters` que a própria resposta oficial
+      // declara — não é parâmetro inventado.
+      expect(parsed.searchParams.get("status")).toBe("UNANSWERED");
+      expect(parsed.searchParams.get("offset")).toBe("100");
+      expect(parsed.searchParams.get("limit")).toBe("100");
+      // A doc oficial NÃO documenta `search_type=scan` para este endpoint —
+      // só para `/questions/search`. Não pode vazar para cá por descuido.
+      expect(parsed.searchParams.get("search_type")).toBeNull();
+      expect(init?.method).toBe("GET");
+      expect(headers.authorization).toBe("Bearer APP_USR-token-teste");
+
+      return Promise.resolve(
+        new Response(JSON.stringify({ total: 1, limit: 100, questions: [fixture] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    });
+    const mercadoLivre = createMercadoLivreClient({ fetchImpl });
+
+    const page = await fetchReceivedQuestionsPage({
+      mercadoLivre,
+      accessToken: "APP_USR-token-teste",
+      status: "UNANSWERED",
+      offset: 100,
+      limit: 100,
+    });
+
+    expect(page.total).toBe(1);
+    expect(page.questions).toHaveLength(1);
+    expect(page.questions[0]).toMatchObject({ id: 11_436_370_259, status: "UNANSWERED" });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignora os campos extras da busca (filters, available_filters, available_sorts) sem recusar a resposta", async () => {
+    // O payload real traz esses três blocos; o contrato só declara o que o
+    // read model usa. Um campo novo do Mercado Livre não pode quebrar a
+    // ingestão.
+    const fixture = await loadFixture("answered");
+    const fetchImpl = vi.fn(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            total: 1,
+            limit: 50,
+            questions: [fixture],
+            filters: { limit: 50, offset: 0, api_version: "4", sorts: [], is_admin: false },
+            available_filters: [{ id: "status", name: "Status", type: "text" }],
+            available_sorts: ["item_id", "from_id", "date_created", "seller_id"],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+
+    const page = await fetchReceivedQuestionsPage({
+      mercadoLivre: createMercadoLivreClient({ fetchImpl }),
+      accessToken: "APP_USR-token-teste",
+      status: "UNANSWERED",
+      offset: 0,
+      limit: 50,
+    });
+
+    expect(page.questions).toHaveLength(1);
+  });
+
+  it("recusa uma página cujo item não passa no contrato, em vez de persistir lixo", async () => {
+    const fetchImpl = vi.fn(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({ total: 1, limit: 50, questions: [{ id: 1, status: "INVENTADO" }] }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+
+    await expect(
+      fetchReceivedQuestionsPage({
+        mercadoLivre: createMercadoLivreClient({ fetchImpl }),
+        accessToken: "APP_USR-token-teste",
+        status: "UNANSWERED",
+        offset: 0,
+        limit: 50,
+      }),
+    ).rejects.toThrow();
   });
 });
 

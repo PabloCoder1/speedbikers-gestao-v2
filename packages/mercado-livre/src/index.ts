@@ -33,6 +33,7 @@ export type { OffsetPage, PaginateOffsetOptions, PagingInfo } from "./pagination
 
 export {
   fetchReceivedQuestion,
+  fetchReceivedQuestionsPage,
   mapQuestionToSupportProjection,
   questionAnswerStatusSchema,
   questionStatusSchema,
@@ -41,6 +42,7 @@ export {
 } from "./questions.js";
 export type {
   FetchReceivedQuestionOptions,
+  FetchReceivedQuestionsPageOptions,
   ReceivedQuestion,
   ReceivedQuestionsPage,
   SupportQuestionBodyState,

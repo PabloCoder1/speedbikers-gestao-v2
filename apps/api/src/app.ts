@@ -23,6 +23,8 @@ import type { LedgerIntegrityScheduleDeps } from "./ledger-integrity-schedule.js
 import { triggerLedgerIntegrityCheck } from "./ledger-integrity-schedule.js";
 import type { ListingVisitsScheduleDeps } from "./listing-visits-schedule.js";
 import { triggerListingVisitsSnapshot } from "./listing-visits-schedule.js";
+import type { SupportQuestionsScheduleDeps } from "./support-questions-schedule.js";
+import { triggerSupportQuestionsReconcile } from "./support-questions-schedule.js";
 import type { ListingsScheduleDeps } from "./listings-schedule.js";
 import { triggerListingsSnapshot } from "./listings-schedule.js";
 import type { MlAccountsDeps } from "./ml-accounts.js";
@@ -79,6 +81,7 @@ export interface AppDependencies {
   ledgerIntegritySchedule?: LedgerIntegrityScheduleDeps;
   listingsSchedule?: ListingsScheduleDeps;
   listingVisitsSchedule?: ListingVisitsScheduleDeps;
+  supportQuestionsSchedule?: SupportQuestionsScheduleDeps;
   salesAnomalyActionsSchedule?: SalesAnomalyActionsScheduleDeps;
   decisionOutcomesSchedule?: DecisionOutcomesScheduleDeps;
 }
@@ -391,6 +394,22 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     const outcome = await triggerListingVisitsSnapshot(listingVisitsSchedule);
+
+    return context.json(outcome);
+  });
+
+  // --------------------------------------------------------------------
+  // Reconciliação de Perguntas (Fase 7B, D-089) — rede de segurança do
+  // webhook `questions`, por CONTA, a cada 6h. Mesmo formato da rota acima.
+  // --------------------------------------------------------------------
+  app.post("/internal/schedule/support-questions", async (context) => {
+    const supportQuestionsSchedule = dependencies.supportQuestionsSchedule;
+
+    if (supportQuestionsSchedule === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const outcome = await triggerSupportQuestionsReconcile(supportQuestionsSchedule);
 
     return context.json(outcome);
   });

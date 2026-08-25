@@ -124,6 +124,18 @@ upsert_job \
   "${API_URL}/internal/schedule/listing-visits" \
   "Sincronizacao de visitas por anuncio, por conta Mercado Livre CONNECTED"
 
+# Reconciliacao de Perguntas do Mercado Livre (Fase 7B, D-089) -- rede de
+# seguranca do webhook `questions`, que desde D-088 e o unico caminho de
+# ingestao. Cadencia de 6 em 6 horas: mais frequente que visitas (pergunta nao
+# respondida e alguem esperando), menos que de hora em hora (o webhook ja
+# entrega em segundos no caminho feliz; isto so cobre o que ele perdeu).
+# Minuto 20 para nao competir com os jobs de hora cheia. Por CONTA.
+upsert_job \
+  "v3-support-questions-reconcile" \
+  "20 */6 * * *" \
+  "${API_URL}/internal/schedule/support-questions" \
+  "Reconciliacao de Perguntas nao respondidas, por conta Mercado Livre CONNECTED"
+
 # Deteccao de anomalia de venda -- Central de Acoes (Fase 6, D-064). Cadencia
 # DIARIA, depois dos jobs acima: o diagnostico usa daily_sku_metrics/
 # domain_events de ONTEM, que ja estao completos a qualquer hora do dia

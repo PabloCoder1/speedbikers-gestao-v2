@@ -285,3 +285,59 @@ export function fetchReceivedQuestion(
     schema: receivedQuestionSchema,
   });
 }
+
+export interface FetchReceivedQuestionsPageOptions {
+  mercadoLivre: MercadoLivreClient;
+  accessToken: string;
+  /**
+   * Filtro `status`. É um dos `available_filters` que a própria resposta
+   * oficial declara, com exatamente os sete valores de `questionStatusSchema`
+   * — não é parâmetro inventado.
+   */
+  status: z.infer<typeof questionStatusSchema>;
+  offset: number;
+  limit: number;
+}
+
+/**
+ * Adaptador de busca das Perguntas recebidas pela conta autenticada
+ * (reconciliação, D-089). O `questions[]` da resposta carrega o MESMO objeto
+ * que `GET /questions/{id}` devolve, então `receivedQuestionSchema` vale para
+ * as duas — foi para isso que D-086 o escreveu como "contrato do detalhe e de
+ * cada entrada de `questions[]` nas buscas".
+ *
+ * **Confirmado por leitura oficial em 2026-08-25** (`developers.mercadolivre.com.br`,
+ * "Perguntas e Respostas", última atualização 05/06/2025 —
+ * `docs/MERCADO_LIVRE.md` secao 2.12):
+ *
+ * - `available_filters` deste endpoint são `item`, `from`, `totalDivisions`,
+ *   `division` e `status`. **Não existe filtro por data** — por isso a
+ *   reconciliação não consegue ser "janela dos últimos N dias" e precisa se
+ *   apoiar no `status`.
+ * - `available_sorts` são `item_id`, `from_id`, `date_created` e `seller_id`,
+ *   mas a resposta padrão traz `"sorts": []`: **a ordenação default não é
+ *   documentada**. Nenhuma decisão desta reconciliação pode depender da ordem
+ *   das páginas — daí varrer o conjunto inteiro do status escolhido, em vez
+ *   de "as N mais recentes".
+ * - A resposta traz `total`, `limit` e `questions[]` no topo; `offset` vive
+ *   dentro de `filters`, não no topo. `receivedQuestionsPageSchema` reflete
+ *   isso e ignora o resto.
+ * - `search_type=scan` NÃO aparece documentado para este endpoint (só para
+ *   `/questions/search`) e continua não presumido.
+ */
+export function fetchReceivedQuestionsPage(
+  options: FetchReceivedQuestionsPageOptions,
+): Promise<ReceivedQuestionsPage> {
+  return options.mercadoLivre.request({
+    method: "GET",
+    path: "/my/received_questions/search",
+    searchParams: {
+      api_version: 4,
+      status: options.status,
+      offset: options.offset,
+      limit: options.limit,
+    },
+    accessToken: options.accessToken,
+    schema: receivedQuestionsPageSchema,
+  });
+}

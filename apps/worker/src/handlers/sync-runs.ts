@@ -14,7 +14,12 @@ import type { Logger } from "@sb/observability";
  */
 
 export type SyncChannel = "webhook" | "reconciliation" | "backfill";
-export type SyncResource = "orders" | "listings" | "fulfillment" | "visits";
+/**
+ * Espelho em TypeScript do CHECK de `sync_runs.resource`/`sync_errors.resource`.
+ * Os dois precisam andar juntos: `questions` entrou em
+ * `20260825180000_add_questions_sync_resource.sql` (D-089).
+ */
+export type SyncResource = "orders" | "listings" | "fulfillment" | "visits" | "questions";
 export type SyncErrorClass = "retryable" | "retryable_eventual" | "not_retryable";
 
 interface SyncRunBase {

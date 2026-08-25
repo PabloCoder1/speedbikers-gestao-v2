@@ -2,7 +2,7 @@
 
 ## RESUMO OPERACIONAL ATUAL — LEIA PRIMEIRO
 
-> Atualizado em 2026-08-25 após ligar o produtor do webhook `questions` (D-088) e versionar D-083 a D-087, que estavam inteiramente fora do Git.
+> Atualizado em 2026-08-25 após fechar a reconciliação de Perguntas (D-089), que era a lacuna mais séria da Fase 7B.
 
 Este bloco é o ponto de entrada atual para qualquer nova sessão.
 
@@ -28,9 +28,20 @@ A fonte de verdade continua sendo:
 - Fase 6: concluída com D-063, D-064 e D-065.
 - **Fase 7 com núcleo funcional entregue, mas checklist incremental ainda aberto.** Notificações/Realtime/preferências estão concluídos; o Copiloto determinístico e a primeira narração LLM estão implantados. **Modelo/orçamento decididos em D-082**: Claude Haiku 4.5, teto R$100/mês, avisa mas não bloqueia. Pendentes sem bloqueio de produto: planner por linguagem natural, streaming/UI de chat, estruturação de sugestões por IA, expansão de “O que aconteceu?” e mecanismo de aviso de orçamento. Portanto, não tratar a Fase 7 como “fechada por completo” enquanto os três itens parciais do checklist permanecem abertos no ROADMAP.
 - O Checkpoint de Consolidação Pré-Fase 7 está fechado por completo desde 2026-08-25.
-- **Fase 7B — Central de Atendimento/SAC Mercado Livre ingerindo Perguntas EM PRODUÇÃO desde 2026-08-25.** D-083 confirmou endpoints/payloads; D-084 aprovou o modelo; D-085 materializou seis tabelas; D-086 acrescentou contrato/mapper/persistência idempotente; D-087 registrou `sync.support.questions`; **D-088 ligou o produtor** — o ACK do webhook roteia `topic=questions` direto para esse job — e os dois serviços foram publicados (`worker-00020-6xp`/`api-00016-5qd`). Continua sem reconciliação por busca, UI, triagem humana, `domain_events` de SAC ou envio de resposta. **A lacuna mais séria agora é a reconciliação**: o webhook é o único caminho, então uma notificação que o Mercado Livre não entregue é uma pergunta perdida para sempre.
+- **Fase 7B — Central de Atendimento/SAC Mercado Livre ingerindo Perguntas EM PRODUÇÃO desde 2026-08-25.** D-083 confirmou endpoints/payloads; D-084 aprovou o modelo; D-085 materializou seis tabelas; D-086 acrescentou contrato/mapper/persistência idempotente; D-087 registrou `sync.support.questions`; **D-088 ligou o produtor** — o ACK do webhook roteia `topic=questions` direto para esse job — e os dois serviços foram publicados (`worker-00020-6xp`/`api-00016-5qd`). **D-089 fechou a reconciliação** (`sync.support.questions.reconcile`, por conta, a cada 6h) — o webhook deixou de ser o único caminho. Continua sem UI, triagem humana, `domain_events` de SAC ou envio de resposta, e sem ingestão de mensagens/reclamações/devoluções/mediações.
 
-### Última etapa concluída — D-088 (produtor do webhook `questions`)
+### Última etapa concluída — D-089 (reconciliação de Perguntas)
+
+- `sync.support.questions.reconcile` (novo job, por conta, Cloud Scheduler a cada 6h) pagina `GET /my/received_questions/search?api_version=4&status=UNANSWERED`, mapeia pelo contrato de D-086 e persiste pela mesma porta idempotente. Fecha a lacuna "notificação perdida = pergunta perdida para sempre" que D-088 deixou aberta.
+- **O recorte por `status` não foi escolha de escopo — foi imposto pela API.** Pesquisa oficial ao vivo antes de codar: `/my/received_questions/search` declara `available_filters` = `item`, `from`, `totalDivisions`, `division`, `status`; **não tem filtro por data**, e a resposta padrão traz `"sorts": []`, ou seja, **ordenação default não documentada**. Sem data e sem ordem, "reconciliar a última janela" é inexpressável. Detalhe em `docs/MERCADO_LIVRE.md` secao 2.12.
+- **Lacuna aceita e registrada**: pergunta que o webhook perdeu E que alguém respondeu pelo app do ML não é recuperada (não está mais `UNANSWERED`). É buraco de histórico, não de operação.
+- A varredura persiste DIRETO, sem enfileirar um job por pergunta: o `questions[]` da busca traz o mesmo objeto do detalhe, então re-buscar por ID seria gastar N chamadas contra uma API limitada para obter dado que já está em mãos.
+- `sync_runs.resource` ganhou `questions` (migration `20260825180000`) — D-087 tinha deixado o CHECK intacto de propósito, porque um fetch por ID não tem janela/contagem/frescor; a varredura tem. O typecheck pegou sozinho que `SyncResource` precisava andar junto.
+- Teto de 20 páginas por execução. Truncar, falhar ao persistir ou recusar por `seller_id` divergente viram `sync_run` **PARCIAL**, nunca `done` — reportar sucesso sobre um recorte seria a mentira que D-067 auditou.
+- 36 testes novos, nenhum tocando a rede real. `pnpm run check` 29/29 e `build` 8/8 verdes; **banco verificado localmente contra Postgres real** (53 migrations do zero, 308 testes de integração, `db lint` limpo).
+- **NÃO deployado.** `api` e `worker` mudaram; o Cloud Scheduler também precisa de `bash infra/cloud-scheduler.sh` para o job `v3-support-questions-reconcile` passar a existir.
+
+### Etapa anterior — D-088 (produtor do webhook `questions`)
 
 - `apps/api/src/webhook.ts` ganhou `routeJob`: `topic=questions` com `resource` casando `^/questions/(\d+)$` enfileira `sync.support.questions` com `{ mlAccountId, questionId }` na fila `ml-sync-<conta>`; todo o resto continua em `sync.webhook.received`, sem regressão.
 - **Onde a etapa foi implementada não era óbvio e a escolha errada só falharia em produção.** O worker (`webhook-received.ts`) também roteia por tópico e parecia o lugar natural, mas só recebe `cloudtasks.enqueuer` em `backfill`/`analytics-recompute` — nunca em `ml-sync-<conta>`. Passaria em todo teste de unidade e quebraria contra o Cloud Tasks real. Ver D-088, decisão 1.
@@ -51,7 +62,11 @@ A fonte de verdade continua sendo:
 
 ### Próxima etapa registrada
 
-**Reconciliação de Perguntas** por `GET /my/received_questions/search?api_version=4`: hoje o webhook é o único caminho, então uma notificação que o Mercado Livre não entregue é uma pergunta perdida para sempre — a própria documentação oficial recomenda a busca como redundância (mesma lógica de `/messages/unread`). A etapa envolve alargar o CHECK de `sync_runs.resource` para `questions` (D-087 deixou isso explicitamente para quando existisse execução com janela, contagem e frescor reais), paginação por `offset`/`limit` (**não presumir `search_type=scan`** — D-083 registra que esse modo não foi confirmado para `/my/received_questions/search`), gatilho por Cloud Scheduler e reuso do mesmo contrato `{ mlAccountId, questionId }` já enfileirado pelo webhook. Ainda **não** implementar UI, triagem, `domain_events` de SAC ou envio de resposta.
+**Primeiro, o deploy pendente** — `api` e `worker` mudaram em D-089, e o Cloud Scheduler precisa de `bash infra/cloud-scheduler.sh` para criar `v3-support-questions-reconcile` (passam a ser 10 jobs, não 9). Exige confirmação explícita do usuário. **Sem isso a reconciliação não roda**, e a Fase 7B volta a depender só do webhook.
+
+**Depois, a Caixa de Entrada de atendimento** (`docs/ROADMAP.md` Fase 7B): a primeira tela do SAC, listando `support_cases` sob RLS com filtros por conta/tipo/status. É o primeiro item da fase que produz valor visível para o usuário — hoje a ingestão de Perguntas funciona mas ninguém consegue VER o que foi ingerido. Leitura direta do Supabase sob RLS (Modelo A, D-012), sem rota nova na `api`; a triagem (assumir/mudar status/resolver) é RPC transacional e pode ficar para a fatia seguinte. Ainda **não** implementar envio de resposta, `domain_events` de SAC nem sugestão do Copiloto.
+
+**Alternativa igualmente defensável, se preferir fechar a ingestão antes da UI:** mensagens pós-venda (`sync.support.messages`), que reaproveitam a mesma cadeia mas exigem pesquisa de contrato própria e o cuidado de `mark_as_read=false` (D-083, decisão 2).
 
 ### Estado de infraestrutura que NÃO deve ser presumido
 
@@ -97,7 +112,7 @@ Publicado e verificado em 2026-08-24, depois do resumo acima ter sido escrito: `
 
 1. ~~Confirmar `maintenance.reconcile-balances` no ciclo natural~~ — confirmado em 2026-08-25, via disparo manual autorizado pelo usuário (ver "Checkpoint pré-Fase 7" acima).
 2. ~~Confirmar sincronização de visitas/conversão com dado real e cadência normal~~ — confirmado em 2026-08-25.
-3. ~~Deploy do Cloud Run pendente~~ — **concluído em 2026-08-25**: `worker-00020-6xp` e `api-00016-5qd`, imagem `a9d13bd`, 100% do tráfego, zero ERROR. A ingestão de Perguntas existe em produção. **Primeira observação pendente**: confirmar, quando uma pergunta real chegar numa das contas conectadas, que o par `ml_webhook_enqueued` (`job_type: sync.support.questions`) e a conclusão do job aparecem nos logs, e que a linha nasce em `support_cases`. Não é bloqueio — é a confirmação ponta a ponta que só o tráfego real pode dar.
+3. **Deploy pendente de novo (D-089)** — `api` e `worker` mudaram, e o Cloud Scheduler precisa de `bash infra/cloud-scheduler.sh` para criar `v3-support-questions-reconcile` (10 jobs esperados, não 9). Sem isso a reconciliação não roda. O deploy anterior (D-088) está confirmado: `worker-00020-6xp`/`api-00016-5qd`, imagem `a9d13bd`, 100% do tráfego, zero ERROR — a ingestão por webhook existe em produção. **Primeira observação pendente**: confirmar, quando uma pergunta real chegar numa das contas conectadas, que o par `ml_webhook_enqueued` (`job_type: sync.support.questions`) e a conclusão do job aparecem nos logs, e que a linha nasce em `support_cases`. Não é bloqueio — é a confirmação ponta a ponta que só o tráfego real pode dar.
 4. **D-083 a D-087 ficaram inteiramente fora do Git até 2026-08-25** — cinco decisões, uma migration, três módulos e ~465 linhas de teste viviam só no working tree de uma máquina, contrariando a regra central do projeto ("o repositório versionado é a memória oficial"). Versionadas em quatro commits lógicos, CI verde, migration confirmada no Supabase Dev (52/52 pares, sem drift). **Regra reforçada**: uma etapa não está concluída enquanto não estiver commitada e com CI verde — "validação completa fica para o fechamento" não pode virar "fica para a próxima sessão".
 5. **Mecanismo de aviso de orçamento de IA não existe** — D-082 decidiu teto de R$100/mês com política "avisa, não bloqueia", mas o job que soma `ai_runs.cost_usd` e avisa o ADMIN nunca foi implementado. Na prática o gasto com a Anthropic hoje é ilimitado e não observado. Registrado como item do checklist da Fase 7, não como bloqueio.
 

@@ -20,6 +20,7 @@ import { createSyncListingVisitsSnapshotHandler } from "./handlers/sync-listing-
 import { createSyncListingsSnapshotHandler } from "./handlers/sync-listings-snapshot.js";
 import { createSyncOrdersWindowHandler } from "./handlers/sync-orders-window.js";
 import { createSyncSupportQuestionHandler } from "./handlers/sync-support-question.js";
+import { createSyncSupportQuestionsReconcileHandler } from "./handlers/sync-support-questions-reconcile.js";
 import { createVerifyLedgerIntegrityHandler } from "./handlers/verify-ledger-integrity.js";
 import { createWebhookReceivedHandler } from "./handlers/webhook-received.js";
 import { createNfeXmlReader } from "./nfe-xml-reader.js";
@@ -85,6 +86,12 @@ const app = createWorkerApp({
       encryptionKey,
     }),
     "sync.support.questions": createSyncSupportQuestionHandler({
+      db,
+      mercadoLivre,
+      oauth,
+      encryptionKey,
+    }),
+    "sync.support.questions.reconcile": createSyncSupportQuestionsReconcileHandler({
       db,
       mercadoLivre,
       oauth,
