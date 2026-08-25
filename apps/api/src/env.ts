@@ -94,6 +94,13 @@ export const envSchema = z.object({
    * servidor.
    */
   WEB_ORIGINS: z.string().optional(),
+
+  /**
+   * Copiloto (D-082) — narração de diagnóstico via Claude Haiku 4.5. Segredo,
+   * vem do Secret Manager (`infra/lib.sh` `SECRET_ANTHROPIC_KEY`). Único
+   * consumidor: `narrate_sku_diagnosis` em `src/copilot.ts`.
+   */
+  ANTHROPIC_API_KEY: z.string().min(20),
 });
 
 export type Env = z.infer<typeof envSchema>;

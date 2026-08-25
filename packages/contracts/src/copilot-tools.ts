@@ -64,8 +64,58 @@ export const salesAccountComparisonOutputSchema = z.object({
 });
 export type SalesAccountComparisonOutput = z.infer<typeof salesAccountComparisonOutputSchema>;
 
+/**
+ * Diagnóstico (`docs/COPILOT.md` secao 4, categoria "Diagnóstico"; D-082):
+ * narra em texto o contrato de `diagnoseSalesAnomaly` (`@sb/domain`,
+ * D-063/D-078) já calculado pelo chamador. O LLM NUNCA produz o
+ * diagnóstico — só recebe o contrato pronto e explica em português,
+ * citando só o que está aqui dentro (`docs/COPILOT.md` secao 5, "nunca
+ * inventar dado ausente"). Espelha `SalesAnomalyDiagnosis` de
+ * `@sb/domain/diagnostics` campo a campo — nenhuma fórmula nova, só o
+ * contrato de rede da mesma estrutura.
+ */
+export const diagnosisEvidenceSchema = z.object({
+  tipo: z.string(),
+  descricao: z.string(),
+});
+
+export const diagnosisCandidateCauseSchema = z.object({
+  eventType: z.string(),
+  occurredAt: z.iso.datetime({ offset: true }),
+  descricao: z.string(),
+});
+
+export const salesAnomalyDiagnosisSchema = z.object({
+  escopo: z.object({ organizationId: z.uuid(), skuId: z.uuid() }),
+  periodo: z.object({ asOf: dateSchema }),
+  direcao: z.enum(["queda", "alta"]),
+  confianca: z.enum(["media", "alta"]),
+  zScore: z.number(),
+  unitsDelta: z.number(),
+  evidencias: z.array(diagnosisEvidenceSchema),
+  causasCandidatas: z.array(diagnosisCandidateCauseSchema),
+  proximosPassos: z.array(z.string()),
+});
+export type SalesAnomalyDiagnosisPayload = z.infer<typeof salesAnomalyDiagnosisSchema>;
+
+export const narrateSkuDiagnosisInputSchema = z.object({
+  diagnosis: salesAnomalyDiagnosisSchema,
+  impactBrl: z.number().nullable(),
+});
+export type NarrateSkuDiagnosisInput = z.infer<typeof narrateSkuDiagnosisInputSchema>;
+
+export const narrateSkuDiagnosisOutputSchema = z.object({
+  narrativa: z.string(),
+});
+export type NarrateSkuDiagnosisOutput = z.infer<typeof narrateSkuDiagnosisOutputSchema>;
+
 /** Nome estável de cada ferramenta — é o que `ai_runs.tool_names` grava e o corpo de `POST /v1/copilot/query` referencia. */
-export const COPILOT_TOOL_NAMES = ["sales_summary", "sales_period_comparison", "sales_account_comparison"] as const;
+export const COPILOT_TOOL_NAMES = [
+  "sales_summary",
+  "sales_period_comparison",
+  "sales_account_comparison",
+  "narrate_sku_diagnosis",
+] as const;
 export type CopilotToolName = (typeof COPILOT_TOOL_NAMES)[number];
 
 export const copilotQueryRequestSchema = z.object({

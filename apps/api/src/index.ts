@@ -3,6 +3,7 @@ import { createAdminClient, createUserClient } from "@sb/db";
 import { loadEncryptionKey } from "@sb/mercado-livre";
 import { createLogger } from "@sb/observability";
 
+import { createAnthropicClient } from "./anthropic-client.js";
 import { createApp } from "./app.js";
 import { createAuthenticator } from "./auth.js";
 import { createEnqueuer } from "./enqueue.js";
@@ -77,6 +78,7 @@ const app = createApp({
     logger,
     createUserClient: (accessToken) =>
       createUserClient({ supabaseUrl: env.SUPABASE_URL, publishableKey: env.SUPABASE_PUBLISHABLE_KEY }, accessToken),
+    anthropic: createAnthropicClient(env.ANTHROPIC_API_KEY),
   },
 });
 

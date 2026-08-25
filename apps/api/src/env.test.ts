@@ -20,6 +20,7 @@ const OBRIGATORIAS = {
   MERCADO_LIVRE_CLIENT_SECRET: "segredo-de-teste",
   MERCADO_LIVRE_REDIRECT_URI: "https://api-rrquw5upla-rj.a.run.app/oauth/mercado-livre/callback",
   ML_TOKEN_ENCRYPTION_KEY: randomBytes(32).toString("base64"),
+  ANTHROPIC_API_KEY: "sk-ant-chave-de-teste-longa-o-bastante",
 };
 
 describe("parseEnv", () => {

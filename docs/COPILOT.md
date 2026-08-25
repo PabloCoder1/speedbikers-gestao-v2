@@ -1,7 +1,7 @@
 # Copiloto Speed Bikers
 
 > Dono documental de: arquitetura do assistente, registro de ferramentas, guardrails e uso de IA.
-> Status: **estratégia aprovada. Ferramentas determinísticas + `ai_runs` implementados em 2026-08-25 (D-077)** — `POST /v1/copilot/query`, `apps/api/src/copilot.ts`, schemas em `@sb/contracts`. Modelo/orçamento decididos em 2026-08-25 (D-082, secao 10) — planner por linguagem natural, LLM, streaming SSE de verdade e UI de chat destravados, implementação ainda não iniciada.
+> Status: **estratégia aprovada. Ferramentas determinísticas + `ai_runs` implementados em 2026-08-25 (D-077)** — `POST /v1/copilot/query`, `apps/api/src/copilot.ts`, schemas em `@sb/contracts`. Modelo/orçamento decididos em 2026-08-25 (D-082) e a primeira ferramenta com LLM de verdade, `narrate_sku_diagnosis`, já implementada — planner por linguagem natural, streaming SSE de verdade e UI de chat continuam pendentes, sem mais bloqueio de decisão de produto.
 
 ---
 
@@ -71,7 +71,9 @@ Ferramenta nova exige: schema tipado, verificação de permissão, teste, e entr
 | `sales_period_comparison` | Comparação | O mesmo período contra o período anterior de igual tamanho (`previousBusinessDateRange`, `@sb/domain`) |
 | `sales_account_comparison` | Comparação | O mesmo período, lado a lado entre 2 e 10 contas |
 
-Verificação de permissão: RLS de verdade, não RBAC reimplementado — cada ferramenta roda com um `UserClient` (`@sb/db`) autenticado como o próprio usuário, então `has_account_access`/`get_sales_summary security invoker` já filtram sem código extra (secao 3, regra 2). Nenhuma ferramenta de escrita, nenhuma ferramenta de diagnóstico/prioridade/estruturação ainda — essas dependem de trabalho que não está nesta fatia (`docs/HANDOFF.md` itens 8/9).
+Verificação de permissão: RLS de verdade, não RBAC reimplementado — cada ferramenta roda com um `UserClient` (`@sb/db`) autenticado como o próprio usuário, então `has_account_access`/`get_sales_summary security invoker` já filtram sem código extra (secao 3, regra 2). Nenhuma ferramenta de escrita.
+
+**`narrate_sku_diagnosis` implementada em 2026-08-25 (D-082)** — categoria "Diagnóstico", primeira (e única, nesta fatia) ferramenta que chama LLM de verdade. Não produz diagnóstico: recebe o contrato de `diagnoseSalesAnomaly` (`@sb/domain`, D-063/D-078) já calculado pelo chamador e pede ao Claude Haiku 4.5 para narrar em português, citando só o que está no contrato (`apps/api/src/copilot.ts`, prompt em `DIAGNOSIS_NARRATION_SYSTEM_PROMPT`). A `api` revalida sob RLS que o usuário alcança o `skuId` antes de narrar, mas não recalcula o diagnóstico — evita duplicar a agregação pesada de `get_sku_sales_baseline`/`domain_events`, que já roda em `apps/web` (D-078). Botão "Narrar com IA" em `apps/web/app/skus/[skuId]/diagnosis-panel.tsx`, só aparece quando há anomalia — fetch client-side direto para a `api` (mesmo padrão de `confirm-apply-form.tsx`: sessão do navegador, `access_token` no header `Authorization`), porque a chave da Anthropic só existe em `apps/api`/Secret Manager, nunca na Vercel.
 
 ---
 
@@ -125,16 +127,17 @@ Estados na Central de Sugestões: `nova` -> `em_analise` -> `aprovada` -> `plane
 
 ## 9. Custo e transporte
 
-- Streaming SSE a partir de `apps/api` — **ainda não implementado**. `POST /v1/copilot/query` (D-077) devolve JSON síncrono porque só o caminho de curto-circuito existe hoje: sem LLM narrando nada, não há token a transmitir em stream. Streaming entra quando o LLM existir.
-- **Toda chamada é rastreável desde D-077** — `ai_runs` grava ferramenta(s), escopo e latência de toda chamada, `llm_used`/`cost_usd` prontos para quando o LLM existir. "Quando pesadas, assíncronas" continua pendente (não há chamada pesada ainda — ferramentas determinísticas respondem em milissegundos).
-- **A interface nunca dispara chamada de IA no carregamento da página.** A V2 precisou de um teste dedicado para garantir isso, e a ideia vale ser mantida. Não se aplica ainda: nenhuma UI consome `/v1/copilot/query` nesta fatia.
-- **Modelo e orçamento decididos em 2026-08-25 (D-082)**: Anthropic Claude Haiku 4.5, teto de R$100/mês, política de AVISAR (não bloquear) ao ultrapassar — ver secao 10. "Configurável por organização" continua aspiração futura — só existe uma organização real hoje, o teto nasce como valor único, não por organização.
+- Streaming SSE a partir de `apps/api` — **ainda não implementado**. `POST /v1/copilot/query` devolve JSON síncrono mesmo para `narrate_sku_diagnosis` (D-082) — a resposta do Haiku 4.5 é curta (2-4 frases, `max_tokens: 512`), não há ganho de latência percebida que justifique streaming para este tamanho de resposta ainda. Streaming entra quando o planner/chat existir, respostas mais longas.
+- **Toda chamada é rastreável desde D-077** — `ai_runs` grava ferramenta(s), escopo e latência de toda chamada. Desde D-082, `llm_used`/`cost_usd` deixam de ser sempre `false`/`null`: `narrate_sku_diagnosis` grava o custo REAL em USD, calculado a partir do `usage.input_tokens`/`usage.output_tokens` que a própria resposta da Anthropic devolve (`apps/api/src/anthropic-client.ts`) — nunca estimado.
+- **A interface nunca dispara chamada de IA no carregamento da página.** A V2 precisou de um teste dedicado para garantir isso, e a ideia vale ser mantida. `narrate_sku_diagnosis` (D-082) só dispara em clique explícito no botão "Narrar com IA", nunca automaticamente ao abrir o Dashboard de SKU.
+- **Modelo e orçamento decididos em 2026-08-25 (D-082)**: Anthropic Claude Haiku 4.5, teto de R$100/mês, política de AVISAR (não bloquear) ao ultrapassar. "Configurável por organização" continua aspiração futura — só existe uma organização real hoje, o teto nasce como valor único, não por organização. **O mecanismo de aviso em si ainda não existe** — `ai_runs.cost_usd` já acumula o dado real necessário para somar o gasto do mês, mas nada ainda lê essa soma nem avisa o ADMIN; toda chamada continua permitida sem checagem de teto nesta fatia (consistente com a política escolhida: "avisar, não bloquear" — a AUSÊNCIA do aviso não impede nenhuma chamada, só deixa a organização sem visibilidade proativa até o mecanismo existir).
 
 ---
 
 ## 10. Pendências
 
-- ~~Escolha do modelo e orçamento de custo por período~~ — **decidido em 2026-08-25 (D-082)**: Anthropic Claude Haiku 4.5 (narração curta + planner simples não exigem um modelo maior), teto de R$100/mês, avisa o ADMIN ao ultrapassar mas continua permitindo chamadas (não bloqueia). Chave nova no Secret Manager do GCP para `apps/api` — a `ANTHROPIC_API_KEY` herdada da V2 (projeto Vercel, sem consumidor) não é reaproveitada, por estar no lugar errado e ter validade incerta. **Isso destrava**: o planner que escolhe a ferramenta a partir de linguagem natural, a narração de evidências ("Por que este produto caiu?"), streaming SSE de verdade, a UI de chat, e a estruturação por IA das sugestões de feature (secao 8, D-079). Nenhum desses tem código ainda — a decisão foi só o que faltava para poder começar. Ver D-082 em `docs/DECISIONS.md`.
+- ~~Escolha do modelo e orçamento de custo por período~~ — **decidido em 2026-08-25 (D-082)**: Anthropic Claude Haiku 4.5 (narração curta + planner simples não exigem um modelo maior), teto de R$100/mês, avisa o ADMIN ao ultrapassar mas continua permitindo chamadas (não bloqueia). Chave nova no Secret Manager do GCP para `apps/api` — a `ANTHROPIC_API_KEY` herdada da V2 (projeto Vercel, sem consumidor) não é reaproveitada, por estar no lugar errado e ter validade incerta.
+- ~~Narração de evidências ("Por que este produto caiu?")~~ — **implementada em 2026-08-25 (D-082)**: `narrate_sku_diagnosis` (secao 4), botão "Narrar com IA" no Dashboard de SKU. **Ainda pendentes, sem bloqueio de decisão de produto**: o planner que escolhe a ferramenta a partir de linguagem natural, streaming SSE de verdade, a UI de chat, a estruturação por IA das sugestões de feature (secao 8, D-079), e o mecanismo de aviso de orçamento (secao 9 — o dado de custo real já é gravado, falta o job que soma e avisa). Ver D-082 em `docs/DECISIONS.md`.
 - ~~As primeiras ferramentas acompanham a tela âncora, o Dashboard de vendas Geral e por Conta (D-033): vendas por período, comparação entre períodos e comparação entre contas.~~ **Implementadas em 2026-08-25 (D-077)** — ver secao 4.
 
 ---

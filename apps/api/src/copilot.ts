@@ -4,6 +4,8 @@ import { previousBusinessDateRange } from "@sb/domain";
 import type {
   CopilotQueryRequest,
   CopilotToolName,
+  NarrateSkuDiagnosisInput,
+  NarrateSkuDiagnosisOutput,
   SalesAccountComparisonInput,
   SalesAccountComparisonOutput,
   SalesPeriodComparisonInput,
@@ -13,6 +15,7 @@ import type {
   SalesSummaryOutput,
 } from "@sb/contracts";
 import {
+  narrateSkuDiagnosisInputSchema,
   salesAccountComparisonInputSchema,
   salesPeriodComparisonInputSchema,
   salesSummaryInputSchema,
@@ -20,6 +23,7 @@ import {
 import type { Logger } from "@sb/observability";
 import type { ZodType } from "zod";
 
+import type { AnthropicClient } from "./anthropic-client.js";
 import type { Caller } from "./auth.js";
 
 /**
@@ -51,6 +55,7 @@ export interface CopilotDeps {
   db: AdminClient;
   logger: Logger;
   createUserClient: (accessToken: string) => UserClient;
+  anthropic: AnthropicClient;
 }
 
 interface RawSalesSummaryRow {
@@ -142,23 +147,117 @@ export async function runSalesAccountComparison(
   return { accounts };
 }
 
+/**
+ * Narração de diagnóstico (`docs/COPILOT.md` secao 4/7, D-082) — o ÚNICO
+ * lugar do Copiloto onde o LLM é chamado nesta fatia. `diagnoseSalesAnomaly`
+ * (`@sb/domain`) já decidiu tudo: direção, confiança, evidências, causas
+ * candidatas. O modelo só narra o que está em `input`, nunca produz
+ * diagnóstico novo — por isso o system prompt proíbe explicitamente inventar
+ * qualquer coisa fora dele.
+ */
+const DIAGNOSIS_NARRATION_SYSTEM_PROMPT = [
+  "Você narra, em português claro e direto, um diagnóstico de anomalia de venda já calculado por um sistema determinístico separado.",
+  "Regras estritas:",
+  "- Cite APENAS os dados fornecidos abaixo. Nunca invente, presuma ou infira qualquer evidência, causa ou número que não esteja explicitamente presente.",
+  "- Se não houver causa candidata, diga isso claramente — nunca sugira uma causa que não foi fornecida.",
+  "- Nunca afirme certeza além do nível de confiança indicado.",
+  "- Seja conciso: 2 a 4 frases, sem saudação nem encerramento.",
+].join("\n");
+
+const currencyFormatter = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+
+function buildDiagnosisNarrationPrompt(input: NarrateSkuDiagnosisInput): string {
+  const { diagnosis, impactBrl } = input;
+
+  const evidencias =
+    diagnosis.evidencias.length > 0 ? diagnosis.evidencias.map((item) => `- ${item.descricao}`).join("\n") : "nenhuma";
+
+  const causas =
+    diagnosis.causasCandidatas.length > 0
+      ? diagnosis.causasCandidatas.map((cause) => `- ${cause.descricao}`).join("\n")
+      : "nenhuma causa candidata encontrada";
+
+  const proximosPassos =
+    diagnosis.proximosPassos.length > 0 ? diagnosis.proximosPassos.map((step) => `- ${step}`).join("\n") : "nenhum";
+
+  return [
+    `Direção: ${diagnosis.direcao}`,
+    `Confiança: ${diagnosis.confianca}`,
+    `Z-score: ${diagnosis.zScore.toFixed(2)}`,
+    `Impacto estimado: ${impactBrl === null ? "desconhecido" : currencyFormatter.format(impactBrl)}`,
+    `Evidências:\n${evidencias}`,
+    `Causas candidatas:\n${causas}`,
+    `Próximos passos sugeridos:\n${proximosPassos}`,
+  ].join("\n\n");
+}
+
+/**
+ * Revalida sob RLS que o usuário alcança o SKU do contrato antes de narrar
+ * — o contrato em si vem do chamador (já calculado no `web`, D-078), não
+ * é recalculado aqui (evita duplicar a agregação pesada de
+ * `get_sku_sales_baseline`/`domain_events`). O pior caso de um contrato
+ * forjado é o próprio usuário gastar crédito de LLM narrando lixo sobre um
+ * SKU que ele já pode ver — nunca um vazamento entre organizações, que é o
+ * que a checagem abaixo impede.
+ */
+export async function runNarrateSkuDiagnosis(
+  userClient: UserClient,
+  input: NarrateSkuDiagnosisInput,
+  anthropic: AnthropicClient,
+): Promise<{ data: NarrateSkuDiagnosisOutput; costUsd: number }> {
+  const sku = await userClient.from("skus").select("id").eq("id", input.diagnosis.escopo.skuId).maybeSingle();
+
+  if (sku.error !== null || sku.data === null) {
+    throw new CopilotToolError("SKU não encontrado ou sem permissão.");
+  }
+
+  const { text, costUsd } = await anthropic.narrate({
+    system: DIAGNOSIS_NARRATION_SYSTEM_PROMPT,
+    prompt: buildDiagnosisNarrationPrompt(input),
+  });
+
+  return { data: { narrativa: text }, costUsd };
+}
+
+interface ToolOutcome {
+  data: unknown;
+  llmUsed: boolean;
+  costUsd: number | null;
+}
+
 interface ToolDefinition {
   inputSchema: ZodType;
-  run: (userClient: UserClient, input: never) => Promise<unknown>;
+  run: (userClient: UserClient, input: never, deps: CopilotDeps) => Promise<ToolOutcome>;
 }
 
 const TOOLS: Record<CopilotToolName, ToolDefinition> = {
   sales_summary: {
     inputSchema: salesSummaryInputSchema,
-    run: runSalesSummary,
+    run: async (userClient, input) => ({ data: await runSalesSummary(userClient, input), llmUsed: false, costUsd: null }),
   },
   sales_period_comparison: {
     inputSchema: salesPeriodComparisonInputSchema,
-    run: runSalesPeriodComparison,
+    run: async (userClient, input) => ({
+      data: await runSalesPeriodComparison(userClient, input),
+      llmUsed: false,
+      costUsd: null,
+    }),
   },
   sales_account_comparison: {
     inputSchema: salesAccountComparisonInputSchema,
-    run: runSalesAccountComparison,
+    run: async (userClient, input) => ({
+      data: await runSalesAccountComparison(userClient, input),
+      llmUsed: false,
+      costUsd: null,
+    }),
+  },
+  narrate_sku_diagnosis: {
+    inputSchema: narrateSkuDiagnosisInputSchema,
+    run: async (userClient, input, deps) => {
+      const outcome = await runNarrateSkuDiagnosis(userClient, input, deps.anthropic);
+
+      return { data: outcome.data, llmUsed: true, costUsd: outcome.costUsd };
+    },
   },
 };
 
@@ -194,10 +293,10 @@ export async function handleCopilotQuery(
   const userClient = deps.createUserClient(accessToken);
   const startedAt = Date.now();
 
-  let data: unknown;
+  let outcome: ToolOutcome;
 
   try {
-    data = await definition.run(userClient, parsedInput.data as never);
+    outcome = await definition.run(userClient, parsedInput.data as never, deps);
   } catch (error) {
     const message = error instanceof CopilotToolError ? error.message : "falha ao executar a ferramenta";
 
@@ -206,6 +305,7 @@ export async function handleCopilotQuery(
     return { status: 502, body: { error: { code: "tool_failed", message } } };
   }
 
+  const { data, llmUsed, costUsd } = outcome;
   const latencyMs = Date.now() - startedAt;
 
   const recorded = await recordAiRun(deps.db, {
@@ -213,8 +313,8 @@ export async function handleCopilotQuery(
     user_id: caller.userId,
     tool_names: [request.tool],
     scope: parsedInput.data as Record<string, unknown>,
-    llm_used: false,
-    cost_usd: null,
+    llm_used: llmUsed,
+    cost_usd: costUsd,
     latency_ms: latencyMs,
   });
 

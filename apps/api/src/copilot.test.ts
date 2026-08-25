@@ -2,10 +2,12 @@ import type { AdminClient, UserClient } from "@sb/db";
 import { createLogger } from "@sb/observability";
 import { describe, expect, it, vi } from "vitest";
 
+import type { AnthropicClient } from "./anthropic-client.js";
 import type { Caller } from "./auth.js";
 import {
   CopilotToolError,
   handleCopilotQuery,
+  runNarrateSkuDiagnosis,
   runSalesAccountComparison,
   runSalesPeriodComparison,
   runSalesSummary,
@@ -133,14 +135,73 @@ describe("runSalesAccountComparison", () => {
   });
 });
 
+describe("runNarrateSkuDiagnosis", () => {
+  const DIAGNOSIS_INPUT = {
+    diagnosis: {
+      escopo: { organizationId: "org-1", skuId: "sku-1" },
+      periodo: { asOf: "2026-08-24" },
+      direcao: "queda" as const,
+      confianca: "alta" as const,
+      zScore: -3.2,
+      unitsDelta: -8,
+      evidencias: [{ tipo: "venda_atual", descricao: "Vendeu 2 unidades ontem, média esperada era 10." }],
+      causasCandidatas: [
+        { eventType: "listing.status.paused", occurredAt: "2026-08-23T10:00:00.000Z", descricao: "Anúncio pausado." },
+      ],
+      proximosPassos: ["Verificar se o anúncio deveria estar pausado."],
+    },
+    impactBrl: -400,
+  };
+
+  /** Fake de `UserClient` só para `.from("skus").select(...).eq(...).maybeSingle()` — a checagem de RLS que a narração faz antes de chamar o LLM. */
+  function fakeUserClientForSku(sku: { id: string } | null): UserClient {
+    return {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            maybeSingle: () => Promise.resolve({ data: sku, error: null }),
+          }),
+        }),
+      }),
+    } as unknown as UserClient;
+  }
+
+  it("recusa quando o SKU não é encontrado sob a RLS do usuário", async () => {
+    const userClient = fakeUserClientForSku(null);
+    const anthropic: AnthropicClient = { narrate: vi.fn() };
+
+    await expect(runNarrateSkuDiagnosis(userClient, DIAGNOSIS_INPUT, anthropic)).rejects.toThrow(CopilotToolError);
+    expect(anthropic.narrate).not.toHaveBeenCalled();
+  });
+
+  it("narra citando o contrato e devolve o custo real devolvido pelo modelo", async () => {
+    const userClient = fakeUserClientForSku({ id: "sku-1" });
+    const narrate = vi.fn<AnthropicClient["narrate"]>(() =>
+      Promise.resolve({ text: "Queda de venda confirmada.", costUsd: 0.00042 }),
+    );
+    const anthropic: AnthropicClient = { narrate };
+
+    const result = await runNarrateSkuDiagnosis(userClient, DIAGNOSIS_INPUT, anthropic);
+
+    expect(result).toEqual({ data: { narrativa: "Queda de venda confirmada." }, costUsd: 0.00042 });
+    const call = narrate.mock.calls[0]?.[0];
+    expect(call?.prompt).toContain("Vendeu 2 unidades ontem");
+    expect(call?.prompt).toContain("Anúncio pausado");
+  });
+});
+
 describe("handleCopilotQuery", () => {
   function fakeDb(insert: () => Promise<{ error: { message: string } | null }>): AdminClient {
     return { from: () => ({ insert }) } as unknown as AdminClient;
   }
 
+  const fakeAnthropic: AnthropicClient = {
+    narrate: () => Promise.reject(new Error("não deveria ser chamado por esta ferramenta")),
+  };
+
   it("400 quando o input não bate com o schema da ferramenta", async () => {
     const { userClient } = fakeUserClient([]);
-    const deps = { db: fakeDb(() => Promise.resolve({ error: null })), logger: createLogger({}, { sink: () => undefined }), createUserClient: () => userClient };
+    const deps = { db: fakeDb(() => Promise.resolve({ error: null })), logger: createLogger({}, { sink: () => undefined }), createUserClient: () => userClient, anthropic: fakeAnthropic };
 
     const outcome = await handleCopilotQuery(deps, CALLER, "token", {
       tool: "sales_summary",
@@ -152,7 +213,7 @@ describe("handleCopilotQuery", () => {
 
   it("200 com o card completo quando a ferramenta responde — escopo e confiança presentes", async () => {
     const { userClient } = fakeUserClient([{ data: SUMMARY_ROW, error: null }]);
-    const deps = { db: fakeDb(() => Promise.resolve({ error: null })), logger: createLogger({}, { sink: () => undefined }), createUserClient: () => userClient };
+    const deps = { db: fakeDb(() => Promise.resolve({ error: null })), logger: createLogger({}, { sink: () => undefined }), createUserClient: () => userClient, anthropic: fakeAnthropic };
 
     const outcome = await handleCopilotQuery(deps, CALLER, "token", {
       tool: "sales_summary",
@@ -166,7 +227,7 @@ describe("handleCopilotQuery", () => {
 
   it("502 quando a ferramenta falha ao executar", async () => {
     const { userClient } = fakeUserClient([{ data: null, error: { message: "timeout" } }]);
-    const deps = { db: fakeDb(() => Promise.resolve({ error: null })), logger: createLogger({}, { sink: () => undefined }), createUserClient: () => userClient };
+    const deps = { db: fakeDb(() => Promise.resolve({ error: null })), logger: createLogger({}, { sink: () => undefined }), createUserClient: () => userClient, anthropic: fakeAnthropic };
 
     const outcome = await handleCopilotQuery(deps, CALLER, "token", {
       tool: "sales_summary",
@@ -179,7 +240,7 @@ describe("handleCopilotQuery", () => {
   it("grava ai_runs com llm_used=false e a ferramenta usada", async () => {
     const { userClient } = fakeUserClient([{ data: SUMMARY_ROW, error: null }]);
     const insert = vi.fn(() => Promise.resolve({ error: null }));
-    const deps = { db: fakeDb(insert), logger: createLogger({}, { sink: () => undefined }), createUserClient: () => userClient };
+    const deps = { db: fakeDb(insert), logger: createLogger({}, { sink: () => undefined }), createUserClient: () => userClient, anthropic: fakeAnthropic };
 
     await handleCopilotQuery(deps, CALLER, "token", {
       tool: "sales_summary",
@@ -197,12 +258,54 @@ describe("handleCopilotQuery", () => {
     );
   });
 
+  it("grava ai_runs com llm_used=true e o custo real para narrate_sku_diagnosis", async () => {
+    const userClient = {
+      from: () => ({
+        select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: { id: "sku-1" }, error: null }) }) }),
+      }),
+    } as unknown as UserClient;
+    const insert = vi.fn(() => Promise.resolve({ error: null }));
+    const anthropic: AnthropicClient = { narrate: () => Promise.resolve({ text: "Narrativa.", costUsd: 0.001 }) };
+    const deps = {
+      db: fakeDb(insert),
+      logger: createLogger({}, { sink: () => undefined }),
+      createUserClient: () => userClient,
+      anthropic,
+    };
+
+    await handleCopilotQuery(deps, CALLER, "token", {
+      tool: "narrate_sku_diagnosis",
+      input: {
+        diagnosis: {
+          escopo: {
+            organizationId: "00000000-0000-4000-8000-000000000001",
+            skuId: "00000000-0000-4000-8000-000000000002",
+          },
+          periodo: { asOf: "2026-08-24" },
+          direcao: "queda",
+          confianca: "alta",
+          zScore: -3.2,
+          unitsDelta: -8,
+          evidencias: [],
+          causasCandidatas: [],
+          proximosPassos: [],
+        },
+        impactBrl: null,
+      },
+    });
+
+    expect(insert).toHaveBeenCalledWith(
+      expect.objectContaining({ tool_names: ["narrate_sku_diagnosis"], llm_used: true, cost_usd: 0.001 }),
+    );
+  });
+
   it("NÃO falha a resposta quando a gravação de ai_runs falha — a consulta já funcionou", async () => {
     const { userClient } = fakeUserClient([{ data: SUMMARY_ROW, error: null }]);
     const deps = {
       db: fakeDb(() => Promise.resolve({ error: { message: "connection reset" } })),
       logger: createLogger({}, { sink: () => undefined }),
       createUserClient: () => userClient,
+      anthropic: fakeAnthropic,
     };
 
     const outcome = await handleCopilotQuery(deps, CALLER, "token", {
