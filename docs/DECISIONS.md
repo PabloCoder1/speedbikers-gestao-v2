@@ -1271,6 +1271,8 @@ Não é específico de `questions`: **nunca chegou `orders_v2`, `post_purchase`,
 
 **Como as duas se separam, sem adivinhação:** quando a primeira página de `UNANSWERED` volta vazia, uma chamada extra SEM o filtro, registrando apenas o `total` (nenhum conteúdo, nenhum dado de comprador). `total > 0` sem filtro ⇒ é o filtro; `total = 0` nos dois ⇒ não enxergamos pergunta alguma ⇒ é permissão.
 
+**Achado operacional no caminho — disparo manual queima o bloco de dedupe do dia.** Depois de deployar a sonda (`worker-00022-d88`), o re-disparo manual voltou `enqueued: 0, deduplicated: 4`: a chave é `{conta}:{dia}:{bloco-6h-UTC}`, e 20h07 e 20h46 caem no mesmo bloco. O dedupe fez o que devia — mas a consequência é que a execução natural seguinte no MESMO bloco também é descartada, então a rodada das 18h20 de SP não aconteceu. Isso vale para qualquer job com dedupe por dia/bloco (D-065 e D-081 dispararam manualmente jobs com chave `{organização}:{data-negócio}` e simplesmente não esbarraram no caso). Não é bug: é o preço, já aceito em D-051, de usar o nome da task como mecanismo de dedupe. Fica registrado para ninguém interpretar "o cron não rodou" como falha.
+
 **Impacto:** `docs/DEPLOYMENT.md` (passo de configuração externa, novo), `docs/ROADMAP.md` (marco da Fase 3 corrigido — não pode continuar afirmando o que nunca aconteceu), `docs/HANDOFF.md` (dois achados nas pendências imediatas), `docs/MERCADO_LIVRE.md` (secao 2.12, o que a reconciliação realmente observou).
 
 ## Como adicionar nova decisão
