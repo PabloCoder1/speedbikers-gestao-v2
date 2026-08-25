@@ -4337,12 +4337,17 @@ describe("feature_suggestions (Sugestões de features, D-079)", () => {
   });
 
   it("ANALISTA não muda o status — só ADMIN/GESTOR pode triar", async () => {
-    await expect(
-      asUser(
-        ANALISTA_SB,
-        `update public.feature_suggestions set status = 'em_analise' where id = '${analistaSuggestionId}'`,
-      ),
-    ).rejects.toThrow(/row-level security|permission denied/i);
+    // UPDATE bloqueado por RLS não lança: a cláusula USING filtra a linha
+    // como se não existisse para este usuário, então o UPDATE afeta ZERO
+    // linhas em vez de rejeitar — mesmo comportamento já documentado em
+    // "usuário não marca a notificação de outro usuário como lida" (D-073).
+    // Diferente do INSERT acima, cujo WITH CHECK rejeita de verdade.
+    const rows = await asUser<{ status: string }>(
+      ANALISTA_SB,
+      `update public.feature_suggestions set status = 'em_analise' where id = '${analistaSuggestionId}' returning status`,
+    );
+
+    expect(rows).toHaveLength(0);
   });
 
   it("ADMIN muda o status de uma sugestão de outro membro", async () => {
