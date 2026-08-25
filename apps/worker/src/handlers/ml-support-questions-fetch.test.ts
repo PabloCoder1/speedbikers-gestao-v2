@@ -118,13 +118,66 @@ describe("fetchSupportQuestions", () => {
   });
 
   it("página vazia encerra sem persistir nada", async () => {
-    const { client, requests } = pagingClient([[]]);
+    const { client, requests } = pagingClient([[], []]);
 
     const result = await fetchSupportQuestions(params(client));
 
     expect(result).toMatchObject({ itemsProcessed: 0, truncated: false });
     expect(persistSupportQuestionMock).not.toHaveBeenCalled();
+    // 1 busca filtrada + 1 sonda de diagnóstico (D-091).
+    expect(requests).toHaveLength(2);
+  });
+
+  it("primeira página vazia dispara a sonda SEM filtro e registra só a contagem (D-091)", async () => {
+    const { client, requests } = pagingClient([[], []]);
+    const lines: string[] = [];
+
+    await fetchSupportQuestions(params(client, lines));
+
+    // A sonda tem que ir sem `status` — é isso que distingue "não há pergunta
+    // em aberto" de "não enxergamos pergunta nenhuma".
+    expect(requests[1]).toMatchObject({ api_version: 4, offset: 0, limit: 1 });
+    expect(requests[1]?.status).toBeUndefined();
+    expect(lines.join()).toContain("support_questions_empty_probe");
+    expect(lines.join()).toContain("unfiltered_total");
+  });
+
+  it("a sonda NÃO roda quando a página veio com resultado", async () => {
+    const { client, requests } = pagingClient([[question(1)]]);
+
+    await fetchSupportQuestions(params(client));
+
     expect(requests).toHaveLength(1);
+  });
+
+  it("a sonda NÃO roda em página vazia que não é a primeira", async () => {
+    // Fim natural da paginação já é explicado — não há ambiguidade a medir.
+    const { client, requests } = pagingClient([fullPage(1), []]);
+
+    await fetchSupportQuestions(params(client));
+
+    expect(requests).toHaveLength(2);
+  });
+
+  it("sonda que falha não derruba a reconciliação — é observabilidade, não resultado", async () => {
+    let call = 0;
+    const request = <T>(options: RequestOptions<T>): Promise<T> => {
+      call += 1;
+
+      if (call === 1) {
+        return Promise.resolve().then(() =>
+          options.schema.parse({ total: 0, limit: 100, questions: [] }),
+        );
+      }
+
+      return Promise.reject(new Error("sonda falhou"));
+    };
+    const lines: string[] = [];
+
+    const result = await fetchSupportQuestions(params({ request }, lines));
+
+    expect(result).toMatchObject({ itemsProcessed: 0, itemsFailed: 0 });
+    expect(lines.join()).toContain("support_questions_empty_probe_failed");
   });
 
   it("não depende de `total` para decidir o fim — ele pode se mover entre páginas", async () => {

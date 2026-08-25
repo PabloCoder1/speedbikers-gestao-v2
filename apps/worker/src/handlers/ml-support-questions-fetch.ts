@@ -75,6 +75,42 @@ export interface FetchSupportQuestionsResult {
   truncated: boolean;
 }
 
+/**
+ * Sonda de diagnóstico de D-091 — mede, não conclui.
+ *
+ * Nunca derruba a reconciliação: é observabilidade, e uma sonda que falha não
+ * pode transformar uma sincronização bem-sucedida em erro (mesmo raciocínio já
+ * documentado para `recordSyncRun*` em D-067, Nível 2).
+ *
+ * **Temporária por desenho.** Sai quando a causa de `total: 0` nas quatro
+ * contas estiver decidida — permissão funcional do token ou comportamento do
+ * filtro. Não vira instrumentação permanente: é uma chamada extra à API do
+ * Mercado Livre, e o custo só se justifica enquanto a dúvida existe.
+ */
+async function probeUnfilteredTotal(params: FetchSupportQuestionsParams): Promise<void> {
+  try {
+    const unfiltered = await fetchReceivedQuestionsPage({
+      mercadoLivre: params.mercadoLivre,
+      accessToken: params.accessToken,
+      offset: 0,
+      // 1 basta: só o `total` interessa, e uma página cheia seria desperdício.
+      limit: 1,
+    });
+
+    params.logger.info("support_questions_empty_probe", {
+      ml_account_id: params.mlAccountId,
+      seller_id: params.sellerId,
+      unfiltered_total: unfiltered.total,
+      unfiltered_returned: unfiltered.questions.length,
+    });
+  } catch (error) {
+    params.logger.warn("support_questions_empty_probe_failed", {
+      ml_account_id: params.mlAccountId,
+      reason: error instanceof Error ? error.message : "erro desconhecido",
+    });
+  }
+}
+
 export async function fetchSupportQuestions(
   params: FetchSupportQuestionsParams,
 ): Promise<FetchSupportQuestionsResult> {
@@ -104,6 +140,21 @@ export async function fetchSupportQuestions(
     }
 
     if (result.questions.length === 0) {
+      // Sonda de diagnóstico (D-091): a primeira página vazia é ambígua.
+      // Pode ser "esta conta não tem pergunta em aberto" (o normal) ou
+      // "não conseguimos VER pergunta nenhuma" — que foi o que aconteceu em
+      // 2026-08-25: as 4 contas voltaram `total: 0` enquanto o ERP mostrava
+      // uma pendente. Sem essa medição, as duas situações são o mesmo log.
+      //
+      // UMA chamada extra, só na primeira página vazia, registrando SOMENTE
+      // a contagem — nenhum texto de pergunta, nenhum dado de comprador.
+      // `total` sem filtro > 0 significa que enxergamos perguntas e o filtro
+      // é que não casa; `0` nos dois significa que não enxergamos nenhuma,
+      // o que aponta para permissão funcional do token (D-083).
+      if (page === 0) {
+        await probeUnfilteredTotal(params);
+      }
+
       return { itemsProcessed, itemsFailed, itemsRejected, remoteTotal, truncated: false };
     }
 
