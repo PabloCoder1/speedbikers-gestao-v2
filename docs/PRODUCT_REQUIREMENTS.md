@@ -107,6 +107,8 @@ Quando houver base matemática suficiente, permitir perguntas de cenário como:
 
 Toda simulação deve exibir as premissas e nunca ser apresentada como certeza.
 
+**Implementado em 2026-08-25 (D-080)** — as três primeiras perguntas, no Dashboard de SKU (`/skus/[skuId]`): a base matemática já existia e estava em produção desde D-058 (`get_stock_coverage`, `cobertura = estoque / venda média diária`, já usada em `/cobertura`) — as três perguntas são a MESMA fórmula resolvida para uma incógnita diferente cada vez. Cálculo em `@sb/domain` (`simulateCoverageDays`/`simulateRequiredQuantity`/`simulateRuptureDate`), premissas sempre visíveis e editáveis ao lado do resultado, nunca escondidas atrás de um botão "calcular". **Margem aproximada continua fora de escopo** — `docs/METRICS.md` já registra que "margem depende de custo cadastrado por SKU", e isso não existe no schema hoje (só custo por pedido de compra individual, sem consolidação); não há base matemática confiável, exatamente a condição que este próprio requisito já previa.
+
 ## Sugestões de features via Copiloto
 
 **Captura + Central de Sugestões implementadas em 2026-08-25 (D-079)** — `apps/web/app/sugestoes`. Estruturação por IA continua pendente (ver abaixo).

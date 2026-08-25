@@ -8,6 +8,7 @@ import { formatCount, formatCurrency } from "../../../lib/format";
 import { listingStatusLabel } from "../../../lib/labels";
 import { createClient } from "../../../lib/supabase/server";
 import { DiagnosisPanel } from "./diagnosis-panel";
+import { SimulatorPanel } from "./simulator-panel";
 
 export const metadata = { title: "Dashboard de SKU — Speed Bikers Gestão" };
 
@@ -86,7 +87,7 @@ export default async function SkuDashboardPage({
   const dateTo = now.toISOString().slice(0, 10);
   const dateFrom = new Date(now.getTime() - (LOOKBACK_DAYS - 1) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-  const [dashboardResult, listingsResult] = await Promise.all([
+  const [dashboardResult, listingsResult, coverageResult] = await Promise.all([
     supabase
       .rpc("get_sku_dashboard", {
         p_organization_id: sku.data.organization_id,
@@ -100,10 +101,22 @@ export default async function SkuDashboardPage({
       .select("id, item_id, title, status, price, ml_accounts(label)")
       .eq("sku_id", sku.data.id)
       .order("title"),
+    // Mesma janela de 30 dias do resumo acima — venda média diária real,
+    // só para pré-preencher a premissa do simulador (D-080); o usuário
+    // pode ajustar livremente a partir daí.
+    supabase
+      .rpc("get_stock_coverage", {
+        p_organization_id: sku.data.organization_id,
+        p_date_from: dateFrom,
+        p_date_to: dateTo,
+        p_sku_id: sku.data.id,
+      })
+      .maybeSingle(),
   ]);
 
   const dashboard = dashboardResult.data;
   const listings = listingsResult.data ?? [];
+  const coverage = coverageResult.data;
 
   return (
     <Shell>
@@ -156,6 +169,12 @@ export default async function SkuDashboardPage({
           </div>
 
           <DiagnosisPanel skuId={sku.data.id} />
+
+          <SimulatorPanel
+            asOf={dateTo}
+            initialStockQuantity={coverage?.local_quantity ?? 0}
+            initialAvgDailySales={coverage?.avg_daily_sales ?? 0}
+          />
         </>
       )}
 

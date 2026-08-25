@@ -15,3 +15,6 @@ export type { LedgerBalance } from "./ledger-integrity.js";
 
 export { computeReturnReversal } from "./return-reversal.js";
 export type { ReturnedOrderItem, ReturnReversal } from "./return-reversal.js";
+
+export { simulateCoverageDays, simulateRequiredQuantity, simulateRuptureDate } from "./coverage-simulation.js";
+export type { CoverageSimulation, RequiredQuantitySimulation, RuptureDateSimulation } from "./coverage-simulation.js";

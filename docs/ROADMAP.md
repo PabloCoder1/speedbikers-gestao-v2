@@ -244,7 +244,7 @@ Itens P1 e P2 podem continuar evoluindo incrementalmente sem reabrir ou invalida
 - [x] **`ai_runs` com custo e escopo** — concluído em 2026-08-25 (D-077), migration `20260825120000_create_ai_runs.sql`. Toda chamada ao Copiloto grava ferramenta(s), escopo e latência; `llm_used`/`cost_usd` prontos para quando o LLM existir.
 - [ ] **Ação contextual "O que aconteceu?"** — **primeira fatia concluída em 2026-08-25 (D-078)**: botão no Dashboard de SKU (`/skus/[skuId]`), mesmo motor de `/diagnostico`/Central de Ações, sob demanda para um SKU só (`get_sku_sales_baseline` ganhou `p_sku_id` opcional). **Continua pendente**: KPIs/gráficos do Dashboard de Vendas e nível de conta — dependem de sinais de diagnóstico que ainda não existem (só vendas por SKU hoje).
 - [ ] **Sugestões de features estruturadas** — **captura + Central de Sugestões concluídas em 2026-08-25 (D-079)**: `apps/web/app/sugestoes`, `feature_suggestions`, sete estados de triagem, texto original preservado íntegro. **Estruturação por IA continua pendente** — os nove campos estruturados (título, problema, objetivo...) dependem da escolha de modelo/orçamento do Copiloto (`docs/COPILOT.md` secao 10), mesma pendência que trava o item 7.
-- [ ] Simulador de decisão onde houver base matemática
+- [x] **Simulador de decisão onde houver base matemática** — concluído em 2026-08-25 (D-080): cobertura/ruptura/quantidade necessária no Dashboard de SKU (`/skus/[skuId]`), mesma fórmula já em produção desde D-058 (`get_stock_coverage`), resolvida para cada incógnita em `@sb/domain`. **Margem aproximada fica de fora** — sem custo consolidado por SKU (`docs/METRICS.md`), não há base matemática confiável ainda.
 
 **Marco:** o sistema fala com você, citando escopo e evidência.
 

@@ -2654,6 +2654,29 @@ describe("get_stock_coverage (D-058, Fase 5B)", () => {
 
     expect(rows).toHaveLength(0);
   });
+
+  // p_sku_id (D-080, simulador do Dashboard de SKU): filtro OPCIONAL
+  // adicionado à assinatura existente, chamada sem ele continua varrendo
+  // todos os SKUs (testes acima, inalterados).
+  it("p_sku_id filtra para UM SKU só, sem precisar de WHERE do lado do cliente", async () => {
+    const rows = await asUser<{ sku_id: string; days_of_coverage: string }>(
+      ADMIN_SB,
+      `select * from public.get_stock_coverage('${ORG_SB}','${WINDOW_START}','${TODAY}','${skuId}')`,
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.sku_id).toBe(skuId);
+    expect(Number(rows[0]?.days_of_coverage)).toBe(20);
+  });
+
+  it("p_sku_id nulo (omitido) continua varrendo todos os SKUs elegíveis da organização", async () => {
+    const rows = await asUser<{ sku_id: string }>(
+      ADMIN_SB,
+      `select sku_id from public.get_stock_coverage('${ORG_SB}','${WINDOW_START}','${TODAY}')`,
+    );
+
+    expect(rows.map((row) => row.sku_id)).toContain(skuId);
+  });
 });
 
 describe("get_sku_abc_curve (D-058, Fase 5B)", () => {
