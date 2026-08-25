@@ -29,10 +29,18 @@ SA_TASKS="v3-tasks-invoker"
 SA_SCHEDULER="v3-scheduler-invoker"
 
 # Supabase Dev. O ref e a URL não são segredo — aparecem no dashboard e em
-# hostnames públicos. O segredo é a chave, que vive no Secret Manager.
+# hostnames públicos. O segredo é a chave de service role, que vive no
+# Secret Manager.
 SUPABASE_PROJECT_REF="nmgccyqquwxecqffsidr"
 SUPABASE_URL="https://${SUPABASE_PROJECT_REF}.supabase.co"
 SECRET_SUPABASE_KEY="SUPABASE_SERVICE_ROLE_KEY"
+
+# Chave PUBLICÁVEL — mesma que `apps/web` já embute no bundle do navegador
+# (`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`), não é segredo. Usada só pela api
+# desde D-077 (`createUserClient`, `@sb/db`): o Copiloto lê sob a RLS do
+# usuário, não com service_role, e precisa de um cliente instanciado com
+# esta chave + o JWT do request.
+SUPABASE_PUBLISHABLE_KEY="sb_publishable_Ldlp0fb3PrvXn29XZ7cpag_Sqo121xo"
 
 # OAuth do Mercado Livre (D-041, D-046). client_id e redirect_uri NÃO são
 # segredo — vão em --set-env-vars, junto dos demais identificadores de
