@@ -1243,6 +1243,36 @@ Evidência medida, não presumida: `worker-00020-6xp` e `api-00016-5qd`, ambos s
 
 **Impacto:** `apps/web/app/atendimento/page.tsx` (novo). `apps/web/lib/support-case-reference.ts` + `.test.ts` (novos), `apps/web/lib/safe-next.ts` + `.test.ts` (novos), `apps/web/lib/labels.ts` (quatro mapas de atendimento + `statusTone`), `apps/web/components/shell.tsx` (grupo ATENDIMENTO), `apps/web/proxy.ts` (query string no `next`), `apps/web/app/login/login-form.tsx` (`safeNext`). `apps/web/e2e/{seed,seed-output}.ts` + `atendimento.spec.ts`. `docs/PRODUCT_REQUIREMENTS.md` (navegação corrigida), `docs/ROADMAP.md`, `docs/HANDOFF.md`. Só `apps/web` — deploy automático pela Vercel, sem Cloud Run envolvido.
 
+## D-091 — O webhook do Mercado Livre NUNCA foi chamado: o marco do Fast Path da Fase 3 nunca foi verdade em produção
+
+**Contexto:** o usuário reportou (2026-08-25) que a Caixa de Entrada recém-entregue (D-090) não mostrava nenhuma pergunta, enquanto o UpSeller exibia uma pendente na conta "Speedbikers (loja 1)". Investigação por medição, não por leitura de código.
+
+**Achado 1 — em 30 dias de log de requisição do Cloud Run, `/webhooks/mercado-livre` recebeu UMA requisição, e foi um teste meu:**
+
+```
+2026-08-25T18:21:11Z  403  2804:14d:...   ← curl de verificação do deploy de D-089
+(nenhuma outra em 720h)
+```
+
+Não é específico de `questions`: **nunca chegou `orders_v2`, `post_purchase`, nada.** O Mercado Livre jamais entregou uma notificação à V3.
+
+**Consequência que ninguém tinha percebido:** `docs/ROADMAP.md` Fase 3 declara o marco *"Pedidos ficam frescos em segundos no caminho feliz"* desde 2026-08-22 (D-044, Fast Path). **Isso nunca aconteceu.** O frescor dos pedidos vem, desde sempre, da reconciliação de hora em hora — que funciona (`reconcile_triggered, accounts_scanned: 4` a cada hora cheia) e, por funcionar, escondeu a ausência total do caminho principal. É o caso exemplar de rede de segurança mascarando a falha do mecanismo que ela deveria apenas complementar.
+
+**Causa raiz — um passo manual que nunca foi documentado nem executado:** a URL de callback e os tópicos assinados vivem no painel de aplicações do Mercado Livre. Nenhum script de `infra/` configura isso (nem poderia — não há API pública para tal), e `docs/DEPLOYMENT.md` não tinha o passo. A regra do projeto "documentação não comprova deploy" nasceu para pegar exatamente esta classe de divergência, mas falhou aqui por um motivo pior: **a documentação nem mencionava que existia algo a verificar.** Corrigido — `docs/DEPLOYMENT.md` ganhou a configuração externa obrigatória, com a URL exata e os tópicos.
+
+**Risco encadeado, ainda aberto:** `apps/api/src/ip-allowlist.ts` continua com o `PENDENTE` de D-045. A regra "o IP confiável é o penúltimo do `X-Forwarded-For`" foi INFERIDA da documentação de HTTPS Load Balancing do Google e nunca foi verificada contra uma chamada real — porque nenhuma chegou. Se estiver errada, **toda notificação toma 403 no instante em que o painel for configurado**, e o Mercado Livre não avisa: desiste após 8 tentativas em 1h. O `webhook_origin_rejected` também não registra o header recebido nem o IP extraído, então hoje um 403 indevido seria silencioso na investigação.
+
+**Achado 2 — a reconciliação funciona, e o Mercado Livre diz que não há perguntas.** Disparo manual autorizado pelo usuário (`gcloud scheduler jobs run v3-support-questions-reconcile`, 20h07/UTC): `support_questions_schedule_triggered` com 4 contas, 4 jobs enfileirados, e os 4 concluíram `sync_support_questions_reconcile_done` com `items_processed: 0`, `items_failed: 0` e **`remote_total: 0`** — sem erro, sem 429, sem 403. `remote_total` é o `total` que o PRÓPRIO Mercado Livre devolveu para `GET /my/received_questions/search?api_version=4&status=UNANSWERED`. Ou seja: a metade da V3 (token, HTTP, contrato, retry, persistência) está provada ponta a ponta contra a API real; o remoto é que respondeu vazio.
+
+**Duas hipóteses, deliberadamente NÃO decididas no chute:**
+
+- **(a) permissão** — as 4 contas foram autorizadas em 2026-08-21, antes de Perguntas existir no projeto. D-083 confirmou que `questions` depende da permissão funcional "Comunicação pré e pós-venda". Sem ela, o Mercado Livre pode devolver lista vazia em vez de erro, e a correção seria acrescentar a permissão e REAUTORIZAR as quatro contas;
+- **(b) filtro** — `status` aparece nos `available_filters` da resposta oficial, mas isso é a documentação descrevendo a si mesma, não comportamento observado.
+
+**Como as duas se separam, sem adivinhação:** quando a primeira página de `UNANSWERED` volta vazia, uma chamada extra SEM o filtro, registrando apenas o `total` (nenhum conteúdo, nenhum dado de comprador). `total > 0` sem filtro ⇒ é o filtro; `total = 0` nos dois ⇒ não enxergamos pergunta alguma ⇒ é permissão.
+
+**Impacto:** `docs/DEPLOYMENT.md` (passo de configuração externa, novo), `docs/ROADMAP.md` (marco da Fase 3 corrigido — não pode continuar afirmando o que nunca aconteceu), `docs/HANDOFF.md` (dois achados nas pendências imediatas), `docs/MERCADO_LIVRE.md` (secao 2.12, o que a reconciliação realmente observou).
+
 ## Como adicionar nova decisão
 
 Registrar:

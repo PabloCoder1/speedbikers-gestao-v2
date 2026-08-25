@@ -149,6 +149,38 @@ Os scripts chamam `gcloud.cmd` no Windows — o wrapper `.ps1` esbarra na polít
 
 ---
 
+## 6.1 Configuração externa obrigatória — painel do Mercado Livre
+
+> Acrescentado em 2026-08-25 (D-091), depois de descobrir que o webhook nunca
+> tinha sido chamado em 30 dias. **Este passo não é automatizável**: não existe
+> API pública para configurá-lo, e nenhum script de `infra/` pode fazê-lo.
+> Enquanto ele não for executado, o webhook simplesmente não recebe tráfego —
+> e o sistema não tem como perceber sozinho, porque "nenhuma notificação" é
+> indistinguível de "nenhum evento aconteceu".
+
+Em `developers.mercadolivre.com.br` → **Suas integrações** → aplicação da V3:
+
+| O quê | Valor | Por quê |
+|---|---|---|
+| URL de callback de notificações | `https://api-rrquw5upla-rj.a.run.app/webhooks/mercado-livre` | É o endpoint que a `api` expõe (`docs/API.md` secao 2) |
+| Tópicos assinados | `orders_v2`, `questions`, `post_purchase` | Os três com consumidor pronto hoje. `messages` entra quando a ingestão existir |
+| Permissões funcionais | incluir **Comunicação pré e pós-venda** | Requisito de `questions`/`messages`/`claims` (D-083). Contas autorizadas ANTES dessa permissão existir precisam ser **reautorizadas** — o token não ganha permissão nova sozinho |
+
+**Como verificar que funcionou** (não presumir):
+
+```
+gcloud logging read 'resource.type="cloud_run_revision"
+  AND resource.labels.service_name="api"
+  AND httpRequest.requestUrl:"/webhooks/"' --freshness=1h
+```
+
+Requisição com status `200` = notificação aceita. Status `403` = a allowlist de
+IP recusou a origem — ver o risco registrado em D-091/D-045 sobre a extração do
+IP a partir de `X-Forwarded-For`, que nunca foi validada contra uma chamada
+real do Mercado Livre. Nenhuma requisição = o painel ainda não está enviando.
+
+---
+
 ## 7. CI/CD
 
 **GitHub Actions** (`.github/workflows/ci.yml`), obrigatório antes de entrar na `v3`:
