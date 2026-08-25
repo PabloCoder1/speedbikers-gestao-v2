@@ -1,0 +1,402 @@
+import Link from "next/link";
+import type { ReactNode } from "react";
+
+import { Shell } from "../../components/shell";
+import { StatusPill } from "../../components/status-pill";
+import { formatDateTime } from "../../lib/format";
+import {
+  supportChannelLabel,
+  supportInternalStatusLabel,
+  supportPriorityLabel,
+  supportReplyStateLabel,
+} from "../../lib/labels";
+import type { SupportCaseLinkRow } from "../../lib/support-case-reference";
+import { resolveSupportCaseReference } from "../../lib/support-case-reference";
+import { createClient } from "../../lib/supabase/server";
+
+export const metadata = { title: "Caixa de Entrada — Speed Bikers Gestão" };
+
+// Sessão vem de cookie: pré-renderizar no build mostraria dado de outra
+// pessoa. Mesmo raciocínio de `apps/web/app/anuncios/page.tsx`.
+export const dynamic = "force-dynamic";
+
+/**
+ * Caixa de Entrada do Atendimento (Fase 7B, D-090) — a primeira tela do SAC.
+ *
+ * Até aqui a ingestão de Perguntas funcionava (D-087/D-088/D-089) e ninguém
+ * conseguia VER o que tinha sido ingerido. Esta tela é só leitura: lista
+ * `support_cases` sob RLS, com filtro por conta, tipo e status.
+ *
+ * **Leitura direta do Supabase, sem rota na `api`** (Modelo A, D-012) — é
+ * exatamente a categoria que `docs/ARCHITECTURE.md` secao 4 descreve: read
+ * model indexado, nenhum segredo envolvido. A triagem (assumir, mudar status,
+ * resolver) é transação com evento de auditoria junto (D-084) e fica para a
+ * fatia seguinte, como RPC.
+ *
+ * **Uma tela, não seis.** `docs/PRODUCT_REQUIREMENTS.md` lista "Perguntas",
+ * "Mensagens", "Reclamações", "Mediações" e "Devoluções" como grupos da
+ * Central — mas D-084 já decidiu que são FILTROS sobre a mesma projeção, não
+ * cases separados (mediação e devolução são facetas do claim). Rotas
+ * separadas duplicariam a mesma tabela cinco vezes.
+ */
+
+/** `internal_status` é fechado em cinco valores (D-084). */
+const INTERNAL_STATUSES = [
+  "NOVO",
+  "EM_ATENDIMENTO",
+  "AGUARDANDO_CLIENTE",
+  "AGUARDANDO_MERCADO_LIVRE",
+  "RESOLVIDO",
+] as const;
+
+const CHANNELS = ["QUESTION", "POST_SALE_MESSAGE", "CLAIM"] as const;
+
+/** Teto de linhas por página. Sem paginação ainda — entra quando o volume pedir. */
+const ROW_LIMIT = 100;
+
+type Channel = (typeof CHANNELS)[number];
+type InternalStatus = (typeof INTERNAL_STATUSES)[number];
+
+/**
+ * `abertos` é o padrão porque é a pergunta que a tela responde ("o que
+ * precisa de mim agora?") e porque bate com o índice parcial
+ * `support_cases_open_inbox_idx`, que existe justamente para essa consulta.
+ */
+type StatusFilter = "abertos" | "todos" | InternalStatus;
+
+interface SupportCaseRow {
+  id: string;
+  channel: string;
+  external_case_id: string;
+  external_status: string | null;
+  internal_status: string;
+  priority: string;
+  remote_reply_state: string;
+  is_mediation: boolean;
+  has_return: boolean;
+  last_activity_at: string;
+  ml_accounts: { label: string } | null;
+  support_case_links: SupportCaseLinkRow[] | null;
+}
+
+const PILL_BASE: React.CSSProperties = {
+  borderRadius: "999px",
+  border: "1px solid var(--sb-border)",
+  padding: "0.25rem 0.75rem",
+  fontSize: "0.8125rem",
+  textDecoration: "none",
+  whiteSpace: "nowrap",
+};
+
+function pillStyle(active: boolean): React.CSSProperties {
+  return {
+    ...PILL_BASE,
+    background: active ? "var(--sb-primary)" : "transparent",
+    color: active ? "var(--sb-white)" : "var(--sb-text-soft)",
+  };
+}
+
+const th: React.CSSProperties = {
+  textAlign: "left",
+  padding: "0.5rem 0.75rem",
+  borderBottom: "1px solid var(--sb-border)",
+  fontSize: "0.75rem",
+  textTransform: "uppercase",
+  letterSpacing: "0.04em",
+  color: "var(--sb-text-soft)",
+  whiteSpace: "nowrap",
+};
+
+const td: React.CSSProperties = {
+  padding: "0.5rem 0.75rem",
+  borderBottom: "1px solid var(--sb-border)",
+  fontSize: "0.875rem",
+  verticalAlign: "top",
+};
+
+function readParam(value: string | string[] | undefined): string | null {
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value ?? null;
+}
+
+function resolveStatus(raw: string | null): StatusFilter {
+  if (raw === "todos") return "todos";
+  if (raw !== null && (INTERNAL_STATUSES as readonly string[]).includes(raw)) {
+    return raw as InternalStatus;
+  }
+  return "abertos";
+}
+
+function resolveChannel(raw: string | null): Channel | null {
+  if (raw !== null && (CHANNELS as readonly string[]).includes(raw)) {
+    return raw as Channel;
+  }
+  return null;
+}
+
+/**
+ * Preserva as outras dimensões ao trocar uma — mesma ideia do `buildHref()`
+ * de `/vendas`, com três dimensões em vez de duas.
+ */
+function buildHref(
+  current: { account: string | null; channel: Channel | null; status: StatusFilter },
+  override: { account?: string | null; channel?: Channel | null; status?: StatusFilter },
+): string {
+  const account = override.account !== undefined ? override.account : current.account;
+  const channel = override.channel !== undefined ? override.channel : current.channel;
+  const status = override.status ?? current.status;
+
+  const search = new URLSearchParams();
+
+  if (account !== null) search.set("account", account);
+  if (channel !== null) search.set("canal", channel);
+  if (status !== "abertos") search.set("status", status);
+
+  const qs = search.toString();
+
+  return qs === "" ? "/atendimento" : `/atendimento?${qs}`;
+}
+
+/** Facetas do claim (D-084) — mostradas junto do tipo, nunca como tipo próprio. */
+function facets(row: SupportCaseRow): string[] {
+  const result: string[] = [];
+  if (row.is_mediation) result.push("Mediação");
+  if (row.has_return) result.push("Devolução");
+  return result;
+}
+
+export default async function AtendimentoPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}): Promise<ReactNode> {
+  const query = await searchParams;
+  const supabase = await createClient();
+
+  const membership = await supabase
+    .from("organization_members")
+    .select("organization_id")
+    .maybeSingle();
+
+  // Falha de leitura e "sem organização" são coisas diferentes (D-067,
+  // Nível 3): a segunda é cadastro, a primeira é erro transitório.
+  if (membership.error !== null) {
+    return (
+      <Shell>
+        <h1 style={{ margin: "0 0 var(--sb-space-3)", fontSize: "1.375rem" }}>Caixa de Entrada</h1>
+        <p role="alert" style={{ color: "var(--sb-danger)" }}>
+          Não foi possível verificar sua organização. Tente recarregar a página.
+        </p>
+      </Shell>
+    );
+  }
+
+  if (membership.data?.organization_id == null) {
+    return (
+      <Shell>
+        <h1 style={{ margin: "0 0 var(--sb-space-3)", fontSize: "1.375rem" }}>Caixa de Entrada</h1>
+        <p style={{ color: "var(--sb-text-soft)" }}>
+          Sua conta não está associada a nenhuma organização.
+        </p>
+      </Shell>
+    );
+  }
+
+  const accountSlug = readParam(query.account);
+  const channel = resolveChannel(readParam(query.canal));
+  const status = resolveStatus(readParam(query.status));
+
+  const accountsResult = await supabase
+    .from("ml_accounts")
+    .select("id, slug, label")
+    .order("label", { ascending: true });
+
+  const accounts = accountsResult.data ?? [];
+  const selectedAccount = accounts.find((account) => account.slug === accountSlug) ?? null;
+
+  // O embed de `support_case_links` atravessa a FK COMPOSTA
+  // (support_case_id, organization_id, ml_account_id) — é ela que garante que
+  // um vínculo nunca pertence a outra conta (D-085). Sem filtro explícito por
+  // organização: a RLS (`has_account_access(ml_account_id)`) já restringe, e
+  // duplicar a regra aqui seria a segunda fonte de verdade que D-012 evita.
+  let casesQuery = supabase
+    .from("support_cases")
+    .select(
+      "id, channel, external_case_id, external_status, internal_status, priority, remote_reply_state, is_mediation, has_return, last_activity_at, ml_accounts(label), support_case_links(order_id, sku_id, listing_id, external_entity_kind, external_entity_id, skus(sku), listings(item_id, title))",
+    )
+    .order("last_activity_at", { ascending: false })
+    .limit(ROW_LIMIT);
+
+  if (selectedAccount !== null) {
+    casesQuery = casesQuery.eq("ml_account_id", selectedAccount.id);
+  }
+
+  if (channel !== null) {
+    casesQuery = casesQuery.eq("channel", channel);
+  }
+
+  if (status === "abertos") {
+    casesQuery = casesQuery.neq("internal_status", "RESOLVIDO");
+  } else if (status !== "todos") {
+    casesQuery = casesQuery.eq("internal_status", status);
+  }
+
+  const casesResult = await casesQuery;
+  const cases = (casesResult.data ?? []) as unknown as SupportCaseRow[];
+  const error = casesResult.error ?? accountsResult.error;
+
+  const current = { account: accountSlug, channel, status };
+
+  return (
+    <Shell>
+      <h1 style={{ margin: "0 0 var(--sb-space-1)", fontSize: "1.375rem" }}>Caixa de Entrada</h1>
+      <p style={{ margin: "0 0 var(--sb-space-3)", color: "var(--sb-text-soft)", fontSize: "0.875rem" }}>
+        Atendimentos das contas Mercado Livre. Hoje só perguntas são
+        sincronizadas — mensagens pós-venda e reclamações ainda não.
+      </p>
+
+      {error !== null && (
+        <p role="alert" style={{ color: "var(--sb-danger)" }}>
+          Não foi possível carregar os atendimentos: {error.message}
+        </p>
+      )}
+
+      {accountsResult.error === null && accounts.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", marginBottom: "var(--sb-space-2)" }}>
+          <Link href={buildHref(current, { account: null })} style={pillStyle(selectedAccount === null)}>
+            Todas as contas
+          </Link>
+          {accounts.map((account) => (
+            <Link
+              key={account.id}
+              href={buildHref(current, { account: account.slug })}
+              style={pillStyle(selectedAccount?.id === account.id)}
+            >
+              {account.label}
+            </Link>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", marginBottom: "var(--sb-space-2)" }}>
+        <Link href={buildHref(current, { channel: null })} style={pillStyle(channel === null)}>
+          Todos os tipos
+        </Link>
+        {CHANNELS.map((code) => (
+          <Link key={code} href={buildHref(current, { channel: code })} style={pillStyle(channel === code)}>
+            {supportChannelLabel(code)}
+          </Link>
+        ))}
+      </div>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", marginBottom: "var(--sb-space-4)" }}>
+        <Link href={buildHref(current, { status: "abertos" })} style={pillStyle(status === "abertos")}>
+          Abertos
+        </Link>
+        {INTERNAL_STATUSES.map((code) => (
+          <Link key={code} href={buildHref(current, { status: code })} style={pillStyle(status === code)}>
+            {supportInternalStatusLabel(code)}
+          </Link>
+        ))}
+        <Link href={buildHref(current, { status: "todos" })} style={pillStyle(status === "todos")}>
+          Todos
+        </Link>
+      </div>
+
+      {error === null && cases.length === 0 && (
+        <p style={{ color: "var(--sb-text-soft)" }}>
+          {status === "abertos" && channel === null && selectedAccount === null
+            ? "Nenhum atendimento em aberto. A sincronização traz perguntas novas pelo webhook em segundos e reconcilia a cada 6 horas."
+            : "Nenhum atendimento com esses filtros."}
+        </p>
+      )}
+
+      {error === null && cases.length > 0 && (
+        <>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th style={th}>Conta</th>
+                  <th style={th}>Tipo</th>
+                  <th style={th}>Produto / referência</th>
+                  <th style={th}>Status interno</th>
+                  <th style={th}>Prioridade</th>
+                  <th style={th}>Resposta</th>
+                  <th style={th}>Última atividade</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cases.map((row) => {
+                  const reference = resolveSupportCaseReference(row.support_case_links);
+                  const rowFacets = facets(row);
+
+                  return (
+                    <tr key={row.id}>
+                      <td style={td}>{row.ml_accounts?.label ?? "—"}</td>
+                      <td style={td}>
+                        {supportChannelLabel(row.channel)}
+                        {rowFacets.length > 0 && (
+                          <div style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
+                            {rowFacets.join(" · ")}
+                          </div>
+                        )}
+                        <div style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
+                          #{row.external_case_id}
+                          {row.external_status !== null && ` · ${row.external_status}`}
+                        </div>
+                      </td>
+                      <td style={td}>
+                        {reference === null ? (
+                          "—"
+                        ) : (
+                          <>
+                            {reference.href === null ? (
+                              <span>{reference.code}</span>
+                            ) : (
+                              <Link href={reference.href} style={{ color: "var(--sb-primary)" }}>
+                                {reference.code}
+                              </Link>
+                            )}
+                            {reference.title !== null && (
+                              <div style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
+                                {reference.title}
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </td>
+                      <td style={td}>
+                        <StatusPill
+                          code={row.internal_status}
+                          label={supportInternalStatusLabel(row.internal_status)}
+                        />
+                      </td>
+                      <td style={td}>
+                        <StatusPill code={row.priority} label={supportPriorityLabel(row.priority)} />
+                      </td>
+                      <td style={td}>
+                        <StatusPill
+                          code={row.remote_reply_state}
+                          label={supportReplyStateLabel(row.remote_reply_state)}
+                        />
+                      </td>
+                      <td style={td}>{formatDateTime(row.last_activity_at)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {cases.length === ROW_LIMIT && (
+            <p style={{ marginTop: "var(--sb-space-2)", color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
+              Mostrando os {ROW_LIMIT} atendimentos com atividade mais recente. Use os filtros para
+              estreitar — paginação entra quando o volume real justificar.
+            </p>
+          )}
+        </>
+      )}
+    </Shell>
+  );
+}

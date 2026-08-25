@@ -22,6 +22,7 @@ import { NotificationToasts } from "./notification-toasts";
  *   COMERCIAL: Vendas, Produtos, Anúncios
  *   ESTOQUE: Estoque, Cobertura, Curva ABC, Notas Fiscais, Compras
  *   INTELIGÊNCIA: Diagnóstico, Ações
+ *   ATENDIMENTO: Caixa de Entrada, Base de Conhecimento
  *   GESTÃO: Vinculações, Fornecedores, Contas ML, Sincronização
  *   ADMINISTRAÇÃO: Usuários, Integrações, Saúde do Sistema, Sugestões, Configurações
  *
@@ -31,6 +32,12 @@ import { NotificationToasts } from "./notification-toasts";
  * como tela própria, distinta de `/skus/{id}`) também não — ficam de fora
  * até nascerem, não como esquecimento. Regra para quem adicionar uma tela
  * nova: ela entra no grupo certo aqui, nunca solta no nível de cima.
+ *
+ * ATENDIMENTO (D-090) tem só "Caixa de Entrada" por enquanto. A lista
+ * original do usuário pedia "Perguntas", "Mensagens", "Reclamações" e
+ * "Mediações" como itens separados — D-084 decidiu depois que são FILTROS
+ * sobre a mesma projeção, não telas distintas, então viraram pílulas dentro
+ * da própria Caixa de Entrada. "Base de Conhecimento" entra quando existir.
  *
  * "Importações" (UpSeller) não estava na lista original do usuário, mas já
  * existe e funciona — entrou em ESTOQUE por ser fluxo de catálogo/saldo.
@@ -70,6 +77,10 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "Diagnóstico", href: "/diagnostico" },
       { label: "Ações", href: "/acoes" },
     ],
+  },
+  {
+    title: "Atendimento",
+    items: [{ label: "Caixa de Entrada", href: "/atendimento" }],
   },
   {
     title: "Gestão",

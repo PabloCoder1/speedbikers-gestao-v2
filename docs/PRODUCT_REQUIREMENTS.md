@@ -391,12 +391,15 @@ Estrutura conceitual desejada:
   - Ações;
 
 - Atendimento (Fase 7B, registrado em 2026-08-24 — ver seção própria abaixo):
-  - Caixa de Entrada;
-  - Perguntas;
-  - Mensagens;
-  - Reclamações;
-  - Mediações;
+  - Caixa de Entrada — **implementada em 2026-08-25 (D-090)**;
   - Base de Conhecimento;
+
+  "Perguntas", "Mensagens", "Reclamações" e "Mediações" estavam listadas aqui
+  como itens de navegação próprios, mas D-084 decidiu depois que são FILTROS
+  sobre a mesma projeção (`support_cases`), não telas distintas — mediação e
+  devolução são inclusive facetas do claim, não canais. Viraram pílulas de
+  filtro dentro da própria Caixa de Entrada; rotas separadas duplicariam a
+  mesma tabela cinco vezes.
 
 - Gestão:
   - Vinculações;

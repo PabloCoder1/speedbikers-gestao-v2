@@ -132,6 +132,44 @@ const FEATURE_SUGGESTION_STATUS: Record<string, string> = {
   recusada: "Recusada",
 };
 
+/**
+ * `support_cases.channel` — os três canais de D-084. Mediação e devolução NÃO
+ * são canais: são facetas do CLAIM (`is_mediation`/`has_return`), e por isso
+ * não aparecem aqui.
+ */
+const SUPPORT_CHANNEL: Record<string, string> = {
+  QUESTION: "Pergunta",
+  POST_SALE_MESSAGE: "Mensagem",
+  CLAIM: "Reclamação",
+};
+
+/** `support_cases.internal_status` — cinco valores de D-084. Não existe `FECHADO` interno. */
+const SUPPORT_INTERNAL_STATUS: Record<string, string> = {
+  NOVO: "Novo",
+  EM_ATENDIMENTO: "Em atendimento",
+  AGUARDANDO_CLIENTE: "Aguardando cliente",
+  AGUARDANDO_MERCADO_LIVRE: "Aguardando Mercado Livre",
+  RESOLVIDO: "Resolvido",
+};
+
+/** `support_cases.priority` — separada da severidade da notificação (D-084). */
+const SUPPORT_PRIORITY: Record<string, string> = {
+  NORMAL: "Normal",
+  ALTA: "Alta",
+  CRITICA: "Crítica",
+};
+
+/**
+ * `support_cases.remote_reply_state` — dica conservadora de D-086, nunca
+ * autorização: mesmo `ALLOWED` continuará sujeito a refresh remoto na hora
+ * de enviar.
+ */
+const SUPPORT_REPLY_STATE: Record<string, string> = {
+  UNKNOWN: "Desconhecido",
+  ALLOWED: "Pode responder",
+  BLOCKED: "Bloqueado",
+};
+
 function lookup(table: Record<string, string>, code: string): string {
   return table[code] ?? code;
 }
@@ -148,6 +186,10 @@ export const listingStatusLabel = (code: string): string => lookup(LISTING_STATU
 export const eventTypeLabel = (code: string): string => lookup(EVENT_TYPE, code);
 export const severityLabel = (code: string): string => lookup(SEVERITY, code);
 export const featureSuggestionStatusLabel = (code: string): string => lookup(FEATURE_SUGGESTION_STATUS, code);
+export const supportChannelLabel = (code: string): string => lookup(SUPPORT_CHANNEL, code);
+export const supportInternalStatusLabel = (code: string): string => lookup(SUPPORT_INTERNAL_STATUS, code);
+export const supportPriorityLabel = (code: string): string => lookup(SUPPORT_PRIORITY, code);
+export const supportReplyStateLabel = (code: string): string => lookup(SUPPORT_REPLY_STATE, code);
 
 /** Cor de destaque por estado. `null` = sem destaque, o padrão da tabela. */
 export function statusTone(code: string): "ok" | "warn" | "bad" | null {
@@ -172,6 +214,16 @@ export function statusTone(code: string): "ok" | "warn" | "bad" | null {
 
   if (code === "active") return "ok";
   if (code === "paused") return "warn";
+
+  // Atendimento (D-090). "NOVO" é warn, não bad: uma pergunta nova é o
+  // estado NORMAL da caixa, não um problema — o que merece vermelho é
+  // prioridade CRITICA e resposta bloqueada.
+  if (code === "RESOLVIDO" || code === "ALLOWED") return "ok";
+  if (code === "NOVO" || code === "AGUARDANDO_CLIENTE" || code === "AGUARDANDO_MERCADO_LIVRE") {
+    return "warn";
+  }
+  if (code === "ALTA") return "warn";
+  if (code === "CRITICA" || code === "BLOCKED") return "bad";
   if (
     code === "FAILED" ||
     code === "INVALID" ||

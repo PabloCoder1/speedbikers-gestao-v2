@@ -15,6 +15,10 @@ export interface SeedOutput {
   skuCode: string;
   documentId: string;
   documentItemId: number;
+  mlAccountLabel: string;
+  supportOpenExternalId: string;
+  supportResolvedExternalId: string;
+  supportResolvedItemId: string;
 }
 
 export const SEED_OUTPUT_PATH = resolve(dirname(fileURLToPath(import.meta.url)), ".seed-output.json");

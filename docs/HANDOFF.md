@@ -2,7 +2,7 @@
 
 ## RESUMO OPERACIONAL ATUAL — LEIA PRIMEIRO
 
-> Atualizado em 2026-08-25 após fechar a reconciliação de Perguntas (D-089), que era a lacuna mais séria da Fase 7B.
+> Atualizado em 2026-08-25 após a primeira tela do SAC (D-090) — a Caixa de Entrada.
 
 Este bloco é o ponto de entrada atual para qualquer nova sessão.
 
@@ -28,9 +28,19 @@ A fonte de verdade continua sendo:
 - Fase 6: concluída com D-063, D-064 e D-065.
 - **Fase 7 com núcleo funcional entregue, mas checklist incremental ainda aberto.** Notificações/Realtime/preferências estão concluídos; o Copiloto determinístico e a primeira narração LLM estão implantados. **Modelo/orçamento decididos em D-082**: Claude Haiku 4.5, teto R$100/mês, avisa mas não bloqueia. Pendentes sem bloqueio de produto: planner por linguagem natural, streaming/UI de chat, estruturação de sugestões por IA, expansão de “O que aconteceu?” e mecanismo de aviso de orçamento. Portanto, não tratar a Fase 7 como “fechada por completo” enquanto os três itens parciais do checklist permanecem abertos no ROADMAP.
 - O Checkpoint de Consolidação Pré-Fase 7 está fechado por completo desde 2026-08-25.
-- **Fase 7B — Central de Atendimento/SAC Mercado Livre ingerindo Perguntas EM PRODUÇÃO desde 2026-08-25.** D-083 confirmou endpoints/payloads; D-084 aprovou o modelo; D-085 materializou seis tabelas; D-086 acrescentou contrato/mapper/persistência idempotente; D-087 registrou `sync.support.questions`; **D-088 ligou o produtor** — o ACK do webhook roteia `topic=questions` direto para esse job — e os dois serviços foram publicados (`worker-00020-6xp`/`api-00016-5qd`). **D-089 fechou a reconciliação** (`sync.support.questions.reconcile`, por conta, a cada 6h) — o webhook deixou de ser o único caminho. Continua sem UI, triagem humana, `domain_events` de SAC ou envio de resposta, e sem ingestão de mensagens/reclamações/devoluções/mediações.
+- **Fase 7B — Central de Atendimento/SAC Mercado Livre ingerindo Perguntas EM PRODUÇÃO desde 2026-08-25.** D-083 confirmou endpoints/payloads; D-084 aprovou o modelo; D-085 materializou seis tabelas; D-086 acrescentou contrato/mapper/persistência idempotente; D-087 registrou `sync.support.questions`; **D-088 ligou o produtor** — o ACK do webhook roteia `topic=questions` direto para esse job — e os dois serviços foram publicados (`worker-00020-6xp`/`api-00016-5qd`). **D-089 fechou a reconciliação** e **D-090 entregou a Caixa de Entrada** (`/atendimento`) — o que é ingerido finalmente é visível. Continua sem triagem humana, `domain_events` de SAC, envio de resposta e sem ingestão de mensagens/reclamações/devoluções/mediações.
 
-### Última etapa concluída — D-089 (reconciliação de Perguntas)
+### Última etapa concluída — D-090 (Caixa de Entrada do SAC)
+
+- `apps/web/app/atendimento` — leitura direta sob RLS (Modelo A, sem rota na `api`), filtros por conta, tipo e status interno, padrão "abertos" (casa com o índice parcial `support_cases_open_inbox_idx`). Ordenação por `last_activity_at desc`, teto de 100 linhas com aviso na tela.
+- **Uma tela, não seis.** `docs/PRODUCT_REQUIREMENTS.md` listava Perguntas/Mensagens/Reclamações/Mediações como itens de navegação próprios — escrito ANTES de D-084, que decidiu que são filtros sobre a mesma projeção. O requisito foi corrigido, não contornado.
+- **Filtros de prioridade, responsável e SLA ficaram de fora de propósito**: os dois primeiros só têm utilidade junto da triagem (fatia seguinte) e o SLA depende de `support_case_deadlines`, que nenhuma ingestão preenche — filtro sobre tabela vazia é pior que filtro nenhum.
+- **Bug real achado ao escrever o teste, e não era só desta tela: o login descartava a query string.** `proxy.ts` mandava só o `pathname` no `next`, então abrir qualquer link filtrado sem sessão (`/vendas?days=90`, um preset de "Filtros salvos" de D-062) levava a pessoa para a tela SEM o filtro depois de entrar. Corrigido. Junto, `safeNext` passou a recusar `next` que aponte para fora do sistema — já era explorável antes, e estava dentro das três linhas que a correção tocava.
+- **A tela foi exercitada de verdade, ao contrário de D-074/D-075/D-076** (que fecharam com a ressalva "a tela não é visitada por nenhum spec"): 3 specs Playwright novos contra Postgres real com login real, seed ganhou conta ML + dois `support_cases`. **8/8 specs verdes** (3 novos + os 5 de D-069, sem regressão). O embed via FK COMPOSTA foi conferido por `curl` no PostgREST local antes de escrever a tela.
+- Armadilha registrada: `getByRole("alert")).toHaveCount(0)` nunca vale num app Next.js — o `#__next-route-announcer__` do framework tem `role="alert"` em toda página.
+- 17 testes de unidade novos, `check` 29/29, `build` 8/8. **Só `apps/web`** — deploy automático pela Vercel, sem Cloud Run.
+
+### Etapa anterior — D-089 (reconciliação de Perguntas)
 
 - `sync.support.questions.reconcile` (novo job, por conta, Cloud Scheduler a cada 6h) pagina `GET /my/received_questions/search?api_version=4&status=UNANSWERED`, mapeia pelo contrato de D-086 e persiste pela mesma porta idempotente. Fecha a lacuna "notificação perdida = pergunta perdida para sempre" que D-088 deixou aberta.
 - **O recorte por `status` não foi escolha de escopo — foi imposto pela API.** Pesquisa oficial ao vivo antes de codar: `/my/received_questions/search` declara `available_filters` = `item`, `from`, `totalDivisions`, `division`, `status`; **não tem filtro por data**, e a resposta padrão traz `"sorts": []`, ou seja, **ordenação default não documentada**. Sem data e sem ordem, "reconciliar a última janela" é inexpressável. Detalhe em `docs/MERCADO_LIVRE.md` secao 2.12.
@@ -63,11 +73,11 @@ A fonte de verdade continua sendo:
 
 ### Próxima etapa registrada
 
-**Observação pendente, não bloqueante:** confirmar a primeira execução natural de `v3-support-questions-reconcile` (18h20 de SP em diante) — esperado `support_questions_schedule_triggered` na `api` e `sync_support_questions_reconcile_done` no worker, com uma linha por conta em `sync_runs` (`resource='questions'`). Se as contas não tiverem perguntas em aberto, `items_processed: 0` é o resultado correto, não uma falha.
+**Observação pendente, não bloqueante:** confirmar a primeira execução natural de `v3-support-questions-reconcile` (18h20 de SP em diante) — esperado `support_questions_schedule_triggered` na `api` e `sync_support_questions_reconcile_done` no worker, com uma linha por conta em `sync_runs` (`resource='questions'`). Se as contas não tiverem perguntas em aberto, `items_processed: 0` é o resultado correto, não uma falha. **Agora dá para conferir pela tela**: `/atendimento` mostra o que foi ingerido, e `/sincronizacao` mostra o frescor por conta.
 
-**Próxima etapa: a Caixa de Entrada de atendimento** (`docs/ROADMAP.md` Fase 7B): a primeira tela do SAC, listando `support_cases` sob RLS com filtros por conta/tipo/status. É o primeiro item da fase que produz valor visível para o usuário — hoje a ingestão de Perguntas funciona mas ninguém consegue VER o que foi ingerido. Leitura direta do Supabase sob RLS (Modelo A, D-012), sem rota nova na `api`; a triagem (assumir/mudar status/resolver) é RPC transacional e pode ficar para a fatia seguinte. Ainda **não** implementar envio de resposta, `domain_events` de SAC nem sugestão do Copiloto.
+**Próxima etapa: triagem interna do atendimento** (`docs/ROADMAP.md` Fase 7B). A Caixa de Entrada é só leitura — ninguém consegue assumir um atendimento, mudar status ou resolver. D-084 já definiu a forma: **RPC transacional** que atualiza `support_cases` E acrescenta `support_case_events` na MESMA transação (histórico append-only, nunca UPDATE solto), autorizada a `ADMIN`/`GESTOR`/`OPERADOR` com acesso à conta; `ANALISTA`/`VISUALIZADOR` só leem. Atenção a duas regras já decididas e fáceis de violar: `RESOLVIDO` exige `resolved_at` (constraint), e sincronização não pode sobrescrever decisão humana de status (D-086, decisão 4) — a triagem precisa conviver com o UPSERT da ingestão sem que um desfaça o outro. Ainda **não** implementar envio de resposta nem sugestão do Copiloto.
 
-**Alternativa igualmente defensável, se preferir fechar a ingestão antes da UI:** mensagens pós-venda (`sync.support.messages`), que reaproveitam a mesma cadeia mas exigem pesquisa de contrato própria e o cuidado de `mark_as_read=false` (D-083, decisão 2).
+**Alternativas igualmente defensáveis:** (a) mensagens pós-venda (`sync.support.messages`), fechando a ingestão antes de aprofundar a UI — exige pesquisa de contrato própria e o cuidado de `mark_as_read=false` (D-083, decisão 2); (b) o **mecanismo de aviso de orçamento de IA**, que segue sendo a pendência mais antiga em aberto.
 
 ### Estado de infraestrutura que NÃO deve ser presumido
 

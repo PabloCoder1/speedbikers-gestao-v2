@@ -12,7 +12,12 @@
  *   - um SKU com saldo LOCAL via `stock_movements` (página do produto);
  *   - uma NF-e (`documents`/`document_items`) em PARSED, com um item ainda
  *     sem vínculo (conferência de NF-e — o vínculo em si o teste faz pela
- *     UI, exercitando `link_document_item` de verdade).
+ *     UI, exercitando `link_document_item` de verdade);
+ *   - uma conta Mercado Livre CONNECTED e dois `support_cases` (Caixa de
+ *     Entrada, D-090): um NOVO com vínculo tipado de SKU e um RESOLVIDO com
+ *     o fallback externo de anúncio que D-086 preserva. Dois estados porque
+ *     o filtro padrão da tela é "abertos" — com um só não daria para provar
+ *     que o RESOLVIDO fica de fora.
  *
  * "Pedido de compra" não precisa de seed: o formulário de `/compras/novo`
  * aceita SKU em texto livre sem exigir cadastro prévio (mesmo padrão de
@@ -38,6 +43,12 @@ const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ORG_SLUG = "e2e-speed-bikers";
 const SKU_CODE = "E2E-SKU-001";
 const DOCUMENT_CONTENT_HASH = createHash("sha256").update("e2e-fixture-nfe").digest("hex");
+const ML_ACCOUNT_SLUG = "e2e-loja";
+const ML_ACCOUNT_LABEL = "Loja E2E";
+const ML_SELLER_ID = 419_059_118;
+const SUPPORT_OPEN_EXTERNAL_ID = "900001";
+const SUPPORT_RESOLVED_EXTERNAL_ID = "900002";
+const SUPPORT_RESOLVED_ITEM_ID = "MLB1623490410";
 
 function requireServiceRoleKey(): string {
   if (SERVICE_ROLE_KEY === undefined || SERVICE_ROLE_KEY === "") {
@@ -253,6 +264,115 @@ async function main(): Promise<void> {
     throw item.error;
   }
 
+  // Conta Mercado Livre + Caixa de Entrada (D-090). `connected_at` é
+  // obrigatório junto de `seller_id` quando o status é CONNECTED
+  // (`ml_accounts_status_coherent`).
+  const mlAccount = await db
+    .from("ml_accounts")
+    .upsert(
+      {
+        organization_id: organizationId,
+        slug: ML_ACCOUNT_SLUG,
+        label: ML_ACCOUNT_LABEL,
+        status: "CONNECTED",
+        seller_id: ML_SELLER_ID,
+        connected_at: new Date().toISOString(),
+      },
+      { onConflict: "organization_id,slug" },
+    )
+    .select("id")
+    .single();
+
+  if (mlAccount.error !== null) {
+    throw mlAccount.error;
+  }
+
+  const mlAccountId = mlAccount.data.id;
+  const now = Date.now();
+
+  const supportCases = await db
+    .from("support_cases")
+    .upsert(
+      [
+        {
+          organization_id: organizationId,
+          ml_account_id: mlAccountId,
+          channel: "QUESTION",
+          external_case_key: `question:${SUPPORT_OPEN_EXTERNAL_ID}`,
+          external_case_id: SUPPORT_OPEN_EXTERNAL_ID,
+          external_status: "UNANSWERED",
+          internal_status: "NOVO",
+          priority: "NORMAL",
+          remote_reply_state: "ALLOWED",
+          last_activity_at: new Date(now).toISOString(),
+        },
+        {
+          organization_id: organizationId,
+          ml_account_id: mlAccountId,
+          channel: "QUESTION",
+          external_case_key: `question:${SUPPORT_RESOLVED_EXTERNAL_ID}`,
+          external_case_id: SUPPORT_RESOLVED_EXTERNAL_ID,
+          external_status: "ANSWERED",
+          internal_status: "RESOLVIDO",
+          priority: "ALTA",
+          remote_reply_state: "BLOCKED",
+          last_activity_at: new Date(now - 3_600_000).toISOString(),
+          resolved_at: new Date(now - 3_600_000).toISOString(),
+        },
+      ],
+      { onConflict: "organization_id,ml_account_id,channel,external_case_key" },
+    )
+    .select("id, external_case_id");
+
+  if (supportCases.error !== null) {
+    throw supportCases.error;
+  }
+
+  const openCaseId = supportCases.data.find(
+    (row) => row.external_case_id === SUPPORT_OPEN_EXTERNAL_ID,
+  )?.id;
+  const resolvedCaseId = supportCases.data.find(
+    (row) => row.external_case_id === SUPPORT_RESOLVED_EXTERNAL_ID,
+  )?.id;
+
+  if (openCaseId === undefined || resolvedCaseId === undefined) {
+    throw new Error("seed de atendimento não devolveu os dois cases");
+  }
+
+  // Os índices únicos de `support_case_links` são PARCIAIS, então `onConflict`
+  // não os expressa com segurança (mesma razão de D-086) — apagar e recriar é
+  // o caminho idempotente aqui.
+  const clearLinks = await db
+    .from("support_case_links")
+    .delete()
+    .in("support_case_id", [openCaseId, resolvedCaseId]);
+
+  if (clearLinks.error !== null) {
+    throw clearLinks.error;
+  }
+
+  const links = await db.from("support_case_links").insert([
+    {
+      organization_id: organizationId,
+      ml_account_id: mlAccountId,
+      support_case_id: openCaseId,
+      sku_id: skuId,
+      link_source: "LISTING_DERIVED",
+    },
+    {
+      organization_id: organizationId,
+      ml_account_id: mlAccountId,
+      support_case_id: resolvedCaseId,
+      external_entity_kind: "LISTING",
+      external_entity_id: SUPPORT_RESOLVED_ITEM_ID,
+      link_source: "REMOTE",
+    },
+  ]);
+
+  if (links.error !== null) {
+    throw links.error;
+  }
+
   const output: SeedOutput = {
     organizationId,
     userId,
@@ -260,6 +380,10 @@ async function main(): Promise<void> {
     skuCode: SKU_CODE,
     documentId,
     documentItemId: item.data.id,
+    mlAccountLabel: ML_ACCOUNT_LABEL,
+    supportOpenExternalId: SUPPORT_OPEN_EXTERNAL_ID,
+    supportResolvedExternalId: SUPPORT_RESOLVED_EXTERNAL_ID,
+    supportResolvedItemId: SUPPORT_RESOLVED_ITEM_ID,
   };
 
   await mkdir(dirname(SEED_OUTPUT_PATH), { recursive: true });

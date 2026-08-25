@@ -13,7 +13,7 @@
 | **Contrato** | Vitest + Zod | Parsing de respostas do Mercado Livre contra **fixtures gravados**; DTOs entre web e api | Fase 3 |
 | **Integração** | Vitest + Supabase local | Migrations aplicam · **RLS permite e nega** · read models · **idempotência** | Fase 2 |
 | **Equivalência** | Vitest | Fórmula em `@sb/domain` versus implementação SQL | Fase 5 |
-| **E2E** | Playwright | Login, página do produto, conferência de NF-e, pedido de compra | Fase 5 |
+| **E2E** | Playwright | Login, página do produto, conferência de NF-e, pedido de compra, Caixa de Entrada do SAC | Fase 5 |
 
 **Nunca chamar o Mercado Livre ao vivo na CI.** Fixtures gravados, sempre.
 
@@ -58,6 +58,10 @@ Ao liberar um caminho público, o teste prova que **apenas** aquele caminho foi 
 **Supabase CLI local** para os testes de integração: banco real, migrations reais, policies reais. Testar RLS contra mock não prova nada.
 
 **Playwright** a partir da Fase 5, apenas nos fluxos críticos. E2E amplo é caro de manter e frágil.
+
+**Quando uma tela NOVA merece spec** (regra acrescentada em 2026-08-25, D-090): quando ela lê por um caminho que nenhum outro teste exercita. A Caixa de Entrada entrou porque o embed de `support_case_links` atravessa uma **FK composta** no PostgREST — comportamento de plataforma que não se prova por revisão de código. O gatilho para escrever a regra foi D-074/D-075/D-076, que fecharam três entregas seguidas com a mesma ressalva ("a tela não é visitada por nenhum spec"): a ressalva repetida virou sinal de que faltava critério, não de que faltava disciplina.
+
+**Armadilha conhecida:** `expect(page.getByRole("alert")).toHaveCount(0)` NUNCA vale num app Next.js. O framework mantém um `#__next-route-announcer__` com `role="alert"` em toda página — live region que anuncia o título na navegação client-side. Para afirmar "não há erro na tela", asserte o TEXTO do banner.
 
 ---
 
