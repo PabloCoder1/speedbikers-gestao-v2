@@ -20,6 +20,16 @@ import type { Enqueuer } from "./enqueue.js";
  * mesmo bloco colapsam, blocos diferentes sempre geram task nova. Mesmo
  * raciocínio de janela de D-051 — um ID fixo por dia seria retido pelo Cloud
  * Tasks por até 24h e descartaria as rodadas seguintes do MESMO dia.
+ *
+ * **O dia vem de `America/Sao_Paulo` e o bloco vem de UTC, de propósito.** O
+ * dia de negócio é o mesmo de todo o resto do projeto (`toSalesMetricDate`,
+ * `docs/METRICS.md`); o bloco só precisa separar as quatro rodadas diárias
+ * entre si, e UTC é a base estável para isso. O cron real
+ * (`20 */6 * * *` em `America/Sao_Paulo`, `infra/cloud-scheduler.sh`) dispara
+ * às 00h20/06h20/12h20/18h20 de SP = 03/09/15/21 UTC, que caem em quatro
+ * blocos UTC distintos — e, como SP é UTC-3, nenhuma dessas quatro horas
+ * cruza a virada do dia, então a data de negócio e a data UTC coincidem em
+ * todas elas. Nenhuma rodada colide com outra nem some.
  */
 
 const BLOCK_HOURS = 6;
