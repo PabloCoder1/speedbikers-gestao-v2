@@ -6,6 +6,12 @@ on:
     branches: [v3, main]
   pull_request:
     branches: [v3]
+  # Disparo manual: em 2026-08-26 um push na v3 simplesmente NAO criou
+  # execucao (so o check da Vercel apareceu no commit), deixando codigo no
+  # repositorio sem esteira e uma migration sem aplicar no Supabase Dev.
+  # Sem este gatilho, a unica saida seria um commit vazio so para acordar a
+  # CI -- ruido no historico para contornar uma falha de plataforma.
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
