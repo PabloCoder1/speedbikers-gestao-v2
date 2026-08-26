@@ -134,7 +134,13 @@ Antes de declarar qualquer mudança operacional como implantada, verificar quand
 - Cloud Scheduler esperado versus realmente provisionado;
 - logs de boot;
 - execução ponta a ponta;
-- CI do commit exato.
+- CI do commit exato -- e que ela EXISTE. Em 2026-08-26 um push na v3 nao criou
+  execucao nenhuma (so o check da Vercel apareceu no commit) enquanto `gh run list`
+  devolvia, no topo, a execucao verde do commit ANTERIOR. Verde na listagem nao
+  significa verde no seu commit: conferir sempre o `headSha`. O gatilho
+  `workflow_dispatch` existe para essa recuperacao -- e desde entao o job de
+  migrations tambem roda em disparo manual, porque na primeira vez ele foi pulado
+  e o codigo ficou verde com o banco Dev sem o schema.
 
 ### D-065 (Memória de decisões) — deploy confirmado, não só codificado
 
