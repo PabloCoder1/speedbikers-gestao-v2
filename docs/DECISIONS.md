@@ -1312,6 +1312,34 @@ Não é específico de `questions`: **nunca chegou `orders_v2`, `post_purchase`,
 
 **Impacto:** `apps/worker/src/handlers/stock-movements.ts`, `domain-events.ts`. `apps/api/src/support-questions-schedule.ts` + teste (+2 de regressão), `app.ts` (log do header cru). `infra/cloud-scheduler.sh` (cron). `packages/db/src/idempotent-writes.integration.test.ts` (novo). `.github/workflows/ci.yml`. Fakes de teste do worker atualizados para aceitar `upsert` — nenhum deles verificava o verbo, só o que foi gravado.
 
+## D-093 — A allowlist do webhook era contornável por um header, e rejeitaria toda notificação legítima: o IP confiável é o ÚLTIMO do `X-Forwarded-For`
+
+**Contexto:** D-092 acrescentou o log do `X-Forwarded-For` cru justamente para que a correção do `PENDENTE` de D-045 saísse de evidência, não de inferência. Duas chamadas ao endpoint REAL de produção, depois do deploy, resolveram a questão — e revelaram um problema pior do que o previsto.
+
+**Medição, contra `https://api-rrquw5upla-rj.a.run.app/webhooks/mercado-livre`:**
+
+| Enviado pelo cliente | Header que a `api` recebeu | Resultado |
+|---|---|---|
+| nada | `2804:14d:...` (só o IP do cliente) | 403 — `extractClientIp` devolvia `undefined` |
+| `X-Forwarded-For: 54.88.218.97` | `54.88.218.97,2804:14d:...` | **200 — ACEITO** |
+
+**Os dois casos concordam: o Cloud Run ACRESCENTA o IP real ao final.** O cliente controla tudo que vem antes e nada do que vem depois.
+
+**Dois defeitos, opostos, na mesma linha de código:**
+
+1. **Toda notificação legítima seria rejeitada.** `parts.length < 2 → undefined`: uma entrada só era tratada como "não deu para ler o header", mas é o caso NORMAL — o Mercado Livre não manda `X-Forwarded-For`, então o header chega com uma entrada. Configurar o painel hoje resultaria em 403 em 100% das notificações, e o Mercado Livre desistiria após 8 tentativas em silêncio.
+2. **E qualquer pessoa conseguia entrar forjando um header.** Lendo o PENÚLTIMO, a posição lida como confiável era exatamente a que o cliente escreve. **Verificado em produção**: uma chamada com `X-Forwarded-For: 54.88.218.97` da minha própria máquina atravessou a allowlist e chegou a `ml_webhook_unknown_account` — parou só porque o `user_id` do payload de teste não existia, não pela autenticação.
+
+**Por que a regra antiga parecia certa:** D-045 a derivou da documentação do Google **HTTPS Load Balancing**, que descreve `<existing>,<client-ip>,<lb-ip>` — ali o balanceador acrescenta o próprio IP por último, e o penúltimo é de fato o cliente. **O Cloud Run em URL própria tem outra topologia**: não há esse último elemento. O `PENDENTE` de D-045 avisava exatamente disso ("o texto confirmado é da documentação de HTTPS Load Balancing, não de uma página específica do Cloud Run") e pedia a verificação que só agora foi feita. A lição não é "a inferência foi descuidada" — ela foi registrada como incerta desde o primeiro dia. É que **uma incerteza registrada continua sendo uma incerteza até alguém medir**, e esta ficou dez meses de pé porque a ausência de tráfego real escondia os dois sintomas.
+
+**Decisão — o IP confiável é o ÚLTIMO elemento, e uma entrada só é válida.** É a única posição que o cliente não controla.
+
+**Verificação:** dois testes de regressão nomeados como tal (`ip-allowlist.test.ts` e `app.test.ts`), provando que `54.88.218.97,<ip-do-atacante>` é RECUSADO e que uma entrada só é aceita. Os fixtures de todo o `app.test.ts` foram corrigidos para o formato real do Cloud Run — estavam todos em `<ip>,169.254.1.1`, formato que nunca existiu neste ambiente. `check` 29/29 e `build` 8/8 verdes.
+
+**Nota sobre o método:** a segunda medição foi um teste de contorno da autenticação contra o próprio sistema do usuário, feito para verificar um controle de segurança dele. A requisição foi única, o payload não correspondia a nenhuma conta real e o efeito foi nulo (`unknown_account`).
+
+**Impacto:** `apps/api/src/ip-allowlist.ts`, `ip-allowlist.test.ts`, `app.test.ts`. Fecha o `PENDENTE` de D-045.
+
 ## Como adicionar nova decisão
 
 Registrar:

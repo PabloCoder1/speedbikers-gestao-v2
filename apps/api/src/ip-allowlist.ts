@@ -30,20 +30,29 @@ export interface IpAllowlistVerifier {
 /**
  * Extrai o IP do cliente de `X-Forwarded-For`.
  *
- * Confirmado na documentação oficial do Google Cloud HTTPS Load Balancing —
- * mesma infraestrutura de front-end que atende o Cloud Run: "If the incoming
- * request already includes an X-Forwarded-For header, the load balancer
- * appends its values to the existing header" no formato
- * `<existing-value>,<client-ip>,<load-balancer-ip>`, e "does not verify any
- * IP addresses that precede <client-ip>,<load-balancer-ip> in this header".
+ * **O IP confiável é o ÚLTIMO da lista.** Medido contra o Cloud Run real em
+ * 2026-08-26 (D-093), com duas chamadas ao endereço de produção:
  *
- * Ou seja, o IP confiável é o PENÚLTIMO da lista — nunca o primeiro, que o
- * próprio cliente controla e pode forjar livremente.
+ * | Enviado pelo cliente | Header que a `api` recebeu |
+ * |---|---|
+ * | nada | `<ip-do-cliente>` |
+ * | `X-Forwarded-For: 54.88.218.97` | `54.88.218.97,<ip-do-cliente>` |
  *
- * PENDENTE: o texto confirmado é da documentação de HTTPS Load Balancing, não
- * de uma página específica do Cloud Run. Verificar contra o log real do Cloud
- * Run em Dev (inspecionar o header recebido numa chamada de teste) antes de
- * depender disto para bloquear tráfego em produção.
+ * Os dois casos concordam: **o Cloud Run ACRESCENTA o IP real ao final**. O
+ * cliente controla tudo que vem antes e não controla o que vem depois.
+ *
+ * **A regra anterior (penúltimo) era uma inversão perigosa**, e o `PENDENTE`
+ * de D-045 avisava exatamente disso — a inferência vinha da documentação do
+ * HTTPS Load Balancing (`<existing>,<client-ip>,<lb-ip>`), que descreve outra
+ * topologia: lá o balanceador acrescenta o PRÓPRIO IP por último, aqui não.
+ * Com a regra antiga, `X-Forwarded-For: <ip-da-allowlist>` forjado por
+ * qualquer pessoa caía exatamente na posição lida como confiável — e a
+ * verificação de 2026-08-26 confirmou a falha em produção: uma chamada com o
+ * header forjado foi ACEITA (200) e atravessou a allowlist.
+ *
+ * Também não existe mais exigência de duas entradas: uma entrada só é o caso
+ * NORMAL (cliente que não manda o header), e tratá-lo como "não deu para ler"
+ * rejeitava toda notificação legítima do Mercado Livre.
  */
 export function extractClientIp(forwardedFor: string | undefined | null): string | undefined {
   if (forwardedFor === undefined || forwardedFor === null) {
@@ -55,11 +64,11 @@ export function extractClientIp(forwardedFor: string | undefined | null): string
     .map((part) => part.trim())
     .filter((part) => part.length > 0);
 
-  if (parts.length < 2) {
+  if (parts.length === 0) {
     return undefined;
   }
 
-  return parts[parts.length - 2];
+  return parts[parts.length - 1];
 }
 
 export function createIpAllowlistVerifier(

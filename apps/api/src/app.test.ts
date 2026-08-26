@@ -654,8 +654,13 @@ describe("POST /internal/schedule/support-questions", () => {
 
 describe("webhook do Mercado Livre", () => {
   const ALLOWED_IP = "54.88.218.97";
-  const FORWARDED_ALLOWED = `${ALLOWED_IP},169.254.1.1`;
-  const FORWARDED_DISALLOWED = "203.0.113.10,169.254.1.1";
+  // Formato REAL do Cloud Run, medido em 2026-08-26 (D-093): o IP confiável é
+  // o ÚLTIMO da lista, porque é o que o Cloud Run acrescenta. O cliente
+  // controla tudo que vem antes.
+  const FORWARDED_ALLOWED = ALLOWED_IP;
+  const FORWARDED_DISALLOWED = "203.0.113.10";
+  /** Um IP da allowlist FORJADO pelo cliente, com o IP real dele no fim. */
+  const FORWARDED_SPOOFED = `${ALLOWED_IP},203.0.113.10`;
 
   const NOTIFICATION = {
     _id: "not-1",
@@ -754,6 +759,22 @@ describe("webhook do Mercado Livre", () => {
     expect(response.status).toBe(403);
     expect(enqueued).toHaveLength(0);
     expect(lines.join()).toContain("webhook_origin_rejected");
+  });
+
+  it("REGRESSÃO DE SEGURANÇA: IP da allowlist forjado pelo cliente é recusado (D-093)", async () => {
+    // Até 2026-08-26 esta chamada era ACEITA em produção com status 200: a
+    // extração pegava o penúltimo elemento, que é justamente o que o cliente
+    // consegue escrever. Verificado contra o serviço real.
+    const { app, enqueued } = withWebhook();
+
+    const response = await app.request("/webhooks/mercado-livre", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": FORWARDED_SPOOFED },
+      body: JSON.stringify(NOTIFICATION),
+    });
+
+    expect(response.status).toBe(403);
+    expect(enqueued).toHaveLength(0);
   });
 
   it("recusa quando não há X-Forwarded-For nenhum", async () => {
