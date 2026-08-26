@@ -140,7 +140,7 @@ describe("gravação idempotente por ON CONFLICT DO NOTHING (D-092)", () => {
       before: {},
       after: {},
       severity: "critico",
-      source: "d092-teste",
+      source: "system",
       dedup_key: DEDUP_KEY,
     };
 
@@ -170,7 +170,7 @@ describe("gravação idempotente por ON CONFLICT DO NOTHING (D-092)", () => {
         sku_id: SKU_ID,
         location_kind: "LOCAL",
         qty_delta: -999,
-        movement_type: "AJUSTE_MANUAL",
+        movement_type: "CANCELAMENTO_ML",
         source_type: "ORDER",
         source_id: "d092-order",
         idempotency_key: IDEMPOTENCY_KEY,
