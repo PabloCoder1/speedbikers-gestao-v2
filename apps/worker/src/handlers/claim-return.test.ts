@@ -102,7 +102,9 @@ function fakeDb(options: FakeDbOptions, captured: Captured): ProcessClaimReturnD
               }),
             }),
           }),
-          insert: (row: Record<string, unknown>) => {
+          // upsert desde D-092 (ON CONFLICT DO NOTHING); o fake aceita os
+          // dois verbos porque o teste verifica O QUE foi gravado.
+          upsert: (row: Record<string, unknown>) => {
             captured.movements.push(row);
 
             return Promise.resolve({ error: null });
@@ -112,7 +114,7 @@ function fakeDb(options: FakeDbOptions, captured: Captured): ProcessClaimReturnD
 
       if (table === "domain_events") {
         return {
-          insert: (row: Record<string, unknown>) => {
+          upsert: (row: Record<string, unknown>) => {
             captured.events.push(row);
 
             return Promise.resolve({ error: null });

@@ -29,19 +29,27 @@ export async function recordDomainEvents(
   logger: Logger,
 ): Promise<void> {
   for (const draft of drafts) {
-    const result = await db.from("domain_events").insert({
-      organization_id: context.organizationId,
-      ml_account_id: context.mlAccountId ?? null,
-      occurred_at: draft.occurredAt.toISOString(),
-      event_type: draft.eventType,
-      entity_type: draft.entityType,
-      entity_id: draft.entityId,
-      before: asJson(draft.before),
-      after: asJson(draft.after),
-      severity: draft.severity,
-      source: draft.source,
-      dedup_key: draft.dedupKey,
-    });
+    // `ON CONFLICT DO NOTHING` em vez de INSERT com 23505 absorvido no
+    // cliente (D-092): o conflito de `dedup_key` é esperado a cada
+    // reprocessamento, e deixá-lo virar ERROR no log do Postgres só enterrava
+    // erro de verdade. `ignoreDuplicates` nunca faz UPDATE — `domain_events` é
+    // append-only (D-016).
+    const result = await db.from("domain_events").upsert(
+      {
+        organization_id: context.organizationId,
+        ml_account_id: context.mlAccountId ?? null,
+        occurred_at: draft.occurredAt.toISOString(),
+        event_type: draft.eventType,
+        entity_type: draft.entityType,
+        entity_id: draft.entityId,
+        before: asJson(draft.before),
+        after: asJson(draft.after),
+        severity: draft.severity,
+        source: draft.source,
+        dedup_key: draft.dedupKey,
+      },
+      { onConflict: "dedup_key", ignoreDuplicates: true },
+    );
 
     if (result.error !== null && result.error.code !== UNIQUE_VIOLATION) {
       logger.error("domain_event_not_recorded", {

@@ -107,9 +107,39 @@ function fakeDb(options: FakeDbOptions = {}): {
   const deleted: { table: string; filters: Record<string, unknown> }[] = [];
   const inserted: { table: string; rows: unknown[] }[] = [];
 
+  function writeAppendOnly(table: string, row: unknown): Promise<{ data: null; error: unknown }> {
+    inserted.push({ table, rows: Array.isArray(row) ? row : [row] });
+
+    if (table === "domain_events" && options.domainEventConflict === true) {
+      return Promise.resolve({ data: null, error: { code: "23505", message: "duplicate key" } });
+    }
+
+    if (table === "domain_events" && options.domainEventError === true) {
+      return Promise.resolve({ data: null, error: { code: "42P01", message: "boom" } });
+    }
+
+    if (table === "stock_movements" && options.stockMovementConflict === true) {
+      return Promise.resolve({ data: null, error: { code: "23505", message: "duplicate key" } });
+    }
+
+    if (table === "stock_movements" && options.stockMovementError === true) {
+      return Promise.resolve({ data: null, error: { code: "42P01", message: "boom" } });
+    }
+
+    return Promise.resolve({ data: null, error: null });
+  }
+
   const db = {
     from: (table: string) => ({
       upsert: (row: unknown) => {
+        // `domain_events` e `stock_movements` passaram a gravar por upsert
+        // (ON CONFLICT DO NOTHING, D-092) em vez de INSERT com o 23505
+        // absorvido no cliente. Continuam sendo contabilizados em `inserted`:
+        // o que os testes verificam é O QUE foi gravado, não o verbo.
+        if (table === "domain_events" || table === "stock_movements") {
+          return writeAppendOnly(table, row);
+        }
+
         upserted.push({ table, row });
 
         return Promise.resolve({ data: null, error: null });
@@ -121,27 +151,7 @@ function fakeDb(options: FakeDbOptions = {}): {
           return Promise.resolve({ data: null, error: null });
         },
       }),
-      insert: (row: unknown) => {
-        inserted.push({ table, rows: Array.isArray(row) ? row : [row] });
-
-        if (table === "domain_events" && options.domainEventConflict === true) {
-          return Promise.resolve({ data: null, error: { code: "23505", message: "duplicate key" } });
-        }
-
-        if (table === "domain_events" && options.domainEventError === true) {
-          return Promise.resolve({ data: null, error: { code: "42P01", message: "boom" } });
-        }
-
-        if (table === "stock_movements" && options.stockMovementConflict === true) {
-          return Promise.resolve({ data: null, error: { code: "23505", message: "duplicate key" } });
-        }
-
-        if (table === "stock_movements" && options.stockMovementError === true) {
-          return Promise.resolve({ data: null, error: { code: "42P01", message: "boom" } });
-        }
-
-        return Promise.resolve({ data: null, error: null });
-      },
+      insert: (row: unknown) => writeAppendOnly(table, row),
       // Tabela importa: `skus`/`sku_components` (dedução de estoque) e
       // `sku_listing_links` (resolução de vínculo) têm formas de filtro
       // e resposta diferentes — misturar os três faria um passar pelo

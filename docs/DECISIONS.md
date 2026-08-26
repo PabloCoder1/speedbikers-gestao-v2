@@ -1290,6 +1290,28 @@ Não é específico de `questions`: **nunca chegou `orders_v2`, `post_purchase`,
 
 **Impacto:** `docs/DEPLOYMENT.md` (passo de configuração externa, novo), `docs/ROADMAP.md` (marco da Fase 3 corrigido — não pode continuar afirmando o que nunca aconteceu), `docs/HANDOFF.md` (dois achados nas pendências imediatas), `docs/MERCADO_LIVRE.md` (secao 2.12, o que a reconciliação realmente observou).
 
+## D-092 — Os ~9.800 "erros" diários do Postgres eram a idempotência funcionando; o problema era enterrarem o erro de verdade
+
+**Contexto:** o usuário mostrou o painel do Supabase com **9.848 erros e 0 warnings em 24h** sobre 10.135 linhas de log, com as últimas horas quase inteiramente vermelhas.
+
+**Diagnóstico, medido:** `recordStockMovements` e `recordDomainEvents` faziam `INSERT` puro e absorviam o `23505` no cliente. Cada inserção repetida era **rejeitada pelo Postgres**, e cada rejeição vira uma linha ERROR no log do banco. A reconciliação horária reprocessa a mesma janela de pedidos — medido nos logs do worker: entre 190 e 332 pedidos por hora somando as 4 contas, média ≈ 265, o que dá ≈ 6.400 pedidos reprocessados por dia. Cada um tenta reinserir os movimentos de estoque dos seus itens, todos colidindo com `idempotency_key`. Isso explica a ordem de grandeza dos 9.848 quase exatamente.
+
+**Ou seja: não havia nada quebrado.** Era a garantia de D-019 funcionando — `idempotency_key` UNIQUE tornando a dupla movimentação fisicamente impossível.
+
+**Mas também não era inofensivo, e é por isso que virou decisão.** 9.848 erros esperados por dia é ruído no qual um erro de verdade desaparece. É a mesma classe de problema que D-067 auditou a sessão inteira: não um dado errado, uma falha que ninguém consegue ver. Com o log nesse estado, o painel de erros do Supabase não serve para nada.
+
+**Decisão — `ON CONFLICT DO NOTHING` em vez de `INSERT` + absorver 23505 no cliente.** `.upsert(row, { onConflict: "...", ignoreDuplicates: true })` nas duas gravações. **A garantia não muda**: a constraint UNIQUE continua existindo e continua sendo o que impede a dupla movimentação. O que muda é o Postgres pular em silêncio em vez de gritar. `ignoreDuplicates` é DO NOTHING, nunca DO UPDATE — reescrever um movimento existente seria exatamente o que o ledger append-only existe para impedir.
+
+**A troca mexe na garantia mais crítica do projeto, então não foi aceita por leitura de documentação.** Se o alvo de conflito estivesse errado e a PRIMEIRA inserção virasse no-op, o sintoma seria o estoque parar de ser registrado **em silêncio**. Criado `packages/db/src/idempotent-writes.integration.test.ts`: contra Postgres + PostgREST reais, pelo MESMO cliente que o worker usa, prova que gravar duas vezes produz uma linha e nenhum erro, que `inventory_balances` aplica o movimento **uma vez** (o trigger, que é o que vira estoque errado se rodar duas vezes), e que um payload diferente com a mesma chave **não sobrescreve** o original. O job `integração` da CI ganhou as variáveis do Supabase local, que a suíte de RLS não precisava por falar `pg` direto.
+
+**Decisão 2 — cadência da reconciliação de Perguntas: 6h → 10 minutos.** Pedido do usuário ("faça as perguntas aparecerem assim que caírem"). O raciocínio original de D-089 ("o webhook entrega em segundos, isto é só a rede de segurança") dependia de uma premissa que D-091 derrubou: **o webhook nunca foi chamado**. Enquanto o painel do Mercado Livre não for configurado, a varredura é o ÚNICO caminho, e uma pergunta podia levar 6 horas para aparecer. Custo: 4 contas × 6 execuções/hora = 24 chamadas/hora, cada uma uma página pequena filtrada — contra as ~945 por conta por execução da sincronização de visitas.
+
+**Decisão 3 — a chave de dedupe passou a ter janela de MINUTO, e isso era obrigatório, não cosmético.** Com `{dia}:{bloco-6h}`, as seis execuções de uma hora colapsariam numa só e a cadência nova não teria efeito nenhum. Como efeito colateral, some o achado operacional de D-091: um disparo manual não "queima" mais a rodada natural seguinte. Dois testes de regressão cobrem os dois casos.
+
+**Achado grave no caminho — a allowlist do webhook rejeitaria 100% das notificações reais.** `extractClientIp` devolve `undefined` quando o `X-Forwarded-For` tem **menos de duas entradas**, e a evidência de que é esse o caso real veio do único teste que já bateu no endpoint: o log de `webhook_origin_rejected` de 2026-08-25 saiu **sem o campo `ip`**, o que só acontece nesse ramo. É o `PENDENTE` de D-045 se materializando: a regra do penúltimo IP foi inferida da documentação de HTTPS Load Balancing e nunca foi exercitada. **Consequência prática: se o painel fosse configurado hoje, toda notificação tomaria 403 e o Mercado Livre desistiria após 8 tentativas, em silêncio.** Ainda NÃO corrigido — corrigir sem ver o header real seria repetir o erro de inferir. O log ganhou `webhook_forwarded_for_unparsed` com o header cru, para que uma única chamada de teste depois do deploy revele o formato verdadeiro e a correção seja feita sobre evidência.
+
+**Impacto:** `apps/worker/src/handlers/stock-movements.ts`, `domain-events.ts`. `apps/api/src/support-questions-schedule.ts` + teste (+2 de regressão), `app.ts` (log do header cru). `infra/cloud-scheduler.sh` (cron). `packages/db/src/idempotent-writes.integration.test.ts` (novo). `.github/workflows/ci.yml`. Fakes de teste do worker atualizados para aceitar `upsert` — nenhum deles verificava o verbo, só o que foi gravado.
+
 ## Como adicionar nova decisão
 
 Registrar:

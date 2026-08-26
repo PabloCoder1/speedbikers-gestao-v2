@@ -154,11 +154,24 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
 
     const result = ipAllowlist.verify(context.req.header("x-forwarded-for"));
 
+    if (!result.ip) {
+      // Sem `ip` extraído, o log anterior saía sem NENHUMA pista do porquê —
+      // e "IP fora da allowlist" ficava indistinguível de "não consegui nem
+      // ler o header" (D-092). O header cru é a única evidência que permite
+      // decidir entre os dois, e o chamador aqui é um servidor do Mercado
+      // Livre, não uma pessoa.
+      dependencies.logger.warn("webhook_forwarded_for_unparsed", {
+        request_id: context.get("requestId"),
+        path: context.req.path,
+        forwarded_for: context.req.header("x-forwarded-for") ?? null,
+      });
+    }
+
     if (!result.ok) {
       dependencies.logger.warn("webhook_origin_rejected", {
         request_id: context.get("requestId"),
         path: context.req.path,
-        ip: result.ip,
+        ip: result.ip ?? null,
       });
 
       // Resposta genérica: não confirmar ao chamador se o problema foi o IP

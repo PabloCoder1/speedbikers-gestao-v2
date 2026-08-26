@@ -124,15 +124,19 @@ upsert_job \
   "${API_URL}/internal/schedule/listing-visits" \
   "Sincronizacao de visitas por anuncio, por conta Mercado Livre CONNECTED"
 
-# Reconciliacao de Perguntas do Mercado Livre (Fase 7B, D-089) -- rede de
-# seguranca do webhook `questions`, que desde D-088 e o unico caminho de
-# ingestao. Cadencia de 6 em 6 horas: mais frequente que visitas (pergunta nao
-# respondida e alguem esperando), menos que de hora em hora (o webhook ja
-# entrega em segundos no caminho feliz; isto so cobre o que ele perdeu).
-# Minuto 20 para nao competir com os jobs de hora cheia. Por CONTA.
+# Reconciliacao de Perguntas do Mercado Livre (Fase 7B, D-089).
+#
+# Cadencia de 10 em 10 minutos desde 2026-08-26 (D-092). Era 6h, sob a
+# premissa de que o webhook entregava em segundos e isto era so rede de
+# seguranca -- premissa que D-091 derrubou: o webhook NUNCA foi chamado.
+# Enquanto o painel do Mercado Livre nao for configurado, esta varredura e o
+# unico caminho de ingestao, e uma pergunta levava ate 6h para aparecer.
+#
+# Custo: 4 contas x 6 execucoes/hora = 24 chamadas/hora, cada uma uma pagina
+# pequena filtrada por UNANSWERED. Por CONTA.
 upsert_job \
   "v3-support-questions-reconcile" \
-  "20 */6 * * *" \
+  "*/10 * * * *" \
   "${API_URL}/internal/schedule/support-questions" \
   "Reconciliacao de Perguntas nao respondidas, por conta Mercado Livre CONNECTED"
 

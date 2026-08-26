@@ -70,12 +70,26 @@ function fakeDeps(options: {
 
             return Promise.resolve({ error: null });
           },
+          // upsert espelha insert: domain_events/stock_movements passaram a
+          // gravar por ON CONFLICT DO NOTHING (D-092).
+          upsert: (row: Record<string, unknown>) => {
+            captured.movements.push(row);
+
+            return Promise.resolve({ error: null });
+          },
         };
       }
 
       if (table === "domain_events") {
         return {
           insert: (row: Record<string, unknown>) => {
+            captured.events.push(row);
+
+            return Promise.resolve({ error: null });
+          },
+          // upsert espelha insert: domain_events/stock_movements passaram a
+          // gravar por ON CONFLICT DO NOTHING (D-092).
+          upsert: (row: Record<string, unknown>) => {
             captured.events.push(row);
 
             return Promise.resolve({ error: null });

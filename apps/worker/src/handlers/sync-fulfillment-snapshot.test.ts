@@ -103,6 +103,13 @@ function fakeDb(options: FakeDbOptions = {}): {
 
         return chain({ data: { id: "run-1" }, error: null });
       },
+      // upsert espelha insert: domain_events/stock_movements passaram a
+      // gravar por ON CONFLICT DO NOTHING (D-092).
+      upsert: (row: unknown) => {
+        inserted.push({ table, row });
+
+        return chain({ data: { id: "run-1" }, error: null });
+      },
       update: () => chain({ data: { ml_account_id: ML_ACCOUNT_ID }, error: null }),
     }),
   } as unknown as SyncFulfillmentSnapshotDeps["db"];

@@ -90,6 +90,15 @@ function fakeDeps(options: {
               options.movementInsertFails === true ? { error: { message: "boom", code: "23503" } } : { error: null },
             );
           },
+          // upsert espelha insert: domain_events/stock_movements passaram a
+          // gravar por ON CONFLICT DO NOTHING (D-092).
+          upsert: (row: Record<string, unknown>) => {
+            captured.movements.push(row);
+
+            return Promise.resolve(
+              options.movementInsertFails === true ? { error: { message: "boom", code: "23503" } } : { error: null },
+            );
+          },
         };
       }
 

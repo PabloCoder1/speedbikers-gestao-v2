@@ -58,6 +58,13 @@ function fakeDeps(options: {
 
             return Promise.resolve({ error: null });
           },
+          // upsert espelha insert: domain_events/stock_movements passaram a
+          // gravar por ON CONFLICT DO NOTHING (D-092).
+          upsert: (row: Record<string, unknown>) => {
+            events.push(row);
+
+            return Promise.resolve({ error: null });
+          },
         };
       }
 

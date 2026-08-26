@@ -74,7 +74,19 @@ jobs:
       - name: Subir Supabase local
         run: pnpm exec supabase start
 
-      - name: Testes de RLS
+      # A suite de RLS fala com o Postgres direto (`pg`), mas a de gravacao
+      # idempotente (D-092) usa supabase-js contra o PostgREST -- e o que esta
+      # sob teste ali e justamente o ON CONFLICT DO NOTHING que o PostgREST
+      # monta. Sem estas variaveis ela nao tem como se conectar.
+      - name: Configurar variaveis do Supabase local
+        run: |
+          eval "$(pnpm exec supabase status -o env)"
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=$API_URL"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY"
+          } >> "$GITHUB_ENV"
+
+      - name: Testes de RLS e de gravacao idempotente
         run: pnpm --filter @sb/db run test:integration
 
       - name: Derrubar Supabase

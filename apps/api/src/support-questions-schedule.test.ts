@@ -72,16 +72,14 @@ describe("triggerSupportQuestionsReconcile (D-089)", () => {
       jobType: "sync.support.questions.reconcile",
       organizationId: "org-1",
       queue: "ml-sync-speedbikers-loja-1",
-      dedupeKey: "support-questions:speedbikers-loja-1:2026-08-25:3",
+      dedupeKey: "support-questions:speedbikers-loja-1:2026-08-25T18:20",
       payload: { mlAccountId: ACCOUNTS[0]?.id },
     });
   });
 
-  it("duas chamadas no MESMO bloco de 6h produzem a mesma chave", async () => {
-    // 18:20 e 20:00 caem no mesmo bloco (18-23) — uma chamada extra do
-    // Scheduler no mesmo bloco não deve virar varredura repetida.
-    const primeira = deps({ now: "2026-08-25T18:20:00.000Z" });
-    const segunda = deps({ now: "2026-08-25T20:00:00.000Z" });
+  it("duas chamadas no MESMO minuto produzem a mesma chave — o caso é retry do Scheduler", async () => {
+    const primeira = deps({ now: "2026-08-26T12:10:03.000Z" });
+    const segunda = deps({ now: "2026-08-26T12:10:47.000Z" });
 
     await triggerSupportQuestionsReconcile(primeira.deps);
     await triggerSupportQuestionsReconcile(segunda.deps);
@@ -89,17 +87,32 @@ describe("triggerSupportQuestionsReconcile (D-089)", () => {
     expect(primeira.enqueued[0]?.dedupeKey).toBe(segunda.enqueued[0]?.dedupeKey);
   });
 
-  it("blocos diferentes do MESMO dia produzem chaves diferentes (D-051)", async () => {
-    // Sem o sufixo de bloco, a rodada das 12h reusaria o ID da rodada das 6h,
-    // que o Cloud Tasks pode reter por até 24h — e seria descartada.
-    const manha = deps({ now: "2026-08-25T06:20:00.000Z" });
-    const tarde = deps({ now: "2026-08-25T12:20:00.000Z" });
+  it("execuções consecutivas do cron de 10 minutos NUNCA colidem (D-051, D-092)", async () => {
+    // A granularidade da chave tem que acompanhar a cadência. Com a chave
+    // antiga (`{dia}:{bloco-6h}`), as seis rodadas de uma hora colapsavam
+    // numa só e cinco perguntas ficavam esperando o próximo bloco.
+    const chaves = await Promise.all(
+      ["12:00", "12:10", "12:20", "12:30", "12:40", "12:50"].map(async (hora) => {
+        const ctx = deps({ now: `2026-08-26T${hora}:00.000Z` });
+        await triggerSupportQuestionsReconcile(ctx.deps);
+        return ctx.enqueued[0]?.dedupeKey;
+      }),
+    );
 
-    await triggerSupportQuestionsReconcile(manha.deps);
-    await triggerSupportQuestionsReconcile(tarde.deps);
+    expect(new Set(chaves).size).toBe(6);
+  });
 
-    expect(manha.enqueued[0]?.dedupeKey).toBe("support-questions:speedbikers-loja-1:2026-08-25:1");
-    expect(tarde.enqueued[0]?.dedupeKey).toBe("support-questions:speedbikers-loja-1:2026-08-25:2");
+  it("um disparo manual não queima a rodada natural seguinte", async () => {
+    // Regressão do achado de 2026-08-25 (D-091): com chave por bloco de 6h,
+    // um `gcloud scheduler jobs run` consumia o bloco do dia e a execução
+    // natural seguinte era descartada em silêncio.
+    const manual = deps({ now: "2026-08-26T12:07:00.000Z" });
+    const natural = deps({ now: "2026-08-26T12:10:00.000Z" });
+
+    await triggerSupportQuestionsReconcile(manual.deps);
+    await triggerSupportQuestionsReconcile(natural.deps);
+
+    expect(manual.enqueued[0]?.dedupeKey).not.toBe(natural.enqueued[0]?.dedupeKey);
   });
 
   it("contabiliza deduplicados separadamente de enfileirados", async () => {

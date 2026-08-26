@@ -88,6 +88,15 @@ function fakeDb(options: {
         return chain({ data: null, error: null });
       },
       upsert: (row: Record<string, unknown>) => {
+        // `domain_events` passou a gravar por upsert (ON CONFLICT DO NOTHING,
+        // D-092) — sem esta bifurcação por tabela, os eventos cairiam no
+        // mesmo balde de `listings` e as asserções de diff ficariam cegas.
+        if (table === "domain_events") {
+          domainEvents.push(row);
+
+          return Promise.resolve({ data: null, error: null });
+        }
+
         upserted.push(row);
 
         return Promise.resolve(

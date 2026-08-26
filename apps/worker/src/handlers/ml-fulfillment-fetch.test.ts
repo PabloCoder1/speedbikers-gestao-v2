@@ -73,6 +73,13 @@ function fakeDb(options: {
 
         return Promise.resolve({ data: null, error: null });
       },
+      // upsert espelha insert: domain_events/stock_movements passaram a
+      // gravar por ON CONFLICT DO NOTHING (D-092).
+      upsert: (row: Record<string, unknown>) => {
+        inserted.push({ table, row });
+
+        return Promise.resolve({ data: null, error: null });
+      },
     }),
   } as unknown as FetchFulfillmentSnapshotsParams["db"];
 
@@ -125,6 +132,13 @@ function fakeDbWithPrevious(
         return snapshotFilterChain({});
       },
       insert: (row: Record<string, unknown>) => {
+        inserted.push({ table, row });
+
+        return Promise.resolve({ data: null, error: null });
+      },
+      // upsert espelha insert: domain_events/stock_movements passaram a
+      // gravar por ON CONFLICT DO NOTHING (D-092).
+      upsert: (row: Record<string, unknown>) => {
         inserted.push({ table, row });
 
         return Promise.resolve({ data: null, error: null });

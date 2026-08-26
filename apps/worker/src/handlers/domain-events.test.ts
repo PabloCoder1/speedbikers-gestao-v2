@@ -32,7 +32,10 @@ function fakeDb(errorForDedupKey?: { dedupKey: string; code: string; message: st
 
   const db = {
     from: () => ({
-      insert: (row: { dedup_key: string }) => {
+      // `upsert` desde D-092: a gravação passou a usar ON CONFLICT DO NOTHING
+      // para não transformar cada conflito esperado de `dedup_key` numa linha
+      // ERROR no log do Postgres.
+      upsert: (row: { dedup_key: string }) => {
         inserted.push(row);
 
         if (row.dedup_key === errorForDedupKey?.dedupKey) {
