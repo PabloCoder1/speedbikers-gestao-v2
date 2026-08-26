@@ -88,3 +88,29 @@ test("filtro por tipo sem dado mostra estado vazio, não erro", async ({ page })
   // "nenhum alert na página" é uma condição que nunca vale num app Next.
   await expect(page.getByText("Não foi possível carregar os atendimentos")).toHaveCount(0);
 });
+
+/**
+ * Triagem (Fase 7B, D-094) pela UI real, com login real e Postgres real.
+ *
+ * É o único teste que atravessa a cadeia inteira: clique → Server Action →
+ * RPC `security definer` → transação que atualiza o case E grava o evento.
+ * O teste de integração prova a RPC isolada; este prova que a tela chega
+ * até ela — inclusive a autorização, porque o usuário do seed é ADMIN e é
+ * `has_account_access` quem decide, não a interface.
+ */
+test("assumir um atendimento muda o status e marca como seu", async ({ page }) => {
+  const seed = await readSeedOutput();
+
+  await login(page, "/atendimento");
+
+  const row = page.getByRole("row", { name: new RegExp(seed.supportOpenExternalId) });
+  await expect(row).toContainText("Novo");
+
+  await row.getByRole("button", { name: "Assumir" }).click();
+
+  // Assumir promove NOVO -> EM_ATENDIMENTO: deixar em "Novo" mentiria para
+  // quem procura o que ainda não tem dono.
+  await expect(row).toContainText("Em atendimento");
+  await expect(row).toContainText("Você");
+  await expect(row.getByRole("button", { name: "Liberar" })).toBeVisible();
+});

@@ -13,6 +13,7 @@ import {
 import type { SupportCaseLinkRow } from "../../lib/support-case-reference";
 import { resolveSupportCaseReference } from "../../lib/support-case-reference";
 import { createClient } from "../../lib/supabase/server";
+import { TriageCell } from "./triage-cell";
 
 export const metadata = { title: "Caixa de Entrada — Speed Bikers Gestão" };
 
@@ -29,9 +30,12 @@ export const dynamic = "force-dynamic";
  *
  * **Leitura direta do Supabase, sem rota na `api`** (Modelo A, D-012) — é
  * exatamente a categoria que `docs/ARCHITECTURE.md` secao 4 descreve: read
- * model indexado, nenhum segredo envolvido. A triagem (assumir, mudar status,
- * resolver) é transação com evento de auditoria junto (D-084) e fica para a
- * fatia seguinte, como RPC.
+ * model indexado, nenhum segredo envolvido.
+ *
+ * **A triagem, ao contrário, passa por RPC** (D-094, `triage_support_case`):
+ * ela atualiza `support_cases` E acrescenta `support_case_events` na MESMA
+ * transação (D-084), e duas escritas separadas do navegador não teriam como
+ * ser atômicas. É a exceção deliberada ao padrão de escrita desta tela.
  *
  * **Uma tela, não seis.** `docs/PRODUCT_REQUIREMENTS.md` lista "Perguntas",
  * "Mensagens", "Reclamações", "Mediações" e "Devoluções" como grupos da
@@ -75,7 +79,9 @@ interface SupportCaseRow {
   is_mediation: boolean;
   has_return: boolean;
   last_activity_at: string;
+  assignee_id: string | null;
   ml_accounts: { label: string } | null;
+  profiles: { full_name: string | null } | null;
   support_case_links: SupportCaseLinkRow[] | null;
 }
 
@@ -173,6 +179,11 @@ export default async function AtendimentoPage({
   const query = await searchParams;
   const supabase = await createClient();
 
+  // Só para a `TriageCell` distinguir "Você" de outro responsável — a
+  // autorização real acontece dentro da RPC, nunca a partir deste id.
+  const { data: auth } = await supabase.auth.getUser();
+  const viewerId = auth.user?.id ?? null;
+
   const membership = await supabase
     .from("organization_members")
     .select("organization_id")
@@ -222,7 +233,7 @@ export default async function AtendimentoPage({
   let casesQuery = supabase
     .from("support_cases")
     .select(
-      "id, channel, external_case_id, external_status, internal_status, priority, remote_reply_state, is_mediation, has_return, last_activity_at, ml_accounts(label), support_case_links(order_id, sku_id, listing_id, external_entity_kind, external_entity_id, skus(sku), listings(item_id, title))",
+      "id, channel, external_case_id, external_status, internal_status, priority, remote_reply_state, is_mediation, has_return, last_activity_at, assignee_id, ml_accounts(label), profiles(full_name), support_case_links(order_id, sku_id, listing_id, external_entity_kind, external_entity_id, skus(sku), listings(item_id, title))",
     )
     .order("last_activity_at", { ascending: false })
     .limit(ROW_LIMIT);
@@ -320,8 +331,7 @@ export default async function AtendimentoPage({
                   <th style={th}>Conta</th>
                   <th style={th}>Tipo</th>
                   <th style={th}>Produto / referência</th>
-                  <th style={th}>Status interno</th>
-                  <th style={th}>Prioridade</th>
+                  <th style={th}>Triagem</th>
                   <th style={th}>Resposta</th>
                   <th style={th}>Última atividade</th>
                 </tr>
@@ -367,13 +377,23 @@ export default async function AtendimentoPage({
                         )}
                       </td>
                       <td style={td}>
-                        <StatusPill
-                          code={row.internal_status}
-                          label={supportInternalStatusLabel(row.internal_status)}
+                        <div style={{ display: "flex", gap: "0.25rem", marginBottom: "0.25rem" }}>
+                          <StatusPill
+                            code={row.internal_status}
+                            label={supportInternalStatusLabel(row.internal_status)}
+                          />
+                          <StatusPill code={row.priority} label={supportPriorityLabel(row.priority)} />
+                        </div>
+                        <TriageCell
+                          triage={{
+                            id: row.id,
+                            internalStatus: row.internal_status,
+                            priority: row.priority,
+                            assigneeId: row.assignee_id,
+                            assigneeName: row.profiles?.full_name ?? null,
+                            viewerId,
+                          }}
                         />
-                      </td>
-                      <td style={td}>
-                        <StatusPill code={row.priority} label={supportPriorityLabel(row.priority)} />
                       </td>
                       <td style={td}>
                         <StatusPill

@@ -3657,6 +3657,50 @@ export type Database = {
           sublabel: string
         }[]
       }
+      triage_support_case: {
+        Args: {
+          p_assignee_id?: string
+          p_case_id: string
+          p_clear_assignee?: boolean
+          p_internal_status?: string
+          p_priority?: string
+        }
+        Returns: {
+          assignee_id: string | null
+          channel: string
+          conversation_path: string | null
+          created_at: string
+          customer_external_id: number | null
+          external_case_id: string
+          external_case_key: string
+          external_stage: string | null
+          external_status: string | null
+          external_substatus: string | null
+          external_type: string | null
+          has_return: boolean
+          id: string
+          internal_status: string
+          is_mediation: boolean
+          last_activity_at: string
+          last_inbound_at: string | null
+          last_outbound_at: string | null
+          ml_account_id: string
+          organization_id: string
+          pack_id: number | null
+          priority: string
+          remote_reply_block_reason: string | null
+          remote_reply_state: string
+          remote_unread_count: number
+          resolved_at: string | null
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "support_cases"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       update_action_status: {
         Args: { p_assignee_id?: string; p_id: string; p_status: string }
         Returns: {
@@ -3898,3 +3942,4 @@ export const Constants = {
     Enums: {},
   },
 } as const
+

@@ -1346,6 +1346,28 @@ Não é específico de `questions`: **nunca chegou `orders_v2`, `post_purchase`,
 
 **Impacto:** `apps/api/src/ip-allowlist.ts`, `ip-allowlist.test.ts`, `app.test.ts`. Fecha o `PENDENTE` de D-045.
 
+## D-094 — Triagem do atendimento é RPC transacional, e não escrita direta sob RLS
+
+**Contexto:** próxima etapa registrada no `docs/HANDOFF.md`. A Caixa de Entrada (D-090) é só leitura — ninguém consegue assumir um atendimento, mudar status ou resolver. Sem isso, duas pessoas respondem a mesma pergunta.
+
+**Decisão 1 — RPC, a exceção deliberada ao padrão de escrita do `web`.** O resto da tela lê e escreve direto sob RLS (D-012). A triagem não pode: precisa atualizar `support_cases` **E** acrescentar `support_case_events` na MESMA transação (D-084 decidiu que o histórico é append-only e que "nada importante depende apenas do estado visual da interface"). Duas escritas separadas do navegador não têm como ser atômicas, e um case que muda de status sem o evento perde quem decidiu e quando. `triage_support_case` é `security definer` e refaz as duas autorizações por dentro: acesso à CONTA (`has_account_access`, a mesma regra da leitura) e papel `ADMIN`/`GESTOR`/`OPERADOR` — `ANALISTA`/`VISUALIZADOR` leem e não triam.
+
+**Decisão 2 — `resolved_at` é derivado do status, não pedido à interface.** A constraint `support_cases_resolution_coherent` exige `resolved_at` preenchido em `RESOLVIDO` e **nulo em qualquer outro estado**. Se a tela precisasse mandar o campo, reabrir um atendimento resolvido falharia por uma constraint que a interface não tem por que conhecer. A RPC calcula: entrando em `RESOLVIDO` preenche (preservando o valor original numa segunda triagem), saindo dele limpa.
+
+**Decisão 3 — parâmetro nulo é "não mexer"; desatribuir exige pedido explícito.** `p_clear_assignee`, separado. Sem isso não haveria como distinguir "não mudei o responsável" de "quero liberar" — e liberar um atendimento assumido por engano é operação real, diferente de `update_action_status` (D-064), que registrou explicitamente não ter "desatribuir".
+
+**Decisão 4 — o responsável precisa ser da MESMA organização.** Sem a checagem, daria para pendurar o atendimento em alguém de fora, que depois o veria na própria lista. É a mesma classe de fronteira que a validação de `seller_id` cumpre na ingestão (D-087).
+
+**Decisão 5 — chamada que não muda nada não gera evento.** Histórico append-only só tem valor se cada linha for uma decisão real; um select que reenvia o mesmo status viraria ruído no lugar onde se procura "quem mexeu nisso".
+
+**Decisão 6 — a interface NÃO esconde o controle de quem não pode triar.** Esconder daria a impressão de que a tela é a barreira, que é o que `docs/ARCHITECTURE.md` secao 18 proíbe presumir. Quem não tem permissão recebe a mensagem da própria RPC ao tentar.
+
+**Defeito latente encontrado ao escrever os testes, NÃO corrigido aqui:** `support_case_events.actor_user_id` é `references profiles(id) on delete set null` — e um SET NULL é um UPDATE, que o trigger append-only da própria tabela **recusa**. Consequência em produção: **um usuário que já triou não pode ser removido do sistema**, e o erro que aparece fala de append-only, não de "usuário em uso". Apareceu porque a limpeza global da suíte de integração quebrou; contornado com um ator dedicado fora do padrão de limpeza (mesma técnica de D-065). A correção real é uma decisão à parte — o precedente do projeto para ator de auditoria é `on delete restrict` (`stock_movements.created_by`), que torna o bloqueio explícito mas não o remove; a alternativa é a linha de auditoria não depender do usuário ainda existir. Registrado no HANDOFF.
+
+**Verificação:** 11 testes de integração contra Postgres real (`rls.integration.test.ts`, 323 no total) cobrindo caminho feliz com evento gravado, `resolved_at` preenchido e limpo, atribuir/liberar, no-op sem evento, e as cinco fronteiras de recusa (papel, acesso à conta, status inválido, responsável de outra organização, atribuir+desatribuir juntos) mais `anon`. **E um teste E2E** (`atendimento.spec.ts`, 9 no total, todos verdes) que atravessa a cadeia inteira pela UI real com login real: clique → Server Action → RPC → transação. `check` 29/29 e `build` 8/8 verdes. Tipos regenerados contra o banco local (+45 linhas, só a função nova).
+
+**Impacto:** `supabase/migrations/20260826120000_create_support_case_triage.sql` (novo). `apps/web/app/atendimento/actions.ts` e `triage-cell.tsx` (novos), `page.tsx` (coluna Triagem, embed de `profiles`). `packages/db/src/types.ts`, `rls.integration.test.ts` (+11), `apps/web/e2e/atendimento.spec.ts` (+1).
+
 ## Como adicionar nova decisão
 
 Registrar:

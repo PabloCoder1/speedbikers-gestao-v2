@@ -4961,4 +4961,214 @@ describe("support read model (Fase 7B, D-085; modelo D-084)", () => {
       ]);
     });
   });
+  describe("triage_support_case (Fase 7B, D-094)", () => {
+    // Case dedicado: os outros do describe são lidos por testes de RLS que
+    // esperam `internal_status = 'NOVO'`, e a triagem MUDA estado de verdade
+    // (asUserPersist commita).
+    const CASE_TRIAGE = "f7144444-0000-4000-8000-000000000004";
+
+    // Ator dedicado, FORA do padrão `%@rls.test` que a limpeza global apaga —
+    // mesma técnica de `RESPONSAVEL_AJUSTE` (D-065). Aqui o motivo é ainda
+    // mais direto: `support_case_events.actor_user_id` é
+    // `on delete set null`, e um SET NULL é um UPDATE — que o trigger
+    // append-only de `support_case_events` RECUSA. Apagar o perfil de quem
+    // triou quebraria a limpeza de TODA a suíte.
+    //
+    // Isso expõe um defeito latente do schema de D-085, registrado em D-094:
+    // em produção, um usuário que já triou não pode ser removido, e o erro
+    // que aparece fala de append-only, não de usuário em uso.
+    const TRIADOR = "dddddddd-0000-4000-8000-000000000009";
+
+    beforeAll(async () => {
+      await client.query(
+        `insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                                email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+         values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',
+                 'triador@supporttest.local','x',now(),'{"full_name":"Triador Supporttest"}',now(),now())
+         on conflict (id) do nothing`,
+        [TRIADOR],
+      );
+
+      await client.query(
+        `insert into public.organization_members (organization_id, user_id, role)
+         values ($1,$2,'GESTOR') on conflict do nothing`,
+        [ORG_SB, TRIADOR],
+      );
+
+      // GESTOR não alcança conta por si só — `has_account_access` é
+      // automático apenas para ADMIN (D-054). Precisa da permissão explícita,
+      // que é justamente o que a triagem exige além do papel.
+      await client.query(
+        `insert into public.user_account_permissions (user_id, ml_account_id)
+         values ($1, $2) on conflict do nothing`,
+        [TRIADOR, ACCOUNT_A],
+      );
+
+      await client.query(
+        `insert into public.support_cases
+           (id, organization_id, ml_account_id, channel, external_case_key,
+            external_case_id, external_status, internal_status, priority,
+            remote_unread_count, last_activity_at)
+         values ($1, $2, $3, 'QUESTION', 'question:840777', '840777',
+                 'UNANSWERED', 'NOVO', 'NORMAL', 0, now())
+         on conflict (id) do nothing`,
+        [CASE_TRIAGE, ORG_SB, ACCOUNT_A],
+      );
+    });
+
+    it("ADMIN tria: muda status E grava o evento na MESMA transação", async () => {
+      await asUserPersist(
+        TRIADOR,
+        `select public.triage_support_case('${CASE_TRIAGE}'::uuid, 'EM_ATENDIMENTO')`,
+      );
+
+      const caso = await client.query<{ internal_status: string; resolved_at: string | null }>(
+        `select internal_status, resolved_at from public.support_cases where id = $1`,
+        [CASE_TRIAGE],
+      );
+
+      expect(caso.rows[0]?.internal_status).toBe("EM_ATENDIMENTO");
+      expect(caso.rows[0]?.resolved_at).toBeNull();
+
+      // O evento é o ponto da RPC existir: sem ele, um UPDATE solto teria o
+      // mesmo efeito visível e perderia quem decidiu.
+      const evento = await client.query<{ event_type: string; source: string; actor_user_id: string }>(
+        `select event_type, source, actor_user_id from public.support_case_events
+         where support_case_id = $1 order by created_at desc limit 1`,
+        [CASE_TRIAGE],
+      );
+
+      expect(evento.rows[0]).toMatchObject({
+        event_type: "support.case.triaged",
+        source: "USER",
+        actor_user_id: TRIADOR,
+      });
+    });
+
+    it("RESOLVIDO preenche resolved_at sozinho — a interface não precisa saber da constraint", async () => {
+      await asUserPersist(
+        TRIADOR,
+        `select public.triage_support_case('${CASE_TRIAGE}'::uuid, 'RESOLVIDO')`,
+      );
+
+      const caso = await client.query<{ resolved_at: string | null }>(
+        `select resolved_at from public.support_cases where id = $1`,
+        [CASE_TRIAGE],
+      );
+
+      expect(caso.rows[0]?.resolved_at).not.toBeNull();
+    });
+
+    it("reabrir limpa resolved_at — senão a constraint recusaria a própria reabertura", async () => {
+      await asUserPersist(
+        TRIADOR,
+        `select public.triage_support_case('${CASE_TRIAGE}'::uuid, 'AGUARDANDO_CLIENTE')`,
+      );
+
+      const caso = await client.query<{ internal_status: string; resolved_at: string | null }>(
+        `select internal_status, resolved_at from public.support_cases where id = $1`,
+        [CASE_TRIAGE],
+      );
+
+      expect(caso.rows[0]).toEqual({ internal_status: "AGUARDANDO_CLIENTE", resolved_at: null });
+    });
+
+    it("atribui e depois libera o responsável", async () => {
+      await asUserPersist(
+        TRIADOR,
+        `select public.triage_support_case('${CASE_TRIAGE}'::uuid, null, null, '${TRIADOR}'::uuid)`,
+      );
+
+      const atribuido = await client.query<{ assignee_id: string | null }>(
+        `select assignee_id from public.support_cases where id = $1`,
+        [CASE_TRIAGE],
+      );
+      expect(atribuido.rows[0]?.assignee_id).toBe(TRIADOR);
+
+      await asUserPersist(
+        TRIADOR,
+        `select public.triage_support_case('${CASE_TRIAGE}'::uuid, null, null, null, true)`,
+      );
+
+      const liberado = await client.query<{ assignee_id: string | null }>(
+        `select assignee_id from public.support_cases where id = $1`,
+        [CASE_TRIAGE],
+      );
+      expect(liberado.rows[0]?.assignee_id).toBeNull();
+    });
+
+    it("chamada que não muda nada NÃO gera evento — histórico só guarda decisão real", async () => {
+      const antes = await client.query<{ total: string }>(
+        `select count(*)::text as total from public.support_case_events where support_case_id = $1`,
+        [CASE_TRIAGE],
+      );
+
+      await asUserPersist(
+        TRIADOR,
+        `select public.triage_support_case('${CASE_TRIAGE}'::uuid, 'AGUARDANDO_CLIENTE')`,
+      );
+
+      const depois = await client.query<{ total: string }>(
+        `select count(*)::text as total from public.support_case_events where support_case_id = $1`,
+        [CASE_TRIAGE],
+      );
+
+      expect(depois.rows[0]?.total).toBe(antes.rows[0]?.total);
+    });
+
+    it("ANALISTA com acesso à conta é recusado pelo PAPEL", async () => {
+      // ANALISTA_SB tem user_account_permissions em ACCOUNT_A: alcança o
+      // atendimento para LER, mas triagem é ADMIN/GESTOR/OPERADOR (D-084).
+      await expect(
+        asUserPersist(
+          ANALISTA_SB,
+          `select public.triage_support_case('${CASE_TRIAGE}'::uuid, 'RESOLVIDO')`,
+        ),
+      ).rejects.toThrow(/papel sem permissao/i);
+    });
+
+    it("usuário sem acesso à conta é recusado ANTES do papel", async () => {
+      await expect(
+        asUserPersist(
+          SEM_ORG,
+          `select public.triage_support_case('${CASE_TRIAGE}'::uuid, 'RESOLVIDO')`,
+        ),
+      ).rejects.toThrow(/sem permissao para este atendimento/i);
+    });
+
+    it("status fora dos cinco valores é recusado", async () => {
+      await expect(
+        asUserPersist(
+          TRIADOR,
+          `select public.triage_support_case('${CASE_TRIAGE}'::uuid, 'FECHADO')`,
+        ),
+      ).rejects.toThrow(/status interno invalido/i);
+    });
+
+    it("responsável de OUTRA organização é recusado", async () => {
+      // Sem esta checagem, o atendimento apareceria na lista de "meus
+      // atendimentos" de alguém de fora da organização.
+      await expect(
+        asUserPersist(
+          TRIADOR,
+          `select public.triage_support_case('${CASE_TRIAGE}'::uuid, null, null, '${DE_OUTRA_ORG}'::uuid)`,
+        ),
+      ).rejects.toThrow(/nao pertence a esta organizacao/i);
+    });
+
+    it("atribuir e desatribuir na mesma chamada é recusado", async () => {
+      await expect(
+        asUserPersist(
+          TRIADOR,
+          `select public.triage_support_case('${CASE_TRIAGE}'::uuid, null, null, '${TRIADOR}'::uuid, true)`,
+        ),
+      ).rejects.toThrow(/atribuir e desatribuir/i);
+    });
+
+    it("anon não executa a RPC", async () => {
+      await expect(
+        asAnon(`select public.triage_support_case('${CASE_TRIAGE}'::uuid, 'RESOLVIDO')`),
+      ).rejects.toThrow(/permission denied/i);
+    });
+  });
 });
