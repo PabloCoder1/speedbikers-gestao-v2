@@ -49,6 +49,7 @@ const ML_SELLER_ID = 419_059_118;
 const SUPPORT_OPEN_EXTERNAL_ID = "900001";
 const SUPPORT_RESOLVED_EXTERNAL_ID = "900002";
 const SUPPORT_RESOLVED_ITEM_ID = "MLB1623490410";
+const SUPPORT_QUESTION_TEXT = "Esse bau serve na CB 500X 2023?";
 
 function requireServiceRoleKey(): string {
   if (SERVICE_ROLE_KEY === undefined || SERVICE_ROLE_KEY === "") {
@@ -351,6 +352,52 @@ async function main(): Promise<void> {
     throw clearLinks.error;
   }
 
+  // Transcript do case aberto (D-095): uma mensagem normal do cliente e uma
+  // com conteúdo BANIDO. A segunda existe porque é a regra sutil — o Mercado
+  // Livre devolve texto VAZIO em conteúdo banido, e a tela precisa dizer
+  // "removido", não mostrar uma bolha em branco.
+  const clearMessages = await db
+    .from("support_messages")
+    .delete()
+    .eq("support_case_id", openCaseId);
+
+  if (clearMessages.error !== null) {
+    throw clearMessages.error;
+  }
+
+  const messages = await db.from("support_messages").insert([
+    {
+      organization_id: organizationId,
+      ml_account_id: mlAccountId,
+      support_case_id: openCaseId,
+      external_message_key: `question:${SUPPORT_OPEN_EXTERNAL_ID}:question`,
+      external_message_id: SUPPORT_OPEN_EXTERNAL_ID,
+      direction: "INBOUND",
+      sender_kind: "CUSTOMER",
+      body: SUPPORT_QUESTION_TEXT,
+      body_state: "AVAILABLE",
+      remote_status: "UNANSWERED",
+      occurred_at: new Date(now - 7_200_000).toISOString(),
+    },
+    {
+      organization_id: organizationId,
+      ml_account_id: mlAccountId,
+      support_case_id: openCaseId,
+      external_message_key: `question:${SUPPORT_OPEN_EXTERNAL_ID}:banida`,
+      external_message_id: null,
+      direction: "INBOUND",
+      sender_kind: "CUSTOMER",
+      body: null,
+      body_state: "BANNED",
+      remote_status: "BANNED",
+      occurred_at: new Date(now - 3_600_000).toISOString(),
+    },
+  ]);
+
+  if (messages.error !== null) {
+    throw messages.error;
+  }
+
   const links = await db.from("support_case_links").insert([
     {
       organization_id: organizationId,
@@ -384,6 +431,7 @@ async function main(): Promise<void> {
     supportOpenExternalId: SUPPORT_OPEN_EXTERNAL_ID,
     supportResolvedExternalId: SUPPORT_RESOLVED_EXTERNAL_ID,
     supportResolvedItemId: SUPPORT_RESOLVED_ITEM_ID,
+    supportQuestionText: SUPPORT_QUESTION_TEXT,
   };
 
   await mkdir(dirname(SEED_OUTPUT_PATH), { recursive: true });

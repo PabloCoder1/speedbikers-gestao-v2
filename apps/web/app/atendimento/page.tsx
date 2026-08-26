@@ -345,7 +345,9 @@ export default async function AtendimentoPage({
                     <tr key={row.id}>
                       <td style={td}>{row.ml_accounts?.label ?? "—"}</td>
                       <td style={td}>
-                        {supportChannelLabel(row.channel)}
+                        <Link href={`/atendimento/${row.id}`} style={{ color: "var(--sb-primary)" }}>
+                          {supportChannelLabel(row.channel)}
+                        </Link>
                         {rowFacets.length > 0 && (
                           <div style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
                             {rowFacets.join(" · ")}

@@ -1368,6 +1368,26 @@ Não é específico de `questions`: **nunca chegou `orders_v2`, `post_purchase`,
 
 **Impacto:** `supabase/migrations/20260826120000_create_support_case_triage.sql` (novo). `apps/web/app/atendimento/actions.ts` e `triage-cell.tsx` (novos), `page.tsx` (coluna Triagem, embed de `profiles`). `packages/db/src/types.ts`, `rls.integration.test.ts` (+11), `apps/web/e2e/atendimento.spec.ts` (+1).
 
+## D-095 — Detalhe do atendimento: a conversa aparece, e `body_state` nunca vira bolha em branco
+
+**Contexto:** próxima etapa registrada no `docs/HANDOFF.md`, e pré-requisito do envio de resposta — a Caixa de Entrada (D-090) mostra QUE existe um atendimento, mas não o que a pessoa perguntou. `support_messages` guarda o transcript desde D-086 e nenhuma tela o consumia.
+
+**Decisão 1 — `body_state` é renderizado como texto explícito, nunca como ausência.** É a regra sutil de D-086: o Mercado Livre devolve texto **vazio** em conteúdo `BANNED`, e `UNDER_REVIEW` vira `MODERATED`. Mostrar uma bolha em branco apagaria duas informações de uma vez — que existiu uma mensagem ali, e por que ela não está visível. Estado diferente de `AVAILABLE` vira o rótulo em itálico, visualmente distinto do que a pessoa escreveu. Coberto por E2E com uma mensagem banida no seed.
+
+**Decisão 2 — atendimento inexistente e atendimento de outra conta dão o MESMO 404.** A RLS já esconde o que o usuário não alcança, e `maybeSingle` devolve `null` nos dois casos. Distinguir ("existe mas você não pode ver") revelaria a existência de um atendimento de outra conta — o mesmo raciocínio que faz a tela de login não dizer se o e-mail existe.
+
+**Decisão 3 — a fonte do prazo é exibida junto do prazo.** D-084 é explícito: prazo ausente nunca vira estimativa apresentada como oficial, e toda exibição informa a fonte. A seção só aparece quando há prazo — nenhuma ingestão preenche `support_case_deadlines` hoje, e uma seção vazia permanente seria promessa sem lastro.
+
+**Decisão 4 — `support_case_events.event_type` ganhou vocabulário PRÓPRIO de rótulos**, separado de `domain_events.event_type`. São coisas diferentes: só transições escolhidas viram `domain_events support.*` (D-084), enquanto o histórico do atendimento registra tudo, inclusive o que nunca notifica. Misturar os dois mapas faria um código novo de um aparecer traduzido pelo outro.
+
+**Decisão 5 — a triagem é a MESMA `TriageCell` da lista.** Sem componente novo e sem segunda implementação: a autorização real está na RPC de D-094, e duplicar o controle criaria duas superfícies para manter em sincronia.
+
+**Escopo deliberadamente ausente:** envio de resposta (comando privilegiado da `apps/api`, D-071/D-084), sugestão do Copiloto, anexos e paginação do transcript (teto de 50 eventos no histórico; a conversa não tem teto porque uma pergunta tem duas mensagens).
+
+**Verificação:** `check` 29/29, `build` 8/8 (`/atendimento/[caseId]` aparece como rota dinâmica), **10 specs E2E verdes** contra Postgres real com login real — o novo atravessa lista para detalhe e prova o texto real da pergunta, a mensagem banida nomeada, o link do SKU e a seção de histórico. O seed do E2E ganhou o transcript, incluindo de propósito uma mensagem `BANNED`: sem ela, a regra mais sutil da tela não teria cobertura.
+
+**Impacto:** `apps/web/app/atendimento/[caseId]/page.tsx` (novo), `apps/web/app/atendimento/page.tsx` (linha vira link), `apps/web/lib/labels.ts` (quatro mapas novos), `apps/web/e2e/{seed,seed-output}.ts` e `atendimento.spec.ts` (+1). Só `apps/web` — deploy automático pela Vercel.
+
 ## Como adicionar nova decisão
 
 Registrar:

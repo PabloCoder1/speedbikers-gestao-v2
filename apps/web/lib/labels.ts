@@ -170,6 +170,48 @@ const SUPPORT_REPLY_STATE: Record<string, string> = {
   BLOCKED: "Bloqueado",
 };
 
+/**
+ * `support_messages.body_state` (D-086) — o estado do CONTEÚDO, não da
+ * mensagem. Texto vazio por moderação não é o mesmo que mensagem vazia, e a
+ * tela precisa dizer qual dos dois é: o Mercado Livre devolve string vazia
+ * em conteúdo banido, e tratar isso como "sem texto" apagaria a informação
+ * de que existiu uma mensagem ali.
+ */
+const SUPPORT_BODY_STATE: Record<string, string> = {
+  AVAILABLE: "Disponível",
+  EMPTY: "Sem texto",
+  BANNED: "Removido pelo Mercado Livre",
+  MODERATED: "Em moderação",
+  UNAVAILABLE: "Indisponível",
+};
+
+/** `support_messages.sender_kind` (D-084). */
+const SUPPORT_SENDER_KIND: Record<string, string> = {
+  CUSTOMER: "Cliente",
+  SELLER: "Você (vendedor)",
+  MERCADO_LIVRE_AGENT: "Agente do Mercado Livre",
+  MEDIATOR: "Mediador",
+  SYSTEM: "Sistema",
+  UNKNOWN: "Desconhecido",
+};
+
+/**
+ * `support_case_events.event_type` — vocabulário PRÓPRIO da auditoria de
+ * atendimento, distinto de `domain_events.event_type` (`EVENT_TYPE` acima).
+ * Só transições escolhidas viram `domain_events support.*` (D-084); aqui
+ * entra tudo que o histórico registra, inclusive o que nunca notifica.
+ */
+const SUPPORT_CASE_EVENT: Record<string, string> = {
+  "support.case.triaged": "Triagem alterada",
+};
+
+/** `support_case_deadlines.deadline_kind` (D-084). */
+const SUPPORT_DEADLINE_KIND: Record<string, string> = {
+  FIRST_RESPONSE: "Primeira resposta",
+  NEXT_ACTION: "Próxima ação",
+  RESOLUTION: "Resolução",
+};
+
 function lookup(table: Record<string, string>, code: string): string {
   return table[code] ?? code;
 }
@@ -190,6 +232,10 @@ export const supportChannelLabel = (code: string): string => lookup(SUPPORT_CHAN
 export const supportInternalStatusLabel = (code: string): string => lookup(SUPPORT_INTERNAL_STATUS, code);
 export const supportPriorityLabel = (code: string): string => lookup(SUPPORT_PRIORITY, code);
 export const supportReplyStateLabel = (code: string): string => lookup(SUPPORT_REPLY_STATE, code);
+export const supportBodyStateLabel = (code: string): string => lookup(SUPPORT_BODY_STATE, code);
+export const supportSenderKindLabel = (code: string): string => lookup(SUPPORT_SENDER_KIND, code);
+export const supportDeadlineKindLabel = (code: string): string => lookup(SUPPORT_DEADLINE_KIND, code);
+export const supportCaseEventLabel = (code: string): string => lookup(SUPPORT_CASE_EVENT, code);
 
 /** Cor de destaque por estado. `null` = sem destaque, o padrão da tabela. */
 export function statusTone(code: string): "ok" | "warn" | "bad" | null {

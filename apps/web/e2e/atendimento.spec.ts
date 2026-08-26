@@ -114,3 +114,36 @@ test("assumir um atendimento muda o status e marca como seu", async ({ page }) =
   await expect(row).toContainText("Você");
   await expect(row.getByRole("button", { name: "Liberar" })).toBeVisible();
 });
+
+/**
+ * Detalhe do atendimento (Fase 7B, D-095) — a tela que torna possível
+ * responder, porque é onde a pergunta finalmente aparece.
+ *
+ * Prova a regra sutil de `body_state` (D-086): conteúdo banido chega da API
+ * com texto VAZIO, e mostrar uma bolha em branco apagaria a informação de que
+ * houve uma mensagem e de por que ela não está lá.
+ */
+test("detalhe mostra a conversa e distingue conteúdo banido de mensagem vazia", async ({ page }) => {
+  const seed = await readSeedOutput();
+
+  await login(page, "/atendimento");
+
+  await page
+    .getByRole("row", { name: new RegExp(seed.supportOpenExternalId) })
+    .getByRole("link", { name: "Pergunta" })
+    .click();
+
+  await expect(
+    page.getByRole("heading", { level: 1, name: new RegExp(seed.supportOpenExternalId) }),
+  ).toBeVisible();
+
+  // O texto real da pergunta — é isto que faltava para conseguir responder.
+  await expect(page.getByText(seed.supportQuestionText)).toBeVisible();
+
+  // A mensagem banida aparece nomeada, não como espaço em branco.
+  await expect(page.getByText("Removido pelo Mercado Livre").first()).toBeVisible();
+
+  // Contexto que a operação precisa junto: qual produto e o histórico.
+  await expect(page.getByRole("link", { name: seed.skuCode })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Histórico" })).toBeVisible();
+});

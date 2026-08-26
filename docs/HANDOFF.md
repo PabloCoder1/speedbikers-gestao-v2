@@ -30,7 +30,15 @@ A fonte de verdade continua sendo:
 - O Checkpoint de Consolidação Pré-Fase 7 está fechado por completo desde 2026-08-25.
 - **Fase 7B — Central de Atendimento/SAC Mercado Livre ingerindo Perguntas EM PRODUÇÃO desde 2026-08-25.** D-083 confirmou endpoints/payloads; D-084 aprovou o modelo; D-085 materializou seis tabelas; D-086 acrescentou contrato/mapper/persistência idempotente; D-087 registrou `sync.support.questions`; **D-088 ligou o produtor** — o ACK do webhook roteia `topic=questions` direto para esse job — e os dois serviços foram publicados (`worker-00020-6xp`/`api-00016-5qd`). **D-089 fechou a reconciliação** e **D-090 entregou a Caixa de Entrada** (`/atendimento`) — o que é ingerido finalmente é visível. Continua sem triagem humana, `domain_events` de SAC, envio de resposta e sem ingestão de mensagens/reclamações/devoluções/mediações.
 
-### Última etapa concluída — D-094 (triagem do atendimento)
+### Última etapa concluída — D-095 (detalhe do atendimento)
+
+- `/atendimento/[caseId]`: transcript de `support_messages`, cabeçalho com situação/resposta remota/produto, vínculos, prazos (com a FONTE junto, D-084), histórico de auditoria e a mesma `TriageCell` da lista. A linha da Caixa de Entrada agora leva até aqui.
+- **A regra sutil que a tela existe para respeitar**: conteúdo `BANNED`/`MODERATED` chega da API com texto VAZIO (D-086). Renderizar bolha em branco apagaria que existiu uma mensagem E por que ela não está visível — vira rótulo explícito em itálico. Coberto por E2E com mensagem banida no seed.
+- Atendimento inexistente e atendimento de outra conta dão o MESMO 404: distinguir revelaria a existência de um atendimento que a RLS esconde.
+- `support_case_events.event_type` ganhou mapa de rótulos PRÓPRIO, separado de `domain_events.event_type` — são vocabulários diferentes.
+- **10 specs E2E verdes**, `check` 29/29, `build` 8/8. Só `apps/web`: deploy automático pela Vercel, sem Cloud Run nem migration.
+
+### Etapa anterior — D-094 (triagem do atendimento)
 
 - `triage_support_case` (RPC `security definer`, migration `20260826120000`): atualiza `support_cases` E acrescenta `support_case_events` na MESMA transação. É a exceção deliberada ao padrão de escrita direta sob RLS do resto da tela — duas escritas do navegador não teriam como ser atômicas, e um case que muda de status sem o evento perde quem decidiu.
 - Autorização refeita por dentro: acesso à CONTA (`has_account_access`) **e** papel ADMIN/GESTOR/OPERADOR. ANALISTA/VISUALIZADOR leem e não triam. A tela NÃO esconde o controle — esconder daria a impressão de que a interface é a barreira.
@@ -90,9 +98,9 @@ A fonte de verdade continua sendo:
 
 **Ordem para chegar lá** — a triagem vem primeiro por necessidade prática, não por preferência: sem ela, duas pessoas respondem a mesma pergunta.
 
-1. **Triagem interna** (próxima etapa registrada, detalhe abaixo).
-2. **Detalhe do atendimento** — a Caixa de Entrada é lista; para responder é preciso ver o texto da pergunta e o transcript (`support_messages` já guarda os dois).
-3. **Envio de resposta** — `POST /answers`, 2.000 caracteres (D-083), confirmação humana explícita, `support_reply_attempts` append-only por `client_request_id`.
+1. ~~**Triagem interna**~~ — concluída em 2026-08-26 (D-094).
+2. ~~**Detalhe do atendimento**~~ — concluído em 2026-08-26 (D-095).
+3. **Envio de resposta — a PRÓXIMA ETAPA.** `POST /answers`, 2.000 caracteres (D-083), confirmação humana explícita. **Comando privilegiado da `apps/api`**, nunca escrita da tela: exige a credencial da conta, revalidação do estado remoto NA HORA do envio (o Mercado Livre pode ter bloqueado a pergunta no meio tempo — `remote_reply_state` é dica conservadora, não autorização, D-086 decisão 3) e auditoria própria. **`support_reply_attempts` ainda NÃO existe**: D-084 decisão 8 já definiu a forma (append-only, um registro por `client_request_id`, com usuário, sugestão opcional, texto final, resultado e ID/erro remoto) e ela ficou de fora da migration read-only de D-085. Sucesso também gera mensagem outbound; falha NÃO vira mensagem fictícia.
 
 **Defeito latente registrado em 2026-08-26 (D-094), a decidir à parte:** `support_case_events.actor_user_id` é `on delete set null`, e SET NULL é um UPDATE — que o trigger append-only da própria tabela recusa. **Um usuário que já triou não pode ser removido do sistema**, e o erro fala de append-only, não de "usuário em uso". Achado porque quebrou a limpeza da suíte de integração; contornado nos testes com um ator dedicado. A correção é decisão própria: o precedente do projeto para ator de auditoria é `on delete restrict` (`stock_movements.created_by`), que torna o bloqueio explícito mas não o remove; a alternativa é a linha de auditoria deixar de depender do usuário existir.
 

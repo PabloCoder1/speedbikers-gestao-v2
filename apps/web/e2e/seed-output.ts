@@ -19,6 +19,7 @@ export interface SeedOutput {
   supportOpenExternalId: string;
   supportResolvedExternalId: string;
   supportResolvedItemId: string;
+  supportQuestionText: string;
 }
 
 export const SEED_OUTPUT_PATH = resolve(dirname(fileURLToPath(import.meta.url)), ".seed-output.json");
