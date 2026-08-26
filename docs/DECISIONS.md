@@ -1310,6 +1310,10 @@ Não é específico de `questions`: **nunca chegou `orders_v2`, `post_purchase`,
 
 **Achado grave no caminho — a allowlist do webhook rejeitaria 100% das notificações reais.** `extractClientIp` devolve `undefined` quando o `X-Forwarded-For` tem **menos de duas entradas**, e a evidência de que é esse o caso real veio do único teste que já bateu no endpoint: o log de `webhook_origin_rejected` de 2026-08-25 saiu **sem o campo `ip`**, o que só acontece nesse ramo. É o `PENDENTE` de D-045 se materializando: a regra do penúltimo IP foi inferida da documentação de HTTPS Load Balancing e nunca foi exercitada. **Consequência prática: se o painel fosse configurado hoje, toda notificação tomaria 403 e o Mercado Livre desistiria após 8 tentativas, em silêncio.** Ainda NÃO corrigido — corrigir sem ver o header real seria repetir o erro de inferir. O log ganhou `webhook_forwarded_for_unparsed` com o header cru, para que uma única chamada de teste depois do deploy revele o formato verdadeiro e a correção seja feita sobre evidência.
 
+**Deployado e confirmado em 2026-08-26**: `worker-00023-pfs`, `api-00018-7cq` e o Scheduler em `*/10 * * * *`. A reconciliação rodou às 12h00 e 12h10 com 4 contas cada, ingerindo 1 pergunta real em cada rodada.
+
+**Observação que a cadência nova revelou, não bloqueante:** duas das quatro contas voltaram `job_failed` com "refresh do token em andamento por outra execução" às 12h00 — a trava de `refresh_locked_until` (D-046, existe porque o `refresh_token` é de uso único). É `retryable` e se resolveu sozinha em ~11 segundos, com as quatro contas concluindo. Com 6 execuções/hora a disputa fica mais provável, especialmente no minuto :00, quando os jobs horários também rodam. Cada ocorrência sai como ERROR no log — ironicamente, um pouco do ruído que esta mesma decisão foi limpar. Não corrigido aqui: é comportamento pré-existente, se cura sozinho, e cada conta só renova o token a cada ~6h, então a frequência é limitada. Fica registrado para quem for mexer em cadência de novo.
+
 **Impacto:** `apps/worker/src/handlers/stock-movements.ts`, `domain-events.ts`. `apps/api/src/support-questions-schedule.ts` + teste (+2 de regressão), `app.ts` (log do header cru). `infra/cloud-scheduler.sh` (cron). `packages/db/src/idempotent-writes.integration.test.ts` (novo). `.github/workflows/ci.yml`. Fakes de teste do worker atualizados para aceitar `upsert` — nenhum deles verificava o verbo, só o que foi gravado.
 
 ## D-093 — A allowlist do webhook era contornável por um header, e rejeitaria toda notificação legítima: o IP confiável é o ÚLTIMO do `X-Forwarded-For`
@@ -1337,6 +1341,8 @@ Não é específico de `questions`: **nunca chegou `orders_v2`, `post_purchase`,
 **Verificação:** dois testes de regressão nomeados como tal (`ip-allowlist.test.ts` e `app.test.ts`), provando que `54.88.218.97,<ip-do-atacante>` é RECUSADO e que uma entrada só é aceita. Os fixtures de todo o `app.test.ts` foram corrigidos para o formato real do Cloud Run — estavam todos em `<ip>,169.254.1.1`, formato que nunca existiu neste ambiente. `check` 29/29 e `build` 8/8 verdes.
 
 **Nota sobre o método:** a segunda medição foi um teste de contorno da autenticação contra o próprio sistema do usuário, feito para verificar um controle de segurança dele. A requisição foi única, o payload não correspondia a nenhuma conta real e o efeito foi nulo (`unknown_account`).
+
+**Deployado e confirmado em 2026-08-26** (`api-00019-n7w`): a MESMA requisição forjada que devolvia 200 agora devolve **403**. A falha está fechada em produção.
 
 **Impacto:** `apps/api/src/ip-allowlist.ts`, `ip-allowlist.test.ts`, `app.test.ts`. Fecha o `PENDENTE` de D-045.
 
