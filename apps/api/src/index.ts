@@ -72,6 +72,7 @@ const app = createApp({
   listingsSchedule: { db, enqueuer, logger },
   listingVisitsSchedule: { db, enqueuer, logger },
   supportQuestionsSchedule: { db, enqueuer, logger },
+  supportReply: { db, enqueuer, logger },
   salesAnomalyActionsSchedule: { db, enqueuer, logger },
   decisionOutcomesSchedule: { db, enqueuer, logger },
   copilot: {

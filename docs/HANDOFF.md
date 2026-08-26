@@ -30,7 +30,17 @@ A fonte de verdade continua sendo:
 - O Checkpoint de Consolidação Pré-Fase 7 está fechado por completo desde 2026-08-25.
 - **Fase 7B — Central de Atendimento/SAC Mercado Livre ingerindo Perguntas EM PRODUÇÃO desde 2026-08-25.** D-083 confirmou endpoints/payloads; D-084 aprovou o modelo; D-085 materializou seis tabelas; D-086 acrescentou contrato/mapper/persistência idempotente; D-087 registrou `sync.support.questions`; **D-088 ligou o produtor** — o ACK do webhook roteia `topic=questions` direto para esse job — e os dois serviços foram publicados (`worker-00020-6xp`/`api-00016-5qd`). **D-089 fechou a reconciliação** e **D-090 entregou a Caixa de Entrada** (`/atendimento`) — o que é ingerido finalmente é visível. Continua sem triagem humana, `domain_events` de SAC, envio de resposta e sem ingestão de mensagens/reclamações/devoluções/mediações.
 
-### Última etapa concluída — D-095 (detalhe do atendimento)
+### Última etapa concluída — D-096 (envio de resposta)
+
+- **A primeira escrita do projeto no Mercado Livre.** `POST /v1/support/cases/:caseId/reply` autoriza (ADMIN/GESTOR/OPERADOR), grava a tentativa PENDING e enfileira `support.reply.send`; o worker revalida, posta em `/answers`, resolve a tentativa e relê a pergunta para materializar a mensagem outbound.
+- **A `api` valida e enfileira, como todo comando privilegiado do projeto.** Ganho concreto: o `ensureAccessToken` com a trava do `refresh_token` de uso único (D-046) segue num lugar só. Duplicá-lo na `api` criaria dois refreshes concorrentes invalidando o token um do outro.
+- **`retryable: false` depois do POST, mesmo em 5xx** — a decisão mais importante da entrega. É a diferença deste job para todos os outros: num sync, 5xx significa "tente de novo"; aqui pode significar que a resposta chegou ao comprador. Antes do POST continua retryable, e a tentativa nem é resolvida.
+- **`support_reply_attempts` nasce PENDING antes da chamada** (refinamento de D-084 decisão 8, explicado em D-096): gravar só depois deixaria uma resposta entregue sem registro se o processo caísse no meio. Linha parada em PENDING = "não sabemos se saiu", com índice parcial para encontrá-las.
+- `clientRequestId` gerado no NAVEGADOR e mantido enquanto o texto não muda: duplo-clique, F5 e retry de rede convergem para a mesma tentativa.
+- **29 testes de unidade novos** (14 na `api`, 15 no worker), 5 de rota, 15 asserções de integração e 2 specs E2E de UI. `check` 29/29 e `build` 8/8.
+- **NÃO deployado, e o envio real nunca foi exercitado** — ver "Pendências técnicas imediatas".
+
+### Etapa anterior — D-095 (detalhe do atendimento)
 
 - `/atendimento/[caseId]`: transcript de `support_messages`, cabeçalho com situação/resposta remota/produto, vínculos, prazos (com a FONTE junto, D-084), histórico de auditoria e a mesma `TriageCell` da lista. A linha da Caixa de Entrada agora leva até aqui.
 - **A regra sutil que a tela existe para respeitar**: conteúdo `BANNED`/`MODERATED` chega da API com texto VAZIO (D-086). Renderizar bolha em branco apagaria que existiu uma mensagem E por que ela não está visível — vira rótulo explícito em itálico. Coberto por E2E com mensagem banida no seed.
@@ -92,21 +102,15 @@ A fonte de verdade continua sendo:
 
 ### Próxima etapa registrada
 
-**Observação pendente, não bloqueante:** confirmar a primeira execução natural de `v3-support-questions-reconcile` (18h20 de SP em diante) — esperado `support_questions_schedule_triggered` na `api` e `sync_support_questions_reconcile_done` no worker, com uma linha por conta em `sync_runs` (`resource='questions'`). Se as contas não tiverem perguntas em aberto, `items_processed: 0` é o resultado correto, não uma falha. **Agora dá para conferir pela tela**: `/atendimento` mostra o que foi ingerido, e `/sincronizacao` mostra o frescor por conta.
+**Primeiro, o deploy e a primeira confirmação humana** — ver item 8 das Pendências técnicas imediatas. Enquanto isso não acontecer, o envio existe só no repositório.
 
-**Confirmado em 2026-08-26 — a ingestão funciona com dado real de produção:** 6 perguntas reais de 4 contas visíveis na Caixa de Entrada, trazidas pela reconciliação. O que a operação pediu ao ver a tela: **falta responder por ali**. Isso está correto e é o desenho — o envio é comando privilegiado da `apps/api` (D-071/D-084), não escrita da tela, porque exige credencial da conta, revalidação do estado remoto na hora do envio e auditoria própria (`support_reply_attempts`).
+**Depois, a Fase 7B tem três caminhos, todos defensáveis:**
 
-**Ordem para chegar lá** — a triagem vem primeiro por necessidade prática, não por preferência: sem ela, duas pessoas respondem a mesma pergunta.
+- **(a) Ingestão de mensagens pós-venda** (`sync.support.messages`) — fecha o buraco maior da caixa de entrada: hoje só Perguntas chegam. Exige pesquisa de contrato própria e o cuidado de `mark_as_read=false` (D-083, decisão 2), porque um GET técnico não pode marcar mensagem como lida no Mercado Livre.
+- **(b) Copiloto sugerindo resposta** — a coluna `suggested_text` já existe e o contrato já a aceita; falta a ferramenta de geração. D-071 é explícito: é geração de TEXTO, não ferramenta de escrita, e o envio continua exigindo confirmação humana.
+- **(c) Templates e respostas rápidas** — o de menor risco e o que a operação provavelmente pede primeiro depois de responder algumas vezes à mão.
 
-1. ~~**Triagem interna**~~ — concluída em 2026-08-26 (D-094).
-2. ~~**Detalhe do atendimento**~~ — concluído em 2026-08-26 (D-095).
-3. **Envio de resposta — a PRÓXIMA ETAPA.** `POST /answers`, 2.000 caracteres (D-083), confirmação humana explícita. **Comando privilegiado da `apps/api`**, nunca escrita da tela: exige a credencial da conta, revalidação do estado remoto NA HORA do envio (o Mercado Livre pode ter bloqueado a pergunta no meio tempo — `remote_reply_state` é dica conservadora, não autorização, D-086 decisão 3) e auditoria própria. **`support_reply_attempts` ainda NÃO existe**: D-084 decisão 8 já definiu a forma (append-only, um registro por `client_request_id`, com usuário, sugestão opcional, texto final, resultado e ID/erro remoto) e ela ficou de fora da migration read-only de D-085. Sucesso também gera mensagem outbound; falha NÃO vira mensagem fictícia.
-
-**Defeito latente registrado em 2026-08-26 (D-094), a decidir à parte:** `support_case_events.actor_user_id` é `on delete set null`, e SET NULL é um UPDATE — que o trigger append-only da própria tabela recusa. **Um usuário que já triou não pode ser removido do sistema**, e o erro fala de append-only, não de "usuário em uso". Achado porque quebrou a limpeza da suíte de integração; contornado nos testes com um ator dedicado. A correção é decisão própria: o precedente do projeto para ator de auditoria é `on delete restrict` (`stock_movements.created_by`), que torna o bloqueio explícito mas não o remove; a alternativa é a linha de auditoria deixar de depender do usuário existir.
-
-**~~Próxima etapa: triagem interna do atendimento~~ — CONCLUÍDA em 2026-08-26 (D-094).** Texto original mantido abaixo como registro do que foi pedido: (`docs/ROADMAP.md` Fase 7B). A Caixa de Entrada é só leitura — ninguém consegue assumir um atendimento, mudar status ou resolver. D-084 já definiu a forma: **RPC transacional** que atualiza `support_cases` E acrescenta `support_case_events` na MESMA transação (histórico append-only, nunca UPDATE solto), autorizada a `ADMIN`/`GESTOR`/`OPERADOR` com acesso à conta; `ANALISTA`/`VISUALIZADOR` só leem. Atenção a duas regras já decididas e fáceis de violar: `RESOLVIDO` exige `resolved_at` (constraint), e sincronização não pode sobrescrever decisão humana de status (D-086, decisão 4) — a triagem precisa conviver com o UPSERT da ingestão sem que um desfaça o outro. Ainda **não** implementar envio de resposta nem sugestão do Copiloto.
-
-**Alternativas igualmente defensáveis:** (a) mensagens pós-venda (`sync.support.messages`), fechando a ingestão antes de aprofundar a UI — exige pesquisa de contrato própria e o cuidado de `mark_as_read=false` (D-083, decisão 2); (b) o **mecanismo de aviso de orçamento de IA**, que segue sendo a pendência mais antiga em aberto.
+**E segue em aberto, fora da Fase 7B:** o mecanismo de aviso de orçamento de IA (item 9), pendência mais antiga do projeto; e a decisão sobre `on delete set null` em `support_case_events.actor_user_id` (D-094).
 
 ### Estado de infraestrutura que NÃO deve ser presumido
 
@@ -161,7 +165,8 @@ Publicado e verificado em 2026-08-24, depois do resumo acima ter sido escrito: `
    **A sonda ainda não produziu dado, e o motivo vale registrar:** o re-disparo manual das 20h46/UTC foi DEDUPLICADO (`enqueued: 0, deduplicated: 4`) — a chave é `{conta}:{dia}:{bloco-6h-UTC}`, e 20h07 e 20h46 caem no mesmo bloco 3. O dedupe funcionou exatamente como projetado; a consequência operacional é que **um disparo manual QUEIMA o bloco do dia**, então a execução natural das 18h20 de SP (21h20/UTC, também bloco 3) também será descartada. O primeiro bloco livre é 00h20 de SP (03h20/UTC). Mesma característica vale para qualquer job com dedupe por dia/bloco disparado manualmente — D-065 e D-081 tiveram sorte de não esbarrar nisso.
 
    **Caminho mais rápido que a sonda:** conferir no painel do Mercado Livre se a permissão funcional "Comunicação pré e pós-venda" está marcada na aplicação. Se não estiver, a hipótese (a) está confirmada sem esperar medição nenhuma, e a correção é acrescentar a permissão e reautorizar as 4 contas.
-8. **Mecanismo de aviso de orçamento de IA não existe** — D-082 decidiu teto de R$100/mês com política "avisa, não bloqueia", mas o job que soma `ai_runs.cost_usd` e avisa o ADMIN nunca foi implementado. Na prática o gasto com a Anthropic hoje é ilimitado e não observado. Registrado como item do checklist da Fase 7, não como bloqueio.
+8. **🔴 O envio de resposta está no código, NÃO em produção, e nunca foi exercitado de verdade (D-096).** `apps/api` e `apps/worker` mudaram e precisam de `infra/deploy-cloud-run.sh` manual; a migration `20260826140000` a CI aplica sozinha no Supabase Dev. **Postar uma resposta real a um comprador é irreversível**, então a primeira confirmação deve ser humana e deliberada — não algo a fazer para validar código. Ao fazê-la, conferir: `support_reply_queued` na `api`, `support_reply_sent` no worker, a linha de `support_reply_attempts` em `SUCCEEDED` com `remote_message_id`, e a mensagem outbound aparecendo no transcript.
+9. **Mecanismo de aviso de orçamento de IA não existe** — D-082 decidiu teto de R$100/mês com política "avisa, não bloqueia", mas o job que soma `ai_runs.cost_usd` e avisa o ADMIN nunca foi implementado. Na prática o gasto com a Anthropic hoje é ilimitado e não observado. Registrado como item do checklist da Fase 7, não como bloqueio.
 
 ### Lacunas funcionais confirmadas na revisão
 

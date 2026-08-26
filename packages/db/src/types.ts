@@ -2960,6 +2960,72 @@ export type Database = {
           },
         ]
       }
+      support_reply_attempts: {
+        Row: {
+          client_request_id: string
+          error_code: string | null
+          error_message: string | null
+          final_text: string
+          id: string
+          ml_account_id: string
+          organization_id: string
+          remote_message_id: string | null
+          requested_at: string
+          requested_by: string
+          resolved_at: string | null
+          status: string
+          suggested_text: string | null
+          support_case_id: string
+        }
+        Insert: {
+          client_request_id: string
+          error_code?: string | null
+          error_message?: string | null
+          final_text: string
+          id?: string
+          ml_account_id: string
+          organization_id: string
+          remote_message_id?: string | null
+          requested_at?: string
+          requested_by: string
+          resolved_at?: string | null
+          status?: string
+          suggested_text?: string | null
+          support_case_id: string
+        }
+        Update: {
+          client_request_id?: string
+          error_code?: string | null
+          error_message?: string | null
+          final_text?: string
+          id?: string
+          ml_account_id?: string
+          organization_id?: string
+          remote_message_id?: string | null
+          requested_at?: string
+          requested_by?: string
+          resolved_at?: string | null
+          status?: string
+          suggested_text?: string | null
+          support_case_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "support_reply_attempts_case_scope_fkey"
+            columns: ["support_case_id", "organization_id", "ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "support_cases"
+            referencedColumns: ["id", "organization_id", "ml_account_id"]
+          },
+          {
+            foreignKeyName: "support_reply_attempts_requested_by_fkey"
+            columns: ["requested_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sync_errors: {
         Row: {
           created_at: string

@@ -147,3 +147,52 @@ test("detalhe mostra a conversa e distingue conteúdo banido de mensagem vazia",
   await expect(page.getByRole("link", { name: seed.skuCode })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Histórico" })).toBeVisible();
 });
+
+/**
+ * Formulário de resposta (Fase 7B, D-096).
+ *
+ * **O ENVIO em si fica fora do E2E, de propósito e pelo mesmo motivo já
+ * registrado em D-069 para "confirmar aplicação" da NF-e:** ele chama
+ * `apps/api`, que enfileira no Cloud Tasks para `apps/worker` — nenhuma
+ * dessas peças existe na esteira, que sobe só o Supabase local e o `web`.
+ * Simular a cadeia inteira inflaria a suíte muito além de "fluxos críticos".
+ *
+ * O que este spec cobre é o que a TELA decide sozinha: quando o formulário
+ * aparece, quando não aparece, e o limite de caracteres. A lógica de envio
+ * está coberta por 14 testes de unidade na `api` e 15 no worker.
+ */
+test("formulário de resposta aparece na pergunta aberta, com o limite da API", async ({ page }) => {
+  const seed = await readSeedOutput();
+
+  await login(page, `/atendimento`);
+  await page
+    .getByRole("row", { name: new RegExp(seed.supportOpenExternalId) })
+    .getByRole("link", { name: "Pergunta" })
+    .click();
+
+  const campo = page.getByLabel("Sua resposta");
+  await expect(campo).toBeVisible();
+
+  // 2.000 caracteres é o limite da API de Perguntas (D-083) — o `maxLength`
+  // evita que a pessoa escreva um texto que só seria recusado no envio.
+  await expect(campo).toHaveAttribute("maxlength", "2000");
+
+  // Confirmar exige texto: um envio vazio nunca deve chegar ao Mercado Livre.
+  const botao = page.getByRole("button", { name: "Enviar resposta" });
+  await expect(botao).toBeDisabled();
+
+  await campo.fill("Serve sim, amigo.");
+  await expect(botao).toBeEnabled();
+});
+
+test("atendimento RESOLVIDO não oferece formulário de resposta", async ({ page }) => {
+  const seed = await readSeedOutput();
+
+  await login(page, "/atendimento?status=RESOLVIDO");
+  await page
+    .getByRole("row", { name: new RegExp(seed.supportResolvedExternalId) })
+    .getByRole("link", { name: "Pergunta" })
+    .click();
+
+  await expect(page.getByLabel("Sua resposta")).toHaveCount(0);
+});

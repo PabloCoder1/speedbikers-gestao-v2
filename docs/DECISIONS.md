@@ -1388,6 +1388,32 @@ Não é específico de `questions`: **nunca chegou `orders_v2`, `post_purchase`,
 
 **Impacto:** `apps/web/app/atendimento/[caseId]/page.tsx` (novo), `apps/web/app/atendimento/page.tsx` (linha vira link), `apps/web/lib/labels.ts` (quatro mapas novos), `apps/web/e2e/{seed,seed-output}.ts` e `atendimento.spec.ts` (+1). Só `apps/web` — deploy automático pela Vercel.
 
+## D-096 — Envio de resposta: a primeira escrita do projeto no Mercado Livre, e o único job que NÃO pode retentar
+
+**Contexto:** última peça registrada da Fase 7B. A Caixa de Entrada (D-090), a triagem (D-094) e o detalhe (D-095) tornaram o atendimento visível e gerenciável; faltava responder. Tudo no projeto até aqui, sem exceção, só LIA do Mercado Livre.
+
+**Decisão 1 — a `api` autoriza e registra; o `worker` envia.** Não é atalho: é o mesmo desenho de todo comando privilegiado do projeto — `/v1/nfe-imports/:id/apply` e `/v1/erp-imports/:id/apply` também validam e enfileiram — e `docs/ARCHITECTURE.md` secao 5 é explícito que a `api` nunca faz trabalho longo inline. Um envio são DUAS chamadas remotas (revalidar e postar). O ganho concreto: o `ensureAccessToken` com a trava do `refresh_token` de uso único (D-046) continua existindo num lugar só, no worker. Duplicá-lo na `api` criaria dois refreshes concorrentes invalidando o token um do outro — exatamente o que a trava existe para impedir.
+
+**Decisão 2 — `support_reply_attempts` nasce PENDING ANTES da chamada remota, e transiciona UMA vez.** É um refinamento explícito de D-084 decisão 8, que fala em "uma linha imutável". Escrever a linha só DEPOIS tornaria imutabilidade e auditoria incompatíveis: uma queda entre o POST e o INSERT deixaria uma resposta já entregue ao comprador SEM registro nenhum, e a tentativa seguinte mandaria a segunda cópia. O que D-084 protege continua protegido — `final_text`, `suggested_text`, `requested_by` e `client_request_id` nunca mudam, e nada é apagado; um trigger recusa DELETE e qualquer UPDATE que não seja PENDING → terminal. "Resultado incerto" deixa de ser conceito e vira estado observável: **uma linha parada em PENDING significa exatamente "não sabemos se saiu"**, e existe índice parcial para encontrá-las.
+
+**Decisão 3 — `retryable: false` depois do POST, mesmo em 5xx.** É a diferença deste job para todos os outros do projeto e a decisão mais importante desta entrega. Num sync, 5xx significa "tente de novo"; num `POST /answers`, 5xx pode significar que a resposta CHEGOU ao comprador. Retentar produziria duas respostas. Falhas ANTES do POST (token, revalidação) continuam retryable, porque nada saiu — e nesse caso a tentativa nem é resolvida, segue PENDING para a próxima entrega. Reenviar de verdade exige nova confirmação humana, com `clientRequestId` novo, e quem confirma vê antes que a anterior falhou.
+
+**Decisão 4 — revalidação do estado remoto NA HORA, sempre.** `support_cases.remote_reply_state` é dica conservadora calculada na última sincronização (D-086, decisão 3). Entre ela e o clique, a pergunta pode ter sido respondida por outra pessoa, deletada ou retida. O worker refaz `GET /questions/{id}` e recusa se não estiver `UNANSWERED`, `hold` ou `deleted_from_listing` — e registra o motivo na tentativa.
+
+**Decisão 5 — o `clientRequestId` é gerado no NAVEGADOR, não na `api`.** Um id novo a cada request não deduplicaria nada; a garantia inteira contra resposta duplicada mora nessa chave. O formulário mantém o mesmo id enquanto o texto não muda, então duplo-clique, F5 e retry de rede convergem para a MESMA tentativa. A `api` reconhece a chave e devolve o estado real (`already_sent`, `in_flight`, `previously_failed`) em vez de enviar de novo — e a corrida no INSERT (23505) também não enfileira.
+
+**Decisão 6 — a mensagem outbound vem de RELER o Mercado Livre, não do que achamos que mandamos.** Depois do envio o worker refaz o `GET` e persiste com o mapper de D-086. O transcript passa a refletir o que o Mercado Livre registrou de fato, e nenhuma projeção é duplicada dentro da `api`. Falha nessa releitura NÃO desfaz o envio nem falha o job: a resposta saiu e está registrada; a reconciliação de 10 minutos (D-092) traz a mensagem.
+
+**Decisão 7 — OPERADOR responde.** Atender é o trabalho dele (D-084). ANALISTA e VISUALIZADOR leem e não respondem, e a rota devolve 403 — coberto por teste.
+
+**Escopo deliberadamente ausente:** sugestão do Copiloto (a coluna `suggested_text` já existe e é aceita pelo contrato, mas nada a preenche), templates e respostas rápidas, anexos, e resposta a mensagens pós-venda e reclamações — canais que nem ingestão têm.
+
+**Verificação:** `check` 29/29 e `build` 8/8 verdes. **29 testes de unidade novos** nas duas metades — 14 na `api` (fronteira de organização como `not_found` e não "sem permissão", canal não-Pergunta, os três estados de idempotência, corrida 23505, texto nunca logado) e 15 no worker (ordem revalidar-antes-de-postar, tentativa já resolvida não reenvia, os quatro estados remotos que bloqueiam, **5xx no POST não retryable**, falha de revalidação retryable sem resolver a tentativa, falha de re-sync não derruba o job). Mais 5 testes de rota em `app.test.ts` (503, 401, 403 para ANALISTA, 400 sem `clientRequestId`, 200 enfileirando na fila da conta) e 15 asserções de integração da tabela.
+
+**Verificação que NÃO foi feita, e por quê:** o envio real a uma pergunta de verdade. Postar uma resposta a um comprador real é irreversível e não é algo a fazer para validar código — a confirmação vai vir do primeiro uso humano deliberado. **E o Docker não subiu nesta máquina na sessão de fechamento**, então migration, testes de integração e E2E foram verificados pela CI, não localmente — a mesma situação de D-069 a D-082, registrada aqui para não parecer que houve verificação local que não houve.
+
+**Impacto:** `supabase/migrations/20260826140000_create_support_reply_attempts.sql` (novo). `packages/mercado-livre/src/questions.ts` (`postQuestionAnswer`) + `index.ts`. `apps/api/src/support-reply.ts` + `.test.ts` (novos), `app.ts` (rota), `index.ts`, `app.test.ts`. `apps/worker/src/handlers/send-support-reply.ts` + `.test.ts` (novos), `index.ts` (registro). `apps/web/app/atendimento/[caseId]/reply-form.tsx` (novo) e `page.tsx` (seção Responder + tentativas), `lib/labels.ts`. `packages/db/src/{types,rls.integration.test}.ts`, `apps/web/e2e/atendimento.spec.ts` (+2).
+
 ## Como adicionar nova decisão
 
 Registrar:

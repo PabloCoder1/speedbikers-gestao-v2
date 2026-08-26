@@ -6,6 +6,7 @@ import { Shell } from "../../../components/shell";
 import { StatusPill } from "../../../components/status-pill";
 import { formatDateTime } from "../../../lib/format";
 import {
+  replyAttemptLabel,
   supportBodyStateLabel,
   supportCaseEventLabel,
   supportChannelLabel,
@@ -19,6 +20,7 @@ import type { SupportCaseLinkRow } from "../../../lib/support-case-reference";
 import { resolveSupportCaseReference } from "../../../lib/support-case-reference";
 import { createClient } from "../../../lib/supabase/server";
 import { TriageCell } from "../triage-cell";
+import { ReplyForm } from "./reply-form";
 
 export const metadata = { title: "Atendimento — Speed Bikers Gestão" };
 
@@ -31,10 +33,10 @@ export const dynamic = "force-dynamic";
  * é preciso ler o que a pessoa perguntou. `support_messages` guarda o
  * transcript desde D-086; esta tela é a primeira a consumi-lo.
  *
- * **Pré-requisito do envio, não o envio.** Responder é comando privilegiado
- * da `apps/api` (D-071/D-084) — exige credencial da conta, revalidação do
- * estado remoto na hora e auditoria própria em `support_reply_attempts`.
- * Nada disso está aqui.
+ * **Desde D-096 é também de onde se responde.** O formulário confirma e a
+ * `api` assume: o `web` nunca fala com o Mercado Livre. O que aparece aqui é
+ * a confirmação humana e o registro das tentativas — o envio em si acontece
+ * no worker, com revalidação do estado remoto na hora.
  *
  * Leitura direta sob RLS (Modelo A, D-012); a triagem reaproveita a mesma
  * `TriageCell` da lista, que passa pela RPC transacional de D-094.
@@ -56,6 +58,16 @@ interface DeadlineRow {
   source: string;
   due_at: string | null;
   started_at: string | null;
+}
+
+interface ReplyAttemptRow {
+  id: string;
+  status: string;
+  final_text: string;
+  error_message: string | null;
+  requested_at: string;
+  resolved_at: string | null;
+  profiles: { full_name: string | null } | null;
 }
 
 interface CaseEventRow {
@@ -158,7 +170,7 @@ export default async function AtendimentoDetalhePage({
     support_case_links: SupportCaseLinkRow[] | null;
   };
 
-  const [messagesResult, deadlinesResult, eventsResult] = await Promise.all([
+  const [messagesResult, deadlinesResult, eventsResult, attemptsResult] = await Promise.all([
     supabase
       .from("support_messages")
       .select("id, direction, sender_kind, body, body_state, remote_status, occurred_at")
@@ -175,16 +187,25 @@ export default async function AtendimentoDetalhePage({
       .eq("support_case_id", caseId)
       .order("occurred_at", { ascending: false })
       .limit(50),
+    supabase
+      .from("support_reply_attempts")
+      .select("id, status, final_text, error_message, requested_at, resolved_at, profiles(full_name)")
+      .eq("support_case_id", caseId)
+      .order("requested_at", { ascending: false })
+      .limit(20),
   ]);
 
   // Erro em qualquer uma das três se junta: mostrar a conversa sem dizer que
   // o histórico falhou seria o "sem dado" indistinguível de "erro" que D-067
   // auditou a sessão inteira.
-  const sideError = messagesResult.error ?? deadlinesResult.error ?? eventsResult.error;
+  const sideError =
+    messagesResult.error ?? deadlinesResult.error ?? eventsResult.error ?? attemptsResult.error;
 
   const messages = (messagesResult.data ?? []) as MessageRow[];
   const deadlines = (deadlinesResult.data ?? []) as DeadlineRow[];
   const events = (eventsResult.data ?? []) as unknown as CaseEventRow[];
+  const attempts = (attemptsResult.data ?? []) as unknown as ReplyAttemptRow[];
+  const podeResponder = supportCase.channel === "QUESTION" && supportCase.resolved_at === null;
   const reference = resolveSupportCaseReference(supportCase.support_case_links);
 
   return (
@@ -337,6 +358,43 @@ export default async function AtendimentoDetalhePage({
                 {/* A FONTE do prazo é obrigatória na exibição (D-084): prazo
                     ausente nunca pode virar estimativa apresentada como oficial. */}
                 <span style={meta}> · fonte: {deadline.source}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {podeResponder && (
+        <section style={section}>
+          <h2 style={sectionTitle}>Responder</h2>
+          <ReplyForm
+            caseId={supportCase.id}
+            remoteReplyState={supportCase.remote_reply_state}
+            remoteReplyBlockReason={supportCase.remote_reply_block_reason}
+          />
+        </section>
+      )}
+
+      {attempts.length > 0 && (
+        <section style={section}>
+          <h2 style={sectionTitle}>Tentativas de envio</h2>
+          <ul style={{ margin: 0, paddingLeft: "1.25rem", fontSize: "0.875rem" }}>
+            {attempts.map((attempt) => (
+              <li key={attempt.id} style={{ marginBottom: "0.375rem" }}>
+                <StatusPill code={attempt.status} label={replyAttemptLabel(attempt.status)} />
+                <span style={meta}>
+                  {" "}
+                  · {formatDateTime(attempt.requested_at)} ·{" "}
+                  {attempt.profiles?.full_name ?? "usuário removido"}
+                </span>
+                {/* O texto enviado fica visível: é auditoria do que o cliente
+                    recebeu, e quem enxerga o atendimento já enxerga o transcript. */}
+                <div style={{ whiteSpace: "pre-wrap" }}>{attempt.final_text}</div>
+                {attempt.error_message !== null && (
+                  <div style={{ color: "var(--sb-danger)", fontSize: "0.8125rem" }}>
+                    {attempt.error_message}
+                  </div>
+                )}
               </li>
             ))}
           </ul>

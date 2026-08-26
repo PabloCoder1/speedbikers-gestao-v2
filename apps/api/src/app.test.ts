@@ -5,7 +5,7 @@ import { createLogger } from "@sb/observability";
 import { describe, expect, it } from "vitest";
 
 import { createApp } from "./app.js";
-import type { AuthResult, Role } from "./auth.js";
+import type { AuthResult, Caller, Role } from "./auth.js";
 import type { EnqueueRequest } from "./enqueue.js";
 import type { FulfillmentScheduleDeps } from "./fulfillment-schedule.js";
 import { createIpAllowlistVerifier } from "./ip-allowlist.js";
@@ -1326,6 +1326,177 @@ describe("conexão de conta Mercado Livre", () => {
       const response = await app.request("/oauth/mercado-livre/callback?state=s&code=c");
 
       expect(response.status).toBe(200);
+    });
+  });
+});
+
+describe("POST /v1/support/cases/:caseId/reply (D-096)", () => {
+  const CASE_ID = "cccccccc-0000-4000-8000-000000000001";
+
+  const CALLER: Caller = {
+    userId: "aaaaaaaa-0000-4000-8000-000000000001",
+    organizationId: "11111111-0000-4000-8000-000000000001",
+    role: "OPERADOR",
+  };
+
+  /**
+   * Fake de `authenticate` que respeita a lista de papéis permitidos — é o
+   * que permite provar que ANALISTA é barrado nesta rota sem depender da
+   * implementação real de `auth.ts`.
+   */
+  function authWithRole(role: Role) {
+    return {
+      authenticate: (_header: string | undefined, allowed: readonly Role[]): Promise<AuthResult> =>
+        Promise.resolve(
+          allowed.includes(role)
+            ? { ok: true, caller: { ...CALLER, role } }
+            : { ok: false, status: 403, reason: "papel sem permissão" },
+        ),
+    };
+  }
+
+  function supportReplyDeps(enqueued: EnqueueRequest[]) {
+    const chain = <T,>(result: T) => {
+      const self = { eq: () => self, maybeSingle: () => Promise.resolve(result) };
+      return self;
+    };
+
+    return {
+      logger: createLogger({}, { sink: () => undefined }),
+      db: {
+        from: (table: string) => ({
+          select: () =>
+            chain({
+              data:
+                table === "support_cases"
+                  ? {
+                      id: CASE_ID,
+                      organization_id: CALLER.organizationId,
+                      ml_account_id: "aaaaaaaa-0000-4000-8000-0000000000aa",
+                      channel: "QUESTION",
+                      external_case_id: "11436370259",
+                      ml_accounts: { slug: "speedbikers-loja-1" },
+                    }
+                  : null,
+              error: null,
+            }),
+          insert: () => ({
+            select: () => ({
+              single: () =>
+                Promise.resolve({ data: { id: "eeeeeeee-0000-4000-8000-000000000001" }, error: null }),
+            }),
+          }),
+        }),
+      } as never,
+      enqueuer: {
+        enqueue: (request: EnqueueRequest) => {
+          enqueued.push(request);
+
+          return Promise.resolve({
+            taskName: "t",
+            deduplicated: false,
+            envelope: {
+              jobType: request.jobType,
+              jobId: "6f1d5f9c-6d0b-4a5f-9f4a-2c9a7a1f0b43",
+              organizationId: request.organizationId,
+              dedupeKey: request.dedupeKey,
+              attempt: 1,
+              enqueuedAt: "2026-08-26T14:00:00.000Z",
+            },
+          });
+        },
+      },
+    };
+  }
+
+  it("responde 503 sem as dependências de envio", async () => {
+    const app = createApp({
+      logger: createLogger({}, { sink: () => undefined }),
+      auth: authWithRole("ADMIN"),
+    });
+
+    const response = await app.request(`/v1/support/cases/${CASE_ID}/reply`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ clientRequestId: "r1", text: "oi" }),
+    });
+
+    expect(response.status).toBe(503);
+  });
+
+  it("exige autenticação", async () => {
+    const enqueued: EnqueueRequest[] = [];
+    const app = createApp({
+      logger: createLogger({}, { sink: () => undefined }),
+      auth: { authenticate: () => Promise.resolve({ ok: false, status: 401, reason: "sem token" }) },
+      supportReply: supportReplyDeps(enqueued),
+    });
+
+    const response = await app.request(`/v1/support/cases/${CASE_ID}/reply`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ clientRequestId: "r1", text: "oi" }),
+    });
+
+    expect(response.status).toBe(401);
+    expect(enqueued).toHaveLength(0);
+  });
+
+  it("ANALISTA é barrado: lê o atendimento, não responde por ele (D-084)", async () => {
+    const enqueued: EnqueueRequest[] = [];
+    const app = createApp({
+      logger: createLogger({}, { sink: () => undefined }),
+      auth: authWithRole("ANALISTA"),
+      supportReply: supportReplyDeps(enqueued),
+    });
+
+    const response = await app.request(`/v1/support/cases/${CASE_ID}/reply`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ clientRequestId: "r1", text: "oi" }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(enqueued).toHaveLength(0);
+  });
+
+  it("corpo sem clientRequestId responde 400 e não enfileira", async () => {
+    const enqueued: EnqueueRequest[] = [];
+    const app = createApp({
+      logger: createLogger({}, { sink: () => undefined }),
+      auth: authWithRole("OPERADOR"),
+      supportReply: supportReplyDeps(enqueued),
+    });
+
+    const response = await app.request(`/v1/support/cases/${CASE_ID}/reply`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "oi" }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(enqueued).toHaveLength(0);
+  });
+
+  it("OPERADOR envia: enfileira o job na fila da conta", async () => {
+    const enqueued: EnqueueRequest[] = [];
+    const app = createApp({
+      logger: createLogger({}, { sink: () => undefined }),
+      auth: authWithRole("OPERADOR"),
+      supportReply: supportReplyDeps(enqueued),
+    });
+
+    const response = await app.request(`/v1/support/cases/${CASE_ID}/reply`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ clientRequestId: "req-1", text: "Serve sim." }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ status: "queued" });
+    expect(enqueued[0]).toMatchObject({
+      jobType: "support.reply.send",
+      queue: "ml-sync-speedbikers-loja-1",
     });
   });
 });

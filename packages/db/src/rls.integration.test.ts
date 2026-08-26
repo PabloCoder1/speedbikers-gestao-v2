@@ -5171,4 +5171,170 @@ describe("support read model (Fase 7B, D-085; modelo D-084)", () => {
       ).rejects.toThrow(/permission denied/i);
     });
   });
+  describe("support_reply_attempts (Fase 7B, D-096)", () => {
+    // Ator fora do padrao `%@rls.test`: `requested_by` e `on delete restrict`
+    // (escolha de D-096, para o bloqueio ser explicito em vez de virar um erro
+    // sobre append-only, como o defeito achado em D-094). Apagar este perfil
+    // quebraria a limpeza global da suite.
+    const RESPONDENTE = "dddddddd-0000-4000-8000-00000000000a";
+    const ATTEMPT_OK = "eeeeeeee-0000-4000-8000-00000000000a";
+
+    beforeAll(async () => {
+      await client.query(
+        `insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                                email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+         values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',
+                 'respondente@supporttest.local','x',now(),'{"full_name":"Respondente Supporttest"}',now(),now())
+         on conflict (id) do nothing`,
+        [RESPONDENTE],
+      );
+
+      await client.query(
+        `insert into public.organization_members (organization_id, user_id, role)
+         values ($1,$2,'OPERADOR') on conflict do nothing`,
+        [ORG_SB, RESPONDENTE],
+      );
+
+      await client.query(
+        `insert into public.user_account_permissions (user_id, ml_account_id)
+         values ($1, $2) on conflict do nothing`,
+        [RESPONDENTE, ACCOUNT_A],
+      );
+
+      await client.query(
+        `insert into public.support_reply_attempts
+           (id, organization_id, ml_account_id, support_case_id, client_request_id,
+            requested_by, final_text, status)
+         values ($1, $2, $3, $4, 'req-d096-ok', $5, 'Serve sim, amigo.', 'PENDING')
+         on conflict (id) do nothing`,
+        [ATTEMPT_OK, ORG_SB, ACCOUNT_A, CASE_A, RESPONDENTE],
+      );
+    });
+
+    it("PENDING nao pode nascer com desfecho preenchido", async () => {
+      await expect(
+        client.query(
+          `insert into public.support_reply_attempts
+             (organization_id, ml_account_id, support_case_id, client_request_id,
+              requested_by, final_text, status, remote_message_id)
+           values ($1,$2,$3,'req-d096-incoerente',$4,'texto','PENDING','123')`,
+          [ORG_SB, ACCOUNT_A, CASE_A, RESPONDENTE],
+        ),
+      ).rejects.toThrow(/outcome_coherent/i);
+    });
+
+    it("SUCCEEDED exige resolved_at; FAILED exige error_code", async () => {
+      await expect(
+        client.query(
+          `insert into public.support_reply_attempts
+             (organization_id, ml_account_id, support_case_id, client_request_id,
+              requested_by, final_text, status)
+           values ($1,$2,$3,'req-d096-sem-resolved',$4,'texto','SUCCEEDED')`,
+          [ORG_SB, ACCOUNT_A, CASE_A, RESPONDENTE],
+        ),
+      ).rejects.toThrow(/outcome_coherent/i);
+
+      await expect(
+        client.query(
+          `insert into public.support_reply_attempts
+             (organization_id, ml_account_id, support_case_id, client_request_id,
+              requested_by, final_text, status, resolved_at)
+           values ($1,$2,$3,'req-d096-sem-erro',$4,'texto','FAILED',now())`,
+          [ORG_SB, ACCOUNT_A, CASE_A, RESPONDENTE],
+        ),
+      ).rejects.toThrow(/outcome_coherent/i);
+    });
+
+    it("texto acima de 2.000 caracteres e recusado no banco, nao so na API", async () => {
+      await expect(
+        client.query(
+          `insert into public.support_reply_attempts
+             (organization_id, ml_account_id, support_case_id, client_request_id,
+              requested_by, final_text)
+           values ($1,$2,$3,'req-d096-longo',$4,repeat('a', 2001))`,
+          [ORG_SB, ACCOUNT_A, CASE_A, RESPONDENTE],
+        ),
+      ).rejects.toThrow(/final_text/i);
+    });
+
+    it("o MESMO client_request_id na organizacao e recusado — e a garantia contra resposta duplicada", async () => {
+      await expect(
+        client.query(
+          `insert into public.support_reply_attempts
+             (organization_id, ml_account_id, support_case_id, client_request_id,
+              requested_by, final_text)
+           values ($1,$2,$3,'req-d096-ok',$4,'outro texto')`,
+          [ORG_SB, ACCOUNT_A, CASE_A, RESPONDENTE],
+        ),
+      ).rejects.toThrow(/client_request_unique/i);
+    });
+
+    it("DELETE e recusado ate para o dono da tabela", async () => {
+      await expect(
+        client.query(`delete from public.support_reply_attempts where id=$1`, [ATTEMPT_OK]),
+      ).rejects.toThrow(/append-only/i);
+    });
+
+    it("UPDATE nao pode alterar o texto enviado nem quem pediu", async () => {
+      await expect(
+        client.query(
+          `update public.support_reply_attempts set final_text='texto trocado' where id=$1`,
+          [ATTEMPT_OK],
+        ),
+      ).rejects.toThrow(/so o desfecho pode ser atualizado/i);
+    });
+
+    it("PENDING transiciona UMA vez para terminal, e o desfecho nao pode ser reescrito", async () => {
+      const primeira = await client.query(
+        `update public.support_reply_attempts
+           set status='SUCCEEDED', remote_message_id='9001', resolved_at=now()
+         where id=$1 returning status`,
+        [ATTEMPT_OK],
+      );
+
+      expect(primeira.rows[0]).toEqual({ status: "SUCCEEDED" });
+
+      // Reentrega do Cloud Tasks nao pode reescrever um desfecho ja registrado.
+      await expect(
+        client.query(
+          `update public.support_reply_attempts
+             set status='FAILED', error_code='x', error_message='y'
+           where id=$1`,
+          [ATTEMPT_OK],
+        ),
+      ).rejects.toThrow(/ja resolvida/i);
+    });
+
+    it("quem alcanca a conta le as tentativas; quem nao alcanca, nao", async () => {
+      const permitido = await asUser(
+        RESPONDENTE,
+        `select id from public.support_reply_attempts where id='${ATTEMPT_OK}'`,
+      );
+      const negado = await asUser(
+        DE_OUTRA_ORG,
+        `select id from public.support_reply_attempts where id='${ATTEMPT_OK}'`,
+      );
+
+      expect(permitido).toHaveLength(1);
+      expect(negado).toHaveLength(0);
+    });
+
+    it("authenticated NAO escreve direto — o envio passa pela api, nunca pela tela", async () => {
+      await expect(
+        asUser(
+          RESPONDENTE,
+          `insert into public.support_reply_attempts
+             (organization_id, ml_account_id, support_case_id, client_request_id,
+              requested_by, final_text)
+           values ('${ORG_SB}','${ACCOUNT_A}','${CASE_A}','req-d096-direto','${RESPONDENTE}','texto')`,
+        ),
+      ).rejects.toThrow(/permission denied|violates row-level security/i);
+    });
+
+    it("anon nao acessa", async () => {
+      await expect(
+        asAnon("select * from public.support_reply_attempts"),
+      ).rejects.toThrow(/permission denied/i);
+    });
+  });
 });

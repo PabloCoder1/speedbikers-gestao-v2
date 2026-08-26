@@ -25,6 +25,8 @@ import type { ListingVisitsScheduleDeps } from "./listing-visits-schedule.js";
 import { triggerListingVisitsSnapshot } from "./listing-visits-schedule.js";
 import type { SupportQuestionsScheduleDeps } from "./support-questions-schedule.js";
 import { triggerSupportQuestionsReconcile } from "./support-questions-schedule.js";
+import type { SupportReplyDeps } from "./support-reply.js";
+import { requestSupportReply, supportReplyRequestSchema } from "./support-reply.js";
 import type { ListingsScheduleDeps } from "./listings-schedule.js";
 import { triggerListingsSnapshot } from "./listings-schedule.js";
 import type { MlAccountsDeps } from "./ml-accounts.js";
@@ -82,6 +84,7 @@ export interface AppDependencies {
   listingsSchedule?: ListingsScheduleDeps;
   listingVisitsSchedule?: ListingVisitsScheduleDeps;
   supportQuestionsSchedule?: SupportQuestionsScheduleDeps;
+  supportReply?: SupportReplyDeps;
   salesAnomalyActionsSchedule?: SalesAnomalyActionsScheduleDeps;
   decisionOutcomesSchedule?: DecisionOutcomesScheduleDeps;
 }
@@ -415,6 +418,88 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
   // Reconciliação de Perguntas (Fase 7B, D-089) — rede de segurança do
   // webhook `questions`, por CONTA, a cada 6h. Mesmo formato da rota acima.
   // --------------------------------------------------------------------
+  // --------------------------------------------------------------------
+  // Envio de resposta a uma Pergunta (Fase 7B, D-096) — o primeiro comando
+  // que escreve no Mercado Livre.
+  //
+  // Valida e ENFILEIRA, como todo comando privilegiado deste projeto
+  // (`/v1/nfe-imports/:id/apply`, `/v1/erp-imports/:id/apply`): o envio são
+  // duas chamadas remotas, que `docs/ARCHITECTURE.md` secao 5 proíbe fazer
+  // inline aqui.
+  // --------------------------------------------------------------------
+  app.post("/v1/support/cases/:caseId/reply", async (context) => {
+    const auth = dependencies.auth;
+    const supportReply = dependencies.supportReply;
+
+    if (auth === undefined || supportReply === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    // OPERADOR entra: atender é o trabalho dele (D-084). ANALISTA e
+    // VISUALIZADOR leem e não respondem.
+    const authorized = await auth.authenticate(context.req.header("authorization"), [
+      "ADMIN",
+      "GESTOR",
+      "OPERADOR",
+    ]);
+
+    if (!authorized.ok) {
+      dependencies.logger.warn("support_reply_unauthorized", {
+        request_id: context.get("requestId"),
+        reason: authorized.reason,
+      });
+
+      return context.json({ error: { code: "unauthorized" } }, authorized.status);
+    }
+
+    let rawBody: unknown;
+
+    try {
+      rawBody = await context.req.json();
+    } catch {
+      return context.json({ error: { code: "invalid_payload", message: "corpo não é JSON" } }, 400);
+    }
+
+    const parsed = supportReplyRequestSchema.safeParse(rawBody);
+
+    if (!parsed.success) {
+      return context.json(
+        {
+          error: {
+            code: "invalid_payload",
+            message: parsed.error.issues[0]?.message ?? "payload inválido",
+          },
+        },
+        400,
+      );
+    }
+
+    const outcome = await requestSupportReply(
+      supportReply,
+      authorized.caller,
+      context.req.param("caseId"),
+      parsed.data,
+    );
+
+    if (outcome.status === "not_found") {
+      return context.json({ error: { code: "not_found" } }, 404);
+    }
+
+    if (outcome.status === "invalid") {
+      return context.json({ error: { code: "invalid_payload", message: outcome.reason } }, 400);
+    }
+
+    if (outcome.status === "error") {
+      return context.json({ error: { code: "internal", message: outcome.reason } }, 500);
+    }
+
+    // `already_sent`/`in_flight`/`previously_failed` são 200: a requisição foi
+    // entendida e o estado devolvido é a resposta certa. Repetir a mesma
+    // confirmação não é erro do chamador — é exatamente o caso que a chave de
+    // idempotência existe para tratar.
+    return context.json(outcome);
+  });
+
   app.post("/internal/schedule/support-questions", async (context) => {
     const supportQuestionsSchedule = dependencies.supportQuestionsSchedule;
 

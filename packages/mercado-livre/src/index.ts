@@ -35,6 +35,8 @@ export {
   fetchReceivedQuestion,
   fetchReceivedQuestionsPage,
   mapQuestionToSupportProjection,
+  postQuestionAnswer,
+  questionAnswerResultSchema,
   questionAnswerStatusSchema,
   questionStatusSchema,
   receivedQuestionSchema,
@@ -43,6 +45,8 @@ export {
 export type {
   FetchReceivedQuestionOptions,
   FetchReceivedQuestionsPageOptions,
+  PostQuestionAnswerOptions,
+  QuestionAnswerResult,
   ReceivedQuestion,
   ReceivedQuestionsPage,
   SupportQuestionBodyState,

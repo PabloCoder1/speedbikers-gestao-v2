@@ -346,3 +346,62 @@ export function fetchReceivedQuestionsPage(
     schema: receivedQuestionsPageSchema,
   });
 }
+
+export interface PostQuestionAnswerOptions {
+  mercadoLivre: MercadoLivreClient;
+  accessToken: string;
+  questionId: number;
+  text: string;
+}
+
+/**
+ * Resposta devolvida por `POST /answers`. Só o que a auditoria precisa: o
+ * contrato oficial devolve a pergunta inteira com `answer` preenchido
+ * (`docs/MERCADO_LIVRE.md` secao 2.12), e reaproveitar
+ * `receivedQuestionSchema` aqui tornaria o ENVIO refém de qualquer campo que
+ * o detalhe passe a exigir. Um envio bem-sucedido não pode falhar por causa
+ * do formato da confirmação.
+ */
+export const questionAnswerResultSchema = z.object({
+  id: z.number().int().positive(),
+  status: z.string().optional(),
+});
+
+export type QuestionAnswerResult = z.infer<typeof questionAnswerResultSchema>;
+
+/**
+ * Envia a resposta de uma Pergunta — **a primeira escrita do projeto no
+ * Mercado Livre** (D-096). Tudo até aqui era leitura.
+ *
+ * Contrato confirmado em D-083 (`docs/MERCADO_LIVRE.md` secao 2.12):
+ * `POST /answers`, corpo `{ question_id, text }`, limite de 2.000 caracteres,
+ * UTF-8. O limite é validado ANTES da chamada — deixar o Mercado Livre
+ * recusar gastaria uma tentativa e produziria um erro remoto para algo que
+ * dá para saber daqui.
+ *
+ * O cliente comum continua dono de Authorization, backoff e classificação de
+ * erro. **Retry automático é decisão de quem chama, não daqui**: repetir um
+ * POST que talvez tenha chegado é o caminho para duas respostas ao mesmo
+ * comprador (ver `support_reply_attempts.client_request_id`).
+ */
+export function postQuestionAnswer(
+  options: PostQuestionAnswerOptions,
+): Promise<QuestionAnswerResult> {
+  const text = options.text.trim();
+
+  if (text.length === 0) {
+    throw new Error("resposta vazia");
+  }
+
+  if (text.length > 2_000) {
+    throw new Error(`resposta com ${String(text.length)} caracteres excede o limite de 2000`);
+  }
+
+  return options.mercadoLivre.request({
+    method: "POST",
+    path: "/answers",
+    body: { question_id: options.questionId, text },
+    accessToken: options.accessToken,
+    schema: questionAnswerResultSchema,
+  });
+}

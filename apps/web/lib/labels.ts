@@ -205,6 +205,17 @@ const SUPPORT_CASE_EVENT: Record<string, string> = {
   "support.case.triaged": "Triagem alterada",
 };
 
+/**
+ * `support_reply_attempts.status` (D-096). PENDING é o estado honesto de
+ * "não sabemos se saiu" — por isso não é "Enviando", que afirmaria mais do
+ * que se sabe depois de uma queda no meio do envio.
+ */
+const REPLY_ATTEMPT_STATUS: Record<string, string> = {
+  PENDING: "Em andamento",
+  SUCCEEDED: "Enviada",
+  FAILED: "Falhou",
+};
+
 /** `support_case_deadlines.deadline_kind` (D-084). */
 const SUPPORT_DEADLINE_KIND: Record<string, string> = {
   FIRST_RESPONSE: "Primeira resposta",
@@ -236,6 +247,7 @@ export const supportBodyStateLabel = (code: string): string => lookup(SUPPORT_BO
 export const supportSenderKindLabel = (code: string): string => lookup(SUPPORT_SENDER_KIND, code);
 export const supportDeadlineKindLabel = (code: string): string => lookup(SUPPORT_DEADLINE_KIND, code);
 export const supportCaseEventLabel = (code: string): string => lookup(SUPPORT_CASE_EVENT, code);
+export const replyAttemptLabel = (code: string): string => lookup(REPLY_ATTEMPT_STATUS, code);
 
 /** Cor de destaque por estado. `null` = sem destaque, o padrão da tabela. */
 export function statusTone(code: string): "ok" | "warn" | "bad" | null {
