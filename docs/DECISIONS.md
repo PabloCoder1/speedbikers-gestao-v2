@@ -1273,6 +1273,21 @@ Não é específico de `questions`: **nunca chegou `orders_v2`, `post_purchase`,
 
 **Achado operacional no caminho — disparo manual queima o bloco de dedupe do dia.** Depois de deployar a sonda (`worker-00022-d88`), o re-disparo manual voltou `enqueued: 0, deduplicated: 4`: a chave é `{conta}:{dia}:{bloco-6h-UTC}`, e 20h07 e 20h46 caem no mesmo bloco. O dedupe fez o que devia — mas a consequência é que a execução natural seguinte no MESMO bloco também é descartada, então a rodada das 18h20 de SP não aconteceu. Isso vale para qualquer job com dedupe por dia/bloco (D-065 e D-081 dispararam manualmente jobs com chave `{organização}:{data-negócio}` e simplesmente não esbarraram no caso). Não é bug: é o preço, já aceito em D-051, de usar o nome da task como mecanismo de dedupe. Fica registrado para ninguém interpretar "o cron não rodou" como falha.
 
+**CONCLUÍDO em 2026-08-26 — as duas hipóteses estavam erradas, e a sonda provou isso.** Execução natural das 03h20/UTC: as quatro contas voltaram vazio na busca filtrada, e a sonda registrou o `total` SEM filtro por conta — `27387997: 3142`, `118570204: 4361`, `463776938: 3073`, `272371352: 4777`.
+
+- **(a) permissão está DESCARTADA**: enxergamos entre 3.073 e 4.777 perguntas por conta. Os tokens de 2026-08-21 têm acesso a `questions`; **nenhuma reautorização é necessária**.
+- **(b) filtro está DESCARTADA**: a execução seguinte, às 09h20/UTC, trouxe `1+1+1+3 = 6` perguntas reais com `status=UNANSWERED`. O filtro funciona.
+
+**A resposta era a mais simples e eu não a tinha considerado seriamente: `total: 0` era verdade.** Não havia pergunta em aberto nos instantes medidos. A rodada das 03h20/UTC (00h20 de SP) passou 2 minutos ANTES da primeira das seis chegar (00h22 de SP); as seis caíram entre 00h22 e 05h14 e a rodada das 06h20 pegou todas. Lição registrada: diante de um "zero" inesperado, a hipótese de que o zero é correto merece o mesmo peso das hipóteses de falha — a sonda foi valiosa justamente por medir em vez de escolher entre duas explicações que eu já tinha formulado.
+
+**Sobre a pergunta que o ERP mostrava pendente em 2026-08-25 às 16h59:** não é determinável retroativamente por que ela não estava `UNANSWERED` às 17h07. A explicação mais provável é que já tinha sido respondida (o UpSeller da operação tem "Auto Resposta" ligada), mas isso é inferência, não medição, e fica marcado como tal.
+
+**Sonda REMOVIDA em 2026-08-26**, como D-091 previa desde a primeira linha ("temporária por desenho"). Ela custava uma chamada extra à API do Mercado Livre em toda execução sem perguntas em aberto — que é o caso comum — e a dúvida que justificava esse custo acabou. `fetchReceivedQuestionsPage` voltou a exigir `status` obrigatório: uma busca sem filtro varre milhares de linhas, e nenhum chamador da ingestão deve conseguir pedir isso sem querer.
+
+**Pipeline confirmado ponta a ponta com dado real de produção:** 6 perguntas reais de 4 contas, ingeridas pela reconciliação e visíveis na Caixa de Entrada (D-090). D-086, D-087, D-089 e D-090 estão validados contra a API real, não só contra fixture.
+
+**O webhook continua não configurado** (verificado em 2026-08-26: a única requisição ao endpoint em 30 dias segue sendo o teste interno). É por isso que essas perguntas levaram até 6 horas para aparecer em vez de segundos — a reconciliação está cobrindo, mas como rede de segurança, não como caminho principal.
+
 **Impacto:** `docs/DEPLOYMENT.md` (passo de configuração externa, novo), `docs/ROADMAP.md` (marco da Fase 3 corrigido — não pode continuar afirmando o que nunca aconteceu), `docs/HANDOFF.md` (dois achados nas pendências imediatas), `docs/MERCADO_LIVRE.md` (secao 2.12, o que a reconciliação realmente observou).
 
 ## Como adicionar nova decisão

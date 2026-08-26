@@ -294,11 +294,12 @@ export interface FetchReceivedQuestionsPageOptions {
    * oficial declara, com exatamente os sete valores de `questionStatusSchema`
    * — não é parâmetro inventado.
    *
-   * Omitir busca SEM filtro de status. Usado só pela sonda de diagnóstico de
-   * D-091, para distinguir "não há pergunta em aberto" de "não enxergamos
-   * pergunta nenhuma"; a ingestão normal sempre passa o filtro.
+   * Obrigatório: uma busca sem filtro varre o histórico inteiro da conta
+   * (medido em 2026-08-26 pela sonda de D-091 — entre 3.073 e 4.777 perguntas
+   * por conta). Nenhum chamador da ingestão deve conseguir pedir isso sem
+   * querer.
    */
-  status?: z.infer<typeof questionStatusSchema>;
+  status: z.infer<typeof questionStatusSchema>;
   offset: number;
   limit: number;
 }
@@ -335,8 +336,6 @@ export function fetchReceivedQuestionsPage(
   return options.mercadoLivre.request({
     method: "GET",
     path: "/my/received_questions/search",
-    // `status: undefined` é omitido pelo `buildUrl` do cliente comum, então
-    // sem filtro a query sai só com api_version/offset/limit.
     searchParams: {
       api_version: 4,
       status: options.status,
