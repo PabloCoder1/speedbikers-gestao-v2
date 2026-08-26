@@ -170,10 +170,17 @@ jobs:
     # compila é como se corrompe um ambiente.
     needs: [check, scripts, integration, e2e]
 
-    # Só em push na branch de desenvolvimento. Pull request NÃO aplica migration
-    # — o Preview da Vercel aponta para o mesmo banco Dev (D-025), e uma
-    # migration de PR afetaria quem estivesse testando.
-    if: github.ref == 'refs/heads/v3' && github.event_name == 'push'
+    # Nunca em pull request: o Preview da Vercel aponta para o mesmo banco Dev
+    # (D-025), e uma migration de PR afetaria quem estivesse testando.
+    #
+    # `workflow_dispatch` entra junto de `push` porque sem ele o disparo manual
+    # ficava pela metade -- foi o que aconteceu em 2026-08-26, quando um push
+    # nao criou execucao e o dispatch de recuperacao rodou tudo MENOS aplicar a
+    # migration. Um dispatch na v3 e um ato deliberado de quem tem acesso ao
+    # repositorio, mesma confianca de um push.
+    if: >-
+      github.ref == 'refs/heads/v3'
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
 
     # Uma execução por vez. Duas aplicando migration no mesmo banco em paralelo
     # é a receita para um schema em estado indefinido.
