@@ -1562,9 +1562,11 @@ Não é específico de `questions`: **nunca chegou `orders_v2`, `post_purchase`,
 
 **Achado ao escrever:** o link do card de mediação usava `?channel=CLAIM`, mas o filtro real da Caixa de Entrada lê **`?canal=`** (`apps/web/app/atendimento/page.tsx`). O parâmetro errado seria ignorado em silêncio e o card levaria à lista sem filtro — conferido contra o código, não presumido.
 
-**Verificação:** `pnpm run check` **29/29** e `build` **8/8** verdes. Só `apps/web`: sem migration, sem Cloud Run, deploy automático pela Vercel.
+**Decisão 5 — `/` saiu da lista de rotas públicas, e o achado veio de VERIFICAR o deploy.** Logo após publicar, `curl` na raiz devolveu **200 sem sessão**: a proxy tinha `/` em `PUBLIC_EXACT`, com a justificativa escrita no próprio arquivo — *"`/` e o painel de progresso do projeto: conteudo estatico, nenhum dado do negocio"*. A justificativa estava correta e acabara de deixar de valer, porque a tela nova lê `actions`/`support_cases`/`notification_recipients`. Mantida a exceção, um visitante anônimo cairia numa tela de dado de negócio exibindo "Sua conta não está associada a nenhuma organização". A exceção saiu junto com a página estática que a sustentava; `PUBLIC_EXACT` fica vazio e documentado, porque `/` é prefixo de tudo e jamais pode migrar para `PUBLIC_PREFIXES`. Spec E2E novo cobre a regressão — sem ele, alguém reintroduz a rota sem perceber que a página por trás mudou de natureza.
 
-**Impacto:** `apps/web/app/page.tsx` reescrito (223 linhas de lista estática → tela dirigida por consulta). Fecha o item P1 "Substituir a Home de construção pela Home orientada a 'o que precisa da minha atenção hoje?'".
+**Verificação:** `pnpm run check` **29/29** e `build` **8/8** verdes. Só `apps/web`: sem migration, sem Cloud Run, deploy automático pela Vercel. **Confirmado em produção em 2026-08-27, medido e não presumido**: `GET /` devolve `307` para `/login?next=%2F` (antes devolvia `200` com o painel), `/login` responde `200`, e a busca pelo conteúdo antigo (`Fase 5B`, `Reconciliação ERP`, `Entrar no sistema`) devolve **zero ocorrências** na página publicada. O `next` preservado prova de quebra que a correção de redirect de D-090 continua valendo.
+
+**Impacto:** `apps/web/app/page.tsx` reescrito (223 linhas de lista estática → tela dirigida por consulta), `apps/web/proxy.ts` (+1 spec E2E). Fecha o item P1 "Substituir a Home de construção pela Home orientada a 'o que precisa da minha atenção hoje?'".
 
 ## Como adicionar nova decisão
 

@@ -41,7 +41,9 @@ A fonte de verdade continua sendo:
 - Quatro contadores nesta fatia (ações abertas, atendimentos abertos, em mediação, notificações não lidas), todos sobre tabelas já provadas. Ruptura, Full, alterações de anúncio e decisões aguardando medição ficam para quando cada um tiver consulta agregada própria.
 - **Achado ao escrever**: o card de mediação linkava `?channel=CLAIM`, mas o filtro real lê `?canal=` — o parâmetro errado seria ignorado em silêncio. Conferido contra o código, não presumido.
 - Falha de leitura aparece como "—", nunca zero (D-067): erro mostrando "0 ações abertas" some com o problema em vez de anunciá-lo.
+- **Achado ao VERIFICAR o deploy, não ao escrever o código**: publicada, a raiz respondia `200` sem sessão — a proxy tinha `/` em `PUBLIC_EXACT` porque *era* painel estático ("nenhum dado do negocio", dizia o comentário). A tela nova lê dado de negócio, então a exceção saiu junto com a página que a justificava. `PUBLIC_EXACT` ficou vazio e documentado (`/` é prefixo de tudo e jamais pode ir para `PUBLIC_PREFIXES`), com spec E2E cobrindo a regressão.
 - `check` **29/29**, `build` **8/8**. Só `apps/web` — sem migration, sem Cloud Run, deploy automático pela Vercel.
+- **Confirmado em produção em 2026-08-27**: `GET /` devolve `307` para `/login?next=%2F` (antes: `200` com o painel), `/login` responde `200`, e o conteúdo antigo tem **zero ocorrências** na página publicada.
 
 ### Etapa anterior — D-104 (claims na Caixa de Entrada)
 
