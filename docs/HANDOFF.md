@@ -42,6 +42,7 @@ A fonte de verdade continua sendo:
 - **Sem identificar nosso papel, INBOUND** — o erro seguro. OUTBOUND diria "já respondemos" e poderia suprimir atenção de um atendimento aberto.
 - **Limite honesto herdado da API**: contagem de mensagens de um claim é **piso, nunca total**. A UI não deve afirmar "N mensagens" como fato.
 - `check` **29/29**, **51 testes** nos arquivos de claim (18 novos). Nenhuma migration — `support_messages` já previa `MEDIATOR`.
+- **Deployado e verificado em 2026-08-27**: `worker-00032-kzb`, 100% do tráfego, zero ERROR, zero WARNING, zero `job_failed`, já processando tráfego real.
 
 ### Etapa anterior — D-105 (a Home de construção saiu)
 
