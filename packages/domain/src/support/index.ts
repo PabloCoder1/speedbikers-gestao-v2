@@ -1,5 +1,10 @@
-export { evaluateConversationRemoteTransition, evaluateQuestionRemoteTransition } from "./remote-transition.js";
+export {
+  evaluateClaimRemoteTransition,
+  evaluateConversationRemoteTransition,
+  evaluateQuestionRemoteTransition,
+} from "./remote-transition.js";
 export type {
+  ClaimRemoteSignal,
   ConversationRemoteSignal,
   QuestionRemoteSignal,
   SupportInternalStatus,

@@ -1,6 +1,69 @@
 import { describe, expect, it } from "vitest";
 
-import { evaluateConversationRemoteTransition, evaluateQuestionRemoteTransition } from "./remote-transition.js";
+import {
+  evaluateClaimRemoteTransition,
+  evaluateConversationRemoteTransition,
+  evaluateQuestionRemoteTransition,
+} from "./remote-transition.js";
+
+describe("evaluateClaimRemoteTransition", () => {
+  const BASE = {
+    caseId: "case-claim",
+    remotelyClosed: true,
+    resolvedAt: "2024-03-21T05:19:22.000-04:00",
+    lastActivityAt: "2024-03-21T05:19:22.000-04:00",
+  };
+
+  it("claim fechado resolve o case não triado", () => {
+    const transition = evaluateClaimRemoteTransition(BASE);
+
+    expect(transition.newStatus).toBe("RESOLVIDO");
+    expect(transition.expectedStatuses).toEqual(["NOVO"]);
+    expect(transition.eventType).toBe("support.case.auto_resolved");
+  });
+
+  it("usa a data real do encerramento, não a da última atividade", () => {
+    const transition = evaluateClaimRemoteTransition({
+      ...BASE,
+      resolvedAt: "2024-03-20T00:00:00.000-04:00",
+      lastActivityAt: "2024-03-21T05:19:22.000-04:00",
+    });
+
+    expect(transition.occurredAt).toBe("2024-03-20T00:00:00.000-04:00");
+  });
+
+  it("sem `resolution.date_created` cai para a última atividade", () => {
+    const transition = evaluateClaimRemoteTransition({ ...BASE, resolvedAt: null });
+
+    expect(transition.occurredAt).toBe("2024-03-21T05:19:22.000-04:00");
+  });
+
+  it("claim aberto reabre um case RESOLVIDO", () => {
+    const transition = evaluateClaimRemoteTransition({ ...BASE, remotelyClosed: false, resolvedAt: null });
+
+    expect(transition.newStatus).toBe("NOVO");
+    expect(transition.expectedStatuses).toEqual(["RESOLVIDO"]);
+    expect(transition.eventType).toBe("support.case.auto_reopened");
+  });
+
+  it("a chave leva timestamp: um claim pode fechar DUAS vezes (estágio recontact)", () => {
+    // Diferença deliberada de PERGUNTA, que usa chave fixa. Com chave fixa, o
+    // segundo fechamento colidiria com o evento do primeiro, seria descartado,
+    // e o case ficaria preso em NOVO com o claim fechado no Mercado Livre.
+    const primeiro = evaluateClaimRemoteTransition(BASE);
+    const segundo = evaluateClaimRemoteTransition({
+      ...BASE,
+      resolvedAt: "2024-04-02T11:00:00.000-04:00",
+    });
+
+    expect(primeiro.dedupKey).not.toBe(segundo.dedupKey);
+    expect(segundo.dedupKey).toBe("auto-resolve:case-claim:2024-04-02T11:00:00.000-04:00");
+  });
+
+  it("reprocessar o MESMO estado produz a mesma chave (idempotente)", () => {
+    expect(evaluateClaimRemoteTransition(BASE).dedupKey).toBe(evaluateClaimRemoteTransition(BASE).dedupKey);
+  });
+});
 
 describe("evaluateQuestionRemoteTransition", () => {
   it("pergunta ainda sem resposta remota: nenhuma transição", () => {

@@ -1526,6 +1526,28 @@ Não é específico de `questions`: **nunca chegou `orders_v2`, `post_purchase`,
 
 **Impacto:** `packages/mercado-livre/src/messages.ts` (+1 teste). Fecha o "Achado 4" de D-101.
 
+## D-104 — Claims na Caixa de Entrada, e a mediação NÃO é `type = "mediations"`
+
+**Contexto:** próximo item aberto na ordem incremental da Fase 7B — ingestão read-only de reclamações/devoluções/mediações. O levantamento mostrou a etapa muito mais barata do que parecia: a pesquisa oficial já estava confirmada (`docs/MERCADO_LIVRE.md` 2.10/2.12), o slot `CLAIM` de `support_cases` existia vazio desde D-085 (com a constraint `external_case_key = 'claim:' || external_case_id` e as colunas `is_mediation`/`has_return`), a Caixa de Entrada já oferecia o filtro "Reclamações" retornando vazio, e `claim-return.ts` **já buscava o claim** desde D-057 para reverter estoque. Faltava só a projeção no meio.
+
+**Decisão 1 — mediação é `stage = "dispute"`, corrigindo D-084.** `docs/DATABASE.md` registrava "Mediação (`claim.type = 'mediations'`)". A leitura oficial ao vivo (2026-08-27) contradiz: a mesma página define `type: "mediations"` como a reclamação comum "entre comprador e vendedor", e `stage: "dispute"` como a "etapa de mediação onde intervém um representante do Mercado Livre". **O próprio exemplo oficial prova**: `type: "mediations"` junto de `stage: "claim"`, encerrado pelo vendedor, sem mediação nenhuma. Seguir D-084 literalmente marcaria reclamações comuns como mediação e — como o modelo prevê "mediação crítica" — encheria a Caixa de Entrada de `CRITICA` falso, exatamente a avalanche que a arquitetura existe para evitar (a V2 chegou a 5.243 alertas). `docs/DATABASE.md` foi corrigido, não contornado.
+
+**Decisão 2 — a projeção vem ANTES dos early returns de `claim-return.ts`, e a ordem é o ponto todo.** Aquele handler retorna cedo quando o claim não tem devolução física — e reclamação sem devolução (mediação, disputa de pagamento) é justamente o que o SAC precisa mostrar. Depois do early return, só apareceriam claims que já reverteram estoque.
+
+**Decisão 3 — SAC não derruba estoque; estoque continua derrubando tudo.** Dois domínios num handler só foi escolha deliberada (aprovada pelo usuário): o claim já está carregado, e re-buscá-lo gastaria chamada contra uma API limitada. O risco de acoplamento é contido pela assimetria — falha ao projetar o atendimento é logada e engolida (a próxima notificação reconverge, a persistência é idempotente), enquanto falha de estoque continua propagando e sendo repetida pelo Cloud Tasks. Estoque é dado financeiro em produção desde D-057; SAC é projeção de leitura.
+
+**Decisão 4 — sem carimbo de tempo do Mercado Livre, NÃO projeta.** `support_cases.last_activity_at` é `not null`, e a alternativa seria o instante da consulta — precisamente o defeito que D-097 encontrou em produção, achatando a ordenação inteira da Caixa de Entrada. O mapper devolve `null`, o handler loga e segue. `last_updated ?? date_created`, nunca `now()`. Os dois campos entraram como **opcionais** no schema pela lição de D-101 (`GET /orders/{id}` não trazia `date_last_updated` apesar do exemplo): exigi-los transformaria uma ausência em ZodError que derrubaria a reversão de estoque já em produção.
+
+**Decisão 5 — `evaluateClaimRemoteTransition` leva timestamp na `dedupKey`, diferente de PERGUNTA.** Um claim pode reabrir (a doc oficial descreve o estágio `recontact`, "uma das partes entra em contato após o fechamento"). Com a chave fixa que PERGUNTA usa, o segundo fechamento colidiria com o evento do primeiro e seria descartado, deixando o case preso em `NOVO` com o claim fechado no Mercado Livre. Sem isso, a etapa recriaria o bug que D-102 acabou de corrigir.
+
+**Decisão 6 — pedido não sincronizado vira vínculo EXTERNO, não erro.** `support_case_links.order_id` tem FK real para `orders`; um claim de pedido fora da janela de backfill derrubaria a ingestão. Mesmo fallback de D-086 para anúncio, promovido a tipado quando o pedido chega.
+
+**Verificação:** `pnpm run check` **29/29** e `build` **8/8** verdes localmente. **33 testes novos** — 16 do mapper puro (com o exemplo oficial VERBATIM como fixture, incluindo o caso que prova a correção de D-084), 6 da transição de claim em `@sb/domain`, 9 da persistência (idempotência, triagem humana preservada, fallback de pedido, promoção do vínculo) e 4 do wiring (projeta sem devolução; projeta claim que não é de pedido; falha de SAC não impede reversão; claim sem data é pulado e o estoque segue). Regressão do caminho de D-057 verde.
+
+**Escopo deliberadamente fora:** transcript do claim (`GET /claims/{id}/messages`) e prazos (`GET /claims/{id}/detail` → `due_date`) — dois fetches novos com contrato próprio, fatia seguinte. Um case de claim sem transcript cai no estado vazio que a tela de D-095 já trata.
+
+**Impacto:** `apps/worker/src/handlers/{claim-schema,claim-support-projection,persist-support-claim,claim-return}.ts`, `packages/domain/src/support/remote-transition.ts` (+4 arquivos de teste). **Nenhuma migration** — o schema de D-085 já previa o canal. **NÃO deployado.**
+
 ## Como adicionar nova decisão
 
 Registrar:

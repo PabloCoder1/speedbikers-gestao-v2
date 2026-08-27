@@ -65,6 +65,54 @@ export function evaluateQuestionRemoteTransition(signal: QuestionRemoteSignal): 
   };
 }
 
+export interface ClaimRemoteSignal {
+  readonly caseId: string;
+  /** `status === "closed"` no payload do claim. */
+  readonly remotelyClosed: boolean;
+  /** `resolution.date_created` quando existe. */
+  readonly resolvedAt: string | null;
+  readonly lastActivityAt: string;
+}
+
+/**
+ * CLAIM: fechado remotamente resolve o case não triado; reaberto volta para
+ * NOVO.
+ *
+ * **Por que a chave leva timestamp, ao contrário de PERGUNTA:** um claim pode
+ * reabrir. A própria documentação oficial descreve o estágio `recontact` —
+ * "etapa em que uma das partes entra em contato após o fechamento". Com a
+ * chave fixa de PERGUNTA, o segundo fechamento (depois de uma reabertura)
+ * colidiria com o evento do primeiro e seria descartado, deixando o case
+ * preso em NOVO com o claim fechado no Mercado Livre.
+ *
+ * `expectedStatuses: ["NOVO"]` no fechamento é a mesma regra conservadora de
+ * D-102: quem já está triando não é atropelado pelo sync.
+ */
+export function evaluateClaimRemoteTransition(signal: ClaimRemoteSignal): SupportRemoteTransition {
+  const occurredAt = signal.resolvedAt ?? signal.lastActivityAt;
+
+  if (signal.remotelyClosed) {
+    return {
+      expectedStatuses: ["NOVO"],
+      newStatus: "RESOLVIDO",
+      eventType: "support.case.auto_resolved",
+      dedupKey: `auto-resolve:${signal.caseId}:${occurredAt}`,
+      occurredAt,
+    };
+  }
+
+  // Claim aberto encontrando um case RESOLVIDO só acontece quando o claim
+  // reabriu de verdade. Case em qualquer outro estado não bate no guard e a
+  // RPC devolve `false` sem erro — cenário normal, não falha.
+  return {
+    expectedStatuses: ["RESOLVIDO"],
+    newStatus: "NOVO",
+    eventType: "support.case.auto_reopened",
+    dedupKey: `auto-reopen:${signal.caseId}:${occurredAt}`,
+    occurredAt,
+  };
+}
+
 export interface ConversationRemoteSignal {
   readonly caseId: string;
   readonly lastInboundAt: string | null;

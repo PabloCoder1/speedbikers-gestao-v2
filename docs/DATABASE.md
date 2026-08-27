@@ -550,7 +550,9 @@ O modelo abaixo fechou a etapa conceitual da Fase 7B em D-084 e seu núcleo read
 
 Identidade física: `unique (organization_id, ml_account_id, channel, external_case_key)`. `buyer_id`, `from.user_id` e `to.user_id` são somente atributos observados — nunca participam da identidade (D-083, Agente de Mensageria do MLB).
 
-Mediação (`claim.type = 'mediations'`) e devolução (`related_entities` contém `return`) são **facetas do mesmo case `CLAIM`**, não novos cases. Um claim pode ser mediação e ter devolução ao mesmo tempo; por isso os filtros “Mediações” e “Devoluções” podem retornar a mesma linha. Mensagens do endpoint de claim pertencem ao case `CLAIM`; não são misturadas com a conversa `POST_SALE_MESSAGE` do mesmo pedido. Cases diferentes se relacionam pelo pedido/pack, sem fundir seus prazos ou ações disponíveis.
+Mediação (`claim.stage = 'dispute'`) e devolução (`related_entities` contém `return`) são **facetas do mesmo case `CLAIM`**, não novos cases.
+
+> **Correção de 2026-08-27 (D-104):** esta linha dizia `claim.type = 'mediations'`. A leitura oficial ao vivo, feita antes de implementar a ingestão, mostrou que o campo errado estava sendo usado: a documentação define `type: "mediations"` como a reclamação COMUM "entre comprador e vendedor", e `stage: "dispute"` como a "etapa de mediação onde intervém um representante do Mercado Livre". O próprio exemplo oficial traz `type: "mediations"` junto de `stage: "claim"` numa reclamação encerrada pelo vendedor, sem mediação alguma. Manter o campo antigo marcaria reclamações comuns como mediação e, pela regra de prioridade abaixo, encheria a Caixa de Entrada de `CRITICA` falso. Um claim pode ser mediação e ter devolução ao mesmo tempo; por isso os filtros “Mediações” e “Devoluções” podem retornar a mesma linha. Mensagens do endpoint de claim pertencem ao case `CLAIM`; não são misturadas com a conversa `POST_SALE_MESSAGE` do mesmo pedido. Cases diferentes se relacionam pelo pedido/pack, sem fundir seus prazos ou ações disponíveis.
 
 #### Tabelas e responsabilidades
 

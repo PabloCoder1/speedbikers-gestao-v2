@@ -357,6 +357,21 @@ Notificação chega pelo tópico `post_purchase` (modelo com subtópicos, secao 
 
 **Mapeamento para `order_items` da V3**: `orders[].item_id`/`variation_id` batem direto com `order_items.item_id`/`variation_id` (mesmo formato — MLB + variation numérica) — dá pra localizar a POSIÇÃO do item sem depender de `sku_listing_links`.
 
+**RE-LEITURA AO VIVO EM 2026-08-27 (D-104), antes da ingestão de SAC** — o registro acima listava só "os campos que a V3 usa hoje", o que bastava para estoque mas não para projetar o claim na Caixa de Entrada. Campos adicionais confirmados no exemplo oficial de `GET /post-purchase/v1/claims/{claim_id}`:
+
+| Campo | Valores/forma | Uso na V3 |
+|---|---|---|
+| `date_created` / `last_updated` | ISO com offset (`"2024-03-21T05:19:22.000-04:00"`) | `last_activity_at` sai daqui — **nunca** do relógio da V3 (lição de D-097) |
+| `stage` | `claim` \| `dispute` \| `recontact` \| `none` \| `stale` | **`dispute` é a mediação** (ver aviso abaixo) |
+| `resolution` | `{reason, date_created, closed_by, benefited, applied_coverage}` | `resolved_at` sai de `resolution.date_created` |
+| `players[]` | `{role, type, user_id, available_actions[]}` | comprador (`type = "buyer"`) e estado de resposta |
+| `players[].available_actions[]` | `{action, mandatory, due_date}` | `send_message_to_*` define `remote_reply_state`; `due_date` é fonte de prazo |
+| `parent_id`, `reason_id`, `fulfilled`, `quantity_type`, `claimed_quantity`, `claim_version`, `site_id` | — | ainda não consumidos |
+
+> ⚠️ **`type = "mediations"` NÃO é mediação.** A mesma página define `type: "mediations"` como a reclamação comum "entre comprador e vendedor", e `stage: "dispute"` como a "etapa de mediação onde intervém um representante do Mercado Livre". O exemplo oficial traz `type: "mediations"` com `stage: "claim"`, encerrado pelo vendedor. Confundir os dois marca reclamação comum como mediação crítica — ver D-104.
+
+**Nota de robustez (D-101):** `date_created`/`last_updated`/`stage`/`players`/`resolution` entraram no schema da V3 como **opcionais**. Campo presente no exemplo da doc pode faltar no payload real, e o mesmo schema é usado pela reversão de estoque que já roda em produção — exigi-los transformaria uma ausência em ZodError que derrubaria dado financeiro.
+
 **Fonte:** `developers.mercadolivre.com.br/pt_br/gerenciar-reclamacoes`, `.../gerenciar-devolucoes`, `.../produto-receba-notificacoes`.
 
 ---

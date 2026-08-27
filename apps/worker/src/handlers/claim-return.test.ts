@@ -50,11 +50,14 @@ interface FakeDbOptions {
   saleMovements?: { sku_id: string; qty_delta: number; idempotency_key: string }[];
   orderItemsError?: boolean;
   saleMovementsError?: boolean;
+  /** D-104: força a projeção de atendimento a falhar, sem tocar no estoque. */
+  supportError?: boolean;
 }
 
 interface Captured {
   movements: Record<string, unknown>[];
   events: Record<string, unknown>[];
+  supportCases: Record<string, unknown>[];
 }
 
 function fakeDb(options: FakeDbOptions, captured: Captured): ProcessClaimReturnDeps["db"] {
@@ -122,8 +125,48 @@ function fakeDb(options: FakeDbOptions, captured: Captured): ProcessClaimReturnD
         };
       }
 
+      // D-104 — tabelas da projeção de atendimento.
+      if (table === "support_cases") {
+        return {
+          upsert: (row: Record<string, unknown>) => {
+            captured.supportCases.push(row);
+
+            return Promise.resolve({ data: null, error: null });
+          },
+          update: () => ({
+            eq: function eq() {
+              return this;
+            },
+            select: () => ({
+              single: () =>
+                Promise.resolve(
+                  options.supportError === true
+                    ? { data: null, error: { message: "banco de atendimento fora do ar" } }
+                    : { data: { id: "case-1" }, error: null },
+                ),
+            }),
+          }),
+        };
+      }
+
+      if (table === "orders") {
+        return {
+          select: () => ({
+            eq: function eq() {
+              return this;
+            },
+            maybeSingle: () => Promise.resolve({ data: null, error: null }),
+          }),
+        };
+      }
+
+      if (table === "support_case_links") {
+        return { insert: () => Promise.resolve({ data: null, error: null }) };
+      }
+
       throw new Error(`tabela inesperada no fake: ${table}`);
     },
+    rpc: () => Promise.resolve({ data: true, error: null }),
   } as unknown as ProcessClaimReturnDeps["db"];
 }
 
@@ -152,7 +195,7 @@ const logger = createLogger({}, { sink: () => undefined });
 
 describe("processClaimReturn (D-057)", () => {
   it("claim sem devolução associada (related_entities vazio): não busca returns, processa zero", async () => {
-    const captured: Captured = { movements: [], events: [] };
+    const captured: Captured = { movements: [], events: [], supportCases: [] };
     const { client, requests } = fakeMercadoLivre({ claim: CLAIM_WITHOUT_RETURN });
 
     const processed = await processClaimReturn(
@@ -170,7 +213,7 @@ describe("processClaimReturn (D-057)", () => {
   });
 
   it("claim de recurso diferente de 'order' (ex.: payment): ignora", async () => {
-    const captured: Captured = { movements: [], events: [] };
+    const captured: Captured = { movements: [], events: [], supportCases: [] };
     const { client } = fakeMercadoLivre({ claim: { ...CLAIM_WITH_RETURN, resource: "payment" } });
 
     const processed = await processClaimReturn(
@@ -186,7 +229,7 @@ describe("processClaimReturn (D-057)", () => {
   });
 
   it("devolução ainda não entregue (status != delivered): não reverte ainda", async () => {
-    const captured: Captured = { movements: [], events: [] };
+    const captured: Captured = { movements: [], events: [], supportCases: [] };
     const { client } = fakeMercadoLivre({ claimReturn: returnPayload({ status: "shipped" }) });
 
     const processed = await processClaimReturn(
@@ -203,7 +246,7 @@ describe("processClaimReturn (D-057)", () => {
   });
 
   it("devolução total entregue: reverte o movimento e grava order.returned", async () => {
-    const captured: Captured = { movements: [], events: [] };
+    const captured: Captured = { movements: [], events: [], supportCases: [] };
     const { client } = fakeMercadoLivre({});
 
     const processed = await processClaimReturn(
@@ -229,7 +272,7 @@ describe("processClaimReturn (D-057)", () => {
   });
 
   it("devolução parcial entregue: não reverte, mas grava o evento para investigação", async () => {
-    const captured: Captured = { movements: [], events: [] };
+    const captured: Captured = { movements: [], events: [], supportCases: [] };
     const { client } = fakeMercadoLivre({
       claimReturn: returnPayload({ total_quantity: "5.0", return_quantity: "2.0" }),
     });
@@ -249,7 +292,7 @@ describe("processClaimReturn (D-057)", () => {
   });
 
   it("item devolvido não encontrado em order_items: pula sem lançar", async () => {
-    const captured: Captured = { movements: [], events: [] };
+    const captured: Captured = { movements: [], events: [], supportCases: [] };
     const { client } = fakeMercadoLivre({});
 
     const processed = await processClaimReturn(
@@ -267,7 +310,7 @@ describe("processClaimReturn (D-057)", () => {
   });
 
   it("falha ao ler order_items rejeita — indistinguível de 'não encontrado' seria pior: pularia uma devolução real", async () => {
-    const captured: Captured = { movements: [], events: [] };
+    const captured: Captured = { movements: [], events: [], supportCases: [] };
     const { client } = fakeMercadoLivre({});
 
     await expect(
@@ -285,7 +328,7 @@ describe("processClaimReturn (D-057)", () => {
   });
 
   it("falha ao ler stock_movements existentes rejeita, em vez de reverter zero", async () => {
-    const captured: Captured = { movements: [], events: [] };
+    const captured: Captured = { movements: [], events: [], supportCases: [] };
     const { client } = fakeMercadoLivre({});
 
     await expect(
@@ -300,5 +343,75 @@ describe("processClaimReturn (D-057)", () => {
     ).rejects.toThrow(/stock_movements/);
 
     expect(captured.movements).toHaveLength(0);
+  });
+});
+
+describe("processClaimReturn — projeção de atendimento (D-104)", () => {
+  /** Claim datado: sem `date_created`/`last_updated` o mapper recusa de propósito. */
+  const DATED_CLAIM = {
+    ...CLAIM_WITH_RETURN,
+    status: "opened",
+    stage: "dispute",
+    date_created: "2026-08-27T10:00:00.000-03:00",
+    last_updated: "2026-08-27T12:00:00.000-03:00",
+  };
+
+  async function run(options: FakeDbOptions, claim: Record<string, unknown>) {
+    const captured: Captured = { movements: [], events: [], supportCases: [] };
+    const { client } = fakeMercadoLivre({ claim });
+
+    const processed = await processClaimReturn(
+      { db: fakeDb(options, captured), mercadoLivre: client },
+      { organizationId: ORGANIZATION_ID, mlAccountId: ML_ACCOUNT_ID },
+      "token",
+      CLAIM_ID,
+      NOW,
+      logger,
+    );
+
+    return { captured, processed };
+  }
+
+  it("projeta o case MESMO sem devolução — é o motivo de a chamada vir antes do early return", async () => {
+    // Uma reclamação sem devolução (mediação, disputa de pagamento) é
+    // justamente o que a Caixa de Entrada precisa mostrar. Se a projeção
+    // estivesse depois do early return, só apareceriam claims que já
+    // reverteram estoque.
+    const { captured, processed } = await run({}, { ...DATED_CLAIM, related_entities: [] });
+
+    expect(processed).toBe(0);
+    expect(captured.movements).toHaveLength(0);
+    expect(captured.supportCases).toHaveLength(1);
+    expect(captured.supportCases[0]?.channel).toBe("CLAIM");
+    expect(captured.supportCases[0]?.is_mediation).toBe(true);
+    expect(captured.supportCases[0]?.priority).toBe("CRITICA");
+  });
+
+  it("projeta o case de claim que NÃO é sobre pedido (ex.: payment)", async () => {
+    const { captured } = await run({}, { ...DATED_CLAIM, resource: "payment", related_entities: [] });
+
+    expect(captured.supportCases).toHaveLength(1);
+  });
+
+  it("falha na projeção de atendimento NÃO impede a reversão de estoque", async () => {
+    // A fronteira que o usuário aprovou: dois domínios num handler só, com o
+    // financeiro protegido. Estoque é dado de negócio e já roda em produção
+    // desde D-057; SAC é projeção de leitura e reconverge na próxima
+    // notificação, porque a persistência é idempotente.
+    const { captured, processed } = await run({ supportError: true }, DATED_CLAIM);
+
+    expect(processed).toBe(1);
+    expect(captured.movements).toHaveLength(1);
+    expect(captured.events).toHaveLength(1);
+  });
+
+  it("claim sem carimbo de tempo do ML é pulado, e o estoque segue normalmente", async () => {
+    // `CLAIM_WITH_RETURN` (fixture de D-057) não tem data nenhuma — o mapper
+    // recusa em vez de inventar `now()`, e a reversão continua acontecendo.
+    const { captured, processed } = await run({}, CLAIM_WITH_RETURN);
+
+    expect(processed).toBe(1);
+    expect(captured.movements).toHaveLength(1);
+    expect(captured.supportCases).toHaveLength(0);
   });
 });

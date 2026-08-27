@@ -4,8 +4,11 @@ import type { RecordedSaleMovement } from "@sb/domain";
 import type { MercadoLivreClient } from "@sb/mercado-livre";
 import type { Logger } from "@sb/observability";
 
+import type { ParsedClaim } from "./claim-schema.js";
 import { claimReturnSchema, claimSchema } from "./claim-schema.js";
+import { mapClaimToSupportProjection } from "./claim-support-projection.js";
 import { recordDomainEvents } from "./domain-events.js";
+import { persistSupportClaim } from "./persist-support-claim.js";
 import { recordStockMovements } from "./stock-movements.js";
 
 /**
@@ -86,6 +89,55 @@ async function loadOrderItemPosition(
   return result.data?.position ?? null;
 }
 
+/**
+ * Projeta o claim na Caixa de Entrada (D-104).
+ *
+ * **Nunca derruba a reversão de estoque.** Esta função roda dentro de um
+ * handler cujo trabalho original é financeiro e já está em produção desde
+ * D-057; uma falha ao projetar o atendimento (ou um claim sem carimbo de
+ * tempo do Mercado Livre) não pode impedir o estoque de voltar. A falha é
+ * registrada e a próxima notificação do mesmo claim reprocessa tudo, porque
+ * a persistência é idempotente.
+ *
+ * O inverso não vale: falha de ESTOQUE continua propagando e sendo repetida
+ * pelo Cloud Tasks, como sempre foi.
+ */
+async function projectClaimAsSupportCase(
+  db: AdminClient,
+  context: ProcessClaimReturnContext,
+  claim: ParsedClaim,
+  logger: Logger,
+): Promise<void> {
+  const projection = mapClaimToSupportProjection(claim);
+
+  if (projection === null) {
+    logger.warn("claim_support_projection_skipped_without_timestamp", {
+      claim_id: String(claim.id),
+      reason: "claim sem date_created nem last_updated",
+    });
+
+    return;
+  }
+
+  try {
+    const result = await persistSupportClaim(db, { ...context, source: "WEBHOOK" }, projection);
+
+    logger.info("claim_support_case_persisted", {
+      claim_id: String(claim.id),
+      support_case_id: result.supportCaseId,
+      link_mode: result.linkMode,
+      transition_applied: result.transitionApplied,
+      is_mediation: projection.case.isMediation,
+      has_return: projection.case.hasReturn,
+    });
+  } catch (error) {
+    logger.error("claim_support_projection_failed", {
+      claim_id: String(claim.id),
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 export async function processClaimReturn(
   deps: ProcessClaimReturnDeps,
   context: ProcessClaimReturnContext,
@@ -100,6 +152,12 @@ export async function processClaimReturn(
     accessToken,
     schema: claimSchema,
   });
+
+  // D-104 — a projeção de atendimento vem ANTES dos early returns abaixo, e a
+  // ordem é o ponto todo: uma reclamação SEM devolução (mediação, disputa de
+  // pagamento) é justamente o que a Caixa de Entrada precisa mostrar. Colocar
+  // isto depois entregaria só os claims que já reverteram estoque.
+  await projectClaimAsSupportCase(deps.db, context, claim, logger);
 
   if (claim.resource !== "order" || !claim.related_entities.includes("return")) {
     // Reclamação sem devolução física associada (mediação de pagamento,
