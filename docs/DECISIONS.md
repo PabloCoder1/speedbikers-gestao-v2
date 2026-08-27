@@ -1654,9 +1654,26 @@ Não é específico de `questions`: **nunca chegou `orders_v2`, `post_purchase`,
 
 **O que NÃO foi tocado, de propósito:** o `range=last_updated:after:...` sem `before`. A doc traz o formato como `range=campo:after:data,before:data`, o que sugere par obrigatório, MAS a lista oficial de exemplos inválidos mostra `range=last_updated:after:<data sem ms>` recusado **apenas pela falta de milissegundos** — o que implica que `after` sozinho é aceito. Ambíguo. Mexer nele agora seria uma terceira mudança simultânea e embaralharia o diagnóstico. Se o 400 persistir, o corpo instrumentado decide.
 
-**Estado honesto:** a correção **não está confirmada**. `check` 29/29 e um teste-guarda novo, mas a prova é a próxima execução horária do `v3-support-claims-reconcile` lendo `sync_runs`. Até lá, D-108 continua sendo código correto que nunca rodou, e a única cobertura real de claims é o webhook.
+**Achado 3 — `status=opened` é exigência da API viva, contra a prosa da doc.** Com a instrumentação no ar, a execução seguinte entregou o corpo: `{"code":400,"error":"bad_request_error","message":"atLeastOneFilterProvided: at least one filter parameter must be provided"}`. A API **não conta `players.user_id` + `players.role` + `range` como filtro**, apesar de a doc listar os três entre os filtros aceitos E recomendar `players.*` como base para "reclamações de um vendedor". A doc também erra a forma do erro (documenta `invalid_query`, a API devolve `bad_request_error`). O que vale é o único exemplo de chamada que a doc publica como funcional — e ele inclui `status=opened`. Acrescentado. Consequência deliberada: claim FECHADO desde a última passada não é reconciliado; o fechamento chega pelo webhook, e um case aberto à toa continua visível na Caixa de Entrada, enquanto um claim aberto nunca visto seria invisível.
 
-**Impacto:** `ml-support-claims-fetch.ts` (remove `sort`), `sync-support-claims-reconcile.ts` (`describeFailure`), +1 teste-guarda. Nenhuma migration.
+**Achado 4 — a BUSCA não devolve o mesmo objeto do DETALHE, e eu presumi que sim.** ZodError em 16 execuções: `data[N].related_entities` ausente. `GET /claims/{id}` traz o campo; `GET /claims/search` não — e o exemplo da própria doc lista os campos da busca sem ele, que eu li sem notar a ausência. **A parte que importa não é o schema, é a semântica**: `has_return` sai desse campo, e ausência significa "esta fonte não informou", não "não tem devolução". Por isso `hasReturn` virou `boolean | null`: na CRIAÇÃO `null` vira `false` (coluna `not null`, "não sei" começa como "não sinalizado"); no UPDATE, `null` **omite a coluna**. Sobrescrever com `false` faria a varredura APAGAR a devolução que o webhook já registrara — a reconciliação destruindo o dado que ela existe para proteger.
+
+**RESOLVIDO E COMPROVADO EM PRODUÇÃO em 2026-08-27** (`worker-00037-t2f`), com três correções em sequência, cada uma revelada pela anterior. Medido depois do disparo manual autorizado:
+
+| Métrica | Antes | Depois |
+|---|---|---|
+| `sync_runs` de `claims` | 28 `failed`, checkpoint NULL | `done`, checkpoint gravado |
+| `support_cases` canal CLAIM | 24 | **268** |
+| Em mediação (`is_mediation`) | — | **133** |
+| Com devolução (`has_return`) | — | 29 |
+| Mensagens de claim | — | **529** |
+| `support_case_deadlines` | 9 | **263** |
+
+**A cadeia D-104 → D-108 inteira só foi provada com dado real agora.** Envelope, transcript, prazos e reconciliação existiam há horas em produção sem nunca terem processado um lote de verdade. Os 29 `has_return` preservados confirmam que a regra de não sobrescrever funciona.
+
+**Consequência para a fatia seguinte, e ela é grande:** o desenho de notificações foi feito medindo **5 claims em `stage='dispute'`** — número colhido enquanto a varredura estava quebrada. O real é **133**. Toda estimativa de volume daquele desenho está obsoleta, e um `support.claim.disputed` com severidade `critico` sem guarda de época teria produzido 133 notificações críticas na primeira varredura. **Refazer a medição antes de implementar** — é literalmente o que a primeira crítica bloqueante do workflow exigiu, por outro motivo.
+
+**Impacto:** `ml-support-claims-fetch.ts` (remove `sort`, acrescenta `status`), `sync-support-claims-reconcile.ts` (`describeFailure`), `claim-schema.ts` (`related_entities` opcional), `claim-support-projection.ts` + `persist-support-claim.ts` (`hasReturn` tri-estado), `claim-return.ts` (guarda conservadora), +3 testes-guarda. Nenhuma migration.
 
 ## Como adicionar nova decisão
 
