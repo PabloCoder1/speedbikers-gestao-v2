@@ -42,6 +42,7 @@ A fonte de verdade continua sendo:
 - **Claim fechado CANCELA, não marca MET** — a API não diz se o prazo foi cumprido, e afirmar que foi seria inventar.
 - Nenhum prazo é estimado: `started_at` fica nulo onde a API não o define.
 - `check` **29/29**, **59 testes** nos arquivos de claim (8 novos). Nenhuma migration — tabela e valores de `source` existem desde D-085.
+- **Deployado e verificado em 2026-08-27**: `worker-00033-s7m`, 100% do tráfego, zero ERROR, zero WARNING, zero `job_failed`, processando tráfego real.
 - **Não entrega** o filtro de SLA na tela nem detecção de `BREACHED` (exige job com relógio) — mas a tabela agora tem dado real para sustentar os dois.
 
 ### Etapa anterior — D-106 (transcript do claim)
