@@ -5383,9 +5383,9 @@ describe("apply_support_remote_transition (D-102)", () => {
           external_case_id, external_status, internal_status, priority,
           remote_unread_count, last_activity_at, resolved_at)
        values
-         ($1, $4, $5, 'QUESTION', 'question:d102-1', 'd102-1', 'ANSWERED', 'NOVO', 'NORMAL', 0, now(), null),
-         ($2, $4, $5, 'QUESTION', 'question:d102-2', 'd102-2', 'ANSWERED', 'EM_ATENDIMENTO', 'NORMAL', 0, now(), null),
-         ($3, $4, $5, 'POST_SALE_MESSAGE', 'message:pack:d102-3', 'd102-3', 'active', 'RESOLVIDO', 'NORMAL', 0, now(), now())
+         ($1, $4, $5, 'QUESTION', 'question:9102000001', '9102000001', 'ANSWERED', 'NOVO', 'NORMAL', 0, now(), null),
+         ($2, $4, $5, 'QUESTION', 'question:9102000002', '9102000002', 'ANSWERED', 'EM_ATENDIMENTO', 'NORMAL', 0, now(), null),
+         ($3, $4, $5, 'POST_SALE_MESSAGE', 'message:pack:9102000003', '9102000003', 'active', 'RESOLVIDO', 'NORMAL', 0, now(), now())
        on conflict (id) do nothing`,
       [CASE_RESPONDIDA_FORA, CASE_TRIADO, CASE_REABRIR, ORG_SB, CONTA_D102],
     );
