@@ -1,4 +1,4 @@
-import type { ParsedClaim, ParsedClaimMessage } from "./claim-schema.js";
+import type { ParsedClaim, ParsedClaimDetail, ParsedClaimMessage } from "./claim-schema.js";
 
 /**
  * Mapper puro claim -> projeção de atendimento (`support_cases`, canal
@@ -41,8 +41,88 @@ export interface SupportClaimMessageProjection {
   occurredAt: string;
 }
 
+export interface SupportClaimDeadlineProjection {
+  deadlineKind: "NEXT_ACTION" | "RESOLUTION";
+  source: "ML_CLAIM_DETAIL" | "ML_AVAILABLE_ACTION";
+  /** Nome da ação, para `ML_AVAILABLE_ACTION`; nulo para o prazo do claim. */
+  sourceReference: string | null;
+  startedAt: string | null;
+  dueAt: string;
+  status: "ACTIVE" | "CANCELLED";
+}
+
 /** A doc oficial: só `dispute` tem "representante do Mercado Livre" intervindo. */
 const MEDIATION_STAGE = "dispute";
+
+/**
+ * Prazos do claim, das DUAS fontes que a API expõe (D-084: "usar o `due_date`
+ * remoto exato quando presente", nunca um SLA inventado).
+ *
+ * - `detail.due_date` -> `RESOLUTION` / `ML_CLAIM_DETAIL`. Um por case, então
+ *   `sourceReference` fica nulo e a UNIQUE (`nulls not distinct`) atualiza a
+ *   MESMA linha a cada re-ingestão em vez de empilhar.
+ * - `players[].available_actions[].due_date` -> `NEXT_ACTION` /
+ *   `ML_AVAILABLE_ACTION`, com o NOME da ação em `sourceReference` — chave
+ *   natural e estável, uma linha por tipo de ação.
+ *
+ * **Só as ações do VENDEDOR viram prazo.** Prazo do comprador ou do mediador
+ * não é tarefa nossa, e listá-lo na Caixa de Entrada criaria urgência falsa
+ * sobre trabalho de outra pessoa.
+ *
+ * **Claim fechado cancela os prazos** em vez de deixá-los `ACTIVE` para
+ * sempre. `CANCELLED` e não `MET` porque a API não diz se o prazo foi
+ * cumprido — afirmar que foi seria inventar.
+ *
+ * `startedAt` só existe para `RESOLUTION`, e vem da abertura do claim (é, por
+ * definição, quando aquele prazo começou). Para uma ação disponível a API não
+ * diz quando a janela abriu, e chutar viraria SLA falso.
+ */
+export function mapClaimDeadlinesToProjection(
+  claim: ParsedClaim,
+  detail: ParsedClaimDetail | null,
+): SupportClaimDeadlineProjection[] {
+  const status = claim.status === "closed" ? ("CANCELLED" as const) : ("ACTIVE" as const);
+  const deadlines: SupportClaimDeadlineProjection[] = [];
+
+  if (detail?.due_date != null && detail.due_date !== "") {
+    deadlines.push({
+      deadlineKind: "RESOLUTION",
+      source: "ML_CLAIM_DETAIL",
+      sourceReference: null,
+      startedAt: claim.date_created ?? null,
+      dueAt: detail.due_date,
+      status,
+    });
+  }
+
+  const sellerRole = resolveSellerRole(claim);
+
+  if (sellerRole === null) {
+    return deadlines;
+  }
+
+  const sellerActions = claim.players?.find((player) => player.role === sellerRole)?.available_actions ?? [];
+  const seen = new Set<string>();
+
+  for (const action of sellerActions) {
+    if (action.due_date == null || action.due_date === "" || seen.has(action.action)) {
+      continue;
+    }
+
+    seen.add(action.action);
+
+    deadlines.push({
+      deadlineKind: "NEXT_ACTION",
+      source: "ML_AVAILABLE_ACTION",
+      sourceReference: action.action,
+      startedAt: null,
+      dueAt: action.due_date,
+      status,
+    });
+  }
+
+  return deadlines;
+}
 
 /**
  * Fingerprint de mensagem de claim. **Obrigatório porque o payload oficial

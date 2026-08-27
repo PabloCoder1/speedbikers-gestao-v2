@@ -5,8 +5,12 @@ import type { MercadoLivreClient } from "@sb/mercado-livre";
 import type { Logger } from "@sb/observability";
 
 import type { ParsedClaim } from "./claim-schema.js";
-import { claimMessagesSchema, claimReturnSchema, claimSchema } from "./claim-schema.js";
-import { mapClaimMessagesToProjection, mapClaimToSupportProjection } from "./claim-support-projection.js";
+import { claimDetailSchema, claimMessagesSchema, claimReturnSchema, claimSchema } from "./claim-schema.js";
+import {
+  mapClaimDeadlinesToProjection,
+  mapClaimMessagesToProjection,
+  mapClaimToSupportProjection,
+} from "./claim-support-projection.js";
 import { recordDomainEvents } from "./domain-events.js";
 import { persistSupportClaim } from "./persist-support-claim.js";
 import { recordStockMovements } from "./stock-movements.js";
@@ -144,8 +148,33 @@ async function projectClaimAsSupportCase(
     });
   }
 
+  // Mesma degradação do transcript: sem o detalhe, o case fica sem prazo
+  // remoto — que é melhor que prazo inventado (D-084) e melhor que perder o
+  // atendimento inteiro por causa de uma chamada acessória.
+  let deadlines: ReturnType<typeof mapClaimDeadlinesToProjection>;
+
   try {
-    const result = await persistSupportClaim(db, { ...context, source: "WEBHOOK" }, projection, messages);
+    const detail = await deps.mercadoLivre.request({
+      method: "GET",
+      path: `/post-purchase/v1/claims/${claimId}/detail`,
+      accessToken,
+      schema: claimDetailSchema,
+    });
+
+    deadlines = mapClaimDeadlinesToProjection(claim, detail);
+  } catch (error) {
+    logger.warn("claim_detail_fetch_failed", {
+      claim_id: String(claim.id),
+      error: error instanceof Error ? error.message : String(error),
+    });
+
+    // As ações disponíveis vêm do claim que JÁ está em mãos, então elas
+    // continuam virando prazo mesmo sem o detalhe.
+    deadlines = mapClaimDeadlinesToProjection(claim, null);
+  }
+
+  try {
+    const result = await persistSupportClaim(db, { ...context, source: "WEBHOOK" }, projection, messages, deadlines);
 
     logger.info("claim_support_case_persisted", {
       claim_id: String(claim.id),
@@ -153,6 +182,7 @@ async function projectClaimAsSupportCase(
       link_mode: result.linkMode,
       transition_applied: result.transitionApplied,
       messages_upserted: result.messagesUpserted,
+      deadlines_upserted: result.deadlinesUpserted,
       is_mediation: projection.case.isMediation,
       has_return: projection.case.hasReturn,
     });

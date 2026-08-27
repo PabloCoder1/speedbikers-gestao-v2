@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { claimMessagesSchema, claimSchema } from "./claim-schema.js";
-import { mapClaimMessagesToProjection, mapClaimToSupportProjection } from "./claim-support-projection.js";
+import { claimDetailSchema, claimMessagesSchema, claimSchema } from "./claim-schema.js";
+import {
+  mapClaimDeadlinesToProjection,
+  mapClaimMessagesToProjection,
+  mapClaimToSupportProjection,
+} from "./claim-support-projection.js";
 
 /**
  * Fixture VERBATIM do exemplo oficial de `GET /post-purchase/v1/claims/{id}`
@@ -372,5 +376,129 @@ describe("mapClaimMessagesToProjection", () => {
 
   it("transcript vazio não quebra", () => {
     expect(mapMessages([])).toEqual([]);
+  });
+});
+
+/** Exemplo VERBATIM de `GET /claims/{id}/detail` (leitura ao vivo, 2026-08-27). */
+const OFFICIAL_DETAIL = {
+  due_date: "2023-07-19T22:33:00.000-04:00",
+  action_responsible: "mediator",
+  title: "Devolución en mediación con Mercado Libre",
+  description: "Intervinimos para ayudar. Te escribiremos antes del miércoles 19 de julio.",
+  problem: "Nos dijiste que el producto llegó dañado",
+};
+
+const SELLER_WITH_ACTIONS = [
+  { role: "complainant", type: "buyer", user_id: 1325224382, available_actions: [] },
+  {
+    role: "respondent",
+    type: "seller",
+    user_id: 1330467461,
+    available_actions: [
+      { action: "send_message_to_complainant", mandatory: true, due_date: "2023-07-18T10:00:00.000-04:00" },
+      { action: "allow_return", mandatory: false, due_date: null },
+    ],
+  },
+];
+
+describe("mapClaimDeadlinesToProjection", () => {
+  it("`detail.due_date` vira RESOLUTION com a fonte declarada", () => {
+    const [prazo] = mapClaimDeadlinesToProjection(parse({ status: "opened" }), claimDetailSchema.parse(OFFICIAL_DETAIL));
+
+    expect(prazo?.deadlineKind).toBe("RESOLUTION");
+    expect(prazo?.source).toBe("ML_CLAIM_DETAIL");
+    expect(prazo?.dueAt).toBe("2023-07-19T22:33:00.000-04:00");
+    // Um por case: sourceReference nulo faz a UNIQUE atualizar a MESMA linha.
+    expect(prazo?.sourceReference).toBeNull();
+    expect(prazo?.startedAt).toBe("2024-03-14T08:28:44.000-04:00");
+  });
+
+  it("ação do vendedor com prazo vira NEXT_ACTION, com o nome da ação", () => {
+    const prazos = mapClaimDeadlinesToProjection(
+      parse({ status: "opened", players: SELLER_WITH_ACTIONS }),
+      claimDetailSchema.parse(OFFICIAL_DETAIL),
+    );
+
+    const acao = prazos.find((prazo) => prazo.source === "ML_AVAILABLE_ACTION");
+
+    expect(acao?.deadlineKind).toBe("NEXT_ACTION");
+    expect(acao?.sourceReference).toBe("send_message_to_complainant");
+    expect(acao?.dueAt).toBe("2023-07-18T10:00:00.000-04:00");
+    // A API não diz quando a janela da ação abriu — não inventar.
+    expect(acao?.startedAt).toBeNull();
+  });
+
+  it("ação SEM due_date não vira prazo — nunca estimar", () => {
+    const prazos = mapClaimDeadlinesToProjection(parse({ status: "opened", players: SELLER_WITH_ACTIONS }), null);
+
+    expect(prazos).toHaveLength(1);
+    expect(prazos[0]?.sourceReference).toBe("send_message_to_complainant");
+  });
+
+  it("prazo de OUTRO participante não é tarefa nossa e fica de fora", () => {
+    // Listar o prazo do comprador criaria urgência falsa sobre trabalho
+    // de outra pessoa.
+    const prazos = mapClaimDeadlinesToProjection(
+      parse({
+        status: "opened",
+        players: [
+          {
+            role: "complainant",
+            type: "buyer",
+            user_id: 1325224382,
+            available_actions: [{ action: "return_review", mandatory: true, due_date: "2023-07-18T10:00:00.000-04:00" }],
+          },
+          { role: "respondent", type: "seller", user_id: 1330467461, available_actions: [] },
+        ],
+      }),
+      null,
+    );
+
+    expect(prazos).toHaveLength(0);
+  });
+
+  it("claim fechado CANCELA os prazos, e não os marca como cumpridos", () => {
+    // A API não diz se o prazo foi cumprido; afirmar MET seria inventar.
+    const prazos = mapClaimDeadlinesToProjection(
+      parse({ status: "closed", players: SELLER_WITH_ACTIONS }),
+      claimDetailSchema.parse(OFFICIAL_DETAIL),
+    );
+
+    expect(prazos.every((prazo) => prazo.status === "CANCELLED")).toBe(true);
+  });
+
+  it("sem detalhe e sem ações, nenhum prazo é criado", () => {
+    expect(mapClaimDeadlinesToProjection(parse({ status: "opened" }), null)).toEqual([]);
+  });
+
+  it("detalhe sem `due_date` não vira prazo vazio", () => {
+    const prazos = mapClaimDeadlinesToProjection(
+      parse({ status: "opened" }),
+      claimDetailSchema.parse({ ...OFFICIAL_DETAIL, due_date: null }),
+    );
+
+    expect(prazos).toHaveLength(0);
+  });
+
+  it("ação repetida no payload não duplica prazo", () => {
+    const prazos = mapClaimDeadlinesToProjection(
+      parse({
+        status: "opened",
+        players: [
+          {
+            role: "respondent",
+            type: "seller",
+            user_id: 1330467461,
+            available_actions: [
+              { action: "send_message_to_complainant", mandatory: true, due_date: "2023-07-18T10:00:00.000-04:00" },
+              { action: "send_message_to_complainant", mandatory: true, due_date: "2023-07-19T10:00:00.000-04:00" },
+            ],
+          },
+        ],
+      }),
+      null,
+    );
+
+    expect(prazos).toHaveLength(1);
   });
 });

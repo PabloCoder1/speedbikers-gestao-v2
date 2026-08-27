@@ -34,6 +34,9 @@ function matches(row: Row, filters: Row): boolean {
 function fakeDb(options: { orders?: number[]; caseWriteError?: string } = {}) {
   const cases = new Map<string, Row>();
   const links: Row[] = [];
+  const messages: Row[] = [];
+  const deadlines: Row[] = [];
+  const notFilters: { column: string; value: string }[] = [];
   const orders = (options.orders ?? []).map((id) => ({ id, organization_id: CONTEXT.organizationId }));
   const rpcCalls: { fn: string; args: Row }[] = [];
   let sequence = 0;
@@ -67,11 +70,19 @@ function fakeDb(options: { orders?: number[]; caseWriteError?: string } = {}) {
           }
           throw new Error(`select inesperado em ${table}`);
         },
-        upsert: (input: Row, options2?: { ignoreDuplicates?: boolean }) => {
-          const key = identity(input);
+        upsert: (input: Row | Row[], options2?: { ignoreDuplicates?: boolean }) => {
+          if (table === "support_messages" || table === "support_case_deadlines") {
+            const target = table === "support_messages" ? messages : deadlines;
+            for (const row of Array.isArray(input) ? input : [input]) {
+              target.push(row);
+            }
+            return Promise.resolve({ data: null, error: null });
+          }
+
+          const key = identity(input as Row);
           const previous = cases.get(key);
           if (previous === undefined || options2?.ignoreDuplicates !== true) {
-            cases.set(key, { ...previous, ...input, id: previous?.id ?? `case-${String(++sequence)}` });
+            cases.set(key, { ...previous, ...(input as Row), id: previous?.id ?? `case-${String(++sequence)}` });
           }
           return Promise.resolve({ data: null, error: null });
         },
@@ -81,6 +92,28 @@ function fakeDb(options: { orders?: number[]; caseWriteError?: string } = {}) {
             eq(column: string, value: unknown) {
               filters[column] = value;
               return chain;
+            },
+            /** `support_case_deadlines`: cancelamento dos prazos que sumiram. */
+            not(column: string, _operator: string, value: unknown) {
+              notFilters.push({ column, value: String(value) });
+              return chain;
+            },
+            /** A cadeia de cancelamento é aguardada direto, sem `.select()`. */
+            then<T>(onFulfilled?: ((value: { data: null; error: null }) => T) | null) {
+              for (const row of deadlines) {
+                if (!matches(row, filters)) {
+                  continue;
+                }
+                const excluded = notFilters.some((entry) => {
+                  const raw = row[entry.column];
+                  return typeof raw === "string" && entry.value.includes(raw);
+                });
+                if (!excluded) {
+                  Object.assign(row, updates);
+                }
+              }
+              const result = { data: null, error: null } as const;
+              return onFulfilled == null ? Promise.resolve(result) : Promise.resolve(onFulfilled(result));
             },
             select: () => ({
               single: () => {
@@ -126,7 +159,7 @@ function fakeDb(options: { orders?: number[]; caseWriteError?: string } = {}) {
     },
   };
 
-  return { db, cases, links, rpcCalls };
+  return { db, cases, links, messages, deadlines, rpcCalls };
 }
 
 function project(overrides: Record<string, unknown> = {}) {

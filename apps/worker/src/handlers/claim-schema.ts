@@ -146,3 +146,22 @@ export const claimMessageSchema = z.object({
 export const claimMessagesSchema = z.array(claimMessageSchema);
 
 export type ParsedClaimMessage = z.infer<typeof claimMessageSchema>;
+
+/**
+ * `GET /post-purchase/v1/claims/{claim_id}/detail` — confirmado por leitura
+ * ao vivo em 2026-08-27 (`docs/MERCADO_LIVRE.md` secao 2.12).
+ *
+ * `due_date` é a "data limite para solucionar a reclamação"; a V3 usa o prazo
+ * REMOTO quando presente e nunca inventa um SLA concorrente (D-084).
+ * Todos os campos opcionais pela mesma lição de D-101.
+ */
+export const claimDetailSchema = z.object({
+  due_date: z.string().nullable().optional(),
+  /** `seller` | `buyer` | `mediator`. */
+  action_responsible: z.string().nullable().optional(),
+  title: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  problem: z.string().nullable().optional(),
+});
+
+export type ParsedClaimDetail = z.infer<typeof claimDetailSchema>;

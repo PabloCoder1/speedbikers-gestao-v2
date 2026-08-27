@@ -1594,6 +1594,26 @@ Não é específico de `questions`: **nunca chegou `orders_v2`, `post_purchase`,
 
 **Impacto:** `claim-schema.ts`, `claim-support-projection.ts`, `persist-support-claim.ts`, `claim-return.ts` (+testes). Nenhuma migration — `support_messages` já previa `MEDIATOR` como `sender_kind`.
 
+## D-107 — Prazos do claim: duas fontes remotas, e o cancelamento é a parte que ninguém lembra
+
+**Contexto:** `support_case_deadlines` existia vazia desde D-085, e por isso a Caixa de Entrada nem oferecia filtro de SLA (registrado em D-090 como corte deliberado: "filtro sobre tabela vazia é pior que filtro nenhum"). Esta fatia preenche a tabela para claims, usando só prazo REMOTO — D-084 é explícito: "usar o `due_date` remoto exato quando presente", nunca inventar SLA concorrente.
+
+**Decisão 1 — as duas fontes que a API expõe, mapeadas para grãos diferentes.** `detail.due_date` (a "data limite para solucionar a reclamação") vira `RESOLUTION`/`ML_CLAIM_DETAIL`, um por case, com `source_reference` NULO — a UNIQUE é `nulls not distinct`, então a re-ingestão atualiza a MESMA linha em vez de empilhar. `players[].available_actions[].due_date` vira `NEXT_ACTION`/`ML_AVAILABLE_ACTION`, com o NOME da ação em `source_reference`: chave natural, estável, uma linha por tipo de ação.
+
+**Decisão 2 — só as ações do VENDEDOR viram prazo.** `available_actions` existe para todos os participantes; listar o prazo do comprador ou do mediador criaria urgência falsa sobre trabalho de outra pessoa numa tela cuja função é dizer o que EU preciso fazer.
+
+**Decisão 3 — o cancelamento é o que faz o filtro de SLA não mentir.** Uma ação some de `available_actions` quando deixa de estar disponível, normalmente porque já foi cumprida. Sem cancelar, a linha ficaria `ACTIVE` para sempre e a Caixa de Entrada mostraria prazo vencido inexistente — o oposto do propósito da tela. Toda ingestão cancela as linhas `ML_AVAILABLE_ACTION` ativas que não estão no payload atual. **Cancela, nunca apaga**: `CANCELLED` preserva que o prazo existiu.
+
+**Decisão 4 — claim fechado cancela, não marca como cumprido.** `MET` afirmaria que o prazo foi respeitado, e a API não diz isso. `CANCELLED` diz a verdade disponível: o prazo não se aplica mais.
+
+**Decisão 5 — `started_at` só existe onde a API o define.** Para `RESOLUTION` é a abertura do claim (por definição, quando aquele prazo começou). Para uma ação disponível a API não diz quando a janela abriu, e chutar viraria SLA falso — fica nulo.
+
+**Degradação:** falha ao buscar `/detail` não custa nada além do prazo de resolução — as ações disponíveis vêm do claim que JÁ está em mãos, então continuam virando prazo. Loga `claim_detail_fetch_failed`. Mesma assimetria de D-104/D-106.
+
+**Verificação:** `pnpm run check` **29/29**, **59 testes** nos arquivos de claim (8 novos, com o exemplo oficial de `/detail` verbatim). Nenhuma migration — a tabela e os quatro valores de `source` existem desde D-085.
+
+**O que isto NÃO entrega:** o filtro de SLA na Caixa de Entrada e a detecção de prazo estourado (`BREACHED`), que exige um job com relógio. A tabela agora tem dado real para sustentar os dois.
+
 ## Como adicionar nova decisão
 
 Registrar:

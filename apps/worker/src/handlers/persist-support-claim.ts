@@ -1,7 +1,11 @@
 import type { AdminClient, TablesInsert, TablesUpdate } from "@sb/db";
 import { evaluateClaimRemoteTransition } from "@sb/domain";
 
-import type { SupportClaimMessageProjection, SupportClaimProjection } from "./claim-support-projection.js";
+import type {
+  SupportClaimDeadlineProjection,
+  SupportClaimMessageProjection,
+  SupportClaimProjection,
+} from "./claim-support-projection.js";
 import { applyRemoteTransition } from "./persist-support-question.js";
 
 /**
@@ -29,6 +33,7 @@ export interface PersistSupportClaimResult {
   linkMode: "TYPED" | "EXTERNAL" | "NONE";
   transitionApplied: boolean;
   messagesUpserted: number;
+  deadlinesUpserted: number;
 }
 
 function persistenceError(operation: string, error: { message: string }): Error {
@@ -112,6 +117,7 @@ export async function persistSupportClaim(
   context: PersistSupportClaimContext,
   projection: SupportClaimProjection,
   messages: readonly SupportClaimMessageProjection[] = [],
+  deadlines: readonly SupportClaimDeadlineProjection[] = [],
 ): Promise<PersistSupportClaimResult> {
   const projected = projection.case;
 
@@ -194,14 +200,82 @@ export async function persistSupportClaim(
   );
 
   const messagesUpserted = await upsertMessages(db, context, supportCaseId, messages);
+  const deadlinesUpserted = await upsertDeadlines(db, context, supportCaseId, deadlines);
 
   if (projection.orderId === null) {
-    return { supportCaseId, linkMode: "NONE", transitionApplied, messagesUpserted };
+    return { supportCaseId, linkMode: "NONE", transitionApplied, messagesUpserted, deadlinesUpserted };
   }
 
   const linkMode = await linkOrder(db, context, supportCaseId, projection.orderId);
 
-  return { supportCaseId, linkMode, transitionApplied, messagesUpserted };
+  return { supportCaseId, linkMode, transitionApplied, messagesUpserted, deadlinesUpserted };
+}
+
+/**
+ * Prazos do claim, sempre com fonte (D-084).
+ *
+ * O passo que NÃO é óbvio é o cancelamento: uma ação some de
+ * `available_actions` quando deixa de estar disponível — normalmente porque
+ * já foi cumprida. Sem cancelar, a linha continuaria `ACTIVE` para sempre e
+ * a Caixa de Entrada mostraria um prazo vencido que não existe mais,
+ * exatamente o tipo de urgência falsa que a tela existe para evitar.
+ *
+ * Cancela, nunca apaga: `CANCELLED` preserva que o prazo existiu.
+ */
+async function upsertDeadlines(
+  db: AdminClient,
+  context: PersistSupportClaimContext,
+  supportCaseId: string,
+  deadlines: readonly SupportClaimDeadlineProjection[],
+): Promise<number> {
+  const stillOpen = deadlines
+    .filter((deadline) => deadline.source === "ML_AVAILABLE_ACTION")
+    .map((deadline) => deadline.sourceReference)
+    .filter((reference): reference is string => reference !== null);
+
+  const staleQuery = db
+    .from("support_case_deadlines")
+    .update({ status: "CANCELLED" })
+    .eq("organization_id", context.organizationId)
+    .eq("support_case_id", supportCaseId)
+    .eq("source", "ML_AVAILABLE_ACTION")
+    .eq("status", "ACTIVE");
+
+  const stale = await (stillOpen.length > 0
+    ? staleQuery.not("source_reference", "in", `(${stillOpen.join(",")})`)
+    : staleQuery);
+
+  if (stale.error !== null) {
+    throw persistenceError(`cancelar prazos vencidos do case ${supportCaseId}`, stale.error);
+  }
+
+  if (deadlines.length === 0) {
+    return 0;
+  }
+
+  const rows: TablesInsert<"support_case_deadlines">[] = deadlines.map((deadline) => ({
+    organization_id: context.organizationId,
+    ml_account_id: context.mlAccountId,
+    support_case_id: supportCaseId,
+    deadline_kind: deadline.deadlineKind,
+    source: deadline.source,
+    source_reference: deadline.sourceReference,
+    policy_key: null,
+    started_at: deadline.startedAt,
+    due_at: deadline.dueAt,
+    status: deadline.status,
+    met_at: null,
+  }));
+
+  const result = await db
+    .from("support_case_deadlines")
+    .upsert(rows, { onConflict: "support_case_id,deadline_kind,source,source_reference" });
+
+  if (result.error !== null) {
+    throw persistenceError(`gravar prazos do case ${supportCaseId}`, result.error);
+  }
+
+  return rows.length;
 }
 
 /**
