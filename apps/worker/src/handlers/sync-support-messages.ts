@@ -256,7 +256,7 @@ export function createSyncSupportMessagesHandler(deps: SyncSupportMessagesDeps):
     try {
       result = await persistSupportConversation(
         deps.db,
-        { organizationId: account.data.organization_id, mlAccountId },
+        { organizationId: account.data.organization_id, mlAccountId, source: "WEBHOOK" },
         mapPackMessagesToSupportProjection(reference, page, observedAt, unreadCount ?? 0),
       );
     } catch (error) {

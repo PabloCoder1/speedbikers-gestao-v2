@@ -1,9 +1,15 @@
 import type { AdminClient, TablesInsert, TablesUpdate } from "@sb/db";
+import { evaluateConversationRemoteTransition } from "@sb/domain";
 import type { SupportConversationProjection } from "@sb/mercado-livre";
+
+import { applyRemoteTransition } from "./persist-support-question.js";
+import type { PersistSupportQuestionContext } from "./persist-support-question.js";
 
 export interface PersistSupportConversationContext {
   organizationId: string;
   mlAccountId: string;
+  /** Origem da ingestão — vira `support_case_events.source` na transição automática (D-102). */
+  source: PersistSupportQuestionContext["source"];
 }
 
 export interface PersistSupportConversationResult {
@@ -11,6 +17,8 @@ export interface PersistSupportConversationResult {
   messagesUpserted: number;
   linkedOrderIds: number[];
   linkMode: "EXTERNAL" | "TYPED";
+  /** D-102: a atividade remota moveu o status interno nesta passada? */
+  transitionApplied: boolean;
 }
 
 function persistenceError(operation: string, error: { message: string }): Error {
@@ -111,6 +119,21 @@ export async function persistSupportConversation(
 
   const supportCaseId = caseWrite.data.id;
 
+  // D-102: vendedor respondeu por último (por fora ou pela V3) => o case
+  // NOVO não triado vira AGUARDANDO_CLIENTE; cliente respondeu por último
+  // => AGUARDANDO_CLIENTE/RESOLVIDO reabre para NOVO (a regra que D-084
+  // previu e D-086 adiou). O guard da RPC protege qualquer triagem humana.
+  const transitionApplied = await applyRemoteTransition(
+    db,
+    context.source,
+    supportCaseId,
+    evaluateConversationRemoteTransition({
+      caseId: supportCaseId,
+      lastInboundAt: projection.case.lastInboundAt,
+      lastOutboundAt: projection.case.lastOutboundAt,
+    }),
+  );
+
   if (projection.messages.length > 0) {
     const messageRows: TablesInsert<"support_messages">[] = projection.messages.map((message) => ({
       organization_id: context.organizationId,
@@ -168,7 +191,7 @@ export async function persistSupportConversation(
       link_source: "REMOTE",
     });
 
-    return { supportCaseId, messagesUpserted: projection.messages.length, linkedOrderIds: [], linkMode: "EXTERNAL" };
+    return { supportCaseId, messagesUpserted: projection.messages.length, linkedOrderIds: [], linkMode: "EXTERNAL", transitionApplied };
   }
 
   for (const order of orders.data) {
@@ -201,5 +224,6 @@ export async function persistSupportConversation(
     messagesUpserted: projection.messages.length,
     linkedOrderIds: orders.data.map((order) => order.id),
     linkMode: "TYPED",
+    transitionApplied,
   };
 }

@@ -190,7 +190,7 @@ export function createSyncSupportMessagesReconcileHandler(
 
         await persistSupportConversation(
           deps.db,
-          { organizationId, mlAccountId },
+          { organizationId, mlAccountId, source: "RECONCILIATION" },
           mapPackMessagesToSupportProjection(
             {
               kind: inferConversationKind(page) ?? "PACK",

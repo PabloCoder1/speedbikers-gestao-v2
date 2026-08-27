@@ -123,7 +123,7 @@ export async function fetchSupportQuestions(
       try {
         await persistSupportQuestion(
           params.db,
-          { organizationId: params.organizationId, mlAccountId: params.mlAccountId },
+          { organizationId: params.organizationId, mlAccountId: params.mlAccountId, source: "RECONCILIATION" },
           mapQuestionToSupportProjection(question, observedAt),
         );
         itemsProcessed += 1;

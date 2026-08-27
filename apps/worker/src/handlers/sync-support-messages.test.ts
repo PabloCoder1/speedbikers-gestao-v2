@@ -182,6 +182,7 @@ describe("sync.support.messages", () => {
       messagesUpserted: 1,
       linkedOrderIds: [1],
       linkMode: "TYPED",
+        transitionApplied: false,
     });
   });
 

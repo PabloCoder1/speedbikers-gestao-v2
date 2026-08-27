@@ -5363,6 +5363,128 @@ describe("support read model (Fase 7B, D-085; modelo D-084)", () => {
   });
 });
 
+describe("apply_support_remote_transition (D-102)", () => {
+  const CONTA_D102 = "ddddaaaa-0000-4000-8000-0000000d1020";
+  const CASE_RESPONDIDA_FORA = "eeeeeeee-0000-4000-8000-0000000d1021";
+  const CASE_TRIADO = "eeeeeeee-0000-4000-8000-0000000d1022";
+  const CASE_REABRIR = "eeeeeeee-0000-4000-8000-0000000d1023";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1, $2, 'Conta D-102', 'd102test-conta', 'PENDING')
+       on conflict do nothing`,
+      [CONTA_D102, ORG_SB],
+    );
+
+    await client.query(
+      `insert into public.support_cases
+         (id, organization_id, ml_account_id, channel, external_case_key,
+          external_case_id, external_status, internal_status, priority,
+          remote_unread_count, last_activity_at, resolved_at)
+       values
+         ($1, $4, $5, 'QUESTION', 'question:d102-1', 'd102-1', 'ANSWERED', 'NOVO', 'NORMAL', 0, now(), null),
+         ($2, $4, $5, 'QUESTION', 'question:d102-2', 'd102-2', 'ANSWERED', 'EM_ATENDIMENTO', 'NORMAL', 0, now(), null),
+         ($3, $4, $5, 'POST_SALE_MESSAGE', 'message:pack:d102-3', 'd102-3', 'active', 'RESOLVIDO', 'NORMAL', 0, now(), now())
+       on conflict (id) do nothing`,
+      [CASE_RESPONDIDA_FORA, CASE_TRIADO, CASE_REABRIR, ORG_SB, CONTA_D102],
+    );
+  });
+
+  it("pergunta respondida fora da V3: NOVO vira RESOLVIDO, com evento atômico de source WEBHOOK sem ator", async () => {
+    const applied = await client.query<{ apply_support_remote_transition: boolean }>(
+      `select public.apply_support_remote_transition(
+         $1, array['NOVO'], 'RESOLVIDO', 'WEBHOOK',
+         'support.case.auto_resolved', 'auto-resolve:${CASE_RESPONDIDA_FORA}',
+         '2026-08-27T12:00:00Z'
+       )`,
+      [CASE_RESPONDIDA_FORA],
+    );
+
+    expect(applied.rows[0]?.apply_support_remote_transition).toBe(true);
+
+    const caso = await client.query<{ internal_status: string; resolved_at: string | null }>(
+      "select internal_status, resolved_at from public.support_cases where id = $1",
+      [CASE_RESPONDIDA_FORA],
+    );
+    expect(caso.rows[0]?.internal_status).toBe("RESOLVIDO");
+    expect(caso.rows[0]?.resolved_at).not.toBeNull();
+
+    const evento = await client.query<{ source: string; actor_user_id: string | null }>(
+      "select source, actor_user_id from public.support_case_events where support_case_id = $1 and event_type = 'support.case.auto_resolved'",
+      [CASE_RESPONDIDA_FORA],
+    );
+    expect(evento.rows).toHaveLength(1);
+    expect(evento.rows[0]).toEqual({ source: "WEBHOOK", actor_user_id: null });
+  });
+
+  it("case triado por humano (EM_ATENDIMENTO) NÃO é tocado — devolve false sem evento", async () => {
+    const applied = await client.query<{ apply_support_remote_transition: boolean }>(
+      `select public.apply_support_remote_transition(
+         $1, array['NOVO'], 'RESOLVIDO', 'RECONCILIATION',
+         'support.case.auto_resolved', 'auto-resolve:${CASE_TRIADO}', now()
+       )`,
+      [CASE_TRIADO],
+    );
+
+    expect(applied.rows[0]?.apply_support_remote_transition).toBe(false);
+
+    const caso = await client.query<{ internal_status: string }>(
+      "select internal_status from public.support_cases where id = $1",
+      [CASE_TRIADO],
+    );
+    expect(caso.rows[0]?.internal_status).toBe("EM_ATENDIMENTO");
+
+    const eventos = await client.query(
+      "select 1 from public.support_case_events where support_case_id = $1",
+      [CASE_TRIADO],
+    );
+    expect(eventos.rows).toHaveLength(0);
+  });
+
+  it("reabertura por inbound: RESOLVIDO volta a NOVO e resolved_at é limpo (constraint satisfeita)", async () => {
+    const applied = await client.query<{ apply_support_remote_transition: boolean }>(
+      `select public.apply_support_remote_transition(
+         $1, array['AGUARDANDO_CLIENTE','RESOLVIDO'], 'NOVO', 'RECONCILIATION',
+         'support.case.auto_reopened', 'auto-reopen:${CASE_REABRIR}:t1', now()
+       )`,
+      [CASE_REABRIR],
+    );
+
+    expect(applied.rows[0]?.apply_support_remote_transition).toBe(true);
+
+    const caso = await client.query<{ internal_status: string; resolved_at: string | null }>(
+      "select internal_status, resolved_at from public.support_cases where id = $1",
+      [CASE_REABRIR],
+    );
+    expect(caso.rows[0]).toEqual({ internal_status: "NOVO", resolved_at: null });
+  });
+
+  it("source USER é recusada — ação humana usa triage_support_case", async () => {
+    await expect(
+      client.query(
+        `select public.apply_support_remote_transition(
+           $1, array['NOVO'], 'RESOLVIDO', 'USER',
+           'support.case.auto_resolved', 'auto-resolve:user-x', now()
+         )`,
+        [CASE_TRIADO],
+      ),
+    ).rejects.toThrow(/source invalida/i);
+  });
+
+  it("authenticated não executa — só o worker (service_role) reage a dado remoto", async () => {
+    await expect(
+      asUser(
+        ADMIN_SB,
+        `select public.apply_support_remote_transition(
+           '${CASE_TRIADO}', array['NOVO'], 'RESOLVIDO', 'WEBHOOK',
+           'support.case.auto_resolved', 'auto-resolve:x', now()
+         )`,
+      ),
+    ).rejects.toThrow(/permission denied/i);
+  });
+});
+
 describe("guarda de GRANTs (D-066/D-098)", () => {
   // D-066 apertou 23 tabelas e o padrão foi REINTRODUZIDO nos dois dias
   // seguintes por migrations que não revogaram na criação (corrigido em

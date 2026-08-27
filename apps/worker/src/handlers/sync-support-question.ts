@@ -148,7 +148,7 @@ export function createSyncSupportQuestionHandler(deps: SyncSupportQuestionDeps):
     try {
       await persistSupportQuestion(
         deps.db,
-        { organizationId: account.data.organization_id, mlAccountId },
+        { organizationId: account.data.organization_id, mlAccountId, source: "WEBHOOK" },
         mapQuestionToSupportProjection(question, observedAt),
       );
     } catch (error) {

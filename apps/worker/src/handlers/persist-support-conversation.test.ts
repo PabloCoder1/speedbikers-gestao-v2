@@ -8,6 +8,7 @@ import { persistSupportConversation } from "./persist-support-conversation.js";
 const CONTEXT: PersistSupportConversationContext = {
   organizationId: "11111111-0000-4000-8000-000000000001",
   mlAccountId: "aaaaaaaa-0000-4000-8000-000000000001",
+  source: "RECONCILIATION",
 };
 const OBSERVED_AT = new Date("2026-08-26T19:00:00.000Z");
 const SELLER_ID = 419_059_118;
@@ -136,7 +137,13 @@ function fakeDb(options: { orders?: Row[]; ordersError?: { message: string } } =
     return chain;
   }
 
+  const rpcCalls: { fn: string; args: Row }[] = [];
+
   const db = {
+    rpc(fn: string, args: Row) {
+      rpcCalls.push({ fn, args });
+      return Promise.resolve({ data: true, error: null });
+    },
     from(table: string) {
       return {
         select: () => {
@@ -207,7 +214,7 @@ function fakeDb(options: { orders?: Row[]; ordersError?: { message: string } } =
     },
   };
 
-  return { db: db as never, cases, messages, links };
+  return { db: db as never, rpcCalls, cases, messages, links };
 }
 
 describe("persistSupportConversation", () => {
@@ -225,6 +232,46 @@ describe("persistSupportConversation", () => {
       conversation_path: "/packs/2000000089077943/seller/419059118",
       remote_unread_count: 2,
       remote_reply_state: "ALLOWED",
+    });
+  });
+
+  it("vendedor respondeu por último pede AGUARDANDO_CLIENTE; cliente respondendo depois pede reabertura (D-102)", async () => {
+    const fake = fakeDb();
+
+    // Só o comprador falou: a decisão pura devolve reabertura, mas com
+    // expected AGUARDANDO_CLIENTE/RESOLVIDO — num case NOVO o guard do
+    // banco não faz nada. O encanamento chama a RPC mesmo assim.
+    await persistSupportConversation(fake.db, CONTEXT, projection(PACK_REFERENCE));
+    expect(fake.rpcCalls[0]).toMatchObject({
+      fn: "apply_support_remote_transition",
+      args: { p_new_status: "NOVO", p_event_type: "support.case.auto_reopened" },
+    });
+
+    // O vendedor respondeu por último (pelo app do ML ou pela V3): pede
+    // AGUARDANDO_CLIENTE, guardado a NOVO.
+    await persistSupportConversation(
+      fake.db,
+      CONTEXT,
+      projection(PACK_REFERENCE, [
+        buyerMessage("m1"),
+        {
+          ...buyerMessage("m2"),
+          from: { user_id: SELLER_ID },
+          to: { user_id: 777 },
+          message_date: { created: "2026-08-26T19:00:00.000Z" },
+        },
+      ]),
+    );
+
+    const awaiting = fake.rpcCalls.at(-1);
+    expect(awaiting).toMatchObject({
+      fn: "apply_support_remote_transition",
+      args: {
+        p_expected_statuses: ["NOVO"],
+        p_new_status: "AGUARDANDO_CLIENTE",
+        p_source: "RECONCILIATION",
+        p_event_type: "support.case.auto_awaiting_customer",
+      },
     });
   });
 

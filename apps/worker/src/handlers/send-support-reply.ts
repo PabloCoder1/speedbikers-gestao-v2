@@ -198,7 +198,7 @@ export function createSendSupportReplyHandler(deps: SendSupportReplyDeps): JobHa
 
       await persistSupportQuestion(
         deps.db,
-        { organizationId: attempt.organization_id, mlAccountId: attempt.ml_account_id },
+        { organizationId: attempt.organization_id, mlAccountId: attempt.ml_account_id, source: "SYSTEM" },
         mapQuestionToSupportProjection(answered, deps.now?.() ?? new Date()),
       );
     } catch (error) {

@@ -178,6 +178,7 @@ describe("sync.support.messages.reconcile", () => {
       messagesUpserted: 1,
       linkedOrderIds: [],
       linkMode: "EXTERNAL",
+        transitionApplied: false,
     });
   });
 

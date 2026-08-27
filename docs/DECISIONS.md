@@ -1502,6 +1502,20 @@ Não é específico de `questions`: **nunca chegou `orders_v2`, `post_purchase`,
 
 **Impacto:** `apps/worker/src/handlers/{order-schema,persist-order,webhook-received,sync-support-messages,ml-orders-fetch}.ts` (+4 testes). Nenhuma migration. **Fecha o item 5 🔴 do HANDOFF** (painel configurado — ação do usuário — e tráfego real confirmado) e a "primeira observação pendente" do item 3.
 
+## D-102 — Respondida fora da V3 não fica "NOVO" para sempre: transição automática guardada pela atividade remota
+
+**Contexto:** pergunta direta do usuário: "se a pergunta/mensagem já foi respondida via outra plataforma ela não deve aparecer ali como novo — já tem isso no sistema?". Investigado contra o código real: **só parcialmente**. Pergunta que JÁ chega respondida na primeira ingestão nasce `RESOLVIDO` (D-086); mas um case que entrou aberto e foi respondido DEPOIS pelo app do Mercado Livre ficava `NOVO` na Caixa de Entrada indefinidamente — a re-ingestão atualizava só a projeção remota (`external_status: ANSWERED`, resposta no transcript), nunca o status interno, que só a triagem humana movia (D-094). Conversas de mensagens: pior — sempre nasciam `NOVO` e nada as movia. Era exatamente a regra que D-084 previu ("nova atividade inbound reabre para NOVO"; "fechamento remoto fica separado") e D-086 adiou "porque exige evento/transação próprios".
+
+**Decisão 1 — RPC transacional `apply_support_remote_transition`** (migration `20260827170000`), no molde de `triage_support_case`: UPDATE do case + `support_case_events` na MESMA transação (D-084 decisão 6). A regra "sync não sobrescreve decisão humana" vira o GUARD `p_expected_statuses` — fora do estado esperado, devolve `false` sem erro (corrida com triagem é cenário normal). `security invoker` + grant só a `service_role`: só o worker reage a dado remoto; quem clica usa a triagem. `source` aceita `WEBHOOK`/`RECONCILIATION`/`SYSTEM` e recusa `USER` de propósito.
+
+**Decisão 2 — a decisão de QUAL transição é pura, em `@sb/domain/support`** (`evaluateQuestionRemoteTransition`/`evaluateConversationRemoteTransition`, 11 testes): pergunta respondida/encerrada remotamente → `NOVO`→`RESOLVIDO` (dedup `auto-resolve:{caseId}`, sem timestamp — pergunta resolve uma vez, webhook e reconciliação convergem); conversa com o vendedor respondendo por último → `NOVO`→`AGUARDANDO_CLIENTE` (não `RESOLVIDO`: conversa não tem "respondida" terminal, e AGUARDANDO_CLIENTE é semanticamente exato — a bola está com o cliente); cliente respondendo por último → `AGUARDANDO_CLIENTE`/`RESOLVIDO`→`NOVO` (a reabertura adiada em D-086; dedup com timestamp — cada rodada é um fato). Empate de timestamp conta como "vendedor respondeu", evitando oscilação. `occurredAt` sempre do relógio do Mercado Livre, nunca `now()`.
+
+**Decisão 3 — o encanamento roda em TODA ingestão**, nos dois persists (`persist-support-question`/`persist-support-conversation`), com `source` propagada pelos 5 chamadores (webhook=WEBHOOK, reconciliação=RECONCILIATION, releitura pós-envio D-096=SYSTEM). Efeito colateral desejado: responder PELA V3 também resolve a pergunta/move a conversa automaticamente quando ninguém triou.
+
+**Verificação:** typecheck/lint/test/build verdes — 11 testes puros novos (`@sb/domain`), 2 de encanamento (persists chamam a RPC com os args da decisão), 5 de integração contra Postgres real (transição aplica com evento atômico source WEBHOOK sem ator; case triado NÃO é tocado e não ganha evento; reabertura limpa `resolved_at` satisfazendo a constraint; `source USER` recusada; `authenticated` sem execute). Pendente: CI + deploy do worker (autorização durável) + regenerar types (cast `as never` temporário, padrão D-077).
+
+**Impacto:** migration + RPC novas; `@sb/domain/support` (módulo novo); os 2 persists e 5 handlers do worker; 7 arquivos de teste. A Caixa de Entrada não muda de código — passa a mostrar a verdade porque o estado agora acompanha a atividade remota. Fecha o gap da pergunta do usuário e a pendência de reabertura de D-086.
+
 ## Como adicionar nova decisão
 
 Registrar:

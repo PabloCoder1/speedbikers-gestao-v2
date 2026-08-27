@@ -193,6 +193,7 @@ describe("sync.support.questions", () => {
       supportCaseId: "case-1",
       messagesUpserted: 1,
       linkMode: "EXTERNAL",
+        transitionApplied: false,
     });
   });
 
@@ -213,7 +214,7 @@ describe("sync.support.questions", () => {
     expect(persistSupportQuestionMock).toHaveBeenCalledTimes(1);
     const call = persistSupportQuestionMock.mock.calls[0];
     expect(call?.[0]).toBe(deps.db);
-    expect(call?.[1]).toEqual({ organizationId: ORGANIZATION_ID, mlAccountId: ML_ACCOUNT_ID });
+    expect(call?.[1]).toEqual({ organizationId: ORGANIZATION_ID, mlAccountId: ML_ACCOUNT_ID, source: "WEBHOOK" });
     expect(call?.[2].case.externalCaseKey).toBe(`question:${String(QUESTION_ID)}`);
     expect(call?.[2].case.externalStatus).toBe("UNANSWERED");
     expect(lines.join("\n")).not.toContain("APP_USR-valido");

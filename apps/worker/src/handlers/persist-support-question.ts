@@ -1,15 +1,56 @@
 import type { AdminClient, TablesInsert, TablesUpdate } from "@sb/db";
+import { evaluateQuestionRemoteTransition } from "@sb/domain";
+import type { SupportRemoteTransition } from "@sb/domain";
 import type { SupportQuestionProjection } from "@sb/mercado-livre";
 
 export interface PersistSupportQuestionContext {
   organizationId: string;
   mlAccountId: string;
+  /** Origem da ingestão — vira `support_case_events.source` na transição automática (D-102). */
+  source: "WEBHOOK" | "RECONCILIATION" | "SYSTEM";
 }
 
 export interface PersistSupportQuestionResult {
   supportCaseId: string;
   messagesUpserted: number;
   linkMode: "EXTERNAL" | "TYPED";
+  /** D-102: a atividade remota moveu o status interno nesta passada? */
+  transitionApplied: boolean;
+}
+
+/**
+ * Executa a transição automática decidida em `@sb/domain` (D-102) — a RPC
+ * faz o UPDATE guardado + `support_case_events` na MESMA transação, e o
+ * guard (`p_expected_statuses`) garante que decisão humana nunca é
+ * sobrescrita. `false` (guard não bateu) é cenário normal, não erro.
+ */
+export async function applyRemoteTransition(
+  db: AdminClient,
+  source: PersistSupportQuestionContext["source"],
+  caseId: string,
+  transition: SupportRemoteTransition | null,
+): Promise<boolean> {
+  if (transition === null) {
+    return false;
+  }
+
+  // `as never`: a RPC ainda não existe em `packages/db/src/types.ts`
+  // (regenerar após a migration aplicada no Dev — padrão D-077/D-100).
+  const result = await db.rpc("apply_support_remote_transition" as never, {
+    p_case_id: caseId,
+    p_expected_statuses: transition.expectedStatuses,
+    p_new_status: transition.newStatus,
+    p_source: source,
+    p_event_type: transition.eventType,
+    p_dedup_key: transition.dedupKey,
+    p_occurred_at: transition.occurredAt,
+  } as never);
+
+  if (result.error !== null) {
+    throw persistenceError(`aplicar transição automática do case ${caseId}`, result.error);
+  }
+
+  return (result.data as unknown as boolean | null) === true;
 }
 
 function persistenceError(operation: string, error: { message: string }): Error {
@@ -108,6 +149,23 @@ export async function persistSupportQuestion(
   }
 
   const supportCaseId = caseWrite.data.id;
+
+  // D-102: pergunta respondida/encerrada no lado remoto resolve o case que
+  // ninguém triou — inclusive quando a resposta veio de fora da V3. Roda em
+  // TODA re-ingestão (não só na primeira): é justamente a re-ingestão que
+  // traz a resposta dada pelo app do Mercado Livre.
+  const transitionApplied = await applyRemoteTransition(
+    db,
+    context.source,
+    supportCaseId,
+    evaluateQuestionRemoteTransition({
+      caseId: supportCaseId,
+      remotelyResolved: projection.case.initialInternalStatus === "RESOLVIDO",
+      resolvedAt: projection.case.initialResolvedAt,
+      lastActivityAt: projection.case.lastActivityAt,
+    }),
+  );
+
   const messageRows: TablesInsert<"support_messages">[] = projection.messages.map((message) => ({
     organization_id: context.organizationId,
     ml_account_id: context.mlAccountId,
@@ -155,7 +213,7 @@ export async function persistSupportQuestion(
       link_source: "REMOTE",
     });
 
-    return { supportCaseId, messagesUpserted: messageRows.length, linkMode: "EXTERNAL" };
+    return { supportCaseId, messagesUpserted: messageRows.length, linkMode: "EXTERNAL", transitionApplied };
   }
 
   await insertSupportLink(db, {
@@ -206,5 +264,5 @@ export async function persistSupportQuestion(
     throw persistenceError(`limpar fallback externo do case ${supportCaseId}`, staleExternalLink.error);
   }
 
-  return { supportCaseId, messagesUpserted: messageRows.length, linkMode: "TYPED" };
+  return { supportCaseId, messagesUpserted: messageRows.length, linkMode: "TYPED", transitionApplied };
 }

@@ -10,6 +10,7 @@ import { persistSupportQuestion } from "./persist-support-question.js";
 const CONTEXT: PersistSupportQuestionContext = {
   organizationId: "11111111-0000-4000-8000-000000000001",
   mlAccountId: "aaaaaaaa-0000-4000-8000-000000000001",
+  source: "RECONCILIATION",
 };
 const OBSERVED_AT = new Date("2026-08-25T18:00:00.000Z");
 
@@ -136,7 +137,13 @@ function statefulFakeDb() {
     return [row.organization_id, row.ml_account_id, row.channel, row.external_case_key].map(String).join(":");
   }
 
+  const rpcCalls: { fn: string; args: Row }[] = [];
+
   const db = {
+    rpc(fn: string, args: Row) {
+      rpcCalls.push({ fn, args });
+      return Promise.resolve({ data: true, error: null });
+    },
     from(table: string) {
       return {
         select: () => {
@@ -216,6 +223,7 @@ function statefulFakeDb() {
 
   return {
     db,
+    rpcCalls,
     cases,
     messages,
     links,
@@ -238,7 +246,7 @@ describe("persistSupportQuestion", () => {
     const state = statefulFakeDb();
     const result = await persistSupportQuestion(state.db, CONTEXT, project());
 
-    expect(result).toEqual({ supportCaseId: "case-1", messagesUpserted: 1, linkMode: "EXTERNAL" });
+    expect(result).toEqual({ supportCaseId: "case-1", messagesUpserted: 1, linkMode: "EXTERNAL", transitionApplied: false });
     expect(state.cases.size).toBe(1);
     expect(state.messages.size).toBe(1);
     expect(state.links).toEqual([
@@ -286,6 +294,29 @@ describe("persistSupportQuestion", () => {
       resolved_at: null,
     });
     expect(state.messages.size).toBe(2);
+  });
+
+  it("pergunta respondida FORA da V3 pede a transição automática guardada (D-102)", async () => {
+    const state = statefulFakeDb();
+
+    // Entra sem resposta: nasce NOVO e nenhuma transição é pedida.
+    await persistSupportQuestion(state.db, CONTEXT, project(UNANSWERED));
+    expect(state.rpcCalls).toHaveLength(0);
+
+    // Re-ingestão traz a resposta dada pelo app do Mercado Livre: a RPC
+    // guardada é chamada — o guard (expected NOVO) é quem protege triagem
+    // humana no banco, provado nos testes de integração.
+    await persistSupportQuestion(state.db, CONTEXT, project(ANSWERED));
+    expect(state.rpcCalls).toHaveLength(1);
+    expect(state.rpcCalls[0]).toMatchObject({
+      fn: "apply_support_remote_transition",
+      args: {
+        p_expected_statuses: ["NOVO"],
+        p_new_status: "RESOLVIDO",
+        p_source: "RECONCILIATION",
+        p_event_type: "support.case.auto_resolved",
+      },
+    });
   });
 
   it("case que chega respondido na primeira observação nasce RESOLVIDO", async () => {

@@ -79,6 +79,7 @@ beforeEach(() => {
     supportCaseId: "cccccccc-0000-4000-8000-000000000001",
     messagesUpserted: 1,
     linkMode: "EXTERNAL",
+        transitionApplied: false,
   });
 });
 
@@ -100,6 +101,7 @@ describe("fetchSupportQuestions", () => {
     expect(persistSupportQuestionMock).toHaveBeenCalledTimes(2);
     expect(persistSupportQuestionMock.mock.calls[0]?.[1]).toEqual({
       organizationId: ORGANIZATION_ID,
+      source: "RECONCILIATION",
       mlAccountId: ML_ACCOUNT_ID,
     });
     expect(persistSupportQuestionMock.mock.calls[0]?.[2]).toMatchObject({
