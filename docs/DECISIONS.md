@@ -1548,6 +1548,24 @@ Não é específico de `questions`: **nunca chegou `orders_v2`, `post_purchase`,
 
 **Impacto:** `apps/worker/src/handlers/{claim-schema,claim-support-projection,persist-support-claim,claim-return}.ts`, `packages/domain/src/support/remote-transition.ts` (+4 arquivos de teste). **Nenhuma migration** — o schema de D-085 já previa o canal. **NÃO deployado.**
 
+## D-105 — O painel de construção mentia em sete pontos, e a correção não é atualizá-lo: é não ter lista escrita à mão
+
+**Contexto:** o usuário abriu a Home publicada e mostrou o painel de progresso da construção (`apps/web/app/page.tsx`, a rota `/` desde a Fase 1). Ele dava **`PENDENTE` para NF-e/XML, Reservado/trânsito, Reconciliação ERP e Pedidos de compra** — os quatro entregues na Fase 4, concluída em 2026-08-23 — e **"Nada começado" para as Fases 5B, 6 e 7**, as três concluídas. Sete afirmações falsas numa tela que existe para informar estado. O pedido foi explícito: "tem que ir atualizando isso aqui, para estarmos sempre alinhado, ou remover de uma vez".
+
+**Decisão — remover a lista, não atualizá-la.** O painel carregava, em comentário no próprio arquivo, a regra que passou a violar: *"Uma página de status que mente é pior que página nenhuma."* Atualizá-lo resolveria hoje e falharia de novo na próxima etapa, porque a fonte era uma constante `PHASES` mantida à mão — o mesmo defeito estrutural que já forçou correções em `docs/HANDOFF.md` e `docs/ROADMAP.md` nesta mesma sessão. **Todo número da tela nova vem de CONSULTA** ao mesmo dado que as telas reais leem: não existe lista para manter, logo não existe como divergir.
+
+**Decisão 2 — a rota `/` vira a Home orientada à atenção, não um redirect.** Um redirect para `/vendas` seria mais barato, mas o nav do `Shell` tem "Visão Geral" apontando para `/`, e ele viraria duplicata do link "Vendas". Além disso o requisito já existia aberto em P1 (`docs/ROADMAP.md`) e em `docs/PRODUCT_REQUIREMENTS.md` ("Home orientada à atenção"): a rota inicial "deve deixar de ser uma página de progresso de construção quando a base funcional estiver suficientemente madura". Está.
+
+**Decisão 3 — quatro contadores nesta fatia, e só.** Ações abertas, atendimentos abertos, atendimentos em mediação e notificações não lidas — as quatro sobre tabelas já provadas (`actions` D-064, `support_cases` D-085/D-104, `notification_recipients` D-073). Ruptura, SKU de alta importância sem Full, alterações de anúncio e decisões aguardando medição ficam de fora porque cada um exige consulta agregada própria; o próprio requisito manda "criar apenas quando houver dado real para sustentá-la". Contagens usam `head: true`, sem trafegar linha.
+
+**Decisão 4 — falha de leitura vira "—", nunca zero** (D-067): um erro de query mostrando `0 ações abertas` é pior que a página antiga, porque some com o problema em vez de anunciá-lo. Cada card carrega `failed` próprio, então uma consulta quebrada não apaga as outras três.
+
+**Achado ao escrever:** o link do card de mediação usava `?channel=CLAIM`, mas o filtro real da Caixa de Entrada lê **`?canal=`** (`apps/web/app/atendimento/page.tsx`). O parâmetro errado seria ignorado em silêncio e o card levaria à lista sem filtro — conferido contra o código, não presumido.
+
+**Verificação:** `pnpm run check` **29/29** e `build` **8/8** verdes. Só `apps/web`: sem migration, sem Cloud Run, deploy automático pela Vercel.
+
+**Impacto:** `apps/web/app/page.tsx` reescrito (223 linhas de lista estática → tela dirigida por consulta). Fecha o item P1 "Substituir a Home de construção pela Home orientada a 'o que precisa da minha atenção hoje?'".
+
 ## Como adicionar nova decisão
 
 Registrar:

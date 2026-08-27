@@ -203,7 +203,7 @@ Nenhuma funcionalidade concluída das Fases 0 a 6 deve ser removida ou reimpleme
 - [ ] Criar alias reutilizável `Fornecedor + código do produto -> SKU` quando um vínculo for confirmado.
 - [ ] Evoluir o Dashboard de SKU para abas/progressive disclosure.
 - [x] Reorganizar a navegação em grupos, evitando todas as telas no mesmo nível — feito em 2026-08-24 (`e1ea084`, ver D-068): COMERCIAL, ESTOQUE, INTELIGÊNCIA, GESTÃO. ADMINISTRAÇÃO e "Produtos" ficam de fora até existirem páginas reais.
-- [ ] Substituir a Home de construção pela Home orientada a “o que precisa da minha atenção hoje?”.
+- [x] Substituir a Home de construção pela Home orientada a “o que precisa da minha atenção hoje?” — feito em 2026-08-27 (D-105), **a pedido do usuário depois de abrir a Home publicada e ver sete afirmações falsas** (`PENDENTE` em quatro itens entregues na Fase 4, "Nada começado" nas Fases 5B/6/7). A correção não foi atualizar a lista: foi eliminá-la. Todo número da tela nova vem de consulta ao mesmo dado das telas reais, então não há como divergir de novo. Primeira fatia com quatro contadores (ações abertas, atendimentos abertos, em mediação, notificações não lidas); ruptura, Full, alterações de anúncio e decisões aguardando medição entram quando cada um tiver consulta agregada própria.
 - [ ] Adicionar as entidades novas que já possuem destino real à Busca Universal, incluindo Central de Ações quando aplicável.
 
 ### P2 — Backlog registrado, sem bloquear a Fase 7

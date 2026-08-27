@@ -313,6 +313,8 @@ Abaixo da camada de atenção podem aparecer KPIs gerais de vendas, receita, con
 
 A Home não deve criar alertas novos apenas para preencher espaço. Deve consumir dados, ações, eventos e diagnósticos reais já existentes.
 
+**Primeira fatia implementada em 2026-08-27 (D-105)** — `apps/web/app/page.tsx`. O painel de progresso da construção foi REMOVIDO: na data da troca ele mentia em sete pontos (dava `PENDENTE` para NF-e/XML, Reservado/trânsito, Reconciliação ERP e Pedidos de compra, todos entregues na Fase 4, e "Nada começado" para as Fases 5B, 6 e 7, todas concluídas). A tela nova não tem lista escrita à mão: **todo número vem de consulta ao mesmo dado que a tela correspondente mostra**, que é o que impede a divergência de voltar. Quatro blocos nesta fatia — ações abertas, atendimentos abertos, atendimentos em mediação e notificações não lidas —, cada um linkando para a tela real. **Pendentes**, um por um, quando houver consulta agregada que os sustente: produtos em risco de ruptura, SKUs de alta importância sem Full, alterações relevantes de anúncios, problemas de sincronização, decisões aguardando medição e oportunidades detectadas. Falha de leitura aparece como “—”, nunca como zero (D-067).
+
 ### Evolução do diagnóstico
 
 A Fase 6 estabelece o motor inicial de diagnóstico, mas não encerra a evolução das fontes de evidência.
