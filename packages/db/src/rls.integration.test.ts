@@ -5420,11 +5420,17 @@ describe("ator de tabela append-only: on delete restrict (D-094/D-099)", () => {
       [ATOR_D099],
     );
 
+    // `created_by` também é o ATOR dedicado, nunca ADMIN_SB:
+    // `purchase_orders.created_by` é `on delete restrict` e o pedido fica
+    // permanente (o DELETE cascatearia para `purchase_order_events`, que o
+    // trigger append-only recusa) — com ADMIN_SB aqui, o `delete from
+    // auth.users where email like '%@rls.test'` do afterAll GLOBAL passaria
+    // a falhar. Foi exatamente o que a primeira rodada da CI pegou.
     const order = await client.query<{ id: string }>(
       `insert into public.purchase_orders (organization_id, created_by, notes)
        values ($1, $2, 'RLSTEST-D099 fixture')
        returning id`,
-      [ORG_SB, ADMIN_SB],
+      [ORG_SB, ATOR_D099],
     );
     purchaseOrderId = order.rows[0]?.id ?? "";
 
