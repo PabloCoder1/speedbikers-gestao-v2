@@ -48,7 +48,7 @@ export async function applyRemoteTransition(
     throw persistenceError(`aplicar transição automática do case ${caseId}`, result.error);
   }
 
-  return result.data === true;
+  return result.data;
 }
 
 function persistenceError(operation: string, error: { message: string }): Error {
