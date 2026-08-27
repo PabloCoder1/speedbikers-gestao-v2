@@ -53,14 +53,11 @@ export function createCheckAiBudgetHandler(deps: CheckAiBudgetDeps): JobHandler 
     const month = toSalesMetricDate(now).slice(0, 7);
     const monthStartIso = `${month}-01T00:00:00-03:00`;
 
-    // `as never`: a RPC ainda não existe em `packages/db/src/types.ts`
-    // (regenerar depois da migration aplicada no Dev — mesma situação e
-    // mesma solução temporária de D-077 para `ai_runs`).
-    const result = await deps.db.rpc("get_ai_monthly_cost_usd" as never, {
+    const result = await deps.db.rpc("get_ai_monthly_cost_usd", {
       p_organization_id: organizationId,
       p_from: monthStartIso,
       p_to: now.toISOString(),
-    } as never);
+    });
 
     if (result.error !== null) {
       return { status: "failed", retryable: true, reason: result.error.message };
