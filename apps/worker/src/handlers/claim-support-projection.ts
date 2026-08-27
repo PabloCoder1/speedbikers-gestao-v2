@@ -16,7 +16,8 @@ export interface SupportClaimCaseProjection {
   externalStage: string | null;
   externalType: string;
   isMediation: boolean;
-  hasReturn: boolean;
+  /** `null` = a fonte não informou (a busca omite `related_entities`, D-109). */
+  hasReturn: boolean | null;
   customerExternalId: number | null;
   remoteReplyState: "UNKNOWN" | "ALLOWED" | "BLOCKED";
   initialInternalStatus: "NOVO" | "RESOLVIDO";
@@ -295,7 +296,9 @@ export function mapClaimToSupportProjection(claim: ParsedClaim): SupportClaimPro
     externalStage: claim.stage ?? null,
     externalType: claim.type,
     isMediation,
-    hasReturn: claim.related_entities.includes("return"),
+    // Ausente = desconhecido. Devolver `false` faria a varredura APAGAR uma
+    // devolução que o webhook já tinha registrado (D-109).
+    hasReturn: claim.related_entities === undefined ? null : claim.related_entities.includes("return"),
     customerExternalId: resolveCustomerExternalId(claim),
     remoteReplyState: resolveReplyState(claim),
     initialInternalStatus: internalState.initialInternalStatus,

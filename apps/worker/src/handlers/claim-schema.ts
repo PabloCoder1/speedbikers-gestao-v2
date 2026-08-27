@@ -68,8 +68,14 @@ export const claimSchema = z.object({
    * este campo para detectar devolução física: "se existir o valor
    * 'return', significa que há uma devolução associada a esta reclamação"
    * (docs oficiais, citado em `docs/MERCADO_LIVRE.md`).
+   *
+   * **OPCIONAL desde D-109, e a ausência significa DESCONHECIDO, não "não
+   * tem".** Medido em produção: `GET /claims/{id}` (detalhe, caminho do
+   * webhook) traz o campo, mas `GET /claims/search` (varredura) NÃO — o
+   * exemplo da própria doc lista os campos da busca sem ele. Exigi-lo
+   * quebrou 16 execuções da varredura com ZodError.
    */
-  related_entities: z.array(z.string()),
+  related_entities: z.array(z.string()).optional(),
 });
 
 export type ParsedClaim = z.infer<typeof claimSchema>;

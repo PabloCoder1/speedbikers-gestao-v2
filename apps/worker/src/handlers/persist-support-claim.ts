@@ -133,7 +133,9 @@ export async function persistSupportClaim(
     external_stage: projected.externalStage,
     external_type: projected.externalType,
     is_mediation: projected.isMediation,
-    has_return: projected.hasReturn,
+    // `null` (fonte não informou) vira `false` só na CRIAÇÃO: a coluna é
+    // `not null` e "não sei" começa como "não sinalizado".
+    has_return: projected.hasReturn ?? false,
     customer_external_id: projected.customerExternalId,
     conversation_path: null,
     remote_unread_count: 0,
@@ -165,10 +167,14 @@ export async function persistSupportClaim(
     external_stage: projected.externalStage,
     external_type: projected.externalType,
     is_mediation: projected.isMediation,
-    has_return: projected.hasReturn,
     customer_external_id: projected.customerExternalId,
     remote_reply_state: projected.remoteReplyState,
     last_activity_at: projected.lastActivityAt,
+    // `has_return` só entra no UPDATE quando a fonte REALMENTE informou
+    // (D-109). A varredura não recebe `related_entities`, e sobrescrever com
+    // `false` apagaria a devolução que o webhook já tinha registrado — a
+    // reconciliação destruiria o dado que ela existe para proteger.
+    ...(projected.hasReturn === null ? {} : { has_return: projected.hasReturn }),
   };
 
   const caseWrite = await db

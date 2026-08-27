@@ -108,7 +108,11 @@ export async function processClaimReturn(
   // isto depois entregaria só os claims que já reverteram estoque.
   await ingestSupportClaim(deps, { ...context, source: "WEBHOOK" }, accessToken, claimId, claim, logger);
 
-  if (claim.resource !== "order" || !claim.related_entities.includes("return")) {
+  // `related_entities` virou opcional em D-109 (a busca não o traz). Aqui o
+  // claim SEMPRE vem de `GET /claims/{id}`, que o traz — mas ausência cai no
+  // ramo conservador de "sem devolução associada", que é a direção segura:
+  // não reverter estoque por engano.
+  if (claim.resource !== "order" || !(claim.related_entities?.includes("return") ?? false)) {
     // Reclamação sem devolução física associada (mediação de pagamento,
     // disputa ainda sem devolução, etc.) — nada a fazer aqui ainda; se uma
     // devolução nascer depois, uma nova notificação (claims_actions) chega.

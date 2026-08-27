@@ -141,6 +141,24 @@ describe("mapClaimToSupportProjection", () => {
     expect(projection).toBeNull();
   });
 
+  it("`related_entities` ausente é DESCONHECIDO (null), nunca `false` (D-109)", () => {
+    // A busca (`/claims/search`) nao traz o campo; o detalhe traz. Devolver
+    // `false` faria a varredura APAGAR a devolucao que o webhook registrou.
+    const daBusca = mapClaimToSupportProjection(
+      claimSchema.parse({
+        id: 1,
+        resource: "order",
+        resource_id: 2,
+        status: "opened",
+        type: "mediations",
+        date_created: "2026-08-27T10:00:00.000-03:00",
+        last_updated: "2026-08-27T10:00:00.000-03:00",
+      }),
+    );
+
+    expect(daBusca?.case.hasReturn).toBeNull();
+  });
+
   it("devolução é faceta, detectada por related_entities (não por type)", () => {
     expect(mapClaimToSupportProjection(parse())?.case.hasReturn).toBe(false);
 
