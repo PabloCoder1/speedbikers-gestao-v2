@@ -3193,6 +3193,18 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      apply_support_remote_transition: {
+        Args: {
+          p_case_id: string
+          p_dedup_key: string
+          p_event_type: string
+          p_expected_statuses: string[]
+          p_new_status: string
+          p_occurred_at: string
+          p_source: string
+        }
+        Returns: boolean
+      }
       approve_purchase_order: {
         Args: { p_id: string }
         Returns: {

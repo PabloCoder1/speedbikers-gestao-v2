@@ -34,23 +34,21 @@ export async function applyRemoteTransition(
     return false;
   }
 
-  // `as never`: a RPC ainda não existe em `packages/db/src/types.ts`
-  // (regenerar após a migration aplicada no Dev — padrão D-077/D-100).
-  const result = await db.rpc("apply_support_remote_transition" as never, {
+  const result = await db.rpc("apply_support_remote_transition", {
     p_case_id: caseId,
-    p_expected_statuses: transition.expectedStatuses,
+    p_expected_statuses: [...transition.expectedStatuses],
     p_new_status: transition.newStatus,
     p_source: source,
     p_event_type: transition.eventType,
     p_dedup_key: transition.dedupKey,
     p_occurred_at: transition.occurredAt,
-  } as never);
+  });
 
   if (result.error !== null) {
     throw persistenceError(`aplicar transição automática do case ${caseId}`, result.error);
   }
 
-  return (result.data as unknown as boolean | null) === true;
+  return result.data === true;
 }
 
 function persistenceError(operation: string, error: { message: string }): Error {
