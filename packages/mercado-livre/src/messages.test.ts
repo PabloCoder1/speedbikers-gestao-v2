@@ -276,6 +276,30 @@ describe("mapPackMessagesToSupportProjection", () => {
     expect(projection.case.customerExternalId).toBe(777);
   });
 
+  it("status_date POSTERIOR às mensagens não vira atividade — medido em produção", () => {
+    // Em 2026-08-27, na primeira ingestão real, `status_date` voltava no
+    // instante da consulta. Entrando num `max()`, empurrava todas as conversas
+    // para o mesmo horário e destruía a ordenação da Caixa de Entrada.
+    const page = packMessagesPageSchema.parse({
+      conversation_status: { status: "active", status_date: "2026-08-27T11:24:45.000Z" },
+      messages: [
+        {
+          id: "m1",
+          from: { user_id: 777 },
+          text: "quando chega?",
+          message_date: { created: "2026-08-27T11:22:09.000Z" },
+        },
+      ],
+    });
+    const projection = mapPackMessagesToSupportProjection(
+      { kind: "PACK", id: "1", sellerId: SELLER_ID },
+      page,
+      OBSERVED_AT,
+    );
+
+    expect(projection.case.lastActivityAt).toBe("2026-08-27T11:22:09.000Z");
+  });
+
   it("conversa sem mensagem ainda produz last_activity_at, que é NOT NULL", () => {
     const page = packMessagesPageSchema.parse({
       conversation_status: { status: "active", status_date: "2026-08-20T10:00:00.000Z" },

@@ -365,17 +365,26 @@ export function mapPackMessagesToSupportProjection(
     .filter((message) => message.direction === "OUTBOUND")
     .map((message) => Date.parse(message.occurredAt));
 
-  // Sem mensagem alguma, `status_date` é a única atividade conhecida; sem ela,
-  // o instante da observação. A coluna é NOT NULL e não aceita chute vazio.
+  // `status_date` é FALLBACK, nunca entra num `max()` com as mensagens.
+  //
+  // Medido em produção em 2026-08-27, na primeira ingestão real: o
+  // `status_date` das conversas voltava praticamente no instante da consulta.
+  // Somado ao máximo, ele empurrava TODAS as conversas para o mesmo horário e
+  // destruía a ordenação da Caixa de Entrada, que ordena por `last_activity_at
+  // desc` — doze conversas com recências diferentes viravam doze empates no
+  // segundo da sincronização.
+  //
+  // Atividade de uma conversa é mensagem. Sem nenhuma, `status_date` é a única
+  // coisa conhecida; sem ele, o instante da observação, porque a coluna é NOT
+  // NULL e não aceita chute vazio.
   const statusDate = page.conversation_status?.status_date ?? null;
-  const activityCandidates = [
-    ...messages.map((message) => Date.parse(message.occurredAt)),
-    ...(statusDate === null ? [] : [Date.parse(statusDate)]),
-  ];
+  const messageTimestamps = messages.map((message) => Date.parse(message.occurredAt));
   const lastActivityAt =
-    activityCandidates.length === 0
-      ? observedAtIso
-      : new Date(Math.max(...activityCandidates)).toISOString();
+    messageTimestamps.length > 0
+      ? new Date(Math.max(...messageTimestamps)).toISOString()
+      : statusDate === null
+        ? observedAtIso
+        : new Date(statusDate).toISOString();
 
   // O comprador REAL, nunca o agente e nunca o vendedor. Numa conversa só com
   // o agente isto fica null — é a resposta correta, não uma falha: D-083 proíbe
