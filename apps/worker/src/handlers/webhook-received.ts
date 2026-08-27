@@ -1,7 +1,7 @@
 import type { AdminClient } from "@sb/db";
 import type { MercadoLivreClient, MercadoLivreOAuthConfig } from "@sb/mercado-livre";
 import { MercadoLivreApiError } from "@sb/mercado-livre";
-import { z } from "zod";
+import { z, ZodError } from "zod";
 
 import type { JobOutcome } from "../job-outcome.js";
 import type { HandlerContext, JobHandler } from "../router.js";
@@ -45,11 +45,39 @@ export interface WebhookReceivedDeps {
   now?: () => Date;
 }
 
+/**
+ * D-101: um ZodError do schema da resposta é erro de CONTRATO — repetir a
+ * mesma chamada devolve o mesmo payload e falha igual, então retry só
+ * acumula ruído (medido em produção: 48 tentativas em 2h para 3 pedidos,
+ * porque o catch antigo classificava tudo que não era `MercadoLivreApiError`
+ * como retryable). `not_retryable`; a reconciliação por janela é a rede de
+ * segurança que já pega o recurso pelo caminho do search. Mesmo tratamento
+ * que `sync-support-messages.ts` já dava desde D-097.
+ */
+function classifyFetchFailure(error: unknown, fallbackReason: string): JobOutcome {
+  if (error instanceof ZodError) {
+    return { status: "failed", retryable: false, reason: `resposta fora do contrato esperado: ${error.message}` };
+  }
+
+  const errorClass = error instanceof MercadoLivreApiError ? error.errorClass : "retryable";
+  const reason = error instanceof Error ? error.message : fallbackReason;
+
+  return { status: "failed", retryable: errorClass !== "not_retryable", reason };
+}
+
 /** `/orders/{order_id}` — confirmado em `docs/MERCADO_LIVRE.md` secao 2.4 e nos fixtures reais de `webhook.test.ts`. */
 const ORDER_RESOURCE_PATTERN = /^\/orders\/(\d+)$/;
 
-/** `/post-purchase/v1/claims/{claim_id}` — confirmado em `docs/MERCADO_LIVRE.md` secao 2.10 (leitura ao vivo, 2026-08-23). */
-const CLAIM_RESOURCE_PATTERN = /^\/post-purchase\/v1\/claims\/(\d+)$/;
+/**
+ * `/post-purchase/v1/claims/{claim_id}` — confirmado em
+ * `docs/MERCADO_LIVRE.md` secao 2.10 (leitura ao vivo, 2026-08-23). O
+ * sufixo opcional é D-101: o tráfego REAL do webhook (primeira vez em
+ * 2026-08-27) também notifica SUB-recursos do claim
+ * (`/claims/{id}/actions-history`, visto em produção) — a notificação
+ * continua significando "algo mudou neste claim", então o handler
+ * processa o claim PAI, exatamente o que `processClaimReturn` já faz.
+ */
+const CLAIM_RESOURCE_PATTERN = /^\/post-purchase\/v1\/claims\/(\d+)(?:\/[a-z0-9-]+)*$/;
 
 export function createWebhookReceivedHandler(deps: WebhookReceivedDeps): JobHandler {
   return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
@@ -115,10 +143,7 @@ export function createWebhookReceivedHandler(deps: WebhookReceivedDeps): JobHand
           context.logger,
         );
       } catch (error) {
-        const errorClass = error instanceof MercadoLivreApiError ? error.errorClass : "retryable";
-        const reason = error instanceof Error ? error.message : "erro desconhecido ao buscar a reclamação";
-
-        return { status: "failed", retryable: errorClass !== "not_retryable", reason };
+        return classifyFetchFailure(error, "erro desconhecido ao buscar a reclamação");
       }
 
       context.logger.info("webhook_fast_path_claim_done", { ml_account_id: mlAccountId, claim_id: resourceId });
@@ -136,10 +161,7 @@ export function createWebhookReceivedHandler(deps: WebhookReceivedDeps): JobHand
         schema: orderSchema,
       });
     } catch (error) {
-      const errorClass = error instanceof MercadoLivreApiError ? error.errorClass : "retryable";
-      const reason = error instanceof Error ? error.message : "erro desconhecido ao buscar o pedido";
-
-      return { status: "failed", retryable: errorClass !== "not_retryable", reason };
+      return classifyFetchFailure(error, "erro desconhecido ao buscar o pedido");
     }
 
     await persistOrder(

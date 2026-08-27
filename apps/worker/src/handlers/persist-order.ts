@@ -56,6 +56,15 @@ export async function persistOrder(
   order: ParsedOrder,
   logger: Logger,
 ): Promise<void> {
+  // D-101: o `GET /orders/{id}` real (fast path do webhook) vem SEM
+  // `date_last_updated` — só o `/orders/search` (reconciliação) o traz.
+  // A coluna é NOT NULL e três `occurredAt` derivam dela, então o fallback
+  // fica em cascata de campos do PRÓPRIO pedido (nunca `now()`, que
+  // colocaria o relógio da V3 no lugar do relógio do Mercado Livre):
+  // `last_updated` é o irmão com o mesmo significado (D-048), e
+  // `date_created` sempre existe.
+  const lastUpdatedAt = order.date_last_updated ?? order.last_updated ?? order.date_created;
+
   // Lido ANTES do upsert: é o "before" do motor de diff. Ausente (order
   // nova para o V3) vira `null` — `detectOrderStatusEvents` trata os dois
   // casos.
@@ -79,7 +88,7 @@ export async function persistOrder(
         status_detail: order.status_detail ?? null,
         date_created: order.date_created,
         date_closed: order.date_closed ?? null,
-        date_last_updated: order.date_last_updated,
+        date_last_updated: lastUpdatedAt,
         last_updated: order.last_updated ?? null,
         total_amount: order.total_amount,
         paid_amount: order.paid_amount ?? null,
@@ -94,7 +103,7 @@ export async function persistOrder(
   const events = detectOrderStatusEvents(
     previousStatus,
     { id: order.id, status: order.status },
-    new Date(order.date_last_updated),
+    new Date(lastUpdatedAt),
   );
 
   if (events.length > 0) {
@@ -136,7 +145,7 @@ export async function persistOrder(
   if (isCancelledOrderStatus(order.status)) {
     const saleMovements = await loadSaleMovements(db, context.organizationId, order.id);
     const reversals = computeCancellationReversals(
-      { id: order.id, status: order.status, occurredAt: new Date(order.date_last_updated) },
+      { id: order.id, status: order.status, occurredAt: new Date(lastUpdatedAt) },
       saleMovements,
     );
 
@@ -169,7 +178,7 @@ export async function persistOrder(
   const deductions = computeSaleDeductions({
     id: order.id,
     status: order.status,
-    occurredAt: new Date(order.date_last_updated),
+    occurredAt: new Date(lastUpdatedAt),
     items: deductionItems,
   });
 

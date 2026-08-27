@@ -430,6 +430,36 @@ describe("persistOrder", () => {
       expect(event.occurred_at).toBe("2020-02-14T02:55:49.811Z");
     });
 
+    it("sem date_last_updated (GET por id, D-101): cai para last_updated, e sem os dois para date_created", async () => {
+      // O relógio continua sendo o do Mercado Livre — a cascata usa só
+      // campos do próprio pedido, nunca now().
+      const { db, upserted } = fakeDb({ previousStatus: "paid" });
+      const order: ParsedOrder = {
+        ...BASE_ORDER,
+        status: "cancelled",
+        date_last_updated: undefined,
+        last_updated: "2020-02-10T00:00:00.000Z",
+      };
+
+      await run(db, order);
+
+      const row = upserted.find((entry) => entry.table === "orders")?.row as { date_last_updated: string };
+      expect(row.date_last_updated).toBe("2020-02-10T00:00:00.000Z");
+
+      const { db: db2, upserted: upserted2 } = fakeDb({ previousStatus: "paid" });
+      const orderSoCreated: ParsedOrder = {
+        ...BASE_ORDER,
+        status: "cancelled",
+        date_last_updated: undefined,
+        last_updated: undefined,
+      };
+
+      await run(db2, orderSoCreated);
+
+      const row2 = upserted2.find((entry) => entry.table === "orders")?.row as { date_last_updated: string };
+      expect(row2.date_last_updated).toBe(BASE_ORDER.date_created);
+    });
+
     it("conflito de dedup_key (23505) é absorvido em silêncio — é a deduplicação funcionando", async () => {
       const { db } = fakeDb({ previousStatus: "paid", domainEventConflict: true });
       const order: ParsedOrder = { ...BASE_ORDER, status: "cancelled" };

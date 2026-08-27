@@ -41,7 +41,13 @@ export const orderSchema = z.object({
   date_created: z.string(),
   date_closed: z.string().nullable().optional(),
   // D-048: campo de checkpoint. Ver docs/MERCADO_LIVRE.md secao "Reconciliação".
-  date_last_updated: z.string(),
+  // Opcional desde D-101: o `GET /orders/{id}` REAL (fast path do webhook,
+  // primeira execução com tráfego de verdade em 2026-08-27) vem SEM este
+  // campo — o ZodError de produção tinha exatamente um path,
+  // `date_last_updated` — enquanto o `/orders/search` (reconciliação) o
+  // traz sempre. `persistOrder` deriva o fallback; o checkpoint de janela
+  // continua lendo o campo do search, intacto.
+  date_last_updated: z.string().nullable().optional(),
   last_updated: z.string().nullable().optional(),
   total_amount: z.number().nonnegative(),
   paid_amount: z.number().nullable().optional(),

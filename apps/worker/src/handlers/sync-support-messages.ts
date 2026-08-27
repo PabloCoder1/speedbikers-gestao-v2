@@ -75,10 +75,18 @@ function remoteFailure(error: unknown, subject: string): JobOutcome {
   }
 
   if (error instanceof ZodError) {
+    // D-101: o reason genérico escondia QUAL campo quebrou — o tráfego real
+    // do webhook (primeira vez em 2026-08-27) reprovou 4 detalhes de
+    // mensagem e o log não dizia onde. Os issues do Zod carregam path/
+    // código/expectativa, nunca o conteúdo da mensagem — seguro de logar, e
+    // é a evidência necessária para corrigir o contrato sem adivinhar
+    // (REGRA ABSOLUTA).
     return {
       status: "failed",
       retryable: false,
-      reason: `${subject} fora do contrato esperado`,
+      reason: `${subject} fora do contrato esperado: ${JSON.stringify(
+        error.issues.map((issue) => ({ path: issue.path.join("."), code: issue.code, message: issue.message })),
+      )}`,
     };
   }
 

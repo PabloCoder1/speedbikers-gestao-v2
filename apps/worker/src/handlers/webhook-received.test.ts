@@ -4,7 +4,9 @@ import { encryptToken, MercadoLivreApiError } from "@sb/mercado-livre";
 import type { MercadoLivreClient, RequestOptions } from "@sb/mercado-livre";
 import { createLogger } from "@sb/observability";
 import { describe, expect, it } from "vitest";
+import { ZodError } from "zod";
 
+import { orderSchema } from "./order-schema.js";
 import type { WebhookReceivedDeps } from "./webhook-received.js";
 import { createWebhookReceivedHandler } from "./webhook-received.js";
 
@@ -228,6 +230,36 @@ describe("sync.webhook.received — Fast Path", () => {
     expect(outcome).toMatchObject({ status: "failed", retryable: false });
   });
 
+  it("resposta fora do contrato (ZodError) NÃO repete — retry de erro determinístico só acumula ruído (D-101)", async () => {
+    // Medido em produção (2026-08-27): 48 tentativas em 2h para 3 pedidos,
+    // porque o catch antigo tratava ZodError como retryable. A
+    // reconciliação por janela é a rede de segurança que pega o pedido.
+    const { deps: d, lines } = deps({}, () =>
+      Promise.reject(new ZodError([{ code: "invalid_type", expected: "string", path: ["campo"], message: "x" }])),
+    );
+
+    const outcome = await run(d, lines);
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(outcome.status === "failed" && outcome.reason).toContain("fora do contrato");
+  });
+
+  it("order do GET por id SEM date_last_updated persiste — cai no fallback last_updated/date_created (D-101)", async () => {
+    // O ZodError real de produção tinha exatamente um path: o GET /orders/{id}
+    // vem sem date_last_updated (só o search o traz sempre, D-048).
+    const { date_last_updated, ...orderSemCampo } = FAKE_ORDER;
+    void date_last_updated;
+
+    // O contrato em si aceita — é o que o client valida na resposta real.
+    expect(orderSchema.safeParse(orderSemCampo).success).toBe(true);
+
+    const { deps: d, lines } = deps({}, orderSemCampo);
+
+    const outcome = await run(d, lines);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+  });
+
   describe("post_purchase (D-057) — só o roteamento; o processamento em si é testado em claim-return.test.ts", () => {
     const POST_PURCHASE_PAYLOAD = {
       mlAccountId: ML_ACCOUNT_ID,
@@ -254,6 +286,25 @@ describe("sync.webhook.received — Fast Path", () => {
       expect(outcome).toEqual({ status: "done", processed: 0 });
       expect(requests).toEqual([
         expect.objectContaining({ method: "GET", path: "/post-purchase/v1/claims/5298178312" }),
+      ]);
+    });
+
+    it("SUB-recurso do claim (/actions-history, visto em produção) processa o claim PAI (D-101)", async () => {
+      // O tráfego real do webhook também notifica sub-recursos — a
+      // notificação continua significando "algo mudou neste claim".
+      const { deps: d, requests, lines } = deps(
+        {},
+        { id: 5563418198, resource: "order", resource_id: 1, status: "closed", type: "mediations", related_entities: [] },
+      );
+
+      const outcome = await run(d, lines, {
+        ...POST_PURCHASE_PAYLOAD,
+        resource: "/post-purchase/v1/claims/5563418198/actions-history",
+      });
+
+      expect(outcome).toEqual({ status: "done", processed: 0 });
+      expect(requests).toEqual([
+        expect.objectContaining({ method: "GET", path: "/post-purchase/v1/claims/5563418198" }),
       ]);
     });
   });

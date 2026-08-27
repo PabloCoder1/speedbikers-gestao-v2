@@ -136,9 +136,14 @@ export async function fetchOrdersWindow(params: FetchOrdersWindowParams): Promis
 
       itemsProcessed += 1;
 
-      const updatedAt = new Date(order.date_last_updated);
+      // No search o campo SEMPRE vem (D-048) — o opcional no schema existe
+      // para o GET por id do fast path (D-101). Se um dia faltar aqui, NÃO
+      // avançar o checkpoint é o conservador: um checkpoint adiantado por
+      // fallback poderia pular janela e perder pedido; um parado só
+      // reprocessa, que é idempotente.
+      const updatedAt = order.date_last_updated != null ? new Date(order.date_last_updated) : null;
 
-      if (latestRecordAt === null || updatedAt > latestRecordAt) {
+      if (updatedAt !== null && (latestRecordAt === null || updatedAt > latestRecordAt)) {
         latestRecordAt = updatedAt;
       }
     }
