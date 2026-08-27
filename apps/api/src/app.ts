@@ -23,6 +23,8 @@ import type { LedgerIntegrityScheduleDeps } from "./ledger-integrity-schedule.js
 import { triggerLedgerIntegrityCheck } from "./ledger-integrity-schedule.js";
 import type { ListingVisitsScheduleDeps } from "./listing-visits-schedule.js";
 import { triggerListingVisitsSnapshot } from "./listing-visits-schedule.js";
+import type { SupportMessagesScheduleDeps } from "./support-messages-schedule.js";
+import { triggerSupportMessagesReconcile } from "./support-messages-schedule.js";
 import type { SupportQuestionsScheduleDeps } from "./support-questions-schedule.js";
 import { triggerSupportQuestionsReconcile } from "./support-questions-schedule.js";
 import type { SupportReplyDeps } from "./support-reply.js";
@@ -84,6 +86,7 @@ export interface AppDependencies {
   listingsSchedule?: ListingsScheduleDeps;
   listingVisitsSchedule?: ListingVisitsScheduleDeps;
   supportQuestionsSchedule?: SupportQuestionsScheduleDeps;
+  supportMessagesSchedule?: SupportMessagesScheduleDeps;
   supportReply?: SupportReplyDeps;
   salesAnomalyActionsSchedule?: SalesAnomalyActionsScheduleDeps;
   decisionOutcomesSchedule?: DecisionOutcomesScheduleDeps;
@@ -508,6 +511,18 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     const outcome = await triggerSupportQuestionsReconcile(supportQuestionsSchedule);
+
+    return context.json(outcome);
+  });
+
+  app.post("/internal/schedule/support-messages", async (context) => {
+    const supportMessagesSchedule = dependencies.supportMessagesSchedule;
+
+    if (supportMessagesSchedule === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const outcome = await triggerSupportMessagesReconcile(supportMessagesSchedule);
 
     return context.json(outcome);
   });

@@ -140,6 +140,20 @@ upsert_job \
   "${API_URL}/internal/schedule/support-questions" \
   "Reconciliacao de Perguntas nao respondidas, por conta Mercado Livre CONNECTED"
 
+# Reconciliacao de Mensagens pos-venda. Mesma cadencia e mesmo motivo medido da
+# de Perguntas: o webhook do Mercado Livre nunca foi chamado (D-091), entao
+# enquanto o painel nao for configurado esta varredura e a UNICA porta por onde
+# uma mensagem pos-venda entra.
+#
+# Custo: 1 chamada a /messages/unread por conta, mais 1 por conversa nao lida.
+# O handler trunca em 120 conversas por execucao para nao consumir o pool
+# compartilhado de 500 rpm da mensageria. Por CONTA.
+upsert_job \
+  "v3-support-messages-reconcile" \
+  "*/10 * * * *" \
+  "${API_URL}/internal/schedule/support-messages" \
+  "Reconciliacao de Mensagens pos-venda nao lidas, por conta Mercado Livre CONNECTED"
+
 # Deteccao de anomalia de venda -- Central de Acoes (Fase 6, D-064). Cadencia
 # DIARIA, depois dos jobs acima: o diagnostico usa daily_sku_metrics/
 # domain_events de ONTEM, que ja estao completos a qualquer hora do dia

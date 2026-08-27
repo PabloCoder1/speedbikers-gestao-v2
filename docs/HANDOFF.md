@@ -30,7 +30,18 @@ A fonte de verdade continua sendo:
 - O Checkpoint de Consolidação Pré-Fase 7 está fechado por completo desde 2026-08-25.
 - **Fase 7B — Central de Atendimento/SAC Mercado Livre ingerindo Perguntas EM PRODUÇÃO desde 2026-08-25.** D-083 confirmou endpoints/payloads; D-084 aprovou o modelo; D-085 materializou seis tabelas; D-086 acrescentou contrato/mapper/persistência idempotente; D-087 registrou `sync.support.questions`; **D-088 ligou o produtor** — o ACK do webhook roteia `topic=questions` direto para esse job — e os dois serviços foram publicados (`worker-00020-6xp`/`api-00016-5qd`). **D-089 fechou a reconciliação** e **D-090 entregou a Caixa de Entrada** (`/atendimento`) — o que é ingerido finalmente é visível. Continua sem triagem humana, `domain_events` de SAC, envio de resposta e sem ingestão de mensagens/reclamações/devoluções/mediações.
 
-### Última etapa concluída — D-096 (envio de resposta)
+### Última etapa concluída — D-097 (ingestão de Mensagens pós-venda)
+
+- **A Caixa de Entrada deixa de ser só de Perguntas.** Webhook do tópico `messages` (`sync.support.messages`) e reconciliação de 10 em 10 minutos por conta (`sync.support.messages.reconcile`, via `/messages/unread`), persistindo pela mesma porta idempotente das Perguntas.
+- **A unidade é a CONVERSA, nunca a mensagem solta**: `conversation_status` — de onde sai o estado de resposta — vive no envelope da conversa. O webhook entrega um ID de mensagem, o handler resolve para o pack/pedido e lê a conversa inteira.
+- **O contrato é permissivo de propósito.** Leitura ao vivo mostrou que as DUAS páginas oficiais discordam sobre a mesma resposta (`user_id` número vs string, `status` minúsculo vs maiúsculo, `to` presente vs ausente, `sellers` vs `seller`). Estrito na estrutura, normalizado nos valores. Ver a tabela em `docs/MERCADO_LIVRE.md` secao 2.12, corrigida nesta etapa.
+- **`mark_as_read=false` é fixo, não parâmetro** — a página "Mensagens pendentes" apresenta o GET sem ele COMO A FORMA de marcar como lida. Expor a flag seria criar o acidente.
+- **O ID do Agente de Mensageria nunca vira cliente** (D-083): numa conversa intermediada `from.user_id` é o agente, e `customer_external_id` fica null. Null é a resposta certa.
+- **`actions: ["read"]` é ignorado**: aviso de leitura não traz conteúdo novo e gastaria um GET do pool de 500 rpm da mensageria para regravar o mesmo dado.
+- **60 testes novos** (28 de contrato com fixtures oficiais verbatim, 14 de handler, 10 de reconciliação, 9 de persistência), mais 4 de webhook, 2 de rota e 1 de integração. `check` 29/29, `build` 8/8.
+- **NÃO deployado**, e nenhuma conversa real foi ingerida — ver "Pendências técnicas imediatas".
+
+### Etapa anterior — D-096 (envio de resposta)
 
 - **A primeira escrita do projeto no Mercado Livre.** `POST /v1/support/cases/:caseId/reply` autoriza (ADMIN/GESTOR/OPERADOR), grava a tentativa PENDING e enfileira `support.reply.send`; o worker revalida, posta em `/answers`, resolve a tentativa e relê a pergunta para materializar a mensagem outbound.
 - **A `api` valida e enfileira, como todo comando privilegiado do projeto.** Ganho concreto: o `ensureAccessToken` com a trava do `refresh_token` de uso único (D-046) segue num lugar só. Duplicá-lo na `api` criaria dois refreshes concorrentes invalidando o token um do outro.
@@ -106,7 +117,7 @@ A fonte de verdade continua sendo:
 
 **Depois, a Fase 7B tem três caminhos, todos defensáveis:**
 
-- **(a) Ingestão de mensagens pós-venda** (`sync.support.messages`) — fecha o buraco maior da caixa de entrada: hoje só Perguntas chegam. Exige pesquisa de contrato própria e o cuidado de `mark_as_read=false` (D-083, decisão 2), porque um GET técnico não pode marcar mensagem como lida no Mercado Livre.
+- ~~**(a) Ingestão de mensagens pós-venda**~~ — concluída em 2026-08-26 (D-097). O que sobrou dela como escopo próprio: **envio** de mensagem pós-venda (`POST /messages/packs/...`, limite de 350 caracteres, e o fluxo separado de contato iniciado pelo vendedor via `action_guide`), anexos, e a ingestão de reclamações/devoluções/mediações.
 - **(b) Copiloto sugerindo resposta** — a coluna `suggested_text` já existe e o contrato já a aceita; falta a ferramenta de geração. D-071 é explícito: é geração de TEXTO, não ferramenta de escrita, e o envio continua exigindo confirmação humana.
 - **(c) Templates e respostas rápidas** — o de menor risco e o que a operação provavelmente pede primeiro depois de responder algumas vezes à mão.
 
@@ -173,7 +184,8 @@ Publicado e verificado em 2026-08-24, depois do resumo acima ter sido escrito: `
    **Caminho mais rápido que a sonda:** conferir no painel do Mercado Livre se a permissão funcional "Comunicação pré e pós-venda" está marcada na aplicação. Se não estiver, a hipótese (a) está confirmada sem esperar medição nenhuma, e a correção é acrescentar a permissão e reautorizar as 4 contas.
 8. **🟡 O envio de resposta está EM PRODUÇÃO, mas nunca foi exercitado de verdade (D-096).** Implantado em 2026-08-26: `worker-00024-9mn` e `api-00020-8g9`, tag `c478948`; migration `20260826140000` aplicada no Supabase Dev. **Verificado por comportamento, não pelo output do deploy**: `POST /v1/support/cases/:id/reply` devolve 401 (existe, exige autenticação) enquanto uma rota inexistente devolve 404 — antes do deploy ela também devolvia 404. Boot dos dois serviços sem warning.
    **O que ainda falta é o envio real.** Postar uma resposta a um comprador é irreversível, então a primeira confirmação deve ser humana e deliberada — não algo a fazer para validar código. Ao fazê-la, conferir os quatro sinais: `support_reply_queued` na `api`, `support_reply_sent` no worker, a linha de `support_reply_attempts` em `SUCCEEDED` com `remote_message_id`, e a mensagem outbound aparecendo no transcript. Enquanto isso não acontecer, o caminho feliz do worker (`postQuestionAnswer` → resolver tentativa → reler) só foi exercitado contra teste.
-9. **Mecanismo de aviso de orçamento de IA não existe** — D-082 decidiu teto de R$100/mês com política "avisa, não bloqueia", mas o job que soma `ai_runs.cost_usd` e avisa o ADMIN nunca foi implementado. Na prática o gasto com a Anthropic hoje é ilimitado e não observado. Registrado como item do checklist da Fase 7, não como bloqueio.
+9. **🔴 A ingestão de Mensagens pós-venda (D-097) está no código, NÃO em produção.** Precisa de: `bash infra/deploy-cloud-run.sh worker` e depois `api` (as variáveis `MERCADO_LIVRE_CLIENT_ID=3270890376967436` e `MERCADO_LIVRE_REDIRECT_URI` precisam estar exportadas — não são segredo, são as mesmas já em uso nos serviços); `bash infra/cloud-scheduler.sh` para criar `v3-support-messages-reconcile`; e a migration `20260826180000`, que a CI aplica sozinha no Supabase Dev. **Além disso, é preciso confirmar que a permissão funcional "Comunicação pré e pós-venda" está concedida às contas** — sem ela, `/messages/unread` responde 403 e a varredura falha inteira. Sinais de que funcionou: `sync_runs` com `resource='messages'`, e cases com `channel='POST_SALE_MESSAGE'` aparecendo em /atendimento.
+10. **Mecanismo de aviso de orçamento de IA não existe** — D-082 decidiu teto de R$100/mês com política "avisa, não bloqueia", mas o job que soma `ai_runs.cost_usd` e avisa o ADMIN nunca foi implementado. Na prática o gasto com a Anthropic hoje é ilimitado e não observado. Registrado como item do checklist da Fase 7, não como bloqueio.
 
 ### Lacunas funcionais confirmadas na revisão
 

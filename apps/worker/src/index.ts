@@ -20,6 +20,8 @@ import { createSyncListingVisitsSnapshotHandler } from "./handlers/sync-listing-
 import { createSyncListingsSnapshotHandler } from "./handlers/sync-listings-snapshot.js";
 import { createSyncOrdersWindowHandler } from "./handlers/sync-orders-window.js";
 import { createSendSupportReplyHandler } from "./handlers/send-support-reply.js";
+import { createSyncSupportMessagesHandler } from "./handlers/sync-support-messages.js";
+import { createSyncSupportMessagesReconcileHandler } from "./handlers/sync-support-messages-reconcile.js";
 import { createSyncSupportQuestionHandler } from "./handlers/sync-support-question.js";
 import { createSyncSupportQuestionsReconcileHandler } from "./handlers/sync-support-questions-reconcile.js";
 import { createVerifyLedgerIntegrityHandler } from "./handlers/verify-ledger-integrity.js";
@@ -87,6 +89,18 @@ const app = createWorkerApp({
       encryptionKey,
     }),
     "support.reply.send": createSendSupportReplyHandler({
+      db,
+      mercadoLivre,
+      oauth,
+      encryptionKey,
+    }),
+    "sync.support.messages": createSyncSupportMessagesHandler({
+      db,
+      mercadoLivre,
+      oauth,
+      encryptionKey,
+    }),
+    "sync.support.messages.reconcile": createSyncSupportMessagesReconcileHandler({
       db,
       mercadoLivre,
       oauth,

@@ -398,12 +398,33 @@ Pesquisa feita exclusivamente na documentação oficial vigente. A permissão fu
 ### Mensagens pós-venda (`messages`)
 
 - **Leitura de uma conversa:** `GET /messages/packs/{pack_id}/sellers/{seller_id}?tag=post_sale&mark_as_read=false&limit=&offset=`. Se `pack_id` for nulo, usar o `order_id` no mesmo segmento `/packs`. `mark_as_read=false` é obrigatório na ingestão: sem ele, esse GET marca as mensagens como lidas no Mercado Livre.
-- **Payload relevante:** `paging`, `conversation_status` (`path`, `status`, `substatus`, `status_date`, `claim_id`, `shipping_id`), `messages[]` (`id`, `from.user_id`, `to.user_id`, `status`, `text`, datas, moderação, anexos e `message_resources`) e `seller_max_message_length`.
+- **Payload EXATO — CONFIRMADO por leitura ao vivo em 2026-08-26**, lendo o JSON de exemplo das duas páginas oficiais. A descrição em prosa que estava aqui não bastava para escrever um schema; os nomes reais são:
+  - `paging` (`limit`, `offset`, `total`);
+  - `conversation_status` (`path`, `status`, `substatus`, `status_date`, **`status_update_allowed`**, `claim_id`, `shipping_id`) — o campo `status_update_allowed` não estava registrado;
+  - `messages[]`: `id` (**não `message_id`** nesta forma), `site_id`, `client_id`, `from.user_id`, `to.user_id`, `status`, `subject`, `text`, **`message_date` (objeto aninhado: `received`/`available`/`notified`/`created`/`read`)**, **`message_moderation`** (`status`, `reason`, `source`, `moderation_date`), `message_attachments`, `message_resources[]` (`id`, `name`) e `conversation_first_message`. As datas **não** são campos planos `date_*` nesta resposta;
+  - `seller_max_message_length` (350) e **`buyer_max_message_length`** (3500), este último também ausente do registro anterior.
+- **⚠️ As duas páginas oficiais DISCORDAM entre si sobre a MESMA resposta.** Comparando "Gestão de mensagens pós-venda" (27/04/2026) com "Mensagens pendentes" (30/12/2025):
+
+  | campo | "Gestão de mensagens" | "Mensagens pendentes" |
+  |---|---|---|
+  | `from.user_id` | número `123456789000` | **string** `"415458330"` |
+  | `status` | `"available"` (minúsculas) | `"IN_MODERATION"` (maiúsculas) |
+  | `message_moderation.status` | `"clean"` | `"NON_MODERATED"` |
+  | `message_moderation.reason` | `null` | `"none"` |
+  | origem da moderação | `source` | `by` |
+  | `to` | presente | **ausente** |
+  | `message_resources[].name` | `"sellers"` | `"seller"` |
+
+  Consequência para a V3: o contrato é **estrito na ESTRUTURA e permissivo nos VALORES** — nada de enum fechado para `status`/moderação, comparação normalizada por caixa, e `user_id` aceito como número ou string numérica. Um enum fechado transformaria variação cosmética do Mercado Livre em perda de atendimento.
+- **PII no payload:** `from` traz `email` e `name` do comprador no exemplo de "Mensagens pendentes". O contrato declara só `user_id`, então o `.parse()` descarta os dois — dado pessoal de comprador não entra no processo.
+- **Moderação é assimétrica:** mensagem moderada do COMPRADOR não aparece na listagem; a do VENDEDOR aparece mesmo moderada.
+- **`GET /messages/{message_id}` tem DUAS respostas documentadas na mesma página** — "sem header" (objeto plano: `message_id`, `date_received`/`date`/`date_available`/`date_notified`/`date_read`, `text.plain`, `moderation`, `resource`, `resource_id`) e "atualizada (com header)" (o MESMO envelope da conversa). **A documentação não diz qual header seleciona qual formato**, então a V3 aceita os dois.
 - **Detalhe:** `GET /messages/{message_id}?tag=post_sale`.
 - **Resposta:** `POST /messages/packs/{pack_id}/sellers/{seller_id}?tag=post_sale`, JSON com `from.user_id`, `to.user_id`, `text` e `attachments` quando houver. Limite do vendedor: **350 caracteres** e uma mensagem por chamada.
 - **Arquitetura vigente no MLB desde 02/02/2026:** quando a conversa passa pelo Agente de Mensageria, `to.user_id` no POST e `from.user_id` no GET representam o agente, não o comprador real. O ID documentado para MLB é `3037675074`. A associação ao pedido/pack e à conta, não o `user_id` remoto isolado, deve governar identidade e autorização na V3.
 - **Início de conversa:** a resposta livre normal pressupõe conversa iniciada pelo comprador. Contato iniciado pelo vendedor usa o fluxo separado de motivos permitidos (`GET /messages/action_guide/packs/{pack_id}` e opções/capacidade disponíveis), nunca um POST livre inventado pela V3.
-- **Não lidas/reconciliação:** `GET /messages/unread?role=seller&tag=post_sale` retorna recursos com contagem e até **500 conversas por chamada**; a própria documentação o recomenda como redundância para perdas do webhook. Existe forma filtrada `GET /messages/unread/{resource}?tag=post_sale`.
+- **Não lidas/reconciliação:** `GET /messages/unread?role=seller&tag=post_sale`. **Payload exato confirmado em 2026-08-26:** `{ "user_id": 378136913, "results": [{ "resource": "/packs/1977056109/sellers/378136913", "count": 1 }] }`; sem pendências, `results` vem `[]` — e no exemplo vazio `user_id` aparece como **string**. Até **500 conversas por chamada**. `role` é obrigatório e **não tem valor padrão**: omiti-lo não devolve erro, devolve resultado errado. A própria documentação o recomenda como redundância para perdas do webhook. Existe forma filtrada `GET /messages/unread/{resource}?tag=post_sale`.
+- **A página "Mensagens pendentes" apresenta o GET da conversa SEM `mark_as_read=false` como A FORMA DE MARCAR COMO LIDA.** É a confirmação mais direta de por que D-083 decisão 2 existe: o parâmetro não é otimização, é o que separa ler de alterar o estado operacional do vendedor.
 - **Webhook:** tópico tipificado `messages`, `resource` é o ID da mensagem (sem barra de path) e `actions` vale `created` ou `read`; buscar com `GET /messages/{resource}`. O tópico está documentado para Argentina, Brasil e México.
 - **Rate limit específico:** GETs de mensageria compartilham um pool de **500 rpm**; POST/PUT compartilham outro pool de **500 rpm**. Continua obrigatório tratar 429 com backoff/jitter.
 - **Bloqueios/prazo:** no fluxo intermediado por agente, o vendedor tem **48 horas úteis** para resolver antes de a conversa ser bloqueada. Ordens canceladas bloqueiam a mensageria; mediação em andamento também pode bloquear o endpoint pós-venda comum. A V3 deve persistir `conversation_status` e nunca prometer envio só porque o caso está aberto localmente.

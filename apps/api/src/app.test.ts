@@ -650,6 +650,63 @@ describe("POST /internal/schedule/support-questions", () => {
     expect(enqueued[0]?.jobType).toBe("sync.support.questions.reconcile");
     expect(enqueued[0]?.queue).toBe("ml-sync-speedbikers-loja-1");
   });
+
+  it("responde 503 sem as dependências da reconciliação de mensagens", async () => {
+    const app = createApp({ logger: createLogger({}, { sink: () => undefined }), oidc: aceitaTudo });
+
+    const response = await app.request("/internal/schedule/support-messages", { method: "POST" });
+
+    expect(response.status).toBe(503);
+  });
+
+  it("dispara a reconciliação de mensagens na fila da conta", async () => {
+    const enqueued: EnqueueRequest[] = [];
+
+    const app = createApp({
+      logger: createLogger({}, { sink: () => undefined }),
+      oidc: aceitaTudo,
+      supportMessagesSchedule: {
+        db: {
+          from: () => ({
+            select: () => ({
+              eq: () =>
+                Promise.resolve({
+                  data: [{ id: "acc-1", organization_id: "org-1", slug: "speedbikers-loja-1" }],
+                  error: null,
+                }),
+            }),
+          }),
+        } as unknown as ListingVisitsScheduleDeps["db"],
+        logger: createLogger({}, { sink: () => undefined }),
+        enqueuer: {
+          enqueue: (request) => {
+            enqueued.push(request);
+
+            return Promise.resolve({
+              taskName: "t",
+              deduplicated: false,
+              envelope: {
+                jobType: request.jobType,
+                jobId: "6f1d5f9c-6d0b-4a5f-9f4a-2c9a7a1f0b33",
+                organizationId: request.organizationId,
+                dedupeKey: request.dedupeKey,
+                attempt: 1,
+                enqueuedAt: "2026-08-26T19:20:00.000Z",
+              },
+            });
+          },
+        },
+      },
+    });
+
+    const response = await app.request("/internal/schedule/support-messages", { method: "POST" });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ accountsScanned: 1, enqueued: 1, deduplicated: 0 });
+    expect(enqueued[0]?.jobType).toBe("sync.support.messages.reconcile");
+    expect(enqueued[0]?.queue).toBe("ml-sync-speedbikers-loja-1");
+    expect(enqueued[0]?.dedupeKey).toMatch(/^support-messages:speedbikers-loja-1:/);
+  });
 });
 
 describe("webhook do Mercado Livre", () => {

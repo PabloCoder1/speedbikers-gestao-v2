@@ -1708,6 +1708,30 @@ describe("observabilidade de sincronização", () => {
     ).resolves.toBeDefined();
   });
 
+  it("aceita resource 'messages' — a reconciliação de Mensagens grava aqui", async () => {
+    // Mesmo raciocínio de 'questions': o job por conversa é pontual e vive só
+    // em `job_runs`; quem ganha linha aqui é a varredura por conta, que tem
+    // janela, contagem e frescor. `20260826180000_add_messages_sync_resource.sql`.
+    const run = await client.query<{ id: string }>(
+      `insert into public.sync_runs
+         (organization_id, ml_account_id, job_id, resource, channel, status, items_processed, started_at, finished_at)
+       values ($1,$2,gen_random_uuid(),'messages','reconciliation','done',3,now(),now())
+       returning id`,
+      [ORG_SB, CONTA],
+    );
+
+    expect(run.rows).toHaveLength(1);
+
+    await expect(
+      client.query(
+        `insert into public.sync_errors
+           (organization_id, ml_account_id, sync_run_id, resource, error_class, message, occurred_at)
+         values ($1,$2,$3,'messages','retryable','rlstest 429',now())`,
+        [ORG_SB, CONTA, run.rows[0]?.id],
+      ),
+    ).resolves.toBeDefined();
+  });
+
   it("resource fora do vocabulário fechado continua recusado", async () => {
     // O CHECK ainda é uma lista fechada — alargar para 'questions' não o
     // transformou em texto livre.

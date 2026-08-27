@@ -276,7 +276,7 @@ describe("receiveWebhook — tópico questions", () => {
     expect(ctx.enqueued).toHaveLength(0);
   });
 
-  it.each(["orders_v2", "post_purchase", "items", "messages", "shipments"])(
+  it.each(["orders_v2", "post_purchase", "items", "shipments"])(
     "tópico vizinho %s continua indo para sync.webhook.received, sem regressão",
     async (topic) => {
       const ctx = deps();
@@ -292,6 +292,62 @@ describe("receiveWebhook — tópico questions", () => {
       expect(ctx.enqueued[0]?.payload).toMatchObject({ topic, mlAccountId: ACCOUNT.id });
     },
   );
+
+  it("mensagem NÃO cai mais no caminho genérico — tem job próprio agora", async () => {
+    const ctx = deps();
+
+    const outcome = await receiveWebhook(ctx.deps, {
+      ...NOTIFICATION,
+      topic: "messages",
+      resource: "fd1d2e37ad004ede9e0bf25d1215002d",
+    });
+
+    expect(outcome).toMatchObject({ status: "enqueued", jobType: "sync.support.messages" });
+    expect(ctx.enqueued[0]?.payload).toMatchObject({
+      messageId: "fd1d2e37ad004ede9e0bf25d1215002d",
+      mlAccountId: ACCOUNT.id,
+    });
+  });
+
+  it("recusa resource de mensagem com barra: o tópico entrega o ID CRU", async () => {
+    const ctx = deps();
+
+    const outcome = await receiveWebhook(ctx.deps, {
+      ...NOTIFICATION,
+      topic: "messages",
+      resource: "/messages/fd1d2e37ad004ede9e0bf25d1215002d",
+    });
+
+    expect(outcome).toEqual({ status: "unroutable_resource" });
+    expect(ctx.enqueued).toHaveLength(0);
+  });
+
+  it("aviso de leitura não gasta um GET do pool de 500 rpm da mensageria", async () => {
+    const ctx = deps();
+
+    const outcome = await receiveWebhook(ctx.deps, {
+      ...NOTIFICATION,
+      topic: "messages",
+      resource: "fd1d2e37ad004ede9e0bf25d1215002d",
+      actions: ["read"],
+    });
+
+    expect(outcome).toEqual({ status: "ignored_action" });
+    expect(ctx.enqueued).toHaveLength(0);
+  });
+
+  it("mensagem nova continua entrando quando `created` acompanha `read`", async () => {
+    const ctx = deps();
+
+    const outcome = await receiveWebhook(ctx.deps, {
+      ...NOTIFICATION,
+      topic: "messages",
+      resource: "fd1d2e37ad004ede9e0bf25d1215002d",
+      actions: ["read", "created"],
+    });
+
+    expect(outcome).toMatchObject({ status: "enqueued", jobType: "sync.support.messages" });
+  });
 
   it("conta desconhecida continua vencendo o roteamento por tópico — nada é enfileirado", async () => {
     const ctx = deps({ accountExists: false });

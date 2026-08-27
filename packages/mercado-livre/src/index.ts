@@ -32,6 +32,40 @@ export { paginateOffset } from "./pagination.js";
 export type { OffsetPage, PaginateOffsetOptions, PagingInfo } from "./pagination.js";
 
 export {
+  classifySender,
+  conversationReplyState,
+  conversationStatusSchema,
+  fetchMessageDetail,
+  fetchPackMessages,
+  fetchUnreadConversations,
+  inferConversationKind,
+  mapPackMessagesToSupportProjection,
+  messageBodyState,
+  messageDetailSchema,
+  MESSAGING_AGENT_USER_IDS,
+  packMessageSchema,
+  packMessagesPageSchema,
+  parseConversationResource,
+  toMessageConversationLocator,
+  unreadConversationsSchema,
+} from "./messages.js";
+export type {
+  FetchMessageDetailOptions,
+  FetchPackMessagesOptions,
+  FetchUnreadConversationsOptions,
+  MessageConversationLocator,
+  PackMessage,
+  PackMessagesPage,
+  SupportConversationCaseProjection,
+  SupportConversationMessageProjection,
+  SupportConversationProjection,
+  SupportConversationReference,
+  SupportMessageBodyState,
+  SupportSenderKind,
+  UnreadConversations,
+} from "./messages.js";
+
+export {
   fetchReceivedQuestion,
   fetchReceivedQuestionsPage,
   mapQuestionToSupportProjection,

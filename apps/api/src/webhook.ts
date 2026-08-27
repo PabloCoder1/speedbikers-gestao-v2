@@ -51,6 +51,14 @@ export type MercadoLivreNotification = z.infer<typeof mercadoLivreNotificationSc
  */
 const QUESTION_RESOURCE_PATTERN = /^\/questions\/(\d+)$/;
 
+/**
+ * Tópico tipificado `messages`: diferente de todos os outros, o `resource` é
+ * o ID da mensagem CRU, sem barra nem caminho — `"fd1d2e37ad004ede9e0bf25..."`,
+ * não `"/messages/fd1d..."` (D-083, secao 2.12). O ID é hexadecimal longo, não
+ * numérico, então nada de `Number()` aqui.
+ */
+const MESSAGE_RESOURCE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/;
+
 export interface WebhookDeps {
   db: AdminClient;
   enqueuer: Enqueuer;
@@ -62,11 +70,34 @@ export type WebhookOutcome =
   | { status: "enqueued"; jobId: string; jobType: string; deduplicated: boolean }
   | { status: "unknown_account" }
   | { status: "unroutable_resource" }
+  | { status: "ignored_action" }
   | { status: "invalid_payload"; reason: string };
 
 interface RoutedJob {
   jobType: string;
   payload: Record<string, unknown>;
+}
+
+/**
+ * `messages` traz `actions: ["created"]` ou `["read"]`.
+ *
+ * `read` avisa que a CONTRAPARTE leu uma mensagem — não existe conteúdo novo,
+ * e a V3 nem persiste `date_read`. Buscar a conversa inteira nesse caso
+ * gastaria um GET do pool compartilhado de 500 rpm da mensageria para gravar
+ * exatamente o que já estava gravado. Numa conversa ativa, `read` chega tanto
+ * quanto `created`, então isso dobraria o custo sem mudar uma linha do banco.
+ *
+ * Ausência de `actions` é tratada como conteúdo novo: perder uma mensagem é
+ * pior do que um GET a mais.
+ */
+function isReadOnlyNotification(notification: MercadoLivreNotification): boolean {
+  const actions = notification.actions;
+
+  if (actions === undefined || actions.length === 0) {
+    return false;
+  }
+
+  return actions.every((action) => action.trim().toLowerCase() === "read");
 }
 
 /**
@@ -101,6 +132,20 @@ function routeJob(notification: MercadoLivreNotification, mlAccountId: string): 
     }
 
     return { jobType: "sync.support.questions", payload: { mlAccountId, questionId } };
+  }
+
+  if (notification.topic === "messages") {
+    if (!MESSAGE_RESOURCE_PATTERN.test(notification.resource)) {
+      return null;
+    }
+
+    // O job resolve a QUAL conversa a mensagem pertence e persiste a conversa
+    // inteira — mensagem solta não traz `conversation_status`, que é de onde
+    // sai o estado de resposta do case.
+    return {
+      jobType: "sync.support.messages",
+      payload: { mlAccountId, messageId: notification.resource },
+    };
   }
 
   return { jobType: "sync.webhook.received", payload: { ...notification, mlAccountId } };
@@ -147,6 +192,15 @@ export async function receiveWebhook(deps: WebhookDeps, rawBody: unknown): Promi
   // (o caso real de reenvio por falta de ACK a tempo); uma mudança de status
   // seguinte, minutos depois, gera um job novo — achado em revisão, 2026-08-22.
   const window = (deps.now?.() ?? new Date()).toISOString().slice(0, 16);
+
+  if (notification.topic === "messages" && isReadOnlyNotification(notification)) {
+    deps.logger.info("ml_webhook_read_receipt_ignored", {
+      topic: notification.topic,
+      ml_account_id: account.data.id,
+    });
+
+    return { status: "ignored_action" };
+  }
 
   const job = routeJob(notification, account.data.id);
 
