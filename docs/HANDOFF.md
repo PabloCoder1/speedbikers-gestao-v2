@@ -44,6 +44,9 @@ A fonte de verdade continua sendo:
 - **Checkpoint não avança em varredura parcial** (pularia claims para sempre) e falha ao LER o checkpoint é `retryable`, nunca fallback para janela larga.
 - Migration `20260827190000` alarga `sync_runs`/`sync_errors` para `claims`. **13º job do Scheduler** — auditorias tipo D-070 devem usar 13.
 - `check` **29/29**, 7 testes novos da varredura.
+- **Deployado e verificado em 2026-08-27**, na ordem obrigatória worker→api: `worker-00034-bk8` e `api-00023-8m7`, 100% do tráfego. Migration `20260827190000` **confirmada aplicada** no Supabase Dev (`list_migrations`, 62 versões). `bash infra/cloud-scheduler.sh` criou `v3-support-claims-reconcile` (`15 * * * *` America/Sao_Paulo) — **`gcloud scheduler jobs list` devolve 13**, medido e não presumido.
+- **Zero ERROR e zero `job_failed`.** Houve 7 `slow_operation` na revisão nova — o sinal de observabilidade do próprio projeto (limiar de 1,5 s), não falha; mesmo padrão já registrado em D-081 sob volume. Registrado em vez de omitido: dizer "zero warning" aqui seria falso.
+- **A primeira execução natural ainda não foi observada** (o job dispara aos :15 de cada hora). Nenhum disparo manual foi feito — ele faria chamadas reais ao Mercado Livre contra as 4 contas.
 
 ### Etapa anterior — D-107 (prazos do claim)
 
