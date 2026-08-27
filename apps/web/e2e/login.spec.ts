@@ -24,6 +24,17 @@ test.describe("login", () => {
     await expect(page).toHaveURL(/\/login$/);
   });
 
+  test("a Home exige sessão desde D-105 — deixou de ser painel estático", async ({ page }) => {
+    // `/` era rota pública enquanto era o painel de progresso da construção
+    // ("nenhum dado do negócio", dizia `proxy.ts`). A Visão Geral que a
+    // substituiu lê `actions`/`support_cases`/`notification_recipients`, então
+    // a exceção saiu junto com a página estática. Sem este teste, alguém
+    // reintroduz `/` em `PUBLIC_EXACT` sem perceber o que mudou.
+    await page.goto("/");
+
+    await expect(page).toHaveURL(/\/login\?next=%2F$/);
+  });
+
   test("login com credenciais válidas volta para a página protegida pedida", async ({ page }) => {
     await page.goto("/login?next=%2Fcompras");
 

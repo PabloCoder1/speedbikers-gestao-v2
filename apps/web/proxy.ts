@@ -13,11 +13,19 @@ import { NextResponse, type NextRequest } from "next/server";
 /**
  * Rotas que dispensam sessao.
  *
- * `/` e o painel de progresso do projeto: conteudo estatico, nenhum dado do
- * negocio. Exigir login nele so esconderia a pagina de quem acompanha a obra.
- * Por ser prefixo de tudo, ele entra na lista de EXATOS, nunca na de prefixos.
+ * **Vazia desde 2026-08-27 (D-105).** `/` morava aqui enquanto era o painel
+ * de progresso da construcao — "conteudo estatico, nenhum dado do negocio",
+ * dizia a justificativa original, e ela estava certa. A Home passou a ser a
+ * Visao Geral orientada a atencao, que le `actions`, `support_cases` e
+ * `notification_recipients`: a condicao que tornava a rota publica deixou de
+ * existir junto com a pagina estatica, entao a excecao saiu com ela.
+ *
+ * Sem sessao, `/` agora cai no mesmo redirect de todas as outras telas —
+ * `/login?next=%2F`. O mecanismo fica no lugar: se algum dia nascer uma rota
+ * exata publica, ela entra aqui, NUNCA em `PUBLIC_PREFIXES` (barra e prefixo
+ * de tudo, e liberaria o sistema inteiro).
  */
-const PUBLIC_EXACT = new Set(["/"]);
+const PUBLIC_EXACT = new Set<string>();
 const PUBLIC_PREFIXES = ["/login", "/auth"];
 
 export async function proxy(request: NextRequest): Promise<NextResponse> {
