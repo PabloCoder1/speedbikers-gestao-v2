@@ -1,4 +1,5 @@
 import type { AdminClient } from "@sb/db";
+import { detectClaimSupportEvents } from "@sb/domain";
 import type { MercadoLivreClient } from "@sb/mercado-livre";
 import type { Logger } from "@sb/observability";
 
@@ -9,6 +10,7 @@ import {
   mapClaimMessagesToProjection,
   mapClaimToSupportProjection,
 } from "./claim-support-projection.js";
+import { recordDomainEvents } from "./domain-events.js";
 import { persistSupportClaim } from "./persist-support-claim.js";
 
 /**
@@ -36,6 +38,18 @@ export interface IngestSupportClaimContext {
   organizationId: string;
   mlAccountId: string;
   source: "WEBHOOK" | "RECONCILIATION";
+  /**
+   * Época de notificação (D-110): claim NASCIDO a partir deste instante gera
+   * `domain_events` de atendimento. `null` = este caminho não notifica.
+   *
+   * Hoje só a RECONCILIAÇÃO notifica, e é escolha, não acaso: a varredura só
+   * enxerga claim ABERTO (`status=opened`, D-109), então um claim que nasceu
+   * e se resolveu sozinho em minutos — 6 casos medidos em 72min de webhook,
+   * um deles mediação encerrada em 108s — nunca vira notificação. O webhook
+   * observaria o claim 1-2s após nascer, cedo demais para saber se ele vai
+   * sobreviver. O custo é latência de até ~1h no aviso; mediação dura dias.
+   */
+  notifyEpoch: string | null;
 }
 
 export async function ingestSupportClaim(
@@ -104,6 +118,39 @@ export async function ingestSupportClaim(
 
   try {
     const result = await persistSupportClaim(deps.db, context, projection, messages, deadlines);
+
+    // D-110 — depois da persistência, nunca antes: o evento carrega o
+    // support_cases.id, e um evento sem case por trás seria notificação com
+    // link morto. `recordDomainEvents` já é best-effort (falha loga, dedupe
+    // absorve), então uma emissão que falhe não desfaz a ingestão.
+    if (context.notifyEpoch !== null) {
+      if (projection.case.openedAt === null && projection.case.isMediation) {
+        // Contador da mitigação obrigatória de D-110: sem nascimento não há
+        // época, e a supressão precisa ser visível, não silenciosa.
+        logger.info("support_event_suppressed_without_opened_at", {
+          claim_id: String(claim.id),
+          support_case_id: result.supportCaseId,
+        });
+      }
+
+      await recordDomainEvents(
+        deps.db,
+        { organizationId: context.organizationId, mlAccountId: context.mlAccountId },
+        detectClaimSupportEvents({
+          supportCaseId: result.supportCaseId,
+          externalCaseId: projection.case.externalCaseId,
+          externalStatus: projection.case.externalStatus,
+          externalStage: projection.case.externalStage,
+          externalType: projection.case.externalType,
+          isMediation: projection.case.isMediation,
+          initialInternalStatus: projection.case.initialInternalStatus,
+          openedAt: projection.case.openedAt,
+          lastActivityAt: projection.case.lastActivityAt,
+          notifyEpoch: context.notifyEpoch,
+        }),
+        logger,
+      );
+    }
 
     logger.info("claim_support_case_persisted", {
       claim_id: String(claim.id),

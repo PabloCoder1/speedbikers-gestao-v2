@@ -1675,6 +1675,30 @@ Não é específico de `questions`: **nunca chegou `orders_v2`, `post_purchase`,
 
 **Impacto:** `ml-support-claims-fetch.ts` (remove `sort`, acrescenta `status`), `sync-support-claims-reconcile.ts` (`describeFailure`), `claim-schema.ts` (`related_entities` opcional), `claim-support-projection.ts` + `persist-support-claim.ts` (`hasReturn` tri-estado), `claim-return.ts` (guarda conservadora), +3 testes-guarda. Nenhuma migration.
 
+## D-110 — Notificações de atendimento, fatia 1: um evento só, e a medição decidiu quase tudo
+
+**Contexto:** primeiro item aberto da Fase 7B depois da ingestão fechada — "Notificações de atendimento — mesma cadeia `domain_events -> severidade -> notifications` da Fase 7, novos `event_type` prefixados `support.*`". O desenho passou por um workflow de 11 agentes (4 leitores paralelos do código real, 3 propostas independentes, 1 juiz, 3 críticos adversariais), que produziu um desenho consolidado E **3 falhas bloqueantes contra o próprio desenho** — e, de quebra, descobriu D-109 ao ler `sync_runs`. Depois de D-109 consertar a varredura, a medição foi refeita contra os 268 claims reais, e ela derrubou a calibração original.
+
+**A medição que decidiu (2026-08-27, Supabase Dev, pós-D-109):** ~35-43 claims novos/dia; **17 mediações novas/dia** (`mediations/dispute`: 68 nascidos em 4 dias); 126 mediações ABERTAS no estoque; devoluções 15/dia; `recontact` raro de verdade (3 no total). O desenho original estimara "unidades por semana" para mediação — colhido enquanto a varredura estava quebrada.
+
+**Decisão 1 — UM evento: `support.claim.disputed`, severidade `importante`.** O proposto em `docs/API.md` era `support.mediation.opened`/`critico`. Renomeado (a entidade do case é o claim; mediação é o `stage` — e o nome antigo sugeriria um case próprio de mediação, o erro que D-104 corrigiu) e **recalibrado: 17 críticos/dia esvaziaria o nível na primeira semana**; o catálogo executável reserva `critico` para dado errado/sincronização morta. Os requisitos autorizam a recalibração em letra: severidades são "regras conceituais iniciais, a calibrar depois com dado real". `critico` de atendimento fica reservado para `support.sla_at_risk`, que é raro e depende do job com relógio (D-107).
+
+**Decisão 2 — `support.claim.opened` FICA FORA, com o número no registro: 35/dia.** `domain_events` é append-only e o fan-out ignora preferências (D-076) — toda emissão vira linha durável na Central para todo membro elegível, sem botão que desfaça. **Errar por menos é reversível (adicionar depois custa uma tarde); errar por mais não é** (~1.000 linhas/mês para sempre). Perguntas e mensagens também ficam fora — severidade condicional sem limiar definido, mesmo caso de `listing.price.changed` que o catálogo se recusa a adivinhar.
+
+**Decisão 3 — quem emite é a RECONCILIAÇÃO, nunca o webhook.** A primeira falha bloqueante provou com dado real: o webhook observa o claim 1-2s após nascer, e 6 claims em 72min se auto-resolveram em minutos — um deles uma MEDIAÇÃO encerrada em 108s, que teria deixado um card crítico obsoleto e indeletável. A varredura horária só enxerga claim que continua ABERTO (`status=opened`, D-109), então **o assentamento vem da própria API, não de um timer**. Custo: até ~1h de latência no aviso; mediação dura dias.
+
+**Decisão 4 — o silêncio da varredura fria é POR CLAIM, nunca por estado de execução.** As outras duas falhas bloqueantes mataram a trava original (`notify = checkpoint existe`) por dois caminhos independentes: ela desarmava para sempre enquanto a varredura nunca tivesse tido sucesso (exatamente o estado em que D-109 a encontrou), e rearmava com a mesma janela fria após um `partial`. A substituta é uma **época testada contra o NASCIMENTO do claim**: `date_created >= max(SUPPORT_EVENTS_EPOCH, ml_accounts.connected_at)`. Cobre primeira varredura, checkpoint congelado, pane prolongada e conta nova (o piso `connected_at` impede o despejo do backlog pré-conexão). As 126 mediações abertas do estoque nasceram antes da época — mudas para sempre, e visíveis na Caixa de Entrada com `priority='CRITICA'`, como sempre.
+
+**Decisão 5 — chave TERMINAL `support.claim.disputed:{support_cases.id}`.** Uma mediação notifica uma vez na vida do case. Chave com timestamp produziria uma notificação POR VARREDURA para cada mediação aberta — 126/hora hoje. O `UNIQUE (dedup_key)` de `domain_events` é de coluna única e o UUID local o satisfaz; mesmo raciocínio de `auto-resolve:{caseId}` (D-102).
+
+**Decisão 6 — comparação de época por INSTANTE, nunca lexicográfica.** O ML carimba com offset (`-04:00`) e a época é `Z`; comparar strings suprimiria um claim nascido `18:30-04:00` (=22:30Z) contra época de 21:00Z. Pego antes do teste; teste-guarda travando.
+
+**Zero migration** — `entity_type` não tem whitelist (verificado em `pg_constraint` no banco vivo pelo workflow), o trigger de fan-out cobre qualquer INSERT, `notification_preferences.event_type` é texto livre. `entityHref` ganhou `support_case -> /atendimento/{id}` — **primeiro evento com destino clicável de detalhe real**.
+
+**Verificação:** `check` 29/29; 9 testes puros novos (`support-events.test.ts`), 3 de emissão na varredura (emite pós-época; época futura silencia; reclamação comum não emite), 4 de `resolveNotifyEpoch`. **Não deployado ainda nesta entrada.**
+
+**Fora desta fatia, com caminho apontado:** `support.customer_replied` é o melhor candidato à fatia 2 (a RPC de D-102 já devolve se a transição aplicou; exige chave não terminal e as três portas); `sla_at_risk` espera o job com relógio; agrupamento na Central e emissão a partir de ação humana continuam fora (a web não tem INSERT em `domain_events` e o fan-out não é security definer).
+
 ## Como adicionar nova decisão
 
 Registrar:

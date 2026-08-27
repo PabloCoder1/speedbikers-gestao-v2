@@ -24,6 +24,8 @@ export interface SupportClaimCaseProjection {
   initialPriority: "ALTA" | "CRITICA";
   initialResolvedAt: string | null;
   lastActivityAt: string;
+  /** `claim.date_created` cru — a época de notificação (D-110) testa o NASCIMENTO. */
+  openedAt: string | null;
 }
 
 export interface SupportClaimProjection {
@@ -305,6 +307,7 @@ export function mapClaimToSupportProjection(claim: ParsedClaim): SupportClaimPro
     initialPriority: isMediation ? "CRITICA" : "ALTA",
     initialResolvedAt: internalState.initialResolvedAt,
     lastActivityAt,
+    openedAt: claim.date_created ?? null,
   };
 
   return {

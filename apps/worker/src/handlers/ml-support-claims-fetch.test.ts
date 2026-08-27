@@ -8,6 +8,8 @@ const ORGANIZATION_ID = "11111111-0000-4000-8000-000000000001";
 const ML_ACCOUNT_ID = "aaaaaaaa-0000-4000-8000-000000000001";
 const SELLER_ID = 1295357671;
 const UPDATED_AFTER = "2026-08-27T00:00:00.000+00:00";
+// Antes de qualquer date_created das fixtures: por padrao os testes EMITEM.
+const NOTIFY_EPOCH = "2026-08-01T00:00:00.000Z";
 
 const logger = createLogger({}, { sink: () => undefined });
 
@@ -100,6 +102,7 @@ function run(pagesByRole: Record<string, unknown[][]>) {
     mercadoLivre: client,
     accessToken: "token",
     updatedAfter: UPDATED_AFTER,
+    notifyEpoch: NOTIFY_EPOCH,
     logger,
   }).then((result) => ({ result, requests }));
 }
@@ -184,10 +187,77 @@ describe("fetchSupportClaims", () => {
       mercadoLivre: client,
       accessToken: "token",
       updatedAfter: UPDATED_AFTER,
+      notifyEpoch: NOTIFY_EPOCH,
       logger,
     }).then((result) => {
       // Uma vez só: a dedupe por id absorve o segundo papel.
       expect(result.itemsProcessed).toBe(1);
+    });
+  });
+
+  it("mediação nascida após a época emite `support.claim.disputed` (D-110)", () => {
+    const fake = fakeDb();
+    const { client } = fakeMercadoLivre({ respondent: [[claim(1, { stage: "dispute" })]], complainant: [[]] });
+
+    return fetchSupportClaims({
+      db: fake.db,
+      organizationId: ORGANIZATION_ID,
+      mlAccountId: ML_ACCOUNT_ID,
+      sellerId: SELLER_ID,
+      mercadoLivre: client,
+      accessToken: "token",
+      updatedAfter: UPDATED_AFTER,
+      notifyEpoch: NOTIFY_EPOCH,
+      logger,
+    }).then(() => {
+      const eventos = fake.upserted.filter((row) => row.event_type === "support.claim.disputed");
+
+      expect(eventos).toHaveLength(1);
+      expect(eventos[0]?.severity).toBe("importante");
+      expect(eventos[0]?.entity_type).toBe("support_case");
+    });
+  });
+
+  it("época FUTURA silencia a varredura fria — nenhuma notificação do estoque", () => {
+    // O cenário das 126 mediações abertas pré-época: mesmo em dispute, claim
+    // nascido antes da época não vira evento. É o que torna QUALQUER
+    // varredura fria (primeira execução, conta nova, checkpoint congelado)
+    // silenciosa por claim, não por estado de execução.
+    const fake = fakeDb();
+    const { client } = fakeMercadoLivre({ respondent: [[claim(1, { stage: "dispute" })]], complainant: [[]] });
+
+    return fetchSupportClaims({
+      db: fake.db,
+      organizationId: ORGANIZATION_ID,
+      mlAccountId: ML_ACCOUNT_ID,
+      sellerId: SELLER_ID,
+      mercadoLivre: client,
+      accessToken: "token",
+      updatedAfter: UPDATED_AFTER,
+      notifyEpoch: "2026-09-01T00:00:00.000Z",
+      logger,
+    }).then((result) => {
+      expect(result.itemsProcessed).toBe(1);
+      expect(fake.upserted.filter((row) => row.event_type === "support.claim.disputed")).toHaveLength(0);
+    });
+  });
+
+  it("reclamação comum não emite nada — só mediação notifica na fatia 1", () => {
+    const fake = fakeDb();
+    const { client } = fakeMercadoLivre({ respondent: [[claim(1, { stage: "claim" })]], complainant: [[]] });
+
+    return fetchSupportClaims({
+      db: fake.db,
+      organizationId: ORGANIZATION_ID,
+      mlAccountId: ML_ACCOUNT_ID,
+      sellerId: SELLER_ID,
+      mercadoLivre: client,
+      accessToken: "token",
+      updatedAfter: UPDATED_AFTER,
+      notifyEpoch: NOTIFY_EPOCH,
+      logger,
+    }).then(() => {
+      expect(fake.upserted.filter((row) => typeof row.event_type === "string")).toHaveLength(0);
     });
   });
 

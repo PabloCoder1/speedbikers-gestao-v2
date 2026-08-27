@@ -42,4 +42,10 @@ export const EVENT_SEVERITY: Readonly<Record<string, EventSeverity>> = {
   // nada — "importante" alerta sem o peso de "critico", reservado para
   // dado errado ou sincronização morta.
   "ai.budget.exceeded": "importante",
+  // MEDIDO antes de calibrar (D-110): 17 mediações NOVAS por dia nesta
+  // operação. O requisito propunha "critico" como regra conceitual a
+  // calibrar com dado real — 17 críticos/dia esvaziaria o nível na primeira
+  // semana. `critico` de atendimento fica reservado para prazo estourando
+  // (`sla_at_risk`), que exige o job com relógio que D-107 deixou pendente.
+  "support.claim.disputed": "importante",
 };

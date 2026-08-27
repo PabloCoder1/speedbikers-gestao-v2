@@ -58,6 +58,9 @@ export function formatEventDiff(
  */
 export function entityHref(entityType: string, entityId: string): string | null {
   if (entityType === "sku") return `/skus/${entityId}`;
+  // D-110: primeiro evento cujo destino tem tela de detalhe própria (D-095).
+  // `entity_id` é o `support_cases.id`, o mesmo UUID da rota.
+  if (entityType === "support_case") return `/atendimento/${entityId}`;
 
   return null;
 }
@@ -66,6 +69,7 @@ export function entityLabel(entityType: string): string {
   if (entityType === "sku") return "SKU";
   if (entityType === "listing") return "Anúncio";
   if (entityType === "order") return "Pedido";
+  if (entityType === "support_case") return "Atendimento";
 
   return entityType;
 }

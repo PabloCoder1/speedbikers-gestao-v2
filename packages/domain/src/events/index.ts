@@ -15,3 +15,10 @@ export type { FreshnessLevel } from "./freshness.js";
 
 export { evaluateAiBudget } from "./ai-budget.js";
 export type { AiBudgetSignal } from "./ai-budget.js";
+
+export {
+  SUPPORT_CASE_ENTITY_TYPE,
+  SUPPORT_CLAIM_DISPUTED_EVENT,
+  detectClaimSupportEvents,
+} from "./support-events.js";
+export type { ClaimSupportEventInput } from "./support-events.js";

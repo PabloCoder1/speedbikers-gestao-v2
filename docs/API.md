@@ -185,6 +185,7 @@ Todo job registra em `job_runs`: início, fim, resultado, erro, itens processado
 | `sync.delayed` | importante | sync |
 | `sync.failed` | crítico | sync |
 | `ai.budget.exceeded` | importante | job de conferência — **implementado em 2026-08-27 (D-100)**, `maintenance.check-ai-budget`: soma mensal de `ai_runs.cost_usd` acima do teto de D-082; deduplicado por organização+mês no próprio `dedup_key` |
+| `support.claim.disputed` | importante | reconciliação de claims — **implementado em 2026-08-27 (D-110)**, primeiro evento de atendimento. Emitido quando a varredura horária observa uma mediação (`stage='dispute'`) ABERTA, nascida (`date_created`) depois da época `max(2026-08-27T21:00Z, connected_at da conta)`. Chave TERMINAL `support.claim.disputed:{support_cases.id}` — uma notificação por case na vida. Severidade CALIBRADA COM DADO REAL: o proposto era `critico` (como `support.mediation.opened`), mas a medição achou 17 mediações novas/dia — 17 críticos diários esvaziaria o nível. O webhook NÃO emite de propósito: observa o claim 1-2s após nascer, e 6 claims medidos se auto-resolveram em minutos; a varredura só vê quem continua aberto |
 
 A severidade final é calculada por **regra versionada** em `@sb/domain/events` (`packages/domain/src/events/catalog.ts`), não fixada na interface. Consumo (corrigido em 2026-08-27 — o texto anterior desta linha dizia "nada lê ainda", congelado de antes de D-073): **a cadeia de notificações consome TODO `domain_event` desde D-073** — trigger de fan-out → Central de Notificações (D-074) → toasts (D-075), com preferências por usuário (D-076); os `listing.*` têm inclusive diff formatado na UI (`apps/web/lib/event-format.ts`). O que continua verdade: a **Central de Ações/diagnóstico** só correlaciona eventos com `entity_type = 'sku'` — `listing.*` (entity_type `listing`) ainda não entra como causa candidata de anomalia de venda (expansão registrada nas lacunas funcionais do `docs/HANDOFF.md`).
 
@@ -277,17 +278,17 @@ pergunta que a V3 nunca vê.
 
 Catálogo de eventos proposto, seguindo `dominio.entidade.acao` (secao 4) — nomes conceituais, a confirmar contra os estados reais que a API devolver:
 
-| Evento (proposto) | Severidade padrão |
-|---|---|
-| `support.question.received` | informativo |
-| `support.message.received` | informativo / importante |
-| `support.claim.opened` | importante |
-| `support.claim.updated` | informativo |
-| `support.mediation.opened` | crítico |
-| `support.return.updated` | importante |
-| `support.customer_replied` | importante |
-| `support.sla_at_risk` | crítico |
+| Evento (proposto) | Severidade padrão | Situação (D-110, 2026-08-27) |
+|---|---|---|
+| `support.question.received` | informativo | ADIADO com medição: 85 cases, canal de maior volume, varredura de 10 min re-elegível para sempre; falta regra escrita de qual pergunta merece atenção |
+| `support.message.received` | informativo / importante | ADIADO: severidade condicional sem limiar definido — mesmo caso de `listing.price.changed`, deliberadamente fora do catálogo executável |
+| `support.claim.opened` | importante | ADIADO com medição: **35 claims novos/dia**; `domain_events` é append-only, errar por mais deixaria ~1.000 linhas/mês na Central para sempre |
+| `support.claim.updated` | informativo | ADIADO: sem diff não há transição definível — é o refresh que a reconciliação horária faz em todo claim aberto |
+| ~~`support.mediation.opened`~~ `support.claim.disputed` | ~~crítico~~ **importante** | **IMPLEMENTADO (D-110)** — renomeado (a entidade do case é o claim; mediação é o `stage`) e recalibrado com dado real: 17 mediações novas/dia |
+| `support.return.updated` | importante | ADIADO: proposta anterior a D-084/D-104 — devolução virou faceta (`has_return`), o evento útil seria a transição `false→true`, que exige diff |
+| `support.customer_replied` | importante | melhor candidato à próxima fatia: a RPC de D-102 já devolve se a transição aplicou; exige chave NÃO terminal e tocar as três portas de persistência |
+| `support.sla_at_risk` | crítico | ADIADO: exige o job com relógio que D-107 deixou pendente; os `due_at` remotos já estão persistidos |
 
-Este catálogo continua propositalmente menor que `support_case_events`: auditoria interna (`ASSIGNEE_CHANGED`, `INTERNAL_STATUS_CHANGED`, refresh técnico de prazo etc.) não gera automaticamente `domain_events`/notificações. Antes de implementar cada linha, definir a transição exata e a `dedup_key` correspondente. Mediação é faceta de claim (`type: mediations`); devolução é outra faceta possível; mensagem comum e mensagem de claim continuam transcripts de cases distintos (D-084).
+Este catálogo continua propositalmente menor que `support_case_events`: auditoria interna (`ASSIGNEE_CHANGED`, `INTERNAL_STATUS_CHANGED`, refresh técnico de prazo etc.) não gera automaticamente `domain_events`/notificações. Antes de implementar cada linha, definir a transição exata e a `dedup_key` correspondente. **Mediação é `stage: 'dispute'`** (corrigido por D-104 — `type: mediations` é a reclamação comum); devolução é outra faceta possível; mensagem comum e mensagem de claim continuam transcripts de cases distintos (D-084).
 
 `sync_runs.resource`/`sync_errors.resource` (hoje `orders`/`listings`/`fulfillment`/`visits`) precisaria crescer de novo para acomodar sincronização de SAC — mesmo CHECK que já cresceu uma vez para caber `visits` (`docs/DATABASE.md`).

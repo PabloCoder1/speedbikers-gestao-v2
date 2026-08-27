@@ -25,6 +25,32 @@ const payloadSchema = z.object({ mlAccountId: z.uuid() });
 
 /** Janela inicial quando ainda não existe checkpoint, e piso de segurança. */
 const FALLBACK_WINDOW_DAYS = 7;
+
+/**
+ * Época global de notificação de atendimento (D-110): só claim NASCIDO a
+ * partir daqui pode virar `domain_events`. É o que faz a primeira varredura
+ * — e QUALQUER varredura fria (checkpoint perdido, janela de 7 dias refeita)
+ * — ser silenciosa POR CLAIM, não por estado de execução: as 126 mediações
+ * abertas medidas em D-110 nasceram antes disto e ficam mudas para sempre.
+ *
+ * Fixada no instante do deploy da fatia. Combina com o piso POR CONTA
+ * (`ml_accounts.connected_at`): conta conectada meses depois não despeja o
+ * backlog dos 7 dias anteriores à conexão como notificação.
+ */
+const SUPPORT_EVENTS_EPOCH = "2026-08-27T21:00:00.000Z";
+
+/**
+ * Época efetiva = `max(SUPPORT_EVENTS_EPOCH, connected_at)`, por instante e
+ * não por string (os dois lados podem vir em fusos diferentes). Exportada
+ * para teste: é a única aritmética da fatia D-110 que mora no handler.
+ */
+export function resolveNotifyEpoch(connectedAt: string | null): string {
+  if (connectedAt !== null && new Date(connectedAt).getTime() > new Date(SUPPORT_EVENTS_EPOCH).getTime()) {
+    return new Date(connectedAt).toISOString();
+  }
+
+  return SUPPORT_EVENTS_EPOCH;
+}
 /**
  * Recuo aplicado ao checkpoint. `last_updated` é o relógio do Mercado Livre e
  * a busca é por `after` estrito: sem a sobreposição, um claim atualizado no
@@ -93,7 +119,7 @@ export function createSyncSupportClaimsReconcileHandler(
 
     const account = await deps.db
       .from("ml_accounts")
-      .select("id, organization_id, seller_id, status")
+      .select("id, organization_id, seller_id, status, connected_at")
       .eq("id", mlAccountId)
       .maybeSingle();
 
@@ -175,6 +201,7 @@ export function createSyncSupportClaimsReconcileHandler(
         mercadoLivre: deps.mercadoLivre,
         accessToken: tokenResult.accessToken,
         updatedAfter: toMercadoLivreInstant(from),
+        notifyEpoch: resolveNotifyEpoch(account.data.connected_at),
         logger: context.logger,
       });
     } catch (error) {

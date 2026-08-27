@@ -106,7 +106,19 @@ export async function processClaimReturn(
   // ordem é o ponto todo: uma reclamação SEM devolução (mediação, disputa de
   // pagamento) é justamente o que a Caixa de Entrada precisa mostrar. Colocar
   // isto depois entregaria só os claims que já reverteram estoque.
-  await ingestSupportClaim(deps, { ...context, source: "WEBHOOK" }, accessToken, claimId, claim, logger);
+  // `notifyEpoch: null` — o webhook NÃO emite evento de atendimento (D-110).
+  // Ele observa o claim 1-2 segundos após nascer, cedo demais para saber se
+  // vai sobreviver: 6 claims medidos se auto-resolveram em minutos, um deles
+  // uma mediação encerrada em 108s. A varredura horária notifica, e só vê
+  // claim que continua ABERTO — o assentamento é da API, não de um timer.
+  await ingestSupportClaim(
+    deps,
+    { ...context, source: "WEBHOOK", notifyEpoch: null },
+    accessToken,
+    claimId,
+    claim,
+    logger,
+  );
 
   // `related_entities` virou opcional em D-109 (a busca não o traz). Aqui o
   // claim SEMPRE vem de `GET /claims/{id}`, que o traz — mas ausência cai no

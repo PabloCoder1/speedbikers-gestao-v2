@@ -52,6 +52,8 @@ export interface FetchSupportClaimsOptions {
   accessToken: string;
   /** Início da janela; ISO COM milissegundos, exigência da API. */
   updatedAfter: string;
+  /** Época de notificação (D-110), calculada pelo handler; repassada por claim. */
+  notifyEpoch: string;
   logger: Logger;
 }
 
@@ -137,6 +139,7 @@ export async function fetchSupportClaims(
             organizationId: options.organizationId,
             mlAccountId: options.mlAccountId,
             source: "RECONCILIATION",
+            notifyEpoch: options.notifyEpoch,
           },
           options.accessToken,
           String(claim.id),
