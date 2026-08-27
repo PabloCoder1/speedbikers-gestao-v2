@@ -88,6 +88,22 @@ export async function fetchSupportClaims(
       const query = new URLSearchParams({
         "players.user_id": String(options.sellerId),
         "players.role": role,
+        // **`status=opened` é exigência da API viva, não escolha nossa** e
+        // não é o que a prosa da doc diz (D-109). Medido: a combinação
+        // `players.*` + `range` devolve
+        // `{"error":"bad_request_error","message":"atLeastOneFilterProvided"}`,
+        // mesmo com a doc listando `players.role`, `players.user_id` e
+        // `last_updated` entre os filtros aceitos. Todo exemplo funcional que
+        // a doc publica inclui `status`, `id`, `order_id` ou
+        // `resource`+`resource_id`; o exemplo de "reclamações de um vendedor"
+        // é literalmente `players.user_id + players.role + status=opened`.
+        //
+        // A consequência é deliberada e limitada: um claim FECHADO desde a
+        // última passada não é reconciliado. O fechamento chega pelo webhook,
+        // e um case que ficou aberto à toa continua visível e triável na
+        // Caixa de Entrada — enquanto um claim ABERTO nunca visto seria
+        // invisível, que é exatamente o buraco que esta varredura fecha.
+        status: "opened",
         range: `last_updated:after:${options.updatedAfter}`,
         limit: String(PAGE_SIZE),
         offset: String(offset),

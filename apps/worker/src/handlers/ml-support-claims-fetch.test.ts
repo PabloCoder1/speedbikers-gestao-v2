@@ -129,7 +129,9 @@ describe("fetchSupportClaims", () => {
       expect(params.get("players.user_id")).toBe(String(SELLER_ID));
       expect(params.get("players.role")).toBe("respondent");
       expect(params.get("range")).toBe(`last_updated:after:${UPDATED_AFTER}`);
-      expect(params.get("status")).toBeNull();
+      // `status=opened` é EXIGÊNCIA da API viva (D-109): sem ele a resposta é
+      // `atLeastOneFilterProvided`, mesmo com players.* + range presentes.
+      expect(params.get("status")).toBe("opened");
     });
   });
 
