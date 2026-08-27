@@ -1614,6 +1614,32 @@ Não é específico de `questions`: **nunca chegou `orders_v2`, `post_purchase`,
 
 **O que isto NÃO entrega:** o filtro de SLA na Caixa de Entrada e a detecção de prazo estourado (`BREACHED`), que exige um job com relógio. A tabela agora tem dado real para sustentar os dois.
 
+## D-108 — Reconciliação de Reclamações: aqui existe janela de verdade, ao contrário de Perguntas
+
+**Contexto:** último item aberto da ingestão read-only da Fase 7B. Desde D-104 só o webhook alimentava claims — **notificação perdida era claim perdido para sempre**, a mesma lacuna que D-089 fechou para Perguntas.
+
+**Pesquisa oficial antes do código (REGRA ABSOLUTA), e ela mudou o desenho.** `GET /post-purchase/v1/claims/search` não estava documentado no projeto. A leitura ao vivo revelou uma API muito mais rica que a de Perguntas — e uma restrição séria.
+
+**Decisão 1 — janela por `range=last_updated:after:...`, com checkpoint real.** D-089 registrou que a busca de Perguntas "não tem filtro por data e não garante ordenação", o que tornou "reconciliar a última janela" inexprimível e forçou o recorte por `status=UNANSWERED` — com a lacuna aceita de "respondida por fora nunca é recuperada". **Aqui nada disso se aplica**: há `range` por `last_updated` e `sort`. `sync_runs.latest_record_at` volta a ser o ponto de onde continuar, como nos jobs de pedido.
+
+**Decisão 2 — o recorte por vendedor é exigência da API, não escolha nossa.** A doc é explícita ao chamar `status=opened` sozinho de "consulta não acotada e custosa", com "risco de rate limiting ou bloqueio da aplicação", e recomenda `players.user_id` + `players.role`. É o que usamos. Consulta só com paginação devolve 400 sistematicamente.
+
+**Decisão 3 — os DOIS papéis são varridos.** O vendedor costuma ser `respondent`, mas em `cancel_sale` é ele quem reclama, e `players.role` é obrigatório junto de `players.user_id`. Varrer só `respondent` perderia silenciosamente uma categoria inteira. Dedupe por `id` evita ingerir duas vezes o claim que apareça nas duas varreduras.
+
+**Decisão 4 — a ingestão completa foi EXTRAÍDA, não duplicada** (`ingest-support-claim.ts`). Webhook e varredura chamam a mesma cadeia envelope+transcript+prazos. Duplicar garantiria que um dia divergissem, e a divergência apareceria como "o claim que veio pelo webhook tem transcript, o que veio pela varredura não".
+
+**Decisão 5 — cadência de 1 hora, não 10 minutos.** Perguntas/Mensagens usam 10 min porque D-092 mediu que o webhook **nunca tinha sido chamado**, então a varredura era o ÚNICO caminho. Para claims, D-101 mediu `post_purchase` chegando de verdade — aqui é rede de segurança. Somado a isso, cada claim custa TRÊS chamadas (busca + transcript + detalhe) e a própria doc alerta para o custo de consultas amplas de reclamação.
+
+**Decisão 6 — o checkpoint NÃO avança em varredura parcial.** Avançar após truncar pularia definitivamente os claims não alcançados. Mesma guarda conservadora que D-101 aplicou ao checkpoint de pedidos. Há ainda 10 minutos de sobreposição no recuo, porque `after` é estrito e um claim atualizado no instante do corte cairia entre duas execuções.
+
+**Decisão 7 — falha ao LER o checkpoint é `retryable`, nunca fallback para a janela larga.** Cair para 7 dias a cada erro transitório transformaria uma falha de leitura em varredura pesada repetida — exatamente o padrão que a doc chama de custoso.
+
+**Detalhes do contrato registrados:** datas exigem milissegundos (400 sem eles); `offset + limit` deve ficar abaixo de 10000; `limit` máximo 100; o material oficial mostra o array ora em `data`, ora em `results`, e o schema aceita os dois (lição de D-097).
+
+**Verificação:** `pnpm run check` **29/29**, 7 testes novos da varredura (dois papéis, filtros exigidos, dedupe, checkpoint, `data`/`results`, fim de paginação, chamadas por claim). Migration `20260827190000` alarga `sync_runs`/`sync_errors` para `claims` — quarta vez com esse formato.
+
+**Impacto:** `ingest-support-claim.ts` (novo, extraído), `ml-support-claims-fetch.ts` (novo), `sync-support-claims-reconcile.ts` (novo), `claim-return.ts` (passa a reusar), `sync-runs.ts`, `apps/api/src/{support-claims-schedule.ts,app.ts,index.ts}`, `infra/cloud-scheduler.sh` (**13º job**). **Fecha o item "Ingestão read-only" da Fase 7B por completo.**
+
 ## Como adicionar nova decisão
 
 Registrar:

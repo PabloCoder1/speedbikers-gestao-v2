@@ -28,6 +28,8 @@ import { triggerListingVisitsSnapshot } from "./listing-visits-schedule.js";
 import type { SupportMessagesScheduleDeps } from "./support-messages-schedule.js";
 import { triggerSupportMessagesReconcile } from "./support-messages-schedule.js";
 import type { SupportQuestionsScheduleDeps } from "./support-questions-schedule.js";
+import type { SupportClaimsScheduleDeps } from "./support-claims-schedule.js";
+import { triggerSupportClaimsReconcile } from "./support-claims-schedule.js";
 import { triggerSupportQuestionsReconcile } from "./support-questions-schedule.js";
 import type { SupportReplyDeps } from "./support-reply.js";
 import { requestSupportReply, supportReplyRequestSchema } from "./support-reply.js";
@@ -88,6 +90,7 @@ export interface AppDependencies {
   listingsSchedule?: ListingsScheduleDeps;
   listingVisitsSchedule?: ListingVisitsScheduleDeps;
   supportQuestionsSchedule?: SupportQuestionsScheduleDeps;
+  supportClaimsSchedule?: SupportClaimsScheduleDeps;
   supportMessagesSchedule?: SupportMessagesScheduleDeps;
   supportReply?: SupportReplyDeps;
   salesAnomalyActionsSchedule?: SalesAnomalyActionsScheduleDeps;
@@ -531,6 +534,18 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     const outcome = await triggerSupportQuestionsReconcile(supportQuestionsSchedule);
+
+    return context.json(outcome);
+  });
+
+  app.post("/internal/schedule/support-claims", async (context) => {
+    const supportClaimsSchedule = dependencies.supportClaimsSchedule;
+
+    if (supportClaimsSchedule === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const outcome = await triggerSupportClaimsReconcile(supportClaimsSchedule);
 
     return context.json(outcome);
   });

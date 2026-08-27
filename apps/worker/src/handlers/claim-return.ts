@@ -4,15 +4,9 @@ import type { RecordedSaleMovement } from "@sb/domain";
 import type { MercadoLivreClient } from "@sb/mercado-livre";
 import type { Logger } from "@sb/observability";
 
-import type { ParsedClaim } from "./claim-schema.js";
-import { claimDetailSchema, claimMessagesSchema, claimReturnSchema, claimSchema } from "./claim-schema.js";
-import {
-  mapClaimDeadlinesToProjection,
-  mapClaimMessagesToProjection,
-  mapClaimToSupportProjection,
-} from "./claim-support-projection.js";
+import { claimReturnSchema, claimSchema } from "./claim-schema.js";
 import { recordDomainEvents } from "./domain-events.js";
-import { persistSupportClaim } from "./persist-support-claim.js";
+import { ingestSupportClaim } from "./ingest-support-claim.js";
 import { recordStockMovements } from "./stock-movements.js";
 
 /**
@@ -93,107 +87,6 @@ async function loadOrderItemPosition(
   return result.data?.position ?? null;
 }
 
-/**
- * Projeta o claim na Caixa de Entrada (D-104).
- *
- * **Nunca derruba a reversão de estoque.** Esta função roda dentro de um
- * handler cujo trabalho original é financeiro e já está em produção desde
- * D-057; uma falha ao projetar o atendimento (ou um claim sem carimbo de
- * tempo do Mercado Livre) não pode impedir o estoque de voltar. A falha é
- * registrada e a próxima notificação do mesmo claim reprocessa tudo, porque
- * a persistência é idempotente.
- *
- * O inverso não vale: falha de ESTOQUE continua propagando e sendo repetida
- * pelo Cloud Tasks, como sempre foi.
- */
-async function projectClaimAsSupportCase(
-  deps: ProcessClaimReturnDeps,
-  context: ProcessClaimReturnContext,
-  accessToken: string,
-  claimId: string,
-  claim: ParsedClaim,
-  logger: Logger,
-): Promise<void> {
-  const db = deps.db;
-  const projection = mapClaimToSupportProjection(claim);
-
-  if (projection === null) {
-    logger.warn("claim_support_projection_skipped_without_timestamp", {
-      claim_id: String(claim.id),
-      reason: "claim sem date_created nem last_updated",
-    });
-
-    return;
-  }
-
-  // O transcript é UMA chamada a mais contra uma API limitada, e falhar nela
-  // não pode custar o envelope: um case sem transcript ainda é um
-  // atendimento visível e triável na Caixa de Entrada. Erro aqui degrada
-  // para lista vazia, nunca derruba a projeção inteira.
-  let messages: ReturnType<typeof mapClaimMessagesToProjection> = [];
-
-  try {
-    const remote = await deps.mercadoLivre.request({
-      method: "GET",
-      path: `/post-purchase/v1/claims/${claimId}/messages`,
-      accessToken,
-      schema: claimMessagesSchema,
-    });
-
-    messages = mapClaimMessagesToProjection(claim, remote);
-  } catch (error) {
-    logger.warn("claim_transcript_fetch_failed", {
-      claim_id: String(claim.id),
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
-
-  // Mesma degradação do transcript: sem o detalhe, o case fica sem prazo
-  // remoto — que é melhor que prazo inventado (D-084) e melhor que perder o
-  // atendimento inteiro por causa de uma chamada acessória.
-  let deadlines: ReturnType<typeof mapClaimDeadlinesToProjection>;
-
-  try {
-    const detail = await deps.mercadoLivre.request({
-      method: "GET",
-      path: `/post-purchase/v1/claims/${claimId}/detail`,
-      accessToken,
-      schema: claimDetailSchema,
-    });
-
-    deadlines = mapClaimDeadlinesToProjection(claim, detail);
-  } catch (error) {
-    logger.warn("claim_detail_fetch_failed", {
-      claim_id: String(claim.id),
-      error: error instanceof Error ? error.message : String(error),
-    });
-
-    // As ações disponíveis vêm do claim que JÁ está em mãos, então elas
-    // continuam virando prazo mesmo sem o detalhe.
-    deadlines = mapClaimDeadlinesToProjection(claim, null);
-  }
-
-  try {
-    const result = await persistSupportClaim(db, { ...context, source: "WEBHOOK" }, projection, messages, deadlines);
-
-    logger.info("claim_support_case_persisted", {
-      claim_id: String(claim.id),
-      support_case_id: result.supportCaseId,
-      link_mode: result.linkMode,
-      transition_applied: result.transitionApplied,
-      messages_upserted: result.messagesUpserted,
-      deadlines_upserted: result.deadlinesUpserted,
-      is_mediation: projection.case.isMediation,
-      has_return: projection.case.hasReturn,
-    });
-  } catch (error) {
-    logger.error("claim_support_projection_failed", {
-      claim_id: String(claim.id),
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
-}
-
 export async function processClaimReturn(
   deps: ProcessClaimReturnDeps,
   context: ProcessClaimReturnContext,
@@ -213,7 +106,7 @@ export async function processClaimReturn(
   // ordem é o ponto todo: uma reclamação SEM devolução (mediação, disputa de
   // pagamento) é justamente o que a Caixa de Entrada precisa mostrar. Colocar
   // isto depois entregaria só os claims que já reverteram estoque.
-  await projectClaimAsSupportCase(deps, context, accessToken, claimId, claim, logger);
+  await ingestSupportClaim(deps, { ...context, source: "WEBHOOK" }, accessToken, claimId, claim, logger);
 
   if (claim.resource !== "order" || !claim.related_entities.includes("return")) {
     // Reclamação sem devolução física associada (mediação de pagamento,

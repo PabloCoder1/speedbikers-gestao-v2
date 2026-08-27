@@ -24,6 +24,7 @@ import { createSendSupportReplyHandler } from "./handlers/send-support-reply.js"
 import { createSyncSupportMessagesHandler } from "./handlers/sync-support-messages.js";
 import { createSyncSupportMessagesReconcileHandler } from "./handlers/sync-support-messages-reconcile.js";
 import { createSyncSupportQuestionHandler } from "./handlers/sync-support-question.js";
+import { createSyncSupportClaimsReconcileHandler } from "./handlers/sync-support-claims-reconcile.js";
 import { createSyncSupportQuestionsReconcileHandler } from "./handlers/sync-support-questions-reconcile.js";
 import { createVerifyLedgerIntegrityHandler } from "./handlers/verify-ledger-integrity.js";
 import { createWebhookReceivedHandler } from "./handlers/webhook-received.js";
@@ -114,6 +115,12 @@ const app = createWorkerApp({
       encryptionKey,
     }),
     "sync.support.questions.reconcile": createSyncSupportQuestionsReconcileHandler({
+      db,
+      mercadoLivre,
+      oauth,
+      encryptionKey,
+    }),
+    "sync.support.claims.reconcile": createSyncSupportClaimsReconcileHandler({
       db,
       mercadoLivre,
       oauth,

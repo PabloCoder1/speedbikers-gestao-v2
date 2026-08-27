@@ -166,6 +166,25 @@ upsert_job \
   "${API_URL}/internal/schedule/support-messages" \
   "Reconciliacao de Mensagens pos-venda nao lidas, por conta Mercado Livre CONNECTED"
 
+# Reconciliacao de Reclamacoes (D-108). Cadencia de 1 HORA, deliberadamente
+# mais folgada que os 10 minutos acima, por tres motivos medidos:
+#
+#  1. o webhook de claims FUNCIONA -- D-101 mediu post_purchase chegando de
+#     verdade. Aqui a varredura e rede de seguranca, nao o unico caminho, que
+#     era a situacao que forcou os 10 minutos em D-092;
+#  2. cada claim custa TRES chamadas (busca + transcript + detalhe), contra
+#     uma pagina unica em Perguntas;
+#  3. a doc oficial chama consultas amplas de reclamacao de "extremamente
+#     custosas" e cita risco de rate limiting ou bloqueio da aplicacao.
+#
+# Janela por `range=last_updated:after:<checkpoint>` -- filtro que a busca de
+# Perguntas nao tem, e por isso aqui existe checkpoint de verdade. Por CONTA.
+upsert_job \
+  "v3-support-claims-reconcile" \
+  "15 * * * *" \
+  "${API_URL}/internal/schedule/support-claims" \
+  "Reconciliacao de Reclamacoes por janela de last_updated, por conta Mercado Livre CONNECTED"
+
 # Deteccao de anomalia de venda -- Central de Acoes (Fase 6, D-064). Cadencia
 # DIARIA, depois dos jobs acima: o diagnostico usa daily_sku_metrics/
 # domain_events de ONTEM, que ja estao completos a qualquer hora do dia
