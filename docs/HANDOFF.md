@@ -54,7 +54,9 @@ A fonte de verdade continua sendo:
 - **Sem carimbo de tempo do Mercado Livre, NÃO projeta.** `last_activity_at` é `not null` e a alternativa seria o instante da consulta — o defeito exato de D-097. `last_updated ?? date_created`, nunca `now()`. Os campos novos entraram como opcionais pela lição de D-101: exigi-los derrubaria a reversão de estoque num payload sem eles.
 - **`evaluateClaimRemoteTransition` leva timestamp na chave, diferente de PERGUNTA** — claim reabre (estágio `recontact` na doc oficial), e a chave fixa faria o segundo fechamento colidir com o primeiro, deixando o case preso em NOVO. Sem isso, a etapa recriaria o bug que D-102 acabou de corrigir.
 - **33 testes novos** (16 do mapper com o exemplo oficial verbatim, 6 da transição, 9 da persistência, 4 do wiring), `check` **29/29** e `build` **8/8** verdes localmente. **Nenhuma migration** — o schema de D-085 já previa o canal.
-- **NÃO deployado.** Fora de escopo por desenho: transcript do claim e prazos (fatia seguinte), e reconciliação de claims (hoje só webhook).
+- **Deployado e verificado em 2026-08-27**: `worker-00031-6vh`, 100% do tráfego, **zero ERROR, zero WARNING, zero `job_failed`**, já processando tráfego real de webhook. Só o worker — a `api` não tinha nenhuma mudança desde a revisão anterior (checagem tipo D-070 antes de agir). A tag saiu `-dirty` por causa de UMA linha de `.gitignore` não commitada, nunca código de aplicação.
+- **O caminho de claim ainda não foi exercitado por dado real** — nenhum `claim_support_case_persisted` no intervalo observado, coerente com D-101 (`post_purchase` foi 3 de ~100 notificações em 2h). Até um claim ter movimento, o caminho feliz só foi exercitado contra teste.
+- Fora de escopo por desenho: transcript do claim e prazos (fatia seguinte), e reconciliação de claims (hoje só webhook).
 
 ### Etapa anterior — D-103 (`seller_max_message_length` chega como ZERO)
 

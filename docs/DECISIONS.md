@@ -1546,7 +1546,11 @@ Não é específico de `questions`: **nunca chegou `orders_v2`, `post_purchase`,
 
 **Escopo deliberadamente fora:** transcript do claim (`GET /claims/{id}/messages`) e prazos (`GET /claims/{id}/detail` → `due_date`) — dois fetches novos com contrato próprio, fatia seguinte. Um case de claim sem transcript cai no estado vazio que a tela de D-095 já trata.
 
-**Impacto:** `apps/worker/src/handlers/{claim-schema,claim-support-projection,persist-support-claim,claim-return}.ts`, `packages/domain/src/support/remote-transition.ts` (+4 arquivos de teste). **Nenhuma migration** — o schema de D-085 já previa o canal. **NÃO deployado.**
+**Impacto:** `apps/worker/src/handlers/{claim-schema,claim-support-projection,persist-support-claim,claim-return}.ts`, `packages/domain/src/support/remote-transition.ts` (+4 arquivos de teste). **Nenhuma migration** — o schema de D-085 já previa o canal.
+
+**Deployado em 2026-08-27**: `worker-00031-6vh`, imagem `b17e745-dirty`, 100% do tráfego. Só o worker — `git log <revisão-anterior>..HEAD -- apps/api` veio VAZIO, então implantar a `api` seria movimento sem motivo (mesma checagem de D-070). **Verificado por comportamento**: zero linha `ERROR`, zero `WARNING`, zero `job_failed` na revisão nova, que já está processando tráfego real de webhook (`sync.webhook.received`). O sufixo `-dirty` na tag é benigno e vale registrar para não assustar auditoria futura: a única alteração não commitada era uma linha do `.gitignore` (`.claude/settings.local.json`), nenhum código de aplicação.
+
+**O caminho de claim ainda NÃO foi exercitado por dado real.** Nenhum `claim_support_case_persisted` apareceu no intervalo observado — coerente com a medição de D-101, em que `post_purchase` foi 3 de ~100 notificações em 2h. A primeira projeção real deve aparecer quando um claim tiver movimento; até lá, o caminho feliz só foi exercitado contra teste.
 
 ## D-105 — O painel de construção mentia em sete pontos, e a correção não é atualizá-lo: é não ter lista escrita à mão
 
