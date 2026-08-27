@@ -1512,7 +1512,7 @@ Não é específico de `questions`: **nunca chegou `orders_v2`, `post_purchase`,
 
 **Decisão 3 — o encanamento roda em TODA ingestão**, nos dois persists (`persist-support-question`/`persist-support-conversation`), com `source` propagada pelos 5 chamadores (webhook=WEBHOOK, reconciliação=RECONCILIATION, releitura pós-envio D-096=SYSTEM). Efeito colateral desejado: responder PELA V3 também resolve a pergunta/move a conversa automaticamente quando ninguém triou.
 
-**Verificação:** typecheck/lint/test/build verdes — 11 testes puros novos (`@sb/domain`), 2 de encanamento (persists chamam a RPC com os args da decisão), 5 de integração contra Postgres real (transição aplica com evento atômico source WEBHOOK sem ator; case triado NÃO é tocado e não ganha evento; reabertura limpa `resolved_at` satisfazendo a constraint; `source USER` recusada; `authenticated` sem execute). Pendente: CI + deploy do worker (autorização durável) + regenerar types (cast `as never` temporário, padrão D-077).
+**Verificação:** typecheck/lint/test/build verdes — 11 testes puros novos (`@sb/domain`), 2 de encanamento (persists chamam a RPC com os args da decisão), 5 de integração contra Postgres real (transição aplica com evento atômico source WEBHOOK sem ator; case triado NÃO é tocado e não ganha evento; reabertura limpa `resolved_at` satisfazendo a constraint; `source USER` recusada; `authenticated` sem execute). **CI confirmou** (342 testes de integração, migration no Dev), types regenerado (cast durou dois commits), **deployado** (`worker-00029-kkv`, depois `worker-00030-kjd` com D-103) — zero falha de support na revisão final.
 
 **Impacto:** migration + RPC novas; `@sb/domain/support` (módulo novo); os 2 persists e 5 handlers do worker; 7 arquivos de teste. A Caixa de Entrada não muda de código — passa a mostrar a verdade porque o estado agora acompanha a atividade remota. Fecha o gap da pergunta do usuário e a pendência de reabertura de D-086.
 
@@ -1522,7 +1522,7 @@ Não é específico de `questions`: **nunca chegou `orders_v2`, `post_purchase`,
 
 **Decisão — `nonnegative`, e nada além disso:** o campo é validado mas NUNCA consumido por lógica nenhuma (grep confirma: só existe no schema). O `.positive()` original era suposição sobre um campo não usado, violando a própria regra de D-097 ("contrato estrito na estrutura, permissivo nos valores"). Aceitar o valor observado é o fix inteiro; atribuir semântica ao 0 (bloquear resposta?) seria inferência sem fonte — fica para quando o campo for consumido de verdade, com pesquisa própria.
 
-**Verificação:** teste novo com o payload real (`seller_max_message_length: 0` aceito), 103 testes do pacote verdes, typecheck/lint/test/build completos verdes. Deploy do worker na sequência (autorização durável) — as conversas que reprovavam passam a ingerir na próxima rodada de 10 min.
+**Verificação:** teste novo com o payload real (`seller_max_message_length: 0` aceito), 103 testes do pacote verdes, typecheck/lint/test/build completos verdes. **Deployado e comprovado em produção** (`worker-00030-kjd`, tag `8ea332f`): na rodada seguinte, ZERO `job_failed` — as conversas que reprovavam ingeriram (`sync_support_messages_done`, via reconciliação E via webhook ao vivo) e as 4 contas completaram a varredura de 10 min.
 
 **Impacto:** `packages/mercado-livre/src/messages.ts` (+1 teste). Fecha o "Achado 4" de D-101.
 
