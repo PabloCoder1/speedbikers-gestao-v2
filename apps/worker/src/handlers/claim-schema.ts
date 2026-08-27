@@ -92,3 +92,57 @@ export const claimReturnSchema = z.object({
 });
 
 export type ParsedClaimReturn = z.infer<typeof claimReturnSchema>;
+
+/**
+ * Mensagem do transcript de um claim — `GET /post-purchase/v1/claims/{id}/messages`,
+ * contrato confirmado por leitura ao vivo em 2026-08-27
+ * (`docs/MERCADO_LIVRE.md` secao 2.12).
+ *
+ * **A resposta é um ARRAY NU**, sem envelope `results`/`paging` — único assim
+ * na integração inteira — e sem parâmetro de paginação documentado.
+ *
+ * **Não existe `id` de mensagem.** Por isso o `external_message_key` é
+ * fingerprint (`buildClaimMessageKey`), exatamente o caminho que D-084
+ * mandou seguir quando o payload não trouxesse ID estável.
+ */
+const claimMessageModerationSchema = z.object({
+  /** `clean` | `rejected` | `pending` | `non_moderated`. */
+  status: z.string().nullable().optional(),
+  /** Observado como `""` E como `null` no material oficial. */
+  reason: z.string().nullable().optional(),
+  source: z.string().nullable().optional(),
+  date_moderated: z.string().nullable().optional(),
+});
+
+export const claimMessageSchema = z.object({
+  sender_role: z.string(),
+  receiver_role: z.string().nullable().optional(),
+  message: z.string().nullable().optional(),
+  translated_message: z.string().nullable().optional(),
+  /** Instante do ENVIO — a metade estável do fingerprint. */
+  message_date: z.string().nullable().optional(),
+  date_created: z.string().nullable().optional(),
+  last_updated: z.string().nullable().optional(),
+  date_read: z.string().nullable().optional(),
+  /** `available` | `moderated` | `rejected` | `pending_translation`. */
+  status: z.string().nullable().optional(),
+  stage: z.string().nullable().optional(),
+  message_moderation: claimMessageModerationSchema.nullable().optional(),
+  repeated: z.boolean().nullable().optional(),
+  attachments: z
+    .array(
+      z.object({
+        filename: z.string(),
+        original_filename: z.string().nullable().optional(),
+        size: z.number().nullable().optional(),
+        type: z.string().nullable().optional(),
+        date_created: z.string().nullable().optional(),
+      }),
+    )
+    .nullable()
+    .optional(),
+});
+
+export const claimMessagesSchema = z.array(claimMessageSchema);
+
+export type ParsedClaimMessage = z.infer<typeof claimMessageSchema>;

@@ -1,4 +1,4 @@
-import type { ParsedClaim } from "./claim-schema.js";
+import type { ParsedClaim, ParsedClaimMessage } from "./claim-schema.js";
 
 /**
  * Mapper puro claim -> projeção de atendimento (`support_cases`, canal
@@ -31,8 +31,130 @@ export interface SupportClaimProjection {
   orderId: number | null;
 }
 
+export interface SupportClaimMessageProjection {
+  externalMessageKey: string;
+  direction: "INBOUND" | "OUTBOUND" | "SYSTEM";
+  senderKind: "CUSTOMER" | "SELLER" | "MEDIATOR" | "UNKNOWN";
+  body: string | null;
+  bodyState: "AVAILABLE" | "EMPTY" | "MODERATED";
+  remoteStatus: string | null;
+  occurredAt: string;
+}
+
 /** A doc oficial: só `dispute` tem "representante do Mercado Livre" intervindo. */
 const MEDIATION_STAGE = "dispute";
+
+/**
+ * Fingerprint de mensagem de claim. **Obrigatório porque o payload oficial
+ * NÃO traz `id` de mensagem** — o caminho que D-084 mandou seguir nesse caso,
+ * com a proibição explícita de usar índice do array.
+ *
+ * Por que índice seria um bug e não só um estilo: a doc filtra em silêncio as
+ * mensagens moderadas da CONTRAPARTE, então a mesma conversa pode voltar com
+ * um item a menos e todos os índices seguintes deslocados — o transcript
+ * inteiro se reembaralharia numa re-ingestão.
+ *
+ * Por que o TEXTO fica de fora da chave: `status` pode virar `moderated` e o
+ * corpo mudar para a MESMA mensagem lógica. Com o texto na chave, moderar
+ * criaria uma linha nova em vez de atualizar a existente — duplicando a
+ * mensagem no transcript.
+ *
+ * Sobra `sender_role` + instante do envio. Colisão exigiria o mesmo
+ * participante mandando duas mensagens no mesmo segundo; nesse caso a
+ * segunda é absorvida pela UNIQUE, e perder uma duplicata exata é melhor que
+ * embaralhar a conversa.
+ */
+export function buildClaimMessageKey(message: ParsedClaimMessage): string | null {
+  const sentAt = message.message_date ?? message.date_created ?? null;
+
+  if (sentAt === null) {
+    return null;
+  }
+
+  return `claim-msg:${message.sender_role}:${sentAt}`;
+}
+
+/**
+ * Nosso papel no claim sai de `players[].type === "seller"` — a doc define
+ * `type` como "papel que a pessoa ocupa sobre a operação" (comprador ou
+ * vendedor), enquanto `role` é o papel na RECLAMAÇÃO (quem reclama). Os dois
+ * se invertem conforme o tipo do claim: em `cancel_sale` quem reclama é o
+ * vendedor.
+ */
+function resolveSellerRole(claim: ParsedClaim): string | null {
+  return claim.players?.find((player) => player.type === "seller")?.role ?? null;
+}
+
+function resolveBody(message: ParsedClaimMessage): {
+  body: string | null;
+  bodyState: SupportClaimMessageProjection["bodyState"];
+} {
+  const moderated =
+    message.status === "moderated" ||
+    message.status === "rejected" ||
+    message.message_moderation?.status === "rejected";
+
+  const text = message.message ?? null;
+
+  if (moderated) {
+    // Mesma regra de D-086 para conteúdo BANNED: preservar que a mensagem
+    // EXISTIU e por que não está visível, em vez de renderizar bolha vazia.
+    return { body: text, bodyState: "MODERATED" };
+  }
+
+  if (text === null || text.trim() === "") {
+    return { body: null, bodyState: "EMPTY" };
+  }
+
+  return { body: text, bodyState: "AVAILABLE" };
+}
+
+/**
+ * Mapeia o transcript. Mensagem sem instante de envio é DESCARTADA (não dá
+ * para fingerprintar nem ordenar), com o mesmo raciocínio do envelope.
+ */
+export function mapClaimMessagesToProjection(
+  claim: ParsedClaim,
+  messages: readonly ParsedClaimMessage[],
+): SupportClaimMessageProjection[] {
+  const sellerRole = resolveSellerRole(claim);
+  const projected: SupportClaimMessageProjection[] = [];
+
+  for (const message of messages) {
+    const externalMessageKey = buildClaimMessageKey(message);
+    const occurredAt = message.message_date ?? message.date_created ?? null;
+
+    if (externalMessageKey === null || occurredAt === null) {
+      continue;
+    }
+
+    const { body, bodyState } = resolveBody(message);
+    const common = { externalMessageKey, body, bodyState, remoteStatus: message.status ?? null, occurredAt };
+
+    if (message.sender_role === "mediator") {
+      projected.push({ ...common, direction: "SYSTEM", senderKind: "MEDIATOR" });
+      continue;
+    }
+
+    // Sem conseguir identificar nosso papel, tratar como INBOUND é o erro
+    // SEGURO: erra para "alguém falou conosco", nunca para "já respondemos"
+    // — que poderia suprimir atenção de um atendimento em aberto.
+    if (sellerRole === null) {
+      projected.push({ ...common, direction: "INBOUND", senderKind: "UNKNOWN" });
+      continue;
+    }
+
+    const isOurs = message.sender_role === sellerRole;
+
+    projected.push({
+      ...common,
+      direction: isOurs ? "OUTBOUND" : "INBOUND",
+      senderKind: isOurs ? "SELLER" : "CUSTOMER",
+    });
+  }
+
+  return projected;
+}
 
 /**
  * Ações de envio de mensagem do vendedor, conforme a lista oficial de

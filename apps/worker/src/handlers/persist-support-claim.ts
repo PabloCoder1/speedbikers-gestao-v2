@@ -1,7 +1,7 @@
 import type { AdminClient, TablesInsert, TablesUpdate } from "@sb/db";
 import { evaluateClaimRemoteTransition } from "@sb/domain";
 
-import type { SupportClaimProjection } from "./claim-support-projection.js";
+import type { SupportClaimMessageProjection, SupportClaimProjection } from "./claim-support-projection.js";
 import { applyRemoteTransition } from "./persist-support-question.js";
 
 /**
@@ -28,6 +28,7 @@ export interface PersistSupportClaimResult {
   supportCaseId: string;
   linkMode: "TYPED" | "EXTERNAL" | "NONE";
   transitionApplied: boolean;
+  messagesUpserted: number;
 }
 
 function persistenceError(operation: string, error: { message: string }): Error {
@@ -110,6 +111,7 @@ export async function persistSupportClaim(
   db: AdminClient,
   context: PersistSupportClaimContext,
   projection: SupportClaimProjection,
+  messages: readonly SupportClaimMessageProjection[] = [],
 ): Promise<PersistSupportClaimResult> {
   const projected = projection.case;
 
@@ -191,11 +193,60 @@ export async function persistSupportClaim(
     }),
   );
 
+  const messagesUpserted = await upsertMessages(db, context, supportCaseId, messages);
+
   if (projection.orderId === null) {
-    return { supportCaseId, linkMode: "NONE", transitionApplied };
+    return { supportCaseId, linkMode: "NONE", transitionApplied, messagesUpserted };
   }
 
   const linkMode = await linkOrder(db, context, supportCaseId, projection.orderId);
 
-  return { supportCaseId, linkMode, transitionApplied };
+  return { supportCaseId, linkMode, transitionApplied, messagesUpserted };
+}
+
+/**
+ * Transcript do claim. A UNIQUE `(support_case_id, external_message_key)`
+ * absorve a re-ingestão; a chave é fingerprint porque o payload não traz ID
+ * (ver `buildClaimMessageKey`).
+ *
+ * **O transcript NUNCA é apagado e reescrito**, só acrescentado/atualizado:
+ * a doc oficial filtra em silêncio as mensagens moderadas da contraparte, e
+ * um `delete`+`insert` deixaria o histórico ENCOLHER a cada rodada, apagando
+ * localmente uma mensagem que existiu de verdade.
+ */
+async function upsertMessages(
+  db: AdminClient,
+  context: PersistSupportClaimContext,
+  supportCaseId: string,
+  messages: readonly SupportClaimMessageProjection[],
+): Promise<number> {
+  if (messages.length === 0) {
+    return 0;
+  }
+
+  const rows: TablesInsert<"support_messages">[] = messages.map((message) => ({
+    organization_id: context.organizationId,
+    ml_account_id: context.mlAccountId,
+    support_case_id: supportCaseId,
+    external_message_key: message.externalMessageKey,
+    external_message_id: null,
+    direction: message.direction,
+    sender_kind: message.senderKind,
+    remote_from_user_id: null,
+    remote_to_user_id: null,
+    body: message.body,
+    body_state: message.bodyState,
+    remote_status: message.remoteStatus,
+    occurred_at: message.occurredAt,
+  }));
+
+  const result = await db
+    .from("support_messages")
+    .upsert(rows, { onConflict: "support_case_id,external_message_key" });
+
+  if (result.error !== null) {
+    throw persistenceError(`gravar transcript do case ${supportCaseId}`, result.error);
+  }
+
+  return rows.length;
 }

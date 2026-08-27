@@ -1572,6 +1572,28 @@ Não é específico de `questions`: **nunca chegou `orders_v2`, `post_purchase`,
 
 **Impacto:** `apps/web/app/page.tsx` reescrito (223 linhas de lista estática → tela dirigida por consulta), `apps/web/proxy.ts` (+1 spec E2E). Fecha o item P1 "Substituir a Home de construção pela Home orientada a 'o que precisa da minha atenção hoje?'".
 
+## D-106 — Transcript do claim: sem `id` no payload, a chave TEM de ser fingerprint
+
+**Contexto:** fatia seguinte de D-104 — o case de reclamação existia sem histórico, e a tela de detalhe (D-095) abria com transcript vazio. A pesquisa oficial ao vivo (2026-08-27, registrada em `docs/MERCADO_LIVRE.md` 2.12) foi feita ANTES do código e determinou o desenho inteiro.
+
+**Decisão 1 — `external_message_key` é fingerprint `claim-msg:{sender_role}:{instante de envio}`.** O payload de `GET /claims/{id}/messages` **não tem `id` de mensagem**: é exatamente a hipótese que D-084 previu ao escrever "se o payload oficial não trouxer ID estável, usar fingerprint determinístico documentado — **nunca índice do array**". A proibição do índice não é estilo: a doc filtra em silêncio as mensagens moderadas da CONTRAPARTE, então a mesma conversa volta com um item a menos e todos os índices seguintes deslocados — o transcript se reembaralharia numa re-ingestão.
+
+**Decisão 2 — o TEXTO fica FORA da chave.** Tentador para garantir unicidade, e errado: `status` pode virar `moderated` e o corpo mudar para a MESMA mensagem lógica. Com o texto na chave, moderar criaria linha nova em vez de atualizar a existente, duplicando a mensagem na tela. Sobra `sender_role` + instante; colisão exigiria o mesmo participante mandando duas mensagens no mesmo segundo, e aí a UNIQUE absorve — perder uma duplicata exata é melhor que embaralhar a conversa.
+
+**Decisão 3 — direção sai do NOSSO papel, não de quem reclama.** `players[].type === "seller"` identifica a conta; `role` (complainant/respondent) inverte conforme o tipo do claim — em `cancel_sale` quem reclama é o vendedor. Usar `role` fixo marcaria nossas próprias mensagens como do cliente na metade dos casos.
+
+**Decisão 4 — sem conseguir identificar nosso papel, INBOUND.** `direction` é `not null` e não tem `UNKNOWN`. Errar para OUTBOUND diria "já respondemos" e poderia suprimir atenção de um atendimento aberto; errar para INBOUND no máximo pede atenção a mais. O erro seguro é o que não esconde trabalho. `sender_kind` fica `UNKNOWN`, preservando a incerteza.
+
+**Decisão 5 — o transcript nunca é apagado e reescrito, só acrescentado.** `delete`+`insert` faria o histórico ENCOLHER a cada rodada, porque a filtragem silenciosa de mensagens moderadas da contraparte remove itens da resposta — apagaríamos localmente uma mensagem que existiu de verdade.
+
+**Decisão 6 — falha do transcript não custa o envelope.** É uma chamada a mais contra uma API limitada; erro degrada para lista vazia e loga `claim_transcript_fetch_failed`. Um case sem transcript ainda é um atendimento visível e triável — mesma assimetria de D-104 entre SAC e estoque, um nível abaixo.
+
+**Limite honesto, herdado da API e registrado na doc:** a contagem de mensagens de um claim é um **piso, nunca um total**. Mensagem moderada da contraparte é filtrada sem deixar buraco visível — diferente de `BANNED` em Perguntas (D-086), onde a mensagem existe com corpo vazio. A UI não deve afirmar "N mensagens" como fato.
+
+**Verificação:** `pnpm run check` **29/29**, **51 testes** nos arquivos de claim (18 novos: contrato do array nu com a fixture oficial verbatim, incluindo `reason` vindo como `""` E como `null` no MESMO exemplo; fingerprint estável sob moderação; papéis invertidos; mediador; fallback seguro; estados de corpo; descarte sem instante).
+
+**Impacto:** `claim-schema.ts`, `claim-support-projection.ts`, `persist-support-claim.ts`, `claim-return.ts` (+testes). Nenhuma migration — `support_messages` já previa `MEDIATOR` como `sender_kind`.
+
 ## Como adicionar nova decisão
 
 Registrar:

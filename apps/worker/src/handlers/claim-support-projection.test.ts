@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { claimSchema } from "./claim-schema.js";
-import { mapClaimToSupportProjection } from "./claim-support-projection.js";
+import { claimMessagesSchema, claimSchema } from "./claim-schema.js";
+import { mapClaimMessagesToProjection, mapClaimToSupportProjection } from "./claim-support-projection.js";
 
 /**
  * Fixture VERBATIM do exemplo oficial de `GET /post-purchase/v1/claims/{id}`
@@ -201,5 +201,176 @@ describe("mapClaimToSupportProjection", () => {
     // `resource_id` de um claim de envio é um shipment, não um pedido —
     // vinculá-lo como order apontaria para um pedido que não existe.
     expect(mapClaimToSupportProjection(parse({ resource: "shipment" }))?.orderId).toBeNull();
+  });
+});
+
+/**
+ * Fixture VERBATIM do exemplo oficial de `GET /claims/{id}/messages`
+ * (mesma leitura ao vivo de 2026-08-27). O vendedor da fixture é o
+ * `respondent` (id 1330467461), como no exemplo do claim.
+ */
+const OFFICIAL_MESSAGES = [
+  {
+    sender_role: "respondent",
+    receiver_role: "mediator",
+    message: "Reclamo + mediacion +devo fallida",
+    translated_message: null,
+    date_created: "2023-07-17T12:52:54.000-04:00",
+    last_updated: "2023-07-17T12:52:54.000-04:00",
+    message_date: "2023-07-17T12:52:54.000-04:00",
+    date_read: null,
+    attachments: [
+      {
+        filename: "3cf94d52-0248-4bb4-98cc-b76c01ff5dc0.jpeg",
+        original_filename: "ZAPATO.jpg",
+        size: 17950,
+        date_created: "2023-07-17T12:52:52.000-04:00",
+        type: "image/jpeg",
+      },
+    ],
+    status: "available",
+    stage: "dispute",
+    message_moderation: { status: "clean", reason: null, source: "online", date_moderated: null },
+    repeated: false,
+  },
+  {
+    sender_role: "complainant",
+    receiver_role: "respondent",
+    message: "Reclamo + mediacion +devo fallida",
+    translated_message: null,
+    date_created: "2023-07-17T12:44:05.000-04:00",
+    last_updated: "2023-07-17T12:44:05.000-04:00",
+    message_date: "2023-07-17T12:44:05.000-04:00",
+    date_read: "2023-07-17T16:48:53Z",
+    attachments: [],
+    status: "available",
+    stage: "claim",
+    // `reason: ""` (string vazia) aqui e `null` acima — os dois no MESMO
+    // exemplo oficial, motivo de o campo ser permissivo.
+    message_moderation: { status: "clean", reason: "", source: "online", date_moderated: "2023-07-17T16:44:05Z" },
+    repeated: false,
+  },
+];
+
+function mapMessages(messages: unknown[] = OFFICIAL_MESSAGES, claimOverrides: Record<string, unknown> = {}) {
+  return mapClaimMessagesToProjection(parse(claimOverrides), claimMessagesSchema.parse(messages));
+}
+
+describe("claimMessagesSchema — payload oficial", () => {
+  it("aceita o array NU do exemplo oficial (sem envelope results/paging)", () => {
+    const parsed = claimMessagesSchema.parse(OFFICIAL_MESSAGES);
+
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0]?.attachments?.[0]?.filename).toBe("3cf94d52-0248-4bb4-98cc-b76c01ff5dc0.jpeg");
+  });
+
+  it("aceita `reason` como string vazia E como null, no mesmo payload", () => {
+    const parsed = claimMessagesSchema.parse(OFFICIAL_MESSAGES);
+
+    expect(parsed[0]?.message_moderation?.reason).toBeNull();
+    expect(parsed[1]?.message_moderation?.reason).toBe("");
+  });
+});
+
+describe("mapClaimMessagesToProjection", () => {
+  it("a chave é fingerprint, NUNCA índice do array", () => {
+    // Índice quebraria: a doc filtra em silêncio mensagens moderadas da
+    // contraparte, deslocando todos os índices seguintes numa re-ingestão.
+    const chaves = mapMessages().map((message) => message.externalMessageKey);
+
+    expect(chaves).toEqual([
+      "claim-msg:respondent:2023-07-17T12:52:54.000-04:00",
+      "claim-msg:complainant:2023-07-17T12:44:05.000-04:00",
+    ]);
+  });
+
+  it("a chave NÃO leva o texto — moderar não pode duplicar a mensagem", () => {
+    const antes = mapMessages()[0]?.externalMessageKey;
+    const depois = mapMessages([
+      { ...OFFICIAL_MESSAGES[0], message: "", status: "moderated" },
+      OFFICIAL_MESSAGES[1],
+    ])[0]?.externalMessageKey;
+
+    expect(depois).toBe(antes);
+  });
+
+  it("direção sai do NOSSO papel no claim, não de quem reclama", () => {
+    const [nossa, deles] = mapMessages();
+
+    // O vendedor da fixture é `respondent`.
+    expect(nossa?.direction).toBe("OUTBOUND");
+    expect(nossa?.senderKind).toBe("SELLER");
+    expect(deles?.direction).toBe("INBOUND");
+    expect(deles?.senderKind).toBe("CUSTOMER");
+  });
+
+  it("papéis invertidos (cancel_sale): o vendedor é quem reclama", () => {
+    const [primeira] = mapMessages(OFFICIAL_MESSAGES, {
+      players: [
+        { role: "complainant", type: "seller", user_id: 1330467461, available_actions: [] },
+        { role: "respondent", type: "buyer", user_id: 1325224382, available_actions: [] },
+      ],
+    });
+
+    // Agora `respondent` é o COMPRADOR — a mesma mensagem vira INBOUND.
+    expect(primeira?.direction).toBe("INBOUND");
+    expect(primeira?.senderKind).toBe("CUSTOMER");
+  });
+
+  it("mediador vira SYSTEM/MEDIATOR", () => {
+    const [mediada] = mapMessages([{ ...OFFICIAL_MESSAGES[0], sender_role: "mediator" }]);
+
+    expect(mediada?.direction).toBe("SYSTEM");
+    expect(mediada?.senderKind).toBe("MEDIATOR");
+  });
+
+  it("sem saber nosso papel, erra para INBOUND — o erro seguro", () => {
+    // Errar para OUTBOUND diria "já respondemos" e poderia suprimir atenção
+    // de um atendimento em aberto. INBOUND no máximo pede atenção a mais.
+    const [primeira] = mapMessages(OFFICIAL_MESSAGES, { players: null });
+
+    expect(primeira?.direction).toBe("INBOUND");
+    expect(primeira?.senderKind).toBe("UNKNOWN");
+  });
+
+  it("mensagem moderada preserva que existiu, com estado explícito", () => {
+    const [moderada] = mapMessages([{ ...OFFICIAL_MESSAGES[0], status: "moderated" }]);
+
+    expect(moderada?.bodyState).toBe("MODERATED");
+    expect(moderada?.remoteStatus).toBe("moderated");
+  });
+
+  it("`message_moderation.status = rejected` também conta como moderada", () => {
+    const [rejeitada] = mapMessages([
+      {
+        ...OFFICIAL_MESSAGES[0],
+        message_moderation: { status: "rejected", reason: "OUT_OF_PLACE_LANGUAGE", source: "online" },
+      },
+    ]);
+
+    expect(rejeitada?.bodyState).toBe("MODERATED");
+  });
+
+  it("mensagem vazia é EMPTY, nunca bolha em branco silenciosa", () => {
+    const [vazia] = mapMessages([{ ...OFFICIAL_MESSAGES[0], message: "   " }]);
+
+    expect(vazia?.bodyState).toBe("EMPTY");
+    expect(vazia?.body).toBeNull();
+  });
+
+  it("mensagem sem instante de envio é descartada, nunca inventada", () => {
+    const resultado = mapMessages([{ ...OFFICIAL_MESSAGES[0], message_date: null, date_created: null }]);
+
+    expect(resultado).toHaveLength(0);
+  });
+
+  it("cai para date_created quando message_date falta", () => {
+    const [primeira] = mapMessages([{ ...OFFICIAL_MESSAGES[0], message_date: null }]);
+
+    expect(primeira?.occurredAt).toBe("2023-07-17T12:52:54.000-04:00");
+  });
+
+  it("transcript vazio não quebra", () => {
+    expect(mapMessages([])).toEqual([]);
   });
 });
