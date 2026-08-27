@@ -76,11 +76,19 @@ export async function fetchSupportClaims(
   for (const role of SELLER_ROLES) {
     for (let page = 0; page < MAX_PAGES; page += 1) {
       const offset = page * PAGE_SIZE;
+      // **Sem `sort`, e a ausência é deliberada (D-109).** A primeira versão
+      // desta varredura mandava `sort=last_updated:asc` e a API devolveu 400
+      // em 100% das 28 execuções. A doc documenta o FORMATO de `sort`
+      // (`campo:asc`) mas nunca diz quais campos são ordenáveis — o único
+      // exemplo oficial usa `date_created:desc`. `last_updated:asc` foi
+      // suposição, e a REGRA ABSOLUTA existe para impedir exatamente isso.
+      //
+      // A varredura não precisa de ordenação: ela calcula o `max(last_updated)`
+      // por conta própria ao percorrer os resultados.
       const query = new URLSearchParams({
         "players.user_id": String(options.sellerId),
         "players.role": role,
         range: `last_updated:after:${options.updatedAfter}`,
-        sort: "last_updated:asc",
         limit: String(PAGE_SIZE),
         offset: String(offset),
       });

@@ -38,6 +38,38 @@ function toMercadoLivreInstant(value: Date): string {
   return `${value.toISOString().slice(0, -1)}+00:00`;
 }
 
+/** Tamanho do corpo remoto preservado no `reason`; a coluna não é ilimitada. */
+const REMOTE_BODY_LIMIT = 500;
+
+/**
+ * Instrumentação de D-109, no mesmo molde do "Achado 4" de D-101.
+ *
+ * O cliente HTTP JÁ captura o corpo da resposta de erro
+ * (`MercadoLivreApiError.body`), mas a primeira versão deste handler guardava
+ * só `error.message` — e o resultado foi 28 falhas seguidas dizendo apenas
+ * "respondeu 400", sem dizer QUAL parâmetro a API recusou. A evidência
+ * existia em runtime e era jogada fora.
+ *
+ * A API documenta que o corpo do 400 enumera os filtros aceitos
+ * (`{"error":"invalid_query","message":"at least any of these filters: ..."}`),
+ * então ele é exatamente o que falta para corrigir sobre evidência em vez de
+ * adivinhar. Corpo de erro do Mercado Livre não carrega token nem conteúdo de
+ * mensagem — é seguro no log.
+ */
+function describeFailure(error: unknown): string {
+  if (!(error instanceof MercadoLivreApiError)) {
+    return error instanceof Error ? error.message : "erro desconhecido ao reconciliar reclamações";
+  }
+
+  if (error.body === undefined || error.body === null) {
+    return `${error.message} Corpo remoto ausente.`;
+  }
+
+  const body = typeof error.body === "string" ? error.body : JSON.stringify(error.body);
+
+  return `${error.message} Corpo remoto: ${body.slice(0, REMOTE_BODY_LIMIT)}`;
+}
+
 export interface SyncSupportClaimsReconcileDeps {
   db: AdminClient;
   mercadoLivre: MercadoLivreClient;
@@ -148,8 +180,7 @@ export function createSyncSupportClaimsReconcileHandler(
     } catch (error) {
       const finishedAt = deps.now?.() ?? new Date();
       const errorClass = error instanceof MercadoLivreApiError ? error.errorClass : "retryable";
-      const reason =
-        error instanceof Error ? error.message : "erro desconhecido ao reconciliar reclamações";
+      const reason = describeFailure(error);
 
       await recordSyncRunFailure(deps.db, {
         organizationId,

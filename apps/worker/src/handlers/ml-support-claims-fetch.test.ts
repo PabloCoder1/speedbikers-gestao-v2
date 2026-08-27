@@ -133,6 +133,17 @@ describe("fetchSupportClaims", () => {
     });
   });
 
+  it("NÃO manda `sort` — a primeira versão mandava e a API deu 400 em 28/28 (D-109)", () => {
+    // A doc documenta o formato de `sort` (`campo:asc`) mas nunca diz quais
+    // campos são ordenáveis; o único exemplo oficial usa `date_created:desc`.
+    // `last_updated:asc` era suposição. A varredura calcula o max sozinha.
+    return run({ respondent: [[]], complainant: [[]] }).then(({ requests }) => {
+      for (const request of searchRequests(requests)) {
+        expect(new URL(`https://x${request.path}`).searchParams.get("sort")).toBeNull();
+      }
+    });
+  });
+
   it("o mesmo claim nos dois papéis é ingerido UMA vez", () => {
     return run({ respondent: [[claim(1)]], complainant: [[claim(1)]] }).then(({ result }) => {
       expect(result.itemsProcessed).toBe(1);

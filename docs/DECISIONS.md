@@ -1640,6 +1640,24 @@ Não é específico de `questions`: **nunca chegou `orders_v2`, `post_purchase`,
 
 **Impacto:** `ingest-support-claim.ts` (novo, extraído), `ml-support-claims-fetch.ts` (novo), `sync-support-claims-reconcile.ts` (novo), `claim-return.ts` (passa a reusar), `sync-runs.ts`, `apps/api/src/{support-claims-schedule.ts,app.ts,index.ts}`, `infra/cloud-scheduler.sh` (**13º job**). **Fecha o item "Ingestão read-only" da Fase 7B por completo.**
 
+## D-109 — A reconciliação de D-108 nunca funcionou: `sort` foi suposição minha, e a evidência estava sendo jogada fora
+
+**Contexto:** D-108 entrou em produção em 2026-08-27 declarada "deployada e verificada" — worker e api no ar, 13º job criado, zero ERROR nos logs de boot. **Nada disso era falso, e mesmo assim o job nunca funcionou uma única vez.** Uma revisão adversarial do desenho de notificações (workflow de 11 agentes) foi ler `sync_runs` e encontrou: `claims / reconciliation / failed / 28 runs / max_checkpoint = NULL`. Confirmado por consulta direta ao Dev: **100% de falha desde o primeiro minuto**, HTTP 400 do Mercado Livre, nas 4 contas.
+
+**Por que a verificação de D-108 não pegou.** Ela mediu o que costuma bastar — boot sem warning, revisão servindo 100%, zero linha ERROR, 13 jobs no Scheduler — e **as quatro medições estavam certas**. O que faltou foi a única que importava para um job novo: **a primeira execução real**. Eu havia até escrito que ela "ainda não foi observada", e segui em frente. A lição não é "verificar mais", é: **um job agendado só está verificado quando uma execução dele foi lida**, e nenhum sinal de deploy substitui isso.
+
+**Achado 1 — `sort=last_updated:asc` foi suposição, e é a causa provável.** A doc documenta o FORMATO de `sort` (`campo:asc`/`campo:desc`) mas **nunca diz quais campos são ordenáveis**; o único exemplo oficial usa `date_created:desc`. Eu inventei `last_updated:asc` ao escrever D-108 — exatamente o tipo de invenção que a REGRA ABSOLUTA existe para impedir, cometida no mesmo commit em que citei a REGRA ABSOLUTA. **Correção: o parâmetro sai.** Não é chute sobre a causa: é a remoção de uma suposição não verificada que a varredura nunca precisou, porque ela calcula o `max(last_updated)` percorrendo os resultados. Teste-guarda impede que volte sem verificação.
+
+**Achado 2 — a evidência existia e era descartada.** `MercadoLivreApiError` **já carrega o corpo da resposta** (`http-client.ts`, `safeReadJson`), e o handler guardava só `error.message`. Resultado: 28 falhas dizendo "respondeu 400" sem dizer QUAL parâmetro foi recusado. A API documenta que o corpo do 400 enumera os filtros aceitos. **Correção: `describeFailure` anexa o corpo remoto ao `reason`** (limitado a 500 chars; corpo de erro do ML não carrega token nem conteúdo de mensagem). Mesmo molde do "Achado 4" de D-101 — instrumentar para corrigir sobre evidência em vez de adivinhar de novo.
+
+**Por que as duas mudanças juntas, e não uma de cada vez:** a remoção do `sort` se justifica sozinha, independente de ser a causa — é uma suposição não verificada em produção. A instrumentação também se justifica sozinha, e é o que garante que a próxima execução **diga** a resposta se o 400 persistir. Se eu só instrumentasse, deixaria uma suposição conhecida no ar por mais uma hora.
+
+**O que NÃO foi tocado, de propósito:** o `range=last_updated:after:...` sem `before`. A doc traz o formato como `range=campo:after:data,before:data`, o que sugere par obrigatório, MAS a lista oficial de exemplos inválidos mostra `range=last_updated:after:<data sem ms>` recusado **apenas pela falta de milissegundos** — o que implica que `after` sozinho é aceito. Ambíguo. Mexer nele agora seria uma terceira mudança simultânea e embaralharia o diagnóstico. Se o 400 persistir, o corpo instrumentado decide.
+
+**Estado honesto:** a correção **não está confirmada**. `check` 29/29 e um teste-guarda novo, mas a prova é a próxima execução horária do `v3-support-claims-reconcile` lendo `sync_runs`. Até lá, D-108 continua sendo código correto que nunca rodou, e a única cobertura real de claims é o webhook.
+
+**Impacto:** `ml-support-claims-fetch.ts` (remove `sort`), `sync-support-claims-reconcile.ts` (`describeFailure`), +1 teste-guarda. Nenhuma migration.
+
 ## Como adicionar nova decisão
 
 Registrar:
