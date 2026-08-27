@@ -91,6 +91,18 @@ describe("contrato da mensageria pós-venda", () => {
     expect(parsed.messages[0]?.status).toBe("UM_STATUS_QUE_AINDA_NAO_EXISTE");
   });
 
+  it("aceita seller_max_message_length ZERO — observado no payload real do webhook (D-103)", () => {
+    // O tráfego real de 2026-08-27 trouxe 0 (provável "vendedor não pode
+    // responder"); o `.positive()` original derrubava a conversa inteira
+    // por um campo que nenhuma lógica consome.
+    const parsed = packMessagesPageSchema.parse({
+      messages: [],
+      seller_max_message_length: 0,
+    });
+
+    expect(parsed.seller_max_message_length).toBe(0);
+  });
+
   it("recusa user_id não numérico, que indicaria payload trocado", () => {
     expect(() =>
       packMessagesPageSchema.parse({

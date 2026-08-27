@@ -111,7 +111,12 @@ export const packMessagesPageSchema = z.object({
     .default(null),
   conversation_status: conversationStatusSchema.nullable().default(null),
   messages: z.array(packMessageSchema).default([]),
-  seller_max_message_length: z.number().int().positive().nullable().default(null),
+  // `nonnegative`, não `positive` (D-103): o tráfego real do webhook trouxe
+  // 0 — provável "vendedor não pode responder", mas o campo não alimenta
+  // lógica nenhuma hoje, então só ACEITAR o valor observado é o correto
+  // (D-097: contrato estrito na estrutura, permissivo nos valores; o
+  // `.positive()` original era suposição sobre um campo não consumido).
+  seller_max_message_length: z.number().int().nonnegative().nullable().default(null),
 });
 
 export const unreadConversationsSchema = z.object({

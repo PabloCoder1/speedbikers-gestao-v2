@@ -1516,6 +1516,16 @@ Não é específico de `questions`: **nunca chegou `orders_v2`, `post_purchase`,
 
 **Impacto:** migration + RPC novas; `@sb/domain/support` (módulo novo); os 2 persists e 5 handlers do worker; 7 arquivos de teste. A Caixa de Entrada não muda de código — passa a mostrar a verdade porque o estado agora acompanha a atividade remota. Fecha o gap da pergunta do usuário e a pendência de reabertura de D-086.
 
+## D-103 — A instrumentação de D-101 pagou-se em horas: `seller_max_message_length` chega como ZERO
+
+**Contexto:** D-101 instrumentou as falhas de contrato de mensagens para logarem os `issues` do Zod, porque 4 detalhes reprovavam sem dizer onde. Minutos depois do deploy do worker com D-102, o log mostrou o campo exato: `seller_max_message_length` com `too_small: expected number to be >0` — o payload REAL do webhook traz **0** (provável "vendedor não pode responder"), e o schema exigia `.positive()`.
+
+**Decisão — `nonnegative`, e nada além disso:** o campo é validado mas NUNCA consumido por lógica nenhuma (grep confirma: só existe no schema). O `.positive()` original era suposição sobre um campo não usado, violando a própria regra de D-097 ("contrato estrito na estrutura, permissivo nos valores"). Aceitar o valor observado é o fix inteiro; atribuir semântica ao 0 (bloquear resposta?) seria inferência sem fonte — fica para quando o campo for consumido de verdade, com pesquisa própria.
+
+**Verificação:** teste novo com o payload real (`seller_max_message_length: 0` aceito), 103 testes do pacote verdes, typecheck/lint/test/build completos verdes. Deploy do worker na sequência (autorização durável) — as conversas que reprovavam passam a ingerir na próxima rodada de 10 min.
+
+**Impacto:** `packages/mercado-livre/src/messages.ts` (+1 teste). Fecha o "Achado 4" de D-101.
+
 ## Como adicionar nova decisão
 
 Registrar:
