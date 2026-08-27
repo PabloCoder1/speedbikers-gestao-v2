@@ -38,4 +38,8 @@ export const EVENT_SEVERITY: Readonly<Record<string, EventSeverity>> = {
   "order.returned": "importante",
   "sync.delayed": "importante",
   "sync.failed": "critico",
+  // "Avisa, não bloqueia" (D-082/D-100): ultrapassar o teto não interrompe
+  // nada — "importante" alerta sem o peso de "critico", reservado para
+  // dado errado ou sincronização morta.
+  "ai.budget.exceeded": "importante",
 };

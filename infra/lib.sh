@@ -58,6 +58,13 @@ SECRET_ML_TOKEN_KEY="ML_TOKEN_ENCRYPTION_KEY"
 # Vercel, sem consumidor, validade incerta).
 SECRET_ANTHROPIC_KEY="ANTHROPIC_API_KEY"
 
+# Teto mensal de gasto com LLM em USD (D-082/D-100), consumido pelo worker
+# (maintenance.check-ai-budget). NÃO é segredo — vai em --set-env-vars.
+# Default 18 = R$100/mês a ~5,5 R$/US$ (conversão administrativa fixa,
+# documentada em D-100); o envSchema do worker tem o MESMO default, então
+# esquecer esta variável não derruba o boot.
+AI_MONTHLY_BUDGET_USD="${AI_MONTHLY_BUDGET_USD:-18}"
+
 sa_email() {
   echo "${1}@${PROJECT_ID}.iam.gserviceaccount.com"
 }

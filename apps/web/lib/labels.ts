@@ -112,6 +112,7 @@ const EVENT_TYPE: Record<string, string> = {
   "order.returned": "Pedido devolvido",
   "sync.delayed": "Sincronização atrasada",
   "sync.failed": "Sincronização falhou",
+  "ai.budget.exceeded": "Orçamento de IA do mês ultrapassado",
 };
 
 /** `domain_events.severity` — três níveis fixos (docs/NOTIFICATIONS.md secao 2). */

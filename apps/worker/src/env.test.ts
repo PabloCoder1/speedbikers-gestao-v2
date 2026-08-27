@@ -82,4 +82,21 @@ describe("parseEnv", () => {
   it("recusa TASKS_INVOKER_SERVICE_ACCOUNT que não é e-mail", () => {
     expect(parseEnv({ ...OBRIGATORIAS, TASKS_INVOKER_SERVICE_ACCOUNT: "v3-tasks" }).ok).toBe(false);
   });
+
+  it("AI_MONTHLY_BUDGET_USD ausente cai no default 18 — esquecer a variável no deploy não derruba o boot (D-100)", () => {
+    const result = parseEnv({ ...OBRIGATORIAS });
+
+    expect(result.ok && result.env.AI_MONTHLY_BUDGET_USD).toBe(18);
+  });
+
+  it("AI_MONTHLY_BUDGET_USD vem como string do --set-env-vars e é convertida", () => {
+    const result = parseEnv({ ...OBRIGATORIAS, AI_MONTHLY_BUDGET_USD: "25.5" });
+
+    expect(result.ok && result.env.AI_MONTHLY_BUDGET_USD).toBe(25.5);
+  });
+
+  it("recusa AI_MONTHLY_BUDGET_USD zero ou negativo — teto inválido não pode virar silêncio", () => {
+    expect(parseEnv({ ...OBRIGATORIAS, AI_MONTHLY_BUDGET_USD: "0" }).ok).toBe(false);
+    expect(parseEnv({ ...OBRIGATORIAS, AI_MONTHLY_BUDGET_USD: "-5" }).ok).toBe(false);
+  });
 });

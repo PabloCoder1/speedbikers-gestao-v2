@@ -184,8 +184,9 @@ Todo job registra em `job_runs`: início, fim, resultado, erro, itens processado
 | `order.returned` | importante | sync — **implementado em 2026-08-23 (D-057)**, `apps/worker/src/handlers/claim-return.ts` |
 | `sync.delayed` | importante | sync |
 | `sync.failed` | crítico | sync |
+| `ai.budget.exceeded` | importante | job de conferência — **implementado em 2026-08-27 (D-100)**, `maintenance.check-ai-budget`: soma mensal de `ai_runs.cost_usd` acima do teto de D-082; deduplicado por organização+mês no próprio `dedup_key` |
 
-A severidade final é calculada por **regra versionada** em `@sb/domain/events` (`packages/domain/src/events/catalog.ts`), não fixada na interface. Consumo em `docs/NOTIFICATIONS.md` — **ainda não construído**: `domain_events` emite, mas nada lê ainda (nem notificação, nem Central de Ações). Os quatro eventos de `listing.*` (preço, título, status, quantidade disponível) fecham o pré-requisito crítico da Fase 7 registrado em `docs/HANDOFF.md` — a emissão existe, falta só a camada de notificação em cima.
+A severidade final é calculada por **regra versionada** em `@sb/domain/events` (`packages/domain/src/events/catalog.ts`), não fixada na interface. Consumo (corrigido em 2026-08-27 — o texto anterior desta linha dizia "nada lê ainda", congelado de antes de D-073): **a cadeia de notificações consome TODO `domain_event` desde D-073** — trigger de fan-out → Central de Notificações (D-074) → toasts (D-075), com preferências por usuário (D-076); os `listing.*` têm inclusive diff formatado na UI (`apps/web/lib/event-format.ts`). O que continua verdade: a **Central de Ações/diagnóstico** só correlaciona eventos com `entity_type = 'sku'` — `listing.*` (entity_type `listing`) ainda não entra como causa candidata de anomalia de venda (expansão registrada nas lacunas funcionais do `docs/HANDOFF.md`).
 
 ---
 

@@ -5362,3 +5362,117 @@ describe("support read model (Fase 7B, D-085; modelo D-084)", () => {
     });
   });
 });
+
+describe("guarda de GRANTs (D-066/D-098)", () => {
+  // D-066 apertou 23 tabelas e o padrão foi REINTRODUZIDO nos dois dias
+  // seguintes por migrations que não revogaram na criação (corrigido em
+  // D-098). Uma auditoria pontual apanha o estoque de um dia; este teste
+  // apanha toda tabela futura: privilégio de ESCRITA para `authenticated`
+  // sem policy correspondente é superfície morta — a RLS nega de qualquer
+  // jeito, então ou a policy deveria existir, ou o GRANT não deveria.
+  //
+  // Também decide empiricamente, a cada rodada da CI, a divergência entre
+  // o achado medido de D-062/D-066 ("privilégio padrão concede escrita a
+  // authenticated em tabela nova") e o comentário da migration
+  // 20260825170000 ("Supabase 2026 não expõe tabela nova por default") —
+  // não importa qual valha no engine do momento, o invariante é o mesmo.
+  it("nenhuma tabela de public da escrita a authenticated sem policy correspondente", async () => {
+    const result = await client.query(
+      `select t.tablename, c.cmd
+       from pg_tables t
+       cross join (values ('INSERT'), ('UPDATE'), ('DELETE')) as c(cmd)
+       where t.schemaname = 'public'
+         and has_table_privilege('authenticated', format('public.%I', t.tablename), c.cmd)
+         and not exists (
+           select 1
+           from pg_policies p
+           where p.schemaname = 'public'
+             and p.tablename = t.tablename
+             and (p.cmd = c.cmd or p.cmd = 'ALL')
+             and (p.roles @> array['authenticated'::name] or p.roles @> array['public'::name])
+         )
+       order by t.tablename, c.cmd`,
+    );
+
+    // Vazio = nenhum grant de escrita órfão. Cada linha que aparecer aqui
+    // é uma combinação (tabela, comando) a revogar — ou uma policy que
+    // deveria ter sido criada junto com o grant.
+    expect(result.rows).toEqual([]);
+  });
+});
+
+describe("ator de tabela append-only: on delete restrict (D-094/D-099)", () => {
+  // E-mail FORA do padrão '%@rls.test' de propósito: o afterAll global
+  // apaga esses usuários, e este ator fica referenciado por uma linha
+  // append-only com `restrict` — apagá-lo é exatamente o que deve falhar.
+  // Mesma técnica do ator dedicado de D-094 (e de D-065 antes dele).
+  const ATOR_D099 = "dddddddd-0000-4000-8000-0000000d0990";
+
+  let purchaseOrderId = "";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                               email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',
+               'ator-d099@restrict.teste','x',now(),'{"full_name":"Ator D-099"}',now(),now())
+       on conflict (id) do nothing`,
+      [ATOR_D099],
+    );
+
+    const order = await client.query<{ id: string }>(
+      `insert into public.purchase_orders (organization_id, created_by, notes)
+       values ($1, $2, 'RLSTEST-D099 fixture')
+       returning id`,
+      [ORG_SB, ADMIN_SB],
+    );
+    purchaseOrderId = order.rows[0]?.id ?? "";
+
+    await client.query(
+      `insert into public.purchase_order_events
+         (organization_id, purchase_order_id, event_type, actor_user_id)
+       values ($1, $2, 'CREATED', $3)`,
+      [ORG_SB, purchaseOrderId, ATOR_D099],
+    );
+  });
+
+  // Sem afterAll: a linha de evento é append-only e referencia o ator com
+  // restrict — é justamente a irremovibilidade que o teste prova.
+
+  it("deletar usuário com histórico falha com erro de FK, não com o erro enganoso de append-only", async () => {
+    // Antes de D-099, o `on delete set null` disparava um UPDATE que o
+    // trigger append-only recusava — o erro falava "Insira um novo evento"
+    // sem mencionar que a causa era o usuário estar referenciado (defeito
+    // registrado em D-094). Com `restrict`, o bloqueio continua (linha de
+    // auditoria não sobrevive sem o ator), mas o diagnóstico é o correto.
+    let raised: Error | null = null;
+
+    try {
+      await client.query("delete from public.profiles where id = $1", [ATOR_D099]);
+    } catch (error) {
+      raised = error as Error;
+    }
+
+    expect(raised).not.toBeNull();
+    expect(raised?.message).toMatch(/foreign key/i);
+    expect(raised?.message).not.toMatch(/append-only/i);
+  });
+
+  it("as duas FKs de ator em tabela append-only são restrict no catálogo", async () => {
+    // Cobre também `support_case_events` sem montar um `support_case`
+    // completo: o comportamento do RESTRICT é o mesmo do teste acima, o
+    // que interessa aqui é provar que a migration trocou a ação das DUAS.
+    const result = await client.query<{ conname: string; confdeltype: string }>(
+      `select conname, confdeltype
+       from pg_constraint
+       where conname in ('support_case_events_actor_user_id_fkey',
+                         'purchase_order_events_actor_user_id_fkey')
+       order by conname`,
+    );
+
+    expect(result.rows).toEqual([
+      { conname: "purchase_order_events_actor_user_id_fkey", confdeltype: "r" },
+      { conname: "support_case_events_actor_user_id_fkey", confdeltype: "r" },
+    ]);
+  });
+});

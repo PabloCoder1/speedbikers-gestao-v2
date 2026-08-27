@@ -12,3 +12,6 @@ export type { ListingSnapshot } from "./listing-events.js";
 
 export { classifySyncFreshness } from "./freshness.js";
 export type { FreshnessLevel } from "./freshness.js";
+
+export { evaluateAiBudget } from "./ai-budget.js";
+export type { AiBudgetSignal } from "./ai-budget.js";

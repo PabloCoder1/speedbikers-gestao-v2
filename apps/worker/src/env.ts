@@ -68,6 +68,19 @@ export const envSchema = z.object({
   GCP_REGION: z.string().min(1),
   WORKER_URL: z.url(),
   TASKS_INVOKER_SERVICE_ACCOUNT: z.email(),
+
+  /**
+   * Teto mensal de gasto com LLM em USD (D-082/D-100), consumido por
+   * `maintenance.check-ai-budget`. D-082 fixou R$100/mês; `ai_runs.cost_usd`
+   * é USD e o projeto não tem (nem quer, pelos três testes de entrada de
+   * infraestrutura) API de câmbio — o default 18 é R$100 a ~5,5 R$/US$,
+   * conversão administrativa fixa e conservadora, documentada em D-100.
+   * Como a política é "avisa, não bloqueia", imprecisão de câmbio só
+   * desloca o MOMENTO do aviso, nunca impede nada. Com default: esquecer a
+   * variável num ramo do script de deploy (risco já materializado três
+   * vezes no projeto) não derruba o boot.
+   */
+  AI_MONTHLY_BUDGET_USD: z.coerce.number().positive().default(18),
 });
 
 export type Env = z.infer<typeof envSchema>;

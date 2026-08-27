@@ -15,6 +15,8 @@ import type { DecisionOutcomesScheduleDeps } from "./decision-outcomes-schedule.
 import { triggerDecisionOutcomesMeasurement } from "./decision-outcomes-schedule.js";
 import type { Enqueuer } from "./enqueue.js";
 import type { ImportDeps } from "./erp-import.js";
+import type { AiBudgetScheduleDeps } from "./ai-budget-schedule.js";
+import { triggerAiBudgetCheck } from "./ai-budget-schedule.js";
 import { confirmApply, isImportKind, receiveUpload } from "./erp-import.js";
 import type { FulfillmentScheduleDeps } from "./fulfillment-schedule.js";
 import { triggerFulfillmentSnapshot } from "./fulfillment-schedule.js";
@@ -90,6 +92,7 @@ export interface AppDependencies {
   supportReply?: SupportReplyDeps;
   salesAnomalyActionsSchedule?: SalesAnomalyActionsScheduleDeps;
   decisionOutcomesSchedule?: DecisionOutcomesScheduleDeps;
+  aiBudgetSchedule?: AiBudgetScheduleDeps;
 }
 
 /**
@@ -379,6 +382,23 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     const outcome = await triggerLedgerIntegrityCheck(ledgerIntegritySchedule);
+
+    return context.json(outcome);
+  });
+
+  // --------------------------------------------------------------------
+  // Aviso de orçamento de IA (D-100) — mesmo formato de
+  // /internal/schedule/ledger-integrity acima, por ORGANIZAÇÃO. Cadência
+  // diária: `infra/cloud-scheduler.sh`.
+  // --------------------------------------------------------------------
+  app.post("/internal/schedule/ai-budget", async (context) => {
+    const aiBudgetSchedule = dependencies.aiBudgetSchedule;
+
+    if (aiBudgetSchedule === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const outcome = await triggerAiBudgetCheck(aiBudgetSchedule);
 
     return context.json(outcome);
   });

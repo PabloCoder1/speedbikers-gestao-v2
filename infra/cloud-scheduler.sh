@@ -104,6 +104,18 @@ upsert_job \
   "${API_URL}/internal/schedule/ledger-integrity" \
   "Conferencia ledger (stock_movements) contra a projecao (inventory_balances), por organizacao"
 
+# Aviso de orcamento de IA (D-082/D-100) -- soma ai_runs.cost_usd do mes de
+# negocio e emite ai.budget.exceeded ao ultrapassar o teto (avisa, nunca
+# bloqueia). Cadencia diaria, 9h: horario escalonado depois de todos os
+# jobs de manutencao/diagnostico da manha (6h..8h30). O EVENTO deduplica
+# por mes no dominio, entao rodar todo dia so mantem o atraso maximo do
+# aviso em ate 24h.
+upsert_job \
+  "v3-check-ai-budget" \
+  "0 9 * * *" \
+  "${API_URL}/internal/schedule/ai-budget" \
+  "Aviso de orcamento de IA: soma ai_runs.cost_usd do mes e emite ai.budget.exceeded ao ultrapassar o teto, por organizacao"
+
 # Sincronizacao de listings/anuncios (D-058) -- cadencia menor que pedidos,
 # mesmo raciocinio de Full (nao muda tao rapido, mais conservador com o
 # orcamento de rate limit nao documentado, D-042). Por CONTA, nao por

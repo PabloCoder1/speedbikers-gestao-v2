@@ -76,6 +76,7 @@ const app = createApp({
   supportReply: { db, enqueuer, logger },
   salesAnomalyActionsSchedule: { db, enqueuer, logger },
   decisionOutcomesSchedule: { db, enqueuer, logger },
+  aiBudgetSchedule: { db, enqueuer, logger },
   copilot: {
     db,
     logger,
