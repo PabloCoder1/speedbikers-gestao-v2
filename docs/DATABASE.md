@@ -788,9 +788,10 @@ Se a migração de compras acontecer na Fase 4, a regra permanece: cada linha mi
 
 | Pendência | Depende de | Efeito |
 |---|---|---|
-| Tabelas de visitas, conversão e Ads | Fase 5B (D-032) | Modelagem adiada por decisão, não por falta de definição |
-| Estrutura exata das planilhas do UpSeller | Amostra real do arquivo | Necessária antes da Fase 2 |
-| Campos do Mercado Livre em cada recurso | `docs/MERCADO_LIVRE.md` | Necessária antes da Fase 3 |
-| Adaptador de detalhe e handler por `questionId` | Fase 7B (D-086) | Próxima pequena etapa; conecta `GET /questions/{id}?api_version=4` ao mapper/persistência, ainda sem produtor de webhook, reconciliação, UI ou resposta |
+| Tabelas de visitas, conversão e Ads | Fase 5B (D-032) | Só a metade de Ads segue adiada (D-059) — visitas/conversão implementadas em 2026-08-23 (`daily_listing_visits`) |
+| ~~Adaptador de detalhe e handler por `questionId`~~ | ~~Fase 7B (D-086)~~ | **Concluído** — D-087 (handler), e a cadeia inteira que a linha original dizia faltar também: webhook (D-088), reconciliação (D-089), UI (D-090/D-095) e resposta (D-096) |
+| Tabelas de reclamações/devoluções/mediações (canal CLAIM) | Fase 7B, pesquisa das APIs de Claims | O modelo D-084 já prevê o canal; a ingestão ainda não existe |
 
-Nenhuma decisão de produto das fases já implantadas segue aberta. O modelo, estados internos e papel de resposta da Fase 7B foram fechados em D-084; o núcleo read-only existe localmente desde D-085 e a persistência isolada de Perguntas desde D-086. Ainda faltam ingestão externa, UI, triagem, notificação e resposta em etapas próprias.
+> As linhas de "planilhas do UpSeller" e "campos do Mercado Livre em cada recurso" da versão original desta tabela foram resolvidas nas Fases 2/3 e removidas em 2026-08-27, na limpeza de textos congelados.
+
+Nenhuma decisão de produto das fases já implantadas segue aberta. Da Fase 7B, faltam (checklist em `docs/ROADMAP.md`): ingestão de reclamações/devoluções/mediações, notificações de atendimento, templates, Copiloto sugerindo resposta, Base de Conhecimento Validada, métricas de SAC e integração com Diagnóstico.

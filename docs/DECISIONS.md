@@ -474,6 +474,8 @@ Levantadas pela pesquisa da documentação oficial que fecha a lista de verifica
 
 **Impacto:** `packages/mercado-livre/src/token-cipher.ts` (`encryptToken`/`decryptToken`/`loadEncryptionKey`) e `apps/api/src/ml-accounts.ts` (`startConnect`/`completeConnect`), implementados e testados nesta sessão — ver `docs/HANDOFF.md`. `ML_TOKEN_ENCRYPTION_KEY`, `MERCADO_LIVRE_CLIENT_ID`, `MERCADO_LIVRE_CLIENT_SECRET` e `MERCADO_LIVRE_REDIRECT_URI` entram no `.env.example` e no `envSchema` de `apps/api`.
 
+> **Nota sobre a numeração (2026-08-27):** D-047 nunca existiu — a numeração pulou de D-046 para D-048 por engano na sessão original (confirmado via `git log -S "## D-047"`: nenhum commit jamais criou nem removeu essa entrada; as duas menções "D-047-adjacent" no texto de D-058 referenciam um número que nunca teve entrada própria). Buraco de numeração, não decisão apagada. O número fica reservado e sem uso para não renumerar todas as referências posteriores.
+
 ## D-048 — Checkpoint de pedidos usa `date_last_updated`, não `last_updated`
 
 **Contexto:** implementando a persistência estruturada de pedidos (`orders`/`order_items`), o exemplo oficial de resposta de `/orders/search` (`developers.mercadolivre.com.br`, "Gerencie vendas → Orders", 2026-08-21) mostrou os dois campos na MESMA order com valores diferentes: `date_last_updated: "2020-02-14T02:55:49.811Z"` e `last_updated: "2019-05-28T15:16:04.000-04:00"`. Nenhuma prosa da página explica a diferença — só a descrição do filtro `order.date_last_updated.from/to`.

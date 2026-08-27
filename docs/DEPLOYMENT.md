@@ -125,8 +125,9 @@ infra/
   deploy-cloud-run.sh       build + deploy de `api`/`worker` — MANUAL, ver secao 7
   cloud-scheduler.sh        cria/atualiza todos os jobs do Cloud Scheduler — idempotente, MANUAL
   README.md                 ordem de execução e pré-requisitos
-  # pendente:
-  # secrets.sh              Fase 2, com o OAuth do Mercado Livre
+  # secrets.sh nunca foi criado, por escolha — os segredos são criados
+  # manualmente no Secret Manager (secao 5); só as concessões de IAM são
+  # scriptadas (setup-dev.sh). Ver infra/README.md.
 ```
 
 Projeto de desenvolvimento: **`speedbikers-gestao-v3`**, região `southamerica-east1`.

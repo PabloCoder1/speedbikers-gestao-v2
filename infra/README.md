@@ -64,4 +64,4 @@ Os limites de taxa e concorrência das filas `ml-sync-*` são **provisórios**. 
 
 ## Ainda não existem
 
-- `secrets.sh` — entra na Fase 2, com o OAuth do Mercado Livre. Valores de segredo **nunca** são versionados.
+- `secrets.sh` — nunca foi criado, e por escolha: os 4 segredos em uso (`SUPABASE_SERVICE_ROLE_KEY`, `MERCADO_LIVRE_CLIENT_SECRET`, `ML_TOKEN_ENCRYPTION_KEY`, `ANTHROPIC_API_KEY`) são criados manualmente no Secret Manager (`docs/DEPLOYMENT.md` secao 5) — cada um nasce de um fluxo diferente (dashboard do Supabase, painel do ML, `openssl rand`, console da Anthropic) e um script que os recebesse por argumento só adicionaria um lugar a mais por onde o valor passa. Valores de segredo **nunca** são versionados. As concessões de IAM (`secretAccessor`) essas sim são scriptadas, em `setup-dev.sh`.

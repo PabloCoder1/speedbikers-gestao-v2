@@ -144,7 +144,7 @@ Estados na Central de Sugestões: `nova` -> `em_analise` -> `aprovada` -> `plane
 
 ## 11. Sugestão de resposta de atendimento (Fase 7B, conceitual)
 
-> Registrado em 2026-08-24 (D-071), junto com a Central de Atendimento/SAC — `docs/PRODUCT_REQUIREMENTS.md`, `docs/ROADMAP.md` Fase 7B. Pesquisa oficial concluída em D-083, modelo unificado aprovado em D-084 e núcleo read-only de banco criado em D-085; nada desta sugestão de resposta está implementado. A próxima fatia é normalizar e persistir Perguntas, não sugerir nem enviar texto.
+> Registrado em 2026-08-24 (D-071), junto com a Central de Atendimento/SAC — `docs/PRODUCT_REQUIREMENTS.md`, `docs/ROADMAP.md` Fase 7B. Atualizado em 2026-08-27: a infraestrutura em volta já existe por completo — ingestão de Perguntas (D-086 a D-089), Caixa de Entrada e detalhe (D-090/D-095), triagem (D-094), **envio manual de resposta** (D-096, `POST /v1/support/cases/:caseId/reply` — o comando privilegiado do fluxo abaixo, exatamente como desenhado aqui) e Mensagens pós-venda (D-097). **O que continua não implementado é a sugestão pelo Copiloto em si** — a ferramenta de geração de texto (`suggested_text` existe como coluna, nunca preenchida) e a Base de Conhecimento Validada.
 
 Categoria de ferramenta nova: gera o **texto** de uma resposta a pergunta, mensagem, reclamação ou mediação — mesma família de "Estruturação" (secao 4, "transforma ideia em sugestão de feature estruturada"), **não** uma ferramenta de escrita. A regra da secao 6 ("sem ferramenta de escrita") continua valendo sem exceção: o Copiloto nunca chama uma tool que envia mensagem ao Mercado Livre.
 

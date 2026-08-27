@@ -108,7 +108,7 @@ A partir de 2026, o bloco `imposto` de cada item pode conter um grupo novo `IBSC
 - **Bloco `imposto` por item é real e grande** (ICMS, IPI, PIS, COFINS, IBSCBS da reforma tributária) — confirmado, integralmente ignorado pelo parser (não afeta `stock_movements`, só dado fiscal).
 - **Múltiplos fornecedores, formatos variados**: só um fornecedor visto até agora (Plasmoto). O parser trata `NCM`/`CFOP` como opcionais (`null` quando ausentes) por precaução, mas só um SEGUNDO XML real de outro fornecedor mostra o que de fato varia entre sistemas emissores.
 - **Encoding**: o XML real recebido é UTF-8 (`<?xml version="1.0" encoding="UTF-8"?>`), confirmado. Um fornecedor que exporte em ISO-8859-1 (Latin-1, comum em sistemas legados brasileiros) ainda seria um risco não testado.
-- **Volume esperado e cadência**: quantas NF-e por mês a Speed Bikers processa, se chegam por e-mail, por XML direto do fornecedor ou só por consulta em serviço como `meudanfe.com.br` — importa para decidir se o upload é sempre manual (um arquivo por vez) ou se compensa suporte a lote (múltiplos XML de uma vez, como o importador do UpSeller já faz com XLSX). Ainda não implementado: a rota de upload em si.
+- **Volume esperado e cadência**: quantas NF-e por mês a Speed Bikers processa, se chegam por e-mail, por XML direto do fornecedor ou só por consulta em serviço como `meudanfe.com.br` — importa para decidir se o upload é sempre manual (um arquivo por vez, como implementado: `POST /v1/nfe-imports`, `apps/api/src/nfe-import.ts`, tela `notas-fiscais/nova`) ou se compensa suporte a lote (múltiplos XML de uma vez, como o importador do UpSeller já faz com XLSX). A rota de upload de um arquivo existe desde 2026-08-22; o suporte a lote é que depende desta resposta.
 
 ---
 
