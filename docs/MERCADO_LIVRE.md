@@ -450,6 +450,29 @@ Pesquisa feita exclusivamente na documentação oficial vigente. A permissão fu
 - `type: "mediations"` é um tipo/estado do próprio **claim**, não um recurso raiz separado. O detalhe continua em `GET /post-purchase/v1/claims/{claim_id}`; `stage` e `players[].available_actions` dizem o que cada participante pode fazer.
 - `GET /post-purchase/v1/claims/{claim_id}/detail` expõe `due_date`, `action_responsible`, título, descrição e problema. `players[].available_actions[].due_date` é outra fonte de prazo por ação. Para claims, a V3 deve usar o prazo remoto quando presente, não inventar um SLA concorrente.
 - Mensagens do claim: `GET /post-purchase/v1/claims/{claim_id}/messages`. Resposta: `POST /post-purchase/v1/claims/{claim_id}/actions/send-message`, com `receiver_role` (`complainant`, `mediator` ou `respondent`), `message` e anexos opcionais. O envio só é válido quando a ação correspondente aparece em `available_actions`; status de sucesso documentado: 201.
+
+#### Contrato do transcript — CONFIRMADO (leitura ao vivo, 2026-08-27)
+
+A resposta é um **ARRAY NU**, não um envelope com `results`/`paging` — diferente de todo o resto da integração. Nenhum parâmetro de paginação é documentado.
+
+| Campo | Forma | Observação |
+|---|---|---|
+| `sender_role` / `receiver_role` | `complainant` \| `respondent` \| `mediator` | quem falou e para quem |
+| `message` | texto | |
+| `translated_message` | nullable | só em CBT |
+| `date_created` / `last_updated` / `message_date` | ISO com offset | |
+| `date_read` | nullable | |
+| `attachments[]` | `{filename, original_filename, size, date_created, type}` | JPG/PNG/PDF, até 5 MB |
+| `status` | `available` \| `moderated` \| `rejected` \| `pending_translation` | |
+| `stage` | `claim` \| `dispute` | mesma semântica de `claims.stage` |
+| `message_moderation` | `{status: clean\|rejected\|pending\|non_moderated, reason, source, date_moderated}` | `reason` observado como `""` E como `null` |
+| `repeated` | boolean | |
+
+> 🔴 **Não existe `id` de mensagem no payload.** É exatamente o caso que D-084 previu ao escrever "se o payload oficial não trouxer ID estável, a implementação deve confirmar a forma real e usar fingerprint determinístico documentado — **nunca índice do array**". A confirmação agora está feita: o ID não existe, então o `external_message_key` de mensagem de claim TERÁ de ser fingerprint. Índice de array quebraria na primeira mensagem moderada/filtrada, que desloca todas as seguintes.
+
+> ⚠️ **O transcript pode ser incompleto e não há como saber.** A doc é explícita: "apenas as mensagens PRÓPRIAS que foram moderadas serão exibidas; as mensagens da contraparte que também passaram por moderação serão automaticamente filtradas". Ou seja, mensagem moderada do comprador some da resposta sem deixar buraco visível — diferente de `BANNED` em Perguntas (D-086), onde a mensagem existe com corpo vazio. Qualquer contagem de mensagens do claim é um piso, nunca um total; a UI não deve afirmar "N mensagens" como fato.
+
+**Fonte:** `developers.mercadolivre.com.br/pt_br/gerenciar-mensagem-de-uma-eclamacao` (o slug tem o typo "eclamacao" no próprio site — a URL com "reclamacao" redireciona para a home).
 - O webhook permanece `post_purchase`, com `actions: ["claims"]` ou `["claims_actions"]` e `resource` apontando para `/post-purchase/v1/claims/{claim_id}`.
 
 ### Consequência para a Fase 7B
