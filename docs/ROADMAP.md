@@ -324,7 +324,7 @@ A ordem não é preferência: é a Regra de Progressão deste arquivo. Quase tod
 - [x] **Vinculação manual livre** — concluída em 2026-08-28 (D-119)
 - [x] **Desfazer vínculo + histórico auditável de vínculo** — concluído em 2026-08-28 (D-125 + D-126). **D-125**: `sku_listing_link_events` append-only e três RPCs; remoção FÍSICA (soft delete quebraria `resolveSku` e o anti-join); e **fechado um furo aberto desde a Fase 2** — `authenticated` tinha DELETE/INSERT/UPDATE com policy `for all`. **D-126**: supressão no importador (vínculo removido à mão não volta pela planilha, vira `UNRESOLVED` e NÃO abre candidato) e `RETARGETED` na reescrita in-place, que é a mutação mais frequente da tabela e não deixava rastro. **Segue aberto**: o botão na interface — as Server Actions existem
 - [ ] **Tela de integridade de vinculações** com reconciliação INDEPENDENTE por conta, que não dependa do mesmo pipeline que ela audita
-- [ ] 🔴 **Decidir o estoque sentinela** — 581 de 828 SKUs com saldo positivo acima de 1.000 unidades (164 em exatamente 3.996), mais 1.639 saldos negativos. **Bloqueia valor de estoque, cobertura confiável e toda a Fase 5D.** Decisão de negócio, não de código — D-120, questão aberta 1
+- [x] 🔴 **Decidir o estoque sentinela** — **RESPONDIDO pelo usuário em 2026-08-28: é o estado real do UpSeller, é estoque virtual** (número alto para o anúncio não pausar). Tratado em D-127: `skus.stock_is_virtual` como CONFIGURAÇÃO, porque não há sinal derivável — armazém é um só, o export não marca, e a hipótese "base menos vendas" foi testada e reprovada (correlação 0,291). `get_stock_coverage` recusa número para SKU virtual em vez de mostrar "2.000 dias". **Nova pré-condição da 5D**: a ferramenta de marcação em lote (2.306 SKUs com a assinatura de base 1.000/10.000) — com sugestão medida, confirmada por gente, nunca aplicada sozinha
 - [ ] **Vínculo fornecedor → SKU** (`skus` não tem `supplier_id`; item P1 já registrado como alias reutilizável) — pré-requisito da configuração de reposição
 
 ---
@@ -345,7 +345,7 @@ A ordem não é preferência: é a Regra de Progressão deste arquivo. Quase tod
 
 ### Fase 5D — Reposição e compra inteligente
 
-**Depende de:** 4B inteira, em especial a questão 1. Sem saldo confiável, toda sugestão é ficção.
+**Depende de:** 4B inteira. A questão de negócio foi respondida (D-127: é estoque virtual deliberado), e o bloqueio virou **pré-condição técnica nomeada** — a marcação em lote de . Sugestão de compra sobre SKU não marcado continua sendo ficção; a diferença é que agora o sistema sabe dizer isso.
 
 - [ ] **Configuração de reposição** por fornecedor/origem/SKU: lead time, cobertura alvo, buffer, política
 - [ ] **Tendência determinística** por janelas (90/60/30/15), classificando crescendo/estável/caindo

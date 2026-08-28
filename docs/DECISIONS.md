@@ -2097,6 +2097,30 @@ Sem fechar isso, a garantia "toda mudança deixa evento" seria vazia. Revogado n
 
 **Segue aberto:** o botão de remover/trocar na interface. As Server Actions (`retargetLink`/`removeLink`) existem desde D-125; falta a UI.
 
+## D-127 — Estoque virtual é deliberado: a Fase 5D destrava, mas com outro desenho
+
+**Contexto:** a questão aberta 1 de D-120, que travava a Fase 5D inteira. O usuário respondeu em 2026-08-28: **é o estado real do UpSeller, é estoque virtual** — número alto para o anúncio não pausar, não erro de exportação.
+
+**A resposta muda a natureza do problema.** Não é dado sujo a limpar: é uma **classe de SKU cujo saldo não responde "quanto eu tenho"**. Cobertura, sugestão de compra e valor de estoque precisam saber a diferença — e um SKU virtual com "2.000 dias de cobertura" não é um número conservador, é um número errado com cara de preciso.
+
+**Decisão 1 — a marcação é CONFIGURAÇÃO, porque procurei um sinal e não existe.** Três tentativas, todas medidas:
+
+- **Armazém**: `erp_stock_snapshots.warehouse` tem **um valor só** (`ESTOQUE LOJA`). O virtual não mora num armazém separado.
+- **Coluna no export**: não existe marcação nenhuma.
+- **Regra derivada das vendas**: a assinatura é visível no histograma — **615 SKUs em exatamente 999, 254 em 998, 148 em 997, 106 em 996...** e, na outra base, **62 em 9.999, 34 em 9.998, 19 em 9.990**. São bases de **1.000 e 10.000 corroídas por venda**, e nenhuma distribuição natural faz isso. Mas testei a hipótese "base menos vendas acumuladas" contra as vendas reais e **ela NÃO se sustenta**: correlação **0,291** e só **165 de 2.172** SKUs batendo exato. O vendedor reajusta o sentinela por fora.
+
+Um limiar (">1.000 é virtual") classificaria errado nos dois sentidos: o SKU virtual já bastante consumido (999 → 640) e o SKU real de giro alto. Então `skus.stock_is_virtual` nasce `false` para todos e **a migration não semeia nenhuma linha** — marcar é ato humano. É a regra transversal que o próprio usuário pediu no bloco 26: configuração em vez de hardcode.
+
+**Decisão 2 — a cobertura RECUSA número para SKU virtual, em vez de escondê-lo.** `get_stock_coverage` devolve `days_of_coverage` nulo e `is_ruptura` falso para eles, mais a marca `stock_is_virtual`. A tela mostra "estoque virtual" na coluna de cobertura e ordena esses SKUs **no fim** — não é urgência, é ausência de resposta. Sumir com eles seria pior: o operador precisa saber que existem e que estão sem resposta.
+
+**Nota sobre `is_ruptura`**: sem saldo físico confiável não dá para afirmar ruptura. Um SKU virtual com saldo alto nunca cairia em ruptura de qualquer forma, mas a regra fica explícita para quando o sentinela for consumido até zero.
+
+**O que isto NÃO resolve, e é a próxima fatia:** marcar 2.306 SKUs um a um não é realista. Falta a **ferramenta de marcação em lote**, com a assinatura medida servindo de *sugestão* que o operador confirma — nunca aplicada sozinha. Enquanto ela não existir, a coluna está lá e ninguém está marcado, então o comportamento é idêntico ao de antes: nada quebrou, nada foi presumido.
+
+**Consequência para a Fase 5D:** ela deixa de estar bloqueada por decisão de negócio e passa a ter uma **pré-condição técnica nomeada** — a marcação. Sugestão de compra sobre SKU não marcado continua sendo ficção, e agora o sistema sabe dizer isso.
+
+**Impacto:** migration `20260828193425` (coluna + `get_stock_coverage` recriada com a marca), `apps/web/app/cobertura/page.tsx`, `packages/db/src/types.ts`. `check` 29/29. **Zero linha marcada** — comportamento inalterado até alguém marcar.
+
 ## Como adicionar nova decisão
 
 Registrar:

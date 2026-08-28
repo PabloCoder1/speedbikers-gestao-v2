@@ -42,6 +42,7 @@ interface CoverageRow {
   avg_daily_sales: number;
   days_of_coverage: number | null;
   is_ruptura: boolean;
+  stock_is_virtual: boolean;
 }
 
 const th: React.CSSProperties = {
@@ -89,10 +90,14 @@ export default async function CoberturaPage(): Promise<ReactNode> {
   });
 
   const rows = ((data ?? []) as CoverageRow[]).slice().sort((a, b) => {
+    // Estoque virtual vai para o FIM: não é urgência, é ausência de resposta.
+    if (a.stock_is_virtual !== b.stock_is_virtual) return a.stock_is_virtual ? 1 : -1;
     if (a.is_ruptura !== b.is_ruptura) return a.is_ruptura ? -1 : 1;
 
     return (a.days_of_coverage ?? Infinity) - (b.days_of_coverage ?? Infinity);
   });
+
+  const virtualCount = rows.filter((row) => row.stock_is_virtual).length;
 
   const rupturaCount = rows.filter((row) => row.is_ruptura).length;
 
@@ -106,6 +111,14 @@ export default async function CoberturaPage(): Promise<ReactNode> {
         venda registrada no período (indica demanda perdida agora).
         {rupturaCount > 0 && (
           <strong style={{ color: "var(--sb-danger)" }}> {formatCount(rupturaCount)} SKU(s) em ruptura.</strong>
+        )}
+        {virtualCount > 0 && (
+          <>
+            {" "}
+            {formatCount(virtualCount)} SKU(s) com <strong>estoque virtual</strong> — saldo sentinela no ERP, não
+            contagem física (D-127). Para esses a cobertura fica em branco de propósito: sem saldo real, um número
+            aqui seria resposta errada com cara de precisa.
+          </>
         )}
       </p>
 
@@ -134,7 +147,16 @@ export default async function CoberturaPage(): Promise<ReactNode> {
 
             <tbody>
               {rows.map((row) => (
-                <tr key={row.sku_id} style={row.is_ruptura ? { background: "#fdeaea" } : undefined}>
+                <tr
+                  key={row.sku_id}
+                  style={
+                    row.stock_is_virtual
+                      ? { color: "var(--sb-text-soft)" }
+                      : row.is_ruptura
+                        ? { background: "#fdeaea" }
+                        : undefined
+                  }
+                >
                   <td style={{ ...td, fontFamily: "ui-monospace, monospace" }}>
                     {row.sku}
                     {row.title !== null && (
@@ -147,7 +169,11 @@ export default async function CoberturaPage(): Promise<ReactNode> {
                   <td style={tdNumber}>{formatCount(row.units_sold)}</td>
                   <td style={tdNumber}>{row.avg_daily_sales}</td>
                   <td style={tdNumber}>
-                    {row.is_ruptura ? "Em ruptura" : (row.days_of_coverage ?? "—")}
+                    {row.stock_is_virtual
+                      ? "estoque virtual"
+                      : row.is_ruptura
+                        ? "Em ruptura"
+                        : (row.days_of_coverage ?? "—")}
                   </td>
                 </tr>
               ))}

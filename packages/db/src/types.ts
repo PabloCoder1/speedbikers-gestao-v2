@@ -2493,6 +2493,7 @@ export type Database = {
           retail_price: number | null
           sku: string
           sku_key: string
+          stock_is_virtual: boolean
           title: string | null
           unit: string | null
           updated_at: string
@@ -2522,6 +2523,7 @@ export type Database = {
           retail_price?: number | null
           sku: string
           sku_key?: string
+          stock_is_virtual?: boolean
           title?: string | null
           unit?: string | null
           updated_at?: string
@@ -2551,6 +2553,7 @@ export type Database = {
           retail_price?: number | null
           sku?: string
           sku_key?: string
+          stock_is_virtual?: boolean
           title?: string | null
           unit?: string | null
           updated_at?: string
@@ -3764,6 +3767,7 @@ export type Database = {
           local_quantity: number
           sku: string
           sku_id: string
+          stock_is_virtual: boolean
           title: string
           units_sold: number
         }[]

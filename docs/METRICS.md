@@ -174,7 +174,7 @@ Três mecanismos independentes, nenhum consolidado numa visão financeira:
 
 ### 5C.4 O que NÃO pode ir para a tela até a fonte melhorar
 
-- **`valor_estoque`** — medido em 2026-08-28: dos 828 SKUs com saldo local positivo, **581 estão acima de 1.000 unidades**, com 164 em exatamente 3.996 e 9 em 39.996. É **estoque sentinela do ERP** (o truque de 4.000/40.000 para o anúncio não pausar), fielmente espelhado pela reconciliação (`AJUSTE_RECONCILIACAO` injetou +5.206.669 unidades). Há ainda **1.639 SKUs com saldo NEGATIVO**, mediana −2. Um valor de estoque sobre isso daria R$ 4,3 milhões num único SKU de retrovisor. **Decisão de negócio pendente** — ver `docs/DECISIONS.md` D-120, questão aberta 1.
+- **`valor_estoque`** — **decisão de negócio RESPONDIDA em 2026-08-28 (D-127): é estoque virtual deliberado**, não erro. Segue bloqueada, mas por outro motivo: falta MARCAR quais SKUs são virtuais (`skus.stock_is_virtual`, hoje zero linhas). Somar quantidade × custo sem essa marca contaria sentinela como patrimônio. A marcação em lote é a próxima fatia.
 - **Qualquer métrica derivada de cobertura, sugestão de compra ou priorização** — mesma base, mesmo bloqueio.
 - **Visão "HOJE"** — mecanicamente trivial, mas `daily_*_metrics` do dia corrente está incompleto por construção, e o projeto evita lê-lo em todos os outros lugares. Ou lê `orders` direto (fora do padrão L3) ou sinaliza a incompletude; nunca finge que o dia fechou.
 
