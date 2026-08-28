@@ -2022,6 +2022,31 @@ Trocar a enumeração de visitas (e de Full) para `listings` é **fatia própria
 
 **Impacto:** migration `20260828185020` (duas funções substituídas, sem tabela/coluna/índice). Nenhuma mudança de código de aplicação — as telas já consomem as duas funções. `check` 29/29.
 
+## D-124 — Visitas passam a enumerar o catálogo ativo: mais cobertura com MENOS chamadas
+
+**Contexto:** fatia que D-123 separou de propósito, com a justificativa de que mudaria a carga na API. **A medição inverteu a minha própria estimativa** — e é por isso que separar valeu.
+
+Eu havia escrito em D-123 que enumerar por `listings` custaria *"~1.900 chamadas/dia a mais"*. Isso assumia varrer o catálogo inteiro (5.085). Filtrando por **status ativo**, a conta é outra:
+
+| | hoje (por vínculo) | agora (catálogo ativo) |
+|---|---|---|
+| Itens enumerados | 3.579 | **3.252** |
+| Ativos cobertos | ~1.713 | **3.252** |
+
+**Menos 327 chamadas/dia e mais 1.539 anúncios ativos cobertos.** A enumeração por vínculo tinha duas falhas ao mesmo tempo: deixava de fora anúncio com variação e anúncio sem vínculo (1.539 ativos, medido), e gastava chamada em item que nem está ativo (1.866, medido).
+
+**Decisão 1 — enumerar `listings` com `status = 'active'`.** `daily_listing_visits` **não exige SKU** (grão é `(ml_account_id, item_id, metric_date)`), então anúncio sem vínculo é perfeitamente sincronizável. É exatamente o que separa este caso do Full — ver decisão 3.
+
+**Decisão 2 — só ATIVOS, de propósito.** A API de visitas aceita **1 item por chamada** (`docs/MERCADO_LIVRE.md` secao 2.15), então cada item custa uma requisição por dia. Anúncio pausado ou encerrado não recebe tráfego relevante, e as linhas históricas dele continuam onde estão. Incluir os 1.833 não-ativos seria +56% de carga por dado quase sempre zero.
+
+**Decisão 3 — Full NÃO muda nesta fatia, por restrição de schema.** `fulfillment_stock_snapshots.sku_id` é **NOT NULL** (congelado na captura, mesmo raciocínio de `order_items.sku_id`/D-020). Enumerar anúncios sem vínculo para Full falharia na inserção. Trocar exigiria tornar a coluna anulável — uma decisão sobre o significado do snapshot, não um ajuste de enumeração. Fica registrado, não feito.
+
+**Consequência para a conversão:** os itens com variação agora ganham **visitas**, e D-123 já lhes deu **pedidos** — então `conversion_rate` deixa de ser `null` para eles a partir da próxima varredura. Antes de D-123+D-124, esses 460 anúncios (15,4% da receita) não tinham nem numerador nem denominador.
+
+**Comentário falso corrigido junto:** a tabela declarava *"mesmo escopo de listings/Full: só itens sem variação"* — falso a partir desta mudança (migration `20260828192215`, só `comment on`).
+
+**Impacto:** `apps/worker/src/handlers/ml-listing-visits-fetch.ts` (enumeração), testes dos dois níveis adaptados, migration só de comentário. `check` 29/29. **Não deployado** — pela regra de D-109, só verificado quando uma execução for lida.
+
 ## Como adicionar nova decisão
 
 Registrar:

@@ -29,7 +29,7 @@ function chain<T>(result: T): { eq: () => ReturnType<typeof chain<T>>; is: () =>
 function fakeDb(options: {
   links?: Link[];
   upsertFailsFor?: string[];
-  linksError?: boolean;
+  listingsError?: boolean;
 }): { db: FetchListingVisitsParams["db"]; upserted: Record<string, unknown>[] } {
   const links = options.links ?? [];
   const upserted: Record<string, unknown>[] = [];
@@ -37,9 +37,9 @@ function fakeDb(options: {
   const db = {
     from: (table: string) => ({
       select: () => {
-        if (table === "sku_listing_links") {
+        if (table === "listings") {
           return chain(
-            options.linksError === true ? { data: null, error: { message: "boom" } } : { data: links, error: null },
+            options.listingsError === true ? { data: null, error: { message: "boom" } } : { data: links, error: null },
           );
         }
 
@@ -106,7 +106,7 @@ const TIME_WINDOW_MLB1 = {
 };
 
 describe("fetchListingVisits (D-032)", () => {
-  it("nenhum vínculo sem variação: zero processados, zero requests", async () => {
+  it("nenhum anúncio ativo: zero processados, zero requests", async () => {
     const { db } = fakeDb({ links: [] });
     const { client, requests } = fakeMercadoLivreClient({});
 
@@ -145,7 +145,7 @@ describe("fetchListingVisits (D-032)", () => {
     expect(requests[0]?.searchParams).toEqual({ last: 3, unit: "day" });
   });
 
-  it("percorre múltiplos vínculos, um item por vez", async () => {
+  it("percorre múltiplos anúncios, um item por vez — a API aceita 1 id por chamada", async () => {
     const { db, upserted } = fakeDb({ links: [{ item_id: "MLB1" }, { item_id: "MLB2" }] });
     const { client } = fakeMercadoLivreClient({
       MLB1: TIME_WINDOW_MLB1,
@@ -159,14 +159,16 @@ describe("fetchListingVisits (D-032)", () => {
     expect(upserted.filter((row) => row.item_id === "MLB2")).toHaveLength(1);
   });
 
-  it("item sem item_id (defesa) é ignorado sem crashar", async () => {
-    const { db } = fakeDb({ links: [{ item_id: null }] });
-    const { client, requests } = fakeMercadoLivreClient({});
+  it("anúncio COM variação entra — era a lacuna da enumeração por vínculo", async () => {
+    // A enumeração antiga ( com )
+    // deixava de fora exatamente estes: 1.539 ativos, medido em 2026-08-28.
+    const { db, upserted } = fakeDb({ links: [{ item_id: "MLB-com-variacao" }] });
+    const { client } = fakeMercadoLivreClient({ "MLB-com-variacao": TIME_WINDOW_MLB1 });
 
     const result = await fetchListingVisits(baseParams(db, client));
 
-    expect(result).toEqual({ itemsProcessed: 0, itemsFailed: 0 });
-    expect(requests).toHaveLength(0);
+    expect(result.itemsProcessed).toBe(1);
+    expect(upserted[0]?.item_id).toBe("MLB-com-variacao");
   });
 
   it("404 ao buscar time_window (anúncio removido): pula só esse item, mesmo raciocínio de listings/Full", async () => {
@@ -213,10 +215,10 @@ describe("fetchListingVisits (D-032)", () => {
     expect(upserted).toHaveLength(2);
   });
 
-  it("falha ao ler sku_listing_links rejeita — sem isto viraria 'done, 0 processados', igual a uma conta sem anúncio", async () => {
-    const { db } = fakeDb({ linksError: true });
+  it("falha ao ler listings rejeita — sem isto viraria 'done, 0 processados', igual a uma conta sem anúncio", async () => {
+    const { db } = fakeDb({ listingsError: true });
     const { client } = fakeMercadoLivreClient({});
 
-    await expect(fetchListingVisits(baseParams(db, client))).rejects.toThrow(/sku_listing_links/);
+    await expect(fetchListingVisits(baseParams(db, client))).rejects.toThrow(/listings/);
   });
 });

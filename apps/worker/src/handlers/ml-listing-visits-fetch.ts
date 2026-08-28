@@ -9,8 +9,20 @@ import { listingVisitsTimeWindowSchema } from "./listing-visits-schema.js";
  * Sincronização de visitas por anúncio (D-032, docs/ROADMAP.md Fase 5B) — a
  * peça pura de fetch+persist, mesmo split de `ml-listings-fetch.ts`.
  *
- * Enumeração via `sku_listing_links` (`ref_kind='ITEM'`), mesmo mecanismo já
- * usado por Full/listings — mesma limitação, só itens SEM variação.
+ * **Enumeração pelo CATÁLOGO (`listings`), status ATIVO** — não mais por
+ * `sku_listing_links` (D-124). A enumeração por vínculo tinha duas falhas ao
+ * mesmo tempo: deixava de fora anúncio com variação e anúncio sem vínculo
+ * (1.539 ativos, medido), e gastava chamada em item que nem está ativo
+ * (1.866, medido). Trocar melhora cobertura E baixa a carga: 3.252 chamadas
+ * contra 3.579.
+ *
+ * `daily_listing_visits` não exige SKU (grão é conta+item), então anúncio sem
+ * vínculo é sincronizável — diferente de Full, cujo `sku_id` é NOT NULL.
+ *
+ * Só ATIVOS de propósito: a API de visitas aceita **1 item por chamada**
+ * (`docs/MERCADO_LIVRE.md` secao 2.15), então cada item custa uma requisição
+ * por dia. Anúncio pausado ou encerrado não recebe tráfego relevante, e as
+ * linhas históricas dele continuam onde estão.
  *
  * `last=3`: pega os últimos 3 dias a cada rodada (a de ontem, que já
  * fechou, mais hoje e anteontem de reforço) — a cadência do job é DIÁRIA
@@ -41,35 +53,30 @@ export async function fetchListingVisits(
 ): Promise<FetchListingVisitsResult> {
   const syncedAt = params.now?.() ?? new Date();
 
-  const links = await params.db
-    .from("sku_listing_links")
+  const listings = await params.db
+    .from("listings")
     .select("item_id")
     .eq("ml_account_id", params.mlAccountId)
-    .eq("ref_kind", "ITEM")
-    .is("variation_id", null);
+    .eq("status", "active");
 
-  if (links.error !== null) {
+  if (listings.error !== null) {
     // Mesmo raciocínio de ml-listings-fetch.ts: o chamador
     // (sync-listing-visits-snapshot.ts) já tem try/catch em volta e registra
     // falha de verdade — sem isto, virava "done, 0 processados".
-    throw new Error(`falha ao ler sku_listing_links: ${links.error.message}`);
+    throw new Error(`falha ao ler listings: ${listings.error.message}`);
   }
 
   let itemsProcessed = 0;
   let itemsFailed = 0;
 
-  for (const link of links.data) {
-    if (link.item_id === null) {
-      // Não deveria acontecer (constraint sku_listing_links_ref_shape) — defesa.
-      continue;
-    }
+  for (const listing of listings.data) {
 
     let timeWindow;
 
     try {
       timeWindow = await params.mercadoLivre.request({
         method: "GET",
-        path: `/items/${link.item_id}/visits/time_window`,
+        path: `/items/${listing.item_id}/visits/time_window`,
         accessToken: params.accessToken,
         searchParams: { last: LAST_DAYS, unit: "day" },
         schema: listingVisitsTimeWindowSchema,
@@ -79,7 +86,7 @@ export async function fetchListingVisits(
         itemsFailed += 1;
         params.logger.warn("listing_visits_fetch_failed", {
           ml_account_id: params.mlAccountId,
-          item_id: link.item_id,
+          item_id: listing.item_id,
           reason: error.message,
         });
 
@@ -96,7 +103,7 @@ export async function fetchListingVisits(
         {
           organization_id: params.organizationId,
           ml_account_id: params.mlAccountId,
-          item_id: link.item_id,
+          item_id: listing.item_id,
           // Data de negócio, sem hora — mesmo raciocínio de `formatBusinessDate`:
           // manipulação de string, nunca `new Date(...)`, para não deslocar o
           // dia por fuso (a API devolve `"2021-08-04T00:00:00Z"`).
@@ -110,7 +117,7 @@ export async function fetchListingVisits(
       if (result.error !== null) {
         params.logger.error("listing_visits_not_recorded", {
           ml_account_id: params.mlAccountId,
-          item_id: link.item_id,
+          item_id: listing.item_id,
           metric_date: entry.date.slice(0, 10),
           reason: result.error.message,
         });

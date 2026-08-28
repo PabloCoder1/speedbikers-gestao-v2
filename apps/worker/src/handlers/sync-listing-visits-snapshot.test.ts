@@ -85,7 +85,7 @@ function fakeDb(options: FakeDbOptions = {}): {
           return chain({ data: credentials ?? null, error: null });
         }
 
-        if (table === "sku_listing_links") {
+        if (table === "listings") {
           return chain({ data: links, error: null });
         }
 
