@@ -42,6 +42,8 @@ A fonte de verdade continua sendo:
 - Chave TERMINAL `support.claim.disputed:{caseId}` — uma notificação por case na vida; com timestamp seriam 126/hora hoje.
 - `entityHref` ganhou `support_case → /atendimento/{id}` — primeiro evento com deep-link de detalhe real. A entrega ponta a ponta do Realtime continua não exercitada (lacuna de D-075).
 - `check` 29/29, 16 testes novos. Catálogo de `docs/API.md` secao 9 atualizado linha a linha com a situação e o motivo de cada adiamento.
+- **Deployado e COMPROVADO em 2026-08-28** (`worker-00038-t5j`): disparo manual, 4 varreduras `done`, **exatamente 1 evento** — de mediação nascida 23 min antes, pós-época — **zero das 126 antigas notificou**, e o fan-out gerou 1 notificação. A época silenciou o estoque e deixou passar o fato novo no primeiro disparo real.
+- **Nota de processo**: o primeiro comando de deploy se perdeu num erro interno da ferramenta; a revisão no ar foi CONFERIDA antes de refazer (estava em D-109 — o deploy não tinha acontecido). Presumir teria repetido o modo de falha de D-109.
 
 ### Etapa anterior — D-109 (a reconciliação de D-108 nunca funcionou)
 
