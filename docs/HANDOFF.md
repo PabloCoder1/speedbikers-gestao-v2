@@ -42,6 +42,7 @@ A fonte de verdade continua sendo:
 - **Ritual de migration respeitado**: aplicada via MCP, arquivo local renomeado para a versão registrada (`20260828111752`), types inseridos cirurgicamente (o gerador MCP omite `graphql_public`; sobrescrever criaria diff falso de centenas de linhas).
 - **Tabuleta corrigida no caminho**: o subtítulo da Caixa de Entrada dizia "só perguntas são sincronizadas" — falso desde D-097/D-108.
 - `check` **29/29**; 4 testes de `applyTemplate` + 9 de integração RLS (CI roda contra Postgres real). **Só `apps/web` + banco — sem Cloud Run.**
+- **Confirmado em produção em 2026-08-28**: `GET /atendimento/templates` devolve `307` para `/login?next=%2Fatendimento%2Ftemplates` — a rota existe no ar (Vercel publicou) e exige sessão, com a query preservada (a prova dupla de D-090).
 
 ### Etapa anterior — D-110 (notificações de atendimento, fatia 1)
 
