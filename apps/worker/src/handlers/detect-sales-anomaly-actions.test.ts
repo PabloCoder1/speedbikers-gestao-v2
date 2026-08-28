@@ -95,6 +95,19 @@ function fakeDeps(options: {
         };
       }
 
+      // D-116 — sinal de SAC: vazio por padrão nos testes de anomalia; a
+      // presença de claims tem teste próprio.
+      if (table === "support_case_links") {
+        const chain = {
+          select: () => chain,
+          eq: () => chain,
+          in: () => chain,
+          neq: () => Promise.resolve({ data: [], error: null }),
+        };
+
+        return chain;
+      }
+
       if (table === "actions") {
         return {
           upsert: (rows: Record<string, unknown>[]) => {

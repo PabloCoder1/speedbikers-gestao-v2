@@ -94,11 +94,21 @@ function describeCandidateCause(eventType: string): string {
  * público de `@sb/domain/diagnostics` — correta sozinha, sem depender de
  * quem chama lembrar do `WHERE` da RPC.
  */
+/**
+ * Sinal de SAC para o diagnóstico (D-116) — reclamações ABERTAS vinculadas
+ * ao SKU no momento da análise. Opcional e aditivo: chamadas existentes
+ * seguem intactas.
+ */
+export interface SupportSignal {
+  readonly openClaims: number;
+}
+
 export function diagnoseSalesAnomaly(
   organizationId: string,
   signal: SalesBaselineSignal,
   asOf: string,
   relatedEvents: readonly CorrelatedEvent[],
+  supportSignal?: SupportSignal,
 ): SalesAnomalyDiagnosis | null {
   if (signal.sampleCount < 4) return null;
   if (signal.baselineMean <= 0) return null;
@@ -121,15 +131,43 @@ export function diagnoseSalesAnomaly(
     },
   ];
 
+  // SAC como evidência (D-116): reclamação aberta é FATO observado, não
+  // conclusão — entra como evidência sempre, e como causa candidata SÓ na
+  // QUEDA (reclamação não explica venda subindo). A regra do requisito
+  // continua: sinal agregado, nunca palavra solta em mensagem.
+  const openClaims = supportSignal?.openClaims ?? 0;
+
+  if (openClaims > 0) {
+    evidencias.push({
+      tipo: "reclamacoes_abertas",
+      descricao: `${String(openClaims)} reclamação(ões) aberta(s) vinculada(s) a este SKU no momento da análise.`,
+    });
+  }
+
   const causasCandidatas: DiagnosisCandidateCause[] = relatedEvents.map((event) => ({
     eventType: event.eventType,
     occurredAt: event.occurredAt,
     descricao: describeCandidateCause(event.eventType),
   }));
 
+  if (direcao === "queda" && openClaims > 0) {
+    causasCandidatas.push({
+      eventType: "support.claims.open",
+      // O instante é o da ANÁLISE (asOf), não de um evento pontual — é um
+      // estado observado, e a descrição deixa isso explícito.
+      occurredAt: new Date(`${asOf}T00:00:00.000Z`),
+      descricao: `${String(openClaims)} reclamação(ões) em aberto no SKU — problema de produto/atendimento pode estar derrubando a conversão.`,
+    });
+  }
+
   const proximosPassos: string[] =
     causasCandidatas.length > 0
-      ? ["Revisar o evento correlato listado acima antes de agir."]
+      ? [
+          "Revisar o evento correlato listado acima antes de agir.",
+          ...(direcao === "queda" && openClaims > 0
+            ? ["Abrir a Caixa de Entrada filtrada por este SKU e ler as reclamações."]
+            : []),
+        ]
       : ["Nenhum evento correlato encontrado — investigar preço, concorrência ou sazonalidade fora do baseline."];
 
   return {

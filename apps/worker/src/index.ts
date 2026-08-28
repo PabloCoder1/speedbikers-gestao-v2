@@ -10,6 +10,7 @@ import { createAnalyticsRecomputeHandler } from "./handlers/analytics-recompute.
 import { createBackfillOrdersHandler } from "./handlers/backfill-orders.js";
 import { createCheckAiBudgetHandler } from "./handlers/check-ai-budget.js";
 import { createDetectSalesAnomalyActionsHandler } from "./handlers/detect-sales-anomaly-actions.js";
+import { createDetectSupportPatternActionsHandler } from "./handlers/detect-support-pattern-actions.js";
 import { createErpImportApplyHandler } from "./handlers/erp-import-apply.js";
 import { createErpImportParseHandler } from "./handlers/erp-import-parse.js";
 import { createMeasureDecisionOutcomesHandler } from "./handlers/measure-decision-outcomes.js";
@@ -131,6 +132,7 @@ const app = createWorkerApp({
     "maintenance.verify-ledger-integrity": createVerifyLedgerIntegrityHandler({ db }),
     "maintenance.check-ai-budget": createCheckAiBudgetHandler({ db, budgetUsd: env.AI_MONTHLY_BUDGET_USD }),
     "diagnostics.detect-sales-anomalies": createDetectSalesAnomalyActionsHandler({ db }),
+    "diagnostics.detect-support-patterns": createDetectSupportPatternActionsHandler({ db }),
     "diagnostics.measure-decision-outcomes": createMeasureDecisionOutcomesHandler({ db }),
     ...nfeHandlers,
   }),

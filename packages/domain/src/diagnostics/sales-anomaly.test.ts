@@ -191,3 +191,38 @@ describe("estimateImpactBrl", () => {
     expect(estimateImpactBrl(0, 30)).toBe(0);
   });
 });
+
+describe("diagnoseSalesAnomaly — sinal de SAC (D-116)", () => {
+  const QUEDA = { currentUnitsSold: 0, baselineMean: 3, baselineStddev: 0.5 };
+  const ALTA = { currentUnitsSold: 10, baselineMean: 2, baselineStddev: 1 };
+
+  it("reclamações abertas viram EVIDÊNCIA sempre que existem", () => {
+    const result = diagnoseSalesAnomaly(ORG_ID, signal(QUEDA), AS_OF, [], { openClaims: 4 });
+
+    expect(result?.evidencias.some((item) => item.tipo === "reclamacoes_abertas")).toBe(true);
+  });
+
+  it("na QUEDA, reclamação aberta vira causa candidata e próximo passo", () => {
+    const result = diagnoseSalesAnomaly(ORG_ID, signal(QUEDA), AS_OF, [], { openClaims: 4 });
+
+    const causa = result?.causasCandidatas.find((item) => item.eventType === "support.claims.open");
+
+    expect(causa).toBeDefined();
+    expect(result?.proximosPassos.some((step) => step.includes("Caixa de Entrada"))).toBe(true);
+  });
+
+  it("na ALTA, reclamação NÃO vira causa — não explica venda subindo", () => {
+    const result = diagnoseSalesAnomaly(ORG_ID, signal(ALTA), AS_OF, [], { openClaims: 4 });
+
+    expect(result?.causasCandidatas.some((item) => item.eventType === "support.claims.open")).toBe(false);
+    // ...mas continua registrada como evidência (fato observado é fato).
+    expect(result?.evidencias.some((item) => item.tipo === "reclamacoes_abertas")).toBe(true);
+  });
+
+  it("sem o parâmetro, comportamento IDÊNTICO ao anterior — aditivo de verdade", () => {
+    const antes = diagnoseSalesAnomaly(ORG_ID, signal(QUEDA), AS_OF, []);
+    const depois = diagnoseSalesAnomaly(ORG_ID, signal(QUEDA), AS_OF, [], { openClaims: 0 });
+
+    expect(depois).toEqual(antes);
+  });
+});

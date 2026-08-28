@@ -48,19 +48,28 @@ export async function triggerSalesAnomalyActionsDetection(
   let enqueued = 0;
   let deduplicated = 0;
 
-  for (const organization of organizations.data) {
-    const result = await deps.enqueuer.enqueue({
-      jobType: "diagnostics.detect-sales-anomalies",
-      organizationId: organization.id,
-      dedupeKey: `detect-sales-anomalies:${organization.id}:${businessDate}`,
-      queue: "maintenance",
-      payload: { organizationId: organization.id },
-    });
+  // D-116: o MESMO gatilho diário enfileira as duas detecções por
+  // organização — handlers separados (falha e retry independentes), zero
+  // job novo no Scheduler. O critério: ambas são "diagnóstico diário por
+  // organização", e um 14º job do Scheduler só duplicaria cron e rota para
+  // o mesmo momento do dia.
+  const jobs = ["diagnostics.detect-sales-anomalies", "diagnostics.detect-support-patterns"] as const;
 
-    if (result.deduplicated) {
-      deduplicated += 1;
-    } else {
-      enqueued += 1;
+  for (const organization of organizations.data) {
+    for (const jobType of jobs) {
+      const result = await deps.enqueuer.enqueue({
+        jobType,
+        organizationId: organization.id,
+        dedupeKey: `${jobType.replace("diagnostics.", "")}:${organization.id}:${businessDate}`,
+        queue: "maintenance",
+        payload: { organizationId: organization.id },
+      });
+
+      if (result.deduplicated) {
+        deduplicated += 1;
+      } else {
+        enqueued += 1;
+      }
     }
   }
 

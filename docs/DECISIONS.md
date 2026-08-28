@@ -1805,6 +1805,26 @@ Não é específico de `questions`: **nunca chegou `orders_v2`, `post_purchase`,
 
 **Impacto:** `docs/METRICS.md` §5B (normativo), migration + types, `/atendimento/metricas` (nova), Caixa de Entrada (filtro + link). **Fecha "Métricas de SAC" na primeira versão operacional e o filtro de SLA pendente de D-107.**
 
+## D-116 — SAC vira sinal: padrões na Central de Ações e evidência no Diagnóstico. Fase 7B completa.
+
+**Contexto:** os dois últimos itens da Fase 7B, pedidos juntos pelo usuário — "Detecção de padrões → Central de Ações" e "Integração com Diagnóstico como fonte de evidência adicional". São o mesmo tema com dois consumidores, e a regra do requisito governa ambos: **agregado, nunca por atendimento individual; nunca por palavra solta em mensagem**.
+
+**Decisão 1 — a regra do padrão é um SNAPSHOT, não uma série, e isso é honestidade estatística.** `detectSupportPatterns` (puro, `@sb/domain/diagnostics`): **≥ 3 reclamações ABERTAS simultaneamente no mesmo SKU** vira ação. "Aumento anormal de mediações" exigiria baseline histórico — e a série de claims só existe desde 2026-08-28 (D-109). Um limiar sobre estado presente é verdadeiro com qualquer profundidade de histórico; um z-score sobre 3 dias seria estatística de mentira. A evolução para baseline entra quando a série tiver corpo.
+
+**Decisão 2 — o impacto é dinheiro OBSERVADO, não estimado**: soma de `orders.total_amount` dos pedidos vinculados aos claims do SKU (via `support_case_links`) — valor em risco de reembolso real. Sem pedido vinculado, impacto é `null`, nunca zero. Mediação envolvida sobe a severidade para `alta` (dinheiro e reputação já em disputa).
+
+**Decisão 3 — `dedup_key` por SKU, SEM data**: a condição é persistente, e cada dia que durar atualiza a MESMA ação (o upsert de D-064 preserva status/responsável — humano que resolveu não é reaberto). Chave com data criaria uma ação nova por dia para o mesmo problema: a avalanche da V2 em câmera lenta. O mesmo case vinculado duas vezes ao SKU conta UMA vez (Set por `support_case_id`) — re-ingestão não fabrica padrão.
+
+**Decisão 4 — ZERO job novo no Scheduler**: o gatilho diário de D-064 (`v3-detect-sales-anomalies`) passa a enfileirar as DUAS detecções por organização, com handlers e dedupe keys separados (falha e retry independentes). Ambas são "diagnóstico diário por organização" — um 14º job só duplicaria cron e rota para o mesmo momento do dia. A contagem esperada do Scheduler CONTINUA 13.
+
+**Decisão 5 — no Diagnóstico, reclamação aberta é EVIDÊNCIA sempre e causa candidata SÓ na queda.** `diagnoseSalesAnomaly` ganhou o 5º parâmetro opcional `supportSignal` (aditivo — teste prova comportamento idêntico sem ele): reclamações abertas entram nas evidências em qualquer direção (fato observado é fato), e viram causa candidata (`support.claims.open`) apenas quando `direcao === 'queda'` — reclamação não explica venda subindo. Na queda, os próximos passos ganham "abrir a Caixa de Entrada filtrada por este SKU". O `occurredAt` da causa é o instante da ANÁLISE, explicitado na descrição — é um estado observado, não um evento pontual.
+
+**Decisão 6 — o sinal de SAC degrada, nunca derruba**: nos dois chamadores (job diário e `/diagnostico`), falha ao ler os claims vira "sem sinal de SAC" com log — evidência ADICIONAL por definição não pode impedir o diagnóstico que já funcionava.
+
+**Verificação:** `check` **29/29**; 5 testes do módulo puro de padrões, 4 da extensão do diagnóstico (incluindo a prova de aditividade), 5 do handler (impacto real somado; mediação sobe severidade; dedupe de case duplicado; falha retryable — nunca "done, 0 padrões"), trigger atualizado com testes ajustados.
+
+**Impacto:** `@sb/domain/diagnostics/{support-patterns.ts,sales-anomaly.ts}`, `apps/worker` (handler novo + sinal no existente), `apps/api` (trigger enfileira ambos), `/diagnostico` (sinal na tela). Sem migration. **FASE 7B COMPLETA** — todos os itens do checklist entregues ou registrados com motivo.
+
 ## Como adicionar nova decisão
 
 Registrar:

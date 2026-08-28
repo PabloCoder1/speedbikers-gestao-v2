@@ -142,6 +142,33 @@ export function createDetectSalesAnomalyActionsHandler(deps: DetectSalesAnomalyA
       eventsBySku.set(event.entity_id, list);
     }
 
+    // D-116 — SAC como evidência: reclamações ABERTAS vinculadas aos SKUs
+    // candidatos. Só para candidatos (mesma economia de N+1 dos eventos), e
+    // falha aqui degrada para "sem sinal de SAC" em vez de derrubar o
+    // diagnóstico: a evidência é adicional por definição.
+    const openClaimsBySku = new Map<string, Set<string>>();
+
+    const claimLinks = await deps.db
+      .from("support_case_links")
+      .select("sku_id, support_case_id, support_cases!inner(internal_status, channel)")
+      .eq("organization_id", organizationId)
+      .in("sku_id", candidateSkuIds)
+      .eq("support_cases.channel", "CLAIM")
+      .neq("support_cases.internal_status", "RESOLVIDO");
+
+    if (claimLinks.error === null) {
+      for (const link of claimLinks.data as unknown as { sku_id: string | null; support_case_id: string }[]) {
+        if (link.sku_id === null) continue;
+
+        const set = openClaimsBySku.get(link.sku_id) ?? new Set<string>();
+
+        set.add(link.support_case_id);
+        openClaimsBySku.set(link.sku_id, set);
+      }
+    } else {
+      context.logger.warn("sales_anomaly_support_signal_failed", { reason: claimLinks.error.message });
+    }
+
     const pricesResult = await deps.db.rpc("get_sku_average_prices", {
       p_organization_id: organizationId,
       p_sku_ids: candidateSkuIds,
@@ -160,7 +187,9 @@ export function createDetectSalesAnomalyActionsHandler(deps: DetectSalesAnomalyA
     const diagnoses: SalesAnomalyDiagnosis[] = [];
 
     for (const row of signals) {
-      const diagnosis = diagnoseSalesAnomaly(organizationId, toSignal(row), asOf, eventsBySku.get(row.sku_id) ?? []);
+      const diagnosis = diagnoseSalesAnomaly(organizationId, toSignal(row), asOf, eventsBySku.get(row.sku_id) ?? [], {
+        openClaims: openClaimsBySku.get(row.sku_id)?.size ?? 0,
+      });
 
       if (diagnosis !== null) {
         diagnoses.push(diagnosis);

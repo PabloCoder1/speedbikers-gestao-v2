@@ -157,6 +157,29 @@ export default async function DiagnosticoPage(): Promise<ReactNode> {
   // quando a causa real podia existir e só não foi lida (D-067).
   const error = baselineError ?? eventsError;
 
+  // D-116 — SAC como evidência: reclamações ABERTAS por SKU candidato, sob
+  // a MESMA RLS da tela. Falha degrada para "sem sinal de SAC" (evidência
+  // adicional nunca derruba o diagnóstico).
+  const openClaimsBySku = new Map<string, Set<string>>();
+
+  if (candidateSkuIds.length > 0) {
+    const claimLinks = await supabase
+      .from("support_case_links")
+      .select("sku_id, support_case_id, support_cases!inner(internal_status, channel)")
+      .in("sku_id", candidateSkuIds)
+      .eq("support_cases.channel", "CLAIM")
+      .neq("support_cases.internal_status", "RESOLVIDO");
+
+    for (const link of (claimLinks.data ?? []) as unknown as { sku_id: string | null; support_case_id: string }[]) {
+      if (link.sku_id === null) continue;
+
+      const set = openClaimsBySku.get(link.sku_id) ?? new Set<string>();
+
+      set.add(link.support_case_id);
+      openClaimsBySku.set(link.sku_id, set);
+    }
+  }
+
   const diagnoses: SalesAnomalyDiagnosis[] = [];
 
   for (const row of signals) {
@@ -174,6 +197,7 @@ export default async function DiagnosticoPage(): Promise<ReactNode> {
       },
       asOf,
       eventsBySku.get(row.sku_id) ?? [],
+      { openClaims: openClaimsBySku.get(row.sku_id)?.size ?? 0 },
     );
 
     if (diagnosis !== null) {
