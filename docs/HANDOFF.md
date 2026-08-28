@@ -40,6 +40,7 @@ A fonte de verdade continua sendo:
 - **Estruturação de sugestões**: os nove campos persistidos sob a RLS do CHAMADOR (a policy de D-079 decide; zero linha = erro claro), `original_text` estruturalmente fora do UPDATE, JSON com parse tolerante a markdown e validação Zod — fora do formato é erro amigável, nunca meia-gravação. `maxTokens` 1.024 só nesta ferramenta (512 truncaria o JSON).
 - **Planner/streaming/UI de chat ficam FORA com motivo de produto**: as ferramentas atuais são contextuais (botão onde o dado mora); um chat genérico é porta de entrada nova, não conclusão das existentes. É o único item de IA aberto da Fase 7.
 - `check` **29/29**, 9 testes novos. **Deploy = api + web** (worker sem mudança funcional — as adições em `@sb/contracts` são inertes para ele).
+- **Deployado e verificado em 2026-08-28**: `api-00024-xvv` (zero warning no boot; `POST /v1/copilot/query` sem token devolve 401 — rota viva com auth) e web publicado pela Vercel. **O caminho feliz com LLM real ainda não foi exercitado** — a primeira sugestão/estruturação de verdade deve ser humana, pelo navegador, e o custo aparecerá em `ai_runs`.
 
 ### Etapa anterior — D-111 (templates de resposta)
 
