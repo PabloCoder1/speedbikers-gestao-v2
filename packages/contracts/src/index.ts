@@ -13,6 +13,11 @@ export {
   salesSummaryInputSchema,
   salesSummaryOutputSchema,
   salesSummarySchema,
+  structureFeatureSuggestionInputSchema,
+  structureFeatureSuggestionOutputSchema,
+  structuredSuggestionFieldsSchema,
+  suggestSupportReplyInputSchema,
+  suggestSupportReplyOutputSchema,
 } from "./copilot-tools.js";
 export type {
   CopilotQueryRequest,
@@ -27,6 +32,11 @@ export type {
   SalesSummary,
   SalesSummaryInput,
   SalesSummaryOutput,
+  StructureFeatureSuggestionInput,
+  StructureFeatureSuggestionOutput,
+  StructuredSuggestionFields,
+  SuggestSupportReplyInput,
+  SuggestSupportReplyOutput,
 } from "./copilot-tools.js";
 
 export { jobEnvelopeSchema, toTaskName } from "./job.js";

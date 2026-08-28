@@ -30,6 +30,15 @@ interface SuggestionQueryRow {
   original_text: string;
   status: string;
   created_at: string;
+  title: string | null;
+  problem: string | null;
+  objective: string | null;
+  impacted_users: string | null;
+  suggested_flow: string | null;
+  expected_benefit: string | null;
+  acceptance_criteria: string | null;
+  dependencies_risks: string | null;
+  complexity: string | null;
   profiles: { full_name: string | null } | null;
 }
 
@@ -51,12 +60,13 @@ export default async function SugestoesPage(): Promise<ReactNode> {
   const role = membership.data?.role ?? null;
   const canManage = role === "ADMIN" || role === "GESTOR";
 
-  // `as never`: `feature_suggestions` ainda não existe em `Database`
-  // (types.ts não regenerado — mesma situação temporária de
-  // `app/sugestoes/actions.ts`).
+  // O `as never` que morava aqui ficou obsoleto: `feature_suggestions`
+  // entrou em `Database` quando os types foram regenerados (D-100).
   const { data, error } = await supabase
-    .from("feature_suggestions" as never)
-    .select("id, original_text, status, created_at, profiles(full_name)")
+    .from("feature_suggestions")
+    .select(
+      "id, original_text, status, created_at, title, problem, objective, impacted_users, suggested_flow, expected_benefit, acceptance_criteria, dependencies_risks, complexity, profiles(full_name)",
+    )
     .order("created_at", { ascending: false });
 
   const rows: SuggestionRowData[] = ((data ?? []) as unknown as SuggestionQueryRow[]).map((row) => ({
@@ -65,6 +75,17 @@ export default async function SugestoesPage(): Promise<ReactNode> {
     status: row.status,
     createdAt: row.created_at,
     authorName: row.profiles?.full_name ?? null,
+    structured: {
+      title: row.title,
+      problem: row.problem,
+      objective: row.objective,
+      impactedUsers: row.impacted_users,
+      suggestedFlow: row.suggested_flow,
+      expectedBenefit: row.expected_benefit,
+      acceptanceCriteria: row.acceptance_criteria,
+      dependenciesRisks: row.dependencies_risks,
+      complexity: row.complexity,
+    },
   }));
 
   return (

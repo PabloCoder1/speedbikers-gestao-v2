@@ -109,12 +109,59 @@ export const narrateSkuDiagnosisOutputSchema = z.object({
 });
 export type NarrateSkuDiagnosisOutput = z.infer<typeof narrateSkuDiagnosisOutputSchema>;
 
+/**
+ * Sugestão de resposta de atendimento (`docs/COPILOT.md` secao 11, D-071/D-112):
+ * gera o TEXTO de uma resposta a partir do contexto determinístico do case
+ * (transcript, vínculos, produto). Mesma família de "Estruturação" — geração
+ * de texto revisável, NUNCA ferramenta de escrita: quem envia é o comando
+ * privilegiado de D-096, depois de confirmação humana.
+ */
+export const suggestSupportReplyInputSchema = z.object({
+  supportCaseId: z.uuid(),
+});
+export type SuggestSupportReplyInput = z.infer<typeof suggestSupportReplyInputSchema>;
+
+export const suggestSupportReplyOutputSchema = z.object({
+  suggestedText: z.string(),
+});
+export type SuggestSupportReplyOutput = z.infer<typeof suggestSupportReplyOutputSchema>;
+
+/**
+ * Estruturação de sugestão de feature (`docs/COPILOT.md` secao 4, categoria
+ * "Estruturação"; requisito da Fase 7, D-079/D-112): preenche os nove campos
+ * estruturados de `feature_suggestions` a partir do texto original — que é
+ * PRESERVADO intacto, por requisito. Campo não inferível fica nulo, nunca
+ * inventado.
+ */
+export const structureFeatureSuggestionInputSchema = z.object({
+  suggestionId: z.uuid(),
+});
+export type StructureFeatureSuggestionInput = z.infer<typeof structureFeatureSuggestionInputSchema>;
+
+export const structuredSuggestionFieldsSchema = z.object({
+  title: z.string().nullable(),
+  problem: z.string().nullable(),
+  objective: z.string().nullable(),
+  impactedUsers: z.string().nullable(),
+  suggestedFlow: z.string().nullable(),
+  expectedBenefit: z.string().nullable(),
+  acceptanceCriteria: z.string().nullable(),
+  dependenciesRisks: z.string().nullable(),
+  complexity: z.string().nullable(),
+});
+export type StructuredSuggestionFields = z.infer<typeof structuredSuggestionFieldsSchema>;
+
+export const structureFeatureSuggestionOutputSchema = structuredSuggestionFieldsSchema;
+export type StructureFeatureSuggestionOutput = StructuredSuggestionFields;
+
 /** Nome estável de cada ferramenta — é o que `ai_runs.tool_names` grava e o corpo de `POST /v1/copilot/query` referencia. */
 export const COPILOT_TOOL_NAMES = [
   "sales_summary",
   "sales_period_comparison",
   "sales_account_comparison",
   "narrate_sku_diagnosis",
+  "suggest_support_reply",
+  "structure_feature_suggestion",
 ] as const;
 export type CopilotToolName = (typeof COPILOT_TOOL_NAMES)[number];
 

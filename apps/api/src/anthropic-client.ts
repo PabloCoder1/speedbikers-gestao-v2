@@ -25,7 +25,12 @@ export interface NarrateResult {
 }
 
 export interface AnthropicClient {
-  narrate: (input: { system: string; prompt: string }) => Promise<NarrateResult>;
+  /**
+   * `maxTokens` opcional (default 512, o suficiente para narração): a
+   * estruturação de sugestões (D-112) devolve 9 campos em JSON e 512
+   * cortaria o objeto no meio — JSON truncado é falha certa de parse.
+   */
+  narrate: (input: { system: string; prompt: string; maxTokens?: number }) => Promise<NarrateResult>;
 }
 
 export class AnthropicClientError extends Error {
@@ -39,10 +44,10 @@ export function createAnthropicClient(apiKey: string): AnthropicClient {
   const client = new Anthropic({ apiKey });
 
   return {
-    narrate: async ({ system, prompt }) => {
+    narrate: async ({ system, prompt, maxTokens }) => {
       const response = await client.messages.create({
         model: MODEL,
-        max_tokens: MAX_OUTPUT_TOKENS,
+        max_tokens: maxTokens ?? MAX_OUTPUT_TOKENS,
         system,
         messages: [{ role: "user", content: prompt }],
       });

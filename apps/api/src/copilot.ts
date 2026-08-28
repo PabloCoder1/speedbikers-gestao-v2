@@ -19,12 +19,15 @@ import {
   salesAccountComparisonInputSchema,
   salesPeriodComparisonInputSchema,
   salesSummaryInputSchema,
+  structureFeatureSuggestionInputSchema,
+  suggestSupportReplyInputSchema,
 } from "@sb/contracts";
 import type { Logger } from "@sb/observability";
 import type { ZodType } from "zod";
 
 import type { AnthropicClient } from "./anthropic-client.js";
 import type { Caller } from "./auth.js";
+import { runStructureFeatureSuggestion, runSuggestSupportReply } from "./copilot-generation.js";
 
 /**
  * `POST /v1/copilot/query` (`docs/API.md` secao 2, `docs/COPILOT.md`).
@@ -255,6 +258,22 @@ const TOOLS: Record<CopilotToolName, ToolDefinition> = {
     inputSchema: narrateSkuDiagnosisInputSchema,
     run: async (userClient, input, deps) => {
       const outcome = await runNarrateSkuDiagnosis(userClient, input, deps.anthropic);
+
+      return { data: outcome.data, llmUsed: true, costUsd: outcome.costUsd };
+    },
+  },
+  suggest_support_reply: {
+    inputSchema: suggestSupportReplyInputSchema,
+    run: async (userClient, input, deps) => {
+      const outcome = await runSuggestSupportReply(userClient, input, deps.anthropic);
+
+      return { data: outcome.data, llmUsed: true, costUsd: outcome.costUsd };
+    },
+  },
+  structure_feature_suggestion: {
+    inputSchema: structureFeatureSuggestionInputSchema,
+    run: async (userClient, input, deps) => {
+      const outcome = await runStructureFeatureSuggestion(userClient, input, deps.anthropic);
 
       return { data: outcome.data, llmUsed: true, costUsd: outcome.costUsd };
     },

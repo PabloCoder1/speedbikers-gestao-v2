@@ -62,6 +62,11 @@ export function ReplyForm({
   // Um id por texto: enquanto a pessoa não mudar o que escreveu, reenviar é
   // sempre a MESMA tentativa.
   const [requestId, setRequestId] = useState(() => crypto.randomUUID());
+  // D-112: o texto que a IA sugeriu, guardado para a AUDITORIA de D-096 —
+  // `support_reply_attempts.suggested_text` registra o sugerido E o texto
+  // final que o humano confirmou, lado a lado.
+  const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
+  const [suggesting, setSuggesting] = useState(false);
 
   const restante = LIMITE - text.length;
   const vazio = text.trim().length === 0;
@@ -84,7 +89,14 @@ export function ReplyForm({
       const response = await fetch(`${API_URL}/v1/support/cases/${caseId}/reply`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-        body: JSON.stringify({ clientRequestId: requestId, text: text.trim() }),
+        body: JSON.stringify({
+          clientRequestId: requestId,
+          text: text.trim(),
+          // Auditoria D-096/D-112: quando houve sugestão de IA, o texto
+          // ORIGINAL sugerido viaja junto — a comparação com o texto final
+          // é o que permite medir quanto o humano precisou corrigir.
+          ...(aiSuggestion === null ? {} : { suggestedText: aiSuggestion }),
+        }),
       });
 
       const body = (await response.json()) as {
@@ -136,6 +148,95 @@ export function ReplyForm({
           revalidado no momento do disparo e provavelmente será recusado.
         </p>
       )}
+
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--sb-space-2)", flexWrap: "wrap" }}>
+        <button
+          type="button"
+          disabled={suggesting || enviando || estado.kind === "queued"}
+          onClick={() => {
+            // D-112 (docs/COPILOT.md secao 11): a ferramenta GERA texto; o
+            // envio continua sendo o comando privilegiado de D-096, depois
+            // de revisão humana — o Copiloto nunca envia.
+            setSuggesting(true);
+
+            void (async () => {
+              const supabase = createClient();
+              const { data } = await supabase.auth.getSession();
+              const token = data.session?.access_token;
+
+              if (token === undefined) {
+                setEstado({ kind: "error", message: "Sessão expirada — atualize a página e entre de novo." });
+                setSuggesting(false);
+
+                return;
+              }
+
+              try {
+                const response = await fetch(`${API_URL}/v1/copilot/query`, {
+                  method: "POST",
+                  headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+                  body: JSON.stringify({ tool: "suggest_support_reply", input: { supportCaseId: caseId } }),
+                });
+
+                const body = (await response.json()) as {
+                  data?: { suggestedText?: string };
+                  error?: { message?: string };
+                };
+
+                const suggested = body.data?.suggestedText;
+
+                if (!response.ok || suggested === undefined) {
+                  setEstado({
+                    kind: "error",
+                    message: body.error?.message ?? "Não foi possível gerar a sugestão.",
+                  });
+
+                  return;
+                }
+
+                const applied = applyTemplate(text, suggested, LIMITE);
+
+                if (!applied.applied) {
+                  setEstado({
+                    kind: "error",
+                    message: "A sugestão não coube no limite junto do que já está escrito.",
+                  });
+
+                  return;
+                }
+
+                setText(applied.text);
+                setAiSuggestion(suggested);
+                setRequestId(crypto.randomUUID());
+
+                if (estado.kind === "error") {
+                  setEstado({ kind: "idle" });
+                }
+              } catch {
+                setEstado({ kind: "error", message: "Falha de conexão ao gerar a sugestão." });
+              } finally {
+                setSuggesting(false);
+              }
+            })();
+          }}
+          style={{
+            border: "1px solid var(--sb-border)",
+            borderRadius: "var(--sb-radius)",
+            background: "var(--sb-surface)",
+            padding: "0.375rem 0.75rem",
+            fontSize: "0.8125rem",
+            cursor: suggesting ? "default" : "pointer",
+          }}
+        >
+          {suggesting ? "Gerando…" : "Sugerir com IA"}
+        </button>
+
+        {aiSuggestion !== null && (
+          <span style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
+            Sugestão de IA inserida — revise antes de enviar.
+          </span>
+        )}
+      </div>
 
       {templates.length > 0 && (
         <div style={{ display: "flex", alignItems: "center", gap: "var(--sb-space-2)" }}>
