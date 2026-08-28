@@ -10,32 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.17"
-  }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
@@ -1802,13 +1777,6 @@ export type Database = {
             referencedRelation: "skus"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "order_items_sku_listing_link_id_fkey"
-            columns: ["sku_listing_link_id"]
-            isOneToOne: false
-            referencedRelation: "sku_listing_links"
-            referencedColumns: ["id"]
-          },
         ]
       }
       orders: {
@@ -2387,7 +2355,43 @@ export type Database = {
           user_product_id?: string | null
           variation_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "sku_listing_link_events_actor_user_id_fkey"
+            columns: ["actor_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sku_listing_link_events_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sku_listing_link_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sku_listing_link_events_previous_sku_id_fkey"
+            columns: ["previous_sku_id"]
+            isOneToOne: false
+            referencedRelation: "skus"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sku_listing_link_events_sku_id_fkey"
+            columns: ["sku_id"]
+            isOneToOne: false
+            referencedRelation: "skus"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       sku_listing_links: {
         Row: {
@@ -2494,7 +2498,11 @@ export type Database = {
           sku: string
           sku_key: string
           stock_is_virtual: boolean
+          stock_is_virtual_set_at: string | null
+          stock_is_virtual_set_by: string | null
           supplier_brand: string | null
+          supplier_brand_set_at: string | null
+          supplier_brand_set_by: string | null
           supplier_brand_source: string | null
           title: string | null
           unit: string | null
@@ -2526,7 +2534,11 @@ export type Database = {
           sku: string
           sku_key?: string
           stock_is_virtual?: boolean
+          stock_is_virtual_set_at?: string | null
+          stock_is_virtual_set_by?: string | null
           supplier_brand?: string | null
+          supplier_brand_set_at?: string | null
+          supplier_brand_set_by?: string | null
           supplier_brand_source?: string | null
           title?: string | null
           unit?: string | null
@@ -2558,7 +2570,11 @@ export type Database = {
           sku?: string
           sku_key?: string
           stock_is_virtual?: boolean
+          stock_is_virtual_set_at?: string | null
+          stock_is_virtual_set_by?: string | null
           supplier_brand?: string | null
+          supplier_brand_set_at?: string | null
+          supplier_brand_set_by?: string | null
           supplier_brand_source?: string | null
           title?: string | null
           unit?: string | null
@@ -2572,6 +2588,20 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "skus_stock_is_virtual_set_by_fkey"
+            columns: ["stock_is_virtual_set_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "skus_supplier_brand_set_by_fkey"
+            columns: ["supplier_brand_set_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -3569,6 +3599,41 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      create_sku_listing_link: {
+        Args: {
+          p_item_id: string
+          p_ml_account_id: string
+          p_sku_id: string
+          // CORREÇÃO MANUAL, reaplicada em D-133 sobre o arquivo gerado: o
+          // gerador NUNCA marca argumento de RPC como nulo, e este aceita
+          // NULL de verdade — é o que distingue vincular o ANÚNCIO INTEIRO
+          // (variação nula) de vincular UMA variação. Sem a correção,
+          // `apps/web/app/vinculacoes/actions.ts` não compila.
+          p_variation_id: string | null
+        }
+        Returns: {
+          channel_sku: string | null
+          confirmed_at: string | null
+          confirmed_by: string | null
+          created_at: string
+          id: string
+          item_id: string | null
+          ml_account_id: string
+          organization_id: string
+          ref_kind: string
+          sku_id: string
+          source: string
+          updated_at: string
+          user_product_id: string | null
+          variation_id: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "sku_listing_links"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       create_supplier: {
         Args: {
           p_contact_name?: string
@@ -3742,6 +3807,48 @@ export type Database = {
           sku_id: string
         }[]
       }
+      get_sku_curation: {
+        Args: {
+          p_brand?: string
+          p_classified?: string
+          p_limit?: number
+          p_missing_brand?: boolean
+          p_offset?: number
+          p_organization_id: string
+          p_search?: string
+          p_signal?: string
+        }
+        Returns: {
+          brand: string
+          decision_diverges_from_signature: boolean
+          has_sentinel_signature: boolean
+          sku: string
+          sku_id: string
+          snapshot_available: number
+          snapshot_captured_at: string
+          stock_is_virtual: boolean
+          stock_is_virtual_set_at: string
+          supplier_brand: string
+          supplier_brand_set_at: string
+          supplier_brand_source: string
+          title: string
+          total_count: number
+          units_sold_90d: number
+        }[]
+      }
+      get_sku_curation_summary: {
+        Args: { p_organization_id: string }
+        Returns: {
+          diverging: number
+          is_total: boolean
+          snapshot_captured_at: string
+          supplier_brand: string
+          total: number
+          unclassified: number
+          virtual_marked: number
+          with_signature: number
+        }[]
+      }
       get_sku_dashboard: {
         Args: {
           p_date_from: string
@@ -3775,6 +3882,18 @@ export type Database = {
           weekday: number
         }[]
       }
+      get_stock_balances: {
+        Args: { p_organization_id: string }
+        Returns: {
+          local_quantity: number
+          reservado: number
+          sku: string
+          sku_id: string
+          title: string
+          total_count: number
+          transito: number
+        }[]
+      }
       get_stock_coverage: {
         Args: {
           p_date_from: string
@@ -3794,18 +3913,6 @@ export type Database = {
           units_sold: number
         }[]
       }
-      get_stock_balances: {
-        Args: { p_organization_id: string }
-        Returns: {
-          local_quantity: number
-          reservado: number
-          sku: string
-          sku_id: string
-          title: string
-          total_count: number
-          transito: number
-        }[]
-      }
       get_stock_coverage_summary: {
         Args: {
           p_date_from: string
@@ -3819,22 +3926,23 @@ export type Database = {
           virtuais: number
         }[]
       }
-      create_sku_listing_link: {
-        Args: {
-          p_item_id: string
-          p_ml_account_id: string
-          p_sku_id: string
-          p_variation_id: string | null
-        }
-        Returns: Database["public"]["Tables"]["sku_listing_links"]["Row"]
-      }
-      remove_sku_listing_link: {
-        Args: { p_link_id: string; p_reason: string }
-        Returns: undefined
-      }
-      retarget_sku_listing_link: {
-        Args: { p_link_id: string; p_reason?: string; p_sku_id: string }
-        Returns: Database["public"]["Tables"]["sku_listing_links"]["Row"]
+      get_support_metrics: {
+        Args: { p_days?: number }
+        Returns: {
+          abertos_claim: number
+          abertos_message: number
+          abertos_question: number
+          abertos_total: number
+          aguardando_loja: number
+          mediacoes_abertas: number
+          mediana_primeira_resposta_horas: number
+          novos_claim: number
+          novos_message: number
+          novos_question: number
+          prazos_proximas_24h: number
+          prazos_vencidos: number
+          resolvidos_periodo: number
+        }[]
       }
       get_unlinked_listings: {
         Args: {
@@ -3855,24 +3963,6 @@ export type Database = {
           title: string
           total_count: number
           units_sold: number
-        }[]
-      }
-      get_support_metrics: {
-        Args: { p_days?: number }
-        Returns: {
-          abertos_claim: number
-          abertos_message: number
-          abertos_question: number
-          abertos_total: number
-          aguardando_loja: number
-          mediacoes_abertas: number
-          mediana_primeira_resposta_horas: number
-          novos_claim: number
-          novos_message: number
-          novos_question: number
-          prazos_proximas_24h: number
-          prazos_vencidos: number
-          resolvidos_periodo: number
         }[]
       }
       link_document_item: {
@@ -3981,8 +4071,37 @@ export type Database = {
         }
         Returns: number
       }
+      remove_sku_listing_link: {
+        Args: { p_link_id: string; p_reason: string }
+        Returns: undefined
+      }
       resolve_link_candidate: {
         Args: { p_candidate_id: string; p_sku_id: string }
+        Returns: {
+          channel_sku: string | null
+          confirmed_at: string | null
+          confirmed_by: string | null
+          created_at: string
+          id: string
+          item_id: string | null
+          ml_account_id: string
+          organization_id: string
+          ref_kind: string
+          sku_id: string
+          source: string
+          updated_at: string
+          user_product_id: string | null
+          variation_id: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "sku_listing_links"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      retarget_sku_listing_link: {
+        Args: { p_link_id: string; p_reason?: string; p_sku_id: string }
         Returns: {
           channel_sku: string | null
           confirmed_at: string | null
@@ -4013,6 +4132,32 @@ export type Database = {
           href: string
           label: string
           sublabel: string
+        }[]
+      }
+      set_skus_stock_virtual: {
+        Args: {
+          p_decision: string
+          p_organization_id: string
+          p_sku_ids: string[]
+        }
+        Returns: {
+          sku_id: string
+          status: string
+        }[]
+      }
+      set_skus_supplier_brand: {
+        Args: {
+          p_organization_id: string
+          p_sku_ids: string[]
+          // CORREÇÃO MANUAL, mesma classe da de `create_sku_listing_link`
+          // acima: o gerador NUNCA marca argumento de RPC como nulo, e aqui
+          // `null` é justamente o valor que LIMPA a marca — a única forma de
+          // desfazer um preenchimento errado (D-133).
+          p_supplier_brand: string | null
+        }
+        Returns: {
+          sku_id: string
+          status: string
         }[]
       }
       triage_support_case: {
@@ -4293,9 +4438,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {},
   },

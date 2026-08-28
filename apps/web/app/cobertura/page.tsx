@@ -138,7 +138,9 @@ export default async function CoberturaPage(): Promise<ReactNode> {
         venda registrada no período (indica demanda perdida agora).
         {rupturaCount > 0 && (
           <strong style={{ color: "var(--sb-danger)" }}> {formatCount(rupturaCount)} SKU(s) em ruptura.</strong>
-        )}
+        )}{" "}
+        <a href="/produtos?estado=pendente&amp;sinal=sentinela">Classificar estoque virtual</a> — SKU com saldo
+        sentinela ainda não classificado aparece aqui como se o número fosse real.
         {virtualCount > 0 && (
           <>
             {" "}

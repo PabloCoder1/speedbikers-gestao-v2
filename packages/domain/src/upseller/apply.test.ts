@@ -180,3 +180,71 @@ describe("recusa antes do banco, e não pelo banco", () => {
     });
   });
 });
+
+describe("as colunas de CURADORIA são imunes ao importador (D-133)", () => {
+  // ESTE TESTE É UMA TRAVA, não uma verificação de rotina.
+  //
+  // Quatro colunas de `skus` só podem ser preenchidas por gente:
+  // `stock_is_virtual` (D-127), `supplier_brand` (D-129) e as duas datas de
+  // decisão (D-133). A imunidade delas ao importador é INCIDENTAL — vem de
+  // `applyProducts` fazer `.update(item.record)`, um UPDATE parcial com as
+  // chaves que `readSkuUpsert` devolve. Basta alguém acrescentar um campo a
+  // `SkuUpsert` sem pensar nisto para a curadoria começar a ser apagada a
+  // cada planilha, EM SILÊNCIO: o import continua verde e a decisão humana
+  // some.
+  //
+  // Foi exatamente esse mecanismo que obrigou D-129 a criar `supplier_brand`
+  // em vez de corrigir `brand` — o importador sobrescreve `brand` sempre.
+  //
+  // Se você está aqui porque este teste ficou vermelho: confira se a coluna
+  // nova é mesmo do ERP. Se for, acrescente a chave à lista abaixo. Se for
+  // decisão humana, ela NÃO pode entrar em `SkuUpsert`.
+  const CHAVES_DO_ERP = [
+    "barcode",
+    "brand",
+    "category_raw",
+    "cest",
+    "erp_product_code",
+    "erp_spu",
+    "height_cm",
+    "image_url",
+    "is_active",
+    "is_discontinued",
+    "length_cm",
+    "ncm",
+    "origin_code",
+    "purchase_cost",
+    "retail_price",
+    "sku",
+    "title",
+    "unit",
+    "weight_g",
+    "width_cm",
+  ];
+
+  const CURADAS = [
+    "stock_is_virtual",
+    "stock_is_virtual_set_at",
+    "stock_is_virtual_set_by",
+    "supplier_brand",
+    "supplier_brand_source",
+    "supplier_brand_set_at",
+    "supplier_brand_set_by",
+  ];
+
+  it("readSkuUpsert devolve EXATAMENTE as chaves do ERP, nem uma a mais", () => {
+    const read = readSkuUpsert({ sku: "ABC-1", title: "Peça" });
+
+    expect(read.ok).toBe(true);
+    expect(Object.keys(read.ok ? read.value : {}).sort()).toEqual(CHAVES_DO_ERP);
+  });
+
+  it("nenhuma coluna de curadoria aparece no que o importador escreve", () => {
+    const read = readSkuUpsert({ sku: "ABC-1", title: "Peça" });
+    const escritas = new Set(Object.keys(read.ok ? read.value : {}));
+
+    for (const curada of CURADAS) {
+      expect(escritas.has(curada)).toBe(false);
+    }
+  });
+});

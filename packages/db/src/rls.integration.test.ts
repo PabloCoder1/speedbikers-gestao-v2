@@ -5932,6 +5932,224 @@ describe("guarda de GRANTs (D-066/D-098/D-130)", () => {
   });
 });
 
+describe("curadoria de catalogo (D-133)", () => {
+  // As duas colunas que so uma PESSOA preenche escrevem por RPC `security
+  // definer`: `skus` nao tem policy de escrita e `authenticated` so tem
+  // SELECT. Se algum dia tiver, estes testes continuam sendo o contrato.
+  const SKU_A = "dddddddd-0000-4000-8000-00000000d001";
+  const SKU_B = "dddddddd-0000-4000-8000-00000000d002";
+  const SKU_OUTRA_ORG = "dddddddd-0000-4000-8000-00000000d003";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.skus (id, organization_id, sku, kind)
+       values ($1,$2,'RLSTEST-CUR-A','PRODUTO'), ($3,$2,'RLSTEST-CUR-B','PRODUTO')
+       on conflict (id) do nothing`,
+      [SKU_A, ORG_SB, SKU_B],
+    );
+
+    await client.query(
+      `insert into public.skus (id, organization_id, sku, kind)
+       values ($1,$2,'RLSTEST-CUR-OUTRA','PRODUTO')
+       on conflict (id) do nothing`,
+      [SKU_OUTRA_ORG, ORG_OUTRA],
+    );
+  });
+
+  it("anon nao executa nenhuma das cinco — o GRANT e a primeira barreira", async () => {
+    for (const chamada of [
+      `select * from public.get_sku_curation('${ORG_SB}')`,
+      `select * from public.get_sku_curation_summary('${ORG_SB}')`,
+      `select * from public.set_skus_stock_virtual('${ORG_SB}', array['${SKU_A}']::uuid[], 'VIRTUAL')`,
+      `select * from public.set_skus_supplier_brand('${ORG_SB}', array['${SKU_A}']::uuid[], 'X')`,
+    ]) {
+      await expect(asAnon(chamada)).rejects.toThrow(/permission denied/i);
+    }
+  });
+
+  it("ANALISTA e recusado nas quatro — leitura tambem, porque a tela projeta erp_stock_snapshots", async () => {
+    // `security invoker` faria a tela aparecer VAZIA em vez de NEGAR, e tela
+    // vazia mente. Por isso ate a LEITURA exige ADMIN/GESTOR aqui.
+    for (const chamada of [
+      `select * from public.get_sku_curation('${ORG_SB}')`,
+      `select * from public.get_sku_curation_summary('${ORG_SB}')`,
+      `select * from public.set_skus_stock_virtual('${ORG_SB}', array['${SKU_A}']::uuid[], 'VIRTUAL')`,
+      `select * from public.set_skus_supplier_brand('${ORG_SB}', array['${SKU_A}']::uuid[], 'X')`,
+    ]) {
+      await expect(asUser(ANALISTA_SB, chamada)).rejects.toThrow(/sem permissao/i);
+    }
+  });
+
+  it("ADMIN de OUTRA organizacao e recusado", async () => {
+    await expect(
+      asUser(DE_OUTRA_ORG, `select * from public.get_sku_curation('${ORG_SB}')`),
+    ).rejects.toThrow(/sem permissao/i);
+  });
+
+  it("classificar grava e SOBREVIVE ao commit, com data e ator", async () => {
+    const linhas = await asUserPersist<{ sku_id: string; status: string }>(
+      ADMIN_SB,
+      `select * from public.set_skus_stock_virtual('${ORG_SB}', array['${SKU_A}']::uuid[], 'VIRTUAL')`,
+    );
+
+    expect(linhas).toEqual([{ sku_id: SKU_A, status: "APLICADO" }]);
+
+    const depois = await client.query<{ v: boolean; at: Date | null; by: string | null }>(
+      `select stock_is_virtual as v, stock_is_virtual_set_at as at, stock_is_virtual_set_by as by
+         from public.skus where id = $1`,
+      [SKU_A],
+    );
+
+    expect(depois.rows[0]?.v).toBe(true);
+    expect(depois.rows[0]?.at).not.toBeNull();
+    expect(depois.rows[0]?.by).toBe(ADMIN_SB);
+  });
+
+  it("segunda chamada identica devolve JA_DECIDIDO — o no-op fica VISIVEL", async () => {
+    // Sem o retorno por linha, "412 marcados" poderia significar 8.
+    const linhas = await asUserPersist<{ sku_id: string; status: string }>(
+      ADMIN_SB,
+      `select * from public.set_skus_stock_virtual('${ORG_SB}', array['${SKU_A}']::uuid[], 'VIRTUAL')`,
+    );
+
+    expect(linhas).toEqual([{ sku_id: SKU_A, status: "JA_DECIDIDO" }]);
+  });
+
+  it("reafirmar FISICO sobre um SKU NUNCA DECIDIDO e decisao nova, nao no-op", async () => {
+    // `stock_is_virtual` ja e `false` por default. O que muda e a DATA: e o
+    // clique que tira o SKU da fila de pendentes.
+    const linhas = await asUserPersist<{ sku_id: string; status: string }>(
+      ADMIN_SB,
+      `select * from public.set_skus_stock_virtual('${ORG_SB}', array['${SKU_B}']::uuid[], 'FISICO')`,
+    );
+
+    expect(linhas).toEqual([{ sku_id: SKU_B, status: "APLICADO" }]);
+  });
+
+  it("INDEFINIDO devolve a linha ao estado 'ninguem olhou'", async () => {
+    await asUserPersist(
+      ADMIN_SB,
+      `select * from public.set_skus_stock_virtual('${ORG_SB}', array['${SKU_B}']::uuid[], 'INDEFINIDO')`,
+    );
+
+    const depois = await client.query<{ v: boolean; at: Date | null; by: string | null }>(
+      `select stock_is_virtual as v, stock_is_virtual_set_at as at, stock_is_virtual_set_by as by
+         from public.skus where id = $1`,
+      [SKU_B],
+    );
+
+    expect(depois.rows[0]).toMatchObject({ v: false, at: null, by: null });
+  });
+
+  it("id de OUTRA organizacao volta NAO_ENCONTRADO sem derrubar o lote", async () => {
+    // Desvio declarado dos precedentes de linha unica: abortar faria o
+    // operador perder as outras 499 decisoes por causa de uma linha que ele
+    // nem sabia que estava ali.
+    const linhas = await asUserPersist<{ sku_id: string; status: string }>(
+      ADMIN_SB,
+      `select * from public.set_skus_stock_virtual(
+         '${ORG_SB}', array['${SKU_A}','${SKU_OUTRA_ORG}']::uuid[], 'FISICO')
+       order by sku_id`,
+    );
+
+    const porId = new Map(linhas.map((l) => [l.sku_id, l.status]));
+
+    expect(porId.get(SKU_A)).toBe("APLICADO");
+    expect(porId.get(SKU_OUTRA_ORG)).toBe("NAO_ENCONTRADO");
+
+    const intacto = await client.query<{ at: Date | null }>(
+      `select stock_is_virtual_set_at as at from public.skus where id = $1`,
+      [SKU_OUTRA_ORG],
+    );
+
+    expect(intacto.rows[0]?.at).toBeNull();
+  });
+
+  it("marca grava MANUAL, normalizada, com data", async () => {
+    const linhas = await asUserPersist<{ status: string }>(
+      ADMIN_SB,
+      `select status from public.set_skus_supplier_brand('${ORG_SB}', array['${SKU_A}']::uuid[], '  off racer ')`,
+    );
+
+    expect(linhas).toEqual([{ status: "APLICADO" }]);
+
+    const depois = await client.query<{ b: string; s: string; at: Date | null }>(
+      `select supplier_brand as b, supplier_brand_source as s, supplier_brand_set_at as at
+         from public.skus where id = $1`,
+      [SKU_A],
+    );
+
+    expect(depois.rows[0]).toMatchObject({ b: "OFF RACER", s: "MANUAL" });
+    expect(depois.rows[0]?.at).not.toBeNull();
+  });
+
+  it("limpar marca zera as QUATRO colunas juntas — anular so o texto violaria o CHECK", async () => {
+    // `skus_supplier_brand_source_coherent` exige os dois nulos ou os dois
+    // preenchidos. Zerar so `supplier_brand` estouraria 23514 e derrubaria o
+    // lote inteiro.
+    await asUserPersist(
+      ADMIN_SB,
+      `select * from public.set_skus_supplier_brand('${ORG_SB}', array['${SKU_A}']::uuid[], '')`,
+    );
+
+    const depois = await client.query<{ b: string | null; s: string | null; at: Date | null; by: string | null }>(
+      `select supplier_brand as b, supplier_brand_source as s,
+              supplier_brand_set_at as at, supplier_brand_set_by as by
+         from public.skus where id = $1`,
+      [SKU_A],
+    );
+
+    expect(depois.rows[0]).toEqual({ b: null, s: null, at: null, by: null });
+  });
+
+  it("lote vazio e lote acima de 500 sao recusados na entrada", async () => {
+    await expect(
+      asUser(ADMIN_SB, `select * from public.set_skus_stock_virtual('${ORG_SB}', array[]::uuid[], 'VIRTUAL')`),
+    ).rejects.toThrow(/selecao vazia/i);
+
+    await expect(
+      asUser(
+        ADMIN_SB,
+        `select * from public.set_skus_stock_virtual(
+           '${ORG_SB}',
+           (select array_agg(gen_random_uuid()) from generate_series(1, 501)),
+           'VIRTUAL')`,
+      ),
+    ).rejects.toThrow(/selecao grande demais/i);
+  });
+
+  it("decisao fora da lista fechada e recusada", async () => {
+    await expect(
+      asUser(ADMIN_SB, `select * from public.set_skus_stock_virtual('${ORG_SB}', array['${SKU_A}']::uuid[], 'SIM')`),
+    ).rejects.toThrow(/decisao invalida/i);
+  });
+
+  it("a fila devolve total_count do FILTRO, nao da pagina", async () => {
+    const linhas = await asUser<{ total_count: string }>(
+      ADMIN_SB,
+      `select total_count from public.get_sku_curation('${ORG_SB}', null, false, null, null, null, 1, 0)`,
+    );
+
+    expect(linhas).toHaveLength(1);
+    expect(Number(linhas[0]?.total_count ?? 0)).toBeGreaterThan(1);
+  });
+
+  it("o resumo separa a linha TOTAL da linha 'sem marca' — sao coisas diferentes", async () => {
+    const linhas = await asUser<{ is_total: boolean; supplier_brand: string | null }>(
+      ADMIN_SB,
+      `select is_total, supplier_brand from public.get_sku_curation_summary('${ORG_SB}')`,
+    );
+
+    const totais = linhas.filter((l) => l.is_total);
+
+    expect(totais).toHaveLength(1);
+    expect(totais[0]?.supplier_brand).toBeNull();
+
+    // E existe TAMBEM uma linha de marca nula que NAO e o total.
+    expect(linhas.some((l) => !l.is_total && l.supplier_brand === null)).toBe(true);
+  });
+});
+
 describe("ator de tabela append-only: on delete restrict (D-094/D-099)", () => {
   // E-mail FORA do padrão '%@rls.test' de propósito: o afterAll global
   // apaga esses usuários, e este ator fica referenciado por uma linha

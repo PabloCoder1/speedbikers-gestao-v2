@@ -2340,6 +2340,56 @@ alvo = snapshot + movimentos com occurred_at > captured_at
 
 **Impacto:** migration `20260828203624` (uma função criada, uma removida), `apps/worker/src/handlers/reconcile-balances.{ts,test.ts}`, `packages/db/src/{types.ts,rls.integration.test.ts}` (teste novo provando que movimento posterior à captura entra no alvo e que `AJUSTE_RECONCILIACAO` não entra). `check` **29/29**.
 
+---
+
+## D-133 — Curadoria do catálogo: `false` deixa de significar duas coisas ao mesmo tempo
+
+**Contexto:** a fatia pendente desde D-127 era a "ferramenta de marcação em lote" — marcar ~2.300 SKUs um a um não é realista. D-129 corrigiu a chave (a assinatura sentinela é **Off Racer 82,4% contra Navetec 0,4%**, não `brand='MANETE'`), e D-131/D-132 tornaram o saldo por baixo dela confiável. Antes de escrever código, submeti o desenho a um painel: cinco leitores mapearam o terreno, três desenhos independentes por lentes diferentes (menor superfície / a pessoa que vai usar / ciclo de vida do dado) e um juiz.
+
+**O juiz escolheu a lente do DADO, e o argumento decisivo foi um que nenhum dos outros dois viu.** `applyProducts` não só atualiza SKU: ele **INSERE** SKU novo. Todo SKU que a próxima planilha criar nasce com `stock_is_virtual = false` por default — e, sem uma marca de decisão, ele fica **indistinguível** de um que alguém já examinou e aprovou como estoque físico. Some da fila de trabalho para sempre, mesmo chegando com saldo 999.
+
+**Decisão 1 — a DATA da decisão, separada do VALOR.** `stock_is_virtual_set_at` e `supplier_brand_set_at` (mais os atores). `set_at is null` passa a significar **nunca classificado**; `false` deixa de ser resposta e volta a ser ausência de resposta. `updated_at` não serviria: a trigger é bumpada pelo importador a cada planilha, então mede "quando o ERP falou deste SKU", nunca "quando uma pessoa decidiu".
+
+**Decisão 2 — CHECK de IMPLICAÇÃO, não bicondicional, e o painel corrigiu dois dos três desenhos aqui.** Dois deles escreveram `by is null = at is null` e justificaram `on delete restrict` afirmando que essa é "a convenção unânime do projeto para coluna de ator". **É falso no código**: coluna de ator em linha MUTÁVEL é `on delete set null` em pelo menos oito lugares (`sku_listing_links.confirmed_by`, `link_candidates.resolved_by`, `erp_import_batches.uploaded_by/applied_by`, os quatro de `purchase_orders`). Com bicondicional, apagar um usuário estouraria a constraint numa operação que não tem nada de errado — a mesma classe de erro enganoso que D-099 e D-113 tiveram de consertar depois. Com implicação (`set_by is null or set_at is not null`), o ator some e a **data fica**: continua sabendo que a decisão existe, só não quem tomou. E passa nas 1.280 linhas `DERIVED` existentes sem backfill nenhum.
+
+**Decisão 3 — três estados de decisão, não dois.** `VIRTUAL`, `FISICO` e **`INDEFINIDO`** (enxerto do desenho perdedor). Sem o terceiro, uma marcação errada só poderia ser *invertida*, nunca *desfeita*, e o SKU nunca voltaria à fila. É o que faz o botão **Desfazer** existir de verdade.
+
+**Decisão 4 — retorno POR LINHA, primeira vez no repositório.** `APLICADO | JA_DECIDIDO | NAO_ENCONTRADO`. Não é enfeite: com o filtro de no-op, "412 marcados" pode significar 8, e sem o retorno por linha essa diferença é invisível. Duas consequências desenhadas em cima disso: a faixa de resultado diz *"412 aplicados · 85 já estavam assim · 3 sumiram da lista — recarregue"*, e o **Desfazer manda de volta APENAS os `APLICADO`** — mandar os enviados reverteria decisão que já era de outra pessoa.
+
+**Decisão 5 — id de outra organização vira `NAO_ENCONTRADO` em vez de abortar o lote.** Desvio declarado dos precedentes de linha única (`create_sku_listing_link` levanta exceção). O motivo: abortar faria o operador perder as outras 499 decisões por causa de uma linha que ele nem sabia que estava ali. A tela é **obrigada** a exibir a contagem — silenciar seria pior que abortar.
+
+**Decisão 6 — o no-op tem duas sutilezas que parecem detalhe e não são.** Reafirmar `FISICO` sobre um SKU cujo `stock_is_virtual` já é `false` **NÃO é no-op** quando `set_at is null`: é o clique que tira o SKU da fila. E confirmar à mão uma marca `DERIVED` idêntica também não é: promove a linha a `MANUAL` e a **blinda** contra re-derivação futura. Os dois casos estão nos testes.
+
+**Decisão 7 — `MANUAL` é literal no corpo da função, nunca parâmetro do cliente.** A CHECK de coerência só proíbe um-nulo-outro-preenchido; gravar `'DERIVED'` passaria em tudo e seria apagado em silêncio pela primeira re-derivação — exatamente o modo de falha para o qual D-129 criou a coluna. E limpar a marca zera as **quatro** colunas no mesmo statement: anular só o texto estouraria `skus_supplier_brand_source_coherent` (23514) e derrubaria o lote inteiro.
+
+**Decisão 8 — ADMIN/GESTOR, e a LEITURA também é `security definer`.** A tela projeta `erp_stock_snapshots`, cuja policy exige ADMIN/GESTOR, e uma RPC `security definer` não pode conceder mais acesso do que a leitura direta concedia. O corolário é o que importa: com `security invoker`, um OPERADOR veria a tela **VAZIA** em vez de receber "sem permissão" — e tela vazia mente.
+
+**Medições feitas antes de escrever, não depois:**
+
+- **Pré-merge de normalização**: a maior marca existente tem **12 caracteres**, **zero** fora de caixa alta, **zero** com espaço nas bordas — logo o `upper(btrim(...))` da RPC não cria marca gêmea. (D-129 já tinha precisado de uma migration só para colapsar `OFFRACER`/`OFF RACER`; era essa a armadilha.)
+- **`EXPLAIN (ANALYZE, BUFFERS)`** da fila, primeira página de 100: **116 ms**, todos os buffers em `shared hit`, vendas de 90 dias por `daily_sku_metrics_account_date_idx`. **Nenhum índice novo** — o plano não pediu, e `docs/DATABASE.md` secao 6 exige EXPLAIN antes de criar índice. Um dos desenhos propunha um índice parcial; foi recusado por isso.
+- **182 SKUs não têm retrato do ERP.** Por isso `has_sentinel_signature` é **NULL** para eles, e não `false`: "sem opinião do ERP" é um terceiro estado, e a tela diz "Sem retrato do ERP" em vez de "Não parece sentinela".
+
+**Uma correção do painel ao desenho vencedor, aceita:** ele filtrava o universo por `is_active`. Nenhum outro consumidor de `skus` filtra (`get_stock_coverage`, `get_sku_abc_curve`, nenhuma tela), e filtrar faria as contagens da tela discordarem dos 3.554 SKUs medidos, além de esconder SKU descontinuado que ainda carrega saldo. Removido.
+
+**O teste de maior valor da fatia não é de RLS nem de tela.** A imunidade das quatro colunas curadas ao importador é **incidental**: vem de `applyProducts` fazer um UPDATE parcial com as chaves que `readSkuUpsert` devolve. Basta alguém acrescentar um campo a `SkuUpsert` para a curadoria começar a ser apagada a cada planilha, **em silêncio** — o import fica verde e a decisão humana some. Por isso o teste congela `Object.keys(readSkuUpsert(...))` na lista exata de 20 chaves e afirma que nenhuma das sete colunas curadas está lá.
+
+**Sobre `packages/db/src/types.ts`:** `docs/API.md` secao 7 exige tipos **gerados**, e desta vez foi possível — o gerador do MCP produziu o arquivo inteiro, o que de quebra corrigiu uma defasagem que a manutenção manual tinha deixado passar (`order_items_sku_listing_link_id_fkey` ainda estava lá, e D-125 removeu essa FK). Duas correções manuais foram **reaplicadas sobre o gerado, com o motivo escrito no próprio arquivo**: o gerador nunca marca argumento de RPC como nulo, e `create_sku_listing_link.p_variation_id` e `set_skus_supplier_brand.p_supplier_brand` aceitam `null` de verdade — no segundo caso, `null` é justamente o valor que LIMPA a marca.
+
+**Escopo recusado, com gatilho declarado:**
+
+- **"Selecionar todos os N do filtro"** e seleção atravessando páginas. É onde o desenho encostaria em "aplicar às cegas": o operador confirmaria uma *contagem*, não as linhas, e D-127 escreve que a sugestão é confirmada por gente, nunca aplicada sozinha. Gatilho para reabrir: medição de que as rodadas de 100 doem de verdade — e a primeira resposta seria aumentar `PAGE_SIZE`, nunca trocar ids por filtro na escrita (viraria TOCTOU).
+- **Evento append-only por SKU, tabela de lote, `domain_events`.** Motivo medido, não preferência: `apps/web/app/skus/[skuId]/actions.ts` lê `domain_events` por `entity_type='sku'` e entrega ao diagnóstico como **causas candidatas** — 500 eventos de configuração virariam 500 causas falsas. A data da decisão na própria linha já responde "quando" e "quem".
+- **Índice novo, `skus.supplier_id`, Filtros Salvos em `/produtos`** (custa três linhas e funciona porque o filtro está na URL; entra quando o operador salvar a mesma combinação duas vezes), **edição de qualquer outro campo do SKU** (as outras 20 colunas morrem no próximo import), **job de re-derivação de `supplier_brand`**.
+- **Semear, backfillar ou aplicar a sugestão sozinha**: recusado por decisão já registrada (D-127, D-129). Só o usuário reabre.
+
+**Duas perguntas que o painel deixou para o usuário, e o que fiz com elas:**
+
+1. *Quem faz a curadoria — só ADMIN/GESTOR, ou também OPERADOR?* Fiquei em **ADMIN/GESTOR**, herdando a policy de `erp_stock_snapshots`, porque é o que a fonte já exigia e ampliar seria conceder acesso novo sem pedido. Abrir para OPERADOR é uma linha na guarda, se for o caso.
+2. *A marcação vai reduzir os `stock.balance.diverged` diários?* **Não, e a pergunta ficou obsoleta durante esta mesma sessão**: nenhum job lê `stock_is_virtual`, então marcar não silencia nada — mas **D-132 já resolveu o ruído por outro caminho**, tornando a reconciliação idempotente entre dias. Sem divergência real, nenhum evento é emitido.
+
+**Impacto:** migrations `20260828210048` (quatro colunas, três CHECKs, comentários) e `20260828215404` (um helper `private` + quatro RPCs, sem tabela nova, sem índice, **sem semear uma linha**), `apps/web/app/produtos/{page,curation-table,actions}.tsx`, `apps/web/lib/sku-curation.{ts,test.ts}` (16 testes), `apps/web/components/shell.tsx` (nav + o JSDoc que declarava "Produtos" ausente de propósito, atualizado na mesma edição), `apps/web/app/cobertura/page.tsx` (link de ida), `packages/domain/src/upseller/apply.test.ts` (a trava), `packages/db/src/rls.integration.test.ts` (13 testes novos), `packages/db/src/types.ts` (gerado), `docs/METRICS.md`. `check` **29/29** e `next build` limpo. **A suíte de integração não rodou aqui** (Docker não sobe nesta máquina) e **a tela não foi vista no navegador** (sem `.env.local` o dev server não alcança o Supabase) — o ensaio operacional que o painel exige (marcar 5 SKUs, conferir em `/cobertura`, só então o lote grande) continua pendente, e o caminho `stock_is_virtual = true` de `get_stock_coverage` **nunca rodou com dado real**.
+
 ## Como adicionar nova decisão
 
 Registrar:

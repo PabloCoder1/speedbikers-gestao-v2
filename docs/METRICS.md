@@ -160,6 +160,10 @@ A conciliação real só existe no ciclo mensal de `/billing/integration/...`, q
 | `valor_cancelado` | Valor cancelado | `SUM(orders.total_amount)` dos cancelados | `orders.total_amount` | Valor **pedido**, não valor estornado — a V3 não observa o estorno financeiro |
 | `skus_distintos_vendidos` | SKUs distintos vendidos | `COUNT(DISTINCT sku_id)` calculado NO GRÃO PEDIDO | `daily_sku_metrics` | **Nunca somar de grão inferior** (D-017/D-050). Exclui o bucket `sku_id IS NULL` — e esse bucket é 21,8% dos itens em 30 dias |
 | `valor_estoque` | Valor do estoque | `SUM(quantity × skus.purchase_cost)` | `inventory_balances` + `skus.purchase_cost` | 🔴 **BLOQUEADA** — ver 5C.4 |
+| `catalogo_nao_classificado` | SKUs nunca classificados | `COUNT(*) WHERE stock_is_virtual_set_at IS NULL` | `skus` | ✅ D-133 — visível em `/produtos` |
+| `catalogo_estoque_virtual` | SKUs com saldo sentinela | `COUNT(*) WHERE stock_is_virtual` | `skus` | ✅ D-133 — visível em `/produtos` e `/cobertura` |
+
+**Sobre `catalogo_nao_classificado` (D-133):** o id aparece ao lado do número na tela, e a definição depende de uma distinção que a coluna sozinha não faz. `stock_is_virtual = false` significa **duas** coisas antes de D-133: "examinado e aprovado como físico" e "ninguém olhou". Quem conta o segundo caso é `stock_is_virtual_set_at IS NULL` — inclusive para o SKU que o próximo import criar, que nasce `false` por default. Contar pelo valor em vez de pela data daria "catálogo 100% classificado" no dia seguinte a uma planilha nova.
 
 ### 5C.3 Cancelamento, devolução, reembolso e mediação são quatro coisas
 
@@ -174,7 +178,7 @@ Três mecanismos independentes, nenhum consolidado numa visão financeira:
 
 ### 5C.4 O que NÃO pode ir para a tela até a fonte melhorar
 
-- **`valor_estoque`** — **decisão de negócio RESPONDIDA em 2026-08-28 (D-127): é estoque virtual deliberado**, não erro. Segue bloqueada, mas por outro motivo: falta MARCAR quais SKUs são virtuais (`skus.stock_is_virtual`, hoje zero linhas). Somar quantidade × custo sem essa marca contaria sentinela como patrimônio. A marcação em lote é a próxima fatia.
+- **`valor_estoque`** — **decisão de negócio RESPONDIDA em 2026-08-28 (D-127): é estoque virtual deliberado**, não erro. **A FERRAMENTA de marcação existe desde D-133** (`/produtos`), mas a métrica **segue bloqueada** por dois motivos que a ferramenta não resolve sozinha: (1) enquanto houver SKU **não classificado**, somar quantidade × custo contaria sentinela como patrimônio — o denominador certo é `catalogo_nao_classificado = 0`, não "alguém começou a marcar"; e (2) o saldo em si só passou a ser confiável com D-131/D-132, e a primeira reconciliação corrigida ainda precisa ser lida. Quando destravar, a definição nasce com **exclusão explícita dos virtuais**, nunca somando tudo.
 - **Qualquer métrica derivada de cobertura, sugestão de compra ou priorização** — mesma base, mesmo bloqueio.
 - **Visão "HOJE"** — mecanicamente trivial, mas `daily_*_metrics` do dia corrente está incompleto por construção, e o projeto evita lê-lo em todos os outros lugares. Ou lê `orders` direto (fora do padrão L3) ou sinaliza a incompletude; nunca finge que o dia fechou.
 

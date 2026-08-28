@@ -28,9 +28,11 @@ import { NotificationToasts } from "./notification-toasts";
  *
  * Um grupo só aparece aqui quando tem pelo menos UMA página real — dropdown
  * vazio não serve pra nada. Hoje: ADMINISTRAÇÃO inteira ainda não existe
- * (nenhuma das cinco páginas foi construída) e "Produtos" (catálogo de SKU
- * como tela própria, distinta de `/skus/{id}`) também não — ficam de fora
- * até nascerem, não como esquecimento. Regra para quem adicionar uma tela
+ * (nenhuma das cinco páginas foi construída) — fica de fora até nascer, não
+ * como esquecimento. "Produtos" NASCEU em 2026-08-28 (D-133): é o catálogo de
+ * SKU como tela própria, distinta de `/skus/{id}`, e serve à curadoria das
+ * duas colunas que só uma pessoa pode preencher (`stock_is_virtual`,
+ * `supplier_brand`). Regra para quem adicionar uma tela
  * nova: ela entra no grupo certo aqui, nunca solta no nível de cima.
  *
  * ATENDIMENTO (D-090) tem só "Caixa de Entrada" por enquanto. A lista
@@ -57,6 +59,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: "Comercial",
     items: [
       { label: "Vendas", href: "/vendas" },
+      { label: "Produtos", href: "/produtos" },
       { label: "Anúncios", href: "/anuncios" },
     ],
   },
