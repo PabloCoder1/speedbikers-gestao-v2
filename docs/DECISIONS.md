@@ -2202,6 +2202,46 @@ A associação com fornecedor é **real** — só que é **Off Racer, não Navet
 
 **Impacto:** migrations `20260828195154` (duas colunas, dois CHECKs, um índice parcial, três `update` de semeadura) e `20260828195524` (normalização), `packages/db/src/types.ts` (Row/Insert/Update de `skus`, inserção cirúrgica). **Nenhuma tela mudou** — a coluna ainda não é lida por ninguém; ela destrava a marcação em lote e o filtro por marca da 5C. `check` **29/29**.
 
+---
+
+## D-130 — O teste-guarda de GRANTs nunca passou, e a razão é de catálogo: `TRUNCATE` não tem RLS por trás
+
+**Contexto:** ao medir os privilégios de `skus` para desenhar a marcação em lote, apareceu `TRUNCATE` para `authenticated`. Puxando o fio, o achado é maior do que a tabela: **o teste-guarda que D-098 escreveu para apanhar exatamente esta classe de defeito nunca passou**, e por isso não apanhou nada.
+
+**Achado 1 — a CI está vermelha desde 2026-08-27 (commit `52f60d7`), e ninguém viu.** O guarda `"nenhuma tabela de public da escrita a authenticated sem policy correspondente"` nasceu junto com D-098. Rodando a consulta dele contra o banco real, ela devolve **5 linhas** desde o primeiro dia:
+
+| Tabela | Comandos órfãos | Desde |
+|---|---|---|
+| `profiles` | INSERT, DELETE | 2026-08-20 (criação) |
+| `sku_listing_link_events` | INSERT, UPDATE, DELETE | 2026-08-28 (**D-125, meu**) |
+
+`profiles` foi **excluída de propósito** da rodada 1 (D-066) sob a justificativa de "ter policy de escrita legítima". A justificativa vale para UPDATE — e só para ele: as linhas nascem de um **trigger sobre `auth.users`**, que roda como dono da função, nunca como `authenticated`. `sku_listing_link_events` é defeito meu de véspera: a migration de D-125 revoga de `anon` e esquece `authenticated`, que é **literalmente o erro descrito no comentário de D-098** ("um `grant select` explícito NÃO desfaz isso — GRANTs são aditivos").
+
+Isso explica por que `check` 29/29 nunca foi garantia: `packages/db/package.json` exclui `*.integration.test.ts` do `test`, e a suíte só roda na CI, contra `supabase start`. **Seis commits (D-125…D-129) foram entregues lendo "29/29" como se fosse verde.**
+
+**Achado 2 — a causa raiz, agora provada no catálogo e não por indução.** As rodadas anteriores discutiam se "tabela nova no Supabase nasce exposta" (D-062/D-066 mediram que sim; o comentário de `20260825170000` afirmava que não). `pg_default_acl` encerra a questão:
+
+```
+schema public, objeto 'r' (tabela), criador postgres
+  -> authenticated=arwdDxtm/postgres
+```
+
+`a`=INSERT, `w`=UPDATE, `d`=DELETE, `D`=TRUNCATE. **Toda tabela criada por migration nasce com escrita total para `authenticated`**, e só um `revoke` explícito tira.
+
+**Achado 3 — `TRUNCATE` derruba o argumento com que as duas rodadas anteriores se tranquilizaram.** D-066 e D-098 aceitaram o grant excessivo escrevendo "é aperto de superfície, não correção de vazamento — a RLS nega de qualquer jeito". **Para TRUNCATE isso é falso.** TRUNCATE não consulta policy, não respeita `using`, e **os triggers append-only de `domain_events` e `stock_movements` também não disparam nele**. É o único privilégio de escrita do projeto **sem nenhum backstop**.
+
+Medido: **33 das 54 tabelas de `public`** ainda davam TRUNCATE a `authenticated` — entre elas `orders`, `order_items`, `skus`, `listings`, `stock_movements` e `domain_events`. As outras 21 nasceram depois da convenção de D-062 e já estavam limpas.
+
+**Não há caminho conhecido de exploração hoje** — o PostgREST não expõe TRUNCATE. O motivo de remover assim mesmo: aqui "ninguém alcança" seria a **única** coisa entre o dado e o apagamento total. Revogado nas 33.
+
+**Achado 4 — o guarda podia MORRER em vez de falhar.** A consulta original monta o nome com `format('public.%I', t.tablename)`. A ordem de avaliação de quals no Postgres **não é garantida**, então o predicado pode rodar antes do filtro `schemaname='public'` e chamar `has_table_privilege('authenticated','public.pg_statistic',…)` — erro `42P01`, que foi exatamente o que aconteceu ao rodar esta consulta durante esta decisão. Um guarda que estoura por acidente de plano não é guarda. Corrigido para passar o **OID**, que não depende de resolução por nome.
+
+**Decisão — o invariante de TRUNCATE é absoluto, não condicionado a policy.** O segundo teste do bloco não pergunta "tem policy correspondente?", porque **não existe policy de TRUNCATE**. Ele afirma: `authenticated` não tem TRUNCATE em tabela nenhuma de `public`. Qualquer tabela futura que esquecer o revoke cai aqui.
+
+**Limitação honesta desta entrega:** Docker não sobe nesta máquina, então **não rodei a suíte de integração localmente**. A verificação é indireta mas direta o bastante: as duas consultas dos testes foram executadas **contra o banco real**, e ambas devolvem **zero linhas** depois da migration (antes: 5 e 33). O veredito final continua sendo a CI.
+
+**Impacto:** migration `20260828200541` (dois `revoke` de escrita, um `revoke truncate` em 33 tabelas), `packages/db/src/rls.integration.test.ts` (guarda corrigido para OID + teste novo de TRUNCATE). Nenhuma tela, nenhuma RPC, nenhum dado alterado. `check` 29/29.
+
 ## Como adicionar nova decisão
 
 Registrar:

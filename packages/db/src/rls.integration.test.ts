@@ -5825,7 +5825,7 @@ describe("get_support_metrics (Métricas de SAC, D-115)", () => {
   });
 });
 
-describe("guarda de GRANTs (D-066/D-098)", () => {
+describe("guarda de GRANTs (D-066/D-098/D-130)", () => {
   // D-066 apertou 23 tabelas e o padrão foi REINTRODUZIDO nos dois dias
   // seguintes por migrations que não revogaram na criação (corrigido em
   // D-098). Uma auditoria pontual apanha o estoque de um dia; este teste
@@ -5833,32 +5833,67 @@ describe("guarda de GRANTs (D-066/D-098)", () => {
   // sem policy correspondente é superfície morta — a RLS nega de qualquer
   // jeito, então ou a policy deveria existir, ou o GRANT não deveria.
   //
-  // Também decide empiricamente, a cada rodada da CI, a divergência entre
-  // o achado medido de D-062/D-066 ("privilégio padrão concede escrita a
-  // authenticated em tabela nova") e o comentário da migration
-  // 20260825170000 ("Supabase 2026 não expõe tabela nova por default") —
-  // não importa qual valha no engine do momento, o invariante é o mesmo.
+  // A causa está medida em D-130 e é de catálogo, não de opinião:
+  // `pg_default_acl` do schema `public` concede `arwdDxtm` a `authenticated`
+  // em toda tabela criada pelo papel `postgres`. Um `grant select` explícito
+  // NÃO desfaz isso — GRANTs são aditivos. Isso encerra a divergência com o
+  // comentário da migration 20260825170000 ("Supabase 2026 não expõe tabela
+  // nova por default"): não expõe é falso, e o default é o contrário.
+  //
+  // As consultas passam o OID da tabela para `has_table_privilege`, e não o
+  // nome montado com `format('public.%I', ...)`. Isso não é estilo: com o
+  // nome, o Postgres pode avaliar o predicado ANTES do filtro de schema
+  // (a ordem de quals não é garantida) e o teste MORRE com
+  // `relation "public.pg_statistic" does not exist` em vez de falhar
+  // limpo — foi o que aconteceu ao rodar esta mesma consulta em D-130.
   it("nenhuma tabela de public da escrita a authenticated sem policy correspondente", async () => {
     const result = await client.query(
-      `select t.tablename, c.cmd
-       from pg_tables t
-       cross join (values ('INSERT'), ('UPDATE'), ('DELETE')) as c(cmd)
-       where t.schemaname = 'public'
-         and has_table_privilege('authenticated', format('public.%I', t.tablename), c.cmd)
+      `select c.relname as tablename, v.cmd
+       from pg_class c
+       join pg_namespace n on n.oid = c.relnamespace
+       cross join (values ('INSERT'), ('UPDATE'), ('DELETE')) as v(cmd)
+       where n.nspname = 'public'
+         and c.relkind = 'r'
+         and has_table_privilege('authenticated', c.oid, v.cmd)
          and not exists (
            select 1
            from pg_policies p
            where p.schemaname = 'public'
-             and p.tablename = t.tablename
-             and (p.cmd = c.cmd or p.cmd = 'ALL')
+             and p.tablename = c.relname
+             and (p.cmd = v.cmd or p.cmd = 'ALL')
              and (p.roles @> array['authenticated'::name] or p.roles @> array['public'::name])
          )
-       order by t.tablename, c.cmd`,
+       order by c.relname, v.cmd`,
     );
 
     // Vazio = nenhum grant de escrita órfão. Cada linha que aparecer aqui
     // é uma combinação (tabela, comando) a revogar — ou uma policy que
     // deveria ter sido criada junto com o grant.
+    expect(result.rows).toEqual([]);
+  });
+
+  // TRUNCATE é a exceção que derruba o consolo das rodadas anteriores.
+  // D-066 e D-098 aceitaram o grant excessivo argumentando "a RLS nega de
+  // qualquer jeito". Para TRUNCATE isso é FALSO: TRUNCATE não consulta
+  // policy nenhuma, não respeita `using`, e nem os triggers append-only de
+  // `domain_events`/`stock_movements` disparam nele. É o único privilégio de
+  // escrita sem NENHUM backstop — por isso o invariante aqui é absoluto
+  // (nunca, em tabela nenhuma) e não condicionado a policy.
+  //
+  // Medido em D-130 antes do revoke: 33 das 54 tabelas de `public` davam
+  // TRUNCATE a `authenticated`, incluindo `orders`, `order_items`, `skus` e
+  // `listings`.
+  it("authenticated nao tem TRUNCATE em tabela nenhuma de public (D-130)", async () => {
+    const result = await client.query(
+      `select c.relname as tablename
+       from pg_class c
+       join pg_namespace n on n.oid = c.relnamespace
+       where n.nspname = 'public'
+         and c.relkind = 'r'
+         and has_table_privilege('authenticated', c.oid, 'TRUNCATE')
+       order by c.relname`,
+    );
+
     expect(result.rows).toEqual([]);
   });
 });
