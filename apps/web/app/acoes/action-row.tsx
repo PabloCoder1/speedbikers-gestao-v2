@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 
+import type { ActionEvidenceView } from "../../lib/action-evidence";
 import { formatCurrency } from "../../lib/format";
 import { claimAction, dismissAction, registerDecision, resolveAction } from "./actions";
 
@@ -9,26 +10,12 @@ import { claimAction, dismissAction, registerDecision, resolveAction } from "./a
  * Uma linha da Central de Ações (Fase 6, D-064) — mesmo padrão de
  * `apps/web/app/vinculacoes/candidate-row.tsx`: componente cliente por linha
  * (estado local de "ocupado"/erro), Server Action por clique.
+ *
+ * A linha NÃO conhece o formato bruto de `actions.evidence`: ela recebe a
+ * visão já normalizada por `describeActionEvidence`, que é total para
+ * qualquer `kind`. Antes daqui a tela lia a forma de `venda_anomala` como se
+ * fosse a única existente.
  */
-
-interface EvidenceItem {
-  tipo: string;
-  descricao: string;
-}
-
-interface CandidateCause {
-  event_type: string;
-  occurred_at: string;
-  descricao: string;
-}
-
-export interface ActionEvidence {
-  direcao: "queda" | "alta";
-  z_score: number;
-  units_delta: number;
-  evidencias: EvidenceItem[];
-  causas_candidatas: CandidateCause[];
-}
 
 export interface OutcomeData {
   windowDays: number;
@@ -51,7 +38,7 @@ export interface ActionRowData {
   severity: string;
   confidence: string;
   estimated_impact_brl: number | null;
-  evidence: ActionEvidence;
+  evidence: ActionEvidenceView;
   recommendation: string;
   status: string;
   assignee_id: string | null;
@@ -89,6 +76,16 @@ function statusLabel(status: string): string {
       return status;
   }
 }
+
+/**
+ * Fundo por tom, não por direção: uma ação sem direção (padrão de
+ * reclamações, D-116) caía no `else` e ficava VERDE, lendo como oportunidade.
+ */
+const TONE_BACKGROUND: Readonly<Record<string, string | undefined>> = {
+  problema: "#fdeaea",
+  oportunidade: "#e6f4ea",
+  neutro: undefined,
+};
 
 function windowLabel(days: number): string {
   return `${String(days)} dias depois`;
@@ -162,7 +159,7 @@ export function ActionRow({ action, userId }: { action: ActionRowData; userId: s
 
   return (
     <>
-    <tr style={action.evidence.direcao === "queda" ? { background: "#fdeaea" } : { background: "#e6f4ea" }}>
+    <tr style={{ background: TONE_BACKGROUND[action.evidence.tone] }}>
       <td style={{ ...td, fontFamily: "ui-monospace, monospace" }}>
         {action.sku ?? "—"}
         {action.title !== null && (
@@ -171,16 +168,21 @@ export function ActionRow({ action, userId }: { action: ActionRowData; userId: s
           </div>
         )}
       </td>
-      <td style={td}>{action.evidence.direcao === "queda" ? "Queda" : "Alta"}</td>
+      <td style={td}>
+        {action.evidence.kindLabel}
+        {action.evidence.direcaoLabel !== null && (
+          <div style={{ color: "var(--sb-text-soft)", fontSize: "0.75rem" }}>{action.evidence.direcaoLabel}</div>
+        )}
+      </td>
       <td style={td}>{action.confidence === "alta" ? "Alta" : "Média"}</td>
       <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
         {formatCurrency(action.estimated_impact_brl)}
       </td>
       <td style={td}>
         {action.evidence.evidencias.map((item) => item.descricao).join(" ")}
-        {action.evidence.causas_candidatas.length > 0 && (
+        {action.evidence.causas.length > 0 && (
           <div style={{ marginTop: "0.25rem", color: "var(--sb-text-soft)" }}>
-            {action.evidence.causas_candidatas.map((cause) => cause.descricao).join(" ")}
+            {action.evidence.causas.map((cause) => cause.descricao).join(" ")}
           </div>
         )}
       </td>

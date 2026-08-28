@@ -38,6 +38,8 @@ interface Options {
   supportCase?: Record<string, unknown> | null;
   existingAttempt?: { id: string; status: string; error_message: string | null } | null;
   insertError?: { code?: string; message: string } | null;
+  /** `false` = o chamador NÃO tem `user_account_permissions` para a conta do case. */
+  accountPermission?: boolean;
 }
 
 function deps(options: Options = {}): {
@@ -56,6 +58,12 @@ function deps(options: Options = {}): {
       select: () => {
         if (table === "support_cases") {
           return chain({ data: supportCase ?? null, error: null });
+        }
+
+        if (table === "user_account_permissions") {
+          const permitido = options.accountPermission ?? true;
+
+          return chain({ data: permitido ? { user_id: CALLER.userId } : null, error: null });
         }
 
         if (table === "support_reply_attempts") {
@@ -180,6 +188,28 @@ describe("requestSupportReply (D-096)", () => {
     expect(await requestSupportReply(ctx.deps, CALLER, CASE_ID, REQUEST)).toEqual({
       status: "not_found",
     });
+  });
+
+  it("sem permissão NA CONTA é `not_found` — papel e organização não bastam", async () => {
+    // A RLS impede este usuário até de LER o case; só o envio, a única
+    // escrita real no Mercado Livre, não checava a conta.
+    const ctx = deps({ accountPermission: false });
+
+    expect(await requestSupportReply(ctx.deps, CALLER, CASE_ID, REQUEST)).toEqual({
+      status: "not_found",
+    });
+    expect(ctx.enqueued).toHaveLength(0);
+    expect(ctx.inserted).toHaveLength(0);
+  });
+
+  it("ADMIN alcança toda conta da própria organização, sem linha de permissão", async () => {
+    // Espelha o ramo `m.role = 'ADMIN'` de `private.has_account_access`.
+    const ctx = deps({ accountPermission: false });
+
+    const outcome = await requestSupportReply(ctx.deps, { ...CALLER, role: "ADMIN" }, CASE_ID, REQUEST);
+
+    expect(outcome).toMatchObject({ status: "queued" });
+    expect(ctx.enqueued).toHaveLength(1);
   });
 
   it("canal que não é Pergunta é recusado — mensagens e claims não estão integrados", async () => {

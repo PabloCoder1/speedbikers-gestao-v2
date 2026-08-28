@@ -1434,7 +1434,11 @@ describe("POST /v1/support/cases/:caseId/reply (D-096)", () => {
                       external_case_id: "11436370259",
                       ml_accounts: { slug: "speedbikers-loja-1" },
                     }
-                  : null,
+                  : // O OPERADOR deste teste TEM permissão na conta — sem a
+                    // linha, o envio agora para em `not_found` (D-117).
+                    table === "user_account_permissions"
+                    ? { user_id: CALLER.userId }
+                    : null,
               error: null,
             }),
           insert: () => ({

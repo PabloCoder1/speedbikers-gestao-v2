@@ -1827,6 +1827,32 @@ Não é específico de `questions`: **nunca chegou `orders_v2`, `post_purchase`,
 
 **Deployado e COMPROVADO em produção em 2026-08-28** (`worker-00039-dn5`/`api-00026-w56`, depois `worker-00040-gjg` com a correção abaixo). A verificação pós-deploy achou um buraco ESTRUTURAL que nenhum teste pegou: o job rodou `done` com zero ações porque **claims tinham 359 vínculos de PEDIDO e NENHUM de SKU** — o persist de D-104 nunca derivara o SKU, e `ORDER_DERIVED` existia no CHECK desde D-085 sem uso. Corrigido na mesma sessão: `linkOrder` deriva os SKUs de `order_items` (o `sku_id` congelado de D-020), e a varredura horária reparou o estoque sozinha — **27 links de SKU nasceram na primeira passada**, sem backfill manual. Medido depois: 24 SKUs com claim aberto, máximo de **2 por SKU** — três SKUs a UM claim do limiar. **Zero ações é o resultado CORRETO do dado real de hoje**: o detector está armado e a primeira ação nasce quando o padrão existir de verdade. Cobertura parcial registrada: item de pedido sem `sku_id` resolvido não deriva (correto por D-020 — o vínculo nasce e a próxima varredura completa).
 
+## D-117 — Dois defeitos P0 achados por auditoria: a Central de Ações quebrada pela própria ação de SAC, e o envio de resposta sem fronteira de conta
+
+**Contexto:** auditoria ampla pedida pelo usuário em 2026-08-28, antes de planejar features novas. Ela mediu o banco de produção em vez de acreditar nas telas, e achou defeitos em código **já implantado** — dois deles corrigidos aqui, um terceiro registrado com plano próprio (ver Decisão 3). Cada defeito passou por verificação adversarial (agentes instruídos a REFUTAR, não a confirmar) antes de qualquer linha ser escrita.
+
+**Decisão 1 — `actions.evidence` é uma união de formatos, e a Central de Ações lia como se fosse um só.** `detect-sales-anomaly-actions` grava `{direcao, z_score, units_delta, evidencias, causas_candidatas}`; `detect-support-pattern-actions` (D-116, anteontem) grava `{evidencias, reclamacoes_abertas}`. A tela declarava a primeira forma como interface única, fazia `row.evidence as ActionEvidence` sem validação e **nem consultava `kind`** — que existe na tabela desde D-064 e é o discriminante real.
+
+Consequências medidas, não presumidas:
+
+- **`action-row.tsx:181` lançava `TypeError` em `causas_candidatas.length`.** Não existe `error.tsx` em lugar nenhum de `apps/web` — o throw sobe até o boundary embutido do Next e **derruba a rota inteira**, levando junto as 183 ações de venda que funcionam. Vale no SSR (500) e na navegação macia.
+- **`direcao` ausente não lançava — MENTIA.** `undefined === "queda"` é `false`, então a linha caía no ramo `else`: fundo verde e rótulo "Alta". Uma ação de reclamações recorrentes se apresentaria como oportunidade de venda em alta.
+- **O defeito era auto-sustentável.** A `dedup_key` do padrão de SAC não tem data (D-116, decisão 3), então a ação persiste enquanto a condição durar — e os botões de resolver/descartar ficam na linha da página que quebrou. Sem acesso ao banco, não havia recuperação pela interface.
+
+A correção não é uma guarda de nulo: é uma **fronteira**. `apps/web/lib/action-evidence.ts` (puro, testado, mesmo padrão de `event-format.ts`) expõe `describeActionEvidence(kind, raw)` — função **total**, que nunca lança, para qualquer `kind` e qualquer payload. `direcao` fora de `{queda, alta}` vira `null` e a tela mostra "—"; o fundo passa a ser por **tom** (`problema`/`oportunidade`/`neutro`), não por direção; a coluna "Direção" virou "Tipo", mostrando o `kind` legível com a direção como sublinha quando existir. Um `kind` novo criado no worker degrada para uma linha sem direção — nunca para uma tela quebrada.
+
+**Estava ARMADO, não dormente:** o handler está registrado e é enfileirado diariamente. Medido em 2026-08-28: 24 SKUs com claim aberto, máximo de **2 por SKU**, limiar 3 — **três SKUs a um claim da quebra**.
+
+**Decisão 2 — o envio de resposta não checava a CONTA, só organização e papel.** `POST /v1/support/cases/:caseId/reply` usa `AdminClient` (`service_role`, bypassa RLS) e conferia em código apenas `organization_id` + papel. Mas atendimento é escopado por conta: a policy de leitura (`support_cases_select_permitted`) e a RPC de triagem (`triage_support_case`, D-094) exigem `has_account_access` — só o envio, **a única escrita real do projeto no Mercado Livre**, não exigia. Um GESTOR/OPERADOR sem permissão na conta responderia ao comprador dela por chamada direta à API, sendo que a RLS o impede até de LER o case.
+
+A checagem vem em **código, não pela RPC**: `private.has_account_access` resolve `auth.uid()`, que é NULL sob `service_role` — chamá-la pelo `AdminClient` devolveria `false` sempre. Espelha a função: ADMIN alcança toda conta da própria organização; os demais exigem linha em `user_account_permissions`. Ausência responde `not_found`, nunca "sem permissão" — mesmo silêncio já usado na fronteira de organização, porque a segunda resposta confirmaria que o case existe.
+
+**Decisão 3 — `private.has_role` sem escopo de organização fica REGISTRADO, não corrigido aqui.** A função filtra só por `user_id` e papel, sem organização: composta como `is_member_of(org) and has_role(['ADMIN'])`, as duas condições podem ser satisfeitas por **organizações diferentes**. A verificação adversarial refutou a exploração *hoje* e a refutação foi confirmada por medição direta: **1 organização, 1 membro, 0 permissões por conta** em produção. Com uma única organização o conjunto de vínculos de qualquer usuário é um singleton, e `has_role` é semanticamente idêntico a uma checagem escopada.
+
+Não corrigir agora é decisão de escopo, não descuido: são **32 sítios de chamada em 25 objetos e 14 arquivos**, com a assinatura mudando — fatia própria, com um teste-guarda multi-organização (que hoje FALHA e não existe na suíte) como passo zero. **O defeito arma sozinho, sem mudança de código, no dia do segundo tenant ou do primeiro usuário adicionado a duas organizações.**
+
+**Impacto:** `apps/web/lib/action-evidence.ts` (novo, 7 testes), `apps/web/app/acoes/{page,action-row}.tsx`, `apps/api/src/support-reply.ts` (+2 testes), fakes de `app.test.ts`/`support-reply.test.ts`. **Sem migration, sem mudança de schema.** `check` 29/29.
+
 ## Como adicionar nova decisão
 
 Registrar:

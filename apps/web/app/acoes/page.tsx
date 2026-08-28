@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
 
 import { Shell } from "../../components/shell";
+import { describeActionEvidence } from "../../lib/action-evidence";
 import { formatCount } from "../../lib/format";
 import { createClient } from "../../lib/supabase/server";
-import type { ActionEvidence, ActionRowData, DecisionData, OutcomeData } from "./action-row";
+import type { ActionRowData, DecisionData, OutcomeData } from "./action-row";
 import { ActionRow } from "./action-row";
 
 export const metadata = { title: "Central de Ações — Speed Bikers Gestão" };
@@ -25,6 +26,7 @@ export const dynamic = "force-dynamic";
 
 interface ActionQueryRow {
   id: string;
+  kind: string;
   severity: string;
   confidence: string;
   estimated_impact_brl: number | null;
@@ -67,7 +69,7 @@ export default async function AcoesPage(): Promise<ReactNode> {
   const { data, error: actionsError } = await supabase
     .from("actions")
     .select(
-      "id, severity, confidence, estimated_impact_brl, evidence, recommendation, status, assignee_id, skus(sku, title)",
+      "id, kind, severity, confidence, estimated_impact_brl, evidence, recommendation, status, assignee_id, skus(sku, title)",
     )
     .in("status", ["novo", "em_andamento"])
     .order("estimated_impact_brl", { ascending: false, nullsFirst: false });
@@ -139,7 +141,7 @@ export default async function AcoesPage(): Promise<ReactNode> {
       severity: row.severity,
       confidence: row.confidence,
       estimated_impact_brl: row.estimated_impact_brl,
-      evidence: row.evidence as ActionEvidence,
+      evidence: describeActionEvidence(row.kind, row.evidence),
       recommendation: row.recommendation,
       status: row.status,
       assignee_id: row.assignee_id,
@@ -170,7 +172,7 @@ export default async function AcoesPage(): Promise<ReactNode> {
             <thead>
               <tr>
                 <th style={th}>SKU</th>
-                <th style={th}>Direção</th>
+                <th style={th}>Tipo</th>
                 <th style={th}>Confiança</th>
                 <th style={th}>Impacto (R$)</th>
                 <th style={th}>Evidência</th>

@@ -92,6 +92,36 @@ export async function requestSupportReply(
     return { status: "not_found" };
   }
 
+  // Organização e papel NÃO bastam: atendimento é escopado por CONTA. A
+  // policy de leitura (`support_cases_select_permitted`) e a RPC de triagem
+  // (`triage_support_case`, D-094) exigem `has_account_access`; só o envio —
+  // a única escrita real no Mercado Livre — não exigia. Sem isto, um
+  // GESTOR/OPERADOR sem permissão na conta responde ao comprador dela por
+  // chamada direta à API, sendo que a RLS o impede até de LER o case.
+  //
+  // A checagem vem em código, não pela RPC: `private.has_account_access`
+  // resolve `auth.uid()`, que é NULL sob `service_role` — chamá-la pelo
+  // `AdminClient` devolveria `false` sempre. Espelha a função: ADMIN alcança
+  // toda conta da própria organização, já confirmada acima.
+  if (caller.role !== "ADMIN") {
+    const permission = await deps.db
+      .from("user_account_permissions")
+      .select("user_id")
+      .eq("user_id", caller.userId)
+      .eq("ml_account_id", supportCase.ml_account_id)
+      .maybeSingle();
+
+    if (permission.error !== null) {
+      return { status: "error", reason: permission.error.message };
+    }
+
+    // Mesmo silêncio da fronteira de organização: "não encontrado", nunca
+    // "sem permissão" — a segunda resposta confirmaria que o case existe.
+    if (permission.data === null) {
+      return { status: "not_found" };
+    }
+  }
+
   if (supportCase.channel !== "QUESTION") {
     return {
       status: "invalid",
