@@ -1961,7 +1961,26 @@ Nenhuma delas é decisão técnica, e **nenhuma foi respondida** — por isso fi
 
 **Impacto:** `packages/mercado-livre/src/items.ts` (novo — `scanSellerItems`, `getItemsBatch`, `chunkItemIds`, 14 testes), `apps/worker/src/handlers/ml-listings-fetch.ts` (reescrito, 12 testes), `sync-listings-snapshot.ts` (passa `seller_id`; conta CONNECTED sem ele é falha não-retryable, porque é incoerência de dado). **Sem migration** — `listings.sku_id` já era anulável e `sync_runs.resource` continua `listings`. `check` 29/29.
 
-**NÃO deployado ainda.** Pela regra do projeto (D-109), este job só estará verificado quando uma execução dele for LIDA — em `sync_runs` e no `listings_catalog_probe`.
+**DEPLOYADO E COMPROVADO em produção em 2026-08-28**, na ordem obrigatória worker→api: `worker-00041-x4q` e `api-00027-lsp` (tag `fa43fe5`, árvore limpa). Disparo manual de `v3-listings-snapshot`: a api enfileirou 4 jobs (0 deduplicados) e **as 4 contas terminaram `done`**, com 4.643 itens processados e zero falha.
+
+**O efeito medido, que é o ponto inteiro da Fase 4B:**
+
+| | antes | depois |
+|---|---|---|
+| Linhas em `listings` | 3.168 | **5.085** |
+| Anúncios **sem vínculo** | 0 (impossível por construção) | **1.917 (37,7%)** |
+
+Esses 1.917 anúncios existiam no Mercado Livre e **não existiam no nosso sistema**. Agora existem, com `sku_id` nulo, e `/anuncios` já sabe renderizá-los.
+
+**As perguntas em aberto da §2.14, respondidas pela primeira execução real** — que é exatamente para isto que o `listings_catalog_probe` foi instrumentado:
+
+1. **A busca SEM filtro de status NÃO devolve só ativos.** Medido por conta: `active` 787–859, `paused` 326–380, `under_review` 4–8, `closed` 1–4. Confirma a leitura de que a frase *"os resultados sempre serão de itens ativos"* pertence ao OUTRO endpoint da mesma página — presumir o contrário teria escondido ~30% do catálogo, que está pausado.
+2. **`limit=100` na primeira chamada funciona e as páginas seguintes voltam ao padrão 50** (22–24 páginas para ~1.100–1.230 itens). O recorte conservador (limit só na primeira, nunca junto de `scroll_id`) atravessou o catálogo inteiro sem erro.
+3. **O laço encerra corretamente** nas quatro contas, sem repetição e sem estouro do teto de segurança.
+
+**Limitação DESCOBERTA na verificação, registrada em vez de escondida:** 442 linhas antigas **não foram revistas** pela varredura — todas `closed`/`inactive` e todas com SKU. São anúncios que a enumeração por vínculo trouxe um dia e que a busca de catálogo não devolve mais. Elas permanecem com o último estado conhecido, e **o upsert não colhe (reap) linha que sumiu do catálogo**. Consequência prática para quem lê a tabela: `synced_at` é o único jeito de saber se a linha foi vista na última varredura. Colher ou marcar essas linhas é fatia própria — apagar histórico de anúncio encerrado sem decidir antes seria pior que mantê-lo.
+
+**Nota operacional:** as varreduras dispararam `slow_operation` (instrumentação própria do projeto, >1.500 ms), o que é esperado e não é falha — cada execução faz 22–24 páginas de busca mais ~60 chamadas de multiget. Zero `job_failed`, zero erro de rate limit na janela.
 
 ## Como adicionar nova decisão
 

@@ -43,7 +43,9 @@ A fonte de verdade continua sendo:
 - **As cinco perguntas que a doc não responde estão INSTRUMENTADAS** (`listings_catalog_probe`), incluindo a distribuição de status observada — a primeira execução real responde. Lição de D-109.
 - **A carga cresce de propósito**: de 3.168 itens enumerados por vínculo para o catálogo inteiro (no mínimo ~8.800 medidos nas 4 contas). O número real só a primeira execução dirá.
 - `check` **29/29**, 26 testes novos (14 no adaptador + 12 no fetcher). Sem migration.
-- 🔴 **NÃO DEPLOYADO.** Pela regra de D-109, este job só está verificado quando uma execução dele for LIDA — em `sync_runs` e no probe.
+- **DEPLOYADO E COMPROVADO em 2026-08-28** (`worker-00041-x4q`/`api-00027-lsp`, ordem worker→api): 4 contas `done`, 4.643 itens, zero falha. **`listings` foi de 3.168 para 5.085, com 1.917 anúncios SEM VÍNCULO (37,7%)** que antes não existiam no sistema.
+- **O probe respondeu as perguntas da §2.14 na primeira execução**: a busca sem filtro **NÃO devolve só ativos** (por conta: 787–859 ativos, 326–380 pausados, 4–8 em revisão, 1–4 encerrados) — presumir o contrário teria escondido ~30% do catálogo. `limit=100` na 1ª chamada funciona e as seguintes voltam ao padrão 50 (22–24 páginas por conta).
+- ⚠️ **Limitação descoberta na verificação**: 442 linhas antigas não foram revistas (todas `closed`/`inactive`, todas com SKU) — a busca de catálogo não as devolve mais e **o upsert não colhe linha que sumiu**. `synced_at` é o único jeito de saber se a linha foi vista na última varredura. Colher/marcar é fatia própria.
 
 ### Etapa anterior — D-120 (os 30 blocos de features viraram roadmap)
 

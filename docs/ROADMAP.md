@@ -422,4 +422,4 @@ A Fase 5A antecede a Fase 4 porque o dashboard de vendas não usa estoque, e a F
 
 **Duas questões de negócio ABERTAS bloqueiam parte da fila** (D-120): o estoque sentinela (3.996/39.996 é o estado real do UpSeller ou erro de exportação?) e o significado operacional de "importado" (rota de compra ou origem fiscal?). A primeira bloqueia a Fase 5D inteira.
 
-**Pendências operacionais:** o **deploy do `apps/api`** com a correção de D-117 (só `apps/web` saiu, pela Vercel); a **CI dos commits `ad718f0` e `724a5c3`**, que precisa ser conferida pelo `headSha`; e o **primeiro envio real de resposta** a um comprador (🟡, ato irreversível que deve ser humano e deliberado).
+**Pendências operacionais:** ~~deploy do `apps/api`~~ — feito em 2026-08-28 (`api-00027-lsp`), junto do worker (`worker-00041-x4q`, D-121). Seguem abertas: a **CI dos commits recentes**, que precisa ser conferida pelo `headSha` (repositório privado, sem token na sessão); e o **primeiro envio real de resposta** a um comprador (🟡, ato irreversível que deve ser humano e deliberado).
