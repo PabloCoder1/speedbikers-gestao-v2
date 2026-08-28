@@ -94,6 +94,36 @@ async function linkOrder(
     link_source: "REMOTE",
   });
 
+  // D-116 — deriva o SKU dos ITENS do pedido (`sku_id` resolvido e congelado
+  // na persistência da venda, D-020). `ORDER_DERIVED` existia no CHECK desde
+  // D-085 e nunca tinha sido usado: sem esta derivação, claim não tem
+  // vínculo de SKU nenhum e a detecção de padrões por SKU é estruturalmente
+  // vazia (medido: 359 links de pedido, ZERO de SKU). Como a varredura
+  // horária re-persiste todo claim ABERTO, o estoque antigo se repara
+  // sozinho na próxima passada — sem backfill manual.
+  const items = await db
+    .from("order_items")
+    .select("sku_id")
+    .eq("order_id", orderId)
+    .not("sku_id", "is", null);
+
+  if (items.error === null) {
+    // O `.not("sku_id","is",null)` acima já exclui itens sem vínculo; o
+    // types gerado marca a coluna como não-nula e o lint confirma que o
+    // filtro extra seria condição morta.
+    const skuIds = [...new Set(items.data.map((item) => item.sku_id))];
+
+    for (const skuId of skuIds) {
+      await insertSupportLink(db, {
+        organization_id: context.organizationId,
+        ml_account_id: context.mlAccountId,
+        support_case_id: supportCaseId,
+        sku_id: skuId,
+        link_source: "ORDER_DERIVED",
+      });
+    }
+  }
+
   // O vínculo externo foi o fallback enquanto o pedido não existia. Só
   // removê-lo depois do tipado estar garantido, nunca antes.
   const staleExternal = await db

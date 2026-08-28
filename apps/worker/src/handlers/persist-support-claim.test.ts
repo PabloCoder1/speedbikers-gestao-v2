@@ -31,7 +31,7 @@ function matches(row: Row, filters: Row): boolean {
 }
 
 /** Fake stateful mínimo: só as tabelas que `persistSupportClaim` toca. */
-function fakeDb(options: { orders?: number[]; caseWriteError?: string } = {}) {
+function fakeDb(options: { orders?: number[]; orderItems?: { sku_id: string | null }[]; caseWriteError?: string } = {}) {
   const cases = new Map<string, Row>();
   const links: Row[] = [];
   const messages: Row[] = [];
@@ -67,6 +67,14 @@ function fakeDb(options: { orders?: number[]; caseWriteError?: string } = {}) {
         select: () => {
           if (table === "orders") {
             return selectChain(() => orders);
+          }
+          if (table === "order_items") {
+            const chain = {
+              eq: () => chain,
+              not: () => Promise.resolve({ data: options.orderItems ?? [], error: null }),
+            };
+
+            return chain;
           }
           throw new Error(`select inesperado em ${table}`);
         },
@@ -272,5 +280,29 @@ describe("persistSupportClaim", () => {
     const fake = fakeDb({ caseWriteError: "conexão perdida" });
 
     await expect(persistSupportClaim(fake.db as never, CONTEXT, project())).rejects.toThrow(/conexão perdida/);
+  });
+});
+
+describe("derivação de SKU do pedido vinculado (D-116)", () => {
+  it("os itens do pedido viram links ORDER_DERIVED de SKU", async () => {
+    const fake = fakeDb({
+      orders: [2000007819609432],
+      orderItems: [{ sku_id: "sku-1" }, { sku_id: "sku-1" }, { sku_id: "sku-2" }],
+    });
+
+    await persistSupportClaim(fake.db as never, CONTEXT, project());
+
+    const skuLinks = fake.links.filter((link) => link.link_source === "ORDER_DERIVED");
+
+    // Dois SKUs distintos, sem duplicar o repetido.
+    expect(skuLinks.map((link) => link.sku_id).sort()).toEqual(["sku-1", "sku-2"]);
+  });
+
+  it("pedido sem itens vinculados a SKU não cria link nenhum", async () => {
+    const fake = fakeDb({ orders: [2000007819609432], orderItems: [] });
+
+    await persistSupportClaim(fake.db as never, CONTEXT, project());
+
+    expect(fake.links.filter((link) => link.link_source === "ORDER_DERIVED")).toHaveLength(0);
   });
 });
