@@ -473,6 +473,77 @@ describe("aplicação — vínculos", () => {
     expect(tables.sku_listing_links?.[0]).toMatchObject({ id: "link-1", sku_id: "sku-pi150" });
     expect(tables.sku_listing_links).toHaveLength(1);
   });
+  it("vínculo removido À MÃO não volta pela planilha, e não vira candidato (D-126)", async () => {
+    // Sem a supressão, a decisão humana que D-125 passou a registrar seria
+    // desfeita em silêncio na próxima importação — e o operador não teria
+    // como saber.
+    const { db, tables } = createFakeDb({
+      erp_import_batches: [batch({ kind: "LINKS" })],
+      erp_import_rows: [okRow(1, LINK_PAYLOAD)],
+      skus: [{ id: "sku-pi150", organization_id: ORG, sku: "PI150", sku_key: "PI150", kind: "PRODUTO" }],
+      ml_accounts: [{ id: "acc-1", organization_id: ORG, slug: "speedbikers-loja-1", label: "Speedbikers (loja 1)", status: "CONNECTED" }],
+      sku_listing_link_events: [
+        {
+          id: "evt-1",
+          organization_id: ORG,
+          ml_account_id: "acc-1",
+          link_id: "link-antigo",
+          event_type: "REMOVED",
+          actor_source: "HUMAN",
+          ref_kind: "ITEM",
+          item_id: "MLB1722724235",
+          variation_id: "205704879161",
+          user_product_id: null,
+          sku_id: "sku-pi150",
+          link_source: "IMPORT_UPSELLER",
+          reason: "anuncio nao e nosso",
+        },
+      ],
+    });
+
+    await createErpImportApplyHandler({ db })(ENVELOPE, ctx({ batchId: BATCH }));
+
+    expect(tables.sku_listing_links ?? []).toHaveLength(0);
+    expect(tables.link_candidates ?? []).toHaveLength(0);
+    expect(tables.erp_import_rows?.[0]).toMatchObject({
+      apply_status: "UNRESOLVED",
+      apply_reason: "vínculo removido por decisão humana",
+    });
+  });
+
+  it("a reescrita in-place do importador passa a deixar rastro (RETARGETED)", async () => {
+    const { db, tables } = createFakeDb({
+      erp_import_batches: [batch({ kind: "LINKS" })],
+      erp_import_rows: [okRow(1, LINK_PAYLOAD)],
+      skus: [{ id: "sku-pi150", organization_id: ORG, sku: "PI150", sku_key: "PI150", kind: "PRODUTO" }],
+      ml_accounts: [{ id: "acc-1", organization_id: ORG, slug: "speedbikers-loja-1", label: "Speedbikers (loja 1)", status: "CONNECTED" }],
+      sku_listing_links: [
+        {
+          id: "link-1",
+          organization_id: ORG,
+          ml_account_id: "acc-1",
+          ref_kind: "ITEM",
+          item_id: "MLB1722724235",
+          variation_id: "205704879161",
+          user_product_id: null,
+          sku_id: "sku-velho",
+          channel_sku: null,
+          source: "IMPORT_UPSELLER",
+        },
+      ],
+    });
+
+    await createErpImportApplyHandler({ db })(ENVELOPE, ctx({ batchId: BATCH }));
+
+    const evento = (tables.sku_listing_link_events ?? [])[0];
+
+    expect(evento).toMatchObject({
+      event_type: "RETARGETED",
+      actor_source: "IMPORT",
+      previous_sku_id: "sku-velho",
+      sku_id: "sku-pi150",
+    });
+  });
 });
 
 describe("guardas do lote", () => {

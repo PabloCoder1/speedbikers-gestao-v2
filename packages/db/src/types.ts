@@ -2326,6 +2326,69 @@ export type Database = {
           },
         ]
       }
+      sku_listing_link_events: {
+        Row: {
+          actor_source: string
+          actor_user_id: string | null
+          channel_sku: string | null
+          created_at: string
+          event_type: string
+          id: string
+          item_id: string | null
+          link_id: string
+          link_source: string
+          ml_account_id: string
+          occurred_at: string
+          organization_id: string
+          previous_sku_id: string | null
+          reason: string | null
+          ref_kind: string
+          sku_id: string
+          user_product_id: string | null
+          variation_id: string | null
+        }
+        Insert: {
+          actor_source: string
+          actor_user_id?: string | null
+          channel_sku?: string | null
+          created_at?: string
+          event_type: string
+          id?: string
+          item_id?: string | null
+          link_id: string
+          link_source: string
+          ml_account_id: string
+          occurred_at?: string
+          organization_id: string
+          previous_sku_id?: string | null
+          reason?: string | null
+          ref_kind: string
+          sku_id: string
+          user_product_id?: string | null
+          variation_id?: string | null
+        }
+        Update: {
+          actor_source?: string
+          actor_user_id?: string | null
+          channel_sku?: string | null
+          created_at?: string
+          event_type?: string
+          id?: string
+          item_id?: string | null
+          link_id?: string
+          link_source?: string
+          ml_account_id?: string
+          occurred_at?: string
+          organization_id?: string
+          previous_sku_id?: string | null
+          reason?: string | null
+          ref_kind?: string
+          sku_id?: string
+          user_product_id?: string | null
+          variation_id?: string | null
+        }
+        Relationships: []
+      }
       sku_listing_links: {
         Row: {
           channel_sku: string | null

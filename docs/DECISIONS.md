@@ -2077,6 +2077,26 @@ Sem fechar isso, a garantia "toda mudança deixa evento" seria vazia. Revogado n
 
 **Impacto:** migration `20260828191841` (tabela nova + trigger + RLS, revogações, drop da FK, helper de autorização, 3 RPCs, `resolve_link_candidate` emendada), `apps/web/app/vinculacoes/actions.ts` (RPC + `retargetLink`/`removeLink` + tradução de erro), `apps/web/lib/manual-link.ts` (as duas funções de mensagem de conflito foram REMOVIDAS — a RPC as absorveu, e duplicá-las seria manter duas verdades), 6 testes de RLS reescritos. `check` 29/29. **Sem UI de remover/trocar ainda** — as ações existem, o botão é a fatia seguinte.
 
+## D-126 — A supressão que faltava: decisão humana não é desfeita pela planilha
+
+**Contexto:** D-125 entregou remover/trocar vínculo com histórico, e declarou como requisito da fatia seguinte exatamente isto — sem supressão, um vínculo `IMPORT_UPSELLER` removido à mão **volta na próxima importação** e desfaz a decisão humana em silêncio. Uma feature de "desfazer" que se desfaz sozinha não é uma feature.
+
+**Decisão 1 — a supressão é por CHAVE NATURAL, lida em lote.** `applyLinks` passa a montar um `Set` das chaves com `REMOVED` **humano** (`actor_source='HUMAN'`), no mesmo `chunk(accountIds)` que já existia, sobre o índice parcial dedicado que D-125 criou. Chave suprimida não gera INSERT.
+
+**Decisão 2 — suprimido vira `UNRESOLVED` e NÃO abre candidato.** Vínculo removido por gente é **questão fechada, não fila**: abrir um `link_candidate` recolocaria na Central de Vinculações exatamente o que alguém tirou de lá. A linha da planilha fica `UNRESOLVED` com o motivo visível em `/importacoes`, que é onde o operador descobre por que aquela linha não aplicou.
+
+**Decisão 3 — falha ao ler a supressão PROPAGA.** Tratar erro de leitura como "nada suprimido" recriaria exatamente os vínculos que alguém removeu de propósito — a mesma classe de mentira que D-067 auditou, e aqui com consequência de dado.
+
+**Decisão 4 — a reescrita in-place do importador passa a deixar rastro.** `RETARGETED` com `actor_source='IMPORT'` e `previous_sku_id`. Isto fecha o buraco que a defesa do painel de D-125 apontou como o mais grave: **a mutação MAIS FREQUENTE desta tabela não é DELETE, é o UPDATE do importador** — e ele reescrevia `sku_id` sem deixar rastro nenhum. Foi por causa dele que D-020 precisou congelar `order_items.sku_id` em vez de confiar no join.
+
+**Armadilha achada ao implementar, que teria virado erro em produção:** `toUpdate` também dispara quando **só o `channel_sku`** muda, e nesse caso `sku_id` continua igual — o que viola `sku_listing_link_events_target_coherent`, que exige `previous_sku_id <> sku_id` num RETARGETED. O evento só é emitido quando o SKU realmente mudou.
+
+**Falha ao gravar o evento derruba o lote, de propósito.** O UPDATE é idempotente (mesmos valores na retentativa), então perder a auditoria é pior que repetir o trabalho — e é coerente com os outros `throw` da mesma função.
+
+**Impacto:** `apps/worker/src/handlers/erp-import-apply.ts` (supressão + evento), 2 testes novos, tipo da tabela `sku_listing_link_events` inserido em `types.ts` (D-125 tinha inserido só as RPCs). **Sem migration** — o índice parcial e a tabela já vieram de D-125. `check` 29/29.
+
+**Segue aberto:** o botão de remover/trocar na interface. As Server Actions (`retargetLink`/`removeLink`) existem desde D-125; falta a UI.
+
 ## Como adicionar nova decisão
 
 Registrar:
