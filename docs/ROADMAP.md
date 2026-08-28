@@ -320,7 +320,7 @@ A ordem não é preferência: é a Regra de Progressão deste arquivo. Quase tod
 
 - [x] **Enumerar o catálogo real do vendedor** — código concluído em 2026-08-28 (D-121): pesquisa oficial primeiro (§2.14), depois `scanSellerItems`+`getItemsBatch` e o fetcher reescrito. `search_type=scan` obrigatório (o teto de 1.000 é real), duas fases (a busca só devolve IDs), varredura drenada inteira antes de escrever (scroll expira em 5 min). Anúncio sem vínculo passa a existir em `listings` com `sku_id` nulo. **NÃO deployado** — pela regra de D-109, só estará verificado quando uma execução for LIDA
 - [x] ~~Abrir `link_candidates` para o Mercado Livre~~ — **decidido DIFERENTE em 2026-08-28 (D-122), depois de painel independente**: a fila é DERIVADA de `listings` (`get_unlinked_listings`, anti-join por qualquer forma de vínculo), não materializada em candidatos. `link_candidates` existe para referências SEM CASA; desde D-121 anúncios do ML têm casa. Correção que veio junto: `listings.sku_id IS NULL` **não** é "sem vínculo" — dos 1.917, **1.013 já têm vínculo de variação**; sem vínculo nenhum são **904** (658 ativos). DISMISS persistente fica de fora, com gatilho declarado
-- [ ] **Sincronizar anúncios COM variação** — hoje `.is("variation_id", null)` exclui 15,5% da receita de `listings`/visitas/conversão
+- [x] **Sincronizar anúncios COM variação** — **metade feita em 2026-08-28 (D-123)**: `get_listing_sales`/`get_listing_traffic` deixaram de filtrar `variation_id is null` e devolveram **R$ 469.593,20 (15,4% da receita, 460 anúncios)** a `/anuncios`. Prova de ausência de dupla contagem: a soma por anúncio bate com `daily_account_metrics` em exatamente R$ 0,00. **Segue aberto**: a enumeração de VISITAS e de FULL ainda usa `sku_listing_links` com `variation_id is null` — 3.382 dos 5.085 anúncios não têm visita, e 1.060 vendem sem visita registrada, então a conversão deles é `null` (correto: sem denominador, não se inventa 0%). Fatia própria porque muda a carga na API (visitas aceita 1 item por chamada: ~1.900 chamadas/dia a mais)
 - [x] **Vinculação manual livre** — concluída em 2026-08-28 (D-119)
 - [ ] **Desfazer vínculo + histórico auditável de vínculo** — as duas nascem juntas; hoje um vínculo manual errado só se corrige por SQL (lacuna declarada em D-119)
 - [ ] **Tela de integridade de vinculações** com reconciliação INDEPENDENTE por conta, que não dependa do mesmo pipeline que ela audita
@@ -366,7 +366,7 @@ A ordem não é preferência: é a Regra de Progressão deste arquivo. Quase tod
 - [ ] **Timeline de evidências** (a ordem dos acontecimentos), para Diagnóstico e "O que aconteceu?". `domain_events` já é a linha do tempo; falta a tela
 - [ ] **IA explicando a AÇÃO**, não só o diagnóstico do SKU, com o vocabulário obrigatório (causa provável, fatores contribuintes, hipóteses, evidências contrárias, o que não conseguimos verificar)
 - [ ] **Atalhos operacionais na Central de Ações** — hoje não existe um único link, e a recomendação gerada manda abrir telas que a interface não oferece
-- [ ] **Ruído antes da inteligência**: `stock.balance.diverged` gera ~2.040 eventos CRÍTICOS por dia e é 55,1% de todas as notificações. Agregar ou silenciar antes de acrescentar qualquer sinal novo
+- [ ] **Ruído antes da inteligência**: `stock.balance.diverged` g   tos CRÍTICOS por dia e é 55,1% de todas as notificações. Agregar ou silenciar antes de acrescentar qualquer sinal novo
 
 ---
 

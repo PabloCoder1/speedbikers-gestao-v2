@@ -2006,6 +2006,22 @@ A consequência de não corrigir seria grave, não cosmética: metade da fila se
 
 **Impacto:** migration `20260828183728` (uma função, sem tabela/coluna/índice), `apps/web/app/vinculacoes/{page,manual-link-form}.tsx`, `apps/web/app/anuncios/page.tsx` (texto), `packages/db/src/types.ts` (tipo inserido cirurgicamente). `check` 29/29. **O bloco de guarda de candidato OPEN em `actions.ts` NÃO foi tocado** — é código morto hoje (zero candidatos) e continua morto, mas removê-lo seria mudança sem necessidade medida e quebraria a compatibilidade se a fonte ERP voltar a produzir candidatos.
 
+## D-123 — Venda de anúncio COM variação volta a contar: R$ 469.593,20 que a tela escondia
+
+**Contexto:** terceiro item da Fase 4B. `get_listing_sales` e `get_listing_traffic` filtravam `m.variation_id is null`, e o comentário da própria função dizia o motivo: *"mesma restrição de escopo: só itens sem variação, igual sync.listings.snapshot"*.
+
+**Decisão — o filtro era o espelho de um limite que deixou de existir, e virou mentira.** Enquanto `listings` só continha itens sem variação (enumeração por `sku_listing_links`), somar variações traria linhas sem par na tela. **D-121 acabou com essa restrição** — `listings` é o catálogo real e itens com variação estão lá. O filtro parou de proteger e passou a **esconder receita**.
+
+Medido em 2026-08-28, últimos 30 dias: **R$ 469.593,20 (15,4% da receita) em 460 anúncios** ficavam invisíveis em `/anuncios`. Um dashboard que erra 15% para menos não é conservador — é errado.
+
+**Por que não há dupla contagem, medido e não presumido.** `daily_listing_metrics` tem grão `(ml_account_id, mlb_id, variation_id, metric_date)` e cada item de pedido contribui para exatamente UMA linha; verifiquei que **zero** itens têm os dois grãos no mesmo dia. As duas funções **já agrupavam por `(conta, mlb_id)`** — a pergunta certa para uma tela cujo grão é o ANÚNCIO. A prova final é aritmética: depois da mudança, a soma do RPC bate com `daily_account_metrics` com diferença de **exatamente R$ 0,00**; antes faltavam R$ 469.593,20.
+
+**O que NÃO foi corrigido, e por quê.** Itens com variação passam a ter PEDIDOS mas continuam sem VISITAS — a varredura de visitas ainda enumera `sku_listing_links` com `variation_id is null`. Para eles `conversion_rate` continua `null`, nunca zero: sem denominador, a resposta honesta é "não sei", não "0%". Medido: **1.060 anúncios vendem sem visita registrada** e 3.382 dos 5.085 do catálogo não têm visita nenhuma.
+
+Trocar a enumeração de visitas (e de Full) para `listings` é **fatia própria** porque muda a carga na API do Mercado Livre: a API de visitas aceita **1 item por chamada** (`docs/MERCADO_LIVRE.md` secao 2.15), então sair de ~3.168 para ~5.085 itens é ~1.900 chamadas/dia a mais. Isso merece sua própria verificação de rate limit, não um apêndice.
+
+**Impacto:** migration `20260828185020` (duas funções substituídas, sem tabela/coluna/índice). Nenhuma mudança de código de aplicação — as telas já consomem as duas funções. `check` 29/29.
+
 ## Como adicionar nova decisão
 
 Registrar:
