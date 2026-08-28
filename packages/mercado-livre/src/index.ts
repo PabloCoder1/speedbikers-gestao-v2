@@ -90,3 +90,20 @@ export type {
 } from "./questions.js";
 
 export { decryptToken, encryptToken, loadEncryptionKey } from "./token-cipher.js";
+
+export {
+  ITEMS_MULTIGET_MAX_IDS,
+  SELLER_ITEMS_MAX_LIMIT,
+  chunkItemIds,
+  getItemsBatch,
+  itemsMultigetEntrySchema,
+  itemsMultigetSchema,
+  scanSellerItems,
+  sellerItemsScanPageSchema,
+} from "./items.js";
+export type {
+  GetItemsBatchOptions,
+  ItemsMultigetEntry,
+  ScanSellerItemsOptions,
+  SellerItemsScanPage,
+} from "./items.js";
