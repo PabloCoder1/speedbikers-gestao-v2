@@ -302,6 +302,88 @@ das APIs de Perguntas/Mensagens antes de qualquer código de integração.
 
 ---
 
+## Subfases acrescentadas em 2026-08-28 (D-120)
+
+Trinta blocos de features trazidos pelo usuário, auditados contra o código real e o banco de produção antes de virarem checklist. Requisitos em `docs/PRODUCT_REQUIREMENTS.md` ("Consolidação de requisitos — 2026-08-28"); achados e ordem em `docs/DECISIONS.md` D-120.
+
+**Nenhuma fase existente foi renumerada** — as subfases seguem o precedente de D-071, que acrescentou a 7B sem tocar na numeração de `docs/PROMPT_MASTER.md` §38.
+
+**Ordem de execução proposta:** `4B → 5C → 5D → 6B → 9`, com a **Fase 8 intercalável a qualquer momento** (backup/restore verificado não conflita com nada disto e é o único risco que cresce a cada dia de uso real).
+
+A ordem não é preferência: é a Regra de Progressão deste arquivo. Quase todas as features pedidas ficam no fim da cadeia `confiabilidade → métricas → eventos → diagnóstico → ações → IA`, e a auditoria encontrou os problemas no começo dela.
+
+---
+
+### Fase 4B — Confiabilidade do catálogo e do estoque
+
+**Por que primeiro:** 80% das features pedidas leem SKU, vínculo ou saldo local. Os três estão medidos como incompletos ou contaminados. Construir dashboards e sugestão de compra sobre isso é produzir decisão errada com aparência de certeza.
+
+- [ ] **Enumerar o catálogo real do vendedor** (`GET /users/{id}/items/search`, `docs/MERCADO_LIVRE.md` secao 2.14) em vez de enumerar `sku_listing_links`. Medido: 3.679 anúncios que já venderam não têm vínculo nenhum, e 21,8% dos itens vendidos em 30 dias saem com `sku_id` nulo (R$ 699.733,15)
+- [ ] **Abrir `link_candidates` para o Mercado Livre.** Hoje o `check source in ('ERP_IMPORT')` e a FK obrigatória para `erp_import_rows` tornam a tabela **estruturalmente incapaz** de receber um anúncio do ML. A tabela está vazia desde sempre
+- [ ] **Sincronizar anúncios COM variação** — hoje `.is("variation_id", null)` exclui 15,5% da receita de `listings`/visitas/conversão
+- [x] **Vinculação manual livre** — concluída em 2026-08-28 (D-119)
+- [ ] **Desfazer vínculo + histórico auditável de vínculo** — as duas nascem juntas; hoje um vínculo manual errado só se corrige por SQL (lacuna declarada em D-119)
+- [ ] **Tela de integridade de vinculações** com reconciliação INDEPENDENTE por conta, que não dependa do mesmo pipeline que ela audita
+- [ ] 🔴 **Decidir o estoque sentinela** — 581 de 828 SKUs com saldo positivo acima de 1.000 unidades (164 em exatamente 3.996), mais 1.639 saldos negativos. **Bloqueia valor de estoque, cobertura confiável e toda a Fase 5D.** Decisão de negócio, não de código — D-120, questão aberta 1
+- [ ] **Vínculo fornecedor → SKU** (`skus` não tem `supplier_id`; item P1 já registrado como alias reutilizável) — pré-requisito da configuração de reposição
+
+---
+
+### Fase 5C — Dashboards operacionais e filtros padronizados
+
+**Depende de:** 4B para os itens que envolvem anúncio e estoque. Os de venda pura podem andar antes.
+
+- [ ] **Vendas**: taxas do ML, margem operacional por pedido, pedidos/valor cancelados, taxa de cancelamento, SKUs distintos vendidos, visão "hoje". Definições em `docs/METRICS.md` 5C — **"receita líquida" é nome vetado**
+- [ ] **Gráfico com métrica trocável** (faturamento/unidades/pedidos/packs). A RPC já devolve as quatro e a tela plota uma: é interface, não banco
+- [ ] **Anúncios como dashboard**: colunas e filtros completos, incluindo anúncio SEM vínculo (destravado pela 4B) e filtro por conta
+- [ ] **Estoque enriquecido**: marca, categoria, origem, custo, Full, datas — **tudo já existe em `skus` e nenhuma tela mostra**. Valor de estoque fica bloqueado pela questão 1
+- [ ] **Curva ABC com escopo e critério**: recálculo DENTRO do escopo de conta (medido: 62% dos SKUs multi-conta mudam de classe), critério trocável, períodos configuráveis. Exige parâmetro no RPC, nunca filtro em JavaScript
+- [ ] **Filtros padronizados** (conta, período, marca, fornecedor, origem, SKU, status) em componente compartilhado, na URL, compatível com os Filtros Salvos já existentes
+- [ ] **Saúde da sincronização**: backfill × contínuo, por conta e recurso, percentual só onde houver denominador confiável. Ganho barato já identificado: `ml_accounts.backfill_covered_until` e `sync_runs.items_processed` são gravados e nunca lidos
+
+---
+
+### Fase 5D — Reposição e compra inteligente
+
+**Depende de:** 4B inteira, em especial a questão 1. Sem saldo confiável, toda sugestão é ficção.
+
+- [ ] **Configuração de reposição** por fornecedor/origem/SKU: lead time, cobertura alvo, buffer, política
+- [ ] **Tendência determinística** por janelas (90/60/30/15), classificando crescendo/estável/caindo
+- [ ] **Definição de "estoque real aproveitável"** — o que entra de Local, Full, Reservado e Trânsito, sem contar duas vezes nem ignorar
+- [ ] **Sugestão de compra auditável**, com decomposição visível ("por que comprar 48?"). Base matemática já existe e está testada (`simulateRequiredQuantity`, D-080)
+- [ ] **Estados operacionais calculados**: ruptura, compra urgente, comprar em breve, cobertura baixa/adequada, excesso
+- [ ] **Custo de simulação separado do custo cadastrado**, com histórico de custo (hoje `skus.purchase_cost` é sobrescrito a cada importação)
+- [ ] **Priorização de compras** por Curva ABC, risco, cobertura, crescimento, prazo e valor
+- [ ] **Da cobertura para o pedido de compra**, com aprovação humana e sem misturar nacional e importado (item P1 já registrado)
+
+---
+
+### Fase 6B — Diagnóstico narrado, timeline e ações acionáveis
+
+**Depende de:** 5C para os sinais novos. A narração em si já tem motor (D-082).
+
+- [ ] **Correlação alcançar eventos de anúncio e pedido** — hoje o filtro `entity_type='sku'` exclui todo `listing.*` e `order.*`, então mudança de preço/título/status **nunca** chega ao diagnóstico
+- [ ] **Timeline de evidências** (a ordem dos acontecimentos), para Diagnóstico e "O que aconteceu?". `domain_events` já é a linha do tempo; falta a tela
+- [ ] **IA explicando a AÇÃO**, não só o diagnóstico do SKU, com o vocabulário obrigatório (causa provável, fatores contribuintes, hipóteses, evidências contrárias, o que não conseguimos verificar)
+- [ ] **Atalhos operacionais na Central de Ações** — hoje não existe um único link, e a recomendação gerada manda abrir telas que a interface não oferece
+- [ ] **Ruído antes da inteligência**: `stock.balance.diverged` gera ~2.040 eventos CRÍTICOS por dia e é 55,1% de todas as notificações. Agregar ou silenciar antes de acrescentar qualquer sinal novo
+
+---
+
+### Fase 9 — Escrita no Mercado Livre: republicação oficial
+
+**Depende de:** 4B (saber quais anúncios existem), 6B (recomendar com evidência) e do motor de alterações de anúncio. É a **primeira escrita destrutiva do projeto** — hoje só existe uma escrita no ML, e é responder pergunta.
+
+- [ ] **Pesquisa oficial** — concluída em 2026-08-28 (`docs/MERCADO_LIVRE.md` secao 2.16): endpoint, pré-condições, uma republicação por pai, `parent_item_id`, tags, herança de visitas/vendas, **variação renovada**, e o vácuo sobre Full, catálogo, idempotência e reputação
+- [ ] **Modelo pai → filho** e a operação rastreável por estados, com idempotência própria (a API não oferece nenhuma)
+- [ ] **Preflight** que nunca fecha o anúncio quando uma pré-condição crítica falha
+- [ ] **Snapshot antes da ação** e remapeamento obrigatório de variações depois
+- [ ] **Bloqueio inicial de Full e Catálogo** — a doc oficial é silenciosa nos dois
+- [ ] **Permissão específica** imposta no backend, e confirmação humana explícita
+- [ ] **Medição 7/15/30 dias** reaproveitando `action_decisions`/`action_outcomes` (D-065) — reuso, não feature nova
+
+---
+
 ## Fase 8 — Hardening e produção
 
 - [ ] Migrar `infra/` de scripts para Terraform
@@ -319,7 +401,7 @@ Não iniciar features de domínio antes de concluir a arquitetura detalhada e re
 
 Não inverter a ordem **confiabilidade dos dados -> métricas corretas -> histórico/eventos -> analytics -> diagnóstico -> ações -> IA** para produzir interface inteligente sobre dados frágeis.
 
-A ordem de execução é **0 -> 1 -> 2 -> 3 -> 5A -> 4 -> 5B -> 6 -> 7 -> 7B -> 8** (D-033, 7B acrescentada por D-071).
+A ordem de execução é **0 -> 1 -> 2 -> 3 -> 5A -> 4 -> 5B -> 6 -> 7 -> 7B -> 4B -> 5C -> 5D -> 6B -> 9** (D-033; 7B acrescentada por D-071; 4B/5C/5D/6B/9 acrescentadas por D-120, sem renumerar nada). **A Fase 8 é intercalável a qualquer momento** — backup/restore verificado não conflita com nenhuma delas e é o único risco que cresce a cada dia de uso real.
 
 A Fase 5A antecede a Fase 4 porque o dashboard de vendas não usa estoque, e a Fase 3 já entrega pedidos confiáveis. A Fase 5B só vem depois da Fase 4 pelo motivo oposto: **dashboard sobre estoque não confiável é pior que dashboard nenhum**, porque produz decisão errada com aparência de certeza.
 
@@ -327,12 +409,17 @@ A Fase 5A antecede a Fase 4 porque o dashboard de vendas não usa estoque, e a F
 
 ## Próximo passo imediato
 
-> Atualizado em 2026-08-27 (segunda vez no mesmo dia), junto com a sincronização de `docs/HANDOFF.md` — a versão anterior desta seção tinha parado em D-097 enquanto D-100 a D-103 já estavam entregues e em produção. A versão antes dessa tinha parado em D-088. **Esta seção é a que mais envelhece no repositório: reescrever ela é parte de fechar qualquer etapa, não uma tarefa separada.**
+> Reescrito em 2026-08-28 (D-120). A versão anterior tinha parado em D-103 enquanto D-104 a D-119 já estavam entregues — inclusive a Fase 7B inteira. **Esta seção é a que mais envelhece no repositório: reescrevê-la é parte de fechar qualquer etapa, não uma tarefa separada.**
 
-**Fase 7B com Perguntas E Mensagens pós-venda em produção.** A cadeia completa D-083 a D-097 está entregue: pesquisa das APIs, modelo unificado, seis tabelas `support_*`, mapper/UPSERT, detalhe por `questionId`, webhook `questions`, reconciliação de Perguntas (D-089 — a "próxima pequena etapa" da versão anterior desta seção), Caixa de Entrada `/atendimento` (D-090), correções de webhook/allowlist (D-091 a D-093), triagem por RPC transacional (D-094), detalhe do atendimento (D-095), **envio de resposta manual — a primeira escrita do projeto no ML** (D-096) e ingestão de Mensagens pós-venda com reconciliação a cada 10 min (D-097, em produção desde 2026-08-27: 4 contas, 14 conversas, 150+ mensagens, zero falhas).
+**Fase 7B COMPLETA (D-116)** e o Copiloto fechado (D-114). Depois disso, quatro etapas:
 
-**O que segue aberto na Fase 7B** (checklist acima): reclamações/devoluções/mediações, notificações de atendimento, templates/respostas rápidas, Copiloto sugerindo resposta, Base de Conhecimento Validada, métricas de SAC, detecção de padrões e integração com Diagnóstico.
+- **D-117** — dois defeitos P0 achados por auditoria: a Central de Ações quebraria inteira na primeira ação de SAC (`evidence` tem duas formas, a tela lia uma, sem consultar `kind`), e o envio de resposta não checava a CONTA. `private.has_role` sem escopo de organização ficou registrado, não corrigido: 32 sítios, e a verificação adversarial refutou a exploração hoje (1 organização, medido).
+- **D-118** — a CI vermelha de D-117 expôs dois defeitos latentes que não eram dela: `knowledge_entries` repetindo o `on delete set null` que D-099 tinha acabado de eliminar, e um teste de escopo que **nasceu impossível de passar** (pedia zero onde a fixture garante 1 desde D-085), o que corrige o registro de D-115.
+- **D-119** — vinculação manual livre, o item P1 mais antigo aberto. A revisão adversarial achou 16 defeitos no código recém-escrito, três decisivos — entre eles a feature nascendo MORTA em qualquer organização com 2+ membros.
+- **D-120** — os trinta blocos de features do usuário viraram roadmap, depois de auditoria: cinco subfases novas (4B, 5C, 5D, 6B, 9), sem renumerar nada.
 
-**Entregue depois de D-097, e em produção** (não estava nesta seção): **D-100** — aviso de orçamento de IA operacional (`v3-check-ai-budget`, **12º job do Scheduler**; a contagem esperada em auditorias tipo D-070 é 12, não 9 nem 11), disparo manual validado com custo real do mês contra o teto. **D-101** — o webhook vivo pela primeira vez e os três contratos que o primeiro tráfego real quebrou, corrigidos (ver Fase 3 acima). **D-102** — transição automática pela atividade remota: pergunta/conversa respondida FORA da V3 não fica `NOVO` para sempre, guardada por RPC transacional que nunca sobrescreve triagem humana. **D-103** — `seller_max_message_length` aceita ZERO, fechando o "Achado 4" de D-101 com o campo exato que a instrumentação revelou.
+**O próximo passo é a Fase 4B**, e não por preferência: a auditoria mediu que 80% das features pedidas leem SKU, vínculo ou saldo local, e os três estão incompletos ou contaminados. O primeiro item é **enumerar o catálogo real do vendedor** — hoje a V3 não sabe quais anúncios existem.
 
-**Pendências fora da Fase 7B**: exercitar o **primeiro envio real de resposta** (🟡 — o código está em produção desde 2026-08-26; falta postar de verdade a um comprador, ato irreversível que deve ser humano e deliberado) e as melhorias incrementais da Fase 7 (planner/streaming, expansão de “O que aconteceu?”, estruturação de sugestões por IA) — nada disso deve ser declarado concluído. **Saíram desta lista em 2026-08-27**: configurar o painel do Mercado Livre (🔴, era ação humana — feita, ver D-101) e operacionalizar o aviso de orçamento de IA (feito, D-100).
+**Duas questões de negócio ABERTAS bloqueiam parte da fila** (D-120): o estoque sentinela (3.996/39.996 é o estado real do UpSeller ou erro de exportação?) e o significado operacional de "importado" (rota de compra ou origem fiscal?). A primeira bloqueia a Fase 5D inteira.
+
+**Pendências operacionais:** o **deploy do `apps/api`** com a correção de D-117 (só `apps/web` saiu, pela Vercel); a **CI dos commits `ad718f0` e `724a5c3`**, que precisa ser conferida pelo `headSha`; e o **primeiro envio real de resposta** a um comprador (🟡, ato irreversível que deve ser humano e deliberado).

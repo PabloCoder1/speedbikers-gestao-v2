@@ -535,6 +535,98 @@ Pesquisado para implementar `listing.status.paused`/`listing.status.reactivated`
 
 ---
 
+## 2.14 Catálogo completo do vendedor — PESQUISADO, NÃO INTEGRADO (2026-08-28, D-120)
+
+`GET /users/{user_id}/items/search` está registrado na seção 2 desde a Fase 0 e **nunca foi chamado**. Consequência medida em produção (D-117): a V3 **não sabe quais anúncios existem**. `listings` é populada enumerando `sku_listing_links` (`ml-listings-fetch.ts`), ou seja, só anúncios que a planilha do UpSeller já vinculou.
+
+Reconciliação independente, medida em 2026-08-28:
+
+| | |
+|---|---|
+| Itens que já venderam (prova de existência) | **7.361** |
+| Fora de `listings` | 4.710 |
+| **Sem vínculo nenhum** | **3.679** |
+| Itens vendidos nos últimos 30 dias com `sku_id` nulo | **21,8%** — 437 anúncios, R$ 699.733,15 |
+
+Antes de integrar, confirmar na doc oficial: paginação (`offset`/`limit` e o teto de 1.000 que a busca de itens costuma impor), `search_type=scan` para catálogos grandes, filtros por `status`, e se variações vêm no mesmo recurso ou exigem `GET /items/{id}`.
+
+---
+
+## 2.15 Dados financeiros do pedido — CONFIRMADO (leitura oficial, 2026-08-28, D-120)
+
+Pesquisado para decidir se "receita líquida" é exibível. **Resposta: parcialmente, e não com esse nome.**
+
+**O que é contrato:**
+
+| Campo | Onde | O que é |
+|---|---|---|
+| `order_items[].sale_fee` | `GET /orders/{id}` | "comissão de vendas"; em Provisões, "tarifa por unidade" |
+| `payments[].marketplace_fee` | `GET /orders/{id}` | "tarifa totalizada no pedido" |
+| `senders[].cost` | `GET /shipments/{id}/costs` | custo do frete cobrado DO VENDEDOR — a FAQ oficial designa este campo para conciliação |
+| `amounts.seller` | `GET /orders/{id}/discounts` | parcela do desconto bancada pelo vendedor; `total − seller` é a parte do ML |
+| `cost` | APIs de Product Ads | investimento, por período/campanha — nunca por pedido |
+
+Fórmula publicada pelo próprio Mercado Livre: `(unit_price * quantity) - marketplace_fee - seller.cost = valor líquido do pedido`.
+
+**O que a doc NÃO diz — e por isso não pode ser presumido:**
+
+- **A composição de `sale_fee`.** A doc nunca afirma se a taxa fixa está dentro ou fora. O texto adjacente ("alguns produtos podem incluir um custo fixo adicional à tarifa de venda") *sugere* estar fora — sugestão, não contrato.
+- **A taxa fixa efetivamente cobrada por pedido.** Só existe como simulação (`GET /sites/{site}/listing_prices`, que exige `logistic_type`+`shipping_mode` corretos, senão "não coincidirá com o que realmente será cobrado") ou consolidada no faturamento mensal.
+- **Taxa de parcelamento, custo de cobrança do MP, impostos retidos no MLB.** Só no faturamento (`/billing/integration/...`); `/perceptions/*` é explicitamente só Argentina.
+- **Reembolsos posteriores.** A doc avisa que `/orders/{id}/discounts` exclui "taxas adicionais e reembolsos posteriores".
+
+**Restrição oficial que decide a arquitetura:** o próprio ML afirma que os endpoints de Relatórios de Faturamento *"não devem ser utilizados como fonte de dados primária para gestão de vendas"*. Logo, **duas visões distintas e declaradas**: estimativa por pedido (tempo real) e conciliação por período (mensal). Nunca uma só chamada de "receita líquida".
+
+**Estado do dado na V3, medido:** `order_items.sale_fee` **existe, está 100% preenchido em todas as janelas e nunca foi lido por ninguém** — R$ 297.993,32 em 30 dias sobre R$ 3.057.736,33 (9,75%). Frete do vendedor **não é persistido** (`orders` não guarda `shipping`). **Não existe L0**: o bucket `raw-ml` foi provisionado e nunca recebeu um byte, então não há de onde reconstruir taxa alguma retroativamente.
+
+### Visitas — limites oficiais que invalidam a suposição de lote
+
+`GET /items/{ITEM_ID}/visits/time_window` — **janela máxima de 150 dias**, `unit` aceita **só `day`**, e o erro `validation_parameters` diz literalmente *"maximum amount of items to query is 1"*: **não existe consulta em lote de itens**. O código atual já chama por item, então não há bug — mas qualquer plano que assuma `ids=A,B,C` está errado.
+
+---
+
+## 2.16 Republicação (relist) — CONFIRMADO com lacunas declaradas (leitura oficial, 2026-08-28, D-120)
+
+Fonte: `developers.mercadolivre.com.br/pt_br/publique-seus-anuncios-novamente` (atualizada 29/12/2025), espelhada em EN/ES e nos domínios MLB/MLA/MLM. **Sem aviso de deprecação.** Nota de método: o portal devolve 403 para fetcher automatizado — só responde com User-Agent de navegador.
+
+```
+POST https://api.mercadolibre.com/items/{item_id}/relist
+{ "price": 550000, "quantity": 1, "listing_type_id": "gold_special" }
+```
+
+**Contrato confirmado:**
+
+| Regra | Situação |
+|---|---|
+| Pai precisa estar `closed` | ✅ Ativo → fechar via `PUT {"status":"closed"}` antes |
+| **Uma republicação por item pai** | ✅ tag `relist` marca "não pode mais" |
+| `parent_item_id` no filho | ✅ é o campo de vínculo pai→filho |
+| Visitas e vendas transferidas | ✅ tags `dragged_visits` / `dragged_bids_and_visits`; **não** transfere em `listing_type_id: "free"` |
+| **`variation_id` é RENOVADO** | ✅ literal: *"renovaremos o id do item e o id da variação"* |
+
+**Quatro crenças que a doc oficial desmente:**
+
+1. A tag **não** é `relisted` nem `item_relisted` — não existem. A oficial é **`relist`**.
+2. `variation_id` **não** é preservado: é renovado. Remapear `variation_id → SKU` é etapa obrigatória, não cuidado opcional.
+3. Os **60 dias não são prazo para republicar** — são a janela para **herdar as visitas**. A doc em nenhum lugar diz que o relist falha depois disso.
+4. É **POST**, não GET.
+
+**Vácuo documental — exige validação empírica antes de qualquer automação:**
+
+- **Experiência de compra / reputação: a doc não afirma NADA, em nenhuma direção.** A página de Experiência de Compra não menciona relist, item pai ou herança uma única vez. Logo, "a experiência volta a 100%" não é apenas não-garantido: não há base para afirmar nem negar.
+- **FULL: silêncio absoluto.** Zero ocorrências de "relist" nas páginas de Fulfillment, Convivência Full/Flex, User Products e Estoque Distribuído. A doc não diz o que acontece com o estoque físico no CD. **Bloquear é a única postura defensável.**
+- **Catálogo: silêncio absoluto.** Nem permitido, nem bloqueado. **Bloquear.**
+- **Idempotência NÃO EXISTE na API.** Busca por `idempot`, `X-Idempotency`, `Idempotency-Key` em todas as páginas: zero ocorrências. A proteção contra criar dois anúncios é 100% nossa.
+- **Nenhum código de erro documentado** para `/relist`, nem HTTP status de sucesso.
+- **Rate limit sem números** — só orientação qualitativa (backoff, jitter).
+- **Relist encadeado** (filho vira pai) não é descrito; a página de Visitas diz que visitas são herdadas *"não importando quantas vezes o anúncio seja publicado novamente"*, o que tensiona com "uma por pai". Incerto.
+
+**Defeito da própria doc, registrado:** o exemplo de resposta do relist **com variações** é internamente inconsistente — devolve o mesmo id do pai e `parent_item_id: null`, contradizendo o texto da página. Não tratar aquele shape como contrato.
+
+**Achado extra:** `automatic_relist` é campo público em todos os exemplos e tem filtro de busca oficial (`with_automatic_relist`), mas **nenhuma página define o que faz**.
+
+---
+
 ## 3. Estratégia de sincronização
 
 Aprovada e independente dos detalhes de endpoint. Três canais com papéis que nunca se confundem:

@@ -135,6 +135,51 @@ Nenhuma dessas será exibida enquanto a fonte não estiver confirmada e a defini
 - **Tempo médio de resolução** — exigiria `nascimento remoto − resolução`, e hoje `created_at` é ingestão local enquanto `resolved_at` mistura relógios: para um claim backfilled o resultado seria **negativo**. Entra quando houver um `opened_at` remoto persistido por case.
 - **Reincidência, produtividade por responsável, atendimentos por SKU** — sem definição inequívoca ainda; ver requisito ("quando matematicamente correto" / "quando fizer sentido operacionalmente").
 
+## 5C. Métricas propostas para a evolução dos dashboards (D-120) — DEFINIDAS, NÃO IMPLEMENTADAS
+
+> Registradas aqui ANTES de qualquer tela, como manda a regra central. Nenhuma
+> vai para a interface enquanto a fonte não estiver confirmada e a ressalva
+> não estiver visível ao lado do número.
+
+### 5C.1 O veto: "receita líquida" não é um nome permitido
+
+A pesquisa oficial (`docs/MERCADO_LIVRE.md` secao 2.15) confirmou que dá para compor **bruto − comissão − frete do vendedor − desconto bancado pelo vendedor**, mas que ficam de fora, por lacuna da própria documentação: a composição de `sale_fee` (a doc nunca diz se a taxa fixa está dentro), a taxa fixa por pedido, a taxa de parcelamento, o custo de cobrança do Mercado Pago, os impostos retidos no MLB e os reembolsos posteriores.
+
+Chamar isso de "receita líquida" afirmaria que o número fecha com o extrato — e ele não fecha. O nome canônico é **`margem_operacional_pedido`**, e a interface exibe a lista do que NÃO entra junto do valor.
+
+A conciliação real só existe no ciclo mensal de `/billing/integration/...`, que o próprio Mercado Livre diz não servir como fonte primária de gestão de vendas. Portanto **duas visões distintas e declaradas**, nunca uma só.
+
+### 5C.2 Definições
+
+| ID | Nome | Fórmula | Fonte | Ressalva obrigatória na tela |
+|---|---|---|---|---|
+| `taxas_ml` | Taxas do Mercado Livre | `SUM(order_items.sale_fee)` sobre vendas válidas | `order_items.sale_fee` (100% preenchido, medido) | É a **comissão de venda**. Não inclui frete, taxa fixa, parcelamento nem impostos |
+| `margem_operacional_pedido` | Margem operacional | `receita_bruta − taxas_ml − frete_vendedor − desconto_vendedor` | idem + `/shipments/{id}/costs` + `/orders/{id}/discounts` | **Não é receita líquida.** Lista o que não entra. Bloqueada até frete e desconto serem persistidos |
+| `pedidos_cancelados` | Pedidos cancelados | `COUNT(DISTINCT orders.id) where status in ('cancelled','pending_cancel')` | `orders.status` | `pending_cancel` conta como cancelado (mesma semântica de `order.cancelled`, `@sb/domain`) |
+| `taxa_cancelamento` | Taxa de cancelamento | `pedidos_cancelados / NULLIF(pedidos_cancelados + pedidos, 0)` | idem | Denominador = **elegíveis** (válidos + cancelados), não só válidos. **Cancelamento ≠ devolução ≠ reembolso ≠ mediação** — ver 5C.3 |
+| `valor_cancelado` | Valor cancelado | `SUM(orders.total_amount)` dos cancelados | `orders.total_amount` | Valor **pedido**, não valor estornado — a V3 não observa o estorno financeiro |
+| `skus_distintos_vendidos` | SKUs distintos vendidos | `COUNT(DISTINCT sku_id)` calculado NO GRÃO PEDIDO | `daily_sku_metrics` | **Nunca somar de grão inferior** (D-017/D-050). Exclui o bucket `sku_id IS NULL` — e esse bucket é 21,8% dos itens em 30 dias |
+| `valor_estoque` | Valor do estoque | `SUM(quantity × skus.purchase_cost)` | `inventory_balances` + `skus.purchase_cost` | 🔴 **BLOQUEADA** — ver 5C.4 |
+
+### 5C.3 Cancelamento, devolução, reembolso e mediação são quatro coisas
+
+Três mecanismos independentes, nenhum consolidado numa visão financeira:
+
+- **Cancelado** — `orders.status in ('cancelled','pending_cancel')` + evento `order.cancelled`.
+- **Reembolsado parcial** — `status = 'partially_refunded'`, que conta como **venda VÁLIDA** e entra na receita bruta pelo total. Reembolso TOTAL não tem status próprio.
+- **Devolvido** — não está em `orders`: vem da API de Claims/Returns (`support_cases.has_return`) e reverte **só estoque**, nunca receita.
+- **Mediação** — faceta do claim (`is_mediation`, `stage='dispute'`), sem efeito financeiro registrado.
+
+**Não existe join entre `support_cases` e `orders`** — há `pack_id`, mas nenhuma FK. Ligar uma devolução ao pedido que ela estorna, em SQL, não é possível hoje.
+
+### 5C.4 O que NÃO pode ir para a tela até a fonte melhorar
+
+- **`valor_estoque`** — medido em 2026-08-28: dos 828 SKUs com saldo local positivo, **581 estão acima de 1.000 unidades**, com 164 em exatamente 3.996 e 9 em 39.996. É **estoque sentinela do ERP** (o truque de 4.000/40.000 para o anúncio não pausar), fielmente espelhado pela reconciliação (`AJUSTE_RECONCILIACAO` injetou +5.206.669 unidades). Há ainda **1.639 SKUs com saldo NEGATIVO**, mediana −2. Um valor de estoque sobre isso daria R$ 4,3 milhões num único SKU de retrovisor. **Decisão de negócio pendente** — ver `docs/DECISIONS.md` D-120, questão aberta 1.
+- **Qualquer métrica derivada de cobertura, sugestão de compra ou priorização** — mesma base, mesmo bloqueio.
+- **Visão "HOJE"** — mecanicamente trivial, mas `daily_*_metrics` do dia corrente está incompleto por construção, e o projeto evita lê-lo em todos os outros lugares. Ou lê `orders` direto (fora do padrão L3) ou sinaliza a incompletude; nunca finge que o dia fechou.
+
+---
+
 ## 6. Como adicionar ou alterar uma métrica
 
 1. Registrar ou alterar a definição **aqui primeiro**.

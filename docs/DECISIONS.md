@@ -1899,6 +1899,42 @@ Também corrigidos na mesma passagem: `auth.getUser()` descartava `.error` (sess
 
 **Impacto:** `apps/web/lib/manual-link.ts` (novo, 13 testes), `apps/web/components/use-sku-search.ts` (novo, extraído), `apps/web/app/vinculacoes/{actions,page,manual-link-form,candidate-row}.tsx`, 3 testes de RLS. **Sem migration.** `check` 29/29.
 
+## D-120 — Trinta blocos de features viram roadmap: o que a auditoria mediu antes de aceitar qualquer um deles
+
+**Contexto:** o usuário trouxe trinta blocos de features, melhorias e correções para a V3, pedindo explicitamente que **nada fosse implementado** antes de comparar com o que já existe, identificar o que é bug, o que é melhoria e o que é novo, e propor ordem. A regra que governou a resposta foi a do próprio projeto: **medir, não presumir**. Sete auditorias de código em paralelo, duas pesquisas na documentação oficial do Mercado Livre e reconciliação independente contra o banco de produção.
+
+**Decisão 1 — a auditoria mudou a prioridade, e isso é o principal resultado.** Quase todas as features pedidas ficam no fim da cadeia `confiabilidade → métricas → eventos → diagnóstico → ações → IA`. Os achados estão no começo dela. Construir na ordem pedida seria decorar uma casa com a fundação trincada — o que a Regra de Progressão deste repositório proíbe nominalmente.
+
+Cinco achados sustentam a reordenação, todos medidos em 2026-08-28:
+
+- 🔴 **A Central de Vinculações não funciona, e é pior do que a desconfiança do usuário.** `link_candidates` tem **zero linhas** e nunca teve nenhuma. O gerador tem uma fonte só (a planilha do UpSeller) e o schema **PROÍBE** que um anúncio do Mercado Livre vire candidato (`check source in ('ERP_IMPORT')` + FK obrigatória para `erp_import_rows`). Reconciliação independente: **7.361 itens já venderam** (prova de existência), 4.710 estão fora de `listings` e **3.679 não têm vínculo nenhum**. Não é história antiga: **21,8% dos itens vendidos nos últimos 30 dias saem com `sku_id` nulo** — 437 anúncios, R$ 699.733,15. Esse dinheiro entra no faturamento da conta e some de tudo que é por SKU: estoque não é baixado, cobertura não existe, ABC não vê.
+- 🔴 **O estoque local é ficção.** Dos 828 SKUs com saldo positivo, **581 estão acima de 1.000 unidades** — 164 em exatamente 3.996, 9 em 39.996. É **estoque sentinela do ERP**, espelhado com fidelidade pela reconciliação (`AJUSTE_RECONCILIACAO`: +5.206.669 unidades). Somam-se **1.639 SKUs com saldo NEGATIVO**, mediana −2. Dos 1.140 SKUs que venderam em 30 dias e têm saldo, só **170 são plausíveis**.
+- 🔴 **A Central de Notificações já é 59% ruído.** `stock.balance.diverged` gera ~2.040 eventos CRÍTICOS por dia, estáveis, e responde por **55,1%** de todas as notificações (8.121 de 14.740, para um único usuário). É a falha dos 5.243 alertas da V2 renascendo — e é consequência direta do achado anterior.
+- 🔴 **Uma bomba-relógio em `/acoes`** e **dois furos de autorização** — corrigidos em D-117/D-118 antes de qualquer feature nova.
+- **`order_items.sale_fee` existe, está 100% preenchido e nunca foi lido.** R$ 297.993,32 em 30 dias sobre R$ 3.057.736,33 (9,75%).
+
+**Decisão 2 — "receita líquida" é um nome vetado.** A pesquisa oficial confirmou que dá para compor bruto − comissão − frete do vendedor − desconto do vendedor, mas que a composição de `sale_fee`, a taxa fixa por pedido, o parcelamento, os impostos retidos no MLB e os reembolsos posteriores **não são obteníveis**. O nome canônico é `margem_operacional_pedido`, com a lista do que não entra visível ao lado. A conciliação real só existe no ciclo mensal de faturamento, que o próprio Mercado Livre afirma não servir como fonte primária de gestão de vendas — logo, **duas visões declaradas, nunca uma**. Agravante: **não existe L0** (o bucket `raw-ml` foi provisionado e nunca recebeu um byte), então nada de financeiro é reconstruível retroativamente.
+
+**Decisão 3 — a republicação é oficial, e quatro crenças correntes sobre ela são falsas.** `POST /items/{item_id}/relist` existe, está documentado e sem deprecação. Mas: a tag é `relist` (não `relisted`/`item_relisted`); o `variation_id` é **renovado**, não preservado — remapear SKU vira etapa obrigatória; os 60 dias são a janela para **herdar visitas**, não prazo para republicar; e é POST. O vácuo documental decide o desenho: **a doc não afirma NADA sobre reputação/experiência de compra**, é silenciosa sobre Full e catálogo, e **não documenta idempotência alguma** — a proteção contra criar dois anúncios é 100% nossa. Full e catálogo ficam bloqueados na primeira versão.
+
+**Decisão 4 — subfases, sem renumerar nada.** `4B` (confiabilidade do catálogo e do estoque), `5C` (dashboards e filtros), `5D` (reposição e compra), `6B` (diagnóstico narrado e timeline) e `9` (escrita no ML). Mesmo precedente de D-071, que criou a 7B sem tocar em `docs/PROMPT_MASTER.md` §38. **A Fase 8 continua intercalável** — backup/restore verificado não conflita com nada disto e é o único risco que cresce a cada dia.
+
+**Decisão 5 — o que NÃO virou requisito.** Três premissas trazidas pelo usuário não sobreviveram à medição e ficam registradas como tal, em vez de virarem código:
+
+- "Navetec e Off Racer são importação" — `origin_code` fiscal diz que **82% dos Navetec e 91% dos Off Racer são NACIONAIS**.
+- "Anúncios sem vínculo estão escondidos pela tela" — não estão escondidos: **a linha não existe**, porque o sync enumera vínculos, não o catálogo.
+- "A Curva ABC pode ganhar filtro de conta" — pode, mas **só dentro do RPC**: filtrar em JavaScript produziria uma curva silenciosamente errada, e este repositório já teve exatamente esse bug de grão multi-conta.
+
+### Duas questões ABERTAS que bloqueiam parte do roadmap
+
+Nenhuma delas é decisão técnica, e **nenhuma foi respondida** — por isso ficam aqui em vez de virarem premissa inventada.
+
+**Questão 1 — o estoque sentinela.** Os valores 3.996 e 39.996 são o estado real do UpSeller (e devemos tratar `LOCAL` como "não confiável" para valor e cobertura), ou são erro de exportação a corrigir na origem? **Bloqueia**: valor de estoque, cobertura confiável e a Fase 5D inteira.
+
+**Questão 2 — o que "importado" significa na operação.** Rota de compra (fornecedor no exterior) ou origem fiscal do item? A resposta decide se a configuração de reposição pendura em fornecedor, em marca ou em SKU. **Bloqueia**: o modelo de configuração da Fase 5D.
+
+**Impacto:** `docs/ROADMAP.md` (5 subfases novas, ordem de execução atualizada), `docs/PRODUCT_REQUIREMENTS.md` (consolidação dos 30 blocos), `docs/METRICS.md` (§5C, com o veto de nome e os bloqueios declarados), `docs/MERCADO_LIVRE.md` (§2.14 catálogo, §2.15 financeiro, §2.16 relist). **Somente documentação — nenhuma linha de código, nenhuma migration, nenhuma alteração de banco ou infraestrutura.**
+
 ## Como adicionar nova decisão
 
 Registrar:

@@ -688,6 +688,119 @@ Resposta automática autônoma não entra nesta etapa. No futuro, automação
 parcial só seria avaliada para casos extremamente seguros e repetitivos,
 com decisão arquitetural explícita e métricas de confiança.
 
+## Consolidação de requisitos — 2026-08-28 (D-120)
+
+Trinta blocos de features, melhorias e correções trazidos pelo usuário, confrontados com o código real e com o banco de produção antes de virarem requisito. **Nada aqui invalida o que já existe**; os itens que a auditoria provou estarem quebrados estão marcados como CORREÇÃO, não como feature nova.
+
+Ordem de construção e dependências em `docs/ROADMAP.md`. Achados que sustentam as prioridades em `docs/DECISIONS.md` D-120.
+
+### Regra transversal: configuração em vez de hardcode
+
+Sempre que uma regra operacional puder mudar — lead time, cobertura alvo, buffer, origem de compra, política de reposição —, ela é **configuração estruturada**, nunca condicional por nome dentro do domínio.
+
+Medição que reforça a regra: `origin_code` (fiscal) diz que **82% dos SKUs Navetec são NACIONAIS**, e 91% dos Off Racer também — contra a premissa operacional de que essas marcas são importação. Ou o código fiscal do export está errado, ou "importado" no vocabulário da operação significa **rota de compra/fornecedor**, não origem fiscal do item. São conceitos diferentes, e o sistema só conhece o segundo. **Decisão pendente** (D-120, questão aberta 2). Enquanto ela não vier: nem hardcode por marca, nem confiança cega em `is_imported`.
+
+`skus` **não tem `supplier_id`** — a relação fornecedor→SKU nunca existiu. Toda configuração por fornecedor nasce de algo que ainda não existe.
+
+### Dashboard de Vendas
+
+Manter os seis KPIs atuais e acrescentar: taxas do Mercado Livre, margem operacional por pedido (**nunca chamada de "receita líquida"** — `docs/METRICS.md` 5C.1), pedidos cancelados, taxa de cancelamento, valor cancelado, SKUs distintos vendidos e a visão "hoje" com a incompletude do dia sinalizada.
+
+O gráfico deve permitir trocar a métrica entre faturamento, unidades, pedidos e compras/packs. **A RPC `get_sales_daily_series` já devolve as quatro** e a tela plota uma — é trabalho de interface, não de banco. Presets de 7/15/30/60/90 e personalizado já existem; a comparação com período anterior existe nos cards e deve alcançar o gráfico.
+
+### Dashboard de Anúncios
+
+Deixa de ser lista e passa a responder: quais anúncios existem, em qual conta, SKU, status, preço, disponível, Full, vendas, faturamento, visitas, conversão, última sincronização e problemas relevantes. Filtros por conta, status, SKU, MLB, período, com/sem Full, com/sem estoque, vinculado/sem vínculo, com/sem venda.
+
+**CORREÇÃO estrutural, não ajuste de tela:** anúncio sem vínculo não aparece porque **a linha não existe** — o sync enumera `sku_listing_links`, não o catálogo do vendedor. A interface já trata `sku_id` nulo. O trabalho é trocar a fonte de enumeração e rodar backfill. Anúncios **com variação** também estão fora hoje, e representam 15,5% da receita.
+
+### Estoque
+
+Enriquecer com marca, categoria, fornecedor, origem, custo, Full, data de criação e último movimento; filtros pelas mesmas dimensões. **Marca, categoria, origem, custo e data de criação já existem em `skus` e nenhuma tela os mostra** — `purchase_cost` está 94,9% preenchido.
+
+Valor do estoque **fica bloqueado** até a questão do estoque sentinela ser resolvida (`docs/METRICS.md` 5C.4).
+
+### Cobertura, reposição e sugestão de compra
+
+A tela deve responder **"quanto eu deveria comprar?"**, não só "quantos dias eu tenho". Para cada SKU: estoque atual, Full, reservado, em trânsito, venda média, tendência, cobertura, prazo de reposição, cobertura desejada, estoque de segurança, quantidade sugerida, custo unitário usado e custo total estimado.
+
+Regras:
+
+- A quantidade vem de **cálculo auditável, nunca de IA**. A IA pode explicar a sugestão; nunca produzi-la.
+- Toda sugestão precisa de decomposição visível ("por que comprar 48?"): demanda projetada, meta de cobertura, buffer, estoque aproveitável, em trânsito, resultado.
+- **"Estoque real aproveitável" exige definição explícita** para não contar duas vezes nem ignorar Local, Full, Reservado e Trânsito — quatro estados com quatro autoridades diferentes.
+- Tendência analisa janelas (90/60/30/15 dias) e classifica crescendo/estável/caindo, com fórmula determinística e documentada.
+- Importado e nacional têm políticas diferentes (referências iniciais: cerca de 90 dias de cobertura para importação; cerca de 15 dias de lead time para nacional). **Lead time não é cobertura alvo** — comprar 15 dias de estoque com 15 dias de prazo zera antes da entrega.
+- Excesso de estoque é estado próprio, calculado, não opinião da IA.
+- Priorização de compra (Curva ABC, risco de ruptura, cobertura, crescimento, margem quando conhecida, prazo, valor necessário) é camada de ordenação, **nunca compra automática**.
+- Custo cadastrado e custo de simulação são distintos: simular um pedido não pode destruir o custo histórico do SKU.
+- Da cobertura para o pedido: selecionar, revisar quantidade e custo, criar pedido — com aprovação humana, respeitando a regra de não misturar nacional e importado.
+
+**Pré-condição declarada:** tudo isto lê `inventory_balances.LOCAL`, hoje contaminado por estoque sentinela (581 de 828 SKUs com saldo positivo acima de 1.000 unidades) e por 1.639 saldos negativos. **Construir sobre isso produz número errado com aparência de precisão** — exatamente o que a Regra de Progressão do roadmap proíbe.
+
+### Configurações de reposição
+
+Estrutura por fornecedor/origem/SKU: lead time, cobertura desejada, buffer máximo, política de compra. Evolui sem alterar código quando um fornecedor ou prazo mudar.
+
+### Curva ABC
+
+Critério trocável (faturamento, unidades, pedidos), períodos de 30/60/90 e personalizado, e **escopo por conta com RECÁLCULO dentro do escopo** — não filtrar uma curva global.
+
+Medido: **726 SKUs vendem em mais de uma conta e 450 deles (62%) mudam de classe conforme a conta.** Recalcular não é refinamento: muda a resposta na maioria dos casos. Exige o parâmetro de conta **dentro** do RPC, nas duas CTEs; filtrar em JavaScript repetiria o bug de grão multi-conta que já derrubou um job em 2026-08-25.
+
+### Central de Ações e Diagnóstico com IA
+
+Manter a matemática determinística e acrescentar a camada de explicação: o que aconteceu, por que o sistema acredita nisso, evidências, confiança, ação recomendada, impacto esperado e o que o humano deve conferir. A IA **narra o que já foi calculado** e nunca inventa diagnóstico — regra já vigente.
+
+Vocabulário obrigatório: causa mais provável, fatores contribuintes, hipóteses, evidências contrárias e o que ainda não conseguimos verificar. Nunca "causa verdadeira".
+
+Ações ganham atalhos operacionais (abrir cobertura, abrir anúncio, abrir SKU, ver Full, abrir diagnóstico). **Hoje não existe nenhum link na Central de Ações** — só quatro botões —, e a própria recomendação manda "abrir a Caixa de Entrada deste SKU", navegação que a interface não oferece.
+
+### Timeline do diagnóstico
+
+A ordem dos acontecimentos é mais útil que o fato isolado. `domain_events` já é a linha do tempo e **não existe nenhuma tela cronológica**.
+
+Limite a resolver antes: a correlação filtra `entity_type='sku'`, e todo evento de anúncio é `entity_type='listing'`. **Mudança de preço, título ou status nunca chega ao diagnóstico hoje.**
+
+### Integridade de vinculações
+
+Indicadores por conta: anúncios sincronizados, vinculados, sem vínculo, percentual, candidatos abertos e resolvidos, inconsistências, variações sem vínculo. A tela deve permitir clicar na diferença.
+
+**Nunca tratar "candidatos abertos = 0" como "tudo vinculado".** A reconciliação tem de ser independente, comparando fontes que não dependem do mesmo pipeline.
+
+### Saúde da sincronização
+
+Diferenciar **backfill** (processo finito, chega a 100%) de **sincronização contínua** (permanente, cujo indicador honesto é frescor, não barra). Por conta e por recurso: status, progresso, processados, esperados quando conhecidos, percentual quando houver denominador confiável, última execução, último sucesso, último dado, erros, tentativas e frescor.
+
+**Nunca inventar porcentagem.** Sem denominador confiável, mostrar página atual, importados, último registro e frescor.
+
+Também distinguir **dado puxado do Mercado Livre** de **dado processado por nós** (métricas recalculadas), que é onde os gargalos aparecem.
+
+### Filtros consistentes entre telas
+
+Padronizar conta, período, marca, fornecedor, origem, SKU e status; componente compartilhado em vez de cada tela reinventar; filtros relevantes na URL; compatível com os Filtros Salvos já existentes — cujo mecanismo é agnóstico de tela e está plugado em apenas uma das cinco.
+
+### Recriar / republicar anúncio (relist)
+
+Operação **oficial** de republicação, nunca uma cópia via criação de item com parâmetros presumidos. Contrato e lacunas em `docs/MERCADO_LIVRE.md` secao 2.16.
+
+Requisitos:
+
+- **Não prometer** recuperação de experiência de compra, exposição, posição orgânica ou vendas. A documentação oficial **não afirma nada** sobre reputação em relist, em nenhuma direção. O que se pode afirmar é: "republicar pelo fluxo oficial quando elegível". Resultado observado depois vira medição, nunca garantia.
+- **Preflight obrigatório** antes de qualquer comando destrutivo; se uma pré-condição crítica falhar, **não fechar o anúncio**. Encerrar é irreversível — a doc afirma que item encerrado não pode ser reativado.
+- **Ler a tag de republicação no pai**: existe uma republicação por item pai, e essa é a checagem mais barata de todas.
+- **Snapshot auditável** antes da ação, suficiente para auditoria, diagnóstico e comparação antes/depois.
+- **Execução assíncrona** pela arquitetura existente (web → api → Cloud Tasks → worker), com estados rastreáveis e falhas nomeadas.
+- **Idempotência é 100% nossa** — a API do Mercado Livre não documenta nenhum mecanismo. Chave de operação, dedup e reconciliação de estado antes de recriar.
+- **Remapear variações é etapa obrigatória**, não cuidado opcional: a doc afirma que o identificador de variação é renovado.
+- **Bloquear inicialmente Full e Catálogo** — a documentação é silenciosa nos dois, e o risco é prender ou desvincular estoque físico.
+- **Relação pai → filho preservada para sempre**, nos dois sentidos, inclusive na Busca Universal: pesquisar o MLB antigo encontra o registro e aponta o atual.
+- **Permissão específica** para executar, imposta no backend, nunca só escondendo o botão.
+- **Confirmação humana explícita.** A IA pode recomendar avaliação; nunca executa e nunca afirma que republicar corrigirá o problema.
+- **Republicação não é atalho para qualidade**: antes de sugerir, verificar causas corrigíveis sem encerrar o anúncio (estoque, preço, título, foto, descrição, compatibilidade, Full, promoção, catálogo, Ads, logística).
+- **Medir 7/15/30 dias** com baseline capturado no ato. `action_decisions`/`action_outcomes` (D-065) já fazem exatamente isso — é reuso, não feature nova. Linguagem "após a republicação", nunca "por causa da".
+- Aprendizado agregado só quando houver amostra suficiente, vindo dos nossos dados e não de opinião da IA.
+
 ## Design System
 
 Paleta oficial inicial:
