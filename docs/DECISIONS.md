@@ -1741,6 +1741,26 @@ Não é específico de `questions`: **nunca chegou `orders_v2`, `post_purchase`,
 
 **Impacto:** `packages/contracts/src/copilot-tools.ts` (+schemas, 2 nomes novos), `apps/api/src/{copilot-generation.ts,copilot.ts,anthropic-client.ts}` (+testes), `apps/web` (`reply-form.tsx` com "Sugerir com IA" + auditoria; `/sugestoes` com "Estruturar com IA" + exibição dos nove campos num `<details>`, texto original sempre visível acima). O `as never` obsoleto de `/sugestoes` saiu no caminho (feature_suggestions entrou nos types em D-100). **Sem migration; deploy = api + web.**
 
+## D-113 — Base de Conhecimento Validada: SQL determinístico, validação humana, e o Copiloto ganha evidência de verdade
+
+**Contexto:** continuação do pedido "finalize o que falta do copiloto". A Base de Conhecimento era o pré-requisito da evidência de compatibilidade que a sugestão de resposta (D-112) declarava não ter — o prompt mandava dizer "será confirmado" para tudo.
+
+**Decisão 1 — tabela relacional consultada por SQL, NUNCA RAG** (D-071 é explícito; `docs/COPILOT.md` secao 6: sem embeddings, sem pgvector). `knowledge_entries`: fato (`content`), tipo (`COMPATIBILIDADE`/`ESPECIFICACAO`/`POLITICA`/`OUTRO`), fonte, SKU opcional (nulo = conhecimento geral da operação), estados `SUGERIDO → VALIDADO/REJEITADO/OBSOLETO`.
+
+**Decisão 2 — qualquer membro SUGERE; só ADMIN/GESTOR VALIDAM, e a policy força o nascimento como SUGERIDO.** O `with check` do INSERT exige `status = 'SUGERIDO'` — a barreira é o banco, não a UI. A constraint `validation_coherent` exige `confirmed_by`/`confirmed_at` em VALIDADO: **confirmação anônima não existe**. É a materialização do requisito "histórico de resposta não é automaticamente verdade" — a validação humana explícita é o que separa opinião de fato.
+
+**Decisão 3 — sem DELETE para `authenticated`.** Conhecimento errado vira REJEITADO/OBSOLETO; apagar esconderia que a equipe já acreditou naquilo. "Ativo/inativo" do requisito é coberto pelos estados, sem coluna redundante.
+
+**Decisão 4 — a consulta do Copiloto pega VALIDADO dos SKUs vinculados + gerais, e a falha degrada.** `suggest_support_reply` injeta no prompt um bloco "Conhecimento validado pela equipe" (limite 12, índice parcial no caminho quente); o system prompt passa a autorizar afirmar SÓ o que está nesse bloco. Erro na consulta = bloco vazio = "será confirmado" — evidência extra nunca derruba a sugestão.
+
+**Decisão 5 — SKU por CÓDIGO na UI, resolvido no servidor.** Código que não resolve é erro explícito; vincular ao SKU errado seria pior que não vincular.
+
+**Ritual de migration**: MCP → `list_migrations` → arquivo local na versão registrada (`20260828114602`) → bloco de types inserido cirurgicamente.
+
+**Verificação:** `check` **29/29**; 2 testes novos no prompt da sugestão (conhecimento entra como evidência; ausência vira "(nenhum registro)"), 7 de integração RLS (membro lê/outra org não; qualquer membro sugere; nascer VALIDADO recusado pela POLICY; ANALISTA não valida; ADMIN valida com quem/quando; VALIDADO sem confirmador recusado pela constraint; DELETE inexistente).
+
+**Impacto:** migration + types, `copilot-generation.ts` (consulta + prompt), `/atendimento/conhecimento` (página nova, actions, 2 componentes), link na Caixa de Entrada.
+
 ## Como adicionar nova decisão
 
 Registrar:

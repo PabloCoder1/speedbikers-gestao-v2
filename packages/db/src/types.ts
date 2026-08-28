@@ -1163,6 +1163,69 @@ export type Database = {
         }
         Relationships: []
       }
+      knowledge_entries: {
+        Row: {
+          confirmed_at: string | null
+          confirmed_by: string | null
+          content: string
+          created_at: string
+          created_by: string | null
+          id: string
+          kind: string
+          note: string | null
+          organization_id: string
+          sku_id: string | null
+          source: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          content: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          kind: string
+          note?: string | null
+          organization_id: string
+          sku_id?: string | null
+          source: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          content?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          kind?: string
+          note?: string | null
+          organization_id?: string
+          sku_id?: string | null
+          source?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "knowledge_entries_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "knowledge_entries_sku_id_fkey"
+            columns: ["sku_id"]
+            isOneToOne: false
+            referencedRelation: "skus"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       link_candidates: {
         Row: {
           channel_sku: string | null

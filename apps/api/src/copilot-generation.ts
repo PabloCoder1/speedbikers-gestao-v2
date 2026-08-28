@@ -26,11 +26,41 @@ const SUPPORT_REPLY_SYSTEM_PROMPT = [
   "Você redige uma RESPOSTA SUGERIDA para o atendimento de uma loja no Mercado Livre, que um atendente humano vai revisar, editar e só então enviar.",
   "Regras estritas:",
   "- Use SOMENTE as informações do contexto fornecido. Nunca invente estoque, prazo, preço, compatibilidade ou qualquer característica do produto que não esteja explícita no contexto.",
-  "- Se a pergunta do cliente pedir uma informação que o contexto não traz (por exemplo, compatibilidade com um veículo), a resposta deve dizer com clareza que será confirmado — nunca afirme nem negue sem base.",
+  "- O bloco 'Conhecimento validado pela equipe' contém fatos CONFIRMADOS por humanos — pode afirmá-los com segurança, citando o que dizem.",
+  "- Se a pergunta do cliente pedir uma informação que o contexto não traz (por exemplo, compatibilidade com um veículo que o conhecimento validado não cobre), a resposta deve dizer com clareza que será confirmado — nunca afirme nem negue sem base.",
   "- Português do Brasil, tom cordial e direto, do ponto de vista da loja.",
   "- No máximo 900 caracteres. Sem saudação genérica repetida, sem placeholders como {nome}, sem assinatura.",
   "- Responda APENAS com o texto da resposta, nada antes ou depois.",
 ].join("\n");
+
+const KNOWLEDGE_LIMIT = 12;
+
+/**
+ * Base de Conhecimento Validada (D-071/D-113): consulta SQL determinística —
+ * nunca RAG. SÓ `status = 'VALIDADO'` entra como evidência; SUGERIDO é
+ * opinião ainda não confirmada e afirmar a partir dele seria exatamente o
+ * "histórico de resposta virando verdade" que o requisito proíbe.
+ */
+async function fetchValidatedKnowledge(userClient: UserClient, skuIds: string[]): Promise<string[]> {
+  const filter = skuIds.length > 0 ? `sku_id.is.null,sku_id.in.(${skuIds.join(",")})` : "sku_id.is.null";
+
+  const result = await userClient
+    .from("knowledge_entries")
+    .select("kind, content")
+    .eq("status", "VALIDADO")
+    .or(filter)
+    .order("created_at", { ascending: false })
+    .limit(KNOWLEDGE_LIMIT);
+
+  if (result.error !== null) {
+    // Conhecimento é evidência EXTRA: falhar aqui degrada para "sem
+    // conhecimento" (o prompt manda dizer "será confirmado"), nunca derruba
+    // a sugestão inteira.
+    return [];
+  }
+
+  return result.data.map((entry) => `[${entry.kind}] ${entry.content}`);
+}
 
 const TRANSCRIPT_LIMIT = 40;
 
@@ -72,7 +102,7 @@ export async function runSuggestSupportReply(
   const caseResult = await userClient
     .from("support_cases")
     .select(
-      "id, channel, external_type, external_status, is_mediation, support_case_links(skus(sku, title), listings(title, item_id))",
+      "id, channel, external_type, external_status, is_mediation, support_case_links(sku_id, skus(sku, title), listings(title, item_id))",
     )
     .eq("id", input.supportCaseId)
     .maybeSingle();
@@ -111,9 +141,16 @@ export async function runSuggestSupportReply(
         ? `reclamação (${caseResult.data.external_type ?? "tipo desconhecido"})`
         : "conversa pós-venda";
 
+  const skuIds = caseResult.data.support_case_links
+    .map((link) => link.sku_id)
+    .filter((id): id is string => id !== null);
+
+  const knowledge = await fetchValidatedKnowledge(userClient, skuIds);
+
   const prompt = [
     `Tipo de atendimento: ${channelLabel}${caseResult.data.is_mediation ? " EM MEDIAÇÃO com o Mercado Livre" : ""}`,
     `Produto(s) vinculado(s): ${products.length > 0 ? products.join("; ") : "nenhum vínculo registrado"}`,
+    `Conhecimento validado pela equipe:\n${knowledge.length > 0 ? knowledge.map((fact) => `- ${fact}`).join("\n") : "(nenhum registro para este produto)"}`,
     `Conversa até aqui:\n${formatTranscript(transcript.data)}`,
   ].join("\n\n");
 

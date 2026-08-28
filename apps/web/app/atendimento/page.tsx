@@ -265,6 +265,9 @@ export default async function AtendimentoPage({
         <Link href="/atendimento/templates" style={{ fontSize: "0.8125rem", color: "var(--sb-secondary)" }}>
           Templates de resposta
         </Link>
+        <Link href="/atendimento/conhecimento" style={{ fontSize: "0.8125rem", color: "var(--sb-secondary)" }}>
+          Base de Conhecimento
+        </Link>
       </div>
       <p style={{ margin: "0 0 var(--sb-space-3)", color: "var(--sb-text-soft)", fontSize: "0.875rem" }}>
         {/* Corrigido em D-111 — dizia "só perguntas são sincronizadas",

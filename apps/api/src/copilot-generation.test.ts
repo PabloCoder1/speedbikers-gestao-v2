@@ -16,6 +16,7 @@ interface SupportFakes {
   supportCase: unknown;
   messages: unknown[];
   messagesError?: { message: string } | null;
+  knowledge?: { kind: string; content: string }[];
 }
 
 function fakeSupportClient(fakes: SupportFakes): UserClient {
@@ -42,6 +43,18 @@ function fakeSupportClient(fakes: SupportFakes): UserClient {
         return chain;
       }
 
+      if (table === "knowledge_entries") {
+        const chain = {
+          select: () => chain,
+          eq: () => chain,
+          or: () => chain,
+          order: () => chain,
+          limit: () => Promise.resolve({ data: fakes.knowledge ?? [], error: null }),
+        };
+
+        return chain;
+      }
+
       throw new Error(`tabela inesperada: ${table}`);
     },
   } as unknown as UserClient;
@@ -59,7 +72,7 @@ const OPEN_CASE = {
   external_type: null,
   external_status: "UNANSWERED",
   is_mediation: false,
-  support_case_links: [{ skus: { sku: "5821", title: "Baú 45L" }, listings: null }],
+  support_case_links: [{ sku_id: "sku-1", skus: { sku: "5821", title: "Baú 45L" }, listings: null }],
 };
 
 describe("runSuggestSupportReply", () => {
@@ -112,6 +125,33 @@ describe("runSuggestSupportReply", () => {
     await runSuggestSupportReply(userClient, { supportCaseId: CASE_ID }, anthropic);
 
     expect(narrate.mock.calls[0]?.[0]?.prompt).toContain("[mensagem banned]");
+  });
+
+  it("conhecimento VALIDADO entra no prompt como evidência (D-113)", async () => {
+    const userClient = fakeSupportClient({
+      supportCase: {
+        ...OPEN_CASE,
+        support_case_links: [{ sku_id: "sku-1", skus: { sku: "5821", title: "Baú 45L" }, listings: null }],
+      },
+      messages: [],
+      knowledge: [{ kind: "COMPATIBILIDADE", content: "Compatível com Honda X-ADV 750 2022-2025" }],
+    });
+    const { anthropic, narrate } = narrateReturning("ok");
+
+    await runSuggestSupportReply(userClient, { supportCaseId: CASE_ID }, anthropic);
+
+    const prompt = narrate.mock.calls[0]?.[0]?.prompt ?? "";
+
+    expect(prompt).toContain("[COMPATIBILIDADE] Compatível com Honda X-ADV 750 2022-2025");
+  });
+
+  it("sem conhecimento validado, o prompt diz isso — nunca inventa evidência", async () => {
+    const userClient = fakeSupportClient({ supportCase: OPEN_CASE, messages: [], knowledge: [] });
+    const { anthropic, narrate } = narrateReturning("ok");
+
+    await runSuggestSupportReply(userClient, { supportCaseId: CASE_ID }, anthropic);
+
+    expect(narrate.mock.calls[0]?.[0]?.prompt).toContain("(nenhum registro para este produto)");
   });
 
   it("o system prompt proíbe inventar e proíbe placeholder", async () => {

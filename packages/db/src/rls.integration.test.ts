@@ -5593,6 +5593,96 @@ describe("reply_templates (Templates de resposta, D-111)", () => {
   });
 });
 
+describe("knowledge_entries (Base de Conhecimento Validada, D-113)", () => {
+  let entryId = "";
+
+  beforeAll(async () => {
+    const inserted = await client.query<{ id: string }>(
+      `insert into public.knowledge_entries (organization_id, created_by, kind, content, source)
+       values ($1, $2, 'POLITICA', 'Troca em até 30 dias com nota fiscal.', 'CONFIRMACAO_INTERNA')
+       returning id`,
+      [ORG_SB, ADMIN_SB],
+    );
+
+    entryId = inserted.rows[0]?.id ?? "";
+  });
+
+  it("qualquer membro lê; outra organização não", async () => {
+    const proprio = await asUser<{ id: string }>(
+      ANALISTA_SB,
+      `select id from public.knowledge_entries where id = '${entryId}'`,
+    );
+    const alheio = await asUser<{ id: string }>(
+      DE_OUTRA_ORG,
+      `select id from public.knowledge_entries where id = '${entryId}'`,
+    );
+
+    expect(proprio).toHaveLength(1);
+    expect(alheio).toHaveLength(0);
+  });
+
+  it("qualquer membro SUGERE — o conhecimento nasce da operação inteira", async () => {
+    const rows = await asUserPersist<{ status: string }>(
+      ANALISTA_SB,
+      `insert into public.knowledge_entries (organization_id, created_by, kind, content, source)
+       values ('${ORG_SB}', '${ANALISTA_SB}', 'COMPATIBILIDADE', 'Compatível com CB 500X 2020+.', 'ATENDIMENTO')
+       returning status`,
+    );
+
+    expect(rows[0]?.status).toBe("SUGERIDO");
+  });
+
+  it("nascer VALIDADO é recusado pela POLICY — validação nunca vem no insert", async () => {
+    await expect(
+      asUser(
+        ANALISTA_SB,
+        `insert into public.knowledge_entries (organization_id, created_by, kind, content, source, status, confirmed_by, confirmed_at)
+         values ('${ORG_SB}', '${ANALISTA_SB}', 'OUTRO', 'burlando', 'CONFIRMACAO_INTERNA', 'VALIDADO', '${ANALISTA_SB}', now())`,
+      ),
+    ).rejects.toThrow(/row-level security/i);
+  });
+
+  it("ANALISTA não valida: RLS filtra e o UPDATE alcança zero linhas", async () => {
+    const rows = await asUser<{ id: string }>(
+      ANALISTA_SB,
+      `update public.knowledge_entries
+         set status = 'VALIDADO', confirmed_by = '${ANALISTA_SB}', confirmed_at = now()
+       where id = '${entryId}' returning id`,
+    );
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("ADMIN valida, com quem/quando gravados", async () => {
+    const rows = await asUserPersist<{ status: string; confirmed_by: string }>(
+      ADMIN_SB,
+      `update public.knowledge_entries
+         set status = 'VALIDADO', confirmed_by = '${ADMIN_SB}', confirmed_at = now()
+       where id = '${entryId}' returning status, confirmed_by`,
+    );
+
+    expect(rows[0]?.status).toBe("VALIDADO");
+    expect(rows[0]?.confirmed_by).toBe(ADMIN_SB);
+  });
+
+  it("VALIDADO sem confirmador é recusado pela constraint — confirmação anônima não existe", async () => {
+    await expect(
+      asUser(
+        ADMIN_SB,
+        `update public.knowledge_entries
+           set status = 'VALIDADO', confirmed_by = null, confirmed_at = null
+         where id = '${entryId}'`,
+      ),
+    ).rejects.toThrow(/knowledge_entries_validation_coherent/i);
+  });
+
+  it("DELETE não existe para authenticated — conhecimento errado vira REJEITADO/OBSOLETO", async () => {
+    await expect(
+      asUser(ADMIN_SB, `delete from public.knowledge_entries where id = '${entryId}'`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+});
+
 describe("guarda de GRANTs (D-066/D-098)", () => {
   // D-066 apertou 23 tabelas e o padrão foi REINTRODUZIDO nos dois dias
   // seguintes por migrations que não revogaram na criação (corrigido em
