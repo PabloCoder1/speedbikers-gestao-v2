@@ -1701,6 +1701,28 @@ Não é específico de `questions`: **nunca chegou `orders_v2`, `post_purchase`,
 
 **Fora desta fatia, com caminho apontado:** `support.customer_replied` é o melhor candidato à fatia 2 (a RPC de D-102 já devolve se a transição aplicou; exige chave não terminal e as três portas); `sla_at_risk` espera o job com relógio; agrupamento na Central e emissão a partir de ação humana continuam fora (a web não tem INSERT em `domain_events` e o fan-out não é security definer).
 
+## D-111 — Templates de resposta: inserir é pré-preencher, nunca enviar
+
+**Contexto:** próximo item da Fase 7B após as notificações (D-110). `reply_templates` era conceitual desde D-084/D-085. O HANDOFF já anotava: "o de menor risco e o que a operação provavelmente pede primeiro depois de responder algumas vezes à mão" — e a operação responde à mão desde D-096.
+
+**Decisão 1 — compartilhado pela ORGANIZAÇÃO, gerenciado por ADMIN/GESTOR, lido por qualquer membro.** Diferente de `saved_filters` (preferência pessoal): o valor do template é a equipe convergir na mesma resposta. Escrita por **RLS direta com policy checando papel** (`private.is_member_of` + `private.has_role(['ADMIN','GESTOR'])`), o padrão de `feature_suggestions` (D-079) — sem transação multi-tabela não há o que justificar RPC `security definer`. Todo GRANT de escrita tem policy correspondente, o invariante que o guard de D-098 verifica.
+
+**Decisão 2 — SEM placeholders nesta fatia, e o motivo está na tabela.** O requisito exemplifica `{nome}` — mas a V3 não tem o nome do comprador de forma confiável: `customer_external_id` é ID numérico e D-083 proíbe confiar em `from`/`to` (Agente de Mensageria). Substituir por dado errado **numa mensagem enviada a um cliente** é a pior versão de inventar dado. Registrado no `comment on table` para a próxima pessoa não "completar" o recurso sem ler isto.
+
+**Decisão 3 — inserir é PRÉ-PREENCHER.** O requisito: "templates não devem substituir o contexto específico do atendimento". O picker preenche a caixa de D-096 e a pessoa edita e confirma como sempre; inserir template também **troca o `clientRequestId`** — texto novo é tentativa nova, a regra de idempotência de D-096 preservada. `applyTemplate` (puro, testado): campo vazio recebe o texto; rascunho existente ganha o template APÓS linha em branco (nunca apaga); estourou os 2000, **não insere e avisa** — truncar mandaria frase cortada a um cliente.
+
+**Decisão 4 — `body` tem o MESMO teto da caixa de resposta (2000).** Template maior que o campo onde será colado é template que nunca cabe.
+
+**Decisão 5 — `created_by … on delete set null`.** O template sobrevive ao autor sair; `restrict` travaria limpeza de usuários por uma coluna que aqui é contexto, não auditoria — a resposta ENVIADA continua auditada em `support_reply_attempts` (D-096), que é onde auditoria de envio mora.
+
+**Ritual de migration**: aplicada via MCP no Dev, `list_migrations` conferido e o arquivo local **renomeado para a versão que o MCP registrou** (`20260828111752`) — divergência ali faria a CI re-aplicar e quebrar. Types regenerados; o gerador MCP omite o schema `graphql_public` que o arquivo atual carrega, então o bloco novo foi inserido cirurgicamente em vez de sobrescrever o arquivo (diff de 38 linhas, não de centenas).
+
+**Correção de tabuleta no caminho**: o subtítulo da Caixa de Entrada dizia "só perguntas são sincronizadas" — congelado de D-090, falso desde D-097/D-108. Mesma classe do painel de construção (D-105).
+
+**Verificação:** `check` **29/29**; 4 testes de `applyTemplate`, 9 testes de integração RLS novos (membro lê; outra organização não; ADMIN cria/edita com `updated_at` andando; ANALISTA recusado em criar/editar/apagar; UNIQUE de nome; `anon` sem GRANT). Integração roda na CI contra Postgres real.
+
+**Impacto:** migration `20260828111752`, `packages/db/src/types.ts`, `apps/web/lib/apply-template.ts` (+teste), `apps/web/app/atendimento/templates/` (página nova, actions, 2 componentes), `reply-form.tsx` (picker), `[caseId]/page.tsx` (fetch sob RLS, falha degrada para "sem templates"), link na Caixa de Entrada. **Só `apps/web` + banco — sem Cloud Run.**
+
 ## Como adicionar nova decisão
 
 Registrar:

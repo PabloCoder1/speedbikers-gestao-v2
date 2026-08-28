@@ -206,6 +206,22 @@ export default async function AtendimentoDetalhePage({
   const events = (eventsResult.data ?? []) as unknown as CaseEventRow[];
   const attempts = (attemptsResult.data ?? []) as unknown as ReplyAttemptRow[];
   const podeResponder = supportCase.channel === "QUESTION" && supportCase.resolved_at === null;
+
+  // Templates da organização (D-111) — só quando a caixa de resposta vai
+  // aparecer; falha aqui degrada para "sem templates", nunca derruba a tela
+  // (a resposta manual continua possível, que é o que importa).
+  let templates: { id: string; name: string; body: string }[] = [];
+
+  if (podeResponder) {
+    const templatesResult = await supabase
+      .from("reply_templates")
+      .select("id, name, body")
+      .order("name");
+
+    if (templatesResult.error === null) {
+      templates = templatesResult.data;
+    }
+  }
   const reference = resolveSupportCaseReference(supportCase.support_case_links);
 
   return (
@@ -371,6 +387,7 @@ export default async function AtendimentoDetalhePage({
             caseId={supportCase.id}
             remoteReplyState={supportCase.remote_reply_state}
             remoteReplyBlockReason={supportCase.remote_reply_block_reason}
+            templates={templates}
           />
         </section>
       )}

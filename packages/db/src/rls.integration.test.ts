@@ -5485,6 +5485,114 @@ describe("apply_support_remote_transition (D-102)", () => {
   });
 });
 
+describe("reply_templates (Templates de resposta, D-111)", () => {
+  // Linhas próprias desta suíte, sem afterAll — mesma convenção do arquivo.
+  let templateId = "";
+
+  beforeAll(async () => {
+    const inserted = await client.query<{ id: string }>(
+      `insert into public.reply_templates (organization_id, created_by, name, body)
+       values ($1, $2, 'Agradecimento D-111', 'Obrigado pelo contato!')
+       returning id`,
+      [ORG_SB, ADMIN_SB],
+    );
+
+    templateId = inserted.rows[0]?.id ?? "";
+  });
+
+  it("qualquer membro da organização lê os templates", async () => {
+    const rows = await asUser<{ id: string }>(
+      ANALISTA_SB,
+      `select id from public.reply_templates where id = '${templateId}'`,
+    );
+
+    expect(rows).toHaveLength(1);
+  });
+
+  it("membro de OUTRA organização não vê", async () => {
+    const rows = await asUser<{ id: string }>(
+      DE_OUTRA_ORG,
+      `select id from public.reply_templates where id = '${templateId}'`,
+    );
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("ADMIN cria template da própria organização", async () => {
+    const rows = await asUserPersist<{ id: string }>(
+      ADMIN_SB,
+      `insert into public.reply_templates (organization_id, created_by, name, body)
+       values ('${ORG_SB}', '${ADMIN_SB}', 'Criado pelo ADMIN D-111', 'Texto.')
+       returning id`,
+    );
+
+    expect(rows).toHaveLength(1);
+  });
+
+  it("ANALISTA não cria — a policy exige ADMIN/GESTOR, não só membro", async () => {
+    await expect(
+      asUser(
+        ANALISTA_SB,
+        `insert into public.reply_templates (organization_id, created_by, name, body)
+         values ('${ORG_SB}', '${ANALISTA_SB}', 'Tentativa do analista', 'Texto.')`,
+      ),
+    ).rejects.toThrow(/row-level security/i);
+  });
+
+  it("ANALISTA não edita: RLS filtra e o UPDATE alcança zero linhas", async () => {
+    const rows = await asUser<{ id: string }>(
+      ANALISTA_SB,
+      `update public.reply_templates set body = 'hackeado' where id = '${templateId}' returning id`,
+    );
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("ANALISTA não apaga pelo mesmo motivo", async () => {
+    const rows = await asUser<{ id: string }>(
+      ANALISTA_SB,
+      `delete from public.reply_templates where id = '${templateId}' returning id`,
+    );
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("ADMIN edita e o updated_at anda sozinho (trigger)", async () => {
+    const rows = await asUserPersist<{ moved: boolean }>(
+      ADMIN_SB,
+      `update public.reply_templates
+         set body = 'Obrigado pelo contato! Editado.'
+       where id = '${templateId}'
+       returning updated_at > created_at as moved`,
+    );
+
+    expect(rows[0]?.moved).toBe(true);
+  });
+
+  it("nome repetido na organização é recusado pela UNIQUE", async () => {
+    await expect(
+      asUser(
+        ADMIN_SB,
+        `insert into public.reply_templates (organization_id, created_by, name, body)
+         values ('${ORG_SB}', '${ADMIN_SB}', 'Agradecimento D-111', 'Duplicado.')`,
+      ),
+    ).rejects.toThrow(/duplicate key/i);
+  });
+
+  it("anon não lê nada — o GRANT foi revogado, nem RLS chega a rodar", async () => {
+    await client.query("begin");
+
+    try {
+      await client.query("set local role anon");
+      await expect(client.query("select id from public.reply_templates")).rejects.toThrow(
+        /permission denied/i,
+      );
+    } finally {
+      await client.query("rollback");
+    }
+  });
+});
+
 describe("guarda de GRANTs (D-066/D-098)", () => {
   // D-066 apertou 23 tabelas e o padrão foi REINTRODUZIDO nos dois dias
   // seguintes por migrations que não revogaram na criação (corrigido em

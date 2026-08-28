@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
+import { applyTemplate } from "../../../lib/apply-template";
 import { createClient } from "../../../lib/supabase/browser";
 
 /**
@@ -28,11 +29,19 @@ const LIMITE = 2_000;
  */
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
+export interface ReplyTemplateOption {
+  id: string;
+  name: string;
+  body: string;
+}
+
 export interface ReplyFormProps {
   caseId: string;
   /** Dica remota da última sincronização — nunca autorização (D-086, decisão 3). */
   remoteReplyState: string;
   remoteReplyBlockReason: string | null;
+  /** Templates da organização (D-111), lidos sob RLS pelo Server Component pai. */
+  templates: ReplyTemplateOption[];
 }
 
 type Estado =
@@ -45,6 +54,7 @@ export function ReplyForm({
   caseId,
   remoteReplyState,
   remoteReplyBlockReason,
+  templates,
 }: ReplyFormProps): ReactNode {
   const router = useRouter();
   const [text, setText] = useState("");
@@ -125,6 +135,60 @@ export function ReplyForm({
           {remoteReplyBlockReason === null ? "" : ` (${remoteReplyBlockReason})`}. O envio é
           revalidado no momento do disparo e provavelmente será recusado.
         </p>
+      )}
+
+      {templates.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--sb-space-2)" }}>
+          <label htmlFor="template" style={{ fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+            Inserir template
+          </label>
+          <select
+            id="template"
+            value=""
+            disabled={enviando || estado.kind === "queued"}
+            onChange={(event) => {
+              const template = templates.find((candidate) => candidate.id === event.target.value);
+
+              if (template === undefined) {
+                return;
+              }
+
+              // Inserir é PRÉ-PREENCHER, nunca enviar (D-111): a pessoa
+              // edita e confirma como sempre. Texto novo = tentativa nova.
+              const result = applyTemplate(text, template.body, LIMITE);
+
+              if (!result.applied) {
+                setEstado({
+                  kind: "error",
+                  message: "O template não coube no limite de caracteres junto do que já está escrito.",
+                });
+
+                return;
+              }
+
+              setText(result.text);
+              setRequestId(crypto.randomUUID());
+
+              if (estado.kind === "error") {
+                setEstado({ kind: "idle" });
+              }
+            }}
+            style={{
+              padding: "0.375rem 0.5rem",
+              border: "1px solid var(--sb-border)",
+              borderRadius: "var(--sb-radius)",
+              fontSize: "0.8125rem",
+              maxWidth: "18rem",
+            }}
+          >
+            <option value="">Escolher…</option>
+            {templates.map((template) => (
+              <option key={template.id} value={template.id}>
+                {template.name}
+              </option>
+            ))}
+          </select>
+        </div>
       )}
 
       <label htmlFor="resposta" style={{ fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>

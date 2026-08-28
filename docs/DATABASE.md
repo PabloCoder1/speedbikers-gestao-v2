@@ -41,7 +41,8 @@ notifications   notifications · notification_recipients · notification_prefere
 feedback        feature_suggestions
 support         support_cases · support_messages · support_case_links · support_case_deadlines
                 support_attachments                       (Fase 7B, D-085 — implementadas)
-                knowledge_entries · reply_templates       (Fase 7B — conceituais)
+                reply_templates                           (Fase 7B, D-111 — implementada)
+                knowledge_entries                         (Fase 7B — conceitual)
 meta            metric_definitions
 ```
 

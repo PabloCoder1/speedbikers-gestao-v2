@@ -260,10 +260,16 @@ export default async function AtendimentoPage({
 
   return (
     <Shell>
-      <h1 style={{ margin: "0 0 var(--sb-space-1)", fontSize: "1.375rem" }}>Caixa de Entrada</h1>
+      <div style={{ display: "flex", alignItems: "baseline", gap: "var(--sb-space-3)", flexWrap: "wrap" }}>
+        <h1 style={{ margin: "0 0 var(--sb-space-1)", fontSize: "1.375rem" }}>Caixa de Entrada</h1>
+        <Link href="/atendimento/templates" style={{ fontSize: "0.8125rem", color: "var(--sb-secondary)" }}>
+          Templates de resposta
+        </Link>
+      </div>
       <p style={{ margin: "0 0 var(--sb-space-3)", color: "var(--sb-text-soft)", fontSize: "0.875rem" }}>
-        Atendimentos das contas Mercado Livre. Hoje só perguntas são
-        sincronizadas — mensagens pós-venda e reclamações ainda não.
+        {/* Corrigido em D-111 — dizia "só perguntas são sincronizadas",
+            congelado de D-090; os três canais sincronizam desde D-097/D-108. */}
+        Perguntas, mensagens pós-venda e reclamações das contas Mercado Livre.
       </p>
 
       {error !== null && (
