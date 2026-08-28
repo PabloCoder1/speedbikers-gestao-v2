@@ -1823,7 +1823,9 @@ Não é específico de `questions`: **nunca chegou `orders_v2`, `post_purchase`,
 
 **Verificação:** `check` **29/29**; 5 testes do módulo puro de padrões, 4 da extensão do diagnóstico (incluindo a prova de aditividade), 5 do handler (impacto real somado; mediação sobe severidade; dedupe de case duplicado; falha retryable — nunca "done, 0 padrões"), trigger atualizado com testes ajustados.
 
-**Impacto:** `@sb/domain/diagnostics/{support-patterns.ts,sales-anomaly.ts}`, `apps/worker` (handler novo + sinal no existente), `apps/api` (trigger enfileira ambos), `/diagnostico` (sinal na tela). Sem migration. **FASE 7B COMPLETA** — todos os itens do checklist entregues ou registrados com motivo.
+**Impacto:** `@sb/domain/diagnostics/{support-patterns.ts,sales-anomaly.ts}`, `apps/worker` (handler novo + sinal no existente + derivação ORDER_DERIVED), `apps/api` (trigger enfileira ambos), `/diagnostico` (sinal na tela). Sem migration. **FASE 7B COMPLETA** — todos os itens do checklist entregues ou registrados com motivo.
+
+**Deployado e COMPROVADO em produção em 2026-08-28** (`worker-00039-dn5`/`api-00026-w56`, depois `worker-00040-gjg` com a correção abaixo). A verificação pós-deploy achou um buraco ESTRUTURAL que nenhum teste pegou: o job rodou `done` com zero ações porque **claims tinham 359 vínculos de PEDIDO e NENHUM de SKU** — o persist de D-104 nunca derivara o SKU, e `ORDER_DERIVED` existia no CHECK desde D-085 sem uso. Corrigido na mesma sessão: `linkOrder` deriva os SKUs de `order_items` (o `sku_id` congelado de D-020), e a varredura horária reparou o estoque sozinha — **27 links de SKU nasceram na primeira passada**, sem backfill manual. Medido depois: 24 SKUs com claim aberto, máximo de **2 por SKU** — três SKUs a UM claim do limiar. **Zero ações é o resultado CORRETO do dado real de hoje**: o detector está armado e a primeira ação nasce quando o padrão existir de verdade. Cobertura parcial registrada: item de pedido sem `sku_id` resolvido não deriva (correto por D-020 — o vínculo nasce e a próxima varredura completa).
 
 ## Como adicionar nova decisão
 
