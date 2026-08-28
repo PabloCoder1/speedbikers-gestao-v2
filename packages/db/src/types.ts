@@ -3634,6 +3634,22 @@ export type Database = {
         Args: { p_from: string; p_organization_id: string; p_to: string }
         Returns: number
       }
+      get_link_integrity: {
+        Args: { p_days?: number; p_organization_id: string }
+        Returns: {
+          account_label: string
+          candidatos_abertos: number
+          com_vinculo: number
+          listings_ativos: number
+          listings_total: number
+          ml_account_id: string
+          pct_vinculado: number
+          receita_sem_vinculo: number
+          sem_vinculo: number
+          vendidos_no_periodo: number
+          vendidos_sem_vinculo: number
+        }[]
+      }
       get_listing_sales: {
         Args: {
           p_date_from: string

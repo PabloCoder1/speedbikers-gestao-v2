@@ -2121,6 +2121,52 @@ Um limiar (">1.000 é virtual") classificaria errado nos dois sentidos: o SKU vi
 
 **Impacto:** migration `20260828193425` (coluna + `get_stock_coverage` recriada com a marca), `apps/web/app/cobertura/page.tsx`, `packages/db/src/types.ts`. `check` 29/29. **Zero linha marcada** — comportamento inalterado até alguém marcar.
 
+## D-128 — Integridade de vinculações: a fila não pode ser acreditada por si mesma
+
+**Contexto:** blocos 16 e 17 do usuário. A desconfiança original — *"duvido que todos os anúncios estejam corretamente vinculados"* — estava certa, e D-117 mostrou que a fila era estruturalmente incapaz de saber. Faltava a tela que mede isso continuamente.
+
+**Decisão — a coluna que importa não vem deste pipeline.** `get_link_integrity` devolve, por conta, o que se espera (anúncios, vinculados, sem vínculo, % e candidatos abertos) e mais uma coluna que é o ponto inteiro: **`vendidos_sem_vinculo`, derivada das VENDAS**. Um item que gerou pedido existe, independentemente do que a nossa varredura conheça. É a única fonte desta tela que não depende do pipeline auditado — auditar a fila com a própria fila não audita nada.
+
+**A divergência que a tela mostra hoje**, medida em 2026-08-28 (90 dias):
+
+| Conta | % vinculado | Candidatos abertos | Venderam sem vínculo | Receita |
+|---|---|---|---|---|
+| GMR | 79,1% | **0** | 142 | R$ 307.153,58 |
+| SbMotos | 84,8% | **0** | 132 | R$ 267.013,04 |
+| Speedbikers (loja 1) | 83,0% | **0** | 193 | R$ 449.611,23 |
+| Speedbikers (loja 2) | 81,8% | **0** | 239 | R$ 528.039,29 |
+
+**650 anúncios venderam sem vínculo, R$ 1.551.817,14 — com a fila de candidatos zerada nas quatro contas.** É exatamente o formato de divergência que o requisito pedia para detectar, e a tela agora a nomeia em vermelho em vez de deixá-la implícita.
+
+**Nota sobre o denominador:** `% vinculado` é sobre o catálogo que a varredura conhece (`listings`), que desde D-121 é o catálogo real do vendedor. Antes de D-121 esse percentual teria sido 100% por construção — e falso.
+
+**Impacto:** migration `20260828193942` (uma função), `apps/web/app/vinculacoes/page.tsx` (seção nova), `packages/db/src/types.ts`. `check` 29/29.
+
+---
+
+## Achado que CONTRADIZ a premissa da marcação por fornecedor (D-127)
+
+O usuário respondeu que o estoque virtual é por fornecedor, citando Navetec e Off Racer. **A medição não sustenta essa associação**, e registrar isso agora evita construir a ferramenta de marcação sobre a chave errada.
+
+Distribuição da assinatura sentinela (base 1.000/10.000) por marca:
+
+| Marca | SKUs | Com assinatura | % |
+|---|---|---|---|
+| **MANETE** | 2.241 | **1.928** | **86,0%** |
+| (sem marca) | 440 | 216 | 49,1% |
+| **NAVETEC** | 228 | **1** | **0,4%** |
+| **OFFRACER** | 65 | **17** | 26,2% |
+| PLASMOTO | 134 | 0 | 0,0% |
+
+O estoque virtual está concentrado em **MANETE**, não em Navetec. Duas leituras possíveis, e não dá para escolher entre elas sem o usuário:
+
+1. **`brand` não é fornecedor.** O campo vem da coluna `Categorias` do UpSeller (D-039), e "MANETE" com 66% do catálogo parece **categoria de produto**, não marca nem fornecedor. Nesse caso a chave de marcação não existe no schema — é o item "Vínculo fornecedor → SKU", ainda aberto.
+2. **A associação é real mas por outro fornecedor** — o que fornece os itens "MANETE" é que sempre tem, e Navetec/Off Racer são importados **sem** serem virtuais.
+
+A afirmação "Navetec e Off Racer são sempre importados" segue **válida e útil** — ela responde a questão aberta 2 de D-120 (o que "importado" significa: **rota de compra**, não `origin_code` fiscal, que classifica 82% dos Navetec como nacionais). Ela só não é a chave do estoque virtual.
+
+**Consequência:** a ferramenta de marcação em lote NÃO deve ser construída por marca antes de esclarecer isto. Fica aguardando.
+
 ## Como adicionar nova decisão
 
 Registrar:

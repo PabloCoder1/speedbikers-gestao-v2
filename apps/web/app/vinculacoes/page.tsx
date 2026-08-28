@@ -31,6 +31,15 @@ const th: React.CSSProperties = {
   whiteSpace: "nowrap",
 };
 
+const tdNumber: React.CSSProperties = {
+  padding: "0.5rem 0.75rem",
+  borderBottom: "1px solid var(--sb-border)",
+  fontSize: "0.875rem",
+  verticalAlign: "top",
+  textAlign: "right",
+  fontVariantNumeric: "tabular-nums",
+};
+
 const td: React.CSSProperties = {
   padding: "0.5rem 0.75rem",
   borderBottom: "1px solid var(--sb-border)",
@@ -76,7 +85,7 @@ export default async function VinculacoesPage({
 
   // Sem filtro por organização: a policy já restringe
   // (link_candidates_select_permitted, has_account_access).
-  const [{ data, error }, contas, manuais, semVinculo] = await Promise.all([
+  const [{ data, error }, contas, manuais, semVinculo, integridade] = await Promise.all([
     supabase
       .from("link_candidates")
       .select("id, sku_key, ref_kind, item_id, variation_id, user_product_id, created_at, ml_accounts(label)")
@@ -103,6 +112,9 @@ export default async function VinculacoesPage({
           // e a função trata `null` como "todos os estados".
           ...(statusFiltro === null ? {} : { p_status: statusFiltro }),
         }),
+    organizationId === null
+      ? Promise.resolve({ data: [], error: null })
+      : supabase.rpc("get_link_integrity", { p_organization_id: organizationId, p_days: 90 }),
   ]);
 
   return (
@@ -114,6 +126,73 @@ export default async function VinculacoesPage({
         e os <strong>candidatos da importação do UpSeller</strong> — planilha que citou um SKU inexistente no
         catálogo. São filas diferentes, com origens diferentes.
       </p>
+
+      {integridade.error === null && integridade.data.length > 0 && (
+        <section style={{ marginBottom: "var(--sb-space-4)" }}>
+          <h2 style={{ margin: "0 0 var(--sb-space-1)", fontSize: "1rem" }}>Integridade por conta</h2>
+
+          <p style={{ margin: "0 0 var(--sb-space-2)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+            A última coluna é a que vale: <strong>ela não vem deste pipeline</strong>. Um anúncio que gerou pedido
+            existe, independentemente do que a nossa varredura conheça. Se ela discordar da fila de candidatos, o
+            problema está no pipeline — não no número.
+          </p>
+
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "52rem" }}>
+              <thead>
+                <tr>
+                  <th style={th}>Conta</th>
+                  <th style={{ ...th, textAlign: "right" }}>Anúncios</th>
+                  <th style={{ ...th, textAlign: "right" }}>Vinculados</th>
+                  <th style={{ ...th, textAlign: "right" }}>Sem vínculo</th>
+                  <th style={{ ...th, textAlign: "right" }}>% vinculado</th>
+                  <th style={{ ...th, textAlign: "right" }}>Candidatos abertos</th>
+                  <th style={{ ...th, textAlign: "right" }}>Venderam sem vínculo (90d)</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {integridade.data.map((linha) => (
+                  <tr key={linha.ml_account_id}>
+                    <td style={td}>{linha.account_label}</td>
+                    <td style={tdNumber}>{formatCount(linha.listings_total)}</td>
+                    <td style={tdNumber}>{formatCount(linha.com_vinculo)}</td>
+                    <td style={tdNumber}>{formatCount(linha.sem_vinculo)}</td>
+                    <td style={tdNumber}>{linha.listings_total === 0 ? "—" : `${String(linha.pct_vinculado)}%`}</td>
+                    <td style={tdNumber}>{formatCount(linha.candidatos_abertos)}</td>
+                    <td style={tdNumber}>
+                      {linha.vendidos_sem_vinculo > 0 ? (
+                        <strong style={{ color: "var(--sb-danger)" }}>
+                          {formatCount(linha.vendidos_sem_vinculo)}
+                        </strong>
+                      ) : (
+                        formatCount(0)
+                      )}
+                      <div style={{ color: "var(--sb-text-soft)", fontSize: "0.75rem", fontWeight: 400 }}>
+                        {formatCurrency(linha.receita_sem_vinculo)}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {integridade.data.some((l) => l.vendidos_sem_vinculo > 0 && l.candidatos_abertos === 0) && (
+            <p style={{ margin: "var(--sb-space-2) 0 0", fontSize: "0.8125rem", color: "var(--sb-danger)" }}>
+              <strong>Divergência:</strong> há anúncio que vendeu sem vínculo e a fila de candidatos está vazia. É
+              exatamente o caso que D-117 mediu — a fila nunca soube desses anúncios, porque o gerador de candidatos
+              só conhece a planilha do UpSeller. Use a lista abaixo.
+            </p>
+          )}
+        </section>
+      )}
+
+      {integridade.error !== null && (
+        <p role="alert" style={{ color: "var(--sb-danger)" }}>
+          Não foi possível carregar a integridade: {integridade.error.message}
+        </p>
+      )}
 
       {contas.error === null && contas.data.length > 0 && <ManualLinkForm
           accounts={contas.data}
