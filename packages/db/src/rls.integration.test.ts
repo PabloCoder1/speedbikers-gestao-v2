@@ -1090,50 +1090,80 @@ describe("vínculo SKU ↔ anúncio", () => {
   });
 
   // ---------------------------------------------------------------
-  // ESCRITA sob RLS. Os testes acima inserem pelo `client` (superuser) e
-  // provam CHECKs e índices — nunca a policy. A vinculação manual livre
-  // (D-119) é o PRIMEIRO código de `apps/web` a escrever nesta tabela, e
-  // `sku_listing_links_write_permitted` existia desde a Fase 2 sem um único
-  // chamador. Sem estes três, a barreira real do recurso segue não provada.
+  // ESCRITA sob RLS. Desde D-125 `authenticated` NAO escreve direto nesta
+  // tabela: a policy `for all` foi removida e INSERT/UPDATE/DELETE revogados.
+  // Antes disso, qualquer ADMIN/GESTOR/OPERADOR apagava vinculo pelo
+  // PostgREST, sem interface e sem auditoria.
   // ---------------------------------------------------------------
 
-  it("ADMIN da organização escreve: a policy autoriza (has_account_access + papel)", async () => {
-    const rows = await asUser<{ id: string }>(
+  it("ADMIN NAO escreve direto: INSERT, UPDATE e DELETE sao recusados no GRANT", async () => {
+    await expect(
+      asUser(
+        ADMIN_SB,
+        `insert into public.sku_listing_links
+           (organization_id, ml_account_id, sku_id, ref_kind, item_id)
+         values ('${ORG_SB}','${CONTA}','${skuId}','ITEM','MLB900000201')`,
+      ),
+    ).rejects.toThrow(/permission denied/i);
+
+    await expect(
+      asUser(ADMIN_SB, `update public.sku_listing_links set sku_id = '${skuId}'`),
+    ).rejects.toThrow(/permission denied/i);
+
+    await expect(
+      asUser(ADMIN_SB, `delete from public.sku_listing_links where item_id = 'MLB900000001'`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
+  it("a RPC cria o vinculo E o evento CREATED na mesma transacao", async () => {
+    const rows = await asUser<{ event_type: string; actor_source: string }>(
       ADMIN_SB,
-      `insert into public.sku_listing_links
-         (organization_id, ml_account_id, sku_id, ref_kind, item_id, source)
-       values ('${ORG_SB}','${CONTA}','${skuId}','ITEM','MLB900000101','MANUAL')
-       returning id`,
+      `with novo as (
+         select (public.create_sku_listing_link(
+           '${CONTA}', 'MLB900000202', null, '${skuId}')).id as link_id
+       )
+       select e.event_type, e.actor_source
+       from public.sku_listing_link_events e, novo
+       where e.link_id = novo.link_id`,
     );
 
     expect(rows).toHaveLength(1);
+    expect(rows[0]?.event_type).toBe("CREATED");
+    expect(rows[0]?.actor_source).toBe("HUMAN");
   });
 
-  it("ANALISTA é recusado pela policy — papel fora de ADMIN/GESTOR/OPERADOR", async () => {
-    // Teste AFIADO por acidente do fixture: ANALISTA_SB TEM
-    // `user_account_permissions` para esta conta (linha ~460), então
-    // `has_account_access` passa e a recusa isola exatamente a dimensão de
-    // PAPEL. A interface esconde o formulário, mas a barreira precisa ser a
-    // policy: um POST direto na Data API não passa pela interface.
+  it("remover sem motivo e recusado — o motivo fica no historico", async () => {
     await expect(
       asUser(
-        ANALISTA_SB,
-        `insert into public.sku_listing_links
-           (organization_id, ml_account_id, sku_id, ref_kind, item_id, source)
-         values ('${ORG_SB}','${CONTA}','${skuId}','ITEM','MLB900000102','MANUAL')`,
+        ADMIN_SB,
+        `select public.remove_sku_listing_link(
+           (public.create_sku_listing_link('${CONTA}','MLB900000203', null, '${skuId}')).id, '  ')`,
       ),
-    ).rejects.toThrow(/row-level security/i);
+    ).rejects.toThrow(/motivo obrigatorio/i);
   });
 
-  it("ADMIN de OUTRA organização não escreve na conta alheia", async () => {
+  it("ANALISTA e recusado pela RPC — papel fora de ADMIN/GESTOR/OPERADOR", async () => {
+    // Afiado pelo fixture: ANALISTA_SB TEM permissao nesta conta, entao
+    // `has_account_access` passa e a recusa isola a dimensao de PAPEL.
     await expect(
-      asUser(
-        DE_OUTRA_ORG,
-        `insert into public.sku_listing_links
-           (organization_id, ml_account_id, sku_id, ref_kind, item_id, source)
-         values ('${ORG_SB}','${CONTA}','${skuId}','ITEM','MLB900000103','MANUAL')`,
-      ),
-    ).rejects.toThrow(/row-level security/i);
+      asUser(ANALISTA_SB, `select public.create_sku_listing_link('${CONTA}','MLB900000204', null, '${skuId}')`),
+    ).rejects.toThrow(/sem permissao/i);
+  });
+
+  it("ADMIN de OUTRA organizacao nao opera vinculo da conta alheia", async () => {
+    await expect(
+      asUser(DE_OUTRA_ORG, `select public.create_sku_listing_link('${CONTA}','MLB900000205', null, '${skuId}')`),
+    ).rejects.toThrow(/sem permissao/i);
+  });
+
+  it("sku_listing_link_events e append-only: UPDATE e DELETE sao recusados", async () => {
+    await expect(
+      asUser(ADMIN_SB, `update public.sku_listing_link_events set reason = 'x'`),
+    ).rejects.toThrow(/permission denied|append-only/i);
+
+    await expect(
+      asUser(ADMIN_SB, `delete from public.sku_listing_link_events`),
+    ).rejects.toThrow(/permission denied|append-only/i);
   });
 
   it("anon é recusado", async () => {

@@ -2047,6 +2047,36 @@ Eu havia escrito em D-123 que enumerar por `listings` custaria *"~1.900 chamadas
 
 **Impacto:** `apps/worker/src/handlers/ml-listing-visits-fetch.ts` (enumeração), testes dos dois níveis adaptados, migration só de comentário. `check` 29/29. **Não deployado** — pela regra de D-109, só verificado quando uma execução for lida.
 
+## D-125 — Desfazer vínculo + histórico auditável, e um furo de escrita que estava aberto desde a Fase 2
+
+**Contexto:** a lacuna que D-119 declarou e D-122 repetiu — *"não existe tabela append-only de eventos de vínculo"*, e um vínculo manual errado só se corrigia por SQL. O roadmap exigia as duas juntas: sem histórico, remover é destruir.
+
+**Decisão 1 — remoção FÍSICA, não `removed_at`.** Um painel de desenho testou as duas e o soft delete quebra em três lugares, todos verificados no código:
+
+1. **`resolveSku` pararia de persistir pedidos.** Ele filtra pela chave natural e termina em `.maybeSingle()`. Remover e revincular o mesmo anúncio criaria DUAS linhas com essa chave (o índice único só cobriria as vivas) → PGRST116 → o `throw` da guarda anti-overselling dispara sobre um estado LEGAL. A guarda existe para impedir venda sem baixa de estoque; ela passaria a impedir a própria feature.
+2. **`get_unlinked_listings` (D-122) é anti-join físico**: a lápide continua satisfazendo o `exists`, e o anúncio não voltaria para a fila.
+3. **`createManualLink` leria a lápide como "já vinculado"** e recusaria o revínculo.
+
+Somado a isso, exigiria o primeiro `drop index` em 68 migrations, sobre um dos "três constraints que sustentam o sistema". Com remoção física, **seis leitores continuam corretos sem uma linha alterada** — a tabela volta a significar o que todos já assumem: uma linha, um vínculo vigente.
+
+**Decisão 2 — 🔴 fechar a escrita direta, que estava aberta desde a Fase 2.** Medido hoje: `authenticated` tinha **DELETE, INSERT, UPDATE e TRUNCATE** em `sku_listing_links`, com policy `for all`. Qualquer ADMIN/GESTOR/OPERADOR com acesso à conta **já apagava ou reescrevia `sku_id` pelo PostgREST** — sem interface, sem auditoria, sem rastro. Não era hipótese: era o estado corrente, e a auditoria de GRANTs de D-066/D-098 excluiu esta tabela de propósito, por ela ter policy de escrita "legítima".
+
+Sem fechar isso, a garantia "toda mudança deixa evento" seria vazia. Revogado no mesmo commit; a escrita passa a ser **só** pelas três RPCs.
+
+**Decisão 3 — RETARGET é a operação primária, REMOVE é a rara.** Trocar o SKU preserva o `id` — logo preserva **todos os ponteiros já gravados em `order_items`** —, satisfaz os três índices trivialmente e grava `source='MANUAL'`, que `PROTECTED_SOURCES` blinda da planilha para sempre. Remover é para quando a intenção real é "este anúncio não deve ter vínculo nenhum", e exige motivo.
+
+**Decisão 4 — a FK de `order_items` sai, para PRESERVAR a procedência.** `order_items.sku_listing_link_id` era `on delete set null`: a primeira remoção zeraria o ponteiro de **255.815 linhas (76,7%)** de forma irreversível. Sem a FK, o id resolve no snapshot **imutável** do evento — melhor que apontar para uma linha mutável que o importador reescreve sem rastro. Mesma forma de `domain_events.entity_id`.
+
+**Decisão 5 — o importador em massa NÃO emite `CREATED`.** Seriam 20.650 eventos na primeira rodada para descrever uma decisão de máquina cuja procedência já vive em `erp_import_rows`/`erp_import_batches`. **Sem backfill dos vínculos existentes**: evento sintetico datado seria dado inventado e faria a linha do tempo mentir. A fronteira está escrita no `comment on table`.
+
+**Verificado contra o banco real**, sob RLS como o usuário de produção, em transação revertida: `delete` direto recusado; ciclo `CREATED → RETARGETED (com previous_sku_id e motivo) → REMOVED (com motivo)` gravado corretamente.
+
+**Consequência imediata assumida:** a revogação **quebrou** o `createManualLink` de D-119 (escrita direta), então ele foi religado à RPC no mesmo commit — e ganhou de brinde o que faltava: as três pré-checagens (mesma forma, mistura de formas, candidato aberto) eram **TOCTOU** fora da transação e agora rodam dentro dela. D-119 fica emendada, não contradita: o próprio critério dela ("RPC quando escreve duas tabelas na mesma transação") passou a se aplicar.
+
+**FICA ABERTO, e é requisito da próxima fatia:** a **supressão no importador**. Um vínculo `IMPORT_UPSELLER` removido à mão volta na próxima importação e desfaz a decisão humana em silêncio — `erp-import-apply` precisa consultar os `REMOVED` humanos (o índice parcial dedicado já existe) e tratar a chave como `UNRESOLVED` em vez de recriar. Também aberto: emitir `RETARGETED` quando o importador reescreve `sku_id` in-place, que é a mutação mais frequente desta tabela e hoje não deixa rastro nenhum.
+
+**Impacto:** migration `20260828191841` (tabela nova + trigger + RLS, revogações, drop da FK, helper de autorização, 3 RPCs, `resolve_link_candidate` emendada), `apps/web/app/vinculacoes/actions.ts` (RPC + `retargetLink`/`removeLink` + tradução de erro), `apps/web/lib/manual-link.ts` (as duas funções de mensagem de conflito foram REMOVIDAS — a RPC as absorveu, e duplicá-las seria manter duas verdades), 6 testes de RLS reescritos. `check` 29/29. **Sem UI de remover/trocar ainda** — as ações existem, o botão é a fatia seguinte.
+
 ## Como adicionar nova decisão
 
 Registrar:

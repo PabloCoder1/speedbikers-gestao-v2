@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { describeExistingLink, describeShapeConflict, parseManualLink } from "./manual-link.js";
+import { parseManualLink } from "./manual-link.js";
 
 const CONTA = "aaaaaaaa-0000-4000-8000-000000000001";
 const SKU = "bbbbbbbb-0000-4000-8000-000000000002";
@@ -54,46 +54,5 @@ describe("parseManualLink", () => {
   it("conta ou SKU ausentes são recusados antes de qualquer consulta", () => {
     expect(parseManualLink({ ...BASE, mlAccountId: "" }).ok).toBe(false);
     expect(parseManualLink({ ...BASE, skuId: "não-é-uuid" }).ok).toBe(false);
-  });
-});
-
-describe("describeExistingLink", () => {
-  it("nomeia o SKU ocupante e a origem do vínculo", () => {
-    const message = describeExistingLink({ sku: "5821", source: "IMPORT_UPSELLER" });
-
-    expect(message).toContain("5821");
-    expect(message).toContain("planilha do UpSeller");
-    expect(message).toContain("Nada foi sobrescrito");
-    // A mensagem NÃO pode instruir "desfaça o vínculo" — desfazer não existe.
-    expect(message).not.toContain("Desfaça");
-  });
-
-  it("vínculo manual anterior é descrito como tal", () => {
-    expect(describeExistingLink({ sku: "5821", source: "MANUAL" })).toContain("à mão");
-  });
-
-  it("SKU fora do alcance da RLS não vira 'null' na tela", () => {
-    expect(describeExistingLink({ sku: null, source: "RULE" })).toContain("que você não alcança");
-  });
-});
-
-describe("describeShapeConflict", () => {
-  it("anúncio inteiro sobre variações existentes: cita venda E Full", () => {
-    const message = describeShapeConflict(true);
-
-    expect(message).toContain("VARIAÇÃO");
-    expect(message).toContain("nunca resolve venda");
-    expect(message).toContain("Full");
-  });
-
-  it("variação sobre anúncio inteiro existente: explica o Full preso no vínculo antigo", () => {
-    const message = describeShapeConflict(false);
-
-    expect(message).toContain("ANÚNCIO INTEIRO");
-    expect(message).toContain("Full");
-  });
-
-  it("as duas mensagens são diferentes — o operador precisa saber qual lado corrigir", () => {
-    expect(describeShapeConflict(true)).not.toBe(describeShapeConflict(false));
   });
 });

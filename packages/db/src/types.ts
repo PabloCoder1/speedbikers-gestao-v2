@@ -3705,6 +3705,23 @@ export type Database = {
           units_sold: number
         }[]
       }
+      create_sku_listing_link: {
+        Args: {
+          p_item_id: string
+          p_ml_account_id: string
+          p_sku_id: string
+          p_variation_id: string | null
+        }
+        Returns: Database["public"]["Tables"]["sku_listing_links"]["Row"]
+      }
+      remove_sku_listing_link: {
+        Args: { p_link_id: string; p_reason: string }
+        Returns: undefined
+      }
+      retarget_sku_listing_link: {
+        Args: { p_link_id: string; p_reason?: string; p_sku_id: string }
+        Returns: Database["public"]["Tables"]["sku_listing_links"]["Row"]
+      }
       get_unlinked_listings: {
         Args: {
           p_days?: number
