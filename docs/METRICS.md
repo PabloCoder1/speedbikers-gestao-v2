@@ -112,6 +112,29 @@ Nenhuma dessas será exibida enquanto a fonte não estiver confirmada e a defini
 
 ---
 
+## 5B. Métricas de SAC (Fase 7B, D-115)
+
+> Definições canônicas ANTES de exibir, como manda a regra central. Todas
+> agregadas em SQL (`get_support_metrics`, `security invoker` — a RLS de
+> `support_cases` decide o escopo por chamador), snapshot ou janela de N
+> dias. Fonte: `support_cases` · `support_messages` · `support_case_deadlines`.
+
+| id | nome | fórmula | ressalvas |
+|---|---|---|---|
+| `sac_abertos` | Atendimentos abertos | `count(support_cases) where internal_status <> 'RESOLVIDO'` — snapshot, também por canal | — |
+| `sac_aguardando_loja` | Aguardando a loja | abertos onde a bola está conosco: `QUESTION` aberta sempre conta; conversa/claim conta quando `last_inbound_at > coalesce(last_outbound_at, -infinity)` | — |
+| `sac_mediacoes_abertas` | Em mediação | abertos com `is_mediation` | mediação = `stage='dispute'` (D-104) |
+| `sac_prazos_24h` | Prazos nas próximas 24h | `support_case_deadlines` `ACTIVE` com `due_at` entre agora e +24h | prazo remoto real (D-107); computado NA LEITURA — o job de `BREACHED` continua não existindo, e ler não muda estado |
+| `sac_prazos_vencidos` | Prazos vencidos | `ACTIVE` com `due_at < now()` | idem; "vencido" aqui é leitura, a linha continua `ACTIVE` |
+| `sac_novos_periodo` | Novos no período | `created_at >= now() - N dias`, por canal | ⚠️ `created_at` é o relógio da INGESTÃO, não do nascimento remoto. Para CLAIM, a série só é confiável a partir de **2026-08-28** (D-109 completou a ingestão; o primeiro dia contém o backfill de ~244) |
+| `sac_resolvidos_periodo` | Resolvidos no período | `resolved_at >= now() - N dias` | `resolved_at` mistura relógios por desenho (triagem humana = `now()`; auto-resolve D-102 = relógio do ML) — serve para contagem, não para duração |
+| `sac_mediana_primeira_resposta_horas` | Primeira resposta (mediana) | mediana de `primeiro OUTBOUND − primeiro INBOUND` por case, `QUESTION`/`POST_SALE_MESSAGE`, primeiro INBOUND dentro do período | os dois lados usam `occurred_at` (relógio do ML) — consistente. **CLAIM fica fora**: o transcript é um piso (D-106) e mensagem de mediador é `SYSTEM`. Caso raro excluído: loja falou ANTES do cliente (o primeiro OUTBOUND precede o INBOUND) |
+
+**Deliberadamente NÃO definidas nesta fatia:**
+
+- **Tempo médio de resolução** — exigiria `nascimento remoto − resolução`, e hoje `created_at` é ingestão local enquanto `resolved_at` mistura relógios: para um claim backfilled o resultado seria **negativo**. Entra quando houver um `opened_at` remoto persistido por case.
+- **Reincidência, produtividade por responsável, atendimentos por SKU** — sem definição inequívoca ainda; ver requisito ("quando matematicamente correto" / "quando fizer sentido operacionalmente").
+
 ## 6. Como adicionar ou alterar uma métrica
 
 1. Registrar ou alterar a definição **aqui primeiro**.

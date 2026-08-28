@@ -1783,6 +1783,28 @@ Não é específico de `questions`: **nunca chegou `orders_v2`, `post_purchase`,
 
 **Impacto:** `anthropic-client.ts` (`plan` com streaming), `copilot-chat.ts` (novo), rota SSE em `app.ts` (mesma autenticação de `/query`), `apps/web/app/copiloto` (chat com parse de SSE sobre fetch), nav "Copiloto" no grupo Inteligência. **Sem migration.** Com D-112/D-113/D-114, o checklist de IA do Copiloto está integralmente coberto ou registrado: a única evolução apontada é memória multi-turno.
 
+## D-115 — Métricas de SAC com definição canônica, e o filtro de SLA que D-107 destravou
+
+**Contexto:** próximo item da Fase 7B ("Métricas de SAC, com definição canônica antes de exibir — mesmo princípio de `docs/METRICS.md`"), somado ao filtro de SLA da Caixa de Entrada que D-107 deixou "destravado, fatia própria" — os dois consomem o mesmo dado de prazos.
+
+**Decisão 1 — as definições nasceram ANTES da tela, em `docs/METRICS.md` §5B**, com fórmula, fonte e ressalva por métrica. Oito métricas definidas: abertos (total e por canal), aguardando a loja, mediações abertas, prazos nas próximas 24h, prazos vencidos, novos no período (por canal), resolvidos no período, mediana de primeira resposta.
+
+**Decisão 2 — "tempo médio de resolução" ficou FORA, e o motivo é de relógio, não de preguiça.** `created_at` é o instante da INGESTÃO local; `resolved_at` mistura relógios por desenho (triagem humana grava `now()`, o auto-resolve de D-102 grava o instante remoto do ML). Para um claim backfilled, `resolved_at − created_at` daria duração **NEGATIVA**. A métrica entra quando existir um `opened_at` remoto persistido por case. Verificado nas migrations antes de decidir, não presumido.
+
+**Decisão 3 — primeira resposta é MEDIANA, só QUESTION/POST_SALE_MESSAGE, e os dois lados no relógio do ML.** `support_messages.occurred_at` é consistente entre INBOUND e OUTBOUND (relógio remoto dos dois lados) — a única dupla comparável do domínio hoje. CLAIM fica fora: o transcript é um piso (D-106) e mensagem de mediador é `SYSTEM`. Mediana e não média: um outlier de fim de semana não pode dobrar o número. Caso raro excluído e documentado: loja que falou ANTES do cliente.
+
+**Decisão 4 — "vencido" é leitura, não estado.** `prazos_vencidos` = linhas `ACTIVE` com `due_at < now()`, computado NA CONSULTA. O job que marcaria `BREACHED` continua não existindo (D-107) e ler não muda estado — a métrica entrega o valor operacional sem fingir que a máquina de estados anda sozinha.
+
+**Decisão 5 — ressalva de série gravada na PRÓPRIA tela**: "novas reclamações" avisa que a série só é confiável a partir de 28/08 (D-109 completou a ingestão; o primeiro dia contém o backfill de ~244). Número sem a ressalva seria um gráfico mentindo com aparência de precisão.
+
+**Decisão 6 — o filtro "Prazo em risco" entra como quarta dimensão da Caixa de Entrada** (`?prazo=risco`): `support_case_deadlines!inner` com `ACTIVE` e `due_at ≤ now()+24h` (vencidos inclusos). O `!inner` só entra no select QUANDO o filtro está ativo — como inner join, ele excluiria da listagem normal todo case sem prazo. Era exatamente o filtro que D-090 cortou por "tabela vazia"; a tabela tem 263 prazos desde D-107.
+
+**Medido contra o dado real antes da tela** (hábito de D-063): 351 abertos, 101 aguardando a loja, 130 mediações, **74 prazos nas próximas 24h, 20 vencidos**, mediana de primeira resposta 0,8h.
+
+**Verificação:** `check` **29/29**; RPC `get_support_metrics` (`security invoker`, soma 100% em SQL — a RLS decide o escopo por chamador) com 3 testes de integração (uma linha; isolamento entre organizações — outra org conta ZERO dos nossos; `anon` sem EXECUTE). Migration `20260828120728` pelo ritual. Tela `/atendimento/metricas` + link no cabeçalho da Caixa.
+
+**Impacto:** `docs/METRICS.md` §5B (normativo), migration + types, `/atendimento/metricas` (nova), Caixa de Entrada (filtro + link). **Fecha "Métricas de SAC" na primeira versão operacional e o filtro de SLA pendente de D-107.**
+
 ## Como adicionar nova decisão
 
 Registrar:

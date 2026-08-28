@@ -5683,6 +5683,47 @@ describe("knowledge_entries (Base de Conhecimento Validada, D-113)", () => {
   });
 });
 
+describe("get_support_metrics (Métricas de SAC, D-115)", () => {
+  it("membro recebe UMA linha com todos os campos", async () => {
+    const rows = await asUser<{ abertos_total: string; prazos_vencidos: string }>(
+      ADMIN_SB,
+      "select abertos_total, prazos_vencidos from public.get_support_metrics(7)",
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0]?.abertos_total)).toBeGreaterThanOrEqual(0);
+  });
+
+  it("security invoker: a RLS decide o escopo — outra organização não conta os cases da nossa", async () => {
+    // As fixtures de support criam cases só na ORG_SB; para DE_OUTRA_ORG a
+    // mesma RPC devolve zeros, porque as policies filtram por conta.
+    const nossos = await asUser<{ abertos_total: string }>(
+      ADMIN_SB,
+      "select abertos_total from public.get_support_metrics(7)",
+    );
+    const alheios = await asUser<{ abertos_total: string }>(
+      DE_OUTRA_ORG,
+      "select abertos_total from public.get_support_metrics(7)",
+    );
+
+    expect(Number(nossos[0]?.abertos_total)).toBeGreaterThan(0);
+    expect(Number(alheios[0]?.abertos_total)).toBe(0);
+  });
+
+  it("anon não executa — o EXECUTE foi revogado", async () => {
+    await client.query("begin");
+
+    try {
+      await client.query("set local role anon");
+      await expect(client.query("select * from public.get_support_metrics(7)")).rejects.toThrow(
+        /permission denied/i,
+      );
+    } finally {
+      await client.query("rollback");
+    }
+  });
+});
+
 describe("guarda de GRANTs (D-066/D-098)", () => {
   // D-066 apertou 23 tabelas e o padrão foi REINTRODUZIDO nos dois dias
   // seguintes por migrations que não revogaram na criação (corrigido em

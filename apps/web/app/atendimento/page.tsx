@@ -145,18 +145,20 @@ function resolveChannel(raw: string | null): Channel | null {
  * de `/vendas`, com três dimensões em vez de duas.
  */
 function buildHref(
-  current: { account: string | null; channel: Channel | null; status: StatusFilter },
-  override: { account?: string | null; channel?: Channel | null; status?: StatusFilter },
+  current: { account: string | null; channel: Channel | null; status: StatusFilter; prazo: boolean },
+  override: { account?: string | null; channel?: Channel | null; status?: StatusFilter; prazo?: boolean },
 ): string {
   const account = override.account !== undefined ? override.account : current.account;
   const channel = override.channel !== undefined ? override.channel : current.channel;
   const status = override.status ?? current.status;
+  const prazo = override.prazo ?? current.prazo;
 
   const search = new URLSearchParams();
 
   if (account !== null) search.set("account", account);
   if (channel !== null) search.set("canal", channel);
   if (status !== "abertos") search.set("status", status);
+  if (prazo) search.set("prazo", "risco");
 
   const qs = search.toString();
 
@@ -216,6 +218,9 @@ export default async function AtendimentoPage({
   const accountSlug = readParam(query.account);
   const channel = resolveChannel(readParam(query.canal));
   const status = resolveStatus(readParam(query.status));
+  // Filtro de SLA (D-115, destravado por D-107): só cases com prazo ATIVO
+  // vencendo nas próximas 24h — ou já vencido.
+  const prazoRisco = readParam(query.prazo) === "risco";
 
   const accountsResult = await supabase
     .from("ml_accounts")
@@ -230,13 +235,24 @@ export default async function AtendimentoPage({
   // um vínculo nunca pertence a outra conta (D-085). Sem filtro explícito por
   // organização: a RLS (`has_account_access(ml_account_id)`) já restringe, e
   // duplicar a regra aqui seria a segunda fonte de verdade que D-012 evita.
+  // O `!inner` do embed de prazos SÓ entra quando o filtro está ativo:
+  // como inner join, ele excluiria da listagem normal todo case sem prazo.
+  const baseSelect =
+    "id, channel, external_case_id, external_status, internal_status, priority, remote_reply_state, is_mediation, has_return, last_activity_at, assignee_id, ml_accounts(label), profiles(full_name), support_case_links(order_id, sku_id, listing_id, external_entity_kind, external_entity_id, skus(sku), listings(item_id, title))";
+
   let casesQuery = supabase
     .from("support_cases")
-    .select(
-      "id, channel, external_case_id, external_status, internal_status, priority, remote_reply_state, is_mediation, has_return, last_activity_at, assignee_id, ml_accounts(label), profiles(full_name), support_case_links(order_id, sku_id, listing_id, external_entity_kind, external_entity_id, skus(sku), listings(item_id, title))",
-    )
+    .select(prazoRisco ? `${baseSelect}, support_case_deadlines!inner(due_at, status)` : baseSelect)
     .order("last_activity_at", { ascending: false })
     .limit(ROW_LIMIT);
+
+  if (prazoRisco) {
+    const em24h = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+    casesQuery = casesQuery
+      .eq("support_case_deadlines.status", "ACTIVE")
+      .lte("support_case_deadlines.due_at", em24h);
+  }
 
   if (selectedAccount !== null) {
     casesQuery = casesQuery.eq("ml_account_id", selectedAccount.id);
@@ -256,7 +272,7 @@ export default async function AtendimentoPage({
   const cases = (casesResult.data ?? []) as unknown as SupportCaseRow[];
   const error = casesResult.error ?? accountsResult.error;
 
-  const current = { account: accountSlug, channel, status };
+  const current = { account: accountSlug, channel, status, prazo: prazoRisco };
 
   return (
     <Shell>
@@ -267,6 +283,9 @@ export default async function AtendimentoPage({
         </Link>
         <Link href="/atendimento/conhecimento" style={{ fontSize: "0.8125rem", color: "var(--sb-secondary)" }}>
           Base de Conhecimento
+        </Link>
+        <Link href="/atendimento/metricas" style={{ fontSize: "0.8125rem", color: "var(--sb-secondary)" }}>
+          Métricas
         </Link>
       </div>
       <p style={{ margin: "0 0 var(--sb-space-3)", color: "var(--sb-text-soft)", fontSize: "0.875rem" }}>
@@ -320,6 +339,15 @@ export default async function AtendimentoPage({
         ))}
         <Link href={buildHref(current, { status: "todos" })} style={pillStyle(status === "todos")}>
           Todos
+        </Link>
+        <Link
+          href={buildHref(current, { prazo: !prazoRisco })}
+          style={{
+            ...pillStyle(prazoRisco),
+            ...(prazoRisco ? { background: "var(--sb-danger)", borderColor: "var(--sb-danger)" } : {}),
+          }}
+        >
+          ⏱ Prazo em risco
         </Link>
       </div>
 

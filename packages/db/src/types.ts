@@ -3705,6 +3705,24 @@ export type Database = {
           units_sold: number
         }[]
       }
+      get_support_metrics: {
+        Args: { p_days?: number }
+        Returns: {
+          abertos_claim: number
+          abertos_message: number
+          abertos_question: number
+          abertos_total: number
+          aguardando_loja: number
+          mediacoes_abertas: number
+          mediana_primeira_resposta_horas: number
+          novos_claim: number
+          novos_message: number
+          novos_question: number
+          prazos_proximas_24h: number
+          prazos_vencidos: number
+          resolvidos_periodo: number
+        }[]
+      }
       link_document_item: {
         Args: { p_item_id: number; p_sku_id?: string }
         Returns: {
