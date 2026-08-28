@@ -20,6 +20,8 @@ function fakeDeps(options: {
   ledgerFails?: boolean;
   projected?: { sku_id: string; location_kind: string; quantity: number }[];
   projectedFails?: boolean;
+  /** Teto de linhas por resposta, como o `max_rows = 1000` real (D-131). */
+  pageCap?: number;
 }): { deps: VerifyLedgerIntegrityDeps; events: Record<string, unknown>[]; lines: string[] } {
   const events: Record<string, unknown>[] = [];
   const lines: string[] = [];
@@ -27,28 +29,46 @@ function fakeDeps(options: {
   const ledger = options.ledger ?? [{ sku_id: "sku-a", location_kind: "LOCAL", quantity: 42 }];
   const projected = options.projected ?? [{ sku_id: "sku-a", location_kind: "LOCAL", quantity: 42 }];
 
+  // O fake pagina de verdade (D-131). Este handler É o vigia de corrupção de
+  // saldo, e foi cegado por ler 1.000 de 2.524 linhas nos dois lados: 6.324
+  // alertas críticos falsos em cinco dias. Um fake que ignorasse `range`
+  // continuaria escondendo exatamente isso.
+  const pageCap = options.pageCap ?? 1000;
+
+  const fatia = <T,>(linhas: T[], from: number, to: number): T[] =>
+    linhas.slice(from, Math.min(to + 1, from + pageCap));
+
   const db = {
     rpc: (fn: string) => {
       if (fn !== "compute_inventory_balances_from_ledger") {
         throw new Error(`rpc inesperada no fake: ${fn}`);
       }
 
-      return Promise.resolve(
-        options.ledgerFails === true ? { data: null, error: { message: "boom" } } : { data: ledger, error: null },
-      );
+      const builder = {
+        order: () => builder,
+        range: (from: number, to: number) =>
+          Promise.resolve(
+            options.ledgerFails === true
+              ? { data: null, error: { message: "boom" } }
+              : { data: fatia(ledger, from, to), error: null },
+          ),
+      };
+
+      return builder;
     },
     from: (table: string) => {
       if (table === "inventory_balances") {
-        return {
-          select: () => ({
-            eq: () =>
-              Promise.resolve(
-                options.projectedFails === true
-                  ? { data: null, error: { message: "boom" } }
-                  : { data: projected, error: null },
-              ),
-          }),
+        const builder = {
+          order: () => builder,
+          range: (from: number, to: number) =>
+            Promise.resolve(
+              options.projectedFails === true
+                ? { data: null, error: { message: "boom" } }
+                : { data: fatia(projected, from, to), error: null },
+            ),
         };
+
+        return { select: () => ({ eq: () => builder }) };
       }
 
       if (table === "domain_events") {
@@ -146,5 +166,24 @@ describe("conferência automática ledger × projeção (D-056)", () => {
     const outcome = await createVerifyLedgerIntegrityHandler(deps)(ENVELOPE, ctx(lines, { nada: true }));
 
     expect(outcome).toMatchObject({ status: "failed", retryable: false });
+  });
+  it("as duas leituras passam de 1.000 linhas e NÃO viram divergência falsa (D-131)", async () => {
+    // O caso real: 2.524 chaves idênticas dos dois lados. Truncado, o handler
+    // via 1.000 de cada e tratava as 1.524 restantes como "ausentes de um
+    // lado" — 1.524 alertas CRÍTICOS por rodada, todos falsos. A soma do
+    // ledger e a projeção foram comparadas em SQL contra produção: zero
+    // divergências reais em 2.524 linhas.
+    const linhas = Array.from({ length: 2524 }, (_, i) => ({
+      sku_id: `sku-${String(i).padStart(4, "0")}`,
+      location_kind: "LOCAL",
+      quantity: 5,
+    }));
+
+    const { deps, events, lines } = fakeDeps({ ledger: linhas, projected: linhas, pageCap: 1000 });
+
+    const outcome = await createVerifyLedgerIntegrityHandler(deps)(ENVELOPE, ctx(lines, { organizationId: ORG_ID }));
+
+    expect(outcome).toEqual({ status: "done", processed: 0 });
+    expect(events).toHaveLength(0);
   });
 });

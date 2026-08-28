@@ -25,6 +25,8 @@ function fakeDeps(options: {
   snapshotFails?: boolean;
   ledger?: { sku_id: string; location_kind: string; quantity: number }[];
   ledgerFails?: boolean;
+  /** Teto de linhas por resposta, como o `max_rows = 1000` real (D-131). */
+  pageCap?: number;
 }): { deps: ReconcileBalancesDeps; captured: Captured; lines: string[] } {
   const captured: Captured = { movements: [], events: [] };
   const lines: string[] = [];
@@ -37,30 +39,47 @@ function fakeDeps(options: {
 
   const ledger = options.ledger ?? [{ sku_id: "sku-a", location_kind: "LOCAL", quantity: 42 }];
 
+  // O fake pagina de verdade (D-131): `range(from, to)` devolve a FATIA, e o
+  // teto do PostgREST é simulado por `pageCap`. Um fake que devolvesse a
+  // lista inteira em qualquer chamada não conseguiria distinguir código que
+  // pagina de código que não pagina — foi exatamente essa cegueira que
+  // deixou o defeito passar.
+  const pageCap = options.pageCap ?? 1000;
+
+  const fatia = <T,>(linhas: T[], from: number, to: number): T[] =>
+    linhas.slice(from, Math.min(to + 1, from + pageCap));
+
   const db = {
     rpc: (fn: string) => {
-      if (fn !== "compute_erp_snapshot_balances") {
+      if (fn !== "compute_erp_target_balances") {
         throw new Error(`rpc inesperada no fake: ${fn}`);
       }
 
-      return Promise.resolve(
-        options.snapshotFails === true ? { data: null, error: { message: "boom" } } : { data: snapshot, error: null },
-      );
+      const builder = {
+        order: () => builder,
+        range: (from: number, to: number) =>
+          Promise.resolve(
+            options.snapshotFails === true
+              ? { data: null, error: { message: "boom" } }
+              : { data: fatia(snapshot, from, to), error: null },
+          ),
+      };
+
+      return builder;
     },
     from: (table: string) => {
       if (table === "inventory_balances") {
-        return {
-          select: () => ({
-            eq: () => ({
-              in: () =>
-                Promise.resolve(
-                  options.ledgerFails === true
-                    ? { data: null, error: { message: "boom" } }
-                    : { data: ledger, error: null },
-                ),
-            }),
-          }),
+        const builder = {
+          order: () => builder,
+          range: (from: number, to: number) =>
+            Promise.resolve(
+              options.ledgerFails === true
+                ? { data: null, error: { message: "boom" } }
+                : { data: fatia(ledger, from, to), error: null },
+            ),
         };
+
+        return { select: () => ({ eq: () => ({ in: () => builder }) }) };
       }
 
       if (table === "stock_movements") {
@@ -212,5 +231,70 @@ describe("reconciliação de estoque contra o UpSeller", () => {
     const outcome = await createReconcileBalancesHandler(deps)(ENVELOPE, ctx(lines, { nada: true }));
 
     expect(outcome).toMatchObject({ status: "failed", retryable: false });
+  });
+  // ---------------------------------------------------------------------
+  // Truncamento silencioso do PostgREST (D-131)
+  //
+  // Estes três testes descrevem o defeito que corrompeu o saldo de estoque
+  // em produção. Rodando contra o código ANTERIOR à correção, os três
+  // falham; é essa a razão de existirem.
+  // ---------------------------------------------------------------------
+
+  it("ledger além do teto de página é lido INTEIRO — sem isso o ajuste vira o snapshot todo (D-131)", async () => {
+    // 1.500 SKUs em que ledger e snapshot JÁ BATEM: a resposta certa é
+    // "nenhum ajuste". Sem paginação, o handler enxergaria só os 1.000
+    // primeiros do ledger, leria os outros 500 como ZERO, e inventaria 500
+    // ajustes de +7 cada — exatamente a forma do defeito real.
+    const linhas = Array.from({ length: 1500 }, (_, i) => ({
+      sku_id: `sku-${String(i).padStart(4, "0")}`,
+      location_kind: "LOCAL",
+      quantity: 7,
+    }));
+
+    const { deps, captured, lines } = fakeDeps({ snapshot: linhas, ledger: linhas, pageCap: 1000 });
+
+    const outcome = await createReconcileBalancesHandler(deps)(ENVELOPE, ctx(lines, { organizationId: ORG_ID }));
+
+    expect(outcome).toEqual({ status: "done", processed: 0 });
+    expect(captured.movements).toHaveLength(0);
+  });
+
+  it("snapshot além do teto é comparado INTEIRO — sem isso 85% do catálogo nunca é reconciliado (D-131)", async () => {
+    // Snapshot com 1.500 linhas contra ledger vazio: toda linha diverge.
+    // Truncado, o handler geraria 1.000 ajustes e chamaria o dia de resolvido.
+    const snapshot = Array.from({ length: 1500 }, (_, i) => ({
+      sku_id: `sku-${String(i).padStart(4, "0")}`,
+      location_kind: "LOCAL",
+      quantity: 3,
+    }));
+
+    const { deps, captured, lines } = fakeDeps({ snapshot, ledger: [], pageCap: 1000 });
+
+    const outcome = await createReconcileBalancesHandler(deps)(ENVELOPE, ctx(lines, { organizationId: ORG_ID }));
+
+    expect(outcome).toEqual({ status: "done", processed: 1500 });
+    expect(captured.movements).toHaveLength(1500);
+
+    const linhaLog = lines
+      .map((l) => JSON.parse(l) as { message?: string })
+      .find((l) => l.message === "balances_reconciled");
+
+    expect(linhaLog).toMatchObject({ snapshot_rows: 1500, ledger_rows: 0 });
+  });
+
+  it("saldo inflado pelo próprio defeito é trazido de volta ao snapshot (D-131)", async () => {
+    // O caso medido em produção: snapshot 9.999, saldo 39.996 (o ajuste
+    // aplicado quatro vezes). O handler corrigido devolve -29.997 e o saldo
+    // volta ao certo — o conserto é COMPENSAÇÃO, porque `stock_movements` é
+    // append-only e não existe apagar.
+    const { deps, captured, lines } = fakeDeps({
+      snapshot: [{ sku_id: "sku-inflado", location_kind: "LOCAL", quantity: 9999 }],
+      ledger: [{ sku_id: "sku-inflado", location_kind: "LOCAL", quantity: 39996 }],
+    });
+
+    const outcome = await createReconcileBalancesHandler(deps)(ENVELOPE, ctx(lines, { organizationId: ORG_ID }));
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(captured.movements[0]).toMatchObject({ sku_id: "sku-inflado", qty_delta: -29997 });
   });
 });

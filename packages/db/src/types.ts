@@ -3442,7 +3442,7 @@ export type Database = {
           isSetofReturn: false
         }
       }
-      compute_erp_snapshot_balances: {
+      compute_erp_target_balances: {
         Args: { p_organization_id: string }
         Returns: {
           location_kind: string
@@ -3792,6 +3792,31 @@ export type Database = {
           stock_is_virtual: boolean
           title: string
           units_sold: number
+        }[]
+      }
+      get_stock_balances: {
+        Args: { p_organization_id: string }
+        Returns: {
+          local_quantity: number
+          reservado: number
+          sku: string
+          sku_id: string
+          title: string
+          total_count: number
+          transito: number
+        }[]
+      }
+      get_stock_coverage_summary: {
+        Args: {
+          p_date_from: string
+          p_date_to: string
+          p_organization_id: string
+        }
+        Returns: {
+          em_ruptura: number
+          sem_cobertura: number
+          total: number
+          virtuais: number
         }[]
       }
       create_sku_listing_link: {

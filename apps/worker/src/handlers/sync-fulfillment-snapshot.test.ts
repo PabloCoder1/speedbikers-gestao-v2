@@ -33,6 +33,7 @@ function chain<T>(result: T): {
   order: () => ReturnType<typeof chain<T>>;
   limit: () => ReturnType<typeof chain<T>>;
   select: () => ReturnType<typeof chain<T>>;
+  range: (from: number, to: number) => Promise<T>;
   maybeSingle: () => Promise<T>;
   then: <R>(resolve: (value: T) => R) => Promise<R>;
 } {
@@ -43,6 +44,18 @@ function chain<T>(result: T): {
     order: () => self,
     limit: () => self,
     select: () => self,
+    // Fatia de verdade: `fetchFulfillmentSnapshots` pagina desde D-131, e um
+    // fake que ignorasse `range` devolveria a lista inteira em toda janela —
+    // laço infinito, ou pior, um teste verde sobre código quebrado.
+    range: (from: number, to: number) => {
+      const envelope = result as { data?: unknown };
+
+      if (Array.isArray(envelope.data)) {
+        return Promise.resolve({ ...(result as object), data: envelope.data.slice(from, to + 1) } as T);
+      }
+
+      return Promise.resolve(result);
+    },
     maybeSingle: () => Promise.resolve(result),
     then: <R>(resolve: (value: T) => R) => Promise.resolve(result).then(resolve),
   };

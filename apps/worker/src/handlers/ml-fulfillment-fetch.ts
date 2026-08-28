@@ -5,6 +5,7 @@ import { MercadoLivreApiError } from "@sb/mercado-livre";
 import type { Logger } from "@sb/observability";
 import { z } from "zod";
 
+import { readAllPages } from "../read-all-pages.js";
 import { recordDomainEvents } from "./domain-events.js";
 
 /**
@@ -25,11 +26,15 @@ import { recordDomainEvents } from "./domain-events.js";
  * Fica para quando isso for confirmado (ex.: contra um XML/JSON real de
  * item com variação).
  *
- * **Sem paginação ainda**: a leitura de `sku_listing_links` usa o limite
- * implícito do PostgREST (1000 linhas). As quatro contas reais têm hoje bem
- * menos que isso na categoria "sem variação" (D-020/secao 2.1), mas uma
- * conta que cresça além disso silenciosamente processaria só as primeiras
- * 1000 — ver se vira problema real antes de adicionar `.range()`.
+ * **Paginado desde D-131 — e o "ver se vira problema real" já tinha virado.**
+ * O texto anterior desta nota dizia que as quatro contas tinham "bem menos
+ * que 1.000" vínculos sem variação e deixava o `.range()` para depois.
+ * Medido em 2026-08-28: **2.012, 1.915, 1.784 e 1.640** — as QUATRO passaram
+ * do teto de `max_rows` de `supabase/config.toml`. Ou seja, de 18% a 50% dos
+ * vínculos de cada conta nunca chegavam a ser consultados, e o snapshot do
+ * Full vinha pela metade sem que nada acusasse: `error` é nulo num resultado
+ * truncado. A lição que fica registrada é sobre o formato da nota, não só
+ * sobre o número — "hoje cabe, revisar depois" não tem quem revise.
  *
  * **Achado no primeiro disparo real em produção (2026-08-22)**: um
  * `sku_listing_links` pode apontar para um `item_id` que não existe mais no
@@ -84,25 +89,27 @@ export async function fetchFulfillmentSnapshots(
 ): Promise<FetchFulfillmentSnapshotsResult> {
   const capturedAt = params.now?.() ?? new Date();
 
-  const links = await params.db
-    .from("sku_listing_links")
-    .select("item_id, sku_id")
-    .eq("ml_account_id", params.mlAccountId)
-    .eq("ref_kind", "ITEM")
-    .is("variation_id", null);
-
-  if (links.error !== null) {
-    // Mesmo raciocínio de ml-listings-fetch.ts: o chamador
-    // (sync-fulfillment-snapshot.ts) já tem try/catch em volta e registra
-    // falha de verdade — sem isto, virava "done, 0 processados".
-    throw new Error(`falha ao ler sku_listing_links: ${links.error.message}`);
-  }
+  // `readAllPages` propaga o erro como exceção — e é o que se quer aqui.
+  // Mesmo raciocínio de ml-listings-fetch.ts: o chamador
+  // (sync-fulfillment-snapshot.ts) já tem try/catch em volta e registra falha
+  // de verdade — engolir viraria "done, 0 processados".
+  const links = await readAllPages<{ item_id: string | null; sku_id: string }>((from, to) =>
+    params.db
+      .from("sku_listing_links")
+      .select("item_id, sku_id")
+      .eq("ml_account_id", params.mlAccountId)
+      .eq("ref_kind", "ITEM")
+      .is("variation_id", null)
+      .order("item_id")
+      .range(from, to),
+    { label: "falha ao ler sku_listing_links" },
+  );
 
   let itemsProcessed = 0;
   let itemsSkipped = 0;
   let itemsFailed = 0;
 
-  for (const link of links.data) {
+  for (const link of links) {
     if (link.item_id === null) {
       // Não deveria acontecer (ref_kind='ITEM' garante item_id no banco,
       // constraint sku_listing_links_ref_shape) — defesa, não caminho normal.

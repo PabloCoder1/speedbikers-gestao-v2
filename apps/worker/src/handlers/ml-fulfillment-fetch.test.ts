@@ -26,6 +26,7 @@ function chain<T>(result: T): {
   is: () => ReturnType<typeof chain<T>>;
   order: () => ReturnType<typeof chain<T>>;
   limit: () => ReturnType<typeof chain<T>>;
+  range: (from: number, to: number) => Promise<T>;
   maybeSingle: () => Promise<T>;
   then: <R>(resolve: (value: T) => R) => Promise<R>;
 } {
@@ -34,6 +35,19 @@ function chain<T>(result: T): {
     is: () => self,
     order: () => self,
     limit: () => self,
+    // `range` FATIA de verdade (D-131). Um fake que devolvesse a lista
+    // inteira em qualquer janela não distinguiria código que pagina de
+    // código que não pagina — e foi essa cegueira que deixou o truncamento
+    // de `sku_listing_links` passar por seis dias em produção.
+    range: (from: number, to: number) => {
+      const envelope = result as { data?: unknown };
+
+      if (Array.isArray(envelope.data)) {
+        return Promise.resolve({ ...(result as object), data: envelope.data.slice(from, to + 1) } as T);
+      }
+
+      return Promise.resolve(result);
+    },
     maybeSingle: () => Promise.resolve(result),
     then: <R>(resolve: (value: T) => R) => Promise.resolve(result).then(resolve),
   };
@@ -408,5 +422,25 @@ describe("fetchFulfillmentSnapshots", () => {
     const { client } = fakeMercadoLivreClient({}, {});
 
     await expect(fetchFulfillmentSnapshots(baseParams(db, client))).rejects.toThrow(/sku_listing_links/);
+  });
+  it("conta com mais de 1.000 vínculos é lida INTEIRA — o teto do PostgREST escondia metade do Full (D-131)", async () => {
+    // 2.012 é o número real da conta "Speedbikers (loja 1)" em 2026-08-28.
+    // Sem paginação o handler consultava 1.000 e ia embora: os outros 1.012
+    // anúncios nunca eram perguntados ao Mercado Livre, e o snapshot do Full
+    // vinha pela metade sem nenhum erro para denunciar.
+    const links = Array.from({ length: 2012 }, (_, i) => ({
+      item_id: `MLB${String(i).padStart(5, "0")}`,
+      sku_id: `sku-${String(i)}`,
+    }));
+
+    const itens = Object.fromEntries(links.map((l) => [l.item_id, { id: l.item_id, inventory_id: null }]));
+
+    const { db } = fakeDb({ links });
+    const { client, requests } = fakeMercadoLivreClient(itens, {});
+
+    const result = await fetchFulfillmentSnapshots(baseParams(db, client));
+
+    expect(result).toEqual({ itemsProcessed: 0, itemsSkipped: 2012, itemsFailed: 0 });
+    expect(requests).toHaveLength(2012);
   });
 });

@@ -4,6 +4,7 @@ import type { ReconciliationBalance } from "@sb/domain";
 import { z } from "zod";
 
 import type { JobOutcome } from "../job-outcome.js";
+import { readAllPages } from "../read-all-pages.js";
 import type { HandlerContext, JobHandler } from "../router.js";
 import { recordDomainEvents } from "./domain-events.js";
 import { recordStockMovements } from "./stock-movements.js";
@@ -12,7 +13,7 @@ import { recordStockMovements } from "./stock-movements.js";
  * Reconciliação de estoque contra o snapshot do UpSeller (D-029, D-054),
  * job `maintenance.reconcile-balances`.
  *
- * Compara o snapshot mais recente do UpSeller (`compute_erp_snapshot_balances`)
+ * Compara o saldo-alvo do UpSeller (`compute_erp_target_balances`)
  * contra o ledger atual (`inventory_balances`) e grava `AJUSTE_RECONCILIACAO`
  * + `stock.balance.diverged` (crítico) para cada SKU/location que divergir —
  * a lógica em si é `computeReconciliationAdjustments`, pura, testada sem
@@ -21,6 +22,21 @@ import { recordStockMovements } from "./stock-movements.js";
  * **Por organização, não por conta ML** — diferente de todos os outros jobs
  * agendados (`sync.orders.window`, `sync.fulfillment.snapshot`): estoque é
  * organizacional (D-006), não pertence a uma conta específica.
+ *
+ * **D-131 — as duas leituras vinham truncadas em 1.000 linhas e isso
+ * corrompeu o saldo de produção.** Nenhuma das duas paginava, contra 6.744
+ * linhas de snapshot e 2.524 de ledger. O ledger ausente é lido como ZERO
+ * por `computeReconciliationAdjustments`, então o ajuste passava a ser o
+ * valor inteiro do snapshot; como a chave de idempotência inclui a data, ele
+ * era reinserido a cada rodada e a trigger de `inventory_balances` somava.
+ * Quatro rodadas depois havia SKU com saldo exatamente 4× o real, 65% dos
+ * saldos negativos e 9.225 eventos `stock.balance.diverged` — quase todos
+ * denunciando uma divergência que o próprio truncamento tinha criado.
+ *
+ * O handler corrigido REPARA o dado sozinho: com o ledger inteiro visível, o
+ * delta passa a ser `snapshot - saldo_inflado` (negativo) e traz o saldo de
+ * volta ao snapshot na primeira rodada. `stock_movements` é append-only, então
+ * o conserto é compensação, nunca apagamento.
  */
 
 const payloadSchema = z.object({ organizationId: z.uuid() });
@@ -31,6 +47,12 @@ export interface ReconcileBalancesDeps {
 }
 
 interface LedgerRow {
+  sku_id: string;
+  location_kind: string;
+  quantity: number;
+}
+
+interface SnapshotRow {
   sku_id: string;
   location_kind: string;
   quantity: number;
@@ -47,17 +69,25 @@ async function loadLedgerBalances(
   // organização é seguro: `computeReconciliationAdjustments` só itera sobre
   // `snapshotBalances` (ver docstring), então SKU do ledger sem contrapartida
   // no snapshot nunca é visitado — a entrada extra no Map é inofensiva.
-  const result = await db
-    .from("inventory_balances")
-    .select("sku_id, location_kind, quantity")
-    .eq("organization_id", organizationId)
-    .in("location_kind", ["LOCAL", "RESERVADO"]);
+  //
+  // PAGINADO desde D-131, e esta é a metade mais destrutiva do defeito: a
+  // tabela tem 2.524 linhas e a consulta voltava com 1.000. SKU ausente do
+  // Map é lido como ledger ZERO por `computeReconciliationAdjustments`, então
+  // o ajuste virava o valor INTEIRO do snapshot — todo dia, acumulando pela
+  // trigger. Medido: SKU com saldo 39.996 para um snapshot de 9.999.
+  const rows = await readAllPages<LedgerRow>((from, to) =>
+    db
+      .from("inventory_balances")
+      .select("sku_id, location_kind, quantity")
+      .eq("organization_id", organizationId)
+      .in("location_kind", ["LOCAL", "RESERVADO"])
+      .order("sku_id")
+      .order("location_kind")
+      .range(from, to),
+    { label: "falha ao consultar inventory_balances" },
+  );
 
-  if (result.error !== null) {
-    throw new Error(`falha ao consultar inventory_balances: ${result.error.message}`);
-  }
-
-  return (result.data as LedgerRow[]).map((row) => ({
+  return rows.map((row) => ({
     skuId: row.sku_id,
     locationKind: row.location_kind as "LOCAL" | "RESERVADO",
     quantity: row.quantity,
@@ -75,19 +105,45 @@ export function createReconcileBalancesHandler(deps: ReconcileBalancesDeps): Job
     const { organizationId } = parsed.data;
     const now = deps.now?.() ?? new Date();
 
-    const snapshotResult = await deps.db.rpc("compute_erp_snapshot_balances", {
-      p_organization_id: organizationId,
-    });
+    // PAGINADO desde D-131: a função devolve uma linha por SKU e por location
+    // (LOCAL + RESERVADO). Medido em produção: 6.744 linhas para 3.372 SKUs,
+    // contra o teto de 1.000 de `supabase/config.toml`. Sem paginação, 85% do
+    // catálogo nunca era comparado — e nada avisava, porque `error` vem nulo.
+    //
+    // O `union all` da função emite TODOS os LOCAL antes do primeiro
+    // RESERVADO, então o corte em 1.000 decapitava a metade RESERVADO
+    // inteira, sempre. Medido: zero linhas RESERVADO em `inventory_balances`
+    // e zero ajustes RESERVADO em quatro dias, contra 300 linhas de snapshot
+    // com reservado diferente de zero. Como este job é a ÚNICA fonte de
+    // movimento RESERVADO da V3, o item "Reservado e em trânsito" da Fase 4
+    // está marcado como concluído no ROADMAP e nunca funcionou um dia.
+    //
+    // A fonte é `compute_erp_target_balances` desde D-132: o snapshot ROLADO
+    // PARA A FRENTE pelos movimentos posteriores à captura. Com o retrato
+    // cru, este job apagava a venda de cada dia enquanto ninguém reimportasse
+    // a planilha.
+    let snapshotBalances: ReconciliationBalance[];
 
-    if (snapshotResult.error !== null) {
-      return { status: "failed", retryable: true, reason: snapshotResult.error.message };
+    try {
+      const snapshotRows = await readAllPages<SnapshotRow>((from, to) =>
+        deps.db
+          .rpc("compute_erp_target_balances", { p_organization_id: organizationId })
+          .order("sku_id")
+          .order("location_kind")
+          .range(from, to),
+        { label: "falha ao consultar o snapshot do UpSeller" },
+      );
+
+      snapshotBalances = snapshotRows.map((row) => ({
+        skuId: row.sku_id,
+        locationKind: row.location_kind as "LOCAL" | "RESERVADO",
+        quantity: row.quantity,
+      }));
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "falha ao consultar o snapshot do UpSeller";
+
+      return { status: "failed", retryable: true, reason };
     }
-
-    const snapshotBalances: ReconciliationBalance[] = snapshotResult.data.map((row) => ({
-      skuId: row.sku_id,
-      locationKind: row.location_kind as "LOCAL" | "RESERVADO",
-      quantity: row.quantity,
-    }));
 
     if (snapshotBalances.length === 0) {
       // Organização sem nenhum snapshot do UpSeller aplicado ainda (ou sem
@@ -129,8 +185,14 @@ export function createReconcileBalancesHandler(deps: ReconcileBalancesDeps): Job
       );
     }
 
+    // `snapshot_rows` e `ledger_rows` são instrumentação de D-131, não
+    // enfeite: o defeito era invisível justamente porque ninguém conseguia
+    // ver quantas linhas o job tinha lido. Com estes dois números no log, uma
+    // leitura truncada volta a ser detectável comparando com o banco.
     context.logger.info("balances_reconciled", {
       organization_id: organizationId,
+      snapshot_rows: snapshotBalances.length,
+      ledger_rows: ledgerBalances.length,
       skus_compared: skuIds.length,
       adjustments: adjustments.length,
     });

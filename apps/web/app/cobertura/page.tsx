@@ -64,6 +64,14 @@ const td: React.CSSProperties = {
 
 const tdNumber: React.CSSProperties = { ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" };
 
+/**
+ * Quantas linhas a tela mostra por vez. O conjunto real passa de 2.600 e o
+ * teto do PostgREST é 1.000 — pedir "tudo" nunca trouxe tudo, só escondia o
+ * corte (D-131). Com a ordenação em SQL, as primeiras linhas são as que
+ * importam: ruptura antes, cobertura mais curta antes.
+ */
+const PAGE_SIZE = 200;
+
 export default async function CoberturaPage(): Promise<ReactNode> {
   const supabase = await createClient();
 
@@ -83,23 +91,42 @@ export default async function CoberturaPage(): Promise<ReactNode> {
   const dateTo = toSalesMetricDate(now);
   const dateFrom = toSalesMetricDate(new Date(now.getTime() - (LOOKBACK_DAYS - 1) * 24 * 60 * 60 * 1000));
 
-  const { data, error } = await supabase.rpc("get_stock_coverage", {
-    p_organization_id: organizationId,
-    p_date_from: dateFrom,
-    p_date_to: dateTo,
-  });
+  // ORDENAÇÃO E LIMITE EXPLÍCITOS (D-131). Antes, esta chamada não tinha
+  // `.range()`: o PostgREST devolvia 1.000 das 2.602 linhas por causa de
+  // `max_rows = 1000`, e a página ordenava e CONTAVA em JavaScript sobre essa
+  // fatia arbitrária. O cabeçalho anunciava uma ruptura contada numa amostra
+  // — a real é 924. Ordenar em SQL também respeita `docs/ARCHITECTURE.md`
+  // secao 15/21; a ordem é a mesma de antes, só que agora sobre o conjunto
+  // inteiro: virtual por último (não é urgência, é ausência de resposta),
+  // ruptura primeiro, depois menor cobertura.
+  const [coverage, summary] = await Promise.all([
+    supabase
+      .rpc("get_stock_coverage", {
+        p_organization_id: organizationId,
+        p_date_from: dateFrom,
+        p_date_to: dateTo,
+      })
+      .order("stock_is_virtual")
+      .order("is_ruptura", { ascending: false })
+      .order("days_of_coverage", { nullsFirst: false })
+      .range(0, PAGE_SIZE - 1),
+    supabase.rpc("get_stock_coverage_summary", {
+      p_organization_id: organizationId,
+      p_date_from: dateFrom,
+      p_date_to: dateTo,
+    }),
+  ]);
 
-  const rows = ((data ?? []) as CoverageRow[]).slice().sort((a, b) => {
-    // Estoque virtual vai para o FIM: não é urgência, é ausência de resposta.
-    if (a.stock_is_virtual !== b.stock_is_virtual) return a.stock_is_virtual ? 1 : -1;
-    if (a.is_ruptura !== b.is_ruptura) return a.is_ruptura ? -1 : 1;
+  const { data, error } = coverage;
 
-    return (a.days_of_coverage ?? Infinity) - (b.days_of_coverage ?? Infinity);
-  });
+  const rows = (data ?? []) as CoverageRow[];
 
-  const virtualCount = rows.filter((row) => row.stock_is_virtual).length;
-
-  const rupturaCount = rows.filter((row) => row.is_ruptura).length;
+  // Os totais vêm do Postgres sobre o conjunto INTEIRO — nunca de contar o
+  // que coube na página.
+  const totals = summary.data?.[0] ?? null;
+  const rupturaCount = totals?.em_ruptura ?? 0;
+  const virtualCount = totals?.virtuais ?? 0;
+  const totalCount = totals?.total ?? rows.length;
 
   return (
     <Shell>
@@ -125,6 +152,13 @@ export default async function CoberturaPage(): Promise<ReactNode> {
       {error !== null && (
         <p role="alert" style={{ color: "var(--sb-danger)" }}>
           Não foi possível carregar: {error.message}
+        </p>
+      )}
+
+      {error === null && totalCount > rows.length && (
+        <p style={{ margin: "0 0 var(--sb-space-2)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+          Mostrando os <strong>{formatCount(rows.length)}</strong> mais urgentes de{" "}
+          <strong>{formatCount(totalCount)}</strong> SKUs. Os totais acima são do conjunto inteiro, não desta página.
         </p>
       )}
 

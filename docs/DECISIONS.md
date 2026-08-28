@@ -1908,8 +1908,8 @@ Também corrigidos na mesma passagem: `auth.getUser()` descartava `.error` (sess
 Cinco achados sustentam a reordenação, todos medidos em 2026-08-28:
 
 - 🔴 **A Central de Vinculações não funciona, e é pior do que a desconfiança do usuário.** `link_candidates` tem **zero linhas** e nunca teve nenhuma. O gerador tem uma fonte só (a planilha do UpSeller) e o schema **PROÍBE** que um anúncio do Mercado Livre vire candidato (`check source in ('ERP_IMPORT')` + FK obrigatória para `erp_import_rows`). Reconciliação independente: **7.361 itens já venderam** (prova de existência), 4.710 estão fora de `listings` e **3.679 não têm vínculo nenhum**. Não é história antiga: **21,8% dos itens vendidos nos últimos 30 dias saem com `sku_id` nulo** — 437 anúncios, R$ 699.733,15. Esse dinheiro entra no faturamento da conta e some de tudo que é por SKU: estoque não é baixado, cobertura não existe, ABC não vê.
-- 🔴 **O estoque local é ficção.** Dos 828 SKUs com saldo positivo, **581 estão acima de 1.000 unidades** — 164 em exatamente 3.996, 9 em 39.996. É **estoque sentinela do ERP**, espelhado com fidelidade pela reconciliação (`AJUSTE_RECONCILIACAO`: +5.206.669 unidades). Somam-se **1.639 SKUs com saldo NEGATIVO**, mediana −2. Dos 1.140 SKUs que venderam em 30 dias e têm saldo, só **170 são plausíveis**.
-- 🔴 **A Central de Notificações já é 59% ruído.** `stock.balance.diverged` gera ~2.040 eventos CRÍTICOS por dia, estáveis, e responde por **55,1%** de todas as notificações (8.121 de 14.740, para um único usuário). É a falha dos 5.243 alertas da V2 renascendo — e é consequência direta do achado anterior.
+- 🔴 **O estoque local é ficção.** Dos 828 SKUs com saldo positivo, **581 estão acima de 1.000 unidades** — 164 em exatamente 3.996, 9 em 39.996. ~~É **estoque sentinela do ERP**, espelhado com fidelidade pela reconciliação (`AJUSTE_RECONCILIACAO`: +5.206.669 unidades).~~ **ATRIBUIÇÃO CORRIGIDA EM D-131 (2026-08-28): esses números são a impressão digital de um BUG, não dado do fornecedor.** 3.996 = 4 × 999 e 39.996 = 4 × 9.999 — a reconciliação lia 1.000 de 6.744 linhas por causa do `max_rows` do PostgREST, tratava o ledger ausente como zero e reaplicava o snapshot inteiro todo dia. As +5.206.669 unidades são o defeito somado, não fidelidade ao UpSeller. O achado de que o saldo local não serve para decidir **continua válido**; a causa era outra. Somam-se **1.639 SKUs com saldo NEGATIVO**, mediana −2. Dos 1.140 SKUs que venderam em 30 dias e têm saldo, só **170 são plausíveis**.
+- 🔴 **A Central de Notificações já é 59% ruído.** (**Causa identificada em D-131**: 69% desses eventos vêm de `verify-ledger-integrity`, cego pelo mesmo truncamento, e são **falsos positivos medidos** — a comparação real dá zero divergências em 2.524 linhas.) `stock.balance.diverged` gera ~2.040 eventos CRÍTICOS por dia, estáveis, e responde por **55,1%** de todas as notificações (8.121 de 14.740, para um único usuário). É a falha dos 5.243 alertas da V2 renascendo — e é consequência direta do achado anterior.
 - 🔴 **Uma bomba-relógio em `/acoes`** e **dois furos de autorização** — corrigidos em D-117/D-118 antes de qualquer feature nova.
 - **`order_items.sale_fee` existe, está 100% preenchido e nunca foi lido.** R$ 297.993,32 em 30 dias sobre R$ 3.057.736,33 (9,75%).
 
@@ -2241,6 +2241,104 @@ Medido: **33 das 54 tabelas de `public`** ainda davam TRUNCATE a `authenticated`
 **Limitação honesta desta entrega:** Docker não sobe nesta máquina, então **não rodei a suíte de integração localmente**. A verificação é indireta mas direta o bastante: as duas consultas dos testes foram executadas **contra o banco real**, e ambas devolvem **zero linhas** depois da migration (antes: 5 e 33). O veredito final continua sendo a CI.
 
 **Impacto:** migration `20260828200541` (dois `revoke` de escrita, um `revoke truncate` em 33 tabelas), `packages/db/src/rls.integration.test.ts` (guarda corrigido para OID + teste novo de TRUNCATE). Nenhuma tela, nenhuma RPC, nenhum dado alterado. `check` 29/29.
+
+---
+
+## D-131 — O PostgREST corta em 1.000 linhas sem avisar, e isso corrompeu o saldo de estoque de produção
+
+**Contexto:** eu ia construir a ferramenta de marcação em lote (fatia registrada no HANDOFF). Ao medir os privilégios de `skus` para desenhá-la, tropecei em `inventory_balances`: mínimo **−4.620**, máximo **43.964**, contra um snapshot do ERP da ordem de 10.000. Puxando o fio, o defeito é de classe e o estrago é grande.
+
+**O mecanismo, e ele é o pior formato possível de defeito: não quebra, mente.** `supabase/config.toml:46` fixa `max_rows = 1000`. Uma consulta que devolveria mais que isso volta cortada com `error` **nulo** — o código segue achando que tem o conjunto inteiro. Nenhum lugar do repo altera esse teto, e `admin-client.ts` não manda header que o contorne.
+
+**A cadeia, em `maintenance.reconcile-balances`:**
+
+1. `compute_erp_snapshot_balances` devolve **6.744 linhas** (3.372 LOCAL + 3.372 RESERVADO). O handler recebia 1.000.
+2. `loadLedgerBalances` lia `inventory_balances` (2.524 linhas) sem `.range()`. Recebia 1.000.
+3. `computeReconciliationAdjustments` faz `ledgerByKey.get(chave) ?? 0`. SKU ausente **por truncamento** é lido como saldo zero.
+4. Logo `delta = snapshot − 0 = snapshot`: o valor inteiro virava ajuste.
+5. A chave de idempotência inclui a data (decisão consciente de D-029, não descuido), então não colide entre dias.
+6. `inventory_balances` é projeção escrita por trigger que **soma** o delta. Os ajustes acumularam.
+
+**A impressão digital, medida em produção:** SKU `1779-3717`, snapshot 9.999, saldo **39.996 — exatamente 4×**, com um ajuste de +9.999 por dia nos dias 25, 26, 27 e 28/08. SKU `1909-3911`: 10.991 → 43.964, também 4×. **637 SKUs receberam os quatro ajustes.** E os ajustes por dia nunca passaram de 1.000: 896, 674, 674, 657.
+
+**Um painel adversarial de quatro lentes matou as duas explicações alternativas** e mediu o que eu não tinha medido:
+
+- *"A trigger duplica"* — **morta**. `inventory_balances` == `sum(stock_movements.qty_delta)` em **2.524 de 2.524 linhas**. A projeção reproduz o ledger com exatidão; ela aplicou fielmente movimentos corrompidos.
+- *"Retry do job reinsere"* — **morta**. 2.901 movimentos para 2.901 chaves distintas, com **máximo de 1 ajuste por SKU por dia**. A idempotência protegeu exatamente do que foi desenhada para proteger.
+- **A prova que fecha o caso**: a recorrência do ajuste correlaciona com a **posição física da linha**. Todos os 259 SKUs que pararam de ser ajustados estão nas 1.000 primeiras linhas físicas de `inventory_balances`; 607 dos 637 com 4× estão além da posição 1.000. Posição no heap não significa nada para trigger nem para retry — só para um `LIMIT` sem `ORDER BY`.
+
+**Três coisas que o meu diagnóstico inicial errou, e que o painel corrigiu:**
+
+🔴 **1. O dano dominante é o OPOSTO do que eu descrevi.** Eu contei a história da inflação. Medido: **1.628 SKUs nunca receberam ajuste nenhum, e 1.627 deles estão NEGATIVOS** (mínimo −4.620). A reconciliação *era* o mecanismo de saldo de abertura — não existe `ENTRADA_NFE` no ledger, só `VENDA_ML` (216.388 movimentos, −222.145 unidades desde 2025-10-23). Truncada, ela semeou ~900 de 3.372 SKUs; o resto só recebeu dedução de venda e afundou. **65% da base está errada para baixo por falta de semeadura; 35% para cima por excesso.** Mesma causa, danos de sinal oposto.
+
+🔴 **2. `RESERVADO` nunca foi reconciliado. Nem uma vez.** `compute_erp_snapshot_balances` é um `union all` que emite os 3.372 LOCAL **antes** do primeiro RESERVADO, sem `order by` — o corte em 1.000 decapitava a metade RESERVADO **sempre**. Medido: **zero** linhas RESERVADO em `inventory_balances`, **zero** ajustes RESERVADO em quatro dias, contra **300 linhas de snapshot com reservado ≠ 0 (686 unidades)**. Como `reconciliation.ts` declara este job a **única** fonte de movimento RESERVADO da V3, o item **"Reservado e em trânsito" da Fase 4 está marcado como concluído no ROADMAP e nunca funcionou um único dia em produção.**
+
+🔴 **3. O vigia estava cego pelo mesmo defeito, e 69% do alarme era falso.** Dos 9.225 `stock.balance.diverged`, apenas 2.901 vêm da reconciliação — **6.324 vêm de `verify-ledger-integrity`**, o job de D-056 que existe para detectar corrupção de saldo. Ele lê `compute_inventory_balances_from_ledger` e `inventory_balances`, **as duas sem `.range()`**, e trata chave ausente de um lado como zero. Como a comparação real dá **zero divergências em 2.524 linhas**, esses 6.324 críticos são **100% falsos** — 1.100 a 1.370 por dia desde 24/08. O único alarme que existia para pegar este bug passou cinco dias gritando sobre um defeito impossível enquanto a corrupção de verdade acontecia ao lado.
+
+**Mais duas ocorrências da mesma classe, medidas:**
+
+- **`ml-fulfillment-fetch`**: lia `sku_listing_links` por conta sem paginar. O comentário no arquivo dizia *"as quatro contas reais têm hoje bem menos que 1.000 — ver se vira problema real antes de adicionar `.range()`"*. Medido em 28/08: **2.012, 1.915, 1.784 e 1.640**. **As quatro passaram**, e de 18% a 50% dos vínculos de cada conta nunca eram consultados — snapshot do Full pela metade, em silêncio. A lição registrada é sobre o formato da nota: *"hoje cabe, revisar depois"* não tem quem revise.
+- **`/cobertura` e `/estoque`**: `get_stock_coverage` devolve 2.602 linhas e a página pedia sem `.range()`, depois contava ruptura e estoque virtual **em JavaScript sobre a fatia** — o cabeçalho anunciava contagem de amostra arbitrária, sendo a ruptura real **924**. `/estoque` era pior: ordenava por `quantity desc` **só** para decidir quais 1.000 das 2.524 linhas sobreviviam (a tela reordenava por SKU em JS logo depois), o que mostrava justamente os saldos inflados e **escondia ~1.524 dos 1.645 negativos**.
+
+**Decisão 1 — um helper, não N correções pontuais.** `apps/worker/src/read-all-pages.ts` (`readAllPages`) faz o laço de `.range()`, com três coisas que não são detalhe: rebaixa `pageSize` ao teto do servidor (pedir 5.000 devolveria 1.000 e o laço concluiria "acabou"); **exige ordenação estável** do chamador, senão a mesma linha volta em duas páginas e no pior caso o laço não termina; e aceita `label` para o erro não perder o contexto que o `try/catch` manual tinha.
+
+**Decisão 2 — os fakes de teste passam a fatiar de verdade.** Um fake que aceita `.range()` e devolve a lista inteira em toda janela faz teste passar sobre código que não pagina — e podia entrar em laço infinito. Os fakes tocados agora simulam `max_rows` com `pageCap`, e cada handler ganhou um teste que **falha contra a versão anterior**: 1.500 linhas iguais dos dois lados devem produzir **zero** ajustes.
+
+**Decisão 3 — instrumentação, porque o defeito era invisível.** `balances_reconciled` passa a logar `snapshot_rows` e `ledger_rows`. Sem esses dois números não havia como perceber que o job lia 1.000 de 6.744.
+
+**O que NÃO faço aqui, e por quê.** Não escrevo script de reparo: `stock_movements` é append-only e o handler corrigido **repara sozinho** (com D-132, `delta = alvo − saldo_inflado`, negativo). Mas com uma ressalva que o painel achou e que teria me feito reportar sucesso falso: `recordStockMovements` usa `ignoreDuplicates: true`, e as **657 chaves `reconciliacao:2026-08-28:*` já existem**. Rodar hoje pularia esses SKUs **em silêncio** e o job reportaria `processed` alto mesmo assim. **O reparo entra na rodada de 2026-08-29**, com chave nova — e pela regra de D-109 só estará verificado quando a execução for lida.
+
+**Correção a D-120, que leu o sintoma deste bug como dado legítimo.** D-120 registrou: *"164 em exatamente 3.996, 9 em 39.996. É estoque sentinela do ERP, espelhado com fidelidade pela reconciliação (+5.206.669 unidades)"*. **3.996 = 4 × 999 e 39.996 = 4 × 9.999**: é a assinatura 4× deste defeito, não fidelidade ao fornecedor. A mesma auditoria também classificou `stock.balance.diverged` como "59% de ruído da Central de Notificações" — o ruído era este bug, e 69% dele vinha do vigia cego. **D-127 não é afetada**: ela mediu a assinatura sentinela em `erp_stock_snapshots`, que nunca esteve corrompido.
+
+**Uma afirmação minha que era falsa:** eu disse "74 SKUs acima de 10.000, e o teto do ERP é 10.000". Não existe esse teto — `docs/UPSELLER.md` secao 6 documenta retrovisores com ~10.993 unidades como estoque artificial do próprio ERP, e D-038 decidiu tratá-los como reais.
+
+**Impacto:** `apps/worker/src/read-all-pages.{ts,test.ts}` (novo, 7 testes), `reconcile-balances.{ts,test.ts}`, `ml-fulfillment-fetch.{ts,test.ts}`, `verify-ledger-integrity.{ts,test.ts}`, `sync-fulfillment-snapshot.test.ts`, `apps/web/app/{cobertura,estoque}/page.tsx`, migrations `20260828203950` (`get_stock_coverage_summary`) e `20260828204103` (`get_stock_balances`), `packages/db/src/{types.ts,rls.integration.test.ts}`. `check` **29/29**. **A suíte de integração não rodou aqui** (Docker não sobe nesta máquina) — as consultas foram verificadas contra o banco real.
+
+---
+
+## D-132 — O alvo da reconciliação é o snapshot ROLADO PARA A FRENTE, não o retrato congelado
+
+**Contexto:** ao corrigir o truncamento de D-131, uma lente do painel refutou não o mecanismo, mas a **conclusão**: paginar sozinho não conserta o saldo. Existe um segundo defeito, independente, e paginar sem tratá-lo **pioraria** — passaria a aplicá-lo aos 3.372 SKUs em vez de ~900.
+
+**O defeito:** `compute_erp_snapshot_balances` devolvia o retrato cru, e o handler forçava `saldo := snapshot`. Existe **um único** snapshot no banco (2026-08-21 15:42) e **não existe job de import do ERP** — `infra/cloud-scheduler.sh` tem 13 jobs `v3-*` e nenhum deles importa a planilha. Com o job rodando todo dia contra um retrato parado, **ele desfaz a venda de cada dia**.
+
+**Medido, e em SKUs NÃO afetados pelo truncamento** (o ajuste é +1, +2, +3 — não o snapshot inteiro), o que isola o mecanismo:
+
+| SKU | Snapshot | Vendeu após a captura | Alvo correto | Saldo hoje |
+|---|---|---|---|---|
+| `EB0001` | 13.163 | −251 | **12.912** | **13.143** |
+| `SV73` | 2.025 | −134 | **1.891** | **2.016** |
+| `TM874.TM0451` | 608 | −146 | **462** | 115 |
+
+Há SKUs em que o ajuste do dia N é **exatamente o oposto da venda do dia N−1**: 31 casos em 26/08, 26 em 27/08, 15 em 28/08.
+
+**E a defesa óbvia não se sustenta** — *"o problema é o import do ERP não rodar"*. O próprio código a derruba: `apps/api/src/balance-reconcile-schedule.ts` escolheu cadência **diária** justamente porque *"o snapshot só muda quando alguém reimporta a planilha do UpSeller manualmente (esporádico)"*. O desenho reconhece o snapshot esporádico e mesmo assim o reaplica todo dia.
+
+**Decisão — "o UpSeller vence" (D-029) continua valendo, com a precisão que faltava: ele vence NO INSTANTE DA CAPTURA.** O que aconteceu depois — venda, cancelamento, devolução — é verdade nossa, com fonte própria, e não pode ser apagado por um retrato mais velho:
+
+```
+alvo = snapshot + movimentos com occurred_at > captured_at
+```
+
+`compute_erp_target_balances` substitui a função antiga, que foi **removida** (manter as duas convidaria a chamar a errada, e o nome `snapshot_balances` descreve exatamente a semântica recusada).
+
+**`AJUSTE_RECONCILIACAO` fica de fora da soma, e é isso que torna a função correta em vez de circular:** ajuste não é evento de estoque, é correção em direção ao alvo. Somando-o, o alvo perseguiria o próprio rastro.
+
+**A álgebra fecha nas três situações** (L = saldo atual, S = snapshot, M = movimentos reais após a captura):
+
+| Situação | Saldo atual | Delta | Efeito |
+|---|---|---|---|
+| Saudável | `L = S + M` | **0** | nada a fazer |
+| Inflado 4× (D-131) | `L = 4S + M` | **−3S** | volta ao certo |
+| Nunca semeado | `L = M` | **S** | o saldo nasce |
+
+**Ganho que não era o objetivo e vale registrar: o job vira idempotente entre dias.** A repetição diária de D-029 passa a produzir **zero** quando não há divergência real, em vez de um ajuste novo a cada rodada. A data na chave de idempotência deixa de ser amplificador de defeito e volta a ser o que D-029 queria: rastro de uma divergência que persiste.
+
+**O que a primeira rodada corrigida vai fazer, medido antes de rodar:** 3.229 dos 3.372 SKUs precisam de ajuste LOCAL (delta líquido **+881.843** unidades — a soma de tirar dos inflados e semear os 1.628 zerados) e **3.372 precisam de ajuste RESERVADO, que nasce pela primeira vez (686 unidades)**.
+
+**Resíduo declarado, que este desenho NÃO resolve:** 27 SKUs têm linha LOCAL no ledger e **não têm** contrapartida no snapshot (de −87 a −1 unidades). `computeReconciliationAdjustments` só itera sobre `snapshotBalances` — por construção, esses 27 nunca são visitados e continuam negativos. Não é descuido: são SKUs sobre os quais o ERP não tem opinião, e inventar uma seria pior. Gatilho para reabrir: se depois de uma reimportação fresca da planilha eles continuarem fora, é sinal de SKU morto no ERP e vivo na V3 — problema de catálogo, não de estoque.
+
+**Impacto:** migration `20260828203624` (uma função criada, uma removida), `apps/worker/src/handlers/reconcile-balances.{ts,test.ts}`, `packages/db/src/{types.ts,rls.integration.test.ts}` (teste novo provando que movimento posterior à captura entra no alvo e que `AJUSTE_RECONCILIACAO` não entra). `check` **29/29**.
 
 ## Como adicionar nova decisão
 

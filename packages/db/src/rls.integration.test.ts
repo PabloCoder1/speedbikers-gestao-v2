@@ -2262,21 +2262,21 @@ describe("reconciliação de estoque contra o UpSeller (D-029, D-054)", () => {
     );
   });
 
-  it("anon não executa compute_erp_snapshot_balances", async () => {
+  it("anon não executa compute_erp_target_balances", async () => {
     await expect(
-      asAnon(`select * from public.compute_erp_snapshot_balances('${ORG_SB}')`),
+      asAnon(`select * from public.compute_erp_target_balances('${ORG_SB}')`),
     ).rejects.toThrow(/permission denied/i);
   });
 
   it("authenticated não executa — só service_role, mesmo sendo ADMIN da organização", async () => {
     await expect(
-      asUser(ADMIN_SB, `select * from public.compute_erp_snapshot_balances('${ORG_SB}')`),
+      asUser(ADMIN_SB, `select * from public.compute_erp_target_balances('${ORG_SB}')`),
     ).rejects.toThrow(/permission denied/i);
   });
 
   it("service_role traz o snapshot MAIS RECENTE por SKU, decomposto em LOCAL/RESERVADO", async () => {
     const rows = await client.query<{ sku_id: string; location_kind: string; quantity: string }>(
-      `select sku_id, location_kind, quantity from public.compute_erp_snapshot_balances('${ORG_SB}')
+      `select sku_id, location_kind, quantity from public.compute_erp_target_balances('${ORG_SB}')
        where sku_id = '${skuId}' order by location_kind`,
     );
 
@@ -2288,6 +2288,40 @@ describe("reconciliação de estoque contra o UpSeller (D-029, D-054)", () => {
     expect(parsed).toEqual([
       { sku_id: skuId, location_kind: "LOCAL", quantity: 50 },
       { sku_id: skuId, location_kind: "RESERVADO", quantity: 10 },
+    ]);
+  });
+
+  // D-132: o alvo é o snapshot ROLADO PARA A FRENTE. Sem isto a reconciliação
+  // forçava `saldo := snapshot` e apagava a venda de cada dia enquanto
+  // ninguém reimportasse a planilha do UpSeller — medido em produção, com o
+  // ajuste do dia N sendo exatamente o oposto da venda do dia N-1.
+  it("movimento POSTERIOR à captura entra no alvo — o retrato do ERP não apaga venda nossa (D-132)", async () => {
+    await client.query(
+      `insert into public.stock_movements
+         (organization_id, sku_id, location_kind, qty_delta, movement_type, idempotency_key, occurred_at)
+       values ($1,$2,'LOCAL',-3,'VENDA_ML',$3, now() + interval '1 minute')`,
+      [ORG_SB, skuId, `d132-venda:${skuId}`],
+    );
+
+    // E o ajuste da própria reconciliação NÃO entra: incluí-lo faria o alvo
+    // perseguir o próprio rastro, que é o defeito circular que D-132 evita.
+    await client.query(
+      `insert into public.stock_movements
+         (organization_id, sku_id, location_kind, qty_delta, movement_type, idempotency_key, occurred_at)
+       values ($1,$2,'LOCAL',999,'AJUSTE_RECONCILIACAO',$3, now() + interval '2 minutes')`,
+      [ORG_SB, skuId, `d132-ajuste:${skuId}`],
+    );
+
+    const rows = await client.query<{ location_kind: string; quantity: string }>(
+      `select location_kind, quantity from public.compute_erp_target_balances('${ORG_SB}')
+       where sku_id = '${skuId}' order by location_kind`,
+    );
+
+    const parsed = rows.rows.map((r) => ({ ...r, quantity: Number(r.quantity) }));
+
+    expect(parsed).toEqual([
+      { location_kind: "LOCAL", quantity: 47 },
+      { location_kind: "RESERVADO", quantity: 10 },
     ]);
   });
 
