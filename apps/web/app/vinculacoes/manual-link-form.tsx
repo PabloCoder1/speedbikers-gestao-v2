@@ -35,9 +35,20 @@ const labelStyle: React.CSSProperties = {
   marginBottom: "0.25rem",
 };
 
-export function ManualLinkForm({ accounts }: { accounts: AccountOption[] }): ReactNode {
-  const [mlAccountId, setMlAccountId] = useState(accounts[0]?.id ?? "");
-  const [itemId, setItemId] = useState("");
+export function ManualLinkForm({
+  accounts,
+  initialAccountId,
+  initialItemId,
+}: {
+  accounts: AccountOption[];
+  /** Pré-preenchimento vindo da URL (linha de "sem vínculo"), não estado novo. */
+  initialAccountId?: string;
+  initialItemId?: string;
+}): ReactNode {
+  const [mlAccountId, setMlAccountId] = useState(
+    accounts.some((account) => account.id === initialAccountId) ? (initialAccountId ?? "") : (accounts[0]?.id ?? ""),
+  );
+  const [itemId, setItemId] = useState(initialItemId ?? "");
   const [variationId, setVariationId] = useState("");
   const skuSearch = useSkuSearch();
   const [busy, setBusy] = useState(false);

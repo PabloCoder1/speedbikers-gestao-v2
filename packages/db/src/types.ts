@@ -3705,6 +3705,27 @@ export type Database = {
           units_sold: number
         }[]
       }
+      get_unlinked_listings: {
+        Args: {
+          p_days?: number
+          p_limit?: number
+          p_organization_id: string
+          p_status?: string
+        }
+        Returns: {
+          account_label: string
+          available_quantity: number
+          gross_revenue: number
+          item_id: string
+          ml_account_id: string
+          price: number
+          status: string
+          synced_at: string
+          title: string
+          total_count: number
+          units_sold: number
+        }[]
+      }
       get_support_metrics: {
         Args: { p_days?: number }
         Returns: {

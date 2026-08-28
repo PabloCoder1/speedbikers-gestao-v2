@@ -135,9 +135,7 @@ export default async function AnunciosPage(): Promise<ReactNode> {
 
       <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
         Estado atual de cada anúncio já vinculado a um SKU, sincronizado do Mercado Livre a cada 6h, com venda dos
-        últimos {LOOKBACK_DAYS} dias. Anúncio ainda sem vínculo não aparece aqui — a Central de Vinculações cuida
-        disso.
-      </p>
+        últimos {LOOKBACK_DAYS} dias. Desde D-121 a lista é o catálogo REAL do Mercado Livre — anúncio sem vínculo aparece aqui com “—” no SKU. A fila de trabalho para vinculá-los está na Central de Vinculações.</p>
 
       {error !== null && (
         <p role="alert" style={{ color: "var(--sb-danger)" }}>

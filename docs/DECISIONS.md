@@ -1982,6 +1982,30 @@ Esses 1.917 anúncios existiam no Mercado Livre e **não existiam no nosso siste
 
 **Nota operacional:** as varreduras dispararam `slow_operation` (instrumentação própria do projeto, >1.500 ms), o que é esperado e não é falha — cada execução faz 22–24 páginas de busca mais ~60 chamadas de multiget. Zero `job_failed`, zero erro de rate limit na janela.
 
+## D-122 — A fila de anúncios sem vínculo é DERIVADA, não materializada: `link_candidates` não recebe o Mercado Livre
+
+**Contexto:** o item 2 da Fase 4B, escrito por mim em D-120, dizia *"abrir `link_candidates` para o Mercado Livre"* — o que exigiria migration (aceitar `source='ML_CATALOG'`, tornar `source_row_id` e `sku_key` anuláveis, criar índices únicos parciais) mais um gerador e uma política de obsolescência. Antes de escrever a migration, submeti as duas alternativas a um painel independente (duas defesas + um levantamento de fatos + um juiz, todos lendo o código real). **O painel derrubou o item que eu mesmo tinha escrito, e derrubou também um número que eu havia reportado.**
+
+**Decisão 1 — a fila é derivada de `listings`, não materializada.** `link_candidates` existe para referências **sem casa**: a planilha cita um anúncio que talvez nem esteja sincronizado. Desde D-121 os anúncios do Mercado Livre TÊM casa (`listings` tem o catálogo inteiro). Materializar candidatos duplicaria estado, criaria obsolescência (candidato aberto quando o vínculo nasce por outro caminho) e exigiria um segundo reconciliador — porque o `reconcileLinkCandidates` existente indexa por `source_row_id` e relê `erp_import_rows`, sendo **por construção incapaz** de resolver um candidato de ML.
+
+**Decisão 2 — a correção que muda tudo: `listings.sku_id IS NULL` NÃO é "anúncio sem vínculo".** O lookup que preenche a coluna usa `ref_kind='ITEM'` e `variation_id IS NULL`, de propósito, porque a pergunta do sync é *"que SKU atribuo a ESTE item?"*. Um anúncio corretamente vinculado nas suas VARIAÇÕES chega com `sku_id` nulo.
+
+Medido: dos **1.917** com `sku_id` nulo, **1.013 (52,8%) já têm vínculo de variação**. Sem vínculo nenhum são **904** — 658 ativos. **Isto corrige o número que D-121 reportou**: "1.917 anúncios sem vínculo" estava errado; 1.917 é "sem vínculo de item inteiro".
+
+A consequência de não corrigir seria grave, não cosmética: metade da fila seria trabalho falso, e a ação natural do operador — vincular o anúncio inteiro — é exatamente o estado misto que D-119 recusa, porque não resolve venda nenhuma **e leva o estoque Full para o SKU errado**.
+
+**Decisão 3 — o anti-join vai para SQL, contrariando o painel, por regra do projeto.** O juiz propôs fazer o anti-join em JavaScript no Server Component, sem migration. Recusei: isso exigiria trafegar ~13 mil vínculos de variação por render e viola `docs/ARCHITECTURE.md` secao 15/21 (*"Zero agregação em JavaScript"*, com o motivo medido na V2: 119 ms contra 1.343 ms). `get_unlinked_listings` (`security invoker`, migration `20260828183728`) faz anti-join, junção de receita e ordenação onde essas coisas pertencem. É **uma função nomeada que `drop function` desfaz** — não é estado novo.
+
+**Decisão 4 — ordenar por DINHEIRO, não por data.** A fila tem centenas de linhas; `created_at` ascendente (o padrão da tela de candidatos) põe o mais velho na frente. Medido no primeiro uso: o topo é um baú Navetec com **R$ 42.517,70 em 30 dias e 139 unidades vendidas — sem vínculo nenhum**. Padrão da tela é **só ativos**; pausado é fila legítima e fica atrás de um link.
+
+**Decisão 5 — a ação reusa o caminho de escrita existente.** Cada linha leva a `/vinculacoes?conta=…&item=…`, que pré-preenche o formulário de D-119 pela URL — mesmo padrão de filtro na URL do resto do app, **sem estado novo, sem RPC de escrita nova, sem policy nova**. As cinco recusas que D-119 construiu (mesma forma, mistura de formas, mesmo SKU, corrida 23505, sessão expirada) continuam sendo a única porta.
+
+**O que fica de fora, conscientemente:** DISMISS persistente ("este eu decidi nunca vincular") — `dismiss_link_candidate` existe desde 21/08 e **nunca rodou sobre dado real** (a tabela tem zero linhas). Construir o segundo caminho de descarte para um botão que nunca foi apertado violaria o critério do projeto. Gatilho declarado para reabrir: se depois de duas semanas de uso o resíduo de anúncios ativos, frescos e recusados pelo operador passar de ~50 linhas, nasce `listing_link_exclusions` — e ainda assim **não** `link_candidates`. Também fica fora o auto-match por `seller_custom_field`: o campo nem é pedido hoje, e se a medição confirmar disponibilidade ele escreve direto em `sku_listing_links` com `source='RULE'`, valor que o CHECK já aceita — ou seja, o maior prêmio prometido pela alternativa é alcançável sem ela.
+
+**Dois textos que ficaram falsos no deploy de ontem foram corrigidos no mesmo commit:** `/anuncios` afirmava *"Anúncio ainda sem vínculo não aparece aqui"* (falso desde D-121 — a página lista as 5.085 linhas, 1.917 com "—" no SKU) e a abertura de `/vinculacoes` dizia que a lista *"não conhece anúncios que só existem no Mercado Livre"*.
+
+**Impacto:** migration `20260828183728` (uma função, sem tabela/coluna/índice), `apps/web/app/vinculacoes/{page,manual-link-form}.tsx`, `apps/web/app/anuncios/page.tsx` (texto), `packages/db/src/types.ts` (tipo inserido cirurgicamente). `check` 29/29. **O bloco de guarda de candidato OPEN em `actions.ts` NÃO foi tocado** — é código morto hoje (zero candidatos) e continua morto, mas removê-lo seria mudança sem necessidade medida e quebraria a compatibilidade se a fonte ERP voltar a produzir candidatos.
+
 ## Como adicionar nova decisão
 
 Registrar:

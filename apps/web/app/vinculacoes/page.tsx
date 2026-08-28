@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 import { Shell } from "../../components/shell";
-import { formatDateTime } from "../../lib/format";
+import { formatCount, formatCurrency, formatDateTime } from "../../lib/format";
 import { createClient } from "../../lib/supabase/server";
 import { CandidateRow } from "./candidate-row";
 import { ManualLinkForm } from "./manual-link-form";
@@ -49,12 +49,34 @@ function reference(row: {
   return row.variation_id === null ? (row.item_id ?? "—") : `${row.item_id ?? "—"} · ${row.variation_id}`;
 }
 
-export default async function VinculacoesPage(): Promise<ReactNode> {
+export default async function VinculacoesPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}): Promise<ReactNode> {
   const supabase = await createClient();
+  const params = await searchParams;
+
+  const primeiro = (chave: string): string => {
+    const valor = params[chave];
+
+    return typeof valor === "string" ? valor : "";
+  };
+
+  // Padrão é SÓ ATIVOS: pausado é fila legítima, mas não é o trabalho do dia.
+  const statusFiltro = primeiro("estado") === "todos" ? null : "active";
+
+  const membership = await supabase
+    .from("organization_members")
+    .select("organization_id")
+    .limit(1)
+    .maybeSingle();
+
+  const organizationId = membership.data?.organization_id ?? null;
 
   // Sem filtro por organização: a policy já restringe
   // (link_candidates_select_permitted, has_account_access).
-  const [{ data, error }, contas, manuais] = await Promise.all([
+  const [{ data, error }, contas, manuais, semVinculo] = await Promise.all([
     supabase
       .from("link_candidates")
       .select("id, sku_key, ref_kind, item_id, variation_id, user_product_id, created_at, ml_accounts(label)")
@@ -71,6 +93,16 @@ export default async function VinculacoesPage(): Promise<ReactNode> {
       .eq("source", "MANUAL")
       .order("confirmed_at", { ascending: false, nullsFirst: false })
       .limit(10),
+    organizationId === null
+      ? Promise.resolve({ data: [], error: null })
+      : supabase.rpc("get_unlinked_listings", {
+          p_organization_id: organizationId,
+          p_days: 30,
+          p_limit: 100,
+          // `exactOptionalPropertyTypes`: omitir é diferente de mandar undefined,
+          // e a função trata `null` como "todos os estados".
+          ...(statusFiltro === null ? {} : { p_status: statusFiltro }),
+        }),
   ]);
 
   return (
@@ -78,12 +110,16 @@ export default async function VinculacoesPage(): Promise<ReactNode> {
       <h1 style={{ margin: "0 0 var(--sb-space-1)", fontSize: "1.375rem" }}>Central de Vinculações</h1>
 
       <p style={{ margin: "0 0 var(--sb-space-4)", color: "var(--sb-text-soft)", fontSize: "0.9375rem" }}>
-        A lista abaixo vem da importação do UpSeller: anúncios cuja planilha citou um SKU que ainda
-        não existe no catálogo. <strong>Ela não conhece anúncios que só existem no Mercado Livre</strong> —
-        para esses, use a vinculação manual.
+        Duas listas: <strong>anúncios sem vínculo</strong>, vindos do catálogo real do Mercado Livre (D-121),
+        e os <strong>candidatos da importação do UpSeller</strong> — planilha que citou um SKU inexistente no
+        catálogo. São filas diferentes, com origens diferentes.
       </p>
 
-      {contas.error === null && contas.data.length > 0 && <ManualLinkForm accounts={contas.data} />}
+      {contas.error === null && contas.data.length > 0 && <ManualLinkForm
+          accounts={contas.data}
+          initialAccountId={primeiro("conta")}
+          initialItemId={primeiro("item")}
+        />}
 
       {contas.error === null && contas.data.length === 0 && (
         <p style={{ color: "var(--sb-text-soft)" }}>
@@ -95,6 +131,80 @@ export default async function VinculacoesPage(): Promise<ReactNode> {
       {contas.error !== null && (
         <p role="alert" style={{ color: "var(--sb-danger)" }}>
           Não foi possível carregar as contas: {contas.error.message}
+        </p>
+      )}
+
+      {semVinculo.error === null && semVinculo.data.length > 0 && (
+        <section style={{ marginBottom: "var(--sb-space-4)" }}>
+          <h2 style={{ margin: "0 0 var(--sb-space-1)", fontSize: "1rem" }}>
+            Anúncios sem vínculo{" "}
+            <span style={{ color: "var(--sb-text-soft)", fontWeight: 400, fontSize: "0.875rem" }}>
+              — {formatCount(semVinculo.data.length)} de {formatCount(semVinculo.data[0]?.total_count ?? 0)}
+              {statusFiltro === null ? " (todos os estados)" : " ativos"}
+            </span>
+          </h2>
+
+          <p style={{ margin: "0 0 var(--sb-space-2)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+            Anúncios do catálogo do Mercado Livre que não têm vínculo em <strong>nenhuma forma</strong> — nem por
+            anúncio inteiro, nem por variação. Ordenados por receita dos últimos 30 dias, porque o que importa é o
+            anúncio que vende sem estar vinculado.{" "}
+            <a href={statusFiltro === null ? "/vinculacoes" : "/vinculacoes?estado=todos"}>
+              {statusFiltro === null ? "Ver só os ativos" : "Ver todos os estados"}
+            </a>
+          </p>
+
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "52rem" }}>
+              <thead>
+                <tr>
+                  <th style={th}>Anúncio</th>
+                  <th style={th}>Loja</th>
+                  <th style={th}>Estado</th>
+                  <th style={{ ...th, textAlign: "right" }}>Receita (30d)</th>
+                  <th style={{ ...th, textAlign: "right" }}>Vendido</th>
+                  <th style={th}>Ação</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {semVinculo.data.map((row) => (
+                  <tr key={`${row.ml_account_id}:${row.item_id}`}>
+                    <td style={td}>
+                      {row.title}
+                      <div style={{ fontFamily: "ui-monospace, monospace", fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
+                        {row.item_id}
+                      </div>
+                    </td>
+                    <td style={td}>{row.account_label}</td>
+                    <td style={td}>{row.status}</td>
+                    <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                      {formatCurrency(row.gross_revenue)}
+                    </td>
+                    <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                      {formatCount(row.units_sold)}
+                    </td>
+                    <td style={td}>
+                      {/* Pré-preenche o formulário acima pela URL — mesmo padrão de
+                          filtro na URL do resto do app, sem estado novo. */}
+                      <a href={`/vinculacoes?conta=${row.ml_account_id}&item=${row.item_id}`}>Vincular</a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {semVinculo.error === null && semVinculo.data.length === 0 && (
+        <p style={{ color: "var(--sb-text-soft)" }}>
+          Nenhum anúncio {statusFiltro === null ? "" : "ativo "}sem vínculo — todo anúncio do catálogo alcança um SKU.
+        </p>
+      )}
+
+      {semVinculo.error !== null && (
+        <p role="alert" style={{ color: "var(--sb-danger)" }}>
+          Não foi possível carregar os anúncios sem vínculo: {semVinculo.error.message}
         </p>
       )}
 
