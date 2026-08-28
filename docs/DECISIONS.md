@@ -1761,6 +1761,28 @@ Não é específico de `questions`: **nunca chegou `orders_v2`, `post_purchase`,
 
 **Impacto:** migration + types, `copilot-generation.ts` (consulta + prompt), `/atendimento/conhecimento` (página nova, actions, 2 componentes), link na Caixa de Entrada.
 
+## D-114 — O chat do Copiloto: planner por tool use, streaming de verdade, e nenhuma SQL gerada por LLM
+
+**Contexto:** o último item de IA aberto da Fase 7 — "planner por linguagem natural e o streaming de verdade" (pendente desde D-077, com modelo/orçamento decididos em D-082). Fecha, junto com D-112/D-113, o pedido "finalize o que falta do copiloto".
+
+**Decisão 1 — o planner é tool use, e os argumentos passam pelo MESMO Zod de `/v1/copilot/query`.** `POST /v1/copilot/chat` recebe a pergunta em português; o modelo escolhe entre as TRÊS ferramentas determinísticas de D-077 (vendas, comparação de períodos, comparação de contas), e cada `tool_use` é validado pelo schema do contracts antes de executar — **um argumento inventado é recusado e vira `tool_result` de erro para o modelo corrigir**, nunca uma consulta malformada. A execução continua sob a RLS do usuário. Nenhuma SQL é gerada por LLM (`docs/COPILOT.md` secao 6, intacta).
+
+**Decisão 2 — streaming SSE de verdade, sem fingir.** `AnthropicClient` ganhou `plan()` sobre `client.messages.stream`: cada delta de texto vai ao navegador NO INSTANTE em que o modelo o gera — inclusive o preâmbulo antes de uma consulta ("vou verificar…"), que é exatamente o feedback que um chat precisa. A alternativa considerada e rejeitada: gerar tudo e "pingar" o texto pronto em pedaços seria streaming de mentira. O SDK continua confinado ao wrapper (`MessageParam`/`Tool` importados só lá).
+
+**Decisão 3 — o contexto que o modelo recebe é o que o USUÁRIO alcança.** O system prompt carrega a data de hoje em `America/Sao_Paulo` (o helper canônico `toSalesMetricDate`, não um `toISOString` solto) e a lista de contas lida sob a RLS do próprio chamador — o modelo não tem como citar conta que o usuário não vê, porque nunca soube que ela existe.
+
+**Decisão 4 — teto de 4 rodadas, com aviso.** Pergunta razoável usa 1-2 consultas; estourar o teto emite um erro explícito ("tente uma pergunta mais direta"), nunca corte silencioso. Erro de ferramenta volta ao modelo como `tool_result` com `is_error` — o modelo explica o que falhou, o erro não some.
+
+**Decisão 5 — as ferramentas de GERAÇÃO ficam fora do chat.** Narração de diagnóstico e as duas de D-112 são contextuais (têm botão onde o dado mora); receber `supportCaseId` por chat não é um caso de uso. O chat cobre o que os requisitos exemplificam como pergunta livre: "como estão as vendas?", "compare as contas".
+
+**Decisão 6 — sem histórico multi-turno nesta fatia.** Cada pergunta é independente; o transporte (SSE + loop) já comporta memória de conversa quando ela for desenhada — com decisão própria sobre custo, porque histórico re-enviado é token pago a cada turno.
+
+**Custo e observabilidade:** `ai_runs` grava a soma de TODAS as rodadas com `tool_names: ["copilot_chat", ...usadas]` — o aviso de orçamento de D-100 soma junto. `runCopilotChat` nunca lança: numa resposta SSE já iniciada não existe mais status HTTP, então erro vira evento `error`.
+
+**Verificação:** `check` **29/29**; 7 testes do orquestrador (resposta direta em deltas; tool_use executa a ferramenta REAL e alimenta o modelo com o resultado; argumento inventado recusado pelo Zod sem derrubar a conversa; ferramenta desconhecida idem; teto de rodadas com aviso; system prompt com hoje+contas+proibição; custo somado em `ai_runs`).
+
+**Impacto:** `anthropic-client.ts` (`plan` com streaming), `copilot-chat.ts` (novo), rota SSE em `app.ts` (mesma autenticação de `/query`), `apps/web/app/copiloto` (chat com parse de SSE sobre fetch), nav "Copiloto" no grupo Inteligência. **Sem migration.** Com D-112/D-113/D-114, o checklist de IA do Copiloto está integralmente coberto ou registrado: a única evolução apontada é memória multi-turno.
+
 ## Como adicionar nova decisão
 
 Registrar:

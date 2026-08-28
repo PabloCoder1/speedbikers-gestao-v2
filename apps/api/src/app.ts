@@ -4,12 +4,14 @@ import { copilotQueryRequestSchema } from "@sb/contracts";
 import type { Logger } from "@sb/observability";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { streamSSE } from "hono/streaming";
 
 import type { Authenticator } from "./auth.js";
 import { extractBearerToken } from "./auth.js";
 import type { BalanceReconcileScheduleDeps } from "./balance-reconcile-schedule.js";
 import { triggerBalanceReconciliation } from "./balance-reconcile-schedule.js";
 import type { CopilotDeps } from "./copilot.js";
+import { copilotChatRequestSchema, runCopilotChat } from "./copilot-chat.js";
 import { handleCopilotQuery } from "./copilot.js";
 import type { DecisionOutcomesScheduleDeps } from "./decision-outcomes-schedule.js";
 import { triggerDecisionOutcomesMeasurement } from "./decision-outcomes-schedule.js";
@@ -895,6 +897,61 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     const outcome = await handleCopilotQuery(copilot, authorized.caller, accessToken, parsedRequest.data);
 
     return context.json(outcome.body, outcome.status);
+  });
+
+  /**
+   * Chat do Copiloto (D-114) — pergunta em linguagem natural, resposta em
+   * SSE de verdade: cada delta de texto do modelo chega ao navegador no
+   * instante em que é gerado. A escolha de ferramenta é tool use; a
+   * execução é 100% as ferramentas determinísticas de D-077 sob a RLS do
+   * usuário (`copilot-chat.ts`).
+   */
+  app.post("/v1/copilot/chat", async (context) => {
+    const auth = dependencies.auth;
+    const copilot = dependencies.copilot;
+
+    if (auth === undefined || copilot === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const authorized = await auth.authenticate(context.req.header("authorization"), [
+      "ADMIN",
+      "GESTOR",
+      "ANALISTA",
+      "OPERADOR",
+      "VISUALIZADOR",
+    ]);
+
+    if (!authorized.ok) {
+      dependencies.logger.warn("copilot_chat_unauthorized", {
+        request_id: context.get("requestId"),
+        reason: authorized.reason,
+      });
+
+      return context.json({ error: { code: "unauthorized" } }, authorized.status);
+    }
+
+    const accessToken = extractBearerToken(context.req.header("authorization"));
+
+    if (accessToken === undefined) {
+      return context.json({ error: { code: "unauthorized" } }, 401);
+    }
+
+    const rawBody: unknown = await context.req.json().catch(() => null);
+    const parsedRequest = copilotChatRequestSchema.safeParse(rawBody);
+
+    if (!parsedRequest.success) {
+      return context.json(
+        { error: { code: "invalid_payload", message: "corpo precisa de { message }" } },
+        400,
+      );
+    }
+
+    return streamSSE(context, async (stream) => {
+      await runCopilotChat(copilot, authorized.caller, accessToken, parsedRequest.data, async (event) => {
+        await stream.writeSSE({ data: JSON.stringify(event) });
+      });
+    });
   });
 
   app.notFound((context) => {

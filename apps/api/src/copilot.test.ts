@@ -168,7 +168,7 @@ describe("runNarrateSkuDiagnosis", () => {
 
   it("recusa quando o SKU não é encontrado sob a RLS do usuário", async () => {
     const userClient = fakeUserClientForSku(null);
-    const anthropic: AnthropicClient = { narrate: vi.fn() };
+    const anthropic: AnthropicClient = { narrate: vi.fn(), plan: vi.fn() };
 
     await expect(runNarrateSkuDiagnosis(userClient, DIAGNOSIS_INPUT, anthropic)).rejects.toThrow(CopilotToolError);
     expect(anthropic.narrate).not.toHaveBeenCalled();
@@ -179,7 +179,7 @@ describe("runNarrateSkuDiagnosis", () => {
     const narrate = vi.fn<AnthropicClient["narrate"]>(() =>
       Promise.resolve({ text: "Queda de venda confirmada.", costUsd: 0.00042 }),
     );
-    const anthropic: AnthropicClient = { narrate };
+    const anthropic: AnthropicClient = { narrate, plan: vi.fn() };
 
     const result = await runNarrateSkuDiagnosis(userClient, DIAGNOSIS_INPUT, anthropic);
 
@@ -197,6 +197,7 @@ describe("handleCopilotQuery", () => {
 
   const fakeAnthropic: AnthropicClient = {
     narrate: () => Promise.reject(new Error("não deveria ser chamado por esta ferramenta")),
+    plan: () => Promise.reject(new Error("não deveria ser chamado por esta ferramenta")),
   };
 
   it("400 quando o input não bate com o schema da ferramenta", async () => {
@@ -265,7 +266,7 @@ describe("handleCopilotQuery", () => {
       }),
     } as unknown as UserClient;
     const insert = vi.fn(() => Promise.resolve({ error: null }));
-    const anthropic: AnthropicClient = { narrate: () => Promise.resolve({ text: "Narrativa.", costUsd: 0.001 }) };
+    const anthropic: AnthropicClient = { narrate: () => Promise.resolve({ text: "Narrativa.", costUsd: 0.001 }), plan: vi.fn() };
     const deps = {
       db: fakeDb(insert),
       logger: createLogger({}, { sink: () => undefined }),

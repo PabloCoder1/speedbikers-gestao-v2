@@ -1,7 +1,7 @@
 # Copiloto Speed Bikers
 
 > Dono documental de: arquitetura do assistente, registro de ferramentas, guardrails e uso de IA.
-> Status: **estratégia aprovada. Ferramentas determinísticas + `ai_runs` implementados em 2026-08-25 (D-077)** — `POST /v1/copilot/query`, `apps/api/src/copilot.ts`, schemas em `@sb/contracts`. Modelo/orçamento decididos em 2026-08-25 (D-082) e a primeira ferramenta com LLM de verdade, `narrate_sku_diagnosis`, já implementada — planner por linguagem natural, streaming SSE de verdade e UI de chat continuam pendentes, sem mais bloqueio de decisão de produto.
+> Status: **estratégia aprovada. Ferramentas determinísticas + `ai_runs` implementados em 2026-08-25 (D-077)** — `POST /v1/copilot/query`, `apps/api/src/copilot.ts`, schemas em `@sb/contracts`. Modelo/orçamento decididos em 2026-08-25 (D-082) e a primeira ferramenta com LLM de verdade, `narrate_sku_diagnosis`, já implementada — planner por linguagem natural, streaming SSE de verdade e UI de chat implementados em 2026-08-28 (D-114, `POST /v1/copilot/chat` + `/copiloto`); sugestão de resposta e estruturação de sugestões em D-112; Base de Conhecimento Validada em D-113. O checklist de IA está coberto — a evolução apontada é memória multi-turno do chat, com decisão própria de custo.
 
 ---
 

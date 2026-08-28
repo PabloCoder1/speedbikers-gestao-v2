@@ -63,7 +63,7 @@ function fakeSupportClient(fakes: SupportFakes): UserClient {
 function narrateReturning(text: string) {
   const narrate = vi.fn<AnthropicClient["narrate"]>(() => Promise.resolve({ text, costUsd: 0.001 }));
 
-  return { anthropic: { narrate }, narrate };
+  return { anthropic: { narrate, plan: vi.fn<AnthropicClient["plan"]>() }, narrate };
 }
 
 const OPEN_CASE = {

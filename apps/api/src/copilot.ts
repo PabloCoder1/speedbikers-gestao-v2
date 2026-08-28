@@ -32,12 +32,12 @@ import { runStructureFeatureSuggestion, runSuggestSupportReply } from "./copilot
 /**
  * `POST /v1/copilot/query` (`docs/API.md` secao 2, `docs/COPILOT.md`).
  *
- * Só o caminho de CURTO-CIRCUITO desta primeira fatia (Fase 7, item 7,
- * D-077): a ferramenta responde por completo, o LLM nunca é chamado
- * (`docs/COPILOT.md` secao 2). O "planner" que escolheria a ferramenta a
- * partir de linguagem natural fica para quando o modelo/orçamento forem
- * decididos (secao 10, pendência explícita) — por ora o chamador informa
- * `tool` diretamente.
+ * O caminho de FERRAMENTA DIRETA (Fase 7, item 7, D-077): o chamador
+ * informa `tool` e o LLM só entra quando a ferramenta é de geração
+ * (`docs/COPILOT.md` secao 2). O planner por linguagem natural existe desde
+ * D-114 como rota IRMÃ (`POST /v1/copilot/chat`, `copilot-chat.ts`) — ele
+ * escolhe entre estas mesmas ferramentas via tool use e valida os
+ * argumentos com os MESMOS schemas deste arquivo.
  *
  * Cada ferramenta roda sob a RLS do usuário de verdade, não RBAC
  * reimplementado em código: `deps.createUserClient(accessToken)` devolve
