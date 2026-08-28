@@ -39,6 +39,7 @@ A fonte de verdade continua sendo:
 - **D-114 — chat do Copiloto**: `POST /v1/copilot/chat` com planner por tool use sobre as três ferramentas de D-077 — argumentos validados pelo MESMO Zod de `/query` (argumento inventado vira `tool_result` de erro, nunca consulta), execução sob RLS, **streaming SSE de verdade** (delta a delta, via `client.messages.stream`), teto de 4 rodadas com aviso, custo somado em `ai_runs`. UI em `/copiloto`, nav no grupo Inteligência.
 - **Estado do Copiloto**: ferramentas determinísticas (D-077) ✅ · narração (D-082) ✅ · sugestão de resposta + estruturação (D-112) ✅ · Base de Conhecimento (D-113) ✅ · planner/streaming/chat (D-114) ✅. Única evolução apontada: memória multi-turno do chat, com decisão própria de custo.
 - `check` **29/29**; 7 testes do orquestrador + 2 de conhecimento no prompt + 7 de RLS. Migration `20260828114602` (knowledge) aplicada e versionada pelo ritual.
+- **Deployado e verificado em 2026-08-28**: `api-00025-2n5` (zero warning no boot; `POST /v1/copilot/chat` sem token devolve 401) e `/copiloto` publicado pela Vercel (307 → login).
 - **Nenhum caminho com LLM real foi exercitado ainda** — chat, sugestão e estruturação aguardam o primeiro uso humano; o custo aparecerá em `ai_runs`.
 
 ### Etapa anterior — D-112 (as duas ferramentas de geração do Copiloto)
