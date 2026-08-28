@@ -535,20 +535,104 @@ Pesquisado para implementar `listing.status.paused`/`listing.status.reactivated`
 
 ---
 
-## 2.14 Catálogo completo do vendedor — PESQUISADO, NÃO INTEGRADO (2026-08-28, D-120)
+## 2.14 Catálogo completo do vendedor — CONFIRMADO (leitura ao vivo, 2026-08-28, D-120/D-121)
 
-`GET /users/{user_id}/items/search` está registrado na seção 2 desde a Fase 0 e **nunca foi chamado**. Consequência medida em produção (D-117): a V3 **não sabe quais anúncios existem**. `listings` é populada enumerando `sku_listing_links` (`ml-listings-fetch.ts`), ou seja, só anúncios que a planilha do UpSeller já vinculou.
+**Nota de método:** o portal devolve **403** para fetcher automatizado; as páginas foram lidas via `curl` com User-Agent de navegador. O espelho EN devolve só um shell JS — PT e ES renderizam no servidor e foram lidos integralmente.
 
-Reconciliação independente, medida em 2026-08-28:
+**Por que isto importa:** `GET /users/{user_id}/items/search` está registrado na seção 2 desde a Fase 0 e **nunca foi chamado**. `listings` é populada enumerando `sku_listing_links` — ou seja, a V3 **não sabe quais anúncios existem**, só quais já foram vinculados pela planilha do UpSeller. Medido em 2026-08-28: **7.361 itens já venderam** (prova de existência), **3.679 sem vínculo nenhum**, e 21,8% dos itens vendidos em 30 dias saem com `sku_id` nulo (R$ 699.733,15).
 
-| | |
+### O contrato
+
+```
+GET https://api.mercadolibre.com/users/{user_id}/items/search
+```
+
+Resposta: `{ seller_id, query, paging{limit,offset,total}, results, orders, available_orders }`.
+
+**`results` é lista de IDs (strings), NUNCA de objetos.** Enumerar o catálogo é obrigatoriamente um processo de **duas fases**: descobrir IDs, depois hidratar.
+
+`filters`/`available_filters` não vêm por padrão (*"para melhorar os tempos de resposta"*); exigem `include_filters=true`.
+
+### Paginação e o teto de 1.000
+
+| Item | Situação |
 |---|---|
-| Itens que já venderam (prova de existência) | **7.361** |
-| Fora de `listings` | 4.710 |
-| **Sem vínculo nenhum** | **3.679** |
-| Itens vendidos nos últimos 30 dias com `sku_id` nulo | **21,8%** — 437 anúncios, R$ 699.733,15 |
+| `limit` default 50, **máximo 100** | CONFIRMADO (o ES desambigua o PT) |
+| `offset` máximo | **NÃO DOCUMENTADO** — o parâmetro nunca aparece em prosa nem em exemplo desta página |
+| **Teto de 1.000 resultados** | **CONFIRMADO que existe**, em três lugares independentes da doc |
 
-Antes de integrar, confirmar na doc oficial: paginação (`offset`/`limit` e o teto de 1.000 que a busca de itens costuma impor), `search_type=scan` para catálogos grandes, filtros por `status`, e se variações vêm no mesmo recurso ou exigem `GET /items/{id}`.
+A doc afirma o teto e manda usar `scan` para passar dele — mas **nunca descreve o que acontece ao ultrapassar 1.000 com `offset`** (erro? truncamento silencioso?). Não inferir.
+
+**Consequência direta para a V3:** a maior conta já teve **2.675 itens distintos observados**. `scan` não é otimização, é **obrigatório**.
+
+### `search_type=scan`
+
+```
+GET /users/{id}/items/search?search_type=scan            # 1ª chamada
+GET /users/{id}/items/search?search_type=scan&scroll_id=<mesmo id>   # seguintes
+```
+
+- O `scroll_id` **expira em 5 minutos** e deve ser o MESMO em todas as chamadas.
+- No fim da lista o retorno é `null` — **a doc não diz qual campo** vira null.
+- *"remova o deslocamento"* (`offset`).
+
+⚠️ **Contradição entre duas páginas oficiais, registrada e não resolvida por inferência:** a FAQ de rate limit (05/05/2026) diz que usar `scroll_id` junto com `offset`/`limit` **causa erro**; a página de itens (07/04/2025) coloca a nota do `limit` máximo 100 dentro da seção do scan. A FAQ é mais recente. **Plano conservador: `limit` só na primeira chamada; chamadas com `scroll_id` não levam `limit` nem `offset`** — e isso precisa ser MEDIDO.
+
+**O scan não pode ser paralelizado nem pausado.** A FAQ é explícita: *"O scroll expira e o consumo repetido ou deixado aberto por muito tempo gera 429."* Pausar o laço para gravar em lote no banco é o caminho para 429 + scroll expirado.
+
+### Filtros
+
+Documentados com prosa e exemplo: `status`, `sku` (seller_custom_field), `seller_sku`, `listing_type_id`, `missing_product_identifiers`, `reputation_health_gauge` (disponível no Brasil), `include_filters`.
+
+Valores de `status` do FILTRO: `pending`, `not_yet_active`, `programmed`, `active`, `paused`, `closed`.
+
+⚠️ **Divergência com a seção 2.13 deste documento:** `under_review` é status de topo do ITEM, mas **não consta entre os valores deste filtro**. Existe um filtro separado `sub_status` (`deleted`, `forbidden`, `freezed`, `held`, `suspended`, `waiting_for_patch`, `warning`). Não assumir `?status=under_review`.
+
+🔴 **NÃO EXISTE filtro por data.** `last_updated_*`, `start_time_*` e `stop_time_*` aparecem **exclusivamente como IDs de ordenação**. Isto **mata sincronização incremental por este endpoint** — o incremental tem de vir do webhook `items`, e `items/search` fica para reconciliação/backfill completo. A própria doc posiciona assim: *"O uso de nosso recurso de busca de itens de um seller **não substitui o uso das notificações de itens**."*
+
+**`q` (busca textual) não tem nome documentado.** A resposta traz `"query": null` e `/restrictions` devolve `query_allowed: true` — existe algum parâmetro, mas o nome nunca é escrito. Não inventar `q=`.
+
+### Ordenação — a armadilha do D-109 de novo
+
+**O parâmetro é `orders`, NÃO `sort`.** `sort` pertence ao outro endpoint (`/sites/{site_id}/search`). Trocar os dois é exatamente o erro que custou D-109.
+
+IDs documentados: `stop_time_asc|desc`, `start_time_asc|desc`, `available_quantity_asc|desc`, `price_asc|desc`, `last_updated_asc|desc`. Padrão aplicado pelo site: `stop_time_asc`.
+
+Defeito da própria doc: existe uma 11ª entrada de `available_orders` cujo `id` **é um objeto, não string** (`inventory_id_asc`). Não assumir que é utilizável.
+
+**Conta grande:** `GET /users/{id}/items/search/restrictions` → `aggregations_allowed` vira `false` acima de **200.000 itens** (nosso caso está muito abaixo).
+
+### Multiget — a segunda fase
+
+```
+GET /items?ids=A,B,C&attributes=id,title,status,price,...
+```
+
+- **Máximo de 20 ids por chamada.**
+- Resposta em formato **verbose**: array de `{ code, body }` — **cada item traz o próprio código**, então falha é por item, não da chamada.
+- `attributes=` projeta campos.
+
+⚠️ **`include_attributes=all` é do item singular, não está documentado no multiget.** E ele é **crítico para vinculação**: *"No caso que deseje consultar o seller custom field deverá enviar o parâmetro `include_attributes=all`"* — ou seja, o `seller_custom_field` (nossa melhor pista de SKU) pode não vir sem ele. Combinar os dois é inferência; medir.
+
+### Variações
+
+A busca **não devolve variações** — só `item_id`. As duas formas documentadas são `GET /items/{id}?attributes=variations` e `GET /items/{id}/variations`.
+
+### Escopos
+
+Nenhum escopo é nomeado por endpoint; `read` + `offline_access` bastam, e a permissão funcional "Publicação e sincronização" **já está habilitada** (a V3 já consome `GET /items/{id}`). **O motivo de 3.679 anúncios estarem invisíveis não é permissão — é que a chamada nunca foi feita.**
+
+### Sem deprecação
+
+A tabela oficial de migração **deprecia o outro endpoint em favor deste**: `/sites/{site}/search?seller_id=` → *"Substitua por `/users/{User_id}/items/search`"*. Para `items/search`, `?search_type=scan` e `/items?ids=`, a coluna diz **"Se mantém"**. Busca por `deprec`/`descontinu`/`obsolet` nas versões PT e ES: zero ocorrências.
+
+### A MEDIR antes de confiar (a doc não responde)
+
+1. `items/search` sem `status` devolve `closed`/`paused` ou só ativos? A frase "os resultados sempre serão de itens ativos" pertence a **outro endpoint** na mesma página.
+2. `limit` junto com `scroll_id` funciona ou erra? (a contradição acima)
+3. `orders`/`status`/`sku` são compatíveis com `scan`?
+4. Qual campo vira `null` no fim do scan?
+5. `include_attributes=all` funciona no multiget?
 
 ---
 
