@@ -1869,6 +1869,36 @@ A correção não é trocar `0` por `1`: é trocar a propriedade errada pela cer
 
 **Impacto:** migration `20260828132701` (só `on delete`, sem mudança de tipo — `types.ts` inalterado), `packages/db/src/rls.integration.test.ts` (limpeza + asserção). `check` 29/29 local; **a suíte de integração exige Postgres real e só pôde ser verificada pela CI** — Docker não estava disponível na máquina desta sessão.
 
+## D-119 — Vinculação manual livre: o requisito P1 mais antigo aberto, e o que a revisão adversarial mudou nele
+
+**Contexto:** item P1 do Checkpoint pré-Fase 7, aberto desde 2026-08-24 e listado em `docs/HANDOFF.md` ("Lacunas funcionais confirmadas") — *"criar fluxo de vinculação manual `Conta + MLB + variation_id? → SKU` sem exigir `link_candidate` prévio"*. A auditoria de 2026-08-28 (D-117) provou por que ele deixou de ser cosmético: **`link_candidates` está vazia, o gerador tem uma fonte só (a planilha do UpSeller) e o schema PROÍBE que um anúncio do Mercado Livre vire candidato** (`check source in ('ERP_IMPORT')`). Medido: 3.679 anúncios que já venderam não têm vínculo nenhum, e 21,8% dos itens vendidos nos últimos 30 dias saem com `sku_id` nulo — R$ 699.733,15. Sem este fluxo, não existia caminho pela interface para consertar um só deles.
+
+**Decisão 1 — escrita DIRETA sob RLS, sem RPC.** Uma tabela só, sem transação multi-tabela: mesmo padrão de `reply_templates` (D-111) e `feature_suggestions` (D-079). A policy `sku_listing_links_write_permitted` existe desde a Fase 2 e **nunca teve um chamador** — nenhum código de `apps/web` escrevia nesta tabela. `resolve_link_candidate` continua RPC porque escreve em DUAS tabelas na mesma transação; aqui não há candidato para fechar.
+
+**Decisão 2 — a validação de entrada é módulo puro e testado** (`apps/web/lib/manual-link.ts`), espelhando as constraints reais: `MLB[0-9]+` com normalização de caixa/espaço, variação só numérica, campo vazio virando `NULL` (nunca string vazia — "anúncio inteiro" é semanticamente diferente de "variação"). O erro fala a língua do operador em vez de devolver violação de CHECK crua.
+
+**A revisão adversarial (27 agentes: 4 lentes independentes, cada achado verificado por um cético) achou 16 defeitos confirmados no código que eu tinha acabado de escrever, e 3 mudaram o resultado:**
+
+**(a) A feature nascia MORTA para o público dela.** `organization_members.select(...).maybeSingle()` sem `.eq("user_id")`: a policy `organization_members_select_same_org` é `is_member_of(organization_id)` — devolve **uma linha por colega**, não a sua. E o `maybeSingle` do postgrest-js 2.112.3 **converte `length > 1` em erro PGRST116** (verificado no bundle instalado, `dist/index.cjs:471-481`). Em qualquer organização com dois membros a ação falharia 100% das vezes com "tente de novo" — mensagem que culpa falha transitória por condição permanente, a classe exata que D-067 auditou. Produção tem 1 membro hoje, então passaria despercebido até o segundo usuário. Corrigido com `.eq("user_id", userId).limit(1)`, mesma semântica de `private.current_org_id()`. **O mesmo defeito existe em 6 outros arquivos** (`compras`, `contas`, `estoque`, `sugestoes`, `atendimento/templates`, `atendimento/conhecimento`) — passe próprio, não misturado aqui.
+
+**(b) Conflito entre as duas FORMAS não era detectado.** Os índices únicos são parciais e **disjuntos**: "anúncio inteiro" e "variação X" do mesmo item nunca colidem no banco. Checar só a própria forma deixava passar um estado incoerente com consequência concreta — `ml-listings-fetch` e `ml-fulfillment-fetch` enumeram justamente os vínculos SEM variação e atribuem o **estoque Full do item ao SKU desse vínculo**. Um vínculo de anúncio inteiro sobre um anúncio que só vende por variação não resolve venda nenhuma (o pedido sempre traz a variação) e ainda leva o Full para o SKU errado. Agora a ação lê TODOS os vínculos do item numa consulta e recusa a mistura, explicando qual lado corrigir.
+
+**(c) A recusa instruía uma ação impossível.** A mensagem dizia "desfaça o vínculo atual antes de criar outro" — e **não existe caminho para desfazer vínculo em lugar nenhum do produto** (zero `update`/`delete` de `sku_listing_links` em `apps/web`). Prometer um caminho inexistente é pior que declarar o limite; a mensagem passou a dizer o que é verdade.
+
+Também corrigidos na mesma passagem: `auth.getUser()` descartava `.error` (sessão expirada virava "sem organização"); candidato `OPEN` para a mesma referência agora é detectado e o operador é mandado para o botão da linha, que fecha o candidato na mesma transação; estado vazio quando o usuário não alcança conta nenhuma; e a busca de SKU, que era cópia literal de 29 linhas de `candidate-row.tsx`, virou o hook `useSkuSearch`.
+
+**Decisão 3 — a policy de escrita ganhou teste sob usuário real.** Todos os testes existentes de `sku_listing_links` inseriam pelo `client` superuser: provavam CHECK e índices, **nunca a policy**. Três testes novos: ADMIN escreve; ANALISTA é recusado (afiado por acidente do fixture — ANALISTA_SB TEM permissão nesta conta, então a recusa isola exatamente a dimensão de PAPEL); ADMIN de outra organização não escreve na conta alheia.
+
+**Verificado contra o banco real antes do commit**, em transação revertida: o INSERT sob RLS como o usuário de produção passa policy e trigger, gravando `source='MANUAL'` com autor e data; e a colisão devolve `23505` no índice `sku_listing_links_item_only_unique` — o código exato que o tratamento de corrida espera.
+
+**Lacunas DECLARADAS, não silenciadas:**
+
+- **"Manter histórico auditável" do requisito NÃO é cumprido.** Não existe tabela append-only de eventos de vínculo, e `domain_events` é escrita só por `service_role`. O que existe é o estado atual (`source`/`confirmed_by`/`confirmed_at`). Trocar ou remover um vínculo não deixaria rastro — e é justamente por isso que remover não foi construído aqui.
+- **Não existe desfazer vínculo.** Consequência: um vínculo manual errado só se corrige por SQL. É a próxima fatia natural deste fluxo, e ela precisa nascer junto do histórico.
+- **A varredura de anúncios continua enumerando `sku_listing_links`** — vincular à mão faz o anúncio entrar em `listings`/Full/visitas, mas descobrir anúncios que ninguém vinculou ainda depende de `/users/{id}/items/search`, não integrado (D-117).
+
+**Impacto:** `apps/web/lib/manual-link.ts` (novo, 13 testes), `apps/web/components/use-sku-search.ts` (novo, extraído), `apps/web/app/vinculacoes/{actions,page,manual-link-form,candidate-row}.tsx`, 3 testes de RLS. **Sem migration.** `check` 29/29.
+
 ## Como adicionar nova decisão
 
 Registrar:

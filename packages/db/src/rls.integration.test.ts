@@ -1089,6 +1089,53 @@ describe("vínculo SKU ↔ anúncio", () => {
     expect(rows).toHaveLength(0);
   });
 
+  // ---------------------------------------------------------------
+  // ESCRITA sob RLS. Os testes acima inserem pelo `client` (superuser) e
+  // provam CHECKs e índices — nunca a policy. A vinculação manual livre
+  // (D-119) é o PRIMEIRO código de `apps/web` a escrever nesta tabela, e
+  // `sku_listing_links_write_permitted` existia desde a Fase 2 sem um único
+  // chamador. Sem estes três, a barreira real do recurso segue não provada.
+  // ---------------------------------------------------------------
+
+  it("ADMIN da organização escreve: a policy autoriza (has_account_access + papel)", async () => {
+    const rows = await asUser<{ id: string }>(
+      ADMIN_SB,
+      `insert into public.sku_listing_links
+         (organization_id, ml_account_id, sku_id, ref_kind, item_id, source)
+       values ('${ORG_SB}','${CONTA}','${skuId}','ITEM','MLB900000101','MANUAL')
+       returning id`,
+    );
+
+    expect(rows).toHaveLength(1);
+  });
+
+  it("ANALISTA é recusado pela policy — papel fora de ADMIN/GESTOR/OPERADOR", async () => {
+    // Teste AFIADO por acidente do fixture: ANALISTA_SB TEM
+    // `user_account_permissions` para esta conta (linha ~460), então
+    // `has_account_access` passa e a recusa isola exatamente a dimensão de
+    // PAPEL. A interface esconde o formulário, mas a barreira precisa ser a
+    // policy: um POST direto na Data API não passa pela interface.
+    await expect(
+      asUser(
+        ANALISTA_SB,
+        `insert into public.sku_listing_links
+           (organization_id, ml_account_id, sku_id, ref_kind, item_id, source)
+         values ('${ORG_SB}','${CONTA}','${skuId}','ITEM','MLB900000102','MANUAL')`,
+      ),
+    ).rejects.toThrow(/row-level security/i);
+  });
+
+  it("ADMIN de OUTRA organização não escreve na conta alheia", async () => {
+    await expect(
+      asUser(
+        DE_OUTRA_ORG,
+        `insert into public.sku_listing_links
+           (organization_id, ml_account_id, sku_id, ref_kind, item_id, source)
+         values ('${ORG_SB}','${CONTA}','${skuId}','ITEM','MLB900000103','MANUAL')`,
+      ),
+    ).rejects.toThrow(/row-level security/i);
+  });
+
   it("anon é recusado", async () => {
     await expect(asAnon("select * from public.sku_listing_links")).rejects.toThrow(
       /permission denied/i,

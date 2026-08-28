@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 
-import { createClient } from "../../lib/supabase/browser";
+import { useSkuSearch } from "../../components/use-sku-search";
 import { dismissLinkCandidate, resolveLinkCandidate } from "./actions";
 
 /**
@@ -12,12 +12,6 @@ import { dismissLinkCandidate, resolveLinkCandidate } from "./actions";
  * A busca lê `skus` direto do navegador, sob RLS (Modelo A) — não é escrita,
  * não precisa de Server Action.
  */
-
-interface SkuResult {
-  id: string;
-  sku: string;
-  title: string | null;
-}
 
 const inputStyle: React.CSSProperties = {
   padding: "0.375rem 0.5rem",
@@ -38,50 +32,18 @@ const buttonStyle: React.CSSProperties = {
 };
 
 export function CandidateRow({ candidateId }: { candidateId: string }): ReactNode {
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<SkuResult[]>([]);
-  const [selected, setSelected] = useState<SkuResult | null>(null);
+  const skuSearch = useSkuSearch();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
-  async function search(value: string): Promise<void> {
-    setQuery(value);
-    setSelected(null);
-
-    if (value.trim().length < 2) {
-      setResults([]);
-
-      return;
-    }
-
-    const supabase = createClient();
-
-    const { data, error: searchError } = await supabase
-      .from("skus")
-      .select("id, sku, title")
-      .ilike("sku_key", `%${value.trim().toUpperCase()}%`)
-      .order("sku")
-      .limit(8);
-
-    if (searchError !== null) {
-      // Sem isto, falha de rede/RLS virava "nenhum SKU encontrado" — igual
-      // a uma busca genuinamente vazia (D-067, Nível 3).
-      setError("Não foi possível buscar SKUs — tente de novo.");
-
-      return;
-    }
-
-    setResults(data);
-  }
-
   async function confirm(): Promise<void> {
-    if (selected === null) return;
+    if (skuSearch.selected === null) return;
 
     setBusy(true);
     setError(null);
 
-    const result = await resolveLinkCandidate(candidateId, selected.id);
+    const result = await resolveLinkCandidate(candidateId, skuSearch.selected.id);
 
     if (!result.ok) {
       setError(result.message);
@@ -118,9 +80,9 @@ export function CandidateRow({ candidateId }: { candidateId: string }): ReactNod
       <div style={{ display: "flex", gap: "0.375rem", position: "relative" }}>
         <input
           type="text"
-          value={query}
+          value={skuSearch.query}
           onChange={(event) => {
-            void search(event.target.value);
+            void skuSearch.search(event.target.value);
           }}
           placeholder="Buscar SKU…"
           disabled={busy}
@@ -132,13 +94,13 @@ export function CandidateRow({ candidateId }: { candidateId: string }): ReactNod
           onClick={() => {
             void confirm();
           }}
-          disabled={busy || selected === null}
+          disabled={busy || skuSearch.selected === null}
           style={{
             ...buttonStyle,
             background: "var(--sb-primary)",
             color: "var(--sb-white)",
-            opacity: busy || selected === null ? 0.5 : 1,
-            cursor: busy || selected === null ? "not-allowed" : "pointer",
+            opacity: busy || skuSearch.selected === null ? 0.5 : 1,
+            cursor: busy || skuSearch.selected === null ? "not-allowed" : "pointer",
           }}
         >
           Vincular
@@ -161,13 +123,13 @@ export function CandidateRow({ candidateId }: { candidateId: string }): ReactNod
         </button>
       </div>
 
-      {selected !== null && (
+      {skuSearch.selected !== null && (
         <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
-          Selecionado: <strong>{selected.sku}</strong> {selected.title !== null && `— ${selected.title}`}
+          Selecionado: <strong>{skuSearch.selected.sku}</strong> {skuSearch.selected.title !== null && `— ${skuSearch.selected.title}`}
         </p>
       )}
 
-      {selected === null && results.length > 0 && (
+      {skuSearch.selected === null && skuSearch.results.length > 0 && (
         <ul
           style={{
             listStyle: "none",
@@ -179,13 +141,12 @@ export function CandidateRow({ candidateId }: { candidateId: string }): ReactNod
             overflowY: "auto",
           }}
         >
-          {results.map((sku) => (
+          {skuSearch.results.map((sku) => (
             <li key={sku.id}>
               <button
                 type="button"
                 onClick={() => {
-                  setSelected(sku);
-                  setResults([]);
+                  skuSearch.select(sku);
                 }}
                 style={{
                   display: "block",

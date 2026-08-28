@@ -199,7 +199,7 @@ Nenhuma funcionalidade concluída das Fases 0 a 6 deve ser removida ou reimpleme
 
 - [ ] Implementar filtros de Conta / Origem / Marca nas telas em que fizerem sentido, preservando a distinção entre estoque físico compartilhado e Full por conta.
 - [ ] Impedir mistura de SKU Nacional e Importado no mesmo pedido de compra.
-- [ ] Criar fluxo de vinculação manual `Conta + MLB + variation_id? -> SKU` sem exigir `link_candidate` prévio.
+- [x] Criar fluxo de vinculação manual `Conta + MLB + variation_id? -> SKU` sem exigir `link_candidate` prévio — concluído em 2026-08-28 (D-119). Escrita direta sob RLS (a policy `sku_listing_links_write_permitted` existia desde a Fase 2 e nunca teve chamador), validação pura testada, conflito das DUAS formas (anúncio inteiro × variação) detectado — os índices são parciais e disjuntos, e a mistura levaria o estoque Full para o SKU errado. **Destravado por D-117**, que mediu por que isto deixou de ser cosmético: 3.679 anúncios que já venderam sem vínculo nenhum e `link_candidates` estruturalmente incapaz de recebê-los. **Lacunas declaradas**: não existe histórico de vínculo nem caminho para DESFAZER — próxima fatia, e as duas precisam nascer juntas.
 - [ ] Criar alias reutilizável `Fornecedor + código do produto -> SKU` quando um vínculo for confirmado.
 - [ ] Evoluir o Dashboard de SKU para abas/progressive disclosure.
 - [x] Reorganizar a navegação em grupos, evitando todas as telas no mesmo nível — feito em 2026-08-24 (`e1ea084`, ver D-068): COMERCIAL, ESTOQUE, INTELIGÊNCIA, GESTÃO. ADMINISTRAÇÃO e "Produtos" ficam de fora até existirem páginas reais.

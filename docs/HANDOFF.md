@@ -33,7 +33,20 @@ A fonte de verdade continua sendo:
 - O Checkpoint de Consolidação Pré-Fase 7: **P0 (confiabilidade) fechado desde 2026-08-25**, exceto o item de pesquisa de novos estados de anúncio (`docs/ROADMAP.md` linha do P0). **P1 segue aberto** — 6 de 8 itens `[ ]` no ROADMAP (a navegação em grupos, D-068, e a Home orientada à atenção, D-105, foram feitas); o próprio ROADMAP prevê que P1/P2 evoluem incrementalmente, então isso não bloqueia nada, mas "fechado por completo" (texto anterior desta linha) afirmava mais do que o checklist registra.
 - **Fase 7B — Central de Atendimento/SAC Mercado Livre com Perguntas E Mensagens pós-venda EM PRODUÇÃO.** A cadeia completa D-083→D-097: pesquisa de APIs, modelo unificado, seis tabelas `support_*`, mapper/persistência idempotente, handler por `questionId`, webhook `questions` (D-088), reconciliação de Perguntas (D-089), Caixa de Entrada `/atendimento` (D-090), correções de webhook/idempotência/allowlist (D-091–D-093), **triagem por RPC transacional** (D-094), **detalhe do atendimento** (D-095), **envio de resposta manual — primeira escrita do projeto no ML** (D-096) e **ingestão de Mensagens pós-venda com reconciliação a cada 10 min** (D-097, produção 2026-08-27: 4 contas, 14 conversas, 150+ mensagens, zero falhas). **D-102 (2026-08-27)**: transição automática pela atividade remota — pergunta respondida FORA da V3 resolve o case não triado, conversa respondida vira AGUARDANDO_CLIENTE, inbound novo REABRE para NOVO (regra prevista em D-084, adiada em D-086); RPC transacional guardada, triagem humana nunca é sobrescrita. **D-103 (2026-08-27)**: `seller_max_message_length` chega como ZERO no payload real e o schema exigia `.positive()` — corrigido para `nonnegative`, fechando o "Achado 4" de D-101 com o campo exato que a instrumentação revelou. Continua sem: `domain_events` de SAC, notificações de atendimento, ingestão de reclamações/devoluções/mediações, templates, Copiloto sugerindo resposta, Base de Conhecimento, métricas de SAC.
 
-### Última etapa concluída — D-118 (a CI vermelha de D-117 expôs dois defeitos latentes)
+### Última etapa concluída — D-119 (vinculação manual livre, e o que a revisão adversarial mudou nela)
+
+- **O requisito P1 mais antigo aberto**, e D-117 mostrou por que deixou de ser cosmético: `link_candidates` vazia, schema PROIBINDO anúncio do ML virar candidato, 3.679 anúncios que venderam sem vínculo. Não havia caminho pela interface para consertar um só.
+- **Escrita direta sob RLS, sem RPC** — a policy `sku_listing_links_write_permitted` existia desde a Fase 2 e **nunca teve um chamador**.
+- **A revisão adversarial (27 agentes, 4 lentes + cético por achado) achou 16 defeitos no código recém-escrito. Três mudaram o resultado:**
+  - 🔴 **A feature nascia MORTA**: `organization_members` sem `.eq("user_id")` + `maybeSingle()` = PGRST116 em QUALQUER organização com 2+ membros (a policy devolve uma linha por colega; verificado no bundle do postgrest-js). Produção tem 1 membro, então passaria despercebido até o segundo usuário. **O mesmo defeito está em 6 outros arquivos — passe próprio.**
+  - **Conflito entre as duas FORMAS não era detectado**: os índices são parciais e disjuntos, e um vínculo de "anúncio inteiro" sobre anúncio com variações não resolve venda E leva o **estoque Full para o SKU errado** (`ml-fulfillment-fetch` enumera justamente os vínculos sem variação).
+  - **A recusa instruía o impossível** ("desfaça o vínculo atual") — desfazer não existe em lugar nenhum do produto.
+- **Verificado contra o banco real**, em transação revertida: INSERT sob RLS como o usuário de produção passa policy e trigger; colisão devolve `23505` no índice esperado.
+- **A policy ganhou teste sob usuário real** — os testes existentes inseriam por superuser e provavam CHECK/índice, nunca a policy.
+- **Lacunas DECLARADAS**: não existe histórico de vínculo (o requisito pede) nem caminho para DESFAZER. As duas precisam nascer juntas — próxima fatia natural.
+- `check` **29/29**, 16 testes novos. Sem migration. **Só `apps/web` + testes de banco — sem Cloud Run.**
+
+### Etapa anterior — D-118 (a CI vermelha de D-117 expôs dois defeitos latentes)
 
 - **Nenhum dos dois era de D-117** (que só tocou `apps/web`/`apps/api`). A CI de `@sb/db test:integration` quebrou por defeitos que já estavam lá.
 - **`knowledge_entries` é a TERCEIRA ocorrência do padrão de D-099** — coluna de ator com `on delete set null` —, criada no dia SEGUINTE por D-113. A colisão é mais direta: a constraint exige `confirmed_by` para `VALIDADO`, e o SET NULL dispara o UPDATE que ela recusa. D-113 escreveu "confirmação anônima não existe" e deixou a FK tentando criar isso. Migration `20260828132701`, `restrict`, pelo precedente unânime.
@@ -382,7 +395,7 @@ Os itens abaixo são requisitos existentes que NÃO devem ser considerados concl
 
 - filtros por Conta / Origem / Marca em Produtos/Estoque e análises relacionadas;
 - separação real entre pedido Nacional e pedido Importado — hoje a origem pode ser exibida sem necessariamente impedir mistura;
-- vinculação manual livre `Conta + MLB + variation_id? -> SKU`, independente de candidato existente;
+- ~~vinculação manual livre `Conta + MLB + variation_id? -> SKU`, independente de candidato existente~~ — **entregue em 2026-08-28 (D-119)**. Segue aberto o que ela NÃO cobre: desfazer um vínculo e histórico auditável de vínculo (as duas precisam nascer juntas);
 - alias reutilizável de código do fornecedor para SKU;
 - Dashboard de SKU organizado por abas/progressive disclosure;
 - Home de produto orientada a “o que precisa da minha atenção hoje?”;
