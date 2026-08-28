@@ -2494,6 +2494,8 @@ export type Database = {
           sku: string
           sku_key: string
           stock_is_virtual: boolean
+          supplier_brand: string | null
+          supplier_brand_source: string | null
           title: string | null
           unit: string | null
           updated_at: string
@@ -2524,6 +2526,8 @@ export type Database = {
           sku: string
           sku_key?: string
           stock_is_virtual?: boolean
+          supplier_brand?: string | null
+          supplier_brand_source?: string | null
           title?: string | null
           unit?: string | null
           updated_at?: string
@@ -2554,6 +2558,8 @@ export type Database = {
           sku?: string
           sku_key?: string
           stock_is_virtual?: boolean
+          supplier_brand?: string | null
+          supplier_brand_source?: string | null
           title?: string | null
           unit?: string | null
           updated_at?: string

@@ -94,6 +94,18 @@ Identidade: `(organization_id, sku_key)` UNIQUE, com `sku_key = upper(btrim(sku)
 
 **Drift corrigido em 2026-08-22**: esta seção dizia `brand_id`, `supplier_id`, `origin` (enum `NACIONAL`/`IMPORTADO`) — conceituado antes de qualquer dado real existir. O que foi de fato implementado (migration `20260820170000_create_catalog.sql`) é mais preciso: `origin_code` (tabela fiscal padrão da NF-e, 0-8, já 98% preenchida no catálogo real) + `is_imported` (`generated always as (origin_code in (1,2,6,7)) stored`) — dado estruturado real, não um enum próprio inventado. `brand` é texto livre normalizado da coluna `Categorias` do UpSeller (D-039), não `brand_id`/tabela `brands`. `supplier_id` não vive em `skus` — fornecedor é entidade própria (`suppliers`, Fase 4, ver abaixo) sem vínculo obrigatório por SKU.
 
+
+**Correção de 2026-08-28 (D-129) — dois campos desta seção não significam o que o nome promete:**
+
+- **`brand` NÃO é marca; é categoria.** Medido: **2.255 de 3.554 SKUs (66%) em `'MANETE'`**, que é um tipo de peça, não um fabricante. O texto acima já dizia que vem de `Categorias` do UpSeller — a consequência é que **nenhuma regra de negócio deve ser escrita contra `brand`**. Some-se a isso que o importador **sobrescreve** o campo a cada planilha (`packages/domain/src/upseller/apply.ts:90`), o que apaga qualquer correção manual.
+- **`is_imported`/`origin_code` NÃO respondem "importado" no sentido do negócio.** `origin_code` é o CST de origem da NF-e, preenchido por **quem emite a nota**, não por quem compra. Medido: a regra do usuário ("Off Racer e Navetec são sempre importados") é **contradita em 707 SKUs**, que chegam com `origin_code = 0` (nacional). Os campos continuam corretos como **dado fiscal** — só não servem como fonte da classificação Nacional/Importado do produto.
+
+**Colunas acrescentadas depois, com o motivo:**
+
+- **`stock_is_virtual boolean not null default false`** (D-127, migration `20260828193425`) — SKU cujo saldo no ERP é **sentinela** (número alto para o anúncio não pausar), não contagem física. É **configuração humana**: não existe sinal no export nem regra derivável (a hipótese "base menos vendas acumuladas" foi testada e reprovada, correlação 0,291). `get_stock_coverage` devolve `NULL` para estes em vez de "2.000 dias".
+- **`supplier_brand text` + `supplier_brand_source text` (`DERIVED` | `MANUAL`)** (D-129, migrations `20260828195154` e `20260828195524`) — a marca **real** do fornecedor, fora do alcance do importador. Dois CHECKs garantem coerência (ou ambos nulos, ou ambos preenchidos). Semeadura: **1.280 `DERIVED`, 2.274 em branco de propósito** para preenchimento manual, a pedido do usuário. Este é o eixo por onde passam a origem Nacional/Importado e a marcação em lote de `stock_is_virtual` — assinatura sentinela medida em **Off Racer 82,4% contra Navetec 0,4%**.
+- **`skus.supplier_id` continua NÃO existindo, agora com motivo medido**: `suppliers` tem **uma linha** (PLASMOTO, criada porque um pedido de compra real precisou dela). Marca de catálogo e entidade de compra coincidem neste negócio mas não são a mesma coisa; a segunda nasce quando uma compra exigir.
+
 `sku_components` modela kits: um SKU de kit referencia SKUs componentes com quantidade.
 
 ### `sku_listing_links` — o vínculo

@@ -2167,6 +2167,41 @@ A afirmação "Navetec e Off Racer são sempre importados" segue **válida e út
 
 **Consequência:** a ferramenta de marcação em lote NÃO deve ser construída por marca antes de esclarecer isto. Fica aguardando.
 
+> **RESOLVIDO em D-129 (2026-08-28), e a leitura 1 estava certa.** `brand` é a **categoria** do UpSeller. Com a marca real separada numa coluna própria, a distribuição fica sem ambiguidade: **Off Racer 82,4%** de assinatura sentinela contra **Navetec 0,4%**. Ou seja, a associação com fornecedor é **real** — só que é Off Racer, e **não** Navetec. "Importado" e "estoque virtual" são dois eixos independentes: Navetec é importado e tem contagem física de verdade. A ferramenta de marcação em lote está destravada, com a chave certa.
+
+---
+
+## D-129 — `brand` não é marca, é categoria: a marca real do fornecedor ganha coluna própria
+
+**Contexto:** a Fase 5D e a ferramenta de marcação em lote de D-127 dependiam de um eixo "fornecedor" que o schema não tinha. O achado anterior (logo acima) media que o estoque sentinela estava em `brand = 'MANETE'` e não em Navetec, e deixava duas leituras em aberto. O usuário então instruiu: *"Manetes grande parte são OFF Racer, apenas alguns que são RT, TMAC ou até Aolixim; os que não têm categorizado a marca, pode deduzir os que tiverem algo que lembre ser Off Racer ou RT, e os que não têm pode deixar vazio para eu colocar manualmente mesmo."*
+
+**Decisão 1 — a leitura 1 estava certa, e a medição agora prova.** `skus.brand` guarda a coluna `Categorias` do UpSeller: **2.255 de 3.554 SKUs (66%) em 'MANETE'**, que é um tipo de peça. NAVETEC, PLASMOTO, TMAC e AOLIXIM convivem no mesmo campo — o export mistura os dois conceitos numa coluna só. Nenhuma regra escrita contra `brand` pode ser confiável enquanto isso for verdade.
+
+**Decisão 2 — coluna nova, e não conserto de `brand`, por um motivo mecânico.** O importador **sobrescreve** `brand` a cada planilha (`packages/domain/src/upseller/apply.ts:90`). Qualquer atribuição feita à mão morreria no próximo import, em silêncio. `supplier_brand` mora fora do alcance do importador. `supplier_brand_source` (`DERIVED` | `MANUAL`) separa o que a máquina deduziu do que a pessoa decidiu, para que um reprocessamento futuro possa reescrever `DERIVED` **sem nunca pisar** em `MANUAL`.
+
+**Decisão 3 — deduzir só onde há evidência, e deixar o resto vazio de propósito.** Dentro de 'MANETE', a dedução usa título **e** código do SKU (o prefixo `off`/`kitoff` carrega sinal que o título não carrega). Fora de 'MANETE', `brand` já é a marca e é copiada. Resultado: **1.280 de 3.554 com marca (36%)**, **2.274 em branco (64%)** — exatamente o que o usuário pediu, e não um palpite disfarçado de dado. `supplier_brand_source = 'MANUAL'` está hoje em **zero linhas**.
+
+**Decisão 4 — normalizar as duas grafias, em migration separada.** `OFF RACER` (567 deduzidos) e `OFFRACER` (65 copiados literalmente do ERP) são o mesmo fornecedor. Não é cosmética: a regra de origem que o usuário deu é **por fornecedor**, e com duas grafias qualquer regra escrita contra uma delas classificaria 65 SKUs errado. Colapsadas em `OFF RACER` — 632.
+
+**O achado que fecha a contradição.** Com a marca real separada, a distribuição da assinatura sentinela deixa de ser ambígua:
+
+| Marca real | SKUs | Com assinatura | % |
+|---|---|---|---|
+| **OFF RACER** | 631 | **520** | **82,4%** |
+| (a preencher à mão) | 2.095 | 1.639 | 78,2% |
+| **NAVETEC** | 228 | **1** | **0,4%** |
+| PLASMOTO | 134 | 0 | 0,0% |
+| RT | 73 | 2 | 2,7% |
+| TMAC / AOLIXIM / PANDÃO / SAKAMAX / ATEC / SPORTIVE | 10–41 cada | 0 | 0,0% |
+
+A associação com fornecedor é **real** — só que é **Off Racer, não Navetec**. E o resíduo "a preencher à mão" com 78,2% é coerente com o que o usuário disse: são as manetes ainda não atribuídas, em grande parte Off Racer. **A ferramenta de marcação em lote está destravada, agora com a chave certa.**
+
+**Segundo achado, que veta uma fonte de dado inteira.** `skus.origin_code` (CST de origem da NF-e) **contradiz a regra do usuário em 707 SKUs**: Off Racer e Navetec são declarados sempre importados, mas 707 deles chegam como `origin_code = 0` (nacional); só 267 SKUs no catálogo inteiro têm `1` e 29 têm `2`. O campo é preenchido por quem emite a nota, não por quem compra. **Confirma D-120 questão 2 com número**: "importado" é rota de compra e o eixo é `supplier_brand` — `origin_code` **não serve** como fonte de Nacional/Importado, e a Fase 5C não deve usá-lo para isso.
+
+**O que fica de fora, conscientemente: `skus.supplier_id`.** O item "Vínculo fornecedor → SKU" pede FK para `suppliers`, que existe desde a Fase de compras e tem **uma linha só** — PLASMOTO, criada porque um pedido de compra real precisou dela. Criar 19 fornecedores para acomodar 19 marcas seria inventar entidades com CNPJ, prazo e condição de pagamento em branco, só para satisfazer um modelo. `supplier_brand` é **atributo de catálogo** (a marca estampada na peça); `suppliers` é **entidade de compra** (a empresa para quem se emite o pedido). Coincidem neste negócio, mas não são a mesma coisa, e a segunda deve nascer quando uma compra real exigir — como PLASMOTO nasceu. O item do roadmap segue aberto, porém reduzido: o eixo de nomeação já existe e serve de semente.
+
+**Impacto:** migrations `20260828195154` (duas colunas, dois CHECKs, um índice parcial, três `update` de semeadura) e `20260828195524` (normalização), `packages/db/src/types.ts` (Row/Insert/Update de `skus`, inserção cirúrgica). **Nenhuma tela mudou** — a coluna ainda não é lida por ninguém; ela destrava a marcação em lote e o filtro por marca da 5C. `check` **29/29**.
+
 ## Como adicionar nova decisão
 
 Registrar:

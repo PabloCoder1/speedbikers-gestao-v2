@@ -33,27 +33,23 @@ A fonte de verdade continua sendo:
 - O Checkpoint de Consolidação Pré-Fase 7: **P0 (confiabilidade) fechado desde 2026-08-25**, exceto o item de pesquisa de novos estados de anúncio (`docs/ROADMAP.md` linha do P0). **P1 segue aberto** — 6 de 8 itens `[ ]` no ROADMAP (a navegação em grupos, D-068, e a Home orientada à atenção, D-105, foram feitas); o próprio ROADMAP prevê que P1/P2 evoluem incrementalmente, então isso não bloqueia nada, mas "fechado por completo" (texto anterior desta linha) afirmava mais do que o checklist registra.
 - **Fase 7B — Central de Atendimento/SAC Mercado Livre com Perguntas E Mensagens pós-venda EM PRODUÇÃO.** A cadeia completa D-083→D-097: pesquisa de APIs, modelo unificado, seis tabelas `support_*`, mapper/persistência idempotente, handler por `questionId`, webhook `questions` (D-088), reconciliação de Perguntas (D-089), Caixa de Entrada `/atendimento` (D-090), correções de webhook/idempotência/allowlist (D-091–D-093), **triagem por RPC transacional** (D-094), **detalhe do atendimento** (D-095), **envio de resposta manual — primeira escrita do projeto no ML** (D-096) e **ingestão de Mensagens pós-venda com reconciliação a cada 10 min** (D-097, produção 2026-08-27: 4 contas, 14 conversas, 150+ mensagens, zero falhas). **D-102 (2026-08-27)**: transição automática pela atividade remota — pergunta respondida FORA da V3 resolve o case não triado, conversa respondida vira AGUARDANDO_CLIENTE, inbound novo REABRE para NOVO (regra prevista em D-084, adiada em D-086); RPC transacional guardada, triagem humana nunca é sobrescrita. **D-103 (2026-08-27)**: `seller_max_message_length` chega como ZERO no payload real e o schema exigia `.positive()` — corrigido para `nonnegative`, fechando o "Achado 4" de D-101 com o campo exato que a instrumentação revelou. Continua sem: `domain_events` de SAC, notificações de atendimento, ingestão de reclamações/devoluções/mediações, templates, Copiloto sugerindo resposta, Base de Conhecimento, métricas de SAC.
 
-### Última etapa concluída — D-128 (integridade de vinculações, com reconciliação independente)
+### Última etapa concluída — D-129 (a marca real do fornecedor, e o achado vermelho resolvido)
+
+- 🟢 **O achado vermelho do handoff anterior está FECHADO, e a leitura 1 era a certa.** `skus.brand` **não é marca — é a categoria do UpSeller**: 2.255 de 3.554 SKUs (66%) em `'MANETE'`, que é um tipo de peça. Era isso que fazia o estoque sentinela "parecer" concentrado numa marca que não existe.
+- **Com a marca real separada, a contradição some**: assinatura sentinela em **Off Racer 82,4% (520/631)** contra **Navetec 0,4% (1/228)**. A associação com fornecedor que você afirmou é **real** — só que é **Off Racer, não Navetec**. E o resíduo ainda sem marca (2.095 SKUs, 78,2% com assinatura) bate com o que você disse: são manetes em grande parte Off Racer.
+- **"Importado" e "estoque virtual" são eixos INDEPENDENTES.** Navetec é importado e tem contagem física de verdade.
+- **Por que coluna nova e não conserto de `brand`**: o importador **sobrescreve** `brand` a cada planilha (`packages/domain/src/upseller/apply.ts:90`). Atribuição feita à mão morreria no próximo import, em silêncio. `supplier_brand` mora fora do alcance dele; `supplier_brand_source` (`DERIVED`/`MANUAL`) garante que um reprocessamento futuro reescreva o deduzido **sem pisar** no que você preencher.
+- **Semeadura conforme você pediu**: dedução por título **e** por código do SKU dentro de 'MANETE' (o prefixo `off`/`kitoff` carrega sinal que o título não tem), cópia direta fora dela. **1.280 com marca (36%), 2.274 em branco (64%)** — vazio de propósito, para você preencher. `MANUAL` está em zero linhas.
+- 🔴 **Segundo achado, que veta uma fonte de dado**: `skus.origin_code` (CST da NF-e) **contradiz sua regra em 707 SKUs** — Off Racer/Navetec chegam como `0` (nacional). O campo é preenchido por quem emite a nota, não por quem compra. **`origin_code` não serve** como fonte de Nacional/Importado na 5C; o eixo é `supplier_brand`.
+- **`skus.supplier_id` NÃO foi criado, de propósito**: `suppliers` tem **uma linha só** (PLASMOTO, nascida de um pedido de compra real). Criar 19 fornecedores com CNPJ e prazo em branco seria inventar entidade. Marca de catálogo ≠ entidade de compra.
+- `check` **29/29**. Migrations `20260828195154` e `20260828195524`. **Nenhuma tela mudou** — a coluna ainda não é lida por ninguém.
+- 🟡 **Próxima fatia, agora destravada com a chave certa**: a **ferramenta de marcação em lote** de `stock_is_virtual`, por `supplier_brand`.
+
+### Etapa anterior — D-128 (integridade de vinculações, com reconciliação independente)
 
 - **A fila não pode ser acreditada por si mesma.** `get_link_integrity` traz por conta o esperado (anúncios, vinculados, sem vínculo, %, candidatos abertos) e mais a coluna que é o ponto inteiro: **`vendidos_sem_vinculo`, derivada das VENDAS** — a única fonte da tela que não vem do pipeline auditado.
 - **A divergência que o requisito pedia para detectar, medida hoje**: **650 anúncios venderam sem vínculo, R$ 1.551.817,14 em 90 dias, com a fila de candidatos ZERADA nas quatro contas** (79,1% a 84,8% vinculados). A tela nomeia isso em vermelho em vez de deixar implícito.
 - `check` **29/29**. Migration `20260828193942`. 71 migrations locais == 71 remotas.
-
-### 🔴 Achado que CONTRADIZ a premissa da marcação por fornecedor
-
-O usuário respondeu que o estoque virtual é por fornecedor, citando Navetec e Off Racer. **A medição não sustenta a associação:**
-
-| Marca | SKUs | Com assinatura sentinela | % |
-|---|---|---|---|
-| **MANETE** | 2.241 | **1.928** | **86,0%** |
-| **NAVETEC** | 228 | **1** | **0,4%** |
-| **OFFRACER** | 65 | 17 | 26,2% |
-
-O estoque virtual está em **MANETE**, não em Navetec. Duas leituras, e não dá para escolher sem o usuário: (1) `brand` **não é fornecedor** — vem da coluna `Categorias` do UpSeller (D-039), e "MANETE" com 66% do catálogo parece categoria de produto; ou (2) a associação é real, mas com outro fornecedor.
-
-A afirmação "Navetec e Off Racer são sempre importados" **segue válida e útil**: ela responde a questão aberta 2 de D-120 — "importado" é **rota de compra**, não `origin_code` fiscal (que classifica 82% dos Navetec como nacionais). Só não é a chave do estoque virtual.
-
-**A ferramenta de marcação em lote NÃO deve ser construída por marca antes de esclarecer isto.**
 
 ### Etapa anterior — D-127 (estoque virtual: a Fase 5D destrava, com outro desenho)
 
