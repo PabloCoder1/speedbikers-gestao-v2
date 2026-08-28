@@ -42,6 +42,7 @@ A fonte de verdade continua sendo:
 - **Filtro "Prazo em risco" na Caixa de Entrada** (`?prazo=risco`, quarta dimensão): `support_case_deadlines!inner` SÓ quando ativo — o inner join excluiria cases sem prazo da listagem normal. Era o filtro que D-090 cortou por tabela vazia; há 263 prazos desde D-107.
 - **Medido antes da tela**: 351 abertos, 101 aguardando a loja, 130 mediações, 74 prazos em 24h, 20 vencidos, mediana de resposta 0,8h.
 - `check` **29/29**; 3 testes de integração da RPC; migration `20260828120728` pelo ritual. **Só web + banco.**
+- **Confirmado em produção em 2026-08-28**: `GET /atendimento/metricas` devolve `307` → login (rota no ar exigindo sessão).
 
 ### Etapa anterior — D-113 + D-114 (o Copiloto está completo)
 
