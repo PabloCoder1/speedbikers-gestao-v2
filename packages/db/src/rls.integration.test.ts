@@ -159,6 +159,18 @@ afterAll(async () => {
        or component_sku_id in (select id from public.skus where sku like 'RLSTEST%')
   `);
   await client.query("delete from public.skus where sku like 'RLSTEST%'");
+
+  // Conhecimento antes dos usuários: `created_by`/`confirmed_by` são
+  // `on delete restrict` desde 2026-08-28 (D-118) — antes eram SET NULL, e o
+  // UPDATE implícito violava `knowledge_entries_validation_coherent` numa
+  // linha VALIDADO, derrubando a limpeza inteira e deixando resíduo para a
+  // rodada seguinte. Mesma ordem já usada para `sku_components`/`skus`.
+  await client.query(`
+    delete from public.knowledge_entries
+    where created_by in (select id from auth.users where email like '%@rls.test')
+       or confirmed_by in (select id from auth.users where email like '%@rls.test')
+  `);
+
   await client.query("delete from auth.users where email like '%@rls.test'");
 
   // As duas organizações de teste NÃO são apagadas: a suíte de observabilidade
@@ -5695,8 +5707,18 @@ describe("get_support_metrics (Métricas de SAC, D-115)", () => {
   });
 
   it("security invoker: a RLS decide o escopo — outra organização não conta os cases da nossa", async () => {
-    // As fixtures de support criam cases só na ORG_SB; para DE_OUTRA_ORG a
-    // mesma RPC devolve zeros, porque as policies filtram por conta.
+    // A fixture de support cria cases nas DUAS organizações (`CASE_OTHER` é
+    // da ORG_OUTRA), então "zero para o vizinho" nunca foi a propriedade
+    // certa — a versão anterior deste teste pedia 0 e era impossível de
+    // passar. A propriedade real é IGUALDADE: o vizinho conta exatamente os
+    // cases DELE, nem um a mais. Derivar o esperado do banco em vez de
+    // fixar um número mantém o teste válido quando a fixture crescer.
+    const propriosDaOutra = await client.query<{ abertos: string }>(
+      `select count(*)::int as abertos from public.support_cases
+        where organization_id = $1 and internal_status <> 'RESOLVIDO'`,
+      [ORG_OUTRA],
+    );
+
     const nossos = await asUser<{ abertos_total: string }>(
       ADMIN_SB,
       "select abertos_total from public.get_support_metrics(7)",
@@ -5707,7 +5729,9 @@ describe("get_support_metrics (Métricas de SAC, D-115)", () => {
     );
 
     expect(Number(nossos[0]?.abertos_total)).toBeGreaterThan(0);
-    expect(Number(alheios[0]?.abertos_total)).toBe(0);
+    expect(Number(alheios[0]?.abertos_total)).toBe(Number(propriosDaOutra.rows[0]?.abertos));
+    // E o vizinho conta MENOS que nós — a prova de que não enxerga os nossos.
+    expect(Number(alheios[0]?.abertos_total)).toBeLessThan(Number(nossos[0]?.abertos_total));
   });
 
   it("anon não executa — o EXECUTE foi revogado", async () => {

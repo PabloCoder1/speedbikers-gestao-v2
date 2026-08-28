@@ -1853,6 +1853,22 @@ Não corrigir agora é decisão de escopo, não descuido: são **32 sítios de c
 
 **Impacto:** `apps/web/lib/action-evidence.ts` (novo, 7 testes), `apps/web/app/acoes/{page,action-row}.tsx`, `apps/api/src/support-reply.ts` (+2 testes), fakes de `app.test.ts`/`support-reply.test.ts`. **Sem migration, sem mudança de schema.** `check` 29/29.
 
+## D-118 — A CI vermelha de D-117 expôs dois defeitos que não eram meus: a terceira ocorrência do padrão de D-099 e um teste que nasceu impossível de passar
+
+**Contexto:** o push de D-117 deixou a CI vermelha em `@sb/db test:integration` — duas falhas em `packages/db/src/rls.integration.test.ts`. Nenhuma delas tem relação com o que D-117 mudou (`apps/web`, `apps/api`): eram latentes, e a regra do projeto ("uma etapa não está concluída enquanto não estiver commitada e com CI verde", item 4 das Pendências) obriga a fechá-las antes de seguir.
+
+**Decisão 1 — `knowledge_entries.created_by`/`confirmed_by` viram `on delete restrict`.** É a **terceira ocorrência do defeito que D-099 corrigiu**, e nasceu no dia SEGUINTE (D-113): coluna de ator com `on delete set null`. Aqui a colisão é mais direta que nas duas anteriores — `knowledge_entries_validation_coherent` exige `confirmed_by is not null` quando `status = 'VALIDADO'`, então o SET NULL dispara um UPDATE que a própria constraint recusa. **D-113 escreveu que "confirmação anônima não existe" e deixou uma FK que tentava criar exatamente isso.**
+
+O sintoma era desproporcional à causa: `delete from auth.users` no `afterAll` falhava com `violates check constraint`, **abortando a limpeza inteira** e deixando resíduo para a rodada seguinte. `restrict` mantém o bloqueio (linha de auditoria não sobrevive sem o ator) e devolve o diagnóstico certo — mesmo raciocínio, mesma redação e mesmo precedente de D-099. Migration `20260828132701`, aplicada pelo ritual. A limpeza da suíte passou a apagar `knowledge_entries` antes dos usuários, na mesma ordem que já usa para `sku_components`/`skus`.
+
+**Decisão 2 — o teste de escopo de `get_support_metrics` pedia um número impossível.** A asserção era `expect(alheios.abertos_total).toBe(0)`, com o comentário "as fixtures de support criam cases só na ORG_SB". **O comentário é falso desde D-085**: a fixture cria `CASE_OTHER` em `ORG_OUTRA` com `internal_status = 'NOVO'` — e `abertos_total` conta exatamente `internal_status <> 'RESOLVIDO'`, sem janela. O vizinho sempre viu 1. O teste nasceu em D-115 já quebrado e **não pode nunca ter passado** — o que corrige o registro de D-115, que afirmava "3 testes de integração da RPC" verdes.
+
+Investigado antes de corrigir: `private.has_account_access` **está corretamente escopada** (junta `organization_members` pela organização da CONTA), então não é o defeito de escopo de D-117/decisão 3 se manifestando. O vizinho enxergar o próprio case é o comportamento certo.
+
+A correção não é trocar `0` por `1`: é trocar a propriedade errada pela certa. "Zero para o vizinho" nunca foi a garantia — a garantia é **igualdade**: o vizinho conta exatamente os cases DELE, nem um a mais. O esperado passa a ser derivado do banco em vez de fixado, então a fixture pode crescer sem falsear o teste, e uma segunda asserção prova que ele conta MENOS que nós.
+
+**Impacto:** migration `20260828132701` (só `on delete`, sem mudança de tipo — `types.ts` inalterado), `packages/db/src/rls.integration.test.ts` (limpeza + asserção). `check` 29/29 local; **a suíte de integração exige Postgres real e só pôde ser verificada pela CI** — Docker não estava disponível na máquina desta sessão.
+
 ## Como adicionar nova decisão
 
 Registrar:
