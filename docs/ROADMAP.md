@@ -318,7 +318,7 @@ A ordem não é preferência: é a Regra de Progressão deste arquivo. Quase tod
 
 **Por que primeiro:** 80% das features pedidas leem SKU, vínculo ou saldo local. Os três estão medidos como incompletos ou contaminados. Construir dashboards e sugestão de compra sobre isso é produzir decisão errada com aparência de certeza.
 
-- [ ] **Enumerar o catálogo real do vendedor** (`GET /users/{id}/items/search`, `docs/MERCADO_LIVRE.md` secao 2.14) em vez de enumerar `sku_listing_links`. Medido: 3.679 anúncios que já venderam não têm vínculo nenhum, e 21,8% dos itens vendidos em 30 dias saem com `sku_id` nulo (R$ 699.733,15)
+- [x] **Enumerar o catálogo real do vendedor** — código concluído em 2026-08-28 (D-121): pesquisa oficial primeiro (§2.14), depois `scanSellerItems`+`getItemsBatch` e o fetcher reescrito. `search_type=scan` obrigatório (o teto de 1.000 é real), duas fases (a busca só devolve IDs), varredura drenada inteira antes de escrever (scroll expira em 5 min). Anúncio sem vínculo passa a existir em `listings` com `sku_id` nulo. **NÃO deployado** — pela regra de D-109, só estará verificado quando uma execução for LIDA
 - [ ] **Abrir `link_candidates` para o Mercado Livre.** Hoje o `check source in ('ERP_IMPORT')` e a FK obrigatória para `erp_import_rows` tornam a tabela **estruturalmente incapaz** de receber um anúncio do ML. A tabela está vazia desde sempre
 - [ ] **Sincronizar anúncios COM variação** — hoje `.is("variation_id", null)` exclui 15,5% da receita de `listings`/visitas/conversão
 - [x] **Vinculação manual livre** — concluída em 2026-08-28 (D-119)

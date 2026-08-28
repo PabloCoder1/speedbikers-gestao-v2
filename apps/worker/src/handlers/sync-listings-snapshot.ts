@@ -40,7 +40,7 @@ export function createSyncListingsSnapshotHandler(deps: SyncListingsSnapshotDeps
 
     const account = await deps.db
       .from("ml_accounts")
-      .select("id, organization_id, status")
+      .select("id, organization_id, status, seller_id")
       .eq("id", mlAccountId)
       .maybeSingle();
 
@@ -56,7 +56,16 @@ export function createSyncListingsSnapshotHandler(deps: SyncListingsSnapshotDeps
       return { status: "done", processed: 0 };
     }
 
-    const { organization_id: organizationId } = account.data;
+    const { organization_id: organizationId, seller_id: sellerId } = account.data;
+
+    // Sem  não há como enumerar o catálogo (a busca é por VENDEDOR,
+    // não por conta interna). Conta CONNECTED sem ele é incoerência de dado,
+    // não falha transitória — por isso não é retryable.
+    if (sellerId === null) {
+      context.logger.warn("sync_listings_snapshot_seller_id_missing", { ml_account_id: mlAccountId });
+
+      return { status: "failed", retryable: false, reason: "conta CONNECTED sem seller_id" };
+    }
     const started = now;
     const tokenResult = await ensureAccessToken(deps, mlAccountId, now);
 
@@ -83,6 +92,7 @@ export function createSyncListingsSnapshotHandler(deps: SyncListingsSnapshotDeps
         db: deps.db,
         organizationId,
         mlAccountId,
+        sellerId,
         mercadoLivre: deps.mercadoLivre,
         accessToken: tokenResult.accessToken,
         logger: context.logger,
@@ -129,8 +139,10 @@ export function createSyncListingsSnapshotHandler(deps: SyncListingsSnapshotDeps
 
     context.logger.info("sync_listings_snapshot_done", {
       ml_account_id: mlAccountId,
+      items_discovered: result.itemsDiscovered,
       items_processed: result.itemsProcessed,
       items_failed: result.itemsFailed,
+      items_without_link: result.itemsWithoutLink,
     });
 
     return { status: "done", processed: result.itemsProcessed };

@@ -54,7 +54,12 @@ interface FakeDbOptions {
   links?: { item_id: string | null; sku_id: string }[];
 }
 
-const DEFAULT_ACCOUNT = { id: ML_ACCOUNT_ID, organization_id: ORGANIZATION_ID, status: "CONNECTED" };
+const DEFAULT_ACCOUNT = {
+  id: ML_ACCOUNT_ID,
+  organization_id: ORGANIZATION_ID,
+  status: "CONNECTED",
+  seller_id: 118570204,
+};
 
 function validCredentials(now: Date): NonNullable<FakeDbOptions["credentials"]> {
   return {
@@ -89,6 +94,11 @@ function fakeDb(options: FakeDbOptions = {}): {
           return chain({ data: links, error: null });
         }
 
+        if (table === "listings") {
+          // Estado anterior lido EM BLOCO desde a Fase 4B.
+          return chain({ data: [], error: null });
+        }
+
         return chain({ data: null, error: null });
       },
       insert: (row: unknown) => {
@@ -112,19 +122,34 @@ function fakeMercadoLivreClient(
   itemsById: Record<string, Record<string, unknown>>,
 ): { client: MercadoLivreClient; requests: RequestOptions<unknown>[] } {
   const requests: RequestOptions<unknown>[] = [];
+  let scanDone = false;
 
+  // Duas fases desde a Fase 4B: a varredura devolve IDs, o multiget hidrata.
   const client = {
     request: (options: RequestOptions<unknown>) => {
       requests.push(options);
 
-      const match = /^\/items\/(.+)$/.exec(options.path);
-      const item = match?.[1] !== undefined ? itemsById[match[1]] : undefined;
+      if (options.path.endsWith("/items/search")) {
+        const page = scanDone
+          ? { results: [], scroll_id: null }
+          : { results: Object.keys(itemsById), scroll_id: null };
+        scanDone = true;
 
-      if (item === undefined) {
-        throw new Error(`item inesperado no fake: ${options.path}`);
+        return Promise.resolve(options.schema.parse(page));
       }
 
-      return Promise.resolve(item);
+      if (options.path === "/items") {
+        const ids = String(options.searchParams?.ids ?? "").split(",").filter(Boolean);
+        const entries = ids.map((id) => {
+          const body = itemsById[id];
+
+          return body === undefined ? { code: 404, body: {} } : { code: 200, body };
+        });
+
+        return Promise.resolve(options.schema.parse(entries));
+      }
+
+      throw new Error(`chamada inesperada no fake: ${options.path}`);
     },
   } as unknown as MercadoLivreClient;
 
@@ -230,8 +255,9 @@ describe("sync.listings.snapshot (D-058)", () => {
     expect(outcome).toEqual({ status: "done", processed: 1 });
     const syncRun = db.inserted.find((e) => e.table === "sync_runs")?.row;
     expect(syncRun).toMatchObject({ status: "done", items_processed: 1, resource: "listings" });
-    const listing = db.inserted.find((e) => e.table === "listings")?.row;
-    expect(listing).toMatchObject({ item_id: "MLB1", sku_id: "sku-1", title: "Cabo de freio dianteiro" });
+    // Upsert em LOTE desde a Fase 4B: a linha vem dentro de um array.
+    const listings = db.inserted.find((e) => e.table === "listings")?.row as Record<string, unknown>[];
+    expect(listings[0]).toMatchObject({ item_id: "MLB1", sku_id: "sku-1", title: "Cabo de freio dianteiro" });
   });
 
   it("erro retryable do Mercado Livre: falha retryable e registra sync_errors com a classe certa", async () => {
@@ -246,15 +272,18 @@ describe("sync.listings.snapshot (D-058)", () => {
   });
 
   it("404 num item específico: NÃO derruba o job — vira partial, itemsFailed no reason", async () => {
-    const { deps: d, db, lines } = deps({ links: [{ item_id: "MLB-removido", sku_id: "sku-1" }] });
-    d.mercadoLivre.request = () =>
-      Promise.reject(
-        new MercadoLivreApiError("Mercado Livre respondeu 404 para GET /items/MLB-removido.", {
-          status: 404,
-          errorClass: "not_retryable",
-          url: "x",
-        }),
-      );
+    // Desde a Fase 4B o 404 de um item chega como `code` DENTRO do envelope
+    // verbose do multiget, não como exceção da chamada inteira — é o que
+    // permite o lote continuar. A varredura descobre o id; a hidratação
+    // devolve 404 para ele.
+    const { deps: d, db, lines } = deps({}, { "MLB-removido": {} });
+    d.mercadoLivre.request = ((options: RequestOptions<unknown>) => {
+      if (options.path.endsWith("/items/search")) {
+        return Promise.resolve(options.schema.parse({ results: ["MLB-removido"], scroll_id: null }));
+      }
+
+      return Promise.resolve(options.schema.parse([{ code: 404, body: { message: "not found" } }]));
+    }) as typeof d.mercadoLivre.request;
 
     const outcome = await run(d, lines);
 

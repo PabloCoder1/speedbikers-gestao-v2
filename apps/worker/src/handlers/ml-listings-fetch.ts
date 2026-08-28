@@ -2,42 +2,73 @@ import type { AdminClient } from "@sb/db";
 import { detectListingEvents } from "@sb/domain";
 import type { ListingSnapshot } from "@sb/domain";
 import type { MercadoLivreClient } from "@sb/mercado-livre";
-import { MercadoLivreApiError } from "@sb/mercado-livre";
+import { chunkItemIds, getItemsBatch, scanSellerItems } from "@sb/mercado-livre";
 import type { Logger } from "@sb/observability";
 
 import { recordDomainEvents } from "./domain-events.js";
 import { listingItemSchema } from "./listing-schema.js";
 
 /**
- * Sincronização de listings/anúncios (D-058, docs/ROADMAP.md Fase 5B) — a
- * peça pura de fetch+persist, mesmo split de `ml-fulfillment-fetch.ts`.
+ * Sincronização de anúncios — **enumeração pelo CATÁLOGO REAL do vendedor**
+ * (Fase 4B, item 1), não mais pelos vínculos internos.
  *
- * Enumeração via `sku_listing_links` (`ref_kind='ITEM'`), mesmo mecanismo já
- * usado por Full — não `/users/{id}/items/search`: o alvo desta fatia é
- * "anúncio já vinculado a um SKU", que é o que os itens do checklist da
- * Fase 5B (Dashboard de SKU/Anúncio, Curva ABC) precisam. Um catálogo mais
- * amplo (itens ainda sem vínculo) fica para quando houver evidência de que
- * "descobrir anúncio novo" é o problema real, não presumido.
+ * O que mudou e por quê (D-117 mediu, `docs/MERCADO_LIVRE.md` secao 2.14
+ * confirmou o contrato): a versão anterior enumerava `sku_listing_links`, ou
+ * seja, **só anúncios que a planilha do UpSeller já tinha vinculado**. A
+ * consequência não era estética — a V3 não sabia quais anúncios existem.
+ * Medido: 7.361 itens já venderam, 3.679 sem vínculo nenhum, e 21,8% dos
+ * itens vendidos em 30 dias saem com `sku_id` nulo.
  *
- * **Escopo desta etapa, deliberadamente limitado a itens SEM variação**
- * (mesmo raciocínio, mesma limitação de `ml-fulfillment-fetch.ts`): a doc
- * oficial não mostra o formato exato de variação dentro da resposta de
- * `/items` para codar esse ramo sem adivinhar.
+ * Três fatos da doc oficial governam este arquivo:
  *
- * **Motor de diff (D-072, pré-requisito crítico da Fase 7,
- * `docs/HANDOFF.md`):** a linha ANTERIOR de `listings` é lida antes do
- * upsert sobrescrevê-la — `listings` é projeção MUTÁVEL, não ledger
- * (`docs/DATABASE.md`), então o "antes" só existe até este momento.
- * `detectListingEvents` (`@sb/domain`) compara e emite `domain_events` para
- * preço, título, status (só `paused`/`reactivated`, catalogadas desde a
- * Fase 0) e quantidade disponível — best-effort via `recordDomainEvents`,
- * nunca derruba a sincronização se a gravação do evento falhar.
+ * 1. **`results` traz só IDs** — enumerar é obrigatoriamente duas fases.
+ * 2. **`search_type=scan` é obrigatório**, não otimização: o teto de 1.000 é
+ *    real e a maior conta desta organização já teve 2.675 itens observados.
+ * 3. **O scroll expira em 5 minutos e não pode ser pausado** — por isso a
+ *    varredura é drenada INTEIRA antes de qualquer escrita no banco. Gravar
+ *    no meio do laço é o caminho para 429 + scroll expirado.
+ *
+ * `sku_id` deixa de dirigir a enumeração e passa a ser um LOOKUP: anúncio sem
+ * vínculo entra em `listings` com `sku_id` nulo (a coluna sempre foi anulável
+ * e a interface já trata), em vez de simplesmente não existir.
+ *
+ * **Cinco perguntas que a doc oficial não responde estão instrumentadas**
+ * (log `listings_catalog_probe`) para a primeira execução real respondê-las —
+ * é a lição de D-109, onde a evidência existia e era descartada.
  */
+
+/** Campos que `listings` usa hoje; projeção reduz payload no multiget. */
+const ITEM_ATTRIBUTES = [
+  "id",
+  "title",
+  "status",
+  "price",
+  "currency_id",
+  "available_quantity",
+  "category_id",
+] as const;
+
+/** Linha de `listings` tal como o upsert em lote a envia. */
+interface ListingUpsertRow {
+  organization_id: string;
+  ml_account_id: string;
+  item_id: string;
+  sku_id: string | null;
+  title: string;
+  status: string;
+  price: number;
+  currency_id: string;
+  available_quantity: number;
+  category_id: string | null;
+  synced_at: string;
+}
 
 export interface FetchListingsParams {
   db: AdminClient;
   organizationId: string;
   mlAccountId: string;
+  /** `seller_id` do Mercado Livre — a enumeração é por vendedor, não por conta interna. */
+  sellerId: number;
   mercadoLivre: MercadoLivreClient;
   accessToken: string;
   logger: Logger;
@@ -45,14 +76,20 @@ export interface FetchListingsParams {
 }
 
 export interface FetchListingsResult {
+  /** IDs devolvidos pela varredura — o denominador que nunca existiu antes. */
+  itemsDiscovered: number;
   itemsProcessed: number;
-  /** Erro NÃO retryable do Mercado Livre (ex.: 404 — anúncio removido) — mesmo tratamento de Full. */
+  /** Falha POR ITEM: `code != 200` no multiget, ou payload fora do schema. */
   itemsFailed: number;
+  /** Anúncios reais que nenhum vínculo alcança — o número que motivou a Fase 4B. */
+  itemsWithoutLink: number;
 }
 
 export async function fetchListings(params: FetchListingsParams): Promise<FetchListingsResult> {
   const syncedAt = params.now?.() ?? new Date();
 
+  // Vínculos viram LOOKUP, não fonte de enumeração. Uma consulta só: com
+  // catálogo completo, uma consulta por item seria milhares de idas ao banco.
   const links = await params.db
     .from("sku_listing_links")
     .select("item_id, sku_id")
@@ -61,102 +98,159 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
     .is("variation_id", null);
 
   if (links.error !== null) {
-    // Não tratar como "conta sem anúncio vinculado nenhum": o chamador
-    // (sync-listings-snapshot.ts) já tem try/catch em volta desta função e
-    // registra falha de verdade — sem isto, uma falha de leitura virava
-    // "done, 0 processados", indistinguível de sincronização bem-sucedida.
     throw new Error(`falha ao ler sku_listing_links: ${links.error.message}`);
+  }
+
+  const skuByItem = new Map<string, string>();
+
+  for (const link of links.data) {
+    if (link.item_id !== null) {
+      skuByItem.set(link.item_id, link.sku_id);
+    }
+  }
+
+  // Estado ANTERIOR em bloco, antes do upsert sobrescrever: `listings` é
+  // projeção mutável (`docs/DATABASE.md`), então o "antes" só existe agora.
+  const previousRows = await params.db
+    .from("listings")
+    .select("item_id, title, status, price, available_quantity")
+    .eq("ml_account_id", params.mlAccountId);
+
+  if (previousRows.error !== null) {
+    throw new Error(`falha ao ler listings anteriores: ${previousRows.error.message}`);
+  }
+
+  const previousByItem = new Map<string, ListingSnapshot>();
+
+  for (const row of previousRows.data) {
+    previousByItem.set(row.item_id, {
+      itemId: row.item_id,
+      title: row.title,
+      status: row.status,
+      price: row.price,
+      availableQuantity: row.available_quantity,
+    });
+  }
+
+  // Fase 1 — descoberta. Drenada INTEIRA antes de escrever: o scroll expira
+  // em 5 min e a FAQ oficial diz que deixá-lo aberto gera 429.
+  const discovered: string[] = [];
+  let scanPages = 0;
+
+  for await (const batch of scanSellerItems({
+    client: params.mercadoLivre,
+    sellerId: params.sellerId,
+    accessToken: params.accessToken,
+    limit: 100,
+  })) {
+    discovered.push(...batch);
+    scanPages += 1;
   }
 
   let itemsProcessed = 0;
   let itemsFailed = 0;
+  let itemsWithoutLink = 0;
+  /** Distribuição de status observada — responde a pergunta 1 da 2.14. */
+  const statusSeen = new Map<string, number>();
 
-  for (const link of links.data) {
-    if (link.item_id === null) {
-      // Não deveria acontecer (constraint sku_listing_links_ref_shape) — defesa.
-      continue;
-    }
+  // Fase 2 — hidratação em lotes de 20 (máximo documentado).
+  for (const chunk of chunkItemIds(discovered)) {
+    const entries = await getItemsBatch({
+      client: params.mercadoLivre,
+      ids: chunk,
+      accessToken: params.accessToken,
+      attributes: ITEM_ATTRIBUTES,
+    });
 
-    let item;
+    const rows: ListingUpsertRow[] = [];
+    const pending: { current: ListingSnapshot; previous: ListingSnapshot | null }[] = [];
 
-    try {
-      item = await params.mercadoLivre.request({
-        method: "GET",
-        path: `/items/${link.item_id}`,
-        accessToken: params.accessToken,
-        schema: listingItemSchema,
-      });
-    } catch (error) {
-      if (error instanceof MercadoLivreApiError && error.errorClass === "not_retryable") {
+    for (const entry of entries) {
+      // O envelope verbose carrega o código POR ITEM: um anúncio removido
+      // entre a varredura e a hidratação não derruba o lote inteiro.
+      if (entry.code !== 200) {
         itemsFailed += 1;
         params.logger.warn("listing_item_fetch_failed", {
           ml_account_id: params.mlAccountId,
-          item_id: link.item_id,
-          reason: error.message,
+          code: entry.code,
         });
 
         continue;
       }
 
-      throw error;
-    }
+      const parsed = listingItemSchema.safeParse(entry.body);
 
-    const previousRow = await params.db
-      .from("listings")
-      .select("title, status, price, available_quantity")
-      .eq("ml_account_id", params.mlAccountId)
-      .eq("item_id", item.id)
-      .maybeSingle();
-
-    const previous: ListingSnapshot | null =
-      previousRow.data === null
-        ? null
-        : {
-            itemId: item.id,
-            title: previousRow.data.title,
-            status: previousRow.data.status,
-            price: previousRow.data.price,
-            availableQuantity: previousRow.data.available_quantity,
-          };
-
-    const result = await params.db
-      .from("listings")
-      .upsert(
-        {
-          organization_id: params.organizationId,
+      if (!parsed.success) {
+        itemsFailed += 1;
+        params.logger.warn("listing_item_schema_rejected", {
           ml_account_id: params.mlAccountId,
-          item_id: item.id,
-          sku_id: link.sku_id,
+          reason: parsed.error.message,
+        });
+
+        continue;
+      }
+
+      const item = parsed.data;
+      const skuId = skuByItem.get(item.id) ?? null;
+
+      if (skuId === null) {
+        itemsWithoutLink += 1;
+      }
+
+      statusSeen.set(item.status, (statusSeen.get(item.status) ?? 0) + 1);
+
+      rows.push({
+        organization_id: params.organizationId,
+        ml_account_id: params.mlAccountId,
+        item_id: item.id,
+        sku_id: skuId,
+        title: item.title,
+        status: item.status,
+        price: item.price,
+        currency_id: item.currency_id,
+        available_quantity: item.available_quantity,
+        category_id: item.category_id ?? null,
+        synced_at: syncedAt.toISOString(),
+      });
+
+      pending.push({
+        current: {
+          itemId: item.id,
           title: item.title,
           status: item.status,
           price: item.price,
-          currency_id: item.currency_id,
-          available_quantity: item.available_quantity,
-          category_id: item.category_id ?? null,
-          synced_at: syncedAt.toISOString(),
+          availableQuantity: item.available_quantity,
         },
-        { onConflict: "ml_account_id,item_id" },
-      );
+        previous: previousByItem.get(item.id) ?? null,
+      });
+    }
+
+    if (rows.length === 0) {
+      continue;
+    }
+
+    const result = await params.db
+      .from("listings")
+      .upsert(rows, { onConflict: "ml_account_id,item_id" });
 
     if (result.error !== null) {
+      // Lote inteiro perdido: contabilizar como falha em vez de seguir
+      // somando `itemsProcessed` sobre uma escrita que não aconteceu.
+      itemsFailed += rows.length;
       params.logger.error("listing_not_recorded", {
         ml_account_id: params.mlAccountId,
-        item_id: link.item_id,
+        items: rows.length,
         reason: result.error.message,
       });
 
       continue;
     }
 
-    const current: ListingSnapshot = {
-      itemId: item.id,
-      title: item.title,
-      status: item.status,
-      price: item.price,
-      availableQuantity: item.available_quantity,
-    };
+    itemsProcessed += rows.length;
 
-    const events = detectListingEvents(previous, current, syncedAt);
+    const events = pending.flatMap((entry) =>
+      detectListingEvents(entry.previous, entry.current, syncedAt),
+    );
 
     if (events.length > 0) {
       await recordDomainEvents(
@@ -166,9 +260,19 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
         params.logger,
       );
     }
-
-    itemsProcessed += 1;
   }
 
-  return { itemsProcessed, itemsFailed };
+  // Instrumentação deliberada: a doc oficial NÃO diz quais status a varredura
+  // devolve sem filtro (a frase "sempre serão itens ativos" pertence a OUTRO
+  // endpoint da mesma página). Sem isto, a resposta continuaria sendo palpite.
+  params.logger.info("listings_catalog_probe", {
+    ml_account_id: params.mlAccountId,
+    scan_pages: scanPages,
+    items_discovered: discovered.length,
+    items_without_link: itemsWithoutLink,
+    links_known: skuByItem.size,
+    status_seen: Object.fromEntries(statusSeen),
+  });
+
+  return { itemsDiscovered: discovered.length, itemsProcessed, itemsFailed, itemsWithoutLink };
 }

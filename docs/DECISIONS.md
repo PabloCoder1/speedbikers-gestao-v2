@@ -1935,6 +1935,34 @@ Nenhuma delas é decisão técnica, e **nenhuma foi respondida** — por isso fi
 
 **Impacto:** `docs/ROADMAP.md` (5 subfases novas, ordem de execução atualizada), `docs/PRODUCT_REQUIREMENTS.md` (consolidação dos 30 blocos), `docs/METRICS.md` (§5C, com o veto de nome e os bloqueios declarados), `docs/MERCADO_LIVRE.md` (§2.14 catálogo, §2.15 financeiro, §2.16 relist). **Somente documentação — nenhuma linha de código, nenhuma migration, nenhuma alteração de banco ou infraestrutura.**
 
+## D-121 — A V3 passa a saber quais anúncios existem: enumeração pelo catálogo real
+
+**Contexto:** primeiro item da Fase 4B. Até aqui `listings` era populada enumerando `sku_listing_links` — ou seja, **só anúncios que a planilha do UpSeller já tinha vinculado**. D-117 mediu a consequência: 7.361 itens já venderam, **3.679 sem vínculo nenhum**, e 21,8% dos itens vendidos em 30 dias saem com `sku_id` nulo (R$ 699.733,15). O endpoint `GET /users/{id}/items/search` estava registrado desde a Fase 0 e **nunca tinha sido chamado**.
+
+**Decisão 1 — a pesquisa oficial veio antes do código, e mudou o desenho três vezes** (`docs/MERCADO_LIVRE.md` secao 2.14, leitura ao vivo):
+
+- **`results` traz só IDs**, nunca objetos. Enumerar é obrigatoriamente **duas fases**: descobrir e depois hidratar via multiget de no máximo 20 ids, em envelope verbose com `code` por item.
+- **O teto de 1.000 é real**, confirmado em três lugares da doc. A maior conta desta organização já teve **2.675 itens distintos observados** — `search_type=scan` **não é otimização, é obrigatório**.
+- **Não existe filtro por data.** Sincronização incremental por este endpoint é impossível; ele é reconciliação/backfill, e o incremental continua sendo o webhook `items` — posicionamento que a própria doc afirma (*"não substitui o uso das notificações de itens"*).
+
+**Decisão 2 — a varredura é drenada INTEIRA antes de qualquer escrita.** O `scroll_id` expira em 5 minutos e a FAQ oficial diz que deixá-lo aberto gera 429. Gravar em lote no meio do laço é o caminho para scroll expirado — então a fase 1 acumula os IDs em memória (alguns milhares de strings, custo irrelevante) e só depois a fase 2 escreve.
+
+**Decisão 3 — `limit` só na primeira chamada, por contradição declarada.** Duas páginas oficiais discordam: a FAQ (05/05/2026) diz que `scroll_id` junto com `offset`/`limit` causa erro; a página de itens (07/04/2025) põe a nota do `limit` máximo dentro da seção do scan. A FAQ é mais recente. O recorte conservador está travado por teste e **marcado para medir**.
+
+**Decisão 4 — nenhuma ordenação é enviada, com teste-guarda.** Aqui o parâmetro é **`orders`**; `sort` pertence a `/sites/{site}/search`. Confundir os dois é exatamente o erro que custou D-109, e a varredura completa não depende de ordem — então o caminho mais seguro é não mandar nenhuma.
+
+**Decisão 5 — `sku_id` deixa de dirigir a enumeração e vira LOOKUP.** Um `Map` carregado de uma consulta só; anúncio sem vínculo entra em `listings` com `sku_id` nulo. A coluna sempre foi anulável e a interface de `/anuncios` já renderiza `"—"` — o que faltava era a linha existir. Também mudou para leitura em BLOCO o estado anterior usado pelo motor de diff (antes era uma consulta por item; com catálogo completo seriam milhares).
+
+**Decisão 6 — as cinco perguntas que a doc não responde estão INSTRUMENTADAS.** O log `listings_catalog_probe` registra páginas de varredura, itens descobertos, itens sem vínculo, vínculos conhecidos e **a distribuição de status observada** — que é o que responde a pergunta mais importante ("a busca sem filtro devolve `closed`/`paused` ou só ativos?", cuja frase na doc pertence a OUTRO endpoint da mesma página). É a lição de D-109: a evidência existia e era descartada.
+
+**Falha por item, nunca do lote:** `code != 200` no envelope verbose e payload fora do schema contam em `itemsFailed` e o lote segue. Falha do upsert conta como falha e **nunca** soma em `itemsProcessed` — sem isso, um lote perdido viraria "done, N processados", a mesma classe de mentira que D-067 auditou.
+
+**Consequência operacional a observar no primeiro ciclo:** a carga cresce de propósito. Antes eram 3.168 itens enumerados por vínculo; agora é o catálogo inteiro (pelo que já observamos, no mínimo ~8.800 nas quatro contas), o que significa dezenas de páginas de varredura e algumas centenas de chamadas de multiget por ciclo de 6h. O backoff com jitter do cliente já existe; **o número real só a primeira execução dirá**, e é justamente o que a instrumentação vai medir.
+
+**Impacto:** `packages/mercado-livre/src/items.ts` (novo — `scanSellerItems`, `getItemsBatch`, `chunkItemIds`, 14 testes), `apps/worker/src/handlers/ml-listings-fetch.ts` (reescrito, 12 testes), `sync-listings-snapshot.ts` (passa `seller_id`; conta CONNECTED sem ele é falha não-retryable, porque é incoerência de dado). **Sem migration** — `listings.sku_id` já era anulável e `sync_runs.resource` continua `listings`. `check` 29/29.
+
+**NÃO deployado ainda.** Pela regra do projeto (D-109), este job só estará verificado quando uma execução dele for LIDA — em `sync_runs` e no `listings_catalog_probe`.
+
 ## Como adicionar nova decisão
 
 Registrar:
