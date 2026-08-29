@@ -2390,6 +2390,50 @@ alvo = snapshot + movimentos com occurred_at > captured_at
 
 **Impacto:** migrations `20260828210048` (quatro colunas, três CHECKs, comentários) e `20260828215404` (um helper `private` + quatro RPCs, sem tabela nova, sem índice, **sem semear uma linha**), `apps/web/app/produtos/{page,curation-table,actions}.tsx`, `apps/web/lib/sku-curation.{ts,test.ts}` (16 testes), `apps/web/components/shell.tsx` (nav + o JSDoc que declarava "Produtos" ausente de propósito, atualizado na mesma edição), `apps/web/app/cobertura/page.tsx` (link de ida), `packages/domain/src/upseller/apply.test.ts` (a trava), `packages/db/src/rls.integration.test.ts` (13 testes novos), `packages/db/src/types.ts` (gerado), `docs/METRICS.md`. `check` **29/29** e `next build` limpo. **A suíte de integração não rodou aqui** (Docker não sobe nesta máquina) e **a tela não foi vista no navegador** (sem `.env.local` o dev server não alcança o Supabase) — o ensaio operacional que o painel exige (marcar 5 SKUs, conferir em `/cobertura`, só então o lote grande) continua pendente, e o caminho `stock_is_virtual = true` de `get_stock_coverage` **nunca rodou com dado real**.
 
+## D-134 — O banco andou e o código ficou: o descompasso que quebrou a reconciliação, e o reparo que ele acidentalmente preservou
+
+**Contexto:** sessão de 2026-08-29 aberta pelo protocolo de início. A tarefa registrada era o reparo do saldo de estoque que D-131/D-132 deixaram agendado para a rodada de hoje. A primeira verificação — qual código está no ar — encontrou um incidente que ninguém tinha visto.
+
+**O achado: o banco estava 10 commits à frente do código.** Cloud Run servia `fa43fe5` (D-121, publicado em 28/08 18:12Z) enquanto o Supabase já tinha as 79 migrations, incluindo as de D-133. A migration `20260828203624` (D-132) faz `drop function public.compute_erp_snapshot_balances(uuid)` e cria `compute_erp_target_balances(uuid)`; o worker no ar ainda chamava o nome antigo. Resultado, medido no Cloud Logging:
+
+```
+09:00:02Z  job_type=maintenance.reconcile-balances  message=job_failed
+reason=Could not find the function public.compute_erp_snapshot_balances(p_organization_id)
+```
+
+Três tentativas (09:00:02, 09:01:02, 09:03:03) — a fila `maintenance` tem `maxAttempts: 3`. A task esgotou e saiu. **A reconciliação não rodou em 2026-08-29 pela manhã.**
+
+🟢 **E a falha SALVOU o reparo, por acidente.** D-131 registrou que uma rodada em 28/08 seria inútil porque as chaves `reconciliacao:2026-08-28:*` já tinham sido consumidas e `recordStockMovements` usa `ignoreDuplicates: true` — pularia os SKUs em silêncio *reportando sucesso*. Como o job de hoje morreu **antes de escrever**, as chaves `reconciliacao:2026-08-29:*` continuaram livres. O descompasso que quebrou o job é o mesmo que preservou a janela.
+
+**Decisão 1 — deploy antes de qualquer disparo, e a ordem não é negociável.** Disparar o job sem publicar o worker novo produziria a quarta falha idêntica. Publicados `worker-00042-tlc` e `api-00028-d4x`, ambos na imagem `6982c33` (sem sufixo `-dirty`), ordem worker→api imposta pelo próprio script. `apps/api` **não tinha nenhuma mudança direta** desde `fa43fe5` — foi publicada mesmo assim porque depende de `@sb/domain`/`@sb/db`, que mudaram, e porque uma tag única por serviço é o que torna "qual código está no ar" respondível sem adivinhação.
+
+**Decisão 2 — o disparo manual foi autorizado explicitamente pelo usuário**, seguindo o precedente de D-065/D-081: a convenção durável de 2026-08-27 cobre *deploy*, não escrita em massa de dado. O usuário pediu o disparo de hoje aceitando de antemão o risco de dedupe. **A ressalva não se materializou**: `balance_reconcile_schedule_triggered` com `enqueued: 1, deduplicated: 0` — a task falha das 09:03 estava a ~11h, fora da janela de dedupe.
+
+**A execução, lida e não presumida** (`balances_reconciled`, 20:51:01Z). Os quatro números que provam a correção de paginação de D-131:
+
+| Campo | Antes (D-131) | Nesta execução |
+|---|---|---|
+| `snapshot_rows` | 1.000 de 6.744 | **6.744** |
+| `ledger_rows` | 1.000 de 2.524 | **2.529** |
+| `skus_compared` | 1.000 | **3.372** |
+| `adjustments` | — | **3.300** |
+
+**O efeito no dado:**
+
+- **LOCAL**: 3.172 linhas, **191 negativas** contra as **1.627** que D-131 mediu; mínimo subiu de **−4.632 para −160**. É a correção do dano dominante que D-131 identificou (65% errado para baixo, por falta de semeadura).
+- **RESERVADO**: de **zero linhas** — nunca reconciliado uma única vez na história do projeto, porque o `union all` truncava antes da primeira linha — para **exatamente 300**, o número de linhas com `reservado ≠ 0` que D-131 previu. Fecha o item da Fase 4 que estava `[~]`.
+- **Integridade**: projeção contra soma do ledger dá **zero divergências em 3.472 chaves**, sem órfãos nos dois sentidos.
+
+🔴 **Consequência que precisa ficar registrada: o reparo gerou uma avalanche de notificações.** A reconciliação emite um `stock.balance.diverged` por ajuste, então 3.300 ajustes viraram **3.300 eventos e 3.308 notificações não lidas numa única hora**. O total não lido subiu para **6.410**. Não é defeito novo — é o item "Ruído antes da inteligência" da Fase 6B (`stock.balance.diverged` já era 55,1% de todas as notificações) encontrando um reparo em massa. **Mas ele deixou de ser teórico**: a Central de Notificações está inutilizável até que a agregação da 6B seja feita, e isso passa a ser pré-requisito prático, não backlog.
+
+**Expectativa declarada, a conferir amanhã e não afirmada aqui:** como D-132 tornou o job idempotente entre dias, a rodada de 2026-08-30 às 09:00Z deveria produzir ~0 ajustes e ~0 eventos. Se produzir milhares de novo, a idempotência de D-132 não está funcionando como projetado — e este parágrafo é o critério.
+
+**Achado colateral, sobre a própria esteira:** `pnpm run check` falhou na primeira rodada com **130 erros em `@sb/api#lint`** (`no-unsafe-member-access` em `request.tool`, "type cannot be resolved"), e passou 29/29 na segunda. `pnpm run lint` isolado em `apps/api` passa com exit 0. É corrida de cache frio do Turborepo: o lint tipado lê os `.d.ts` das dependências enquanto ainda estão sendo gerados. **Não é defeito de código, é uma fonte de CI falsamente vermelha** — mesma classe de armadilha que D-130 documentou ao provar que "check 29/29" não era prova de nada. Quem vir `@sb/api#lint` vermelho deve rodar de novo antes de investigar.
+
+**Observação não diagnosticada, deixada aberta de propósito:** 16 ocorrências de `sync.webhook.received` com `resposta fora do contrato esperado: Invalid input: expected array, received null` no path `["orders"]`, todas na revisão `worker-00041-x4q` numa janela de 6 minutos em 28/08 (provavelmente retries da mesma notificação). Mesma classe de D-101/D-103. Não foi investigada nesta sessão e não reapareceu na revisão nova no intervalo observado.
+
+**Impacto:** nenhuma migration, nenhuma linha de código de produto. Revisões `worker-00042-tlc`/`api-00028-d4x` (tag `6982c33`); 3.300 movimentos de ajuste e 300 linhas RESERVADO criados no Supabase Dev; `docs/HANDOFF.md` atualizado, inclusive a seção "Próxima etapa registrada", que estava congelada na Fase 7B enquanto a 7B já tinha sido fechada por D-116.
+
 ## Como adicionar nova decisão
 
 Registrar:

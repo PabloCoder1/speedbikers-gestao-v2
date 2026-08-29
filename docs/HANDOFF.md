@@ -2,9 +2,11 @@
 
 ## RESUMO OPERACIONAL ATUAL — LEIA PRIMEIRO
 
-> Atualizado em 2026-08-27 após D-101/D-102/D-103 — o webhook vivo pela primeira vez, a transição automática pela atividade remota e o contrato de Mensagens corrigido sobre evidência real.
+> Atualizado em 2026-08-29 após D-134 — o saldo de estoque REPARADO e verificado em produção, depois de um descompasso em que o banco estava 10 commits à frente do código no ar.
 >
-> **Nota de sincronização (2026-08-27):** este bloco tinha ficado congelado em D-097 enquanto `docs/DECISIONS.md` já registrava até D-103, todas em produção. Corrigido nesta atualização. Vale a regra de sempre: se este resumo divergir de `docs/DECISIONS.md` ou do código, prevalece a ordem de fonte de verdade listada abaixo.
+> **Nota de sincronização (2026-08-29):** este bloco tinha ficado congelado em D-103. É a terceira vez que isso acontece (as anteriores pararam em D-097 e D-103), sempre pelo mesmo motivo: o resumo é escrito no fim da sessão e a sessão seguinte lê a fase errada. Vale a regra de sempre: se este resumo divergir de `docs/DECISIONS.md` ou do código, prevalece a ordem de fonte de verdade listada abaixo.
+>
+> **Regra que D-134 acrescenta:** documentação não comprova deploy — e **migration aplicada não comprova código no ar**. As duas metades andam separadas e já divergiram em produção. Antes de confiar em qualquer job, conferir a imagem no Cloud Run contra o `HEAD`.
 
 Este bloco é o ponto de entrada atual para qualquer nova sessão.
 
@@ -33,7 +35,24 @@ A fonte de verdade continua sendo:
 - O Checkpoint de Consolidação Pré-Fase 7: **P0 (confiabilidade) fechado desde 2026-08-25**, exceto o item de pesquisa de novos estados de anúncio (`docs/ROADMAP.md` linha do P0). **P1 segue aberto** — 6 de 8 itens `[ ]` no ROADMAP (a navegação em grupos, D-068, e a Home orientada à atenção, D-105, foram feitas); o próprio ROADMAP prevê que P1/P2 evoluem incrementalmente, então isso não bloqueia nada, mas "fechado por completo" (texto anterior desta linha) afirmava mais do que o checklist registra.
 - **Fase 7B — Central de Atendimento/SAC Mercado Livre com Perguntas E Mensagens pós-venda EM PRODUÇÃO.** A cadeia completa D-083→D-097: pesquisa de APIs, modelo unificado, seis tabelas `support_*`, mapper/persistência idempotente, handler por `questionId`, webhook `questions` (D-088), reconciliação de Perguntas (D-089), Caixa de Entrada `/atendimento` (D-090), correções de webhook/idempotência/allowlist (D-091–D-093), **triagem por RPC transacional** (D-094), **detalhe do atendimento** (D-095), **envio de resposta manual — primeira escrita do projeto no ML** (D-096) e **ingestão de Mensagens pós-venda com reconciliação a cada 10 min** (D-097, produção 2026-08-27: 4 contas, 14 conversas, 150+ mensagens, zero falhas). **D-102 (2026-08-27)**: transição automática pela atividade remota — pergunta respondida FORA da V3 resolve o case não triado, conversa respondida vira AGUARDANDO_CLIENTE, inbound novo REABRE para NOVO (regra prevista em D-084, adiada em D-086); RPC transacional guardada, triagem humana nunca é sobrescrita. **D-103 (2026-08-27)**: `seller_max_message_length` chega como ZERO no payload real e o schema exigia `.positive()` — corrigido para `nonnegative`, fechando o "Achado 4" de D-101 com o campo exato que a instrumentação revelou. Continua sem: `domain_events` de SAC, notificações de atendimento, ingestão de reclamações/devoluções/mediações, templates, Copiloto sugerindo resposta, Base de Conhecimento, métricas de SAC.
 
-### Última etapa concluída — D-133 (curadoria do catálogo: a tela `/produtos`)
+### Última etapa concluída — D-134 (o saldo foi REPARADO em produção, e o descompasso que quase impediu isso)
+
+> 🟢 **Este é o bloco que responde "posso confiar no saldo de estoque da V3?". A resposta mudou hoje.**
+
+- **O achado de abertura: o banco estava 10 commits à frente do código no ar.** Cloud Run servia `fa43fe5` (D-121) com o Supabase já em 79/79 migrations. A migration `20260828203624` derrubou `compute_erp_snapshot_balances` e criou `compute_erp_target_balances`; o worker antigo chamava o nome morto. **A reconciliação de 2026-08-29 09:00Z falhou 3× e a task esgotou** (`maintenance` tem `maxAttempts: 3`).
+- 🟢 **E a falha salvou o reparo.** Como o job morreu ANTES de escrever, as chaves `reconciliacao:2026-08-29:*` ficaram livres — exatamente a armadilha que D-131 descreveu para 28/08 (`ignoreDuplicates: true` pularia os SKUs em silêncio reportando sucesso).
+- **Deploy**: `worker-00042-tlc` e `api-00028-d4x`, imagem `6982c33`, ordem worker→api. `apps/api` não tinha mudança direta desde `fa43fe5`; foi publicada por depender de `@sb/domain`/`@sb/db`.
+- **Disparo manual autorizado explicitamente pelo usuário** (precedente D-065/D-081 — a convenção durável cobre deploy, não escrita em massa). `enqueued: 1, deduplicated: 0`: a janela de dedupe já tinha expirado.
+- **A execução foi LIDA** (regra de D-109), `balances_reconciled` às 20:51:01Z: `snapshot_rows` **6.744** (era 1.000 de 6.744), `ledger_rows` **2.529** (era 1.000 de 2.524), `skus_compared` **3.372** (era 1.000), `adjustments` **3.300**.
+- **LOCAL**: 191 negativas contra as **1.627** de D-131; mínimo de **−4.632 para −160**.
+- **RESERVADO**: de **zero linhas** para **exatamente 300** — o número que D-131 previu. O item "Reservado e em trânsito" da Fase 4, corrigido para `[~]` por D-131, pode voltar a `[x]`.
+- **Integridade**: projeção × soma do ledger = **zero divergências em 3.472 chaves**, sem órfãos.
+- 🔴 **PENDÊNCIA CRIADA POR ESTE REPARO, e é a mais urgente agora**: um `stock.balance.diverged` por ajuste ⇒ **3.308 notificações não lidas numa hora**, total de **6.410**. A Central de Notificações está inutilizável. O item "Ruído antes da inteligência" da Fase 6B deixou de ser backlog e virou pré-requisito prático.
+- 🟡 **A conferir em 2026-08-30 às 09:00Z, sem afirmar aqui**: D-132 tornou o job idempotente entre dias, então a rodada natural deveria dar ~0 ajustes e ~0 eventos. Milhares de novo = a idempotência não funciona como projetado.
+- ⚠️ **`pnpm run check` falhou na 1ª rodada** (130 erros em `@sb/api#lint`) e passou **29/29** na 2ª; `lint` isolado em `apps/api` passa. Corrida de cache frio do Turborepo, não defeito. Rodar de novo antes de investigar.
+- Sem migration, sem código de produto alterado. Ver D-134 em `docs/DECISIONS.md`.
+
+### Etapa anterior — D-133 (curadoria do catálogo: a tela `/produtos`)
 
 - **A fatia que estava pendente desde D-127 saiu.** `/produtos` é a mesa de trabalho para as duas colunas que só uma pessoa pode preencher: `stock_is_virtual` (saldo sentinela do ERP) e `supplier_brand` (porque `brand` é a CATEGORIA do UpSeller). Desenho submetido a painel independente de 9 agentes antes de qualquer código.
 - 🔴 **O achado que decidiu o desenho, e que eu não tinha visto:** `applyProducts` não só atualiza — ele **INSERE** SKU novo. Todo SKU que a próxima planilha criar nasce `stock_is_virtual = false` e ficaria **indistinguível** de um que você já examinou e aprovou como físico. Sumiria da fila para sempre, mesmo chegando com 999. Por isso a **data da decisão** virou coluna própria: `set_at is null` = nunca classificado, e `false` deixou de significar duas coisas ao mesmo tempo.
@@ -457,6 +476,24 @@ A fonte de verdade continua sendo:
 
 ### Próxima etapa registrada
 
+> **Reescrita em 2026-08-29 (D-134).** A versão anterior estava congelada nos três caminhos da Fase 7B — que D-116 fechou em 2026-08-28. Era a TERCEIRA ocorrência do mesmo defeito de manutenção nesta seção. O histórico dela ficou preservado abaixo, a partir de "Correção de 2026-08-27", como registro do que se pensava.
+
+**Estado após D-134:** código e banco estão sincronizados (`6982c33` no ar, 79/79 migrations), o saldo de estoque foi reparado e verificado, e a Fase 4B está materialmente concluída — só o item `[~]` de FK fornecedor→SKU segue aberto, por decisão registrada em D-129 (`suppliers` tem uma linha).
+
+**As três candidatas, em ordem de urgência medida:**
+
+1. 🔴 **Agregar `stock.balance.diverged`** (item "Ruído antes da inteligência", Fase 6B). Deixou de ser backlog: são **6.410 notificações não lidas**, 3.308 delas criadas pelo reparo de hoje numa hora. Qualquer sinal novo acrescentado antes disso nasce invisível — a Central de Notificações já não é legível. É a única das três que PIORA a cada dia de operação.
+2. 🟡 **O ensaio operacional de `/produtos`** (pendência declarada em D-133): marcar 5 SKUs, abrir `/cobertura`, conferir, e só então o lote grande. O caminho `stock_is_virtual = true` de `get_stock_coverage` nunca rodou com dado real. **Ficou mais barato desde D-134**: `apps/web/.env.local` existe nesta máquina, então o dev server alcança o Supabase e a tela pode enfim ser vista no navegador — o que D-133 registrou como impossível.
+3. **Abrir a Fase 5C** (dashboards operacionais e filtros padronizados). Destravada de verdade agora: a 5C lê saldo, e o saldo passou a ser confiável hoje.
+
+**Recomendação:** 1, depois 2, depois 3. O motivo é a Regra de Progressão do `docs/ROADMAP.md` aplicada a eventos em vez de a dados — construir diagnóstico e dashboards sobre uma Central de Notificações saturada é a mesma classe de erro que construir métrica sobre saldo contaminado.
+
+**Pendências que seguem abertas e não bloqueiam nenhuma das três:** o primeiro envio real de resposta a um comprador (🟡, ato irreversível que deve ser humano e deliberado); a decisão entre reimportação manual periódica do UpSeller e job próprio de import (`erp_stock_snapshots` tem um único dia, 2026-08-21 — quanto mais velho o retrato, mais o alvo rolado de D-132 depende do próprio ledger); a pesquisa oficial de foto/descrição/promoção/catálogo para eventos de anúncio (item P0 nunca executado); e os 6 itens P1 do Checkpoint.
+
+---
+
+**Registro histórico do que esta seção dizia antes de D-134:**
+
 **Correção de 2026-08-27:** o texto anterior desta seção dizia "primeiro, o deploy e a primeira confirmação humana... enquanto isso não acontecer, o envio existe só no repositório". **O deploy aconteceu em 2026-08-26** (item 8 das Pendências técnicas imediatas) — o que continua pendente é só a **primeira confirmação humana**, ou seja, postar uma resposta real a um comprador. Isso é irreversível e por isso deve ser um ato humano deliberado, não algo feito para validar código. Não bloqueia nenhum dos caminhos abaixo.
 
 **Depois, a Fase 7B tem três caminhos, todos defensáveis:**
@@ -534,7 +571,7 @@ Publicado e verificado em 2026-08-24, depois do resumo acima ter sido escrito: `
    **O que ainda falta é o envio real.** Postar uma resposta a um comprador é irreversível, então a primeira confirmação deve ser humana e deliberada — não algo a fazer para validar código. Ao fazê-la, conferir os quatro sinais: `support_reply_queued` na `api`, `support_reply_sent` no worker, a linha de `support_reply_attempts` em `SUCCEEDED` com `remote_message_id`, e a mensagem outbound aparecendo no transcript. Enquanto isso não acontecer, o caminho feliz do worker (`postQuestionAnswer` → resolver tentativa → reler) só foi exercitado contra teste.
 9. **🟢 A ingestão de Mensagens pós-venda (D-097) está EM PRODUÇÃO e funcionando.** Implantada em 2026-08-27: `worker-00026-nrp`, `api-00021-gmw`, job `v3-support-messages-reconcile` (10 min) e migration `20260826180000` aplicada. **Medido, não presumido:** 4 contas, 14 conversas, 150+ mensagens, zero falhas — o que também confirma a permissão "Comunicação pré e pós-venda" concedida (sem ela a varredura inteira daria 403).
    **O que sobra de atenção aqui é a impossibilidade de reparar histórico.** A varredura só enxerga conversas NÃO LIDAS, então uma conversa já lida está fora do alcance dela — e portanto fora do alcance de qualquer correção futura de mapper. Foi exatamente o que aconteceu com o defeito de `last_activity_at` encontrado no mesmo dia: as 9 linhas afetadas precisaram de reparo direto, derivado de `max(support_messages.occurred_at)`. **Um bug de mapeamento em Mensagens NÃO é curável por "rodar a sincronização de novo"**, diferente de Pedidos e Perguntas. Prever isso em qualquer mudança de mapper deste canal.
-10. ~~Mecanismo de aviso de orçamento de IA não existe~~ — **CÓDIGO COMPLETO em 2026-08-27 (D-100)**: RPC `get_ai_monthly_cost_usd` (migration `20260827150000`), `evaluateAiBudget` (`@sb/domain`), job `maintenance.check-ai-budget` (worker), gatilho `/internal/schedule/ai-budget` (api), bloco `v3-check-ai-budget` no `infra/cloud-scheduler.sh` (diário, 9h SP), evento `ai.budget.exceeded` (importante) entregue pela cadeia de notificações existente, um aviso por organização por mês via `dedup_key`. Teto `AI_MONTHLY_BUDGET_USD` (default 18 USD ≈ R$100, conversão documentada em D-100). **OPERACIONAL desde 2026-08-27**: `worker-00027-662`/`api-00022-dbf` no ar, job `v3-check-ai-budget` criado — **a contagem esperada de jobs do Scheduler agora é 12** (D-097 criou o 11º, este é o 12º; auditorias tipo D-070 devem usar 12). Disparo manual validou ponta a ponta: `ai_budget_checked` com custo real do mês US$ 0,005192 contra teto US$ 18, `exceeded: false`. `types.ts` regenerado (o cast temporário durou um commit). Ver D-100 em `docs/DECISIONS.md`.
+10. ~~Mecanismo de aviso de orçamento de IA não existe~~ — **CÓDIGO COMPLETO em 2026-08-27 (D-100)**: RPC `get_ai_monthly_cost_usd` (migration `20260827150000`), `evaluateAiBudget` (`@sb/domain`), job `maintenance.check-ai-budget` (worker), gatilho `/internal/schedule/ai-budget` (api), bloco `v3-check-ai-budget` no `infra/cloud-scheduler.sh` (diário, 9h SP), evento `ai.budget.exceeded` (importante) entregue pela cadeia de notificações existente, um aviso por organização por mês via `dedup_key`. Teto `AI_MONTHLY_BUDGET_USD` (default 18 USD ≈ R$100, conversão documentada em D-100). **OPERACIONAL desde 2026-08-27**: `worker-00027-662`/`api-00022-dbf` no ar, job `v3-check-ai-budget` criado — **a contagem esperada de jobs do Scheduler é 13** (corrigido em 2026-08-29/D-134: este texto dizia 12 e esquecia `v3-support-claims-reconcile`, de D-108; medido, `infra/cloud-scheduler.sh` tem 13 — conferir sempre contra o script, nunca contra este texto). Disparo manual validou ponta a ponta: `ai_budget_checked` com custo real do mês US$ 0,005192 contra teto US$ 18, `exceeded: false`. `types.ts` regenerado (o cast temporário durou um commit). Ver D-100 em `docs/DECISIONS.md`.
 
 ### Lacunas funcionais confirmadas na revisão
 
