@@ -3823,21 +3823,33 @@ export type Database = {
           units_sold: number
         }[]
       }
+      // ADIÇÃO MANUAL (D-140), terceira da mesma dívida (D-138, D-139): sem
+      // `SUPABASE_ACCESS_TOKEN` nem Docker nesta sessão, nenhum gerador rodou.
+      // Escrito a partir da assinatura real da migration `20260829233213`.
       get_sku_abc_curve: {
         Args: {
+          p_criterion?: string | null
           p_date_from: string
           p_date_to: string
+          p_limit?: number
+          p_ml_account_id?: string | null
+          p_offset?: number
+          p_only_without_full?: boolean
           p_organization_id: string
         }
         Returns: {
           abc_class: string
+          class_a_count: number
+          class_b_count: number
+          class_c_count: number
           cumulative_share: number
           full_quantity: number
-          gross_revenue: number
-          revenue_share: number
+          metric_share: number
+          metric_value: number
           sku: string
           sku_id: string
-          title: string
+          title: string | null
+          total_count: number
         }[]
       }
       get_sku_average_prices: {

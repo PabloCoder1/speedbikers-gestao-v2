@@ -2,6 +2,14 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { Shell } from "../../components/shell";
+import {
+  ABC_CRITERIA,
+  ABC_PERIODS,
+  PAGE_SIZE,
+  buildAbcHref,
+  resolveAbcFilters,
+  summarizeAbcWindow,
+} from "../../lib/abc-filters";
 import { formatCount, formatCurrency } from "../../lib/format";
 import { createClient } from "../../lib/supabase/server";
 
@@ -12,36 +20,33 @@ export const metadata = { title: "Curva ABC — Speed Bikers Gestão" };
 export const dynamic = "force-dynamic";
 
 /**
- * "Curva ABC e filtros de Full" (Fase 5B, docs/ROADMAP.md) — as duas metades
- * do item de checklist viram UMA tela: classe A/B/C por receita, com um
- * filtro para achar SKUs de alta venda que não têm estoque em Full nenhum
- * (dependem 100% do local). `get_sku_abc_curve` faz toda a soma e o
- * ranqueamento em SQL (docs/ARCHITECTURE.md secao 21).
+ * Curva ABC com escopo, critério e período (Fase 5C, D-140).
  *
- * Janela FIXA de 90 dias — mais longa que os 30 dias de /cobertura de
- * propósito: classificação ABC precisa de um sinal mais estável, 30 dias tem
- * ruído demais para SKUs de venda mais espaçada. Sem seletor de período
- * nesta primeira fatia, mesmo raciocínio de "escopo deliberadamente menor"
- * já usado em outras telas desta sessão.
- */
-
-const LOOKBACK_DAYS = 90;
-
-/**
- * `title` é anulável de verdade (`skus.title`), mas o gerador de tipos do
- * Supabase não infere nulidade em coluna de retorno de RPC a partir da
- * lógica SQL — mesma lacuna já documentada em `get_stock_coverage`
- * (apps/web/app/cobertura/page.tsx). Tipo local reflete a nulidade real.
+ * **O escopo de conta RECALCULA a curva, não a filtra.** Medido em
+ * 2026-08-29: 743 SKUs vendem em mais de uma conta e 476 (64,1%) mudam de
+ * classe conforme a conta. O parâmetro entra nas duas pontas do RPC —
+ * conjunto e denominador —, nunca em JavaScript.
+ *
+ * 🔴 **A versão anterior mostrava 1.000 de 1.492 SKUs e somava as classes em
+ * JavaScript sobre esse resultado truncado**: exibia classe C = 298 quando o
+ * real era 790, e o filtro "sem Full" via 699 de 1.180. Sétima ocorrência da
+ * classe de D-131, e a primeira em que o estrago foi uma ESTATÍSTICA e não
+ * uma lista. As contagens agora são janela sobre o conjunto filtrado inteiro,
+ * calculadas no Postgres.
  */
 interface AbcRow {
   sku_id: string;
   sku: string;
   title: string | null;
-  gross_revenue: number;
-  revenue_share: number;
+  metric_value: number;
+  metric_share: number;
   cumulative_share: number;
   abc_class: "A" | "B" | "C";
   full_quantity: number;
+  total_count: number;
+  class_a_count: number;
+  class_b_count: number;
+  class_c_count: number;
 }
 
 const CLASS_TONE: Record<string, { background: string; color: string }> = {
@@ -69,31 +74,29 @@ const td: React.CSSProperties = {
 
 const tdNumber: React.CSSProperties = { ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" };
 
+function pillStyle(active: boolean): React.CSSProperties {
+  return {
+    padding: "0.25rem 0.625rem",
+    borderRadius: "var(--sb-radius)",
+    border: `1px solid ${active ? "var(--sb-primary)" : "var(--sb-border)"}`,
+    background: active ? "var(--sb-primary)" : "transparent",
+    color: active ? "#fff" : "var(--sb-text-soft)",
+    textDecoration: "none",
+    fontSize: "0.8125rem",
+    whiteSpace: "nowrap",
+  };
+}
+
 export default async function CurvaAbcPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }): Promise<ReactNode> {
   const query = await searchParams;
-  const semFull = query.semFull === "1";
-
   const supabase = await createClient();
 
   const membership = await supabase.from("organization_members").select("organization_id").maybeSingle();
   const organizationId = membership.data?.organization_id ?? null;
-
-  if (membership.error !== null) {
-    // Distinto de "sem organização": aquela mensagem sugere problema de
-    // cadastro; isto é falha de leitura transitória (D-067, Nível 3).
-    return (
-      <Shell>
-        <h1 style={{ margin: "0 0 var(--sb-space-3)", fontSize: "1.375rem" }}>Curva ABC</h1>
-        <p role="alert" style={{ color: "var(--sb-danger)" }}>
-          Não foi possível confirmar sua organização: {membership.error.message}
-        </p>
-      </Shell>
-    );
-  }
 
   if (organizationId === null) {
     return (
@@ -104,50 +107,97 @@ export default async function CurvaAbcPage({
     );
   }
 
+  const filters = resolveAbcFilters(query);
+
+  const accountsResult = await supabase.from("ml_accounts").select("id, slug, label").order("label");
+  const accounts = accountsResult.data ?? [];
+  // Slug desconhecido cai em "consolidado" em silêncio — mesmo tratamento de
+  // `/vendas` e `/anuncios`.
+  const selectedAccount = accounts.find((a) => a.slug === filters.accountSlug) ?? null;
+
   const now = new Date();
   const dateTo = now.toISOString().slice(0, 10);
-  const dateFrom = new Date(now.getTime() - (LOOKBACK_DAYS - 1) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const dateFrom = new Date(now.getTime() - (filters.days - 1) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
   const { data, error } = await supabase.rpc("get_sku_abc_curve", {
     p_organization_id: organizationId,
     p_date_from: dateFrom,
     p_date_to: dateTo,
+    p_ml_account_id: selectedAccount?.id ?? null,
+    p_criterion: filters.criterion.key,
+    p_only_without_full: filters.onlyWithoutFull,
+    p_limit: PAGE_SIZE,
+    p_offset: (filters.page - 1) * PAGE_SIZE,
   });
 
-  const allRows = (data ?? []) as AbcRow[];
-  const rows = semFull ? allRows.filter((row) => row.full_quantity === 0) : allRows;
-
-  const classCounts = { A: 0, B: 0, C: 0 };
-  for (const row of allRows) {
-    classCounts[row.abc_class] += 1;
-  }
+  const rows = (data ?? []) as AbcRow[];
+  const first = rows[0];
+  const totalCount = first?.total_count ?? 0;
+  const windowInfo = summarizeAbcWindow(filters.page, totalCount, rows.length);
+  const formatValue = filters.criterion.format === "currency" ? formatCurrency : formatCount;
 
   return (
     <Shell>
       <h1 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.375rem" }}>Curva ABC</h1>
 
       <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
-        Últimos {LOOKBACK_DAYS} dias ({dateFrom} a {dateTo}). Classe A concentra até 80% da receita acumulada, B até
-        95%, C o resto — SKU sem venda no período não entra na curva. Classe A: {formatCount(classCounts.A)} · B:{" "}
-        {formatCount(classCounts.B)} · C: {formatCount(classCounts.C)}.
+        Últimos {filters.days} dias ({dateFrom} a {dateTo}), por {filters.criterion.label.toLowerCase()}
+        {selectedAccount === null ? ", consolidado" : `, recalculada dentro de ${selectedAccount.label}`}. Classe A
+        concentra até 80% do acumulado, B até 95%, C o resto — SKU sem venda no período não entra na curva.
+        {first !== undefined && (
+          <>
+            {" "}
+            Classe A: {formatCount(first.class_a_count)} · B: {formatCount(first.class_b_count)} · C:{" "}
+            {formatCount(first.class_c_count)}.
+          </>
+        )}
       </p>
 
-      <div style={{ margin: "0 0 var(--sb-space-3)" }}>
-        <Link
-          href={semFull ? "/curva-abc" : "/curva-abc?semFull=1"}
-          style={{
-            display: "inline-block",
-            border: "1px solid var(--sb-border)",
-            borderRadius: "var(--sb-radius)",
-            padding: "0.25rem 0.75rem",
-            fontSize: "0.8125rem",
-            textDecoration: "none",
-            color: semFull ? "var(--sb-primary-ink, #fff)" : "var(--sb-text)",
-            background: semFull ? "var(--sb-primary)" : "transparent",
-          }}
-        >
-          {semFull ? "✓ Somente sem estoque em Full" : "Somente sem estoque em Full"}
-        </Link>
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--sb-space-2)", marginBottom: "var(--sb-space-3)" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", alignItems: "center" }}>
+          <span style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)", minWidth: "5rem" }}>Escopo</span>
+          <Link href={buildAbcHref(filters, { accountSlug: null })} style={pillStyle(filters.accountSlug === null)}>
+            Consolidado
+          </Link>
+          {accounts.map((account) => (
+            <Link
+              key={account.id}
+              href={buildAbcHref(filters, { accountSlug: account.slug })}
+              style={pillStyle(filters.accountSlug === account.slug)}
+            >
+              {account.label}
+            </Link>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", alignItems: "center" }}>
+          <span style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)", minWidth: "5rem" }}>Critério</span>
+          {ABC_CRITERIA.map((criterion) => (
+            <Link
+              key={criterion.key}
+              href={buildAbcHref(filters, { criterion })}
+              style={pillStyle(filters.criterion.key === criterion.key)}
+            >
+              {criterion.label}
+            </Link>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", alignItems: "center" }}>
+          <span style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)", minWidth: "5rem" }}>Período</span>
+          {ABC_PERIODS.map((days) => (
+            <Link key={days} href={buildAbcHref(filters, { days })} style={pillStyle(filters.days === days)}>
+              {days} dias
+            </Link>
+          ))}
+
+          <Link
+            href={buildAbcHref(filters, { onlyWithoutFull: !filters.onlyWithoutFull })}
+            style={{ ...pillStyle(filters.onlyWithoutFull), marginLeft: "var(--sb-space-3)" }}
+          >
+            Somente sem estoque em Full
+          </Link>
+        </div>
       </div>
 
       {error !== null && (
@@ -156,9 +206,9 @@ export default async function CurvaAbcPage({
         </p>
       )}
 
-      {error === null && rows.length === 0 && (
-        <p style={{ color: "var(--sb-text-soft)" }}>
-          {semFull ? "Nenhum SKU sem estoque em Full nesta janela." : "Nenhum SKU com venda no período."}
+      {error === null && (
+        <p style={{ margin: "0 0 var(--sb-space-2)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+          {windowInfo.label}
         </p>
       )}
 
@@ -169,8 +219,8 @@ export default async function CurvaAbcPage({
               <tr>
                 <th style={th}>Classe</th>
                 <th style={th}>SKU</th>
-                <th style={th}>Receita</th>
-                <th style={th}>% receita</th>
+                <th style={th}>{filters.criterion.label}</th>
+                <th style={th}>% do total</th>
                 <th style={th}>% acumulado</th>
                 <th style={th}>Estoque Full</th>
               </tr>
@@ -201,14 +251,40 @@ export default async function CurvaAbcPage({
                       </div>
                     )}
                   </td>
-                  <td style={tdNumber}>{formatCurrency(row.gross_revenue)}</td>
-                  <td style={tdNumber}>{row.revenue_share}%</td>
+                  <td style={tdNumber}>{formatValue(row.metric_value)}</td>
+                  <td style={tdNumber}>{row.metric_share}%</td>
                   <td style={tdNumber}>{row.cumulative_share}%</td>
                   <td style={tdNumber}>{formatCount(row.full_quantity)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {error === null && windowInfo.totalPages > 1 && (
+        <div
+          style={{
+            display: "flex",
+            gap: "var(--sb-space-2)",
+            alignItems: "center",
+            marginTop: "var(--sb-space-3)",
+            fontSize: "0.8125rem",
+          }}
+        >
+          {filters.page > 1 && (
+            <Link href={buildAbcHref(filters, { page: filters.page - 1 })} style={pillStyle(false)}>
+              ← Anterior
+            </Link>
+          )}
+          <span style={{ color: "var(--sb-text-soft)" }}>
+            Página {filters.page} de {windowInfo.totalPages}
+          </span>
+          {filters.page < windowInfo.totalPages && (
+            <Link href={buildAbcHref(filters, { page: filters.page + 1 })} style={pillStyle(false)}>
+              Próxima →
+            </Link>
+          )}
         </div>
       )}
     </Shell>

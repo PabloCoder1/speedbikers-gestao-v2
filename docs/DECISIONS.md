@@ -2594,6 +2594,40 @@ Tambem errei o metodo de medicao no caminho: o primeiro `EXPLAIN` inline deu 29 
 
 **Impacto:** migration `20260829230010`, `apps/web/app/estoque/page.tsx` (reescrita), `apps/web/lib/stock-filters.{ts,test.ts}` (novo, 13 testes), `packages/db/src/types.ts`, `docs/ROADMAP.md`.
 
+## D-140 - Curva ABC com escopo e criterio, e a SETIMA ocorrencia do truncamento (a primeira que corrompe uma estatistica)
+
+**Contexto:** ultimo item grande da Fase 5C. A curva era global, por faturamento, com janela fixa de 90 dias e nenhum parametro.
+
+**Decisao 1 - o escopo de conta RECALCULA a curva, nao a filtra.** `p_ml_account_id` entra nas DUAS pontas do RPC: no conjunto (quais SKUs) e no denominador (`total`). Filtrar so o conjunto manteria o denominador global e produziria percentuais que nao somam 100 dentro do escopo.
+
+**Verifiquei a medicao que justifica a fatia antes de escrever**, em vez de confiar no numero registrado: o `docs/PRODUCT_REQUIREMENTS.md` media 726 SKUs multi-conta e 450 (62%) mudando de classe em 28/08. Hoje: **743 e 476 (64,1%)**. O fenomeno e estavel e a fatia se justifica.
+
+**Prova de que recalcula em vez de filtrar:** curva global = 1.492 SKUs, 270 na classe A; escopada numa conta = 541 SKUs, 126 na classe A, e **189 deles MUDAM de classe**. Se fosse filtro, a classe seria identica. Trocar o criterio de faturamento para unidades muda outros **312**.
+
+**Decisao 2 - criterio trocavel** entre faturamento, unidades e pedidos, cada um carregando o ID da definicao canonica (`receita_bruta`, `unidades_vendidas`, `pedidos`), como exige `docs/ARCHITECTURE.md` secao 15. Periodos de 30/60/90, com 90 continuando o default -- classificacao ABC precisa de sinal estavel.
+
+**A SETIMA ocorrencia da classe de D-131, e a pior ate agora em natureza:**
+
+A tela chamava a RPC **sem `.range()`** contra o teto `max_rows = 1000`, e a curva devolve **1.492 linhas**. Ate aqui e o padrao ja conhecido. O que muda e o que a tela fazia com o array truncado: **somava as classes A/B/C em JavaScript** e **aplicava o filtro "sem Full" em JavaScript**. Medido:
+
+| | Real | O que a tela exibia |
+|---|---|---|
+| Classe C | **790** | **298** (62% invisiveis) |
+| "Sem Full" | **1.180** | **699** (41% invisiveis) |
+
+Nas seis ocorrencias anteriores o estrago era uma LISTA incompleta. Aqui era uma **estatistica de resumo errada** -- um numero que o operador le como fato consolidado, nao como "os primeiros N". E o filtro "sem Full", cujo proposito inteiro e achar SKUs que dependem so de estoque local, escondia 481 deles.
+
+**Correcao:** filtro e paginacao no Postgres, e as contagens de classe viraram janela sobre o conjunto filtrado INTEIRO (`count(*) filter (...) over ()`), nunca sobre a pagina. Conferido contra medicao direta: 1.492 / A=270 / B=432 / C=790 sem filtro; 1.180 / A=99 / B=317 / C=764 com "sem Full". **Os 99 de classe A sem Full nenhum sao exatamente o que aquele filtro existe para revelar** -- e estavam parcialmente truncados.
+
+**Achado menor, mesma familia:** a URL antiga ligava o filtro pela mera PRESENCA de `semFull`, entao `?semFull=0` LIGAVA o filtro. Agora so `=1` liga, com teste.
+
+**`EXPLAIN (ANALYZE, BUFFERS)`:** 102 ms e 7.871 buffers na curva global inteira. Nenhum indice novo -- o plano nao pediu.
+
+- **Divida declarada, terceira consecutiva (D-138, D-139):** `packages/db/src/types.ts` editado a mao, sem `SUPABASE_ACCESS_TOKEN` nem Docker nesta sessao.
+- **Tela nao vista renderizada** -- exige sessao, e entrar credencial e acao vedada ao agente. `check` **29/29** (+13 testes), `next build` compila `/curva-abc`.
+
+**Impacto:** migration `20260829233213`, `apps/web/app/curva-abc/page.tsx` (reescrita), `apps/web/lib/abc-filters.{ts,test.ts}` (novo, 13 testes), `packages/db/src/types.ts`, `docs/ROADMAP.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:
