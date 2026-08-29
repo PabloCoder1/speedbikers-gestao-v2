@@ -132,7 +132,7 @@ function ctx(lines: string[], payload: unknown): { logger: ReturnType<typeof cre
 }
 
 describe("reconciliação de estoque contra o UpSeller", () => {
-  it("gera AJUSTE_RECONCILIACAO e stock.balance.diverged para cada divergência", async () => {
+  it("gera AJUSTE_RECONCILIACAO e stock.balance.adjusted para cada divergência", async () => {
     const { deps, captured, lines } = fakeDeps({});
 
     const outcome = await createReconcileBalancesHandler(deps)(ENVELOPE, ctx(lines, { organizationId: ORG_ID }));
@@ -161,8 +161,10 @@ describe("reconciliação de estoque contra o UpSeller", () => {
 
     expect(captured.events[0]).toMatchObject({
       ml_account_id: null,
-      event_type: "stock.balance.diverged",
-      severity: "critico",
+      // `adjusted`/`informativo` desde D-135: o ajuste sai na mesma
+      // execução, então o saldo já está correto quando este evento existe.
+      event_type: "stock.balance.adjusted",
+      severity: "informativo",
       source: "system",
     });
   });

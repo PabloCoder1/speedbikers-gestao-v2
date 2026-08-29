@@ -66,23 +66,46 @@ describe("computeReconciliationAdjustments", () => {
     expect(result[0]?.movement).toMatchObject({ locationKind: "RESERVADO", qtyDelta: 5 });
   });
 
-  it("evento stock.balance.diverged: crítico, source system, before/after com a quantidade certa", () => {
+  it("evento stock.balance.adjusted: INFORMATIVO, source system, before/after com a quantidade certa", () => {
     const snapshot: ReconciliationBalance[] = [{ skuId: "sku-a", locationKind: "LOCAL", quantity: 50 }];
     const ledger: ReconciliationBalance[] = [{ skuId: "sku-a", locationKind: "LOCAL", quantity: 42 }];
 
     const result = computeReconciliationAdjustments(snapshot, ledger, BUSINESS_DATE, OCCURRED_AT);
 
     expect(result[0]?.event).toEqual({
-      eventType: "stock.balance.diverged",
+      eventType: "stock.balance.adjusted",
       entityType: "sku",
       entityId: "sku-a",
       before: { locationKind: "LOCAL", quantity: 42 },
       after: { locationKind: "LOCAL", quantity: 50 },
-      severity: "critico",
+      severity: "informativo",
       source: "system",
       dedupKey: `reconciliacao:${BUSINESS_DATE}:sku-a:LOCAL`,
       occurredAt: OCCURRED_AT,
     });
+  });
+
+  /**
+   * A trava de D-135. Os dois caminhos de estoque nasceram com o MESMO
+   * `event_type` e a mesma severidade, e foi isso que fez 657–896 alertas
+   * críticos por dia sobre rotina já corrigida. Reunificá-los por descuido
+   * — um `EVENT_SEVERITY` copiado, um find-and-replace — devolveria o
+   * problema em silêncio, porque nada quebra: o evento continua gravando.
+   * Este teste falha no instante em que a reconciliação voltar a emitir
+   * `diverged` ou a subir de `informativo`.
+   */
+  it("a reconciliação NUNCA emite `stock.balance.diverged` — esse tipo é do vigia de integridade (D-135)", () => {
+    const snapshot: ReconciliationBalance[] = [
+      { skuId: "sku-a", locationKind: "LOCAL", quantity: 50 },
+      { skuId: "sku-b", locationKind: "RESERVADO", quantity: 7 },
+    ];
+    const ledger: ReconciliationBalance[] = [{ skuId: "sku-a", locationKind: "LOCAL", quantity: 42 }];
+
+    const result = computeReconciliationAdjustments(snapshot, ledger, BUSINESS_DATE, OCCURRED_AT);
+
+    expect(result).toHaveLength(2);
+    expect(result.map((r) => r.event.eventType)).toEqual(["stock.balance.adjusted", "stock.balance.adjusted"]);
+    expect(result.map((r) => r.event.severity)).toEqual(["informativo", "informativo"]);
   });
 
   it("movimento e evento compartilham a MESMA chave — um ajuste, uma explicação, sem risco de divergir entre si", () => {

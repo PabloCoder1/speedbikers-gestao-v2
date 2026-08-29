@@ -79,6 +79,13 @@ function describeCandidateCause(eventType: string): string {
       return "Houve devolução perto desta data.";
     case "stock.balance.diverged":
       return "Divergência de saldo detectada perto desta data — o dado de estoque pode estar incorreto.";
+    // Separado de `diverged` em D-135. A redação é deliberadamente mais
+    // fraca: aqui o saldo JÁ foi corrigido contra o ERP na mesma execução,
+    // então a evidência é "o número anterior estava errado", não "o número
+    // está errado". Afirmar o segundo seria a IA herdando um alarme que o
+    // próprio sistema já resolveu.
+    case "stock.balance.adjusted":
+      return "Saldo corrigido contra o ERP perto desta data — o estoque anterior a ela pode estar incorreto.";
     default:
       return `Evento "${eventType}" registrado perto desta data.`;
   }

@@ -33,6 +33,25 @@ export const EVENT_SEVERITY: Readonly<Record<string, EventSeverity>> = {
   "listing.fulfillment.exited": "importante",
   "stock.depleted": "critico",
   "stock.replenished": "informativo",
+  // As duas metades do que ERA um tipo só (D-135). O mesmo `event_type`
+  // carregava significados opostos e a severidade mentia para um deles:
+  //
+  // `stock.balance.adjusted` — reconciliação contra o UpSeller (D-029). A
+  // divergência é ESPERADA aqui: o ERP é operado por gente, diverge por
+  // processo, e a própria reconciliação JÁ CORRIGE o saldo na mesma
+  // execução. Um fato consumado e rotineiro não é emergência —
+  // `informativo`. Medido antes de trocar: 657 a 896 eventos/dia neste
+  // caminho, todos `critico`, num universo em que `stock.balance.diverged`
+  // era 59,3% de TODOS os domain_events de 7 dias.
+  //
+  // `stock.balance.diverged` — vigia de integridade ledger×projeção
+  // (D-056). Aqui as duas fontes são internas e não deveriam divergir
+  // NUNCA, por construção; uma divergência é bug, e o job só detecta,
+  // nunca corrige. Continua `critico`, e agora o nível volta a significar
+  // alguma coisa: com o truncamento de D-131 corrigido, este caminho
+  // emite ZERO (medido em 2026-08-29: 3.472 chaves comparadas, 0
+  // divergências).
+  "stock.balance.adjusted": "informativo",
   "stock.balance.diverged": "critico",
   "order.cancelled": "importante",
   "order.returned": "importante",

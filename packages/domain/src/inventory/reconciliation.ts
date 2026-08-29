@@ -75,12 +75,24 @@ export function computeReconciliationAdjustments(
         locationKind: snapshot.locationKind,
       },
       event: {
-        eventType: "stock.balance.diverged",
+        // `adjusted`, não `diverged`, desde D-135 — e o nome descreve o que
+        // de fato aconteceu: o ajuste sai NA MESMA estrutura (`movement`
+        // acima), então quando este evento existe o saldo JÁ foi corrigido.
+        // Chamar isso de "divergência crítica" alarmava sobre um problema
+        // que a própria linha resolvia. `stock.balance.diverged` ficou
+        // reservado ao vigia de integridade (D-056), onde divergir é bug.
+        //
+        // `dedupKey` inalterado de propósito: continua `reconciliacao:...`,
+        // então as 6.201 linhas históricas seguem legíveis pelo prefixo e
+        // nada precisa de backfill — `domain_events` é append-only (L2), e
+        // reescrever história para uniformizar nomenclatura seria pior que
+        // conviver com os dois nomes.
+        eventType: "stock.balance.adjusted",
         entityType: "sku",
         entityId: snapshot.skuId,
         before: { locationKind: snapshot.locationKind, quantity: ledgerQuantity },
         after: { locationKind: snapshot.locationKind, quantity: snapshot.quantity },
-        severity: EVENT_SEVERITY["stock.balance.diverged"] ?? "critico",
+        severity: EVENT_SEVERITY["stock.balance.adjusted"] ?? "informativo",
         source: "system",
         dedupKey: key,
         occurredAt,

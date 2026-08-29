@@ -107,6 +107,12 @@ const EVENT_TYPE: Record<string, string> = {
   "listing.fulfillment.exited": "Saiu do Full",
   "stock.depleted": "Estoque zerado",
   "stock.replenished": "Estoque reabastecido",
+  // Dois rótulos porque são dois fatos (D-135): o primeiro é rotina já
+  // resolvida — o saldo foi trazido para o número do ERP; o segundo é o
+  // alarme de verdade, ledger contra projeção, que não deveria acontecer
+  // nunca. O texto precisa deixar essa diferença óbvia na Central sem o
+  // usuário abrir o evento.
+  "stock.balance.adjusted": "Saldo ajustado pelo ERP",
   "stock.balance.diverged": "Divergência de saldo de estoque",
   "order.cancelled": "Pedido cancelado",
   "order.returned": "Pedido devolvido",

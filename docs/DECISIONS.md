@@ -2434,6 +2434,43 @@ Três tentativas (09:00:02, 09:01:02, 09:03:03) — a fila `maintenance` tem `ma
 
 **Impacto:** nenhuma migration, nenhuma linha de código de produto. Revisões `worker-00042-tlc`/`api-00028-d4x` (tag `6982c33`); 3.300 movimentos de ajuste e 300 linhas RESERVADO criados no Supabase Dev; `docs/HANDOFF.md` atualizado, inclusive a seção "Próxima etapa registrada", que estava congelada na Fase 7B enquanto a 7B já tinha sido fechada por D-116.
 
+## D-135 — `stock.balance.diverged` significava duas coisas opostas, e a severidade mentia para uma delas
+
+**Contexto:** a tarefa registrada era "agregar ou silenciar `stock.balance.diverged`" (Fase 6B), escrita em 2026-08-28 sobre uma dor medida de ~2.040 eventos críticos/dia e 55,1% de todas as notificações. **A medição feita antes de construir mostrou que o item descrevia um problema que tinha acabado de deixar de existir.**
+
+**O que a medição achou.** Os 13.891 eventos de 7 dias vinham de duas origens distinguíveis pelo prefixo do `dedup_key`:
+
+| Origem | Volume/dia | O que era |
+|---|---|---|
+| `integridade-ledger` | ~1.366 | **100% falsos** — o próprio vigia truncava em 1.000 linhas e "achava" divergência onde não havia (D-131) |
+| `reconciliacao` | ~657 | alvo congelado desfazia a venda de cada dia (D-132) |
+
+As duas causas-raiz já estavam corrigidas no repositório e entraram em produção com o deploy de D-134. **Prova direta, medida em 2026-08-29 disparando o vigia com o worker novo:** `rows_compared: 3472, divergences: 0`, contra `rows_compared: 1683, divergences: 1366` na última rodada da versão truncada, no mesmo dia. **Zero eventos gravados.**
+
+**Decisão 1 — NÃO construir a camada de agregação.** Ela resolveria uma dor que a fonte já tinha eliminado, reprovando no teste 1 do `docs/ARCHITECTURE.md` §1 ("só entra infraestrutura que resolve um problema medido, não um problema imaginado"). O item da Fase 6B dizia "agregar **ou silenciar**"; silenciar aconteceu, de graça, ao consertar o bug.
+
+**Decisão 2 — separar o que sobrou, porque o defeito real era de SIGNIFICADO, não de volume.** O mesmo `event_type` carregava dois fatos opostos, e o próprio código do domínio já admitia isso em comentário: na reconciliação contra o UpSeller *"a divergência é ESPERADA (o ERP externo diverge por processo humano)"*; no vigia *"as duas fontes são internas e não deveriam DIVERGIR NUNCA, por construção. Uma divergência aqui é bug"*. **As duas eram `critico`.** É o padrão de D-133 outra vez: um valor significando duas coisas ao mesmo tempo.
+
+- `stock.balance.adjusted` (**informativo**) — reconciliação contra o UpSeller. **O nome descreve o que aconteceu**: o ajuste sai na MESMA estrutura de retorno que o evento, então quando ele existe o saldo **já foi corrigido**. Alarmar sobre um problema que a própria linha resolveu é o oposto de informar.
+- `stock.balance.diverged` (**critico**) — vigia de integridade, e só ele. Aqui o job **só detecta, nunca corrige**, e o nível volta a significar alguma coisa: hoje este caminho emite zero.
+
+**Decisão 3 — `dedup_key` inalterado e ZERO backfill.** As 6.201 linhas históricas de reconciliação continuam com o nome antigo. `domain_events` é append-only (L2, `docs/ARCHITECTURE.md` §9); reescrever história para uniformizar nomenclatura seria pior que conviver com dois nomes, e o prefixo do `dedup_key` já separa as origens em qualquer consulta. O catálogo em `docs/API.md` diz isso explicitamente para quem for ler dado antigo.
+
+**Decisão 4 — nenhuma migration.** Medido antes de assumir: `domain_events_event_type_check` é só `char_length` entre 1 e 100, não um enum. O catálogo é imposto em `@sb/domain/events`, como `docs/API.md` §4 já declarava ("a severidade final é calculada por regra versionada, não fixada na interface"). Tipo novo é mudança de código, não de schema.
+
+**A trava, e ela foi verificada FALHANDO.** Os dois caminhos nasceram com o mesmo tipo e a mesma severidade; reunificá-los por descuido — um `EVENT_SEVERITY` copiado, um find-and-replace — devolveria o problema **em silêncio**, porque nada quebra: o evento continua gravando. O teste novo afirma que a reconciliação nunca emite `diverged` e nunca sobe de `informativo`. Revertendo `reconciliation.ts` à mão, **2 testes falham**; restaurado, 10/10. Um teste que não sabe falhar não vale nada — foi exatamente o achado de D-118.
+
+**Limpeza do backlog, e por que ela NÃO foi "marcar todas como lidas".** Havia 6.851 não lidas. A composição desmentia a premissa:
+
+- **4.666 eram ruído provado** e foram marcadas como lidas: 1.366 de `integridade-ledger` (falsos, provados duas vezes) e 3.300 de `reconciliacao` (o próprio reparo de D-134);
+- **2.185 ficaram de propósito**, entre elas 34 `stock.depleted` críticos, 109 cancelamentos, 77 devoluções e 28 mediações — **sinal operacional real dos últimos dois dias**. "Marcar todas como lidas", que é o que a interface oferece (D-074), teria enterrado isso junto.
+
+Operação direta em `notification_recipients.read_at` via `service_role`, não migration: é dado, não estrutura (mesmo precedente do reparo direto de 9 linhas em D-097).
+
+🔴 **O que a limpeza revelou, e vira a próxima pergunta:** com `stock.balance.diverged` fora, **`listing.available_quantity.changed` passa a ser a maior fonte de entulho da Central — 1.790 não lidas, 6.540 eventos em 7 dias (27,9% de todos)**. Ele é `informativo`, mas **o fan-out é incondicional** e a preferência do usuário não o filtra (D-076 deixou a preferência só no toast, de propósito). Nada de D-134/D-135 tocou nisso. **É aqui que a agregação da Fase 6B cabe de verdade, se couber** — e o alvo mudou de lugar em relação ao que o roadmap descrevia. Não decidido nesta sessão: é sinal legítimo, não falso, e silenciá-lo é escolha de produto do usuário.
+
+**Impacto:** sem migration. `packages/domain/src/events/catalog.ts`, `packages/domain/src/inventory/reconciliation.ts`, `packages/domain/src/diagnostics/sales-anomaly.ts`, `packages/domain/src/inventory/reconciliation.test.ts` (+1 trava), `apps/worker/src/handlers/reconcile-balances.test.ts`, `apps/web/lib/labels.ts`, `docs/API.md` (catálogo de eventos e a linha do job — que ainda citava `compute_erp_snapshot_balances`, nome morto desde D-132 e causa da falha de D-134). `check` **29/29**. **Exige deploy do worker** para valer na próxima rodada.
+
 ## Como adicionar nova decisão
 
 Registrar:
