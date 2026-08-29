@@ -45,7 +45,7 @@ A fonte de verdade continua sendo:
 - **A trava foi verificada FALHANDO** (2 testes) antes de ser aceita — lição de D-118.
 - **Backlog limpo com bisturi, não com marreta**: 4.666 marcadas como lidas (1.366 falsas + 3.300 do reparo de D-134); **2.185 preservadas de propósito**, incluindo 34 `stock.depleted`, 109 cancelamentos, 77 devoluções e 28 mediações. "Marcar todas como lidas" — o que a interface oferece — teria enterrado esse sinal real.
 - 🔴 **A limpeza revelou o próximo alvo, e ele é outro**: `listing.available_quantity.changed` com **1.790 não lidas e 6.540 eventos/7 dias (27,9%)**. É `informativo`, mas o fan-out é incondicional e a preferência não o filtra (D-076). **Nada de D-134/D-135 tocou nisso** — é aqui que a agregação da Fase 6B cabe de verdade. Não decidido: é sinal legítimo, e silenciá-lo é escolha de produto.
-- ⚠️ **EXIGE DEPLOY DO WORKER** para valer na rodada de amanhã. `check` 29/29.
+- ✅ **Deployado e verificado**: `worker-00043-bkp` (imagem `06d7489`), `worker_started` e zero ERROR. A rodada de 2026-08-30 às 09:00Z já emite `stock.balance.adjusted`. `check` 29/29.
 
 ### Etapa anterior — D-134 (o saldo foi REPARADO em produção, e o descompasso que quase impediu isso)
 
