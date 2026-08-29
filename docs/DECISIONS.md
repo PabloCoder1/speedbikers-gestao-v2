@@ -2529,7 +2529,44 @@ O offset é bem definido porque `previousBusinessDateRange` devolve janela do ME
 
 **Impacto:** `apps/web/lib/series-alignment.{ts,test.ts}` (novo), `apps/web/app/vendas/sales-chart.tsx` (reescrito), `apps/web/app/vendas/page.tsx`, `docs/ROADMAP.md`. Deploy automático pela Vercel.
 
-## Como adicionar nova decisão
+## D-138 - Dashboard de Anuncios, e a SEXTA ocorrencia do truncamento de 1.000 linhas
+
+**Contexto:** item da Fase 5C (*"Anuncios como dashboard: colunas e filtros completos, incluindo anuncio SEM vinculo e filtro por conta"*). A primeira leitura do codigo encontrou outra coisa antes.
+
+- **A tela mostrava 1.000 de 5.085 anuncios, em silencio.** `page.tsx` lia `from("listings").select(...).order("title")` **sem `.range()`**, contra o teto `max_rows = 1000` de `supabase/config.toml`. O PostgREST corta a resposta e devolve `error` NULO. Como ordenava por titulo, o que sobrevivia era "os 1.000 primeiros no alfabeto" - criterio de nada.
+
+**E a SEXTA ocorrencia da classe de D-131, e a primeira encontrada depois dela.** O defeito nasceu com D-121: enquanto `listings` era enumerada por `sku_listing_links` a tabela cabia no teto; ao passar a conter o catalogo REAL do vendedor ela cresceu para 5.085 e a leitura sem paginacao virou truncamento. D-131 corrigiu cinco pontos no mesmo dia e nao alcancou este - a busca de entao mirou o worker e as duas telas de estoque.
+
+**Decisao 1 - o precedente seguido e o de `/estoque` (D-131), NAO o `readAllPages` do worker.** Numa tela, trazer 5.085 linhas para o navegador a fim de mostrar 50 e desperdicio. O pivo, os filtros, a ordenacao e a **contagem** passam para o Postgres (`get_listings_dashboard`), e a pagina le uma janela declarada.
+
+**Decisao 2 - `total_count` e o ponto inteiro da funcao.** Sem ele a tela nao tem como distinguir "estes sao todos os anuncios" de "estes sao os primeiros N" - exatamente a ambiguidade que deixou o truncamento invisivel. A tela agora diz sempre *"Mostrando 1 a 50 de 5.085"*, e um teste fixa essa frase.
+
+**Decisao 3 - `p_link_state` nao e `sku_id is null`.** D-122 mediu que 1.013 dos 1.917 anuncios com `sku_id` nulo tem vinculo POR VARIACAO; sem vinculo nenhum sao 904. A tela antiga mostrava "-" nos dois casos, **dobrando o tamanho aparente da fila de trabalho**. Agora "por variacao" (apagado, nao e pendencia) e "sem vinculo" (alerta) sao rotulos distintos, com teste afirmando que diferem.
+
+**Decisao 4 - ordenacao deterministica e COMPLETA** (`gross_revenue desc, title asc, item_id asc`). Sem o terceiro criterio, duas paginas consecutivas poderiam repetir ou pular linhas - o modo mais silencioso de uma tabela paginada mentir.
+
+**O `EXPLAIN` REPROVOU a minha primeira versao, e e o melhor argumento a favor da regra do §21:**
+
+- duas varreduras de `daily_listing_metrics` (venda e pedidos) com o mesmo `group by` e a mesma janela - unificadas numa CTE;
+- e o defeito caro: `exists (select 1 from sku_listing_links ...)` **correlacionado**. Fora da funcao ele engana, porque so roda para as linhas que sobrevivem ao `limit`; dentro, o filtro `p_link_state` obriga a avalia-lo para **todas as 5.085 linhas**, cada uma varrendo as 20.650 de `sku_listing_links`. Trocado por `left join` contra um conjunto `distinct`: **1.123 ms -> 137 ms**, medido no filtro mais pesado.
+
+Tambem errei o metodo de medicao no caminho: o primeiro `EXPLAIN` inline deu 29 ms, mas eu tinha selecionado so `id` e o Postgres **eliminou os joins e o `exists`** que eu queria medir. Numero de outra consulta. Refeito com todas as colunas.
+
+**Nenhum indice novo** - o plano usa `daily_listing_metrics_account_date_idx` e resolve o resto em hash join sobre tabelas pequenas. `docs/DATABASE.md` §6 exige EXPLAIN antes de criar indice; ele nao pediu nenhum.
+
+**Contagens conferidas contra D-122**, que e quem estabeleceu a semantica: 5.085 no total, 4.181 vinculados (3.168 diretos + 1.013 por variacao), **904 sem vinculo**, 654 destes ativos. Os mesmos numeros.
+
+**Achado de processo, e ele quase quebrou a CI:** o `apply_migration` do MCP gera o PROPRIO timestamp de versao (`20260829220548`), diferente do nome que eu tinha dado ao arquivo (`20260829215000`). A CI veria o arquivo como nao aplicado, tentaria roda-lo e falharia com *"function already exists"*. Arquivo renomeado para a versao real. **Quem aplicar migration por MCP precisa conferir `supabase_migrations.schema_migrations` depois** - o nome do arquivo nao e a fonte da verdade nesse caminho.
+
+- **Divida declarada: `packages/db/src/types.ts` foi editado A MAO.** `docs/API.md` §7 exige tipos gerados, e nesta sessao nao havia `SUPABASE_ACCESS_TOKEN` nem Docker - nem o gerador do CLI (`--project-id`, caminho de D-073) nem o local rodaram. O bloco foi escrito a partir da assinatura real da migration, com o motivo no proprio arquivo, e **deve ser substituido pelo gerado na proxima sessao com token**.
+
+- **A tela nao foi vista renderizada** - exige sessao, e entrar credencial e acao vedada ao agente. `check` **29/29** (118 testes em `@sb/web`, +11), `next build` compila `/anuncios`, e as quatro combinacoes de filtro foram conferidas contra o banco real.
+
+**Escopo recusado, com gatilho:** filtros de Full, com/sem estoque e com/sem venda (o PRD os pede) - Full depende de `fulfillment_stock_snapshots.sku_id` ser NOT NULL, que D-123 ja registrou como decisao pendente sobre o significado do snapshot; os outros dois entram quando alguem pedir, e custam uma clausula cada.
+
+**Impacto:** migration `20260829220548`, `apps/web/app/anuncios/page.tsx` (reescrita), `apps/web/lib/listings-dashboard.{ts,test.ts}` (novo, 11 testes), `packages/db/src/types.ts`, `docs/ROADMAP.md`. Deploy automatico pela Vercel.
+
+## Como adicionar nova decisao
 
 Registrar:
 

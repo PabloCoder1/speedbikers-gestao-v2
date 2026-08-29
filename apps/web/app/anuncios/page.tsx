@@ -5,6 +5,15 @@ import { Shell } from "../../components/shell";
 import { StatusPill } from "../../components/status-pill";
 import { formatCount, formatCurrency, formatDateTime } from "../../lib/format";
 import { listingStatusLabel } from "../../lib/labels";
+import {
+  LINK_STATE_FILTERS,
+  PAGE_SIZE,
+  linkStateBadge,
+  resolveLinkStateFilter,
+  resolvePage,
+  resolveStatusFilter,
+  summarizeWindow,
+} from "../../lib/listings-dashboard";
 import { createClient } from "../../lib/supabase/server";
 
 export const metadata = { title: "Anúncios — Speed Bikers Gestão" };
@@ -14,27 +23,43 @@ export const metadata = { title: "Anúncios — Speed Bikers Gestão" };
 export const dynamic = "force-dynamic";
 
 /**
- * "Dashboards de SKU e de Anúncio" (Fase 5B, docs/ROADMAP.md) — a metade de
- * anúncio: estado atual (D-058) cruzado com venda somada dos últimos 30
- * dias (`get_listing_sales`, soma em SQL — docs/ARCHITECTURE.md secao 21) e,
- * desde D-032, visitas e conversão (`get_listing_traffic`, mesmo padrão).
- * Cruzamento feito em JS por CHAVE (ml_account_id + item_id/mlb_id), não é
- * agregação — a soma em si já veio pronta dos RPCs.
+ * Dashboard de Anúncios (Fase 5C, D-138).
+ *
+ * **Deixou de ser lista e passou a responder perguntas**, que é o que
+ * `docs/PRODUCT_REQUIREMENTS.md` pede: quais anúncios existem, em qual conta,
+ * com qual SKU, quais venderam, quais não têm vínculo.
+ *
+ * 🔴 **A versão anterior mostrava 1.000 de 5.085 anúncios, em silêncio.** Lia
+ * `from("listings").select(...).order("title")` sem `.range()`, e o PostgREST
+ * corta em `max_rows = 1000` devolvendo `error` NULO — sexta ocorrência da
+ * classe de D-131. Como ordenava por título, o que sobrevivia eram "os 1.000
+ * primeiros no alfabeto".
+ *
+ * Agora o pivô, os filtros, a ordenação e a CONTAGEM vivem no Postgres
+ * (`get_listings_dashboard`) e a tela lê uma janela declarada, exibindo
+ * sempre "N de M" — mesmo precedente que D-131 usou em `/estoque`.
  */
 
 const LOOKBACK_DAYS = 30;
 
-/**
- * `conversion_rate` é anulável de verdade (`NULL` quando não há visita no
- * período, não `Infinity`) — mesma lacuna do gerador já documentada em
- * `/cobertura`/`/curva-abc`, aqui do lado do retorno de `get_listing_traffic`.
- */
-interface TrafficRow {
-  ml_account_id: string;
+interface DashboardRow {
+  listing_id: string;
   item_id: string;
-  visits: number;
-  orders_count: number;
+  title: string;
+  status: string;
+  price: number;
+  available_quantity: number;
+  synced_at: string;
+  ml_account_id: string;
+  account_label: string;
+  sku_id: string | null;
+  sku: string | null;
+  link_state: string;
+  units_sold: number;
+  gross_revenue: number;
+  visits: number | null;
   conversion_rate: number | null;
+  total_count: number;
 }
 
 const th: React.CSSProperties = {
@@ -56,7 +81,59 @@ const td: React.CSSProperties = {
 
 const tdNumber: React.CSSProperties = { ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" };
 
-export default async function AnunciosPage(): Promise<ReactNode> {
+function pillStyle(active: boolean): React.CSSProperties {
+  return {
+    padding: "0.25rem 0.625rem",
+    borderRadius: "var(--sb-radius)",
+    border: `1px solid ${active ? "var(--sb-primary)" : "var(--sb-border)"}`,
+    background: active ? "var(--sb-primary)" : "transparent",
+    color: active ? "#fff" : "var(--sb-text-soft)",
+    textDecoration: "none",
+    fontSize: "0.8125rem",
+    whiteSpace: "nowrap",
+  };
+}
+
+interface Filters {
+  account: string | null;
+  status: string | null;
+  link: string;
+  search: string | null;
+  page: number;
+}
+
+/**
+ * Preserva as outras dimensões ao trocar uma — mesmo `buildHref` de
+ * `/vendas`. Trocar de conta NÃO pode resetar o filtro de vínculo.
+ *
+ * Qualquer mudança de filtro volta para a página 1: manter o offset seria
+ * mostrar "página 7 de 2", ou pior, uma página vazia que parece "nenhum
+ * resultado".
+ */
+function buildHref(current: Filters, override: Partial<Filters>): string {
+  const next = { ...current, ...override };
+  const resetPage = override.page === undefined;
+  const search = new URLSearchParams();
+
+  if (next.account !== null) search.set("conta", next.account);
+  if (next.status !== null) search.set("estado", next.status);
+  if (next.link !== "all") search.set("vinculo", next.link);
+  if (next.search !== null && next.search !== "") search.set("busca", next.search);
+
+  const page = resetPage ? 1 : next.page;
+  if (page > 1) search.set("pagina", String(page));
+
+  const qs = search.toString();
+
+  return qs === "" ? "/anuncios" : `/anuncios?${qs}`;
+}
+
+export default async function AnunciosPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}): Promise<ReactNode> {
+  const query = await searchParams;
   const supabase = await createClient();
 
   const membership = await supabase.from("organization_members").select("organization_id").maybeSingle();
@@ -75,67 +152,131 @@ export default async function AnunciosPage(): Promise<ReactNode> {
   const dateTo = now.toISOString().slice(0, 10);
   const dateFrom = new Date(now.getTime() - (LOOKBACK_DAYS - 1) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-  // Sem filtro por conta: a policy já restringe (listings_select_own_account).
-  const [listingsResult, salesResult, trafficResult] = await Promise.all([
-    supabase
-      .from("listings")
-      .select(
-        "id, item_id, sku_id, ml_account_id, title, status, price, available_quantity, synced_at, skus(sku), ml_accounts(label)",
-      )
-      .order("title"),
-    supabase.rpc("get_listing_sales", {
-      p_organization_id: organizationId,
-      p_date_from: dateFrom,
-      p_date_to: dateTo,
-    }),
-    supabase.rpc("get_listing_traffic", {
-      p_organization_id: organizationId,
-      p_date_from: dateFrom,
-      p_date_to: dateTo,
-    }),
-  ]);
+  const accountsResult = await supabase.from("ml_accounts").select("id, slug, label").order("label");
+  const accounts = accountsResult.data ?? [];
 
-  const { data, error: listingsError } = listingsResult;
-  // Falha em vendas/tráfego isolada ficava invisível antes (só o erro de
-  // listingsResult era checado) — toda linha mostraria "—" em vendido/
-  // receita/visitas/conversão, indistinguível de "sem venda no período"
-  // (D-067).
-  const error = listingsError ?? salesResult.error ?? trafficResult.error;
-  // `error === null` não estreita `data` aqui (a checagem combina três
-  // resultados) — `rows` é o array garantido, `data` original só sobrevive
-  // pra nada mais ser lido dele abaixo.
-  const rows = data ?? [];
+  const requestedAccount = typeof query.conta === "string" ? query.conta : null;
+  const selectedAccount = accounts.find((a) => a.slug === requestedAccount) ?? null;
 
-  // Chave de junção: (ml_account_id, item_id) — mesmo par único de `listings`
-  // e o mesmo espaço de valores de `daily_listing_metrics.mlb_id`. Junção por
-  // chave em JS, não agregação — a soma já veio pronta dos RPCs.
-  const salesByListing = new Map<string, { units_sold: number; gross_revenue: number }>();
-  for (const row of salesResult.data ?? []) {
-    salesByListing.set(`${row.ml_account_id}:${row.mlb_id}`, row);
-  }
+  const filters: Filters = {
+    // Slug desconhecido cai em "todas as contas" em silêncio — mesmo
+    // tratamento de `/vendas`, não é erro de rede nem de dado.
+    account: selectedAccount?.slug ?? null,
+    status: resolveStatusFilter(query.estado),
+    link: resolveLinkStateFilter(query.vinculo),
+    search: typeof query.busca === "string" && query.busca.trim() !== "" ? query.busca.trim() : null,
+    page: resolvePage(query.pagina),
+  };
 
-  const trafficByListing = new Map<string, TrafficRow>();
-  for (const row of (trafficResult.data ?? []) as TrafficRow[]) {
-    trafficByListing.set(`${row.ml_account_id}:${row.item_id}`, row);
-  }
+  const { data, error } = await supabase.rpc("get_listings_dashboard", {
+    p_organization_id: organizationId,
+    p_date_from: dateFrom,
+    p_date_to: dateTo,
+    p_ml_account_id: selectedAccount?.id ?? null,
+    p_status: filters.status,
+    p_link_state: filters.link,
+    p_search: filters.search,
+    p_limit: PAGE_SIZE,
+    p_offset: (filters.page - 1) * PAGE_SIZE,
+  });
+
+  const rows = (data ?? []) as DashboardRow[];
+  // `total_count` vem repetido em toda linha (window function). Zero linhas
+  // significa zero no conjunto filtrado — não há de onde ler o total, e é a
+  // resposta certa.
+  const totalCount = rows[0]?.total_count ?? 0;
+  const window = summarizeWindow(filters.page, totalCount, rows.length);
 
   return (
     <Shell>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "var(--sb-space-3)",
-          marginBottom: "var(--sb-space-4)",
-          flexWrap: "wrap",
-        }}
-      >
-        <h1 style={{ margin: 0, fontSize: "1.375rem" }}>Anúncios</h1>
-      </div>
+      <h1 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.375rem" }}>Anúncios</h1>
 
       <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
-        Estado atual de cada anúncio já vinculado a um SKU, sincronizado do Mercado Livre a cada 6h, com venda dos
-        últimos {LOOKBACK_DAYS} dias. Desde D-121 a lista é o catálogo REAL do Mercado Livre — anúncio sem vínculo aparece aqui com “—” no SKU. A fila de trabalho para vinculá-los está na Central de Vinculações.</p>
+        Catálogo real do Mercado Livre (D-121), sincronizado a cada 6h, com venda, visitas e conversão dos últimos{" "}
+        {LOOKBACK_DAYS} dias. Anúncio sem vínculo aparece aqui — a fila de trabalho para vinculá-los está na Central
+        de Vinculações.
+      </p>
+
+      {/* Filtros. Todos na URL, para o link ser compartilhável e o voltar do navegador funcionar. */}
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--sb-space-2)", marginBottom: "var(--sb-space-3)" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", alignItems: "center" }}>
+          <span style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)", minWidth: "4.5rem" }}>Conta</span>
+          <Link href={buildHref(filters, { account: null })} style={pillStyle(filters.account === null)}>
+            Todas
+          </Link>
+          {accounts.map((account) => (
+            <Link
+              key={account.id}
+              href={buildHref(filters, { account: account.slug })}
+              style={pillStyle(filters.account === account.slug)}
+            >
+              {account.label}
+            </Link>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", alignItems: "center" }}>
+          <span style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)", minWidth: "4.5rem" }}>Vínculo</span>
+          {LINK_STATE_FILTERS.map((option) => (
+            <Link
+              key={option.key}
+              href={buildHref(filters, { link: option.key })}
+              style={pillStyle(filters.link === option.key)}
+            >
+              {option.label}
+            </Link>
+          ))}
+
+          <span style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)", marginLeft: "var(--sb-space-3)" }}>
+            Estado
+          </span>
+          <Link href={buildHref(filters, { status: null })} style={pillStyle(filters.status === null)}>
+            Todos
+          </Link>
+          {["active", "paused", "closed"].map((status) => (
+            <Link
+              key={status}
+              href={buildHref(filters, { status })}
+              style={pillStyle(filters.status === status)}
+            >
+              {listingStatusLabel(status)}
+            </Link>
+          ))}
+        </div>
+
+        <form method="get" style={{ display: "flex", gap: "0.375rem", alignItems: "center" }}>
+          {/*
+            Hidden para cada dimensão ativa: um GET nativo envia SÓ os campos
+            do formulário, então sem isto buscar descartaria conta, vínculo e
+            estado. Mesmo cuidado de `/vendas` (D-136).
+          */}
+          {filters.account !== null && <input type="hidden" name="conta" value={filters.account} />}
+          {filters.status !== null && <input type="hidden" name="estado" value={filters.status} />}
+          {filters.link !== "all" && <input type="hidden" name="vinculo" value={filters.link} />}
+          <input
+            type="search"
+            name="busca"
+            defaultValue={filters.search ?? ""}
+            placeholder="SKU, MLB ou título"
+            aria-label="Buscar por SKU, MLB ou título"
+            style={{
+              padding: "0.25rem 0.5rem",
+              borderRadius: "var(--sb-radius)",
+              border: "1px solid var(--sb-border)",
+              fontSize: "0.8125rem",
+              minWidth: "16rem",
+            }}
+          />
+          <button type="submit" style={pillStyle(filters.search !== null)}>
+            Buscar
+          </button>
+          {filters.search !== null && (
+            <Link href={buildHref(filters, { search: null })} style={{ fontSize: "0.8125rem" }}>
+              limpar
+            </Link>
+          )}
+        </form>
+      </div>
 
       {error !== null && (
         <p role="alert" style={{ color: "var(--sb-danger)" }}>
@@ -143,13 +284,19 @@ export default async function AnunciosPage(): Promise<ReactNode> {
         </p>
       )}
 
+      {error === null && (
+        <p style={{ margin: "0 0 var(--sb-space-2)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+          {window.label}
+        </p>
+      )}
+
       {error === null && rows.length === 0 && (
-        <p style={{ color: "var(--sb-text-soft)" }}>Nenhum anúncio sincronizado ainda.</p>
+        <p style={{ color: "var(--sb-text-soft)" }}>Nenhum anúncio corresponde a estes filtros.</p>
       )}
 
       {error === null && rows.length > 0 && (
         <div style={{ overflowX: "auto" }}>
-          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "68rem" }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "72rem" }}>
             <thead>
               <tr>
                 <th style={th}>Anúncio</th>
@@ -167,14 +314,13 @@ export default async function AnunciosPage(): Promise<ReactNode> {
             </thead>
 
             <tbody>
-              {rows.map((listing) => {
-                const sales = salesByListing.get(`${listing.ml_account_id}:${listing.item_id}`) ?? null;
-                const traffic = trafficByListing.get(`${listing.ml_account_id}:${listing.item_id}`) ?? null;
+              {rows.map((row) => {
+                const badge = linkStateBadge(row.link_state);
 
                 return (
-                  <tr key={listing.id}>
+                  <tr key={row.listing_id}>
                     <td style={td}>
-                      {listing.title}
+                      {row.title}
                       <div
                         style={{
                           fontFamily: "ui-monospace, monospace",
@@ -182,34 +328,62 @@ export default async function AnunciosPage(): Promise<ReactNode> {
                           fontSize: "0.75rem",
                         }}
                       >
-                        {listing.item_id}
+                        {row.item_id}
                       </div>
                     </td>
                     <td style={{ ...td, fontFamily: "ui-monospace, monospace" }}>
-                      {listing.sku_id !== null && listing.skus !== null ? (
-                        <Link href={`/skus/${listing.sku_id}`}>{listing.skus.sku}</Link>
+                      {row.sku_id !== null && row.sku !== null ? (
+                        <Link href={`/skus/${row.sku_id}`}>{row.sku}</Link>
                       ) : (
-                        "—"
+                        <span style={{ color: badge.tone }} title={badge.hint}>
+                          {badge.label}
+                        </span>
                       )}
                     </td>
-                    <td style={td}>{listing.ml_accounts.label}</td>
+                    <td style={td}>{row.account_label}</td>
                     <td style={td}>
-                      <StatusPill code={listing.status} label={listingStatusLabel(listing.status)} />
+                      <StatusPill code={row.status} label={listingStatusLabel(row.status)} />
                     </td>
-                    <td style={tdNumber}>{formatCurrency(listing.price)}</td>
-                    <td style={tdNumber}>{listing.available_quantity}</td>
-                    <td style={tdNumber}>{sales === null ? "—" : formatCount(sales.units_sold)}</td>
-                    <td style={tdNumber}>{sales === null ? "—" : formatCurrency(sales.gross_revenue)}</td>
-                    <td style={tdNumber}>{traffic === null ? "—" : formatCount(traffic.visits)}</td>
+                    <td style={tdNumber}>{formatCurrency(row.price)}</td>
+                    <td style={tdNumber}>{row.available_quantity}</td>
+                    <td style={tdNumber}>{formatCount(row.units_sold)}</td>
+                    <td style={tdNumber}>{formatCurrency(row.gross_revenue)}</td>
+                    <td style={tdNumber}>{row.visits === null ? "—" : formatCount(row.visits)}</td>
                     <td style={tdNumber}>
-                      {traffic?.conversion_rate == null ? "—" : `${String(traffic.conversion_rate)}%`}
+                      {row.conversion_rate === null ? "—" : `${String(row.conversion_rate)}%`}
                     </td>
-                    <td style={td}>{formatDateTime(listing.synced_at)}</td>
+                    <td style={td}>{formatDateTime(row.synced_at)}</td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {error === null && window.totalPages > 1 && (
+        <div
+          style={{
+            display: "flex",
+            gap: "var(--sb-space-2)",
+            alignItems: "center",
+            marginTop: "var(--sb-space-3)",
+            fontSize: "0.8125rem",
+          }}
+        >
+          {filters.page > 1 && (
+            <Link href={buildHref(filters, { page: filters.page - 1 })} style={pillStyle(false)}>
+              ← Anterior
+            </Link>
+          )}
+          <span style={{ color: "var(--sb-text-soft)" }}>
+            Página {filters.page} de {window.totalPages}
+          </span>
+          {filters.page < window.totalPages && (
+            <Link href={buildHref(filters, { page: filters.page + 1 })} style={pillStyle(false)}>
+              Próxima →
+            </Link>
+          )}
         </div>
       )}
     </Shell>

@@ -3748,6 +3748,51 @@ export type Database = {
           visits: number
         }[]
       }
+      // ADIÇÃO MANUAL (D-138), e ela é uma DÍVIDA, não uma escolha.
+      // `docs/API.md` §7 exige tipos GERADOS. Nesta sessão não havia
+      // `SUPABASE_ACCESS_TOKEN` nem Docker, então nem o gerador do CLI
+      // (`--project-id`, caminho usado em D-073) nem o local rodaram. O bloco
+      // abaixo foi escrito à mão a partir da assinatura real da migration
+      // `20260829220548`, e deve ser SUBSTITUÍDO pelo gerado na próxima sessão
+      // que tiver o token — junto com as duas correções de nulidade que
+      // D-133 já documenta acima e abaixo.
+      //
+      // Os quatro argumentos opcionais aceitam `null` de verdade (é o valor
+      // que significa "sem filtro"), e o gerador nunca marca argumento de RPC
+      // como nulo — mesma classe das correções de `create_sku_listing_link` e
+      // `set_skus_supplier_brand`. Aqui já nascem corretos.
+      get_listings_dashboard: {
+        Args: {
+          p_date_from: string
+          p_date_to: string
+          p_limit?: number
+          p_link_state?: string | null
+          p_ml_account_id?: string | null
+          p_offset?: number
+          p_organization_id: string
+          p_search?: string | null
+          p_status?: string | null
+        }
+        Returns: {
+          account_label: string
+          available_quantity: number
+          conversion_rate: number | null
+          gross_revenue: number
+          item_id: string
+          link_state: string
+          listing_id: string
+          ml_account_id: string
+          price: number
+          sku: string | null
+          sku_id: string | null
+          status: string
+          synced_at: string
+          title: string
+          total_count: number
+          units_sold: number
+          visits: number | null
+        }[]
+      }
       get_sales_daily_series: {
         Args: {
           p_date_from: string
