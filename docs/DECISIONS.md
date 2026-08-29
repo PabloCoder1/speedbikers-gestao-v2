@@ -2471,6 +2471,31 @@ Operação direta em `notification_recipients.read_at` via `service_role`, não 
 
 **Impacto:** sem migration. `packages/domain/src/events/catalog.ts`, `packages/domain/src/inventory/reconciliation.ts`, `packages/domain/src/diagnostics/sales-anomaly.ts`, `packages/domain/src/inventory/reconciliation.test.ts` (+1 trava), `apps/worker/src/handlers/reconcile-balances.test.ts`, `apps/web/lib/labels.ts`, `docs/API.md` (catálogo de eventos e a linha do job — que ainda citava `compute_erp_snapshot_balances`, nome morto desde D-132 e causa da falha de D-134). `check` **29/29**. **Deployado e verificado**: `worker-00043-bkp` (imagem `06d7489`), boot com `worker_started` e zero ERROR — a rodada de 2026-08-30 às 09:00Z já emite `stock.balance.adjusted`.
 
+## D-136 — Métrica trocável no gráfico de vendas: a Fase 5C começa pelo dado que já viajava e era descartado
+
+**Contexto:** primeira fatia da Fase 5C, escolhida por ser a que o ROADMAP marcava como mais barata — *"a RPC já devolve as quatro e a tela plota uma: é interface, não banco"*. **Premissa conferida antes de escrever, não assumida**: `get_sales_daily_series` (`20260821210000`) devolve `units_sold`, `gross_revenue`, `orders_count` e `purchases_count` desde 2026-08-21, e `page.tsx` não restringe colunas. As quatro cruzavam a rede todo dia e três eram jogadas fora no cliente.
+
+**Decisão 1 — a métrica mora na URL, e a tela continua Server Component.** `?metric=`, resolvido no servidor, sem `use client`, sem estado. Segue o que a tela já fazia com `days`/`from`/`to`/`account` e o que D-133 fez em `/produtos`. Ganha o que URL dá de graça: link compartilhável, voltar do navegador, e compatibilidade com os Filtros Salvos, que o `docs/PRODUCT_REQUIREMENTS.md` pede e cujo mecanismo é agnóstico de tela.
+
+**Decisão 2 — o default fica FORA da URL.** `/vendas` limpo continua idêntico ao de ontem. Uma URL sem `?metric=` tem de mostrar exatamente o gráfico que mostrava antes desta fatia: mudar isso quebraria links salvos e a memória de quem abre a tela todo dia. Há teste para essa invariante especificamente.
+
+**Decisão 3 — `DEFAULT_SALES_METRIC` aponta para uma constante NOMEADA, não para `SALES_METRICS[0]`.** O lint pediu `!` no lugar do `as`; a resposta certa não era nenhum dos dois. Indexar a posição 0 significa que reordenar o array — coisa que alguém fará um dia só para mudar a ordem dos botões — trocaria em silêncio qual gráfico a tela abre por padrão. Com a constante, a ordem visual e o default ficam independentes.
+
+**Decisão 4 — cada métrica carrega o ID da definição canônica.** `receita_bruta`, `unidades_vendidas`, `pedidos`, `pedidos_por_pack`, todos de `docs/METRICS.md` 5.2, aprovados em 2026-08-21. **Nenhuma métrica nova foi inventada** — a coluna da RPC é a implementação da definição que já existia. Um teste falha se alguém acrescentar uma quinta entrada com ID fora do catálogo, que é como `docs/ARCHITECTURE.md` §15 ("todo número na tela carrega o ID da sua definição") deixa de ser boa intenção.
+
+**Dois defeitos encontrados ao implementar, ambos do tipo que não quebra nada:**
+
+- **O `<form method="get">` do período personalizado teria descartado a métrica.** Um GET nativo envia só os campos do formulário, e o `account` já tinha `input hidden` por exatamente esse motivo. Sem o hidden da métrica, escolher um intervalo de datas devolveria o gráfico a faturamento sozinho — o mesmo defeito que o comentário de `buildHref` já descrevia ("trocar de conta não pode resetar o período"), na terceira dimensão.
+- **Rótulo fracionário em eixo de contagem.** As linhas de grade são `chartMax × 0,5`; com faturamento isso é natural, com unidades produz "27,5 unidades". Arredondado **só o rótulo** — a posição `y` continua no valor exato, senão a linha sairia do lugar.
+
+**Cuidado explícito com formatação:** contagem nunca passa por `formatCurrency`. "R$ 12" numa série de unidades vendidas seria um número errado com aparência de certo — a classe de defeito que D-131 perseguiu.
+
+⚠️ **Limitação honesta de verificação:** `check` **29/29** (6 testes novos) e `next build` compila `/vendas`. **A tela NÃO foi vista renderizada** — o dev server sobe e alcança o Supabase (verificado nesta sessão, o bloqueio de D-133 acabou), mas `/vendas` exige sessão e não há credencial de usuário nesta sessão; entrar credencial é ação vedada ao agente. Mesma limitação registrada em D-074/D-075. O que ficou provado sem sessão: o middleware preserva a query no `next=` (`/login?next=%2Fvendas%3Fmetric%3Dunidades%26days%3D30`), então o link sobrevive ao login.
+
+**Escopo recusado:** comparação com período anterior NO GRÁFICO (o `docs/PRODUCT_REQUIREMENTS.md` pede, e ela já existe nos cards) — é a fatia seguinte e tem decisão própria de desenho, porque duas séries no mesmo SVG exigem escala, legenda e cor, e nenhuma delas está resolvida hoje.
+
+**Impacto:** sem migration, sem RPC nova, sem consulta nova. `apps/web/lib/sales-metric.{ts,test.ts}` (novo, 6 testes), `apps/web/app/vendas/sales-chart.tsx`, `apps/web/app/vendas/page.tsx`, `docs/ROADMAP.md`. Deploy automático pela Vercel — não exige Cloud Run.
+
 ## Como adicionar nova decisão
 
 Registrar:

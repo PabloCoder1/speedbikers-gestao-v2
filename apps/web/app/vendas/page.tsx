@@ -14,6 +14,7 @@ import { SavedFilters } from "../../components/saved-filters";
 import { Shell } from "../../components/shell";
 import { formatBusinessDate, formatCount, formatCurrency, formatDateTime } from "../../lib/format";
 import { createClient } from "../../lib/supabase/server";
+import { DEFAULT_SALES_METRIC, SALES_METRICS, resolveSalesMetric } from "../../lib/sales-metric";
 import { SalesChart } from "./sales-chart";
 
 export const metadata = { title: "Dashboard de Vendas — Speed Bikers Gestão" };
@@ -233,12 +234,14 @@ interface AccountOption {
  * pode resetar o período, e vice-versa. Mesma ideia do `href()` de
  * `apps/web/app/importacoes/[id]/page.tsx`, com duas dimensões em vez de uma.
  */
-function buildHref(current: { period: Period; accountSlug: string | null }, override: {
+function buildHref(current: { period: Period; accountSlug: string | null; metricKey: string }, override: {
   period?: Period;
   accountSlug?: string | null;
+  metricKey?: string;
 }): string {
   const period = override.period ?? current.period;
   const accountSlug = override.accountSlug !== undefined ? override.accountSlug : current.accountSlug;
+  const metricKey = override.metricKey ?? current.metricKey;
 
   const search = new URLSearchParams();
 
@@ -251,6 +254,13 @@ function buildHref(current: { period: Period; accountSlug: string | null }, over
 
   if (accountSlug !== null) {
     search.set("account", accountSlug);
+  }
+
+  // O default fica FORA da URL, como `days` e `account` já fazem: `/vendas`
+  // limpo continua sendo a mesma página de sempre, e um link compartilhado só
+  // carrega o que foi realmente escolhido.
+  if (metricKey !== DEFAULT_SALES_METRIC.key) {
+    search.set("metric", metricKey);
   }
 
   const qs = search.toString();
@@ -286,6 +296,8 @@ export default async function VendasPage({
     name: row.name,
     params: row.params as Record<string, string>,
   }));
+
+  const metric = resolveSalesMetric(query.metric);
 
   const requestedSlug = typeof query.account === "string" ? query.account : null;
   const selectedAccount = accounts.find((account) => account.slug === requestedSlug) ?? null;
@@ -388,7 +400,7 @@ export default async function VendasPage({
           }}
         >
           <Link
-            href={buildHref({ period, accountSlug }, { accountSlug: null })}
+            href={buildHref({ period, accountSlug, metricKey: metric.key }, { accountSlug: null })}
             style={pillStyle(selectedAccount === null)}
           >
             Todas as contas
@@ -397,7 +409,7 @@ export default async function VendasPage({
           {accounts.map((account) => (
             <Link
               key={account.id}
-              href={buildHref({ period, accountSlug }, { accountSlug: account.slug })}
+              href={buildHref({ period, accountSlug, metricKey: metric.key }, { accountSlug: account.slug })}
               style={pillStyle(selectedAccount?.id === account.id)}
             >
               {account.label}
@@ -418,7 +430,7 @@ export default async function VendasPage({
         {PRESET_DAYS.map((preset) => (
           <Link
             key={preset}
-            href={buildHref({ period, accountSlug }, { period: { days: preset } })}
+            href={buildHref({ period, accountSlug, metricKey: metric.key }, { period: { days: preset } })}
             style={pillStyle(!isCustom && days === preset)}
           >
             {preset} dias
@@ -430,6 +442,15 @@ export default async function VendasPage({
           style={{ display: "flex", alignItems: "center", gap: "0.375rem", fontSize: "0.8125rem" }}
         >
           {accountSlug !== null && <input type="hidden" name="account" value={accountSlug} />}
+          {/*
+            Mesmo motivo do hidden de `account` logo acima: um GET nativo
+            envia SÓ os campos do formulário, então sem isto escolher um
+            período personalizado descartaria a métrica escolhida e o
+            gráfico voltaria para faturamento sozinho.
+          */}
+          {metric.key !== DEFAULT_SALES_METRIC.key && (
+            <input type="hidden" name="metric" value={metric.key} />
+          )}
           <input
             type="date"
             name="from"
@@ -502,9 +523,31 @@ export default async function VendasPage({
 
       {error === null && dailySeries.length > 0 && (
         <div style={{ marginTop: "var(--sb-space-5)" }}>
-          <h2 style={{ fontSize: "1.0625rem", margin: "0 0 var(--sb-space-2)" }}>
-            Receita bruta por dia
-          </h2>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "baseline",
+              justifyContent: "space-between",
+              gap: "var(--sb-space-2)",
+              margin: "0 0 var(--sb-space-2)",
+            }}
+          >
+            <h2 style={{ fontSize: "1.0625rem", margin: 0 }}>{metric.heading}</h2>
+
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)" }} role="group" aria-label="Métrica do gráfico">
+              {SALES_METRICS.map((option) => (
+                <Link
+                  key={option.key}
+                  href={buildHref({ period, accountSlug, metricKey: metric.key }, { metricKey: option.key })}
+                  style={pillStyle(option.key === metric.key)}
+                  aria-current={option.key === metric.key ? "true" : undefined}
+                >
+                  {option.label}
+                </Link>
+              ))}
+            </div>
+          </div>
 
           {dailySeries.length < businessDateRangeLength(range.from, range.to) && (
             <p style={{ margin: "0 0 var(--sb-space-2)", color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
@@ -513,7 +556,7 @@ export default async function VendasPage({
             </p>
           )}
 
-          <SalesChart points={dailySeries} />
+          <SalesChart points={dailySeries} metric={metric} />
         </div>
       )}
     </Shell>
