@@ -3927,13 +3927,34 @@ export type Database = {
           weekday: number
         }[]
       }
+      // ADIÇÃO MANUAL (D-139), mesma dívida declarada em D-138: sem
+      // `SUPABASE_ACCESS_TOKEN` nem Docker nesta sessão, nenhum gerador rodou.
+      // Escrito a partir da assinatura real da migration `20260829230010`.
+      // Os quatro filtros aceitam `null` de verdade (é o valor que significa
+      // "sem filtro") e o gerador nunca marca argumento de RPC como nulo.
       get_stock_balances: {
-        Args: { p_organization_id: string }
+        Args: {
+          p_category?: string | null
+          p_limit?: number
+          p_offset?: number
+          p_only_negative?: boolean
+          p_organization_id: string
+          p_search?: string | null
+          p_supplier_brand?: string | null
+        }
         Returns: {
+          category: string | null
+          created_at: string
+          full_quantity: number | null
+          last_movement_at: string | null
           local_quantity: number
+          purchase_cost: number | null
           reservado: number
           sku: string
           sku_id: string
+          stock_is_virtual: boolean
+          stock_is_virtual_set_at: string | null
+          supplier_brand: string | null
           title: string
           total_count: number
           transito: number

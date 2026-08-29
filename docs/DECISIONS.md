@@ -2566,6 +2566,34 @@ Tambem errei o metodo de medicao no caminho: o primeiro `EXPLAIN` inline deu 29 
 
 **Impacto:** migration `20260829220548`, `apps/web/app/anuncios/page.tsx` (reescrita), `apps/web/lib/listings-dashboard.{ts,test.ts}` (novo, 11 testes), `packages/db/src/types.ts`, `docs/ROADMAP.md`. Deploy automatico pela Vercel.
 
+## D-139 - Estoque enriquecido, e a segunda coluna fiscal que mente sobre a rota de compra
+
+**Contexto:** item da Fase 5C. `/estoque` mostrava quatro colunas (SKU, Local, Reservado, Transito) enquanto marca, categoria, custo, Full e datas ja existiam no banco e nenhuma tela as lia - era literalmente o que o `docs/PRODUCT_REQUIREMENTS.md` apontava.
+
+**Decisao 1 - as colunas foram escolhidas POR PREENCHIMENTO MEDIDO**, porque coluna quase vazia e ruido: `category_raw` 95,7%, `purchase_cost` 94,9%, `brand` 82,9% (entra como CATEGORIA, nunca como marca - D-129), `supplier_brand` 36,0% (entra: e a marca REAL, e o vazio e deliberado, esperando preenchimento humano em `/produtos`).
+
+**Decisao 2 - NAO existe coluna Origem, e este e o achado da fatia.** `is_imported` diz que **187 dos 228 SKUs NAVETEC sao nacionais**, contra a regra de negocio que o usuario estabeleceu. E a SEGUNDA coluna fiscal a contradizer a rota de compra: D-129 ja tinha vetado `origin_code` por 707 SKUs, e a causa e a mesma - as duas carregam a origem preenchida por quem EMITE a nota, nao por quem COMPRA. O `docs/PRODUCT_REQUIREMENTS.md` ja avisava ("nem confianca cega em `is_imported`"); agora esta medido. Mostrar "Nacional" para Navetec seria a tela afirmando com confianca algo falso.
+
+**Decisao 3 - Valor de estoque continua FORA, e a razao mudou de lugar.** `docs/METRICS.md` 5C.4 o bloqueava "ate a questao do estoque sentinela ser resolvida". A questao FOI resolvida (D-127) e a ferramenta existe (D-133), mas medido hoje: **1.089 SKUs carregam a assinatura sentinela e ZERO estao classificados**. O bloqueio saiu de "pergunta aberta" e virou "classificacao nao feita" - quem destrava e o ensaio de `/produtos`, que segue pendente.
+
+**O EXPLAIN reprovou DUAS versoes, e a segunda reprovacao nao era da consulta:**
+
+- **1a: 1.646 ms, 132.368 buffers.** `distinct on` sobre `fulfillment_stock_snapshots` varria as 60.086 linhas historicas. Medido que `captured_at` e carimbo POR RODADA do job (130 carimbos, ~462 linhas cada), nao por item - entao basta juntar com o `max(captured_at)` de cada conta e ler ~1.848 linhas. Resultado: 1.024 ms, 79.436 buffers.
+- **2a: o custo restante era `max(occurred_at)` sobre `stock_movements`** - 70.732 buffers, 224 mil linhas varridas, `Heap Fetches: 69872` num index-only scan. **A causa nao era a consulta: era o reparo em massa de D-134**, que inseriu 6.672 movimentos e deixou o mapa de visibilidade defasado. `vacuum (analyze)` levou a **11.052 buffers, 132 ms quente**.
+
+**LICAO OPERACIONAL, e ela vale alem desta tela:** reparo em massa no ledger deve ser seguido de `VACUUM ANALYZE`. Sem isso, toda consulta que agrega `stock_movements` paga ~6x em buffers, silenciosamente, e o custo aparece como "a tela esta lenta" em vez de "o mapa de visibilidade esta velho".
+
+**Decisao 4 - "ultimo movimento" usa `occurred_at`, nao `updated_at` da projecao.** Testei a substituicao barata (custo zero, ja estava no join): 3.148 dos 3.174 SKUs concordam no dia, **mas o desvio maximo e de 278 dias** - movimento retroativo (backfill de pedido antigo) tem `occurred_at` velho e `updated_at` recente. Numa tela de estoque o operador quer a data do FATO.
+
+**Substitui a assinatura de D-131 em vez de criar funcao nova:** `/estoque` era o unico chamador, e deixar a antiga viva seria codigo morto.
+
+**Conferido contra o banco real:** 3.174 SKUs no total, **191 negativos** (exatamente o que D-134 deixou), 212 Navetec, 539 com Full na ultima captura.
+
+- **Divida declarada, a mesma de D-138:** `packages/db/src/types.ts` editado a mao, sem `SUPABASE_ACCESS_TOKEN` nem Docker nesta sessao. Substituir pelo gerado na proxima sessao com token.
+- **Tela nao vista renderizada** - exige sessao, e entrar credencial e acao vedada ao agente. `check` **29/29** (+13 testes), `next build` compila `/estoque`.
+
+**Impacto:** migration `20260829230010`, `apps/web/app/estoque/page.tsx` (reescrita), `apps/web/lib/stock-filters.{ts,test.ts}` (novo, 13 testes), `packages/db/src/types.ts`, `docs/ROADMAP.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:
