@@ -2496,6 +2496,39 @@ Operação direta em `notification_recipients.read_at` via `service_role`, não 
 
 **Impacto:** sem migration, sem RPC nova, sem consulta nova. `apps/web/lib/sales-metric.{ts,test.ts}` (novo, 6 testes), `apps/web/app/vendas/sales-chart.tsx`, `apps/web/app/vendas/page.tsx`, `docs/ROADMAP.md`. Deploy automático pela Vercel — não exige Cloud Run.
 
+## D-137 — Comparação de período no gráfico, e o alinhamento por índice que estava certo por sorte
+
+**Contexto:** fatia declarada como "seguinte" em D-136 e adiada de propósito, porque duas séries no mesmo SVG exigem três decisões que não estavam tomadas — escala, alinhamento e cor/legenda. Requisito de `docs/PRODUCT_REQUIREMENTS.md`: *"a comparação com período anterior existe nos cards e deve alcançar o gráfico"*.
+
+**Decisão 1 — escala COMPARTILHADA, um eixo Y só.** As duas séries são a mesma métrica na mesma unidade; dois eixos seriam mentira visual. `chartMax` passa a considerar as duas: usar só o máximo do período atual faria a linha anterior sair do quadro exatamente quando o período passado tivesse vendido mais — o caso que a comparação existe para mostrar.
+
+🔴 **Decisão 2 — o eixo X deixa de ser índice do array e passa a ser OFFSET DE DIA. É o achado da fatia.**
+
+A primeira versão espaçava por índice, com um argumento que era bom para uma série só: dias sem linha em `daily_account_metrics` ficam AUSENTES (a RPC não fabrica zero), e espaçar por calendário exageraria a lacuna.
+
+**Com duas séries esse desenho passa a mentir.** Índice não significa a mesma coisa nas duas janelas: se a atual tem 28 dias com métrica e a anterior tem 30, o índice 5 de uma é um dia relativo DIFERENTE do índice 5 da outra — e o gráfico afirmaria "este dia contra o mesmo dia do período anterior" sobre dois dias que não se correspondem.
+
+**Medido antes de decidir:** hoje as duas janelas estão completas (**30/30 dias cada, zero ausentes**), então o alinhamento por índice funcionaria — **por sorte**. É a classe de defeito que este projeto persegue desde D-131: correto agora, silenciosamente errado no primeiro dia em que uma janela tiver lacuna e a outra não. E não é hipótese remota: a própria tela já exibe *"Só N dias têm métrica calculada"* quando a série vem incompleta, ou seja, o estado é previsto e tratado em outro lugar do mesmo arquivo.
+
+O offset é bem definido porque `previousBusinessDateRange` devolve janela do MESMO comprimento por construção — `0..length-1` mapeia 1:1.
+
+**Decisão 3 — cor, ordem de pintura e legenda condicional.** Período anterior em `--sb-muted`, tracejado, mais fino, e **desenhado ANTES no DOM**: em SVG a ordem é a ordem de pintura, então desenhar depois colocaria a referência por cima da linha que interessa. A legenda só é renderizada quando existe série anterior — anunciar uma linha tracejada que não foi desenhada faria a tela descrever algo que não está lá.
+
+**Decisão 4 — a dica de cada ponto carrega os dois valores**, e "sem dado" quando o dia não existe do outro lado. `undefined`, nunca 0: "sem dado" e "vendeu zero" são afirmações diferentes sobre o negócio, e a RPC não fabrica zero.
+
+**Dois defeitos meus, achados e corrigidos durante a implementação:**
+
+- **A quarta consulta ficou de fora da agregação de erro, e esse era o pior lugar possível.** O bloco tem comentário explícito de D-067 ("falha em QUALQUER uma das três: mostrar erro, nunca 'sem dado'"). Sem a quarta ali, falhar a consulta da série anterior produziria um gráfico **sem a linha de comparação** — visualmente idêntico a "o período anterior não teve venda", que é uma afirmação sobre o negócio, não sobre a rede. Exatamente a classe que D-067 existe para impedir.
+- **A legenda rotulava o fim da janela anterior com a data do ÚLTIMO PONTO COM DADO.** Se o último dia não tiver métrica, a legenda encolheria a janela e o usuário compararia 30 dias contra o que a tela chamaria de 28. Passou a usar a janela real.
+
+**A trava foi verificada FALHANDO.** `offsetInPeriod`/`indexByOffset` foram extraídos para `apps/web/lib/series-alignment.ts` — em `lib/` e não dentro do componente para serem testáveis sem React, mesma razão de `sales-metric.ts` (D-136) e `sku-curation.ts` (D-133). O teste central monta o cenário assimétrico (janela atual com um dia ausente no meio, anterior completa) e prova que o dia 4 encontra o dia 4, não "o quarto item da lista". Trocando `indexByOffset` para indexar por posição de array, **ele falha**; restaurado, 5/5. Sem isso o teste seria decorativo: o defeito que ele impede é **invisível na tela** — as duas linhas continuariam bonitas.
+
+**Nenhuma consulta nova de banco.** A quarta chamada reusa `get_sales_daily_series` com a outra janela, em PARALELO (`docs/ARCHITECTURE.md` §21: "consultas independentes em paralelo, nunca em cascata"). Sem migration, sem RPC nova.
+
+⚠️ **Mesma limitação de verificação de D-136:** `check` **29/29** (107 testes em `@sb/web`, +5) e `next build` compila `/vendas`. **A tela não foi vista renderizada** — exige sessão e entrar credencial é ação vedada ao agente.
+
+**Impacto:** `apps/web/lib/series-alignment.{ts,test.ts}` (novo), `apps/web/app/vendas/sales-chart.tsx` (reescrito), `apps/web/app/vendas/page.tsx`, `docs/ROADMAP.md`. Deploy automático pela Vercel.
+
 ## Como adicionar nova decisão
 
 Registrar:

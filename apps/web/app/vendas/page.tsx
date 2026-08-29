@@ -311,7 +311,7 @@ export default async function VendasPage({
   // vez, em vez de atribuir `undefined` a um campo opcional.
   const accountFilter = selectedAccount === null ? {} : { p_ml_account_id: selectedAccount.id };
 
-  const [currentResult, previousResult, seriesResult] = await Promise.all([
+  const [currentResult, previousResult, seriesResult, previousSeriesResult] = await Promise.all([
     supabase
       .rpc("get_sales_summary", { p_date_from: range.from, p_date_to: range.to, ...accountFilter })
       .single(),
@@ -327,16 +327,33 @@ export default async function VendasPage({
       p_date_to: range.to,
       ...accountFilter,
     }),
+    // Quarta consulta EM PARALELO, não em cascata (docs/ARCHITECTURE.md §21).
+    // Mesma RPC, outra janela: a comparação de período já existia nos cards
+    // desde a Fase 5A e o `docs/PRODUCT_REQUIREMENTS.md` pede que ela alcance
+    // o gráfico. Nenhuma RPC nova.
+    supabase.rpc("get_sales_daily_series", {
+      p_date_from: previousRange.from,
+      p_date_to: previousRange.to,
+      ...accountFilter,
+    }),
   ]);
 
   const summary: SalesSummary | null = currentResult.data ?? null;
   const previousSummary: SalesSummary | null = previousResult.data ?? null;
   const dailySeries = seriesResult.data ?? [];
-  // Falha em QUALQUER uma das três: mostrar erro, nunca "sem dado" — uma
+  const previousDailySeries = previousSeriesResult.data ?? [];
+  // Falha em QUALQUER uma das QUATRO: mostrar erro, nunca "sem dado" — uma
   // falha em previousResult/seriesResult isolada ficava invisível antes
   // (só currentResult.error era checado), e a comparação de período/gráfico
   // silenciosamente pareciam legítimos com dado incompleto (D-067).
-  const error = currentResult.error ?? previousResult.error ?? seriesResult.error;
+  //
+  // A quarta entrou com a série do período anterior (D-137) e é o caso mais
+  // traiçoeiro dos quatro: sem ela aqui, falhar a consulta produziria um
+  // gráfico SEM a linha de comparação — visualmente idêntico a "o período
+  // anterior não teve venda", que é uma afirmação sobre o negócio, não sobre
+  // a rede. É exatamente a classe de defeito que D-067 existe para impedir.
+  const error =
+    currentResult.error ?? previousResult.error ?? seriesResult.error ?? previousSeriesResult.error;
 
   const lastComputedAt = summary?.last_computed_at ?? null;
   const freshness = classifySyncFreshness(lastComputedAt === null ? null : new Date(lastComputedAt), now);
@@ -556,7 +573,15 @@ export default async function VendasPage({
             </p>
           )}
 
-          <SalesChart points={dailySeries} metric={metric} />
+          <SalesChart
+            points={dailySeries}
+            previousPoints={previousDailySeries}
+            metric={metric}
+            rangeFrom={range.from}
+            rangeTo={range.to}
+            previousRangeFrom={previousRange.from}
+            previousRangeTo={previousRange.to}
+          />
         </div>
       )}
     </Shell>
