@@ -3793,6 +3793,34 @@ export type Database = {
           visits: number | null
         }[]
       }
+      // ADIÇÃO MANUAL (D-143), mesma dívida de D-138/D-139/D-140: sem token
+      // de gerador nesta sessão. Assinaturas das migrations `20260830011456`.
+      get_sync_health: {
+        Args: { p_organization_id: string }
+        Returns: {
+          account_label: string
+          channel: string
+          failed_24h: number
+          items_24h: number
+          last_run_at: string | null
+          last_run_reason: string | null
+          last_run_status: string | null
+          last_success_at: string | null
+          latest_record_at: string | null
+          ml_account_id: string
+          resource: string
+          runs_24h: number
+        }[]
+      }
+      get_processing_health: {
+        Args: { p_organization_id: string }
+        Returns: {
+          account_label: string
+          last_computed_at: string | null
+          latest_metric_date: string | null
+          ml_account_id: string
+        }[]
+      }
       get_sales_daily_series: {
         Args: {
           p_date_from: string

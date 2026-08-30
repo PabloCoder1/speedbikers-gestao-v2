@@ -2707,6 +2707,34 @@ A camada 3 foi encontrada pelo CATALOGO (enumerando as FKs RESTRICT reais), nao 
 
 **Impacto:** migrations `20260830002606` e `20260830004256`, correcao do ARQUIVO de `20260828215404` (para o rebuild do zero na CI; o Dev remoto e corrigido pelo bloco idempotente), tres correcoes no teardown e dois testes de `packages/db/src/rls.integration.test.ts`. Commits `0d0c96d`, `75e9a88`, `d2bd58f`, `702cad5`.
 
+## D-143 - Saude da sincronizacao por recurso, e os dois problemas de producao que a tela antiga escondia
+
+**Contexto:** ultimo item da Fase 5C. A tela `/sincronizacao` media o frescor de UM recurso (orders, canal de reconciliacao) e contava erros de 24h. O PRD (2026-08-28) pede por conta E por recurso, separando backfill de sincronizacao continua e dado puxado de dado processado. O ROADMAP apontava o ganho barato: `sync_runs.items_processed` e `ml_accounts.backfill_covered_until` "sao gravados e nunca lidos".
+
+**A medicao previa ja pagou a fatia -- dois problemas de producao INVISIVEIS na tela antiga:**
+
+- **`visits`: 123 falhas em 145 execucoes (85%)**, todas 429 do Mercado Livre -- o rate limit conhecido de D-070, agravado pela cobertura maior de D-124 (a varredura e por item, 1 chamada cada). Ha UM sucesso diario, entao o frescor fica "ok" enquanto a cobertura degrada por baixo.
+- **`fulfillment`: ZERO `done` em 130 execucoes** -- 111 `partial` (404 de itens mortos derrubam itens individuais) e 19 falhas. Nunca completou uma rodada limpa.
+
+**Corrigir o rate limit e fatia de worker, nao desta tela** -- o que esta fatia entrega e a VISIBILIDADE que faltava para alguem decidir prioriza-la.
+
+**Decisao 1 - o veredito de frescor e CONTRA A CADENCIA de cada job, nao um limiar unico.** `classifySyncFreshness` (`@sb/domain`) tem limiares calibrados para pedidos (horario). Aplica-los a `visits` (diario) carimbaria "atrasada" uma sincronizacao funcionando exatamente como projetada. `classifyResourceFreshness` (novo, `apps/web/lib/sync-health.ts`) compara a idade do ultimo SUCESSO com a cadencia real do job: ate 2 ciclos perdidos = ok, ate 4 = atencao, acima = critico. As cadencias vem de `infra/cloud-scheduler.sh` (fonte apontada no comentario); se um cron mudar la, o pior caso e veredito conservador -- nunca dado inventado. Recurso sem cadencia mapeada NAO ganha veredito ("datas cruas valem mais que selo chutado").
+
+**Decisao 2 - backfill NUNCA ganha selo de frescor.** E processo finito: "nao rodou nas ultimas 24h" e o estado NORMAL de um backfill concluido. A tabela dele mostra o cursor real (`backfill_covered_until`, lido pela primeira vez) e a ultima execucao -- sem porcentagem, porque nao existe denominador confiavel para "quanto falta" (regra do PRD: nunca inventar porcentagem).
+
+**Decisao 3 - falha alta com sucesso recente e ESTADO PROPRIO, nao media.** `failureRateLabel` alerta "17 de 20 execucoes falharam (85%)" mesmo com o veredito "Em dia" -- e exatamente o estado real de `visits`, e uma media dos dois esconderia o problema.
+
+**Decisao 4 - o lado PROCESSADO tem tabela propria** (`get_processing_health`): ate que dia as metricas diarias foram calculadas e quando foi o ultimo recalculo, por conta. O ML pode estar em dia e o recalculo parado -- e onde os gargalos aparecem (PRD).
+
+**RPCs:** `get_sync_health` (por conta x recurso x canal: ultima execucao com status e motivo, ultimo sucesso, ultimo dado, execucoes/falhas/itens de 24h) e `get_processing_health`. `EXPLAIN`: 37 ms, 1.196 buffers, 32 linhas. Nenhum indice novo.
+
+- **Divida declarada, quinta ocorrencia**: `types.ts` a mao (sem token de gerador na sessao).
+- **Tela nao vista renderizada** (exige sessao). `check` **29/29** (+10 testes), `next build` compila `/sincronizacao`. As RPCs foram conferidas contra o banco real, incluindo a distincao backfill/reconciliacao com dado de producao.
+
+**FASE 5C COMPLETA** com esta fatia: metrica trocavel (D-136), comparacao no grafico (D-137), anuncios (D-138), estoque (D-139), Curva ABC (D-140), filtros padronizados (D-141) e saude da sincronizacao (D-143). O item de Vendas (taxas ML/margem/cancelamentos) do PRD segue aberto como evolucao -- depende de definicoes de METRICS.md 5C ainda nao implementadas em RPC.
+
+**Impacto:** migration `20260830011456`, `apps/web/app/sincronizacao/page.tsx` (reescrita), `apps/web/lib/sync-health.{ts,test.ts}` (novo, 10 testes), `packages/db/src/types.ts`, `docs/ROADMAP.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:

@@ -1,10 +1,10 @@
-import type { FreshnessLevel } from "@sb/domain";
-import { classifySyncFreshness } from "@sb/domain";
 import type { ReactNode } from "react";
 
 import { Shell } from "../../components/shell";
 import { formatCount, formatDateTime } from "../../lib/format";
 import { createClient } from "../../lib/supabase/server";
+import { classifyResourceFreshness, failureRateLabel } from "../../lib/sync-health";
+import type { SyncVerdict } from "../../lib/sync-health";
 
 export const metadata = { title: "Saúde da Sincronização — Speed Bikers Gestão" };
 
@@ -13,29 +13,31 @@ export const metadata = { title: "Saúde da Sincronização — Speed Bikers Ges
 export const dynamic = "force-dynamic";
 
 /**
- * Saúde da Sincronização (docs/ROADMAP.md, marco final da Fase 3).
+ * Saúde da Sincronização POR RECURSO (Fase 5C, D-143).
  *
- * `docs/ARCHITECTURE.md` secao 20: "sync_runs/sync_errors/freshness por
- * conta vira a tela de Saúde da Sincronização, que é observabilidade PARA O
- * USUÁRIO" — e a mesma secao avisa para não repetir o erro da V2
- * ("instrumentação sem consumidor é custo puro"). `sync_runs`, `sync_errors`
- * e `domain_events` já existem e gravam desde a Fase 3; esta tela é o
- * primeiro consumidor.
+ * A versão anterior media o frescor de UM recurso (orders) e contava erros
+ * de 24h. Medido antes de reescrever: `visits` falhava 123 de 145 execuções
+ * (85%, rate limit 429) e `fulfillment` nunca teve uma rodada `done` — e a
+ * tela não mostrava nenhum dos dois.
  *
- * O cartão de frescor por conta ainda é só `resource = 'orders'` —
- * `listings` continua não construído (`docs/ROADMAP.md`). Full já existe
- * (`sync.fulfillment.snapshot`, 2026-08-22) e já aparece nos "Eventos
- * recentes" abaixo (a seção lê `domain_events` inteiro, sem filtrar por
- * resource), mas ainda não ganhou cartão de frescor próprio — Full não tem
- * um "atraso" no mesmo sentido de pedidos, é sempre uma fotografia do
- * estado atual, não uma janela que pode ficar para trás.
+ * Três verdades que a tela agora separa, porque são três coisas:
+ *
+ * 1. **Reconciliação** (permanente): o indicador honesto é frescor CONTRA A
+ *    CADÊNCIA do job — visits roda 1x/dia, messages a cada 10 min; o mesmo
+ *    limiar para os dois carimbaria "atrasada" uma sincronização saudável.
+ * 2. **Backfill** (finito): "não rodou nas últimas 24h" é o estado normal de
+ *    um backfill concluído. Mostra o cursor (`backfill_covered_until`) e a
+ *    conclusão — nunca um selo de atraso, nunca uma porcentagem inventada.
+ * 3. **Processamento nosso** (métricas recalculadas): o ML pode estar em dia
+ *    e o recálculo parado — é onde os gargalos aparecem (PRD 2026-08-28).
  */
 
-const FRESHNESS_TONE: Record<FreshnessLevel, { color: string; label: string }> = {
+const VERDICT_TONE: Record<SyncVerdict, { color: string; label: string } | null> = {
   ok: { color: "var(--sb-secondary)", label: "Em dia" },
-  atencao: { color: "var(--sb-accent-ink)", label: "Sincronização atrasando" },
-  critico: { color: "var(--sb-danger)", label: "Sincronização atrasada" },
-  nunca_sincronizado: { color: "var(--sb-muted-ink)", label: "Nunca sincronizado" },
+  atencao: { color: "var(--sb-accent-ink)", label: "Atrasando" },
+  critico: { color: "var(--sb-danger)", label: "Atrasada" },
+  nunca: { color: "var(--sb-muted-ink)", label: "Nunca sincronizado" },
+  sem_cadencia: null,
 };
 
 const ACCOUNT_STATUS_TONE: Record<string, { color: string; label: string }> = {
@@ -45,155 +47,62 @@ const ACCOUNT_STATUS_TONE: Record<string, { color: string; label: string }> = {
   ERROR: { color: "var(--sb-danger)", label: "Erro de conexão" },
 };
 
+const RESOURCE_LABEL: Record<string, string> = {
+  orders: "Pedidos",
+  listings: "Anúncios",
+  visits: "Visitas",
+  fulfillment: "Full",
+  questions: "Perguntas",
+  messages: "Mensagens",
+  claims: "Reclamações",
+};
+
 const SEVERITY_TONE: Record<string, { color: string; label: string }> = {
   informativo: { color: "var(--sb-muted-ink)", label: "Informativo" },
   importante: { color: "var(--sb-accent-ink)", label: "Importante" },
   critico: { color: "var(--sb-danger)", label: "Crítico" },
 };
 
-/**
- * Rótulo legível por `event_type`. Fallback para o próprio tipo bruto: um
- * evento novo (quando o motor de diff ganhar mais detectores) não deve ficar
- * invisível só porque a tela ainda não tem um texto pronto para ele.
- */
-const EVENT_LABEL: Record<string, string> = {
-  "order.cancelled": "Pedido cancelado",
-  "listing.fulfillment.entered": "Anúncio entrou no Full",
-  "stock.depleted": "Estoque zerou",
-  "stock.replenished": "Estoque reposto",
+const th: React.CSSProperties = {
+  textAlign: "left",
+  padding: "0.5rem 0.75rem",
+  borderBottom: "1px solid var(--sb-border)",
+  fontSize: "0.75rem",
+  textTransform: "uppercase",
+  letterSpacing: "0.04em",
+  color: "var(--sb-text-soft)",
+  whiteSpace: "nowrap",
 };
 
-type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
+const td: React.CSSProperties = {
+  padding: "0.5rem 0.75rem",
+  borderBottom: "1px solid var(--sb-border)",
+  fontSize: "0.8125rem",
+  verticalAlign: "top",
+};
 
-interface AccountRow {
-  id: string;
-  label: string;
-  slug: string;
-  status: string;
-  last_error: string | null;
+const tdNumber: React.CSSProperties = { ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" };
+
+interface HealthRow {
+  ml_account_id: string;
+  account_label: string;
+  resource: string;
+  channel: string;
+  last_run_at: string | null;
+  last_run_status: string | null;
+  last_run_reason: string | null;
+  last_success_at: string | null;
+  latest_record_at: string | null;
+  runs_24h: number;
+  failed_24h: number;
+  items_24h: number;
 }
 
-interface AccountHealth extends AccountRow {
-  freshness: FreshnessLevel | null;
-  latestRecordAt: string | null;
-  errorCount24h: number;
-  /**
-   * Falha ao MEDIR o frescor/contagem de erros — distinto de `null`
-   * (frescor genuinamente não aplicável). Sem isto, uma falha de leitura
-   * virava "Nunca sincronizado"/"0 erro(s) nas últimas 24h" numa tela que
-   * existe justamente pra pegar esse tipo de problema (D-067).
-   */
-  healthCheckError: string | null;
-}
-
-async function loadAccountHealth(
-  supabase: SupabaseServerClient,
-  account: AccountRow,
-  now: Date,
-): Promise<AccountHealth> {
-  if (account.status !== "CONNECTED") {
-    // Conta que nunca chegou a sincronizar não tem frescor a medir — mostrar
-    // "0h de atraso" seria fingir um dado que não existe.
-    return { ...account, freshness: null, latestRecordAt: null, errorCount24h: 0, healthCheckError: null };
-  }
-
-  const since = new Date(now.getTime() - 24 * 3_600_000).toISOString();
-
-  const [lastRun, errorCount] = await Promise.all([
-    supabase
-      .from("sync_runs")
-      .select("latest_record_at")
-      .eq("ml_account_id", account.id)
-      .eq("resource", "orders")
-      // Só reconciliação mede frescor. Backfill também grava sync_runs em
-      // 'orders', mas o `latest_record_at` dele é uma data de negócio
-      // HISTÓRICA (o pedido mais antigo daquele pedaço de 7 dias) — sem
-      // este filtro, um backfill que rodou HÁ POUCO (finished_at recente)
-      // "vence" a ordenação e a tela mostra uma data de meses atrás como
-      // se fosse o frescor real, mesmo com a reconciliação rodando em dia
-      // de hora em hora. Achado em produção (2026-08-22): a tela marcava
-      // "Sincronização atrasada" para uma conta cuja reconciliação nunca
-      // parou de funcionar.
-      .eq("channel", "reconciliation")
-      .in("status", ["done", "partial"])
-      .order("finished_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    supabase
-      .from("sync_errors")
-      .select("id", { count: "exact", head: true })
-      .eq("ml_account_id", account.id)
-      .gte("occurred_at", since),
-  ]);
-
-  const healthCheckError = lastRun.error?.message ?? errorCount.error?.message ?? null;
-
-  if (healthCheckError !== null) {
-    return { ...account, freshness: null, latestRecordAt: null, errorCount24h: 0, healthCheckError };
-  }
-
-  const latestRecordAt = lastRun.data?.latest_record_at ?? null;
-
-  return {
-    ...account,
-    freshness: classifySyncFreshness(latestRecordAt === null ? null : new Date(latestRecordAt), now),
-    latestRecordAt,
-    errorCount24h: errorCount.count ?? 0,
-    healthCheckError: null,
-  };
-}
-
-function AccountCard({ account }: { account: AccountHealth }): ReactNode {
-  const statusTone = ACCOUNT_STATUS_TONE[account.status] ?? { color: "var(--sb-muted-ink)", label: account.status };
-  const freshnessTone = account.freshness === null ? null : FRESHNESS_TONE[account.freshness];
-  const borderColor = freshnessTone?.color ?? statusTone.color;
-
-  return (
-    <li
-      style={{
-        display: "flex",
-        flexWrap: "wrap",
-        alignItems: "baseline",
-        gap: "var(--sb-space-3)",
-        padding: "var(--sb-space-3)",
-        border: "1px solid var(--sb-border)",
-        borderRadius: "var(--sb-radius)",
-        borderLeft: `3px solid ${borderColor}`,
-      }}
-    >
-      <span style={{ fontWeight: 600, minWidth: "10rem" }}>{account.label}</span>
-
-      <span style={{ color: "var(--sb-text-soft)", fontSize: "0.8125rem", fontFamily: "ui-monospace, monospace" }}>
-        {account.slug}
-      </span>
-
-      <span style={{ fontSize: "0.8125rem", fontWeight: 700, color: statusTone.color }}>{statusTone.label}</span>
-
-      {account.status === "ERROR" && account.last_error !== null && (
-        <span style={{ color: "var(--sb-danger)", fontSize: "0.8125rem" }}>{account.last_error}</span>
-      )}
-
-      {account.healthCheckError !== null && (
-        <span role="alert" style={{ color: "var(--sb-danger)", fontSize: "0.8125rem" }}>
-          Não foi possível medir o frescor desta conta: {account.healthCheckError}
-        </span>
-      )}
-
-      {freshnessTone !== null && (
-        <>
-          <span style={{ fontSize: "0.8125rem", fontWeight: 700, color: freshnessTone.color }}>
-            {freshnessTone.label}
-          </span>
-          <span style={{ color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
-            atualizado até {formatDateTime(account.latestRecordAt)}
-          </span>
-          <span style={{ color: "var(--sb-text-soft)", fontSize: "0.8125rem", marginLeft: "auto" }}>
-            {formatCount(account.errorCount24h)} erro(s) nas últimas 24h
-          </span>
-        </>
-      )}
-    </li>
-  );
+interface ProcessingRow {
+  ml_account_id: string;
+  account_label: string;
+  latest_metric_date: string | null;
+  last_computed_at: string | null;
 }
 
 interface EventRow {
@@ -203,63 +112,32 @@ interface EventRow {
   entity_id: string;
   severity: string;
   occurred_at: string;
-  /** Nulo para eventos organizacionais sem conta associada (D-054). */
   ml_accounts: { label: string } | null;
-}
-
-function EventLine({ event }: { event: EventRow }): ReactNode {
-  const tone = SEVERITY_TONE[event.severity] ?? { color: "var(--sb-muted-ink)", label: event.severity };
-  const label = EVENT_LABEL[event.event_type] ?? event.event_type;
-
-  return (
-    <li
-      style={{
-        display: "flex",
-        flexWrap: "wrap",
-        alignItems: "baseline",
-        gap: "var(--sb-space-2)",
-        padding: "var(--sb-space-2) 0",
-        borderBottom: "1px solid var(--sb-border)",
-        fontSize: "0.875rem",
-      }}
-    >
-      <span
-        style={{
-          fontSize: "0.6875rem",
-          fontWeight: 700,
-          letterSpacing: "0.04em",
-          color: tone.color,
-          minWidth: "5.5rem",
-        }}
-      >
-        {tone.label.toUpperCase()}
-      </span>
-      <span style={{ fontWeight: 600 }}>{label}</span>
-      <span style={{ color: "var(--sb-text-soft)", fontFamily: "ui-monospace, monospace", fontSize: "0.8125rem" }}>
-        {event.entity_type} {event.entity_id}
-      </span>
-      {/* Nulo para eventos organizacionais sem conta (D-054, ex.: stock.balance.diverged). */}
-      <span style={{ color: "var(--sb-text-soft)" }}>{event.ml_accounts?.label ?? "Estoque"}</span>
-      <span style={{ color: "var(--sb-text-soft)", marginLeft: "auto", whiteSpace: "nowrap" }}>
-        {formatDateTime(event.occurred_at)}
-      </span>
-    </li>
-  );
 }
 
 export default async function SincronizacaoPage(): Promise<ReactNode> {
   const supabase = await createClient();
   const now = new Date();
 
-  const accountsResult = await supabase
-    .from("ml_accounts")
-    .select("id, label, slug, status, last_error")
-    .order("label", { ascending: true });
+  const membership = await supabase.from("organization_members").select("organization_id").maybeSingle();
+  const organizationId = membership.data?.organization_id ?? null;
 
-  const accounts = accountsResult.data ?? [];
+  if (organizationId === null) {
+    return (
+      <Shell>
+        <h1 style={{ margin: "0 0 var(--sb-space-3)", fontSize: "1.375rem" }}>Saúde da Sincronização</h1>
+        <p style={{ color: "var(--sb-text-soft)" }}>Sua conta não está associada a nenhuma organização.</p>
+      </Shell>
+    );
+  }
 
-  const [health, eventsResult] = await Promise.all([
-    Promise.all(accounts.map((account) => loadAccountHealth(supabase, account, now))),
+  const [accountsResult, healthResult, processingResult, eventsResult] = await Promise.all([
+    supabase
+      .from("ml_accounts")
+      .select("id, label, slug, status, last_error, backfill_covered_until")
+      .order("label", { ascending: true }),
+    supabase.rpc("get_sync_health", { p_organization_id: organizationId }),
+    supabase.rpc("get_processing_health", { p_organization_id: organizationId }),
     supabase
       .from("domain_events")
       .select("id, event_type, entity_type, entity_id, severity, occurred_at, ml_accounts(label)")
@@ -267,53 +145,269 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
       .limit(30),
   ]);
 
-  const events = eventsResult.data ?? [];
+  const accounts = accountsResult.data ?? [];
+  const health = (healthResult.data ?? []) as HealthRow[];
+  const processing = (processingResult.data ?? []) as ProcessingRow[];
+  const events = (eventsResult.data ?? []) as EventRow[];
+
+  // Falha em QUALQUER uma das quatro: mostrar erro, nunca "sem dado" (D-067)
+  // — numa tela que existe para pegar exatamente esse tipo de problema.
+  const error =
+    accountsResult.error ?? healthResult.error ?? processingResult.error ?? eventsResult.error;
+
+  const reconciliation = health.filter((row) => row.channel === "reconciliation");
+  const backfill = health.filter((row) => row.channel === "backfill");
 
   return (
     <Shell>
       <h1 style={{ margin: "0 0 var(--sb-space-1)", fontSize: "1.375rem" }}>Saúde da Sincronização</h1>
 
       <p style={{ margin: "0 0 var(--sb-space-4)", color: "var(--sb-text-soft)", fontSize: "0.9375rem" }}>
-        Frescor de pedidos por conta e os últimos eventos detectados. O cartão de frescor por conta
-        ainda é só de pedidos — anúncios (listings) seguem sem sincronização própria.
+        Por conta e por recurso, contra a cadência real de cada job. Reconciliação é permanente (o indicador é
+        frescor); backfill é finito (o indicador é o cursor); e o recálculo de métricas é trabalho nosso, medido em
+        separado.
       </p>
 
-      {accountsResult.error !== null && (
+      {error !== null && (
         <p role="alert" style={{ color: "var(--sb-danger)" }}>
-          Não foi possível carregar as contas: {accountsResult.error.message}
+          Não foi possível carregar: {error.message}
         </p>
       )}
 
-      {accountsResult.error === null && accounts.length === 0 && (
-        <p style={{ color: "var(--sb-text-soft)" }}>Nenhuma conta Mercado Livre cadastrada ainda.</p>
-      )}
+      {error === null && (
+        <>
+          {/* Conexão das contas */}
+          <ul
+            style={{
+              listStyle: "none",
+              padding: 0,
+              margin: "0 0 var(--sb-space-4)",
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "var(--sb-space-2)",
+            }}
+          >
+            {accounts.map((account) => {
+              const tone = ACCOUNT_STATUS_TONE[account.status] ?? {
+                color: "var(--sb-muted-ink)",
+                label: account.status,
+              };
 
-      {accounts.length > 0 && (
-        <ul style={{ listStyle: "none", padding: 0, margin: "0 0 var(--sb-space-5)", display: "grid", gap: "var(--sb-space-2)" }}>
-          {health.map((account) => (
-            <AccountCard key={account.id} account={account} />
-          ))}
-        </ul>
-      )}
+              return (
+                <li
+                  key={account.id}
+                  style={{
+                    border: "1px solid var(--sb-border)",
+                    borderLeft: `3px solid ${tone.color}`,
+                    borderRadius: "var(--sb-radius)",
+                    padding: "0.375rem 0.75rem",
+                    fontSize: "0.8125rem",
+                    display: "flex",
+                    gap: "var(--sb-space-2)",
+                    alignItems: "baseline",
+                  }}
+                >
+                  <strong>{account.label}</strong>
+                  <span style={{ color: tone.color, fontWeight: 600 }}>{tone.label}</span>
+                  {account.status === "ERROR" && account.last_error !== null && (
+                    <span style={{ color: "var(--sb-danger)" }}>{account.last_error}</span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
 
-      <h2 style={{ fontSize: "1.0625rem", margin: "0 0 var(--sb-space-2)" }}>Eventos recentes</h2>
+          {/* Reconciliação: frescor contra a cadência */}
+          <h2 style={{ fontSize: "1.0625rem", margin: "0 0 var(--sb-space-2)" }}>
+            Sincronização contínua (dado puxado do Mercado Livre)
+          </h2>
 
-      {eventsResult.error !== null && (
-        <p role="alert" style={{ color: "var(--sb-danger)" }}>
-          Não foi possível carregar os eventos: {eventsResult.error.message}
-        </p>
-      )}
+          <div style={{ overflowX: "auto", marginBottom: "var(--sb-space-4)" }}>
+            <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "60rem" }}>
+              <thead>
+                <tr>
+                  <th style={th}>Conta</th>
+                  <th style={th}>Recurso</th>
+                  <th style={th}>Situação</th>
+                  <th style={th}>Último sucesso</th>
+                  <th style={th}>Último dado</th>
+                  <th style={th}>Itens (24h)</th>
+                  <th style={th}>Falhas (24h)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reconciliation.map((row) => {
+                  const verdict = classifyResourceFreshness(
+                    row.resource,
+                    row.channel,
+                    row.last_success_at,
+                    now,
+                  );
+                  const tone = VERDICT_TONE[verdict];
+                  const failures = failureRateLabel(row.runs_24h, row.failed_24h);
 
-      {eventsResult.error === null && events.length === 0 && (
-        <p style={{ color: "var(--sb-text-soft)" }}>Nenhum evento registrado ainda.</p>
-      )}
+                  return (
+                    <tr key={`${row.ml_account_id}:${row.resource}`}>
+                      <td style={td}>{row.account_label}</td>
+                      <td style={td}>{RESOURCE_LABEL[row.resource] ?? row.resource}</td>
+                      <td style={{ ...td, color: tone?.color, fontWeight: tone === null ? undefined : 700 }}>
+                        {tone?.label ?? "—"}
+                        {/*
+                          Falha alta com sucesso recente é estado próprio: o
+                          caso real é visits com 85% de falha por 429 e ainda
+                          assim um sucesso diário — o frescor fica "Em dia"
+                          enquanto a cobertura degrada. O alerta não substitui
+                          o veredito; soma-se a ele.
+                        */}
+                        {failures !== null && (
+                          <div style={{ color: "var(--sb-danger)", fontWeight: 400, fontSize: "0.75rem" }}>
+                            {failures}
+                          </div>
+                        )}
+                        {row.last_run_status !== null &&
+                          row.last_run_status !== "done" &&
+                          row.last_run_status !== "partial" &&
+                          row.last_run_reason !== null && (
+                            <div style={{ color: "var(--sb-text-soft)", fontWeight: 400, fontSize: "0.75rem" }}>
+                              última falha: {row.last_run_reason.slice(0, 80)}
+                            </div>
+                          )}
+                      </td>
+                      <td style={td}>{formatDateTime(row.last_success_at)}</td>
+                      <td style={td}>{formatDateTime(row.latest_record_at)}</td>
+                      <td style={tdNumber}>{formatCount(row.items_24h)}</td>
+                      <td style={{ ...tdNumber, color: row.failed_24h > 0 ? "var(--sb-danger)" : undefined }}>
+                        {formatCount(row.failed_24h)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
 
-      {events.length > 0 && (
-        <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-          {events.map((event) => (
-            <EventLine key={event.id} event={event} />
-          ))}
-        </ul>
+          {/* Backfill: finito, sem selo de atraso, sem porcentagem inventada */}
+          <h2 style={{ fontSize: "1.0625rem", margin: "0 0 var(--sb-space-2)" }}>Backfill (histórico, finito)</h2>
+
+          <div style={{ overflowX: "auto", marginBottom: "var(--sb-space-4)" }}>
+            <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "44rem" }}>
+              <thead>
+                <tr>
+                  <th style={th}>Conta</th>
+                  <th style={th}>Recurso</th>
+                  <th style={th}>Última execução</th>
+                  <th style={th}>Coberto até</th>
+                  <th style={th}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {backfill.map((row) => {
+                  const account = accounts.find((a) => a.id === row.ml_account_id);
+
+                  return (
+                    <tr key={`${row.ml_account_id}:${row.resource}:bf`}>
+                      <td style={td}>{row.account_label}</td>
+                      <td style={td}>{RESOURCE_LABEL[row.resource] ?? row.resource}</td>
+                      <td style={td}>{formatDateTime(row.last_run_at)}</td>
+                      {/*
+                        `backfill_covered_until` era gravado e nunca lido — o
+                        "ganho barato" do ROADMAP. É o cursor real: até onde a
+                        história já foi puxada, sem inventar porcentagem
+                        (não existe denominador confiável para "quanto falta").
+                      */}
+                      <td style={td}>{formatDateTime(account?.backfill_covered_until ?? null)}</td>
+                      <td style={td}>{row.last_run_status ?? "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* O lado processado por nós */}
+          <h2 style={{ fontSize: "1.0625rem", margin: "0 0 var(--sb-space-2)" }}>
+            Métricas recalculadas (dado processado por nós)
+          </h2>
+
+          <div style={{ overflowX: "auto", marginBottom: "var(--sb-space-4)" }}>
+            <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "36rem" }}>
+              <thead>
+                <tr>
+                  <th style={th}>Conta</th>
+                  <th style={th}>Métricas calculadas até</th>
+                  <th style={th}>Último recálculo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {processing.map((row) => (
+                  <tr key={row.ml_account_id}>
+                    <td style={td}>{row.account_label}</td>
+                    <td style={td}>{row.latest_metric_date ?? "—"}</td>
+                    <td style={td}>{formatDateTime(row.last_computed_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Eventos recentes — preservado da versão anterior */}
+          <h2 style={{ fontSize: "1.0625rem", margin: "0 0 var(--sb-space-2)" }}>Eventos recentes</h2>
+
+          {events.length === 0 && <p style={{ color: "var(--sb-text-soft)" }}>Nenhum evento registrado ainda.</p>}
+
+          {events.length > 0 && (
+            <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+              {events.map((event) => {
+                const tone = SEVERITY_TONE[event.severity] ?? {
+                  color: "var(--sb-muted-ink)",
+                  label: event.severity,
+                };
+
+                return (
+                  <li
+                    key={event.id}
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      alignItems: "baseline",
+                      gap: "var(--sb-space-2)",
+                      padding: "var(--sb-space-2) 0",
+                      borderBottom: "1px solid var(--sb-border)",
+                      fontSize: "0.875rem",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: "0.6875rem",
+                        fontWeight: 700,
+                        letterSpacing: "0.04em",
+                        color: tone.color,
+                        minWidth: "5.5rem",
+                      }}
+                    >
+                      {tone.label.toUpperCase()}
+                    </span>
+                    <span style={{ fontWeight: 600 }}>{event.event_type}</span>
+                    <span
+                      style={{
+                        color: "var(--sb-text-soft)",
+                        fontFamily: "ui-monospace, monospace",
+                        fontSize: "0.8125rem",
+                      }}
+                    >
+                      {event.entity_type} {event.entity_id}
+                    </span>
+                    {/* Nulo para eventos organizacionais sem conta (D-054). */}
+                    <span style={{ color: "var(--sb-text-soft)" }}>{event.ml_accounts?.label ?? "Estoque"}</span>
+                    <span style={{ color: "var(--sb-text-soft)", marginLeft: "auto", whiteSpace: "nowrap" }}>
+                      {formatDateTime(event.occurred_at)}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </>
       )}
     </Shell>
   );
