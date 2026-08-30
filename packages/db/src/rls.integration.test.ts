@@ -2962,9 +2962,13 @@ describe("get_purchase_suggestions (D-147, Fase 5D)", () => {
       [CONTA, ORG_SB],
     );
 
+    // Marca exige proveniência junto (D-133): `supplier_brand_source` casado
+    // pelo CHECK, e 'MANUAL' exige `supplier_brand_set_at` — a CI #266 cobrou
+    // exatamente isso quando a fixture veio só com o texto da marca.
     const sku = await client.query<{ id: string }>(
-      `insert into public.skus (organization_id, sku, kind, supplier_brand, purchase_cost)
-       values ($1,'PURCHTEST-pastilha','PRODUTO','PURCHTEST-MARCA',12.5) returning id`,
+      `insert into public.skus
+         (organization_id, sku, kind, supplier_brand, supplier_brand_source, supplier_brand_set_at, purchase_cost)
+       values ($1,'PURCHTEST-pastilha','PRODUTO','PURCHTEST-MARCA','MANUAL',now(),12.5) returning id`,
       [ORG_SB],
     );
     skuId = sku.rows[0]?.id ?? "";
