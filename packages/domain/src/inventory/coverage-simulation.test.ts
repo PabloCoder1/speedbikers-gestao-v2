@@ -56,6 +56,18 @@ describe("simulateRequiredQuantity", () => {
     expect(result.requiredQuantity).toBe(0);
   });
 
+  /**
+   * Artefato de float que virava unidade INTEIRA (D-150): `90 × (3/30)` dá
+   * `9.0000000000000005` em binário, e o `ceil` cru mandava comprar 10
+   * quando a conta exata dá 9 — exatamente o caso taxa = units30/30 da
+   * sugestão de compra. O produto é saneado na 9ª casa antes do `ceil`,
+   * que também é o que mantém a equivalência com a derivação SQL (numeric).
+   */
+  it("produto com resultado exato não ganha unidade fantasma por artefato binário", () => {
+    expect(simulateRequiredQuantity(90, 3 / 30).requiredQuantity).toBe(9);
+    expect(simulateRequiredQuantity(30, 0.1).requiredQuantity).toBe(3);
+  });
+
   it("rejeita dias-alvo negativo", () => {
     expect(() => simulateRequiredQuantity(-1, 5)).toThrow(RangeError);
   });

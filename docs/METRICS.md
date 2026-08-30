@@ -244,6 +244,20 @@ Três mecanismos independentes, nenhum consolidado numa visão financeira:
 | Recusas | As quatro de 5D.3 (config/virtual/historico/amostra) MAIS `SEM_DEMANDA_RECENTE` (taxa zero nos 30d torna a cobertura INDEFINIDA -- contrato de D-080, nunca "infinita" fingida). A cobertura em si e exposta sempre que computavel: ela nao depende da politica |
 | Implementacao canonica | `classifyStockState` em `@sb/domain/purchasing`; nenhuma constante inventada -- todos os limiares vem da politica (D-144) |
 
+### 5D.5 Prioridade de compra (D-150)
+
+| Campo | Definicao |
+|---|---|
+| ID | `prioridade_compra` |
+| Nome | Prioridade de compra |
+| Natureza | ORDENACAO, nunca compra automatica (PRD). Chaves lexicograficas EXPLICAVEIS, sem score e sem peso inventado |
+| Chave 1 | Estado operacional (5D.4): RUPTURA > COMPRA_URGENTE > COMPRAR_EM_BREVE > COBERTURA_BAIXA > **recusas** > ADEQUADA > EXCESSO. Recusa no MEIO de proposito: e pendencia humana (config/ensaio) -- acima do que nao precisa de acao, abaixo do que precisa de compra |
+| Chave 2 | Classe ABC (5C/D-140), criterio faturamento, 90 dias TRAILING (a mesma janela do `units_90d`) -- pela PROPRIA `get_sku_abc_curve` via join, nunca reimplementada |
+| Chave 3 | Cobertura em dias, crescente (menos dias primeiro); indefinidas por ultimo |
+| Chave 4 | Venda 30d decrescente; SKU como desempate final |
+| Crescimento e valor | COLUNAS para o julgamento humano, nao chaves -- chave explicavel vale mais que score opaco |
+| Onde roda | Em SQL (`get_purchase_suggestions`), DERIVADA das formulas canonicas de `@sb/domain` com TESTE DE EQUIVALENCIA na CI: para cada linha, sugestao/estado/cobertura do SQL == dominio sobre os mesmos ingredientes. A tela continua renderizando pelo dominio |
+
 ## 6. Como adicionar ou alterar uma métrica
 
 1. Registrar ou alterar a definição **aqui primeiro**.

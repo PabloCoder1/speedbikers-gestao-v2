@@ -15,7 +15,7 @@
     "lint": "eslint .",
     "test": "vitest run --exclude '**/node_modules/**' --exclude '**/*.integration.test.ts'",
     "gen:types": "supabase gen types typescript --local > src/types.ts",
-    "test:integration": "vitest run integration"
+    "test:integration": "pnpm --filter @sb/domain run build && vitest run integration"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.112.3",
@@ -23,6 +23,7 @@
   },
   "devDependencies": {
     "@sb/config": "workspace:*",
+    "@sb/domain": "workspace:*",
     "@types/node": "26.2.0",
     "@types/pg": "8.23.1",
     "eslint": "10.8.1",

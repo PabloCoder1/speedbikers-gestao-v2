@@ -1,3 +1,10 @@
+import {
+  classifySalesTrend,
+  classifyStockState,
+  computePurchaseSuggestion,
+  computeUsableStock,
+  resolveReplenishmentPolicy,
+} from "@sb/domain";
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -3191,6 +3198,204 @@ describe("get_purchase_suggestions (D-147, Fase 5D)", () => {
     );
 
     expect(rows).toHaveLength(0);
+  });
+});
+
+describe("prioridade da sugestão de compra (D-150) — equivalência SQL × domínio", () => {
+  // O TESTE DE EQUIVALÊNCIA que D-144/D-147 declararam para o dia em que a
+  // fórmula ganhasse versão SQL: para CADA linha que a RPC devolve, o
+  // domínio (@sb/domain) recebe os MESMOS ingredientes e precisa chegar ao
+  // MESMO veredito (sugestão, estado, cobertura). Roda sobre todas as
+  // fixtures vivas no banco neste ponto da suíte, mais quatro SKUs
+  // plantados para forçar os ramos (urgente, ruptura, excesso, virtual).
+  //
+  // Marca própria (PURCHPRIO) para não contaminar o teste de filtro de
+  // D-147, que afirma total_count=1 para PURCHTEST-MARCA. Nomes fora de
+  // 'RLSTEST%': com métricas/ledger, os SKUs são indeletáveis por desenho.
+  const CONTA = "ddddbbbb-0000-4000-8000-0000000000bb";
+  const TODAY = "2026-08-23";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$2,'Conta de reposicao','purchtest-conta','PENDING')
+       on conflict do nothing`,
+      [CONTA, ORG_SB],
+    );
+
+    // A política da marca: janela 120 (15+90+15), teto 240.
+    await client.query(
+      `insert into public.replenishment_settings
+         (organization_id, supplier_brand, lead_time_days, target_coverage_days, safety_stock_days, max_coverage_days)
+       values ($1,'PURCHPRIO-MARCA',15,90,15,240)
+       on conflict (organization_id, supplier_brand) where supplier_brand is not null do nothing`,
+      [ORG_SB],
+    );
+
+    const skus = await client.query<{ id: string; sku: string }>(
+      `insert into public.skus
+         (organization_id, sku, kind, supplier_brand, supplier_brand_source, supplier_brand_set_at, stock_is_virtual)
+       values
+         ($1,'PURCHPRIO-urgente','PRODUTO','PURCHPRIO-MARCA','MANUAL',now(),false),
+         ($1,'PURCHPRIO-ruptura','PRODUTO','PURCHPRIO-MARCA','MANUAL',now(),false),
+         ($1,'PURCHPRIO-excesso','PRODUTO','PURCHPRIO-MARCA','MANUAL',now(),false),
+         ($1,'PURCHPRIO-virtual','PRODUTO','PURCHPRIO-MARCA','MANUAL',now(),true)
+       returning id, sku`,
+      [ORG_SB],
+    );
+    const bySku = new Map(skus.rows.map((r) => [r.sku, r.id]));
+
+    // 84 dias de métrica (1 un/dia) — dá história ≥ 84 para a ORGANIZAÇÃO
+    // inteira e taxa 1,0 para o urgente. É o que destrava os ramos
+    // não-recusados: sem isso, TODA linha cairia em HISTORICO_INCOMPLETO.
+    await client.query(
+      `insert into public.daily_sku_metrics
+         (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       select $1, $2, $3, d::date, 1, 50, 1, 1
+       from generate_series($4::date - 83, $4::date, interval '1 day') d`,
+      [ORG_SB, CONTA, bySku.get("PURCHPRIO-urgente"), TODAY],
+    );
+
+    await client.query(
+      `insert into public.daily_sku_metrics
+         (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values ($1,$2,$3,$4::date,15,750,5,5),
+              ($1,$2,$5,$4::date,6,300,3,3),
+              ($1,$2,$5,$4::date - 40,6,300,3,3),
+              ($1,$2,$6,$4::date,15,750,5,5)`,
+      [
+        ORG_SB,
+        CONTA,
+        bySku.get("PURCHPRIO-ruptura"),
+        TODAY,
+        bySku.get("PURCHPRIO-excesso"),
+        bySku.get("PURCHPRIO-virtual"),
+      ],
+    );
+
+    // Saldos: urgente com 10 (cobertura 10 ≤ prazo 15); excesso com 1.000
+    // (cobertura 5.000 > teto 240); ruptura sem saldo nenhum.
+    await client.query(
+      `insert into public.stock_movements
+         (organization_id, sku_id, location_kind, qty_delta, movement_type, source_type, source_id, idempotency_key, occurred_at)
+       values
+         ($1,$2,'LOCAL',10,'ENTRADA_NFE','DOCUMENT','purchprio-doc','purchprio:urgente',now()),
+         ($1,$3,'LOCAL',1000,'ENTRADA_NFE','DOCUMENT','purchprio-doc','purchprio:excesso',now())`,
+      [ORG_SB, bySku.get("PURCHPRIO-urgente"), bySku.get("PURCHPRIO-excesso")],
+    );
+  });
+
+  interface PriorityRow {
+    sku_id: string;
+    sku: string;
+    supplier_brand: string | null;
+    stock_is_virtual: boolean;
+    local_quantity: string;
+    reservado: string;
+    transito: string;
+    full_quantity: string;
+    units_15d: string;
+    units_30d: string;
+    units_60d: string;
+    units_90d: string;
+    history_days_90: string;
+    abc_class: string | null;
+    coverage_days: string | null;
+    state: string | null;
+    suggested_quantity: number | null;
+  }
+
+  async function fetchAll(): Promise<PriorityRow[]> {
+    return asUser<PriorityRow>(
+      ADMIN_SB,
+      `select * from public.get_purchase_suggestions('${ORG_SB}','${TODAY}', null, null, 100000, 0)`,
+    );
+  }
+
+  it("EQUIVALÊNCIA: para toda linha, o SQL e o domínio chegam ao mesmo veredito", async () => {
+    const settingsResult = await client.query<{
+      supplier_brand: string | null;
+      sku_id: string | null;
+      lead_time_days: number;
+      target_coverage_days: number;
+      safety_stock_days: number;
+      max_coverage_days: number | null;
+      policy_note: string | null;
+    }>(`select * from public.replenishment_settings where organization_id = $1`, [ORG_SB]);
+
+    const settings = settingsResult.rows.map((s) => ({
+      supplierBrand: s.supplier_brand,
+      skuId: s.sku_id,
+      leadTimeDays: s.lead_time_days,
+      targetCoverageDays: s.target_coverage_days,
+      safetyStockDays: s.safety_stock_days,
+      maxCoverageDays: s.max_coverage_days,
+      policyNote: s.policy_note,
+    }));
+
+    const rows = await fetchAll();
+
+    expect(rows.length).toBeGreaterThan(4);
+
+    for (const row of rows) {
+      const trend = classifySalesTrend({
+        units15: Number(row.units_15d),
+        units30: Number(row.units_30d),
+        units60: Number(row.units_60d),
+        units90: Number(row.units_90d),
+        historyDays90: Number(row.history_days_90),
+      });
+      const usable = computeUsableStock({
+        localQuantity: Number(row.local_quantity),
+        fullQuantity: Number(row.full_quantity),
+        transitQuantity: Number(row.transito),
+        reservedQuantity: Number(row.reservado),
+        stockIsVirtual: row.stock_is_virtual,
+      });
+      const policy = resolveReplenishmentPolicy(settings, {
+        id: row.sku_id,
+        supplierBrand: row.supplier_brand,
+      });
+      const suggestion = computePurchaseSuggestion({ policy, trend, usable });
+      const stockState = classifyStockState({ policy, trend, usable });
+
+      // `sku` no objeto para a falha DIZER qual linha divergiu.
+      expect({
+        sku: row.sku,
+        suggested: row.suggested_quantity,
+        state: row.state,
+        coverage: row.coverage_days === null ? null : Number(row.coverage_days),
+      }).toEqual({
+        sku: row.sku,
+        suggested: suggestion.suggestedQuantity,
+        state: stockState.state,
+        coverage: stockState.coverageDays,
+      });
+    }
+  });
+
+  it("os quatro ramos plantados saem com o estado esperado", async () => {
+    const rows = await fetchAll();
+    const bySku = new Map(rows.map((r) => [r.sku, r]));
+
+    expect(bySku.get("PURCHPRIO-ruptura")?.state).toBe("RUPTURA");
+    expect(bySku.get("PURCHPRIO-urgente")?.state).toBe("COMPRA_URGENTE");
+    expect(Number(bySku.get("PURCHPRIO-urgente")?.suggested_quantity)).toBe(110);
+    expect(bySku.get("PURCHPRIO-excesso")?.state).toBe("EXCESSO");
+    expect(bySku.get("PURCHPRIO-virtual")?.state).toBeNull();
+    expect(bySku.get("PURCHPRIO-virtual")?.suggested_quantity).toBeNull();
+  });
+
+  it("a ordem é a prioridade: ruptura > urgente > recusas > excesso", async () => {
+    const order = (await fetchAll()).map((r) => r.sku);
+    const at = (sku: string) => order.indexOf(sku);
+
+    expect(at("PURCHPRIO-ruptura")).toBeGreaterThanOrEqual(0);
+    expect(at("PURCHPRIO-ruptura")).toBeLessThan(at("PURCHPRIO-urgente"));
+    // PURCHTEST-pastilha não tem política (marca sem regra): recusa, rank 4.
+    expect(at("PURCHPRIO-urgente")).toBeLessThan(at("PURCHTEST-pastilha"));
+    // EXCESSO fica DEPOIS das recusas: não é pendência de compra.
+    expect(at("PURCHTEST-pastilha")).toBeLessThan(at("PURCHPRIO-excesso"));
   });
 });
 

@@ -3917,6 +3917,8 @@ export type Database = {
           p_supplier_brand?: string | null
         }
         Returns: {
+          abc_class: string
+          coverage_days: number
           full_quantity: number
           history_days_90: number
           local_quantity: number
@@ -3924,7 +3926,9 @@ export type Database = {
           reservado: number
           sku: string
           sku_id: string
+          state: string
           stock_is_virtual: boolean
+          suggested_quantity: number
           supplier_brand: string
           title: string
           total_count: number

@@ -71,7 +71,7 @@ export function summarizeReplenishmentWindow(
     rowsOnPage,
     pageSize: PAGE_SIZE,
     noun: "SKUs",
-    trailing: ", da maior venda recente para a menor",
+    trailing: ", em ordem de prioridade de compra",
     emptyLabel: "Nenhum SKU no filtro atual.",
   });
 }

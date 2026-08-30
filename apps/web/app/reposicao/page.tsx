@@ -84,6 +84,15 @@ interface SuggestionRow {
   units_60d: number;
   units_90d: number;
   history_days_90: number;
+  /**
+   * Derivados em SQL (D-150) para a ORDENAÇÃO por prioridade e para o teste
+   * de equivalência; as células continuam renderizando pelo domínio. Só
+   * `abc_class` é exibido daqui — a curva é canônica em SQL (D-140).
+   */
+  abc_class: string | null;
+  coverage_days: number | null;
+  state: string | null;
+  suggested_quantity: number | null;
   total_count: number;
 }
 
@@ -195,8 +204,11 @@ export default async function ReposicaoPage({
         aproveitável soma local, Full e trânsito, reservado fora. A quantidade é cálculo determinístico, nunca IA —
         e quando falta base (configuração, estoque real, histórico ou amostra), a linha diz o motivo em vez de
         inventar número. O <strong>estado</strong> compara a cobertura em dias com os limiares da própria política
-        (prazo, ponto de pedido, janela, teto) — excesso só é afirmado com o teto configurado. SKU com estoque
-        virtual destrava no <Link href="/produtos?estado=pendente&sinal=sentinela">ensaio de classificação</Link>.
+        (prazo, ponto de pedido, janela, teto) — excesso só é afirmado com o teto configurado. A{" "}
+        <strong>ordem é a prioridade de compra</strong>, por chaves explicáveis e sem pesos: estado (ruptura
+        primeiro), classe ABC, menor cobertura, maior venda recente. Priorizar é ordenar — a compra continua
+        decisão sua. SKU com estoque virtual destrava no{" "}
+        <Link href="/produtos?estado=pendente&sinal=sentinela">ensaio de classificação</Link>.
       </p>
 
       {error === null && settings.length === 0 && (
@@ -271,6 +283,9 @@ export default async function ReposicaoPage({
               <tr>
                 <th style={th}>SKU</th>
                 <th style={th}>Marca</th>
+                <th style={th} title="Curva ABC por faturamento, 90 dias (D-140) — segunda chave da prioridade">
+                  Classe
+                </th>
                 <th style={th}>Venda/dia (30d)</th>
                 <th style={th}>Tendência</th>
                 <th style={th}>Aproveitável</th>
@@ -319,6 +334,10 @@ export default async function ReposicaoPage({
                     </td>
                     {/* Marca vazia é estado legítimo (36% preenchidos, D-129). */}
                     <td style={td}>{row.supplier_brand ?? "—"}</td>
+                    {/* "—" = sem venda no período da curva, não classe faltando. */}
+                    <td style={{ ...td, fontWeight: row.abc_class === "A" ? 600 : undefined }}>
+                      {row.abc_class ?? "—"}
+                    </td>
                     <td style={tdNumber}>{RATE.format(breakdown.dailyRate)}</td>
                     <td style={td}>
                       <TrendBadge

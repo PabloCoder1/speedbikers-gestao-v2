@@ -238,6 +238,9 @@ importers:
       '@sb/config':
         specifier: workspace:*
         version: link:../config
+      '@sb/domain':
+        specifier: workspace:*
+        version: link:../domain
       '@types/node':
         specifier: 26.2.0
         version: 26.2.0

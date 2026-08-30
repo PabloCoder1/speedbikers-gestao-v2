@@ -64,12 +64,25 @@ export interface RequiredQuantitySimulation {
   readonly requiredQuantity: number;
 }
 
-/** "Quantidade necessária para X dias de cobertura": inverso de `simulateCoverageDays`. Arredonda para cima — cobertura parcial de um dia ainda é estoque insuficiente para aquele dia inteiro. */
+/**
+ * "Quantidade necessária para X dias de cobertura": inverso de
+ * `simulateCoverageDays`. Arredonda para cima — cobertura parcial de um dia
+ * ainda é estoque insuficiente para aquele dia inteiro.
+ *
+ * O produto é saneado na 9ª casa antes do `ceil` (D-150): em binário,
+ * `0.1 × 30 = 3.0000000000000004`, e o `ceil` cru transformaria o artefato
+ * em uma unidade INTEIRA a mais — o simulador mandava comprar 4 quando a
+ * conta exata dá 3. A 9ª casa está ordens de grandeza abaixo de qualquer
+ * precisão real de venda média diária, e é o que mantém a equivalência com
+ * a derivação SQL da fórmula (`numeric` é exato).
+ */
 export function simulateRequiredQuantity(targetDays: number, avgDailySales: number): RequiredQuantitySimulation {
   assertNonNegative(targetDays, "dias-alvo");
   assertNonNegative(avgDailySales, "venda média diária");
 
-  return { targetDays, avgDailySales, requiredQuantity: Math.ceil(targetDays * avgDailySales) };
+  const product = Math.round(targetDays * avgDailySales * 1e9) / 1e9;
+
+  return { targetDays, avgDailySales, requiredQuantity: Math.ceil(product) };
 }
 
 export interface RuptureDateSimulation {

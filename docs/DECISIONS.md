@@ -2874,6 +2874,28 @@ A camada 3 foi encontrada pelo CATALOGO (enumerando as FKs RESTRICT reais), nao 
 
 **Impacto:** migration `20260830154350` (tabela + 2 triggers de captura + append-only fisico + RLS), `apps/web/app/skus/[skuId]/page.tsx` (secao de custo), `apps/web/app/compras/novo/item-row.tsx` (sugestao de custo), `apps/web/app/reposicao/page.tsx` (tooltip), `packages/db/src/types.ts` (regenerado), `rls.integration.test.ts` (+7).
 
+## D-150 - Priorizacao de compras: a primeira derivacao SQL da formula canonica, com teste de equivalencia
+
+**Contexto:** penultimo item da 5D. O PRD e explicito: priorizacao e camada de ORDENACAO, nunca compra automatica. Ordenar o conjunto inteiro (3.276 SKUs) pela prioridade exige o calculo no Postgres (D-131: paginacao e ordenacao em SQL) -- e o momento que D-144/D-147 declararam para a primeira versao SQL derivada de `@sb/domain` com teste de equivalencia.
+
+**A ordem e lexicografica por categorias, sem score e sem peso inventado:** estado operacional (ruptura > urgente > em breve > baixa > RECUSAS > adequada > excesso), classe ABC (faturamento/90d, pela PROPRIA `get_sku_abc_curve` via join -- a curva e canonica em SQL, nunca reimplementada), cobertura crescente, venda 30d decrescente, SKU. **Recusa no meio de proposito**: pendencia humana acima do que nao precisa de acao, abaixo do que precisa de compra. Crescimento e valor sao COLUNAS para o julgamento, nao chaves -- chave explicavel vale mais que score opaco. Normativa em `docs/METRICS.md` 5D.5.
+
+**O teste de equivalencia e a licenca da derivacao:** `packages/db` ganhou `@sb/domain` como devDependency (sem ciclo) e a suite compara, PARA CADA LINHA que a RPC devolve, sugestao/estado/cobertura do SQL contra o dominio alimentado com os mesmos ingredientes -- mais quatro SKUs plantados que forcam os ramos (urgente, ruptura, excesso, virtual) e um teste de posicoes da ordenacao. O `test:integration` builda `@sb/domain` antes (o job de CI chama o script direto, sem turbo).
+
+**Detalhes que a derivacao exigiu:**
+
+1. **Resolucao de politica em SQL por precedencia de LINHA INTEIRA** (SKU > marca > padrao), nunca coalesce por campo -- coalesce misturaria escopos quando o `max_coverage_days` do escopo vencedor e nulo.
+2. **Bug real de float achado pela equivalencia, corrigido na RAIZ (D-080):** `Math.ceil(janela x taxa)` cru transforma artefato binario em unidade INTEIRA -- `90 x (3/30) = 9.0000000000000005` mandava comprar 10 quando a conta exata da 9. `simulateRequiredQuantity` agora sanea o produto na 9a casa antes do ceil; vale tambem para o Simulador de decisao, que carregava o mesmo defeito.
+3. **A tela continua renderizando pelo dominio** (formula unica: o canonico e o TS); as colunas derivadas existem para ordenar e para a equivalencia. So `abc_class` e exibida do SQL -- a curva e canonica la.
+
+**Medicao:** 196 ms quente, 15.047 buffers, temp ~4MB -- acima da familia de 90-137 ms, e o custo extra e o preco DECLARADO de reusar a `get_sku_abc_curve` canonica (que refaz o proprio join de Full) em vez de duplicar a formula. Nenhum indice novo.
+
+**Verificado no dado real antes de qualquer config:** com a configuracao vazia, a ordem ja conta a verdade -- classe A com cobertura 0,0 no topo (24001/PLASMOTO de novo: 497 un/30d com aproveitavel -55). Ensaio revertido no Dev com os quatro ramos e as posicoes ANTES do push.
+
+**Verificacao:** `check` 29/29 (+1 dominio, +3 integracao), build compila. Tela nao vista renderizada (a ressalva de sempre).
+
+**Impacto:** migration `20260830163841` (RPC reescrita com derivacao e ordenacao), `packages/domain/src/inventory/coverage-simulation.{ts,test.ts}` (saneamento de float), `packages/db/package.json` (+@sb/domain dev, test:integration builda antes), `rls.integration.test.ts` (+3, incluindo a equivalencia linha a linha), `apps/web/app/reposicao/page.tsx` (coluna Classe, texto da ordem), `apps/web/lib/replenishment-filters.ts` (rotulo), `types.ts` (regenerado), `docs/METRICS.md` 5D.5.
+
 ## Como adicionar nova decisao
 
 Registrar:
