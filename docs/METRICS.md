@@ -212,6 +212,21 @@ Três mecanismos independentes, nenhum consolidado numa visão financeira:
 | Fonte | `inventory_balances` (LOCAL/RESERVADO/TRANSITO) + ultimo snapshot de `fulfillment_stock_snapshots` por conta, somado (FULL) |
 | Implementacao canonica | `computeUsableStock` em `@sb/domain/purchasing` (formula unica) |
 
+### 5D.3 Sugestao de compra auditavel (D-147)
+
+| Campo | Definicao |
+|---|---|
+| ID | `sugestao_compra` |
+| Nome | Sugestao de compra auditavel |
+| Formula | `max(0, ceil(demanda_projetada - estoque_aproveitavel))`, com `demanda_projetada = ceil(taxa_30d x janela_demanda)` e `janela_demanda = prazo + cobertura + seguranca` (a soma de D-144: prazo SOMA, nunca substitui) |
+| Taxa de demanda | Unidades dos ultimos 30 dias / 30 -- a MESMA janela "recente" da tendencia (5D). 90d diluiria o regime antigo que a tendencia pode ja ter declarado morto; 15d amplificaria ruido. A tendencia aparece AO LADO como contexto e NUNCA altera o numero |
+| Recusas | TODAS as aplicaveis, em lista: `SEM_CONFIGURACAO` (D-144), `ESTOQUE_VIRTUAL` (5D.2), `HISTORICO_INCOMPLETO` e `AMOSTRA_INSUFICIENTE` (5D). Numero so quando defensavel |
+| Zero | E resposta ("nao compre"), nunca recusa. Excesso como estado proprio e item aberto da fase |
+| LOCAL negativo | AUMENTA a sugestao: unidades devidas tambem precisam ser compradas (5D.2) |
+| Custo estimado | custo CADASTRADO x sugestao, rotulado como tal -- custo de simulacao separado e item aberto da fase |
+| Implementacao canonica | `computePurchaseSuggestion` em `@sb/domain/purchasing`, reusando `simulateRequiredQuantity` (D-080) e `demandWindowDays` (D-144) |
+| Fonte | RPC `get_purchase_suggestions` entrega INGREDIENTES (saldo pivotado, Full da ultima captura, janelas, `history_days_90`, marca, custo); `replenishment_settings` resolve a politica. A formula NUNCA roda em SQL enquanto a ordenacao nao precisar dela |
+
 ## 6. Como adicionar ou alterar uma métrica
 
 1. Registrar ou alterar a definição **aqui primeiro**.

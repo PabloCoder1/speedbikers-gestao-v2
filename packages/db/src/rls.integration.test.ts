@@ -2942,6 +2942,121 @@ describe("get_stock_coverage (D-058, Fase 5B)", () => {
   });
 });
 
+describe("get_purchase_suggestions (D-147, Fase 5D)", () => {
+  // A RPC entrega INGREDIENTES; a fórmula da sugestão mora em @sb/domain
+  // (computePurchaseSuggestion) — aqui se testa que cada parcela chega certa
+  // e isolada por organização, nunca a conta.
+  //
+  // Mesmo raciocínio de nomes fora dos padrões de limpeza global, e mesma
+  // ausência de afterAll — ver comentário equivalente no describe de
+  // get_stock_coverage, acima.
+  const CONTA = "ddddbbbb-0000-4000-8000-0000000000bb";
+  const TODAY = "2026-08-23";
+  let skuId = "";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$2,'Conta de reposicao','purchtest-conta','PENDING')
+       on conflict do nothing`,
+      [CONTA, ORG_SB],
+    );
+
+    const sku = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind, supplier_brand, purchase_cost)
+       values ($1,'PURCHTEST-pastilha','PRODUTO','PURCHTEST-MARCA',12.5) returning id`,
+      [ORG_SB],
+    );
+    skuId = sku.rows[0]?.id ?? "";
+
+    // As três parcelas do pivô, em location_kinds distintos.
+    await client.query(
+      `insert into public.stock_movements
+         (organization_id, sku_id, location_kind, qty_delta, movement_type, source_type, source_id, idempotency_key, occurred_at)
+       values
+         ($1,$2,'LOCAL',30,'ENTRADA_NFE','DOCUMENT','purchtest-doc','purchtest:local',now()),
+         ($1,$2,'RESERVADO',4,'RESERVA','DOCUMENT','purchtest-doc','purchtest:reservado',now()),
+         ($1,$2,'TRANSITO',2,'ENTRADA_TRANSITO','DOCUMENT','purchtest-doc','purchtest:transito',now())`,
+      [ORG_SB, skuId],
+    );
+
+    // Vendas: 10 dentro da janela de 30 e 5 fora dela mas dentro da de 90 —
+    // é o que separa units_30d de units_90d.
+    await client.query(
+      `insert into public.daily_sku_metrics
+         (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values ($1,$2,$3,$4::date,10,500,5,5),
+              ($1,$2,$3,$4::date - 40,5,250,3,3)`,
+      [ORG_SB, CONTA, skuId, TODAY],
+    );
+
+    // Full: duas capturas; só a mais RECENTE pode contar (captured_at é
+    // carimbo por rodada, D-139) — a antiga carrega 99 de propósito.
+    await client.query(
+      `insert into public.fulfillment_stock_snapshots
+         (organization_id, ml_account_id, inventory_id, item_id, sku_id, quantity, captured_at)
+       values ($1,$2,'PURCHINV1','MLBPURCH1',$3,99,'2026-08-13T12:00:00Z'),
+              ($1,$2,'PURCHINV1','MLBPURCH1',$3,7,'2026-08-22T12:00:00Z')`,
+      [ORG_SB, CONTA, skuId],
+    );
+  });
+
+  it("entrega os ingredientes: parcelas do saldo, janelas de venda e o Full da ÚLTIMA captura", async () => {
+    const rows = await asUser<{
+      local_quantity: string;
+      reservado: string;
+      transito: string;
+      full_quantity: string;
+      units_30d: string;
+      units_60d: string;
+      units_90d: string;
+      supplier_brand: string;
+      purchase_cost: string;
+    }>(
+      ADMIN_SB,
+      `select * from public.get_purchase_suggestions('${ORG_SB}','${TODAY}') where sku_id='${skuId}'`,
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0]?.local_quantity)).toBe(30);
+    expect(Number(rows[0]?.reservado)).toBe(4);
+    expect(Number(rows[0]?.transito)).toBe(2);
+    // 7, não 99 nem 106: a captura antiga não conta.
+    expect(Number(rows[0]?.full_quantity)).toBe(7);
+    expect(Number(rows[0]?.units_30d)).toBe(10);
+    expect(Number(rows[0]?.units_60d)).toBe(15);
+    expect(Number(rows[0]?.units_90d)).toBe(15);
+    expect(rows[0]?.supplier_brand).toBe("PURCHTEST-MARCA");
+    expect(Number(rows[0]?.purchase_cost)).toBe(12.5);
+  });
+
+  it("o filtro de marca filtra e a CONTAGEM acompanha o conjunto filtrado, não o universo", async () => {
+    const rows = await asUser<{ sku_id: string; total_count: string }>(
+      ADMIN_SB,
+      `select * from public.get_purchase_suggestions('${ORG_SB}','${TODAY}','PURCHTEST-MARCA')`,
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.sku_id).toBe(skuId);
+    expect(Number(rows[0]?.total_count)).toBe(1);
+  });
+
+  it("anon não executa", async () => {
+    await expect(
+      asAnon(`select * from public.get_purchase_suggestions('${ORG_SB}','${TODAY}')`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
+  it("usuário de outra organização não vê o SKU desta", async () => {
+    const rows = await asUser<{ sku_id: string }>(
+      DE_OUTRA_ORG,
+      `select * from public.get_purchase_suggestions('${ORG_SB}','${TODAY}') where sku_id='${skuId}'`,
+    );
+
+    expect(rows).toHaveLength(0);
+  });
+});
+
 describe("get_sku_abc_curve (D-058, Fase 5B)", () => {
   // Mesmo raciocínio de nomes fora dos padrões de limpeza global, e mesma
   // ausência de afterAll — ver comentário equivalente no describe de

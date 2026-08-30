@@ -2813,6 +2813,29 @@ A camada 3 foi encontrada pelo CATALOGO (enumerando as FKs RESTRICT reais), nao 
 
 **Impacto:** `packages/domain/src/purchasing/usable-stock.{ts,test.ts}` (novo), `apps/web/app/estoque/page.tsx`, `docs/METRICS.md` 5D.2, `docs/ROADMAP.md`. Sem migration.
 
+## D-147 - Sugestao de compra auditavel: a composicao das tres pecas, e a divida do gerador quitada
+
+**Contexto:** o coracao da Fase 5D, com as tres pre-condicoes prontas (D-144/145/146). O PRD exige: quantidade por calculo auditavel (nunca IA), decomposicao visivel ("por que comprar 48?"), e as referencias por politica -- nao por palpite.
+
+**A conta e uma COMPOSICAO, nao uma formula nova:** `computePurchaseSuggestion` em `@sb/domain/purchasing` consome exatamente o que as tres fatias produziram -- a politica resolvida (D-144) da a janela (`prazo + cobertura + seguranca`), a tendencia (D-145) da a taxa dos ultimos 30 dias, o aproveitavel (D-146) da o que ja existe -- e projeta com `simulateRequiredQuantity` (D-080), como o ROADMAP previa. `sugestao = max(0, ceil(taxa x janela - aproveitavel))`. Normativa em `docs/METRICS.md` 5D.3.
+
+**Decisoes de desenho:**
+
+1. **Taxa = 30d/30, e a tendencia NAO modula o numero.** E a mesma janela "recente" da classificacao; modular por CRESCENDO/CAINDO seria um segundo botao escondido. A tendencia aparece ao lado, como contexto.
+2. **As recusas se propagam e TODAS aparecem** (lista, nao primeira): sem configuracao, estoque virtual, historico incompleto, amostra insuficiente. Quem configurar a marca de um SKU virtual precisa saber que ainda falta o ensaio -- descobrir recusa por recusa esconderia o caminho. A decomposicao parcial fica exposta (taxa sempre; projecao se ha config; aproveitavel se nao e virtual).
+3. **Zero e resposta** ("nao compre"), nunca recusa. **LOCAL negativo AUMENTA a sugestao** -- a divida entra na compra (24001/PLASMOTO, real: 497 un/30d com LOCAL -168 e Full 113 -> aproveitavel -55).
+4. **Custo estimado = custo CADASTRADO x sugestao**, rotulado como tal no tooltip; custo de simulacao separado segue item aberto.
+
+**A RPC entrega INGREDIENTES, nunca a formula** (`get_purchase_suggestions`): reusa os blocos medidos de D-139 (pivot + Full da ultima captura) e D-145 (janelas + `history_days_90`), full outer join saldo x venda de 90d, filtros/ordenacao/contagem no Postgres (D-131). Ordena por `units_30d desc` -- ordenar PELA sugestao exigiria a formula em SQL com teste de equivalencia, e priorizacao e item proprio da fase. `EXPLAIN`: 90 ms quente, 5.445 buffers, 3.276 linhas. Nenhum indice novo.
+
+**Tela `/reposicao`** com a conta inteira por linha (tooltip: `taxa/dia x janela = projetado - aproveitavel = comprar N`), janela com escopo da politica, marca/busca/paginacao (padrao D-141), aviso quando `replenishment_settings` esta vazia, e o retarget do nav que D-144 previa (configuracao virou subpagina). `TrendBadge` extraido para `components/` quando `/reposicao` virou o segundo consumidor -- a regra de contencao de D-141.
+
+**A divida do gerador foi QUITADA no caminho:** `generate_typescript_types` do MCP funcionou nesta sessao -- `types.ts` voltou a ser o arquivo GERADO (docs/API.md secao 7), enterrando os 7 blocos manuais de D-138..D-146. Sobrevive UMA classe de correcao manual, reaplicada e marcada no arquivo: o gerador nunca marca argumento de RPC como anulavel, e ha argumentos onde `null` carrega significado (D-133) -- `p_variation_id`, `p_supplier_brand` de `set_skus_supplier_brand`, os filtros de dashboard/estoque/curva-abc e os da RPC nova. O check inteiro passou com o arquivo regenerado -- prova de que os 7 blocos manuais estavam fieis ao schema.
+
+**Verificacao:** `check` 29/29 (+9 dominio, +9 filtros, +4 integracao RLS/ingredientes), `next build` compila, RPC conferida contra o banco real (total 3.276, lideres de venda no topo). Tela nao vista renderizada (a ressalva de sempre). Com a configuracao vazia, TODAS as linhas recusam "sem configuracao" -- e o contrato: a tela nasce recusando e passa a responder no instante em que o ADMIN preencher `/reposicao/configuracoes`.
+
+**Impacto:** `packages/domain/src/purchasing/purchase-suggestion.{ts,test.ts}` (novo), `apps/web/app/reposicao/page.tsx` (novo), `apps/web/lib/replenishment-filters.{ts,test.ts}` (novo), `apps/web/components/trend-badge.tsx` (novo, extraido de `/cobertura`), `apps/web/components/shell.tsx` (retarget), `packages/db/src/types.ts` (REGENERADO), `packages/db/src/rls.integration.test.ts` (+4), migration `20260830145612`, `docs/METRICS.md` 5D.3.
+
 ## Como adicionar nova decisao
 
 Registrar:

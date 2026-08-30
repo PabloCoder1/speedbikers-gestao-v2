@@ -1,3 +1,11 @@
+// GERADO por generate_typescript_types (Supabase MCP) em 2026-08-30 (D-147),
+// quitando a divida declarada desde D-138: sete blocos escritos a mao por
+// falta de gerador na sessao. A partir daqui o arquivo volta a ser o contrato
+// gerado que docs/API.md secao 7 exige -- com UMA classe de correcao manual
+// reaplicada por cima, marcada "CORRECAO MANUAL" nos pontos exatos: o
+// gerador nunca marca argumento de RPC como anulavel, e alguns argumentos
+// aceitam NULL com significado (D-133).
+
 export type Json =
   | string
   | number
@@ -2179,8 +2187,6 @@ export type Database = {
           },
         ]
       }
-      // ADIÇÃO MANUAL (D-144), mesma dívida de D-138..D-143: sem token de
-      // gerador nesta sessão. Assinatura da migration `20260830015215`.
       replenishment_settings: {
         Row: {
           created_at: string
@@ -3655,16 +3661,16 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      // CORRECAO MANUAL sobre o arquivo gerado (D-133): `p_variation_id`
+      // aceita NULL de verdade -- e o que distingue vincular o ANUNCIO
+      // INTEIRO (variacao nula) de vincular UMA variacao. O gerador nunca
+      // marca argumento de RPC como nulo; sem isto, vinculacoes/actions.ts
+      // nao compila.
       create_sku_listing_link: {
         Args: {
           p_item_id: string
           p_ml_account_id: string
           p_sku_id: string
-          // CORREÇÃO MANUAL, reaplicada em D-133 sobre o arquivo gerado: o
-          // gerador NUNCA marca argumento de RPC como nulo, e este aceita
-          // NULL de verdade — é o que distingue vincular o ANÚNCIO INTEIRO
-          // (variação nula) de vincular UMA variação. Sem a correção,
-          // `apps/web/app/vinculacoes/actions.ts` não compila.
           p_variation_id: string | null
         }
         Returns: {
@@ -3804,19 +3810,10 @@ export type Database = {
           visits: number
         }[]
       }
-      // ADIÇÃO MANUAL (D-138), e ela é uma DÍVIDA, não uma escolha.
-      // `docs/API.md` §7 exige tipos GERADOS. Nesta sessão não havia
-      // `SUPABASE_ACCESS_TOKEN` nem Docker, então nem o gerador do CLI
-      // (`--project-id`, caminho usado em D-073) nem o local rodaram. O bloco
-      // abaixo foi escrito à mão a partir da assinatura real da migration
-      // `20260829220548`, e deve ser SUBSTITUÍDO pelo gerado na próxima sessão
-      // que tiver o token — junto com as duas correções de nulidade que
-      // D-133 já documenta acima e abaixo.
-      //
-      // Os quatro argumentos opcionais aceitam `null` de verdade (é o valor
-      // que significa "sem filtro"), e o gerador nunca marca argumento de RPC
-      // como nulo — mesma classe das correções de `create_sku_listing_link` e
-      // `set_skus_supplier_brand`. Aqui já nascem corretos.
+      // CORRECAO MANUAL sobre o arquivo gerado (classe D-133): o gerador
+      // NUNCA marca argumento de RPC como nulo, e os argumentos abaixo
+      // aceitam NULL de verdade (e o valor que significa "sem filtro" --
+      // ou, nos obrigatorios, que carrega significado proprio).
       get_listings_dashboard: {
         Args: {
           p_date_from: string
@@ -3832,49 +3829,62 @@ export type Database = {
         Returns: {
           account_label: string
           available_quantity: number
-          conversion_rate: number | null
+          conversion_rate: number
           gross_revenue: number
           item_id: string
           link_state: string
           listing_id: string
           ml_account_id: string
           price: number
-          sku: string | null
-          sku_id: string | null
+          sku: string
+          sku_id: string
           status: string
           synced_at: string
           title: string
           total_count: number
           units_sold: number
-          visits: number | null
-        }[]
-      }
-      // ADIÇÃO MANUAL (D-143), mesma dívida de D-138/D-139/D-140: sem token
-      // de gerador nesta sessão. Assinaturas das migrations `20260830011456`.
-      get_sync_health: {
-        Args: { p_organization_id: string }
-        Returns: {
-          account_label: string
-          channel: string
-          failed_24h: number
-          items_24h: number
-          last_run_at: string | null
-          last_run_reason: string | null
-          last_run_status: string | null
-          last_success_at: string | null
-          latest_record_at: string | null
-          ml_account_id: string
-          resource: string
-          runs_24h: number
+          visits: number
         }[]
       }
       get_processing_health: {
         Args: { p_organization_id: string }
         Returns: {
           account_label: string
-          last_computed_at: string | null
-          latest_metric_date: string | null
+          last_computed_at: string
+          latest_metric_date: string
           ml_account_id: string
+        }[]
+      }
+      // CORRECAO MANUAL sobre o arquivo gerado (classe D-133): o gerador
+      // NUNCA marca argumento de RPC como nulo, e os argumentos abaixo
+      // aceitam NULL de verdade (e o valor que significa "sem filtro" --
+      // ou, nos obrigatorios, que carrega significado proprio).
+      get_purchase_suggestions: {
+        Args: {
+          p_date_to: string
+          p_limit?: number
+          p_offset?: number
+          p_organization_id: string
+          p_search?: string | null
+          p_supplier_brand?: string | null
+        }
+        Returns: {
+          full_quantity: number
+          history_days_90: number
+          local_quantity: number
+          purchase_cost: number
+          reservado: number
+          sku: string
+          sku_id: string
+          stock_is_virtual: boolean
+          supplier_brand: string
+          title: string
+          total_count: number
+          transito: number
+          units_15d: number
+          units_30d: number
+          units_60d: number
+          units_90d: number
         }[]
       }
       get_sales_daily_series: {
@@ -3907,9 +3917,10 @@ export type Database = {
           units_sold: number
         }[]
       }
-      // ADIÇÃO MANUAL (D-140), terceira da mesma dívida (D-138, D-139): sem
-      // `SUPABASE_ACCESS_TOKEN` nem Docker nesta sessão, nenhum gerador rodou.
-      // Escrito a partir da assinatura real da migration `20260829233213`.
+      // CORRECAO MANUAL sobre o arquivo gerado (classe D-133): o gerador
+      // NUNCA marca argumento de RPC como nulo, e os argumentos abaixo
+      // aceitam NULL de verdade (e o valor que significa "sem filtro" --
+      // ou, nos obrigatorios, que carrega significado proprio).
       get_sku_abc_curve: {
         Args: {
           p_criterion?: string | null
@@ -3932,7 +3943,7 @@ export type Database = {
           metric_value: number
           sku: string
           sku_id: string
-          title: string | null
+          title: string
           total_count: number
         }[]
       }
@@ -4023,11 +4034,10 @@ export type Database = {
           weekday: number
         }[]
       }
-      // ADIÇÃO MANUAL (D-139), mesma dívida declarada em D-138: sem
-      // `SUPABASE_ACCESS_TOKEN` nem Docker nesta sessão, nenhum gerador rodou.
-      // Escrito a partir da assinatura real da migration `20260829230010`.
-      // Os quatro filtros aceitam `null` de verdade (é o valor que significa
-      // "sem filtro") e o gerador nunca marca argumento de RPC como nulo.
+      // CORRECAO MANUAL sobre o arquivo gerado (classe D-133): o gerador
+      // NUNCA marca argumento de RPC como nulo, e os argumentos abaixo
+      // aceitam NULL de verdade (e o valor que significa "sem filtro" --
+      // ou, nos obrigatorios, que carrega significado proprio).
       get_stock_balances: {
         Args: {
           p_category?: string | null
@@ -4039,25 +4049,23 @@ export type Database = {
           p_supplier_brand?: string | null
         }
         Returns: {
-          category: string | null
+          category: string
           created_at: string
-          full_quantity: number | null
-          last_movement_at: string | null
+          full_quantity: number
+          last_movement_at: string
           local_quantity: number
-          purchase_cost: number | null
+          purchase_cost: number
           reservado: number
           sku: string
           sku_id: string
           stock_is_virtual: boolean
-          stock_is_virtual_set_at: string | null
-          supplier_brand: string | null
+          stock_is_virtual_set_at: string
+          supplier_brand: string
           title: string
           total_count: number
           transito: number
         }[]
       }
-      // COLUNAS DE D-145 ADICIONADAS À MÃO (7a ocorrência da dívida do
-      // gerador — sem token nesta sessão). Assinatura real: `20260830021209`.
       get_stock_coverage: {
         Args: {
           p_date_from: string
@@ -4067,14 +4075,14 @@ export type Database = {
         }
         Returns: {
           avg_daily_sales: number
-          days_of_coverage: number | null
+          days_of_coverage: number
           history_days_90: number
           is_ruptura: boolean
           local_quantity: number
           sku: string
           sku_id: string
           stock_is_virtual: boolean
-          title: string | null
+          title: string
           units_15d: number
           units_30d: number
           units_60d: number
@@ -4111,6 +4119,23 @@ export type Database = {
           prazos_proximas_24h: number
           prazos_vencidos: number
           resolvidos_periodo: number
+        }[]
+      }
+      get_sync_health: {
+        Args: { p_organization_id: string }
+        Returns: {
+          account_label: string
+          channel: string
+          failed_24h: number
+          items_24h: number
+          last_run_at: string
+          last_run_reason: string
+          last_run_status: string
+          last_success_at: string
+          latest_record_at: string
+          ml_account_id: string
+          resource: string
+          runs_24h: number
         }[]
       }
       get_unlinked_listings: {
@@ -4314,14 +4339,13 @@ export type Database = {
           status: string
         }[]
       }
+      // CORRECAO MANUAL sobre o arquivo gerado (D-133): `null` e o valor
+      // que LIMPA a marca -- a unica forma de desfazer um preenchimento
+      // errado. O gerador nunca marca argumento de RPC como nulo.
       set_skus_supplier_brand: {
         Args: {
           p_organization_id: string
           p_sku_ids: string[]
-          // CORREÇÃO MANUAL, mesma classe da de `create_sku_listing_link`
-          // acima: o gerador NUNCA marca argumento de RPC como nulo, e aqui
-          // `null` é justamente o valor que LIMPA a marca — a única forma de
-          // desfazer um preenchimento errado (D-133).
           p_supplier_brand: string | null
         }
         Returns: {
