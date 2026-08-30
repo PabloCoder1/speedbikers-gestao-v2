@@ -2996,11 +2996,13 @@ describe("get_purchase_suggestions (D-147, Fase 5D)", () => {
 
     // Full: duas capturas; só a mais RECENTE pode contar (captured_at é
     // carimbo por rodada, D-139) — a antiga carrega 99 de propósito.
+    // item_id respeita o CHECK de formato real (^MLB[0-9]+$) — a CI #267
+    // recusou 'MLBPURCH1'.
     await client.query(
       `insert into public.fulfillment_stock_snapshots
          (organization_id, ml_account_id, inventory_id, item_id, sku_id, quantity, captured_at)
-       values ($1,$2,'PURCHINV1','MLBPURCH1',$3,99,'2026-08-13T12:00:00Z'),
-              ($1,$2,'PURCHINV1','MLBPURCH1',$3,7,'2026-08-22T12:00:00Z')`,
+       values ($1,$2,'PURCHINV1','MLB900100900',$3,99,'2026-08-13T12:00:00Z'),
+              ($1,$2,'PURCHINV1','MLB900100900',$3,7,'2026-08-22T12:00:00Z')`,
       [ORG_SB, CONTA, skuId],
     );
   });
@@ -3018,7 +3020,10 @@ describe("get_purchase_suggestions (D-147, Fase 5D)", () => {
       purchase_cost: string;
     }>(
       ADMIN_SB,
-      `select * from public.get_purchase_suggestions('${ORG_SB}','${TODAY}') where sku_id='${skuId}'`,
+      // Limite explícito e folgado: o WHERE roda DEPOIS da janela da função,
+      // e a página default de 100 poderia esconder o SKU conforme as fixtures
+      // dos outros describes crescem.
+      `select * from public.get_purchase_suggestions('${ORG_SB}','${TODAY}', null, null, 10000, 0) where sku_id='${skuId}'`,
     );
 
     expect(rows).toHaveLength(1);
