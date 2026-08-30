@@ -147,6 +147,27 @@ afterAll(async () => {
 
   // Componentes primeiro: `on delete restrict` impede apagar um produto que
   // compõe kit — que é justamente a garantia testada acima.
+  // Desde D-125, resolve_link_candidate/create_sku_listing_link tambem gravam
+  // em sku_listing_link_events -- e os testes de resolve usam asUserPersist DE
+  // PROPOSITO (o efeito precisa sobreviver a transacao). Evento persistido e
+  // append-only: o trigger recusa DELETE de qualquer papel, e as FKs
+  // `restrict` de ml_account_id/sku_id bloqueiam a limpeza de contas e SKUs
+  // abaixo. Este afterAll falhou EM SILENCIO desde D-125 (a CI estava
+  // vermelha por outros motivos e depois parou -- D-142). O bypass e ato de
+  // manutencao do DONO da tabela, so no teardown do teste: o invariante
+  // append-only vale para os papeis da aplicacao, e volta a valer na linha
+  // seguinte.
+  await client.query(
+    "alter table public.sku_listing_link_events disable trigger sku_listing_link_events_no_mutation",
+  );
+  await client.query(`
+    delete from public.sku_listing_link_events
+    where ml_account_id in (select id from public.ml_accounts where slug like 'rlstest%')
+       or sku_id in (select id from public.skus where sku like 'RLSTEST%')
+  `);
+  await client.query(
+    "alter table public.sku_listing_link_events enable trigger sku_listing_link_events_no_mutation",
+  );
   await client.query(`
     delete from public.sku_listing_links
     where sku_id in (select id from public.skus where sku like 'RLSTEST%')
