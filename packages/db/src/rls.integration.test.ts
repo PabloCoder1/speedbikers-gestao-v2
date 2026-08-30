@@ -197,6 +197,7 @@ afterAll(async () => {
       and not exists (select 1 from public.fulfillment_stock_snapshots f where f.sku_id = s.id)
       and not exists (select 1 from public.support_case_links c where c.sku_id = s.id)
       and not exists (select 1 from public.sku_listing_link_events e where e.sku_id = s.id or e.previous_sku_id = s.id)
+      and not exists (select 1 from public.sku_cost_history h where h.sku_id = s.id)
   `);
 
   // Conhecimento antes dos usuários: `created_by`/`confirmed_by` são
@@ -2829,9 +2830,11 @@ describe("estoque em trânsito a partir do ciclo do pedido de compra (D-055)", (
 });
 
 describe("sku_cost_history (D-149, Fase 5D)", () => {
-  // O SKU é deletável no teardown mesmo com histórico: a FK é CASCADE de
-  // propósito (custo de quem nunca operou não é história perdida), e
-  // `purchase_order_items.sku_id` é SET NULL.
+  // SKU com histórico de custo é INDELETÁVEL (FK restrict, o padrão das
+  // tabelas de auditoria — a primeira versão usava CASCADE e a CI #270
+  // mostrou a contradição: o cascade dispara o DELETE que o gatilho
+  // append-only rejeita). O teardown pula esses SKUs pela guarda NOT EXISTS;
+  // resíduo local acumula até o próximo reset, como nas organizações.
   let skuId = "";
 
   beforeAll(async () => {
