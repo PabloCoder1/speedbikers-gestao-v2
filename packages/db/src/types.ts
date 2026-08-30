@@ -1,10 +1,10 @@
-// GERADO por generate_typescript_types (Supabase MCP) em 2026-08-30 (D-147),
-// quitando a divida declarada desde D-138: sete blocos escritos a mao por
-// falta de gerador na sessao. A partir daqui o arquivo volta a ser o contrato
-// gerado que docs/API.md secao 7 exige -- com UMA classe de correcao manual
-// reaplicada por cima, marcada "CORRECAO MANUAL" nos pontos exatos: o
-// gerador nunca marca argumento de RPC como anulavel, e alguns argumentos
-// aceitam NULL com significado (D-133).
+// GERADO por generate_typescript_types (Supabase MCP) -- desde D-147 o
+// arquivo volta a ser o contrato gerado que docs/API.md secao 7 exige,
+// regenerado a cada migration (script regen_types no scratchpad da sessao),
+// com UMA classe de correcao manual reaplicada por cima, marcada
+// "CORRECAO MANUAL" nos pontos exatos: o gerador nunca marca argumento de
+// RPC como anulavel, e alguns argumentos aceitam NULL com significado
+// (D-133).
 
 export type Json =
   | string
@@ -2192,6 +2192,7 @@ export type Database = {
           created_at: string
           id: string
           lead_time_days: number
+          max_coverage_days: number | null
           organization_id: string
           policy_note: string | null
           safety_stock_days: number
@@ -2204,6 +2205,7 @@ export type Database = {
           created_at?: string
           id?: string
           lead_time_days: number
+          max_coverage_days?: number | null
           organization_id: string
           policy_note?: string | null
           safety_stock_days?: number
@@ -2216,6 +2218,7 @@ export type Database = {
           created_at?: string
           id?: string
           lead_time_days?: number
+          max_coverage_days?: number | null
           organization_id?: string
           policy_note?: string | null
           safety_stock_days?: number

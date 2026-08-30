@@ -227,6 +227,23 @@ Três mecanismos independentes, nenhum consolidado numa visão financeira:
 | Implementacao canonica | `computePurchaseSuggestion` em `@sb/domain/purchasing`, reusando `simulateRequiredQuantity` (D-080) e `demandWindowDays` (D-144) |
 | Fonte | RPC `get_purchase_suggestions` entrega INGREDIENTES (saldo pivotado, Full da ultima captura, janelas, `history_days_90`, marca, custo); `replenishment_settings` resolve a politica. A formula NUNCA roda em SQL enquanto a ordenacao nao precisar dela |
 
+### 5D.4 Estados operacionais de estoque (D-148)
+
+| Campo | Definicao |
+|---|---|
+| ID | `estado_operacional` |
+| Nome | Estado operacional de estoque |
+| Regua | Cobertura em dias = `aproveitavel / taxa_30d` (mesma formula de D-080, `simulateCoverageDays` -- arredondada a 1 casa) |
+| RUPTURA | `aproveitavel <= 0` com demanda recente -- nada para vender |
+| COMPRA_URGENTE | cobertura <= prazo: mesmo comprando AGORA, esgota antes de chegar |
+| COMPRAR_EM_BREVE | cobertura <= prazo + seguranca (o ponto de pedido) |
+| COBERTURA_BAIXA | cobertura abaixo da janela de demanda -- o territorio em que a sugestao (5D.3) ja da numero > 0 |
+| ADEQUADA | cobertura na janela, ate o teto (quando houver) -- limites inclusivos |
+| EXCESSO | cobertura acima do TETO configurado (`max_coverage_days`, o "buffer maximo" do PRD). **Sem teto, EXCESSO nunca e afirmado** -- quanto e "demais" e decisao do ADMIN, nao constante do codigo |
+| Coerencia do teto | CHECK no banco: teto >= prazo + cobertura + seguranca (abaixo da janela, ADEQUADA seria impossivel) |
+| Recusas | As quatro de 5D.3 (config/virtual/historico/amostra) MAIS `SEM_DEMANDA_RECENTE` (taxa zero nos 30d torna a cobertura INDEFINIDA -- contrato de D-080, nunca "infinita" fingida). A cobertura em si e exposta sempre que computavel: ela nao depende da politica |
+| Implementacao canonica | `classifyStockState` em `@sb/domain/purchasing`; nenhuma constante inventada -- todos os limiares vem da politica (D-144) |
+
 ## 6. Como adicionar ou alterar uma métrica
 
 1. Registrar ou alterar a definição **aqui primeiro**.

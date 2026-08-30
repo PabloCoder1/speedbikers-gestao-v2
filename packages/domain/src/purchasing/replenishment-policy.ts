@@ -24,6 +24,12 @@ export interface ReplenishmentSetting {
   readonly leadTimeDays: number;
   readonly targetCoverageDays: number;
   readonly safetyStockDays: number;
+  /**
+   * O "buffer máximo" do PRD (D-148): cobertura acima disso é EXCESSO.
+   * Nulo = o ADMIN ainda não definiu o que é "demais" — e sem teto o estado
+   * EXCESSO nunca é afirmado, nunca chutado.
+   */
+  readonly maxCoverageDays: number | null;
   readonly policyNote: string | null;
 }
 

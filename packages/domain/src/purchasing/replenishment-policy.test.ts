@@ -9,6 +9,7 @@ const padrao: ReplenishmentSetting = {
   leadTimeDays: 15,
   targetCoverageDays: 30,
   safetyStockDays: 7,
+  maxCoverageDays: null,
   policyNote: null,
 };
 
@@ -18,6 +19,7 @@ const navetec: ReplenishmentSetting = {
   leadTimeDays: 60,
   targetCoverageDays: 90,
   safetyStockDays: 15,
+  maxCoverageDays: 240,
   policyNote: "importação — pedido consolidado",
 };
 
@@ -27,6 +29,7 @@ const porSku: ReplenishmentSetting = {
   leadTimeDays: 5,
   targetCoverageDays: 10,
   safetyStockDays: 0,
+  maxCoverageDays: null,
   policyNote: null,
 };
 

@@ -6542,4 +6542,43 @@ describe("replenishment_settings (Configuração de reposição, D-144)", () => 
       ),
     ).rejects.toThrow(/check/i);
   });
+
+  /**
+   * O teto de excesso (D-148) abaixo da própria janela tornaria o estado
+   * ADEQUADA impossível — toda cobertura na janela já contaria como excesso.
+   * A contradição é recusada na ORIGEM, pelo CHECK, não descoberta na tela.
+   */
+  it("teto de excesso abaixo da janela (prazo+cobertura+segurança) é recusado pelo CHECK", async () => {
+    await expect(
+      client.query(
+        `insert into public.replenishment_settings
+           (organization_id, supplier_brand, lead_time_days, target_coverage_days, safety_stock_days, max_coverage_days)
+         values ($1, 'RLSTETO', 15, 90, 15, 119)`,
+        [ORG_SB],
+      ),
+    ).rejects.toThrow(/max_covers_window/i);
+  });
+
+  it("teto igual à janela é aceito, e nulo continua legítimo (excesso nunca afirmado)", async () => {
+    const inserted = await client.query<{ id: string; max_coverage_days: number | null }>(
+      `insert into public.replenishment_settings
+         (organization_id, supplier_brand, lead_time_days, target_coverage_days, safety_stock_days, max_coverage_days)
+       values ($1, 'RLSTETO', 15, 90, 15, 120)
+       returning id, max_coverage_days`,
+      [ORG_SB],
+    );
+
+    expect(inserted.rows[0]?.max_coverage_days).toBe(120);
+
+    // Limpar o teto é edição legítima: volta a "não afirmar excesso".
+    const cleared = await client.query<{ max_coverage_days: number | null }>(
+      `update public.replenishment_settings set max_coverage_days = null
+       where id = $1 returning max_coverage_days`,
+      [inserted.rows[0]?.id],
+    );
+
+    expect(cleared.rows[0]?.max_coverage_days).toBeNull();
+
+    await client.query(`delete from public.replenishment_settings where id = $1`, [inserted.rows[0]?.id]);
+  });
 });

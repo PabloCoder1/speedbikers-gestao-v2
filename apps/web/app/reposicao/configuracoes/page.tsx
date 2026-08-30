@@ -67,6 +67,7 @@ interface SettingRow {
   lead_time_days: number;
   target_coverage_days: number;
   safety_stock_days: number;
+  max_coverage_days: number | null;
   policy_note: string | null;
   updated_at: string;
   skus: { sku: string } | null;
@@ -107,7 +108,7 @@ export default async function ReposicaoConfigPage({
     supabase
       .from("replenishment_settings")
       .select(
-        "id, supplier_brand, sku_id, lead_time_days, target_coverage_days, safety_stock_days, policy_note, updated_at, skus(sku)",
+        "id, supplier_brand, sku_id, lead_time_days, target_coverage_days, safety_stock_days, max_coverage_days, policy_note, updated_at, skus(sku)",
       )
       .order("supplier_brand", { ascending: true, nullsFirst: true }),
     supabase.from("skus").select("supplier_brand").not("supplier_brand", "is", null).order("supplier_brand"),
@@ -160,6 +161,9 @@ export default async function ReposicaoConfigPage({
                 <th style={th}>Prazo (dias)</th>
                 <th style={th}>Cobertura (dias)</th>
                 <th style={th}>Segurança (dias)</th>
+                <th style={th} title="O buffer máximo: cobertura acima disso é EXCESSO. Vazio = excesso nunca é afirmado.">
+                  Teto (dias)
+                </th>
                 <th style={th}>Nota</th>
                 <th style={th}>Atualizado</th>
                 {canWrite && <th style={th}></th>}
@@ -170,9 +174,9 @@ export default async function ReposicaoConfigPage({
                 <tr key={row.id}>
                   <td style={{ ...td, fontWeight: 600 }}>{scopeLabel(row)}</td>
                   {canWrite ? (
-                    <td style={td} colSpan={3}>
+                    <td style={td} colSpan={4}>
                       {/*
-                        Editar é um form por linha: os três números mudam, o
+                        Editar é um form por linha: os quatro números mudam, o
                         ESCOPO nunca — mudar a marca de uma regra existente
                         re-atribuiria a política de outro conjunto de SKUs em
                         silêncio (identidade fixa, mesmo desenho de D-076).
@@ -206,6 +210,16 @@ export default async function ReposicaoConfigPage({
                           min={0}
                           max={365}
                         />
+                        <input
+                          type="number"
+                          name="max_coverage_days"
+                          defaultValue={row.max_coverage_days ?? ""}
+                          aria-label="Teto de cobertura em dias (buffer máximo, opcional)"
+                          placeholder="teto"
+                          style={inputStyle}
+                          min={1}
+                          max={1095}
+                        />
                         <button type="submit" style={buttonStyle}>
                           Salvar
                         </button>
@@ -216,6 +230,7 @@ export default async function ReposicaoConfigPage({
                       <td style={td}>{row.lead_time_days}</td>
                       <td style={td}>{row.target_coverage_days}</td>
                       <td style={td}>{row.safety_stock_days}</td>
+                      <td style={td}>{row.max_coverage_days ?? "—"}</td>
                     </>
                   )}
                   <td style={{ ...td, color: "var(--sb-text-soft)", maxWidth: "16rem" }}>{row.policy_note ?? "—"}</td>
@@ -270,6 +285,13 @@ export default async function ReposicaoConfigPage({
             <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.75rem" }}>
               Segurança (dias)
               <input type="number" name="safety_stock_days" style={inputStyle} min={0} max={365} defaultValue={0} />
+            </label>
+            <label
+              style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.75rem" }}
+              title="Cobertura acima disso é EXCESSO. Vazio = excesso nunca é afirmado. Precisa ser ≥ prazo + cobertura + segurança."
+            >
+              Teto (dias, opcional)
+              <input type="number" name="max_coverage_days" style={inputStyle} min={1} max={1095} />
             </label>
             <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.75rem" }}>
               Nota (opcional)

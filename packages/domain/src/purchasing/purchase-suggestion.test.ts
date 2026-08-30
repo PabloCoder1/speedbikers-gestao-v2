@@ -18,6 +18,7 @@ const policy: ResolvedReplenishmentPolicy = {
   leadTimeDays: 15,
   targetCoverageDays: 90,
   safetyStockDays: 15,
+  maxCoverageDays: null,
   policyNote: null,
 };
 

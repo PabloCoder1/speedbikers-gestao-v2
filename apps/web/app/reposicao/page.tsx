@@ -1,11 +1,17 @@
 import {
   classifySalesTrend,
+  classifyStockState,
   computePurchaseSuggestion,
   computeUsableStock,
   resolveReplenishmentPolicy,
   toSalesMetricDate,
 } from "@sb/domain";
-import type { PurchaseSuggestionRefusal, ReplenishmentSetting } from "@sb/domain";
+import type {
+  PurchaseSuggestionRefusal,
+  ReplenishmentSetting,
+  StockOperationalState,
+  StockStateRefusal,
+} from "@sb/domain";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -88,6 +94,26 @@ const REFUSAL_LABEL: Record<PurchaseSuggestionRefusal, string> = {
   AMOSTRA_INSUFICIENTE: "sem amostra",
 };
 
+/** Os estados (D-148) herdam as recusas da sugestão, mais uma própria. */
+const STATE_REFUSAL_LABEL: Record<StockStateRefusal, string> = {
+  ...REFUSAL_LABEL,
+  SEM_DEMANDA_RECENTE: "sem demanda recente",
+};
+
+/**
+ * Tons por severidade (D-007: nunca todas as cores com o mesmo peso):
+ * ruptura/urgente em vermelho, os avisos no amarelo-tinta legível, adequada
+ * no tom positivo já usado pela tendência.
+ */
+const STATE_TONE: Record<StockOperationalState, { label: string; color: string; bold?: boolean }> = {
+  RUPTURA: { label: "Ruptura", color: "var(--sb-danger)", bold: true },
+  COMPRA_URGENTE: { label: "Compra urgente", color: "var(--sb-danger)" },
+  COMPRAR_EM_BREVE: { label: "Comprar em breve", color: "var(--sb-accent-ink)" },
+  COBERTURA_BAIXA: { label: "Cobertura baixa", color: "var(--sb-text-soft)" },
+  ADEQUADA: { label: "Adequada", color: "var(--sb-secondary)" },
+  EXCESSO: { label: "Excesso", color: "var(--sb-accent-ink)", bold: true },
+};
+
 const RATE = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 function scopeLabel(scope: "SKU" | "MARCA" | "PADRAO", brand: string | null): string {
@@ -133,7 +159,9 @@ export default async function ReposicaoPage({
     }),
     supabase
       .from("replenishment_settings")
-      .select("supplier_brand, sku_id, lead_time_days, target_coverage_days, safety_stock_days, policy_note"),
+      .select(
+        "supplier_brand, sku_id, lead_time_days, target_coverage_days, safety_stock_days, max_coverage_days, policy_note",
+      ),
     supabase.from("skus").select("supplier_brand").not("supplier_brand", "is", null).order("supplier_brand"),
   ]);
 
@@ -148,6 +176,7 @@ export default async function ReposicaoPage({
     leadTimeDays: s.lead_time_days,
     targetCoverageDays: s.target_coverage_days,
     safetyStockDays: s.safety_stock_days,
+    maxCoverageDays: s.max_coverage_days,
     policyNote: s.policy_note,
   }));
 
@@ -165,8 +194,9 @@ export default async function ReposicaoPage({
         <Link href="/reposicao/configuracoes">configuração de reposição</Link> (prazo + cobertura + segurança); o
         aproveitável soma local, Full e trânsito, reservado fora. A quantidade é cálculo determinístico, nunca IA —
         e quando falta base (configuração, estoque real, histórico ou amostra), a linha diz o motivo em vez de
-        inventar número. SKU com estoque virtual destrava no{" "}
-        <Link href="/produtos?estado=pendente&sinal=sentinela">ensaio de classificação</Link>.
+        inventar número. O <strong>estado</strong> compara a cobertura em dias com os limiares da própria política
+        (prazo, ponto de pedido, janela, teto) — excesso só é afirmado com o teto configurado. SKU com estoque
+        virtual destrava no <Link href="/produtos?estado=pendente&sinal=sentinela">ensaio de classificação</Link>.
       </p>
 
       {error === null && settings.length === 0 && (
@@ -236,7 +266,7 @@ export default async function ReposicaoPage({
 
       {error === null && rows.length > 0 && (
         <div style={{ overflowX: "auto" }}>
-          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "68rem" }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "76rem" }}>
             <thead>
               <tr>
                 <th style={th}>SKU</th>
@@ -245,6 +275,7 @@ export default async function ReposicaoPage({
                 <th style={th}>Tendência</th>
                 <th style={th}>Aproveitável</th>
                 <th style={th}>Janela (dias)</th>
+                <th style={th}>Estado</th>
                 <th style={th}>Sugestão</th>
                 <th style={th}>Custo estimado</th>
               </tr>
@@ -274,6 +305,7 @@ export default async function ReposicaoPage({
                 });
                 const suggestion = computePurchaseSuggestion({ policy, trend, usable });
                 const { breakdown } = suggestion;
+                const stockState = classifyStockState({ policy, trend, usable });
 
                 return (
                   <tr key={row.sku_id}>
@@ -317,6 +349,32 @@ export default async function ReposicaoPage({
                           title={`prazo ${String(policy.leadTimeDays)} + cobertura ${String(policy.targetCoverageDays)} + segurança ${String(policy.safetyStockDays)} · ${scopeLabel(policy.scope, policy.supplierBrand)}`}
                         >
                           {formatCount(breakdown.demandWindowDays)}
+                        </span>
+                      )}
+                    </td>
+                    <td style={td}>
+                      {stockState.state === null ? (
+                        <span
+                          style={{ color: "var(--sb-muted-ink)", fontSize: "0.75rem", whiteSpace: "nowrap" }}
+                          title={
+                            stockState.coverageDays === null
+                              ? undefined
+                              : `cobertura ${RATE.format(stockState.coverageDays)}d — sem régua completa para um selo`
+                          }
+                        >
+                          {stockState.refusals.map((r) => STATE_REFUSAL_LABEL[r]).join(" · ")}
+                        </span>
+                      ) : (
+                        <span
+                          style={{
+                            color: STATE_TONE[stockState.state].color,
+                            fontWeight: STATE_TONE[stockState.state].bold === true ? 600 : undefined,
+                            fontSize: "0.8125rem",
+                            whiteSpace: "nowrap",
+                          }}
+                          title={`cobertura ${stockState.coverageDays === null ? "0" : RATE.format(stockState.coverageDays)}d · prazo ${String(stockState.thresholds.leadTimeDays)} · ponto de pedido ${String(stockState.thresholds.reorderPointDays)} · janela ${String(stockState.thresholds.demandWindowDays)}${stockState.thresholds.maxCoverageDays === null ? " · teto de excesso não configurado" : ` · teto ${String(stockState.thresholds.maxCoverageDays)}`}`}
+                        >
+                          {STATE_TONE[stockState.state].label}
                         </span>
                       )}
                     </td>

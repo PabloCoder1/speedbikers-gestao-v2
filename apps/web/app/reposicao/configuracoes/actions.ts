@@ -34,7 +34,27 @@ function describeWriteError(error: { message: string; code?: string } | null): s
     return "Sem permissão: só ADMIN e GESTOR alteram a configuração de reposição.";
   }
 
+  if (error.code === "23514" && error.message.includes("max_covers_window")) {
+    return "O teto precisa ser maior ou igual a prazo + cobertura + segurança — abaixo da janela, toda cobertura adequada já contaria como excesso.";
+  }
+
   return `Não foi possível salvar: ${error.message}`;
+}
+
+/**
+ * O teto ("buffer máximo", D-148) é OPCIONAL: vazio = o ADMIN ainda não
+ * definiu o que é "demais", e o estado EXCESSO nunca é afirmado.
+ */
+function parseOptionalMax(raw: FormDataEntryValue | null): number | null | string {
+  if (typeof raw !== "string" || raw.trim() === "") return null;
+
+  const parsed = Number.parseInt(raw, 10);
+
+  if (!Number.isFinite(parsed) || parsed < 1 || parsed > 1095) {
+    return "Teto de cobertura precisa ser um número entre 1 e 1095 — ou vazio para não afirmar excesso.";
+  }
+
+  return parsed;
 }
 
 function parseDays(raw: FormDataEntryValue | null, label: string, min: number): number | string {
@@ -60,8 +80,9 @@ export async function createSetting(formData: FormData): Promise<void> {
   const leadTime = parseDays(formData.get("lead_time_days"), "Prazo de reposição", 1);
   const coverage = parseDays(formData.get("target_coverage_days"), "Cobertura alvo", 1);
   const safety = parseDays(formData.get("safety_stock_days"), "Estoque de segurança", 0);
+  const maxCoverage = parseOptionalMax(formData.get("max_coverage_days"));
 
-  const firstError = [leadTime, coverage, safety].find((v) => typeof v === "string");
+  const firstError = [leadTime, coverage, safety, maxCoverage].find((v) => typeof v === "string");
 
   if (typeof firstError === "string") {
     finish(firstError);
@@ -81,6 +102,7 @@ export async function createSetting(formData: FormData): Promise<void> {
     lead_time_days: leadTime as number,
     target_coverage_days: coverage as number,
     safety_stock_days: safety as number,
+    max_coverage_days: maxCoverage as number | null,
     policy_note: note,
   });
 
@@ -98,8 +120,9 @@ export async function updateSetting(formData: FormData): Promise<void> {
   const leadTime = parseDays(formData.get("lead_time_days"), "Prazo de reposição", 1);
   const coverage = parseDays(formData.get("target_coverage_days"), "Cobertura alvo", 1);
   const safety = parseDays(formData.get("safety_stock_days"), "Estoque de segurança", 0);
+  const maxCoverage = parseOptionalMax(formData.get("max_coverage_days"));
 
-  const firstError = [leadTime, coverage, safety].find((v) => typeof v === "string");
+  const firstError = [leadTime, coverage, safety, maxCoverage].find((v) => typeof v === "string");
 
   if (typeof firstError === "string") {
     finish(firstError);
@@ -108,12 +131,15 @@ export async function updateSetting(formData: FormData): Promise<void> {
   // O ESCOPO é identidade e não é editável — mudar a marca de uma regra
   // existente re-atribuiria silenciosamente a política de outro conjunto de
   // SKUs. Mesma regra de identidade fixa de `notification_preferences` (D-076).
+  // Limpar o teto (campo vazio) é edição legítima: volta a "não afirmar
+  // excesso".
   const { error } = await supabase
     .from("replenishment_settings")
     .update({
       lead_time_days: leadTime as number,
       target_coverage_days: coverage as number,
       safety_stock_days: safety as number,
+      max_coverage_days: maxCoverage as number | null,
     })
     .eq("id", id);
 

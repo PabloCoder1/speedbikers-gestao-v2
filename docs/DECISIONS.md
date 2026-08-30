@@ -2836,6 +2836,24 @@ A camada 3 foi encontrada pelo CATALOGO (enumerando as FKs RESTRICT reais), nao 
 
 **Impacto:** `packages/domain/src/purchasing/purchase-suggestion.{ts,test.ts}` (novo), `apps/web/app/reposicao/page.tsx` (novo), `apps/web/lib/replenishment-filters.{ts,test.ts}` (novo), `apps/web/components/trend-badge.tsx` (novo, extraido de `/cobertura`), `apps/web/components/shell.tsx` (retarget), `packages/db/src/types.ts` (REGENERADO), `packages/db/src/rls.integration.test.ts` (+4), migration `20260830145612`, `docs/METRICS.md` 5D.3.
 
+## D-148 - Estados operacionais calculados: todos os limiares vem da politica, nenhuma constante inventada
+
+**Contexto:** segundo item da reta final da 5D. O ROADMAP pede cinco estados (ruptura, compra urgente, comprar em breve, cobertura baixa/adequada, excesso); o PRD exige que excesso seja "estado proprio, calculado, nao opiniao da IA".
+
+**A regua e a cobertura em dias** (`aproveitavel / taxa_30d`, a MESMA formula de D-080 via `simulateCoverageDays` -- formula unica), **e todos os limiares vem da configuracao de D-144**: cobertura <= prazo -> COMPRA_URGENTE (mesmo comprando agora, esgota antes de chegar); <= prazo + seguranca (ponto de pedido) -> COMPRAR_EM_BREVE; abaixo da janela -> COBERTURA_BAIXA (onde a sugestao de D-147 ja da numero); na janela ate o teto -> ADEQUADA; acima do teto -> EXCESSO. `aproveitavel <= 0` com demanda -> RUPTURA. Normativa em `docs/METRICS.md` 5D.4.
+
+**O achado da fatia: o "buffer maximo" que o PRD nomeia na secao de configuracao e que D-144 nao implementou e exatamente o teto do EXCESSO.** A coluna `max_coverage_days` nasce ANULAVEL e nenhuma linha e preenchida: sem teto, EXCESSO nunca e afirmado -- quanto e "demais" e decisao do ADMIN, nao constante do codigo (mesmo desenho da recusa de D-144). A coerencia e contrato do banco: CHECK `max_covers_window` recusa teto < prazo + cobertura + seguranca, porque abaixo da janela o estado ADEQUADA seria impossivel.
+
+**Uma recusa nova, propria dos estados: SEM_DEMANDA_RECENTE.** Taxa zero nos ultimos 30 dias torna a cobertura INDEFINIDA (contrato de D-080 -- nunca "infinita" fingida), e sem regua nenhum selo e defensavel. O caso passa pela porta da amostra (units30=0 com units90>=12) e e real. As quatro recusas de D-147 tambem se propagam. A cobertura em si e exposta sempre que computavel -- ela nao depende da politica.
+
+**Consumidores:** coluna Estado em `/reposicao` (tons por severidade, D-007; tooltip com cobertura + os quatro limiares) e campo "Teto (dias)" em `/reposicao/configuracoes` (criar, editar e LIMPAR -- voltar a nulo e edicao legitima). Erro do CHECK traduzido na action.
+
+**Processo que ficou de D-147 e virou passo padrao: o ensaio revertido.** A CI cobrou duas vezes fixtures que violavam CHECKs que eu nao tinha enumerado (proveniencia da marca de D-133; formato de item_id). Na segunda, a fixture INTEIRA foi validada contra o Dev numa transacao com rollback (DO block com raise por assercao) -- CI #268 verde na primeira tentativa depois disso. Nesta fatia o ensaio rodou ANTES do primeiro push.
+
+**Verificacao:** `check` 29/29 (+11 dominio, +2 integracao), build compila, constraints ensaiadas contra o Dev em transacao revertida. Tela nao vista renderizada (a ressalva de sempre). CI #268 (`a6e07c6`) validou D-147 completa, incluindo os 4 testes de integracao da RPC.
+
+**Impacto:** `packages/domain/src/purchasing/stock-state.{ts,test.ts}` (novo), `replenishment-policy.ts` (+`maxCoverageDays`), `apps/web/app/reposicao/page.tsx` (coluna Estado), `apps/web/app/reposicao/configuracoes/{page,actions}.tsx` (campo teto), `packages/db/src/types.ts` (REGENERADO -- script `regen_types` reutilizavel), `rls.integration.test.ts` (+2), migration `20260830152556`, `docs/METRICS.md` 5D.4.
+
 ## Como adicionar nova decisao
 
 Registrar:
