@@ -2759,6 +2759,37 @@ A camada 3 foi encontrada pelo CATALOGO (enumerando as FKs RESTRICT reais), nao 
 
 **Impacto:** migration `20260830015215`, `packages/domain/src/purchasing/replenishment-policy.{ts,test.ts}` (novo), `apps/web/app/reposicao/configuracoes/{page,actions}.tsx`, `apps/web/components/shell.tsx` (nav ESTOQUE), `packages/db/src/rls.integration.test.ts` (+8), `packages/db/src/types.ts`, `docs/ROADMAP.md`.
 
+## D-145 - Tendencia deterministica -- e o buraco de recalculo que fazia junho mentir em TODAS as telas
+
+**Contexto:** segunda fatia da Fase 5D ("tendencia por janelas 90/60/30/15, classificando crescendo/estavel/caindo, com formula deterministica e documentada").
+
+**O achado veio ANTES da formula, e era maior que a fatia.** A primeira medicao de limiares deu **86% dos SKUs "crescendo"** -- distribuicao impossivel. Causa: **junho tinha 13 de 30 dias com metrica recomputada** (1.903 unidades) com os PEDIDOS COMPLETOS em `orders` (23.025 pedidos, 30/30 dias). Buraco de RECALCULO, nao de dados -- a janela "anterior" subcontava e tudo parecia crescimento.
+
+**Reparo antes da feature** (Regra de Progressao): `rebuild_daily_sales_metrics` -- idempotente, L3 e 100% recomputavel por desenho -- para as 4 contas, 2026-06-01..2026-08-29, ~1,4s por conta. Resultado medido:
+
+| Mes | Antes | Depois |
+|---|---|---|
+| junho | 1.903 unidades (13 dias) | **21.224 (30/30)** -- 11x subcontado |
+| julho | 16.723 | **25.581** -- tambem furado |
+| agosto | 28.522 | 28.897 |
+
+**TODA tela de 90 dias lia junho/julho errados ate 2026-08-30** -- `/vendas`, Curva ABC, baselines de diagnostico. O reparo os corrige de uma vez. E abre uma pendencia: NADA vigia buraco de recalculo (o `history_days_90` desta fatia e a primeira guarda, mas so na tendencia).
+
+**A formula, fixada DEPOIS da medicao no dado consertado:**
+
+- `taxa_recente = u30/30` vs `taxa_anterior = (u90-u30)/60` -- **janelas nao sobrepostas** (sobreposicao contaria as vendas recentes dos dois lados; ha teste fixando a razao exata para a versao sobreposta nao voltar em silencio);
+- limiares **+-25%**: no dado real dao 239 crescendo / 174 caindo / 152 estavel -- corte com significado, nao degenerado;
+- **duas recusas como parte do desenho**: AMOSTRA_INSUFICIENTE (< 12 unidades/90d -- razao sobre meia duzia de vendas e ruido; 1.144 SKUs caem aqui e e a resposta certa) e HISTORICO_INCOMPLETO (< 84/90 dias com metrica -- a guarda que nasceu do artefato de junho);
+- SKU que COMECOU a vender (anterior zero) e CRESCENDO por definicao (6 casos reais).
+
+**Formula unica:** canonica em `@sb/domain/purchasing` (`classifySalesTrend`, 9 testes); a RPC so agrega as janelas (`units_15d/30d/60d/90d` + `history_days_90` em `get_stock_coverage`) e a classificacao NUNCA e feita em SQL. Definicao normativa registrada em `docs/METRICS.md` secao 5D.
+
+**Consumidor imediato:** coluna Tendencia em `/cobertura`, com as quatro janelas e a razao no tooltip (decomposicao visivel). As janelas de 15/60 sao contexto exposto; a classificacao documentada usa 30x(30,90].
+
+**Verificacao:** `check` 29/29 (+9 testes), `EXPLAIN` 94 ms na organizacao inteira, `next build` compila. Tela nao vista renderizada; `types.ts` a mao (7a ocorrencia -- e desta vez corrigiu de carona a nulidade de `days_of_coverage`/`title` que o bloco antigo afirmava erradas).
+
+**Impacto:** migration `20260830021209`, reparo de dado via `rebuild_daily_sales_metrics` (sem migration -- e execucao, nao schema), `packages/domain/src/purchasing/sales-trend.{ts,test.ts}`, `apps/web/app/cobertura/page.tsx`, `packages/db/src/types.ts`, `docs/METRICS.md` secao 5D, `docs/ROADMAP.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:

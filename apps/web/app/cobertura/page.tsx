@@ -1,6 +1,9 @@
 import { toSalesMetricDate } from "@sb/domain";
 import type { ReactNode } from "react";
 
+import { classifySalesTrend } from "@sb/domain";
+import type { SalesTrend } from "@sb/domain";
+
 import { Shell } from "../../components/shell";
 import { formatCount } from "../../lib/format";
 import { createClient } from "../../lib/supabase/server";
@@ -43,7 +46,25 @@ interface CoverageRow {
   days_of_coverage: number | null;
   is_ruptura: boolean;
   stock_is_virtual: boolean;
+  units_15d: number;
+  units_30d: number;
+  units_60d: number;
+  units_90d: number;
+  history_days_90: number;
 }
+
+/**
+ * Rótulos da tendência (D-145). As duas recusas têm texto próprio e tom
+ * apagado: "sem amostra" e "histórico incompleto" são respostas, não erros —
+ * mesmo princípio do "estoque virtual" na coluna de cobertura.
+ */
+const TREND_TONE: Record<SalesTrend, { label: string; color: string }> = {
+  CRESCENDO: { label: "▲ Crescendo", color: "var(--sb-secondary)" },
+  ESTAVEL: { label: "◆ Estável", color: "var(--sb-text-soft)" },
+  CAINDO: { label: "▼ Caindo", color: "var(--sb-danger)" },
+  AMOSTRA_INSUFICIENTE: { label: "sem amostra", color: "var(--sb-muted-ink)" },
+  HISTORICO_INCOMPLETO: { label: "histórico incompleto", color: "var(--sb-muted-ink)" },
+};
 
 const th: React.CSSProperties = {
   textAlign: "left",
@@ -178,6 +199,7 @@ export default async function CoberturaPage(): Promise<ReactNode> {
                 <th style={th}>Vendido no período</th>
                 <th style={th}>Média/dia</th>
                 <th style={th}>Cobertura (dias)</th>
+                <th style={th}>Tendência</th>
               </tr>
             </thead>
 
@@ -210,6 +232,27 @@ export default async function CoberturaPage(): Promise<ReactNode> {
                       : row.is_ruptura
                         ? "Em ruptura"
                         : (row.days_of_coverage ?? "—")}
+                  </td>
+                  <td style={td}>
+                    {(() => {
+                      const result = classifySalesTrend({
+                        units15: row.units_15d,
+                        units30: row.units_30d,
+                        units60: row.units_60d,
+                        units90: row.units_90d,
+                        historyDays90: row.history_days_90,
+                      });
+                      const tone = TREND_TONE[result.trend];
+
+                      return (
+                        <span
+                          style={{ color: tone.color, fontSize: "0.8125rem", whiteSpace: "nowrap" }}
+                          title={`15d: ${String(row.units_15d)} · 30d: ${String(row.units_30d)} · 60d: ${String(row.units_60d)} · 90d: ${String(row.units_90d)}${result.ratio === null ? "" : ` · razão 30d÷(30–90d): ${result.ratio.toFixed(2)}`}`}
+                        >
+                          {tone.label}
+                        </span>
+                      );
+                    })()}
                   </td>
                 </tr>
               ))}

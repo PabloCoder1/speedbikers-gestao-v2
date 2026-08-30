@@ -184,6 +184,20 @@ Três mecanismos independentes, nenhum consolidado numa visão financeira:
 
 ---
 
+## 5D. Tendencia de venda (D-145) -- DEFINIDA E IMPLEMENTADA
+
+| Campo | Definicao |
+|---|---|
+| ID | `tendencia_venda` |
+| Nome | Tendencia de venda |
+| Formula | `taxa_recente = unidades(ultimos 30d)/30`; `taxa_anterior = unidades((30,90] dias atras)/60`; `razao = taxa_recente/taxa_anterior`. CRESCENDO se razao >= 1,25; CAINDO se <= 0,75; ESTAVEL entre elas. Janelas NAO sobrepostas de proposito: comparar "ultimos 15" com "ultimos 90" contaria as vendas recentes dos dois lados e diluiria o sinal |
+| Recusas | AMOSTRA_INSUFICIENTE quando unidades(90d) < 12 (~1/semana: razao sobre meia duzia de vendas e ruido); HISTORICO_INCOMPLETO quando a organizacao tem < 84 dos 90 dias com metrica recomputada -- a guarda nasceu de caso real (2026-08-30: junho com 13/30 dias fazia 86% dos SKUs parecerem "crescendo") |
+| Fonte | `daily_sku_metrics.units_sold`, janelas trailing encerradas em `p_date_to` (`get_stock_coverage`) |
+| Granularidade | SKU, organizacao (soma todas as contas -- estoque local e compartilhado) |
+| Implementacao canonica | `classifySalesTrend` em `@sb/domain/purchasing` (formula unica; versao SQL futura exigira teste de equivalencia) |
+| Limiares | +-25%, fixados APOS medicao no dado real pos-reparo: 239 crescendo / 174 caindo / 152 estavel em 565 classificaveis |
+| Timezone | dia civil `America/Sao_Paulo`, herdado de `daily_sku_metrics` |
+
 ## 6. Como adicionar ou alterar uma métrica
 
 1. Registrar ou alterar a definição **aqui primeiro**.

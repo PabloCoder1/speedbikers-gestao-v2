@@ -4056,6 +4056,8 @@ export type Database = {
           transito: number
         }[]
       }
+      // COLUNAS DE D-145 ADICIONADAS À MÃO (7a ocorrência da dívida do
+      // gerador — sem token nesta sessão). Assinatura real: `20260830021209`.
       get_stock_coverage: {
         Args: {
           p_date_from: string
@@ -4065,13 +4067,18 @@ export type Database = {
         }
         Returns: {
           avg_daily_sales: number
-          days_of_coverage: number
+          days_of_coverage: number | null
+          history_days_90: number
           is_ruptura: boolean
           local_quantity: number
           sku: string
           sku_id: string
           stock_is_virtual: boolean
-          title: string
+          title: string | null
+          units_15d: number
+          units_30d: number
+          units_60d: number
+          units_90d: number
           units_sold: number
         }[]
       }
