@@ -2359,6 +2359,51 @@ export type Database = {
           },
         ]
       }
+      sku_cost_history: {
+        Row: {
+          changed_at: string
+          changed_by_role: string
+          id: number
+          new_cost: number | null
+          organization_id: string
+          previous_cost: number | null
+          sku_id: string
+        }
+        Insert: {
+          changed_at?: string
+          changed_by_role: string
+          id?: never
+          new_cost?: number | null
+          organization_id: string
+          previous_cost?: number | null
+          sku_id: string
+        }
+        Update: {
+          changed_at?: string
+          changed_by_role?: string
+          id?: never
+          new_cost?: number | null
+          organization_id?: string
+          previous_cost?: number | null
+          sku_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sku_cost_history_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sku_cost_history_sku_id_fkey"
+            columns: ["sku_id"]
+            isOneToOne: false
+            referencedRelation: "skus"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sku_listing_link_events: {
         Row: {
           actor_source: string

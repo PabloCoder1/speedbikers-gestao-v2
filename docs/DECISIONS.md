@@ -2854,6 +2854,26 @@ A camada 3 foi encontrada pelo CATALOGO (enumerando as FKs RESTRICT reais), nao 
 
 **Impacto:** `packages/domain/src/purchasing/stock-state.{ts,test.ts}` (novo), `replenishment-policy.ts` (+`maxCoverageDays`), `apps/web/app/reposicao/page.tsx` (coluna Estado), `apps/web/app/reposicao/configuracoes/{page,actions}.tsx` (campo teto), `packages/db/src/types.ts` (REGENERADO -- script `regen_types` reutilizavel), `rls.integration.test.ts` (+2), migration `20260830152556`, `docs/METRICS.md` 5D.4.
 
+## D-149 - Custo de simulacao separado do cadastrado, e o custo passa a ter historia
+
+**Contexto:** terceiro item da reta final da 5D. O ROADMAP nomeia a dor: `skus.purchase_cost` e sobrescrito a cada importacao (o UPDATE do erp-import-apply grava o registro INTEIRO) e o valor anterior morre sem rastro. O PRD exige: "simular um pedido nao pode destruir o custo historico do SKU".
+
+**A separacao ja era estrutural -- esta fatia a torna VISIVEL e TRAVADA:**
+
+1. **`sku_cost_history` (nova, L2 append-only), alimentada por TRIGGER na propria `skus`**: nenhum caminho de escrita (import, reparo direto, RPC futura) muda o custo sem historiar. `previous_cost` nulo = SKU nasceu com custo; `new_cost` nulo = custo apagado (o apagamento tambem e historia). `changed_by_role` e a proveniencia real disponivel (service_role = import, postgres = direto) -- NAO ha coluna de ator humano porque nao existe caminho humano de escrita; coluna sempre nula seria auditoria de mentira.
+2. **SEM backfill, de proposito**: linha "baseline" afirmaria um instante de vigencia que ninguem mediu, e seriam ~3.4k escritas em massa sem necessidade (precedente D-065/D-081). O registro comeca em 2026-08-30 e a tela declara isso.
+3. **FK do SKU em CASCADE, contra o instinto de ledger**: SKU deletavel = SKU que nunca operou (as outras FKs restrict ja o prendem ao primeiro movimento); custo de quem nunca operou nao e historia perdida. Tambem evita engrossar a cebola de teardown de D-142 -- e foi por ela que se descobriu que `purchase_order_items.sku_id` e SET NULL (por isso os testes de compras usavam `skuId: null`).
+4. **O invariante do PRD virou teste**: criar pedido com `unit_cost` proprio nao toca `skus.purchase_cost` NEM gera linha de historia -- o custo de pedido vive em `purchase_order_items.unit_cost` e nunca escreve de volta.
+5. **O custo cadastrado vira SUGESTAO no pedido** (`/compras/novo`): selecionar um SKU preenche o custo unitario com o cadastrado, rotulado ("edite a vontade; o pedido nao altera o cadastro"), e so quando o campo esta vazio ou ainda carrega sugestao anterior -- nunca por cima do que o usuario digitou. Antes o campo nascia vazio e era digitado de cabeca.
+
+**Consumidores**: secao "Custo cadastrado" no Dashboard de SKU (custo atual + historico com proveniencia + estado vazio honesto sobre o inicio do rastreio); tooltip do custo estimado em `/reposicao` atualizado (o "item aberto" fechou).
+
+**Ensaio revertido ANTES do push** (processo de D-148): as cinco mecanicas do gatilho (nascimento, mudanca, update sem custo, apagamento, append-only) validadas contra o Dev em transacao com rollback.
+
+**Verificacao:** `check` 29/29 (+7 integracao), build compila. Tela nao vista renderizada (a ressalva de sempre).
+
+**Impacto:** migration `20260830154350` (tabela + 2 triggers de captura + append-only fisico + RLS), `apps/web/app/skus/[skuId]/page.tsx` (secao de custo), `apps/web/app/compras/novo/item-row.tsx` (sugestao de custo), `apps/web/app/reposicao/page.tsx` (tooltip), `packages/db/src/types.ts` (regenerado), `rls.integration.test.ts` (+7).
+
 ## Como adicionar nova decisao
 
 Registrar:

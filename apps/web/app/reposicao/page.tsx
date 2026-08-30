@@ -403,7 +403,7 @@ export default async function ReposicaoPage({
                       {suggestion.suggestedQuantity !== null &&
                       suggestion.suggestedQuantity > 0 &&
                       row.purchase_cost !== null ? (
-                        <span title="custo CADASTRADO × sugestão — sobrescrito a cada importação; custo de simulação separado é item aberto da Fase 5D">
+                        <span title="custo CADASTRADO × sugestão — sobrescrito a cada importação, com histórico no Dashboard do SKU (D-149); o custo do PEDIDO é editável na criação e nunca escreve de volta no cadastro">
                           {formatCurrency(suggestion.suggestedQuantity * row.purchase_cost)}
                         </span>
                       ) : (

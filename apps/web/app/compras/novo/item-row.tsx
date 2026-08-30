@@ -24,6 +24,8 @@ export interface DraftItem {
   isImported: boolean | null;
   quantityOrdered: string;
   unitCost: string;
+  /** True quando `unitCost` veio do cadastro e o usuário ainda não mexeu. */
+  unitCostSuggested?: boolean | undefined;
 }
 
 interface SkuResult {
@@ -32,6 +34,8 @@ interface SkuResult {
   title: string | null;
   /** Nulo quando o SKU não tem código fiscal de origem cadastrado (~2% do catálogo). */
   is_imported: boolean | null;
+  /** Custo CADASTRADO (94,9% preenchido) — vira sugestão editável, nunca volta pro cadastro. */
+  purchase_cost: number | null;
 }
 
 function originLabel(isImported: boolean | null): string {
@@ -74,7 +78,7 @@ export function ItemRow({
 
     const { data, error } = await supabase
       .from("skus")
-      .select("id, sku, title, is_imported")
+      .select("id, sku, title, is_imported, purchase_cost")
       .ilike("sku_key", `%${value.trim().toUpperCase()}%`)
       .order("sku")
       .limit(8);
@@ -91,12 +95,22 @@ export function ItemRow({
   }
 
   function select(sku: SkuResult): void {
+    // Custo de simulação separado do cadastrado (D-149): o cadastrado entra
+    // como SUGESTÃO editável — só quando o campo ainda está vazio ou ainda
+    // carrega a sugestão anterior (nunca por cima do que o usuário digitou).
+    // O valor vai para `purchase_order_items.unit_cost` e jamais escreve de
+    // volta em `skus.purchase_cost`.
+    const shouldSuggest =
+      sku.purchase_cost !== null && (item.unitCost === "" || item.unitCostSuggested === true);
+
     onChange({
       ...item,
       skuId: sku.id,
       skuSnapshot: sku.sku,
       titleSnapshot: sku.title,
       isImported: sku.is_imported,
+      unitCost: shouldSuggest ? String(sku.purchase_cost) : item.unitCost,
+      unitCostSuggested: shouldSuggest ? true : item.unitCostSuggested,
     });
     setResults([]);
   }
@@ -198,10 +212,15 @@ export function ItemRow({
           step="0.01"
           value={item.unitCost}
           onChange={(event) => {
-            onChange({ ...item, unitCost: event.target.value });
+            onChange({ ...item, unitCost: event.target.value, unitCostSuggested: false });
           }}
           style={inputStyle}
         />
+        {item.unitCostSuggested === true && (
+          <div style={{ fontSize: "0.6875rem", color: "var(--sb-text-soft)", marginTop: "0.25rem" }}>
+            custo cadastrado — edite à vontade; o pedido não altera o cadastro
+          </div>
+        )}
       </td>
 
       <td style={{ padding: "0.375rem", verticalAlign: "top" }}>

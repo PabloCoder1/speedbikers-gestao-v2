@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 
 import { Shell } from "../../../components/shell";
 import { StatusPill } from "../../../components/status-pill";
-import { formatCount, formatCurrency } from "../../../lib/format";
+import { formatCount, formatCurrency, formatDateTime } from "../../../lib/format";
 import { listingStatusLabel } from "../../../lib/labels";
 import { createClient } from "../../../lib/supabase/server";
 import { DiagnosisPanel } from "./diagnosis-panel";
@@ -75,7 +75,11 @@ export default async function SkuDashboardPage({
 
   const supabase = await createClient();
 
-  const sku = await supabase.from("skus").select("id, sku, title, organization_id").eq("id", skuId).maybeSingle();
+  const sku = await supabase
+    .from("skus")
+    .select("id, sku, title, organization_id, purchase_cost")
+    .eq("id", skuId)
+    .maybeSingle();
 
   // `null` aqui pode ser "não existe" ou "a policy escondeu" — mesmo
   // raciocínio já usado em apps/web/app/compras/[id]/page.tsx.
@@ -87,7 +91,7 @@ export default async function SkuDashboardPage({
   const dateTo = now.toISOString().slice(0, 10);
   const dateFrom = new Date(now.getTime() - (LOOKBACK_DAYS - 1) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-  const [dashboardResult, listingsResult, coverageResult] = await Promise.all([
+  const [dashboardResult, listingsResult, coverageResult, costHistoryResult] = await Promise.all([
     supabase
       .rpc("get_sku_dashboard", {
         p_organization_id: sku.data.organization_id,
@@ -112,11 +116,21 @@ export default async function SkuDashboardPage({
         p_sku_id: sku.data.id,
       })
       .maybeSingle(),
+    // Histórico de custo cadastrado (D-149) — alimentado por trigger a cada
+    // mudança de `skus.purchase_cost`. Sem backfill: o registro começa em
+    // 30/08/2026 e a tela diz isso.
+    supabase
+      .from("sku_cost_history")
+      .select("id, previous_cost, new_cost, changed_by_role, changed_at")
+      .eq("sku_id", sku.data.id)
+      .order("changed_at", { ascending: false })
+      .limit(20),
   ]);
 
   const dashboard = dashboardResult.data;
   const listings = listingsResult.data ?? [];
   const coverage = coverageResult.data;
+  const costHistory = costHistoryResult.data ?? [];
 
   return (
     <Shell>
@@ -176,6 +190,64 @@ export default async function SkuDashboardPage({
             initialAvgDailySales={coverage?.avg_daily_sales ?? 0}
           />
         </>
+      )}
+
+      {/*
+        Custo cadastrado + histórico (D-149). Duas honestidades: o registro
+        começa em 30/08/2026 (não há como historiar o que a importação já
+        sobrescreveu antes), e o custo de PEDIDO é outro número — vive em
+        purchase_order_items.unit_cost e nunca escreve de volta aqui.
+      */}
+      <h2 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.0625rem" }}>Custo cadastrado</h2>
+
+      <p style={{ margin: "0 0 var(--sb-space-2)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+        Custo atual: <strong>{formatCurrency(sku.data.purchase_cost)}</strong> — sobrescrito a cada importação do
+        UpSeller; desde 30/08/2026 toda mudança fica registrada abaixo. O custo usado num pedido de compra é
+        editável no próprio pedido e nunca altera este cadastro.
+      </p>
+
+      {costHistoryResult.error !== null && (
+        <p role="alert" style={{ color: "var(--sb-danger)" }}>
+          Não foi possível carregar o histórico de custo: {costHistoryResult.error.message}
+        </p>
+      )}
+
+      {costHistoryResult.error === null && costHistory.length === 0 && (
+        <p style={{ color: "var(--sb-text-soft)", fontSize: "0.8125rem", marginBottom: "var(--sb-space-4)" }}>
+          Nenhuma mudança registrada desde o início do rastreio (30/08/2026).
+        </p>
+      )}
+
+      {costHistoryResult.error === null && costHistory.length > 0 && (
+        <div style={{ overflowX: "auto", marginBottom: "var(--sb-space-4)" }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "32rem" }}>
+            <thead>
+              <tr>
+                <th style={th}>Quando</th>
+                <th style={th}>De</th>
+                <th style={th}>Para</th>
+                <th style={th}>Origem</th>
+              </tr>
+            </thead>
+            <tbody>
+              {costHistory.map((entry) => (
+                <tr key={entry.id}>
+                  <td style={{ ...td, whiteSpace: "nowrap" }}>{formatDateTime(entry.changed_at)}</td>
+                  {/* `De` vazio = primeiro registro (o SKU nasceu com custo). */}
+                  <td style={tdNumber}>{formatCurrency(entry.previous_cost)}</td>
+                  <td style={tdNumber}>{formatCurrency(entry.new_cost)}</td>
+                  <td style={{ ...td, color: "var(--sb-text-soft)" }}>
+                    {entry.changed_by_role === "service_role"
+                      ? "importação (worker)"
+                      : entry.changed_by_role === "postgres"
+                        ? "operação direta no banco"
+                        : entry.changed_by_role}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       <h2 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.0625rem" }}>Anúncios vinculados</h2>

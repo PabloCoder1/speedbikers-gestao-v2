@@ -2793,6 +2793,131 @@ describe("estoque em trânsito a partir do ciclo do pedido de compra (D-055)", (
 
     expect(await movementCount(orderId)).toBe(0);
   });
+
+  /**
+   * O invariante do PRD que D-149 trava em teste: "simular um pedido não pode
+   * destruir o custo histórico do SKU". O custo do PEDIDO vive em
+   * `purchase_order_items.unit_cost`; o CADASTRADO fica em
+   * `skus.purchase_cost` e agora tem trilha (`sku_cost_history`) — criar um
+   * pedido com custo próprio não toca nem um nem outro.
+   */
+  it("pedido com custo próprio NÃO toca o custo cadastrado nem gera história (D-149)", async () => {
+    const sku = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind, purchase_cost)
+       values ($1,'RLSTEST-compras-custo','PRODUTO',12.5) returning id`,
+      [ORG_SB],
+    );
+    const skuId = sku.rows[0]?.id ?? "";
+
+    const items = `'[{"skuId":"${skuId}","skuSnapshot":"RLSTEST-compras-custo","titleSnapshot":"Custo proprio","quantityOrdered":4,"unitCost":99.9}]'::jsonb`;
+
+    await asUserPersist(ADMIN_TRANSITO, `select * from public.create_purchase_order('${ORG_SB}',${items})`);
+
+    const cost = await client.query<{ purchase_cost: string }>(
+      `select purchase_cost from public.skus where id = $1`,
+      [skuId],
+    );
+    expect(Number(cost.rows[0]?.purchase_cost)).toBe(12.5);
+
+    // Só a linha do nascimento (12.5) — o pedido não historia nada.
+    const history = await client.query<{ n: string }>(
+      `select count(*) as n from public.sku_cost_history where sku_id = $1`,
+      [skuId],
+    );
+    expect(Number(history.rows[0]?.n)).toBe(1);
+  });
+});
+
+describe("sku_cost_history (D-149, Fase 5D)", () => {
+  // O SKU é deletável no teardown mesmo com histórico: a FK é CASCADE de
+  // propósito (custo de quem nunca operou não é história perdida), e
+  // `purchase_order_items.sku_id` é SET NULL.
+  let skuId = "";
+
+  beforeAll(async () => {
+    const sku = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind, purchase_cost)
+       values ($1,'RLSTEST-CUSTO-hist','PRODUTO',12.5) returning id`,
+      [ORG_SB],
+    );
+
+    skuId = sku.rows[0]?.id ?? "";
+  });
+
+  it("SKU que nasce com custo ganha a primeira linha — previous nulo, role de quem escreveu", async () => {
+    const rows = await client.query<{ previous_cost: string | null; new_cost: string; changed_by_role: string }>(
+      `select previous_cost, new_cost, changed_by_role from public.sku_cost_history where sku_id = $1`,
+      [skuId],
+    );
+
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0]?.previous_cost).toBeNull();
+    expect(Number(rows.rows[0]?.new_cost)).toBe(12.5);
+    expect(rows.rows[0]?.changed_by_role).toBe("postgres");
+  });
+
+  it("mudar o custo gera linha com previous/new; update que não toca custo não gera nada", async () => {
+    await client.query(`update public.skus set purchase_cost = 15 where id = $1`, [skuId]);
+    // A sobrescrita silenciosa que motivou a fatia: título muda, custo não —
+    // e o histórico NÃO ganha linha.
+    await client.query(`update public.skus set title = 'renomeado' where id = $1`, [skuId]);
+
+    const rows = await client.query<{ previous_cost: string; new_cost: string }>(
+      `select previous_cost, new_cost from public.sku_cost_history where sku_id = $1 order by id`,
+      [skuId],
+    );
+
+    expect(rows.rows).toHaveLength(2);
+    expect(Number(rows.rows[1]?.previous_cost)).toBe(12.5);
+    expect(Number(rows.rows[1]?.new_cost)).toBe(15);
+  });
+
+  it("apagar o custo registra a transição para nulo — o apagamento também é história", async () => {
+    await client.query(`update public.skus set purchase_cost = null where id = $1`, [skuId]);
+
+    const rows = await client.query<{ previous_cost: string; new_cost: string | null }>(
+      `select previous_cost, new_cost from public.sku_cost_history where sku_id = $1 order by id desc limit 1`,
+      [skuId],
+    );
+
+    expect(Number(rows.rows[0]?.previous_cost)).toBe(15);
+    expect(rows.rows[0]?.new_cost).toBeNull();
+  });
+
+  it("é append-only: nem UPDATE nem DELETE do dono passam", async () => {
+    await expect(
+      client.query(`update public.sku_cost_history set new_cost = 99 where sku_id = $1`, [skuId]),
+    ).rejects.toThrow(/append-only/);
+    await expect(
+      client.query(`delete from public.sku_cost_history where sku_id = $1`, [skuId]),
+    ).rejects.toThrow(/append-only/);
+  });
+
+  it("membro lê; usuário de outra organização não vê; anon é recusado", async () => {
+    const member = await asUser<{ id: string }>(
+      ADMIN_SB,
+      `select id from public.sku_cost_history where sku_id = '${skuId}'`,
+    );
+    expect(member.length).toBeGreaterThan(0);
+
+    const outra = await asUser<{ id: string }>(
+      DE_OUTRA_ORG,
+      `select id from public.sku_cost_history where sku_id = '${skuId}'`,
+    );
+    expect(outra).toHaveLength(0);
+
+    await expect(asAnon("select * from public.sku_cost_history")).rejects.toThrow(/permission denied/i);
+  });
+
+  it("authenticated não insere direto — só a trigger escreve", async () => {
+    await expect(
+      asUser(
+        ADMIN_SB,
+        `insert into public.sku_cost_history (organization_id, sku_id, previous_cost, new_cost, changed_by_role)
+         values ('${ORG_SB}','${skuId}',1,2,'hack')`,
+      ),
+    ).rejects.toThrow(/permission denied/i);
+  });
 });
 
 describe("get_stock_coverage (D-058, Fase 5B)", () => {
