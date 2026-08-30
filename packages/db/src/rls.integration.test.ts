@@ -179,7 +179,25 @@ afterAll(async () => {
     where kit_sku_id in (select id from public.skus where sku like 'RLSTEST%')
        or component_sku_id in (select id from public.skus where sku like 'RLSTEST%')
   `);
-  await client.query("delete from public.skus where sku like 'RLSTEST%'");
+  // SKUs seguem o MESMO precedente documentado abaixo para as organizações:
+  // histórico legítimo bloqueia a exclusão, e o resíduo é aceito. Desde que os
+  // fluxos de compra (RECEBIMENTO_TRANSITO), ajuste manual e NF-e persistem
+  // movimentos de verdade (asUserPersist, de propósito), um SKU de teste com
+  // ledger não é apagável — `stock_movements.sku_id` é RESTRICT e o ledger é
+  // append-only POR DESENHO. Apagar só o que nada referencia mantém o teardown
+  // verde sem desligar a proteção do ledger; o ambiente local acumula até o
+  // próximo `supabase db reset --local`, como já acontece com as organizações.
+  await client.query(`
+    delete from public.skus s
+    where s.sku like 'RLSTEST%'
+      and not exists (select 1 from public.stock_movements m where m.sku_id = s.id)
+      and not exists (select 1 from public.inventory_balances b where b.sku_id = s.id)
+      and not exists (select 1 from public.daily_sku_metrics d where d.sku_id = s.id)
+      and not exists (select 1 from public.order_items o where o.sku_id = s.id)
+      and not exists (select 1 from public.fulfillment_stock_snapshots f where f.sku_id = s.id)
+      and not exists (select 1 from public.support_case_links c where c.sku_id = s.id)
+      and not exists (select 1 from public.sku_listing_link_events e where e.sku_id = s.id or e.previous_sku_id = s.id)
+  `);
 
   // Conhecimento antes dos usuários: `created_by`/`confirmed_by` são
   // `on delete restrict` desde 2026-08-28 (D-118) — antes eram SET NULL, e o
@@ -192,7 +210,23 @@ afterAll(async () => {
        or confirmed_by in (select id from auth.users where email like '%@rls.test')
   `);
 
-  await client.query("delete from auth.users where email like '%@rls.test'");
+  // Usuários: mesma regra. D-099 (2026-08-27) trocou os atores dos ledgers de
+  // SET NULL para RESTRICT — desde então, apagar um usuário cujo perfil assina
+  // um movimento, um pedido de compra ou um evento é IMPOSSÍVEL por desenho
+  // (o cascade auth.users -> profiles esbarra no RESTRICT). Este delete
+  // quebrou naquele dia e nunca apareceu: a CI ficou vermelha pelo guarda de
+  // GRANTs na mesma data e depois parou por faturamento (D-142). Apaga só
+  // quem não assina nada.
+  await client.query(`
+    delete from auth.users u
+    where u.email like '%@rls.test'
+      and not exists (select 1 from public.stock_movements m where m.created_by = u.id)
+      and not exists (select 1 from public.purchase_orders p where p.created_by = u.id)
+      and not exists (select 1 from public.purchase_order_events e where e.actor_user_id = u.id)
+      and not exists (select 1 from public.sku_listing_link_events le where le.actor_user_id = u.id)
+      and not exists (select 1 from public.support_case_events se where se.actor_user_id = u.id)
+      and not exists (select 1 from public.support_reply_attempts ra where ra.requested_by = u.id)
+  `);
 
   // As duas organizações de teste NÃO são apagadas: a suíte de observabilidade
   // de sincronização, acima, grava em `sync_runs`/`sync_errors` — append-only
