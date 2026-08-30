@@ -364,11 +364,11 @@ A ordem não é preferência: é a Regra de Progressão deste arquivo. Quase tod
 
 **Depende de:** 5C para os sinais novos. A narração em si já tem motor (D-082).
 
-- [ ] **Correlação alcançar eventos de anúncio e pedido** — hoje o filtro `entity_type='sku'` exclui todo `listing.*` e `order.*`, então mudança de preço/título/status **nunca** chega ao diagnóstico
+- [x] **Correlação alcançar eventos de anúncio e pedido** — concluído em 2026-08-30 (D-152): RPC `get_sku_correlated_events` única para os TRÊS consumidores (tela, painel do SKU, worker) mapeia `listing.*` via `listings(conta, item_id)` e `order.*` via `order_items` congelados (D-020). Vocabulário FECHADO de anúncio — `available_quantity.changed` excluído de propósito (91% do ruído, consequência de venda, não causa). Causas clássicas com leitura própria. 34 ms medidos
 - [ ] **Timeline de evidências** (a ordem dos acontecimentos), para Diagnóstico e "O que aconteceu?". `domain_events` já é a linha do tempo; falta a tela
 - [ ] **IA explicando a AÇÃO**, não só o diagnóstico do SKU, com o vocabulário obrigatório (causa provável, fatores contribuintes, hipóteses, evidências contrárias, o que não conseguimos verificar)
 - [ ] **Atalhos operacionais na Central de Ações** — hoje não existe um único link, e a recomendação gerada manda abrir telas que a interface não oferece
-- [ ] **Ruído antes da inteligência**: `stock.balance.diverged` gera ~2.040 eventos CRÍTICOS por dia e é 55,1% de todas as notificações. Agregar ou silenciar antes de acrescentar qualquer sinal novo
+- [x] **Ruído antes da inteligência** — fechado com MEDIÇÃO em 2026-08-30 (D-152): `stock.balance.diverged` em ZERO nas últimas 24h — D-134/D-135 o eliminaram na ORIGEM (reparo do saldo + separação adjusted/diverged). Topo atual do ruído: `listing.available_quantity.changed`, 1.267 notificações/24h (91% do total, informativo) — segue como DECISÃO DE PRODUTO do usuário, já sinalizada
 
 ---
 

@@ -4011,6 +4011,19 @@ export type Database = {
           sku_id: string
         }[]
       }
+      get_sku_correlated_events: {
+        Args: {
+          p_from: string
+          p_organization_id: string
+          p_sku_ids: string[]
+          p_to: string
+        }
+        Returns: {
+          event_type: string
+          occurred_at: string
+          sku_id: string
+        }[]
+      }
       get_sku_curation: {
         Args: {
           p_brand?: string

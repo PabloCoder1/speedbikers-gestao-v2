@@ -3405,6 +3405,112 @@ describe("prioridade da sugestão de compra (D-150) — equivalência SQL × dom
   });
 });
 
+describe("get_sku_correlated_events (D-152, Fase 6B)", () => {
+  // Era própria (2025-01) pelo mesmo motivo do describe da prioridade:
+  // eventos plantados não podem vazar para janelas de outros describes.
+  // Nomes fora de 'RLSTEST%': o SKU vira alvo de order_items e listings.
+  const CONTA = "ddddcccc-0000-4000-8000-0000000000cc";
+  const ORDER_ID = "900700100200";
+  const FROM = "2025-01-01T00:00:00Z";
+  const TO = "2025-01-31T00:00:00Z";
+  let skuId = "";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$2,'Conta de correlacao','corrtest-conta','PENDING')
+       on conflict do nothing`,
+      [CONTA, ORG_SB],
+    );
+
+    const sku = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind)
+       values ($1,'CORRTEST-alvo','PRODUTO') returning id`,
+      [ORG_SB],
+    );
+    skuId = sku.rows[0]?.id ?? "";
+
+    await client.query(
+      `insert into public.listings
+         (organization_id, ml_account_id, item_id, title, status, price, currency_id, available_quantity, sku_id)
+       values ($1,$2,'MLB900700100','Anuncio correlacionado','active',100,'BRL',5,$3)
+       on conflict do nothing`,
+      [ORG_SB, CONTA, skuId],
+    );
+
+    await client.query(
+      `insert into public.orders
+         (id, organization_id, ml_account_id, status, date_created, date_last_updated, total_amount, currency_id)
+       values ($1,$2,$3,'cancelled','2025-01-09T12:00:00Z','2025-01-10T12:00:00Z',100,'BRL')
+       on conflict do nothing`,
+      [ORDER_ID, ORG_SB, CONTA],
+    );
+
+    await client.query(
+      `insert into public.order_items
+         (order_id, organization_id, ml_account_id, position, item_id, title, quantity, unit_price, currency_id, sku_id)
+       values ($1,$2,$3,1,'MLB900700100','Item correlacionado',1,100,'BRL',$4)
+       on conflict do nothing`,
+      [ORDER_ID, ORG_SB, CONTA, skuId],
+    );
+
+    // Um evento por caminho de mapeamento, mais os dois que NÃO podem sair:
+    // available_quantity.changed (excluído do vocabulário — é consequência
+    // de venda, não causa) e um order com entity_id não numérico (guarda do
+    // cast: descartado, nunca erro).
+    await client.query(
+      `insert into public.domain_events
+         (organization_id, ml_account_id, occurred_at, event_type, entity_type, entity_id, severity, source, dedup_key)
+       values
+         ($1,$2,'2025-01-10T10:00:00Z','stock.depleted','sku',$3,'critico','system','corrtest:sku'),
+         ($1,$2,'2025-01-10T11:00:00Z','listing.price.changed','listing','MLB900700100','informativo','system','corrtest:price'),
+         ($1,$2,'2025-01-10T12:00:00Z','listing.available_quantity.changed','listing','MLB900700100','informativo','system','corrtest:qty'),
+         ($1,$2,'2025-01-10T13:00:00Z','order.cancelled','order',$4,'importante','system','corrtest:order'),
+         ($1,$2,'2025-01-10T14:00:00Z','order.cancelled','order','nao-numerico','importante','system','corrtest:badid')`,
+      [ORG_SB, CONTA, skuId, ORDER_ID],
+    );
+  });
+
+  it("mapeia os três caminhos ao SKU — e SÓ o vocabulário fechado", async () => {
+    const rows = await asUser<{ sku_id: string; event_type: string }>(
+      ADMIN_SB,
+      `select * from public.get_sku_correlated_events('${ORG_SB}', array['${skuId}']::uuid[], '${FROM}', '${TO}')`,
+    );
+
+    const types = rows.map((r) => r.event_type).sort();
+
+    // available_quantity.changed fora (excluído de propósito: 91% do ruído
+    // medido, consequência de venda); o order de entity_id não numérico
+    // descartado pela guarda em vez de derrubar a consulta.
+    expect(types).toEqual(["listing.price.changed", "order.cancelled", "stock.depleted"]);
+    expect(rows.every((r) => r.sku_id === skuId)).toBe(true);
+  });
+
+  it("SKU fora da lista de candidatos não traz nada — o filtro é por SKU, não por janela", async () => {
+    const rows = await asUser<{ sku_id: string }>(
+      ADMIN_SB,
+      `select * from public.get_sku_correlated_events('${ORG_SB}', array['00000000-0000-4000-8000-000000000000']::uuid[], '${FROM}', '${TO}')`,
+    );
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("anon não executa", async () => {
+    await expect(
+      asAnon(`select * from public.get_sku_correlated_events('${ORG_SB}', array['${skuId}']::uuid[], '${FROM}', '${TO}')`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
+  it("usuário de outra organização não vê os eventos desta", async () => {
+    const rows = await asUser<{ sku_id: string }>(
+      DE_OUTRA_ORG,
+      `select * from public.get_sku_correlated_events('${ORG_SB}', array['${skuId}']::uuid[], '${FROM}', '${TO}')`,
+    );
+
+    expect(rows).toHaveLength(0);
+  });
+});
+
 describe("get_sku_abc_curve (D-058, Fase 5B)", () => {
   // Mesmo raciocínio de nomes fora dos padrões de limpeza global, e mesma
   // ausência de afterAll — ver comentário equivalente no describe de

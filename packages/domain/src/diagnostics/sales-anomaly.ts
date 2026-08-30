@@ -86,6 +86,19 @@ function describeCandidateCause(eventType: string): string {
     // próprio sistema já resolveu.
     case "stock.balance.adjusted":
       return "Saldo corrigido contra o ERP perto desta data — o estoque anterior a ela pode estar incorreto.";
+    // D-152: os eventos de ANÚNCIO passaram a chegar à correlação (antes o
+    // filtro entity_type='sku' os barrava) — são as causas clássicas de
+    // virada na venda, e cada uma ganha a sua leitura.
+    case "listing.price.changed":
+      return "O preço de um anúncio deste SKU mudou perto desta data — causa clássica de virada na venda.";
+    case "listing.title.changed":
+      return "O título de um anúncio deste SKU mudou perto desta data — afeta busca e conversão.";
+    case "listing.status.paused":
+      return "Um anúncio deste SKU foi PAUSADO perto desta data — sem oferta ativa, sem venda por aquele canal.";
+    case "listing.status.reactivated":
+      return "Um anúncio deste SKU foi reativado perto desta data — pode explicar a retomada.";
+    case "listing.fulfillment.entered":
+      return "Um anúncio deste SKU entrou no Full perto desta data — muda logística e exposição.";
     default:
       return `Evento "${eventType}" registrado perto desta data.`;
   }

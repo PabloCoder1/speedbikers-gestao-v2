@@ -44,7 +44,7 @@ const STABLE_ROW = {
 function fakeDeps(options: {
   baseline?: typeof ANOMALY_ROW[];
   baselineFails?: boolean;
-  events?: { entity_id: string; event_type: string; occurred_at: string }[];
+  events?: { sku_id: string; event_type: string; occurred_at: string }[];
   eventsFails?: boolean;
   prices?: { sku_id: string; average_price: number }[];
   pricesFail?: boolean;
@@ -71,30 +71,17 @@ function fakeDeps(options: {
         );
       }
 
+      // D-152: a correlação virou RPC (fonte única com /diagnostico e o
+      // painel do SKU) — linhas já chegam mapeadas por sku_id.
+      if (fn === "get_sku_correlated_events") {
+        return Promise.resolve(
+          options.eventsFails === true ? { data: null, error: { message: "boom" } } : { data: events, error: null },
+        );
+      }
+
       throw new Error(`rpc inesperada no fake: ${fn}`);
     },
     from: (table: string) => {
-      if (table === "domain_events") {
-        return {
-          select: () => ({
-            eq: () => ({
-              eq: () => ({
-                in: () => ({
-                  gte: () => ({
-                    lt: () =>
-                      Promise.resolve(
-                        options.eventsFails === true
-                          ? { data: null, error: { message: "boom" } }
-                          : { data: events, error: null },
-                      ),
-                  }),
-                }),
-              }),
-            }),
-          }),
-        };
-      }
-
       // D-116 — sinal de SAC: vazio por padrão nos testes de anomalia; a
       // presença de claims tem teste próprio.
       if (table === "support_case_links") {
@@ -172,7 +159,7 @@ describe("detecção de anomalia de venda vira ação (Fase 6, D-064)", () => {
 
   it("evento correlato entra na evidência", async () => {
     const { deps, upserted, lines } = fakeDeps({
-      events: [{ entity_id: "sku-a", event_type: "stock.depleted", occurred_at: "2026-08-22T21:00:00.000Z" }],
+      events: [{ sku_id: "sku-a", event_type: "stock.depleted", occurred_at: "2026-08-22T21:00:00.000Z" }],
     });
 
     await createDetectSalesAnomalyActionsHandler(deps)(ENVELOPE, ctx(lines, { organizationId: ORG_ID }));

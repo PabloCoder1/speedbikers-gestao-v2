@@ -71,14 +71,14 @@ export async function diagnoseSku(skuId: string): Promise<SkuDiagnosisResult> {
   const windowStart = shiftBusinessDate(asOf, -CORRELATION_WINDOW_DAYS_BEFORE);
   const windowEnd = shiftBusinessDate(asOf, CORRELATION_WINDOW_DAYS_AFTER);
 
-  const eventsResult = await supabase
-    .from("domain_events")
-    .select("event_type, occurred_at")
-    .eq("organization_id", organizationId)
-    .eq("entity_type", "sku")
-    .eq("entity_id", skuId)
-    .gte("occurred_at", windowStart)
-    .lt("occurred_at", windowEnd);
+  // D-152: correlação ampliada — eventos de anúncio e pedido mapeados ao SKU
+  // pela mesma RPC dos demais consumidores (/diagnostico e worker).
+  const eventsResult = await supabase.rpc("get_sku_correlated_events", {
+    p_organization_id: organizationId,
+    p_sku_ids: [skuId],
+    p_from: windowStart,
+    p_to: windowEnd,
+  });
 
   if (eventsResult.error !== null) {
     // Mesmo cuidado de /diagnostico (D-067): falha ao ler domain_events não

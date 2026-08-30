@@ -128,6 +128,40 @@ describe("diagnoseSalesAnomaly", () => {
     expect(result?.proximosPassos[0]).toContain("evento correlato");
   });
 
+  /**
+   * D-152: os eventos de ANÚNCIO passaram a chegar à correlação (o filtro
+   * entity_type='sku' os barrava desde sempre) — cada causa clássica tem
+   * leitura própria, nunca o texto genérico de fallback.
+   */
+  it("eventos de anúncio (D-152) viram causas com descrição própria, não fallback genérico", () => {
+    const events: CorrelatedEvent[] = [
+      { eventType: "listing.price.changed", occurredAt: new Date("2026-08-22T10:00:00.000Z") },
+      { eventType: "listing.status.paused", occurredAt: new Date("2026-08-22T11:00:00.000Z") },
+      { eventType: "listing.status.reactivated", occurredAt: new Date("2026-08-22T12:00:00.000Z") },
+      { eventType: "listing.title.changed", occurredAt: new Date("2026-08-22T13:00:00.000Z") },
+      { eventType: "listing.fulfillment.entered", occurredAt: new Date("2026-08-22T14:00:00.000Z") },
+    ];
+
+    const result = diagnoseSalesAnomaly(
+      ORG_ID,
+      signal({ currentUnitsSold: 0, baselineMean: 3, baselineStddev: 0.5 }),
+      AS_OF,
+      events,
+    );
+
+    const byType = new Map(result?.causasCandidatas.map((c) => [c.eventType, c.descricao]));
+
+    expect(byType.get("listing.price.changed")).toContain("preço");
+    expect(byType.get("listing.status.paused")).toContain("PAUSADO");
+    expect(byType.get("listing.status.reactivated")).toContain("reativado");
+    expect(byType.get("listing.title.changed")).toContain("título");
+    expect(byType.get("listing.fulfillment.entered")).toContain("Full");
+
+    for (const descricao of byType.values()) {
+      expect(descricao).not.toContain("registrado perto desta data");
+    }
+  });
+
   it("escopo e período carregam organizationId/skuId/asOf recebidos", () => {
     const result = diagnoseSalesAnomaly(
       ORG_ID,

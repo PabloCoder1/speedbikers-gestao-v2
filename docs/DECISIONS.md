@@ -2912,6 +2912,26 @@ A camada 3 foi encontrada pelo CATALOGO (enumerando as FKs RESTRICT reais), nao 
 
 **Impacto:** `apps/web/app/compras/novo/prefill.{ts,test.ts}` (novo), `apps/web/app/compras/novo/page.tsx` (pre-carga), `apps/web/app/compras/novo/purchase-order-form.tsx` (aviso de mistura), `apps/web/app/reposicao/page.tsx` (selecao + submit).
 
+## D-152 - Fase 6B comeca: o ruido medido como resolvido, e a correlacao alcanca anuncio e pedido
+
+**Contexto:** primeira fatia da 6B. O checklist tem uma pre-condicao nomeada -- "ruido antes da inteligencia" -- e um item de correlacao que o proprio ROADMAP descreve: o filtro `entity_type='sku'` exclui todo `listing.*` e `order.*` do diagnostico.
+
+**1. O ruido foi MEDIDO como resolvido (2026-08-30):** `stock.balance.diverged` -- que era ~2.040 criticos/dia e 55,1% de todas as notificacoes -- esta em **ZERO nas ultimas 24h** (os 13.891 da janela de 7d sao residuo anterior a D-134/D-135, que o eliminaram na ORIGEM). O item fecha com numeros, nao com otimismo. O topo do ruido agora e `listing.available_quantity.changed`: 1.267 notificacoes/24h, **91% do total** -- severidade informativa, e segue sendo a DECISAO DE PRODUTO ja sinalizada ao usuario (silenciar, agregar ou manter).
+
+**2. A correlacao alcancou anuncio e pedido** (`get_sku_correlated_events`, RPC unica para os TRES consumidores -- `/diagnostico`, painel do SKU e detector do worker, que carregavam o mesmo filtro copiado):
+
+- `entity_type='sku'`: o que ja chegava (todos os stock.*);
+- `entity_type='listing'`: entity_id e o item_id do ML -- mapeia ao SKU por `listings(ml_account_id, item_id) -> sku_id`. **Vocabulario FECHADO** (preco/titulo/pausa/reativacao/Full) e a exclusao e o ponto: `available_quantity.changed` e consequencia de venda, nao causa -- inclui-lo inundaria todo diagnostico com o proprio ruido que a fase manda conter;
+- `entity_type='order'`: entity_id e o id ML do pedido (orders.id bigint) -- mapeia pelos itens CONGELADOS (`order_items.sku_id`, D-020); pedido com dois SKUs candidatos correlaciona com os dois; entity_id nao numerico e descartado por guarda de regex em vez de derrubar a consulta.
+
+**As causas classicas ganharam leitura propria** em `describeCandidateCause` (preco mudou, anuncio PAUSADO, reativado, titulo, entrada no Full) -- a funcao ja sabia descrever `order.cancelled`/`order.returned` que nunca chegavam; agora chegam.
+
+**Medicao:** 34 ms quente, 10.534 buffers (50 SKUs candidatos, janela de 10 dias). Nenhum indice novo. Ensaio revertido no Dev com os tres caminhos + exclusao + guarda ANTES do push.
+
+**Verificacao:** `check` 29/29 (+1 dominio, +4 integracao), build compila. Tela nao vista renderizada (a ressalva de sempre).
+
+**Impacto:** migration `20260830211033` (RPC), `packages/domain/src/diagnostics/sales-anomaly.{ts,test.ts}` (vocabulario), `apps/web/app/diagnostico/page.tsx`, `apps/web/app/skus/[skuId]/actions.ts`, `apps/worker/src/handlers/detect-sales-anomaly-actions.{ts,test.ts}`, `types.ts` (regenerado), `rls.integration.test.ts` (+4).
+
 ## Como adicionar nova decisao
 
 Registrar:

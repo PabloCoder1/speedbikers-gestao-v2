@@ -121,14 +121,15 @@ export function createDetectSalesAnomalyActionsHandler(deps: DetectSalesAnomalyA
     const windowStart = shiftBusinessDate(asOf, -CORRELATION_WINDOW_DAYS_BEFORE);
     const windowEnd = shiftBusinessDate(asOf, CORRELATION_WINDOW_DAYS_AFTER);
 
-    const eventsResult = await deps.db
-      .from("domain_events")
-      .select("entity_id, event_type, occurred_at")
-      .eq("organization_id", organizationId)
-      .eq("entity_type", "sku")
-      .in("entity_id", candidateSkuIds)
-      .gte("occurred_at", windowStart)
-      .lt("occurred_at", windowEnd);
+    // D-152: correlação ampliada — a RPC mapeia também eventos de ANÚNCIO
+    // (preço/título/status, via listings) e de PEDIDO (via order_items
+    // congelados) ao SKU. Fonte única com /diagnostico e o painel do SKU.
+    const eventsResult = await deps.db.rpc("get_sku_correlated_events", {
+      p_organization_id: organizationId,
+      p_sku_ids: candidateSkuIds,
+      p_from: windowStart,
+      p_to: windowEnd,
+    });
 
     if (eventsResult.error !== null) {
       return { status: "failed", retryable: true, reason: eventsResult.error.message };
@@ -137,9 +138,9 @@ export function createDetectSalesAnomalyActionsHandler(deps: DetectSalesAnomalyA
     const eventsBySku = new Map<string, CorrelatedEvent[]>();
 
     for (const event of eventsResult.data) {
-      const list = eventsBySku.get(event.entity_id) ?? [];
+      const list = eventsBySku.get(event.sku_id) ?? [];
       list.push({ eventType: event.event_type, occurredAt: new Date(event.occurred_at) });
-      eventsBySku.set(event.entity_id, list);
+      eventsBySku.set(event.sku_id, list);
     }
 
     // D-116 — SAC como evidência: reclamações ABERTAS vinculadas aos SKUs
