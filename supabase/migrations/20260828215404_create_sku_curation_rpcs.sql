@@ -103,7 +103,7 @@ begin
     from public.daily_sku_metrics m
     where m.organization_id = p_organization_id
       and m.sku_id is not null
-      and m.metric_date >= (pg_catalog.current_date - 89)
+      and m.metric_date >= (current_date - 89)
     group by m.sku_id
   ),
   base as (

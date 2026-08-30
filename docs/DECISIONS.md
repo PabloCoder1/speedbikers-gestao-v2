@@ -2673,6 +2673,26 @@ A regra de contencao do projeto diz que algo vira peca compartilhada quando apar
 
 **Impacto:** `apps/web/lib/filters.{ts,test.ts}` (novo, 11 testes), `apps/web/components/filter-pill.tsx` (novo), `apps/web/lib/{stock-filters,abc-filters,listings-dashboard}.ts`, as cinco telas, migration `20260830002606`.
 
+## D-142 - A CI voltou e cobrou a conta dos 17 commits: quatro defeitos, um deles quebrando /produtos
+
+**Contexto:** o usuario reativou os minutos de Actions tornando o repositorio publico. A primeira execucao completa (CI #256) passou em typecheck/build, e2e e infraestrutura -- e falhou no job de integracao com **8 erros**. Cada um foi triado contra o banco real antes de qualquer correcao. Quatro causas distintas:
+
+**1. `/produtos` ESTAVA QUEBRADA -- `pg_catalog.current_date` nao e SQL valido.** `current_date` e palavra reservada, nao funcao: qualifica-la vira `tabela.coluna` e estoura *"missing FROM-clause entry for table pg_catalog"*. A qualificacao veio de aplicar mecanicamente a regra do `search_path = ''` (que vale para funcoes) a uma palavra reservada, em `get_sku_curation` (D-133). **Nunca falhou antes porque o erro so dispara DEPOIS do guarda de permissao, e a tela nunca foi aberta como ADMIN** -- exatamente a verificacao que D-133 declarou pendente. O ensaio dos 5 SKUs teria morrido no primeiro clique. Corrigido reescrevendo a definicao REAL lida do catalogo (so o trecho trocado), com bloco idempotente na migration para o rebuild da CI. Ocorrencia unica no repositorio, verificada por grep.
+
+**2. `profiles` PERDEU O UPDATE em D-130, e a policy ficou morta.** O comentario da propria migration concluia: *"verdade para UPDATE, e so para ele"* -- e a linha seguinte revogou os tres (`revoke insert, update, delete`). A analise estava certa; o comando nao seguiu a analise. Como o GRANT e avaliado ANTES da RLS, `profiles_update_self` ficou inalcancavel: **"usuario atualiza o proprio perfil" esteve quebrado em producao de 28/08 ate hoje.** Dois dos oito erros eram isto.
+
+**3. `compute_erp_target_balances` concedida a `authenticated` contra o proprio teste de D-132.** O teste da MESMA decisao afirma *"authenticated nao executa -- so service_role, mesmo sendo ADMIN"*; a migration concedeu. O unico chamador e o worker, via service_role. Revogado. Migration e teste da mesma decisao discordavam, e ninguem viu porque a CI estava vermelha desde D-130 por outro motivo.
+
+**4. Dois testes errados, nao dois defeitos de produto:**
+- O teste de `get_listing_sales` afirmava 5/500 *"ignorando a linha com variacao"* -- o comportamento que **D-123 removeu de proposito** (R$ 469.593,20 escondidos). Atualizado para 14/1400, com o motivo no comentario.
+- O teste do evento CREATED de `create_sku_listing_link` **nasceu falhando e nunca rodou numa CI verde**: chamava a RPC num CTE e lia os eventos NA MESMA instrucao -- o snapshot do SELECT externo nao enxerga linhas inseridas por funcao volatil durante a execucao. Devolvia `[]` com a RPC funcionando (verificado: a definicao insere o evento). O padrao correto ja existia no proprio arquivo (`asUserPersist` + leitura separada). Mesma classe do achado de D-118: teste que nao sabe falhar... ou que nao sabe passar.
+
+**O padrao que une os quatro:** nenhum aparecia no `check` local, porque `packages/db` exclui `*.integration.test.ts` do script `test` POR CONSTRUCAO. "check 29/29" e uma afirmacao sobre tipos, lint e testes de unidade -- nunca sobre RLS, GRANTs ou o guarda. D-130 ja tinha dito isso; D-142 e a segunda demonstracao, com a esteira parada por FATURAMENTO em vez de por defeito.
+
+**Correcao de premissa que ficou desta conversa:** commitar e dar push nunca estiveram bloqueados pelo faturamento -- Actions nao afeta Git.
+
+**Impacto:** migration `20260830004256` (fix idempotente + GRANT de profiles + REVOKE do erp_target), correcao do ARQUIVO de `20260828215404` (para o rebuild do zero na CI; o Dev remoto e corrigido pelo bloco idempotente), dois testes de `packages/db/src/rls.integration.test.ts`. `check` **29/29**. O veredito final e a propria CI, no push desta correcao.
+
 ## Como adicionar nova decisao
 
 Registrar:

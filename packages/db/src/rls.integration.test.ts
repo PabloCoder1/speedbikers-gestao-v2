@@ -1116,20 +1116,30 @@ describe("vínculo SKU ↔ anúncio", () => {
   });
 
   it("a RPC cria o vinculo E o evento CREATED na mesma transacao", async () => {
-    const rows = await asUser<{ event_type: string; actor_source: string }>(
+    // Este teste NASCEU falhando e nunca rodou numa CI verde (landou com a
+    // esteira vermelha por D-130, depois ela parou por faturamento — D-142).
+    // A versão original chamava a RPC num CTE e lia os eventos NA MESMA
+    // instrução: o snapshot do SELECT externo é estabelecido no início da
+    // instrução e não enxerga linhas inseridas por função volátil durante a
+    // execução — devolvia [] com a RPC funcionando perfeitamente. O padrão
+    // correto já existia no próprio arquivo: `asUserPersist` + leitura em
+    // consulta separada (o comentário do helper descreve exatamente isso).
+    const created = await asUserPersist<{ id: string }>(
       ADMIN_SB,
-      `with novo as (
-         select (public.create_sku_listing_link(
-           '${CONTA}', 'MLB900000202', null, '${skuId}')).id as link_id
-       )
-       select e.event_type, e.actor_source
-       from public.sku_listing_link_events e, novo
-       where e.link_id = novo.link_id`,
+      `select (public.create_sku_listing_link('${CONTA}', 'MLB900000202', null, '${skuId}')).id`,
+    );
+    const linkId = created[0]?.id ?? "";
+
+    const rows = await client.query<{ event_type: string; actor_source: string }>(
+      `select e.event_type, e.actor_source
+       from public.sku_listing_link_events e
+       where e.link_id = $1`,
+      [linkId],
     );
 
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.event_type).toBe("CREATED");
-    expect(rows[0]?.actor_source).toBe("HUMAN");
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0]?.event_type).toBe("CREATED");
+    expect(rows.rows[0]?.actor_source).toBe("HUMAN");
   });
 
   it("remover sem motivo e recusado — o motivo fica no historico", async () => {
@@ -3032,15 +3042,21 @@ describe("get_listing_sales (Fase 5B, Dashboards de SKU e de Anúncio)", () => {
 
   // Sem afterAll de limpeza: mesma razão do ledger de estoque acima.
 
-  it("soma venda por (conta, anúncio) no intervalo, ignorando a linha com variação", async () => {
+  it("soma venda por (conta, anúncio) no intervalo, INCLUINDO a linha com variação (D-123)", async () => {
+    // Este teste afirmava 5/500, "ignorando a linha com variação" — que era o
+    // comportamento ANTES de D-123. D-123 removeu o filtro `variation_id is
+    // null` de propósito (R$ 469.593,20 escondidos, 15,4% da receita) e o
+    // teste ficou obsoleto sem que ninguém visse: a CI já estava vermelha por
+    // outro motivo (D-130) e depois parou de rodar (falha de faturamento,
+    // D-142). O fixture tem 2+3 sem variação e 9 com — o total correto é 14.
     const rows = await asUser<{ ml_account_id: string; mlb_id: string; units_sold: string; gross_revenue: string }>(
       ADMIN_SB,
       `select * from public.get_listing_sales('${ORG_SB}','${WINDOW_START}','${TODAY}') where mlb_id='${MLB_ID}'`,
     );
 
     expect(rows).toHaveLength(1);
-    expect(Number(rows[0]?.units_sold)).toBe(5);
-    expect(Number(rows[0]?.gross_revenue)).toBe(500);
+    expect(Number(rows[0]?.units_sold)).toBe(14);
+    expect(Number(rows[0]?.gross_revenue)).toBe(1400);
   });
 
   it("fora da janela de datas, o anúncio nem aparece", async () => {
