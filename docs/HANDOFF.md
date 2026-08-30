@@ -43,7 +43,8 @@ A fonte de verdade continua sendo:
 - **`compute_erp_target_balances`** concedida a `authenticated` contra o próprio teste de D-132. Revogada.
 - **Dois testes errados** (não produto): o de `get_listing_sales` ainda afirmava o comportamento que D-123 removeu de propósito; o do evento CREATED **nasceu falhando** — CTE lê na mesma instrução que insere, snapshot não enxerga. Corrigido com o padrão `asUserPersist` que já existia no arquivo.
 - **O padrão comum**: nada disso aparece no `check` local — `packages/db` exclui integração do `test` por construção. "29/29" nunca foi afirmação sobre RLS/GRANTs.
-- ⏳ **O veredito é a própria CI no push desta correção** — ler o resultado antes de seguir.
+- **O teardown da suíte estava quebrado em TRÊS camadas de FK** (eventos->contas desde D-125; ledger->skus; atores->profiles->auth.users **desde D-099**, quebrada no mesmo dia em que o guarda deixou a CI vermelha — uma falha escondeu a outra). Camadas 2 e 3 resolvidas SEM desligar trigger de ledger: apaga-se só o que nada referencia, resíduo local documentado — o precedente das organizações.
+- 🟢 **VEREDITO — CI #260 (`702cad5`): os CINCO jobs VERDES**, incluindo "aplicar migrations no Supabase Dev". Primeira esteira completamente verde desde 27/08 — e a primeira vez NA HISTÓRIA em que o guarda de GRANTs de D-098 passou na CI. "check 29/29" volta a ter uma esteira por trás.
 
 ### Etapa anterior — D-141 (filtros padronizados + a medição do repositório público)
 

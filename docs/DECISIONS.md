@@ -2691,7 +2691,21 @@ A regra de contencao do projeto diz que algo vira peca compartilhada quando apar
 
 **Correcao de premissa que ficou desta conversa:** commitar e dar push nunca estiveram bloqueados pelo faturamento -- Actions nao afeta Git.
 
-**Impacto:** migration `20260830004256` (fix idempotente + GRANT de profiles + REVOKE do erp_target), correcao do ARQUIVO de `20260828215404` (para o rebuild do zero na CI; o Dev remoto e corrigido pelo bloco idempotente), dois testes de `packages/db/src/rls.integration.test.ts`. `check` **29/29**. O veredito final e a propria CI, no push desta correcao.
+**O teardown da suite tambem estava quebrado, em TRES camadas -- e cada uma tinha dono e data:**
+
+| Camada | Bloqueio | Quebrada desde |
+|---|---|---|
+| 1 | `sku_listing_link_events` -> `ml_accounts` (RESTRICT) | D-125, 28/08 |
+| 2 | `stock_movements` -> `skus` (RESTRICT) | fluxos de compra/ajuste persistidos |
+| 3 | atores dos ledgers -> `profiles` -> `auth.users` | **D-099, 27/08** -- a troca SET NULL -> RESTRICT quebrou a limpeza no MESMO dia em que o guarda de GRANTs deixou a CI vermelha; uma falha escondeu a outra |
+
+A camada 3 foi encontrada pelo CATALOGO (enumerando as FKs RESTRICT reais), nao pagando mais uma rodada de CI. E houve uma correcao de diagnostico no caminho: atribui o erro da camada 1 ao meu proprio teste corrigido com `asUserPersist`; a rodada seguinte devolveu o mesmo erro com o teste ja em rollback -- a fonte era `resolve_link_candidate`, que persiste eventos de proposito desde D-125.
+
+**Decisao de teardown, e ela e assimetrica de proposito:** na camada 1 o trigger append-only foi desligado-e-religado pelo dono da tabela (eventos de teste sao expurgaveis); nas camadas 2 e 3 NAO -- `stock_movements` e o artefato mais protegido do projeto, e teardown de teste nao e lugar para normalizar excecao. Vale o precedente que o proprio arquivo documenta para `organizations`: historico legitimo bloqueia exclusao, apaga-se so o que nada referencia (`not exists` sobre as FKs enumeradas do catalogo), e o residuo local e aceito ate o proximo `supabase db reset`.
+
+**VEREDITO -- CI #260 (`702cad5`), 2026-08-30: os CINCO jobs verdes**, incluindo "aplicar migrations no Supabase Dev". E a primeira esteira completamente verde desde 27/08 -- e a primeira vez NA HISTORIA em que o teste-guarda de GRANTs de D-098 passou na CI (D-130 provou que ele nunca tinha passado desde que nasceu).
+
+**Impacto:** migrations `20260830002606` e `20260830004256`, correcao do ARQUIVO de `20260828215404` (para o rebuild do zero na CI; o Dev remoto e corrigido pelo bloco idempotente), tres correcoes no teardown e dois testes de `packages/db/src/rls.integration.test.ts`. Commits `0d0c96d`, `75e9a88`, `d2bd58f`, `702cad5`.
 
 ## Como adicionar nova decisao
 
