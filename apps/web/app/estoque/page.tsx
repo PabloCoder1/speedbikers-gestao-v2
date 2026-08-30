@@ -1,3 +1,4 @@
+import { computeUsableStock } from "@sb/domain";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -202,6 +203,7 @@ export default async function EstoquePage({
                 <th style={th}>Full</th>
                 <th style={th}>Reservado</th>
                 <th style={th}>Em trânsito</th>
+                <th style={th}>Aproveitável</th>
                 <th style={th}>Custo</th>
                 <th style={th}>Último movimento</th>
                 <th style={th}></th>
@@ -237,6 +239,41 @@ export default async function EstoquePage({
                   <td style={tdNumber}>{row.full_quantity === null ? "—" : formatCount(row.full_quantity)}</td>
                   <td style={tdNumber}>{formatCount(row.reservado)}</td>
                   <td style={tdNumber}>{formatCount(row.transito)}</td>
+                  <td style={tdNumber}>
+                    {(() => {
+                      /*
+                        Aproveitável = LOCAL + FULL + TRÂNSITO, RESERVADO fora
+                        (já comprometido; o Disponível do UpSeller já o
+                        exclui). Definição normativa em docs/METRICS.md §5D
+                        (D-146). SKU virtual recusa o total — somar sentinela
+                        com Full real seria lixo com aparência de precisão.
+                      */
+                      const usable = computeUsableStock({
+                        localQuantity: row.local_quantity,
+                        fullQuantity: row.full_quantity ?? 0,
+                        transitQuantity: row.transito,
+                        reservedQuantity: row.reservado,
+                        stockIsVirtual: row.stock_is_virtual,
+                      });
+
+                      if (usable.total === null) {
+                        return (
+                          <span style={{ color: "var(--sb-text-soft)", fontSize: "0.75rem" }}>
+                            estoque virtual
+                          </span>
+                        );
+                      }
+
+                      return (
+                        <span
+                          title={`local ${String(usable.components.local)} + full ${String(usable.components.full)} + trânsito ${String(usable.components.transit)} (reservado ${String(usable.components.reservedExcluded)} fica fora)`}
+                          style={{ fontWeight: 600 }}
+                        >
+                          {formatCount(usable.total)}
+                        </span>
+                      );
+                    })()}
+                  </td>
                   <td style={tdNumber}>{formatCurrency(row.purchase_cost)}</td>
                   <td style={td}>
                     {row.last_movement_at === null ? "—" : formatBusinessDate(row.last_movement_at.slice(0, 10))}

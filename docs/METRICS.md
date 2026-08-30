@@ -198,6 +198,20 @@ Três mecanismos independentes, nenhum consolidado numa visão financeira:
 | Limiares | +-25%, fixados APOS medicao no dado real pos-reparo: 239 crescendo / 174 caindo / 152 estavel em 565 classificaveis |
 | Timezone | dia civil `America/Sao_Paulo`, herdado de `daily_sku_metrics` |
 
+### 5D.2 Estoque real aproveitavel (D-146)
+
+| Campo | Definicao |
+|---|---|
+| ID | `estoque_aproveitavel` |
+| Nome | Estoque real aproveitavel |
+| Formula | `LOCAL + FULL + TRANSITO`. **RESERVADO fica FORA** |
+| Por que nao ha dupla contagem | O "Disponivel" do UpSeller JA EXCLUI o "Ocupado": no modelo da V3 os dois viram `location_kind` disjuntos (LOCAL/RESERVADO) desde a importacao. FULL e outro armazem fisico (CD do ML), disjunto por lugar. TRANSITO baixa e LOCAL sobe na MESMA transacao no recebimento (D-055) -- em nenhum instante a mesma unidade esta em duas parcelas |
+| Por que RESERVADO fica fora | Comprometido com pedidos existentes; conta-lo faria a sugestao deixar de repor unidades que ja tem dono |
+| Recusa | SKU com `stock_is_virtual` nao tem total (o LOCAL e sentinela, e sentinela + Full real = lixo com aparencia de precisao). `null` com motivo, componentes expostos -- mesmo desenho da cobertura (D-127) |
+| LOCAL negativo | Entra NEGATIVO: -5 sao unidades vendidas alem do que o ledger conhece, devidas. Truncar em zero esconderia a divida da sugestao de compra |
+| Fonte | `inventory_balances` (LOCAL/RESERVADO/TRANSITO) + ultimo snapshot de `fulfillment_stock_snapshots` por conta, somado (FULL) |
+| Implementacao canonica | `computeUsableStock` em `@sb/domain/purchasing` (formula unica) |
+
 ## 6. Como adicionar ou alterar uma métrica
 
 1. Registrar ou alterar a definição **aqui primeiro**.

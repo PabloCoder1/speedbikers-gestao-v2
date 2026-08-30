@@ -2790,6 +2790,29 @@ A camada 3 foi encontrada pelo CATALOGO (enumerando as FKs RESTRICT reais), nao 
 
 **Impacto:** migration `20260830021209`, reparo de dado via `rebuild_daily_sales_metrics` (sem migration -- e execucao, nao schema), `packages/domain/src/purchasing/sales-trend.{ts,test.ts}`, `apps/web/app/cobertura/page.tsx`, `packages/db/src/types.ts`, `docs/METRICS.md` secao 5D, `docs/ROADMAP.md`.
 
+## D-146 - Estoque real aproveitavel: a definicao que faltava, e as duas honestidades dela
+
+**Contexto:** terceira fatia da Fase 5D e ultima pre-condicao da sugestao de compra. O PRD exige definicao explicita do que entra de Local, Full, Reservado e Transito, "sem contar duas vezes nem ignorar". Definicao normativa em `docs/METRICS.md` 5D.2.
+
+**A conta: `aproveitavel = LOCAL + FULL + TRANSITO`, com RESERVADO fora.**
+
+**A pergunta da dupla contagem foi respondida por MEDICAO do modelo, nao por suposicao:** o "Disponivel" do UpSeller ja exclui o "Ocupado" -- as duas colunas do export viram `location_kind` DISJUNTOS (LOCAL/RESERVADO) desde a importacao, somando independentes. Logo somar LOCAL sem RESERVADO nao subtrai nada em dobro, e somar os dois e que contaria unidades comprometidas como disponiveis. FULL e outro armazem fisico (disjunto por lugar); TRANSITO baixa e LOCAL sobe na MESMA transacao do recebimento (D-055).
+
+**As duas honestidades, e elas sao o desenho:**
+
+1. **SKU virtual nao tem total.** `stock_is_virtual` diz que o LOCAL e sentinela; sentinela + Full real = lixo com aparencia de precisao. `computeUsableStock` devolve `null` com motivo -- mesma recusa de D-127 na cobertura e de D-144 na politica. Full e transito continuam expostos nos componentes: sao reais.
+2. **LOCAL negativo entra NEGATIVO.** -5 sao unidades vendidas alem do que o ledger conhece -- DEVIDAS. Truncar em zero esconderia a divida e a sugestao de compra deixaria de cobri-la. 191 SKUs estao negativos pos-D-134; o numero e real e aparece na conta.
+
+**Formula unica:** `computeUsableStock` em `@sb/domain/purchasing` (5 testes), com a decomposicao no retorno -- e o "por que aproveitavel = 48?" que a sugestao de compra vai exibir.
+
+**Consumidor imediato, sem migration nem RPC nova:** coluna "Aproveitavel" em `/estoque` -- a RPC de D-139 ja devolvia as quatro parcelas e a tela as mostrava separadas sem nunca responder o total. O tooltip carrega a decomposicao ("local X + full Y + transito Z, reservado W fica fora"), honrando o `ARCHITECTURE.md` secao 14: nunca somar num "estoque total" sem dizer o que ele contem.
+
+**Verificacao:** `check` 29/29 (+5 testes), `next build` compila. Tela nao vista renderizada (a ressalva de sempre).
+
+**Com esta fatia, as TRES pre-condicoes da sugestao de compra estao prontas:** politica (D-144) + tendencia (D-145) + aproveitavel (D-146), sobre saldo reparado (D-134) e historico recomputado (D-145). O que continua pendente e HUMANO: o ensaio de /produtos (SKUs sentinela sem classificar => a sugestao recusara para eles) e o preenchimento de /reposicao/configuracoes.
+
+**Impacto:** `packages/domain/src/purchasing/usable-stock.{ts,test.ts}` (novo), `apps/web/app/estoque/page.tsx`, `docs/METRICS.md` 5D.2, `docs/ROADMAP.md`. Sem migration.
+
 ## Como adicionar nova decisao
 
 Registrar:
