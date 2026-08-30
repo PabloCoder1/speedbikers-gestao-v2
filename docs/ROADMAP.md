@@ -349,7 +349,7 @@ A ordem não é preferência: é a Regra de Progressão deste arquivo. Quase tod
 
 **Depende de:** 4B inteira. A questão de negócio foi respondida (D-127: é estoque virtual deliberado), e o bloqueio virou **pré-condição técnica nomeada** — a marcação em lote de . Sugestão de compra sobre SKU não marcado continua sendo ficção; a diferença é que agora o sistema sabe dizer isso.
 
-- [ ] **Configuração de reposição** por fornecedor/origem/SKU: lead time, cobertura alvo, buffer, política
+- [x] **Configuração de reposição** — concluído em 2026-08-30 (D-144): `replenishment_settings` em três escopos exclusivos (padrão da org > marca `supplier_brand` > SKU, o mais específico vence), resolvedor puro em `@sb/domain/purchasing` que devolve `null` sem configuração — e a sugestão RECUSA em vez de inventar default. ZERO linhas semeadas (D-127/D-133). `demandWindowDays = lead + cobertura + segurança` — a armadilha do PRD virou função nomeada. Tela `/reposicao/configuracoes` (escrita ADMIN/GESTOR sob RLS). SKU sem marca só casa com o padrão da org — 64% não têm marca e cair em política errada em silêncio seria pior
 - [ ] **Tendência determinística** por janelas (90/60/30/15), classificando crescendo/estável/caindo
 - [ ] **Definição de "estoque real aproveitável"** — o que entra de Local, Full, Reservado e Trânsito, sem contar duas vezes nem ignorar
 - [ ] **Sugestão de compra auditável**, com decomposição visível ("por que comprar 48?"). Base matemática já existe e está testada (`simulateRequiredQuantity`, D-080)

@@ -6316,3 +6316,106 @@ describe("ator de tabela append-only: on delete restrict (D-094/D-099)", () => {
     ]);
   });
 });
+
+describe("replenishment_settings (Configuração de reposição, D-144)", () => {
+  // Linhas próprias desta suíte, sem afterAll — mesma convenção do arquivo.
+  // `organization_id` tem cascade de organizations e `sku_id` de skus, então
+  // o teardown global não é bloqueado por estas linhas (diferente dos
+  // ledgers — foi a lição de D-142).
+  let settingId = "";
+
+  beforeAll(async () => {
+    const inserted = await client.query<{ id: string }>(
+      `insert into public.replenishment_settings
+         (organization_id, supplier_brand, lead_time_days, target_coverage_days, safety_stock_days)
+       values ($1, 'NAVETEC', 60, 90, 15)
+       returning id`,
+      [ORG_SB],
+    );
+
+    settingId = inserted.rows[0]?.id ?? "";
+  });
+
+  it("qualquer membro da organização lê a configuração", async () => {
+    const rows = await asUser<{ id: string }>(
+      ANALISTA_SB,
+      `select id from public.replenishment_settings where id = '${settingId}'`,
+    );
+
+    expect(rows).toHaveLength(1);
+  });
+
+  it("membro de OUTRA organização não vê", async () => {
+    const rows = await asUser<{ id: string }>(
+      DE_OUTRA_ORG,
+      `select id from public.replenishment_settings where id = '${settingId}'`,
+    );
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("ADMIN cria o padrão da organização", async () => {
+    const rows = await asUserPersist<{ id: string }>(
+      ADMIN_SB,
+      `insert into public.replenishment_settings
+         (organization_id, lead_time_days, target_coverage_days)
+       values ('${ORG_SB}', 15, 30)
+       returning id`,
+    );
+
+    expect(rows).toHaveLength(1);
+  });
+
+  it("segundo padrão da organização é recusado — o índice parcial garante UM", async () => {
+    await expect(
+      asUser(
+        ADMIN_SB,
+        `insert into public.replenishment_settings
+           (organization_id, lead_time_days, target_coverage_days)
+         values ('${ORG_SB}', 10, 20)`,
+      ),
+    ).rejects.toThrow(/duplicate key/i);
+  });
+
+  it("ANALISTA não cria — a policy exige ADMIN/GESTOR", async () => {
+    await expect(
+      asUser(
+        ANALISTA_SB,
+        `insert into public.replenishment_settings
+           (organization_id, supplier_brand, lead_time_days, target_coverage_days)
+         values ('${ORG_SB}', 'RT', 15, 30)`,
+      ),
+    ).rejects.toThrow(/row-level security/i);
+  });
+
+  it("ANALISTA não edita: RLS filtra e o UPDATE alcança zero linhas", async () => {
+    const rows = await asUser<{ id: string }>(
+      ANALISTA_SB,
+      `update public.replenishment_settings set lead_time_days = 1 where id = '${settingId}' returning id`,
+    );
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("marca com escopo E sku ao mesmo tempo é recusada — os escopos são exclusivos", async () => {
+    await expect(
+      client.query(
+        `insert into public.replenishment_settings
+           (organization_id, supplier_brand, sku_id, lead_time_days, target_coverage_days)
+         values ($1, 'NAVETEC', (select id from public.skus limit 1), 15, 30)`,
+        [ORG_SB],
+      ),
+    ).rejects.toThrow(/one_scope/i);
+  });
+
+  it("marca fora de caixa alta é recusada pelo CHECK — a normalização é obrigação de quem grava", async () => {
+    await expect(
+      client.query(
+        `insert into public.replenishment_settings
+           (organization_id, supplier_brand, lead_time_days, target_coverage_days)
+         values ($1, 'navetec', 15, 30)`,
+        [ORG_SB],
+      ),
+    ).rejects.toThrow(/check/i);
+  });
+});

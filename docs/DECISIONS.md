@@ -2735,6 +2735,30 @@ A camada 3 foi encontrada pelo CATALOGO (enumerando as FKs RESTRICT reais), nao 
 
 **Impacto:** migration `20260830011456`, `apps/web/app/sincronizacao/page.tsx` (reescrita), `apps/web/lib/sync-health.{ts,test.ts}` (novo, 10 testes), `packages/db/src/types.ts`, `docs/ROADMAP.md`.
 
+## D-144 - Configuracao de reposicao: a fundacao da 5D, e a recusa como contrato
+
+**Contexto:** primeira fatia da Fase 5D. Todos os outros itens da fase (tendencia, sugestao auditavel, estados operacionais, priorizacao) LEEM a configuracao de reposicao -- lead time, cobertura alvo, estoque de seguranca. A nota do proprio ROADMAP orientou o corte: "sugestao de compra sobre SKU nao marcado continua sendo ficcao; a diferenca e que agora o sistema sabe dizer isso" -- o ensaio de `/produtos` pendente nao bloqueia construir a fundacao, bloqueia inventar numero.
+
+**Decisao 1 - tres escopos exclusivos, o mais especifico vence: SKU > marca > padrao da organizacao.** O eixo de marca e `supplier_brand` (D-129: `skus.supplier_id` nao existe de proposito -- `suppliers` tem uma linha, e marca de catalogo nao e entidade de compra). Unicidade por indice parcial em cada escopo (um padrao por org, uma regra por marca, uma por SKU) e CHECK proibindo marca e SKU na mesma linha. Medido antes: 18 marcas, 3.554 SKUs.
+
+**Decisao 2 - ZERO linhas semeadas, e a recusa e o contrato.** Precedente D-127/D-133: configurar e ato humano. O resolvedor (`resolveReplenishmentPolicy`, `@sb/domain/purchasing`) devolve `null` sem configuracao aplicavel, e quem chama RECUSA a sugestao em vez de assumir default. As referencias do PRD (~90 dias de cobertura para importacao, ~15 de lead nacional) aparecem na tela COMO TEXTO -- referencia e o que o ADMIN digita, nunca o que o codigo assume.
+
+**Decisao 3 - SKU sem marca nao casa com configuracao de marca nenhuma.** 64% dos SKUs ainda nao tem `supplier_brand` (vazio de proposito, D-129); deixa-los cair numa marca qualquer aplicaria a politica errada em silencio. Sem marca, so o padrao da organizacao alcanca o SKU. Testado.
+
+**Decisao 4 - a armadilha do PRD virou funcao nomeada.** "Comprar 15 dias de estoque com 15 dias de prazo zera antes da entrega": `demandWindowDays = lead + cobertura + seguranca` -- lead time SOMA, nunca substitui. E a formula que a sugestao de compra vai consumir; pela regra da formula unica, quando ela precisar existir em SQL, a versao SQL sera derivada com teste de equivalencia.
+
+**Decisao 5 - escopo e IDENTIDADE, nao campo editavel.** Editar uma regra muda os tres numeros; mudar a MARCA de uma regra re-atribuiria silenciosamente a politica de outro conjunto de SKUs (mesma regra de identidade fixa de D-076). Apagar e recriar e o caminho para trocar escopo.
+
+**Decisao 6 - `sku_id` e `on delete cascade`, diferente dos ledgers.** Configuracao nao e historia: a regra de um SKU morre com ele. E foi deliberado tambem pelo aprendizado de D-142 -- FK restrict em tabela de teste persistente bloquearia o teardown da suite.
+
+**Decisao 7 - Server Actions com retorno void e erro pela URL** (`?erro=`): `<form action>` de Server Component exige void, e o redirect de sucesso da POST-redirect-GET de graca. Escrita direta sob RLS, sem RPC -- policies espelham `reply_templates` (D-111): leitura para membros, escrita ADMIN/GESTOR.
+
+**Verificacao:** `check` 29/29 (+8 testes de dominio), `next build` compila `/reposicao/configuracoes`, 8 testes de RLS novos na suite de integracao (incluindo o indice parcial do padrao unico e o CHECK de caixa alta). 86 migrations locais == 86 remotas. Tela nao vista renderizada (exige sessao); `types.ts` a mao (6a ocorrencia da divida).
+
+**Escopo recusado, com gatilho:** configuracao por SKU na TELA (a tabela e o resolvedor ja suportam; a UI entra quando o primeiro caso real aparecer -- criar dropdown de 3.554 SKUs antes disso e peso sem uso); "buffer maximo" como campo proprio (o PRD cita, mas sem consumidor definido ainda -- entra com a sugestao de compra se a formula pedir); politica nacional/importado como flag (o eixo E a marca, D-129).
+
+**Impacto:** migration `20260830015215`, `packages/domain/src/purchasing/replenishment-policy.{ts,test.ts}` (novo), `apps/web/app/reposicao/configuracoes/{page,actions}.tsx`, `apps/web/components/shell.tsx` (nav ESTOQUE), `packages/db/src/rls.integration.test.ts` (+8), `packages/db/src/types.ts`, `docs/ROADMAP.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:

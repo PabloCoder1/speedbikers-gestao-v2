@@ -68,6 +68,10 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Estoque", href: "/estoque" },
       { label: "Cobertura", href: "/cobertura" },
+      // Aponta direto para a configuração enquanto a tela de sugestão de
+      // compra (Fase 5D) não existe; quando ela nascer em /reposicao, o link
+      // retarget-a e a configuração vira subpágina dela (D-144).
+      { label: "Reposição", href: "/reposicao/configuracoes" },
       { label: "Curva ABC", href: "/curva-abc" },
       { label: "Notas Fiscais", href: "/notas-fiscais" },
       { label: "Compras", href: "/compras" },

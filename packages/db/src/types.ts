@@ -2179,6 +2179,62 @@ export type Database = {
           },
         ]
       }
+      // ADIÇÃO MANUAL (D-144), mesma dívida de D-138..D-143: sem token de
+      // gerador nesta sessão. Assinatura da migration `20260830015215`.
+      replenishment_settings: {
+        Row: {
+          created_at: string
+          id: string
+          lead_time_days: number
+          organization_id: string
+          policy_note: string | null
+          safety_stock_days: number
+          sku_id: string | null
+          supplier_brand: string | null
+          target_coverage_days: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          lead_time_days: number
+          organization_id: string
+          policy_note?: string | null
+          safety_stock_days?: number
+          sku_id?: string | null
+          supplier_brand?: string | null
+          target_coverage_days: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          lead_time_days?: number
+          organization_id?: string
+          policy_note?: string | null
+          safety_stock_days?: number
+          sku_id?: string | null
+          supplier_brand?: string | null
+          target_coverage_days?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "replenishment_settings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "replenishment_settings_sku_id_fkey"
+            columns: ["sku_id"]
+            isOneToOne: false
+            referencedRelation: "skus"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       reply_templates: {
         Row: {
           body: string
