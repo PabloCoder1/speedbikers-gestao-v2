@@ -3212,8 +3212,14 @@ describe("prioridade da sugestão de compra (D-150) — equivalência SQL × dom
   // Marca própria (PURCHPRIO) para não contaminar o teste de filtro de
   // D-147, que afirma total_count=1 para PURCHTEST-MARCA. Nomes fora de
   // 'RLSTEST%': com métricas/ledger, os SKUs são indeletáveis por desenho.
+  //
+  // ERA PRÓPRIA (2025): a CI #272 mostrou que receita plantada em 2026-08
+  // dilui a curva ABC do describe vizinho (o "SKU dominante" caiu de >95%
+  // para 92,59% de share). A RPC recebe `p_date_to` explícito, então uma
+  // janela inteira em 2025 mantém este describe consistente consigo mesmo
+  // e invisível para todas as janelas de 2026 dos demais.
   const CONTA = "ddddbbbb-0000-4000-8000-0000000000bb";
-  const TODAY = "2026-08-23";
+  const TODAY = "2025-08-23";
 
   beforeAll(async () => {
     await client.query(
