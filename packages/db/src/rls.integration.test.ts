@@ -1121,25 +1121,39 @@ describe("vínculo SKU ↔ anúncio", () => {
     // A versão original chamava a RPC num CTE e lia os eventos NA MESMA
     // instrução: o snapshot do SELECT externo é estabelecido no início da
     // instrução e não enxerga linhas inseridas por função volátil durante a
-    // execução — devolvia [] com a RPC funcionando perfeitamente. O padrão
-    // correto já existia no próprio arquivo: `asUserPersist` + leitura em
-    // consulta separada (o comentário do helper descreve exatamente isso).
-    const created = await asUserPersist<{ id: string }>(
-      ADMIN_SB,
-      `select (public.create_sku_listing_link('${CONTA}', 'MLB900000202', null, '${skuId}')).id`,
-    );
-    const linkId = created[0]?.id ?? "";
+    // execução — devolvia [] com a RPC funcionando perfeitamente.
+    //
+    // A correção é transação explícita com instruções SEPARADAS (o contador
+    // de comandos avança entre elas, então a segunda enxerga a primeira) e
+    // ROLLBACK no fim — não `asUserPersist`: um evento comitado é
+    // append-only e bloquearia para sempre, via FK, a limpeza de
+    // `ml_accounts` do afterAll (foi exatamente o que a primeira tentativa
+    // desta correção causou na CI seguinte).
+    await client.query("begin");
+    try {
+      await client.query("set local role authenticated");
+      await client.query("select set_config('request.jwt.claims', $1, true)", [
+        JSON.stringify({ sub: ADMIN_SB }),
+      ]);
 
-    const rows = await client.query<{ event_type: string; actor_source: string }>(
-      `select e.event_type, e.actor_source
-       from public.sku_listing_link_events e
-       where e.link_id = $1`,
-      [linkId],
-    );
+      const created = await client.query<{ id: string }>(
+        `select (public.create_sku_listing_link('${CONTA}', 'MLB900000202', null, '${skuId}')).id`,
+      );
+      const linkId = created.rows[0]?.id ?? "";
 
-    expect(rows.rows).toHaveLength(1);
-    expect(rows.rows[0]?.event_type).toBe("CREATED");
-    expect(rows.rows[0]?.actor_source).toBe("HUMAN");
+      const rows = await client.query<{ event_type: string; actor_source: string }>(
+        `select e.event_type, e.actor_source
+         from public.sku_listing_link_events e
+         where e.link_id = $1`,
+        [linkId],
+      );
+
+      expect(rows.rows).toHaveLength(1);
+      expect(rows.rows[0]?.event_type).toBe("CREATED");
+      expect(rows.rows[0]?.actor_source).toBe("HUMAN");
+    } finally {
+      await client.query("rollback");
+    }
   });
 
   it("remover sem motivo e recusado — o motivo fica no historico", async () => {
