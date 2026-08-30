@@ -6,6 +6,7 @@ import { useState, type ReactNode } from "react";
 import { createPurchaseOrder, updatePurchaseOrderDraft } from "../actions";
 import { ItemRow } from "./item-row";
 import type { DraftItem } from "./item-row";
+import { detectOriginMix } from "./prefill";
 
 const inputStyle: React.CSSProperties = {
   display: "block",
@@ -250,6 +251,40 @@ export function PurchaseOrderForm({
           + Adicionar item
         </button>
       </div>
+
+      {(() => {
+        /*
+          "Não misturar nacional e importado" (PRD) como AVISO, nunca
+          bloqueio (D-151): `is_imported` é origem FISCAL e D-129/D-139
+          mediram que ela contradiz a rota de compra em parte do catálogo —
+          bloquear em cima de dado sabidamente errado impediria pedidos
+          legítimos. O aviso entrega a regra; a decisão continua humana.
+        */
+        const mix = detectOriginMix(items);
+
+        if (!mix.mixed) return null;
+
+        return (
+          <p
+            role="alert"
+            style={{
+              margin: 0,
+              fontSize: "0.8125rem",
+              color: "var(--sb-accent-ink)",
+              border: "1px solid var(--sb-accent-ink)",
+              borderRadius: "var(--sb-radius)",
+              padding: "var(--sb-space-2)",
+              maxWidth: "40rem",
+            }}
+          >
+            ⚠ Este pedido mistura <strong>{mix.imported} importado(s)</strong> e{" "}
+            <strong>{mix.national} nacional(is)</strong>
+            {mix.unknown > 0 && <> (mais {mix.unknown} sem origem conhecida)</>} — a regra da operação é não
+            misturar importação e compra nacional num mesmo pedido. A origem aqui é a FISCAL do cadastro, que erra
+            parte do catálogo (D-129); confira pela rota de compra real antes de criar.
+          </p>
+        );
+      })()}
 
       {error !== null && (
         <p role="alert" style={{ margin: 0, fontSize: "0.875rem", color: "var(--sb-danger)" }}>

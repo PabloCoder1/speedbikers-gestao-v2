@@ -2896,6 +2896,22 @@ A camada 3 foi encontrada pelo CATALOGO (enumerando as FKs RESTRICT reais), nao 
 
 **Impacto:** migration `20260830163841` (RPC reescrita com derivacao e ordenacao), `packages/domain/src/inventory/coverage-simulation.{ts,test.ts}` (saneamento de float), `packages/db/package.json` (+@sb/domain dev, test:integration builda antes), `rls.integration.test.ts` (+3, incluindo a equivalencia linha a linha), `apps/web/app/reposicao/page.tsx` (coluna Classe, texto da ordem), `apps/web/lib/replenishment-filters.ts` (rotulo), `types.ts` (regenerado), `docs/METRICS.md` 5D.5.
 
+## D-151 - Da cobertura para o pedido: a ponte que encurta o caminho, nunca a decisao -- FASE 5D COMPLETA
+
+**Contexto:** a ultima fatia da 5D. O PRD pede: selecionar, revisar quantidade e custo, criar pedido -- com aprovacao humana, respeitando a regra de nao misturar nacional e importado.
+
+**A ponte tem as duas pontas prontas ha muito, e a fatia e deliberadamente pequena:** `/reposicao` ja prioriza e sugere (D-147/D-150); `/compras/novo` ja aceita `initial` (o editar de rascunho usa) e o ciclo DRAFT -> aprovar -> enviar -> receber de D-055 E a aprovacao humana. O que faltava era o fio:
+
+1. **Selecao em `/reposicao`**: checkbox POR LINHA COM SUGESTAO defensavel e positiva (linha recusada ou coberta nao tem o que pedir; item avulso entra a mao no proprio pedido). GET nativo para `/compras/novo` com pares `sku=<uuid>:<qtd sugerida>`.
+2. **Pre-carga no pedido** (`parseReplenishmentPrefill`, pura e testada): par malformado e DESCARTADO em silencio (URL e editavel; um caractere errado nao derruba os demais), duplicata fica com a primeira, teto de 100. O `.in()` roda sob RLS: id alheio simplesmente nao volta. Quantidade sugerida + custo CADASTRADO como sugestao editavel (D-149) -- e o aviso na tela: nasce como RASCUNHO, so vira compra com a aprovacao do ciclo de Compras.
+3. **"Nao misturar nacional e importado" como AVISO, nunca bloqueio** (`detectOriginMix`, pura e testada): `is_imported` e origem FISCAL e D-129/D-139 MEDIRAM que ela contradiz a rota de compra (187 dos 228 NAVETEC constam "nacionais") -- bloquear em cima de dado sabidamente errado impediria pedidos legitimos. O aviso conta importados/nacionais/desconhecidos, cita a ressalva de D-129 e deixa a decisao com o humano; origem desconhecida NAO dispara a mistura (ausencia de resposta nao e resposta). O proprio PRD ja avisava: "nem hardcode por marca, nem confianca cega em is_imported".
+
+**Verificacao:** `check` 29/29 (+7 testes de web), build compila. Sem migration, sem RPC nova, sem types. Tela nao vista renderizada (a ressalva de sempre).
+
+**FASE 5D COMPLETA**: D-144 (configuracao) -> D-145 (tendencia) -> D-146 (aproveitavel) -> D-147 (sugestao) -> D-148 (estados) -> D-149 (custo com historia) -> D-150 (priorizacao com equivalencia SQL) -> D-151 (cobertura->pedido). Toda a matematica e deterministica, toda recusa tem motivo, e os DOIS interruptores da fase continuam humanos: preencher `/reposicao/configuracoes` e o ensaio de `/produtos`. A proxima fase da fila declarada e a **6B (diagnostico narrado, timeline e acoes acionaveis)** -- cujo primeiro item ja esta medido: `stock.balance.diverged` foi eliminado na origem por D-134/D-135, restando verificar o que sobrou de ruido antes de qualquer sinal novo.
+
+**Impacto:** `apps/web/app/compras/novo/prefill.{ts,test.ts}` (novo), `apps/web/app/compras/novo/page.tsx` (pre-carga), `apps/web/app/compras/novo/purchase-order-form.tsx` (aviso de mistura), `apps/web/app/reposicao/page.tsx` (selecao + submit).
+
 ## Como adicionar nova decisao
 
 Registrar:

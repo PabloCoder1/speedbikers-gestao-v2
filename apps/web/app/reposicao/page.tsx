@@ -277,10 +277,17 @@ export default async function ReposicaoPage({
       )}
 
       {error === null && rows.length > 0 && (
+        // A ponte cobertura→pedido (D-151): GET nativo para /compras/novo com
+        // pares `sku=<uuid>:<qtd sugerida>` — o pedido nasce pré-carregado,
+        // como RASCUNHO, e segue o ciclo de aprovação humana de D-055.
+        <form action="/compras/novo" method="get">
         <div style={{ overflowX: "auto" }}>
-          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "76rem" }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "78rem" }}>
             <thead>
               <tr>
+                <th style={th} title="Marque para levar ao pedido de compra — só linhas com sugestão defensável">
+                  Pedido
+                </th>
                 <th style={th}>SKU</th>
                 <th style={th}>Marca</th>
                 <th style={th} title="Curva ABC por faturamento, 90 dias (D-140) — segunda chave da prioridade">
@@ -324,6 +331,21 @@ export default async function ReposicaoPage({
 
                 return (
                   <tr key={row.sku_id}>
+                    <td style={{ ...td, textAlign: "center" }}>
+                      {/*
+                        Checkbox só onde há SUGESTÃO defensável e positiva —
+                        linha recusada ou coberta não tem o que pedir; itens
+                        avulsos entram à mão no próprio pedido.
+                      */}
+                      {suggestion.suggestedQuantity !== null && suggestion.suggestedQuantity > 0 && (
+                        <input
+                          type="checkbox"
+                          name="sku"
+                          value={`${row.sku_id}:${String(suggestion.suggestedQuantity)}`}
+                          aria-label={`Levar ${row.sku} ao pedido de compra com ${String(suggestion.suggestedQuantity)} unidade(s)`}
+                        />
+                      )}
+                    </td>
                     <td style={{ ...td, fontFamily: "ui-monospace, monospace" }}>
                       {row.sku}
                       {row.title !== null && (
@@ -435,6 +457,14 @@ export default async function ReposicaoPage({
             </tbody>
           </table>
         </div>
+
+        <button type="submit" style={{ ...FILTER_SUBMIT_STYLE, marginTop: "var(--sb-space-2)" }}>
+          Criar pedido com os selecionados →
+        </button>
+        <span style={{ marginLeft: "var(--sb-space-2)", fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
+          quantidade e custo revisáveis no pedido; nasce como rascunho, com aprovação humana
+        </span>
+        </form>
       )}
 
       {error === null && windowInfo.totalPages > 1 && (
