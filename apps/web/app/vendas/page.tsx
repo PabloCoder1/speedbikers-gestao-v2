@@ -6,11 +6,11 @@ import {
   shiftBusinessDate,
   toSalesMetricDate,
 } from "@sb/domain";
-import Link from "next/link";
 import type { ReactNode } from "react";
 
 import type { SavedFilter } from "../../components/saved-filters";
 import { SavedFilters } from "../../components/saved-filters";
+import { FILTER_SUBMIT_STYLE, FilterPill } from "../../components/filter-pill";
 import { Shell } from "../../components/shell";
 import { formatBusinessDate, formatCount, formatCurrency, formatDateTime } from "../../lib/format";
 import { createClient } from "../../lib/supabase/server";
@@ -63,21 +63,6 @@ const FRESHNESS_TONE: Record<FreshnessLevel, { color: string; label: string }> =
   nunca_sincronizado: { color: "var(--sb-muted-ink)", label: "Nunca calculado" },
 };
 
-const PILL_BASE: React.CSSProperties = {
-  padding: "0.25rem 0.75rem",
-  borderRadius: "999px",
-  border: "1px solid var(--sb-border)",
-  fontSize: "0.8125rem",
-  textDecoration: "none",
-};
-
-function pillStyle(active: boolean): React.CSSProperties {
-  return {
-    ...PILL_BASE,
-    background: active ? "var(--sb-primary)" : "transparent",
-    color: active ? "var(--sb-white)" : "var(--sb-text-soft)",
-  };
-}
 
 interface SalesSummary {
   units_sold: number;
@@ -416,21 +401,19 @@ export default async function VendasPage({
             marginBottom: "var(--sb-space-2)",
           }}
         >
-          <Link
-            href={buildHref({ period, accountSlug, metricKey: metric.key }, { accountSlug: null })}
-            style={pillStyle(selectedAccount === null)}
+          <FilterPill
+            href={buildHref({ period, accountSlug, metricKey: metric.key }, { accountSlug: null })} active={selectedAccount === null}
           >
             Todas as contas
-          </Link>
+          </FilterPill>
 
           {accounts.map((account) => (
-            <Link
+            <FilterPill
               key={account.id}
-              href={buildHref({ period, accountSlug, metricKey: metric.key }, { accountSlug: account.slug })}
-              style={pillStyle(selectedAccount?.id === account.id)}
+              href={buildHref({ period, accountSlug, metricKey: metric.key }, { accountSlug: account.slug })} active={selectedAccount?.id === account.id}
             >
               {account.label}
-            </Link>
+            </FilterPill>
           ))}
         </div>
       )}
@@ -445,13 +428,12 @@ export default async function VendasPage({
         }}
       >
         {PRESET_DAYS.map((preset) => (
-          <Link
+          <FilterPill
             key={preset}
-            href={buildHref({ period, accountSlug, metricKey: metric.key }, { period: { days: preset } })}
-            style={pillStyle(!isCustom && days === preset)}
+            href={buildHref({ period, accountSlug, metricKey: metric.key }, { period: { days: preset } })} active={!isCustom && days === preset}
           >
             {preset} dias
-          </Link>
+          </FilterPill>
         ))}
 
         <form
@@ -493,7 +475,7 @@ export default async function VendasPage({
               fontSize: "0.8125rem",
             }}
           />
-          <button type="submit" style={pillStyle(isCustom)}>
+          <button type="submit" style={FILTER_SUBMIT_STYLE}>
             Personalizado
           </button>
         </form>
@@ -554,14 +536,13 @@ export default async function VendasPage({
 
             <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)" }} role="group" aria-label="Métrica do gráfico">
               {SALES_METRICS.map((option) => (
-                <Link
+                <FilterPill
                   key={option.key}
-                  href={buildHref({ period, accountSlug, metricKey: metric.key }, { metricKey: option.key })}
-                  style={pillStyle(option.key === metric.key)}
+                  href={buildHref({ period, accountSlug, metricKey: metric.key }, { metricKey: option.key })} active={option.key === metric.key}
                   aria-current={option.key === metric.key ? "true" : undefined}
                 >
                   {option.label}
-                </Link>
+                </FilterPill>
               ))}
             </div>
           </div>

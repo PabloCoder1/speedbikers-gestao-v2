@@ -2628,6 +2628,51 @@ Nas seis ocorrencias anteriores o estrago era uma LISTA incompleta. Aqui era uma
 
 **Impacto:** migration `20260829233213`, `apps/web/app/curva-abc/page.tsx` (reescrita), `apps/web/lib/abc-filters.{ts,test.ts}` (novo, 13 testes), `packages/db/src/types.ts`, `docs/ROADMAP.md`.
 
+## D-141 - Filtros padronizados, e a medicao de exposicao do repositorio publico
+
+Duas coisas nesta entrada, porque aconteceram juntas.
+
+### 1. O repositorio virou publico, e a exposicao foi MEDIDA em vez de temida
+
+O usuario tornou o repositorio publico para recuperar os minutos de GitHub Actions (a CI estava parada desde 28/08 por falha de faturamento -- os jobs nem comecavam, mensagem "The job was not started because recent account payments have failed"). Eu tinha levantado risco: `infra/lib.sh` versiona a chave publicavel do Supabase e o ref do projeto.
+
+**Medido depois da decisao, e o resultado desarma o alerta:**
+
+- **nenhuma** tabela de `public` concede SELECT ou INSERT a `anon`;
+- **todas** tem RLS habilitada;
+- das funcoes executaveis por `anon`, so `get_unlinked_listings` nao era trigger -- e ela e `security invoker`, entao roda com os privilegios (inexistentes) do chamador.
+
+**Abrir o repositorio nao expos dado.** A chave publicavel nao abre nada porque `anon` nao tem privilegio nenhum. Ficou so a inconsistencia: a migration de D-122 esqueceu o `revoke all ... from public, anon` que todas as outras fazem. Fechado -- agora **nenhuma** RPC de negocio e executavel por `anon`. Nao era vulnerabilidade, era superficie desnecessaria, mesmo argumento de D-066.
+
+**Correcao de premissa registrada:** commitar e dar push NUNCA estiveram bloqueados. O faturamento de Actions nao afeta Git. Cinco commits subiram normalmente durante a interrupcao.
+
+### 2. Filtros padronizados (o item da Fase 5C)
+
+**Extraido com dor MEDIDA, nao por antecipacao** (`docs/ARCHITECTURE.md` secao 1):
+
+| Peca | Antes | Depois |
+|---|---|---|
+| `pillStyle` | 5 copias | 0 |
+| `buildHref` com reset de pagina | 3 copias | 0 |
+| Calculo de janela paginada | 3 copias | 1 |
+
+A regra de contencao do projeto diz que algo vira peca compartilhada quando aparece o SEGUNDO consumidor; aqui ja eram cinco. Antes desta sessao havia uma copia so -- por isso o item estava parado, e por isso ele so ficou maduro agora.
+
+**Decisao 1 - compartilha-se a MECANICA, nunca o vocabulario.** `lib/filters.ts` tem `resolvePageParam`, `buildFilterHref` e `summarizePagedWindow`. O que NAO entrou: a resolucao dos filtros de cada tela. `marca` so existe em `/estoque`, `criterio` so em `/curva-abc`, `vinculo` so em `/anuncios`. Generalizar isso produziria um resolvedor que aceita qualquer coisa e nao valida nada -- o oposto do que cada `resolve*` faz, que e recusar valor fora da lista fechada.
+
+**Decisao 2 - `tone` no `FilterPill` existe por um caso real.** Das dezoito pilulas, uma divergia: "⏱ Prazo em risco" em `/atendimento` fica VERMELHA quando ativa, porque ali "ligado" significa risco, nao selecao. Apagar essa diferenca na extracao teria trocado um alerta por um filtro comum.
+
+**Decisao 3 - as tres libs delegam mas mantem a API publica**, entao nenhuma tela precisou mudar por causa disso. Os 36 testes existentes de `stock-filters`, `abc-filters` e `listings-dashboard` **passaram sem uma linha alterada** -- e como eles fixam as strings de rotulo, isso e a prova de que o comportamento nao mudou.
+
+**O que a extracao revelou de codigo morto:** `PILL_BASE` orfao em duas telas e `import Link` sem uso em outras duas. Removidos.
+
+`check` **29/29**, 154 testes em `@sb/web` (+11 do nucleo novo), `next build` limpo.
+
+- **Divida declarada, quarta consecutiva** (D-138, D-139, D-140): `packages/db/src/types.ts` segue editado a mao, sem `SUPABASE_ACCESS_TOKEN` nesta sessao.
+- **Telas nao vistas renderizadas.** Este e um refactor de aparencia em CINCO telas sem verificacao visual -- o risco mais alto da sessao nesse quesito. O que sustenta: os 36 testes de comportamento intactos, o build, e o fato de o `FilterPill` reproduzir exatamente o mesmo objeto de estilo que estava nas cinco copias.
+
+**Impacto:** `apps/web/lib/filters.{ts,test.ts}` (novo, 11 testes), `apps/web/components/filter-pill.tsx` (novo), `apps/web/lib/{stock-filters,abc-filters,listings-dashboard}.ts`, as cinco telas, migration `20260830002606`.
+
 ## Como adicionar nova decisao
 
 Registrar:

@@ -1,7 +1,11 @@
 /**
- * Filtros da Curva ABC (D-140), puros e testáveis sem React nem banco —
- * mesmo padrão de `stock-filters.ts` (D-139) e `listings-dashboard.ts` (D-138).
+ * Filtros da Curva ABC (D-140), puros e testáveis sem React nem banco.
+ *
+ * A mecânica compartilhada (href, página, janela) vive em `./filters` desde
+ * D-141; aqui fica o vocabulário próprio: critério, período e "sem Full".
  */
+
+import { buildFilterHref, resolvePageParam, summarizePagedWindow } from "./filters";
 
 export const PAGE_SIZE = 200;
 
@@ -45,8 +49,6 @@ export function resolveAbcPeriod(raw: unknown): number {
 }
 
 export function resolveAbcFilters(query: Record<string, string | string[] | undefined>): AbcFilters {
-  const rawPage = typeof query.pagina === "string" ? Number.parseInt(query.pagina, 10) : Number.NaN;
-
   return {
     accountSlug: typeof query.conta === "string" && query.conta !== "" ? query.conta : null,
     criterion: resolveAbcCriterion(query.criterio),
@@ -54,26 +56,25 @@ export function resolveAbcFilters(query: Record<string, string | string[] | unde
     // `semFull=1` liga; qualquer outra coisa desliga. A URL antiga usava a
     // mera presença do parâmetro, o que fazia `?semFull=0` LIGAR o filtro.
     onlyWithoutFull: query.semFull === "1",
-    page: Number.isFinite(rawPage) && rawPage >= 1 ? rawPage : 1,
+    page: resolvePageParam(query.pagina),
   };
 }
 
 export function buildAbcHref(current: AbcFilters, override: Partial<AbcFilters>): string {
   const next = { ...current, ...override };
-  const resetPage = override.page === undefined;
-  const params = new URLSearchParams();
 
-  if (next.accountSlug !== null) params.set("conta", next.accountSlug);
-  if (next.criterion.key !== ABC_CRITERIA[0].key) params.set("criterio", next.criterion.key);
-  if (next.days !== DEFAULT_PERIOD) params.set("dias", String(next.days));
-  if (next.onlyWithoutFull) params.set("semFull", "1");
-
-  const page = resetPage ? 1 : next.page;
-  if (page > 1) params.set("pagina", String(page));
-
-  const qs = params.toString();
-
-  return qs === "" ? "/curva-abc" : `/curva-abc?${qs}`;
+  return buildFilterHref(
+    "/curva-abc",
+    {
+      conta: next.accountSlug,
+      // Defaults ficam FORA da URL: `/curva-abc` limpo continua sendo a mesma
+      // página de sempre, e o link compartilhado só carrega o que foi escolhido.
+      criterio: next.criterion.key === ABC_CRITERIA[0].key ? null : next.criterion.key,
+      dias: next.days === DEFAULT_PERIOD ? null : String(next.days),
+      semFull: next.onlyWithoutFull ? "1" : null,
+    },
+    override.page === undefined ? 1 : next.page,
+  );
 }
 
 export interface AbcSummary {
@@ -88,22 +89,12 @@ export interface AbcSummary {
  * sempre diz quantos SKUs estão fora da página.
  */
 export function summarizeAbcWindow(page: number, totalCount: number, rowsOnPage: number): AbcSummary {
-  if (totalCount === 0) {
-    return { label: "Nenhum SKU com venda no período e escopo escolhidos.", totalPages: 0 };
-  }
-
-  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
-  const formatted = new Intl.NumberFormat("pt-BR");
-
-  if (totalPages === 1) {
-    return { label: `${formatted.format(totalCount)} SKUs na curva.`, totalPages };
-  }
-
-  const first = (page - 1) * PAGE_SIZE + 1;
-  const last = first + rowsOnPage - 1;
-
-  return {
-    label: `Mostrando ${formatted.format(first)} a ${formatted.format(last)} de ${formatted.format(totalCount)} SKUs na curva.`,
-    totalPages,
-  };
+  return summarizePagedWindow({
+    page,
+    totalCount,
+    rowsOnPage,
+    pageSize: PAGE_SIZE,
+    noun: "SKUs na curva",
+    emptyLabel: "Nenhum SKU com venda no período e escopo escolhidos.",
+  });
 }

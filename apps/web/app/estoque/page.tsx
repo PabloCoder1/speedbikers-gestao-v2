@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { FILTER_SUBMIT_STYLE, FilterPill } from "../../components/filter-pill";
 import { Shell } from "../../components/shell";
 import { formatBusinessDate, formatCount, formatCurrency } from "../../lib/format";
 import { PAGE_SIZE, buildStockHref, resolveStockFilters, summarizeStockWindow } from "../../lib/stock-filters";
@@ -31,18 +32,6 @@ const td: React.CSSProperties = {
 
 const tdNumber: React.CSSProperties = { ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" };
 
-function pillStyle(active: boolean): React.CSSProperties {
-  return {
-    padding: "0.25rem 0.625rem",
-    borderRadius: "var(--sb-radius)",
-    border: `1px solid ${active ? "var(--sb-primary)" : "var(--sb-border)"}`,
-    background: active ? "var(--sb-primary)" : "transparent",
-    color: active ? "#fff" : "var(--sb-text-soft)",
-    textDecoration: "none",
-    fontSize: "0.8125rem",
-    whiteSpace: "nowrap",
-  };
-}
 
 interface StockRow {
   sku_id: string;
@@ -142,23 +131,22 @@ export default async function EstoquePage({
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--sb-space-2)", marginBottom: "var(--sb-space-3)" }}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", alignItems: "center" }}>
           <span style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)", minWidth: "4rem" }}>Marca</span>
-          <Link href={buildStockHref(filters, { brand: null })} style={pillStyle(filters.brand === null)}>
+          <FilterPill href={buildStockHref(filters, { brand: null })} active={filters.brand === null}>
             Todas
-          </Link>
+          </FilterPill>
           {brands.map((brand) => (
-            <Link key={brand} href={buildStockHref(filters, { brand })} style={pillStyle(filters.brand === brand)}>
+            <FilterPill key={brand} href={buildStockHref(filters, { brand })} active={filters.brand === brand}>
               {brand}
-            </Link>
+            </FilterPill>
           ))}
         </div>
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", alignItems: "center" }}>
-          <Link
-            href={buildStockHref(filters, { onlyNegative: !filters.onlyNegative })}
-            style={pillStyle(filters.onlyNegative)}
+          <FilterPill
+            href={buildStockHref(filters, { onlyNegative: !filters.onlyNegative })} active={filters.onlyNegative}
           >
             Só saldo negativo
-          </Link>
+          </FilterPill>
 
           <form method="get" style={{ display: "flex", gap: "0.375rem", alignItems: "center" }}>
             {/* Hidden por dimensão ativa: GET nativo só envia campos do form (D-136). */}
@@ -179,7 +167,7 @@ export default async function EstoquePage({
                 minWidth: "14rem",
               }}
             />
-            <button type="submit" style={pillStyle(filters.search !== null)}>
+            <button type="submit" style={FILTER_SUBMIT_STYLE}>
               Buscar
             </button>
           </form>
@@ -277,17 +265,17 @@ export default async function EstoquePage({
           }}
         >
           {filters.page > 1 && (
-            <Link href={buildStockHref(filters, { page: filters.page - 1 })} style={pillStyle(false)}>
+            <FilterPill href={buildStockHref(filters, { page: filters.page - 1 })} active={false}>
               ← Anterior
-            </Link>
+            </FilterPill>
           )}
           <span style={{ color: "var(--sb-text-soft)" }}>
             Página {filters.page} de {windowInfo.totalPages}
           </span>
           {filters.page < windowInfo.totalPages && (
-            <Link href={buildStockHref(filters, { page: filters.page + 1 })} style={pillStyle(false)}>
+            <FilterPill href={buildStockHref(filters, { page: filters.page + 1 })} active={false}>
               Próxima →
-            </Link>
+            </FilterPill>
           )}
         </div>
       )}

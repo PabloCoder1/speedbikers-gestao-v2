@@ -1,6 +1,6 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { FilterPill } from "../../components/filter-pill";
 import { Shell } from "../../components/shell";
 import {
   ABC_CRITERIA,
@@ -74,18 +74,6 @@ const td: React.CSSProperties = {
 
 const tdNumber: React.CSSProperties = { ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" };
 
-function pillStyle(active: boolean): React.CSSProperties {
-  return {
-    padding: "0.25rem 0.625rem",
-    borderRadius: "var(--sb-radius)",
-    border: `1px solid ${active ? "var(--sb-primary)" : "var(--sb-border)"}`,
-    background: active ? "var(--sb-primary)" : "transparent",
-    color: active ? "#fff" : "var(--sb-text-soft)",
-    textDecoration: "none",
-    fontSize: "0.8125rem",
-    whiteSpace: "nowrap",
-  };
-}
 
 export default async function CurvaAbcPage({
   searchParams,
@@ -156,47 +144,44 @@ export default async function CurvaAbcPage({
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--sb-space-2)", marginBottom: "var(--sb-space-3)" }}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", alignItems: "center" }}>
           <span style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)", minWidth: "5rem" }}>Escopo</span>
-          <Link href={buildAbcHref(filters, { accountSlug: null })} style={pillStyle(filters.accountSlug === null)}>
+          <FilterPill href={buildAbcHref(filters, { accountSlug: null })} active={filters.accountSlug === null}>
             Consolidado
-          </Link>
+          </FilterPill>
           {accounts.map((account) => (
-            <Link
+            <FilterPill
               key={account.id}
-              href={buildAbcHref(filters, { accountSlug: account.slug })}
-              style={pillStyle(filters.accountSlug === account.slug)}
+              href={buildAbcHref(filters, { accountSlug: account.slug })} active={filters.accountSlug === account.slug}
             >
               {account.label}
-            </Link>
+            </FilterPill>
           ))}
         </div>
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", alignItems: "center" }}>
           <span style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)", minWidth: "5rem" }}>Critério</span>
           {ABC_CRITERIA.map((criterion) => (
-            <Link
+            <FilterPill
               key={criterion.key}
-              href={buildAbcHref(filters, { criterion })}
-              style={pillStyle(filters.criterion.key === criterion.key)}
+              href={buildAbcHref(filters, { criterion })} active={filters.criterion.key === criterion.key}
             >
               {criterion.label}
-            </Link>
+            </FilterPill>
           ))}
         </div>
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", alignItems: "center" }}>
           <span style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)", minWidth: "5rem" }}>Período</span>
           {ABC_PERIODS.map((days) => (
-            <Link key={days} href={buildAbcHref(filters, { days })} style={pillStyle(filters.days === days)}>
+            <FilterPill key={days} href={buildAbcHref(filters, { days })} active={filters.days === days}>
               {days} dias
-            </Link>
+            </FilterPill>
           ))}
 
-          <Link
-            href={buildAbcHref(filters, { onlyWithoutFull: !filters.onlyWithoutFull })}
-            style={{ ...pillStyle(filters.onlyWithoutFull), marginLeft: "var(--sb-space-3)" }}
+          <FilterPill
+            href={buildAbcHref(filters, { onlyWithoutFull: !filters.onlyWithoutFull })} active={filters.onlyWithoutFull}
           >
             Somente sem estoque em Full
-          </Link>
+          </FilterPill>
         </div>
       </div>
 
@@ -273,17 +258,17 @@ export default async function CurvaAbcPage({
           }}
         >
           {filters.page > 1 && (
-            <Link href={buildAbcHref(filters, { page: filters.page - 1 })} style={pillStyle(false)}>
+            <FilterPill href={buildAbcHref(filters, { page: filters.page - 1 })} active={false}>
               ← Anterior
-            </Link>
+            </FilterPill>
           )}
           <span style={{ color: "var(--sb-text-soft)" }}>
             Página {filters.page} de {windowInfo.totalPages}
           </span>
           {filters.page < windowInfo.totalPages && (
-            <Link href={buildAbcHref(filters, { page: filters.page + 1 })} style={pillStyle(false)}>
+            <FilterPill href={buildAbcHref(filters, { page: filters.page + 1 })} active={false}>
               Próxima →
-            </Link>
+            </FilterPill>
           )}
         </div>
       )}

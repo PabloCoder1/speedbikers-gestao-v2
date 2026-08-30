@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { FilterPill } from "../../components/filter-pill";
 import { Shell } from "../../components/shell";
 import { StatusPill } from "../../components/status-pill";
 import { formatDateTime } from "../../lib/format";
@@ -85,22 +86,6 @@ interface SupportCaseRow {
   support_case_links: SupportCaseLinkRow[] | null;
 }
 
-const PILL_BASE: React.CSSProperties = {
-  borderRadius: "999px",
-  border: "1px solid var(--sb-border)",
-  padding: "0.25rem 0.75rem",
-  fontSize: "0.8125rem",
-  textDecoration: "none",
-  whiteSpace: "nowrap",
-};
-
-function pillStyle(active: boolean): React.CSSProperties {
-  return {
-    ...PILL_BASE,
-    background: active ? "var(--sb-primary)" : "transparent",
-    color: active ? "var(--sb-white)" : "var(--sb-text-soft)",
-  };
-}
 
 const th: React.CSSProperties = {
   textAlign: "left",
@@ -302,53 +287,46 @@ export default async function AtendimentoPage({
 
       {accountsResult.error === null && accounts.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", marginBottom: "var(--sb-space-2)" }}>
-          <Link href={buildHref(current, { account: null })} style={pillStyle(selectedAccount === null)}>
+          <FilterPill href={buildHref(current, { account: null })} active={selectedAccount === null}>
             Todas as contas
-          </Link>
+          </FilterPill>
           {accounts.map((account) => (
-            <Link
+            <FilterPill
               key={account.id}
-              href={buildHref(current, { account: account.slug })}
-              style={pillStyle(selectedAccount?.id === account.id)}
+              href={buildHref(current, { account: account.slug })} active={selectedAccount?.id === account.id}
             >
               {account.label}
-            </Link>
+            </FilterPill>
           ))}
         </div>
       )}
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", marginBottom: "var(--sb-space-2)" }}>
-        <Link href={buildHref(current, { channel: null })} style={pillStyle(channel === null)}>
+        <FilterPill href={buildHref(current, { channel: null })} active={channel === null}>
           Todos os tipos
-        </Link>
+        </FilterPill>
         {CHANNELS.map((code) => (
-          <Link key={code} href={buildHref(current, { channel: code })} style={pillStyle(channel === code)}>
+          <FilterPill key={code} href={buildHref(current, { channel: code })} active={channel === code}>
             {supportChannelLabel(code)}
-          </Link>
+          </FilterPill>
         ))}
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", marginBottom: "var(--sb-space-4)" }}>
-        <Link href={buildHref(current, { status: "abertos" })} style={pillStyle(status === "abertos")}>
+        <FilterPill href={buildHref(current, { status: "abertos" })} active={status === "abertos"}>
           Abertos
-        </Link>
+        </FilterPill>
         {INTERNAL_STATUSES.map((code) => (
-          <Link key={code} href={buildHref(current, { status: code })} style={pillStyle(status === code)}>
+          <FilterPill key={code} href={buildHref(current, { status: code })} active={status === code}>
             {supportInternalStatusLabel(code)}
-          </Link>
+          </FilterPill>
         ))}
-        <Link href={buildHref(current, { status: "todos" })} style={pillStyle(status === "todos")}>
+        <FilterPill href={buildHref(current, { status: "todos" })} active={status === "todos"}>
           Todos
-        </Link>
-        <Link
-          href={buildHref(current, { prazo: !prazoRisco })}
-          style={{
-            ...pillStyle(prazoRisco),
-            ...(prazoRisco ? { background: "var(--sb-danger)", borderColor: "var(--sb-danger)" } : {}),
-          }}
-        >
+        </FilterPill>
+        <FilterPill href={buildHref(current, { prazo: !prazoRisco })} active={prazoRisco} tone="danger">
           ⏱ Prazo em risco
-        </Link>
+        </FilterPill>
       </div>
 
       {error === null && cases.length === 0 && (

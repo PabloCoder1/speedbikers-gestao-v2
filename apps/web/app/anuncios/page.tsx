@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { FILTER_SUBMIT_STYLE, FilterPill } from "../../components/filter-pill";
 import { Shell } from "../../components/shell";
 import { StatusPill } from "../../components/status-pill";
 import { formatCount, formatCurrency, formatDateTime } from "../../lib/format";
@@ -14,6 +15,7 @@ import {
   resolveStatusFilter,
   summarizeWindow,
 } from "../../lib/listings-dashboard";
+import { buildFilterHref } from "../../lib/filters";
 import { createClient } from "../../lib/supabase/server";
 
 export const metadata = { title: "Anúncios — Speed Bikers Gestão" };
@@ -81,18 +83,6 @@ const td: React.CSSProperties = {
 
 const tdNumber: React.CSSProperties = { ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" };
 
-function pillStyle(active: boolean): React.CSSProperties {
-  return {
-    padding: "0.25rem 0.625rem",
-    borderRadius: "var(--sb-radius)",
-    border: `1px solid ${active ? "var(--sb-primary)" : "var(--sb-border)"}`,
-    background: active ? "var(--sb-primary)" : "transparent",
-    color: active ? "#fff" : "var(--sb-text-soft)",
-    textDecoration: "none",
-    fontSize: "0.8125rem",
-    whiteSpace: "nowrap",
-  };
-}
 
 interface Filters {
   account: string | null;
@@ -112,20 +102,18 @@ interface Filters {
  */
 function buildHref(current: Filters, override: Partial<Filters>): string {
   const next = { ...current, ...override };
-  const resetPage = override.page === undefined;
-  const search = new URLSearchParams();
 
-  if (next.account !== null) search.set("conta", next.account);
-  if (next.status !== null) search.set("estado", next.status);
-  if (next.link !== "all") search.set("vinculo", next.link);
-  if (next.search !== null && next.search !== "") search.set("busca", next.search);
-
-  const page = resetPage ? 1 : next.page;
-  if (page > 1) search.set("pagina", String(page));
-
-  const qs = search.toString();
-
-  return qs === "" ? "/anuncios" : `/anuncios?${qs}`;
+  return buildFilterHref(
+    "/anuncios",
+    {
+      conta: next.account,
+      estado: next.status,
+      // "all" e o default do vinculo: fica fora da URL, como os demais.
+      vinculo: next.link === "all" ? null : next.link,
+      busca: next.search,
+    },
+    override.page === undefined ? 1 : next.page,
+  );
 }
 
 export default async function AnunciosPage({
@@ -201,46 +189,43 @@ export default async function AnunciosPage({
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--sb-space-2)", marginBottom: "var(--sb-space-3)" }}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", alignItems: "center" }}>
           <span style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)", minWidth: "4.5rem" }}>Conta</span>
-          <Link href={buildHref(filters, { account: null })} style={pillStyle(filters.account === null)}>
+          <FilterPill href={buildHref(filters, { account: null })} active={filters.account === null}>
             Todas
-          </Link>
+          </FilterPill>
           {accounts.map((account) => (
-            <Link
+            <FilterPill
               key={account.id}
-              href={buildHref(filters, { account: account.slug })}
-              style={pillStyle(filters.account === account.slug)}
+              href={buildHref(filters, { account: account.slug })} active={filters.account === account.slug}
             >
               {account.label}
-            </Link>
+            </FilterPill>
           ))}
         </div>
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", alignItems: "center" }}>
           <span style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)", minWidth: "4.5rem" }}>Vínculo</span>
           {LINK_STATE_FILTERS.map((option) => (
-            <Link
+            <FilterPill
               key={option.key}
-              href={buildHref(filters, { link: option.key })}
-              style={pillStyle(filters.link === option.key)}
+              href={buildHref(filters, { link: option.key })} active={filters.link === option.key}
             >
               {option.label}
-            </Link>
+            </FilterPill>
           ))}
 
           <span style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)", marginLeft: "var(--sb-space-3)" }}>
             Estado
           </span>
-          <Link href={buildHref(filters, { status: null })} style={pillStyle(filters.status === null)}>
+          <FilterPill href={buildHref(filters, { status: null })} active={filters.status === null}>
             Todos
-          </Link>
+          </FilterPill>
           {["active", "paused", "closed"].map((status) => (
-            <Link
+            <FilterPill
               key={status}
-              href={buildHref(filters, { status })}
-              style={pillStyle(filters.status === status)}
+              href={buildHref(filters, { status })} active={filters.status === status}
             >
               {listingStatusLabel(status)}
-            </Link>
+            </FilterPill>
           ))}
         </div>
 
@@ -267,7 +252,7 @@ export default async function AnunciosPage({
               minWidth: "16rem",
             }}
           />
-          <button type="submit" style={pillStyle(filters.search !== null)}>
+          <button type="submit" style={FILTER_SUBMIT_STYLE}>
             Buscar
           </button>
           {filters.search !== null && (
@@ -372,17 +357,17 @@ export default async function AnunciosPage({
           }}
         >
           {filters.page > 1 && (
-            <Link href={buildHref(filters, { page: filters.page - 1 })} style={pillStyle(false)}>
+            <FilterPill href={buildHref(filters, { page: filters.page - 1 })} active={false}>
               ← Anterior
-            </Link>
+            </FilterPill>
           )}
           <span style={{ color: "var(--sb-text-soft)" }}>
             Página {filters.page} de {window.totalPages}
           </span>
           {filters.page < window.totalPages && (
-            <Link href={buildHref(filters, { page: filters.page + 1 })} style={pillStyle(false)}>
+            <FilterPill href={buildHref(filters, { page: filters.page + 1 })} active={false}>
               Próxima →
-            </Link>
+            </FilterPill>
           )}
         </div>
       )}
