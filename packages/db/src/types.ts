@@ -3953,6 +3953,20 @@ export type Database = {
           units_sold: number
         }[]
       }
+      get_sales_expanded_summary: {
+        Args: {
+          p_date_from: string
+          p_date_to: string
+          p_ml_account_id?: string
+        }
+        Returns: {
+          pedidos_cancelados: number
+          skus_distintos_vendidos: number
+          taxa_cancelamento: number
+          taxas_ml: number
+          valor_cancelado: number
+        }[]
+      }
       get_sales_summary: {
         Args: {
           p_date_from: string

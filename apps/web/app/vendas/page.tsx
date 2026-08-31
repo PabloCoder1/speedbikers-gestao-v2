@@ -12,7 +12,7 @@ import type { SavedFilter } from "../../components/saved-filters";
 import { SavedFilters } from "../../components/saved-filters";
 import { FILTER_SUBMIT_STYLE, FilterPill } from "../../components/filter-pill";
 import { Shell } from "../../components/shell";
-import { formatBusinessDate, formatCount, formatCurrency, formatDateTime } from "../../lib/format";
+import { formatBusinessDate, formatCount, formatCurrency, formatDateTime, formatPercent } from "../../lib/format";
 import { createClient } from "../../lib/supabase/server";
 import { DEFAULT_SALES_METRIC, SALES_METRICS, resolveSalesMetric } from "../../lib/sales-metric";
 import { SalesChart } from "./sales-chart";
@@ -74,6 +74,19 @@ interface SalesSummary {
   last_computed_at: string | null;
 }
 
+/**
+ * Métricas 5C (D-157) — nulidade REAL por cima do tipo gerado (o gerador não
+ * marca retorno anulável; padrão de D-153): `taxa_cancelamento` vem NULL
+ * quando não há pedido elegível no período — nunca 0% fingido.
+ */
+interface ExpandedSummary {
+  taxas_ml: number;
+  pedidos_cancelados: number;
+  taxa_cancelamento: number | null;
+  valor_cancelado: number;
+  skus_distintos_vendidos: number;
+}
+
 interface MetricCardSpec {
   metricId: string;
   label: string;
@@ -81,6 +94,8 @@ interface MetricCardSpec {
   format: (value: number | null) => string;
   current: number | null;
   previous: number | null;
+  /** Ressalva OBRIGATÓRIA de docs/METRICS.md 5C.2 — visível ao lado do número, nunca só em tooltip. */
+  ressalva?: string;
 }
 
 function buildCards(current: SalesSummary, previous: SalesSummary | null): MetricCardSpec[] {
@@ -136,6 +151,63 @@ function buildCards(current: SalesSummary, previous: SalesSummary | null): Metri
   ];
 }
 
+/**
+ * Métricas 5C de vendas (D-157) — cancelamentos e taxas vêm de `orders`
+ * direto (L1): não existem no rollup L3 por construção, e a taxa de
+ * cancelamento usa os dois lados da MESMA leitura (misturar L1 com L3
+ * embutiria o atraso do recálculo na razão — 0,1% medido). Por isso podem
+ * divergir ligeiramente dos cards L3 acima, e a seção declara a fonte.
+ */
+function buildExpandedCards(current: ExpandedSummary, previous: ExpandedSummary | null): MetricCardSpec[] {
+  return [
+    {
+      metricId: "taxas_ml",
+      label: "Taxas do Mercado Livre",
+      formula: "SUM(order_items.sale_fee) sobre vendas válidas",
+      format: formatCurrency,
+      current: current.taxas_ml,
+      previous: previous?.taxas_ml ?? null,
+      ressalva: "Comissão de venda. Não inclui frete, taxa fixa, parcelamento nem impostos.",
+    },
+    {
+      metricId: "pedidos_cancelados",
+      label: "Pedidos cancelados",
+      formula: "COUNT(DISTINCT orders.id) em cancelled/pending_cancel",
+      format: formatCount,
+      current: current.pedidos_cancelados,
+      previous: previous?.pedidos_cancelados ?? null,
+      ressalva: "Inclui pending_cancel. Cancelamento não é devolução, reembolso nem mediação.",
+    },
+    {
+      metricId: "taxa_cancelamento",
+      label: "Taxa de cancelamento",
+      formula: "cancelados ÷ elegíveis (válidos + cancelados)",
+      format: formatPercent,
+      current: current.taxa_cancelamento,
+      previous: previous?.taxa_cancelamento ?? null,
+      ressalva: "Denominador: pedidos elegíveis, os dois lados da mesma leitura de orders.",
+    },
+    {
+      metricId: "valor_cancelado",
+      label: "Valor cancelado",
+      formula: "SUM(orders.total_amount) dos cancelados",
+      format: formatCurrency,
+      current: current.valor_cancelado,
+      previous: previous?.valor_cancelado ?? null,
+      ressalva: "Valor pedido, não valor estornado — o estorno financeiro não é observado.",
+    },
+    {
+      metricId: "skus_distintos_vendidos",
+      label: "SKUs distintos vendidos",
+      formula: "COUNT(DISTINCT sku_id) no grão pedido",
+      format: formatCount,
+      current: current.skus_distintos_vendidos,
+      previous: previous?.skus_distintos_vendidos ?? null,
+      ressalva: "Exclui itens vendidos sem vínculo de SKU (21,8% dos itens em 30 dias, medido).",
+    },
+  ];
+}
+
 function MetricCard({ card, showPrevious }: { card: MetricCardSpec; showPrevious: boolean }): ReactNode {
   return (
     <div
@@ -155,6 +227,10 @@ function MetricCard({ card, showPrevious }: { card: MetricCardSpec; showPrevious
         <span style={{ fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
           período anterior: {card.previous === null ? "sem dado" : card.format(card.previous)}
         </span>
+      )}
+
+      {card.ressalva !== undefined && (
+        <span style={{ fontSize: "0.6875rem", color: "var(--sb-text-soft)" }}>{card.ressalva}</span>
       )}
 
       <span
@@ -296,7 +372,8 @@ export default async function VendasPage({
   // vez, em vez de atribuir `undefined` a um campo opcional.
   const accountFilter = selectedAccount === null ? {} : { p_ml_account_id: selectedAccount.id };
 
-  const [currentResult, previousResult, seriesResult, previousSeriesResult] = await Promise.all([
+  const [currentResult, previousResult, seriesResult, previousSeriesResult, expandedResult, previousExpandedResult] =
+    await Promise.all([
     supabase
       .rpc("get_sales_summary", { p_date_from: range.from, p_date_to: range.to, ...accountFilter })
       .single(),
@@ -321,6 +398,18 @@ export default async function VendasPage({
       p_date_to: previousRange.to,
       ...accountFilter,
     }),
+    // Quinta e sexta (D-157): métricas 5C — cancelamentos, taxas e SKUs
+    // distintos, período atual e anterior, no mesmo paralelo.
+    supabase
+      .rpc("get_sales_expanded_summary", { p_date_from: range.from, p_date_to: range.to, ...accountFilter })
+      .single(),
+    supabase
+      .rpc("get_sales_expanded_summary", {
+        p_date_from: previousRange.from,
+        p_date_to: previousRange.to,
+        ...accountFilter,
+      })
+      .single(),
   ]);
 
   const summary: SalesSummary | null = currentResult.data ?? null;
@@ -337,8 +426,19 @@ export default async function VendasPage({
   // gráfico SEM a linha de comparação — visualmente idêntico a "o período
   // anterior não teve venda", que é uma afirmação sobre o negócio, não sobre
   // a rede. É exatamente a classe de defeito que D-067 existe para impedir.
+  // As duas de D-157 entram na MESMA agregação: falhar só a expandida
+  // produziria a tela sem a seção de cancelamentos — visualmente idêntico a
+  // "não houve cancelamento", afirmação sobre o negócio, não sobre a rede.
   const error =
-    currentResult.error ?? previousResult.error ?? seriesResult.error ?? previousSeriesResult.error;
+    currentResult.error ??
+    previousResult.error ??
+    seriesResult.error ??
+    previousSeriesResult.error ??
+    expandedResult.error ??
+    previousExpandedResult.error;
+
+  const expanded: ExpandedSummary | null = expandedResult.data ?? null;
+  const previousExpanded: ExpandedSummary | null = previousExpandedResult.data ?? null;
 
   const lastComputedAt = summary?.last_computed_at ?? null;
   const freshness = classifySyncFreshness(lastComputedAt === null ? null : new Date(lastComputedAt), now);
@@ -517,6 +617,35 @@ export default async function VendasPage({
           {buildCards(summary, previousSummary).map((card) => (
             <MetricCard key={card.metricId} card={card} showPrevious={previousHasData} />
           ))}
+        </div>
+      )}
+
+      {/*
+        Seção 5C (D-157) — NÃO condicionada a neverComputed: cancelamento vem
+        de `orders` direto (L1) e existe mesmo quando o recálculo L3 ainda não
+        tocou a janela. A nota declara a fonte, porque os números podem
+        divergir ligeiramente dos cards L3 acima (atraso do recálculo).
+      */}
+      {error === null && expanded !== null && (
+        <div style={{ marginTop: "var(--sb-space-4)" }}>
+          <h2 style={{ fontSize: "1.0625rem", margin: "0 0 var(--sb-space-1)" }}>Cancelamentos e taxas</h2>
+          <p style={{ margin: "0 0 var(--sb-space-2)", color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
+            Calculado dos pedidos diretamente (visão operacional) — pode divergir minimamente dos cards acima,
+            que vêm do recálculo diário. Não é receita líquida: frete, taxa fixa, parcelamento e impostos não
+            são observados.
+          </p>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(13rem, 1fr))",
+              gap: "var(--sb-space-3)",
+            }}
+          >
+            {buildExpandedCards(expanded, previousExpanded).map((card) => (
+              <MetricCard key={card.metricId} card={card} showPrevious={previousExpanded !== null} />
+            ))}
+          </div>
         </div>
       )}
 

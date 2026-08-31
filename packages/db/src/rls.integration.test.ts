@@ -579,6 +579,7 @@ describe("métricas diárias de venda", () => {
   const CONTA_B = "bbbb2222-0000-4000-8000-00000000bbbb";
   const CONTA_OUTRA = "dddd4444-0000-4000-8000-00000000dddd";
   const ORDER_IDS = [9900001001, 9900001002, 9900001003, 9900001004, 9900001005, 9900001006];
+  const ORDER_PENDING_CANCEL = 9900001007;
 
   let skuA = "";
   let skuB = "";
@@ -618,18 +619,32 @@ describe("métricas diárias de venda", () => {
       [...ORDER_IDS, ORG_SB, CONTA_A, CONTA_B, ORG_OUTRA, CONTA_OUTRA],
     );
 
+    // sale_fee entrou com get_sales_expanded_summary (D-157): a taxa do item
+    // CANCELADO ($4, fee 99) existe de propósito — prova que taxas_ml só soma
+    // vendas válidas.
     await client.query(
       `insert into public.order_items
          (order_id, organization_id, ml_account_id, position, item_id, variation_id,
-          title, quantity, unit_price, currency_id, sku_id)
+          title, quantity, unit_price, currency_id, sku_id, sale_fee)
        values
-         ($1,$7,$8,0,'MLB900001',null,'Métrica A',2,50,'BRL',$12),
-         ($2,$7,$8,0,'MLB900002','123','Métrica B',1,50,'BRL',$13),
-         ($3,$7,$8,0,'MLB900001',null,'Métrica A',1,30,'BRL',$12),
-         ($4,$7,$8,0,'MLB900001',null,'Cancelado',9,111,'BRL',$12),
-         ($5,$7,$9,0,'MLB900003',null,'Sem vínculo',1,40,'BRL',null),
-         ($6,$10,$11,0,'MLB900004',null,'Outra organização',1,20,'BRL',null)`,
+         ($1,$7,$8,0,'MLB900001',null,'Métrica A',2,50,'BRL',$12,10.50),
+         ($2,$7,$8,0,'MLB900002','123','Métrica B',1,50,'BRL',$13,5.25),
+         ($3,$7,$8,0,'MLB900001',null,'Métrica A',1,30,'BRL',$12,3.25),
+         ($4,$7,$8,0,'MLB900001',null,'Cancelado',9,111,'BRL',$12,99),
+         ($5,$7,$9,0,'MLB900003',null,'Sem vínculo',1,40,'BRL',null,4.00),
+         ($6,$10,$11,0,'MLB900004',null,'Outra organização',1,20,'BRL',null,2.00)`,
       [...ORDER_IDS, ORG_SB, CONTA_A, CONTA_B, ORG_OUTRA, CONTA_OUTRA, skuA, skuB],
+    );
+
+    // Pedido pending_cancel (D-157): conta como CANCELADO na taxa — mesma
+    // semântica de order.cancelled em @sb/domain. Fora de ORDER_IDS para não
+    // deslocar os posicionais do insert principal.
+    await client.query(
+      `insert into public.orders
+         (id, organization_id, ml_account_id, pack_id, status, date_created,
+          date_last_updated, total_amount, currency_id)
+       values ($1,$2,$3,null,'pending_cancel','2026-08-20 18:00:00+00','2026-08-20 18:05:00+00',60,'BRL')`,
+      [ORDER_PENDING_CANCEL, ORG_SB, CONTA_A],
     );
 
     await client.query(
@@ -654,7 +669,9 @@ describe("métricas diárias de venda", () => {
     await client.query("delete from public.daily_account_metrics where ml_account_id = any($1)", [
       accounts,
     ]);
-    await client.query("delete from public.orders where id = any($1)", [ORDER_IDS]);
+    await client.query("delete from public.orders where id = any($1)", [
+      [...ORDER_IDS, ORDER_PENDING_CANCEL],
+    ]);
     await client.query("delete from public.skus where id = any($1)", [[skuA, skuB]]);
     await client.query("delete from public.ml_accounts where id = $1", [CONTA_OUTRA]);
   });
@@ -1020,6 +1037,81 @@ describe("métricas diárias de venda", () => {
       ).rejects.toThrow(/permission denied/i);
       await expect(
         asAnon(`select * from public.get_sales_daily_series('2026-08-20','2026-08-20')`),
+      ).rejects.toThrow(/permission denied/i);
+    });
+  });
+
+  // get_sales_expanded_summary (20260831114736, D-157) — as métricas 5C que
+  // NÃO existem no rollup L3: cancelamento sai de orders direto, e a taxa
+  // usa os dois lados da mesma leitura. Reaproveita o fixture acima, que já
+  // tinha um pedido cancelado (999) — o pending_cancel e os sale_fee
+  // entraram junto com a RPC.
+  describe("get_sales_expanded_summary (D-157)", () => {
+    const COLS =
+      "taxas_ml, pedidos_cancelados, taxa_cancelamento, valor_cancelado, skus_distintos_vendidos";
+
+    it("grão organização: taxa só de vendas válidas, pending_cancel conta como cancelado, bucket sem SKU excluído", async () => {
+      const rows = await asUser<{
+        taxas_ml: string;
+        pedidos_cancelados: string;
+        taxa_cancelamento: string;
+        valor_cancelado: string;
+        skus_distintos_vendidos: string;
+      }>(ADMIN_SB, `select ${COLS} from public.get_sales_expanded_summary('2026-08-20','2026-08-20')`);
+
+      expect(rows[0]).toEqual({
+        // 10.50 + 5.25 + 3.25 + 4.00 — o fee 99 do pedido CANCELADO fica fora.
+        taxas_ml: "23.00",
+        // cancelled (999) + pending_cancel (60).
+        pedidos_cancelados: "2",
+        // 2 cancelados ÷ 6 elegíveis (4 válidos + 2 cancelados).
+        taxa_cancelamento: "0.3333",
+        valor_cancelado: "1059.00",
+        // skuA + skuB — o item da CONTA_B vendeu sem vínculo (bucket nulo, fora).
+        skus_distintos_vendidos: "2",
+      });
+    });
+
+    it("filtra por conta quando informado", async () => {
+      const rows = await asUser<{ taxas_ml: string; taxa_cancelamento: string }>(
+        ADMIN_SB,
+        `select ${COLS} from public.get_sales_expanded_summary('2026-08-20','2026-08-20','${CONTA_A}')`,
+      );
+
+      // CONTA_A: fees 10.50+5.25+3.25; 2 cancelados ÷ 5 elegíveis (3 válidos + 2).
+      expect(rows[0]).toMatchObject({ taxas_ml: "19.00", taxa_cancelamento: "0.4000" });
+    });
+
+    it("usuário de outra organização só alcança a própria — e taxa 0 é 0 de verdade, não null", async () => {
+      const rows = await asUser<{
+        taxas_ml: string;
+        pedidos_cancelados: string;
+        taxa_cancelamento: string;
+        skus_distintos_vendidos: string;
+      }>(DE_OUTRA_ORG, `select ${COLS} from public.get_sales_expanded_summary('2026-08-20','2026-08-20')`);
+
+      expect(rows[0]).toMatchObject({
+        taxas_ml: "2.00",
+        pedidos_cancelados: "0",
+        // 0 cancelados ÷ 1 elegível: zero calculado, não indefinido.
+        taxa_cancelamento: "0.0000",
+        skus_distintos_vendidos: "0",
+      });
+    });
+
+    it("sem pedido elegível a taxa é NULL — nunca 0% fingido", async () => {
+      const rows = await asUser<{ taxa_cancelamento: string | null; pedidos_cancelados: string }>(
+        SEM_ORG,
+        `select ${COLS} from public.get_sales_expanded_summary('2026-08-20','2026-08-20')`,
+      );
+
+      expect(rows[0]?.pedidos_cancelados).toBe("0");
+      expect(rows[0]?.taxa_cancelamento).toBeNull();
+    });
+
+    it("anon é recusado", async () => {
+      await expect(
+        asAnon(`select * from public.get_sales_expanded_summary('2026-08-20','2026-08-20')`),
       ).rejects.toThrow(/permission denied/i);
     });
   });

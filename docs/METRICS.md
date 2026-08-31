@@ -135,11 +135,23 @@ Nenhuma dessas será exibida enquanto a fonte não estiver confirmada e a defini
 - **Tempo médio de resolução** — exigiria `nascimento remoto − resolução`, e hoje `created_at` é ingestão local enquanto `resolved_at` mistura relógios: para um claim backfilled o resultado seria **negativo**. Entra quando houver um `opened_at` remoto persistido por case.
 - **Reincidência, produtividade por responsável, atendimentos por SKU** — sem definição inequívoca ainda; ver requisito ("quando matematicamente correto" / "quando fizer sentido operacionalmente").
 
-## 5C. Métricas propostas para a evolução dos dashboards (D-120) — DEFINIDAS, NÃO IMPLEMENTADAS
+## 5C. Métricas propostas para a evolução dos dashboards (D-120) — CINCO IMPLEMENTADAS EM D-157
 
 > Registradas aqui ANTES de qualquer tela, como manda a regra central. Nenhuma
 > vai para a interface enquanto a fonte não estiver confirmada e a ressalva
 > não estiver visível ao lado do número.
+>
+> **D-157 (2026-08-31)**: `taxas_ml`, `pedidos_cancelados`, `taxa_cancelamento`,
+> `valor_cancelado` e `skus_distintos_vendidos` implementadas — RPC
+> `get_sales_expanded_summary` (security invoker), seção "Cancelamentos e
+> taxas" em `/vendas` com a ressalva de cada uma VISÍVEL no card, definições
+> espelhadas em `metric_definitions`. **Refinamento registrado**: a taxa de
+> cancelamento calcula os DOIS lados (cancelados e válidos) da mesma leitura
+> de `orders` (L1) — misturar cancelados de L1 com o `pedidos` de L3
+> embutiria o atraso do recálculo na razão (0,1% medido no dia da entrega).
+> Seguem bloqueadas com o motivo nomeado: `margem_operacional_pedido` (frete
+> e desconto não persistidos), `valor_estoque` (5C.4) e a visão "hoje"
+> (decisão própria de desenho).
 
 ### 5C.1 O veto: "receita líquida" não é um nome permitido
 

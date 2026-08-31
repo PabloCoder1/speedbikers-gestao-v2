@@ -51,3 +51,16 @@ export function formatCurrency(value: number | null): string {
 
   return CURRENCY.format(value);
 }
+
+const PERCENT = new Intl.NumberFormat("pt-BR", {
+  style: "percent",
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
+
+/** Recebe a FRAÇÃO (0.0728 → "7,3%"). `null` = indefinido (denominador zero), nunca 0% fingido. */
+export function formatPercent(value: number | null): string {
+  if (value === null) return "—";
+
+  return PERCENT.format(value);
+}

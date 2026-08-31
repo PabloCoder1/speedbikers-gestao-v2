@@ -2992,6 +2992,24 @@ A camada 3 foi encontrada pelo CATALOGO (enumerando as FKs RESTRICT reais), nao 
 
 **Impacto:** `apps/worker/src/handlers/ml-listing-visits-fetch.{ts,test.ts}`, `apps/worker/src/handlers/sync-listing-visits-snapshot.{ts,test.ts}` (log + fake), `docs/{MERCADO_LIVRE,ROADMAP,HANDOFF}.md`.
 
+## D-157 - Metricas 5C de vendas: cancelamento sai do L1 de proposito, e a ressalva vira parte do card
+
+**Contexto:** o item de Vendas era o unico da 5C ainda aberto. Das sete metricas de 5C.2, cinco tem fonte confirmada E persistida (`sale_fee` 100% preenchido, medido em D-120); margem operacional espera frete/desconto que nao existem no banco, e a visao "hoje" tem decisao propria (5C.4). Entregar as cinco e recusar as duas com motivo nomeado e exatamente o desenho da secao.
+
+**Decisao 1 — cancelamento vem de `orders` direto (L1), nao do rollup L3.** Nao e desvio da arquitetura, e o unico caminho: o recalculo filtra `paid`/`partially_refunded` POR CONSTRUCAO, entao cancelamento nao existe em `daily_*_metrics`. E a **taxa de cancelamento calcula os dois lados da MESMA leitura**: misturar cancelados de L1 com o `pedidos` de L3 embutiria o atraso do recalculo na razao — medido no dia da entrega: 28.584 validos em L1 contra 28.556 em L3 na mesma janela (0,1%). A secao da tela declara a fonte e avisa que pode divergir minimamente dos cards L3 acima.
+
+**Decisao 2 — a ressalva obrigatoria e PARTE DO CARD, nao tooltip.** 5C manda a ressalva "visivel ao lado do numero"; cada um dos cinco cards carrega a sua em texto corrido (comissao nao inclui frete/taxa fixa/parcelamento/impostos; pending_cancel conta como cancelado; valor PEDIDO, nao estornado; bucket sem vinculo excluido — 21,8% dos itens). A secao inteira abre com o aviso de 5C.1: **nao e receita liquida**.
+
+**Decisao 3 — `taxa_cancelamento` NULL quando nao ha pedido elegivel**, nunca 0% fingido (nullif no denominador; nulidade REAL por interface local sobre o tipo gerado, padrao D-153). `formatPercent` novo em `lib/format`.
+
+**Mecanica:** RPC `get_sales_expanded_summary` (security invoker — RLS de orders/order_items/daily_sku_metrics filtra antes da soma; anon revogado), mesma expressao de dia civil SP do recalculo canonico, janela sargavel em `orders_date_created_idx`. **EXPLAIN: 168 ms / 174k buffers, sem indice novo.** Catalogo `metric_definitions` ganhou as cinco definicoes. Duas consultas novas em `/vendas`, no MESMO paralelo e na MESMA agregacao de erro de D-067 (falhar so a expandida viraria "nao houve cancelamento"). Migration aplicada pelo MCP e arquivo renomeado para o timestamp registrado (`20260831114736`, licao de D-138); `types.ts` com o bloco novo no formato exato do gerador (unica migration desde a regeneracao de D-153).
+
+**Ensaio revertido no Dev ANTES do push** (licao de D-148): fixture equivalente ao do teste de integracao inserida em 2020-01-01 (data sem dado real), RPC devolvendo as STRINGS EXATAS que o teste espera ("23.00", 2, "0.3333", "1059.00") — inclusive a prova do fuso (pedido de 01:30 UTC do dia 2 contado no dia civil 1 de SP). Zero residuo conferido.
+
+**Verificacao:** `check` 29/29, build 8/8. +5 testes de integracao (RLS por organizacao, filtro por conta, pending_cancel, bucket nulo, taxa NULL, anon recusado) sobre o fixture existente de metricas — que ganhou `sale_fee` e um pedido `pending_cancel`. ⚠️ Tela nao vista renderizada (a ressalva de sempre); RLS dos testes novos confirmada pela CI, nao localmente.
+
+**Impacto:** migration `20260831114736`, `packages/db/src/{types.ts,rls.integration.test.ts}`, `apps/web/app/vendas/page.tsx`, `apps/web/lib/format.ts`, `docs/{METRICS,ROADMAP,HANDOFF}.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:
