@@ -67,13 +67,48 @@ describe("triggerListingVisitsSnapshot (D-032)", () => {
 
     expect(outcome).toEqual({ accountsScanned: 2, enqueued: 2, deduplicated: 0 });
     expect(enqueued).toHaveLength(2);
+    // Ordenado por slug desde D-171: "sbmotos" vem antes de
+    // "speedbikers-loja-1", e é ele quem sai sem atraso.
     expect(enqueued[0]).toMatchObject({
       jobType: "sync.listing-visits.snapshot",
       organizationId: "org-1",
-      queue: "ml-sync-speedbikers-loja-1",
-      dedupeKey: "listing-visits:speedbikers-loja-1:2026-08-23",
-      payload: { mlAccountId: ACCOUNTS[0]?.id },
+      queue: "ml-sync-sbmotos",
+      dedupeKey: "listing-visits:sbmotos:2026-08-23",
+      payload: { mlAccountId: ACCOUNTS[1]?.id },
     });
+  });
+
+  /**
+   * O ponto inteiro de D-171: o rate limit do Mercado Livre é por aplicação
+   * e endpoint, então duas varreduras simultâneas somam contra o MESMO teto.
+   * A primeira conta sai sem `delaySeconds` de propósito — zero explícito
+   * viraria um `scheduleTime` onde antes não havia agendamento nenhum.
+   */
+  it("escalona as contas: a primeira sem atraso, cada seguinte 10 min depois (D-171)", async () => {
+    const { deps: d, enqueued } = deps();
+
+    await triggerListingVisitsSnapshot(d);
+
+    expect(enqueued[0]?.delaySeconds).toBeUndefined();
+    expect(enqueued[1]?.delaySeconds).toBe(600);
+  });
+
+  it("a ordem do escalonamento não depende da ordem em que o banco devolveu as contas", async () => {
+    const { deps: d, enqueued } = deps();
+    d.db = {
+      from: () => ({
+        select: () => ({
+          // Mesmas contas, ordem invertida — o horário de cada uma não pode
+          // mudar por causa disso.
+          eq: () => Promise.resolve({ data: [...ACCOUNTS].reverse(), error: null }),
+        }),
+      }),
+    } as unknown as ListingVisitsScheduleDeps["db"];
+
+    await triggerListingVisitsSnapshot(d);
+
+    expect(enqueued.map((e) => e.queue)).toEqual(["ml-sync-sbmotos", "ml-sync-speedbikers-loja-1"]);
+    expect(enqueued.map((e) => e.delaySeconds)).toEqual([undefined, 600]);
   });
 
   it("a chave de dedupe é o dia de negócio — mesmo dia produz a mesma chave (cadência diária, não a cada 6h)", async () => {

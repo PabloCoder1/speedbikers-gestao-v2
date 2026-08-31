@@ -3246,6 +3246,43 @@ A camada 3 foi encontrada pelo CATALOGO (enumerando as FKs RESTRICT reais), nao 
 
 **Impacto:** as tres migrations acima, `packages/db/src/{types.ts,rls.integration.test.ts}`, `apps/web/app/anuncios/page.tsx`, `apps/web/app/anuncios/[itemId]/page.tsx`, `docs/{METRICS,ROADMAP,HANDOFF}.md`.
 
+## D-171 - O 429 das visitas: a defesa inteira estava no eixo que o Mercado Livre nao limita
+
+**Contexto:** ao catalogar `taxa_conversao` (D-170) fui medir a coleta de visitas e achei **~83% das execucoes falhando com 429** (31/08: 20 falhas em 24 tentativas; 30/08: 22 em 26; 29/08: 20 em 24). D-156 tinha atacado esse mesmo 429 tres fatias antes, com checkpoint por linha e espacamento de 150 ms entre itens.
+
+**Primeiro achado: eu estava medindo o codigo errado.** O commit de D-156 e de 08:41 e so entrou no ar no deploy das ~11h; o job roda **07:00**. Tudo que medi de 31/08 e do codigo ANTERIOR a D-156 — que portanto **nunca foi exercitado** ate agora. Registrei antes de conferir que "o checkpoint funciona, as tentativas somam 759 -> 786 -> 852 -> 857"; **era falso**: sao quatro varreduras completas, uma por conta. O registro foi corrigido no HANDOFF em vez de apagado.
+
+**Segundo achado, e a causa real: o eixo.** `docs/MERCADO_LIVRE.md` secao 2.15 ja registrava que o limite e por **`client_id` + endpoint**, nao por conta de vendedor. Toda a defesa construida ate aqui e por conta: fila `ml-sync-<slug>` separada (D-032) e espacamento entre itens dentro de UMA execucao (D-156). `listing-visits-schedule.ts` enfileirava as quatro contas CONNECTED em laco, sem atraso nenhum — quatro varreduras simultaneas no mesmo endpoint.
+
+**A medicao que fecha o caso, e que nao e estimativa:** cada varredura roda a **~3 req/s** (759-857 itens em 212-273 s) — o ritmo e ditado pela latencia do proprio ML (~330 ms/item), nao pelo laco; os 150 ms de D-156 sao folga acima disso e **nunca chegam a morder**. Em 29/08 duas contas rodaram sobrepostas por ~5,5 min, ~6 req/s somados, e **as duas completaram sem um unico 429**. As quatro juntas (~12 req/s) morrem em 58-151 s, todos os dias medidos. O teto do endpoint esta entre 6 e 12 req/s.
+
+**Decisao — escalonar as contas no enfileiramento:** `ACCOUNT_STAGGER_SECONDS = 600` em `listing-visits-schedule.ts`, usando o `delaySeconds` que `enqueue.ts` sempre teve e este agendador nunca usou. A primeira conta sai exatamente como hoje (omitido, nao zero: `enqueue.ts` testa `=== undefined`, e um zero produziria `scheduleTime` onde nao havia agendamento). 600 s cobre a varredura mais longa medida (328 s) com folga; se uma estourar, o pior caso e DUAS sobrepostas — o cenario que 29/08 provou seguro. Ordem por `slug` para o horario de cada conta nao mudar a cada rodada.
+
+**O que NAO foi mexido, e por que:** `INTER_ITEM_DELAY_MS` (nunca exercitado — mexer em numero nao testado e chute sobre chute, o que D-042 proibe); `--max-attempts` da fila (e queue-wide e carrega orders/questions/messages/claims — mais tentativas = mais carga no endpoint saturado); concorrencia do worker (a medicao diz que simultaneidade E a doenca); e o `throw` no 429 (engolir trocaria falha visivel por buraco silencioso, e quebraria o contrato uniforme dos handlers — com o checkpoint de D-156 propagar deixou de perder progresso).
+
+**Terceira conclusao apressada desfeita:** eu havia registrado que a cobertura de ~1.900 anuncios/dia era o 429 truncando a varredura. **Nao e.** Ha **zero** linhas com `visits = 0` em 9.652 (o ML simplesmente omite o dia sem visita) e as quatro varreduras completam TODO dia. Os 3.456 ativos com media de 4,9 dias observados em 31 sao trafego de cauda longa, nao coleta quebrada — e e exatamente isso que D-170 passou a declarar na tela.
+
+**Como provar (depois do proximo deploy):** tentativas/dia de `visits` caem de 24-27 para 4-6 e as falhas com 429 de ~20 para 0-2; a sobreposicao entre contas no dia vai a zero. Se as falhas continuarem altas com uma conta por vez, o modelo causal esta errado e a resposta e revisar a hipotese, nao aumentar o offset.
+
+```sql
+-- Resultado, 2-3 dias depois do deploy:
+select (started_at at time zone 'America/Sao_Paulo')::date as dia,
+       count(*) as tentativas,
+       count(*) filter (where status = 'failed') as falhas,
+       count(*) filter (where reason like '%429%') as falhas_429
+from sync_runs where resource = 'visits' and started_at >= now() - interval '10 days'
+group by 1 order by 1 desc;
+-- Antes: 24-27 / 20-23 / 20-23.  Alvo: 4-6 / 0-2 / 0-2.
+```
+
+**Sequenciamento declarado:** a rodada de 01/09 as 07:00 ainda roda SEM este escalonamento (o deploy e ato humano e nao aconteceu), o que da de graca a primeira medicao de D-156 sozinho. Os dois eixos sao independentes e cada um se justifica por si.
+
+**Cópia que fica de pe, registrada para quem for mexer:** `order-financials-schedule.ts` tem o mesmo laco sem offset e `sync-order-financials.ts` copiou o 150 ms de D-156. Roda 09:30 em endpoints diferentes e **nunca tomou 429** — nao mexer agora, mas o remedio e o mesmo quando mexer.
+
+**Verificacao:** `check` 29/29 (+2 testes: escalonamento com a primeira conta sem atraso, e ordem estavel independente da ordem do banco), build 8/8. Sem migration, sem infra, sem tocar no worker. ⚠️ **O efeito so existe depois do proximo deploy da api** — ate la, nada muda em producao.
+
+**Impacto:** `apps/api/src/{listing-visits-schedule.ts,listing-visits-schedule.test.ts}`, `docs/{HANDOFF,DECISIONS}.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:
