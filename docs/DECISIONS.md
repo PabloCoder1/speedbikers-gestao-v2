@@ -3078,6 +3078,26 @@ A camada 3 foi encontrada pelo CATALOGO (enumerando as FKs RESTRICT reais), nao 
 
 **Impacto:** `apps/api/src/{relist.ts,relist.test.ts,app.ts,index.ts}`, `apps/worker/src/{handlers/relist-prepare.ts,handlers/relist-prepare.test.ts,index.ts}`, `docs/{API,ROADMAP,HANDOFF}.md`.
 
+## D-162 - O executor do relist: re-entrante por ESTADO, e a janela sem idempotencia atravessada sem mentir
+
+**Contexto:** a fatia destrutiva da Fase 9 — fechar o pai (irreversivel) e emitir o POST /relist numa API SEM idempotencia (secao 2.16). Todo o desenho existe para atravessar essa janela sem jamais mentir sobre onde parou.
+
+**Decisao 1 — confirmacao humana em DOIS atos:** o pedido (D-161) e a execucao (`POST /v1/listings/relist/:id/execute`, D-162) sao comandos separados, ambos ADMIN/GESTOR + escopo por conta. So REQUESTED e executavel (409 fora disso); o worker re-roda o preflight NA HORA de qualquer forma — o estado do anuncio muda entre pedido e execucao (padrao D-096 de revalidar o remoto no momento do ato).
+
+**Decisao 2 — re-entrante por estado, nunca por memoria:** cada retomada do Cloud Tasks decide pelo status persistido (maquina de D-159), e o estado e gravado ANTES do ato remoto que descreve — um crash deixa a operacao dizendo a verdade ("estava fechando", "estava republicando"), nunca um passo atras dela. Retomada em CLOSING reconfere o remoto (pai ja fechado nao repete o PUT); retomada em RELISTING vira RELIST_FAILED SEMPRE — entre persistir RELISTING e ler a resposta nao ha como saber se o filho nasceu, e repetir o POST poderia criar DOIS.
+
+**Decisao 3 — POST falho NUNCA re-tenta** (mesma razao de D-096: um 5xx pode significar que o filho existe) e **filho so e confirmado por id DIFERENTE do pai** — o defeito registrado da propria doc (resposta com variacoes devolvendo o id do pai) nao e tratado como contrato; resposta ambigua e RELIST_FAILED, gente decide.
+
+**Decisao 4 — transicao e CAS de verdade:** `update ... where id and status = from` com `select` conferindo QUE a linha mudou — zero linhas significa que o estado mudou sob os pes, e o job falha e rele em vez de gravar evento de transicao que nao aconteceu. Falha ao persistir STATUS falha o passo; falha so no EVENTO e logada sem derrubar (repetir o job para regravar auditoria repetiria atos remotos — o risco maior).
+
+**Decisao 5 — o corpo do relist herda do pai AO VIVO** (price/available_quantity/listing_type_id do GET da execucao, nao do snapshot): e o contrato minimo confirmado; overrides humanos entram com a UI, com decisao propria. `PUT {status:closed}` que responde sem fechar vira CLOSE_FAILED — reabrivel, nada destrutivo aconteceu.
+
+**Escopo declarado:** o executor PARA em RELISTED. O remapeamento (RELISTED→REMAPPED) e fatia propria: vinculo de ITEM e retargetavel; vinculo de VARIACAO nao tem mapeamento deterministico (ids renovados, sem tabela de/para na doc) e caira na fila de vinculacao existente.
+
+**Verificacao:** `check` 29/29 (+9 testes do executor cobrindo caminho feliz, re-preflight na hora, retomadas, POST falho, resposta ambigua, CLOSE_FAILED, noop e CAS perdido; +3 do comando), build 8/8. Sem migration, sem UI. ⚠️ **NUNCA exercitado contra o ML real — a primeira execucao de verdade deve ser um ensaio humano deliberado, depois do deploy, com um anuncio sacrificavel.**
+
+**Impacto:** `apps/worker/src/handlers/relist-execute.{ts,test.ts}` (novo), `apps/api/src/{relist.ts,relist.test.ts,app.ts}`, `apps/worker/src/index.ts`, `docs/{API,ROADMAP,HANDOFF}.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:

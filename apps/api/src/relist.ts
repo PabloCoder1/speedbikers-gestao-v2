@@ -43,6 +43,103 @@ export type RelistRequestOutcome =
   | { status: "not_found" }
   | { status: "error"; reason: string };
 
+export type RelistExecuteOutcome =
+  | { status: "queued"; deduplicated: boolean }
+  | { status: "invalid"; reason: string }
+  | { status: "not_found" }
+  | { status: "error"; reason: string };
+
+/**
+ * A CONFIRMAÇÃO humana da execução (D-162) — segundo ato, separado do pedido
+ * de propósito: é aqui que o irreversível é autorizado. Só operação
+ * REQUESTED (preflight aprovado na criação) é executável; o worker re-roda o
+ * preflight NA HORA de qualquer forma (padrão D-096).
+ */
+export async function requestListingRelistExecution(
+  deps: RelistDeps,
+  caller: Caller,
+  relistId: string,
+): Promise<RelistExecuteOutcome> {
+  const now = deps.now?.() ?? new Date();
+
+  const operation = await deps.db
+    .from("listing_relists")
+    .select("id, organization_id, ml_account_id, status, parent_item_id, ml_accounts(slug)")
+    .eq("id", relistId)
+    .maybeSingle();
+
+  if (operation.error !== null) {
+    return { status: "error", reason: operation.error.message };
+  }
+
+  const row = operation.data as {
+    id: string;
+    organization_id: string;
+    ml_account_id: string;
+    status: string;
+    parent_item_id: string;
+    ml_accounts: { slug: string } | null;
+  } | null;
+
+  // Fronteira de organização em código (AdminClient bypassa RLS); "não
+  // encontrado" nunca vira "sem permissão" — padrão D-096.
+  if (row?.organization_id !== caller.organizationId) {
+    return { status: "not_found" };
+  }
+
+  if (caller.role !== "ADMIN") {
+    const permission = await deps.db
+      .from("user_account_permissions")
+      .select("user_id")
+      .eq("user_id", caller.userId)
+      .eq("ml_account_id", row.ml_account_id)
+      .maybeSingle();
+
+    if (permission.error !== null) {
+      return { status: "error", reason: permission.error.message };
+    }
+
+    if (permission.data === null) {
+      return { status: "not_found" };
+    }
+  }
+
+  if (row.status !== "REQUESTED") {
+    return {
+      status: "invalid",
+      reason:
+        row.status === "PREFLIGHT_FAILED"
+          ? "a operação foi reprovada no preflight — corrija a causa e crie um novo pedido"
+          : `a operação está em ${row.status} e não aguarda execução`,
+    };
+  }
+
+  const slug = row.ml_accounts?.slug;
+
+  if (slug === undefined) {
+    return { status: "error", reason: "conta sem slug para resolver a fila" };
+  }
+
+  const minuteWindow = now.toISOString().slice(0, 16);
+
+  const enqueued = await deps.enqueuer.enqueue({
+    jobType: "relist.execute",
+    organizationId: caller.organizationId,
+    dedupeKey: `relist-execute:${relistId}:${minuteWindow}`,
+    queue: `ml-sync-${slug}`,
+    payload: { relistId },
+  });
+
+  deps.logger.info("relist_execute_queued", {
+    relist_id: relistId,
+    parent_item_id: row.parent_item_id,
+    confirmed_by: caller.userId,
+    deduplicated: enqueued.deduplicated,
+  });
+
+  return { status: "queued", deduplicated: enqueued.deduplicated };
+}
+
 export async function requestListingRelist(
   deps: RelistDeps,
   caller: Caller,

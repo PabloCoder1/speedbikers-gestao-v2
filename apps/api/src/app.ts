@@ -34,7 +34,7 @@ import type { SupportClaimsScheduleDeps } from "./support-claims-schedule.js";
 import { triggerSupportClaimsReconcile } from "./support-claims-schedule.js";
 import { triggerSupportQuestionsReconcile } from "./support-questions-schedule.js";
 import type { RelistDeps } from "./relist.js";
-import { relistRequestSchema, requestListingRelist } from "./relist.js";
+import { relistRequestSchema, requestListingRelist, requestListingRelistExecution } from "./relist.js";
 import type { SupportReplyDeps } from "./support-reply.js";
 import { requestSupportReply, supportReplyRequestSchema } from "./support-reply.js";
 import type { ListingsScheduleDeps } from "./listings-schedule.js";
@@ -587,6 +587,51 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
 
     if (outcome.status === "not_found") {
       return context.json({ error: { code: "not_found" } }, 404);
+    }
+
+    if (outcome.status === "error") {
+      return context.json({ error: { code: "internal", message: outcome.reason } }, 500);
+    }
+
+    return context.json(outcome);
+  });
+
+  // A CONFIRMACAO da execucao (D-162): segundo ato humano, separado do
+  // pedido -- e aqui que o irreversivel e autorizado. Mesmo par papel+conta.
+  app.post("/v1/listings/relist/:relistId/execute", async (context) => {
+    const auth = dependencies.auth;
+    const relist = dependencies.relist;
+
+    if (auth === undefined || relist === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const authorized = await auth.authenticate(context.req.header("authorization"), [
+      "ADMIN",
+      "GESTOR",
+    ]);
+
+    if (!authorized.ok) {
+      dependencies.logger.warn("relist_execute_unauthorized", {
+        request_id: context.get("requestId"),
+        reason: authorized.reason,
+      });
+
+      return context.json({ error: { code: "unauthorized" } }, authorized.status);
+    }
+
+    const outcome = await requestListingRelistExecution(
+      relist,
+      authorized.caller,
+      context.req.param("relistId"),
+    );
+
+    if (outcome.status === "not_found") {
+      return context.json({ error: { code: "not_found" } }, 404);
+    }
+
+    if (outcome.status === "invalid") {
+      return context.json({ error: { code: "invalid_state", message: outcome.reason } }, 409);
     }
 
     if (outcome.status === "error") {

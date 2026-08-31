@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Caller } from "./auth.js";
 import type { EnqueueRequest, Enqueuer } from "./enqueue.js";
 import type { RelistDeps } from "./relist.js";
-import { requestListingRelist } from "./relist.js";
+import { requestListingRelist, requestListingRelistExecution } from "./relist.js";
 
 const ORGANIZATION_ID = "11111111-0000-4000-8000-000000000001";
 const ML_ACCOUNT_ID = "aaaaaaaa-0000-4000-8000-000000000001";
@@ -16,10 +16,14 @@ const GESTOR: Caller = { userId: "u-gestor", organizationId: ORGANIZATION_ID, ro
 
 const REQUEST = { mlAccountId: ML_ACCOUNT_ID, itemId: ITEM_ID };
 
+const RELIST_ID = "cccccccc-0000-4000-8000-000000000001";
+
 interface FakeDbOptions {
   accountOrganizationId?: string | null;
   hasAccountPermission?: boolean;
   listingExists?: boolean;
+  operationStatus?: string;
+  operationOrganizationId?: string;
 }
 
 function fakeDb(options: FakeDbOptions = {}): RelistDeps["db"] {
@@ -52,6 +56,20 @@ function fakeDb(options: FakeDbOptions = {}): RelistDeps["db"] {
               if (table === "listings") {
                 return Promise.resolve({
                   data: options.listingExists === false ? null : { item_id: ITEM_ID },
+                  error: null,
+                });
+              }
+
+              if (table === "listing_relists") {
+                return Promise.resolve({
+                  data: {
+                    id: RELIST_ID,
+                    organization_id: options.operationOrganizationId ?? ORGANIZATION_ID,
+                    ml_account_id: ML_ACCOUNT_ID,
+                    status: options.operationStatus ?? "REQUESTED",
+                    parent_item_id: ITEM_ID,
+                    ml_accounts: { slug: "loja-1" },
+                  },
                   error: null,
                 });
               }
@@ -142,6 +160,61 @@ describe("requestListingRelist (D-161)", () => {
     const outcome = await requestListingRelist(deps(fakeDb({ listingExists: false }), enqueuer), ADMIN, REQUEST);
 
     expect(outcome).toEqual({ status: "not_found" });
+    expect(requests).toHaveLength(0);
+  });
+});
+
+describe("requestListingRelistExecution (D-162)", () => {
+  it("REQUESTED confirmada enfileira relist.execute na fila da conta", async () => {
+    const { enqueuer, requests } = fakeEnqueuer();
+
+    const outcome = await requestListingRelistExecution(deps(fakeDb(), enqueuer), ADMIN, RELIST_ID);
+
+    expect(outcome).toEqual({ status: "queued", deduplicated: false });
+    expect(requests[0]).toMatchObject({
+      jobType: "relist.execute",
+      queue: "ml-sync-loja-1",
+      payload: { relistId: RELIST_ID },
+    });
+    expect(requests[0]?.dedupeKey).toBe(`relist-execute:${RELIST_ID}:2026-08-31T12:00`);
+  });
+
+  it("operação fora de REQUESTED é invalid — inclusive PREFLIGHT_FAILED, com a orientação de refazer o pedido", async () => {
+    const { enqueuer, requests } = fakeEnqueuer();
+
+    const reprovada = await requestListingRelistExecution(
+      deps(fakeDb({ operationStatus: "PREFLIGHT_FAILED" }), enqueuer),
+      ADMIN,
+      RELIST_ID,
+    );
+    expect(reprovada).toMatchObject({ status: "invalid" });
+    expect((reprovada as { reason: string }).reason).toContain("preflight");
+
+    const emCurso = await requestListingRelistExecution(
+      deps(fakeDb({ operationStatus: "RELISTING" }), enqueuer),
+      ADMIN,
+      RELIST_ID,
+    );
+    expect(emCurso).toMatchObject({ status: "invalid" });
+    expect(requests).toHaveLength(0);
+  });
+
+  it("operação de outra organização é not_found; GESTOR sem permissão na conta idem (lição D-117)", async () => {
+    const { enqueuer, requests } = fakeEnqueuer();
+
+    const outraOrg = await requestListingRelistExecution(
+      deps(fakeDb({ operationOrganizationId: "22222222-0000-4000-8000-000000000002" }), enqueuer),
+      ADMIN,
+      RELIST_ID,
+    );
+    expect(outraOrg).toEqual({ status: "not_found" });
+
+    const semPermissao = await requestListingRelistExecution(
+      deps(fakeDb({ hasAccountPermission: false }), enqueuer),
+      GESTOR,
+      RELIST_ID,
+    );
+    expect(semPermissao).toEqual({ status: "not_found" });
     expect(requests).toHaveLength(0);
   });
 });
