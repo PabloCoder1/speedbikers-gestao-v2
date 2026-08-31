@@ -3158,6 +3158,24 @@ A camada 3 foi encontrada pelo CATALOGO (enumerando as FKs RESTRICT reais), nao 
 
 **Impacto:** migration `20260831161834`, `packages/db/src/{types.ts,rls.integration.test.ts}`, `apps/web/app/vendas/page.tsx`, `docs/{METRICS,ROADMAP,HANDOFF}.md`. **O item de Vendas do PRD esta COMPLETO (D-157→D-166) e a Fase 5C, 100%.**
 
+## D-167 - Movimentacoes: o ledger vira extrato legivel, e o EXPLAIN reprovou duas versoes
+
+**Contexto:** primeiro item da trilha 5E na ordem registrada ("experiencia sobre dados prontos"). O ledger tem 225k movimentos auditaveis que nenhuma tela mostrava — "por que o saldo mudou?" exigia SQL na mao. Riscos nomeados pelo proprio item: IDs sem contexto, estoque fisico atribuido a conta, consulta cara, escrita acidental em append-only.
+
+**Decisao 1 — leitura PURA por construcao:** a tela nao tem um unico caminho de escrita (nem botao, nem Server Action) e a RPC e `security invoker` sobre a RLS existente. O ledger segue append-only e intocavel.
+
+**Decisao 2 — o EXPLAIN reprovou DUAS versoes antes da tela existir:** `count(*) over ()` materializava 225k linhas COM join e derramava em temp (685 ms); a reescrita em CTE unica referenciada duas vezes ainda materializava (210 ms, temp ~2.8k). O desenho aprovado separa pagina (indice novo `stock_movements_org_timeline_idx`, 0,3 ms) de contagem (index-only scan, ~63 ms) como subconsultas INDEPENDENTES — **64 ms, zero temp**. A segunda migration substitui o corpo da primeira, com a medicao registrada nos dois comentarios. `vacuum (analyze)` rodado apos criar o indice (licao de D-139).
+
+**Decisao 3 — contexto humano contra "IDs sem contexto":** vocabulario proprio em `lib/movement-labels` (funcoes TOTAIS — tipo/origem desconhecidos degradam para o valor cru): os 12 tipos com rotulo, origem traduzida com o id junto (Pedido ML N / NF-e / Reconciliacao UpSeller / Reclamacao / Pedido de compra — os 5 valores MEDIDOS + codigo), motivo e ator do ajuste manual (profiles.full_name), delta com sinal explicito. "Sem registro externo" e o caso legitimo do AJUSTE_MANUAL, nao lacuna.
+
+**Decisao 4 — sem filtro de conta DE PROPOSITO:** LOCAL/RESERVADO/TRANSITO pertencem a organizacao (regra do PRD) — oferecer filtro por conta aqui seria induzir exatamente o erro que o requisito manda evitar. Filtros: tipo, local, origem, busca por SKU/titulo, periodo (dia civil SP) — todos na URL, valores fora dos conjuntos fechados caem para "sem filtro" antes de tocar a RPC.
+
+**Desvio declarado do DoD registrado:** o item pedia "UI/Playwright"; esta fatia entrega testes de lib (8) + integracao da RPC (4: extrato com contexto, filtros somando na contagem, paginacao com total estavel, RLS/anon) e NAO acrescenta Playwright — o criterio da casa (D-069) reserva e2e para fluxos criticos com escrita, e esta tela e leitura pura. Registrado aqui em vez de silenciosamente.
+
+**Verificacao:** migrations `20260831163145` + `20260831163256` nos DOIS bancos; **440/440 testes de integracao em banco recriado do zero (102 migrations)**; `check` 29/29 (+12 testes), build 8/8. ⚠️ Tela nao vista renderizada (a ressalva de sempre).
+
+**Impacto:** migrations acima (indice + RPC + tune), `packages/db/src/{types.ts,rls.integration.test.ts}`, `apps/web/lib/{movement-labels,movement-labels.test,movement-filters,movement-filters.test}.ts`, `apps/web/app/estoque/movimentacoes/page.tsx` (novo), `apps/web/components/shell.tsx` (nav), `docs/{ROADMAP,HANDOFF}.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:

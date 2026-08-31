@@ -7177,6 +7177,116 @@ describe("remapeamento do relist — complete_listing_relist_remap (D-163)", () 
   });
 });
 
+describe("movimentações — get_stock_movements (D-167)", () => {
+  // Fixture permanente (movimentos são append-only; SKU referenciado por
+  // RESTRICT) — nomes fora dos padrões de limpeza global, sem afterAll.
+  const ATOR_MOV = "ffff7777-0000-4000-8000-000000000051";
+
+  let skuMovId = "";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                              email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',
+               'ator@movtest.internal','x',now(),'{"full_name":"Ator de movimentos"}',now(),now())
+       on conflict (id) do nothing`,
+      [ATOR_MOV],
+    );
+    await client.query(
+      `insert into public.organization_members (organization_id, user_id, role)
+       values ($1,$2,'ADMIN') on conflict do nothing`,
+      [ORG_SB, ATOR_MOV],
+    );
+
+    const sku = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind) values ($1,'MOVLIST-A','PRODUTO')
+       on conflict on constraint skus_org_key_unique do update set sku = excluded.sku
+       returning id`,
+      [ORG_SB],
+    );
+    skuMovId = sku.rows[0]?.id ?? "";
+
+    await client.query(
+      `insert into public.stock_movements
+         (organization_id, sku_id, location_kind, qty_delta, movement_type,
+          source_type, source_id, idempotency_key, occurred_at, reason, created_by)
+       values
+         ($1,$2,'LOCAL',-2,'VENDA_ML','ORDER','9911001','movtest:venda:1','2026-08-15 12:00:00+00',null,null),
+         ($1,$2,'LOCAL',5,'AJUSTE_MANUAL',null,null,'movtest:ajuste:1','2026-08-16 12:00:00+00','Contagem física',$3),
+         ($1,$2,'LOCAL',1,'AJUSTE_RECONCILIACAO','RECONCILIATION','2026-08-17','movtest:reconc:1','2026-08-17 12:00:00+00',null,null)
+       on conflict (idempotency_key) do nothing`,
+      [ORG_SB, skuMovId, ATOR_MOV],
+    );
+  });
+
+  it("extrato ordenado do mais recente, com contexto humano e contagem do conjunto filtrado", async () => {
+    const rows = await asUser<{
+      movement_type: string;
+      qty_delta: string;
+      sku: string;
+      source_type: string | null;
+      source_id: string | null;
+      reason: string | null;
+      created_by_name: string | null;
+      total_count: string;
+    }>(
+      ATOR_MOV,
+      `select movement_type, qty_delta, sku, source_type, source_id, reason, created_by_name, total_count
+       from public.get_stock_movements('${ORG_SB}', 50, 0, 'MOVLIST-A')`,
+    );
+
+    expect(rows.map((r) => r.movement_type)).toEqual(["AJUSTE_RECONCILIACAO", "AJUSTE_MANUAL", "VENDA_ML"]);
+    expect(rows.every((r) => r.total_count === "3")).toBe(true);
+    // O ajuste manual carrega motivo E ator; a venda carrega a origem.
+    const ajuste = rows.find((r) => r.movement_type === "AJUSTE_MANUAL");
+    expect(ajuste).toMatchObject({ reason: "Contagem física", created_by_name: "Ator de movimentos" });
+    const venda = rows.find((r) => r.movement_type === "VENDA_ML");
+    expect(venda).toMatchObject({ source_type: "ORDER", source_id: "9911001", qty_delta: "-2.000" });
+  });
+
+  it("filtros por tipo e por período reduzem o conjunto E a contagem juntos", async () => {
+    const porTipo = await asUser<{ movement_type: string; total_count: string }>(
+      ATOR_MOV,
+      `select movement_type, total_count
+       from public.get_stock_movements('${ORG_SB}', 50, 0, 'MOVLIST-A', 'AJUSTE_MANUAL')`,
+    );
+    expect(porTipo).toHaveLength(1);
+    expect(porTipo[0]).toMatchObject({ movement_type: "AJUSTE_MANUAL", total_count: "1" });
+
+    const porPeriodo = await asUser<{ movement_type: string; total_count: string }>(
+      ATOR_MOV,
+      `select movement_type, total_count
+       from public.get_stock_movements('${ORG_SB}', 50, 0, 'MOVLIST-A', null, null, null, '2026-08-15', '2026-08-16')`,
+    );
+    expect(porPeriodo.map((r) => r.movement_type).sort()).toEqual(["AJUSTE_MANUAL", "VENDA_ML"]);
+    expect(porPeriodo[0]?.total_count).toBe("2");
+  });
+
+  it("paginação com contagem estável — a página muda, o total não", async () => {
+    const pagina2 = await asUser<{ movement_type: string; total_count: string }>(
+      ATOR_MOV,
+      `select movement_type, total_count
+       from public.get_stock_movements('${ORG_SB}', 1, 1, 'MOVLIST-A')`,
+    );
+
+    expect(pagina2).toHaveLength(1);
+    expect(pagina2[0]).toMatchObject({ movement_type: "AJUSTE_MANUAL", total_count: "3" });
+  });
+
+  it("usuário de outra organização não vê os movimentos; anon é recusado", async () => {
+    const outra = await asUser(
+      DE_OUTRA_ORG,
+      `select id from public.get_stock_movements('${ORG_SB}', 50, 0, 'MOVLIST-A')`,
+    );
+    expect(outra).toHaveLength(0);
+
+    await expect(
+      asAnon(`select * from public.get_stock_movements('${ORG_SB}')`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+});
+
 describe("guarda de GRANTs (D-066/D-098/D-130)", () => {
   // D-066 apertou 23 tabelas e o padrão foi REINTRODUZIDO nos dois dias
   // seguintes por migrations que não revogaram na criação (corrigido em

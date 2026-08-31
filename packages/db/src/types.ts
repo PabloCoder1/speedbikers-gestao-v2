@@ -4439,6 +4439,37 @@ export type Database = {
           virtuais: number
         }[]
       }
+      // CORRECAO MANUAL sobre o arquivo gerado (classe D-133): o gerador
+      // NUNCA marca argumento de RPC como nulo, e os filtros abaixo aceitam
+      // NULL de verdade (e o valor que significa "sem filtro").
+      get_stock_movements: {
+        Args: {
+          p_date_from?: string | null
+          p_date_to?: string | null
+          p_limit?: number
+          p_location_kind?: string | null
+          p_movement_type?: string | null
+          p_offset?: number
+          p_organization_id: string
+          p_search?: string | null
+          p_source_type?: string | null
+        }
+        Returns: {
+          created_by_name: string
+          id: string
+          location_kind: string
+          movement_type: string
+          occurred_at: string
+          qty_delta: number
+          reason: string
+          sku: string
+          sku_id: string
+          sku_title: string
+          source_id: string
+          source_type: string
+          total_count: number
+        }[]
+      }
       get_support_metrics: {
         Args: { p_days?: number }
         Returns: {

@@ -433,7 +433,9 @@ Subfase incremental posterior às bases 5C/5D/6B. Não reabre seus marcos conclu
 - **Riscos:** soma cega com estoque físico, snapshot stale e sugestão sem política logística.
 - **Fora da primeira versão:** envio automático, promessa de venda e otimização por IA.
 
-#### Estoque → Movimentações — B
+#### Estoque → Movimentações — B — ✅ CONCLUÍDO em 2026-08-31 (D-167)
+
+`/estoque/movimentacoes` (nav ESTOQUE): extrato do ledger com filtros na URL (tipo/local/origem/busca/período), paginação com contagem sobre o conjunto filtrado (classe D-131), e o contexto humano que o risco "IDs sem contexto" pedia — SKU linkado, origem traduzida (Pedido ML N, NF-e, Reconciliação UpSeller, Pedido de compra), motivo e ator do ajuste manual. Somente leitura por construção (zero Server Action). O EXPLAIN reprovou DUAS versões (685 ms → 210 ms → **64 ms**, zero temp): `count(*) over ()` e depois a CTE dupla materializavam 225k linhas; página e contagem viraram subconsultas independentes sobre o índice novo `stock_movements_org_timeline_idx`. Sem filtro de conta DE PROPÓSITO: estoque físico é da organização (regra do PRD). Playwright não incluído (a tela é leitura pura; os fluxos críticos de D-069 seguem sendo o critério) — desvio declarado do DoD original.
 
 - **Objetivo/problema:** tornar o ledger existente utilizável para responder “por que o saldo mudou?”.
 - **Reutiliza:** `stock_movements` e referências de NF-e, compra, venda, cancelamento, devolução, ajuste e reconciliação; filtros/paginação existentes.

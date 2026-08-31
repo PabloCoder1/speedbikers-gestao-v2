@@ -67,6 +67,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: "Estoque",
     items: [
       { label: "Estoque", href: "/estoque" },
+      { label: "Movimentações", href: "/estoque/movimentacoes" },
       { label: "Cobertura", href: "/cobertura" },
       // A sugestão de compra nasceu em /reposicao (D-147); a configuração
       // virou subpágina dela, linkada do cabeçalho — o retarget que D-144
