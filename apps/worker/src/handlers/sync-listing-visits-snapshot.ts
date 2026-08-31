@@ -135,6 +135,9 @@ export function createSyncListingVisitsSnapshotHandler(
       ml_account_id: mlAccountId,
       items_processed: result.itemsProcessed,
       items_failed: result.itemsFailed,
+      // Trabalho que uma tentativa anterior da MESMA rodada já fez (D-156) —
+      // processados + pulados ≈ ativos da conta quando a rodada completa.
+      items_skipped: result.itemsSkipped,
     });
 
     return { status: "done", processed: result.itemsProcessed };

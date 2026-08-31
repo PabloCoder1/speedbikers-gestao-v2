@@ -422,7 +422,9 @@ A Fase 5A antecede a Fase 4 porque o dashboard de vendas não usa estoque, e a F
 
 **Decisão de produto pendente sinalizada desde D-135**: `listing.available_quantity.changed` é 91% das notificações (informativo, legítimo) — silenciar, agregar ou manter é escolha do usuário.
 
-**Candidatas defensáveis para a próxima fatia de código**, a escolher com o usuário: o item de **Vendas** do PRD que restou da 5C (taxas do ML, cancelamentos, visão "hoje"); a **Fase 8** (backup/restore verificado); o **rate limit de `visits`** (85% de falha 429, medido em D-143); ou abrir a **Fase 9** pela modelagem pai→filho.
+~~O **rate limit de `visits`** (85% de falha 429, medido em D-143)~~ — **corrigido em 2026-08-31 (D-156)**: checkpoint pela própria `daily_listing_visits` (cada tentativa soma progresso em vez de recomeçar; o teto de 8 tentativas da fila deixou de arriscar a cauda), espaçamento de 150 ms entre chamadas e enumeração paginada (a 8ª ocorrência da classe D-131, ainda latente: 857 ativos medidos contra o teto de 1.000). **Aguarda deploy do worker e a leitura da rodada seguinte** (regra de D-109 — a confirmação é a queda das ~22 execuções falhas/dia).
+
+**Candidatas defensáveis para a próxima fatia de código**, a escolher com o usuário: o item de **Vendas** do PRD que restou da 5C (taxas do ML, cancelamentos, visão "hoje"); a **Fase 8** (backup/restore verificado); ou abrir a **Fase 9** pela modelagem pai→filho.
 
 **Registro histórico do que esta seção dizia antes (D-120):**
 

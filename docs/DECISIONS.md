@@ -2976,6 +2976,22 @@ A camada 3 foi encontrada pelo CATALOGO (enumerando as FKs RESTRICT reais), nao 
 
 **Impacto:** `packages/domain/src/diagnostics/action-evidence.{ts,test.ts}` (movidos de `apps/web/lib`), `packages/domain/src/diagnostics/index.ts`, `packages/contracts/src/{copilot-tools,index}.ts` (`narrate_action`), `apps/api/src/copilot.{ts,test.ts}`, `apps/web/app/acoes/{page,action-row}.tsx`, `docs/{COPILOT,API,ROADMAP,HANDOFF}.md`.
 
+## D-156 - Rate limit de visits: cada tentativa passa a somar progresso, e a rajada ganha espacamento
+
+**Contexto:** D-143 mediu e entregou a visibilidade: `visits` falhava 123 de 145 execucoes (85%) por 429, e "corrigir o rate limit e fatia de worker". Remedido em 2026-08-31 antes de escrever: a cobertura diaria ACONTECE (4 `done`/dia, ~240s, ~815-895 itens), mas ao custo de ~22 execucoes falhas/dia — cada uma queimando dezenas de segundos de chamadas full-speed antes de morrer no 429 esgotado e RECOMECAR DO ZERO na tentativa seguinte do Cloud Tasks. A fila `ml-sync-<conta>` tem teto de 8 tentativas, e os dias medidos chegam a ~7,5 por conta: um dia pior que a media esgota as tentativas e perde a cauda EM SILENCIO. De quebra: a maior conta tem 857 ativos e a enumeracao lia `listings` sem `.range()` — a 8a ocorrencia latente da classe D-131, a 143 itens do penhasco.
+
+**Decisao 1 — checkpoint pela PROPRIA tabela, nao por infraestrutura nova.** Item com linha em `daily_listing_visits` com `synced_at` nas ultimas 12h e pulado. Cada tentativa do Cloud Tasks passa a CONTINUAR de onde a anterior morreu — o retry nativo da fila vira o mecanismo de retomada, sem coluna de cursor, sem job novo, sem IAM novo (o worker nao pode enfileirar em `ml-sync-<conta>`, secao 11 da arquitetura — auto-encadeamento estava bloqueado por construcao). Janela de 12h: menor que a cadencia diaria, maior que a cauda de retries (~2h), livre de fuso. Item com escrita parcial pode ser pulado ate a janela expirar — o `last=3` da rodada seguinte recobre, que e a folga para a qual ele existe.
+
+**Decisao 2 — espacamento de 150 ms entre chamadas (~6-7/s).** A execucao que completa faz ~280 ms/item; as que morrem, full speed — a rajada e o gatilho. Sem numero oficial de rate limit (D-042), o valor e conservador e AJUSTAVEL POR MEDICAO, declarado no codigo e em `MERCADO_LIVRE.md` secao 2.11. Custo: +~2 min na varredura completa (~370s totais, contra timeout de 900s). Item pulado pelo checkpoint nao paga espera (testado).
+
+**Decisao 3 — enumeracao e checkpoint por `readAllPages`.** Fecha a 8a ocorrencia da classe D-131 ANTES de virar corte silencioso; a leitura do checkpoint ja nasce paginada (ate 3 linhas por item na janela). O teste de paginacao fatia por `range` de verdade — 1.002 ativos atravessam em duas paginas.
+
+**O que NAO mudou:** 429 esgotado continua derrubando a execucao (falha retryable, `sync_runs` failed) — so que agora o progresso persiste e a tentativa seguinte nao o repete. 404/403 por item continuam `itemsFailed` sem derrubar. O resultado ganhou `itemsSkipped`, logado pelo orquestrador.
+
+**Verificacao:** `check` 29/29 (20 testes no par de arquivos, +4 novos), build 8/8. Sem migration. ⚠️ **Aguarda deploy do worker e a LEITURA da rodada seguinte** (regra de D-109): a confirmacao e a queda das ~22 execucoes falhas/dia na tela de Saude da Sincronizacao (D-143), que ja mede exatamente isso.
+
+**Impacto:** `apps/worker/src/handlers/ml-listing-visits-fetch.{ts,test.ts}`, `apps/worker/src/handlers/sync-listing-visits-snapshot.{ts,test.ts}` (log + fake), `docs/{MERCADO_LIVRE,ROADMAP,HANDOFF}.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:

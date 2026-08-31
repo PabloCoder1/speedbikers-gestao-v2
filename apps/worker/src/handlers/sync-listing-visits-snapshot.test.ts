@@ -25,10 +25,19 @@ const ENVELOPE = {
   enqueuedAt: "2026-08-23T18:00:00.000Z",
 };
 
-/** Fake mínimo, encadeável e thenable — mesmo espírito de sync-listings-snapshot.test.ts. */
+/**
+ * Fake mínimo, encadeável e thenable — mesmo espírito de
+ * sync-listings-snapshot.test.ts. `order`/`gte`/`range` entraram com a
+ * leitura paginada + checkpoint de D-156; `range` resolve o resultado
+ * inteiro numa página só (os casos de paginação real vivem em
+ * ml-listing-visits-fetch.test.ts).
+ */
 function chain<T>(result: T): {
   eq: () => ReturnType<typeof chain<T>>;
   is: () => ReturnType<typeof chain<T>>;
+  gte: () => ReturnType<typeof chain<T>>;
+  order: () => ReturnType<typeof chain<T>>;
+  range: () => Promise<T>;
   select: () => ReturnType<typeof chain<T>>;
   maybeSingle: () => Promise<T>;
   then: <R>(resolve: (value: T) => R) => Promise<R>;
@@ -36,6 +45,9 @@ function chain<T>(result: T): {
   const self = {
     eq: () => self,
     is: () => self,
+    gte: () => self,
+    order: () => self,
+    range: () => Promise.resolve(result),
     select: () => self,
     maybeSingle: () => Promise.resolve(result),
     then: <R>(resolve: (value: T) => R) => Promise.resolve(result).then(resolve),
