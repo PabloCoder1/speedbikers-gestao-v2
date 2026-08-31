@@ -3114,6 +3114,20 @@ A camada 3 foi encontrada pelo CATALOGO (enumerando as FKs RESTRICT reais), nao 
 
 **Impacto:** migration `20260831145457`, `apps/worker/src/handlers/{relist-execute.ts,relist-execute.test.ts,erp-import-apply.ts}`, `packages/db/src/{types.ts,rls.integration.test.ts}`, `docs/{ROADMAP,HANDOFF}.md`.
 
+## D-164 - Medicao 7/15/30 do relist: reuso LITERAL de D-065 -- FASE 9 COMPLETA NO BACKEND
+
+**Contexto:** ultimo item da Fase 9. O PRD ja tinha dado a resposta ("action_decisions/action_outcomes ja fazem exatamente isso — e reuso, nao feature nova"), e a leitura do job de medicao confirmou o que torna o reuso literal possivel: ele enumera TODAS as decisoes da organizacao, sem filtro de status da acao — uma decisao criada pelo worker e medida em 7/15/30 automaticamente.
+
+**Decisao 1 — a acao `republicacao` nasce RESOLVIDA:** e registro de ato consumado, nao pendencia — a Central lista so abertos e um relist concluido nao e problema para triar. `dedup_key = republicacao:{relist_id}` (UNIQUE por organizacao) e a idempotencia; evidencia carrega pai/filho/relist_id; recomendacao com a linguagem de honestidade do PRD ("apos a republicacao", NUNCA causal — testado que "por causa" nao aparece). Rotulo "Republicacao" e tom NEUTRO em describeActionEvidence.
+
+**Decisao 2 — a decisao e do HUMANO que pediu:** `action_decisions.created_by` exige gente, e aqui ela existe de verdade — `listing_relists.requested_by`. Baseline capturado NA HORA do REMAPPED pela MESMA `get_sku_decision_snapshot` das medicoes futuras (so muda o as_of). Filho sem SKU (pai de variacoes aguardando vinculacao humana) nasce com baseline VAZIO — a mesma convencao do job para acao sem SKU, nunca inventado.
+
+**Decisao 3 — garantia idempotente no ramo REMAPPED do executor:** a medicao roda depois do remap no caminho feliz e, se falhar, o job falha com retry — a retomada entra pelo ramo REMAPPED, que passou de noop a `ensureRelistMeasurement` (conferir e completar o que faltar, zero chamada remota). Corrida na criacao da acao (23505) rele e segue; releitura vazia FALHA em vez de criar decisao orfa.
+
+**Verificacao:** `check` 29/29 (+4 testes da medicao, +1 do rotulo, caminho feliz e ramo REMAPPED do executor atualizados), build 8/8. Sem migration — reuso e isso.
+
+**Impacto:** `apps/worker/src/handlers/{relist-measurement.ts,relist-measurement.test.ts}` (novo), `apps/worker/src/handlers/{relist-execute.ts,relist-execute.test.ts}`, `packages/domain/src/diagnostics/action-evidence.{ts,test.ts}`, `docs/{ROADMAP,HANDOFF}.md`. **FASE 9 COMPLETA NO BACKEND (D-159→D-164)** — pesquisa, modelo, preflight, criacao, executor, remapeamento e medicao. O que NAO existe, declarado: UI (trilha da visao de UX) e o primeiro relist real (ensaio humano deliberado, pos-deploy, com anuncio sacrificavel).
+
 ## Como adicionar nova decisao
 
 Registrar:

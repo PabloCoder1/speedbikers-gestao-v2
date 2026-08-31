@@ -8,6 +8,7 @@ import { z } from "zod";
 import type { JobOutcome } from "../job-outcome.js";
 import type { HandlerContext, JobHandler } from "../router.js";
 import { ensureAccessToken } from "./ml-token.js";
+import { ensureRelistMeasurement } from "./relist-measurement.js";
 
 /**
  * `relist.execute` (Fase 9, D-162) — a PRIMEIRA ESCRITA DESTRUTIVA do
@@ -88,6 +89,7 @@ interface OperationRow {
   parent_item_id: string;
   child_item_id: string | null;
   status: string;
+  requested_by: string;
 }
 
 interface TransitionContext {
@@ -217,6 +219,22 @@ async function remapRelistedOperation(
     variation_candidates_created: result?.variation_candidates_created ?? 0,
   });
 
+  // Medição 7/15/30 (D-164): registro reusando D-065. Falhar aqui FALHA o
+  // job com retry — a retomada entra pelo ramo REMAPPED, que é só esta
+  // garantia idempotente, sem repetir nada remoto.
+  const measured = await ensureRelistMeasurement(deps, context.logger, {
+    id: operation.id,
+    organization_id: operation.organization_id,
+    ml_account_id: operation.ml_account_id,
+    parent_item_id: operation.parent_item_id,
+    child_item_id: operation.child_item_id,
+    requested_by: operation.requested_by,
+  });
+
+  if (!measured.ok) {
+    return { status: "failed", retryable: true, reason: measured.message ?? "falha ao registrar a medição" };
+  }
+
   return { status: "done", processed: 1 };
 }
 
@@ -232,7 +250,7 @@ export function createRelistExecuteHandler(deps: RelistExecuteDeps): JobHandler 
 
     const loaded = await deps.db
       .from("listing_relists")
-      .select("id, organization_id, ml_account_id, parent_item_id, child_item_id, status")
+      .select("id, organization_id, ml_account_id, parent_item_id, child_item_id, status, requested_by")
       .eq("id", parsed.data.relistId)
       .maybeSingle();
 
@@ -282,8 +300,31 @@ export function createRelistExecuteHandler(deps: RelistExecuteDeps): JobHandler 
       return remapRelistedOperation(deps, context, operation, tokenResult.accessToken);
     }
 
+    // REMAPPED retomado: o único trabalho possivelmente pendente é a
+    // MEDIÇÃO (D-164) — garantia idempotente, sem nenhuma chamada remota.
+    if (operation.status === "REMAPPED") {
+      if (operation.child_item_id === null) {
+        return { status: "failed", retryable: false, reason: "operação REMAPPED sem child_item_id — incoerência estrutural" };
+      }
+
+      const measured = await ensureRelistMeasurement(deps, context.logger, {
+        id: operation.id,
+        organization_id: operation.organization_id,
+        ml_account_id: operation.ml_account_id,
+        parent_item_id: operation.parent_item_id,
+        child_item_id: operation.child_item_id,
+        requested_by: operation.requested_by,
+      });
+
+      if (!measured.ok) {
+        return { status: "failed", retryable: true, reason: measured.message ?? "falha ao registrar a medição" };
+      }
+
+      return { status: "done", processed: 0 };
+    }
+
     // Idempotência de retomada: estado que este job não trata é trabalho já
-    // feito (REMAPPED) ou já resolvido (terminais) — nunca refazer.
+    // resolvido (terminais) — nunca refazer.
     if (operation.status !== "REQUESTED" && operation.status !== "CLOSING" && operation.status !== "CLOSED") {
       context.logger.info("relist_execute_noop", { relist_id: operation.id, status: operation.status });
 

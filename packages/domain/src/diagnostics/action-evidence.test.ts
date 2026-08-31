@@ -27,6 +27,16 @@ const RECLAMACOES = {
 };
 
 describe("describeActionEvidence", () => {
+  it("republicação (D-164) tem rótulo próprio e tom NEUTRO — registro de ato, não problema nem oportunidade", () => {
+    const view = describeActionEvidence("republicacao", {
+      evidencias: [{ tipo: "republicacao", descricao: "MLB1 republicado como MLB2." }],
+    });
+
+    expect(view.kindLabel).toBe("Republicação");
+    expect(view.tone).toBe("neutro");
+    expect(view.direcaoLabel).toBeNull();
+  });
+
   it("lê a anomalia de venda por completo", () => {
     const view = describeActionEvidence("venda_anomala", VENDA_ANOMALA);
 

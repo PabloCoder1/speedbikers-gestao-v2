@@ -13,6 +13,7 @@ const ML_ACCOUNT_ID = "aaaaaaaa-0000-4000-8000-000000000001";
 const ORGANIZATION_ID = "11111111-0000-4000-8000-000000000001";
 const PARENT = "MLB910000001";
 const CHILD = "MLB910000777";
+const REQUESTED_BY = "bbbbbbbb-0000-4000-8000-000000000002";
 const ENCRYPTION_KEY = randomBytes(32);
 const NOW = new Date("2026-08-31T13:00:00.000Z");
 
@@ -56,6 +57,7 @@ function healthyChild(overrides: Record<string, unknown> = {}): Record<string, u
 function chain(result: unknown): unknown {
   const self = {
     eq: () => self,
+    is: () => self,
     select: () => self,
     maybeSingle: () => Promise.resolve(result),
     then: (resolve: (value: unknown) => unknown) => Promise.resolve(result).then(resolve),
@@ -82,10 +84,12 @@ function fakeDb(options: FakeDbOptions = {}): {
   updates: RecordedUpdate[];
   events: Record<string, unknown>[];
   rpcCalls: Record<string, unknown>[];
+  decisionInserts: Record<string, unknown>[];
 } {
   const updates: RecordedUpdate[] = [];
   const events: Record<string, unknown>[] = [];
   const rpcCalls: Record<string, unknown>[] = [];
+  const decisionInserts: Record<string, unknown>[] = [];
 
   const credentials = {
     access_token_ciphertext: encryptToken("APP_USR-valido", ENCRYPTION_KEY),
@@ -110,6 +114,7 @@ function fakeDb(options: FakeDbOptions = {}): {
                       ? (options.operationStatus === "RELISTED" || options.operationStatus === "REMAPPED" ? CHILD : null)
                       : options.childItemId,
                   status: options.operationStatus ?? "REQUESTED",
+                  requested_by: REQUESTED_BY,
                 },
             error: null,
           });
@@ -117,6 +122,17 @@ function fakeDb(options: FakeDbOptions = {}): {
 
         if (table === "ml_credentials") {
           return chain({ data: credentials, error: null });
+        }
+
+        // Medição (D-164): vínculo do filho com SKU; ação/decisão inexistentes.
+        if (table === "sku_listing_links") {
+          const self = {
+            eq: () => self,
+            is: () => self,
+            maybeSingle: () => Promise.resolve({ data: { sku_id: "dddddddd-0000-4000-8000-000000000003" }, error: null }),
+          };
+
+          return self;
         }
 
         return chain({ data: null, error: null });
@@ -137,12 +153,30 @@ function fakeDb(options: FakeDbOptions = {}): {
         }),
       }),
       insert: (row: Record<string, unknown>) => {
+        if (table === "actions") {
+          return {
+            select: () => ({ single: () => Promise.resolve({ data: { id: "action-1" }, error: null }) }),
+          };
+        }
+
+        if (table === "action_decisions") {
+          decisionInserts.push(row);
+
+          return Promise.resolve({ error: null });
+        }
+
         events.push(row);
 
         return Promise.resolve({ error: null });
       },
     }),
-    rpc: (_name: string, args: Record<string, unknown>) => {
+    rpc: (name: string, args: Record<string, unknown>) => {
+      // O snapshot da medição (D-164) não entra em rpcCalls — as
+      // afirmações sobre o REMAPEAMENTO continuam contando só o remap.
+      if (name === "get_sku_decision_snapshot") {
+        return Promise.resolve({ data: { as_of: "2026-08-31" }, error: null });
+      }
+
       rpcCalls.push(args);
 
       return Promise.resolve(
@@ -156,7 +190,7 @@ function fakeDb(options: FakeDbOptions = {}): {
     },
   } as unknown as RelistExecuteDeps["db"];
 
-  return { db, updates, events, rpcCalls };
+  return { db, updates, events, rpcCalls, decisionInserts };
 }
 
 interface FakeClientOptions {
@@ -225,7 +259,7 @@ function run(db: RelistExecuteDeps["db"], client: MercadoLivreClient) {
 
 describe("relist.execute (D-162/D-163)", () => {
   it("caminho feliz: confirma o filho e conclui o remapeamento transacional", async () => {
-    const { db, updates, events, rpcCalls } = fakeDb();
+    const { db, updates, events, rpcCalls, decisionInserts } = fakeDb();
     const { client, calls } = fakeClient();
 
     const outcome = await run(db, client);
@@ -250,6 +284,10 @@ describe("relist.execute (D-162/D-163)", () => {
     ]);
     // Transições do sistema: SEM ator.
     expect(events.every((event) => event.actor_user_id === null)).toBe(true);
+    // Medição 7/15/30 (D-164): a decisão de D-065 nasce junto do REMAPPED,
+    // atribuída ao humano que pediu a republicação.
+    expect(decisionInserts).toHaveLength(1);
+    expect(decisionInserts[0]).toMatchObject({ created_by: REQUESTED_BY });
   });
 
   it("re-preflight reprova NA HORA (o pai entrou no Full desde o pedido): PREFLIGHT_FAILED, e o PUT nunca sai", async () => {
@@ -370,8 +408,8 @@ describe("relist.execute (D-162/D-163)", () => {
     expect(calls).toEqual([`GET /items/${CHILD}?include_attributes=all`]);
   });
 
-  it("REMAPPED é noop terminal — nenhuma leitura ou escrita se repete", async () => {
-    const { db, updates, rpcCalls } = fakeDb({ operationStatus: "REMAPPED" });
+  it("REMAPPED retomado garante a MEDIÇÃO (D-164) sem nenhuma chamada remota — e nada mais se repete", async () => {
+    const { db, updates, rpcCalls, decisionInserts } = fakeDb({ operationStatus: "REMAPPED" });
     const { client, calls } = fakeClient();
 
     const outcome = await run(db, client);
@@ -380,6 +418,9 @@ describe("relist.execute (D-162/D-163)", () => {
     expect(updates).toHaveLength(0);
     expect(rpcCalls).toHaveLength(0);
     expect(calls).toEqual([]);
+    // A garantia idempotente: a decisão de D-065 existe ao sair daqui.
+    expect(decisionInserts).toHaveLength(1);
+    expect(decisionInserts[0]).toMatchObject({ created_by: REQUESTED_BY });
   });
 
   it("CAS perdido (0 linhas na transição): o job FALHA com retry e relê o estado — nunca grava evento de transição que não aconteceu", async () => {

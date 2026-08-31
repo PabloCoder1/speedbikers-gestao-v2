@@ -49,6 +49,7 @@ export interface ActionEvidenceView {
 const KIND_LABELS: Readonly<Record<string, string>> = {
   venda_anomala: "Venda anômala",
   reclamacoes_recorrentes: "Reclamações recorrentes",
+  republicacao: "Republicação",
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
