@@ -4099,6 +4099,20 @@ export type Database = {
           weekday: number
         }[]
       }
+      get_sku_timeline: {
+        Args: { p_limit?: number; p_organization_id: string; p_sku_id: string }
+        Returns: {
+          account_label: string
+          after: Json
+          before: Json
+          entity_id: string
+          entity_type: string
+          event_type: string
+          id: string
+          occurred_at: string
+          severity: string
+        }[]
+      }
       // CORRECAO MANUAL sobre o arquivo gerado (classe D-133): o gerador
       // NUNCA marca argumento de RPC como nulo, e os argumentos abaixo
       // aceitam NULL de verdade (e o valor que significa "sem filtro" --

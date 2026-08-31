@@ -4,8 +4,9 @@ import type { ReactNode } from "react";
 
 import { Shell } from "../../../components/shell";
 import { StatusPill } from "../../../components/status-pill";
+import { entityLabel, formatEventDiff } from "../../../lib/event-format";
 import { formatCount, formatCurrency, formatDateTime } from "../../../lib/format";
-import { listingStatusLabel } from "../../../lib/labels";
+import { eventTypeLabel, listingStatusLabel } from "../../../lib/labels";
 import { createClient } from "../../../lib/supabase/server";
 import { DiagnosisPanel } from "./diagnosis-panel";
 import { SimulatorPanel } from "./simulator-panel";
@@ -27,6 +28,26 @@ export const dynamic = "force-dynamic";
  */
 
 const LOOKBACK_DAYS = 30;
+
+/** A linha do tempo mostra os últimos N — e diz isso quando o corte agiu. */
+const TIMELINE_LIMIT = 50;
+
+/**
+ * Nulidade real conferida contra o corpo da RPC (o gerador não marca
+ * `account_label` do left join como anulável) — mesmo padrão das demais
+ * telas.
+ */
+interface TimelineRow {
+  id: string;
+  occurred_at: string;
+  event_type: string;
+  entity_type: string;
+  entity_id: string;
+  severity: string;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  account_label: string | null;
+}
 
 const statBox: React.CSSProperties = {
   border: "1px solid var(--sb-border)",
@@ -91,7 +112,7 @@ export default async function SkuDashboardPage({
   const dateTo = now.toISOString().slice(0, 10);
   const dateFrom = new Date(now.getTime() - (LOOKBACK_DAYS - 1) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-  const [dashboardResult, listingsResult, coverageResult, costHistoryResult] = await Promise.all([
+  const [dashboardResult, listingsResult, coverageResult, costHistoryResult, timelineResult] = await Promise.all([
     supabase
       .rpc("get_sku_dashboard", {
         p_organization_id: sku.data.organization_id,
@@ -125,12 +146,21 @@ export default async function SkuDashboardPage({
       .eq("sku_id", sku.data.id)
       .order("changed_at", { ascending: false })
       .limit(20),
+    // Linha do tempo (D-153): todos os eventos mapeáveis ao SKU — dele, dos
+    // seus anúncios e dos seus pedidos. História, não causa: aqui o
+    // vocabulário é ABERTO (contrato oposto ao da correlação de D-152).
+    supabase.rpc("get_sku_timeline", {
+      p_organization_id: sku.data.organization_id,
+      p_sku_id: sku.data.id,
+      p_limit: TIMELINE_LIMIT,
+    }),
   ]);
 
   const dashboard = dashboardResult.data;
   const listings = listingsResult.data ?? [];
   const coverage = coverageResult.data;
   const costHistory = costHistoryResult.data ?? [];
+  const timeline = (timelineResult.data ?? []) as unknown as TimelineRow[];
 
   return (
     <Shell>
@@ -248,6 +278,77 @@ export default async function SkuDashboardPage({
             </tbody>
           </table>
         </div>
+      )}
+
+      {/*
+        Linha do tempo (D-153) — a ordem dos acontecimentos. Vocabulário
+        ABERTO de propósito (contrato oposto ao da correlação): história não
+        edita o passado. Diff só para formatos documentados (formatEventDiff
+        devolve null para o resto — nunca leitura inventada).
+      */}
+      <h2 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.0625rem" }}>Linha do tempo</h2>
+
+      {timelineResult.error !== null && (
+        <p role="alert" style={{ color: "var(--sb-danger)" }}>
+          Não foi possível carregar a linha do tempo: {timelineResult.error.message}
+        </p>
+      )}
+
+      {timelineResult.error === null && timeline.length === 0 && (
+        <p style={{ color: "var(--sb-text-soft)", fontSize: "0.8125rem", marginBottom: "var(--sb-space-4)" }}>
+          Nenhum evento registrado para este SKU — a linha do tempo nasce dos eventos de domínio (webhook e
+          reconciliações) e só enxerga o que o sistema registrou.
+        </p>
+      )}
+
+      {timelineResult.error === null && timeline.length > 0 && (
+        <>
+          {timeline.length >= TIMELINE_LIMIT && (
+            <p style={{ margin: "0 0 var(--sb-space-2)", fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
+              Mostrando os {TIMELINE_LIMIT} eventos mais recentes.
+            </p>
+          )}
+          <div style={{ overflowX: "auto", marginBottom: "var(--sb-space-4)" }}>
+            <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "48rem" }}>
+              <thead>
+                <tr>
+                  <th style={th}>Quando</th>
+                  <th style={th}>Evento</th>
+                  <th style={th}>Mudança</th>
+                  <th style={th}>Onde</th>
+                </tr>
+              </thead>
+              <tbody>
+                {timeline.map((entry) => (
+                  <tr key={entry.id}>
+                    <td style={{ ...td, whiteSpace: "nowrap" }}>{formatDateTime(entry.occurred_at)}</td>
+                    <td style={td}>
+                      <span
+                        style={
+                          entry.severity === "critico"
+                            ? { color: "var(--sb-danger)", fontWeight: 600 }
+                            : entry.severity === "importante"
+                              ? { color: "var(--sb-accent-ink)" }
+                              : undefined
+                        }
+                      >
+                        {eventTypeLabel(entry.event_type)}
+                      </span>
+                    </td>
+                    <td style={td}>{formatEventDiff(entry.event_type, entry.before, entry.after) ?? "—"}</td>
+                    <td style={{ ...td, color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
+                      {entityLabel(entry.entity_type)}
+                      {entry.entity_type !== "sku" && (
+                        <span style={{ fontFamily: "ui-monospace, monospace" }}> {entry.entity_id}</span>
+                      )}
+                      {entry.account_label !== null && <> · {entry.account_label}</>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       <h2 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.0625rem" }}>Anúncios vinculados</h2>

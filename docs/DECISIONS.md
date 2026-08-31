@@ -2932,6 +2932,20 @@ A camada 3 foi encontrada pelo CATALOGO (enumerando as FKs RESTRICT reais), nao 
 
 **Impacto:** migration `20260830211033` (RPC), `packages/domain/src/diagnostics/sales-anomaly.{ts,test.ts}` (vocabulario), `apps/web/app/diagnostico/page.tsx`, `apps/web/app/skus/[skuId]/actions.ts`, `apps/worker/src/handlers/detect-sales-anomaly-actions.{ts,test.ts}`, `types.ts` (regenerado), `rls.integration.test.ts` (+4).
 
+## D-153 - Timeline de evidencias: historia nao edita o passado
+
+**Contexto:** segundo item de tela da 6B. "domain_events ja e a linha do tempo; falta a tela" (ROADMAP) -- a ordem dos acontecimentos de um SKU, para o Diagnostico e o "O que aconteceu?".
+
+**A RPC (`get_sku_timeline`) junta os MESMOS tres caminhos de D-152** (evento do proprio SKU; de anuncio via `listings(conta, item_id)`; de pedido via `order_items` congelados) -- **mas com o contrato OPOSTO no vocabulario, e a diferenca e o desenho**: a correlacao FECHA a lista porque causa candidata inventada e ruido vestido de causa (e exclui `available_quantity.changed`); a timeline e HISTORIA, nao causa -- todo evento mapeavel entra, inclusive as mudancas de quantidade, porque elas SAO a historia do estoque daquele SKU e escolher o que entra na historia seria editar o passado. O teste de integracao fixa o contraste sobre as MESMAS fixtures: correlacao devolve 3, timeline devolve 4.
+
+**A tela** e uma secao "Linha do tempo" no Dashboard de SKU: quando (fuso fixo), evento (rotulos de `eventTypeLabel`, severidade por tom), mudanca (via `formatEventDiff`, que so interpreta formatos DOCUMENTADOS -- o resto aparece sem diff, nunca com leitura inventada) e onde (entidade + conta). Ultimos 50, com o corte declarado quando age. Zero pecas novas de leitura: `eventTypeLabel`/`severityLabel`/`formatEventDiff`/`entityLabel` ja existiam compartilhados entre Central de Notificacoes e toasts (D-074/D-075).
+
+**Medicao:** 70 ms quente, 36.286 buffers no SKU MAIS MOVIMENTADO da organizacao (pior caso), limit 50. Nenhum indice novo. Ensaio revertido no Dev (4 eventos, ordem decrescente, corte do limit, label da conta) ANTES do push.
+
+**Verificacao:** `check` 29/29 (+2 integracao), build compila. Tela nao vista renderizada (a ressalva de sempre). Licao pequena de tipos: o gerador nao marca `account_label` de LEFT JOIN como anulavel -- interface local de nulidade real, o padrao das demais telas.
+
+**Impacto:** migration `20260831095401` (RPC), `apps/web/app/skus/[skuId]/page.tsx` (secao), `types.ts` (regenerado), `rls.integration.test.ts` (+2 sobre as fixtures de D-152).
+
 ## Como adicionar nova decisao
 
 Registrar:

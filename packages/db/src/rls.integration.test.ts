@@ -3509,6 +3509,56 @@ describe("get_sku_correlated_events (D-152, Fase 6B)", () => {
 
     expect(rows).toHaveLength(0);
   });
+
+  /**
+   * D-153, sobre as MESMAS fixtures — e o contraste é o desenho: a
+   * correlação devolve 3 eventos (vocabulário fechado); a TIMELINE devolve
+   * 4, porque história não edita o passado — available_quantity.changed é
+   * ruído como causa, mas É a história do estoque daquele SKU. O order de
+   * entity_id não numérico continua fora nas duas (guarda de cast).
+   */
+  it("a TIMELINE (D-153) devolve os 4 eventos — história não edita o passado", async () => {
+    const rows = await asUser<{
+      event_type: string;
+      entity_type: string;
+      account_label: string | null;
+      occurred_at: string;
+    }>(ADMIN_SB, `select * from public.get_sku_timeline('${ORG_SB}', '${skuId}', 50)`);
+
+    const types = rows.map((r) => r.event_type).sort();
+
+    expect(types).toEqual([
+      "listing.available_quantity.changed",
+      "listing.price.changed",
+      "order.cancelled",
+      "stock.depleted",
+    ]);
+    // Ordem cronológica DECRESCENTE — o mais recente primeiro.
+    const stamps = rows.map((r) => new Date(r.occurred_at).getTime());
+    expect([...stamps].sort((a, b) => b - a)).toEqual(stamps);
+    // O label da conta chega junto — a tela diz DE ONDE veio.
+    expect(rows.every((r) => r.account_label === "Conta de correlacao")).toBe(true);
+  });
+
+  it("timeline: p_limit corta pelo mais recente; anon e outra organização são recusados", async () => {
+    const rows = await asUser<{ event_type: string }>(
+      ADMIN_SB,
+      `select * from public.get_sku_timeline('${ORG_SB}', '${skuId}', 1)`,
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.event_type).toBe("order.cancelled");
+
+    await expect(
+      asAnon(`select * from public.get_sku_timeline('${ORG_SB}', '${skuId}', 50)`),
+    ).rejects.toThrow(/permission denied/i);
+
+    const outra = await asUser<{ event_type: string }>(
+      DE_OUTRA_ORG,
+      `select * from public.get_sku_timeline('${ORG_SB}', '${skuId}', 50)`,
+    );
+    expect(outra).toHaveLength(0);
+  });
 });
 
 describe("get_sku_abc_curve (D-058, Fase 5B)", () => {
