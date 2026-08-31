@@ -3303,6 +3303,34 @@ group by 1 order by 1 desc;
 
 **Impacto:** migration acima, `packages/db/src/{types.ts,rls.integration.test.ts}`, `apps/web/lib/{price-filters,price-filters.test}.ts`, `apps/web/app/precos/page.tsx` (novo), `apps/web/components/shell.tsx` (nav), `docs/{ROADMAP,HANDOFF}.md`.
 
+## D-173 - Central Full: o GRAO do Full estava errado em duas leituras, e isso aparecia como fila de trabalho falsa
+
+**Contexto:** proximo item da ordem registrada da 5E ("Centrais analiticas: Precos e Full"). O item pedia "operacao propria de Full, nao apenas uma coluna dispersa". Fui medir antes de desenhar, e o problema estava ANTES da tela.
+
+**O achado:** o saldo do Full e por **BUCKET** (`inventory_id`, um por item/variacao — a unique da tabela e `(ml_account_id, inventory_id, captured_at)`). Duas leituras colapsavam por `(sku_id, ml_account_id)` e ficavam com UM bucket, descartando os outros. Medido no Dev sobre 75.852 capturas:
+
+- grao errado **7.098 unidades**, grao certo **8.408** (15,6% a mais);
+- **246 pares** conta+SKU tem mais de um bucket (ate 5);
+- **12 SKUs que a Curva ABC declarava "sem Full" TEM Full** — e `p_only_without_full` e uma FILA DE TRABALHO: ela mandava enviar ao Full item que ja estava la.
+
+`get_sku_dashboard` sempre esteve certo (`distinct on (ml_account_id, item_id, variation_id)`) — o defeito era das outras duas, e uma delas eu mesmo escrevi em D-168.
+
+**Decisao 1 — corrigir o grao onde ele e lido, nao so na tela nova:** a mesma migration cria `get_fulfillment_overview` e conserta `get_sku_abc_curve`; o Dashboard de Anuncio passou a ler o Full pela RPC nova (`p_sku_id`) em vez de pegar uma linha da tabela. Tres leituras, uma definicao.
+
+**Decisao 2 — janela de frescor de 3 dias, declarada na tela:** "ultimo snapshot" passa a significar "ultimo dos ultimos 3 dias". Bucket que o ML parou de reportar **nao e estoque atual**, e carregar o saldo antigo para sempre e afirmar estoque que nao existe. De quebra, a janela impede o custo de crescer com a tabela (**85.805 buffers / 110 ms** sem ela contra **27.270 / 24 ms** com ela).
+
+**Decisao 3 — criterios deterministicos com a regra a vista:** `saudavel | parado | ruptura | ausente`, e a tela escreve o criterio de cada um. Nada de score de "saude" inventado (o item veta explicitamente). Numeros de hoje: 432 em ruptura, 49 parados, 619 saudaveis.
+
+**Decisao 4 — o que a tela NAO faz, por veto do proprio item:** nao soma Full com estoque fisico (Full e por CONTA, estoque e da ORGANIZACAO — as colunas ficam lado a lado e a prosa diz isso); **nao sugere quanto enviar** (mostra que ha saldo local e para ai — custo de envio, lote minimo e prazo nao existem no sistema, e numero sem politica e invencao); e nao reimplementa "Curva A sem Full", que ja existe em `/curva-abc?semFull=1` — a Central aponta para la em vez de criar a cópia divergente.
+
+**A armadilha de D-167 apareceu de novo, com o veredito INVERTIDO.** Copiei o desenho aprovado la — contagem como subconsulta escalar sobre a CTE filtrada — e a funcao custou **899 ms**: o planner reexecutava a varredura do espelho para responder a contagem. A correcao foi `as materialized` na CTE do espelho e `count(*) over ()` de volta: **53 ms** sem filtro, 97 ms com. Em D-167 a window era o problema (225 mil movimentos, derramando em temp); aqui o conjunto final tem 1.872 linhas e o caro e reler o espelho. **Mesma armadilha, tamanhos diferentes — por isso a regra e MEDIR, nao copiar o desenho anterior.**
+
+**Achado adjacente, medido e registrado como fatia propria:** `captured_at` e carimbado UMA vez no inicio da varredura e as ~500 linhas de cada conta entram ao longo de **312 a 395 segundos** (medido em 31/08). Quem le `where captured_at = max(captured_at)` ve, nesses ~6 minutos, so a fracao ja gravada — e e o que `get_stock_balances` (`/estoque`) e `get_purchase_suggestions` (`/reposicao`) fazem hoje, duas vezes por dia por conta. A leitura por bucket desta fatia e imune (bucket nao regravado mantem a captura anterior). Nao consertei aqui para nao inchar a fatia; virou tarefa registrada.
+
+**Verificacao:** ensaio revertido no Dev antes de cada migration; migrations `20260831210151` + `20260831210849` nos dois bancos; **464/464 testes de integracao em banco recriado do zero** (+7 da RPC, incluindo o que TRAVA o grao: duas variacoes do mesmo anuncio somando 17, com a captura antiga de 999 e o bucket de 10 dias atras ficando de fora) e +12 de lib; `check` 29/29, build 8/8, **13/13 Playwright**. **Tela VISTA renderizada** — e foi nela que o grao apareceu certo: "15" com "2 variacoes" embaixo.
+
+**Impacto:** as duas migrations acima, `packages/db/src/{types.ts,rls.integration.test.ts}`, `apps/web/lib/{full-filters,full-filters.test}.ts`, `apps/web/app/full/page.tsx` (novo), `apps/web/app/anuncios/[itemId]/page.tsx` (Full pela RPC), `apps/web/components/shell.tsx` (nav), `docs/{ROADMAP,HANDOFF}.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:

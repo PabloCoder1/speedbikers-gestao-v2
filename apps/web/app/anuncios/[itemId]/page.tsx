@@ -162,15 +162,25 @@ export default async function AnuncioPage({
       .single(),
     // Full é espelho por SKU+conta: sem vínculo de SKU, não há como
     // rastrear — e a tela DIZ isso em vez de mostrar zero.
+    //
+    // Via RPC desde D-173, e não mais lendo uma linha da tabela: o saldo do
+    // Full é por BUCKET (um por variação), e pegar a captura mais recente do
+    // par SKU+conta mostrava UM bucket como se fosse o total. Medido: 246
+    // pares têm mais de uma variação, e o erro escondia 15,6% das unidades.
     row.sku_id === null
       ? Promise.resolve({ data: null, error: null })
       : supabase
-          .from("fulfillment_stock_snapshots")
-          .select("quantity, captured_at")
-          .eq("ml_account_id", row.ml_account_id)
-          .eq("sku_id", row.sku_id)
-          .order("captured_at", { ascending: false })
-          .limit(1)
+          .rpc("get_fulfillment_overview", {
+            p_organization_id: row.organization_id,
+            p_date_from: dateFrom,
+            p_date_to: dateTo,
+            p_ml_account_id: row.ml_account_id,
+            p_situation: null,
+            p_search: null,
+            p_sku_id: row.sku_id,
+            p_limit: 1,
+            p_offset: 0,
+          })
           .maybeSingle(),
     supabase
       .from("domain_events")
@@ -276,7 +286,9 @@ export default async function AnuncioPage({
           ? "Sem vínculo de SKU — o estoque Full é espelhado por SKU e conta, então este anúncio não é rastreável no Full até ser vinculado."
           : full === null
             ? "Nenhum snapshot de Full para este SKU nesta conta — o item não está no Full, ou nunca foi capturado."
-            : `${formatCount(full.quantity)} unidade(s) no Full — snapshot de ${formatDateTime(full.captured_at)}.`}
+            : `${formatCount(full.full_quantity)} unidade(s) no Full${
+                full.buckets > 1 ? ` em ${String(full.buckets)} variações` : ""
+              } — captura de ${formatDateTime(full.captured_at)}.`}
       </p>
 
       {actions.length > 0 && (

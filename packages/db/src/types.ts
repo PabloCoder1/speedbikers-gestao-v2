@@ -4045,6 +4045,38 @@ export type Database = {
           vendidos_sem_vinculo: number
         }[]
       }
+      get_fulfillment_overview: {
+        // CORRECAO MANUAL sobre o arquivo gerado (classe D-133): o gerador
+        // nunca marca argumento de RPC como nulo, e os quatro opcionais
+        // abaixo aceitam NULL de verdade -- e o valor que significa "sem
+        // filtro".
+        Args: {
+          p_date_from: string
+          p_date_to: string
+          p_limit?: number
+          p_ml_account_id?: string | null
+          p_offset?: number
+          p_organization_id: string
+          p_search?: string | null
+          p_situation?: string | null
+          p_sku_id?: string | null
+        }
+        Returns: {
+          account_label: string
+          buckets: number
+          captured_at: string
+          full_quantity: number
+          local_quantity: number
+          ml_account_id: string
+          situation: string
+          sku: string
+          sku_id: string
+          // LEFT do proprio cadastro: SKU pode nao ter titulo.
+          sku_title: string | null
+          total_count: number
+          units_sold: number
+        }[]
+      }
       get_listing_dashboard_summary: {
         Args: {
           p_date_from: string

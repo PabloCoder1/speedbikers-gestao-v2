@@ -4581,6 +4581,146 @@ describe("get_price_changes (D-172, Central de Preços)", () => {
   });
 });
 
+// get_fulfillment_overview (20260831210151, D-173) — a Central Full, e o
+// GRÃO do Full: um saldo por bucket (inventory_id), somado por SKU.
+describe("get_fulfillment_overview (D-173, Central Full)", () => {
+  const CONTA_FULL = "dddd3333-0000-4000-8000-000000000333";
+  const HOJE = new Date().toISOString().slice(0, 10);
+  const DE = new Date(Date.now() - 29 * 86_400_000).toISOString().slice(0, 10);
+
+  let skuVariacoesId = "";
+  let skuRupturaId = "";
+  let skuParadoId = "";
+
+  const CALL = (extra = "null, null, null, null, 500, 0") =>
+    `select * from public.get_fulfillment_overview('${ORG_SB}','${DE}','${HOJE}', ${extra})`;
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$2,'Conta do Full','fulltest-conta','PENDING')
+       on conflict do nothing`,
+      [CONTA_FULL, ORG_SB],
+    );
+
+    const skus = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, title)
+       values ($1,'fulltest-variacoes','SKU com duas variações no Full'),
+              ($1,'fulltest-ruptura','SKU que vendeu e zerou no Full'),
+              ($1,'fulltest-parado','SKU parado no Full')
+       returning id`,
+      [ORG_SB],
+    );
+
+    skuVariacoesId = skus.rows[0]?.id ?? "";
+    skuRupturaId = skus.rows[1]?.id ?? "";
+    skuParadoId = skus.rows[2]?.id ?? "";
+
+    await client.query(
+      `insert into public.fulfillment_stock_snapshots
+         (organization_id, ml_account_id, inventory_id, item_id, variation_id, sku_id, quantity, captured_at)
+       values
+         -- DUAS variações do MESMO anúncio: o caso que o grão errado perdia.
+         ($1,$2,'fulltest-inv-a','MLB330000001','111',$3,10,now()),
+         ($1,$2,'fulltest-inv-b','MLB330000001','222',$3,7,now()),
+         -- Captura ANTIGA da variação A: não pode ser somada à recente.
+         ($1,$2,'fulltest-inv-a','MLB330000001','111',$3,999,now() - interval '2 hours'),
+         -- Fora da janela de frescor: bucket que o ML parou de reportar.
+         ($1,$2,'fulltest-inv-velho','MLB330000009','333',$3,500,now() - interval '10 days'),
+         ($1,$2,'fulltest-inv-rup','MLB330000002',null,$4,0,now()),
+         ($1,$2,'fulltest-inv-par','MLB330000003',null,$5,4,now())`,
+      [ORG_SB, CONTA_FULL, skuVariacoesId, skuRupturaId, skuParadoId],
+    );
+
+    await client.query(
+      `insert into public.daily_sku_metrics
+         (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values ($1,$2,$3,current_date - 1,3,300,3,3),
+              ($1,$2,$4,current_date - 1,6,600,6,6)`,
+      [ORG_SB, CONTA_FULL, skuVariacoesId, skuRupturaId],
+    );
+  });
+
+  /**
+   * O teste que trava o defeito de D-173: somar os buckets do último
+   * snapshot de CADA variação. O grão errado (`distinct on (sku, conta)`)
+   * devolveria 10 — uma das duas — e a captura antiga devolveria 999.
+   */
+  it("soma as variações do mesmo anúncio, cada uma na sua captura mais recente", async () => {
+    const rows = await asUser<{ full_quantity: string; buckets: string; situation: string }>(
+      ADMIN_SB,
+      `${CALL()} where sku_id = '${skuVariacoesId}'`,
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0]?.full_quantity)).toBe(17);
+    expect(Number(rows[0]?.buckets)).toBe(2);
+    expect(rows[0]?.situation).toBe("saudavel");
+  });
+
+  it("bucket sem captura recente sai da conta: saldo antigo não é estoque atual", async () => {
+    const rows = await asUser<{ full_quantity: string; buckets: string }>(
+      ADMIN_SB,
+      `${CALL()} where sku_id = '${skuVariacoesId}'`,
+    );
+
+    // As 500 unidades do bucket de 10 dias atrás não entram nas 17.
+    expect(Number(rows[0]?.full_quantity)).toBe(17);
+    expect(Number(rows[0]?.buckets)).toBe(2);
+  });
+
+  it("situações são determinísticas: ruptura vendeu e zerou; parado tem saldo e não vendeu", async () => {
+    const ruptura = await asUser<{ situation: string; full_quantity: string; units_sold: string }>(
+      ADMIN_SB,
+      `${CALL()} where sku_id = '${skuRupturaId}'`,
+    );
+    const parado = await asUser<{ situation: string; full_quantity: string; units_sold: string }>(
+      ADMIN_SB,
+      `${CALL()} where sku_id = '${skuParadoId}'`,
+    );
+
+    expect(ruptura[0]?.situation).toBe("ruptura");
+    expect(Number(ruptura[0]?.full_quantity)).toBe(0);
+    expect(Number(ruptura[0]?.units_sold)).toBe(6);
+
+    expect(parado[0]?.situation).toBe("parado");
+    expect(Number(parado[0]?.full_quantity)).toBe(4);
+    expect(Number(parado[0]?.units_sold)).toBe(0);
+  });
+
+  it("filtro de situação e total_count enxergam o conjunto filtrado", async () => {
+    const rupturas = await asUser<{ sku_id: string; total_count: string }>(
+      ADMIN_SB,
+      `${CALL("null, 'ruptura', null, null, 500, 0")} where sku_id = '${skuRupturaId}'`,
+    );
+
+    expect(rupturas).toHaveLength(1);
+    // A contagem é do conjunto inteiro em ruptura, não do recorte do where.
+    expect(Number(rupturas[0]?.total_count)).toBeGreaterThanOrEqual(1);
+  });
+
+  it("p_sku_id devolve um SKU só — é como o Dashboard de Anúncio lê o Full", async () => {
+    const rows = await asUser<{ sku_id: string; full_quantity: string }>(
+      ADMIN_SB,
+      CALL(`null, null, null, '${skuVariacoesId}', 500, 0`),
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.sku_id).toBe(skuVariacoesId);
+    expect(Number(rows[0]?.full_quantity)).toBe(17);
+  });
+
+  it("anon não executa get_fulfillment_overview", async () => {
+    await expect(asAnon(CALL())).rejects.toThrow(/permission denied/i);
+  });
+
+  it("usuário de outra organização não vê o Full desta", async () => {
+    const rows = await asUser<{ sku_id: string }>(DE_OUTRA_ORG, CALL());
+
+    expect(rows).toHaveLength(0);
+  });
+});
+
 describe("search_entities (Fase 5B, Busca universal)", () => {
   // Mesmo raciocínio de nomes fora dos padrões de limpeza global, e mesma
   // ausência de afterAll — ver comentário equivalente no describe de

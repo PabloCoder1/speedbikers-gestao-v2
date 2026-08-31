@@ -431,7 +431,12 @@ Subfase incremental posterior às bases 5C/5D/6B. Não reabre seus marcos conclu
 - **Riscos:** atribuição causal indevida, janelas incompletas e margem sem base.
 - **Fora da primeira versão:** precificação automática, escrita remota de preço e margem/rentabilidade sem custo defensável.
 
-#### Central Full — B/C
+#### Central Full — B/C — 🟡 PRIMEIRA VERSÃO em 2026-08-31 (D-173); análise antes/depois segue ABERTA
+
+`/full` (nav ESTOQUE): saldo no Full por conta e SKU **no grão certo** (soma dos buckets `inventory_id`, janela de frescor de 3 dias), com venda de 30 dias, estoque local da organização em coluna separada e situação determinística — `Saudável | Parado | Ruptura | Fora do Full`, com o critério de cada uma escrito na tela. Filtros na URL e paginação com contagem.
+
+- **O achado que veio antes da tela:** o Full é por BUCKET (um por variação) e duas leituras da casa colapsavam por `(sku, conta)`, ficando com um bucket só. Medido: **15,6% das unidades a menos** (7.098 contra 8.408), 246 pares com mais de uma variação e **12 SKUs que a Curva ABC declarava "sem Full" tendo Full** — a fila de trabalho mandava enviar ao Full item que já estava lá. Corrigido na Curva ABC e no Dashboard de Anúncio junto.
+- **O que falta:** análise antes/depois da entrada no Full (a série tem 10 dias) e "potencial de envio" como número — a tela mostra que há saldo local, mas **não sugere quanto enviar**, porque política logística (custo, lote mínimo, prazo) não existe no sistema. "Curva A sem Full" **não foi reimplementada**: já existe em `/curva-abc?semFull=1` e a Central aponta para lá, em vez de criar cópia divergente.
 
 - **Objetivo/problema:** oferecer operação própria de Full, não apenas uma coluna dispersa.
 - **Reutiliza:** `fulfillment_stock_snapshots`, eventos de Full, Curva ABC, estoque aproveitável, cobertura, vendas, diagnóstico, ações, decisões e outcomes.
