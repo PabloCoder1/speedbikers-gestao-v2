@@ -3220,6 +3220,32 @@ A camada 3 foi encontrada pelo CATALOGO (enumerando as FKs RESTRICT reais), nao 
 
 **Impacto:** `apps/web/app/skus/[skuId]/page.tsx`, `apps/web/lib/{action-shortcuts,action-shortcuts.test}.ts`, `apps/web/e2e/sku-dashboard.spec.ts`, `.claude/launch.json`, `docs/{ROADMAP,HANDOFF}.md`.
 
+## D-170 - Visitas e conversao entram no catalogo, e catalogar revelou que a conversao estava errada em TRES lugares
+
+**Contexto:** o ensaio visual de D-169 mostrou o Dashboard de Anuncio exibindo "Visitas" e "Conversao" sem id canonico. As duas estavam em `docs/METRICS.md` 5.5 ("dependentes de fonte ainda nao confirmada"), texto envelhecido: a fonte foi confirmada em D-032, `daily_listing_visits` esta em producao e D-156 corrigiu a coleta. Ou seja: dois numeros na tela sem definicao — exatamente o que D-023 proibe. A tarefa parecia ser "escrever duas linhas no catalogo".
+
+**O que catalogar revelou.** Antes de escrever a definicao, fui medir o que as telas realmente calculavam. Havia **TRES implementacoes** da mesma metrica, e nenhuma igual a outra:
+
+- `get_listing_traffic` — percentual (`* 100`), e **sem nenhum consumidor de tela** (a tela migrou em D-138 e o comentario da funcao ainda dizia "Consumida por /anuncios");
+- `get_listing_dashboard_summary` — fracao, criada por MIM em D-168 sem conferir a que ja existia;
+- `get_listings_dashboard` — percentual, e **esta e a que /anuncios usa de verdade**, com a tela concatenando `${row.conversion_rate}%` no numero cru (sem locale: "10.23%", ponto em vez de virgula).
+
+**Decisao 1 — unidade unica, com precedente:** `taxa_cancelamento` ja era `round(x, 4)` em SQL e `formatPercent` documenta "Recebe a FRACAO". As tres passam a devolver **fracao**; as telas formatam.
+
+**Decisao 2 — a base estava errada, e isso era visivel em producao:** o numerador somava pedidos da JANELA INTEIRA sobre um denominador que so existe nos dias em que o job coletou visitas. Medido no Dev sobre agosto/2026: **11 dias de coleta contra 31 de pedidos**, e o resultado eram **93 anuncios com conversao acima de 100%, o maior com 2.900%**. Restringir o numerador aos DIAS OBSERVADOS zera os 93 e faz o maximo cair para exatamente 1,0000. E o principio do subconjunto coberto de D-166 aplicado a trafego: numerador e denominador do MESMO recorte.
+
+**Decisao 3 — cobertura declarada, nao escondida:** `days_observed` sai das tres RPCs e aparece na tela — coluna "obs." (2/30) em `/anuncios`, ressalva no card do Dashboard ("observadas em 2 de 30 dias", "pedidos / visitas dos 2 dias observados"). Media real no Dev: 4,9 dias observados em 31. Um numero honesto na formula e enganoso na leitura continua enganando.
+
+**Decisao 4 — grao de SKU nao existe de proposito:** a fonte e por MLB. Somar visitas de anuncios distintos para um SKU exigiria vinculo completo, e vinculo incompleto viraria denominador incompleto — o defeito que esta fatia acabou de corrigir. As duas sao as primeiras definicoes do catalogo com grao de anuncio e sem grao de SKU, e um teste guarda essa escolha.
+
+**EXPLAIN reprovou a primeira formulacao:** juntar `daily_listing_metrics` linha a linha contra as 14.984 visitas deu Nested Loop com Memoize — 14.984 lookups, **50.949 buffers, 130 ms**. Agregar as metricas POR DIA antes trocou isso por hash join entre conjuntos ja reduzidos: **4.149 buffers, 59,8 ms** — mais rapido que a versao ANTIGA da funcao (578 ms), que nem fazia esta conta. De quebra, `metricas` passou a derivar de `metricas_dia`: uma leitura da tabela em vez de duas.
+
+**Lacuna fechada de passagem:** `get_listings_dashboard`, a RPC que a tela principal de anuncios usa, **nao tinha nenhum teste de integracao**. Ganhou cinco (conversao sobre dias observados, NULL sem visita, `total_count` do conjunto filtrado, anon negado, isolamento por organizacao).
+
+**Verificacao:** tres migrations (`20260831173454`, `173535`, `174004`) nos DOIS bancos, com ensaio revertido no Dev antes de cada uma (3.056/3.056 linhas conferidas contra a formula antiga: novo = antigo/100) e conferencia depois de aplicar (0 acima de 100%, maior 1,0000, sobre os 5.085 anuncios reais). **450/450 testes de integracao em banco recriado do zero**, `check` 29/29, build 8/8, **13/13 Playwright**. **Telas VISTAS renderizadas**: `/anuncios` (obs. 2/30, conversao 1,3% em pt-BR) e o Dashboard de Anuncio (cada card com seu id canonico).
+
+**Impacto:** as tres migrations acima, `packages/db/src/{types.ts,rls.integration.test.ts}`, `apps/web/app/anuncios/page.tsx`, `apps/web/app/anuncios/[itemId]/page.tsx`, `docs/{METRICS,ROADMAP,HANDOFF}.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:

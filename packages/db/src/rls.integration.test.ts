@@ -278,11 +278,33 @@ describe("catálogo de métricas", () => {
       "receita_bruta",
       "skus_distintos_vendidos",
       "taxa_cancelamento",
+      "taxa_conversao",
       "taxas_ml",
       "ticket_medio",
       "unidades_vendidas",
       "valor_cancelado",
+      "visitas",
     ]);
+  });
+
+  /**
+   * As duas nasceram em D-170 e sao as PRIMEIRAS com grao de anuncio sem
+   * grao de SKU — a fonte e por MLB, e nao ha como somar visitas de anuncios
+   * distintos para um SKU sem vinculo completo. O teste guarda essa escolha:
+   * se alguem acrescentar 'sku' aqui sem o read model que a sustente, a
+   * definicao passa a prometer o que a tela nao tem.
+   */
+  it("visitas e taxa_conversao: grão de anúncio, sem grão de SKU (D-170)", async () => {
+    const rows = await asUser<{ id: string; granularities: string; cancellation_treatment: string }>(
+      ADMIN_SB,
+      "select id, granularities::text as granularities, cancellation_treatment from public.metric_definitions where id in ('visitas','taxa_conversao') order by id",
+    );
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.id).toBe("taxa_conversao");
+    expect(rows[0]?.granularities).toBe("{listing,account,organization}");
+    expect(rows[1]?.id).toBe("visitas");
+    expect(rows[1]?.granularities).toBe("{listing,account,organization}");
   });
 
   it("authenticated sem organização não lê definição nenhuma", async () => {
@@ -4157,7 +4179,12 @@ describe("daily_listing_visits e get_listing_traffic (D-032, Fase 5B)", () => {
          (organization_id, ml_account_id, mlb_id, variation_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
        values
          ($1,$2,$3,null,$4,5,500,5,5),
-         ($1,$2,$5,null,$4,2,200,2,2)`,
+         ($1,$2,$5,null,$4,2,200,2,2),
+         -- DIA SEM VISITA (2026-08-21 não está entre as datas de visita
+         -- acima): é o caso que separa a conversão certa da errada em D-170.
+         -- Somar estes 3 pedidos sobre um denominador que não cobre este dia
+         -- é exatamente o que inflava a taxa acima de 100% em produção.
+         ($1,$2,$3,null,'2026-08-21',3,300,3,3)`,
       [ORG_SB, CONTA_TRAFEGO, ITEM_ID, TODAY, ITEM_SO_PEDIDO],
     );
   });
@@ -4182,11 +4209,12 @@ describe("daily_listing_visits e get_listing_traffic (D-032, Fase 5B)", () => {
     await expect(asAnon("select * from public.daily_listing_visits")).rejects.toThrow(/permission denied/i);
   });
 
-  it("get_listing_traffic soma visitas no intervalo e calcula conversão (pedidos / visitas)", async () => {
+  it("get_listing_traffic: conversão é FRAÇÃO e só sobre os dias observados (D-170)", async () => {
     const rows = await asUser<{
       item_id: string;
       visits: string;
       orders_count: string;
+      days_observed: string;
       conversion_rate: string;
     }>(
       ADMIN_SB,
@@ -4195,8 +4223,14 @@ describe("daily_listing_visits e get_listing_traffic (D-032, Fase 5B)", () => {
 
     expect(rows).toHaveLength(1);
     expect(Number(rows[0]?.visits)).toBe(50);
-    expect(Number(rows[0]?.orders_count)).toBe(5);
-    expect(Number(rows[0]?.conversion_rate)).toBe(10);
+    // Pedidos da JANELA INTEIRA: 5 no dia com visita + 3 no dia sem.
+    expect(Number(rows[0]?.orders_count)).toBe(8);
+    // Dois dias de coleta (20/08 e 23/08); 21/08 teve pedido, não visita.
+    expect(Number(rows[0]?.days_observed)).toBe(2);
+    // 5 pedidos observados ÷ 50 visitas = 0,1 — e NÃO 8/50 = 0,16, que é o
+    // que a fórmula antiga faria ao misturar as duas janelas. Fração, não
+    // percentual: a tela formata com formatPercent.
+    expect(rows[0]?.conversion_rate).toBe("0.1000");
   });
 
   it("item com pedido mas sem visita no período: conversion_rate nulo, não Infinity", async () => {
@@ -4211,14 +4245,16 @@ describe("daily_listing_visits e get_listing_traffic (D-032, Fase 5B)", () => {
     expect(rows[0]?.conversion_rate).toBeNull();
   });
 
-  it("visita fora da janela de datas não conta na soma", async () => {
-    const rows = await asUser<{ visits: string }>(
+  it("visita fora da janela de datas não conta na soma nem na cobertura", async () => {
+    const rows = await asUser<{ visits: string; days_observed: string }>(
       ADMIN_SB,
       `select * from public.get_listing_traffic('${ORG_SB}','${WINDOW_START}','${TODAY}') where item_id='${ITEM_ID}'`,
     );
 
-    // 20 + 30 = 50, sem contar as 999 de 2020-01-02.
+    // 20 + 30 = 50, sem contar as 999 de 2020-01-02 — que também não entram
+    // em days_observed: dia fora da janela não é dia observado.
     expect(Number(rows[0]?.visits)).toBe(50);
+    expect(Number(rows[0]?.days_observed)).toBe(2);
   });
 
   it("anon não executa get_listing_traffic", async () => {
@@ -4276,7 +4312,8 @@ describe("get_listing_dashboard_summary (D-168, Dashboard 360º do Anúncio)", (
          (organization_id, ml_account_id, mlb_id, variation_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
        values
          ($1,$2,$3,null,$4,5,500,5,5),
-         ($1,$2,$5,null,$4,2,200,2,2)
+         ($1,$2,$5,null,$4,2,200,2,2),
+         ($1,$2,$3,null,'2026-08-21',3,300,3,3)
        on conflict do nothing`,
       [ORG_SB, CONTA_TRAFEGO, ITEM_ID, TODAY, ITEM_SO_PEDIDO],
     );
@@ -4288,16 +4325,20 @@ describe("get_listing_dashboard_summary (D-168, Dashboard 360º do Anúncio)", (
       gross_revenue: string;
       orders_count: string;
       visits: string;
+      days_observed: string;
       conversion: string;
     }>(ADMIN_SB, CALL(ITEM_ID));
 
     expect(rows).toHaveLength(1);
-    expect(Number(rows[0]?.units_sold)).toBe(5);
-    expect(rows[0]?.gross_revenue).toBe("500.00");
-    expect(Number(rows[0]?.orders_count)).toBe(5);
+    // Venda da JANELA INTEIRA: 5 unidades no dia observado + 3 no dia sem
+    // visita. Estas três colunas não dependem da coleta de visitas.
+    expect(Number(rows[0]?.units_sold)).toBe(8);
+    expect(rows[0]?.gross_revenue).toBe("800.00");
+    expect(Number(rows[0]?.orders_count)).toBe(8);
     // 20 + 30 = 50, sem as 999 de 2020-01-02.
     expect(Number(rows[0]?.visits)).toBe(50);
-    // 5 pedidos ÷ 50 visitas.
+    expect(Number(rows[0]?.days_observed)).toBe(2);
+    // 5 pedidos DOS DIAS OBSERVADOS ÷ 50 visitas (D-170) — não 8/50.
     expect(rows[0]?.conversion).toBe("0.1000");
   });
 
@@ -4314,7 +4355,7 @@ describe("get_listing_dashboard_summary (D-168, Dashboard 360º do Anúncio)", (
   });
 
   it("security invoker: usuário de outra organização soma zero mesmo passando os IDs certos", async () => {
-    const rows = await asUser<{ units_sold: string; visits: string; conversion: string | null }>(
+    const rows = await asUser<{ units_sold: string; visits: string; days_observed: string; conversion: string | null }>(
       DE_OUTRA_ORG,
       CALL(ITEM_ID),
     );
@@ -4329,6 +4370,86 @@ describe("get_listing_dashboard_summary (D-168, Dashboard 360º do Anúncio)", (
 
   it("anon não executa get_listing_dashboard_summary", async () => {
     await expect(asAnon(CALL(ITEM_ID))).rejects.toThrow(/permission denied/i);
+  });
+});
+
+// get_listings_dashboard — a RPC que a tela /anuncios realmente usa, e que
+// ate D-170 nao tinha teste de integracao nenhum. Reusa a fixture de trafego
+// (mesma conta, mesmo item, com o dia 21/08 que tem pedido e NAO tem visita).
+describe("get_listings_dashboard (D-138; conversão canônica em D-170)", () => {
+  const CONTA_TRAFEGO = "dddd8888-0000-4000-8000-000000000088";
+  const ITEM_ID = "MLB900100500";
+  const ITEM_SO_PEDIDO = "MLB900100501";
+  const TODAY = "2026-08-23";
+  const WINDOW_START = "2026-07-25";
+
+  const CALL = `select * from public.get_listings_dashboard('${ORG_SB}','${WINDOW_START}','${TODAY}')`;
+
+  beforeAll(async () => {
+    // A funcao parte de `listings`: sem a linha do anuncio, a fixture de
+    // metricas/visitas nao aparece.
+    await client.query(
+      `insert into public.listings
+         (organization_id, ml_account_id, item_id, title, status, price, currency_id, available_quantity, synced_at)
+       values
+         ($1,$2,$3,'Anúncio com visitas observadas','ACTIVE',100,'BRL',5,now()),
+         ($1,$2,$4,'Anúncio que vendeu sem visita','ACTIVE',200,'BRL',5,now())
+       on conflict (ml_account_id, item_id) do nothing`,
+      [ORG_SB, CONTA_TRAFEGO, ITEM_ID, ITEM_SO_PEDIDO],
+    );
+  });
+
+  it("conversão é fração sobre os dias observados, com days_observed ao lado", async () => {
+    const rows = await asUser<{
+      item_id: string;
+      visits: string;
+      units_sold: string;
+      days_observed: string;
+      conversion_rate: string | null;
+      total_count: string;
+    }>(ADMIN_SB, `${CALL} where item_id='${ITEM_ID}'`);
+
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0]?.visits)).toBe(50);
+    // Venda da janela inteira (5 + 3), como nas outras RPCs.
+    expect(Number(rows[0]?.units_sold)).toBe(8);
+    expect(Number(rows[0]?.days_observed)).toBe(2);
+    // 5 pedidos observados ÷ 50 visitas. A fórmula antiga dava "16.00"
+    // (8/50 em percentual) — dois erros de uma vez.
+    expect(rows[0]?.conversion_rate).toBe("0.1000");
+  });
+
+  it("anúncio que vendeu sem visita observada: taxa NULL e cobertura zero, nunca 0%", async () => {
+    const rows = await asUser<{ visits: string; days_observed: string; conversion_rate: string | null }>(
+      ADMIN_SB,
+      `${CALL} where item_id='${ITEM_SO_PEDIDO}'`,
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0]?.visits ?? 0)).toBe(0);
+    expect(Number(rows[0]?.days_observed)).toBe(0);
+    expect(rows[0]?.conversion_rate).toBeNull();
+  });
+
+  it("total_count conta o conjunto filtrado inteiro, não a página", async () => {
+    const rows = await asUser<{ item_id: string; total_count: string }>(
+      ADMIN_SB,
+      `select * from public.get_listings_dashboard('${ORG_SB}','${WINDOW_START}','${TODAY}', null, null, 'all', 'MLB9001005', 1, 0)`,
+    );
+
+    // Uma linha na página, mas a contagem enxerga os dois anúncios da busca.
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0]?.total_count)).toBe(2);
+  });
+
+  it("anon não executa get_listings_dashboard", async () => {
+    await expect(asAnon(CALL)).rejects.toThrow(/permission denied/i);
+  });
+
+  it("usuário de outra organização não enxerga estes anúncios", async () => {
+    const rows = await asUser<{ item_id: string }>(DE_OUTRA_ORG, `${CALL} where item_id='${ITEM_ID}'`);
+
+    expect(rows).toHaveLength(0);
   });
 });
 

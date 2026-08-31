@@ -2,7 +2,7 @@
 
 > Dono documental de: definição oficial de cada métrica.
 > Este documento é **normativo**. Se um número na interface discorda daqui, o número está errado.
-> Status: **regras canônicas e métricas de vendas aprovadas.** Métricas de estoque, tráfego e Ads permanecem para a Fase 5B.
+> Status: **regras canônicas, métricas de vendas e de tráfego aprovadas.** Métricas de estoque e Ads permanecem para a Fase 5B.
 
 ---
 
@@ -104,11 +104,24 @@ atualizado_em      data da última revisão desta definição
 
 ### 5.5 Dependentes de fonte ainda não confirmada
 
-`visitas` · `taxa_conversao` · `investimento_ads` · `receita_ads` · `acos` · `margem_contribuicao`
+`investimento_ads` · `receita_ads` · `acos` · `margem_contribuicao`
 
-**Escopo definido:** visitas, conversão e Ads entram na **Fase 5B** (D-032), depois do estoque. Até lá, o diagnóstico **não distingue queda de tráfego de queda de conversão** e deve declarar isso explicitamente, em vez de inferir. Margem depende de custo cadastrado por SKU.
+**Escopo definido:** Ads entra depois; `margem_contribuicao` depende de custo cadastrado por SKU. Enquanto a fonte não existir, o diagnóstico **não distingue queda de tráfego de queda de conversão sem dizer que não distingue** — declara, em vez de inferir.
 
 Nenhuma dessas será exibida enquanto a fonte não estiver confirmada e a definição preenchida. **Métrica sem fonte confirmada não vai para a tela.**
+
+> **`visitas` e `taxa_conversao` saíram desta seção em 2026-08-31 (D-170).** O texto tinha envelhecido: a fonte foi confirmada em D-032, `daily_listing_visits` está em produção e a coleta foi corrigida em D-156 — mas as duas apareciam na tela **sem definição canônica**, exatamente o que a regra central proíbe. As definições estão em **5D**, abaixo.
+
+### 5D. Métricas de tráfego (D-032 na fonte, catalogadas em D-170)
+
+| ID | Nome | Fórmula | Fonte | Ressalva obrigatória na tela |
+|---|---|---|---|---|
+| `visitas` | Visitas do anúncio | `SUM(daily_listing_visits.visits)` | `GET /visits/items` do Mercado Livre, por dia, gravado por `sync.listing-visits.snapshot` (D-032; coleta corrigida em D-156) | Grão de **anúncio**, nunca de SKU. Dia sem coleta é **ausência de observação**, não zero visita — a tela mostra em quantos dias houve coleta |
+| `taxa_conversao` | Taxa de conversão do anúncio | `SUM(pedidos nos dias com visita observada) / NULLIF(SUM(visitas), 0)` | `daily_listing_metrics.orders_count` (nosso ledger) sobre `daily_listing_visits.visits` (Mercado Livre) | **Fração**, como `taxa_cancelamento` — a tela formata em percentual. Sem visita observada a taxa é **NULL**, nunca 0%. Não é conversão de sessão nem funil do ML |
+
+**Por que o numerador é restrito aos dias observados.** As duas pontas da razão vêm de fontes diferentes, com coberturas diferentes: os pedidos existem todo dia, as visitas só nos dias em que o job rodou. Medido no Dev em 2026-08-31, sobre agosto: **11 dias de coleta contra 31 de pedidos**, e a fórmula antiga (janela inteira ÷ visitas parciais) produzia **93 anúncios com conversão acima de 100%, o maior com 2.900%**. Restringir o numerador ao mesmo recorte do denominador zera os 93 e faz o máximo cair para exatamente 1,0000. É o princípio do subconjunto coberto de D-166 aplicado a tráfego: **numerador e denominador do mesmo recorte, e a cobertura declarada ao lado do número**.
+
+**Grão de SKU não existe de propósito.** A fonte é por MLB. Somar visitas de anúncios distintos para um SKU exigiria vínculo completo — e vínculo incompleto viraria denominador incompleto, que é o defeito que esta definição acabou de corrigir.
 
 ---
 

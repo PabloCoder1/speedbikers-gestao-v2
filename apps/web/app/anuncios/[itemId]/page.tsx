@@ -71,12 +71,38 @@ const cardStyle: React.CSSProperties = {
   gap: "0.25rem",
 };
 
-function SummaryCard({ label, value, note }: { label: string; value: string; note?: string }): ReactNode {
+/**
+ * Dois campos separados, no mesmo padrão de `/vendas` (D-157): `ressalva` é
+ * prosa para quem lê a tela, `metricId` é o id canônico do catálogo
+ * (`metric_definitions`) — a exigência de D-023. Misturar os dois numa
+ * string só faria o id parecer explicação, e explicação nenhuma substitui a
+ * definição.
+ */
+function SummaryCard({
+  label,
+  value,
+  ressalva,
+  metricId,
+}: {
+  label: string;
+  value: string;
+  ressalva?: string;
+  metricId?: string;
+}): ReactNode {
   return (
     <div style={cardStyle}>
       <span style={{ fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>{label}</span>
       <span style={{ fontSize: "1.5rem", fontWeight: 700 }}>{value}</span>
-      {note !== undefined && <span style={{ fontSize: "0.6875rem", color: "var(--sb-muted-ink)" }}>{note}</span>}
+      {ressalva !== undefined && (
+        <span style={{ fontSize: "0.6875rem", color: "var(--sb-text-soft)" }}>{ressalva}</span>
+      )}
+      {metricId !== undefined && (
+        <span
+          style={{ fontSize: "0.6875rem", color: "var(--sb-muted-ink)", fontFamily: "ui-monospace, monospace" }}
+        >
+          {metricId}
+        </span>
+      )}
     </div>
   );
 }
@@ -217,14 +243,28 @@ export default async function AnuncioPage({
             marginBottom: "var(--sb-space-4)",
           }}
         >
-          <SummaryCard label="Unidades vendidas" value={formatCount(summary.units_sold)} note="unidades_vendidas" />
-          <SummaryCard label="Receita bruta" value={formatCurrency(summary.gross_revenue)} note="receita_bruta" />
-          <SummaryCard label="Pedidos" value={formatCount(summary.orders_count)} note="pedidos" />
-          <SummaryCard label="Visitas" value={formatCount(summary.visits)} />
+          <SummaryCard label="Unidades vendidas" value={formatCount(summary.units_sold)} metricId="unidades_vendidas" />
+          <SummaryCard label="Receita bruta" value={formatCurrency(summary.gross_revenue)} metricId="receita_bruta" />
+          <SummaryCard label="Pedidos" value={formatCount(summary.orders_count)} metricId="pedidos" />
+          <SummaryCard
+            label="Visitas"
+            value={formatCount(summary.visits)}
+            ressalva={
+              summary.days_observed === 0
+                ? "nenhum dia com coleta de visitas no período"
+                : `observadas em ${String(summary.days_observed)} de ${String(LOOKBACK_DAYS)} dias`
+            }
+            metricId="visitas"
+          />
           <SummaryCard
             label="Conversão"
             value={summary.conversion === null ? "—" : formatPercent(summary.conversion)}
-            note="pedidos ÷ visitas; — sem visita no período"
+            ressalva={
+              summary.conversion === null
+                ? "sem visita observada — taxa indefinida, não 0%"
+                : `pedidos ÷ visitas dos ${String(summary.days_observed)} dias observados`
+            }
+            metricId="taxa_conversao"
           />
         </div>
       )}

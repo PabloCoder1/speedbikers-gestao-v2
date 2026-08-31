@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { FILTER_SUBMIT_STYLE, FilterPill } from "../../components/filter-pill";
 import { Shell } from "../../components/shell";
 import { StatusPill } from "../../components/status-pill";
-import { formatCount, formatCurrency, formatDateTime } from "../../lib/format";
+import { formatCount, formatCurrency, formatDateTime, formatPercent } from "../../lib/format";
 import { listingStatusLabel } from "../../lib/labels";
 import {
   LINK_STATE_FILTERS,
@@ -60,6 +60,7 @@ interface DashboardRow {
   units_sold: number;
   gross_revenue: number;
   visits: number | null;
+  days_observed: number;
   conversion_rate: number | null;
   total_count: number;
 }
@@ -185,6 +186,13 @@ export default async function AnunciosPage({
         de Vinculações.
       </p>
 
+      <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.75rem", color: "var(--sb-muted-ink)" }}>
+        <span style={{ fontFamily: "ui-monospace, monospace" }}>visitas</span> ·{" "}
+        <span style={{ fontFamily: "ui-monospace, monospace" }}>taxa_conversao</span> — a conversão usa como
+        numerador os pedidos dos dias em que houve coleta de visitas (a coluna “obs.” mostra quantos foram), nunca a
+        janela inteira sobre um denominador parcial. Sem visita observada a taxa fica “—”: indefinida, não 0%.
+      </p>
+
       {/* Filtros. Todos na URL, para o link ser compartilhável e o voltar do navegador funcionar. */}
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--sb-space-2)", marginBottom: "var(--sb-space-3)" }}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", alignItems: "center" }}>
@@ -293,6 +301,7 @@ export default async function AnunciosPage({
                 <th style={th}>Vendido ({LOOKBACK_DAYS}d)</th>
                 <th style={th}>Receita ({LOOKBACK_DAYS}d)</th>
                 <th style={th}>Visitas ({LOOKBACK_DAYS}d)</th>
+                <th style={th}>Obs.</th>
                 <th style={th}>Conversão</th>
                 <th style={th}>Sincronizado em</th>
               </tr>
@@ -335,9 +344,15 @@ export default async function AnunciosPage({
                     <td style={tdNumber}>{formatCount(row.units_sold)}</td>
                     <td style={tdNumber}>{formatCurrency(row.gross_revenue)}</td>
                     <td style={tdNumber}>{row.visits === null ? "—" : formatCount(row.visits)}</td>
-                    <td style={tdNumber}>
-                      {row.conversion_rate === null ? "—" : `${String(row.conversion_rate)}%`}
+                    {/*
+                      Dias com coleta de visitas dentro da janela: é a base do
+                      denominador, e sem ela a taxa ao lado seria lida como se
+                      cobrisse os 30 dias.
+                    */}
+                    <td style={{ ...tdNumber, color: "var(--sb-text-soft)" }} title="Dias com visitas observadas na janela">
+                      {row.days_observed === 0 ? "—" : `${String(row.days_observed)}/${String(LOOKBACK_DAYS)}`}
                     </td>
+                    <td style={tdNumber}>{formatPercent(row.conversion_rate)}</td>
                     <td style={td}>{formatDateTime(row.synced_at)}</td>
                   </tr>
                 );

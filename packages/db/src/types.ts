@@ -4055,9 +4055,10 @@ export type Database = {
         }
         Returns: {
           // CORRECAO MANUAL (classe D-133): conversion e NULL sem visita no
-          // periodo (round(orders / nullif(visits, 0))) — o gerador nao
-          // enxerga nulabilidade de coluna calculada.
+          // periodo (round(pedidos_observados / nullif(visits, 0))) — o
+          // gerador nao enxerga nulabilidade de coluna calculada.
           conversion: number | null
+          days_observed: number
           gross_revenue: number
           orders_count: number
           units_sold: number
@@ -4084,7 +4085,11 @@ export type Database = {
           p_organization_id: string
         }
         Returns: {
-          conversion_rate: number
+          // CORRECAO MANUAL (classe D-133): conversion_rate e NULL quando
+          // nao houve visita observada no periodo (D-170) — o gerador nao
+          // enxerga nulabilidade de coluna calculada.
+          conversion_rate: number | null
+          days_observed: number
           item_id: string
           ml_account_id: string
           orders_count: number
