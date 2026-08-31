@@ -149,10 +149,10 @@ Nenhuma dessas será exibida enquanto a fonte não estiver confirmada e a defini
 > cancelamento calcula os DOIS lados (cancelados e válidos) da mesma leitura
 > de `orders` (L1) — misturar cancelados de L1 com o `pedidos` de L3
 > embutiria o atraso do recálculo na razão (0,1% medido no dia da entrega).
-> Segue bloqueada com o motivo nomeado: `valor_estoque` (5C.4). A visão
-> "hoje" foi resolvida em D-158; as FONTES da margem operacional são
-> persistidas desde D-165 (a métrica entra com a RPC/tela sobre janela
-> coberta).
+> Segue bloqueada com o motivo nomeado: `valor_estoque` (5C.4 — espera o
+> ensaio de `/produtos`). Todas as demais métricas de 5C.2 estão
+> implementadas (D-157/D-158/D-165/D-166) — **o item de Vendas do PRD está
+> COMPLETO**.
 
 ### 5C.1 O veto: "receita líquida" não é um nome permitido
 
@@ -167,7 +167,7 @@ A conciliação real só existe no ciclo mensal de `/billing/integration/...`, q
 | ID | Nome | Fórmula | Fonte | Ressalva obrigatória na tela |
 |---|---|---|---|---|
 | `taxas_ml` | Taxas do Mercado Livre | `SUM(order_items.sale_fee)` sobre vendas válidas | `order_items.sale_fee` (100% preenchido, medido) | É a **comissão de venda**. Não inclui frete, taxa fixa, parcelamento nem impostos |
-| `margem_operacional_pedido` | Margem operacional | `receita_bruta − taxas_ml − frete_vendedor − desconto_vendedor` | idem + `order_financials` (D-165: frete = `senders[].cost` somado; desconto = `amounts.seller`) | **Não é receita líquida.** Lista o que não entra. **Fontes PERSISTIDAS desde D-165** (varredura diária dos últimos 7 dias; NULL = não observado, nunca zero) — a métrica em si entra quando a RPC/tela nascerem sobre janela COBERTA, declarando a cobertura (pedidos com captura ÷ pedidos do período) |
+| `margem_operacional_pedido` | Margem operacional | `receita_bruta − taxas_ml − frete_vendedor − desconto_vendedor`, **sobre pedidos COBERTOS** | `orders` + `order_items.sale_fee` + `order_financials` (D-165) | **IMPLEMENTADA em D-166** (`get_sales_margin_summary` + seção em `/vendas`): computada SÓ sobre pedidos com frete E desconto observados, receita/taxas do MESMO subconjunto, cobertura declarada ao lado (cobertos ÷ válidos), zero cobertura = NULL. **Não é receita líquida** (5C.1) — a tela lista o que não entra. Componentes `frete_vendedor`/`desconto_vendedor` catalogados junto |
 | `pedidos_cancelados` | Pedidos cancelados | `COUNT(DISTINCT orders.id) where status in ('cancelled','pending_cancel')` | `orders.status` | `pending_cancel` conta como cancelado (mesma semântica de `order.cancelled`, `@sb/domain`) |
 | `taxa_cancelamento` | Taxa de cancelamento | `pedidos_cancelados / NULLIF(pedidos_cancelados + pedidos, 0)` | idem | Denominador = **elegíveis** (válidos + cancelados), não só válidos. **Cancelamento ≠ devolução ≠ reembolso ≠ mediação** — ver 5C.3 |
 | `valor_cancelado` | Valor cancelado | `SUM(orders.total_amount)` dos cancelados | `orders.total_amount` | Valor **pedido**, não valor estornado — a V3 não observa o estorno financeiro |

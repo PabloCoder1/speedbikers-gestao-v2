@@ -4181,6 +4181,22 @@ export type Database = {
           valor_cancelado: number
         }[]
       }
+      get_sales_margin_summary: {
+        Args: {
+          p_date_from: string
+          p_date_to: string
+          p_ml_account_id?: string
+        }
+        Returns: {
+          desconto_vendedor: number
+          frete_vendedor: number
+          gross_revenue_covered: number
+          margem_operacional: number
+          orders_covered: number
+          orders_total: number
+          taxas_ml_covered: number
+        }[]
+      }
       get_sales_summary: {
         Args: {
           p_date_from: string

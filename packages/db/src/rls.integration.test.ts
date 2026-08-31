@@ -268,6 +268,9 @@ describe("catálogo de métricas", () => {
     const rows = await asUser<{ id: string }>(ADMIN_SB, "select id from public.metric_definitions order by id");
 
     expect(rows.map((row) => row.id)).toEqual([
+      "desconto_vendedor",
+      "frete_vendedor",
+      "margem_operacional_pedido",
       "pedidos",
       "pedidos_cancelados",
       "pedidos_por_pack",
@@ -651,6 +654,15 @@ describe("métricas diárias de venda", () => {
          ($5,$7,$9,0,'MLB900003',null,'Sem vínculo',1,40,'BRL',null,4.00),
          ($6,$10,$11,0,'MLB900004',null,'Outra organização',1,20,'BRL',null,2.00)`,
       [...ORDER_IDS, ORG_SB, CONTA_A, CONTA_B, ORG_OUTRA, CONTA_OUTRA, skuA, skuB],
+    );
+
+    // Custos por pedido (D-166): 1001 e 1002 COBERTOS (frete E desconto
+    // observados); 1003 com frete NULO (não observado) fica FORA da margem;
+    // 1005 sem captura nenhuma. O cancelado (1004) nunca entra.
+    await client.query(
+      `insert into public.order_financials (order_id, organization_id, ml_account_id, seller_shipping_cost, seller_discount)
+       values ($1,$4,$5,15.00,5.00), ($2,$4,$5,25.00,0.00), ($3,$4,$5,null,3.00)`,
+      [ORDER_IDS[0], ORDER_IDS[1], ORDER_IDS[2], ORG_SB, CONTA_A],
     );
 
     // Pedido pending_cancel (D-157): conta como CANCELADO na taxa — mesma
@@ -1194,6 +1206,66 @@ describe("métricas diárias de venda", () => {
 
       expect(rows[0]?.gross_revenue).toBe("0");
       expect(rows[0]?.last_order_at).toBeNull();
+    });
+  });
+
+  // get_sales_margin_summary (20260831161834, D-166) — a margem só sobre
+  // pedidos COBERTOS (frete E desconto observados), com cobertura declarada.
+  describe("get_sales_margin_summary (D-166)", () => {
+    const COLS =
+      "orders_total, orders_covered, gross_revenue_covered, taxas_ml_covered, frete_vendedor, desconto_vendedor, margem_operacional";
+
+    it("só pedidos cobertos entram — frete NULO exclui, cancelado nunca entra, e receita/taxas saem do MESMO subconjunto", async () => {
+      const rows = await asUser<{
+        orders_total: string;
+        orders_covered: string;
+        gross_revenue_covered: string;
+        taxas_ml_covered: string;
+        frete_vendedor: string;
+        desconto_vendedor: string;
+        margem_operacional: string;
+      }>(ADMIN_SB, `select ${COLS} from public.get_sales_margin_summary('2026-08-20','2026-08-20')`);
+
+      expect(rows[0]).toEqual({
+        // 4 válidos na organização; só 1001 e 1002 têm os DOIS custos.
+        orders_total: "4",
+        orders_covered: "2",
+        // Receita e taxas do MESMO subconjunto coberto (100+50; 10.50+5.25).
+        gross_revenue_covered: "150.00",
+        taxas_ml_covered: "15.75",
+        frete_vendedor: "40.00",
+        desconto_vendedor: "5.00",
+        // 150 − 15.75 − 40 − 5.
+        margem_operacional: "89.25",
+      });
+    });
+
+    it("filtra por conta quando informado", async () => {
+      const rows = await asUser<{ orders_total: string; margem_operacional: string }>(
+        ADMIN_SB,
+        `select ${COLS} from public.get_sales_margin_summary('2026-08-20','2026-08-20','${CONTA_A}')`,
+      );
+
+      expect(rows[0]).toMatchObject({ orders_total: "3", margem_operacional: "89.25" });
+    });
+
+    it("zero cobertura: TUDO nulo — recusa como contrato, nunca R$ 0,00 fingido", async () => {
+      const rows = await asUser<{
+        orders_total: string;
+        orders_covered: string;
+        margem_operacional: string | null;
+        frete_vendedor: string | null;
+      }>(ADMIN_SB, `select ${COLS} from public.get_sales_margin_summary('2019-01-01','2019-01-01')`);
+
+      expect(rows[0]?.orders_covered).toBe("0");
+      expect(rows[0]?.margem_operacional).toBeNull();
+      expect(rows[0]?.frete_vendedor).toBeNull();
+    });
+
+    it("anon é recusado", async () => {
+      await expect(
+        asAnon(`select * from public.get_sales_margin_summary('2026-08-20','2026-08-20')`),
+      ).rejects.toThrow(/permission denied/i);
     });
   });
 });

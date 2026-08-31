@@ -3144,6 +3144,20 @@ A camada 3 foi encontrada pelo CATALOGO (enumerando as FKs RESTRICT reais), nao 
 
 **Impacto:** migration `20260831160501`, `apps/worker/src/handlers/{sync-order-financials.ts,sync-order-financials.test.ts,order-schema.ts,persist-order.ts,sync-runs.ts}`, `apps/worker/src/index.ts`, `apps/api/src/{order-financials-schedule.ts,order-financials-schedule.test.ts,app.ts,index.ts}`, `infra/cloud-scheduler.sh`, `packages/db/src/types.ts`, `docs/{METRICS,MERCADO_LIVRE,API,ROADMAP,HANDOFF}.md`.
 
+## D-166 - Margem operacional: so sobre pedidos COBERTOS, cobertura declarada -- o item de Vendas COMPLETO
+
+**Contexto:** a ultima metrica do item de Vendas (5C.2), destravada por D-165. O risco classico de uma "margem" e misturar pedidos com e sem custo capturado — a receita entraria inteira e o custo pela metade, subestimando custo com aparencia de precisao.
+
+**Decisao 1 — computada SO sobre pedidos COBERTOS** (frete E desconto observados — os dois nao-nulos): receita e taxas saem do MESMO subconjunto, nunca do periodo inteiro. Pedido com custo NULL (nao observado, D-165) fica FORA — incluir com zero seria a mentira que o NULL existe para impedir.
+
+**Decisao 2 — cobertura DECLARADA na resposta e na tela**: `orders_covered / orders_total` viaja na RPC e aparece ao lado do numero ("sobre X de Y pedidos validos, Z%"). Zero cobertura = NULL em tudo e a secao RECUSA com a explicacao (a captura comecou em 31/08) — recusa como contrato (D-144/D-147). Provado em producao no ensaio: 28.905 validos, 0 cobertos, tudo NULL.
+
+**Decisao 3 — o veto de 5C.1 vira texto fixo da secao**: "Nao e receita liquida" com a lista do que NAO entra (taxa fixa, parcelamento, custo do MP, impostos retidos, reembolsos posteriores — as lacunas da propria doc). Os componentes `frete_vendedor`/`desconto_vendedor` entraram no catalogo com IDs proprios (todo numero na tela carrega o seu, D-023).
+
+**Verificacao:** ensaio revertido no Dev com fixture (3 validos, 2 cobertos, margem 225.00 — frete NULL excluido, cancelado fora) ANTES da migration; migration `20260831161834` nos DOIS bancos na mesma versao; **436/436 testes de integracao em banco recriado do zero (100 migrations)** (+4 da RPC: subconjunto/exclusoes, filtro por conta, recusa por zero cobertura, anon; lista exata do catalogo atualizada — o guarda de D-157 pos-CI funcionando como desenhado); `check` 29/29, build 8/8. ⚠️ Tela nao vista renderizada; a secao nasce em RECUSA ate a primeira varredura de custos rodar (pos-deploy + scheduler).
+
+**Impacto:** migration `20260831161834`, `packages/db/src/{types.ts,rls.integration.test.ts}`, `apps/web/app/vendas/page.tsx`, `docs/{METRICS,ROADMAP,HANDOFF}.md`. **O item de Vendas do PRD esta COMPLETO (D-157→D-166) e a Fase 5C, 100%.**
+
 ## Como adicionar nova decisao
 
 Registrar:

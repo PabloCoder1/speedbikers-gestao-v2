@@ -100,6 +100,20 @@ interface TodaySummary {
   last_order_at: string | null;
 }
 
+/**
+ * Margem operacional (D-166) — nulidade REAL: com zero pedidos cobertos,
+ * TUDO vem NULL (recusa como contrato) — nunca R$ 0,00 fingido.
+ */
+interface MarginSummary {
+  orders_total: number;
+  orders_covered: number;
+  gross_revenue_covered: number | null;
+  taxas_ml_covered: number | null;
+  frete_vendedor: number | null;
+  desconto_vendedor: number | null;
+  margem_operacional: number | null;
+}
+
 interface MetricCardSpec {
   metricId: string;
   label: string;
@@ -260,6 +274,43 @@ function buildExpandedCards(current: ExpandedSummary, previous: ExpandedSummary 
       current: current.skus_distintos_vendidos,
       previous: previous?.skus_distintos_vendidos ?? null,
       ressalva: "Exclui itens vendidos sem vínculo de SKU (21,8% dos itens em 30 dias, medido).",
+    },
+  ];
+}
+
+/**
+ * Margem operacional (D-166, METRICS 5C.2) — computada SÓ sobre pedidos
+ * COBERTOS (frete E desconto observados, D-165), receita e taxas do MESMO
+ * subconjunto. A cobertura e o veto de 5C.1 vivem no cabeçalho da seção.
+ */
+function buildMarginCards(margin: MarginSummary, previous: MarginSummary | null): MetricCardSpec[] {
+  return [
+    {
+      metricId: "margem_operacional_pedido",
+      label: "Margem operacional",
+      formula: "receita − taxas − frete do vendedor − desconto, sobre pedidos cobertos",
+      format: formatCurrency,
+      current: margin.margem_operacional,
+      previous: previous?.margem_operacional ?? null,
+      ressalva: "Não é receita líquida: taxa fixa, parcelamento, custo do MP, impostos e reembolsos posteriores ficam fora.",
+    },
+    {
+      metricId: "frete_vendedor",
+      label: "Frete do vendedor",
+      formula: "SUM(senders[].cost) sobre pedidos cobertos",
+      format: formatCurrency,
+      current: margin.frete_vendedor,
+      previous: previous?.frete_vendedor ?? null,
+      ressalva: "Só pedidos com o custo observado — não observado nunca vira R$ 0,00.",
+    },
+    {
+      metricId: "desconto_vendedor",
+      label: "Desconto bancado pelo vendedor",
+      formula: "SUM(amounts.seller) sobre pedidos cobertos",
+      format: formatCurrency,
+      current: margin.desconto_vendedor,
+      previous: previous?.desconto_vendedor ?? null,
+      ressalva: "Exclui taxas adicionais e reembolsos posteriores (limite da própria doc).",
     },
   ];
 }
@@ -436,6 +487,8 @@ export default async function VendasPage({
     expandedResult,
     previousExpandedResult,
     todayResult,
+    marginResult,
+    previousMarginResult,
   ] = await Promise.all([
     supabase
       .rpc("get_sales_summary", { p_date_from: range.from, p_date_to: range.to, ...accountFilter })
@@ -476,6 +529,18 @@ export default async function VendasPage({
     // Sétima (D-158): visão "hoje" ao vivo sobre orders (L1) — independente
     // do período selecionado, respeita só o filtro de conta.
     supabase.rpc("get_sales_today_summary", { p_date: today, ...accountFilter }).single(),
+    // Oitava e nona (D-166): margem operacional sobre janela COBERTA,
+    // período atual e anterior, no mesmo paralelo.
+    supabase
+      .rpc("get_sales_margin_summary", { p_date_from: range.from, p_date_to: range.to, ...accountFilter })
+      .single(),
+    supabase
+      .rpc("get_sales_margin_summary", {
+        p_date_from: previousRange.from,
+        p_date_to: previousRange.to,
+        ...accountFilter,
+      })
+      .single(),
   ]);
 
   const summary: SalesSummary | null = currentResult.data ?? null;
@@ -502,11 +567,15 @@ export default async function VendasPage({
     previousSeriesResult.error ??
     expandedResult.error ??
     previousExpandedResult.error ??
-    todayResult.error;
+    todayResult.error ??
+    marginResult.error ??
+    previousMarginResult.error;
 
   const expanded: ExpandedSummary | null = expandedResult.data ?? null;
   const previousExpanded: ExpandedSummary | null = previousExpandedResult.data ?? null;
   const todaySummary: TodaySummary | null = todayResult.data ?? null;
+  const margin: MarginSummary | null = marginResult.data ?? null;
+  const previousMargin: MarginSummary | null = previousMarginResult.data ?? null;
 
   const lastComputedAt = summary?.last_computed_at ?? null;
   const freshness = classifySyncFreshness(lastComputedAt === null ? null : new Date(lastComputedAt), now);
@@ -745,6 +814,53 @@ export default async function VendasPage({
               <MetricCard key={card.metricId} card={card} showPrevious={previousExpanded !== null} />
             ))}
           </div>
+        </div>
+      )}
+
+      {/*
+        Margem operacional (D-166, 5C.1/5C.2): SÓ sobre pedidos cobertos,
+        cobertura declarada, e o veto — não é receita líquida. Com zero
+        cobertura, a seção RECUSA em vez de fingir número.
+      */}
+      {error === null && margin !== null && (
+        <div style={{ marginTop: "var(--sb-space-4)" }}>
+          <h2 style={{ fontSize: "1.0625rem", margin: "0 0 var(--sb-space-1)" }}>
+            Margem operacional — estimativa por pedido
+          </h2>
+
+          {margin.orders_covered === 0 ? (
+            <p style={{ margin: 0, color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
+              Nenhum dos {formatCount(margin.orders_total)} pedidos válidos do período tem frete e desconto
+              capturados ainda — a captura diária de custos começou em 31/08/2026 e a margem só é exibida
+              sobre pedidos cobertos, nunca estimada por cima.
+            </p>
+          ) : (
+            <>
+              <p style={{ margin: "0 0 var(--sb-space-2)", color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
+                Calculada sobre {formatCount(margin.orders_covered)} de {formatCount(margin.orders_total)}{" "}
+                pedidos válidos do período (
+                {formatPercent(margin.orders_covered / Math.max(margin.orders_total, 1))}) — os que têm frete e
+                desconto observados. <strong>Não é receita líquida</strong>: taxa fixa por pedido, parcelamento,
+                custo de cobrança do Mercado Pago, impostos retidos e reembolsos posteriores não são observados.
+              </p>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(13rem, 1fr))",
+                  gap: "var(--sb-space-3)",
+                }}
+              >
+                {buildMarginCards(margin, previousMargin).map((card) => (
+                  <MetricCard
+                    key={card.metricId}
+                    card={card}
+                    showPrevious={previousMargin !== null && previousMargin.orders_covered > 0}
+                  />
+                ))}
+              </div>
+            </>
+          )}
         </div>
       )}
 
