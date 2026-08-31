@@ -3,6 +3,8 @@ export {
   copilotQueryRequestSchema,
   diagnosisCandidateCauseSchema,
   diagnosisEvidenceSchema,
+  narrateActionInputSchema,
+  narrateActionOutputSchema,
   narrateSkuDiagnosisInputSchema,
   narrateSkuDiagnosisOutputSchema,
   salesAccountComparisonInputSchema,
@@ -22,6 +24,8 @@ export {
 export type {
   CopilotQueryRequest,
   CopilotToolName,
+  NarrateActionInput,
+  NarrateActionOutput,
   NarrateSkuDiagnosisInput,
   NarrateSkuDiagnosisOutput,
   SalesAccountComparisonInput,

@@ -366,7 +366,7 @@ A ordem não é preferência: é a Regra de Progressão deste arquivo. Quase tod
 
 - [x] **Correlação alcançar eventos de anúncio e pedido** — concluído em 2026-08-30 (D-152): RPC `get_sku_correlated_events` única para os TRÊS consumidores (tela, painel do SKU, worker) mapeia `listing.*` via `listings(conta, item_id)` e `order.*` via `order_items` congelados (D-020). Vocabulário FECHADO de anúncio — `available_quantity.changed` excluído de propósito (91% do ruído, consequência de venda, não causa). Causas clássicas com leitura própria. 34 ms medidos
 - [x] **Timeline de evidências** — concluído em 2026-08-31 (D-153): seção "Linha do tempo" no Dashboard de SKU via `get_sku_timeline` (os mesmos 3 caminhos de mapeamento de D-152, mas vocabulário ABERTO — história não edita o passado, `available_quantity.changed` entra AQUI e fica fora da correlação, contraste fixado em teste). Diff só para formatos documentados (`formatEventDiff`); últimos 50 com corte declarado. 70 ms medidos no pior caso
-- [ ] **IA explicando a AÇÃO**, não só o diagnóstico do SKU, com o vocabulário obrigatório (causa provável, fatores contribuintes, hipóteses, evidências contrárias, o que não conseguimos verificar)
+- [x] **IA explicando a AÇÃO** — concluído em 2026-08-31 (D-155): ferramenta `narrate_action` no motor de D-082 (Haiku 4.5, orçamento D-100), botão "Explicar com IA" na linha de `/acoes`. O input é só `{ actionId }` — a ação já vive no banco, a `api` a relê sob a RLS do usuário (autorização e dado no mesmo ato) e o prompt nasce da MESMA `describeActionEvidence` que a tela renderiza (movida para `@sb/domain` quando a `api` virou o segundo consumidor). Vocabulário obrigatório do PRD imposto no system prompt em cinco seções rotuladas, seção sem dado declara ausência, "causa verdadeira" proibida por instrução. **FASE 6B COMPLETA** (D-152→D-155)
 - [x] **Atalhos operacionais na Central de Ações** — concluído em 2026-08-31 (D-154): `actionShortcuts` (puro, testado) com a regra inversa da dor — só tela que EXISTE, com o filtro que ela realmente tem. Venda anômala: Dashboard do SKU + anúncios + reposição; reclamações: Caixa de Entrada SEM fingir filtro por SKU (não existe). De passagem, o próximo passo do diagnóstico prometia exatamente esse filtro inexistente — corrigido no domínio
 - [x] **Ruído antes da inteligência** — fechado com MEDIÇÃO em 2026-08-30 (D-152): `stock.balance.diverged` em ZERO nas últimas 24h — D-134/D-135 o eliminaram na ORIGEM (reparo do saldo + separação adjusted/diverged). Topo atual do ruído: `listing.available_quantity.changed`, 1.267 notificações/24h (91% do total, informativo) — segue como DECISÃO DE PRODUTO do usuário, já sinalizada
 
@@ -411,13 +411,18 @@ A Fase 5A antecede a Fase 4 porque o dashboard de vendas não usa estoque, e a F
 
 ## Próximo passo imediato
 
-> Reescrito em 2026-08-29 (D-134). A versão anterior tinha parado em D-120, apontando como "próximo passo" o primeiro item da Fase 4B — que D-121 já tinha entregue. **Esta seção é a que mais envelhece no repositório: reescrevê-la é parte de fechar qualquer etapa, não uma tarefa separada.**
+> Reescrito em 2026-08-31 (D-155). A versão anterior tinha parado em D-134/D-135, apontando como "próximo passo" a agregação de ruído (resolvida por outro caminho em D-135) e a abertura da 5C — as Fases 5C, 5D e 6B fecharam inteiras desde então. **Esta seção é a que mais envelhece no repositório: reescrevê-la é parte de fechar qualquer etapa, não uma tarefa separada.**
 
-**Fase 4B materialmente concluída.** Código e banco sincronizados (`6982c33` no ar, 79/79 migrations), saldo de estoque reparado e verificado em produção (D-134), RESERVADO nascido pela primeira vez. Segue aberto só o item `[~]` de FK fornecedor→SKU, por decisão registrada em D-129.
+**Fase 6B COMPLETA (D-152→D-155).** Da fila declarada por D-120 (`4B → 5C → 5D → 6B → 9`), resta a **Fase 9** (republicação oficial de anúncio — a primeira escrita destrutiva no ML), com a **Fase 8 intercalável** (backup/restore verificado é o único risco que cresce a cada dia de uso real).
 
-**O próximo passo é agregar `stock.balance.diverged`** — o item "Ruído antes da inteligência" da Fase 6B, promovido a primeiro da fila por medição, não por preferência: são **6.410 notificações não lidas**, das quais **3.308 foram criadas pelo reparo de D-134 numa única hora** (um evento por ajuste × 3.300 ajustes). A Central de Notificações não é legível hoje, e qualquer sinal novo acrescentado antes da agregação nasce invisível. É a mesma Regra de Progressão de sempre, aplicada a eventos em vez de a dados.
+**Antes de abrir a Fase 9, os dois interruptores HUMANOS da 5D seguem desligados** — e são atos do usuário por decisão registrada (D-127/D-144), não do agente:
 
-Depois dele: o **ensaio operacional de `/produtos`** (D-133 — marcar 5 SKUs, conferir em `/cobertura`, só então o lote grande; agora possível no navegador, porque `.env.local` existe) e então a **Fase 5C**, que a confiabilidade do saldo acaba de destravar de verdade.
+1. 🟡 **O ensaio operacional de `/produtos`** (D-133): marcar os 5 SKUs candidatos já separados no HANDOFF, conferir em `/cobertura` (devem sair com cobertura VAZIA e rótulo "estoque virtual"), só então o lote grande (~1.089 SKUs com assinatura sentinela). Sem isso, valor de estoque (D-139) e a qualidade da sugestão de compra seguem bloqueados.
+2. 🟡 **Preencher `/reposicao/configuracoes`** (D-144): sem configuração, `/reposicao` recusa para todos — é o contrato.
+
+**Decisão de produto pendente sinalizada desde D-135**: `listing.available_quantity.changed` é 91% das notificações (informativo, legítimo) — silenciar, agregar ou manter é escolha do usuário.
+
+**Candidatas defensáveis para a próxima fatia de código**, a escolher com o usuário: o item de **Vendas** do PRD que restou da 5C (taxas do ML, cancelamentos, visão "hoje"); a **Fase 8** (backup/restore verificado); o **rate limit de `visits`** (85% de falha 429, medido em D-143); ou abrir a **Fase 9** pela modelagem pai→filho.
 
 **Registro histórico do que esta seção dizia antes (D-120):**
 

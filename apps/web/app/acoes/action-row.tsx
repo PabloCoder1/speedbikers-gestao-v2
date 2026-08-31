@@ -1,12 +1,13 @@
 "use client";
 
+import type { ActionEvidenceView } from "@sb/domain";
 import { useState, type ReactNode } from "react";
 
 import Link from "next/link";
 
-import type { ActionEvidenceView } from "../../lib/action-evidence";
 import type { ActionShortcut } from "../../lib/action-shortcuts";
 import { formatCurrency } from "../../lib/format";
+import { createClient } from "../../lib/supabase/browser";
 import { claimAction, dismissAction, registerDecision, resolveAction } from "./actions";
 
 /**
@@ -117,11 +118,73 @@ function formatSnapshot(snapshot: Record<string, unknown>): string {
   return `Vendido (7d): ${String(unitsSold)} · Preço médio: ${priceText} · Estoque local: ${String(stockLocal)}`;
 }
 
+/**
+ * A chave da Anthropic só existe em `apps/api` (Secret Manager, nunca na
+ * Vercel) — por isso a explicação é um fetch client-side direto para a `api`,
+ * mesmo padrão de `diagnosis-panel.tsx` (D-082): sessão do navegador,
+ * `access_token` no header `Authorization`. Só o `actionId` viaja; a `api`
+ * relê a ação sob a RLS do usuário e narra o que está no banco (D-155).
+ */
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
+
 export function ActionRow({ action, userId }: { action: ActionRowData; userId: string }): ReactNode {
   const [status, setStatus] = useState(action.status);
   const [assigneeId, setAssigneeId] = useState(action.assignee_id);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [explanation, setExplanation] = useState<string | null>(null);
+  const [explaining, setExplaining] = useState(false);
+  const [explainError, setExplainError] = useState<string | null>(null);
+
+  async function handleExplain(): Promise<void> {
+    setExplaining(true);
+    setExplainError(null);
+
+    const supabase = createClient();
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+
+    if (token === undefined) {
+      setExplainError("Sua sessão expirou. Entre de novo.");
+      setExplaining(false);
+
+      return;
+    }
+
+    let response: Response;
+
+    try {
+      response = await fetch(`${API_URL}/v1/copilot/query`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ tool: "narrate_action", input: { actionId: action.id } }),
+      });
+    } catch {
+      setExplainError("Não foi possível falar com o servidor. Tente de novo.");
+      setExplaining(false);
+
+      return;
+    }
+
+    if (!response.ok) {
+      const payload: unknown = await response.json().catch(() => null);
+      const message =
+        typeof payload === "object" && payload !== null && "error" in payload
+          ? (payload as { error?: { message?: string } }).error?.message
+          : undefined;
+
+      setExplainError(message ?? "Não foi possível explicar a ação.");
+      setExplaining(false);
+
+      return;
+    }
+
+    const payload = (await response.json()) as { data: { narrativa: string } };
+
+    setExplanation(payload.data.narrativa);
+    setExplaining(false);
+  }
 
   async function run(
     fn: () => Promise<{ ok: boolean; message: string | null }>,
@@ -261,7 +324,26 @@ export function ActionRow({ action, userId }: { action: ActionRowData; userId: s
             >
               Registrar decisão
             </button>
+            {/*
+              IA explicando a AÇÃO (D-155, último item da Fase 6B) — nunca no
+              carregamento da página (docs/COPILOT.md secao 9), só em clique.
+            */}
+            <button
+              type="button"
+              disabled={explaining}
+              onClick={() => {
+                void handleExplain();
+              }}
+              style={buttonStyle}
+            >
+              {explaining ? "Explicando…" : "Explicar com IA"}
+            </button>
           </div>
+        )}
+        {explainError !== null && (
+          <p role="alert" style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", color: "var(--sb-danger)" }}>
+            {explainError}
+          </p>
         )}
         {error !== null && (
           <p role="alert" style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", color: "var(--sb-danger)" }}>
@@ -270,6 +352,16 @@ export function ActionRow({ action, userId }: { action: ActionRowData; userId: s
         )}
       </td>
     </tr>
+
+    {explanation !== null && (
+      <tr style={{ background: "var(--sb-bg-soft, #f7f7f8)" }}>
+        <td colSpan={8} style={{ ...td, fontSize: "0.8125rem" }}>
+          <strong>Explicação (IA):</strong>
+          {/* As cinco seções chegam separadas por quebra de linha — pre-line as preserva. */}
+          <div style={{ whiteSpace: "pre-line", marginTop: "0.25rem", fontStyle: "italic" }}>{explanation}</div>
+        </td>
+      </tr>
+    )}
 
     {action.decisions.length > 0 && (
       <tr style={{ background: "var(--sb-bg-soft, #f7f7f8)" }}>

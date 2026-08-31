@@ -7,6 +7,7 @@ import type { Caller } from "./auth.js";
 import {
   CopilotToolError,
   handleCopilotQuery,
+  runNarrateAction,
   runNarrateSkuDiagnosis,
   runSalesAccountComparison,
   runSalesPeriodComparison,
@@ -187,6 +188,100 @@ describe("runNarrateSkuDiagnosis", () => {
     const call = narrate.mock.calls[0]?.[0];
     expect(call?.prompt).toContain("Vendeu 2 unidades ontem");
     expect(call?.prompt).toContain("Anúncio pausado");
+  });
+});
+
+describe("runNarrateAction", () => {
+  /** Fake de `UserClient` para `.from("actions").select(...).eq(...).maybeSingle()` — a leitura sob RLS que é autorização e dado no mesmo ato. */
+  function fakeUserClientForAction(row: Record<string, unknown> | null): UserClient {
+    return {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            maybeSingle: () => Promise.resolve({ data: row, error: null }),
+          }),
+        }),
+      }),
+    } as unknown as UserClient;
+  }
+
+  const ACTION_ROW = {
+    kind: "venda_anomala",
+    confidence: "alta",
+    estimated_impact_brl: -400,
+    evidence: {
+      direcao: "queda",
+      evidencias: [{ tipo: "venda_vs_baseline", descricao: "Vendeu 14 unidades a menos que o esperado." }],
+      causas_candidatas: [
+        {
+          event_type: "listing.status.paused",
+          occurred_at: "2026-08-30T10:00:00.000Z",
+          descricao: "Anúncio pausado dois dias antes.",
+        },
+      ],
+    },
+    recommendation: "Investigar por que o anúncio foi pausado.",
+    skus: { sku: "5821", title: "Manete esportivo" },
+  };
+
+  it("recusa quando a ação não é encontrada sob a RLS do usuário — o LLM nunca é chamado", async () => {
+    const userClient = fakeUserClientForAction(null);
+    const anthropic: AnthropicClient = { narrate: vi.fn(), plan: vi.fn() };
+
+    await expect(
+      runNarrateAction(userClient, { actionId: "00000000-0000-4000-8000-000000000009" }, anthropic),
+    ).rejects.toThrow(CopilotToolError);
+    expect(anthropic.narrate).not.toHaveBeenCalled();
+  });
+
+  it("monta o prompt pela MESMA leitura da tela e exige o vocabulário obrigatório no system prompt", async () => {
+    const userClient = fakeUserClientForAction(ACTION_ROW);
+    const narrate = vi.fn<AnthropicClient["narrate"]>(() =>
+      Promise.resolve({ text: "Causa mais provável: anúncio pausado.", costUsd: 0.0007 }),
+    );
+    const anthropic: AnthropicClient = { narrate, plan: vi.fn() };
+
+    const result = await runNarrateAction(userClient, { actionId: "00000000-0000-4000-8000-000000000009" }, anthropic);
+
+    expect(result).toEqual({ data: { narrativa: "Causa mais provável: anúncio pausado." }, costUsd: 0.0007 });
+
+    const call = narrate.mock.calls[0]?.[0];
+
+    // Prompt: só o que está na linha — evidência, causa datada, recomendação, SKU.
+    expect(call?.prompt).toContain("Vendeu 14 unidades a menos");
+    expect(call?.prompt).toContain("Anúncio pausado dois dias antes");
+    expect(call?.prompt).toContain("Investigar por que o anúncio foi pausado.");
+    expect(call?.prompt).toContain("5821");
+
+    // Vocabulário obrigatório do PRD (D-155) — as cinco seções, e a proibição.
+    expect(call?.system).toContain("Causa mais provável:");
+    expect(call?.system).toContain("Fatores contribuintes:");
+    expect(call?.system).toContain("Hipóteses:");
+    expect(call?.system).toContain("Evidências contrárias:");
+    expect(call?.system).toContain("O que não conseguimos verificar:");
+    expect(call?.system).toContain('"causa verdadeira"');
+  });
+
+  it("ação de SAC (sem direção, sem causas) degrada honestamente — o prompt declara a ausência", async () => {
+    const userClient = fakeUserClientForAction({
+      kind: "reclamacoes_recorrentes",
+      confidence: "alta",
+      estimated_impact_brl: null,
+      evidence: { evidencias: [{ tipo: "reclamacoes_abertas", descricao: "3 reclamações abertas no SKU." }] },
+      recommendation: "Abrir a Caixa de Entrada.",
+      skus: null,
+    });
+    const narrate = vi.fn<AnthropicClient["narrate"]>(() => Promise.resolve({ text: "Narrativa.", costUsd: 0.0002 }));
+    const anthropic: AnthropicClient = { narrate, plan: vi.fn() };
+
+    await runNarrateAction(userClient, { actionId: "00000000-0000-4000-8000-000000000009" }, anthropic);
+
+    const call = narrate.mock.calls[0]?.[0];
+
+    expect(call?.prompt).toContain("Reclamações recorrentes");
+    expect(call?.prompt).toContain("nenhuma causa candidata encontrada");
+    expect(call?.prompt).toContain("sem SKU vinculado");
+    expect(call?.prompt).toContain("Impacto estimado: desconhecido");
   });
 });
 

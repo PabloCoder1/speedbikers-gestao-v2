@@ -110,6 +110,27 @@ export const narrateSkuDiagnosisOutputSchema = z.object({
 export type NarrateSkuDiagnosisOutput = z.infer<typeof narrateSkuDiagnosisOutputSchema>;
 
 /**
+ * Explicação de AÇÃO da Central de Ações (`docs/COPILOT.md` secao 4, D-155 —
+ * o último item da Fase 6B): narra em texto uma ação já detectada pelo
+ * pipeline determinístico (D-064/D-116). Diferente de `narrate_sku_diagnosis`
+ * — cujo contrato é calculado na hora pelo `web` e viaja no corpo —, a ação
+ * JÁ VIVE no banco (`actions`): o input é só o id, e a `api` lê a linha sob a
+ * RLS do próprio usuário (autorização e dado no mesmo ato — não existe
+ * contrato forjável). A narração segue o vocabulário obrigatório do PRD:
+ * causa mais provável, fatores contribuintes, hipóteses, evidências
+ * contrárias e o que não conseguimos verificar — nunca "causa verdadeira".
+ */
+export const narrateActionInputSchema = z.object({
+  actionId: z.uuid(),
+});
+export type NarrateActionInput = z.infer<typeof narrateActionInputSchema>;
+
+export const narrateActionOutputSchema = z.object({
+  narrativa: z.string(),
+});
+export type NarrateActionOutput = z.infer<typeof narrateActionOutputSchema>;
+
+/**
  * Sugestão de resposta de atendimento (`docs/COPILOT.md` secao 11, D-071/D-112):
  * gera o TEXTO de uma resposta a partir do contexto determinístico do case
  * (transcript, vínculos, produto). Mesma família de "Estruturação" — geração
@@ -160,6 +181,7 @@ export const COPILOT_TOOL_NAMES = [
   "sales_period_comparison",
   "sales_account_comparison",
   "narrate_sku_diagnosis",
+  "narrate_action",
   "suggest_support_reply",
   "structure_feature_suggestion",
 ] as const;

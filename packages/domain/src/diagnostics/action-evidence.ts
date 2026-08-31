@@ -14,6 +14,13 @@
  * Este módulo é a fronteira: uma função TOTAL, que nunca lança, para qualquer
  * `kind` e qualquer payload. Um `kind` novo criado no worker degrada para uma
  * linha sem direção e sem causas — nunca para uma tela quebrada.
+ *
+ * Morava em `apps/web/lib` até D-155, quando a `apps/api` virou o segundo
+ * consumidor (`narrate_action` monta o prompt de narração a partir da MESMA
+ * leitura que a tela renderiza) — a regra de contenção de
+ * `docs/ARCHITECTURE.md` secao 7 manda subir para package exatamente nesse
+ * momento. Dois leitores independentes do mesmo `jsonb` divergiriam na
+ * primeira forma nova, e a narração citaria evidência que a tela não mostra.
  */
 
 export interface ActionEvidenceItem {

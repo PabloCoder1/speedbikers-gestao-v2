@@ -1,7 +1,7 @@
+import { describeActionEvidence } from "@sb/domain";
 import type { ReactNode } from "react";
 
 import { Shell } from "../../components/shell";
-import { describeActionEvidence } from "../../lib/action-evidence";
 import { actionShortcuts } from "../../lib/action-shortcuts";
 import { formatCount } from "../../lib/format";
 import { createClient } from "../../lib/supabase/server";

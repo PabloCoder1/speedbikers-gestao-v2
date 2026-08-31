@@ -72,7 +72,7 @@ Em qualquer falha depois da troca de código, a conta é marcada `status = 'ERRO
 | `/v1/nfe-imports/:id/apply` | POST | GESTOR | **Implementado em 2026-08-22** — confirmação humana: move o documento `PARSED` para `APPLYING` e **enfileira** a aplicação. Recusa se `resolved_items < total_items` — diferente do UpSeller, não tolera aplicação parcial (`apps/api/src/nfe-import.ts`, `confirmNfeApply`) |
 | `/v1/purchase-orders/:id/approve` | POST | GESTOR | Transição de ciclo |
 | `/v1/diagnostics/run` | POST | ANALISTA | Enfileira diagnóstico |
-| `/v1/copilot/query` | POST | qualquer autenticado | **Implementado em 2026-08-25 (D-077/D-082)** — `{ tool, input }`, devolve `{ tool, escopo, confianca, data }`. Quatro ferramentas: três de curto-circuito (sem LLM) + `narrate_sku_diagnosis` (com LLM, D-082). Streaming SSE e o planner por linguagem natural ainda não existem, ver detalhe abaixo |
+| `/v1/copilot/query` | POST | qualquer autenticado | **Implementado em 2026-08-25 (D-077/D-082)** — `{ tool, input }`, devolve `{ tool, escopo, confianca, data }`. Sete ferramentas: três de curto-circuito (sem LLM) + quatro com LLM (`narrate_sku_diagnosis` D-082, `suggest_support_reply`/`structure_feature_suggestion` D-112, `narrate_action` D-155). Planner por linguagem natural e streaming existem na rota irmã `/v1/copilot/chat` (D-114) |
 
 A `api` **verifica o JWT e reavalia a autorização no servidor**. Não confiar na interface para autorização.
 
@@ -82,11 +82,13 @@ Cada ferramenta lê sob a RLS do usuário de verdade — `apps/api` ganhou um se
 
 **`narrate_sku_diagnosis` — implementada em 2026-08-25 (D-082)**, primeira ferramenta que chama LLM de verdade (Claude Haiku 4.5). Corpo `{ diagnosis: <contrato de SalesAnomalyDiagnosis>, impactBrl }` — o diagnóstico já vem CALCULADO pelo chamador (`apps/web`, `diagnoseSku`, D-078); a `api` não recalcula, só revalida sob RLS que o usuário alcança o `skuId` do contrato antes de narrar (`select id from skus where id = ...`), depois pede ao modelo para narrar citando só o que está no contrato. `ai_runs.llm_used=true` e `cost_usd` gravado com o custo REAL (tokens de entrada/saída devolvidos pela Anthropic, não estimado) — ver `docs/COPILOT.md` secao 9/10.
 
+**`narrate_action` — implementada em 2026-08-31 (D-155)**, a IA explicando a AÇÃO da Central de Ações (último item da Fase 6B). Corpo `{ actionId }` — nada mais viaja: a ação já vive em `actions` e a `api` lê a linha (com o join de `skus`) sob a RLS do próprio usuário, então autorização e dado são o mesmo ato e não existe contrato forjável. O prompt nasce da mesma `describeActionEvidence` que a tela `/acoes` renderiza (`@sb/domain/diagnostics` desde esta fatia); o system prompt impõe o vocabulário obrigatório do PRD (causa mais provável, fatores contribuintes, hipóteses, evidências contrárias, o que não conseguimos verificar) e proíbe "causa verdadeira". Detalhe em `docs/COPILOT.md` secao 4.
+
 Contrato de erro: `400 invalid_payload` (input não bate com o schema da ferramenta), `502 tool_failed` (a RPC falhou, ou o SKU não foi encontrado sob a RLS do usuário, ou a chamada à Anthropic falhou), `401`/`403` iguais ao resto da `api`.
 
-**Só o caminho de curto-circuito desta primeira fatia** (`docs/COPILOT.md` secao 2: "se a ferramenta já respondeu por completo... o LLM NÃO é chamado") — o chamador informa `tool` explicitamente, não existe planner que escolha a ferramenta a partir de linguagem natural. Resposta é JSON síncrono, não SSE: sem LLM narrando nada nesta fatia, não há token a transmitir em stream. Planner, streaming de verdade e UI de chat ficam para quando o modelo/orçamento forem decididos (`docs/COPILOT.md` secao 10, pendência que continua aberta).
+**`/v1/copilot/query` é o caminho de ferramenta direta** (`docs/COPILOT.md` secao 2) — o chamador informa `tool` explicitamente e a resposta é JSON síncrono. O planner por linguagem natural, com streaming SSE e UI de chat, existe desde D-114 na rota irmã `POST /v1/copilot/chat` (`copilot-chat.ts`), validando argumentos com os MESMOS schemas. *(Este parágrafo afirmava "planner ainda não existe, pendência aberta" — congelado entre D-114 e 2026-08-31, corrigido em D-155.)*
 
-Toda chamada grava `ai_runs` (`docs/DATABASE.md`) — `llm_used: false` e `cost_usd: null` em toda linha desta fase, campos prontos para quando o LLM existir.
+Toda chamada grava `ai_runs` (`docs/DATABASE.md`) — ferramentas de curto-circuito com `llm_used: false`/`cost_usd: null`; as de geração gravam `llm_used: true` e o custo REAL devolvido pela Anthropic (desde D-082).
 
 ### CORS
 

@@ -1,9 +1,11 @@
 import type { AdminClient, UserClient } from "@sb/db";
 import { recordAiRun } from "@sb/db";
-import { previousBusinessDateRange } from "@sb/domain";
+import { describeActionEvidence, previousBusinessDateRange } from "@sb/domain";
 import type {
   CopilotQueryRequest,
   CopilotToolName,
+  NarrateActionInput,
+  NarrateActionOutput,
   NarrateSkuDiagnosisInput,
   NarrateSkuDiagnosisOutput,
   SalesAccountComparisonInput,
@@ -15,6 +17,7 @@ import type {
   SalesSummaryOutput,
 } from "@sb/contracts";
 import {
+  narrateActionInputSchema,
   narrateSkuDiagnosisInputSchema,
   salesAccountComparisonInputSchema,
   salesPeriodComparisonInputSchema,
@@ -222,6 +225,101 @@ export async function runNarrateSkuDiagnosis(
   return { data: { narrativa: text }, costUsd };
 }
 
+/**
+ * Explicação de AÇÃO da Central de Ações (D-155, o último item da Fase 6B) —
+ * a IA explica a AÇÃO, não só o diagnóstico do SKU. O vocabulário é o
+ * OBRIGATÓRIO do PRD ("Central de Ações e Diagnóstico com IA"): causa mais
+ * provável, fatores contribuintes, hipóteses, evidências contrárias e o que
+ * não conseguimos verificar — nunca "causa verdadeira". Seção sem dado diz
+ * isso, em vez de ser preenchida com suposição: para `reclamacoes_recorrentes`
+ * (D-116), que não tem direção nem causas candidatas, é esse o caminho que
+ * roda sempre.
+ */
+const ACTION_EXPLANATION_SYSTEM_PROMPT = [
+  "Você explica, em português claro e direto, uma ação já detectada por um sistema determinístico separado (a Central de Ações).",
+  "Estruture a resposta EXATAMENTE nestas cinco seções, cada uma numa linha própria iniciada pelo rótulo:",
+  "Causa mais provável:",
+  "Fatores contribuintes:",
+  "Hipóteses:",
+  "Evidências contrárias:",
+  "O que não conseguimos verificar:",
+  "Regras estritas:",
+  "- Cite APENAS os dados fornecidos abaixo. Nunca invente, presuma ou infira evidência, causa ou número que não esteja explicitamente presente.",
+  '- Seção sem dado correspondente diz isso explicitamente (por exemplo: "nenhuma registrada pelo sistema") — nunca é preenchida com suposição.',
+  '- Nunca use a expressão "causa verdadeira" nem afirme certeza além do nível de confiança indicado.',
+  "- Sem saudação nem encerramento; cada seção tem 1 a 2 frases.",
+].join("\n");
+
+/** Forma da linha de `actions` lida sob RLS — espelho do que `/acoes` já seleciona (nulabilidade real do join). */
+interface ActionRowForNarration {
+  kind: string;
+  confidence: string;
+  estimated_impact_brl: number | null;
+  evidence: unknown;
+  recommendation: string;
+  skus: { sku: string; title: string | null } | null;
+}
+
+function buildActionExplanationPrompt(row: ActionRowForNarration): string {
+  // A MESMA leitura defensiva que a tela renderiza (`describeActionEvidence`,
+  // @sb/domain) — dois leitores independentes do jsonb divergiriam na
+  // primeira forma nova, e a narração citaria o que a tela não mostra.
+  const view = describeActionEvidence(row.kind, row.evidence);
+
+  const evidencias =
+    view.evidencias.length > 0 ? view.evidencias.map((item) => `- ${item.descricao}`).join("\n") : "nenhuma";
+
+  const causas =
+    view.causas.length > 0
+      ? view.causas.map((cause) => `- ${cause.descricao} (evento ${cause.eventType} em ${cause.occurredAt})`).join("\n")
+      : "nenhuma causa candidata encontrada";
+
+  const skuLine =
+    row.skus === null ? "sem SKU vinculado" : `${row.skus.sku}${row.skus.title === null ? "" : ` — ${row.skus.title}`}`;
+
+  return [
+    `Tipo de ação: ${view.kindLabel}${view.direcaoLabel === null ? "" : ` (${view.direcaoLabel})`}`,
+    `SKU: ${skuLine}`,
+    `Confiança calculada: ${row.confidence}`,
+    `Impacto estimado: ${row.estimated_impact_brl === null ? "desconhecido" : currencyFormatter.format(row.estimated_impact_brl)}`,
+    `Evidências:\n${evidencias}`,
+    `Causas candidatas (eventos datados):\n${causas}`,
+    `Recomendação do sistema: ${row.recommendation}`,
+  ].join("\n\n");
+}
+
+/**
+ * Diferente de `runNarrateSkuDiagnosis`, aqui não existe contrato vindo do
+ * chamador: a ação já vive em `actions` e a leitura sob a RLS do usuário é
+ * autorização e dado no mesmo ato. Ação de outra organização simplesmente
+ * não é encontrada.
+ */
+export async function runNarrateAction(
+  userClient: UserClient,
+  input: NarrateActionInput,
+  anthropic: AnthropicClient,
+): Promise<{ data: NarrateActionOutput; costUsd: number }> {
+  const action = await userClient
+    .from("actions")
+    .select("kind, confidence, estimated_impact_brl, evidence, recommendation, skus(sku, title)")
+    .eq("id", input.actionId)
+    .maybeSingle();
+
+  if (action.error !== null || action.data === null) {
+    throw new CopilotToolError("Ação não encontrada ou sem permissão.");
+  }
+
+  const { text, costUsd } = await anthropic.narrate({
+    system: ACTION_EXPLANATION_SYSTEM_PROMPT,
+    prompt: buildActionExplanationPrompt(action.data),
+    // Cinco seções rotuladas de 1-2 frases passam com folga de 512 só na
+    // maioria das vezes — truncar a última seção no meio é falha certa.
+    maxTokens: 768,
+  });
+
+  return { data: { narrativa: text }, costUsd };
+}
+
 interface ToolOutcome {
   data: unknown;
   llmUsed: boolean;
@@ -258,6 +356,14 @@ const TOOLS: Record<CopilotToolName, ToolDefinition> = {
     inputSchema: narrateSkuDiagnosisInputSchema,
     run: async (userClient, input, deps) => {
       const outcome = await runNarrateSkuDiagnosis(userClient, input, deps.anthropic);
+
+      return { data: outcome.data, llmUsed: true, costUsd: outcome.costUsd };
+    },
+  },
+  narrate_action: {
+    inputSchema: narrateActionInputSchema,
+    run: async (userClient, input, deps) => {
+      const outcome = await runNarrateAction(userClient, input, deps.anthropic);
 
       return { data: outcome.data, llmUsed: true, costUsd: outcome.costUsd };
     },

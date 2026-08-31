@@ -2958,6 +2958,24 @@ A camada 3 foi encontrada pelo CATALOGO (enumerando as FKs RESTRICT reais), nao 
 
 **Impacto:** `apps/web/lib/action-shortcuts.{ts,test.ts}` (novo), `apps/web/app/acoes/{page,action-row}.tsx` (sku_id no select; atalhos sob a recomendacao), `packages/domain/src/diagnostics/sales-anomaly.ts` (texto honesto).
 
+## D-155 - IA explicando a ACAO: o vocabulario obrigatorio vira instrucao, e a leitura da evidencia vira uma so -- FASE 6B COMPLETA
+
+**Contexto:** ultimo item da 6B ("IA explicando a ACAO, nao so o diagnostico do SKU"). O motor ja existia (D-082: Haiku 4.5, `ai_runs` com custo real, orcamento D-100); D-154 acabara de dar chao determinismo a linha da Central. O PRD fixa o vocabulario obrigatorio: causa mais provavel, fatores contribuintes, hipoteses, evidencias contrarias e o que nao conseguimos verificar -- nunca "causa verdadeira".
+
+**Decisao 1 -- o input e so `{ actionId }`, e isso elimina a superficie de contrato forjado.** `narrate_sku_diagnosis` (D-082) recebe o contrato inteiro do chamador porque o diagnostico e calculado na hora pelo `web` e nao existe no banco. A ACAO e o oposto: ja vive em `actions` (D-064/D-116). A `api` le a linha sob a RLS do PROPRIO usuario (`UserClient`) -- autorizacao e dado no mesmo ato, acao de outra organizacao simplesmente nao e encontrada. Nada a revalidar, nada a forjar.
+
+**Decisao 2 -- `describeActionEvidence` subiu para `@sb/domain/diagnostics`.** A `api` precisava ler o MESMO `evidence` jsonb que a tela: a `api` virou o segundo consumidor, e a regra de contencao (`ARCHITECTURE.md` secao 7) manda subir exatamente nesse momento. `git mv` preservando historia, teste junto, zero linha alterada na logica. A alternativa -- um segundo leitor na `api` -- divergiria na primeira forma nova de `kind`, e a narracao citaria evidencia que a tela nao mostra (a classe de defeito que D-117 achou na leitura dupla da Central).
+
+**Decisao 3 -- o vocabulario obrigatorio e INSTRUCAO DE SISTEMA, nao esperanca.** `ACTION_EXPLANATION_SYSTEM_PROMPT` exige as cinco secoes rotuladas, manda secao sem dado declarar a ausencia ("nenhuma registrada pelo sistema") e proibe a expressao "causa verdadeira" e certeza acima da confianca informada. Para `reclamacoes_recorrentes` -- sem direcao, sem causas candidatas -- e o caminho da ausencia que roda sempre: o teste fixa que o prompt declara "nenhuma causa candidata encontrada" em vez de omitir. `maxTokens: 768` (cinco secoes nao cabem com folga nos 512 padrao; truncar a ultima secao e falha certa).
+
+**UI:** botao "Explicar com IA" na linha de `/acoes` (client fetch direto a `api`, padrao D-082 -- a chave da Anthropic nunca chega a Vercel), narrativa em linha propria sob a acao com `pre-line`. Nunca dispara no carregamento (`COPILOT.md` secao 9).
+
+**De passagem:** dois paragrafos de `docs/API.md` congelados desde D-114/D-082 ("planner ainda nao existe"; "llm_used sempre false") corrigidos com a marca da correcao.
+
+**Verificacao:** `check` 29/29 (+3 testes de api; testes de `action-evidence` movidos sem alteracao), build 8/8. Sem migration, sem RPC, sem types. Tela nao vista renderizada (a ressalva de sempre); o caminho LLM real (chave da Anthropic) so existe no deploy.
+
+**Impacto:** `packages/domain/src/diagnostics/action-evidence.{ts,test.ts}` (movidos de `apps/web/lib`), `packages/domain/src/diagnostics/index.ts`, `packages/contracts/src/{copilot-tools,index}.ts` (`narrate_action`), `apps/api/src/copilot.{ts,test.ts}`, `apps/web/app/acoes/{page,action-row}.tsx`, `docs/{COPILOT,API,ROADMAP,HANDOFF}.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:
