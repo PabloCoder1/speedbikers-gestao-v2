@@ -4,6 +4,16 @@ As fases seguem a numeração definida no `docs/PROMPT_MASTER.md` §38. Elas for
 
 Cada fase só é considerada concluída sob a Definition of Done do `docs/PROMPT_MASTER.md` §33.
 
+## Referência oficial da visão final de UX/UI
+
+O Figma **“Telas SpeedBikers Gestão”** é, desde 2026-08-31, a referência oficial da **visão final visual e de experiência** do produto. Ele não comprova implementação e não substitui as fontes de verdade já existentes:
+
+- código e infraestrutura real dizem o que existe;
+- este ROADMAP e o `docs/HANDOFF.md` dizem o que está planejado;
+- o Figma diz como a experiência final deve se apresentar.
+
+Uma tela desenhada no Figma nunca recebe `[x]` por existir no design. A implementação continua incremental e só fecha sob a Definition of Done. O alinhamento abaixo acrescenta escopo futuro sem reabrir fases concluídas.
+
 ---
 
 ## Fase 0 — Fundação
@@ -130,7 +140,7 @@ Cada fase só é considerada concluída sob a Definition of Done do `docs/PROMPT
 - [x] Exportação do pedido de compra em Excel (principal) e PDF (D-034) — concluído em 2026-08-23: usuário liberou implementar com layout PRÓPRIO ("faça do jeito que você achar bem profissional"), a ajustar quando o modelo oficial chegar — ver `docs/HANDOFF.md`
 - [x] **Geração de `stock_movements` (`ENTRADA_TRANSITO`/`RECEBIMENTO_TRANSITO`) a partir do ciclo do pedido de compra** — concluído em 2026-08-23 (D-055): TRANSITO nasce ao marcar o pedido `ORDERED` (compromisso de compra assumido, não confirmação do fornecedor — a V3 não tem como observar isso sem integração) e fecha ao `RECEIVED` ou ao `CANCELLED` enquanto `ORDERED`. NÃO gera LOCAL — isso continua sendo exclusivo da NF-e (`ENTRADA_NFE`), desacoplado de propósito. Item sem `sku_id` vinculado não gera movimento, mesmo padrão de `computeSaleDeductions`/`computeNfeApplicationMovements`
 - [x] **Tela de edição do pedido em `DRAFT`** — concluído em 2026-08-23: `/compras/[id]/editar`, reaproveita `PurchaseOrderForm`/`ItemRow` de `novo/` (mesmo formulário, agora pré-preenchido, apontando para `update_purchase_order_draft` em vez de `create_purchase_order`). Link "Editar" só aparece com o pedido em `DRAFT`
-- [ ] **Recebimento parcial de pedido de compra** (hoje é tudo-ou-nada) — decisão de escopo deliberada, não bloqueio; entra quando o volume real de uso mostrar que vale a pena
+- [ ] **Recebimento parcial de pedido de compra** (hoje é tudo-ou-nada) — categoria **D, evolução futura sem bloquear a Fase 4**. A visão final prevê o ciclo `RASCUNHO -> APROVADO/ENVIADO -> PEDIDO/CONFIRMADO quando aplicável -> EM_TRANSITO -> RECEBIDO_PARCIALMENTE -> RECEBIDO | CANCELADO`. A máquina atual não será alterada sem decisão arquitetural própria sobre quantidades por item, idempotência, trânsito e eventos.
 
 **Marco — ATINGIDO em 2026-08-23.** O estoque responde "por que este número é este" movimento a movimento (ledger auditável, D-006/D-019), e a divergência contra o ERP é visível em vez de silenciosa (D-029). Todos os itens reais do checklist fechados — só resta recebimento parcial de pedido de compra, decisão de escopo deliberada (D-040), não bloqueio.
 
@@ -201,7 +211,7 @@ Nenhuma funcionalidade concluída das Fases 0 a 6 deve ser removida ou reimpleme
 - [ ] Impedir mistura de SKU Nacional e Importado no mesmo pedido de compra.
 - [x] Criar fluxo de vinculação manual `Conta + MLB + variation_id? -> SKU` sem exigir `link_candidate` prévio — concluído em 2026-08-28 (D-119). Escrita direta sob RLS (a policy `sku_listing_links_write_permitted` existia desde a Fase 2 e nunca teve chamador), validação pura testada, conflito das DUAS formas (anúncio inteiro × variação) detectado — os índices são parciais e disjuntos, e a mistura levaria o estoque Full para o SKU errado. **Destravado por D-117**, que mediu por que isto deixou de ser cosmético: 3.679 anúncios que já venderam sem vínculo nenhum e `link_candidates` estruturalmente incapaz de recebê-los. **Lacunas declaradas**: não existe histórico de vínculo nem caminho para DESFAZER — próxima fatia, e as duas precisam nascer juntas.
 - [ ] Criar alias reutilizável `Fornecedor + código do produto -> SKU` quando um vínculo for confirmado.
-- [ ] Evoluir o Dashboard de SKU para abas/progressive disclosure.
+- [ ] Evoluir o Dashboard de SKU para abas/progressive disclosure — categoria **A, já planejado e alinhado ao Figma**. Preservar o dashboard atual e migrar incrementalmente para `Visão Geral | Vendas | Estoque | Anúncios | Preços | Full | Tráfego | Histórico | Diagnóstico | Decisões | Atendimento`, criando uma aba somente quando houver dado real para sustentá-la; não transformar a página numa vertical gigantesca.
 - [x] Reorganizar a navegação em grupos, evitando todas as telas no mesmo nível — feito em 2026-08-24 (`e1ea084`, ver D-068): COMERCIAL, ESTOQUE, INTELIGÊNCIA, GESTÃO. ADMINISTRAÇÃO e "Produtos" ficam de fora até existirem páginas reais.
 - [x] Substituir a Home de construção pela Home orientada a “o que precisa da minha atenção hoje?” — feito em 2026-08-27 (D-105), **a pedido do usuário depois de abrir a Home publicada e ver sete afirmações falsas** (`PENDENTE` em quatro itens entregues na Fase 4, "Nada começado" nas Fases 5B/6/7). A correção não foi atualizar a lista: foi eliminá-la. Todo número da tela nova vem de consulta ao mesmo dado das telas reais, então não há como divergir de novo. Primeira fatia com quatro contadores (ações abertas, atendimentos abertos, em mediação, notificações não lidas); ruptura, Full, alterações de anúncio e decisões aguardando medição entram quando cada um tiver consulta agregada própria.
 - [ ] Adicionar as entidades novas que já possuem destino real à Busca Universal, incluindo Central de Ações quando aplicável.
@@ -378,11 +388,134 @@ A ordem não é preferência: é a Regra de Progressão deste arquivo. Quase tod
 
 - [x] **Pesquisa oficial** — concluída em 2026-08-28 (`docs/MERCADO_LIVRE.md` secao 2.16): endpoint, pré-condições, uma republicação por pai, `parent_item_id`, tags, herança de visitas/vendas, **variação renovada**, e o vácuo sobre Full, catálogo, idempotência e reputação. *(O checkbox estava `[ ]` com o texto dizendo "concluída" — inconsistência corrigida em D-159.)*
 - [x] **Modelo pai → filho** e a operação rastreável por estados, com idempotência própria — concluído em 2026-08-31 (D-159): máquina de estados pura em `@sb/domain/listings` (9 estados; RELISTING só nasce de CLOSED ou de retry humano; `RELIST_FAILED` = pai fechado sem filho, o estado que exige gente) e a idempotência como CONSTRAINT (`listing_relists_one_live_per_parent`, índice único parcial cujo predicado espelha `RELIST_REOPENABLE_STATES` — equivalência fixada em teste; filho único; CHECK de coerência filho×estado). Histórico append-only com ator (`listing_relist_events`, FKs RESTRICT pelas lições D-099/D-149). Sem chamada ao ML, sem UI — modelo primeiro, de propósito
-- [~] **Preflight** que nunca fecha o anúncio quando uma pré-condição crítica falha — **o avaliador determinístico entregue em 2026-08-31 (D-160)**: `evaluateRelistPreflight` (`@sb/domain/listings`, pura, total, FAIL-SAFE — snapshot ilegível reprova, nunca presume) com os quatro bloqueios da pesquisa (tag `relist` = já republicado; Full por `inventory_id` raiz OU variação; catálogo; encadeamento não documentado) e o aviso de herança em `free`. Todos os bloqueios saem JUNTOS (o operador vê a lista, não um por vez). **A metade da CRIAÇÃO do fio entregue em D-161**: `POST /v1/listings/relist` (ADMIN/GESTOR + escopo por conta) enfileira `relist.prepare`; o worker captura o `parent_snapshot` e roda o avaliador — a operação nasce `REQUESTED` ou morre `PREFLIGHT_FAILED` com os motivos, sem nada destrutivo. **O que resta**: o executor (fechar o pai → POST /relist → confirmar filho → remapear), atrás de confirmação adicional, e a re-execução do preflight NA HORA do fechamento (estado remoto muda entre criação e execução — padrão D-096)
+- [x] **Preflight** que nunca fecha o anúncio quando uma pré-condição crítica falha — concluído em 2026-08-31 (D-160–D-162): `evaluateRelistPreflight` é puro, total e FAIL-SAFE; D-161 captura o snapshot na criação; D-162 repete o preflight NA HORA da execução antes de fechar o pai. Tag `relist`, Full, catálogo, encadeamento não documentado e snapshot ilegível/incompleto são tratados sem presumir segurança.
 - [~] **Snapshot antes da ação** e remapeamento obrigatório de variações depois — snapshot ✓ (D-161, capturado na criação); **executor até RELISTED ✓ (D-162)**: re-preflight NA HORA → fechar → POST → confirmar filho (só por id ≠ pai — resposta ambígua é RELIST_FAILED), re-entrante por estado (persistido ANTES do ato que descreve; retomada em RELISTING vira RELIST_FAILED — repetir o POST poderia criar dois filhos; POST falho nunca re-tenta, padrão D-096), transições por CAS. **Resta o REMAPEAMENTO** (RELISTED→REMAPPED): vínculo de ITEM retargetável; vínculo de VARIAÇÃO não tem mapeamento determinístico (ids renovados sem tabela de/para na doc) — cairá na fila de vinculação existente, declarado
 - [x] **Bloqueio inicial de Full e Catálogo** — ✓ D-160 (`FULL_BLOQUEADO`/`CATALOGO_BLOQUEADO`), re-avaliado na execução (D-162)
 - [x] **Permissão específica** imposta no backend, e confirmação humana explícita — ✓ D-161/D-162: ADMIN/GESTOR + escopo por conta nas DUAS rotas, e a execução é um segundo ato humano separado do pedido (`POST .../relist/:id/execute`)
 - [ ] **Medição 7/15/30 dias** reaproveitando `action_decisions`/`action_outcomes` (D-065) — reuso, não feature nova
+
+- [ ] **Experiência visual final da republicação** — categoria **A, alinhamento da Fase 9 com o Figma**, sem duplicar o fluxo existente: ação secundária; modal/drawer de segurança; preflight e riscos visíveis; indicação de Full, catálogo e variações; confirmação humana em dois atos; progresso por estado; relação MLB pai → filho; remapeamento/sincronização; acompanhamento 7/15/30. A primeira versão visual não promete ganho de exposição, reputação ou venda e não autoriza a IA a executar.
+
+---
+
+## Trilhas da visão final — escopo acrescentado em 2026-08-31
+
+Esta seção formaliza a visão final sem renumerar fases existentes nem transformar experiência futura em bloqueio retroativo. Classificação: **A** já planejado/alinhado ao Figma; **B** backend existente, falta principalmente experiência; **C** feature nova formal; **D** evolução futura não bloqueante; **E** dependente de dado, API ou decisão futura.
+
+### Trilha 5E — Inteligência operacional e dashboards 360º
+
+Subfase incremental posterior às bases 5C/5D/6B. Não reabre seus marcos concluídos.
+
+#### Dashboard 360º individual do Anúncio — B/C
+
+- **Objetivo/problema:** dar a cada anúncio um destino individual, hoje inexistente, reunindo estado, desempenho, evidências e decisões sem cruzamento manual de listas.
+- **Reutiliza:** `listings`, métricas por anúncio, `daily_listing_visits`, Full, `domain_events`, correlação/timeline de D-152/D-153, diagnóstico, `actions`, `action_decisions` e `action_outcomes`.
+- **Falta:** rota e read model escopados por conta; cabeçalho com título/MLB/SKU/conta/status/preço/estoque/Full/frescor; abas `Visão Geral | Vendas | Tráfego | Preço | Full | Histórico | Diagnóstico | Decisões`; timeline correlacionada por tempo.
+- **Definition of Done:** RLS por conta; métricas canônicas; loading/erro/vazio/stale; timeline sem linguagem causal; links para SKU, ações e decisões; Playwright de autorização/isolamento; performance medida.
+- **Riscos:** confundir correlação com causalidade, duplicar timeline do SKU, afirmar “saúde” sem definição e criar N+1 por aba.
+- **Fora da primeira versão:** score inventado, Ads sem elegibilidade, escrita/relist inline e causalidade por IA.
+
+#### Central de Inteligência de Preços — C/E
+
+- **Objetivo/problema:** transformar mudanças de preço dispersas em análise comercial antes/depois ligada a SKU, anúncio, ação e decisão.
+- **Reutiliza:** preço atual de `listings`, `listing.price.changed`, vendas/visitas/conversão, diagnóstico, Central de Ações, decisões/outcomes e histórico de custo.
+- **Falta:** read model de janelas comparáveis; tela `PREÇOS`; filtros; definição canônica de “impacto observado”; alertas/oportunidades determinísticos.
+- **Definition of Done:** preço anterior/atual e instante rastreáveis; janelas declaradas; métricas antes/depois; custo ausente aparece como ausência; ações/deep-links; testes e performance.
+- **Riscos:** atribuição causal indevida, janelas incompletas e margem sem base.
+- **Fora da primeira versão:** precificação automática, escrita remota de preço e margem/rentabilidade sem custo defensável.
+
+#### Central Full — B/C
+
+- **Objetivo/problema:** oferecer operação própria de Full, não apenas uma coluna dispersa.
+- **Reutiliza:** `fulfillment_stock_snapshots`, eventos de Full, Curva ABC, estoque aproveitável, cobertura, vendas, diagnóstico, ações, decisões e outcomes.
+- **Falta:** tela `FULL`; read models por conta/SKU; critérios para Curva A sem Full, ruptura Full e potencial de envio; análise antes/depois da entrada no Full.
+- **Definition of Done:** quantidade/frescor por conta; filtros; critérios visíveis; histórico; comparação não causal; links para SKU, cobertura e ação; performance medida.
+- **Riscos:** soma cega com estoque físico, snapshot stale e sugestão sem política logística.
+- **Fora da primeira versão:** envio automático, promessa de venda e otimização por IA.
+
+#### Estoque → Movimentações — B
+
+- **Objetivo/problema:** tornar o ledger existente utilizável para responder “por que o saldo mudou?”.
+- **Reutiliza:** `stock_movements` e referências de NF-e, compra, venda, cancelamento, devolução, ajuste e reconciliação; filtros/paginação existentes.
+- **Falta:** rota/read model paginado; busca e filtros por SKU, período, tipo, origem, referência e conta quando aplicável; apresentação do motivo e contexto.
+- **Definition of Done:** instante, quantidade, tipo, origem, referência e motivo claros; filtros na URL; RLS; paginação sem truncamento; UI/Playwright; ledger somente leitura.
+- **Riscos:** IDs sem contexto, estoque físico atribuído a conta, consulta cara e escrita acidental em dado append-only.
+- **Fora da primeira versão:** alterar/apagar movimentos, recalcular saldo no navegador e exportar sem necessidade medida.
+
+#### Dashboard individual do Fornecedor — B/E
+
+- **Objetivo/problema:** reunir parceiro, pedidos, custos e histórico sem fingir relação fornecedor→SKU inexistente.
+- **Reutiliza:** `suppliers`, pedidos/itens/eventos de compra, custos e `supplier_brand` apenas como eixo distinto.
+- **Falta:** rota; abas `Visão Geral | Produtos | Pedidos | Custos | Histórico`; modelagem real fornecedor→SKU antes de afirmar completude em Produtos.
+- **Definition of Done:** ausências declaradas; pedidos/custos rastreáveis; marca nunca tratada como FK; RLS/testes; navegação pela lista.
+- **Riscos:** confundir marca com entidade de compra, inventar cadastro e agregar custos incompatíveis.
+- **Fora da primeira versão:** fornecedores inferidos, CNPJ/prazo fictício e escolha automática.
+
+### Trilha 7C — Aprendizado humano/supervisionado do Copiloto — C
+
+- **Objetivo/problema:** converter correções humanas úteis em conhecimento reutilizável sem a IA aprender sozinha.
+- **Reutiliza:** Base de Conhecimento Validada, seus estados, RBAC, auditoria e ferramentas determinísticas.
+- **Falta:** oferta explícita do candidato com `Não | Revisar | Registrar/Sugerir`; preservar resposta, correção, contexto e origem; revisão antes da validação.
+- **Definition of Done:** nada gravado sem ação humana; sugestão com proveniência; papéis existentes validam; conflitos são sinalizados; Copiloto afirma apenas conhecimento validado; testes de permissão/auditoria.
+- **Riscos:** opinião virar fato, dado pessoal/transitório, duplicidade e promoção automática.
+- **Fora da primeira versão:** fine-tuning, embeddings/RAG, validação automática e resposta autônoma.
+
+### Trilha 8A — Administração e operação da plataforma
+
+Complementa a Fase 8; suas telas não substituem hardening, backup/restore nem verificação externa.
+
+#### Administração de Usuários e Permissões — B/C
+
+- **Objetivo/problema:** administrar membros, papéis e acesso por conta sem operação manual de banco.
+- **Reutiliza:** organizações, `profiles`, `organization_members`, papéis, `user_account_permissions` e helpers RLS/RBAC.
+- **Falta:** UI; fluxo aprovado de convite/ativação; comandos transacionais para papel/escopo; auditoria.
+- **Definition of Done:** só ADMIN altera; proteção do último ADMIN; backend/RLS efetivos; testes negativos multi-org/conta; histórico de mudanças.
+- **Riscos:** escalada de privilégio, lockout e segurança apenas visual.
+- **Fora da primeira versão:** grupos complexos, ACL arbitrária por feature e substituição das policies.
+
+#### Central de Integrações — C/E
+
+- **Objetivo/problema:** centralizar estado e ações seguras de Mercado Livre, UpSeller, IA, Supabase, Google Cloud, webhooks e futuras integrações.
+- **Reutiliza:** contas ML/OAuth, `sync_runs`/`sync_errors`, importações UpSeller, `ai_runs`, webhook e configurações existentes.
+- **Falta:** catálogo/adaptadores de status; distinção conexão × sincronização × configuração; reconectar/configurar com autorização.
+- **Definition of Done:** status e atividade de fonte real; erro sanitizado; zero secret; ações autorizadas; “não verificável” em vez de verde presumido.
+- **Riscos:** confundir saúde de integração com plataforma, expor metadados e declarar saúde só por haver configuração.
+- **Fora da primeira versão:** painel de secrets, provisionamento cloud e conectores sem necessidade.
+
+#### Administração → Saúde do Sistema — C/E
+
+- **Objetivo/problema:** detectar drift entre estado esperado e infraestrutura real, separado da Saúde da Sincronização.
+- **Reutiliza:** `/health`, metadados de build/deploy, scripts `infra/`, schedulers esperados, migrations e observabilidade.
+- **Falta:** contrato seguro de versão para Web/API/Worker/DB/Scheduler/filas; commit esperado; coletores autenticados; `CURRENT | OUTDATED | UNKNOWN`.
+- **Definition of Done:** commits esperado/implantado, deploy/erro, migrations e jobs esperados/reais quando verificáveis; `UNKNOWN` se medir falhar; nada deriva de documentação; testes de drift/indisponibilidade.
+- **Riscos:** permissões cloud excessivas, cache mascarando drift, tela stale e vazamento de IDs.
+- **Fora da primeira versão:** deploy, migration, rollback ou recriação de scheduler pela UI.
+
+#### Administração → Configurações — B/C
+
+- **Objetivo/problema:** dar entrada coerente às configurações distribuídas sem duplicar verdade.
+- **Reutiliza:** reposição, preferências de notificação, contas ML, orçamento do Copiloto e organização.
+- **Falta:** landing com `Organização | Reposição | Notificações | Mercado Livre | IA/Copiloto | Operação | Preferências`; decidir entre embutir ou apontar para a tela dona.
+- **Definition of Done:** um dono por configuração; links/permissões corretos; zero cópia divergente; ausência/erro; acessibilidade.
+- **Riscos:** tabela genérica sem semântica, UI/regra duplicada e controle sem autorização.
+- **Fora da primeira versão:** mover tudo, flags genéricas e edição de secrets.
+
+### Itens existentes apenas alinhados — A/D/E
+
+- **Dashboard final de Vendas — A/E:** permanece na 5C. Preserva KPIs, visão hoje, escopo por conta, comparação e gráfico já entregues. Só margem operacional depende de frete/descontos; “receita líquida” segue vetado.
+- **Dashboard de SKU com abas — A:** permanece no P1, sem duplicata; detalhado no próprio item.
+- **Republicação — A:** permanece na Fase 9; alinhamento visual acrescentado ali.
+- **Tráfego / Ads — A/E:** visitas/conversão permanecem na 5B; `INTELIGÊNCIA → TRÁFEGO / ADS` é visão futura, mas Ads depende de elegibilidade e necessidade reais.
+- **Recebimento parcial — D:** permanece na Fase 4; ciclo visual alinhado sem alterar a máquina atual.
+
+### Ordem recomendada para as novas trilhas
+
+1. **Antes delas:** deploy/validação do `HEAD`; atos humanos de `/produtos` e `/reposicao/configuracoes`; remapeamento e medição da Fase 9 conforme aprovação; verificação de backup da Fase 8.
+2. **Experiência sobre dados prontos:** Movimentações; Dashboard 360º do Anúncio; abas do Dashboard de SKU.
+3. **Centrais analíticas:** Preços e Full; Fornecedor somente até o limite do relacionamento real.
+4. **Administração/hardening:** Usuários; Saúde do Sistema; Integrações; Configurações — Saúde sobe se o risco de drift voltar a crescer.
+5. **IA no fim:** aprendizado supervisionado depois de a Base de Conhecimento ser exercitada com uso real.
+6. **Dependências:** margem, Ads e recebimento parcial só após dado, elegibilidade ou decisão próprios.
 
 ---
 
@@ -404,6 +537,8 @@ Não iniciar features de domínio antes de concluir a arquitetura detalhada e re
 Não inverter a ordem **confiabilidade dos dados -> métricas corretas -> histórico/eventos -> analytics -> diagnóstico -> ações -> IA** para produzir interface inteligente sobre dados frágeis.
 
 A ordem de execução é **0 -> 1 -> 2 -> 3 -> 5A -> 4 -> 5B -> 6 -> 7 -> 7B -> 4B -> 5C -> 5D -> 6B -> 9** (D-033; 7B acrescentada por D-071; 4B/5C/5D/6B/9 acrescentadas por D-120, sem renumerar nada). **A Fase 8 é intercalável a qualquer momento** — backup/restore verificado não conflita com nenhuma delas e é o único risco que cresce a cada dia de uso real.
+
+As trilhas **5E, 7C e 8A** registram a visão final acrescentada em 2026-08-31 e não entram retroativamente nessa sequência histórica nem reabrem seus marcos. Sua ordem própria está na seção “Trilhas da visão final” e começa somente depois das prioridades operacionais correntes.
 
 A Fase 5A antecede a Fase 4 porque o dashboard de vendas não usa estoque, e a Fase 3 já entrega pedidos confiáveis. A Fase 5B só vem depois da Fase 4 pelo motivo oposto: **dashboard sobre estoque não confiável é pior que dashboard nenhum**, porque produz decisão errada com aparência de certeza.
 
