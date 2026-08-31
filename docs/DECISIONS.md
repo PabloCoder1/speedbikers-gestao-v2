@@ -3010,6 +3010,8 @@ A camada 3 foi encontrada pelo CATALOGO (enumerando as FKs RESTRICT reais), nao 
 
 **Impacto:** migration `20260831114736`, `packages/db/src/{types.ts,rls.integration.test.ts}`, `apps/web/app/vendas/page.tsx`, `apps/web/lib/format.ts`, `docs/{METRICS,ROADMAP,HANDOFF}.md`.
 
+**Correcao pos-CI (2026-08-31):** a CI deste commit FALHOU num teste que a fatia nao tinha tocado — "membro autenticado le as seis definicoes canonicas" fixava a CONTAGEM do catalogo, e as cinco definicoes novas levaram de 6 a 11. O ensaio no Dev nao pegou porque valida a RPC, nao a suite alheia; a licao e a mesma classe de D-142 ("29/29 local nunca foi afirmacao sobre a suite de integracao"). Corrigido trocando contagem por CONJUNTO EXATO de ids (lista diz O QUE mudou, contagem so diz QUE mudou) e validado com a suite INTEIRA rodando local pela primeira vez desde D-142: Docker configurado pelo usuario, `supabase start` aplicou as 92 migrations do zero e **422/422 testes de integracao passaram** — incluindo os de D-157/D-158.
+
 ## D-158 - Visao "hoje": le orders ao vivo E sinaliza -- as duas metades da alternativa de 5C.4
 
 **Contexto:** o sub-item "visao hoje" era o penultimo do item de Vendas, deixado por 5C.4 com decisao de desenho propria: "ou le orders direto (fora do padrao L3) ou sinaliza a incompletude; nunca finge que o dia fechou". D-157 tinha acabado de estabelecer o precedente que faltava — leitura L1 com a fonte DECLARADA na tela.

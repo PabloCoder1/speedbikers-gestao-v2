@@ -43,6 +43,7 @@ A fonte de verdade continua sendo:
 - **O teste de integração é mini-prova de equivalência L1×L3**: sobre o mesmo fixture, a visão "hoje" devolve exatamente o que o teste do rollup lê (5 / 220.00 / 4 / 3), com a prova do fuso (01:30 UTC do dia 21 = dia civil 20 SP) e cancelado/pending_cancel fora do `last_order_at`.
 - Ensaio revertido no Dev (strings exatas, zero resíduo); migration `20260831115917` com arquivo casando o timestamp do MCP (lição D-138). `check` 29/29, build 8/8, +4 testes. ⚠️ Tela não vista renderizada.
 - **Do item de Vendas resta SÓ a margem operacional** — bloqueada por frete/desconto não persistidos; a fatia de worker que os persiste é candidata declarada no ROADMAP.
+- 🔴 **A CI de D-157 falhou e a correção veio com um marco**: o teste "seis definições canônicas" fixava a CONTAGEM do catálogo e as 5 definições novas quebraram-no (classe de D-142 — o ensaio no Dev valida a RPC, não a suíte alheia). Corrigido para conjunto EXATO de ids, e validado com **a suíte de integração inteira rodando LOCAL pela primeira vez desde D-142**: o usuário configurou o Docker, `supabase start` aplicou as 92 migrations do zero e **422/422 passaram** (D-157 + D-158 incluídos). O ambiente local de integração volta a existir nesta máquina.
 
 ### Etapa anterior — D-157 (métricas 5C de vendas — cancelamento sai do L1 de propósito)
 

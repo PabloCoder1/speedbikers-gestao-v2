@@ -259,10 +259,27 @@ describe("perfil criado automaticamente", () => {
 });
 
 describe("catálogo de métricas", () => {
-  it("membro autenticado lê as seis definições canônicas", async () => {
-    const rows = await asUser<{ id: string }>(ADMIN_SB, "select id from public.metric_definitions");
+  it("membro autenticado lê exatamente as definições canônicas registradas", async () => {
+    // Conjunto EXATO, não contagem: a versão antiga fixava "seis" e quebrou
+    // em silêncio... na CI, quando D-157 acrescentou as cinco de 5C — uma
+    // contagem só diz QUE mudou, a lista diz O QUE mudou. Toda migration que
+    // tocar metric_definitions atualiza esta lista junto (espelho de
+    // docs/METRICS.md, como manda D-023).
+    const rows = await asUser<{ id: string }>(ADMIN_SB, "select id from public.metric_definitions order by id");
 
-    expect(rows).toHaveLength(6);
+    expect(rows.map((row) => row.id)).toEqual([
+      "pedidos",
+      "pedidos_cancelados",
+      "pedidos_por_pack",
+      "preco_medio_praticado",
+      "receita_bruta",
+      "skus_distintos_vendidos",
+      "taxa_cancelamento",
+      "taxas_ml",
+      "ticket_medio",
+      "unidades_vendidas",
+      "valor_cancelado",
+    ]);
   });
 
   it("authenticated sem organização não lê definição nenhuma", async () => {
