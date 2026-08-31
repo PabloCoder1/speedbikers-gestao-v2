@@ -4453,6 +4453,134 @@ describe("get_listings_dashboard (D-138; conversão canônica em D-170)", () => 
   });
 });
 
+// get_price_changes (20260831201544, D-172) — a Central de Precos le os
+// eventos que ja existiam e ninguem via.
+describe("get_price_changes (D-172, Central de Preços)", () => {
+  // UUID livre conferido contra os já usados neste arquivo — reaproveitar um
+  // id existente faria o `on conflict do nothing` reusar a conta alheia, e o
+  // teste passaria a afirmar coisa de outro describe (aconteceu com 7777).
+  const CONTA_PRECO = "dddd5555-0000-4000-8000-000000000055";
+  const ITEM_SUBIU = "MLB770000001";
+  const ITEM_CAIU = "MLB770000002";
+  const ITEM_SEM_ANUNCIO = "MLB770000003";
+  const FROM = "2026-08-01T00:00:00Z";
+  const TO = "2026-09-01T00:00:00Z";
+
+  const CALL = (extra = "null, null, null, 50, 0") =>
+    `select * from public.get_price_changes('${ORG_SB}','${FROM}','${TO}', ${extra})`;
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$2,'Conta de preços','precotest-conta','PENDING')
+       on conflict do nothing`,
+      [CONTA_PRECO, ORG_SB],
+    );
+
+    await client.query(
+      `insert into public.listings
+         (organization_id, ml_account_id, item_id, title, status, price, currency_id, available_quantity, synced_at)
+       values
+         ($1,$2,$3,'Anúncio que subiu','ACTIVE',120,'BRL',3,now()),
+         ($1,$2,$4,'Anúncio que caiu','ACTIVE',80,'BRL',3,now())
+       on conflict (ml_account_id, item_id) do nothing`,
+      [ORG_SB, CONTA_PRECO, ITEM_SUBIU, ITEM_CAIU],
+    );
+
+    await client.query(
+      `insert into public.domain_events
+         (organization_id, ml_account_id, entity_type, entity_id, event_type, severity, source, dedup_key, before, after, occurred_at)
+       values
+         ($1,$2,'listing',$3,'listing.price.changed','informativo','sync','precotest-sobe','{"price": 100}','{"price": 120}','2026-08-20T12:00:00Z'),
+         ($1,$2,'listing',$4,'listing.price.changed','informativo','sync','precotest-cai','{"price": 100}','{"price": 80}','2026-08-21T12:00:00Z'),
+         -- Evento de anúncio que não está mais no catálogo: a linha continua
+         -- existindo, com título nulo (o evento é verdade, o anúncio sumiu).
+         ($1,$2,'listing',$5,'listing.price.changed','informativo','sync','precotest-orfao','{"price": 50}','{"price": 60}','2026-08-22T12:00:00Z'),
+         -- Fora da janela de datas.
+         ($1,$2,'listing',$3,'listing.price.changed','informativo','sync','precotest-fora','{"price": 10}','{"price": 20}','2020-01-02T12:00:00Z'),
+         -- Sem os dois lados do preço: não vira linha com NULL silencioso.
+         ($1,$2,'listing',$3,'listing.price.changed','informativo','sync','precotest-incompleto','{}','{"price": 130}','2026-08-23T12:00:00Z')
+       on conflict do nothing`,
+      [ORG_SB, CONTA_PRECO, ITEM_SUBIU, ITEM_CAIU, ITEM_SEM_ANUNCIO],
+    );
+  });
+
+  it("lê as mudanças com de/para, delta e razão em FRAÇÃO (convenção de D-170)", async () => {
+    const rows = await asUser<{
+      item_id: string;
+      price_before: string;
+      price_after: string;
+      delta: string;
+      delta_ratio: string;
+      title: string | null;
+      sku: string | null;
+      total_count: string;
+    }>(ADMIN_SB, `${CALL()} where item_id='${ITEM_SUBIU}'`);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.price_before).toBe("100");
+    expect(rows[0]?.price_after).toBe("120");
+    expect(rows[0]?.delta).toBe("20.00");
+    // 20 sobre 100 = 0,2 — fração, não 20.
+    expect(rows[0]?.delta_ratio).toBe("0.2000");
+    expect(rows[0]?.title).toBe("Anúncio que subiu");
+  });
+
+  it("evento sem os dois lados do preço fica de fora, e data fora da janela também", async () => {
+    const rows = await asUser<{ item_id: string; occurred_at: string }>(
+      ADMIN_SB,
+      `${CALL()} where item_id='${ITEM_SUBIU}'`,
+    );
+
+    // Três eventos existem para este item (subiu, fora da janela, incompleto);
+    // só um é resposta legítima da pergunta "de quanto para quanto".
+    expect(rows).toHaveLength(1);
+  });
+
+  it("anúncio que saiu do catálogo continua aparecendo, com título nulo", async () => {
+    const rows = await asUser<{ item_id: string; title: string | null; account_label: string }>(
+      ADMIN_SB,
+      `${CALL()} where item_id='${ITEM_SEM_ANUNCIO}'`,
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.title).toBeNull();
+    // A conta vem do próprio evento, não do anúncio — por isso sobrevive.
+    expect(rows[0]?.account_label).toBe("Conta de preços");
+  });
+
+  it("filtro de direção separa aumento de redução", async () => {
+    const subiram = await asUser<{ item_id: string }>(ADMIN_SB, CALL("null, 'up', null, 50, 0"));
+    const cairam = await asUser<{ item_id: string }>(ADMIN_SB, CALL("null, 'down', null, 50, 0"));
+
+    expect(subiram.map((r) => r.item_id)).toContain(ITEM_SUBIU);
+    expect(subiram.map((r) => r.item_id)).not.toContain(ITEM_CAIU);
+    expect(cairam.map((r) => r.item_id)).toContain(ITEM_CAIU);
+    expect(cairam.map((r) => r.item_id)).not.toContain(ITEM_SUBIU);
+  });
+
+  it("total_count conta o conjunto filtrado inteiro, não a página", async () => {
+    const pagina = await asUser<{ item_id: string; total_count: string }>(
+      ADMIN_SB,
+      CALL("null, null, 'MLB77000000', 1, 0"),
+    );
+
+    expect(pagina).toHaveLength(1);
+    // Uma linha na página, mas a busca alcança os três eventos válidos.
+    expect(Number(pagina[0]?.total_count)).toBe(3);
+  });
+
+  it("anon não executa get_price_changes", async () => {
+    await expect(asAnon(CALL())).rejects.toThrow(/permission denied/i);
+  });
+
+  it("usuário de outra organização não vê mudança nenhuma desta", async () => {
+    const rows = await asUser<{ item_id: string }>(DE_OUTRA_ORG, CALL());
+
+    expect(rows).toHaveLength(0);
+  });
+});
+
 describe("search_entities (Fase 5B, Busca universal)", () => {
   // Mesmo raciocínio de nomes fora dos padrões de limpeza global, e mesma
   // ausência de afterAll — ver comentário equivalente no describe de

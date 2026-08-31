@@ -3283,6 +3283,26 @@ group by 1 order by 1 desc;
 
 **Impacto:** `apps/api/src/{listing-visits-schedule.ts,listing-visits-schedule.test.ts}`, `docs/{HANDOFF,DECISIONS}.md`.
 
+## D-172 - Central de Precos: mostrar o que mudou sem fingir que se sabe o efeito
+
+**Contexto:** proximo item da trilha 5E. As mudancas de preco ja eram gravadas em `domain_events` (`listing.price.changed`, a cada varredura de anuncios) — 71 eventos em 57 anuncios — e **nao apareciam em tela nenhuma**: responder "que precos mudaram esta semana?" exigia SQL na mao.
+
+**Decisao 1 — a primeira versao mostra O QUE mudou, e NAO afirma impacto.** O item pede "analise antes/depois" e "impacto observado". Fui medir antes de escrever: a serie de eventos comeca em **24/08/2026** (sete dias) e as visitas por anuncio sao esporadicas (media de 4,9 dias observados em 31, medida em D-170). Nao existe janela comparavel dos DOIS lados de cada mudanca. Construir a comparacao sobre isso seria a "atribuicao causal indevida" que o proprio item lista como risco — entao a tela mostra a mudanca e **diz na propria pagina** que nao afirma impacto. O que falta e TEMPO de serie, nao codigo, e o item do ROADMAP continua aberto com esse motivo escrito.
+
+**Decisao 2 — o evento e a verdade, o anuncio e contexto.** `left join` com `listings`: um anuncio pode ter saido do catalogo depois da mudanca de preco, e a linha continua aparecendo com "anuncio fora do catalogo" em vez de sumir. Esconder o evento porque o anuncio sumiu seria apagar historia.
+
+**Decisao 3 — `delta_ratio` em FRACAO**, a convencao que D-170 acabou de canonizar (`round(x, 4)` em SQL, `formatPercent` na tela), NULL quando o preco anterior era zero. Evento sem os dois lados do preco fica FORA da resposta em vez de virar linha com NULL silencioso: "de quanto para quanto" e a pergunta da tela.
+
+**Achado do ensaio visual — erro de fuso que eu mesmo escrevi.** A tela declarava "o registro comeca em 24/08/2026", mas exibia **23/08**: eu havia passado a data por `formatDateTime("2026-08-24T00:00:00Z")`, e meia-noite UTC e 21h do dia anterior em Sao Paulo. E exatamente o deslocamento que a casa proibe em data de negocio (a regra do `formatBusinessDate`: manipulacao de string, nunca `new Date`). Corrigido para rotulo literal, com o porque no comentario. **So apareceu porque a tela foi vista renderizada** — nenhum teste pegaria.
+
+**Divida alheia encontrada e NAO consertada aqui:** `summarizePagedWindow` nunca flexiona numero, e todas as telas paginadas exibem "1 anuncios", "1 movimentos". A Central de Precos resolve o singular no chamador, com o paliativo declarado em comentario; corrigir o helper mexe em quatro telas e virou tarefa propria.
+
+**Licao de processo (custou uma CI vermelha):** apliquei a migration desta fatia no Dev via MCP **enquanto a CI do commit anterior ainda rodava** — o job "aplicar migrations" comecou 20:15:33 e a migration entrou no Dev 20:15:44, onze segundos depois. O `supabase db push` daquele commit encontrou no remoto uma migration que o repositorio ainda nao tinha e falhou. Nenhum outro check quebrou. **Regra**: so aplicar migration no Dev depois que a CI anterior fechar, ou aceitar que o job daquele commit vai falhar por uma corrida que nao e defeito do codigo.
+
+**Verificacao:** ensaio revertido no Dev antes da migration (71 eventos, 34 reducoes + 37 aumentos = 71, pagina de 10 com `total_count` 71); migration `20260831201544` nos dois bancos; **457/457 testes de integracao em banco recriado do zero** (+7 da RPC: de/para com fracao, evento incompleto e fora da janela excluidos, anuncio fora do catalogo, filtro de direcao, contagem sob paginacao, anon, isolamento) e +12 de lib; `check` 29/29, build 8/8, **13/13 Playwright**. **Tela VISTA renderizada** (lista, filtro de reducoes, singular e datas conferidos).
+
+**Impacto:** migration acima, `packages/db/src/{types.ts,rls.integration.test.ts}`, `apps/web/lib/{price-filters,price-filters.test}.ts`, `apps/web/app/precos/page.tsx` (novo), `apps/web/components/shell.tsx` (nav), `docs/{ROADMAP,HANDOFF}.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:

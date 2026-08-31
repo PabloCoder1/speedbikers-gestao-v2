@@ -4115,7 +4115,9 @@ export type Database = {
         Returns: {
           account_label: string
           available_quantity: number
-          conversion_rate: number
+          // CORRECAO MANUAL (classe D-133): NULL sem visita observada (D-170).
+          conversion_rate: number | null
+          days_observed: number
           gross_revenue: number
           item_id: string
           link_state: string
@@ -4145,6 +4147,41 @@ export type Database = {
       // NUNCA marca argumento de RPC como nulo, e os argumentos abaixo
       // aceitam NULL de verdade (e o valor que significa "sem filtro" --
       // ou, nos obrigatorios, que carrega significado proprio).
+      get_price_changes: {
+        // CORRECAO MANUAL sobre o arquivo gerado (classe D-133): o gerador
+        // nunca marca argumento de RPC como nulo, e os tres abaixo aceitam
+        // NULL de verdade -- e o valor que significa "sem filtro".
+        Args: {
+          p_date_from: string
+          p_date_to: string
+          p_direction?: string | null
+          p_limit?: number
+          p_ml_account_id?: string | null
+          p_offset?: number
+          p_organization_id: string
+          p_search?: string | null
+        }
+        Returns: {
+          account_label: string
+          delta: number
+          // CORRECAO MANUAL (classe D-133): colunas anulaveis que o gerador
+          // nao enxerga — `delta_ratio` e NULL quando o preco anterior era
+          // zero, e titulo/status/sku vem de LEFT JOIN (o anuncio pode ter
+          // saido do catalogo depois do evento).
+          delta_ratio: number | null
+          event_id: string
+          item_id: string
+          ml_account_id: string
+          occurred_at: string
+          price_after: number
+          price_before: number
+          sku: string | null
+          sku_id: string | null
+          status: string | null
+          title: string | null
+          total_count: number
+        }[]
+      }
       get_purchase_suggestions: {
         Args: {
           p_date_to: string

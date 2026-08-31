@@ -418,7 +418,11 @@ Subfase incremental posterior às bases 5C/5D/6B. Não reabre seus marcos conclu
 - **Riscos:** confundir correlação com causalidade, duplicar timeline do SKU, afirmar “saúde” sem definição e criar N+1 por aba.
 - **Fora da primeira versão:** score inventado, Ads sem elegibilidade, escrita/relist inline e causalidade por IA.
 
-#### Central de Inteligência de Preços — C/E
+#### Central de Inteligência de Preços — C/E — 🟡 PRIMEIRA VERSÃO em 2026-08-31 (D-172); a análise antes/depois segue ABERTA
+
+`/precos` (nav COMERCIAL): toda mudança de preço observada, com anúncio, SKU, conta, de/para, delta absoluto e proporcional, filtros na URL (direção/conta/busca/período) e paginação com contagem sobre o conjunto filtrado. Os eventos `listing.price.changed` já existiam desde a Fase 5B e não apareciam em tela nenhuma.
+
+- **O que falta, e por quê:** a análise antes/depois e a definição de "impacto observado" **não entraram, e não por falta de código**: a série de eventos começa em 24/08/2026 e as visitas por anúncio são esporádicas (média de 4,9 dias observados em 31, medido em D-170), então não existe janela comparável dos dois lados de cada mudança. Afirmar impacto sobre isso seria a "atribuição causal indevida" que o próprio item lista como risco. O que falta é **tempo de série**, e o item permanece aberto por isso. Alertas/oportunidades determinísticos também ficam para essa etapa.
 
 - **Objetivo/problema:** transformar mudanças de preço dispersas em análise comercial antes/depois ligada a SKU, anúncio, ação e decisão.
 - **Reutiliza:** preço atual de `listings`, `listing.price.changed`, vendas/visitas/conversão, diagnóstico, Central de Ações, decisões/outcomes e histórico de custo.
