@@ -6,3 +6,6 @@ export {
   relistStateRequiresHuman,
 } from "./relist.js";
 export type { RelistState } from "./relist.js";
+
+export { evaluateRelistPreflight } from "./relist-preflight.js";
+export type { RelistPreflightIssue, RelistPreflightResult } from "./relist-preflight.js";

@@ -3046,6 +3046,20 @@ A camada 3 foi encontrada pelo CATALOGO (enumerando as FKs RESTRICT reais), nao 
 
 **Impacto:** `packages/domain/src/listings/{relist.ts,relist.test.ts,index.ts}` (subdominio novo), `packages/domain/src/index.ts`, migration `20260831123707`, `packages/db/src/{types.ts,rls.integration.test.ts}`, `docs/{ROADMAP,HANDOFF}.md`.
 
+## D-160 - Preflight do relist: fail-safe por desenho -- snapshot ilegivel reprova, nunca presume
+
+**Contexto:** segunda fatia da Fase 9. O ROADMAP pede "preflight que nunca fecha o anuncio quando pre-condicao critica falha" — fechar e IRREVERSIVEL (secao 2.16). A fatia entrega o AVALIADOR deterministico; o fio (executor que o consulta antes de fechar) nasce junto do fluxo web→api→worker, na fatia seguinte.
+
+**Decisao 1 — cada bloqueio nasce de um fato da pesquisa, nunca de suposicao (REGRA ABSOLUTA):** `JA_REPUBLICADO` pela tag oficial `relist` (uma republicacao por pai e regra do proprio ML); `FULL_BLOQUEADO` por `inventory_id` na raiz OU em variacao (secao 2.7, exemplo oficial) — a doc de relist e silenciosa sobre o CD e o risco e prender estoque fisico; `CATALOGO_BLOQUEADO` por `catalog_listing` (silencio documental identico); `ENCADEAMENTO_NAO_DOCUMENTADO` quando o pai ja e FILHO (`parent_item_id` presente) — o caso "incerto" que a propria pesquisa registrou.
+
+**Decisao 2 — FAIL-SAFE como contrato:** o snapshot e jsonb sem contrato de banco. Forma que nao e um item ⇒ `SNAPSHOT_ILEGIVEL`; `tags`/`catalog_listing` ilegiveis ⇒ `SNAPSHOT_INCOMPLETO` — reprovar o que nao da para VERIFICAR, nunca presumir aprovacao. A excecao e deliberada e testada: ausencia so passa onde ausencia e o caso NORMAL (`inventory_id` ausente = fora do Full; `parent_item_id` ausente = nao e filho). Mesmo espirito da recusa como contrato de D-144/D-147.
+
+**Decisao 3 — bloqueios saem JUNTOS, aviso nunca bloqueia:** o operador ve a lista inteira de uma vez (corrigir um por vez seria a dor de CI em conta-gotas, em versao de produto). `HERANCA_NAO_OCORRE_EM_FREE` e aviso: republicar anuncio gratuito e permitido, so nao herda visitas/vendas — quem decide sabendo e o humano (PRD: nao prometer recuperacao de exposicao).
+
+**Verificacao:** `check` 29/29 (+9 testes de dominio, incluindo o fail-safe sobre lixo e a prova do contraste ausencia-normal x ausencia-lacuna), build 8/8. Sem migration, sem rede, sem UI. 🟢 CI de D-159 (`787e885`) verde.
+
+**Impacto:** `packages/domain/src/listings/{relist-preflight.ts,relist-preflight.test.ts,index.ts}`, `docs/{ROADMAP,HANDOFF}.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:
