@@ -136,6 +136,16 @@ upsert_job \
   "${API_URL}/internal/schedule/listing-visits" \
   "Sincronizacao de visitas por anuncio, por conta Mercado Livre CONNECTED"
 
+# Captura de custos por pedido (D-165) -- frete do vendedor e desconto
+# bancado, para a margem operacional (METRICS 5C.2). DIARIA, depois do pico
+# de visitas (7h) para nao disputar o mesmo rate limit por conta; a varredura
+# cobre 7 dias por rodada, entao uma rodada perdida se autocorrige.
+upsert_job \
+  "v3-order-financials-sweep" \
+  "30 9 * * *" \
+  "${API_URL}/internal/schedule/order-financials" \
+  "Captura de frete do vendedor e desconto por pedido, por conta CONNECTED"
+
 # Reconciliacao de Perguntas do Mercado Livre (Fase 7B, D-089).
 #
 # Cadencia de 10 em 10 minutos desde 2026-08-26 (D-092). Era 6h, sob a

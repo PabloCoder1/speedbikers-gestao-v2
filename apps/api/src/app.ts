@@ -26,6 +26,8 @@ import type { IpAllowlistVerifier } from "./ip-allowlist.js";
 import type { LedgerIntegrityScheduleDeps } from "./ledger-integrity-schedule.js";
 import { triggerLedgerIntegrityCheck } from "./ledger-integrity-schedule.js";
 import type { ListingVisitsScheduleDeps } from "./listing-visits-schedule.js";
+import type { OrderFinancialsScheduleDeps } from "./order-financials-schedule.js";
+import { triggerOrderFinancialsSweep } from "./order-financials-schedule.js";
 import { triggerListingVisitsSnapshot } from "./listing-visits-schedule.js";
 import type { SupportMessagesScheduleDeps } from "./support-messages-schedule.js";
 import { triggerSupportMessagesReconcile } from "./support-messages-schedule.js";
@@ -93,6 +95,7 @@ export interface AppDependencies {
   ledgerIntegritySchedule?: LedgerIntegrityScheduleDeps;
   listingsSchedule?: ListingsScheduleDeps;
   listingVisitsSchedule?: ListingVisitsScheduleDeps;
+  orderFinancialsSchedule?: OrderFinancialsScheduleDeps;
   supportQuestionsSchedule?: SupportQuestionsScheduleDeps;
   supportClaimsSchedule?: SupportClaimsScheduleDeps;
   supportMessagesSchedule?: SupportMessagesScheduleDeps;
@@ -441,6 +444,22 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     const outcome = await triggerListingVisitsSnapshot(listingVisitsSchedule);
+
+    return context.json(outcome);
+  });
+
+  // --------------------------------------------------------------------
+  // Captura de custos por pedido (D-165) -- frete do vendedor e desconto
+  // bancado, por CONTA, diaria. Mesmo formato da rota acima.
+  // --------------------------------------------------------------------
+  app.post("/internal/schedule/order-financials", async (context) => {
+    const orderFinancialsSchedule = dependencies.orderFinancialsSchedule;
+
+    if (orderFinancialsSchedule === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const outcome = await triggerOrderFinancialsSweep(orderFinancialsSchedule);
 
     return context.json(outcome);
   });

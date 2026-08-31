@@ -3128,6 +3128,22 @@ A camada 3 foi encontrada pelo CATALOGO (enumerando as FKs RESTRICT reais), nao 
 
 **Impacto:** `apps/worker/src/handlers/{relist-measurement.ts,relist-measurement.test.ts}` (novo), `apps/worker/src/handlers/{relist-execute.ts,relist-execute.test.ts}`, `packages/domain/src/diagnostics/action-evidence.{ts,test.ts}`, `docs/{ROADMAP,HANDOFF}.md`. **FASE 9 COMPLETA NO BACKEND (D-159→D-164)** — pesquisa, modelo, preflight, criacao, executor, remapeamento e medicao. O que NAO existe, declarado: UI (trilha da visao de UX) e o primeiro relist real (ensaio humano deliberado, pos-deploy, com anuncio sacrificavel).
 
+## D-165 - Custos por pedido: as fontes da margem operacional persistidas, e NULL nunca vira zero
+
+**Contexto:** a margem operacional era a ultima metrica do item de Vendas (5C.2), "bloqueada ate frete e desconto serem persistidos". As fontes estavam confirmadas desde a leitura oficial de 2.15 (D-120): frete do vendedor = soma de `senders[].cost` em GET /shipments/{id}/costs (a FAQ designa o campo para conciliacao); desconto bancado = `amounts.seller` em GET /orders/{id}/discounts. O que faltava era ingestao — e nem o `shipping_id` era persistido.
+
+**Decisao 1 — a chave vem de graca, a captura e varredura:** `orders.shipping_id` passa a ser gravado na persistencia do pedido (o payload ja o traz — zero chamadas novas; leitura aditiva no schema). Os custos vem do job diario `sync.order-financials`, por conta, na fila da conta: janela de 7 dias sobre pedidos validos, com TODAS as licoes de D-156 embutidas — checkpoint por existencia de linha (429 no meio nao descarta o progresso), espacamento de 150 ms entre pedidos, enumeracao paginada (classe D-131).
+
+**Decisao 2 — NULL nunca vira zero:** endpoint que responde 4xx definitivo para um pedido (sem envio; desconto nao observavel) grava o campo NULO — a linha existe (o pedido FOI varrido), o valor nao foi observado. Zero afirmaria "custou R$ 0,00", que a doc nao sustenta. Pedido anterior a D-165 (sem shipping_id) entra com frete NULO e sai DECLARADO na contagem `items_without_shipping` do log — nunca escondido na media.
+
+**Decisao 3 — sem backfill alem da janela**, o precedente de D-149: o rastreio comeca quando a captura comeca (nao existe L0 de onde reconstruir taxa retroativa — medido em 2.15), e a metrica futura declara a cobertura (pedidos com captura / pedidos do periodo). A METRICA em si (RPC + tela, com a lista do que NAO entra e o veto a "receita liquida") e a fatia seguinte, sobre janela COBERTA.
+
+**Observabilidade desde o nascimento:** `sync_runs.resource` ganhou `order_financials` (quinto alargamento do CHECK, mesmo formato) — a varredura tem janela/contagem/frescor reais; a tela de Saude degrada sem selo chutado para recurso sem cadencia declarada.
+
+**Verificacao:** migration `20260831160501` aplicada nos DOIS bancos na mesma versao; **432/432 testes de integracao em banco recriado do zero (99 migrations)**; `check` 29/29 (+9 testes: 7 do handler — caminho feliz com soma de senders, frete nulo declarado, 4xx→NULL, checkpoint, espacamento, 429 no meio com progresso preservado, conta desconectada — e 2 do gatilho), build 8/8. ⚠️ **O job so passa a existir quando `bash infra/cloud-scheduler.sh` rodar apos o proximo deploy** — registrado como pendencia operacional junto do deploy que ja estava pendente (o ar segue em `fc39c27`).
+
+**Impacto:** migration `20260831160501`, `apps/worker/src/handlers/{sync-order-financials.ts,sync-order-financials.test.ts,order-schema.ts,persist-order.ts,sync-runs.ts}`, `apps/worker/src/index.ts`, `apps/api/src/{order-financials-schedule.ts,order-financials-schedule.test.ts,app.ts,index.ts}`, `infra/cloud-scheduler.sh`, `packages/db/src/types.ts`, `docs/{METRICS,MERCADO_LIVRE,API,ROADMAP,HANDOFF}.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:

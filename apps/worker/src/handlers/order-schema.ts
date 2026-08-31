@@ -54,6 +54,9 @@ export const orderSchema = z.object({
   currency_id: z.string(),
   pack_id: z.number().nullable().optional(),
   buyer: z.object({ id: z.number() }).nullable().optional(),
+  // D-165: shipping.id é a chave de GET /shipments/{id}/costs (§2.15). O
+  // objeto shipping do pedido é padrão da API; ler só o id é aditivo.
+  shipping: z.object({ id: z.number().nullable().optional() }).nullable().optional(),
   tags: z.array(z.string()).optional(),
   cancel_detail: z
     .object({ description: z.string().nullable().optional() })

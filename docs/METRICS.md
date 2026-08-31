@@ -149,9 +149,10 @@ Nenhuma dessas será exibida enquanto a fonte não estiver confirmada e a defini
 > cancelamento calcula os DOIS lados (cancelados e válidos) da mesma leitura
 > de `orders` (L1) — misturar cancelados de L1 com o `pedidos` de L3
 > embutiria o atraso do recálculo na razão (0,1% medido no dia da entrega).
-> Seguem bloqueadas com o motivo nomeado: `margem_operacional_pedido` (frete
-> e desconto não persistidos) e `valor_estoque` (5C.4). A visão "hoje" foi
-> resolvida em D-158 (ver 5C.4).
+> Segue bloqueada com o motivo nomeado: `valor_estoque` (5C.4). A visão
+> "hoje" foi resolvida em D-158; as FONTES da margem operacional são
+> persistidas desde D-165 (a métrica entra com a RPC/tela sobre janela
+> coberta).
 
 ### 5C.1 O veto: "receita líquida" não é um nome permitido
 
@@ -166,7 +167,7 @@ A conciliação real só existe no ciclo mensal de `/billing/integration/...`, q
 | ID | Nome | Fórmula | Fonte | Ressalva obrigatória na tela |
 |---|---|---|---|---|
 | `taxas_ml` | Taxas do Mercado Livre | `SUM(order_items.sale_fee)` sobre vendas válidas | `order_items.sale_fee` (100% preenchido, medido) | É a **comissão de venda**. Não inclui frete, taxa fixa, parcelamento nem impostos |
-| `margem_operacional_pedido` | Margem operacional | `receita_bruta − taxas_ml − frete_vendedor − desconto_vendedor` | idem + `/shipments/{id}/costs` + `/orders/{id}/discounts` | **Não é receita líquida.** Lista o que não entra. Bloqueada até frete e desconto serem persistidos |
+| `margem_operacional_pedido` | Margem operacional | `receita_bruta − taxas_ml − frete_vendedor − desconto_vendedor` | idem + `order_financials` (D-165: frete = `senders[].cost` somado; desconto = `amounts.seller`) | **Não é receita líquida.** Lista o que não entra. **Fontes PERSISTIDAS desde D-165** (varredura diária dos últimos 7 dias; NULL = não observado, nunca zero) — a métrica em si entra quando a RPC/tela nascerem sobre janela COBERTA, declarando a cobertura (pedidos com captura ÷ pedidos do período) |
 | `pedidos_cancelados` | Pedidos cancelados | `COUNT(DISTINCT orders.id) where status in ('cancelled','pending_cancel')` | `orders.status` | `pending_cancel` conta como cancelado (mesma semântica de `order.cancelled`, `@sb/domain`) |
 | `taxa_cancelamento` | Taxa de cancelamento | `pedidos_cancelados / NULLIF(pedidos_cancelados + pedidos, 0)` | idem | Denominador = **elegíveis** (válidos + cancelados), não só válidos. **Cancelamento ≠ devolução ≠ reembolso ≠ mediação** — ver 5C.3 |
 | `valor_cancelado` | Valor cancelado | `SUM(orders.total_amount)` dos cancelados | `orders.total_amount` | Valor **pedido**, não valor estornado — a V3 não observa o estorno financeiro |

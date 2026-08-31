@@ -27,7 +27,8 @@ export type SyncResource =
   | "visits"
   | "questions"
   | "messages"
-  | "claims";
+  | "claims"
+  | "order_financials";
 export type SyncErrorClass = "retryable" | "retryable_eventual" | "not_retryable";
 
 interface SyncRunBase {

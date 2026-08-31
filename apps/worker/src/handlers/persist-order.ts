@@ -94,6 +94,7 @@ export async function persistOrder(
         paid_amount: order.paid_amount ?? null,
         currency_id: order.currency_id,
         buyer_id: order.buyer?.id ?? null,
+        shipping_id: order.shipping?.id ?? null,
         tags: order.tags ?? [],
         cancel_reason: order.cancel_detail?.description ?? null,
       },

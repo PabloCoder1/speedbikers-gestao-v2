@@ -21,6 +21,7 @@ import { createSyncFulfillmentSnapshotHandler } from "./handlers/sync-fulfillmen
 import { createSyncListingVisitsSnapshotHandler } from "./handlers/sync-listing-visits-snapshot.js";
 import { createSyncListingsSnapshotHandler } from "./handlers/sync-listings-snapshot.js";
 import { createSyncOrdersWindowHandler } from "./handlers/sync-orders-window.js";
+import { createSyncOrderFinancialsHandler } from "./handlers/sync-order-financials.js";
 import { createRelistExecuteHandler } from "./handlers/relist-execute.js";
 import { createRelistPrepareHandler } from "./handlers/relist-prepare.js";
 import { createSendSupportReplyHandler } from "./handlers/send-support-reply.js";
@@ -88,6 +89,12 @@ const app = createWorkerApp({
     "sync.fulfillment.snapshot": createSyncFulfillmentSnapshotHandler({ db, mercadoLivre, oauth, encryptionKey }),
     "sync.listings.snapshot": createSyncListingsSnapshotHandler({ db, mercadoLivre, oauth, encryptionKey }),
     "sync.listing-visits.snapshot": createSyncListingVisitsSnapshotHandler({
+      db,
+      mercadoLivre,
+      oauth,
+      encryptionKey,
+    }),
+    "sync.order-financials": createSyncOrderFinancialsHandler({
       db,
       mercadoLivre,
       oauth,

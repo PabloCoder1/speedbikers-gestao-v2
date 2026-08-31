@@ -112,6 +112,7 @@ O upload da planilha vai do navegador **direto** para a `api`, sem passar pela V
 | `/internal/schedule/maintenance` | Cloud Scheduler | Reconciliação de estoque contra o UpSeller (D-029) — **implementado em 2026-08-22**, diário, por ORGANIZAÇÃO (não por conta ML). Expurgo continua sem dono |
 | `/internal/schedule/ledger-integrity` | Cloud Scheduler | Conferência ledger × projeção (D-056) — **implementado em 2026-08-23**, diário, por ORGANIZAÇÃO |
 | `/internal/schedule/listings` | Cloud Scheduler | Sincronização de listings/anúncios (D-058) — **implementado em 2026-08-23**, a cada 6h, por CONTA |
+| `/internal/schedule/order-financials` | Cloud Scheduler | Captura de custos por pedido (D-165): frete do vendedor + desconto bancado, para a margem operacional — **implementado em 2026-08-31**, diário (9h30/SP), por CONTA; varredura de 7 dias com checkpoint por linha e espaçamento (lição D-156) |
 | `/internal/schedule/listing-visits` | Cloud Scheduler | Sincronização de visitas por anúncio (D-032/D-059) — **implementado em 2026-08-23**, DIÁRIO (não 6h — visita não é dado operacional urgente), por CONTA |
 | `/internal/schedule/support-questions` | Cloud Scheduler | Reconciliação de Perguntas (D-089) — **implementado em 2026-08-25**, a cada 6h, por CONTA. Rede de segurança do webhook `questions` |
 | `/internal/schedule/sales-anomaly-actions` | Cloud Scheduler | Detecção de anomalia de venda, Central de Ações (D-064) — **implementado em 2026-08-24**, DIÁRIO, por ORGANIZAÇÃO |

@@ -663,7 +663,7 @@ Fórmula publicada pelo próprio Mercado Livre: `(unit_price * quantity) - marke
 
 **Restrição oficial que decide a arquitetura:** o próprio ML afirma que os endpoints de Relatórios de Faturamento *"não devem ser utilizados como fonte de dados primária para gestão de vendas"*. Logo, **duas visões distintas e declaradas**: estimativa por pedido (tempo real) e conciliação por período (mensal). Nunca uma só chamada de "receita líquida".
 
-**Estado do dado na V3, medido:** `order_items.sale_fee` **existe, está 100% preenchido em todas as janelas e nunca foi lido por ninguém** — R$ 297.993,32 em 30 dias sobre R$ 3.057.736,33 (9,75%). Frete do vendedor **não é persistido** (`orders` não guarda `shipping`). **Não existe L0**: o bucket `raw-ml` foi provisionado e nunca recebeu um byte, então não há de onde reconstruir taxa alguma retroativamente.
+**Estado do dado na V3, medido:** `order_items.sale_fee` **existe, está 100% preenchido em todas as janelas e nunca foi lido por ninguém** — R$ 297.993,32 em 30 dias sobre R$ 3.057.736,33 (9,75%). Frete do vendedor **passou a ser persistido em D-165** (`orders.shipping_id` na persistência do pedido + varredura diária `sync.order-financials` gravando `order_financials.seller_shipping_cost`/`seller_discount`; NULL = não observado, nunca zero). **Não existe L0**: o bucket `raw-ml` foi provisionado e nunca recebeu um byte, então não há de onde reconstruir taxa alguma retroativamente.
 
 ### Visitas — limites oficiais que invalidam a suposição de lote
 

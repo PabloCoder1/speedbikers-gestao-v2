@@ -1837,6 +1837,55 @@ export type Database = {
           },
         ]
       }
+      order_financials: {
+        Row: {
+          captured_at: string
+          ml_account_id: string
+          order_id: number
+          organization_id: string
+          seller_discount: number | null
+          seller_shipping_cost: number | null
+        }
+        Insert: {
+          captured_at?: string
+          ml_account_id: string
+          order_id: number
+          organization_id: string
+          seller_discount?: number | null
+          seller_shipping_cost?: number | null
+        }
+        Update: {
+          captured_at?: string
+          ml_account_id?: string
+          order_id?: number
+          organization_id?: string
+          seller_discount?: number | null
+          seller_shipping_cost?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_financials_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_financials_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: true
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_financials_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       order_items: {
         Row: {
           created_at: string
@@ -1941,6 +1990,7 @@ export type Database = {
           organization_id: string
           pack_id: number | null
           paid_amount: number | null
+          shipping_id: number | null
           status: string
           status_detail: string | null
           tags: string[]
@@ -1961,6 +2011,7 @@ export type Database = {
           organization_id: string
           pack_id?: number | null
           paid_amount?: number | null
+          shipping_id?: number | null
           status: string
           status_detail?: string | null
           tags?: string[]
@@ -1981,6 +2032,7 @@ export type Database = {
           organization_id?: string
           pack_id?: number | null
           paid_amount?: number | null
+          shipping_id?: number | null
           status?: string
           status_detail?: string | null
           tags?: string[]
