@@ -5,12 +5,25 @@ import { actionShortcuts } from "./action-shortcuts";
 const SKU_ID = "11111111-2222-4333-8444-555555555501";
 
 describe("actionShortcuts", () => {
-  it("venda anômala com SKU: dashboard, anúncios e reposição — todos para telas que existem", () => {
+  it("venda anômala com SKU: dashboard, diagnóstico, anúncios e reposição — todos para telas que existem", () => {
     expect(actionShortcuts({ kind: "venda_anomala", skuId: SKU_ID, sku: "3001-9243" })).toEqual([
       { label: "Dashboard do SKU", href: `/skus/${SKU_ID}` },
+      { label: "Diagnóstico do SKU", href: `/skus/${SKU_ID}?aba=diagnostico` },
       { label: "Anúncios do SKU", href: "/anuncios?busca=3001-9243" },
       { label: "Reposição", href: "/reposicao?busca=3001-9243" },
     ]);
+  });
+
+  /**
+   * A aba de diagnóstico depende do ID, não do código do SKU: uma ação com
+   * `sku` preenchido e `skuId` nulo não pode gerar `/skus/?aba=diagnostico`
+   * — link morto é o que este módulo existe para impedir.
+   */
+  it("venda anômala sem ID de SKU: busca por código ainda existe, atalho de aba não é inventado", () => {
+    const shortcuts = actionShortcuts({ kind: "venda_anomala", skuId: null, sku: "3001-9243" });
+
+    expect(shortcuts.some((s) => s.href.startsWith("/skus/"))).toBe(false);
+    expect(shortcuts).toContainEqual({ label: "Anúncios do SKU", href: "/anuncios?busca=3001-9243" });
   });
 
   /**
@@ -28,7 +41,9 @@ describe("actionShortcuts", () => {
   it("SKU com caracteres reservados é escapado na busca", () => {
     const shortcuts = actionShortcuts({ kind: "venda_anomala", skuId: SKU_ID, sku: "A&B #1" });
 
-    expect(shortcuts[1]?.href).toBe("/anuncios?busca=A%26B%20%231");
+    // Por rótulo, não por índice: a lista cresce, e um teste que depende da
+    // posição quebra sem que nada de errado tenha acontecido.
+    expect(shortcuts.find((s) => s.label === "Anúncios do SKU")?.href).toBe("/anuncios?busca=A%26B%20%231");
   });
 
   it("ação sem SKU vinculado: nenhum link morto", () => {

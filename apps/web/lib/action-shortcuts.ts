@@ -25,8 +25,21 @@ export function actionShortcuts(input: {
   const shortcuts: ActionShortcut[] = [];
 
   if (input.skuId !== null) {
-    // O hub: diagnóstico, simulador, custo e a linha do tempo (D-153).
+    // O hub. Desde D-169 a tela abre na Visão geral (estoque em cada estado,
+    // venda da janela e custo); diagnóstico, simulador, custo detalhado e
+    // linha do tempo passaram a viver em abas — e a aba tem URL própria,
+    // então o atalho abaixo pode apontar direto para ela em vez de mandar
+    // procurar.
     shortcuts.push({ label: "Dashboard do SKU", href: `/skus/${input.skuId}` });
+  }
+
+  if (input.kind === "venda_anomala" && input.skuId !== null) {
+    // "Por que a venda mudou?" é a pergunta do diagnóstico — e desde D-169
+    // ela é endereçável. Continua valendo a regra do módulo: a aba EXISTE, e
+    // `diagnostico` é um dos valores que a tela aceita. Depende de `skuId`,
+    // não de `sku`: sem id não há rota, e link morto é justamente o que este
+    // módulo existe para impedir.
+    shortcuts.push({ label: "Diagnóstico do SKU", href: `/skus/${input.skuId}?aba=diagnostico` });
   }
 
   if (input.kind === "venda_anomala" && input.sku !== null) {

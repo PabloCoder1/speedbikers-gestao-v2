@@ -20,5 +20,9 @@ test("dashboard de SKU mostra saldo local do seed", async ({ page }) => {
 
   await expect(statValue(page, "Local")).toContainText("50");
 
+  // Abas (D-169): "Anúncios" virou aba própria — navegar por ela cobre a
+  // navegação junto. O locator escopa pelo nav das abas porque o menu
+  // lateral também tem um link "Anúncios".
+  await page.getByRole("navigation", { name: "Abas do SKU" }).getByRole("link", { name: "Anúncios" }).click();
   await expect(page.getByText("Nenhum anúncio vinculado a este SKU.")).toBeVisible();
 });
