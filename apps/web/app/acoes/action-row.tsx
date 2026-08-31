@@ -2,7 +2,10 @@
 
 import { useState, type ReactNode } from "react";
 
+import Link from "next/link";
+
 import type { ActionEvidenceView } from "../../lib/action-evidence";
+import type { ActionShortcut } from "../../lib/action-shortcuts";
 import { formatCurrency } from "../../lib/format";
 import { claimAction, dismissAction, registerDecision, resolveAction } from "./actions";
 
@@ -43,6 +46,8 @@ export interface ActionRowData {
   status: string;
   assignee_id: string | null;
   decisions: DecisionData[];
+  /** Atalhos operacionais (D-154), calculados no servidor — só telas que existem. */
+  shortcuts: ActionShortcut[];
 }
 
 const td: React.CSSProperties = {
@@ -186,7 +191,23 @@ export function ActionRow({ action, userId }: { action: ActionRowData; userId: s
           </div>
         )}
       </td>
-      <td style={td}>{action.recommendation}</td>
+      <td style={td}>
+        {action.recommendation}
+        {/*
+          Atalhos operacionais (D-154): a recomendação deixou de mandar o
+          operador procurar telas — os caminhos que EXISTEM estão a um
+          clique, embaixo dela.
+        */}
+        {action.shortcuts.length > 0 && (
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.375rem" }}>
+            {action.shortcuts.map((shortcut) => (
+              <Link key={shortcut.href} href={shortcut.href} style={{ fontSize: "0.75rem", whiteSpace: "nowrap" }}>
+                {shortcut.label} →
+              </Link>
+            ))}
+          </div>
+        )}
+      </td>
       <td style={td}>
         {statusLabel(status)}
         {assigneeId !== null && (

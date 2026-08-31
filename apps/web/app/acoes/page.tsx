@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import { Shell } from "../../components/shell";
 import { describeActionEvidence } from "../../lib/action-evidence";
+import { actionShortcuts } from "../../lib/action-shortcuts";
 import { formatCount } from "../../lib/format";
 import { createClient } from "../../lib/supabase/server";
 import type { ActionRowData, DecisionData, OutcomeData } from "./action-row";
@@ -27,6 +28,7 @@ export const dynamic = "force-dynamic";
 interface ActionQueryRow {
   id: string;
   kind: string;
+  sku_id: string | null;
   severity: string;
   confidence: string;
   estimated_impact_brl: number | null;
@@ -69,7 +71,7 @@ export default async function AcoesPage(): Promise<ReactNode> {
   const { data, error: actionsError } = await supabase
     .from("actions")
     .select(
-      "id, kind, severity, confidence, estimated_impact_brl, evidence, recommendation, status, assignee_id, skus(sku, title)",
+      "id, kind, sku_id, severity, confidence, estimated_impact_brl, evidence, recommendation, status, assignee_id, skus(sku, title)",
     )
     .in("status", ["novo", "em_andamento"])
     .order("estimated_impact_brl", { ascending: false, nullsFirst: false });
@@ -146,6 +148,10 @@ export default async function AcoesPage(): Promise<ReactNode> {
       status: row.status,
       assignee_id: row.assignee_id,
       decisions: decisionsByAction.get(row.id) ?? [],
+      // Atalhos operacionais (D-154): só para telas que existem, com o
+      // filtro que elas realmente têm — calculados no servidor, a linha só
+      // renderiza.
+      shortcuts: actionShortcuts({ kind: row.kind, skuId: row.sku_id, sku: row.skus?.sku ?? null }),
     }),
   );
 

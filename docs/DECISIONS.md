@@ -2946,6 +2946,18 @@ A camada 3 foi encontrada pelo CATALOGO (enumerando as FKs RESTRICT reais), nao 
 
 **Impacto:** migration `20260831095401` (RPC), `apps/web/app/skus/[skuId]/page.tsx` (secao), `types.ts` (regenerado), `rls.integration.test.ts` (+2 sobre as fixtures de D-152).
 
+## D-154 - Atalhos operacionais na Central de Acoes: so se aponta para tela que existe
+
+**Contexto:** item da 6B com a dor nomeada pelo ROADMAP: "hoje nao existe um unico link, e a recomendacao gerada manda abrir telas que a interface nao oferece". Fatia deliberadamente ANTES da "IA explicando a acao" -- o mesmo principio de "ruido antes da inteligencia": a camada deterministica primeiro, para a narracao da fatia seguinte apontar para chao real.
+
+**A regra do modulo e a inversa da dor** (`actionShortcuts`, puro e testado): so se aponta para tela que EXISTE, com o filtro que ela realmente tem. Venda anomala com SKU ganha tres atalhos -- Dashboard do SKU (o hub: diagnostico, simulador, custo e a linha do tempo de D-153), `/anuncios?busca=` (D-138) e `/reposicao?busca=` (D-147). Reclamacoes recorrentes ganha a Caixa de Entrada INTEIRA, **sem fingir um filtro por SKU que `/atendimento` nao oferece**. `kind` desconhecido degrada para os atalhos genericos do SKU; acao sem SKU nao ganha link morto. Calculo no servidor; a linha so renderiza.
+
+**O achado da fatia estava no DOMINIO**: o proximo passo do diagnostico prometia "Abrir a Caixa de Entrada FILTRADA POR ESTE SKU" -- exatamente o filtro que nao existe, a queixa literal do item encarnada numa string de D-116. Corrigido para prometer o que existe.
+
+**Verificacao:** `check` 29/29 (+5 testes de web), build compila. Sem migration, sem RPC, sem types. Tela nao vista renderizada (a ressalva de sempre).
+
+**Impacto:** `apps/web/lib/action-shortcuts.{ts,test.ts}` (novo), `apps/web/app/acoes/{page,action-row}.tsx` (sku_id no select; atalhos sob a recomendacao), `packages/domain/src/diagnostics/sales-anomaly.ts` (texto honesto).
+
 ## Como adicionar nova decisao
 
 Registrar:

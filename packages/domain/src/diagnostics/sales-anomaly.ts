@@ -184,8 +184,11 @@ export function diagnoseSalesAnomaly(
     causasCandidatas.length > 0
       ? [
           "Revisar o evento correlato listado acima antes de agir.",
+          // D-154: o texto prometia "filtrada por este SKU" — um filtro que
+          // /atendimento NÃO oferece. Recomendação só aponta para o que
+          // existe (a queixa literal do item de atalhos do ROADMAP).
           ...(direcao === "queda" && openClaims > 0
-            ? ["Abrir a Caixa de Entrada filtrada por este SKU e ler as reclamações."]
+            ? ["Abrir a Caixa de Entrada e ler as reclamações deste SKU."]
             : []),
         ]
       : ["Nenhum evento correlato encontrado — investigar preço, concorrência ou sazonalidade fora do baseline."];
