@@ -1115,6 +1115,70 @@ describe("métricas diárias de venda", () => {
       ).rejects.toThrow(/permission denied/i);
     });
   });
+
+  // get_sales_today_summary (20260831115917, D-158) — a visão "hoje": as
+  // MESMAS fórmulas canônicas avaliadas ao vivo sobre orders (L1). O teste
+  // do grão organização é uma mini-prova de equivalência L1×L3: os números
+  // têm de ser IGUAIS aos que o teste de get_sales_summary lê do rollup
+  // sobre este mesmo fixture.
+  describe("get_sales_today_summary (D-158)", () => {
+    it("grão organização bate com o rollup L3 sobre o mesmo fixture — e o pedido de 01:30 UTC entra no dia civil SP", async () => {
+      const rows = await asUser<{
+        units_sold: string;
+        gross_revenue: string;
+        orders_count: string;
+        purchases_count: string;
+        last_order_at: string;
+      }>(
+        ADMIN_SB,
+        `select units_sold, gross_revenue, orders_count, purchases_count, last_order_at::text
+         from public.get_sales_today_summary('2026-08-20')`,
+      );
+
+      expect(rows[0]).toEqual({
+        units_sold: "5",
+        gross_revenue: "220.00",
+        orders_count: "4",
+        purchases_count: "3",
+        // A última venda VÁLIDA do dia civil SP: 01:30 UTC do dia 21 = 22:30
+        // do dia 20 em São Paulo. Cancelado/pending_cancel não contam.
+        last_order_at: "2026-08-21 01:30:00+00",
+      });
+    });
+
+    it("filtra por conta quando informado", async () => {
+      const rows = await asUser<{ gross_revenue: string; purchases_count: string }>(
+        ADMIN_SB,
+        `select gross_revenue, purchases_count from public.get_sales_today_summary('2026-08-20','${CONTA_A}')`,
+      );
+
+      expect(rows[0]).toEqual({ gross_revenue: "180.00", purchases_count: "2" });
+    });
+
+    it("dia sem venda: zeros reais e last_order_at NULL — nunca um horário fingido", async () => {
+      const rows = await asUser<{ orders_count: string; last_order_at: string | null }>(
+        ADMIN_SB,
+        `select orders_count, last_order_at from public.get_sales_today_summary('2019-01-01')`,
+      );
+
+      expect(rows[0]?.orders_count).toBe("0");
+      expect(rows[0]?.last_order_at).toBeNull();
+    });
+
+    it("anon é recusado; authenticated sem organização não soma linha nenhuma", async () => {
+      await expect(
+        asAnon(`select * from public.get_sales_today_summary('2026-08-20')`),
+      ).rejects.toThrow(/permission denied/i);
+
+      const rows = await asUser<{ gross_revenue: string; last_order_at: string | null }>(
+        SEM_ORG,
+        `select gross_revenue, last_order_at from public.get_sales_today_summary('2026-08-20')`,
+      );
+
+      expect(rows[0]?.gross_revenue).toBe("0");
+      expect(rows[0]?.last_order_at).toBeNull();
+    });
+  });
 });
 
 describe("credenciais são inalcançáveis pela Data API", () => {

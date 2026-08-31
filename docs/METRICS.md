@@ -150,8 +150,8 @@ Nenhuma dessas será exibida enquanto a fonte não estiver confirmada e a defini
 > de `orders` (L1) — misturar cancelados de L1 com o `pedidos` de L3
 > embutiria o atraso do recálculo na razão (0,1% medido no dia da entrega).
 > Seguem bloqueadas com o motivo nomeado: `margem_operacional_pedido` (frete
-> e desconto não persistidos), `valor_estoque` (5C.4) e a visão "hoje"
-> (decisão própria de desenho).
+> e desconto não persistidos) e `valor_estoque` (5C.4). A visão "hoje" foi
+> resolvida em D-158 (ver 5C.4).
 
 ### 5C.1 O veto: "receita líquida" não é um nome permitido
 
@@ -192,7 +192,7 @@ Três mecanismos independentes, nenhum consolidado numa visão financeira:
 
 - **`valor_estoque`** — **decisão de negócio RESPONDIDA em 2026-08-28 (D-127): é estoque virtual deliberado**, não erro. **A FERRAMENTA de marcação existe desde D-133** (`/produtos`), mas a métrica **segue bloqueada** por dois motivos que a ferramenta não resolve sozinha: (1) enquanto houver SKU **não classificado**, somar quantidade × custo contaria sentinela como patrimônio — o denominador certo é `catalogo_nao_classificado = 0`, não "alguém começou a marcar"; e (2) o saldo em si só passou a ser confiável com D-131/D-132, e a primeira reconciliação corrigida ainda precisa ser lida. Quando destravar, a definição nasce com **exclusão explícita dos virtuais**, nunca somando tudo.
 - **Qualquer métrica derivada de cobertura, sugestão de compra ou priorização** — mesma base, mesmo bloqueio.
-- **Visão "HOJE"** — mecanicamente trivial, mas `daily_*_metrics` do dia corrente está incompleto por construção, e o projeto evita lê-lo em todos os outros lugares. Ou lê `orders` direto (fora do padrão L3) ou sinaliza a incompletude; nunca finge que o dia fechou.
+- ~~**Visão "HOJE"**~~ — **RESOLVIDA em D-158 (2026-08-31)**, com as duas metades da alternativa que esta seção previa: lê `orders` direto (RPC `get_sales_today_summary`, precedente de fonte L1 declarada estabelecido por D-157) E sinaliza a incompletude ("dia em andamento", "última venda registrada às HH:MM" via `last_order_at`). **Nenhuma métrica nova nasceu**: são as quatro fórmulas canônicas de 5.2 avaliadas ao vivo sobre a fonte que o catálogo já cita — por isso os cards usam os IDs existentes, e a incompletude (uma verdade sobre as quatro) vive no cabeçalho da seção.
 
 ---
 

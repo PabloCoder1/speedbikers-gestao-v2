@@ -87,6 +87,19 @@ interface ExpandedSummary {
   skus_distintos_vendidos: number;
 }
 
+/**
+ * Visão "hoje" (D-158) — nulidade real: `last_order_at` é NULL quando o dia
+ * ainda não tem venda (max sobre conjunto vazio), e os zeros são zeros DE
+ * VERDADE — `orders` chega ao vivo pelo webhook, diferente do rollup L3.
+ */
+interface TodaySummary {
+  units_sold: number;
+  gross_revenue: number;
+  orders_count: number;
+  purchases_count: number;
+  last_order_at: string | null;
+}
+
 interface MetricCardSpec {
   metricId: string;
   label: string;
@@ -147,6 +160,49 @@ function buildCards(current: SalesSummary, previous: SalesSummary | null): Metri
       format: formatCurrency,
       current: current.average_selling_price,
       previous: previous?.average_selling_price ?? null,
+    },
+  ];
+}
+
+/**
+ * Visão "hoje" (D-158, 5C.4): as MESMAS quatro fórmulas canônicas do topo da
+ * tela, avaliadas ao vivo sobre `orders` (L1) — nenhuma métrica nova, por
+ * isso os IDs são os já catalogados. A incompletude é UMA verdade sobre as
+ * quatro e vive no cabeçalho da seção, não em cada card.
+ */
+function buildTodayCards(today: TodaySummary): MetricCardSpec[] {
+  return [
+    {
+      metricId: "receita_bruta",
+      label: "Receita bruta (hoje)",
+      formula: "SUM(orders.total_amount) — avaliada ao vivo sobre orders",
+      format: formatCurrency,
+      current: today.gross_revenue,
+      previous: null,
+    },
+    {
+      metricId: "unidades_vendidas",
+      label: "Unidades vendidas (hoje)",
+      formula: "SUM(order_items.quantity) — avaliada ao vivo sobre orders",
+      format: formatCount,
+      current: today.units_sold,
+      previous: null,
+    },
+    {
+      metricId: "pedidos",
+      label: "Pedidos (hoje)",
+      formula: "COUNT(DISTINCT orders.id) — avaliada ao vivo sobre orders",
+      format: formatCount,
+      current: today.orders_count,
+      previous: null,
+    },
+    {
+      metricId: "pedidos_por_pack",
+      label: "Compras (hoje)",
+      formula: "COUNT(DISTINCT pack_id, order_id como fallback) — avaliada ao vivo",
+      format: formatCount,
+      current: today.purchases_count,
+      previous: null,
     },
   ];
 }
@@ -372,8 +428,15 @@ export default async function VendasPage({
   // vez, em vez de atribuir `undefined` a um campo opcional.
   const accountFilter = selectedAccount === null ? {} : { p_ml_account_id: selectedAccount.id };
 
-  const [currentResult, previousResult, seriesResult, previousSeriesResult, expandedResult, previousExpandedResult] =
-    await Promise.all([
+  const [
+    currentResult,
+    previousResult,
+    seriesResult,
+    previousSeriesResult,
+    expandedResult,
+    previousExpandedResult,
+    todayResult,
+  ] = await Promise.all([
     supabase
       .rpc("get_sales_summary", { p_date_from: range.from, p_date_to: range.to, ...accountFilter })
       .single(),
@@ -410,6 +473,9 @@ export default async function VendasPage({
         ...accountFilter,
       })
       .single(),
+    // Sétima (D-158): visão "hoje" ao vivo sobre orders (L1) — independente
+    // do período selecionado, respeita só o filtro de conta.
+    supabase.rpc("get_sales_today_summary", { p_date: today, ...accountFilter }).single(),
   ]);
 
   const summary: SalesSummary | null = currentResult.data ?? null;
@@ -435,10 +501,12 @@ export default async function VendasPage({
     seriesResult.error ??
     previousSeriesResult.error ??
     expandedResult.error ??
-    previousExpandedResult.error;
+    previousExpandedResult.error ??
+    todayResult.error;
 
   const expanded: ExpandedSummary | null = expandedResult.data ?? null;
   const previousExpanded: ExpandedSummary | null = previousExpandedResult.data ?? null;
+  const todaySummary: TodaySummary | null = todayResult.data ?? null;
 
   const lastComputedAt = summary?.last_computed_at ?? null;
   const freshness = classifySyncFreshness(lastComputedAt === null ? null : new Date(lastComputedAt), now);
@@ -604,6 +672,37 @@ export default async function VendasPage({
           Nenhuma métrica calculada para este período ainda. As contas conectadas ainda estão trazendo o
           histórico (backfill) — o recálculo só materializa dias tocados pela reconciliação.
         </p>
+      )}
+
+      {/*
+        Visão "hoje" (D-158, METRICS 5C.4): lê `orders` ao vivo e SINALIZA a
+        incompletude — nunca finge que o dia fechou. Independente do período
+        selecionado; respeita o filtro de conta. Zeros aqui são reais (o
+        webhook traz pedidos em segundos), diferente de "nunca calculado".
+      */}
+      {error === null && todaySummary !== null && (
+        <div style={{ marginBottom: "var(--sb-space-4)" }}>
+          <h2 style={{ fontSize: "1.0625rem", margin: "0 0 var(--sb-space-1)" }}>Hoje — dia em andamento</h2>
+          <p style={{ margin: "0 0 var(--sb-space-2)", color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
+            Números parciais por construção: o dia só fecha à meia-noite (São Paulo) e não é comparável com
+            períodos encerrados.{" "}
+            {todaySummary.last_order_at === null
+              ? "Nenhuma venda registrada até agora."
+              : `Última venda registrada às ${formatDateTime(todaySummary.last_order_at)}.`}
+          </p>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(13rem, 1fr))",
+              gap: "var(--sb-space-3)",
+            }}
+          >
+            {buildTodayCards(todaySummary).map((card) => (
+              <MetricCard key={`hoje-${card.metricId}`} card={card} showPrevious={false} />
+            ))}
+          </div>
+        </div>
       )}
 
       {error === null && summary !== null && !neverComputed && (

@@ -3010,6 +3010,22 @@ A camada 3 foi encontrada pelo CATALOGO (enumerando as FKs RESTRICT reais), nao 
 
 **Impacto:** migration `20260831114736`, `packages/db/src/{types.ts,rls.integration.test.ts}`, `apps/web/app/vendas/page.tsx`, `apps/web/lib/format.ts`, `docs/{METRICS,ROADMAP,HANDOFF}.md`.
 
+## D-158 - Visao "hoje": le orders ao vivo E sinaliza -- as duas metades da alternativa de 5C.4
+
+**Contexto:** o sub-item "visao hoje" era o penultimo do item de Vendas, deixado por 5C.4 com decisao de desenho propria: "ou le orders direto (fora do padrao L3) ou sinaliza a incompletude; nunca finge que o dia fechou". D-157 tinha acabado de estabelecer o precedente que faltava — leitura L1 com a fonte DECLARADA na tela.
+
+**Decisao — as duas metades, nao uma:** `get_sales_today_summary` le `orders`/`order_items` ao vivo para um unico dia civil SP, E a secao "Hoje — dia em andamento" sinaliza tres vezes: no titulo, no aviso ("numeros parciais por construcao; nao comparavel com periodos encerrados") e no **`last_order_at`** — "ultima venda registrada as HH:MM", que diz ate onde o dia foi observado (o webhook traz pedidos em segundos desde D-101). Dia sem venda mostra "nenhuma venda registrada ate agora" com zeros REAIS — diferente do "nunca calculado" do L3, porque orders e vivo.
+
+**Nenhuma metrica nova nasceu.** Sao as quatro formulas canonicas de 5.2 (receita_bruta, unidades_vendidas, pedidos, pedidos_por_pack) avaliadas ao vivo sobre a fonte que o proprio catalogo cita — os cards usam os IDs existentes, e a incompletude, que e UMA verdade sobre as quatro, vive no cabecalho da secao, nao repetida em cada card. Receita/pedidos/compras contados nas ORDERS (nao no join com itens — imune a pedido multi-item duplicar total_amount); unidades no join.
+
+**O teste de integracao e uma mini-prova de equivalencia L1×L3:** sobre o MESMO fixture, `get_sales_today_summary('2026-08-20')` tem de devolver exatamente o que o teste de `get_sales_summary` le do rollup (5 / 220.00 / 4 / 3) — e prova de quebra o fuso (pedido de 01:30 UTC do dia 21 contado no dia civil 20 de SP) e a exclusao de cancelado/pending_cancel do `last_order_at`.
+
+**Mecanica:** security invoker (RLS filtra antes da soma; anon revogado), mesma expressao de dia civil do recalculo, **EXPLAIN 19 ms / 2.9k buffers** (dia com 136 pedidos), setima consulta de `/vendas` no MESMO paralelo e agregacao de erro. Migration `20260831115917` aplicada pelo MCP com arquivo casando o timestamp (licao D-138). Ensaio revertido no Dev confirmou as strings exatas do teste, zero residuo.
+
+**Verificacao:** `check` 29/29, build 8/8, +4 testes de integracao. ⚠️ Tela nao vista renderizada (a ressalva de sempre).
+
+**Impacto:** migration `20260831115917`, `packages/db/src/{types.ts,rls.integration.test.ts}`, `apps/web/app/vendas/page.tsx`, `docs/{METRICS,ROADMAP,HANDOFF}.md`. **Do item de Vendas resta so a margem operacional** (frete/desconto nao persistidos — fatia de worker candidata declarada).
+
 ## Como adicionar nova decisao
 
 Registrar:

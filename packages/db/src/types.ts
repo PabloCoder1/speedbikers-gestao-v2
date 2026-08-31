@@ -3983,6 +3983,19 @@ export type Database = {
           units_sold: number
         }[]
       }
+      get_sales_today_summary: {
+        Args: {
+          p_date: string
+          p_ml_account_id?: string
+        }
+        Returns: {
+          gross_revenue: number
+          last_order_at: string
+          orders_count: number
+          purchases_count: number
+          units_sold: number
+        }[]
+      }
       // CORRECAO MANUAL sobre o arquivo gerado (classe D-133): o gerador
       // NUNCA marca argumento de RPC como nulo, e os argumentos abaixo
       // aceitam NULL de verdade (e o valor que significa "sem filtro" --
