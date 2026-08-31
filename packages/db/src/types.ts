@@ -1224,7 +1224,8 @@ export type Database = {
           resolved_sku_id: string | null
           sku_key: string
           source: string
-          source_row_id: number
+          source_relist_id: string | null
+          source_row_id: number | null
           status: string
           updated_at: string
           user_product_id: string | null
@@ -1244,7 +1245,8 @@ export type Database = {
           resolved_sku_id?: string | null
           sku_key: string
           source?: string
-          source_row_id: number
+          source_relist_id?: string | null
+          source_row_id?: number | null
           status?: string
           updated_at?: string
           user_product_id?: string | null
@@ -1264,7 +1266,8 @@ export type Database = {
           resolved_sku_id?: string | null
           sku_key?: string
           source?: string
-          source_row_id?: number
+          source_relist_id?: string | null
+          source_row_id?: number | null
           status?: string
           updated_at?: string
           user_product_id?: string | null
@@ -1297,6 +1300,13 @@ export type Database = {
             columns: ["resolved_sku_id"]
             isOneToOne: false
             referencedRelation: "skus"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "link_candidates_source_relist_id_fkey"
+            columns: ["source_relist_id"]
+            isOneToOne: false
+            referencedRelation: "listing_relists"
             referencedColumns: ["id"]
           },
           {
@@ -2547,6 +2557,7 @@ export type Database = {
           ml_account_id: string
           occurred_at: string
           organization_id: string
+          previous_item_id: string | null
           previous_sku_id: string | null
           reason: string | null
           ref_kind: string
@@ -2567,6 +2578,7 @@ export type Database = {
           ml_account_id: string
           occurred_at?: string
           organization_id: string
+          previous_item_id?: string | null
           previous_sku_id?: string | null
           reason?: string | null
           ref_kind: string
@@ -2587,6 +2599,7 @@ export type Database = {
           ml_account_id?: string
           occurred_at?: string
           organization_id?: string
+          previous_item_id?: string | null
           previous_sku_id?: string | null
           reason?: string | null
           ref_kind?: string
@@ -3710,6 +3723,26 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      // CORRECAO MANUAL sobre o arquivo gerado (classe D-133): o gerador
+      // NUNCA marca argumento de RPC como nulo, e `p_child_category_id`
+      // aceita NULL de verdade (filho sem categoria informada).
+      complete_listing_relist_remap: {
+        Args: {
+          p_child_available_quantity: number
+          p_child_category_id: string | null
+          p_child_currency_id: string
+          p_child_price: number
+          p_child_status: string
+          p_child_title: string
+          p_child_variations: Json
+          p_relist_id: string
+        }
+        Returns: {
+          item_links_remapped: number
+          variation_candidates_created: number
+          variation_links_retired: number
+        }[]
       }
       compute_erp_target_balances: {
         Args: { p_organization_id: string }

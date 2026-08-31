@@ -51,6 +51,28 @@ const parentForRelistSchema = z.object({
   listing_type_id: z.string(),
 });
 
+/**
+ * Filho lido DEPOIS do POST, para materializar a projeção e remapear.
+ * `include_attributes=all` é necessário para `seller_custom_field`, que é
+ * apenas pista visual na fila — variation_id renovado nunca é associado a
+ * SKU automaticamente (docs/MERCADO_LIVRE.md §2.16, D-163).
+ */
+const childForRemapSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  status: z.string(),
+  price: z.number(),
+  currency_id: z.string(),
+  available_quantity: z.number().int(),
+  category_id: z.string().nullable().optional(),
+  variations: z.array(
+    z.object({
+      id: z.union([z.number().int(), z.string().regex(/^\d+$/)]).transform(String),
+      seller_custom_field: z.string().nullable().optional(),
+    }),
+  ),
+});
+
 export interface RelistExecuteDeps {
   db: AdminClient;
   mercadoLivre: MercadoLivreClient;
@@ -64,6 +86,7 @@ interface OperationRow {
   organization_id: string;
   ml_account_id: string;
   parent_item_id: string;
+  child_item_id: string | null;
   status: string;
 }
 
@@ -132,6 +155,71 @@ async function transition(
   return { ok: true };
 }
 
+async function remapRelistedOperation(
+  deps: RelistExecuteDeps,
+  context: HandlerContext,
+  operation: OperationRow,
+  accessToken: string,
+): Promise<JobOutcome> {
+  if (operation.child_item_id === null) {
+    return {
+      status: "failed",
+      retryable: false,
+      reason: "operação RELISTED sem child_item_id — incoerência estrutural",
+    };
+  }
+
+  const child = await deps.mercadoLivre.request({
+    method: "GET",
+    path: `/items/${operation.child_item_id}?include_attributes=all`,
+    accessToken,
+    schema: childForRemapSchema,
+  });
+
+  if (child.id !== operation.child_item_id) {
+    return {
+      status: "failed",
+      retryable: false,
+      reason: `o remapeamento recebeu o item ${child.id}, mas esperava ${operation.child_item_id}`,
+    };
+  }
+
+  const remapped = await deps.db.rpc("complete_listing_relist_remap", {
+    p_relist_id: operation.id,
+    p_child_title: child.title,
+    p_child_status: child.status,
+    p_child_price: child.price,
+    p_child_currency_id: child.currency_id,
+    p_child_available_quantity: child.available_quantity,
+    p_child_category_id: child.category_id ?? null,
+    p_child_variations: child.variations.map((variation) => ({
+      id: variation.id,
+      channel_sku: variation.seller_custom_field ?? null,
+    })),
+  });
+
+  if (remapped.error !== null) {
+    return {
+      status: "failed",
+      retryable: true,
+      reason: `falha ao remapear vínculos do relist: ${remapped.error.message}`,
+    };
+  }
+
+  const result = remapped.data[0];
+
+  context.logger.info("relist_remap_done", {
+    relist_id: operation.id,
+    parent_item_id: operation.parent_item_id,
+    child_item_id: operation.child_item_id,
+    item_links_remapped: result?.item_links_remapped ?? 0,
+    variation_links_retired: result?.variation_links_retired ?? 0,
+    variation_candidates_created: result?.variation_candidates_created ?? 0,
+  });
+
+  return { status: "done", processed: 1 };
+}
+
 export function createRelistExecuteHandler(deps: RelistExecuteDeps): JobHandler {
   return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
     const parsed = payloadSchema.safeParse(context.payload);
@@ -144,7 +232,7 @@ export function createRelistExecuteHandler(deps: RelistExecuteDeps): JobHandler 
 
     const loaded = await deps.db
       .from("listing_relists")
-      .select("id, organization_id, ml_account_id, parent_item_id, status")
+      .select("id, organization_id, ml_account_id, parent_item_id, child_item_id, status")
       .eq("id", parsed.data.relistId)
       .maybeSingle();
 
@@ -181,8 +269,21 @@ export function createRelistExecuteHandler(deps: RelistExecuteDeps): JobHandler 
       return { status: "done", processed: 1 };
     }
 
+    // D-163 — RELISTED não é mais noop: o ato remoto já terminou e esta
+    // retomada executa somente leituras remotas + a transação local de
+    // remapeamento. Falhar aqui é seguro para retry; a função é idempotente.
+    if (operation.status === "RELISTED") {
+      const tokenResult = await ensureAccessToken(deps, operation.ml_account_id, now);
+
+      if (!tokenResult.ok) {
+        return { status: "failed", retryable: tokenResult.retryable, reason: tokenResult.reason };
+      }
+
+      return remapRelistedOperation(deps, context, operation, tokenResult.accessToken);
+    }
+
     // Idempotência de retomada: estado que este job não trata é trabalho já
-    // feito (RELISTED/REMAPPED) ou já resolvido (terminais) — nunca refazer.
+    // feito (REMAPPED) ou já resolvido (terminais) — nunca refazer.
     if (operation.status !== "REQUESTED" && operation.status !== "CLOSING" && operation.status !== "CLOSED") {
       context.logger.info("relist_execute_noop", { relist_id: operation.id, status: operation.status });
 
@@ -392,6 +493,11 @@ export function createRelistExecuteHandler(deps: RelistExecuteDeps): JobHandler 
       child_item_id: child.id,
     });
 
-    return { status: "done", processed: 1 };
+    operation.child_item_id = child.id;
+
+    // O POST já terminou e o filho foi confirmado. Daqui em diante só há
+    // leitura remota + transação local: qualquer falha retorna retryable e a
+    // próxima entrega entra pelo ramo RELISTED acima, sem repetir o POST.
+    return remapRelistedOperation(deps, context, operation, accessToken);
   };
 }

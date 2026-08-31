@@ -3098,6 +3098,22 @@ A camada 3 foi encontrada pelo CATALOGO (enumerando as FKs RESTRICT reais), nao 
 
 **Impacto:** `apps/worker/src/handlers/relist-execute.{ts,test.ts}` (novo), `apps/api/src/{relist.ts,relist.test.ts,app.ts}`, `apps/worker/src/index.ts`, `docs/{API,ROADMAP,HANDOFF}.md`.
 
+## D-163 - Remapeamento pos-relist: transacao unica, e variacao renovada vira trabalho HUMANO
+
+**Contexto:** penultima fatia da Fase 9. O ML renova item_id E variation_id (secao 2.16) sem tabela de/para. Iniciada por outra sessao (executor estendido + migration + testes de worker) e CONCLUIDA nesta: aplicacao da migration nos dois bancos, tipos, testes de integracao, um teste de worker corrigido e um teste antigo atualizado.
+
+**Decisao 1 — TUDO numa funcao transacional** (`complete_listing_relist_remap`, service_role-only): projecao do filho em `listings` (ja com o sku remapeado), vinculo/candidatos, os DOIS historicos e o estado terminal — o worker nunca deixa REMAPPED com vinculo pela metade. Idempotente: chamar sobre REMAPPED devolve zeros sem erro. `for update` + recheck de status na propria transacao.
+
+**Decisao 2 — vinculo de ITEM preserva o link_id e troca so a referencia**, com evento novo `REFERENCE_REMAPPED` carregando `previous_item_id` (diferente de RETARGETED, que troca o SKU). Filho que ja tem vinculo RECUSA o remapeamento automatico. **Vinculo de VARIACAO nao e remapeado**: os antigos saem com REMOVED (reason `RELIST_VARIATION_RENEWED`, que tambem SUPRIME a recriacao pela planilha velha do UpSeller — indice de supressao ampliado) e cada variation_id novo vira candidato `source=RELIST` na Central de Vinculacoes — `seller_custom_field` entra so como PISTA visual, nunca autorizacao para mapear sozinho.
+
+**Decisao 3 — a fila existente ganha a segunda origem** em vez de fila nova: `link_candidates.source` aceita RELIST com `source_relist_id` (CHECK de coerencia entre as duas origens; unicidades parciais por origem). A reconciliacao automatica por SKU exato do importador passou a filtrar `source='ERP_IMPORT'` — candidato de relist NUNCA e resolvido sozinho.
+
+**No executor:** RELISTED deixou de ser noop — retoma pelo remapeamento (leituras remotas + transacao local, seguro para retry); o caminho feliz segue direto ate REMAPPED. Filho lido com `include_attributes=all` e id conferido. **Correcao de teste achada ao terminar**: o fake do cliente ML devolvia corpo cru sem rodar o schema — o transform de id de variacao (numero→string) nunca era exercitado; o fake passou a `schema.parse(...)` como o cliente real.
+
+**Verificacao:** migration validada em transacao revertida no local ANTES do Dev; aplicada nos DOIS bancos com a MESMA versao (`20260831145457`, renomeada para o timestamp do MCP — licao D-138); **432/432 testes de integracao em banco recriado do zero** (+6 de remapeamento: item, idempotencia, variacoes, grants, coerencia; 1 teste antigo atualizado para o nome novo do indice); tipos com a correcao manual da classe D-133 (`p_child_category_id` anulavel); `check` 29/29, build 8/8.
+
+**Impacto:** migration `20260831145457`, `apps/worker/src/handlers/{relist-execute.ts,relist-execute.test.ts,erp-import-apply.ts}`, `packages/db/src/{types.ts,rls.integration.test.ts}`, `docs/{ROADMAP,HANDOFF}.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:

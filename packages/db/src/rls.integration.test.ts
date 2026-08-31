@@ -1609,7 +1609,7 @@ describe("Central de Vinculações", () => {
 
   /**
    * Cada chamada usa uma linha de origem PRÓPRIA — `link_candidates` permite
-   * só um candidato por linha (`link_candidates_source_row_unique`), e testes
+   * só um candidato por linha (`link_candidates_erp_source_row_unique` desde D-163), e testes
    * independentes não podem depender da ordem de limpeza uns dos outros.
    */
   async function insertCandidate(): Promise<string> {
@@ -1651,7 +1651,7 @@ describe("Central de Vinculações", () => {
          values ($1,$2,$3,'RLSTEST-CANDIDATO','ITEM','MLB900000778')`,
         [ORG_SB, CONTA, rowId],
       ),
-    ).rejects.toThrow(/link_candidates_source_row_unique/);
+    ).rejects.toThrow(/link_candidates_erp_source_row_unique/);
 
     await client.query("delete from public.link_candidates where source_row_id = $1", [rowId]);
   });
@@ -6894,6 +6894,214 @@ describe("republicação — listing_relists (Fase 9, D-159)", () => {
     await expect(
       client.query(`delete from public.listing_relist_events where relist_id = $1`, [relistId]),
     ).rejects.toThrow(/append-only/);
+  });
+});
+
+describe("remapeamento do relist — complete_listing_relist_remap (D-163)", () => {
+  // Fixtures dedicadas e permanentes (fora dos padrões de limpeza global):
+  // relists/eventos são append-only ou RESTRICT — mesmo precedente do
+  // describe de listing_relists acima.
+  const ADMIN_REMAP = "ffff5555-0000-4000-8000-000000000041";
+  const CONTA_REMAP = "ffff6666-0000-4000-8000-000000000042";
+  const PAI_ITEM = "MLB920000001";
+  const FILHO_ITEM = "MLB920000101";
+  const PAI_VAR = "MLB920000002";
+  const FILHO_VAR = "MLB920000102";
+
+  let opItemId = "";
+  let opVarId = "";
+  let skuAId = "";
+
+  function remapSql(relistId: string, childItemId: string, variations: string): string {
+    return `select * from public.complete_listing_relist_remap(
+      '${relistId}', 'Filho ${childItemId}', 'active', 150.00, 'BRL', 3, 'MLB1234', '${variations}'::jsonb)`;
+  }
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                              email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',
+               'admin@relistremap.internal','x',now(),'{"full_name":"Admin de remap"}',now(),now())
+       on conflict (id) do nothing`,
+      [ADMIN_REMAP],
+    );
+
+    await client.query(
+      `insert into public.organization_members (organization_id, user_id, role)
+       values ($1,$2,'ADMIN') on conflict do nothing`,
+      [ORG_SB, ADMIN_REMAP],
+    );
+
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, seller_id, status, connected_at)
+       values ($1,$2,'Conta de remap','relist-remap-conta',992,'CONNECTED',now())
+       on conflict do nothing`,
+      [CONTA_REMAP, ORG_SB],
+    );
+
+    const skus = await client.query<{ id: string; sku_key: string }>(
+      `insert into public.skus (organization_id, sku, kind)
+       values ($1,'RELISTREMAP-A','PRODUTO'), ($1,'RELISTREMAP-B','PRODUTO')
+       on conflict on constraint skus_org_key_unique do update set sku = excluded.sku
+       returning id, sku_key`,
+      [ORG_SB],
+    );
+
+    skuAId = skus.rows.find((row) => row.sku_key === "RELISTREMAP-A")?.id ?? "";
+    const skuBId = skus.rows.find((row) => row.sku_key === "RELISTREMAP-B")?.id ?? "";
+
+    // Pai 1: vínculo de ANÚNCIO INTEIRO. Pai 2: dois vínculos de VARIAÇÃO.
+    await client.query(
+      `insert into public.sku_listing_links (organization_id, ml_account_id, sku_id, ref_kind, item_id)
+       values ($1,$2,$3,'ITEM',$4)
+       on conflict do nothing`,
+      [ORG_SB, CONTA_REMAP, skuAId, PAI_ITEM],
+    );
+    await client.query(
+      `insert into public.sku_listing_links (organization_id, ml_account_id, sku_id, ref_kind, item_id, variation_id)
+       values ($1,$2,$3,'ITEM',$4,'111'), ($1,$2,$3,'ITEM',$4,'222')
+       on conflict do nothing`,
+      [ORG_SB, CONTA_REMAP, skuBId, PAI_VAR],
+    );
+
+    const ops = await client.query<{ id: string; parent_item_id: string }>(
+      `insert into public.listing_relists
+         (organization_id, ml_account_id, parent_item_id, child_item_id, status, parent_snapshot, requested_by)
+       values ($1,$2,$3,$4,'RELISTED','{}',$5), ($1,$2,$6,$7,'RELISTED','{}',$5)
+       returning id, parent_item_id`,
+      [ORG_SB, CONTA_REMAP, PAI_ITEM, FILHO_ITEM, ADMIN_REMAP, PAI_VAR, FILHO_VAR],
+    );
+
+    opItemId = ops.rows.find((row) => row.parent_item_id === PAI_ITEM)?.id ?? "";
+    opVarId = ops.rows.find((row) => row.parent_item_id === PAI_VAR)?.id ?? "";
+  });
+
+  it("vínculo de ITEM inteiro: MESMO link_id passa a apontar ao filho, com REFERENCE_REMAPPED preservando o pai", async () => {
+    const result = await client.query<{
+      item_links_remapped: number;
+      variation_links_retired: number;
+      variation_candidates_created: number;
+    }>(remapSql(opItemId, FILHO_ITEM, "[]"));
+
+    expect(result.rows[0]).toMatchObject({
+      item_links_remapped: 1,
+      variation_links_retired: 0,
+      variation_candidates_created: 0,
+    });
+
+    const link = await client.query<{ item_id: string; sku_id: string }>(
+      `select item_id, sku_id from public.sku_listing_links
+       where ml_account_id = $1 and ref_kind = 'ITEM' and item_id = $2`,
+      [CONTA_REMAP, FILHO_ITEM],
+    );
+    expect(link.rows).toEqual([{ item_id: FILHO_ITEM, sku_id: skuAId }]);
+
+    const event = await client.query<{ previous_item_id: string; reason: string }>(
+      `select previous_item_id, reason from public.sku_listing_link_events
+       where ml_account_id = $1 and event_type = 'REFERENCE_REMAPPED'`,
+      [CONTA_REMAP],
+    );
+    expect(event.rows).toEqual([{ previous_item_id: PAI_ITEM, reason: "RELIST_ITEM_REMAPPED" }]);
+
+    // A projeção do filho nasce já com o sku_id remapeado.
+    const listing = await client.query<{ sku_id: string; status: string }>(
+      `select sku_id, status from public.listings where ml_account_id = $1 and item_id = $2`,
+      [CONTA_REMAP, FILHO_ITEM],
+    );
+    expect(listing.rows).toEqual([{ sku_id: skuAId, status: "active" }]);
+
+    const op = await client.query<{ status: string }>(
+      `select status from public.listing_relists where id = $1`,
+      [opItemId],
+    );
+    expect(op.rows[0]?.status).toBe("REMAPPED");
+  });
+
+  it("idempotência: chamar de novo sobre REMAPPED devolve zeros sem erro e sem evento novo", async () => {
+    const before = await client.query<{ n: string }>(
+      `select count(*) as n from public.listing_relist_events where relist_id = $1`,
+      [opItemId],
+    );
+
+    const again = await client.query<{ item_links_remapped: number }>(remapSql(opItemId, FILHO_ITEM, "[]"));
+
+    expect(again.rows[0]?.item_links_remapped).toBe(0);
+
+    const after = await client.query<{ n: string }>(
+      `select count(*) as n from public.listing_relist_events where relist_id = $1`,
+      [opItemId],
+    );
+    expect(after.rows[0]?.n).toBe(before.rows[0]?.n);
+  });
+
+  it("variações renovadas: vínculos antigos saem com REMOVED de supressão e cada id novo vira candidato RELIST", async () => {
+    const result = await client.query<{
+      item_links_remapped: number;
+      variation_links_retired: number;
+      variation_candidates_created: number;
+    }>(remapSql(opVarId, FILHO_VAR, '[{"id":"901","channel_sku":"RELISTREMAP-B"},{"id":"902","channel_sku":null}]'));
+
+    expect(result.rows[0]).toMatchObject({
+      item_links_remapped: 0,
+      variation_links_retired: 2,
+      variation_candidates_created: 2,
+    });
+
+    const oldLinks = await client.query(
+      `select 1 from public.sku_listing_links where ml_account_id = $1 and item_id = $2`,
+      [CONTA_REMAP, PAI_VAR],
+    );
+    expect(oldLinks.rows).toHaveLength(0);
+
+    const removed = await client.query<{ reason: string }>(
+      `select reason from public.sku_listing_link_events
+       where ml_account_id = $1 and item_id = $2 and event_type = 'REMOVED'`,
+      [CONTA_REMAP, PAI_VAR],
+    );
+    expect(removed.rows).toEqual([
+      { reason: "RELIST_VARIATION_RENEWED" },
+      { reason: "RELIST_VARIATION_RENEWED" },
+    ]);
+
+    const candidates = await client.query<{ variation_id: string; sku_key: string; channel_sku: string | null }>(
+      `select variation_id, sku_key, channel_sku from public.link_candidates
+       where source = 'RELIST' and source_relist_id = $1 order by variation_id`,
+      [opVarId],
+    );
+    expect(candidates.rows).toEqual([
+      { variation_id: "901", sku_key: "RELISTREMAP-B", channel_sku: "RELISTREMAP-B" },
+      { variation_id: "902", sku_key: "VARIACAO-902", channel_sku: null },
+    ]);
+
+    const op = await client.query<{ status: string }>(
+      `select status from public.listing_relists where id = $1`,
+      [opVarId],
+    );
+    expect(op.rows[0]?.status).toBe("REMAPPED");
+
+    const transitionEvent = await client.query<{ reason: string }>(
+      `select reason from public.listing_relist_events where relist_id = $1 and to_status = 'REMAPPED'`,
+      [opVarId],
+    );
+    expect(transitionEvent.rows[0]?.reason).toBe("VARIATIONS_QUEUED:2");
+  });
+
+  it("authenticated não executa a transação — ela é do worker/service_role", async () => {
+    await expect(asUser(ADMIN_REMAP, remapSql(opItemId, FILHO_ITEM, "[]"))).rejects.toThrow(
+      /permission denied/i,
+    );
+  });
+
+  it("coerência do candidato: RELIST com source_row_id (ou ERP_IMPORT sem) viola a constraint", async () => {
+    await expect(
+      client.query(
+        `insert into public.link_candidates
+           (organization_id, ml_account_id, source, source_row_id, source_relist_id, sku_key, ref_kind, item_id, variation_id)
+         values ($1,$2,'RELIST',123,$3,'X','ITEM','${FILHO_VAR}','999')`,
+        [ORG_SB, CONTA_REMAP, opVarId],
+      ),
+    ).rejects.toThrow(/source_coherent/);
   });
 });
 

@@ -39,6 +39,20 @@ function healthyParent(overrides: Record<string, unknown> = {}): Record<string, 
   };
 }
 
+function healthyChild(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: CHILD,
+    title: "Anúncio republicado",
+    status: "active",
+    price: 199.9,
+    currency_id: "BRL",
+    available_quantity: 5,
+    category_id: "MLB1234",
+    variations: [],
+    ...overrides,
+  };
+}
+
 function chain(result: unknown): unknown {
   const self = {
     eq: () => self,
@@ -52,8 +66,10 @@ function chain(result: unknown): unknown {
 
 interface FakeDbOptions {
   operationStatus?: string;
+  childItemId?: string | null;
   operationMissing?: boolean;
   updateReturnsEmpty?: boolean;
+  remapError?: string;
 }
 
 interface RecordedUpdate {
@@ -65,9 +81,11 @@ function fakeDb(options: FakeDbOptions = {}): {
   db: RelistExecuteDeps["db"];
   updates: RecordedUpdate[];
   events: Record<string, unknown>[];
+  rpcCalls: Record<string, unknown>[];
 } {
   const updates: RecordedUpdate[] = [];
   const events: Record<string, unknown>[] = [];
+  const rpcCalls: Record<string, unknown>[] = [];
 
   const credentials = {
     access_token_ciphertext: encryptToken("APP_USR-valido", ENCRYPTION_KEY),
@@ -87,6 +105,10 @@ function fakeDb(options: FakeDbOptions = {}): {
                   organization_id: ORGANIZATION_ID,
                   ml_account_id: ML_ACCOUNT_ID,
                   parent_item_id: PARENT,
+                  child_item_id:
+                    options.childItemId === undefined
+                      ? (options.operationStatus === "RELISTED" || options.operationStatus === "REMAPPED" ? CHILD : null)
+                      : options.childItemId,
                   status: options.operationStatus ?? "REQUESTED",
                 },
             error: null,
@@ -120,13 +142,26 @@ function fakeDb(options: FakeDbOptions = {}): {
         return Promise.resolve({ error: null });
       },
     }),
+    rpc: (_name: string, args: Record<string, unknown>) => {
+      rpcCalls.push(args);
+
+      return Promise.resolve(
+        options.remapError === undefined
+          ? {
+              data: [{ item_links_remapped: 1, variation_links_retired: 0, variation_candidates_created: 0 }],
+              error: null,
+            }
+          : { data: null, error: { message: options.remapError } },
+      );
+    },
   } as unknown as RelistExecuteDeps["db"];
 
-  return { db, updates, events };
+  return { db, updates, events, rpcCalls };
 }
 
 interface FakeClientOptions {
   parentBody?: Record<string, unknown>;
+  childBody?: Record<string, unknown>;
   putStatus?: string;
   relistOutcome?: { id: string } | Error;
 }
@@ -141,12 +176,21 @@ function fakeClient(options: FakeClientOptions = {}): {
     request: (request: RequestOptions<unknown>) => {
       calls.push(`${request.method} ${request.path}`);
 
+      // Como o cliente REAL: toda resposta atravessa o schema do chamador —
+      // é ele que aplica o transform de id de variação para string, e um
+      // fake que devolvesse o corpo cru validaria de menos.
+      const respond = (body: unknown) => Promise.resolve(request.schema.parse(body));
+
       if (request.method === "GET") {
-        return Promise.resolve(options.parentBody ?? healthyParent());
+        if (request.path === `/items/${CHILD}?include_attributes=all`) {
+          return respond(options.childBody ?? healthyChild());
+        }
+
+        return respond(options.parentBody ?? healthyParent());
       }
 
       if (request.method === "PUT") {
-        return Promise.resolve({ id: PARENT, status: options.putStatus ?? "closed" });
+        return respond({ id: PARENT, status: options.putStatus ?? "closed" });
       }
 
       const relist = options.relistOutcome ?? { id: CHILD };
@@ -155,7 +199,7 @@ function fakeClient(options: FakeClientOptions = {}): {
         return Promise.reject(relist);
       }
 
-      return Promise.resolve(relist);
+      return respond(relist);
     },
   } as unknown as MercadoLivreClient;
 
@@ -179,9 +223,9 @@ function run(db: RelistExecuteDeps["db"], client: MercadoLivreClient) {
   });
 }
 
-describe("relist.execute (D-162)", () => {
-  it("caminho feliz: re-preflight → CLOSING → PUT → CLOSED → RELISTING → POST → RELISTED com o filho", async () => {
-    const { db, updates, events } = fakeDb();
+describe("relist.execute (D-162/D-163)", () => {
+  it("caminho feliz: confirma o filho e conclui o remapeamento transacional", async () => {
+    const { db, updates, events, rpcCalls } = fakeDb();
     const { client, calls } = fakeClient();
 
     const outcome = await run(db, client);
@@ -190,8 +234,20 @@ describe("relist.execute (D-162)", () => {
     // O estado é persistido ANTES do ato remoto que ele descreve.
     expect(updates.map((update) => update.patch.status)).toEqual(["CLOSING", "CLOSED", "RELISTING", "RELISTED"]);
     expect(updates[3]?.patch.child_item_id).toBe(CHILD);
-    expect(calls).toEqual([`GET /items/${PARENT}`, `PUT /items/${PARENT}`, `POST /items/${PARENT}/relist`]);
+    expect(calls).toEqual([
+      `GET /items/${PARENT}`,
+      `PUT /items/${PARENT}`,
+      `POST /items/${PARENT}/relist`,
+      `GET /items/${CHILD}?include_attributes=all`,
+    ]);
     expect(events.map((event) => event.to_status)).toEqual(["CLOSING", "CLOSED", "RELISTING", "RELISTED"]);
+    expect(rpcCalls).toEqual([
+      expect.objectContaining({
+        p_relist_id: RELIST_ID,
+        p_child_title: "Anúncio republicado",
+        p_child_variations: [],
+      }),
+    ]);
     // Transições do sistema: SEM ator.
     expect(events.every((event) => event.actor_user_id === null)).toBe(true);
   });
@@ -264,18 +320,65 @@ describe("relist.execute (D-162)", () => {
     const outcome = await run(db, client);
 
     expect(outcome).toEqual({ status: "done", processed: 1 });
-    expect(calls).toEqual([`GET /items/${PARENT}`, `POST /items/${PARENT}/relist`]);
+    expect(calls).toEqual([
+      `GET /items/${PARENT}`,
+      `POST /items/${PARENT}/relist`,
+      `GET /items/${CHILD}?include_attributes=all`,
+    ]);
     expect(updates.map((update) => update.patch.status)).toEqual(["CLOSED", "RELISTING", "RELISTED"]);
   });
 
-  it("estado que este job não trata (RELISTED) é noop — trabalho já feito não se refaz", async () => {
-    const { db, updates } = fakeDb({ operationStatus: "RELISTED" });
+  it("retomada em RELISTED faz só GET do filho + remapeamento, sem repetir PUT/POST", async () => {
+    const { db, updates, rpcCalls } = fakeDb({ operationStatus: "RELISTED" });
+    const { client, calls } = fakeClient();
+
+    const outcome = await run(db, client);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(updates).toHaveLength(0);
+    expect(calls).toEqual([`GET /items/${CHILD}?include_attributes=all`]);
+    expect(rpcCalls).toHaveLength(1);
+  });
+
+  it("variações renovadas são passadas como candidatos com seller_custom_field apenas como pista", async () => {
+    const { db, rpcCalls } = fakeDb({ operationStatus: "RELISTED" });
+    const { client } = fakeClient({
+      childBody: healthyChild({
+        variations: [
+          { id: 20_570_487_916, seller_custom_field: "SKU-A" },
+          { id: "20570487917", seller_custom_field: null },
+        ],
+      }),
+    });
+
+    const outcome = await run(db, client);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(rpcCalls[0]?.p_child_variations).toEqual([
+      { id: "20570487916", channel_sku: "SKU-A" },
+      { id: "20570487917", channel_sku: null },
+    ]);
+  });
+
+  it("falha da transação local é retryable: RELISTED permite retomar sem novo POST", async () => {
+    const { db } = fakeDb({ operationStatus: "RELISTED", remapError: "banco indisponível" });
+    const { client, calls } = fakeClient();
+
+    const outcome = await run(db, client);
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true });
+    expect(calls).toEqual([`GET /items/${CHILD}?include_attributes=all`]);
+  });
+
+  it("REMAPPED é noop terminal — nenhuma leitura ou escrita se repete", async () => {
+    const { db, updates, rpcCalls } = fakeDb({ operationStatus: "REMAPPED" });
     const { client, calls } = fakeClient();
 
     const outcome = await run(db, client);
 
     expect(outcome).toEqual({ status: "done", processed: 0 });
     expect(updates).toHaveLength(0);
+    expect(rpcCalls).toHaveLength(0);
     expect(calls).toEqual([]);
   });
 
