@@ -3028,6 +3028,24 @@ A camada 3 foi encontrada pelo CATALOGO (enumerando as FKs RESTRICT reais), nao 
 
 **Impacto:** migration `20260831115917`, `packages/db/src/{types.ts,rls.integration.test.ts}`, `apps/web/app/vendas/page.tsx`, `docs/{METRICS,ROADMAP,HANDOFF}.md`. **Do item de Vendas resta so a margem operacional** (frete/desconto nao persistidos — fatia de worker candidata declarada).
 
+## D-159 - Fase 9 abre pelo MODELO: idempotencia vira constraint, e o estado que exige gente tem nome
+
+**Contexto:** a fila declarada de D-120 chegou a ultima fase (9 — republicacao oficial, a primeira escrita destrutiva no ML). A pesquisa de 2.16 fixa o que decide o desenho: o fluxo real FECHA O PAI (irreversivel) antes do POST /relist, **a API nao oferece idempotencia nenhuma** (busca literal: zero ocorrencias), o `variation_id` do filho e RENOVADO, e Full/catalogo sao vacuo documental. Abrir a fase pelo modelo — sem chamada ao ML, sem UI — e a ordem que nao alarga a pilha nao-deployada.
+
+**Decisao 1 — a maquina de estados e do dominio, e nomeia a janela perigosa.** `@sb/domain/listings` (subdominio novo): 9 estados, com tres familias — reabriveis (`PREFLIGHT_FAILED`/`CLOSE_FAILED`: nada destrutivo aconteceu), vivos, e **`RELIST_FAILED` = pai fechado SEM filho confirmado**, o unico `relistStateRequiresHuman`: nao e terminal (o retry humano volta a RELISTING depois de reconferir o remoto — um filho pode ter nascido sem a resposta chegar) e nunca reabre como operacao nova. O teste fixa que RELISTING so nasce de CLOSED ou desse retry — nao existe caminho que emita o POST sem o pai confirmado fechado.
+
+**Decisao 2 — idempotencia como CONSTRAINT, nunca boa vontade de handler.** `listing_relists_one_live_per_parent` (indice unico parcial: uma operacao viva/concluida por pai; o predicado espelha `RELIST_REOPENABLE_STATES` e o teste de integracao fixa a equivalencia dos dois lados), `listing_relists_child_unique` (um filho nunca pertence a duas operacoes) e o CHECK `child_requires_state` (filho so existe a partir de RELISTED — preenchido quando CONFIRMADO no remoto, nunca pelo que o POST "deveria" ter criado). A validacao de TRANSICAO fica so no dominio (duplica-la em trigger exigiria equivalencia sem ganho; quem escreve e worker/RPC futura, sempre pela maquina).
+
+**Decisao 3 — as licoes viram FK:** ator RESTRICT (D-099), historico RESTRICT (D-149 — cascade + append-only quebra teardown), snapshot `parent_snapshot` capturado na criacao (base do preflight, do remapeamento e do antes/depois do PRD). Historico `listing_relist_events` append-only com trigger, sem grant de update/delete nem para service_role.
+
+**Achado de suite no caminho:** a conta do fixture usou slug `rlstest-*` e a limpeza global quebrou na 2a rodada local (RESTRICT novo) — corrigida para slug permanente (`relist-conta`, precedente `syncobs-conta`). E ficou documentado o que a rodada dupla ensinou: **a suite de integracao pressupoe banco recriado por rodada** (fixtures referenciadas por append-only ficam por desenho); local, `supabase db reset` antes de repetir.
+
+**Fase 8, medicao parcial de passagem:** a metade do SCHEMA do "backup e restore verificados" ja e provada diariamente (CI + local recriam as 93 migrations do zero); a metade do DADO depende do plano do projeto Supabase, que nem MCP nem API expoem — registrado no ROADMAP como ato do usuario (Dashboard → Database → Backups).
+
+**Verificacao:** migration `20260831123707` aplicada no Dev (MCP, arquivo casando o timestamp) e no local; **427/427 testes de integracao em banco recriado do zero** (+5 de relist: RLS/anon, escrita direta negada, indice parcial com reabertura, coerencia+unicidade do filho, append-only ate para superusuario); `check` 29/29 (+7 testes de dominio), build 8/8.
+
+**Impacto:** `packages/domain/src/listings/{relist.ts,relist.test.ts,index.ts}` (subdominio novo), `packages/domain/src/index.ts`, migration `20260831123707`, `packages/db/src/{types.ts,rls.integration.test.ts}`, `docs/{ROADMAP,HANDOFF}.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:

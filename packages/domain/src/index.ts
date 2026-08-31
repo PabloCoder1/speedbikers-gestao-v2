@@ -16,3 +16,4 @@ export * from "./nfe/index.js";
 export * from "./purchasing/index.js";
 export * from "./diagnostics/index.js";
 export * from "./support/index.js";
+export * from "./listings/index.js";

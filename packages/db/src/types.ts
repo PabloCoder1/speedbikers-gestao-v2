@@ -1308,6 +1308,135 @@ export type Database = {
           },
         ]
       }
+      listing_relist_events: {
+        Row: {
+          actor_user_id: string | null
+          from_status: string | null
+          id: string
+          ml_account_id: string
+          occurred_at: string
+          organization_id: string
+          reason: string | null
+          relist_id: string
+          to_status: string
+        }
+        Insert: {
+          actor_user_id?: string | null
+          from_status?: string | null
+          id?: string
+          ml_account_id: string
+          occurred_at?: string
+          organization_id: string
+          reason?: string | null
+          relist_id: string
+          to_status: string
+        }
+        Update: {
+          actor_user_id?: string | null
+          from_status?: string | null
+          id?: string
+          ml_account_id?: string
+          occurred_at?: string
+          organization_id?: string
+          reason?: string | null
+          relist_id?: string
+          to_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "listing_relist_events_actor_user_id_fkey"
+            columns: ["actor_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "listing_relist_events_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "listing_relist_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "listing_relist_events_relist_id_fkey"
+            columns: ["relist_id"]
+            isOneToOne: false
+            referencedRelation: "listing_relists"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      listing_relists: {
+        Row: {
+          child_item_id: string | null
+          created_at: string
+          failure_reason: string | null
+          id: string
+          ml_account_id: string
+          organization_id: string
+          parent_item_id: string
+          parent_snapshot: Json
+          requested_by: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          child_item_id?: string | null
+          created_at?: string
+          failure_reason?: string | null
+          id?: string
+          ml_account_id: string
+          organization_id: string
+          parent_item_id: string
+          parent_snapshot: Json
+          requested_by: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          child_item_id?: string | null
+          created_at?: string
+          failure_reason?: string | null
+          id?: string
+          ml_account_id?: string
+          organization_id?: string
+          parent_item_id?: string
+          parent_snapshot?: Json
+          requested_by?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "listing_relists_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "listing_relists_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "listing_relists_requested_by_fkey"
+            columns: ["requested_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       listings: {
         Row: {
           available_quantity: number

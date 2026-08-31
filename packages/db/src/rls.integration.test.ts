@@ -6736,6 +6736,167 @@ describe("get_support_metrics (Métricas de SAC, D-115)", () => {
   });
 });
 
+describe("republicação — listing_relists (Fase 9, D-159)", () => {
+  // Ator e conta DEDICADOS, nunca apagados: `requested_by` e `ml_account_id`
+  // são `on delete restrict`, e os eventos são append-only — mesmo
+  // raciocínio de ADMIN_COMPRAS/observabilidade (reusar ADMIN_SB quebraria a
+  // limpeza global). Sem afterAll, como manda o precedente.
+  const ADMIN_RELIST = "ffff1111-0000-4000-8000-000000000031";
+  const CONTA_RELIST = "ffff2222-0000-4000-8000-000000000032";
+
+  let relistId = "";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                              email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',
+               'admin@relisttest.internal','x',now(),'{"full_name":"Admin de relist"}',now(),now())
+       on conflict (id) do nothing`,
+      [ADMIN_RELIST],
+    );
+
+    await client.query(
+      `insert into public.organization_members (organization_id, user_id, role)
+       values ($1,$2,'ADMIN') on conflict do nothing`,
+      [ORG_SB, ADMIN_RELIST],
+    );
+
+    // Slug FORA do padrão de limpeza global ('rlstest%'): esta conta fica
+    // referenciada por `listing_relists` com `on delete restrict`, então a
+    // limpeza a pularia com erro — mesmo raciocínio de 'syncobs-conta'.
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, seller_id, status, connected_at)
+       values ($1,$2,'Conta de relist','relist-conta',991,'CONNECTED',now())
+       on conflict do nothing`,
+      [CONTA_RELIST, ORG_SB],
+    );
+
+    const inserted = await client.query<{ id: string }>(
+      `insert into public.listing_relists
+         (organization_id, ml_account_id, parent_item_id, status, parent_snapshot, requested_by)
+       values ($1,$2,'MLB910000001','REQUESTED','{"title":"pai"}',$3)
+       returning id`,
+      [ORG_SB, CONTA_RELIST, ADMIN_RELIST],
+    );
+
+    relistId = inserted.rows[0]?.id ?? "";
+
+    await client.query(
+      `insert into public.listing_relist_events
+         (organization_id, ml_account_id, relist_id, from_status, to_status, actor_user_id)
+       values ($1,$2,$3,null,'REQUESTED',$4)`,
+      [ORG_SB, CONTA_RELIST, relistId, ADMIN_RELIST],
+    );
+  });
+
+  it("membro da organização lê a operação e o histórico; outra organização não vê nada; anon é recusado", async () => {
+    const own = await asUser<{ parent_item_id: string; status: string }>(
+      ADMIN_RELIST,
+      `select parent_item_id, status from public.listing_relists where id = '${relistId}'`,
+    );
+    expect(own).toEqual([{ parent_item_id: "MLB910000001", status: "REQUESTED" }]);
+
+    const events = await asUser<{ to_status: string }>(
+      ADMIN_RELIST,
+      `select to_status from public.listing_relist_events where relist_id = '${relistId}'`,
+    );
+    expect(events).toEqual([{ to_status: "REQUESTED" }]);
+
+    const outra = await asUser(DE_OUTRA_ORG, `select id from public.listing_relists`);
+    expect(outra).toHaveLength(0);
+
+    await expect(asAnon("select * from public.listing_relists")).rejects.toThrow(/permission denied/i);
+    await expect(asAnon("select * from public.listing_relist_events")).rejects.toThrow(/permission denied/i);
+  });
+
+  it("authenticated não escreve direto — a escrita é do worker/RPC futura", async () => {
+    await expect(
+      asUser(
+        ADMIN_RELIST,
+        `insert into public.listing_relists
+           (organization_id, ml_account_id, parent_item_id, parent_snapshot, requested_by)
+         values ('${ORG_SB}','${CONTA_RELIST}','MLB910000099','{}','${ADMIN_RELIST}')`,
+      ),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
+  it("uma operação VIVA por pai — e o predicado do índice é RELIST_REOPENABLE_STATES do domínio", async () => {
+    // Segunda operação para o MESMO pai com a primeira viva: rejeitada.
+    await expect(
+      client.query(
+        `insert into public.listing_relists
+           (organization_id, ml_account_id, parent_item_id, status, parent_snapshot, requested_by)
+         values ($1,$2,'MLB910000001','REQUESTED','{}',$3)`,
+        [ORG_SB, CONTA_RELIST, ADMIN_RELIST],
+      ),
+    ).rejects.toThrow(/one_live_per_parent/);
+
+    // Primeira termina em estado REABRÍVEL (nada destrutivo no ML): nova
+    // operação passa a ser permitida — a equivalência com o domínio.
+    await client.query(`update public.listing_relists set status = 'PREFLIGHT_FAILED' where id = $1`, [relistId]);
+
+    const second = await client.query<{ id: string }>(
+      `insert into public.listing_relists
+         (organization_id, ml_account_id, parent_item_id, status, parent_snapshot, requested_by)
+       values ($1,$2,'MLB910000001','REQUESTED','{}',$3)
+       returning id`,
+      [ORG_SB, CONTA_RELIST, ADMIN_RELIST],
+    );
+
+    expect(second.rows).toHaveLength(1);
+
+    // A nova é a VIVA agora; uma terceira é rejeitada de novo.
+    await expect(
+      client.query(
+        `insert into public.listing_relists
+           (organization_id, ml_account_id, parent_item_id, status, parent_snapshot, requested_by)
+         values ($1,$2,'MLB910000001','REQUESTED','{}',$3)`,
+        [ORG_SB, CONTA_RELIST, ADMIN_RELIST],
+      ),
+    ).rejects.toThrow(/one_live_per_parent/);
+  });
+
+  it("filho só existe a partir de RELISTED, e nunca pertence a duas operações", async () => {
+    // Filho com status de meio de caminho: mentira estrutural, rejeitada.
+    await expect(
+      client.query(
+        `insert into public.listing_relists
+           (organization_id, ml_account_id, parent_item_id, child_item_id, status, parent_snapshot, requested_by)
+         values ($1,$2,'MLB910000002','MLB910000102','CLOSING','{}',$3)`,
+        [ORG_SB, CONTA_RELIST, ADMIN_RELIST],
+      ),
+    ).rejects.toThrow(/child_requires_state/);
+
+    await client.query(
+      `insert into public.listing_relists
+         (organization_id, ml_account_id, parent_item_id, child_item_id, status, parent_snapshot, requested_by)
+       values ($1,$2,'MLB910000002','MLB910000102','RELISTED','{}',$3)`,
+      [ORG_SB, CONTA_RELIST, ADMIN_RELIST],
+    );
+
+    // O MESMO filho numa segunda operação (outro pai): rejeitado.
+    await expect(
+      client.query(
+        `insert into public.listing_relists
+           (organization_id, ml_account_id, parent_item_id, child_item_id, status, parent_snapshot, requested_by)
+         values ($1,$2,'MLB910000003','MLB910000102','RELISTED','{}',$3)`,
+        [ORG_SB, CONTA_RELIST, ADMIN_RELIST],
+      ),
+    ).rejects.toThrow(/child_unique/);
+  });
+
+  it("o histórico é append-only de verdade — UPDATE e DELETE rejeitados até para o superusuário", async () => {
+    await expect(
+      client.query(`update public.listing_relist_events set reason = 'x' where relist_id = $1`, [relistId]),
+    ).rejects.toThrow(/append-only/);
+
+    await expect(
+      client.query(`delete from public.listing_relist_events where relist_id = $1`, [relistId]),
+    ).rejects.toThrow(/append-only/);
+  });
+});
+
 describe("guarda de GRANTs (D-066/D-098/D-130)", () => {
   // D-066 apertou 23 tabelas e o padrão foi REINTRODUZIDO nos dois dias
   // seguintes por migrations que não revogaram na criação (corrigido em

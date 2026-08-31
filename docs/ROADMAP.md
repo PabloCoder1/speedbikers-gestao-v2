@@ -376,8 +376,8 @@ A ordem não é preferência: é a Regra de Progressão deste arquivo. Quase tod
 
 **Depende de:** 4B (saber quais anúncios existem), 6B (recomendar com evidência) e do motor de alterações de anúncio. É a **primeira escrita destrutiva do projeto** — hoje só existe uma escrita no ML, e é responder pergunta.
 
-- [ ] **Pesquisa oficial** — concluída em 2026-08-28 (`docs/MERCADO_LIVRE.md` secao 2.16): endpoint, pré-condições, uma republicação por pai, `parent_item_id`, tags, herança de visitas/vendas, **variação renovada**, e o vácuo sobre Full, catálogo, idempotência e reputação
-- [ ] **Modelo pai → filho** e a operação rastreável por estados, com idempotência própria (a API não oferece nenhuma)
+- [x] **Pesquisa oficial** — concluída em 2026-08-28 (`docs/MERCADO_LIVRE.md` secao 2.16): endpoint, pré-condições, uma republicação por pai, `parent_item_id`, tags, herança de visitas/vendas, **variação renovada**, e o vácuo sobre Full, catálogo, idempotência e reputação. *(O checkbox estava `[ ]` com o texto dizendo "concluída" — inconsistência corrigida em D-159.)*
+- [x] **Modelo pai → filho** e a operação rastreável por estados, com idempotência própria — concluído em 2026-08-31 (D-159): máquina de estados pura em `@sb/domain/listings` (9 estados; RELISTING só nasce de CLOSED ou de retry humano; `RELIST_FAILED` = pai fechado sem filho, o estado que exige gente) e a idempotência como CONSTRAINT (`listing_relists_one_live_per_parent`, índice único parcial cujo predicado espelha `RELIST_REOPENABLE_STATES` — equivalência fixada em teste; filho único; CHECK de coerência filho×estado). Histórico append-only com ator (`listing_relist_events`, FKs RESTRICT pelas lições D-099/D-149). Sem chamada ao ML, sem UI — modelo primeiro, de propósito
 - [ ] **Preflight** que nunca fecha o anúncio quando uma pré-condição crítica falha
 - [ ] **Snapshot antes da ação** e remapeamento obrigatório de variações depois
 - [ ] **Bloqueio inicial de Full e Catálogo** — a doc oficial é silenciosa nos dois
@@ -391,7 +391,7 @@ A ordem não é preferência: é a Regra de Progressão deste arquivo. Quase tod
 - [ ] Migrar `infra/` de scripts para Terraform
 - [ ] Projeto Supabase de produção e Cloud Run de produção
 - [ ] Testes de carga e revisão de `pg_stat_statements`
-- [ ] Backup e restore verificados
+- [ ] Backup e restore verificados — **medição parcial em 2026-08-31 (D-159)**: a metade do SCHEMA já é provada todo dia (CI e o ambiente local recriam as 93 migrations do zero); o buraco é o DADO. Se o projeto Supabase tem backup automático depende do PLANO, que nem o MCP nem a API expõem — **ato do usuário**: Dashboard → Database → Backups do projeto `speedbikers-gestao-v3-dev`, e relatar o que existe (diário? PITR? nada?) antes de qualquer máquina própria de backup ser construída
 - [ ] Revisão de segurança e de secrets
 - [ ] Rollout da V3
 
@@ -426,7 +426,9 @@ A Fase 5A antecede a Fase 4 porque o dashboard de vendas não usa estoque, e a F
 
 ~~O item de **Vendas** do PRD que restou da 5C~~ — **seis das sete métricas entregues em 2026-08-31 (D-157 + D-158, visão "hoje" incluída)**; resta só a margem operacional, bloqueada pela persistência de frete/desconto.
 
-**Candidatas defensáveis para a próxima fatia de código**, a escolher com o usuário: a **Fase 8** (backup/restore verificado — o único risco que cresce a cada dia); abrir a **Fase 9** pela modelagem pai→filho; ou a fatia de worker que destrava a margem operacional (persistir frete do vendedor e desconto por pedido).
+~~Abrir a **Fase 9** pela modelagem pai→filho~~ — **aberta em 2026-08-31 (D-159)**: modelo, máquina de estados e idempotência por constraint entregues. **A próxima fatia da Fase 9 é o preflight** (nunca fechar o pai quando pré-condição crítica falha: tag `relist` já presente, Full, catálogo — os bloqueios que a pesquisa mandou impor).
+
+**Outras candidatas**: a **Fase 8** (a metade do DADO do backup espera o relato do Dashboard — ver o item da fase); ou a fatia de worker que destrava a margem operacional (persistir frete do vendedor e desconto por pedido).
 
 **Registro histórico do que esta seção dizia antes (D-120):**
 
