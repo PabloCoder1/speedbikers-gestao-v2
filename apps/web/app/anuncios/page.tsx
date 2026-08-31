@@ -313,7 +313,8 @@ export default async function AnunciosPage({
                           fontSize: "0.75rem",
                         }}
                       >
-                        {row.item_id}
+                        {/* Dashboard 360º do anúncio (D-168) — o destino individual. */}
+                        <Link href={`/anuncios/${row.item_id}`}>{row.item_id}</Link>
                       </div>
                     </td>
                     <td style={{ ...td, fontFamily: "ui-monospace, monospace" }}>

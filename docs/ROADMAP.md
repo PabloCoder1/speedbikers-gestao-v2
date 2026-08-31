@@ -406,7 +406,9 @@ Esta seção formaliza a visão final sem renumerar fases existentes nem transfo
 
 Subfase incremental posterior às bases 5C/5D/6B. Não reabre seus marcos concluídos.
 
-#### Dashboard 360º individual do Anúncio — B/C
+#### Dashboard 360º individual do Anúncio — B/C — ✅ PRIMEIRA VERSÃO em 2026-08-31 (D-168)
+
+`/anuncios/[itemId]` (link no item_id da lista): cabeçalho com conta/status/preço/disponível/SKU-linkado/frescor, cards de vendas+tráfego 30 dias sobre `get_listing_dashboard_summary` (soma do grão listing, poucos ms por índice de grão; conversão NULL sem visita), seção Full honesta ("sem vínculo de SKU" quando não rastreável), ações relacionadas e a linha do tempo DESTE anúncio (recorte por entidade da timeline de D-153, não duplicata — sem linguagem causal). Consultas em paralelo por construção (o risco "N+1 por aba" morre no desenho). **Em SEÇÕES, não abas** — as abas do Figma são a evolução registrada, igual ao item P1 do Dashboard de SKU. **Desvios declarados do DoD:** sem abas Diagnóstico/Decisões nesta fatia (dependem dos read models próprios) e sem Playwright (tela de leitura pura; e2e segue reservado aos fluxos críticos de D-069).
 
 - **Objetivo/problema:** dar a cada anúncio um destino individual, hoje inexistente, reunindo estado, desempenho, evidências e decisões sem cruzamento manual de listas.
 - **Reutiliza:** `listings`, métricas por anúncio, `daily_listing_visits`, Full, `domain_events`, correlação/timeline de D-152/D-153, diagnóstico, `actions`, `action_decisions` e `action_outcomes`.

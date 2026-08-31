@@ -4045,6 +4045,25 @@ export type Database = {
           vendidos_sem_vinculo: number
         }[]
       }
+      get_listing_dashboard_summary: {
+        Args: {
+          p_date_from: string
+          p_date_to: string
+          p_item_id: string
+          p_ml_account_id: string
+          p_organization_id: string
+        }
+        Returns: {
+          // CORRECAO MANUAL (classe D-133): conversion e NULL sem visita no
+          // periodo (round(orders / nullif(visits, 0))) — o gerador nao
+          // enxerga nulabilidade de coluna calculada.
+          conversion: number | null
+          gross_revenue: number
+          orders_count: number
+          units_sold: number
+          visits: number
+        }[]
+      }
       get_listing_sales: {
         Args: {
           p_date_from: string

@@ -4237,6 +4237,101 @@ describe("daily_listing_visits e get_listing_traffic (D-032, Fase 5B)", () => {
   });
 });
 
+// get_listing_dashboard_summary (20260831164303, D-168) — o resumo do
+// Dashboard 360º do Anúncio: soma de UM anúncio, conversão NULL sem visita.
+// Reusa deliberadamente a mesma fixture do describe de tráfego acima
+// (mesmos UUIDs, inserts idempotentes) — o cenário é idêntico, só muda o
+// grão da pergunta (um item, não a lista).
+describe("get_listing_dashboard_summary (D-168, Dashboard 360º do Anúncio)", () => {
+  const CONTA_TRAFEGO = "dddd8888-0000-4000-8000-000000000088";
+  const ITEM_ID = "MLB900100500";
+  const ITEM_SO_PEDIDO = "MLB900100501";
+  const TODAY = "2026-08-23";
+  const WINDOW_START = "2026-07-25";
+
+  const CALL = (item: string) =>
+    `select * from public.get_listing_dashboard_summary('${ORG_SB}','${CONTA_TRAFEGO}','${item}','${WINDOW_START}','${TODAY}')`;
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$2,'Conta de tráfego','trafegotest-conta','PENDING')
+       on conflict do nothing`,
+      [CONTA_TRAFEGO, ORG_SB],
+    );
+
+    await client.query(
+      `insert into public.daily_listing_visits
+         (organization_id, ml_account_id, item_id, metric_date, visits, synced_at)
+       values
+         ($1,$2,$3,'2026-08-20',20,now()),
+         ($1,$2,$3,$4,30,now()),
+         ($1,$2,$3,'2020-01-02',999,now())
+       on conflict do nothing`,
+      [ORG_SB, CONTA_TRAFEGO, ITEM_ID, TODAY],
+    );
+
+    await client.query(
+      `insert into public.daily_listing_metrics
+         (organization_id, ml_account_id, mlb_id, variation_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values
+         ($1,$2,$3,null,$4,5,500,5,5),
+         ($1,$2,$5,null,$4,2,200,2,2)
+       on conflict do nothing`,
+      [ORG_SB, CONTA_TRAFEGO, ITEM_ID, TODAY, ITEM_SO_PEDIDO],
+    );
+  });
+
+  it("soma vendas + visitas do item na janela e calcula conversão; visita fora da janela não conta", async () => {
+    const rows = await asUser<{
+      units_sold: string;
+      gross_revenue: string;
+      orders_count: string;
+      visits: string;
+      conversion: string;
+    }>(ADMIN_SB, CALL(ITEM_ID));
+
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0]?.units_sold)).toBe(5);
+    expect(rows[0]?.gross_revenue).toBe("500.00");
+    expect(Number(rows[0]?.orders_count)).toBe(5);
+    // 20 + 30 = 50, sem as 999 de 2020-01-02.
+    expect(Number(rows[0]?.visits)).toBe(50);
+    // 5 pedidos ÷ 50 visitas.
+    expect(rows[0]?.conversion).toBe("0.1000");
+  });
+
+  it("item com pedido mas sem visita: conversão NULL, nunca Infinity nem zero fingido", async () => {
+    const rows = await asUser<{ orders_count: string; visits: string; conversion: string | null }>(
+      ADMIN_SB,
+      CALL(ITEM_SO_PEDIDO),
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0]?.orders_count)).toBe(2);
+    expect(Number(rows[0]?.visits)).toBe(0);
+    expect(rows[0]?.conversion).toBeNull();
+  });
+
+  it("security invoker: usuário de outra organização soma zero mesmo passando os IDs certos", async () => {
+    const rows = await asUser<{ units_sold: string; visits: string; conversion: string | null }>(
+      DE_OUTRA_ORG,
+      CALL(ITEM_ID),
+    );
+
+    // A RLS filtra ANTES da soma: os coalesce devolvem a linha zerada,
+    // nunca os números da organização alheia.
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0]?.units_sold)).toBe(0);
+    expect(Number(rows[0]?.visits)).toBe(0);
+    expect(rows[0]?.conversion).toBeNull();
+  });
+
+  it("anon não executa get_listing_dashboard_summary", async () => {
+    await expect(asAnon(CALL(ITEM_ID))).rejects.toThrow(/permission denied/i);
+  });
+});
+
 describe("search_entities (Fase 5B, Busca universal)", () => {
   // Mesmo raciocínio de nomes fora dos padrões de limpeza global, e mesma
   // ausência de afterAll — ver comentário equivalente no describe de

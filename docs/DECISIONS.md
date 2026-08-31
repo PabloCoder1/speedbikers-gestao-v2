@@ -3176,6 +3176,26 @@ A camada 3 foi encontrada pelo CATALOGO (enumerando as FKs RESTRICT reais), nao 
 
 **Impacto:** migrations acima (indice + RPC + tune), `packages/db/src/{types.ts,rls.integration.test.ts}`, `apps/web/lib/{movement-labels,movement-labels.test,movement-filters,movement-filters.test}.ts`, `apps/web/app/estoque/movimentacoes/page.tsx` (novo), `apps/web/components/shell.tsx` (nav), `docs/{ROADMAP,HANDOFF}.md`.
 
+## D-168 - Dashboard 360º do Anuncio: o destino individual nasce em secoes, com read model somado em SQL
+
+**Contexto:** segundo item da trilha 5E na ordem registrada. Cada anuncio era uma linha de lista sem destino individual — estado, desempenho, Full e historia exigiam cruzar telas na mao. O item do ROADMAP pedia rota escopada, metricas canonicas, timeline sem causalidade; os riscos nomeados: N+1 por aba, duplicar a timeline do SKU, correlacao virando causa.
+
+**Decisao 1 — primeira versao em SECOES, o mesmo formato do Dashboard de SKU:** `/anuncios/[itemId]` com cabecalho (conta, status, preco, disponivel, SKU linkado ou "sem vinculo" explicito, frescor), Vendas e trafego 30 dias, Full, Acoes relacionadas e Linha do tempo. As abas do Figma sao evolucao registrada (como o P1 do SKU), nao pre-requisito. MLB ids sao globais no ML — resolucao por `item_id` com `maybeSingle`, e "nao existe" e "RLS escondeu" viram o MESMO 404.
+
+**Decisao 2 — read model somado em SQL, nunca no navegador:** `get_listing_dashboard_summary` (security invoker, revoke anon) soma `daily_listing_metrics` + `daily_listing_visits` de UM item na janela; conversao = pedidos / nullif(visitas) com a convencao de D-059 (NULL, nunca Infinity nem zero fingido). EXPLAIN ensaiado ANTES da migration: poucos ms pelos indices de grao. As 4 consultas da pagina rodam em PARALELO por construcao — o risco "N+1 por aba" morre no desenho, nao em otimizacao futura.
+
+**Decisao 3 — a timeline e RECORTE, nao duplicata:** `domain_events` com `entity_type='listing'` e `entity_id=item_id` — so o que aconteceu NESTE anuncio. A timeline do SKU (D-153) agrega tres caminhos; esta filtra um. Mesmo vocabulario (`eventTypeLabel`/`formatEventDiff`), mesma regra: historia, nunca causa.
+
+**Decisao 4 — Full honesto:** o espelho de Full e por SKU+conta; anuncio sem vinculo de SKU NAO e rastreavel, e a tela DIZ isso em vez de mostrar zero (a regra "nao observado nunca vira R$ 0,00", aplicada a estoque).
+
+**Licao (classe D-133, de novo):** o tipo gerado da RPC declarava `conversion: number`; o lint reprovou o `=== null` como "no overlap". Correcao manual marcada em types.ts — coluna calculada com `nullif` e invisivel ao gerador.
+
+**Desvios declarados do DoD registrado:** sem abas Diagnostico/Decisoes nesta fatia (dependem de read models proprios; os dados ja aparecem via Acoes relacionadas) e sem Playwright (leitura pura; e2e reservado aos fluxos criticos de D-069).
+
+**Verificacao:** migration `20260831164303` nos DOIS bancos; **444/444 testes de integracao em banco recriado do zero (103 migrations)** — +4 da RPC (soma na janela com visita fora dela excluida, conversao NULL sem visita, invoker devolvendo ZERO para org alheia, anon negado); `check` 29/29, build 8/8. ⚠️ Tela nao vista renderizada.
+
+**Impacto:** migration acima, `packages/db/src/{types.ts,rls.integration.test.ts}`, `apps/web/app/anuncios/[itemId]/page.tsx` (novo), `apps/web/app/anuncios/page.tsx` (link), `docs/{ROADMAP,HANDOFF}.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:
