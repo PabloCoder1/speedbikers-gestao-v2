@@ -33,6 +33,8 @@ import type { SupportQuestionsScheduleDeps } from "./support-questions-schedule.
 import type { SupportClaimsScheduleDeps } from "./support-claims-schedule.js";
 import { triggerSupportClaimsReconcile } from "./support-claims-schedule.js";
 import { triggerSupportQuestionsReconcile } from "./support-questions-schedule.js";
+import type { RelistDeps } from "./relist.js";
+import { relistRequestSchema, requestListingRelist } from "./relist.js";
 import type { SupportReplyDeps } from "./support-reply.js";
 import { requestSupportReply, supportReplyRequestSchema } from "./support-reply.js";
 import type { ListingsScheduleDeps } from "./listings-schedule.js";
@@ -95,6 +97,7 @@ export interface AppDependencies {
   supportClaimsSchedule?: SupportClaimsScheduleDeps;
   supportMessagesSchedule?: SupportMessagesScheduleDeps;
   supportReply?: SupportReplyDeps;
+  relist?: RelistDeps;
   salesAnomalyActionsSchedule?: SalesAnomalyActionsScheduleDeps;
   decisionOutcomesSchedule?: DecisionOutcomesScheduleDeps;
   aiBudgetSchedule?: AiBudgetScheduleDeps;
@@ -525,6 +528,71 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     // entendida e o estado devolvido é a resposta certa. Repetir a mesma
     // confirmação não é erro do chamador — é exatamente o caso que a chave de
     // idempotência existe para tratar.
+    return context.json(outcome);
+  });
+
+  // --------------------------------------------------------------------
+  // Pedido de republicacao (Fase 9, D-161): a api autoriza e enfileira; o
+  // worker captura o snapshot e roda o preflight. NADA destrutivo nesta
+  // rota -- o fechamento do pai e o POST /relist sao fatia propria.
+  // --------------------------------------------------------------------
+  app.post("/v1/listings/relist", async (context) => {
+    const auth = dependencies.auth;
+    const relist = dependencies.relist;
+
+    if (auth === undefined || relist === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    // ADMIN/GESTOR, sem OPERADOR: republicar comeca fechando um anuncio
+    // (irreversivel) -- e decisao de gestao, nao de atendimento. A permissao
+    // especifica do PRD e este par papel+conta, imposto no servidor.
+    const authorized = await auth.authenticate(context.req.header("authorization"), [
+      "ADMIN",
+      "GESTOR",
+    ]);
+
+    if (!authorized.ok) {
+      dependencies.logger.warn("relist_unauthorized", {
+        request_id: context.get("requestId"),
+        reason: authorized.reason,
+      });
+
+      return context.json({ error: { code: "unauthorized" } }, authorized.status);
+    }
+
+    let rawBody: unknown;
+
+    try {
+      rawBody = await context.req.json();
+    } catch {
+      return context.json({ error: { code: "invalid_payload", message: "corpo não é JSON" } }, 400);
+    }
+
+    const parsed = relistRequestSchema.safeParse(rawBody);
+
+    if (!parsed.success) {
+      return context.json(
+        {
+          error: {
+            code: "invalid_payload",
+            message: parsed.error.issues[0]?.message ?? "payload inválido",
+          },
+        },
+        400,
+      );
+    }
+
+    const outcome = await requestListingRelist(relist, authorized.caller, parsed.data);
+
+    if (outcome.status === "not_found") {
+      return context.json({ error: { code: "not_found" } }, 404);
+    }
+
+    if (outcome.status === "error") {
+      return context.json({ error: { code: "internal", message: outcome.reason } }, 500);
+    }
+
     return context.json(outcome);
   });
 

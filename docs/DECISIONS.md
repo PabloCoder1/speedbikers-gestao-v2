@@ -3060,6 +3060,24 @@ A camada 3 foi encontrada pelo CATALOGO (enumerando as FKs RESTRICT reais), nao 
 
 **Impacto:** `packages/domain/src/listings/{relist-preflight.ts,relist-preflight.test.ts,index.ts}`, `docs/{ROADMAP,HANDOFF}.md`.
 
+## D-161 - O fio do relist comeca pela CRIACAO: a api autoriza e enfileira, o worker captura e avalia, nada destrutivo acontece
+
+**Contexto:** terceira fatia da Fase 9. Modelo (D-159) e avaliador (D-160) prontos; o fio web→api→worker precisava nascer — e o corte deliberado e parar ANTES de qualquer escrita no Mercado Livre: esta fatia entrega o pedido humano ate o veredito do preflight, e o executor (fechar → POST → confirmar → remapear) fica para a proxima, atras de confirmacao propria.
+
+**Decisao 1 — o desenho de D-096, reusado inteiro:** `POST /v1/listings/relist` valida (papel ADMIN/GESTOR na rota; fronteira de organizacao em codigo porque o AdminClient bypassa RLS; escopo por CONTA para nao-ADMIN — a licao de D-117; anuncio conhecido em `listings` para falhar cedo) e ENFILEIRA `relist.prepare` na fila da conta (a captura fala com o ML e disputa o rate limit daquela conta, D-036). "Nao encontrado" nunca vira "sem permissao" — a segunda resposta revelaria que a conta/anuncio existe.
+
+**Decisao 2 — sem OPERADOR, e o porque registrado:** republicar comeca fechando um anuncio (irreversivel). E decisao de gestao, nao de atendimento — a "permissao especifica" do PRD e este par papel+conta imposto no servidor. Um flag proprio de permissao seria entidade inventada antes do primeiro caso real.
+
+**Decisao 3 — o worker e o unico que toca o remoto, e so LE:** `relist.prepare` busca o item pelo multiget ja existente (1 id), guarda o corpo CRU como `parent_snapshot` (D-159: capturado na criacao) e roda `evaluateRelistPreflight`. Aprovado ⇒ fica REQUESTED com o evento de criacao carregando o ATOR humano; reprovado ⇒ PREFLIGHT_FAILED com `failure_reason` (descricoes) e evento SEM ator (transicao do sistema, reason = codigos). Corpo de OUTRO item falha sem retry (snapshot do anuncio errado e defeito, nao condicao transitoria). 23505 no insert = o indice parcial de D-159 fazendo o trabalho: retry do Cloud Tasks ou segundo pedido terminam em paz, sem segunda operacao.
+
+**Decisao 4 — janela de minuto no nome da task (classe D-051):** o Cloud Tasks retem nomes por 24h; sem a janela, um pedido legitimo horas depois de uma operacao reaberta seria descartado em silencio. Dois cliques no mesmo minuto colapsam; a garantia duravel e a constraint, nao o nome.
+
+**Falha que NAO e engolida:** se o update para PREFLIGHT_FAILED falhar, o job FALHA com retry — deixar a operacao REQUESTED aprovavel seria o oposto do veredito. Ja o evento de auditoria que falha e logado sem derrubar o job (falhar depois do insert repetiria tudo e cairia no 23505 SEM o evento — pior).
+
+**Verificacao:** `check` 29/29 (+7 testes de worker, +4 de api), build 8/8. Sem migration, sem UI (o botao nasce com o executor — hoje o caminho e chamavel por API, como o primeiro envio de resposta foi). ⚠️ Fluxo nunca exercitado contra o ML real — e nao deve ser antes do deploy e de um ensaio deliberado.
+
+**Impacto:** `apps/api/src/{relist.ts,relist.test.ts,app.ts,index.ts}`, `apps/worker/src/{handlers/relist-prepare.ts,handlers/relist-prepare.test.ts,index.ts}`, `docs/{API,ROADMAP,HANDOFF}.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:
