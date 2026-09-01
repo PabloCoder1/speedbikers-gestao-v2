@@ -30,6 +30,9 @@ function chain<T>(result: T): {
   eq: () => ReturnType<typeof chain<T>>;
   is: () => ReturnType<typeof chain<T>>;
   select: () => ReturnType<typeof chain<T>>;
+  // D-193: as leituras de `fetchListings` passaram a ser paginadas.
+  order: () => ReturnType<typeof chain<T>>;
+  range: () => ReturnType<typeof chain<T>>;
   maybeSingle: () => Promise<T>;
   then: <R>(resolve: (value: T) => R) => Promise<R>;
 } {
@@ -37,6 +40,8 @@ function chain<T>(result: T): {
     eq: () => self,
     is: () => self,
     select: () => self,
+    order: () => self,
+    range: () => self,
     maybeSingle: () => Promise.resolve(result),
     then: <R>(resolve: (value: T) => R) => Promise.resolve(result).then(resolve),
   };

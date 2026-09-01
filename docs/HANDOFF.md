@@ -14,8 +14,8 @@
 |---|---|
 | **Atualizado em** | 2026-09-01 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `05d0d35` (D-191) — esta fatia, D-192, é o commit seguinte |
-| **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **33 commits atrás** |
+| **HEAD conhecido** | `5587a40` (D-192) — esta fatia, D-193, é o commit seguinte |
+| **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **34 commits atrás** |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | 119 locais == 119 no Dev, última `20260901160650` — sem drift |
 | **Frente atual** | Trilha 8B — P0 fechado (A–H); em P1 |
@@ -72,6 +72,11 @@ Números completos e método: `docs/PERFORMANCE.md`.
   tirou a leitura da janela, D-189 tirou a janela e parou de apagar itens a
   partir de resposta vazia); qual dos dois aconteceu não dá para saber.
   **Reprocessar os dois continua sendo ato pendente.**
+- **O truncamento de 1.000 do PostgREST volta sempre.** D-131 corrompeu o
+  estoque; D-183 achou um contador errado; D-193 achou mais dois cortes vivos
+  no worker. Ao escrever qualquer leitura, pergunte quantas linhas ela pode
+  devolver **no pior caso** — e num `in(...)`, o que a chave multiplica, não
+  o tamanho do lote.
 - **O tipo gerado não conhece a RLS.** `supabase gen types` deriva a
   nulabilidade de um embed da chave estrangeira; a RLS é avaliada depois, e
   uma linha invisível ao chamador faz o embed voltar `null` numa coluna que o
@@ -125,8 +130,10 @@ Nada disto pode ser feito por um agente.
    reduzir a origem", e a origem (218.750 jobs vazios de webhook, D-179) só
    some com o deploy. Junto com o item 1, é o segundo do P1 travado pelo
    mesmo ato humano.
-3. **P1 — round trips por tela e read models**, os dois itens do P1 que
-   sobraram e não dependem do deploy. `docs/ROADMAP.md` tem a ordem.
+3. **P1 — read models e o resto do item de frontend.** A varredura de
+   truncamento saiu em D-193 (dois cortes vivos corrigidos); sobram os
+   waterfalls/N+1, o filtro de marcas que agrega em JavaScript, e os read
+   models. `docs/ROADMAP.md` tem a ordem.
 4. **Antes da segunda organização** — `get_system_health` tem escopo de
    plataforma com guard de tenant (D-182). Não é urgente hoje e não tem
    correção óbvia: as duas tentativas naturais causam regressão verificada.

@@ -7,6 +7,7 @@ import type { Logger } from "@sb/observability";
 
 import { recordDomainEvents } from "./domain-events.js";
 import { listingItemSchema } from "./listing-schema.js";
+import { readAllPages } from "../read-all-pages.js";
 
 /**
  * Sincronização de anúncios — **enumeração pelo CATÁLOGO REAL do vendedor**
@@ -90,20 +91,28 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
 
   // Vínculos viram LOOKUP, não fonte de enumeração. Uma consulta só: com
   // catálogo completo, uma consulta por item seria milhares de idas ao banco.
-  const links = await params.db
-    .from("sku_listing_links")
-    .select("item_id, sku_id")
-    .eq("ml_account_id", params.mlAccountId)
-    .eq("ref_kind", "ITEM")
-    .is("variation_id", null);
-
-  if (links.error !== null) {
-    throw new Error(`falha ao ler sku_listing_links: ${links.error.message}`);
-  }
+  //
+  // PAGINADO desde D-193. Medido: a conta com mais vínculos tem **984** neste
+  // recorte — 16 linhas do teto de 1.000 do PostgREST, que corta **sem erro**
+  // (D-131). Ainda não estava truncando; estava a um lote de anúncios de
+  // começar, e o sintoma seria mudo: vínculo ausente do Map vira `sku_id`
+  // nulo no anúncio, e o painel perde o SKU sem nada quebrar.
+  const links = await readAllPages<{ item_id: string | null; sku_id: string }>(
+    (from, to) =>
+      params.db
+        .from("sku_listing_links")
+        .select("item_id, sku_id")
+        .eq("ml_account_id", params.mlAccountId)
+        .eq("ref_kind", "ITEM")
+        .is("variation_id", null)
+        .order("id")
+        .range(from, to),
+    { label: "falha ao ler sku_listing_links" },
+  );
 
   const skuByItem = new Map<string, string>();
 
-  for (const link of links.data) {
+  for (const link of links) {
     if (link.item_id !== null) {
       skuByItem.set(link.item_id, link.sku_id);
     }
@@ -111,18 +120,37 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
 
   // Estado ANTERIOR em bloco, antes do upsert sobrescrever: `listings` é
   // projeção mutável (`docs/DATABASE.md`), então o "antes" só existe agora.
-  const previousRows = await params.db
-    .from("listings")
-    .select("item_id, title, status, price, available_quantity")
-    .eq("ml_account_id", params.mlAccountId);
-
-  if (previousRows.error !== null) {
-    throw new Error(`falha ao ler listings anteriores: ${previousRows.error.message}`);
-  }
+  //
+  // PAGINADO desde D-193, e aqui o truncamento **já estava acontecendo**: a
+  // conta com mais anúncios tem **1.311**, contra o teto de 1.000. O efeito
+  // era o pior formato possível — silêncio. `detectListingEvents(null, ...)`
+  // devolve `[]` de propósito (primeira sincronização não gera evento), então
+  // os ~311 anúncios fora da janela eram tratados como recém-vistos a CADA
+  // execução: mudança de preço, de status e de quantidade neles **nunca**
+  // virava evento. E, sem `.order()`, quais 1.000 entravam variava entre
+  // execuções.
+  const previousRows = await readAllPages<{
+    item_id: string;
+    title: string;
+    status: string;
+    price: number;
+    available_quantity: number;
+  }>(
+    (from, to) =>
+      params.db
+        .from("listings")
+        .select("item_id, title, status, price, available_quantity")
+        .eq("ml_account_id", params.mlAccountId)
+        // `listings_account_item_unique (ml_account_id, item_id)` — com a
+        // conta já fixada no filtro, `item_id` é ordenação estável.
+        .order("item_id")
+        .range(from, to),
+    { label: "falha ao ler listings anteriores" },
+  );
 
   const previousByItem = new Map<string, ListingSnapshot>();
 
-  for (const row of previousRows.data) {
+  for (const row of previousRows) {
     previousByItem.set(row.item_id, {
       itemId: row.item_id,
       title: row.title,

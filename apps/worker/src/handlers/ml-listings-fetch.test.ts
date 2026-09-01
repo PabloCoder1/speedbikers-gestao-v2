@@ -24,19 +24,63 @@ interface PreviousRow {
 }
 
 /** Fake encadeável: `.eq()`/`.is()` devolvem a si mesmos e o `await` resolve. */
+/**
+ * D-193: as duas leituras passaram a ser PAGINADAS (`.order().range()`), e a
+ * cadeia precisa aceitar isso.
+ *
+ * O fake devolve o conjunto INTEIRO na primeira página. Isso é deliberado: o
+ * que estes testes exercitam é o comportamento do handler, e a mecânica da
+ * paginação já tem teste próprio em `read-all-pages.test.ts`. `readAllPages`
+ * para quando a página vem incompleta, então uma única página menor que o
+ * tamanho do lote encerra o laço.
+ */
 function chain<T>(result: T): T {
   const self = {
     eq: () => self,
     is: () => self,
+    order: () => self,
+    range: () => self,
     then: (resolve: (value: T) => unknown) => Promise.resolve(result).then(resolve),
   };
 
   return self as unknown as T;
 }
 
+/**
+ * Cadeia que HONRA o `.range(from, to)` — é ela que torna a paginação
+ * observável no teste.
+ *
+ * A cadeia simples acima devolve tudo na primeira página, o que basta para os
+ * testes de comportamento. Esta existe para o caso que D-193 corrigiu:
+ * conjunto maior que o teto de 1.000 do PostgREST.
+ */
+function chainPaginada<T>(linhas: T[]): { data: T[]; error: null } {
+  // O TETO é a peça central: o PostgREST devolve no máximo 1.000 linhas, com
+  // `error` NULO (D-131). Sem modelá-lo, o fake devolveria tudo de uma vez e
+  // o teste passaria também no código sem paginação — provando nada.
+  const TETO = 1000;
+  const fatiar = (from: number, to: number) => ({
+    data: linhas.slice(from, Math.min(to + 1, from + TETO)),
+    error: null,
+  });
+
+  const self = (from: number, to: number): unknown => ({
+    eq: () => self(from, to),
+    is: () => self(from, to),
+    order: () => self(from, to),
+    range: (novoFrom: number, novoTo: number) => self(novoFrom, novoTo),
+    then: (resolve: (value: { data: T[]; error: null }) => unknown) =>
+      Promise.resolve(fatiar(from, to)).then(resolve),
+  });
+
+  return self(0, linhas.length) as { data: T[]; error: null };
+}
+
 function fakeDb(options: {
   links?: Link[];
   previous?: PreviousRow[];
+  /** Como `previous`, mas servido em PÁGINAS — para o teste de D-193. */
+  previousPaginado?: PreviousRow[];
   linksError?: boolean;
   previousError?: boolean;
   upsertFails?: boolean;
@@ -60,6 +104,10 @@ function fakeDb(options: {
         }
 
         if (table === "listings") {
+          if (options.previousPaginado !== undefined) {
+            return chainPaginada(options.previousPaginado) as never;
+          }
+
           return chain(
             options.previousError === true
               ? { data: null, error: { message: "boom previous" } }
@@ -162,6 +210,47 @@ function params(
 }
 
 describe("fetchListings — enumeração pelo catálogo real (Fase 4B)", () => {
+  // D-193 — a leitura não para no teto de 1.000 do PostgREST.
+  //
+  // Medido no Dev: a conta com mais anúncios tem **1.311**, e a leitura do
+  // estado anterior vinha sem `.range()`. O corte é SILENCIOSO (D-131:
+  // `error` nulo, `data` com exatamente 1.000), e o sintoma aqui era mudo por
+  // um segundo motivo: `detectListingEvents(null, ...)` devolve `[]` de
+  // propósito, então os ~311 anúncios fora da janela eram tratados como
+  // recém-vistos a CADA execução — mudança de preço, status e quantidade
+  // neles nunca virava evento.
+  //
+  // Este teste falha no código anterior: sem paginação, o handler enxergaria
+  // 1.000 dos 1.311 e emitiria evento para o que estava fora.
+  it("lê TODOS os anúncios anteriores, além do teto de 1.000 (D-193)", async () => {
+    const TOTAL = 1311;
+    // Preço 10 no estado anterior contra os 100 que o `item()` do fake
+    // devolve: se o anterior for encontrado, o diff vê mudança de preço.
+    const anteriores = Array.from({ length: TOTAL }, (_, i) => ({
+      item_id: `MLB${String(i).padStart(6, "0")}`,
+      title: `Anúncio MLB${String(i).padStart(6, "0")}`,
+      status: "active",
+      price: 10,
+      available_quantity: 5,
+    }));
+
+    // O último item da lista — o que só aparece na segunda página. Se o
+    // handler o tratasse como novo, `detectListingEvents` não emitiria nada
+    // para a mudança de preço abaixo.
+    const ultimo = anteriores[TOTAL - 1] as { item_id: string };
+
+    const fake = fakeDb({ previousPaginado: anteriores });
+    const { client } = fakeClient({ scanPages: [{ results: [ultimo.item_id], scroll_id: null }] });
+
+    const result = await fetchListings(params(fake.db, client));
+
+    expect(result.itemsProcessed).toBe(1);
+
+    // O preço mudou de 10 para 100. O evento só existe se o estado ANTERIOR
+    // foi encontrado — ou seja, se a segunda página foi lida.
+    expect(fake.domainEvents.map((row) => row.event_type)).toContain("listing.price.changed");
+  });
+
   it("enumera o CATÁLOGO, não os vínculos — anúncio sem vínculo entra com sku_id nulo", async () => {
     // O ponto inteiro da Fase 4B: a versão anterior enumerava
     // `sku_listing_links` e por isso não sabia que MLB2 existia.

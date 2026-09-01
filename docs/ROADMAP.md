@@ -578,7 +578,9 @@ Frente transversal aberta em 2026-09-01. **Não renumera nem reabre fase alguma*
 - [ ] Retenção de telemetria: `job_runs` só depois de reduzir a origem (P0-C), separando auditoria de negócio de telemetria operacional.
 - [ ] Índices: triagem caso a caso (FK sem índice **e** índices sem uso), nunca em lote pelo advisor.
 - [ ] Cloud Tasks × Cloud Run × limites do ML como um sistema só — medir antes de aumentar capacidade.
-- [ ] Frontend: waterfalls, N+1, dados carregados por aba não aberta, e varredura sistemática da classe de truncamento de 1.000 linhas (D-131).
+- [x] **Varredura sistemática da classe de truncamento de 1.000 linhas (D-131)** — feita em 2026-09-01 (D-193). 22 tabelas passam de 1.000 linhas, 73 leituras as tocam, 23 sem limite; destas, **duas cortavam de verdade** (vínculos por conta no ERP, 20.651; anúncios anteriores na sincronização, 1.311) e uma estava a **16 linhas** de começar. Corrigidas com o `readAllPages` que a própria D-131 criou.
+- [ ] **Filtro de marcas de `/estoque` e `/reposicao`** — lê 3.550 SKUs para deduzir marcas distintas em JavaScript. Corta no teto de 1.000, mas o sintoma é cosmético (marca faltando no filtro) e a correção certa não é paginar: é agregação em SQL, como a regra da casa já manda.
+- [ ] Frontend: waterfalls, N+1 e dados carregados por aba não aberta — o resto do item, que a varredura de truncamento não cobre.
 - [ ] Observabilidade: relatório de performance sobre o que já existe (`job_runs`, `sync_runs`, `/saude`), sem criar plataforma nova.
 
 #### P2 — produção

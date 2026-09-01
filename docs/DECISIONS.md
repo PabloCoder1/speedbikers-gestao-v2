@@ -3916,6 +3916,37 @@ Seguir o compilador ali significaria apagar a defesa. Antes de fazer isso, medi.
 
 **Impacto:** `packages/db/src/rls-embed-nullability.integration.test.ts` (novo).
 
+## D-193 - A varredura do truncamento: dois cortes vivos, e um a 16 linhas de comecar
+
+**Contexto:** o item do P1 pedia "varredura sistematica da classe de truncamento de 1.000 linhas (D-131)". Aquele defeito corrompeu o saldo de estoque de producao — o PostgREST corta em 1.000 e devolve `error` NULO, entao o codigo segue achando que tem o conjunto inteiro. **Nao quebra, mente.**
+
+**O metodo, o mesmo que funcionou em D-191:** medir as tabelas, achar as leituras sem limite, e conferir a cardinalidade REAL de cada uma antes de concluir. Vinte e duas tabelas passam de 1.000 linhas; 73 leituras as tocam, 50 ja limitadas, **23 sem limite**.
+
+**Das 23, tres importam — e a varredura errou uma, que a leitura do codigo corrigiu:**
+
+| Sitio | Maximo medido | Situacao |
+|---|---|---|
+| `erp-import-apply.ts` — vinculos por conta | **20.651** | **cortava**, 20x o teto |
+| `ml-listings-fetch.ts` — anuncios anteriores por conta | **1.311** | **cortava** |
+| `ml-listings-fetch.ts` — vinculos ITEM por conta | 984 | a **16 linhas** do teto |
+| ~~`erp-import-apply.ts` — skus por organizacao~~ | 3.554 na tabela | **seguro**, e a varredura marcou errado |
+
+**Por que o quarto e seguro, e por que a diferenca importa.** Ele fatia por `sku_key` (`LOOKUP_CHUNK = 200`) e `skus_org_key_unique` garante uma linha por chave: 200 chaves, no maximo 200 linhas. O irmao dele fatia por `ml_account_id`, e cada conta tem milhares de vinculos — as 4 contas cabem numa fatia so. **O que decide nao e o tamanho do lote, e o que a chave do `in(...)` multiplica.** Essa frase esta no comentario do codigo.
+
+**O efeito do corte em `ml-listings-fetch`, e ele e mudo por dois motivos somados.** A leitura do estado anterior alimenta o motor de diff. `detectListingEvents(null, ...)` devolve `[]` **de proposito** — primeira sincronizacao nao inventa evento de mudanca. Com 1.311 anuncios e 1.000 lidos, os ~311 de fora eram tratados como recem-vistos a CADA execucao: **mudanca de preco, de status e de quantidade neles nunca virava evento**. E, sem `.order()`, quais 1.000 entravam variava entre execucoes.
+
+Procurei a assinatura disso em `domain_events` antes de escrever o paragrafo acima: nao ha excesso de eventos repetidos, o que **confirma** o diagnostico em vez de contradize-lo — o defeito nao produz evento espurio, produz ausencia.
+
+**Decisao — usar o helper que D-131 ja criou.** `readAllPages` existe, tem a licao escrita no proprio docstring, e exige ordenacao estavel. As tres leituras passam por ele, com a chave de ordenacao justificada em cada uma (`id` nos vinculos; `item_id` nos anuncios, porque `listings_account_item_unique` o torna unico com a conta ja fixada no filtro).
+
+**O teste so vale se falhar sem a correcao, e para isso o FAKE precisou modelar o teto.** Um fake que devolve tudo de uma vez faria o teste passar tambem no codigo antigo — provando nada. O `chainPaginada` corta em 1.000 como o PostgREST faz. Conferido: com a paginacao desligada, o teste falha; com ela, passa.
+
+**O que fica registrado e nao foi feito:** o filtro de marcas de `/estoque` e `/reposicao` le 3.550 SKUs para deduzir as marcas distintas em JavaScript. Corta, mas o sintoma e cosmetico (marca faltando no filtro) e a correcao certa nao e paginar: e uma agregacao em SQL, que a regra da casa ja manda ("zero agregacao em JavaScript"). Fatia propria.
+
+**Verificacao:** 519/519 no worker (+1), 516/516 de integracao em banco recriado, `check` 29/29, build 8/8, 13/13 Playwright, `check:embeds` 33/33. Sem migration.
+
+**Impacto:** `apps/worker/src/handlers/{ml-listings-fetch.ts,erp-import-apply.ts}` e tres arquivos de teste.
+
 ## Como adicionar nova decisao
 
 Registrar:

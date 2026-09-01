@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **191** (D-001 a D-192).
+Decisões registradas: **192** (D-001 a D-193).
 
 ## Por domínio
 
@@ -141,7 +141,7 @@ Decisões registradas: **191** (D-001 a D-192).
 - **D-171** — O 429 das visitas: a defesa inteira estava no eixo que o Mercado Livre nao limita
 - **D-179** — Topico de webhook sem consumidor deixa de virar Cloud Task
 
-### outros (26)
+### outros (27)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -169,6 +169,7 @@ Decisões registradas: **191** (D-001 a D-192).
 - **D-182** — O inventario do P0-E nao achou o furo que procurava, e achou outro
 - **D-188** — O embed que so um teste de integracao consegue provar
 - **D-191** — A varredura das projecoes: 33 aceitas, 26 formas conferidas, e a guarda que faltava
+- **D-193** — A varredura do truncamento: dois cortes vivos, e um a 16 linhas de comecar
 
 ### vendas/métricas (12)
 
