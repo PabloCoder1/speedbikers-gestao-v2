@@ -734,6 +734,44 @@ describe("persistOrder", () => {
       await expect(run(db, BASE_ORDER)).rejects.toThrow(/sku_listing_link/);
     });
 
+    // D-184 — a garantia que a rejeição sozinha NÃO dava.
+    //
+    // `resolveSku` rodava ENTRE o `order_items.delete` e o
+    // `order_items.insert`. Rejeitar ali já era o certo, mas tarde demais: o
+    // delete já tinha acontecido e o pedido ficava com ZERO itens até um
+    // reprocessamento bem-sucedido. Há 2 pedidos assim no Dev — `paid`, com o
+    // movimento de estoque gravado e nenhuma linha em `order_items`.
+    //
+    // Quem paga é `claim-return.ts`: sem a linha do item ele não acha a
+    // `position`, emite `claim_return_order_item_not_found` e pula a reversão
+    // da devolução. Fica registrado, mas a reversão não acontece.
+    //
+    // Este teste falha se alguém mover a resolução de volta para depois de
+    // uma escrita.
+    it("falha ao resolver o vínculo não apaga os itens que já existiam (D-184)", async () => {
+      const { db, deleted, upserted } = fakeDb({ linkLookupError: true });
+
+      await expect(run(db, BASE_ORDER)).rejects.toThrow(/sku_listing_link/);
+
+      // Nem o delete dos itens, nem sequer o upsert da própria order: a
+      // leitura agora acontece antes de QUALQUER escrita.
+      expect(deleted.filter((row) => row.table === "order_items")).toEqual([]);
+      expect(upserted.filter((row) => row.table === "orders")).toEqual([]);
+    });
+
+    it("falha ao ler o status anterior também rejeita sem escrever nada (D-184)", async () => {
+      // Este JÁ passava antes de D-184 — a leitura de status sempre foi a
+      // primeira coisa do handler. Está aqui para que o par não se separe:
+      // as duas leituras agora sobem juntas, e a garantia tem de valer para
+      // as duas. O irmão acima é o que de fato falhava.
+      const { db, deleted, upserted } = fakeDb({ previousStatusError: true });
+
+      await expect(run(db, BASE_ORDER)).rejects.toThrow(/status anterior/);
+
+      expect(deleted.filter((row) => row.table === "order_items")).toEqual([]);
+      expect(upserted.filter((row) => row.table === "orders")).toEqual([]);
+    });
+
     it("falha ao ler o kind do SKU rejeita, em vez de tratar um KIT real como PRODUTO sem componentes", async () => {
       const { db } = fakeDb({ linkForItem: () => ({ id: "link-1", sku_id: "sku-1" }), skuKindError: true });
 

@@ -66,10 +66,41 @@ export async function persistOrder(
   // `date_created` sempre existe.
   const lastUpdatedAt = order.date_last_updated ?? order.last_updated ?? order.date_created;
 
-  // Lido ANTES do upsert: é o "before" do motor de diff. Ausente (order
-  // nova para o V3) vira `null` — `detectOrderStatusEvents` trata os dois
-  // casos.
-  const existing = await db.from("orders").select("status").eq("id", order.id).maybeSingle();
+  // D-184 — as duas leituras deste handler sobem para ANTES de qualquer
+  // escrita, e sobem JUNTAS.
+  //
+  // O motivo forte é robustez, não latência. `resolveSku` rodava ENTRE o
+  // `order_items.delete` e o `order_items.insert`, e ela LANÇA em erro de
+  // propósito (gravar `sku_id` null numa venda real pularia a dedução
+  // inteira). Ou seja: a única leitura do caminho vivia dentro da janela em
+  // que o pedido está sem itens, e uma falha ali deixava o pedido com ZERO
+  // itens até um reprocessamento bem-sucedido.
+  //
+  // Existem 2 pedidos assim no Dev (`paid`, com o movimento de estoque
+  // gravado e nenhuma linha em `order_items`) — ambos de julho/2026, antes
+  // de D-178, quando a falha do próprio `insert` ainda era silenciosa. Essa
+  // metade D-178 já fechou; esta fecha a outra.
+  //
+  // O consumidor que paga a conta é `claim-return.ts`: sem a linha do item
+  // ele não acha a `position`, emite `claim_return_order_item_not_found` e
+  // pula a reversão da devolução. É registrado — não é perda silenciosa —
+  // mas é reversão que não acontece.
+  //
+  // De brinde, uma espera a menos: as duas leituras não dependem uma da
+  // outra. `resolveSku` já é uma função async (dispara na chamada) e o
+  // builder do PostgREST é thenable, então `Promise.all` inicia as duas.
+  const variationIds = order.order_items.map((item) =>
+    item.item.variation_id != null ? String(item.item.variation_id) : null,
+  );
+
+  const [existing, resolvedLinks] = await Promise.all([
+    db.from("orders").select("status").eq("id", order.id).maybeSingle(),
+    Promise.all(
+      order.order_items.map((item, index) =>
+        resolveSku(db, context.mlAccountId, item.item.id, variationIds[index] ?? null),
+      ),
+    ),
+  ]);
 
   if (existing.error !== null) {
     throw new Error(`falha ao ler status anterior da order ${String(order.id)}: ${existing.error.message}`);
@@ -125,29 +156,28 @@ export async function persistOrder(
     return;
   }
 
-  const items = await Promise.all(
-    order.order_items.map(async (item, position) => {
-      const variationId = item.item.variation_id != null ? String(item.item.variation_id) : null;
-      const resolved = await resolveSku(db, context.mlAccountId, item.item.id, variationId);
+  // Sem `await` aqui: os vínculos foram resolvidos no topo, antes do delete.
+  const items = order.order_items.map((item, position) => {
+    const variationId = variationIds[position] ?? null;
+    const resolved = resolvedLinks[position] ?? null;
 
-      return {
-        order_id: order.id,
-        organization_id: context.organizationId,
-        ml_account_id: context.mlAccountId,
-        position,
-        item_id: item.item.id,
-        variation_id: variationId,
-        title: item.item.title,
-        seller_sku: item.item.seller_sku ?? null,
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        sale_fee: item.sale_fee ?? null,
-        currency_id: item.currency_id,
-        sku_id: resolved?.sku_id ?? null,
-        sku_listing_link_id: resolved?.id ?? null,
-      };
-    }),
-  );
+    return {
+      order_id: order.id,
+      organization_id: context.organizationId,
+      ml_account_id: context.mlAccountId,
+      position,
+      item_id: item.item.id,
+      variation_id: variationId,
+      title: item.item.title,
+      seller_sku: item.item.seller_sku ?? null,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      sale_fee: item.sale_fee ?? null,
+      currency_id: item.currency_id,
+      sku_id: resolved?.sku_id ?? null,
+      sku_listing_link_id: resolved?.id ?? null,
+    };
+  });
 
   assertWritten(await db.from("order_items").insert(items), "order_items.insert");
 

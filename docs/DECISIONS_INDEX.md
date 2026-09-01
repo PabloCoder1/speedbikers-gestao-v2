@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **182** (D-001 a D-183).
+Decisões registradas: **183** (D-001 a D-184).
 
 ## Por domínio
 
-### atendimento (23)
+### atendimento (24)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -41,6 +41,7 @@ Decisões registradas: **182** (D-001 a D-183).
 - **D-135** — `stock.balance.diverged` significava duas coisas opostas, e a severidade mentia para uma delas
 - **D-149** — Custo de simulacao separado do cadastrado, e o custo passa a ter historia
 - **D-177** — O contexto dos agentes virou problema de engenharia, e o bootstrap caiu de 1,2 MB para 7,6 KB
+- **D-184** — A unica leitura do caminho vivia na janela em que o pedido esta sem itens
 
 ### banco/rls (19)
 

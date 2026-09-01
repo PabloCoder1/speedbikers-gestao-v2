@@ -121,6 +121,81 @@ de `orders` é irrelevante aqui: a V3 já nasceu normalizada, então nenhuma
 
 ---
 
+## Workers — o que `job_runs` já sabia
+
+Até 2026-09-01 este documento só media RPC. Mas o worker tem telemetria
+própria desde sempre (`job_runs.duration_ms` e `processed`), e ninguém tinha
+olhado. Medido no Dev, todas as execuções registradas:
+
+| Job | Execuções | Médio | p95 |
+|---|---|---|---|
+| `sync.fulfillment.snapshot` | 175 | **292,9 s** | 397,9 s |
+| `sync.listing-visits.snapshot` | 212 | **88,0 s** | 268,5 s |
+| `sync.orders.window` | 989 | **65,1 s** | 140,4 s |
+| `sync.support.messages.reconcile` | 3.004 | 6,8 s | 20,5 s |
+| `sync.support.claims.reconcile` | 568 | 5,2 s | 12,0 s |
+| `sync.support.questions.reconcile` | 3.571 | 1,8 s | 6,9 s |
+| `sync.support.messages` | 598 | 0,9 s | 1,3 s |
+| `sync.support.questions` | 826 | 0,6 s | 0,9 s |
+| `analytics.recompute` | 10.972 | 182 ms | 354 ms |
+| `sync.webhook.received` | 252.967 | 96 ms | 622 ms |
+| `system.ping` | 291 | 0,5 ms | 1 ms |
+
+`backfill.orders` (415 execuções, 17 min de média) fica de fora da leitura:
+é carga histórica, roda uma vez por conta e não voltou desde 25/08.
+
+### O que o `sync.webhook.received` esconde na média
+
+Os 96 ms médios são enganosos — a maioria das execuções não faz trabalho
+nenhum (é o achado de D-179). Separando:
+
+| | Execuções | Médio | Mediana | p95 |
+|---|---|---|---|---|
+| com trabalho (1 pedido) | 21.997 | **723,5 ms** | 588 ms | 1.234 ms |
+| no-op | 230.993 | 35,8 ms | **0 ms** | 1 ms |
+
+### Como conferir o efeito de D-184 depois do deploy
+
+D-184 tirou uma espera serial de cada pedido, mas o worker **não está no ar** —
+o número real só existe depois do deploy. A consulta que responde, comparando
+antes e depois pela data do deploy:
+
+```sql
+select date_trunc('day', started_at) as dia,
+       count(*) as execucoes,
+       sum(processed) as pedidos,
+       round(avg(duration_ms::numeric / nullif(processed, 0)), 1) as ms_por_pedido
+from public.job_runs
+where job_type = 'sync.orders.window' and duration_ms is not null and processed > 0
+group by 1 order by 1 desc limit 14;
+```
+
+Baseline a bater: **660,7 ms por pedido** na janela, **588 ms** de mediana no
+webhook com trabalho.
+
+### Persistir UM pedido custa ~600–700 ms, pelos dois caminhos
+
+O número aparece duas vezes, por caminhos independentes, e eles concordam:
+
+- `sync.webhook.received` com trabalho: **723,5 ms** para um pedido
+  (inclui um `GET /orders/{id}` no Mercado Livre).
+- `sync.orders.window`: **660,7 ms por pedido** (980 execuções, 104.288
+  pedidos, **106,4 pedidos por execução**, máximo 1.148).
+
+O laço da janela é estritamente serial — `for await (page) { for (raw of
+page) { await persistOrder(...) } }` — e cada pedido custa ~7 idas ao banco.
+106 pedidos × 7 = ~742 idas em série por execução, o que explica os 65 s.
+
+⚠️ **Cuidado ao ler esse "por item".** O ROADMAP registrava "buscar vínculos,
+`kind` de SKU e componentes de KIT **em lote, em vez de por item**". Medido:
+**todo pedido tem exatamente 1 item** — 337.581 pedidos, `position` máximo
+`0`, p99 de 1 item. Não é defeito de persistência: no Mercado Livre uma
+compra de vários produtos vira um **pack** de vários pedidos de um item cada,
+e há 1.794 packs com mais de um pedido (até 6). O laço por item tem
+cardinalidade 1; o multiplicador real é o número de **pedidos** na janela.
+
+---
+
 ## Trabalho desnecessário medido
 
 | O quê | Medição | Item |

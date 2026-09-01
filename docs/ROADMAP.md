@@ -564,7 +564,12 @@ Frente transversal aberta em 2026-09-01. **Não renumera nem reabre fase alguma*
 
 #### P1 — depois que o P0 fechar
 
-- [ ] Round trips de `persistOrder`: buscar vínculos, `kind` de SKU e componentes de KIT em lote, em vez de por item.
+- [x] ~~Round trips de `persistOrder`: buscar vínculos, `kind` de SKU e componentes de KIT em lote, **em vez de por item**~~ — **refutado e substituído em 2026-09-01 (D-184)**. Todo pedido tem 1 item (no ML, compra de vários produtos vira um *pack* de vários pedidos); o laço por item tem cardinalidade 1. O que a fatia entregou foi outra coisa: as duas leituras subiram para antes de qualquer escrita — 7 esperas seriais viram 6, e fecha a janela em que `resolveSku` podia deixar o pedido com **zero itens** (há 2 assim no Dev).
+- [ ] **Fundir vínculo + `kind` + componentes num embed só** (mais uma ida a menos por pedido). Registrado em D-184 com o portão que falta: o fake dos testes ignora a string de projeção, então a forma do embed precisa de um teste na pista de **integração** contra o PostgREST real — sem ele a mudança passa verde e quebra em produção.
+- [ ] **Lote por página de pedidos** em `fetchOrdersWindow` (6,79 → ~0,25 idas por pedido — o maior ganho disponível). Commit próprio: muda a semântica de falha parcial, o significado de `assertWritten` com 50 pedidos juntos, e o caminho de cancelamento.
+- [ ] **Medir uma chamada pelo pooler Postgres direto (6543) contra a mesma pelo PostgREST.** Se os ~52 ms virarem ~5 ms, essa alavanca é maior que qualquer batching e muda a forma de todo o resto. É a medição mais barata com o maior valor de informação.
+- [ ] **Promover erro não-23505 de `VENDA_ML`/`CANCELAMENTO_ML` a crítico** em `recordStockMovements`. Hoje `assert-written.ts` classifica `stock_movements` como observabilidade; uma linha de `VENDA_ML` não é telemetria — é o que move o saldo. Pré-requisito de qualquer mudança que aumente a pressão no gateway.
+- [ ] **Reprocessar os 2 pedidos sem `order_items`** (`2000017347483988`, `2000017394032682`) — ambos `paid`, com o movimento de estoque gravado e nenhuma linha de item. A dedução está correta; falta a linha do item, que `claim-return` precisa para reverter devolução.
 - [ ] Read models para o que é consultado repetidamente (último movimento por SKU, Full atual), sempre reconstruíveis da fonte.
 - [ ] Retenção de telemetria: `job_runs` só depois de reduzir a origem (P0-C), separando auditoria de negócio de telemetria operacional.
 - [ ] Índices: triagem caso a caso (FK sem índice **e** índices sem uso), nunca em lote pelo advisor.

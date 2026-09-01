@@ -14,11 +14,11 @@
 |---|---|
 | **Atualizado em** | 2026-09-01 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `1d98a2c` (D-182) — esta fatia, D-183, é o commit seguinte |
-| **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **22 commits atrás** |
+| **HEAD conhecido** | `88b80bd` (D-183) — esta fatia, D-184, é o commit seguinte |
+| **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **23 commits atrás** |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | 119 locais == 119 no Dev, última `20260901160650` — sem drift |
-| **Frente atual** | Trilha 8B — Performance, Segurança, Confiabilidade e Contexto |
+| **Frente atual** | Trilha 8B — P0 fechado (A–H); em P1 |
 
 ### O que está pronto
 
@@ -64,6 +64,12 @@ Números completos e método: `docs/PERFORMANCE.md`.
 - **A suíte de integração local exige banco recriado.** `supabase db reset`
   antes de rodar; e rodá-la quebra o seed do Playwright depois (usuários
   criados por SQL deixam `confirmation_token` nulo e o GoTrue estoura).
+- **2 pedidos estão sem linha em `order_items`** (`2000017347483988` e
+  `2000017394032682`): `paid`, com o movimento de estoque gravado e nenhum
+  item. A dedução está certa; falta a linha que `claim-return` precisa para
+  reverter devolução — sem ela ele registra `claim_return_order_item_not_found`
+  e pula. D-184 fechou a porta por onde isso entrava; **reprocessar os dois é
+  ato pendente**.
 - **A primeira medição pode ser cache frio.** `get_sku_timeline` mediu
   3.308 ms na primeira passada e **57 ms** na segunda — quase virou uma
   otimização inútil. Sempre duas passadas seguidas; se divergirem muito, a
@@ -98,13 +104,18 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-1. **P1 — retenção de `job_runs`**: são **271.184 linhas** reais (não as ~6
-   mil que `n_live_tup` estima), e o deploy pendente elimina a maior fonte
-   delas (D-179, 218.750 jobs vazios de webhook). Decidir a política de
-   retenção *depois* do deploy, com o volume já estabilizado.
-2. **P1** — round trips por tela, read models de `stock_movements` e triagem
-   de índices, na ordem registrada na trilha 8B.
-3. **Antes da segunda organização** — `get_system_health` tem escopo de
+1. **Medir uma chamada pelo pooler Postgres direto (6543) contra a mesma
+   pelo PostgREST.** É a medição mais barata com o maior valor de informação
+   que existe hoje: se os ~52 ms por ida virarem ~5 ms, essa alavanca é maior
+   que qualquer lote e muda a forma de todo o resto do P1 (D-184).
+2. **P1 — o resto do caminho de pedidos**: o embed de vínculo+`kind`+
+   componentes (precisa de portão na pista de integração) e o lote por página
+   em `fetchOrdersWindow`, que é o maior ganho disponível. Ordem e ressalvas
+   em `docs/ROADMAP.md`.
+3. **P1 — retenção de `job_runs`**: **271.184 linhas** reais. Bloqueado por
+   regra própria — "só depois de reduzir a origem", e a origem (218.750 jobs
+   vazios de webhook, D-179) só some com o deploy.
+4. **Antes da segunda organização** — `get_system_health` tem escopo de
    plataforma com guard de tenant (D-182). Não é urgente hoje e não tem
    correção óbvia: as duas tentativas naturais causam regressão verificada.
 

@@ -3626,6 +3626,43 @@ A correcao usa a mesma fonte do badge e o `summarizePagedWindow` que D-138/D-140
 
 **Impacto:** migration acima, `apps/web/app/notificacoes/page.tsx`.
 
+## D-184 - A unica leitura do caminho vivia na janela em que o pedido esta sem itens
+
+**Contexto:** primeiro item do P1 da trilha 8B — "round trips de `persistOrder`: buscar vinculos, `kind` de SKU e componentes de KIT **em lote, em vez de por item**".
+
+**O item, como escrito, esta refutado.** Medido: **todo pedido tem exatamente 1 item** — 337.581 pedidos, `position` maximo `0`, p99 de 1 item. Nao e defeito de persistencia (o schema e `z.array(...)` e o codigo grava N): no Mercado Livre uma compra de varios produtos vira um **pack** de varios pedidos de um item cada, e ha **1.794 packs com mais de um pedido** (ate 6). Os dois lacos que o item mandava agrupar tem **cardinalidade 1**; agrupa-los economiza exatamente zero.
+
+**O problema que ele tentava resolver existe — com outro multiplicador.** A telemetria do worker estava em `job_runs` desde sempre e ninguem tinha lido:
+
+| | Execucoes | Medio | p95 |
+|---|---|---|---|
+| `sync.orders.window` | 989 | **65,1 s** | 140,4 s |
+| `sync.webhook.received` (com trabalho) | 21.997 | **723,5 ms** | 1.234 ms |
+
+Os dois caminhos concordam sobre o custo de UM pedido: **660,7 ms** na janela (106,4 pedidos por execucao) e **723,5 ms** no webhook (mediana 588 ms). O laco da janela e estritamente serial e cada pedido custa **7 idas ao PostgREST**. Com pagina de 50, as ~3 chamadas ao Mercado Livre respondem por menos de 10% dos 65 s — o resto e banco, em serie.
+
+**Decisao — mover as duas leituras para ANTES de qualquer escrita, e inicia-las juntas.** O ganho de latencia (uma espera a menos) e o motivo menor. O motivo forte e outro:
+
+`resolveSku` rodava **entre** o `order_items.delete` e o `order_items.insert`. Ela **lanca** em erro de proposito (gravar `sku_id` null numa venda real pularia a deducao inteira — overselling). Ou seja: a unica leitura do caminho vivia dentro da janela em que o pedido esta sem itens, e uma falha ali deixava o pedido com **zero itens** ate um reprocessamento bem-sucedido.
+
+**Nao e hipotetico.** Ha **2 pedidos assim no Dev**: `paid`, com o movimento de estoque gravado e **nenhuma linha em `order_items`**. Os dois sao de julho/2026 — anteriores a D-178, quando a falha do proprio `insert` ainda era silenciosa. Essa metade D-178 ja fechou; esta fecha a outra.
+
+**O consumidor que paga a conta** e `claim-return.ts`: sem a linha do item ele nao acha a `position` e pula a reversao da devolucao. **Correcao de uma afirmacao que circulou na analise:** isso **nao** e silencioso — ha `logger.warn("claim_return_order_item_not_found")` com `claim_id`, `order_id` e `item_id` antes do `continue`. A reversao nao acontece, mas fica registrada.
+
+**O que NAO foi feito, e por que:**
+
+- **Fundir `sku_listing_links` + `skus` + `sku_components` num embed so** (uma ida a menos). Fica registrado porque exige um portao que esta fatia nao pagou: o fake dos testes ignora a string de projecao (`select: () => self`), entao a forma do embed **nao e verificavel pela suite de unidade** — precisaria de um teste na pista de integracao provando a forma literal contra o PostgREST real. Sem esse portao, a mudanca passa verde e quebra em producao.
+- **Lote por pagina de pedidos** (6,79 → ~0,25 idas por pedido, o maior ganho disponivel). Commit proprio: muda a semantica de falha parcial, o significado de `assertWritten` quando 50 pedidos vao juntos, e o caminho de cancelamento. Nao pega carona.
+- **Upsert de array em `recordStockMovements`.** Vale ~1,3 ms aqui, e a funcao e **compartilhada**: `nfe-import-apply.ts` marca a nota como `APPLIED` incondicionalmente depois de chama-la, entao all-or-nothing ali seria perda de estoque permanente sem caminho de retry. Se um dia for feito, tem de ser numa funcao nova.
+- **Upsert de array em `recordDomainEvents`.** `detectOrderStatusEvents` devolve no maximo um draft. Ganho zero.
+- **Antecipar `loadSaleMovements`** (caminho de cancelamento). Alargaria de ~1 para ~7 saltos a corrida com o webhook, por ~2,6 ms.
+
+**Sobre o ganho de latencia, com honestidade:** o worker **nao esta no ar** (o deploy e ato humano pendente), entao o efeito ponta a ponta **nao foi medido**. O que se pode afirmar e estrutural: eram 7 idas e 7 esperas seriais, passam a ser 7 idas e **6** esperas. A aritmetica dos desenhos estima ~50-60 ms por pedido; o numero real so aparece depois do deploy, e a consulta para conferir esta em `docs/PERFORMANCE.md`.
+
+**Verificacao:** o teste novo **falha no codigo antigo e passa no novo** — conferido revertendo o arquivo de producao e rodando a suite (1 falha, exatamente a esperada). O irmao dele (falha ao ler o status anterior) ja passava antes, e o comentario diz isso: esta ali para o par nao se separar. **498/498 testes do worker**, 507/507 de integracao em banco recriado, `check` 29/29, build 8/8, 13/13 Playwright.
+
+**Impacto:** `apps/worker/src/handlers/persist-order.ts`, `persist-order.test.ts`. Nenhuma migration — nao ha mudanca de banco nesta fatia.
+
 ## Como adicionar nova decisao
 
 Registrar:
