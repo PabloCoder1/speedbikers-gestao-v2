@@ -94,30 +94,41 @@ export default async function EstoquePage({
 
   const filters = resolveStockFilters(query);
 
-  // O pivô, os filtros, a ordenação e a contagem vêm do Postgres (D-131,
-  // enriquecido em D-139). A tela nunca lê a tabela inteira.
-  const { data, error } = await supabase.rpc("get_stock_balances", {
-    p_organization_id: organizationId,
-    p_supplier_brand: filters.brand,
-    p_category: filters.category,
-    p_search: filters.search,
-    p_only_negative: filters.onlyNegative,
-    p_limit: PAGE_SIZE,
-    p_offset: (filters.page - 1) * PAGE_SIZE,
-  });
+  // As duas leituras são INDEPENDENTES — em `Promise.all` elas custam uma ida
+  // ao banco, não duas em fila. Sequenciais eram um waterfall sem motivo: a
+  // lista de marcas não depende da página do pivô.
+  const [balances, brandsResult] = await Promise.all([
+    // O pivô, os filtros, a ordenação e a contagem vêm do Postgres (D-131,
+    // enriquecido em D-139). A tela nunca lê a tabela inteira.
+    supabase.rpc("get_stock_balances", {
+      p_organization_id: organizationId,
+      p_supplier_brand: filters.brand,
+      p_category: filters.category,
+      p_search: filters.search,
+      p_only_negative: filters.onlyNegative,
+      p_limit: PAGE_SIZE,
+      p_offset: (filters.page - 1) * PAGE_SIZE,
+    }),
+    // Marcas disponíveis para o filtro, vindas do que existe de verdade —
+    // lista fixa envelheceria no primeiro preenchimento novo em `/produtos`.
+    //
+    // D-194: a agregação é do BANCO. A forma anterior lia `supplier_brand` de
+    // todos os SKUs e deduzia as distintas com `new Set(...)` — 3.550 linhas
+    // para produzir 19 valores, e o teto de 1.000 do PostgREST (D-131) cortava
+    // a lista: **10 das 19 marcas nunca apareciam no filtro**.
+    supabase.rpc("get_supplier_brands", { p_organization_id: organizationId }),
+  ]);
 
-  const rows = (data ?? []) as StockRow[];
+  // A falha da lista de marcas não fica muda: filtro vazio por erro é o mesmo
+  // silêncio que D-131 combate — a tela diria "nenhuma marca" sem distinguir
+  // catálogo sem marca de leitura quebrada.
+  const error = balances.error ?? brandsResult.error;
+
+  const rows = (balances.data ?? []) as StockRow[];
   const totalCount = rows[0]?.total_count ?? 0;
   const windowInfo = summarizeStockWindow(filters.page, totalCount, rows.length);
 
-  // Marcas disponíveis para o filtro, vindas do que existe de verdade —
-  // lista fixa envelheceria no primeiro preenchimento novo em `/produtos`.
-  const brandsResult = await supabase
-    .from("skus")
-    .select("supplier_brand")
-    .not("supplier_brand", "is", null)
-    .order("supplier_brand");
-  const brands = [...new Set((brandsResult.data ?? []).map((r) => r.supplier_brand))];
+  const brands = (brandsResult.data ?? []).map((r) => r.supplier_brand);
 
   return (
     <Shell>

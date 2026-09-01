@@ -4387,6 +4387,12 @@ export type Database = {
       // NUNCA marca argumento de RPC como nulo, e os argumentos abaixo
       // aceitam NULL de verdade (e o valor que significa "sem filtro" --
       // ou, nos obrigatorios, que carrega significado proprio).
+      get_supplier_brands: {
+        Args: { p_organization_id: string }
+        Returns: {
+          supplier_brand: string
+        }[]
+      }
       get_supplier_overview: {
         Args: { p_organization_id: string; p_supplier_id: string }
         Returns: {

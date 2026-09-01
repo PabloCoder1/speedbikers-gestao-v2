@@ -171,13 +171,16 @@ export default async function ReposicaoPage({
       .select(
         "supplier_brand, sku_id, lead_time_days, target_coverage_days, safety_stock_days, max_coverage_days, policy_note",
       ),
-    supabase.from("skus").select("supplier_brand").not("supplier_brand", "is", null).order("supplier_brand"),
+    // D-194: a agregação é do BANCO. A forma anterior lia 3.550 linhas para
+    // produzir 19 valores, e o teto de 1.000 do PostgREST (D-131) fazia 10
+    // das 19 marcas nunca aparecerem no filtro.
+    supabase.rpc("get_supplier_brands", { p_organization_id: organizationId }),
   ]);
 
   const rows = (suggestionsResult.data ?? []) as SuggestionRow[];
   const totalCount = rows[0]?.total_count ?? 0;
   const windowInfo = summarizeReplenishmentWindow(filters.page, totalCount, rows.length);
-  const error = suggestionsResult.error ?? settingsResult.error;
+  const error = suggestionsResult.error ?? settingsResult.error ?? brandsResult.error;
 
   const settings: ReplenishmentSetting[] = (settingsResult.data ?? []).map((s) => ({
     supplierBrand: s.supplier_brand,
@@ -189,9 +192,8 @@ export default async function ReposicaoPage({
     policyNote: s.policy_note,
   }));
 
-  const brands = [...new Set((brandsResult.data ?? []).map((r) => r.supplier_brand))].filter(
-    (b): b is string => b !== null,
-  );
+  // Sem `Set` e sem filtro de nulo: a RPC já devolve distintas e não-nulas.
+  const brands = (brandsResult.data ?? []).map((r) => r.supplier_brand);
 
   return (
     <Shell>

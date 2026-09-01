@@ -14,10 +14,10 @@
 |---|---|
 | **Atualizado em** | 2026-09-01 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `5587a40` (D-192) — esta fatia, D-193, é o commit seguinte |
+| **HEAD conhecido** | `5587a40` (D-192) — D-193 e D-194 são os dois commits seguintes |
 | **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **34 commits atrás** |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
-| **Migrations** | 119 locais == 119 no Dev, última `20260901160650` — sem drift |
+| **Migrations** | 120 locais == 120 no Dev, última `20260901203000` — sem drift |
 | **Frente atual** | Trilha 8B — P0 fechado (A–H); em P1 |
 
 ### O que está pronto
@@ -74,9 +74,14 @@ Números completos e método: `docs/PERFORMANCE.md`.
   **Reprocessar os dois continua sendo ato pendente.**
 - **O truncamento de 1.000 do PostgREST volta sempre.** D-131 corrompeu o
   estoque; D-183 achou um contador errado; D-193 achou mais dois cortes vivos
-  no worker. Ao escrever qualquer leitura, pergunte quantas linhas ela pode
+  no worker; D-194 achou um **na tela**, escondendo 10 das 19 marcas do
+  filtro. Ao escrever qualquer leitura, pergunte quantas linhas ela pode
   devolver **no pior caso** — e num `in(...)`, o que a chave multiplica, não
   o tamanho do lote.
+- **"Cosmético" é um julgamento, e julgamento sem medição é chute.** Eu
+  mesmo registrei o filtro de marcas como sintoma cosmético em D-193. Medido
+  em D-194: a tela mostrava **9 de 19 marcas**. Antes de rebaixar a
+  prioridade de um defeito, produza o número que justifica o rebaixamento.
 - **O tipo gerado não conhece a RLS.** `supabase gen types` deriva a
   nulabilidade de um embed da chave estrangeira; a RLS é avaliada depois, e
   uma linha invisível ao chamador faz o embed voltar `null` numa coluna que o
@@ -131,9 +136,10 @@ Nada disto pode ser feito por um agente.
    some com o deploy. Junto com o item 1, é o segundo do P1 travado pelo
    mesmo ato humano.
 3. **P1 — read models e o resto do item de frontend.** A varredura de
-   truncamento saiu em D-193 (dois cortes vivos corrigidos); sobram os
-   waterfalls/N+1, o filtro de marcas que agrega em JavaScript, e os read
-   models. `docs/ROADMAP.md` tem a ordem.
+   truncamento saiu em D-193 (dois cortes vivos no worker) e o filtro de
+   marcas em D-194 (que também desfez o waterfall de `/estoque`); sobram os
+   waterfalls/N+1 das outras telas, os dados carregados por aba não aberta,
+   e os read models. `docs/ROADMAP.md` tem a ordem.
 4. **Antes da segunda organização** — `get_system_health` tem escopo de
    plataforma com guard de tenant (D-182). Não é urgente hoje e não tem
    correção óbvia: as duas tentativas naturais causam regressão verificada.

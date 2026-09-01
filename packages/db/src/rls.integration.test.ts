@@ -493,6 +493,48 @@ describe("catálogo", () => {
   });
 });
 
+describe("marcas do filtro (D-194)", () => {
+  // `get_supplier_brands` é SECURITY INVOKER de propósito. O parâmetro
+  // `p_organization_id` serve ao ÍNDICE, não à autorização — quem autoriza é a
+  // RLS de `skus`. Estes dois testes provam que a distinção não é retórica:
+  // passar o id de outra organização não abre nada.
+  //
+  // Se alguém trocar a função para SECURITY DEFINER, o primeiro teste abaixo
+  // quebra E o contrato versionado da superfície exposta (D-182) quebra junto.
+  it("o membro vê as marcas da própria organização", async () => {
+    await client.query(
+      // `supplier_brand_source` junto porque `skus_supplier_brand_source_coherent`
+      // exige as duas colunas coerentes; DERIVED não pede data, MANUAL pediria.
+      `insert into public.skus (organization_id, sku, kind, supplier_brand, supplier_brand_source)
+       values ($1,'RLSTEST-MARCA-1','PRODUTO','RLSTEST Alfa','DERIVED'),
+              ($1,'RLSTEST-MARCA-2','PRODUTO','RLSTEST Alfa','DERIVED'),
+              ($1,'RLSTEST-MARCA-3','PRODUTO','RLSTEST Beta','DERIVED'),
+              ($1,'RLSTEST-MARCA-4','PRODUTO',null,null)`,
+      [ORG_SB],
+    );
+
+    const rows = await asUser<{ supplier_brand: string }>(
+      ADMIN_SB,
+      `select supplier_brand from public.get_supplier_brands('${ORG_SB}')
+       where supplier_brand like 'RLSTEST %' order by supplier_brand`,
+    );
+
+    // Distintas e sem nulo — é o que a tela consome direto, sem `Set` nem filtro.
+    expect(rows.map((row) => row.supplier_brand)).toEqual(["RLSTEST Alfa", "RLSTEST Beta"]);
+  });
+
+  it("o id de outra organização no parâmetro não vaza marca nenhuma", async () => {
+    // O parâmetro casa com as linhas; a RLS é que não deixa vê-las. Numa
+    // versão SECURITY DEFINER esta chamada devolveria o catálogo alheio.
+    const rows = await asUser<{ supplier_brand: string }>(
+      DE_OUTRA_ORG,
+      `select supplier_brand from public.get_supplier_brands('${ORG_SB}')`,
+    );
+
+    expect(rows).toEqual([]);
+  });
+});
+
 describe("composição de kit", () => {
   it("PRODUTO não pode ter componente", async () => {
     await client.query(

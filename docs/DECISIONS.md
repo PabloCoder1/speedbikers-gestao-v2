@@ -3947,6 +3947,46 @@ Procurei a assinatura disso em `domain_events` antes de escrever o paragrafo aci
 
 **Impacto:** `apps/worker/src/handlers/{ml-listings-fetch.ts,erp-import-apply.ts}` e tres arquivos de teste.
 
+## D-194 - O filtro de marcas escondia 10 das 19, e eu tinha chamado isso de cosmetico
+
+**Contexto:** a fatia anterior (D-193) fechou a varredura de truncamento e deixou este item registrado com uma frase minha: *"o sintoma e cosmetico (marca faltando no filtro)"*. Antes de corrigir, medi. **A frase estava errada**, e o numero e constrangedor:
+
+| | |
+|---|---|
+| marcas que existem | **19** |
+| marcas que a tela mostrava | **9** |
+| linhas trafegadas para produzir isso | **3.550** |
+
+O usuario abria o filtro de `/estoque` e via **menos da metade** das marcas do proprio catalogo. Nao e estilo; e a tela mentindo sobre o que existe. Fica registrado porque a licao nao e sobre marcas: **"cosmetico" e um julgamento, e julgamento sem medicao e chute** — a MISSAO MESTRE manda reproduzir o numero, inclusive quando o numero e meu.
+
+**Sao dois defeitos no mesmo lugar.**
+
+**1. O corte de 1.000 (classe D-131).** Tres telas liam `skus.supplier_brand` de TODAS as linhas. Sao 3.550, o PostgREST devolve 1.000 e `error` volta **NULO**. Como a ordenacao era por `supplier_brand`, sobreviviam as alfabeticamente primeiras — as 10 ultimas nunca chegavam. **Nao quebra, mente**, e desta vez a mentira estava na cara do usuario.
+
+**2. Agregacao em JavaScript** (`new Set(...)`), que `docs/ARCHITECTURE.md` (15/21) proibe. Trazer 3.550 linhas para contar 19 valores distintos e trabalho que o banco faz melhor.
+
+**Decisao — nao paginar, agregar.** `readAllPages` (D-131) resolveria o corte e deixaria o segundo defeito de pe: 3.550 linhas continuariam atravessando a rede em duas requisicoes em vez de uma. A correcao certa e a agregacao ir para onde ela pertence. `public.get_supplier_brands(p_organization_id uuid)` faz o `distinct` no Postgres.
+
+**SECURITY INVOKER, de proposito.** O reflexo seria DEFINER; aqui seria errado. A RLS de `skus` ja restringe a organizacao do chamador, e `p_organization_id` serve ao **indice**, nao a autorizacao. Uma DEFINER atravessaria a RLS sem precisar e faria a superficie exposta versionada em D-182 crescer por uma lista de 19 strings. A migration falha na propria aplicacao se a funcao for DEFINER ou alcancavel por `anon`, e dois testes em `rls.integration.test.ts` provam com usuario autenticado de verdade: o membro ve as marcas da sua organizacao, e **passar o id de outra organizacao no parametro devolve vazio** — o filtro nao e a autorizacao.
+
+**O ganho, sem inflar.** Medido no Dev como usuario autenticado, dentro de transacao (a armadilha de D-181):
+
+| | Antes | Depois |
+|---|---|---|
+| marcas visiveis | 9 de 19 | **19 de 19** |
+| corpo da resposta | **34 kB** | **606 bytes** |
+| tempo do plano | 3,8 ms | 2,6 ms |
+
+O milissegundo **nao e o ponto** — D-185 ja mediu que o SQL e 0,6% do tempo observado, e 3,8 contra 2,6 e quase ruido. O que muda e a **correcao** (o dobro de marcas) e o **corpo** (56x menor), tres vezes por navegacao porque sao tres telas.
+
+**Um waterfall junto, porque estava na mesma funcao.** `/estoque` fazia dois `await` em fila — o pivo e as marcas — sendo que a lista de marcas nao depende da pagina do pivo. Viraram um `Promise.all`. E o erro da leitura de marcas, que as tres telas engoliam, passa a aparecer: **filtro vazio por falha e o mesmo silencio que D-131 combate** — sem isso a tela nao distingue "catalogo sem marca" de "leitura quebrada".
+
+**O teste precisou de mais de mil linhas de verdade.** Um fake devolve o array que o teste mandou, entao o teto nao existe nele — o defeito passaria verde. `supplier-brands.integration.test.ts` insere **1.111 SKUs** em 12 marcas, com as duas ultimas inteiramente fora da primeira pagina, e o primeiro teste **exercita a forma antiga** para fixar o formato do defeito: `error` nulo, `data` com exatamente 1.000, e 10 marcas de 12. Esse teste nao guarda a correcao, guarda o **motivo** dela.
+
+**Verificacao:** `check` 29/29, build 8/8, **522/522** de integracao em banco recriado (+6), 13/13 Playwright, `check:embeds` 33/33. Migration `20260901203000` aplicada no Dev.
+
+**Impacto:** `supabase/migrations/20260901203000_supplier_brands_rpc.sql`, as tres telas, `packages/db/src/types.ts`, e dois arquivos de teste.
+
 ## Como adicionar nova decisao
 
 Registrar:

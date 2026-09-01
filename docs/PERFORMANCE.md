@@ -361,6 +361,15 @@ Cada linha tem o antes/depois real, não estimativa.
 | 2026-09-01 | `get_stock_balances` | 9.104 ms / 751.576 | **681 ms / 22.516** | idem — nenhuma linha da RPC mudou | D-181 |
 | 2026-09-01 | `get_listings_dashboard` | timeout > 60 s | **271 ms / 21.739** | idem — nenhuma linha da RPC mudou | D-181 |
 | 2026-09-01 | `get_sku_sales_baseline` | 1.334 ms / 4.136 | **49 ms** | `current_day as materialized` (o CTE inlineado virava o lado interno de um nested loop, 440 loops × 31 mil linhas) + filtro de dia da semana empurrado para o agregado | D-183 |
+| 2026-09-01 | Filtro de marcas (3 telas) | 34 kB de corpo, **9 de 19 marcas** | 606 bytes, **19 de 19** | `distinct` no Postgres (`get_supplier_brands`) no lugar de `new Set(...)` sobre 3.550 linhas truncadas em 1.000 | D-194 |
+
+**Lição de D-194 — o ganho nem sempre é o milissegundo.** O plano da consulta
+antiga levava 3,8 ms e o da nova leva 2,6 ms: quase ruído, e coerente com
+D-185 (o SQL é 0,6% do tempo observado de uma ida ao banco). O que a fatia
+comprou foi **correção** — o filtro passou a mostrar 19 marcas em vez de 9 —
+e **corpo de resposta**, de 34 kB para 606 bytes, três vezes por navegação
+porque são três telas. Quando o antes/depois em milissegundos for magro,
+pergunte o que mais mudou antes de concluir que não valeu.
 
 **Lição que se repete:** o mesmo desenho pode ser certo num tamanho e errado
 em outro. D-167 reprovou `count(*) over ()` sobre 225 mil linhas; D-173

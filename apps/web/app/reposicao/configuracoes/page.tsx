@@ -111,13 +111,13 @@ export default async function ReposicaoConfigPage({
         "id, supplier_brand, sku_id, lead_time_days, target_coverage_days, safety_stock_days, max_coverage_days, policy_note, updated_at, skus(sku)",
       )
       .order("supplier_brand", { ascending: true, nullsFirst: true }),
-    supabase.from("skus").select("supplier_brand").not("supplier_brand", "is", null).order("supplier_brand"),
+    // D-194: ver o comentário equivalente em `/reposicao`.
+    supabase.rpc("get_supplier_brands", { p_organization_id: organizationId }),
   ]);
 
   const rows = (settingsResult.data ?? []) as SettingRow[];
-  const brands = [...new Set((brandsResult.data ?? []).map((r) => r.supplier_brand))].filter(
-    (b): b is string => b !== null,
-  );
+  // Sem `Set` e sem filtro de nulo: a RPC já devolve distintas e não-nulas.
+  const brands = (brandsResult.data ?? []).map((r) => r.supplier_brand);
   const configuredBrands = new Set(rows.map((r) => r.supplier_brand).filter((b) => b !== null));
   const error = settingsResult.error ?? brandsResult.error;
 
