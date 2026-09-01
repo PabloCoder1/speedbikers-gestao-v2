@@ -112,7 +112,6 @@ export function createNfeImportApplyHandler(deps: NfeApplyDeps): JobHandler {
       movements,
       data.operation_type === "ENTRADA" ? "ENTRADA_NFE" : "SAIDA_NFE",
       { type: "DOCUMENT", id: documentId },
-      context.logger,
     );
 
     await deps.db

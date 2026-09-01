@@ -423,7 +423,6 @@ export async function persistOrder(
         reversals,
         "CANCELAMENTO_ML",
         { type: "ORDER", id: String(order.id) },
-        logger,
       );
     }
 
@@ -471,7 +470,6 @@ export async function persistOrder(
       deductions,
       "VENDA_ML",
       { type: "ORDER", id: String(order.id) },
-      logger,
     );
   }
 }

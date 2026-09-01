@@ -16,10 +16,15 @@
  * Por que LANÇAR e não logar: para escrita de dado de negócio, "falhou e
  * seguiu" é pior que "falhou e parou". Lançar faz o job terminar como
  * `failed` e o Cloud Tasks retentar — e os handlers já são idempotentes por
- * chave (`onConflict`/`idempotency_key`), então repetir é seguro. Escritas
- * de OBSERVABILIDADE seguem o caminho oposto de propósito: `stock_movements`
- * e `sync_errors` logam e continuam, porque perder telemetria não pode
- * derrubar o trabalho real.
+ * chave (`onConflict`/`idempotency_key`), então repetir é seguro.
+ *
+ * **A fronteira é o DADO, não a tabela — e D-178 a colocou no lugar errado
+ * uma vez.** Escrita de OBSERVABILIDADE loga e continua: `sync_errors` é
+ * telemetria, e perder telemetria não pode derrubar o trabalho real.
+ * `stock_movements` estava desse lado e **não deveria**: uma linha ali é o
+ * que move o saldo. D-187 a passou para cá. O que confundiu foi o 23505 —
+ * absorver conflito de `idempotency_key` é idempotência funcionando;
+ * absorver falha real é perda de estoque.
  */
 export interface SupabaseWriteResult {
   error: { message: string; code?: string } | null;

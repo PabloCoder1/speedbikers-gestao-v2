@@ -14,8 +14,8 @@
 |---|---|
 | **Atualizado em** | 2026-09-01 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `b5f1d09` (D-185) — esta fatia, D-186, é o commit seguinte |
-| **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **25 commits atrás** |
+| **HEAD conhecido** | `515da2d` (D-186) — esta fatia, D-187, é o commit seguinte |
+| **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **26 commits atrás** |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | 119 locais == 119 no Dev, última `20260901160650` — sem drift |
 | **Frente atual** | Trilha 8B — P0 fechado (A–H); em P1 |
@@ -109,19 +109,19 @@ Nada disto pode ser feito por um agente.
    no ar é de 25 commits atrás. O ganho estrutural está fixado em teste; o
    número real precisa do deploy, e a consulta para conferir está em
    `docs/PERFORMANCE.md`.
-2. **P1 — lote de ESCRITA por página.** Deliberadamente não feito em D-186,
-   com três razões medidas no ROADMAP (a janela `delete`+`insert`
-   multiplicada por 50, o trigger `AFTER INSERT FOR EACH ROW` segurando 36
-   travas de saldo, e o raio de alcance em `nfe-import-apply`). Resolver as
-   três é pré-requisito, não checklist.
-3. **P1 — o embed de vínculo+`kind`+componentes.** Uma ida a menos por
+2. **P1 — o embed de vínculo+`kind`+componentes.** Uma ida a menos por
    pedido, e precisa de portão na pista de integração: o fake dos testes
    ignora a string de projeção, então a forma do embed passaria verde e
    quebraria em produção.
-3. **P1 — retenção de `job_runs`**: **271.184 linhas** reais. Bloqueado por
+3. **P1 — lote de ESCRITA por página.** D-187 resolveu um dos três
+   pré-requisitos (o raio de alcance em `nfe-import-apply`). Sobram dois, e
+   os dois são estruturais: a janela `delete`+`insert` multiplicada por 50, e
+   o trigger `AFTER INSERT FOR EACH ROW` segurando 36 travas de saldo em
+   ordem arbitrária.
+4. **P1 — retenção de `job_runs`**: **271.184 linhas** reais. Bloqueado por
    regra própria — "só depois de reduzir a origem", e a origem (218.750 jobs
    vazios de webhook, D-179) só some com o deploy.
-4. **Antes da segunda organização** — `get_system_health` tem escopo de
+5. **Antes da segunda organização** — `get_system_health` tem escopo de
    plataforma com guard de tenant (D-182). Não é urgente hoje e não tem
    correção óbvia: as duas tentativas naturais causam regressão verificada.
 

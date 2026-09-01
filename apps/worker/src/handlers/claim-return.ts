@@ -179,7 +179,6 @@ export async function processClaimReturn(
         reversal.movements,
         "DEVOLUCAO_ML",
         { type: "CLAIM", id: claimId },
-        logger,
       );
     }
 

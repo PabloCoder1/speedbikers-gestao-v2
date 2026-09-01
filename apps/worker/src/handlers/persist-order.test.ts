@@ -585,16 +585,23 @@ describe("persistOrder", () => {
       expect(lines.join()).not.toContain("stock_movement_not_recorded");
     });
 
-    it("uma falha de gravação REAL em stock_movements é logada, mas não derruba a persistência do pedido", async () => {
-      const { db, upserted } = fakeDb({
+    // Reescrito em D-187. A intenção original — separar o 23505 (absorvido)
+    // de uma falha REAL (não absorvida) — é a mesma; o que mudou é o que
+    // "não absorvida" significa.
+    //
+    // Até D-186 este teste exigia log-e-segue, porque D-178 classificara
+    // `stock_movements` como observabilidade. A fronteira estava errada: uma
+    // linha ali é o que MOVE O SALDO, e a perda era invisível — o trigger
+    // `apply_to_balance` não dispara para uma linha que não entrou, então
+    // `verify-ledger-integrity` compara dois lados que concordam em estar
+    // sem ela.
+    it("uma falha de gravação REAL em stock_movements ABORTA — não é telemetria, é o saldo (D-187)", async () => {
+      const { db } = fakeDb({
         linkForItem: () => ({ id: "link-1", sku_id: "sku-1" }),
         stockMovementError: true,
       });
-      const lines: string[] = [];
 
-      await expect(run(db, BASE_ORDER, lines)).resolves.toBeUndefined();
-      expect(lines.join()).toContain("stock_movement_not_recorded");
-      expect(upserted.find((entry) => entry.table === "orders")).toBeDefined();
+      await expect(run(db, BASE_ORDER)).rejects.toThrow(/stock_movements.*VENDA_ML/);
     });
   });
 
@@ -700,17 +707,31 @@ describe("persistOrder", () => {
       expect(lines.join()).not.toContain("stock_movement_not_recorded");
     });
 
-    it("uma falha de gravação REAL na reversão é logada, mas não derruba a persistência do pedido", async () => {
-      const { db, upserted } = fakeDb({
+    // Reescrito em D-187, mesmo raciocínio do irmão acima. Uma reversão de
+    // cancelamento perdida é pior ainda: o estoque fica deduzido por uma
+    // venda que não existe mais.
+    it("uma falha de gravação REAL na reversão ABORTA (D-187)", async () => {
+      const { db } = fakeDb({
         existingSaleMovements: [{ sku_id: "sku-1", qty_delta: -1, idempotency_key: "venda:2032217210:0" }],
         stockMovementError: true,
       });
       const order: ParsedOrder = { ...BASE_ORDER, status: "cancelled" };
+
+      await expect(run(db, order)).rejects.toThrow(/stock_movements.*CANCELAMENTO_ML/);
+    });
+
+    // A metade que NÃO mudou, e que precisa continuar valendo: o job é
+    // retentado pelo Cloud Tasks, então abortar só é seguro porque repetir é
+    // inócuo. Este teste é o que garante que o 23505 continua absorvido.
+    it("abortar não quebrou a idempotência: 23505 segue absorvido em silêncio (D-187)", async () => {
+      const { db } = fakeDb({
+        linkForItem: () => ({ id: "link-1", sku_id: "sku-1" }),
+        stockMovementConflict: true,
+      });
       const lines: string[] = [];
 
-      await expect(run(db, order, lines)).resolves.toBeUndefined();
-      expect(lines.join()).toContain("stock_movement_not_recorded");
-      expect(upserted.find((entry) => entry.table === "orders")).toBeDefined();
+      await expect(run(db, BASE_ORDER, lines)).resolves.toBeUndefined();
+      expect(lines.join()).not.toContain("stock_movement");
     });
   });
 

@@ -3727,6 +3727,32 @@ O lote de escrita fica no ROADMAP com essas tres, para nao ser refeito como se f
 
 **Impacto:** `apps/worker/src/handlers/persist-order.ts`, `ml-orders-fetch.ts`, `persist-order.test.ts`, `sync-orders-window.test.ts`, `backfill-orders.test.ts`. Nenhuma migration.
 
+## D-187 - Uma linha de `stock_movements` nao e telemetria: e o saldo
+
+**Contexto:** pre-requisito registrado do lote de escrita, e antes disso uma correcao de fronteira. D-178 criou `assertWritten` e escreveu, sobre o que fica de fora: *"escrita de OBSERVABILIDADE continua logando e seguindo — `stock_movements` (que absorve 23505 de propósito) e `sync_errors` nao podem derrubar o trabalho real por causa de telemetria."*
+
+**Essa frase juntou duas coisas que nao sao a mesma, e a colagem foi o 23505.** Absorver conflito de `idempotency_key` e a garantia fisica do ledger funcionando — reprocessar o mesmo pedido nao deduz duas vezes, e isso continua igual. Absorver uma falha REAL de gravacao e perder uma linha que **move o saldo**. `sync_errors` e telemetria; `stock_movements` nunca foi.
+
+**Por que a perda era invisivel — e isso e o que torna o defeito grave.** `verify-ledger-integrity` compara a soma de `stock_movements` contra a projecao de `inventory_balances`. Se a linha nunca foi gravada, o trigger `apply_to_balance` nunca disparou: os dois lados ficam sem ela, **concordam**, e a verificacao passa. Nao havia lugar nenhum do sistema onde essa perda aparecesse.
+
+**Decisao — falha nao-23505 ABORTA, em todos os cinco chamadores.** Conferido um a um: os cinco rodam dentro de job com retry do Cloud Tasks, e a chave de idempotencia torna repetir inocuo.
+
+**Em `nfe-import-apply`, abortar e ESTRITAMENTE melhor, e esse e o achado da fatia.** O `documents.update({status:"APPLIED"})` vem **depois** da gravacao dos movimentos. Hoje: os movimentos nao entram, a nota e marcada como aplicada assim mesmo, e **nunca mais e reprocessada** — estoque perdido em definitivo. Com o abort, a nota continua reprocessavel.
+
+A opcao `movementInsertFails` **ja existia** no fake daquele teste e **nenhum teste a usava**: o caminho de falha nunca tinha sido exercitado. O teste novo o exercita e prova que a nota nao e marcada.
+
+**Todos os tipos de movimento, nao so `VENDA_ML`.** O item registrado pedia `VENDA_ML`/`CANCELAMENTO_ML`. Mas `ENTRADA_NFE`, `SAIDA_NFE`, `AJUSTE_RECONCILIACAO`, `AJUSTE_MANUAL` e os de transito movem o saldo pelo mesmo trigger. Uma lista parcial seria uma lista de excecoes que ninguem revisa — o mesmo argumento de D-182.
+
+**O `logger` saiu da assinatura.** Sem o log-e-segue, o parametro ficou morto, e uma funcao que recebe logger e nunca loga engana quem le. O contexto (tipo do movimento, SKU, chave) foi para a mensagem do erro: um sinal so, com tudo que se precisa para achar a linha que nao entrou.
+
+**Dois testes reescritos, nao apagados.** Eles fixavam "e logada, mas nao derruba a persistencia do pedido" — a decisao que esta fatia reverte. A INTENCAO original (separar 23505 absorvido de falha real nao absorvida) continua, e o que mudou e o que "nao absorvida" significa. Somou-se um terceiro que garante a metade que **nao** mudou: o 23505 segue absorvido em silencio, porque e ele que torna o retry inocuo — e sem retry inocuo, abortar seria trocar um defeito por outro.
+
+**Efeito colateral util:** isto **remove um dos tres pre-requisitos** do lote de escrita por pagina (o raio de alcance em `nfe-import-apply`). Sobram dois: a janela `delete`+`insert` multiplicada por 50, e o trigger `AFTER INSERT FOR EACH ROW` segurando 36 travas de saldo.
+
+**Verificacao:** os tres testes novos **falham com a correcao revertida** — conferido restaurando o log-e-segue (3 falhas, exatamente as esperadas). 510/510 no worker, 507/507 de integracao em banco recriado, `check` 29/29, build 8/8, 13/13 Playwright. Sem migration.
+
+**Impacto:** `apps/worker/src/handlers/{stock-movements.ts,assert-written.ts,persist-order.ts,claim-return.ts,nfe-import-apply.ts,reconcile-balances.ts}` e os dois arquivos de teste.
+
 ## Como adicionar nova decisao
 
 Registrar:

@@ -142,6 +142,26 @@ describe("aplicação da NF-e conferida", () => {
     expect(captured.documentUpdates.at(-1)).toMatchObject({ status: "APPLIED" });
   });
 
+  // D-187 — o ganho concreto de promover a escrita de movimento a crítica.
+  //
+  // A opção `movementInsertFails` existia neste fake e **nenhum teste a
+  // usava**: o caminho de falha nunca foi exercitado. Até D-186 ele produzia
+  // o pior desfecho possível — os movimentos não entravam, o
+  // `documents.update({status:"APPLIED"})` logo abaixo rodava assim mesmo, e
+  // a nota nunca mais era reprocessada. Estoque perdido em definitivo, sem
+  // nenhum sinal: `verify-ledger-integrity` compara a soma do ledger contra a
+  // projeção do trigger, e a linha ausente falta dos dois lados.
+  it("falha ao gravar movimentos NÃO marca a nota como aplicada (D-187)", async () => {
+    const { deps, captured, lines } = fakeDeps({ movementInsertFails: true });
+
+    await expect(createNfeImportApplyHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }))).rejects.toThrow(
+      /stock_movements.*ENTRADA_NFE/,
+    );
+
+    // O ponto do teste: sem os movimentos, a nota continua reprocessável.
+    expect(captured.documentUpdates.filter((update) => update.status === "APPLIED")).toEqual([]);
+  });
+
   it("SAIDA gera stock_movements com qty negativo", async () => {
     const { deps, captured, lines } = fakeDeps({ operationType: "SAIDA" });
 

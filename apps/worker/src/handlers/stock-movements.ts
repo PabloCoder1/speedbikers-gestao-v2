@@ -1,16 +1,40 @@
 import type { AdminClient } from "@sb/db";
 import type { StockMovementDraft } from "@sb/domain";
-import type { Logger } from "@sb/observability";
+
+import { CriticalWriteError } from "./assert-written.js";
 
 /**
  * Grava os rascunhos de dedução de estoque produzidos por
  * `computeSaleDeductions` (`@sb/domain/inventory`) em `stock_movements`.
  *
- * Best-effort DE PROPÓSITO, mesmo padrão de `domain-events.ts`: falhar aqui
- * não pode derrubar uma persistência de pedido que já deu certo. O
- * conflito de `idempotency_key` não é erro: é a garantia física do ledger
- * funcionando (docs/DATABASE.md secao 3) — reprocessar o mesmo pedido não
- * deduz o estoque duas vezes.
+ * **Uma linha aqui NÃO é telemetria: é o que move o saldo.** D-178 classificou
+ * `stock_movements` junto com `sync_errors` como observabilidade — "perder
+ * telemetria não pode derrubar o trabalho real" — e essa fronteira estava no
+ * lugar errado. D-187 a corrige: falha de gravação **aborta**.
+ *
+ * O que confundiu as duas coisas foi o 23505. Absorver conflito de
+ * `idempotency_key` é a garantia física do ledger funcionando
+ * (docs/DATABASE.md secao 3) — reprocessar o mesmo pedido não deduz o estoque
+ * duas vezes, e isso continua igual. Absorver uma falha REAL é outra coisa
+ * completamente diferente, e era o que estava acontecendo.
+ *
+ * **Por que a perda era invisível.** `verify-ledger-integrity` compara a soma
+ * de `stock_movements` contra a projeção de `inventory_balances`. Se a linha
+ * nunca foi gravada, o trigger `apply_to_balance` nunca disparou: os dois
+ * lados ficam sem ela, **concordam**, e a verificação passa. Não havia
+ * nenhum lugar do sistema onde essa perda aparecesse.
+ *
+ * **Por que abortar é seguro nos cinco chamadores.** Todos rodam dentro de
+ * job com retry do Cloud Tasks, e a chave de idempotência torna repetir
+ * inócuo. Em `nfe-import-apply` abortar é ESTRITAMENTE melhor: o
+ * `documents.update({status:"APPLIED"})` vem DEPOIS desta chamada, então
+ * lançar impede que a nota seja marcada como aplicada sem os movimentos —
+ * hoje ela é marcada, e nunca mais é reprocessada.
+ *
+ * **Todos os tipos de movimento, não só `VENDA_ML`.** `ENTRADA_NFE`,
+ * `SAIDA_NFE`, `AJUSTE_RECONCILIACAO`, `AJUSTE_MANUAL` e os de trânsito
+ * movem o saldo pelo mesmo trigger. Uma lista de exceções seria uma lista
+ * que ninguém revisa.
  *
  * **`ON CONFLICT DO NOTHING`, não `INSERT` com o 23505 absorvido no cliente**
  * (D-092). A versão anterior deixava o Postgres REJEITAR cada inserção
@@ -35,7 +59,6 @@ export async function recordStockMovements(
   drafts: readonly StockMovementDraft[],
   movementType: string,
   source: { type: string; id: string },
-  logger: Logger,
 ): Promise<void> {
   for (const draft of drafts) {
     const result = await db.from("stock_movements").upsert(
@@ -58,13 +81,15 @@ export async function recordStockMovements(
 
     // A checagem de 23505 fica como rede: `onConflict` cobre a UNIQUE de
     // `idempotency_key`, mas uma constraint futura não coberta por ela ainda
-    // chegaria aqui, e continuaria não sendo motivo para derrubar o job.
+    // chegaria aqui — e continuaria sendo idempotência, não falha.
     if (result.error !== null && result.error.code !== UNIQUE_VIOLATION) {
-      logger.error("stock_movement_not_recorded", {
-        sku_id: draft.skuId,
-        idempotency_key: draft.idempotencyKey,
-        reason: result.error.message,
-      });
+      // O contexto vai na mensagem em vez de num log separado: um sinal só,
+      // com tudo que se precisa para achar a linha que não entrou.
+      throw new CriticalWriteError(
+        `stock_movements (${movementType}, sku ${draft.skuId}, chave ${draft.idempotencyKey})`,
+        result.error.message,
+        result.error.code,
+      );
     }
   }
 }

@@ -174,7 +174,6 @@ export function createReconcileBalancesHandler(deps: ReconcileBalancesDeps): Job
         adjustments.map((a) => a.movement),
         "AJUSTE_RECONCILIACAO",
         { type: "RECONCILIATION", id: businessDate },
-        context.logger,
       );
 
       await recordDomainEvents(
