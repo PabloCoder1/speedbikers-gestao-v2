@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **190** (D-001 a D-191).
+Decisões registradas: **191** (D-001 a D-192).
 
 ## Por domínio
 
@@ -44,7 +44,7 @@ Decisões registradas: **190** (D-001 a D-191).
 - **D-184** — A unica leitura do caminho vivia na janela em que o pedido esta sem itens
 - **D-187** — Uma linha de `stock_movements` nao e telemetria: e o saldo
 
-### banco/rls (20)
+### banco/rls (21)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -66,6 +66,7 @@ Decisões registradas: **190** (D-001 a D-191).
 - **D-181** — A RLS deixa de ser avaliada uma vez por linha
 - **D-183** — O CTE que o Postgres decidiu nao materializar, e o contador que contava a pagina
 - **D-185** — Nao era o PostgREST: era o round trip
+- **D-192** — O tipo gerado nao conhece a RLS, e por isso o cast estava certo
 
 ### estoque (18)
 

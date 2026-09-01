@@ -14,8 +14,8 @@
 |---|---|
 | **Atualizado em** | 2026-09-01 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `fcfdfb4` (D-190) — esta fatia, D-191, é o commit seguinte |
-| **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **31 commits atrás** |
+| **HEAD conhecido** | `05d0d35` (D-191) — esta fatia, D-192, é o commit seguinte |
+| **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **33 commits atrás** |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | 119 locais == 119 no Dev, última `20260901160650` — sem drift |
 | **Frente atual** | Trilha 8B — P0 fechado (A–H); em P1 |
@@ -72,6 +72,12 @@ Números completos e método: `docs/PERFORMANCE.md`.
   tirou a leitura da janela, D-189 tirou a janela e parou de apagar itens a
   partir de resposta vazia); qual dos dois aconteceu não dá para saber.
   **Reprocessar os dois continua sendo ato pendente.**
+- **O tipo gerado não conhece a RLS.** `supabase gen types` deriva a
+  nulabilidade de um embed da chave estrangeira; a RLS é avaliada depois, e
+  uma linha invisível ao chamador faz o embed voltar `null` numa coluna que o
+  tipo declara não-nula (medido em D-192). Não remova um `?.` sobre embed só
+  porque o compilador diz que é desnecessário — pergunte antes se a RLS pode
+  esconder aquela linha daquele leitor.
 - **A primeira medição pode ser cache frio.** `get_sku_timeline` mediu
   3.308 ms na primeira passada e **57 ms** na segunda — quase virou uma
   otimização inútil. Sempre duas passadas seguidas; se divergirem muito, a
@@ -119,10 +125,8 @@ Nada disto pode ser feito por um agente.
    reduzir a origem", e a origem (218.750 jobs vazios de webhook, D-179) só
    some com o deploy. Junto com o item 1, é o segundo do P1 travado pelo
    mesmo ato humano.
-3. **P1 — reduzir a população de casts sobre embed.** D-191 auditou os 11
-   arquivos que têm os dois e não achou divergência; isto é prevenção, não
-   correção. Sem `as`, o tipo gerado valida a cardinalidade de graça e a
-   classe de defeito de D-188 deixa de existir ali.
+3. **P1 — round trips por tela e read models**, os dois itens do P1 que
+   sobraram e não dependem do deploy. `docs/ROADMAP.md` tem a ordem.
 4. **Antes da segunda organização** — `get_system_health` tem escopo de
    plataforma com guard de tenant (D-182). Não é urgente hoje e não tem
    correção óbvia: as duas tentativas naturais causam regressão verificada.

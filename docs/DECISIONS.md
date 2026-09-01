@@ -3884,6 +3884,38 @@ Conferido no caso concreto: `organization_members → profiles` tem `isOneToOne:
 
 **Impacto:** `packages/db/scripts/check-embeds.mjs` (novo), `packages/db/package.json`, `.github/workflows/ci.yml`.
 
+## D-192 - O tipo gerado nao conhece a RLS, e por isso o cast estava certo
+
+**Contexto:** o item registrado dizia "reduzir a populacao de casts sobre embed — sem `as`, o tipo gerado valida a cardinalidade de graca, e a classe de defeito de D-188 deixa de existir ali". **A premissa esta pela metade, e a metade que falta inverte a conclusao.**
+
+**O que aconteceu ao tentar.** Removi o cast de `apps/web/app/usuarios/page.tsx`. O typecheck passou — o cast era mesmo redundante para a CARDINALIDADE. Mas o lint imediatamente acusou `m.profiles?.full_name` como **encadeamento opcional desnecessario**: o tipo gerado afirma que `profiles` nunca e nulo, enquanto o cast declarava `| null`.
+
+Seguir o compilador ali significaria apagar a defesa. Antes de fazer isso, medi.
+
+**A medicao, e ela e decisiva.** `feature_suggestions.created_by` e NOT NULL com FK para `profiles` — o tipo gerado promete nao-nulo. Montei uma sugestao da Organizacao A criada por alguem de fora dela e li como membro da A:
+
+| | |
+|---|---|
+| sugestoes visiveis | **1** |
+| perfil do autor visivel | **0** |
+| embed do perfil | **NULO** |
+
+**`supabase gen types` deriva a nulabilidade da CHAVE ESTRANGEIRA. A RLS e avaliada depois, e uma linha invisivel ao chamador nao vira erro: vira `null`.** O tipo e otimista, e o cast que declarava `| null` estava **mais correto que ele**.
+
+**Decisao 1 — a mudanca foi revertida, e o item do ROADMAP reescrito.** Remover casts sobre embed nao e melhoria de higiene: em embed de tabela protegida por RLS, e trocar uma verdade por uma promessa que o banco nao cumpre. O que o cast custa (a checagem de cardinalidade) e menos do que o que ele protege (um estado que acontece de verdade).
+
+**Decisao 2 — o que D-191 chamou de "frouxidoes no sentido seguro" muda de nome.** Cinco casts declaravam `| null` onde o banco garante NOT NULL, e foram registrados como tipo largo demais, sem acao. Com esta medicao, pelo menos os que embutem tabela sob RLS **nao sao largos: sao certos**. A classificacao anterior estava errada, e este registro a corrige.
+
+**Decisao 3 — o achado vira teste, nao paragrafo.** `packages/db/src/rls-embed-nullability.integration.test.ts`, na pista de integracao, porque e la que a RLS existe. Ele prova os tres lados: a linha e invisivel; o embed dela volta nulo; e o mesmo embed **nao** e nulo para quem a enxerga — o contraste que separa "invisivel" de "nao existe".
+
+**O que ainda vale da ideia original.** Onde o embed aponta para tabela que o chamador sempre enxerga, o cast e mesmo redundante e removê-lo devolve a checagem de cardinalidade. Mas isso e analise POR SITIO, com criterio explicito — "a RLS pode esconder esta linha deste leitor?" —, e nao varredura mecanica. Nao ha ganho que justifique fazer as 11 de uma vez.
+
+**Duas armadilhas de fixture, registradas porque custaram tempo.** Apagar `organization_members` direto esbarra na guarda de ultimo ADMIN (D-175) — a saida e apagar a ORGANIZACAO e deixar a cascata, que a propria guarda preve. E apagar a organizacao esbarra em `organization_access_events`, que e append-only e recusa DELETE ate em cascata: por isso o fixture **fica**, seguindo a convencao ja registrada nas outras suites de integracao. Ids aleatorios e RLS escopando as consultas alheias tornam isso inofensivo.
+
+**Verificacao:** o teste novo passa 4/4 e prova a divergencia contra o Postgres real; `check` 29/29, **516/516 de integracao** em banco recriado (+4), `check:embeds` 33/33, build 8/8, 13/13 Playwright. Sem migration, e **sem mudanca de codigo de aplicacao** — a unica mudanca que esta fatia chegou a fazer foi revertida de proposito.
+
+**Impacto:** `packages/db/src/rls-embed-nullability.integration.test.ts` (novo).
+
 ## Como adicionar nova decisao
 
 Registrar:
