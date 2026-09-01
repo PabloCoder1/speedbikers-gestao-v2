@@ -456,7 +456,12 @@ Subfase incremental posterior às bases 5C/5D/6B. Não reabre seus marcos conclu
 - **Riscos:** IDs sem contexto, estoque físico atribuído a conta, consulta cara e escrita acidental em dado append-only.
 - **Fora da primeira versão:** alterar/apagar movimentos, recalcular saldo no navegador e exportar sem necessidade medida.
 
-#### Dashboard individual do Fornecedor — B/E
+#### Dashboard individual do Fornecedor — B/E — 🟡 PRIMEIRA VERSÃO em 2026-09-01 (D-174); abas Custos/Histórico seguem ABERTAS
+
+`/fornecedores/[supplierId]` (link no nome, na lista): cadastro do parceiro, pedidos de compra linkados, e **"SKUs já comprados"** — derivado dos itens dos pedidos, que é o único vínculo fornecedor→produto REAL. Cancelado aparece em card próprio, nunca somado nem escondido.
+
+- **A ausência que o item mandava não fingir, medida:** `supplier_product_links` **nunca foi criada** e `skus.supplier_brand` é MARCA (19 valores para 3.550 SKUs), sem FK para `suppliers`. Não há catálogo de produtos por fornecedor — a tela diz isso em vez de inventar a aba `Produtos` completa.
+- **O que falta:** `Custos` como aba própria (hoje o custo aparece por SKU comprado, do último pedido) e `Histórico` de eventos do relacionamento — ambos esperam volume: a base tem **1 fornecedor e 1 pedido**, e o pedido está cancelado. Uma aba de tendência sobre isso seria gráfico de um ponto.
 
 - **Objetivo/problema:** reunir parceiro, pedidos, custos e histórico sem fingir relação fornecedor→SKU inexistente.
 - **Reutiliza:** `suppliers`, pedidos/itens/eventos de compra, custos e `supplier_brand` apenas como eixo distinto.

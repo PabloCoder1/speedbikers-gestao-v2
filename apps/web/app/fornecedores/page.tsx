@@ -94,7 +94,10 @@ export default async function FornecedoresPage(): Promise<ReactNode> {
             <tbody>
               {data.map((supplier) => (
                 <tr key={supplier.id}>
-                  <td style={td}>{supplier.name}</td>
+                  <td style={td}>
+                    {/* Dashboard do fornecedor (D-174) — o destino individual. */}
+                    <Link href={`/fornecedores/${supplier.id}`}>{supplier.name}</Link>
+                  </td>
                   <td style={{ ...td, color: "var(--sb-text-soft)" }}>{supplier.legal_name ?? "—"}</td>
                   <td style={{ ...td, fontFamily: "ui-monospace, monospace" }}>{supplier.document ?? "—"}</td>
                   <td style={td}>{supplier.contact_name ?? "—"}</td>

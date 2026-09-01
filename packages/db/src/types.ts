@@ -4323,6 +4323,61 @@ export type Database = {
       // NUNCA marca argumento de RPC como nulo, e os argumentos abaixo
       // aceitam NULL de verdade (e o valor que significa "sem filtro" --
       // ou, nos obrigatorios, que carrega significado proprio).
+      get_supplier_overview: {
+        Args: { p_organization_id: string; p_supplier_id: string }
+        Returns: {
+          // CORRECAO MANUAL (classe D-133): todo o cadastro do fornecedor e
+          // opcional menos `name`, e o gerador nao marca isso; as datas sao
+          // nulas quando ele nunca teve pedido.
+          contact_name: string | null
+          document: string | null
+          email: string | null
+          is_active: boolean
+          legal_name: string | null
+          name: string
+          notes: string | null
+          orders_approved: number
+          orders_cancelled: number
+          orders_draft: number
+          orders_ordered: number
+          orders_received: number
+          orders_total: number
+          phone: string | null
+          primeiro_pedido_em: string | null
+          skus_distintos: number
+          supplier_id: string
+          ultimo_pedido_em: string | null
+          unidades_canceladas: number
+          unidades_pedidas: number
+          valor_cancelado: number
+          valor_pedido: number
+          website: string | null
+          whatsapp: string | null
+        }[]
+      }
+      get_supplier_purchased_skus: {
+        Args: {
+          p_limit?: number
+          p_offset?: number
+          p_organization_id: string
+          p_supplier_id: string
+        }
+        Returns: {
+          pedidos: number
+          sku: string
+          // CORRECAO MANUAL (classe D-133): `sku_id` e nulo no item digitado
+          // livre (o formulario aceita SKU sem vinculo de proposito), e
+          // `title` vem de LEFT JOIN.
+          sku_id: string | null
+          title: string | null
+          total_count: number
+          ultimo_custo: number
+          ultimo_pedido_em: string
+          ultimo_pedido_numero: number
+          unidades_canceladas: number
+          unidades_pedidas: number
+        }[]
+      }
       get_sku_abc_curve: {
         Args: {
           p_criterion?: string | null

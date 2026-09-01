@@ -3331,6 +3331,30 @@ group by 1 order by 1 desc;
 
 **Impacto:** as duas migrations acima, `packages/db/src/{types.ts,rls.integration.test.ts}`, `apps/web/lib/{full-filters,full-filters.test}.ts`, `apps/web/app/full/page.tsx` (novo), `apps/web/app/anuncios/[itemId]/page.tsx` (Full pela RPC), `apps/web/components/shell.tsx` (nav), `docs/{ROADMAP,HANDOFF}.md`.
 
+## D-174 - Dashboard de Fornecedor: o relacionamento real e o que foi COMPRADO, e so isso
+
+**Contexto:** ultimo item das "centrais analiticas" na ordem registrada da 5E, com uma condicao no proprio texto: "Fornecedor **somente ate o limite do relacionamento real**". Fui medir esse limite antes de desenhar.
+
+**O limite, medido:** **1 fornecedor** cadastrado, **1 pedido de compra** (e ele esta CANCELADO), 2 itens. E, principalmente: **nao existe** vinculo fornecedor->SKU — `supplier_product_links` nunca foi criada, e `skus.supplier_brand` e MARCA (19 valores distintos cobrindo 3.550 dos 3.554 SKUs), sem FK nenhuma para `suppliers`. O item do ROADMAP pede uma aba `Produtos` e, no mesmo paragrafo, avisa para nao fingir essa relacao. As duas coisas nao cabem juntas.
+
+**Decisao 1 — "Produtos" vira "SKUs ja comprados", derivado dos pedidos.** O que foi comprado nao e ficcao, e observacao: os itens dos pedidos ligam fornecedor a produto de verdade. A tela entrega isso e **declara** que nao existe catalogo por fornecedor. Marca continua sendo eixo separado, nunca tratada como entidade de compra (o risco que o item nomeia).
+
+**Decisao 2 — cancelado em card proprio, nem somado nem escondido.** O unico pedido da base esta CANCELLED. Somar tudo num total mostraria R$ 4.644,00 "comprados" que nao existem; excluir em silencio mostraria "1 pedido, R$ 0,00" sem explicar. O resumo tem `valor_pedido` e `valor_cancelado` separados — o mesmo raciocinio de `valor_cancelado` no catalogo de vendas (D-157).
+
+**Decisao 3 — custo do ULTIMO pedido, nunca media.** Media entre epocas misturaria negociacoes diferentes num numero que nao aconteceu. E o custo mostrado aqui **nao altera** o custo cadastrado do SKU (a fronteira que D-149 estabeleceu).
+
+**Decisao 4 — item em texto livre continua sendo um item.** O formulario de compra aceita SKU digitado sem vinculo de proposito, e a RPC agrupa por vinculo quando ha `sku_id` e por texto quando nao ha. Na tela, o item livre e texto, nunca link morto.
+
+**O que a fixture ensinou (e a casa acertou):** a primeira versao do teste inseriu `purchase_orders` direto e o banco recusou duas vezes — `created_by` NOT NULL e depois o CHECK `purchase_orders_approved_coherent`. A maquina de estados dos pedidos **nao aceita estado incoerente nem vindo de teste**: um ORDERED sem `approved_at`/`ordered_at` e recusado. A fixture passou a respeitar a maquina em vez de contorna-la.
+
+**O que NAO entrou, com o motivo:** abas `Custos` e `Historico` proprias. Nao por falta de codigo — por falta de volume: com 1 fornecedor e 1 pedido, uma aba de tendencia seria um grafico de um ponto. O item do ROADMAP fica aberto dizendo exatamente isso.
+
+**Verificacao:** ensaio revertido no Dev antes da migration; migration `20260901111144` nos DOIS bancos; **469/469 testes de integracao em banco recriado do zero** (+5: cancelado separado do comprado, item livre convivendo com o vinculado sem link morto, fornecedor sem pedido devolvendo zeros e data NULA, anon negado nas duas, isolamento por organizacao); `check` 29/29, build 8/8, **13/13 Playwright**. **Tela VISTA renderizada** com fixture propria (R$ 4.794,00 sobre 120x18,50 + 60x42,90, dois SKUs, um deles em texto livre).
+
+**Nota de ambiente:** o Docker Desktop caiu no meio da sessao e o banco local ficou fora; subi de novo antes de qualquer verificacao. Nenhum passo foi dado sem banco.
+
+**Impacto:** migration acima, `packages/db/src/{types.ts,rls.integration.test.ts}`, `apps/web/app/fornecedores/[supplierId]/page.tsx` (novo), `apps/web/app/fornecedores/page.tsx` (link), `docs/{ROADMAP,HANDOFF}.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:

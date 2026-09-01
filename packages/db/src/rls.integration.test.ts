@@ -4721,6 +4721,153 @@ describe("get_fulfillment_overview (D-173, Central Full)", () => {
   });
 });
 
+// get_supplier_overview / get_supplier_purchased_skus (20260901111144, D-174)
+// — o Dashboard de Fornecedor, ate o limite do relacionamento REAL.
+describe("Dashboard de Fornecedor (D-174)", () => {
+  let supplierId = "";
+  let skuId = "";
+  let pedidoAtivoId = "";
+  let pedidoCanceladoId = "";
+
+  const CALL_OVERVIEW = () =>
+    `select * from public.get_supplier_overview('${ORG_SB}','${supplierId}')`;
+  const CALL_SKUS = () =>
+    `select * from public.get_supplier_purchased_skus('${ORG_SB}','${supplierId}', 50, 0)`;
+
+  beforeAll(async () => {
+    const fornecedor = await client.query<{ id: string }>(
+      `insert into public.suppliers (organization_id, name, legal_name, contact_name)
+       values ($1,'fornectest-parceiro','Parceiro Testes LTDA','Fulano') returning id`,
+      [ORG_SB],
+    );
+    supplierId = fornecedor.rows[0]?.id ?? "";
+
+    const sku = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, title)
+       values ($1,'fornectest-sku','SKU comprado do parceiro') returning id`,
+      [ORG_SB],
+    );
+    skuId = sku.rows[0]?.id ?? "";
+
+    const pedidos = await client.query<{ id: string }>(
+      // Os carimbos de estado sao obrigatorios por CHECK
+      // (`purchase_orders_approved_coherent` e as irmas): o banco recusa um
+      // pedido ORDERED sem `approved_at`/`ordered_at`, e CANCELLED sem
+      // `cancelled_at`. A fixture respeita a maquina de estados em vez de
+      // contorna-la.
+      `insert into public.purchase_orders
+         (organization_id, supplier_id, status, currency, created_by,
+          approved_at, approved_by, ordered_at, ordered_by, cancelled_at, cancelled_by)
+       values
+         ($1,$2,'ORDERED','BRL',$3, now(), $3, now(), $3, null, null),
+         ($1,$2,'CANCELLED','BRL',$3, null, null, null, null, now(), $3)
+       returning id`,
+      [ORG_SB, supplierId, ADMIN_SB],
+    );
+    pedidoAtivoId = pedidos.rows[0]?.id ?? "";
+    pedidoCanceladoId = pedidos.rows[1]?.id ?? "";
+
+    await client.query(
+      `insert into public.purchase_order_items
+         (organization_id, purchase_order_id, position, sku_id, sku_snapshot, title_snapshot, quantity_ordered, unit_cost)
+       values
+         ($1,$2,1,$3,'fornectest-sku','SKU comprado do parceiro',10,5.00),
+         -- Item em TEXTO LIVRE: o formulario aceita de proposito, e ele e um
+         -- SKU legitimo do ponto de vista da compra.
+         ($1,$2,2,null,'fornectest-avulso','Item digitado livre',4,2.50),
+         -- Mesmo SKU num pedido CANCELADO: nao pode somar ao comprado.
+         ($1,$4,1,$3,'fornectest-sku','SKU comprado do parceiro',7,9.99)`,
+      [ORG_SB, pedidoAtivoId, skuId, pedidoCanceladoId],
+    );
+  });
+
+  it("resumo separa comprado de cancelado, e conta os pedidos por estado", async () => {
+    const rows = await asUser<{
+      name: string;
+      orders_total: string;
+      orders_ordered: string;
+      orders_cancelled: string;
+      skus_distintos: string;
+      unidades_pedidas: string;
+      valor_pedido: string;
+      unidades_canceladas: string;
+      valor_cancelado: string;
+    }>(ADMIN_SB, CALL_OVERVIEW());
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.name).toBe("fornectest-parceiro");
+    expect(Number(rows[0]?.orders_total)).toBe(2);
+    expect(Number(rows[0]?.orders_ordered)).toBe(1);
+    expect(Number(rows[0]?.orders_cancelled)).toBe(1);
+    // Dois itens distintos no pedido ativo (um vinculado, um livre); o
+    // cancelado repete o vinculado e nao cria um terceiro.
+    expect(Number(rows[0]?.skus_distintos)).toBe(2);
+    // 10 x 5,00 + 4 x 2,50 = 60,00 -- o cancelado NAO entra.
+    expect(Number(rows[0]?.unidades_pedidas)).toBe(14);
+    expect(rows[0]?.valor_pedido).toBe("60.00");
+    // 7 x 9,99 = 69,93, visivel em campo proprio em vez de sumir.
+    expect(Number(rows[0]?.unidades_canceladas)).toBe(7);
+    expect(rows[0]?.valor_cancelado).toBe("69.93");
+  });
+
+  it("SKUs comprados: item vinculado e item em texto livre convivem, sem link morto", async () => {
+    const rows = await asUser<{
+      sku: string;
+      sku_id: string | null;
+      unidades_pedidas: string;
+      unidades_canceladas: string;
+      ultimo_custo: string;
+    }>(ADMIN_SB, `${CALL_SKUS()} order by sku`);
+
+    expect(rows).toHaveLength(2);
+
+    const livre = rows.find((r) => r.sku === "fornectest-avulso");
+    const vinculado = rows.find((r) => r.sku === "fornectest-sku");
+
+    // O item livre existe na resposta e NAO tem sku_id: a tela mostra texto,
+    // nao um link para lugar nenhum.
+    expect(livre?.sku_id).toBeNull();
+    expect(Number(livre?.unidades_pedidas)).toBe(4);
+
+    expect(vinculado?.sku_id).toBe(skuId);
+    expect(Number(vinculado?.unidades_pedidas)).toBe(10);
+    expect(Number(vinculado?.unidades_canceladas)).toBe(7);
+  });
+
+  it("fornecedor sem pedido nenhum devolve zeros, não erro nem linha vazia", async () => {
+    const outro = await client.query<{ id: string }>(
+      `insert into public.suppliers (organization_id, name)
+       values ($1,'fornectest-sem-pedido') returning id`,
+      [ORG_SB],
+    );
+    const outroId = outro.rows[0]?.id ?? "";
+
+    const rows = await asUser<{ orders_total: string; valor_pedido: string; primeiro_pedido_em: string | null }>(
+      ADMIN_SB,
+      `select * from public.get_supplier_overview('${ORG_SB}','${outroId}')`,
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0]?.orders_total)).toBe(0);
+    expect(Number(rows[0]?.valor_pedido)).toBe(0);
+    // Sem pedido, sem data: ausencia declarada, nunca uma data inventada.
+    expect(rows[0]?.primeiro_pedido_em).toBeNull();
+  });
+
+  it("anon não executa nenhuma das duas", async () => {
+    await expect(asAnon(CALL_OVERVIEW())).rejects.toThrow(/permission denied/i);
+    await expect(asAnon(CALL_SKUS())).rejects.toThrow(/permission denied/i);
+  });
+
+  it("usuário de outra organização não enxerga o fornecedor nem o que ele vendeu", async () => {
+    const resumo = await asUser<{ name: string }>(DE_OUTRA_ORG, CALL_OVERVIEW());
+    const skus = await asUser<{ sku: string }>(DE_OUTRA_ORG, CALL_SKUS());
+
+    expect(resumo).toHaveLength(0);
+    expect(skus).toHaveLength(0);
+  });
+});
+
 describe("search_entities (Fase 5B, Busca universal)", () => {
   // Mesmo raciocínio de nomes fora dos padrões de limpeza global, e mesma
   // ausência de afterAll — ver comentário equivalente no describe de
