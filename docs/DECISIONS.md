@@ -3816,6 +3816,42 @@ Os dois caminhos produzem exatamente o estado dos 2 pedidos quebrados. **Qual do
 
 **Impacto:** `apps/worker/src/handlers/persist-order.ts` e quatro arquivos de teste do worker, `packages/db/src/idempotent-writes.integration.test.ts`.
 
+## D-190 - A pagina vira a unidade de escrita
+
+**Contexto:** o ultimo item grande do caminho de pedidos. D-185 mediu o que decide a forma de tudo isto — **o custo de uma ida ao banco e o round trip, nao o SQL** (as sete idas de um pedido somam 3,95 ms de servidor contra 660,7 ms observados). D-186 e D-188 resolveram as leituras. Sobravam **quatro escritas por pedido**, que numa pagina de 50 sao 200 idas seriais.
+
+**Decisao — a pagina vira a unidade.** `persistOrder` ganha um coletor opcional: presente, ele COLETA as escritas; ausente, grava na hora. `fetchOrdersWindow` cria um por pagina e descarrega no fim. **Quatro idas para a pagina inteira**, em lugar de quatro por pedido — provado por teste que monta 50 pedidos e exige exatamente quatro chamadas.
+
+**O caminho do webhook nao muda de semantica, de proposito.** Ele processa UM pedido, nao teria o que agrupar, e "grava e so entao segue" continua sendo o certo la. Sem coletor, o codigo e o mesmo de antes.
+
+**Os tres pre-requisitos, e por que nenhum era contornavel:**
+
+| | resolvido em |
+|---|---|
+| `order_items` era `delete` + `insert` sem transacao — em lote, 50 pedidos sem itens em vez de um | **D-189**, que inverteu para `upsert` + cauda |
+| `recordStockMovements` e compartilhada com `nfe-import-apply`, que nao tem retry | **D-187**, e aqui o lote usa funcao PROPRIA — a compartilhada nao muda de forma |
+| o trigger `AFTER INSERT FOR EACH ROW` segurando N travas de saldo | **esta fatia**, ver abaixo |
+
+**A correcao do deadlock e uma linha, e a razao dela e o que importa.** `stock_movements_apply_to_balance` e `AFTER INSERT FOR EACH ROW` e faz `DO UPDATE` em `inventory_balances`. Um insert de N linhas dispara N execucoes dentro do MESMO statement, cada uma travando a linha de saldo do seu SKU — N travas seguradas ao mesmo tempo, **na ordem em que as linhas aparecem**. Dois lotes concorrentes com SKUs em comum, em ordens diferentes, formam ciclo. Hoje isso e impossivel porque cada movimento e um statement proprio, que segura uma trava de cada vez.
+
+`ordenaPorSku` restaura a garantia: todo lote adquire na mesma ordem, entao nao ha ciclo. Um lote contra um insert de uma linha tambem nao fecha ciclo — quem segura uma trava so nunca espera. Ha teste exigindo a ordenacao, com essa razao no comentario, para que nao seja removida como enfeite.
+
+**A armadilha que so existe em lote, e que o Postgres confirmou.** `ON CONFLICT DO UPDATE` recusa a MESMA chave duas vezes no MESMO comando — "cannot affect row a second time". Sequencialmente isso nunca foi problema: dois upserts do mesmo pedido sao dois comandos. Em lote e um so, e o Mercado Livre **pagina por offset**: uma order atualizada durante a varredura pode aparecer duas vezes.
+
+O lote desduplica mantendo a ULTIMA ocorrencia, que e exatamente o que a forma sequencial produzia. E ha **teste de integracao provando que o erro e real**, nao hipotese — sem ele, a desduplicacao pareceria defensiva demais e alguem a removeria.
+
+`domain_events` e `stock_movements` nao precisam de desduplicacao: gravam por `ON CONFLICT DO NOTHING` (D-092), que aceita chave repetida no mesmo comando.
+
+**A ordem do flush nao e estilo.** `orders` antes de `order_items` porque `order_items_order_id_fkey` referencia `orders(id)`; a cauda depois dos itens porque e a inversao de D-189; os movimentos por ultimo. Ha teste para a primeira, que e a unica com consequencia imediata (a FK rejeitaria).
+
+**O que muda na semantica de falha, dito sem maquiagem.** Antes: o pedido 7 falha, os pedidos 1-6 ja estao gravados, o job aborta. Agora: a pagina inteira ou entra ou nao entra. **O raio nao aumentou** — hoje o checkpoint tambem nao avanca quando o job falha, entao os pedidos 8-50 ja nao eram persistidos. O que muda e haver menos estados intermediarios, nao mais.
+
+**Sobre o ganho, pela sexta fatia seguida: nao foi medido ponta a ponta.** O worker esta 29 commits atras do que roda aqui. O estrutural esta fixado em teste (50 pedidos → 4 idas), e junto com D-186/D-188 leva o caminho de ~7 idas por pedido para **~0,16** — quatro escritas e duas leituras divididas por 50. A consulta para conferir depois do deploy esta em `docs/PERFORMANCE.md`.
+
+**Verificacao:** 8 testes novos so para o lote, entre eles os tres que fixam as garantias que so o lote precisa (ordenacao por SKU, desduplicacao, ordem do flush); teste de integracao provando o "affect row a second time" contra o Postgres real; **518/518 no worker**, **512/512 de integracao** em banco recriado, `check` 29/29, build 8/8, 13/13 Playwright. Sem migration.
+
+**Impacto:** `apps/worker/src/handlers/{page-writes.ts (novo),page-writes.test.ts (novo),persist-order.ts,ml-orders-fetch.ts,domain-events.ts}` e quatro fakes de teste, `packages/db/src/idempotent-writes.integration.test.ts`.
+
 ## Como adicionar nova decisao
 
 Registrar:

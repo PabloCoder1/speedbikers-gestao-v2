@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import { orderSchema } from "./order-schema.js";
 import type { ParsedOrder } from "./order-schema.js";
+import { flushPageWrites, novaPagina } from "./page-writes.js";
 import { persistOrder, prefetchOrders } from "./persist-order.js";
 
 /**
@@ -162,8 +163,17 @@ export async function fetchOrdersWindow(params: FetchOrdersWindowParams): Promis
 
     const prefetch = await prefetchOrders(params.db, context, orders);
 
+    // D-190: as ESCRITAS tambem passam a ser uma vez por pagina. `persistOrder`
+    // coleta em vez de gravar; o `flush` no fim faz quatro idas para a pagina
+    // inteira, em lugar de quatro por pedido.
+    //
+    // O `flush` fica DEPOIS do laco, e nao dentro: e ele que torna a pagina
+    // uma unidade. Se algum pedido lancar, nada da pagina foi gravado e o job
+    // falha — o Cloud Tasks retenta, e tudo aqui e idempotente por chave.
+    const writes = novaPagina(params.organizationId);
+
     for (const order of orders) {
-      await persistOrder(params.db, context, order, params.logger, prefetch);
+      await persistOrder(params.db, context, order, params.logger, prefetch, writes);
 
       dirtyMetricDates.add(toSalesMetricDate(order.date_created));
 
@@ -180,6 +190,8 @@ export async function fetchOrdersWindow(params: FetchOrdersWindowParams): Promis
         latestRecordAt = updatedAt;
       }
     }
+
+    await flushPageWrites(params.db, writes);
   }
 
   return {

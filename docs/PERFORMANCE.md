@@ -233,6 +233,23 @@ lança, em vez de seguir com um conjunto possivelmente cortado.
 **A regra que fica:** antes de escrever um `in (...)`, calcule o pior caso de
 linhas por chave e compare com 1.000. Não é o número de chaves que conta.
 
+### O caminho de pedidos, de 7 idas para ~0,16 (D-184 a D-190)
+
+Seis fatias no mesmo caminho, todas medidas na estrutura e **nenhuma medida
+ponta a ponta** — o worker está 29 commits atrás do que roda no repo. Onde o
+caminho chegou, por pedido:
+
+| | leituras | escritas | total por pedido |
+|---|---|---|---|
+| antes (D-183) | 3 | 4 | **7** |
+| D-186 (leituras por página) | 3/página | 4 | ~4,06 |
+| D-188 (embed) | 2/página | 4 | ~4,04 |
+| D-190 (escritas por página) | 2/página | 4/página | **~0,16** |
+
+O que autoriza a conta: o custo é **por chamada**, não por linha (D-185 — o
+SQL é 0,6% do tempo). O que ela não é: medição. A consulta que a transforma
+em número real está logo abaixo.
+
 ### Como conferir o efeito de D-184 depois do deploy
 
 D-184 tirou uma espera serial de cada pedido, mas o worker **não está no ar** —

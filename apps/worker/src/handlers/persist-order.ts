@@ -6,11 +6,12 @@ import {
   detectOrderStatusEvents,
   isCancelledOrderStatus,
 } from "@sb/domain";
-import type { RecordedSaleMovement, SaleDeductionItem } from "@sb/domain";
+import type { RecordedSaleMovement, SaleDeductionItem, StockMovementDraft } from "@sb/domain";
 import type { Logger } from "@sb/observability";
 
 import { assertWritten } from "./assert-written.js";
-import { recordDomainEvents } from "./domain-events.js";
+import { asJson, recordDomainEvents } from "./domain-events.js";
+import type { PageWrites } from "./page-writes.js";
 import type { ParsedOrder } from "./order-schema.js";
 import { recordStockMovements } from "./stock-movements.js";
 
@@ -244,6 +245,33 @@ export async function prefetchOrders(
   return { previousStatusById, linkByItemKey };
 }
 
+/**
+ * Um lugar so para a bifurcacao "coleta ou grava" dos movimentos.
+ *
+ * Em lote NAO reusa `recordStockMovements`: aquela funcao e compartilhada com
+ * `nfe-import-apply`, que nao tem retry, e mudar a forma dela para all-or-
+ * nothing seria perda de estoque permanente ali (D-187). O lote usa funcao
+ * propria, em `page-writes.ts`.
+ */
+async function gravaMovimentos(
+  db: AdminClient,
+  context: PersistOrderContext,
+  writes: PageWrites | undefined,
+  drafts: readonly StockMovementDraft[],
+  movementType: string,
+  source: { type: string; id: string },
+): Promise<void> {
+  if (writes !== undefined) {
+    for (const draft of drafts) {
+      writes.movements.push({ draft, movementType, source });
+    }
+
+    return;
+  }
+
+  await recordStockMovements(db, context, drafts, movementType, source);
+}
+
 export async function persistOrder(
   db: AdminClient,
   context: PersistOrderContext,
@@ -255,6 +283,13 @@ export async function persistOrder(
    * teria o que agrupar.
    */
   prefetch?: OrderPrefetch,
+  /**
+   * Acumulador da pagina (D-190). Presente, as escritas deste pedido sao
+   * COLETADAS e o chamador descarrega uma vez por pagina. Ausente, o handler
+   * escreve na hora — e o caminho do webhook, que tem UM pedido e para o qual
+   * "escreve e so entao segue" continua sendo a semantica certa.
+   */
+  writes?: PageWrites,
 ): Promise<void> {
   // D-101: o `GET /orders/{id}` real (fast path do webhook) vem SEM
   // `date_last_updated` — só o `/orders/search` (reconciliação) o traz.
@@ -323,11 +358,7 @@ export async function persistOrder(
 
   // Aborta se o pedido nao gravou (D-178): tudo abaixo -- eventos de status e
   // deducao de estoque -- presume que ele existe.
-  assertWritten(
-    await db
-    .from("orders")
-    .upsert(
-      {
+  const linhaDaOrder = {
         id: order.id,
         organization_id: context.organizationId,
         ml_account_id: context.mlAccountId,
@@ -344,12 +375,17 @@ export async function persistOrder(
         buyer_id: order.buyer?.id ?? null,
         shipping_id: order.shipping?.id ?? null,
         tags: order.tags ?? [],
-        cancel_reason: order.cancel_detail?.description ?? null,
-      },
-      { onConflict: "id" },
-    ),
-    "orders.upsert",
-  );
+    cancel_reason: order.cancel_detail?.description ?? null,
+  };
+
+  if (writes !== undefined) {
+    writes.orders.push(linhaDaOrder);
+  } else {
+    assertWritten(
+      await db.from("orders").upsert(linhaDaOrder, { onConflict: "id" }),
+      `orders.upsert (order ${String(order.id)})`,
+    );
+  }
 
   const events = detectOrderStatusEvents(
     previousStatus,
@@ -358,7 +394,25 @@ export async function persistOrder(
   );
 
   if (events.length > 0) {
-    await recordDomainEvents(db, context, events, logger);
+    if (writes !== undefined) {
+      for (const draft of events) {
+        writes.events.push({
+          organization_id: context.organizationId,
+          ml_account_id: context.mlAccountId,
+          occurred_at: draft.occurredAt.toISOString(),
+          event_type: draft.eventType,
+          entity_type: draft.entityType,
+          entity_id: draft.entityId,
+          before: asJson(draft.before ?? null),
+          after: asJson(draft.after ?? null),
+          severity: draft.severity,
+          source: draft.source,
+          dedup_key: draft.dedupKey,
+        });
+      }
+    } else {
+      await recordDomainEvents(db, context, events, logger);
+    }
   }
 
   if (order.order_items.length === 0) {
@@ -414,18 +468,26 @@ export async function persistOrder(
   // `order_items.id` — conferido no catalogo —, entao preservar o id em vez
   // de trocar a cada gravacao nao quebra nada, e de brinde o id passa a ser
   // estavel.
-  assertWritten(
-    await db.from("order_items").upsert(items, { onConflict: "order_id,position" }),
-    `order_items.upsert (order ${String(order.id)})`,
-  );
+  if (writes !== undefined) {
+    writes.items.push(...items);
+    writes.tails.push({ orderId: order.id, fromPosition: items.length });
+  } else {
+    assertWritten(
+      await db.from("order_items").upsert(items, { onConflict: "order_id,position" }),
+      `order_items.upsert (order ${String(order.id)})`,
+    );
+  }
 
   // A cauda: posicoes que existiam numa versao anterior mais longa e nao
   // existem mais. Roda DEPOIS da gravacao, entao nao ha instante em que o
-  // pedido esteja sem os itens atuais.
-  assertWritten(
-    await db.from("order_items").delete().eq("order_id", order.id).gte("position", items.length),
-    `order_items.delete da cauda (order ${String(order.id)})`,
-  );
+  // pedido esteja sem os itens atuais. Em lote, a cauda ja foi registrada
+  // junto com os itens, acima.
+  if (writes === undefined) {
+    assertWritten(
+      await db.from("order_items").delete().eq("order_id", order.id).gte("position", items.length),
+      `order_items.delete da cauda (order ${String(order.id)})`,
+    );
+  }
 
   if (isCancelledOrderStatus(order.status)) {
     const saleMovements = await loadSaleMovements(db, context.organizationId, order.id);
@@ -435,13 +497,10 @@ export async function persistOrder(
     );
 
     if (reversals.length > 0) {
-      await recordStockMovements(
-        db,
-        context,
-        reversals,
-        "CANCELAMENTO_ML",
-        { type: "ORDER", id: String(order.id) },
-      );
+      await gravaMovimentos(db, context, writes, reversals, "CANCELAMENTO_ML", {
+        type: "ORDER",
+        id: String(order.id),
+      });
     }
 
     return;
@@ -485,13 +544,10 @@ export async function persistOrder(
   });
 
   if (deductions.length > 0) {
-    await recordStockMovements(
-      db,
-      context,
-      deductions,
-      "VENDA_ML",
-      { type: "ORDER", id: String(order.id) },
-    );
+    await gravaMovimentos(db, context, writes, deductions, "VENDA_ML", {
+      type: "ORDER",
+      id: String(order.id),
+    });
   }
 }
 

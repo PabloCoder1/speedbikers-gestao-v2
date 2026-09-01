@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **188** (D-001 a D-189).
+Decisões registradas: **189** (D-001 a D-190).
 
 ## Por domínio
 
@@ -88,7 +88,7 @@ Decisões registradas: **188** (D-001 a D-189).
 - **D-167** — Movimentacoes: o ledger vira extrato legivel, e o EXPLAIN reprovou duas versoes
 - **D-173** — Central Full: o GRAO do Full estava errado em duas leituras, e isso aparecia como fila de trabalho falsa
 
-### interface (10)
+### interface (11)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -100,6 +100,7 @@ Decisões registradas: **188** (D-001 a D-189).
 - **D-175** — Administracao de Usuarios: a tela e a parte menos importante, e a revisao adversarial achou quatro defeitos meus
 - **D-178** — Escrita critica que falha nao pode deixar o handler seguir
 - **D-189** — Grava e so entao apaga: o pre-requisito que deixou o caminho mais seguro do que era
+- **D-190** — A pagina vira a unidade de escrita
 
 ### mercado-livre (35)
 

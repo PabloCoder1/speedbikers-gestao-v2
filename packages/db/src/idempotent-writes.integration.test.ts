@@ -271,6 +271,25 @@ describe("substituicao de itens por upsert em (order_id, position) (D-189)", () 
     expect(linhas.data).toEqual([{ position: 0, title: "segunda versao" }]);
   });
 
+  // D-190 — a razao pela qual o lote desduplica antes de gravar.
+  //
+  // `ON CONFLICT DO UPDATE` recusa a MESMA chave duas vezes no MESMO comando.
+  // Sequencialmente isso nunca foi problema: dois upserts do mesmo pedido sao
+  // dois comandos. Em lote e um so, e o Mercado Livre pagina por offset — uma
+  // order atualizada durante a varredura pode aparecer duas vezes.
+  //
+  // Este teste prova que o erro e REAL, nao hipotese. Sem ele, a
+  // desduplicacao em `page-writes.ts` pareceria defensiva demais e alguem a
+  // removeria.
+  it("a mesma chave DUAS VEZES no mesmo upsert e recusada pelo Postgres (D-190)", async () => {
+    const duplicado = await db.from("order_items").upsert([item("primeira"), item("segunda")], {
+      onConflict: "order_id,position",
+    });
+
+    expect(duplicado.error).not.toBeNull();
+    expect(duplicado.error?.message).toMatch(/affect row a second time/i);
+  });
+
   it("a exclusao da cauda nao toca nas posicoes que o pedido atual ocupa", async () => {
     // Um pedido que ja teve 3 itens e agora tem 1: as posicoes 1 e 2 sao a
     // cauda, e a 0 tem de sobreviver.

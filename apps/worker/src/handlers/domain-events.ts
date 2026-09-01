@@ -67,6 +67,6 @@ export async function recordDomainEvents(
  * seguro converter: o motor de diff só produz objetos serializáveis
  * (`{ status: string | null }`), nunca `undefined`, `Date` ou classe.
  */
-function asJson(value: unknown): Json {
+export function asJson(value: unknown): Json {
   return value as Json;
 }

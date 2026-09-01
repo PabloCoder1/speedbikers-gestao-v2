@@ -14,8 +14,8 @@
 |---|---|
 | **Atualizado em** | 2026-09-01 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `6cfe64d` (D-188) — esta fatia, D-189, é o commit seguinte |
-| **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **28 commits atrás** |
+| **HEAD conhecido** | `f8a416f` (D-189) — esta fatia, D-190, é o commit seguinte |
+| **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **29 commits atrás** |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | 119 locais == 119 no Dev, última `20260901160650` — sem drift |
 | **Frente atual** | Trilha 8B — P0 fechado (A–H); em P1 |
@@ -106,21 +106,18 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-1. **O deploy é o que trava a medição.** Três fatias seguidas (D-184, D-186)
-   mudaram o worker e **nenhuma pôde ser medida ponta a ponta** — o que está
-   no ar é de 25 commits atrás. O ganho estrutural está fixado em teste; o
-   número real precisa do deploy, e a consulta para conferir está em
-   `docs/PERFORMANCE.md`.
-2. **P1 — lote de ESCRITA por página.** Os três pré-requisitos saíram do
-   caminho: D-187 resolveu o de `nfe-import-apply`, D-189 fechou a janela
-   `delete`+`insert`, e o do trigger tem solução conhecida e barata (ordenar
-   o lote por `sku_id`, para que todo lote concorrente adquira as travas na
-   mesma ordem). Virou trabalho de implementação, não de investigação.
-3. **P1 — varrer as outras projeções com embed.** D-188 criou o lugar
-   (`packages/db/src/projections.ts`) e o padrão: constante versionada mais
-   teste na pista de integração que importa a constante. O portão pegou um
-   `PGRST201` que 510 testes de unidade não veriam; vale conferir os outros
-   `select=` com embed do repo.
+1. **O deploy é o que trava a medição, e agora com peso.** **Seis** fatias
+   seguidas (D-184 a D-190) mudaram o worker e **nenhuma pôde ser medida
+   ponta a ponta**. O caminho de pedidos saiu de 7 idas ao banco por pedido
+   para ~0,16 — na estrutura, fixada em teste. O número real precisa do
+   deploy, e a consulta está em `docs/PERFORMANCE.md`.
+
+   **O caminho de pedidos fechou como frente.** O que resta do P1 é outro
+   assunto.
+2. **P1 — varrer as outras projeções com embed.** D-188 criou o lugar
+   (`packages/db/src/projections.ts`) e o padrão. O portão já pegou um
+   `PGRST201` (D-188) e um `onConflict` errado (D-189) que 518 testes de
+   unidade não veriam; vale conferir os outros `select=` com embed do repo.
 4. **P1 — retenção de `job_runs`**: **271.184 linhas** reais. Bloqueado por
    regra própria — "só depois de reduzir a origem", e a origem (218.750 jobs
    vazios de webhook, D-179) só some com o deploy.

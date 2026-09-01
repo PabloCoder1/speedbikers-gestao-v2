@@ -87,11 +87,20 @@ function fakeDb(options: FakeDbOptions = {}): WebhookReceivedDeps["db"] {
       // insert de `stock_movements`/`domain_events` (dedução por venda).
       upsert: () => Promise.resolve({ data: null, error: null }),
       insert: () => Promise.resolve({ data: null, error: null }),
-      // D-189: a exclusão da cauda encadeia `.eq().gte()`, e a cadeia precisa
-      // ser thenable em qualquer ponto — outros caminhos ainda usam só `.eq()`.
+      // D-189/D-190: a exclusão da cauda encadeia `.eq().gte()` por pedido e
+      // `.in().gte()` em lote. A cadeia precisa ser thenable em qualquer
+      // ponto — outros caminhos ainda usam só `.eq()`.
       delete: () => {
-        const cadeia = () => ({
+        interface CadeiaDelete {
+          eq: () => CadeiaDelete;
+          in: () => CadeiaDelete;
+          gte: () => CadeiaDelete;
+          then: <T>(onFulfilled: (value: { data: null; error: null }) => T) => Promise<T>;
+        }
+
+        const cadeia = (): CadeiaDelete => ({
           eq: () => cadeia(),
+          in: () => cadeia(),
           gte: () => cadeia(),
           then: <T>(onFulfilled: (value: { data: null; error: null }) => T) =>
             Promise.resolve({ data: null, error: null }).then(onFulfilled),
