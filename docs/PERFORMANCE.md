@@ -154,6 +154,64 @@ nenhum (é o achado de D-179). Separando:
 | com trabalho (1 pedido) | 21.997 | **723,5 ms** | 588 ms | 1.234 ms |
 | no-op | 230.993 | 35,8 ms | **0 ms** | 1 ms |
 
+### Onde vai o tempo de uma ida ao banco (D-185)
+
+Persistir um pedido custa ~660 ms e faz 7 idas ao PostgREST. A pergunta era:
+trocar o caminho quente do worker para uma conexão Postgres direta (pooler)
+derrubaria isso? A hipótese registrada dizia "se os ~52 ms por ida virarem
+~5 ms, essa alavanca é maior que qualquer lote".
+
+**Não vira. A hipótese está refutada, por duas medições independentes.**
+
+**1. Quanto dessas idas é SQL de verdade.** `pg_stat_statements` no Dev, para
+as consultas exatas que o handler roda:
+
+| # | Consulta | ms no servidor |
+|---|---|---|
+| 1 | `orders` select status | 0,081 |
+| 2 | `orders` upsert | 0,588 |
+| 3 | `order_items` delete | 0,187 |
+| 4 | `sku_listing_links` select (`resolveSku`) | 0,144 |
+| 5 | `order_items` insert | 2,037 |
+| 6 | `skus` select kind | 0,042 |
+| 7 | `stock_movements` insert | 0,868 |
+| | **soma** | **3,95 ms** |
+
+Contra **660,7 ms** observados por pedido: o banco responde por **0,6%**.
+99,4% do tempo não é o Postgres trabalhando.
+
+**2. Quanto do resto é o PostgREST.** A mesma leitura por três caminhos, no
+mesmo processo, contra o mesmo Postgres local — reproduza com
+`pnpm --filter @sb/db run bench:postgrest`:
+
+| Caminho | p50 |
+|---|---|
+| Postgres direto (`pg`, porta 54322) | **0,86 ms** |
+| PostgREST com a consulta (porta 54321) | 15,00 ms |
+| HTTP até a mesma porta **sem tocar no Postgres** (404 pelo schema cache) | 14,91 ms |
+
+O terceiro é o controle, e é ele que decide: o `PGRST205` no corpo prova que
+a requisição atravessou Kong **e** PostgREST, e o PostgREST a recusou pelo
+cache sem consultar o banco. **O que o PostgREST soma sobre esse piso é
+0,1 a 0,8 ms** (duas execuções). O custo é o round trip, não o PostgREST.
+
+⚠️ **O que este número NÃO é.** O piso de ~15 ms é o proxy de rede do Docker
+Desktop no Windows mais o Kong local — não se parece com a rede de produção,
+e não deve ser citado como se fosse. O que é transferível é a **decomposição**:
+o processamento do PostgREST não depende da rede, e ele é menos de 1 ms.
+
+**Consequência para a ordem do trabalho.** Como o custo é **por chamada** e
+quase independente do que a chamada faz, quem manda é o NÚMERO de idas:
+
+- trocar de protocolo remove a camada HTTP/Kong do transporte — real, mas é
+  substituir `supabase-js` no caminho mais crítico do sistema por um ganho
+  que a medição não sustenta como grande;
+- **fazer menos chamadas vale sempre**, seja o transporte qual for. O lote
+  por página em `fetchOrdersWindow` (6,79 → ~0,25 idas por pedido) corta
+  ~96% das idas, e portanto ~96% de um custo que é todo por ida.
+
+Por isso o lote subiu para o topo do P1 e o pooler saiu da lista.
+
 ### Como conferir o efeito de D-184 depois do deploy
 
 D-184 tirou uma espera serial de cada pedido, mas o worker **não está no ar** —

@@ -14,8 +14,8 @@
 |---|---|
 | **Atualizado em** | 2026-09-01 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `88b80bd` (D-183) — esta fatia, D-184, é o commit seguinte |
-| **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **23 commits atrás** |
+| **HEAD conhecido** | `669ccf8` (D-184) — esta fatia, D-185, é o commit seguinte |
+| **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **24 commits atrás** |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | 119 locais == 119 no Dev, última `20260901160650` — sem drift |
 | **Frente atual** | Trilha 8B — P0 fechado (A–H); em P1 |
@@ -104,14 +104,15 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-1. **Medir uma chamada pelo pooler Postgres direto (6543) contra a mesma
-   pelo PostgREST.** É a medição mais barata com o maior valor de informação
-   que existe hoje: se os ~52 ms por ida virarem ~5 ms, essa alavanca é maior
-   que qualquer lote e muda a forma de todo o resto do P1 (D-184).
-2. **P1 — o resto do caminho de pedidos**: o embed de vínculo+`kind`+
-   componentes (precisa de portão na pista de integração) e o lote por página
-   em `fetchOrdersWindow`, que é o maior ganho disponível. Ordem e ressalvas
-   em `docs/ROADMAP.md`.
+1. **P1 — lote por página em `fetchOrdersWindow`.** Subiu para o topo em
+   D-185: o custo é **por chamada** (o SQL é 0,6% do tempo e o PostgREST soma
+   menos de 1 ms), então cortar 6,79 → ~0,25 idas por pedido corta ~96% do
+   tempo, seja qual for o transporte. Commit próprio — muda a semântica de
+   falha parcial e o significado de `assertWritten` com 50 pedidos juntos.
+2. **P1 — o embed de vínculo+`kind`+componentes.** Uma ida a menos por
+   pedido, e precisa de portão na pista de integração: o fake dos testes
+   ignora a string de projeção, então a forma do embed passaria verde e
+   quebraria em produção.
 3. **P1 — retenção de `job_runs`**: **271.184 linhas** reais. Bloqueado por
    regra própria — "só depois de reduzir a origem", e a origem (218.750 jobs
    vazios de webhook, D-179) só some com o deploy.

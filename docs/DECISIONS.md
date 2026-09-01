@@ -3663,6 +3663,40 @@ Os dois caminhos concordam sobre o custo de UM pedido: **660,7 ms** na janela (1
 
 **Impacto:** `apps/worker/src/handlers/persist-order.ts`, `persist-order.test.ts`. Nenhuma migration — nao ha mudanca de banco nesta fatia.
 
+## D-185 - Nao era o PostgREST: era o round trip
+
+**Contexto:** o item que abria o P1 da trilha 8B era uma MEDICAO, nao um refactor — "medir uma chamada pelo pooler Postgres direto contra a mesma pelo PostgREST". A hipotese registrada em D-184: "se os ~52 ms por ida virarem ~5 ms, essa alavanca e maior que qualquer lote e muda a forma de todo o resto do P1".
+
+**A hipotese esta refutada.** Duas medicoes independentes, e a segunda tem um controle que e o que de fato decide.
+
+**Primeira — quanto das 7 idas e SQL.** `pg_stat_statements` no Dev, nas consultas exatas do handler, soma **3,95 ms** para as sete. Contra 660,7 ms observados por pedido, o banco responde por **0,6%**. Nao ha nada a otimizar dentro do Postgres neste caminho: ele ja e praticamente instantaneo.
+
+**Segunda — quanto do resto e o PostgREST.** A mesma leitura por tres caminhos, no mesmo processo, contra o mesmo Postgres local:
+
+| Caminho | p50 |
+|---|---|
+| Postgres direto (`pg`) | **0,86 ms** |
+| PostgREST com a consulta | 15,00 ms |
+| HTTP ate a mesma porta **sem tocar no Postgres** | 14,91 ms |
+
+**O terceiro caminho e a fatia inteira.** Sem ele, a leitura obvia dos dois primeiros seria "PostgREST custa 17x mais que Postgres direto, troque" — e estaria errada. O controle pede uma tabela inexistente: o PostgREST recusa pelo schema cache (o corpo traz `PGRST205`, provando que a requisicao atravessou Kong E PostgREST) sem consultar o banco. **O que o PostgREST soma sobre esse piso e 0,1 a 0,8 ms.**
+
+O custo por chamada e o round trip. Trocar de protocolo nao o remove — so troca HTTP por TCP sobre a mesma rede.
+
+**Decisao 1 — nao trocar o caminho quente para conexao Postgres direta.** O ganho que a medicao sustenta e a camada HTTP/Kong do transporte, e o preco e substituir `supabase-js` no caminho mais critico do sistema (deducao de estoque). O item sai da lista, com o numero que o tirou.
+
+**Decisao 2 — o lote por pagina sobe para o topo do P1.** Como o custo e **por chamada** e quase independente do que a chamada faz, quem manda e o NUMERO de idas. Lote em `fetchOrdersWindow` corta 6,79 → ~0,25 idas por pedido: ~96% de um custo que e todo por ida. E vale seja qual for o transporte — nao depende de nenhuma hipotese sobre a rede.
+
+**Decisao 3 — a medicao vira ferramenta versionada.** `packages/db/scripts/bench-postgrest.mjs`, rodavel com `pnpm --filter @sb/db run bench:postgrest`. A proxima pessoa que suspeitar do PostgREST reproduz em trinta segundos em vez de reabrir a discussao.
+
+**O que este numero NAO e, dito no proprio script e aqui:** o piso de ~15 ms e o proxy de rede do Docker Desktop no Windows mais o Kong local. **Nao se parece com a rede de producao** e nao deve ser citado como se fosse. O que e transferivel e a decomposicao — o processamento do PostgREST nao depende da rede, e e menos de 1 ms.
+
+**Limitacao que ficou em aberto:** nao consegui separar o Kong do proxy do Docker (o container do PostgREST nao expoe porta ao host e o do Kong nao tem `curl`). Isso refinaria o numero, mas nao muda a recomendacao: Kong e proxy sao os dois transporte, os dois sao por chamada, e os dois somem com lote.
+
+**Verificacao:** as duas execucoes do script concordam (PostgREST soma 0,779 ms e 0,098 ms sobre o piso); o `PGRST205` no corpo do controle foi conferido com `curl`; a soma do `pg_stat_statements` vem de 4.078 chamadas reais de producao, nao de amostra sintetica.
+
+**Impacto:** `packages/db/scripts/bench-postgrest.mjs` (novo), `packages/db/package.json`. Nenhuma mudanca de aplicacao — esta fatia e uma medicao, e o produto dela e a ordem do trabalho seguinte.
+
 ## Como adicionar nova decisao
 
 Registrar:

@@ -15,7 +15,8 @@
     "lint": "eslint .",
     "test": "vitest run --exclude '**/node_modules/**' --exclude '**/*.integration.test.ts'",
     "gen:types": "supabase gen types typescript --local > src/types.ts",
-    "test:integration": "pnpm --filter @sb/domain run build && vitest run integration"
+    "test:integration": "pnpm --filter @sb/domain run build && vitest run integration",
+    "bench:postgrest": "node scripts/bench-postgrest.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.112.3",
