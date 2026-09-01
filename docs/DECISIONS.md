@@ -3576,6 +3576,56 @@ A guarda de verdade nao e a migration e sim o teste «nenhuma tabela de public d
 
 **Impacto:** migration acima, `packages/db/src/rls.integration.test.ts`. Nenhuma mudanca de aplicacao.
 
+## D-183 - O CTE que o Postgres decidiu nao materializar, e o contador que contava a pagina
+
+**Contexto:** P0-H da trilha 8B — as tres suspeitas que sobraram: `get_sku_sales_baseline`, `get_sku_timeline` e as consultas da Central de Notificacoes. A regra registrada era reproduzir cada uma antes de otimizar.
+
+**Reproduzir mudou o alvo, para menos e para mais.**
+
+| Suspeita | Primeira medicao | Segunda medicao (quente) | Veredito |
+|---|---|---|---|
+| `get_sku_timeline` | 3.308 ms | **57 ms** | nao era problema — cache frio |
+| `get_sku_sales_baseline` | 1.334 ms | 1.367 ms | lentidao real e reproduzivel |
+| Central de Notificacoes | 208 ms | — | dentro do budget, mas **numero errado na tela** |
+
+**A licao do `get_sku_timeline`:** a primeira passada mostrou 4.977 blocos lidos do disco. Quase virou uma otimizacao inutil de uma funcao saudavel. Medir duas vezes seguidas e barato; otimizar o que nao esta lento nao e.
+
+**Decisao 1 — `current_day as materialized`.** `get_sku_sales_baseline` gastava 1,3 segundo com **4.136 buffers**: CPU, nao I/O. O plano nomeou o culpado:
+
+```
+Nested Loop Left Join (actual time=69.128..1078.580 rows=440)
+  Rows Removed by Join Filter: 76865
+  ->  CTE Scan on daily_totals (rows=175 loops=440)
+        Filter: (metric_date = CURRENT_DATE)
+        Rows Removed by Filter: 31182
+```
+
+Tudo ANTES do join custava 70 ms; o `left join current_day` consumia o resto sozinho. A causa e uma regra do PostgreSQL 12+ que aqui funcionou ao contrario: **um CTE referenciado uma vez so e INLINE por padrao**. `daily_totals` e lido duas vezes, entao ja era materializado; `current_day` e lido uma vez, foi inlineado no lado interno do nested loop, e "175 linhas calculadas uma vez" virou "re-filtrar 31.357 linhas uma vez por SKU" — 440 loops.
+
+Nao era caso de indice: os dados ja estavam em memoria.
+
+**Decisao 2 — o filtro de dia da semana desce para o agregado.** Ele vivia em `weekday_history`, o que obrigava o `group by` a processar a historia inteira (41.585 linhas) para no fim manter so um dia da semana (6.617). Descer o filtro e seguro porque `current_day` procura `metric_date = p_as_of`, e `p_as_of` trivialmente tem o mesmo dia da semana que ele proprio.
+
+Medido: **1.037 ms → 107 ms** so com a materializacao, **→ 44 ms** com as duas. Depois de aplicar, no Dev: **49 ms**, 27x.
+
+**Equivalencia provada antes de aplicar,** com md5 do conjunto em **cinco formatos de chamada** — organizacao inteira e SKU unico, hoje e datas passadas (30, 45 e 97 dias atras, este ultimo devolvendo so 23 SKUs). Identico nos cinco. Os testes que ja existiam cobriam exatamente o que a mudanca toca ("ignora linha de outro dia da semana", "limita a 8 ocorrencias mais recentes", "amostra abaixo de 4").
+
+**Decisao 3 — a Central de Notificacoes nao estava lenta; estava mentindo.** A consulta custa 208 ms, dentro do budget. Mas `unreadCount` era `rows.filter(r => r.readAt === null).length` sobre as **100 linhas carregadas**. Medido no Dev: **28.386 notificacoes, 2.543 nao lidas**. A tela dizia "100 no historico" e no maximo 100 nao lidas.
+
+**O pior nao era o numero, era o botao.** "Marcar todas como lidas" so aparece com `unreadCount > 0`. Bastava ler as 100 mais recentes para ele SUMIR — deixando milhares de nao lidas sem nenhuma forma de limpar pela interface, enquanto a Server Action por tras dele sempre marcou todas, sem limite.
+
+**E a mesma tela ja se contradizia:** o badge da navegacao (`components/shell.tsx`) sempre usou `count: "exact", head: true` — o numero certo. Havia duas contagens de nao lidas na mesma pagina, discordando.
+
+A correcao usa a mesma fonte do badge e o `summarizePagedWindow` que D-138/D-140 criaram para exatamente esta classe de defeito. Custo: duas contagens, **2,7 ms e 1,0 ms** contra 28 mil linhas — o round trip a mais e mais barato que o numero errado que ele evita. `count` nulo e recusa, nao zero (D-131): sem contagem, a tela diz que nao sabe.
+
+**Verificado na tela**, com cenario montado no banco local para exercitar o caso extremo: 150 notificacoes, as **100 mais recentes lidas**, 50 antigas nao lidas — exatamente onde o codigo antigo escondia o botao. Depois: "Mostrando 1 a 100 de 150 notificacoes, as mais recentes · 50 nao lida(s)", com o botao presente e concordando com o badge.
+
+**Sem guarda automatizada para esse rotulo, e vale dizer:** o defeito era uma conta no componente, e a suite de integracao nao alcanca renderizacao. O e2e e deliberadamente pequeno ("apenas fluxos criticos", `docs/TESTING.md`) e um fixture de 150 notificacoes nao cabe nele. O que reduz o risco e a correcao ter TIRADO a conta em vez de conserta-la: a pagina agora le o mesmo `count` que o badge, sem aritmetica propria.
+
+**Verificacao:** ensaio revertido no local antes de aplicar; migration `20260901160650` nos DOIS bancos; **507/507 testes de integracao em banco recriado do zero**; `check` 29/29, build 8/8, **13/13 Playwright**; e passagem visual na tela com o cenario acima.
+
+**Impacto:** migration acima, `apps/web/app/notificacoes/page.tsx`.
+
 ## Como adicionar nova decisao
 
 Registrar:

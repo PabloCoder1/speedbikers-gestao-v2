@@ -67,6 +67,8 @@ Ambiente: Supabase Dev `nmgccyqquwxecqffsidr`. Dados: 337.303 `orders`,
 | `get_sku_abc_curve` | 417 ms | — | 200 |
 | `get_unlinked_listings` | 460 ms | — | 100 |
 | `get_stock_coverage` | 314 ms | — | 3.251 |
+| `get_sku_timeline` | 57 ms (3.308 ms na 1ª passada, cache frio) | 38.316 | 50 |
+| `get_sku_sales_baseline` (depois de D-183) | 49 ms | — | 440 |
 
 As quatro últimas eram o P0-H. **Não tenho o "antes" delas medido**, então
 não reivindico ganho — o que está registrado é que hoje estão dentro do
@@ -187,6 +189,7 @@ Cada linha tem o antes/depois real, não estimativa.
 | 2026-09-01 | `listings` (policy pura) | 186,8 ms / 15.802 | **4,8 ms / 462** | RLS como conjunto: `coluna in (select private.accessible_accounts())` no lugar da função escalar por linha | D-181 |
 | 2026-09-01 | `get_stock_balances` | 9.104 ms / 751.576 | **681 ms / 22.516** | idem — nenhuma linha da RPC mudou | D-181 |
 | 2026-09-01 | `get_listings_dashboard` | timeout > 60 s | **271 ms / 21.739** | idem — nenhuma linha da RPC mudou | D-181 |
+| 2026-09-01 | `get_sku_sales_baseline` | 1.334 ms / 4.136 | **49 ms** | `current_day as materialized` (o CTE inlineado virava o lado interno de um nested loop, 440 loops × 31 mil linhas) + filtro de dia da semana empurrado para o agregado | D-183 |
 
 **Lição que se repete:** o mesmo desenho pode ser certo num tamanho e errado
 em outro. D-167 reprovou `count(*) over ()` sobre 225 mil linhas; D-173
@@ -196,6 +199,19 @@ reprovou o substituto sobre 1.872. Medir, não copiar o padrão anterior.
 Postgres avalia a *autorização*. Uma função barata chamada 5.085 vezes custa
 mais que uma consulta cara. E o sintoma aponta para o lugar errado: parecia
 agregação, era policy.
+
+**Lição de D-183 — duas.** A primeira: **um CTE lido uma vez só é INLINE** no
+PostgreSQL 12+, e o inline pode ser catastrófico quando ele cai no lado
+interno de um nested loop. `current_day` tinha 175 linhas e era recalculado
+uma vez por SKU do resultado. `as materialized` é a correção, e por isso a
+migration tem guarda de catálogo: uma reescrita futura que remova a palavra
+devolve o segundo perdido.
+
+A segunda: **a primeira medição pode ser cache frio, e enganar nos dois
+sentidos**. `get_sku_timeline` mediu 3.308 ms na primeira passada (4.977
+blocos lidos do disco) e **57 ms** depois — não era problema nenhum, e quase
+virou uma otimização inútil. Meça sempre duas vezes seguidas; se os números
+divergirem muito, o primeiro era I/O frio.
 
 ⚠️ **A armadilha do baseline** apareceu de novo aqui, ao contrário: a
 primeira comparação de visibilidade rodou `set local role authenticated`

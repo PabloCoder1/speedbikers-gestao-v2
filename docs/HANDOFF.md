@@ -14,10 +14,10 @@
 |---|---|
 | **Atualizado em** | 2026-09-01 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `b2882b9` (D-181) — esta fatia, D-182, é o commit seguinte |
-| **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **21 commits atrás** |
+| **HEAD conhecido** | `1d98a2c` (D-182) — esta fatia, D-183, é o commit seguinte |
+| **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **22 commits atrás** |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
-| **Migrations** | 118 locais == 118 no Dev, última `20260901150926` — sem drift |
+| **Migrations** | 119 locais == 119 no Dev, última `20260901160650` — sem drift |
 | **Frente atual** | Trilha 8B — Performance, Segurança, Confiabilidade e Contexto |
 
 ### O que está pronto
@@ -46,12 +46,9 @@ Medidos contra o Dev em 2026-09-01, não herdados de documentação.
 | ~~P0-E~~ | ~~`SECURITY DEFINER` / `search_path` / policies duplicadas~~ | ✅ inventariado em D-182 — **nenhum dos três tinha vulnerabilidade**; advisor 33 → 26 WARN; allowlist das 25 RPCs virou teste de CI |
 | ~~P0-F~~ | ~~`get_stock_balances`~~ | ✅ corrigido em D-181 — **9.104 ms → 681 ms**, sem tocar na RPC |
 | ~~P0-G~~ | ~~`get_listings_dashboard`~~ | ✅ corrigido em D-181 — **timeout em 60 s → 271 ms**, sem tocar na RPC |
-| **P0-H** | Demais RPCs fora do budget | resta `get_sku_sales_baseline`, `get_sku_timeline` e a Central de Notificações — quatro das suspeitas entraram no budget junto com D-181 |
+| ~~P0-H~~ | ~~Demais RPCs fora do budget~~ | ✅ fechado em D-183 — `get_sku_sales_baseline` **1.334 ms → 49 ms**; `get_sku_timeline` nunca foi problema (3.308 ms era cache frio, o real é 57 ms); a Central de Notificações não estava lenta, estava **contando errado** |
 
-**O P0 de segurança fechou** (B, C, D, E). O que resta do P0 é performance:
-P0-H. D-182 ainda corrigiu, fora do escopo do P0-E, duas FKs escolhidas pelo
-cliente que eram gravadas sem validar a organização — latentes até a segunda
-organização, mesma classe de D-180.
+**Todo o P0 da trilha 8B fechou** — A a H. A frente passa para o P1.
 
 Números completos e método: `docs/PERFORMANCE.md`.
 
@@ -67,6 +64,10 @@ Números completos e método: `docs/PERFORMANCE.md`.
 - **A suíte de integração local exige banco recriado.** `supabase db reset`
   antes de rodar; e rodá-la quebra o seed do Playwright depois (usuários
   criados por SQL deixam `confirmation_token` nulo e o GoTrue estoura).
+- **A primeira medição pode ser cache frio.** `get_sku_timeline` mediu
+  3.308 ms na primeira passada e **57 ms** na segunda — quase virou uma
+  otimização inútil. Sempre duas passadas seguidas; se divergirem muito, a
+  primeira era I/O de disco (D-183).
 - **`n_live_tup` mente, e mentiu feio.** As estatísticas do Dev estão velhas:
   `job_runs` estimava ~6 mil e tem **271.184**; `ml_credentials` estimava 0 e
   tem **4 credenciais reais**. Para qualquer raciocínio de segurança ou de
@@ -97,12 +98,12 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-1. **P0-H** — sobraram `get_sku_sales_baseline`, `get_sku_timeline` e as
-   consultas da Central de Notificações. Reproduzir cada uma antes de
-   otimizar: `pg_stat_statements` mistura versões antigas das funções.
-2. **P1** — retenção de `job_runs` primeiro: são **271.184 linhas** reais
-   (não as ~6 mil que `n_live_tup` estima). Depois round trips por tela,
-   read models de `stock_movements` e triagem de índices.
+1. **P1 — retenção de `job_runs`**: são **271.184 linhas** reais (não as ~6
+   mil que `n_live_tup` estima), e o deploy pendente elimina a maior fonte
+   delas (D-179, 218.750 jobs vazios de webhook). Decidir a política de
+   retenção *depois* do deploy, com o volume já estabilizado.
+2. **P1** — round trips por tela, read models de `stock_movements` e triagem
+   de índices, na ordem registrada na trilha 8B.
 3. **Antes da segunda organização** — `get_system_health` tem escopo de
    plataforma com guard de tenant (D-182). Não é urgente hoje e não tem
    correção óbvia: as duas tentativas naturais causam regressão verificada.
