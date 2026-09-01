@@ -118,10 +118,10 @@ Nada disto pode ser feito por um agente.
    (`packages/db/src/projections.ts`) e o padrão. O portão já pegou um
    `PGRST201` (D-188) e um `onConflict` errado (D-189) que 518 testes de
    unidade não veriam; vale conferir os outros `select=` com embed do repo.
-4. **P1 — retenção de `job_runs`**: **271.184 linhas** reais. Bloqueado por
+3. **P1 — retenção de `job_runs`**: **271.184 linhas** reais. Bloqueado por
    regra própria — "só depois de reduzir a origem", e a origem (218.750 jobs
    vazios de webhook, D-179) só some com o deploy.
-5. **Antes da segunda organização** — `get_system_health` tem escopo de
+4. **Antes da segunda organização** — `get_system_health` tem escopo de
    plataforma com guard de tenant (D-182). Não é urgente hoje e não tem
    correção óbvia: as duas tentativas naturais causam regressão verificada.
 
