@@ -143,7 +143,10 @@ describe("receiveWebhook", () => {
     const ctx = deps();
 
     await receiveWebhook(ctx.deps, NOTIFICATION);
-    await receiveWebhook(ctx.deps, { ...NOTIFICATION, topic: "items", _id: "not-2" });
+    // `post_purchase` em vez de `items`: desde D-179 tópico sem consumidor
+    // nem chega à fila, e a afirmação aqui é sobre a CHAVE não depender do
+    // tópico — o que continua valendo entre dois tópicos enfileiráveis.
+    await receiveWebhook(ctx.deps, { ...NOTIFICATION, topic: "post_purchase", _id: "not-2" });
 
     expect(ctx.enqueued[0]?.dedupeKey).toBe(ctx.enqueued[1]?.dedupeKey);
   });
@@ -276,7 +279,7 @@ describe("receiveWebhook — tópico questions", () => {
     expect(ctx.enqueued).toHaveLength(0);
   });
 
-  it.each(["orders_v2", "post_purchase", "items", "shipments"])(
+  it.each(["orders_v2", "post_purchase"])(
     "tópico vizinho %s continua indo para sync.webhook.received, sem regressão",
     async (topic) => {
       const ctx = deps();
@@ -292,6 +295,51 @@ describe("receiveWebhook — tópico questions", () => {
       expect(ctx.enqueued[0]?.payload).toMatchObject({ topic, mlAccountId: ACCOUNT.id });
     },
   );
+
+  /**
+   * D-179 — o ponto da fatia: tópico sem consumidor recebe ACK e NÃO vira
+   * Cloud Task. Medido antes da mudança: 218.750 execuções de
+   * `sync.webhook.received` que terminaram `done / processed: 0`, cada uma
+   * tendo custado task + invocação de worker + linha de `job_runs`.
+   */
+  it.each(["shipments", "items", "user-products", "collections", "seller-promotions", "stock-location"])(
+    "tópico %s não tem consumidor: ACK sem enfileirar nada",
+    async (topic) => {
+      const ctx = deps();
+
+      const outcome = await receiveWebhook(ctx.deps, {
+        ...NOTIFICATION,
+        topic,
+        resource: "/items/MLB1054990648",
+      });
+
+      expect(outcome).toEqual({ status: "no_consumer", topic });
+      // O que esta fatia existe para impedir:
+      expect(ctx.enqueued).toHaveLength(0);
+    },
+  );
+
+  it("tópico sem consumidor continua observável — o log estruturado sai no lugar do job", async () => {
+    const registros: { event: string; fields: Record<string, unknown> }[] = [];
+    const ctx = deps();
+
+    ctx.deps.logger = {
+      ...ctx.deps.logger,
+      info: (event: string, fields: Record<string, unknown>) => {
+        registros.push({ event, fields });
+      },
+    } as typeof ctx.deps.logger;
+
+    await receiveWebhook(ctx.deps, {
+      ...NOTIFICATION,
+      topic: "shipments",
+      resource: "/shipments/44556677",
+    });
+
+    const registro = registros.find((r) => r.event === "ml_webhook_topic_without_consumer");
+
+    expect(registro?.fields).toMatchObject({ topic: "shipments", resource: "/shipments/44556677" });
+  });
 
   it("mensagem NÃO cai mais no caminho genérico — tem job próprio agora", async () => {
     const ctx = deps();

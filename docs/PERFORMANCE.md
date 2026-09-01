@@ -97,12 +97,54 @@ de `orders` é irrelevante aqui: a V3 já nasceu normalizada, então nenhuma
 
 | O quê | Medição | Item |
 |---|---|---|
-| Webhooks sem consumidor viram Cloud Task | `sync.webhook.received` = **243.944** de 265.276 linhas de `job_runs` (92%); **221.602** terminaram `done` com `processed = 0` | P0-C |
+| Webhooks sem consumidor viravam Cloud Task | `sync.webhook.received` = **243.944** de 265.276 linhas de `job_runs` (92%) | ✅ P0-C, D-179 |
 
 Cada uma dessas linhas custou: notificação → API → Cloud Task → dispatch →
-Cloud Run → router → gravação em `job_runs` → retorno. Para nada. A correção
-é uma allowlist na borda: sem consumidor, ACK + log estruturado, **sem
-enfileirar**.
+Cloud Run → router → gravação em `job_runs` → retorno. Para nada.
+
+### Por tópico, antes da correção (2026-09-01)
+
+| Tópico | Execuções | Com trabalho | Consumidor |
+|---|---|---|---|
+| `shipments` | 54.727 | 0 | não |
+| `user-products` | 46.597 | 0 | não |
+| `collections` | 33.893 | 0 | não |
+| `seller-promotions` | 25.850 | 0 | não |
+| `items` | 21.742 | 0 | não |
+| `items` (price) | 16.398 | 0 | não |
+| `users` | 9.952 | 0 | não |
+| `stock-location` | 7.835 | 0 | não |
+| `suggestions` + `sites` + `flex` + `catalog_suggestions` | 1.756 | 0 | não |
+| **`orders_v2`** | 20.799 | 20.376 | **sim** |
+| **`post_purchase`** | 5.520 | 669 | **sim** |
+
+**218.750 execuções — 89,7% do caminho genérico e 82,5% de todo o
+`job_runs` — existiram para não fazer nada.**
+
+A correção (D-179) é uma allowlist na borda, em `@sb/contracts` para a `api`
+e o `worker` lerem a mesma lista: sem consumidor, ACK + log estruturado,
+**sem Cloud Task**.
+
+⚠️ **A redução ainda não aconteceu em produção.** O código no ar é anterior
+a esta mudança e continua enfileirando tudo. Para comprovar depois do
+deploy:
+
+```sql
+-- Antes: sync.webhook.received domina o dia e quase tudo tem processed = 0.
+-- Alvo:  só orders_v2/post_purchase criam job; o resto some da tabela.
+select date_trunc('day', started_at) as dia,
+       count(*) filter (where job_type = 'sync.webhook.received') as genericos,
+       count(*) filter (where job_type = 'sync.webhook.received'
+                          and status = 'done' and processed = 0) as noop,
+       count(*) as total_jobs
+from job_runs
+where started_at >= now() - interval '7 days'
+group by 1 order by 1 desc;
+```
+
+`post_purchase` continua tendo no-op legítimo (3.797 de 5.520): o tópico TEM
+consumidor, e é o handler que decide que aquela notificação específica não
+gera trabalho. Isso não é desperdício de fila — é filtro de domínio, e fica.
 
 ---
 

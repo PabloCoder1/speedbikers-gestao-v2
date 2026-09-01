@@ -41,7 +41,7 @@ Medidos contra o Dev em 2026-09-01, não herdados de documentação.
 |---|---|---|
 | ~~P0-A~~ | ~~Contexto dos agentes~~ | ✅ corrigido em D-177 — bootstrap de ~1.245 KB para **7,6 KB**; `pnpm docs:check` guarda |
 | ~~P0-B~~ | ~~Writes sem verificação~~ | ✅ corrigido em D-178 — `assertWritten` aborta; 3 testes provam que nada posterior roda |
-| **P0-C** | Webhooks sem consumidor viram task | `sync.webhook.received` = **243.944 de 265.276** linhas de `job_runs` (92%); **221.602 terminaram com `processed = 0`** |
+| ~~P0-C~~ | ~~Webhooks sem consumidor viram task~~ | ✅ corrigido em D-179 — allowlist em `@sb/contracts`; **218.750 execuções/zero trabalho** deixam de ser enfileiradas ⚠️ só vale após o deploy |
 | **P0-D** | `private.has_role` sem organização | 21 policies e 8 funções; ADMIN de uma org valeria como ADMIN em outra |
 | **P0-E** | `SECURITY DEFINER` / `search_path` / policies duplicadas | apontado pelos advisors; inventário ainda não feito |
 | **P0-F** | `get_stock_balances` | **9.104 ms / 751.576 buffers** para 50 linhas (usuário autenticado real) |
@@ -73,7 +73,8 @@ Números completos e método: `docs/PERFORMANCE.md`.
 Nada disto pode ser feito por um agente.
 
 1. **Deploy** dos dois serviços (`bash infra/deploy-cloud-run.sh`) — leva ao
-   ar D-162→D-176, incluindo a correção do 429 e o `APP_COMMIT`.
+   ar D-162→D-179: a correção do 429, o `APP_COMMIT` e o fim dos 218.750
+   jobs vazios de webhook. **É o ato de maior efeito pendente.**
 2. `bash infra/cloud-scheduler.sh` depois do deploy (15 jobs esperados).
 3. Relatar **Dashboard → Database → Backups** do projeto Dev (decide a
    abordagem de backup da Fase 8).
@@ -89,16 +90,17 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-1. **P0-C** — parar de enfileirar tópico sem consumidor (allowlist na
-   borda, ACK + log estruturado), e remedir `job_runs` depois.
-2. **P0-D** — `has_role` com escopo de organização, fixtures com duas
-   organizações e testes negativos cross-org.
-3. **P0-F/G** — atacar o custo da RLS por linha ANTES de reescrever a RPC: o
+1. **P0-D** — `has_role` com escopo de organização, fixtures com duas
+   organizações e testes negativos cross-org. É o último P0 que trava a
+   entrada de uma segunda pessoa no sistema.
+2. **P0-F/G** — atacar o custo da RLS por linha ANTES de reescrever a RPC: o
    timeout de `get_listings_dashboard` aponta para dentro de
    `has_account_access`, e uma policy set-based beneficia todas as telas de
    uma vez.
-4. **P0-E** — inventário de `SECURITY DEFINER` e `search_path` das funções
-   de trigger.
+3. **P0-E** — inventário de `SECURITY DEFINER`, `search_path` das funções de
+   trigger e policies permissivas duplicadas.
+4. **P0-H** — reproduzir as demais RPCs suspeitas antes de otimizar:
+   `pg_stat_statements` mistura versões antigas das funções.
 
 ---
 

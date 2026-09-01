@@ -45,3 +45,6 @@ export type {
 
 export { jobEnvelopeSchema, toTaskName } from "./job.js";
 export type { JobEnvelope } from "./job.js";
+
+export { WEBHOOK_TOPICS_WITH_CONSUMER, hasWebhookConsumer } from "./webhook-topics.js";
+export type { WebhookTopicWithConsumer } from "./webhook-topics.js";

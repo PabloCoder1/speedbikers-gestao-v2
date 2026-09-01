@@ -1,3 +1,4 @@
+import { hasWebhookConsumer } from "@sb/contracts";
 import type { AdminClient } from "@sb/db";
 import type { Logger } from "@sb/observability";
 import { z } from "zod";
@@ -71,6 +72,7 @@ export type WebhookOutcome =
   | { status: "unknown_account" }
   | { status: "unroutable_resource" }
   | { status: "ignored_action" }
+  | { status: "no_consumer"; topic: string }
   | { status: "invalid_payload"; reason: string };
 
 interface RoutedJob {
@@ -118,7 +120,10 @@ function isReadOnlyNotification(notification: MercadoLivreNotification): boolean
  * formato documentado — não há o que buscar, e mandar para o caminho genérico
  * esconderia a anomalia atrás de um ACK sem trabalho.
  */
-function routeJob(notification: MercadoLivreNotification, mlAccountId: string): RoutedJob | null {
+function routeJob(
+  notification: MercadoLivreNotification,
+  mlAccountId: string,
+): RoutedJob | "no_consumer" | null {
   if (notification.topic === "questions") {
     const match = QUESTION_RESOURCE_PATTERN.exec(notification.resource);
     const questionId = match === null ? Number.NaN : Number(match[1]);
@@ -146,6 +151,16 @@ function routeJob(notification: MercadoLivreNotification, mlAccountId: string): 
       jobType: "sync.support.messages",
       payload: { mlAccountId, messageId: notification.resource },
     };
+  }
+
+  // Topico sem consumidor NAO vira job (D-179). Antes, tudo que nao fosse
+  // `questions`/`messages` caia no generico, o worker devolvia
+  // `done / processed: 0`, e a notificacao tinha custado uma Cloud Task, uma
+  // invocacao de Cloud Run e uma linha de `job_runs` para nada — 218.750
+  // execucoes medidas assim. A lista vive em `@sb/contracts` para a `api` e
+  // o `worker` nunca discordarem sobre o que tem consumidor.
+  if (!hasWebhookConsumer(notification.topic)) {
+    return "no_consumer";
   }
 
   return { jobType: "sync.webhook.received", payload: { ...notification, mlAccountId } };
@@ -203,6 +218,19 @@ export async function receiveWebhook(deps: WebhookDeps, rawBody: unknown): Promi
   }
 
   const job = routeJob(notification, account.data.id);
+
+  if (job === "no_consumer") {
+    // ACK + log estruturado, sem fila. A observabilidade continua: o que
+    // deixa de existir e a linha de `job_runs` que so registrava trabalho
+    // nenhum.
+    deps.logger.info("ml_webhook_topic_without_consumer", {
+      topic: notification.topic,
+      resource: notification.resource,
+      ml_account_id: account.data.id,
+    });
+
+    return { status: "no_consumer", topic: notification.topic };
+  }
 
   if (job === null) {
     // Não é transitório: reenviar o mesmo `resource` malformado não muda o

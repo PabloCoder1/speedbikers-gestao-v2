@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **177** (D-001 a D-178).
+Decisões registradas: **178** (D-001 a D-179).
 
 ## Por domínio
 
@@ -95,7 +95,7 @@ Decisões registradas: **177** (D-001 a D-178).
 - **D-175** — Administracao de Usuarios: a tela e a parte menos importante, e a revisao adversarial achou quatro defeitos meus
 - **D-178** — Escrita critica que falha nao pode deixar o handler seguir
 
-### mercado-livre (34)
+### mercado-livre (35)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -131,6 +131,7 @@ Decisões registradas: **177** (D-001 a D-178).
 - **D-164** — Medicao 7/15/30 do relist: reuso LITERAL de D-065 -- FASE 9 COMPLETA NO BACKEND
 - **D-170** — Visitas e conversao entram no catalogo, e catalogar revelou que a conversao estava errada em TRES lugares
 - **D-171** — O 429 das visitas: a defesa inteira estava no eixo que o Mercado Livre nao limita
+- **D-179** — Topico de webhook sem consumidor deixa de virar Cloud Task
 
 ### outros (22)
 

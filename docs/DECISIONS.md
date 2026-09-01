@@ -3443,6 +3443,28 @@ group by 1 order by 1 desc;
 
 **Impacto:** `apps/worker/src/handlers/{assert-written.ts (novo),persist-order.ts,persist-order.test.ts,ml-fulfillment-fetch.ts}`.
 
+## D-179 - Topico de webhook sem consumidor deixa de virar Cloud Task
+
+**Contexto:** segundo P0 tecnico da trilha 8B, e o de maior volume medido. `sync.webhook.received` respondia por **243.944 das 265.276** linhas de `job_runs` (92%), e **221.602** dessas execucoes terminaram `done` com `processed = 0`.
+
+**A causa era uma divergencia entre as duas pontas.** A `api` enfileirava TUDO que nao fosse `questions`/`messages` no caminho generico; o `worker` so tinha consumidor para `orders_v2` e `post_purchase` e devolvia `done / processed: 0` para o resto. Cada notificacao de um topico sem consumidor custava: Mercado Livre -> API -> Cloud Task -> dispatch -> Cloud Run -> router -> gravacao em `job_runs` -> retorno. Para nada.
+
+**Medido por topico antes de mexer** (o "sem consumidor" nao e suposicao): `shipments` 54.727, `user-products` 46.597, `collections` 33.893, `seller-promotions` 25.850, `items` 21.742, `items/price` 16.398, `users` 9.952, `stock-location` 7.835, mais `suggestions`/`sites`/`flex`/`catalog_suggestions` — **218.750 execucoes, ZERO com trabalho**. Contra `orders_v2` (20.799, com 20.376 uteis) e `post_purchase` (5.520, com 669).
+
+**Decisao 1 — a lista vive em `@sb/contracts`, nao duplicada.** Era justamente a divergencia entre o que a `api` achava e o que o `worker` fazia que produzia o desperdicio. Agora as duas pontas leem `WEBHOOK_TOPICS_WITH_CONSUMER`. Quando um topico ganhar consumidor, muda-se **um** lugar e o caminho inteiro volta a funcionar.
+
+**Decisao 2 — ACK + log, nunca silencio.** O topico sem consumidor recebe 200 (reenviar nao mudaria nada, e negar faria o ML gastar 8 tentativas em 1h) e sai um `ml_webhook_topic_without_consumer` estruturado. **Observabilidade nao exige 200 mil linhas de `job_runs`**: o log estruturado responde "quais topicos chegam e nao consumimos?" sem custar fila. Ha teste para o log, nao so para a ausencia da task.
+
+**Decisao 3 — o ramo do worker fica, como defesa em profundidade.** Ele so alcanca job que ja estava na fila quando a mudanca subir, mas remove-lo faria as duas pontas voltarem a poder divergir.
+
+**O que NAO foi tocado:** `post_purchase` tem 3.797 no-op de 5.520, e isso **fica**. O topico TEM consumidor; e o handler que decide que aquela notificacao especifica nao gera trabalho — filtro de dominio, nao desperdicio de fila. Confundir os dois casos seria desligar um consumidor real.
+
+**Verificacao:** `check` 29/29, build 8/8, 302/302 na `api` (+7: seis topicos sem consumidor provando `enqueued.length === 0`, e um provando que o log sai). Tres testes que afirmavam o comportamento antigo foram REESCRITOS, nao apagados — a intencao original deles (mudar um topico nao afeta os vizinhos) continua coberta. Sem migration.
+
+⚠️ **O efeito ainda nao existe em producao:** o codigo no ar e anterior a esta mudanca. A consulta de comprovacao pos-deploy esta em `docs/PERFORMANCE.md`.
+
+**Impacto:** `packages/contracts/src/{webhook-topics.ts (novo),index.ts}`, `apps/api/src/{webhook.ts,webhook.test.ts}`, `apps/worker/src/handlers/webhook-received.ts`.
+
 ## Como adicionar nova decisao
 
 Registrar:

@@ -1,3 +1,4 @@
+import { hasWebhookConsumer } from "@sb/contracts";
 import type { AdminClient } from "@sb/db";
 import type { MercadoLivreClient, MercadoLivreOAuthConfig } from "@sb/mercado-livre";
 import { MercadoLivreApiError } from "@sb/mercado-livre";
@@ -89,8 +90,12 @@ export function createWebhookReceivedHandler(deps: WebhookReceivedDeps): JobHand
 
     const { mlAccountId, resource, topic } = parsed.data;
 
-    if (topic !== "orders_v2" && topic !== "post_purchase") {
-      // Sem consumidor para este tópico ainda — ACK sem trabalho, não é erro.
+    if (!hasWebhookConsumer(topic)) {
+      // Desde D-179 a `api` nem enfileira tópico sem consumidor, então este
+      // ramo só alcança job que já estava na fila quando a mudança subiu.
+      // Continua aqui como defesa em profundidade: as duas pontas leem a
+      // MESMA lista (`@sb/contracts`), e é a divergência entre elas que
+      // gerava 218.750 execuções vazias.
       return { status: "done", processed: 0 };
     }
 
