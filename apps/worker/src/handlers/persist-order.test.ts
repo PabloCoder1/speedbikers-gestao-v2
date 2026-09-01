@@ -2,7 +2,7 @@ import { createLogger } from "@sb/observability";
 import { describe, expect, it } from "vitest";
 
 import type { ParsedOrder } from "./order-schema.js";
-import type { OrderPrefetch, PersistOrderContext } from "./persist-order.js";
+import type { OrderPrefetch, PersistOrderContext, ResolvedLink } from "./persist-order.js";
 import { persistOrder, prefetchOrders } from "./persist-order.js";
 
 const CONTEXT: PersistOrderContext = {
@@ -91,10 +91,12 @@ interface FakeDbOptions {
   saleMovementsError?: boolean;
   /** Simula falha ao resolver sku_listing_links (resolveSku). */
   linkLookupError?: boolean;
-  /** Simula falha ao ler o kind do SKU (loadSkuKindAndComponents, primeira query). */
-  skuKindError?: boolean;
-  /** Simula falha ao ler os componentes do kit (loadSkuKindAndComponents, segunda query). */
-  componentsError?: boolean;
+  /**
+   * Simula o vínculo voltando SEM o SKU embutido (D-188) — o estado que a FK
+   * torna impossível e que, se tratado como PRODUTO, deduziria contra a linha
+   * de um KIT.
+   */
+  linkWithoutSku?: boolean;
   /** Simula falha no `upsert` de `orders` — a escrita mais critica do handler (D-178). */
   orderWriteError?: boolean;
   /** Simula falha no `delete` de `order_items` (D-178). */
@@ -192,29 +194,10 @@ function fakeDb(options: FakeDbOptions = {}): {
           });
         }
 
-        if (table === "skus") {
-          return filterChain({}, (filters) => {
-            if (options.skuKindError === true) {
-              return { data: null, error: { code: "42P01", message: "boom" } };
-            }
-
-            const skuId = filters.id as string;
-
-            return { data: { kind: options.skuKindById?.(skuId) ?? "PRODUTO" }, error: null };
-          });
-        }
-
-        if (table === "sku_components") {
-          return filterChain({}, (filters) => {
-            if (options.componentsError === true) {
-              return { data: null, error: { code: "42P01", message: "boom" } };
-            }
-
-            const kitSkuId = filters.kit_sku_id as string;
-
-            return { data: options.componentsByKitId?.(kitSkuId) ?? [], error: null };
-          });
-        }
+        // D-188: `skus` e `sku_components` deixaram de ser consultadas — vêm
+        // embutidas na leitura do vínculo. As opções `skuKindById` e
+        // `componentsByKitId` continuam existindo e significando o mesmo; é o
+        // ramo do vínculo, abaixo, que as monta na forma do embed.
 
         if (table === "stock_movements") {
           return filterChain({}, () => {
@@ -235,7 +218,36 @@ function fakeDb(options: FakeDbOptions = {}): {
           const variationId = (filters.variation_id as string | null | undefined) ?? null;
           const link = options.linkForItem?.(itemId, variationId) ?? null;
 
-          return { data: link, error: null };
+          if (link === null) {
+            return { data: null, error: null };
+          }
+
+          // D-188: o vínculo passou a trazer `kind` e componentes embutidos.
+          // O fake MONTA essa forma a partir das mesmas opções de antes —
+          // `skuKindById` e `componentsByKitId` continuam significando o
+          // mesmo, e os testes que as usam não mudaram.
+          //
+          // O que este fake NÃO valida é a string de projeção (`select: () =>
+          // self`): a forma do embed é provada contra o PostgREST real em
+          // `packages/db/src/projections.integration.test.ts`.
+          if (options.linkWithoutSku === true) {
+            return { data: { ...link, item_id: itemId, variation_id: variationId, skus: null }, error: null };
+          }
+
+          const kind = options.skuKindById?.(link.sku_id) ?? "PRODUTO";
+
+          return {
+            data: {
+              ...link,
+              item_id: itemId,
+              variation_id: variationId,
+              skus: {
+                kind,
+                sku_components: kind === "KIT" ? (options.componentsByKitId?.(link.sku_id) ?? []) : [],
+              },
+            },
+            error: null,
+          };
         });
       },
     }),
@@ -793,20 +805,37 @@ describe("persistOrder", () => {
       expect(upserted.filter((row) => row.table === "orders")).toEqual([]);
     });
 
-    it("falha ao ler o kind do SKU rejeita, em vez de tratar um KIT real como PRODUTO sem componentes", async () => {
-      const { db } = fakeDb({ linkForItem: () => ({ id: "link-1", sku_id: "sku-1" }), skuKindError: true });
+    // Reescrito em D-188. A intenção é a mesma — um KIT real não pode cair
+    // como PRODUTO sem componentes —, mas o modo de falha mudou: `kind` não é
+    // mais uma leitura própria que pode falhar, e sim um campo do embed. O
+    // estado equivalente é o vínculo voltar sem o SKU embutido.
+    it("vínculo sem o SKU embutido rejeita, em vez de tratar um KIT real como PRODUTO (D-188)", async () => {
+      const { db } = fakeDb({ linkForItem: () => ({ id: "link-1", sku_id: "sku-1" }), linkWithoutSku: true });
 
-      await expect(run(db, BASE_ORDER)).rejects.toThrow(/kind do sku/);
+      await expect(run(db, BASE_ORDER)).rejects.toThrow(/sem o SKU embutido/);
     });
 
-    it("falha ao ler os componentes de um KIT rejeita, em vez de deduzir sem componente nenhum", async () => {
-      const { db } = fakeDb({
+    // Reescrito em D-188: a falha que este teste simulava — a leitura dos
+    // componentes falhando por conta própria — deixou de existir, porque os
+    // componentes vêm no mesmo embed do vínculo. Uma leitura que falha agora
+    // cai no teste de `linkLookupError`, e um `skus` nulo no de "sem o SKU
+    // embutido".
+    //
+    // O que sobra e vale um tripwire é a OUTRA metade: um KIT sem componentes
+    // cadastrados não produz movimento nenhum — a venda não deduz nada, em
+    // silêncio. Não é regressão (era assim antes do embed) e não está vivo:
+    // medido no Dev, 138 KITs e ZERO sem componentes. Se um dia aparecer, é
+    // aqui que a decisão tem de ser retomada, com o número na mão.
+    it("KIT sem componentes cadastrados não deduz nada — tripwire, não aprovação (D-188)", async () => {
+      const { db, inserted } = fakeDb({
         linkForItem: () => ({ id: "link-kit", sku_id: "sku-kit" }),
         skuKindById: () => "KIT",
-        componentsError: true,
+        componentsByKitId: () => [],
       });
 
-      await expect(run(db, BASE_ORDER)).rejects.toThrow(/componentes do kit/);
+      await expect(run(db, BASE_ORDER)).resolves.toBeUndefined();
+
+      expect(inserted.filter((row) => row.table === "stock_movements")).toEqual([]);
     });
   });
 });
@@ -896,25 +925,55 @@ describe("prefetchOrders (D-186)", () => {
 
   const PEDIDO_A: ParsedOrder = { ...BASE_ORDER, id: 2_000_017_347_483_988 };
 
-  it("resolve vínculo, kind e componentes da página numa leitura por tabela", async () => {
+  it("resolve vínculo, kind e componentes numa leitura só (D-188)", async () => {
     const { db, consultadas } = dbFalso({
       orders: { data: [{ id: 2_000_017_347_483_988, status: "paid" }], error: null },
       sku_listing_links: {
-        data: [{ id: "link-1", sku_id: "sku-kit", item_id: "MLB1054990648", variation_id: null }],
+        data: [
+          {
+            id: "link-1",
+            sku_id: "sku-kit",
+            item_id: "MLB1054990648",
+            variation_id: null,
+            skus: { kind: "KIT", sku_components: [{ component_sku_id: "sku-peca", quantity: 2 }] },
+          },
+        ],
         error: null,
       },
-      skus: { data: [{ id: "sku-kit", kind: "KIT" }], error: null },
-      sku_components: { data: [{ kit_sku_id: "sku-kit", component_sku_id: "sku-peca", quantity: 2 }], error: null },
     });
 
     const prefetch = await prefetchOrders(db, CONTEXT, [PEDIDO_A]);
 
-    expect(prefetch.linkByItemKey.get("MLB1054990648\u0000")).toEqual({ id: "link-1", sku_id: "sku-kit" });
-    expect(prefetch.skuKindById.get("sku-kit")).toBe("KIT");
-    expect(prefetch.componentsByKitId.get("sku-kit")).toEqual([{ componentSkuId: "sku-peca", quantity: 2 }]);
+    expect(prefetch.linkByItemKey.get("MLB1054990648\u0000")).toEqual({
+      id: "link-1",
+      sku_id: "sku-kit",
+      kind: "KIT",
+      components: [{ componentSkuId: "sku-peca", quantity: 2 }],
+    });
 
-    // Uma leitura por tabela, não uma por pedido.
-    expect(consultadas).toEqual(["orders", "sku_listing_links", "skus", "sku_components"]);
+    // D-188: `skus` e `sku_components` deixaram de ser consultas próprias — o
+    // embed as traz junto, e elas eram ENCADEADAS (skus dependia dos
+    // vínculos, componentes dependiam dos kinds). A forma do embed é provada
+    // contra o PostgREST real em `packages/db/src/projections.integration.test.ts`;
+    // este fake não valida a string de projeção, e é justamente por isso que
+    // aquele portão existe.
+    expect(consultadas).toEqual(["orders", "sku_listing_links"]);
+  });
+
+  it("vínculo sem o SKU embutido LANÇA — não cai em PRODUTO (D-188)", async () => {
+    // A FK `sku_listing_links_sku_id_fkey` é `not null` + `on delete
+    // restrict`: a linha do SKU sempre existe. `skus` nulo aqui só pode ser o
+    // embed não tendo resolvido, e cair em PRODUTO gravaria `VENDA_ML` contra
+    // a linha de um KIT — sem deduzir os componentes, e com uma chave de
+    // idempotência que nunca mais é gerada depois do conserto.
+    const { db } = dbFalso({
+      sku_listing_links: {
+        data: [{ id: "link-1", sku_id: "sku-1", item_id: "MLB1054990648", variation_id: null, skus: null }],
+        error: null,
+      },
+    });
+
+    await expect(prefetchOrders(db, CONTEXT, [PEDIDO_A])).rejects.toThrow(/sem o SKU embutido/);
   });
 
   it("chaveia o pedido por STRING — `orders.id` é bigint e o mapa mente se os tipos divergirem", async () => {
@@ -972,16 +1031,22 @@ describe("prefetchOrders (D-186)", () => {
 
     const { db, consultadas } = dbFalso({
       sku_listing_links: {
-        data: [{ id: "link-1", sku_id: "sku-1", item_id: "MLB1054990648", variation_id: null }],
+        data: [
+          {
+            id: "link-1",
+            sku_id: "sku-1",
+            item_id: "MLB1054990648",
+            variation_id: null,
+            skus: { kind: "PRODUTO", sku_components: [] },
+          },
+        ],
         error: null,
       },
-      skus: { data: [{ id: "sku-1", kind: "PRODUTO" }], error: null },
     });
 
     await prefetchOrders(db, CONTEXT, pagina);
 
-    // Sem kits na página, `sku_components` nem é consultada.
-    expect(consultadas).toEqual(["orders", "sku_listing_links", "skus"]);
+    expect(consultadas).toEqual(["orders", "sku_listing_links"]);
   });
 
   it("página vazia não vai ao banco", async () => {
@@ -998,10 +1063,7 @@ describe("persistOrder com prefetch (D-186)", () => {
   function prefetchDe(parcial: Partial<OrderPrefetch>): OrderPrefetch {
     return {
       previousStatusById: parcial.previousStatusById ?? new Map<string, string>(),
-      linkByItemKey: parcial.linkByItemKey ?? new Map<string, { id: string; sku_id: string }>(),
-      skuKindById: parcial.skuKindById ?? new Map<string, string>(),
-      componentsByKitId:
-        parcial.componentsByKitId ?? new Map<string, { componentSkuId: string; quantity: number }[]>(),
+      linkByItemKey: parcial.linkByItemKey ?? new Map<string, ResolvedLink>(),
     };
   }
 
@@ -1019,8 +1081,9 @@ describe("persistOrder com prefetch (D-186)", () => {
       BASE_ORDER,
       createLogger({ service: "test" }),
       prefetchDe({
-        linkByItemKey: new Map([["MLB1054990648\u0000", { id: "link-9", sku_id: "sku-9" }]]),
-        skuKindById: new Map([["sku-9", "PRODUTO"]]),
+        linkByItemKey: new Map([
+          ["MLB1054990648\u0000", { id: "link-9", sku_id: "sku-9", kind: "PRODUTO" as const, components: [] }],
+        ]),
       }),
     );
 
@@ -1028,25 +1091,6 @@ describe("persistOrder com prefetch (D-186)", () => {
 
     expect((itens?.rows[0] as { sku_id: string }).sku_id).toBe("sku-9");
     expect((itens?.rows[0] as { sku_listing_link_id: string }).sku_listing_link_id).toBe("link-9");
-  });
-
-  it("SKU ausente do lote LANÇA — não cai em PRODUTO", async () => {
-    // `sku_listing_links.sku_id` é NOT NULL com FK `on delete restrict`, então
-    // a linha do SKU sempre existe: ausente do lote só pode ser lote que
-    // falhou. Cair em PRODUTO gravaria `VENDA_ML` contra a linha de um KIT —
-    // passa na FK, não deduz os componentes, e a chave de idempotência
-    // `venda:<id>:<pos>` nunca mais é gerada depois do conserto.
-    const { db } = fakeDb({});
-
-    await expect(
-      persistOrder(
-        db,
-        CONTEXT,
-        BASE_ORDER,
-        createLogger({ service: "test" }),
-        prefetchDe({ linkByItemKey: new Map([["MLB1054990648\u0000", { id: "link-9", sku_id: "sku-9" }]]) }),
-      ),
-    ).rejects.toThrow(/ausente do lote de kinds/);
   });
 
   it("KIT decompõe pelos componentes do lote", async () => {
@@ -1058,9 +1102,17 @@ describe("persistOrder com prefetch (D-186)", () => {
       BASE_ORDER,
       createLogger({ service: "test" }),
       prefetchDe({
-        linkByItemKey: new Map([["MLB1054990648\u0000", { id: "link-9", sku_id: "sku-kit" }]]),
-        skuKindById: new Map([["sku-kit", "KIT"]]),
-        componentsByKitId: new Map([["sku-kit", [{ componentSkuId: "sku-peca", quantity: 3 }]]]),
+        linkByItemKey: new Map([
+          [
+            "MLB1054990648\u0000",
+            {
+              id: "link-9",
+              sku_id: "sku-kit",
+              kind: "KIT" as const,
+              components: [{ componentSkuId: "sku-peca", quantity: 3 }],
+            },
+          ],
+        ]),
       }),
     );
 

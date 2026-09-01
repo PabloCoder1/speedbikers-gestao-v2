@@ -14,8 +14,8 @@
 |---|---|
 | **Atualizado em** | 2026-09-01 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `515da2d` (D-186) — esta fatia, D-187, é o commit seguinte |
-| **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **26 commits atrás** |
+| **HEAD conhecido** | `2b15242` (D-187) — esta fatia, D-188, é o commit seguinte |
+| **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **27 commits atrás** |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | 119 locais == 119 no Dev, última `20260901160650` — sem drift |
 | **Frente atual** | Trilha 8B — P0 fechado (A–H); em P1 |
@@ -109,15 +109,16 @@ Nada disto pode ser feito por um agente.
    no ar é de 25 commits atrás. O ganho estrutural está fixado em teste; o
    número real precisa do deploy, e a consulta para conferir está em
    `docs/PERFORMANCE.md`.
-2. **P1 — o embed de vínculo+`kind`+componentes.** Uma ida a menos por
-   pedido, e precisa de portão na pista de integração: o fake dos testes
-   ignora a string de projeção, então a forma do embed passaria verde e
-   quebraria em produção.
-3. **P1 — lote de ESCRITA por página.** D-187 resolveu um dos três
+2. **P1 — lote de ESCRITA por página.** D-187 resolveu um dos três
    pré-requisitos (o raio de alcance em `nfe-import-apply`). Sobram dois, e
    os dois são estruturais: a janela `delete`+`insert` multiplicada por 50, e
    o trigger `AFTER INSERT FOR EACH ROW` segurando 36 travas de saldo em
-   ordem arbitrária.
+   ordem arbitrária. É o último item grande do caminho de pedidos.
+3. **P1 — varrer as outras projeções com embed.** D-188 criou o lugar
+   (`packages/db/src/projections.ts`) e o padrão: constante versionada mais
+   teste na pista de integração que importa a constante. O portão pegou um
+   `PGRST201` que 510 testes de unidade não veriam; vale conferir os outros
+   `select=` com embed do repo.
 4. **P1 — retenção de `job_runs`**: **271.184 linhas** reais. Bloqueado por
    regra própria — "só depois de reduzir a origem", e a origem (218.750 jobs
    vazios de webhook, D-179) só some com o deploy.

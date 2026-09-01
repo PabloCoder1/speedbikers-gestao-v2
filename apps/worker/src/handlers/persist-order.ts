@@ -1,4 +1,5 @@
-import type { AdminClient } from "@sb/db";
+import { SKU_LINK_WITH_KIND_SELECT } from "@sb/db";
+import type { AdminClient, SkuLinkWithKindRow } from "@sb/db";
 import {
   computeCancellationReversals,
   computeSaleDeductions,
@@ -62,15 +63,47 @@ export interface PersistOrderContext {
  * resultado seria "pedido novo" para um pedido existente, ou "sem vinculo"
  * para um item vinculado — deducao de estoque pulada, em silencio.
  */
+export interface ResolvedLink {
+  id: string;
+  sku_id: string;
+  kind: "PRODUTO" | "KIT";
+  components: { componentSkuId: string; quantity: number }[];
+}
+
 export interface OrderPrefetch {
   /** `String(order.id)` -> status gravado. Ausente = pedido novo para a V3. */
   previousStatusById: Map<string, string>;
   /** `chaveDoItem(item_id, variation_id)` -> vinculo vigente. Ausente = sem vinculo. */
-  linkByItemKey: Map<string, { id: string; sku_id: string }>;
-  /** `sku_id` -> `kind`. Ausente e ERRO, nao PRODUTO — ver `kindDoSku`. */
-  skuKindById: Map<string, string>;
-  /** `kit_sku_id` -> componentes. Ausente = kit sem componentes cadastrados. */
-  componentsByKitId: Map<string, { componentSkuId: string; quantity: number }[]>;
+  linkByItemKey: Map<string, ResolvedLink>;
+}
+
+/**
+ * Traduz uma linha do embed para a forma que o handler usa (D-188).
+ *
+ * **`skus` nulo LANCA.** `sku_listing_links.sku_id` e NOT NULL com FK
+ * `on delete restrict` para `skus`, entao a linha do SKU sempre existe: nulo
+ * aqui so pode ser o embed nao tendo resolvido. Cair em PRODUTO gravaria um
+ * `VENDA_ML` contra a linha de um KIT — passa na FK, nao deduz os
+ * componentes, e a chave `venda:<id>:<pos>` nunca mais e gerada depois do
+ * conserto (a forma KIT usa `venda:<id>:<pos>:<sku>`). Linha irreversivel num
+ * ledger append-only.
+ */
+function linkResolvido(row: SkuLinkWithKindRow): ResolvedLink {
+  if (row.skus === null) {
+    throw new Error(
+      `vinculo ${row.id} veio sem o SKU embutido — a FK garante que ele existe, entao o embed falhou, e cair em PRODUTO deduziria contra a linha do kit`,
+    );
+  }
+
+  return {
+    id: row.id,
+    sku_id: row.sku_id,
+    kind: row.skus.kind === "KIT" ? "KIT" : "PRODUTO",
+    components: row.skus.sku_components.map((component) => ({
+      componentSkuId: component.component_sku_id,
+      quantity: component.quantity,
+    })),
+  };
 }
 
 function chaveDoItem(itemId: string, variationId: string | null): string {
@@ -158,12 +191,10 @@ export async function prefetchOrders(
   orders: readonly ParsedOrder[],
 ): Promise<OrderPrefetch> {
   const previousStatusById = new Map<string, string>();
-  const linkByItemKey = new Map<string, { id: string; sku_id: string }>();
-  const skuKindById = new Map<string, string>();
-  const componentsByKitId = new Map<string, { componentSkuId: string; quantity: number }[]>();
+  const linkByItemKey = new Map<string, ResolvedLink>();
 
   if (orders.length === 0) {
-    return { previousStatusById, linkByItemKey, skuKindById, componentsByKitId };
+    return { previousStatusById, linkByItemKey };
   }
 
   const orderIds = orders.map((order) => order.id);
@@ -177,7 +208,7 @@ export async function prefetchOrders(
       emLotes(itemIds, ITENS_POR_CONSULTA).map((lote) =>
         db
           .from("sku_listing_links")
-          .select("id, sku_id, item_id, variation_id")
+          .select(SKU_LINK_WITH_KIND_SELECT)
           .eq("ml_account_id", context.mlAccountId)
           .eq("ref_kind", "ITEM")
           .in("item_id", lote),
@@ -192,7 +223,7 @@ export async function prefetchOrders(
   for (const linkResult of linkResults) {
     // Mesma razao de `resolveSku`: tratar falha como "sem vinculo" gravaria
     // `sku_id` null numa venda real e pularia a deducao inteira.
-    for (const row of linhasDe(linkResult, "sku_listing_links")) {
+    for (const row of linhasDe(linkResult, "sku_listing_links") as unknown as SkuLinkWithKindRow[]) {
       // A constraint `sku_listing_links_ref_shape` garante `item_id not null`
       // quando `ref_kind = 'ITEM'`, que e o filtro desta consulta — o tipo
       // gerado e que nao sabe disso (a coluna e nullable para o outro
@@ -203,60 +234,14 @@ export async function prefetchOrders(
         continue;
       }
 
-      linkByItemKey.set(chaveDoItem(row.item_id, row.variation_id), { id: row.id, sku_id: row.sku_id });
+      linkByItemKey.set(chaveDoItem(row.item_id, row.variation_id), linkResolvido(row));
     }
   }
 
-  const skuIds = [...new Set([...linkByItemKey.values()].map((link) => link.sku_id))];
-
-  if (skuIds.length > 0) {
-    const skusResult = await db.from("skus").select("id, kind").in("id", skuIds);
-
-    for (const row of linhasDe(skusResult, "skus.kind")) {
-      skuKindById.set(row.id, row.kind);
-    }
-
-    const kitIds = skuIds.filter((skuId) => skuKindById.get(skuId) === "KIT");
-
-    if (kitIds.length > 0) {
-      const componentsResult = await db
-        .from("sku_components")
-        .select("kit_sku_id, component_sku_id, quantity")
-        .in("kit_sku_id", kitIds);
-
-      for (const row of linhasDe(componentsResult, "sku_components")) {
-        const atuais = componentsByKitId.get(row.kit_sku_id) ?? [];
-
-        atuais.push({ componentSkuId: row.component_sku_id, quantity: row.quantity });
-        componentsByKitId.set(row.kit_sku_id, atuais);
-      }
-    }
-  }
-
-  return { previousStatusById, linkByItemKey, skuKindById, componentsByKitId };
-}
-
-/**
- * `kind` do SKU vindo do prefetch.
- *
- * Ausente LANCA, e essa e a diferenca em relacao a `loadSkuKindAndComponents`
- * — que cai em PRODUTO quando nao acha, com razao documentada. Aqui a razao
- * nao vale: `sku_listing_links.sku_id` e NOT NULL com FK `on delete restrict`
- * para `skus`, entao a linha do SKU **sempre existe**. Ausente do lote so
- * pode significar que o lote falhou ou foi cortado — e cair em PRODUTO
- * gravaria um `VENDA_ML` contra a linha de um KIT: passa na FK, nao deduz os
- * componentes, e a chave de idempotencia `venda:<id>:<pos>` nunca mais e
- * gerada depois do conserto (a forma KIT usa `venda:<id>:<pos>:<sku>`).
- * Linha irreversivel num ledger append-only.
- */
-function kindDoSku(prefetch: OrderPrefetch, skuId: string): "PRODUTO" | "KIT" {
-  const kind = prefetch.skuKindById.get(skuId);
-
-  if (kind === undefined) {
-    throw new Error(`sku ${skuId} ausente do lote de kinds — lote falhou ou foi cortado, e cair em PRODUTO deduziria contra a linha do kit`);
-  }
-
-  return kind === "KIT" ? "KIT" : "PRODUTO";
+  // D-188: `kind` e componentes vem embutidos na propria leitura do vinculo.
+  // Antes eram duas consultas a mais, encadeadas (skus dependia dos vinculos,
+  // sku_components dependia dos kinds).
+  return { previousStatusById, linkByItemKey };
 }
 
 export async function persistOrder(
@@ -308,7 +293,7 @@ export async function persistOrder(
   );
 
   let previousStatus: string | null;
-  let resolvedLinks: ({ id: string; sku_id: string } | null)[];
+  let resolvedLinks: (ResolvedLink | null)[];
 
   if (prefetch !== undefined) {
     // Chave STRING para um `id` que e `bigint` no banco: ver o comentario de
@@ -429,8 +414,9 @@ export async function persistOrder(
     return;
   }
 
-  const deductionItems: SaleDeductionItem[] = await Promise.all(
-    items.map(async (item) => {
+  // Sem `await` aqui: desde D-188 nao ha leitura dentro deste laco. `kind` e
+  // componentes chegam junto com o vinculo, nos dois caminhos.
+  const deductionItems: SaleDeductionItem[] = items.map((item) => {
       // Item sem vinculo continua com `skuKind: null`: a forma
       // `skuKind: "PRODUTO"` com `skuId: null` e um estado que o contrato de
       // `SaleDeductionItem` declara impossivel.
@@ -438,23 +424,25 @@ export async function persistOrder(
         return { position: item.position, quantity: item.quantity, skuId: null, skuKind: null, components: [] };
       }
 
-      if (prefetch !== undefined) {
-        const kind = kindDoSku(prefetch, item.sku_id);
+      // D-188: `kind` e componentes chegam junto com o vinculo, nos DOIS
+      // caminhos — o lote da janela e o embed do webhook. Nao ha mais leitura
+      // aqui dentro.
+      const resolved = resolvedLinks[item.position];
 
-        return {
-          position: item.position,
-          quantity: item.quantity,
-          skuId: item.sku_id,
-          skuKind: kind,
-          components: kind === "KIT" ? (prefetch.componentsByKitId.get(item.sku_id) ?? []) : [],
-        };
+      if (resolved === null || resolved === undefined) {
+        throw new Error(
+          `item ${String(item.position)} da order ${String(order.id)} tem sku_id sem vinculo resolvido — estado impossivel`,
+        );
       }
 
-      const { kind, components } = await loadSkuKindAndComponents(db, item.sku_id);
-
-      return { position: item.position, quantity: item.quantity, skuId: item.sku_id, skuKind: kind, components };
-    }),
-  );
+    return {
+      position: item.position,
+      quantity: item.quantity,
+      skuId: item.sku_id,
+      skuKind: resolved.kind,
+      components: resolved.components,
+    };
+  });
 
   const deductions = computeSaleDeductions({
     id: order.id,
@@ -517,10 +505,10 @@ async function resolveSku(
   mlAccountId: string,
   itemId: string,
   variationId: string | null,
-): Promise<{ id: string; sku_id: string } | null> {
+): Promise<ResolvedLink | null> {
   const query = db
     .from("sku_listing_links")
-    .select("id, sku_id")
+    .select(SKU_LINK_WITH_KIND_SELECT)
     .eq("ml_account_id", mlAccountId)
     .eq("ref_kind", "ITEM")
     .eq("item_id", itemId);
@@ -537,48 +525,11 @@ async function resolveSku(
     );
   }
 
-  return result.data;
+  // D-188: uma ida em vez de tres. O caminho do webhook processa UM pedido e
+  // nao tem o que agrupar, entao era ele que ainda pagava `sku_listing_links`
+  // + `skus` + `sku_components` em sequencia.
+  const row = result.data as unknown as SkuLinkWithKindRow | null;
+
+  return row === null ? null : linkResolvido(row);
 }
 
-/**
- * `kind` decide se a dedução vai para o próprio SKU (PRODUTO) ou para os
- * componentes (KIT, `docs/DATABASE.md` secao 4 — kit não tem saldo
- * próprio). SKU não encontrado (não deveria acontecer: `sku_listing_links`
- * referencia `skus` com FK) cai em PRODUTO sem componentes — a inserção
- * seguinte falha por violação de FK em vez de deduzir contra um SKU
- * inexistente, e `recordStockMovements` loga o que não é conflito de
- * idempotência.
- */
-async function loadSkuKindAndComponents(
-  db: AdminClient,
-  skuId: string,
-): Promise<{ kind: "PRODUTO" | "KIT"; components: { componentSkuId: string; quantity: number }[] }> {
-  const sku = await db.from("skus").select("kind").eq("id", skuId).maybeSingle();
-
-  if (sku.error !== null) {
-    // Não tratar como PRODUTO sem componentes: um KIT real cairia sem
-    // decompor, deduzindo contra a própria linha do kit (sem saldo) em vez
-    // dos componentes — estoque dos componentes nunca seria reduzido.
-    throw new Error(`falha ao ler kind do sku ${skuId}: ${sku.error.message}`);
-  }
-
-  if (sku.data?.kind !== "KIT") {
-    return { kind: "PRODUTO", components: [] };
-  }
-
-  const componentsResult = await db
-    .from("sku_components")
-    .select("component_sku_id, quantity")
-    .eq("kit_sku_id", skuId);
-
-  if (componentsResult.error !== null) {
-    throw new Error(`falha ao ler componentes do kit ${skuId}: ${componentsResult.error.message}`);
-  }
-
-  const components = componentsResult.data.map((row) => ({
-    componentSkuId: row.component_sku_id,
-    quantity: row.quantity,
-  }));
-
-  return { kind: "KIT", components };
-}

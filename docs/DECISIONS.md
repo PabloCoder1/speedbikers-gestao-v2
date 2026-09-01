@@ -3753,6 +3753,34 @@ A opcao `movementInsertFails` **ja existia** no fake daquele teste e **nenhum te
 
 **Impacto:** `apps/worker/src/handlers/{stock-movements.ts,assert-written.ts,persist-order.ts,claim-return.ts,nfe-import-apply.ts,reconcile-balances.ts}` e os dois arquivos de teste.
 
+## D-188 - O embed que so um teste de integracao consegue provar
+
+**Contexto:** o item pedia fundir vinculo + `kind` + componentes num embed so, "uma ida a menos por pedido", com a ressalva de que precisava de portao na pista de integracao.
+
+**A conta mudou desde que o item foi escrito, e vale refaze-la.** D-186 agrupou as leituras por pagina; no caminho da JANELA o embed passou a valer ~1% (1-2 idas a menos numa execucao de ~436). O ganho vivo esta no **webhook**, que chama `persistOrder` sem prefetch porque processa UM pedido e nao tem o que agrupar: la eram tres leituras encadeadas (`sku_listing_links` → `skus` → `sku_components`) e passam a ser uma. Sobre 21.997 execucoes com trabalho, a 723,5 ms de media.
+
+**Decisao 1 — a projecao vira constante versionada, em `packages/db`.** `SKU_LINK_WITH_KIND_SELECT`. O worker importa; o teste de integracao importa a MESMA constante. Copiar a string no teste faria o teste provar uma string que o codigo nao usa — que e o defeito que o portao existe para impedir.
+
+**Decisao 2 — o portao, e ele se pagou na primeira execucao.** A forma natural de escrever o embed, `skus(kind, sku_components(...))`, e **recusada** com `PGRST201`: `sku_components` tem DUAS chaves estrangeiras para `skus` (`kit_sku_id` e `component_sku_id`) e o PostgREST nao escolhe sozinho. A forma correta nomeia a chave: `sku_components!sku_components_kit_sku_id_fkey(...)`.
+
+**Nenhum teste de unidade veria isso.** Os fakes ignoram a string de projecao inteira (`select: () => self`) — de proposito, porque modela-la seria reimplementar o PostgREST. A forma errada passaria VERDE em 510 testes e quebraria em producao. Conferido nos dois sentidos: com o nome da FK removido da constante, o teste de integracao falha com `PGRST201`; a suite de unidade continua verde.
+
+**A forma da resposta tambem foi verificada, nao suposta:** `skus` vem OBJETO (relacao muitos-para-um) e `sku_components` vem ARRAY dentro dele, vazio — nao ausente — num SKU `PRODUTO`. Se `skus` viesse array, `resolved.skus.kind` seria `undefined` e **todo KIT viraria PRODUTO**, deduzindo contra a linha do kit em vez dos componentes.
+
+**Decisao 3 — usar nos DOIS caminhos, o que simplifica em vez de complicar.** O prefetch de D-186 fazia quatro leituras encadeadas (`orders.status`, vinculos, `skus`, `sku_components`); passa a fazer duas. Sumiram dois blocos inteiros, a funcao `kindDoSku` e a funcao `loadSkuKindAndComponents`. Os dois caminhos passam a produzir a mesma forma (`ResolvedLink`), e o bloco de deducao deixou de ter leitura dentro — virou um `map` sincrono.
+
+**`skus` nulo LANCA.** Mesma razao de sempre: `sku_listing_links.sku_id` e NOT NULL com FK `on delete restrict`, entao a linha do SKU sempre existe. Nulo aqui so pode ser o embed nao tendo resolvido, e cair em PRODUTO gravaria `VENDA_ML` contra a linha de um KIT.
+
+**Um tripwire, e o numero que o justifica.** O teste que exercitava "falha ao ler os componentes" perdeu o sentido — os componentes vem no mesmo embed. No lugar dele ficou o que sobra e importa: **um KIT sem componentes cadastrados nao produz movimento nenhum**, a venda nao deduz nada, em silencio. Nao e regressao (era assim antes) e **nao esta vivo**: medido no Dev, **138 KITs e ZERO sem componentes**. O teste e tripwire, nao aprovacao — se aparecer, a decisao se retoma com o numero na mao.
+
+**Testes reescritos, nao apagados,** e cada um com a intencao original preservada: "falha ao ler o kind rejeita" virou "vinculo sem o SKU embutido rejeita" (mesma garantia, outro modo de falha); os fakes passaram a MONTAR a forma do embed a partir das mesmas opcoes (`skuKindById`, `componentsByKitId`), entao os testes que as usavam nao mudaram; os ramos de fake para `skus` e `sku_components` foram removidos, porque ramo inalcancavel engana quem le.
+
+**Sobre o ganho, pela quinta fatia seguida:** o worker **nao esta no ar**, entao nao foi medido ponta a ponta. O estrutural esta fixado em teste — o prefetch consulta `["orders", "sku_listing_links"]`, nao mais quatro tabelas.
+
+**Verificacao:** o portao falha com a projecao errada (conferido); 510/510 no worker, **509/509 de integracao** em banco recriado (o portao entrou na pista do CI, +2), `check` 29/29, build 8/8, 13/13 Playwright. Sem migration.
+
+**Impacto:** `packages/db/src/{projections.ts (novo),projections.integration.test.ts (novo),index.ts}`, `apps/worker/src/handlers/{persist-order.ts,persist-order.test.ts}`.
+
 ## Como adicionar nova decisao
 
 Registrar:

@@ -4,6 +4,9 @@ export type { AdminClient, AdminClientConfig } from "./admin-client.js";
 export { recordAiRun } from "./ai-runs.js";
 export type { AiRunInsert } from "./ai-runs.js";
 
+export { SKU_LINK_WITH_KIND_SELECT } from "./projections.js";
+export type { SkuLinkWithKindRow } from "./projections.js";
+
 export { recordJobRun } from "./job-runs.js";
 export type { JobRunInsert, RecordResult } from "./job-runs.js";
 
