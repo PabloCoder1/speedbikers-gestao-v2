@@ -40,6 +40,10 @@ const ORGANIZATION_ID = randomUUID();
 // as execuções anteriores (o ledger é append-only e não é limpo — mesma
 // convenção já registrada em `rls.integration.test.ts`).
 const SKU_ID = randomUUID();
+const ACCOUNT_ID = randomUUID();
+// `orders.id` e bigint e vem do Mercado Livre — um valor alto e proximo do
+// real, longe de qualquer sequencia.
+const ORDER_ID = 2_000_000_000_000_000 + Math.floor(Number(process.hrtime.bigint() % 1_000_000n));
 const IDEMPOTENCY_KEY = `d092-teste:${randomUUID()}`;
 const DEDUP_KEY = `d092-teste:${randomUUID()}`;
 
@@ -69,12 +73,42 @@ beforeAll(async () => {
   if (sku.error !== null) {
     throw sku.error;
   }
+
+  // Fixture do teste de D-189, abaixo.
+  const account = await db.from("ml_accounts").insert({
+    id: ACCOUNT_ID,
+    organization_id: ORGANIZATION_ID,
+    label: "D-189",
+    slug: `d189-${ACCOUNT_ID.slice(0, 8)}`,
+  });
+
+  if (account.error !== null) {
+    throw account.error;
+  }
+
+  const order = await db.from("orders").insert({
+    id: ORDER_ID,
+    organization_id: ORGANIZATION_ID,
+    ml_account_id: ACCOUNT_ID,
+    status: "paid",
+    date_created: new Date().toISOString(),
+    date_last_updated: new Date().toISOString(),
+    total_amount: 100,
+    currency_id: "BRL",
+  });
+
+  if (order.error !== null) {
+    throw order.error;
+  }
 });
 
 afterAll(async () => {
   // `stock_movements` e `domain_events` são append-only e recusam DELETE até
   // do `service_role`; apagar a organização também não os leva junto (a FK do
   // SKU é `on delete restrict`). As linhas ficam, como ficariam em produção.
+  await db.from("order_items").delete().eq("order_id", ORDER_ID);
+  await db.from("orders").delete().eq("id", ORDER_ID);
+  await db.from("ml_accounts").delete().eq("id", ACCOUNT_ID);
   await db.from("organizations").delete().eq("id", ORGANIZATION_ID);
 });
 
@@ -189,5 +223,67 @@ describe("gravação idempotente por ON CONFLICT DO NOTHING (D-092)", () => {
     expect(rows.data).toHaveLength(1);
     expect(Number(rows.data?.[0]?.qty_delta)).toBe(-3);
     expect(rows.data?.[0]?.movement_type).toBe("VENDA_ML");
+  });
+});
+
+
+/**
+ * D-189 — a substituicao de itens deixou de ser `delete` + `insert` e passou a
+ * ser `upsert` + exclusao da cauda, para que nao exista instante em que o
+ * pedido esteja sem itens.
+ *
+ * `onConflict: "order_id,position"` e uma STRING interpretada pelo servidor,
+ * exatamente a classe que o fake das suites de unidade ignora (a licao de
+ * D-188). Se o alvo do conflito estivesse errado, o sintoma seria a segunda
+ * gravacao DUPLICAR o item em vez de substitui-lo — e nenhum teste de unidade
+ * veria.
+ */
+describe("substituicao de itens por upsert em (order_id, position) (D-189)", () => {
+  const item = (title: string) => ({
+    order_id: ORDER_ID,
+    organization_id: ORGANIZATION_ID,
+    ml_account_id: ACCOUNT_ID,
+    position: 0,
+    item_id: "MLB999999999",
+    variation_id: null,
+    title,
+    quantity: 1,
+    unit_price: 100,
+    currency_id: "BRL",
+  });
+
+  it("gravar duas vezes a mesma posicao SUBSTITUI, nao duplica", async () => {
+    const primeira = await db.from("order_items").upsert([item("primeira versao")], {
+      onConflict: "order_id,position",
+    });
+
+    expect(primeira.error).toBeNull();
+
+    const segunda = await db.from("order_items").upsert([item("segunda versao")], {
+      onConflict: "order_id,position",
+    });
+
+    expect(segunda.error).toBeNull();
+
+    const linhas = await db.from("order_items").select("position, title").eq("order_id", ORDER_ID);
+
+    expect(linhas.error).toBeNull();
+    expect(linhas.data).toEqual([{ position: 0, title: "segunda versao" }]);
+  });
+
+  it("a exclusao da cauda nao toca nas posicoes que o pedido atual ocupa", async () => {
+    // Um pedido que ja teve 3 itens e agora tem 1: as posicoes 1 e 2 sao a
+    // cauda, e a 0 tem de sobreviver.
+    await db.from("order_items").upsert([{ ...item("mantem"), position: 0 }, { ...item("cauda 1"), position: 1 }, { ...item("cauda 2"), position: 2 }], {
+      onConflict: "order_id,position",
+    });
+
+    const exclusao = await db.from("order_items").delete().eq("order_id", ORDER_ID).gte("position", 1);
+
+    expect(exclusao.error).toBeNull();
+
+    const linhas = await db.from("order_items").select("position, title").eq("order_id", ORDER_ID);
+
+    expect(linhas.data).toEqual([{ position: 0, title: "mantem" }]);
   });
 });

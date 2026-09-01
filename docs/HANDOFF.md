@@ -14,8 +14,8 @@
 |---|---|
 | **Atualizado em** | 2026-09-01 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `2b15242` (D-187) — esta fatia, D-188, é o commit seguinte |
-| **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **27 commits atrás** |
+| **HEAD conhecido** | `6cfe64d` (D-188) — esta fatia, D-189, é o commit seguinte |
+| **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **28 commits atrás** |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | 119 locais == 119 no Dev, última `20260901160650` — sem drift |
 | **Frente atual** | Trilha 8B — P0 fechado (A–H); em P1 |
@@ -68,8 +68,10 @@ Números completos e método: `docs/PERFORMANCE.md`.
   `2000017394032682`): `paid`, com o movimento de estoque gravado e nenhum
   item. A dedução está certa; falta a linha que `claim-return` precisa para
   reverter devolução — sem ela ele registra `claim_return_order_item_not_found`
-  e pula. D-184 fechou a porta por onde isso entrava; **reprocessar os dois é
-  ato pendente**.
+  e pula. **Os dois caminhos que produzem esse estado estão fechados** (D-184
+  tirou a leitura da janela, D-189 tirou a janela e parou de apagar itens a
+  partir de resposta vazia); qual dos dois aconteceu não dá para saber.
+  **Reprocessar os dois continua sendo ato pendente.**
 - **A primeira medição pode ser cache frio.** `get_sku_timeline` mediu
   3.308 ms na primeira passada e **57 ms** na segunda — quase virou uma
   otimização inútil. Sempre duas passadas seguidas; se divergirem muito, a
@@ -109,11 +111,11 @@ Nada disto pode ser feito por um agente.
    no ar é de 25 commits atrás. O ganho estrutural está fixado em teste; o
    número real precisa do deploy, e a consulta para conferir está em
    `docs/PERFORMANCE.md`.
-2. **P1 — lote de ESCRITA por página.** D-187 resolveu um dos três
-   pré-requisitos (o raio de alcance em `nfe-import-apply`). Sobram dois, e
-   os dois são estruturais: a janela `delete`+`insert` multiplicada por 50, e
-   o trigger `AFTER INSERT FOR EACH ROW` segurando 36 travas de saldo em
-   ordem arbitrária. É o último item grande do caminho de pedidos.
+2. **P1 — lote de ESCRITA por página.** Os três pré-requisitos saíram do
+   caminho: D-187 resolveu o de `nfe-import-apply`, D-189 fechou a janela
+   `delete`+`insert`, e o do trigger tem solução conhecida e barata (ordenar
+   o lote por `sku_id`, para que todo lote concorrente adquira as travas na
+   mesma ordem). Virou trabalho de implementação, não de investigação.
 3. **P1 — varrer as outras projeções com embed.** D-188 criou o lugar
    (`packages/db/src/projections.ts`) e o padrão: constante versionada mais
    teste na pista de integração que importa a constante. O portão pegou um

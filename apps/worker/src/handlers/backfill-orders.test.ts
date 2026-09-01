@@ -126,7 +126,18 @@ function fakeDb(options: FakeDbOptions = {}): {
       },
       // persistOrder: upsert de `orders`, delete + insert de `order_items`.
       upsert: () => Promise.resolve({ data: null, error: null }),
-      delete: () => ({ eq: () => Promise.resolve({ data: null, error: null }) }),
+      // D-189: a exclusão da cauda encadeia `.eq().gte()`, e a cadeia precisa
+      // ser thenable em qualquer ponto — outros caminhos ainda usam só `.eq()`.
+      delete: () => {
+        const cadeia = () => ({
+          eq: () => cadeia(),
+          gte: () => cadeia(),
+          then: <T>(onFulfilled: (value: { data: null; error: null }) => T) =>
+            Promise.resolve({ data: null, error: null }).then(onFulfilled),
+        });
+
+        return cadeia();
+      },
     }),
   } as unknown as BackfillOrdersDeps["db"];
 

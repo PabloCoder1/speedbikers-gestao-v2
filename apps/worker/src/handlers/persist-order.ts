@@ -361,15 +361,13 @@ export async function persistOrder(
     await recordDomainEvents(db, context, events, logger);
   }
 
-  // Delete + insert e a forma de substituir os itens: se o delete falha e o
-  // insert segue, o pedido fica com itens duplicados de duas versoes.
-  assertWritten(await db.from("order_items").delete().eq("order_id", order.id), "order_items.delete");
-
   if (order.order_items.length === 0) {
+    // Pedido sem item nenhum: nao ha o que gravar, e apagar o que existe
+    // seria destruir dado a partir de uma resposta vazia do Mercado Livre.
     return;
   }
 
-  // Sem `await` aqui: os vínculos foram resolvidos no topo, antes do delete.
+  // Sem `await` aqui: os vínculos foram resolvidos no topo.
   const items = order.order_items.map((item, position) => {
     const variationId = variationIds[position] ?? null;
     const resolved = resolvedLinks[position] ?? null;
@@ -392,7 +390,42 @@ export async function persistOrder(
     };
   });
 
-  assertWritten(await db.from("order_items").insert(items), "order_items.insert");
+  // D-189 — GRAVA e depois apaga a sobra, em vez de apagar e depois gravar.
+  //
+  // A forma antiga era `delete` + `insert`, e entre as duas o pedido ficava
+  // sem item nenhum. PostgREST nao tem transacao entre chamadas, entao a
+  // janela era real: **ha 2 pedidos no Dev assim** — `paid`, com o movimento
+  // de estoque gravado e nenhuma linha em `order_items`. D-184 tirou a
+  // leitura de dentro dessa janela; esta fatia tira a janela.
+  //
+  // Comparacao honesta dos modos de falha, que e o que decide:
+  //
+  //   antiga  delete OK, insert falha  -> pedido com ZERO itens (observado)
+  //   nova    upsert OK, delete falha  -> pedido com os itens CERTOS, no
+  //                                       pior caso com sobra de uma versao
+  //                                       anterior mais longa
+  //
+  // A sobra so existiria se um pedido ENCOLHESSE de itens, o que nunca
+  // acontece: todo pedido tem exatamente 1 item (D-184 — no Mercado Livre,
+  // compra de varios produtos vira um pack de varios pedidos).
+  //
+  // `onConflict` em `(order_id, position)`: a UNIQUE ja existia
+  // (`order_items_order_id_position_key`). Nenhuma FK aponta para
+  // `order_items.id` — conferido no catalogo —, entao preservar o id em vez
+  // de trocar a cada gravacao nao quebra nada, e de brinde o id passa a ser
+  // estavel.
+  assertWritten(
+    await db.from("order_items").upsert(items, { onConflict: "order_id,position" }),
+    `order_items.upsert (order ${String(order.id)})`,
+  );
+
+  // A cauda: posicoes que existiam numa versao anterior mais longa e nao
+  // existem mais. Roda DEPOIS da gravacao, entao nao ha instante em que o
+  // pedido esteja sem os itens atuais.
+  assertWritten(
+    await db.from("order_items").delete().eq("order_id", order.id).gte("position", items.length),
+    `order_items.delete da cauda (order ${String(order.id)})`,
+  );
 
   if (isCancelledOrderStatus(order.status)) {
     const saleMovements = await loadSaleMovements(db, context.organizationId, order.id);

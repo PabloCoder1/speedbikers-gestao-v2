@@ -148,6 +148,21 @@ function fakeDb(options: FakeDbOptions = {}): {
           return writeAppendOnly(table, row);
         }
 
+        // D-189: `order_items` passou a gravar por upsert (grava e depois
+        // apaga a cauda, em vez de apagar e depois gravar). Segue contando
+        // em `inserted` pelo mesmo motivo já registrado para `domain_events`
+        // e `stock_movements`: o que os testes verificam é O QUE foi
+        // gravado, não o verbo.
+        if (table === "order_items") {
+          inserted.push({ table, rows: Array.isArray(row) ? row : [row] });
+
+          return Promise.resolve(
+            options.itemsInsertError === true
+              ? { data: null, error: { code: "42P01", message: "boom" } }
+              : { data: null, error: null },
+          );
+        }
+
         upserted.push({ table, row });
 
         if (table === "orders" && options.orderWriteError === true) {
@@ -156,17 +171,33 @@ function fakeDb(options: FakeDbOptions = {}): {
 
         return Promise.resolve({ data: null, error: null });
       },
-      delete: () => ({
-        eq: (col: string, val: unknown) => {
-          deleted.push({ table, filters: { [col]: val } });
+      delete: () => {
+        // D-189: a exclusão da cauda é `.eq("order_id").gte("position", n)`.
+        // A cadeia precisa ser thenable em qualquer ponto: `claim-return` e
+        // outros ainda usam só `.eq()`.
+        const resultado = () =>
+          Promise.resolve(
+            table === "order_items" && options.itemsDeleteError === true
+              ? { data: null, error: { code: "42P01", message: "boom" } }
+              : { data: null, error: null },
+          );
 
-          if (table === "order_items" && options.itemsDeleteError === true) {
-            return Promise.resolve({ data: null, error: { code: "42P01", message: "boom" } });
-          }
+        const cadeia = (filters: Record<string, unknown>) => {
+          const self = {
+            eq: (col: string, val: unknown) => cadeia({ ...filters, [col]: val }),
+            gte: (col: string, val: unknown) => cadeia({ ...filters, [`${col}>=`]: val }),
+            then: <T>(onFulfilled: (value: { data: null; error: unknown }) => T) => {
+              deleted.push({ table, filters });
 
-          return Promise.resolve({ data: null, error: null });
-        },
-      }),
+              return resultado().then(onFulfilled);
+            },
+          };
+
+          return self;
+        };
+
+        return cadeia({});
+      },
       insert: (row: unknown) => {
         if (table === "order_items" && options.itemsInsertError === true) {
           inserted.push({ table, rows: Array.isArray(row) ? row : [row] });
@@ -317,22 +348,41 @@ describe("persistOrder", () => {
     expect(orderUpsert?.row).toMatchObject({ pack_id: null, buyer_id: null, tags: [] });
   });
 
-  it("apaga os order_items existentes antes de inserir os novos — reprocessar substitui tudo", async () => {
+  // Reescrito em D-189. A intenção — reprocessar substitui os itens, sem
+  // sobra de uma versão anterior — é a mesma. A ORDEM é que se inverteu:
+  // grava primeiro, apaga a cauda depois, para que não exista instante em
+  // que o pedido esteja sem itens.
+  it("reprocessar substitui os itens: grava e SÓ ENTÃO apaga a cauda (D-189)", async () => {
     const { db, deleted, inserted } = fakeDb();
 
     await run(db, BASE_ORDER);
 
-    expect(deleted).toEqual([{ table: "order_items", filters: { order_id: BASE_ORDER.id } }]);
     expect(inserted.find((entry) => entry.table === "order_items")).toBeDefined();
+
+    // A cauda é tudo a partir da posição que o pedido atual não ocupa.
+    expect(deleted).toEqual([
+      { table: "order_items", filters: { order_id: BASE_ORDER.id, "position>=": 1 } },
+    ]);
   });
 
-  it("não insere nada em order_items quando o pedido não tem itens", async () => {
+  // Contrato NOVO em D-189, e a mudança é deliberada.
+  //
+  // Antes: um pedido com `order_items: []` fazia o handler APAGAR os itens
+  // existentes e sair. Isso destrói dado a partir de uma resposta vazia do
+  // Mercado Livre — e uma order não perde itens: eles são fixados na compra.
+  // Uma resposta sem itens é anomalia da API, não fato do negócio.
+  //
+  // Isso importa porque é um dos dois caminhos que produzem o estado dos 2
+  // pedidos quebrados no Dev (`paid`, com movimento de estoque e ZERO itens).
+  // O outro era a janela entre `delete` e `insert`. Esta fatia fecha os dois;
+  // qual dos dois aconteceu não dá para saber com o que está gravado.
+  it("pedido sem itens NÃO apaga os que já existem — resposta vazia não é fato (D-189)", async () => {
     const { db, deleted, inserted } = fakeDb();
     const order: ParsedOrder = { ...BASE_ORDER, order_items: [] };
 
     await run(db, order);
 
-    expect(deleted).toHaveLength(1);
+    expect(deleted).toEqual([]);
     expect(inserted.find((entry) => entry.table === "order_items")).toBeUndefined();
   });
 
@@ -862,24 +912,28 @@ describe("persistOrder — escritas críticas (D-178)", () => {
     expect(inserted.map((i) => i.table)).not.toContain("stock_movements");
   });
 
-  it("falha ao apagar os itens antigos aborta antes de inserir os novos", async () => {
+  // Reescrito em D-189: a exclusão passou a ser a da CAUDA e roda por último.
+  // A intenção continua sendo "falhou, para" — o que mudou é o que já estava
+  // gravado quando ela falha, e agora é o estado CERTO.
+  it("falha ao apagar a cauda aborta antes de deduzir estoque (D-189)", async () => {
     const { db, inserted } = fakeDb({ itemsDeleteError: true });
 
     await expect(
       persistOrder(db, CONTEXT, BASE_ORDER, createLogger({}, { sink: () => undefined })),
-    ).rejects.toThrow(/order_items\.delete/);
+    ).rejects.toThrow(/order_items\.delete da cauda/);
 
-    // O insert nao pode acontecer: delete que falhou + insert que passa
-    // deixaria o pedido com itens de duas versoes.
-    expect(inserted.map((i) => i.table)).not.toContain("order_items");
+    // Os itens JÁ foram gravados — e é isso que torna esta falha inofensiva
+    // perto da antiga: o pedido fica com os itens certos, não com zero.
+    expect(inserted.map((i) => i.table)).toContain("order_items");
+    expect(inserted.map((i) => i.table)).not.toContain("stock_movements");
   });
 
-  it("falha ao inserir os itens aborta antes de deduzir estoque", async () => {
+  it("falha ao gravar os itens aborta antes de deduzir estoque", async () => {
     const { db, inserted } = fakeDb({ itemsInsertError: true });
 
     await expect(
       persistOrder(db, CONTEXT, BASE_ORDER, createLogger({}, { sink: () => undefined })),
-    ).rejects.toThrow(/order_items\.insert/);
+    ).rejects.toThrow(/order_items\.upsert/);
 
     expect(inserted.map((i) => i.table)).not.toContain("stock_movements");
   });

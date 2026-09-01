@@ -3781,6 +3781,41 @@ A opcao `movementInsertFails` **ja existia** no fake daquele teste e **nenhum te
 
 **Impacto:** `packages/db/src/{projections.ts (novo),projections.integration.test.ts (novo),index.ts}`, `apps/worker/src/handlers/{persist-order.ts,persist-order.test.ts}`.
 
+## D-189 - Grava e so entao apaga: o pre-requisito que deixou o caminho mais seguro do que era
+
+**Contexto:** o lote de escrita por pagina tinha tres pre-requisitos. D-187 resolveu um. Esta fatia ataca o segundo — "a janela `delete`+`insert` multiplicada por 50" — e o achado e que resolve-lo **nao e contornar um obstaculo: e consertar um defeito que ja existe hoje, sem lote nenhum**.
+
+**A forma antiga.** `order_items` era substituido por `delete` de tudo, depois `insert` dos novos. O PostgREST nao tem transacao entre chamadas, entao entre as duas o pedido fica **sem item nenhum**. D-184 tirou a leitura de dentro dessa janela; esta fatia tira a janela.
+
+**A forma nova, e a comparacao que decide.** `upsert` em `(order_id, position)`, e so depois `delete` da cauda:
+
+| | falha no meio produz |
+|---|---|
+| antiga (`delete` → `insert`) | pedido com **ZERO itens** |
+| nova (`upsert` → `delete` da cauda) | pedido com os itens **CERTOS**, no pior caso com sobra de uma versao anterior mais longa |
+
+A sobra so existiria se um pedido ENCOLHESSE de itens, o que nunca acontece: todo pedido tem exatamente 1 item (D-184 — no Mercado Livre, compra de varios produtos vira um pack de varios pedidos).
+
+**Nao e hipotetico:** ha **2 pedidos no Dev** `paid`, com o movimento de estoque gravado e nenhuma linha em `order_items`.
+
+**Um segundo caminho para o mesmo estado, que so apareceu ao escrever isto.** A forma antiga tratava `order_items: []` como ordem de APAGAR: deletava os itens existentes e saia. Mas uma order **nao perde itens** — eles sao fixados na compra. Uma resposta vazia do Mercado Livre e anomalia da API, nao fato do negocio, e destruir dado a partir dela e o defeito. Agora o handler sai sem tocar em nada.
+
+Os dois caminhos produzem exatamente o estado dos 2 pedidos quebrados. **Qual dos dois aconteceu nao da para saber** com o que esta gravado — e esta fatia fecha os dois.
+
+**O que autorizou a troca, conferido no catalogo:** a UNIQUE `(order_id, position)` ja existia (`order_items_order_id_position_key`), e **nenhuma FK aponta para `order_items.id`**. Trocar `delete`+`insert` (que gera id novo) por `upsert` (que preserva) nao quebra nada, e de brinde o id passa a ser estavel.
+
+**O portao, de novo, e de novo se pagando.** `onConflict: "order_id,position"` e uma STRING interpretada pelo servidor — a mesma classe que D-188 encontrou. Se o alvo do conflito estivesse errado, a segunda gravacao DUPLICARIA o item em vez de substituir, e nenhum teste de unidade veria: o fake ignora a opcao. Ha teste na pista de integracao provando substituicao contra o Postgres real, e conferido que ele **falha** com o alvo trocado para `"id"` (aparece o 23505).
+
+**Esta fatia nao muda a performance.** Continuam quatro escritas por pedido — a exclusao mudou de lugar e de forma, nao de quantidade. O ganho e de robustez; o desbloqueio do lote e consequencia.
+
+**O terceiro pre-requisito, com veredito em vez de silencio.** O trigger `stock_movements_apply_to_balance` e `AFTER INSERT FOR EACH ROW` e faz `DO UPDATE` em `inventory_balances`: um insert de N linhas segura N travas de saldo em ordem arbitraria dentro de um statement, classe de deadlock que hoje nao existe porque cada movimento e um statement proprio. **Tem solucao conhecida e barata** — ordenar o lote por `sku_id`, para que todo lote concorrente adquira as travas na mesma ordem; um lote contra um insert de uma linha nao fecha ciclo. Fica registrado com a solucao junto, para que o proximo agente nao redescubra o problema sem ela.
+
+**Testes reescritos, nao apagados,** quatro deles, cada um com a intencao original preservada e a mudanca dita no comentario: "apaga antes de inserir" virou "grava e SO ENTAO apaga a cauda"; "falha ao apagar aborta antes de inserir" virou "falha ao apagar a cauda aborta antes de deduzir" — e este agora afirma que os itens **ja estao gravados**, que e o que torna a falha inofensiva perto da antiga. O de pedido sem itens mudou de contrato, e o comentario explica por que a mudanca e deliberada.
+
+**Verificacao:** o portao falha com o `onConflict` errado (conferido); 510/510 no worker, **511/511 de integracao** em banco recriado (+2), `check` 29/29, build 8/8, 13/13 Playwright. Sem migration — a UNIQUE necessaria ja existia.
+
+**Impacto:** `apps/worker/src/handlers/persist-order.ts` e quatro arquivos de teste do worker, `packages/db/src/idempotent-writes.integration.test.ts`.
+
 ## Como adicionar nova decisao
 
 Registrar:
