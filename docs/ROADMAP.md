@@ -508,7 +508,14 @@ Complementa a Fase 8; suas telas não substituem hardening, backup/restore nem v
 - **Riscos:** confundir saúde de integração com plataforma, expor metadados e declarar saúde só por haver configuração.
 - **Fora da primeira versão:** painel de secrets, provisionamento cloud e conectores sem necessidade.
 
-#### Administração → Saúde do Sistema — C/E
+#### Administração → Saúde do Sistema — C/E — 🟡 PRIMEIRA VERSÃO em 2026-09-01 (D-176); coletores de nuvem seguem FORA
+
+`/saude` (nav GESTÃO, restrita a ADMIN): commit da web × commit da API com veredito `CURRENT | OUTDATED | UNKNOWN`, migration aplicada (versão, nome, contagem, lida do schema privado) e última execução de cada job com idade e falhas em 24h.
+
+- **Nada deriva de documentação**, como o DoD exige: o commit vem do `/health` e das variáveis de build, a migration vem do banco, os jobs vêm de `job_runs`. `UNKNOWN` aparece como UNKNOWN, com o motivo — nunca como "tudo certo".
+- **Sem permissões novas de nuvem**, o risco que o item nomeia: em vez de perguntar ao Cloud Scheduler quais jobs existem, a tela observa o **efeito** (`job_runs` mostra o que rodou). Um scheduler que existe e nunca dispara é indistinguível de um ausente para quem depende do resultado.
+- **O commit implantado só existe depois do próximo deploy:** `APP_COMMIT` passou a ser injetado pelo `infra/deploy-cloud-run.sh` nos dois serviços, e a revisão que está no ar hoje é anterior a isso — até lá a tela mostra UNKNOWN dizendo exatamente essa razão.
+- **Falta:** comparar migrations esperadas (do repositório) com aplicadas, e o estado de filas/scheduler — ambos exigem coletor autenticado ou artefato de build, que não entraram nesta versão.
 
 - **Objetivo/problema:** detectar drift entre estado esperado e infraestrutura real, separado da Saúde da Sincronização.
 - **Reutiliza:** `/health`, metadados de build/deploy, scripts `infra/`, schedulers esperados, migrations e observabilidade.

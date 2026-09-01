@@ -5101,6 +5101,70 @@ describe("acesso e privilégio (D-175)", () => {
   });
 });
 
+// get_system_health (20260901121910, D-176) — a Saude do Sistema le o schema
+// PRIVADO de migrations, entao a autorizacao dela e a coisa mais importante
+// a testar.
+describe("get_system_health (D-176, Saúde do Sistema)", () => {
+  it("ADMIN recebe a migration aplicada e a contagem, lidas do schema privado", async () => {
+    const rows = await asUser<{
+      db_migration_version: string;
+      db_migration_name: string;
+      db_migrations_count: string;
+    }>(ADMIN_SB, "select * from public.get_system_health() limit 1");
+
+    expect(rows.length).toBeGreaterThan(0);
+    // A versao e o carimbo YYYYMMDDHHMMSS — 14 digitos, sempre.
+    expect(rows[0]?.db_migration_version).toMatch(/^\d{14}$/);
+    expect(Number(rows[0]?.db_migrations_count)).toBeGreaterThan(0);
+  });
+
+  /**
+   * O ponto da fatia: `security definer` sobre `supabase_migrations` seria um
+   * vazamento com passo extra se a autorizacao fosse herdada de quem chamou.
+   * Ela e REFEITA dentro da funcao — quem nao e ADMIN recebe zero linhas, nao
+   * um erro (a diferenca importa: erro vazaria a existencia do dado).
+   */
+  it("quem não é ADMIN recebe ZERO linhas, não erro e não dado", async () => {
+    const rows = await asUser(ANALISTA_SB, "select * from public.get_system_health()");
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("anon não executa get_system_health", async () => {
+    await expect(asAnon("select * from public.get_system_health()")).rejects.toThrow(
+      /permission denied/i,
+    );
+  });
+
+  it("não devolve o SQL das migrations — só versão e nome", async () => {
+    const colunas = await client.query<{ column_name: string }>(
+      `select column_name from information_schema.columns
+        where table_schema = 'public' and table_name = 'get_system_health'`,
+    );
+
+    const nomes = colunas.rows.map((c) => c.column_name);
+
+    // `statements` e `rollback` carregam o SQL inteiro da migration: nunca
+    // podem sair por aqui.
+    expect(nomes).not.toContain("statements");
+    expect(nomes).not.toContain("rollback");
+  });
+
+  it("jobs vêm com idade e falhas de 24h, e a idade nunca é negativa", async () => {
+    const rows = await asUser<{ job_type: string | null; job_age_hours: string | null; job_failures_24h: string }>(
+      ADMIN_SB,
+      "select * from public.get_system_health() where job_type is not null",
+    );
+
+    for (const row of rows) {
+      if (row.job_age_hours !== null) {
+        expect(Number(row.job_age_hours)).toBeGreaterThanOrEqual(0);
+      }
+      expect(Number(row.job_failures_24h)).toBeGreaterThanOrEqual(0);
+    }
+  });
+});
+
 describe("search_entities (Fase 5B, Busca universal)", () => {
   // Mesmo raciocínio de nomes fora dos padrões de limpeza global, e mesma
   // ausência de afterAll — ver comentário equivalente no describe de

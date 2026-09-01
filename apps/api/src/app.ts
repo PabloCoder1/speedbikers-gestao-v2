@@ -151,6 +151,12 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       status: "ok",
       service: "api",
       startedAt: startedAt.toISOString(),
+      // Commit DESTA imagem, injetado no deploy (infra/deploy-cloud-run.sh
+      // usa o mesmo `git rev-parse --short HEAD` que taggeia a imagem).
+      // `null` quando a variavel nao existe -- que e o caso de toda revisao
+      // anterior a D-176, e a Saude do Sistema mostra UNKNOWN em vez de
+      // fingir que sabe.
+      commit: process.env.APP_COMMIT ?? null,
     });
   });
 

@@ -35,7 +35,28 @@ describe("GET /health", () => {
       status: "ok",
       service: "api",
       startedAt: "2026-08-19T14:00:00.000Z",
+      // `null` sem APP_COMMIT no ambiente (D-176): a Saude do Sistema le
+      // isso como UNKNOWN e diz o motivo, em vez de fingir um commit.
+      commit: null,
     });
+  });
+
+  it("expõe o commit implantado quando APP_COMMIT existe (D-176)", async () => {
+    const anterior = process.env.APP_COMMIT;
+    process.env.APP_COMMIT = "abc1234";
+
+    try {
+      const { app } = buildApp();
+      const response = await app.request("/health");
+
+      expect(await response.json()).toMatchObject({ commit: "abc1234" });
+    } finally {
+      if (anterior === undefined) {
+        delete process.env.APP_COMMIT;
+      } else {
+        process.env.APP_COMMIT = anterior;
+      }
+    }
   });
 
   it("não exige autenticação — o Cloud Run precisa dele para o probe", async () => {

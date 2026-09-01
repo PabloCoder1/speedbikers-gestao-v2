@@ -3387,6 +3387,26 @@ group by 1 order by 1 desc;
 
 **Impacto:** as quatro migrations acima, `packages/db/src/{types.ts,rls.integration.test.ts}`, `apps/web/app/usuarios/{page.tsx,actions.ts,member-controls.tsx}` (novos), `apps/web/components/shell.tsx` (nav), `docs/{ROADMAP,HANDOFF}.md`.
 
+## D-176 - Saude do Sistema: a tela responde a pergunta que esta sessao precisou fazer varias vezes
+
+**Contexto:** segundo item da trilha 8A. O item pede detectar DRIFT entre o estado esperado e a infraestrutura real, e o DoD e severo em tres pontos: "nada deriva de documentacao", "UNKNOWN se medir falhar" e nenhuma permissao de nuvem a mais.
+
+**Por que ele importa, com evidencia desta propria sessao:** varias vezes foi preciso perguntar "o codigo no ar e o que eu acho que e?" e a resposta so existia cavando `gcloud` e `git log`. Hoje o ar esta em `fc39c27` e o HEAD ja passou de treze commits — inclusive D-171, que corrige o 429 das visitas e nao esta valendo. Nenhuma tela dizia isso.
+
+**Decisao 1 — medir o EFEITO, nao o agendamento.** A tentacao era consultar o Cloud Scheduler para listar jobs esperados; isso exigiria credencial de nuvem na web, que e exatamente o risco "permissoes cloud excessivas" do item. Em vez disso a tela le `job_runs`: o que rodou, quando, com que status, quantas falhas em 24h. **Um scheduler que existe e nunca dispara e indistinguivel de um ausente** para quem depende do resultado — e as duas situacoes aparecem igual aqui, pela idade.
+
+**Decisao 2 — o commit vem do binario, nao do repositorio.** `infra/deploy-cloud-run.sh` ja taggeava a imagem com `git rev-parse --short HEAD`, mas nao injetava esse valor nos servicos: a API nao sabia qual commit ela era. Agora `APP_COMMIT` entra nos DOIS servicos (um via `--set-env-vars`, outro via arquivo de env — o script usa as duas formas) e sai no `/health`. A web compara com o seu proprio (`VERCEL_GIT_COMMIT_SHA`).
+
+**Decisao 3 — UNKNOWN e um estado de primeira classe.** API sem resposta, commit nao injetado ou variavel ausente **nao viram "ok"**: viram UNKNOWN com o motivo escrito ao lado ("a revisao no ar e anterior ao commit que passou a injetar APP_COMMIT"). E o que impede a tela de mascarar o drift que ela existe para achar. Foi tambem o que o ensaio visual mostrou: localmente, sem API, a tela diz "UNKNOWN — a API nao respondeu ao /health".
+
+**Decisao 4 — `security definer` com autorizacao refeita dentro.** A migration aplicada mora em `supabase_migrations`, schema privado; ler exige definer. Sem refazer a checagem de ADMIN dentro da funcao, isso seria um vazamento com passo extra. Quem nao e ADMIN recebe **zero linhas**, nao erro — erro vazaria a existencia do dado. E `statements`/`rollback` (o SQL inteiro de cada migration) nunca saem: um teste guarda isso.
+
+**O que ficou de fora, declarado:** comparar migrations ESPERADAS (do repositorio) com as aplicadas exigiria um artefato gerado no build; estado de filas e do scheduler exigiria coletor autenticado. Os dois entram quando houver necessidade real — e ate la a tela nao finge saber.
+
+**Verificacao:** migration `20260901121910` nos DOIS bancos; **484/484 testes de integracao em banco recriado do zero** (+5: ADMIN le versao e contagem, nao-ADMIN recebe ZERO linhas em vez de erro, anon negado, o SQL das migrations nao vaza, idade de job nunca negativa) e +1 no `/health` da api; `check` 29/29, build 8/8, **13/13 Playwright**. **Tela VISTA renderizada** — e o que ela mostrou foi justamente um UNKNOWN honesto.
+
+**Impacto:** migration acima, `packages/db/src/{types.ts,rls.integration.test.ts}`, `apps/api/src/{app.ts,app.test.ts}`, `infra/deploy-cloud-run.sh`, `apps/web/app/saude/page.tsx` (novo), `apps/web/components/shell.tsx` (nav), `docs/{ROADMAP,HANDOFF}.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:

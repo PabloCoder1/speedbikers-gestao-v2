@@ -4442,6 +4442,22 @@ export type Database = {
           unidades_pedidas: number
         }[]
       }
+      get_system_health: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          db_migration_applied_at: string
+          db_migration_name: string
+          db_migration_version: string
+          db_migrations_count: number
+          // CORRECAO MANUAL (classe D-133): o LEFT JOIN de jobs deixa estas
+          // colunas nulas quando nao ha execucao registrada.
+          job_age_hours: number | null
+          job_failures_24h: number
+          job_last_run_at: string | null
+          job_status: string | null
+          job_type: string | null
+        }[]
+      }
       get_sku_abc_curve: {
         Args: {
           p_criterion?: string | null

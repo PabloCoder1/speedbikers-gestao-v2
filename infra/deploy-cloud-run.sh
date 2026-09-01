@@ -81,6 +81,10 @@ build_and_deploy() {
 
     cat > "${env_file}" <<YAML
 NODE_ENV: production
+# Commit desta imagem — o MESMO que a taggeia. E o que a Saude do Sistema
+# (D-176) compara com o commit da web para dizer se o que esta no ar e o que
+# se espera. Sem ele, a tela mostra UNKNOWN em vez de adivinhar.
+APP_COMMIT: "${TAG}"
 GCP_PROJECT_ID: "${PROJECT_ID}"
 GCP_REGION: "${REGION}"
 WORKER_URL: "${worker_url}"
@@ -137,7 +141,7 @@ YAML
       --concurrency 4 \
       --timeout 900s \
       --cpu 1 --memory 512Mi \
-      --set-env-vars "NODE_ENV=production,SUPABASE_URL=${SUPABASE_URL},ERP_IMPORTS_BUCKET=${PROJECT_ID}-erp-imports,MERCADO_LIVRE_CLIENT_ID=${MERCADO_LIVRE_CLIENT_ID},GCP_PROJECT_ID=${PROJECT_ID},GCP_REGION=${REGION},WORKER_URL=${self_url},TASKS_INVOKER_SERVICE_ACCOUNT=$(sa_email "${SA_TASKS}"),AI_MONTHLY_BUDGET_USD=${AI_MONTHLY_BUDGET_USD}" \
+      --set-env-vars "NODE_ENV=production,APP_COMMIT=${TAG},SUPABASE_URL=${SUPABASE_URL},ERP_IMPORTS_BUCKET=${PROJECT_ID}-erp-imports,MERCADO_LIVRE_CLIENT_ID=${MERCADO_LIVRE_CLIENT_ID},GCP_PROJECT_ID=${PROJECT_ID},GCP_REGION=${REGION},WORKER_URL=${self_url},TASKS_INVOKER_SERVICE_ACCOUNT=$(sa_email "${SA_TASKS}"),AI_MONTHLY_BUDGET_USD=${AI_MONTHLY_BUDGET_USD}" \
       --set-secrets "SUPABASE_SERVICE_ROLE_KEY=${SECRET_SUPABASE_KEY}:latest,MERCADO_LIVRE_CLIENT_SECRET=${SECRET_ML_CLIENT_SECRET}:latest,ML_TOKEN_ENCRYPTION_KEY=${SECRET_ML_TOKEN_KEY}:latest" \
       --quiet
 
