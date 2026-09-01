@@ -2,8 +2,8 @@ import { createLogger } from "@sb/observability";
 import { describe, expect, it } from "vitest";
 
 import type { ParsedOrder } from "./order-schema.js";
-import type { PersistOrderContext } from "./persist-order.js";
-import { persistOrder } from "./persist-order.js";
+import type { OrderPrefetch, PersistOrderContext } from "./persist-order.js";
+import { persistOrder, prefetchOrders } from "./persist-order.js";
 
 const CONTEXT: PersistOrderContext = {
   organizationId: "11111111-0000-4000-8000-000000000001",
@@ -832,5 +832,221 @@ describe("persistOrder — escritas críticas (D-178)", () => {
     ).rejects.toThrow(/order_items\.insert/);
 
     expect(inserted.map((i) => i.table)).not.toContain("stock_movements");
+  });
+});
+
+
+// D-186 — as leituras da pagina inteira, resolvidas de uma vez.
+//
+// O que estes testes protegem NAO e a latencia: e a diferenca entre "nao ha
+// vinculo" e "a leitura em lote nao trouxe o vinculo". As duas produzem o
+// mesmo `null` no mapa, e a segunda faz a deducao de estoque ser pulada em
+// silencio — a assinatura exata do defeito que corrompeu o saldo em D-131.
+describe("prefetchOrders (D-186)", () => {
+  interface RespostaFalsa {
+    data: unknown;
+    error: { message: string } | null;
+  }
+
+  function dbFalso(porTabela: Record<string, RespostaFalsa>) {
+    const consultadas: string[] = [];
+
+    const cadeia = (resposta: RespostaFalsa) => {
+      const self = {
+        select: () => self,
+        eq: () => self,
+        in: () => self,
+        then: <R>(onFulfilled: (value: RespostaFalsa) => R) => Promise.resolve(resposta).then(onFulfilled),
+      };
+
+      return self;
+    };
+
+    const db = {
+      from: (table: string) => {
+        consultadas.push(table);
+
+        return cadeia(porTabela[table] ?? { data: [], error: null });
+      },
+    } as unknown as Parameters<typeof prefetchOrders>[0];
+
+    return { db, consultadas };
+  }
+
+  const PEDIDO_A: ParsedOrder = { ...BASE_ORDER, id: 2_000_017_347_483_988 };
+
+  it("resolve vínculo, kind e componentes da página numa leitura por tabela", async () => {
+    const { db, consultadas } = dbFalso({
+      orders: { data: [{ id: 2_000_017_347_483_988, status: "paid" }], error: null },
+      sku_listing_links: {
+        data: [{ id: "link-1", sku_id: "sku-kit", item_id: "MLB1054990648", variation_id: null }],
+        error: null,
+      },
+      skus: { data: [{ id: "sku-kit", kind: "KIT" }], error: null },
+      sku_components: { data: [{ kit_sku_id: "sku-kit", component_sku_id: "sku-peca", quantity: 2 }], error: null },
+    });
+
+    const prefetch = await prefetchOrders(db, CONTEXT, [PEDIDO_A]);
+
+    expect(prefetch.linkByItemKey.get("MLB1054990648\u0000")).toEqual({ id: "link-1", sku_id: "sku-kit" });
+    expect(prefetch.skuKindById.get("sku-kit")).toBe("KIT");
+    expect(prefetch.componentsByKitId.get("sku-kit")).toEqual([{ componentSkuId: "sku-peca", quantity: 2 }]);
+
+    // Uma leitura por tabela, não uma por pedido.
+    expect(consultadas).toEqual(["orders", "sku_listing_links", "skus", "sku_components"]);
+  });
+
+  it("chaveia o pedido por STRING — `orders.id` é bigint e o mapa mente se os tipos divergirem", async () => {
+    const { db } = dbFalso({
+      orders: { data: [{ id: 2_000_017_347_483_988, status: "cancelled" }], error: null },
+    });
+
+    const prefetch = await prefetchOrders(db, CONTEXT, [PEDIDO_A]);
+
+    // A consulta com o número NÃO acha; a com string acha. É por isso que o
+    // mapa é `Map<string, ...>` e o chamador usa `String(order.id)`.
+    expect(prefetch.previousStatusById.get(String(PEDIDO_A.id))).toBe("cancelled");
+    expect(prefetch.previousStatusById.get(PEDIDO_A.id as unknown as string)).toBeUndefined();
+  });
+
+  it("recusa leitura que pode ter sido cortada pelo teto de 1.000 do PostgREST", async () => {
+    // D-131: acima do teto, a resposta volta cortada com `error` NULO. Aqui
+    // "cortada" seria indistinguível de "sem vínculo" — e um vínculo perdido
+    // grava `sku_id` nulo e pula a dedução.
+    const muitas = Array.from({ length: 1000 }, (_, i) => ({
+      id: `link-${String(i)}`,
+      sku_id: "sku-1",
+      item_id: `MLB${String(i)}`,
+      variation_id: null,
+    }));
+
+    const { db } = dbFalso({ sku_listing_links: { data: muitas, error: null } });
+
+    await expect(prefetchOrders(db, CONTEXT, [PEDIDO_A])).rejects.toThrow(/cortada pelo teto|D-131/);
+  });
+
+  it("recusa `data` nulo sem erro, em vez de tratar como página sem vínculos", async () => {
+    const { db } = dbFalso({ sku_listing_links: { data: null, error: null } });
+
+    await expect(prefetchOrders(db, CONTEXT, [PEDIDO_A])).rejects.toThrow(/data nulo sem erro/);
+  });
+
+  it("propaga erro de leitura em vez de virar 'sem vínculo'", async () => {
+    const { db } = dbFalso({ sku_listing_links: { data: null, error: { message: "boom" } } });
+
+    await expect(prefetchOrders(db, CONTEXT, [PEDIDO_A])).rejects.toThrow(/sku_listing_links.*boom/);
+  });
+
+  // A propriedade pela qual esta fatia existe: o número de idas ao banco não
+  // cresce com o número de pedidos da página. Era 3 por pedido — 150 numa
+  // página de 50 do Mercado Livre.
+  it("o número de leituras NÃO cresce com o tamanho da página", async () => {
+    const pagina = [
+      { ...BASE_ORDER, id: 1 },
+      { ...BASE_ORDER, id: 2 },
+      { ...BASE_ORDER, id: 3 },
+      { ...BASE_ORDER, id: 4 },
+      { ...BASE_ORDER, id: 5 },
+    ];
+
+    const { db, consultadas } = dbFalso({
+      sku_listing_links: {
+        data: [{ id: "link-1", sku_id: "sku-1", item_id: "MLB1054990648", variation_id: null }],
+        error: null,
+      },
+      skus: { data: [{ id: "sku-1", kind: "PRODUTO" }], error: null },
+    });
+
+    await prefetchOrders(db, CONTEXT, pagina);
+
+    // Sem kits na página, `sku_components` nem é consultada.
+    expect(consultadas).toEqual(["orders", "sku_listing_links", "skus"]);
+  });
+
+  it("página vazia não vai ao banco", async () => {
+    const { db, consultadas } = dbFalso({});
+
+    const prefetch = await prefetchOrders(db, CONTEXT, []);
+
+    expect(consultadas).toEqual([]);
+    expect(prefetch.linkByItemKey.size).toBe(0);
+  });
+});
+
+describe("persistOrder com prefetch (D-186)", () => {
+  function prefetchDe(parcial: Partial<OrderPrefetch>): OrderPrefetch {
+    return {
+      previousStatusById: parcial.previousStatusById ?? new Map<string, string>(),
+      linkByItemKey: parcial.linkByItemKey ?? new Map<string, { id: string; sku_id: string }>(),
+      skuKindById: parcial.skuKindById ?? new Map<string, string>(),
+      componentsByKitId:
+        parcial.componentsByKitId ?? new Map<string, { componentSkuId: string; quantity: number }[]>(),
+    };
+  }
+
+  it("usa o vínculo do lote e grava o sku_id — sem ler sku_listing_links", async () => {
+    const { db, inserted } = fakeDb({
+      // Se o handler ignorasse o prefetch e lesse por conta própria, este
+      // fake devolveria `null` e o item sairia sem SKU. O teste falha nesse
+      // caso, que é o ponto.
+      linkForItem: () => null,
+    });
+
+    await persistOrder(
+      db,
+      CONTEXT,
+      BASE_ORDER,
+      createLogger({ service: "test" }),
+      prefetchDe({
+        linkByItemKey: new Map([["MLB1054990648\u0000", { id: "link-9", sku_id: "sku-9" }]]),
+        skuKindById: new Map([["sku-9", "PRODUTO"]]),
+      }),
+    );
+
+    const itens = inserted.find((row) => row.table === "order_items");
+
+    expect((itens?.rows[0] as { sku_id: string }).sku_id).toBe("sku-9");
+    expect((itens?.rows[0] as { sku_listing_link_id: string }).sku_listing_link_id).toBe("link-9");
+  });
+
+  it("SKU ausente do lote LANÇA — não cai em PRODUTO", async () => {
+    // `sku_listing_links.sku_id` é NOT NULL com FK `on delete restrict`, então
+    // a linha do SKU sempre existe: ausente do lote só pode ser lote que
+    // falhou. Cair em PRODUTO gravaria `VENDA_ML` contra a linha de um KIT —
+    // passa na FK, não deduz os componentes, e a chave de idempotência
+    // `venda:<id>:<pos>` nunca mais é gerada depois do conserto.
+    const { db } = fakeDb({});
+
+    await expect(
+      persistOrder(
+        db,
+        CONTEXT,
+        BASE_ORDER,
+        createLogger({ service: "test" }),
+        prefetchDe({ linkByItemKey: new Map([["MLB1054990648\u0000", { id: "link-9", sku_id: "sku-9" }]]) }),
+      ),
+    ).rejects.toThrow(/ausente do lote de kinds/);
+  });
+
+  it("KIT decompõe pelos componentes do lote", async () => {
+    const { db, inserted } = fakeDb({});
+
+    await persistOrder(
+      db,
+      CONTEXT,
+      BASE_ORDER,
+      createLogger({ service: "test" }),
+      prefetchDe({
+        linkByItemKey: new Map([["MLB1054990648\u0000", { id: "link-9", sku_id: "sku-kit" }]]),
+        skuKindById: new Map([["sku-kit", "KIT"]]),
+        componentsByKitId: new Map([["sku-kit", [{ componentSkuId: "sku-peca", quantity: 3 }]]]),
+      }),
+    );
+
+    const movimentos = inserted.filter((row) => row.table === "stock_movements").flatMap((row) => row.rows);
+
+    // Kit não tem saldo próprio: a dedução vai para o componente.
+    expect(movimentos).toHaveLength(1);
+    expect((movimentos[0] as { sku_id: string }).sku_id).toBe("sku-peca");
   });
 });

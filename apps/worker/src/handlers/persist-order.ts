@@ -51,11 +51,225 @@ export interface PersistOrderContext {
   mlAccountId: string;
 }
 
+/**
+ * As tres leituras de `persistOrder`, resolvidas UMA VEZ para a pagina
+ * inteira em vez de uma vez por pedido (D-186).
+ *
+ * As chaves sao STRING em todos os mapas, inclusive a do pedido — que no
+ * banco e `bigint`. Isso nao e detalhe de estilo: `orders.id` chega como
+ * `number` e `stock_movements.source_id` e `text`, e um mapa montado com um
+ * tipo e consultado com o outro devolve `undefined` sem erro nenhum. O
+ * resultado seria "pedido novo" para um pedido existente, ou "sem vinculo"
+ * para um item vinculado — deducao de estoque pulada, em silencio.
+ */
+export interface OrderPrefetch {
+  /** `String(order.id)` -> status gravado. Ausente = pedido novo para a V3. */
+  previousStatusById: Map<string, string>;
+  /** `chaveDoItem(item_id, variation_id)` -> vinculo vigente. Ausente = sem vinculo. */
+  linkByItemKey: Map<string, { id: string; sku_id: string }>;
+  /** `sku_id` -> `kind`. Ausente e ERRO, nao PRODUTO — ver `kindDoSku`. */
+  skuKindById: Map<string, string>;
+  /** `kit_sku_id` -> componentes. Ausente = kit sem componentes cadastrados. */
+  componentsByKitId: Map<string, { componentSkuId: string; quantity: number }[]>;
+}
+
+function chaveDoItem(itemId: string, variationId: string | null): string {
+  // `\u0000` nunca aparece nos dois campos (sao ids do Mercado Livre), entao
+  // nao ha par distinto que colida.
+  return `${itemId}\u0000${variationId ?? ""}`;
+}
+
+/**
+ * Teto do PostgREST: **1.000 linhas, devolvidas com `error` NULO** — o
+ * defeito que corrompeu o saldo de estoque de producao em D-131 ("nao quebra,
+ * mente"). Toda leitura em lote deste arquivo passa por aqui.
+ *
+ * Nao existe forma de distinguir "cortou" de "so tinha isso" olhando a
+ * resposta; a unica defesa e nunca chegar perto do teto e gritar se chegar.
+ */
+const TETO_POSTGREST = 1000;
+
+/**
+ * As tres unicas formas de uma leitura em lote nao devolver o que promete —
+ * conferidas num lugar so, porque as tres terminam no MESMO estrago: uma
+ * linha ausente vira "sem vinculo", `sku_id` fica nulo e a deducao de
+ * estoque e pulada em silencio.
+ */
+function linhasDe<T>(
+  resultado: { data: T[] | null; error: { message: string } | null },
+  leitura: string,
+): T[] {
+  if (resultado.error !== null) {
+    throw new Error(`falha na leitura em lote de ${leitura}: ${resultado.error.message}`);
+  }
+
+  if (resultado.data === null) {
+    // `error` nulo com `data` nulo nao acontece no cliente real — lista vazia
+    // vem como `[]`. Recusar em vez de assumir vazio: "sem vinculo" e uma
+    // resposta LEGITIMA neste caminho, entao um estado impossivel nao pode
+    // virar essa resposta por omissao.
+    throw new Error(`leitura em lote de ${leitura} devolveu data nulo sem erro`);
+  }
+
+  if (resultado.data.length >= TETO_POSTGREST) {
+    throw new Error(
+      `leitura em lote de ${leitura} devolveu ${String(resultado.data.length)} linhas e pode ter sido cortada pelo teto do PostgREST (D-131): reduza o lote`,
+    );
+  }
+
+  return resultado.data;
+}
+
+/**
+ * Quantos `item_id` distintos vao por consulta de vinculo.
+ *
+ * MEDIDO no Dev: um anuncio tem ate **19** vinculos (media 3,3, p99 11),
+ * porque cada variacao e uma linha. Com os 50 pedidos de uma pagina do
+ * Mercado Livre, o pior caso daria 950 linhas — perto demais das 1.000. Com
+ * 25, o pior caso e 475, e a folga e de 2x.
+ */
+const ITENS_POR_CONSULTA = 25;
+
+function emLotes<T>(itens: readonly T[], tamanho: number): T[][] {
+  const lotes: T[][] = [];
+
+  for (let i = 0; i < itens.length; i += tamanho) {
+    lotes.push(itens.slice(i, i + tamanho));
+  }
+
+  return lotes;
+}
+
+/**
+ * Resolve, para uma pagina inteira de pedidos, o que `persistOrder` leria um
+ * pedido por vez.
+ *
+ * MEDIDO (D-185): o custo de uma ida ao banco e o round trip, nao o SQL — o
+ * SQL das sete idas de um pedido soma 3,95 ms contra 660,7 ms observados.
+ * Logo o que importa e o NUMERO de idas. Estas tres leituras eram 3 por
+ * pedido (150 numa pagina de 50); passam a ser ~4 por pagina.
+ *
+ * **As escritas continuam uma por pedido, de proposito.** Ver o comentario
+ * em `fetchOrdersWindow`.
+ */
+export async function prefetchOrders(
+  db: AdminClient,
+  context: PersistOrderContext,
+  orders: readonly ParsedOrder[],
+): Promise<OrderPrefetch> {
+  const previousStatusById = new Map<string, string>();
+  const linkByItemKey = new Map<string, { id: string; sku_id: string }>();
+  const skuKindById = new Map<string, string>();
+  const componentsByKitId = new Map<string, { componentSkuId: string; quantity: number }[]>();
+
+  if (orders.length === 0) {
+    return { previousStatusById, linkByItemKey, skuKindById, componentsByKitId };
+  }
+
+  const orderIds = orders.map((order) => order.id);
+  const itemIds = [...new Set(orders.flatMap((order) => order.order_items.map((item) => item.item.id)))];
+
+  // 1 + N idas, com N = lotes de item. As duas primeiras nao dependem uma da
+  // outra.
+  const [statusResult, linkResults] = await Promise.all([
+    db.from("orders").select("id, status").in("id", orderIds),
+    Promise.all(
+      emLotes(itemIds, ITENS_POR_CONSULTA).map((lote) =>
+        db
+          .from("sku_listing_links")
+          .select("id, sku_id, item_id, variation_id")
+          .eq("ml_account_id", context.mlAccountId)
+          .eq("ref_kind", "ITEM")
+          .in("item_id", lote),
+      ),
+    ),
+  ]);
+
+  for (const row of linhasDe(statusResult, "orders.status")) {
+    previousStatusById.set(String(row.id), row.status);
+  }
+
+  for (const linkResult of linkResults) {
+    // Mesma razao de `resolveSku`: tratar falha como "sem vinculo" gravaria
+    // `sku_id` null numa venda real e pularia a deducao inteira.
+    for (const row of linhasDe(linkResult, "sku_listing_links")) {
+      // A constraint `sku_listing_links_ref_shape` garante `item_id not null`
+      // quando `ref_kind = 'ITEM'`, que e o filtro desta consulta — o tipo
+      // gerado e que nao sabe disso (a coluna e nullable para o outro
+      // `ref_kind`). Pular em vez de afirmar com `!`: se a constraint mudar,
+      // o pior caso vira "sem vinculo", que ja e o caminho tratado, e nao um
+      // crash com chave `null`.
+      if (row.item_id === null) {
+        continue;
+      }
+
+      linkByItemKey.set(chaveDoItem(row.item_id, row.variation_id), { id: row.id, sku_id: row.sku_id });
+    }
+  }
+
+  const skuIds = [...new Set([...linkByItemKey.values()].map((link) => link.sku_id))];
+
+  if (skuIds.length > 0) {
+    const skusResult = await db.from("skus").select("id, kind").in("id", skuIds);
+
+    for (const row of linhasDe(skusResult, "skus.kind")) {
+      skuKindById.set(row.id, row.kind);
+    }
+
+    const kitIds = skuIds.filter((skuId) => skuKindById.get(skuId) === "KIT");
+
+    if (kitIds.length > 0) {
+      const componentsResult = await db
+        .from("sku_components")
+        .select("kit_sku_id, component_sku_id, quantity")
+        .in("kit_sku_id", kitIds);
+
+      for (const row of linhasDe(componentsResult, "sku_components")) {
+        const atuais = componentsByKitId.get(row.kit_sku_id) ?? [];
+
+        atuais.push({ componentSkuId: row.component_sku_id, quantity: row.quantity });
+        componentsByKitId.set(row.kit_sku_id, atuais);
+      }
+    }
+  }
+
+  return { previousStatusById, linkByItemKey, skuKindById, componentsByKitId };
+}
+
+/**
+ * `kind` do SKU vindo do prefetch.
+ *
+ * Ausente LANCA, e essa e a diferenca em relacao a `loadSkuKindAndComponents`
+ * — que cai em PRODUTO quando nao acha, com razao documentada. Aqui a razao
+ * nao vale: `sku_listing_links.sku_id` e NOT NULL com FK `on delete restrict`
+ * para `skus`, entao a linha do SKU **sempre existe**. Ausente do lote so
+ * pode significar que o lote falhou ou foi cortado — e cair em PRODUTO
+ * gravaria um `VENDA_ML` contra a linha de um KIT: passa na FK, nao deduz os
+ * componentes, e a chave de idempotencia `venda:<id>:<pos>` nunca mais e
+ * gerada depois do conserto (a forma KIT usa `venda:<id>:<pos>:<sku>`).
+ * Linha irreversivel num ledger append-only.
+ */
+function kindDoSku(prefetch: OrderPrefetch, skuId: string): "PRODUTO" | "KIT" {
+  const kind = prefetch.skuKindById.get(skuId);
+
+  if (kind === undefined) {
+    throw new Error(`sku ${skuId} ausente do lote de kinds — lote falhou ou foi cortado, e cair em PRODUTO deduziria contra a linha do kit`);
+  }
+
+  return kind === "KIT" ? "KIT" : "PRODUTO";
+}
+
 export async function persistOrder(
   db: AdminClient,
   context: PersistOrderContext,
   order: ParsedOrder,
   logger: Logger,
+  /**
+   * Leituras ja resolvidas para a pagina inteira (D-186). Ausente, o handler
+   * le por conta propria — e o caminho do webhook, que tem UM pedido e nao
+   * teria o que agrupar.
+   */
+  prefetch?: OrderPrefetch,
 ): Promise<void> {
   // D-101: o `GET /orders/{id}` real (fast path do webhook) vem SEM
   // `date_last_updated` — só o `/orders/search` (reconciliação) o traz.
@@ -93,20 +307,34 @@ export async function persistOrder(
     item.item.variation_id != null ? String(item.item.variation_id) : null,
   );
 
-  const [existing, resolvedLinks] = await Promise.all([
-    db.from("orders").select("status").eq("id", order.id).maybeSingle(),
-    Promise.all(
-      order.order_items.map((item, index) =>
-        resolveSku(db, context.mlAccountId, item.item.id, variationIds[index] ?? null),
+  let previousStatus: string | null;
+  let resolvedLinks: ({ id: string; sku_id: string } | null)[];
+
+  if (prefetch !== undefined) {
+    // Chave STRING para um `id` que e `bigint` no banco: ver o comentario de
+    // `OrderPrefetch`. Ausente do mapa = pedido novo para a V3, exatamente o
+    // que o `maybeSingle()` sem linha significa.
+    previousStatus = prefetch.previousStatusById.get(String(order.id)) ?? null;
+    resolvedLinks = order.order_items.map(
+      (item, index) => prefetch.linkByItemKey.get(chaveDoItem(item.item.id, variationIds[index] ?? null)) ?? null,
+    );
+  } else {
+    const [existing, links] = await Promise.all([
+      db.from("orders").select("status").eq("id", order.id).maybeSingle(),
+      Promise.all(
+        order.order_items.map((item, index) =>
+          resolveSku(db, context.mlAccountId, item.item.id, variationIds[index] ?? null),
+        ),
       ),
-    ),
-  ]);
+    ]);
 
-  if (existing.error !== null) {
-    throw new Error(`falha ao ler status anterior da order ${String(order.id)}: ${existing.error.message}`);
+    if (existing.error !== null) {
+      throw new Error(`falha ao ler status anterior da order ${String(order.id)}: ${existing.error.message}`);
+    }
+
+    previousStatus = existing.data?.status ?? null;
+    resolvedLinks = links;
   }
-
-  const previousStatus = existing.data?.status ?? null;
 
   // Aborta se o pedido nao gravou (D-178): tudo abaixo -- eventos de status e
   // deducao de estoque -- presume que ele existe.
@@ -204,8 +432,23 @@ export async function persistOrder(
 
   const deductionItems: SaleDeductionItem[] = await Promise.all(
     items.map(async (item) => {
+      // Item sem vinculo continua com `skuKind: null`: a forma
+      // `skuKind: "PRODUTO"` com `skuId: null` e um estado que o contrato de
+      // `SaleDeductionItem` declara impossivel.
       if (item.sku_id === null) {
         return { position: item.position, quantity: item.quantity, skuId: null, skuKind: null, components: [] };
+      }
+
+      if (prefetch !== undefined) {
+        const kind = kindDoSku(prefetch, item.sku_id);
+
+        return {
+          position: item.position,
+          quantity: item.quantity,
+          skuId: item.sku_id,
+          skuKind: kind,
+          components: kind === "KIT" ? (prefetch.componentsByKitId.get(item.sku_id) ?? []) : [],
+        };
       }
 
       const { kind, components } = await loadSkuKindAndComponents(db, item.sku_id);

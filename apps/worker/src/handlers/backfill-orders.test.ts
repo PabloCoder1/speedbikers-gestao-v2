@@ -108,9 +108,12 @@ function fakeDb(options: FakeDbOptions = {}): {
           return chain({ data: account ?? null, error: null });
         }
 
-        if (table === "sku_listing_links") {
+        // D-186: leitura em LOTE devolve lista. O cliente real devolve `[]`,
+        // nunca `null`, quando não há linha — e `prefetchOrders` recusa `data`
+        // nulo sem erro de propósito.
+        if (table === "sku_listing_links" || table === "skus" || table === "sku_components" || table === "orders") {
           // Sem vínculo cadastrado no fake — persistOrder grava sku_id nulo.
-          return chain({ data: null, error: null });
+          return chain({ data: [], error: null });
         }
 
         return chain({ data: credentials ?? null, error: null });

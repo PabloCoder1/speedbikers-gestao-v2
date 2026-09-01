@@ -14,8 +14,8 @@
 |---|---|
 | **Atualizado em** | 2026-09-01 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `669ccf8` (D-184) — esta fatia, D-185, é o commit seguinte |
-| **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **24 commits atrás** |
+| **HEAD conhecido** | `b5f1d09` (D-185) — esta fatia, D-186, é o commit seguinte |
+| **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **25 commits atrás** |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | 119 locais == 119 no Dev, última `20260901160650` — sem drift |
 | **Frente atual** | Trilha 8B — P0 fechado (A–H); em P1 |
@@ -104,12 +104,17 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-1. **P1 — lote por página em `fetchOrdersWindow`.** Subiu para o topo em
-   D-185: o custo é **por chamada** (o SQL é 0,6% do tempo e o PostgREST soma
-   menos de 1 ms), então cortar 6,79 → ~0,25 idas por pedido corta ~96% do
-   tempo, seja qual for o transporte. Commit próprio — muda a semântica de
-   falha parcial e o significado de `assertWritten` com 50 pedidos juntos.
-2. **P1 — o embed de vínculo+`kind`+componentes.** Uma ida a menos por
+1. **O deploy é o que trava a medição.** Três fatias seguidas (D-184, D-186)
+   mudaram o worker e **nenhuma pôde ser medida ponta a ponta** — o que está
+   no ar é de 25 commits atrás. O ganho estrutural está fixado em teste; o
+   número real precisa do deploy, e a consulta para conferir está em
+   `docs/PERFORMANCE.md`.
+2. **P1 — lote de ESCRITA por página.** Deliberadamente não feito em D-186,
+   com três razões medidas no ROADMAP (a janela `delete`+`insert`
+   multiplicada por 50, o trigger `AFTER INSERT FOR EACH ROW` segurando 36
+   travas de saldo, e o raio de alcance em `nfe-import-apply`). Resolver as
+   três é pré-requisito, não checklist.
+3. **P1 — o embed de vínculo+`kind`+componentes.** Uma ida a menos por
    pedido, e precisa de portão na pista de integração: o fake dos testes
    ignora a string de projeção, então a forma do embed passaria verde e
    quebraria em produção.

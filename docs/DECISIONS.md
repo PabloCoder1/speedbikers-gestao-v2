@@ -3697,6 +3697,36 @@ O custo por chamada e o round trip. Trocar de protocolo nao o remove — so troc
 
 **Impacto:** `packages/db/scripts/bench-postgrest.mjs` (novo), `packages/db/package.json`. Nenhuma mudanca de aplicacao — esta fatia e uma medicao, e o produto dela e a ordem do trabalho seguinte.
 
+## D-186 - As leituras viram uma por pagina; as escritas ficam uma por pedido, e isso e a decisao
+
+**Contexto:** topo do P1 depois de D-185, que mediu o que decide a forma desta fatia — **o custo de uma ida ao banco e o round trip, nao o SQL**. As sete idas de um pedido somam 3,95 ms de servidor contra 660,7 ms observados. Logo o que importa e o NUMERO de idas, e o laco da janela fazia 7 por pedido, ~742 por execucao.
+
+**Decisao 1 — as tres LEITURAS sao resolvidas uma vez por pagina.** `prefetchOrders` monta quatro mapas para a pagina inteira; `persistOrder` ganha um parametro opcional e le deles. Sem o parametro, ele le sozinho como sempre — e o caminho do webhook, que tem UM pedido e nao teria o que agrupar. Numa pagina de 50: **150 leituras viram ~4**.
+
+**Decisao 2 — as ESCRITAS continuam uma por pedido, e nao por timidez.** Sao tres razoes, cada uma medida:
+
+1. **`order_items` e substituido por `delete` + `insert`, e o PostgREST nao tem transacao entre chamadas.** Em lote, um insert que falha depois do delete deixaria os **50 pedidos da pagina** sem itens em vez de um — multiplicando por 50 exatamente a janela que D-184 acabou de fechar, e que ja produziu 2 pedidos sem item em producao.
+2. **`stock_movements_apply_to_balance` e `AFTER INSERT FOR EACH ROW`** e faz `DO UPDATE` em `inventory_balances` — verificado no catalogo. Um insert de ~36 linhas seguraria ~36 travas de saldo em ordem arbitraria dentro de um statement: classe de deadlock que hoje nao existe, com 4 contas na mesma organizacao e catalogo largamente compartilhado.
+3. **`recordStockMovements` e compartilhada com `nfe-import-apply`**, que marca a nota `APPLIED` incondicionalmente logo depois. All-or-nothing ali e perda de estoque permanente sem retry — ao contrario de pedido, que a janela horaria reprocessa sozinha.
+
+O lote de escrita fica no ROADMAP com essas tres, para nao ser refeito como se fosse so mais um `in (...)`.
+
+**A medicao que definiu o tamanho do lote.** A leitura de vinculos filtra por `item_id`, e cada variacao e uma linha. Medido no Dev: **ate 19 vinculos por anuncio** (media 3,3, p99 11). Com os 50 itens de uma pagina, o pior caso daria **950 linhas** — perto demais do teto de **1.000 do PostgREST**, que devolve cortado com `error` NULO e corrompeu o saldo de estoque de producao em D-131 ("nao quebra, mente"). Por isso os vinculos vao em lotes de **25 itens**: pior caso 475, folga de 2x. E ha guarda absoluta: qualquer leitura em lote que devolva >= 1.000 linhas **lanca**.
+
+**As tres formas de uma leitura em lote mentir, conferidas num lugar so.** `linhasDe()` recusa erro, recusa `data` nulo sem erro, e recusa possivel truncamento — porque as tres terminam no MESMO estrago: linha ausente vira "sem vinculo", `sku_id` fica nulo, e a deducao de estoque e pulada em silencio. Recusar `data` nulo importa especialmente: "sem vinculo" e uma resposta **legitima** neste caminho, entao um estado impossivel nao pode virar essa resposta por omissao.
+
+**O tipo que faria o lote mentir sem erro nenhum.** `orders.id` e `bigint` e `stock_movements.source_id` e `text` — verificados no catalogo. Um mapa montado com um tipo e consultado com o outro devolve `undefined`: "pedido novo" para um pedido existente, "sem vinculo" para um item vinculado. Todas as chaves sao STRING, e ha teste que consulta o mapa com o numero e exige `undefined` — a falha ficaria invisivel sem ele.
+
+**SKU ausente do lote LANCA, e nao cai em PRODUTO.** `loadSkuKindAndComponents` cai em PRODUTO quando nao acha, com razao documentada. Aqui a razao nao vale: `sku_listing_links.sku_id` e NOT NULL com FK `on delete restrict` para `skus`, entao a linha do SKU **sempre existe** — ausente do lote so pode ser lote que falhou. Cair em PRODUTO gravaria `VENDA_ML` contra a linha de um KIT: passa na FK, nao deduz os componentes, e a chave `venda:<id>:<pos>` nunca mais e gerada depois do conserto (a forma KIT usa `venda:<id>:<pos>:<sku>`). Linha irreversivel num ledger append-only.
+
+**Correcao nos fakes dos testes, e ela vale como registro:** dois fakes devolviam `data: null` para leitura de lista. O cliente real devolve `[]` — nunca `null`. Os fakes foram corrigidos em vez de o codigo ser afrouxado para aceitar `null`, que era o caminho mais curto e o errado.
+
+**Sobre o ganho, com honestidade:** o worker **nao esta no ar** (deploy e ato humano pendente), entao o efeito ponta a ponta **nao foi medido**. O que se afirma e estrutural e esta fixado em teste: as leituras eram 3 por pedido e passam a ser ~4 por PAGINA. Com 7 idas por pedido antes, sobram ~4,1 — **41% menos idas**. A consulta para conferir depois do deploy esta em `docs/PERFORMANCE.md`, com o baseline de 660,7 ms por pedido.
+
+**Verificacao:** o teste da guarda de truncamento **falha com a guarda desativada** (conferido subindo o teto para 99.999.999); ha teste que fixa a propriedade pela qual a fatia existe — cinco pedidos na pagina continuam sendo 3 leituras, nao 15. **49 testes em `persist-order`** (eram 39), 498/498 no worker, 507/507 de integracao em banco recriado, `check` 29/29, build 8/8, 13/13 Playwright.
+
+**Impacto:** `apps/worker/src/handlers/persist-order.ts`, `ml-orders-fetch.ts`, `persist-order.test.ts`, `sync-orders-window.test.ts`, `backfill-orders.test.ts`. Nenhuma migration.
+
 ## Como adicionar nova decisao
 
 Registrar:

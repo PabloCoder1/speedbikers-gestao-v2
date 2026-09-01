@@ -6,7 +6,8 @@ import type { Logger } from "@sb/observability";
 import { z } from "zod";
 
 import { orderSchema } from "./order-schema.js";
-import { persistOrder } from "./persist-order.js";
+import type { ParsedOrder } from "./order-schema.js";
+import { persistOrder, prefetchOrders } from "./persist-order.js";
 
 /**
  * Busca de pedidos por janela de data, compartilhada por `sync.orders.window`
@@ -109,7 +110,40 @@ export async function fetchOrdersWindow(params: FetchOrdersWindowParams): Promis
   let latestRecordAt: Date | null = null;
   const dirtyMetricDates = new Set<string>();
 
+  const context = { organizationId: params.organizationId, mlAccountId: params.mlAccountId };
+
   for await (const page of pages) {
+    // D-186 — a pagina inteira e parseada antes de persistir, para que as
+    // LEITURAS possam ser resolvidas de uma vez so.
+    //
+    // MEDIDO em D-185: o custo de uma ida ao banco e o round trip, nao o SQL
+    // (o SQL das sete idas de um pedido soma 3,95 ms contra 660,7 ms
+    // observados). Logo o que importa e o NUMERO de idas. As tres leituras
+    // eram 3 por pedido — 150 numa pagina de 50 — e passam a ser ~4 por
+    // pagina.
+    //
+    // **As ESCRITAS continuam uma por pedido, de proposito.** Nao e timidez;
+    // sao tres razoes medidas:
+    //
+    //  1. `order_items` e substituido por `delete` + `insert`, e PostgREST
+    //     nao tem transacao entre chamadas. Em lote, um insert que falha
+    //     depois do delete deixaria os 50 pedidos da pagina sem itens em vez
+    //     de um — multiplicando por 50 exatamente a janela que D-184 acabou
+    //     de fechar.
+    //  2. `stock_movements_apply_to_balance` e `AFTER INSERT FOR EACH ROW` e
+    //     faz `DO UPDATE` em `inventory_balances`. Um insert de ~36 linhas
+    //     seguraria ~36 travas de saldo em ordem arbitraria dentro de um
+    //     statement — classe de deadlock que hoje nao existe, com 4 contas
+    //     na mesma organizacao e catalogo compartilhado.
+    //  3. `recordStockMovements` e compartilhada com `nfe-import-apply`, que
+    //     marca a nota `APPLIED` incondicionalmente logo depois. All-or-
+    //     nothing ali e perda de estoque permanente sem retry — ao contrario
+    //     de pedido, que a janela horaria reprocessa.
+    //
+    // O lote de escrita fica registrado no ROADMAP com essas tres, para nao
+    // ser refeito como se fosse so mais um `in (...)`.
+    const orders: ParsedOrder[] = [];
+
     for (const raw of page) {
       const parsed = orderSchema.safeParse(raw);
 
@@ -123,14 +157,13 @@ export async function fetchOrdersWindow(params: FetchOrdersWindowParams): Promis
         continue;
       }
 
-      const order = parsed.data;
+      orders.push(parsed.data);
+    }
 
-      await persistOrder(
-        params.db,
-        { organizationId: params.organizationId, mlAccountId: params.mlAccountId },
-        order,
-        params.logger,
-      );
+    const prefetch = await prefetchOrders(params.db, context, orders);
+
+    for (const order of orders) {
+      await persistOrder(params.db, context, order, params.logger, prefetch);
 
       dirtyMetricDates.add(toSalesMetricDate(order.date_created));
 

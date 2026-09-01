@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **184** (D-001 a D-185).
+Decisões registradas: **185** (D-001 a D-186).
 
 ## Por domínio
 
@@ -179,7 +179,7 @@ Decisões registradas: **184** (D-001 a D-185).
 - **D-157** — Metricas 5C de vendas: cancelamento sai do L1 de proposito, e a ressalva vira parte do card
 - **D-165** — Custos por pedido: as fontes da margem operacional persistidas, e NULL nunca vira zero
 
-### worker/infra (42)
+### worker/infra (43)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -223,4 +223,5 @@ Decisões registradas: **184** (D-001 a D-185).
 - **D-159** — Fase 9 abre pelo MODELO: idempotencia vira constraint, e o estado que exige gente tem nome
 - **D-174** — Dashboard de Fornecedor: o relacionamento real e o que foi COMPRADO, e so isso
 - **D-176** — Saude do Sistema: a tela responde a pergunta que esta sessao precisou fazer varias vezes
+- **D-186** — As leituras viram uma por pagina; as escritas ficam uma por pedido, e isso e a decisao
 

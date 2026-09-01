@@ -212,6 +212,27 @@ quase independente do que a chamada faz, quem manda é o NÚMERO de idas:
 
 Por isso o lote subiu para o topo do P1 e o pooler saiu da lista.
 
+### O que define o tamanho de um lote (D-186)
+
+A leitura de vínculos filtra por `item_id`, e **cada variação de um anúncio é
+uma linha**. Medido no Dev, sobre 5.114 anúncios distintos:
+
+| | |
+|---|---|
+| vínculos por anúncio, média | 3,30 |
+| p99 | 11 |
+| **máximo** | **19** |
+
+Com os 50 pedidos de uma página do Mercado Livre, o pior caso daria **950
+linhas** — contra o teto de **1.000 do PostgREST**, que devolve cortado com
+`error` NULO (D-131, o defeito que corrompeu o saldo de estoque de produção).
+Por isso o lote de vínculos é de **25 itens**: pior caso 475, folga de 2×. E
+há guarda absoluta — qualquer leitura em lote que devolva ≥ 1.000 linhas
+lança, em vez de seguir com um conjunto possivelmente cortado.
+
+**A regra que fica:** antes de escrever um `in (...)`, calcule o pior caso de
+linhas por chave e compare com 1.000. Não é o número de chaves que conta.
+
 ### Como conferir o efeito de D-184 depois do deploy
 
 D-184 tirou uma espera serial de cada pedido, mas o worker **não está no ar** —
