@@ -3852,6 +3852,38 @@ O lote desduplica mantendo a ULTIMA ocorrencia, que e exatamente o que a forma s
 
 **Impacto:** `apps/worker/src/handlers/{page-writes.ts (novo),page-writes.test.ts (novo),persist-order.ts,ml-orders-fetch.ts,domain-events.ts}` e quatro fakes de teste, `packages/db/src/idempotent-writes.integration.test.ts`.
 
+## D-191 - A varredura das projecoes: 33 aceitas, 26 formas conferidas, e a guarda que faltava
+
+**Contexto:** D-188 encontrou um `PGRST201` numa projecao com embed — a forma natural era recusada porque `sku_components` tem duas chaves estrangeiras para `skus` e o PostgREST nao escolhe sozinho. **Nenhum dos 510 testes de unidade viu**, porque os fakes ignoram a string de `select` inteira, de proposito: modela-la seria reimplementar o PostgREST. O item registrado era varrer o resto do repo.
+
+**A varredura tem duas perguntas, e elas nao sao a mesma.**
+
+**1. Aceitacao — o PostgREST aceita a projecao?** Resposta: **33 projecoes com embed, todas aceitas**. O caso de D-188 era o unico. E resultado, nao anticlimax: significa que ninguem precisa refazer isto.
+
+**2. Forma — o codigo consome o que ela devolve?** Aceitacao nao e correcao. O tipo gerado codifica a cardinalidade de cada relacao — muitos-para-um vira OBJETO, um-para-muitos vira ARRAY — e o TypeScript pega a troca **exceto onde ha cast**. A superficie de risco e exatamente `embed ∩ cast`: sem cast o compilador ja protege, sem embed nao ha cardinalidade a errar.
+
+Enumerados os arquivos do repo com os dois: **11**. Auditados **14** (os 11 mais tres que a enumeracao estrita nao pegou), **26 chaves embutidas**, **zero divergencias**. Cada forma conferida por duas fontes: o lado da FK no catalogo e o bloco `Relationships` de `packages/db/src/types.ts`.
+
+**O erro do meu proprio extrator, que quase virou seis falsos positivos.** A primeira versao pareava `.from("X")` com o `.select(...)` seguinte dentro de uma janela de caracteres, e atravessava consultas diferentes: acusou `ml_accounts` com uma projecao de `domain_events`, `organization_members` com colunas de sugestao. **Olhar para os achados antes de acreditar neles** foi o que pegou — a incoerencia era visivel na propria saida. O extrator corrigido proibe outro `.from(` no meio, e a razao esta no comentario do script.
+
+**O erro da REGRA que eu mesmo dei aos auditores, e este e o mais util de registrar.** Escrevi no briefing que `isOneToOne: false` implica ARRAY. **Esta errado, e produziria falso positivo em 6 de 8 arquivos.** A regra so vale para embed REVERSO — relacao declarada na outra tabela apontando para a consultada. Quando a FK esta no lado CONSULTADO, o resultado e OBJETO, e `isOneToOne` apenas separa um-para-um de muitos-para-um.
+
+Conferido no caso concreto: `organization_members → profiles` tem `isOneToOne: false` e FK em `organization_members.user_id`; o embed devolve **objeto**, e `usuarios/page.tsx` o consome como objeto — corretamente. **O criterio confiavel e o lado da FK, nao o `isOneToOne`.**
+
+**Decisao 1 — a varredura de aceitacao vira guarda de CI, nao relatorio.** `pnpm --filter @sb/db run check:embeds` extrai toda projecao com embed do repo e pergunta ao PostgREST real. Roda no job de integracao, que ja sobe o Supabase. **Conferido que a guarda falha**: reintroduzindo de proposito a forma ambigua de D-188, ela recusa e sai com codigo 1; removida, volta a verde. Guarda que nunca falhou nao e guarda.
+
+**Decisao 2 — o que a guarda NAO cobre, dito no proprio arquivo.** Ela pega `PGRST201` e nada mais. Nao pega forma errada sob cast, nao pega `onConflict` errado (D-189). Sao tres portoes distintos e nenhum cobre o outro.
+
+**Decisao 3 — NAO construir o verificador de forma automatizado.** Ele teria de parsear a linguagem do `select=`, resolver cada salto contra o catalogo e comparar com o tipo declarado — reimplementar o PostgREST, exatamente o que os fakes se recusaram a fazer pela razao certa. Retorno hoje: zero, porque nao ha divergencia. A alternativa melhor fica registrada: **reduzir a populacao de casts**. `apps/api/src/copilot.ts` mostra o padrao que dispensa o portao — sem `as`, passando o resultado direto para um parametro tipado, e o `tsc` valida de graca.
+
+**Duas correcoes as auditorias que encomendei.** Uma sinalizou `apps/api/src/copilot-generation.ts` (embed aninhado de duas camadas) como pendencia; conferi que aquele arquivo tem **zero casts**, entao o tipo gerado ja o protege. E a outra nao sabia que minha enumeracao de arquivos com `embed ∩ cast` era exaustiva — ela hedgeou dizendo que nao podia afirmar o repo limpo; com os 11 arquivos enumerados e todos auditados, pode.
+
+**Cinco frouxidoes no sentido seguro, registradas sem acao:** casts que declaram `| null` onde o banco garante NOT NULL. Produzem, no maximo, um ramo morto — nao o sintoma silencioso de D-188, que e valor errado circulando.
+
+**Verificacao:** guarda conferida nos dois sentidos; `check` 29/29, build 8/8, 518/518 no worker, 512/512 de integracao em banco recriado, 13/13 Playwright. Sem migration.
+
+**Impacto:** `packages/db/scripts/check-embeds.mjs` (novo), `packages/db/package.json`, `.github/workflows/ci.yml`.
+
 ## Como adicionar nova decisao
 
 Registrar:

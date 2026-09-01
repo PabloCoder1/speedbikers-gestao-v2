@@ -90,10 +90,19 @@ jobs:
           {
             echo "NEXT_PUBLIC_SUPABASE_URL=$API_URL"
             echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY"
+            echo "API_URL=$API_URL"
           } >> "$GITHUB_ENV"
 
       - name: Testes de RLS e de gravacao idempotente
         run: pnpm --filter @sb/db run test:integration
+
+      # As projecoes com embed do PostgREST sao avaliadas SO no servidor, e os
+      # fakes das suites de unidade ignoram a string de `select` inteira -- de
+      # proposito, porque modela-la seria reimplementar o PostgREST. Uma
+      # projecao invalida passa verde em 518 testes e quebra em producao: foi
+      # o PGRST201 de D-188. Este passo pergunta ao PostgREST de verdade.
+      - name: Projecoes com embed aceitas pelo PostgREST
+        run: pnpm --filter @sb/db run check:embeds
 
       - name: Derrubar Supabase
         if: always()

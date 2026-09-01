@@ -14,8 +14,8 @@
 |---|---|
 | **Atualizado em** | 2026-09-01 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `f8a416f` (D-189) — esta fatia, D-190, é o commit seguinte |
-| **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **29 commits atrás** |
+| **HEAD conhecido** | `fcfdfb4` (D-190) — esta fatia, D-191, é o commit seguinte |
+| **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **31 commits atrás** |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | 119 locais == 119 no Dev, última `20260901160650` — sem drift |
 | **Frente atual** | Trilha 8B — P0 fechado (A–H); em P1 |
@@ -114,13 +114,15 @@ Nada disto pode ser feito por um agente.
 
    **O caminho de pedidos fechou como frente.** O que resta do P1 é outro
    assunto.
-2. **P1 — varrer as outras projeções com embed.** D-188 criou o lugar
-   (`packages/db/src/projections.ts`) e o padrão. O portão já pegou um
-   `PGRST201` (D-188) e um `onConflict` errado (D-189) que 518 testes de
-   unidade não veriam; vale conferir os outros `select=` com embed do repo.
-3. **P1 — retenção de `job_runs`**: **271.184 linhas** reais. Bloqueado por
-   regra própria — "só depois de reduzir a origem", e a origem (218.750 jobs
-   vazios de webhook, D-179) só some com o deploy.
+2. **P1 — retenção de `job_runs`, e ela também espera o deploy.** São
+   **271.184 linhas** reais. Bloqueado por regra própria — "só depois de
+   reduzir a origem", e a origem (218.750 jobs vazios de webhook, D-179) só
+   some com o deploy. Junto com o item 1, é o segundo do P1 travado pelo
+   mesmo ato humano.
+3. **P1 — reduzir a população de casts sobre embed.** D-191 auditou os 11
+   arquivos que têm os dois e não achou divergência; isto é prevenção, não
+   correção. Sem `as`, o tipo gerado valida a cardinalidade de graça e a
+   classe de defeito de D-188 deixa de existir ali.
 4. **Antes da segunda organização** — `get_system_health` tem escopo de
    plataforma com guard de tenant (D-182). Não é urgente hoje e não tem
    correção óbvia: as duas tentativas naturais causam regressão verificada.
