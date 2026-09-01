@@ -4868,6 +4868,239 @@ describe("Dashboard de Fornecedor (D-174)", () => {
   });
 });
 
+// D-175 — Administracao de Usuarios: a guarda contra lockout e a auditoria.
+// Estes sao testes NEGATIVOS de privilegio: o que NAO pode acontecer.
+//
+// ORGANIZACAO PROPRIA de proposito. A primeira versao usou `ORG_SB` e falhou
+// por uma premissa errada minha: outros describes promovem membros, e a
+// organizacao compartilhada tem OITO ADMINs — "rebaixar o ultimo" nunca
+// seria o ultimo ali. Lockout so se testa onde se controla quantos ADMINs
+// existem.
+describe("acesso e privilégio (D-175)", () => {
+  const ORG_LOCK = "44444444-0000-4000-8000-000000000444";
+  const ADMIN_LOCK = "44444444-0000-4000-8000-00000000aaa1";
+  const MEMBRO_LOCK = "44444444-0000-4000-8000-00000000bbb1";
+  const CONTA_LOCK = "44444444-0000-4000-8000-00000000ccc1";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                               email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+       values
+         ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',
+          'admin-lock@rls.test','x',now(),'{"full_name":"Admin do lockout"}',now(),now()),
+         ($2,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',
+          'membro-lock@rls.test','x',now(),'{"full_name":"Membro comum"}',now(),now())
+       on conflict (id) do nothing`,
+      [ADMIN_LOCK, MEMBRO_LOCK],
+    );
+
+    await client.query(
+      `insert into public.organizations (id, name, slug)
+       values ($1,'Org do lockout','org-lockout') on conflict (id) do nothing`,
+      [ORG_LOCK],
+    );
+
+    await client.query(
+      `insert into public.organization_members (organization_id, user_id, role)
+       values ($1,$2,'ADMIN'), ($1,$3,'ANALISTA')
+       on conflict do nothing`,
+      [ORG_LOCK, ADMIN_LOCK, MEMBRO_LOCK],
+    );
+
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$2,'Conta do lockout','locktest-conta','PENDING')
+       on conflict do nothing`,
+      [CONTA_LOCK, ORG_LOCK],
+    );
+  });
+
+  /**
+   * O risco "lockout" do item do ROADMAP: a policy autoriza o ADMIN a
+   * rebaixar a si mesmo, e a organizacao ficaria sem ninguem capaz de
+   * administrar. A guarda esta em TRIGGER, entao vale para qualquer caminho
+   * de escrita — inclusive este, que fala com a tabela direto.
+   */
+  it("o ÚLTIMO ADMIN não pode ser rebaixado, nem por ele mesmo", async () => {
+    await expect(
+      asUser(
+        ADMIN_LOCK,
+        `update public.organization_members set role = 'GESTOR'
+           where organization_id = '${ORG_LOCK}' and user_id = '${ADMIN_LOCK}'`,
+      ),
+    ).rejects.toThrow(/sem nenhum ADMIN/i);
+
+    const depois = await client.query<{ role: string }>(
+      `select role from public.organization_members where organization_id = $1 and user_id = $2`,
+      [ORG_LOCK, ADMIN_LOCK],
+    );
+    expect(depois.rows[0]?.role).toBe("ADMIN");
+  });
+
+  it("o ÚLTIMO ADMIN não pode ser removido", async () => {
+    await expect(
+      asUser(
+        ADMIN_LOCK,
+        `delete from public.organization_members
+           where organization_id = '${ORG_LOCK}' and user_id = '${ADMIN_LOCK}'`,
+      ),
+    ).rejects.toThrow(/sem nenhum ADMIN/i);
+  });
+
+  it("com DOIS admins, rebaixar um deles é permitido — a guarda não é rígida demais", async () => {
+    await client.query(
+      `update public.organization_members set role = 'ADMIN'
+         where organization_id = $1 and user_id = $2`,
+      [ORG_LOCK, MEMBRO_LOCK],
+    );
+
+    // Agora ha dois: rebaixar o segundo passa.
+    await client.query(
+      `update public.organization_members set role = 'ANALISTA'
+         where organization_id = $1 and user_id = $2`,
+      [ORG_LOCK, MEMBRO_LOCK],
+    );
+
+    const restantes = await client.query<{ n: string }>(
+      `select count(*) as n from public.organization_members
+         where organization_id = $1 and role = 'ADMIN'`,
+      [ORG_LOCK],
+    );
+
+    expect(Number(restantes.rows[0]?.n)).toBe(1);
+  });
+
+  it("quem não é ADMIN não muda papel de ninguém — nem o próprio", async () => {
+    await asUser(
+      MEMBRO_LOCK,
+      `update public.organization_members set role = 'ADMIN'
+         where organization_id = '${ORG_LOCK}' and user_id = '${MEMBRO_LOCK}'`,
+    );
+
+    const depois = await client.query<{ role: string }>(
+      `select role from public.organization_members where organization_id = $1 and user_id = $2`,
+      [ORG_LOCK, MEMBRO_LOCK],
+    );
+
+    // Escalada de privilegio: continua ANALISTA.
+    expect(depois.rows[0]?.role).toBe("ANALISTA");
+  });
+
+  it("quem não é ADMIN não concede acesso a conta nenhuma", async () => {
+    await asUser(
+      MEMBRO_LOCK,
+      `insert into public.user_account_permissions (user_id, ml_account_id)
+         values ('${MEMBRO_LOCK}', '${CONTA_LOCK}')`,
+    ).catch(() => undefined);
+
+    const linhas = await client.query<{ n: string }>(
+      `select count(*) as n from public.user_account_permissions
+         where user_id = $1 and ml_account_id = $2`,
+      [MEMBRO_LOCK, CONTA_LOCK],
+    );
+
+    expect(Number(linhas.rows[0]?.n)).toBe(0);
+  });
+
+  it("mudança de papel vira evento de auditoria, com ator e de/para", async () => {
+    await asUserPersist(
+      ADMIN_LOCK,
+      `update public.organization_members set role = 'OPERADOR'
+         where organization_id = '${ORG_LOCK}' and user_id = '${MEMBRO_LOCK}'`,
+    );
+
+    const eventos = await client.query<{
+      event_type: string;
+      previous_role: string;
+      new_role: string;
+      actor_user_id: string;
+    }>(
+      `select event_type, previous_role, new_role, actor_user_id
+         from public.organization_access_events
+        where target_user_id = $1
+        order by occurred_at desc limit 1`,
+      [MEMBRO_LOCK],
+    );
+
+    expect(eventos.rows[0]?.event_type).toBe("MEMBER_ROLE_CHANGED");
+    expect(eventos.rows[0]?.previous_role).toBe("ANALISTA");
+    expect(eventos.rows[0]?.new_role).toBe("OPERADOR");
+    // O ator sai de `auth.uid()`: quem mudou fica registrado, nao so o que mudou.
+    expect(eventos.rows[0]?.actor_user_id).toBe(ADMIN_LOCK);
+  });
+
+  it("conceder e revogar acesso a conta viram eventos próprios", async () => {
+    await asUserPersist(
+      ADMIN_LOCK,
+      `insert into public.user_account_permissions (user_id, ml_account_id)
+         values ('${MEMBRO_LOCK}', '${CONTA_LOCK}')`,
+    );
+    await asUserPersist(
+      ADMIN_LOCK,
+      `delete from public.user_account_permissions
+         where user_id = '${MEMBRO_LOCK}' and ml_account_id = '${CONTA_LOCK}'`,
+    );
+
+    const eventos = await client.query<{ event_type: string }>(
+      `select event_type from public.organization_access_events
+        where target_user_id = $1 and ml_account_id = $2
+        order by occurred_at`,
+      [MEMBRO_LOCK, CONTA_LOCK],
+    );
+
+    expect(eventos.rows.map((r) => r.event_type)).toEqual([
+      "ACCOUNT_ACCESS_GRANTED",
+      "ACCOUNT_ACCESS_REVOKED",
+    ]);
+  });
+
+  it("a auditoria é append-only: nem UPDATE nem DELETE passam", async () => {
+    await expect(
+      client.query(
+        `update public.organization_access_events set new_role = 'ADMIN' where organization_id = '${ORG_LOCK}'`,
+      ),
+    ).rejects.toThrow(/append-only/i);
+
+    await expect(
+      client.query(`delete from public.organization_access_events where organization_id = '${ORG_LOCK}'`),
+    ).rejects.toThrow(/append-only/i);
+  });
+
+  it("só ADMIN lê a auditoria; membro comum e anon não leem nada", async () => {
+    const doAdmin = await asUser<{ id: string }>(
+      ADMIN_LOCK,
+      `select id from public.organization_access_events where organization_id = '${ORG_LOCK}'`,
+    );
+    const doMembro = await asUser<{ id: string }>(
+      MEMBRO_LOCK,
+      `select id from public.organization_access_events where organization_id = '${ORG_LOCK}'`,
+    );
+
+    expect(doAdmin.length).toBeGreaterThan(0);
+    expect(doMembro).toHaveLength(0);
+
+    await expect(asAnon("select * from public.organization_access_events")).rejects.toThrow(
+      /permission denied/i,
+    );
+  });
+
+  /**
+   * ADMIN de OUTRA organizacao nao pode ler a auditoria desta. O helper
+   * `private.has_role` nao filtra organizacao (ele responde "sou ADMIN em
+   * ALGUMA organizacao"), entao a policy desta tabela combina papel e
+   * organizacao na propria expressao — ver a migration.
+   */
+  it("ADMIN de outra organização não lê a auditoria desta", async () => {
+    const vistos = await asUser<{ id: string }>(
+      DE_OUTRA_ORG,
+      `select id from public.organization_access_events where organization_id = '${ORG_LOCK}'`,
+    );
+
+    expect(vistos).toHaveLength(0);
+  });
+});
+
 describe("search_entities (Fase 5B, Busca universal)", () => {
   // Mesmo raciocínio de nomes fora dos padrões de limpeza global, e mesma
   // ausência de afterAll — ver comentário equivalente no describe de

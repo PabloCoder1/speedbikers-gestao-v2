@@ -483,7 +483,14 @@ Subfase incremental posterior às bases 5C/5D/6B. Não reabre seus marcos conclu
 
 Complementa a Fase 8; suas telas não substituem hardening, backup/restore nem verificação externa.
 
-#### Administração de Usuários e Permissões — B/C
+#### Administração de Usuários e Permissões — B/C — 🟡 PRIMEIRA VERSÃO em 2026-09-01 (D-175); convite/ativação segue ABERTO
+
+`/usuarios` (nav GESTÃO): membros, papel de cada um e acesso por conta, com edição para ADMIN. O que sustenta a tela é tudo de banco — as policies `*_admin_writes` (que já existiam), o **trigger `guard_last_admin`** contra lockout e a auditoria append-only `organization_access_events`.
+
+- **A parte que já existia, medida antes de escrever:** as policies já restringiam escrita a ADMIN, então não foi preciso criar RPC de autorização — a tela escreve direto sob RLS (padrão de D-119) e apenas traduz a recusa do banco.
+- **O que faltava era invariante e história:** a policy autorizava o ADMIN a rebaixar a si mesmo, deixando a organização sem administrador; e não havia registro de quem mudou o acesso de quem.
+- **Convite/ativação NÃO entrou:** criar usuário exige a Admin API do Auth com `service_role`, que a `web` não tem (e não deve ter). É rota da `api` com decisão de produto própria — quem convida, e-mail, expiração — e fazê-la agora decidiria isso por baixo do pano.
+- **Achado registrado como fatia própria:** `private.has_role` não filtra organização, então ADMIN de uma organização ganharia poder de ADMIN em outra onde seja apenas membro. Afeta **21 policies** e 8 funções; inofensivo hoje (uma organização), grave quando houver a segunda.
 
 - **Objetivo/problema:** administrar membros, papéis e acesso por conta sem operação manual de banco.
 - **Reutiliza:** organizações, `profiles`, `organization_members`, papéis, `user_account_permissions` e helpers RLS/RBAC.

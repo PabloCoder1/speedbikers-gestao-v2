@@ -3659,6 +3659,70 @@ export type Database = {
           },
         ]
       }
+      organization_access_events: {
+        Row: {
+          // CORRECAO MANUAL (classe D-133): `actor_user_id` e NULO quando a
+          // mudanca veio de service_role (sem humano identificado), e os
+          // campos de papel/conta so existem no tipo de evento que os usa.
+          actor_user_id: string | null
+          created_at: string
+          event_type: string
+          id: string
+          ml_account_id: string | null
+          new_role: string | null
+          occurred_at: string
+          organization_id: string
+          previous_role: string | null
+          target_user_id: string
+        }
+        Insert: {
+          actor_user_id?: string | null
+          created_at?: string
+          event_type: string
+          id?: string
+          ml_account_id?: string | null
+          new_role?: string | null
+          occurred_at?: string
+          organization_id: string
+          previous_role?: string | null
+          target_user_id: string
+        }
+        Update: {
+          actor_user_id?: string | null
+          created_at?: string
+          event_type?: string
+          id?: string
+          ml_account_id?: string | null
+          new_role?: string | null
+          occurred_at?: string
+          organization_id?: string
+          previous_role?: string | null
+          target_user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_access_events_actor_user_id_fkey"
+            columns: ["actor_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_access_events_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_access_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_account_permissions: {
         Row: {
           created_at: string

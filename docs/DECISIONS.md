@@ -3355,6 +3355,38 @@ group by 1 order by 1 desc;
 
 **Impacto:** migration acima, `packages/db/src/{types.ts,rls.integration.test.ts}`, `apps/web/app/fornecedores/[supplierId]/page.tsx` (novo), `apps/web/app/fornecedores/page.tsx` (link), `docs/{ROADMAP,HANDOFF}.md`.
 
+## D-175 - Administracao de Usuarios: a tela e a parte menos importante, e a revisao adversarial achou quatro defeitos meus
+
+**Contexto:** primeiro item da trilha 8A ("Administracao/hardening") na ordem registrada. O DoD pede: so ADMIN altera; **protecao do ultimo ADMIN**; backend/RLS efetivos; testes negativos multi-org/conta; historico. Riscos nomeados: escalada de privilegio, lockout, **seguranca apenas visual**.
+
+**O que ja existia, medido antes de escrever:** as policies `organization_members_admin_writes` e `user_account_permissions_admin_writes` **ja** restringem escrita a ADMIN, e `private.has_account_access` ja resolve o escopo por conta. Ou seja, o "backend efetivo" do item ja estava de pe — nao era preciso RPC nova para autorizar. A tela escreve direto sob RLS (padrao de D-119) e so TRADUZ a recusa do banco.
+
+**Decisao 1 — a guarda de lockout vai em TRIGGER, nao em RPC.** A policy autoriza o ADMIN a rebaixar ou remover qualquer membro, inclusive ele mesmo sendo o ultimo — e isso tranca a organizacao inteira para fora da administracao. Em trigger, a protecao vale para todo caminho de escrita (tela, PostgREST direto, codigo futuro); numa RPC, valeria so para quem lembrasse de chama-la. Este e o item onde "seguranca apenas visual" seria mais tentador e mais inutil.
+
+**Decisao 2 — auditoria append-only gravada pelo proprio banco.** `organization_access_events` registra papel alterado e acesso a conta concedido/revogado, com ator vindo de `auth.uid()`. Nem a tela nem a API conseguem editar ou apagar uma linha.
+
+**Decisao 3 — convite/ativacao NAO entra nesta fatia.** Criar usuario exige a Admin API do Auth com `service_role`, que a `web` nao tem e nao deve ter (a chave viveria no processo que serve a interface). E rota da `api`, com decisao de produto propria: quem pode convidar, se ha e-mail, se o convite expira. Fazer agora seria decidir isso por baixo do pano.
+
+**A revisao adversarial achou QUATRO defeitos meus, tres invisiveis em teste feliz:**
+
+1. **Corrida na guarda.** `select count(*)` sem trava: duas transacoes simultaneas, cada uma rebaixando um de dois ADMINs, veem "sobra o outro" e passam as duas — zero ADMIN, exatamente o lockout que a guarda existe para impedir. Corrigido com `pg_advisory_xact_lock` por organizacao, o idioma que a casa ja usa.
+2. **A guarda tornava organizacao e usuario indeletaveis.** `organizations` e `profiles` cascateiam para `organization_members`, e na cascata a linha do ultimo ADMIN passava pelo BEFORE DELETE e era recusada. Lockout e sobre deixar a organizacao VIVA sem administrador; quando ela esta indo embora, nao ha ninguem para trancar do lado de fora.
+3. **A policy de leitura herdava um furo de escopo** (ver o achado abaixo). Numa tabela de auditoria de privilegio, o pior lugar possivel. Reescrita para checar papel e organizacao na MESMA linha, sem depender do helper.
+4. **`service_role` tinha UPDATE/DELETE/TRUNCATE** na tabela append-only — e `TRUNCATE` **nao dispara trigger**, ou seja, apagaria a auditoria inteira sem passar pelo backstop. Revogados.
+
+**E a suite achou mais dois, que nenhuma revisao pegou — porque so aparecem ao executar:**
+
+5. **FK com acao de escrita numa tabela append-only e contradicao (D-149 de novo).** `ml_account_id ... on delete set null` faz o PROPRIO Postgres emitir um UPDATE quando a conta e removida, e o trigger append-only recusa. Sem FK, como `target_user_id` ja fazia.
+6. **FK `restrict` no ATOR torna a pessoa indeletavel para sempre.** Numa tabela que so cresce, `restrict` significa "ninguem pode ser removido do sistema depois de ter mexido em acesso". Tambem sem FK — o que se perde e a garantia referencial, o que se ganha e poder desligar alguem sem apagar a historia do que fez.
+
+**E um erro que so o teste negativo pegaria:** a trava foi escrita como `pg_advisory_xact_lock(bigint, bigint)`, assinatura que **nao existe** (as formas sao `(bigint)` e `(integer,integer)`), e plpgsql so descobre isso em execucao. Sem o teste, a guarda teria ido para producao falhando com "function does not exist" em vez de proteger.
+
+**Achado de seguranca registrado como fatia propria:** `private.has_role(allowed)` responde "sou X em ALGUMA organizacao", sem filtrar qual. Combinado com `is_member_of(org)`, sao dois EXISTS independentes: quem for ADMIN em X e membro qualquer em Y satisfaz os dois para linhas de Y. Afeta **21 policies** e 8 funcoes. Inofensivo hoje (uma organizacao, um usuario) e grave assim que existir a segunda — que e justamente o que este item destrava.
+
+**Verificacao:** quatro migrations (`20260901114420`, `120048`, `120405`, `120619`) nos DOIS bancos; **479/479 testes de integracao em banco recriado do zero** (+11 de privilegio: ultimo ADMIN nao rebaixa nem sai, dois ADMINs rebaixam sim, nao-ADMIN nao escala nem concede, auditoria com ator e de/para, conceder/revogar viram eventos proprios, append-only recusando UPDATE e DELETE, so ADMIN le, ADMIN de outra organizacao nao le); `check` 29/29, build 8/8, **13/13 Playwright**. **Tela VISTA renderizada**, inclusive a recusa chegando ao usuario: "A organizacao ficaria sem nenhum ADMIN. Promova outro membro antes de rebaixar ou remover este."
+
+**Impacto:** as quatro migrations acima, `packages/db/src/{types.ts,rls.integration.test.ts}`, `apps/web/app/usuarios/{page.tsx,actions.ts,member-controls.tsx}` (novos), `apps/web/components/shell.tsx` (nav), `docs/{ROADMAP,HANDOFF}.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:
