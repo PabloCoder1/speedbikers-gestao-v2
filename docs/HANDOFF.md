@@ -14,10 +14,10 @@
 |---|---|
 | **Atualizado em** | 2026-09-01 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `44d3f54` (D-180) — esta fatia, D-181, é o commit seguinte |
-| **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **20 commits atrás** |
+| **HEAD conhecido** | `b2882b9` (D-181) — esta fatia, D-182, é o commit seguinte |
+| **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **21 commits atrás** |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
-| **Migrations** | 117 locais == 117 no Dev, última `20260901141107` — sem drift |
+| **Migrations** | 118 locais == 118 no Dev, última `20260901150926` — sem drift |
 | **Frente atual** | Trilha 8B — Performance, Segurança, Confiabilidade e Contexto |
 
 ### O que está pronto
@@ -43,10 +43,15 @@ Medidos contra o Dev em 2026-09-01, não herdados de documentação.
 | ~~P0-B~~ | ~~Writes sem verificação~~ | ✅ corrigido em D-178 — `assertWritten` aborta; 3 testes provam que nada posterior roda |
 | ~~P0-C~~ | ~~Webhooks sem consumidor viram task~~ | ✅ corrigido em D-179 — allowlist em `@sb/contracts`; **218.750 execuções/zero trabalho** deixam de ser enfileiradas ⚠️ só vale após o deploy |
 | ~~P0-D~~ | ~~`has_role` sem organização~~ | ✅ corrigido em D-180 — `has_org_role` em 21 policies e 8 funções; `has_role` removido; +5 testes cross-org |
-| **P0-E** | `SECURITY DEFINER` / `search_path` / policies duplicadas | apontado pelos advisors; inventário ainda não feito |
+| ~~P0-E~~ | ~~`SECURITY DEFINER` / `search_path` / policies duplicadas~~ | ✅ inventariado em D-182 — **nenhum dos três tinha vulnerabilidade**; advisor 33 → 26 WARN; allowlist das 25 RPCs virou teste de CI |
 | ~~P0-F~~ | ~~`get_stock_balances`~~ | ✅ corrigido em D-181 — **9.104 ms → 681 ms**, sem tocar na RPC |
 | ~~P0-G~~ | ~~`get_listings_dashboard`~~ | ✅ corrigido em D-181 — **timeout em 60 s → 271 ms**, sem tocar na RPC |
 | **P0-H** | Demais RPCs fora do budget | resta `get_sku_sales_baseline`, `get_sku_timeline` e a Central de Notificações — quatro das suspeitas entraram no budget junto com D-181 |
+
+**O P0 de segurança fechou** (B, C, D, E). O que resta do P0 é performance:
+P0-H. D-182 ainda corrigiu, fora do escopo do P0-E, duas FKs escolhidas pelo
+cliente que eram gravadas sem validar a organização — latentes até a segunda
+organização, mesma classe de D-180.
 
 Números completos e método: `docs/PERFORMANCE.md`.
 
@@ -62,6 +67,10 @@ Números completos e método: `docs/PERFORMANCE.md`.
 - **A suíte de integração local exige banco recriado.** `supabase db reset`
   antes de rodar; e rodá-la quebra o seed do Playwright depois (usuários
   criados por SQL deixam `confirmation_token` nulo e o GoTrue estoura).
+- **`n_live_tup` mente, e mentiu feio.** As estatísticas do Dev estão velhas:
+  `job_runs` estimava ~6 mil e tem **271.184**; `ml_credentials` estimava 0 e
+  tem **4 credenciais reais**. Para qualquer raciocínio de segurança ou de
+  volume, `count(*)` — nunca a estimativa (D-182).
 
 ---
 
@@ -88,14 +97,15 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-1. **P0-E** — inventário de `SECURITY DEFINER`, `search_path` das funções de
-   trigger e policies permissivas duplicadas. É o último P0 de segurança
-   ainda aberto.
-2. **P0-H** — sobraram `get_sku_sales_baseline`, `get_sku_timeline` e as
+1. **P0-H** — sobraram `get_sku_sales_baseline`, `get_sku_timeline` e as
    consultas da Central de Notificações. Reproduzir cada uma antes de
    otimizar: `pg_stat_statements` mistura versões antigas das funções.
-3. **P1** — round trips por tela, retenção de `job_runs`, read models de
-   `stock_movements` e triagem de índices, na ordem registrada na trilha 8B.
+2. **P1** — retenção de `job_runs` primeiro: são **271.184 linhas** reais
+   (não as ~6 mil que `n_live_tup` estima). Depois round trips por tela,
+   read models de `stock_movements` e triagem de índices.
+3. **Antes da segunda organização** — `get_system_health` tem escopo de
+   plataforma com guard de tenant (D-182). Não é urgente hoje e não tem
+   correção óbvia: as duas tentativas naturais causam regressão verificada.
 
 ---
 

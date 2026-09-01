@@ -2820,6 +2820,70 @@ describe("pedidos de compra (fornecedores, ciclo, histórico por evento)", () =>
     ).rejects.toThrow(/outra organizacao/);
   });
 
+  // D-182 — o irmao do teste acima, que faltava.
+  //
+  // As duas funcoes validavam o FORNECEDOR contra a organizacao e depois
+  // inseriam `sku_id` cru do JSON do cliente. `create_manual_stock_adjustment`
+  // ja fazia a checagem com esta mensagem exata, entao era inconsistencia.
+  //
+  // A guarda vive num TRIGGER de `purchase_order_items`, nao dentro das RPCs:
+  // repetir a validacao em cada escritor foi exatamente o que falhou. Por
+  // isso os dois testes abaixo entram pelas DUAS portas — a RPC e a tabela.
+  it("create_purchase_order recusa SKU de outra organização (D-182)", async () => {
+    const outro = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, title)
+       values ($1,'RLSTEST-sku-outra-org','SKU de outra org') returning id`,
+      [ORG_OUTRA],
+    );
+    const skuDeOutraOrg = outro.rows[0]?.id ?? "";
+
+    const itensEnvenenados = `'[{"skuId":"${skuDeOutraOrg}","skuSnapshot":"RLSTEST-invasor","titleSnapshot":"Item invasor","quantityOrdered":1,"unitCost":1}]'::jsonb`;
+
+    await expect(
+      asUser(ADMIN_COMPRAS, `select * from public.create_purchase_order('${ORG_SB}',${itensEnvenenados})`),
+    ).rejects.toThrow(/outra organizacao/);
+  });
+
+  it("o invariante vale na TABELA, não só na RPC (D-182)", async () => {
+    // O item envenenado seria propagado para `stock_movements` por
+    // `mark_purchase_order_ordered` / `receive_purchase_order` /
+    // `cancel_purchase_order`, e nenhuma das tres revalida. Se a guarda
+    // vivesse so na RPC de criacao, bastaria uma quarta funcao para reabrir.
+    const outro = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, title)
+       values ($1,'RLSTEST-sku-outra-org-2','SKU de outra org 2') returning id`,
+      [ORG_OUTRA],
+    );
+    const skuDeOutraOrg = outro.rows[0]?.id ?? "";
+
+    const pedido = await asUserPersist<{ id: string }>(
+      ADMIN_COMPRAS,
+      `select id from public.create_purchase_order('${ORG_SB}',${ITEMS})`,
+    );
+    const pedidoId = pedido[0]?.id ?? "";
+
+    await expect(
+      client.query(
+        `insert into public.purchase_order_items
+           (organization_id, purchase_order_id, position, sku_id, sku_snapshot, quantity_ordered)
+         values ($1,$2,99,$3,'RLSTEST-direto',1)`,
+        [ORG_SB, pedidoId, skuDeOutraOrg],
+      ),
+    ).rejects.toThrow(/outra organizacao/);
+  });
+
+  it("item de texto livre (sem SKU) continua aceito — a guarda não fechou demais (D-182)", async () => {
+    // `sku_id` e nullable de proposito: comprar algo que ainda nao existe no
+    // catalogo e fluxo legitimo. Uma guarda que tratasse NULL como violacao
+    // quebraria a criacao de pedido com item avulso.
+    const pedido = await asUserPersist<{ id: string }>(
+      ADMIN_COMPRAS,
+      `select id from public.create_purchase_order('${ORG_SB}',${ITEMS})`,
+    );
+
+    expect(pedido[0]?.id).toBeDefined();
+  });
+
   it("create_purchase_order recusa pedido sem nenhum item", async () => {
     await expect(
       asUser(ADMIN_SB, `select * from public.create_purchase_order('${ORG_SB}','[]'::jsonb)`),
@@ -6087,6 +6151,30 @@ describe("actions / update_action_status / get_sku_average_prices (Fase 6, Centr
       ).rejects.toThrow(/sem permissao/i);
     });
 
+    // D-182 — o teste acima cobre QUEM CHAMA; faltava cobrir QUEM RECEBE.
+    //
+    // `p_assignee_id` e uma FK escolhida pelo cliente, e a funcao nao
+    // conferia nada sobre ela: um membro de A atribuia uma acao de A a
+    // alguem de B. A funcao irma `triage_support_case` ja validava a mesma
+    // coluna — era inconsistencia, nao desenho.
+    it("responsável de outra organização é rejeitado (D-182)", async () => {
+      await expect(
+        asUser(
+          ADMIN_SB,
+          `select * from public.update_action_status('${actionId}','em_andamento','${DE_OUTRA_ORG}')`,
+        ),
+      ).rejects.toThrow(/responsavel nao pertence/i);
+    });
+
+    it("responsável da própria organização continua aceito — a guarda não fechou demais (D-182)", async () => {
+      const rows = await asUser<{ assignee_id: string }>(
+        ADMIN_SB,
+        `select * from public.update_action_status('${actionId}','em_andamento','${ANALISTA_SB}')`,
+      );
+
+      expect(rows[0]?.assignee_id).toBe(ANALISTA_SB);
+    });
+
     it("status inválido é rejeitado", async () => {
       await expect(
         asUser(ADMIN_SB, `select * from public.update_action_status('${actionId}','lixo')`),
@@ -8572,6 +8660,183 @@ describe("guarda de GRANTs (D-066/D-098/D-130)", () => {
     // é uma combinação (tabela, comando) a revogar — ou uma policy que
     // deveria ter sido criada junto com o grant.
     expect(result.rows).toEqual([]);
+  });
+
+  // D-182 — a superficie SECURITY DEFINER exposta vira CONTRATO VERSIONADO.
+  //
+  // Uma funcao `SECURITY DEFINER` roda com os privilegios do dono e por isso
+  // ATRAVESSA a RLS. Isso e deliberado nesta arquitetura: `authenticated` nao
+  // tem grant de escrita em tabela nenhuma (D-066/D-098/D-130), entao toda
+  // escrita entra por uma RPC que valida o escopo antes de agir.
+  //
+  // O risco nao e a lista existir; e ela CRESCER sem que ninguem perceba.
+  // Uma funcao nova nasce DEFINER com `execute` para `authenticated` por
+  // habito, ninguem revisa se ela valida o escopo dos parametros que recebe,
+  // e a superficie aumenta em silencio. Foi assim que `update_action_status`
+  // ficou gravando um `assignee_id` de outra organizacao — a funcao irma
+  // `triage_support_case` valida a mesma coluna e explica por que.
+  //
+  // As 25 foram auditadas em 2026-09-01: todas sao chamadas pelo app (zero
+  // superficie morta) e todas tem `search_path` travado.
+  const RPCS_DEFINER_EXPOSTAS = [
+    "approve_purchase_order",
+    "cancel_purchase_order",
+    "create_action_decision",
+    "create_manual_stock_adjustment",
+    "create_purchase_order",
+    "create_saved_filter",
+    "create_sku_listing_link",
+    "create_supplier",
+    "delete_saved_filter",
+    "dismiss_link_candidate",
+    "get_sku_curation",
+    "get_sku_curation_summary",
+    "get_system_health",
+    "link_document_item",
+    "mark_purchase_order_ordered",
+    "receive_purchase_order",
+    "remove_sku_listing_link",
+    "resolve_link_candidate",
+    "retarget_sku_listing_link",
+    "set_skus_stock_virtual",
+    "set_skus_supplier_brand",
+    "triage_support_case",
+    "update_action_status",
+    "update_purchase_order_draft",
+    "update_supplier",
+  ];
+
+  it("a superficie SECURITY DEFINER exposta a authenticated e exatamente a lista versionada (D-182)", async () => {
+    const result = await client.query<{ proname: string }>(
+      `select p.proname
+         from pg_proc p
+         join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public'
+          and p.prosecdef
+          and has_function_privilege('authenticated', p.oid, 'execute')
+        order by p.proname`,
+    );
+
+    // Falhou aqui? NAO adicione o nome na lista para o teste passar. Primeiro
+    // responda: essa funcao valida o escopo de CADA parametro que recebe
+    // (organizacao, conta, papel, e as FKs que o cliente escolhe) antes de
+    // ler ou escrever? Se nao valida, ela nao deveria ser SECURITY DEFINER —
+    // ou nao deveria ter `execute` para authenticated.
+    expect(result.rows.map((r) => r.proname)).toEqual(RPCS_DEFINER_EXPOSTAS);
+  });
+
+  it("nenhuma funcao SECURITY DEFINER de public e alcancavel por anon (D-182)", async () => {
+    // `anon` e o visitante sem login. Uma DEFINER exposta a ele atravessaria
+    // a RLS sem sequer exigir autenticacao.
+    const result = await client.query<{ proname: string }>(
+      `select p.proname
+         from pg_proc p
+         join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public'
+          and p.prosecdef
+          and has_function_privilege('anon', p.oid, 'execute')
+        order by p.proname`,
+    );
+
+    expect(result.rows).toEqual([]);
+  });
+
+  it("toda funcao de public e private tem search_path travado (D-182)", async () => {
+    // `search_path` mutavel deixa um schema no caminho de busca do chamador
+    // sequestrar identificador nao qualificado. Nas 7 funcoes que faltavam
+    // NAO era explorável (o corpo inteiro e um `raise exception` sem UM
+    // identificador resolvivel) — mas um inventario so vira guarda se for
+    // absoluto. Uma lista de excecoes conhecidas e uma lista que ninguem
+    // revisa, e o proximo WARN, esse real, se perde no meio.
+    const result = await client.query<{ funcao: string }>(
+      `select n.nspname || '.' || p.proname as funcao
+         from pg_proc p
+         join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname in ('public', 'private')
+          and coalesce(array_to_string(p.proconfig, ','), '') not like '%search_path=%'
+        order by 1`,
+    );
+
+    expect(result.rows).toEqual([]);
+  });
+
+  it("nenhuma tabela de public da QUALQUER privilegio a anon (D-182)", async () => {
+    // O lado que a guarda de D-130 nao cobria. `pg_default_acl` fazia toda
+    // tabela nova nascer com privilegio para anon; D-182 fechou a torneira,
+    // e este teste e o que impede a proxima reabertura.
+    //
+    // `as materialized` nao e estilo: sem a barreira o Postgres pode avaliar
+    // `has_table_privilege` antes do filtro de relkind (a ordem dos quals nao
+    // e garantida) — a mesma armadilha documentada acima em D-130.
+    const result = await client.query<{ tablename: string }>(
+      `with tabelas as materialized (
+         select c.oid as oid, c.relname as relname
+           from pg_class c
+           join pg_namespace n on n.oid = c.relnamespace
+          where n.nspname = 'public' and c.relkind = 'r'
+       )
+       select relname as tablename from tabelas
+        where has_table_privilege('anon', oid, 'SELECT')
+           or has_table_privilege('anon', oid, 'INSERT')
+           or has_table_privilege('anon', oid, 'UPDATE')
+           or has_table_privilege('anon', oid, 'DELETE')
+           or has_table_privilege('anon', oid, 'TRUNCATE')
+           or has_table_privilege('anon', oid, 'REFERENCES')
+           or has_table_privilege('anon', oid, 'TRIGGER')
+        order by relname`,
+    );
+
+    expect(result.rows).toEqual([]);
+  });
+
+  it("nenhuma tabela de public esta com a RLS desligada (D-182)", async () => {
+    // Invariante mais barato do arquivo e o que mais economiza raciocinio:
+    // com ele verde, toda analise de acesso comeca de "a RLS esta ligada".
+    const result = await client.query<{ tablename: string }>(
+      `select c.relname as tablename
+         from pg_class c
+         join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = 'public' and c.relkind = 'r' and not c.relrowsecurity
+        order by c.relname`,
+    );
+
+    expect(result.rows).toEqual([]);
+  });
+
+  it("as tres tabelas sem policy continuam inalcancaveis pelo browser (D-182)", async () => {
+    // `job_runs`, `ml_credentials` e `ml_oauth_states` tem RLS ligada e ZERO
+    // policies DE PROPOSITO — nao e omissao a corrigir. `ml_credentials`
+    // guarda os tokens do Mercado Livre (cifrados, chave fora do banco) e
+    // NAO pode ser alcancavel pelo navegador.
+    //
+    // Sao duas camadas independentes, e o teste confere as DUAS: sem grant de
+    // tabela o browser apanha ANTES de chegar na RLS; e mesmo que um grant
+    // reaparecesse, a RLS sem policy nega tudo.
+    const result = await client.query<{
+      tabela: string;
+      policies: string;
+      anon: boolean;
+      auth: boolean;
+      rls: boolean;
+    }>(
+      `select c.relname as tabela,
+              (select count(*) from pg_policies p
+                where p.schemaname = 'public' and p.tablename = c.relname)::text as policies,
+              has_table_privilege('anon', c.oid, 'SELECT') as anon,
+              has_table_privilege('authenticated', c.oid, 'SELECT') as auth,
+              c.relrowsecurity as rls
+         from pg_class c
+         join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = 'public'
+          and c.relname in ('job_runs', 'ml_credentials', 'ml_oauth_states')
+        order by c.relname`,
+    );
+
+    expect(result.rows).toEqual([
+      { tabela: "job_runs", policies: "0", anon: false, auth: false, rls: true },
+      { tabela: "ml_credentials", policies: "0", anon: false, auth: false, rls: true },
+      { tabela: "ml_oauth_states", policies: "0", anon: false, auth: false, rls: true },
+    ]);
   });
 
   // TRUNCATE é a exceção que derruba o consolo das rodadas anteriores.

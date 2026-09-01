@@ -3516,6 +3516,66 @@ O plano antigo mostra `Filter: private.has_account_access(...)`; o novo, `hashed
 
 **Impacto:** migration acima, `packages/db/src/rls.integration.test.ts`. Nenhuma mudanca de aplicacao — como em D-180, o problema era inteiramente de banco.
 
+## D-182 - O inventario do P0-E nao achou o furo que procurava, e achou outro
+
+**Contexto:** P0-E da trilha 8B, o ultimo P0 de seguranca. A auditoria herdada apontava tres coisas: funcoes `SECURITY DEFINER` com `search_path` mutavel, policies permissivas duplicadas e `SECURITY DEFINER` exposto demais.
+
+**As tres suspeitas, medidas contra o banco real:**
+
+| Suspeita | Estado medido |
+|---|---|
+| `SECURITY DEFINER` sem `search_path` | **ZERO**, nos dois schemas. As 37 ja tinham |
+| Policies permissivas duplicadas | **4 existem** — e nas 4 o predicado da policy `ALL` e SUBCONJUNTO do de SELECT. Redundancia, nao vazamento |
+| `search_path` mutavel | 7 funcoes, **todas de trigger**, corpo inteiro `raise exception '<literal>', tg_op` |
+| RPCs `SECURITY DEFINER` expostas | 25, e **todas as 25 sao chamadas pelo app** — zero superficie morta |
+
+**Decisao 1 — registrar que o P0-E nao tinha vulnerabilidade, com o porque.** Nenhum dos tres itens tinha caminho de ataque. Isso e resultado, nao anticlimax: significa que o proximo agente nao deve refazer o trabalho, e que a documentacao herdada estava desatualizada. O ruido de linter fica documentado abaixo para nao ser reaberto todo mes.
+
+**Decisao 2 — os 7 `search_path` sao travados MESMO nao sendo vulneraveis.** Nao ha um identificador resolvivel naqueles corpos: literal de string nao passa por resolucao de nome, `tg_op` e variavel do plpgsql, e o Postgres recusa chamada direta de funcao de trigger. O ganho e o painel: eram **7 dos 33 WARN** do advisor. Um painel com ruido conhecido e um painel que ninguem le, e o proximo alerta — esse real — se perde no meio. Depois da migration: **26 WARN**, todos conhecidos e justificados.
+
+**Cuidado com o argumento errado que circula:** "sao SECURITY INVOKER, logo nao ha escalacao por construcao" e **falso**. Uma trigger function INVOKER roda com os privilegios de quem dispara o DML; se o DML parte de dentro de uma DEFINER pertencente a `postgres`, o corpo roda como postgres. A inocuidade aqui vem de nao haver nada a sequestrar, nao daquele principio.
+
+**Decisao 3 — o que a auditoria achou de verdade: duas FKs do cliente sem validacao de escopo.**
+
+`create_purchase_order` e `update_purchase_order_draft` validam o FORNECEDOR contra a organizacao e depois inserem `sku_id` cru do JSON do cliente. A funcao irma `create_manual_stock_adjustment` **ja fazia** a checagem, com a mensagem exata `'SKU pertence a outra organizacao'` — entao era inconsistencia, nao escolha.
+
+O dano nao seria a quantidade lancada (`receive`/`cancel` lancam o contra-movimento). Seria a **linha carimbada**: `inventory_balances` tem `unique (sku_id, location_kind)` **sem organizacao**, entao o upsert de A criaria a linha de saldo de um SKU de B carimbada com a organizacao A — e a policy de leitura esconderia de B o proprio saldo, para sempre. Agravante: a FK e `on delete restrict`, entao B tambem nao conseguiria mais apagar o proprio SKU.
+
+`update_action_status` confere que QUEM CHAMA e membro da organizacao da acao, e nada sobre `p_assignee_id`. `triage_support_case` valida a mesma coluna e explica por que.
+
+Medido: **zero linhas violam hoje** (0 incoerencias em `purchase_order_items`, `inventory_balances` e `stock_movements`). Sao latentes — mordem no dia da segunda organizacao, mesma classe de D-180.
+
+**Decisao 4 — a guarda do SKU vive num TRIGGER, nao dentro das RPCs.** Repetir a validacao em cada escritor foi exatamente o que falhou. Ha tres funcoes que propagam esses itens para `stock_movements` (`mark_purchase_order_ordered`, `receive_purchase_order`, `cancel_purchase_order`) e nenhuma revalida. Um invariante na tabela vale para as tres e para a quarta que alguem escrever depois. Por isso ha teste entrando pelas DUAS portas — a RPC e a tabela.
+
+**Decisao 5 — a lista de RPCs expostas vira contrato versionado.** O risco nunca foi a lista existir; foi ela CRESCER sem revisao. Uma funcao nova nasce DEFINER com `execute` para `authenticated` por habito, ninguem confere se ela valida o escopo dos parametros, e a superficie aumenta em silencio — foi assim que `update_action_status` ficou como ficou. O teste falha em CI se a lista mudar, e o comentario obriga quem for adicionar a responder a pergunta certa antes.
+
+**Decisao 6 — fechar a torneira do `pg_default_acl`, com escopo declarado.** Toda tabela e sequence nova de `public` nascia com privilegio para `anon` e `authenticated`. As tres rodadas de revoke (D-066/D-098/D-130) limparam o que existia; esta fecha a origem — mas so parte dela, e vale dizer qual:
+
+| Default | Situacao |
+|---|---|
+| `postgres` / tabelas e sequences | **fechado.** E o que importa: migration roda como `postgres` |
+| `postgres` / funcoes | deixado. As RPCs dependem de `grant execute`; exige varrer todas as migrations que criam funcao |
+| `supabase_admin` / tudo | deixado **de proposito**. E o papel da plataforma; revogar dali pode quebrar maquinaria do Supabase e o ganho e zero — a aplicacao nao cria objeto por esse papel |
+
+A guarda de verdade nao e a migration e sim o teste «nenhuma tabela de public da QUALQUER privilegio a anon», que pega o vazamento venha de qual grantor vier.
+
+**O que NAO foi mexido, e por que:**
+
+- **`job_runs`, `ml_credentials`, `ml_oauth_states`** continuam com RLS ligada e ZERO policies. Nao e omissao: sao tres camadas independentes (sem grant de tabela; RLS sem policy; `private` sem USAGE). O browser apanha no GRANT **antes** de chegar na RLS. Ha teste conferindo as duas camadas.
+- **A chave unica de `inventory_balances`** nao ganhou `organization_id`: trocar o indice sem trocar o `on conflict` de `private.apply_stock_movement` na MESMA migration faz todo insert em `stock_movements` falhar com 42P10 — o estoque inteiro para. E sozinha nao corrige nada: troca corrupcao silenciosa por lixo silencioso. A guarda no trigger resolve sem esse risco.
+- **A forma escalar de `has_org_role` nas 21 policies.** Medido: 13 a 19 microssegundos por linha varrida, e o ganho TOTAL de converter as 21 hoje e de 1 a 2 ms — `erp_import_rows` (30.983 linhas) ja e hasheada pelo planner porque a policy envolve a funcao num EXISTS, `erp_stock_snapshots` (3.372) so e lida por uma RPC que atravessa a RLS, e todo o resto tem ate 36 linhas. **Nao ha analogo do ganho de D-181.** Fica registrado com o limiar: ~5-7 mil linhas em `erp_stock_snapshots`, que chega em 2 a 3 lotes de importacao.
+- **`get_system_health`** tem escopo de plataforma protegido por papel de escopo de tenant. Correta por acidente enquanto houver uma organizacao. As duas correcoes obvias causam regressao verificada (filtrar por organizacao apaga o heartbeat `system.ping`, que e a razao de ser da tela; mudar a assinatura quebra a pagina e os tipos). Registrado como bloqueio a resolver ANTES da segunda organizacao.
+
+**Ruido de linter, documentado para nao ser reaberto:** os 3 INFO de `rls_enabled_no_policy` (deliberados, acima); `TRIGGER`/`REFERENCES` para `authenticated` (so exerciveis por DDL; `authenticated` e dono de zero relacoes e tem CREATE em zero schemas — revogados assim mesmo, por higiene); as 6 sequences com `anon=rwU` (as 6 colunas sao IDENTITY ALWAYS, e IDENTITY e avaliada por `NextValueExpr` sem consultar a ACL da sequence); `TEMP` no banco para anon/authenticated (sem SQL dinamico, sem `pg_cron`/`pg_net`/`dblink`, e `pg_temp` nao e pesquisado para funcoes quando nao nomeado no `search_path`).
+
+**Um erro meu, corrigido:** reportei `job_runs`/`ml_credentials`/`ml_oauth_states` com 5.054/0/0 linhas usando `n_live_tup`, que e **estimativa** e estava velha. O real e **271.184 / 4 / 24**. Importa: `ml_credentials` nao esta vazia — guarda 4 credenciais reais do Mercado Livre (cifradas, chave fora do banco). A blindagem daquela tabela protege segredo vivo. Para raciocinio de seguranca, `count(*)`, nunca `n_live_tup`.
+
+**Divergencia consciente entre o arquivo e o que foi aplicado:** dois comentarios da migration local foram corrigidos DEPOIS de aplicar — a contagem de WARN (eu havia escrito 11; sao 33) e o escopo do `pg_default_acl` (o texto aplicado dizia "fecha a torneira" sem dizer que fecha so o grantor `postgres`). O SQL e identico; so o comentario mudou, e o arquivo local e a versao correta.
+
+**Verificacao:** ensaio revertido no local ANTES de aplicar, que pegou a armadilha de ordem de quals ja documentada em D-130 (`has_sequence_privilege` avaliada antes do filtro `relkind='S'`, matando o bloco com «"suppliers" is not a sequence») — resolvida com `as materialized`. Migration `20260901150926` nos DOIS bancos. **507/507 testes de integracao em banco recriado do zero** (+11: a lista versionada, anon sem DEFINER, `search_path` absoluto, anon sem privilegio de tabela, RLS ligada em toda tabela, as tres tabelas blindadas nas duas camadas, SKU cross-org pela RPC e pela tabela, item de texto livre preservado, responsavel cross-org e responsavel legitimo). `check` 29/29, build 8/8, 13/13 Playwright — incluindo o e2e de pedido de compra com item avulso, que prova que a guarda nao fechou o caminho legitimo na UI. Advisor: 33 WARN → 26.
+
+**Impacto:** migration acima, `packages/db/src/rls.integration.test.ts`. Nenhuma mudanca de aplicacao.
+
 ## Como adicionar nova decisao
 
 Registrar:
