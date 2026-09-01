@@ -90,7 +90,6 @@ jobs:
           {
             echo "NEXT_PUBLIC_SUPABASE_URL=$API_URL"
             echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY"
-            echo "API_URL=$API_URL"
           } >> "$GITHUB_ENV"
 
       - name: Testes de RLS e de gravacao idempotente

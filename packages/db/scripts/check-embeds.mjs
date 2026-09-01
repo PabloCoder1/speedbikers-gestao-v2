@@ -25,11 +25,17 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-const API_URL = process.env.API_URL;
-const KEY = process.env.SERVICE_ROLE_KEY;
+// Dois nomes para cada, e isto NAO e indecisao: `supabase status -o env`
+// emite `API_URL`/`SERVICE_ROLE_KEY`, enquanto o CI e o resto do repo usam
+// `NEXT_PUBLIC_SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`. Aceitar os dois faz
+// o script rodar em qualquer um dos dois ambientes sem variavel extra --
+// exportar a variavel errada foi exatamente o que quebrou a primeira
+// tentativa deste passo no CI.
+const API_URL = process.env.API_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
+const KEY = process.env.SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (API_URL == null || KEY == null) {
-  console.error("faltam API_URL / SERVICE_ROLE_KEY no ambiente");
+  console.error("faltam a URL e a chave de service role no ambiente");
   console.error('rode antes: eval "$(pnpm exec supabase status -o env)"');
   process.exit(1);
 }
