@@ -52,10 +52,25 @@ Ambiente: Supabase Dev `nmgccyqquwxecqffsidr`. Dados: 337.303 `orders`,
 
 | RPC | Parâmetros | Tempo | Buffers | Situação |
 |---|---|---|---|---|
-| `get_stock_balances` | 50 linhas, sem filtro | **9.104 ms** | 751.576 | 🔴 P0-F |
-| `get_listings_dashboard` | 30 dias, 50 linhas | **timeout > 60 s** | — | 🔴 P0-G |
+| `get_stock_balances` | 50 linhas, sem filtro | **9.104 ms** | 751.576 | 🔴 P0-F — resolvido em D-181 |
+| `get_listings_dashboard` | 30 dias, 50 linhas | **timeout > 60 s** | — | 🔴 P0-G — resolvido em D-181 |
 | `get_fulfillment_overview` | 30 dias, 50 linhas | 97 ms | ~30 k | ✅ dentro do budget (D-173) |
 | `get_listings_dashboard` (antes de D-170) | 30 dias, 50 linhas | 578 ms | 30.354 | referência histórica |
+
+### Depois de D-181 — mesma medição, mesmo usuário
+
+| RPC | Tempo | Buffers | Linhas |
+|---|---|---|---|
+| `get_stock_balances` | **681 ms** (3.138 ms a frio) | 22.516 | 50 |
+| `get_listings_dashboard` | **271 ms** (536 ms a frio) | 21.739 (na passada a frio) | 50 |
+| `get_sales_expanded_summary` | 700 ms | — | 1 |
+| `get_sku_abc_curve` | 417 ms | — | 200 |
+| `get_unlinked_listings` | 460 ms | — | 100 |
+| `get_stock_coverage` | 314 ms | — | 3.251 |
+
+As quatro últimas eram o P0-H. **Não tenho o "antes" delas medido**, então
+não reivindico ganho — o que está registrado é que hoje estão dentro do
+budget, e que nenhuma linha de código de RPC foi tocada para isso.
 
 ### O achado que muda a ordem de ataque
 
@@ -83,6 +98,17 @@ policy virando teste de pertencimento) tende a beneficiar todas as telas de
 uma vez, enquanto reescrever cada RPC resolve uma tela por vez. A segurança
 não pode ser afrouxada para isso — o alvo é o mesmo predicado avaliado menos
 vezes.
+
+**Confirmado em D-181.** A prova isolada, antes de mexer em qualquer policy:
+
+| `select count(*) from listings` (5.085 linhas visíveis) | Tempo | Buffers |
+|---|---|---|
+| `using (private.has_account_access(ml_account_id))` | 186,8 ms | 15.802 |
+| `using (ml_account_id in (select private.accessible_accounts()))` | **4,8 ms** | **462** |
+
+O plano antigo mostra `Filter: private.has_account_access(ml_account_id)`;
+o novo, `hashed SubPlan` com `rows=4 loops=1` — quatro contas no sistema,
+uma resposta em vez de 5.085.
 
 ### Volume que não é problema (ainda)
 
@@ -158,10 +184,25 @@ Cada linha tem o antes/depois real, não estimativa.
 | 2026-08-31 | `get_listings_dashboard` | 578 ms | 59,8 ms (inline) | agregar métricas por dia antes do join, em vez de nested loop com memoize (50.949 → 4.149 buffers) | D-170 |
 | 2026-08-31 | `get_fulfillment_overview` | 899 ms | **53 ms** | `as materialized` na CTE do espelho + `count(*) over ()` | D-173 |
 | 2026-08-31 | Espelho do Full (leitura) | 110 ms / 85.805 buffers | 24 ms / 27.270 | janela de frescor de 3 dias no `distinct on` | D-173 |
+| 2026-09-01 | `listings` (policy pura) | 186,8 ms / 15.802 | **4,8 ms / 462** | RLS como conjunto: `coluna in (select private.accessible_accounts())` no lugar da função escalar por linha | D-181 |
+| 2026-09-01 | `get_stock_balances` | 9.104 ms / 751.576 | **681 ms / 22.516** | idem — nenhuma linha da RPC mudou | D-181 |
+| 2026-09-01 | `get_listings_dashboard` | timeout > 60 s | **271 ms / 21.739** | idem — nenhuma linha da RPC mudou | D-181 |
 
 **Lição que se repete:** o mesmo desenho pode ser certo num tamanho e errado
 em outro. D-167 reprovou `count(*) over ()` sobre 225 mil linhas; D-173
 reprovou o substituto sobre 1.872. Medir, não copiar o padrão anterior.
+
+**Lição de D-181:** antes de reescrever a consulta, verifique quantas vezes o
+Postgres avalia a *autorização*. Uma função barata chamada 5.085 vezes custa
+mais que uma consulta cara. E o sintoma aponta para o lugar errado: parecia
+agregação, era policy.
+
+⚠️ **A armadilha do baseline** apareceu de novo aqui, ao contrário: a
+primeira comparação de visibilidade rodou `set local role authenticated`
+**fora de uma transação**, o Postgres descartou em silêncio, e a contagem
+saiu como superusuário — com a RLS desligada. Deu 17/6/14 contra os 15/5/13
+reais e simulou uma regressão que não existia. Se uma medição de RLS mudar
+de forma inexplicável, confira primeiro se o papel realmente trocou.
 
 ---
 

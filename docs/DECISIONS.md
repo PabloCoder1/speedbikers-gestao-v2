@@ -3485,6 +3485,37 @@ group by 1 order by 1 desc;
 
 **Impacto:** migration acima, `packages/db/src/rls.integration.test.ts`. Nenhuma mudanca de aplicacao — o furo era inteiramente de banco.
 
+## D-181 - A RLS deixa de ser avaliada uma vez por linha
+
+**Contexto:** P0-F e P0-G da trilha 8B. `get_stock_balances` levava 9.104 ms para devolver 50 linhas; `get_listings_dashboard` estourava 60 s. Os dois pareciam problema de agregacao.
+
+**O diagnostico que muda o alvo.** O `CONTEXT` do erro de timeout apontava para dentro de `private.has_account_access`, nao para um no de agregacao. A funcao nao e cara — faz um `exists` barato. O defeito e a **forma**: recebendo uma COLUNA, ela e executada uma vez por linha candidata. Em `listings` isso e 5.085 execucoes para responder uma pergunta que tem **quatro** respostas possiveis, porque o sistema tem quatro contas.
+
+**A prova isolada, antes de mexer em qualquer policy** (Dev, usuario autenticado real, `select count(*) from listings`, 5.085 linhas nos dois casos):
+
+| Predicado | Tempo | Buffers |
+|---|---|---|
+| `private.has_account_access(ml_account_id)` | 186,8 ms | 15.802 |
+| `ml_account_id in (select private.accessible_accounts())` | **4,8 ms** | **462** |
+
+O plano antigo mostra `Filter: private.has_account_access(...)`; o novo, `hashed SubPlan` com `rows=4 loops=1`.
+
+**Decisao 1 — a autorizacao vira CONJUNTO, nao predicado escalar.** `private.accessible_accounts()` e `private.accessible_orgs()` devolvem `setof uuid` com exatamente a mesma regra das escalares — mesmo `exists`, mesmo `auth.uid()`, mesma distincao entre ADMIN e `user_account_permissions`. A policy passa a ser um teste de pertencimento. **Muda quantas vezes a pergunta e feita, nao qual e a resposta.**
+
+**Decisao 2 — as versoes escalares CONTINUAM existindo.** Dentro de uma RPC que valida uma conta especifica (`triage_support_case`), elas sao chamadas uma vez so e ali sao a forma certa. O defeito nunca foi a funcao; foi o uso dela numa policy. Por isso o teste de regressao proibe a forma escalar **em policy**, e nao a funcao.
+
+**Decisao 3 — a reescrita das 42 policies e programatica e verificada.** Um bloco `do` substitui o texto do predicado, **levanta excecao** se sobrar chamada com parenteses aninhados que o regex nao alcance, exige exatamente **42** migradas (o inventario medido nos dois bancos) e prova no fim que nenhuma policy ficou com a forma antiga e que as duas funcoes novas sao `SECURITY DEFINER` com `search_path` travado.
+
+**Como a equivalencia foi provada antes de aplicar.** Contar linhas nao basta: duas policies diferentes podem devolver o mesmo numero de linhas erradas. O ensaio comparou o **md5 do conjunto visivel** em **40 tabelas x 4 usuarios** do fixture, dentro de uma transacao revertida — antes e depois da migration, na mesma transacao. **Zero divergencias.**
+
+**O susto que valeu a lição:** a primeira comparacao acusou regressao (17/6/14 contra 15/5/13). Era erro da MEDIÇÃO: o `set local role authenticated` do baseline rodou **fora de uma transacao**, o Postgres descartou em silencio e a contagem saiu como superusuario, com a RLS desligada. O mesmo tipo de armadilha ja documentado em `docs/PERFORMANCE.md`, agora ao contrario — antes fingia sucesso, aqui fingiu quebra.
+
+**Resultado medido depois de aplicar,** com a RPC **inalterada**: `get_stock_balances` 9.104 ms → **681 ms** (751.576 → 22.516 buffers); `get_listings_dashboard` timeout > 60 s → **271 ms**. De quebra, quatro RPCs do P0-H entraram no budget sem trabalho proprio — nao se reivindica ganho nelas, porque o "antes" nao foi medido.
+
+**Verificacao:** ensaio de equivalencia revertido no local ANTES de aplicar; migration `20260901141107` nos DOIS bancos; **496/496 testes de integracao em banco recriado do zero**, com +6 testes que comparam as duas formas conta a conta e organizacao a organizacao para os quatro usuarios do fixture, proibem a forma escalar em policy e montam o cenario de permissao em vez de assumi-lo. `check` 29/29, build 8/8, 13/13 Playwright.
+
+**Impacto:** migration acima, `packages/db/src/rls.integration.test.ts`. Nenhuma mudanca de aplicacao — como em D-180, o problema era inteiramente de banco.
+
 ## Como adicionar nova decisao
 
 Registrar:

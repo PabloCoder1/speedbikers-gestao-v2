@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **179** (D-001 a D-180).
+Decisões registradas: **180** (D-001 a D-181).
 
 ## Por domínio
 
@@ -42,7 +42,7 @@ Decisões registradas: **179** (D-001 a D-180).
 - **D-149** — Custo de simulacao separado do cadastrado, e o custo passa a ter historia
 - **D-177** — O contexto dos agentes virou problema de engenharia, e o bootstrap caiu de 1,2 MB para 7,6 KB
 
-### banco/rls (17)
+### banco/rls (18)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -61,6 +61,7 @@ Decisões registradas: **179** (D-001 a D-180).
 - **D-137** — Comparação de período no gráfico, e o alinhamento por índice que estava certo por sorte
 - **D-150** — Priorizacao de compras: a primeira derivacao SQL da formula canonica, com teste de equivalencia
 - **D-168** — Dashboard 360º do Anuncio: o destino individual nasce em secoes, com read model somado em SQL
+- **D-181** — A RLS deixa de ser avaliada uma vez por linha
 
 ### estoque (18)
 

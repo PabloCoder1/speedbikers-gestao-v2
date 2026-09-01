@@ -87,6 +87,30 @@ async function asUserPersist<T>(userId: string, sql: string): Promise<T[]> {
   }
 }
 
+/**
+ * Planta o claim que `auth.uid()` le, mas NAO troca de papel.
+ *
+ * `authenticated` nao tem USAGE no schema `private` — e de proposito: as
+ * funcoes de autorizacao so sao alcancaveis de dentro de uma policy. Para
+ * comparar a forma escalar com a forma de conjunto (D-181) e preciso
+ * enxerga-las de fora, e isso so o dono da conexao consegue.
+ */
+async function comoClaimDe<T>(userId: string, sql: string): Promise<T[]> {
+  await client.query("begin");
+
+  try {
+    await client.query("select set_config('request.jwt.claims', $1, true)", [
+      JSON.stringify({ sub: userId }),
+    ]);
+
+    const result = await client.query(sql);
+
+    return result.rows as T[];
+  } finally {
+    await client.query("rollback");
+  }
+}
+
 async function asAnon<T>(sql: string): Promise<T[]> {
   await client.query("begin");
 
@@ -5281,6 +5305,175 @@ describe("escopo de papel entre organizações (D-180)", () => {
 
     // O fixture cria fornecedores em ORG_SB; o ADMIN de verdade os vê.
     expect(proprios.length).toBeGreaterThan(0);
+  });
+});
+
+// D-181 — a RLS deixa de ser avaliada uma vez POR LINHA.
+//
+// A funcao escalar `has_account_access(coluna)` obrigava o Postgres a
+// executa-la para cada linha candidata: 5.085 chamadas no Dev para responder
+// uma pergunta com 4 respostas possiveis. A forma de conjunto responde uma
+// vez por consulta.
+//
+// O risco de uma troca dessas nao e performance, e **visibilidade**: uma
+// reescrita que "otimiza" mostrando linhas a mais e um vazamento, e uma que
+// mostra linhas a menos e uma quebra silenciosa. Por isso os testes abaixo
+// comparam as DUAS formas em vez de so exercitar a nova.
+describe("RLS por conjunto em vez de por linha (D-181)", () => {
+  const TODOS = [ADMIN_SB, ANALISTA_SB, DE_OUTRA_ORG, SEM_ORG];
+
+  it("conjunto e escalar concordam sobre CADA conta, para cada usuário", async () => {
+    for (const usuario of TODOS) {
+      const divergencias = await comoClaimDe<{ id: string }>(
+        usuario,
+        `select a.id
+           from public.ml_accounts a
+          where private.has_account_access(a.id)
+                is distinct from (a.id in (select private.accessible_accounts()))`,
+      );
+
+      expect(divergencias).toHaveLength(0);
+    }
+  });
+
+  it("conjunto e escalar concordam sobre CADA organização, para cada usuário", async () => {
+    for (const usuario of TODOS) {
+      const divergencias = await comoClaimDe<{ id: string }>(
+        usuario,
+        `select o.id
+           from public.organizations o
+          where private.is_member_of(o.id)
+                is distinct from (o.id in (select private.accessible_orgs()))`,
+      );
+
+      expect(divergencias).toHaveLength(0);
+    }
+  });
+
+  it("nenhuma policy voltou à forma escalar — o defeito era a forma, não a função", async () => {
+    // Guarda de regressão: as versões escalares continuam existindo e são a
+    // forma certa DENTRO de uma RPC que valida uma conta específica. O que
+    // não pode voltar é o uso delas numa policy, onde recebem uma coluna.
+    const escalares = await client.query<{ tablename: string; policyname: string }>(
+      `select tablename, policyname
+         from pg_policies
+        where schemaname = 'public'
+          and (qual::text like '%has_account_access(%'
+            or coalesce(with_check::text, '') like '%has_account_access(%'
+            or qual::text like '%is_member_of(%'
+            or coalesce(with_check::text, '') like '%is_member_of(%')
+        order by tablename, policyname`,
+    );
+
+    expect(escalares.rows).toEqual([]);
+  });
+
+  it("o ADMIN legítimo continua enxergando os seus — a otimização não fechou demais", async () => {
+    const listings = await asUser<{ id: string }>(ADMIN_SB, `select id from public.listings`);
+    const skus = await asUser<{ id: string }>(ADMIN_SB, `select id from public.skus`);
+
+    expect(listings.length).toBeGreaterThan(0);
+    expect(skus.length).toBeGreaterThan(0);
+  });
+
+  it("o conjunto reflete `user_account_permissions`, não um atalho por organização", async () => {
+    // Este teste MONTA o cenário em vez de assumi-lo: quando ele roda, a
+    // suíte já concedeu acesso a contas em testes anteriores, e um teste que
+    // dependesse do fixture inicial passaria ou falharia conforme a ordem.
+    await client.query("begin");
+
+    try {
+      // O ator das escritas — os gatilhos de auditoria registram quem concedeu.
+      await client.query("select set_config('request.jwt.claims', $1, true)", [
+        JSON.stringify({ sub: ADMIN_SB }),
+      ]);
+      await client.query(
+        `insert into public.organization_members (organization_id, user_id, role)
+         values ($1, $2, 'ANALISTA')
+         on conflict (organization_id, user_id) do update set role = 'ANALISTA'`,
+        [ORG_SB, ANALISTA_SB],
+      );
+      await client.query(`delete from public.user_account_permissions where user_id = $1`, [
+        ANALISTA_SB,
+      ]);
+
+      await client.query("select set_config('request.jwt.claims', $1, true)", [
+        JSON.stringify({ sub: ANALISTA_SB }),
+      ]);
+
+      // Membro da organização, mas sem permissão: nenhuma conta. A regra de
+      // conta não é a de organização — o conjunto não afrouxou isso.
+      const semPermissao = await client.query<{ id: string }>(
+        `select a.id from public.ml_accounts a where a.id in (select private.accessible_accounts())`,
+      );
+      expect(semPermissao.rows).toEqual([]);
+
+      // E `listings` some junto, porque a policy passa pelo mesmo conjunto.
+      await client.query("set local role authenticated");
+      const listings = await client.query<{ id: string }>(`select id from public.listings`);
+      expect(listings.rows).toEqual([]);
+      await client.query("reset role");
+
+      // Concedida UMA conta, o conjunto passa a ser exatamente ela.
+      const conta = await client.query<{ id: string }>(
+        `select id from public.ml_accounts where organization_id = $1 order by id limit 1`,
+        [ORG_SB],
+      );
+      const contaId = conta.rows[0]?.id;
+      expect(contaId).toBeDefined();
+
+      await client.query("select set_config('request.jwt.claims', $1, true)", [
+        JSON.stringify({ sub: ADMIN_SB }),
+      ]);
+      await client.query(
+        `insert into public.user_account_permissions (user_id, ml_account_id) values ($1, $2)`,
+        [ANALISTA_SB, contaId],
+      );
+      await client.query("select set_config('request.jwt.claims', $1, true)", [
+        JSON.stringify({ sub: ANALISTA_SB }),
+      ]);
+
+      const comPermissao = await client.query<{ id: string }>(
+        `select a.id from public.ml_accounts a where a.id in (select private.accessible_accounts())`,
+      );
+      expect(comPermissao.rows.map((r) => r.id)).toEqual([contaId]);
+    } finally {
+      await client.query("rollback");
+    }
+  });
+
+  it("quem é de outra organização não alcança conta nem organização desta", async () => {
+    const contas = await comoClaimDe<{ id: string }>(
+      DE_OUTRA_ORG,
+      `select a.id from public.ml_accounts a
+        where a.organization_id = '${ORG_SB}'
+          and a.id in (select private.accessible_accounts())`,
+    );
+    const orgs = await comoClaimDe<{ id: string }>(
+      DE_OUTRA_ORG,
+      `select o.id from public.organizations o
+        where o.id = '${ORG_SB}' and o.id in (select private.accessible_orgs())`,
+    );
+
+    expect(contas).toHaveLength(0);
+    expect(orgs).toHaveLength(0);
+  });
+
+  it("as funções de conjunto são SECURITY DEFINER com search_path travado", async () => {
+    const funcoes = await client.query<{ proname: string; seguro: boolean }>(
+      `select p.proname,
+              (p.prosecdef and coalesce(array_to_string(p.proconfig, ','), '') like '%search_path=%') as seguro
+         from pg_proc p
+         join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'private'
+          and p.proname in ('accessible_accounts', 'accessible_orgs')
+        order by p.proname`,
+    );
+
+    expect(funcoes.rows).toEqual([
+      { proname: "accessible_accounts", seguro: true },
+      { proname: "accessible_orgs", seguro: true },
+    ]);
   });
 });
 
