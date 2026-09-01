@@ -1,4 +1,5 @@
 import type { AdminClient } from "@sb/db";
+import { assertWritten } from "./assert-written.js";
 import { detectFulfillmentEvents } from "@sb/domain";
 import type { MercadoLivreClient } from "@sb/mercado-livre";
 import { MercadoLivreApiError } from "@sb/mercado-livre";
@@ -201,7 +202,10 @@ export async function fetchFulfillmentSnapshots(
       capturedAt,
     };
 
-    await params.db.from("fulfillment_stock_snapshots").insert({
+    // O snapshot e a base do diff logo abaixo: se ele nao gravou, os eventos
+    // de Full sairiam de uma comparacao com estado que nao existe (D-178).
+    assertWritten(
+      await params.db.from("fulfillment_stock_snapshots").insert({
       organization_id: params.organizationId,
       ml_account_id: params.mlAccountId,
       inventory_id: stock.inventory_id,
@@ -209,8 +213,10 @@ export async function fetchFulfillmentSnapshots(
       variation_id: null,
       sku_id: link.sku_id,
       quantity: stock.available_quantity,
-      captured_at: capturedAt.toISOString(),
-    });
+        captured_at: capturedAt.toISOString(),
+      }),
+      "fulfillment_stock_snapshots.insert",
+    );
 
     const events = detectFulfillmentEvents(previous, current);
 

@@ -95,6 +95,12 @@ interface FakeDbOptions {
   skuKindError?: boolean;
   /** Simula falha ao ler os componentes do kit (loadSkuKindAndComponents, segunda query). */
   componentsError?: boolean;
+  /** Simula falha no `upsert` de `orders` — a escrita mais critica do handler (D-178). */
+  orderWriteError?: boolean;
+  /** Simula falha no `delete` de `order_items` (D-178). */
+  itemsDeleteError?: boolean;
+  /** Simula falha no `insert` de `order_items` (D-178). */
+  itemsInsertError?: boolean;
 }
 
 function fakeDb(options: FakeDbOptions = {}): {
@@ -142,16 +148,32 @@ function fakeDb(options: FakeDbOptions = {}): {
 
         upserted.push({ table, row });
 
+        if (table === "orders" && options.orderWriteError === true) {
+          return Promise.resolve({ data: null, error: { code: "42P01", message: "boom" } });
+        }
+
         return Promise.resolve({ data: null, error: null });
       },
       delete: () => ({
         eq: (col: string, val: unknown) => {
           deleted.push({ table, filters: { [col]: val } });
 
+          if (table === "order_items" && options.itemsDeleteError === true) {
+            return Promise.resolve({ data: null, error: { code: "42P01", message: "boom" } });
+          }
+
           return Promise.resolve({ data: null, error: null });
         },
       }),
-      insert: (row: unknown) => writeAppendOnly(table, row),
+      insert: (row: unknown) => {
+        if (table === "order_items" && options.itemsInsertError === true) {
+          inserted.push({ table, rows: Array.isArray(row) ? row : [row] });
+
+          return Promise.resolve({ data: null, error: { code: "42P01", message: "boom" } });
+        }
+
+        return writeAppendOnly(table, row);
+      },
       // Tabela importa: `skus`/`sku_components` (dedução de estoque) e
       // `sku_listing_links` (resolução de vínculo) têm formas de filtro
       // e resposta diferentes — misturar os três faria um passar pelo
@@ -727,5 +749,50 @@ describe("persistOrder", () => {
 
       await expect(run(db, BASE_ORDER)).rejects.toThrow(/componentes do kit/);
     });
+  });
+});
+
+/**
+ * D-178 — escrita critica que falha nao pode deixar o handler seguir.
+ *
+ * O `AdminClient` nao lanca sozinho: sem checar `.error`, `persistOrder`
+ * continuava emitindo evento de status e deduzindo estoque de um pedido que
+ * podia nao ter sido gravado. Estes testes provam que o fluxo PARA.
+ */
+describe("persistOrder — escritas críticas (D-178)", () => {
+  it("falha ao gravar a order aborta antes de evento e de estoque", async () => {
+    const { db, inserted } = fakeDb({ orderWriteError: true, previousStatus: "confirmed" });
+
+    await expect(
+      persistOrder(db, CONTEXT, BASE_ORDER, createLogger({}, { sink: () => undefined })),
+    ).rejects.toThrow(/orders\.upsert/);
+
+    // Nada depois da order: nem domain_events (a mudanca confirmed -> paid
+    // geraria um), nem order_items, nem stock_movements.
+    expect(inserted.map((i) => i.table)).not.toContain("domain_events");
+    expect(inserted.map((i) => i.table)).not.toContain("order_items");
+    expect(inserted.map((i) => i.table)).not.toContain("stock_movements");
+  });
+
+  it("falha ao apagar os itens antigos aborta antes de inserir os novos", async () => {
+    const { db, inserted } = fakeDb({ itemsDeleteError: true });
+
+    await expect(
+      persistOrder(db, CONTEXT, BASE_ORDER, createLogger({}, { sink: () => undefined })),
+    ).rejects.toThrow(/order_items\.delete/);
+
+    // O insert nao pode acontecer: delete que falhou + insert que passa
+    // deixaria o pedido com itens de duas versoes.
+    expect(inserted.map((i) => i.table)).not.toContain("order_items");
+  });
+
+  it("falha ao inserir os itens aborta antes de deduzir estoque", async () => {
+    const { db, inserted } = fakeDb({ itemsInsertError: true });
+
+    await expect(
+      persistOrder(db, CONTEXT, BASE_ORDER, createLogger({}, { sink: () => undefined })),
+    ).rejects.toThrow(/order_items\.insert/);
+
+    expect(inserted.map((i) => i.table)).not.toContain("stock_movements");
   });
 });

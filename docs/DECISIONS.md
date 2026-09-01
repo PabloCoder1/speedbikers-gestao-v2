@@ -3407,6 +3407,42 @@ group by 1 order by 1 desc;
 
 **Impacto:** migration acima, `packages/db/src/{types.ts,rls.integration.test.ts}`, `apps/api/src/{app.ts,app.test.ts}`, `infra/deploy-cloud-run.sh`, `apps/web/app/saude/page.tsx` (novo), `apps/web/components/shell.tsx` (nav), `docs/{ROADMAP,HANDOFF}.md`.
 
+## D-177 - O contexto dos agentes virou problema de engenharia, e o bootstrap caiu de 1,2 MB para 7,6 KB
+
+**Contexto:** o `AGENTS.md` mandava ler, antes de QUALQUER tarefa: README, `HANDOFF.md` (453 KB), `ROADMAP.md` (116 KB), `ARCHITECTURE.md` (32 KB), `PRODUCT_REQUIREMENTS.md` (41 KB) e `DECISIONS.md` (602 KB) — **~1.245 KB de Markdown** antes de escrever a primeira linha de codigo. Isso deixou de ser documentacao e virou custo de engenharia.
+
+**O problema pior nao e o custo, e a competicao.** Informacao historica disputa espaco com informacao atual, e o proprio HANDOFF ja tinha provado isso mais de uma vez: o resumo do topo ficava desatualizado enquanto as secoes de baixo avancavam — inclusive nesta sessao, quando uma sessao paralela atualizou a data para D-174 mantendo o texto de D-169.
+
+**Decisao 1 — `AGENTS.md` vira ROTEADOR.** Passa a mandar ler duas coisas (HANDOFF + confirmacao de branch/HEAD/banco) e, depois, **so o documento que a tarefa pede**, com uma tabela tarefa->documento. Ninguem le `COPILOT.md` para mexer em indice de Postgres.
+
+**Decisao 2 — `HANDOFF.md` e ESTADO CORRENTE, nao diario.** Passou de 453 KB (81 secoes "Etapa anterior" + um "HISTORICO DETALHADO") para **5 KB**: estado, P0 ativos, riscos, atos humanos, proximos passos e um mapa de "onde procurar o resto". A historia inteira foi PRESERVADA em `docs/archive/handoffs/2026-08-19_a_2026-09-01.md` — nada foi apagado, e o git guarda o resto.
+
+**Decisao 3 — `DECISIONS.md` ganha indice DERIVADO.** `docs/DECISIONS_INDEX.md` (18 KB) lista os 175 IDs por dominio inferido do titulo, gerado por `pnpm docs:index`. O agente acha o `D-xxx` e le **so aquela secao** com `grep -A`. Os IDs continuam estaveis e no mesmo arquivo — nada foi renumerado nem movido.
+
+**Decisao 4 — o budget e guardado por script, nao por disciplina.** `pnpm docs:check` reprova se: o HANDOFF passar de 25 KB, o AGENTS de 6 KB, o ROADMAP de 130 KB; se faltar uma das secoes obrigatorias; se o HANDOFF voltar a ter secao de "etapa anterior"; se nao declarar data e HEAD; ou se o indice de decisoes ficar defasado. Disciplina sem verificacao ja falhou aqui — o arquivo cresceu uma sessao de cada vez, sem ninguem decidir que cresceria.
+
+**O que NAO foi feito:** nenhuma decisao alterada, nenhuma fase renumerada, nenhuma fase concluida reaberta, nenhum historico apagado.
+
+**Verificacao:** bootstrap obrigatorio medido antes (~1.245 KB) e depois (**7,6 KB** = AGENTS 2,3 + HANDOFF 5,1) — **99,4% menos**. `pnpm docs:check` verde, `check` 29/29, build 8/8.
+
+**Impacto:** `AGENTS.md`, `docs/HANDOFF.md` (reescrito), `docs/archive/handoffs/` (novo), `docs/DECISIONS_INDEX.md` (novo, derivado), `docs/PERFORMANCE.md` (novo), `scripts/{build-decisions-index,docs-check}.mjs` (novos), `package.json`, `docs/ROADMAP.md` (trilha 8B).
+
+## D-178 - Escrita critica que falha nao pode deixar o handler seguir
+
+**Contexto:** primeiro P0 tecnico da trilha 8B. `persist-order.ts` fazia tres escritas sem ler o retorno — `orders.upsert`, `order_items.delete` e `order_items.insert` — e seguia adiante emitindo evento de status e deduzindo estoque.
+
+**Por que isso passou:** o `AdminClient` e o cliente normal do Supabase. Ele **nao** transforma erro do PostgREST em excecao so porque a chamada foi aguardada com `await`. `await db.from(...).insert(...)` com erro resolve normalmente, e o codigo seguinte roda como se tivesse gravado. D-067 varreu 34 pontos desta classe em 2026-08-24; estes escaparam ou nasceram depois — o que mostra que varredura pontual nao imuniza o projeto, so o momento.
+
+**Decisao — abortar, nao logar.** Um helper minimo (`assertWritten`) lanca quando `.error` nao e nulo. Para dado de NEGOCIO, "falhou e seguiu" e pior que "falhou e parou": lancar faz o job terminar `failed`, o Cloud Tasks retenta, e os handlers ja sao idempotentes por chave (`onConflict`/`idempotency_key`), entao repetir e seguro.
+
+**A fronteira que NAO muda:** escrita de OBSERVABILIDADE continua logando e seguindo — `stock_movements` (que absorve 23505 de propósito) e `sync_errors` nao podem derrubar o trabalho real por causa de telemetria. A regra e o dado, nao o verbo.
+
+**Segundo ponto corrigido:** `ml-fulfillment-fetch.ts` gravava o snapshot de Full sem checar antes de detectar eventos pelo diff — os eventos sairiam de uma comparacao com um estado que nao existe.
+
+**Verificacao:** tres testes de regressao que forcam a falha de cada escrita e provam que **nada posterior acontece** (sem `domain_events`, sem `order_items`, sem `stock_movements`). 37/37 no arquivo, 496/496 no worker, `check` 29/29, build 8/8. Sem migration — e correcao de codigo.
+
+**Impacto:** `apps/worker/src/handlers/{assert-written.ts (novo),persist-order.ts,persist-order.test.ts,ml-fulfillment-fetch.ts}`.
+
 ## Como adicionar nova decisao
 
 Registrar:

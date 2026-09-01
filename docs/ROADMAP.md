@@ -541,6 +541,42 @@ Complementa a Fase 8; suas telas não substituem hardening, backup/restore nem v
 - **Tráfego / Ads — A/E:** visitas/conversão permanecem na 5B; `INTELIGÊNCIA → TRÁFEGO / ADS` é visão futura, mas Ads depende de elegibilidade e necessidade reais.
 - **Recebimento parcial — D:** permanece na Fase 4; ciclo visual alinhado sem alterar a máquina atual.
 
+### Trilha 8B — Performance, Segurança, Confiabilidade e Contexto dos Agentes
+
+Frente transversal aberta em 2026-09-01. **Não renumera nem reabre fase alguma**: complementa a Fase 8 (hardening) e a 8A (administração), atacando gargalos medidos em vez de suposições. A regra da trilha é uma só — `MEDIR → IDENTIFICAR → PRIORIZAR → CORRIGIR → TESTAR → REMEDIR → DOCUMENTAR`. Otimização sem antes/depois registrado em `docs/PERFORMANCE.md` não recebe `[x]`.
+
+**Baseline medido contra o Dev em 2026-09-01** (usuário autenticado real, não `service_role`): `docs/PERFORMANCE.md`.
+
+#### P0 — o que está errado agora
+
+- [x] **P0-A — Contexto dos agentes** — concluído em 2026-09-01 (D-177). O bootstrap obrigatório saiu de **~1.245 KB para 7,6 KB**: `AGENTS.md` virou roteador, `HANDOFF.md` virou estado corrente (453 KB → 5 KB, história em `docs/archive/handoffs/`), `DECISIONS.md` ganhou índice derivado (`pnpm docs:index`) e `pnpm docs:check` impede a regressão.
+- [ ] **P0-B — Writes sem verificação em `persist-order.ts`** — `orders.upsert`, `order_items.delete` e `order_items.insert` ignoram `.error`, e o fluxo segue para eventos de domínio e dedução de estoque. Varrer a mesma classe no projeto e cobrir com teste que force a falha do write.
+- [ ] **P0-C — Webhook sem consumidor não pode virar task** — `sync.webhook.received` é **243.944 de 265.276** linhas de `job_runs` (92%), e **221.602** terminaram `done` com `processed = 0`. Allowlist na borda: sem consumidor, ACK + log estruturado, sem enfileirar. Remedir `job_runs` depois.
+- [ ] **P0-D — `private.has_role` sem organização** — 21 policies e 8 funções dependem de um predicado que responde "sou X em ALGUMA organização". Criar equivalente com escopo, migrar chamadores, fixtures com DUAS organizações e testes negativos cross-org.
+- [ ] **P0-E — `SECURITY DEFINER`, `search_path` e policies duplicadas** — inventário classificado (comando de browser / leitura / backend / interna / legada), `search_path` imutável nas funções de trigger, allowlist versionada de RPCs expostas e separação de policies `FOR ALL` que participam do SELECT sem necessidade.
+- [ ] **P0-F — `get_stock_balances`** — **9.104 ms / 751.576 buffers** para 50 linhas. Estratégia page-first: paginar SKUs primeiro, calcular fatos caros só para a página, contar à parte.
+- [ ] **P0-G — `get_listings_dashboard`** — **timeout em 60 s**. O `CONTEXT` do erro aponta para dentro de `private.has_account_access`: **o custo dominante é a policy avaliada por linha**, não a agregação. Atacar a RLS antes de reescrever a RPC.
+- [ ] **P0-H — demais RPCs fora do budget** — `get_sales_expanded_summary`, `get_sku_abc_curve`, `get_sku_sales_baseline`, `get_sku_timeline`, `get_unlinked_listings` e as consultas da Central de Notificações. Reproduzir cada uma antes de concluir que está lenta: `pg_stat_statements` mistura versões antigas das funções.
+
+#### P1 — depois que o P0 fechar
+
+- [ ] Round trips de `persistOrder`: buscar vínculos, `kind` de SKU e componentes de KIT em lote, em vez de por item.
+- [ ] Read models para o que é consultado repetidamente (último movimento por SKU, Full atual), sempre reconstruíveis da fonte.
+- [ ] Retenção de telemetria: `job_runs` só depois de reduzir a origem (P0-C), separando auditoria de negócio de telemetria operacional.
+- [ ] Índices: triagem caso a caso (FK sem índice **e** índices sem uso), nunca em lote pelo advisor.
+- [ ] Cloud Tasks × Cloud Run × limites do ML como um sistema só — medir antes de aumentar capacidade.
+- [ ] Frontend: waterfalls, N+1, dados carregados por aba não aberta, e varredura sistemática da classe de truncamento de 1.000 linhas (D-131).
+- [ ] Observabilidade: relatório de performance sobre o que já existe (`job_runs`, `sync_runs`, `/saude`), sem criar plataforma nova.
+
+#### P2 — produção
+
+- [ ] Load tests, backup/restore verificado, Terraform, Supabase e Cloud Run de produção, rollout.
+- [ ] **Atos externos** (não são código): branch protection da `v3` (hoje `protected: false`, CI não é tecnicamente obrigatória) e `Leaked Password Protection` no Auth do Supabase.
+
+#### Definition of Done da trilha
+
+Comportamento anterior preservado; bug com teste de regressão; migration versionada; RLS testada, cross-org quando pertinente; `check`, `build`, integração em banco recriado e Playwright verdes; advisor relido quando aplicável; **benchmark antes/depois em `docs/PERFORMANCE.md`**; `HANDOFF` atualizado sem virar diário; `D-xxx` quando houver decisão arquitetural.
+
 ### Ordem recomendada para as novas trilhas
 
 1. **Antes delas:** deploy/validação do `HEAD`; atos humanos de `/produtos` e `/reposicao/configuracoes`; remapeamento e medição da Fase 9 conforme aprovação; verificação de backup da Fase 8.

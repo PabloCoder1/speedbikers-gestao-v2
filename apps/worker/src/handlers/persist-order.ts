@@ -8,6 +8,7 @@ import {
 import type { RecordedSaleMovement, SaleDeductionItem } from "@sb/domain";
 import type { Logger } from "@sb/observability";
 
+import { assertWritten } from "./assert-written.js";
 import { recordDomainEvents } from "./domain-events.js";
 import type { ParsedOrder } from "./order-schema.js";
 import { recordStockMovements } from "./stock-movements.js";
@@ -76,7 +77,10 @@ export async function persistOrder(
 
   const previousStatus = existing.data?.status ?? null;
 
-  await db
+  // Aborta se o pedido nao gravou (D-178): tudo abaixo -- eventos de status e
+  // deducao de estoque -- presume que ele existe.
+  assertWritten(
+    await db
     .from("orders")
     .upsert(
       {
@@ -99,7 +103,9 @@ export async function persistOrder(
         cancel_reason: order.cancel_detail?.description ?? null,
       },
       { onConflict: "id" },
-    );
+    ),
+    "orders.upsert",
+  );
 
   const events = detectOrderStatusEvents(
     previousStatus,
@@ -111,7 +117,9 @@ export async function persistOrder(
     await recordDomainEvents(db, context, events, logger);
   }
 
-  await db.from("order_items").delete().eq("order_id", order.id);
+  // Delete + insert e a forma de substituir os itens: se o delete falha e o
+  // insert segue, o pedido fica com itens duplicados de duas versoes.
+  assertWritten(await db.from("order_items").delete().eq("order_id", order.id), "order_items.delete");
 
   if (order.order_items.length === 0) {
     return;
@@ -141,7 +149,7 @@ export async function persistOrder(
     }),
   );
 
-  await db.from("order_items").insert(items);
+  assertWritten(await db.from("order_items").insert(items), "order_items.insert");
 
   if (isCancelledOrderStatus(order.status)) {
     const saleMovements = await loadSaleMovements(db, context.organizationId, order.id);
