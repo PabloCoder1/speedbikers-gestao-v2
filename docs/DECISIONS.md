@@ -3465,6 +3465,26 @@ group by 1 order by 1 desc;
 
 **Impacto:** `packages/contracts/src/{webhook-topics.ts (novo),index.ts}`, `apps/api/src/{webhook.ts,webhook.test.ts}`, `apps/worker/src/handlers/webhook-received.ts`.
 
+## D-180 - O papel ganha escopo de organizacao, e o predicado sem escopo deixa de existir
+
+**Contexto:** P0-D da trilha 8B, e o ultimo P0 que travava a entrada de uma segunda pessoa no sistema. `private.has_role(allowed text[])` respondia "sou X em ALGUMA organizacao", sem receber qual.
+
+**Por que a conjuncao nao fechava o escopo.** As policies escreviam `is_member_of(org) AND has_role(papeis)`. Parece suficiente, mas sao **dois EXISTS independentes sobre a mesma tabela**: o primeiro confirma que sou membro da organizacao da linha, o segundo confirma que tenho o papel em algum lugar. Quem for ADMIN em A e VISUALIZADOR em B satisfaz os dois para as linhas de B.
+
+**Inventario medido antes de mexer** (nao herdado do prompt de auditoria): **21 policies** sobre 16 tabelas e **8 funcoes**. Sete funcoes ja checavam `is_member_of` da organizacao certa junto — nelas o furo exigia ser membro do alvo E ter papel em outra. A oitava, `triage_support_case`, chamava `has_role` **sem organizacao nenhuma**: bastava alcancar a conta — que um VISUALIZADOR da organizacao dona pode ter — e ser OPERADOR em qualquer outra.
+
+**Decisao 1 — um predicado com os dois lados na MESMA linha.** `private.has_org_role(target_org, allowed[])` junta papel e organizacao num unico `exists`. Nao e refatoracao cosmetica: e a juncao que fecha o escopo.
+
+**Decisao 2 — `has_role` e REMOVIDO, nao depreciado.** Deixar a versao sem escopo viva seria deixar a arma carregada na gaveta: qualquer policy nova escrita por habito reintroduziria o furo. E o `drop function` no fim da migration e a **prova** de que a migracao foi completa — se qualquer policy ou funcao ainda dependesse dela, o drop falha e a migration inteira reverte.
+
+**Decisao 3 — a substituicao nas funcoes e verificada, nao cega.** O bloco que reescreve as 8 funcoes reconhece cinco formas de chamada e **levanta excecao** se encontrar uma que nao conhece. Isso ja rendeu: o ensaio parou em `dismiss_link_candidate`, cuja guarda usa o alias `c.` — a substituicao cega teria deixado a funcao com o predicado antigo, em silencio.
+
+**O erro que a revisao pegou antes de aplicar:** a primeira versao da "forma 5" trocava `is_member_of(org) or has_account_access(conta) or has_role(papeis)` por apenas `has_org_role(org, papeis)` — **removendo a checagem de conta**. Isso teria afrouxado o escopo em vez de fecha-lo. `has_account_access` valida uma dimensao que `has_org_role` nao cobre, e permanece separado. Ha teste conferindo que ele continua no corpo da funcao.
+
+**Verificacao:** ensaio revertido no local ANTES de aplicar, com contagens exatas (0 policies suspeitas, 21 migradas, 9 funcoes com escopo, 0 `has_role` sobrevivente) e conferencia de que `check_sku_listing_link_writer` manteve `has_account_access`. Migration `20260901135046` nos DOIS bancos. **489/489 testes de integracao em banco recriado do zero**, com +5 cross-org usando as DUAS organizacoes do fixture: o predicado separa as organizacoes, o antigo nao existe mais no catalogo, ADMIN de outra organizacao nao escreve em `ml_accounts` nem muda papeis, nao le `suppliers`/`purchase_orders` — e o ADMIN legitimo **continua** enxergando os seus (a correcao nao fecha demais). `check` 29/29, build 8/8, 13/13 Playwright.
+
+**Impacto:** migration acima, `packages/db/src/rls.integration.test.ts`. Nenhuma mudanca de aplicacao — o furo era inteiramente de banco.
+
 ## Como adicionar nova decisao
 
 Registrar:

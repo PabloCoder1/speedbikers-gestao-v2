@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **178** (D-001 a D-179).
+Decisões registradas: **179** (D-001 a D-180).
 
 ## Por domínio
 
@@ -133,7 +133,7 @@ Decisões registradas: **178** (D-001 a D-179).
 - **D-171** — O 429 das visitas: a defesa inteira estava no eixo que o Mercado Livre nao limita
 - **D-179** — Topico de webhook sem consumidor deixa de virar Cloud Task
 
-### outros (22)
+### outros (23)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -157,6 +157,7 @@ Decisões registradas: **178** (D-001 a D-179).
 - **D-125** — Desfazer vínculo + histórico auditável, e um furo de escrita que estava aberto desde a Fase 2
 - **D-158** — Visao "hoje": le orders ao vivo E sinaliza -- as duas metades da alternativa de 5C.4
 - **D-172** — Central de Precos: mostrar o que mudou sem fingir que se sabe o efeito
+- **D-180** — O papel ganha escopo de organizacao, e o predicado sem escopo deixa de existir
 
 ### vendas/métricas (12)
 

@@ -17,7 +17,7 @@
 | **HEAD conhecido** | `89bc4d3` |
 | **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **14 commits atrás do HEAD** |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
-| **Migrations** | 115 locais == 115 no Dev, última `20260901121910` — sem drift |
+| **Migrations** | 116 locais == 116 no Dev, última `20260901135046` — sem drift |
 | **Frente atual** | Trilha 8B — Performance, Segurança, Confiabilidade e Contexto |
 
 ### O que está pronto
@@ -42,7 +42,7 @@ Medidos contra o Dev em 2026-09-01, não herdados de documentação.
 | ~~P0-A~~ | ~~Contexto dos agentes~~ | ✅ corrigido em D-177 — bootstrap de ~1.245 KB para **7,6 KB**; `pnpm docs:check` guarda |
 | ~~P0-B~~ | ~~Writes sem verificação~~ | ✅ corrigido em D-178 — `assertWritten` aborta; 3 testes provam que nada posterior roda |
 | ~~P0-C~~ | ~~Webhooks sem consumidor viram task~~ | ✅ corrigido em D-179 — allowlist em `@sb/contracts`; **218.750 execuções/zero trabalho** deixam de ser enfileiradas ⚠️ só vale após o deploy |
-| **P0-D** | `private.has_role` sem organização | 21 policies e 8 funções; ADMIN de uma org valeria como ADMIN em outra |
+| ~~P0-D~~ | ~~`has_role` sem organização~~ | ✅ corrigido em D-180 — `has_org_role` em 21 policies e 8 funções; `has_role` removido; +5 testes cross-org |
 | **P0-E** | `SECURITY DEFINER` / `search_path` / policies duplicadas | apontado pelos advisors; inventário ainda não feito |
 | **P0-F** | `get_stock_balances` | **9.104 ms / 751.576 buffers** para 50 linhas (usuário autenticado real) |
 | **P0-G** | `get_listings_dashboard` | **timeout em 60 s**; o `CONTEXT` do erro aponta para dentro de `private.has_account_access` |
@@ -57,9 +57,6 @@ Números completos e método: `docs/PERFORMANCE.md`.
 - **O que está no ar é velho.** O deploy é de `fc39c27`; D-171 (que corrige
   o 429 das visitas) e D-176 (`APP_COMMIT` no `/health`) **não estão
   valendo**. Até o próximo deploy, `/saude` mostra `UNKNOWN` — corretamente.
-- **`has_role` é uma escalada esperando a segunda organização.** Inofensivo
-  hoje (uma org, um usuário), grave assim que a Administração de Usuários
-  destravar a entrada da segunda pessoa.
 - **Relist nunca foi exercitado contra o ML real.** A primeira execução
   precisa ser ensaio humano deliberado, com anúncio sacrificável.
 - **A suíte de integração local exige banco recriado.** `supabase db reset`
@@ -90,16 +87,13 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-1. **P0-D** — `has_role` com escopo de organização, fixtures com duas
-   organizações e testes negativos cross-org. É o último P0 que trava a
-   entrada de uma segunda pessoa no sistema.
-2. **P0-F/G** — atacar o custo da RLS por linha ANTES de reescrever a RPC: o
+1. **P0-F/G** — atacar o custo da RLS por linha ANTES de reescrever a RPC: o
    timeout de `get_listings_dashboard` aponta para dentro de
-   `has_account_access`, e uma policy set-based beneficia todas as telas de
-   uma vez.
-3. **P0-E** — inventário de `SECURITY DEFINER`, `search_path` das funções de
+   `has_account_access`. `has_org_role` (D-180) é o precedente da forma
+   set-based, e uma policy assim beneficia todas as telas de uma vez.
+2. **P0-E** — inventário de `SECURITY DEFINER`, `search_path` das funções de
    trigger e policies permissivas duplicadas.
-4. **P0-H** — reproduzir as demais RPCs suspeitas antes de otimizar:
+3. **P0-H** — reproduzir as demais RPCs suspeitas antes de otimizar:
    `pg_stat_statements` mistura versões antigas das funções.
 
 ---

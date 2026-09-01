@@ -5165,6 +5165,125 @@ describe("get_system_health (D-176, Saúde do Sistema)", () => {
   });
 });
 
+// D-180 — o papel passa a ter ESCOPO de organizacao.
+//
+// O fixture global ja tem duas organizacoes (ORG_SB e ORG_OUTRA) e
+// DE_OUTRA_ORG e ADMIN da segunda. Faltava o caso que expunha o furo:
+// alguem que e ADMIN numa organizacao e membro COMUM na outra. Antes de
+// D-180, `is_member_of(org) AND has_role(papeis)` eram dois EXISTS
+// independentes, e esse alguem valia como ADMIN nas duas.
+describe("escopo de papel entre organizações (D-180)", () => {
+  // ADMIN em ORG_OUTRA (pelo fixture global) e VISUALIZADOR em ORG_SB.
+  const INFILTRADO = DE_OUTRA_ORG;
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.organization_members (organization_id, user_id, role)
+       values ($1, $2, 'VISUALIZADOR')
+       on conflict (organization_id, user_id) do update set role = 'VISUALIZADOR'`,
+      [ORG_SB, INFILTRADO],
+    );
+  });
+
+  afterAll(async () => {
+    await client.query(
+      `delete from public.organization_members where organization_id = $1 and user_id = $2`,
+      [ORG_SB, INFILTRADO],
+    );
+  });
+
+  /**
+   * O predicado e' chamado como `service_role`/`postgres` porque o schema
+   * `private` nao e' acessivel a `authenticated` — e essa inacessibilidade e'
+   * parte do desenho. O que os testes seguintes verificam e' o EFEITO das
+   * policies, que e' o que importa para quem usa o sistema.
+   */
+  it("o predicado novo separa as organizações; o antigo não existe mais", async () => {
+    const escopado = await client.query<{ na_outra: boolean; na_sb: boolean }>(
+      `select private.has_org_role($1, array['ADMIN']) as na_outra,
+              private.has_org_role($2, array['ADMIN']) as na_sb
+         from (select set_config('request.jwt.claims', json_build_object('sub', $3::text)::text, true)) _`,
+      [ORG_OUTRA, ORG_SB, INFILTRADO],
+    );
+
+    // ADMIN de verdade só na organização onde ele é ADMIN.
+    expect(escopado.rows[0]?.na_outra).toBe(true);
+    expect(escopado.rows[0]?.na_sb).toBe(false);
+
+    // E o predicado sem escopo foi REMOVIDO do banco — não dá para
+    // reintroduzir o furo por descuido.
+    const antigo = await client.query<{ n: string }>(
+      `select count(*) as n from pg_proc p
+         join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'private' and p.proname = 'has_role'`,
+    );
+
+    expect(Number(antigo.rows[0]?.n)).toBe(0);
+  });
+
+  it("ADMIN de outra organização NÃO escreve em ml_accounts desta", async () => {
+    const antes = await client.query<{ label: string }>(
+      `select label from public.ml_accounts where organization_id = $1 limit 1`,
+      [ORG_SB],
+    );
+    const label = antes.rows[0]?.label ?? "";
+
+    await asUser(
+      INFILTRADO,
+      `update public.ml_accounts set label = 'invadido' where organization_id = '${ORG_SB}'`,
+    );
+
+    const depois = await client.query<{ label: string }>(
+      `select label from public.ml_accounts where organization_id = $1 limit 1`,
+      [ORG_SB],
+    );
+
+    expect(depois.rows[0]?.label).toBe(label);
+  });
+
+  it("ADMIN de outra organização NÃO muda papéis desta", async () => {
+    await asUser(
+      INFILTRADO,
+      `update public.organization_members set role = 'ADMIN'
+         where organization_id = '${ORG_SB}' and user_id = '${INFILTRADO}'`,
+    );
+
+    const depois = await client.query<{ role: string }>(
+      `select role from public.organization_members where organization_id = $1 and user_id = $2`,
+      [ORG_SB, INFILTRADO],
+    );
+
+    // Continua VISUALIZADOR: o papel de ADMIN que ele tem na outra
+    // organização não atravessa.
+    expect(depois.rows[0]?.role).toBe("VISUALIZADOR");
+  });
+
+  it("GESTOR/ADMIN de outra organização não LÊ o que é restrito a papel nesta", async () => {
+    const fornecedores = await asUser<{ id: string }>(
+      INFILTRADO,
+      `select id from public.suppliers where organization_id = '${ORG_SB}'`,
+    );
+    const compras = await asUser<{ id: string }>(
+      INFILTRADO,
+      `select id from public.purchase_orders where organization_id = '${ORG_SB}'`,
+    );
+
+    // `suppliers` e `purchase_orders` exigem ADMIN/GESTOR *na organização*.
+    expect(fornecedores).toHaveLength(0);
+    expect(compras).toHaveLength(0);
+  });
+
+  it("quem é ADMIN na PRÓPRIA organização continua funcionando — a correção não fecha demais", async () => {
+    const proprios = await asUser<{ id: string }>(
+      ADMIN_SB,
+      `select id from public.suppliers where organization_id = '${ORG_SB}'`,
+    );
+
+    // O fixture cria fornecedores em ORG_SB; o ADMIN de verdade os vê.
+    expect(proprios.length).toBeGreaterThan(0);
+  });
+});
+
 describe("search_entities (Fase 5B, Busca universal)", () => {
   // Mesmo raciocínio de nomes fora dos padrões de limpeza global, e mesma
   // ausência de afterAll — ver comentário equivalente no describe de
