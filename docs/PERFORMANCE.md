@@ -404,6 +404,37 @@ acumuladas, mas dito para ninguém tratar a diferença como pura.
 Consulta para a leitura futura: a mesma de "Onde vai o tempo", ordenando
 `pg_stat_statements` por `total_exec_time`.
 
+**Primeira leitura, 36 minutos depois — e ela NÃO confirma a hipótese.** Vale
+registrar antes de acumular mais janela, porque o formato do engano é
+instrutivo:
+
+| | antes (média de 23h) | janela de 36 min |
+|---|---|---|
+| escritas nas duas tabelas de métrica | 485 mil/dia | **0** |
+| Realtime, % do tempo do banco | 43,4% | **68,8%** |
+| Realtime, ms por chamada | 6,34 | **5,80** |
+| Realtime, chamadas por minuto | 56,7 | **118** |
+
+⚠️ **A PERCENTAGEM SUBIU, e ela é a métrica errada aqui.** O denominador
+encolheu: sem as métricas sendo reescritas, o trabalho próprio do banco caiu
+muito, então a mesma decodificação passa a ser fatia maior de um total menor.
+Ler "43,4% → 68,8%" como piora é o erro que este parágrafo existe para evitar.
+
+⚠️ **Comparar TOTAIS entre janelas de tamanhos diferentes também engana.** A
+média de 23h dilui períodos ociosos; 36 minutos escolhidos não.
+
+**A métrica robusta é `ms por chamada`**, que não depende do tamanho da janela
+nem da carga do resto do banco — e ela caiu de 6,34 para 5,80 (**−8,5%**),
+consistente com haver menos WAL para mastigar por chamada. Mas −8,5% está
+muito longe de explicar 43,4% do tempo do banco: **o custo do Realtime não é
+dominado pelo WAL das métricas**, e a hipótese registrada em D-198 (minha) não
+se sustenta nesta primeira leitura.
+
+O que sobra como suspeita, para a próxima leitura: a **frequência de polling**
+do decodificador, que dobrou entre as duas janelas e não tem relação com o
+volume de escrita da aplicação. Antes de qualquer conclusão, acumular janela —
+e comparar `ms por chamada`, não percentagem.
+
 **Lição de D-199 — uma otimização de materialização se prova por IGUALDADE,
 não por economia.** Trocar apaga-e-insere por convergência cortou as escritas
 das métricas diárias em ~99%. Esse não é o número que autoriza a fatia: numa

@@ -225,14 +225,17 @@ Nada disto pode ser feito por um agente.
    antes de qualquer conclusão sobre o Realtime em si; a consulta é a de
    `pg_stat_statements` por `total_exec_time`, em `docs/PERFORMANCE.md`.
 
-   ⚠️ **A remedição precisa de TEMPO, não de reset.** As estatísticas
-   acumuladas misturam as duas formas. `pg_stat_reset()` daria a janela
-   limpa e foi **rejeitado**: apaga observabilidade compartilhada e só se
-   desfaz esperando. Como os contadores são acumulativos, a saída é subtrair
-   de um marco — ele está em `docs/PERFORMANCE.md`, seção "Marco para remedir
-   o Realtime", com data e os cinco números. Conferido às 12:07 de 02/09,
-   **2 minutos depois do marco**: cedo demais (0 escritas de métrica, 268
-   chamadas do Realtime). Precisa de horas, não de minutos.
+   ⚠️ **Primeira leitura feita (36 min) e ela NÃO confirma a hipótese — que
+   era minha.** As escritas de métrica foram a **zero** e o custo por chamada
+   do Realtime caiu só **8,5%** (6,34 → 5,80 ms). Isso está longe de explicar
+   43,4% do tempo do banco: **o custo do Realtime não é dominado pelo WAL das
+   métricas.** A percentagem *subiu* para 68,8%, e isso é o denominador
+   encolhendo, não piora — a métrica robusta é **ms por chamada**, nunca
+   percentagem, e nunca total entre janelas de tamanhos diferentes. Suspeita
+   que sobra: a frequência de polling do decodificador, que dobrou entre as
+   janelas sem relação com a escrita da aplicação. Detalhes e a tabela em
+   `docs/PERFORMANCE.md`, "Marco para remedir o Realtime". Precisa de janela
+   maior antes de concluir.
 5. **Antes da segunda organização** — `get_system_health` tem escopo de
    plataforma com guard de tenant (D-182). Não é urgente hoje e não tem
    correção óbvia: as duas tentativas naturais causam regressão verificada.
