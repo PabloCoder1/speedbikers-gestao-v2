@@ -680,6 +680,132 @@ describe("contas Mercado Livre", () => {
       ),
     ).rejects.toThrow(/row-level security/i);
   });
+
+  // ------------------------------------------------------------------
+  // Superficie de escrita do navegador (item do P0 da 8B, aberto por D-182)
+  //
+  // Das tres escritas que `authenticated` tinha, so o INSERT tem consumidor
+  // (`apps/web/app/contas/actions.ts`). O DELETE nao tem nenhum e era o
+  // perigoso: `ml_credentials` e blindada em tres camadas, mas o CASCADE
+  // roda como DONO da tabela e atravessa as tres.
+  // ------------------------------------------------------------------
+
+  const CONTA_DESCARTAVEL = "cccc3333-0000-4000-8000-00000000cccc";
+
+  /**
+   * Semeia uma conta COM credencial cifrada e opera como um usuario, tudo na
+   * MESMA transacao, revertida no fim.
+   *
+   * A transacao nao e conveniencia: o teste exerce um DELETE destrutivo sobre
+   * uma tabela que e fixture de metade da suite. Reverter e o que permite
+   * provar a recusa sem arriscar os testes seguintes.
+   */
+  async function comContaDescartavel(corpo: (userId: string) => Promise<void>, userId: string): Promise<number> {
+    await client.query("begin");
+
+    try {
+      await client.query(
+        `insert into public.ml_accounts (id, organization_id, label, slug, seller_id, status, connected_at)
+         values ('${CONTA_DESCARTAVEL}','${ORG_SB}','Descartável','rlstest-conta-descartavel',999,'CONNECTED',now())`,
+      );
+      await client.query(
+        `insert into public.ml_credentials
+           (ml_account_id, access_token_ciphertext, refresh_token_ciphertext, access_token_expires_at)
+         values ('${CONTA_DESCARTAVEL}','cifrado','cifrado', now() + interval '6 hours')`,
+      );
+
+      await client.query("savepoint antes_do_ataque");
+      await client.query("set local role authenticated");
+      await client.query("select set_config('request.jwt.claims', $1, true)", [
+        JSON.stringify({ sub: userId }),
+      ]);
+
+      await corpo(userId);
+
+      // A tentativa aborta a transacao; o savepoint devolve o estado para que
+      // a CONSEQUENCIA ainda possa ser conferida.
+      await client.query("rollback to savepoint antes_do_ataque");
+      await client.query("reset role");
+
+      const credenciais = await client.query<{ n: string }>(
+        `select count(*) as n from public.ml_credentials where ml_account_id = '${CONTA_DESCARTAVEL}'`,
+      );
+
+      return Number(credenciais.rows[0]?.n ?? "-1");
+    } finally {
+      await client.query("rollback");
+    }
+  }
+
+  it("ADMIN não apaga conta pelo navegador — e a credencial cifrada sobrevive", async () => {
+    let recusa: unknown = null;
+
+    const credenciais = await comContaDescartavel(async () => {
+      try {
+        await client.query(`delete from public.ml_accounts where id = '${CONTA_DESCARTAVEL}'`);
+      } catch (error) {
+        recusa = error;
+      }
+    }, ADMIN_SB);
+
+    // Recusado — e no GRANT, antes de a RLS ser consultada.
+    expect(String(recusa)).toMatch(/permission denied/i);
+    // E a consequencia que importa: o CASCADE nao alcancou o segredo.
+    expect(credenciais).toBe(1);
+  });
+
+  it("ADMIN não altera conta pelo navegador — UPDATE roda como service_role", async () => {
+    await expect(
+      asUser(ADMIN_SB, `update public.ml_accounts set label = 'sequestrada' where id = '${CONTA_A}'`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
+  it("ADMIN continua criando conta — o INSERT é o consumidor real da policy", async () => {
+    await expect(
+      asUser(
+        ADMIN_SB,
+        `insert into public.ml_accounts (organization_id, label, slug)
+         values ('${ORG_SB}','Nova','rlstest-conta-nova')`,
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  it("ADMIN de outra organização não cria conta nesta", async () => {
+    await expect(
+      asUser(
+        DE_OUTRA_ORG,
+        `insert into public.ml_accounts (organization_id, label, slug)
+         values ('${ORG_SB}','Invasora','rlstest-conta-invasora')`,
+      ),
+    ).rejects.toThrow(/row-level security/i);
+  });
+
+  /**
+   * As DUAS camadas, conferidas separadamente — porque cada uma sozinha ja
+   * recusaria, e um teste que so exercita o caminho nao diria qual delas
+   * fechou. Se o GRANT voltar por descuido (aconteceu tres vezes:
+   * D-066/D-098/D-130), a policy ainda recusa; e vice-versa.
+   */
+  it("as duas camadas independentes: o GRANT e a POLICY", async () => {
+    const grants = await client.query<{ verbo: string; tem: boolean }>(
+      `select v as verbo, has_table_privilege('authenticated','public.ml_accounts', v) as tem
+         from unnest(array['SELECT','INSERT','UPDATE','DELETE']) v`,
+    );
+
+    expect(Object.fromEntries(grants.rows.map((r) => [r.verbo, r.tem]))).toEqual({
+      SELECT: true,
+      INSERT: true,
+      UPDATE: false,
+      DELETE: false,
+    });
+
+    const policies = await client.query<{ cmd: string }>(
+      `select cmd from pg_policies where schemaname='public' and tablename='ml_accounts'`,
+    );
+
+    // Nenhuma policy permissiva alcanca UPDATE ou DELETE — nem via 'ALL'.
+    expect(policies.rows.map((p) => p.cmd).sort()).toEqual(["INSERT", "SELECT"]);
+  });
 });
 
 describe("métricas diárias de venda", () => {
@@ -5593,6 +5719,15 @@ describe("escopo de papel entre organizações (D-180)", () => {
     expect(Number(antigo.rows[0]?.n)).toBe(0);
   });
 
+  /**
+   * A recusa MUDOU DE CAMADA, e o teste passa a afirmar as duas garantias.
+   *
+   * Até a fatia que encolheu a superfície de escrita de `ml_accounts`, o
+   * UPDATE era concedido a `authenticated` e a RLS o reduzia a ZERO LINHAS
+   * em silêncio — por isso a asserção original era só "o label não mudou",
+   * sem erro nenhum. Agora o GRANT recusa antes de a RLS ser consultada.
+   * Nada enfraqueceu: o dado continua intacto E a recusa ficou explícita.
+   */
   it("ADMIN de outra organização NÃO escreve em ml_accounts desta", async () => {
     const antes = await client.query<{ label: string }>(
       `select label from public.ml_accounts where organization_id = $1 limit 1`,
@@ -5600,10 +5735,12 @@ describe("escopo de papel entre organizações (D-180)", () => {
     );
     const label = antes.rows[0]?.label ?? "";
 
-    await asUser(
-      INFILTRADO,
-      `update public.ml_accounts set label = 'invadido' where organization_id = '${ORG_SB}'`,
-    );
+    await expect(
+      asUser(
+        INFILTRADO,
+        `update public.ml_accounts set label = 'invadido' where organization_id = '${ORG_SB}'`,
+      ),
+    ).rejects.toThrow(/permission denied/i);
 
     const depois = await client.query<{ label: string }>(
       `select label from public.ml_accounts where organization_id = $1 limit 1`,

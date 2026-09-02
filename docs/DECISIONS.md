@@ -4611,6 +4611,43 @@ A correcao emite `order.return.unreversed` em `domain_events`, onde a casa ja ol
 
 **Impacto:** `supabase/migrations/20260902184130_system_health_scoped_to_org.sql`, `packages/db/src/rls.integration.test.ts`. Nenhuma mudanca de aplicacao: `apps/web/app/saude/page.tsx` e `packages/db/src/types.ts` seguem intactos.
 
+## D-210 - O DELETE que ninguem chamava atravessava a blindagem que protege o segredo
+
+**Contexto:** o item do P0 da trilha 8B que D-182 registrou e deixou aberto — *"`ml_accounts`: UPDATE/DELETE para `authenticated` sem consumidor, e sem trilha de auditoria"*. Medido no catalogo e no codigo antes de escrever qualquer coisa.
+
+**Das tres escritas concedidas a `authenticated`, so uma tem consumidor:**
+
+| verbo | consumidor | cliente |
+|---|---|---|
+| INSERT | `apps/web/app/contas/actions.ts` (Server Action) | **sob RLS** — legitimo, e continua valendo |
+| UPDATE | `apps/api/src/ml-accounts.ts`, `ml-token.ts`, `backfill-orders.ts` | `AdminClient` (`service_role`) |
+| DELETE | **nenhum**, nos tres apps | so testes e seed, ambos `service_role` |
+
+**O DELETE nao era excesso de privilegio: era um caminho ate o segredo.** `ml_credentials` guarda os tokens do Mercado Livre cifrados e e blindada em TRES camadas independentes — zero grant para `authenticated`/`anon`, RLS ligada, zero policies (D-182 registrou as tres). **O CASCADE atravessa as tres**, porque roda com os privilegios do dono da tabela e nao com os do chamador.
+
+**Reproduzido antes de corrigido, e a evidencia e o numero:** como ADMIN autenticado, `delete from public.ml_accounts where id = ...` respondeu **DELETE 1**, e a contagem de `ml_credentials` daquela conta foi de **1 para 0**. Nao e inferencia sobre o catalogo de FKs — e a linha sumindo.
+
+**Por que o furo nunca apareceu, e por que isso NAO e a defesa.** Das 23 filhas, 15 sao RESTRICT (pedidos, `sync_runs`, `domain_events`...): qualquer conta com historico e indeletavel. **A conta que o DELETE alcanca e exatamente a recem-criada ou a que falhou no OAuth** — que ja tem credencial gravada e ainda nao tem historico. O acaso da ordem de criacao das tabelas estava fazendo o papel de controle de acesso.
+
+**Duas camadas, como a casa faz desde D-066/D-098/D-130:**
+
+1. `revoke update, delete ... from authenticated` — o navegador apanha no GRANT, antes de a RLS ser consultada;
+2. a policy `ml_accounts_admin_writes` (`for ALL`) vira `ml_accounts_admin_inserts` (`for insert`) — se o grant voltar por descuido, e ele **ja voltou tres vezes**, a RLS ainda recusa.
+
+**A policy de SELECT nao muda e nao perde nada — conferido, nao suposto.** `ml_accounts_select_permitted` usa `accessible_accounts()`, cuja definicao no catalogo da ao ADMIN **todas** as contas da organizacao: e mais larga que o predicado da `ALL` que saiu. Esta era uma das 4 policies que D-182 catalogou como "redundantes, nao vazamento"; agora ela deixa de ser redundante e passa a ser especifica.
+
+**Um teste de D-180 quebrou, e a correcao dele e o achado mais interessante da fatia.** *"ADMIN de outra organizacao NAO escreve em ml_accounts desta"* fazia um UPDATE e afirmava so que **o label nao mudou** — porque a RLS reduzia o UPDATE a ZERO LINHAS **em silencio**, sem erro. Agora o GRANT recusa antes, com `permission denied`. Nada enfraqueceu; a recusa mudou de camada. O teste passa a afirmar **as duas** garantias: recusa explicita E dado intacto.
+
+**Sobre a segunda clausula do item, "sem trilha de auditoria": ela se dissolve, e nao por preguica.** As duas tabelas irmas tem trigger de auditoria porque **humanos mudam privilegio nelas pela UI** (`/usuarios`, D-175) — e o que se audita la e "quem mudou o acesso de quem". Depois desta fatia, o unico caminho humano ate `ml_accounts` e **criar**; nao existe mais mudanca de privilegio para registrar. O que continua faltando e menor e nomeavel: a tabela tem `created_at` e **nao tem `created_by`**.
+
+**Nao acrescentei a coluna, e a razao e concreta:** `packages/db/src/types.ts` e gerado pelo MCP contra o **Dev**, e D-209 mediu que o gerador da CLI local produz outro formato e apaga as correcoes manuais. Uma coluna nova exigiria regenerar o contrato, e o caminho de regeneracao so existe **depois** de a migration pousar no Dev pela CI. Adicionar a coluna hoje significaria versionar um contrato gerado que eu sei estar desatualizado — a classe de drift silencioso de D-207. Fica registrado como fatia propria, com o bloqueio nomeado.
+
+**Sem dimensao de performance, e isso foi medido, nao presumido.** Retirar uma das duas policies permissivas poderia baratear todo SELECT em `ml_accounts`. Medido no volume real (4 contas): **0,244 ms contra 0,319 ms** na passada quente, com a passada fria invertendo o sinal. E ruido. Nenhuma linha entra em `docs/PERFORMANCE.md` — um "nao mediu diferenca" na tabela "Historico de otimizacoes medidas" seria pior que a ausencia.
+
+**Verificacao:** **536/536** de integracao em banco recriado (+5, e um teste de D-180 reescrito), `check` 29/29, build 8/8, `check:embeds` 33/33, `check:waterfalls` 52 arquivos, 13/13 Playwright. Nenhuma mudanca de aplicacao: o unico consumidor legitimo (`createMlAccount`) tem teste de integracao entrando pela policy exata — **e nenhum e2e cobre `/contas`**, o que fica dito aqui em vez de parecer coberto.
+
+**Impacto:** `supabase/migrations/20260902190642_ml_accounts_write_surface.sql`, `packages/db/src/rls.integration.test.ts`.
+
 ## Como adicionar nova decisao
 
 Registrar:

@@ -14,10 +14,10 @@
 |---|---|
 | **Atualizado em** | 2026-09-02 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `ded1ddf` (D-208) — esta fatia, D-209, é o commit seguinte |
+| **HEAD conhecido** | `17f411d` (D-209) — esta fatia, D-210, é o commit seguinte |
 | **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **57 commits atrás** (o «34» registrado aqui estava errado: eram 55 já em `c19a879`; medido com `git rev-list --count fc39c27..HEAD`) |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
-| **Migrations** | **124 locais**, 123 no Dev até o push — a CI aplica (job `aplicar migrations no Supabase Dev`, só em `v3`). Sem drift: o caminho é o push, **nunca** o MCP (lição de D-207) |
+| **Migrations** | **125 locais**, 123 no Dev até o push — a CI aplica (job `aplicar migrations no Supabase Dev`, só em `v3`). Sem drift: o caminho é o push, **nunca** o MCP (lição de D-207) |
 | **Frente atual** | Trilha 8B — P0 fechado (A–H); em P1 |
 
 ### O que está pronto
@@ -57,7 +57,7 @@ ressalva os torna invisíveis:
 | item | estado |
 |---|---|
 | ~~`get_system_health` com escopo de plataforma~~ | ✅ **fechado em D-209** |
-| `ml_accounts` com UPDATE/DELETE para `authenticated` sem consumidor e sem auditoria | **aberto** |
+| ~~`ml_accounts` com UPDATE/DELETE para `authenticated`~~ | ✅ **fechado em D-210** |
 | `pg_default_acl` de funções (o que D-182 deixou) | **aberto** |
 
 Números completos e método: `docs/PERFORMANCE.md`.
@@ -350,11 +350,25 @@ Nada disto pode ser feito por um agente.
    defeito**: 308,7 → 261,9 ms. De quebra, o guarda vizinho estava **vazio** e
    foi reescrito — ver D-209 e "Riscos ativos".
 
-8. **O P0 da 8B ainda tem dois itens sem letra** (tabela acima), e os dois
-   independem do deploy: `ml_accounts` (revogar UPDATE/DELETE de
-   `authenticated` sem consumidor + trilha de auditoria, com o padrão de
-   D-175 já pronto nas duas tabelas irmãs) e `pg_default_acl` de funções. O
-   primeiro é a próxima fatia natural desta frente.
+8. **~~`ml_accounts`~~ — FECHADO em D-210.** O DELETE não era excesso de
+   privilégio: era um caminho até o segredo. Reproduzido antes de corrigido —
+   um ADMIN autenticado apagava a conta (`DELETE 1`) e a credencial cifrada
+   ia de **1 para 0**, porque o CASCADE roda como dono da tabela e atravessa
+   as três camadas que blindam `ml_credentials`. O furo nunca apareceu porque
+   as 15 filhas em RESTRICT tornam indeletável qualquer conta com histórico —
+   **o acaso da ordem de criação das tabelas estava fazendo o papel de
+   controle de acesso**. Fechado em duas camadas (GRANT + policy `for
+   insert`), com o único consumidor real (criar conta) preservado.
+
+9. **O que resta do P0 da 8B**, e os dois independem do deploy:
+   - **`pg_default_acl` de funções** — o que D-182 deixou aberto de
+     propósito; exige varrer todas as migrations que criam função.
+   - **`ml_accounts.created_by`** — fatia nova, nomeada em D-210. A tabela
+     tem `created_at` e não tem autor. **Bloqueada por dependência real**:
+     coluna nova exige regenerar `packages/db/src/types.ts`, e o caminho de
+     regeneração é o MCP contra o **Dev** — que só terá a migration depois
+     que a CI a aplicar. Versionar um contrato gerado sabendo-o desatualizado
+     é a classe de drift de D-207.
 
 ---
 
