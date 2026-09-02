@@ -66,12 +66,26 @@ Números completos e método: `docs/PERFORMANCE.md`.
   criados por SQL deixam `confirmation_token` nulo e o GoTrue estoura).
 - **2 pedidos estão sem linha em `order_items`** (`2000017347483988` e
   `2000017394032682`): `paid`, com o movimento de estoque gravado e nenhum
-  item. A dedução está certa; falta a linha que `claim-return` precisa para
-  reverter devolução — sem ela ele registra `claim_return_order_item_not_found`
-  e pula. **Os dois caminhos que produzem esse estado estão fechados** (D-184
-  tirou a leitura da janela, D-189 tirou a janela e parou de apagar itens a
-  partir de resposta vazia); qual dos dois aconteceu não dá para saber.
-  **Reprocessar os dois continua sendo ato pendente.**
+  item. A dedução está certa. **Os dois caminhos que produzem esse estado
+  estão fechados** (D-184 tirou a leitura da janela, D-189 tirou a janela e
+  parou de apagar itens a partir de resposta vazia); qual dos dois aconteceu
+  não dá para saber. **Medido em D-208, e o item mudou de natureza:**
+  - **o dano hoje é zero** — os dois estão `delivered` desde julho, com **0**
+    casos de atendimento, **0** eventos de devolução e **0** movimentos de
+    reversão. Não é "pequeno": é zero, e foi contado;
+  - **reprocessar não é ato pendente de aprovação, é ato sem mecanismo** —
+    `sync.orders.window` e `backfill.orders` só aceitam `{ mlAccountId }`, e o
+    cliente só tem `fetchOrdersWindow` por período: **não existe
+    `GET /orders/{id}` no código**. Não adianta aprovar; não há o que rodar;
+  - **reconstruir a linha do movimento seria inventar dado** — `item_id`,
+    `variation_id` e preço só o Mercado Livre tem;
+  - **o que tornava a falta perigosa já foi fechado.** `claim-return` pulava
+    com um `logger.warn` e o job fechava `done` — a reversão perdida não
+    deixava vestígio no banco, e `done` com `processed` baixo é
+    indistinguível de um no-op legítimo (D-205 mediu 4.903 deles saudáveis).
+    Agora a perda vira `order.return.unreversed`, `critico`, em
+    `domain_events`. **Isso vale para qualquer pedido futuro, não só estes
+    dois** — que é o motivo de a fatia ter sido essa, e não o reprocessamento.
 - **O truncamento de 1.000 do PostgREST volta sempre.** D-131 corrompeu o
   estoque; D-183 achou um contador errado; D-193 achou mais dois cortes vivos
   no worker; D-194 achou um **na tela**, escondendo 10 das 19 marcas do

@@ -116,6 +116,16 @@ const EVENT_TYPE: Record<string, string> = {
   "stock.balance.diverged": "Divergência de saldo de estoque",
   "order.cancelled": "Pedido cancelado",
   "order.returned": "Pedido devolvido",
+  // D-208 -- o rotulo evita a palavra "devolucao" sozinha porque o fato NAO
+  // e a devolucao: e o estoque que ficou preso deduzido porque nao havia
+  // como reverter. Quem le na Central precisa entender que ha acao humana
+  // pendente, nao que um pedido voltou.
+  "order.return.unreversed": "Devolução sem baixa: estoque preso",
+  // D-208 -- o rotulo evita a palavra "devolucao" sozinha porque o fato NAO
+  // e a devolucao: e o estoque que ficou preso deduzido porque nao havia
+  // como reverter. Quem le na Central precisa entender que ha acao humana
+  // pendente, nao que um pedido voltou.
+
   "sync.delayed": "Sincronização atrasada",
   "sync.failed": "Sincronização falhou",
   "ai.budget.exceeded": "Orçamento de IA do mês ultrapassado",

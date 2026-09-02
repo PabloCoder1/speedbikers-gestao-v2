@@ -4509,6 +4509,59 @@ Identicos. O `db reset` reproduz exatamente o que esta aplicado.
 
 **Impacto:** `supabase/migrations/20260902005023_stock_balances_page_first.sql` (recuperado), `packages/db/src/rls.integration.test.ts`.
 
+## D-208 - O item que faltava nao tinha conserto, e o defeito era o silencio
+
+**Contexto:** o item registrado era *"reprocessar os 2 pedidos sem `order_items`"* (`2000017347483988`, `2000017394032682`). Ao medir para executa-lo, **duas coisas se inverteram**: o dano hoje e zero, e o reprocessamento **nao existe como ato**.
+
+**O dano medido e zero, e nao "pequeno".** Os dois pedidos, de 338.791:
+
+| | |
+|---|---|
+| status | `paid`, **`delivered`** |
+| datas | 10/07 e 13/07; movimento gravado em 14/07 e 15/07 |
+| deducao de estoque | **correta** — `TP036` -1, `YD8JAK` -1 |
+| casos de atendimento vinculados | **0** |
+| eventos de devolucao/reclamacao | **0** |
+| movimentos de reversao | **0** |
+
+(Esse ultimo numero so apareceu depois de eu corrigir um **bug de precedencia no meu proprio SQL**: `where ... and (A) or (B)` fez a subconsulta correlacionada contar a tabela inteira e devolver 173 para os dois pedidos. Com os parenteses, 0.)
+
+**E o reprocessamento nao e um ato pendente de aprovacao — e um ato sem mecanismo.** Fui procurar como executa-lo e nao ha caminho:
+
+| job | payload | serve? |
+|---|---|---|
+| `sync.orders.window` | `{ mlAccountId }` — a janela e calculada dentro do handler | nao aceita pedido nem janela |
+| `backfill.orders` | `{ mlAccountId }` | conta inteira, 338.791 pedidos |
+
+E o cliente so tem `fetchOrdersWindow` (`/orders/search` por periodo): **nao existe `GET /orders/{id}` no codigo**. Ou seja, o item estava registrado ha varias fatias como se dependesse de aprovacao humana, quando na verdade dependia de codigo que ninguem escreveu. **Reconstruir a linha a partir do movimento seria inventar dado** — `item_id`, `variation_id` e preco so o ML tem.
+
+**Nao construi o mecanismo, e a razao e a medicao acima.** Um tipo de job novo, com handler, testes e deploy, para consertar 2 linhas em 338.791 que nao causam dano nenhum, e exatamente a "infraestrutura prematura" que a missao proibe.
+
+**O que EU corrigi foi o defeito que faz a linha faltante importar — e ele nao esta nos 2 pedidos.** Quando uma devolucao chega para um pedido sem `order_items`, `claim-return` faz:
+
+```ts
+if (position === null) {
+  logger.warn("claim_return_order_item_not_found", { ... });
+  continue;   // <- e so
+}
+```
+
+O job fecha **`status: "done"`**, `processed` vem menor, e **o banco nao guarda vestigio nenhum**. E a classe D-131 de novo — nao quebra, mente — com um agravante: `done` com `processed` baixo e **indistinguivel de um no-op legitimo**, que e comum (D-205 mediu 4.903 execucoes de `post_purchase` que sao filtro de dominio saudavel). O unico rastro ficava no log do Cloud Run, que ninguem consulta. **Isso vale para qualquer pedido futuro, nao so para estes dois.**
+
+A correcao emite `order.return.unreversed` em `domain_events`, onde a casa ja olha. Ela **nao** conserta o estoque (nao ha o que consertar sem o item) e **nao** falha o job: repetir a busca nao faz a linha aparecer, entao retentativa seria so ruido (D-202).
+
+**`critico` e medido, nao e enfase.** A licao de D-135 e que um `critico` que dispara o tempo todo apaga o significado do nivel. Este teria disparado **ZERO vezes em toda a historia da base** — os unicos dois candidatos estao entregues desde julho sem nenhuma reclamacao. Ele so dispara quando estoque real fica preso deduzido sem caminho automatico de volta, e ai precisa mesmo de gente.
+
+**Um teste antigo foi REESCRITO, nao removido.** `"item devolvido nao encontrado em order_items: pula sem lancar"` afirmava `captured.events` vazio. Estava certo para o contrato de D-057 e e precisamente o buraco que esta fatia fecha.
+
+**A guarda de rotulo saiu de um erro que estava disponivel para mim nesta fatia.** `/notificacoes/preferencias` monta a lista iterando `Object.keys(EVENT_SEVERITY)`, e `lookup()` devolve o **codigo cru** quando falta rotulo — esquecer nao quebra nada, so poe `order.return.unreversed` na frente do usuario no meio de frases em portugues. Eu acrescentei severidade e rotulo em arquivos diferentes, sem nada ligando os dois. `apps/web/lib/labels.test.ts` e esse elo, e **foi verificado contra o estado sem o rotulo** (falha nomeando o tipo exato) — passar nao prova que guarda funciona, licao de D-197.
+
+**Sem migration:** `domain_events.event_type` e texto livre (1-100 chars) e `critico` ja esta no `check` de `severity`. Conferido no schema antes de escrever, porque o fake de banco dos testes nao pegaria uma constraint.
+
+**Verificacao:** `check` 29/29, build 8/8, `check:embeds` 33/33, `check:waterfalls` 52 arquivos, worker 522/522.
+
+**Impacto:** `packages/domain/src/inventory/return-reversal.ts`, `packages/domain/src/events/catalog.ts`, `packages/domain/src/inventory/index.ts`, `apps/worker/src/handlers/claim-return.ts`, `apps/web/lib/labels.ts`, `apps/web/lib/labels.test.ts` (novo).
+
 ## Como adicionar nova decisao
 
 Registrar:

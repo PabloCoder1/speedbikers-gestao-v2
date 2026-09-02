@@ -1,5 +1,5 @@
 import type { AdminClient } from "@sb/db";
-import { computeReturnReversal } from "@sb/domain";
+import { computeReturnReversal, computeUnreversedReturn } from "@sb/domain";
 import type { RecordedSaleMovement } from "@sb/domain";
 import type { MercadoLivreClient } from "@sb/mercado-livre";
 import type { Logger } from "@sb/observability";
@@ -158,6 +158,33 @@ export async function processClaimReturn(
         order_id: returnedOrder.order_id,
         item_id: returnedOrder.item_id,
       });
+
+      // O `warn` acima era, ate D-208, o UNICO vestigio de uma devolucao
+      // perdida — e ele mora no log do Cloud Run, que ninguem consulta. Sem
+      // a `position` nao ha como reverter (e ela que localiza a venda), mas
+      // a PERDA precisa ficar consultavel no banco: o estoque segue deduzido
+      // sem caminho automatico de volta, e so gente resolve.
+      //
+      // Nao vira `failed`: repetir a busca nao faz a linha de `order_items`
+      // aparecer, entao retentativa seria ruido (D-202). E `processed` NAO e
+      // incrementado de proposito — nada foi processado.
+      await recordDomainEvents(
+        deps.db,
+        context,
+        [
+          computeUnreversedReturn(
+            { id: returnedOrder.order_id },
+            {
+              itemId: returnedOrder.item_id,
+              variationId,
+              returnQuantity: returnedOrder.return_quantity,
+            },
+            claimId,
+            now,
+          ),
+        ],
+        logger,
+      );
 
       continue;
     }

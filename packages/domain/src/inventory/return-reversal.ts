@@ -86,3 +86,61 @@ export function computeReturnReversal(
     },
   };
 }
+
+/**
+ * O evento da devolução que NÃO pôde ser revertida (D-208).
+ *
+ * `computeReturnReversal` acima pressupõe que a linha de `order_items`
+ * existe — é dela que sai a `position`, que é como a venda original é
+ * localizada (`venda:{orderId}:{position}`). Quando ela NÃO existe, o
+ * handler não tem como reverter nada, e até aqui apenas registrava um
+ * `logger.warn` e seguia: o pedido continuava deduzido do estoque para
+ * sempre e **o banco não guardava nenhum vestígio disso**.
+ *
+ * É a classe D-131 de novo — "não quebra, mente". O job fecha `done`, a
+ * contagem de processados vem menor, e nada distingue essa perda de um
+ * no-op legítimo (que é comum: D-205 mediu 4.903 execuções de
+ * `post_purchase` que são filtro de domínio saudável). O único rastro
+ * ficava no log do Cloud Run, que ninguém consulta.
+ *
+ * Este evento existe para que a perda seja CONSULTÁVEL onde a casa já
+ * olha. Ele não conserta o estoque — não há o que consertar sem o item,
+ * que só o Mercado Livre tem — e não faz o job falhar: repetir a busca
+ * não faria a linha aparecer, então retentativa seria só ruído (mesmo
+ * raciocínio de `permanentFailure` em D-202).
+ *
+ * `critico` é medido, não é ênfase: em 338.791 pedidos existem DOIS sem
+ * `order_items` (2026-09-02), ambos `delivered` desde julho e sem nenhuma
+ * reclamação — ou seja, este evento teria disparado ZERO vezes em toda a
+ * história da base. A lição de D-135 é que um `critico` que dispara o
+ * tempo todo apaga o significado do nível; este só dispara quando estoque
+ * real fica preso, e aí precisa mesmo de gente.
+ */
+export function computeUnreversedReturn(
+  order: { id: number },
+  item: { itemId: string; variationId: string | null; returnQuantity: number },
+  claimId: string,
+  occurredAt: Date,
+): DomainEventDraft {
+  const eventType = "order.return.unreversed";
+
+  return {
+    eventType,
+    entityType: "order",
+    entityId: String(order.id),
+    before: { claimId, itemId: item.itemId, variationId: item.variationId },
+    after: {
+      claimId,
+      returnQuantity: item.returnQuantity,
+      reason: "order_item_not_found",
+      needsManualReview: true,
+    },
+    severity: EVENT_SEVERITY[eventType] ?? "critico",
+    source: "sync",
+    // Sem `position` (é exatamente ela que falta), a identidade do fato é
+    // o item devolvido dentro do claim. `variationId` entra porque o mesmo
+    // `item_id` pode voltar em variações diferentes do mesmo claim.
+    dedupKey: `${eventType}:${claimId}:${String(order.id)}:${item.itemId}:${item.variationId ?? "-"}`,
+    occurredAt,
+  };
+}

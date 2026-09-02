@@ -55,6 +55,14 @@ export const EVENT_SEVERITY: Readonly<Record<string, EventSeverity>> = {
   "stock.balance.diverged": "critico",
   "order.cancelled": "importante",
   "order.returned": "importante",
+  // A devolucao que NAO pode ser revertida por falta da linha de
+  // `order_items` (D-208). `critico` e medido, nao e enfase: em 338.791
+  // pedidos existem DOIS sem item (2026-09-02), ambos `delivered` desde
+  // julho e sem nenhuma reclamacao — o evento teria disparado ZERO vezes em
+  // toda a historia da base. E o oposto do caso de D-135: aqui o nivel
+  // continua significando alguma coisa porque so dispara quando estoque
+  // real fica preso deduzido, sem caminho automatico de volta.
+  "order.return.unreversed": "critico",
   "sync.delayed": "importante",
   "sync.failed": "critico",
   // "Avisa, não bloqueia" (D-082/D-100): ultrapassar o teto não interrompe

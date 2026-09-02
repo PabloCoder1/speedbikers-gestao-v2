@@ -291,7 +291,13 @@ describe("processClaimReturn (D-057)", () => {
     expect(captured.events[0]).toMatchObject({ event_type: "order.returned" });
   });
 
-  it("item devolvido não encontrado em order_items: pula sem lançar", async () => {
+  /**
+   * Este teste AFIRMAVA `captured.events` vazio — "pula sem lançar" (D-057).
+   * Estava certo para o contrato de então e é justamente o buraco que D-208
+   * fecha: a devolução perdida não deixava rastro NENHUM no banco, só um
+   * `logger.warn` no Cloud Run. Reescrito, não removido.
+   */
+  it("item devolvido não encontrado: não reverte, mas REGISTRA a perda (D-208)", async () => {
     const captured: Captured = { movements: [], events: [], supportCases: [] };
     const { client } = fakeMercadoLivre({});
 
@@ -304,9 +310,17 @@ describe("processClaimReturn (D-057)", () => {
       logger,
     );
 
+    // Continua sem reverter: sem a `position` não há como localizar a venda,
+    // e inventar o movimento seria pior que não gravá-lo.
     expect(processed).toBe(0);
     expect(captured.movements).toHaveLength(0);
-    expect(captured.events).toHaveLength(0);
+
+    // O que mudou: agora a perda é consultável no banco.
+    expect(captured.events).toHaveLength(1);
+    expect(captured.events[0]).toMatchObject({
+      event_type: "order.return.unreversed",
+      severity: "critico",
+    });
   });
 
   it("falha ao ler order_items rejeita — indistinguível de 'não encontrado' seria pior: pularia uma devolução real", async () => {
