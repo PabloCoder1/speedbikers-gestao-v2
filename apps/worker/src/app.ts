@@ -5,7 +5,7 @@ import type { Logger } from "@sb/observability";
 import { measure } from "@sb/observability";
 import { Hono } from "hono";
 
-import { JOB_STATUS, toHttpStatus, toOutcome } from "./job-outcome.js";
+import { JOB_STATUS, resolveAttempt, toHttpStatus, toOutcome } from "./job-outcome.js";
 import type { HandlerRegistry } from "./router.js";
 import { handlers as defaultHandlers, resolveHandler } from "./router.js";
 
@@ -43,7 +43,7 @@ export function createWorkerApp(dependencies: WorkerDependencies): Hono {
         issues: parsed.error.issues.map((issue) => issue.message),
       });
 
-      return context.json({ status: "rejected", reason: "envelope inválido" }, JOB_STATUS.badRequest);
+      return context.json({ status: "rejected", reason: "envelope inválido" }, JOB_STATUS.invalidEnvelope);
     }
 
     const envelope = parsed.data;
@@ -54,14 +54,23 @@ export function createWorkerApp(dependencies: WorkerDependencies): Hono {
 
       return context.json(
         { status: "rejected", reason: "tipo de job desconhecido" },
-        JOB_STATUS.badRequest,
+        JOB_STATUS.unknownJobType,
       );
     }
+
+    // Quantas entregas o Cloud Tasks ja fez, e nao o que o envelope diz: o
+    // corpo do job e o MESMO em toda reentrega, entao `envelope.attempt`
+    // marcava 1 nas 2.234 execucoes extras que D-201 mediu. O cabecalho e a
+    // unica fonte que cresce.
+    const attempt = resolveAttempt(
+      context.req.header("x-cloudtasks-taskretrycount"),
+      envelope.attempt,
+    );
 
     const logger = dependencies.logger.child({
       job_id: envelope.jobId,
       job_type: envelope.jobType,
-      attempt: envelope.attempt,
+      attempt,
     });
 
     const startedProcessingAt = new Date();
@@ -99,7 +108,7 @@ export function createWorkerApp(dependencies: WorkerDependencies): Hono {
         job_id: envelope.jobId,
         job_type: envelope.jobType,
         dedupe_key: envelope.dedupeKey,
-        attempt: envelope.attempt,
+        attempt,
         status: outcome.status,
         retryable: outcome.status === "failed" ? outcome.retryable : null,
         reason: outcome.status === "failed" ? outcome.reason : null,

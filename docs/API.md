@@ -235,6 +235,36 @@ Classificação para retry, aplicada pelo cliente do Mercado Livre e pelos handl
 | Retryable com tolerância | 404 por consistência eventual | Retry limitado |
 | Não retryable | 401, 403, payload inválido | Falha imediata, registra em `sync_errors` |
 
+### O status HTTP que o `worker` devolve ao Cloud Tasks (D-201)
+
+A tabela acima é sobre o cliente do Mercado Livre. A resposta do `worker` para
+a FILA segue uma regra diferente, e mais dura do que este documento sugeria:
+
+> **O Cloud Tasks repete qualquer resposta que não seja 2xx.** Ele não
+> distingue 4xx de 5xx. Só o 2xx encerra a task.
+
+| Situação | Status | Por quê |
+|---|---|---|
+| Concluído | **200** | a task sai da fila |
+| Falha definitiva (`retryable: false`) | **200** | repetir não muda o resultado, e só 2xx faz a fila descartar |
+| Envelope inválido / não-JSON | **200** | nunca se tornaria válido |
+| Falha transitória (`retryable: true`) | **503** | rate limit, indisponibilidade, timeout |
+| Tipo de job desconhecido | **503** | pode ser a janela entre a `api` enfileirar um tipo novo e o worker novo subir; descartar perderia trabalho real |
+
+⚠️ **O 200 em falha não é fingir sucesso.** O código HTTP aqui fala com a fila,
+não com uma pessoa: ele responde "não repita". A verdade sobre o job fica no
+corpo da resposta (`{"status":"failed","retryable":false,...}`) e em
+`job_runs`, que é onde alguém procura.
+
+Até D-201 a falha definitiva respondia **422**, na crença — escrita no código —
+de que "4xx a fila descarta sem repetir". Medido no Dev em 7 dias: **535
+job_ids reentregues, 2.234 execuções extras, até 8 entregas do mesmo job**, que
+é exatamente o `--max-attempts 8` das filas.
+
+**E o número da tentativa vem do cabeçalho `X-CloudTasks-TaskRetryCount`,
+nunca do envelope.** O corpo do job é idêntico em toda reentrega, então
+`envelope.attempt` marcava `1` nas 2.234. O cabeçalho conta a partir de zero.
+
 ---
 
 ## 7. Versionamento

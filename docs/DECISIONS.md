@@ -4286,6 +4286,34 @@ Entrega a **medicao**, que e o que o item pedia. **Nao muda o codigo**, e a raza
 
 **Impacto:** `docs/PERFORMANCE.md`, `docs/ROADMAP.md`, `docs/HANDOFF.md`.
 
+## D-202 - Falha definitiva passa a responder 200, e o 200 nao e fingir sucesso
+
+**Contexto:** correcao do defeito que D-201 mediu. `apps/worker/src/job-outcome.ts` abria afirmando *"2xx encerra a task, **4xx a descarta sem repetir**, 5xx agenda nova tentativa"* e mapeava falha definitiva para 422. **A segunda parte da frase e falsa:** o Cloud Tasks repete qualquer resposta que nao seja 2xx.
+
+**O que isso custava, medido em 7 dias no Dev:** 535 job_ids reentregues, **2.234 execucoes extras**, ate **8 entregas do mesmo job** — exatamente o `--max-attempts 8` das filas `ml-sync-*`. Uma pergunta apagada no Mercado Livre devolve 404, o handler a classifica **corretamente** como `not_retryable`, e ela era buscada oito vezes assim mesmo.
+
+**A correcao e curta e a explicacao e longa, de proposito:**
+
+| situacao | antes | agora | por que |
+|---|---|---|---|
+| falha definitiva | 422 | **200** | so 2xx faz a fila descartar |
+| envelope invalido / nao-JSON | 400 | **200** | nunca se tornaria valido |
+| tipo de job desconhecido | 400 | **503** | ver abaixo |
+
+**O 200 em falha nao e fingir sucesso, e vale insistir nisso.** O codigo HTTP aqui fala com a FILA, nao com uma pessoa — ele responde "nao repita". A verdade sobre o job continua onde sempre esteve: no corpo (`{"status":"failed","retryable":false,"reason":...}`) e em `job_runs.status = 'failed'`. Quem depura le o corpo e a tabela, nunca o codigo de status.
+
+**Tipo desconhecido foi para o outro lado, e essa e a unica decisao de verdade da fatia.** "Desconhecido" pode ser permanente (tipo que nao existe) ou **temporario**: a janela entre a `api` passar a enfileirar um tipo novo e o worker novo subir. Descartar na janela perderia trabalho real; repetir custa ate 8 tentativas com backoff de 10s a 600s — tempo de sobra para o deploy pousar. Antes ele respondia 400 e, pelo proprio defeito que esta fatia corrige, **era repetido assim mesmo**. O comportamento efetivo nao muda; o que muda e o codigo passar a dizer a verdade sobre a intencao.
+
+**O instrumento deixa de mentir.** `job_runs.attempt` marcava **1** nas 2.234 execucoes extras porque `attempt` viaja no CORPO do job, e o Cloud Tasks reentrega o mesmo corpo. Quem cresce e o cabecalho `X-CloudTasks-TaskRetryCount`, que a fila conta **a partir de zero** — dai o `+ 1` para virar "tentativa numero N". Sem o cabecalho (teste local, chamada manual) cai no valor do envelope, que e o melhor palpite disponivel e **nao zero**.
+
+**Cinco testes reescritos e tres novos, e os reescritos sao a prova.** Um deles se chamava *"falha definitiva responde 422, para a fila descartar"* — o nome carregava a crenca falsa na propria frase. Os novos cobrem o cabecalho: um prova que o **envelope diz 1 e o cabecalho diz 3, e o log registra 4**; outro prova o fallback sem cabecalho; o terceiro prova que cabecalho ilegivel **nao vira tentativa zero**.
+
+**O que esta fatia NAO resolve, e e o item que sobra.** O 429 diario do snapshot de visitas continua: ele e falha *transitoria* e legitimamente repete. O que muda e que agora repete pelo motivo certo, e a contagem de tentativas passa a aparecer. Espalhar a rajada de ~2.700 requisicoes das 10:00 UTC segue registrado como fatia propria.
+
+**Verificacao:** `check` 29/29 (com os 8 testes de `app.test.ts` verdes), build 8/8. Sem migration. **Nada disto tem efeito antes do deploy** — o worker no ar e anterior, e o deploy e o mesmo ato humano que ja trava dois itens do P1.
+
+**Impacto:** `apps/worker/src/{job-outcome.ts,app.ts,app.test.ts}`, `docs/API.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:

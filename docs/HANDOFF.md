@@ -14,7 +14,7 @@
 |---|---|
 | **Atualizado em** | 2026-09-01 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `b5686bd` (D-200 + correções) — esta fatia, D-201, é o commit seguinte |
+| **HEAD conhecido** | `7d2101a` (D-201) — esta fatia, D-202, é o commit seguinte |
 | **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **34 commits atrás** |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | **121 locais, 122 no Dev — o drift continua.** Ver "Dev à frente do repositório", abaixo |
@@ -240,16 +240,13 @@ Nada disto pode ser feito por um agente.
    D-199 continua valendo pelos próprios méritos — 485 mil escritas por dia é
    desperdício em qualquer escala — mas **não pela razão que eu registrei**.
 
-5. **P1 — falha "permanente" não é permanente, e o instrumento estava cego.**
-   Achado em D-201 ao medir capacidade. `job-outcome.ts` mapeia falha
-   definitiva para HTTP **422** acreditando que "4xx a descarta sem repetir";
-   **o Cloud Tasks reentrega qualquer não-2xx**. Medido em 7 dias: 535 job_ids
-   reentregues, **2.234 execuções extras**, até 8 entregas do mesmo job (= o
-   `--max-attempts 8` das filas). Uma pergunta apagada no ML é buscada 8 vezes
-   mesmo classificada corretamente como `not_retryable`. E `job_runs.attempt`
-   marca **1** nas 2.234, porque ninguém lê `X-CloudTasks-TaskRetryCount`.
-   Correção é fatia própria (muda o contrato HTTP com a fila) e só tem efeito
-   depois do deploy.
+5. **~~P1 — falha "permanente" não é permanente~~ — CORRIGIDO em D-202.**
+   Falha definitiva e envelope inválido respondem **200** (só 2xx faz o Cloud
+   Tasks descartar); tipo de job desconhecido passa a **503**, porque pode ser
+   a janela de um deploy. O número da tentativa passa a vir de
+   `X-CloudTasks-TaskRetryCount`. **Sem efeito antes do deploy** — o worker no
+   ar é anterior.
+
 6. **P1 — o snapshot de visitas leva 429 do ML todo dia**, ~80% das execuções
    há 7 dias. `docs/ROADMAP.md` dizia "items_failed: 0"; era verdade em 25/08
    e deixou de ser em 27/08. A alavanca é espalhar a rajada de ~2.700
