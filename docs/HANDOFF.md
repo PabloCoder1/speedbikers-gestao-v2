@@ -14,10 +14,10 @@
 |---|---|
 | **Atualizado em** | 2026-09-02 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `0f017c6` (D-211) — esta fatia, D-212, é o commit seguinte |
+| **HEAD conhecido** | `94a86e2` — esta fatia, D-213, é o commit seguinte |
 | **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **61 commits atrás** (o «34» registrado aqui estava errado: eram 55 já em `c19a879`; medido com `git rev-list --count fc39c27..HEAD`) |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
-| **Migrations** | **128 locais**, **126 no Dev** — D-209/D-210/D-211 aplicadas pela CI em 2026-09-02 e CONFERIDAS lá (`anon` alcança 0 funções; `ml_accounts` sem UPDATE/DELETE para `authenticated`). As duas desta fatia sobem no próximo push — a CI aplica (job `aplicar migrations no Supabase Dev`, só em `v3`). Sem drift: o caminho é o push, **nunca** o MCP (lição de D-207) |
+| **Migrations** | **128 locais == 128 no Dev**, sem drift — D-209→D-212 aplicadas pela CI em 2026-09-02 e CONFERIDAS lá (`anon` alcança 0 funções; `ml_accounts` sem UPDATE/DELETE para `authenticated`; `created_by` presente). O caminho é o push, **nunca** o MCP (lição de D-207) |
 | **Frente atual** | Trilha 8B — P0 fechado (A–H); em P1 |
 
 ### O que está pronto
@@ -300,11 +300,12 @@ Nada disto pode ser feito por um agente.
 2. **Retenção de `job_runs`** (271.184 linhas) — bloqueada por regra própria:
    "só depois de reduzir a origem", e a origem (218.750 jobs vazios de
    webhook, D-179) só some com o deploy. **Mesmo ato humano do item 1.**
-3. **Regenerar `packages/db/src/types.ts`** — mecânico, e destrava quando a
-   CI aplicar as migrations de D-212 no Dev. `docs/API.md` §7 exige o
-   contrato regenerado a cada migration (D-147), e **o gerador da CLI local
-   não serve**: apaga as correções manuais (D-209). O caminho é o MCP contra
-   o Dev.
+3. **~~Regenerar `packages/db/src/types.ts`~~ — FEITO em D-213**, e por um
+   caminho que vale reusar: editar só o bloco afetado e **provar a igualdade**
+   contra um arquivo de referência gerado na hora. Regenerar por inteiro
+   apagaria os ~18 sítios de "CORRECAO MANUAL" e obrigaria a reaplicá-los —
+   mais edição manual, não menos. O cabeçalho do arquivo agora traz os três
+   passos; ele mandava usar um script que não existe mais.
 
 **Fechados nesta frente** — o detalhe mora no `D-xxx`, não aqui:
 
@@ -315,10 +316,12 @@ Nada disto pode ser feito por um agente.
 | `ml_accounts` com UPDATE/DELETE sem consumidor | **D-210** |
 | `pg_default_acl` de funções | **D-211** |
 | `ml_accounts.created_by` + a regressão de `RETURNING` | **D-212** |
+| contrato gerado atualizado, com prova de igualdade | **D-213** |
 
 **Com isso o P0 da trilha 8B fechou inteiro** — os itens com letra e os três
-que nunca receberam uma. O que resta do P1 são os itens 1 e 2, e os dois
-esperam o mesmo ato humano.
+que nunca receberam uma. **O que resta do P1 são os itens 1 e 2, e os dois
+esperam o MESMO ato humano: o deploy.** Não há hoje fatia de agente
+registrada que não dependa dele.
 
 ---
 

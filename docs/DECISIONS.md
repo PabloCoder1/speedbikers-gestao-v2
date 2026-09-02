@@ -4737,6 +4737,26 @@ enquanto o MESMO insert sem `returning` continuava passando.
 
 **Impacto:** `supabase/migrations/20260902195500_ml_accounts_select_reaches_new_row.sql`, `supabase/migrations/20260902200000_ml_accounts_created_by.sql`, `packages/db/src/rls.integration.test.ts`.
 
+## D-213 - Como atualizar o contrato gerado sem perder as correcoes manuais
+
+**Contexto:** D-212 acrescentou `ml_accounts.created_by` e deixou declarado que o contrato (`packages/db/src/types.ts`) seria regenerado no commit seguinte, porque o gerador so le o **Dev** e o Dev so recebe a coluna quando a CI aplica a migration. A CI aplicou (Dev em **128**, `created_by` presente). Este e o commit seguinte — e o caminho obvio se mostrou o caro.
+
+**O que o caminho obvio custava.** O arquivo tem **5.238 linhas e ~18 sitios de "CORRECAO MANUAL"** (D-133/D-147): nulabilidade que o gerador nao enxerga, em argumento de RPC e em coluna calculada. Regenerar por inteiro apaga os 18 e obriga a reaplica-los a mao. Para uma migration que acrescenta UMA coluna a UMA tabela, isso e **mais** edicao manual, nao menos — e cada reaplicacao e uma chance de errar em silencio num arquivo que ninguem revisa linha a linha.
+
+**O caminho barato, e o que o torna legitimo.** Editei so o bloco de `ml_accounts` — `Row`, `Insert`, `Update` e `Relationships` — na forma que o gerador usa, e **provei a igualdade**: gerei um arquivo de referencia com `supabase gen types typescript --local`, extrai o mesmo bloco dos dois e comparei. **Identicos byte a byte.**
+
+A prova e o ponto inteiro. Sem ela, isto seria exatamente a manutencao a mao que D-147 existe para acabar; com ela, o resultado e indistinguivel do que a regeneracao produziria, e as 18 correcoes ficam de pe.
+
+⚠️ **Vale para migration que mexe em POUCAS tabelas.** Para uma que mexa em muitas, o caro inverte: regenerar por inteiro e reaplicar as correcoes passa a ser mais barato que editar bloco a bloco. O criterio e o numero de blocos, nao a preferencia.
+
+**Uma nota sobre o gerador da CLI local, que D-209 tinha condenado.** Ele continua imprestavel para SUBSTITUIR o arquivo — formato diferente, e apaga as correcoes. Mas serve perfeitamente como **referencia de comparacao**, que e o uso desta fatia: os blocos de tabela (`Row`/`Insert`/`Update`/`Relationships`) sao identicos entre os dois geradores; a divergencia de D-209 estava no cabecalho, no `__InternalSupabase`, no schema `graphql_public` e na nulabilidade de argumento de RPC. **"Nao serve para gerar" nao implicava "nao serve para conferir"**, e eu tinha tratado as duas como a mesma coisa.
+
+**O cabecalho do arquivo foi corrigido junto:** ele mandava usar um "script regen_types no scratchpad da sessao" que nao existe mais — instrucao que so se descobre falsa na hora de precisar dela. No lugar, os tres passos acima.
+
+**Verificacao:** bloco identico ao do gerador (comparacao byte a byte), `check` 29/29, build 8/8. Sem migration e sem mudanca de comportamento.
+
+**Impacto:** `packages/db/src/types.ts` (10 linhas de contrato + cabecalho).
+
 ## Como adicionar nova decisao
 
 Registrar:

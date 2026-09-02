@@ -1,10 +1,26 @@
 // GERADO por generate_typescript_types (Supabase MCP) -- desde D-147 o
 // arquivo volta a ser o contrato gerado que docs/API.md secao 7 exige,
-// regenerado a cada migration (script regen_types no scratchpad da sessao),
-// com UMA classe de correcao manual reaplicada por cima, marcada
-// "CORRECAO MANUAL" nos pontos exatos: o gerador nunca marca argumento de
-// RPC como anulavel, e alguns argumentos aceitam NULL com significado
-// (D-133).
+// regenerado a cada migration, com UMA classe de correcao manual reaplicada
+// por cima, marcada "CORRECAO MANUAL" nos pontos exatos: o gerador nunca
+// marca argumento de RPC como anulavel, e alguns argumentos aceitam NULL com
+// significado (D-133).
+//
+// COMO ATUALIZAR (D-213). O "script regen_types" que este cabecalho citava
+// vivia no scratchpad de uma sessao e nao existe mais. Para uma migration que
+// mexe em POUCAS tabelas, regenerar tudo e o caminho CARO: apaga os ~18
+// sitios de correcao manual e obriga a reaplica-los a mao, que e mais edicao
+// manual, nao menos. O caminho barato e verificavel:
+//
+//   1. editar aqui so o bloco afetado, na forma que o gerador usa
+//      (colunas em ordem alfabetica; Insert/Update com "?"; Relationships
+//      pelo nome real da constraint);
+//   2. gerar um arquivo de referencia num diretorio temporario
+//      (supabase gen types typescript --local > /tmp/ref.ts);
+//   3. comparar SO o bloco alterado, e exigir igualdade byte a byte.
+//
+// O passo 3 e o que torna a edicao a mao legitima: o resultado e provado
+// identico ao do gerador, sem custar as correcoes manuais. Para migration que
+// mexe em muitas tabelas, ai sim vale regenerar por inteiro e reaplicar.
 
 export type Json =
   | string
@@ -1564,6 +1580,7 @@ export type Database = {
           backfill_covered_until: string | null
           connected_at: string | null
           created_at: string
+          created_by: string | null
           created_by_import: boolean
           id: string
           label: string
@@ -1579,6 +1596,7 @@ export type Database = {
           backfill_covered_until?: string | null
           connected_at?: string | null
           created_at?: string
+          created_by?: string | null
           created_by_import?: boolean
           id?: string
           label: string
@@ -1594,6 +1612,7 @@ export type Database = {
           backfill_covered_until?: string | null
           connected_at?: string | null
           created_at?: string
+          created_by?: string | null
           created_by_import?: boolean
           id?: string
           label?: string
@@ -1606,6 +1625,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "ml_accounts_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "ml_accounts_organization_id_fkey"
             columns: ["organization_id"]
