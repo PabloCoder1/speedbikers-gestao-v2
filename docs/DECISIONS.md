@@ -4395,7 +4395,13 @@ A causa: **eu validei a guarda contra um banco com DRIFT.** No Dev, `get_stock_b
 
 ⚠️ **O arquivo local difere do que foi aplicado**, e isto esta dito em vez de escondido: o `do $$` foi removido depois de aplicar. As duas definicoes de funcao sao byte-identicas; o que saiu foi uma asercao que ja tinha rodado e passado no Dev, e que falharia por engano num banco recriado.
 
-**Verificacao:** as cinco funcoes usam a canonica no catalogo do Dev depois de aplicar; `/reposicao` devolve 313 SKUs com Full, **7.844 unidades**, zero divergencia contra a expressao canonica; `get_sku_dashboard` devolve **5,000** antes e depois para o mesmo SKU. `check` 29/29. Migration `20260902131348`. **A suite de integracao nao rodou nesta maquina** (Docker fora) — foi o CI que apanhou o erro acima, que e exatamente para isso que ele existe.
+**E o CI reprovou uma SEGUNDA vez, por outra consequencia da mesma mudanca.** Com a guarda fora da migration, o `db reset` passou e o e2e ficou verde — mas a integracao caiu de novo, agora num fixture. O de `get_purchase_suggestions` inseria snapshots com `captured_at` **fixo** em `2026-08-13` e `2026-08-22`: onze e vinte dias atras. Ele dependia, **sem dizer**, de a funcao NAO ter janela de frescor. Adotada a canonica, as duas capturas cairam fora e o Full virou zero contra os 7 esperados.
+
+O fixture passou a usar datas RELATIVAS — que e o que ele sempre quis dizer ("a captura mais nova vence") — e **ganhou um terceiro snapshot**, num bucket abandonado ha 10 dias. Com ele, o mesmo `expect(7)` prova duas coisas em vez de uma: nao e 99 nem 106 (deduplicacao por bucket) e nao e 507 (janela de frescor). Sem essa linha, o teste nao distinguiria os dois mecanismos.
+
+**Fixture com data fixa apodrece**, e este apodreceu em silencio: ele ficou verde por semanas porque a funcao que ele testava tinha o defeito complementar.
+
+**Verificacao — e desta vez completa nesta maquina, porque o Docker voltou:** **523/523** de integracao em banco recriado (+1), `check` 29/29, build 8/8, **13/13 Playwright**, `check:embeds` 33/33, `check:waterfalls` 52 arquivos. As cinco funcoes usam a canonica no catalogo do Dev; `/reposicao` devolve 313 SKUs com Full, **7.844 unidades**, zero divergencia contra a expressao canonica; `get_sku_dashboard` devolve **5,000** antes e depois. Migration `20260902131348`.
 
 **Impacto:** `supabase/migrations/20260902131348_full_atual_definicao_unica.sql`, `packages/db/src/rls.integration.test.ts`.
 

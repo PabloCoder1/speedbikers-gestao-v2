@@ -117,6 +117,12 @@ Números completos e método: `docs/PERFORMANCE.md`.
   status`.** A varredura de D-200 deixou `apps/worker/src/handlers/__cast_probe.ts`
   para trás — um arquivo criado para inspecionar um tipo e nunca apagado. Quem
   pegou foi o `tsc`, não a leitura do resultado do agente.
+- **Fixture com data fixa apodrece, e apodrece em silêncio.** O de
+  `get_purchase_suggestions` fixava `captured_at` em `2026-08-13`, e dependia
+  sem dizer de a função NÃO ter janela de frescor. Ficou verde por semanas
+  porque a função que ele testava tinha o defeito complementar; quebrou no
+  instante em que o defeito foi corrigido. Data em fixture se escreve
+  relativa ao `now()`, salvo quando a data É o que está sob prova.
 - **Não pergunte ao Dev o que é verdade no repositório.** A guarda de D-204
   passou no Dev e quebrou o `db reset`: no Dev, `get_stock_balances` já é
   canônica por uma migration de OUTRA frente que não está no git. Consulta a

@@ -3597,10 +3597,23 @@ describe("get_purchase_suggestions (D-147, Fase 5D)", () => {
     // item_id respeita o CHECK de formato real (^MLB[0-9]+$) — a CI #267
     // recusou 'MLBPURCH1'.
     await client.query(
+      // Datas RELATIVAS desde D-204, e a troca nao e cosmetica: antes eram
+      // '2026-08-13' e '2026-08-22' fixos, e este fixture dependia — sem
+      // dizer — de `get_purchase_suggestions` NAO ter janela de frescor.
+      // Quando a funcao adotou a definicao canonica (janela de 3 dias), as
+      // duas capturas cairam fora e o Full virou zero. Fixture com data fixa
+      // apodrece: o que ele testava era "a captura mais nova vence", e isso
+      // se escreve com `now()`.
       `insert into public.fulfillment_stock_snapshots
          (organization_id, ml_account_id, inventory_id, item_id, sku_id, quantity, captured_at)
-       values ($1,$2,'PURCHINV1','MLB900100900',$3,99,'2026-08-13T12:00:00Z'),
-              ($1,$2,'PURCHINV1','MLB900100900',$3,7,'2026-08-22T12:00:00Z')`,
+       values
+         -- Mesmo bucket, duas capturas: a mais nova vence.
+         ($1,$2,'PURCHINV1','MLB900100900',$3,99,now() - interval '2 days'),
+         ($1,$2,'PURCHINV1','MLB900100900',$3,7,now() - interval '1 hour'),
+         -- Bucket que o ML parou de reportar: FORA da janela de 3 dias, e por
+         -- isso nao entra. E o que a definicao canonica compra aqui, e sem
+         -- esta linha o teste nao distinguiria a janela da deduplicacao.
+         ($1,$2,'PURCHINV-ABANDONADO','MLB900100900',$3,500,now() - interval '10 days')`,
       [ORG_SB, CONTA, skuId],
     );
   });
@@ -3628,7 +3641,9 @@ describe("get_purchase_suggestions (D-147, Fase 5D)", () => {
     expect(Number(rows[0]?.local_quantity)).toBe(30);
     expect(Number(rows[0]?.reservado)).toBe(4);
     expect(Number(rows[0]?.transito)).toBe(2);
-    // 7, não 99 nem 106: a captura antiga não conta.
+    // 7, e o número prova DUAS coisas de uma vez desde D-204: não é 99 nem
+    // 106 (a captura antiga do mesmo bucket não conta — deduplicação), e não
+    // é 507 (o bucket abandonado há 10 dias não conta — janela de frescor).
     expect(Number(rows[0]?.full_quantity)).toBe(7);
     expect(Number(rows[0]?.units_30d)).toBe(10);
     expect(Number(rows[0]?.units_60d)).toBe(15);
