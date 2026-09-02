@@ -14,10 +14,10 @@
 |---|---|
 | **Atualizado em** | 2026-09-01 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `0f7ff83` (D-205) — esta fatia, D-206, é o commit seguinte |
+| **HEAD conhecido** | `c19a879` (D-206) — esta fatia, D-207, é o commit seguinte |
 | **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **34 commits atrás** |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
-| **Migrations** | **122 locais, 123 no Dev — o drift continua.** Ver "Dev à frente do repositório", abaixo |
+| **Migrations** | 123 locais == 123 no Dev — **drift resolvido em D-207**, sem drift |
 | **Frente atual** | Trilha 8B — P0 fechado (A–H); em P1 |
 
 ### O que está pronto
@@ -203,36 +203,28 @@ Números completos e método: `docs/PERFORMANCE.md`.
 
 ---
 
-## Dev à frente do repositório (2026-09-02) — a CI está vermelha por isto
+## ~~Dev à frente do repositório~~ — RESOLVIDO em D-207
 
-O Supabase Dev tem uma migration que **o repositório não tem**:
+Por doze commits (D-195 a D-206) o job `aplicar migrations no Supabase Dev`
+ficou vermelho porque a versão `20260902005023`
+(`stock_balances_page_first`) estava no histórico do Dev e **não existia no
+repositório** — aplicada por outra frente e nunca empurrada.
 
-| | |
-|---|---|
-| versão | `20260902005023` |
-| nome | `stock_balances_page_first` |
-| o que faz | reescreve `public.get_stock_balances` (a RPC de `/estoque`) |
-| no git | **não existe**, em nenhum branch |
+D-207 recuperou o SQL de `supabase_migrations.schema_migrations.statements` e
+o gravou com a **versão e o nome exatos**. Verificado por identidade: o md5 de
+`pg_get_functiondef` no banco local recriado bate com o do Dev
+(`15b9f49043058a202296a49ba67b44a9`).
 
-O comentário dentro dela se identifica como **"Page-first (D-196)"** — ou seja,
-é trabalho de **outra frente**, aplicado no Dev e ainda não empurrado. Foi ela
-que deixou o job `aplicar migrations no Supabase Dev` vermelho em `28eeaa7`
-(D-195): o `db push` encontra no remoto um histórico que o local não contém.
-Os outros 5 checks daquele commit passaram, incluindo o Playwright.
+⚠️ **Quando a outra frente empurrar a fatia dela**, o git vai acusar conflito
+em `supabase/migrations/20260902005023_stock_balances_page_first.sql`. O SQL
+será idêntico; a diferença é o cabeçalho que marca o arquivo como recuperado.
+**Fique com a versão deles** — ela tem a intenção original e o registro da
+decisão.
 
-**Não recuperei o arquivo para dentro do repositório de propósito.** O SQL é
-integralmente legível em `supabase_migrations.schema_migrations`, então
-reconstruí-lo é trivial — mas adotar DDL de outra frente sob autoria alheia,
-sem a fatia e os testes que a acompanham, trocaria um problema visível por um
-invisível. **Quem tem a fatia é quem deve empurrá-la**; quando isso acontecer,
-o `db push` volta a passar sozinho.
-
-Duas consequências práticas enquanto isso não acontece:
-
-- **o número D-196 está tomado** — esta sessão pulou para D-197;
-- **`get_stock_balances` no Dev não é mais o que as migrations do repositório
-  produzem.** Um `supabase db reset` local dá a versão antiga; o Dev tem a
-  nova. Qualquer medição da RPC precisa dizer contra qual das duas rodou.
+**A lição, que vale para mim tanto quanto para a outra frente:** aplicar
+migration por MCP sem empurrar o arquivo no mesmo dia quebra a esteira de
+todo mundo, e o custo se acumula em silêncio — doze commits com um check
+vermelho normalizado treinam qualquer um a ignorar o vermelho.
 
 ---
 

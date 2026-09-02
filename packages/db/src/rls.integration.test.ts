@@ -8884,24 +8884,20 @@ describe("guarda de GRANTs (D-066/D-098/D-130)", () => {
         order by proname`,
     );
 
-    // LISTA VERSIONADA, no formato de D-182 — e ela tem exatamente um nome.
+    // LISTA VERSIONADA, no formato de D-182 — e ela esta VAZIA desde D-207.
     //
-    // `get_stock_balances` continua divergente NO REPOSITORIO: D-173 nomeou as
-    // DUAS funcoes que liam `max(captured_at)` (`/estoque` e `/reposicao`) e
-    // D-204 so consertou a segunda. A primeira ja esta canonica no Dev, por
-    // `20260902005023_stock_balances_page_first` — uma migration de OUTRA
-    // FRENTE que ainda nao foi empurrada.
+    // Ela teve exatamente um nome por tres commits: `get_stock_balances`, que
+    // era canonica no Dev e divergente no repositorio, porque a migration que
+    // a corrigia (`20260902005023_stock_balances_page_first`) tinha sido
+    // aplicada por outra frente e nunca empurrada. D-207 recuperou aquela
+    // migration para o git — a mesma versao, o mesmo nome, o SQL identico
+    // (md5 conferido contra o Dev) — e com isso a excecao deixou de existir.
     //
-    // Nao foi corrigida aqui DE PROPOSITO: a migration desta fatia tem carimbo
-    // POSTERIOR ao daquela, entao reescrever a funcao a partir da versao do
-    // repositorio apagaria em silencio o `page-first` deles no proximo
-    // `db reset`. Sobrescrever o trabalho de outra frente para deixar um teste
-    // verde e pior do que a lista.
-    //
-    // QUANDO A FATIA DELES POUSAR: a linha abaixo vira `[]`. Se este teste
-    // falhar com um nome NOVO, nao acrescente o nome — a funcao acusada esta
-    // inventando uma sexta definicao de Full, e e ela que muda.
-    expect(result.rows.map((r) => r.proname)).toEqual(["get_stock_balances"]);
+    // Se este teste falhar com um nome NOVO, **nao acrescente o nome**: a
+    // funcao acusada esta inventando uma sexta definicao de Full, e e ela que
+    // muda. A lista so volta a ter entrada se alguem provar, com numero, que
+    // uma definicao diferente e a certa — e ai D-173 e que precisa mudar.
+    expect(result.rows.map((r) => r.proname)).toEqual([]);
   });
 
   it("nenhuma funcao SECURITY DEFINER de public e alcancavel por anon (D-182)", async () => {

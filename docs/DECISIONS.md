@@ -4471,6 +4471,44 @@ Nos dois primeiros, um id ausente de `ml_accounts` tambem esta ausente de `acces
 
 **Impacto:** `apps/web/app/anuncios/[itemId]/page.tsx`, `apps/web/app/atendimento/[caseId]/page.tsx`, `packages/db/src/rls-embed-nullability.integration.test.ts`.
 
+## D-207 - A migration que existia so no banco volta para o git
+
+**Contexto:** o job `aplicar migrations no Supabase Dev` estava vermelho em **todos os commits de D-195 a D-206** — doze seguidos. Nao era a fatia de ninguem: `supabase db push` recusava tudo com
+
+```
+Remote migration versions not found in local migrations directory.
+```
+
+A versao `20260902005023` (`stock_balances_page_first`) estava no historico do Dev e **nao existia no repositorio**. Ela foi aplicada por OUTRA FRENTE de trabalho e nunca empurrada. Eu vinha reportando isso a cada fatia e deixando o vermelho de pe, porque adotar DDL alheia sem autorizacao trocaria um problema visivel por um invisivel. Com a autorizacao, foi corrigido.
+
+**As duas saidas que o proprio CLI sugere foram RECUSADAS, e a razao e a mesma nas duas:**
+
+| saida sugerida | o que ela faria | por que nao |
+|---|---|---|
+| `migration repair --status reverted 20260902005023` | apaga a LINHA do historico | a FUNCAO continua no banco. O Dev ficaria com DDL que nenhuma migration explica: o desalinhamento passa de barulhento a **invisivel** |
+| `supabase db pull` | gera migration nova, com carimbo novo, de um diff do schema inteiro | a versao continuaria diferente da do historico remoto — o mesmo problema com outra roupa — e o diff arrastaria ruido nao relacionado |
+
+**A terceira saida e a unica que restaura o invariante da casa** ("git e a memoria; local == remoto"): recuperar o SQL de `supabase_migrations.schema_migrations.statements` — o unico lugar onde ele existia — e grava-lo com a **versao e o nome exatos**.
+
+**A recuperacao foi verificada por identidade, nao por leitura.** Recriei o banco local do zero com as 123 migrations e comparei a funcao resultante com a do Dev:
+
+| | |
+|---|---|
+| md5 de `pg_get_functiondef` no local | `15b9f49043058a202296a49ba67b44a9` |
+| md5 no Dev | `15b9f49043058a202296a49ba67b44a9` |
+
+Identicos. O `db reset` reproduz exatamente o que esta aplicado.
+
+**A lista versionada de D-204 esvaziou sozinha, e isso e a confirmacao.** Aquele teste afirmava `["get_stock_balances"]` — a unica funcao que lia `fulfillment_stock_snapshots` fora da definicao canonica no repositorio. A migration recuperada e justamente a que a torna canonica, entao a lista virou `[]`, exatamente na condicao que D-204 tinha escrito ("quando a fatia deles pousar, a linha abaixo vira `[]`"). **A excecao nao foi removida a mao: ela deixou de existir.**
+
+**O que fica dito no proprio arquivo, para nao virar disputa de autoria.** O cabecalho da migration diz que ela foi RECUPERADA e nao escrita aqui, e instrui: quando a outra frente empurrar a versao dela, o git vai acusar conflito neste arquivo; **fique com a versao deles**, que tem a intencao original e o registro da decisao. Este arquivo existe para destravar a esteira, nao para reivindicar a fatia.
+
+**A licao, e ela e sobre processo e nao sobre SQL.** Um ambiente compartilhado com DDL aplicada fora do controle de versao quebra a esteira de TODO MUNDO, nao so de quem aplicou — e o custo se acumula em silencio: doze commits com um check vermelho normalizado, o que treina qualquer um a ignorar o vermelho. **Aplicar migration por MCP sem empurrar o arquivo no mesmo dia e a origem disso**, e vale para mim tanto quanto para a outra frente.
+
+**Verificacao:** `db reset` com 123 migrations, **526/526** de integracao em banco recriado, `check` 29/29, build 8/8, **13/13 Playwright**.
+
+**Impacto:** `supabase/migrations/20260902005023_stock_balances_page_first.sql` (recuperado), `packages/db/src/rls.integration.test.ts`.
+
 ## Como adicionar nova decisao
 
 Registrar:
