@@ -14,7 +14,7 @@
 |---|---|
 | **Atualizado em** | 2026-09-01 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `7a70a35` (D-199) — esta fatia, D-200, é o commit seguinte |
+| **HEAD conhecido** | `b5686bd` (D-200 + correções) — esta fatia, D-201, é o commit seguinte |
 | **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **34 commits atrás** |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | **121 locais, 122 no Dev — o drift continua.** Ver "Dev à frente do repositório", abaixo |
@@ -117,6 +117,12 @@ Números completos e método: `docs/PERFORMANCE.md`.
   status`.** A varredura de D-200 deixou `apps/worker/src/handlers/__cast_probe.ts`
   para trás — um arquivo criado para inspecionar um tipo e nunca apagado. Quem
   pegou foi o `tsc`, não a leitura do resultado do agente.
+- **Num sistema com fila externa, a tabela de execuções não sabe quantas
+  vezes foi chamada.** `job_runs.attempt` marcava **1** em 2.234 execuções
+  extras porque ninguém escreve `X-CloudTasks-TaskRetryCount` nela. Minha
+  primeira leitura concluiu "zero retentativas, não há pressão" — eu li o
+  instrumento, e o instrumento mentia. O que revelou foi contar `job_id`
+  repetido. Antes de concluir "não há retry", pergunte quem escreve o número.
 - **Percentagem sem o total é enquadramento, não medição.** "O Realtime é
   43,4% do tempo do banco" (D-198) e "o Realtime é 0,63% do relógio" descrevem
   o MESMO fato — e só o segundo diz se vale mexer. Num ambiente ocioso, toda
@@ -234,7 +240,21 @@ Nada disto pode ser feito por um agente.
    D-199 continua valendo pelos próprios méritos — 485 mil escritas por dia é
    desperdício em qualquer escala — mas **não pela razão que eu registrei**.
 
-5. **Antes da segunda organização** — `get_system_health` tem escopo de
+5. **P1 — falha "permanente" não é permanente, e o instrumento estava cego.**
+   Achado em D-201 ao medir capacidade. `job-outcome.ts` mapeia falha
+   definitiva para HTTP **422** acreditando que "4xx a descarta sem repetir";
+   **o Cloud Tasks reentrega qualquer não-2xx**. Medido em 7 dias: 535 job_ids
+   reentregues, **2.234 execuções extras**, até 8 entregas do mesmo job (= o
+   `--max-attempts 8` das filas). Uma pergunta apagada no ML é buscada 8 vezes
+   mesmo classificada corretamente como `not_retryable`. E `job_runs.attempt`
+   marca **1** nas 2.234, porque ninguém lê `X-CloudTasks-TaskRetryCount`.
+   Correção é fatia própria (muda o contrato HTTP com a fila) e só tem efeito
+   depois do deploy.
+6. **P1 — o snapshot de visitas leva 429 do ML todo dia**, ~80% das execuções
+   há 7 dias. `docs/ROADMAP.md` dizia "items_failed: 0"; era verdade em 25/08
+   e deixou de ser em 27/08. A alavanca é espalhar a rajada de ~2.700
+   requisições das 10:00 UTC, **não** aumentar capacidade.
+7. **Antes da segunda organização** — `get_system_health` tem escopo de
    plataforma com guard de tenant (D-182). Não é urgente hoje e não tem
    correção óbvia: as duas tentativas naturais causam regressão verificada.
 

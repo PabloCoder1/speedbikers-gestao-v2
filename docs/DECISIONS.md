@@ -4222,6 +4222,70 @@ A amostra do "depois" e pequena (14 recomputes) e esta dita como pequena. O ensa
 
 **Impacto:** seis telas, dois handlers do worker.
 
+## D-201 - "4xx a descarta sem repetir" e falso, e custou 2.234 execucoes em 7 dias
+
+**Contexto:** item do P1 — *"Cloud Tasks x Cloud Run x limites do ML como um sistema so; medir antes de aumentar capacidade"*. Medido contra o Dev em 02/09/2026. **A resposta e que nao falta capacidade em lugar nenhum — e que o mecanismo de retry nao faz o que o codigo diz que faz.**
+
+### Nao ha escassez de capacidade
+
+| | |
+|---|---|
+| ocupacao do banco (86.310 s de relogio) | **1,43%** |
+| jobs com pressao de concorrencia | **nenhum** |
+| maior duracao media | `sync.fulfillment.snapshot`, 303 s |
+
+Aumentar Cloud Run ou dispatches nao resolveria nada, porque nada esta esperando por capacidade nossa. **O unico limite que o sistema encosta e externo: o 429 do Mercado Livre.**
+
+### O limite real, e ele e diario
+
+`sync.listing-visits.snapshot`, sete dias seguidos:
+
+| dia | execucoes | falhas | por 429 |
+|---|---|---|---|
+| 02/09 | 19 | 15 | **15** |
+| 01/09 | 17 | 13 | **13** |
+| 31/08 | 24 | 20 | **20** |
+| 30/08 | 26 | 22 | **22** |
+| 29/08 | 24 | 20 | **20** |
+| 28/08 | 27 | 23 | **23** |
+| 27/08 | 26 | 22 | **22** |
+
+**~80% das execucoes falham, e 100% das falhas sao 429**, sempre na janela das 10:00 UTC — o snapshot diario, que dispara ~2.700 requisicoes de item em rajada. `docs/ROADMAP.md` ainda dizia que essa sincronizacao tinha sido validada com "items_failed: 0"; isso era verdade em 25/08 e **deixou de ser em 27/08**.
+
+**Aumentar capacidade aqui PIORARIA**: mais paralelismo, mais 429. A alavanca certa e a oposta — espalhar a rajada no tempo.
+
+### O achado que reordena o item
+
+Sao 3 execucoes agendadas por dia virando ~20. Ou seja: o Cloud Tasks **reentrega**. Medido em 7 dias:
+
+| | |
+|---|---|
+| job_ids reentregues | **535** |
+| execucoes extras | **2.234** |
+| maior numero de entregas do mesmo job | **8** |
+| maior `attempt` registrado em `job_runs` | **1** |
+
+Oito entregas e exatamente o `--max-attempts 8` das filas `ml-sync-*` (`infra/cloud-tasks-queues.sh:69`).
+
+**E o codigo acredita que isso nao acontece.** `apps/worker/src/job-outcome.ts` abre com: *"2xx encerra a task, **4xx a descarta sem repetir**, 5xx agenda nova tentativa"*, e por isso mapeia falha definitiva para **422**. **A premissa e falsa: o Cloud Tasks reentrega qualquer resposta que nao seja 2xx** — ele nao distingue 4xx de 5xx. "Falha permanente" nunca foi permanente.
+
+Consequencia medida, em dois sintomas que pareciam desconexos:
+
+- uma pergunta apagada no Mercado Livre devolve 404, e o handler a classifica **corretamente** como `not_retryable` (`sync-support-question.ts:38`) — e ela e buscada **8 vezes** assim mesmo. Foi a repeticao de ids especificos 8 e 16 vezes que puxou este fio;
+- cada 429 do snapshot de visitas queima as 8 tentativas e falha do mesmo jeito.
+
+**E o instrumento que teria mostrado isso esta cego.** `job_runs.attempt` marca **1** nas 2.234 execucoes extras, porque o worker nao le o cabecalho `X-CloudTasks-TaskRetryCount`. Foi por isso que a minha primeira leitura desta mesma tabela concluiu "zero retentativas, nao ha pressao" — **eu li o instrumento, e o instrumento mente**. A contagem por `job_id` repetido e que revelou.
+
+### O que esta fatia entrega, e o que NAO entrega
+
+Entrega a **medicao**, que e o que o item pedia. **Nao muda o codigo**, e a razao e deliberada: a correcao (devolver 200 em falha definitiva, para o Cloud Tasks descartar de verdade, e ler `X-CloudTasks-TaskRetryCount` para `attempt`) muda o contrato HTTP do worker com a fila. Isso merece fatia propria, com os testes de `app.ts` reescritos junto — e nao teria efeito nenhum antes do deploy, que ja e o ato humano que trava dois outros itens do P1.
+
+**Uma correcao a mim mesmo, no meio da propria fatia.** Escrevi "zero retentativas em todos os jobs" lendo `maior_attempt = 1`, e estava errado — havia 2.234. A frase saiu antes de eu cruzar `job_id` com contagem. Fica registrada porque o erro e util: **num sistema com fila externa, a tabela de execucoes nao sabe quantas vezes foi chamada, a menos que alguem escreva o cabecalho nela.**
+
+**Verificacao:** so SELECT, nada destrutivo. Sem migration, sem mudanca de codigo.
+
+**Impacto:** `docs/PERFORMANCE.md`, `docs/ROADMAP.md`, `docs/HANDOFF.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:

@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **198** (D-001 a D-200; D-196 é de outra frente).
+Decisões registradas: **199** (D-001 a D-201; D-196 é de outra frente).
 
 ## Por domínio
 
@@ -176,6 +176,7 @@ Decisões registradas: **198** (D-001 a D-200; D-196 é de outra frente).
 - **D-198** — A triagem de indices nao produziu indice nenhum, e o motivo de cada metade e diferente
 - **D-199** — 485 mil escritas por dia para atualizar duas linhas
 - **D-200** — O cast escondia quais guardas eram reais, e foi o compilador que separou
+- **D-201** — "4xx a descarta sem repetir" e falso, e custou 2.234 execucoes em 7 dias
 
 ### vendas/métricas (12)
 
