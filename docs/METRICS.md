@@ -28,8 +28,20 @@ Valem para todas as métricas, sem exceção.
 | **Aritmética** | `numeric` no Postgres, com arredondamento explícito antes de cruzar para o JavaScript |
 | **Agregação** | Sempre em SQL. **Zero agregação em JavaScript** |
 | **Recomputabilidade** | Toda métrica é reconstruível de L1+L2. L3 nunca é fonte única |
+| **Materialização** | A L3 **converge**, não é reescrita (D-199): `insert ... on conflict do update ... where a linha DIFERE`, mais um `delete` por anti-join do que deixou de existir. Linha igual não vira `UPDATE`, não gera WAL e não deixa tupla morta |
 | **Cancelamento e devolução** | Cada definição declara explicitamente se inclui, exclui ou estorna |
 | **Escopo da IA** | Análise por IA respeita exatamente o filtro selecionado pelo usuário |
+
+*Motivo da materialização convergente (D-199):* a forma anterior apagava o
+intervalo inteiro da conta e reinseria tudo. Medido no Dev, isso custava
+**485 mil escritas por dia** entre `daily_listing_metrics` e
+`daily_sku_metrics` — onze vezes a rotatividade de `job_runs` — porque um dia
+com 355 linhas era reescrito inteiro toda vez, disparado por **0 a 4 pedidos**
+que tinham mudado naquela hora. O resultado era correto; o custo é que não
+era. **O retorno das RPCs mudou de contrato junto:** era "linhas inseridas"
+(sempre o dia inteiro) e passou a ser "linhas efetivamente escritas"
+(inseridas + atualizadas + removidas). Um recompute que não muda nada agora
+reporta `0` — e isso é a verdade, não uma falha.
 
 *Motivo do timezone canônico:* a V2 teve bug de limite de dia por fazer operações UTC em pontos que representavam datas de negócio, e chegou a manter cinco cópias do mesmo helper de data.
 

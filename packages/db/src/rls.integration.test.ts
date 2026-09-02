@@ -872,7 +872,27 @@ describe("métricas diárias de venda", () => {
     expect(result.rows[0]?.differences).toBe("0");
   });
 
-  it("rebuild completo é idempotente e retorna as linhas materializadas", async () => {
+  // D-199 — a segunda chamada nao escreve NADA, e e isso que a fatia comprou.
+  //
+  // Este teste afirmava `second === 5`: o rebuild reescrevia as cinco linhas
+  // de novo, identicas, toda vez. Era o comportamento antigo, e o numero
+  // estava certo para aquela forma. Medido no Dev, essa forma custava 485 mil
+  // escritas por dia entre `daily_listing_metrics` e `daily_sku_metrics` —
+  // onze vezes a rotatividade de `job_runs`.
+  //
+  // O teste foi REESCRITO, nao apagado: o `5` da primeira chamada e o `0` da
+  // segunda sao a diferenca inteira, e a contagem de linhas logo abaixo
+  // continua `5` — que e a prova de que convergir escreveu menos sem mudar o
+  // resultado.
+  it("rebuild converge: a primeira chamada materializa, a segunda não escreve nada", async () => {
+    // As linhas são apagadas ANTES de propósito. O `beforeAll` já
+    // materializou este dia, e sem limpar aqui as DUAS chamadas devolveriam
+    // zero — o teste passaria dizendo nada. Limpando, a primeira volta a
+    // materializar as cinco e a segunda revela a convergência.
+    await client.query("delete from public.daily_listing_metrics where ml_account_id = $1", [CONTA_A]);
+    await client.query("delete from public.daily_sku_metrics where ml_account_id = $1", [CONTA_A]);
+    await client.query("delete from public.daily_account_metrics where ml_account_id = $1", [CONTA_A]);
+
     const first = await client.query<{ rebuilt: number }>(
       `select public.rebuild_daily_sales_metrics($1,$2,'2026-08-20','2026-08-20') as rebuilt`,
       [ORG_SB, CONTA_A],
@@ -883,7 +903,7 @@ describe("métricas diárias de venda", () => {
     );
 
     expect(first.rows[0]?.rebuilt).toBe(5);
-    expect(second.rows[0]?.rebuilt).toBe(5);
+    expect(second.rows[0]?.rebuilt).toBe(0);
 
     const counts = await client.query<{ total: string }>(
       `select count(*)::text as total
@@ -907,12 +927,29 @@ describe("métricas diárias de venda", () => {
         [ORDER_IDS.slice(0, 3)],
       );
 
+      // D-199 — o retorno passou a contar tambem as REMOCOES. Antes, um dia
+      // que perdia todas as vendas devolvia 0 ("nada inserido"), e isso lia
+      // como "nada feito" justamente na hora em que o trabalho era apagar
+      // as linhas obsoletas. Agora devolve exatamente quantas linhas existiam
+      // e foram removidas — por isso o "antes" é MEDIDO aqui em vez de fixado
+      // num número: a asserção continua exata sem depender de quantas linhas
+      // os testes anteriores deixaram.
+      const antes = await client.query<{ total: string }>(
+        `select (
+           (select count(*) from public.daily_listing_metrics where ml_account_id = $1) +
+           (select count(*) from public.daily_sku_metrics where ml_account_id = $1) +
+           (select count(*) from public.daily_account_metrics where ml_account_id = $1)
+         )::text as total`,
+        [CONTA_A],
+      );
+
       const refreshed = await client.query<{ refreshed: number }>(
         `select public.recompute_daily_sales_metrics($1,$2,'2026-08-20') as refreshed`,
         [ORG_SB, CONTA_A],
       );
 
-      expect(refreshed.rows[0]?.refreshed).toBe(0);
+      expect(Number(antes.rows[0]?.total)).toBeGreaterThan(0);
+      expect(refreshed.rows[0]?.refreshed).toBe(Number(antes.rows[0]?.total));
 
       const remaining = await client.query<{ total: string }>(
         `select (
@@ -943,6 +980,24 @@ describe("métricas diárias de venda", () => {
     await otherClient.connect();
 
     try {
+      // D-199 tornou este teste MAIS forte, não mais fraco.
+      //
+      // Antes, as duas chamadas devolviam 5 porque a forma antiga reescrevia
+      // o dia inteiro sempre — e por isso o número não distinguia "as duas
+      // rodaram em fila" de "as duas rodaram juntas e uma sobrescreveu a
+      // outra". Agora a segunda a pegar a trava encontra o estado já
+      // convergido e escreve ZERO, então o par `[5, 0]` é a assinatura da
+      // serialização: uma fez o trabalho, a outra viu que não havia trabalho.
+      //
+      // Sem a trava consultiva, as duas tentariam inserir as mesmas cinco
+      // linhas e uma quebraria na constraint de grão.
+      //
+      // Qual das duas chega primeiro NÃO é determinístico, e o teste não
+      // finge que é: compara o par ordenado.
+      await client.query("delete from public.daily_listing_metrics where ml_account_id = $1", [CONTA_A]);
+      await client.query("delete from public.daily_sku_metrics where ml_account_id = $1", [CONTA_A]);
+      await client.query("delete from public.daily_account_metrics where ml_account_id = $1", [CONTA_A]);
+
       const sql = `select public.recompute_daily_sales_metrics(
         '${ORG_SB}','${CONTA_A}','2026-08-20'
       ) as refreshed`;
@@ -951,8 +1006,11 @@ describe("métricas diárias de venda", () => {
         otherClient.query<{ refreshed: number }>(sql),
       ]);
 
-      expect(first.rows[0]?.refreshed).toBe(5);
-      expect(second.rows[0]?.refreshed).toBe(5);
+      const escritas = [first.rows[0]?.refreshed, second.rows[0]?.refreshed].sort(
+        (a, b) => (a ?? 0) - (b ?? 0),
+      );
+
+      expect(escritas).toEqual([0, 5]);
     } finally {
       await otherClient.end();
     }
@@ -1050,8 +1108,16 @@ describe("métricas diárias de venda", () => {
       await expect(asUser(ADMIN_SB, recomputeSql)).rejects.toThrow(/permission denied/i);
       await expect(asAnon(recomputeSql)).rejects.toThrow(/permission denied/i);
 
+      // Este teste é sobre QUEM pode executar, não sobre quanto foi escrito.
+      // Ele afirmava `5` porque a forma antiga reescrevia o dia inteiro toda
+      // vez, e o número era estável por acidente. Desde D-199 ele depende do
+      // que os testes anteriores deixaram convergido — fixá-lo aqui acoplaria
+      // um teste de permissão ao estado das métricas, que é o tipo de amarra
+      // que quebra em silêncio quando outro teste muda. O que importa é que a
+      // chamada RESOLVE para service_role e é recusada para os outros dois.
       const rows = await asServiceRole<{ refreshed: number }>(recomputeSql);
-      expect(rows[0]?.refreshed).toBe(5);
+      expect(typeof rows[0]?.refreshed).toBe("number");
+      expect(rows[0]?.refreshed).toBeGreaterThanOrEqual(0);
     });
   });
 

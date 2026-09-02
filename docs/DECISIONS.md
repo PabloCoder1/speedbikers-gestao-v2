@@ -4116,6 +4116,65 @@ O desenho nao e ingenuo — o caminho incremental ja e escopado a UM dia (`recom
 
 **Impacto:** `docs/PERFORMANCE.md`, `docs/ROADMAP.md`, `docs/HANDOFF.md`.
 
+## D-199 - 485 mil escritas por dia para atualizar duas linhas
+
+**Contexto:** tarefa registrada por D-198 — "medir se 1.080 recomputes por dia, para ~512 pares (conta, dia), e o piso ou ainda tem folga". A resposta e que **a frequencia esta certa e a forma esta errada**, e chegar nisso exigiu derrubar duas hipoteses minhas.
+
+**Primeira hipotese derrubada: nao ha deduplicacao faltando.** Sao 1.141 recomputes em 24h com **1.141 chaves de dedupe distintas** — a chave e `recompute:<conta>:<dia>:<hora>`, entao a janela e horaria e cada chave e legitimamente unica. Os 1.141 cobrem **123 pares (conta, dia)**, ou seja ~9 recomputes por par por dia.
+
+**Segunda hipotese derrubada: os recomputes de dias velhos nao sao desperdicio.** Ver `2026-08-17` sendo recomputado hoje parece defeito. Nao e: um pedido criado em 17/08 que muda de status hoje **realmente** suja as metricas de 17/08. Conferido pelo outro lado tambem — de 3.876 pedidos reescritos em 24h, apenas **46** nao tinham mudanca real no Mercado Livre (1,2%). A sincronizacao nao esta re-persistindo o que nao mudou.
+
+**O que estava errado era o tamanho de cada escrita.** `private.refresh_daily_sales_metrics` APAGAVA o intervalo inteiro da conta e REINSERIA tudo. Medido no dia 2026-08-24:
+
+| | |
+|---|---|
+| linhas reescritas por recompute | **355** |
+| pedidos que mudaram na hora que disparou | **0 a 4** |
+
+E em algumas horas, zero pedidos — e 355 linhas reescritas mesmo assim.
+
+**O total, e a comparacao que coloca em escala:**
+
+| tabela | escritas em 24h | forma |
+|---|---|---|
+| `daily_listing_metrics` | **269.504** | 135.271 ins + 134.233 del |
+| `daily_sku_metrics` | **215.355** | 108.114 ins + 107.241 del |
+| `job_runs`, para comparar | 43.030 | so inserts |
+
+**485 mil escritas por dia — onze vezes a rotatividade da tabela de telemetria que ja estava na fila para politica de retencao.**
+
+**Por que isso importa alem do obvio.** D-198 mediu que o maior consumidor de tempo do banco nao e consulta de tela: e o decodificador de WAL do Realtime, com **43,4%** do total. A publicacao esta minima e correta — uma tabela so. O custo dele nao vem de configuracao errada: vem do volume de WAL do banco inteiro, e quem produz esse volume sao estas duas tabelas.
+
+**A correcao: convergir em vez de reescrever.** `insert ... on conflict do update ... **where a linha DIFERE**`, mais um `delete` por anti-join para o que deixou de existir. Sem a clausula `where`, o `UPDATE` acontece mesmo com valores identicos: escreve a tupla, gera WAL, deixa a versao antiga para o vacuum. **E o `where` que e a fatia** — por isso ele tem guarda de catalogo na migration, como em D-183.
+
+**Ensaiado antes de aplicar, contra o Dev, em transacao revertida.** O Docker local nao sobe nesta maquina, entao o ensaio foi `begin; ...; rollback;` no proprio Dev — nao destrutivo, e melhor que nao ensaiar. Dia 2026-08-24, metricas ja corretas:
+
+| | |
+|---|---|
+| forma antiga | **220 linhas escritas** |
+| forma nova | **0** |
+
+**E a prova que importa mais e a de igualdade, nao a de economia.** Uma otimizacao que mudasse os numeros em silencio seria catastrofica numa tabela de metricas. No mesmo formato de ensaio, estraguei o dia de tres jeitos — uma linha alterada, uma apagada, uma linha fantasma inserida — e rodei a forma nova. Ela convergiu para a assinatura md5 **exata** da forma antiga: `e66f5fc4c9b7fddf8eaf577766de939a`, 220 linhas. Mesmo numero, mesma linha, menos escrita.
+
+**Quatro testes de integracao afirmavam o comportamento antigo, e foram REESCRITOS.** Nenhum apagado:
+
+| teste | antes | depois |
+|---|---|---|
+| rebuild idempotente | segunda chamada devolvia 5 | devolve **0** — e a convergencia |
+| projecao obsoleta | devolvia 0 ("nada inserido") | devolve o numero de linhas removidas, **medido no teste** em vez de fixado |
+| duas recomputacoes concorrentes | as duas devolviam 5 | o par ordenado e `[0, 5]` |
+| permissoes das RPCs | afirmava 5 | afirma que **resolve**, porque o teste e sobre quem executa |
+
+**O terceiro ficou mais forte, e vale dizer por que.** Com a forma antiga, as duas concorrentes devolviam 5 — numero que nao distinguia "rodaram em fila" de "rodaram juntas e uma sobrescreveu a outra". Agora a segunda a pegar a trava encontra o estado convergido e escreve zero: **o par `[0, 5]` e a assinatura da serializacao**. Qual delas chega primeiro nao e deterministico, e o teste compara o par ordenado em vez de fingir que e.
+
+**Uma armadilha que quase entrou.** A primeira versao do teste de convergencia afirmava `first === 5`. Falharia: o `beforeAll` da suite **ja materializa** aquele dia, entao a primeira chamada tambem encontraria tudo convergido e devolveria 0. O teste passou a apagar as linhas antes, de proposito — sem isso ele passaria dizendo nada.
+
+**Mudanca de contrato, dita em tres lugares.** O retorno das RPCs era "linhas inseridas" e passou a ser "linhas efetivamente escritas". Um recompute que nao muda nada reporta `0`, e isso e a verdade — mas quem le `processed` precisa saber. Esta na migration, nos testes e em `docs/METRICS.md`.
+
+**Verificacao:** `check` 29/29, build 8/8. Migration `20260902115548` aplicada no Dev, ensaiada antes. **A suite de integracao nao rodou nesta maquina** — o Docker Desktop faz "application reset" e desliga sozinho aqui, entao os quatro testes reescritos sao verificados pelo CI.
+
+**Impacto:** `supabase/migrations/20260902115548_metrics_converge_instead_of_rewrite.sql`, `packages/db/src/rls.integration.test.ts` (quatro testes), `docs/METRICS.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:

@@ -14,10 +14,10 @@
 |---|---|
 | **Atualizado em** | 2026-09-01 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `0bd48b5` (D-197) — esta fatia, D-198, é o commit seguinte |
+| **HEAD conhecido** | `c7619e9` (D-198) — esta fatia, D-199, é o commit seguinte |
 | **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **34 commits atrás** |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
-| **Migrations** | **120 locais, 121 no Dev — HÁ DRIFT.** Ver "Dev à frente do repositório", abaixo |
+| **Migrations** | **121 locais, 122 no Dev — o drift continua.** Ver "Dev à frente do repositório", abaixo |
 | **Frente atual** | Trilha 8B — P0 fechado (A–H); em P1 |
 
 ### O que está pronto
@@ -113,6 +113,11 @@ Números completos e método: `docs/PERFORMANCE.md`.
   por um `.eq("organization_id", ...)` que a RLS já garantia — e mais
   estreito. Antes de aceitar que duas leituras estão em fila por necessidade,
   pergunte se o que as amarra é dado ou é um filtro que não filtra nada.
+- **Uma otimização de materialização se prova por IGUALDADE, não por
+  economia.** D-199 cortou 485 mil escritas por dia numa tabela de métricas —
+  e o número que autoriza a fatia não é esse, é a assinatura md5 idêntica
+  entre a forma antiga e a nova depois de estragar os dados de propósito.
+  Economia sem prova de igualdade, numa tabela de números, é risco puro.
 - **`stats_reset` NULO não quer dizer "desde sempre".** Um restart do
   Postgres leva as estatísticas junto e deixa `stats_reset` nulo assim mesmo.
   Confira contra um número que você conhece — em D-198, `n_tup_ins` de
@@ -202,17 +207,19 @@ Nada disto pode ser feito por um agente.
    a regex não via, achados por varredura de agentes que leram o código). O
    terceiro terço — dados carregados por aba não aberta — foi varrido junto e
    **já estava certo**: `/skus/[skuId]` dispara por aba desde sempre. **O item
-   de frontend do P1 está fechado.** Sobram **N+1** e **dados carregados por aba não
-   aberta** — e os read models. `docs/ROADMAP.md` tem a ordem.
-4. **P1 — o Realtime custa 43,4% do banco, e não é configuração errada.**
-   Achado em D-198 ao medir para a triagem de índices: o decodificador de WAL
-   é o maior consumidor de tempo do banco (78.261 chamadas, 496 s). A
-   publicação está mínima e correta — uma tabela só. O custo escala com o
-   volume de escrita, e os maiores produtores são `daily_listing_metrics` e
-   `daily_sku_metrics`: **485 mil escritas por dia** por apaga-e-insere, a
-   tabela inteira reescrita 2,6× ao dia. O caminho incremental já é escopado a
-   um dia e a fila já deduplica ~13:1 — falta medir se 1.080 recomputes/dia
-   para ~512 pares (conta, dia) é o piso ou ainda tem folga.
+   de frontend do P1 está fechado.**
+4. **P1 — remedir o Realtime, agora que a maior fonte de WAL foi corrigida.**
+   D-198 mediu o decodificador de WAL em **43,4%** de todo o tempo do banco.
+   D-199 atacou a causa: as métricas diárias eram reescritas inteiras
+   (**485 mil escritas/dia**) e agora convergem — um dia já correto passou de
+   220 escritas para **0**. O número do Realtime precisa ser medido de novo
+   antes de qualquer conclusão sobre o Realtime em si; a consulta é a de
+   `pg_stat_statements` por `total_exec_time`, em `docs/PERFORMANCE.md`.
+
+   ⚠️ **A remedição precisa de uma janela nova.** As estatísticas do Dev
+   foram perdidas no restart de 01/09 e ainda misturam as duas formas. O
+   honesto é `pg_stat_reset()` deliberado, com a data anotada, e esperar —
+   comparar contra os números de D-198 sem isso mistura antes e depois.
 5. **Antes da segunda organização** — `get_system_health` tem escopo de
    plataforma com guard de tenant (D-182). Não é urgente hoje e não tem
    correção óbvia: as duas tentativas naturais causam regressão verificada.
