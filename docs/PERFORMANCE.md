@@ -377,6 +377,33 @@ chamada faz. Duas leituras independentes em fila custam duas; juntas, uma. Por
 isso a correção de D-195 não precisou de nenhuma medição de antes/depois por
 tela: a conta é estrutural, e o guarda de CI a mantém.
 
+### Marco para remedir o Realtime (aberto desde D-199)
+
+D-198 mediu o decodificador de WAL do Realtime em **43,4%** de todo o tempo do
+banco, e apontou as métricas diárias como maior fonte de WAL. D-199 corrigiu a
+fonte. O número do Realtime **ainda não foi remedido**, e não pode ser: as
+estatísticas acumuladas misturam as duas formas.
+
+**Não resete as estatísticas para conseguir a janela.** `pg_stat_reset()`
+apaga observabilidade compartilhada e só se desfaz esperando. Em vez disso,
+subtraia deste marco — os contadores são acumulativos, e a diferença entre
+duas leituras é uma janela limpa:
+
+| marco em | 2026-09-02 12:04:59 UTC |
+|---|---|
+| Realtime, ms acumulados | **516.964** |
+| Realtime, chamadas | **81.125** |
+| banco inteiro, ms acumulados | **1.196.160** |
+| `daily_listing_metrics`, escritas | **270.021** |
+| `daily_sku_metrics`, escritas | **215.798** |
+
+A migration de D-199 entrou às **11:55 UTC** do mesmo dia, então as ~9 minutos
+antes do marco ainda contêm a forma antiga — desprezível contra as 24h
+acumuladas, mas dito para ninguém tratar a diferença como pura.
+
+Consulta para a leitura futura: a mesma de "Onde vai o tempo", ordenando
+`pg_stat_statements` por `total_exec_time`.
+
 **Lição de D-199 — uma otimização de materialização se prova por IGUALDADE,
 não por economia.** Trocar apaga-e-insere por convergência cortou as escritas
 das métricas diárias em ~99%. Esse não é o número que autoriza a fatia: numa
