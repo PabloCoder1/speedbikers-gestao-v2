@@ -4795,6 +4795,36 @@ O ultimo e o que distingue arquivar de perder: o ROADMAP continua apontando para
 
 **Impacto:** `docs/ROADMAP.md`, `docs/archive/roadmap/2026-09-02_detalhe-dos-itens-concluidos.md` (novo).
 
+## D-215 - Um checkbox que mentia ha uma semana, e uma secao que era o segundo dono da verdade
+
+**Contexto:** com o P0 da trilha 8B fechado e os dois itens restantes do P1 travados no deploy (ato humano), fui conferir os 28 itens `[ ]` do ROADMAP em vez de aceitar a frase de resumo que **eu mesmo** tinha escrito no HANDOFF. Dois achados, nenhum dependente do deploy.
+
+### 1. `P0-B` estava `[ ]` no ROADMAP e fechado no codigo ha uma semana
+
+O item pedia tres coisas, e a conferencia foi no **codigo**, nao no documento:
+
+| o que o item exigia | estado real |
+|---|---|
+| os tres writes de `persist-order.ts` verificados | ✔ `assertWritten` em `orders.upsert`, `order_items.upsert` e `order_items.delete` da cauda |
+| varrer a mesma classe no projeto | ✔ 7 sitios em 3 arquivos |
+| teste que force a falha do write | ✔ **tres**, e eu os RODEI: *falha ao gravar a order aborta antes de evento e de estoque*, *falha ao apagar a cauda aborta antes de deduzir estoque*, *falha ao gravar os itens aborta antes de deduzir estoque* |
+
+**Um detalhe que so aparece lendo o codigo:** o item nomeia `order_items.insert`, e o codigo faz `upsert` — a escrita mudou de forma em D-190. Um checkbox conferido por leitura do proprio texto nunca acharia isso.
+
+**Por que ficou aberto:** D-178 fechou o defeito e nao marcou o checkbox; o HANDOFF passou a dizer "corrigido" e o ROADMAP a dizer "aberto", por **doze commits**. Eu registrei essa divergencia na revisao de inicio de sessao, listada como achado, e depois passei seis fatias sem corrigi-la — porque "e so um checkbox" e exatamente como um documento perde a autoridade.
+
+### 2. "Proximo passo imediato" era um SEGUNDO dono de "onde o projeto esta"
+
+A secao (6,1 KB) mandava *"abrir a Fase 9 pelo preflight"*, concluida em D-162/D-164. Nao e descuido de quem escreveu: **o proprio primeiro paragrafo dela avisava ser "a secao que mais envelhece no repo"**.
+
+**Um aviso de que o texto mente nao conserta o texto.** E o `README` da casa ja tinha a regra que resolve: *"cada assunto tem um unico dono documental"*. Onde o projeto esta e qual o proximo passo e do `docs/HANDOFF.md` desde D-177. Dois donos do mesmo fato **so podem divergir** — a unica duvida e quando.
+
+Aposentada: no lugar, tres linhas apontando para o dono de cada pergunta. O texto integral foi para `docs/archive/roadmap/2026-09-02_proximo-passo-imediato-aposentado.md`, porque carrega registro historico (o que a secao dizia em D-120 e em D-155) que nao esta em outro lugar — e com ele os `D-098`, `D-118` e `D-130`, que so eram citados ali.
+
+**Verificacao, contra a versao em `HEAD`:** **exatamente um** item saiu da lista de abertos (o P0-B, deliberado), **zero** surgiram, os parciais `[~]` estao byte a byte, a secao aposentada esta integral no arquivo e os tres `D-xxx` orfaos tambem. `docs:check ok`; ROADMAP em **65,4 KB**. Os tres testes de P0-B rodados de verdade antes de marcar.
+
+**Impacto:** `docs/ROADMAP.md`, `docs/archive/roadmap/2026-09-02_proximo-passo-imediato-aposentado.md` (novo).
+
 ## Como adicionar nova decisao
 
 Registrar:

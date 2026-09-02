@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **212** (D-001 a D-214).
+Decisões registradas: **213** (D-001 a D-215).
 
 ## Por domínio
 
-### atendimento (28)
+### atendimento (29)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -46,6 +46,7 @@ Decisões registradas: **212** (D-001 a D-214).
 - **D-199** — 485 mil escritas por dia para atualizar duas linhas
 - **D-200** — O cast escondia quais guardas eram reais, e foi o compilador que separou
 - **D-201** — "4xx a descarta sem repetir" e falso, e custou 2.234 execucoes em 7 dias
+- **D-215** — Um checkbox que mentia ha uma semana, e uma secao que era o segundo dono da verdade
 
 ### banco/rls (23)
 
