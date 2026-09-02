@@ -15,7 +15,7 @@
 | **Atualizado em** | 2026-09-02 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
 | **HEAD conhecido** | `a66f1dc` (D-215) — esta fatia, D-216, é o commit seguinte |
-| **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **61 commits atrás** (o «34» registrado aqui estava errado: eram 55 já em `c19a879`; medido com `git rev-list --count fc39c27..HEAD`) |
+| **Deploy no ar** | **`0702969` — o mesmo do `HEAD`, sem atraso** (`api-00030-gqw` / `worker-00045-cwq`, 2026-09-02). Depois de 66 commits parado. Verificado contra a infraestrutura, não contra o script: `APP_COMMIT=0702969` nos dois serviços, imagem `api:0702969`, `/health` respondendo `{"commit":"0702969"}` e **zero `ERROR`** no Cloud Logging desde o boot |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | **128 locais == 128 no Dev**, sem drift — D-209→D-212 aplicadas pela CI em 2026-09-02 e CONFERIDAS lá (`anon` alcança 0 funções; `ml_accounts` sem UPDATE/DELETE para `authenticated`; `created_by` presente). O caminho é o push, **nunca** o MCP (lição de D-207) |
 | **Frente atual** | Trilha 8B — P0 fechado (A–H); em P1 |
@@ -41,7 +41,7 @@ Medidos contra o Dev em 2026-09-01, não herdados de documentação.
 |---|---|---|
 | ~~P0-A~~ | ~~Contexto dos agentes~~ | ✅ corrigido em D-177 — bootstrap de ~1.245 KB para **7,6 KB**; `pnpm docs:check` guarda |
 | ~~P0-B~~ | ~~Writes sem verificação~~ | ✅ corrigido em D-178 — `assertWritten` aborta; 3 testes provam que nada posterior roda |
-| ~~P0-C~~ | ~~Webhooks sem consumidor viram task~~ | ✅ corrigido em D-179 — allowlist em `@sb/contracts`; **218.750 execuções/zero trabalho** deixam de ser enfileiradas ⚠️ só vale após o deploy |
+| ~~P0-C~~ | ~~Webhooks sem consumidor viram task~~ | ✅ corrigido em D-179 — allowlist em `@sb/contracts`; **218.750 execuções/zero trabalho** deixam de ser enfileiradas — **no ar desde 2026-09-02** |
 | ~~P0-D~~ | ~~`has_role` sem organização~~ | ✅ corrigido em D-180 — `has_org_role` em 21 policies e 8 funções; `has_role` removido; +5 testes cross-org |
 | ~~P0-E~~ | ~~`SECURITY DEFINER` / `search_path` / policies duplicadas~~ | ✅ inventariado em D-182 — **nenhum dos três tinha vulnerabilidade**; advisor 33 → 26 WARN; allowlist das 25 RPCs virou teste de CI |
 | ~~P0-F~~ | ~~`get_stock_balances`~~ | ✅ corrigido em D-181 — **9.104 ms → 681 ms**, sem tocar na RPC |
@@ -68,9 +68,13 @@ Números completos e método: `docs/PERFORMANCE.md`.
 
 ## Riscos ativos
 
-- **O que está no ar é velho.** O deploy é de `fc39c27`; D-171 (que corrige
-  o 429 das visitas) e D-176 (`APP_COMMIT` no `/health`) **não estão
-  valendo**. Até o próximo deploy, `/saude` mostra `UNKNOWN` — corretamente.
+- ~~**O que está no ar é velho.**~~ **RESOLVIDO em 2026-09-02**: o deploy
+  levou os dois serviços de `fc39c27` para `0702969`, o mesmo do `HEAD`.
+  D-171 e D-176 passaram a valer, e `/saude` deixa de mostrar `UNKNOWN`.
+  **O risco não sai daqui, muda de forma:** o que voltou a valer é a regra de
+  D-070 — 66 commits se acumularam entre um deploy e outro, e nada no sistema
+  avisa. Quem trabalha no `worker` ou na `api` confere `APP_COMMIT` contra o
+  `HEAD` antes de concluir que uma correção está valendo.
 - **Relist nunca foi exercitado contra o ML real.** A primeira execução
   precisa ser ensaio humano deliberado, com anúncio sacrificável.
 - **A suíte de integração local exige banco recriado.** `supabase db reset`
@@ -271,11 +275,14 @@ Números completos e método: `docs/PERFORMANCE.md`.
 
 Nada disto pode ser feito por um agente.
 
-1. **Deploy** dos dois serviços (`bash infra/deploy-cloud-run.sh`) — leva ao
-   ar D-162→D-179: a correção do 429, o `APP_COMMIT` e o fim dos 218.750
-   jobs vazios de webhook. **É o ato de maior efeito pendente.** (D-180 e
-   D-181 são de banco e já valem no Dev, sem depender do deploy.)
-2. `bash infra/cloud-scheduler.sh` depois do deploy (15 jobs esperados).
+1. ~~**Deploy** dos dois serviços~~ — **FEITO em 2026-09-02**, e com ele
+   entraram no ar D-162→D-216: a correção do 429, o `APP_COMMIT`, o fim dos
+   218.750 jobs vazios de webhook, a falha definitiva respondendo 200 e o
+   caminho de pedidos reescrito.
+2. ~~`bash infra/cloud-scheduler.sh`~~ — **FEITO**, 14 jobs `ENABLED`.
+   ⚠️ **O «15 esperados» que estava escrito aqui era falso.** A lista canônica
+   é `infra/cloud-scheduler.sh` (`docs/DEPLOYMENT.md` §7 diz isso), e ela tem
+   **14**. Conferido dos dois lados: 14 no script, 14 no Cloud Scheduler.
 3. Relatar **Dashboard → Database → Backups** do projeto Dev (decide a
    abordagem de backup da Fase 8).
 4. Ensaio de `/produtos` (5 SKUs sentinela) e preencher
@@ -292,14 +299,16 @@ Nada disto pode ser feito por um agente.
 
 **Abertos:**
 
-1. **O deploy dos dois serviços Cloud Run** — ato humano, e o de maior efeito
-   pendente. **Seis** fatias (D-184 a D-190) mudaram o worker e nenhuma pôde
-   ser medida ponta a ponta; o caminho de pedidos saiu de 7 idas ao banco por
-   pedido para ~0,16 na estrutura, e o número real precisa do deploy. A
-   consulta está em `docs/PERFORMANCE.md`.
-2. **Retenção de `job_runs`** (271.184 linhas) — bloqueada por regra própria:
-   "só depois de reduzir a origem", e a origem (218.750 jobs vazios de
-   webhook, D-179) só some com o deploy. **Mesmo ato humano do item 1.**
+1. **Medir o caminho de pedidos ponta a ponta — DESTRAVADO pelo deploy de
+   2026-09-02.** Seis fatias (D-184 a D-190) levaram o caminho de ~7 idas ao
+   banco por pedido para **~0,16** na estrutura, fixado em teste e **nunca
+   medido em produção**. A consulta está em `docs/PERFORMANCE.md`. Precisa de
+   tráfego real depois do deploy — não dá para medir no minuto seguinte.
+2. **Retenção de `job_runs`** (271.184 linhas) — **a pré-condição caiu**: a
+   regra era "só depois de reduzir a origem", e a origem (218.750 jobs vazios
+   de webhook, D-179) parou de produzir com o deploy. As linhas antigas
+   continuam lá; agora é decidir a política de expurgo, separando auditoria de
+   negócio de telemetria operacional.
 3. **~~Regenerar `packages/db/src/types.ts`~~ — FEITO em D-213**, e por um
    caminho que vale reusar: editar só o bloco afetado e **provar a igualdade**
    contra um arquivo de referência gerado na hora. Regenerar por inteiro
@@ -322,7 +331,8 @@ Nada disto pode ser feito por um agente.
 | Busca Universal alcança atendimento e NF-e; dois destinos envelhecidos | **D-216** |
 
 **Com isso o P0 da trilha 8B fechou inteiro** — os itens com letra e os três
-que nunca receberam uma. Os itens 1 e 2 acima esperam o **deploy**.
+que nunca receberam uma. **E os itens 1 e 2 acima destravaram**: o deploy
+saiu em 2026-09-02.
 
 ⚠️ **"Não resta fatia independente do deploy" é FALSO, e eu escrevi isso uma
 vez.** O Checkpoint P1 do `docs/ROADMAP.md` diz o contrário com todas as
