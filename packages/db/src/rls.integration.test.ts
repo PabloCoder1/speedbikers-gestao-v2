@@ -5739,6 +5739,132 @@ describe("get_system_health (D-176, Saúde do Sistema)", () => {
   });
 });
 
+// Busca Universal (search_entities) — o item do Checkpoint P1 que pedia as
+// entidades com destino REAL. A regra de D-060 e a que continua valendo: so
+// entra o que leva a algum lugar.
+describe("search_entities (Busca Universal)", () => {
+  const CONTA_BUSCA = "eeee5555-0000-4000-8000-00000000eeee";
+
+  /**
+   * O ELO entre a funcao SQL e `apps/web/lib/labels.ts`.
+   *
+   * A paleta mostra o `entity_type` traduzido, e `lookup()` devolve o CODIGO
+   * CRU quando falta rotulo — entao acrescentar uma entidade aqui e esquecer
+   * o rotulo la nao quebra nada: so poe `nota_fiscal` como cabecalho de
+   * resultado, na frente do usuario. Mesma armadilha de D-208.
+   *
+   * Este teste le os tipos do CORPO da funcao, nao de uma lista paralela: se
+   * alguem acrescentar a oitava entidade, ele falha aqui e a mensagem manda
+   * atualizar o mapa de rotulos.
+   */
+  it("emite exatamente as sete entidades que a interface sabe rotular", async () => {
+    const def = await client.query<{ src: string }>(
+      `select pg_get_functiondef(p.oid) as src
+         from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' and p.proname = 'search_entities'`,
+    );
+
+    const tipos = [...(def.rows[0]?.src ?? "").matchAll(/select\s+'([a-z_]+)'/g)].map((m) => m[1]);
+
+    // Se este array mudar, atualize SEARCH_ENTITY em apps/web/lib/labels.ts.
+    expect(tipos.sort()).toEqual(
+      ["anuncio", "atendimento", "conta", "fornecedor", "nota_fiscal", "pedido_compra", "sku"],
+    );
+  });
+
+  /**
+   * Semeia atendimento e NF-e e busca na MESMA transacao, revertida no fim —
+   * as duas tabelas sao fixture de outros testes do arquivo.
+   */
+  async function comEntidadesNovas<T>(userId: string, termo: string): Promise<T[]> {
+    await client.query("begin");
+
+    try {
+      // Conta propria, criada e revertida aqui: o teste nao pode depender do
+      // fixture de outro `describe` — quando roda filtrado, o `beforeAll`
+      // daquele nao executa e o FK quebra.
+      await client.query(
+        `insert into public.ml_accounts (id, organization_id, label, slug, seller_id, status, connected_at)
+         values ('${CONTA_BUSCA}','${ORG_SB}','Busca','rlstest-conta-busca',9001,'CONNECTED',now())`,
+      );
+      // O ANALISTA recebe acesso A ESTA conta: e o que a asserçao dele mede.
+      await client.query(
+        `insert into public.user_account_permissions (user_id, ml_account_id)
+         values ('${ANALISTA_SB}','${CONTA_BUSCA}')`,
+      );
+      await client.query(
+        `insert into public.support_cases
+           (organization_id, ml_account_id, channel, external_case_key, external_case_id,
+            external_type, last_activity_at)
+         values ('${ORG_SB}', '${CONTA_BUSCA}', 'QUESTION',
+                 'question:9001234567', '9001234567', null, now())`,
+      );
+      await client.query(
+        `insert into public.documents
+           (organization_id, storage_path, content_hash, document_number, issuer_name)
+         values ('${ORG_SB}', 'rlstest/busca.xml', md5('rlstest-busca') || md5('rlstest-busca-2'), '9001234567', 'Fornecedor Busca')`,
+      );
+
+      await client.query("set local role authenticated");
+      await client.query("select set_config('request.jwt.claims', $1, true)", [
+        JSON.stringify({ sub: userId }),
+      ]);
+
+      const r = await client.query(
+        `select entity_type, label, href from public.search_entities('${ORG_SB}', '${termo}') order by entity_type`,
+      );
+
+      return r.rows as T[];
+    } finally {
+      await client.query("rollback");
+    }
+  }
+
+  it("acha atendimento e NF-e, e cada um leva ao destino INDIVIDUAL", async () => {
+    const rows = await comEntidadesNovas<{ entity_type: string; label: string; href: string }>(
+      ADMIN_SB,
+      "9001234567",
+    );
+
+    const atendimento = rows.find((r) => r.entity_type === "atendimento");
+    const nota = rows.find((r) => r.entity_type === "nota_fiscal");
+
+    expect(atendimento?.href.startsWith("/atendimento/")).toBe(true);
+    expect(atendimento?.href).toHaveLength("/atendimento/".length + 36);
+    expect(nota?.href.startsWith("/notas-fiscais/")).toBe(true);
+    expect(nota?.href).toHaveLength("/notas-fiscais/".length + 36);
+    // O rotulo nunca sai vazio: document_number e anulavel e a busca alcanca
+    // a nota pelo emitente.
+    expect(nota?.label).toBe("NF-e 9001234567");
+  });
+
+  /**
+   * A RLS decide o escopo, e nao um filtro escrito na funcao: `documents` so
+   * e legivel por ADMIN/GESTOR, e `support_cases` por quem tem acesso a
+   * conta. O ANALISTA tem a conta, mas nao o papel.
+   */
+  it("ANALISTA vê o atendimento da conta a que tem acesso, e NÃO vê a NF-e", async () => {
+    const rows = await comEntidadesNovas<{ entity_type: string }>(ANALISTA_SB, "9001234567");
+    const tipos = rows.map((r) => r.entity_type);
+
+    expect(tipos).toContain("atendimento");
+    expect(tipos).not.toContain("nota_fiscal");
+  });
+
+  it("os destinos que MELHORARAM desde D-060 apontam para a página individual", async () => {
+    const rows = await asUser<{ entity_type: string; href: string }>(
+      ADMIN_SB,
+      `select entity_type, href from public.search_entities('${ORG_SB}', 'rlstest')`,
+    );
+
+    for (const row of rows) {
+      // Anúncio e fornecedor deixaram de cair na lista (D-168 e D-174).
+      if (row.entity_type === "anuncio") expect(row.href).not.toBe("/anuncios");
+      if (row.entity_type === "fornecedor") expect(row.href).not.toBe("/fornecedores");
+    }
+  });
+});
+
 // D-180 — o papel passa a ter ESCOPO de organizacao.
 //
 // O fixture global ja tem duas organizacoes (ORG_SB e ORG_OUTRA) e
@@ -6113,7 +6239,13 @@ describe("search_entities (Fase 5B, Busca universal)", () => {
       `select * from public.search_entities('${ORG_SB}','${TERMO}') where entity_type='anuncio'`,
     );
 
-    expect(rows.some((row) => row.label.includes(TERMO) && row.href === "/anuncios")).toBe(true);
+    // O destino MUDOU e o teste muda junto: `/anuncios/{item_id}` existe
+    // desde D-168, e continuar afirmando `/anuncios` seria fixar o defeito
+    // que esta fatia corrige — cair na lista inteira e o trabalho manual que
+    // a Busca Universal existe para poupar.
+    expect(
+      rows.some((row) => row.label.includes(TERMO) && row.href.startsWith("/anuncios/")),
+    ).toBe(true);
   });
 
   it("encontra fornecedor pelo nome", async () => {
@@ -6122,7 +6254,12 @@ describe("search_entities (Fase 5B, Busca universal)", () => {
       `select * from public.search_entities('${ORG_SB}','${TERMO}') where entity_type='fornecedor'`,
     );
 
-    expect(rows.some((row) => row.label === "SEARCHTEST Distribuidora" && row.href === "/fornecedores")).toBe(true);
+    // Idem: `/fornecedores/{id}` existe desde D-174.
+    expect(
+      rows.some(
+        (row) => row.label === "SEARCHTEST Distribuidora" && row.href.startsWith("/fornecedores/"),
+      ),
+    ).toBe(true);
   });
 
   it("encontra conta pelo label ou slug", async () => {

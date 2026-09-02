@@ -4825,6 +4825,50 @@ Aposentada: no lugar, tres linhas apontando para o dono de cada pergunta. O text
 
 **Impacto:** `docs/ROADMAP.md`, `docs/archive/roadmap/2026-09-02_proximo-passo-imediato-aposentado.md` (novo).
 
+## D-216 - A Busca Universal alcanca as entidades novas, e dois destinos dela tinham envelhecido
+
+**Contexto:** item aberto do Checkpoint P1 — *"adicionar as entidades novas que ja possuem destino real a Busca Universal, incluindo Central de Acoes quando aplicavel"*. Puxado porque **eu tinha afirmado, no fim da fatia anterior, que nao restava tarefa registrada independente do deploy — e estava errado**: o preambulo do proprio Checkpoint diz o contrario, com todas as letras (*"nenhum depende de decisao de produto pendente; qualquer um pode ser puxado"*). Eu li o resumo do HANDOFF, que era meu, em vez da fonte.
+
+**A regra de D-060 continua sendo a regra:** so entra entidade com destino de navegacao REAL, porque resultado que nao leva a lugar nenhum e ruido com aparencia de recurso. O que mudou desde D-060 foi o mundo.
+
+| entidade | em D-060 | hoje |
+|---|---|---|
+| anuncio | `/anuncios` (lista) | **`/anuncios/{item_id}`** (D-168) |
+| fornecedor | `/fornecedores` (lista) | **`/fornecedores/{id}`** (D-174) |
+| atendimento | nao existia | **`/atendimento/{id}`** (D-095) |
+| NF-e | nao entrou na fatia | **`/notas-fiscais/{id}`** |
+
+**As duas primeiras nao sao entidade nova: sao destino que envelheceu.** O comentario da propria funcao dizia *"anuncio -> /anuncios, sem pagina por item ainda"* — verdade em D-060, falsa desde D-168, e ninguem voltou aqui. Buscar um anuncio e cair na lista inteira e exatamente o trabalho manual que a Busca Universal existe para poupar. **Dois testes de D-060 afirmavam o destino antigo e foram atualizados**: continuar afirmando `/anuncios` seria fixar o defeito.
+
+**A Central de Acoes fica de fora, agora com medicao no lugar de "ainda nao existe":** `/acoes` existe desde D-064, mas **nao ha rota `/acoes/[id]` e a pagina nao le `searchParams`** — nao existe deep link para uma acao. A clausula do item e "quando aplicavel", e nao e. **Importacoes** tambem fica de fora, por outro motivo: `/importacoes/{id}` existe, mas uma importacao nao tem identificador que alguem digite numa busca. **Destino existir nao basta; precisa haver o que procurar.**
+
+**A RLS decide o escopo, e ha teste que prova:** a funcao e `security invoker`, entao `support_cases` filtra por acesso a conta e `documents` so aparece para ADMIN/GESTOR. O teste entra com o ANALISTA e mede as duas metades — ele **ve** o atendimento da conta a que tem acesso e **nao ve** a NF-e. Nenhum filtro de papel escrito na funcao.
+
+**Um furo meu, achado antes de rodar:** `documents.document_number` e ANULAVEL e a busca alcanca a nota pelo emitente — `'NF-e ' || d.document_number` teria produzido **rotulo nulo**, uma linha vazia na paleta. Corrigido com `coalesce`, e o teste afirma o rotulo exato.
+
+---
+
+**O guarda que eu escrevi primeiro era VAZIO, e quem mostrou foi a dupla prova.**
+
+O risco real: acrescentar uma entidade no SQL e esquecer o rotulo em `apps/web`, porque `lookup()` devolve o **codigo cru** — `nota_fiscal` viraria cabecalho de resultado na frente do usuario. E a armadilha de D-208.
+
+Minha primeira versao foi um teste que fazia `Object.keys(SEARCH_ENTITY)` e conferia se cada chave tinha rotulo. **Comparava o mapa consigo mesmo.** Removi o rotulo de `nota_fiscal` de proposito para ver o guarda acusar, e ele **passou**: tirar a linha tira a chave da lista tambem. Classe D-209, construida por mim nesta fatia, e o unico motivo de eu ter visto e a regra de D-197 de conferir o guarda contra o defeito.
+
+**O elo certo nao e teste, e o COMPILADOR.** A lista virou tupla `as const` e o mapa virou `Record<SearchEntityType, string>`: omitir um rotulo deixa de compilar. Provado do mesmo jeito — removendo a linha:
+
+```
+error TS2741: Property 'nota_fiscal' is missing in type '{ sku: ...; atendimento: string; }'
+  but required in type 'Record<"sku" | ... | "nota_fiscal", string>'
+```
+
+**A outra ponta do elo e o teste de integracao**, e essa precisa ser teste porque o SQL nao tem tipo: ele extrai os `entity_type` do **corpo da funcao** (`pg_get_functiondef`), nao de uma lista paralela, e afirma os sete. A oitava entidade falha ali, e a mensagem manda atualizar o mapa — que ai nao compila sem o rotulo. **SQL → lista → rotulo, com uma trava em cada salto.**
+
+**Sem mudanca de contrato:** assinatura identica (mesmos 2 argumentos, mesmas 4 colunas), conferida por `pg_get_function_result` — nada a regenerar em `types.ts` (D-213).
+
+**Verificacao:** **546/546** de integracao em banco recriado (+4), `check` 29/29, build 8/8, `check:embeds` 33/33, `check:waterfalls` 52 arquivos, 13/13 Playwright. As duas provas de guarda feitas contra o defeito, nao contra a correcao.
+
+**Impacto:** `supabase/migrations/20260902201330_search_entities_novos_destinos.sql`, `apps/web/lib/labels.ts`, `apps/web/components/command-palette.tsx`, `packages/db/src/rls.integration.test.ts`.
+
 ## Como adicionar nova decisao
 
 Registrar:

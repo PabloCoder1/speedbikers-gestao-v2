@@ -220,7 +220,7 @@ Nenhuma funcionalidade concluída das Fases 0 a 6 deve ser removida ou reimpleme
   - **O que falta, e por quê** — nenhuma das seis está bloqueada por falta de dado, o que muda quem pode puxá-las: `Full` (dado em `fulfillment_stock_snapshots` por SKU+conta), `Decisões` (alcança o SKU por `actions.sku_id`), `Preços` (`listing.price.changed`) e `Tráfego` (`daily_listing_visits` por anúncio) precisam de **consulta agregada por SKU** — somar em JS dentro da tela violaria a regra de agregação em SQL. `Vendas` como aba própria só se ganhar recorte além dos dois números. `Atendimento` é a única sem caminho pronto: `support_cases` não tem vínculo de SKU (liga por anúncio).
 - [x] Reorganizar a navegação em grupos, evitando todas as telas no mesmo nível — ✔ 2026-08-24 · D-068
 - [x] Substituir a Home de construção pela Home orientada a “o que precisa da minha atenção hoje?” — ✔ 2026-08-27 · D-105
-- [ ] Adicionar as entidades novas que já possuem destino real à Busca Universal, incluindo Central de Ações quando aplicável.
+- [x] Adicionar as entidades novas que já possuem destino real à Busca Universal, incluindo Central de Ações quando aplicável — ✔ 2026-09-02 · D-216. Entraram **atendimento** (`/atendimento/{id}`) e **NF-e** (`/notas-fiscais/{id}`); **anúncio** e **fornecedor** deixaram de cair na lista e passaram a apontar para a página individual, que existe desde D-168/D-174. **Central de Ações fica de fora com medição**, não com "ainda não existe": `/acoes` não tem rota por id nem lê `searchParams`, e a cláusula é "quando aplicável".
 
 ### P2 — Backlog registrado, sem bloquear a Fase 7
 

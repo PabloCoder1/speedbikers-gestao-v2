@@ -14,7 +14,7 @@
 |---|---|
 | **Atualizado em** | 2026-09-02 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `3debab1` (D-214) — esta fatia, D-215, é o commit seguinte |
+| **HEAD conhecido** | `a66f1dc` (D-215) — esta fatia, D-216, é o commit seguinte |
 | **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **61 commits atrás** (o «34» registrado aqui estava errado: eram 55 já em `c19a879`; medido com `git rev-list --count fc39c27..HEAD`) |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | **128 locais == 128 no Dev**, sem drift — D-209→D-212 aplicadas pela CI em 2026-09-02 e CONFERIDAS lá (`anon` alcança 0 funções; `ml_accounts` sem UPDATE/DELETE para `authenticated`; `created_by` presente). O caminho é o push, **nunca** o MCP (lição de D-207) |
@@ -319,11 +319,26 @@ Nada disto pode ser feito por um agente.
 | contrato gerado atualizado, com prova de igualdade | **D-213** |
 | ROADMAP de volta ao budget, `docs:check` verde | **D-214** |
 | `P0-B` marcado (fechado no código desde D-178) e a seção duplicada aposentada | **D-215** |
+| Busca Universal alcança atendimento e NF-e; dois destinos envelhecidos | **D-216** |
 
 **Com isso o P0 da trilha 8B fechou inteiro** — os itens com letra e os três
-que nunca receberam uma. **O que resta do P1 são os itens 1 e 2, e os dois
-esperam o MESMO ato humano: o deploy.** Não há hoje fatia de agente
-registrada que não dependa dele.
+que nunca receberam uma. Os itens 1 e 2 acima esperam o **deploy**.
+
+⚠️ **"Não resta fatia independente do deploy" é FALSO, e eu escrevi isso uma
+vez.** O Checkpoint P1 do `docs/ROADMAP.md` diz o contrário com todas as
+letras: *"nenhum depende de decisão de produto pendente; qualquer um pode ser
+puxado quando o usuário priorizar"*. Restam **três** lá, e nenhum depende do
+deploy:
+
+| item | estado |
+|---|---|
+| filtros de Conta / Origem / Marca | aberto — **Origem** esbarra em `is_imported`, que D-139 mediu como não confiável |
+| Nacional × Importado no mesmo pedido de compra | aberto — **mesmo bloqueio de dado** |
+| alias `Fornecedor + código -> SKU` | aberto — a relação fornecedor→SKU não existe (D-174) |
+| abas do Dashboard de SKU (6 de 11) | aberto — nenhuma bloqueada por dado (D-169) |
+
+O de menor risco é o das **abas do Dashboard de SKU**: D-169 mediu que
+nenhuma das seis depende de dado que falte.
 
 ---
 

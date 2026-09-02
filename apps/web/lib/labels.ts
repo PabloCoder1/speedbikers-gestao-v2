@@ -243,6 +243,55 @@ const SUPPORT_DEADLINE_KIND: Record<string, string> = {
   RESOLUTION: "Resolução",
 };
 
+/**
+ * Entidades da Busca Universal (`search_entities`).
+ *
+ * O mapa morava dentro de `command-palette.tsx`. Veio para ca porque o
+ * `lookup()` devolve o CODIGO CRU quando falta rotulo — e o codigo cru aqui
+ * e `pedido_compra` aparecendo como cabecalho de um resultado de busca. E a
+ * mesma armadilha de D-208, e o elo entre a funcao SQL e este mapa e um teste
+ * em cada ponta (ver `labels.test.ts` e o guarda de integracao).
+ *
+ * Toda entidade nova em `search_entities` precisa de uma linha aqui.
+ */
+/**
+ * As entidades que `search_entities` pode devolver. Lista PRIMEIRO, mapa
+ * depois — e nessa ordem por um motivo.
+ */
+export const SEARCH_ENTITY_TYPES = [
+  "sku",
+  "anuncio",
+  "conta",
+  "fornecedor",
+  "pedido_compra",
+  "atendimento",
+  "nota_fiscal",
+] as const;
+
+export type SearchEntityType = (typeof SEARCH_ENTITY_TYPES)[number];
+
+/**
+ * O elo entre a lista e os rótulos é o COMPILADOR, não um teste.
+ *
+ * `Record<SearchEntityType, string>` torna a omissão de um rótulo um erro de
+ * tipo: acrescentar a entidade à lista e esquecer a tradução **não compila**.
+ *
+ * A primeira versão disto era um teste que fazia `Object.keys(SEARCH_ENTITY)`
+ * e conferia se cada chave tinha rótulo — comparando o mapa consigo mesmo.
+ * Passava sempre, inclusive com o rótulo removido: verificado, e é a classe de
+ * guarda vazio de D-209. Quem pega a divergência SQL↔lista é o teste de
+ * integração; quem pega lista↔rótulo é este tipo.
+ */
+const SEARCH_ENTITY: Record<SearchEntityType, string> = {
+  sku: "SKU",
+  anuncio: "Anúncio",
+  conta: "Conta",
+  fornecedor: "Fornecedor",
+  pedido_compra: "Pedido de compra",
+  atendimento: "Atendimento",
+  nota_fiscal: "NF-e",
+};
+
 function lookup(table: Record<string, string>, code: string): string {
   return table[code] ?? code;
 }
@@ -267,6 +316,7 @@ export const supportBodyStateLabel = (code: string): string => lookup(SUPPORT_BO
 export const supportSenderKindLabel = (code: string): string => lookup(SUPPORT_SENDER_KIND, code);
 export const supportDeadlineKindLabel = (code: string): string => lookup(SUPPORT_DEADLINE_KIND, code);
 export const supportCaseEventLabel = (code: string): string => lookup(SUPPORT_CASE_EVENT, code);
+export const searchEntityLabel = (code: string): string => lookup(SEARCH_ENTITY, code);
 export const replyAttemptLabel = (code: string): string => lookup(REPLY_ATTEMPT_STATUS, code);
 
 /** Cor de destaque por estado. `null` = sem destaque, o padrão da tabela. */

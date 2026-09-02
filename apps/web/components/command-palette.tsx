@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
+import { searchEntityLabel } from "../lib/labels";
 import { createClient } from "../lib/supabase/browser";
 
 /**
@@ -24,14 +25,6 @@ interface SearchResult {
   sublabel: string;
   href: string;
 }
-
-const ENTITY_LABEL: Record<string, string> = {
-  sku: "SKU",
-  anuncio: "Anúncio",
-  conta: "Conta",
-  fornecedor: "Fornecedor",
-  pedido_compra: "Pedido de compra",
-};
 
 export function CommandPalette({ organizationId }: { organizationId: string | null }): ReactNode {
   const router = useRouter();
@@ -211,7 +204,7 @@ export function CommandPalette({ organizationId }: { organizationId: string | nu
                       color: "var(--sb-text-soft)",
                     }}
                   >
-                    {ENTITY_LABEL[result.entity_type] ?? result.entity_type}
+                    {searchEntityLabel(result.entity_type)}
                   </span>
                   <div style={{ fontSize: "0.875rem" }}>{result.label}</div>
                   {result.sublabel !== "" && (
