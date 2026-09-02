@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **211** (D-001 a D-213).
+Decisões registradas: **212** (D-001 a D-214).
 
 ## Por domínio
 
@@ -188,6 +188,10 @@ Decisões registradas: **211** (D-001 a D-213).
 - **D-211** — A torneira que faltava, e os dois bancos discordavam sobre ela
 - **D-212** — A conta ganha autor, e o caminho revelou o que D-210 tinha quebrado sem notar
 - **D-213** — Como atualizar o contrato gerado sem perder as correcoes manuais
+
+### processo/docs (1)
+
+- **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
 ### vendas/métricas (12)
 

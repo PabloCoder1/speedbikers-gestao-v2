@@ -4757,6 +4757,44 @@ A prova e o ponto inteiro. Sem ela, isto seria exatamente a manutencao a mao que
 
 **Impacto:** `packages/db/src/types.ts` (10 linhas de contrato + cabecalho).
 
+## D-214 - O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
+
+**Contexto:** `pnpm docs:check` reprovava o `docs/ROADMAP.md` em **139,3 KB** contra o budget de 130 -- e reprovava **desde antes desta sessao** (137,7 KB no commit `ded1ddf`). O guarda e o de D-177, que existe para impedir que o bootstrap dos agentes volte a custar 1,2 MB.
+
+**A medicao decidiu o corte, e ela e bem direta:**
+
+| | linhas | peso |
+|---|---|---|
+| itens `[x]` (CONCLUIDOS) | 182 | **85,8 KB** |
+| itens `[ ]` (abertos) | 28 | 9,9 KB |
+| itens `[~]` (parciais) | 3 | 3,1 KB |
+
+**62% do arquivo era narrativa de trabalho ja terminado** -- cada `[x]` carregando o paragrafo inteiro do que foi feito, com numeros, que e exatamente o que o `D-xxx` correspondente ja guarda. A mensagem do proprio guarda diz o que fazer: *"e planejamento; narrativa longa vira D-xxx ou arquivo"*.
+
+**O que foi feito:** as **144** linhas `[x]` acima de 200 bytes viraram *titulo — ✔ data · D-xxx*, e o texto integral de cada uma foi para `docs/archive/roadmap/2026-09-02_detalhe-dos-itens-concluidos.md`, palavra por palavra, sem edicao. **139,3 → 70,2 KB**, com folga larga para as fases que vierem.
+
+**O que NAO foi tocado, e essa e a parte que importa:** itens abertos e parciais ficaram **byte a byte**, porque sao a lista de trabalho. Nenhum checkbox mudou de estado.
+
+**A verificacao e o que autoriza uma edicao mecanica desse tamanho.** Um script comparou o resultado contra a versao em `HEAD` e exigiu cinco invariantes:
+
+| invariante | resultado |
+|---|---|
+| contagem de `[x]` / `[ ]` / `[~]` | 182 / 28 / 3, iguais |
+| linhas `[ ]` e `[~]` byte a byte | iguais |
+| os 144 itens longos presentes no arquivo, integrais | 144/144 |
+| headings preservados | 48/48 |
+| `D-xxx` citados **no proprio ROADMAP** | **174 antes, 174 depois** |
+
+O ultimo e o que distingue arquivar de perder: o ROADMAP continua apontando para as mesmas 174 decisoes; o que saiu dele foi a REPETICAO do que elas contam.
+
+**Uma nota sobre por que isso demorou.** As quatro fatias anteriores desta sessao acrescentaram 1,6 KB ao arquivo cada uma, e eu encurtei as notas justamente porque o guarda ja estava vermelho -- tratando o sintoma sem consertar a causa. **Um guarda vermelho normalizado treina qualquer um a ignorar o vermelho**, que e a licao literal de D-207, e eu passei quatro commits provando isso na pratica.
+
+**Achado que fica registrado sem ser corrigido aqui:** a secao "Proximo passo imediato" do ROADMAP (6,1 KB) esta desatualizada -- ela manda "abrir a Fase 9 pelo preflight", que fechou em D-162/D-164. O proprio texto dela avisa: *"esta secao e a que mais envelhece no repo"*. Quem responde por onde o projeto esta e o `docs/HANDOFF.md`; corrigir ou aposentar essa secao e fatia propria, e nao se mistura com um conserto de budget.
+
+**Verificacao:** `docs:check ok` -- verde pela primeira vez na sessao. Os cinco invariantes acima. Sem migration, sem codigo.
+
+**Impacto:** `docs/ROADMAP.md`, `docs/archive/roadmap/2026-09-02_detalhe-dos-itens-concluidos.md` (novo).
+
 ## Como adicionar nova decisao
 
 Registrar:

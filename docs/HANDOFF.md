@@ -14,7 +14,7 @@
 |---|---|
 | **Atualizado em** | 2026-09-02 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `94a86e2` — esta fatia, D-213, é o commit seguinte |
+| **HEAD conhecido** | `7199f30` (D-213) — esta fatia, D-214, é o commit seguinte |
 | **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **61 commits atrás** (o «34» registrado aqui estava errado: eram 55 já em `c19a879`; medido com `git rev-list --count fc39c27..HEAD`) |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | **128 locais == 128 no Dev**, sem drift — D-209→D-212 aplicadas pela CI em 2026-09-02 e CONFERIDAS lá (`anon` alcança 0 funções; `ml_accounts` sem UPDATE/DELETE para `authenticated`; `created_by` presente). O caminho é o push, **nunca** o MCP (lição de D-207) |
@@ -317,6 +317,7 @@ Nada disto pode ser feito por um agente.
 | `pg_default_acl` de funções | **D-211** |
 | `ml_accounts.created_by` + a regressão de `RETURNING` | **D-212** |
 | contrato gerado atualizado, com prova de igualdade | **D-213** |
+| ROADMAP de volta ao budget, `docs:check` verde | **D-214** |
 
 **Com isso o P0 da trilha 8B fechou inteiro** — os itens com letra e os três
 que nunca receberam uma. **O que resta do P1 são os itens 1 e 2, e os dois
