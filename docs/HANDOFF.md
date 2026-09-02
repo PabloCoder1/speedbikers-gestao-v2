@@ -222,6 +222,11 @@ Números completos e método: `docs/PERFORMANCE.md`.
   `job_runs` era 42.936 contra 307.756 linhas reais, e isso revelou que a
   janela era de 23 horas, não de 13 dias. Toda conclusão tirada de
   `idx_scan = 0` depende dessa janela.
+- **Conflito à vista em `20260902005023_stock_balances_page_first.sql`.**
+  D-207 recuperou essa migration do banco porque ela existia só no Dev.
+  Quando a outra frente empurrar a fatia dela, o git vai acusar conflito neste
+  arquivo: o SQL é idêntico, a diferença é o cabeçalho. **Fique com a versão
+  deles** — tem a intenção original e o registro da decisão.
 - **Comparar predicados por abrangência só vale dentro do mesmo universo de
   linhas.** Em D-210 conferi que a policy de SELECT de `ml_accounts` era
   "mais larga" que a de escrita que eu removia, e concluí que nada se perdia.
@@ -262,31 +267,6 @@ Números completos e método: `docs/PERFORMANCE.md`.
 
 ---
 
-## ~~Dev à frente do repositório~~ — RESOLVIDO em D-207
-
-Por doze commits (D-195 a D-206) o job `aplicar migrations no Supabase Dev`
-ficou vermelho porque a versão `20260902005023`
-(`stock_balances_page_first`) estava no histórico do Dev e **não existia no
-repositório** — aplicada por outra frente e nunca empurrada.
-
-D-207 recuperou o SQL de `supabase_migrations.schema_migrations.statements` e
-o gravou com a **versão e o nome exatos**. Verificado por identidade: o md5 de
-`pg_get_functiondef` no banco local recriado bate com o do Dev
-(`15b9f49043058a202296a49ba67b44a9`).
-
-⚠️ **Quando a outra frente empurrar a fatia dela**, o git vai acusar conflito
-em `supabase/migrations/20260902005023_stock_balances_page_first.sql`. O SQL
-será idêntico; a diferença é o cabeçalho que marca o arquivo como recuperado.
-**Fique com a versão deles** — ela tem a intenção original e o registro da
-decisão.
-
-**A lição, que vale para mim tanto quanto para a outra frente:** aplicar
-migration por MCP sem empurrar o arquivo no mesmo dia quebra a esteira de
-todo mundo, e o custo se acumula em silêncio — doze commits com um check
-vermelho normalizado treinam qualquer um a ignorar o vermelho.
-
----
-
 ## Atos humanos pendentes
 
 Nada disto pode ser feito por um agente.
@@ -310,109 +290,35 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-1. **O deploy é o que trava a medição, e agora com peso.** **Seis** fatias
-   seguidas (D-184 a D-190) mudaram o worker e **nenhuma pôde ser medida
-   ponta a ponta**. O caminho de pedidos saiu de 7 idas ao banco por pedido
-   para ~0,16 — na estrutura, fixada em teste. O número real precisa do
-   deploy, e a consulta está em `docs/PERFORMANCE.md`.
+**Abertos:**
 
-   **O caminho de pedidos fechou como frente.** O que resta do P1 é outro
-   assunto.
-2. **P1 — retenção de `job_runs`, e ela também espera o deploy.** São
-   **271.184 linhas** reais. Bloqueado por regra própria — "só depois de
-   reduzir a origem", e a origem (218.750 jobs vazios de webhook, D-179) só
-   some com o deploy. Junto com o item 1, é o segundo do P1 travado pelo
-   mesmo ato humano.
-3. **~~P1 — read models e o resto do item de frontend~~ — FECHADO.** O item
-   de frontend saiu em D-193/D-194/D-195/D-197. E **read models virou outra
-   coisa em D-204**: investigado, o que havia para consolidar não era custo,
-   era **definição**. "Full atual" era reimplementado em cinco funções com
-   TRÊS definições diferentes, e as três devolviam o mesmo número — a
-   divergência era latente. `get_purchase_suggestions`, que decide quanto
-   comprar, usava `max(captured_at)` sem bucket nem janela. As duas
-   divergentes adotaram a canônica de D-173; a garantia é **guarda de
-   catálogo**, não função compartilhada.
+1. **O deploy dos dois serviços Cloud Run** — ato humano, e o de maior efeito
+   pendente. **Seis** fatias (D-184 a D-190) mudaram o worker e nenhuma pôde
+   ser medida ponta a ponta; o caminho de pedidos saiu de 7 idas ao banco por
+   pedido para ~0,16 na estrutura, e o número real precisa do deploy. A
+   consulta está em `docs/PERFORMANCE.md`.
+2. **Retenção de `job_runs`** (271.184 linhas) — bloqueada por regra própria:
+   "só depois de reduzir a origem", e a origem (218.750 jobs vazios de
+   webhook, D-179) só some com o deploy. **Mesmo ato humano do item 1.**
+3. **Regenerar `packages/db/src/types.ts`** — mecânico, e destrava quando a
+   CI aplicar as migrations de D-212 no Dev. `docs/API.md` §7 exige o
+   contrato regenerado a cada migration (D-147), e **o gerador da CLI local
+   não serve**: apaga as correções manuais (D-209). O caminho é o MCP contra
+   o Dev.
 
-4. **~~P1 — remedir o Realtime~~ — FECHADO, e o resultado corrige o
-   enquadramento que eu tinha dado.** D-198 registrou o decodificador de WAL
-   em **43,4% do tempo do banco** e eu apresentei isso como o maior consumidor.
-   A pergunta que faltava era **"43,4% de quanto?"**: em 86.310 s de relógio o
-   banco consumiu **1.234 s de CPU (1,43% de ocupação)**, e o Realtime foram
-   **543 s — 0,63% do relógio**. Era 43,4% de um banco **98,6% ocioso**. Os
-   dois slots lógicos estão ativos e em dia (224 kB retidos), e o decodificador
-   faz polling em intervalo próprio: por isso o custo por chamada caiu só 8,5%
-   quando as escritas de métrica foram a zero. **Não há o que otimizar.**
-   D-199 continua valendo pelos próprios méritos — 485 mil escritas por dia é
-   desperdício em qualquer escala — mas **não pela razão que eu registrei**.
+**Fechados nesta frente** — o detalhe mora no `D-xxx`, não aqui:
 
-5. **~~P1 — falha "permanente" não é permanente~~ — CORRIGIDO em D-202.**
-   Falha definitiva e envelope inválido respondem **200** (só 2xx faz o Cloud
-   Tasks descartar); tipo de job desconhecido passa a **503**, porque pode ser
-   a janela de um deploy. O número da tentativa passa a vir de
-   `X-CloudTasks-TaskRetryCount`. **Sem efeito antes do deploy** — o worker no
-   ar é anterior.
+| | |
+|---|---|
+| read models, Realtime, falha "permanente", 429 das visitas | D-198→D-204 |
+| `get_system_health` com escopo de plataforma | **D-209** |
+| `ml_accounts` com UPDATE/DELETE sem consumidor | **D-210** |
+| `pg_default_acl` de funções | **D-211** |
+| `ml_accounts.created_by` + a regressão de `RETURNING` | **D-212** |
 
-6. **~~P1 — o snapshot de visitas leva 429~~ — ITEM DERRUBADO em D-203, e
-   quem o escreveu fui eu.** O espaçamento que eu ia propor **já existe e já
-   está no ar** (D-156, ancestral do commit em produção). E o dano é quase
-   nulo: a cobertura diária é parcial (32% a 75%), mas na semana são 573 de
-   3.409 sem visita (17%) e — entre os **1.204 anúncios que venderam** —
-   exatamente **1** ficou sem dado. `taxa_conversao` já é `SUM(pedidos nos
-   dias com visita observada) / SUM(visitas)`: absorve cobertura parcial por
-   construção. Registrado com os números para ninguém re-escalar ao ver "80%
-   de falha" em `job_runs`.
-
-7. **~~Antes da segunda organização — `get_system_health`~~ — FECHADO em
-   D-209.** A correção não era nenhuma das duas tentativas que D-182 tinha
-   verificado e recusado: a linha de `job_runs` aparece quando pertence a uma
-   organização onde o chamador é ADMIN **ou** quando não pertence a organização
-   nenhuma — e "nenhuma" vem do **catálogo**, não do UUID sentinela copiado
-   para o SQL. O heartbeat `system.ping` sobrevive (é o que a primeira
-   tentativa apagava) e a assinatura não mudou (é o que a segunda quebrava),
-   provado por `pg_get_function_result`. **A correção saiu mais barata que o
-   defeito**: 308,7 → 261,9 ms. De quebra, o guarda vizinho estava **vazio** e
-   foi reescrito — ver D-209 e "Riscos ativos".
-
-8. **~~`ml_accounts`~~ — FECHADO em D-210.** O DELETE não era excesso de
-   privilégio: era um caminho até o segredo. Reproduzido antes de corrigido —
-   um ADMIN autenticado apagava a conta (`DELETE 1`) e a credencial cifrada
-   ia de **1 para 0**, porque o CASCADE roda como dono da tabela e atravessa
-   as três camadas que blindam `ml_credentials`. O furo nunca apareceu porque
-   as 15 filhas em RESTRICT tornam indeletável qualquer conta com histórico —
-   **o acaso da ordem de criação das tabelas estava fazendo o papel de
-   controle de acesso**. Fechado em duas camadas (GRANT + policy `for
-   insert`), com o único consumidor real (criar conta) preservado.
-
-9. **~~`pg_default_acl` de funções~~ — FECHADO em D-211**, e a medição mudou
-   o item. No **Dev**, toda função nova de `public` nascia executável por
-   `anon`; **localmente, não** — o repositório não controlava nenhum dos dois,
-   e perguntar só ao banco local responderia "já está fechado". A exposição de
-   hoje era idêntica nos dois e inofensiva: 6 funções de trigger, que o
-   Postgres recusa chamar. O defeito era **a próxima função**, e ela nasceria
-   aberta só no Dev — invisível para a CI. Fechado no repositório, e as 6
-   retardatárias saíram de `public` para `private`, levando a zero **por
-   estrutura** o que `anon` alcança.
-
-10. **~~`ml_accounts.created_by`~~ — FECHADO em D-212.** A autoria vem de
-    **trigger**, não de `default auth.uid()`: o default só vale quando a
-    coluna é omitida, e quem escreve direto no PostgREST poderia mandar o
-    autor de outra pessoa. O trigger ignora o valor recebido — há teste que
-    manda o ANALISTA e recebe o ADMIN. NULO para `service_role` é
-    declaração, e não há backfill (D-175).
-
-    **No caminho, achei uma regressão que EU tinha introduzido em D-210:**
-    `insert ... returning` em `ml_accounts` passou a ser recusado pela RLS,
-    porque `RETURNING` também aplica as policies de SELECT e
-    `accessible_accounts()` é STABLE — não enxerga a linha da própria
-    instrução. Corrigido na policy de SELECT, com teste de regressão. Ver
-    D-212 e "Riscos ativos".
-
-11. **Regenerar `packages/db/src/types.ts`** — único item aberto, e é
-    mecânico. A coluna `created_by` existe no repositório e o contrato
-    gerado ainda não a conhece; o gerador é o MCP contra o **Dev**, que
-    recebe a migration no próximo push. `docs/API.md` §7 exige o contrato
-    regenerado a cada migration (D-147), e **o gerador da CLI local não
-    serve** — ele apaga as correções manuais (D-209).
+**Com isso o P0 da trilha 8B fechou inteiro** — os itens com letra e os três
+que nunca receberam uma. O que resta do P1 são os itens 1 e 2, e os dois
+esperam o mesmo ato humano.
 
 ---
 
