@@ -4648,6 +4648,8 @@ A correcao emite `order.return.unreversed` em `domain_events`, onde a casa ja ol
 
 **Impacto:** `supabase/migrations/20260902190642_ml_accounts_write_surface.sql`, `packages/db/src/rls.integration.test.ts`.
 
+> ⚠️ **CORRECAO, registrada em D-212.** A frase acima — *"a policy de SELECT nao muda e nao perde nada"* — estava certa para linhas que JA EXISTEM e **errada para uma: a que esta sendo criada**. Com `RETURNING`, o Postgres aplica tambem as policies de SELECT, e `accessible_accounts()` e STABLE: nao enxerga a linha da propria instrucao. A policy `for ALL` que saiu cobria o caso sem querer. `insert ... returning` em `ml_accounts` passou a ser recusado; corrigido em D-212.
+
 ## D-211 - A torneira que faltava, e os dois bancos discordavam sobre ela
 
 **Contexto:** o ultimo item do P0 da trilha 8B — *"`pg_default_acl`: o que D-182 deixou aberto"*. D-182 fechou o default de tabelas e sequences e registrou o resto por escrito: *"`postgres`/funcoes — deixado. As RPCs dependem de `grant execute`; exige varrer todas as migrations que criam funcao"*. Esta e a varredura.
@@ -4696,6 +4698,44 @@ A correcao emite `order.return.unreversed` em `domain_events`, onde a casa ja ol
 **Verificacao:** **538/538** de integracao em banco recriado (+2 guardas novos, 1 alargado), `check` 29/29, build 8/8, `check:embeds` 33/33, `check:waterfalls` 52 arquivos, 13/13 Playwright — este ultimo importa nesta fatia mais que nas outras, porque o e2e escreve em `stock_movements` pelos dois fluxos cujos triggers foram recriados.
 
 **Impacto:** `supabase/migrations/20260902194500_function_default_acl_and_trigger_schema.sql`, `packages/db/src/rls.integration.test.ts`.
+
+## D-212 - A conta ganha autor, e o caminho revelou o que D-210 tinha quebrado sem notar
+
+**Contexto:** item 10 do HANDOFF — a fatia que D-210 nomeou e adiou. Depois que D-210 encolheu a superficie de escrita, a clausula "sem trilha de auditoria" do item original se dissolveu: as tabelas irmas tem trigger porque humanos mudam PRIVILEGIO nelas, e em `ml_accounts` nao ha mais mudanca de privilegio pela UI. Sobrou uma ausencia menor e nomeavel — a tabela tem `created_at` e nao tem quem.
+
+**A coluna vem de TRIGGER, nao de `default auth.uid()`, e a diferenca e testavel.** Um default so vale quando a coluna e OMITIDA: quem escreve direto no PostgREST pode mandar `created_by` de outra pessoa, e a coluna deixa de ser um fato de auditoria para virar uma alegacao do cliente. O trigger ignora o valor recebido e grava `auth.uid()` — o mesmo padrao que D-175 usa para `actor_user_id`. Ha teste que manda o ANALISTA e recebe o ADMIN de volta.
+
+**NULO e declaracao, nao omissao:** escrita por `service_role` (OAuth pela api, seed, importacao) nao tem humano identificado. Sem backfill — as contas que ja existem ficam sem autor, porque carimbar o passado com quem "provavelmente" criou seria dado inventado. As duas regras, com as mesmas palavras, vem de D-175.
+
+---
+
+**E aqui o achado que nao era da fatia: D-210 quebrou `insert ... returning` em `ml_accounts`, e a decisao dela afirma o contrario.**
+
+Descoberto porque o teste de autoria precisa ler o valor de volta. O primeiro `returning` respondeu:
+
+```
+new row violates row-level security policy for table "ml_accounts"
+```
+
+enquanto o MESMO insert sem `returning` continuava passando.
+
+**A mecanica:** com `RETURNING`, o Postgres aplica tambem as policies de SELECT. Depois de D-210 restou uma so, `ml_accounts_select_permitted`, cujo predicado e `id in (select private.accessible_accounts())`. **`accessible_accounts()` e STABLE** — enxerga o snapshot do INICIO da instrucao, onde a linha recem-inserida ainda nao existe. A policy `for ALL` que D-210 removeu nao tinha o problema: o predicado dela le `organization_id` da propria linha nova.
+
+**Reproduzido nos dois sentidos antes de escrever:** recriando a policy `ALL` numa transacao revertida, o `returning` volta a funcionar; sem ela, falha.
+
+**O que isso diz sobre a analise de D-210, e a licao e minha:** eu conferi que `ml_accounts_select_permitted` era "mais larga" que o predicado da `ALL` **para o conjunto de linhas existentes**, e concluí que nada se perdia. A pergunta que faltou foi *"mais larga para QUAIS linhas?"*. Uma policy que se apoia num conjunto derivado nao alcanca a linha que a propria instrucao esta criando; uma que le a coluna da linha, sim. **Comparar predicados por abrangencia so vale dentro do mesmo universo de linhas** — e o INSERT cria um universo com uma linha a mais.
+
+**A correcao entra na policy de SELECT, nao devolve a de escrita.** O disjunto `private.has_org_role(organization_id, array['ADMIN'])` e redundante para linhas existentes — `accessible_accounts()` ja devolve todas as contas da organizacao ao ADMIN — e obrigatorio para a linha nova. Os testes que provam que nada alargou sao os que ja existiam: o ANALISTA continua vendo so a conta em que tem permissao, e o usuario de outra organizacao continua vendo nenhuma.
+
+**Nao quebrava nada HOJE, e isso nao rebaixa o item.** `apps/web/app/contas/actions.ts` faz `.insert()` sem `.select()`. Estava a um `.select()` de distancia — o gesto mais natural do mundo, pegar o id da conta criada — e o erro que apareceria fala de RLS, nao de RETURNING. E a licao de D-194 ao contrario: medir o dano serve para escalar E para nao rebaixar.
+
+---
+
+**Verificacao:** **542/542** de integracao em banco recriado (+4: um de regressao do RETURNING, tres de autoria), `check` 29/29, build 8/8, `check:embeds` 33/33, `check:waterfalls` 52 arquivos, 13/13 Playwright.
+
+⚠️ **`packages/db/src/types.ts` NAO acompanha este commit, e o motivo esta declarado:** o gerador e o MCP contra o **Dev**, e o Dev so recebe a coluna quando a CI aplicar esta migration. O contrato e regenerado no commit seguinte, que existe para isso. E a mesma dependencia que D-210 nomeou; a diferenca e que agora ela e de minutos, nao de fatia.
+
+**Impacto:** `supabase/migrations/20260902195500_ml_accounts_select_reaches_new_row.sql`, `supabase/migrations/20260902200000_ml_accounts_created_by.sql`, `packages/db/src/rls.integration.test.ts`.
 
 ## Como adicionar nova decisao
 

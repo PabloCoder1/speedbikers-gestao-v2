@@ -14,10 +14,10 @@
 |---|---|
 | **Atualizado em** | 2026-09-02 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `1d1263c` (D-210) — esta fatia, D-211, é o commit seguinte |
-| **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **57 commits atrás** (o «34» registrado aqui estava errado: eram 55 já em `c19a879`; medido com `git rev-list --count fc39c27..HEAD`) |
+| **HEAD conhecido** | `0f017c6` (D-211) — esta fatia, D-212, é o commit seguinte |
+| **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **61 commits atrás** (o «34» registrado aqui estava errado: eram 55 já em `c19a879`; medido com `git rev-list --count fc39c27..HEAD`) |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
-| **Migrations** | **126 locais**, 123 no Dev até o push — a CI aplica (job `aplicar migrations no Supabase Dev`, só em `v3`). Sem drift: o caminho é o push, **nunca** o MCP (lição de D-207) |
+| **Migrations** | **128 locais**, **126 no Dev** — D-209/D-210/D-211 aplicadas pela CI em 2026-09-02 e CONFERIDAS lá (`anon` alcança 0 funções; `ml_accounts` sem UPDATE/DELETE para `authenticated`). As duas desta fatia sobem no próximo push — a CI aplica (job `aplicar migrations no Supabase Dev`, só em `v3`). Sem drift: o caminho é o push, **nunca** o MCP (lição de D-207) |
 | **Frente atual** | Trilha 8B — P0 fechado (A–H); em P1 |
 
 ### O que está pronto
@@ -222,6 +222,15 @@ Números completos e método: `docs/PERFORMANCE.md`.
   `job_runs` era 42.936 contra 307.756 linhas reais, e isso revelou que a
   janela era de 23 horas, não de 13 dias. Toda conclusão tirada de
   `idx_scan = 0` depende dessa janela.
+- **Comparar predicados por abrangência só vale dentro do mesmo universo de
+  linhas.** Em D-210 conferi que a policy de SELECT de `ml_accounts` era
+  "mais larga" que a de escrita que eu removia, e concluí que nada se perdia.
+  Era mais larga **para as linhas que já existem** — e o INSERT cria um
+  universo com uma linha a mais. Uma policy apoiada em conjunto derivado
+  (`accessible_accounts()`, STABLE) **não alcança a linha que a própria
+  instrução está criando**; uma que lê a coluna da linha, sim. Resultado:
+  `insert ... returning` passou a ser recusado, e a decisão dizia o
+  contrário (corrigido em D-212).
 - **`proacl` é armazenamento; privilégio efetivo é `has_function_privilege`.**
   Em D-211 comparei os dois bancos contando a string `authenticated=X` na ACL
   crua e achei **58 contra 64** — registrei uma divergência que não existia.
@@ -384,12 +393,26 @@ Nada disto pode ser feito por um agente.
    retardatárias saíram de `public` para `private`, levando a zero **por
    estrutura** o que `anon` alcança.
 
-10. **`ml_accounts.created_by`** — a fatia que resta do P0, nomeada em D-210.
-    A tabela tem `created_at` e não tem autor. **Bloqueada por dependência
-    real**: coluna nova exige regenerar `packages/db/src/types.ts`, e o
-    caminho é o MCP contra o **Dev** — que só terá as migrations depois que a
-    CI as aplicar. Versionar um contrato gerado sabendo-o desatualizado é a
-    classe de drift de D-207. **Destrava com o push.**
+10. **~~`ml_accounts.created_by`~~ — FECHADO em D-212.** A autoria vem de
+    **trigger**, não de `default auth.uid()`: o default só vale quando a
+    coluna é omitida, e quem escreve direto no PostgREST poderia mandar o
+    autor de outra pessoa. O trigger ignora o valor recebido — há teste que
+    manda o ANALISTA e recebe o ADMIN. NULO para `service_role` é
+    declaração, e não há backfill (D-175).
+
+    **No caminho, achei uma regressão que EU tinha introduzido em D-210:**
+    `insert ... returning` em `ml_accounts` passou a ser recusado pela RLS,
+    porque `RETURNING` também aplica as policies de SELECT e
+    `accessible_accounts()` é STABLE — não enxerga a linha da própria
+    instrução. Corrigido na policy de SELECT, com teste de regressão. Ver
+    D-212 e "Riscos ativos".
+
+11. **Regenerar `packages/db/src/types.ts`** — único item aberto, e é
+    mecânico. A coluna `created_by` existe no repositório e o contrato
+    gerado ainda não a conhece; o gerador é o MCP contra o **Dev**, que
+    recebe a migration no próximo push. `docs/API.md` §7 exige o contrato
+    regenerado a cada migration (D-147), e **o gerador da CLI local não
+    serve** — ele apaga as correções manuais (D-209).
 
 ---
 

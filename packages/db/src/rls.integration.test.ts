@@ -770,6 +770,82 @@ describe("contas Mercado Livre", () => {
     ).resolves.toBeDefined();
   });
 
+  /**
+   * Efeito colateral de D-210, corrigido depois: com `RETURNING`, o Postgres
+   * aplica TAMBEM as policies de SELECT, e `accessible_accounts()` e STABLE
+   * — enxerga o snapshot do inicio da instrucao, onde a linha recem-criada
+   * ainda nao existe. A policy `for ALL` que D-210 removeu cobria o caso sem
+   * querer, porque lia `organization_id` da propria linha nova.
+   *
+   * O app hoje faz `.insert()` sem `.select()`, entao nada quebrava — mas
+   * estava a um `.select()` de quebrar, e o erro fala de RLS, nao de
+   * RETURNING.
+   */
+  it("insert ... RETURNING alcança a linha recém-criada (regressão de D-210)", async () => {
+    const rows = await asUser<{ slug: string }>(
+      ADMIN_SB,
+      `insert into public.ml_accounts (organization_id, label, slug)
+       values ('${ORG_SB}','Com returning','rlstest-conta-returning')
+       returning slug`,
+    );
+
+    expect(rows[0]?.slug).toBe("rlstest-conta-returning");
+  });
+
+  // ---------------- autoria da conta (item 10 do HANDOFF) ----------------
+
+  it("criar conta carimba o AUTOR a partir de auth.uid()", async () => {
+    const rows = await asUser<{ created_by: string | null }>(
+      ADMIN_SB,
+      `insert into public.ml_accounts (organization_id, label, slug)
+       values ('${ORG_SB}','Com autor','rlstest-conta-autor')
+       returning created_by`,
+    );
+
+    expect(rows[0]?.created_by).toBe(ADMIN_SB);
+  });
+
+  /**
+   * A razao de a autoria vir de TRIGGER e nao de `default auth.uid()`: o
+   * default so vale quando a coluna e OMITIDA, e quem escreve direto no
+   * PostgREST pode mandar o que quiser. Com o trigger, o valor enviado nem e
+   * consultado — forjar autoria deixa de ser possivel em vez de ser
+   * desencorajado.
+   */
+  it("autoria não é forjável: o valor enviado pelo cliente é ignorado", async () => {
+    const rows = await asUser<{ created_by: string | null }>(
+      ADMIN_SB,
+      `insert into public.ml_accounts (organization_id, label, slug, created_by)
+       values ('${ORG_SB}','Forjada','rlstest-conta-forjada','${ANALISTA_SB}')
+       returning created_by`,
+    );
+
+    // Mandou o ANALISTA, gravou o ADMIN — quem de fato estava autenticado.
+    expect(rows[0]?.created_by).toBe(ADMIN_SB);
+    expect(rows[0]?.created_by).not.toBe(ANALISTA_SB);
+  });
+
+  /**
+   * Escrita de `service_role` (OAuth pela api, seed, importacao do UpSeller)
+   * nao tem humano identificado. NULO aqui e DECLARACAO — inventar um ator
+   * seria pior, a mesma regra de D-175 para `actor_user_id`.
+   */
+  it("criação sem humano identificado deixa o autor NULO, e isso é declaração", async () => {
+    await client.query("begin");
+
+    try {
+      const rows = await client.query<{ created_by: string | null }>(
+        `insert into public.ml_accounts (organization_id, label, slug)
+         values ('${ORG_SB}','Sem humano','rlstest-conta-sem-humano')
+         returning created_by`,
+      );
+
+      expect(rows.rows[0]?.created_by).toBeNull();
+    } finally {
+      await client.query("rollback");
+    }
+  });
+
   it("ADMIN de outra organização não cria conta nesta", async () => {
     await expect(
       asUser(
