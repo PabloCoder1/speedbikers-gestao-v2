@@ -33,18 +33,6 @@ export const dynamic = "force-dynamic";
  * que houve R$ 4.644,00 pedidos e desfeitos.
  */
 
-interface PurchasedSku {
-  sku_id: string | null;
-  sku: string;
-  title: string | null;
-  pedidos: number;
-  unidades_pedidas: number;
-  unidades_canceladas: number;
-  ultimo_custo: number;
-  ultimo_pedido_numero: number;
-  ultimo_pedido_em: string;
-  total_count: number;
-}
 
 const th: React.CSSProperties = {
   textAlign: "left",
@@ -141,7 +129,7 @@ export default async function FornecedorPage({
     notFound();
   }
 
-  const skus = (skusResult.data ?? []) as unknown as PurchasedSku[];
+  const skus = skusResult.data ?? [];
   const orders = ordersResult.data ?? [];
   const secondaryError = skusResult.error ?? ordersResult.error;
 

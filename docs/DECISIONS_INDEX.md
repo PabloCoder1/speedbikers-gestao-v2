@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **197** (D-001 a D-199; D-196 é de outra frente).
+Decisões registradas: **198** (D-001 a D-200; D-196 é de outra frente).
 
 ## Por domínio
 
@@ -175,6 +175,7 @@ Decisões registradas: **197** (D-001 a D-199; D-196 é de outra frente).
 - **D-197** — O guarda de D-195 estava cego para quatro classes, e quem mostrou foi uma varredura que LEU o codigo
 - **D-198** — A triagem de indices nao produziu indice nenhum, e o motivo de cada metade e diferente
 - **D-199** — 485 mil escritas por dia para atualizar duas linhas
+- **D-200** — O cast escondia quais guardas eram reais, e foi o compilador que separou
 
 ### vendas/métricas (12)
 

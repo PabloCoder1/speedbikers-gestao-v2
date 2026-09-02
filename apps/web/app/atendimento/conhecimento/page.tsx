@@ -30,16 +30,6 @@ const th: React.CSSProperties = {
   whiteSpace: "nowrap",
 };
 
-interface KnowledgeQueryRow {
-  id: string;
-  kind: string;
-  content: string;
-  note: string | null;
-  source: string;
-  status: string;
-  created_at: string;
-  skus: { sku: string } | null;
-}
 
 export default async function ConhecimentoPage(): Promise<ReactNode> {
   const supabase = await createClient();
@@ -56,7 +46,7 @@ export default async function ConhecimentoPage(): Promise<ReactNode> {
   const role = membershipResult.data?.role ?? null;
   const canManage = role === "ADMIN" || role === "GESTOR";
 
-  const rows: KnowledgeRowData[] = ((entriesResult.data ?? []) as unknown as KnowledgeQueryRow[]).map(
+  const rows: KnowledgeRowData[] = (entriesResult.data ?? []).map(
     (row) => ({
       id: row.id,
       kind: row.kind,

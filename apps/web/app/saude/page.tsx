@@ -39,17 +39,6 @@ export const dynamic = "force-dynamic";
 /** Quantas horas sem rodar antes de a idade virar sinal, por cadência. */
 const JOB_STALE_HOURS = 26;
 
-interface HealthRow {
-  db_migration_version: string;
-  db_migration_name: string;
-  db_migrations_count: number;
-  db_migration_applied_at: string;
-  job_type: string | null;
-  job_status: string | null;
-  job_last_run_at: string | null;
-  job_age_hours: number | null;
-  job_failures_24h: number;
-}
 
 type Verdict = "CURRENT" | "OUTDATED" | "UNKNOWN";
 
@@ -123,7 +112,7 @@ export default async function SaudePage(): Promise<ReactNode> {
 
   const [healthResult, api] = await Promise.all([supabase.rpc("get_system_health"), fetchApiHealth()]);
 
-  const rows = (healthResult.data ?? []) as unknown as HealthRow[];
+  const rows = healthResult.data ?? [];
 
   // A RPC devolve zero linhas para quem não é ADMIN (a autorização é dela,
   // não desta tela).

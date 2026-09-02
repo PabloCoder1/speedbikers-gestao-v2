@@ -27,17 +27,7 @@ export interface DetectSupportPatternActionsDeps {
   db: AdminClient;
 }
 
-interface SkuLinkRow {
-  support_case_id: string;
-  sku_id: string | null;
-  skus: { sku: string; title: string | null } | null;
-  support_cases: { internal_status: string; channel: string; is_mediation: boolean } | null;
-}
 
-interface OrderLinkRow {
-  support_case_id: string;
-  orders: { total_amount: number | null } | null;
-}
 
 function toEvidence(finding: SupportPatternFinding): Json {
   return { evidencias: finding.evidencias, reclamacoes_abertas: finding.openClaims } as unknown as Json;
@@ -70,7 +60,7 @@ export function createDetectSupportPatternActionsHandler(
       return { status: "failed", retryable: true, reason: skuLinks.error.message };
     }
 
-    const rows = skuLinks.data as unknown as SkuLinkRow[];
+    const rows = skuLinks.data;
 
     if (rows.length === 0) {
       context.logger.info("detect_support_pattern_actions_done", {
@@ -98,7 +88,7 @@ export function createDetectSupportPatternActionsHandler(
 
     const orderTotalByCase = new Map<string, number>();
 
-    for (const link of orderLinks.data as unknown as OrderLinkRow[]) {
+    for (const link of orderLinks.data) {
       const amount = link.orders?.total_amount;
 
       if (amount != null) {
@@ -110,10 +100,22 @@ export function createDetectSupportPatternActionsHandler(
     // reclamação é evidência para cada produto envolvido.
     const bySkuCases = new Map<string, { sku: string; title: string | null; cases: Set<string>; mediations: Set<string> }>();
 
+    // Dos TRES guardas de nulo que moravam aqui, dois eram mortos e um NAO
+    // era — e sem o cast o compilador separa os dois casos sozinho (D-200):
+    //
+    // - `sku_id` e anulavel no banco, mas o `.not("sku_id", "is", null)` da
+    //   consulta acima estreita o tipo. Guarda morto.
+    // - `support_cases` vem com `!inner`. Guarda morto.
+    // - `skus` NAO tem `!inner`, e o embed continua anulavel. **Este fica.**
+    //
+    // Tentei remover os tres de uma vez e o `tsc` recusou na hora, apontando
+    // exatamente o terceiro. E o que o cast escondia: com ele, os tres pareciam
+    // igualmente necessarios (ou igualmente dispensaveis) e nada distinguia.
     for (const row of rows) {
-      if (row.sku_id === null || row.skus === null || row.support_cases === null) {
+      if (row.skus === null) {
         continue;
       }
+
 
       const entry = bySkuCases.get(row.sku_id) ?? {
         sku: row.skus.sku,

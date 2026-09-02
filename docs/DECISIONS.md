@@ -4184,6 +4184,44 @@ A amostra do "depois" e pequena (14 recomputes) e esta dita como pequena. O ensa
 
 **Impacto:** `supabase/migrations/20260902115548_metrics_converge_instead_of_rewrite.sql`, `packages/db/src/rls.integration.test.ts` (quatro testes), `docs/METRICS.md`.
 
+## D-200 - O cast escondia quais guardas eram reais, e foi o compilador que separou
+
+**Contexto:** o item que D-192 deixou aberto — *"onde o cast E redundante, remove-lo, por sitio, com criterio. A pergunta e 'a RLS pode esconder esta linha deste leitor?'"*. Sao 20 sitios com `as unknown as` sobre resultado de consulta. **Nove sairam; cinco ficaram, cada um com a razao escrita.**
+
+**A varredura de agentes nao foi confiavel, e eu tinha um canario para saber.** Dezesseis arquivos foram classificados por agentes que leram as policies, e cada proposta de remocao passou por dois ceticos. **Dezesseis propostas, zero refutadas** — a mesma taxa que ja me alertou em D-182. E entre as dezesseis estava `apps/web/app/usuarios/page.tsx`, que e **exatamente o sitio que D-192 tentou remover e reverteu**, nomeado no docstring do proprio teste daquela decisao. Um canario plantado de proposito, e ele disparou.
+
+**O filtro que funcionou nao foi o agente: foi o compilador.** A pergunta util nao e "a RLS pode esconder esta linha?" respondida por leitura de policy — e "removendo o cast, o lint passa a exigir apagar algum `?.`?". Se nao exige, a remocao so devolve a checagem de cardinalidade e e segura. Se exige, o sitio precisa de medicao propria antes de qualquer coisa. Esse teste e mecanico, roda em segundos e nao depende de ninguem raciocinar certo sobre RLS.
+
+**Um criterio mais forte que ler policy, achado no caminho.** `apps/api/src/support-reply.ts` traz no proprio comentario: *"O `AdminClient` bypassa RLS"*. **Quem le com `service_role` nao pode ser vitima de D-192** — a RLS nao e avaliada, entao o embed nao pode voltar nulo por invisibilidade. Isso cobre o worker inteiro (`createAdminClient` em `apps/worker/src/index.ts:42`) de uma vez, sem ler uma policy sequer.
+
+**O melhor achado da fatia veio de um erro meu.** Em `detect-support-pattern-actions.ts` havia tres guardas de nulo na mesma linha. Removi os tres, e o `tsc` recusou na hora apontando o terceiro:
+
+| guarda | veredito | por que |
+|---|---|---|
+| `row.sku_id === null` | morto | a consulta tem `.not("sku_id", "is", null)`, e o tipo do cliente estreita por causa dele |
+| `row.support_cases === null` | morto | o embed tem `!inner` |
+| `row.skus === null` | **real** | sem `!inner`, o embed continua anulavel |
+
+**E isso e o argumento a favor de remover o cast, nao contra.** Com o cast, os tres guardas pareciam iguais — igualmente necessarios ou igualmente dispensaveis, e nada no codigo distinguia. Sem ele, o compilador separa em segundos o que uma leitura humana confundiria. O cast nao estava protegendo: estava **apagando a diferenca**.
+
+**Os cinco que ficaram, e por que cada um:**
+
+| sitio | por que fica |
+|---|---|
+| `usuarios/page.tsx:121` | remove-lo faz o lint exigir apagar dois `?.`. A cadeia de catalogo diz que o embed nao pode ser nulo (vejo membro so da minha org -> `shares_org_with` verdadeiro -> FK CASCADE sem orfao), **mas a medicao no Dev tem n=1** e nao derruba uma decisao registrada. Fica com a analise pronta para uma fatia com fixture proprio |
+| `anuncios/[itemId]:133` | idem: o fallback `?? "Conta desconhecida"` viraria ramo morto |
+| `atendimento/[caseId]:212` | idem: `ml_accounts?.label ?? "—"` viraria ramo morto |
+| `api/support-reply.ts:85` | o guarda e provavelmente morto (service_role + FK NOT NULL), mas ele vive no caminho de **resposta a comprador**, que exige aprovacao humana. Nao se apaga guarda dali de carona numa fatia de tipos |
+| `atendimento/[caseId]:247` | nao foi tentado nesta fatia |
+
+**Uma sujeira que a varredura deixou, e vale registrar.** Um dos agentes criou `apps/worker/src/handlers/__cast_probe.ts` para inspecionar um tipo e **nao apagou**. O `tsc` acusou. Agente que escreve no repo precisa ser conferido com `git status`, nao so pelo que devolve.
+
+**O que a fatia entrega em numero:** 87 linhas removidas contra 30 adicionadas — quase tudo interface local que duplicava, com menos precisao, o tipo que o gerador ja produz.
+
+**Verificacao:** `check` 29/29, build 8/8, `check:waterfalls` 52 arquivos. Sem migration. A suite de integracao nao rodou nesta maquina (Docker fora) — vai no CI.
+
+**Impacto:** seis telas, dois handlers do worker.
+
 ## Como adicionar nova decisao
 
 Registrar:

@@ -158,7 +158,7 @@ export function createDetectSalesAnomalyActionsHandler(deps: DetectSalesAnomalyA
       .neq("support_cases.internal_status", "RESOLVIDO");
 
     if (claimLinks.error === null) {
-      for (const link of claimLinks.data as unknown as { sku_id: string | null; support_case_id: string }[]) {
+      for (const link of claimLinks.data) {
         if (link.sku_id === null) continue;
 
         const set = openClaimsBySku.get(link.sku_id) ?? new Set<string>();

@@ -47,22 +47,6 @@ const LOOKBACK_DAYS = 30;
  */
 const SERIES_START_LABEL = "24/08/2026";
 
-interface PriceChangeRow {
-  event_id: string;
-  item_id: string;
-  title: string | null;
-  status: string | null;
-  sku_id: string | null;
-  sku: string | null;
-  ml_account_id: string;
-  account_label: string;
-  price_before: number;
-  price_after: number;
-  delta: number;
-  delta_ratio: number | null;
-  occurred_at: string;
-  total_count: number;
-}
 
 const th: React.CSSProperties = {
   textAlign: "left",
@@ -146,7 +130,7 @@ export default async function PrecosPage({
     p_offset: (filters.page - 1) * PAGE_SIZE,
   });
 
-  const rows = (data ?? []) as unknown as PriceChangeRow[];
+  const rows = data ?? [];
   const totalCount = rows[0]?.total_count ?? 0;
   const window = summarizePagedWindow({
     page: filters.page,

@@ -174,7 +174,7 @@ export default async function DiagnosticoPage(): Promise<ReactNode> {
       eventsBySku.set(event.sku_id, list);
     }
 
-    for (const link of (claimLinks.data ?? []) as unknown as { sku_id: string | null; support_case_id: string }[]) {
+    for (const link of claimLinks.data ?? []) {
       if (link.sku_id === null) continue;
 
       const set = openClaimsBySku.get(link.sku_id) ?? new Set<string>();

@@ -47,20 +47,6 @@ const LOOKBACK_DAYS = 30;
 /** Mesma janela da RPC — declarada aqui porque a tela precisa explicá-la. */
 const FRESHNESS_DAYS = 3;
 
-interface FullRow {
-  ml_account_id: string;
-  account_label: string;
-  sku_id: string;
-  sku: string;
-  sku_title: string | null;
-  full_quantity: number;
-  buckets: number;
-  captured_at: string;
-  local_quantity: number;
-  units_sold: number;
-  situation: string;
-  total_count: number;
-}
 
 const th: React.CSSProperties = {
   textAlign: "left",
@@ -144,7 +130,7 @@ export default async function FullPage({
     p_offset: (filters.page - 1) * PAGE_SIZE,
   });
 
-  const rows = (data ?? []) as unknown as FullRow[];
+  const rows = data ?? [];
   const totalCount = rows[0]?.total_count ?? 0;
   const window = summarizePagedWindow({
     page: filters.page,

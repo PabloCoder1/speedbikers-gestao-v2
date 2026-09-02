@@ -14,7 +14,7 @@
 |---|---|
 | **Atualizado em** | 2026-09-01 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `c7619e9` (D-198) — esta fatia, D-199, é o commit seguinte |
+| **HEAD conhecido** | `7a70a35` (D-199) — esta fatia, D-200, é o commit seguinte |
 | **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **34 commits atrás** |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | **121 locais, 122 no Dev — o drift continua.** Ver "Dev à frente do repositório", abaixo |
@@ -113,6 +113,15 @@ Números completos e método: `docs/PERFORMANCE.md`.
   por um `.eq("organization_id", ...)` que a RLS já garantia — e mais
   estreito. Antes de aceitar que duas leituras estão em fila por necessidade,
   pergunte se o que as amarra é dado ou é um filtro que não filtra nada.
+- **Um agente que escreve no repositório precisa ser conferido com `git
+  status`.** A varredura de D-200 deixou `apps/worker/src/handlers/__cast_probe.ts`
+  para trás — um arquivo criado para inspecionar um tipo e nunca apagado. Quem
+  pegou foi o `tsc`, não a leitura do resultado do agente.
+- **Taxa de refutação zero é sinal de cético frouxo, não de achado forte.**
+  Aconteceu em D-182 (0 de 16) e de novo em D-200 (0 de 16) — e em D-200 a
+  lista incluía o sítio que D-192 já tinha revertido. Quando a varredura
+  aprova tudo, o filtro tem que vir de outro lugar: em D-200 veio do
+  compilador (remover o cast e ver se o lint exige apagar um `?.`).
 - **Uma otimização de materialização se prova por IGUALDADE, não por
   economia.** D-199 cortou 485 mil escritas por dia numa tabela de métricas —
   e o número que autoriza a fatia não é esse, é a assinatura md5 idêntica
@@ -216,10 +225,14 @@ Nada disto pode ser feito por um agente.
    antes de qualquer conclusão sobre o Realtime em si; a consulta é a de
    `pg_stat_statements` por `total_exec_time`, em `docs/PERFORMANCE.md`.
 
-   ⚠️ **A remedição precisa de uma janela nova.** As estatísticas do Dev
-   foram perdidas no restart de 01/09 e ainda misturam as duas formas. O
-   honesto é `pg_stat_reset()` deliberado, com a data anotada, e esperar —
-   comparar contra os números de D-198 sem isso mistura antes e depois.
+   ⚠️ **A remedição precisa de TEMPO, não de reset.** As estatísticas
+   acumuladas misturam as duas formas. `pg_stat_reset()` daria a janela
+   limpa e foi **rejeitado**: apaga observabilidade compartilhada e só se
+   desfaz esperando. Como os contadores são acumulativos, a saída é subtrair
+   de um marco — ele está em `docs/PERFORMANCE.md`, seção "Marco para remedir
+   o Realtime", com data e os cinco números. Conferido às 12:07 de 02/09,
+   **2 minutos depois do marco**: cedo demais (0 escritas de métrica, 268
+   chamadas do Realtime). Precisa de horas, não de minutos.
 5. **Antes da segunda organização** — `get_system_health` tem escopo de
    plataforma com guard de tenant (D-182). Não é urgente hoje e não tem
    correção óbvia: as duas tentativas naturais causam regressão verificada.
