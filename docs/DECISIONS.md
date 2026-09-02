@@ -4056,6 +4056,66 @@ Os dois primeiros escondiam defeito; os dois ultimos **inventavam** defeito. Os 
 
 **Impacto:** `apps/web/app/{page,precos/page,full/page,diagnostico/page,compras/[id]/page,importacoes/[id]/page,atendimento/[caseId]/page}.tsx`, `apps/web/components/{shell,notification-toasts}.tsx` e `apps/web/scripts/check-waterfalls.mjs`.
 
+## D-198 - A triagem de indices nao produziu indice nenhum, e o motivo de cada metade e diferente
+
+**Contexto:** item do P1, escrito com a regra da casa embutida — "triagem caso a caso (FK sem indice **e** indices sem uso), **nunca em lote pelo advisor**". Medido contra o Dev em 02/09/2026. **O resultado e nao mexer**, e as duas metades caem por razoes distintas.
+
+### A metade de REMOVER cai por falta de janela
+
+O Dev tem **325 indices, 235 com `idx_scan = 0`** — 72%. Numero que parece um convite, e nao e.
+
+`pg_stat_database.stats_reset` e NULO, o que sugere estatisticas desde sempre. **Sugere errado.** O Postgres reiniciou em 01/09 12:44 e as estatisticas foram junto — a prova esta em `job_runs`:
+
+| | |
+|---|---|
+| `n_tup_ins` segundo as estatisticas | **42.936** |
+| linhas de verdade na tabela | **307.756** |
+
+As estatisticas cobrem **~23 horas**, nao os 13 dias de vida do banco. Num ambiente de desenvolvimento, que nao recebe trafego continuo, "nao usado em 23 horas" nao diz nada sobre um indice. Remover a partir disso e exatamente o que `docs/PERFORMANCE.md` proibe. **A metade de remocao fica bloqueada por dado, e volta a ser possivel quando houver uma janela honesta** — o jeito de conseguir uma e anotar a data de um `pg_stat_reset()` e esperar, nao inferir.
+
+### A metade de CRIAR cai por ausencia de sintoma
+
+Sao **71 chaves estrangeiras sem indice que as cubra por prefixo**. A tentacao e criar as 71. Tres medicoes derrubam isso:
+
+**1. Nenhuma das 12 consultas mais caras e varredura por FK sem indice.** O ranking por tempo TOTAL (que e o que paga a conta, nao a media) nao tem uma sequer.
+
+**2. As filhas grandes ja estao cobertas para o que a aplicacao realmente pergunta.** `stock_movements.sku_id` nao tem indice proprio, mas tem `stock_movements_sku_timeline_idx (organization_id, sku_id, occurred_at desc)` com **40.220 usos** — porque toda consulta real filtra por organizacao primeiro, que e o que a RLS impoe. Mesma historia em `fulfillment_stock_snapshots` (16.644 usos) e `daily_sku_metrics`.
+
+**3. O caminho que fica descoberto e o `DELETE` no PAI — e ele nao acontece.** A verificacao de FK consulta so pelas colunas referenciadas, entao um indice composto que comeca por outra coluna nao serve. Medido: `select 1 from stock_movements where sku_id = ?` custa **2.024 ms frio, 13,5 ms quente**, varrendo os 2.381 buffers do indice inteiro. E real. So que **nenhum codigo de producao apaga `skus`, `profiles` ou `organizations`** — conferido no `apps/web`, `apps/worker` e `apps/api`. Quem paga esses 13 ms e a suite de integracao, e ela e a unica.
+
+Criar os 71 indices somaria amplificacao de escrita nas tabelas mais quentes do banco (485 mil escritas por dia, ver abaixo) para acelerar delecoes que nunca ocorrem. **A triagem terminou sem produzir indice, e isso e o resultado, nao a ausencia dele.**
+
+### O que a medicao achou de verdade, e e maior que a pergunta original
+
+Ao ranquear o tempo do banco, o primeiro colocado nao e consulta de aplicacao:
+
+| Consumidor | Chamadas | Tempo total | % |
+|---|---|---|---|
+| **decodificador de WAL do Realtime** | 78.261 | 496 s | **43,4%** |
+| `rebuild/recompute_daily_sales_metrics` | 1.080 | 59 s | 5,2% |
+| `insert into order_items` | 14.613 | 28 s | 2,5% |
+| `insert into job_runs` | 43.011 | 24 s | 2,1% |
+
+**43,4% do tempo do banco e infraestrutura de replicacao, nao pergunta de tela.** A publicacao `supabase_realtime` esta MINIMA e correta — uma tabela so, `notification_recipients`, exatamente como D-075 desenhou. Entao o custo nao vem de configuracao errada: vem do fato de que a decodificacao logica le **todo** o WAL para decidir o que interessa. O custo escala com o volume de escrita do banco inteiro.
+
+**E aqui minha hipotese estava errada, o que so se soube medindo.** Escrevi que o deploy pendente cortaria esse custo, porque cortaria a rotatividade de `job_runs` (D-179). O dado desmente:
+
+| tabela | escritas em ~23h | padrao |
+|---|---|---|
+| `daily_listing_metrics` | **269.504** | 135.271 inserts + 134.233 deletes |
+| `daily_sku_metrics` | **215.355** | 108.114 inserts + 107.241 deletes |
+| `job_runs` | 43.030 | so inserts |
+
+As duas tabelas de metricas somam **485 mil escritas por dia, 11x a rotatividade de `job_runs`**, por serem reescritas com apaga-e-insere. `daily_listing_metrics` tem 52.530 linhas e recebeu 135.271 insercoes: **a tabela inteira e reescrita 2,6 vezes por dia**.
+
+O desenho nao e ingenuo — o caminho incremental ja e escopado a UM dia (`recompute_daily_sales_metrics(org, conta, metric_date)`) e a fila ja deduplica cerca de 13 para 1 (14.614 escritas em `orders` viraram 1.080 recomputes). O que nao foi medido ainda e se 1.080 recomputes por dia, para ~512 pares (conta, dia) possiveis, e o piso ou ainda tem folga. **Fica registrado como tarefa propria, com o numero junto.**
+
+**Uma ressalva honesta sobre as varreduras sequenciais.** `job_runs` aparece com 67 varreduras lendo 13,4 milhoes de linhas, o que parece defeito de aplicacao e nao e: sao as **minhas proprias consultas de investigacao** desta sessao e das anteriores (`count(*)`, `min(started_at)`). A aplicacao escreve `job_runs` e quase nao a le. Estatistica de banco de desenvolvimento inclui quem investiga.
+
+**Verificacao:** so SELECT e EXPLAIN, nada destrutivo. Sem migration, sem mudanca de codigo.
+
+**Impacto:** `docs/PERFORMANCE.md`, `docs/ROADMAP.md`, `docs/HANDOFF.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:

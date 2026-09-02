@@ -14,7 +14,7 @@
 |---|---|
 | **Atualizado em** | 2026-09-01 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `28eeaa7` (D-195) — esta fatia, D-197, é o commit seguinte |
+| **HEAD conhecido** | `0bd48b5` (D-197) — esta fatia, D-198, é o commit seguinte |
 | **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **34 commits atrás** |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | **120 locais, 121 no Dev — HÁ DRIFT.** Ver "Dev à frente do repositório", abaixo |
@@ -113,6 +113,12 @@ Números completos e método: `docs/PERFORMANCE.md`.
   por um `.eq("organization_id", ...)` que a RLS já garantia — e mais
   estreito. Antes de aceitar que duas leituras estão em fila por necessidade,
   pergunte se o que as amarra é dado ou é um filtro que não filtra nada.
+- **`stats_reset` NULO não quer dizer "desde sempre".** Um restart do
+  Postgres leva as estatísticas junto e deixa `stats_reset` nulo assim mesmo.
+  Confira contra um número que você conhece — em D-198, `n_tup_ins` de
+  `job_runs` era 42.936 contra 307.756 linhas reais, e isso revelou que a
+  janela era de 23 horas, não de 13 dias. Toda conclusão tirada de
+  `idx_scan = 0` depende dessa janela.
 - **`n_live_tup` mente, e mentiu feio.** As estatísticas do Dev estão velhas:
   `job_runs` estimava ~6 mil e tem **271.184**; `ml_credentials` estimava 0 e
   tem **4 credenciais reais**. Para qualquer raciocínio de segurança ou de
@@ -198,7 +204,16 @@ Nada disto pode ser feito por um agente.
    **já estava certo**: `/skus/[skuId]` dispara por aba desde sempre. **O item
    de frontend do P1 está fechado.** Sobram **N+1** e **dados carregados por aba não
    aberta** — e os read models. `docs/ROADMAP.md` tem a ordem.
-4. **Antes da segunda organização** — `get_system_health` tem escopo de
+4. **P1 — o Realtime custa 43,4% do banco, e não é configuração errada.**
+   Achado em D-198 ao medir para a triagem de índices: o decodificador de WAL
+   é o maior consumidor de tempo do banco (78.261 chamadas, 496 s). A
+   publicação está mínima e correta — uma tabela só. O custo escala com o
+   volume de escrita, e os maiores produtores são `daily_listing_metrics` e
+   `daily_sku_metrics`: **485 mil escritas por dia** por apaga-e-insere, a
+   tabela inteira reescrita 2,6× ao dia. O caminho incremental já é escopado a
+   um dia e a fila já deduplica ~13:1 — falta medir se 1.080 recomputes/dia
+   para ~512 pares (conta, dia) é o piso ou ainda tem folga.
+5. **Antes da segunda organização** — `get_system_health` tem escopo de
    plataforma com guard de tenant (D-182). Não é urgente hoje e não tem
    correção óbvia: as duas tentativas naturais causam regressão verificada.
 

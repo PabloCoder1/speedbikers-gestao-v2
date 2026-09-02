@@ -442,3 +442,35 @@ impacto na escrita.
 Para **remover**, registre: `idx_scan`, quando as estatísticas foram
 resetadas, qual query deveria usá-lo, se é UNIQUE/FK, tamanho e risco.
 UNIQUE e constraint **nunca** saem por estatística de uso.
+
+### Triagem de 2026-09-02 (D-198) — resultado: não mexer
+
+| | |
+|---|---|
+| índices no Dev | **325** |
+| com `idx_scan = 0` | **235** (72%) |
+| FKs sem índice que as cubra por prefixo | **71** |
+| índices criados nesta triagem | **0** |
+| índices removidos | **0** |
+
+**Remover ficou bloqueado por falta de janela.** `pg_stat_database.stats_reset`
+é NULO, o que *sugere* estatísticas desde sempre — e sugere errado. O Postgres
+reiniciou em 01/09 12:44 e as estatísticas foram junto. A prova é `job_runs`:
+`n_tup_ins` = **42.936** contra **307.756** linhas reais. As estatísticas
+cobrem ~23 horas. "Não usado em 23 horas", num banco de desenvolvimento sem
+tráfego contínuo, não diz nada sobre um índice.
+
+**Criar ficou sem sintoma.** Nenhuma das 12 consultas mais caras por tempo
+total é varredura por FK sem índice. As filhas grandes já estão cobertas para
+o que a aplicação pergunta: `stock_movements.sku_id` não tem índice próprio,
+mas `stock_movements_sku_timeline_idx (organization_id, sku_id, occurred_at)`
+tem **40.220 usos**, porque toda consulta real filtra por organização primeiro
+— que é o que a RLS impõe. O que fica descoberto é a verificação de FK no
+`DELETE` do pai, medida em **13,5 ms quente / 2.024 ms frio** (2.381 buffers,
+o índice inteiro) — e **nenhum código de produção apaga `skus`, `profiles` ou
+`organizations`**. Quem paga são os testes de integração.
+
+⚠️ **Cuidado ao ler `seq_scan` num banco de desenvolvimento.** `job_runs`
+aparece com 67 varreduras lendo 13,4 milhões de linhas. Não é a aplicação: são
+as consultas de investigação desta sessão e das anteriores. A estatística
+inclui quem investiga.
