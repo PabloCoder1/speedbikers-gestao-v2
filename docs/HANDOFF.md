@@ -14,10 +14,10 @@
 |---|---|
 | **Atualizado em** | 2026-09-01 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `c324dc7` (D-202) — esta fatia, D-203, é o commit seguinte |
+| **HEAD conhecido** | `690a1c5` (D-203) — esta fatia, D-204, é o commit seguinte |
 | **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **34 commits atrás** |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
-| **Migrations** | **121 locais, 122 no Dev — o drift continua.** Ver "Dev à frente do repositório", abaixo |
+| **Migrations** | **122 locais, 123 no Dev — o drift continua.** Ver "Dev à frente do repositório", abaixo |
 | **Frente atual** | Trilha 8B — P0 fechado (A–H); em P1 |
 
 ### O que está pronto
@@ -117,6 +117,12 @@ Números completos e método: `docs/PERFORMANCE.md`.
   status`.** A varredura de D-200 deixou `apps/worker/src/handlers/__cast_probe.ts`
   para trás — um arquivo criado para inspecionar um tipo e nunca apagado. Quem
   pegou foi o `tsc`, não a leitura do resultado do agente.
+- **Varredura de arquivo herda o recorte de quem a montou; de catálogo, não.**
+  Em D-204 os agentes leram as seis migrations que eu listei e não viram a
+  terceira definição de Full — porque `get_sku_dashboard` não estava na minha
+  lista. Quem a achou foi uma consulta a `pg_proc`, que pergunta ao banco em
+  vez de ao repositório. Quando a pergunta é "quem faz X hoje", pergunte ao
+  catálogo.
 - **Meça o DANO, não o sintoma — e o erro tem os dois sinais.** Em D-194 eu
   tinha chamado de "cosmético" um filtro que escondia 10 de 19 marcas; em
   D-203 chamei de urgente um 429 cujo dano real é **1 anúncio em 1.204**. As
@@ -228,14 +234,16 @@ Nada disto pode ser feito por um agente.
    reduzir a origem", e a origem (218.750 jobs vazios de webhook, D-179) só
    some com o deploy. Junto com o item 1, é o segundo do P1 travado pelo
    mesmo ato humano.
-3. **P1 — read models e o resto do item de frontend.** O item de frontend
-   está saindo em terços: truncamento em D-193, filtro de marcas em D-194,
-   **waterfalls em D-195** (14 leituras em fila — a maior no `Shell`, que
-   embrulha toda tela) e **N+1/leituras em fila em D-197** (mais 8 sítios que
-   a regex não via, achados por varredura de agentes que leram o código). O
-   terceiro terço — dados carregados por aba não aberta — foi varrido junto e
-   **já estava certo**: `/skus/[skuId]` dispara por aba desde sempre. **O item
-   de frontend do P1 está fechado.**
+3. **~~P1 — read models e o resto do item de frontend~~ — FECHADO.** O item
+   de frontend saiu em D-193/D-194/D-195/D-197. E **read models virou outra
+   coisa em D-204**: investigado, o que havia para consolidar não era custo,
+   era **definição**. "Full atual" era reimplementado em cinco funções com
+   TRÊS definições diferentes, e as três devolviam o mesmo número — a
+   divergência era latente. `get_purchase_suggestions`, que decide quanto
+   comprar, usava `max(captured_at)` sem bucket nem janela. As duas
+   divergentes adotaram a canônica de D-173; a garantia é **guarda de
+   catálogo**, não função compartilhada.
+
 4. **~~P1 — remedir o Realtime~~ — FECHADO, e o resultado corrige o
    enquadramento que eu tinha dado.** D-198 registrou o decodificador de WAL
    em **43,4% do tempo do banco** e eu apresentei isso como o maior consumidor.

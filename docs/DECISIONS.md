@@ -4355,6 +4355,38 @@ Entre 25% e 68% dos anuncios ativos ficam sem visita capturada num dia. Parece g
 
 **Impacto:** `docs/ROADMAP.md`, `docs/HANDOFF.md`.
 
+## D-204 - Tres definicoes de "Full atual", e as tres devolviam o mesmo numero
+
+**Contexto:** o item do P1 era *"read models para o que e consultado repetidamente (ultimo movimento por SKU, Full atual), sempre reconstruiveis da fonte"*. Antes de construir read model nenhum, fui ver o que exatamente e recalculado.
+
+**"Ultimo movimento por SKU" saiu da lista sozinho:** existe em UM lugar so, `get_stock_balances`, e a fatia nao-empurrada da outra frente ja o tornou page-first. Nao ha repeticao para consolidar.
+
+**"Full atual" era outra historia.** Cinco funcoes leem `fulfillment_stock_snapshots`, e elas usavam **TRES definicoes diferentes**:
+
+| definicao | onde |
+|---|---|
+| canonica de D-173: bucket `inventory_id` + janela de 3 dias | `get_stock_balances`, `get_sku_abc_curve`, `get_fulfillment_overview` |
+| `where captured_at = max(captured_at)`, sem bucket, sem janela | **`get_purchase_suggestions`** — a que decide quanto comprar |
+| `distinct on (ml_account_id, item_id, variation_id)`, sem janela | **`get_sku_dashboard`** |
+
+**E as tres devolviam o mesmo numero.** Isso foi medido ANTES de mexer, e e o dado mais importante da fatia: 648 SKUs, **7.873 unidades**, zero divergencia nas duas comparacoes. A divergencia era **latente**, e cada forma acende numa condicao propria:
+
+1. **`max(captured_at)`** — `captured_at` e carimbado UMA vez no inicio da varredura, mas as ~500 linhas de cada conta entram ao longo de **312 a 395 segundos**. Durante esses ~6 minutos, **duas vezes por dia por conta**, `/reposicao` via Full parcial: Full menor do que e, logo sugestao de compra **maior do que precisa**. E, sem janela de frescor, uma captura que falhasse deixaria Full velho passar por atual sem sinal nenhum. **Isto ja estava registrado** — o achado adjacente de D-173 nomeia esta funcao e diz que nao foi consertada ali "para nao inchar a fatia; virou tarefa registrada". Esta e a fatia.
+
+2. **grao por `(item_id, variation_id)`** — hoje coincide com `inventory_id` porque a relacao esta **1:1 (2.165 para 2.165)**. Nada garante que continue. E quando o grao errou antes o preco foi alto: a migration `20260831210151_..._full_grain_fix.sql` registra **12 SKUs aparecendo como "sem Full" tendo Full, e o total 15,6% menor**.
+
+**Um efeito que so aparece olhando a linha inteira.** Em `/reposicao`, o `abc_class` vem de `get_sku_abc_curve` — que usa a canonica — enquanto o `full_quantity` da **mesma linha** vinha do grao antigo. Duas definicoes de Full na mesma linha de resultado, e nenhuma delas errada o suficiente para aparecer.
+
+**Decisao — a unidade e a DEFINICAO, nao a funcao.** A tentacao e extrair `private.full_atual()` e chamar das cinco. Nao da: `get_stock_balances` calcula Full por LATERAL, so para os SKUs da pagina, e uma funcao que devolve a organizacao inteira desfaria essa otimizacao. Entao as duas divergentes adotam a expressao canonica **no lugar**, e a garantia contra a sexta forma vem de uma **guarda de catalogo** — na migration e como teste de integracao.
+
+**A guarda quase nasceu enganavel, e o furo era o meu proprio texto.** A primeira versao casava sobre `pg_get_functiondef`, que **inclui os comentarios** — e os comentarios que eu acabara de escrever citam `inventory_id` e "3 dias". Uma funcao errada com um comentario certo passaria. A versao final remove os comentarios com `regexp_replace` antes de conferir. **Conferida contra o DEFEITO antes de existir**: rodada sobre o estado anterior, acusava exatamente `get_purchase_suggestions` e `get_sku_dashboard`, e deixava passar as tres corretas.
+
+**O que a varredura de agentes acrescentou, e o que ela nao viu.** Doze agentes leram as seis migrations que mencionam a tabela; corroboraram a divergencia, refutaram corretamente um achado sobre `get_stock_balances` (substituida por migration posterior), e foram eles que notaram a linha de `/reposicao` misturando duas definicoes. **Mas nao viram `get_sku_dashboard`**, porque a lista de arquivos que eu montei — por `grep ... | tail -6` — nao a incluia. Quem achou a terceira forma foi a consulta ao catalogo, que pergunta ao banco em vez de ao repositorio. **Varredura de arquivo herda o recorte de quem a montou; varredura de catalogo, nao.**
+
+**Verificacao:** as cinco funcoes usam a canonica no catalogo depois de aplicar; `/reposicao` devolve 313 SKUs com Full, **7.844 unidades**, zero divergencia contra a expressao canonica; `get_sku_dashboard` devolve **5,000** antes e depois para o mesmo SKU. `check` 29/29. Migration `20260902131348`. **A suite de integracao nao rodou nesta maquina** (Docker fora) — o teste novo e verificado pelo CI.
+
+**Impacto:** `supabase/migrations/20260902131348_full_atual_definicao_unica.sql`, `packages/db/src/rls.integration.test.ts`.
+
 ## Como adicionar nova decisao
 
 Registrar:

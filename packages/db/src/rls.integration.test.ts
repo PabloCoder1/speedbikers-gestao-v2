@@ -8833,6 +8833,49 @@ describe("guarda de GRANTs (D-066/D-098/D-130)", () => {
     expect(result.rows.map((r) => r.proname)).toEqual(RPCS_DEFINER_EXPOSTAS);
   });
 
+  // D-204 — "Full atual" tem UMA definicao, e este teste e o que impede a
+  // sexta forma de nascer.
+  //
+  // Cinco funcoes leem `fulfillment_stock_snapshots`, e elas chegaram a usar
+  // TRES definicoes diferentes: a canonica de D-173 (bucket `inventory_id` +
+  // janela de 3 dias), `where captured_at = max(captured_at)` sem bucket nem
+  // janela (`get_purchase_suggestions`, a que decide quanto comprar), e
+  // `distinct on (ml_account_id, item_id, variation_id)` sem janela
+  // (`get_sku_dashboard`).
+  //
+  // As tres devolviam o mesmo numero no dia da correcao — a divergencia era
+  // LATENTE. Ela acende quando a varredura esta a meio (312 a 395 segundos,
+  // duas vezes por dia por conta), quando uma captura falha, ou quando o ML
+  // reparte um item em varios buckets. Quando o grao errou antes, custou 12
+  // SKUs aparecendo como "sem Full" tendo Full, e o total 15,6% menor.
+  it("nenhuma funcao le fulfillment_stock_snapshots fora da definicao canonica (D-204)", async () => {
+    const result = await client.query<{ proname: string }>(
+      // Os COMENTARIOS saem antes da conferencia: sem isso, o proprio texto
+      // que explica a regra faria a funcao passar sem cumpri-la.
+      `with corpo as (
+         select p.proname,
+                regexp_replace(pg_get_functiondef(p.oid), '--[^' || chr(10) || ']*', '', 'g') as sql_sem_comentario
+           from pg_proc p
+           join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname in ('public', 'private')
+            and p.prokind = 'f'
+            and pg_get_functiondef(p.oid) like '%fulfillment_stock_snapshots%'
+       )
+       select proname
+         from corpo
+        where sql_sem_comentario like '%fulfillment_stock_snapshots%'
+          and not (sql_sem_comentario like '%inventory_id%'
+                   and sql_sem_comentario like '%3 days%')
+        order by proname`,
+    );
+
+    // Falhou aqui? NAO relaxe a consulta. A funcao acusada esta calculando
+    // Full de um jeito proprio — ou ela adota `distinct on (ml_account_id,
+    // inventory_id)` com `captured_at >= now() - interval '3 days'`, ou a
+    // definicao canonica mudou e D-173 precisa ser reescrita antes.
+    expect(result.rows.map((r) => r.proname)).toEqual([]);
+  });
+
   it("nenhuma funcao SECURITY DEFINER de public e alcancavel por anon (D-182)", async () => {
     // `anon` e o visitante sem login. Uma DEFINER exposta a ele atravessaria
     // a RLS sem sequer exigir autenticacao.
