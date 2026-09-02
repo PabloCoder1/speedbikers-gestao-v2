@@ -117,16 +117,25 @@ export default async function AtendimentoDetalhePage({
   const { caseId } = await params;
   const supabase = await createClient();
 
-  const { data: auth } = await supabase.auth.getUser();
-  const viewerId = auth.user?.id ?? null;
+  // `getUser()` em paralelo com a leitura, não antes dela (D-195). Ele revalida
+  // o token contra o servidor de Auth e custa uma ida inteira; enfileirá-lo
+  // atrasava a tela sem proteger nada, porque quem barra a rota é o
+  // `proxy.ts` — que já chamou `getUser()` nesta mesma requisição e
+  // redirecionou para `/login` se não havia sessão. E a leitura não fica
+  // desprotegida por sair junto: o PostgREST confere o JWT por conta própria e
+  // a RLS decide o que volta. O id daqui é só para a tela distinguir "Você".
+  const [{ data: auth }, caseResult] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase
+      .from("support_cases")
+      .select(
+        "id, channel, external_case_id, external_status, external_substatus, internal_status, priority, remote_reply_state, remote_reply_block_reason, is_mediation, has_return, customer_external_id, pack_id, last_activity_at, last_inbound_at, last_outbound_at, resolved_at, assignee_id, ml_accounts(label), profiles(full_name), support_case_links(order_id, sku_id, listing_id, external_entity_kind, external_entity_id, skus(sku), listings(item_id, title))",
+      )
+      .eq("id", caseId)
+      .maybeSingle(),
+  ]);
 
-  const caseResult = await supabase
-    .from("support_cases")
-    .select(
-      "id, channel, external_case_id, external_status, external_substatus, internal_status, priority, remote_reply_state, remote_reply_block_reason, is_mediation, has_return, customer_external_id, pack_id, last_activity_at, last_inbound_at, last_outbound_at, resolved_at, assignee_id, ml_accounts(label), profiles(full_name), support_case_links(order_id, sku_id, listing_id, external_entity_kind, external_entity_id, skus(sku), listings(item_id, title))",
-    )
-    .eq("id", caseId)
-    .maybeSingle();
+  const viewerId = auth.user?.id ?? null;
 
   if (caseResult.error !== null) {
     return (

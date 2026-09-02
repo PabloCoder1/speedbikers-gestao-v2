@@ -50,6 +50,14 @@ jobs:
       - name: Testes
         run: pnpm run test
 
+      # Leituras independentes em FILA num Server Component pagam as latencias
+      # somadas antes da primeira linha renderizar. Nao ha erro, nao ha teste
+      # vermelho -- o custo so aparece no relogio de quem abre a pagina. D-195
+      # achou 12 assim, em 9 telas. Este passo e estatico e nao precisa de
+      # banco, por isso mora aqui e nao no job de integracao.
+      - name: Leituras em fila sem dependencia
+        run: pnpm --filter @sb/web run check:waterfalls
+
       - name: Build
         run: pnpm run build
 

@@ -166,15 +166,23 @@ export default async function AtendimentoPage({
   const query = await searchParams;
   const supabase = await createClient();
 
-  // Só para a `TriageCell` distinguir "Você" de outro responsável — a
-  // autorização real acontece dentro da RPC, nunca a partir deste id.
-  const { data: auth } = await supabase.auth.getUser();
-  const viewerId = auth.user?.id ?? null;
+  // Três leituras que nada devem umas às outras, juntas desde D-195: eram
+  // três idas ao banco em fila antes da primeira linha aparecer.
+  //
+  // - `getUser()` só serve para a `TriageCell` distinguir "Você" de outro
+  //   responsável — a autorização real acontece dentro da RPC, nunca a partir
+  //   deste id. Ele revalida o token e custa uma ida inteira; quem barra a
+  //   rota é o `proxy.ts`, que já chamou `getUser()` nesta requisição.
+  // - a organização vem da RLS em toda leitura; este `select` existe para
+  //   distinguir "sem organização" de "falha de leitura" (D-067).
+  // - as contas alimentam o seletor e não dependem de nenhuma das outras.
+  const [{ data: auth }, membership, accountsResult] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase.from("organization_members").select("organization_id").maybeSingle(),
+    supabase.from("ml_accounts").select("id, slug, label").order("label", { ascending: true }),
+  ]);
 
-  const membership = await supabase
-    .from("organization_members")
-    .select("organization_id")
-    .maybeSingle();
+  const viewerId = auth.user?.id ?? null;
 
   // Falha de leitura e "sem organização" são coisas diferentes (D-067,
   // Nível 3): a segunda é cadastro, a primeira é erro transitório.
@@ -206,11 +214,6 @@ export default async function AtendimentoPage({
   // Filtro de SLA (D-115, destravado por D-107): só cases com prazo ATIVO
   // vencendo nas próximas 24h — ou já vencido.
   const prazoRisco = readParam(query.prazo) === "risco";
-
-  const accountsResult = await supabase
-    .from("ml_accounts")
-    .select("id, slug, label")
-    .order("label", { ascending: true });
 
   const accounts = accountsResult.data ?? [];
   const selectedAccount = accounts.find((account) => account.slug === accountSlug) ?? null;

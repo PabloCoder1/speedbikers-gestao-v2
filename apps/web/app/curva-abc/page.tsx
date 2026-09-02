@@ -83,7 +83,15 @@ export default async function CurvaAbcPage({
   const query = await searchParams;
   const supabase = await createClient();
 
-  const membership = await supabase.from("organization_members").select("organization_id").maybeSingle();
+  // As contas não dependem da organização: a RLS já as restringe, e o `select`
+  // de `organization_members` existe para o guarda de "sem organização", não
+  // para filtrar. As duas leituras saem juntas desde D-195; a RPC abaixo
+  // continua depois, porque ela SIM precisa da conta escolhida.
+  const [membership, accountsResult] = await Promise.all([
+    supabase.from("organization_members").select("organization_id").maybeSingle(),
+    supabase.from("ml_accounts").select("id, slug, label").order("label"),
+  ]);
+
   const organizationId = membership.data?.organization_id ?? null;
 
   if (organizationId === null) {
@@ -97,7 +105,6 @@ export default async function CurvaAbcPage({
 
   const filters = resolveAbcFilters(query);
 
-  const accountsResult = await supabase.from("ml_accounts").select("id, slug, label").order("label");
   const accounts = accountsResult.data ?? [];
   // Slug desconhecido cai em "consolidado" em silêncio — mesmo tratamento de
   // `/vendas` e `/anuncios`.

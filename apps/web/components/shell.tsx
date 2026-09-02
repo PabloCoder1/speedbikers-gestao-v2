@@ -157,12 +157,23 @@ function NavGroupDropdown({ group }: { group: NavGroup }): ReactNode {
 export async function Shell({ children }: { children: ReactNode }): Promise<ReactNode> {
   const supabase = await createClient();
 
-  const { data: auth } = await supabase.auth.getUser();
-
-  const membership = await supabase
-    .from("organization_members")
-    .select("role, organization_id, organizations(name)")
-    .maybeSingle();
+  // As TRÊS leituras do cabeçalho, juntas (D-195). Elas não devem nada umas às
+  // outras — quem é o usuário, qual a organização, e quantas notificações não
+  // lidas — e este componente embrulha **toda página autenticada**: em fila,
+  // eram três idas ao banco somadas ao custo da página, em cada navegação.
+  // Era o waterfall de maior alcance do app, e o único que se paga 45 vezes.
+  //
+  // `getUser()` revalida o token contra o servidor de Auth e custa uma ida
+  // inteira. Enfileirá-lo não protegia nada: quem barra a rota é o `proxy.ts`,
+  // que já chamou `getUser()` nesta mesma requisição e redirecionou para
+  // `/login` sem sessão. As outras duas são restringidas pela RLS.
+  const [{ data: auth }, membership, unread] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase.from("organization_members").select("role, organization_id, organizations(name)").maybeSingle(),
+    // Badge de não lidas (Fase 7, item 4) — `notification_recipients_select_own`
+    // já restringe a própria linha, sem precisar filtrar por user_id aqui.
+    supabase.from("notification_recipients").select("*", { count: "exact", head: true }).is("read_at", null),
+  ]);
 
   const role = membership.data?.role ?? null;
   const orgName = membership.data?.organizations.name ?? "Speed Bikers";
@@ -173,15 +184,9 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
   // numa tela que roda em TODA página autenticada (D-067, Nível 3).
   const membershipError = membership.error !== null;
 
-  // Badge de não lidas (Fase 7, item 4) — `notification_recipients_select_own`
-  // já restringe a própria linha, sem precisar filtrar por user_id aqui.
   // Falha na contagem degrada pro emblema simplesmente não aparecer: não é
   // dado de negócio (D-067 mirava corrupção de estoque/pedido, não um
   // contador de UI), então sem `⚠` — só some.
-  const unread = await supabase
-    .from("notification_recipients")
-    .select("*", { count: "exact", head: true })
-    .is("read_at", null);
   const unreadCount = unread.count ?? 0;
 
   return (

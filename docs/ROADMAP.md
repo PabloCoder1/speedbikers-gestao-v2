@@ -580,7 +580,8 @@ Frente transversal aberta em 2026-09-01. **Não renumera nem reabre fase alguma*
 - [ ] Cloud Tasks × Cloud Run × limites do ML como um sistema só — medir antes de aumentar capacidade.
 - [x] **Varredura sistemática da classe de truncamento de 1.000 linhas (D-131)** — feita em 2026-09-01 (D-193). 22 tabelas passam de 1.000 linhas, 73 leituras as tocam, 23 sem limite; destas, **duas cortavam de verdade** (vínculos por conta no ERP, 20.651; anúncios anteriores na sincronização, 1.311) e uma estava a **16 linhas** de começar. Corrigidas com o `readAllPages` que a própria D-131 criou.
 - [x] **Filtro de marcas de `/estoque` e `/reposicao`** — feito em 2026-09-01 (D-194) com agregação em SQL, não paginação. **A linha anterior deste item dizia que o sintoma era "cosmético": estava errada.** Medido antes de corrigir, o filtro mostrava **9 das 19 marcas** — o usuário via menos da metade do próprio catálogo, sem nenhum aviso. Corpo da resposta: 34 kB → 606 bytes.
-- [ ] Frontend: waterfalls, N+1 e dados carregados por aba não aberta — o resto do item, que a varredura de truncamento não cobre.
+- [x] **Frontend: waterfalls** — feito em 2026-09-02 (D-195). **14 leituras em fila sem dependência**, todas para `Promise.all`. A maior estava no `Shell` (3 leituras em fila num componente que embrulha **toda** página autenticada); as outras 12 em 9 telas. Medido ~125 ms por ida contra o Dev (latência desta máquina, não de produção — o que transfere é a decomposição de D-185: o custo é por chamada). Guarda permanente `check:waterfalls` no CI — varre todo `.tsx` de `app/` e `components/` sem `"use client"`, e foi conferido contra o código anterior (acusa 12 dos 14; os 2 restantes são condicionais, excluídos por regra).
+- [ ] Frontend: N+1 e dados carregados por aba não aberta — o resto do item.
 - [ ] Observabilidade: relatório de performance sobre o que já existe (`job_runs`, `sync_runs`, `/saude`), sem criar plataforma nova.
 
 #### P2 — produção

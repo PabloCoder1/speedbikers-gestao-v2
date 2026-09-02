@@ -3987,6 +3987,42 @@ O milissegundo **nao e o ponto** — D-185 ja mediu que o SQL e 0,6% do tempo ob
 
 **Impacto:** `supabase/migrations/20260901203000_supplier_brands_rpc.sql`, as tres telas, `packages/db/src/types.ts`, e dois arquivos de teste.
 
+## D-195 - O waterfall que se paga em toda tela estava no cabecalho, e a varredura quase nao olhou la
+
+**Contexto:** o item de frontend do P1 pede "waterfalls, N+1 e dados carregados por aba nao aberta". Esta fatia fecha o primeiro terco. Um Server Component que faz `await` de duas leituras independentes paga as duas latencias SOMADAS antes de renderizar a primeira linha — nao ha erro, nao ha teste vermelho, e o codigo parece certo. O custo so aparece no relogio de quem abre a pagina.
+
+**A escala, medida antes de mexer.** Deste ambiente contra o Supabase Dev: **~125 ms de mediana por ida** (8 amostras, min 93, max 222). Esse numero e a latencia DESTA maquina e nao vale como numero de producao — o que vale e a decomposicao de D-185: o custo e **por chamada** e quase independente do que a chamada faz. Duas em fila custam duas; duas juntas custam uma.
+
+**A varredura errou primeiro, e o erro e a parte util.** A primeira versao comparava so o nome ligado PELO `await` (`membership`) e nao os derivados dele (`organizationId = membership.data...`). Resultado: acusava de waterfall uma RPC que usa `organizationId` — ou seja, **inventava dependencia inexistente onde havia dependencia real**. Mesma classe do extrator de D-191 e da varredura de D-193, e a correcao foi a mesma: propagar a contaminacao transitivamente. Com isso os achados cairam de 22 para 12, e os 10 que sairam eram todos dependencia legitima (`/full`, `/precos`, `/estoque/movimentacoes`, `/diagnostico`, e as RPCs de `/anuncios` e `/curva-abc`).
+
+**O maior nao estava em pagina nenhuma.** A primeira varredura olhou so `page.tsx` — e por isso quase perdeu o achado que importa: **`components/shell.tsx` tinha TRES leituras em fila** (`getUser()`, a organizacao, e o contador de nao lidas), e o `Shell` embrulha **toda pagina autenticada**. Nao e um waterfall entre 12: e o unico que se paga **em cada navegacao do sistema**, somado ao custo da tela que ele embrulha. Os tres sao independentes — quem e o usuario, qual a organizacao, quantas notificacoes — e viraram um `Promise.all`.
+
+A licao nao e sobre o Shell. **O recorte da varredura decide o que ela pode achar.** "Paginas" parecia a unidade obvia; a unidade certa era "componente de servidor", e a diferenca era o achado de maior alcance do app. O guarda foi ampliado junto: agora varre todo `.tsx` de `app/` e `components/` que **nao** declara `"use client"` — o criterio e esse porque, num Server Component, todo `await` acontece antes da pagina chegar ao navegador, enquanto num componente de cliente o `await` responde a uma interacao, que e outra pergunta.
+
+**Os outros 12, em 9 telas.** Tres formas:
+
+| Forma | Onde | O que era |
+|---|---|---|
+| `getUser()` antes da leitura | `/acoes`, `/atendimento`, `/atendimento/[caseId]` | uma ida inteira so para saber quem e o usuario |
+| lista de contas antes da RPC | `/anuncios`, `/curva-abc`, `/atendimento` | o seletor de conta nao depende da organizacao |
+| guarda de 404 antes do filho | `/notas-fiscais/[id]`, `/estoque/[skuId]/ajuste` | os dois partem do MESMO id da URL |
+
+Mais `/sugestoes` (papel e listagem sao independentes) e `/compras/novo` (fornecedores e o prefill da URL).
+
+**O `getUser()` em paralelo NAO afrouxa nada, e a razao importa.** Ele revalida o token contra o servidor de Auth. Enfileira-lo parecia prudencia; nao era. Quem barra a rota e o `proxy.ts`, que **ja chamou `getUser()` nesta mesma requisicao** e redirecionou para `/login` se nao havia sessao. E a leitura que sai junto nao fica desprotegida: o PostgREST confere o JWT por conta propria e a RLS decide o que volta. O id da pagina serve so para a tela escrever "Voce".
+
+**O guarda de 404 tambem nao afrouxa.** Disparar `document_items` antes de saber se a nota existe nao mostra nada a quem nao podia ver — a RLS restringe as duas leituras de forma independente. O preco e uma consulta desperdicada no caminho 404, que e o caminho raro.
+
+**O que a fatia deixa de guarda, e por que nao e teste.** Nao ha suite de componente no `apps/web` — os 205 testes sao de helpers puros. Montar um harness de Server Component para provar paralelismo seria infraestrutura nova para um problema que um leitor estatico resolve. `check:waterfalls` e um script na forma de `check:embeds` (D-191): varre `page.tsx`/`layout.tsx`, marca leitura que nao usa nada da anterior, e **exclui de proposito** o que nao e defeito — leitura condicional (carregar sob demanda e o padrao certo), leitura dependente, e Server Action. Tem escape `// fila-justificada: <razao>`, que exige a razao escrita.
+
+**O guarda se prova antes de julgar o repo.** Um guarda que para de detectar em silencio e pior que guarda nenhum. O script roda quatro casos-fixture na propria carga e aborta se algum falhar; um deles e o que mais preocupa numa regressao: **leitura solta pendurada embaixo de um `Promise.all` que ja existe**. Conferido tambem contra o codigo ANTERIOR a esta fatia: **acusa 12 dos 14** (os dois do `Shell` inclusos). Os 2 que faltam sao os condicionais, que ele exclui por regra — e a diferenca esta escrita aqui para ninguem confundir cobertura com omissao.
+
+**A primeira execucao do guarda acusou 29 falsos** — ele varria `actions.ts` e tratava o arquivo inteiro como um bloco so, entao a segunda Server Action "vinha em fila" com a primeira. Duas correcoes: so o caminho de render, e uma funcao por vez.
+
+**Verificacao:** `check` 29/29, build 8/8, `check:waterfalls` 52 arquivos limpos. Sem migration. **O Playwright nao rodou nesta maquina**: o Docker Desktop nao sobe o motor Linux aqui (a distro `docker-desktop` do WSL fica `Stopped`), entao o Supabase local nao existe. O passo continua no CI, que roda o proprio Supabase — mas fica dito que a suite E2E desta fatia foi verificada la, nao aqui.
+
+**Impacto:** `apps/web/components/shell.tsx`, nove `page.tsx`, `apps/web/scripts/check-waterfalls.mjs` (novo), `apps/web/{package.json,eslint.config.js}` e o passo novo no CI.
+
 ## Como adicionar nova decisao
 
 Registrar:

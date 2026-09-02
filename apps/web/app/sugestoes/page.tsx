@@ -56,18 +56,25 @@ const th: React.CSSProperties = {
 export default async function SugestoesPage(): Promise<ReactNode> {
   const supabase = await createClient();
 
-  const membership = await supabase.from("organization_members").select("role").maybeSingle();
-  const role = membership.data?.role ?? null;
-  const canManage = role === "ADMIN" || role === "GESTOR";
-
+  // As duas leituras são INDEPENDENTES: o papel decide o que a tela DEIXA
+  // fazer, e a listagem é restringida pela RLS, não pelo papel. Em fila
+  // custavam duas idas ao banco somadas; em paralelo, uma (D-195).
+  //
   // O `as never` que morava aqui ficou obsoleto: `feature_suggestions`
   // entrou em `Database` quando os types foram regenerados (D-100).
-  const { data, error } = await supabase
-    .from("feature_suggestions")
-    .select(
-      "id, original_text, status, created_at, title, problem, objective, impacted_users, suggested_flow, expected_benefit, acceptance_criteria, dependencies_risks, complexity, profiles(full_name)",
-    )
-    .order("created_at", { ascending: false });
+  const [membership, suggestions] = await Promise.all([
+    supabase.from("organization_members").select("role").maybeSingle(),
+    supabase
+      .from("feature_suggestions")
+      .select(
+        "id, original_text, status, created_at, title, problem, objective, impacted_users, suggested_flow, expected_benefit, acceptance_criteria, dependencies_risks, complexity, profiles(full_name)",
+      )
+      .order("created_at", { ascending: false }),
+  ]);
+
+  const role = membership.data?.role ?? null;
+  const canManage = role === "ADMIN" || role === "GESTOR";
+  const { data, error } = suggestions;
 
   const rows: SuggestionRowData[] = ((data ?? []) as unknown as SuggestionQueryRow[]).map((row) => ({
     id: row.id,

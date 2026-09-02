@@ -362,6 +362,24 @@ Cada linha tem o antes/depois real, não estimativa.
 | 2026-09-01 | `get_listings_dashboard` | timeout > 60 s | **271 ms / 21.739** | idem — nenhuma linha da RPC mudou | D-181 |
 | 2026-09-01 | `get_sku_sales_baseline` | 1.334 ms / 4.136 | **49 ms** | `current_day as materialized` (o CTE inlineado virava o lado interno de um nested loop, 440 loops × 31 mil linhas) + filtro de dia da semana empurrado para o agregado | D-183 |
 | 2026-09-01 | Filtro de marcas (3 telas) | 34 kB de corpo, **9 de 19 marcas** | 606 bytes, **19 de 19** | `distinct` no Postgres (`get_supplier_brands`) no lugar de `new Set(...)` sobre 3.550 linhas truncadas em 1.000 | D-194 |
+| 2026-09-02 | `Shell` (cabeçalho de **toda** tela) | 3 idas em série, em cada navegação | 1 ida | `Promise.all` — o waterfall de maior alcance do app | D-195 |
+| 2026-09-02 | Leituras em fila em 9 telas | 2 a 3 idas em série antes de renderizar | 1 ida | `Promise.all` nas leituras independentes; **14 sítios** no total, guarda `check:waterfalls` no CI | D-195 |
+
+**Lição de D-195 — o piso de latência, e o que ele NÃO é.** Deste ambiente
+contra o Supabase Dev, uma leitura trivial (`organizations?select=id&limit=1`)
+custa **~125 ms de mediana** (8 amostras, min 93, máx 222). Esse número é a
+latência desta máquina até a nuvem e **não vale como número de produção** — do
+Vercel para o Supabase a distância é outra. O que transfere é o mesmo que
+D-185 já havia isolado: o custo é **por chamada** e quase independente do que a
+chamada faz. Duas leituras independentes em fila custam duas; juntas, uma. Por
+isso a correção de D-195 não precisou de nenhuma medição de antes/depois por
+tela: a conta é estrutural, e o guarda de CI a mantém.
+
+⚠️ **E o recorte da varredura decide o que ela acha.** A primeira olhou só
+`page.tsx` e quase perdeu o maior achado: `components/shell.tsx` fazia **três**
+leituras em fila e embrulha toda página autenticada — não é um waterfall entre
+catorze, é o único que se paga em cada navegação. A unidade certa não era
+"página", era "componente de servidor".
 
 **Lição de D-194 — o ganho nem sempre é o milissegundo.** O plano da consulta
 antiga levava 3,8 ms e o da nova leva 2,6 ms: quase ruído, e coerente com

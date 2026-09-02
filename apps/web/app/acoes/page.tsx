@@ -53,10 +53,25 @@ const th: React.CSSProperties = {
 export default async function AcoesPage(): Promise<ReactNode> {
   const supabase = await createClient();
 
-  const { data: auth } = await supabase.auth.getUser();
-  const userId = auth.user?.id ?? null;
+  // Três leituras independentes, juntas desde D-195 — eram três idas ao banco
+  // em fila. `getUser()` revalida o token contra o servidor de Auth e custa
+  // uma ida inteira: enfileirá-lo não protegia nada, porque quem barra a rota
+  // é o `proxy.ts`, que já chamou `getUser()` nesta mesma requisição. E as
+  // ações não ficam desprotegidas por saírem junto: a RLS decide o que volta,
+  // e o `organizationId` abaixo só serve ao guarda de "sem organização".
+  const [{ data: auth }, membership, actionsResult] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase.from("organization_members").select("organization_id").maybeSingle(),
+    supabase
+      .from("actions")
+      .select(
+        "id, kind, sku_id, severity, confidence, estimated_impact_brl, evidence, recommendation, status, assignee_id, skus(sku, title)",
+      )
+      .in("status", ["novo", "em_andamento"])
+      .order("estimated_impact_brl", { ascending: false, nullsFirst: false }),
+  ]);
 
-  const membership = await supabase.from("organization_members").select("organization_id").maybeSingle();
+  const userId = auth.user?.id ?? null;
   const organizationId = membership.data?.organization_id ?? null;
 
   if (organizationId === null || userId === null) {
@@ -68,13 +83,7 @@ export default async function AcoesPage(): Promise<ReactNode> {
     );
   }
 
-  const { data, error: actionsError } = await supabase
-    .from("actions")
-    .select(
-      "id, kind, sku_id, severity, confidence, estimated_impact_brl, evidence, recommendation, status, assignee_id, skus(sku, title)",
-    )
-    .in("status", ["novo", "em_andamento"])
-    .order("estimated_impact_brl", { ascending: false, nullsFirst: false });
+  const { data, error: actionsError } = actionsResult;
 
   const actionIds = (data ?? []).map((row) => row.id);
 

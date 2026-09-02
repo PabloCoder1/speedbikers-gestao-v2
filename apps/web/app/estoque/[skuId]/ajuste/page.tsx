@@ -21,18 +21,23 @@ export default async function AjusteEstoquePage({
 
   const supabase = await createClient();
 
-  const sku = await supabase.from("skus").select("id, sku, title").eq("id", skuId).maybeSingle();
+  // As duas leituras partem do MESMO `skuId` da URL — a segunda nunca
+  // precisou esperar a primeira. Em paralelo desde D-195.
+  //
+  // O guarda continua depois, e continua correto: a RLS restringe as duas
+  // leituras de forma independente, então disparar `inventory_balances` antes
+  // de saber se o SKU existe não mostra nada a quem não podia ver. O preço é
+  // uma consulta desperdiçada no caminho 404, que é o caminho raro.
+  const [sku, balances] = await Promise.all([
+    supabase.from("skus").select("id, sku, title").eq("id", skuId).maybeSingle(),
+    supabase.from("inventory_balances").select("location_kind, quantity").eq("sku_id", skuId),
+  ]);
 
   // `null` aqui pode ser "não existe" ou "a policy escondeu" — mesmo
   // raciocínio já usado em apps/web/app/compras/[id]/page.tsx.
   if (sku.error !== null || sku.data === null) {
     notFound();
   }
-
-  const balances = await supabase
-    .from("inventory_balances")
-    .select("location_kind, quantity")
-    .eq("sku_id", skuId);
 
   return (
     <Shell>

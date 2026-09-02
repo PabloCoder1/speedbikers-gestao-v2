@@ -14,7 +14,7 @@
 |---|---|
 | **Atualizado em** | 2026-09-01 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `5587a40` (D-192) — D-193 e D-194 são os dois commits seguintes |
+| **HEAD conhecido** | `0557a60` (D-194) — esta fatia, D-195, é o commit seguinte |
 | **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **34 commits atrás** |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | 120 locais == 120 no Dev, última `20260901203000` — sem drift |
@@ -92,6 +92,16 @@ Números completos e método: `docs/PERFORMANCE.md`.
   3.308 ms na primeira passada e **57 ms** na segunda — quase virou uma
   otimização inútil. Sempre duas passadas seguidas; se divergirem muito, a
   primeira era I/O de disco (D-183).
+- **O guarda estático precisa provar que ainda detecta.** `check:waterfalls`
+  (D-195) roda quatro casos-fixture na própria carga e aborta se algum falhar,
+  porque um guarda que para de detectar em silêncio deixa a esteira verde com a
+  garantia vazia. Ele também foi conferido contra o código ANTERIOR à correção:
+  acusa 12 dos 14 sítios reais. Todo guarda novo nasce com essa dupla prova.
+- **O recorte da varredura decide o que ela pode achar.** A de D-195 começou
+  olhando só `page.tsx` e quase perdeu o achado de maior alcance do app: o
+  `Shell` fazia três leituras em fila e embrulha **toda** página autenticada.
+  Antes de rodar uma varredura, pergunte se a unidade escolhida é a unidade
+  onde o defeito mora.
 - **`n_live_tup` mente, e mentiu feio.** As estatísticas do Dev estão velhas:
   `job_runs` estimava ~6 mil e tem **271.184**; `ml_credentials` estimava 0 e
   tem **4 credenciais reais**. Para qualquer raciocínio de segurança ou de
@@ -135,11 +145,11 @@ Nada disto pode ser feito por um agente.
    reduzir a origem", e a origem (218.750 jobs vazios de webhook, D-179) só
    some com o deploy. Junto com o item 1, é o segundo do P1 travado pelo
    mesmo ato humano.
-3. **P1 — read models e o resto do item de frontend.** A varredura de
-   truncamento saiu em D-193 (dois cortes vivos no worker) e o filtro de
-   marcas em D-194 (que também desfez o waterfall de `/estoque`); sobram os
-   waterfalls/N+1 das outras telas, os dados carregados por aba não aberta,
-   e os read models. `docs/ROADMAP.md` tem a ordem.
+3. **P1 — read models e o resto do item de frontend.** O item de frontend
+   está saindo em terços: truncamento em D-193, filtro de marcas em D-194,
+   **waterfalls em D-195** (14 leituras em fila — a maior no `Shell`, que
+   embrulha toda tela — com guarda `check:waterfalls` no CI). Sobram **N+1** e **dados carregados por aba não
+   aberta** — e os read models. `docs/ROADMAP.md` tem a ordem.
 4. **Antes da segunda organização** — `get_system_health` tem escopo de
    plataforma com guard de tenant (D-182). Não é urgente hoje e não tem
    correção óbvia: as duas tentativas naturais causam regressão verificada.

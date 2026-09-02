@@ -125,7 +125,15 @@ export default async function AnunciosPage({
   const query = await searchParams;
   const supabase = await createClient();
 
-  const membership = await supabase.from("organization_members").select("organization_id").maybeSingle();
+  // As contas não dependem da organização: a RLS já as restringe, e o `select`
+  // de `organization_members` existe para o guarda de "sem organização", não
+  // para filtrar. As duas leituras saem juntas desde D-195; a RPC abaixo
+  // continua depois, porque ela SIM precisa da conta escolhida.
+  const [membership, accountsResult] = await Promise.all([
+    supabase.from("organization_members").select("organization_id").maybeSingle(),
+    supabase.from("ml_accounts").select("id, slug, label").order("label"),
+  ]);
+
   const organizationId = membership.data?.organization_id ?? null;
 
   if (organizationId === null) {
@@ -141,7 +149,6 @@ export default async function AnunciosPage({
   const dateTo = now.toISOString().slice(0, 10);
   const dateFrom = new Date(now.getTime() - (LOOKBACK_DAYS - 1) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-  const accountsResult = await supabase.from("ml_accounts").select("id, slug, label").order("label");
   const accounts = accountsResult.data ?? [];
 
   const requestedAccount = typeof query.conta === "string" ? query.conta : null;

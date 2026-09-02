@@ -58,13 +58,26 @@ export default async function NotaFiscalPage({
 
   const supabase = await createClient();
 
-  const document = await supabase
-    .from("documents")
-    .select(
-      "id, file_name, status, access_key, operation_type, document_number, series, issue_date, issuer_cnpj, issuer_name, recipient_cnpj, recipient_name, total_items, resolved_items, parsed_at, last_error",
-    )
-    .eq("id", id)
-    .maybeSingle();
+  // As duas leituras partem do MESMO `id` da URL — a dos itens nunca precisou
+  // esperar a da nota. Em paralelo desde D-195; a RLS restringe as duas de
+  // forma independente, então o guarda de 404 continua abaixo sem virar
+  // vazamento, ao custo de uma consulta desperdiçada no caminho raro.
+  const [document, items] = await Promise.all([
+    supabase
+      .from("documents")
+      .select(
+        "id, file_name, status, access_key, operation_type, document_number, series, issue_date, issuer_cnpj, issuer_name, recipient_cnpj, recipient_name, total_items, resolved_items, parsed_at, last_error",
+      )
+      .eq("id", id)
+      .maybeSingle(),
+    supabase
+      .from("document_items")
+      .select(
+        "id, position, supplier_code, ean, description, ncm, cfop, unit, quantity, unit_value, total_value, sku_id, skus(id, sku, title)",
+      )
+      .eq("document_id", id)
+      .order("position"),
+  ]);
 
   // `null` aqui pode ser "não existe" ou "a policy escondeu". A tela responde
   // igual nos dois casos de propósito — mesmo raciocínio de
@@ -74,14 +87,6 @@ export default async function NotaFiscalPage({
   }
 
   const info = document.data;
-
-  const items = await supabase
-    .from("document_items")
-    .select(
-      "id, position, supplier_code, ean, description, ncm, cfop, unit, quantity, unit_value, total_value, sku_id, skus(id, sku, title)",
-    )
-    .eq("document_id", id)
-    .order("position");
 
   // Estados de trabalho em curso — mesmo raciocínio de AutoRefresh em
   // apps/web/app/importacoes/[id]/page.tsx.

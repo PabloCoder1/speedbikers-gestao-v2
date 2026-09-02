@@ -11,7 +11,8 @@
     "lint": "eslint .",
     "test": "vitest run --passWithNoTests --exclude '**/node_modules/**' --exclude 'e2e/**'",
     "e2e:seed": "tsx e2e/seed.ts",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "check:waterfalls": "node scripts/check-waterfalls.mjs"
   },
   "dependencies": {
     "@sb/db": "workspace:*",
