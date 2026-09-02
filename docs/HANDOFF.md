@@ -117,6 +117,16 @@ Números completos e método: `docs/PERFORMANCE.md`.
   status`.** A varredura de D-200 deixou `apps/worker/src/handlers/__cast_probe.ts`
   para trás — um arquivo criado para inspecionar um tipo e nunca apagado. Quem
   pegou foi o `tsc`, não a leitura do resultado do agente.
+- **Não pergunte ao Dev o que é verdade no repositório.** A guarda de D-204
+  passou no Dev e quebrou o `db reset`: no Dev, `get_stock_balances` já é
+  canônica por uma migration de OUTRA frente que não está no git. Consulta a
+  catálogo responde sobre o BANCO consultado — e enquanto houver drift, o
+  banco e o repositório são coisas diferentes. Para "o que o repositório
+  produz", a fonte é `supabase/migrations/`, não `pg_proc`.
+- **Asserção sobre outras funções não cabe dentro de uma migration.** Ela roda
+  uma vez, no meio da fila, e o que vale naquele instante depende de tudo que
+  veio antes — que difere entre ambientes. Guarda desse tipo mora no teste de
+  integração, que roda contra um banco recriado do zero.
 - **Varredura de arquivo herda o recorte de quem a montou; de catálogo, não.**
   Em D-204 os agentes leram as seis migrations que eu listei e não viram a
   terceira definição de Full — porque `get_sku_dashboard` não estava na minha

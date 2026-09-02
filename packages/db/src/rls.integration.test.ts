@@ -8869,11 +8869,24 @@ describe("guarda de GRANTs (D-066/D-098/D-130)", () => {
         order by proname`,
     );
 
-    // Falhou aqui? NAO relaxe a consulta. A funcao acusada esta calculando
-    // Full de um jeito proprio — ou ela adota `distinct on (ml_account_id,
-    // inventory_id)` com `captured_at >= now() - interval '3 days'`, ou a
-    // definicao canonica mudou e D-173 precisa ser reescrita antes.
-    expect(result.rows.map((r) => r.proname)).toEqual([]);
+    // LISTA VERSIONADA, no formato de D-182 — e ela tem exatamente um nome.
+    //
+    // `get_stock_balances` continua divergente NO REPOSITORIO: D-173 nomeou as
+    // DUAS funcoes que liam `max(captured_at)` (`/estoque` e `/reposicao`) e
+    // D-204 so consertou a segunda. A primeira ja esta canonica no Dev, por
+    // `20260902005023_stock_balances_page_first` — uma migration de OUTRA
+    // FRENTE que ainda nao foi empurrada.
+    //
+    // Nao foi corrigida aqui DE PROPOSITO: a migration desta fatia tem carimbo
+    // POSTERIOR ao daquela, entao reescrever a funcao a partir da versao do
+    // repositorio apagaria em silencio o `page-first` deles no proximo
+    // `db reset`. Sobrescrever o trabalho de outra frente para deixar um teste
+    // verde e pior do que a lista.
+    //
+    // QUANDO A FATIA DELES POUSAR: a linha abaixo vira `[]`. Se este teste
+    // falhar com um nome NOVO, nao acrescente o nome — a funcao acusada esta
+    // inventando uma sexta definicao de Full, e e ela que muda.
+    expect(result.rows.map((r) => r.proname)).toEqual(["get_stock_balances"]);
   });
 
   it("nenhuma funcao SECURITY DEFINER de public e alcancavel por anon (D-182)", async () => {

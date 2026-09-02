@@ -335,47 +335,27 @@ as $$
 $$;
 
 -- ------------------------------------------------------------
--- A prova: nenhuma sexta definicao
+-- A prova mora no TESTE, e nao aqui -- e a razao importa
 -- ------------------------------------------------------------
-do $do$
-declare
-  v_fora text;
-begin
-  -- Toda funcao que le `fulfillment_stock_snapshots` precisa carregar as duas
-  -- marcas da definicao canonica. Sem esta guarda, a terceira forma volta na
-  -- proxima RPC que alguem escrever -- foi exatamente assim que chegaram a
-  -- tres.
-  --
-  -- Os COMENTARIOS saem antes da conferencia. Sem isso a guarda seria
-  -- enganada pelo proprio texto que explica a regra: as duas funcoes
-  -- corrigidas aqui citam `inventory_id` e "3 dias" em comentario, e passariam
-  -- mesmo se o SQL abaixo deles nao usasse nenhum dos dois. Guarda que se
-  -- deixa enganar pelo comentario e pior que guarda nenhuma.
-  --
-  -- Conferida contra o DEFEITO antes de existir: rodada sobre o estado
-  -- anterior, ela acusava exatamente `get_purchase_suggestions` e
-  -- `get_sku_dashboard`, e deixava passar as tres corretas.
-  with corpo as (
-    select p.proname,
-           regexp_replace(pg_get_functiondef(p.oid), '--[^' || chr(10) || ']*', '', 'g') as sql_sem_comentario
-    from pg_proc p
-    join pg_namespace n on n.oid = p.pronamespace
-    where n.nspname in ('public', 'private')
-      and p.prokind = 'f'
-      and pg_get_functiondef(p.oid) like '%fulfillment_stock_snapshots%'
-  )
-  select string_agg(c.proname, ', ')
-    into v_fora
-  from corpo c
-  where c.sql_sem_comentario like '%fulfillment_stock_snapshots%'
-    and not (
-      c.sql_sem_comentario like '%inventory_id%'
-      and c.sql_sem_comentario like '%3 days%'
-    );
-
-  if v_fora is not null then
-    raise exception
-      'D-204: estas funcoes leem fulfillment_stock_snapshots sem a definicao canonica (bucket inventory_id + janela de 3 dias): %',
-      v_fora;
-  end if;
-end $do$;
+--
+-- A primeira versao desta migration terminava com um `do $$` que varria
+-- `pg_proc` e falhava se QUALQUER funcao lesse `fulfillment_stock_snapshots`
+-- fora da definicao canonica. Ele passou no Dev e **quebrou o `db reset`**,
+-- porque uma asercao sobre o estado de OUTRAS funcoes nao pode viver dentro
+-- de uma migration: ela e avaliada uma vez, no meio da fila, e o que vale
+-- naquele instante depende de tudo que veio antes -- inclusive de migrations
+-- que existem num ambiente e nao no outro.
+--
+-- Foi exatamente o que aconteceu: no Dev, `get_stock_balances` ja e canonica
+-- por causa de `20260902005023_stock_balances_page_first`, uma migration de
+-- OUTRA FRENTE que ainda nao foi empurrada para o repositorio. No repositorio
+-- ela ainda usa `max(captured_at)` -- e eu validei a guarda contra o banco com
+-- drift, nao contra o repositorio.
+--
+-- A guarda continua existindo, como TESTE DE INTEGRACAO
+-- (`packages/db/src/rls.integration.test.ts`, "nenhuma funcao le
+-- fulfillment_stock_snapshots fora da definicao canonica"). La ela roda contra
+-- um banco recriado do zero a cada CI, que e o unico lugar onde a pergunta
+-- "quais funcoes existem" tem uma resposta estavel -- e la ela e uma LISTA
+-- VERSIONADA, no formato de D-182: hoje a lista tem `get_stock_balances`, com
+-- a razao escrita, e some quando a fatia da outra frente pousar.

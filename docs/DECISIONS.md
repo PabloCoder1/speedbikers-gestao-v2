@@ -4383,7 +4383,19 @@ Entre 25% e 68% dos anuncios ativos ficam sem visita capturada num dia. Parece g
 
 **O que a varredura de agentes acrescentou, e o que ela nao viu.** Doze agentes leram as seis migrations que mencionam a tabela; corroboraram a divergencia, refutaram corretamente um achado sobre `get_stock_balances` (substituida por migration posterior), e foram eles que notaram a linha de `/reposicao` misturando duas definicoes. **Mas nao viram `get_sku_dashboard`**, porque a lista de arquivos que eu montei — por `grep ... | tail -6` — nao a incluia. Quem achou a terceira forma foi a consulta ao catalogo, que pergunta ao banco em vez de ao repositorio. **Varredura de arquivo herda o recorte de quem a montou; varredura de catalogo, nao.**
 
-**Verificacao:** as cinco funcoes usam a canonica no catalogo depois de aplicar; `/reposicao` devolve 313 SKUs com Full, **7.844 unidades**, zero divergencia contra a expressao canonica; `get_sku_dashboard` devolve **5,000** antes e depois para o mesmo SKU. `check` 29/29. Migration `20260902131348`. **A suite de integracao nao rodou nesta maquina** (Docker fora) — o teste novo e verificado pelo CI.
+**E o CI reprovou a primeira versao, por um erro que vale mais do que a fatia.** A migration terminava com um `do $$` que varria `pg_proc` e falhava se qualquer funcao lesse a tabela fora da canonica. **Passou no Dev e quebrou o `db reset`** — integracao e e2e, os dois.
+
+A causa: **eu validei a guarda contra um banco com DRIFT.** No Dev, `get_stock_balances` ja e canonica por `20260902005023_stock_balances_page_first`, a migration da outra frente que ainda nao foi empurrada. No repositorio ela continua com `max(captured_at)` — porque D-173 nomeou as DUAS funcoes e esta fatia so consertou a segunda. Perguntei ao catalogo do Dev "quais funcoes estao divergentes" e recebi a resposta certa **para o Dev**, que nao e a resposta para o repositorio.
+
+**Duas correcoes, e nenhuma delas e "consertar `get_stock_balances` tambem".** Reescrever aquela funcao a partir da versao do repositorio seria pior: a migration desta fatia tem carimbo POSTERIOR ao da outra frente, entao no proximo `db reset` a minha rodaria por ultimo e **apagaria em silencio o page-first deles**. Sobrescrever o trabalho de outra frente para deixar um teste verde nao e correcao.
+
+1. **A guarda saiu da migration.** Uma asercao sobre o estado de OUTRAS funcoes nao pode viver dentro de uma migration: e avaliada uma vez, no meio da fila, e o que vale naquele instante depende de tudo que veio antes — inclusive de migrations que existem num ambiente e nao no outro. Ela vive no **teste de integracao**, que roda contra um banco recriado do zero.
+
+2. **O teste virou LISTA VERSIONADA**, no formato de D-182, com exatamente um nome: `get_stock_balances`, e a razao escrita ao lado. Vira `[]` quando a fatia da outra frente pousar. Um nome NOVO na lista continua sendo falha — e a instrucao no teste diz para nao acrescentar o nome.
+
+⚠️ **O arquivo local difere do que foi aplicado**, e isto esta dito em vez de escondido: o `do $$` foi removido depois de aplicar. As duas definicoes de funcao sao byte-identicas; o que saiu foi uma asercao que ja tinha rodado e passado no Dev, e que falharia por engano num banco recriado.
+
+**Verificacao:** as cinco funcoes usam a canonica no catalogo do Dev depois de aplicar; `/reposicao` devolve 313 SKUs com Full, **7.844 unidades**, zero divergencia contra a expressao canonica; `get_sku_dashboard` devolve **5,000** antes e depois para o mesmo SKU. `check` 29/29. Migration `20260902131348`. **A suite de integracao nao rodou nesta maquina** (Docker fora) — foi o CI que apanhou o erro acima, que e exatamente para isso que ele existe.
 
 **Impacto:** `supabase/migrations/20260902131348_full_atual_definicao_unica.sql`, `packages/db/src/rls.integration.test.ts`.
 
