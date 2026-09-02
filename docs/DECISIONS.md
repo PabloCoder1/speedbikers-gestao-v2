@@ -4023,6 +4023,37 @@ Mais `/sugestoes` (papel e listagem sao independentes) e `/compras/novo` (fornec
 
 **Impacto:** `apps/web/components/shell.tsx`, nove `page.tsx`, `apps/web/scripts/check-waterfalls.mjs` (novo), `apps/web/{package.json,eslint.config.js}` e o passo novo no CI.
 
+## D-197 - O guarda de D-195 estava cego para quatro classes, e quem mostrou foi uma varredura que LEU o codigo
+
+**Contexto:** D-195 fechou os waterfalls que uma varredura por regex conseguia ver e deixou `check:waterfalls` como guarda. Esta fatia rodou por cima dele uma varredura de agentes com cinco angulos independentes (N+1 por laco, N+1 por nivel, aba nao aberta, sobre-busca, cliente refazendo trabalho do servidor), cada achado passando por dois ceticos que **abriam o arquivo** para tentar refutar. **Doze achados, seis sobreviveram** — e quatro deles eram invisiveis para o guarda que eu tinha acabado de escrever.
+
+**Os furos do guarda, e cada um custou um sitio real:**
+
+| Furo | Quem mostrou |
+|---|---|
+| `Promise.all` era so MARCO, nunca julgado | `/compras/[id]`, `/atendimento/[caseId]`, `/` |
+| consulta montada em variavel (`await q.range(...)`) nao era leitura | `/importacoes/[id]` |
+| anotacao de tipo (`const x: T[] = ...`) cortava a cadeia de dependencia | acusava `/vendas`, que estava certa |
+| reatribuicao (`q = q.eq(..., x.id)`) nao propagava dependencia | acusava `/atendimento`, que estava certa |
+
+Os dois primeiros escondiam defeito; os dois ultimos **inventavam** defeito. Os quatro estao fechados, cada um com caso-fixture proprio.
+
+**O pior deles nao apareceu na varredura — apareceu na conferencia.** Rodando o guarda corrigido contra o codigo ANTERIOR, `/compras/[id]` continuava passando verde. O motivo: a variavel chamava-se `order`, e o bloco continha `.order("position")`. O `\border\b` casava com o METODO do PostgREST, e o guarda concluia que o bloco dependia da variavel. **Falso negativo silencioso** — o pior defeito possivel num guarda, porque a esteira fica verde e a garantia sumiu. A correcao e um lookbehind que ignora acesso a membro; e a primeira versao DELA quebrou o spread (`{ ...filtro }` tambem comeca com ponto), o que o **auto-teste do proprio guarda pegou**. Foi exatamente o cenario que D-195 disse que os fixtures existiam para cobrir.
+
+**Um nivel de latencia que era puro filtro redundante.** `/precos` e `/full` liam `ml_accounts` com `.eq("organization_id", organizationId)`. A policy e `id in (select private.accessible_accounts())`, e essa funcao junta `organization_members` por `auth.uid()`: **a RLS ja restringe por organizacao E por permissao de conta**, mais estreito que o filtro manual. O `.eq` nao removia uma linha sequer — so amarrava a leitura a anterior, criando uma fila de tres onde bastavam duas. Outras cinco telas ja liam sem ele. Este caso o guarda **nao tem como pegar**: a dependencia e textual e real; o que a torna desnecessaria e a RLS, que um leitor estatico nao conhece. Fica documentado como limite, nao como cobertura.
+
+**A regra da casa obedecida por dentro e quebrada por fora.** A Home tinha um `Promise.all` das quatro contagens com o comentario *"Consultas independentes em paralelo, nunca em cascata (`docs/ARCHITECTURE.md` secao 21, regra 4)"* — e o bloco inteiro esperava a leitura da organizacao, que nenhuma das quatro usa. O comentario certo nao viu o defeito porque o defeito estava um nivel acima do que ele descrevia.
+
+**Uma ida ao banco que saia do NAVEGADOR em toda pagina.** `NotificationToasts` lia `notification_preferences` no `setup()` do efeito, e o `Shell` o renderiza em todas as telas autenticadas. Pior: a leitura ficava **na frente** do `.subscribe()` do Realtime. Agora o `Shell` a le no `Promise.all` que ja fazia (custo zero de latencia) e passa por prop. O componente deixou de ser dono da busca e passou a ser dono do comportamento.
+
+**Os seis refutados nao foram desperdicio.** Cinco eram sobre-busca (colunas pedidas e nao renderizadas, JSONB trazido sem uso) e um era N+1 aparente em `/acoes`. Os ceticos mataram todos por **custo**, nao por fato: as colunas existem mesmo, mas D-185 ja mediu que o corpo de uma resposta pequena nao e o custo — o custo e o numero de idas. Registrado para nao serem re-achados.
+
+**Contagem honesta.** Oito sitios corrigidos. O guarda pega **quatro**; tres sao os limites documentados no cabecalho dele (`/precos`, `/full`, `/diagnostico`) e um e de cliente, que nao e a pergunta dele.
+
+**Verificacao:** `check` 29/29, build 8/8, `check:waterfalls` 52 arquivos limpos e conferido contra o codigo anterior. Sem migration. Playwright no CI (o Docker Desktop nao sobe o motor Linux nesta maquina — a distro `docker-desktop` do WSL fica `Stopped` e o app faz "application reset" sozinho).
+
+**Impacto:** `apps/web/app/{page,precos/page,full/page,diagnostico/page,compras/[id]/page,importacoes/[id]/page,atendimento/[caseId]/page}.tsx`, `apps/web/components/{shell,notification-toasts}.tsx` e `apps/web/scripts/check-waterfalls.mjs`.
+
 ## Como adicionar nova decisao
 
 Registrar:

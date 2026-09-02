@@ -59,9 +59,13 @@ function AttentionCard({ card }: { card: Card }): ReactNode {
         color: "inherit",
       }}
     >
-      <div style={{ fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>{card.label}</div>
+      <div style={{ fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+        {card.label}
+      </div>
 
-      <div style={{ fontSize: "1.75rem", fontWeight: 600, margin: "0.25rem 0" }}>
+      <div
+        style={{ fontSize: "1.75rem", fontWeight: 600, margin: "0.25rem 0" }}
+      >
         {card.failed ? "—" : formatCount(card.count)}
       </div>
 
@@ -75,39 +79,57 @@ function AttentionCard({ card }: { card: Card }): ReactNode {
 export default async function HomePage(): Promise<ReactNode> {
   const supabase = await createClient();
 
-  const membership = await supabase.from("organization_members").select("organization_id").maybeSingle();
+  // Consultas independentes em paralelo, nunca em cascata
+  // (`docs/ARCHITECTURE.md` secao 21, regra 4).
+  //
+  // O bloco já era paralelo — mas ele inteiro esperava a leitura da
+  // organização, e nenhuma das quatro a usa: quem restringe por organização é
+  // a RLS. A regra estava obedecida por dentro e quebrada por fora, e o
+  // comentário acima não bastou para ver isso (D-197). O `membership` entrou
+  // no mesmo `Promise.all`.
+  //
+  // O guarda de "sem organização" continua abaixo. As quatro contagens passam
+  // a rodar também nesse caminho: são `head: true` sob RLS, devolvem zero
+  // linha para quem não alcança nada, e a tela não as mostra.
+  const [membership, openActions, openCases, mediations, unread] =
+    await Promise.all([
+      supabase
+        .from("organization_members")
+        .select("organization_id")
+        .maybeSingle(),
+      supabase
+        .from("actions")
+        .select("id", { count: "exact", head: true })
+        .in("status", ["novo", "em_andamento"]),
+      supabase
+        .from("support_cases")
+        .select("id", { count: "exact", head: true })
+        .neq("internal_status", "RESOLVIDO"),
+      supabase
+        .from("support_cases")
+        .select("id", { count: "exact", head: true })
+        .eq("is_mediation", true)
+        .neq("internal_status", "RESOLVIDO"),
+      supabase
+        .from("notification_recipients")
+        .select("id", { count: "exact", head: true })
+        .is("read_at", null),
+    ]);
+
   const organizationId = membership.data?.organization_id ?? null;
 
   if (membership.error !== null || organizationId === null) {
     return (
       <Shell>
-        <h1 style={{ margin: "0 0 var(--sb-space-3)", fontSize: "1.375rem" }}>Visão Geral</h1>
-        <p style={{ color: "var(--sb-text-soft)" }}>Sua conta não está associada a nenhuma organização.</p>
+        <h1 style={{ margin: "0 0 var(--sb-space-3)", fontSize: "1.375rem" }}>
+          Visão Geral
+        </h1>
+        <p style={{ color: "var(--sb-text-soft)" }}>
+          Sua conta não está associada a nenhuma organização.
+        </p>
       </Shell>
     );
   }
-
-  // Consultas independentes em paralelo, nunca em cascata
-  // (`docs/ARCHITECTURE.md` secao 21, regra 4).
-  const [openActions, openCases, mediations, unread] = await Promise.all([
-    supabase
-      .from("actions")
-      .select("id", { count: "exact", head: true })
-      .in("status", ["novo", "em_andamento"]),
-    supabase
-      .from("support_cases")
-      .select("id", { count: "exact", head: true })
-      .neq("internal_status", "RESOLVIDO"),
-    supabase
-      .from("support_cases")
-      .select("id", { count: "exact", head: true })
-      .eq("is_mediation", true)
-      .neq("internal_status", "RESOLVIDO"),
-    supabase
-      .from("notification_recipients")
-      .select("id", { count: "exact", head: true })
-      .is("read_at", null),
-  ]);
 
   const cards: readonly Card[] = [
     {
@@ -141,7 +163,9 @@ export default async function HomePage(): Promise<ReactNode> {
     },
   ];
 
-  const allQuiet = cards.every((card) => !card.failed && (card.count ?? 0) === 0);
+  const allQuiet = cards.every(
+    (card) => !card.failed && (card.count ?? 0) === 0,
+  );
 
   return (
     <Shell>
@@ -149,8 +173,15 @@ export default async function HomePage(): Promise<ReactNode> {
         O que precisa da sua atenção hoje?
       </h1>
 
-      <p style={{ margin: "0 0 var(--sb-space-4)", color: "var(--sb-text-soft)", fontSize: "0.9375rem" }}>
-        Cada número abaixo é lido do mesmo dado que a tela correspondente mostra.
+      <p
+        style={{
+          margin: "0 0 var(--sb-space-4)",
+          color: "var(--sb-text-soft)",
+          fontSize: "0.9375rem",
+        }}
+      >
+        Cada número abaixo é lido do mesmo dado que a tela correspondente
+        mostra.
       </p>
 
       <div
@@ -166,8 +197,15 @@ export default async function HomePage(): Promise<ReactNode> {
       </div>
 
       {allQuiet ? (
-        <p style={{ marginTop: "var(--sb-space-4)", color: "var(--sb-text-soft)", fontSize: "0.9375rem" }}>
-          Nada aberto no momento. Um dia sem pendência é um resultado, não um estado vazio.
+        <p
+          style={{
+            marginTop: "var(--sb-space-4)",
+            color: "var(--sb-text-soft)",
+            fontSize: "0.9375rem",
+          }}
+        >
+          Nada aberto no momento. Um dia sem pendência é um resultado, não um
+          estado vazio.
         </p>
       ) : null}
 

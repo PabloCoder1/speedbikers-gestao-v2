@@ -83,7 +83,26 @@ const SEVERITY_BORDER: Record<string, string> = {
   informativo: "var(--sb-border)",
 };
 
-export function NotificationToasts({ userId }: { userId: string | null }): ReactNode {
+export function NotificationToasts({
+  userId,
+  preferenceRules,
+}: {
+  userId: string | null;
+  /**
+   * Preferências vindas do SERVIDOR, por prop (D-197).
+   *
+   * Antes este componente as lia do navegador dentro do `setup()`, em toda
+   * página autenticada — o `Shell` o renderiza em todas elas. Era uma ida ao
+   * banco a mais por carregamento, saindo do cliente, e ela ficava **na
+   * frente** da assinatura de Realtime: o `.subscribe()` só acontecia depois
+   * que a leitura voltasse.
+   *
+   * O `Shell` já faz um `Promise.all` de leituras do cabeçalho; esta entrou
+   * nele e não custa latência nenhuma a mais. O componente deixou de ser o
+   * dono da busca e passou a ser o dono do comportamento, que é o certo.
+   */
+  preferenceRules: NotificationPreferenceRule[];
+}): ReactNode {
   const [toasts, setToasts] = useState<ToastGroup[]>([]);
   const groups = useRef(new Map<string, ToastGroup>());
   const dismissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
@@ -95,7 +114,6 @@ export function NotificationToasts({ userId }: { userId: string | null }): React
     // forma confiável dentro das funções aninhadas abaixo.
     const uid = userId;
     const supabase = createClient();
-    let preferenceRules: NotificationPreferenceRule[] = [];
     let cancelled = false;
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
@@ -169,19 +187,8 @@ export function NotificationToasts({ userId }: { userId: string | null }): React
       scheduleDismiss(key);
     }
 
-    async function setup(): Promise<void> {
-      const { data } = await supabase
-        .from("notification_preferences")
-        .select("event_type, ml_account_id, min_severity, enabled");
-
+    function setup(): void {
       if (cancelled) return;
-
-      preferenceRules = (data ?? []).map((row) => ({
-        eventType: row.event_type,
-        mlAccountId: row.ml_account_id,
-        minSeverity: row.min_severity,
-        enabled: row.enabled,
-      }));
 
       channel = supabase
         .channel(`notification-toasts:${uid}`)
@@ -200,7 +207,7 @@ export function NotificationToasts({ userId }: { userId: string | null }): React
         .subscribe();
     }
 
-    void setup();
+    setup();
 
     return () => {
       cancelled = true;
@@ -209,7 +216,7 @@ export function NotificationToasts({ userId }: { userId: string | null }): React
       for (const timer of dismissTimers.current.values()) clearTimeout(timer);
       dismissTimers.current.clear();
     };
-  }, [userId]);
+  }, [userId, preferenceRules]);
 
   function dismiss(key: string): void {
     const timer = dismissTimers.current.get(key);

@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import { createClient } from "../lib/supabase/server";
 import { CommandPalette } from "./command-palette";
+import type { NotificationPreferenceRule } from "../lib/notification-preferences";
 import { NotificationToasts } from "./notification-toasts";
 
 /**
@@ -167,13 +168,29 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
   // inteira. Enfileirá-lo não protegia nada: quem barra a rota é o `proxy.ts`,
   // que já chamou `getUser()` nesta mesma requisição e redirecionou para
   // `/login` sem sessão. As outras duas são restringidas pela RLS.
-  const [{ data: auth }, membership, unread] = await Promise.all([
+  const [{ data: auth }, membership, unread, preferences] = await Promise.all([
     supabase.auth.getUser(),
     supabase.from("organization_members").select("role, organization_id, organizations(name)").maybeSingle(),
     // Badge de não lidas (Fase 7, item 4) — `notification_recipients_select_own`
     // já restringe a própria linha, sem precisar filtrar por user_id aqui.
     supabase.from("notification_recipients").select("*", { count: "exact", head: true }).is("read_at", null),
+    // D-197: esta leitura era feita pelo NAVEGADOR, dentro de
+    // `NotificationToasts`, em toda página autenticada — uma ida a mais por
+    // carregamento, e ela ficava na frente da assinatura de Realtime. Aqui
+    // ela entra num `Promise.all` que já existia e não custa latência nenhuma.
+    supabase.from("notification_preferences").select("event_type, ml_account_id, min_severity, enabled"),
   ]);
+
+  // Falha aqui degrada para "sem regra", que é o mesmo que o componente fazia
+  // quando a leitura do cliente falhava: `shouldNotify` sobre lista vazia
+  // deixa passar. Preferência é filtro de toast, nunca de dado — a Central de
+  // Notificações continua mostrando tudo.
+  const preferenceRules: NotificationPreferenceRule[] = (preferences.data ?? []).map((row) => ({
+    eventType: row.event_type,
+    mlAccountId: row.ml_account_id,
+    minSeverity: row.min_severity,
+    enabled: row.enabled,
+  }));
 
   const role = membership.data?.role ?? null;
   const orgName = membership.data?.organizations.name ?? "Speed Bikers";
@@ -295,7 +312,7 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
 
       <main style={{ padding: "var(--sb-space-4)", flex: 1 }}>{children}</main>
 
-      <NotificationToasts userId={auth.user?.id ?? null} />
+      <NotificationToasts userId={auth.user?.id ?? null} preferenceRules={preferenceRules} />
     </div>
   );
 }

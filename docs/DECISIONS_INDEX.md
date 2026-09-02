@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **194** (D-001 a D-195).
+Decisões registradas: **195** (D-001 a D-197; D-196 é de outra frente).
 
 ## Por domínio
 
@@ -172,6 +172,7 @@ Decisões registradas: **194** (D-001 a D-195).
 - **D-193** — A varredura do truncamento: dois cortes vivos, e um a 16 linhas de comecar
 - **D-194** — O filtro de marcas escondia 10 das 19, e eu tinha chamado isso de cosmetico
 - **D-195** — O waterfall que se paga em toda tela estava no cabecalho, e a varredura quase nao olhou la
+- **D-197** — O guarda de D-195 estava cego para quatro classes, e quem mostrou foi uma varredura que LEU o codigo
 
 ### vendas/métricas (12)
 

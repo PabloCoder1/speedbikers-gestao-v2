@@ -98,7 +98,22 @@ export default async function FullPage({
   const supabase = await createClient();
   const filters = resolveFullFilters(query);
 
-  const membership = await supabase.from("organization_members").select("organization_id").maybeSingle();
+  // O `.eq("organization_id", ...)` que morava aqui era REDUNDANTE, e o preço
+  // dele era um nível inteiro de latência (D-197). A policy de `ml_accounts` é
+  // `id in (select private.accessible_accounts())`, e essa função junta
+  // `organization_members` por `auth.uid()`: a RLS já restringe por
+  // organização **e** por permissão de conta — estritamente mais estreita que
+  // o filtro manual. O filtro não removia uma linha sequer; só amarrava esta
+  // leitura à anterior, obrigando três latências em fila onde duas bastam.
+  //
+  // É como `/vendas`, `/anuncios`, `/curva-abc`, `/atendimento` e
+  // `/vinculacoes` já liam. A RPC abaixo continua depois — ela SIM depende da
+  // conta escolhida.
+  const [membership, accounts] = await Promise.all([
+    supabase.from("organization_members").select("organization_id").maybeSingle(),
+    supabase.from("ml_accounts").select("id, label").order("label"),
+  ]);
+
   const organizationId = membership.data?.organization_id ?? null;
 
   if (organizationId === null) {
@@ -109,12 +124,6 @@ export default async function FullPage({
       </Shell>
     );
   }
-
-  const accounts = await supabase
-    .from("ml_accounts")
-    .select("id, label")
-    .eq("organization_id", organizationId)
-    .order("label");
 
   const accountIds = new Set((accounts.data ?? []).map((row) => row.id));
   const account = filters.account !== null && accountIds.has(filters.account) ? filters.account : null;

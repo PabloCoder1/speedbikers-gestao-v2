@@ -14,10 +14,10 @@
 |---|---|
 | **Atualizado em** | 2026-09-01 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `0557a60` (D-194) — esta fatia, D-195, é o commit seguinte |
+| **HEAD conhecido** | `28eeaa7` (D-195) — esta fatia, D-197, é o commit seguinte |
 | **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **34 commits atrás** |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
-| **Migrations** | 120 locais == 120 no Dev, última `20260901203000` — sem drift |
+| **Migrations** | **120 locais, 121 no Dev — HÁ DRIFT.** Ver "Dev à frente do repositório", abaixo |
 | **Frente atual** | Trilha 8B — P0 fechado (A–H); em P1 |
 
 ### O que está pronto
@@ -102,10 +102,54 @@ Números completos e método: `docs/PERFORMANCE.md`.
   `Shell` fazia três leituras em fila e embrulha **toda** página autenticada.
   Antes de rodar uma varredura, pergunte se a unidade escolhida é a unidade
   onde o defeito mora.
+- **Guarda estático se confere contra o DEFEITO, não contra a correção.**
+  `check:waterfalls` passava verde no repo inteiro e estava cego para quatro
+  classes (D-197). A pior só apareceu ao rodá-lo contra o código anterior: a
+  variável se chamava `order` e o bloco continha `.order("position")`, então
+  ele via dependência onde não havia — falso NEGATIVO silencioso. Rode todo
+  guarda nas duas versões: a corrigida não pode acusar, a anterior tem que.
+- **Uma dependência textual pode ser inventada por um filtro redundante.**
+  `/precos` e `/full` amarravam a leitura de `ml_accounts` à da organização
+  por um `.eq("organization_id", ...)` que a RLS já garantia — e mais
+  estreito. Antes de aceitar que duas leituras estão em fila por necessidade,
+  pergunte se o que as amarra é dado ou é um filtro que não filtra nada.
 - **`n_live_tup` mente, e mentiu feio.** As estatísticas do Dev estão velhas:
   `job_runs` estimava ~6 mil e tem **271.184**; `ml_credentials` estimava 0 e
   tem **4 credenciais reais**. Para qualquer raciocínio de segurança ou de
   volume, `count(*)` — nunca a estimativa (D-182).
+
+---
+
+## Dev à frente do repositório (2026-09-02) — a CI está vermelha por isto
+
+O Supabase Dev tem uma migration que **o repositório não tem**:
+
+| | |
+|---|---|
+| versão | `20260902005023` |
+| nome | `stock_balances_page_first` |
+| o que faz | reescreve `public.get_stock_balances` (a RPC de `/estoque`) |
+| no git | **não existe**, em nenhum branch |
+
+O comentário dentro dela se identifica como **"Page-first (D-196)"** — ou seja,
+é trabalho de **outra frente**, aplicado no Dev e ainda não empurrado. Foi ela
+que deixou o job `aplicar migrations no Supabase Dev` vermelho em `28eeaa7`
+(D-195): o `db push` encontra no remoto um histórico que o local não contém.
+Os outros 5 checks daquele commit passaram, incluindo o Playwright.
+
+**Não recuperei o arquivo para dentro do repositório de propósito.** O SQL é
+integralmente legível em `supabase_migrations.schema_migrations`, então
+reconstruí-lo é trivial — mas adotar DDL de outra frente sob autoria alheia,
+sem a fatia e os testes que a acompanham, trocaria um problema visível por um
+invisível. **Quem tem a fatia é quem deve empurrá-la**; quando isso acontecer,
+o `db push` volta a passar sozinho.
+
+Duas consequências práticas enquanto isso não acontece:
+
+- **o número D-196 está tomado** — esta sessão pulou para D-197;
+- **`get_stock_balances` no Dev não é mais o que as migrations do repositório
+  produzem.** Um `supabase db reset` local dá a versão antiga; o Dev tem a
+  nova. Qualquer medição da RPC precisa dizer contra qual das duas rodou.
 
 ---
 
@@ -148,7 +192,8 @@ Nada disto pode ser feito por um agente.
 3. **P1 — read models e o resto do item de frontend.** O item de frontend
    está saindo em terços: truncamento em D-193, filtro de marcas em D-194,
    **waterfalls em D-195** (14 leituras em fila — a maior no `Shell`, que
-   embrulha toda tela — com guarda `check:waterfalls` no CI). Sobram **N+1** e **dados carregados por aba não
+   embrulha toda tela) e **N+1/leituras em fila em D-197** (mais 8 sítios que
+   a regex não via, achados por varredura de agentes que leram o código). Sobram **N+1** e **dados carregados por aba não
    aberta** — e os read models. `docs/ROADMAP.md` tem a ordem.
 4. **Antes da segunda organização** — `get_system_health` tem escopo de
    plataforma com guard de tenant (D-182). Não é urgente hoje e não tem

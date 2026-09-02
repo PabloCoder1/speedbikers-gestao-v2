@@ -24,6 +24,34 @@
  * inventava waterfall onde havia dependência real — mesma classe de erro da
  * varredura de D-193, e a correção foi a mesma: propagar transitivamente.
  *
+ * **Três furos que D-197 fechou**, todos achados por uma varredura de agentes
+ * que leu o código em vez de casar regex:
+ *
+ * - um `await Promise.all([...])` era tratado só como MARCO, nunca perguntando
+ *   se o bloco inteiro dependia da leitura anterior. `/compras/[id]` lia o
+ *   pedido, e só então disparava um `Promise.all` de itens e eventos que não
+ *   usava nada dele;
+ * - uma consulta montada numa variável (`let q = supabase.from(...)`, depois
+ *   `await q.range(...)`) não era reconhecida como leitura, porque a expressão
+ *   não começa em `await supabase`. Era o caso de `/importacoes/[id]`;
+ * - o guarda passou a varrer `components/` junto com `app/`, e não só
+ *   `page.tsx` — foi assim que `shell.tsx` apareceu (D-195).
+ *
+ * **Dois limites que ele NÃO tem como fechar, ditos aqui para ninguém
+ * confundir silêncio com garantia:**
+ *
+ * - **dependência textual inventada por filtro redundante.** `/precos` e
+ *   `/full` liam `ml_accounts` com `.eq("organization_id", organizationId)`,
+ *   e esse `organizationId` — vindo da leitura anterior — fazia o guarda
+ *   classificar a leitura como dependente. Só que a RLS de `ml_accounts` já
+ *   restringe por organização E por permissão de conta: o filtro não removia
+ *   linha nenhuma, só criava a fila. Saber isso exige conhecer a RLS, que um
+ *   leitor estático não conhece;
+ * - **leituras em `if` irmãos com a mesma condição.** `/diagnostico` tinha
+ *   dois `if (candidateSkuIds.length > 0)` seguidos, um com cada leitura.
+ *   Cada um é condicional — e leitura condicional é o padrão certo — mas
+ *   juntos são uma fila. O guarda não funde blocos.
+ *
  * **O que NÃO é waterfall, e o script não acusa:**
  *
  * - leitura dentro de `if`/`? :` — carregar só quando precisa é o padrão
@@ -78,6 +106,30 @@ function arquivos(dir) {
   return saida;
 }
 
+/**
+ * O nome é MESMO usado nesta expressão — ou é o método homônimo?
+ *
+ * O `(?<!\.)` não é preciosismo. Uma variável chamada `order` colide com
+ * `.order("position")`, que aparece em quase toda leitura do PostgREST: sem o
+ * lookbehind, o guarda lia `.order(` dentro do bloco de `/compras/[id]`,
+ * concluía que ele dependia da variável `order`, e a página passava VERDE com
+ * o waterfall intacto.
+ *
+ * Um falso NEGATIVO é o pior defeito possível aqui, porque a esteira fica
+ * verde e a garantia sumiu sem ninguém perceber. Este foi encontrado ao rodar
+ * o guarda contra o código ANTERIOR à correção — que é exatamente para isso
+ * que essa conferência existe (D-197).
+ *
+ * A segunda alternativa (`(?<=\.\.\.)`) existe porque o SPREAD também começa
+ * com ponto: `{ ...filtro }` é uso legítimo da variável, não acesso a membro.
+ * Foi o auto-teste desta mesma varredura que pegou isso, na primeira versão
+ * do lookbehind — o caso da declaração anotada passou a acusar `/vendas` de
+ * novo. Guarda que se prova antes de julgar não é cerimônia.
+ */
+function nomeUsadoEm(nome, expressao) {
+  return new RegExp(`(?:(?<![.\\w$])|(?<=\\.\\.\\.))\\b${nome}\\b`).test(expressao);
+}
+
 /** Nomes que uma desestruturação (ou um identificador simples) liga. */
 function nomesLigados(alvo) {
   if (!alvo.startsWith("{") && !alvo.startsWith("[")) return [alvo];
@@ -121,9 +173,22 @@ function dentroDeCondicional(fonte, posicao) {
   return pilha.some(Boolean);
 }
 
-const DECL = /(?:const|let)\s+(\{[^}]*\}|\[[^\]]*\]|[A-Za-z_$][\w$]*)\s*=\s*([\s\S]*?);\n/g;
+// `(?::[^=;]+)?` é a ANOTAÇÃO DE TIPO, e ela não é detalhe: sem tolerá-la,
+// `const accounts: AccountOption[] = accountsResult.data ?? []` não casava,
+// `accounts` nunca era marcado como derivado da leitura, e a dependência
+// sumia três níveis adiante — o guarda então ACUSAVA `/vendas`, que estava
+// certa. Um falso positivo custa mais caro que um achado perdido: ele ensina
+// a ignorar o guarda.
+const DECL = /(?:const|let)\s+(\{[^}]*\}|\[[^\]]*\]|[A-Za-z_$][\w$]*)(?::[^=;]+)?\s*=\s*([\s\S]*?);\n/g;
+// Reatribuição: `casesQuery = casesQuery.eq("ml_account_id", selectedAccount.id)`.
+// É assim que uma consulta montada ganha filtros vindos de uma leitura
+// anterior, e ignorá-la fazia o guarda acusar `/atendimento` sem razão.
+const REATRIB = /^[ \t]*([A-Za-z_$][\w$]*)\s*=\s*([\s\S]*?);\n/gm;
 const LEITURA = /^await\s+supabase\b/;
 const BARREIRA = /^await\s+Promise\.all\b/;
+// Consulta MONTADA numa variável, sem `await`: `let q = supabase.from(...)`.
+// Montar não dispara nada; o `await` depois é que é a leitura.
+const MONTAGEM = /^supabase\s*[.\n]/;
 
 /** Achados de um arquivo: leituras em fila que não usam nada da anterior. */
 export function analisar(fonte) {
@@ -152,25 +217,53 @@ function pedacosDeFuncao(fonte) {
 }
 
 function analisarFuncao(fonteInteira, deslocamento, fonte) {
+  // Nomes que carregam DADO vindo de uma leitura. Uma leitura que menciona
+  // qualquer um deles depende da anterior.
   const contaminados = new Set();
+  // Nomes que carregam uma CONSULTA MONTADA, ainda não disparada. Eles NÃO
+  // contaminam — montar não é ler —, mas `await <nome>` é uma leitura.
+  const montadas = new Set();
   const achados = [];
   let jaHouveLeitura = false;
 
-  for (const m of fonte.matchAll(DECL)) {
-    const alvo = m[1];
-    const expressao = m[2].trim();
-    const usados = [...contaminados].filter((n) => new RegExp(`\\b${n}\\b`).test(expressao));
+  // Declarações e reatribuições, na ORDEM do arquivo: a contaminação é
+  // sequencial, e ler as duas listas separadamente perderia a ordem.
+  const eventos = [
+    ...[...fonte.matchAll(DECL)].map((m) => ({ i: m.index, alvo: m[1], expr: m[2], decl: true })),
+    ...[...fonte.matchAll(REATRIB)].map((m) => ({ i: m.index, alvo: m[1], expr: m[2], decl: false })),
+  ].sort((a, b) => a.i - b.i);
 
-    if (LEITURA.test(expressao) || BARREIRA.test(expressao)) {
-      const linha = fonteInteira.slice(0, deslocamento + m.index).split("\n").length;
-      const anterior = fonte.slice(0, m.index).split("\n").slice(-3).join("\n");
+  for (const m of eventos) {
+    const alvo = m.alvo;
+    const expressao = m.expr.trim();
+    const usados = [...contaminados].filter((n) => nomeUsadoEm(n, expressao));
 
+    // Uma reatribuição nunca é leitura: `q = q.eq(...)` só monta. Ela serve
+    // para PROPAGAR contaminação para a consulta montada.
+    if (!m.decl) {
+      if (usados.length > 0) {
+        contaminados.add(alvo);
+        montadas.delete(alvo);
+      }
+      continue;
+    }
+
+    const leituraMontada = [...montadas].some((n) => new RegExp(`^await\\s+${n}\\b`).test(expressao));
+    const eLeitura = LEITURA.test(expressao) || leituraMontada;
+    const eBarreira = BARREIRA.test(expressao);
+
+    if (eLeitura || eBarreira) {
+      const linha = fonteInteira.slice(0, deslocamento + m.i).split("\n").length;
+      const anterior = fonte.slice(0, m.i).split("\n").slice(-3).join("\n");
+
+      // A BARREIRA também é julgada, e não só contada. Um `Promise.all` que
+      // não usa nada da leitura anterior é exatamente o mesmo defeito: o
+      // bloco inteiro espera por um dado que não consome.
       if (
-        LEITURA.test(expressao) &&
         jaHouveLeitura &&
         usados.length === 0 &&
         !ESCAPE.test(anterior) &&
-        !dentroDeCondicional(fonte, m.index)
+        !dentroDeCondicional(fonte, m.i)
       ) {
         achados.push({ linha, trecho: expressao.split("\n")[0].slice(0, 72) });
       }
@@ -178,6 +271,8 @@ function analisarFuncao(fonteInteira, deslocamento, fonte) {
       jaHouveLeitura = true;
 
       for (const nome of nomesLigados(alvo)) contaminados.add(nome);
+    } else if (MONTAGEM.test(expressao)) {
+      for (const nome of nomesLigados(alvo)) montadas.add(nome);
     } else if (usados.length > 0) {
       // Derivada de leitura: passa a contaminar, senão a dependência some.
       for (const nome of nomesLigados(alvo)) contaminados.add(nome);
@@ -221,6 +316,69 @@ const CASOS = [
   const c = await supabase.from("z").select("id");
 `,
     esperado: 1,
+  },
+  {
+    // D-197: o `Promise.all` deixou de ser so um marco.
+    nome: "acusa um Promise.all que nao usa nada da leitura anterior",
+    fonte: `
+  const pedido = await supabase.from("purchase_orders").select("id").eq("id", id).maybeSingle();
+  const [itens, eventos] = await Promise.all([
+    supabase.from("purchase_order_items").select("id").eq("purchase_order_id", id),
+    supabase.from("purchase_order_events").select("id").eq("purchase_order_id", id),
+  ]);
+`,
+    esperado: 1,
+  },
+  {
+    nome: "nao acusa um Promise.all que USA a leitura anterior",
+    fonte: `
+  const membership = await supabase.from("organization_members").select("organization_id").maybeSingle();
+  const organizationId = membership.data?.organization_id ?? null;
+  const [a, b] = await Promise.all([
+    supabase.rpc("x", { p_organization_id: organizationId }),
+    supabase.rpc("y", { p_organization_id: organizationId }),
+  ]);
+`,
+    esperado: 0,
+  },
+  {
+    // D-197: consulta montada numa variavel e depois disparada.
+    nome: "acusa leitura disparada de uma consulta montada antes",
+    fonte: `
+  const lote = await supabase.from("erp_import_batches").select("id").eq("id", id).maybeSingle();
+  let rowsQuery = supabase.from("erp_import_rows").select("row_number").eq("batch_id", id);
+  const linhas = await rowsQuery.order("row_number").range(0, 49);
+`,
+    esperado: 1,
+  },
+  {
+    // D-197: a anotacao de tipo nao pode cortar a cadeia de dependencia.
+    nome: "nao acusa quando a dependencia passa por declaracao ANOTADA",
+    fonte: `
+  const contas = await supabase.from("ml_accounts").select("id, slug");
+  const lista: AccountOption[] = contas.data ?? [];
+  const escolhida = lista.find((c) => c.slug === slug) ?? null;
+  const filtro = escolhida === null ? {} : { p_ml_account_id: escolhida.id };
+  const [a, b] = await Promise.all([
+    supabase.rpc("get_sales_summary", { ...filtro }),
+    supabase.rpc("get_sales_series", { ...filtro }),
+  ]);
+`,
+    esperado: 0,
+  },
+  {
+    // D-197: a consulta ganha o filtro por REATRIBUICAO, dentro de um if.
+    nome: "nao acusa consulta montada que recebe filtro da leitura anterior",
+    fonte: `
+  const contas = await supabase.from("ml_accounts").select("id, slug");
+  const escolhida = (contas.data ?? []).find((c) => c.slug === slug) ?? null;
+  let casesQuery = supabase.from("support_cases").select("id");
+  if (escolhida !== null) {
+    casesQuery = casesQuery.eq("ml_account_id", escolhida.id);
+  }
+  const casos = await casesQuery;
+`,
+    esperado: 0,
   },
   {
     nome: "não acusa leitura condicional",

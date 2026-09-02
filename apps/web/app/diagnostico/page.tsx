@@ -130,20 +130,41 @@ export default async function DiagnosticoPage(): Promise<ReactNode> {
   const eventsBySku = new Map<string, CorrelatedEvent[]>();
   let eventsError: { message: string } | null = null;
 
+  // D-116 — SAC como evidência: reclamações ABERTAS por SKU candidato, sob
+  // a MESMA RLS da tela. Falha degrada para "sem sinal de SAC" (evidência
+  // adicional nunca derruba o diagnóstico).
+  const openClaimsBySku = new Map<string, Set<string>>();
+
+  // Eram DOIS `if (candidateSkuIds.length > 0)` seguidos, cada um com sua
+  // leitura, e a segunda esperava a primeira sem usar nada dela (D-197). A
+  // condição é a mesma e as duas leituras partem do mesmo `candidateSkuIds`:
+  // um `if` só, com as duas juntas. Sem anomalia nenhuma o custo era zero
+  // antes e continua zero agora — o ganho aparece justamente nas visitas em
+  // que a tela tem algo a mostrar.
+  //
+  // Aqui não cabe embed: um dos lados é RPC, o outro é tabela.
   if (candidateSkuIds.length > 0) {
     const windowStart = shiftBusinessDate(asOf, -CORRELATION_WINDOW_DAYS_BEFORE);
     const windowEnd = shiftBusinessDate(asOf, CORRELATION_WINDOW_DAYS_AFTER);
 
-    // D-152: a correlação deixou de filtrar entity_type='sku' — a RPC mapeia
-    // também eventos de ANÚNCIO (preço/título/status, via listings) e de
-    // PEDIDO (cancelamento/devolução, via order_items congelados) ao SKU.
-    // Mesmo raciocínio nos outros dois consumidores (painel do SKU e worker).
-    const eventsResult = await supabase.rpc("get_sku_correlated_events", {
-      p_organization_id: organizationId,
-      p_sku_ids: candidateSkuIds,
-      p_from: windowStart,
-      p_to: windowEnd,
-    });
+    const [eventsResult, claimLinks] = await Promise.all([
+      // D-152: a correlação deixou de filtrar entity_type='sku' — a RPC mapeia
+      // também eventos de ANÚNCIO (preço/título/status, via listings) e de
+      // PEDIDO (cancelamento/devolução, via order_items congelados) ao SKU.
+      // Mesmo raciocínio nos outros dois consumidores (painel do SKU e worker).
+      supabase.rpc("get_sku_correlated_events", {
+        p_organization_id: organizationId,
+        p_sku_ids: candidateSkuIds,
+        p_from: windowStart,
+        p_to: windowEnd,
+      }),
+      supabase
+        .from("support_case_links")
+        .select("sku_id, support_case_id, support_cases!inner(internal_status, channel)")
+        .in("sku_id", candidateSkuIds)
+        .eq("support_cases.channel", "CLAIM")
+        .neq("support_cases.internal_status", "RESOLVIDO"),
+    ]);
 
     eventsError = eventsResult.error;
 
@@ -152,25 +173,6 @@ export default async function DiagnosticoPage(): Promise<ReactNode> {
       list.push({ eventType: event.event_type, occurredAt: new Date(event.occurred_at) });
       eventsBySku.set(event.sku_id, list);
     }
-  }
-
-  // Falha ao ler domain_events ficava invisível antes: o diagnóstico
-  // reportava "nenhuma causa candidata encontrada" com confiança normal,
-  // quando a causa real podia existir e só não foi lida (D-067).
-  const error = baselineError ?? eventsError;
-
-  // D-116 — SAC como evidência: reclamações ABERTAS por SKU candidato, sob
-  // a MESMA RLS da tela. Falha degrada para "sem sinal de SAC" (evidência
-  // adicional nunca derruba o diagnóstico).
-  const openClaimsBySku = new Map<string, Set<string>>();
-
-  if (candidateSkuIds.length > 0) {
-    const claimLinks = await supabase
-      .from("support_case_links")
-      .select("sku_id, support_case_id, support_cases!inner(internal_status, channel)")
-      .in("sku_id", candidateSkuIds)
-      .eq("support_cases.channel", "CLAIM")
-      .neq("support_cases.internal_status", "RESOLVIDO");
 
     for (const link of (claimLinks.data ?? []) as unknown as { sku_id: string | null; support_case_id: string }[]) {
       if (link.sku_id === null) continue;
@@ -181,6 +183,11 @@ export default async function DiagnosticoPage(): Promise<ReactNode> {
       openClaimsBySku.set(link.sku_id, set);
     }
   }
+
+  // Falha ao ler domain_events ficava invisível antes: o diagnóstico
+  // reportava "nenhuma causa candidata encontrada" com confiança normal,
+  // quando a causa real podia existir e só não foi lida (D-067).
+  const error = baselineError ?? eventsError;
 
   const diagnoses: SalesAnomalyDiagnosis[] = [];
 

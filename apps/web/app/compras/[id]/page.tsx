@@ -54,24 +54,28 @@ export default async function PedidoDeCompraPage({
 
   const supabase = await createClient();
 
-  const order = await supabase
-    .from("purchase_orders")
-    .select(
-      "id, order_number, status, destination_warehouse_name, currency, notes, expected_at, approved_at, ordered_at, received_at, cancelled_at, cancel_reason, created_at, suppliers(name)",
-    )
-    .eq("id", id)
-    .maybeSingle();
-
-  // `null` aqui pode ser "não existe" ou "a policy escondeu" — a tela
-  // responde igual nos dois casos, mesmo raciocínio já usado em
-  // apps/web/app/importacoes/[id]/page.tsx.
-  if (order.error !== null || order.data === null) {
-    notFound();
-  }
-
-  const info = order.data;
-
-  const [items, events] = await Promise.all([
+  // As TRÊS leituras partem do mesmo `id` da URL (D-197). Havia um
+  // `Promise.all` aqui, e ele escondia o problema: o par itens/eventos já ia
+  // junto, mas o par inteiro esperava o cabeçalho do pedido — que nenhum dos
+  // dois usa. Duas latências em fila onde uma resolve.
+  //
+  // O guarda `check:waterfalls` (D-195) não via isto: ele checava dependência
+  // das leituras SOLTAS e tratava o `Promise.all` só como marco, sem nunca
+  // perguntar se o próprio bloco dependia da leitura anterior. Foi esta tela
+  // que mostrou o furo, e o guarda foi corrigido na mesma fatia.
+  //
+  // O guarda de 404 continua abaixo, e continua correto: a RLS restringe as
+  // três leituras de forma independente, então disparar itens e eventos antes
+  // de saber se o pedido existe não mostra nada a quem não podia ver. O preço
+  // são duas consultas desperdiçadas no caminho 404, que é o caminho raro.
+  const [order, items, events] = await Promise.all([
+    supabase
+      .from("purchase_orders")
+      .select(
+        "id, order_number, status, destination_warehouse_name, currency, notes, expected_at, approved_at, ordered_at, received_at, cancelled_at, cancel_reason, created_at, suppliers(name)",
+      )
+      .eq("id", id)
+      .maybeSingle(),
     supabase
       .from("purchase_order_items")
       .select("id, position, sku_snapshot, title_snapshot, quantity_ordered, unit_cost, skus(is_imported)")
@@ -83,6 +87,15 @@ export default async function PedidoDeCompraPage({
       .eq("purchase_order_id", id)
       .order("occurred_at", { ascending: false }),
   ]);
+
+  // `null` aqui pode ser "não existe" ou "a policy escondeu" — a tela
+  // responde igual nos dois casos, mesmo raciocínio já usado em
+  // apps/web/app/importacoes/[id]/page.tsx.
+  if (order.error !== null || order.data === null) {
+    notFound();
+  }
+
+  const info = order.data;
 
   // `null` distinto de 0: uma falha de leitura não pode aparecer como "0
   // itens, R$ 0,00" no topo — parece um pedido vazio de verdade em vez de

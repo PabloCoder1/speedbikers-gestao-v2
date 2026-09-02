@@ -75,25 +75,14 @@ export default async function ConferenciaPage({
 
   const supabase = await createClient();
 
-  const batch = await supabase
-    .from("erp_import_batches")
-    .select(
-      "id, kind, status, file_name, total_rows, ok_rows, skipped_rows, invalid_rows, applied_rows, unresolved_rows, parsed_at, last_error",
-    )
-    .eq("id", id)
-    .maybeSingle();
-
-  // `null` aqui pode ser "não existe" ou "a policy escondeu". A tela responde
-  // igual nos dois casos de propósito: confirmar a existência de um lote de
-  // outra organização já é vazamento.
-  if (batch.error !== null || batch.data === null) {
-    notFound();
-  }
-
-  // Copia local: dentro de um callback o TypeScript descarta o estreitamento de
-  // uma propriedade, porque nada garante que ela nao mudou nesse meio-tempo.
-  const info = batch.data;
-
+  // As duas leituras partem do mesmo `id` da rota, e a das linhas só precisa
+  // de `filter` e `page`, que vêm da URL — nunca precisou esperar o lote
+  // (D-197). Duas latências em fila onde uma resolve, e esta tela pagava isso
+  // também em toda troca de página e de filtro, que são as interações
+  // frequentes dela.
+  //
+  // A consulta das linhas é montada ANTES do `Promise.all` porque o filtro de
+  // status é opcional; montar não dispara nada, o `await` é que dispara.
   const from = (page - 1) * PAGE_SIZE;
 
   let rowsQuery = supabase
@@ -105,7 +94,28 @@ export default async function ConferenciaPage({
     rowsQuery = rowsQuery.eq("status", filter);
   }
 
-  const rows = await rowsQuery.order("row_number").range(from, from + PAGE_SIZE - 1);
+  const [batch, rows] = await Promise.all([
+    supabase
+      .from("erp_import_batches")
+      .select(
+        "id, kind, status, file_name, total_rows, ok_rows, skipped_rows, invalid_rows, applied_rows, unresolved_rows, parsed_at, last_error",
+      )
+      .eq("id", id)
+      .maybeSingle(),
+    rowsQuery.order("row_number").range(from, from + PAGE_SIZE - 1),
+  ]);
+
+  // `null` aqui pode ser "não existe" ou "a policy escondeu". A tela responde
+  // igual nos dois casos de propósito: confirmar a existência de um lote de
+  // outra organização já é vazamento. A RLS restringe `erp_import_rows` de
+  // forma independente, então ler as linhas em paralelo não contorna isso.
+  if (batch.error !== null || batch.data === null) {
+    notFound();
+  }
+
+  // Copia local: dentro de um callback o TypeScript descarta o estreitamento de
+  // uma propriedade, porque nada garante que ela nao mudou nesse meio-tempo.
+  const info = batch.data;
 
   const total = rows.count ?? 0;
   const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));

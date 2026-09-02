@@ -87,7 +87,10 @@ const sectionTitle: React.CSSProperties = {
   fontSize: "1rem",
 };
 
-const meta: React.CSSProperties = { fontSize: "0.75rem", color: "var(--sb-text-soft)" };
+const meta: React.CSSProperties = {
+  fontSize: "0.75rem",
+  color: "var(--sb-text-soft)",
+};
 
 /**
  * Corpo da mensagem respeitando `body_state` (D-086).
@@ -98,7 +101,11 @@ const meta: React.CSSProperties = { fontSize: "0.75rem", color: "var(--sb-text-s
  * visualmente distinto do que a pessoa realmente escreveu.
  */
 function MessageBody({ message }: { message: MessageRow }): ReactNode {
-  if (message.body_state === "AVAILABLE" && message.body !== null && message.body !== "") {
+  if (
+    message.body_state === "AVAILABLE" &&
+    message.body !== null &&
+    message.body !== ""
+  ) {
     return <p style={{ margin: 0, whiteSpace: "pre-wrap" }}>{message.body}</p>;
   }
 
@@ -124,7 +131,24 @@ export default async function AtendimentoDetalhePage({
   // redirecionou para `/login` se não havia sessão. E a leitura não fica
   // desprotegida por sair junto: o PostgREST confere o JWT por conta própria e
   // a RLS decide o que volta. O id daqui é só para a tela distinguir "Você".
-  const [{ data: auth }, caseResult] = await Promise.all([
+  //
+  // As SEIS leituras partem do mesmo `caseId` da URL (D-197). O bloco de
+  // mensagens/prazos/eventos/tentativas já era paralelo, mas esperava o
+  // cabeçalho do atendimento — e nenhuma das quatro usa nada dele. Era o
+  // mesmo defeito de `/compras/[id]`, e o guarda só passou a vê-lo quando
+  // deixou de tratar `Promise.all` como simples marco.
+  //
+  // Os guardas de erro e de 404 continuam abaixo e continuam corretos: a RLS
+  // restringe as seis leituras de forma independente, então buscá-las antes
+  // de saber se o atendimento existe não mostra nada a quem não podia ver.
+  const [
+    { data: auth },
+    caseResult,
+    messagesResult,
+    deadlinesResult,
+    eventsResult,
+    attemptsResult,
+  ] = await Promise.all([
     supabase.auth.getUser(),
     supabase
       .from("support_cases")
@@ -133,6 +157,34 @@ export default async function AtendimentoDetalhePage({
       )
       .eq("id", caseId)
       .maybeSingle(),
+    supabase
+      .from("support_messages")
+      .select(
+        "id, direction, sender_kind, body, body_state, remote_status, occurred_at",
+      )
+      .eq("support_case_id", caseId)
+      .order("occurred_at", { ascending: true }),
+    supabase
+      .from("support_case_deadlines")
+      .select("id, deadline_kind, source, due_at, started_at")
+      .eq("support_case_id", caseId)
+      .order("due_at", { ascending: true }),
+    supabase
+      .from("support_case_events")
+      .select(
+        "id, event_type, source, occurred_at, before, after, profiles(full_name)",
+      )
+      .eq("support_case_id", caseId)
+      .order("occurred_at", { ascending: false })
+      .limit(50),
+    supabase
+      .from("support_reply_attempts")
+      .select(
+        "id, status, final_text, error_message, requested_at, resolved_at, profiles(full_name)",
+      )
+      .eq("support_case_id", caseId)
+      .order("requested_at", { ascending: false })
+      .limit(20),
   ]);
 
   const viewerId = auth.user?.id ?? null;
@@ -140,7 +192,9 @@ export default async function AtendimentoDetalhePage({
   if (caseResult.error !== null) {
     return (
       <Shell>
-        <h1 style={{ margin: "0 0 var(--sb-space-3)", fontSize: "1.375rem" }}>Atendimento</h1>
+        <h1 style={{ margin: "0 0 var(--sb-space-3)", fontSize: "1.375rem" }}>
+          Atendimento
+        </h1>
         <p role="alert" style={{ color: "var(--sb-danger)" }}>
           Não foi possível carregar o atendimento: {caseResult.error.message}
         </p>
@@ -179,42 +233,21 @@ export default async function AtendimentoDetalhePage({
     support_case_links: SupportCaseLinkRow[] | null;
   };
 
-  const [messagesResult, deadlinesResult, eventsResult, attemptsResult] = await Promise.all([
-    supabase
-      .from("support_messages")
-      .select("id, direction, sender_kind, body, body_state, remote_status, occurred_at")
-      .eq("support_case_id", caseId)
-      .order("occurred_at", { ascending: true }),
-    supabase
-      .from("support_case_deadlines")
-      .select("id, deadline_kind, source, due_at, started_at")
-      .eq("support_case_id", caseId)
-      .order("due_at", { ascending: true }),
-    supabase
-      .from("support_case_events")
-      .select("id, event_type, source, occurred_at, before, after, profiles(full_name)")
-      .eq("support_case_id", caseId)
-      .order("occurred_at", { ascending: false })
-      .limit(50),
-    supabase
-      .from("support_reply_attempts")
-      .select("id, status, final_text, error_message, requested_at, resolved_at, profiles(full_name)")
-      .eq("support_case_id", caseId)
-      .order("requested_at", { ascending: false })
-      .limit(20),
-  ]);
-
   // Erro em qualquer uma das três se junta: mostrar a conversa sem dizer que
   // o histórico falhou seria o "sem dado" indistinguível de "erro" que D-067
   // auditou a sessão inteira.
   const sideError =
-    messagesResult.error ?? deadlinesResult.error ?? eventsResult.error ?? attemptsResult.error;
+    messagesResult.error ??
+    deadlinesResult.error ??
+    eventsResult.error ??
+    attemptsResult.error;
 
   const messages = (messagesResult.data ?? []) as MessageRow[];
   const deadlines = (deadlinesResult.data ?? []) as DeadlineRow[];
   const events = (eventsResult.data ?? []) as unknown as CaseEventRow[];
   const attempts = (attemptsResult.data ?? []) as unknown as ReplyAttemptRow[];
-  const podeResponder = supportCase.channel === "QUESTION" && supportCase.resolved_at === null;
+  const podeResponder =
+    supportCase.channel === "QUESTION" && supportCase.resolved_at === null;
 
   // Templates da organização (D-111) — só quando a caixa de resposta vai
   // aparecer; falha aqui degrada para "sem templates", nunca derruba a tela
@@ -242,16 +275,20 @@ export default async function AtendimentoDetalhePage({
       </p>
 
       <h1 style={{ margin: "0 0 var(--sb-space-1)", fontSize: "1.375rem" }}>
-        {supportChannelLabel(supportCase.channel)} #{supportCase.external_case_id}
+        {supportChannelLabel(supportCase.channel)} #
+        {supportCase.external_case_id}
       </h1>
 
       <p style={{ ...meta, margin: "0 0 var(--sb-space-3)" }}>
         {supportCase.ml_accounts?.label ?? "—"}
-        {supportCase.external_status !== null && ` · Mercado Livre: ${supportCase.external_status}`}
-        {supportCase.external_substatus !== null && ` (${supportCase.external_substatus})`}
+        {supportCase.external_status !== null &&
+          ` · Mercado Livre: ${supportCase.external_status}`}
+        {supportCase.external_substatus !== null &&
+          ` (${supportCase.external_substatus})`}
         {supportCase.is_mediation && " · Mediação"}
         {supportCase.has_return && " · Devolução"}
-        {supportCase.pack_id !== null && ` · Pack ${String(supportCase.pack_id)}`}
+        {supportCase.pack_id !== null &&
+          ` · Pack ${String(supportCase.pack_id)}`}
       </p>
 
       {sideError !== null && (
@@ -273,12 +310,17 @@ export default async function AtendimentoDetalhePage({
       >
         <div>
           <div style={meta}>Situação</div>
-          <div style={{ display: "flex", gap: "0.25rem", marginTop: "0.25rem" }}>
+          <div
+            style={{ display: "flex", gap: "0.25rem", marginTop: "0.25rem" }}
+          >
             <StatusPill
               code={supportCase.internal_status}
               label={supportInternalStatusLabel(supportCase.internal_status)}
             />
-            <StatusPill code={supportCase.priority} label={supportPriorityLabel(supportCase.priority)} />
+            <StatusPill
+              code={supportCase.priority}
+              label={supportPriorityLabel(supportCase.priority)}
+            />
           </div>
         </div>
 
@@ -305,11 +347,16 @@ export default async function AtendimentoDetalhePage({
             ) : reference.href === null ? (
               reference.code
             ) : (
-              <Link href={reference.href} style={{ color: "var(--sb-primary)" }}>
+              <Link
+                href={reference.href}
+                style={{ color: "var(--sb-primary)" }}
+              >
                 {reference.code}
               </Link>
             )}
-            {reference?.title != null && <div style={meta}>{reference.title}</div>}
+            {reference?.title != null && (
+              <div style={meta}>{reference.title}</div>
+            )}
           </div>
         </div>
 
@@ -338,7 +385,15 @@ export default async function AtendimentoDetalhePage({
             Nenhuma mensagem sincronizada para este atendimento.
           </p>
         ) : (
-          <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: "var(--sb-space-2)" }}>
+          <ol
+            style={{
+              listStyle: "none",
+              margin: 0,
+              padding: 0,
+              display: "grid",
+              gap: "var(--sb-space-2)",
+            }}
+          >
             {messages.map((message) => {
               const fromSeller = message.direction === "OUTBOUND";
 
@@ -360,7 +415,8 @@ export default async function AtendimentoDetalhePage({
                   }}
                 >
                   <div style={{ ...meta, marginBottom: "0.25rem" }}>
-                    {supportSenderKindLabel(message.sender_kind)} · {formatDateTime(message.occurred_at)}
+                    {supportSenderKindLabel(message.sender_kind)} ·{" "}
+                    {formatDateTime(message.occurred_at)}
                     {message.body_state !== "AVAILABLE" &&
                       ` · ${supportBodyStateLabel(message.body_state)}`}
                   </div>
@@ -375,11 +431,15 @@ export default async function AtendimentoDetalhePage({
       {deadlines.length > 0 && (
         <section style={section}>
           <h2 style={sectionTitle}>Prazos</h2>
-          <ul style={{ margin: 0, paddingLeft: "1.25rem", fontSize: "0.875rem" }}>
+          <ul
+            style={{ margin: 0, paddingLeft: "1.25rem", fontSize: "0.875rem" }}
+          >
             {deadlines.map((deadline) => (
               <li key={deadline.id}>
                 {supportDeadlineKindLabel(deadline.deadline_kind)}:{" "}
-                {deadline.due_at === null ? "sem prazo definido" : formatDateTime(deadline.due_at)}
+                {deadline.due_at === null
+                  ? "sem prazo definido"
+                  : formatDateTime(deadline.due_at)}
                 {/* A FONTE do prazo é obrigatória na exibição (D-084): prazo
                     ausente nunca pode virar estimativa apresentada como oficial. */}
                 <span style={meta}> · fonte: {deadline.source}</span>
@@ -404,10 +464,15 @@ export default async function AtendimentoDetalhePage({
       {attempts.length > 0 && (
         <section style={section}>
           <h2 style={sectionTitle}>Tentativas de envio</h2>
-          <ul style={{ margin: 0, paddingLeft: "1.25rem", fontSize: "0.875rem" }}>
+          <ul
+            style={{ margin: 0, paddingLeft: "1.25rem", fontSize: "0.875rem" }}
+          >
             {attempts.map((attempt) => (
               <li key={attempt.id} style={{ marginBottom: "0.375rem" }}>
-                <StatusPill code={attempt.status} label={replyAttemptLabel(attempt.status)} />
+                <StatusPill
+                  code={attempt.status}
+                  label={replyAttemptLabel(attempt.status)}
+                />
                 <span style={meta}>
                   {" "}
                   · {formatDateTime(attempt.requested_at)} ·{" "}
@@ -415,9 +480,13 @@ export default async function AtendimentoDetalhePage({
                 </span>
                 {/* O texto enviado fica visível: é auditoria do que o cliente
                     recebeu, e quem enxerga o atendimento já enxerga o transcript. */}
-                <div style={{ whiteSpace: "pre-wrap" }}>{attempt.final_text}</div>
+                <div style={{ whiteSpace: "pre-wrap" }}>
+                  {attempt.final_text}
+                </div>
                 {attempt.error_message !== null && (
-                  <div style={{ color: "var(--sb-danger)", fontSize: "0.8125rem" }}>
+                  <div
+                    style={{ color: "var(--sb-danger)", fontSize: "0.8125rem" }}
+                  >
                     {attempt.error_message}
                   </div>
                 )}
@@ -431,9 +500,13 @@ export default async function AtendimentoDetalhePage({
         <h2 style={sectionTitle}>Histórico</h2>
 
         {events.length === 0 ? (
-          <p style={{ color: "var(--sb-text-soft)" }}>Nenhum evento registrado ainda.</p>
+          <p style={{ color: "var(--sb-text-soft)" }}>
+            Nenhum evento registrado ainda.
+          </p>
         ) : (
-          <ul style={{ margin: 0, paddingLeft: "1.25rem", fontSize: "0.875rem" }}>
+          <ul
+            style={{ margin: 0, paddingLeft: "1.25rem", fontSize: "0.875rem" }}
+          >
             {events.map((event) => (
               <li key={event.id}>
                 {supportCaseEventLabel(event.event_type)}
@@ -456,7 +529,8 @@ export default async function AtendimentoDetalhePage({
           ` · Última do cliente: ${formatDateTime(supportCase.last_inbound_at)}`}
         {supportCase.last_outbound_at !== null &&
           ` · Última sua: ${formatDateTime(supportCase.last_outbound_at)}`}
-        {supportCase.resolved_at !== null && ` · Resolvido em: ${formatDateTime(supportCase.resolved_at)}`}
+        {supportCase.resolved_at !== null &&
+          ` · Resolvido em: ${formatDateTime(supportCase.resolved_at)}`}
       </p>
     </Shell>
   );

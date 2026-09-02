@@ -364,6 +364,7 @@ Cada linha tem o antes/depois real, não estimativa.
 | 2026-09-01 | Filtro de marcas (3 telas) | 34 kB de corpo, **9 de 19 marcas** | 606 bytes, **19 de 19** | `distinct` no Postgres (`get_supplier_brands`) no lugar de `new Set(...)` sobre 3.550 linhas truncadas em 1.000 | D-194 |
 | 2026-09-02 | `Shell` (cabeçalho de **toda** tela) | 3 idas em série, em cada navegação | 1 ida | `Promise.all` — o waterfall de maior alcance do app | D-195 |
 | 2026-09-02 | Leituras em fila em 9 telas | 2 a 3 idas em série antes de renderizar | 1 ida | `Promise.all` nas leituras independentes; **14 sítios** no total, guarda `check:waterfalls` no CI | D-195 |
+| 2026-09-02 | 8 sítios que a regex não via | 2 a 3 idas em série (uma delas saindo do navegador) | 1 ida | `Promise.all`, filtro redundante removido, preferências do toast vindas do servidor | D-197 |
 
 **Lição de D-195 — o piso de latência, e o que ele NÃO é.** Deste ambiente
 contra o Supabase Dev, uma leitura trivial (`organizations?select=id&limit=1`)
@@ -374,6 +375,17 @@ D-185 já havia isolado: o custo é **por chamada** e quase independente do que 
 chamada faz. Duas leituras independentes em fila custam duas; juntas, uma. Por
 isso a correção de D-195 não precisou de nenhuma medição de antes/depois por
 tela: a conta é estrutural, e o guarda de CI a mantém.
+
+**Lição de D-197 — o guarda precisa ser conferido contra o defeito, não contra
+a correção.** `check:waterfalls` passava verde no repo inteiro e mesmo assim
+estava cego para quatro classes. Três só apareceram quando uma varredura de
+agentes LEU o código em vez de casar regex; a quarta — a pior — só apareceu ao
+rodar o guarda contra o código ANTERIOR à correção: a variável se chamava
+`order` e o bloco continha `.order("position")`, então o guarda achava que
+havia dependência onde não havia. **Um falso negativo silencioso é pior que
+guarda nenhum**, porque a esteira fica verde e a garantia sumiu. Todo guarda
+estático da casa roda contra as duas versões: a corrigida (não pode acusar) e
+a anterior (tem que acusar).
 
 ⚠️ **E o recorte da varredura decide o que ela acha.** A primeira olhou só
 `page.tsx` e quase perdeu o maior achado: `components/shell.tsx` fazia **três**
