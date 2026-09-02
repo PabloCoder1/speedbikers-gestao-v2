@@ -5347,18 +5347,57 @@ describe("get_system_health (D-176, Saúde do Sistema)", () => {
     );
   });
 
+  /**
+   * ESTE TESTE ESTAVA VAZIO. A versao anterior consultava
+   * `information_schema.columns`, que descreve TABELA e VIEW — nunca funcao:
+   * ela devolvia ZERO linhas (contra 14 de `job_runs`, conferido), e a
+   * afirmacao "statements nao esta na lista" passava sobre a lista vazia.
+   * Teria passado igual se a funcao devolvesse o SQL inteiro da migration,
+   * que e precisamente o que ela existe para impedir. Classe D-197: guarda
+   * verde e cego.
+   *
+   * A fonte que responde sobre funcao e `pg_get_function_result`. As duas
+   * primeiras asserçoes existem para que o teste nao possa voltar a ser vazio
+   * — se a consulta parar de achar a funcao, elas falham antes das negativas.
+   */
   it("não devolve o SQL das migrations — só versão e nome", async () => {
-    const colunas = await client.query<{ column_name: string }>(
-      `select column_name from information_schema.columns
-        where table_schema = 'public' and table_name = 'get_system_health'`,
+    const assinatura = await client.query<{ result: string }>(
+      `select pg_get_function_result(p.oid) as result
+         from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' and p.proname = 'get_system_health'`,
     );
 
-    const nomes = colunas.rows.map((c) => c.column_name);
+    const result = assinatura.rows[0]?.result ?? "";
+
+    expect(result.startsWith("TABLE(")).toBe(true);
+    expect(result).toContain("db_migration_version");
 
     // `statements` e `rollback` carregam o SQL inteiro da migration: nunca
     // podem sair por aqui.
-    expect(nomes).not.toContain("statements");
-    expect(nomes).not.toContain("rollback");
+    expect(result).not.toContain("statements");
+    expect(result).not.toContain("rollback");
+  });
+
+  /**
+   * A assinatura e contrato: D-182 recusou a correcao de escopo que a mudasse,
+   * porque `apps/web/app/saude/page.tsx` le `rows[0]` para a migration e
+   * itera as demais colunas para os jobs, e `packages/db/src/types.ts` e
+   * gerado a partir dela. Fixar as 9 colunas aqui obriga quem for muda-las a
+   * passar pela pagina e pelos tipos de proposito, em vez de descobrir depois.
+   */
+  it("mantém exatamente as 9 colunas que a página e os tipos consomem", async () => {
+    const assinatura = await client.query<{ result: string }>(
+      `select pg_get_function_result(p.oid) as result
+         from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' and p.proname = 'get_system_health'`,
+    );
+
+    expect(assinatura.rows[0]?.result).toBe(
+      "TABLE(db_migration_version text, db_migration_name text, " +
+        "db_migrations_count bigint, db_migration_applied_at timestamp with time zone, " +
+        "job_type text, job_status text, job_last_run_at timestamp with time zone, " +
+        "job_age_hours numeric, job_failures_24h bigint)",
+    );
   });
 
   it("jobs vêm com idade e falhas de 24h, e a idade nunca é negativa", async () => {
@@ -5373,6 +5412,128 @@ describe("get_system_health (D-176, Saúde do Sistema)", () => {
       }
       expect(Number(row.job_failures_24h)).toBeGreaterThanOrEqual(0);
     }
+  });
+
+  // ------------------------------------------------------------------
+  // Escopo de organizacao (item 7 do HANDOFF, aberto por D-182)
+  //
+  // A funcao devolve telemetria de PLATAFORMA (`job_runs` de todas as
+  // organizacoes) protegida por um papel de escopo de TENANT: o guard
+  // pergunta "e ADMIN de alguma organizacao?", nunca "de qual". Com uma
+  // organizacao ela esta correta por ACIDENTE. Estes testes entram pela
+  // SEGUNDA, que o fixture global ja tem (ORG_OUTRA/DE_OUTRA_ORG).
+  // ------------------------------------------------------------------
+
+  /**
+   * Semeia `job_runs` e consulta como um usuario na MESMA transacao,
+   * revertida no fim.
+   *
+   * Nao da para semear e limpar depois: `job_runs` e append-only por trigger
+   * (20260820160000) e o banco RECUSA o DELETE. A transacao revertida e a
+   * unica forma de nao deixar linha de teste para tras.
+   */
+  async function comJobRuns<T>(seed: string, userId: string, sql: string): Promise<T[]> {
+    await client.query("begin");
+
+    try {
+      // O seed roda como dono da tabela: `authenticated` nao tem grant de
+      // INSERT em `job_runs` — e nao deve ter.
+      await client.query(seed);
+      await client.query("set local role authenticated");
+      await client.query("select set_config('request.jwt.claims', $1, true)", [
+        JSON.stringify({ sub: userId }),
+      ]);
+
+      const result = await client.query(sql);
+
+      return result.rows as T[];
+    } finally {
+      await client.query("rollback");
+    }
+  }
+
+  const JOBS_VISIVEIS =
+    `select job_type, job_status, job_last_run_at, job_failures_24h
+       from public.get_system_health() where job_type is not null`;
+
+  /** `failed` exige `retryable` nao nulo (job_runs_failure_fields_match_status). */
+  function inserirJob(org: string, tipo: string, status: "done" | "failed", quando: string): string {
+    const retryable = status === "failed" ? "true" : "null";
+
+    return `insert into public.job_runs
+              (organization_id, job_id, job_type, dedupe_key, attempt, status, retryable, started_at, finished_at)
+            values ('${org}', gen_random_uuid(), '${tipo}', gen_random_uuid()::text, 1, '${status}', ${retryable}, ${quando}, ${quando})`;
+  }
+
+  it("ADMIN vê job da PRÓPRIA organização", async () => {
+    const rows = await comJobRuns<{ job_type: string }>(
+      inserirJob(ORG_SB, "rlstest.job.sb", "done", "now()"),
+      ADMIN_SB,
+      JOBS_VISIVEIS,
+    );
+
+    expect(rows.map((r) => r.job_type)).toContain("rlstest.job.sb");
+  });
+
+  it("ADMIN de outra organização NÃO vê o job desta", async () => {
+    const rows = await comJobRuns<{ job_type: string }>(
+      inserirJob(ORG_SB, "rlstest.job.sb", "done", "now()"),
+      DE_OUTRA_ORG,
+      JOBS_VISIVEIS,
+    );
+
+    expect(rows.map((r) => r.job_type)).not.toContain("rlstest.job.sb");
+  });
+
+  /**
+   * A regressao que D-182 verificou e por isso RECUSOU a correcao obvia:
+   * filtrar `job_runs` pela organizacao do chamador apaga o heartbeat, porque
+   * `system.ping` e enfileirado com uma organizacao SENTINELA que nao existe
+   * em `organizations` (`apps/api/src/app.ts`). O UUID aparece aqui de
+   * proposito — o teste existe para provar que o valor que a `api` realmente
+   * enfileira sobrevive ao escopo.
+   */
+  it("job de PLATAFORMA continua visível — é o heartbeat, e ele é a razão da tela", async () => {
+    const rows = await comJobRuns<{ job_type: string }>(
+      inserirJob("00000000-0000-4000-8000-000000000000", "system.ping", "done", "now()"),
+      ADMIN_SB,
+      JOBS_VISIVEIS,
+    );
+
+    expect(rows.map((r) => r.job_type)).toContain("system.ping");
+  });
+
+  /**
+   * O vazamento que sobrevive a um escopo feito pela metade. O mesmo
+   * `job_type` roda em TODA organizacao (`sync.orders.window`), entao a linha
+   * aparece legitimamente para os dois ADMINs — o que nao pode atravessar e o
+   * NUMERO: a ultima execucao e a contagem de falhas da organizacao alheia.
+   */
+  it("falhas e última execução de outra organização não entram na linha do mesmo job_type", async () => {
+    const rows = await comJobRuns<{
+      job_type: string;
+      job_status: string;
+      job_failures_24h: string;
+    }>(
+      [
+        // A organizacao do chamador: execucao ANTIGA e bem-sucedida.
+        inserirJob(ORG_OUTRA, "rlstest.job.compartilhado", "done", "now() - interval '5 hours'"),
+        // A alheia: mais RECENTE e falhada, tres vezes.
+        inserirJob(ORG_SB, "rlstest.job.compartilhado", "failed", "now() - interval '1 hour'"),
+        inserirJob(ORG_SB, "rlstest.job.compartilhado", "failed", "now() - interval '1 hour'"),
+        inserirJob(ORG_SB, "rlstest.job.compartilhado", "failed", "now() - interval '1 hour'"),
+      ].join(";"),
+      DE_OUTRA_ORG,
+      JOBS_VISIVEIS,
+    );
+
+    const linha = rows.find((r) => r.job_type === "rlstest.job.compartilhado");
+
+    // A linha existe: o job e dele tambem.
+    expect(linha).toBeDefined();
+    // Mas o estado e a contagem sao os DELE, nao os da organizacao alheia.
+    expect(linha?.job_status).toBe("done");
+    expect(Number(linha?.job_failures_24h)).toBe(0);
   });
 });
 

@@ -2,6 +2,11 @@
 
 Este arquivo registra decisões já aprovadas para evitar que agentes futuros reabram escolhas sem motivo.
 
+> **Lacunas na numeração.** `D-196` não existe aqui: o número foi usado por
+> outra frente de trabalho. Este aviso mora na FONTE porque estava em
+> `docs/DECISIONS_INDEX.md`, que é gerado — a nota fora escrita à mão lá e a
+> primeira regeneração a apagaria (achado de D-209).
+
 ## D-001 — Mesmo repositório, branch V3 limpa
 
 **Decisão:** manter `PabloCoder1/speedbikers-gestao-v2` como repositório único. A `main` preserva a V2 e a `v3` é reconstruída de forma limpa.
@@ -4561,6 +4566,50 @@ A correcao emite `order.return.unreversed` em `domain_events`, onde a casa ja ol
 **Verificacao:** `check` 29/29, build 8/8, `check:embeds` 33/33, `check:waterfalls` 52 arquivos, worker 522/522.
 
 **Impacto:** `packages/domain/src/inventory/return-reversal.ts`, `packages/domain/src/events/catalog.ts`, `packages/domain/src/inventory/index.ts`, `apps/worker/src/handlers/claim-return.ts`, `apps/web/lib/labels.ts`, `apps/web/lib/labels.test.ts` (novo).
+
+## D-209 - O escopo que faltava tinha uma terceira saida, e o guarda ao lado estava vazio
+
+**Contexto:** item 7 dos "Proximos passos" do HANDOFF, aberto por D-182 e registrado como "a resolver ANTES da segunda organizacao". `get_system_health` devolve telemetria de PLATAFORMA (`job_runs` de todas as organizacoes) protegida por um papel de escopo de TENANT: o guard pergunta *"e ADMIN de alguma organizacao?"*, nunca *"de qual"*. Com uma organizacao, correta por acidente.
+
+**O defeito foi REPRODUZIDO antes de corrigido**, com o fixture de duas organizacoes que ja existia (`ORG_SB`/`ADMIN_SB` e `ORG_OUTRA`/`DE_OUTRA_ORG`, este ultimo ADMIN da segunda):
+
+| teste | contra a versao anterior |
+|---|---|
+| ADMIN de outra organizacao nao ve o job desta | **falha** — via `rlstest.job.sb` |
+| falhas e ultima execucao do mesmo `job_type` nao atravessam | **falha** — lia `failed` da organizacao alheia como propria execucao |
+
+**As duas correcoes obvias continuam recusadas, e D-182 ja tinha dito por que.** Filtrar `job_runs` pela organizacao do chamador **apaga o heartbeat**: `system.ping` e enfileirado com a organizacao SENTINELA `00000000-0000-4000-8000-000000000000` (`apps/api/src/app.ts`), que nao e organizacao de ninguem — e o heartbeat e a unica prova de que `api -> Cloud Tasks -> worker` esta inteiro. Mudar a assinatura quebra a pagina e os tipos gerados.
+
+**A terceira saida:** a linha aparece quando pertence a uma organizacao onde o chamador e ADMIN **ou** quando nao pertence a organizacao nenhuma.
+
+**"Nao pertence a organizacao nenhuma" e derivado do CATALOGO** (`not exists` contra `organizations`), nao do UUID sentinela copiado para o SQL. O sentinela ja tem UMA definicao; copia-lo criaria a segunda, que e literalmente como "Full atual" acabou com tres definicoes divergentes (D-204). De quebra, cobre qualquer job de plataforma futuro sem editar a funcao.
+
+**O que continua com escopo de plataforma, de proposito:** versao, nome e contagem da migration. Nao sao dado de tenant — sao um unico valor para o banco inteiro, e sao a pergunta que a tela existe para responder. Escopa-las nao protegeria ninguem e esvaziaria a tela.
+
+**A assinatura nao mudou, e isso foi provado pelo CATALOGO, nao por leitura:** `pg_get_function_result` devolve as mesmas 9 colunas, na mesma ordem, com os mesmos tipos. `packages/db/src/types.ts` nao foi tocado.
+
+⚠️ **E aqui um erro meu, corrigido no caminho:** rodei `pnpm --filter @sb/db run gen:types` para "provar" que os tipos nao mudavam, e ele produziu **476 linhas de diff**. Nao era a minha mudanca: o arquivo versionado e gerado pelo **MCP** e carrega correcoes manuais marcadas (D-133/D-147), e o gerador da CLI local produz outro formato e as apagaria. Revertido. A prova certa era o catalogo desde o inicio.
+
+**O conjunto, e nao `has_org_role` por linha.** O helper canonico de D-180 e escalar e receberia uma COLUNA: viraria uma chamada por linha sobre 271 mil, que e o padrao que D-181 mediu em 9.104 ms. O plano confirma a escolha — `hashed SubPlan` nas duas pontas, resolvidas uma vez. Nas 21 policies o escalar era aceitavel porque as tabelas sao pequenas (D-182 mediu o ganho total em 1-2 ms); aqui nao e.
+
+**A correcao de seguranca saiu MAIS BARATA que o defeito:** 308,7/287,9 ms → **261,9/267,7 ms**, duas passadas por versao (D-183). O filtro remove 89.491 de 271.184 linhas antes do `distinct on`, que e a parte cara. Numeros, plano e a ressalva de que a semeadura e sintetica: `docs/PERFORMANCE.md`.
+
+**O tamanho do defeito, medido:** das 41 linhas visiveis, **13** traziam a ultima execucao de outra organizacao e **40** traziam contagem de falhas inflada — **1.676 falhas alheias**. A contagem de LINHAS e identica nas duas versoes (41 e 41), porque o mesmo `job_type` roda em toda organizacao: **o que vazava era o conteudo, nao a existencia**. Um escopo feito pela metade — filtrar a lista e esquecer o agregado — passaria despercebido, e e por isso que o teste do agregado existe.
+
+**O achado de tabela ao lado: um guarda VAZIO, e ele guardava o `security definer`.** O teste *"nao devolve o SQL das migrations"* consultava `information_schema.columns`, que descreve TABELA e VIEW — **nunca funcao**. Ele recebia ZERO linhas (contra 14 de `job_runs`, conferido) e afirmava "statements nao esta na lista": passava sobre a lista vazia, e teria passado igual se a funcao devolvesse o SQL inteiro da migration — que e precisamente o que ela existe para impedir, sendo `security definer` sobre schema privado.
+
+**A dupla prova de D-197 foi feita, e nao afirmada.** Numa transacao revertida, criei uma versao deliberadamente vazada (`returns table (db_migration_version text, statements text[])`):
+
+| | o que le nessa versao | veredito |
+|---|---|---|
+| guarda NOVO (`pg_get_function_result`) | `TABLE(db_migration_version text, statements text[])` | **acusa** |
+| guarda ANTIGO (`information_schema.columns`) | zero linhas | **cego** |
+
+**A assinatura virou contrato versionado**, no mesmo espirito de D-182 (a lista de RPCs expostas): um teste fixa as 9 colunas exatas. O risco nao e a assinatura existir, e ela MUDAR sem que ninguem passe pela pagina e pelos tipos. Ajuda que o Postgres recuse `create or replace` que mude o tipo de retorno — mudar exige `drop function` deliberado, e agora tambem exige encarar o teste.
+
+**Verificacao:** **531/531** de integracao em banco recriado (+5: quatro de escopo, um de contrato de assinatura; o guarda vazio foi REESCRITO, nao removido), `check` 29/29, build 8/8, `check:embeds` 33/33, `check:waterfalls` 52 arquivos, 13/13 Playwright. Migration aplicada e conferida no local; **ainda NAO aplicada no Dev** — ver HANDOFF.
+
+**Impacto:** `supabase/migrations/20260902184130_system_health_scoped_to_org.sql`, `packages/db/src/rls.integration.test.ts`. Nenhuma mudanca de aplicacao: `apps/web/app/saude/page.tsx` e `packages/db/src/types.ts` seguem intactos.
 
 ## Como adicionar nova decisao
 

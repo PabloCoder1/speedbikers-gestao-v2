@@ -366,6 +366,7 @@ Cada linha tem o antes/depois real, não estimativa.
 | 2026-09-02 | Leituras em fila em 9 telas | 2 a 3 idas em série antes de renderizar | 1 ida | `Promise.all` nas leituras independentes; **14 sítios** no total, guarda `check:waterfalls` no CI | D-195 |
 | 2026-09-02 | 8 sítios que a regex não via | 2 a 3 idas em série (uma delas saindo do navegador) | 1 ida | `Promise.all`, filtro redundante removido, preferências do toast vindas do servidor | D-197 |
 | 2026-09-02 | Materialização das métricas diárias | **218,5** linhas escritas por recompute | **1,5** | `on conflict do update ... where a linha difere` no lugar de apaga-e-insere; remedido no Dev com tráfego real | D-199 |
+| 2026-09-02 | `get_system_health` (escopo de organização) | 308,7 / 287,9 ms | **261,9 / 267,7 ms** | filtrar `job_runs` por CONJUNTO antes do `distinct on`; a correção de segurança saiu **mais barata** que o defeito | D-209 |
 
 **Lição de D-195 — o piso de latência, e o que ele NÃO é.** Deste ambiente
 contra o Supabase Dev, uma leitura trivial (`organizations?select=id&limit=1`)
@@ -376,6 +377,63 @@ D-185 já havia isolado: o custo é **por chamada** e quase independente do que 
 chamada faz. Duas leituras independentes em fila custam duas; juntas, uma. Por
 isso a correção de D-195 não precisou de nenhuma medição de antes/depois por
 tela: a conta é estrutural, e o guarda de CI a mantém.
+
+### Escopo de organização em `get_system_health` (D-209) — a correção de segurança saiu mais barata
+
+O item 7 do HANDOFF era de **segurança**, não de performance: a função devolvia
+`job_runs` de todas as organizações protegida por um papel de escopo de tenant.
+A medição entrou porque a DoD da trilha 8B pede antes/depois — e o resultado
+inverteu a expectativa de que escopar custaria tempo.
+
+| | Anterior | Nova |
+|---|---|---|
+| passada 1 | 308,7 ms | **261,9 ms** |
+| passada 2 (quente) | 287,9 ms | **267,7 ms** |
+
+**Duas passadas por versão, por causa de D-183** — a primeira medição de
+`get_sku_timeline` marcou 3.308 ms e a segunda 57 ms, e quase virou uma
+otimização inútil. Aqui as duas passadas concordam: a diferença é real, não
+cache frio.
+
+**Por que a versão escopada é mais rápida:** o filtro remove linhas **antes**
+do `distinct on (job_type)`, que é a parte cara. Foram **89.491 de 271.184**
+linhas removidas nesta semeadura — o sort trabalha sobre um terço a menos.
+
+**A forma do plano é o que garante isso, e foi conferida:**
+
+```
+Seq Scan on job_runs r
+  Filter: ((ANY (organization_id = (hashed SubPlan 2).col1))
+        OR (NOT (ANY (organization_id = (hashed SubPlan 4).col1))))
+  Rows Removed by Filter: 89491
+```
+
+`hashed SubPlan` nas duas pontas: cada subconsulta é resolvida **uma vez** e
+sondada por linha. É a forma de conjunto de D-181, e foi por isso que o helper
+escalar `private.has_org_role(coluna, ...)` **não** foi usado aqui — ele
+receberia uma coluna e viraria uma chamada por linha, sobre 271 mil linhas, que
+é exatamente o padrão que D-181 mediu em 9.104 ms.
+
+⚠️ **A semeadura é SINTÉTICA e o número não é do Dev.** O banco local nasce
+vazio; semeei 271.184 linhas para bater com a contagem real do Dev, com 40
+tipos de job espalhados por duas organizações mais o sentinela. O que transfere
+é a **forma** (o plano, o sinal da diferença), não a latência absoluta. O Dev
+tem UMA organização, onde este defeito está dormente por definição — medir lá
+não produziria o contraste.
+
+**O tamanho do defeito, na mesma semeadura.** Comparando as duas versões lado a
+lado para o mesmo ADMIN, das 41 linhas visíveis:
+
+| | |
+|---|---|
+| linhas com `job_last_run_at` de outra organização | **13 de 41** |
+| linhas com `job_failures_24h` inflado | **40 de 41** |
+| falhas alheias somadas ao número lido | **1.676** |
+
+A contagem de linhas é **idêntica** nas duas versões (41 e 41) — o mesmo
+`job_type` roda em toda organização, então a linha aparece legitimamente para
+os dois ADMINs. O que vazava era o **conteúdo**, não a existência: um escopo
+feito pela metade (filtrar a lista, esquecer o agregado) passaria despercebido.
 
 ### Marco para remedir o Realtime (aberto desde D-199)
 

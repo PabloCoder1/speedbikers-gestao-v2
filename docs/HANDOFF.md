@@ -12,12 +12,12 @@
 
 | | |
 |---|---|
-| **Atualizado em** | 2026-09-01 |
+| **Atualizado em** | 2026-09-02 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `c19a879` (D-206) — esta fatia, D-207, é o commit seguinte |
-| **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **34 commits atrás** |
+| **HEAD conhecido** | `ded1ddf` (D-208) — esta fatia, D-209, é o commit seguinte |
+| **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **57 commits atrás** (o «34» registrado aqui estava errado: eram 55 já em `c19a879`; medido com `git rev-list --count fc39c27..HEAD`) |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
-| **Migrations** | 123 locais == 123 no Dev — **drift resolvido em D-207**, sem drift |
+| **Migrations** | **124 locais**, 123 no Dev até o push — a CI aplica (job `aplicar migrations no Supabase Dev`, só em `v3`). Sem drift: o caminho é o push, **nunca** o MCP (lição de D-207) |
 | **Frente atual** | Trilha 8B — P0 fechado (A–H); em P1 |
 
 ### O que está pronto
@@ -49,6 +49,16 @@ Medidos contra o Dev em 2026-09-01, não herdados de documentação.
 | ~~P0-H~~ | ~~Demais RPCs fora do budget~~ | ✅ fechado em D-183 — `get_sku_sales_baseline` **1.334 ms → 49 ms**; `get_sku_timeline` nunca foi problema (3.308 ms era cache frio, o real é 57 ms); a Central de Notificações não estava lenta, estava **contando errado** |
 
 **Todo o P0 da trilha 8B fechou** — A a H. A frente passa para o P1.
+
+⚠️ **"A a H" é o recorte dos itens NOMEADOS.** O bloco P0 do `docs/ROADMAP.md`
+tem mais três itens que nunca receberam letra, e dizer "P0 fechado" sem essa
+ressalva os torna invisíveis:
+
+| item | estado |
+|---|---|
+| ~~`get_system_health` com escopo de plataforma~~ | ✅ **fechado em D-209** |
+| `ml_accounts` com UPDATE/DELETE para `authenticated` sem consumidor e sem auditoria | **aberto** |
+| `pg_default_acl` de funções (o que D-182 deixou) | **aberto** |
 
 Números completos e método: `docs/PERFORMANCE.md`.
 
@@ -210,6 +220,18 @@ Números completos e método: `docs/PERFORMANCE.md`.
   `job_runs` era 42.936 contra 307.756 linhas reais, e isso revelou que a
   janela era de 23 horas, não de 13 dias. Toda conclusão tirada de
   `idx_scan = 0` depende dessa janela.
+- **Não rode `gen:types` da CLI local para conferir tipo.** `packages/db/src/types.ts`
+  é gerado pelo **MCP** e carrega correções manuais marcadas "CORRECAO MANUAL"
+  (D-133/D-147). O gerador da CLI produz outro formato e as apaga: em D-209 a
+  conferência produziu **476 linhas de diff** que não tinham nada a ver com a
+  mudança. Para "a assinatura mudou?", a fonte é o catálogo
+  (`pg_get_function_result`), não o gerador.
+- **Um guarda pode estar consultando a fonte errada e passar sempre.**
+  `information_schema.columns` descreve TABELA e VIEW, nunca FUNÇÃO. Um teste
+  de D-176 afirmava "a função não devolve `statements`" sobre uma lista **vazia**
+  — verde desde que nasceu, e teria passado igual se a função vazasse o SQL
+  inteiro das migrations. Antes de confiar num guarda, pergunte se a consulta
+  dele devolve alguma linha **na versão correta** (D-209).
 - **`n_live_tup` mente, e mentiu feio.** As estatísticas do Dev estão velhas:
   `job_runs` estimava ~6 mil e tem **271.184**; `ml_credentials` estimava 0 e
   tem **4 credenciais reais**. Para qualquer raciocínio de segurança ou de
@@ -317,9 +339,22 @@ Nada disto pode ser feito por um agente.
    construção. Registrado com os números para ninguém re-escalar ao ver "80%
    de falha" em `job_runs`.
 
-7. **Antes da segunda organização** — `get_system_health` tem escopo de
-   plataforma com guard de tenant (D-182). Não é urgente hoje e não tem
-   correção óbvia: as duas tentativas naturais causam regressão verificada.
+7. **~~Antes da segunda organização — `get_system_health`~~ — FECHADO em
+   D-209.** A correção não era nenhuma das duas tentativas que D-182 tinha
+   verificado e recusado: a linha de `job_runs` aparece quando pertence a uma
+   organização onde o chamador é ADMIN **ou** quando não pertence a organização
+   nenhuma — e "nenhuma" vem do **catálogo**, não do UUID sentinela copiado
+   para o SQL. O heartbeat `system.ping` sobrevive (é o que a primeira
+   tentativa apagava) e a assinatura não mudou (é o que a segunda quebrava),
+   provado por `pg_get_function_result`. **A correção saiu mais barata que o
+   defeito**: 308,7 → 261,9 ms. De quebra, o guarda vizinho estava **vazio** e
+   foi reescrito — ver D-209 e "Riscos ativos".
+
+8. **O P0 da 8B ainda tem dois itens sem letra** (tabela acima), e os dois
+   independem do deploy: `ml_accounts` (revogar UPDATE/DELETE de
+   `authenticated` sem consumidor + trilha de auditoria, com o padrão de
+   D-175 já pronto nas duas tabelas irmãs) e `pg_default_acl` de funções. O
+   primeiro é a próxima fatia natural desta frente.
 
 ---
 

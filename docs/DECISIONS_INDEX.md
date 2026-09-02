@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **206** (D-001 a D-208; D-196 é de outra frente).
+Decisões registradas: **207** (D-001 a D-209).
 
 ## Por domínio
 
-### atendimento (25)
+### atendimento (28)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -43,8 +43,11 @@ Decisões registradas: **206** (D-001 a D-208; D-196 é de outra frente).
 - **D-177** — O contexto dos agentes virou problema de engenharia, e o bootstrap caiu de 1,2 MB para 7,6 KB
 - **D-184** — A unica leitura do caminho vivia na janela em que o pedido esta sem itens
 - **D-187** — Uma linha de `stock_movements` nao e telemetria: e o saldo
+- **D-199** — 485 mil escritas por dia para atualizar duas linhas
+- **D-200** — O cast escondia quais guardas eram reais, e foi o compilador que separou
+- **D-201** — "4xx a descarta sem repetir" e falso, e custou 2.234 execucoes em 7 dias
 
-### banco/rls (21)
+### banco/rls (23)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -67,8 +70,10 @@ Decisões registradas: **206** (D-001 a D-208; D-196 é de outra frente).
 - **D-183** — O CTE que o Postgres decidiu nao materializar, e o contador que contava a pagina
 - **D-185** — Nao era o PostgREST: era o round trip
 - **D-192** — O tipo gerado nao conhece a RLS, e por isso o cast estava certo
+- **D-198** — A triagem de indices nao produziu indice nenhum, e o motivo de cada metade e diferente
+- **D-207** — A migration que existia so no banco volta para o git
 
-### estoque (18)
+### estoque (19)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -88,8 +93,9 @@ Decisões registradas: **206** (D-001 a D-208; D-196 é de outra frente).
 - **D-166** — Margem operacional: so sobre pedidos COBERTOS, cobertura declarada -- o item de Vendas COMPLETO
 - **D-167** — Movimentacoes: o ledger vira extrato legivel, e o EXPLAIN reprovou duas versoes
 - **D-173** — Central Full: o GRAO do Full estava errado em duas leituras, e isso aparecia como fila de trabalho falsa
+- **D-204** — Tres definicoes de "Full atual", e as tres devolviam o mesmo numero
 
-### interface (11)
+### interface (13)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -102,8 +108,10 @@ Decisões registradas: **206** (D-001 a D-208; D-196 é de outra frente).
 - **D-178** — Escrita critica que falha nao pode deixar o handler seguir
 - **D-189** — Grava e so entao apaga: o pre-requisito que deixou o caminho mais seguro do que era
 - **D-190** — A pagina vira a unidade de escrita
+- **D-194** — O filtro de marcas escondia 10 das 19, e eu tinha chamado isso de cosmetico
+- **D-195** — O waterfall que se paga em toda tela estava no cabecalho, e a varredura quase nao olhou la
 
-### mercado-livre (35)
+### mercado-livre (36)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -140,8 +148,9 @@ Decisões registradas: **206** (D-001 a D-208; D-196 é de outra frente).
 - **D-170** — Visitas e conversao entram no catalogo, e catalogar revelou que a conversao estava errada em TRES lugares
 - **D-171** — O 429 das visitas: a defesa inteira estava no eixo que o Mercado Livre nao limita
 - **D-179** — Topico de webhook sem consumidor deixa de virar Cloud Task
+- **D-203** — O 429 do snapshot de visitas e real, e o dano que eu registrei nao era
 
-### outros (27)
+### outros (32)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -170,20 +179,11 @@ Decisões registradas: **206** (D-001 a D-208; D-196 é de outra frente).
 - **D-188** — O embed que so um teste de integracao consegue provar
 - **D-191** — A varredura das projecoes: 33 aceitas, 26 formas conferidas, e a guarda que faltava
 - **D-193** — A varredura do truncamento: dois cortes vivos, e um a 16 linhas de comecar
-- **D-194** — O filtro de marcas escondia 10 das 19, e eu tinha chamado isso de cosmetico
-- **D-195** — O waterfall que se paga em toda tela estava no cabecalho, e a varredura quase nao olhou la
 - **D-197** — O guarda de D-195 estava cego para quatro classes, e quem mostrou foi uma varredura que LEU o codigo
-- **D-198** — A triagem de indices nao produziu indice nenhum, e o motivo de cada metade e diferente
-- **D-199** — 485 mil escritas por dia para atualizar duas linhas
-- **D-200** — O cast escondia quais guardas eram reais, e foi o compilador que separou
-- **D-201** — "4xx a descarta sem repetir" e falso, e custou 2.234 execucoes em 7 dias
 - **D-202** — Falha definitiva passa a responder 200, e o 200 nao e fingir sucesso
-- **D-203** — O 429 do snapshot de visitas e real, e o dano que eu registrei nao era
-- **D-204** — Tres definicoes de "Full atual", e as tres devolviam o mesmo numero
 - **D-205** — O relatorio de saude carrega as armadilhas junto dos numeros
 - **D-206** — O mesmo ataque separa os quatro casts, e a regra nao era "depende"
-- **D-207** — A migration que existia so no banco volta para o git
-- **D-208** — O item que faltava nao tinha conserto, e o defeito era o silencio
+- **D-209** — O escopo que faltava tinha uma terceira saida, e o guarda ao lado estava vazio
 
 ### vendas/métricas (12)
 
@@ -200,7 +200,7 @@ Decisões registradas: **206** (D-001 a D-208; D-196 é de outra frente).
 - **D-157** — Metricas 5C de vendas: cancelamento sai do L1 de proposito, e a ressalva vira parte do card
 - **D-165** — Custos por pedido: as fontes da margem operacional persistidas, e NULL nunca vira zero
 
-### worker/infra (43)
+### worker/infra (44)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -245,4 +245,5 @@ Decisões registradas: **206** (D-001 a D-208; D-196 é de outra frente).
 - **D-174** — Dashboard de Fornecedor: o relacionamento real e o que foi COMPRADO, e so isso
 - **D-176** — Saude do Sistema: a tela responde a pergunta que esta sessao precisou fazer varias vezes
 - **D-186** — As leituras viram uma por pagina; as escritas ficam uma por pedido, e isso e a decisao
+- **D-208** — O item que faltava nao tinha conserto, e o defeito era o silencio
 
