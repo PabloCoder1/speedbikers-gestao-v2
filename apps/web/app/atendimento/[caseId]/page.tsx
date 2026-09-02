@@ -16,7 +16,6 @@ import {
   supportReplyStateLabel,
   supportSenderKindLabel,
 } from "../../../lib/labels";
-import type { SupportCaseLinkRow } from "../../../lib/support-case-reference";
 import { resolveSupportCaseReference } from "../../../lib/support-case-reference";
 import { createClient } from "../../../lib/supabase/server";
 import { TriageCell } from "../triage-cell";
@@ -70,15 +69,6 @@ interface ReplyAttemptRow {
   profiles: { full_name: string | null } | null;
 }
 
-interface CaseEventRow {
-  id: string;
-  event_type: string;
-  source: string;
-  occurred_at: string;
-  before: unknown;
-  after: unknown;
-  profiles: { full_name: string | null } | null;
-}
 
 const section: React.CSSProperties = { marginTop: "var(--sb-space-4)" };
 
@@ -209,29 +199,7 @@ export default async function AtendimentoDetalhePage({
     notFound();
   }
 
-  const supportCase = caseResult.data as unknown as {
-    id: string;
-    channel: string;
-    external_case_id: string;
-    external_status: string | null;
-    external_substatus: string | null;
-    internal_status: string;
-    priority: string;
-    remote_reply_state: string;
-    remote_reply_block_reason: string | null;
-    is_mediation: boolean;
-    has_return: boolean;
-    customer_external_id: number | null;
-    pack_id: number | null;
-    last_activity_at: string;
-    last_inbound_at: string | null;
-    last_outbound_at: string | null;
-    resolved_at: string | null;
-    assignee_id: string | null;
-    ml_accounts: { label: string } | null;
-    profiles: { full_name: string | null } | null;
-    support_case_links: SupportCaseLinkRow[] | null;
-  };
+  const supportCase = caseResult.data;
 
   // Erro em qualquer uma das três se junta: mostrar a conversa sem dizer que
   // o histórico falhou seria o "sem dado" indistinguível de "erro" que D-067
@@ -244,7 +212,7 @@ export default async function AtendimentoDetalhePage({
 
   const messages = (messagesResult.data ?? []) as MessageRow[];
   const deadlines = (deadlinesResult.data ?? []) as DeadlineRow[];
-  const events = (eventsResult.data ?? []) as unknown as CaseEventRow[];
+  const events = eventsResult.data ?? [];
   const attempts = (attemptsResult.data ?? []) as unknown as ReplyAttemptRow[];
   const podeResponder =
     supportCase.channel === "QUESTION" && supportCase.resolved_at === null;
@@ -280,7 +248,11 @@ export default async function AtendimentoDetalhePage({
       </h1>
 
       <p style={{ ...meta, margin: "0 0 var(--sb-space-3)" }}>
-        {supportCase.ml_accounts?.label ?? "—"}
+      {/* Sem `?.` desde D-206 -- mesma razao de `/anuncios/[itemId]`: a policy
+          de `support_cases` filtra por `accessible_accounts()`, derivada da
+          propria `ml_accounts`, entao um orfao esconde o ATENDIMENTO em vez de
+          devolver a conta nula. */}
+        {supportCase.ml_accounts.label}
         {supportCase.external_status !== null &&
           ` · Mercado Livre: ${supportCase.external_status}`}
         {supportCase.external_substatus !== null &&

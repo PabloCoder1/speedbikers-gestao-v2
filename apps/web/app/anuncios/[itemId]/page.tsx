@@ -130,21 +130,7 @@ export default async function AnuncioPage({
     notFound();
   }
 
-  const row = listing.data as unknown as {
-    id: string;
-    organization_id: string;
-    ml_account_id: string;
-    item_id: string;
-    sku_id: string | null;
-    title: string;
-    status: string;
-    price: number;
-    currency_id: string;
-    available_quantity: number;
-    synced_at: string;
-    ml_accounts: { label: string } | null;
-    skus: { sku: string; title: string | null } | null;
-  };
+  const row = listing.data;
 
   const now = new Date();
   const dateTo = now.toISOString().slice(0, 10);
@@ -219,7 +205,16 @@ export default async function AnuncioPage({
       </div>
 
       <p style={{ margin: "var(--sb-space-1) 0 var(--sb-space-3)", color: "var(--sb-text-soft)", fontSize: "0.875rem" }}>
-        {row.ml_accounts?.label ?? "Conta desconhecida"} · {listingStatusLabel(row.status)} ·{" "}
+      {/* Sem `?.` desde D-206, e a razao nao e "o tipo diz que nao e nulo":
+          e que um orfao ESCONDE O PAI aqui. A policy filtra por
+          `ml_account_id in (select private.accessible_accounts())`, e essa
+          funcao e derivada da propria `ml_accounts` -- um id que nao existe
+          la nao entra no conjunto, entao o anuncio inteiro some em vez de
+          voltar com a conta nula. Tentativa de contraexemplo registrada em
+          D-206. (Em `/usuarios` o mesmo ataque FUNCIONA, porque la a policy
+          se apoia em `accessible_orgs()`, que nao vem de `profiles` -- e por
+          isso o cast de la ficou.) */}
+        {row.ml_accounts.label} · {listingStatusLabel(row.status)} ·{" "}
         {formatCurrency(row.price)} · {formatCount(row.available_quantity)} disponível ·{" "}
         {row.skus === null ? (
           <span style={{ color: "var(--sb-accent-ink)" }}>sem vínculo de SKU</span>

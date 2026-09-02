@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **203** (D-001 a D-205; D-196 é de outra frente).
+Decisões registradas: **204** (D-001 a D-206; D-196 é de outra frente).
 
 ## Por domínio
 
@@ -181,6 +181,7 @@ Decisões registradas: **203** (D-001 a D-205; D-196 é de outra frente).
 - **D-203** — O 429 do snapshot de visitas e real, e o dano que eu registrei nao era
 - **D-204** — Tres definicoes de "Full atual", e as tres devolviam o mesmo numero
 - **D-205** — O relatorio de saude carrega as armadilhas junto dos numeros
+- **D-206** — O mesmo ataque separa os quatro casts, e a regra nao era "depende"
 
 ### vendas/métricas (12)
 

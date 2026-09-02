@@ -14,7 +14,7 @@
 |---|---|
 | **Atualizado em** | 2026-09-01 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `be9e7f7` (D-204) — esta fatia, D-205, é o commit seguinte |
+| **HEAD conhecido** | `0f7ff83` (D-205) — esta fatia, D-206, é o commit seguinte |
 | **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **34 commits atrás** |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | **122 locais, 123 no Dev — o drift continua.** Ver "Dev à frente do repositório", abaixo |
@@ -117,6 +117,18 @@ Números completos e método: `docs/PERFORMANCE.md`.
   status`.** A varredura de D-200 deixou `apps/worker/src/handlers/__cast_probe.ts`
   para trás — um arquivo criado para inspecionar um tipo e nunca apagado. Quem
   pegou foi o `tsc`, não a leitura do resultado do agente.
+- **O embed pode voltar nulo quando a policy do PAI não se apoia na mesma
+  tabela do EMBED.** É a regra que D-206 extraiu atacando os quatro casts que
+  sobraram: em `listings → ml_accounts` a policy usa `accessible_accounts()`,
+  derivada da própria `ml_accounts`, então um órfão esconde o PAI e o nulo é
+  inalcançável; em `organization_members → profiles` a policy usa
+  `accessible_orgs()`, que não olha `profiles`, e o nulo aflora. Antes de
+  remover um cast sobre embed, faça essa pergunta — ela é mais curta que
+  reconstruir o raciocínio.
+- **"Tem CASCADE, logo não existe órfão" é falso.** CASCADE é implementado por
+  gatilhos, e `pg_restore --disable-triggers` os desliga — que é exatamente
+  como se restaura dado, e "backup/restore verificado" é item aberto do
+  roadmap. Foi essa perna que caiu no ataque de D-206 e salvou um cast.
 - **Relatório de número cru repete o engano de quem o leu.** O `report:health`
   (D-205) imprime a armadilha ao lado de cada valor porque esta sessão leu
   estes mesmos números errado seis vezes. Rode-o com

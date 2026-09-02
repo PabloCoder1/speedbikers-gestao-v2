@@ -154,3 +154,101 @@ describe("nulabilidade de embed sob RLS (D-192)", () => {
     expect(tipos).toContain("feature_suggestions_created_by_fkey");
   });
 });
+
+/**
+ * O que separa um embed que PODE voltar nulo de um que NÃO PODE (D-206).
+ *
+ * D-192 provou que existe o embed nulo. O item que ficou aberto pedia a
+ * análise POR SÍTIO — "a RLS pode esconder esta linha deste leitor?" — e a
+ * resposta acabou sendo mais nítida do que "depende": **depende de a policy do
+ * PAI se apoiar, ou não, na mesma tabela do embed.**
+ *
+ *   `listings` → `ml_accounts`: a policy do pai é
+ *   `ml_account_id in (select private.accessible_accounts())`, e essa função é
+ *   derivada DA PRÓPRIA `ml_accounts`. Um id que não existe lá não entra no
+ *   conjunto — então o ANÚNCIO some. O embed nulo é inalcançável.
+ *
+ *   `organization_members` → `profiles`: a policy do pai é
+ *   `organization_id in (select private.accessible_orgs())`, derivada de
+ *   `organization_members` e NÃO de `profiles`. Um perfil ausente não afeta a
+ *   visibilidade do pai — então a linha fica visível com o embed nulo.
+ *
+ * O mesmo ataque (órfão) distingue os dois casos, e é por isso que o cast de
+ * `/anuncios/[itemId]` saiu e o de `/usuarios` ficou.
+ *
+ * Estes testes fixam a DISTINÇÃO, não os sítios: se alguém trocar a policy de
+ * `listings` para se apoiar em organização, o primeiro teste falha — e é
+ * exatamente aí que o cast removido precisaria voltar.
+ */
+describe("o que decide se um embed pode voltar nulo (D-206)", () => {
+  it("a policy de listings se apoia na PRÓPRIA ml_accounts — órfão esconde o pai, não o filho", async () => {
+    const policies = await client.query<{ qual: string }>(
+      `select pg_get_expr(polqual, polrelid) as qual
+         from pg_policy
+        where polrelid = 'public.listings'::regclass
+          and polcmd in ('r', '*')
+          and polpermissive`,
+    );
+
+    // Uma só, e ela testa accessible_accounts(). Se aparecer uma SEGUNDA
+    // policy permissiva (a típica seria por organização), o conjunto do pai
+    // deixa de ser o do filho e o embed nulo passa a ser alcançável — o
+    // cenário que o ataque de D-206 identificou como o único caminho real.
+    expect(policies.rows).toHaveLength(1);
+    expect(policies.rows[0]?.qual).toContain("accessible_accounts");
+
+    const corpo = await client.query<{ definicao: string }>(
+      `select pg_get_functiondef(p.oid) as definicao
+         from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'private' and p.proname = 'accessible_accounts'`,
+    );
+
+    // A função extrai o conjunto da própria ml_accounts: é isso que faz o
+    // órfão derrubar o pai junto.
+    expect(corpo.rows[0]?.definicao).toContain("public.ml_accounts");
+  });
+
+  it("a de organization_members se apoia em OUTRA tabela — e por isso o nulo aflora", async () => {
+    const policies = await client.query<{ qual: string }>(
+      `select pg_get_expr(polqual, polrelid) as qual
+         from pg_policy
+        where polrelid = 'public.organization_members'::regclass
+          and polcmd = 'r'
+          and polpermissive`,
+    );
+
+    expect(policies.rows[0]?.qual).toContain("accessible_orgs");
+
+    const corpo = await client.query<{ definicao: string }>(
+      `select pg_get_functiondef(p.oid) as definicao
+         from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'private' and p.proname = 'accessible_orgs'`,
+    );
+
+    // NÃO menciona profiles: a visibilidade do pai não depende do embed, então
+    // um perfil ausente deixa a linha de membro visível com o embed nulo.
+    // É o motivo de o cast de `/usuarios` continuar lá.
+    expect(corpo.rows[0]?.definicao).not.toContain("public.profiles");
+  });
+
+  it("o embed do assignee é anulável pela FK, não pelo cast — o `?.` sobrevive sem ele", async () => {
+    // `support_case_events.actor_user_id` e `support_cases.assignee_id` são
+    // ANULÁVEIS (`on delete set null`), então o tipo gerado já entrega
+    // `profiles | null`. Foi o que permitiu remover aqueles casts sem apagar
+    // defesa nenhuma — diferente do caso de D-192, onde a FK é NOT NULL.
+    const colunas = await client.query<{ tabela: string; coluna: string; anulavel: string }>(
+      `select table_name as tabela, column_name as coluna, is_nullable as anulavel
+         from information_schema.columns
+        where table_schema = 'public'
+          and (table_name, column_name) in
+              (('support_case_events', 'actor_user_id'), ('support_cases', 'assignee_id'))
+        order by table_name`,
+    );
+
+    expect(colunas.rows).toHaveLength(2);
+
+    for (const c of colunas.rows) {
+      expect(c.anulavel).toBe("YES");
+    }
+  });
+});

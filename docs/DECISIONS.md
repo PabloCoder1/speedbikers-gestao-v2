@@ -4438,6 +4438,39 @@ A validacao fecha sozinha: `n_tup_ins` de `job_runs` = 54.130 contra `count(*)` 
 
 **Impacto:** `packages/db/scripts/report-health.mjs` (novo), `packages/db/package.json`, `docs/PERFORMANCE.md`.
 
+## D-206 - O mesmo ataque separa os quatro casts, e a regra nao era "depende"
+
+**Contexto:** o item que D-192 abriu e D-200 deixou com quatro sitios — *"onde o cast E redundante, remove-lo, por sitio, com criterio: a RLS pode esconder esta linha deste leitor?"*. **Tres sairam, um ficou**, e o que decide nao e o sitio: e uma propriedade da policy que da para enunciar.
+
+**A regra, que so apareceu depois de atacar:**
+
+> O embed pode voltar nulo quando a policy do PAI **nao** se apoia na mesma tabela do EMBED.
+
+| relacionamento | a policy do pai se apoia em | orfao esconde | veredito |
+|---|---|---|---|
+| `listings` → `ml_accounts` | `accessible_accounts()`, derivada de **`ml_accounts`** | o PAI | **removido** |
+| `support_cases` → `ml_accounts` | idem | o PAI | **removido** |
+| `support_case_events` → `profiles` | FK **anulavel**, o tipo gerado ja diz `\| null` | — | **removido** |
+| `organization_members` → `profiles` | `accessible_orgs()`, derivada de **`organization_members`** | nada | **FICA** |
+
+Nos dois primeiros, um id ausente de `ml_accounts` tambem esta ausente de `accessible_accounts()` — entao **o anuncio (ou o atendimento) some**, em vez de voltar com a conta nula. No ultimo, `accessible_orgs()` nao olha `profiles`: um perfil ausente deixa a linha de membro visivel, e **o nulo aflora**.
+
+**O metodo foi ATACAR, nao confirmar.** Tres agentes receberam a alegacao "e impossivel o pai estar visivel e o embed nulo" e a tarefa de **construir o contraexemplo** no banco, em transacao revertida. Dois nao conseguiram, com nove e cinco razoes estruturais medidas. **O terceiro conseguiu** — e foi o que salvou o cast de `/usuarios`.
+
+**Como ele conseguiu, e por que isso decide.** Ele derrubou a perna mais fraca do meu raciocinio: *"a FK tem CASCADE, entao nao existe orfao"*. **CASCADE e implementado por gatilhos**, e caminhos rotineiros os desligam — `session_replication_role = replica`, `pg_restore --disable-triggers`, `alter table ... disable trigger all`. Ele montou esse estado e o embed voltou nulo para um leitor legitimo.
+
+**Conferi antes de aceitar: este repositorio nao tem nenhum desses caminhos** — `grep` por `session_replication_role`, `DISABLE TRIGGER` e `--disable-triggers` volta vazio. Ou seja, o contraexemplo e real no BANCO e o sistema nao o alcanca hoje.
+
+**E mesmo assim o cast fica**, por uma razao que o proprio ROADMAP fornece: **"backup/restore verificado" e item aberto**, e `pg_restore --disable-triggers` e exatamente como se restaura dado. O caminho que produz o orfao e uma operacao que o projeto **planeja adicionar**. Manter custa uma checagem de cardinalidade; remover custa um `TypeError` numa tela, num dia de restore.
+
+**O que a fatia entrega alem das remocoes:** tres testes que fixam a DISTINCAO, nao os sitios. Um deles afirma que `listings` tem **exatamente uma** policy permissiva de SELECT — porque o ataque identificou que uma segunda policy (a tipica seria por organizacao) faria o conjunto do pai deixar de ser o do filho, e o embed nulo voltaria a ser alcancavel. **E o unico caminho real para o buraco reabrir, e agora ele falha o teste em vez de passar despercebido.**
+
+**Uma nota sobre confianca.** Os vereditos vieram com `alta` para `listings` e `media` para `support_cases` e `organization_members`. Aceitei os tres, mas as remocoes so foram feitas depois de o proprio compilador confirmar o que cada uma custava: em `support_case_events` o lint nao pediu nada (o `?.` sobrevive pela FK anulavel), e nos outros dois ele pediu apagar o fallback — que e a decisao de verdade, e esta comentada no lugar onde o fallback estava.
+
+**Verificacao:** **526/526** de integracao em banco recriado (+3), `check` 29/29, build 8/8, `check:embeds` 33/33.
+
+**Impacto:** `apps/web/app/anuncios/[itemId]/page.tsx`, `apps/web/app/atendimento/[caseId]/page.tsx`, `packages/db/src/rls-embed-nullability.integration.test.ts`.
+
 ## Como adicionar nova decisao
 
 Registrar:
