@@ -9198,16 +9198,78 @@ describe("guarda de GRANTs (D-066/D-098/D-130)", () => {
     expect(result.rows.map((r) => r.proname)).toEqual([]);
   });
 
-  it("nenhuma funcao SECURITY DEFINER de public e alcancavel por anon (D-182)", async () => {
-    // `anon` e o visitante sem login. Uma DEFINER exposta a ele atravessaria
-    // a RLS sem sequer exigir autenticacao.
+  /**
+   * ALARGADO: a versao de D-182 filtrava `p.prosecdef` e por isso estava
+   * verde enquanto SEIS funcoes de public eram alcancaveis por `anon` — as
+   * de trigger, que nao sao DEFINER. Nao eram exploraveis (o Postgres recusa
+   * chamada direta de funcao de trigger), mas um guarda que so olha metade da
+   * populacao nao e um guarda: e a classe de D-197.
+   *
+   * A pergunta certa nao e "qual funcao perigosa o anon alcanca", e sim
+   * "o anon alcanca ALGUMA".
+   */
+  it("nenhuma funcao de public e alcancavel por anon — DEFINER ou nao (D-182, alargado)", async () => {
+    const result = await client.query<{ proname: string; definer: boolean }>(
+      `select p.proname, p.prosecdef as definer
+         from pg_proc p
+         join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public'
+          and has_function_privilege('anon', p.oid, 'execute')
+        order by p.proname`,
+    );
+
+    expect(result.rows).toEqual([]);
+  });
+
+  /**
+   * O default de FUNCOES, que D-182 deixou aberto de propósito e esta fatia
+   * fechou. Sem ele, cada RPC nova depende de alguem lembrar do
+   * `revoke ... from anon` — e o esquecimento seria invisivel aqui, porque
+   * os dois bancos DISCORDAVAM: no Dev a funcao nova nascia com `anon`, no
+   * local nao.
+   *
+   * A primeira asserçao existe para o teste nao poder ficar vazio: sem
+   * entrada em `pg_default_acl`, vale o default embutido do Postgres, que e
+   * EXECUTE para PUBLIC — o pior caso passaria como zero linhas.
+   */
+  it("o default de funcoes de public nao concede a anon, authenticated nem PUBLIC", async () => {
+    const entrada = await client.query<{ n: string }>(
+      `select count(*) as n
+         from pg_default_acl d
+         join pg_namespace n on n.oid = d.defaclnamespace
+        where n.nspname = 'public' and d.defaclobjtype = 'f'
+          and pg_get_userbyid(d.defaclrole) = 'postgres'`,
+    );
+
+    // Sem entrada, o default embutido concede EXECUTE a PUBLIC.
+    expect(Number(entrada.rows[0]?.n)).toBe(1);
+
+    const abertos = await client.query<{ papel: string }>(
+      `select case when a.grantee = 0 then 'PUBLIC' else a.grantee::regrole::text end as papel
+         from pg_default_acl d
+         join pg_namespace n on n.oid = d.defaclnamespace,
+         lateral aclexplode(d.defaclacl) a
+        where n.nspname = 'public' and d.defaclobjtype = 'f'
+          and pg_get_userbyid(d.defaclrole) = 'postgres'
+          and a.privilege_type = 'EXECUTE'
+          and (a.grantee = 0 or a.grantee::regrole::text in ('anon', 'authenticated'))
+        order by 1`,
+    );
+
+    expect(abertos.rows).toEqual([]);
+  });
+
+  /**
+   * A regra que a casa escreveu em 20260820160000 e nunca virou guarda:
+   * `public` e o schema exposto pelo PostgREST e deve conter TABELAS, nao
+   * maquinaria interna. Seis funcoes de trigger tinham ficado para tras.
+   */
+  it("nenhuma funcao de trigger mora em public — maquinaria interna vive em private", async () => {
     const result = await client.query<{ proname: string }>(
       `select p.proname
          from pg_proc p
          join pg_namespace n on n.oid = p.pronamespace
-        where n.nspname = 'public'
-          and p.prosecdef
-          and has_function_privilege('anon', p.oid, 'execute')
+        where n.nspname = 'public' and p.prorettype::regtype::text = 'trigger'
         order by p.proname`,
     );
 

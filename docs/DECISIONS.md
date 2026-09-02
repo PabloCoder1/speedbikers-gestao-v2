@@ -4648,6 +4648,55 @@ A correcao emite `order.return.unreversed` em `domain_events`, onde a casa ja ol
 
 **Impacto:** `supabase/migrations/20260902190642_ml_accounts_write_surface.sql`, `packages/db/src/rls.integration.test.ts`.
 
+## D-211 - A torneira que faltava, e os dois bancos discordavam sobre ela
+
+**Contexto:** o ultimo item do P0 da trilha 8B — *"`pg_default_acl`: o que D-182 deixou aberto"*. D-182 fechou o default de tabelas e sequences e registrou o resto por escrito: *"`postgres`/funcoes — deixado. As RPCs dependem de `grant execute`; exige varrer todas as migrations que criam funcao"*. Esta e a varredura.
+
+**A primeira medicao quase encerrou o item como ja resolvido**, e teria sido errado:
+
+| `pg_default_acl`, grantor `postgres`, schema `public`, FUNCOES | |
+|---|---|
+| **local** | `{postgres=X}` — fechado |
+| **Dev** | `{postgres=X, **anon=X**, **authenticated=X**, service_role=X}` |
+
+**No Dev, toda funcao nova de `public` nasce executavel por `anon`.** Localmente, nao. E **o repositorio nao controla nenhum dos dois**: o valor vem do bootstrap da plataforma, e as versoes divergiram. Perguntar so ao banco local responderia "ja esta fechado" — a armadilha de D-204 na direcao inversa.
+
+**A exposicao de HOJE e identica nos dois, e nao e explorável.** Medida com `has_function_privilege`, que resolve `PUBLIC`:
+
+| | Dev | local |
+|---|---|---|
+| funcoes em `public` | 70 | 70 |
+| alcancaveis por `anon` | **6** | **6** |
+| ... que NAO sao de trigger | **0** | **0** |
+
+⚠️ **Contar a ACL crua da a resposta errada, e deu:** o mesmo par de bancos aparece como **58 contra 64** quando se procura a string `authenticated=X` em `proacl`. A diferenca inteira era representacao — ACL nula significa "default embutido", que concede a `PUBLIC`, que inclui os dois papeis. **Eu registrei a divergencia como consequencia antes de medir direito, e ela nao era.** Para privilegio efetivo existe `has_function_privilege`; `proacl` e o armazenamento, nao a resposta.
+
+**As 6 sao funcoes de trigger, e isso foi PROVADO, nao suposto:** como `anon`, `has_function_privilege` devolve `true` e a chamada morre em `trigger functions can only be called as triggers`.
+
+**Entao o defeito nao e a exposicao atual: e a proxima funcao.** No Dev ela nasce com `anon`; no local, nao. Um esquecimento de `revoke ... from anon` passaria verde na CI **e** no banco local, e viveria so no Dev.
+
+**Fechar tambem para `authenticated` e uma troca deliberada de modo de falha.** Hoje, esquecer o revoke produz uma funcao silenciosamente chamavel por quem nao fez login — falha **silenciosa e de seguranca**. Depois, esquecer o grant produz uma funcao que nao roda para ninguem — falha **ruidosa e funcional**, que o teste da propria fatia pega. E o habito ja existe: as migrations escrevem **77 `grant execute on function`** explicitos, em 60 arquivos. `service_role` fica de fora de proposito — e o papel do backend, nao alcanca o navegador.
+
+**As 6 funcoes de trigger saem de `public`, e nao e limpeza oportunista.** E a regra que a propria casa escreveu em `20260820160000`, ao mover `job_runs_reject_mutation`: *"`public` e o schema exposto pelo PostgREST e deve conter tabelas, nao maquinaria interna"*. **18 funcoes de trigger ja moravam em `private`; estas 6 eram as retardatarias.** Movidas (12 triggers recriados, mensagens de excecao reproduzidas ao pe da letra porque ha testes que as afirmam), o numero de funcoes de `public` alcancaveis por `anon` vai a **zero por estrutura, nao por grant**.
+
+**O guarda de D-182 estava mais estreito do que parecia.** *"nenhuma funcao SECURITY DEFINER de public e alcancavel por anon"* filtra `p.prosecdef` — e as 6 nao sao DEFINER. Ele ficou **verde o tempo todo** enquanto seis funcoes eram alcancaveis por `anon`. Alargado: a pergunta certa nao e "qual funcao perigosa o anon alcanca", e sim **"o anon alcanca alguma"**. Classe de D-197.
+
+**Dupla prova de D-197, guarda a guarda, contra o estado ANTERIOR:**
+
+| guarda | contra a versao anterior |
+|---|---|
+| nenhuma funcao de `public` alcancavel por `anon` (alargado) | **acusa** — lista as 6, com `definer: false` |
+| nenhuma funcao de trigger em `public` | **acusa** — lista as 6 |
+| o default de funcoes nao concede a `anon`/`authenticated`/`PUBLIC` | **passa** ⚠️ |
+
+**O terceiro nao consegue reprovar localmente, e isso fica dito em vez de escondido:** o bootstrap local ja nascia fechado, entao o guarda passa com ou sem esta migration — ele **nao pega, pela CI, a regressao que existiria no Dev**. Provei que ele funciona simulando o estado real do Dev numa transacao revertida (`alter default privileges ... grant execute ... to anon, authenticated`): ai ele acusa os dois papeis. E, como o guarda de CI nao alcanca o Dev, a migration carrega **a asserçao dentro dela**, que roda no ato da aplicacao nos dois bancos — hoje e o unico ponto em que o estado do Dev e conferido de verdade.
+
+**Sem mudanca de contrato:** as funcoes de trigger nao aparecem em `packages/db/src/types.ts` (o PostgREST nao as expoe), entao o gerador nao entra nesta fatia — que era o bloqueio de D-210.
+
+**Verificacao:** **538/538** de integracao em banco recriado (+2 guardas novos, 1 alargado), `check` 29/29, build 8/8, `check:embeds` 33/33, `check:waterfalls` 52 arquivos, 13/13 Playwright — este ultimo importa nesta fatia mais que nas outras, porque o e2e escreve em `stock_movements` pelos dois fluxos cujos triggers foram recriados.
+
+**Impacto:** `supabase/migrations/20260902194500_function_default_acl_and_trigger_schema.sql`, `packages/db/src/rls.integration.test.ts`.
+
 ## Como adicionar nova decisao
 
 Registrar:

@@ -14,10 +14,10 @@
 |---|---|
 | **Atualizado em** | 2026-09-02 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `17f411d` (D-209) — esta fatia, D-210, é o commit seguinte |
+| **HEAD conhecido** | `1d1263c` (D-210) — esta fatia, D-211, é o commit seguinte |
 | **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **57 commits atrás** (o «34» registrado aqui estava errado: eram 55 já em `c19a879`; medido com `git rev-list --count fc39c27..HEAD`) |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
-| **Migrations** | **125 locais**, 123 no Dev até o push — a CI aplica (job `aplicar migrations no Supabase Dev`, só em `v3`). Sem drift: o caminho é o push, **nunca** o MCP (lição de D-207) |
+| **Migrations** | **126 locais**, 123 no Dev até o push — a CI aplica (job `aplicar migrations no Supabase Dev`, só em `v3`). Sem drift: o caminho é o push, **nunca** o MCP (lição de D-207) |
 | **Frente atual** | Trilha 8B — P0 fechado (A–H); em P1 |
 
 ### O que está pronto
@@ -50,15 +50,17 @@ Medidos contra o Dev em 2026-09-01, não herdados de documentação.
 
 **Todo o P0 da trilha 8B fechou** — A a H. A frente passa para o P1.
 
-⚠️ **"A a H" é o recorte dos itens NOMEADOS.** O bloco P0 do `docs/ROADMAP.md`
-tem mais três itens que nunca receberam letra, e dizer "P0 fechado" sem essa
-ressalva os torna invisíveis:
+✅ **E agora o bloco P0 está completo de verdade — os nomeados E os três
+sem letra.** A ressalva abaixo nasceu porque "P0 fechado — A a H" era o
+recorte dos itens que tinham letra: o bloco do `docs/ROADMAP.md` tinha mais
+três, e chamá-lo de fechado os tornava invisíveis. Ficam listados porque a
+lição é essa, não porque restem:
 
 | item | estado |
 |---|---|
 | ~~`get_system_health` com escopo de plataforma~~ | ✅ **fechado em D-209** |
 | ~~`ml_accounts` com UPDATE/DELETE para `authenticated`~~ | ✅ **fechado em D-210** |
-| `pg_default_acl` de funções (o que D-182 deixou) | **aberto** |
+| ~~`pg_default_acl` de funções~~ | ✅ **fechado em D-211** |
 
 Números completos e método: `docs/PERFORMANCE.md`.
 
@@ -220,6 +222,18 @@ Números completos e método: `docs/PERFORMANCE.md`.
   `job_runs` era 42.936 contra 307.756 linhas reais, e isso revelou que a
   janela era de 23 horas, não de 13 dias. Toda conclusão tirada de
   `idx_scan = 0` depende dessa janela.
+- **`proacl` é armazenamento; privilégio efetivo é `has_function_privilege`.**
+  Em D-211 comparei os dois bancos contando a string `authenticated=X` na ACL
+  crua e achei **58 contra 64** — registrei uma divergência que não existia.
+  ACL nula significa "default embutido", que concede a `PUBLIC`, que inclui
+  os dois papéis. Medido direito, os bancos eram **idênticos**. Para "quem
+  pode executar", pergunte a `has_function_privilege`, nunca ao texto de
+  `proacl`.
+- **Um guarda pode ser mais estreito que o próprio nome.** "nenhuma funcao
+  SECURITY DEFINER de public e alcancavel por anon" (D-182) filtra
+  `p.prosecdef` — ficou **verde o tempo todo** enquanto 6 funções
+  não-DEFINER eram alcançáveis por `anon` (D-211). Antes de confiar num
+  guarda, leia o `where` dele e pergunte que população fica de fora.
 - **Não rode `gen:types` da CLI local para conferir tipo.** `packages/db/src/types.ts`
   é gerado pelo **MCP** e carrega correções manuais marcadas "CORRECAO MANUAL"
   (D-133/D-147). O gerador da CLI produz outro formato e as apaga: em D-209 a
@@ -360,15 +374,22 @@ Nada disto pode ser feito por um agente.
    controle de acesso**. Fechado em duas camadas (GRANT + policy `for
    insert`), com o único consumidor real (criar conta) preservado.
 
-9. **O que resta do P0 da 8B**, e os dois independem do deploy:
-   - **`pg_default_acl` de funções** — o que D-182 deixou aberto de
-     propósito; exige varrer todas as migrations que criam função.
-   - **`ml_accounts.created_by`** — fatia nova, nomeada em D-210. A tabela
-     tem `created_at` e não tem autor. **Bloqueada por dependência real**:
-     coluna nova exige regenerar `packages/db/src/types.ts`, e o caminho de
-     regeneração é o MCP contra o **Dev** — que só terá a migration depois
-     que a CI a aplicar. Versionar um contrato gerado sabendo-o desatualizado
-     é a classe de drift de D-207.
+9. **~~`pg_default_acl` de funções~~ — FECHADO em D-211**, e a medição mudou
+   o item. No **Dev**, toda função nova de `public` nascia executável por
+   `anon`; **localmente, não** — o repositório não controlava nenhum dos dois,
+   e perguntar só ao banco local responderia "já está fechado". A exposição de
+   hoje era idêntica nos dois e inofensiva: 6 funções de trigger, que o
+   Postgres recusa chamar. O defeito era **a próxima função**, e ela nasceria
+   aberta só no Dev — invisível para a CI. Fechado no repositório, e as 6
+   retardatárias saíram de `public` para `private`, levando a zero **por
+   estrutura** o que `anon` alcança.
+
+10. **`ml_accounts.created_by`** — a fatia que resta do P0, nomeada em D-210.
+    A tabela tem `created_at` e não tem autor. **Bloqueada por dependência
+    real**: coluna nova exige regenerar `packages/db/src/types.ts`, e o
+    caminho é o MCP contra o **Dev** — que só terá as migrations depois que a
+    CI as aplicar. Versionar um contrato gerado sabendo-o desatualizado é a
+    classe de drift de D-207. **Destrava com o push.**
 
 ---
 
