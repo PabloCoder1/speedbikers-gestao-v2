@@ -539,6 +539,96 @@ de forma inexplicável, confira primeiro se o papel realmente trocou.
 
 ---
 
+## Relatório de saúde — `report:health` (D-205)
+
+O item do P1 pedia "relatório de performance sobre o que já existe
+(`job_runs`, `sync_runs`, `/saude`), **sem criar plataforma nova**". O
+relatório é um script:
+
+```bash
+eval "$(pnpm exec supabase status -o env)"
+DB_URL="$DB_URL" pnpm --filter @sb/db run report:health
+```
+
+Nenhuma tabela, view ou endpoint foi criado. Só `SELECT` sobre o que o sistema
+já grava, reunido num lugar.
+
+### Por que ele carrega as armadilhas junto dos números
+
+Esta sessão leu estes mesmos números errado **seis vezes**, e cada erro virou
+decisão. Um relatório que mostrasse os números crus repetiria os seis — então
+cada seção imprime o alerta ao lado do valor:
+
+| # | armadilha | onde queimou |
+|---|---|---|
+| 1 | percentagem sem o total infla em banco ocioso | D-198 → D-199 |
+| 2 | `job_runs.attempt` é constante em 1 | D-201 |
+| 3 | `n_live_tup` é estimativa e errou por 45× | D-182 |
+| 4 | `stats_reset` de `pg_stat_database` é NULO após restart | D-198 |
+| 5 | `seq_scan` alto em `job_runs` é quem investiga | D-198 |
+| 6 | "80% de falha" pode ser progresso, não defeito | D-203 |
+
+### A janela É conhecível, e D-198 errou ao dizer que não
+
+D-198 concluiu que a metade de *remoção* da triagem de índices estava
+bloqueada porque "`stats_reset` é NULO, então não dá para saber a janela".
+**Estava errado, e o erro foi olhar a view errada:**
+
+| | |
+|---|---|
+| `pg_stat_database.stats_reset` | **NULO** |
+| `pg_stat_statements_info.stats_reset` | **2026-09-01 12:44:54,917 UTC** |
+| `pg_postmaster_start_time()` | 12:44:54,992 — **75 ms depois** |
+
+E a validação fecha: `n_tup_ins` de `job_runs` = 54.130 contra `count(*)`
+restrito à janela = 54.129. **Um de diferença em 54 mil** — a corrida entre as
+duas subconsultas. A janela é o restart, e dá para medi-la.
+
+O bloqueio da remoção de índices continua, mas **por outro motivo**: a janela é
+curta (~28 h), não desconhecida. É a primeira coisa que o script imprime,
+porque todo o resto depende dela.
+
+### A leitura de 2026-09-02 (Dev, janela de 27,9 h)
+
+| | |
+|---|---|
+| **fila, 7 dias** | |
+| webhook sem consumidor (D-179) | **261.845 execuções — 83,4% da fila** |
+| ...e o que isso custa de worker | **9,2 segundos** |
+| linhas com `attempt > 1` | **0** |
+| reentregas reais (por `job_id` repetido) | **2.275** |
+| **banco, janela de 27,9 h** | |
+| CPU de consulta somada | 1.592 s |
+| ocupação | **1,58% de um núcleo** |
+| decodificador de WAL do Realtime | 44,9% do banco, **0,68% do relógio** |
+
+**O par 83,4% / 9,2 segundos é o relatório inteiro em uma linha.** O
+desperdício de D-179 é enorme em CONTAGEM e desprezível em TEMPO: ele não
+queima CPU, queima um dispatch do Cloud Tasks, uma invocação de Cloud Run e uma
+linha de `job_runs` **por evento**. O deploy pendente continua valendo — pelo
+motivo certo, que é volume de invocação e ruído na telemetria, não lentidão.
+
+### Dois status que mentem na direção alarmante
+
+**O job do Full está 100% `partial` há 7 dias — e entrega 100% dos buckets.**
+São 114 execuções `partial`, zero `done`, sempre com "N item(ns) falharam
+(404/403)". Contra isso: **2.165 de 2.165 buckets** capturados, o mais velho
+com 1,3 h de uma janela de 72 h. `partial` ali é condição estrutural
+permanente — itens que sumiram do Full do ML —, não defeito de frescor.
+
+**E o no-op de `post_purchase` não é desperdício.** O critério ingênuo
+(`status = 'done' and processed = 0`) acusaria 266.119 execuções inúteis, mas
+4.903 delas são filtro de domínio de um consumidor que existe e funciona.
+Somar os dois casos proporia desligar um consumidor real.
+
+### O que o script deliberadamente NÃO faz
+
+Não grava histórico, não abre endpoint, não cria alerta. Um relatório que
+precisa de infraestrutura para existir vira a plataforma que o item proibia.
+Ele roda quando alguém pergunta, contra o banco que a pessoa apontar.
+
+---
+
 ## Índices — critério
 
 Não adicionar índice por advisor, nem remover por `idx_scan = 0`.

@@ -17,7 +17,8 @@
     "gen:types": "supabase gen types typescript --local > src/types.ts",
     "test:integration": "pnpm --filter @sb/domain run build && vitest run integration",
     "bench:postgrest": "node scripts/bench-postgrest.mjs",
-    "check:embeds": "node scripts/check-embeds.mjs"
+    "check:embeds": "node scripts/check-embeds.mjs",
+    "report:health": "node scripts/report-health.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.112.3",

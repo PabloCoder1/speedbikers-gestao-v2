@@ -4405,6 +4405,39 @@ O fixture passou a usar datas RELATIVAS — que e o que ele sempre quis dizer ("
 
 **Impacto:** `supabase/migrations/20260902131348_full_atual_definicao_unica.sql`, `packages/db/src/rls.integration.test.ts`.
 
+## D-205 - O relatorio de saude carrega as armadilhas junto dos numeros
+
+**Contexto:** ultimo item livre do P1 — *"observabilidade: relatorio de performance sobre o que ja existe (`job_runs`, `sync_runs`, `/saude`), sem criar plataforma nova"*. O relatorio e um script, `pnpm --filter @sb/db run report:health`. Nenhuma tabela, view ou endpoint.
+
+**A decisao de desenho e uma so, e nao e sobre quais numeros mostrar.** Esta sessao leu estes mesmos numeros errado **seis vezes** — cada erro virou decisao (D-182, D-198, D-199, D-201, D-203). Um relatorio que apresentasse os numeros crus repetiria os seis, e seria pior que nao ter relatorio, porque numero em relatorio vira base de decisao. **Entao cada secao imprime a armadilha ao lado do valor**, e a primeira coisa que o script mostra e a janela das estatisticas, porque todo o resto depende dela.
+
+**A varredura que produziu os numeros foi dura consigo mesma, e isso e o sinal de que valeu.** Cinco agentes mediram uma superficie cada; cada leitura passou por um cetico com os seis enganos na mao. **Trinta leituras, oito sobreviveram** — 27%. Nas duas varreduras anteriores desta sessao os ceticos aprovaram tudo (16 de 16 em D-200), o que na hora eu li como sinal de alerta e era. Aqui as refutacoes sao substantivas: *"a consulta nao reproduz o numero"*, *"a frase afirma mais do que o numero sustenta"*, *"acionavel esta marcado para algo saudavel"*.
+
+**E uma das oito corrige D-198, que e minha.** Eu tinha concluido que a metade de remocao da triagem de indices estava bloqueada porque *"`stats_reset` e NULO, entao nao da para saber a janela"*. **Olhei a view errada:**
+
+| | |
+|---|---|
+| `pg_stat_database.stats_reset` | **NULO** |
+| `pg_stat_statements_info.stats_reset` | **2026-09-01 12:44:54,917 UTC** |
+| `pg_postmaster_start_time()` | 12:44:54,992 — **75 ms depois** |
+
+A validacao fecha sozinha: `n_tup_ins` de `job_runs` = 54.130 contra `count(*)` restrito a janela = 54.129. **Um de diferenca em 54 mil**, que e a corrida entre as subconsultas. O bloqueio da remocao de indices continua, mas **por outro motivo**: a janela e CURTA (~28 h), nao desconhecida.
+
+**O relatorio inteiro cabe num par de numeros.** O desperdicio de D-179 e **261.845 execucoes em 7 dias, 83,4% da fila** — e custa **9,2 segundos** de worker. Enorme em contagem, desprezivel em tempo: ele nao queima CPU, queima um dispatch do Cloud Tasks, uma invocacao de Cloud Run e uma linha de `job_runs` **por evento**. Sozinho, o percentual mandaria otimizar desempenho, e nao ha desempenho a otimizar. O deploy continua valendo pelo motivo certo.
+
+**Dois status que mentem na direcao alarmante, e os dois ficam registrados para ninguem "consertar":**
+
+- **o job do Full esta 100% `partial` ha 7 dias e entrega 100% dos buckets** — 114 execucoes `partial`, zero `done`, e 2.165 de 2.165 buckets capturados, o mais velho com 1,3 h de uma janela de 72 h. `partial` ali sao itens que sumiram do Full do ML: condicao estrutural, nao defeito;
+- **o no-op de `post_purchase` nao e desperdicio.** O criterio ingenuo acusaria 266.119 execucoes inuteis; 4.903 delas sao filtro de dominio de um consumidor que existe e funciona. Somar os dois proporia desligar um consumidor real.
+
+**O que o script deliberadamente NAO faz:** nao grava historico, nao abre endpoint, nao cria alerta. Um relatorio que precisa de infraestrutura para existir vira a plataforma que o item proibia. Ele roda quando alguem pergunta, contra o banco que a pessoa apontar.
+
+**Uma ressalva de verificacao.** O script foi exercitado ponta a ponta contra o Supabase LOCAL — as cinco secoes rodam, nenhum erro de SQL, e o caso "banco vazio" imprime "sem dado na janela" em vez de `null`. Os NUMEROS da leitura registrada vieram do Dev por MCP, porque a conexao direta com o Dev exige a senha do banco, que e segredo de CI. Estrutura provada aqui, numeros medidos la.
+
+**Verificacao:** `check` 29/29, script roda contra o local. Sem migration, sem mudanca de codigo de aplicacao.
+
+**Impacto:** `packages/db/scripts/report-health.mjs` (novo), `packages/db/package.json`, `docs/PERFORMANCE.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:

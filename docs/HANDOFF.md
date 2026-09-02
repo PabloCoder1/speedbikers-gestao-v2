@@ -14,7 +14,7 @@
 |---|---|
 | **Atualizado em** | 2026-09-01 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `690a1c5` (D-203) — esta fatia, D-204, é o commit seguinte |
+| **HEAD conhecido** | `be9e7f7` (D-204) — esta fatia, D-205, é o commit seguinte |
 | **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **34 commits atrás** |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | **122 locais, 123 no Dev — o drift continua.** Ver "Dev à frente do repositório", abaixo |
@@ -117,6 +117,16 @@ Números completos e método: `docs/PERFORMANCE.md`.
   status`.** A varredura de D-200 deixou `apps/worker/src/handlers/__cast_probe.ts`
   para trás — um arquivo criado para inspecionar um tipo e nunca apagado. Quem
   pegou foi o `tsc`, não a leitura do resultado do agente.
+- **Relatório de número cru repete o engano de quem o leu.** O `report:health`
+  (D-205) imprime a armadilha ao lado de cada valor porque esta sessão leu
+  estes mesmos números errado seis vezes. Rode-o com
+  `DB_URL=... pnpm --filter @sb/db run report:health`, e leia os ⚠️ JUNTO dos
+  números, não depois.
+- **A janela das estatísticas é conhecível — eu tinha dito que não.**
+  `pg_stat_database.stats_reset` fica NULO após um restart, mas
+  `pg_stat_statements_info.stats_reset` tem a data exata (validada contra
+  `count(*)`: 1 linha de erro em 54 mil). D-198 concluiu "não dá para saber" a
+  partir da view errada.
 - **Fixture com data fixa apodrece, e apodrece em silêncio.** O de
   `get_purchase_suggestions` fixava `captured_at` em `2026-08-13`, e dependia
   sem dizer de a função NÃO ter janela de frescor. Ficou verde por semanas
