@@ -117,6 +117,11 @@ Números completos e método: `docs/PERFORMANCE.md`.
   status`.** A varredura de D-200 deixou `apps/worker/src/handlers/__cast_probe.ts`
   para trás — um arquivo criado para inspecionar um tipo e nunca apagado. Quem
   pegou foi o `tsc`, não a leitura do resultado do agente.
+- **Percentagem sem o total é enquadramento, não medição.** "O Realtime é
+  43,4% do tempo do banco" (D-198) e "o Realtime é 0,63% do relógio" descrevem
+  o MESMO fato — e só o segundo diz se vale mexer. Num ambiente ocioso, toda
+  participação percentual infla. Antes de chamar algo de maior consumidor,
+  responda: consumidor de quanto?
 - **Taxa de refutação zero é sinal de cético frouxo, não de achado forte.**
   Aconteceu em D-182 (0 de 16) e de novo em D-200 (0 de 16) — e em D-200 a
   lista incluía o sítio que D-192 já tinha revertido. Quando a varredura
@@ -217,25 +222,18 @@ Nada disto pode ser feito por um agente.
    terceiro terço — dados carregados por aba não aberta — foi varrido junto e
    **já estava certo**: `/skus/[skuId]` dispara por aba desde sempre. **O item
    de frontend do P1 está fechado.**
-4. **P1 — remedir o Realtime, agora que a maior fonte de WAL foi corrigida.**
-   D-198 mediu o decodificador de WAL em **43,4%** de todo o tempo do banco.
-   D-199 atacou a causa: as métricas diárias eram reescritas inteiras
-   (**485 mil escritas/dia**) e agora convergem — um dia já correto passou de
-   220 escritas para **0**. O número do Realtime precisa ser medido de novo
-   antes de qualquer conclusão sobre o Realtime em si; a consulta é a de
-   `pg_stat_statements` por `total_exec_time`, em `docs/PERFORMANCE.md`.
+4. **~~P1 — remedir o Realtime~~ — FECHADO, e o resultado corrige o
+   enquadramento que eu tinha dado.** D-198 registrou o decodificador de WAL
+   em **43,4% do tempo do banco** e eu apresentei isso como o maior consumidor.
+   A pergunta que faltava era **"43,4% de quanto?"**: em 86.310 s de relógio o
+   banco consumiu **1.234 s de CPU (1,43% de ocupação)**, e o Realtime foram
+   **543 s — 0,63% do relógio**. Era 43,4% de um banco **98,6% ocioso**. Os
+   dois slots lógicos estão ativos e em dia (224 kB retidos), e o decodificador
+   faz polling em intervalo próprio: por isso o custo por chamada caiu só 8,5%
+   quando as escritas de métrica foram a zero. **Não há o que otimizar.**
+   D-199 continua valendo pelos próprios méritos — 485 mil escritas por dia é
+   desperdício em qualquer escala — mas **não pela razão que eu registrei**.
 
-   ⚠️ **Primeira leitura feita (36 min) e ela NÃO confirma a hipótese — que
-   era minha.** As escritas de métrica foram a **zero** e o custo por chamada
-   do Realtime caiu só **8,5%** (6,34 → 5,80 ms). Isso está longe de explicar
-   43,4% do tempo do banco: **o custo do Realtime não é dominado pelo WAL das
-   métricas.** A percentagem *subiu* para 68,8%, e isso é o denominador
-   encolhendo, não piora — a métrica robusta é **ms por chamada**, nunca
-   percentagem, e nunca total entre janelas de tamanhos diferentes. Suspeita
-   que sobra: a frequência de polling do decodificador, que dobrou entre as
-   janelas sem relação com a escrita da aplicação. Detalhes e a tabela em
-   `docs/PERFORMANCE.md`, "Marco para remedir o Realtime". Precisa de janela
-   maior antes de concluir.
 5. **Antes da segunda organização** — `get_system_health` tem escopo de
    plataforma com guard de tenant (D-182). Não é urgente hoje e não tem
    correção óbvia: as duas tentativas naturais causam regressão verificada.

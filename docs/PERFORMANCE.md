@@ -430,10 +430,36 @@ muito longe de explicar 43,4% do tempo do banco: **o custo do Realtime não é
 dominado pelo WAL das métricas**, e a hipótese registrada em D-198 (minha) não
 se sustenta nesta primeira leitura.
 
-O que sobra como suspeita, para a próxima leitura: a **frequência de polling**
-do decodificador, que dobrou entre as duas janelas e não tem relação com o
-volume de escrita da aplicação. Antes de qualquer conclusão, acumular janela —
-e comparar `ms por chamada`, não percentagem.
+**E a segunda leitura encerra o item, corrigindo o ENQUADRAMENTO — que era
+meu.** A pergunta que faltava fazer não era "quanto o Realtime custa em
+relação ao banco", e sim **"43,4% de quanto?"**:
+
+| | |
+|---|---|
+| relógio decorrido | 86.310 s |
+| CPU que o banco consumiu | **1.234 s** |
+| ocupação do banco | **1,43%** |
+| Realtime, em tempo absoluto | 543 s |
+| Realtime, em relação ao **relógio** | **0,63%** |
+
+**Os "43,4% do tempo do banco" eram 43,4% de um banco 98,6% ocioso.** O número
+de D-198 está numericamente certo e foi apresentado como se fosse o maior
+problema do sistema. Não é: é o piso de infraestrutura de um ambiente sem
+tráfego, e otimizá-lo devolveria 0,63% de um relógio que já está parado.
+
+O mecanismo confirma: os dois slots lógicos (`wal2json` e `pgoutput`) estão
+**ativos e em dia**, com 224 kB de WAL retido cada. O decodificador faz
+polling num intervalo próprio, independente da atividade da aplicação — por
+isso o custo por chamada caiu só 8,5% quando as escritas de métrica foram a
+zero, e por isso a percentagem subiu quando o resto do banco parou de
+trabalhar.
+
+**A lição, e ela é sobre como se lê `pg_stat_statements`:** uma participação
+percentual só quer dizer alguma coisa depois de responder qual é o total. Num
+banco ocioso, "43% do tempo" e "0,6% do relógio" descrevem o MESMO fato — e
+só o segundo diz se vale mexer. D-199 continua valendo pelos próprios méritos
+(485 mil escritas por dia é desperdício em qualquer escala, e a correção foi
+provada por igualdade), mas **não pela razão que eu tinha registrado.**
 
 **Lição de D-199 — uma otimização de materialização se prova por IGUALDADE,
 não por economia.** Trocar apaga-e-insere por convergência cortou as escritas
