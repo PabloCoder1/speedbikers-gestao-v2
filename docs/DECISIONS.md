@@ -4314,6 +4314,47 @@ Entrega a **medicao**, que e o que o item pedia. **Nao muda o codigo**, e a raza
 
 **Impacto:** `apps/worker/src/{job-outcome.ts,app.ts,app.test.ts}`, `docs/API.md`.
 
+## D-203 - O 429 do snapshot de visitas e real, e o dano que eu registrei nao era
+
+**Contexto:** o item que EU registrei em D-201 dizia *"o snapshot de visitas leva 429 do ML todo dia, ~80% das execucoes; a alavanca e espalhar a rajada"*. Antes de espalhar rajada nenhuma, medi o dano. **A frase estava certa no sintoma e errada na conclusao**, e a diferenca decide se a fatia vale a pena.
+
+**Primeiro: a correcao que eu ia propor JA EXISTE e JA ESTA NO AR.** `ml-listing-visits-fetch.ts` traz no cabecalho *"Espacamento entre chamadas: a rajada e o gatilho do 429 sustentado"* — e D-156 (`d12d0fa`) e ancestral de `fc39c27`, o commit em producao. Propor "espalhar a rajada" seria propor de novo o que ja foi feito. **Ler o codigo antes de propor a solucao teria evitado o item inteiro.**
+
+**Segundo: a cobertura DIARIA e mesmo parcial.**
+
+| dia | itens capturados | ativos | cobertura |
+|---|---|---|---|
+| 02/09 | 2.566 | 3.409 | **75,3%** |
+| 01/09 | 1.902 | 3.409 | 55,8% |
+| 31/08 | 1.970 | 3.409 | 57,8% |
+| 29/08 | 1.184 | 3.409 | 34,7% |
+| 26/08 | 1.083 | 3.409 | 31,8% |
+
+Entre 25% e 68% dos anuncios ativos ficam sem visita capturada num dia. Parece grave, e foi assim que eu registrei.
+
+**Terceiro, e e o numero que derruba a minha propria escalada:** na janela de UMA SEMANA,
+
+| | |
+|---|---|
+| anuncios ativos | 3.409 |
+| sem nenhuma visita na semana | 573 (**17%**) |
+| **venderam na semana** | **1.204** |
+| venderam E ficaram sem visita | **1** |
+
+**Um.** Entre os 1.204 anuncios em que "conversao" significa alguma coisa, exatamente **um** ficou sem dado. A cobertura roda entre os itens ao longo dos dias, e os que vendem — que sao os que a tela olha — sao cobertos.
+
+**E a metrica ja foi desenhada para isso.** `docs/METRICS.md` define `taxa_conversao` como `SUM(pedidos **nos dias com visita observada**) / NULLIF(SUM(visitas), 0)`. A clausula "nos dias com visita observada" exclui do numerador exatamente os dias sem captura: a formula **absorve** cobertura parcial por construcao, em vez de dividir por um denominador incompleto.
+
+**Decisao — o item cai de prioridade em vez de virar fatia.** O 429 e real e diario, mas o dano pratico e um anuncio em 1.204, sobre uma metrica que ja trata a lacuna. Gastar uma fatia espalhando uma rajada que ja tem espacamento, para recuperar isso, seria trabalho a procura de problema. **Fica registrado com os numeros, para que a proxima pessoa nao o re-escale por ver "80% de falha" no `job_runs`.**
+
+**O que muda de verdade e como o 429 aparece.** Depois de D-202, cada 429 esgotado continua sendo falha *transitoria* (503, repete — correto), mas a contagem de tentativas passa a vir do cabecalho do Cloud Tasks. O "80% de execucoes falhando" vai passar a se ler como o que sempre foi: **um crawl com limite de taxa que progride a cada tentativa**, e nao um job quebrado.
+
+**A licao, e ela e a terceira desta sessao no mesmo formato.** Escrevi "~80% das execucoes falhando" olhando `job_runs.status` e converti isso em urgencia sem perguntar o que a falha custava. As tres vezes o corretivo foi o mesmo: **medir o DANO, nao o sintoma.** Em D-194 o sintoma "cosmetico" escondia dano real; aqui o sintoma alarmante esconde dano quase nulo. O erro tem os dois sinais.
+
+**Verificacao:** so SELECT. Sem migration, sem mudanca de codigo.
+
+**Impacto:** `docs/ROADMAP.md`, `docs/HANDOFF.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:

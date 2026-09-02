@@ -14,7 +14,7 @@
 |---|---|
 | **Atualizado em** | 2026-09-01 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `7d2101a` (D-201) — esta fatia, D-202, é o commit seguinte |
+| **HEAD conhecido** | `c324dc7` (D-202) — esta fatia, D-203, é o commit seguinte |
 | **Deploy no ar** | `fc39c27` (`worker-00044-ps5` / `api-00029-vkg`) — **34 commits atrás** |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | **121 locais, 122 no Dev — o drift continua.** Ver "Dev à frente do repositório", abaixo |
@@ -117,6 +117,14 @@ Números completos e método: `docs/PERFORMANCE.md`.
   status`.** A varredura de D-200 deixou `apps/worker/src/handlers/__cast_probe.ts`
   para trás — um arquivo criado para inspecionar um tipo e nunca apagado. Quem
   pegou foi o `tsc`, não a leitura do resultado do agente.
+- **Meça o DANO, não o sintoma — e o erro tem os dois sinais.** Em D-194 eu
+  tinha chamado de "cosmético" um filtro que escondia 10 de 19 marcas; em
+  D-203 chamei de urgente um 429 cujo dano real é **1 anúncio em 1.204**. As
+  duas vezes converti um sintoma em prioridade sem perguntar o que ele
+  custava. Antes de escalar ou rebaixar, produza o número do dano.
+- **Antes de propor a correção, leia se ela já existe.** O "espalhar a rajada"
+  de D-203 já estava implementado e no ar desde D-156. Um `git log` no arquivo
+  teria poupado o item inteiro.
 - **Num sistema com fila externa, a tabela de execuções não sabe quantas
   vezes foi chamada.** `job_runs.attempt` marcava **1** em 2.234 execuções
   extras porque ninguém escreve `X-CloudTasks-TaskRetryCount` nela. Minha
@@ -247,10 +255,16 @@ Nada disto pode ser feito por um agente.
    `X-CloudTasks-TaskRetryCount`. **Sem efeito antes do deploy** — o worker no
    ar é anterior.
 
-6. **P1 — o snapshot de visitas leva 429 do ML todo dia**, ~80% das execuções
-   há 7 dias. `docs/ROADMAP.md` dizia "items_failed: 0"; era verdade em 25/08
-   e deixou de ser em 27/08. A alavanca é espalhar a rajada de ~2.700
-   requisições das 10:00 UTC, **não** aumentar capacidade.
+6. **~~P1 — o snapshot de visitas leva 429~~ — ITEM DERRUBADO em D-203, e
+   quem o escreveu fui eu.** O espaçamento que eu ia propor **já existe e já
+   está no ar** (D-156, ancestral do commit em produção). E o dano é quase
+   nulo: a cobertura diária é parcial (32% a 75%), mas na semana são 573 de
+   3.409 sem visita (17%) e — entre os **1.204 anúncios que venderam** —
+   exatamente **1** ficou sem dado. `taxa_conversao` já é `SUM(pedidos nos
+   dias com visita observada) / SUM(visitas)`: absorve cobertura parcial por
+   construção. Registrado com os números para ninguém re-escalar ao ver "80%
+   de falha" em `job_runs`.
+
 7. **Antes da segunda organização** — `get_system_health` tem escopo de
    plataforma com guard de tenant (D-182). Não é urgente hoje e não tem
    correção óbvia: as duas tentativas naturais causam regressão verificada.
