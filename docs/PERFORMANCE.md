@@ -365,6 +365,7 @@ Cada linha tem o antes/depois real, não estimativa.
 | 2026-09-02 | `Shell` (cabeçalho de **toda** tela) | 3 idas em série, em cada navegação | 1 ida | `Promise.all` — o waterfall de maior alcance do app | D-195 |
 | 2026-09-02 | Leituras em fila em 9 telas | 2 a 3 idas em série antes de renderizar | 1 ida | `Promise.all` nas leituras independentes; **14 sítios** no total, guarda `check:waterfalls` no CI | D-195 |
 | 2026-09-02 | 8 sítios que a regex não via | 2 a 3 idas em série (uma delas saindo do navegador) | 1 ida | `Promise.all`, filtro redundante removido, preferências do toast vindas do servidor | D-197 |
+| 2026-09-02 | Materialização das métricas diárias | **218,5** linhas escritas por recompute | **1,5** | `on conflict do update ... where a linha difere` no lugar de apaga-e-insere; remedido no Dev com tráfego real | D-199 |
 
 **Lição de D-195 — o piso de latência, e o que ele NÃO é.** Deste ambiente
 contra o Supabase Dev, uma leitura trivial (`organizations?select=id&limit=1`)
@@ -375,6 +376,28 @@ D-185 já havia isolado: o custo é **por chamada** e quase independente do que 
 chamada faz. Duas leituras independentes em fila custam duas; juntas, uma. Por
 isso a correção de D-195 não precisou de nenhuma medição de antes/depois por
 tela: a conta é estrutural, e o guarda de CI a mantém.
+
+**Lição de D-199 — uma otimização de materialização se prova por IGUALDADE,
+não por economia.** Trocar apaga-e-insere por convergência cortou as escritas
+das métricas diárias em ~99%. Esse não é o número que autoriza a fatia: numa
+tabela de métricas, uma mudança que alterasse os valores em silêncio seria
+catastrófica. O número que autoriza é a **assinatura md5 idêntica** entre a
+forma antiga e a nova, obtida depois de estragar o dia de propósito (uma linha
+alterada, uma apagada, uma fantasma inserida) e deixar a nova convergir.
+Economia primeiro, igualdade depois, é a ordem errada.
+
+**E a remedição não repetiu o número do ensaio — ficou melhor.** O ensaio, num
+dia já correto, deu 220 → 0. A medição no Dev com tráfego real, comparando os
+recomputes antes e depois da migration:
+
+| | recomputes | linhas escritas | média |
+|---|---|---|---|
+| antes | 231 | 50.482 | **218,5** |
+| depois | 14 | **21** | **1,5** |
+
+A amostra do "depois" é pequena (14 recomputes na primeira hora) e está dita
+como pequena. O sinal, porém, não é ambíguo: os recomputes que de fato tinham
+mudança passaram a escrever ~1,5 linhas em vez de reescrever o dia inteiro.
 
 **Lição de D-197 — o guarda precisa ser conferido contra o defeito, não contra
 a correção.** `check:waterfalls` passava verde no repo inteiro e mesmo assim

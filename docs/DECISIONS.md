@@ -4171,6 +4171,15 @@ E em algumas horas, zero pedidos — e 355 linhas reescritas mesmo assim.
 
 **Mudanca de contrato, dita em tres lugares.** O retorno das RPCs era "linhas inseridas" e passou a ser "linhas efetivamente escritas". Um recompute que nao muda nada reporta `0`, e isso e a verdade — mas quem le `processed` precisa saber. Esta na migration, nos testes e em `docs/METRICS.md`.
 
+**REMEDIDO no Dev, com trafego real, uma hora depois de aplicar** — e o numero ficou melhor que o do ensaio:
+
+| | recomputes | linhas escritas | media |
+|---|---|---|---|
+| antes | 231 | 50.482 | **218,5** |
+| depois | 14 | **21** | **1,5** |
+
+A amostra do "depois" e pequena (14 recomputes) e esta dita como pequena. O ensaio mediu o caso facil — um dia sem mudanca nenhuma, 220 para 0. Esta medicao cobre os recomputes que DE FATO tinham mudanca, e eles passaram a escrever ~1,5 linhas em vez de reescrever o dia inteiro.
+
 **Verificacao:** `check` 29/29, build 8/8. Migration `20260902115548` aplicada no Dev, ensaiada antes. **A suite de integracao nao rodou nesta maquina** — o Docker Desktop faz "application reset" e desliga sozinho aqui, entao os quatro testes reescritos sao verificados pelo CI.
 
 **Impacto:** `supabase/migrations/20260902115548_metrics_converge_instead_of_rewrite.sql`, `packages/db/src/rls.integration.test.ts` (quatro testes), `docs/METRICS.md`.
