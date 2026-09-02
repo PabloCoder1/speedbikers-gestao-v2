@@ -193,7 +193,10 @@ Nada disto pode ser feito por um agente.
    está saindo em terços: truncamento em D-193, filtro de marcas em D-194,
    **waterfalls em D-195** (14 leituras em fila — a maior no `Shell`, que
    embrulha toda tela) e **N+1/leituras em fila em D-197** (mais 8 sítios que
-   a regex não via, achados por varredura de agentes que leram o código). Sobram **N+1** e **dados carregados por aba não
+   a regex não via, achados por varredura de agentes que leram o código). O
+   terceiro terço — dados carregados por aba não aberta — foi varrido junto e
+   **já estava certo**: `/skus/[skuId]` dispara por aba desde sempre. **O item
+   de frontend do P1 está fechado.** Sobram **N+1** e **dados carregados por aba não
    aberta** — e os read models. `docs/ROADMAP.md` tem a ordem.
 4. **Antes da segunda organização** — `get_system_health` tem escopo de
    plataforma com guard de tenant (D-182). Não é urgente hoje e não tem
