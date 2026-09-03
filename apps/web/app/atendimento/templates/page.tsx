@@ -5,6 +5,7 @@ import { Shell } from "../../../components/shell";
 import { createClient } from "../../../lib/supabase/server";
 import { NewTemplateForm } from "./new-template-form";
 import { TemplateRow } from "./template-row";
+import { currentMembership } from "../../../lib/membership";
 
 export const metadata = { title: "Templates de resposta — Speed Bikers Gestão" };
 
@@ -24,10 +25,10 @@ export default async function TemplatesPage(): Promise<ReactNode> {
 
   const [templatesResult, membershipResult] = await Promise.all([
     supabase.from("reply_templates").select("id, name, body").order("name"),
-    supabase.from("organization_members").select("role").maybeSingle(),
+    currentMembership(supabase),
   ]);
 
-  const role = membershipResult.data?.role ?? null;
+  const role = membershipResult.role;
   const canManage = role === "ADMIN" || role === "GESTOR";
 
   return (

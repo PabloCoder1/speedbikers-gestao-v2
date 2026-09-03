@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { Shell } from "../../components/shell";
 import { formatBusinessDate, formatCount } from "../../lib/format";
 import { createClient } from "../../lib/supabase/server";
+import { currentMembership } from "../../lib/membership";
 
 export const metadata = { title: "Diagnóstico — Speed Bikers Gestão" };
 
@@ -70,8 +71,8 @@ const tdNumber: React.CSSProperties = { ...td, textAlign: "right", fontVariantNu
 export default async function DiagnosticoPage(): Promise<ReactNode> {
   const supabase = await createClient();
 
-  const membership = await supabase.from("organization_members").select("organization_id").maybeSingle();
-  const organizationId = membership.data?.organization_id ?? null;
+  const membership = await currentMembership(supabase);
+  const organizationId = membership.organizationId;
 
   if (membership.error !== null) {
     // Distinto de "sem organização": aquela mensagem sugere problema de

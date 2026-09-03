@@ -5,6 +5,7 @@ import { Shell } from "../../../components/shell";
 import { createClient } from "../../../lib/supabase/server";
 import { KnowledgeRow, type KnowledgeRowData } from "./knowledge-row";
 import { NewKnowledgeForm } from "./new-knowledge-form";
+import { currentMembership } from "../../../lib/membership";
 
 export const metadata = { title: "Base de Conhecimento — Speed Bikers Gestão" };
 
@@ -40,10 +41,10 @@ export default async function ConhecimentoPage(): Promise<ReactNode> {
       .select("id, kind, content, note, source, status, created_at, skus(sku)")
       .order("created_at", { ascending: false })
       .limit(200),
-    supabase.from("organization_members").select("role").maybeSingle(),
+    currentMembership(supabase),
   ]);
 
-  const role = membershipResult.data?.role ?? null;
+  const role = membershipResult.role;
   const canManage = role === "ADMIN" || role === "GESTOR";
 
   const rows: KnowledgeRowData[] = (entriesResult.data ?? []).map(

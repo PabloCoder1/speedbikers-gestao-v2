@@ -10,6 +10,17 @@ exatamente o que o budget de `docs:check` existe para impedir.
 Cada linha nasceu de um erro real. A decisão que a gerou está em
 `DECISIONS.md` — procure pelo termo no `DECISIONS_INDEX.md`.
 
+- **O Playwright testa o BUILD, não a árvore de trabalho — e falha descrevendo
+  código que você não tem mais.** `pnpm run e2e` sobe `next start`, que serve
+  o `.next` de quando foi construído pela última vez; e `pnpm run check` é
+  `typecheck lint test`, **sem build**. Editar o servidor, rodar `check` verde e
+  ir direto ao Playwright testa a versão ANTIGA. Em D-234 isso custou meia dúzia
+  de rodadas: nove testes falhavam com a mensagem exata do defeito que eu tinha
+  acabado de consertar, e cada nova hipótese (RLS, cache de schema do PostgREST,
+  variáveis de ambiente, segundo membro) foi refutada por medição porque a causa
+  era outra. **`build` ANTES do `e2e`, sempre** — é por isso que ele está no
+  meio do comando da bateria no HANDOFF, e não por enfeite.
+
 - **O truncamento de 1.000 do PostgREST volta sempre.** D-131 corrompeu o
   estoque; D-183 achou um contador errado; D-193 achou mais dois cortes vivos
   no worker; D-194 achou um **na tela**, escondendo 10 das 19 marcas do

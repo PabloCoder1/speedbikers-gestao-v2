@@ -238,36 +238,26 @@ D-228, três das quatro últimas por reuso), a **Central de Integrações**
 (D-231), a **revisão adversarial dela** (D-232 — sanitizador de erro nas cinco
 telas, uma lista de chave sensível com dois consumidores) e o **Hub de
 Configurações** (D-233 — sete seções numa viagem, o Hub não edita, aponta).
-Bateria da última: **566/566**, 29/29, 8/8, **34/34** embeds, 55, **19/19**.
+Bateria da última: **570/570**, 29/29, 8/8, **33** embeds, 55, **19/19** (com
+os DOIS membros no seed).
 
 ---
 
-🔴 **A PRÓXIMA TAREFA é a migração de `organization_members` para
-`lib/membership.ts` (D-234) — e ela conserta um defeito PROVADO, não um
-risco teórico.**
+✅ **D-234 fechou o defeito do segundo usuário.** 26 telas liam
+`organization_members` sem filtrar por usuário e devolviam `PGRST116` assim
+que a organização ganhava o segundo membro — *"sem organização"* para o
+próprio ADMIN. Agora leem `lib/membership.ts`, que chama
+`get_current_membership()`: o filtro por `auth.uid()` acontece no BANCO, então
+continua sendo **uma ida** (fazer em JS exigiria `getUser()` antes da consulta,
+e as duas ficariam em série). **O seed cria o segundo usuário**, e a suíte
+ficaria vermelha se alguém reintroduzir a leitura sem filtro.
 
-~25 telas leem `from("organization_members").select(...).maybeSingle()` **sem
-filtrar por usuário**. Funciona hoje só porque a organização tem um membro.
-Medido no banco local, com o segundo membro na MESMA organização:
+⚠️ **`/usuarios` continua lendo direto, de propósito** — ela lista membros.
 
-| | forma antiga | forma nova (`lib/membership.ts`) |
-|---|---|---|
-| 1 membro | 1 linha, sem erro | 1 linha, sem erro |
-| **2 membros** | **`data=null`, `PGRST116`** | **1 linha, sem erro** |
-
-Com `data` nulo a tela diz *"sem organização"* ou *"restrita a ADMIN"* — **para
-o próprio ADMIN**. A prova empírica veio antes da causa: pôr o segundo usuário
-no seed derrubou **9 dos 19 e2e de uma vez**. Ou seja: **cadastrar o segundo
-usuário em `/usuarios` hoje quebra o produto para todo mundo.**
-
-O conserto existe e as telas novas já o usam. Falta migrar as outras, e não é
-mecânico: os pontos têm formatos diferentes (uns leem `organization_id`,
-outros `role`, outros embutem `organizations(name)`).
-
-**A prova está pronta para virar teste:** `e2e/constants.ts` já traz
-`E2E_GESTOR_EMAIL`/`_PASSWORD`; o seed **ainda não cria** esse usuário. Criá-lo
-é o primeiro passo da fatia — a suíte deve ficar vermelha, e ficar verde de
-novo ao fim da migração.
+🔴 **A próxima pendência saudável (B) é o Aprendizado humano supervisionado**
+— "reusa a Base de Conhecimento (D-113); nada promovido sem humano". **O
+caminho NÃO foi medido**: ler o item do ROADMAP e as telas de
+`/atendimento/conhecimento` antes de escrever.
 
 ⚠️ **Dívida menor, registrada para não virar terceira cópia:** `/saude`,
 `/sincronizacao` e `/skus/[skuId]` ainda carregam suas próprias cópias de

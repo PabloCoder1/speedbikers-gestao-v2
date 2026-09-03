@@ -12,6 +12,7 @@ import {
 } from "../../lib/abc-filters";
 import { formatCount, formatCurrency } from "../../lib/format";
 import { createClient } from "../../lib/supabase/server";
+import { currentMembership } from "../../lib/membership";
 
 export const metadata = { title: "Curva ABC — Speed Bikers Gestão" };
 
@@ -88,11 +89,11 @@ export default async function CurvaAbcPage({
   // para filtrar. As duas leituras saem juntas desde D-195; a RPC abaixo
   // continua depois, porque ela SIM precisa da conta escolhida.
   const [membership, accountsResult] = await Promise.all([
-    supabase.from("organization_members").select("organization_id").maybeSingle(),
+    currentMembership(supabase),
     supabase.from("ml_accounts").select("id, slug, label").order("label"),
   ]);
 
-  const organizationId = membership.data?.organization_id ?? null;
+  const organizationId = membership.organizationId;
 
   if (organizationId === null) {
     return (

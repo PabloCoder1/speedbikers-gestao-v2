@@ -15,6 +15,7 @@ import {
   summarizePagedWindow,
 } from "../../lib/price-filters";
 import { createClient } from "../../lib/supabase/server";
+import { currentMembership } from "../../lib/membership";
 
 export const metadata = { title: "Preços — Speed Bikers Gestão" };
 
@@ -89,11 +90,11 @@ export default async function PrecosPage({
   // `/vinculacoes` já liam. A RPC abaixo continua depois — ela SIM depende da
   // conta escolhida.
   const [membership, accounts] = await Promise.all([
-    supabase.from("organization_members").select("organization_id").maybeSingle(),
+    currentMembership(supabase),
     supabase.from("ml_accounts").select("id, label").order("label"),
   ]);
 
-  const organizationId = membership.data?.organization_id ?? null;
+  const organizationId = membership.organizationId;
 
   if (organizationId === null) {
     return (

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { createClient } from "../../lib/supabase/server";
+import { currentMembership } from "../../lib/membership";
 
 /**
  * Ajuste manual de estoque (Fase 4, docs/ROADMAP.md) — Server Action chamando
@@ -41,7 +42,7 @@ function describeRpcError(error: { message: string } | null): string | null {
 async function currentOrganizationId(
   supabase: Awaited<ReturnType<typeof createClient>>,
 ): Promise<{ organizationId: string | null; failed: boolean }> {
-  const membership = await supabase.from("organization_members").select("organization_id").maybeSingle();
+  const membership = await currentMembership(supabase);
 
   if (membership.error !== null) {
     // Distinto de "sem organização" — falha de leitura transitória, não
@@ -49,7 +50,7 @@ async function currentOrganizationId(
     return { organizationId: null, failed: true };
   }
 
-  return { organizationId: membership.data?.organization_id ?? null, failed: false };
+  return { organizationId: membership.organizationId, failed: false };
 }
 
 export async function createManualStockAdjustment(input: {

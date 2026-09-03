@@ -8,6 +8,7 @@ import { sanitizeErrorText } from "../../lib/sanitize";
 import { createClient } from "../../lib/supabase/server";
 import { classifyResourceFreshness, failureRateLabel } from "../../lib/sync-health";
 import type { SyncVerdict } from "../../lib/sync-health";
+import { currentMembership } from "../../lib/membership";
 
 export const metadata = { title: "Saúde da Sincronização — Speed Bikers Gestão" };
 
@@ -116,8 +117,8 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
   const supabase = await createClient();
   const now = new Date();
 
-  const membership = await supabase.from("organization_members").select("organization_id").maybeSingle();
-  const organizationId = membership.data?.organization_id ?? null;
+  const membership = await currentMembership(supabase);
+  const organizationId = membership.organizationId;
 
   if (organizationId === null) {
     return (

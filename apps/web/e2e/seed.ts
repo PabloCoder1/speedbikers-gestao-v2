@@ -34,7 +34,14 @@ import { mkdir, writeFile } from "node:fs/promises";
 import type { Database } from "@sb/db";
 import { createClient } from "@supabase/supabase-js";
 
-import { E2E_DECISION_TEXT, E2E_SKU_SALES, E2E_USER_EMAIL, E2E_USER_PASSWORD } from "./constants.js";
+import {
+  E2E_DECISION_TEXT,
+  E2E_GESTOR_EMAIL,
+  E2E_GESTOR_PASSWORD,
+  E2E_SKU_SALES,
+  E2E_USER_EMAIL,
+  E2E_USER_PASSWORD,
+} from "./constants.js";
 import { SEED_OUTPUT_PATH, type SeedOutput } from "./seed-output.js";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321";
@@ -86,6 +93,59 @@ async function findUserIdByEmail(
   return null;
 }
 
+/**
+ * Cria (ou reaproveita) um usuário e garante que ele é membro da organização
+ * com o papel pedido. Idempotente: o seed roda repetido no mesmo banco.
+ */
+async function garanteMembro(
+  db: ReturnType<typeof createClient<Database>>,
+  organizationId: string,
+  quem: { email: string; password: string; fullName: string; role: "ADMIN" | "GESTOR" },
+): Promise<string> {
+  const existente = await findUserIdByEmail(db, quem.email);
+
+  let userId: string;
+
+  if (existente !== null) {
+    const atualizado = await db.auth.admin.updateUserById(existente, { password: quem.password });
+
+    if (atualizado.error !== null) {
+      throw atualizado.error;
+    }
+
+    userId = existente;
+  } else {
+    const criado = await db.auth.admin.createUser({
+      email: quem.email,
+      password: quem.password,
+      email_confirm: true,
+    });
+
+    if (criado.error !== null) {
+      throw criado.error;
+    }
+
+    userId = criado.data.user.id;
+  }
+
+  const profile = await db.from("profiles").upsert({ id: userId, full_name: quem.fullName }, { onConflict: "id" });
+
+  if (profile.error !== null) {
+    throw profile.error;
+  }
+
+  const membership = await db.from("organization_members").upsert(
+    { organization_id: organizationId, user_id: userId, role: quem.role },
+    { onConflict: "organization_id,user_id" },
+  );
+
+  if (membership.error !== null) {
+    throw membership.error;
+  }
+
+  return userId;
+}
+
 async function main(): Promise<void> {
   const db = createClient<Database>(SUPABASE_URL, requireServiceRoleKey(), {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -103,48 +163,27 @@ async function main(): Promise<void> {
 
   const organizationId = org.data.id;
 
-  const existingUserId = await findUserIdByEmail(db, E2E_USER_EMAIL);
+  const userId = await garanteMembro(db, organizationId, {
+    email: E2E_USER_EMAIL,
+    password: E2E_USER_PASSWORD,
+    fullName: "E2E",
+    role: "ADMIN",
+  });
 
-  let userId: string;
-
-  if (existingUserId !== null) {
-    const updated = await db.auth.admin.updateUserById(existingUserId, {
-      password: E2E_USER_PASSWORD,
-    });
-
-    if (updated.error !== null) {
-      throw updated.error;
-    }
-
-    userId = existingUserId;
-  } else {
-    const created = await db.auth.admin.createUser({
-      email: E2E_USER_EMAIL,
-      password: E2E_USER_PASSWORD,
-      email_confirm: true,
-    });
-
-    if (created.error !== null) {
-      throw created.error;
-    }
-
-    userId = created.data.user.id;
-  }
-
-  const profile = await db.from("profiles").upsert({ id: userId, full_name: "E2E" }, { onConflict: "id" });
-
-  if (profile.error !== null) {
-    throw profile.error;
-  }
-
-  const membership = await db.from("organization_members").upsert(
-    { organization_id: organizationId, user_id: userId, role: "ADMIN" },
-    { onConflict: "organization_id,user_id" },
-  );
-
-  if (membership.error !== null) {
-    throw membership.error;
-  }
+  // O SEGUNDO membro (D-234), e ele é a PROVA de um defeito, não decoração.
+  // Enquanto a organização tinha um membro só, ~25 telas liam
+  // `organization_members` com `maybeSingle()` SEM filtrar por usuário e
+  // funcionavam por acidente de cardinalidade. Com dois membros o PostgREST
+  // devolve `PGRST116`, `data` vira nulo, e a tela diz "sem organização" para
+  // o próprio ADMIN — ou seja, cadastrar o segundo usuário em `/usuarios`
+  // quebrava o produto para todo mundo. Este usuário existe para que a suíte
+  // fique VERMELHA se alguém reintroduzir a leitura sem filtro.
+  await garanteMembro(db, organizationId, {
+    email: E2E_GESTOR_EMAIL,
+    password: E2E_GESTOR_PASSWORD,
+    fullName: "E2E Gestor",
+    role: "GESTOR",
+  });
 
   const sku = await db
     .from("skus")

@@ -15,6 +15,7 @@ import type { SupportCaseLinkRow } from "../../lib/support-case-reference";
 import { resolveSupportCaseReference } from "../../lib/support-case-reference";
 import { createClient } from "../../lib/supabase/server";
 import { TriageCell } from "./triage-cell";
+import { currentMembership } from "../../lib/membership";
 
 export const metadata = { title: "Caixa de Entrada — Speed Bikers Gestão" };
 
@@ -178,7 +179,7 @@ export default async function AtendimentoPage({
   // - as contas alimentam o seletor e não dependem de nenhuma das outras.
   const [{ data: auth }, membership, accountsResult] = await Promise.all([
     supabase.auth.getUser(),
-    supabase.from("organization_members").select("organization_id").maybeSingle(),
+    currentMembership(supabase),
     supabase.from("ml_accounts").select("id, slug, label").order("label", { ascending: true }),
   ]);
 
@@ -197,7 +198,7 @@ export default async function AtendimentoPage({
     );
   }
 
-  if (membership.data?.organization_id == null) {
+  if (membership.organizationId == null) {
     return (
       <Shell>
         <h1 style={{ margin: "0 0 var(--sb-space-3)", fontSize: "1.375rem" }}>Caixa de Entrada</h1>

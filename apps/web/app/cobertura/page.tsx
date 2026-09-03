@@ -5,6 +5,7 @@ import { Shell } from "../../components/shell";
 import { TrendBadge } from "../../components/trend-badge";
 import { formatCount } from "../../lib/format";
 import { createClient } from "../../lib/supabase/server";
+import { currentMembership } from "../../lib/membership";
 
 export const metadata = { title: "Cobertura de estoque — Speed Bikers Gestão" };
 
@@ -81,8 +82,8 @@ const PAGE_SIZE = 200;
 export default async function CoberturaPage(): Promise<ReactNode> {
   const supabase = await createClient();
 
-  const membership = await supabase.from("organization_members").select("organization_id").maybeSingle();
-  const organizationId = membership.data?.organization_id ?? null;
+  const membership = await currentMembership(supabase);
+  const organizationId = membership.organizationId;
 
   if (organizationId === null) {
     return (

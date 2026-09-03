@@ -5427,6 +5427,65 @@ O comentario em `settings-hub.ts` diz isso na cara: *"o teste e quem mantem esta
 
 **Impacto:** `supabase/migrations/20260903160535_settings_overview_rpc.sql`, `apps/web/lib/settings-hub.ts`, `apps/web/lib/settings-hub.test.ts`, `apps/web/app/configuracoes/page.tsx`, `apps/web/e2e/configuracoes.spec.ts`, `packages/db/src/types.ts` (a mao, D-213), `packages/db/src/rls.integration.test.ts`, `apps/web/components/shell.tsx`.
 
+## D-234 - O defeito que D-119 achou, adiou e ninguem colheu: 26 telas quebravam no segundo usuario
+
+**Contexto:** `/usuarios` cadastra membros. Cadastrar o SEGUNDO **quebrava o produto para todo mundo** — e isso nao foi descoberto agora.
+
+**D-119 achou isto em 28/08**, verificou no bundle instalado do postgrest-js (`dist/index.cjs:471-481`: `length > 1` vira `PGRST116`), consertou no arquivo que estava tocando e escreveu, com todas as letras:
+
+> *"O mesmo defeito existe em **6 outros arquivos** — passe proprio, nao misturado aqui."*
+
+**O passe nunca aconteceu.** Seis dias depois eram **26**, e a revisao de D-232 reencontrou o mesmo defeito por outro caminho, sem saber que ja tinha nome. Enquanto isso a arvore acumulou **tres contornos locais diferentes** para a mesma pergunta (`.limit(1)` em `/produtos`, `.limit(1).maybeSingle()` em `/vinculacoes`, e o `.eq("user_id")` de D-119) — a "terceira copia" de D-232, agora em forma de conserto.
+
+**A licao nao e "D-119 errou".** Adiar foi razoavel: misturar 7 arquivos na fatia da vinculacao manual teria escondido as duas. **O que faltou foi o adiamento virar item rastreado** em vez de uma frase dentro de uma decisao. Frase em decisao nao e fila.
+
+---
+
+**O DEFEITO, medido**
+
+A policy e `organization_id in (private.accessible_orgs())` — devolve **todos os membros da organizacao**, nao a sua linha. Com um membro so, `maybeSingle()` funciona por acidente de cardinalidade.
+
+| | forma antiga | `get_current_membership()` |
+|---|---|---|
+| 1 membro | 1 linha | 1 linha |
+| **2 membros na mesma org** | **`data=null`, `PGRST116`** | **1 linha** |
+
+Com `data` nulo a tela diz *"sem organizacao"* ou *"restrita a ADMIN"* — **para o proprio ADMIN**. O teste de integracao reproduz o defeito direto (`select ... from organization_members` como ADMIN devolve **mais de uma linha** no fixture, que ja tinha dois membros em ORG_SB), entao o guarda acusa a versao defeituosa e nao so aprova a correta (D-197).
+
+---
+
+**POR QUE RPC, E NAO O FILTRO EM JAVASCRIPT**
+
+O conserto obvio e `.eq("user_id", (await getUser()).id)` — foi assim que D-232/D-233 sairam, em duas telas. **Nao escala para 26**, e a razao ja estava escrita na casa, em `components/shell.tsx`:
+
+> *"`getUser()` revalida o token contra o servidor de Auth e **custa uma ida inteira**. Enfileira-lo nao protegia nada: quem barra a rota e o `proxy.ts`, que ja chamou `getUser()` nesta mesma requisicao."*
+
+Filtrar em JS exige o `uid` **antes** da consulta: as duas idas ficam em **serie**, em 26 telas — latencia nova em toda a aplicacao, e exatamente a fila que `check:waterfalls` existe para pegar. No banco, `(select auth.uid())` resolve dentro da mesma chamada: **volta a ser uma ida**, igual a de hoje.
+
+**Nao e view:** o `public` tem 33 funcoes e ZERO views; a primeira view aqui criaria um segundo padrao de leitura para economizar nada.
+
+**Devolve CONJUNTO, e isso e deliberado.** `accessible_orgs()` e um conjunto: multi-organizacao e estruturalmente possivel (medido: 0 usuarios em duas, hoje). Um `limit 1` na RPC escolheria uma organizacao **em silencio** — a mesma classe de erro que esta fatia conserta. O ajudante trata "mais de uma" como **estado nomeado**, com mensagem propria, em vez de "pegue a primeira".
+
+**Um embed a menos, de brinde:** `organization_name` vem na RPC, entao o `Shell` parou de precisar de `organizations(name)`. `check:embeds` caiu de 34 para 33.
+
+---
+
+**A ARMADILHA QUE CUSTOU MEIA DUZIA DE RODADAS, E ERA METODO, NAO CODIGO**
+
+Depois da migracao, **os mesmos 9 e2e continuavam vermelhos**, com a mensagem exata do defeito que eu tinha acabado de consertar. Levantei e **refutei por medicao** quatro hipoteses — RLS de `support_cases` (o ADMIN via 1 conta, 2 casos, 2 mensagens), `accessible_accounts()` (filtra por `auth.uid()` certo), cache de schema do PostgREST (a RPC responde em `t+0s` depois do reset), variaveis de ambiente (`.env.local` identico ao que eu exportava).
+
+A causa era o metodo: **`pnpm run check` e `typecheck lint test`, SEM build**, e `pnpm run e2e` sobe `next start`, que serve o `.next` da ultima construcao. **O Playwright estava testando a versao ANTIGA do codigo.** A ordem correta ja estava escrita no comando da bateria do HANDOFF — eu e que pulei o `build`. Virou licao em `docs/LICOES.md`.
+
+E houve uma segunda, da mesma familia: deixei um `next dev` na porta 3000 e o Playwright o reusou (`reuseExistingServer`), produzindo **duas falhas diferentes em duas rodadas seguidas** do mesmo teste — ruido que quase virou hipotese.
+
+---
+
+**O QUE NAO FOI MIGRADO, e por que:** `/usuarios` (`page.tsx` e `actions.ts`) continua lendo `organization_members` direto — ela **lista membros de proposito**, e trocar por "a minha linha" quebraria a tela.
+
+**Verificacao:** **570/570** de integracao em banco recriado (566 + 4 novos), `check` 29/29, build 8/8, `check:embeds` **33** (era 34), `check:waterfalls` 55, **19/19 Playwright com o segundo membro no seed** — a mesma suite que ficava **8-9 vermelha** ao criar esse usuario antes da migracao.
+
+**Impacto:** `supabase/migrations/20260903183000_current_membership_rpc.sql`, `apps/web/lib/membership.ts`, `apps/web/e2e/seed.ts`, `packages/db/src/types.ts` (a mao, D-213), `packages/db/src/rls.integration.test.ts`, `docs/LICOES.md`, e as 29 telas e acoes migradas.
+
 ## Como adicionar nova decisao
 
 Registrar:

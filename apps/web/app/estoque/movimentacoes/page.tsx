@@ -21,6 +21,7 @@ import {
   movementTypeLabel,
 } from "../../../lib/movement-labels";
 import { createClient } from "../../../lib/supabase/server";
+import { currentMembership } from "../../../lib/membership";
 
 export const metadata = { title: "Movimentações de Estoque — Speed Bikers Gestão" };
 
@@ -85,8 +86,8 @@ export default async function MovimentacoesPage({
   const supabase = await createClient();
   const filters = resolveMovementFilters(query);
 
-  const membership = await supabase.from("organization_members").select("organization_id").maybeSingle();
-  const organizationId = membership.data?.organization_id ?? null;
+  const membership = await currentMembership(supabase);
+  const organizationId = membership.organizationId;
 
   if (organizationId === null) {
     return (

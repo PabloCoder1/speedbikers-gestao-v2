@@ -7,6 +7,7 @@ import { formatCount } from "../../lib/format";
 import { createClient } from "../../lib/supabase/server";
 import type { ActionRowData, DecisionData, OutcomeData } from "./action-row";
 import { ActionRow } from "./action-row";
+import { currentMembership } from "../../lib/membership";
 
 export const metadata = { title: "Central de Ações — Speed Bikers Gestão" };
 
@@ -61,7 +62,7 @@ export default async function AcoesPage(): Promise<ReactNode> {
   // e o `organizationId` abaixo só serve ao guarda de "sem organização".
   const [{ data: auth }, membership, actionsResult] = await Promise.all([
     supabase.auth.getUser(),
-    supabase.from("organization_members").select("organization_id").maybeSingle(),
+    currentMembership(supabase),
     supabase
       .from("actions")
       .select(
@@ -72,7 +73,7 @@ export default async function AcoesPage(): Promise<ReactNode> {
   ]);
 
   const userId = auth.user?.id ?? null;
-  const organizationId = membership.data?.organization_id ?? null;
+  const organizationId = membership.organizationId;
 
   if (organizationId === null || userId === null) {
     return (

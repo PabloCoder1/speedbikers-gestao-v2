@@ -5,6 +5,7 @@ import { formatCount } from "../../lib/format";
 import { createClient } from "../../lib/supabase/server";
 import { NewSuggestionForm } from "./new-suggestion-form";
 import { SuggestionRow, type SuggestionRowData } from "./suggestion-row";
+import { currentMembership } from "../../lib/membership";
 
 export const metadata = { title: "Sugestões de Melhoria — Speed Bikers Gestão" };
 
@@ -63,7 +64,7 @@ export default async function SugestoesPage(): Promise<ReactNode> {
   // O `as never` que morava aqui ficou obsoleto: `feature_suggestions`
   // entrou em `Database` quando os types foram regenerados (D-100).
   const [membership, suggestions] = await Promise.all([
-    supabase.from("organization_members").select("role").maybeSingle(),
+    currentMembership(supabase),
     supabase
       .from("feature_suggestions")
       .select(
@@ -72,7 +73,7 @@ export default async function SugestoesPage(): Promise<ReactNode> {
       .order("created_at", { ascending: false }),
   ]);
 
-  const role = membership.data?.role ?? null;
+  const role = membership.role;
   const canManage = role === "ADMIN" || role === "GESTOR";
   const { data, error } = suggestions;
 

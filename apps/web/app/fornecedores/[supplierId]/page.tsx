@@ -7,6 +7,7 @@ import { StatusPill } from "../../../components/status-pill";
 import { formatCount, formatCurrency, formatDateTime } from "../../../lib/format";
 import { purchaseOrderStatusLabel } from "../../../lib/labels";
 import { createClient } from "../../../lib/supabase/server";
+import { currentMembership } from "../../../lib/membership";
 
 export const metadata = { title: "Fornecedor — Speed Bikers Gestão" };
 
@@ -88,8 +89,8 @@ export default async function FornecedorPage({
   const { supplierId } = await params;
   const supabase = await createClient();
 
-  const membership = await supabase.from("organization_members").select("organization_id").maybeSingle();
-  const organizationId = membership.data?.organization_id ?? null;
+  const membership = await currentMembership(supabase);
+  const organizationId = membership.organizationId;
 
   if (organizationId === null) {
     return (

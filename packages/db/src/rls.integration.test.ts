@@ -4861,6 +4861,59 @@ describe("get_settings_overview (D-233, Hub de Configuracoes)", () => {
  * frase não, ele falha — é o que torna a cópia legítima (mesmo método de
  * D-206/D-228, paridade fixada por teste).
  */
+// get_current_membership (20260903183000, D-234) — a associação de QUEM
+// pergunta, e a prova de que a forma antiga estava errada.
+describe("get_current_membership (D-234)", () => {
+  // O fixture já tem DOIS membros em ORG_SB (ADMIN_SB e ANALISTA_SB). É essa
+  // cardinalidade que quebrava ~25 telas — e é ela que dá dentes a estes
+  // testes: sem um segundo membro, os dois lados dariam a mesma coisa.
+  it("a forma ANTIGA devolve mais de uma linha — é o defeito, e ele é reproduzível", async () => {
+    const semFiltro = await asUser<{ role: string }>(
+      ADMIN_SB,
+      "select organization_id, role from public.organization_members",
+    );
+
+    // Duas linhas é exatamente o que faz `maybeSingle()` do postgrest-js
+    // devolver PGRST116 e `data` nulo — e a tela dizer "sem organização"
+    // para o próprio ADMIN.
+    expect(semFiltro.length).toBeGreaterThan(1);
+  });
+
+  it("cada um recebe O SEU papel, não o do colega", async () => {
+    const admin = await asUser<{ organization_id: string; organization_name: string; role: string }>(
+      ADMIN_SB,
+      "select * from public.get_current_membership()",
+    );
+    const analista = await asUser<{ organization_id: string; role: string }>(
+      ANALISTA_SB,
+      "select * from public.get_current_membership()",
+    );
+
+    expect(admin).toHaveLength(1);
+    expect(admin[0]?.role).toBe("ADMIN");
+    expect(admin[0]?.organization_id).toBe(ORG_SB);
+    // O nome vem junto para o Shell não precisar de embed.
+    expect(admin[0]?.organization_name).not.toBeNull();
+
+    expect(analista).toHaveLength(1);
+    // A parte que importa para segurança: o ANALISTA não lê o papel do ADMIN.
+    expect(analista[0]?.role).toBe("ANALISTA");
+    expect(analista[0]?.organization_id).toBe(ORG_SB);
+  });
+
+  it("quem não é membro de organização nenhuma recebe zero linhas, não erro", async () => {
+    const rows = await asUser(SEM_ORG, "select * from public.get_current_membership()");
+
+    // Zero linhas e erro são respostas diferentes (D-067): "não é membro" é
+    // cadastro; erro é falha de leitura. A tela distingue as duas.
+    expect(rows).toHaveLength(0);
+  });
+
+  it("anon não executa get_current_membership", async () => {
+    await expect(asAnon("select * from public.get_current_membership()")).rejects.toThrow(/permission denied/i);
+  });
+});
+
 describe("hub de configuracoes: quem altera bate com as policies (D-233)", () => {
   async function politicas(tabela: string, comandos: string[]): Promise<string[]> {
     const rows = await client.query<{ texto: string }>(

@@ -5,6 +5,7 @@ import { formatCount } from "../../lib/format";
 import { createClient } from "../../lib/supabase/server";
 
 import { CurationTable, type CurationRow } from "./curation-table";
+import { currentMembership } from "../../lib/membership";
 
 export const metadata = { title: "Produtos — Speed Bikers Gestão" };
 
@@ -140,8 +141,8 @@ export default async function ProdutosPage({
   // `.limit(1)` e não `.maybeSingle()` sem filtro: numa organização com dois
   // membros o `maybeSingle` estoura PGRST116 e a tela inteira morre — o
   // defeito que D-119 mediu e corrigiu.
-  const membership = await supabase.from("organization_members").select("organization_id").limit(1);
-  const organizationId = membership.data?.[0]?.organization_id ?? null;
+  const membership = await currentMembership(supabase);
+  const organizationId = membership.organizationId;
 
   if (membership.error !== null) {
     // Distinto de "sem organização": aquela mensagem sugere problema de

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { createClient } from "../../lib/supabase/server";
+import { currentMembership } from "../../lib/membership";
 
 /**
  * Criação de conta Mercado Livre (docs/DATABASE.md, tabela `ml_accounts`).
@@ -47,18 +48,18 @@ export async function createMlAccount(label: string, slug: string): Promise<Acti
     return { ok: false, message: "Preencha o rótulo e o identificador." };
   }
 
-  const membership = await supabase.from("organization_members").select("organization_id").maybeSingle();
+  const membership = await currentMembership(supabase);
 
   if (membership.error !== null) {
     return { ok: false, message: "Não foi possível confirmar sua organização — tente de novo." };
   }
 
-  if (membership.data === null) {
+  if (membership.organizationId === null) {
     return { ok: false, message: "Sua conta não está associada a nenhuma organização." };
   }
 
   const { error } = await supabase.from("ml_accounts").insert({
-    organization_id: membership.data.organization_id,
+    organization_id: membership.organizationId,
     label: trimmedLabel,
     slug: trimmedSlug,
   });

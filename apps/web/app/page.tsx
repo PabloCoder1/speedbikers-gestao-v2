@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { Shell } from "../components/shell";
 import { formatCount } from "../lib/format";
 import { createClient } from "../lib/supabase/server";
+import { currentMembership } from "../lib/membership";
 
 export const metadata = { title: "Visão Geral — Speed Bikers Gestão" };
 
@@ -93,10 +94,7 @@ export default async function HomePage(): Promise<ReactNode> {
   // linha para quem não alcança nada, e a tela não as mostra.
   const [membership, openActions, openCases, mediations, unread] =
     await Promise.all([
-      supabase
-        .from("organization_members")
-        .select("organization_id")
-        .maybeSingle(),
+      currentMembership(supabase),
       supabase
         .from("actions")
         .select("id", { count: "exact", head: true })
@@ -116,7 +114,7 @@ export default async function HomePage(): Promise<ReactNode> {
         .is("read_at", null),
     ]);
 
-  const organizationId = membership.data?.organization_id ?? null;
+  const organizationId = membership.organizationId;
 
   if (membership.error !== null || organizationId === null) {
     return (

@@ -5,6 +5,7 @@ import { createClient } from "../lib/supabase/server";
 import { CommandPalette } from "./command-palette";
 import type { NotificationPreferenceRule } from "../lib/notification-preferences";
 import { NotificationToasts } from "./notification-toasts";
+import { currentMembership } from "../lib/membership";
 
 /**
  * Moldura das telas autenticadas: cabeçalho, navegação e identificação.
@@ -172,7 +173,7 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
   // `/login` sem sessão. As outras duas são restringidas pela RLS.
   const [{ data: auth }, membership, unread, preferences] = await Promise.all([
     supabase.auth.getUser(),
-    supabase.from("organization_members").select("role, organization_id, organizations(name)").maybeSingle(),
+    currentMembership(supabase),
     // Badge de não lidas (Fase 7, item 4) — `notification_recipients_select_own`
     // já restringe a própria linha, sem precisar filtrar por user_id aqui.
     supabase.from("notification_recipients").select("*", { count: "exact", head: true }).is("read_at", null),
@@ -194,9 +195,9 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
     enabled: row.enabled,
   }));
 
-  const role = membership.data?.role ?? null;
-  const orgName = membership.data?.organizations.name ?? "Speed Bikers";
-  const organizationId = membership.data?.organization_id ?? null;
+  const role = membership.role;
+  const orgName = membership.organizationName ?? "Speed Bikers";
+  const organizationId = membership.organizationId;
   // Falha aqui (não "sem organização" — isso já é tratado explicitamente em
   // cada página) degradava em silêncio: nome genérico, busca desabilitada
   // (organizationId null), papel sumindo do cabeçalho, sem nenhum sinal —

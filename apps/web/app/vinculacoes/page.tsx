@@ -5,6 +5,7 @@ import { formatCount, formatCurrency, formatDateTime } from "../../lib/format";
 import { createClient } from "../../lib/supabase/server";
 import { CandidateRow } from "./candidate-row";
 import { ManualLinkForm } from "./manual-link-form";
+import { currentMembership } from "../../lib/membership";
 
 export const metadata = { title: "Central de Vinculações — Speed Bikers Gestão" };
 
@@ -75,13 +76,9 @@ export default async function VinculacoesPage({
   // Padrão é SÓ ATIVOS: pausado é fila legítima, mas não é o trabalho do dia.
   const statusFiltro = primeiro("estado") === "todos" ? null : "active";
 
-  const membership = await supabase
-    .from("organization_members")
-    .select("organization_id")
-    .limit(1)
-    .maybeSingle();
+  const membership = await currentMembership(supabase);
 
-  const organizationId = membership.data?.organization_id ?? null;
+  const organizationId = membership.organizationId;
 
   // Sem filtro por organização: a policy já restringe
   // (link_candidates_select_permitted, has_account_access).

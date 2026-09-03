@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { createClient } from "../../lib/supabase/server";
+import { currentMembership } from "../../lib/membership";
 
 /**
  * Sugestões de features via Copiloto (Fase 7, item 9, D-079,
@@ -43,13 +44,13 @@ export async function createSuggestion(originalText: string): Promise<Suggestion
 
   const [authResult, membershipResult] = await Promise.all([
     supabase.auth.getUser(),
-    supabase.from("organization_members").select("organization_id").maybeSingle(),
+    currentMembership(supabase),
   ]);
 
   const userId = authResult.data.user?.id;
-  const organizationId = membershipResult.data?.organization_id;
+  const organizationId = membershipResult.organizationId;
 
-  if (userId === undefined || organizationId === undefined) {
+  if (userId === undefined || organizationId === null) {
     return { ok: false, message: "Sessão expirada ou sem organização — atualize a página e tente de novo." };
   }
 

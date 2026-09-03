@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { createClient } from "../../../lib/supabase/server";
+import { currentMembership } from "../../../lib/membership";
 
 /**
  * Templates de resposta (Fase 7B, D-111) — Server Actions diretas sob RLS,
@@ -67,13 +68,13 @@ export async function createTemplate(name: string, body: string): Promise<Templa
 
   const [authResult, membershipResult] = await Promise.all([
     supabase.auth.getUser(),
-    supabase.from("organization_members").select("organization_id").maybeSingle(),
+    currentMembership(supabase),
   ]);
 
   const userId = authResult.data.user?.id;
-  const organizationId = membershipResult.data?.organization_id;
+  const organizationId = membershipResult.organizationId;
 
-  if (userId === undefined || organizationId === undefined) {
+  if (userId === undefined || organizationId === null) {
     return { ok: false, message: "Sessão expirada — atualize a página." };
   }
 

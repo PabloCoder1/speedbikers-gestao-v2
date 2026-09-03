@@ -16,6 +16,7 @@ import { formatBusinessDate, formatCount, formatCurrency, formatDateTime, format
 import { createClient } from "../../lib/supabase/server";
 import { DEFAULT_SALES_METRIC, SALES_METRICS, resolveSalesMetric } from "../../lib/sales-metric";
 import { SalesChart } from "./sales-chart";
+import { currentMembership } from "../../lib/membership";
 
 export const metadata = { title: "Dashboard de Vendas — Speed Bikers Gestão" };
 
@@ -453,12 +454,12 @@ export default async function VendasPage({
 
   const [accountsResult, membershipResult, savedFiltersResult] = await Promise.all([
     supabase.from("ml_accounts").select("id, slug, label").order("label", { ascending: true }),
-    supabase.from("organization_members").select("organization_id").maybeSingle(),
+    currentMembership(supabase),
     supabase.from("saved_filters").select("id, name, params").eq("screen", "/vendas").order("name"),
   ]);
 
   const accounts: AccountOption[] = accountsResult.data ?? [];
-  const organizationId = membershipResult.data?.organization_id ?? null;
+  const organizationId = membershipResult.organizationId;
   const savedFilters: SavedFilter[] = (savedFiltersResult.data ?? []).map((row) => ({
     id: row.id,
     name: row.name,

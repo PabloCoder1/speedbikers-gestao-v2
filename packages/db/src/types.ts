@@ -4135,6 +4135,14 @@ export type Database = {
           vendidos_sem_vinculo: number
         }[]
       }
+      get_current_membership: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          organization_id: string
+          organization_name: string
+          role: string
+        }[]
+      }
       get_fulfillment_overview: {
         // CORRECAO MANUAL sobre o arquivo gerado (classe D-133): o gerador
         // nunca marca argumento de RPC como nulo, e os quatro opcionais

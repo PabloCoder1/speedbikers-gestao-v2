@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { createClient } from "../../../lib/supabase/server";
+import { currentMembership } from "../../../lib/membership";
 
 /**
  * Configuração de reposição (D-144, Fase 5D) — Server Actions diretas sob
@@ -70,8 +71,8 @@ function parseDays(raw: FormDataEntryValue | null, label: string, min: number): 
 export async function createSetting(formData: FormData): Promise<void> {
   const supabase = await createClient();
 
-  const membership = await supabase.from("organization_members").select("organization_id").maybeSingle();
-  const organizationId = membership.data?.organization_id ?? null;
+  const membership = await currentMembership(supabase);
+  const organizationId = membership.organizationId;
 
   if (organizationId === null) {
     finish("Sessão sem organização — atualize a página.");

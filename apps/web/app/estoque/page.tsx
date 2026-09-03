@@ -7,6 +7,7 @@ import { Shell } from "../../components/shell";
 import { formatBusinessDate, formatCount, formatCurrency } from "../../lib/format";
 import { PAGE_SIZE, buildStockHref, resolveStockFilters, summarizeStockWindow } from "../../lib/stock-filters";
 import { createClient } from "../../lib/supabase/server";
+import { currentMembership } from "../../lib/membership";
 
 export const metadata = { title: "Estoque — Speed Bikers Gestão" };
 
@@ -80,8 +81,8 @@ export default async function EstoquePage({
   const query = await searchParams;
   const supabase = await createClient();
 
-  const membership = await supabase.from("organization_members").select("organization_id").maybeSingle();
-  const organizationId = membership.data?.organization_id ?? null;
+  const membership = await currentMembership(supabase);
+  const organizationId = membership.organizationId;
 
   if (organizationId === null) {
     return (
