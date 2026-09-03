@@ -13,9 +13,14 @@ import { E2E_USER_EMAIL, E2E_USER_PASSWORD } from "./constants.js";
  * "entrar" e "chegar na tela certa".
  */
 export async function login(page: Page, redirectTo = "/"): Promise<void> {
+  await loginAs(page, E2E_USER_EMAIL, E2E_USER_PASSWORD, redirectTo);
+}
+
+/** O mesmo fluxo, para o segundo usuário do seed (GESTOR, D-232). */
+export async function loginAs(page: Page, email: string, password: string, redirectTo = "/"): Promise<void> {
   await page.goto(redirectTo);
-  await page.getByLabel("E-mail").fill(E2E_USER_EMAIL);
-  await page.getByLabel("Senha").fill(E2E_USER_PASSWORD);
+  await page.getByLabel("E-mail").fill(email);
+  await page.getByLabel("Senha").fill(password);
   await page.getByRole("button", { name: "Entrar" }).click();
 }
 

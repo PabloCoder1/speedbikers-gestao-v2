@@ -305,6 +305,19 @@ const ACTION_STATUS: Record<string, string> = {
   descartado: "Descartado",
 };
 
+/**
+ * `ml_accounts.status` (D-041) — vivia copiado em `/contas` e `/sincronizacao`
+ * e nasceu uma terceira vez em `/integracoes`; D-232 subiu para cá. REVOKED e
+ * ERROR são coisas diferentes (acesso revogado exige reautenticação humana;
+ * erro de conexão pode ser transitório) e ficam com nomes diferentes.
+ */
+const ML_ACCOUNT_STATUS: Record<string, string> = {
+  PENDING: "Aguardando conexão",
+  CONNECTED: "Conectada",
+  REVOKED: "Acesso revogado",
+  ERROR: "Erro de conexão",
+};
+
 function lookup(table: Record<string, string>, code: string): string {
   return table[code] ?? code;
 }
@@ -319,6 +332,7 @@ export const purchaseOrderEventLabel = (code: string): string => lookup(PURCHASE
 export const locationKindLabel = (code: string): string => lookup(LOCATION_KIND, code);
 export const listingStatusLabel = (code: string): string => lookup(LISTING_STATUS, code);
 export const actionStatusLabel = (code: string): string => lookup(ACTION_STATUS, code);
+export const mlAccountStatusLabel = (code: string): string => lookup(ML_ACCOUNT_STATUS, code);
 export const eventTypeLabel = (code: string): string => lookup(EVENT_TYPE, code);
 export const severityLabel = (code: string): string => lookup(SEVERITY, code);
 export const featureSuggestionStatusLabel = (code: string): string => lookup(FEATURE_SUGGESTION_STATUS, code);
@@ -356,6 +370,13 @@ export function statusTone(code: string): "ok" | "warn" | "bad" | null {
 
   if (code === "active") return "ok";
   if (code === "paused") return "warn";
+
+  // Conta do Mercado Livre (D-232): conectada é ok; aguardando é warn; revogada
+  // e erro são bad — mesma leitura que `/contas` e `/sincronizacao` já faziam
+  // com mapas próprios.
+  if (code === "CONNECTED") return "ok";
+  if (code === "PENDING") return "warn";
+  if (code === "REVOKED" || code === "ERROR") return "bad";
 
   // Atendimento (D-090). "NOVO" é warn, não bad: uma pergunta nova é o
   // estado NORMAL da caixa, não um problema — o que merece vermelho é

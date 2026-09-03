@@ -103,19 +103,34 @@ describe("classifyJobFreshness (Saúde do Sistema, D-219)", () => {
   });
 
   /**
-   * Job movido por evento não tem cadência, e inventar uma seria gritar sobre
-   * o comportamento certo — a decisão que D-143 tomou para backfill.
+   * Job movido por evento e RARO por natureza não tem cadência, e inventar uma
+   * seria gritar sobre o comportamento certo — a decisão que D-143 tomou para
+   * backfill. Este teste dizia o mesmo dos jobs de webhook; D-232 mediu que o
+   * de pedidos processa ~4.600 execuções por dia com intervalo máximo de 61
+   * minutos na semana, e o tirou daqui (ver o teste seguinte).
    */
-  it("job sem cadência fixa não ganha veredito", () => {
-    for (const semCadencia of [
-      "analytics.recompute",
-      "sync.webhook.received",
-      "sync.support.questions",
-      "backfill.orders",
-      "erp.import.apply",
-    ]) {
+  it("job sem cadência fixa e raro por natureza não ganha veredito", () => {
+    for (const semCadencia of ["analytics.recompute", "backfill.orders", "erp.import.apply"]) {
       expect(classifyJobFreshness(semCadencia, minutesAgo(9999), NOW)).toBe("sem_cadencia");
     }
+  });
+
+  /**
+   * Silêncio de job por evento (D-232): a unidade é o MAIOR intervalo
+   * observado em 7 dias (61 min para o webhook de pedidos), e a escada é a do
+   * módulo — até 2× é normal, até 4× atenção, acima crítico.
+   */
+  it("webhook de pedidos: mudo há 1 h é normal, há 3 h é atenção, há 5 h é crítico — e nunca rodou é `nunca`", () => {
+    expect(classifyJobFreshness("sync.webhook.received", minutesAgo(60), NOW)).toBe("ok");
+    expect(classifyJobFreshness("sync.webhook.received", minutesAgo(180), NOW)).toBe("atencao");
+    expect(classifyJobFreshness("sync.webhook.received", minutesAgo(300), NOW)).toBe("critico");
+    expect(classifyJobFreshness("sync.webhook.received", null, NOW)).toBe("nunca");
+  });
+
+  it("webhooks de perguntas e mensagens têm o SEU intervalo medido — 10 horas mudos ainda é normal", () => {
+    expect(classifyJobFreshness("sync.support.questions", minutesAgo(600), NOW)).toBe("ok");
+    expect(classifyJobFreshness("sync.support.messages", minutesAgo(600), NOW)).toBe("ok");
+    expect(classifyJobFreshness("sync.support.questions", minutesAgo(50 * 60), NOW)).toBe("critico");
   });
 
   it("job agendado que nunca rodou é `nunca`, não `ok`", () => {

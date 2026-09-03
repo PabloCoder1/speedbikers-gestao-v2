@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { StatusPill } from "../../components/status-pill";
 import { Shell } from "../../components/shell";
 import { formatCount, formatDateTime } from "../../lib/format";
+import { sanitizeErrorText } from "../../lib/sanitize";
 import { batchStatusLabel, kindLabel } from "../../lib/labels";
 import { createClient } from "../../lib/supabase/server";
 
@@ -109,7 +110,7 @@ export default async function ImportacoesPage(): Promise<ReactNode> {
 
                     {batch.last_error !== null && (
                       <div style={{ color: "var(--sb-danger)", fontSize: "0.75rem" }}>
-                        {batch.last_error}
+                        {sanitizeErrorText(batch.last_error)}
                       </div>
                     )}
                   </td>

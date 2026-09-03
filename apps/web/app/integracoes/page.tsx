@@ -2,10 +2,15 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { Shell } from "../../components/shell";
-import { fetchApiHealth, apiBaseUrl } from "../../lib/api-health";
+import { StatePill } from "../../components/state-pill";
+import type { PillTone } from "../../components/state-pill";
+import { cardStyle, td, th } from "../../components/table-styles";
+import { apiBaseUrl, fetchApiHealth } from "../../lib/api-health";
 import { formatDateTime } from "../../lib/format";
-import { describeIntegrations, sanitizeErrorText } from "../../lib/integrations";
+import { describeIntegrations } from "../../lib/integrations";
 import type { Dimension, IntegrationState } from "../../lib/integrations";
+import { currentMembership } from "../../lib/membership";
+import { sanitizeErrorText } from "../../lib/sanitize";
 import { createClient } from "../../lib/supabase/server";
 
 export const metadata = { title: "Integrações — Speed Bikers Gestão" };
@@ -15,35 +20,39 @@ export const metadata = { title: "Integrações — Speed Bikers Gestão" };
 export const dynamic = "force-dynamic";
 
 /**
- * Central de Integrações (item C/E do ROADMAP, primeira versão — D-231).
+ * Central de Integrações (item C/E do ROADMAP; D-231, refeita em D-232 depois
+ * da revisão adversarial).
  *
  * Uma tela que COMPÕE e APONTA. Nenhuma tabela nova, nenhuma RPC nova,
  * nenhuma permissão de nuvem nova: ela lê em paralelo o que as telas donas já
- * leem (contas ML, saúde da sincronização, jobs, lotes do UpSeller, uso de IA,
- * `/health` da API) e entrega isso a `lib/integrations.ts`, que separa cada
- * integração em três dimensões — **conexão, sincronização e configuração** —
- * porque o item nomeia exatamente essa confusão como o risco: "declarar saúde
- * só por haver configuração".
+ * leem e entrega isso a `lib/integrations.ts`, que separa cada integração em
+ * três dimensões — **conexão, sincronização e configuração** — porque o item
+ * nomeia exatamente essa confusão como o risco: "declarar saúde só por haver
+ * configuração".
+ *
+ * Aberta a qualquer membro, como as suas fontes (`/contas`, `/sincronizacao`,
+ * `/importacoes` não têm porta ADMIN). O que é só de ADMIN — `get_system_health`
+ * — refaz a autorização DENTRO da RPC e devolve zero linhas para os demais; a
+ * tela traduz isso em "restrito a ADMIN" nos cards que dependem dele, em vez
+ * de negar a página inteira (a primeira versão negava, e era mais restrita que
+ * as próprias fontes).
  *
  * Duas regras que valem mais que qualquer selo verde aqui:
  *
- * 1. **`ok` exige atividade observada.** Configuração existente sem atividade
- *    nunca é verde; e nesta versão NENHUMA configuração é `ok`, porque não há
- *    coletor autenticado para Secret Manager, Cloud Scheduler, painel do
- *    Mercado Livre ou Dashboard do Supabase (o item exclui permissões novas de
- *    nuvem). O honesto é "Não verificável", com o motivo escrito ao lado.
+ * 1. **`ok` exige atividade observada e recente.** Um `CONNECTED` gravado é
+ *    flag, não atividade. Fonte sob demanda (IA, lote do UpSeller) nunca vira
+ *    verde: vira "Observado", com a data.
  * 2. **Um dado, um dono (D-224).** Veredito de frescor vem de
  *    `lib/sync-health.ts`, o mesmo de `/sincronizacao` e `/saude`; reconectar
- *    conta continua em `/contas`. Esta tela não tem botão: só links para a
- *    tela que manda.
- *
- * Restrita a ADMIN, como `/saude` — é estado da operação, não do produto.
+ *    conta continua em `/contas`. Esta tela não tem botão: só links.
  */
 
-const STATE_TONE: Record<IntegrationState, { color: string; label: string }> = {
+const STATE_TONE: Record<IntegrationState, PillTone> = {
   ok: { color: "var(--sb-secondary)", label: "OK" },
   atencao: { color: "var(--sb-accent-ink)", label: "Atenção" },
   erro: { color: "var(--sb-danger)", label: "Erro" },
+  observado: { color: "var(--sb-text-soft)", label: "Observado" },
+  sem_atividade: { color: "var(--sb-muted-ink)", label: "Sem atividade" },
   nao_configurado: { color: "var(--sb-muted-ink)", label: "Não configurado" },
   nao_verificavel: { color: "var(--sb-text-soft)", label: "Não verificável" },
 };
@@ -53,53 +62,6 @@ const DIMENSION_LABEL = {
   sync: "Sincronização",
   configuration: "Configuração",
 } as const;
-
-const cardStyle: React.CSSProperties = {
-  border: "1px solid var(--sb-border)",
-  borderRadius: "var(--sb-radius)",
-  padding: "var(--sb-space-3)",
-  display: "grid",
-  gap: "var(--sb-space-2)",
-};
-
-const th: React.CSSProperties = {
-  textAlign: "left",
-  padding: "0.375rem 0.5rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.6875rem",
-  textTransform: "uppercase",
-  letterSpacing: "0.04em",
-  color: "var(--sb-text-soft)",
-  whiteSpace: "nowrap",
-};
-
-const td: React.CSSProperties = {
-  padding: "0.375rem 0.5rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.8125rem",
-  verticalAlign: "top",
-};
-
-function StatePill({ state }: { state: IntegrationState }): ReactNode {
-  const tone = STATE_TONE[state];
-
-  return (
-    <span
-      style={{
-        display: "inline-block",
-        padding: "0.0625rem 0.5rem",
-        borderRadius: "999px",
-        border: `1px solid ${tone.color}`,
-        color: tone.color,
-        fontSize: "0.75rem",
-        fontWeight: 600,
-        whiteSpace: "nowrap",
-      }}
-    >
-      {tone.label}
-    </span>
-  );
-}
 
 function DimensionRow({ label, dimension }: { label: string; dimension: Dimension | null }): ReactNode {
   return (
@@ -114,7 +76,7 @@ function DimensionRow({ label, dimension }: { label: string; dimension: Dimensio
       ) : (
         <>
           <td style={td}>
-            <StatePill state={dimension.state} />
+            <StatePill tone={STATE_TONE[dimension.state]} />
           </td>
           <td style={td}>{dimension.detail}</td>
           <td style={{ ...td, whiteSpace: "nowrap", color: "var(--sb-text-soft)" }}>
@@ -129,18 +91,29 @@ function DimensionRow({ label, dimension }: { label: string; dimension: Dimensio
 export default async function IntegracoesPage(): Promise<ReactNode> {
   const supabase = await createClient();
 
-  // Papel e organização na MESMA linha (D-180). `organization_id` é
-  // parâmetro de `get_sync_health`, por isso a leitura vem antes das outras —
-  // dependência real, não fila sem motivo.
-  const membership = await supabase.from("organization_members").select("organization_id, role").maybeSingle();
-  const organizationId = membership.data?.organization_id ?? null;
-  const isAdmin = membership.data?.role === "ADMIN";
+  // A linha de quem está logado (filtrada por usuário — D-232), porque
+  // `organization_id` é parâmetro de `get_sync_health`: dependência real.
+  const membership = await currentMembership(supabase);
 
-  if (organizationId === null || !isAdmin) {
+  if (membership.error !== null) {
+    // "Não consegui ler" e "não é membro" são respostas diferentes (D-067).
     return (
       <Shell>
         <h1 style={{ margin: "0 0 var(--sb-space-3)", fontSize: "1.375rem" }}>Integrações</h1>
-        <p style={{ color: "var(--sb-text-soft)" }}>Esta tela é restrita a ADMIN.</p>
+        <p role="alert" style={{ color: "var(--sb-danger)" }}>
+          Não foi possível ler sua organização: {sanitizeErrorText(membership.error.message)}
+        </p>
+      </Shell>
+    );
+  }
+
+  const organizationId = membership.organizationId;
+
+  if (organizationId === null) {
+    return (
+      <Shell>
+        <h1 style={{ margin: "0 0 var(--sb-space-3)", fontSize: "1.375rem" }}>Integrações</h1>
+        <p style={{ color: "var(--sb-text-soft)" }}>Sua conta não está associada a nenhuma organização.</p>
       </Shell>
     );
   }
@@ -149,18 +122,26 @@ export default async function IntegracoesPage(): Promise<ReactNode> {
   const agora = new Date();
   const inicioDoMes = new Date(Date.UTC(agora.getUTCFullYear(), agora.getUTCMonth(), 1)).toISOString();
 
-  const [accounts, syncHealth, systemHealth, batches, aiRuns, aiCost, apiHealth] = await Promise.all([
-    supabase.from("ml_accounts").select("label, status, connected_at, last_error").order("label"),
+  const [accounts, syncHealth, systemHealth, batches, aiRuns, aiCost, budgetEvent, apiHealth] = await Promise.all([
+    supabase.from("ml_accounts").select("id, label, status, connected_at, last_error").order("label"),
     supabase.rpc("get_sync_health", { p_organization_id: organizationId }),
     supabase.rpc("get_system_health"),
+    // Cancelado é estado terminal NORMAL (ato humano), não falha da integração:
+    // fica fora para não esconder o último lote que valeu.
     supabase
       .from("erp_import_batches")
       .select("status, created_at, last_error")
+      .neq("status", "CANCELLED")
       .order("created_at", { ascending: false })
       .limit(1),
-    // `count: "exact"` com `limit(1)`: a contagem é do conjunto inteiro e a
-    // linha é a mais recente — uma viagem para as duas perguntas (D-185).
-    supabase.from("ai_runs").select("created_at", { count: "exact" }).order("created_at", { ascending: false }).limit(1),
+    // MESMA janela do custo (o mês): `count: "exact"` com `limit(1)` traz a
+    // contagem do conjunto e a linha mais recente numa viagem (D-185).
+    supabase
+      .from("ai_runs")
+      .select("created_at", { count: "exact" })
+      .gte("created_at", inicioDoMes)
+      .order("created_at", { ascending: false })
+      .limit(1),
     // Soma no banco (regra de docs/ARCHITECTURE.md secao 15), na RPC que
     // D-100 já criou para o teto mensal.
     supabase.rpc("get_ai_monthly_cost_usd", {
@@ -168,28 +149,51 @@ export default async function IntegracoesPage(): Promise<ReactNode> {
       p_from: inicioDoMes,
       p_to: agora.toISOString(),
     }),
+    // Evento organizacional, legível pela web sob RLS (D-100): o teto do mês
+    // foi ultrapassado?
+    supabase
+      .from("domain_events")
+      .select("occurred_at")
+      .eq("event_type", "ai.budget.exceeded")
+      .gte("occurred_at", inicioDoMes)
+      .order("occurred_at", { ascending: false })
+      .limit(1),
     fetchApiHealth(),
   ]);
 
+  // `get_system_health` devolve ZERO linhas para quem não é ADMIN (para ADMIN
+  // sempre há ao menos a linha da migration). Zero linhas, portanto, é
+  // "restrito", não "nenhum job" — e o módulo diz isso.
+  const healthRows = systemHealth.error === null ? systemHealth.data : [];
+  const jobs = healthRows.length === 0 ? null : healthRows.filter((row) => row.job_type !== null);
+  const primeira = healthRows[0];
+
   const cards = describeIntegrations({
     now: agora,
+    viewerIsAdmin: membership.role === "ADMIN",
     mlAccounts: accounts.error === null ? accounts.data : null,
     syncHealth: syncHealth.error === null ? syncHealth.data : null,
-    // A RPC devolve zero linhas para quem não é ADMIN; aqui já somos.
-    jobs: systemHealth.error === null ? systemHealth.data.filter((row) => row.job_type !== null) : null,
+    jobs,
+    migration:
+      primeira === undefined
+        ? null
+        : {
+            version: primeira.db_migration_version,
+            name: primeira.db_migration_name,
+            applied_at: primeira.db_migration_applied_at,
+            count: primeira.db_migrations_count,
+          },
     importBatches: batches.error === null ? batches.data : null,
     ai:
       aiRuns.error === null
         ? {
-            runs: aiRuns.count ?? 0,
+            runsThisMonth: aiRuns.count ?? 0,
             lastRunAt: aiRuns.data[0]?.created_at ?? null,
             monthCostUsd: aiCost.error === null ? aiCost.data : null,
+            budgetExceededAt: budgetEvent.error === null ? (budgetEvent.data[0]?.occurred_at ?? null) : null,
           }
         : null,
     api: { configured: apiBaseUrl() !== null, health: apiHealth },
-    // Observação, não presunção: chegar aqui já leu `organization_members`, e
-    // pelo menos uma das leituras acima respondeu sem erro.
-    dbReachable: accounts.error === null || batches.error === null || aiRuns.error === null,
   });
 
   // Erro de leitura aparece, sanitizado — nunca escondido atrás de um card
@@ -201,6 +205,7 @@ export default async function IntegracoesPage(): Promise<ReactNode> {
     { fonte: "importações", erro: batches.error },
     { fonte: "uso de IA", erro: aiRuns.error },
     { fonte: "custo de IA", erro: aiCost.error },
+    { fonte: "eventos de teto de IA", erro: budgetEvent.error },
   ];
   const falhas = fontes.flatMap((f) =>
     f.erro === null ? [] : [`${f.fonte}: ${sanitizeErrorText(f.erro.message) ?? "erro sem mensagem"}`],
@@ -213,10 +218,10 @@ export default async function IntegracoesPage(): Promise<ReactNode> {
       <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
         Cada integração em três perguntas separadas — <strong>está conectada?</strong>{" "}
         <strong>está sincronizando?</strong> <strong>está configurada?</strong> — porque uma resposta não prova a
-        outra. <strong>OK</strong> só aparece com atividade observada (um job, um lote, uma leitura que acabou de
-        acontecer); configuração existente sem atividade nunca é verde.{" "}
-        <strong>Não verificável</strong> quer dizer exatamente isso: não há coletor daqui, e a tela diz onde a
-        resposta mora. Nada aqui é ação — cada card aponta para a tela que manda.
+        outra. <strong>OK</strong> só aparece com atividade observada e recente; <strong>Observado</strong> é
+        atividade sem régua de frescor (uso sob demanda), com a data ao lado; <strong>Sem atividade</strong> é o
+        que nunca rodou; <strong>Não verificável</strong> quer dizer que não há coletor daqui — e a tela diz onde a
+        resposta mora. Nada aqui é ação: cada card aponta para a tela que manda.
       </p>
 
       {falhas.length > 0 && (

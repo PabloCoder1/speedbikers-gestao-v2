@@ -1,34 +1,53 @@
-import { classifyJobFreshness, classifyResourceFreshness } from "./sync-health";
+import { batchStatusLabel, mlAccountStatusLabel, statusTone } from "./labels";
+import { sanitizeErrorText } from "./sanitize";
+import { classifyJobFreshness, classifyResourceFreshness, failureRateLabel } from "./sync-health";
 import type { SyncVerdict } from "./sync-health";
 
 /**
- * Catálogo e adaptadores de status da Central de Integrações (D-231) — a
- * peça PURA da tela `/integracoes`, no padrão de `lib/sync-health.ts`: recebe
- * o que a página já leu (contas ML, saúde da sincronização, jobs, lotes do
- * UpSeller, uso de IA, `/health` da API) e devolve, para cada integração, três
- * dimensões SEPARADAS — conexão, sincronização e configuração — porque o
- * item do ROADMAP nomeia exatamente essa confusão como o risco: "declarar
- * saúde só por haver configuração".
+ * Catálogo e adaptadores de status da Central de Integrações (D-231, refeita
+ * em D-232 depois da revisão adversarial) — a peça PURA de `/integracoes`, no
+ * padrão de `lib/sync-health.ts`: recebe o que a página já leu e devolve, para
+ * cada integração, três dimensões SEPARADAS — conexão, sincronização e
+ * configuração — porque o item do ROADMAP nomeia exatamente essa confusão como
+ * o risco: "declarar saúde só por haver configuração".
  *
- * Regras que este módulo fixa (e que os testes provam):
+ * Regras que este módulo fixa (e que os testes provam por INVARIANTE, iterando
+ * entradas adversas, não por caso único):
  *
- * 1. **`ok` exige ATIVIDADE observada** — um run, um job, um lote, uma leitura
- *    que acabou de acontecer. Configuração existente sem atividade nunca é
- *    verde. Nesta versão NENHUMA dimensão `configuration` pode ser `ok`: não
- *    há coletor autenticado para Secret Manager, Cloud Scheduler, painel do
+ * 1. **`ok` exige ATIVIDADE observada e recente.** Um `status = CONNECTED`
+ *    gravado no banco é flag, não atividade — a primeira versão pintava verde
+ *    por ele, e a revisão mostrou isso com a conta do seed do e2e (CONNECTED,
+ *    sem credencial, sem nenhum run). Conexão do Mercado Livre só é `ok` quando
+ *    TODAS as contas conectadas têm sucesso de reconciliação dentro da
+ *    cadência (o veredito de D-143). Fonte sob demanda (IA, lote do UpSeller)
+ *    nunca vira verde: vira `observado`, o estado neutro que os donos já usam
+ *    para `sem_cadencia` — a data diz quando.
+ * 2. **Nenhuma dimensão `configuration` pode ser `ok` nesta versão**: não há
+ *    coletor autenticado para Secret Manager, Cloud Scheduler, painel do
  *    Mercado Livre ou Dashboard do Supabase, e o item exclui permissões novas
- *    de nuvem. O honesto é `nao_verificavel`, com o motivo.
- * 2. **A Central não recalcula veredito.** Frescor de recurso e de job vem de
- *    `sync-health.ts` (D-143/D-219), o mesmo que `/sincronizacao` e `/saude`
- *    usam. Um dado, um dono (D-224): aqui só se compõe e se aponta.
- * 3. **Erro sanitizado.** Qualquer texto de erro passa por `sanitizeErrorText`
- *    antes de virar detalhe — mesmo que a fonte já seja limpa (D-217 lembra
- *    que a fonte é limpa até o dia em que não é).
- * 4. **Dimensão que não se aplica é `null`**, não um estado inventado: UpSeller
- *    não tem "conexão" (é planilha), webhook não tem "sincronização".
+ *    de nuvem. O honesto é `nao_verificavel` com o motivo — e, quando algo DÁ
+ *    para medir (a migration aplicada, a conferência do teto de IA), o fato
+ *    medido vai no detalhe.
+ * 3. **A Central não recalcula veredito.** Frescor de recurso e de job vem de
+ *    `sync-health.ts`, o MESMO que `/sincronizacao` e `/saude` usam —
+ *    inclusive o silêncio dos jobs de webhook, que D-232 levou para lá. A
+ *    taxa de falha usa `failureRateLabel`, o alerta que D-143 criou. Um dado,
+ *    um dono (D-224): aqui só se traduz, compõe e aponta.
+ * 4. **Uma tradução só** de `SyncVerdict` para o vocabulário da tela
+ *    (`fromVerdict`), usada por todos os cards. `nunca` é neutro
+ *    (`sem_atividade`), como "Nunca rodou" em cinza nos donos — não é "não
+ *    verificável", porque houve coletor e ele observou "nunca".
+ * 5. **Dimensão que não se aplica é `null`**, não um estado inventado.
  */
 
-export type IntegrationState = "ok" | "atencao" | "erro" | "nao_configurado" | "nao_verificavel";
+export type IntegrationState =
+  | "ok"
+  | "atencao"
+  | "erro"
+  | "observado"
+  | "sem_atividade"
+  | "nao_configurado"
+  | "nao_verificavel";
 
 export interface Dimension {
   state: IntegrationState;
@@ -55,10 +74,12 @@ export interface IntegrationCard {
 }
 
 // ---------------------------------------------------------------------------
-// Entradas cruas (a forma que a página lê; nulo = a leitura falhou)
+// Entradas cruas (a forma que a página lê; nulo = a leitura falhou ou é
+// restrita a quem a página não é)
 // ---------------------------------------------------------------------------
 
 export interface MlAccountInput {
+  id: string;
   label: string;
   status: string;
   connected_at: string | null;
@@ -66,9 +87,12 @@ export interface MlAccountInput {
 }
 
 export interface SyncHealthInput {
+  ml_account_id: string;
   resource: string;
   channel: string;
   last_run_at: string | null;
+  last_run_status: string | null;
+  last_run_reason: string | null;
   last_success_at: string | null;
   failed_24h: number;
   runs_24h: number;
@@ -78,7 +102,16 @@ export interface JobInput {
   job_type: string | null;
   job_status: string | null;
   job_last_run_at: string | null;
+  /** Idade calculada NO BANCO por `get_system_health` — a mesma que `/saude` mostra. */
+  job_age_hours: number | null;
   job_failures_24h: number;
+}
+
+export interface MigrationInput {
+  version: string | null;
+  name: string | null;
+  applied_at: string | null;
+  count: number | null;
 }
 
 export interface ImportBatchInput {
@@ -88,9 +121,12 @@ export interface ImportBatchInput {
 }
 
 export interface AiUsageInput {
-  runs: number;
+  /** Chamadas NO MÊS corrente — a mesma janela do custo, nunca o all-time. */
+  runsThisMonth: number;
   lastRunAt: string | null;
   monthCostUsd: number | null;
+  /** `ai.budget.exceeded` deste mês em `domain_events`, se houve. */
+  budgetExceededAt: string | null;
 }
 
 export interface ApiInput {
@@ -102,46 +138,17 @@ export interface ApiInput {
 
 export interface IntegrationsInput {
   now: Date;
+  /** O que `organization_members.role` diz de quem está olhando — decide o que "zero linhas" significa. */
+  viewerIsAdmin: boolean;
   mlAccounts: MlAccountInput[] | null;
   syncHealth: SyncHealthInput[] | null;
+  /** `null` = `get_system_health` não devolveu linha (não é ADMIN) ou falhou. */
   jobs: JobInput[] | null;
-  /** Lotes do UpSeller, do mais recente para o mais antigo. */
+  migration: MigrationInput | null;
+  /** Lotes do UpSeller, do mais recente para o mais antigo, SEM os cancelados. */
   importBatches: ImportBatchInput[] | null;
   ai: AiUsageInput | null;
   api: ApiInput;
-  /** A própria página acabou de ler o banco com sucesso — é observação, não presunção. */
-  dbReachable: boolean;
-}
-
-// ---------------------------------------------------------------------------
-// Sanitização
-// ---------------------------------------------------------------------------
-
-// A aspa opcional ANTES do separador existe por um caso real do teste: em JSON
-// a chave vem como `"access_token":"APP_USR-…"` — aspa, dois-pontos, aspa — e a
-// primeira versão só previa `token=valor` e `token: valor`.
-const SECRET_LIKE =
-  /(access[_-]?token|refresh[_-]?token|client[_-]?secret|api[_-]?key|apikey|authorization|bearer|password|senha|secret)["']?(\s*[=:]\s*|\s+)["']?[A-Za-z0-9._~+/-]{6,}/gi;
-
-const QUERY_STRING = /\?[^\s"'<>]+/g;
-
-/**
- * Nunca deixa passar o que PARECE segredo, e corta a query string de qualquer
- * URL (é onde token costuma viajar). Não é criptografia — é a última linha
- * antes da tela, para o dia em que a fonte deixar de ser limpa.
- */
-export function sanitizeErrorText(text: string | null | undefined, max = 200): string | null {
-  if (text === null || text === undefined) return null;
-
-  const limpo = text
-    .replace(SECRET_LIKE, "$1=[oculto]")
-    .replace(QUERY_STRING, "?[oculto]")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  if (limpo === "") return null;
-
-  return limpo.length > max ? `${limpo.slice(0, max - 1)}…` : limpo;
 }
 
 // ---------------------------------------------------------------------------
@@ -150,6 +157,10 @@ export function sanitizeErrorText(text: string | null | undefined, max = 200): s
 
 function hoursBetween(now: Date, iso: string): number {
   return Math.round(((now.getTime() - new Date(iso).getTime()) / 3_600_000) * 10) / 10;
+}
+
+function daysBetween(now: Date, iso: string): number {
+  return Math.floor(hoursBetween(now, iso) / 24);
 }
 
 function maxIso(values: (string | null)[]): string | null {
@@ -162,8 +173,13 @@ function maxIso(values: (string | null)[]): string | null {
   return best;
 }
 
-/** `sync-health` fala em `critico`; a Central fala em `erro`. Mesma coisa, vocabulário da tela. */
-function fromVerdict(verdict: SyncVerdict): IntegrationState {
+/**
+ * A ÚNICA tradução de `SyncVerdict` para o vocabulário da tela. `critico` é
+ * `erro`; `nunca` é neutro (`sem_atividade`), como os donos mostram "Nunca
+ * rodou" em cinza; `sem_cadencia` é `observado` — houve atividade, não há
+ * régua.
+ */
+export function fromVerdict(verdict: SyncVerdict): IntegrationState {
   switch (verdict) {
     case "ok":
       return "ok";
@@ -172,10 +188,25 @@ function fromVerdict(verdict: SyncVerdict): IntegrationState {
     case "critico":
       return "erro";
     case "nunca":
-      return "nao_verificavel";
+      return "sem_atividade";
     case "sem_cadencia":
-      return "nao_verificavel";
+      return "observado";
   }
+}
+
+/** Do pior para o melhor — o agregado de um card é o pior dos seus membros. */
+const SEVERITY_ORDER: readonly IntegrationState[] = [
+  "erro",
+  "atencao",
+  "nao_verificavel",
+  "sem_atividade",
+  "nao_configurado",
+  "observado",
+  "ok",
+];
+
+function worst(states: IntegrationState[]): IntegrationState {
+  return SEVERITY_ORDER.find((s) => states.includes(s)) ?? "nao_verificavel";
 }
 
 const NAO_VERIFICAVEL = (detail: string): Dimension => ({ state: "nao_verificavel", detail, observedAt: null });
@@ -184,85 +215,207 @@ function findJob(jobs: JobInput[] | null, jobType: string): JobInput | null {
   return jobs?.find((job) => job.job_type === jobType) ?? null;
 }
 
+/**
+ * Estado de UM job a partir da mesma linha que `/saude` mostra: frescor pelo
+ * dono (`classifyJobFreshness`, que desde D-232 também cobre o silêncio dos
+ * jobs de webhook), e as duas coisas que a primeira versão ignorava — a última
+ * execução ter FALHADO (`erro`) e haver falhas em 24 h (`atencao`, no mínimo).
+ */
+function jobState(job: JobInput | null, jobType: string, now: Date): { state: IntegrationState; detail: string } {
+  const ultima = job?.job_last_run_at ?? null;
+
+  if (job === null || ultima === null) {
+    return { state: "sem_atividade", detail: "nunca rodou" };
+  }
+
+  const base = fromVerdict(classifyJobFreshness(jobType, ultima, now));
+  const idade = job.job_age_hours ?? hoursBetween(now, ultima);
+  const falhas = job.job_failures_24h > 0 ? `; ${String(job.job_failures_24h)} falha(s) em 24h` : "";
+
+  if (job.job_status === "failed") {
+    return { state: "erro", detail: `última execução FALHOU há ${String(idade)} h${falhas}` };
+  }
+
+  const state: IntegrationState =
+    job.job_failures_24h > 0 && (base === "ok" || base === "observado") ? "atencao" : base;
+
+  return { state, detail: `há ${String(idade)} h${falhas}` };
+}
+
 // ---------------------------------------------------------------------------
 // Adaptadores, um por integração
 // ---------------------------------------------------------------------------
 
-function mercadoLivre(input: IntegrationsInput): IntegrationCard {
-  let connection: Dimension;
+const ML_LINKS: IntegrationLink[] = [
+  { label: "Contas ML", href: "/contas" },
+  { label: "Sincronização", href: "/sincronizacao" },
+];
 
+function mercadoLivreConnection(input: IntegrationsInput): Dimension {
   if (input.mlAccounts === null) {
-    connection = NAO_VERIFICAVEL("não foi possível ler as contas");
-  } else if (input.mlAccounts.length === 0) {
-    connection = { state: "nao_configurado", detail: "nenhuma conta cadastrada", observedAt: null };
-  } else {
-    const conectadas = input.mlAccounts.filter((a) => a.status === "CONNECTED");
-    const comErro = input.mlAccounts.filter((a) => a.status === "ERROR" || a.status === "REVOKED");
-    const pendentes = input.mlAccounts.filter((a) => a.status === "PENDING");
-    const total = input.mlAccounts.length;
-    const observedAt = maxIso(input.mlAccounts.map((a) => a.connected_at));
+    return NAO_VERIFICAVEL("não foi possível ler as contas");
+  }
 
-    if (comErro.length > 0) {
-      const primeira = comErro[0];
-      const motivo = sanitizeErrorText(primeira?.last_error ?? null, 120);
+  if (input.mlAccounts.length === 0) {
+    // A policy de `ml_accounts` só mostra a quem é ADMIN ou tem acesso à conta:
+    // para os demais, zero linhas não é "nenhuma conta cadastrada".
+    return input.viewerIsAdmin
+      ? { state: "nao_configurado", detail: "nenhuma conta cadastrada", observedAt: null }
+      : NAO_VERIFICAVEL("contas visíveis só para ADMIN ou para quem tem acesso à conta");
+  }
 
-      connection = {
-        state: "erro",
-        detail: `${String(conectadas.length)} de ${String(total)} contas conectadas; com erro: ${comErro
-          .map((a) => a.label)
-          .join(", ")}${motivo === null ? "" : ` — ${motivo}`}`,
-        observedAt,
-      };
-    } else if (pendentes.length > 0) {
-      connection = {
-        state: "atencao",
-        detail: `${String(conectadas.length)} de ${String(total)} contas conectadas; aguardando conexão: ${pendentes
-          .map((a) => a.label)
-          .join(", ")}`,
-        observedAt,
-      };
-    } else {
-      connection = { state: "ok", detail: `${String(total)} conta(s) conectada(s)`, observedAt };
+  const total = input.mlAccounts.length;
+  const conectadas = input.mlAccounts.filter((a) => a.status === "CONNECTED");
+  const problematicas = input.mlAccounts.filter((a) => a.status === "REVOKED" || a.status === "ERROR");
+  const pendentes = input.mlAccounts.filter((a) => a.status === "PENDING");
+
+  if (problematicas.length > 0) {
+    // REVOKED e ERROR com o nome do dono (D-232): revogado exige reautenticação
+    // humana; erro pode ser transitório. Colapsar os dois escondia isso.
+    const descricao = problematicas
+      .map((a) => {
+        const motivo = sanitizeErrorText(a.last_error, 100);
+
+        return `${a.label} (${mlAccountStatusLabel(a.status).toLowerCase()}${motivo === null ? "" : `: ${motivo}`})`;
+      })
+      .join("; ");
+
+    return {
+      state: "erro",
+      detail: `${String(conectadas.length)} de ${String(total)} contas conectadas — ${descricao}`,
+      observedAt: maxIso(input.mlAccounts.map((a) => a.connected_at)),
+    };
+  }
+
+  if (pendentes.length > 0) {
+    return {
+      state: "atencao",
+      detail: `${String(conectadas.length)} de ${String(total)} contas conectadas; aguardando conexão: ${pendentes
+        .map((a) => a.label)
+        .join(", ")}`,
+      observedAt: maxIso(input.mlAccounts.map((a) => a.connected_at)),
+    };
+  }
+
+  // Todas CONNECTED. Isso é uma FLAG gravada quando o OAuth passou; só vira
+  // `ok` com atividade observada: um sucesso de reconciliação dentro da
+  // cadência (D-143) para CADA conta.
+  if (input.syncHealth === null) {
+    return {
+      state: "sem_atividade",
+      detail: `${String(total)} conta(s) conectada(s); atividade não pôde ser lida`,
+      observedAt: null,
+    };
+  }
+
+  const semAtividade: string[] = [];
+  const atrasadas: string[] = [];
+  const sucessos: (string | null)[] = [];
+
+  for (const conta of conectadas) {
+    const linhas = input.syncHealth.filter(
+      (row) => row.ml_account_id === conta.id && row.channel === "reconciliation",
+    );
+    const vereditos = linhas.map((row) =>
+      classifyResourceFreshness(row.resource, row.channel, row.last_success_at, input.now),
+    );
+    const ultimoSucesso = maxIso(linhas.map((row) => row.last_success_at));
+
+    sucessos.push(ultimoSucesso);
+
+    if (ultimoSucesso === null) {
+      semAtividade.push(conta.label);
+    } else if (!vereditos.includes("ok")) {
+      atrasadas.push(conta.label);
     }
   }
 
-  let sync: Dimension;
+  if (semAtividade.length > 0) {
+    return {
+      state: "sem_atividade",
+      detail: `${String(total)} conta(s) conectada(s), mas nenhuma chamada ao Mercado Livre bem-sucedida foi observada para: ${semAtividade.join(", ")}`,
+      observedAt: maxIso(sucessos),
+    };
+  }
 
-  if (input.syncHealth === null) {
-    sync = NAO_VERIFICAVEL("não foi possível ler a saúde da sincronização");
-  } else {
-    const reconciliacao = input.syncHealth.filter((row) => row.channel === "reconciliation");
-
-    if (reconciliacao.length === 0) {
-      sync = NAO_VERIFICAVEL("nenhuma sincronização registrada");
-    } else {
-      const vereditos = reconciliacao.map((row) =>
-        classifyResourceFreshness(row.resource, row.channel, row.last_success_at, input.now),
-      );
-      const contagem = (v: SyncVerdict): number => vereditos.filter((x) => x === v).length;
-      const falhas24h = reconciliacao.reduce((acc, row) => acc + row.failed_24h, 0);
-      const state: IntegrationState =
-        contagem("critico") > 0 ? "erro" : contagem("atencao") > 0 ? "atencao" : contagem("nunca") > 0 ? "atencao" : "ok";
-
-      sync = {
-        state,
-        detail: `${String(contagem("ok"))} em dia, ${String(contagem("atencao"))} atrasando, ${String(
-          contagem("critico"),
-        )} atrasado(s), ${String(contagem("nunca"))} nunca; ${String(falhas24h)} falha(s) em 24h`,
-        observedAt: maxIso(reconciliacao.map((row) => row.last_run_at)),
-      };
-    }
+  if (atrasadas.length > 0) {
+    return {
+      state: "atencao",
+      detail: `${String(total)} conta(s) conectada(s); sem sucesso recente em: ${atrasadas.join(", ")}`,
+      observedAt: maxIso(sucessos),
+    };
   }
 
   return {
+    state: "ok",
+    detail: `${String(total)} conta(s) conectada(s), todas com sincronização recente`,
+    observedAt: maxIso(sucessos),
+  };
+}
+
+function mercadoLivreSync(input: IntegrationsInput): Dimension {
+  if (input.syncHealth === null) {
+    return NAO_VERIFICAVEL("não foi possível ler a saúde da sincronização");
+  }
+
+  const reconciliacao = input.syncHealth.filter((row) => row.channel === "reconciliation");
+
+  if (reconciliacao.length === 0) {
+    return { state: "sem_atividade", detail: "nenhuma sincronização registrada", observedAt: null };
+  }
+
+  const contagem: Record<SyncVerdict, number> = { ok: 0, atencao: 0, critico: 0, nunca: 0, sem_cadencia: 0 };
+  const alertas: string[] = [];
+  let ultimaFalha: string | null = null;
+
+  for (const row of reconciliacao) {
+    const veredito = classifyResourceFreshness(row.resource, row.channel, row.last_success_at, input.now);
+    contagem[veredito] += 1;
+
+    // O alerta de taxa de falha é do dono (D-143): frescor OK com 85% de falha
+    // era exatamente o caso que ele nasceu para não esconder.
+    const taxa = failureRateLabel(row.runs_24h, row.failed_24h);
+
+    if (taxa !== null) {
+      alertas.push(`${row.resource}: ${taxa}`);
+    } else if (veredito === "sem_cadencia" && row.failed_24h > 0) {
+      alertas.push(`${row.resource}: ${String(row.failed_24h)} falha(s) em 24h`);
+    }
+
+    if (row.last_run_status === "failed" && ultimaFalha === null) {
+      const motivo = sanitizeErrorText(row.last_run_reason, 80);
+      ultimaFalha = `${row.resource}${motivo === null ? "" : ` — ${motivo}`}`;
+    }
+  }
+
+  const state: IntegrationState =
+    contagem.critico > 0
+      ? "erro"
+      : contagem.atencao > 0 || alertas.length > 0
+        ? "atencao"
+        : contagem.ok > 0
+          ? "ok"
+          : "sem_atividade";
+
+  const partes = [
+    `${String(contagem.ok)} em dia, ${String(contagem.atencao)} atrasando, ${String(contagem.critico)} atrasado(s), ${String(
+      contagem.nunca,
+    )} nunca, ${String(contagem.sem_cadencia)} sem cadência`,
+  ];
+
+  if (alertas.length > 0) partes.push(`alertas: ${alertas.join(" · ")}`);
+  if (ultimaFalha !== null) partes.push(`última falha: ${ultimaFalha}`);
+
+  return { state, detail: partes.join(" — "), observedAt: maxIso(reconciliacao.map((row) => row.last_run_at)) };
+}
+
+function mercadoLivre(input: IntegrationsInput): IntegrationCard {
+  return {
     id: "mercado_livre",
     label: "Mercado Livre",
-    links: [
-      { label: "Contas ML", href: "/contas" },
-      { label: "Sincronização", href: "/sincronizacao" },
-    ],
-    connection,
-    sync,
+    links: ML_LINKS,
+    connection: mercadoLivreConnection(input),
+    sync: mercadoLivreSync(input),
     configuration: NAO_VERIFICAVEL(
       "client id e secret vivem no Secret Manager e o app no painel do Mercado Livre — sem coletor autenticado daqui",
     ),
@@ -270,35 +423,40 @@ function mercadoLivre(input: IntegrationsInput): IntegrationCard {
 }
 
 /**
- * 24 h de silêncio é o limiar, e ele é MEDIDO, não escolhido: em 03/09/2026 o
- * webhook produziu 5.218 execuções em 24 h (~217/h). Um dia inteiro sem nada
- * não é noite fraca — é a URL de notificação quebrada ou a API fora do ar.
- * Abaixo disso a Central não carimba: é job movido por evento, e a idade crua
- * é o honesto (mesma regra de `sem_cadencia` em D-143).
+ * Os três fluxos que o webhook alimenta. O que se observa é a EXECUÇÃO NO
+ * WORKER (a linha de `job_runs` é gravada quando o worker termina), não o
+ * recebimento na API — a revisão de D-231 apontou que "último webhook" prometia
+ * mais do que a fonte sustenta. O silêncio tolerado de cada um é medido e mora
+ * em `sync-health.ts` (`EVENT_JOB_SILENCE_MIN`), o mesmo que `/saude` lê.
  */
-const WEBHOOK_SILENCE_ALERT_HOURS = 24;
+const WEBHOOK_STREAMS: readonly { jobType: string; label: string }[] = [
+  { jobType: "sync.webhook.received", label: "pedidos e pós-venda" },
+  { jobType: "sync.support.questions", label: "perguntas" },
+  { jobType: "sync.support.messages", label: "mensagens" },
+];
 
 function webhook(input: IntegrationsInput): IntegrationCard {
-  const job = findJob(input.jobs, "sync.webhook.received");
-  const recebidoEm = job?.job_last_run_at ?? null;
   let connection: Dimension;
 
   if (input.jobs === null) {
-    connection = NAO_VERIFICAVEL("não foi possível ler as execuções (restrito a ADMIN)");
-  } else if (job === null || recebidoEm === null) {
-    connection = NAO_VERIFICAVEL("nenhum webhook recebido registrado");
+    connection = NAO_VERIFICAVEL("execuções restritas a ADMIN (get_system_health não devolveu linhas)");
   } else {
-    const horas = hoursBetween(input.now, recebidoEm);
-    const falhas = job.job_failures_24h > 0 ? `; ${String(job.job_failures_24h)} falha(s) em 24h` : "";
+    const fluxos = WEBHOOK_STREAMS.map((stream) => {
+      const job = findJob(input.jobs, stream.jobType);
+      const estado = jobState(job, stream.jobType, input.now);
 
-    connection =
-      horas > WEBHOOK_SILENCE_ALERT_HOURS
-        ? {
-            state: "atencao",
-            detail: `último webhook há ${String(horas)} h — acima do limiar de ${String(WEBHOOK_SILENCE_ALERT_HOURS)} h${falhas}`,
-            observedAt: recebidoEm,
-          }
-        : { state: "ok", detail: `último webhook há ${String(horas)} h${falhas}`, observedAt: recebidoEm };
+      return { ...stream, job, ...estado };
+    });
+
+    const algumRegistro = fluxos.some((f) => f.job !== null && f.job.job_last_run_at !== null);
+
+    connection = algumRegistro
+      ? {
+          state: worst(fluxos.map((f) => f.state)),
+          detail: `processados pelo worker — ${fluxos.map((f) => `${f.label}: ${f.detail}`).join("; ")}`,
+          observedAt: maxIso(fluxos.map((f) => f.job?.job_last_run_at ?? null)),
+        }
+      : { state: "sem_atividade", detail: "nenhum webhook processado registrado", observedAt: null };
   }
 
   return {
@@ -307,41 +465,43 @@ function webhook(input: IntegrationsInput): IntegrationCard {
     links: [{ label: "Saúde do Sistema", href: "/saude" }],
     connection,
     sync: null,
-    configuration: NAO_VERIFICAVEL("a URL de notificação é configurada no painel do Mercado Livre — não legível daqui"),
+    configuration: NAO_VERIFICAVEL(
+      "a URL de notificação é configurada no painel do Mercado Livre e o recebimento na API não é observável daqui",
+    ),
   };
 }
-
-const BATCH_IN_PROGRESS = new Set(["UPLOADED", "PARSING", "PARSED", "APPLYING"]);
 
 function upseller(input: IntegrationsInput): IntegrationCard {
   let sync: Dimension;
 
   if (input.importBatches === null) {
     sync = NAO_VERIFICAVEL("não foi possível ler as importações");
-  } else if (input.importBatches.length === 0) {
-    sync = { state: "nao_configurado", detail: "nenhuma importação registrada", observedAt: null };
   } else {
     const ultimo = input.importBatches[0];
 
     if (ultimo === undefined) {
-      sync = NAO_VERIFICAVEL("nenhuma importação registrada");
+      sync = { state: "nao_configurado", detail: "nenhuma importação registrada (cancelados não contam)", observedAt: null };
     } else {
-      const dias = Math.floor(hoursBetween(input.now, ultimo.created_at) / 24);
-      const idade = `há ${String(dias)} dia(s)`;
+      // Rótulo e tom do DONO (`labels.ts`): PARSED é "Aguardando conferência"
+      // — ação humana pendente —, não "em andamento", que era a leitura errada
+      // da primeira versão.
+      const idade = `há ${String(daysBetween(input.now, ultimo.created_at))} dia(s)`;
+      const rotulo = batchStatusLabel(ultimo.status);
+      const tom = statusTone(ultimo.status);
+      const motivo = sanitizeErrorText(ultimo.last_error, 120);
 
-      if (ultimo.status === "APPLIED") {
-        sync = { state: "ok", detail: `último lote aplicado ${idade}`, observedAt: ultimo.created_at };
-      } else if (BATCH_IN_PROGRESS.has(ultimo.status)) {
-        sync = { state: "atencao", detail: `lote em andamento (${ultimo.status}) ${idade}`, observedAt: ultimo.created_at };
-      } else {
-        const motivo = sanitizeErrorText(ultimo.last_error, 120);
-
-        sync = {
-          state: "erro",
-          detail: `último lote ${ultimo.status} ${idade}${motivo === null ? "" : ` — ${motivo}`}`,
-          observedAt: ultimo.created_at,
-        };
-      }
+      sync =
+        tom === "bad"
+          ? {
+              state: "erro",
+              detail: `último lote: ${rotulo} ${idade}${motivo === null ? "" : ` — ${motivo}`}`,
+              observedAt: ultimo.created_at,
+            }
+          : tom === "warn"
+            ? { state: "atencao", detail: `último lote: ${rotulo} ${idade}`, observedAt: ultimo.created_at }
+            : // Lote aplicado é atividade observada, sob demanda: sem régua de
+              // frescor, sem verde — a data diz quando.
+              { state: "observado", detail: `último lote: ${rotulo} ${idade}`, observedAt: ultimo.created_at };
     }
   }
 
@@ -349,7 +509,6 @@ function upseller(input: IntegrationsInput): IntegrationCard {
     id: "upseller",
     label: "UpSeller (planilha)",
     links: [{ label: "Importações", href: "/importacoes" }],
-    // Não há conexão: é upload de planilha, não integração viva.
     connection: null,
     sync,
     configuration: NAO_VERIFICAVEL("o bucket de importação vive no Google Cloud Storage — sem coletor daqui"),
@@ -361,57 +520,85 @@ function ia(input: IntegrationsInput): IntegrationCard {
 
   if (input.ai === null) {
     sync = NAO_VERIFICAVEL("não foi possível ler as execuções de IA");
-  } else if (input.ai.runs === 0 || input.ai.lastRunAt === null) {
-    sync = { state: "nao_configurado", detail: "nenhuma chamada registrada", observedAt: null };
   } else {
     const custo =
       input.ai.monthCostUsd === null ? "custo do mês não observado" : `US$ ${input.ai.monthCostUsd.toFixed(2)} no mês`;
+    const chamadas = `${String(input.ai.runsThisMonth)} chamada(s) no mês`;
 
-    // Uso é sob demanda, não job: sem cadência, sem selo de atraso (D-143).
-    // `ok` aqui diz "há atividade observada", e a data diz quando.
-    sync = {
-      state: "ok",
-      detail: `${String(input.ai.runs)} execução(ões); ${custo}`,
-      observedAt: input.ai.lastRunAt,
-    };
+    if (input.ai.budgetExceededAt !== null) {
+      sync = {
+        state: "atencao",
+        detail: `teto do mês ultrapassado em ${input.ai.budgetExceededAt.slice(0, 10)}; ${chamadas}; ${custo}`,
+        observedAt: input.ai.budgetExceededAt,
+      };
+    } else if (input.ai.runsThisMonth === 0 || input.ai.lastRunAt === null) {
+      sync = { state: "sem_atividade", detail: `nenhuma chamada no mês; ${custo}`, observedAt: input.ai.lastRunAt };
+    } else {
+      // Uso sob demanda: atividade observada, sem régua — `observado`, não `ok`.
+      sync = { state: "observado", detail: `${chamadas}; ${custo}`, observedAt: input.ai.lastRunAt };
+    }
   }
 
-  const conferidoEm = findJob(input.jobs, "maintenance.check-ai-budget")?.job_last_run_at ?? null;
-  const conferencia =
-    conferidoEm === null
-      ? "conferência do teto nunca registrada"
-      : `teto conferido há ${String(hoursBetween(input.now, conferidoEm))} h`;
+  // A conferência diária do teto (D-100) É mensurável: mesma régua de /saude.
+  let configuration: Dimension;
+
+  if (input.jobs === null) {
+    configuration = NAO_VERIFICAVEL("chave da Anthropic no Secret Manager; conferência do teto restrita a ADMIN");
+  } else {
+    const job = findJob(input.jobs, "maintenance.check-ai-budget");
+    const conferencia = jobState(job, "maintenance.check-ai-budget", input.now);
+
+    configuration =
+      conferencia.state === "ok"
+        ? NAO_VERIFICAVEL(`chave da Anthropic no Secret Manager (não legível daqui); teto conferido ${conferencia.detail}`)
+        : {
+            state: conferencia.state === "sem_atividade" ? "sem_atividade" : "atencao",
+            detail: `chave no Secret Manager; conferência do teto: ${conferencia.detail}`,
+            observedAt: job?.job_last_run_at ?? null,
+          };
+  }
 
   return {
     id: "ia",
     label: "IA / Copiloto",
-    links: [{ label: "Copiloto", href: "/copiloto" }],
+    // Custo e uso de IA não têm tela dona hoje (registrado em D-232): o teto
+    // está descrito em Configurações, e o chat é o Copiloto.
+    links: [
+      { label: "Configurações", href: "/configuracoes" },
+      { label: "Copiloto", href: "/copiloto" },
+    ],
     connection: null,
     sync,
-    configuration: NAO_VERIFICAVEL(`chave da Anthropic no Secret Manager; ${conferencia}`),
+    configuration,
   };
 }
 
 function supabase(input: IntegrationsInput): IntegrationCard {
+  const migracao =
+    input.migration?.version === undefined || input.migration.version === null
+      ? "migration aplicada não lida (restrita a ADMIN)"
+      : `migration ${input.migration.version}${input.migration.name === null ? "" : ` (${input.migration.name})`} aplicada${
+          input.migration.applied_at === null ? "" : ` em ${input.migration.applied_at.slice(0, 10)}`
+        }${input.migration.count === null ? "" : `, ${String(input.migration.count)} no total`}`;
+
   return {
     id: "supabase",
     label: "Supabase (banco e Auth)",
     links: [{ label: "Saúde do Sistema", href: "/saude" }],
-    connection: input.dbReachable
-      ? { state: "ok", detail: "este carregamento acabou de ler o banco", observedAt: input.now.toISOString() }
-      : { state: "erro", detail: "as leituras desta página falharam", observedAt: null },
+    // Fato, não veredito: para esta página existir, a sessão passou pela RLS
+    // e `organization_members` respondeu. Isso é observação, e é tudo que ela
+    // sustenta — por isso `observado`, nunca uma pílula verde que não varia.
+    connection: {
+      state: "observado",
+      detail: "esta página leu organization_members sob a RLS desta sessão",
+      observedAt: input.now.toISOString(),
+    },
     sync: null,
-    configuration: NAO_VERIFICAVEL(
-      "backups, PITR e Leaked Password Protection só aparecem no Dashboard — sem coletor daqui",
-    ),
+    configuration: NAO_VERIFICAVEL(`${migracao}; backups, PITR e Leaked Password Protection só aparecem no Dashboard`),
   };
 }
 
 function googleCloud(input: IntegrationsInput): IntegrationCard {
-  const ping = findJob(input.jobs, "system.ping");
-  const pingVerdict: SyncVerdict | null =
-    input.jobs === null ? null : classifyJobFreshness("system.ping", ping?.job_last_run_at ?? null, input.now);
-
   let apiState: IntegrationState;
   let apiDetail: string;
 
@@ -429,30 +616,24 @@ function googleCloud(input: IntegrationsInput): IntegrationCard {
   let workerState: IntegrationState;
   let workerDetail: string;
 
-  if (pingVerdict === null) {
+  if (input.jobs === null) {
     workerState = "nao_verificavel";
     workerDetail = "worker: execuções restritas a ADMIN";
   } else {
-    const pingEm = ping?.job_last_run_at ?? null;
+    const ping = jobState(findJob(input.jobs, "system.ping"), "system.ping", input.now);
 
-    workerState = fromVerdict(pingVerdict);
-    workerDetail =
-      pingEm === null
-        ? "worker: heartbeat nunca registrado"
-        : `worker: heartbeat há ${String(hoursBetween(input.now, pingEm))} h`;
+    workerState = ping.state;
+    workerDetail = `worker: heartbeat ${ping.detail}`;
   }
-
-  const ordem: IntegrationState[] = ["erro", "atencao", "nao_verificavel", "nao_configurado", "ok"];
-  const state = ordem.find((s) => s === apiState || s === workerState) ?? "nao_verificavel";
 
   return {
     id: "google_cloud",
     label: "Google Cloud (API e worker)",
     links: [{ label: "Saúde do Sistema", href: "/saude" }],
     connection: {
-      state,
+      state: worst([apiState, workerState]),
       detail: `${apiDetail}; ${workerDetail}`,
-      observedAt: maxIso([input.api.health?.startedAt ?? null, ping?.job_last_run_at ?? null]),
+      observedAt: maxIso([input.api.health?.startedAt ?? null, findJob(input.jobs, "system.ping")?.job_last_run_at ?? null]),
     },
     sync: null,
     configuration: NAO_VERIFICAVEL(

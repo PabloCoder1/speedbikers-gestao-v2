@@ -1,4 +1,4 @@
-export { createLogger, redact } from "./logger.js";
+export { createLogger, redact, SENSITIVE_KEY_NAMES } from "./logger.js";
 export type { LogContext, Logger, LoggerOptions, LogSeverity, LogSink } from "./logger.js";
 
 export { measure, SLOW_OPERATION_THRESHOLD_MS } from "./measure.js";

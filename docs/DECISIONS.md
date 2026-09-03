@@ -5344,6 +5344,57 @@ e **nenhuma execucao desde entao**. O Full ficou 18 horas sem snapshot; a janela
 
 **Impacto:** `apps/web/app/integracoes/page.tsx` (nova), `apps/web/lib/integrations.ts` (novo) + teste, `apps/web/lib/api-health.ts` (novo), `apps/web/app/saude/page.tsx`, `apps/web/components/shell.tsx`, `apps/web/e2e/integracoes.spec.ts` (novo).
 
+## D-232 - A revisao adversarial de D-231: uma lista com dois consumidores, e o defeito que so aparece no segundo usuario
+
+**Contexto:** D-231 entregou a Central de Integracoes. A revisao adversarial da propria fatia achou quatro coisas, e nenhuma delas era da tela nova — todas eram **repeticao que a tela nova tornou visivel**.
+
+---
+
+**1. "Ultima linha antes da tela" que existe numa tela so nao e ultima linha.**
+
+D-231 sanitizava `last_error` dentro de `lib/integrations.ts`. Mas o MESMO `last_error` saia **cru** em `/contas`, `/importacoes`, `/saude` e `/sincronizacao` — um clique depois do card que o ocultava. O sanitizador virou `apps/web/lib/sanitize.ts` e as cinco telas leem de la.
+
+**E o regex tinha dois furos que so apareceram executando.** Rodado contra `Authorization: Bearer eyJ…`, o JWT **saia inteiro**: o desenho so conhecia rotulo, e ali o segredo vem depois de `Bearer`. Agora sao duas familias — por rotulo+forma, e **por forma sem rotulo** (`APP_USR-`, `TG-`, JWT, `sk-ant-`, senha em DSN).
+
+**O segundo furo era o oposto, e mais insidioso: o filtro comia texto benigno.** A mensagem real que `ml-token.ts` grava — *"Mercado Livre recusou a troca de token: invalid_client."* — virava `token=[oculto]`, e a tela **deixava de dizer o que aconteceu**. Um filtro de seguranca que apaga a causa do erro troca um risco por outro. A regra passou a exigir que o valor **pareca segredo**: tem digito ou tem 20+ caracteres.
+
+**O buraco que essa regra abre esta ESCRITO no codigo, nao escondido:** `senha=correcthorse` (curto, minusculo, sem digito) passa. Nenhum segredo de maquina tem essa forma — sao base64, hex ou prefixados —, mas uma senha escolhida por gente tem. A troca foi deliberada, e nomea-la e o que separa "medimos" de "confiamos".
+
+**O guarda e provado nos DOIS sentidos** (D-197): acusa **toda** chave de `SENSITIVE_KEY_NAMES` com valor que tem digito, e cala nas cinco frases benignas (`invalid_client`, `planilha sem a coluna sku`, `chave no Secret Manager`, `senha incorreta`, `authorization: forbidden`) — as tres ultimas usam palavras da propria lista como PALAVRAS, e a primeira versao comia as tres.
+
+**2. Uma lista, dois consumidores.** O logger de `@sb/observability` ja tinha a lista de "nome de chave que e segredo". O sanitizador ia nascer com a **segunda**, que divergiria na primeira adicao. `SENSITIVE_KEY_NAMES` passou a ser exportada e o regex do logger e montado dela — e o teste percorre a lista **inteira**, entao chave nova no logger ja nasce coberta na tela.
+
+**3. Terceira copia e o sinal de parar.** `ml_accounts.status` tinha rotulo e cor copiados em `/contas` e `/sincronizacao`, e nasceria uma terceira vez em `/integracoes`. Subiu para `labels.ts` (`mlAccountStatusLabel` + `statusTone`), onde **REVOKED e ERROR ficam com nomes diferentes** porque sao coisas diferentes: acesso revogado exige humano reautenticando; erro de conexao pode ser transitorio. Idem `th`/`td`/`tdNumber`/`cardStyle` (`components/table-styles.ts`) e a pilula de contorno (`components/state-pill.tsx`). **As telas antigas NAO foram migradas na mesma fatia** — de proposito: e uma linha por tela, e misturar isso aqui faria o diff parar de dizer o que a fatia fez.
+
+---
+
+**4. O DEFEITO QUE SO EXISTE A PARTIR DO SEGUNDO USUARIO — e a prova custou tres tentativas.**
+
+~25 telas leem `from("organization_members").select(...).maybeSingle()` **sem filtrar por usuario**. Funciona hoje por acidente de cardinalidade: so ha um membro.
+
+**Medido, com o segundo membro na MESMA organizacao:**
+
+| | forma antiga | forma nova (`lib/membership.ts`) |
+|---|---|---|
+| 1 membro | 1 linha, sem erro | 1 linha, sem erro |
+| **2 membros** | **`data=null`, `PGRST116`** | **1 linha, sem erro** |
+
+Com `data` nulo a tela diz *"sem organizacao"* ou *"restrita a ADMIN"* — **para o proprio ADMIN**. E a prova empirica ja existia antes da causa: por a criacao do segundo usuario no seed derrubou **9 dos 19** e2e de uma vez.
+
+**As duas primeiras medicoes desta prova estavam ERRADAS, e o erro merece registro.** Usei `select id from organizations limit 1` para achar "a organizacao" — **sem `order by`, e o banco de teste tem DUAS** (`Speed Bikers`, das migrations, e `E2E Speed Bikers`, do seed). Inseri o segundo membro numa organizacao e consultei a outra. A primeira rodada concluiu *"hipotese errada, a forma antiga sobreviveu"*; a segunda quase reportou um defeito inexistente em `get_settings_overview` (`members_admin: 0`), que era a mesma troca de organizacao. **`limit 1` sem `order by` nao e "uma linha qualquer" num teste: e uma linha DIFERENTE a cada consulta**, e duas conclusoes opostas sairam disso antes de a terceira medicao, ancorada na organizacao DO USUARIO LOGADO, provar o que o codigo ja dizia.
+
+**O conserto existe (`lib/membership.ts`) e as telas novas ja o usam; a migracao das outras NAO entrou aqui.** Nao por conveniencia: sao ~25 pontos com formatos diferentes (uns leem `organization_id`, outros `role`, outros embutem `organizations(name)`), e enfiar isso na fatia do sanitizador esconderia as duas. **O seed do segundo usuario fica FORA ate la** — as credenciais e a nota do defeito ficam em `e2e/constants.ts`, prontas para virar a prova da fatia seguinte.
+
+**5. Duas verdades para a mesma linha, e a segunda tinha um numero redondo.** A primeira versao da Central carregava uma constante propria de 24 h para decidir se um webhook estava mudo; `/saude` decidia por outro caminho. **A mesma linha de `get_system_health` com dois vereditos.** Agora as duas leem `classifyJobFreshness`.
+
+E o limiar deixou de ser redondo. D-219 tinha excluido os jobs de webhook do frescor **de proposito** — carimbar atraso em job sem cadencia e gritar sobre o comportamento certo. Isso continua verdade para o que e raro por natureza (backfill, import). **Nao e verdade para o webhook de pedidos:** medido no Dev, `sync.webhook.received` fez **32.149 execucoes em 7 dias** (~4.600/dia) com **maior intervalo de 61 minutos** na semana inteira (p99 2,6 min). Silencio de horas ali nao e noite fraca — e URL de notificacao quebrada, API fora do ar ou worker parado.
+
+A unidade passou a ser **o maior intervalo observado em 7 dias**, com a escada ja usada no modulo (2x atencao, 4x critico): 61 min -> atencao em ~2 h, critico em ~4 h. Perguntas e mensagens tem intervalo natural muito maior (630 e 600 min), e cada limiar e **o seu, medido** — nao um numero redondo para os tres.
+
+**Verificacao:** `check` 29/29, build 8/8, **566/566** de integracao em banco recriado, `check:embeds` 34/34, `check:waterfalls` 55, **19/19 Playwright**.
+
+**Impacto:** `apps/web/lib/sanitize.ts` (novo), `apps/web/lib/membership.ts` (novo), `apps/web/components/state-pill.tsx` (novo), `apps/web/components/table-styles.ts` (novo), `packages/observability/src/logger.ts`, `apps/web/lib/labels.ts`, `apps/web/lib/sync-health.ts`, `apps/web/lib/integrations.ts`, e as telas `/integracoes`, `/contas`, `/importacoes`, `/saude`, `/sincronizacao`.
+
 ## Como adicionar nova decisao
 
 Registrar:

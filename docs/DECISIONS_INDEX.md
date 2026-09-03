@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **229** (D-001 a D-231).
+Decisões registradas: **230** (D-001 a D-232).
 
 ## Por domínio
 
-### atendimento (30)
+### atendimento (33)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -48,8 +48,11 @@ Decisões registradas: **229** (D-001 a D-231).
 - **D-201** — "4xx a descarta sem repetir" e falso, e custou 2.234 execucoes em 7 dias
 - **D-215** — Um checkbox que mentia ha uma semana, e uma secao que era o segundo dono da verdade
 - **D-223** — O que significa "V3 100%", e a auditoria de checkbox que veio junto
+- **D-229** — A varredura de custos falhava em TODO pedido real, e repetia o fracasso oito vezes por dia
+- **D-231** — A Central de Integracoes compoe e aponta: tres perguntas por integracao, e configuracao nunca e verde
+- **D-232** — A revisao adversarial de D-231: uma lista com dois consumidores, e o defeito que so aparece no segundo usuario
 
-### banco/rls (24)
+### banco/rls (25)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -75,6 +78,7 @@ Decisões registradas: **229** (D-001 a D-231).
 - **D-198** — A triagem de indices nao produziu indice nenhum, e o motivo de cada metade e diferente
 - **D-207** — A migration que existia so no banco volta para o git
 - **D-225** — A aba Full do SKU sai sem SQL novo, e a suite cobrou duas armadilhas de ambiente
+- **D-228** — A aba Decisoes fecha as nove, e a prova do embed e a paridade das policies, nao o texto delas
 
 ### estoque (19)
 
@@ -115,13 +119,8 @@ Decisões registradas: **229** (D-001 a D-231).
 - **D-195** — O waterfall que se paga em toda tela estava no cabecalho, e a varredura quase nao olhou la
 - **D-224** — O Dashboard de SKU encolhe de 11 abas para 9, e as duas que saem tem motivo
 - **D-226** — A aba Precos sai por reuso, e o barato so apareceu porque a forma obvia foi MEDIDA
-- **D-227** — A aba Vendas: tres perguntas, um round trip, e a soma que precisou ser medida antes de ser somada
-- **D-228** — A aba Decisoes fecha as nove, e a prova do embed e a paridade das policies, nao o texto delas
-- **D-229** — A varredura de custos falhava em TODO pedido real, e repetia o fracasso oito vezes por dia
-- **D-230** — O snapshot do Full morreu no dia em que a escrita passou a abortar, e a causa era dois anuncios com um estoque
-- **D-231** — A Central de Integracoes compoe e aponta: tres perguntas por integracao, e configuracao nunca e verde
 
-### mercado-livre (38)
+### mercado-livre (39)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -161,6 +160,7 @@ Decisões registradas: **229** (D-001 a D-231).
 - **D-203** — O 429 do snapshot de visitas e real, e o dano que eu registrei nao era
 - **D-220** — O caminho de pedidos, enfim medido: 17 a 28x na janela, e ZERO no webhook
 - **D-222** — O expurgo do entulho de webhook: limpeza unica, nao politica de retencao
+- **D-230** — O snapshot do Full morreu no dia em que a escrita passou a abortar, e a causa era dois anuncios com um estoque
 
 ### outros (37)
 
@@ -206,7 +206,7 @@ Decisões registradas: **229** (D-001 a D-231).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (12)
+### vendas/métricas (13)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -220,6 +220,7 @@ Decisões registradas: **229** (D-001 a D-231).
 - **D-140** — Curva ABC com escopo e criterio, e a SETIMA ocorrencia do truncamento (a primeira que corrompe uma estatistica)
 - **D-157** — Metricas 5C de vendas: cancelamento sai do L1 de proposito, e a ressalva vira parte do card
 - **D-165** — Custos por pedido: as fontes da margem operacional persistidas, e NULL nunca vira zero
+- **D-227** — A aba Vendas: tres perguntas, um round trip, e a soma que precisou ser medida antes de ser somada
 
 ### worker/infra (48)
 

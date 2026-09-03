@@ -17,6 +17,7 @@
   "dependencies": {
     "@sb/db": "workspace:*",
     "@sb/domain": "workspace:*",
+    "@sb/observability": "workspace:*",
     "@supabase/ssr": "0.12.4",
     "@supabase/supabase-js": "2.112.3",
     "exceljs": "4.4.0",

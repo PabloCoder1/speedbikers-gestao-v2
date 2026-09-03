@@ -35,7 +35,21 @@ const REDACTED = "[REDACTED]";
  * parcialmente. Redigir por nome de chave é o único filtro que continua
  * funcionando quando alguém despeja um objeto inteiro por engano.
  */
-const SENSITIVE_KEY = /token|secret|password|passwd|authorization|api[-_]?key|credential|cookie/i;
+// Exportada (D-232) porque a tela tem o MESMO problema em texto: o sanitizador
+// de `apps/web/lib/sanitize.ts` monta o seu regex a partir desta lista, em vez
+// de manter uma segunda lista de "parece segredo" que divergiria da primeira.
+export const SENSITIVE_KEY_NAMES: readonly string[] = [
+  "token",
+  "secret",
+  "password",
+  "passwd",
+  "authorization",
+  "api[-_]?key",
+  "credential",
+  "cookie",
+];
+
+const SENSITIVE_KEY = new RegExp(SENSITIVE_KEY_NAMES.join("|"), "i");
 
 export function redact(context: LogContext): LogContext {
   const result: LogContext = {};

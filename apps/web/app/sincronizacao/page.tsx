@@ -1,7 +1,10 @@
 import type { ReactNode } from "react";
 
 import { Shell } from "../../components/shell";
+import { toneColor } from "../../components/state-pill";
 import { formatCount, formatDateTime } from "../../lib/format";
+import { mlAccountStatusLabel, statusTone } from "../../lib/labels";
+import { sanitizeErrorText } from "../../lib/sanitize";
 import { createClient } from "../../lib/supabase/server";
 import { classifyResourceFreshness, failureRateLabel } from "../../lib/sync-health";
 import type { SyncVerdict } from "../../lib/sync-health";
@@ -40,12 +43,6 @@ const VERDICT_TONE: Record<SyncVerdict, { color: string; label: string } | null>
   sem_cadencia: null,
 };
 
-const ACCOUNT_STATUS_TONE: Record<string, { color: string; label: string }> = {
-  PENDING: { color: "var(--sb-muted-ink)", label: "Aguardando conexão" },
-  CONNECTED: { color: "var(--sb-secondary)", label: "Conectada" },
-  REVOKED: { color: "var(--sb-danger)", label: "Acesso revogado" },
-  ERROR: { color: "var(--sb-danger)", label: "Erro de conexão" },
-};
 
 const RESOURCE_LABEL: Record<string, string> = {
   orders: "Pedidos",
@@ -188,10 +185,7 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
             }}
           >
             {accounts.map((account) => {
-              const tone = ACCOUNT_STATUS_TONE[account.status] ?? {
-                color: "var(--sb-muted-ink)",
-                label: account.status,
-              };
+              const tone = { color: toneColor(statusTone(account.status)), label: mlAccountStatusLabel(account.status) };
 
               return (
                 <li
@@ -210,7 +204,7 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
                   <strong>{account.label}</strong>
                   <span style={{ color: tone.color, fontWeight: 600 }}>{tone.label}</span>
                   {account.status === "ERROR" && account.last_error !== null && (
-                    <span style={{ color: "var(--sb-danger)" }}>{account.last_error}</span>
+                    <span style={{ color: "var(--sb-danger)" }}>{sanitizeErrorText(account.last_error)}</span>
                   )}
                 </li>
               );
@@ -269,7 +263,7 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
                           row.last_run_status !== "partial" &&
                           row.last_run_reason !== null && (
                             <div style={{ color: "var(--sb-text-soft)", fontWeight: 400, fontSize: "0.75rem" }}>
-                              última falha: {row.last_run_reason.slice(0, 80)}
+                              última falha: {sanitizeErrorText(row.last_run_reason, 80)}
                             </div>
                           )}
                       </td>

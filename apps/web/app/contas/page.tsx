@@ -1,7 +1,10 @@
 import type { ReactNode } from "react";
 
 import { Shell } from "../../components/shell";
+import { toneColor } from "../../components/state-pill";
 import { formatDateTime } from "../../lib/format";
+import { mlAccountStatusLabel, statusTone } from "../../lib/labels";
+import { sanitizeErrorText } from "../../lib/sanitize";
 import { createClient } from "../../lib/supabase/server";
 import { ConnectButton } from "./connect-button";
 import { NewAccountForm } from "./new-account-form";
@@ -23,13 +26,6 @@ export const dynamic = "force-dynamic";
  * segredo. Conectar exige o `client_secret` do Mercado Livre, que só a `api`
  * conhece — por isso é uma chamada separada (`connect-button.tsx`).
  */
-
-const STATUS_TONE: Record<string, { color: string; label: string }> = {
-  PENDING: { color: "var(--sb-muted-ink)", label: "Aguardando conexão" },
-  CONNECTED: { color: "var(--sb-secondary)", label: "Conectada" },
-  REVOKED: { color: "var(--sb-danger)", label: "Acesso revogado" },
-  ERROR: { color: "var(--sb-danger)", label: "Erro de conexão" },
-};
 
 export default async function ContasPage(): Promise<ReactNode> {
   const supabase = await createClient();
@@ -55,7 +51,7 @@ export default async function ContasPage(): Promise<ReactNode> {
 
       {error !== null && (
         <p role="alert" style={{ color: "var(--sb-danger)" }}>
-          Não foi possível carregar as contas: {error.message}
+          Não foi possível carregar as contas: {sanitizeErrorText(error.message)}
         </p>
       )}
 
@@ -66,7 +62,9 @@ export default async function ContasPage(): Promise<ReactNode> {
       {accounts.length > 0 && (
         <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: "var(--sb-space-2)" }}>
           {accounts.map((account) => {
-            const tone = STATUS_TONE[account.status] ?? { color: "var(--sb-muted-ink)", label: account.status };
+            // Rótulo e tom do vocabulário único (D-232) — este mapa vivia copiado aqui,
+            // em /sincronizacao e em /integracoes.
+            const tone = { color: toneColor(statusTone(account.status)), label: mlAccountStatusLabel(account.status) };
 
             return (
               <li
@@ -99,7 +97,11 @@ export default async function ContasPage(): Promise<ReactNode> {
                 )}
 
                 {account.status === "ERROR" && account.last_error !== null && (
-                  <span style={{ color: "var(--sb-danger)", fontSize: "0.8125rem" }}>{account.last_error}</span>
+                  // Sanitizado (D-232): a Central oculta este mesmo texto e aponta para
+                  // cá — a "última linha antes da tela" tem de ser a mesma nas duas.
+                  <span style={{ color: "var(--sb-danger)", fontSize: "0.8125rem" }}>
+                    {sanitizeErrorText(account.last_error)}
+                  </span>
                 )}
 
                 <span style={{ marginLeft: "auto" }}>

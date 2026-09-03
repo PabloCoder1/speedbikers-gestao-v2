@@ -98,8 +98,38 @@ function verdictFromCadence(cadenceMin: number | undefined, lastAt: string | nul
  * pouco mais de quatro horas.
  */
 export function classifyJobFreshness(jobType: string, lastRunAt: string | null, now: Date): SyncVerdict {
-  return verdictFromCadence(JOB_CADENCE_MIN[jobType], lastRunAt, now);
+  return verdictFromCadence(JOB_CADENCE_MIN[jobType] ?? EVENT_JOB_SILENCE_MIN[jobType], lastRunAt, now);
 }
+
+/**
+ * Jobs movidos por EVENTO que ganham veredito de SILÊNCIO (D-232).
+ *
+ * D-219 excluiu os jobs de webhook do frescor "de propósito", porque carimbar
+ * atraso num job sem cadência seria gritar sobre o comportamento certo. Isso
+ * continua verdade para o que é raro por natureza (chave suja, backfill,
+ * import). Não é verdade para o webhook de pedidos: medido no Dev em
+ * 2026-09-03, `sync.webhook.received` processou **32.149 execuções em 7 dias**
+ * (~4.600/dia, 221/h nas últimas 24 h), com **maior intervalo entre duas
+ * execuções de 61 minutos** na semana inteira (p99 2,6 min, p99,9 9,3 min). Um
+ * silêncio de horas ali não é noite fraca — é URL de notificação quebrada,
+ * API fora do ar ou worker parado.
+ *
+ * A unidade é o MAIOR intervalo observado em 7 dias, e a escada é a mesma do
+ * resto do módulo (2× = atenção, 4× = crítico): 61 min → atenção a partir de
+ * ~2 h, crítico a partir de ~4 h. Para os webhooks de perguntas e mensagens o
+ * intervalo natural é muito maior (máximo de 630 e 600 min na semana), e o
+ * mapa reflete isso — cada limiar é o seu, medido, não um número redondo.
+ *
+ * A consulta que produziu estes números está em `docs/PERFORMANCE.md`.
+ * `/saude` e `/integracoes` leem o MESMO veredito daqui — a primeira versão da
+ * Central tinha uma constante própria de 24 h, e a revisão de D-231 apontou:
+ * duas verdades para a mesma linha de `get_system_health`.
+ */
+export const EVENT_JOB_SILENCE_MIN: Readonly<Record<string, number>> = {
+  "sync.webhook.received": 61, // maior intervalo em 7 dias (2026-08-27 → 09-03)
+  "sync.support.questions": 631,
+  "sync.support.messages": 600,
+};
 
 /**
  * O veredito compara a idade do último SUCESSO com a cadência esperada:

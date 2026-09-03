@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Shell } from "../../components/shell";
 import { fetchApiHealth } from "../../lib/api-health";
 import { formatDateTime } from "../../lib/format";
+import { sanitizeErrorText } from "../../lib/sanitize";
 import { createClient } from "../../lib/supabase/server";
 import { classifyJobFreshness } from "../../lib/sync-health";
 import type { SyncVerdict } from "../../lib/sync-health";
@@ -153,7 +154,7 @@ export default async function SaudePage(): Promise<ReactNode> {
 
       {healthResult.error !== null && (
         <p role="alert" style={{ color: "var(--sb-danger)" }}>
-          Não foi possível ler a saúde do banco: {healthResult.error.message}
+          Não foi possível ler a saúde do banco: {sanitizeErrorText(healthResult.error.message)}
         </p>
       )}
 

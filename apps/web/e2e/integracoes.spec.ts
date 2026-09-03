@@ -4,18 +4,19 @@ import { login } from "./helpers.js";
 import { readSeedOutput } from "./seed-output.js";
 
 /**
- * Central de Integrações (D-231) — tela de composição: seis fontes lidas em
- * paralelo e transformadas por `lib/integrations.ts`. O módulo é puro e tem
- * os seus testes; o que só se prova RODANDO é a fiação — as leituras sob RLS
- * como ADMIN do seed, a página não quebrar quando uma fonte está vazia (não
- * há lote do UpSeller nem execução de IA no seed), e o estado honesto
- * "Não verificável" aparecendo onde não há coletor (D-188: rodar é a prova).
+ * Central de Integrações (D-231, refeita em D-232). O que só se prova RODANDO
+ * (D-188) é a fiação — as leituras sob RLS, a página inteira quando fontes
+ * estão vazias — e as duas regras do item na tela servida. O teste negativo
+ * com um GESTOR fica para a fatia que migra as leituras de
+ * `organization_members` (ver `e2e/constants.ts`):
  *
- * TESTING.md reserva o Playwright a fluxos críticos; este teste é o mínimo
- * que sustenta a regra do item — "nunca verde não verificável" — na tela
- * servida, e não no fake.
+ *  - "ok exige atividade observada": a conta do seed é CONNECTED e nunca
+ *    sincronizou; a primeira versão a pintava de verde, e o teste EXIGIA isso.
+ *    Agora exige o contrário.
+ *  - "nunca verde não verificável": nenhuma linha de Configuração, em nenhuma
+ *    das seis regiões, pode dizer OK.
  */
-test("Central de Integrações: ADMIN vê a conta do seed conectada e o que não dá para verificar dito por extenso", async ({
+test("ADMIN: a conta do seed, conectada e sem nenhum run, NÃO é ok; nenhuma configuração é OK; zero botões", async ({
   page,
 }) => {
   const seed = await readSeedOutput();
@@ -25,25 +26,31 @@ test("Central de Integrações: ADMIN vê a conta do seed conectada e o que não
   await expect(page).toHaveURL(/\/integracoes$/);
   await expect(page.getByRole("heading", { level: 1, name: "Integrações" })).toBeVisible();
 
-  // A conta do seed está CONNECTED: conexão do Mercado Livre em ok.
-  const mercadoLivre = page.getByRole("region", { name: "Mercado Livre" });
-  await expect(mercadoLivre.getByText("1 conta(s) conectada(s)")).toBeVisible();
+  // `exact` NAO e enfeite: `getByRole` casa nome por SUBSTRING, e existe um
+  // segundo card chamado "Webhook do Mercado Livre" — sem isso o locator pega
+  // as duas regioes e o modo estrito recusa com dois resultados.
+  const mercadoLivre = page.getByRole("region", { name: "Mercado Livre", exact: true });
+  const conexao = mercadoLivre.getByRole("row", { name: /Conexão/ });
 
-  // Sem coletor autenticado, configuração nunca é verde — e a tela diz por quê.
-  const googleCloud = page.getByRole("region", { name: "Google Cloud (API e worker)" });
-  await expect(googleCloud.getByText("Não verificável").first()).toBeVisible();
-  await expect(googleCloud.getByText(/sem coletor autenticado/)).toBeVisible();
+  // `toContainText` na LINHA, não `getByText`: a pílula e a célula que a contém
+  // têm o mesmo texto, e o modo estrito recusa dois elementos.
+  await expect(conexao).toContainText("Sem atividade");
+  await expect(conexao).toContainText("nenhuma chamada ao Mercado Livre bem-sucedida");
+  await expect(conexao).toContainText(seed.mlAccountLabel);
+  await expect(conexao).not.toContainText("OK");
+
+  // Em NENHUMA das seis regiões a linha de Configuração pode ser OK.
+  for (const regiao of await page.getByRole("region").all()) {
+    const configuracao = regiao.getByRole("row", { name: /Configuração/ });
+
+    await expect(configuracao).toBeVisible();
+    await expect(configuracao).not.toContainText("OK");
+  }
 
   // O seed não tem lote do UpSeller: "não configurado", não zero fingido nem erro.
-  const upseller = page.getByRole("region", { name: "UpSeller (planilha)" });
-  await expect(upseller.getByText("nenhuma importação registrada")).toBeVisible();
+  await expect(page.getByRole("region", { name: "UpSeller (planilha)" }).getByText(/nenhuma importação registrada/)).toBeVisible();
 
-  // Um dado, um dono: cada card aponta para a tela dona.
+  // Um dado, um dono: cada card aponta para a tela dona; nada aqui é ação.
   await expect(mercadoLivre.getByRole("link", { name: "Contas ML" })).toBeVisible();
-
-  // Nada aqui é ação: a Central compõe e aponta. O escopo é o dos cards — o
-  // Shell em volta tem os seus botões (menu, sair), e eles não são da Central.
   await expect(page.getByRole("region").getByRole("button")).toHaveCount(0);
-
-  void seed;
 });

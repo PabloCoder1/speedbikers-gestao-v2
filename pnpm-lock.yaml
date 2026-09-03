@@ -84,6 +84,9 @@ importers:
       '@sb/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@sb/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
       '@supabase/ssr':
         specifier: 0.12.4
         version: 0.12.4(@supabase/supabase-js@2.112.3)
