@@ -309,7 +309,7 @@ export function CurationTable({
           style={{
             border: "1px solid var(--sb-accent-ink)",
             borderRadius: "var(--sb-radius)",
-            background: "#fff8dc",
+            background: "var(--sb-accent-soft)",
             padding: "var(--sb-space-3)",
             marginBottom: "var(--sb-space-3)",
           }}
@@ -348,8 +348,8 @@ export function CurationTable({
             margin: "0 0 var(--sb-space-3)",
             padding: "var(--sb-space-2)",
             borderRadius: "var(--sb-radius)",
-            background: resultado.erro ? "#fdeaea" : "#e6f4ea",
-            color: resultado.erro ? "var(--sb-danger)" : "#136c34",
+            background: resultado.erro ? "var(--sb-danger-soft)" : "var(--sb-success-soft)",
+            color: resultado.erro ? "var(--sb-danger-ink)" : "var(--sb-success)",
             fontSize: "0.875rem",
             display: "flex",
             gap: "var(--sb-space-2)",
@@ -407,7 +407,7 @@ export function CurationTable({
             {rows.map((row) => (
               <tr
                 key={row.sku_id}
-                style={row.decision_diverges_from_signature ? { background: "#fff8dc" } : undefined}
+                style={row.decision_diverges_from_signature ? { background: "var(--sb-accent-soft)" } : undefined}
               >
                 <td style={td}>
                   <input

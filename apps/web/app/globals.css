@@ -7,13 +7,22 @@
  * Regra da D-007: não usar todas as cores com o mesmo peso. Primary e
  * Secondary estruturam; Danger e Accent são pontuais e chamam atenção
  * justamente porque são raros.
+ *
+ * D1 da frente visual (docs/DESIGN_IMPLEMENTATION.md) mediu contraste WCAG de
+ * cada token contra a superfície em que ele REALMENTE aparece e achou três
+ * reprovações antigas. Os números estão ao lado de cada correção: eles são a
+ * razão da cor ser esta e não a do Figma. Onde o Figma foi medido pior, o real
+ * ficou — o Figma é verdade visual, não verdade de contraste.
  */
 
 :root {
   --sb-white: #ffffff;
   --sb-primary: #0f1158;
   --sb-secondary: #373993;
-  --sb-danger: #e83736;
+  /* Era #e83736: 4,17x sobre branco — reprovava como texto E como fundo do
+     botão destrutivo com texto branco (compras/[id]/actions-panel.tsx). Mesma
+     matiz, só escurecida: 4,92x sobre branco, 4,52x sobre cinza claro. */
+  --sb-danger: #dd1d1d;
   --sb-muted: #ccc5d5;
   --sb-supporting: #655d89;
   --sb-accent: #f8e523;
@@ -31,12 +40,46 @@
 
   --sb-radius: 0.5rem;
 
-  /* Tons de texto para os estados do painel.
-     O accent oficial (#F8E523) é ilegível sobre branco — a D-007 diz para não
+  /*
+   * ESTADO — fundo suave + tinta.
+   *
+   * Estas cinco cores já existiam: literais, repetidas em 16 lugares de 8
+   * arquivos (pílula de status, curva ABC, curadoria, cobertura, diagnóstico,
+   * ações). O comentário no topo deste arquivo dizia que não deveriam existir
+   * assim; agora não existem. Nada aqui é cor nova — é a paleta que o app já
+   * pintava, com nome, mais as correções que a medição exigiu.
+   *
+   * A medição que importa numa pílula é TINTA SOBRE O PRÓPRIO FUNDO SUAVE, não
+   * sobre branco. Foi aí que as duas reprovações apareceram.
+   */
+
+  /* O verde é o que o app já usava (#136c34), não o do Figma (#148065): medido,
+     o do Figma dá 4,30x sobre este mesmo fundo suave — reprova. O real dá
+     5,74x, e 6,52x sobre branco. Não precisa de variante `-ink` por isso. */
+  --sb-success: #136c34;
+  --sb-success-soft: #e6f4ea;
+
+  /* Tinta de perigo para texto sobre fundo suave. `--sb-danger` corrigido ainda
+     dá só 4,25x sobre #fdeaea — o fundo rosa come o que o branco perdoava. Esta
+     dá 4,51x ali, 5,22x sobre branco. Mesma matiz do vermelho de marca. */
+  --sb-danger-ink: #d61a18;
+  --sb-danger-soft: #fdeaea;
+
+  /* O accent oficial (#F8E523) é ilegível sobre branco — a D-007 diz para não
      usar todas as cores com o mesmo peso, então o amarelo fica reservado a
-     destaque de fundo, e o texto usa uma variante escurecida. */
-  --sb-accent-ink: #8a7a00;
-  --sb-muted-ink: #7c7590;
+     destaque de fundo, e o texto usa uma variante escurecida.
+     Era #8a7a00: 4,32x sobre branco e 4,05x sobre o próprio fundo suave —
+     reprovava nos dois. Agora 4,91x e 4,61x. */
+  --sb-accent-ink: #807100;
+  --sb-accent-soft: #fff8dc;
+
+  /* Era #7c7590: 4,37x sobre branco, reprovava. Agora 4,90x. */
+  --sb-muted-ink: #746d88;
+
+  /* Linha de apoio dentro de tabela (explicação da IA, decisões registradas).
+     `app/acoes/action-row.tsx` já escrevia `var(--sb-bg-soft, #f7f7f8)` — o
+     token nunca existiu, então o fallback era o valor real. Agora existe. */
+  --sb-bg-soft: #f8f9fc;
 }
 
 *,

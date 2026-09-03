@@ -30,39 +30,59 @@ do Figma acomoda o significado real.
 
 ### Cores — mapeamento Figma → token real
 
-O real usa `--sb-*` em `apps/web/app/globals.css` (81 linhas, definidas por
-D-007). A identidade **bate**: os três tons de marca são o mesmo desenho, com
-ajuste fino. O que falta são tons de apoio.
+O real usa `--sb-*` em `apps/web/app/globals.css`, definidos por D-007. A
+identidade **bate**: os três tons de marca são o mesmo desenho. D1 mediu
+contraste WCAG de cada token contra a superfície em que ele **realmente**
+aparece — e o veredito inverteu três suposições desta tabela.
 
-| Papel | Figma | `--sb-*` hoje | Situação |
+| Papel | Figma | `--sb-*` depois de D1 | Contraste medido |
 |---|---|---|---|
-| Marca escura (navy) | `#0E1259` | `--sb-primary` `#0f1158` | alinhado |
-| Marca clara (violeta) | `#3F44A6` | `--sb-secondary` `#373993` | alinhado |
-| Marca destaque (amarelo) | `#F2E30C` | `--sb-accent` `#f8e523` | alinhado |
-| Superfície | `#ffffff` | `--sb-surface` | alinhado |
-| Borda | `#e4e5f0` | `--sb-border` `#ccc5d5` | **mais escura no real** |
-| Texto principal | `#12142b` | `--sb-text` = navy | **real usa navy como texto** |
-| Texto secundário | `#4a4d65` | — | **ausente** |
-| Texto suave | `#737791` | `--sb-text-soft` `#655d89` | próximo |
-| **Fundo da página** | `#f4f5fa` | — | **ausente — body é branco** |
-| Hover de superfície | `#f8f9fc` | — | **ausente** |
-| **Sucesso** | `#148065` | — | **ausente — telas usam `--sb-secondary` como "ok"** |
-| Atenção | `#d98a00` | `--sb-accent-ink` `#8a7a00` | mais escuro no real |
-| Perigo | `#e32b2b` | `--sb-danger` `#e83736` | alinhado |
+| Marca escura (navy) | `#0E1259` | `--sb-primary` `#0f1158` | 16,92x |
+| Marca clara (violeta) | `#3F44A6` | `--sb-secondary` `#373993` | 9,68x |
+| Marca destaque | `#F2E30C` | `--sb-accent` `#f8e523` | só fundo, nunca texto (D-007) |
+| Borda | `#e4e5f0` | `--sb-border` `#ccc5d5` | **mantida** — clarear só faz sentido junto do fundo cinza (D2) |
+| Texto principal | `#12142b` | `--sb-text` = navy | 16,92x — o Figma também usa navy como texto |
+| Texto suave | `#737791` | `--sb-text-soft` `#655d89` | **real 6,03x × Figma 4,40x — o do Figma reprova** |
+| Fundo da página | `#f4f5fa` | ausente | **movido para D2** (motivo abaixo) |
+| Linha de apoio | `#f8f9fc` | `--sb-bg-soft` | novo |
+| Sucesso | `#148065` | `--sb-success` `#136c34` | **real 5,74x × Figma 4,30x sobre o próprio fundo suave** |
+| Atenção (tinta) | `#d98a00` | `--sb-accent-ink` `#807100` | 4,05x → **4,61x** corrigido |
+| Perigo | `#e32b2b` | `--sb-danger` `#dd1d1d` | 4,17x → **4,92x** corrigido |
+| Perigo (tinta) | — | `--sb-danger-ink` `#d61a18` | 3,60x → **4,51x** corrigido |
+| Menor peso | — | `--sb-muted-ink` `#746d88` | 4,37x → **4,90x** corrigido |
+
+**Três vezes o real venceu o Figma na medição** (texto suave, verde, e a
+tinta de perigo que o Figma não tem). O Figma é verdade visual; não é verdade
+de contraste. Onde ele reprovou, ficou o valor real — e onde os dois
+reprovaram, entrou um terceiro valor de mesma matiz, só escurecido.
+
+**A regra que fechou o escopo de D1:** *só entra token que ganha consumidor na
+mesma fatia.* Token declarado sem leitor é promessa, não fato. Por isso a
+escala de raio e o fundo cinza ficaram de fora — e por isso as cinco cores de
+estado entraram: elas já tinham 16 consumidores, escritos como hex literal.
 
 **A diferença estrutural é uma só:** o Figma é **cartão branco sobre fundo
 cinza**; o app real é branco sobre branco, separando por borda. Tudo o mais é
 ajuste fino.
 
-**Alavanca e risco de D1:** as telas escrevem estilo inline referenciando
-`var(--sb-*)`. Mudar o token em `globals.css` propaga para **as 32 telas de
-uma vez**; mudar forma de componente, não. Por isso D1 é token, não varredura.
+**Por que o fundo cinza é de D2, e não de D1:** `cardStyle` em
+`components/table-styles.ts` **não define `background`** — o cartão herda o
+fundo da página. Pintar o `body` de `#f4f5fa` hoje daria cartão cinza sobre
+cinza, e só 4 das 32 telas importam o módulo único (as outras 28 carregam
+cópia privada). O cinza entra junto com o `background` do cartão, em D2.
 
 ### Tipografia
 
 Sem `next/font`: o real usa a pilha do sistema. O Figma pede **Inter** (texto)
-e **DM Mono** (números/IDs). A escala do Figma é densa — `text-[10px]` é o
-segundo seletor mais usado do protótipo inteiro:
+e **DM Mono** (números/IDs).
+
+**A fonte não entrou em D1, de propósito.** Cor e métrica de fonte são classes
+de risco diferentes: cor se prova com número (contraste), fonte se prova com
+tela renderizada (deslocamento de layout em tabela densa). Juntas numa fatia
+só, uma tabela quebrada não diria qual das duas a quebrou — a mesma classe de
+erro da D-200. A fonte é fatia própria, com telas densas renderizadas antes e
+depois. A escala do Figma é densa — `text-[10px]` é o segundo seletor mais
+usado do protótipo inteiro:
 
 | Uso | Figma | real (inline) |
 |---|---|---|
@@ -75,8 +95,9 @@ segundo seletor mais usado do protótipo inteiro:
 ### Espaçamento e raio
 
 Real: escala de 5 (`--sb-space-1..5` = 0.25/0.5/1/1.5/2.5rem) e **um** raio
-(`--sb-radius` 0.5rem). Figma: `p-3`/`p-4`/`p-6` e raio em escala
-(4/6/8/12px). D1 acrescenta a escala de raio sem mexer no default.
+(`--sb-radius` 0.5rem = 8px, que é o `lg` do Figma). Figma: `p-3`/`p-4`/`p-6`
+e raio em escala (4/6/8/12px). A escala de raio entra quando um componente
+pedir — hoje nenhum pede, e token sem leitor não entra (regra de D1).
 
 ### Componentes do Figma (de `DesignSystem.tsx`)
 
@@ -156,8 +177,8 @@ que o Figma não listou (`Copiloto`, `Reposição`, `Importações`, `Sugestões
 | Lote | Superfície | Estado |
 |---|---|---|
 | D0 | Auditoria visual + Design Contract | **CONCLUÍDO** |
-| D1 | Design foundation (tokens) | próximo |
-| D2 | Shell global | fila |
+| D1 | Design foundation (tokens de cor) | **CONCLUÍDO** |
+| D2 | Shell global + fundo cinza + `background` do cartão | próximo |
 | D3 | Home | fila |
 | D4 | Vendas | fila |
 | D5 | Produtos | fila |
@@ -168,18 +189,35 @@ que o Figma não listou (`Copiloto`, `Reposição`, `Importações`, `Sugestões
 | D21–D30 | Vinculações, Diagnóstico, Ações, Alterações, Preços, Full, Tráfego, Atendimento, Conhecimento, Central | fila |
 | D31–D36 | Usuários, Integrações, Sincronização, Saúde, Configurações, Copiloto | fila |
 | D37 | Passe visual global | fila |
+| — | Tipografia (Inter + DM Mono) | fatia própria, sem posição fixa |
 
 ## Última fatia concluída
 
-**D0** — Figma MCP confirmado conectado (não precisou instalar). Tokens,
-design system e briefs extraídos do export local, sem gastar consulta ao MCP.
-Contrato acima; inventário de componentes; sete diferenças intencionais
-registradas.
+**D1 — tokens de cor.** Mediu contraste WCAG de todo par (texto, fundo) que o
+app pinta: **18 pares, 4 reprovavam**. Depois: 18 pares, **zero reprovações**,
+pior caso 4,51x. As quatro falhas eram antigas e invisíveis — pílula de
+atenção (4,05x), pílula de perigo (3,60x), `--sb-muted-ink` (4,37x) e
+`--sb-danger` (4,17x, que também é o fundo do botão destrutivo com texto
+branco em `compras/[id]/actions-panel.tsx`).
+
+Na varredura apareceu o achado que definiu a fatia: o app **já tinha** uma
+paleta de estado completa — `#fdeaea`, `#e6f4ea`, `#fff8dc`, `#136c34` — como
+hex literal em 16 lugares de 7 arquivos, contra o que o próprio cabeçalho do
+`globals.css` mandava. E `app/acoes/action-row.tsx` escrevia
+`var(--sb-bg-soft, #f7f7f8)`: um `var()` de um token **que nunca existiu**,
+então o fallback era o valor real. D1 deu nome aos quatro, criou o quinto, e
+hoje **não há um único hex literal em `apps/web`**.
+
+Verificação: contraste conferido também no navegador (5,74 / 4,61 / 4,51 /
+10,08 — bateu com a aritmética na segunda casa); 273 unitários, 582 de
+integração, 19 e2e, `build` e `docs:check`. As duas falhas de e2e da primeira
+rodada eram estado acumulado, não regressão: provado com `db reset` + reseed.
 
 ## Próxima fatia segura
 
-**D1 — Design foundation.** Só `apps/web/app/globals.css`, acrescentando o que
-falta (fundo de página, `success`, texto secundário, hover de superfície,
-escala de raio) e aproximando borda e texto dos valores do Figma. **Sem tocar
-nas 32 telas**: elas leem os tokens. Verificar que o contraste continua
-acessível e que nenhuma tela regride — o risco é justamente a propagação.
+**D2 — Shell global.** `components/shell.tsx` mais duas linhas em
+`components/table-styles.ts`: `background: var(--sb-surface)` no `cardStyle` e
+o `--sb-ground` no `body`. Essa ordem importa — o fundo cinza sem o cartão
+branco é regressão em 28 telas. A dívida das cópias privadas de `cardStyle`
+(já registrada no HANDOFF) passa a ter consequência visual, e é o que decide
+se D2 cabe numa fatia ou vira duas.

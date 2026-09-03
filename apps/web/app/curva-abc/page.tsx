@@ -51,8 +51,8 @@ interface AbcRow {
 }
 
 const CLASS_TONE: Record<string, { background: string; color: string }> = {
-  A: { background: "#e6f4ea", color: "#136c34" },
-  B: { background: "#fff8dc", color: "var(--sb-accent-ink)" },
+  A: { background: "var(--sb-success-soft)", color: "var(--sb-success)" },
+  B: { background: "var(--sb-accent-soft)", color: "var(--sb-accent-ink)" },
   C: { background: "var(--sb-muted)", color: "var(--sb-text)" },
 };
 

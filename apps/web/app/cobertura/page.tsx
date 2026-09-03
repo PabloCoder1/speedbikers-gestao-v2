@@ -245,7 +245,7 @@ export default async function CoberturaPage({
                     row.stock_is_virtual
                       ? { color: "var(--sb-text-soft)" }
                       : row.is_ruptura
-                        ? { background: "#fdeaea" }
+                        ? { background: "var(--sb-danger-soft)" }
                         : undefined
                   }
                 >

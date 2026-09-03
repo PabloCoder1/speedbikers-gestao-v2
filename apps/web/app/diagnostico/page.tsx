@@ -262,7 +262,7 @@ export default async function DiagnosticoPage(): Promise<ReactNode> {
                 return (
                   <tr
                     key={diagnosis.escopo.skuId}
-                    style={diagnosis.direcao === "queda" ? { background: "#fdeaea" } : { background: "#e6f4ea" }}
+                    style={diagnosis.direcao === "queda" ? { background: "var(--sb-danger-soft)" } : { background: "var(--sb-success-soft)" }}
                   >
                     <td style={{ ...td, fontFamily: "ui-monospace, monospace" }}>
                       {row?.sku}

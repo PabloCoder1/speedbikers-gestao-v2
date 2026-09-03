@@ -151,7 +151,7 @@ export function DiagnosisPanel({ skuId }: { skuId: string }): ReactNode {
       )}
 
       {result !== null && result.ok && result.status === "anomaly" && result.diagnosis !== null && (
-        <div style={{ ...cardStyle, background: result.diagnosis.direcao === "queda" ? "#fdeaea" : "#e6f4ea" }}>
+        <div style={{ ...cardStyle, background: result.diagnosis.direcao === "queda" ? "var(--sb-danger-soft)" : "var(--sb-success-soft)" }}>
           <div style={{ fontWeight: 700 }}>
             {result.diagnosis.direcao === "queda" ? "Queda" : "Alta"} de venda — confiança{" "}
             {result.diagnosis.confianca === "alta" ? "alta" : "média"}

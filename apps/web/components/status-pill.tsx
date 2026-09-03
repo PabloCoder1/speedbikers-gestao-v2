@@ -3,9 +3,9 @@ import type { ReactNode } from "react";
 import { statusTone } from "../lib/labels";
 
 const TONES = {
-  ok: { background: "#e6f4ea", color: "#136c34" },
-  warn: { background: "#fff8dc", color: "var(--sb-accent-ink)" },
-  bad: { background: "#fdeaea", color: "var(--sb-danger)" },
+  ok: { background: "var(--sb-success-soft)", color: "var(--sb-success)" },
+  warn: { background: "var(--sb-accent-soft)", color: "var(--sb-accent-ink)" },
+  bad: { background: "var(--sb-danger-soft)", color: "var(--sb-danger-ink)" },
   none: { background: "var(--sb-muted)", color: "var(--sb-text)" },
 };
 

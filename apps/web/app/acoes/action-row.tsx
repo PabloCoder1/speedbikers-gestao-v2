@@ -75,8 +75,8 @@ const buttonStyle: React.CSSProperties = {
  * reclamações, D-116) caía no `else` e ficava VERDE, lendo como oportunidade.
  */
 const TONE_BACKGROUND: Readonly<Record<string, string | undefined>> = {
-  problema: "#fdeaea",
-  oportunidade: "#e6f4ea",
+  problema: "var(--sb-danger-soft)",
+  oportunidade: "var(--sb-success-soft)",
   neutro: undefined,
 };
 
@@ -320,7 +320,7 @@ export function ActionRow({ action, userId }: { action: ActionRowData; userId: s
     </tr>
 
     {explanation !== null && (
-      <tr style={{ background: "var(--sb-bg-soft, #f7f7f8)" }}>
+      <tr style={{ background: "var(--sb-bg-soft)" }}>
         <td colSpan={8} style={{ ...td, fontSize: "0.8125rem" }}>
           <strong>Explicação (IA):</strong>
           {/* As cinco seções chegam separadas por quebra de linha — pre-line as preserva. */}
@@ -330,7 +330,7 @@ export function ActionRow({ action, userId }: { action: ActionRowData; userId: s
     )}
 
     {action.decisions.length > 0 && (
-      <tr style={{ background: "var(--sb-bg-soft, #f7f7f8)" }}>
+      <tr style={{ background: "var(--sb-bg-soft)" }}>
         <td colSpan={8} style={{ ...td, fontSize: "0.8125rem" }}>
           {action.decisions.map((decision) => (
             <div key={decision.id} style={{ marginBottom: "0.5rem" }}>
