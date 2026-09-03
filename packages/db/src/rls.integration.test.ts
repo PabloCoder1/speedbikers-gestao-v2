@@ -3669,8 +3669,13 @@ describe("get_stock_coverage (D-058, Fase 5B)", () => {
       [CONTA, ORG_SB],
     );
 
+    // `brand` recebe valor DIFERENTE de `supplier_brand` de propósito: é o
+    // estado real do Dev (D-129/D-235), e é o que prova qual coluna o filtro
+    // usa. `supplier_brand_source` vai junto por causa da constraint
+    // `skus_supplier_brand_source_coherent`.
     const sku = await client.query<{ id: string }>(
-      `insert into public.skus (organization_id, sku, kind) values ($1,$2,'PRODUTO') returning id`,
+      `insert into public.skus (organization_id, sku, kind, brand, supplier_brand, supplier_brand_source)
+       values ($1,$2,'PRODUTO','COVCATEGORIA','COVMARCA','DERIVED') returning id`,
       [ORG_SB, SKU_NOME],
     );
     skuId = sku.rows[0]?.id ?? "";
@@ -3754,6 +3759,70 @@ describe("get_stock_coverage (D-058, Fase 5B)", () => {
     expect(rows).toHaveLength(1);
     expect(Number(rows[0]?.local_quantity)).toBe(0);
     expect(rows[0]?.is_ruptura).toBe(true);
+  });
+
+  // ---- p_supplier_brand (D-236) ------------------------------------------
+
+  it("filtra por marca, e usa supplier_brand — NUNCA brand, que guarda a categoria", async () => {
+    const porMarca = await asUser<{ sku_id: string }>(
+      ADMIN_SB,
+      `select * from public.get_stock_coverage('${ORG_SB}','${WINDOW_START}','${TODAY}',null,'COVMARCA')`,
+    );
+    // O SKU tem brand='COVCATEGORIA'. Se o filtro olhasse essa coluna, esta
+    // consulta o encontraria — e ela tem de voltar vazia.
+    const porCategoria = await asUser(
+      ADMIN_SB,
+      `select * from public.get_stock_coverage('${ORG_SB}','${WINDOW_START}','${TODAY}',null,'COVCATEGORIA')`,
+    );
+
+    expect(porMarca.map((r) => r.sku_id)).toContain(skuId);
+    expect(porCategoria).toHaveLength(0);
+  });
+
+  it("os TOTAIS acompanham o filtro — senão o cabeçalho contradiz a tabela", async () => {
+    const semFiltro = await asUser<{ total: string }>(
+      ADMIN_SB,
+      `select * from public.get_stock_coverage_summary('${ORG_SB}','${WINDOW_START}','${TODAY}')`,
+    );
+    const comFiltro = await asUser<{ total: string }>(
+      ADMIN_SB,
+      `select * from public.get_stock_coverage_summary('${ORG_SB}','${WINDOW_START}','${TODAY}','COVMARCA')`,
+    );
+
+    // Sem a guarda de "maior que", os dois lados poderiam ser iguais por acaso
+    // e o teste passaria sem provar nada (D-197).
+    expect(Number(semFiltro[0]?.total)).toBeGreaterThan(Number(comFiltro[0]?.total));
+    expect(Number(comFiltro[0]?.total)).toBeGreaterThan(0);
+  });
+
+  it("a chamada POSICIONAL de 3 argumentos continua válida — o summary depende disso", async () => {
+    // `get_stock_coverage_summary` chama `get_stock_coverage` com 3 argumentos.
+    // Foi por quebrar exatamente isso que D-235 derrubou 6 testes; aqui o
+    // parâmetro novo é o ÚLTIMO justamente para manter a chamada válida.
+    const tres = await asUser(
+      ADMIN_SB,
+      `select * from public.get_stock_coverage('${ORG_SB}','${WINDOW_START}','${TODAY}')`,
+    );
+
+    expect(tres.length).toBeGreaterThan(0);
+  });
+
+  it("history_days_90 NÃO acompanha o filtro de marca — a guarda é do pipeline, não da marca", async () => {
+    // Ela alimenta a recusa HISTORICO_INCOMPLETO de D-145, que pergunta "o
+    // pipeline de métricas da ORGANIZAÇÃO tem buracos?". Se seguisse o
+    // recorte, toda marca pequena teria a tendência recusada por um motivo
+    // que não é o dela.
+    const semFiltro = await asUser<{ history_days_90: string }>(
+      ADMIN_SB,
+      `select * from public.get_stock_coverage('${ORG_SB}','${WINDOW_START}','${TODAY}') where sku_id='${skuId}'`,
+    );
+    const comFiltro = await asUser<{ history_days_90: string }>(
+      ADMIN_SB,
+      `select * from public.get_stock_coverage('${ORG_SB}','${WINDOW_START}','${TODAY}',null,'COVMARCA') where sku_id='${skuId}'`,
+    );
+
+    expect(Number(semFiltro[0]?.history_days_90)).toBeGreaterThan(0);
+    expect(comFiltro[0]?.history_days_90).toBe(semFiltro[0]?.history_days_90);
   });
 
   it("anon não executa", async () => {

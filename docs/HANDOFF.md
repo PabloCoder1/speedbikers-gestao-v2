@@ -211,7 +211,7 @@ Nada disto pode ser feito por um agente.
 
 | | |
 |---|---|
-| filtros de Conta e Marca | **PARCIAL** (D-235): `/curva-abc` feito; faltam `/cobertura` e `/vendas`. **Origem fica de fora** — `is_imported` medido como não confiável |
+| filtros de Conta e Marca | **PARCIAL**: `/curva-abc` (D-235) e `/cobertura` (D-236) feitos; falta `/vendas`. **Origem fica de fora** — `is_imported` medido como não confiável |
 
 **Dependentes de dado/tempo (D)** — não é possível hoje, e forçar seria inventar:
 
@@ -243,7 +243,7 @@ D-228, três das quatro últimas por reuso), a **Central de Integrações**
 (D-231), a **revisão adversarial dela** (D-232 — sanitizador de erro nas cinco
 telas, uma lista de chave sensível com dois consumidores) e o **Hub de
 Configurações** (D-233 — sete seções numa viagem, o Hub não edita, aponta).
-Bateria da última: **573/573**, 29/29, 8/8, **33** embeds, 55, **19/19** (com
+Bateria da última: **577/577**, 29/29, 8/8, **33** embeds, 55, **19/19** (com
 os DOIS membros no seed).
 
 ---
@@ -259,24 +259,24 @@ ficaria vermelha se alguém reintroduzir a leitura sem filtro.
 
 ⚠️ **`/usuarios` continua lendo direto, de propósito** — ela lista membros.
 
-✅ **D-235 pôs o filtro de Marca em `/curva-abc`**, com a curva recalculada
-DENTRO do recorte (conta e marca compõem). Marca é `skus.supplier_brand` —
-`skus.brand` guarda a categoria do UpSeller e diverge em 2.320 dos 3.554 SKUs.
+✅ **Filtro de Marca em `/curva-abc` (D-235) e `/cobertura` (D-236).** Marca é
+`skus.supplier_brand` — `skus.brand` guarda a categoria do UpSeller e diverge
+em 2.320 dos 3.554 SKUs. Na curva, o recorte **recalcula** as classes; na
+cobertura, os totais do cabeçalho (que vêm de outra RPC) recebem o mesmo
+filtro, e `history_days_90` **não** segue o recorte de propósito.
 
-🔴 **A próxima tarefa é terminar os filtros de Marca**, com o caminho já medido:
+🔴 **A próxima tarefa é o filtro de Marca em `/vendas`**, a última do item.
+**O caminho está medido, e ela é maior que as duas anteriores:**
 
-| tela | o que falta | tamanho |
-|---|---|---|
-| `/cobertura` | `p_supplier_brand` em `get_stock_coverage` e `get_stock_coverage_summary` (a segunda delega à primeira) | 2 RPCs |
-| `/vendas` | 6 RPCs, **cada uma chamada duas vezes** (período comparativo) | fatia própria |
+| | |
+|---|---|
+| RPCs a mudar | **6** — `get_sales_summary`, `get_sales_daily_series`, `get_sales_expanded_summary`, `get_sales_today_summary`, `get_sales_margin_summary` (a sexta é a repetição do período comparativo) |
+| chamadas na tela | **cada uma duas vezes** (período atual + comparativo) — o filtro precisa ir nas duas, senão a comparação mente |
+| antes de escrever | perguntar ao catálogo quem chama cada uma (`select proname from pg_proc where prosrc like '%get_sales_%'`) — foi assim que D-236 não repetiu o erro de D-235 |
 
-⚠️ **`/cobertura` NÃO leva filtro de conta**, e isso é regra do item, não
-esquecimento: estoque físico é da organização; Full é que é por conta.
-
-⚠️ **Ao mudar assinatura de RPC, varra o catálogo do Postgres, não só o
-código** — `get_sku_abc_curve` tinha dois chamadores dentro do banco e a
-mudança no meio da assinatura derrubou 6 testes (D-235, e a lição está em
-`LICOES.md`). Parâmetro novo no FIM mantém chamada posicional antiga válida.
+⚠️ **`/vendas` JÁ TEM filtro de conta**, então ali entram as duas dimensões do
+item — e o cuidado de D-236 vale em dobro: quando um número do cabeçalho vem
+de RPC diferente da tabela, os dois têm de receber o mesmo recorte.
 
 ⚠️ **Dívida menor, registrada para não virar terceira cópia:** `/saude`,
 `/sincronizacao` e `/skus/[skuId]` ainda carregam suas próprias cópias de

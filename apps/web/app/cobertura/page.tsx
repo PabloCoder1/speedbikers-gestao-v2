@@ -1,10 +1,12 @@
 import { toSalesMetricDate } from "@sb/domain";
 import type { ReactNode } from "react";
 
+import { FilterPill } from "../../components/filter-pill";
 import { Shell } from "../../components/shell";
 import { TrendBadge } from "../../components/trend-badge";
 import { formatCount } from "../../lib/format";
 import { createClient } from "../../lib/supabase/server";
+import { buildCoverageHref, resolveCoverageFilters } from "../../lib/coverage-filters";
 import { currentMembership } from "../../lib/membership";
 
 export const metadata = { title: "Cobertura de estoque — Speed Bikers Gestão" };
@@ -79,7 +81,12 @@ const tdNumber: React.CSSProperties = { ...td, textAlign: "right", fontVariantNu
  */
 const PAGE_SIZE = 200;
 
-export default async function CoberturaPage(): Promise<ReactNode> {
+export default async function CoberturaPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}): Promise<ReactNode> {
+  const query = await searchParams;
   const supabase = await createClient();
 
   const membership = await currentMembership(supabase);
@@ -94,6 +101,8 @@ export default async function CoberturaPage(): Promise<ReactNode> {
     );
   }
 
+  const filters = resolveCoverageFilters(query);
+
   const now = new Date();
   const dateTo = toSalesMetricDate(now);
   const dateFrom = toSalesMetricDate(new Date(now.getTime() - (LOOKBACK_DAYS - 1) * 24 * 60 * 60 * 1000));
@@ -106,22 +115,30 @@ export default async function CoberturaPage(): Promise<ReactNode> {
   // secao 15/21; a ordem é a mesma de antes, só que agora sobre o conjunto
   // inteiro: virtual por último (não é urgência, é ausência de resposta),
   // ruptura primeiro, depois menor cobertura.
-  const [coverage, summary] = await Promise.all([
+  const [coverage, summary, brandsResult] = await Promise.all([
     supabase
       .rpc("get_stock_coverage", {
         p_organization_id: organizationId,
         p_date_from: dateFrom,
         p_date_to: dateTo,
+        p_supplier_brand: filters.brand,
       })
       .order("stock_is_virtual")
       .order("is_ruptura", { ascending: false })
       .order("days_of_coverage", { nullsFirst: false })
       .range(0, PAGE_SIZE - 1),
+    // Os totais recebem o MESMO filtro: com recorte, "924 em ruptura" tem de
+    // ser da marca, não da operação inteira — senão o cabeçalho contradiz a
+    // tabela logo abaixo dele.
     supabase.rpc("get_stock_coverage_summary", {
       p_organization_id: organizationId,
       p_date_from: dateFrom,
       p_date_to: dateTo,
+      p_supplier_brand: filters.brand,
     }),
+    // A lista vem do BANCO, nunca das linhas da página (D-194): montá-la a
+    // partir do resultado paginado fazia 10 das 19 marcas nunca aparecerem.
+    supabase.rpc("get_supplier_brands", { p_organization_id: organizationId }),
   ]);
 
   const { data, error } = coverage;
@@ -130,6 +147,7 @@ export default async function CoberturaPage(): Promise<ReactNode> {
 
   // Os totais vêm do Postgres sobre o conjunto INTEIRO — nunca de contar o
   // que coube na página.
+  const brands = (brandsResult.data ?? []).map((r) => r.supplier_brand);
   const totals = summary.data?.[0] ?? null;
   const rupturaCount = totals?.em_ruptura ?? 0;
   const virtualCount = totals?.virtuais ?? 0;
@@ -140,7 +158,8 @@ export default async function CoberturaPage(): Promise<ReactNode> {
       <h1 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.375rem" }}>Cobertura de estoque</h1>
 
       <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
-        Últimos {LOOKBACK_DAYS} dias ({dateFrom} a {dateTo}). Cobertura é o estoque local dividido pela venda média
+        Últimos {LOOKBACK_DAYS} dias ({dateFrom} a {dateTo})
+        {filters.brand === null ? "" : `, só ${filters.brand}`}. Cobertura é o estoque local dividido pela venda média
         diária do período — quantos dias faltam para esgotar no ritmo atual. Ruptura: sem estoque local, mas com
         venda registrada no período (indica demanda perdida agora).
         {rupturaCount > 0 && (
@@ -158,6 +177,31 @@ export default async function CoberturaPage(): Promise<ReactNode> {
         )}
       </p>
 
+      {/*
+        Só MARCA. Não há seletor de conta aqui de propósito: estoque físico é
+        da organização (regra do item P1) — Full é que é por conta, e quem
+        responde por conta é a Central Full.
+      */}
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "var(--sb-space-2)",
+          alignItems: "center",
+          marginBottom: "var(--sb-space-3)",
+        }}
+      >
+        <span style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)", minWidth: "4rem" }}>Marca</span>
+        <FilterPill href={buildCoverageHref(filters, { brand: null })} active={filters.brand === null}>
+          Todas
+        </FilterPill>
+        {brands.map((brand) => (
+          <FilterPill key={brand} href={buildCoverageHref(filters, { brand })} active={filters.brand === brand}>
+            {brand}
+          </FilterPill>
+        ))}
+      </div>
+
       {error !== null && (
         <p role="alert" style={{ color: "var(--sb-danger)" }}>
           Não foi possível carregar: {error.message}
@@ -172,7 +216,11 @@ export default async function CoberturaPage(): Promise<ReactNode> {
       )}
 
       {error === null && rows.length === 0 && (
-        <p style={{ color: "var(--sb-text-soft)" }}>Nenhum SKU com estoque local ou venda recente.</p>
+        <p style={{ color: "var(--sb-text-soft)" }}>
+          {filters.brand === null
+            ? "Nenhum SKU com estoque local ou venda recente."
+            : `Nenhum SKU de ${filters.brand} com estoque local ou venda recente. A operação inteira pode ter — este é o recorte da marca.`}
+        </p>
       )}
 
       {error === null && rows.length > 0 && (

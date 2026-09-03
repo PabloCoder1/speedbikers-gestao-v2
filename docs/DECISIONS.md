@@ -5555,6 +5555,55 @@ O erro foi enganoso de proposito proprio: o Postgres reportou *"function get_sku
 
 **Impacto:** `supabase/migrations/20260903200000_abc_curve_supplier_brand.sql`, `apps/web/lib/abc-filters.ts`, `apps/web/lib/abc-filters.test.ts`, `apps/web/app/curva-abc/page.tsx`, `packages/db/src/types.ts` (a mao, D-213), `packages/db/src/rls.integration.test.ts`, `docs/LICOES.md`.
 
+## D-236 - Marca na Cobertura: a licao de D-235 aplicada ANTES do erro, e uma coluna que NAO segue o filtro
+
+**Contexto:** segunda parte do item P1 dos filtros, depois da Curva ABC (D-235). Nada de novo no criterio de qual coluna e "marca" -- `skus.supplier_brand`, nunca `skus.brand`, que guarda a CATEGORIA do UpSeller (D-129) e diverge em 2.320 dos 3.554 SKUs.
+
+**Sem filtro de conta, e isso e a regra do item.** O enunciado pede os filtros *"preservando a distincao entre estoque fisico compartilhado e Full por conta"*. Cobertura le `inventory_balances` com `location_kind = 'LOCAL'`: **estoque fisico e da organizacao**. Um seletor de conta responderia pergunta que o dado nao tem — a mesma decisao que `/estoque/movimentacoes` ja registrara. O teste de unidade fixa isso: um `?conta=` colado na URL e **ignorado**, nao vira filtro silencioso.
+
+---
+
+**A LICAO DE D-235, APLICADA ANTES DO ERRO.** Em D-235 eu descobri tarde que a funcao tinha chamadores dentro do proprio Postgres, e a mudanca no meio da assinatura derrubou 6 testes. Aqui a **primeira** consulta desta fatia foi ao catalogo:
+
+```sql
+select proname from pg_proc where prosrc like '%get_stock_coverage%'
+```
+
+Resposta: `get_stock_coverage_summary` chama de verdade, com **3 argumentos posicionais**; `get_sku_curation` apenas MENCIONA num comentario (zero chamadas — conferido com `regexp_matches`, nao com leitura no olho). Com `p_supplier_brand` no fim da assinatura, aquela chamada continua valida, e ha teste que a exercita explicitamente: *"a chamada POSICIONAL de 3 argumentos continua valida — o summary depende disso"*.
+
+**Aqui NAO ha a duvida semantica de D-235.** Na curva, filtrar antes ou depois da classificacao mudava os numeros, porque ha denominador. Cobertura nao tem: cada linha e um SKU e o calculo e local a ele. O filtro vai no lugar obvio — o `join public.skus sk` que ja existia no fim —, na forma da casa.
+
+**Custo medido no Dev, quente, como limite superior** (funcao inteira + filtro por fora; por dentro e no maximo isso):
+
+| | tempo | buffers | linhas |
+|---|---|---|---|
+| sem filtro | 101 ms | 14.252 | 3.253 |
+| `'OFF RACER'` | **61 ms** | 14.042 | 2.407 |
+
+Fica **mais barato**: os 187 buffers do `skus_supplier_brand_idx` (que ja existia) sao pagos com folga por haver menos linha atravessando o resto.
+
+---
+
+**OS TOTAIS ACOMPANHAM O FILTRO, E ELES VEM DE OUTRA RPC.** O cabecalho diz *"N SKU(s) em ruptura"* a partir de `get_stock_coverage_summary`; a tabela vem de `get_stock_coverage`. **Duas chamadas, e e exatamente ai que a tela poderia se contradizer** — esquecer de repassar o filtro a uma delas faria o cabecalho anunciar a ruptura da operacao inteira sobre uma tabela de uma marca so.
+
+Provado nas duas pontas: teste de integracao (`total` sem filtro **maior** que com filtro, com guarda contra os dois lados serem iguais por acaso — D-197) e **na tela**: com uma ruptura semeada so em OFF RACER, sem filtro aparece *"1 SKU(s) em ruptura"* e a linha; filtrando NAVETEC, **a contagem some junto com a linha**.
+
+---
+
+**`history_days_90` NAO SEGUE O FILTRO, E ISSO E DELIBERADO.**
+
+A CTE `history` conta dias distintos com metrica **na organizacao** e alimenta a recusa `HISTORICO_INCOMPLETO` de `classifySalesTrend` (D-145): *"se menos de 84 dos 90 dias tem metrica, a tendencia se recusa em vez de repetir a mentira"*. Essa guarda pergunta **"o pipeline de metricas tem buracos?"** — nao "esta marca vendeu bastante?".
+
+Filtra-la por marca trocaria o significado: toda marca pequena passaria a ter a tendencia recusada por um motivo que **nao e o dela**, e o selo diria "historico incompleto" sobre um historico completo. Fica organizacional, com teste que fixa a igualdade entre o valor filtrado e o nao filtrado.
+
+**Esta e a parte que um filtro "obvio" erra em silencio:** nem toda coluna de um resultado pertence ao recorte. Duas seguem o filtro (as linhas e os totais), uma nao (a guarda de qualidade do dado), e a diferenca so aparece perguntando o que cada numero significa.
+
+**Sem Playwright, desvio declarado** — leitura pura, mesmo tratamento de `/curva-abc` (D-235) e `/estoque`. Vista **rodando** nos quatro estados: sem filtro, por marca, marca inexistente (vazio honesto: *"a operacao inteira pode ter — este e o recorte da marca"*) e a ruptura entrando e saindo do cabecalho.
+
+**Verificacao:** **577/577** de integracao em banco recriado (573 + 4 novos), `check` 29/29 (6 casos novos em `coverage-filters`), build 8/8, `check:embeds` 33, `check:waterfalls` 55, **19/19 Playwright**.
+
+**Impacto:** `supabase/migrations/20260903213000_stock_coverage_supplier_brand.sql`, `apps/web/lib/coverage-filters.ts` (novo), `apps/web/lib/coverage-filters.test.ts` (novo), `apps/web/app/cobertura/page.tsx`, `packages/db/src/types.ts` (a mao, D-213), `packages/db/src/rls.integration.test.ts`.
+
 ## Como adicionar nova decisao
 
 Registrar:

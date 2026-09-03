@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **233** (D-001 a D-235).
+Decisões registradas: **234** (D-001 a D-236).
 
 ## Por domínio
 
@@ -80,7 +80,7 @@ Decisões registradas: **233** (D-001 a D-235).
 - **D-225** — A aba Full do SKU sai sem SQL novo, e a suite cobrou duas armadilhas de ambiente
 - **D-228** — A aba Decisoes fecha as nove, e a prova do embed e a paridade das policies, nao o texto delas
 
-### estoque (19)
+### estoque (20)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -101,6 +101,7 @@ Decisões registradas: **233** (D-001 a D-235).
 - **D-167** — Movimentacoes: o ledger vira extrato legivel, e o EXPLAIN reprovou duas versoes
 - **D-173** — Central Full: o GRAO do Full estava errado em duas leituras, e isso aparecia como fila de trabalho falsa
 - **D-204** — Tres definicoes de "Full atual", e as tres devolviam o mesmo numero
+- **D-236** — Marca na Cobertura: a licao de D-235 aplicada ANTES do erro, e uma coluna que NAO segue o filtro
 
 ### interface (16)
 

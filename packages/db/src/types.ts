@@ -4730,6 +4730,7 @@ export type Database = {
           p_date_to: string
           p_organization_id: string
           p_sku_id?: string
+          p_supplier_brand?: string | null
         }
         Returns: {
           avg_daily_sales: number
@@ -4753,6 +4754,7 @@ export type Database = {
           p_date_from: string
           p_date_to: string
           p_organization_id: string
+          p_supplier_brand?: string | null
         }
         Returns: {
           em_ruptura: number
