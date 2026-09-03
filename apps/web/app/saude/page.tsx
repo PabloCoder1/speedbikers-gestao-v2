@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { Shell } from "../../components/shell";
+import { fetchApiHealth } from "../../lib/api-health";
 import { formatDateTime } from "../../lib/format";
 import { createClient } from "../../lib/supabase/server";
 import { classifyJobFreshness } from "../../lib/sync-health";
@@ -94,36 +95,6 @@ function verdictColor(verdict: Verdict): string {
   if (verdict === "UNKNOWN") return "var(--sb-text-soft)";
 
   return "var(--sb-secondary)";
-}
-
-/**
- * Lê o `/health` da API. Qualquer falha — rede, timeout, resposta estranha —
- * vira `null`, e o chamador transforma isso em UNKNOWN com o motivo. Nunca
- * lança: uma API fora do ar não pode derrubar a tela que existe para
- * mostrar que ela está fora do ar.
- */
-async function fetchApiHealth(): Promise<{ commit: string | null; startedAt: string | null } | null> {
-  const base = process.env.NEXT_PUBLIC_API_URL ?? "";
-
-  if (base === "") return null;
-
-  try {
-    const response = await fetch(`${base}/health`, {
-      cache: "no-store",
-      signal: AbortSignal.timeout(4000),
-    });
-
-    if (!response.ok) return null;
-
-    const body = (await response.json()) as { commit?: unknown; startedAt?: unknown };
-
-    return {
-      commit: typeof body.commit === "string" ? body.commit : null,
-      startedAt: typeof body.startedAt === "string" ? body.startedAt : null,
-    };
-  } catch {
-    return null;
-  }
 }
 
 export default async function SaudePage(): Promise<ReactNode> {

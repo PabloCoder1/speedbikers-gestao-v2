@@ -504,7 +504,12 @@ Complementa a Fase 8; suas telas não substituem hardening, backup/restore nem v
 - **Riscos:** escalada de privilégio, lockout e segurança apenas visual.
 - **Fora da primeira versão:** grupos complexos, ACL arbitrária por feature e substituição das policies.
 
-#### Central de Integrações — C/E
+#### Central de Integrações — C/E — 🟡 PRIMEIRA VERSÃO em 2026-09-03 (D-231)
+
+`/integracoes` (nav GESTÃO, restrita a ADMIN): seis integrações — Mercado Livre, Webhook, UpSeller, IA/Copiloto, Supabase, Google Cloud — cada uma em **três dimensões separadas** (conexão × sincronização × configuração), com estado em vocabulário fechado (`ok | atencao | erro | nao_configurado | nao_verificavel`), detalhe sanitizado e instante observado. Nenhuma tabela, RPC ou permissão de nuvem nova: compõe `ml_accounts`, `get_sync_health`, `get_system_health`, `erp_import_batches`, `ai_runs`/`get_ai_monthly_cost_usd` e o `/health` da API, e **aponta** para a tela dona (um dado, um dono). `ok` exige atividade observada; **nenhuma configuração é verde nesta versão** (sem coletor autenticado — teste fixa). Sem ação alguma na tela.
+
+- **Falta (segunda versão):** coletores autenticados para configuração (Secret Manager, Scheduler, painel do ML, Dashboard do Supabase) — cada um é permissão nova de nuvem e precisa de decisão própria; ações autorizadas na própria Central (hoje vivem nas telas donas).
+
 
 - **Objetivo/problema:** centralizar estado e ações seguras de Mercado Livre, UpSeller, IA, Supabase, Google Cloud, webhooks e futuras integrações.
 - **Reutiliza:** contas ML/OAuth, `sync_runs`/`sync_errors`, importações UpSeller, `ai_runs`, webhook e configurações existentes.

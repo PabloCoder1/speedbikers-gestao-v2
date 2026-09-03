@@ -5314,9 +5314,35 @@ e **nenhuma execucao desde entao**. O Full ficou 18 horas sem snapshot; a janela
 
 **O que fica aberto, escrito:** (a) qual SKU "e dono" de um inventario compartilhado hoje e o do primeiro anuncio em ordem de `item_id` — arbitrario, mas estavel; a informacao para decidir melhor esta no log; (b) a retentativa de Cloud Tasks para falha de ESCRITA repetiu 8 vezes uma falha deterministica — D-202 tratou as falhas de dominio, nao as de escrita; vale uma fatia propria quando houver o segundo caso.
 
-**Verificacao:** worker **527/527** (+1), `check` 29/29, build 8/8. Sem migration. Deploy do worker feito na mesma sessao (autorizado), com a captura disparada a mao e conferida em `sync_runs`.
+**Verificacao:** worker **527/527** (+1), `check` 29/29, build 8/8. Sem migration. Deploy do worker feito na mesma sessao (autorizado) e conferido em `sync_runs`: as quatro contas fecharam `done` (`partial` pelos 404 estruturais) com **501, 611, 574 e 479 itens**, e as retentativas da execucao das 15:00 UTC — que tinham falhado no worker antigo — passaram ao cair na revisao nova. O Full voltou a ter snapshot depois de 18 horas.
 
 **Impacto:** `apps/worker/src/handlers/ml-fulfillment-fetch.ts`, `apps/worker/src/handlers/sync-fulfillment-snapshot.ts`, `apps/worker/src/handlers/ml-fulfillment-fetch.test.ts`, `docs/MERCADO_LIVRE.md` secao 2.7.
+
+## D-231 - A Central de Integracoes compoe e aponta: tres perguntas por integracao, e configuracao nunca e verde
+
+**Contexto:** proxima pendencia saudavel (B) depois das nove abas do SKU — o item C/E do ROADMAP, "Central de Integracoes: primeira versao simples; nunca verde nao verificavel". O DoD do item: *status e atividade de fonte real; erro sanitizado; zero secret; acoes autorizadas; "nao verificavel" em vez de verde presumido*. O risco que o item nomeia: *declarar saude so por haver configuracao*.
+
+**Nenhuma tabela, nenhuma RPC, nenhuma permissao de nuvem.** A tela `/integracoes` (GESTAO, ADMIN como `/saude`) le em paralelo o que as telas donas ja leem — `ml_accounts`, `get_sync_health` (D-143), `get_system_health` (D-176/D-219), `erp_import_batches`, `ai_runs` + `get_ai_monthly_cost_usd` (D-100), `/health` da API — e entrega tudo a um modulo PURO, `lib/integrations.ts`, no padrao de `lib/sync-health.ts`. E ele o "catalogo/adaptadores de status" que o item pedia.
+
+**Tres perguntas separadas por integracao — conexao, sincronizacao, configuracao —, porque uma resposta nao prova a outra.** E a distincao que o item lista como faltante. Uma conta ML `CONNECTED` com a reconciliacao muda ha 13 horas e "conectada" e "erro" ao mesmo tempo (o cenario de D-217); uma planilha do UpSeller nao tem "conexao" (a dimensao e `null`, dita como "nao se aplica", nunca um estado inventado).
+
+**A regra central, provada por teste: `ok` exige ATIVIDADE observada, e nesta versao NENHUMA configuracao e `ok`.** Nao ha coletor autenticado para Secret Manager, Cloud Scheduler, painel do Mercado Livre ou Dashboard do Supabase — e o item exclui permissoes novas de nuvem. Entao toda dimensao "configuracao" sai `nao_verificavel`, com o motivo escrito ("client id e secret vivem no Secret Manager e o app no painel do ML — sem coletor daqui"). O teste itera as seis integracoes e falha se alguma configuracao virar verde. Supabase e o caso-limite que a regra esclarece: a conexao e `ok` **porque esta pagina acabou de ler o banco** — isso e observacao, nao presuncao; a saude do projeto alem disso e nao verificavel.
+
+**A Central nao recalcula veredito (um dado, um dono, D-224).** Frescor de recurso e de job vem de `classifyResourceFreshness`/`classifyJobFreshness`, os mesmos de `/sincronizacao` e `/saude`; a Central so agrega ("2 em dia, 0 atrasando, 1 atrasado") e aponta para a tela dona. Reconectar conta continua em `/contas`. **A tela nao tem um unico botao** — o e2e conta zero.
+
+**O unico limiar novo e MEDIDO, nao escolhido.** Webhook e job movido por evento e nao ganha selo de frescor (D-143) — mas 24 h sem NENHUM webhook e outra coisa: em 03/09/2026 foram **5.218 execucoes em 24 h**, ~217/h. Um dia inteiro mudo nao e noite fraca, e URL de notificacao quebrada ou API fora do ar. Abaixo de 24 h a Central mostra a idade crua.
+
+**Sanitizacao e a ultima linha antes da tela.** `sanitizeErrorText` oculta o que parece segredo (`access_token`, `refresh_token`, `client_secret`, `api_key`, `bearer`, `password`…) e corta a query string de qualquer URL, mesmo que a fonte ja seja limpa (D-217 lembra que ela e limpa ate o dia em que nao e). **O teste pegou o regex errado na primeira versao**: em JSON a chave vem como `"access_token":"APP_USR-…"` — aspa, dois-pontos, aspa — e o padrao so previa `token=valor`. Corrigido com a aspa opcional antes do separador; o caso real ficou no teste.
+
+**`fetchApiHealth` saiu de `/saude` para `lib/api-health.ts`**, porque a Central precisa da mesma leitura e um formato so — a mesma extracao de D-228.
+
+**Playwright, com a razao escrita.** `docs/TESTING.md` reserva o e2e a fluxos criticos; esta e uma tela de leitura. Ainda assim um teste entrou, porque o que so se prova RODANDO (D-188) e a fiacao: seis leituras sob RLS como ADMIN do seed, a pagina inteira quando duas fontes estao vazias (o seed nao tem lote do UpSeller nem execucao de IA — "nao configurado", nao zero nem erro), e "Nao verificavel" aparecendo por extenso onde nao ha coletor. E o minimo que sustenta a regra do item na tela servida, e nao no fake.
+
+**Os tres ceticos nao rodaram.** A revisao adversarial do desenho (duplicacao/dono, verde presumido, vazamento) foi lancada duas vezes e as seis tentativas morreram com `529 Overloaded` da API. O desenho seguiu com as regras acima como guarda — e esta registrado aqui para a revisao ser refeita quando a API responder, sobre o codigo e nao sobre o rascunho.
+
+**Verificacao:** integracao **559/559** (sem mudanca de banco), `check` 29/29, build 8/8, `check:embeds` 34/34, `check:waterfalls` 53 arquivos, **18/18 Playwright** (17 + 1), 18 testes unitarios do modulo.
+
+**Impacto:** `apps/web/app/integracoes/page.tsx` (nova), `apps/web/lib/integrations.ts` (novo) + teste, `apps/web/lib/api-health.ts` (novo), `apps/web/app/saude/page.tsx`, `apps/web/components/shell.tsx`, `apps/web/e2e/integracoes.spec.ts` (novo).
 
 ## Como adicionar nova decisao
 

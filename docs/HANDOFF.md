@@ -364,7 +364,6 @@ Nada disto pode ser feito por um agente.
 
 | | |
 |---|---|
-| Central de Integrações | primeira versão simples; nunca verde não verificável |
 | Hub de Configurações | um dado, um dono: aponta para a tela dona, não duplica |
 | Aprendizado humano supervisionado | reusa a Base de Conhecimento (D-113); nada promovido sem humano |
 | filtros de Conta e Marca | **Origem fica de fora** — `is_imported` é medido como não confiável |
@@ -394,11 +393,26 @@ Diagnóstico | Decisões`. Três das quatro últimas por reuso (`Full` D-225,
 `Vendas` (D-227) com a única RPC nova, `get_sku_sales_breakdown`. Bateria
 completa na última: **559/559**, 29/29, 8/8, **34/34** embeds, 52, **17/17**.
 
-**A próxima pendência saudável (B), na ordem da tabela acima, é a Central de
-Integrações** — "primeira versão simples; nunca verde não verificável". **Eu
-NÃO medi o caminho dela.** Antes de escrever, ler o item no `docs/ROADMAP.md`
-e o que `/saude` já mostra (D-176, D-219): a Central não pode afirmar um
-estado que `/saude` não sustenta, e não pode duplicar o que ele já diz.
+✅ **Central de Integrações — primeira versão entregue em D-231** (`/integracoes`,
+ADMIN): compõe as fontes existentes e aponta para as telas donas; três
+dimensões por integração; configuração nunca verde sem coletor. Bateria:
+**559/559**, 29/29, 8/8, 34/34, 53, **18/18**.
+
+**A próxima pendência saudável (B), na ordem da tabela acima, é o Hub de
+Configurações** — "um dado, um dono: aponta para a tela dona, não duplica"
+(item "Administração → Configurações" do ROADMAP). **O caminho NÃO foi
+medido**: ler o item e as telas que já são donas de cada configuração
+(`/reposicao/configuracoes`, `/notificacoes/preferencias`, `/contas`,
+`/usuarios`) antes de escrever — a decisão registrada no item é "embutir ou
+apontar", e a resposta da casa tem sido apontar.
+
+⚠️ **Dois defeitos vivos foram encontrados e consertados em 03/09 ao medir
+`job_runs`** (D-229 sweep financeiro; D-230 snapshot do Full) — os dois já
+estavam no ar e nenhum aparecia em tela. A Central de Integrações mostra a
+sincronização em `erro` nesses casos; **`/saude` e `/sincronizacao` já
+mostravam** as falhas em `job_runs`/`sync_runs` e ninguém olhou. A lição vale
+mais que as duas correções: **um vermelho que ninguém lê não protege nada** —
+antes de cada fatia, abrir `/saude` (ou `report:health`) e ler.
 
 ⚠️ **`apps/web/next-env.d.ts` alterna** entre `./.next/dev/types/...` e
 `./.next/types/...` conforme o último comando foi `next dev` ou `next build`.

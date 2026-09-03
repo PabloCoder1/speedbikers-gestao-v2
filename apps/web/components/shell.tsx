@@ -100,6 +100,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "Vinculações", href: "/vinculacoes" },
       { label: "Fornecedores", href: "/fornecedores" },
       { label: "Usuários", href: "/usuarios" },
+      { label: "Integrações", href: "/integracoes" },
       { label: "Contas ML", href: "/contas" },
       { label: "Sincronização", href: "/sincronizacao" },
       { label: "Saúde do Sistema", href: "/saude" },
