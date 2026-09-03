@@ -33,6 +33,75 @@ export const RECONCILIATION_CADENCE_MIN: Readonly<Record<string, number>> = {
 };
 
 /**
+ * Minutos entre execuções esperadas de cada JOB agendado, para a Saúde do
+ * Sistema (D-219).
+ *
+ * Mesma fonte e mesma regra do mapa acima — `infra/cloud-scheduler.sh` —, mas
+ * com outra chave: lá a unidade é o RECURSO por conta, aqui é o `job_type`
+ * que aparece em `job_runs`. Conferido contra o Cloud Scheduler real, não só
+ * contra o script.
+ *
+ * **Só entra job com cadência FIXA.** `analytics.recompute` (chave suja),
+ * `sync.webhook.received`, `sync.support.questions`/`.messages` (webhook),
+ * `backfill.orders` (finito) e os de import/relist (sob demanda) ficam de
+ * fora de propósito: carimbar frescor num job orientado a evento seria gritar
+ * sobre o comportamento certo — a mesma decisão que D-143 tomou para backfill.
+ */
+export const JOB_CADENCE_MIN: Readonly<Record<string, number>> = {
+  "system.ping": 60, // v3-heartbeat: "0 * * * *"
+  "sync.orders.window": 60, // v3-reconcile-orders: "0 * * * *"
+  "sync.support.claims.reconcile": 60, // v3-support-claims-reconcile: "15 * * * *"
+  "sync.support.questions.reconcile": 10, // v3-support-questions-reconcile: "*/10 * * * *"
+  "sync.support.messages.reconcile": 10, // v3-support-messages-reconcile: "*/10 * * * *"
+  "sync.listings.snapshot": 360, // v3-listings-snapshot: "0 */6 * * *"
+  "sync.fulfillment.snapshot": 360, // v3-fulfillment-snapshot: "0 */6 * * *"
+  "sync.listing-visits.snapshot": 1440, // v3-listing-visits-snapshot: "0 7 * * *"
+  "sync.order-financials": 1440, // v3-order-financials-sweep: "30 9 * * *"
+  "maintenance.reconcile-balances": 1440, // v3-reconcile-balances: "0 6 * * *"
+  "maintenance.verify-ledger-integrity": 1440, // v3-verify-ledger-integrity: "30 6 * * *"
+  "maintenance.check-ai-budget": 1440, // v3-check-ai-budget: "0 9 * * *"
+  // Um scheduler só (v3-detect-sales-anomalies, "0 8 * * *") enfileira os dois.
+  "diagnostics.detect-sales-anomalies": 1440,
+  "diagnostics.detect-support-patterns": 1440,
+  "diagnostics.measure-decision-outcomes": 1440, // v3-measure-decision-outcomes: "30 8 * * *"
+};
+
+/**
+ * O núcleo do veredito, compartilhado pelas duas telas: até 2 ciclos perdidos
+ * é tolerância normal (um 429, um deploy no horário), até 4 é atenção, acima
+ * é crítico.
+ */
+function verdictFromCadence(cadenceMin: number | undefined, lastAt: string | null, now: Date): SyncVerdict {
+  if (cadenceMin === undefined) {
+    return "sem_cadencia";
+  }
+
+  if (lastAt === null) {
+    return "nunca";
+  }
+
+  const ageMin = (now.getTime() - new Date(lastAt).getTime()) / 60_000;
+
+  if (ageMin <= cadenceMin * 2) return "ok";
+  if (ageMin <= cadenceMin * 4) return "atencao";
+
+  return "critico";
+}
+
+/**
+ * Veredito de frescor de um JOB AGENDADO (D-219).
+ *
+ * O incidente de D-217 é o motivo: `/saude` usava `JOB_STALE_HOURS = 26` para
+ * todos os jobs, e `sync.orders.window` — HORÁRIO — ficou 13 horas mudo sem
+ * a tela dizer nada. Treze horas é catástrofe para um job de hora em hora e
+ * passa folgado sob 26. Com a cadência, o mesmo silêncio vira `critico` em
+ * pouco mais de quatro horas.
+ */
+export function classifyJobFreshness(jobType: string, lastRunAt: string | null, now: Date): SyncVerdict {
+  return verdictFromCadence(JOB_CADENCE_MIN[jobType], lastRunAt, now);
+}
+
+/**
  * O veredito compara a idade do último SUCESSO com a cadência esperada:
  * até 2 ciclos perdidos é tolerância normal (um 429, um deploy no horário),
  * até 4 é atenção, acima é crítico. Recurso sem cadência mapeada não ganha
@@ -48,22 +117,7 @@ export function classifyResourceFreshness(
     return "sem_cadencia";
   }
 
-  const cadence = RECONCILIATION_CADENCE_MIN[resource];
-
-  if (cadence === undefined) {
-    return "sem_cadencia";
-  }
-
-  if (lastSuccessAt === null) {
-    return "nunca";
-  }
-
-  const ageMin = (now.getTime() - new Date(lastSuccessAt).getTime()) / 60_000;
-
-  if (ageMin <= cadence * 2) return "ok";
-  if (ageMin <= cadence * 4) return "atencao";
-
-  return "critico";
+  return verdictFromCadence(RECONCILIATION_CADENCE_MIN[resource], lastSuccessAt, now);
 }
 
 /**

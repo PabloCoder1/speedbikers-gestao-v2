@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 import { Shell } from "../../components/shell";
 import { formatDateTime } from "../../lib/format";
 import { createClient } from "../../lib/supabase/server";
+import { classifyJobFreshness } from "../../lib/sync-health";
+import type { SyncVerdict } from "../../lib/sync-health";
 
 export const metadata = { title: "Saúde do Sistema — Speed Bikers Gestão" };
 
@@ -36,8 +38,25 @@ export const dynamic = "force-dynamic";
  * rollback ou recriação de scheduler pela interface.
  */
 
-/** Quantas horas sem rodar antes de a idade virar sinal, por cadência. */
-const JOB_STALE_HOURS = 26;
+/**
+ * Veredito de frescor por job, contra a CADÊNCIA de cada um (D-219).
+ *
+ * A versão anterior usava um limiar único de 26 h para todos, e o próprio
+ * texto da tela admitia a fraqueza ("a idade é informação, não veredito").
+ * O incidente de D-217 mostrou o custo: `sync.orders.window` é HORÁRIO e
+ * ficou 13 h mudo — catástrofe para ele, folgado sob 26 h, e a tela não
+ * disse nada por meio dia.
+ *
+ * Job sem cadência fixa (webhook, chave suja, backfill) não ganha selo:
+ * `sem_cadencia` mostra a idade crua, que é o honesto. Mesma regra de D-143.
+ */
+const JOB_VERDICT_TONE: Record<SyncVerdict, { color: string; label: string } | null> = {
+  ok: { color: "var(--sb-secondary)", label: "Em dia" },
+  atencao: { color: "var(--sb-accent-ink)", label: "Atrasando" },
+  critico: { color: "var(--sb-danger)", label: "Parado" },
+  nunca: { color: "var(--sb-muted-ink)", label: "Nunca rodou" },
+  sem_cadencia: null,
+};
 
 
 type Verdict = "CURRENT" | "OUTDATED" | "UNKNOWN";
@@ -113,6 +132,9 @@ export default async function SaudePage(): Promise<ReactNode> {
   const [healthResult, api] = await Promise.all([supabase.rpc("get_system_health"), fetchApiHealth()]);
 
   const rows = healthResult.data ?? [];
+  // Um instante só para a página inteira: duas chamadas a new Date() dariam
+  // vereditos calculados contra relógios diferentes na mesma tabela.
+  const agora = new Date();
 
   // A RPC devolve zero linhas para quem não é ADMIN (a autorização é dela,
   // não desta tela).
@@ -220,8 +242,9 @@ export default async function SaudePage(): Promise<ReactNode> {
 
       <p style={{ margin: "0 0 var(--sb-space-2)", fontSize: "0.75rem", color: "var(--sb-muted-ink)" }}>
         De <span style={{ fontFamily: "ui-monospace, monospace" }}>job_runs</span>: o que rodou de verdade. Um job
-        que sumiu do agendador e um que falha em silêncio aparecem igual aqui — pela idade. Cadências são
-        diferentes entre si, então a idade é informação, não veredito; o destaque começa em {JOB_STALE_HOURS}h.
+        que sumiu do agendador e um que falha em silêncio aparecem igual aqui, e o veredito é contra a
+        <strong> cadência de cada um</strong> — 13h de silêncio é catástrofe num job horário e normal num diário.
+        Job movido por evento (webhook, chave suja, backfill) não recebe selo: a idade crua é o honesto.
       </p>
 
       {jobs.length === 0 && healthResult.error === null && (
@@ -238,14 +261,15 @@ export default async function SaudePage(): Promise<ReactNode> {
                 <th style={th}>Job</th>
                 <th style={th}>Último estado</th>
                 <th style={th}>Quando</th>
+                <th style={th}>Frescor</th>
                 <th style={{ ...th, textAlign: "right" }}>Idade (h)</th>
                 <th style={{ ...th, textAlign: "right" }}>Falhas 24h</th>
               </tr>
             </thead>
             <tbody>
               {jobs.map((job) => {
-                const idade = job.job_age_hours ?? 0;
-                const velho = idade >= JOB_STALE_HOURS;
+                const veredito = classifyJobFreshness(job.job_type ?? "", job.job_last_run_at, agora);
+                const tom = JOB_VERDICT_TONE[veredito];
 
                 return (
                   <tr key={job.job_type ?? ""}>
@@ -263,9 +287,10 @@ export default async function SaudePage(): Promise<ReactNode> {
                     <td style={td}>
                       {job.job_last_run_at === null ? "—" : formatDateTime(job.job_last_run_at)}
                     </td>
-                    <td style={{ ...tdNumber, color: velho ? "var(--sb-accent-ink)" : undefined }}>
-                      {job.job_age_hours ?? "—"}
+                    <td style={{ ...td, color: tom?.color, fontWeight: tom === null ? undefined : 600 }}>
+                      {tom?.label ?? "—"}
                     </td>
+                    <td style={{ ...tdNumber, color: tom?.color }}>{job.job_age_hours ?? "—"}</td>
                     <td
                       style={{
                         ...tdNumber,

@@ -14,7 +14,7 @@
 |---|---|
 | **Atualizado em** | 2026-09-02 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `f538338` (D-217) — esta fatia, D-218, é o commit seguinte |
+| **HEAD conhecido** | `fa21512` (D-218) — esta fatia, D-219, é o commit seguinte |
 | **Deploy no ar** | **`0702969` — o mesmo do `HEAD`, sem atraso** (`api-00030-gqw` / `worker-00045-cwq`, 2026-09-02). Depois de 66 commits parado. Verificado contra a infraestrutura, não contra o script: `APP_COMMIT=0702969` nos dois serviços, imagem `api:0702969`, `/health` respondendo `{"commit":"0702969"}` e **zero `ERROR`** no Cloud Logging desde o boot |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | **128 locais == 128 no Dev**, sem drift — D-209→D-212 aplicadas pela CI em 2026-09-02 e CONFERIDAS lá (`anon` alcança 0 funções; `ml_accounts` sem UPDATE/DELETE para `authenticated`; `created_by` presente). O caminho é o push, **nunca** o MCP (lição de D-207) |
@@ -325,12 +325,14 @@ Nada disto pode ser feito por um agente.
    item não mencionava:** `job_runs` **recusa DELETE por trigger**, inclusive
    para `service_role` — expurgo exige um caminho explícito, não um `delete`.
 
-3. **Frescor por CADÊNCIA na Saúde do Sistema** — `/saude` usa
-   `JOB_STALE_HOURS = 26` para todos os jobs. Um job horário calado por 13 h
-   passa folgado, e foi assim que o incidente de D-217 durou meio dia. **D-143
-   já resolveu isto** na Saúde da Sincronização, com veredito contra a
-   cadência real de cada job; esta tela nunca recebeu o tratamento.
-3. **~~Regenerar `packages/db/src/types.ts`~~ — FEITO em D-213**, e por um
+3. **~~Frescor por CADÊNCIA na Saúde do Sistema~~ — FEITO em D-219.** O
+   veredito passou a ser contra a cadência de cada job, reusando o núcleo de
+   D-143. Medido contra o Dev no ato: **três jobs que a tela antiga mostrava
+   como nada** viraram CRÍTICO/atenção — e são reais, o resíduo de D-217
+   (`sbmotos` e `gmr` ainda em `ERROR`). Um job diário em 25,5 h continua
+   `ok`, que é o outro lado do mesmo erro.
+
+4. **~~Regenerar `packages/db/src/types.ts`~~ — FEITO em D-213**, e por um
    caminho que vale reusar: editar só o bloco afetado e **provar a igualdade**
    contra um arquivo de referência gerado na hora. Regenerar por inteiro
    apagaria os ~18 sítios de "CORRECAO MANUAL" e obrigaria a reaplicá-los —

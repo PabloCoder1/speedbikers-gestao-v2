@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { classifyResourceFreshness, failureRateLabel } from "./sync-health";
+import {
+  classifyJobFreshness,
+  classifyResourceFreshness,
+  failureRateLabel,
+  JOB_CADENCE_MIN,
+} from "./sync-health";
 
 const NOW = new Date("2026-08-30T12:00:00Z");
 
@@ -62,5 +67,70 @@ describe("failureRateLabel", () => {
   it("zero falha ou zero execução não produz alerta", () => {
     expect(failureRateLabel(24, 0)).toBeNull();
     expect(failureRateLabel(0, 0)).toBeNull();
+  });
+});
+
+describe("classifyJobFreshness (Saúde do Sistema, D-219)", () => {
+  /**
+   * O CASO DO INCIDENTE, virado teste.
+   *
+   * Em D-217 `sync.orders.window` — job HORÁRIO — ficou 13 horas mudo e a
+   * tela não disse nada, porque o limiar era um só e valia 26 horas para
+   * todos. Treze horas é catástrofe para ele.
+   */
+  it("job horário calado por 13h é CRÍTICO — era o que 26h deixava passar", () => {
+    expect(classifyJobFreshness("sync.orders.window", minutesAgo(13 * 60), NOW)).toBe("critico");
+    // E já era crítico bem antes: mais de 4 ciclos.
+    expect(classifyJobFreshness("sync.orders.window", minutesAgo(5 * 60), NOW)).toBe("critico");
+    expect(classifyJobFreshness("sync.orders.window", minutesAgo(3 * 60), NOW)).toBe("atencao");
+    expect(classifyJobFreshness("sync.orders.window", minutesAgo(90), NOW)).toBe("ok");
+  });
+
+  /**
+   * A outra metade, e é o que impede a correção de virar alarme falso: as
+   * MESMAS 13 horas são normais num job diário. Um limiar único erra nas duas
+   * direções — passa o que importa e grita o que está certo.
+   */
+  it("as mesmas 13h num job diário são OK", () => {
+    expect(classifyJobFreshness("sync.listing-visits.snapshot", minutesAgo(13 * 60), NOW)).toBe("ok");
+    expect(classifyJobFreshness("maintenance.check-ai-budget", minutesAgo(13 * 60), NOW)).toBe("ok");
+  });
+
+  it("job de 10 minutos fica crítico em menos de uma hora", () => {
+    expect(classifyJobFreshness("sync.support.questions.reconcile", minutesAgo(15), NOW)).toBe("ok");
+    expect(classifyJobFreshness("sync.support.questions.reconcile", minutesAgo(30), NOW)).toBe("atencao");
+    expect(classifyJobFreshness("sync.support.questions.reconcile", minutesAgo(60), NOW)).toBe("critico");
+  });
+
+  /**
+   * Job movido por evento não tem cadência, e inventar uma seria gritar sobre
+   * o comportamento certo — a decisão que D-143 tomou para backfill.
+   */
+  it("job sem cadência fixa não ganha veredito", () => {
+    for (const semCadencia of [
+      "analytics.recompute",
+      "sync.webhook.received",
+      "sync.support.questions",
+      "backfill.orders",
+      "erp.import.apply",
+    ]) {
+      expect(classifyJobFreshness(semCadencia, minutesAgo(9999), NOW)).toBe("sem_cadencia");
+    }
+  });
+
+  it("job agendado que nunca rodou é `nunca`, não `ok`", () => {
+    expect(classifyJobFreshness("sync.orders.window", null, NOW)).toBe("nunca");
+  });
+
+  /**
+   * O elo com a infraestrutura: todo job do mapa tem cadência positiva, e o
+   * comentário ao lado de cada um nomeia o scheduler que a define
+   * (`infra/cloud-scheduler.sh`). Um valor zerado ou negativo tornaria o
+   * veredito sempre crítico, em silêncio.
+   */
+  it("toda cadência mapeada é positiva", () => {
+    const invalidas = Object.entries(JOB_CADENCE_MIN).filter(([, min]) => !(min > 0));
+
+    expect(invalidas).toEqual([]);
   });
 });

@@ -4941,6 +4941,41 @@ error TS2741: Property 'nota_fiscal' is missing in type '{ sku: ...; atendimento
 
 **Impacto:** `supabase/migrations/20260903112000_system_health_skip_scan.sql`.
 
+## D-219 - O frescor de /saude passa a ser contra a cadencia, e o incidente de ontem vira teste
+
+**Contexto:** item aberto pelo proprio incidente de D-217. `/saude` julgava todos os jobs por um limiar unico — `JOB_STALE_HOURS = 26` — e por isso `sync.orders.window`, que roda **de hora em hora**, ficou **13 horas mudo sem a tela dizer nada**. Treze horas e catastrofe para ele e passa folgado sob 26.
+
+**A tela ja sabia da propria fraqueza.** O texto dela dizia, literalmente: *"cadências são diferentes entre si, então a idade é informação, não veredito; o destaque começa em 26h"*. Era honesto e era insuficiente — **declarar a limitação não a conserta**, e o custo foi meio dia de sincronizacao parada sem sinal.
+
+**Nao inventei mecanismo: D-143 ja tinha resolvido isto** na Saude da Sincronizacao, com a frase que virou a regra — *"o veredito de frescor e CONTRA A CADENCIA de cada job, nao um limiar unico"*. O que faltava era aplicar a mesma coisa com outra chave: la a unidade e o RECURSO por conta, aqui e o `job_type` de `job_runs`.
+
+**O nucleo passou a ser compartilhado**, em vez de copiado: `verdictFromCadence` (2 ciclos = ok, 4 = atencao, acima = critico) atende as duas telas, e `classifyResourceFreshness` agora delega para ele. **Os 8 testes que ja existiam para a funcao antiga continuam passando** — e sao eles a prova de que a extracao nao mudou comportamento.
+
+**As cadencias vieram de `infra/cloud-scheduler.sh` E foram conferidas contra o Cloud Scheduler REAL**, job a job, nao so contra o script. O mapa nao foi adivinhado: cada endpoint do agendador foi seguido ate o `jobType` que ele enfileira no codigo da `api` — inclusive o caso que uma leitura apressada erraria, `v3-detect-sales-anomalies`, que enfileira **dois** tipos.
+
+**Job sem cadencia fixa nao ganha selo**, e isso e decisao, nao lacuna: `analytics.recompute` (chave suja), `sync.webhook.received`, as ingestoes por webhook, `backfill.orders` (finito) e os de import/relist mostram a **idade crua**. Carimbar frescor num job orientado a evento seria a tela gritando sobre o comportamento certo — a mesma decisao que D-143 tomou para backfill.
+
+---
+
+**A MEDICAO CONTRA O DEV REAL, e ela vale mais que o teste.** Aplicando o veredito novo ao estado de hoje:
+
+| job | silencio | cadencia | veredito NOVO | tela ANTIGA |
+|---|---|---|---|---|
+| `sync.support.claims.reconcile` | 13,5 h | 60 min | **CRITICO** | *(nada)* |
+| `sync.listings.snapshot` | 14,7 h | 6 h | **atencao** | *(nada)* |
+| `sync.fulfillment.snapshot` | 13,9 h | 6 h | **atencao** | *(nada)* |
+| `sync.listing-visits.snapshot` | 25,5 h | 24 h | ok | *(nada)* |
+
+**Os tres primeiros sao problemas REAIS que a tela antiga mostrava como nada** — e nao sao hipoteticos: sao o residuo do proprio D-217. Duas contas (`sbmotos`, `gmr`) seguem em `ERROR`, entao os jobs por conta continuam parados para elas. **A tela nova aponta exatamente a metade da recuperacao que ficou por fazer.**
+
+E a ultima linha mostra o erro na direcao oposta: 25,5 h num job **diario** e saudavel, e passava por um triz sob o limiar de 26 h — a 26,1 h a tela antiga gritaria sobre um job funcionando perfeitamente. **Um limiar unico erra nos dois sentidos**: deixa passar o que importa e alarma o que esta certo.
+
+**O incidente virou teste**, e e o mais importante do arquivo: 13 horas de silencio num job horario devolve `critico`; as MESMAS 13 horas num job diario devolvem `ok`. As duas asserçoes juntas sao o que impede a correcao de virar alarme falso.
+
+**Verificacao:** 14 testes em `sync-health.test.ts` (8 antigos preservados + 6 novos), `check` 29/29, build 8/8, `check:waterfalls` 52 arquivos, 13/13 Playwright. Sem migration e sem mudanca de contrato — a RPC `get_system_health` nao foi tocada; o veredito e calculado na tela, a partir do que ela ja recebia.
+
+**Impacto:** `apps/web/lib/sync-health.ts`, `apps/web/lib/sync-health.test.ts`, `apps/web/app/saude/page.tsx`.
+
 ## Como adicionar nova decisao
 
 Registrar:
