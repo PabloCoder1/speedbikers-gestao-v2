@@ -5,159 +5,33 @@ import { createClient } from "../lib/supabase/server";
 import { CommandPalette } from "./command-palette";
 import type { NotificationPreferenceRule } from "../lib/notification-preferences";
 import { NotificationToasts } from "./notification-toasts";
+import { SidebarNav } from "./nav";
 import { currentMembership } from "../lib/membership";
 
 /**
- * Moldura das telas autenticadas: cabeçalho, navegação e identificação.
+ * Moldura das telas autenticadas: sidebar escura à esquerda, topbar e área
+ * central (D3 da frente visual).
  *
  * O papel é lido do banco, não do token. Um JWT pode ser antigo — alguém
  * rebaixado de ADMIN para VISUALIZADOR continuaria vendo o menu de ADMIN até o
  * token expirar. Ler de `organization_members` custa uma consulta e elimina a
  * janela.
  *
- * Navegação agrupada por categoria (pedido explícito do usuário, 2026-08-24
- * — "não fica só colocando solto, fica bagunça"), `<details>`/`<summary>`
- * nativo — dropdown sem JS, acessível de graça. Estrutura alvo completa:
+ * **A navegação saiu do topo.** Até D2 eram 29 links em cinco dropdowns
+ * horizontais; o brief do usuário (`speed-bikers-design.md`, seção 7 "ESTRUTURA
+ * GLOBAL") pede "SIDEBAR VERTICAL ESQUERDA + TOP BAR + ÁREA CENTRAL" e fecha
+ * com "Não usar dezenas de links horizontalmente no topo". A lista, o
+ * agrupamento e a marca de seção atual moram em `components/nav.tsx`, que é
+ * client component só porque `usePathname` é a única forma de o App Router
+ * dizer onde se está.
  *
- *   VISÃO GERAL, NOTIFICAÇÕES, SUGESTÕES (itens soltos, sem grupo — ambos
- *   são transversais a todas as categorias, não pertencem a nenhuma)
- *   COMERCIAL: Vendas, Produtos, Anúncios
- *   ESTOQUE: Estoque, Cobertura, Curva ABC, Notas Fiscais, Compras
- *   INTELIGÊNCIA: Diagnóstico, Ações
- *   ATENDIMENTO: Caixa de Entrada, Base de Conhecimento
- *   GESTÃO: Vinculações, Fornecedores, Contas ML, Sincronização
- *   ADMINISTRAÇÃO: Usuários, Integrações, Saúde do Sistema, Sugestões, Configurações
- *
- * Um grupo só aparece aqui quando tem pelo menos UMA página real — dropdown
- * vazio não serve pra nada. Hoje: ADMINISTRAÇÃO inteira ainda não existe
- * (nenhuma das cinco páginas foi construída) — fica de fora até nascer, não
- * como esquecimento. "Produtos" NASCEU em 2026-08-28 (D-133): é o catálogo de
- * SKU como tela própria, distinta de `/skus/{id}`, e serve à curadoria das
- * duas colunas que só uma pessoa pode preencher (`stock_is_virtual`,
- * `supplier_brand`). Regra para quem adicionar uma tela
- * nova: ela entra no grupo certo aqui, nunca solta no nível de cima.
- *
- * ATENDIMENTO (D-090) tem só "Caixa de Entrada" por enquanto. A lista
- * original do usuário pedia "Perguntas", "Mensagens", "Reclamações" e
- * "Mediações" como itens separados — D-084 decidiu depois que são FILTROS
- * sobre a mesma projeção, não telas distintas, então viraram pílulas dentro
- * da própria Caixa de Entrada. "Base de Conhecimento" entra quando existir.
- *
- * "Importações" (UpSeller) não estava na lista original do usuário, mas já
- * existe e funciona — entrou em ESTOQUE por ser fluxo de catálogo/saldo.
+ * O que o Figma desenha e este Shell NÃO tem, por não existir no sistema —
+ * inventar aqui seria inventar produto: seletor de organização (não há segunda
+ * organização, e `lib/membership.ts` NOMEIA esse estado em vez de escolher
+ * uma), Central de Ajuda, menu de perfil (esconderia o "Sair" atrás de um
+ * dropdown que não existe) e botão flutuante do Copiloto (que é rota, e está
+ * no menu). Registrado em `docs/DESIGN_IMPLEMENTATION.md`.
  */
-interface NavItem {
-  label: string;
-  href: string;
-}
-
-interface NavGroup {
-  title: string;
-  items: NavItem[];
-}
-
-const NAV_GROUPS: NavGroup[] = [
-  {
-    title: "Comercial",
-    items: [
-      { label: "Vendas", href: "/vendas" },
-      { label: "Produtos", href: "/produtos" },
-      { label: "Anúncios", href: "/anuncios" },
-      { label: "Preços", href: "/precos" },
-    ],
-  },
-  {
-    title: "Estoque",
-    items: [
-      { label: "Estoque", href: "/estoque" },
-      { label: "Movimentações", href: "/estoque/movimentacoes" },
-      { label: "Full", href: "/full" },
-      { label: "Cobertura", href: "/cobertura" },
-      // A sugestão de compra nasceu em /reposicao (D-147); a configuração
-      // virou subpágina dela, linkada do cabeçalho — o retarget que D-144
-      // já previa.
-      { label: "Reposição", href: "/reposicao" },
-      { label: "Curva ABC", href: "/curva-abc" },
-      { label: "Notas Fiscais", href: "/notas-fiscais" },
-      { label: "Compras", href: "/compras" },
-      { label: "Importações", href: "/importacoes" },
-    ],
-  },
-  {
-    title: "Inteligência",
-    items: [
-      { label: "Diagnóstico", href: "/diagnostico" },
-      { label: "Ações", href: "/acoes" },
-      { label: "Copiloto", href: "/copiloto" },
-    ],
-  },
-  {
-    title: "Atendimento",
-    items: [{ label: "Caixa de Entrada", href: "/atendimento" }],
-  },
-  {
-    title: "Gestão",
-    items: [
-      { label: "Vinculações", href: "/vinculacoes" },
-      { label: "Fornecedores", href: "/fornecedores" },
-      { label: "Usuários", href: "/usuarios" },
-      { label: "Configurações", href: "/configuracoes" },
-      { label: "Integrações", href: "/integracoes" },
-      { label: "Contas ML", href: "/contas" },
-      { label: "Sincronização", href: "/sincronizacao" },
-      { label: "Saúde do Sistema", href: "/saude" },
-    ],
-  },
-];
-
-const navLinkStyle: React.CSSProperties = {
-  display: "block",
-  padding: "0.375rem 0.75rem",
-  color: "var(--sb-text)",
-  textDecoration: "none",
-  fontSize: "0.875rem",
-  whiteSpace: "nowrap",
-};
-
-const navGroupSummaryStyle: React.CSSProperties = {
-  cursor: "pointer",
-  color: "var(--sb-text-soft)",
-  fontSize: "0.9375rem",
-  listStyle: "none",
-  userSelect: "none",
-};
-
-function NavGroupDropdown({ group }: { group: NavGroup }): ReactNode {
-  return (
-    <details className="sb-nav-group" style={{ position: "relative" }}>
-      <summary style={navGroupSummaryStyle}>{group.title.toUpperCase()} ▾</summary>
-
-      <div
-        className="sb-nav-group-menu"
-        style={{
-          position: "absolute",
-          top: "100%",
-          left: 0,
-          marginTop: "0.375rem",
-          background: "var(--sb-surface)",
-          border: "1px solid var(--sb-border)",
-          borderRadius: "var(--sb-radius)",
-          boxShadow: "0 8px 20px rgba(0,0,0,0.12)",
-          padding: "0.25rem",
-          minWidth: "10rem",
-          zIndex: 50,
-        }}
-      >
-        {group.items.map((item) => (
-          <Link key={item.href} href={item.href} style={navLinkStyle}>
-            {item.label}
-          </Link>
-        ))}
-      </div>
-    </details>
-  );
-}
-
 export async function Shell({ children }: { children: ReactNode }): Promise<ReactNode> {
   const supabase = await createClient();
 
@@ -210,124 +84,111 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
   const unreadCount = unread.count ?? 0;
 
   return (
-    <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column" }}>
-      <header
-        style={{
-          // O chrome declara o seu fundo em vez de herdar o da página. Hoje é
-          // o mesmo branco e o efeito é nulo; quando o conteúdo ganhar fundo
-          // próprio, o cabeçalho não vai junto por acidente.
-          background: "var(--sb-surface)",
-          borderBottom: "1px solid var(--sb-border)",
-          padding: "var(--sb-space-3) var(--sb-space-4)",
-          display: "flex",
-          alignItems: "center",
-          gap: "var(--sb-space-4)",
-          flexWrap: "wrap",
-        }}
-      >
+    <div className="sb-shell">
+      <aside className="sb-sidebar">
         <Link
           href="/"
-          style={{ fontWeight: 700, color: "var(--sb-primary)", textDecoration: "none" }}
+          style={{
+            display: "block",
+            padding: "var(--sb-space-3)",
+            borderBottom: "1px solid var(--sb-primary-border)",
+            color: "var(--sb-white)",
+            textDecoration: "none",
+            fontWeight: 700,
+            fontSize: "0.9375rem",
+          }}
         >
           {orgName}
         </Link>
 
-        <CommandPalette organizationId={organizationId} />
+        <SidebarNav />
+      </aside>
 
-        <nav style={{ display: "flex", alignItems: "center", gap: "var(--sb-space-3)", fontSize: "0.9375rem" }}>
-          <Link href="/" style={{ color: "var(--sb-text-soft)", textDecoration: "none" }}>
-            Visão Geral
-          </Link>
-
-          <Link
-            href="/notificacoes"
-            style={{ color: "var(--sb-text-soft)", textDecoration: "none", position: "relative" }}
-          >
-            Notificações
-            {unreadCount > 0 && (
-              <span
-                style={{
-                  marginLeft: "0.375rem",
-                  display: "inline-block",
-                  minWidth: "1.125rem",
-                  padding: "0 0.25rem",
-                  borderRadius: "999px",
-                  background: "var(--sb-danger)",
-                  color: "var(--sb-white)",
-                  fontSize: "0.6875rem",
-                  fontWeight: 700,
-                  textAlign: "center",
-                  lineHeight: "1.125rem",
-                }}
-              >
-                {unreadCount > 99 ? "99+" : unreadCount}
-              </span>
-            )}
-          </Link>
-
-          <Link href="/sugestoes" style={{ color: "var(--sb-text-soft)", textDecoration: "none" }}>
-            Sugestões
-          </Link>
-
-          {NAV_GROUPS.map((group) => (
-            <NavGroupDropdown key={group.title} group={group} />
-          ))}
-        </nav>
-
-        <div
+      <div className="sb-workspace">
+        <header
           style={{
-            marginLeft: "auto",
+            background: "var(--sb-surface)",
+            borderBottom: "1px solid var(--sb-border)",
+            padding: "var(--sb-space-2) var(--sb-space-4)",
             display: "flex",
             alignItems: "center",
             gap: "var(--sb-space-3)",
-            fontSize: "0.8125rem",
-            color: "var(--sb-text-soft)",
+            flexWrap: "wrap",
           }}
         >
-          <span>
-            {auth.user?.email ?? "—"}
-            {role === null ? "" : ` · ${role}`}
-            {membershipError && (
-              <span
-                role="alert"
-                title="Não foi possível confirmar sua organização — busca e alguns dados podem estar incompletos nesta página."
-                style={{ color: "var(--sb-danger)", marginLeft: "0.375rem", cursor: "help" }}
-              >
-                ⚠
-              </span>
-            )}
-          </span>
+          <CommandPalette organizationId={organizationId} />
 
-          <form action="/auth/sign-out" method="post">
-            <button
-              type="submit"
-              style={{
-                border: "1px solid var(--sb-border)",
-                background: "transparent",
-                borderRadius: "var(--sb-radius)",
-                padding: "0.25rem 0.625rem",
-                cursor: "pointer",
-                color: "inherit",
-                font: "inherit",
-              }}
+          <div
+            style={{
+              marginLeft: "auto",
+              display: "flex",
+              alignItems: "center",
+              gap: "var(--sb-space-3)",
+              fontSize: "0.8125rem",
+              color: "var(--sb-text-soft)",
+            }}
+          >
+            <Link
+              href="/notificacoes"
+              style={{ color: "var(--sb-text-soft)", textDecoration: "none", whiteSpace: "nowrap" }}
             >
-              Sair
-            </button>
-          </form>
-        </div>
-      </header>
+              Notificações
+              {unreadCount > 0 && (
+                <span
+                  style={{
+                    marginLeft: "0.375rem",
+                    display: "inline-block",
+                    minWidth: "1.125rem",
+                    padding: "0 0.25rem",
+                    borderRadius: "999px",
+                    background: "var(--sb-danger)",
+                    color: "var(--sb-white)",
+                    fontSize: "0.6875rem",
+                    fontWeight: 700,
+                    textAlign: "center",
+                    lineHeight: "1.125rem",
+                  }}
+                >
+                  {unreadCount > 99 ? "99+" : unreadCount}
+                </span>
+              )}
+            </Link>
 
-      {/*
-        O chão do conteúdo é decidido AQUI, e só aqui — não no `body`.
-        Medido em D2: pintar o `body` alcançaria também o `<header>` acima (45
-        telas de chrome) e `app/login/page.tsx`, a única tela fora do Shell.
-        Pintar o `<main>` alcança só o conteúdo, e `minHeight: 100dvh` +
-        `flexDirection: column` + `flex: 1` no wrapper garantem que ele preenche
-        a viewport e cresce com a página. Trocar este `--sb-surface` por um
-        token de chão é uma linha, num lugar, quando as superfícies de dentro
-        já declararem o fundo delas.
-      */}
-      <main style={{ padding: "var(--sb-space-4)", flex: 1, background: "var(--sb-surface)" }}>{children}</main>
+            <span>
+              {auth.user?.email ?? "—"}
+              {role === null ? "" : ` · ${role}`}
+              {membershipError && (
+                <span
+                  role="alert"
+                  title="Não foi possível confirmar sua organização — busca e alguns dados podem estar incompletos nesta página."
+                  style={{ color: "var(--sb-danger)", marginLeft: "0.375rem", cursor: "help" }}
+                >
+                  ⚠
+                </span>
+              )}
+            </span>
+
+            <form action="/auth/sign-out" method="post">
+              <button
+                type="submit"
+                style={{
+                  border: "1px solid var(--sb-border)",
+                  background: "var(--sb-surface)",
+                  borderRadius: "var(--sb-radius-md)",
+                  padding: "0.25rem 0.625rem",
+                  cursor: "pointer",
+                  color: "inherit",
+                  font: "inherit",
+                }}
+              >
+                Sair
+              </button>
+            </form>
+          </div>
+        </header>
+
+        <main style={{ padding: "var(--sb-space-4)", flex: 1, background: "var(--sb-surface)" }}>{children}</main>
+      </div>
 
       <NotificationToasts userId={auth.user?.id ?? null} preferenceRules={preferenceRules} />
     </div>

@@ -58,6 +58,9 @@ jobs:
       - name: Leituras em fila sem dependencia
         run: pnpm --filter @sb/web run check:waterfalls
 
+      - name: Guarda de export em "use server"
+        run: pnpm --filter @sb/web run check:server-actions
+
       - name: Build
         run: pnpm run build
 

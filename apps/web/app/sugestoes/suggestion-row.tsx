@@ -7,7 +7,8 @@ import { StatusPill } from "../../components/status-pill";
 import { formatDateTime } from "../../lib/format";
 import { featureSuggestionStatusLabel } from "../../lib/labels";
 import { createClient } from "../../lib/supabase/browser";
-import { SUGGESTION_STATUS_VALUES, updateSuggestionStatus, type SuggestionStatus } from "./actions";
+import { updateSuggestionStatus } from "./actions";
+import { SUGGESTION_STATUS_VALUES, type SuggestionStatus } from "./constants";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 

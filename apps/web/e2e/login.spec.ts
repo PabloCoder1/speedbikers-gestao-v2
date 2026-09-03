@@ -43,6 +43,16 @@ test.describe("login", () => {
     await page.getByRole("button", { name: "Entrar" }).click();
 
     await expect(page).toHaveURL(/\/compras$/);
-    await expect(page.getByRole("link", { name: "Visão Geral" })).toBeVisible();
+
+    // A afirmação é "a moldura autenticada renderizou". Ela era um rótulo de
+    // link ("Visão Geral"), que D3 renomeou ao trocar o cabeçalho horizontal
+    // pela sidebar — e um teste que quebra ao renomear um rótulo estava
+    // medindo o rótulo, não a moldura. Agora afirma o landmark de navegação e
+    // um item dentro dele, o que sobrevive a renomeação e continua provando
+    // que o Shell montou com o menu.
+    const menu = page.getByRole("navigation", { name: "Navegação principal" });
+
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole("link", { name: "Vendas" })).toBeVisible();
   });
 });

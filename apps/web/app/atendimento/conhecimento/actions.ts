@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import type { KnowledgeKind, KnowledgeSource } from "./constants";
 import { createClient } from "../../../lib/supabase/server";
 import { currentMembership } from "../../../lib/membership";
 
@@ -14,11 +15,6 @@ import { currentMembership } from "../../../lib/membership";
  * `knowledge_entries_validation_coherent`).
  */
 
-export const KNOWLEDGE_KINDS = ["COMPATIBILIDADE", "ESPECIFICACAO", "POLITICA", "OUTRO"] as const;
-export const KNOWLEDGE_SOURCES = ["CONFIRMACAO_INTERNA", "FABRICANTE", "DOCUMENTACAO", "ATENDIMENTO"] as const;
-
-export type KnowledgeKind = (typeof KNOWLEDGE_KINDS)[number];
-export type KnowledgeSource = (typeof KNOWLEDGE_SOURCES)[number];
 
 export interface KnowledgeActionResult {
   ok: boolean;

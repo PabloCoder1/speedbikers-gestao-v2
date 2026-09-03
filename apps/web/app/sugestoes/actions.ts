@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import type { SuggestionStatus } from "./constants";
 import { createClient } from "../../lib/supabase/server";
 import { currentMembership } from "../../lib/membership";
 
@@ -21,17 +22,6 @@ export interface SuggestionActionResult {
   message: string | null;
 }
 
-export const SUGGESTION_STATUS_VALUES = [
-  "nova",
-  "em_analise",
-  "aprovada",
-  "planejada",
-  "em_desenvolvimento",
-  "entregue",
-  "recusada",
-] as const;
-
-export type SuggestionStatus = (typeof SUGGESTION_STATUS_VALUES)[number];
 
 export async function createSuggestion(originalText: string): Promise<SuggestionActionResult> {
   const trimmed = originalText.trim();

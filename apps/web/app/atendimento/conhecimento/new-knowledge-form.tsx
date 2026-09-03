@@ -2,8 +2,8 @@
 
 import { useState, type ReactNode } from "react";
 
-import type { KnowledgeKind, KnowledgeSource } from "./actions";
-import { KNOWLEDGE_KINDS, KNOWLEDGE_SOURCES, createKnowledgeEntry } from "./actions";
+import { createKnowledgeEntry } from "./actions";
+import { KNOWLEDGE_KINDS, KNOWLEDGE_SOURCES, type KnowledgeKind, type KnowledgeSource } from "./constants";
 
 /**
  * Registro de conhecimento (D-113) — qualquer membro sugere; nasce SUGERIDO

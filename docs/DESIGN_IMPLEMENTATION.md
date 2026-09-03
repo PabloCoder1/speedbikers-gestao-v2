@@ -226,6 +226,11 @@ branco embutido.
 | Aba Tráfego no SKU | visita é medida por `item_id`; o dono é o Dashboard do Anúncio | D-224 |
 | "Enviar X unidades ao Full" | sem política logística defensável | auditoria corretiva do próprio Figma, item 6 |
 | Receita líquida | nome vetado; existe margem operacional observada | METRICS 5C.1 |
+| Seletor de organização na sidebar | não há segunda organização, e `lib/membership.ts` **nomeia** esse estado em vez de escolher uma | D-232 |
+| Central de Ajuda | não existe | — |
+| Menu de perfil | esconderia o "Sair" atrás de um dropdown que não foi desenhado | — |
+| Botão flutuante do Copiloto | Copiloto é rota, e está no menu | — |
+| Trilho de 58px só com ícones | o app não tem **nenhum** ícone (medido: sem `<img>`, sem SVG, sem `public/`) — um trilho sem ícone é uma coluna vazia | — |
 
 **A auditoria corretiva do Figma pede a mesma honestidade que o sistema já
 pratica** ("Requer política logística", "Quantidade ainda não calculada",
@@ -235,14 +240,32 @@ pratica** ("Requer política logística", "Quantidade ainda não calculada",
 
 ## Navegação — Figma × real
 
-O Figma agrupa em `VISÃO GERAL | OPERAÇÃO | INTELIGÊNCIA | ATENDIMENTO |
-ADMINISTRAÇÃO`. O real agrupa em `Comercial | Estoque | (compras) |
-Inteligência | Atendimento | Gestão`. **Quase todo item existe dos dois
-lados**; o que muda é o agrupamento. D2 reconcilia — sem esconder tela real
-que o Figma não listou (`Copiloto`, `Reposição`, `Importações`, `Sugestões`,
-`Notificações`).
+**O brief decide, e ele é explícito.** `speed-bikers-design.md`, seção 7
+"ESTRUTURA GLOBAL", pede "SIDEBAR VERTICAL ESQUERDA + TOP BAR + ÁREA CENTRAL",
+com a sidebar podendo "ficar expandida", "ficar compacta", "agrupar
+funcionalidades" e "destacar seção atual" — e fecha com a frase que condenava a
+moldura anterior: **"Não usar dezenas de links horizontalmente no topo."** Eram
+29 links em cinco dropdowns. "Sidebar escura" aparece em outros dois briefs
+(`speed-bikers-design-evolution.md:42`, `speed-bikers-v3-tasks.md:912`).
 
----
+D3 trocou a moldura. O agrupamento é o do Figma (`VISÃO GERAL | OPERAÇÃO |
+INTELIGÊNCIA | ATENDIMENTO | ADMINISTRAÇÃO`), com duas regras:
+
+- **nenhuma tela real ficou de fora por não estar no Figma** — Reposição,
+  Importações, Copiloto e Sugestões entraram no grupo que lhes cabe;
+- **nenhuma tela do Figma que não existe foi inventada** — Margem, Insights,
+  Design System e as cinco de Atendimento seguem como diferenças intencionais.
+
+Métricas e Templates de atendimento continuam linkadas do cabeçalho da própria
+Caixa de Entrada: são ferramentas dela, não seções.
+
+**Cuidado com o export do Figma:** ele RENDERIZA a sidebar branca, com o nome
+da marca em branco por cima (invisível). É colisão de CSS no arquivo montado
+por script, não decisão — o bloco escuro e o claro têm a mesma especificidade e
+o claro vem depois. A intenção escura está provada em três lugares (os dois
+briefs acima e o comentário `/* Correção da Logo (Forçar cor branca sobre fundo
+escuro da Sidebar) */` no próprio CSS). **Copie o que o export declara, não o
+que ele renderiza.**
 
 ## Status de implementação
 
@@ -252,9 +275,10 @@ que o Figma não listou (`Copiloto`, `Reposição`, `Importações`, `Sugestões
 | D1 | Design foundation (tokens de cor) | **CONCLUÍDO** |
 | D2 | Shell + o passo branco (superfícies declaram fundo) | **CONCLUÍDO** |
 | — | O passo cinza (`--sb-ground` no `<main>`) | fila, com pré-requisitos medidos |
-| D3 | Home | próximo |
-| D4 | Vendas | fila |
-| D5 | Produtos | fila |
+| D3 | Moldura: sidebar vertical, grupos e seção atual | **CONCLUÍDO** |
+| D4 | Home | próximo |
+| D5 | Vendas | fila |
+| D6 | Produtos | fila |
 | D6–D10 | Dashboard de SKU (fundação + 4 pares de abas) | fila |
 | D11–D12 | Anúncios (listagem, depois dashboard em lotes) | fila |
 | D13 | Republicação (só UX; motor real preservado) | fila |
@@ -266,39 +290,49 @@ que o Figma não listou (`Copiloto`, `Reposição`, `Importações`, `Sugestões
 
 ## Última fatia concluída
 
-**D1 — tokens de cor.** Mediu contraste WCAG de todo par (texto, fundo) que o
-app pinta: **18 pares, 4 reprovavam**. Depois: 18 pares, **zero reprovações**,
-pior caso 4,51x. As quatro falhas eram antigas e invisíveis — pílula de
-atenção (4,05x), pílula de perigo (3,60x), `--sb-muted-ink` (4,37x) e
-`--sb-danger` (4,17x, que também é o fundo do botão destrutivo com texto
-branco em `compras/[id]/actions-panel.tsx`).
+**D3 — a moldura.** Sidebar escura à esquerda com os cinco grupos do Figma,
+topbar com busca/notificações/usuário/sair, e a seção atual marcada — em cor
+**e** em `aria-current="page"`, a mesma doutrina de `components/filter-pill.tsx`.
+`components/nav.tsx` é o único client component novo, e existe por um motivo
+só: "destacar seção atual" exige a rota atual, e o App Router não a entrega a um
+Server Component. As quatro leituras em `Promise.all` do Shell (D-195) não foram
+tocadas.
 
-Na varredura apareceu o achado que definiu a fatia: o app **já tinha** uma
-paleta de estado completa — `#fdeaea`, `#e6f4ea`, `#fff8dc`, `#136c34` — como
-hex literal em 16 lugares de 7 arquivos, contra o que o próprio cabeçalho do
-`globals.css` mandava. E `app/acoes/action-row.tsx` escrevia
-`var(--sb-bg-soft, #f7f7f8)`: um `var()` de um token **que nunca existiu**,
-então o fallback era o valor real. D1 deu nome aos quatro, criou o quinto, e
-hoje **não há um hex de seis dígitos literal em `apps/web`**.
+**Contraste medido antes de copiar**, contra o ponto mais claro do gradiente que
+o Figma declara (`#161b68`, o pior caso) e contra o navy do app: item de menu
+12,16x / 13,63x, rótulo de grupo 8,18x / 9,16x, item ativo (navy sobre o amarelo
+da marca) 13,07x. Passa com folga em qualquer ponto — por isso a sidebar aqui é
+navy chapado, e não gradiente: o gradiente não muda o veredito e o brief pede
+"sem excesso de gradientes".
 
-**Correção, medida em D2 e registrada aqui porque a afirmação de D1 foi forte
-demais:** ainda existem `#fff` (hex de TRÊS dígitos, 6 lugares) e sombras em
-`rgba()` — o grep de D1 procurava `#[0-9a-f]{6}` e não os via. `app/compras/
-[id]/export/pdf.ts` usa `rgb()` do pdf-lib, que não é CSS e não conta. E a
-frase "28 telas carregam cópia privada de `cardStyle`" era inferência do
-comentário de `table-styles.ts`, não medição: são **2** telas que importam o
-módulo, **3** com cópia nomeada, e o resto com estilo inline ad-hoc.
+**Duas telas quebradas, achadas porque o menu novo passou a apontar para elas.**
+Uma varredura dos 28 links encontrou duas HTTP 500, ambas da mesma causa: um
+módulo `"use server"` exportando uma **constante**. O contrato do Next é que
+todo export de um módulo assim seja função assíncrona — a constante chega ao
+componente cliente como referência de servidor, e `.map(...)` não existe.
+`build`, `typecheck` e `lint` passam; a tela morre em runtime (classe D-131).
 
-Verificação: contraste conferido também no navegador (5,74 / 4,61 / 4,51 /
-10,08 — bateu com a aritmética na segunda casa); 273 unitários, 582 de
-integração, 19 e2e, `build` e `docs:check`. As duas falhas de e2e da primeira
-rodada eram estado acumulado, não regressão: provado com `db reset` + reseed.
+- `/atendimento/conhecimento` quebrava **sempre**. Nada no menu antigo apontava
+  para lá — só o cabeçalho da Caixa de Entrada.
+- `/sugestoes` quebrava **só com dado**. Com a tabela vazia a linha nunca
+  renderiza. Provado inserindo uma sugestão: 200 vira 500.
+
+Corrigidas movendo os valores para um `constants.ts` irmão, e guardadas por
+`apps/web/scripts/check-server-actions.mjs`, no CI ao lado do
+`check:waterfalls`. O guarda foi provado contra o código de antes: reprova com
+saída 1, e passa depois.
+
+**Verificação:** 28/28 links do menu resolvem e cada um marca exatamente a si
+mesmo como seção atual; em 1440/1100/860/700px a **página** nunca rola na
+horizontal (só a tabela, dentro de si) — é o que o `min-width: 0` na coluna de
+conteúdo promete; 273 unitários, 582 de integração em banco recriado, 19 e2e,
+`check` 29/29, `build` 8/8, `check:waterfalls`, `check:server-actions`,
+`docs:check`.
 
 ## Próxima fatia segura
 
-**D2 — Shell global.** `components/shell.tsx` mais duas linhas em
-`components/table-styles.ts`: `background: var(--sb-surface)` no `cardStyle` e
-o `--sb-ground` no `body`. Essa ordem importa — o fundo cinza sem o cartão
-branco é regressão em 28 telas. A dívida das cópias privadas de `cardStyle`
-(já registrada no HANDOFF) passa a ter consequência visual, e é o que decide
-se D2 cabe numa fatia ou vira duas.
+**D4 — Home.** A tela mais curta do app (quatro cartões e um link), agora dentro
+de uma moldura estável. É onde o "cartão de atenção" do Figma
+(`.attention-card`, faixa esquerda de 4px na cor do estado) encontra os quatro
+números que a Home já lê — e onde se decide se o cartão de diagnóstico do
+`DesignSystem.tsx` vira componente real ou fica sendo padrão inline.

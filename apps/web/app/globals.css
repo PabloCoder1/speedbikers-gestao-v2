@@ -76,6 +76,33 @@
   /* Era #7c7590: 4,37x sobre branco, reprovava. Agora 4,90x. */
   --sb-muted-ink: #746d88;
 
+  /*
+   * SUPERFÍCIE ESCURA — a sidebar (D3).
+   *
+   * O brief pede "sidebar escura" (`speed-bikers-design-evolution.md:42` e
+   * `speed-bikers-v3-tasks.md:912`) e "superfície clara" para o resto. O fundo é
+   * `--sb-primary`, o navy que já é a identidade — não uma cor nova.
+   *
+   * As duas tintas claras vêm do próprio Figma e foram medidas contra o navy
+   * do app antes de entrar: texto de item 13,63x, rótulo de grupo 9,16x. Contra
+   * o ponto mais claro do gradiente que o Figma declara (`#161b68`, o pior
+   * caso), 12,16x e 8,18x — passa com folga em qualquer ponto. Por isso a
+   * sidebar aqui é navy CHAPADO: o gradiente do Figma não muda o veredito e o
+   * brief pede "sem excesso de gradientes".
+   *
+   * `--sb-primary-hover` e `--sb-primary-border` são os translúcidos do Figma
+   * (`#ffffff14` e `#ffffff1f`) já resolvidos sobre o navy. Resolvidos, e não
+   * `rgba()`, porque cor opaca se mede; alpha sobre fundo variável, não.
+   */
+  --sb-on-primary: #e3e5ff;
+  --sb-on-primary-soft: #b9bce4;
+  --sb-primary-hover: #222465;
+  --sb-primary-border: #2c2e6c;
+
+  /* O item de navegação usa 6px, o `--radius-md` do Figma. O default de 8px
+     continua sendo o do cartão. */
+  --sb-radius-md: 0.375rem;
+
   /* Linha de apoio dentro de tabela (explicação da IA, decisões registradas).
      `app/acoes/action-row.tsx` já escrevia `var(--sb-bg-soft, #f7f7f8)` — o
      token nunca existiu, então o fallback era o valor real. Agora existe. */
@@ -106,6 +133,83 @@ body {
     sans-serif;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * A MOLDURA (D3) — sidebar + coluna de conteúdo.
+ *
+ * Fica em folha de estilo, e não inline, por causa das media queries: o brief
+ * pede que a sidebar possa "ficar expandida" e "ficar compacta", e largura por
+ * ponto de quebra não se escreve em `style={{}}`.
+ *
+ * `min-width: 0` na coluna de conteúdo NÃO é enfeite: sem isso, um item flex
+ * assume `min-width: auto` e se recusa a encolher abaixo do conteúdo — as 44
+ * tabelas com `overflow-x: auto` empurrariam a largura da página inteira e o
+ * scroll horizontal sairia da tabela para o documento.
+ *
+ * Abaixo de 900px a moldura empilha: a sidebar vira uma faixa no topo com
+ * altura limitada e rolagem própria. O Figma prevê um trilho de 58px só com
+ * ícones — este app não tem nenhum ícone (medido: nenhum `<img>`, nenhum SVG,
+ * nenhum `public/`), e um trilho de 58px sem ícone é uma coluna vazia.
+ */
+.sb-shell {
+  display: flex;
+  min-height: 100dvh;
+}
+
+.sb-sidebar {
+  width: 250px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  background: var(--sb-primary);
+  border-right: 1px solid var(--sb-primary-border);
+}
+
+.sb-workspace {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* O chevron aponta para baixo quando aberto e para a direita quando fechado —
+   a mesma convenção do <details> nativo, que este menu esconde ao usar
+   `list-style: none` no summary. */
+.sb-nav-chevron {
+  transition: transform 120ms ease;
+}
+
+.sb-nav-group:not([open]) .sb-nav-chevron {
+  transform: rotate(-90deg);
+}
+
+.sb-nav-link:hover {
+  background: var(--sb-primary-hover);
+}
+
+/* O item ativo é amarelo; o hover não pode apagá-lo. */
+.sb-nav-link[aria-current="page"]:hover {
+  background: var(--sb-accent);
+}
+
+@media (max-width: 1150px) {
+  .sb-sidebar {
+    width: 215px;
+  }
+}
+
+@media (max-width: 900px) {
+  .sb-shell {
+    flex-direction: column;
+  }
+
+  .sb-sidebar {
+    width: 100%;
+    max-height: 45vh;
+    border-right: 0;
+    border-bottom: 1px solid var(--sb-primary-border);
+  }
 }
 
 /*
