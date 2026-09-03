@@ -87,9 +87,16 @@ Números completos e método: `docs/PERFORMANCE.md`.
   passaram despercebidas em D-217.
 - **Relist nunca foi exercitado contra o ML real.** A primeira execução
   precisa ser ensaio humano deliberado, com anúncio sacrificável.
-- **A suíte de integração local exige banco recriado.** `supabase db reset`
-  antes de rodar; e rodá-la quebra o seed do Playwright depois (usuários
-  criados por SQL deixam `confirmation_token` nulo e o GoTrue estoura).
+- **As duas suítes locais não convivem no mesmo banco, e a ordem é a cura.**
+  `test:integration` exige banco recriado; e rodá-la quebra o seed do
+  Playwright depois (usuários criados por SQL deixam `confirmation_token`
+  nulo, e o seed morre em `AuthRetryableFetchError: Database error finding
+  users`). **`supabase db reset` antes de CADA uma das duas** — o risco já
+  estava escrito aqui e mesmo assim custou uma rodada (D-225).
+- **O Playwright reusa servidor existente fora da CI** (`reuseExistingServer`).
+  Um `next dev` esquecido na porta 3000 faz a suíte rodar contra o dev
+  server, que compila sob demanda, e 13 casos estouram por timeout. Não é
+  regressão: é o servidor no caminho. **Encerre a 3000 antes** (D-225).
 - **2 pedidos estão sem linha em `order_items`** (`2000017347483988` e
   `2000017394032682`): `paid`, com o movimento de estoque gravado e nenhum
   item. A dedução está certa. **Os dois caminhos que produzem esse estado
@@ -331,7 +338,7 @@ Nada disto pode ser feito por um agente.
 
 | | |
 |---|---|
-| 4 abas do Dashboard de SKU | `Vendas`, `Preços`, `Full`, `Decisões` — nenhuma bloqueada por dado (D-169/D-224) |
+| 3 abas do Dashboard de SKU | `Vendas`, `Preços`, `Decisões` — nenhuma bloqueada por dado (D-169/D-224). `Full` **entregue e verificada** (D-225) |
 | Central de Integrações | primeira versão simples; nunca verde não verificável |
 | Hub de Configurações | um dado, um dono: aponta para a tela dona, não duplica |
 | Aprendizado humano supervisionado | reusa a Base de Conhecimento (D-113); nada promovido sem humano |
@@ -355,36 +362,20 @@ expansão do "O que aconteceu?" · eventos adicionais de SAC · os 2 pedidos sem
 
 ### Próxima tarefa segura
 
-**As 4 abas do Dashboard de SKU** (`Vendas`, `Preços`, `Full`, `Decisões`),
-uma por vez, com a agregação no BANCO — nunca somando conjunto grande em
-JavaScript. É a maior pendência de produto que não depende de dado, de decisão
-sua nem de infraestrutura externa.
+**As 3 abas restantes do Dashboard de SKU** (`Vendas`, `Preços`,
+`Decisões`), uma por vez, com a agregação no BANCO — nunca somando conjunto
+grande em JavaScript. É a maior pendência de produto que não depende de dado,
+de decisão sua nem de infraestrutura externa.
 
-⚠️ **A aba `Full` já está escrita, e a suíte NÃO foi rodada nela.** Leia isto
-antes de continuar:
+✅ **A aba `Full` está entregue e verificada** (D-225): sem SQL novo, vista
+rodando nos dois estados, bateria completa verde — **547/547**, 29/29, 8/8,
+33/33, **14/14**.
 
-| | |
-|---|---|
-| o que existe | `apps/web/app/skus/[skuId]/page.tsx` ganhou a aba `full` + 1 caso em `apps/web/e2e/sku-dashboard.spec.ts` |
-| SQL novo | **nenhum** — reusa `get_fulfillment_overview`, que aceita `p_sku_id` desde D-173 |
-| verificado | na aplicação rodando, nos dois estados: vazio honesto, e preenchido somando 2 buckets (7+5) em `No Full = 12` — o grão de D-173 |
-| verificado antes do bloqueio | `check` 29/29, `build` 8/8, `check:waterfalls`, e o caso e2e novo passando |
-| **NÃO verificado** | **a suíte completa** — `test:integration` e os 14 Playwright juntos |
-
-**Por que ficou pela metade:** o classificador de segurança do harness entrou
-em sobrecarga e passou a recusar `pnpm`/`supabase` (só `git` passava). Não é o
-código nem o ambiente. **Antes de confiar nesta aba, rode:**
+**O comando da bateria** (a ordem importa — ver os dois riscos de ambiente):
 
 ```bash
-pnpm exec supabase db reset && pnpm --filter @sb/db run test:integration && pnpm run check && pnpm run build && pnpm --filter web run e2e:seed && pnpm --filter web run e2e
+pnpm exec supabase db reset && pnpm --filter @sb/db run test:integration && pnpm run check && pnpm run build && pnpm exec supabase db reset && pnpm --filter web run e2e:seed && pnpm --filter web run e2e
 ```
-
-Esperado: **547/547**, 29/29, 8/8, **14/14**.
-
-⚠️ **Armadilha que custou uma rodada:** o Playwright usa
-`reuseExistingServer` fora da CI. Se houver um `next dev` na porta 3000, ele
-roda contra o dev server — que compila sob demanda — e a suíte estoura por
-timeout. **Encerre qualquer servidor na 3000 antes.**
 
 **As outras três, com o caminho já medido** (não precisa re-investigar):
 

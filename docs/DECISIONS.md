@@ -5148,6 +5148,33 @@ O usuario pediu explicitamente *"nao faca isso apenas porque este prompt mandou;
 
 **Impacto:** `docs/ROADMAP.md`, `docs/PRODUCT_REQUIREMENTS.md`.
 
+## D-225 - A aba Full do SKU sai sem SQL novo, e a suite cobrou duas armadilhas de ambiente
+
+**Contexto:** primeira das quatro abas que faltavam no Dashboard de SKU depois de D-224 reduzir o escopo de 11 para 9.
+
+**Zero SQL novo, e isso foi medido antes de escrever.** `get_fulfillment_overview` ja aceitava `p_sku_id` desde D-173 — a aba e reuso, nao RPC nova. O grao certo vem junto de graca: a soma e por bucket `inventory_id`, que e exatamente o achado que D-173 mediu em **15,6% de unidades a menos** quando se colapsa por `(sku, conta)`.
+
+**Verificado na aplicacao RODANDO, nos dois estados** — compilar nao e ver (licao de D-169):
+
+- **vazio**: *"Nenhuma conta com snapshot recente. Ausencia de snapshot nao e o mesmo que saldo zero — e a falta do dado"*. Regra de D-067, e e onde a tela poderia mentir estampando "0 no Full";
+- **preenchido**: dois buckets semeados (7 e 5) aparecem como **`No Full = 12`, `Buckets = 2`**. A coluna de buckets existe para tornar o grao VISIVEL. `Local (org.)` fica em coluna separada — quatro estados com quatro autoridades nao se somam.
+
+**Um `?.` morto, e a razao veio do SQL e nao do compilador.** O lint acusou a checagem de `captured_at === null`. Antes de obedecer, fui a consulta: ela e **dirigida pelo snapshot** (`vendas` e `saldo_local` entram por `left join`), entao toda linha devolvida tem `captured_at` — o nulo e inalcancavel. Removido **com a razao escrita ao lado**, que e o contrato de D-192/D-206: nao se tira um guarda sobre nulo so porque o compilador reclama, e nao se mantem um que o SQL prova impossivel.
+
+---
+
+**AS DUAS ARMADILHAS DE AMBIENTE, e as duas custaram tempo real.**
+
+**1. `reuseExistingServer` fora da CI.** Subi um `next dev` na porta 3000 para inspecionar a tela e deixei de pe. O Playwright, localmente, **reusa o servidor existente** — entao rodou contra o dev server, que compila sob demanda, e 13 casos estouraram por timeout (3 minutos para um unico teste). **Nao era regressao: era o meu servidor no caminho.** Encerrar qualquer coisa na 3000 antes da suite virou nota no HANDOFF.
+
+**2. A ordem entre as duas suites, que o HANDOFF ja registrava e eu executei errado assim mesmo.** Rodar `test:integration` cria usuarios por SQL com `confirmation_token` nulo, e o seed do Playwright depois morre em `AuthRetryableFetchError: Database error finding users`. **A ordem correta e `db reset` ENTRE as duas.** O risco estava escrito; eu li e nao apliquei.
+
+**Uma decisao de processo, tomada contra o meu proprio criterio inicial.** Eu tinha segurado o commit por nao ter a suite completa. Quando o usuario avisou que trocaria de agente, mudei: **trabalho so na arvore de trabalho e mais arriscado que trabalho commitado com o status escrito** — arvore e o que se perde numa troca. Commitado como `SUITE COMPLETA NAO RODADA` (`10085aa`), com o comando exato no HANDOFF, e confirmado verde na sequencia.
+
+**Verificacao:** **547/547** de integracao em banco recriado, `check` 29/29, build 8/8, `check:embeds` 33/33, `check:waterfalls` 52 arquivos, **14/14 Playwright** (13 + o caso novo, que fixa o estado vazio honesto).
+
+**Impacto:** `apps/web/app/skus/[skuId]/page.tsx`, `apps/web/e2e/sku-dashboard.spec.ts`.
+
 ## Como adicionar nova decisao
 
 Registrar:

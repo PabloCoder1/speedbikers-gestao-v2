@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **222** (D-001 a D-224).
+Decisões registradas: **223** (D-001 a D-225).
 
 ## Por domínio
 
@@ -49,7 +49,7 @@ Decisões registradas: **222** (D-001 a D-224).
 - **D-215** — Um checkbox que mentia ha uma semana, e uma secao que era o segundo dono da verdade
 - **D-223** — O que significa "V3 100%", e a auditoria de checkbox que veio junto
 
-### banco/rls (23)
+### banco/rls (24)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -74,6 +74,7 @@ Decisões registradas: **222** (D-001 a D-224).
 - **D-192** — O tipo gerado nao conhece a RLS, e por isso o cast estava certo
 - **D-198** — A triagem de indices nao produziu indice nenhum, e o motivo de cada metade e diferente
 - **D-207** — A migration que existia so no banco volta para o git
+- **D-225** — A aba Full do SKU sai sem SQL novo, e a suite cobrou duas armadilhas de ambiente
 
 ### estoque (19)
 
