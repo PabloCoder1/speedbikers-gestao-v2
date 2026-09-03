@@ -4869,6 +4869,41 @@ error TS2741: Property 'nota_fiscal' is missing in type '{ sku: ...; atendimento
 
 **Impacto:** `supabase/migrations/20260902201330_search_entities_novos_destinos.sql`, `apps/web/lib/labels.ts`, `apps/web/components/command-palette.tsx`, `packages/db/src/rls.integration.test.ts`.
 
+## D-217 - Incidente: a representacao virou valor, e 13 horas de sincronizacao pararam
+
+**Contexto:** o usuario mostrou a tela de vendas com *"Cálculo desatualizado · calculado até 02/09/2026, 08:02"* — 27 horas de atraso. O sintoma estava a tres saltos da causa, e a causa fui **eu**.
+
+**A cadeia inteira, medida:**
+
+1. Para o deploy manual do Cloud Run, passei ao usuario um comando que extraia `MERCADO_LIVRE_CLIENT_ID` do servico no ar com `gcloud ... --format='value(...extract("value"))'`. **Aquele formato devolveu a REPRESENTACAO DE LISTA** — `['1234...']` — e nao o valor. Medido depois: 16 caracteres so-digitos viraram **20 caracteres comecando por colchete e aspa**.
+2. O `deploy-cloud-run.sh` aceitou, porque a unica validacao era "nao vazia", e publicou a string nos **dois** servicos.
+3. **O deploy passou verde.** Nada quebra na subida: o client id so e usado quando um token precisa ser renovado.
+4. De **37 a 117 minutos depois**, uma a uma conforme o token vencia, as 4 contas receberam `invalid_client` do Mercado Livre e viraram `status = 'ERROR'`.
+5. Todo job que itera conta consulta `where status = 'CONNECTED'` — passou a achar **zero**. O endpoint respondia 200 e logava `reconcile_triggered` com `enqueued: 0`. **Do lado do Cloud Scheduler estava tudo verde**, com `lastAttemptTime` de hoje e sem codigo de erro.
+6. Sem `sync.orders.window` nao ha pedido persistido; sem pedido persistido o worker nao enfileira `analytics.recompute` (chave suja, secao 10 da ARCHITECTURE). **A tela de vendas passou a mentir sobre a data do calculo** — e esse foi o unico sinal que chegou a um humano.
+
+**O que continuou funcionando escondeu o problema:** heartbeat, webhooks, `reconcile-balances` e `verify-ledger-integrity` nao dependem de conta conectada. O sistema parecia meio vivo.
+
+**O conserto, em duas partes.** Primeiro a causa: `gcloud run services update` com o valor correto recuperado da revisao anterior (`worker-00044-ps5`), sem rebuild — a imagem estava certa, so a variavel nao. Depois o efeito: as contas **nao voltam sozinhas** (ver abaixo), entao foram devolvidas a `CONNECTED` no banco. Verificado numa conta antes das demais: disparei `v3-reconcile-orders` a mao, o endpoint reportou `accounts_scanned: 1, enqueued: 1`, o job rodou, e **34 `analytics.recompute` correram em 15 minutos**. As metricas voltaram de 27 horas para **2 minutos**.
+
+---
+
+**TRES ACHADOS QUE VALEM MAIS QUE O CONSERTO.**
+
+**1. `ERROR` e um estado sem saida.** `ml-token.ts` **so escreve** `status: "ERROR"`; nenhum caminho devolve a conta a `CONNECTED` a nao ser uma **nova autorizacao OAuth**. Ou seja: um problema TRANSITORIO de credencial desativa a conta **permanentemente**, e a recuperacao exige ato humano na interface. Foi por isso que corrigir a variavel nao bastou. Isso e desenho, nao bug — mas e desenho que ninguem escolheu de proposito.
+
+**2. A guarda que faltava custava uma linha.** O client id do Mercado Livre e numerico. `deploy-cloud-run.sh` agora recusa qualquer coisa com caractere nao numerico, com mensagem que nomeia a armadilha exata. **Provada nos dois sentidos**: acusa o valor do incidente e aceita o correto. Uma linha teria custado o deploy em vez de meio dia de sincronizacao.
+
+**3. `/saude` nao pegaria isto, e o motivo e conhecido.** A tela usa `JOB_STALE_HOURS = 26` — **um limiar unico para todos os jobs**. `sync.orders.window` roda de hora em hora; 13 horas de silencio e catastrofe e passa folgado sob 26. **D-143 ja resolveu exatamente este problema na Saude da Sincronizacao** ("veredito de frescor CONTRA A CADENCIA real de cada job — um limiar unico carimbaria atrasada uma sincronizacao saudavel"), e a Saude do Sistema nunca recebeu o mesmo tratamento. Fica registrado como proximo passo.
+
+**A licao sobre a MINHA parte.** Eu tinha acabado de escrever, em D-211, que `proacl` e armazenamento e privilegio efetivo se pergunta a `has_function_privilege` — *nao confie na representacao*. Duas horas depois entreguei um comando que confundia a representacao do gcloud com o valor. **E eu ate testei o comando** antes de passar: conferi que devolvia 20 caracteres nao-vazios e chamei isso de "funciona". Testei presenca, nao forma — exatamente o que o script fazia.
+
+**E a mesma armadilha me pegou DE NOVO ao escrever esta decisao.** A primeira gravacao usou `String.replace(ancora, texto)`, e o texto continha a expressao regular de digitos entre crases; em JavaScript, cifrao-crase dentro do argumento de substituicao insere **tudo que vem antes do match**. O `DECISIONS.md` foi de 214 para **429 decisoes**, +4.904 linhas. Pego por `grep -c` logo depois, revertido, refeito com funcao de substituicao (que nao interpreta cifrao). **Duas vezes no mesmo dia confiei no que um mecanismo parecia fazer em vez de conferir o que ele fez.**
+
+**Verificacao:** `bash -n` no script; a guarda conferida contra o valor real do incidente e contra o correto; contas e jobs medidos no Dev depois do conserto; contagem de decisoes conferida apos gravar.
+
+**Impacto:** `infra/deploy-cloud-run.sh`. Sem migration. Servicos: `api-00031-rqv`, `worker-00046-ndh`.
+
 ## Como adicionar nova decisao
 
 Registrar:

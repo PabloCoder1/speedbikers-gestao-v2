@@ -14,7 +14,7 @@
 |---|---|
 | **Atualizado em** | 2026-09-02 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `a66f1dc` (D-215) — esta fatia, D-216, é o commit seguinte |
+| **HEAD conhecido** | `c20bee2` — esta fatia, D-217, é o commit seguinte |
 | **Deploy no ar** | **`0702969` — o mesmo do `HEAD`, sem atraso** (`api-00030-gqw` / `worker-00045-cwq`, 2026-09-02). Depois de 66 commits parado. Verificado contra a infraestrutura, não contra o script: `APP_COMMIT=0702969` nos dois serviços, imagem `api:0702969`, `/health` respondendo `{"commit":"0702969"}` e **zero `ERROR`** no Cloud Logging desde o boot |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | **128 locais == 128 no Dev**, sem drift — D-209→D-212 aplicadas pela CI em 2026-09-02 e CONFERIDAS lá (`anon` alcança 0 funções; `ml_accounts` sem UPDATE/DELETE para `authenticated`; `created_by` presente). O caminho é o push, **nunca** o MCP (lição de D-207) |
@@ -75,6 +75,15 @@ Números completos e método: `docs/PERFORMANCE.md`.
   D-070 — 66 commits se acumularam entre um deploy e outro, e nada no sistema
   avisa. Quem trabalha no `worker` ou na `api` confere `APP_COMMIT` contra o
   `HEAD` antes de concluir que uma correção está valendo.
+- **`ERROR` numa conta do Mercado Livre é estado SEM SAÍDA.** `ml-token.ts`
+  só escreve `status = 'ERROR'`; nada devolve a conta a `CONNECTED` exceto
+  uma nova autorização OAuth. Um problema **transitório** de credencial
+  desativa a conta permanentemente, e todo job que itera contas para de
+  enfileirar em silêncio (D-217).
+- **Um job que para de ser ENFILEIRADO não falha — emudece.** O Cloud
+  Scheduler mostra verde, o endpoint responde 200, e `job_runs` simplesmente
+  para de crescer. Não há linha `failed` para achar. Foi assim que 13 horas
+  passaram despercebidas em D-217.
 - **Relist nunca foi exercitado contra o ML real.** A primeira execução
   precisa ser ensaio humano deliberado, com anúncio sacrificável.
 - **A suíte de integração local exige banco recriado.** `supabase db reset`

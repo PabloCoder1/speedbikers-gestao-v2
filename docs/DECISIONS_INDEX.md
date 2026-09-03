@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **214** (D-001 a D-216).
+Decisões registradas: **215** (D-001 a D-217).
 
 ## Por domínio
 
@@ -209,7 +209,7 @@ Decisões registradas: **214** (D-001 a D-216).
 - **D-157** — Metricas 5C de vendas: cancelamento sai do L1 de proposito, e a ressalva vira parte do card
 - **D-165** — Custos por pedido: as fontes da margem operacional persistidas, e NULL nunca vira zero
 
-### worker/infra (45)
+### worker/infra (46)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -256,4 +256,5 @@ Decisões registradas: **214** (D-001 a D-216).
 - **D-186** — As leituras viram uma por pagina; as escritas ficam uma por pedido, e isso e a decisao
 - **D-208** — O item que faltava nao tinha conserto, e o defeito era o silencio
 - **D-216** — A Busca Universal alcanca as entidades novas, e dois destinos dela tinham envelhecido
+- **D-217** — Incidente: a representacao virou valor, e 13 horas de sincronizacao pararam
 

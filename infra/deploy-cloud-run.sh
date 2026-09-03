@@ -43,6 +43,28 @@ build_and_deploy() {
   # o Cloud Logging (ver docs/HANDOFF.md, achado registrado nesta sessão).
   [ -n "${MERCADO_LIVRE_CLIENT_ID}" ] || fail "MERCADO_LIVRE_CLIENT_ID não definida. Ver .env.example."
 
+  # FORMATO, e nao so presenca. Isto existe por um incidente real de
+  # 2026-09-03: a variável foi exportada a partir de
+  # `gcloud ... --format='value(...extract("value"))'`, que devolveu a
+  # REPRESENTACAO DE LISTA — `['1234...']` — em vez do valor. O script aceitou,
+  # porque "não vazia" era tudo que ele exigia, e publicou a string com
+  # colchete e aspas nos DOIS servicos.
+  #
+  # O estrago nao apareceu no deploy: apareceu de 37 a 117 minutos depois,
+  # conforme o token de cada conta vencia. O Mercado Livre respondeu
+  # `invalid_client`, as 4 contas viraram ERROR, e todo job que itera conta
+  # parou — inclusive o recompute de metricas, que so e enfileirado quando um
+  # pedido e persistido. A tela de vendas passou 13 horas dizendo "Cálculo
+  # desatualizado" e ninguem ligou uma coisa a outra.
+  #
+  # O client id do Mercado Livre e numerico. Uma linha aqui teria custado o
+  # deploy inteiro em vez de meio dia de sincronizacao.
+  case "${MERCADO_LIVRE_CLIENT_ID}" in
+    *[!0-9]*)
+      fail "MERCADO_LIVRE_CLIENT_ID='${MERCADO_LIVRE_CLIENT_ID}' tem caractere nao numerico. O client id do Mercado Livre e so digitos — se voce a extraiu do gcloud, provavelmente pegou a representacao de lista (['...']) em vez do valor."
+      ;;
+  esac
+
   if [ "${app}" = "api" ]; then
     # A api precisa conhecer a própria URL (audience do OIDC) e a do worker.
     # Ambas são estáveis por serviço; na primeira criação a de si mesma ainda
