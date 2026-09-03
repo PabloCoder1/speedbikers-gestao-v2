@@ -360,6 +360,40 @@ uma por vez, com a agregação no BANCO — nunca somando conjunto grande em
 JavaScript. É a maior pendência de produto que não depende de dado, de decisão
 sua nem de infraestrutura externa.
 
+⚠️ **A aba `Full` já está escrita, e a suíte NÃO foi rodada nela.** Leia isto
+antes de continuar:
+
+| | |
+|---|---|
+| o que existe | `apps/web/app/skus/[skuId]/page.tsx` ganhou a aba `full` + 1 caso em `apps/web/e2e/sku-dashboard.spec.ts` |
+| SQL novo | **nenhum** — reusa `get_fulfillment_overview`, que aceita `p_sku_id` desde D-173 |
+| verificado | na aplicação rodando, nos dois estados: vazio honesto, e preenchido somando 2 buckets (7+5) em `No Full = 12` — o grão de D-173 |
+| verificado antes do bloqueio | `check` 29/29, `build` 8/8, `check:waterfalls`, e o caso e2e novo passando |
+| **NÃO verificado** | **a suíte completa** — `test:integration` e os 14 Playwright juntos |
+
+**Por que ficou pela metade:** o classificador de segurança do harness entrou
+em sobrecarga e passou a recusar `pnpm`/`supabase` (só `git` passava). Não é o
+código nem o ambiente. **Antes de confiar nesta aba, rode:**
+
+```bash
+pnpm exec supabase db reset && pnpm --filter @sb/db run test:integration && pnpm run check && pnpm run build && pnpm --filter web run e2e:seed && pnpm --filter web run e2e
+```
+
+Esperado: **547/547**, 29/29, 8/8, **14/14**.
+
+⚠️ **Armadilha que custou uma rodada:** o Playwright usa
+`reuseExistingServer` fora da CI. Se houver um `next dev` na porta 3000, ele
+roda contra o dev server — que compila sob demanda — e a suíte estoura por
+timeout. **Encerre qualquer servidor na 3000 antes.**
+
+**As outras três, com o caminho já medido** (não precisa re-investigar):
+
+| aba | caminho |
+|---|---|
+| `Decisões` | leitura direta sob RLS — `action_decisions` e `action_outcomes` têm policy de SELECT por organização. ⚠️ usa **embed**, e D-188 é a lição de que embed só se prova rodando |
+| `Preços` | `get_price_changes` já existe; falta só `p_sku_id` |
+| `Vendas` | única que pede RPC nova, sobre `daily_sku_metrics` (já tem grão SKU × dia) |
+
 ---
 
 ## Onde procurar o resto

@@ -26,3 +26,23 @@ test("dashboard de SKU mostra saldo local do seed", async ({ page }) => {
   await page.getByRole("navigation", { name: "Abas do SKU" }).getByRole("link", { name: "Anúncios" }).click();
   await expect(page.getByText("Nenhum anúncio vinculado a este SKU.")).toBeVisible();
 });
+
+/**
+ * Aba Full (D-224/D-225) — a fiação, e o estado vazio HONESTO.
+ *
+ * O seed não cria snapshot de Full de propósito: é o estado mais comum de um
+ * SKU qualquer, e é onde a tela pode mentir. A regra de D-067 é que ausência
+ * de dado nunca vira zero — aqui isso significa dizer "não há snapshot", e
+ * não estampar "0 no Full", que é uma afirmação diferente e falsa.
+ */
+test("aba Full existe e distingue ausência de snapshot de saldo zero", async ({ page }) => {
+  const seed = await readSeedOutput();
+
+  await login(page, `/skus/${seed.skuId}`);
+
+  await page.getByRole("navigation", { name: "Abas do SKU" }).getByRole("link", { name: "Full" }).click();
+
+  await expect(page).toHaveURL(/aba=full/);
+  await expect(page.getByRole("heading", { name: "Full por conta" })).toBeVisible();
+  await expect(page.getByText("Ausência de snapshot não é o mesmo que saldo zero")).toBeVisible();
+});

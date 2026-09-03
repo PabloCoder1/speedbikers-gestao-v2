@@ -7,6 +7,7 @@ import { StatusPill } from "../../../components/status-pill";
 import { entityLabel, formatEventDiff } from "../../../lib/event-format";
 import { formatCount, formatCurrency, formatDateTime } from "../../../lib/format";
 import { eventTypeLabel, listingStatusLabel } from "../../../lib/labels";
+import { fullSituationCriterion, fullSituationLabel } from "../../../lib/full-filters";
 import { createClient } from "../../../lib/supabase/server";
 import { DiagnosisPanel } from "./diagnosis-panel";
 import { SimulatorPanel } from "./simulator-panel";
@@ -46,13 +47,14 @@ const LOOKBACK_DAYS = 30;
 /** A linha do tempo mostra os últimos N — e diz isso quando o corte agiu. */
 const TIMELINE_LIMIT = 50;
 
-const TAB_KEYS = ["visao-geral", "estoque", "anuncios", "historico", "diagnostico"] as const;
+const TAB_KEYS = ["visao-geral", "estoque", "anuncios", "full", "historico", "diagnostico"] as const;
 type TabKey = (typeof TAB_KEYS)[number];
 
 const TAB_LABELS: Record<TabKey, string> = {
   "visao-geral": "Visão geral",
   estoque: "Estoque",
   anuncios: "Anúncios",
+  full: "Full",
   historico: "Histórico",
   diagnostico: "Diagnóstico",
 };
@@ -186,8 +188,10 @@ export default async function SkuDashboardPage({
   const needsCoverage = tab === "estoque";
   const needsListings = tab === "anuncios";
   const needsHistory = tab === "historico";
+  const needsFull = tab === "full";
 
-  const [dashboardResult, listingsResult, coverageResult, costHistoryResult, timelineResult] = await Promise.all([
+  const [dashboardResult, listingsResult, coverageResult, costHistoryResult, timelineResult, fullResult] =
+    await Promise.all([
     needsDashboard
       ? supabase
           .rpc("get_sku_dashboard", {
@@ -239,13 +243,32 @@ export default async function SkuDashboardPage({
           p_limit: TIMELINE_LIMIT,
         })
       : Promise.resolve({ data: null, error: null }),
-  ]);
+    // Full por CONTA (D-224). Reusa `get_fulfillment_overview`, que já aceita
+    // `p_sku_id` desde D-173 — nenhuma RPC nova, e o grão certo vem de graça:
+    // a soma é por bucket `inventory_id`, que é o achado que D-173 mediu em
+    // 15,6% de unidades a menos quando se colapsa por (sku, conta).
+    // `p_limit` pequeno porque um SKU existe em poucas contas.
+      needsFull
+        ? supabase.rpc("get_fulfillment_overview", {
+            p_organization_id: sku.data.organization_id,
+            p_date_from: dateFrom,
+            p_date_to: dateTo,
+            p_ml_account_id: null,
+            p_situation: null,
+            p_search: null,
+            p_sku_id: sku.data.id,
+            p_limit: 20,
+            p_offset: 0,
+          })
+        : Promise.resolve({ data: null, error: null }),
+    ]);
 
   const dashboard = dashboardResult.data;
   const listings = listingsResult.data ?? [];
   const coverage = coverageResult.data;
   const costHistory = costHistoryResult.data ?? [];
   const timeline = (timelineResult.data ?? []) as unknown as TimelineRow[];
+  const full = fullResult.data ?? [];
 
   return (
     <Shell>
@@ -404,6 +427,73 @@ export default async function SkuDashboardPage({
                         <StatusPill code={listing.status} label={listingStatusLabel(listing.status)} />
                       </td>
                       <td style={tdNumber}>{formatCurrency(listing.price)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
+      {tab === "full" && (
+        <>
+          <h2 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.0625rem" }}>Full por conta</h2>
+
+          <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+            Saldo no Full de cada conta, somado por bucket de variação — o grão que D-173 mediu como certo. O
+            estoque LOCAL aparece em coluna separada de propósito: são quatro estados com autoridades
+            diferentes, e somá-los daria um número que não existe.
+          </p>
+
+          {fullResult.error !== null && (
+            <p role="alert" style={{ color: "var(--sb-danger)" }}>
+              Não foi possível carregar o Full: {fullResult.error.message}
+            </p>
+          )}
+
+          {fullResult.error === null && full.length === 0 && (
+            <p style={{ color: "var(--sb-text-soft)" }}>
+              Nenhuma conta com snapshot recente de Full para este SKU. Ausência de snapshot não é o mesmo que
+              saldo zero — é a falta do dado.
+            </p>
+          )}
+
+          {fullResult.error === null && full.length > 0 && (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "40rem" }}>
+                <thead>
+                  <tr>
+                    <th style={th}>Conta</th>
+                    <th style={{ ...th, textAlign: "right" }}>No Full</th>
+                    <th style={{ ...th, textAlign: "right" }}>Buckets</th>
+                    <th style={{ ...th, textAlign: "right" }}>Local (org.)</th>
+                    <th style={{ ...th, textAlign: "right" }}>Vendas {LOOKBACK_DAYS}d</th>
+                    <th style={th}>Situação</th>
+                    <th style={th}>Capturado</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {full.map((linha) => (
+                    <tr key={linha.ml_account_id}>
+                      <td style={td}>{linha.account_label}</td>
+                      <td style={tdNumber}>{formatCount(linha.full_quantity)}</td>
+                      <td style={tdNumber}>{formatCount(linha.buckets)}</td>
+                      <td style={tdNumber}>{formatCount(linha.local_quantity)}</td>
+                      <td style={tdNumber}>{formatCount(linha.units_sold)}</td>
+                      <td style={{ ...td, color: linha.situation === "ruptura" ? "var(--sb-danger)" : undefined }}>
+                        <span title={fullSituationCriterion(linha.situation)}>
+                          {fullSituationLabel(linha.situation)}
+                        </span>
+                      </td>
+                      {/* Sem checagem de nulo, e a razão foi conferida no SQL, não no
+                          compilador (D-192/D-206): a consulta é DIRIGIDA pelo snapshot —
+                          `vendas` e `saldo_local` é que entram por left join —, então
+                          toda linha devolvida tem `captured_at`. O nulo é inalcançável. */}
+                      <td style={{ ...td, fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+                        {formatDateTime(linha.captured_at)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
