@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 
+import { E2E_SKU_SALES } from "./constants.js";
 import { login, statValue } from "./helpers.js";
 import { readSeedOutput } from "./seed-output.js";
 
@@ -67,4 +68,38 @@ test("aba Preços existe e não confunde ausência de evento com preço parado",
   await expect(page.getByRole("heading", { name: "Mudanças de preço observadas" })).toBeVisible();
   await expect(page.getByText("Nenhuma mudança de preço observada neste período")).toBeVisible();
   await expect(page.getByText("uma alteração feita e desfeita entre duas sincronizações não deixa registro")).toBeVisible();
+});
+
+/**
+ * Aba Vendas (D-227) — a única com RPC própria, e por isso a única em que o
+ * e2e precisa provar NÚMERO, não só fiação: total, por conta e por dia saem
+ * de `get_sku_sales_breakdown` já somados no banco. O seed grava dois dias na
+ * mesma conta; se a tela somasse em JavaScript, ou se a RPC dividisse a
+ * razão errado, os valores abaixo não fechariam.
+ */
+test("aba Vendas mostra total, ticket médio e a conta — somados no banco", async ({ page }) => {
+  const seed = await readSeedOutput();
+  const unidades = E2E_SKU_SALES.reduce((acc, v) => acc + v.units, 0);
+  const receita = E2E_SKU_SALES.reduce((acc, v) => acc + v.revenue, 0);
+  const compras = E2E_SKU_SALES.reduce((acc, v) => acc + v.purchases, 0);
+
+  await login(page, `/skus/${seed.skuId}`);
+
+  await page.getByRole("navigation", { name: "Abas do SKU" }).getByRole("link", { name: "Vendas" }).click();
+
+  await expect(page).toHaveURL(/aba=vendas/);
+  await expect(page.getByRole("heading", { name: "Vendas do SKU" })).toBeVisible();
+
+  await expect(statValue(page, "Unidades vendidas")).toHaveText(String(unidades));
+  // Razão sobre as SOMAS (500 / 5 = R$ 100,00), não média das razões diárias.
+  await expect(statValue(page, "Ticket médio")).toContainText(`${String(receita / compras)},00`);
+
+  // A conta do seed aparece na tabela por conta, com as mesmas unidades.
+  const linhaConta = page.getByRole("row", { name: new RegExp(seed.mlAccountLabel) });
+  await expect(linhaConta).toContainText(String(unidades));
+
+  // Dois dias gravados, duas linhas por dia — e nenhum dia inventado com zero.
+  await expect(page.getByRole("heading", { name: "Por dia" })).toBeVisible();
+  const tabelaDias = page.getByRole("table").last();
+  await expect(tabelaDias.getByRole("row")).toHaveCount(E2E_SKU_SALES.length + 1);
 });

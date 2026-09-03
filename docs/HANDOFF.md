@@ -338,7 +338,7 @@ Nada disto pode ser feito por um agente.
 
 | | |
 |---|---|
-| 2 abas do Dashboard de SKU | `Vendas` e `Decisões` — nenhuma bloqueada por dado (D-169/D-224). `Full` (D-225) e `Preços` (D-226) **entregues e verificadas** |
+| 1 aba do Dashboard de SKU | `Decisões` — não bloqueada por dado (D-169/D-224). `Full` (D-225), `Preços` (D-226) e `Vendas` (D-227) **entregues e verificadas** |
 | Central de Integrações | primeira versão simples; nunca verde não verificável |
 | Hub de Configurações | um dado, um dono: aponta para a tela dona, não duplica |
 | Aprendizado humano supervisionado | reusa a Base de Conhecimento (D-113); nada promovido sem humano |
@@ -362,14 +362,20 @@ expansão do "O que aconteceu?" · eventos adicionais de SAC · os 2 pedidos sem
 
 ### Próxima tarefa segura
 
-**As 2 abas restantes do Dashboard de SKU** (`Vendas` e `Decisões`), uma por
-vez, com a agregação no BANCO — nunca somando conjunto grande em JavaScript.
-É a maior pendência de produto que não depende de dado, de decisão sua nem de
-infraestrutura externa.
+**A última aba do Dashboard de SKU** (`Decisões`), com a agregação no BANCO —
+nunca somando conjunto grande em JavaScript. É a maior pendência de produto
+que não depende de dado, de decisão sua nem de infraestrutura externa.
 
-✅ **`Full` (D-225) e `Preços` (D-226) estão entregues e verificadas**, as
-duas por reuso e sem RPC nova. Bateria completa na última: **550/550**,
-29/29, 8/8, 33/33, **15/15**.
+✅ **`Full` (D-225), `Preços` (D-226) e `Vendas` (D-227) estão entregues e
+verificadas.** As duas primeiras por reuso; `Vendas` com a única RPC nova das
+abas, `get_sku_sales_breakdown` (total, por conta e por dia num round trip,
+via grouping sets — razões sobre as somas, nunca média de médias). Bateria
+completa na última: **558/558**, 29/29, 8/8, 33/33, 52, **16/16**.
+
+⚠️ **O `web` lê os tipos do BUILD de `@sb/db`** (e o `worker`, do de
+`@sb/domain`): depois de editar `types.ts` ou `packages/domain/src`, rode o
+`build` do pacote antes do `tsc` do consumidor, senão o erro que aparece é de
+outro lugar (D-208, D-227).
 
 **O comando da bateria** (a ordem importa — ver os dois riscos de ambiente):
 
@@ -381,12 +387,11 @@ pnpm exec supabase db reset && pnpm --filter @sb/db run test:integration && pnpm
 mora num pacote: `pnpm --filter @sb/db run check:embeds` (exige as variáveis
 do `supabase status` exportadas) e `pnpm --filter web run check:waterfalls`.
 
-**As outras duas, com o caminho já medido** (não precisa re-investigar):
+**A que falta, com o caminho já medido** (não precisa re-investigar):
 
 | aba | caminho |
 |---|---|
-| `Decisões` | leitura direta sob RLS — `action_decisions` e `action_outcomes` têm policy de SELECT por organização. ⚠️ usa **embed**, e D-188 é a lição de que embed só se prova rodando |
-| `Vendas` | única que pede RPC nova, sobre `daily_sku_metrics` (já tem grão SKU × dia) |
+| `Decisões` | leitura direta sob RLS — `action_decisions`, `action_outcomes` e `actions` têm a MESMA policy (`private.is_member_of(organization_id)`), então o embed `action_decisions → actions!inner` não volta nulo para linha visível (a regra de D-206). ⚠️ D-188: embed só se prova rodando, e `check:embeds` é o que prova. **Medido em 03/09:** existe **1** decisão em todo o Dev (1 SKU), contra 843 ações em 407 SKUs (máx. 8 por SKU) — o estado vazio É a tela, e ele precisa dizer quantas ações abertas o SKU tem e apontar para `/acoes`, onde a decisão é registrada. Contar as abertas com `select(..., { count: "exact", head: true })`, não em JS. Os helpers `formatSnapshot`/`windowLabel` vivem privados em `apps/web/app/acoes/action-row.tsx` (client component): extrair para `lib/`, não importar de lá |
 
 ---
 

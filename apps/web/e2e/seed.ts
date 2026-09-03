@@ -34,7 +34,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import type { Database } from "@sb/db";
 import { createClient } from "@supabase/supabase-js";
 
-import { E2E_USER_EMAIL, E2E_USER_PASSWORD } from "./constants.js";
+import { E2E_SKU_SALES, E2E_USER_EMAIL, E2E_USER_PASSWORD } from "./constants.js";
 import { SEED_OUTPUT_PATH, type SeedOutput } from "./seed-output.js";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321";
@@ -418,6 +418,30 @@ async function main(): Promise<void> {
 
   if (links.error !== null) {
     throw links.error;
+  }
+
+  // Vendas do SKU (aba Vendas, D-227): duas linhas do recálculo diário, na
+  // MESMA conta e no MESMO grão da tabela real (`unique nulls not distinct
+  // (ml_account_id, sku_id, metric_date)`), para o e2e provar que o total, a
+  // linha por conta e as linhas por dia saem do banco já somados. Upsert pela
+  // chave do grão: rodar o seed duas vezes não duplica venda.
+  const salesRows = E2E_SKU_SALES.map((venda) => ({
+    organization_id: organizationId,
+    ml_account_id: mlAccountId,
+    sku_id: skuId,
+    metric_date: new Date(Date.now() - venda.daysAgo * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+    units_sold: venda.units,
+    gross_revenue: venda.revenue,
+    orders_count: venda.orders,
+    purchases_count: venda.purchases,
+  }));
+
+  const sales = await db
+    .from("daily_sku_metrics")
+    .upsert(salesRows, { onConflict: "ml_account_id,sku_id,metric_date" });
+
+  if (sales.error !== null) {
+    throw sales.error;
   }
 
   const output: SeedOutput = {

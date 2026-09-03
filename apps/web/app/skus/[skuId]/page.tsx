@@ -5,7 +5,13 @@ import type { ReactNode } from "react";
 import { Shell } from "../../../components/shell";
 import { StatusPill } from "../../../components/status-pill";
 import { entityLabel, formatEventDiff } from "../../../lib/event-format";
-import { formatCount, formatCurrency, formatDateTime, formatPercent } from "../../../lib/format";
+import {
+  formatBusinessDate,
+  formatCount,
+  formatCurrency,
+  formatDateTime,
+  formatPercent,
+} from "../../../lib/format";
 import { eventTypeLabel, listingStatusLabel } from "../../../lib/labels";
 import { fullSituationCriterion, fullSituationLabel } from "../../../lib/full-filters";
 import { createClient } from "../../../lib/supabase/server";
@@ -19,23 +25,19 @@ export const metadata = { title: "Dashboard de SKU — Speed Bikers Gestão" };
 export const dynamic = "force-dynamic";
 
 /**
- * "Dashboard de SKU" (Fase 5B) evoluído para ABAS (item P1, D-169) — o
- * progressive disclosure alinhado ao Figma: a página deixou de ser uma
- * vertical única e cada aba só carrega as consultas de que precisa.
+ * "Dashboard de SKU" (Fase 5B) em ABAS (D-169), no escopo final de NOVE abas
+ * de D-224 — progressive disclosure alinhado ao Figma: cada aba só dispara as
+ * consultas de que precisa (o resto vira `Promise.resolve`).
  *
- * Só existem as abas com dado real HOJE (a regra do item P1): Visão geral,
- * Estoque, Anúncios, Histórico e Diagnóstico. Vendas fica na Visão geral
- * (são dois números, não uma aba).
- *
- * As seis abas do Figma que faltam NÃO estão bloqueadas por falta de dado —
- * a distinção importa para quem for continuar. `Full` tem
- * `fulfillment_stock_snapshots` por SKU e conta (a Visão geral já mostra o
- * total), `Decisões` alcança o SKU por `actions.sku_id`, `Preços` tem
- * `listing.price.changed` e `Tráfego` tem `daily_listing_visits` por
- * anúncio. O que falta em cada uma é a CONSULTA agregada por SKU — e
- * inventá-la de dentro desta tela seria somar em JS o que a casa exige somar
- * em SQL. `Atendimento` é o único sem caminho pronto: `support_cases` não
- * tem vínculo de SKU (a Caixa de Entrada liga por anúncio).
+ * Ordem e nomes são os aprovados em D-224:
+ * `Visão geral | Vendas | Estoque | Anúncios | Preços | Full | Histórico | Diagnóstico | Decisões`.
+ * `Tráfego` e `Atendimento` saíram lá, com motivo escrito. `Full` (D-225) e
+ * `Preços` (D-226) saíram por reuso de RPC existente. `Vendas` (D-227) é a
+ * única com RPC própria — `get_sku_sales_breakdown` devolve TOTAL, por CONTA
+ * e por DIA num único round trip (grouping sets no banco): a regra
+ * inegociável é agregar em SQL (docs/ARCHITECTURE.md secao 15), e D-185 mediu
+ * que o custo de uma chamada é a viagem, não o SQL. `Decisões` é a última que
+ * falta; o caminho está medido em docs/HANDOFF.md.
  *
  * A aba vive na URL (`?aba=`, mesmo padrão dos filtros de Movimentações):
  * valor fora do conjunto fechado cai para a Visão geral antes de tocar o
@@ -47,15 +49,18 @@ const LOOKBACK_DAYS = 30;
 /** A linha do tempo mostra os últimos N — e diz isso quando o corte agiu. */
 const TIMELINE_LIMIT = 50;
 
-const TAB_KEYS = ["visao-geral", "estoque", "anuncios", "full", "precos", "historico", "diagnostico"] as const;
+// Na ordem aprovada em D-224 (Preços ANTES de Full — a ordem anterior estava
+// trocada em relação ao PRD).
+const TAB_KEYS = ["visao-geral", "vendas", "estoque", "anuncios", "precos", "full", "historico", "diagnostico"] as const;
 type TabKey = (typeof TAB_KEYS)[number];
 
 const TAB_LABELS: Record<TabKey, string> = {
   "visao-geral": "Visão geral",
+  vendas: "Vendas",
   estoque: "Estoque",
   anuncios: "Anúncios",
-  full: "Full",
   precos: "Preços",
+  full: "Full",
   historico: "Histórico",
   diagnostico: "Diagnóstico",
 };
@@ -153,6 +158,89 @@ function StockBoxes({
   );
 }
 
+/**
+ * Os SEIS números canônicos de venda no grão SKU (docs/METRICS.md 5.2), lidos
+ * da linha `total` de `get_sku_sales_breakdown`. Nenhuma métrica nova: são os
+ * mesmos ids de `/vendas`, e a RPC é a implementação deles neste grão. As
+ * duas razões chegam calculadas sobre as SOMAS no banco (nunca média de
+ * médias diárias) e vêm NULL com denominador zero — `formatCurrency(null)`
+ * imprime "—", não R$ 0,00.
+ */
+interface SalesTotals {
+  units_sold: number;
+  gross_revenue: number;
+  orders_count: number;
+  purchases_count: number;
+  average_ticket: number | null;
+  average_selling_price: number | null;
+}
+
+interface SalesCard {
+  metricId: string;
+  label: string;
+  formula: string;
+  value: string;
+}
+
+function buildSalesCards(total: SalesTotals): SalesCard[] {
+  return [
+    {
+      metricId: "unidades_vendidas",
+      label: "Unidades vendidas",
+      formula: "SUM(order_items.quantity)",
+      value: formatCount(total.units_sold),
+    },
+    {
+      metricId: "receita_bruta",
+      label: "Receita bruta",
+      formula: "SUM(orders.total_amount) — pedidos pagos ou parcialmente reembolsados",
+      value: formatCurrency(total.gross_revenue),
+    },
+    {
+      metricId: "pedidos",
+      label: "Pedidos",
+      formula: "COUNT(DISTINCT orders.id)",
+      value: formatCount(total.orders_count),
+    },
+    {
+      metricId: "pedidos_por_pack",
+      label: "Compras (por pack)",
+      formula: "COUNT(DISTINCT pack_id, com order_id como fallback)",
+      value: formatCount(total.purchases_count),
+    },
+    {
+      metricId: "ticket_medio",
+      label: "Ticket médio",
+      formula: "receita_bruta / pedidos_por_pack",
+      value: formatCurrency(total.average_ticket),
+    },
+    {
+      metricId: "preco_medio_praticado",
+      label: "Preço médio praticado",
+      formula: "receita_bruta / unidades_vendidas",
+      value: formatCurrency(total.average_selling_price),
+    },
+  ];
+}
+
+/**
+ * Mesmo desenho do `MetricCard` de `/vendas` (rótulo, valor, id canônico em
+ * monoespaçado, fórmula no `title`) — em `div`s, e não `span`s, de propósito:
+ * é a forma `<div><div>{label}</div><div>{value}</div></div>` que o helper
+ * `statValue` do Playwright já sabe ler nesta página.
+ */
+function SalesMetricCard({ card }: { card: SalesCard }): ReactNode {
+  return (
+    <div title={card.formula} style={{ ...statBox, display: "grid", gap: "0.25rem" }}>
+      <div style={statLabel}>{card.label}</div>
+      <div style={statValue}>{card.value}</div>
+      <div style={{ fontSize: "0.6875rem", color: "var(--sb-muted-ink)", fontFamily: "ui-monospace, monospace" }}>
+        {card.metricId}
+      </div>
+    </div>
+  );
+}
+
 export default async function SkuDashboardPage({
   params,
   searchParams,
@@ -191,6 +279,7 @@ export default async function SkuDashboardPage({
   const needsHistory = tab === "historico";
   const needsFull = tab === "full";
   const needsPrices = tab === "precos";
+  const needsSales = tab === "vendas";
 
   const [
     dashboardResult,
@@ -200,6 +289,7 @@ export default async function SkuDashboardPage({
     timelineResult,
     fullResult,
     pricesResult,
+    salesResult,
   ] = await Promise.all([
     needsDashboard
       ? supabase
@@ -293,7 +383,19 @@ export default async function SkuDashboardPage({
           p_offset: 0,
         })
       : Promise.resolve({ data: null, error: null }),
-    ]);
+    // Vendas (D-227). A única aba com RPC própria: `get_sku_sales_breakdown`
+    // devolve TOTAL, por CONTA e por DIA numa chamada só (grouping sets no
+    // banco). Três perguntas, um round trip (D-185) — e nenhuma soma em
+    // JavaScript: as razões já chegam calculadas sobre as somas.
+    needsSales
+      ? supabase.rpc("get_sku_sales_breakdown", {
+          p_organization_id: sku.data.organization_id,
+          p_sku_id: sku.data.id,
+          p_date_from: dateFrom,
+          p_date_to: dateTo,
+        })
+      : Promise.resolve({ data: null, error: null }),
+  ]);
 
   const dashboard = dashboardResult.data;
   const listings = listingsResult.data ?? [];
@@ -302,6 +404,12 @@ export default async function SkuDashboardPage({
   const timeline = (timelineResult.data ?? []) as unknown as TimelineRow[];
   const full = fullResult.data ?? [];
   const prices = pricesResult.data ?? [];
+  const sales = salesResult.data ?? [];
+  // Particionar as (no máximo) 1 + contas + 30 linhas por `grain` não é
+  // agregar: as somas e razões vieram prontas do banco.
+  const salesTotal = sales.find((linha) => linha.grain === "total") ?? null;
+  const salesByAccount = sales.filter((linha) => linha.grain === "conta");
+  const salesByDay = sales.filter((linha) => linha.grain === "dia");
 
   return (
     <Shell>
@@ -380,8 +488,148 @@ export default async function SkuDashboardPage({
               </div>
 
               <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
-                Simulador de cobertura na aba Estoque; mudanças de custo e linha do tempo na aba Histórico.
+                Pedidos, ticket médio e vendas por conta e por dia na aba Vendas; simulador de cobertura na aba
+                Estoque; mudanças de custo e linha do tempo na aba Histórico.
               </p>
+            </>
+          )}
+        </>
+      )}
+
+      {tab === "vendas" && (
+        <>
+          <h2 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.0625rem" }}>Vendas do SKU</h2>
+
+          {/*
+            D-227. A fonte é o recálculo por conta e por dia (`daily_sku_metrics`,
+            refeito a cada reconciliação horária de pedidos nos dias que
+            mudaram) — não é leitura ao vivo de `orders`. Somar entre contas é
+            seguro porque pack e pedido pertencem a UMA conta (D-017/D-050), e
+            somar entre dias também: medido em 03/09/2026, 172.624 packs, ZERO
+            em mais de um dia.
+          */}
+          <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+            Vendas válidas deste SKU (pedidos pagos ou parcialmente reembolsados) nos últimos {LOOKBACK_DAYS} dias,
+            somadas entre as contas <strong>no banco</strong>. Vêm do recálculo por conta e por dia, refeito a cada
+            reconciliação de pedidos — não é leitura ao vivo. Cada número carrega o id da sua definição canônica.
+          </p>
+
+          {salesResult.error !== null && (
+            <p role="alert" style={{ color: "var(--sb-danger)" }}>
+              Não foi possível carregar as vendas: {salesResult.error.message}
+            </p>
+          )}
+
+          {salesResult.error === null && salesTotal === null && (
+            <p style={{ color: "var(--sb-text-soft)" }}>Sem dado de vendas para este SKU.</p>
+          )}
+
+          {salesResult.error === null && salesTotal !== null && (
+            <>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(11rem, 1fr))",
+                  gap: "var(--sb-space-3)",
+                  marginBottom: "var(--sb-space-3)",
+                }}
+              >
+                {buildSalesCards(salesTotal).map((card) => (
+                  <SalesMetricCard key={card.metricId} card={card} />
+                ))}
+              </div>
+
+              {salesTotal.units_sold === 0 && (
+                <p style={{ color: "var(--sb-text-soft)", fontSize: "0.8125rem", marginBottom: "var(--sb-space-4)" }}>
+                  Nenhuma venda válida contabilizada para este SKU no período. É o que o recálculo registrou: um
+                  pedido ainda não reconciliado, ou vendido por anúncio sem vínculo com este SKU, não entra aqui.
+                </p>
+              )}
+
+              {salesByAccount.length > 0 && (
+                <>
+                  <h3 style={{ margin: "0 0 var(--sb-space-1)", fontSize: "0.9375rem" }}>Por conta</h3>
+                  <p style={{ margin: "0 0 var(--sb-space-2)", fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
+                    Ticket médio e preço médio são razões sobre as somas de cada conta — nunca média das médias
+                    diárias.
+                  </p>
+                  <div style={{ overflowX: "auto", marginBottom: "var(--sb-space-4)" }}>
+                    <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "44rem" }}>
+                      <thead>
+                        <tr>
+                          <th style={th}>Conta</th>
+                          <th style={{ ...th, textAlign: "right" }}>Unidades</th>
+                          <th style={{ ...th, textAlign: "right" }}>Receita bruta</th>
+                          <th style={{ ...th, textAlign: "right" }}>Pedidos</th>
+                          <th style={{ ...th, textAlign: "right" }}>Compras</th>
+                          <th style={{ ...th, textAlign: "right" }}>Ticket médio</th>
+                          <th style={{ ...th, textAlign: "right" }}>Preço médio</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {salesByAccount.map((linha) => (
+                          <tr key={linha.ml_account_id ?? linha.account_label ?? "conta"}>
+                            {/* `account_label` vem de LEFT JOIN em ml_accounts: uma conta
+                                que a RLS não mostre (ou que tenha sido removida) deixa a
+                                venda visível e o rótulo nulo — a venda aconteceu. */}
+                            <td style={td}>{linha.account_label ?? "Conta não identificada"}</td>
+                            <td style={tdNumber}>{formatCount(linha.units_sold)}</td>
+                            <td style={tdNumber}>{formatCurrency(linha.gross_revenue)}</td>
+                            <td style={tdNumber}>{formatCount(linha.orders_count)}</td>
+                            <td style={tdNumber}>{formatCount(linha.purchases_count)}</td>
+                            <td style={tdNumber}>{formatCurrency(linha.average_ticket)}</td>
+                            <td style={tdNumber}>{formatCurrency(linha.average_selling_price)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+
+              {salesByDay.length > 0 && (
+                <>
+                  <h3 style={{ margin: "0 0 var(--sb-space-1)", fontSize: "0.9375rem" }}>Por dia</h3>
+                  <p style={{ margin: "0 0 var(--sb-space-2)", fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
+                    Dias sem venda registrada não aparecem — o recálculo não fabrica zero (mesmo contrato de /vendas).
+                    Duas contas no mesmo dia viram uma linha só.
+                  </p>
+                  <div style={{ overflowX: "auto", marginBottom: "var(--sb-space-3)" }}>
+                    <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "32rem" }}>
+                      <thead>
+                        <tr>
+                          <th style={th}>Dia</th>
+                          <th style={{ ...th, textAlign: "right" }}>Unidades</th>
+                          <th style={{ ...th, textAlign: "right" }}>Receita bruta</th>
+                          <th style={{ ...th, textAlign: "right" }}>Pedidos</th>
+                          <th style={{ ...th, textAlign: "right" }}>Compras</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {salesByDay.map((linha) => (
+                          <tr key={linha.metric_date ?? "dia"}>
+                            {/* `metric_date` é DATA DE NEGÓCIO (YYYY-MM-DD): formatar por
+                                string, nunca por `new Date` (deslocaria o dia civil). */}
+                            <td style={{ ...td, whiteSpace: "nowrap" }}>
+                              {linha.metric_date === null ? "—" : formatBusinessDate(linha.metric_date)}
+                            </td>
+                            <td style={tdNumber}>{formatCount(linha.units_sold)}</td>
+                            <td style={tdNumber}>{formatCurrency(linha.gross_revenue)}</td>
+                            <td style={tdNumber}>{formatCount(linha.orders_count)}</td>
+                            <td style={tdNumber}>{formatCount(linha.purchases_count)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+
+              {salesTotal.last_computed_at !== null && (
+                <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
+                  Recálculo mais recente entre as linhas mostradas: {formatDateTime(salesTotal.last_computed_at)}.
+                </p>
+              )}
             </>
           )}
         </>

@@ -5216,6 +5216,34 @@ E a mensagem obvia seria falsa. `listing.price.changed` e um **diff entre dois s
 
 **Impacto:** `supabase/migrations/20260903143000_price_changes_por_sku.sql`, `apps/web/app/skus/[skuId]/page.tsx`, `packages/db/src/types.ts` (a mao, D-213), `packages/db/src/rls.integration.test.ts`, `apps/web/e2e/sku-dashboard.spec.ts`.
 
+## D-227 - A aba Vendas: tres perguntas, um round trip, e a soma que precisou ser medida antes de ser somada
+
+**Contexto:** terceira das quatro abas que faltavam no Dashboard de SKU (D-224), e a unica que **precisou de RPC propria**. `Full` (D-225) e `Precos` (D-226) sairam por reuso; aqui nao havia o que reusar: `get_sku_dashboard` devolve dois numeros (unidades e receita) e nenhuma RPC entrega, no grao SKU, os outros quatro canonicos de `docs/METRICS.md` 5.2 -- `pedidos`, `pedidos_por_pack`, `ticket_medio`, `preco_medio_praticado`. Todos ja tem `sku` como granularidade aprovada em `metric_definitions`. **Nenhuma metrica nova foi inventada**: a RPC e a implementacao delas neste grao.
+
+**Uma funcao, tres graos, um round trip.** A aba responde tres perguntas -- quanto vendeu, em que contas, em que dias -- e as tres sao agrupamentos do MESMO conjunto de linhas. `get_sku_sales_breakdown` usa `group by grouping sets ((), (conta), (dia))` e devolve as tres respostas com uma coluna `grain` (`total | conta | dia`). O motivo e D-185: o custo de uma chamada e a viagem, nao o SQL. As alternativas eram tres RPCs (tres viagens) ou uma RPC de serie com a soma feita em JavaScript (o lugar proibido por `docs/ARCHITECTURE.md` secao 15 e reafirmado em D-224). Medido no Dev, SKU mais vendido da janela (74 linhas em 4 contas): **35 linhas, 193 buffers, 1,4 ms**, entrando por `daily_sku_metrics_sku_date_idx`. Nenhum indice novo.
+
+**A soma que precisou ser medida antes de ser somada.** `docs/METRICS.md` 5.1 proibe somar contagem DISTINTA de um grao inferior, e `orders_count`/`purchases_count` sao contagens distintas por (conta, SKU, dia). A soma entre CONTAS a casa ja fazia (`get_sales_summary`, `get_sales_daily_series`) com o argumento estrutural: pack e pedido pertencem a uma conta (D-017/D-050). A soma entre DIAS ninguem tinha justificado -- um pack que atravessasse a meia-noite seria contado duas vezes. Fui a fonte: **172.624 packs em `orders`, ZERO em mais de um dia civil.** A soma e exata hoje, e o cabecalho da migration diz o que aconteceria se deixasse de ser (superestima 1 por pack; o teste de fechamento entre graos NAO pegaria, porque os tres somariam igual -- a guarda e a medicao, refeita quando houver motivo).
+
+**Razoes sobre as somas, nunca media de medias.** `average_ticket` e `average_selling_price` sao calculadas em cada grupo como `sum(receita) / nullif(sum(denominador), 0)`. O teste fixa isso com numero: 1.000 / 9 = **111,11**, enquanto a media das razoes diarias (100, 125, 112,5) daria outro valor. Com denominador zero vem NULL, e a tela imprime "--" -- R$ 0,00 de ticket seria mentira.
+
+**A linha `total` existe SEMPRE.** SKU sem venda na janela devolve uma linha `total` com zeros, razoes NULL e `last_computed_at` NULL -- o contrato de `get_sku_dashboard` ("zeros, nao linha ausente"). Ensaiado no Dev em transacao revertida antes de aplicar: 1 linha, `total`, 0, NULL, NULL. E importa porque **o estado vazio e a maioria**: 1.220 dos 3.554 SKUs (34,3%) tem venda nos ultimos 30 dias; 66% das paginas abrem nele. Mediana de 3 linhas por SKU, maximo 117 (30 dias x 4 contas).
+
+**O que a tela diz e o que ela nao diz.** A fonte e o recalculo por conta e por dia, refeito a cada reconciliacao horaria nos dias que mudaram -- nao e leitura ao vivo de `orders`, e a tela declara isso e mostra o `last_computed_at`. Dias sem venda nao aparecem (o recalculo nao fabrica zero, mesmo contrato de `/vendas`). Cada card carrega o id canonico em monoespacado e a formula no `title`, o mesmo desenho do `MetricCard` de `/vendas` -- em `div`s, de proposito, porque e a forma que o helper `statValue` do Playwright ja le nesta pagina.
+
+**Ordem das abas corrigida de passagem.** `TAB_KEYS` tinha `full` antes de `precos`; D-224 aprovou `Precos | Full`. Trocado, com o motivo no comentario.
+
+**Tres armadilhas de ambiente, duas ja conhecidas e uma nova:**
+
+- **o `web` le os tipos do BUILD de `@sb/db`, nao do `src`** -- o `tsc` acusou que a linha da RPC nova tinha a forma de `get_sku_dashboard`, porque o `dist` era o antigo. `pnpm --filter @sb/db run build` antes do typecheck. E a mesma licao de `@sb/domain` em D-208, agora do outro lado;
+- **o driver `pg` converte coluna `date` em `Date` no fuso da maquina** -- `metric_date` voltou `2026-08-20T03:00:00.000Z`, e a comparacao com a data civil passou a depender de onde o teste roda. A casa ja usa `metric_date::text` em dois lugares; o teste do grao `dia` faz o mesmo;
+- **as variaveis do `supabase status` precisam estar exportadas** para tres dos cinco arquivos de integracao -- sem elas, "3 failed" que nao sao falha. Ja estava escrito no HANDOFF, e eu cai de novo.
+
+**D-213 cumprido com prova, nao com confianca.** O bloco de `types.ts` foi escrito a mao e comparado ao de `supabase gen types typescript --local` depois do `db reset`: **identico**, fora os comentarios e as seis correcoes `| null` declaradas (classe D-133 -- o gerador nao enxerga nulidade de coluna de RPC).
+
+**Verificacao:** **558/558** de integracao em banco recriado (550 + 8), `check` 29/29, build 8/8, `check:embeds` 33/33, `check:waterfalls` 52, **16/16 Playwright** (15 + 1). O e2e desta aba prova NUMERO, nao so fiacao: o seed grava dois dias na mesma conta e a tela tem de mostrar 5 unidades, ticket R$ 100,00 (500 / 5, razao das somas), a conta do seed com as mesmas unidades e exatamente duas linhas de dia. Nao tirei screenshot manual: a prova de tela e o Playwright, na aplicacao servida pelo build, com login real.
+
+**Impacto:** `supabase/migrations/20260903134854_sku_sales_breakdown_rpc.sql`, `apps/web/app/skus/[skuId]/page.tsx`, `packages/db/src/types.ts` (a mao, D-213), `packages/db/src/rls.integration.test.ts` (+8), `apps/web/e2e/{seed,constants,sku-dashboard.spec}.ts`.
+
 ## Como adicionar nova decisao
 
 Registrar:

@@ -4612,6 +4612,168 @@ describe("get_sku_dashboard (Fase 5B, Dashboards de SKU e de Anúncio)", () => {
   });
 });
 
+describe("get_sku_sales_breakdown (D-227, aba Vendas do Dashboard de SKU)", () => {
+  // UUIDs livres, conferidos contra o arquivo (a lição do 7777: reaproveitar
+  // um id faz o `on conflict do nothing` reusar a conta de outro describe).
+  const CONTA_A = "ddddeeee-0000-4000-8000-0000000000e1";
+  const CONTA_B = "ddddeeee-0000-4000-8000-0000000000e2";
+  const FROM = "2026-08-01";
+  const TO = "2026-08-31";
+  const DIA_1 = "2026-08-20"; // duas contas vendem no mesmo dia
+  const DIA_2 = "2026-08-22"; // só a conta A
+  const FORA = "2026-07-01"; // fora da janela
+
+  let skuComVendaId = "";
+  let skuSemVendaId = "";
+
+  const CALL = (skuId: string, org = ORG_SB) =>
+    `select * from public.get_sku_sales_breakdown('${org}','${skuId}','${FROM}','${TO}')`;
+
+  interface Linha {
+    grain: string;
+    metric_date: string | null;
+    ml_account_id: string | null;
+    account_label: string | null;
+    units_sold: string;
+    gross_revenue: string;
+    orders_count: string;
+    purchases_count: string;
+    average_ticket: string | null;
+    average_selling_price: string | null;
+    last_computed_at: string | null;
+  }
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$3,'Conta A de vendas','vendastest-a','PENDING'),
+              ($2,$3,'Conta B de vendas','vendastest-b','PENDING')
+       on conflict do nothing`,
+      [CONTA_A, CONTA_B, ORG_SB],
+    );
+
+    const skus = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind)
+       values ($1,'VENDASTEST-com-venda','PRODUTO'), ($1,'VENDASTEST-sem-venda','PRODUTO')
+       returning id`,
+      [ORG_SB],
+    );
+    skuComVendaId = skus.rows[0]?.id ?? "";
+    skuSemVendaId = skus.rows[1]?.id ?? "";
+
+    // Totais esperados na janela: 10 unidades, R$ 1.000, 9 pedidos, 9 compras.
+    // A linha de FORA tem 100 unidades de propósito: se a janela vazar, o
+    // total explode e nenhum número abaixo fecha.
+    await client.query(
+      `insert into public.daily_sku_metrics
+         (organization_id, ml_account_id, sku_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values
+         ($1,$2,$4,$5, 3, 300, 3, 3),
+         ($1,$3,$4,$5, 2, 250, 2, 2),
+         ($1,$2,$4,$6, 5, 450, 4, 4),
+         ($1,$2,$4,$7, 100, 9999, 100, 100)`,
+      [ORG_SB, CONTA_A, CONTA_B, skuComVendaId, DIA_1, DIA_2, FORA],
+    );
+  });
+
+  // Sem afterAll de limpeza: mesma razão do ledger de estoque acima.
+
+  it("a linha total soma tudo da janela, e as razões são calculadas sobre as SOMAS", async () => {
+    const rows = await asUser<Linha>(ADMIN_SB, `${CALL(skuComVendaId)} where grain = 'total'`);
+
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0]?.units_sold)).toBe(10);
+    expect(Number(rows[0]?.gross_revenue)).toBe(1000);
+    expect(Number(rows[0]?.orders_count)).toBe(9);
+    expect(Number(rows[0]?.purchases_count)).toBe(9);
+    // 1000 / 9 — a razão das somas. A média das razões diárias
+    // (100, 125, 112,5) daria outro número, e é exatamente o que
+    // docs/METRICS.md 5.1 proíbe.
+    expect(rows[0]?.average_ticket).toBe("111.11");
+    expect(rows[0]?.average_selling_price).toBe("100.00");
+    expect(rows[0]?.metric_date).toBeNull();
+    expect(rows[0]?.account_label).toBeNull();
+  });
+
+  it("uma linha por conta, com rótulo, ordenada por unidades", async () => {
+    const rows = await asUser<Linha>(ADMIN_SB, `${CALL(skuComVendaId)} where grain = 'conta'`);
+
+    expect(rows.map((r) => r.account_label)).toEqual(["Conta A de vendas", "Conta B de vendas"]);
+    expect(rows.map((r) => Number(r.units_sold))).toEqual([8, 2]);
+    expect(rows[0]?.average_ticket).toBe("107.14"); // 750 / 7
+    expect(rows[1]?.average_ticket).toBe("125.00"); // 250 / 2
+  });
+
+  it("duas contas no mesmo dia viram UMA linha de dia, e o dia fora da janela não aparece", async () => {
+    // `metric_date::text`: o driver `pg` converte coluna `date` em `Date` no
+    // fuso da máquina, e a comparação com a data civil passaria a depender de
+    // onde o teste roda (quebrou aqui com 03:00Z).
+    const rows = await asUser<Linha>(
+      ADMIN_SB,
+      `select metric_date::text as metric_date, units_sold, gross_revenue
+         from public.get_sku_sales_breakdown('${ORG_SB}','${skuComVendaId}','${FROM}','${TO}')
+        where grain = 'dia'`,
+    );
+
+    expect(rows.map((r) => r.metric_date)).toEqual([DIA_1, DIA_2]);
+    // 3 (conta A) + 2 (conta B) no mesmo dia.
+    expect(Number(rows[0]?.units_sold)).toBe(5);
+    expect(Number(rows[0]?.gross_revenue)).toBe(550);
+    expect(Number(rows[1]?.units_sold)).toBe(5);
+  });
+
+  it("os três grãos fecham entre si — total = soma das contas = soma dos dias", async () => {
+    const rows = await asUser<Linha>(ADMIN_SB, CALL(skuComVendaId));
+
+    const soma = (grain: string, campo: keyof Linha) =>
+      rows.filter((r) => r.grain === grain).reduce((acc, r) => acc + Number(r[campo]), 0);
+
+    // Guarda contra vácuo (D-197): se nada voltasse, 0 = 0 = 0 passaria.
+    expect(rows.length).toBeGreaterThan(3);
+
+    for (const campo of ["units_sold", "gross_revenue", "orders_count", "purchases_count"] as const) {
+      expect(soma("conta", campo)).toBe(soma("total", campo));
+      expect(soma("dia", campo)).toBe(soma("total", campo));
+    }
+  });
+
+  it("o vocabulário de grain é fechado: total, conta ou dia", async () => {
+    const rows = await asUser<Linha>(ADMIN_SB, CALL(skuComVendaId));
+
+    for (const r of rows) {
+      expect(["total", "conta", "dia"]).toContain(r.grain);
+    }
+    expect(rows.filter((r) => r.grain === "total")).toHaveLength(1);
+  });
+
+  it("SKU sem venda devolve UMA linha total com zeros e razões NULL — não linha ausente, não zero fingido", async () => {
+    const rows = await asUser<Linha>(ADMIN_SB, CALL(skuSemVendaId));
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.grain).toBe("total");
+    expect(Number(rows[0]?.units_sold)).toBe(0);
+    expect(Number(rows[0]?.gross_revenue)).toBe(0);
+    // Denominador zero: a razão não existe. "R$ 0,00" de ticket seria mentira.
+    expect(rows[0]?.average_ticket).toBeNull();
+    expect(rows[0]?.average_selling_price).toBeNull();
+    expect(rows[0]?.last_computed_at).toBeNull();
+  });
+
+  it("anon não executa", async () => {
+    await expect(asAnon(CALL(skuComVendaId))).rejects.toThrow(/permission denied/i);
+  });
+
+  it("usuário de outra organização recebe a linha total ZERADA, sem conta nem dia — a RLS filtra antes da soma", async () => {
+    // Mesmo contrato de get_sku_dashboard: `organization_id` é parâmetro, a
+    // função não erra — as tabelas por trás simplesmente não devolvem nada.
+    const rows = await asUser<Linha>(DE_OUTRA_ORG, CALL(skuComVendaId));
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.grain).toBe("total");
+    expect(Number(rows[0]?.units_sold)).toBe(0);
+  });
+});
+
 describe("daily_listing_visits e get_listing_traffic (D-032, Fase 5B)", () => {
   // Mesmo raciocínio de nomes fora dos padrões de limpeza global, e mesma
   // ausência de afterAll — ver comentário equivalente no describe de

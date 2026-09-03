@@ -4617,6 +4617,33 @@ export type Database = {
           weekday: number
         }[]
       }
+      get_sku_sales_breakdown: {
+        Args: {
+          p_date_from: string
+          p_date_to: string
+          p_organization_id: string
+          p_sku_id: string
+        }
+        Returns: {
+          // CORRECAO MANUAL (classe D-133): o gerador nao enxerga nulidade de
+          // coluna de RPC. `account_label`/`ml_account_id` so existem no grao
+          // 'conta' e `metric_date` so no grao 'dia'; as duas razoes vem NULL
+          // com denominador zero; `last_computed_at` e NULL quando o SKU nao
+          // tem linha nenhuma na janela (a linha 'total' existe mesmo assim,
+          // com zeros -- D-227).
+          account_label: string | null
+          average_selling_price: number | null
+          average_ticket: number | null
+          grain: string
+          gross_revenue: number
+          last_computed_at: string | null
+          metric_date: string | null
+          ml_account_id: string | null
+          orders_count: number
+          purchases_count: number
+          units_sold: number
+        }[]
+      }
       get_sku_timeline: {
         Args: { p_limit?: number; p_organization_id: string; p_sku_id: string }
         Returns: {
