@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **225** (D-001 a D-227).
+Decisões registradas: **226** (D-001 a D-228).
 
 ## Por domínio
 
@@ -116,6 +116,7 @@ Decisões registradas: **225** (D-001 a D-227).
 - **D-224** — O Dashboard de SKU encolhe de 11 abas para 9, e as duas que saem tem motivo
 - **D-226** — A aba Precos sai por reuso, e o barato so apareceu porque a forma obvia foi MEDIDA
 - **D-227** — A aba Vendas: tres perguntas, um round trip, e a soma que precisou ser medida antes de ser somada
+- **D-228** — A aba Decisoes fecha as nove, e a prova do embed e a paridade das policies, nao o texto delas
 
 ### mercado-livre (38)
 

@@ -292,6 +292,19 @@ const SEARCH_ENTITY: Record<SearchEntityType, string> = {
   nota_fiscal: "NF-e",
 };
 
+/**
+ * `actions.status` (D-064) — vocabulário fechado no CHECK da tabela. Vivia
+ * privado em `apps/web/app/acoes/action-row.tsx`; extraído em D-228 porque a
+ * aba Decisões do SKU mostra o mesmo status e não pode importar de um módulo
+ * `"use client"`.
+ */
+const ACTION_STATUS: Record<string, string> = {
+  novo: "Novo",
+  em_andamento: "Em andamento",
+  resolvido: "Resolvido",
+  descartado: "Descartado",
+};
+
 function lookup(table: Record<string, string>, code: string): string {
   return table[code] ?? code;
 }
@@ -305,6 +318,7 @@ export const purchaseOrderStatusLabel = (code: string): string => lookup(PURCHAS
 export const purchaseOrderEventLabel = (code: string): string => lookup(PURCHASE_ORDER_EVENT, code);
 export const locationKindLabel = (code: string): string => lookup(LOCATION_KIND, code);
 export const listingStatusLabel = (code: string): string => lookup(LISTING_STATUS, code);
+export const actionStatusLabel = (code: string): string => lookup(ACTION_STATUS, code);
 export const eventTypeLabel = (code: string): string => lookup(EVENT_TYPE, code);
 export const severityLabel = (code: string): string => lookup(SEVERITY, code);
 export const featureSuggestionStatusLabel = (code: string): string => lookup(FEATURE_SUGGESTION_STATUS, code);

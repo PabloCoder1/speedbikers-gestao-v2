@@ -1,9 +1,11 @@
+import { describeActionEvidence } from "@sb/domain";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { Shell } from "../../../components/shell";
 import { StatusPill } from "../../../components/status-pill";
+import { formatDecisionSnapshot, OUTCOME_WINDOWS_DAYS, outcomeWindowLabel } from "../../../lib/decision-format";
 import { entityLabel, formatEventDiff } from "../../../lib/event-format";
 import {
   formatBusinessDate,
@@ -12,7 +14,7 @@ import {
   formatDateTime,
   formatPercent,
 } from "../../../lib/format";
-import { eventTypeLabel, listingStatusLabel } from "../../../lib/labels";
+import { actionStatusLabel, eventTypeLabel, listingStatusLabel } from "../../../lib/labels";
 import { fullSituationCriterion, fullSituationLabel } from "../../../lib/full-filters";
 import { createClient } from "../../../lib/supabase/server";
 import { DiagnosisPanel } from "./diagnosis-panel";
@@ -36,8 +38,10 @@ export const dynamic = "force-dynamic";
  * única com RPC própria — `get_sku_sales_breakdown` devolve TOTAL, por CONTA
  * e por DIA num único round trip (grouping sets no banco): a regra
  * inegociável é agregar em SQL (docs/ARCHITECTURE.md secao 15), e D-185 mediu
- * que o custo de uma chamada é a viagem, não o SQL. `Decisões` é a última que
- * falta; o caminho está medido em docs/HANDOFF.md.
+ * que o custo de uma chamada é a viagem, não o SQL. `Decisões` (D-228) é
+ * leitura direta sob RLS — `action_decisions` com o embed `actions!inner`
+ * filtrado pelo SKU da ação, num round trip — e o estado vazio É a tela:
+ * havia UMA decisão registrada em todo o Dev quando ela nasceu.
  *
  * A aba vive na URL (`?aba=`, mesmo padrão dos filtros de Movimentações):
  * valor fora do conjunto fechado cai para a Visão geral antes de tocar o
@@ -51,7 +55,17 @@ const TIMELINE_LIMIT = 50;
 
 // Na ordem aprovada em D-224 (Preços ANTES de Full — a ordem anterior estava
 // trocada em relação ao PRD).
-const TAB_KEYS = ["visao-geral", "vendas", "estoque", "anuncios", "precos", "full", "historico", "diagnostico"] as const;
+const TAB_KEYS = [
+  "visao-geral",
+  "vendas",
+  "estoque",
+  "anuncios",
+  "precos",
+  "full",
+  "historico",
+  "diagnostico",
+  "decisoes",
+] as const;
 type TabKey = (typeof TAB_KEYS)[number];
 
 const TAB_LABELS: Record<TabKey, string> = {
@@ -63,6 +77,7 @@ const TAB_LABELS: Record<TabKey, string> = {
   full: "Full",
   historico: "Histórico",
   diagnostico: "Diagnóstico",
+  decisoes: "Decisões",
 };
 
 function parseTab(value: string | string[] | undefined): TabKey {
@@ -280,6 +295,7 @@ export default async function SkuDashboardPage({
   const needsFull = tab === "full";
   const needsPrices = tab === "precos";
   const needsSales = tab === "vendas";
+  const needsDecisions = tab === "decisoes";
 
   const [
     dashboardResult,
@@ -290,6 +306,8 @@ export default async function SkuDashboardPage({
     fullResult,
     pricesResult,
     salesResult,
+    decisionsResult,
+    openActionsResult,
   ] = await Promise.all([
     needsDashboard
       ? supabase
@@ -395,6 +413,33 @@ export default async function SkuDashboardPage({
           p_date_to: dateTo,
         })
       : Promise.resolve({ data: null, error: null }),
+    // Decisões (D-228). Leitura direta sob RLS, sem RPC: `action_decisions`
+    // com o embed `actions!inner` (o SKU vive na AÇÃO, não na decisão) e o
+    // embed reverso `action_outcomes`. As três tabelas têm a MESMA policy
+    // (`organization_id in (select private.accessible_orgs())`, a forma de
+    // conjunto de D-181), então o embed não volta nulo para
+    // linha visível (a regra de D-206) — e `!inner` faz o filtro pelo SKU
+    // descartar a decisão inteira, nunca anular a ação. Sem cast.
+    needsDecisions
+      ? supabase
+          .from("action_decisions")
+          .select(
+            "id, decision, baseline_snapshot, created_at, actions!inner(id, kind, status, evidence, recommendation), action_outcomes(window_days, outcome_snapshot, measured_at)",
+          )
+          .eq("actions.sku_id", sku.data.id)
+          .order("created_at", { ascending: false })
+      : Promise.resolve({ data: null, error: null }),
+    // Quantas ações ABERTAS este SKU tem — contado no BANCO (`head: true`
+    // devolve só o count), não em JS. Medido em 03/09/2026: máximo de 8
+    // ações por SKU, então caberia contar em JS; a regra não é sobre o
+    // tamanho de hoje.
+    needsDecisions
+      ? supabase
+          .from("actions")
+          .select("id", { count: "exact", head: true })
+          .eq("sku_id", sku.data.id)
+          .in("status", ["novo", "em_andamento"])
+      : Promise.resolve({ data: null, error: null, count: null }),
   ]);
 
   const dashboard = dashboardResult.data;
@@ -410,6 +455,8 @@ export default async function SkuDashboardPage({
   const salesTotal = sales.find((linha) => linha.grain === "total") ?? null;
   const salesByAccount = sales.filter((linha) => linha.grain === "conta");
   const salesByDay = sales.filter((linha) => linha.grain === "dia");
+  const decisions = decisionsResult.data ?? [];
+  const openActions = openActionsResult.count ?? null;
 
   return (
     <Shell>
@@ -1006,6 +1053,117 @@ export default async function SkuDashboardPage({
       )}
 
       {tab === "diagnostico" && <DiagnosisPanel skuId={sku.data.id} />}
+
+      {tab === "decisoes" && (
+        <>
+          <h2 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.0625rem" }}>Decisões registradas</h2>
+
+          {/*
+            D-228. Memória de decisões (Fase 6, D-064/D-065): a decisão nasce de
+            uma AÇÃO na Central e guarda o retrato do SKU no momento
+            (get_sku_decision_snapshot); o job de medição refaz o retrato 7, 15
+            e 30 dias depois. Comparação BRUTA lado a lado, nunca uma % de
+            "resultado" — e "depois" não é "por causa".
+          */}
+          <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+            Cada decisão nasce de uma ação da <Link href="/acoes">Central de Ações</Link> e guarda um retrato do
+            SKU no momento — venda de 7 dias, preço médio e estoque local. O job de medição refaz o mesmo retrato 7,
+            15 e 30 dias depois. A comparação é <strong>lado a lado, bruta</strong>: nenhuma porcentagem de
+            resultado é sintetizada, e &ldquo;depois&rdquo; não quer dizer &ldquo;por causa&rdquo;.
+          </p>
+
+          {decisionsResult.error !== null && (
+            <p role="alert" style={{ color: "var(--sb-danger)" }}>
+              Não foi possível carregar as decisões: {decisionsResult.error.message}
+            </p>
+          )}
+
+          {decisionsResult.error === null && decisions.length === 0 && (
+            <p style={{ color: "var(--sb-text-soft)" }}>
+              Nenhuma decisão registrada para este SKU.{" "}
+              {openActionsResult.error !== null && (
+                <span role="alert" style={{ color: "var(--sb-danger)" }}>
+                  Não foi possível contar as ações abertas: {openActionsResult.error.message}
+                </span>
+              )}
+              {openActionsResult.error === null && openActions !== null && openActions > 0 && (
+                <>
+                  Há {formatCount(openActions)} ação(ões) aberta(s) dele na{" "}
+                  <Link href="/acoes">Central de Ações</Link> — é lá que uma decisão é registrada e depois medida.
+                </>
+              )}
+              {openActionsResult.error === null && openActions === 0 && (
+                <>Também não há ação aberta para ele na Central de Ações.</>
+              )}
+            </p>
+          )}
+
+          {decisionsResult.error === null && decisions.length > 0 && (
+            <div style={{ display: "grid", gap: "var(--sb-space-3)" }}>
+              {decisions.map((decision) => {
+                // A visão normalizada da ação (`describeActionEvidence` é total
+                // para qualquer `kind`, D-116) — a mesma que a Central usa.
+                const acao = describeActionEvidence(decision.actions.kind, decision.actions.evidence);
+                // Ordenar 3 medições e listar as janelas ausentes não é agregar.
+                const medidas = [...decision.action_outcomes].sort((a, b) => a.window_days - b.window_days);
+                const pendentes = OUTCOME_WINDOWS_DAYS.filter(
+                  (dias) => !medidas.some((medida) => medida.window_days === dias),
+                );
+
+                return (
+                  <article key={decision.id} style={{ ...statBox, minWidth: 0 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "0.5rem",
+                        alignItems: "center",
+                        flexWrap: "wrap",
+                        fontSize: "0.8125rem",
+                        color: "var(--sb-text-soft)",
+                        marginBottom: "var(--sb-space-1)",
+                      }}
+                    >
+                      <span>
+                        {acao.kindLabel}
+                        {acao.direcaoLabel !== null && ` · ${acao.direcaoLabel}`}
+                      </span>
+                      <StatusPill code={decision.actions.status} label={actionStatusLabel(decision.actions.status)} />
+                    </div>
+
+                    <p style={{ margin: "0 0 var(--sb-space-1)", fontSize: "0.9375rem" }}>
+                      <strong>Decisão ({formatDateTime(decision.created_at)}):</strong> {decision.decision}
+                    </p>
+
+                    <p style={{ margin: "0 0 var(--sb-space-1)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+                      Recomendação da ação: {decision.actions.recommendation}
+                    </p>
+
+                    <p style={{ margin: "0 0 0.125rem", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+                      No momento da decisão — {formatDecisionSnapshot(decision.baseline_snapshot)}
+                    </p>
+
+                    {medidas.map((medida) => (
+                      <p
+                        key={medida.window_days}
+                        style={{ margin: "0 0 0.125rem", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}
+                      >
+                        {outcomeWindowLabel(medida.window_days)} ({formatDateTime(medida.measured_at)}) —{" "}
+                        {formatDecisionSnapshot(medida.outcome_snapshot)}
+                      </p>
+                    ))}
+
+                    {pendentes.length > 0 && (
+                      <p style={{ margin: "var(--sb-space-1) 0 0", fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
+                        Ainda sem medição: {pendentes.map(outcomeWindowLabel).join(", ")}.
+                      </p>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
     </Shell>
   );
 }

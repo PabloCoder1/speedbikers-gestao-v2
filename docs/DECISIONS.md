@@ -5244,6 +5244,26 @@ E a mensagem obvia seria falsa. `listing.price.changed` e um **diff entre dois s
 
 **Impacto:** `supabase/migrations/20260903134854_sku_sales_breakdown_rpc.sql`, `apps/web/app/skus/[skuId]/page.tsx`, `packages/db/src/types.ts` (a mao, D-213), `packages/db/src/rls.integration.test.ts` (+8), `apps/web/e2e/{seed,constants,sku-dashboard.spec}.ts`.
 
+## D-228 - A aba Decisoes fecha as nove, e a prova do embed e a paridade das policies, nao o texto delas
+
+**Contexto:** ultima das nove abas de D-224. Leitura direta sob RLS, **sem RPC** -- e a razao e a regra, nao a preguica: a aba e uma LISTA (as decisoes das acoes deste SKU, cada uma com o retrato do momento e as medicoes de 7/15/30 dias), nao uma agregacao. A unica contagem que ela faz -- quantas acoes ABERTAS o SKU tem -- e feita no banco, com `select("id", { count: "exact", head: true })`: devolve so o numero, zero linhas. Medido em 03/09/2026, o maximo e 8 acoes por SKU, entao caberia contar em JavaScript; a regra nao e sobre o tamanho de hoje.
+
+**O embed sai SEM cast, e o argumento e o de D-206.** `action_decisions` com `actions!inner` (o SKU vive na ACAO, nao na decisao) e o embed reverso `action_outcomes`. O embed nao pode voltar nulo para linha visivel quando a policy do PAI e a do EMBED se apoiam no mesmo predicado -- e as tres tabelas se apoiam. `!inner` faz o filtro pelo SKU descartar a decisao inteira, nunca anular a acao. D-188 e a licao de que embed so se prova RODANDO: `check:embeds` aceitou a projecao nova (**34** projecoes, +1), e o Playwright a exercita na aplicacao servida com login real.
+
+**O teste que falhou, e o que ele ensinou.** Escrevi o teste de paridade afirmando o TEXTO da policy -- `is_member_of(organization_id)`, com que as tres tabelas nasceram em D-064/D-065. **Falhou nas tres.** D-181 as reescreveu para a forma de conjunto, `organization_id in (select private.accessible_orgs())`: a policy mudou de FORMA sem mudar de sentido, e o teste estava fixando a coisa errada. A versao que ficou nao fixa texto nenhum: fixa que **as tres expressoes sao identicas entre si**, que cada tabela tem UMA policy permissiva de SELECT e que a expressao se apoia em `organization_id`. E essa a propriedade de que a aba depende -- se alguem der a `actions` uma policy propria (por conta, por exemplo), o conjunto do pai deixa de ser o do embed, o teste falha, e a aba precisa voltar a tratar `actions` como anulavel. O comentario da pagina, que repetia o texto antigo, foi corrigido junto.
+
+**Tres formatadores sairam de um componente cliente.** `formatSnapshot`, `windowLabel` e `statusLabel` viviam privados em `apps/web/app/acoes/action-row.tsx`, um modulo `"use client"` -- e um Server Component nao importa funcao de la. Foram para `lib/decision-format.ts` (com testes) e `lib/labels.ts` (`actionStatusLabel`, na tabela de rotulos da casa); `action-row.tsx` passou a importa-los: **40 linhas fora, 6 dentro**. Um formato, duas telas: se a forma do snapshot mudar, muda num lugar. `formatDecisionSnapshot` recebe `unknown` e estreita dentro -- o `Json` do banco nao precisa de cast na borda (D-200: cast esconde qual guarda e real).
+
+**O estado vazio E a tela, e ele aponta para onde a decisao nasce.** Medido em 03/09/2026: **UMA** decisao registrada em todo o Dev (1 SKU), contra 843 acoes em 407 SKUs (841 abertas). Uma aba vazia que dissesse so "nenhuma decisao" seria inutil em 99,97% das paginas. A tela diz quantas acoes abertas o SKU tem -- contadas no banco -- e aponta para `/acoes`, que e o unico lugar onde uma decisao e registrada e depois medida.
+
+**"Depois" nao e "por causa".** A comparacao e bruta, lado a lado -- o retrato no momento da decisao e o retrato 7/15/30 dias depois -- e nenhuma porcentagem de "resultado" e sintetizada (o contrato de D-065, o mesmo de `/vendas`). As janelas ainda nao medidas sao ditas por extenso ("Ainda sem medicao: 15 dias depois, 30 dias depois"), em vez de sumirem.
+
+**O item do ROADMAP fecha.** As nove abas aprovadas em D-224 existem: `Visao geral | Vendas | Estoque | Anuncios | Precos | Full | Historico | Diagnostico | Decisoes`. Quatro fatias (D-225 a D-228), tres por reuso, uma com RPC propria.
+
+**Verificacao:** **559/559** de integracao em banco recriado (558 + 1, o de paridade — um teste, tres tabelas), `check` 29/29, build 8/8, `check:embeds` **34/34** (+1), `check:waterfalls` 52, **17/17 Playwright** (16 + 1). O e2e planta uma acao, uma decisao com baseline e UMA medicao de 7 dias, e exige na tela os dois retratos lado a lado, o tipo e a direcao da acao, e o texto das janelas ainda sem medicao.
+
+**Impacto:** `apps/web/app/skus/[skuId]/page.tsx`, `apps/web/app/acoes/action-row.tsx`, `apps/web/lib/labels.ts`, `apps/web/lib/decision-format.ts` (novo) + teste, `packages/db/src/rls-embed-nullability.integration.test.ts` (+1), `apps/web/e2e/{seed,constants,sku-dashboard.spec}.ts`.
+
 ## Como adicionar nova decisao
 
 Registrar:

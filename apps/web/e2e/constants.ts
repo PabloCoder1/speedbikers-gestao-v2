@@ -18,3 +18,6 @@ export const E2E_SKU_SALES = [
   { daysAgo: 1, units: 3, revenue: 300, orders: 3, purchases: 3 },
   { daysAgo: 3, units: 2, revenue: 200, orders: 2, purchases: 2 },
 ] as const;
+
+/** Texto da decisão do seed (aba Decisões, D-228) — o spec procura por ele. */
+export const E2E_DECISION_TEXT = "Repor 10 unidades e revisar o preço — decisão de teste E2E";

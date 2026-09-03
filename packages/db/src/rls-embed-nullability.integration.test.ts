@@ -252,3 +252,52 @@ describe("o que decide se um embed pode voltar nulo (D-206)", () => {
     }
   });
 });
+
+/**
+ * A aba Decisões do SKU (D-228) lê `action_decisions` com o embed
+ * `actions!inner` e o embed reverso `action_outcomes`, SEM cast. A regra de
+ * D-206 diz quando isso é seguro: o embed não pode voltar nulo para linha
+ * visível quando a policy do PAI e a do EMBED se apoiam no MESMO predicado.
+ *
+ * O predicado, hoje, é `organization_id in (select private.accessible_orgs())`
+ * — a forma de conjunto de D-181, não o `is_member_of(organization_id)` com
+ * que as três nasceram. A primeira versão deste teste procurava o texto
+ * antigo e falhou nas três: a policy tinha mudado de FORMA sem mudar de
+ * sentido. Por isso o teste não fixa o texto — fixa que as três expressões
+ * são IDÊNTICAS entre si e se apoiam em `organization_id`, que é a
+ * propriedade de que a aba depende. Se alguém der a `actions` uma policy
+ * própria (por conta, por exemplo), o conjunto do pai deixa de ser o do
+ * embed, este teste falha, e a aba precisa voltar a tratar `actions` como
+ * anulável.
+ */
+describe("memória de decisões: as três tabelas partilham a policy (D-228)", () => {
+  const TABELAS = ["actions", "action_decisions", "action_outcomes"];
+
+  it("cada uma tem UMA policy permissiva de SELECT, e as três expressões são a MESMA", async () => {
+    const policies = await client.query<{ tabela: string; qual: string }>(
+      `select c.relname::text as tabela, pg_get_expr(p.polqual, p.polrelid) as qual
+         from pg_policy p
+         join pg_class c on c.oid = p.polrelid
+         join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = 'public'
+          and c.relname::text = any($1::text[])
+          and p.polcmd in ('r', '*')
+          and p.polpermissive`,
+      [TABELAS],
+    );
+
+    // Uma por tabela — uma SEGUNDA policy permissiva em qualquer delas
+    // alargaria o conjunto do pai ou do filho, e o embed nulo voltaria a ser
+    // alcançável (o caminho que D-206 identificou como o único real).
+    expect(policies.rows.map((r) => r.tabela).sort()).toEqual([...TABELAS].sort());
+
+    const expressoes = new Set(policies.rows.map((r) => r.qual));
+
+    expect(expressoes.size).toBe(1);
+
+    const [qual] = [...expressoes];
+
+    expect(qual).toContain("organization_id");
+    expect(qual).toContain("accessible_orgs");
+  });
+});

@@ -34,7 +34,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import type { Database } from "@sb/db";
 import { createClient } from "@supabase/supabase-js";
 
-import { E2E_SKU_SALES, E2E_USER_EMAIL, E2E_USER_PASSWORD } from "./constants.js";
+import { E2E_DECISION_TEXT, E2E_SKU_SALES, E2E_USER_EMAIL, E2E_USER_PASSWORD } from "./constants.js";
 import { SEED_OUTPUT_PATH, type SeedOutput } from "./seed-output.js";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321";
@@ -442,6 +442,100 @@ async function main(): Promise<void> {
 
   if (sales.error !== null) {
     throw sales.error;
+  }
+
+  // Memória de decisões (aba Decisões, D-228): UMA ação do SKU, UMA decisão
+  // com baseline e UMA medição (7 dias) — o e2e prova o lado a lado e as
+  // janelas ainda sem medição. A ação entra pela chave estável (`dedup_key`);
+  // a decisão só se ainda não existe (não há chave natural); o outcome pela
+  // unique (decisão, janela). Rodar o seed duas vezes não duplica nada.
+  const action = await db
+    .from("actions")
+    .upsert(
+      {
+        organization_id: organizationId,
+        kind: "venda_anomala",
+        severity: "alta",
+        confidence: "alta",
+        estimated_impact_brl: 900,
+        sku_id: skuId,
+        evidence: {
+          direcao: "queda",
+          evidencias: [{ tipo: "vendas", descricao: "Vendeu 2 nos últimos 7 dias contra baseline de 9." }],
+          causas_candidatas: [],
+        },
+        recommendation: "Revisar preço e estoque antes de repor.",
+        status: "novo",
+        created_by: "system",
+        dedup_key: `e2e:seed:venda_anomala:${skuId}`,
+      },
+      { onConflict: "organization_id,dedup_key" },
+    )
+    .select("id")
+    .single();
+
+  if (action.error !== null) {
+    throw action.error;
+  }
+
+  const existingDecision = await db
+    .from("action_decisions")
+    .select("id")
+    .eq("action_id", action.data.id)
+    .maybeSingle();
+
+  if (existingDecision.error !== null) {
+    throw existingDecision.error;
+  }
+
+  let decisionId: string;
+
+  if (existingDecision.data === null) {
+    const decision = await db
+      .from("action_decisions")
+      .insert({
+        organization_id: organizationId,
+        action_id: action.data.id,
+        decision: E2E_DECISION_TEXT,
+        baseline_snapshot: {
+          as_of: "2026-08-25",
+          units_sold_7d: 2,
+          avg_daily_units_7d: 0.29,
+          avg_price_7d: 100,
+          stock_local: 50,
+        },
+        created_by: userId,
+      })
+      .select("id")
+      .single();
+
+    if (decision.error !== null) {
+      throw decision.error;
+    }
+
+    decisionId = decision.data.id;
+  } else {
+    decisionId = existingDecision.data.id;
+  }
+
+  const outcome = await db.from("action_outcomes").upsert(
+    {
+      organization_id: organizationId,
+      action_decision_id: decisionId,
+      window_days: 7,
+      outcome_snapshot: {
+        as_of: "2026-09-01",
+        units_sold_7d: 5,
+        avg_daily_units_7d: 0.71,
+        avg_price_7d: 100,
+        stock_local: 45,
+      },
+    },
+    { onConflict: "action_decision_id,window_days" },
+  );
+
+  if (outcome.error !== null) {
+    throw outcome.error;
   }
 
   const output: SeedOutput = {

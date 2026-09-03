@@ -7,6 +7,8 @@ import Link from "next/link";
 
 import type { ActionShortcut } from "../../lib/action-shortcuts";
 import { formatCurrency } from "../../lib/format";
+import { formatDecisionSnapshot, outcomeWindowLabel } from "../../lib/decision-format";
+import { actionStatusLabel } from "../../lib/labels";
 import { createClient } from "../../lib/supabase/browser";
 import { claimAction, dismissAction, registerDecision, resolveAction } from "./actions";
 
@@ -68,21 +70,6 @@ const buttonStyle: React.CSSProperties = {
   whiteSpace: "nowrap",
 };
 
-function statusLabel(status: string): string {
-  switch (status) {
-    case "novo":
-      return "Novo";
-    case "em_andamento":
-      return "Em andamento";
-    case "resolvido":
-      return "Resolvido";
-    case "descartado":
-      return "Descartado";
-    default:
-      return status;
-  }
-}
-
 /**
  * Fundo por tom, não por direção: uma ação sem direção (padrão de
  * reclamações, D-116) caía no `else` e ficava VERDE, lendo como oportunidade.
@@ -93,29 +80,8 @@ const TONE_BACKGROUND: Readonly<Record<string, string | undefined>> = {
   neutro: undefined,
 };
 
-function windowLabel(days: number): string {
-  return `${String(days)} dias depois`;
-}
-
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("pt-BR");
-}
-
-/**
- * Comparação BRUTA lado a lado, nunca uma % sintetizada — mesmo raciocínio
- * já usado em `/vendas` (D-050-adjacent): `avg_price_7d`/outros podem faltar
- * (SKU sem venda no período), `—` em vez de inventar zero.
- */
-function formatSnapshot(snapshot: Record<string, unknown>): string {
-  if (Object.keys(snapshot).length === 0) return "Sem dado (ação sem SKU vinculado).";
-
-  const unitsSold = snapshot.units_sold_7d;
-  const avgPrice = snapshot.avg_price_7d;
-  const stockLocal = snapshot.stock_local;
-
-  const priceText = typeof avgPrice === "number" ? formatCurrency(avgPrice) : "—";
-
-  return `Vendido (7d): ${String(unitsSold)} · Preço médio: ${priceText} · Estoque local: ${String(stockLocal)}`;
 }
 
 /**
@@ -272,7 +238,7 @@ export function ActionRow({ action, userId }: { action: ActionRowData; userId: s
         )}
       </td>
       <td style={td}>
-        {statusLabel(status)}
+        {actionStatusLabel(status)}
         {assigneeId !== null && (
           <div style={{ color: "var(--sb-text-soft)", fontSize: "0.75rem" }}>
             {assigneeId === userId ? "Atribuído a você" : "Atribuído"}
@@ -372,15 +338,15 @@ export function ActionRow({ action, userId }: { action: ActionRowData; userId: s
                 <strong>Decisão ({formatDate(decision.createdAt)}):</strong> {decision.decision}
               </div>
               <div style={{ color: "var(--sb-text-soft)", marginTop: "0.125rem" }}>
-                No momento da decisão — {formatSnapshot(decision.baselineSnapshot)}
+                No momento da decisão — {formatDecisionSnapshot(decision.baselineSnapshot)}
               </div>
               {decision.outcomes.map((outcome) => (
                 <div
                   key={outcome.windowDays}
                   style={{ color: "var(--sb-text-soft)", marginTop: "0.125rem" }}
                 >
-                  {windowLabel(outcome.windowDays)} ({formatDate(outcome.measuredAt)}) —{" "}
-                  {formatSnapshot(outcome.outcomeSnapshot)}
+                  {outcomeWindowLabel(outcome.windowDays)} ({formatDate(outcome.measuredAt)}) —{" "}
+                  {formatDecisionSnapshot(outcome.outcomeSnapshot)}
                 </div>
               ))}
             </div>

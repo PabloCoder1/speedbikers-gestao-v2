@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { E2E_SKU_SALES } from "./constants.js";
+import { E2E_DECISION_TEXT, E2E_SKU_SALES } from "./constants.js";
 import { login, statValue } from "./helpers.js";
 import { readSeedOutput } from "./seed-output.js";
 
@@ -102,4 +102,29 @@ test("aba Vendas mostra total, ticket médio e a conta — somados no banco", as
   await expect(page.getByRole("heading", { name: "Por dia" })).toBeVisible();
   const tabelaDias = page.getByRole("table").last();
   await expect(tabelaDias.getByRole("row")).toHaveCount(E2E_SKU_SALES.length + 1);
+});
+
+/**
+ * Aba Decisões (D-228) — a última das nove. Leitura direta sob RLS com embed
+ * (`action_decisions → actions!inner`, `→ action_outcomes`), e D-188 é a lição
+ * de que embed só se prova RODANDO: este teste é a prova na aplicação servida,
+ * com login real. O seed grava uma decisão com baseline e uma medição de 7
+ * dias; a tela tem de mostrar os dois retratos lado a lado e dizer quais
+ * janelas ainda não foram medidas — sem nenhuma porcentagem de "resultado".
+ */
+test("aba Decisões mostra a decisão do seed com o antes e o depois lado a lado", async ({ page }) => {
+  const seed = await readSeedOutput();
+
+  await login(page, `/skus/${seed.skuId}`);
+
+  await page.getByRole("navigation", { name: "Abas do SKU" }).getByRole("link", { name: "Decisões" }).click();
+
+  await expect(page).toHaveURL(/aba=decisoes/);
+  await expect(page.getByRole("heading", { name: "Decisões registradas" })).toBeVisible();
+
+  await expect(page.getByText(E2E_DECISION_TEXT)).toBeVisible();
+  await expect(page.getByText("Venda anômala · Queda")).toBeVisible();
+  await expect(page.getByText("No momento da decisão — Vendido (7d): 2")).toBeVisible();
+  await expect(page.getByText(/7 dias depois \(.*\) — Vendido \(7d\): 5/)).toBeVisible();
+  await expect(page.getByText("Ainda sem medição: 15 dias depois, 30 dias depois.")).toBeVisible();
 });
