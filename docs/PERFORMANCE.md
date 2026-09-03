@@ -367,6 +367,7 @@ Cada linha tem o antes/depois real, não estimativa.
 | 2026-09-02 | 8 sítios que a regex não via | 2 a 3 idas em série (uma delas saindo do navegador) | 1 ida | `Promise.all`, filtro redundante removido, preferências do toast vindas do servidor | D-197 |
 | 2026-09-02 | Materialização das métricas diárias | **218,5** linhas escritas por recompute | **1,5** | `on conflict do update ... where a linha difere` no lugar de apaga-e-insere; remedido no Dev com tráfego real | D-199 |
 | 2026-09-02 | `get_system_health` (escopo de organização) | 308,7 / 287,9 ms | **261,9 / 267,7 ms** | filtrar `job_runs` por CONJUNTO antes do `distinct on`; a correção de segurança saiu **mais barata** que o defeito | D-209 |
+| 2026-09-03 | Caminho de pedidos (janela) — **medido em produção** | 743 / 608 / 541 ms por pedido | **43,4 / 29,4 / 19,0** | lote de leitura e de escrita por página (D-186/D-188/D-190), agora com tráfego real; ganho de **17× a 28×**, por faixa de lote | D-220 |
 
 **Lição de D-195 — o piso de latência, e o que ele NÃO é.** Deste ambiente
 contra o Supabase Dev, uma leitura trivial (`organizations?select=id&limit=1`)
@@ -434,6 +435,55 @@ A contagem de linhas é **idêntica** nas duas versões (41 e 41) — o mesmo
 `job_type` roda em toda organização, então a linha aparece legitimamente para
 os dois ADMINs. O que vazava era o **conteúdo**, não a existência: um escopo
 feito pela metade (filtrar a lista, esquecer o agregado) passaria despercebido.
+
+### O caminho de pedidos, medido em produção (D-220)
+
+Seis fatias (D-184 a D-190) reescreveram a persistência de pedidos e **nenhuma
+pôde ser medida** — o worker no ar era anterior. O deploy de 2026-09-02
+destravou, e a consulta registrada acima foi rodada com tráfego real.
+
+**A primeira leitura enganava, e por isso não é a que vale.** Agrupado por dia,
+o pós-deploy dava **19,6 ms por pedido** contra o baseline de 660,7 — 34×. Mas
+era **uma única execução**, de recuperação, com 441 pedidos de uma vez. Lote
+grande amortiza custo fixo; comparar contra os ~120 por execução de antes seria
+fraudar o número.
+
+**Controlado por faixa de lote**, o ganho se sustenta e não é artefato:
+
+| pedidos por execução | antes | depois | ganho |
+|---|---|---|---|
+| 10–99 | 743,3 ms (309 exec) | **43,4 ms** | **17×** |
+| 100–199 | 607,8 ms (247 exec) | **29,4 ms** | **21×** |
+| 200–287 | 541,3 ms (50 exec) | **19,0 ms** | **28×** |
+
+Por execução, na primeira faixa: de **45,4 s para 3,5 s**.
+
+**O ganho CRESCE com o lote, e isso é a assinatura do que foi feito** — as
+fatias agruparam leitura e escrita *por página*, então quanto mais pedidos na
+página, mais custo fixo se dilui.
+
+#### O webhook quase não mudou, e isso estava previsto na mecânica
+
+| `sync.webhook.received` com trabalho | mediana | p95 |
+|---|---|---|
+| antes (19.334 execuções) | 595 ms | 1.306 ms |
+| depois (458 execuções) | **545 ms** | **794 ms** |
+
+Oito por cento na mediana. **O motivo é estrutural: o webhook persiste UM
+pedido por invocação** (`processed` médio = 1,0). Lote de página não tem o que
+agrupar numa página de um.
+
+⚠️ **Isto corrige como o ganho vinha sendo descrito.** O "de ~7 idas ao banco
+por pedido para ~0,16" era — sempre foi — um número **por página**. Onde a
+página tem um pedido só, continuam sendo ~4 idas. A frase certa é: *o caminho
+da JANELA ficou 17 a 28× mais barato por pedido; o do webhook ficou igual, e
+não havia como ficar diferente*. O p95 caiu 39%, o que é consistente com menos
+idas ao banco na cauda.
+
+**Ressalva de amostra:** o pós-deploy tem 8 execuções da janela, acumuladas
+depois que as contas foram restauradas (D-217), e **só 2 das 4 contas estão
+ativas**. A direção e a ordem de grandeza estão claras; os números finos ainda
+vão se firmar com mais tráfego.
 
 ### Marco para remedir o Realtime (aberto desde D-199)
 

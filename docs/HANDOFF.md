@@ -14,7 +14,7 @@
 |---|---|
 | **Atualizado em** | 2026-09-02 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `fa21512` (D-218) — esta fatia, D-219, é o commit seguinte |
+| **HEAD conhecido** | `b131d5b` (D-219) — esta fatia, D-220, é o commit seguinte |
 | **Deploy no ar** | **`0702969` — o mesmo do `HEAD`, sem atraso** (`api-00030-gqw` / `worker-00045-cwq`, 2026-09-02). Depois de 66 commits parado. Verificado contra a infraestrutura, não contra o script: `APP_COMMIT=0702969` nos dois serviços, imagem `api:0702969`, `/health` respondendo `{"commit":"0702969"}` e **zero `ERROR`** no Cloud Logging desde o boot |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | **128 locais == 128 no Dev**, sem drift — D-209→D-212 aplicadas pela CI em 2026-09-02 e CONFERIDAS lá (`anon` alcança 0 funções; `ml_accounts` sem UPDATE/DELETE para `authenticated`; `created_by` presente). O caminho é o push, **nunca** o MCP (lição de D-207) |
@@ -308,11 +308,16 @@ Nada disto pode ser feito por um agente.
 
 **Abertos:**
 
-1. **Medir o caminho de pedidos ponta a ponta — DESTRAVADO pelo deploy de
-   2026-09-02.** Seis fatias (D-184 a D-190) levaram o caminho de ~7 idas ao
-   banco por pedido para **~0,16** na estrutura, fixado em teste e **nunca
-   medido em produção**. A consulta está em `docs/PERFORMANCE.md`. Precisa de
-   tráfego real depois do deploy — não dá para medir no minuto seguinte.
+1. **~~Medir o caminho de pedidos ponta a ponta~~ — FEITO em D-220**, e a
+   medição corrigiu como o ganho vinha sendo descrito. Controlado por faixa de
+   lote, a **janela** ficou **17× a 28×** mais barata por pedido (743 → 43 ms
+   na faixa de 10–99; 45,4 s → 3,5 s por execução). O **webhook ficou igual**
+   (595 → 545 ms de mediana), e isso era estrutural: ele persiste **um** pedido
+   por invocação, e lote de página não tem o que agrupar numa página de um.
+
+   ⚠️ **A frase "de ~7 idas ao banco por pedido para ~0,16" era incompleta** —
+   o 0,16 é um número **por página**. Onde a página tem um pedido, continuam
+   ~4 idas. Números em `docs/PERFORMANCE.md`.
 2. **Retenção de `job_runs` — o item se dividiu em D-218, e metade fechou.**
    A pré-condição caiu (a origem parou: **−94,6%**, medido em produção). E a
    medição mostrou que **o custo não era volume, era uma consulta**: o

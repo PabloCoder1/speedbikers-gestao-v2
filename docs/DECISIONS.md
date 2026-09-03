@@ -4976,6 +4976,47 @@ E a ultima linha mostra o erro na direcao oposta: 25,5 h num job **diario** e sa
 
 **Impacto:** `apps/web/lib/sync-health.ts`, `apps/web/lib/sync-health.test.ts`, `apps/web/app/saude/page.tsx`.
 
+## D-220 - O caminho de pedidos, enfim medido: 17 a 28x na janela, e ZERO no webhook
+
+**Contexto:** item 1 dos "Proximos passos", aberto desde 2026-09-01. Seis fatias (D-184 a D-190) reescreveram a persistencia de pedidos e **nenhuma pode ser medida** — o worker no ar era anterior. O deploy de 02/09 destravou; a consulta ja estava registrada em `docs/PERFORMANCE.md`, e foi ela que rodei.
+
+**A primeira leitura dava 34x, e eu nao usei.** Agrupado por dia, o pos-deploy marcava **19,6 ms por pedido** contra o baseline de 660,7. Mas era **uma execucao so** — a corrida de recuperacao depois do incidente, com 441 pedidos de uma vez. Lote grande amortiza custo fixo; comparar isso contra os ~120 pedidos por execucao de antes seria fraudar o proprio numero.
+
+**Controlado por faixa de lote, o ganho se sustenta:**
+
+| pedidos por execucao | antes | depois | ganho |
+|---|---|---|---|
+| 10-99 | 743,3 ms (309 exec) | **43,4 ms** | **17x** |
+| 100-199 | 607,8 ms (247 exec) | **29,4 ms** | **21x** |
+| 200-287 | 541,3 ms (50 exec) | **19,0 ms** | **28x** |
+
+Nao e artefato de lote: aparece em **todas** as faixas. Por execucao, na primeira: de **45,4 s para 3,5 s**.
+
+**E o ganho CRESCER com o lote e a assinatura do que foi feito** — as fatias agruparam leitura e escrita *por pagina*. Quanto mais pedidos na pagina, mais custo fixo se dilui. Se o ganho fosse plano, seria sinal de que a explicacao estava errada.
+
+---
+
+**O ACHADO QUE CORRIGE COMO EU VINHA DESCREVENDO O GANHO.**
+
+O outro baseline registrado era o webhook: 588 ms de mediana. Medido:
+
+| `sync.webhook.received` com trabalho | mediana | p95 |
+|---|---|---|
+| antes (19.334 execucoes) | 595 ms | 1.306 ms |
+| depois (458 execucoes) | **545 ms** | **794 ms** |
+
+**Oito por cento.** E nao e decepcao — e o que a mecanica prevê: o webhook persiste **UM pedido por invocacao** (`processed` medio = 1,0). Lote de pagina nao tem o que agrupar numa pagina de um.
+
+**Entao a frase "o caminho de pedidos saiu de ~7 idas ao banco por pedido para ~0,16", que eu repeti em varias fatias e no HANDOFF, estava incompleta.** O 0,16 e — e sempre foi — um numero **por pagina**. Onde a pagina tem um pedido, continuam sendo ~4 idas. A formulacao honesta e: *a JANELA ficou 17 a 28x mais barata por pedido; o WEBHOOK ficou igual, e nao havia como ficar diferente*.
+
+O p95 do webhook caiu 39% (1.306 → 794 ms), o que e consistente com menos idas ao banco na cauda — o ganho existe, so nao esta na mediana.
+
+**Ressalva de amostra, declarada:** o pos-deploy tem **8 execucoes** da janela, acumuladas depois que as contas foram restauradas (D-217), e **so 2 das 4 contas estao ativas**. Direcao e ordem de grandeza estao claras; os numeros finos vao se firmar com mais trafego. Nao esperei mais porque o item pedia a medicao, nao a precisao da terceira casa — e a diferenca entre 743 e 43 nao depende de amostra maior.
+
+**Verificacao:** consulta registrada em `docs/PERFORMANCE.md` rodada contra o Dev; comparacao controlada por faixa de lote; os dois baselines do arquivo (660,7 ms na janela, 588 ms no webhook) confrontados um a um. Sem codigo novo, sem migration — esta fatia e medicao.
+
+**Impacto:** `docs/PERFORMANCE.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:
