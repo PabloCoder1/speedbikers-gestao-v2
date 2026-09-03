@@ -211,11 +211,16 @@ Nada disto pode ser feito por um agente.
 
 | | |
 |---|---|
-| Aprendizado humano supervisionado | reusa a Base de Conhecimento (D-113); nada promovido sem humano |
-| filtros de Conta e Marca | **Origem fica de fora** — `is_imported` é medido como não confiável |
+| filtros de Conta e Marca | **PARCIAL** (D-235): `/curva-abc` feito; faltam `/cobertura` e `/vendas`. **Origem fica de fora** — `is_imported` medido como não confiável |
 
 **Dependentes de dado/tempo (D)** — não é possível hoje, e forçar seria inventar:
 
+**Aprendizado humano supervisionado** (Trilha 7C) — medido em 03/09: a Base de
+Conhecimento tem **0 entradas** e **0 templates**, foram **4 respostas enviadas
+pelo produto** (a última em 27/08) e **0 atendimentos assumidos**. Os 1.189
+casos resolvidos vieram importados do ML: a operação responde no painel do
+Mercado Livre. O item é "converter correções HUMANAS em conhecimento" — não há
+o que converter. **Destrava com uso, não com código** (D-235) ·
 vendas perdidas estimadas (sem saldo inicial no ledger, D-061) · Nacional × Importado
 (confiabilidade de `is_imported`) · alias fornecedor→SKU (relação não existe, D-174) ·
 antes/depois de Preços e de Full (série curta demais)
@@ -238,7 +243,7 @@ D-228, três das quatro últimas por reuso), a **Central de Integrações**
 (D-231), a **revisão adversarial dela** (D-232 — sanitizador de erro nas cinco
 telas, uma lista de chave sensível com dois consumidores) e o **Hub de
 Configurações** (D-233 — sete seções numa viagem, o Hub não edita, aponta).
-Bateria da última: **570/570**, 29/29, 8/8, **33** embeds, 55, **19/19** (com
+Bateria da última: **573/573**, 29/29, 8/8, **33** embeds, 55, **19/19** (com
 os DOIS membros no seed).
 
 ---
@@ -254,10 +259,24 @@ ficaria vermelha se alguém reintroduzir a leitura sem filtro.
 
 ⚠️ **`/usuarios` continua lendo direto, de propósito** — ela lista membros.
 
-🔴 **A próxima pendência saudável (B) é o Aprendizado humano supervisionado**
-— "reusa a Base de Conhecimento (D-113); nada promovido sem humano". **O
-caminho NÃO foi medido**: ler o item do ROADMAP e as telas de
-`/atendimento/conhecimento` antes de escrever.
+✅ **D-235 pôs o filtro de Marca em `/curva-abc`**, com a curva recalculada
+DENTRO do recorte (conta e marca compõem). Marca é `skus.supplier_brand` —
+`skus.brand` guarda a categoria do UpSeller e diverge em 2.320 dos 3.554 SKUs.
+
+🔴 **A próxima tarefa é terminar os filtros de Marca**, com o caminho já medido:
+
+| tela | o que falta | tamanho |
+|---|---|---|
+| `/cobertura` | `p_supplier_brand` em `get_stock_coverage` e `get_stock_coverage_summary` (a segunda delega à primeira) | 2 RPCs |
+| `/vendas` | 6 RPCs, **cada uma chamada duas vezes** (período comparativo) | fatia própria |
+
+⚠️ **`/cobertura` NÃO leva filtro de conta**, e isso é regra do item, não
+esquecimento: estoque físico é da organização; Full é que é por conta.
+
+⚠️ **Ao mudar assinatura de RPC, varra o catálogo do Postgres, não só o
+código** — `get_sku_abc_curve` tinha dois chamadores dentro do banco e a
+mudança no meio da assinatura derrubou 6 testes (D-235, e a lição está em
+`LICOES.md`). Parâmetro novo no FIM mantém chamada posicional antiga válida.
 
 ⚠️ **Dívida menor, registrada para não virar terceira cópia:** `/saude`,
 `/sincronizacao` e `/skus/[skuId]` ainda carregam suas próprias cópias de

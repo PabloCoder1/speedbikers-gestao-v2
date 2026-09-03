@@ -4315,13 +4315,18 @@ describe("get_sku_abc_curve (D-058, Fase 5B)", () => {
       [CONTA_ABC, ORG_SB],
     );
 
+    // `brand` recebe de propósito um valor DIFERENTE de `supplier_brand`: é o
+    // estado real do Dev (2.320 dos 3.554 SKUs divergem, D-129/D-235), e é o
+    // que permite provar qual das duas colunas o filtro usa. `supplier_brand_source`
+    // vai junto porque `skus_supplier_brand_source_coherent` exige os dois ou
+    // nenhum: a marca sempre carrega de onde veio.
     const skus = await client.query<{ id: string }>(
-      `insert into public.skus (organization_id, sku, kind)
+      `insert into public.skus (organization_id, sku, kind, brand, supplier_brand, supplier_brand_source)
        values
-         ($1,'ABCTEST-alta-receita','PRODUTO'),
-         ($1,'ABCTEST-baixa-receita','PRODUTO'),
-         ($1,'ABCTEST-fora-da-janela','PRODUTO'),
-         ($1,'ABCTEST-com-full','PRODUTO')
+         ($1,'ABCTEST-alta-receita','PRODUTO','ABCCATEGORIA','ABCMARCA-A','DERIVED'),
+         ($1,'ABCTEST-baixa-receita','PRODUTO','ABCCATEGORIA','ABCMARCA-B','DERIVED'),
+         ($1,'ABCTEST-fora-da-janela','PRODUTO','ABCCATEGORIA','ABCMARCA-B','DERIVED'),
+         ($1,'ABCTEST-com-full','PRODUTO','ABCCATEGORIA','ABCMARCA-B','DERIVED')
        returning id`,
       [ORG_SB],
     );
@@ -4413,6 +4418,55 @@ describe("get_sku_abc_curve (D-058, Fase 5B)", () => {
 
     expect(rows).toHaveLength(1);
     expect(Number(rows[0]?.full_quantity)).toBe(42);
+  });
+
+  // ---- p_supplier_brand (D-235) ------------------------------------------
+
+  it("filtrar por marca RECALCULA a curva dentro dela — não é a fatia da marca na curva global", async () => {
+    // Sem filtro a curva é {alta 100.000, comFull 200, baixa 100}: 'com-full'
+    // fica com 0,2% e classe C. Filtrando por ABCMARCA-B o conjunto vira
+    // {comFull 200, baixa 100} — e 'com-full' passa a 66,67% e classe A.
+    //
+    // É a diferença entre as DUAS semânticas possíveis, e ela é gritante de
+    // propósito: se o filtro tivesse entrado depois da classificação (a
+    // alternativa que a migration descartou), estes números seriam 0,2% e C.
+    const semFiltro = await asUser<{ metric_share: string; abc_class: string }>(
+      ADMIN_SB,
+      `select * from public.get_sku_abc_curve('${ORG_SB}','${WINDOW_START}','${TODAY}') where sku_id='${skuComFullId}'`,
+    );
+    const comFiltro = await asUser<{ metric_share: string; abc_class: string; total_count: string }>(
+      ADMIN_SB,
+      `select * from public.get_sku_abc_curve('${ORG_SB}','${WINDOW_START}','${TODAY}',null,'faturamento',false,200,0,'ABCMARCA-B')
+         where sku_id='${skuComFullId}'`,
+    );
+
+    expect(semFiltro[0]?.abc_class).toBe("C");
+    expect(Number(semFiltro[0]?.metric_share)).toBeCloseTo(0.2, 1);
+
+    expect(comFiltro[0]?.abc_class).toBe("A");
+    expect(Number(comFiltro[0]?.metric_share)).toBeCloseTo(66.67, 1);
+    // Só os dois SKUs da marca com venda na janela entram na curva.
+    expect(Number(comFiltro[0]?.total_count)).toBe(2);
+  });
+
+  it("o filtro usa supplier_brand, NUNCA brand — a coluna que guarda a categoria", async () => {
+    // Os quatro SKUs do fixture têm brand='ABCCATEGORIA'. Se o filtro olhasse
+    // essa coluna, esta consulta devolveria a curva inteira.
+    const porCategoria = await asUser(
+      ADMIN_SB,
+      `select * from public.get_sku_abc_curve('${ORG_SB}','${WINDOW_START}','${TODAY}',null,'faturamento',false,200,0,'ABCCATEGORIA')`,
+    );
+
+    expect(porCategoria).toHaveLength(0);
+  });
+
+  it("marca sem SKU nenhum devolve curva vazia, não a curva inteira", async () => {
+    const inexistente = await asUser(
+      ADMIN_SB,
+      `select * from public.get_sku_abc_curve('${ORG_SB}','${WINDOW_START}','${TODAY}',null,'faturamento',false,200,0,'ABCMARCA-QUE-NAO-EXISTE')`,
+    );
+
+    expect(inexistente).toHaveLength(0);
   });
 
   it("anon não executa", async () => {

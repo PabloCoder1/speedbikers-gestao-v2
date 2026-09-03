@@ -212,7 +212,7 @@ Nenhuma funcionalidade concluída das Fases 0 a 6 deve ser removida ou reimpleme
 
 > Alinhamento (2026-08-27, a pedido do usuário): os 7 itens abertos abaixo NÃO são esquecimento nem bloqueio — são fila deliberada que ficou atrás da Fase 7/7B na priorização. Nenhum depende de decisão de produto pendente; qualquer um pode ser puxado quando o usuário priorizar. O próprio arquivo já registra: "Itens P1 e P2 podem continuar evoluindo incrementalmente".
 
-- [ ] Implementar filtros de Conta / Origem / Marca nas telas em que fizerem sentido, preservando a distinção entre estoque físico compartilhado e Full por conta.
+- [ ] Implementar filtros de Conta / Origem / Marca nas telas em que fizerem sentido, preservando a distinção entre estoque físico compartilhado e Full por conta. **PARCIAL em 2026-09-03 (D-235): `/curva-abc` ganhou o filtro de Marca** (já tinha o de Conta), com a curva **recalculada dentro do recorte** — mesma semântica que o filtro de conta já usava. Marca é `skus.supplier_brand`, nunca `skus.brand`: esta guarda a CATEGORIA do UpSeller (D-129) e diverge da marca real em **2.320 dos 3.554 SKUs**. **Origem segue FORA**, pelo mesmo critério: `is_imported` é medido como não confiável. **Falta, medido:** `/cobertura` (2 RPCs; sem filtro de conta de propósito — estoque físico é da organização) e `/vendas` (6 RPCs, cada uma chamada duas vezes pelo período comparativo).
 - [ ] Impedir mistura de SKU Nacional e Importado no mesmo pedido de compra.
 - [x] Criar fluxo de vinculação manual `Conta + MLB + variation_id? -> SKU` sem exigir `link_candidate` prévio — ✔ 2026-08-28 · D-119/D-117
 - [ ] Criar alias reutilizável `Fornecedor + código do produto -> SKU` quando um vínculo for confirmado.
@@ -476,6 +476,17 @@ Subfase incremental posterior às bases 5C/5D/6B. Não reabre seus marcos conclu
 - **Fora da primeira versão:** fornecedores inferidos, CNPJ/prazo fictício e escolha automática.
 
 ### Trilha 7C — Aprendizado humano/supervisionado do Copiloto — C
+
+> 🔴 **BLOQUEADA POR ADOÇÃO, não por código (medido em 2026-09-03, D-235).** A
+> Base de Conhecimento existe desde 28/08 com os quatro estados, RBAC e tela de
+> registro — e tem **0 entradas** e **0 templates**. Pelo produto foram enviadas
+> **4 respostas**, a última em 27/08; **0 atendimentos assumidos**. As 1.199
+> mensagens de saída e os 1.189 casos resolvidos vieram IMPORTADOS do Mercado
+> Livre: a operação responde no painel do ML, não aqui. Este item é "converter
+> **correções humanas** em conhecimento" — não há correção humana no produto
+> para converter, e o próprio ROADMAP já ordenava "depois de a Base ser
+> exercitada com uso real". **O que destrava é ato humano** (usar a Caixa de
+> Entrada e registrar conhecimento), não uma fatia de código.
 
 - **Objetivo/problema:** converter correções humanas úteis em conhecimento reutilizável sem a IA aprender sozinha.
 - **Reutiliza:** Base de Conhecimento Validada, seus estados, RBAC, auditoria e ferramentas determinísticas.

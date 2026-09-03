@@ -21,6 +21,18 @@ Cada linha nasceu de um erro real. A decisão que a gerou está em
   era outra. **`build` ANTES do `e2e`, sempre** — é por isso que ele está no
   meio do comando da bateria no HANDOFF, e não por enfeite.
 
+- **Chamador que vive DENTRO do banco não aparece em busca de código.** Ao
+  trocar a assinatura de `get_sku_abc_curve` (D-235), o `grep` por `apps/web`
+  e pelos testes disse "dois chamadores". Faltavam dois, e eles chamavam de
+  dentro do Postgres: `get_purchase_suggestions` e `get_sku_curation`. Seis
+  testes ficaram vermelhos com uma mensagem enganosa — o Postgres reclamava de
+  `get_sku_abc_curve` **dentro de um teste que chamava outra função**. Antes de
+  mudar assinatura, pergunte ao catálogo:
+  `select proname from pg_proc where prosrc like '%nome_da_funcao%'`.
+  E quando houver chamador posicional, **parâmetro novo no FIM** mantém as
+  chamadas antigas válidas (o default cobre o argumento que falta) — blast
+  radius zero, sem recriar função que a fatia não testa.
+
 - **O truncamento de 1.000 do PostgREST volta sempre.** D-131 corrompeu o
   estoque; D-183 achou um contador errado; D-193 achou mais dois cortes vivos
   no worker; D-194 achou um **na tela**, escondendo 10 das 19 marcas do

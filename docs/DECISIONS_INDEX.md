@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **232** (D-001 a D-234).
+Decisões registradas: **233** (D-001 a D-235).
 
 ## Por domínio
 
@@ -208,7 +208,7 @@ Decisões registradas: **232** (D-001 a D-234).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (13)
+### vendas/métricas (14)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -223,6 +223,7 @@ Decisões registradas: **232** (D-001 a D-234).
 - **D-157** — Metricas 5C de vendas: cancelamento sai do L1 de proposito, e a ressalva vira parte do card
 - **D-165** — Custos por pedido: as fontes da margem operacional persistidas, e NULL nunca vira zero
 - **D-227** — A aba Vendas: tres perguntas, um round trip, e a soma que precisou ser medida antes de ser somada
+- **D-235** — Marca na Curva ABC: a coluna certa, a semantica certa, e um chamador que so existia no banco
 
 ### worker/infra (48)
 

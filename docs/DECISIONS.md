@@ -5486,6 +5486,75 @@ E houve uma segunda, da mesma familia: deixei um `next dev` na porta 3000 e o Pl
 
 **Impacto:** `supabase/migrations/20260903183000_current_membership_rpc.sql`, `apps/web/lib/membership.ts`, `apps/web/e2e/seed.ts`, `packages/db/src/types.ts` (a mao, D-213), `packages/db/src/rls.integration.test.ts`, `docs/LICOES.md`, e as 29 telas e acoes migradas.
 
+## D-235 - Marca na Curva ABC: a coluna certa, a semantica certa, e um chamador que so existia no banco
+
+**Contexto:** a proxima tarefa registrada era **Trilha 7C (Aprendizado humano supervisionado)**, e ela esta **bloqueada por adocao, nao por codigo** — medido antes de escrever qualquer coisa:
+
+| | |
+|---|---|
+| `knowledge_entries` | **0** |
+| `reply_templates` | **0** |
+| respostas enviadas PELO PRODUTO | **4**, a ultima em 27/08 |
+| casos assumidos por humano no produto | **0** |
+| mensagens de saida (importadas do ML) | 1.199 |
+| atendimentos resolvidos | 1.189 |
+
+7C e "converter **correcoes humanas uteis** em conhecimento reutilizavel". **Nao ha correcao humana no produto para converter** — a operacao responde no painel do Mercado Livre. O proprio ROADMAP ja dizia a ordem: *"aprendizado supervisionado DEPOIS de a Base de Conhecimento ser exercitada com uso real"*. Construir a oferta agora seria pendura-la depois de uma acao que ninguem executa. Foi para ato humano; a fatia seguiu para o outro item aberto da categoria B.
+
+---
+
+**1. DUAS COLUNAS DE MARCA, E A OBVIA E A ERRADA.** Medido no Dev, elas divergem em **2.320 dos 3.554 SKUs**:
+
+| coluna | preenchida | o que contem |
+|---|---|---|
+| `skus.brand` | 83,0% | topo e **`MANETE`** — TIPO DE PECA — em 2.225 SKUs cuja marca real e `OFF RACER` |
+| `skus.supplier_brand` | **99,9%** | marcas de verdade, com procedencia (`MANUAL`/`DERIVED`) e normalizacao (`OFFRACER` -> `OFF RACER`) |
+
+**D-129 ja tinha registrado isso** ("`skus.brand` guarda a CATEGORIA do UpSeller e o importador a sobrescreve a cada planilha") — a medicao aqui confirmou uma decisao existente em vez de descobrir algo. Filtrar por `brand` daria resposta plausivel e errada, que e exatamente o motivo pelo qual o proprio item deixou a **Origem** de fora. E `supplier_brand` e a coluna que `replenishment_settings` ja usa, entao a Curva concorda com a Reposicao.
+
+**2. A SEMANTICA E A DECISAO INTEIRA.** Duas leituras possiveis, e o numero muda:
+
+- **(a) filtro na `base`** -> a curva ABC **dentro** da marca; participacoes somam 100% dela e as classes A/B/C sao refeitas ali;
+- **(b) filtro na `classificada`** -> onde os SKUs da marca **caem** na curva global.
+
+**(a)**, porque o filtro de CONTA ja escolheu (a) explicitamente ("o denominador sai do MESMO conjunto escopado"). Com (b), a MESMA tela significaria coisas diferentes conforme o filtro usado.
+
+**O teste acusa a alternativa, nao so aprova a escolhida** (D-197): no fixture, o SKU 'com-full' tem **0,2% e classe C** na curva global e **66,67% e classe A** filtrando pela marca dele. Se o filtro tivesse entrado depois da classificacao, os numeros seriam 0,2% e C. A distancia e proposital.
+
+Visto rodando: NAVETEC sai de 14,06% na curva global para **100%** dentro da propria marca, e conta+marca compoem ("recalculada dentro de Loja E2E e OFF RACER"). Marca inexistente da estado vazio, nao a curva inteira.
+
+**3. `exists`, NAO `join`, E O MOTIVO E MEDIDO.** A `base` nao junta `skus`; juntar so para filtrar mudaria o plano **tambem sem filtro**. Quente nos tres:
+
+| | tempo | buffers |
+|---|---|---|
+| hoje (sem o parametro) | 18,4 ms | 1.184 |
+| com o parametro, NULO | 18,9 ms | **1.184 — identico** |
+| filtrado por `OFF RACER` | **16,8 ms** | 1.371 |
+
+Sem filtro o `or` curto-circuita e o subplano some: a tela nao paga nada pelo filtro novo. (Os 728 ms da primeira medicao eram I/O frio — a comparacao honesta e quente contra quente.)
+
+---
+
+**4. O CHAMADOR QUE SO EXISTIA NO BANCO, E A CONVENCAO QUE CEDEU.**
+
+Coloquei `p_supplier_brand` onde a convencao de D-226 manda — entre os filtros e a paginacao. **A suite reprovou com 6 testes vermelhos, e a causa nao estava em TypeScript nenhum:** `get_sku_abc_curve` tem **dois chamadores dentro do proprio Postgres** — `get_purchase_suggestions` e `get_sku_curation` — e os dois chamam posicionalmente com 8 argumentos.
+
+O erro foi enganoso de proposito proprio: o Postgres reportou *"function get_sku_abc_curve ... does not exist"* **dentro de um teste que chamava `get_purchase_suggestions`**. Meu `grep` tinha varrido `apps/web` e concluido "dois chamadores"; faltava varrer `pg_proc`.
+
+**A saida foi mover o parametro para o FIM da assinatura.** Uma chamada de 8 argumentos continua casando com a funcao de 9 porque o nono tem default — **blast radius zero**, nenhuma das duas funcoes precisou ser recriada. Recriar duas funcoes grandes so para preservar a ordem dos argumentos trocaria uma convencao de leitura por risco em codigo que esta fatia nao testa. A excecao esta escrita na assinatura e no cabecalho, para nao virar mistério.
+
+**Licao, em `docs/LICOES.md`:** ao mudar assinatura de funcao, o `grep` tem de varrer o catalogo do Postgres — chamador que vive no banco nao aparece em busca de codigo.
+
+---
+
+**O QUE FICOU DE FORA, MEDIDO E RASTREADO** (nao como frase enterrada — a licao de D-234): `/cobertura` (2 RPCs, e sem filtro de conta de proposito: estoque fisico e da organizacao) e `/vendas` (**6 RPCs, cada uma chamada duas vezes** para o periodo comparativo). As duas estao no HANDOFF como item proprio.
+
+**Sem Playwright, desvio declarado:** a tela e leitura pura e os fluxos criticos de D-069 seguem sendo o criterio — mesmo tratamento de `/estoque` e `/estoque/movimentacoes`, que tambem tem filtro de marca e nao tem spec. A fiacao foi vista **rodando**, nos quatro estados (sem filtro, por marca, marca+conta, marca inexistente).
+
+**Verificacao:** **573/573** de integracao em banco recriado (570 + 3 novos), `check` 29/29 (18 casos em `abc-filters`, 5 novos), build 8/8, `check:embeds` 33, `check:waterfalls` 55, **19/19 Playwright**.
+
+**Impacto:** `supabase/migrations/20260903200000_abc_curve_supplier_brand.sql`, `apps/web/lib/abc-filters.ts`, `apps/web/lib/abc-filters.test.ts`, `apps/web/app/curva-abc/page.tsx`, `packages/db/src/types.ts` (a mao, D-213), `packages/db/src/rls.integration.test.ts`, `docs/LICOES.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:

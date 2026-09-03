@@ -12,6 +12,7 @@ import {
 
 const base = {
   accountSlug: null,
+  brand: null,
   criterion: ABC_CRITERIA[0],
   days: 90,
   onlyWithoutFull: false,
@@ -62,6 +63,27 @@ describe("critério e período", () => {
   });
 });
 
+describe("marca vinda da URL (D-235)", () => {
+  it("lê `marca`, apara espaço e trata vazio como ausência", () => {
+    expect(resolveAbcFilters({ marca: "OFF RACER" }).brand).toBe("OFF RACER");
+    expect(resolveAbcFilters({ marca: "  RT  " }).brand).toBe("RT");
+    expect(resolveAbcFilters({ marca: "" }).brand).toBeNull();
+    expect(resolveAbcFilters({ marca: "   " }).brand).toBeNull();
+    expect(resolveAbcFilters({}).brand).toBeNull();
+  });
+
+  it("marca desconhecida NÃO cai num default — vai ao banco e a curva volta vazia", () => {
+    // Diferente de critério e período, onde o default é o comportamento certo.
+    // Aqui "não existe SKU dessa marca" é uma resposta legítima, e inventar
+    // "todas" faria a tela mostrar a curva inteira dizendo que é de uma marca.
+    expect(resolveAbcFilters({ marca: "MARCA-QUE-NAO-EXISTE" }).brand).toBe("MARCA-QUE-NAO-EXISTE");
+  });
+
+  it("array na URL (`?marca=a&marca=b`) é ignorado, não concatenado", () => {
+    expect(resolveAbcFilters({ marca: ["OFF RACER", "RT"] }).brand).toBeNull();
+  });
+});
+
 describe("buildAbcHref", () => {
   it("defaults ficam fora da URL", () => {
     expect(buildAbcHref(base, {})).toBe("/curva-abc");
@@ -71,6 +93,19 @@ describe("buildAbcHref", () => {
     const atual = { ...base, accountSlug: "sbmotos", onlyWithoutFull: true };
 
     expect(buildAbcHref(atual, { days: 30 })).toBe("/curva-abc?conta=sbmotos&dias=30&semFull=1");
+  });
+
+  it("marca entra na URL como `marca` e convive com a conta (D-235)", () => {
+    // Conta e marca são recortes INDEPENDENTES e componíveis: o item pede os
+    // dois, e a curva é recalculada dentro da interseção.
+    const atual = { ...base, accountSlug: "sbmotos", brand: "OFF RACER" };
+
+    expect(buildAbcHref(atual, {})).toBe("/curva-abc?conta=sbmotos&marca=OFF+RACER");
+    expect(buildAbcHref(atual, { brand: null })).toBe("/curva-abc?conta=sbmotos");
+  });
+
+  it("trocar de marca volta para a página 1", () => {
+    expect(buildAbcHref({ ...base, brand: "RT", page: 4 }, { brand: "NAVETEC" })).toBe("/curva-abc?marca=NAVETEC");
   });
 
   it("trocar filtro volta para a página 1", () => {

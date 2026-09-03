@@ -24,10 +24,20 @@ const DEFAULT_PERIOD = 90;
 
 export interface AbcFilters {
   accountSlug: string | null;
+  /**
+   * `skus.supplier_brand`, NUNCA `skus.brand` (D-129/D-235): a segunda guarda
+   * a categoria do UpSeller e diverge da marca real em 2.320 dos 3.554 SKUs.
+   */
+  brand: string | null;
   criterion: AbcCriterion;
   days: number;
   onlyWithoutFull: boolean;
   page: number;
+}
+
+/** Mesma leitura de `stock-filters`: vazio e só-espaço viram nulo. */
+function readParam(raw: unknown): string | null {
+  return typeof raw === "string" && raw.trim() !== "" ? raw.trim() : null;
 }
 
 export function resolveAbcCriterion(raw: unknown): AbcCriterion {
@@ -51,6 +61,10 @@ export function resolveAbcPeriod(raw: unknown): number {
 export function resolveAbcFilters(query: Record<string, string | string[] | undefined>): AbcFilters {
   return {
     accountSlug: typeof query.conta === "string" && query.conta !== "" ? query.conta : null,
+    // Marca desconhecida NÃO cai num default: ela vai ao banco e a curva volta
+    // vazia, que é a resposta certa para "não há SKU dessa marca" — diferente
+    // do critério e do período, onde o default é o comportamento correto.
+    brand: readParam(query.marca),
     criterion: resolveAbcCriterion(query.criterio),
     days: resolveAbcPeriod(query.dias),
     // `semFull=1` liga; qualquer outra coisa desliga. A URL antiga usava a
@@ -67,6 +81,7 @@ export function buildAbcHref(current: AbcFilters, override: Partial<AbcFilters>)
     "/curva-abc",
     {
       conta: next.accountSlug,
+      marca: next.brand,
       // Defaults ficam FORA da URL: `/curva-abc` limpo continua sendo a mesma
       // página de sempre, e o link compartilhado só carrega o que foi escolhido.
       criterio: next.criterion.key === ABC_CRITERIA[0].key ? null : next.criterion.key,

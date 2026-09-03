@@ -4534,6 +4534,7 @@ export type Database = {
           p_offset?: number
           p_only_without_full?: boolean
           p_organization_id: string
+          p_supplier_brand?: string | null
         }
         Returns: {
           abc_class: string

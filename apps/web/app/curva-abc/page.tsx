@@ -115,16 +115,31 @@ export default async function CurvaAbcPage({
   const dateTo = now.toISOString().slice(0, 10);
   const dateFrom = new Date(now.getTime() - (filters.days - 1) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-  const { data, error } = await supabase.rpc("get_sku_abc_curve", {
+  // A lista de marcas vem do BANCO, nunca das linhas da página (D-194):
+  // montá-la a partir do resultado paginado fazia 10 das 19 marcas nunca
+  // aparecerem no filtro. Sai no MESMO round trip da curva — as duas dependem
+  // da organização e não dependem uma da outra.
+  const [curva, brandsResult] = await Promise.all([
+    supabase.rpc("get_sku_abc_curve", {
     p_organization_id: organizationId,
     p_date_from: dateFrom,
     p_date_to: dateTo,
     p_ml_account_id: selectedAccount?.id ?? null,
     p_criterion: filters.criterion.key,
     p_only_without_full: filters.onlyWithoutFull,
+    // Entra na MESMA ponta que a conta: a curva é recalculada DENTRO da marca
+    // (participações somam 100% dela), não é a fatia da marca na curva global.
+    p_supplier_brand: filters.brand,
     p_limit: PAGE_SIZE,
     p_offset: (filters.page - 1) * PAGE_SIZE,
-  });
+    }),
+    supabase.rpc("get_supplier_brands", { p_organization_id: organizationId }),
+  ]);
+
+  const { data, error } = curva;
+  // Falha da lista não fica muda: filtro vazio por erro é indistinguível de
+  // "não há marca", e a tela mostraria o segundo dizendo o primeiro (D-194).
+  const brands = (brandsResult.data ?? []).map((r) => r.supplier_brand);
 
   const rows = (data ?? []) as AbcRow[];
   const first = rows[0];
@@ -132,13 +147,21 @@ export default async function CurvaAbcPage({
   const windowInfo = summarizeAbcWindow(filters.page, totalCount, rows.length);
   const formatValue = filters.criterion.format === "currency" ? formatCurrency : formatCount;
 
+  // Conta e marca são recortes independentes e componíveis, e a frase precisa
+  // dizer isso numa só oração: "recalculada dentro de X, recalculada dentro de
+  // Y" saiu da primeira versão e lia mal na tela. "Recalculada" é a palavra
+  // certa e não é enfeite — as classes A/B/C são refeitas DENTRO do recorte,
+  // não é a fatia do recorte na curva global.
+  const recortes = [selectedAccount?.label, filters.brand].filter((r): r is string => r !== undefined && r !== null);
+  const escopo = recortes.length === 0 ? ", consolidado" : `, recalculada dentro de ${recortes.join(" e ")}`;
+
   return (
     <Shell>
       <h1 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.375rem" }}>Curva ABC</h1>
 
       <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
         Últimos {filters.days} dias ({dateFrom} a {dateTo}), por {filters.criterion.label.toLowerCase()}
-        {selectedAccount === null ? ", consolidado" : `, recalculada dentro de ${selectedAccount.label}`}. Classe A
+        {escopo}. Classe A
         concentra até 80% do acumulado, B até 95%, C o resto — SKU sem venda no período não entra na curva.
         {first !== undefined && (
           <>
@@ -161,6 +184,18 @@ export default async function CurvaAbcPage({
               href={buildAbcHref(filters, { accountSlug: account.slug })} active={filters.accountSlug === account.slug}
             >
               {account.label}
+            </FilterPill>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", alignItems: "center" }}>
+          <span style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)", minWidth: "5rem" }}>Marca</span>
+          <FilterPill href={buildAbcHref(filters, { brand: null })} active={filters.brand === null}>
+            Todas
+          </FilterPill>
+          {brands.map((brand) => (
+            <FilterPill key={brand} href={buildAbcHref(filters, { brand })} active={filters.brand === brand}>
+              {brand}
             </FilterPill>
           ))}
         </div>
