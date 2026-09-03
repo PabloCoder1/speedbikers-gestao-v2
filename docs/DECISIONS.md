@@ -5050,6 +5050,41 @@ O p95 do webhook caiu 39% (1.306 → 794 ms), o que e consistente com menos idas
 
 **Impacto:** `packages/db/src/rls.integration.test.ts`.
 
+## D-222 - O expurgo do entulho de webhook: limpeza unica, nao politica de retencao
+
+**Contexto:** ultimo item aberto do HANDOFF, autorizado pelo usuario ("pode apagar") depois de D-221 ter medido o alvo e recusado decidir sozinho — apagar 278 mil linhas e irreversivel, e o beneficio e disco contra um teto que nem o MCP nem a API expoem.
+
+**A distincao que decidiu o desenho:** D-221 mediu o "88% sem trabalho" em tres janelas e mostrou que ele **ja existia com as 4 contas saudaveis**, antes do incidente de D-217 — era o defeito que **D-179 matou na origem**, e o ritmo caiu de 2.664 para ~93 linhas/h. Logo, o acumulado e **massa de um defeito morto, nao fluxo corrente**. Massa se limpa uma vez; nao exige mecanismo permanente de escrita destrutiva numa tabela append-only.
+
+**O recorte, com as quatro condicoes:**
+
+| condicao | por que |
+|---|---|
+| `job_type = 'sync.webhook.received'` | nenhum outro tipo e tocado |
+| `status = 'done'` | **falha nunca sai** — falha e o que se investiga |
+| `processed = 0` | a linha registra "chegou notificacao e nao havia o que fazer" |
+| `started_at` < 2026-09-02 20:53 UTC | o instante em que D-179 entrou no ar; nada do sistema corrigido e apagado |
+
+Medido antes de escrever: **278.371 linhas (82,8% da tabela, ~106 MB)**. Sobrevivem 32.102 de webhook, 2.249 delas pos-deploy.
+
+**A data fixa e proposital, e e o oposto da armadilha do HANDOFF.** *"Fixture com data fixa apodrece"* vale para teste, que roda de novo todo dia. Esta migration roda **uma vez** e esta ancorada num evento real e datado — uma janela relativa (`now() - interval`) e que estaria errada, porque apagaria coisa diferente conforme o dia em que rodasse.
+
+**O risco real nao e apagar demais: e sair com o trigger desligado.** `job_runs` recusa DELETE ate para o dono, entao a migration desliga `job_runs_no_delete`, apaga e religa. Sair dali com a garantia desativada trocaria 106 MB por uma invariante perdida, **em silencio**. Tres defesas, nesta ordem:
+
+1. a propria migration afirma `tgenabled = 'O'` no fim e **falha** se nao estiver;
+2. o teste de integracao de **D-221** entra pela porta do dono depois de TODAS as migrations — conferido: `job_runs_no_delete = O`, `job_runs_no_update = O`, e 547/547;
+3. as duas asserçoes de sobrevivente ("sobrou webhook COM trabalho", "sobrou webhook pos-deploy") pegam um recorte largo demais.
+
+**As asserçoes de sobrevivente sao condicionais, e isso NAO as esvazia.** Em banco recriado (`db reset`, CI) `job_runs` nasce vazia, e exigir sobrevivente ali derrubaria a migration por motivo falso. Ficam sob `if exists (select 1 from public.job_runs)` — e se o recorte tivesse apagado webhook demais, os outros `job_type` continuariam na tabela, o `exists` seria verdadeiro e as checagens acusariam. **A condicao nao cobre o caso que interessa; ela cobre so o banco vazio.**
+
+**Sem `VACUUM FULL`:** ele devolveria os 106 MB ao sistema de arquivos, mas pede lock exclusivo. O espaco fica reutilizavel pelo proprio crescimento (~4 mil linhas/dia) — a tabela nao volta a crescer em disco tao cedo.
+
+**O que NAO foi criado, e e o ponto:** nenhum caminho permanente de expurgo, nenhum RPC de retencao, nenhum particionamento. O ritmo atual nao justifica, e a medicao e que diz isso — a mesma disciplina de D-198 ("resultado: nao mexer") e D-208 ("infraestrutura prematura para um nao-problema").
+
+**Verificacao:** `db reset` com as 131 migrations, **547/547** de integracao, os dois triggers conferidos em `O` depois da migration, `check` 29/29, build 8/8, `check:embeds` 33/33, 13/13 Playwright.
+
+**Impacto:** `supabase/migrations/20260903120000_job_runs_expurgo_unico.sql`.
+
 ## Como adicionar nova decisao
 
 Registrar:

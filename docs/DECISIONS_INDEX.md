@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **219** (D-001 a D-221).
+Decisões registradas: **220** (D-001 a D-222).
 
 ## Por domínio
 
@@ -112,7 +112,7 @@ Decisões registradas: **219** (D-001 a D-221).
 - **D-194** — O filtro de marcas escondia 10 das 19, e eu tinha chamado isso de cosmetico
 - **D-195** — O waterfall que se paga em toda tela estava no cabecalho, e a varredura quase nao olhou la
 
-### mercado-livre (37)
+### mercado-livre (38)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -151,6 +151,7 @@ Decisões registradas: **219** (D-001 a D-221).
 - **D-179** — Topico de webhook sem consumidor deixa de virar Cloud Task
 - **D-203** — O 429 do snapshot de visitas e real, e o dano que eu registrei nao era
 - **D-220** — O caminho de pedidos, enfim medido: 17 a 28x na janela, e ZERO no webhook
+- **D-222** — O expurgo do entulho de webhook: limpeza unica, nao politica de retencao
 
 ### outros (37)
 
