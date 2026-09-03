@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **235** (D-001 a D-237).
+Decisões registradas: **236** (D-001 a D-241).
 
 ## Por domínio
 
@@ -102,9 +102,8 @@ Decisões registradas: **235** (D-001 a D-237).
 - **D-173** — Central Full: o GRAO do Full estava errado em duas leituras, e isso aparecia como fila de trabalho falsa
 - **D-204** — Tres definicoes de "Full atual", e as tres devolviam o mesmo numero
 - **D-236** — Marca na Cobertura: a licao de D-235 aplicada ANTES do erro, e uma coluna que NAO segue o filtro
-- **D-237** — Marca em /vendas: o filtro entra, e o que nao tem resposta por marca volta NULL
 
-### interface (16)
+### interface (17)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -122,6 +121,7 @@ Decisões registradas: **235** (D-001 a D-237).
 - **D-224** — O Dashboard de SKU encolhe de 11 abas para 9, e as duas que saem tem motivo
 - **D-226** — A aba Precos sai por reuso, e o barato so apareceu porque a forma obvia foi MEDIDA
 - **D-234** — O defeito que D-119 achou, adiou e ninguem colheu: 26 telas quebravam no segundo usuario
+- **D-241** — A frente visual como varredura: tres telas mortas e uma coluna fantasma que build verde nao pegava
 
 ### mercado-livre (39)
 
@@ -210,7 +210,7 @@ Decisões registradas: **235** (D-001 a D-237).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (14)
+### vendas/métricas (15)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -226,6 +226,7 @@ Decisões registradas: **235** (D-001 a D-237).
 - **D-165** — Custos por pedido: as fontes da margem operacional persistidas, e NULL nunca vira zero
 - **D-227** — A aba Vendas: tres perguntas, um round trip, e a soma que precisou ser medida antes de ser somada
 - **D-235** — Marca na Curva ABC: a coluna certa, a semantica certa, e um chamador que so existia no banco
+- **D-237** — Marca em /vendas: o filtro entra, e o que nao tem resposta por marca volta NULL
 
 ### worker/infra (48)
 

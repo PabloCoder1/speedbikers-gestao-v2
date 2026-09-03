@@ -5662,6 +5662,34 @@ E estava certa, e **insuficiente**: `pg_proc` so enxerga dentro do banco. **O Co
 
 **Impacto:** `supabase/migrations/20260903190307_sales_supplier_brand.sql`, `apps/web/app/vendas/{page,sales-chart}.tsx`, `apps/api/src/copilot.ts` + teste, `packages/db/src/types.ts` (a mao, D-213), `packages/db/src/rls.integration.test.ts`, `docs/METRICS.md`.
 
+## D-241 - A frente visual como varredura: tres telas mortas e uma coluna fantasma que build verde nao pegava
+
+**Contexto:** as fatias D0-D4 da frente visual (registradas em `docs/DESIGN_IMPLEMENTATION.md`, que e a memoria daquela frente) sao de aparencia. Mas trocar a moldura e abrir tela por tela renderizada funcionou como **varredura de integridade** e achou quatro defeitos funcionais que nenhuma suite pegava. Esta entrada existe porque eles nao sao decisoes de design: sao de engenharia, e quem procurar "por que existe `check:server-actions`" vai procurar aqui.
+
+**1. Dois modulos `"use server"` exportando CONSTANTE, e as duas telas correspondentes mortas.** O contrato do Next e que todo export de um modulo `"use server"` seja funcao assincrona — o bundler troca cada um por uma referencia de servidor, entao a constante chega ao componente cliente como essa referencia e `.map(...)` deixa de existir. **`build`, `typecheck` e `lint` passam.** Classe D-131: nao quebra, mente.
+
+  - `/atendimento/conhecimento` quebrava SEMPRE (o formulario renderiza incondicionalmente). Ninguem tinha visto porque nada no menu antigo apontava para la — so o cabecalho da Caixa de Entrada.
+  - `/sugestoes` quebrava SO COM DADO. Com a tabela vazia a linha nunca renderiza. Provado inserindo uma sugestao no banco local: 200 virou 500. Latente, e pior por isso — a tela funciona ate o primeiro usuario usa-la.
+
+  Corrigidas movendo os valores para um `constants.ts` irmao. A varredura perguntou se eram as unicas: 17 modulos `"use server"` no app, e eram exatamente esses dois.
+
+**2. O guarda: `apps/web/scripts/check-server-actions.mjs`**, no CI ao lado do `check:waterfalls`, no mesmo padrao. **Provado contra o codigo de antes (D-197):** reprova com saida 1 na forma antiga e passa na nova. Ele diz tambem o que NAO pega — `export { X }` no fim do arquivo e `export * from`, formas que este repositorio nao usa hoje — porque silencio nao e garantia.
+
+**3. A Home pedia uma coluna que nao existe.** `app/page.tsx` contava notificacoes com `.select("id")` em `notification_recipients` — tabela cuja chave e **composta** `(notification_id, user_id)` e que **nao tem coluna `id`**. O PostgREST recusava e o card mostrava "Nao foi possivel carregar" desde que existe. **Nunca funcionou.** Ninguem viu porque D-067 manda falha aparecer como "—" em vez de zero: a tela estava CERTA em nao fingir um numero, e o "—" passa por discricao em vez de defeito. `components/shell.tsx` escapou por usar `*`, que expande so para as colunas concedidas.
+
+  Guardado por `apps/web/e2e/home.spec.ts`, e a assercao que vale e a **negativa**: nenhum card pode dizer "Nao foi possivel carregar". Pega a proxima coluna errada em qualquer um dos seis, sem precisar saber qual. Provado contra o codigo de antes: com `.select("id")` de volta, reprova.
+
+**4. Ruptura nao gera acao, e o motor de atencao nao sabe disso.** O brief da Home poe "SKUs Curva A em ruptura" como PRIMEIRO exemplo de critico. O motor emite tres tipos — `venda_anomala`, `reclamacoes_recorrentes`, `republicacao` — e nenhum e ruptura. Enquanto a lacuna nao fechar, a Home le `get_stock_coverage_summary` direto, com `// fila-justificada:` porque essa funcao exige `p_organization_id` e cria a unica ida em serie da tela. **A lacuna fica registrada, nao contornada em silencio.**
+
+**Duas licoes de ambiente local**, que custaram uma execucao cada e que a de `docs/DECISIONS.md` sobre GoTrue nao cobria:
+
+  - **Servidor de dev na porta 3000 faz a suite Playwright inteira falhar no login.** `playwright.config.ts` tem `reuseExistingServer` fora do CI, entao ele reusa o servidor de DEV — e o dev server do Next recusa origem `127.0.0.1` (que e o `baseURL` da suite) com **403**, enquanto `localhost` passa. O sintoma nao parece login: a URL para em `/login?` sem alerta de erro. Pare o preview antes de rodar e2e.
+  - **Sem servidor de dev, o Playwright sobe `next start`, que serve o ULTIMO BUILD.** Corrigir o fonte e rodar a suite sem `pnpm run build` testa o codigo anterior. Custou um diagnostico inteiro contra uma correcao que ja estava certa no disco.
+
+**Verificacao:** `check` 29/29, build 8/8, integracao **582/582** em banco recriado, **20/20 Playwright**, `check:waterfalls` 55, `check:server-actions` 17, `docs:check`. Alem disso, medido no navegador: **28/28 links do menu resolvem** e cada um marca exatamente a si mesmo como secao atual; a pagina nao rola na horizontal em 1440/1100/860/700px; e o passo branco de D2 saiu **16/16 fotografias byte a byte identicas**.
+
+**Impacto:** `apps/web/app/page.tsx`, `apps/web/components/{shell,nav}.tsx`, `apps/web/app/globals.css`, `apps/web/app/atendimento/conhecimento/{actions.ts,constants.ts,new-knowledge-form.tsx}`, `apps/web/app/sugestoes/{actions.ts,constants.ts,suggestion-row.tsx}`, `apps/web/scripts/check-server-actions.mjs`, `apps/web/e2e/{home,login}.spec.ts`, `.github/workflows/ci.yml`, `docs/DESIGN_IMPLEMENTATION.md`, mais 16 arquivos do passo branco de D2.
+
 ## Como adicionar nova decisao
 
 Registrar:

@@ -226,6 +226,8 @@ branco embutido.
 | Aba Tráfego no SKU | visita é medida por `item_id`; o dono é o Dashboard do Anúncio | D-224 |
 | "Enviar X unidades ao Full" | sem política logística defensável | auditoria corretiva do próprio Figma, item 6 |
 | Receita líquida | nome vetado; existe margem operacional observada | METRICS 5C.1 |
+| Variação percentual entre períodos na Home | `variacao_percentual_periodo` está pendente em METRICS 5.4, e D-023 proíbe número sintetizado sem `metric_definitions` — a tela mostra os dois valores lado a lado | D-023 |
+| "Faturamento hoje" na Home | `/vendas` já tem o bloco "Hoje" com o aviso de dia parcial; repetir seria dois donos do mesmo dado com o mesmo aviso | D-224 |
 | Seletor de organização na sidebar | não há segunda organização, e `lib/membership.ts` **nomeia** esse estado em vez de escolher uma | D-232 |
 | Central de Ajuda | não existe | — |
 | Menu de perfil | esconderia o "Sair" atrás de um dropdown que não foi desenhado | — |
@@ -276,8 +278,8 @@ que ele renderiza.**
 | D2 | Shell + o passo branco (superfícies declaram fundo) | **CONCLUÍDO** |
 | — | O passo cinza (`--sb-ground` no `<main>`) | fila, com pré-requisitos medidos |
 | D3 | Moldura: sidebar vertical, grupos e seção atual | **CONCLUÍDO** |
-| D4 | Home | próximo |
-| D5 | Vendas | fila |
+| D4 | Home orientada à atenção | **CONCLUÍDO** |
+| D5 | Vendas | próximo |
 | D6 | Produtos | fila |
 | D6–D10 | Dashboard de SKU (fundação + 4 pares de abas) | fila |
 | D11–D12 | Anúncios (listagem, depois dashboard em lotes) | fila |
@@ -290,49 +292,49 @@ que ele renderiza.**
 
 ## Última fatia concluída
 
-**D3 — a moldura.** Sidebar escura à esquerda com os cinco grupos do Figma,
-topbar com busca/notificações/usuário/sair, e a seção atual marcada — em cor
-**e** em `aria-current="page"`, a mesma doutrina de `components/filter-pill.tsx`.
-`components/nav.tsx` é o único client component novo, e existe por um motivo
-só: "destacar seção atual" exige a rota atual, e o App Router não a entrega a um
-Server Component. As quatro leituras em `Promise.all` do Shell (D-195) não foram
-tocadas.
+**D4 — Home orientada à atenção.** O brief pede cards priorizados por
+severidade, com explicação e ação (`speed-bikers-design.md`, seção 10). A
+severidade **não foi inventada**: `actions.severity` é coluna real com CHECK em
+`baixa|media|alta`, e ruptura vem de `get_stock_coverage_summary`, a mesma
+função que `/cobertura` usa no cabeçalho.
 
-**Contraste medido antes de copiar**, contra o ponto mais claro do gradiente que
-o Figma declara (`#161b68`, o pior caso) e contra o navy do app: item de menu
-12,16x / 13,63x, rótulo de grupo 8,18x / 9,16x, item ativo (navy sobre o amarelo
-da marca) 13,07x. Passa com folga em qualquer ponto — por isso a sidebar aqui é
-navy chapado, e não gradiente: o gradiente não muda o veredito e o brief pede
-"sem excesso de gradientes".
+Seis cards em três degraus de ordem — o que **falhou** primeiro ("não sei" é
+mais urgente que qualquer número), depois o que **tem** número por severidade,
+e só então o que está **limpo**. A primeira versão ordenava só por severidade e
+a tela renderizada mostrou o erro: um crítico zerado ficava à frente de um
+importante com 1. Zero não pede atenção, ainda que a categoria seja grave.
 
-**Duas telas quebradas, achadas porque o menu novo passou a apontar para elas.**
-Uma varredura dos 28 links encontrou duas HTTP 500, ambas da mesma causa: um
-módulo `"use server"` exportando uma **constante**. O contrato do Next é que
-todo export de um módulo assim seja função assíncrona — a constante chega ao
-componente cliente como referência de servidor, e `.map(...)` não existe.
-`build`, `typecheck` e `lint` passam; a tela morre em runtime (classe D-131).
+**Nada some quando é zero.** Um card zerado é a diferença entre "medi e está
+limpo" e "não medi" — perde a cor de severidade e ganha o rótulo "Limpo", mas
+fica. E um card que falhou não anuncia severidade: dizer "Crítico" sobre um
+número que não foi lido é afirmar o que não se sabe.
 
-- `/atendimento/conhecimento` quebrava **sempre**. Nada no menu antigo apontava
-  para lá — só o cabeçalho da Caixa de Entrada.
-- `/sugestoes` quebrava **só com dado**. Com a tabela vazia a linha nunca
-  renderiza. Provado inserindo uma sugestão: 200 vira 500.
+**Três achados funcionais**, todos registrados em `docs/DECISIONS.md` (D-241):
 
-Corrigidas movendo os valores para um `constants.ts` irmão, e guardadas por
-`apps/web/scripts/check-server-actions.mjs`, no CI ao lado do
-`check:waterfalls`. O guarda foi provado contra o código de antes: reprova com
-saída 1, e passa depois.
+1. **O contador de notificações da Home nunca funcionou.** Pedia `.select("id")`
+   em `notification_recipients` — tabela cuja chave é composta
+   `(notification_id, user_id)` e que **não tem coluna `id`**. Ninguém viu
+   porque D-067 manda falha aparecer como "—", e um "—" passa por discrição em
+   vez de defeito.
+2. **Ruptura não gera ação.** O motor emite `venda_anomala`,
+   `reclamacoes_recorrentes` e `republicacao` — e o primeiro exemplo de crítico
+   do brief é ruptura. A lacuna fica registrada; enquanto isso a Home lê a
+   cobertura direto, com a ida em série declarada.
+3. **Duas armadilhas locais de e2e**, com o mecanismo: servidor de dev na porta
+   3000 faz o Playwright reusá-lo e o Next recusa `127.0.0.1` com 403 (a suíte
+   morre no login sem parecer login); e sem servidor de dev o Playwright sobe
+   `next start`, que serve o **último build** — corrigir o fonte sem buildar
+   testa o código anterior.
 
-**Verificação:** 28/28 links do menu resolvem e cada um marca exatamente a si
-mesmo como seção atual; em 1440/1100/860/700px a **página** nunca rola na
-horizontal (só a tabela, dentro de si) — é o que o `min-width: 0` na coluna de
-conteúdo promete; 273 unitários, 582 de integração em banco recriado, 19 e2e,
-`check` 29/29, `build` 8/8, `check:waterfalls`, `check:server-actions`,
-`docs:check`.
+**Verificação:** `check` 29/29, build 8/8, integração 582/582 em banco
+recriado, **20/20 Playwright** (o novo `e2e/home.spec.ts` afirma o negativo —
+nenhum card pode dizer "Não foi possível carregar" — e foi provado contra o
+código de antes), `check:waterfalls`, `check:server-actions`, `docs:check`.
 
 ## Próxima fatia segura
 
-**D4 — Home.** A tela mais curta do app (quatro cartões e um link), agora dentro
-de uma moldura estável. É onde o "cartão de atenção" do Figma
-(`.attention-card`, faixa esquerda de 4px na cor do estado) encontra os quatro
-números que a Home já lê — e onde se decide se o cartão de diagnóstico do
-`DesignSystem.tsx` vira componente real ou fica sendo padrão inline.
+**D5 — Vendas.** A tela mais densa do app e a que o brief detalha mais
+(`speed-bikers-design.md`, seção 11). Ela já tem filtros salvos, recorte por
+marca com contrato NULL (D-237), gráfico que recusa em vez de plotar zero, e o
+bloco de margem — nada disso pode regredir. É a primeira fatia em que o
+`.kpi-strip` do Figma encontra um bloco de KPIs real e grande.
