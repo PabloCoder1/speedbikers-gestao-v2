@@ -5395,6 +5395,38 @@ A unidade passou a ser **o maior intervalo observado em 7 dias**, com a escada j
 
 **Impacto:** `apps/web/lib/sanitize.ts` (novo), `apps/web/lib/membership.ts` (novo), `apps/web/components/state-pill.tsx` (novo), `apps/web/components/table-styles.ts` (novo), `packages/observability/src/logger.ts`, `apps/web/lib/labels.ts`, `apps/web/lib/sync-health.ts`, `apps/web/lib/integrations.ts`, e as telas `/integracoes`, `/contas`, `/importacoes`, `/saude`, `/sincronizacao`.
 
+## D-233 - Hub de Configuracoes: a resposta e APONTAR, e o que torna isso seguro e o Hub nao saber editar
+
+**Contexto:** o item "Administracao -> Configuracoes" do ROADMAP deixava a decisao em aberto — **embutir** cada configuracao numa tela unica, ou **apontar** para a tela dona de cada uma.
+
+**A resposta e apontar, e a razao nao e preguica: e D-224.** Um dado, um dono. Embutir significaria um segundo formulario para o mesmo campo, com uma segunda validacao que diverge da primeira no dia em que uma das duas mudar. `lib/settings-hub.ts` **nao sabe editar nada** — recebe uma linha, devolve sete secoes com resumo, quem altera e para onde ir. **Zero copia divergente porque nao ha copia.**
+
+**Uma viagem, nao sete.** `get_settings_overview` responde "o que existe e quanto" para as sete secoes numa chamada so, com as 16 contagens feitas no banco (D-185: o custo e a viagem, nao a linha). `security invoker`, entao cada subselect passa pelas policies que ja existem — e os campos `*_mine` sao **os meus**, nao os da organizacao, porque `notification_preferences` e `saved_filters` sao por usuario. Isso e o que a tela quer dizer, nao um efeito colateral.
+
+**Zero nao e ausencia.** A funcao devolve **sempre uma linha**, mesmo com tudo vazio, e a tela separa `nao_configurado` (contagem zero, sabemos que nao ha) de `indisponivel` (a leitura falhou, nao sabemos). Organizacao de que o chamador nao e membro devolve nome NULL e zeros — **nao erro** —, mesmo contrato de `get_sku_dashboard`. Sem essa separacao o Hub estamparia "nao configurado" para quem so nao tem permissao de ver.
+
+**"IA / Copiloto" fica `nao_editavel`, e isso e informacao.** O teto de gasto e `AI_MONTHLY_BUDGET_USD`, variavel do worker definida no deploy (D-100). O Hub diz *"Ninguem pela interface"* em vez de esconder a secao ou inventar um formulario que nao existe — a mesma disciplina de "nunca verde nao verificavel" de D-231.
+
+---
+
+**"QUEM ALTERA" E COPIA DAS POLICIES, E COPIA APODRECE — ENTAO TEM GUARDA.**
+
+Cada secao afirma quem pode escrever ("ADMIN e GESTOR", "cada usuario edita so as proprias"). Isso e texto na tela **espelhando SQL noutro arquivo**: no dia em que uma policy mudar, o Hub passa a mentir sobre permissao — e mentir sobre permissao e pior do que nao dizer nada.
+
+O teste de integracao `hub de configuracoes: quem altera bate com as policies (D-233)` le `pg_policy` direto e confere as frases **contra o `pg_get_expr` das policies reais**, a cada CI:
+
+- `replenishment_settings`, `reply_templates`, `knowledge_entries` -> escrita cita `'ADMIN'` **e** `'GESTOR'` (com a excecao explicita da sugestao `SUGERIDO`, que qualquer membro insere);
+- `ml_accounts` e `organization_members` -> escrita cita `'ADMIN'` e **nao** cita `'GESTOR'`;
+- `organizations` -> **nenhuma policy de escrita**, que e o que sustenta a frase "nome e slug: sem tela, nao editavel na interface".
+
+O comentario em `settings-hub.ts` diz isso na cara: *"o teste e quem mantem estas frases verdadeiras — nao este comentario"*.
+
+**Uma armadilha de teste que custou uma rodada, e nao era da tela.** O spec falhava em modo estrito com dois resultados para `getByRole("region", { name: "Mercado Livre" })`. Nao era ambiguidade da pagina: **`getByRole` casa nome por SUBSTRING**, e existem dois cards — `Mercado Livre` e `Webhook do Mercado Livre`. `exact: true` prende o locator no card certo. A licao e a de sempre: o teste vermelho descrevia o locator, nao o produto.
+
+**Verificacao:** `check` 29/29, build 8/8, **566/566** de integracao em banco recriado (inclui os dois casos de paridade com `pg_policy`), `check:embeds` 34/34, `check:waterfalls` 55, **19/19 Playwright**. A RPC foi ensaiada no Dev em transacao revertida antes de existir: os 16 campos bateram com as contagens feitas a mao na mesma sessao.
+
+**Impacto:** `supabase/migrations/20260903160535_settings_overview_rpc.sql`, `apps/web/lib/settings-hub.ts`, `apps/web/lib/settings-hub.test.ts`, `apps/web/app/configuracoes/page.tsx`, `apps/web/e2e/configuracoes.spec.ts`, `packages/db/src/types.ts` (a mao, D-213), `packages/db/src/rls.integration.test.ts`, `apps/web/components/shell.tsx`.
+
 ## Como adicionar nova decisao
 
 Registrar:

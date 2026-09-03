@@ -4414,6 +4414,31 @@ export type Database = {
       // NUNCA marca argumento de RPC como nulo, e os argumentos abaixo
       // aceitam NULL de verdade (e o valor que significa "sem filtro" --
       // ou, nos obrigatorios, que carrega significado proprio).
+      get_settings_overview: {
+        Args: { p_organization_id: string }
+        Returns: {
+          // CORRECAO MANUAL (classe D-133): o gerador nao enxerga nulidade de
+          // coluna de RPC. Nome e slug sao NULL para organizacao que a RLS
+          // esconde; os dois campos da regra geral de notificacao sao NULL
+          // quando o usuario nao tem regra geral (D-233).
+          knowledge_entries: number
+          knowledge_validated: number
+          members_admin: number
+          members_total: number
+          ml_accounts_connected: number
+          ml_accounts_total: number
+          notification_global_enabled: boolean | null
+          notification_global_min_severity: string | null
+          notification_prefs_mine: number
+          organization_name: string | null
+          organization_slug: string | null
+          replenishment_brand: number
+          replenishment_default: number
+          replenishment_sku: number
+          reply_templates: number
+          saved_filters_mine: number
+        }[]
+      }
       get_supplier_brands: {
         Args: { p_organization_id: string }
         Returns: {

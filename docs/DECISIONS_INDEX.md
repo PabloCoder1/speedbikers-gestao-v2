@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **230** (D-001 a D-232).
+Decisões registradas: **231** (D-001 a D-233).
 
 ## Por domínio
 
@@ -162,7 +162,7 @@ Decisões registradas: **230** (D-001 a D-232).
 - **D-222** — O expurgo do entulho de webhook: limpeza unica, nao politica de retencao
 - **D-230** — O snapshot do Full morreu no dia em que a escrita passou a abortar, e a causa era dois anuncios com um estoque
 
-### outros (37)
+### outros (38)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -201,6 +201,7 @@ Decisões registradas: **230** (D-001 a D-232).
 - **D-212** — A conta ganha autor, e o caminho revelou o que D-210 tinha quebrado sem notar
 - **D-213** — Como atualizar o contrato gerado sem perder as correcoes manuais
 - **D-218** — A retencao nao era o problema: 335 mil linhas custavam 1,1 s por causa de UMA consulta
+- **D-233** — Hub de Configuracoes: a resposta e APONTAR, e o que torna isso seguro e o Hub nao saber editar
 
 ### processo/docs (1)
 

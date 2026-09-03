@@ -4774,6 +4774,147 @@ describe("get_sku_sales_breakdown (D-227, aba Vendas do Dashboard de SKU)", () =
   });
 });
 
+describe("get_settings_overview (D-233, Hub de Configuracoes)", () => {
+  const CALL = (org = ORG_SB) => `select * from public.get_settings_overview('${org}')`;
+
+  interface Linha {
+    organization_name: string | null;
+    organization_slug: string | null;
+    members_total: string;
+    members_admin: string;
+    replenishment_default: string;
+    replenishment_brand: string;
+    replenishment_sku: string;
+    notification_prefs_mine: string;
+    notification_global_min_severity: string | null;
+    notification_global_enabled: boolean | null;
+    saved_filters_mine: string;
+    reply_templates: string;
+    knowledge_entries: string;
+    knowledge_validated: string;
+    ml_accounts_total: string;
+    ml_accounts_connected: string;
+  }
+
+  it("devolve UMA linha com o nome da organização e contagens que batem com a leitura direta sob a MESMA RLS", async () => {
+    const rows = await asUser<Linha>(ADMIN_SB, CALL());
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.organization_name).toBe("Speed Bikers RLS");
+    expect(rows[0]?.organization_slug).toBe("speed-bikers-rls");
+
+    // A forma ingênua, executada como o mesmo usuário: se a RPC e a leitura
+    // direta discordarem, uma das duas está lendo fora da RLS.
+    const membros = await asUser<{ n: string }>(
+      ADMIN_SB,
+      `select count(*) as n from public.organization_members where organization_id = '${ORG_SB}'`,
+    );
+    const contas = await asUser<{ n: string }>(
+      ADMIN_SB,
+      `select count(*) as n from public.ml_accounts where organization_id = '${ORG_SB}'`,
+    );
+    const minhas = await asUser<{ n: string }>(ADMIN_SB, `select count(*) as n from public.notification_preferences`);
+
+    expect(rows[0]?.members_total).toBe(membros[0]?.n);
+    expect(rows[0]?.ml_accounts_total).toBe(contas[0]?.n);
+    expect(rows[0]?.notification_prefs_mine).toBe(minhas[0]?.n);
+  });
+
+  it("o padrão da organização de reposição é contado à parte das regras por marca e por SKU", async () => {
+    const antes = await asUser<Linha>(ADMIN_SB, CALL());
+
+    // Uma regra POR MARCA nova, com nome único para não colidir com fixtures
+    // de outros describes; o padrão da organização não muda.
+    await client.query(
+      `insert into public.replenishment_settings
+         (organization_id, supplier_brand, lead_time_days, target_coverage_days)
+       values ($1, 'HUBTEST-MARCA', 10, 30)`,
+      [ORG_SB],
+    );
+
+    const depois = await asUser<Linha>(ADMIN_SB, CALL());
+
+    expect(Number(depois[0]?.replenishment_brand)).toBe(Number(antes[0]?.replenishment_brand) + 1);
+    expect(depois[0]?.replenishment_default).toBe(antes[0]?.replenishment_default);
+    expect(depois[0]?.replenishment_sku).toBe(antes[0]?.replenishment_sku);
+  });
+
+  it("usuário de outra organização recebe nome NULL e zeros — a RLS filtra cada subselect, a função não erra", async () => {
+    const rows = await asUser<Linha>(DE_OUTRA_ORG, CALL());
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.organization_name).toBeNull();
+    expect(Number(rows[0]?.members_total)).toBe(0);
+    expect(Number(rows[0]?.ml_accounts_total)).toBe(0);
+    expect(Number(rows[0]?.replenishment_brand)).toBe(0);
+  });
+
+  it("anon não executa", async () => {
+    await expect(asAnon(CALL())).rejects.toThrow(/permission denied/i);
+  });
+});
+
+/**
+ * "Quem altera" no Hub de Configurações é TEXTO copiado das policies
+ * (`apps/web/lib/settings-hub.ts`, `EDITORS`), e cópia é risco. Este teste
+ * confere cada frase contra `pg_policy`: se uma policy mudar de papel e a
+ * frase não, ele falha — é o que torna a cópia legítima (mesmo método de
+ * D-206/D-228, paridade fixada por teste).
+ */
+describe("hub de configuracoes: quem altera bate com as policies (D-233)", () => {
+  async function politicas(tabela: string, comandos: string[]): Promise<string[]> {
+    const rows = await client.query<{ texto: string }>(
+      `select coalesce(pg_get_expr(polqual, polrelid), '') || ' ' || coalesce(pg_get_expr(polwithcheck, polrelid), '') as texto
+         from pg_policy
+        where polrelid = ('public.' || $1)::regclass
+          and polcmd = any($2::"char"[])`,
+      [tabela, comandos],
+    );
+
+    return rows.rows.map((r) => r.texto);
+  }
+
+  it("reposição, templates e conhecimento: ADMIN e GESTOR escrevem", async () => {
+    for (const tabela of ["replenishment_settings", "reply_templates", "knowledge_entries"]) {
+      const escrita = await politicas(tabela, ["a", "w", "d"]);
+
+      expect(escrita.length, tabela).toBeGreaterThan(0);
+      for (const texto of escrita) {
+        // Inserção de conhecimento é de qualquer membro (SUGERIDO); as demais são ADMIN/GESTOR.
+        if (tabela === "knowledge_entries" && texto.includes("SUGERIDO")) continue;
+
+        expect(texto, tabela).toContain("'ADMIN'");
+        expect(texto, tabela).toContain("'GESTOR'");
+      }
+    }
+  });
+
+  it("contas ML e membros: só ADMIN escreve — e organizations não tem policy de escrita nenhuma", async () => {
+    for (const tabela of ["ml_accounts", "organization_members"]) {
+      const escrita = await politicas(tabela, ["a", "w", "d", "*"]);
+
+      expect(escrita.length, tabela).toBeGreaterThan(0);
+      for (const texto of escrita) {
+        expect(texto, tabela).toContain("'ADMIN'");
+        expect(texto, tabela).not.toContain("'GESTOR'");
+      }
+    }
+
+    expect(await politicas("organizations", ["a", "w", "d", "*"])).toEqual([]);
+  });
+
+  it("preferências de notificação e filtros salvos: só o próprio usuário", async () => {
+    for (const tabela of ["notification_preferences", "saved_filters"]) {
+      const todas = await politicas(tabela, ["r", "a", "w", "d", "*"]);
+
+      expect(todas.length, tabela).toBeGreaterThan(0);
+      for (const texto of todas) {
+        expect(texto, tabela).toContain("auth.uid()");
+      }
+    }
+  });
+});
+
 describe("daily_listing_visits e get_listing_traffic (D-032, Fase 5B)", () => {
   // Mesmo raciocínio de nomes fora dos padrões de limpeza global, e mesma
   // ausência de afterAll — ver comentário equivalente no describe de
