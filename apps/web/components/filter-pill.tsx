@@ -42,7 +42,7 @@ export function FilterPill({
         borderRadius: "var(--sb-radius)",
         border: `1px solid ${active ? accent : "var(--sb-border)"}`,
         background: active ? accent : "transparent",
-        color: active ? "#fff" : "var(--sb-text-soft)",
+        color: active ? "var(--sb-white)" : "var(--sb-text-soft)",
         textDecoration: "none",
         fontSize: "0.8125rem",
         whiteSpace: "nowrap",

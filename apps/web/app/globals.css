@@ -109,6 +109,32 @@ body {
 }
 
 /*
+ * A TABELA DECLARA O SEU FUNDO — e por que isto é regra de folha de estilo, e
+ * não uma edição em 32 arquivos (D2 da frente visual).
+ *
+ * Invariante medida e verificada: o app tem **44 `<table>` e 44 wrappers
+ * `overflowX: "auto"`**, relação 1:1 — todo `</table>` é seguido do `</div>`
+ * do seu wrapper, e nenhuma `<table>` declara `background` inline. Enquanto
+ * essa contagem bater, esta regra alcança exatamente as 44 e mais nada.
+ * **Se um dia ela deixar de bater, é aqui que se descobre** — por isso o
+ * número está escrito, e não subentendido.
+ *
+ * Hoje o efeito é NULO: a página é branca e a tabela passa a declarar o mesmo
+ * branco que já herdava. É de propósito. A tabela é a superfície principal
+ * deste app e nenhuma delas está dentro de cartão; quando o fundo da página
+ * deixar de ser branco, quem não declara o próprio fundo vira chão. Declarar
+ * antes de mudar o chão é o passo que torna a mudança do chão uma linha só.
+ *
+ * Estilo inline vence folha de estilo, e isso é a metade boa: os 31
+ * `background: "transparent"` que carregam significado — a linha neutra de
+ * `/acoes`, o balão do cliente em `/atendimento`, a `FilterPill` inativa —
+ * continuam intactos sem precisar de exceção.
+ */
+table {
+  background: var(--sb-surface);
+}
+
+/*
  * Dropdown da navegação (Shell) usa <details>/<summary> nativo para não
  * precisar de JS nem de "use client". O colapso do conteúdo quando fechado
  * normalmente vem de graça da UA stylesheet (details:not([open]) > *), mas

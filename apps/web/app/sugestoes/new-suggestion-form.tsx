@@ -55,6 +55,7 @@ export function NewSuggestionForm(): ReactNode {
         gap: "var(--sb-space-2)",
         border: "1px solid var(--sb-border)",
         borderRadius: "var(--sb-radius)",
+        background: "var(--sb-surface)",
         padding: "var(--sb-space-3)",
         marginBottom: "var(--sb-space-4)",
       }}
@@ -82,7 +83,7 @@ export function NewSuggestionForm(): ReactNode {
             borderRadius: "var(--sb-radius)",
             border: "1px solid var(--sb-primary)",
             background: "var(--sb-primary)",
-            color: "#fff",
+            color: "var(--sb-white)",
             fontSize: "0.8125rem",
             cursor: "pointer",
           }}

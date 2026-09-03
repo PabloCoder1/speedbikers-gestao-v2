@@ -78,6 +78,7 @@ export default async function ContasPage(): Promise<ReactNode> {
                   border: "1px solid var(--sb-border)",
                   borderRadius: "var(--sb-radius)",
                   borderLeft: `3px solid ${tone.color}`,
+                  background: "var(--sb-surface)",
                 }}
               >
                 <span style={{ fontWeight: 600, minWidth: "10rem" }}>{account.label}</span>

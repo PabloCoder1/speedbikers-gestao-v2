@@ -74,6 +74,7 @@ export function NewPreferenceForm({
         flexWrap: "wrap",
         border: "1px solid var(--sb-border)",
         borderRadius: "var(--sb-radius)",
+        background: "var(--sb-surface)",
         padding: "var(--sb-space-3)",
       }}
     >
@@ -149,7 +150,7 @@ export function NewPreferenceForm({
           borderRadius: "var(--sb-radius)",
           border: "1px solid var(--sb-primary)",
           background: "var(--sb-primary)",
-          color: "#fff",
+          color: "var(--sb-white)",
           fontSize: "0.8125rem",
           cursor: "pointer",
         }}

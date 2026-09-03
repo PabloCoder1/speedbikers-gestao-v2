@@ -319,7 +319,7 @@ export function CurationTable({
           <div style={{ display: "flex", gap: "var(--sb-space-2)" }}>
             <button
               type="button"
-              style={{ ...botao, background: "var(--sb-accent-ink)", color: "#fff", borderColor: "var(--sb-accent-ink)" }}
+              style={{ ...botao, background: "var(--sb-accent-ink)", color: "var(--sb-white)", borderColor: "var(--sb-accent-ink)" }}
               disabled={emCurso}
               onClick={() => {
                 aplicar(pendente, ids, true);

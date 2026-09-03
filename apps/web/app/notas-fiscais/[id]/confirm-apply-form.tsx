@@ -88,6 +88,7 @@ export function ConfirmApplyForm({
         padding: "var(--sb-space-3)",
         border: "1px solid var(--sb-border)",
         borderRadius: "var(--sb-radius)",
+        background: "var(--sb-surface)",
       }}
     >
       <p style={{ margin: 0, fontSize: "0.875rem", flex: "1 1 20rem" }}>

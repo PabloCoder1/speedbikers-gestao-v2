@@ -67,6 +67,7 @@ const cardStyle: React.CSSProperties = {
   padding: "var(--sb-space-3)",
   border: "1px solid var(--sb-border)",
   borderRadius: "var(--sb-radius)",
+  background: "var(--sb-surface)",
   display: "grid",
   gap: "0.25rem",
 };

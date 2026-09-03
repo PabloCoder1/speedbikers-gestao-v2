@@ -227,6 +227,7 @@ export function DocumentItemRow({
             padding: 0,
             border: "1px solid var(--sb-border)",
             borderRadius: "var(--sb-radius)",
+            background: "var(--sb-surface)",
             maxHeight: "10rem",
             overflowY: "auto",
           }}

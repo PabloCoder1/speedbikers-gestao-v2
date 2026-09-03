@@ -106,6 +106,7 @@ interface TimelineRow {
 const statBox: React.CSSProperties = {
   border: "1px solid var(--sb-border)",
   borderRadius: "var(--sb-radius)",
+  background: "var(--sb-surface)",
   padding: "var(--sb-space-3)",
   minWidth: "9rem",
 };

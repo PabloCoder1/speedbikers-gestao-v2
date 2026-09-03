@@ -86,6 +86,7 @@ export function ManualLinkForm({
       style={{
         border: "1px solid var(--sb-border)",
         borderRadius: "var(--sb-radius)",
+        background: "var(--sb-surface)",
         padding: "var(--sb-space-3)",
         marginBottom: "var(--sb-space-4)",
       }}
@@ -204,7 +205,7 @@ export function ManualLinkForm({
             borderRadius: "var(--sb-radius)",
             border: "none",
             background: "var(--sb-primary)",
-            color: "#fff",
+            color: "var(--sb-white)",
             fontSize: "0.8125rem",
             fontWeight: 600,
             cursor: busy || skuSearch.selected === null ? "not-allowed" : "pointer",

@@ -65,11 +65,9 @@ estado entraram: elas já tinham 16 consumidores, escritos como hex literal.
 cinza**; o app real é branco sobre branco, separando por borda. Tudo o mais é
 ajuste fino.
 
-**Por que o fundo cinza é de D2, e não de D1:** `cardStyle` em
-`components/table-styles.ts` **não define `background`** — o cartão herda o
-fundo da página. Pintar o `body` de `#f4f5fa` hoje daria cartão cinza sobre
-cinza, e só 4 das 32 telas importam o módulo único (as outras 28 carregam
-cópia privada). O cinza entra junto com o `background` do cartão, em D2.
+**Por que o fundo cinza não entrou nem em D1 nem em D2:** ver
+"O passo branco e o passo cinza", abaixo. A resposta curta é que ele não é uma
+linha — é a última linha de uma sequência, e a sequência é o trabalho.
 
 ### Tipografia
 
@@ -126,6 +124,80 @@ grave. Tabelas já usam `overflow-x: auto` com `minWidth`.
 
 ---
 
+## O passo branco e o passo cinza
+
+O padrão do Figma é **cartão branco sobre fundo cinza**. O app é branco sobre
+branco, separando por borda. Trocar isso parece uma linha —
+`body { background: #f4f5fa }` — e **não é**. Medido:
+
+| medição | número |
+|---|---|
+| separação do cartão branco contra o cinza, sem borda | **1,089:1** |
+| `<table>` no app, e wrappers `overflowX:auto` | **44 e 44** — relação 1:1 |
+| tabelas dentro de cartão | **nenhuma** |
+| telas autenticadas que a mudança alcança de uma vez | **46** |
+| testes que afirmam qualquer coisa sobre cor ou fundo | **zero** |
+
+**O cartão branco não se separa do cinza sozinho** — 1,089:1 é quase nada. Quem
+separa é a borda, antes e depois. O cinza compra hierarquia, não separação; e
+trocar a borda pela do Figma (`#e4e5f0`) *piora* (1,68 → 1,25 contra o cartão),
+porque o Figma compensa com sombra que o app não tem.
+
+### Ordem: branco primeiro, cinza por último
+
+Cada passo branco é um diff **visualmente nulo** — sobre página branca,
+declarar `background: var(--sb-surface)` renderiza exatamente igual. Por ser
+nulo, pode ser fatiado à vontade, sem estado intermediário quebrado em tela
+nenhuma. A ordem inversa quebra 46 telas ao mesmo tempo, pelo tempo que as
+fatias seguintes levarem, e sem nenhum teste para pegar.
+
+### O que ainda falta para o cinza — medido, não estimado
+
+Cada item abaixo foi verificado no código; nenhum é hipótese.
+
+1. **`--sb-surface` significa duas coisas.** É o fundo do `body` **e** o token
+   de "cartão branco" em 15 lugares. Repontá-lo para cinza pintaria de cinza a
+   camada flutuante inteira — o dropdown da navegação, a paleta `Ctrl+K`, os
+   toasts, a barra sticky da curadoria — que é justamente a camada cuja única
+   função é parecer *acima*. **O cinza precisa de token próprio (`--sb-ground`),
+   e `--sb-surface` continua branco.** É violação de "um dado, um dono"
+   (D-224) que só a coincidência de ambos serem brancos escondia.
+2. **Pintar o `<main>`, não o `body`.** O `<header>` é irmão do `<main>`: com o
+   `body` cinza ele vai junto em 46 telas; com o `<main>` cinza ele fica branco
+   de graça. E `app/login/page.tsx`, a única tela fora do Shell, fica intocada.
+   D2 já pôs o `background` no `<main>` — trocar o token ali é a linha final.
+3. **`status-pill.tsx` não tem borda: o fundo *é* a forma da pílula.** Sobre o
+   cinza, `warn` (`#fff8dc`) fica **mais claro que o chão** e inverte, a
+   1,02:1; `ok` e `bad` perdem 68% e 59% da separação. E elas vivem em tabelas
+   que ficam direto no chão. **O cinza destruiria as pílulas que D1 consertou**
+   se as tabelas já não fossem brancas — por isso a regra da tabela veio antes.
+4. **`--sb-bg-soft` (`#f8f9fc`) colide com o cinza e é mais claro que ele.** As
+   linhas de apoio de `/acoes` inverteriam de recuo para destaque, a 1,03:1.
+   Precisa ser reescolhido contra o novo chão.
+5. **Toda razão de contraste cai 8,2% de uma vez.** `--sb-muted-ink` (`#746d88`)
+   vai de 4,90 para **4,499** — abaixo de AA, em ~30 lugares. A escolha de D1
+   mirou 4,50 sobre o cinza e ficou de fora por arredondamento; ou escurece, ou
+   o texto passa a viver dentro de cartão branco.
+6. **A série de comparação do gráfico de `/vendas` já reprova hoje.** A
+   tracejada do período anterior é `--sb-muted` a **1,68:1**, contra os 3:1 que
+   a WCAG 1.4.11 pede de objeto gráfico que carrega informação. O cinza leva a
+   1,54:1. É defeito existente, e é achado próprio desta fatia.
+7. **~90 controles nativos.** Não há `color-scheme` em lugar nenhum: o
+   navegador pinta os campos de branco, e os 31 `background: "transparent"`
+   explícitos ficariam cinza — dois tipos de campo, duas cores, às vezes na
+   mesma célula.
+8. **Uma dívida que o cinza *paga*:** `app/notificacoes/notification-row.tsx:70`
+   distingue lida de não-lida com `--sb-surface` vs `transparent`. Os dois
+   ramos rendem branco hoje — **o realce existe no código e nunca apareceu na
+   tela.** Com o chão separado, liga sozinho.
+
+**Ausências verificadas** (procuradas e inexistentes, então não são risco):
+nenhum gradiente, `@media print`, `color-scheme`, `::-webkit-scrollbar`,
+`<canvas>`, `<img>`/`next/image`, diretório `public/`, logo ou SVG com fundo
+branco embutido.
+
+---
+
 ## Componentes reais reutilizáveis
 
 | Componente | Caminho | Situação |
@@ -137,7 +209,7 @@ grave. Tabelas já usam `overflow-x: auto` com `minWidth`.
 | `FilterPill` | `components/filter-pill.tsx` | ≈ filtros do Figma |
 | `SavedFilters` | `components/saved-filters.tsx` | alinhado |
 | `CommandPalette` | `components/command-palette.tsx` | alinhado |
-| `th`/`td`/`tdNumber`/`cardStyle` | `components/table-styles.ts` | **módulo único existe; 32 telas ainda têm cópia privada** |
+| `th`/`td`/`tdNumber`/`cardStyle` | `components/table-styles.ts` | **2 telas importam; 3 têm cópia nomeada; o resto é estilo inline ad-hoc** |
 
 **Não criar `Card`, `CardV2`, `FigmaCard`.** Adaptar o que existe.
 
@@ -178,8 +250,9 @@ que o Figma não listou (`Copiloto`, `Reposição`, `Importações`, `Sugestões
 |---|---|---|
 | D0 | Auditoria visual + Design Contract | **CONCLUÍDO** |
 | D1 | Design foundation (tokens de cor) | **CONCLUÍDO** |
-| D2 | Shell global + fundo cinza + `background` do cartão | próximo |
-| D3 | Home | fila |
+| D2 | Shell + o passo branco (superfícies declaram fundo) | **CONCLUÍDO** |
+| — | O passo cinza (`--sb-ground` no `<main>`) | fila, com pré-requisitos medidos |
+| D3 | Home | próximo |
 | D4 | Vendas | fila |
 | D5 | Produtos | fila |
 | D6–D10 | Dashboard de SKU (fundação + 4 pares de abas) | fila |
@@ -206,7 +279,15 @@ hex literal em 16 lugares de 7 arquivos, contra o que o próprio cabeçalho do
 `globals.css` mandava. E `app/acoes/action-row.tsx` escrevia
 `var(--sb-bg-soft, #f7f7f8)`: um `var()` de um token **que nunca existiu**,
 então o fallback era o valor real. D1 deu nome aos quatro, criou o quinto, e
-hoje **não há um único hex literal em `apps/web`**.
+hoje **não há um hex de seis dígitos literal em `apps/web`**.
+
+**Correção, medida em D2 e registrada aqui porque a afirmação de D1 foi forte
+demais:** ainda existem `#fff` (hex de TRÊS dígitos, 6 lugares) e sombras em
+`rgba()` — o grep de D1 procurava `#[0-9a-f]{6}` e não os via. `app/compras/
+[id]/export/pdf.ts` usa `rgb()` do pdf-lib, que não é CSS e não conta. E a
+frase "28 telas carregam cópia privada de `cardStyle`" era inferência do
+comentário de `table-styles.ts`, não medição: são **2** telas que importam o
+módulo, **3** com cópia nomeada, e o resto com estilo inline ad-hoc.
 
 Verificação: contraste conferido também no navegador (5,74 / 4,61 / 4,51 /
 10,08 — bateu com a aritmética na segunda casa); 273 unitários, 582 de

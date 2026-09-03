@@ -31,6 +31,7 @@ export const tdNumber: React.CSSProperties = { ...td, textAlign: "right", fontVa
 export const cardStyle: React.CSSProperties = {
   border: "1px solid var(--sb-border)",
   borderRadius: "var(--sb-radius)",
+  background: "var(--sb-surface)",
   padding: "var(--sb-space-3)",
   display: "grid",
   gap: "var(--sb-space-2)",

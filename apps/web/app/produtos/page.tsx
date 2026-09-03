@@ -69,7 +69,7 @@ const pill: React.CSSProperties = {
 const pillAtiva: React.CSSProperties = {
   ...pill,
   background: "var(--sb-accent-ink)",
-  color: "#fff",
+  color: "var(--sb-white)",
   borderColor: "var(--sb-accent-ink)",
 };
 

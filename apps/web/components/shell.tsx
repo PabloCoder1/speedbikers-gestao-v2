@@ -213,6 +213,10 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
     <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column" }}>
       <header
         style={{
+          // O chrome declara o seu fundo em vez de herdar o da página. Hoje é
+          // o mesmo branco e o efeito é nulo; quando o conteúdo ganhar fundo
+          // próprio, o cabeçalho não vai junto por acidente.
+          background: "var(--sb-surface)",
           borderBottom: "1px solid var(--sb-border)",
           padding: "var(--sb-space-3) var(--sb-space-4)",
           display: "flex",
@@ -249,7 +253,7 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
                   padding: "0 0.25rem",
                   borderRadius: "999px",
                   background: "var(--sb-danger)",
-                  color: "#fff",
+                  color: "var(--sb-white)",
                   fontSize: "0.6875rem",
                   fontWeight: 700,
                   textAlign: "center",
@@ -313,7 +317,17 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
         </div>
       </header>
 
-      <main style={{ padding: "var(--sb-space-4)", flex: 1 }}>{children}</main>
+      {/*
+        O chão do conteúdo é decidido AQUI, e só aqui — não no `body`.
+        Medido em D2: pintar o `body` alcançaria também o `<header>` acima (45
+        telas de chrome) e `app/login/page.tsx`, a única tela fora do Shell.
+        Pintar o `<main>` alcança só o conteúdo, e `minHeight: 100dvh` +
+        `flexDirection: column` + `flex: 1` no wrapper garantem que ele preenche
+        a viewport e cresce com a página. Trocar este `--sb-surface` por um
+        token de chão é uma linha, num lugar, quando as superfícies de dentro
+        já declararem o fundo delas.
+      */}
+      <main style={{ padding: "var(--sb-space-4)", flex: 1, background: "var(--sb-surface)" }}>{children}</main>
 
       <NotificationToasts userId={auth.user?.id ?? null} preferenceRules={preferenceRules} />
     </div>
