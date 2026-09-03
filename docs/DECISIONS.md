@@ -4904,6 +4904,43 @@ error TS2741: Property 'nota_fiscal' is missing in type '{ sku: ...; atendimento
 
 **Impacto:** `infra/deploy-cloud-run.sh`. Sem migration. Servicos: `api-00031-rqv`, `worker-00046-ndh`.
 
+## D-218 - A retencao nao era o problema: 335 mil linhas custavam 1,1 s por causa de UMA consulta
+
+**Contexto:** item 2 dos "Proximos passos" — *"retencao de `job_runs` (271.184 linhas), destravada pelo deploy"*. A premissa registrada era que a tabela e grande demais. **Medi antes de agir, e a premissa se dividiu em duas: uma verdadeira e uma falsa.**
+
+**Primeiro, a pre-condicao do item — e ela e a primeira evidencia EM PRODUCAO de D-179:**
+
+| `sync.webhook.received` | |
+|---|---|
+| na hora ANTERIOR ao deploy | **2.649** |
+| nas 14 h seguintes | 2.036, ou **~143/h** |
+
+**Reducao de 94,6%.** A origem parou de produzir, como o item previa. O ritmo geral da tabela caiu de ~64 mil para ~3,9 mil linhas/dia.
+
+**A parte VERDADEIRA da premissa:** a tabela ocupa **112 MB — 15,6% do banco** (75 MB de dados, 37 MB de indice), e 92,4% das linhas sao de um unico `job_type`, com **281.776 delas sem trabalho nenhum** (`processed = 0`) — entulho de um defeito ja corrigido, nao fluxo corrente.
+
+**A parte FALSA:** que isso e o que dói. O custo real estava numa consulta. O `distinct on (job_type)` de `get_system_health` gastava **1.134 ms** varrendo as 335 mil linhas e derramando **16,5 MB para disco** (`Sort Method: external merge`) — **para devolver 22 linhas**, uma por tipo de job.
+
+**TRES HIPOTESES, todas medidas em transacao revertida contra o Dev real:**
+
+| hipotese | resultado |
+|---|---|
+| so um indice `(job_type, quando desc)` | **PIOROU** — 5.985 ms contra 1.134, e 260.656 buffers contra 9.625 |
+| skip scan emulado (CTE recursiva) + o mesmo indice | **0,462 ms**, 174 buffers |
+| a CTE `falhas` (24 h), a outra metade | **68 ms** — nao doi, fica como esta |
+
+**1.134 ms → 0,462 ms: 2.450x, sem apagar uma linha.** O indice sozinho piora porque o `distinct on` percorre o indice INTEIRO — o Postgres nao faz skip scan por conta propria aqui, e trocar "seq scan + sort" por "index scan aleatorio" sai caro. O que destrava e o fato de haver **335 mil linhas e apenas 22 tipos distintos**: a CTE recursiva salta de tipo em tipo pelo indice em vez de ler tudo.
+
+**Provado por IGUALDADE, nao por economia** (regra de D-199): as duas formas devolvem 22 linhas, zero linhas em uma e nao na outra, e **md5 identico** — `c6591cb5509b4a6fa0022aec5273707f` — contra o dado real do Dev.
+
+**O escopo de D-209 continua inteiro, e essa e a parte delicada.** A visibilidade **nao** migrou para a enumeracao dos tipos: ela vive dentro do lateral, que para na primeira linha visivel de cada tipo. Um `job_type` que so exista em organizacao alheia nao produz linha e some do resultado. **A prova ja existia**: o teste de D-209 que insere um job em ORG_SB e exige que o ADMIN da outra organizacao nao o veja — ele exercita exatamente o caminho novo, e passa. A enumeracao NAO e escopada de proposito; escopa-la exigiria o indice comecando por organizacao e destruiria o skip scan.
+
+**O QUE ESTA FATIA NAO RESOLVE, e fica dito:** os 112 MB. A retencao continua aberta e agora e questao de **disco**, nao de tempo de resposta — com uma barreira que o item nao mencionava e que quem for fazer precisa saber: **`job_runs` recusa DELETE por trigger** (`job_runs_no_delete`, migration `20260820160000`), inclusive para `service_role`. Expurgo ali exige um caminho explicito, nao um `delete`.
+
+**Verificacao:** **546/546** de integracao em banco recriado (as 130 migrations), `check` 29/29, build 8/8, `check:embeds` 33/33, `check:waterfalls` 52 arquivos, 13/13 Playwright. Igualdade md5 contra o Dev. Assinatura da funcao inalterada — nada a regenerar em `types.ts`.
+
+**Impacto:** `supabase/migrations/20260903112000_system_health_skip_scan.sql`.
+
 ## Como adicionar nova decisao
 
 Registrar:

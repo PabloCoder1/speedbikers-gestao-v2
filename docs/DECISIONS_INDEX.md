@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **215** (D-001 a D-217).
+Decisões registradas: **216** (D-001 a D-218).
 
 ## Por domínio
 
@@ -151,7 +151,7 @@ Decisões registradas: **215** (D-001 a D-217).
 - **D-179** — Topico de webhook sem consumidor deixa de virar Cloud Task
 - **D-203** — O 429 do snapshot de visitas e real, e o dano que eu registrei nao era
 
-### outros (36)
+### outros (37)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -189,6 +189,7 @@ Decisões registradas: **215** (D-001 a D-217).
 - **D-211** — A torneira que faltava, e os dois bancos discordavam sobre ela
 - **D-212** — A conta ganha autor, e o caminho revelou o que D-210 tinha quebrado sem notar
 - **D-213** — Como atualizar o contrato gerado sem perder as correcoes manuais
+- **D-218** — A retencao nao era o problema: 335 mil linhas custavam 1,1 s por causa de UMA consulta
 
 ### processo/docs (1)
 
