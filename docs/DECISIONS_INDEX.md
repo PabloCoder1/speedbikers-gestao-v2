@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **218** (D-001 a D-220).
+Decisões registradas: **219** (D-001 a D-221).
 
 ## Por domínio
 
@@ -211,7 +211,7 @@ Decisões registradas: **218** (D-001 a D-220).
 - **D-157** — Metricas 5C de vendas: cancelamento sai do L1 de proposito, e a ressalva vira parte do card
 - **D-165** — Custos por pedido: as fontes da margem operacional persistidas, e NULL nunca vira zero
 
-### worker/infra (47)
+### worker/infra (48)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -260,4 +260,5 @@ Decisões registradas: **218** (D-001 a D-220).
 - **D-216** — A Busca Universal alcanca as entidades novas, e dois destinos dela tinham envelhecido
 - **D-217** — Incidente: a representacao virou valor, e 13 horas de sincronizacao pararam
 - **D-219** — O frescor de /saude passa a ser contra a cadencia, e o incidente de ontem vira teste
+- **D-221** — A garantia append-only de job_runs nao tinha guarda, e eu ia precisar dela
 

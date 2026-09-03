@@ -447,6 +447,59 @@ describe("job_runs permanece fechada", () => {
       /permission denied/i,
     );
   });
+
+  /**
+   * A garantia append-only, que NINGUÉM estava guardando.
+   *
+   * `job_runs` recusa UPDATE e DELETE por trigger desde `20260820130000` —
+   * "nem a service_role consegue alterar", diz a migration. Mas não havia
+   * teste: uma migration futura que desligasse o trigger para fazer expurgo
+   * e esquecesse de religá-lo deixaria a tabela mutável **em silêncio**, e a
+   * suíte continuaria verde.
+   *
+   * O teste entra pela porta mais forte possível — o DONO da tabela, que
+   * atravessa GRANT e RLS. Se nem ele apaga, ninguém apaga.
+   */
+  it("recusa DELETE e UPDATE até para o dono da tabela", async () => {
+    await client.query("begin");
+
+    try {
+      await client.query(
+        `insert into public.job_runs
+           (organization_id, job_id, job_type, dedupe_key, attempt, status, started_at, finished_at)
+         values ('${ORG_SB}', gen_random_uuid(), 'rlstest.appendonly', 'rlstest-appendonly', 1,
+                 'done', now(), now())`,
+      );
+
+      await expect(
+        client.query("delete from public.job_runs where job_type = 'rlstest.appendonly'"),
+      ).rejects.toThrow(/append-only/i);
+    } finally {
+      await client.query("rollback");
+    }
+
+    // UPDATE pela mesma porta, em transação própria (a de cima abortou) e
+    // sobre uma linha que EXISTE: a primeira versão deste teste mirava
+    // `system.ping`, que não existe em banco recriado — e UPDATE que casa
+    // zero linhas não dispara trigger de linha, então ele passava sem provar
+    // nada. Guarda vazio da classe D-209, pego pela própria suíte.
+    await client.query("begin");
+
+    try {
+      await client.query(
+        `insert into public.job_runs
+           (organization_id, job_id, job_type, dedupe_key, attempt, status, started_at, finished_at)
+         values ('${ORG_SB}', gen_random_uuid(), 'rlstest.appendonly', 'rlstest-appendonly-u', 1,
+                 'done', now(), now())`,
+      );
+
+      await expect(
+        client.query("update public.job_runs set processed = 1 where job_type = 'rlstest.appendonly'"),
+      ).rejects.toThrow(/append-only/i);
+    } finally {
+      await client.query("rollback");
+    }
+  });
 });
 
 

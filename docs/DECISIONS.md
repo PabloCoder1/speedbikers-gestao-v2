@@ -5017,6 +5017,39 @@ O p95 do webhook caiu 39% (1.306 → 794 ms), o que e consistente com menos idas
 
 **Impacto:** `docs/PERFORMANCE.md`.
 
+## D-221 - A garantia append-only de job_runs nao tinha guarda, e eu ia precisar dela
+
+**Contexto:** investigando a metade de DISCO do item de retencao de `job_runs` (a de tempo fechou em D-218), a primeira coisa que apareceu nao foi um numero: foi uma **barreira**. `job_runs` recusa UPDATE e DELETE por trigger desde `20260820130000` — *"nem a service_role consegue alterar"*, diz a migration. Qualquer expurgo precisa desligar o trigger, apagar e religar.
+
+**E nao havia teste nenhum sobre isso.** O unico teste de `job_runs` cobria RLS (*"nem authenticated le"*). Uma migration futura que desligasse o trigger para expurgar e **esquecesse de religa-lo** deixaria a tabela mutavel em silencio, com a suite verde — e o proximo agente leria a migration de 2026-08-20 afirmando uma garantia que nao existe mais.
+
+**O guarda entra pela porta mais forte possivel: o DONO da tabela**, que atravessa GRANT e RLS. Se nem ele apaga, ninguem apaga.
+
+**A primeira versao do guarda era VAZIA, e a propria suite pegou.** O ramo de UPDATE mirava `system.ping` — que nao existe em banco recriado — e **UPDATE que casa zero linhas nao dispara trigger de linha**: passava sem provar nada. Classe D-209, terceira vez nesta sessao. Corrigido para operar sobre uma linha inserida na mesma transacao.
+
+**Dupla prova de D-197, feita:** com `job_runs_no_delete`/`no_update` desligados o teste **falha** (`promise resolved "Result{ command: 'DELETE' }"`); religados, passa.
+
+---
+
+**O que a medicao da metade de disco ja estabeleceu, para quem for fecha-la:**
+
+| | |
+|---|---|
+| `job_runs` hoje | **128 MB**, 3a maior tabela — atras de `orders` (148) e `order_items` (132) |
+| ritmo pos-deploy | ~93 linhas/h de webhook, contra 2.664/h antes de D-179 |
+| entulho alcançavel | **278.371 linhas (82,8%), ~106 MB** — `sync.webhook.received`, `done`, `processed = 0`, **estritamente antes do deploy** |
+| sobrevivem | 32.102 linhas de webhook, 2.249 delas pos-deploy |
+
+⚠️ **O "88% sem trabalho" NAO e residuo do incidente de D-217.** Medido em tres janelas: antes do deploy, com as 4 contas saudaveis, ja era **88,0%**; durante o incidente foi 100% (todas em ERROR); agora e 55% (2 de 4 restauradas). Ou seja, o entulho e massa do defeito que **D-179 ja matou na origem** — nao fluxo corrente.
+
+**Isso muda o que o expurgo e:** nao e "politica de retencao", e **limpeza unica de um defeito morto**. Politica recorrente nao se justifica no ritmo atual — e a diferenca importa, porque limpeza unica cabe numa migration com o trigger religado no fim, e politica recorrente exigiria um caminho permanente de escrita destrutiva.
+
+**A execucao do expurgo NAO entra nesta fatia**, e a razao nao e escopo: apagar 278 mil linhas e **irreversivel**, e o beneficio e disco contra um teto que **nem o MCP nem a API expoem** (mesma lacuna que D-159 registrou para backup). Medir "106 MB" sem saber o limite nao autoriza destruir historico. Fica proposto com os numeros acima, para decisao humana.
+
+**Verificacao:** **547/547** de integracao em banco recriado (+1), guarda conferido nos dois sentidos, `check` 29/29.
+
+**Impacto:** `packages/db/src/rls.integration.test.ts`.
+
 ## Como adicionar nova decisao
 
 Registrar:

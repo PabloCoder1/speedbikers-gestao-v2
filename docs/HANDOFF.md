@@ -14,7 +14,7 @@
 |---|---|
 | **Atualizado em** | 2026-09-02 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `b131d5b` (D-219) — esta fatia, D-220, é o commit seguinte |
+| **HEAD conhecido** | `bf93066` (D-220) — esta fatia, D-221, é o commit seguinte |
 | **Deploy no ar** | **`0702969` — o mesmo do `HEAD`, sem atraso** (`api-00030-gqw` / `worker-00045-cwq`, 2026-09-02). Depois de 66 commits parado. Verificado contra a infraestrutura, não contra o script: `APP_COMMIT=0702969` nos dois serviços, imagem `api:0702969`, `/health` respondendo `{"commit":"0702969"}` e **zero `ERROR`** no Cloud Logging desde o boot |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | **128 locais == 128 no Dev**, sem drift — D-209→D-212 aplicadas pela CI em 2026-09-02 e CONFERIDAS lá (`anon` alcança 0 funções; `ml_accounts` sem UPDATE/DELETE para `authenticated`; `created_by` presente). O caminho é o push, **nunca** o MCP (lição de D-207) |
@@ -318,17 +318,30 @@ Nada disto pode ser feito por um agente.
    ⚠️ **A frase "de ~7 idas ao banco por pedido para ~0,16" era incompleta** —
    o 0,16 é um número **por página**. Onde a página tem um pedido, continuam
    ~4 idas. Números em `docs/PERFORMANCE.md`.
-2. **Retenção de `job_runs` — o item se dividiu em D-218, e metade fechou.**
-   A pré-condição caiu (a origem parou: **−94,6%**, medido em produção). E a
-   medição mostrou que **o custo não era volume, era uma consulta**: o
-   `distinct on` de `get_system_health` gastava 1.134 ms derramando 16,5 MB
-   para disco, e virou **0,462 ms** com skip scan — 2.450×, sem apagar uma
-   linha.
+2. **Retenção de `job_runs` — a metade de DISCO, e ela virou uma decisão
+   sua.** A metade de tempo fechou em D-218; D-221 mediu a de disco.
 
-   **O que resta é DISCO**: 112 MB, 15,6% do banco, dos quais 281.776 linhas
-   são entulho sem trabalho de um defeito já corrigido. ⚠️ **Barreira que o
-   item não mencionava:** `job_runs` **recusa DELETE por trigger**, inclusive
-   para `service_role` — expurgo exige um caminho explícito, não um `delete`.
+   **Não é política de retenção, é limpeza única de um defeito morto:** o
+   "88% sem trabalho" já existia com as 4 contas saudáveis, antes do
+   incidente — era o problema que **D-179 matou na origem** (o ritmo caiu de
+   2.664 para ~93 linhas/h). O acumulado é massa, não fluxo.
+
+   | | |
+   |---|---|
+   | `job_runs` | **128 MB**, 3ª maior tabela |
+   | alcançável | **278.371 linhas (82,8%), ~106 MB** |
+   | recorte | `sync.webhook.received`, `done`, `processed = 0`, **antes do deploy** |
+   | sobrevivem | 32.102 de webhook, 2.249 pós-deploy |
+
+   ⚠️ **Parado por decisão humana, não por escopo:** apagar 278 mil linhas é
+   irreversível e o benefício é disco contra um teto que **nem o MCP nem a
+   API expõem** — a mesma lacuna que D-159 registrou para backup. Medir
+   "106 MB" sem saber o limite não autoriza destruir histórico.
+
+   ✅ **O que ficou pronto:** a garantia append-only de `job_runs` **não tinha
+   guarda nenhuma** e agora tem — entrando pela porta do dono da tabela, com
+   dupla prova. Sem ela, uma migration de expurgo que esquecesse de religar o
+   trigger deixaria a tabela mutável em silêncio.
 
 3. **~~Frescor por CADÊNCIA na Saúde do Sistema~~ — FEITO em D-219.** O
    veredito passou a ser contra a cadência de cada job, reusando o núcleo de
