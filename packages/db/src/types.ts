@@ -4350,12 +4350,17 @@ export type Database = {
           p_date_from: string
           p_date_to: string
           p_ml_account_id?: string
+          p_sem_marca?: boolean
+          p_supplier_brand?: string | null
         }
         Returns: {
           gross_revenue: number
           metric_date: string
           orders_count: number
-          purchases_count: number
+          // CORRECAO MANUAL (classe D-133): estes campos passam a ser NULL sob
+          // recorte de marca (D-237) -- nao ha resposta certa por marca, e o
+          // tipo obriga a tela a tratar isso em vez de imprimir "null".
+          purchases_count: number | null
           units_sold: number
         }[]
       }
@@ -4364,13 +4369,18 @@ export type Database = {
           p_date_from: string
           p_date_to: string
           p_ml_account_id?: string
+          p_sem_marca?: boolean
+          p_supplier_brand?: string | null
         }
         Returns: {
-          pedidos_cancelados: number
+          // CORRECAO MANUAL (classe D-133): estes campos passam a ser NULL sob
+          // recorte de marca (D-237) -- nao ha resposta certa por marca, e o
+          // tipo obriga a tela a tratar isso em vez de imprimir "null".
+          pedidos_cancelados: number | null
           skus_distintos_vendidos: number
-          taxa_cancelamento: number
+          taxa_cancelamento: number | null
           taxas_ml: number
-          valor_cancelado: number
+          valor_cancelado: number | null
         }[]
       }
       get_sales_margin_summary: {
@@ -4378,15 +4388,19 @@ export type Database = {
           p_date_from: string
           p_date_to: string
           p_ml_account_id?: string
+          p_sem_marca?: boolean
+          p_supplier_brand?: string | null
         }
         Returns: {
-          desconto_vendedor: number
-          frete_vendedor: number
-          gross_revenue_covered: number
-          margem_operacional: number
-          orders_covered: number
-          orders_total: number
-          taxas_ml_covered: number
+          // CORRECAO MANUAL (classe D-133): a margem inteira e NULL sob recorte
+          // de marca (D-237) -- frete e desconto sao do PEDIDO, nao do item.
+          desconto_vendedor: number | null
+          frete_vendedor: number | null
+          gross_revenue_covered: number | null
+          margem_operacional: number | null
+          orders_covered: number | null
+          orders_total: number | null
+          taxas_ml_covered: number | null
         }[]
       }
       get_sales_summary: {
@@ -4394,14 +4408,19 @@ export type Database = {
           p_date_from: string
           p_date_to: string
           p_ml_account_id?: string
+          p_sem_marca?: boolean
+          p_supplier_brand?: string | null
         }
         Returns: {
           average_selling_price: number
-          average_ticket: number
+          // CORRECAO MANUAL (classe D-133): estes campos passam a ser NULL sob
+          // recorte de marca (D-237) -- nao ha resposta certa por marca, e o
+          // tipo obriga a tela a tratar isso em vez de imprimir "null".
+          average_ticket: number | null
           gross_revenue: number
           last_computed_at: string
           orders_count: number
-          purchases_count: number
+          purchases_count: number | null
           units_sold: number
         }[]
       }
@@ -4409,12 +4428,17 @@ export type Database = {
         Args: {
           p_date: string
           p_ml_account_id?: string
+          p_sem_marca?: boolean
+          p_supplier_brand?: string | null
         }
         Returns: {
           gross_revenue: number
           last_order_at: string
           orders_count: number
-          purchases_count: number
+          // CORRECAO MANUAL (classe D-133): estes campos passam a ser NULL sob
+          // recorte de marca (D-237) -- nao ha resposta certa por marca, e o
+          // tipo obriga a tela a tratar isso em vez de imprimir "null".
+          purchases_count: number | null
           units_sold: number
         }[]
       }

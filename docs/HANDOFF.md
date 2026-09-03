@@ -265,18 +265,33 @@ em 2.320 dos 3.554 SKUs. Na curva, o recorte **recalcula** as classes; na
 cobertura, os totais do cabeçalho (que vêm de outra RPC) recebem o mesmo
 filtro, e `history_days_90` **não** segue o recorte de propósito.
 
-🔴 **A próxima tarefa é o filtro de Marca em `/vendas`**, a última do item.
-**O caminho está medido, e ela é maior que as duas anteriores:**
+✅ **Filtro de Marca em `/vendas` (D-237) — item P1 dos filtros CONCLUÍDO.** A
+mais difícil das três, e a dificuldade não era SQL: **nem todo número de vendas
+tem versão por marca**. O que decompõe foi provado (a soma dos itens bate
+exatamente com o total dos pedidos); o que não decompõe volta **NULL** —
+compras por pack, ticket médio, trio de cancelamento e a margem inteira. A
+tabela por métrica está em `docs/METRICS.md` **5E**, e é lá que se consulta
+antes de recortar qualquer número de vendas por marca de novo.
 
-| | |
-|---|---|
-| RPCs a mudar | **6** — `get_sales_summary`, `get_sales_daily_series`, `get_sales_expanded_summary`, `get_sales_today_summary`, `get_sales_margin_summary` (a sexta é a repetição do período comparativo) |
-| chamadas na tela | **cada uma duas vezes** (período atual + comparativo) — o filtro precisa ir nas duas, senão a comparação mente |
-| antes de escrever | perguntar ao catálogo quem chama cada uma (`select proname from pg_proc where prosrc like '%get_sales_%'`) — foi assim que D-236 não repetiu o erro de D-235 |
+🟡 **A lição desta fatia, e ela custou um build vermelho:** a conferência de
+D-236 (*"pergunte ao catálogo quem chama, ANTES de escrever"*) estava certa e
+**insuficiente** — `pg_proc` só enxerga dentro do banco, e o **Copiloto
+(`apps/api/src/copilot.ts`) chama `get_sales_summary` de fora dele**. A
+pergunta certa tem duas metades: a consulta ao catálogo **e** um `grep` no
+monorepo. Faça as duas antes de mudar assinatura de RPC.
 
-⚠️ **`/vendas` JÁ TEM filtro de conta**, então ali entram as duas dimensões do
-item — e o cuidado de D-236 vale em dobro: quando um número do cabeçalho vem
-de RPC diferente da tabela, os dois têm de receber o mesmo recorte.
+⚠️ **Linha de base contra o Dev não é prova.** O Dev processa ~221 webhooks por
+hora: capturei os números antes de aplicar a migration e quatro dos cinco
+"mudaram" depois — era o banco andando, não regressão. A prova que vale compara
+a RPC com a leitura direta da mesma fonte **no mesmo instante**.
+
+🔴 **A próxima tarefa NÃO foi medida.** As pendências saudáveis (B) que restam
+no `docs/ROADMAP.md` são o **Aprendizado humano supervisionado** (reusa a Base
+de Conhecimento de D-113; a regra "nada promovido sem humano" já vive na policy
+de insert, então a fatia é sobre o que ALIMENTA sugestões) e os **filtros de
+Conta e Marca** em telas ainda não cobertas — este item acabou de fechar para
+as três telas que o mediam, então reabri-lo exige medir onde mais faz sentido.
+Ler o item no ROADMAP e a tela dona antes de escrever.
 
 ⚠️ **Dívida menor, registrada para não virar terceira cópia:** `/saude`,
 `/sincronizacao` e `/skus/[skuId]` ainda carregam suas próprias cópias de

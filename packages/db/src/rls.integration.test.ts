@@ -1402,6 +1402,91 @@ describe("métricas diárias de venda", () => {
       });
     });
 
+    // ---- recorte de marca (D-237) ---------------------------------------
+
+    it("SEM recorte, o resultado nao muda: a fonte continua sendo o rollup de conta", async () => {
+      // Guarda de NAO REGRESSAO. A funcao passou a ter dois ramos (`union
+      // all`), e o de cima e byte a byte o corpo antigo. Se alguem trocar a
+      // fonte incondicionalmente "para simplificar", este teste cai.
+      const rows = await asUser<{ units_sold: string; gross_revenue: string; purchases_count: string }>(
+        ADMIN_SB,
+        `select units_sold, gross_revenue, purchases_count from public.get_sales_summary('2026-08-20','2026-08-20')`,
+      );
+
+      expect(rows[0]?.units_sold).toBe("5");
+      expect(rows[0]?.gross_revenue).toBe("220.00");
+      // Presente sem recorte -- e e justamente o que some COM recorte.
+      expect(rows[0]?.purchases_count).not.toBeNull();
+    });
+
+    it("COM recorte de marca, compras e ticket medio voltam NULL -- nunca um numero errado", async () => {
+      // A razao esta na migration que criou as metricas: purchases_count e
+      // contagem DISTINTA de pack, e pack atravessa SKU. Somar por marca
+      // contaria o mesmo pack duas vezes.
+      const marca = await asUser<{ purchases_count: string | null; average_ticket: string | null; units_sold: string }>(
+        ADMIN_SB,
+        `select * from public.get_sales_summary('2026-08-20','2026-08-20',null,'MARCA-INEXISTENTE')`,
+      );
+      const semMarca = await asUser<{ purchases_count: string | null; average_ticket: string | null }>(
+        ADMIN_SB,
+        `select * from public.get_sales_summary('2026-08-20','2026-08-20',null,null,true)`,
+      );
+
+      expect(marca[0]?.purchases_count).toBeNull();
+      expect(marca[0]?.average_ticket).toBeNull();
+      expect(semMarca[0]?.purchases_count).toBeNull();
+      expect(semMarca[0]?.average_ticket).toBeNull();
+    });
+
+    it("a serie diaria segue a mesma regra: purchases_count NULL sob recorte", async () => {
+      const semRecorte = await asUser<{ purchases_count: string | null }>(
+        ADMIN_SB,
+        `select * from public.get_sales_daily_series('2026-08-20','2026-08-20')`,
+      );
+      const comRecorte = await asUser<{ purchases_count: string | null }>(
+        ADMIN_SB,
+        `select * from public.get_sales_daily_series('2026-08-20','2026-08-20',null,null,true)`,
+      );
+
+      expect(semRecorte[0]?.purchases_count).not.toBeNull();
+      for (const linha of comRecorte) {
+        expect(linha.purchases_count).toBeNull();
+      }
+    });
+
+    it("a MARGEM sai inteira em NULL sob recorte -- frete e desconto sao do PEDIDO", async () => {
+      // Devolver receita da marca menos custo da operacao inteira seria numero
+      // errado com cara de preciso.
+      const rows = await asUser<Record<string, unknown>>(
+        ADMIN_SB,
+        `select * from public.get_sales_margin_summary('2026-08-20','2026-08-20',null,'QUALQUER')`,
+      );
+
+      expect(rows).toHaveLength(1);
+      expect(Object.values(rows[0] ?? {}).every((v) => v === null)).toBe(true);
+    });
+
+    it("o trio de cancelamento sai em NULL sob recorte, e taxas_ml NAO", async () => {
+      // taxas_ml sai de order_items.sale_fee, que e por ITEM -- decompoe.
+      // O trio conta pedidos e soma orders.total_amount -- nao decompoe.
+      const rows = await asUser<{
+        taxas_ml: string;
+        pedidos_cancelados: string | null;
+        taxa_cancelamento: string | null;
+        valor_cancelado: string | null;
+        skus_distintos_vendidos: string;
+      }>(
+        ADMIN_SB,
+        `select * from public.get_sales_expanded_summary('2026-08-20','2026-08-20',null,'MARCA-INEXISTENTE')`,
+      );
+
+      expect(rows[0]?.pedidos_cancelados).toBeNull();
+      expect(rows[0]?.taxa_cancelamento).toBeNull();
+      expect(rows[0]?.valor_cancelado).toBeNull();
+      expect(rows[0]?.taxas_ml).not.toBeNull();
+      expect(rows[0]?.skus_distintos_vendidos).not.toBeNull();
+    });
+
     it("get_sales_summary filtra por conta quando informado", async () => {
       const rows = await asUser<{ gross_revenue: string }>(
         ADMIN_SB,

@@ -68,13 +68,35 @@ interface RawSalesSummaryRow {
   units_sold: number;
   gross_revenue: number;
   orders_count: number;
-  purchases_count: number;
+  /**
+   * Anulável desde D-237: sob recorte de MARCA a RPC devolve NULL aqui, porque
+   * a compra é contada por `pack` e um pack atravessa SKUs de marcas
+   * diferentes — somá-la por marca contaria o mesmo pack duas vezes.
+   *
+   * O Copiloto NÃO recorta por marca (a chamada abaixo passa só datas e conta),
+   * então na prática nunca é nulo. Quem tornar isso falso vai bater na guarda
+   * de `toSalesSummary`, que é onde a decisão precisa ser tomada.
+   */
+  purchases_count: number | null;
   average_ticket: number | null;
   average_selling_price: number | null;
   last_computed_at: string | null;
 }
 
 function toSalesSummary(row: RawSalesSummaryRow): SalesSummary {
+  // GUARDA, não cast (a lição de D-200: cast esconde qual defesa é real). O
+  // contrato de saída do Copiloto (`salesSummarySchema`) declara
+  // `purchasesCount` NÃO anulável, e isso é verdade enquanto a chamada não
+  // recortar por marca. Se alguém acrescentar `p_supplier_brand` aqui, esta
+  // linha estoura em vez de mandar um número inventado para o modelo narrar —
+  // e a decisão certa passa a ser: alargar o contrato ou recusar a ferramenta
+  // sob recorte.
+  if (row.purchases_count === null) {
+    throw new CopilotToolError(
+      "get_sales_summary devolveu purchases_count nulo: isso só acontece sob recorte de marca, que esta ferramenta não faz. Alargue o contrato antes de recortar.",
+    );
+  }
+
   return {
     unitsSold: row.units_sold,
     grossRevenue: row.gross_revenue,

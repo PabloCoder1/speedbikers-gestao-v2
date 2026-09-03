@@ -10,7 +10,8 @@ interface DailyPoint {
   gross_revenue: number;
   units_sold: number;
   orders_count: number;
-  purchases_count: number;
+  /** NULL sob recorte de marca (D-237) — ver a recusa logo abaixo. */
+  purchases_count: number | null;
 }
 
 const WIDTH = 800;
@@ -74,11 +75,29 @@ export function SalesChart({
 }): ReactNode {
   if (points.length === 0) return null;
 
+  // RECUSA EM VEZ DE ZERO (D-237). Sob recorte de marca, `purchases_count` vem
+  // NULL: pack atravessa SKU e não existe "compras da marca X". Plotar `?? 0`
+  // desenharia uma linha rente ao eixo — visualmente idêntica a "esta marca
+  // não teve compras", que é afirmação diferente e falsa. Mesma disciplina de
+  // D-127 com cobertura de estoque virtual.
+  const indisponivel = [...points, ...previousPoints].some((p) => p[metric.field] === null);
+
+  if (indisponivel) {
+    return (
+      <p style={{ margin: 0, color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
+        <strong>{metric.label}</strong> não tem série por marca: a compra é contada por <em>pack</em>, e um pack
+        pode atravessar SKUs de marcas diferentes — somá-la por marca contaria o mesmo pack duas vezes. Escolha
+        outra métrica, ou tire o recorte de marca.
+      </p>
+    );
+  }
+
   // Contagem NUNCA é formatada como moeda: "R$ 12" numa série de unidades
   // vendidas seria um número errado com aparência de certo — a classe de
   // defeito que este projeto persegue desde D-131.
   const formatValue = metric.format === "currency" ? formatCurrency : formatCount;
-  const valueAt = (point: DailyPoint): number => point[metric.field];
+  // Depois da recusa acima, o campo é numérico em todos os pontos.
+  const valueAt = (point: DailyPoint): number => point[metric.field] ?? 0;
 
   const periodLength = businessDateRangeLength(rangeFrom, rangeTo);
 

@@ -90,6 +90,30 @@ describe("runSalesSummary", () => {
     );
   });
 
+  /**
+   * O recorte de marca de D-237 fez `purchases_count` virar anulável na RPC.
+   * O Copiloto NÃO recorta por marca, então para ele o campo nunca é nulo — e
+   * os dois testes abaixo são as duas metades dessa afirmação: a chamada não
+   * manda os parâmetros de marca, e se mesmo assim vier nulo a ferramenta
+   * estoura em vez de narrar um número inventado.
+   */
+  it("não recorta por marca: a chamada não manda p_supplier_brand nem p_sem_marca", async () => {
+    const { userClient, calls } = fakeUserClient([{ data: SUMMARY_ROW, error: null }]);
+
+    await runSalesSummary(userClient, { dateFrom: "2026-08-01", dateTo: "2026-08-24" });
+
+    expect(calls[0]?.args).not.toHaveProperty("p_supplier_brand");
+    expect(calls[0]?.args).not.toHaveProperty("p_sem_marca");
+  });
+
+  it("purchases_count nulo estoura em vez de virar zero — só acontece sob recorte, que esta ferramenta não faz (D-237)", async () => {
+    const { userClient } = fakeUserClient([{ data: { ...SUMMARY_ROW, purchases_count: null }, error: null }]);
+
+    await expect(runSalesSummary(userClient, { dateFrom: "2026-08-01", dateTo: "2026-08-24" })).rejects.toThrow(
+      /purchases_count nulo/,
+    );
+  });
+
   it("períodos sem venda (average_ticket/average_selling_price nulos) não viram zero fingido", async () => {
     const { userClient } = fakeUserClient([
       { data: { ...SUMMARY_ROW, average_ticket: null, average_selling_price: null }, error: null },

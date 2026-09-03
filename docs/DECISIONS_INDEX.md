@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **234** (D-001 a D-236).
+Decisões registradas: **235** (D-001 a D-237).
 
 ## Por domínio
 
@@ -102,6 +102,7 @@ Decisões registradas: **234** (D-001 a D-236).
 - **D-173** — Central Full: o GRAO do Full estava errado em duas leituras, e isso aparecia como fila de trabalho falsa
 - **D-204** — Tres definicoes de "Full atual", e as tres devolviam o mesmo numero
 - **D-236** — Marca na Cobertura: a licao de D-235 aplicada ANTES do erro, e uma coluna que NAO segue o filtro
+- **D-237** — Marca em /vendas: o filtro entra, e o que nao tem resposta por marca volta NULL
 
 ### interface (16)
 

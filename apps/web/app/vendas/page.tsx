@@ -69,7 +69,8 @@ interface SalesSummary {
   units_sold: number;
   gross_revenue: number;
   orders_count: number;
-  purchases_count: number;
+  /** NULL sob recorte de marca (D-237): pack atravessa SKU, e somar contagem distinta entre grãos conta o mesmo pack duas vezes. */
+  purchases_count: number | null;
   average_ticket: number | null;
   average_selling_price: number | null;
   last_computed_at: string | null;
@@ -82,9 +83,11 @@ interface SalesSummary {
  */
 interface ExpandedSummary {
   taxas_ml: number;
-  pedidos_cancelados: number;
+  /** As três de cancelamento são NULL sob recorte de marca (D-237): contagem
+   *  distinta em pedidos, e `valor_cancelado` é o total do PEDIDO inteiro. */
+  pedidos_cancelados: number | null;
   taxa_cancelamento: number | null;
-  valor_cancelado: number;
+  valor_cancelado: number | null;
   skus_distintos_vendidos: number;
 }
 
@@ -97,7 +100,8 @@ interface TodaySummary {
   units_sold: number;
   gross_revenue: number;
   orders_count: number;
-  purchases_count: number;
+  /** NULL sob recorte de marca (D-237): pack atravessa SKU, e somar contagem distinta entre grãos conta o mesmo pack duas vezes. */
+  purchases_count: number | null;
   last_order_at: string | null;
 }
 
@@ -106,14 +110,24 @@ interface TodaySummary {
  * TUDO vem NULL (recusa como contrato) — nunca R$ 0,00 fingido.
  */
 interface MarginSummary {
-  orders_total: number;
-  orders_covered: number;
+  /** Sob recorte de marca (D-237) a margem sai INTEIRA em NULL: frete e
+   *  desconto são do PEDIDO, e não há cota de marca. */
+  orders_total: number | null;
+  orders_covered: number | null;
   gross_revenue_covered: number | null;
   taxas_ml_covered: number | null;
   frete_vendedor: number | null;
   desconto_vendedor: number | null;
   margem_operacional: number | null;
 }
+
+/**
+ * O recorte de marca tem TRÊS estados, e "sem marca" não é ausência de
+ * filtro: é a venda que nenhuma marca alcança — 23,2% da receita, itens sem
+ * `sku_id` vinculado (D-237). Sem esse estado, somar as 19 marcas não
+ * chegaria ao total e um quarto do faturamento sumiria sem explicação.
+ */
+type BrandFilter = { kind: "todas" } | { kind: "marca"; value: string } | { kind: "sem_marca" };
 
 interface MetricCardSpec {
   metricId: string;
@@ -403,14 +417,19 @@ interface AccountOption {
  * pode resetar o período, e vice-versa. Mesma ideia do `href()` de
  * `apps/web/app/importacoes/[id]/page.tsx`, com duas dimensões em vez de uma.
  */
-function buildHref(current: { period: Period; accountSlug: string | null; metricKey: string }, override: {
-  period?: Period;
-  accountSlug?: string | null;
-  metricKey?: string;
-}): string {
+function buildHref(
+  current: { period: Period; accountSlug: string | null; metricKey: string; brand: BrandFilter },
+  override: {
+    period?: Period;
+    accountSlug?: string | null;
+    metricKey?: string;
+    brand?: BrandFilter;
+  },
+): string {
   const period = override.period ?? current.period;
   const accountSlug = override.accountSlug !== undefined ? override.accountSlug : current.accountSlug;
   const metricKey = override.metricKey ?? current.metricKey;
+  const brand = override.brand ?? current.brand;
 
   const search = new URLSearchParams();
 
@@ -423,6 +442,16 @@ function buildHref(current: { period: Period; accountSlug: string | null; metric
 
   if (accountSlug !== null) {
     search.set("account", accountSlug);
+  }
+
+  // Marca e "sem marca" são estados MUTUAMENTE exclusivos, e por isso viram
+  // dois parâmetros distintos: um valor reservado dentro de `marca` colidiria
+  // com marca real e precisaria da mesma constante em SQL e em TypeScript —
+  // as "duas listas" que D-232 puniu.
+  if (brand.kind === "marca") {
+    search.set("marca", brand.value);
+  } else if (brand.kind === "sem_marca") {
+    search.set("semMarca", "1");
   }
 
   // O default fica FORA da URL, como `days` e `account` já fazem: `/vendas`
@@ -480,6 +509,22 @@ export default async function VendasPage({
   // vez, em vez de atribuir `undefined` a um campo opcional.
   const accountFilter = selectedAccount === null ? {} : { p_ml_account_id: selectedAccount.id };
 
+  // `semMarca=1` vence sobre `marca=` quando os dois vêm na URL: um recorte
+  // só, e o mais específico é o que isola a venda que nenhuma marca alcança.
+  const brand: BrandFilter =
+    query.semMarca === "1"
+      ? { kind: "sem_marca" }
+      : typeof query.marca === "string" && query.marca.trim() !== ""
+        ? { kind: "marca", value: query.marca.trim() }
+        : { kind: "todas" };
+
+  const brandFilter =
+    brand.kind === "marca"
+      ? { p_supplier_brand: brand.value }
+      : brand.kind === "sem_marca"
+        ? { p_sem_marca: true }
+        : {};
+
   const [
     currentResult,
     previousResult,
@@ -488,23 +533,24 @@ export default async function VendasPage({
     expandedResult,
     previousExpandedResult,
     todayResult,
+    brandsResult,
     marginResult,
     previousMarginResult,
   ] = await Promise.all([
     supabase
-      .rpc("get_sales_summary", { p_date_from: range.from, p_date_to: range.to, ...accountFilter })
+      .rpc("get_sales_summary", { p_date_from: range.from, p_date_to: range.to, ...accountFilter, ...brandFilter })
       .single(),
     supabase
       .rpc("get_sales_summary", {
         p_date_from: previousRange.from,
         p_date_to: previousRange.to,
-        ...accountFilter,
+        ...accountFilter, ...brandFilter,
       })
       .single(),
     supabase.rpc("get_sales_daily_series", {
       p_date_from: range.from,
       p_date_to: range.to,
-      ...accountFilter,
+      ...accountFilter, ...brandFilter,
     }),
     // Quarta consulta EM PARALELO, não em cascata (docs/ARCHITECTURE.md §21).
     // Mesma RPC, outra janela: a comparação de período já existia nos cards
@@ -513,36 +559,45 @@ export default async function VendasPage({
     supabase.rpc("get_sales_daily_series", {
       p_date_from: previousRange.from,
       p_date_to: previousRange.to,
-      ...accountFilter,
+      ...accountFilter, ...brandFilter,
     }),
     // Quinta e sexta (D-157): métricas 5C — cancelamentos, taxas e SKUs
     // distintos, período atual e anterior, no mesmo paralelo.
     supabase
-      .rpc("get_sales_expanded_summary", { p_date_from: range.from, p_date_to: range.to, ...accountFilter })
+      .rpc("get_sales_expanded_summary", { p_date_from: range.from, p_date_to: range.to, ...accountFilter, ...brandFilter })
       .single(),
     supabase
       .rpc("get_sales_expanded_summary", {
         p_date_from: previousRange.from,
         p_date_to: previousRange.to,
-        ...accountFilter,
+        ...accountFilter, ...brandFilter,
       })
       .single(),
     // Sétima (D-158): visão "hoje" ao vivo sobre orders (L1) — independente
     // do período selecionado, respeita só o filtro de conta.
-    supabase.rpc("get_sales_today_summary", { p_date: today, ...accountFilter }).single(),
+    supabase.rpc("get_sales_today_summary", { p_date: today, ...accountFilter, ...brandFilter }).single(),
+    // A lista vem do BANCO, nunca das linhas da página (D-194). Não depende do
+    // recorte: as pílulas têm de continuar mostrando as outras marcas.
+    // Sem organização a página ainda renderiza (ela não faz early-return), e
+    // pedir a lista com id nulo seria erro de rede em vez de filtro vazio.
+    organizationId === null
+      ? Promise.resolve({ data: null, error: null })
+      : supabase.rpc("get_supplier_brands", { p_organization_id: organizationId }),
     // Oitava e nona (D-166): margem operacional sobre janela COBERTA,
     // período atual e anterior, no mesmo paralelo.
     supabase
-      .rpc("get_sales_margin_summary", { p_date_from: range.from, p_date_to: range.to, ...accountFilter })
+      .rpc("get_sales_margin_summary", { p_date_from: range.from, p_date_to: range.to, ...accountFilter, ...brandFilter })
       .single(),
     supabase
       .rpc("get_sales_margin_summary", {
         p_date_from: previousRange.from,
         p_date_to: previousRange.to,
-        ...accountFilter,
+        ...accountFilter, ...brandFilter,
       })
       .single(),
   ]);
+
+  const brands = (brandsResult.data ?? []).map((r) => r.supplier_brand);
 
   const summary: SalesSummary | null = currentResult.data ?? null;
   const previousSummary: SalesSummary | null = previousResult.data ?? null;
@@ -640,7 +695,7 @@ export default async function VendasPage({
           }}
         >
           <FilterPill
-            href={buildHref({ period, accountSlug, metricKey: metric.key }, { accountSlug: null })} active={selectedAccount === null}
+            href={buildHref({ period, accountSlug, metricKey: metric.key, brand }, { accountSlug: null })} active={selectedAccount === null}
           >
             Todas as contas
           </FilterPill>
@@ -648,13 +703,52 @@ export default async function VendasPage({
           {accounts.map((account) => (
             <FilterPill
               key={account.id}
-              href={buildHref({ period, accountSlug, metricKey: metric.key }, { accountSlug: account.slug })} active={selectedAccount?.id === account.id}
+              href={buildHref({ period, accountSlug, metricKey: metric.key, brand }, { accountSlug: account.slug })} active={selectedAccount?.id === account.id}
             >
               {account.label}
             </FilterPill>
           ))}
         </div>
       )}
+
+      {/*
+        "Sem marca" NÃO é ausência de filtro: é a venda que nenhuma marca
+        alcança — item sem SKU vinculado, 23,2% da receita. Sem essa pílula,
+        somar as marcas não chegaria ao total e um quarto do faturamento
+        sumiria sem explicação (D-237).
+      */}
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "center",
+          gap: "var(--sb-space-2)",
+          marginBottom: "var(--sb-space-2)",
+        }}
+      >
+        <span style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)", minWidth: "4rem" }}>Marca</span>
+        <FilterPill
+          href={buildHref({ period, accountSlug, metricKey: metric.key, brand }, { brand: { kind: "todas" } })}
+          active={brand.kind === "todas"}
+        >
+          Todas
+        </FilterPill>
+        <FilterPill
+          href={buildHref({ period, accountSlug, metricKey: metric.key, brand }, { brand: { kind: "sem_marca" } })}
+          active={brand.kind === "sem_marca"}
+        >
+          Sem marca
+        </FilterPill>
+        {brands.map((nome) => (
+          <FilterPill
+            key={nome}
+            href={buildHref({ period, accountSlug, metricKey: metric.key, brand }, { brand: { kind: "marca", value: nome } })}
+            active={brand.kind === "marca" && brand.value === nome}
+          >
+            {nome}
+          </FilterPill>
+        ))}
+      </div>
 
       <div
         style={{
@@ -668,7 +762,7 @@ export default async function VendasPage({
         {PRESET_DAYS.map((preset) => (
           <FilterPill
             key={preset}
-            href={buildHref({ period, accountSlug, metricKey: metric.key }, { period: { days: preset } })} active={!isCustom && days === preset}
+            href={buildHref({ period, accountSlug, metricKey: metric.key, brand }, { period: { days: preset } })} active={!isCustom && days === preset}
           >
             {preset} dias
           </FilterPill>
@@ -829,18 +923,25 @@ export default async function VendasPage({
             Margem operacional — estimativa por pedido
           </h2>
 
-          {margin.orders_covered === 0 ? (
+          {margin.orders_covered === null ? (
             <p style={{ margin: 0, color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
-              Nenhum dos {formatCount(margin.orders_total)} pedidos válidos do período tem frete e desconto
+              <strong>Não há margem por marca.</strong> Frete e desconto do vendedor são do PEDIDO — um pedido
+              tem um frete, não um frete por item —, então não existe cota de marca para descontar. Mostrar a
+              receita da marca menos o custo da operação inteira seria número errado com cara de preciso. Tire o
+              recorte de marca para ver a margem.
+            </p>
+          ) : margin.orders_covered === 0 ? (
+            <p style={{ margin: 0, color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
+              Nenhum dos {formatCount(margin.orders_total ?? 0)} pedidos válidos do período tem frete e desconto
               capturados ainda — a captura diária de custos começou em 31/08/2026 e a margem só é exibida
               sobre pedidos cobertos, nunca estimada por cima.
             </p>
           ) : (
             <>
               <p style={{ margin: "0 0 var(--sb-space-2)", color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
-                Calculada sobre {formatCount(margin.orders_covered)} de {formatCount(margin.orders_total)}{" "}
+                Calculada sobre {formatCount(margin.orders_covered)} de {formatCount(margin.orders_total ?? 0)}{" "}
                 pedidos válidos do período (
-                {formatPercent(margin.orders_covered / Math.max(margin.orders_total, 1))}) — os que têm frete e
+                {formatPercent(margin.orders_covered / Math.max(margin.orders_total ?? 1, 1))}) — os que têm frete e
                 desconto observados. <strong>Não é receita líquida</strong>: taxa fixa por pedido, parcelamento,
                 custo de cobrança do Mercado Pago, impostos retidos e reembolsos posteriores não são observados.
               </p>
@@ -856,7 +957,7 @@ export default async function VendasPage({
                   <MetricCard
                     key={card.metricId}
                     card={card}
-                    showPrevious={previousMargin !== null && previousMargin.orders_covered > 0}
+                    showPrevious={previousMargin !== null && (previousMargin.orders_covered ?? 0) > 0}
                   />
                 ))}
               </div>
@@ -883,7 +984,7 @@ export default async function VendasPage({
               {SALES_METRICS.map((option) => (
                 <FilterPill
                   key={option.key}
-                  href={buildHref({ period, accountSlug, metricKey: metric.key }, { metricKey: option.key })} active={option.key === metric.key}
+                  href={buildHref({ period, accountSlug, metricKey: metric.key, brand }, { metricKey: option.key })} active={option.key === metric.key}
                   aria-current={option.key === metric.key ? "true" : undefined}
                 >
                   {option.label}

@@ -296,6 +296,38 @@ Três mecanismos independentes, nenhum consolidado numa visão financeira:
 | Crescimento e valor | COLUNAS para o julgamento humano, nao chaves -- chave explicavel vale mais que score opaco |
 | Onde roda | Em SQL (`get_purchase_suggestions`), DERIVADA das formulas canonicas de `@sb/domain` com TESTE DE EQUIVALENCIA na CI: para cada linha, sugestao/estado/cobertura do SQL == dominio sobre os mesmos ingredientes. A tela continua renderizando pelo dominio |
 
+## 5E. O que NÃO tem versão por marca (D-237)
+
+O filtro de marca de `/vendas` obrigou a responder, métrica por métrica, se ela
+**decompõe** por marca. A resposta não é a mesma para todas, e o critério é um
+só: **a marca vive no ITEM; se a métrica é contada no PEDIDO, não há cota de
+marca para atribuir.**
+
+| Métrica | Decompõe? | Por quê |
+|---|---|---|
+| `receita_bruta` | **sim** | `sum(order_items.quantity * unit_price)` = `sum(orders.total_amount)` — medido, R$ 3.073.580,78 dos dois lados |
+| `unidades_vendidas` | **sim** | `order_items.quantity` é do item |
+| `pedidos` | **sim** (hoje) | medido: **zero pedidos com mais de um SKU** em 340.024. É verdade do dado, não garantia estrutural — se um pedido passar a ter duas marcas, ele conta nas duas |
+| `preco_medio_praticado` | **sim** | razão de dois aditivos |
+| `taxas_ml` | **sim** | `order_items.sale_fee` é por item |
+| `skus_distintos_vendidos` | **sim** | contagem distinta NO grão SKU |
+| **`pedidos_por_pack`** | **NÃO** | contagem DISTINTA de pack, e um pack atravessa SKUs de marcas diferentes. Medido: somando o grão fino, **48 de 124 pares (conta, dia) divergem em agosto/2026**, sempre para mais |
+| **`ticket_medio`** | **NÃO** | denominador é `pedidos_por_pack` |
+| **`pedidos_cancelados`, `taxa_cancelamento`, `valor_cancelado`** | **NÃO** | contagem de pedido e `orders.total_amount`, do pedido inteiro |
+| **`margem_operacional_pedido`, `frete_vendedor`, `desconto_vendedor`** | **NÃO** | um pedido tem **um** frete, não um frete por item |
+
+**A regra que fica:** sob recorte de marca, o que não decompõe volta **NULL** —
+nunca um número plausível. Mostrar receita da marca menos custo da operação
+inteira seria número errado com cara de preciso, que é o que D-127 recusa fazer
+com cobertura. A tela imprime `—` e, no gráfico, **recusa a série** com o
+motivo, em vez de plotar zero.
+
+**"Sem marca" é um valor do filtro**, não ausência dele: **23,2% da receita**
+está em itens sem `sku_id`. Sem esse estado, somar as 19 marcas não chega ao
+total e um quarto do faturamento some sem explicação.
+
+---
+
 ## 6. Como adicionar ou alterar uma métrica
 
 1. Registrar ou alterar a definição **aqui primeiro**.

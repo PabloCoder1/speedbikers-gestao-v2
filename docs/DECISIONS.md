@@ -5604,6 +5604,64 @@ Filtra-la por marca trocaria o significado: toda marca pequena passaria a ter a 
 
 **Impacto:** `supabase/migrations/20260903213000_stock_coverage_supplier_brand.sql`, `apps/web/lib/coverage-filters.ts` (novo), `apps/web/lib/coverage-filters.test.ts` (novo), `apps/web/app/cobertura/page.tsx`, `packages/db/src/types.ts` (a mao, D-213), `packages/db/src/rls.integration.test.ts`.
 
+## D-237 - Marca em /vendas: o filtro entra, e o que nao tem resposta por marca volta NULL
+
+**Contexto:** ultima das tres telas do item P1 "filtros de Conta / Origem / Marca" — depois da Curva ABC (D-235) e da Cobertura (D-236). E a mais dificil, e a dificuldade **nao e SQL**: e que nem todo numero de vendas tem versao por marca. Cinco RPCs, cada uma chamada duas vezes pela tela (periodo atual e comparativo).
+
+**O que decompoe por marca foi PROVADO, nao suposto.** Receita e unidades decompoem porque a soma dos itens bate exatamente com o total dos pedidos — `sum(orders.total_amount)` = `sum(order_items.quantity * unit_price)` = **R$ 3.073.580,78**, identico. Logo a fatia de uma marca e uma parcela legitima.
+
+**O que NAO decompoe, e a migration que criou as metricas ja dizia em 2026-08-21:**
+
+> *"purchases_count NAO E A SOMA da contagem por anuncio: pedidos do mesmo pack podem pertencer a anuncios diferentes."*
+
+Medido agora: somando `daily_sku_metrics.purchases_count` por (conta, dia) contra `daily_account_metrics`, **48 de 124 pares divergem so em agosto/2026**, sempre com o grao fino somando MAIS — a assinatura de contar o mesmo pack duas vezes. `average_ticket` (receita / compras) herda. E frete e desconto sao do PEDIDO: **nao existe cota de frete da marca X**, entao a margem sai inteira.
+
+**A decisao: o filtro entra, e o que nao tem resposta certa volta NULL** — nunca um numero plausivel e errado. Mesmo contrato de `days_of_coverage` para estoque virtual (D-127): *"sem saldo real, um numero aqui seria resposta errada com cara de precisa"*.
+
+| numero | sob recorte de marca |
+|---|---|
+| receita, unidades, pedidos, preco medio | **filtrados** — aditivos, decomposicao provada |
+| **compras (pack) e ticket medio** | **NULL** — pack atravessa SKU |
+| taxas do ML, SKUs distintos vendidos | **filtrados** — o primeiro sai de `order_items.sale_fee`, por item |
+| **trio de cancelamento** | **NULL** — contagem de pedido e `orders.total_amount` |
+| **margem operacional (7 campos)** | **NULL inteira** — frete e desconto sao do pedido |
+
+**As duas primeiras RPCs trocam de FONTE, e so quando ha filtro.** `get_sales_summary` e `get_sales_daily_series` leem `daily_account_metrics`, que **nao tem dimensao de SKU**. A fonte fina tem, e as duas reconciliam. Mas trocar sempre seria regressao na tela mais usada, entao e `union all` com guardas mutuamente exclusivas. **Conferido no plano, nao no comentario:** com marca nula o EXPLAIN inline mostra **so** o `Index Scan on daily_account_metrics` — o ramo do grao fino **nao aparece**. Custo quente medido: **133 buffers / 0,93 ms sem filtro** contra **884 / 6,6 ms com** — o preco existe e so e pago por quem recorta.
+
+**"Sem marca" e valor de filtro, nao esquecimento.** 23,2% da receita esta em itens sem `sku_id` — venda que nenhuma marca alcanca. Sem esse estado, somar as 19 marcas nao chegaria ao total. E parametro PROPRIO (`p_sem_marca`) em vez de string reservada dentro de `p_supplier_brand`: valor magico colidiria com marca real e exigiria a mesma constante em SQL e TypeScript — as "duas listas" que D-232 puniu.
+
+**A prova que sustenta tudo: as partes somam o todo.** No Dev, 30 dias, as 19 marcas mais "sem marca" contra o total sem filtro:
+
+| | soma das partes | total | sobra |
+|---|---|---|---|
+| unidades | 30.128 | 30.128 | **0** |
+| receita | R$ 3.061.992,52 | R$ 3.061.992,52 | **0** |
+| pedidos | 29.573 | 29.573 | **0** |
+
+---
+
+**O ACHADO DA FATIA, E ELE E SOBRE ONDE SE PROCURA.** A conferencia de D-236 — *"pergunte ao catalogo quem chama, ANTES de escrever"* — foi feita e deu **zero chamadores**:
+
+```sql
+select proname from pg_proc where prosrc like '%get_sales_%'   -- nenhum
+```
+
+E estava certa, e **insuficiente**: `pg_proc` so enxerga dentro do banco. **O Copiloto (`apps/api/src/copilot.ts`) chama `get_sales_summary` de fora dele**, e apareceu como erro de compilacao do `@sb/api` depois de a migration ja estar aplicada. A licao de D-235 tinha sido aprendida pela metade: a pergunta certa nao e "quem chama no banco", e "quem chama, em qualquer lugar" — e a segunda metade da resposta e um `grep` no monorepo, nao uma consulta ao catalogo.
+
+**O conserto foi guarda, nao cast** (D-200: cast esconde qual defesa e real). O Copiloto **nao recorta por marca** — a chamada passa so datas e conta —, entao para ele o campo nunca e nulo, e o contrato de saida (`salesSummarySchema`) segue nao anulavel. Mas se alguem acrescentar o recorte la, `toSalesSummary` **estoura** em vez de mandar um numero inventado para o modelo narrar. Dois testes fixam as duas metades: a chamada nao manda os parametros de marca, e nulo estoura. Contra o codigo sem a guarda, **exatamente um teste cai** — o certo.
+
+---
+
+**A primeira prova pareceu falhar, e a razao vale registrar.** Capturei a linha de base do Dev antes de aplicar e comparei depois: quatro dos cinco numeros "mudaram". Nao era regressao — **o Dev esta vivo, processando ~221 webhooks por hora**, e a base envelheceu entre as duas medicoes (o "hoje" subiu de 623 para 624 pedidos, o sinal mais claro). A prova refeita e imune ao tempo: a RPC contra a leitura direta da MESMA fonte, no MESMO instante — **identico** nas duas. **Linha de base contra banco vivo nao e prova; comparacao no mesmo instante e.**
+
+**A migration recebeu carimbo ANTERIOR as duas irmas** (`20260903190307` contra `20260903200000` de D-235 e `20260903213000` de D-236), porque foi escrita antes e aplicada depois. Nao ha problema, e foi verificado em vez de suposto: `supabase db reset` aplica na ordem de versao e passou — as tres fatias tocam funcoes disjuntas. O arquivo local foi renomeado para o carimbo do Dev (D-138).
+
+**Na tela, o grafico RECUSA em vez de desenhar zero.** Sob recorte, "Compras (packs)" nao tem serie: plotar `?? 0` desenharia uma linha rente ao eixo, visualmente identica a "esta marca nao teve compras", que e afirmacao diferente e falsa. **Visto rodando:** a recusa aparece com o texto do porque e **nenhum `polyline` e desenhado**; com "Faturamento" no mesmo recorte, o grafico desenha normalmente. E a troca de fonte se provou sozinha no ensaio: sem filtro a tela dizia *"nenhuma metrica calculada"* (o seed local so grava o grao fino) e com "Sem marca" apareceram R$ 500,00 / 5 unidades / 5 pedidos.
+
+**Verificacao:** integracao **582/582** em banco recriado, `check` 29/29, build 8/8, `check:embeds` 33/33, `check:waterfalls` 55, **19/19 Playwright**. ACL conferida apos o drop+create (D-211): as cinco `invoker`, sem `public`, sem `anon`, sem sobrecarga orfa.
+
+**Impacto:** `supabase/migrations/20260903190307_sales_supplier_brand.sql`, `apps/web/app/vendas/{page,sales-chart}.tsx`, `apps/api/src/copilot.ts` + teste, `packages/db/src/types.ts` (a mao, D-213), `packages/db/src/rls.integration.test.ts`, `docs/METRICS.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:
