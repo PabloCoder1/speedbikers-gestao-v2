@@ -5264,6 +5264,33 @@ E a mensagem obvia seria falsa. `listing.price.changed` e um **diff entre dois s
 
 **Impacto:** `apps/web/app/skus/[skuId]/page.tsx`, `apps/web/app/acoes/action-row.tsx`, `apps/web/lib/labels.ts`, `apps/web/lib/decision-format.ts` (novo) + teste, `packages/db/src/rls-embed-nullability.integration.test.ts` (+1), `apps/web/e2e/{seed,constants,sku-dashboard.spec}.ts`.
 
+## D-229 - A varredura de custos falhava em TODO pedido real, e repetia o fracasso oito vezes por dia
+
+**Contexto:** ao fechar as abas do SKU, fui conferir os atos humanos que uma varredura anterior tinha levantado e medi o estado real do sweep financeiro de D-165 (`v3-order-financials-sweep`, no ar desde 02/09). Em 03/09/2026: **16 execucoes, 1 linha em `order_financials`**, contra 7.413 pedidos validos nos ultimos 7 dias (4.776 ja com `shipping_id`). As 16 sao 2 contas x 8 tentativas, todas `failed`/`retryable`, todas com o MESMO motivo:
+
+```
+path: ["amounts"], "Invalid input: expected object, received undefined"
+```
+
+**A causa e uma leitura errada da documentacao, que estava escrita como certa.** D-165 escreveu o schema de `GET /orders/{id}/discounts` com `amounts.seller` **na raiz**, a partir da tabela de `docs/MERCADO_LIVRE.md` §2.15 ("`amounts.seller` — parcela do desconto bancada pelo vendedor"). A forma documentada pelo Mercado Livre e uma **lista**: `details[]`, cada desconto com `type` e `items[]`, e `amounts { total, seller }` **dentro de cada item**. O campo existe; a nesting nao. Em producao, TODA resposta real falhava na validacao. A unica linha gravada foi a do unico pedido cujo endpoint respondeu 4xx — o caminho "nao observado → NULL" funcionou; o caminho feliz nunca.
+
+**Ressalva de fonte, escrita porque importa:** o portal de desenvolvedores devolve **403** a leitor automatizado (ja registrado em §2.16), entao nao li a pagina — li o resumo do buscador sobre a pagina oficial ("Gerenciamento de vendas") e o confrontei com o erro de validacao real, que diz exatamente "`amounts` ausente na raiz". As duas evidencias apontam para o mesmo lugar. Quem tiver o portal aberto no navegador confirma a nesting em um minuto.
+
+**Por que uma resposta ruim matava o dia inteiro — e isso e a segunda metade do defeito.** O cliente HTTP valida com `schema.parse` e deixa o `ZodError` cru propagar. `fetchOptionalCost` so transforma em NULL o `MercadoLivreApiError` definitivo (4xx); o `ZodError` passava, caia no `catch` da varredura, virava `errorClass = "retryable"` e o job saia `failed`/retryable. O Cloud Tasks repetiu **8 vezes** (`--max-attempts 8`) exatamente o mesmo fracasso, porque nenhuma repeticao muda o corpo que o Mercado Livre devolve — e cada tentativa morria no primeiro pedido, entao os seguintes nunca eram alcancados. E a classe de D-202 (falha definitiva tratada como transitoria) somada a de D-208 (o unico rastro era o log).
+
+**Dois consertos, um por metade:**
+
+1. **Schema na forma documentada**, em uniao com a forma antiga (aceitar as duas custa uma linha, e nada prova que o ML nunca devolve a antiga). O desconto do vendedor e a **soma** de `amounts.seller` sobre todos os itens de todos os descontos. **`details` vazio e desconto ZERO observado** — o endpoint enumerou os descontos do pedido e nao havia nenhum — e isso e diferente do 4xx definitivo, que continua NULL ("nao observado"). A distincao importa para a cobertura da margem (D-166): um pedido sem desconto agora conta como coberto, em vez de ficar NULL para sempre.
+2. **Resposta 200 fora do contrato nao derruba mais o dia.** `ZodError` por pedido e falha PERMANENTE daquele pedido, nao da varredura: registra em log, **pula SEM gravar linha** (sem checkpoint, o pedido volta amanha e e capturado quando o schema for corrigido — gravar NULL o queimaria para sempre, D-156) e segue para o proximo. O `sync_run` sai **`partial`** com o motivo, para `/saude` ver que a varredura nao esta inteira; o job responde `done` (D-202: repetir nao mudaria nada).
+
+**O teste que fixa o cenario de 03/09:** tres pedidos, o do meio com corpo fora do contrato → `done` com 2 processados, 3 chamadas feitas, o do meio SEM linha, `sync_run` `partial` com "1 pedido(s) com resposta fora do contrato". Antes desta fatia, o mesmo cenario era `failed` no segundo pedido e o terceiro nunca era alcancado. Mais tres testes: soma sobre varios itens e descontos (6,50), `details` vazio → 0, forma antiga → aceita.
+
+**O que continua verdade e o que muda no ar:** nada disto vale ate o proximo deploy — o worker no ar (`0702969`) tem o schema antigo e vai continuar falhando 16 vezes por dia ate la. Depois do deploy, a primeira varredura cobre os 7 dias da janela; pedidos anteriores ficam de fora (janela de 7 dias, contrato de D-165). **Nao ha backfill nesta fatia**, e o motivo e o mesmo de D-165.
+
+**Verificacao:** worker 526/526 (+4), `check` 29/29, build 8/8. Sem migration.
+
+**Impacto:** `apps/worker/src/handlers/sync-order-financials.ts`, `apps/worker/src/handlers/sync-order-financials.test.ts`, `docs/MERCADO_LIVRE.md` §2.15 (a linha da tabela corrigida), `docs/HANDOFF.md` (atos humanos).
+
 ## Como adicionar nova decisao
 
 Registrar:

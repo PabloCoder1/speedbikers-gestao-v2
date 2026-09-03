@@ -316,6 +316,19 @@ Nada disto pode ser feito por um agente.
    (configuração externa, não migration).
 7. **Branch protection da `v3`**: hoje `protected: false` — a CI não é
    tecnicamente obrigatória para merge.
+8. **Deploy de `worker` (e `api`) para D-229 valer.** O sweep financeiro
+   (`v3-order-financials-sweep`) falha **16 vezes por dia** no ar — 2 contas
+   × 8 tentativas, todas com o mesmo erro de schema em `/orders/{id}/discounts`
+   — e `order_financials` tem **1 linha**. D-229 corrigiu o schema e a
+   resiliência no código; até o deploy, a margem operacional continua sem
+   fonte. Conferência no dia seguinte: `select status, items_processed, reason
+   from sync_runs where resource = 'order_financials' order by started_at desc
+   limit 4` — esperar `done` (ou `partial` com motivo), nunca `failed`; e
+   `select count(*) from order_financials` crescendo.
+9. **O repositório está PÚBLICO** (`visibility: public` na API do GitHub, sem
+   token). Os docs carregam números de faturamento, nomes de contas e o
+   estado interno da operação. Decidir: tornar privado, ou aceitar de
+   propósito. Não é ato de agente.
 
 ---
 

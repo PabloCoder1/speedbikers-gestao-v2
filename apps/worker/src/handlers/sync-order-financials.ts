@@ -1,7 +1,7 @@
 import type { AdminClient } from "@sb/db";
 import type { MercadoLivreClient, MercadoLivreOAuthConfig } from "@sb/mercado-livre";
 import { MercadoLivreApiError } from "@sb/mercado-livre";
-import { z } from "zod";
+import { z, ZodError } from "zod";
 
 import type { JobOutcome } from "../job-outcome.js";
 import { readAllPages } from "../read-all-pages.js";
@@ -40,10 +40,47 @@ const shipmentCostsSchema = z.object({
   senders: z.array(z.object({ cost: z.number().nonnegative() })),
 });
 
-/** GET /orders/{id}/discounts — `amounts.seller` é a parcela do vendedor. */
-const orderDiscountsSchema = z.object({
-  amounts: z.object({ seller: z.number().nonnegative() }),
-});
+/**
+ * GET /orders/{id}/discounts — a forma DOCUMENTADA (D-229) é uma lista:
+ *
+ *   { details: [ { type, items: [ { id, quantity, amounts: { total, seller } } ] } ] }
+ *
+ * `amounts.seller` existe, mas DENTRO de cada item de cada desconto — nunca
+ * na raiz. D-165 leu "`amounts.seller` em GET /orders/{id}/discounts" da
+ * tabela de §2.15 e escreveu o schema com `amounts` na raiz; em produção,
+ * TODA resposta real falhava na validação (16 execuções em 03/09/2026, uma
+ * linha gravada — a única cujo endpoint respondeu 4xx). A forma antiga
+ * continua aceita na união: nada prova que o Mercado Livre nunca a devolve,
+ * e aceitar as duas custa uma linha.
+ *
+ * O desconto do vendedor é a SOMA de `amounts.seller` sobre todos os itens
+ * de todos os descontos. `details` VAZIO é desconto ZERO observado — o
+ * endpoint enumerou os descontos do pedido e não havia nenhum — distinto do
+ * 4xx definitivo, que continua NULL ("não observado").
+ */
+const orderDiscountsSchema = z.union([
+  z.object({
+    details: z.array(
+      z.object({
+        items: z.array(z.object({ amounts: z.object({ seller: z.number().nonnegative() }) })),
+      }),
+    ),
+  }),
+  z.object({ amounts: z.object({ seller: z.number().nonnegative() }) }),
+]);
+
+type OrderDiscounts = z.infer<typeof orderDiscountsSchema>;
+
+function sumSellerDiscount(payload: OrderDiscounts): number {
+  if ("details" in payload) {
+    return payload.details.reduce(
+      (total, detail) => total + detail.items.reduce((sub, item) => sub + item.amounts.seller, 0),
+      0,
+    );
+  }
+
+  return payload.amounts.seller;
+}
 
 /** Janela da varredura: pedidos válidos dos últimos N dias sem captura. */
 const SWEEP_WINDOW_DAYS = 7;
@@ -179,6 +216,7 @@ export function createSyncOrderFinancialsHandler(deps: SyncOrderFinancialsDeps):
     let itemsProcessed = 0;
     let itemsSkipped = 0;
     let itemsWithoutShipping = 0;
+    let itemsShapeUnknown = 0;
     let requestsMade = 0;
 
     try {
@@ -196,32 +234,58 @@ export function createSyncOrderFinancialsHandler(deps: SyncOrderFinancialsDeps):
         requestsMade += 1;
 
         let shippingCost: number | null = null;
+        let sellerDiscount: number | null = null;
 
-        if (order.shipping_id === null) {
-          itemsWithoutShipping += 1;
-        } else {
-          shippingCost = await fetchOptionalCost(
+        try {
+          if (order.shipping_id === null) {
+            itemsWithoutShipping += 1;
+          } else {
+            shippingCost = await fetchOptionalCost(
+              () =>
+                deps.mercadoLivre.request({
+                  method: "GET",
+                  path: `/shipments/${String(order.shipping_id)}/costs`,
+                  accessToken,
+                  schema: shipmentCostsSchema,
+                }),
+              (payload) => payload.senders.reduce((total, sender) => total + sender.cost, 0),
+            );
+          }
+
+          sellerDiscount = await fetchOptionalCost(
             () =>
               deps.mercadoLivre.request({
                 method: "GET",
-                path: `/shipments/${String(order.shipping_id)}/costs`,
+                path: `/orders/${String(order.id)}/discounts`,
                 accessToken,
-                schema: shipmentCostsSchema,
+                schema: orderDiscountsSchema,
               }),
-            (payload) => payload.senders.reduce((total, sender) => total + sender.cost, 0),
+            sumSellerDiscount,
           );
-        }
+        } catch (error) {
+          // Resposta 200 FORA do contrato (D-229). O cliente HTTP valida com
+          // `schema.parse` e deixa o ZodError cru propagar; até aqui ele caía
+          // no catch de fora como "retryable", o Cloud Tasks repetia 8 vezes
+          // e o dia inteiro da conta morria no primeiro pedido cuja resposta o
+          // schema não conhecia — nenhuma repetição muda o corpo que o
+          // Mercado Livre devolve. É falha PERMANENTE deste pedido, não da
+          // varredura: registra, pula SEM gravar linha (sem checkpoint, ele
+          // volta amanhã e é capturado quando o schema for corrigido) e
+          // segue para o próximo. Gravar NULL aqui queimaria o pedido para
+          // sempre (D-156: progresso por existência de linha).
+          if (error instanceof ZodError) {
+            itemsShapeUnknown += 1;
+            context.logger.warn("sync_order_financials_shape_unknown", {
+              ml_account_id: mlAccountId,
+              order_id: order.id,
+              issues: error.issues.map((issue) => `${issue.path.map(String).join(".")}: ${issue.message}`),
+            });
 
-        const sellerDiscount = await fetchOptionalCost(
-          () =>
-            deps.mercadoLivre.request({
-              method: "GET",
-              path: `/orders/${String(order.id)}/discounts`,
-              accessToken,
-              schema: orderDiscountsSchema,
-            }),
-          (payload) => payload.amounts.seller,
-        );
+            continue;
+          }
+
+          throw error;
+        }
 
         const inserted = await deps.db.from("order_financials").upsert(
           {
@@ -269,6 +333,14 @@ export function createSyncOrderFinancialsHandler(deps: SyncOrderFinancialsDeps):
 
     const finishedAt = deps.now?.() ?? new Date();
 
+    // `partial` quando algum pedido ficou fora do contrato: o trabalho que
+    // deu para fazer foi feito e persistiu, mas /saude precisa ver que a
+    // varredura não está inteira — um log que ninguém lê não basta (D-208).
+    const shapeUnknownReason =
+      itemsShapeUnknown > 0
+        ? `${String(itemsShapeUnknown)} pedido(s) com resposta fora do contrato do Mercado Livre; não gravados, voltam na próxima varredura`
+        : undefined;
+
     await recordSyncRunSuccess(
       deps.db,
       {
@@ -281,7 +353,8 @@ export function createSyncOrderFinancialsHandler(deps: SyncOrderFinancialsDeps):
         latestRecordAt: finishedAt,
         startedAt: started,
         finishedAt,
-        status: "done",
+        status: itemsShapeUnknown > 0 ? "partial" : "done",
+        ...(shapeUnknownReason !== undefined ? { reason: shapeUnknownReason } : {}),
       },
       context.logger,
     );
@@ -293,6 +366,7 @@ export function createSyncOrderFinancialsHandler(deps: SyncOrderFinancialsDeps):
       // Pedidos anteriores a D-165 (sem shipping_id): frete fica NULO,
       // declarado — nunca escondido na média.
       items_without_shipping: itemsWithoutShipping,
+      items_shape_unknown: itemsShapeUnknown,
     });
 
     return { status: "done", processed: itemsProcessed };

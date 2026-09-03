@@ -121,6 +121,12 @@ interface FakeClientOptions {
   costsError?: MercadoLivreApiError;
   discountsError?: MercadoLivreApiError;
   sellerDiscount?: number;
+  /**
+   * Corpos de /discounts na ORDEM das chamadas (D-229) — passam pelo
+   * `schema.parse` do fake exatamente como no cliente real, então um corpo
+   * fora do contrato lança o mesmo ZodError. Esgotados, volta a forma padrão.
+   */
+  discountsBodies?: unknown[];
 }
 
 function fakeClient(options: FakeClientOptions = {}): {
@@ -147,7 +153,24 @@ function fakeClient(options: FakeClientOptions = {}): {
         return Promise.reject(options.discountsError);
       }
 
-      return Promise.resolve(request.schema.parse({ amounts: { seller: options.sellerDiscount ?? 3.75 } }));
+      const injetado = options.discountsBodies?.shift();
+
+      if (injetado !== undefined) {
+        return Promise.resolve(request.schema.parse(injetado));
+      }
+
+      // A forma DOCUMENTADA (D-229): lista de descontos, cada um com itens,
+      // `amounts.seller` dentro do item — nunca na raiz.
+      return Promise.resolve(
+        request.schema.parse({
+          details: [
+            {
+              type: "coupon",
+              items: [{ id: "MLB1", quantity: 1, amounts: { total: 5, seller: options.sellerDiscount ?? 3.75 } }],
+            },
+          ],
+        }),
+      );
     },
   } as unknown as MercadoLivreClient;
 
@@ -275,5 +298,84 @@ describe("sync.order-financials (D-165)", () => {
     expect(outcome).toEqual({ status: "done", processed: 0 });
     expect(upserted).toHaveLength(0);
     expect(calls).toEqual([]);
+  });
+});
+
+/**
+ * O contrato de GET /orders/{id}/discounts (D-229). Em produção, 03/09/2026:
+ * 16 execuções, 1 linha gravada. TODA resposta real falhava no schema de
+ * D-165 (`amounts` na raiz), o ZodError cru caía no catch da varredura como
+ * "retryable", o Cloud Tasks repetia 8 vezes e o dia inteiro da conta morria
+ * no primeiro pedido cuja resposta o schema não conhecia.
+ */
+describe("sync.order-financials — o contrato de /orders/{id}/discounts (D-229)", () => {
+  it("desconto do vendedor é a SOMA de details[].items[].amounts.seller — a forma documentada", async () => {
+    const { db, upserted } = fakeDb({ orders: [{ id: 9101, shipping_id: null }] });
+    const { client } = fakeClient({
+      discountsBodies: [
+        {
+          details: [
+            { type: "coupon", items: [{ id: "MLB1", quantity: 1, amounts: { total: 10, seller: 4 } }] },
+            {
+              type: "discount",
+              items: [
+                { id: "MLB1", quantity: 1, amounts: { total: 6, seller: 2.5 } },
+                { id: "MLB2", quantity: 2, amounts: { total: 3, seller: 0 } },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    const outcome = await run(db, client);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(upserted[0]).toMatchObject({ order_id: 9101, seller_discount: 6.5 });
+  });
+
+  it("`details` vazio é desconto ZERO observado, não NULL: o endpoint enumerou e não havia nenhum", async () => {
+    const { db, upserted } = fakeDb({ orders: [{ id: 9102, shipping_id: null }] });
+    const { client } = fakeClient({ discountsBodies: [{ details: [] }] });
+
+    const outcome = await run(db, client);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    // Diferente do 4xx definitivo (teste acima, `seller_discount: null`):
+    // aqui o Mercado Livre RESPONDEU a lista, e ela está vazia.
+    expect(upserted[0]).toMatchObject({ order_id: 9102, seller_discount: 0 });
+  });
+
+  it("a forma antiga (`amounts.seller` na raiz) continua aceita — nada prova que o ML nunca a devolve", async () => {
+    const { db, upserted } = fakeDb({ orders: [{ id: 9103, shipping_id: null }] });
+    const { client } = fakeClient({ discountsBodies: [{ amounts: { seller: 1.25 } }] });
+
+    const outcome = await run(db, client);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(upserted[0]).toMatchObject({ order_id: 9103, seller_discount: 1.25 });
+  });
+
+  it("resposta 200 FORA do contrato não derruba o dia: pula SEM checkpoint, segue, e o sync_run sai `partial`", async () => {
+    const { db, upserted, syncRuns } = fakeDb({
+      orders: [
+        { id: 9201, shipping_id: null },
+        { id: 9202, shipping_id: null },
+        { id: 9203, shipping_id: null },
+      ],
+    });
+    const { client, calls } = fakeClient({ discountsBodies: [{ details: [] }, { foo: "bar" }, { details: [] }] });
+
+    const outcome = await run(db, client);
+
+    // Antes de D-229 este cenário era `failed`/retryable no pedido 9202, o
+    // 9203 nunca era alcançado e a fila repetia o mesmo fracasso 8 vezes.
+    expect(outcome).toEqual({ status: "done", processed: 2 });
+    expect(calls).toHaveLength(3);
+    // 9202 NÃO ganha linha: sem checkpoint ele volta amanhã e é capturado
+    // quando o schema for corrigido. Gravar NULL o queimaria para sempre.
+    expect(upserted.map((row) => row.order_id)).toEqual([9201, 9203]);
+    expect(syncRuns[0]).toMatchObject({ resource: "order_financials", status: "partial", items_processed: 2 });
+    expect(String(syncRuns[0]?.reason)).toContain("1 pedido(s) com resposta fora do contrato");
   });
 });

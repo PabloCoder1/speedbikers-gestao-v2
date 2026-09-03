@@ -649,7 +649,7 @@ Pesquisado para decidir se "receita líquida" é exibível. **Resposta: parcialm
 | `order_items[].sale_fee` | `GET /orders/{id}` | "comissão de vendas"; em Provisões, "tarifa por unidade" |
 | `payments[].marketplace_fee` | `GET /orders/{id}` | "tarifa totalizada no pedido" |
 | `senders[].cost` | `GET /shipments/{id}/costs` | custo do frete cobrado DO VENDEDOR — a FAQ oficial designa este campo para conciliação |
-| `amounts.seller` | `GET /orders/{id}/discounts` | parcela do desconto bancada pelo vendedor; `total − seller` é a parte do ML |
+| `details[].items[].amounts.seller` | `GET /orders/{id}/discounts` | parcela do desconto bancada pelo vendedor; `total − seller` é a parte do ML. **⚠️ Corrigido em D-229 (2026-09-03):** esta linha dizia `amounts.seller` sem a nesting, e D-165 escreveu o schema com `amounts` na raiz — em produção TODA resposta real falhava na validação (16 execuções, 1 linha). A resposta é uma LISTA de descontos (`details[]`, cada um com `type` e `items[]`), e `amounts { total, seller }` fica dentro de cada item; o desconto do vendedor no pedido é a SOMA. `details` vazio = nenhum desconto (zero observado). Fonte: resumo do buscador sobre a página oficial de Gerenciamento de vendas (o portal devolve 403 a leitor automatizado, ver §2.16) confrontado com o erro de validação real |
 | `cost` | APIs de Product Ads | investimento, por período/campanha — nunca por pedido |
 
 Fórmula publicada pelo próprio Mercado Livre: `(unit_price * quantity) - marketplace_fee - seller.cost = valor líquido do pedido`.
