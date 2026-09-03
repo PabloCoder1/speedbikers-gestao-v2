@@ -14,10 +14,11 @@
 |---|---|
 | **Atualizado em** | 2026-09-02 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `a8a2680` (D-221) — esta fatia, D-222, é o commit seguinte |
+| **HEAD conhecido** | `a3a42e4` (D-222) — esta fatia, D-223/D-224, é o commit seguinte |
+| **Fechamento da V3** | **185 de 213 itens do ROADMAP fechados (87%)** — 26 abertos e 2 parciais. Dos 26, **6 são bloqueadores**, e todos são hardening/lançamento: nenhum é feature faltando (D-223) |
 | **Deploy no ar** | **`0702969` — o mesmo do `HEAD`, sem atraso** (`api-00030-gqw` / `worker-00045-cwq`, 2026-09-02). Depois de 66 commits parado. Verificado contra a infraestrutura, não contra o script: `APP_COMMIT=0702969` nos dois serviços, imagem `api:0702969`, `/health` respondendo `{"commit":"0702969"}` e **zero `ERROR`** no Cloud Logging desde o boot |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
-| **Migrations** | **131 locais**, 130 no Dev até o push, sem drift — D-209→D-212 aplicadas pela CI em 2026-09-02 e CONFERIDAS lá (`anon` alcança 0 funções; `ml_accounts` sem UPDATE/DELETE para `authenticated`; `created_by` presente). O caminho é o push, **nunca** o MCP (lição de D-207) |
+| **Migrations** | **131 locais, 130 no Dev** — o expurgo (`20260903120000`) está no git e **não pousou**; a CI não o aplicou, sem drift — D-209→D-212 aplicadas pela CI em 2026-09-02 e CONFERIDAS lá (`anon` alcança 0 funções; `ml_accounts` sem UPDATE/DELETE para `authenticated`; `created_by` presente). O caminho é o push, **nunca** o MCP (lição de D-207) |
 | **Frente atual** | Trilha 8B — P0 fechado (A–H); em P1 |
 
 ### O que está pronto
@@ -294,6 +295,13 @@ Nada disto pode ser feito por um agente.
    **14**. Conferido dos dois lados: 14 no script, 14 no Cloud Scheduler.
 3. Relatar **Dashboard → Database → Backups** do projeto Dev (decide a
    abordagem de backup da Fase 8).
+3b. **Conferir o saldo do estoque contra o UpSeller.** É a segunda metade da
+   condição que o item da reconciliação impõe a si mesmo, e a única que falta
+   (D-223). D-134 já leu a rodada e mediu **zero divergências em 3.472
+   chaves** — mas isso é consistência interna, projeção contra ledger. Abrir o
+   UpSeller, comparar o saldo de alguns SKUs e relatar fecha o `[~]`.
+3c. **As duas contas em `ERROR`** (`sbmotos`, `gmr`), paradas desde D-217:
+   `update public.ml_accounts set status='CONNECTED', last_error=null where slug in ('sbmotos','gmr') and status='ERROR';`
 4. Ensaio de `/produtos` (5 SKUs sentinela) e preencher
    `/reposicao/configuracoes`.
 5. Primeiro relist real, deliberado, com anúncio sacrificável.
@@ -306,80 +314,51 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-**Abertos:**
+### Fechamento da V3 — as cinco categorias de D-223
 
-1. **~~Medir o caminho de pedidos ponta a ponta~~ — FEITO em D-220**, e a
-   medição corrigiu como o ganho vinha sendo descrito. Controlado por faixa de
-   lote, a **janela** ficou **17× a 28×** mais barata por pedido (743 → 43 ms
-   na faixa de 10–99; 45,4 s → 3,5 s por execução). O **webhook ficou igual**
-   (595 → 545 ms de mediana), e isso era estrutural: ele persiste **um** pedido
-   por invocação, e lote de página não tem o que agrupar numa página de um.
-
-   ⚠️ **A frase "de ~7 idas ao banco por pedido para ~0,16" era incompleta** —
-   o 0,16 é um número **por página**. Onde a página tem um pedido, continuam
-   ~4 idas. Números em `docs/PERFORMANCE.md`.
-2. **~~Retenção de `job_runs`~~ — FECHADA em D-222**, e o item terminou
-   sendo outra coisa: **limpeza única de um defeito morto**, não política de
-   retenção. D-221 mediu que o "88% sem trabalho" já existia com as 4 contas
-   saudáveis — era o problema que **D-179 matou na origem** (2.664 → ~93
-   linhas/h). Acumulado é massa, não fluxo.
-
-   A migration apaga **278.371 linhas (82,8%, ~106 MB)** com recorte de quatro
-   condições — só `sync.webhook.received`, só `done`, só `processed = 0`, só
-   antes do deploy. **Falha nunca sai.** Nenhum mecanismo permanente de
-   expurgo foi criado: o ritmo atual não justifica.
-
-   ⚠️ **O risco não era apagar demais, era sair com o trigger desligado** —
-   a migration religa e afirma, e o teste de D-221 confere depois de todas as
-   migrations.
-
-3. **~~Frescor por CADÊNCIA na Saúde do Sistema~~ — FEITO em D-219.** O
-   veredito passou a ser contra a cadência de cada job, reusando o núcleo de
-   D-143. Medido contra o Dev no ato: **três jobs que a tela antiga mostrava
-   como nada** viraram CRÍTICO/atenção — e são reais, o resíduo de D-217
-   (`sbmotos` e `gmr` ainda em `ERROR`). Um job diário em 25,5 h continua
-   `ok`, que é o outro lado do mesmo erro.
-
-4. **~~Regenerar `packages/db/src/types.ts`~~ — FEITO em D-213**, e por um
-   caminho que vale reusar: editar só o bloco afetado e **provar a igualdade**
-   contra um arquivo de referência gerado na hora. Regenerar por inteiro
-   apagaria os ~18 sítios de "CORRECAO MANUAL" e obrigaria a reaplicá-los —
-   mais edição manual, não menos. O cabeçalho do arquivo agora traz os três
-   passos; ele mandava usar um script que não existe mais.
-
-**Fechados nesta frente** — o detalhe mora no `D-xxx`, não aqui:
+**Bloqueadores técnicos (A)** — sem isto a V3 não fecha:
 
 | | |
 |---|---|
-| read models, Realtime, falha "permanente", 429 das visitas | D-198→D-204 |
-| `get_system_health` com escopo de plataforma | **D-209** |
-| `ml_accounts` com UPDATE/DELETE sem consumidor | **D-210** |
-| `pg_default_acl` de funções | **D-211** |
-| `ml_accounts.created_by` + a regressão de `RETURNING` | **D-212** |
-| contrato gerado atualizado, com prova de igualdade | **D-213** |
-| ROADMAP de volta ao budget, `docs:check` verde | **D-214** |
-| `P0-B` marcado (fechado no código desde D-178) e a seção duplicada aposentada | **D-215** |
-| Busca Universal alcança atendimento e NF-e; dois destinos envelhecidos | **D-216** |
+| backup e restore **verificados** | a metade do SCHEMA já é provada todo dia (CI recria as migrations); falta a do DADO |
+| revisão de segurança e de secrets | — |
+| load tests e revisão de `pg_stat_statements` | — |
+| Supabase e Cloud Run de **produção** | depende de ato humano para criar |
+| rollout da V3 | — |
+| UX final da republicação | backend pronto (D-159→D-164); falta a superfície de confirmação humana |
 
-**Com isso o P0 da trilha 8B fechou inteiro** — os itens com letra e os três
-que nunca receberam uma. **E os itens 1 e 2 acima destravaram**: o deploy
-saiu em 2026-09-02.
+**Pendências saudáveis (B)** — agregam e cabem antes do lançamento:
 
-⚠️ **"Não resta fatia independente do deploy" é FALSO, e eu escrevi isso uma
-vez.** O Checkpoint P1 do `docs/ROADMAP.md` diz o contrário com todas as
-letras: *"nenhum depende de decisão de produto pendente; qualquer um pode ser
-puxado quando o usuário priorizar"*. Restam **três** lá, e nenhum depende do
-deploy:
-
-| item | estado |
+| | |
 |---|---|
-| filtros de Conta / Origem / Marca | aberto — **Origem** esbarra em `is_imported`, que D-139 mediu como não confiável |
-| Nacional × Importado no mesmo pedido de compra | aberto — **mesmo bloqueio de dado** |
-| alias `Fornecedor + código -> SKU` | aberto — a relação fornecedor→SKU não existe (D-174) |
-| abas do Dashboard de SKU (6 de 11) | aberto — nenhuma bloqueada por dado (D-169) |
+| 4 abas do Dashboard de SKU | `Vendas`, `Preços`, `Full`, `Decisões` — nenhuma bloqueada por dado (D-169/D-224) |
+| Central de Integrações | primeira versão simples; nunca verde não verificável |
+| Hub de Configurações | um dado, um dono: aponta para a tela dona, não duplica |
+| Aprendizado humano supervisionado | reusa a Base de Conhecimento (D-113); nada promovido sem humano |
+| filtros de Conta e Marca | **Origem fica de fora** — `is_imported` é medido como não confiável |
 
-O de menor risco é o das **abas do Dashboard de SKU**: D-169 mediu que
-nenhuma das seis depende de dado que falte.
+**Dependentes de dado/tempo (D)** — não é possível hoje, e forçar seria inventar:
+
+vendas perdidas estimadas (sem saldo inicial no ledger, D-061) · Nacional × Importado
+(confiabilidade de `is_imported`) · alias fornecedor→SKU (relação não existe, D-174) ·
+antes/depois de Preços e de Full (série curta demais)
+
+**Futuro V3.1+ (C)** — decisão deliberada de não fazer agora:
+
+Ads · recebimento parcial · DANFE/PDF · XML de pedido de compra · Terraform ·
+expansão do "O que aconteceu?" · eventos adicionais de SAC · os 2 pedidos sem
+`order_items` (dano medido em ZERO, D-208)
+
+**Atos humanos (E)** — ver a seção própria acima.
+
+---
+
+### Próxima tarefa segura
+
+**As 4 abas do Dashboard de SKU** (`Vendas`, `Preços`, `Full`, `Decisões`),
+uma por vez, com a agregação no BANCO — nunca somando conjunto grande em
+JavaScript. É a maior pendência de produto que não depende de dado, de decisão
+sua nem de infraestrutura externa.
 
 ---
 

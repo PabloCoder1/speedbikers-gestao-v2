@@ -5085,6 +5085,69 @@ Medido antes de escrever: **278.371 linhas (82,8% da tabela, ~106 MB)**. Sobrevi
 
 **Impacto:** `supabase/migrations/20260903120000_job_runs_expurgo_unico.sql`.
 
+## D-223 - O que significa "V3 100%", e a auditoria de checkbox que veio junto
+
+**Contexto:** decisao NOVA do usuario, na entrada da reta final. Ate aqui "faltar" e "estar aberto" eram a mesma coisa no ROADMAP, e por isso um backlog deliberado parecia software incompleto. Esta decisao separa as duas coisas e **nao renumera nem reabre fase historica**.
+
+### A definicao
+
+**A V3 esta 100% quando PRODUTO UTIL + HARDENING NECESSARIO + VALIDACOES DE LANCAMENTO estiverem concluidos.** Item futuro deliberado **nao impede** o fechamento. Todo `[ ]` do ROADMAP passa a pertencer a uma destas cinco categorias:
+
+| | categoria | significado |
+|---|---|---|
+| **A** | BLOQUEADOR V3 | sem isto a V3 nao fecha |
+| **B** | IMPORTANTE, NAO BLOQUEADOR | entra se couber; nao segura o lancamento |
+| **C** | FUTURO / V3.1+ | decisao deliberada de nao fazer agora |
+| **D** | DEPENDENTE DE DADO/TEMPO | so e possivel com serie, volume ou dado que ainda nao existe |
+| **E** | ATO HUMANO/EXTERNO | agente nenhum executa |
+
+**Um `[ ]` de categoria C, D ou E nao e divida tecnica**, e o ROADMAP passa a dizer isso na propria linha (🔵 NAO BLOQUEIA A V3), para ninguem ler um checkbox aberto de backlog como produto pela metade.
+
+### A auditoria, item a item, contra o CODIGO
+
+O prompt do usuario sugeriu dois checkboxes para reavaliar. **Um se confirmou, o outro nao — e a prova e que decidiu.**
+
+**✅ "Snapshot antes da acao e remapeamento" (`[~]` → `[x]`).** O proprio texto ja terminava em "item completo", e o codigo confirma: `complete_listing_relist_remap` existe na migration `20260831145457`, e chamada em `relist-execute.ts:189`, e coberta no teste de integracao. O checkbox e que tinha ficado para tras.
+
+**❌ "Reconciliacao contra o snapshot do UpSeller" (continua `[~]`).** O prompt afirmava que D-134 fechava este item, citando `snapshot_rows` 6.744, `ledger_rows` 2.529, `skus_compared` 3.372 e integridade zero. **Os numeros conferem** — mas a frase de D-134, *"fecha o item da Fase 4 que estava `[~]`"*, e sobre **RESERVADO**, que e outro item e ja esta `[x]`.
+
+E a condicao que ESTE item impoe a si mesmo e dupla: *"a rodada de 2026-08-29 lida **e o saldo conferido contra o ERP**"*. D-134 cumpre a primeira. A segunda nao: as "zero divergencias em 3.472 chaves" sao **consistencia interna** — projecao contra soma do ledger. **Conferir contra o ERP e abrir o UpSeller e comparar**, e isso e ato humano (categoria E), agora listado como tal.
+
+O usuario pediu explicitamente *"nao faca isso apenas porque este prompt mandou; PROVE primeiro"*. A prova disse nao.
+
+**Contagem corrigida:** o HANDOFF dizia *"restam tres"* e listava **quatro**. Corrigido.
+
+**Duplicacao Fase 8 × trilha 8B/P2:** o checkbox agregado *"Load tests, backup/restore, Terraform, producao, rollout"* repete cinco assuntos que a Fase 8 detalha um a um. **Historico preservado**, mas anotado como INDICE — contar os dois seria contabilizar a mesma pendencia duas vezes.
+
+**Terraform e categoria C.** Desejavel para evoluir a infraestrutura, **nao e blocker funcional** da V3 inicial. Isso NAO alivia backup, restore, seguranca, ambiente de producao, load tests e rollout, que seguem como A ou E.
+
+**Verificacao:** 18 itens anotados; contagem de checkbox conferida contra `HEAD` por script — **exatamente uma** mudanca de estado (`[~]`→`[x]` do remapeamento), zero itens perdidos ou criados.
+
+**Impacto:** `docs/ROADMAP.md`, `docs/HANDOFF.md`.
+
+## D-224 - O Dashboard de SKU encolhe de 11 abas para 9, e as duas que saem tem motivo
+
+**Contexto:** decisao de produto NOVA do usuario, posterior a D-169. O item do Checkpoint P1 previa **onze** abas e estava aberto "faltam 6 das 11". O escopo final passa a ser **nove**.
+
+**A contagem de partida diverge entre os documentos, e vale dizer:** o `docs/PRODUCT_REQUIREMENTS.md` lista **dez** abas; o `docs/ROADMAP.md` contava **onze**, incluindo `Atendimento`, que nunca esteve no PRD. Saem as duas — `Tráfego` e `Atendimento` — e o resultado sao nove pelas duas contagens.
+
+**As nove aprovadas:** `Visão geral | Vendas | Estoque | Anúncios | Preços | Full | Histórico | Diagnóstico | Decisões`.
+
+**As duas que saem, e por que — nao e corte por pressa:**
+
+| aba | motivo |
+|---|---|
+| **Tráfego** | pertence naturalmente ao ANUNCIO, nao ao SKU: visita e medida por `item_id` em `daily_listing_visits`, e o Dashboard 360º do Anuncio (D-168) ja e o dono. No SKU pode aparecer resumida, se aparecer |
+| **Atendimento** | **nao existe vinculo confiavel SKU → `support_case`**. O caminho e `support_case_links`, populado a partir de FK reais e referencias externas, e D-084 registrou que um case tem VARIOS pedidos/SKUs — nao ha "SKU principal". Uma aba sobre isso mostraria um recorte arbitrario |
+
+**Nao apaga a ideia historica**: D-169 fica como estava, e esta decisao registra que a visao final foi SIMPLIFICADA depois, com o motivo de cada remocao. Reabrir exige decisao nova, nao esquecimento.
+
+**Estado real das nove, medido em `apps/web/app/skus/[skuId]`:** cinco entregues em D-169 (`Visão geral`, `Estoque`, `Anúncios`, `Histórico`, `Diagnóstico`). **Faltam quatro**: `Vendas`, `Preços`, `Full`, `Decisões` — e D-169 ja mediu que **nenhuma esta bloqueada por falta de dado**, o que muda quem pode puxa-las: e trabalho de agregacao, nao de coleta.
+
+**Regra que vale para as quatro:** agregacao pertence ao BANCO. Nada de somar conjunto grande em JavaScript so para entregar a aba — a regra inegociavel de `docs/ARCHITECTURE.md` secao 15, medida na V2 em 119 ms contra 1.343 ms.
+
+**Impacto:** `docs/ROADMAP.md`, `docs/PRODUCT_REQUIREMENTS.md`.
+
 ## Como adicionar nova decisao
 
 Registrar:

@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **220** (D-001 a D-222).
+Decisões registradas: **222** (D-001 a D-224).
 
 ## Por domínio
 
-### atendimento (29)
+### atendimento (30)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -47,6 +47,7 @@ Decisões registradas: **220** (D-001 a D-222).
 - **D-200** — O cast escondia quais guardas eram reais, e foi o compilador que separou
 - **D-201** — "4xx a descarta sem repetir" e falso, e custou 2.234 execucoes em 7 dias
 - **D-215** — Um checkbox que mentia ha uma semana, e uma secao que era o segundo dono da verdade
+- **D-223** — O que significa "V3 100%", e a auditoria de checkbox que veio junto
 
 ### banco/rls (23)
 
@@ -96,7 +97,7 @@ Decisões registradas: **220** (D-001 a D-222).
 - **D-173** — Central Full: o GRAO do Full estava errado em duas leituras, e isso aparecia como fila de trabalho falsa
 - **D-204** — Tres definicoes de "Full atual", e as tres devolviam o mesmo numero
 
-### interface (13)
+### interface (14)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -111,6 +112,7 @@ Decisões registradas: **220** (D-001 a D-222).
 - **D-190** — A pagina vira a unidade de escrita
 - **D-194** — O filtro de marcas escondia 10 das 19, e eu tinha chamado isso de cosmetico
 - **D-195** — O waterfall que se paga em toda tela estava no cabecalho, e a varredura quase nao olhou la
+- **D-224** — O Dashboard de SKU encolhe de 11 abas para 9, e as duas que saem tem motivo
 
 ### mercado-livre (38)
 

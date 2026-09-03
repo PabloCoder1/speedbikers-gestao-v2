@@ -281,10 +281,20 @@ Estrutura inicial desejada:
 - Anúncios;
 - Preços;
 - Full;
-- Tráfego;
+- ~~Tráfego~~ — **removido em 2026-09-03 (D-224)**;
 - Histórico;
 - Diagnóstico;
 - Decisões.
+
+**Escopo final: NOVE abas (D-224).** `Tráfego` sai desta lista porque pertence
+ao ANÚNCIO — visita é medida por `item_id` em `daily_listing_visits`, e o
+Dashboard 360º do Anúncio (D-168) já é o dono; no SKU pode aparecer resumida.
+`Atendimento`, que o `docs/ROADMAP.md` chegou a contar como décima primeira,
+também sai: **não existe vínculo confiável SKU → `support_case`** — D-084
+registra que um case tem vários pedidos e SKUs, sem "principal", então uma aba
+mostraria um recorte arbitrário.
+
+A ideia histórica fica preservada acima; reabrir exige decisão nova.
 
 O cabeçalho do SKU e seus KPIs principais devem permanecer facilmente acessíveis.
 
