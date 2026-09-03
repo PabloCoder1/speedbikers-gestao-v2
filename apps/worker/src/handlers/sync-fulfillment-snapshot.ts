@@ -145,6 +145,9 @@ export function createSyncFulfillmentSnapshotHandler(deps: SyncFulfillmentSnapsh
       items_processed: result.itemsProcessed,
       items_skipped: result.itemsSkipped,
       items_failed: result.itemsFailed,
+      // Anúncios que compartilham inventário com outro da mesma conta (D-230):
+      // estrutura do catálogo, não falha — por isso não entra no `partial`.
+      inventories_shared: result.inventoriesShared,
     });
 
     return { status: "done", processed: result.itemsProcessed };

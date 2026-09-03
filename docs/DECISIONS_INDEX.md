@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **227** (D-001 a D-229).
+Decisões registradas: **228** (D-001 a D-230).
 
 ## Por domínio
 
@@ -118,6 +118,7 @@ Decisões registradas: **227** (D-001 a D-229).
 - **D-227** — A aba Vendas: tres perguntas, um round trip, e a soma que precisou ser medida antes de ser somada
 - **D-228** — A aba Decisoes fecha as nove, e a prova do embed e a paridade das policies, nao o texto delas
 - **D-229** — A varredura de custos falhava em TODO pedido real, e repetia o fracasso oito vezes por dia
+- **D-230** — O snapshot do Full morreu no dia em que a escrita passou a abortar, e a causa era dois anuncios com um estoque
 
 ### mercado-livre (38)
 

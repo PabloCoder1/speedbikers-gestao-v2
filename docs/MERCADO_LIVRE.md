@@ -298,6 +298,7 @@ Tópicos "com subtópicos" (`messages`, `vis_leads`, `post_purchase`) trazem tam
   Erros confirmados: `404 seller_product_not_found`, `400 validation_error`, `403 forbidden`, `401 unauthorized`, `429 too_many_request`, `500 internal_error`.
 - Operações (histórico de movimento no Full): `GET /stock/fulfillment/operations/search?...` — janela máxima de consulta de **60 dias**, padrão 15 dias sem filtro de data; paginação por `scroll` (expira em 5 min), até **1000 registros/página**. Não usado nesta etapa (só o snapshot agregado).
 - Disponível hoje apenas para **Argentina, Brasil, México, Chile e Colômbia**.
+- **Um `inventory_id` pode pertencer a MAIS DE UM anúncio da mesma conta (D-230, medido em produção em 2026-09-03).** O inventário é do produto do vendedor (`user_product`, secao 2.3), e um user product vive em vários itens. Consequência para quem grava snapshot: a chave natural é `(conta, inventory_id, captura)`, nunca `(conta, item_id, captura)` — a V3 grava UMA linha por inventário por captura e loga os demais anúncios que apontam para ele. Foi essa colisão, escondida por um `insert` sem leitura de retorno até D-178, que derrubou `sync.fulfillment.snapshot` em 02/09/2026 (32 falhas, 18 h sem snapshot).
 
 **Fonte:** `developers.mercadolivre.com.br/pt_br/envios-fulfillment` (página com "Última atualização em 10/06/2026", lida ao vivo via browser em 2026-08-22 — `WebFetch` bloqueado por 403 nessas páginas, a leitura funcionou só via navegador real); `.../estoque-multi-origem` (estoque próprio, distinto do Full, não confundir).
 

@@ -5291,6 +5291,33 @@ path: ["amounts"], "Invalid input: expected object, received undefined"
 
 **Impacto:** `apps/worker/src/handlers/sync-order-financials.ts`, `apps/worker/src/handlers/sync-order-financials.test.ts`, `docs/MERCADO_LIVRE.md` §2.15 (a linha da tabela corrigida), `docs/HANDOFF.md` (atos humanos).
 
+## D-230 - O snapshot do Full morreu no dia em que a escrita passou a abortar, e a causa era dois anuncios com um estoque
+
+**Contexto:** ao medir `job_runs` para a Central de Integracoes, `sync.fulfillment.snapshot` apareceu com **32 falhas** entre 21:00 e 21:47 de 02/09/2026 — 4 contas x 8 tentativas, todas com o mesmo motivo:
+
+```
+escrita critica falhou em fulfillment_stock_snapshots.insert:
+duplicate key value violates unique constraint "fulfillment_stock_snapshots_unique"
+```
+
+e **nenhuma execucao desde entao**. O Full ficou 18 horas sem snapshot; a janela de frescor canonica e de 3 dias (D-173), entao em mais dois dias `/full`, cobertura e sugestao de compra passariam a mostrar "sem snapshot" em tudo.
+
+**A chave duplicada e DENTRO da mesma execucao — e isso decide o diagnostico.** A chave e `(ml_account_id, inventory_id, captured_at)`, e `captured_at` e fixo por execucao. Medido: cada uma das 8 tentativas de cada conta gravou um conjunto INTEIRO de linhas com o seu proprio `captured_at` (75, 433, 370 e 361 linhas, oito vezes cada) e morreu no mesmo ponto. Nao e colisao entre tentativas; e o mesmo `inventory_id` chegando duas vezes na mesma varredura.
+
+**Por que dois anuncios chegam ao mesmo inventario:** o Full e por `inventory_id`, e o `inventory_id` e do PRODUTO do vendedor, nao do anuncio — `docs/MERCADO_LIVRE.md` secao 2.3 ja dizia "um `user_product` pode aparecer em varios itens", e a propria resposta de estoque devolve `external_references[]` no plural. Dois vinculos `ITEM` da mesma conta (anuncio classico e premium do mesmo produto, por exemplo) resolvem para o mesmo inventario. Nao ha vinculo duplicado por item (medido: zero nas quatro contas) e nao ha inventario com dois itens NA TABELA — porque a segunda linha nunca foi gravada.
+
+**Por que so quebrou em 02/09 as 21:00, e nunca antes.** Ate D-178 o `insert` do snapshot nao lia o retorno: a colisao era ENGOLIDA, a captura fechava `done`, e o segundo anuncio simplesmente nao ganhava linha — ninguem viu. D-178 fez a escrita critica abortar ("falhou e seguiu e pior que falhou e parou") e entrou no ar no deploy de 02/09 ~21:00; a primeira execucao depois dele foi a primeira a falhar. **D-178 estava certo** — a colisao ERA um defeito escondido —, e o que este registro corrige e o defeito, nao a guarda. As 8 tentativas por conta (D-202 ainda nao cobria este caminho) gravaram ~10 mil linhas de snapshot repetidas em 47 minutos; ficam na tabela (sao verdade, so redundantes), e a definicao canonica de "Full atual" (`distinct on` do mais recente por bucket) nao e afetada.
+
+**A correcao e a do grao certo (D-173): UM snapshot por `inventory_id` por captura.** O primeiro vinculo em ordem de `item_id` grava; os seguintes com o mesmo inventario sao contados em `inventoriesShared` e logados com os DOIS anuncios e `same_sku` — dois anuncios do mesmo inventario apontando para SKUs diferentes e vinculo a revisar, e o log e onde isso aparece. Sem segunda chamada de estoque (economiza a chamada), sem segunda linha, sem abortar. **Nao e `partial`**: e a estrutura do catalogo do vendedor, nao defeito de dado — o mesmo criterio que D-165 usou para `itemsSkipped`.
+
+**O teste nao passa por acaso no codigo antigo.** O fake de banco nunca recusa um insert, entao a versao antiga gravaria DUAS linhas e faria DUAS chamadas de estoque; o teste exige uma e uma, e exige o log com `item_id`, `first_item_id` e `same_sku: false`.
+
+**O que fica aberto, escrito:** (a) qual SKU "e dono" de um inventario compartilhado hoje e o do primeiro anuncio em ordem de `item_id` — arbitrario, mas estavel; a informacao para decidir melhor esta no log; (b) a retentativa de Cloud Tasks para falha de ESCRITA repetiu 8 vezes uma falha deterministica — D-202 tratou as falhas de dominio, nao as de escrita; vale uma fatia propria quando houver o segundo caso.
+
+**Verificacao:** worker **527/527** (+1), `check` 29/29, build 8/8. Sem migration. Deploy do worker feito na mesma sessao (autorizado), com a captura disparada a mao e conferida em `sync_runs`.
+
+**Impacto:** `apps/worker/src/handlers/ml-fulfillment-fetch.ts`, `apps/worker/src/handlers/sync-fulfillment-snapshot.ts`, `apps/worker/src/handlers/ml-fulfillment-fetch.test.ts`, `docs/MERCADO_LIVRE.md` secao 2.7.
+
 ## Como adicionar nova decisao
 
 Registrar:

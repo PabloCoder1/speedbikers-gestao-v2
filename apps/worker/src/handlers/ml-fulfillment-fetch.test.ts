@@ -219,7 +219,7 @@ describe("fetchFulfillmentSnapshots", () => {
 
     const result = await fetchFulfillmentSnapshots(baseParams(db, client));
 
-    expect(result).toEqual({ itemsProcessed: 0, itemsSkipped: 0, itemsFailed: 0 });
+    expect(result).toEqual({ itemsProcessed: 0, itemsSkipped: 0, itemsFailed: 0, inventoriesShared: 0 });
     expect(requests).toHaveLength(0);
   });
 
@@ -229,7 +229,7 @@ describe("fetchFulfillmentSnapshots", () => {
 
     const result = await fetchFulfillmentSnapshots(baseParams(db, client));
 
-    expect(result).toEqual({ itemsProcessed: 0, itemsSkipped: 1, itemsFailed: 0 });
+    expect(result).toEqual({ itemsProcessed: 0, itemsSkipped: 1, itemsFailed: 0, inventoriesShared: 0 });
     expect(inserted.find((e) => e.table === "fulfillment_stock_snapshots")).toBeUndefined();
   });
 
@@ -242,7 +242,7 @@ describe("fetchFulfillmentSnapshots", () => {
 
     const result = await fetchFulfillmentSnapshots(baseParams(db, client));
 
-    expect(result).toEqual({ itemsProcessed: 1, itemsSkipped: 0, itemsFailed: 0 });
+    expect(result).toEqual({ itemsProcessed: 1, itemsSkipped: 0, itemsFailed: 0, inventoriesShared: 0 });
     const snapshot = inserted.find((e) => e.table === "fulfillment_stock_snapshots")?.row;
     expect(snapshot).toMatchObject({
       organization_id: ORGANIZATION_ID,
@@ -321,9 +321,56 @@ describe("fetchFulfillmentSnapshots", () => {
 
     const result = await fetchFulfillmentSnapshots(baseParams(db, client));
 
-    expect(result).toEqual({ itemsProcessed: 2, itemsSkipped: 0, itemsFailed: 0 });
+    expect(result).toEqual({ itemsProcessed: 2, itemsSkipped: 0, itemsFailed: 0, inventoriesShared: 0 });
     const snapshots = inserted.filter((e) => e.table === "fulfillment_stock_snapshots").map((e) => e.row.sku_id);
     expect(snapshots).toEqual(["sku-1", "sku-2"]);
+  });
+
+  it("dois anúncios com o MESMO inventory_id: um snapshot só, uma chamada de estoque só, e a captura não cai (D-230)", async () => {
+    // O que aconteceu em produção em 02/09/2026 21:00: dois vínculos da mesma
+    // conta resolvem para o mesmo `inventory_id` (o inventário é do PRODUTO
+    // do vendedor, e um user product vive em vários anúncios). A segunda
+    // gravação colidia com a chave única (ml_account_id, inventory_id,
+    // captured_at); desde D-178 isso abortava a captura da conta inteira —
+    // 4 contas, 8 tentativas, 32 falhas, 18 horas sem snapshot.
+    //
+    // O fake de banco nunca recusa um insert, então este teste NÃO passa por
+    // acaso no código antigo: lá saem DUAS linhas e DUAS chamadas de estoque.
+    const { db, inserted } = fakeDb({
+      links: [
+        { item_id: "MLB1", sku_id: "sku-1" },
+        { item_id: "MLB2", sku_id: "sku-2" },
+      ],
+    });
+    const { client, requests } = fakeMercadoLivreClient(
+      { MLB1: { id: "MLB1", inventory_id: "INV-COMPARTILHADO" }, MLB2: { id: "MLB2", inventory_id: "INV-COMPARTILHADO" } },
+      { "INV-COMPARTILHADO": { inventory_id: "INV-COMPARTILHADO", available_quantity: 9 } },
+    );
+    const lines: string[] = [];
+
+    const result = await fetchFulfillmentSnapshots(baseParams(db, client, lines));
+
+    expect(result).toEqual({ itemsProcessed: 1, itemsSkipped: 0, itemsFailed: 0, inventoriesShared: 1 });
+
+    const snapshots = inserted.filter((entry) => entry.table === "fulfillment_stock_snapshots");
+
+    // UMA linha, a do primeiro anúncio em ordem de item_id — grão por
+    // inventário (D-173), nunca por anúncio.
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0]?.row).toMatchObject({ item_id: "MLB1", inventory_id: "INV-COMPARTILHADO", quantity: 9 });
+
+    // Dois GET /items (um por vínculo), mas UM só GET de estoque: o segundo
+    // anúncio é reconhecido antes da chamada.
+    expect(requests.filter((r) => r.path.startsWith("/items/"))).toHaveLength(2);
+    expect(requests.filter((r) => r.path.includes("/stock/fulfillment"))).toHaveLength(1);
+
+    // O log diz QUAL anúncio repetiu qual, e se apontam para o mesmo SKU —
+    // aqui não: é o caso que quem cuida dos vínculos precisa ver.
+    const log = lines.find((line) => line.includes("fulfillment_inventory_shared"));
+    expect(log).toBeDefined();
+    expect(log).toContain('"item_id":"MLB2"');
+    expect(log).toContain('"first_item_id":"MLB1"');
+    expect(log).toContain('"same_sku":false');
   });
 
   it("item sem item_id (defesa, não deveria acontecer) é ignorado sem crashar", async () => {
@@ -332,7 +379,7 @@ describe("fetchFulfillmentSnapshots", () => {
 
     const result = await fetchFulfillmentSnapshots(baseParams(db, client));
 
-    expect(result).toEqual({ itemsProcessed: 0, itemsSkipped: 0, itemsFailed: 0 });
+    expect(result).toEqual({ itemsProcessed: 0, itemsSkipped: 0, itemsFailed: 0, inventoriesShared: 0 });
     expect(requests).toHaveLength(0);
   });
 
@@ -375,7 +422,7 @@ describe("fetchFulfillmentSnapshots", () => {
 
       const result = await fetchFulfillmentSnapshots(baseParams(db, client));
 
-      expect(result).toEqual({ itemsProcessed: 1, itemsSkipped: 0, itemsFailed: 1 });
+      expect(result).toEqual({ itemsProcessed: 1, itemsSkipped: 0, itemsFailed: 1, inventoriesShared: 0 });
       expect(inserted.filter((e) => e.table === "fulfillment_stock_snapshots")).toHaveLength(1);
       expect(inserted[0]?.row.sku_id).toBe("sku-2");
     });
@@ -400,7 +447,7 @@ describe("fetchFulfillmentSnapshots", () => {
 
       const result = await fetchFulfillmentSnapshots(baseParams(db, client));
 
-      expect(result).toEqual({ itemsProcessed: 0, itemsSkipped: 0, itemsFailed: 1 });
+      expect(result).toEqual({ itemsProcessed: 0, itemsSkipped: 0, itemsFailed: 1, inventoriesShared: 0 });
       expect(inserted.find((e) => e.table === "fulfillment_stock_snapshots")).toBeUndefined();
     });
 
@@ -440,7 +487,7 @@ describe("fetchFulfillmentSnapshots", () => {
 
     const result = await fetchFulfillmentSnapshots(baseParams(db, client));
 
-    expect(result).toEqual({ itemsProcessed: 0, itemsSkipped: 2012, itemsFailed: 0 });
+    expect(result).toEqual({ itemsProcessed: 0, itemsSkipped: 2012, itemsFailed: 0, inventoriesShared: 0 });
     expect(requests).toHaveLength(2012);
   });
 });

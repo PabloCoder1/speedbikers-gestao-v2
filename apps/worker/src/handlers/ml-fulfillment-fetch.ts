@@ -46,6 +46,25 @@ import { recordDomainEvents } from "./domain-events.js";
  * item: erro NÃO retryable (404/403 — problema DESTE item específico) conta
  * em `itemsFailed` e segue para o próximo; erro retryable (503/429/rede —
  * pode ser instabilidade afetando a conta inteira) continua propagando.
+ *
+ * **Dois anúncios, um estoque (D-230).** O Full é por `inventory_id`, e o
+ * `inventory_id` é do PRODUTO do vendedor (`user_product`), não do anúncio —
+ * `docs/MERCADO_LIVRE.md` secao 2.3: "um `user_product` pode aparecer em
+ * vários itens". Dois vínculos da mesma conta podem, portanto, resolver para
+ * o MESMO `inventory_id`, e a segunda gravação colide com a chave única
+ * `(ml_account_id, inventory_id, captured_at)`. Até D-178 essa colisão era
+ * ENGOLIDA (o `insert` não lia o retorno) e a captura fechava `done`; D-178
+ * fez a escrita crítica abortar, e a primeira execução depois do deploy
+ * (02/09/2026 21:00) falhou nas QUATRO contas, 8 tentativas cada — 32 falhas
+ * com "duplicate key", cada tentativa gravando centenas de linhas antes de
+ * morrer no mesmo lugar. O snapshot ficou 18 horas sem rodar.
+ *
+ * A regra agora é a do grão certo (D-173): UM snapshot por `inventory_id` por
+ * captura. O primeiro vínculo (em ordem de `item_id`) grava; os seguintes com
+ * o mesmo inventário são contados em `inventoriesShared` e logados com os
+ * dois anúncios e se apontam para o mesmo SKU — sem segunda chamada de
+ * estoque, sem segunda linha, sem abortar. Não é `partial`: é a estrutura do
+ * catálogo do vendedor, não um defeito de dado.
  */
 
 const itemResponseSchema = z.object({
@@ -83,6 +102,12 @@ export interface FetchFulfillmentSnapshotsResult {
    * inclusive nas tentativas seguintes (o mesmo item quebra de novo).
    */
   itemsFailed: number;
+  /**
+   * Vínculos cujo `inventory_id` já tinha sido capturado NESTA execução por
+   * outro anúncio da mesma conta (D-230). Contados e logados, nunca gravados
+   * de novo — a chave única é por inventário.
+   */
+  inventoriesShared: number;
 }
 
 export async function fetchFulfillmentSnapshots(
@@ -109,6 +134,10 @@ export async function fetchFulfillmentSnapshots(
   let itemsProcessed = 0;
   let itemsSkipped = 0;
   let itemsFailed = 0;
+  let inventoriesShared = 0;
+
+  // Inventário -> primeiro anúncio que o capturou nesta execução (D-230).
+  const inventoriesSeen = new Map<string, { itemId: string; skuId: string }>();
 
   for (const link of links) {
     if (link.item_id === null) {
@@ -150,6 +179,28 @@ export async function fetchFulfillmentSnapshots(
       itemsSkipped += 1;
       continue;
     }
+
+    const firstItem = inventoriesSeen.get(item.inventory_id);
+
+    if (firstItem !== undefined) {
+      // Mesmo estoque físico já capturado por outro anúncio desta conta
+      // (user product em mais de um item). A segunda linha colidiria com a
+      // chave única e, desde D-178, derrubaria a captura inteira. `same_sku`
+      // no log é a informação útil para quem cuida dos vínculos: dois anúncios
+      // do mesmo inventário apontando para SKUs diferentes é vínculo a revisar.
+      inventoriesShared += 1;
+      params.logger.info("fulfillment_inventory_shared", {
+        ml_account_id: params.mlAccountId,
+        inventory_id: item.inventory_id,
+        item_id: link.item_id,
+        first_item_id: firstItem.itemId,
+        same_sku: firstItem.skuId === link.sku_id,
+      });
+
+      continue;
+    }
+
+    inventoriesSeen.set(item.inventory_id, { itemId: link.item_id, skuId: link.sku_id });
 
     let stock: z.infer<typeof fulfillmentStockResponseSchema>;
 
@@ -232,5 +283,5 @@ export async function fetchFulfillmentSnapshots(
     itemsProcessed += 1;
   }
 
-  return { itemsProcessed, itemsSkipped, itemsFailed };
+  return { itemsProcessed, itemsSkipped, itemsFailed, inventoriesShared };
 }

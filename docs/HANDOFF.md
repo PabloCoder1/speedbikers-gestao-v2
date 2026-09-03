@@ -302,33 +302,46 @@ Nada disto pode ser feito por um agente.
    **14**. Conferido dos dois lados: 14 no script, 14 no Cloud Scheduler.
 3. Relatar **Dashboard → Database → Backups** do projeto Dev (decide a
    abordagem de backup da Fase 8).
-3b. **Conferir o saldo do estoque contra o UpSeller.** É a segunda metade da
+3b. **Conferir o saldo do estoque contra o UpSeller** — o usuário vai subir a
+   planilha do UpSeller quando as etapas atuais fecharem (2026-09-03). É a segunda metade da
    condição que o item da reconciliação impõe a si mesmo, e a única que falta
    (D-223). D-134 já leu a rodada e mediu **zero divergências em 3.472
    chaves** — mas isso é consistência interna, projeção contra ledger. Abrir o
    UpSeller, comparar o saldo de alguns SKUs e relatar fecha o `[~]`.
-3c. **As duas contas em `ERROR`** (`sbmotos`, `gmr`), paradas desde D-217:
-   `update public.ml_accounts set status='CONNECTED', last_error=null where slug in ('sbmotos','gmr') and status='ERROR';`
+3c. ~~**As duas contas em `ERROR`** (`sbmotos`, `gmr`)~~ — **FEITO pelo
+   usuário em 2026-09-03** (reautorização OAuth às 13:31/13:34 UTC; medido:
+   as quatro contas `CONNECTED`, última sincronização `done` às 14:40 UTC).
+   Se alguma tela ainda mostrar ERROR, é cache — o banco diz CONNECTED.
 4. Ensaio de `/produtos` (5 SKUs sentinela) e preencher
    `/reposicao/configuracoes`.
 5. Primeiro relist real, deliberado, com anúncio sacrificável.
 6. **Auth → Leaked Password Protection** está desligado no Supabase
-   (configuração externa, não migration).
-7. **Branch protection da `v3`**: hoje `protected: false` — a CI não é
-   tecnicamente obrigatória para merge.
-8. **Deploy de `worker` (e `api`) para D-229 valer.** O sweep financeiro
-   (`v3-order-financials-sweep`) falha **16 vezes por dia** no ar — 2 contas
-   × 8 tentativas, todas com o mesmo erro de schema em `/orders/{id}/discounts`
-   — e `order_financials` tem **1 linha**. D-229 corrigiu o schema e a
-   resiliência no código; até o deploy, a margem operacional continua sem
-   fonte. Conferência no dia seguinte: `select status, items_processed, reason
-   from sync_runs where resource = 'order_financials' order by started_at desc
-   limit 4` — esperar `done` (ou `partial` com motivo), nunca `failed`; e
-   `select count(*) from order_financials` crescendo.
-9. **O repositório está PÚBLICO** (`visibility: public` na API do GitHub, sem
-   token). Os docs carregam números de faturamento, nomes de contas e o
-   estado interno da operação. Decidir: tornar privado, ou aceitar de
-   propósito. Não é ato de agente.
+   (configuração externa, não migration). O agente NÃO consegue ligar: a
+   Management API exige o access token do Dashboard, que a CLI guarda no
+   cofre do Windows. Caminho, 30 segundos: Dashboard → projeto
+   `nmgccyqquwxecqffsidr` → Authentication → Sign In / Providers → Email →
+   *Prevent use of leaked passwords* → Save.
+7. ~~**Branch protection da `v3`**~~ — **FEITO em 2026-09-03**, a proteção
+   MÍNIMA e reversível: sem force-push, sem apagar a branch, **sem** PR
+   obrigatório e **sem** status check obrigatório — o fluxo de push direto na
+   `v3` continua igual. Exigir PR/CI é decisão de fluxo, não de agente; quando
+   vier, os nomes reais dos jobs estão em `.github/workflows/ci.yml`.
+8. ~~**Deploy de `worker` (e `api`) para D-229 valer.**~~ — **FEITO em
+   2026-09-03 (autorizado pelo usuário, executado pelo agente)**: `worker` e
+   `api` em `6baa641` e depois `worker` de novo com D-230. Validação no ar:
+   `v3-order-financials-sweep` disparado a mão às 14:56 UTC e
+   `order_financials` passou de **1 para centenas de linhas** em minutos, com
+   frete e desconto observados (a leitura final está em D-229/D-230).
+9. ~~**O repositório está PÚBLICO.**~~ — **DECIDIDO pelo usuário em
+   2026-09-03: fica público**, porque o plano gratuito do GitHub não aceita
+   mais commits em repositório privado. Consequência que vale para todo mundo
+   que escreve aqui: **os docs são públicos** — nunca um segredo, uma chave,
+   um dado pessoal de cliente ou um número que a empresa não publicaria.
+10. **Rotacionar a credencial do GitHub do Git Credential Manager.** Ao
+    aplicar a proteção da `v3`, o agente imprimiu por engano o token OAuth
+    (`gho_…`) no transcript da sessão. GitHub → Settings → Applications →
+    Authorized OAuth Apps → *Git Credential Manager* → **Revoke**; o próximo
+    `git push` pede login de novo. Um minuto, e fecha a exposição.
 
 ---
 
