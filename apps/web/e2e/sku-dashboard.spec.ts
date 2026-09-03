@@ -46,3 +46,25 @@ test("aba Full existe e distingue ausência de snapshot de saldo zero", async ({
   await expect(page.getByRole("heading", { name: "Full por conta" })).toBeVisible();
   await expect(page.getByText("Ausência de snapshot não é o mesmo que saldo zero")).toBeVisible();
 });
+
+/**
+ * Aba Preços (D-226) — a fiação, e de novo o estado vazio, que aqui é a
+ * regra e não a exceção: 95 dos 3.554 SKUs do Dev (2,7%) têm algum evento de
+ * preço, então 97% das páginas mostram exatamente esta mensagem.
+ *
+ * O que ela precisa dizer é o oposto do óbvio. `listing.price.changed` é um
+ * DIFF entre snapshots de 6 em 6 horas — logo "sem linha" não é "preço
+ * parado", e a tela que dissesse "preço estável" estaria inventando.
+ */
+test("aba Preços existe e não confunde ausência de evento com preço parado", async ({ page }) => {
+  const seed = await readSeedOutput();
+
+  await login(page, `/skus/${seed.skuId}`);
+
+  await page.getByRole("navigation", { name: "Abas do SKU" }).getByRole("link", { name: "Preços" }).click();
+
+  await expect(page).toHaveURL(/aba=precos/);
+  await expect(page.getByRole("heading", { name: "Mudanças de preço observadas" })).toBeVisible();
+  await expect(page.getByText("Nenhuma mudança de preço observada neste período")).toBeVisible();
+  await expect(page.getByText("uma alteração feita e desfeita entre duas sincronizações não deixa registro")).toBeVisible();
+});

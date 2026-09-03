@@ -4282,6 +4282,7 @@ export type Database = {
           p_offset?: number
           p_organization_id: string
           p_search?: string | null
+          p_sku_id?: string | null
         }
         Returns: {
           account_label: string

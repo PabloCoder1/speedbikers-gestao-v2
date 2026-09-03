@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **223** (D-001 a D-225).
+Decisões registradas: **224** (D-001 a D-226).
 
 ## Por domínio
 
@@ -98,7 +98,7 @@ Decisões registradas: **223** (D-001 a D-225).
 - **D-173** — Central Full: o GRAO do Full estava errado em duas leituras, e isso aparecia como fila de trabalho falsa
 - **D-204** — Tres definicoes de "Full atual", e as tres devolviam o mesmo numero
 
-### interface (14)
+### interface (15)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -114,6 +114,7 @@ Decisões registradas: **223** (D-001 a D-225).
 - **D-194** — O filtro de marcas escondia 10 das 19, e eu tinha chamado isso de cosmetico
 - **D-195** — O waterfall que se paga em toda tela estava no cabecalho, e a varredura quase nao olhou la
 - **D-224** — O Dashboard de SKU encolhe de 11 abas para 9, e as duas que saem tem motivo
+- **D-226** — A aba Precos sai por reuso, e o barato so apareceu porque a forma obvia foi MEDIDA
 
 ### mercado-livre (38)
 

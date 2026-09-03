@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { Shell } from "../../../components/shell";
 import { StatusPill } from "../../../components/status-pill";
 import { entityLabel, formatEventDiff } from "../../../lib/event-format";
-import { formatCount, formatCurrency, formatDateTime } from "../../../lib/format";
+import { formatCount, formatCurrency, formatDateTime, formatPercent } from "../../../lib/format";
 import { eventTypeLabel, listingStatusLabel } from "../../../lib/labels";
 import { fullSituationCriterion, fullSituationLabel } from "../../../lib/full-filters";
 import { createClient } from "../../../lib/supabase/server";
@@ -47,7 +47,7 @@ const LOOKBACK_DAYS = 30;
 /** A linha do tempo mostra os últimos N — e diz isso quando o corte agiu. */
 const TIMELINE_LIMIT = 50;
 
-const TAB_KEYS = ["visao-geral", "estoque", "anuncios", "full", "historico", "diagnostico"] as const;
+const TAB_KEYS = ["visao-geral", "estoque", "anuncios", "full", "precos", "historico", "diagnostico"] as const;
 type TabKey = (typeof TAB_KEYS)[number];
 
 const TAB_LABELS: Record<TabKey, string> = {
@@ -55,6 +55,7 @@ const TAB_LABELS: Record<TabKey, string> = {
   estoque: "Estoque",
   anuncios: "Anúncios",
   full: "Full",
+  precos: "Preços",
   historico: "Histórico",
   diagnostico: "Diagnóstico",
 };
@@ -189,9 +190,17 @@ export default async function SkuDashboardPage({
   const needsListings = tab === "anuncios";
   const needsHistory = tab === "historico";
   const needsFull = tab === "full";
+  const needsPrices = tab === "precos";
 
-  const [dashboardResult, listingsResult, coverageResult, costHistoryResult, timelineResult, fullResult] =
-    await Promise.all([
+  const [
+    dashboardResult,
+    listingsResult,
+    coverageResult,
+    costHistoryResult,
+    timelineResult,
+    fullResult,
+    pricesResult,
+  ] = await Promise.all([
     needsDashboard
       ? supabase
           .rpc("get_sku_dashboard", {
@@ -261,6 +270,29 @@ export default async function SkuDashboardPage({
             p_offset: 0,
           })
         : Promise.resolve({ data: null, error: null }),
+    // Preços (D-226). Reusa `get_price_changes` de D-172, que ganhou
+    // `p_sku_id` — nenhuma RPC nova. A janela aqui é a MESMA de 30 dias das
+    // outras abas, e não a de 7 dias da Central de Preços: a pergunta desta
+    // tela é "o que aconteceu com este SKU no período que a página inteira
+    // está mostrando", não "o que mudou esta semana na operação".
+    needsPrices
+      ? supabase.rpc("get_price_changes", {
+          p_organization_id: sku.data.organization_id,
+          // As demais RPCs desta página recebem `p_date_to` como DIA e o
+          // tratam como inclusivo. `get_price_changes` não: ela recebe
+          // timestamptz e corta em `occurred_at < p_date_to`. Passar
+          // `dateTo` cru esconderia as mudanças de HOJE, sem erro nenhum na
+          // tela. O +1 dia é a mesma correção que /precos já faz.
+          p_date_from: `${dateFrom}T00:00:00Z`,
+          p_date_to: new Date(new Date(`${dateTo}T00:00:00Z`).getTime() + 86_400_000).toISOString(),
+          p_ml_account_id: null,
+          p_direction: null,
+          p_search: null,
+          p_sku_id: sku.data.id,
+          p_limit: 50,
+          p_offset: 0,
+        })
+      : Promise.resolve({ data: null, error: null }),
     ]);
 
   const dashboard = dashboardResult.data;
@@ -269,6 +301,7 @@ export default async function SkuDashboardPage({
   const costHistory = costHistoryResult.data ?? [];
   const timeline = (timelineResult.data ?? []) as unknown as TimelineRow[];
   const full = fullResult.data ?? [];
+  const prices = pricesResult.data ?? [];
 
   return (
     <Shell>
@@ -496,6 +529,92 @@ export default async function SkuDashboardPage({
                       </td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
+      {tab === "precos" && (
+        <>
+          <h2 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.0625rem" }}>Mudanças de preço observadas</h2>
+
+          {/*
+            D-226. A palavra "observadas" não é enfeite: `listing.price.changed`
+            é um DIFF entre dois snapshots de 6 em 6 horas, então uma mudança que
+            sobe e volta dentro da mesma janela não existe aqui, e a primeira
+            aparição de um anúncio não gera evento (não há "antes").
+          */}
+          <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+            Preço de cada anúncio deste SKU, comparado a cada sincronização (de 6 em 6 horas), nos últimos{" "}
+            {LOOKBACK_DAYS} dias. <strong>Não há análise de impacto</strong>: a série começa em 24/08/2026 e a
+            mediana é de uma mudança por SKU — ligar preço a venda com isso seria inventar causa.
+          </p>
+
+          {pricesResult.error !== null && (
+            <p role="alert" style={{ color: "var(--sb-danger)" }}>
+              Não foi possível carregar as mudanças de preço: {pricesResult.error.message}
+            </p>
+          )}
+
+          {pricesResult.error === null && prices.length === 0 && (
+            <p style={{ color: "var(--sb-text-soft)" }}>
+              Nenhuma mudança de preço observada neste período. Isso <strong>não</strong> quer dizer que o preço
+              ficou parado: uma alteração feita e desfeita entre duas sincronizações não deixa registro.
+            </p>
+          )}
+
+          {pricesResult.error === null && prices.length > 0 && (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "42rem" }}>
+                <thead>
+                  <tr>
+                    <th style={th}>Quando</th>
+                    <th style={th}>Anúncio</th>
+                    <th style={th}>Conta</th>
+                    <th style={{ ...th, textAlign: "right" }}>De</th>
+                    <th style={{ ...th, textAlign: "right" }}>Para</th>
+                    <th style={{ ...th, textAlign: "right" }}>Δ</th>
+                    <th style={{ ...th, textAlign: "right" }}>Δ %</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {prices.map((linha) => {
+                    const subiu = linha.delta > 0;
+                    const cor = subiu ? "var(--sb-secondary)" : "var(--sb-danger)";
+
+                    return (
+                      <tr key={linha.event_id}>
+                        <td style={{ ...td, fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+                          {formatDateTime(linha.occurred_at)}
+                        </td>
+                        <td style={td}>
+                          <Link href={`/anuncios/${linha.item_id}`}>{linha.item_id}</Link>
+                          {/* Título vem de LEFT JOIN: o anúncio pode ter saído do
+                              catálogo depois do evento, e o evento continua sendo
+                              verdade. Mostrar o MLB sem título é mais honesto do que
+                              esconder a linha (contrato de D-172). */}
+                          {linha.title !== null && (
+                            <div style={{ fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>{linha.title}</div>
+                          )}
+                        </td>
+                        <td style={td}>{linha.account_label}</td>
+                        <td style={tdNumber}>{formatCurrency(linha.price_before)}</td>
+                        <td style={tdNumber}>{formatCurrency(linha.price_after)}</td>
+                        <td style={{ ...tdNumber, color: cor }}>
+                          {subiu ? "+" : ""}
+                          {formatCurrency(linha.delta)}
+                        </td>
+                        <td style={{ ...tdNumber, color: cor }}>
+                          {/* NULL quando o preço anterior era zero — a fração não
+                              existe, e "0%" seria mentira. */}
+                          {linha.delta_ratio === null ? "—" : `${subiu ? "+" : ""}${formatPercent(linha.delta_ratio)}`}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

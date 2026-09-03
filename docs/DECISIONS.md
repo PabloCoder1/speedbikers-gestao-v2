@@ -5175,6 +5175,47 @@ O usuario pediu explicitamente *"nao faca isso apenas porque este prompt mandou;
 
 **Impacto:** `apps/web/app/skus/[skuId]/page.tsx`, `apps/web/e2e/sku-dashboard.spec.ts`.
 
+## D-226 - A aba Precos sai por reuso, e o barato so apareceu porque a forma obvia foi MEDIDA
+
+**Contexto:** segunda das abas que faltavam no Dashboard de SKU. `get_price_changes` (D-172) ja devolvia `sku_id` em cada linha; faltava poder FILTRAR por ele. Nenhuma logica nova, nenhum indice novo.
+
+**Assinatura trocada, nao sobrecarregada.** `create or replace` nao muda lista de argumentos — criaria uma SEGUNDA funcao, e chamada que omite os defaults ficaria ambigua. A funcao e derrubada e recriada, com a ACL refeita junto (D-211: o default de `function` nao e o que se espera). `p_sku_id` entra depois de `p_search` e antes de `p_limit`, a ordem de `get_fulfillment_overview`: filtros primeiro, paginacao por ultimo.
+
+---
+
+**A FORMA OBVIA ESTAVA ERRADA, E SO A MEDICAO MOSTROU.** O natural era copiar a casa: `and (p_sku_id is null or l.sku_id = p_sku_id)`, que e o que `get_fulfillment_overview` faz. Quatro planos medidos no Dev com `explain (analyze, buffers)` **quente nos quatro**:
+
+| forma | `p_sku_id` nulo | `p_sku_id` preenchido |
+|---|---|---|
+| `l.sku_id = p_sku_id` (a da casa) | 960 buffers | 960 buffers |
+| `in` sobre os anuncios do SKU | **960 — identico** | **173 buffers** |
+
+**Ganha 5,5x onde importa e EMPATA onde nao importa.** A diferenca e estrutural, nao acidental: em `get_fulfillment_overview` o filtro cai sobre a tabela que DIRIGE a consulta; aqui `listings` entra por `left join`, entao o planejador le todos os eventos de preco da organizacao e so depois descarta. Conferido tambem com valor LITERAL, para nao atribuir a diferenca a plano generico — nem assim ele entra por `listings_sku_idx`.
+
+Com `p_sku_id` nulo o `or` curto-circuita e o subplano **some do plano**: a Central de Precos nao paga nada pela aba nova. Nao ha regressao a trocar por ganho.
+
+**A igualdade e estrutural, e virou teste.** `listings_account_item_unique` torna `(ml_account_id, item_id)` unico, logo `l.sku_id = p_sku_id` ⇔ `(e.ml_account_id, e.entity_id) in (select ml_account_id, item_id from listings where sku_id = p_sku_id)` — inclusive na borda do anuncio que sumiu do catalogo (um lado da NULL, o outro nao acha par). O teste de integracao **executa a forma ingenua em JavaScript e compara** com o `in`: 1 = 1, e com `expect(esperado.length).toBeGreaterThan(0)` para nao passar vazio (D-197). Conferido tambem que o filtro **separa 3 de 1** — nao e guarda vacuo.
+
+**O que NAO foi feito, com o numero na mao.** Existe uma terceira forma, sem o `or`, que entra direto por `listings_sku_idx`: **64 buffers, 0,598 ms**, outros 2,7x. Ela exige ou ramificar em plpgsql (duas copias da consulta para manter sincronizadas) ou virar o left join em inner, que **apagaria** a linha do anuncio que sumiu. Nao vale 109 buffers hoje; fica medida no cabecalho da migration para quando valer.
+
+---
+
+**O OFF-BY-ONE QUE ESCONDERIA O DIA DE HOJE, EM SILENCIO.** As demais RPCs desta pagina recebem `p_date_to` como DIA e tratam como inclusivo. `get_price_changes` nao: recebe `timestamptz` e corta em `occurred_at < p_date_to`. Passar `dateTo` cru **sumiria com as mudancas de hoje sem erro nenhum na tela** — o tipo de falha que nada acusa. Medido depois do conserto: forma crua **3 linhas**, forma corrigida **4**. O ajuste tem dentes, e a mudanca de hoje esta na tela.
+
+**8.873 divergencias que nao existiam, e como isso se resolveu.** Antes de construir sobre `listings.sku_id`, conferi se ele briga com `sku_listing_links` — dois donos da verdade seria motivo para parar. O primeiro numero foi **8.873 divergentes**, alarmante. Era o MEU join: `sku_listing_links` tem `variation_id`, e um anuncio com variacoes tem varias linhas, cada uma para um SKU. Medido no caso comparavel (`variation_id is null`): **3.168 concordam, ZERO divergem**. O que existe sao 939 anuncios cujas variacoes apontam para SKUs diferentes; desses, **5 tem evento de preco (de 168)**. Para esses 5 a mudanca e do ANUNCIO — o preco em `listings` e um so por anuncio, e esse e o grao que existe para gravar. **Numero grande e assustador quase sempre e a pergunta mal feita; a saida foi refazer a medicao, nao arredondar a conclusao.**
+
+---
+
+**O ESTADO VAZIO E A REGRA AQUI, NAO A EXCECAO.** Medido: **95 dos 3.554 SKUs (2,7%)** tem algum evento de preco. **97% das paginas mostram a mensagem vazia** — ela e a tela, e onde a mentira sairia mais barata.
+
+E a mensagem obvia seria falsa. `listing.price.changed` e um **diff entre dois snapshots de 6 em 6 horas** (`v3-listings-snapshot`, `0 */6 * * *`, conferido em `infra/cloud-scheduler.sh`; o motor e `listing-events.ts`). Logo mudanca feita e desfeita dentro da janela **nao existe** ali, e primeira aparicao de anuncio nao gera evento. A tela diz isso: *"Isso nao quer dizer que o preco ficou parado: uma alteracao feita e desfeita entre duas sincronizacoes nao deixa registro"* — mesma familia de D-067 e da aba Full de D-225.
+
+**A restricao de D-172 fica mais dura no grao de SKU:** nao ha analise antes/depois. Serie de 10 dias, **mediana de 1 evento por SKU** (53 dos 95 tem exatamente um). Afirmar impacto seria a atribuicao causal que o proprio item do ROADMAP nomeia como risco — a tela diz em negrito que nao faz isso.
+
+**Verificacao:** **550/550** de integracao em banco recriado (547 + 3 novos), `check` 29/29, build 8/8, `check:embeds` 33/33, `check:waterfalls` 52, **15/15 Playwright**. Vista na aplicacao RODANDO nos dois estados: vazio honesto, e preenchido com os quatro casos que importam — a mudanca de HOJE presente (o off-by-one), alta e queda com cor e sinal, e **preco anterior zero saindo como `—` e nao `0%`**.
+
+**Impacto:** `supabase/migrations/20260903143000_price_changes_por_sku.sql`, `apps/web/app/skus/[skuId]/page.tsx`, `packages/db/src/types.ts` (a mao, D-213), `packages/db/src/rls.integration.test.ts`, `apps/web/e2e/sku-dashboard.spec.ts`.
+
 ## Como adicionar nova decisao
 
 Registrar:

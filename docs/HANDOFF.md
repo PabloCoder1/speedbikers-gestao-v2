@@ -338,7 +338,7 @@ Nada disto pode ser feito por um agente.
 
 | | |
 |---|---|
-| 3 abas do Dashboard de SKU | `Vendas`, `Preços`, `Decisões` — nenhuma bloqueada por dado (D-169/D-224). `Full` **entregue e verificada** (D-225) |
+| 2 abas do Dashboard de SKU | `Vendas` e `Decisões` — nenhuma bloqueada por dado (D-169/D-224). `Full` (D-225) e `Preços` (D-226) **entregues e verificadas** |
 | Central de Integrações | primeira versão simples; nunca verde não verificável |
 | Hub de Configurações | um dado, um dono: aponta para a tela dona, não duplica |
 | Aprendizado humano supervisionado | reusa a Base de Conhecimento (D-113); nada promovido sem humano |
@@ -362,14 +362,14 @@ expansão do "O que aconteceu?" · eventos adicionais de SAC · os 2 pedidos sem
 
 ### Próxima tarefa segura
 
-**As 3 abas restantes do Dashboard de SKU** (`Vendas`, `Preços`,
-`Decisões`), uma por vez, com a agregação no BANCO — nunca somando conjunto
-grande em JavaScript. É a maior pendência de produto que não depende de dado,
-de decisão sua nem de infraestrutura externa.
+**As 2 abas restantes do Dashboard de SKU** (`Vendas` e `Decisões`), uma por
+vez, com a agregação no BANCO — nunca somando conjunto grande em JavaScript.
+É a maior pendência de produto que não depende de dado, de decisão sua nem de
+infraestrutura externa.
 
-✅ **A aba `Full` está entregue e verificada** (D-225): sem SQL novo, vista
-rodando nos dois estados, bateria completa verde — **547/547**, 29/29, 8/8,
-33/33, **14/14**.
+✅ **`Full` (D-225) e `Preços` (D-226) estão entregues e verificadas**, as
+duas por reuso e sem RPC nova. Bateria completa na última: **550/550**,
+29/29, 8/8, 33/33, **15/15**.
 
 **O comando da bateria** (a ordem importa — ver os dois riscos de ambiente):
 
@@ -377,12 +377,15 @@ rodando nos dois estados, bateria completa verde — **547/547**, 29/29, 8/8,
 pnpm exec supabase db reset && pnpm --filter @sb/db run test:integration && pnpm run check && pnpm run build && pnpm exec supabase db reset && pnpm --filter web run e2e:seed && pnpm --filter web run e2e
 ```
 
-**As outras três, com o caminho já medido** (não precisa re-investigar):
+⚠️ **`check:embeds` e `check:waterfalls` não estão no `check`** e cada um
+mora num pacote: `pnpm --filter @sb/db run check:embeds` (exige as variáveis
+do `supabase status` exportadas) e `pnpm --filter web run check:waterfalls`.
+
+**As outras duas, com o caminho já medido** (não precisa re-investigar):
 
 | aba | caminho |
 |---|---|
 | `Decisões` | leitura direta sob RLS — `action_decisions` e `action_outcomes` têm policy de SELECT por organização. ⚠️ usa **embed**, e D-188 é a lição de que embed só se prova rodando |
-| `Preços` | `get_price_changes` já existe; falta só `p_sku_id` |
 | `Vendas` | única que pede RPC nova, sobre `daily_sku_metrics` (já tem grão SKU × dia) |
 
 ---

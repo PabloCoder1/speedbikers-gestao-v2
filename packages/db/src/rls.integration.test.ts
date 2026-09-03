@@ -4931,8 +4931,11 @@ describe("get_price_changes (D-172, Central de Preços)", () => {
   const ITEM_SEM_ANUNCIO = "MLB770000003";
   const FROM = "2026-08-01T00:00:00Z";
   const TO = "2026-09-01T00:00:00Z";
+  // Só ITEM_SUBIU tem SKU. ITEM_CAIU fica sem, e ITEM_SEM_ANUNCIO nem anúncio
+  // tem — os dois lados que o filtro de SKU precisa deixar de fora.
+  let SKU_DO_ANUNCIO = "";
 
-  const CALL = (extra = "null, null, null, 50, 0") =>
+  const CALL = (extra = "null, null, null, null, 50, 0") =>
     `select * from public.get_price_changes('${ORG_SB}','${FROM}','${TO}', ${extra})`;
 
   beforeAll(async () => {
@@ -4943,14 +4946,22 @@ describe("get_price_changes (D-172, Central de Preços)", () => {
       [CONTA_PRECO, ORG_SB],
     );
 
+    const skuDoAnuncio = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, title)
+       values ($1,'precotest-com-evento','SKU cujo anúncio mudou de preço')
+       returning id`,
+      [ORG_SB],
+    );
+    SKU_DO_ANUNCIO = skuDoAnuncio.rows[0]?.id ?? "";
+
     await client.query(
       `insert into public.listings
-         (organization_id, ml_account_id, item_id, title, status, price, currency_id, available_quantity, synced_at)
+         (organization_id, ml_account_id, item_id, title, status, price, currency_id, available_quantity, synced_at, sku_id)
        values
-         ($1,$2,$3,'Anúncio que subiu','ACTIVE',120,'BRL',3,now()),
-         ($1,$2,$4,'Anúncio que caiu','ACTIVE',80,'BRL',3,now())
+         ($1,$2,$3,'Anúncio que subiu','ACTIVE',120,'BRL',3,now(),$5),
+         ($1,$2,$4,'Anúncio que caiu','ACTIVE',80,'BRL',3,now(),null)
        on conflict (ml_account_id, item_id) do nothing`,
-      [ORG_SB, CONTA_PRECO, ITEM_SUBIU, ITEM_CAIU],
+      [ORG_SB, CONTA_PRECO, ITEM_SUBIU, ITEM_CAIU, SKU_DO_ANUNCIO],
     );
 
     await client.query(
@@ -5016,8 +5027,8 @@ describe("get_price_changes (D-172, Central de Preços)", () => {
   });
 
   it("filtro de direção separa aumento de redução", async () => {
-    const subiram = await asUser<{ item_id: string }>(ADMIN_SB, CALL("null, 'up', null, 50, 0"));
-    const cairam = await asUser<{ item_id: string }>(ADMIN_SB, CALL("null, 'down', null, 50, 0"));
+    const subiram = await asUser<{ item_id: string }>(ADMIN_SB, CALL("null, 'up', null, null, 50, 0"));
+    const cairam = await asUser<{ item_id: string }>(ADMIN_SB, CALL("null, 'down', null, null, 50, 0"));
 
     expect(subiram.map((r) => r.item_id)).toContain(ITEM_SUBIU);
     expect(subiram.map((r) => r.item_id)).not.toContain(ITEM_CAIU);
@@ -5028,12 +5039,60 @@ describe("get_price_changes (D-172, Central de Preços)", () => {
   it("total_count conta o conjunto filtrado inteiro, não a página", async () => {
     const pagina = await asUser<{ item_id: string; total_count: string }>(
       ADMIN_SB,
-      CALL("null, null, 'MLB77000000', 1, 0"),
+      CALL("null, null, 'MLB77000000', null, 1, 0"),
     );
 
     expect(pagina).toHaveLength(1);
     // Uma linha na página, mas a busca alcança os três eventos válidos.
     expect(Number(pagina[0]?.total_count)).toBe(3);
+  });
+
+  // ---- p_sku_id (D-226, aba Preços do Dashboard de SKU) -------------------
+
+  it("p_sku_id devolve EXATAMENTE o que peneirar por sku_id fora do banco devolveria", async () => {
+    // Esta é a prova de igualdade de D-199 virada teste. A migration troca
+    // `l.sku_id = p_sku_id` por um `in` sobre os anúncios do SKU, e o
+    // argumento de que são a mesma coisa é estrutural (a unicidade de
+    // `(ml_account_id, item_id)`). Aqui ela é conferida contra dado real:
+    // o lado direito é a forma ingênua, executada em JavaScript.
+    const semFiltro = await asUser<{ event_id: string; sku_id: string | null }>(ADMIN_SB, CALL());
+    const comFiltro = await asUser<{ event_id: string }>(
+      ADMIN_SB,
+      CALL(`null, null, null, '${SKU_DO_ANUNCIO}', 50, 0`),
+    );
+
+    const esperado = semFiltro.filter((r) => r.sku_id === SKU_DO_ANUNCIO).map((r) => r.event_id);
+
+    // Sem esta guarda o teste passaria com os dois lados vazios (D-197).
+    expect(esperado.length).toBeGreaterThan(0);
+    expect(comFiltro.map((r) => r.event_id).sort()).toEqual([...esperado].sort());
+  });
+
+  it("filtro de SKU não alcança o anúncio sem SKU nem o evento órfão", async () => {
+    const rows = await asUser<{ item_id: string }>(
+      ADMIN_SB,
+      CALL(`null, null, null, '${SKU_DO_ANUNCIO}', 50, 0`),
+    );
+    const itens = rows.map((r) => r.item_id);
+
+    expect(itens).toContain(ITEM_SUBIU);
+    // Anúncio existe, mas sem SKU.
+    expect(itens).not.toContain(ITEM_CAIU);
+    // Evento cujo anúncio sumiu do catálogo: sem anúncio não há SKU a que
+    // atribuir. Ele continua aparecendo SEM filtro (o caso acima) e some COM
+    // filtro — é a borda que a migration afirma no cabeçalho.
+    expect(itens).not.toContain(ITEM_SEM_ANUNCIO);
+  });
+
+  it("total_count respeita o filtro de SKU, e não o total da organização", async () => {
+    const rows = await asUser<{ total_count: string }>(
+      ADMIN_SB,
+      CALL(`null, null, null, '${SKU_DO_ANUNCIO}', 50, 0`),
+    );
+
+    // Um evento legítimo para este SKU (os outros dois do mesmo item são o
+    // incompleto e o fora da janela, já descartados antes do filtro).
+    expect(Number(rows[0]?.total_count)).toBe(1);
   });
 
   it("anon não executa get_price_changes", async () => {
