@@ -5472,6 +5472,53 @@ describe("get_listings_dashboard (D-138; conversão canônica em D-170)", () => 
     expect(Number(rows[0]?.total_count)).toBe(2);
   });
 
+  it("p_stock particiona por available_quantity e valor desconhecido cai em 'all' (D-242)", async () => {
+    // Um terceiro anúncio, ZERADO — as duas fixtures acima têm 5.
+    const ITEM_ZERADO = "MLB900100502";
+
+    await client.query(
+      `insert into public.listings
+         (organization_id, ml_account_id, item_id, title, status, price, currency_id, available_quantity, synced_at)
+       values ($1,$2,$3,'Anúncio sem estoque','ACTIVE',150,'BRL',0,now())
+       on conflict (ml_account_id, item_id) do nothing`,
+      [ORG_SB, CONTA_TRAFEGO, ITEM_ZERADO],
+    );
+
+    const contagem = async (stock: string): Promise<number> => {
+      const rows = await asUser<{ total_count: string }>(
+        ADMIN_SB,
+        `select total_count from public.get_listings_dashboard('${ORG_SB}','${WINDOW_START}','${TODAY}', p_stock => '${stock}', p_limit => 1)`,
+      );
+
+      return Number(rows[0]?.total_count ?? 0);
+    };
+
+    const [all, out, dentro, lixo] = await Promise.all([
+      contagem("all"),
+      contagem("out"),
+      contagem("in"),
+      contagem("lixo"),
+    ]);
+
+    // A coluna é NOT NULL: as duas classes cobrem o conjunto inteiro, sem
+    // terceira posição silenciosa.
+    expect(out + dentro).toBe(all);
+    expect(out).toBeGreaterThanOrEqual(1);
+
+    // Valor fora da lista NÃO devolve zero linhas — seria indistinguível de um
+    // filtro legítimo sem resultado. Cai em 'all', como quem não passou.
+    expect(lixo).toBe(all);
+
+    // E o recorte 'out' é EXATAMENTE quem tem zero — não "quem tem pouco".
+    const zerados = await asUser<{ item_id: string; available_quantity: number }>(
+      ADMIN_SB,
+      `select item_id, available_quantity from public.get_listings_dashboard('${ORG_SB}','${WINDOW_START}','${TODAY}', p_stock => 'out', p_limit => 500)`,
+    );
+
+    expect(zerados.map((r) => r.item_id)).toContain(ITEM_ZERADO);
+    expect(zerados.every((r) => Number(r.available_quantity) === 0)).toBe(true);
+  });
+
   it("anon não executa get_listings_dashboard", async () => {
     await expect(asAnon(CALL)).rejects.toThrow(/permission denied/i);
   });

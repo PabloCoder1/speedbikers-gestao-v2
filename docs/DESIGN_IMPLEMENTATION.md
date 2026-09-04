@@ -314,6 +314,34 @@ branco embutido.
 > em vez de substituir apresentação antiga; entra quando a fila de migração
 > fechar.
 
+> **Superfície:** `/anuncios`, faixa de resumo · **Figma:** seis células —
+> Ativos, Pausados, Sem estoque, **No Full**, Sem vínculo, **Com queda** ·
+> **V3 real:** mede quatro; "No Full" é fato de **SKU** (`listings` não tem
+> coluna de logística; o Full vive em `fulfillment_stock_snapshots`, grão de
+> SKU) e "Com queda" não tem detecção por anúncio nem entrada em
+> `metric_definitions` · **Decisão:** cinco células — **Total** na âncora mais as
+> quatro medidas; as duas ausentes ficam de fora · **Motivo:** métrica canônica
+> (D-023) e grão — contar anúncio "no Full" trocaria o grão no meio da faixa, e
+> "queda" sem definição seria número sintetizado.
+
+> **Superfície:** `/anuncios`, tabela · **Figma:** colunas **Full** e **Saúde**
+> ("Em risco", "Saudável") · **V3 real:** Full é de SKU, e "saúde" de anúncio
+> não existe como veredito · **Decisão:** as duas colunas saem; entram Visitas e
+> Obs., que o frame não tem e a V3 mede · **Motivo:** regra funcional — a
+> conversão só é honesta ao lado dos dias observados (D-123), e um selo "Em
+> risco" sem regra por trás é o oposto do que esta frente persegue.
+
+> **Superfície:** `/anuncios`, cabeçalho · **Figma:** ação **"Novo anúncio"** ·
+> **V3 real:** a V3 não cria anúncio no Mercado Livre — o catálogo é lido, e
+> escrita no ML é ato com aprovação humana · **Decisão:** sem ação no cabeçalho ·
+> **Motivo:** escopo aprovado e segurança.
+
+> **Superfície:** `/anuncios`, células "ver lista" · **Figma:** chip `<Status>`
+> decorativo · **V3 real:** — · **Decisão:** o chip é um **link** para o recorte
+> que produziu o número, e o número vem do `total_count` da MESMA função que
+> monta a lista · **Motivo:** "um dado, um dono" (D-224) — contagem e lista não
+> podem divergir se são a mesma consulta.
+
 
 
 > **Superfície:** `/skus/[id]`, aba Visão geral · **Figma:** cartão "Estoque
@@ -463,10 +491,9 @@ que ele renderiza.**
 | R1 | Retrabalho da moldura, pelo **frame** do Figma | **CONCLUÍDO** |
 | R2 | Sistema tipográfico e densidade (Inter + DM Mono) | **CONCLUÍDO** |
 | R3 | Home, refeita pelo frame do Figma | **CONCLUÍDO** |
-| D7 | Produtos | fila |
-
-| D8–D12 | Dashboard de SKU (fundação + 4 pares de abas) | fila |
-
+| D7 | Produtos | **CONCLUÍDO** |
+| D8–D11 | Dashboard de SKU (fundação + nove abas) | **CONCLUÍDO** |
+| D12 | Anúncios — faixa de estados + painel, pelo frame `Listings` | **CONCLUÍDO** |
 | D13 | Republicação (só UX; motor real preservado) | fila |
 | D14–D20 | Estoque, Cobertura/Reposição, Curva ABC, Movimentações, NF-e, Compras, Fornecedores | fila |
 | D21–D30 | Vinculações, Diagnóstico, Ações, Alterações, Preços, Full, Tráfego, Atendimento, Conhecimento, Central | fila |
@@ -484,36 +511,55 @@ O que resta são superfícies **ainda não migradas** — a fila D7 em diante.
 
 ## Última fatia concluída
 
-**D11 — as seis abas restantes do SKU**, fechando a tela. Mesma substituição de
-D10, repetida: cada `<h2>` + explicação virou um **painel** com o título no
-cabeçalho, e o conteúdo passou a viver sobre superfície branca em vez de flutuar
-no fundo tingido da aba.
+**D12 — Anúncios**, pelo frame `Listings`. A tela deixou de abrir com um `<h1>`
+e dois parágrafos sobre uma tabela crua e passou a ter a composição do frame:
+sobrancelha `COMERCIAL / CATÁLOGO`, barra de menus (conta, estado, vínculo,
+**estoque**, busca), **faixa de cinco estados** com âncora navy e chips "ver
+lista" tonalizados, e o painel "Anúncios monitorados" com a linha *Filtros
+ativos:* dizendo o recorte real.
 
-| aba | virou |
-|---|---|
-| Anúncios, Full, Preços, Decisões | um painel cada |
-| Histórico | **dois** painéis — "Custo cadastrado" e "Linha do tempo" são assuntos distintos e estavam no mesmo bloco |
-| Diagnóstico | intocada: `DiagnosisPanel` já é um cartão próprio |
+**O frame pedia seis células; a V3 mede quatro.** "No Full" é fato de SKU e
+"Com queda" não existe — as duas ficaram de fora, com o motivo no registro de
+desvios. A âncora recebeu o **total**, que é medido e é o denominador das
+outras.
 
-**Cartão-dentro-de-cartão, resolvido na origem.** `SimulatorPanel` trazia a
-própria moldura e o próprio `<h2>` — dentro do painel de D10 virava moldura
-dupla. Os dois saíram do componente: quem diz o título agora é o painel que o
-contém. É o mesmo raciocínio de "um dado, um dono", aplicado à moldura.
+**Uma capacidade que a tela não tinha, para a faixa ser honesta.** A célula
+"Sem estoque" e o botão "Com estoque" do frame são o mesmo predicado, e a RPC
+não o conhecia. `get_listings_dashboard` ganhou `p_stock` ('all' | 'out' |
+'in'), **por último na assinatura** — a suíte de integração a chama
+posicionalmente, e um argumento no meio quebraria todo chamador SQL existente.
+Cada célula lê o `total_count` da mesma função que monta a lista, então clicar
+mostra exatamente o que o número prometeu.
 
-**Verificado tela a tela, não por amostra:** uma sonda percorreu as **nove
-abas** e mediu, em cada uma, o HTTP, quantos painéis, quantos cartões de
-indicador e quantos `<h2>` de estilo antigo restaram. O resultado final é
-`h2-antigos=0` nas nove, com todas em 200.
+**A tela nunca teve e2e, e o motivo era invisível:** o seed não criava anúncio
+nenhum; os do banco local eram resíduo da suíte de integração. O seed passou a
+criar quatro (um por estado, mais um de vínculo por variação para provar
+D-122), e três specs novos derivam as contagens do fixture. A suíte foi de 22
+para **25**.
 
-**Verificação:** `check` 29/29, build 8/8, integração 582/582, **22/22
-Playwright**, `check:waterfalls`, `check:server-actions`, `docs:check`.
+**O guard D-182 pegou uma regressão real na primeira versão da migration:** sem
+o `revoke ... from public, anon`, o Postgres deu EXECUTE a PUBLIC na função
+recriada. Corrigido; a migration explica.
+
+**`.sb-table` nasceu aqui.** Cada tabela migrada carregava seus próprios
+`th`/`td` inline; a classe da casa vem das medidas do frame (`th` 9px DM Mono
+sobre `#faf9fb`, `td` 11px com 12px de respiro, fio `#f0eef3`) e é **opt-in**:
+44 tabelas no app, trocar o `td` global mudaria todas sem medir nenhuma. As
+outras adotam ao migrar.
+
+**Verificação:** `check` 29/29, build 8/8, integração **583/583** (uma nova
+para `p_stock`), **25/25 Playwright**, `check:waterfalls`,
+`check:server-actions`, `docs:check`.
 
 ## Próxima fatia segura
 
-**D12 — Anúncios.** O brief pede que a tela "NÃO pareça somente uma tabela de
-anúncios" (`speed-bikers-design.md`, seção 13): resumo por estado (ativos,
-pausados, sem estoque, Full, sem Full, sem vínculo, com queda, com problema) e
-filtros. O `ObjectHeader` de D8 já serve o dashboard de um anúncio; a listagem
-ganha a composição de faixa + painel. **Antes de implementar, conferir quais
-daqueles oito estados o sistema mede de verdade** — o brief lista mais do que a
-V3 observa hoje.
+**D13 — Republicação (`/republicacao`).** Só a apresentação: o motor de relist,
+a fila, os eventos e a primeira republicação real deliberada (ainda pendente de
+ato humano em `docs/HANDOFF.md`) não mudam. O frame a consultar é o de
+Republicação do export; antes de desenhar, conferir o que a tela mede hoje —
+candidatos, agendados, executados, falhas — contra o que o frame mostra, e
+registrar cada célula que o sistema não observa em vez de estampá-la.
+
+Depois, pela fila: Estoque, Cobertura/Reposição, Curva ABC, Movimentações —
+todas tabelas, todas candidatas naturais a adotar `.sb-table` e apagar os
+consts inline ao migrar.

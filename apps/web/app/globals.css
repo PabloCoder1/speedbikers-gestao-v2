@@ -156,6 +156,10 @@
 
   /* Fundo do cabeçalho de tabela — o `.table-wrap th` do Figma. */
   --sb-table-head: #faf9fb;
+  /* Corpo e fio da `.sb-table` (D-242): #464352 dá 8,9:1 sobre branco; o fio
+     é mais claro que `--sb-border` de propósito — ver o comentário da classe. */
+  --sb-table-ink: #464352;
+  --sb-table-rule: #f0eef3;
 }
 
 *,
@@ -804,6 +808,25 @@ body {
   color: var(--sb-muted-ink);
 }
 
+/*
+  O chip "ver lista" do `.ops-metric` do Figma: `width: max-content` para ele
+  medir a palavra e não a coluna, e `justify-self: start` porque a célula é um
+  grid — sem isso o `max-content` ainda esticaria até a borda.
+*/
+.sb-kpi-link {
+  justify-self: start;
+  width: max-content;
+  margin-top: 0.125rem;
+  padding: 0.125rem 0.25rem;
+  border-radius: var(--sb-radius-sm);
+  font-size: 0.625rem;
+  text-decoration: none;
+}
+
+.sb-kpi-link:hover {
+  text-decoration: underline;
+}
+
 .sb-kpi-strip-ancora .sb-kpi:first-child .sb-kpi-label,
 .sb-kpi-strip-ancora .sb-kpi:first-child .sb-kpi-prev,
 .sb-kpi-strip-ancora .sb-kpi:first-child .sb-kpi-note {
@@ -816,6 +839,18 @@ body {
 
 .sb-kpi-strip-ancora .sb-kpi:first-child .sb-kpi-id {
   color: var(--sb-on-primary);
+}
+
+/*
+  Na célula âncora o chip perde o tom e vira vidro sobre o navy — é a própria
+  correção que o Figma carrega no `index.css` do export (`background:
+  rgba(255,255,255,.2)`, borda a 40%). O `!important` existe porque o tom vem
+  como `style` inline do componente, e aqui a regra da âncora tem de ganhar.
+*/
+.sb-kpi-strip-ancora .sb-kpi:first-child .sb-kpi-link {
+  background: rgba(255, 255, 255, 0.2) !important;
+  color: var(--sb-white) !important;
+  border: 1px solid rgba(255, 255, 255, 0.4);
 }
 
 /* --- botões (`.button`, `.button ghost`, `.button primary`) --- */
@@ -1396,6 +1431,37 @@ body {
  * Cor NUNCA é a única pista — o texto sempre acompanha, porque cerca de 8% dos
  * homens não distinguem vermelho de verde.
  */
+/*
+  A célula de produto das tabelas do Figma (`.product-cell` + `.product-thumb`).
+
+  O quadradinho **não é foto** — no frame ele traz duas letras em DM Mono sobre
+  cinza-lilás ("XR", "PF", "CB"). É um monograma, e por isso é implementável com
+  o dado que existe: as iniciais do próprio título. Miniatura de verdade
+  continua adiada, porque `listings` e `skus` não guardam imagem — e um
+  placeholder cinza fingindo foto seria pior do que a letra honesta.
+*/
+.sb-product-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.sb-product-thumb {
+  flex: none;
+  width: 1.75rem;
+  height: 1.75rem;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  background: var(--sb-neutral-soft);
+  color: var(--sb-secondary);
+  font-family: var(--sb-mono);
+  font-size: 0.5625rem;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
 .sb-status {
   display: inline-block;
   padding: 3px 5px;
@@ -1452,6 +1518,72 @@ th {
  */
 table {
   background: var(--sb-surface);
+}
+
+/*
+ * `.sb-table` — a tabela do frame (`.table-wrap table`), medida no export:
+ *
+ *   th   9px DM Mono, .04em, uppercase, #92909a sobre #faf9fb, 9px 12px
+ *   td   11px, 12px, borda superior #f0eef3, #464352
+ *   tr   :hover td #fcfbfd
+ *   table  nowrap, text-align left
+ *
+ * É OPT-IN de propósito. O app tem 44 `<table>`, cada uma com o seu `th`/`td`
+ * inline de `0.5rem 0.75rem`; trocar o `td` global mudaria as 44 num gesto sem
+ * medir nenhuma — a mesma classe de mudança que o fundo cinza (D2) mostrou ser
+ * perigosa. Cada tabela adota a classe quando a sua tela migra, e apaga os
+ * consts inline ao adotar. `/anuncios` foi a primeira (D-242).
+ *
+ * `--sb-table-ink` e `--sb-table-rule` são os dois valores do frame que ainda
+ * não tinham token: a tinta do corpo (#464352, 8,9:1 sobre branco) e a linha
+ * entre linhas (#f0eef3), mais clara que `--sb-border` de propósito — o frame
+ * separa linhas com um fio quase invisível e deixa a borda forte só para o
+ * contorno do painel.
+ */
+.sb-table {
+  border-collapse: collapse;
+  width: 100%;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.sb-table th {
+  padding: 0.5625rem 0.75rem;
+  font-size: 0.5625rem;
+  color: var(--sb-muted-ink);
+  border-top: 1px solid var(--sb-border);
+}
+
+.sb-table td {
+  padding: 0.75rem;
+  font-size: 0.6875rem;
+  color: var(--sb-table-ink);
+  border-top: 1px solid var(--sb-table-rule);
+}
+
+.sb-table tr:hover td {
+  background: var(--sb-bg-soft);
+}
+
+.sb-table .sb-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+  Nome da entidade na primeira coluna: o frame usa `<b>`, e o link herda a cor
+  do texto em vez de virar azul sublinhado. Numa tabela em que MLB e SKU já são
+  links, um terceiro sublinhado por linha vira ruído — o nome é clicável, mas é
+  o hover que o diz.
+*/
+.sb-table .sb-entity {
+  font-weight: 600;
+  color: var(--sb-primary);
+  text-decoration: none;
+}
+
+.sb-table .sb-entity:hover {
+  text-decoration: underline;
 }
 
 /*

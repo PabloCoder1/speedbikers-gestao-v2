@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **236** (D-001 a D-241).
+Decisões registradas: **237** (D-001 a D-242).
 
 ## Por domínio
 
@@ -123,7 +123,7 @@ Decisões registradas: **236** (D-001 a D-241).
 - **D-234** — O defeito que D-119 achou, adiou e ninguem colheu: 26 telas quebravam no segundo usuario
 - **D-241** — A frente visual como varredura: tres telas mortas e uma coluna fantasma que build verde nao pegava
 
-### mercado-livre (39)
+### mercado-livre (40)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -164,6 +164,7 @@ Decisões registradas: **236** (D-001 a D-241).
 - **D-220** — O caminho de pedidos, enfim medido: 17 a 28x na janela, e ZERO no webhook
 - **D-222** — O expurgo do entulho de webhook: limpeza unica, nao politica de retencao
 - **D-230** — O snapshot do Full morreu no dia em que a escrita passou a abortar, e a causa era dois anuncios com um estoque
+- **D-242** — Anuncios pelo frame: a faixa que so conta o que se mede, e a RPC que ganhou um filtro para a faixa ser honesta
 
 ### outros (38)
 

@@ -38,6 +38,8 @@ import {
   E2E_DECISION_TEXT,
   E2E_GESTOR_EMAIL,
   E2E_GESTOR_PASSWORD,
+  E2E_LISTINGS,
+  E2E_LISTING_TRAFFIC,
   E2E_SKU_SALES,
   E2E_USER_EMAIL,
   E2E_USER_PASSWORD,
@@ -575,6 +577,108 @@ async function main(): Promise<void> {
 
   if (outcome.error !== null) {
     throw outcome.error;
+  }
+
+  // ------------------------------------------------------------------
+  // Anúncios (D-242). O seed não criava nenhum, então `/anuncios` nunca teve
+  // e2e: depois de um `db reset` a tela ficava vazia. Os quatro cobrem os
+  // quatro estados que a faixa de resumo conta — ver `E2E_LISTINGS`.
+  // ------------------------------------------------------------------
+  const listings = await db.from("listings").upsert(
+    E2E_LISTINGS.map((anuncio) => ({
+      organization_id: organizationId,
+      ml_account_id: mlAccountId,
+      item_id: anuncio.itemId,
+      title: anuncio.title,
+      status: anuncio.status,
+      price: anuncio.price,
+      currency_id: "BRL",
+      available_quantity: anuncio.available,
+      // Vínculo DIRETO só no primeiro. O de variação mora em
+      // `sku_listing_links` e deixa esta coluna nula de propósito (D-122).
+      sku_id: anuncio.vinculo === "sku" ? skuId : null,
+      synced_at: new Date().toISOString(),
+    })),
+    { onConflict: "ml_account_id,item_id" },
+  );
+
+  if (listings.error !== null) {
+    throw listings.error;
+  }
+
+  const porVariacao = E2E_LISTINGS.find((anuncio) => anuncio.vinculo === "variacao");
+
+  if (porVariacao !== undefined) {
+    const VARIATION_ID = "123456789";
+
+    // Existe-então-insere em vez de upsert: a unicidade é um índice PARCIAL
+    // (`where ref_kind = 'ITEM' and variation_id is not null`) e o `on_conflict`
+    // do PostgREST não o alcança. Mesmo caminho do movimento de estoque acima.
+    const linkExistente = await db
+      .from("sku_listing_links")
+      .select("id")
+      .eq("ml_account_id", mlAccountId)
+      .eq("item_id", porVariacao.itemId)
+      .eq("variation_id", VARIATION_ID)
+      .maybeSingle();
+
+    if (linkExistente.error !== null) {
+      throw linkExistente.error;
+    }
+
+    if (linkExistente.data === null) {
+      const link = await db.from("sku_listing_links").insert({
+        organization_id: organizationId,
+        ml_account_id: mlAccountId,
+        ref_kind: "ITEM",
+        item_id: porVariacao.itemId,
+        variation_id: VARIATION_ID,
+        sku_id: skuId,
+        source: "MANUAL",
+      });
+
+      if (link.error !== null) {
+        throw link.error;
+      }
+    }
+  }
+
+  const diaTrafego = new Date(Date.now() - E2E_LISTING_TRAFFIC.daysAgo * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
+
+  const visitas = await db.from("daily_listing_visits").upsert(
+    {
+      organization_id: organizationId,
+      ml_account_id: mlAccountId,
+      item_id: E2E_LISTING_TRAFFIC.itemId,
+      metric_date: diaTrafego,
+      visits: E2E_LISTING_TRAFFIC.visits,
+      synced_at: new Date().toISOString(),
+    },
+    { onConflict: "ml_account_id,item_id,metric_date" },
+  );
+
+  if (visitas.error !== null) {
+    throw visitas.error;
+  }
+
+  const metricasAnuncio = await db.from("daily_listing_metrics").upsert(
+    {
+      organization_id: organizationId,
+      ml_account_id: mlAccountId,
+      mlb_id: E2E_LISTING_TRAFFIC.itemId,
+      metric_date: diaTrafego,
+      units_sold: E2E_LISTING_TRAFFIC.units,
+      gross_revenue: E2E_LISTING_TRAFFIC.revenue,
+      orders_count: E2E_LISTING_TRAFFIC.orders,
+      purchases_count: E2E_LISTING_TRAFFIC.orders,
+    },
+    { onConflict: "ml_account_id,mlb_id,variation_id,metric_date" },
+  );
+
+  if (metricasAnuncio.error !== null) {
+    throw metricasAnuncio.error;
   }
 
   const output: SeedOutput = {

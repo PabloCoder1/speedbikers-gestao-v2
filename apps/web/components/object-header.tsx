@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { TOM, type Tom } from "./tone";
+
 /**
  * Cabeçalho de entidade — o "Object Header" do `DesignSystem.tsx` do Figma, que
  * lá é declarado como **o padrão de SKU, anúncio, pedido de compra e
@@ -27,7 +29,7 @@ import type { ReactNode } from "react";
  */
 export interface ObjectBadge {
   readonly label: string;
-  readonly tom: "neutro" | "ok" | "atencao" | "perigo" | "info";
+  readonly tom: Tom;
 }
 
 export interface ObjectTab {
@@ -35,14 +37,6 @@ export interface ObjectTab {
   readonly label: string;
   readonly active: boolean;
 }
-
-const TOM: Record<ObjectBadge["tom"], { background: string; color: string }> = {
-  neutro: { background: "var(--sb-neutral-soft)", color: "var(--sb-neutral-ink)" },
-  ok: { background: "var(--sb-success-soft)", color: "var(--sb-success)" },
-  atencao: { background: "var(--sb-accent-soft)", color: "var(--sb-accent-ink)" },
-  perigo: { background: "var(--sb-danger-soft)", color: "var(--sb-danger-ink)" },
-  info: { background: "var(--sb-secondary-soft)", color: "var(--sb-secondary)" },
-};
 
 export function ObjectHeader({
   identificador,

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { E2E_DECISION_TEXT, E2E_SKU_SALES } from "./constants.js";
+import { E2E_DECISION_TEXT, E2E_LISTINGS, E2E_SKU_SALES } from "./constants.js";
 import { login } from "./helpers.js";
 import { readSeedOutput } from "./seed-output.js";
 
@@ -38,7 +38,19 @@ test("dashboard de SKU mostra saldo local do seed", async ({ page }) => {
   // navegação junto. O locator escopa pelo nav das abas porque o menu
   // lateral também tem um link "Anúncios".
   await page.getByRole("navigation", { name: "Abas do SKU" }).getByRole("link", { name: "Anúncios" }).click();
-  await expect(page.getByText("Nenhum anúncio vinculado a este SKU.")).toBeVisible();
+
+  // O seed passou a criar anúncios (D-242), então esta aba deixou de provar só
+  // o estado vazio e passa a provar o VÍNCULO: o único anúncio com `sku_id`
+  // deste SKU aparece, e os outros três — inclusive o de vínculo por variação,
+  // que não preenche `listings.sku_id` — não.
+  const vinculado = E2E_LISTINGS.filter((anuncio) => anuncio.vinculo === "sku");
+
+  expect(vinculado).toHaveLength(1);
+  await expect(page.getByText(vinculado[0]?.itemId ?? "")).toBeVisible();
+
+  for (const outro of E2E_LISTINGS.filter((anuncio) => anuncio.vinculo !== "sku")) {
+    await expect(page.getByText(outro.itemId)).toHaveCount(0);
+  }
 });
 
 /**

@@ -27,6 +27,29 @@ const LINK_STATE_KEYS = new Set(LINK_STATE_FILTERS.map((f) => f.key as string));
  */
 const STATUS_KEYS = new Set(["active", "paused", "closed", "under_review"]);
 
+/**
+ * Recorte por estoque DO ANÚNCIO (D-242) — `listings.available_quantity`.
+ *
+ * O frame `Listings` pede as duas pontas: a célula "Sem estoque" na faixa de
+ * resumo e o botão "Com estoque" na barra da tabela. A coluna é NOT NULL, então
+ * as duas classes particionam o conjunto inteiro — não existe terceira posição
+ * silenciosa entre elas.
+ *
+ * **Não é o saldo do ERP nem o do Full.** São três grãos diferentes, e o único
+ * que responde "o anúncio pode vender agora?" é este.
+ */
+export const STOCK_FILTERS = [
+  { key: "all", label: "Qualquer estoque" },
+  { key: "in", label: "Com estoque" },
+  { key: "out", label: "Sem estoque" },
+] as const;
+
+const STOCK_KEYS = new Set(STOCK_FILTERS.map((f) => f.key as string));
+
+export function resolveStockFilter(raw: unknown): string {
+  return typeof raw === "string" && STOCK_KEYS.has(raw) ? raw : "all";
+}
+
 export function resolveLinkStateFilter(raw: unknown): string {
   return typeof raw === "string" && LINK_STATE_KEYS.has(raw) ? raw : "all";
 }

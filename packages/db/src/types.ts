@@ -4241,6 +4241,7 @@ export type Database = {
           p_organization_id: string
           p_search?: string | null
           p_status?: string | null
+          p_stock?: string | null
         }
         Returns: {
           account_label: string

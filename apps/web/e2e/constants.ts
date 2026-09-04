@@ -32,3 +32,75 @@ export const E2E_SKU_SALES = [
 
 /** Texto da decisão do seed (aba Decisões, D-228) — o spec procura por ele. */
 export const E2E_DECISION_TEXT = "Repor 10 unidades e revisar o preço — decisão de teste E2E";
+
+/**
+ * Anúncios do seed (D-242). **O seed não criava nenhum** — os que existiam no
+ * banco local eram resíduo da suíte de integração, e por isso `/anuncios`
+ * chegou até aqui sem e2e nenhum: depois de um `db reset` a tela ficava vazia e
+ * não havia o que afirmar.
+ *
+ * Os quatro cobrem exatamente os quatro estados que a faixa de resumo conta, e
+ * o spec DERIVA as contagens desta lista — mudar uma linha muda os dois lados
+ * juntos, como em `E2E_SKU_SALES`:
+ *
+ *   ativos = 3 · pausados = 1 · sem estoque = 1 · sem vínculo = 2
+ *
+ * O quarto existe por causa de D-122: vínculo POR VARIAÇÃO tem `sku_id` nulo no
+ * anúncio e **não** é fila de trabalho. Se a contagem de "sem vínculo" um dia
+ * voltar a ser `sku_id is null`, ela dirá 3 e o spec fica vermelho.
+ */
+export const E2E_LISTINGS = [
+  {
+    itemId: "MLB800000001",
+    title: "Kit Relação E2E — vende e tem visita",
+    status: "active",
+    price: 189.9,
+    available: 12,
+    /** `listings.sku_id` preenchido: vínculo direto, a coluna SKU vira link. */
+    vinculo: "sku",
+  },
+  {
+    itemId: "MLB800000002",
+    title: "Pastilha de Freio E2E — sem estoque",
+    status: "active",
+    price: 124.5,
+    available: 0,
+    vinculo: "nenhum",
+  },
+  {
+    itemId: "MLB800000003",
+    title: "Retrovisor E2E — pausado",
+    status: "paused",
+    price: 96,
+    available: 5,
+    vinculo: "nenhum",
+  },
+  {
+    itemId: "MLB800000004",
+    title: "Guidão E2E — vínculo por variação",
+    status: "active",
+    price: 240,
+    available: 3,
+    /** Linha em `sku_listing_links` com `variation_id`, `listings.sku_id` NULO. */
+    vinculo: "variacao",
+  },
+] as const;
+
+/**
+ * Tráfego e venda do PRIMEIRO anúncio, e só dele.
+ *
+ * O segundo fica deliberadamente sem visita: é o que prova na tela a regra de
+ * D-123 — sem denominador a conversão é "—", **indefinida, não 0%**. Um seed
+ * que desse visita a todos apagaria a única evidência visual dessa distinção.
+ *
+ * `daysAgo` relativo a hoje pelo mesmo motivo de `E2E_SKU_SALES`: a janela da
+ * tela é de 30 dias e data fixa sairia dela em silêncio.
+ */
+export const E2E_LISTING_TRAFFIC = {
+  itemId: "MLB800000001",
+  daysAgo: 1,
+  visits: 250,
+  units: 8,
+  revenue: 1519.2,
+  orders: 8,
+} as const;

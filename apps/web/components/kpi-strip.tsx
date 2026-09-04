@@ -1,4 +1,7 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
+
+import { TOM, type Tom } from "./tone";
 
 /**
  * Faixa de indicadores do Figma (`.kpi-strip`).
@@ -50,6 +53,19 @@ export interface KpiCellData {
   readonly previous: string | null;
   /** Ressalva obrigatória de METRICS 5C.2, quando a métrica tem uma. */
   readonly ressalva?: string;
+  /**
+   * O chip "ver lista" do `.ops-metric` do Figma — a terceira linha da célula
+   * na variante de OPERAÇÃO da faixa (o frame `Listings` usa `<Status>ver
+   * lista</Status>` em todas as seis).
+   *
+   * Aqui ele é um LINK de verdade, para o recorte que produziu o número. É a
+   * diferença entre um enfeite e a promessa que a célula faz: se a contagem diz
+   * 17 sem estoque, clicar tem de mostrar os 17 — e mostra, porque contagem e
+   * lista saem da mesma consulta filtrada.
+   */
+  readonly href?: string;
+  /** Tom do chip, como no frame: cada estado tem o seu. */
+  readonly tom?: Tom;
 }
 
 export function KpiStrip({
@@ -73,6 +89,12 @@ export function KpiStrip({
           {cell.ressalva !== undefined && <span className="sb-kpi-note">{cell.ressalva}</span>}
 
           {cell.metricId !== undefined && <span className="sb-kpi-id">{cell.metricId}</span>}
+
+          {cell.href !== undefined && (
+            <Link className="sb-kpi-link" href={cell.href} style={TOM[cell.tom ?? "info"]}>
+              ver lista
+            </Link>
+          )}
         </div>
       ))}
     </div>
