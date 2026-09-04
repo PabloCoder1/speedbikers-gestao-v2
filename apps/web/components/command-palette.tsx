@@ -91,23 +91,25 @@ export function CommandPalette({ organizationId }: { organizationId: string | nu
   }
 
   if (!open) {
+    /*
+     * O gatilho é o campo de busca do topbar do Figma (`.search`): 36px de
+     * altura, ocupando metade da barra, com o texto do que se pode buscar e a
+     * tecla de atalho num `<kbd>`. Era um botão pequeno de "Buscar… Ctrl+K", e
+     * a diferença não é cosmética: no Figma a busca é o elemento MAIS À
+     * ESQUERDA e o mais largo do topbar, porque ela é a forma primária de
+     * navegar num sistema com 28 telas.
+     */
     return (
       <button
         type="button"
+        className="sb-search"
         onClick={() => {
           setOpen(true);
         }}
-        style={{
-          border: "1px solid var(--sb-border)",
-          borderRadius: "var(--sb-radius)",
-          padding: "0.25rem 0.625rem",
-          fontSize: "0.8125rem",
-          background: "transparent",
-          color: "var(--sb-text-soft)",
-          cursor: "pointer",
-        }}
       >
-        Buscar… <span style={{ opacity: 0.7 }}>Ctrl+K</span>
+        <span aria-hidden="true" className="sb-search-icon">⌕</span>
+        <span className="sb-search-label">Buscar SKU, pedido, anúncio ou ação…</span>
+        <kbd>Ctrl K</kbd>
       </button>
     );
   }

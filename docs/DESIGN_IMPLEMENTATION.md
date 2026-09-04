@@ -292,6 +292,31 @@ branco embutido.
 
 ### Desvios registrados, no formato curto
 
+> **Superfície:** moldura · **Figma:** `.brand` com arquivo de logo · **V3
+> real:** símbolo com as iniciais da organização · **Decisão:** usar a variante
+> `.brand-symbol` que o próprio Figma declara · **Motivo:** dado inexistente —
+> o app não tem **nenhuma** imagem (medido: sem `<img>`, sem SVG, sem `public/`).
+
+> **Superfície:** moldura · **Figma:** `.account-switch` abre um seletor de
+> escopo · **V3 real:** bloco de informação com link para `/contas` ·
+> **Decisão:** manter a composição, trocar a ação · **Motivo:** regra funcional
+> — não há segunda organização, e `lib/membership.ts` **nomeia** esse estado em
+> vez de escolher uma (D-232).
+
+> **Superfície:** moldura · **Figma:** `.profile` com chevron de menu ·
+> **V3 real:** perfil é informação e "Sair" fica visível · **Decisão:** não
+> criar o menu · **Motivo:** escopo enxuto — o dropdown não foi desenhado, e
+> esconder o "Sair" atrás dele piora o que existe.
+
+> **Superfície:** moldura · **Figma:** "Central de ajuda" no rodapé da sidebar,
+> botão flutuante do Copiloto, botão de recolher a sidebar · **V3 real:**
+> ausentes · **Decisão:** omitir os dois primeiros, adiar o terceiro ·
+> **Motivo:** não existe / seria um terceiro caminho para uma rota que já está
+> no menu e no topbar / o recolher só faz sentido com o trilho de 58px, que
+> pede estado de cliente.
+
+
+
 > **Superfície:** `/vendas` · **Figma:** célula "Receita líquida ML" na faixa de
 > KPIs · **V3 real:** a célula não existe · **Decisão:** recompor a faixa sem
 > ela · **Motivo:** nome vetado por METRICS 5C.1 — existe margem operacional
@@ -362,11 +387,13 @@ que ele renderiza.**
 | D1 | Design foundation (tokens de cor) | **CONCLUÍDO** |
 | D2 | Shell + o passo branco (superfícies declaram fundo) | **CONCLUÍDO** |
 | — | O passo cinza (`--sb-ground` no `<main>`) | fila, com pré-requisitos medidos |
-| D3 | Moldura: sidebar vertical, grupos e seção atual | **CONCLUÍDO** |
+| D3 | Moldura: sidebar vertical, grupos e seção atual | **CONCLUÍDO** · refeita pelo frame |
 | D4 | Home orientada à atenção | **CONCLUÍDO** · `REVISÃO VISUAL NECESSÁRIA` |
 | D5 | Vendas — gráfico (seção 12 do brief) | **CONCLUÍDO** |
 | D6 | Vendas — composição, refeita a partir do Figma | **CONCLUÍDO** |
-| D7 | Produtos | próximo |
+| R1 | Retrabalho da moldura, pelo **frame** do Figma | **CONCLUÍDO** |
+| R2 | Retrabalho da Home, pelo frame do Figma | próximo |
+| D7 | Produtos | fila |
 
 | D6–D10 | Dashboard de SKU (fundação + 4 pares de abas) | fila |
 | D11–D12 | Anúncios (listagem, depois dashboard em lotes) | fila |
@@ -383,53 +410,60 @@ Telas migradas **antes** da correção de direção de 2026-09-04, que seguem
 presas à composição antiga. Não serão refeitas agora — a fila não para — mas
 cada uma precisa de um passe Figma-first antes de a frente fechar.
 
+**Auditoria do que já foi feito**, pedida pelo usuário depois da correção de
+direção. Nem tudo precisava de retrabalho, e refazer o que já estava certo seria
+desperdício:
+
+| fatia | tem composição? | veredito |
+|---|---|---|
+| D0 (auditoria) | documento | nada a refazer |
+| D1 (tokens de cor) | não | nada a refazer |
+| D2 (passo branco) | não | nada a refazer |
+| D3 (moldura) | sim | **refeita** — veio do brief, não do frame |
+| D4 (Home) | sim | **pendente** — grade de cards herdada |
+| D5 (gráfico) | componente | compatível |
+| D6 (`/vendas`) | sim | já foi Figma-first |
+
 | Superfície | O que está preso ao legado |
 |---|---|
 | `/` (D4) | conteúdo e severidade estão certos; a composição é grade de cards herdada, não o `.kpi-strip` + `.attention-card` do Figma |
 
 ## Última fatia concluída
 
-**D6 — a composição de `/vendas`, refeita a partir do Figma.** Primeira fatia
-sob a regra nova, e a ordem foi a que ela manda: ler o frame `Sales` do export,
-entender a composição, **só então** abrir a tela antiga — e abri-la para
-descobrir o que precisava sobreviver, não para adaptá-la.
+**R1 — a moldura, refeita a partir do FRAME.** D3 tinha vindo do *brief*
+("sidebar escura", "não usar dezenas de links horizontalmente no topo") e parou
+aí. O frame tem mais, e o que faltava mudava a composição:
 
-**O que mudou de composição:**
-
-| antes | agora, como no Figma |
+| faltava | agora |
 |---|---|
-| `<h1>` + selo de frescor, e um parágrafo | `page-title`: sobrancelha "COMERCIAL / RESULTADOS", título, subtítulo, barra à direita |
-| três linhas de pílulas (conta, marca, período) empurrando o conteúdo para baixo | três menus `<details>` na barra, com o rótulo dizendo o estado |
-| 6 cartões soltos numa grade | **uma** faixa dividida em células, a primeira navy — a métrica-âncora |
-| 4 blocos de `<h2>` + grade de cartões | 4 `panel` com `panel-head` (título, subtítulo, conteúdo) |
-| pílulas de métrica ao lado do título do gráfico | controle segmentado dentro do painel do gráfico |
+| marca era um link de texto | `.brand` de 78px com símbolo, nome e sobrancelha "GESTÃO V3", separado por borda |
+| nav sem ícones | glifo por item — é o que o próprio Figma faz (`function Icon` é um `<span>` com um caractere) |
+| sem contador no item | "Caixa de Entrada" mostra atendimentos abertos, o `.nav-item em` do frame — **número real**, não o "3" do desenho |
+| sem rodapé na sidebar | `.sidebar-bottom` com organização e contas conectadas, ligando a `/contas` |
+| topbar improvisado | 78px, busca à ESQUERDA ocupando metade da barra, ações à direita com divisor |
+| busca era um botão pequeno | o campo `.search` do Figma, com o texto do que se pode buscar e a tecla num `<kbd>` |
+| usuário era texto solto | `.profile` com avatar de iniciais, e-mail e papel |
+| a página inteira rolava | **chrome fixo, só o conteúdo rola** — em tela longa a navegação e a busca continuam alcançáveis |
 
-Três componentes base nasceram e vão servir todas as telas: `PageTitle`,
-`Panel`, `KpiStrip`.
+**Duas leituras do Shell nasceram com o frame** e custam zero ida: contas
+conectadas e atendimentos abertos entram no `Promise.all` que já existia
+(D-185 — o custo é o round trip). São números **reais**: o frame desenha um
+"3", e desenho não é dado.
 
-**Duas correções que só a tela renderizada mostrou.** A barra de ferramentas
-quebrava para baixo do subtítulo (o bloco de título ocupava a linha inteira —
-faltava `flex: 1 1 24rem`); e a célula navy aparecia nas **três** faixas
-empilhadas, transformando ênfase em ruído. A âncora virou opção, e só a faixa
-principal a recebe.
+**Dois defeitos que só a tela mostrou.** O glifo da lupa pegava o `flex: 1` da
+regra do rótulo e empurrava o texto para o meio da barra. E o menu parecia
+passar por baixo do rodapé — a sonda desmentiu: ele **rola** (1140px de
+conteúdo em 1100px de área), e o item cortado é o fim da lista, não um erro de
+empilhamento. Medir antes de "consertar" evitou quebrar o que estava certo.
 
-**Nada de comportamento saiu**, e o novo `e2e/vendas.spec.ts` é o guarda disso:
-ele aplica conta → marca → período → métrica e exige que os quatro sobrevivam
-**juntos** na URL. Era o caso que o formulário de período personalizado já tinha
-errado uma vez (o `metric` se perdia e o gráfico voltava para faturamento
-sozinho); agora `marca`/`semMarca` entraram na mesma conta de campos ocultos.
-
-**Dead code pass:** `MetricCard` ficou sem consumidor e saiu. `FilterPill` e
-`FILTER_SUBMIT_STYLE` **ficam** — seis outras telas ainda os usam; só o import
-de `/vendas` foi removido.
-
-**Verificação:** `check` 29/29, build 8/8, integração 582/582 em banco
-recriado, **21/21 Playwright**, `check:waterfalls`, `check:server-actions`,
-`docs:check`.
+**Verificação:** `check` 29/29, build 8/8, integração 582/582, **21/21
+Playwright**, `check:waterfalls`, `check:server-actions`, `docs:check`. Medido
+no navegador: topbar 78px, sidebar 250px, a página não rola e o conteúdo rola
+sozinho.
 
 ## Próxima fatia segura
 
-**D7 — `/produtos`.** Ler o frame no Figma primeiro. É a tela da curadoria das
-duas colunas que só uma pessoa pode preencher (`stock_is_virtual`,
-`supplier_brand`), então o que precisa sobreviver é a escrita — não só a
-leitura, como em `/vendas`.
+**R2 — a Home, pelo frame.** É a que sobrou da auditoria: o conteúdo e a
+severidade estão certos (D4), a composição é grade de cards herdada. Ler o
+frame `Home` do export primeiro — ele não foi consultado em D4, e é essa a
+falha que esta rodada de retrabalho existe para corrigir.

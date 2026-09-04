@@ -152,11 +152,19 @@ body {
 }
 
 /*
- * A MOLDURA (D3) — sidebar + coluna de conteúdo.
+ * A MOLDURA — sidebar + topbar + área central, refeita a partir do frame do
+ * Figma (`app-shell` em `src/App.tsx`, CSS em `src/index.css`).
  *
- * Fica em folha de estilo, e não inline, por causa das media queries: o brief
- * pede que a sidebar possa "ficar expandida" e "ficar compacta", e largura por
- * ponto de quebra não se escreve em `style={{}}`.
+ * D3 tinha trazido a sidebar do BRIEF ("sidebar escura", "não usar dezenas de
+ * links no topo") mas não do FRAME. O frame tem mais, e o que faltava mudava a
+ * composição: bloco de marca de altura fixa com borda, rodapé da sidebar,
+ * topbar de 78px com busca à esquerda e ações à direita, divisor vertical, e
+ * bloco de perfil com avatar.
+ *
+ * **O chrome é fixo e só o conteúdo rola** (`.app-shell{height:100%}` +
+ * `.content{overflow:auto}` no Figma). Numa aplicação de painel isso não é
+ * detalhe: a navegação e a busca ficam alcançáveis em tela longa, em vez de
+ * subirem junto com a tabela.
  *
  * `min-width: 0` na coluna de conteúdo NÃO é enfeite: sem isso, um item flex
  * assume `min-width: auto` e se recusa a encolher abaixo do conteúdo — as 44
@@ -165,12 +173,13 @@ body {
  *
  * Abaixo de 900px a moldura empilha: a sidebar vira uma faixa no topo com
  * altura limitada e rolagem própria. O Figma prevê um trilho de 58px só com
- * ícones — este app não tem nenhum ícone (medido: nenhum `<img>`, nenhum SVG,
- * nenhum `public/`), e um trilho de 58px sem ícone é uma coluna vazia.
+ * ícones; isso depende do botão de recolher, que é estado de cliente e está
+ * registrado como adiado em `docs/DESIGN_IMPLEMENTATION.md`.
  */
 .sb-shell {
   display: flex;
-  min-height: 100dvh;
+  height: 100dvh;
+  overflow: hidden;
 }
 
 .sb-sidebar {
@@ -178,6 +187,7 @@ body {
   flex: none;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   background: var(--sb-primary);
   border-right: 1px solid var(--sb-primary-border);
 }
@@ -187,11 +197,152 @@ body {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
-/* O chevron aponta para baixo quando aberto e para a direita quando fechado —
-   a mesma convenção do <details> nativo, que este menu esconde ao usar
-   `list-style: none` no summary. */
+.sb-content {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: var(--sb-space-4);
+  background: var(--sb-surface);
+}
+
+/* --- bloco de marca (`.brand`) --- */
+.sb-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  height: 78px;
+  flex: none;
+  padding: 0 1.125rem;
+  border-bottom: 1px solid var(--sb-primary-border);
+  color: var(--sb-white);
+  text-decoration: none;
+}
+
+/*
+ * `.brand-symbol` do Figma. Ele desenha um logo em imagem; este app não tem
+ * NENHUMA imagem (medido: sem `<img>`, sem SVG, sem `public/`), e inventar um
+ * arquivo de logo não é trabalho desta frente. O símbolo com as iniciais é a
+ * variante que o próprio Figma declara, e o `inset` de 4px é o dele.
+ */
+.sb-brand-symbol {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 9px;
+  background: var(--sb-accent);
+  color: var(--sb-primary);
+  font-size: 1rem;
+  font-weight: 700;
+  box-shadow: inset 0 -4px var(--sb-accent-ink);
+}
+
+.sb-brand b {
+  display: block;
+  font-size: 0.6875rem;
+  letter-spacing: 0.055em;
+}
+
+.sb-brand small {
+  display: block;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 0.5625rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  color: var(--sb-accent);
+}
+
+/* --- navegação --- */
+.sb-nav {
+  flex: 1;
+  /* Sem `min-height: 0` o item flex assume `min-height: auto` e se recusa a
+     encolher abaixo do conteúdo — o menu passa POR BAIXO do rodapé em vez de
+     rolar. Mesma classe do `min-width: 0` na coluna de conteúdo. */
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.875rem 0.625rem;
+  scrollbar-width: thin;
+}
+
+.sb-nav-group {
+  margin: 0 0 0.875rem;
+}
+
+.sb-nav-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.3125rem 0.5rem;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  font-size: 0.5625rem;
+  font-weight: 700;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+  color: var(--sb-on-primary-soft);
+}
+
+.sb-nav-label::-webkit-details-marker {
+  display: none;
+}
+
+.sb-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5625rem;
+  height: 32px;
+  margin: 1px 0;
+  padding: 0 0.5rem;
+  border-radius: var(--sb-radius-md);
+  color: var(--sb-on-primary);
+  font-size: 0.75rem;
+  text-decoration: none;
+}
+
+.sb-nav-link:hover {
+  background: var(--sb-primary-hover);
+}
+
+/* O item ativo é amarelo; o hover não pode apagá-lo. */
+.sb-nav-link[aria-current="page"] {
+  background: var(--sb-accent);
+  color: var(--sb-primary);
+  font-weight: 600;
+}
+
+.sb-nav-link[aria-current="page"]:hover {
+  background: var(--sb-accent);
+}
+
+/*
+ * O glifo é decorativo e `aria-hidden`: ele ajuda a varrer a lista com o olho,
+ * e quem lê por leitor de tela ouve só o rótulo. Largura fixa para os rótulos
+ * alinharem em coluna.
+ */
+.sb-nav-icon {
+  width: 13px;
+  flex: none;
+  text-align: center;
+  opacity: 0.8;
+}
+
+/* Contador no item (`.nav-item em` do Figma) — número real, não enfeite. */
+.sb-nav-count {
+  margin-left: auto;
+  padding: 1px 5px;
+  border-radius: 9px;
+  background: var(--sb-danger);
+  color: var(--sb-white);
+  font-size: 0.5625rem;
+  font-weight: 700;
+  font-style: normal;
+}
+
 .sb-nav-chevron {
   transition: transform 120ms ease;
 }
@@ -200,24 +351,233 @@ body {
   transform: rotate(-90deg);
 }
 
-.sb-nav-link:hover {
-  background: var(--sb-primary-hover);
+/* --- rodapé da sidebar (`.sidebar-bottom`) --- */
+.sb-sidebar-bottom {
+  flex: none;
+  margin-top: auto;
+  padding: 0.625rem;
+  border-top: 1px solid var(--sb-primary-border);
 }
 
-/* O item ativo é amarelo; o hover não pode apagá-lo. */
-.sb-nav-link[aria-current="page"]:hover {
+/*
+ * `.account-switch` do Figma abre um SELETOR DE ESCOPO. Aqui é informação e um
+ * link, não um seletor: não há segunda organização, e `lib/membership.ts`
+ * NOMEIA esse estado em vez de escolher uma (D-232). O que o bloco mostra é
+ * real — o nome da organização e quantas contas do Mercado Livre estão
+ * conectadas — e leva para a tela dona delas.
+ */
+.sb-account {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem;
+  border-radius: var(--sb-radius);
+  background: var(--sb-primary-hover);
+  color: var(--sb-white);
+  text-decoration: none;
+}
+
+.sb-account:hover {
+  background: var(--sb-primary-border);
+}
+
+.sb-account-mark {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: var(--sb-radius-md);
   background: var(--sb-accent);
+  color: var(--sb-primary);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 0.625rem;
+  font-weight: 700;
+}
+
+.sb-account b,
+.sb-account small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sb-account b {
+  font-size: 0.75rem;
+}
+
+.sb-account small {
+  margin-top: 2px;
+  font-size: 0.625rem;
+  color: var(--sb-on-primary-soft);
+}
+
+/* --- topbar --- */
+.sb-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sb-space-3);
+  flex: none;
+  height: 78px;
+  padding: 0 1.75rem;
+  background: var(--sb-surface);
+  border-bottom: 1px solid var(--sb-border);
+}
+
+.sb-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 36px;
+  width: min(455px, 50%);
+  padding: 0 0.6875rem;
+  border: 1px solid var(--sb-border);
+  border-radius: 7px;
+  background: var(--sb-bg-soft);
+  color: var(--sb-text-soft);
+  font: inherit;
+  font-size: 0.75rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sb-search:hover {
+  border-color: var(--sb-secondary);
+}
+
+/* Só o RÓTULO cresce. A primeira versão desta regra pegava também o glifo da
+   lupa, que ficava com `flex: 1` e empurrava o texto para o meio da barra. */
+.sb-search-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sb-search-icon {
+  flex: none;
+  opacity: 0.7;
+}
+
+.sb-search kbd {
+  padding: 2px 4px;
+  border: 1px solid var(--sb-border);
+  border-radius: 4px;
+  background: var(--sb-muted);
+  color: var(--sb-text);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 0.625rem;
+}
+
+.sb-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sb-icon-button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: var(--sb-radius-md);
+  background: none;
+  color: var(--sb-text);
+  font-size: 1rem;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.sb-icon-button:hover {
+  background: var(--sb-bg-soft);
+}
+
+/* Contagem, não ponto: o app SABE quantas não lidas existem. */
+.sb-icon-count {
+  position: absolute;
+  top: -2px;
+  right: -4px;
+  min-width: 1rem;
+  padding: 0 3px;
+  border: 1px solid var(--sb-surface);
+  border-radius: 999px;
+  background: var(--sb-danger);
+  color: var(--sb-white);
+  font-size: 0.5625rem;
+  font-weight: 700;
+  line-height: 0.875rem;
+  text-align: center;
+}
+
+.sb-top-rule {
+  height: 26px;
+  margin: 0 0.25rem;
+  border-left: 1px solid var(--sb-border);
+}
+
+.sb-profile {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 2px;
+  min-width: 0;
+}
+
+.sb-profile b,
+.sb-profile small {
+  display: block;
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sb-profile b {
+  font-size: 0.6875rem;
+}
+
+.sb-profile small {
+  margin-top: 2px;
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-avatar {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--sb-secondary-soft);
+  color: var(--sb-secondary);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 0.625rem;
+  font-weight: 700;
 }
 
 @media (max-width: 1150px) {
   .sb-sidebar {
     width: 215px;
   }
+
+  .sb-topbar {
+    padding: 0 1.125rem;
+  }
 }
 
 @media (max-width: 900px) {
   .sb-shell {
     flex-direction: column;
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
   }
 
   .sb-sidebar {
@@ -225,6 +585,21 @@ body {
     max-height: 45vh;
     border-right: 0;
     border-bottom: 1px solid var(--sb-primary-border);
+  }
+
+  .sb-workspace,
+  .sb-content {
+    overflow: visible;
+  }
+
+  .sb-topbar {
+    height: auto;
+    flex-wrap: wrap;
+    padding: var(--sb-space-2) var(--sb-space-3);
+  }
+
+  .sb-search {
+    width: 100%;
   }
 }
 
