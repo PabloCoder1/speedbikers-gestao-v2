@@ -16,6 +16,8 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { FILTER_SUBMIT_STYLE, FilterGroup, FilterPill } from "../../components/filter-pill";
+import { PageTitle } from "../../components/page-title";
+import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
 import { TrendBadge } from "../../components/trend-badge";
 import { formatCount, formatCurrency } from "../../lib/format";
@@ -158,12 +160,13 @@ export default async function ReposicaoPage({
 
   // Ingredientes, filtros, ordenação e contagem vêm do Postgres (D-131);
   // a FÓRMULA roda aqui pela implementação canônica — nunca nas duas pontas.
-  const [suggestionsResult, settingsResult, brandsResult] = await Promise.all([
+  const [suggestionsResult, settingsResult, brandsResult, countsResult] = await Promise.all([
     supabase.rpc("get_purchase_suggestions", {
       p_organization_id: organizationId,
       p_date_to: dateTo,
       p_supplier_brand: filters.brand,
       p_search: filters.search,
+      p_state: filters.state,
       p_limit: PAGE_SIZE,
       p_offset: (filters.page - 1) * PAGE_SIZE,
     }),
@@ -176,6 +179,14 @@ export default async function ReposicaoPage({
     // produzir 19 valores, e o teto de 1.000 do PostgREST (D-131) fazia 10
     // das 19 marcas nunca aparecerem no filtro.
     supabase.rpc("get_supplier_brands", { p_organization_id: organizationId }),
+    // Os cartões recebem marca e busca, mas NÃO o estado: eles precisam
+    // continuar mostrando os outros estados quando um deles está ativo.
+    supabase.rpc("get_purchase_state_counts", {
+      p_organization_id: organizationId,
+      p_date_to: dateTo,
+      p_supplier_brand: filters.brand,
+      p_search: filters.search,
+    }),
   ]);
 
   const rows = (suggestionsResult.data ?? []) as SuggestionRow[];
@@ -196,9 +207,73 @@ export default async function ReposicaoPage({
   // Sem `Set` e sem filtro de nulo: a RPC já devolve distintas e não-nulas.
   const brands = (brandsResult.data ?? []).map((r) => r.supplier_brand);
 
+  /*
+    Os SETE cartões de estado (D-250). O frame `Coverage` desenha CINCO, e a
+    conferência contra o vocabulário canônico (D-150) achou três diferenças:
+
+    * o frame OMITE `COBERTURA_BAIXA`, que existe e tem 37 SKUs no Dev;
+    * o frame desenha "Excesso" com número, mas EXCESSO só é afirmado com
+      TETO configurado — sem teto ele volta vazio POR DESENHO, e "0" cru
+      leria como "não há excesso", que é afirmação diferente;
+    * falta o bucket de RECUSA, que é 86% do catálogo. Sem ele os cartões
+      somariam 463 embaixo de uma tabela que anuncia 3.280 — dois números
+      que o olho compara sozinho.
+  */
+  const contagens = new Map((countsResult.data ?? []).map((c) => [c.state, c.skus]));
+  const temTeto = (settingsResult.data ?? []).some((s) => s.max_coverage_days !== null);
+
+  const CARTOES: readonly { estado: string; rotulo: string; cor: string; nota?: string }[] = [
+    { estado: "RUPTURA", rotulo: "Em ruptura", cor: "var(--sb-danger)" },
+    { estado: "COMPRA_URGENTE", rotulo: "Compra urgente", cor: "var(--sb-danger)" },
+    { estado: "COMPRAR_EM_BREVE", rotulo: "Comprar em breve", cor: "var(--sb-accent-ink)" },
+    { estado: "COBERTURA_BAIXA", rotulo: "Cobertura baixa", cor: "var(--sb-accent-ink)" },
+    { estado: "ADEQUADA", rotulo: "Cobertura adequada", cor: "var(--sb-secondary)" },
+    {
+      estado: "EXCESSO",
+      rotulo: "Excesso",
+      cor: "var(--sb-text-soft)",
+      // O único estado que depende de configuração: sem teto, ele nunca é
+      // afirmado — "quanto é demais é decisão do ADMIN, não constante do
+      // código" (D-148). O cartão diz isso em vez de mostrar um zero mudo.
+      ...(temTeto ? {} : { nota: "exige teto de cobertura configurado" }),
+    },
+    {
+      estado: "SEM_ESTADO",
+      rotulo: "Sem estado",
+      cor: "var(--sb-muted-ink)",
+      nota: "sem configuração, estoque virtual, histórico furado ou amostra insuficiente",
+    },
+  ];
+
   return (
     <Shell>
-      <h1 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.375rem" }}>Reposição</h1>
+      {/* Sobrancelha e título do frame `Coverage` (ESTOQUE / PLANEJAMENTO). */}
+      <PageTitle
+        eyebrow="ESTOQUE / PLANEJAMENTO"
+        title="Cobertura e reposição"
+        subtitle="Priorize capital onde o risco e a demanda se encontram."
+        aside={<Link href="/reposicao/configuracoes">Configurações de reposição →</Link>}
+      />
+
+      <div className="sb-state-cards">
+        {CARTOES.map((c) => {
+          const ativo = filters.state === c.estado;
+          const quantos = contagens.get(c.estado) ?? 0;
+
+          return (
+            <Link
+              key={c.estado}
+              href={buildReplenishmentHref(filters, { state: ativo ? null : c.estado })}
+              className={ativo ? "sb-state-card sb-state-card-ativo" : "sb-state-card"}
+              aria-current={ativo ? "true" : undefined}
+            >
+              <span style={{ color: c.cor }}>{c.rotulo}</span>
+              <strong>{formatCount(quantos)}</strong>
+              <small>{c.nota ?? "SKUs"}</small>
+            </Link>
+          );
+        })}
+      </div>
 
       <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
         Quanto comprar de cada SKU, com a conta inteira visível:{" "}
@@ -270,22 +345,19 @@ export default async function ReposicaoPage({
       )}
 
       {error === null && (
-        <p style={{ margin: "0 0 var(--sb-space-2)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
-          {windowInfo.label}
-        </p>
-      )}
+        <Panel
+          title="Recomendação de compra"
+          subtitle={`Baseada em venda média, tendência, cobertura e lead time. ${windowInfo.label}`}
+        >
+          {rows.length === 0 && <p className="sb-empty">Nenhum SKU corresponde a estes filtros.</p>}
 
-      {error === null && rows.length === 0 && (
-        <p style={{ color: "var(--sb-text-soft)" }}>Nenhum SKU corresponde a estes filtros.</p>
-      )}
-
-      {error === null && rows.length > 0 && (
+          {rows.length > 0 && (
         // A ponte cobertura→pedido (D-151): GET nativo para /compras/novo com
         // pares `sku=<uuid>:<qtd sugerida>` — o pedido nasce pré-carregado,
         // como RASCUNHO, e segue o ciclo de aprovação humana de D-055.
         <form action="/compras/novo" method="get">
         <div style={{ overflowX: "auto" }}>
-          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "78rem" }}>
+          <table className="sb-table">
             <thead>
               <tr>
                 <th style={th} title="Marque para levar ao pedido de compra — só linhas com sugestão defensável">
@@ -468,6 +540,8 @@ export default async function ReposicaoPage({
           quantidade e custo revisáveis no pedido; nasce como rascunho, com aprovação humana
         </span>
         </form>
+          )}
+        </Panel>
       )}
 
       {error === null && windowInfo.totalPages > 1 && (

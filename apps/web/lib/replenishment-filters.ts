@@ -19,6 +19,15 @@ export const PAGE_SIZE = 100;
 
 export interface ReplenishmentFilters {
   brand: string | null;
+  /**
+   * Estado operacional (D-150), ou `SEM_ESTADO` para o bucket de recusa.
+   *
+   * O bucket NÃO é ausência de filtro: é 86% do catálogo, com cinco portas
+   * documentadas (sem configuração, estoque virtual, histórico furado,
+   * amostra insuficiente, sem demanda recente). Precisa ser selecionável,
+   * senão os cartões não fecham com o total da tabela (D-250).
+   */
+  state: string | null;
   search: string | null;
   page: number;
 }
@@ -32,6 +41,9 @@ export function resolveReplenishmentFilters(
 ): ReplenishmentFilters {
   return {
     brand: readParam(query.marca),
+    // Estado desconhecido NÃO cai num default: vai ao banco e a tabela volta
+    // vazia, que é a resposta certa para "não há linha nesse estado".
+    state: readParam(query.estado),
     search: readParam(query.busca),
     page: resolvePageParam(query.pagina),
   };
@@ -50,7 +62,8 @@ export function buildReplenishmentHref(
 
   return buildFilterHref(
     "/reposicao",
-    { marca: next.brand, busca: next.search },
+    { marca: next.brand,
+      estado: next.state, busca: next.search },
     override.page === undefined ? 1 : next.page,
   );
 }

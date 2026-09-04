@@ -4317,6 +4317,21 @@ export type Database = {
           total_count: number
         }[]
       }
+      get_purchase_state_counts: {
+        Args: {
+          p_date_to: string
+          p_organization_id: string
+          p_search?: string | null
+          p_supplier_brand?: string | null
+        }
+        Returns: {
+          skus: number
+          // CORRECAO MANUAL (classe D-133): o bucket de recusa vem como
+          // 'SEM_ESTADO', que NAO e um dos seis estados canonicos -- e o nome
+          // da ausencia, e ela e 86% do catalogo (D-250).
+          state: string
+        }[]
+      }
       get_purchase_suggestions: {
         Args: {
           p_date_to: string
@@ -4324,6 +4339,7 @@ export type Database = {
           p_offset?: number
           p_organization_id: string
           p_search?: string | null
+          p_state?: string | null
           p_supplier_brand?: string | null
         }
         Returns: {

@@ -7,13 +7,13 @@ import {
   summarizeReplenishmentWindow,
 } from "./replenishment-filters";
 
-const vazio = { brand: null, search: null, page: 1 };
+const vazio = { brand: null, state: null, search: null, page: 1 };
 
 describe("resolveReplenishmentFilters", () => {
   it("lê as dimensões da URL", () => {
-    const f = resolveReplenishmentFilters({ marca: "NAVETEC", busca: "3001", pagina: "3" });
+    const f = resolveReplenishmentFilters({ marca: "NAVETEC", estado: "RUPTURA", busca: "3001", pagina: "3" });
 
-    expect(f).toEqual({ brand: "NAVETEC", search: "3001", page: 3 });
+    expect(f).toEqual({ brand: "NAVETEC", state: "RUPTURA", search: "3001", page: 3 });
   });
 
   it("string vazia e espaços viram null, não filtro que não casa com nada", () => {
@@ -36,6 +36,19 @@ describe("buildReplenishmentHref", () => {
     const atual = { ...vazio, brand: "NAVETEC" };
 
     expect(buildReplenishmentHref(atual, { search: "manete" })).toBe("/reposicao?marca=NAVETEC&busca=manete");
+  });
+
+  it("estado entra na URL como `estado` e convive com marca e busca (D-250)", () => {
+    // As três dimensões são independentes e componíveis: clicar num cartão de
+    // estado não pode descartar a marca escolhida antes.
+    const atual = { ...vazio, brand: "NAVETEC", state: "RUPTURA", search: "manete" };
+
+    expect(buildReplenishmentHref(atual, {})).toBe("/reposicao?marca=NAVETEC&estado=RUPTURA&busca=manete");
+    expect(buildReplenishmentHref(atual, { state: null })).toBe("/reposicao?marca=NAVETEC&busca=manete");
+  });
+
+  it("`SEM_ESTADO` é valor de filtro como qualquer outro — é 86% do catálogo", () => {
+    expect(buildReplenishmentHref({ ...vazio, state: "SEM_ESTADO" }, {})).toBe("/reposicao?estado=SEM_ESTADO");
   });
 
   it("trocar de filtro VOLTA para a página 1", () => {

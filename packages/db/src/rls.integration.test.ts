@@ -4176,6 +4176,91 @@ describe("get_purchase_suggestions (D-147, Fase 5D)", () => {
     expect(Number(rows[0]?.total_count)).toBe(1);
   });
 
+  // ---- cartoes de estado (D-250) ----------------------------------------
+
+  it("os cartoes FECHAM com a tabela -- a soma das contagens e o total sem filtro", async () => {
+    // Este e o teste que impede a contradicao mais visivel possivel: cinco
+    // numeros somando 463 embaixo de uma tabela que anuncia 3.280. O olho
+    // compara os dois sozinho.
+    const contagens = await asUser<{ state: string; skus: string }>(
+      ADMIN_SB,
+      `select * from public.get_purchase_state_counts('${ORG_SB}','${TODAY}')`,
+    );
+    const semFiltro = await asUser<{ total_count: string }>(
+      ADMIN_SB,
+      `select total_count from public.get_purchase_suggestions('${ORG_SB}','${TODAY}',null,null,1,0)`,
+    );
+
+    const soma = contagens.reduce((acc, linha) => acc + Number(linha.skus), 0);
+
+    expect(contagens.length).toBeGreaterThan(0);
+    expect(soma).toBe(Number(semFiltro[0]?.total_count));
+  });
+
+  it("o bucket de recusa tem NOME e e filtravel -- 86% do catalogo no Dev", async () => {
+    // `SEM_ESTADO` nao e um dos seis estados canonicos: e o nome da AUSENCIA,
+    // que precisa ser selecionavel porque e a maioria das linhas.
+    const contagens = await asUser<{ state: string; skus: string }>(
+      ADMIN_SB,
+      `select * from public.get_purchase_state_counts('${ORG_SB}','${TODAY}')`,
+    );
+    const semEstado = contagens.find((c) => c.state === "SEM_ESTADO");
+
+    if (semEstado !== undefined) {
+      const linhas = await asUser<{ state: string | null; total_count: string }>(
+        ADMIN_SB,
+        `select * from public.get_purchase_suggestions('${ORG_SB}','${TODAY}',null,null,1000,0,'SEM_ESTADO')`,
+      );
+
+      // Toda linha do recorte tem estado NULO, e a contagem bate com o cartao.
+      for (const linha of linhas) {
+        expect(linha.state).toBeNull();
+      }
+      expect(Number(linhas[0]?.total_count)).toBe(Number(semEstado.skus));
+    }
+  });
+
+  it("total_count acompanha o FILTRO de estado, nao o universo", async () => {
+    const semFiltro = await asUser<{ total_count: string }>(
+      ADMIN_SB,
+      `select total_count from public.get_purchase_suggestions('${ORG_SB}','${TODAY}',null,null,1,0)`,
+    );
+    const inexistente = await asUser(
+      ADMIN_SB,
+      `select * from public.get_purchase_suggestions('${ORG_SB}','${TODAY}',null,null,1000,0,'ESTADO-QUE-NAO-EXISTE')`,
+    );
+
+    expect(Number(semFiltro[0]?.total_count)).toBeGreaterThan(0);
+    // Estado desconhecido nao cai em "sem filtro": devolve vazio, que e a
+    // resposta certa para "nao ha linha nesse estado".
+    expect(inexistente).toHaveLength(0);
+  });
+
+  it("as contagens recebem o MESMO filtro de marca da tabela", async () => {
+    const daMarca = await asUser<{ state: string; skus: string }>(
+      ADMIN_SB,
+      `select * from public.get_purchase_state_counts('${ORG_SB}','${TODAY}','PURCHTEST-MARCA')`,
+    );
+    const tudo = await asUser<{ state: string; skus: string }>(
+      ADMIN_SB,
+      `select * from public.get_purchase_state_counts('${ORG_SB}','${TODAY}')`,
+    );
+
+    const somaMarca = daMarca.reduce((a, l) => a + Number(l.skus), 0);
+    const somaTudo = tudo.reduce((a, l) => a + Number(l.skus), 0);
+
+    // Sem a guarda, os dois lados poderiam ser iguais por acaso e o teste
+    // passaria sem provar nada (D-197).
+    expect(somaMarca).toBeGreaterThan(0);
+    expect(somaTudo).toBeGreaterThan(somaMarca);
+  });
+
+  it("anon nao executa get_purchase_state_counts", async () => {
+    await expect(
+      asAnon(`select * from public.get_purchase_state_counts('${ORG_SB}','${TODAY}')`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
   it("anon não executa", async () => {
     await expect(
       asAnon(`select * from public.get_purchase_suggestions('${ORG_SB}','${TODAY}')`),

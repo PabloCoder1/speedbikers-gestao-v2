@@ -5742,6 +5742,61 @@ E estava certa, e **insuficiente**: `pg_proc` so enxerga dentro do banco. **O Co
 
 **Impacto:** `supabase/migrations/20260904234500_stock_summary_rpc.sql`, `apps/web/app/estoque/page.tsx`, `packages/db/src/types.ts` (a mao, D-213), `packages/db/src/rls.integration.test.ts`.
 
+## D-250 - D15: os cinco cartoes do frame contra seis estados e um bucket de recusa
+
+**Contexto:** fatia D15 -- `/reposicao` contra o frame `Coverage`. O frame ja tinha revelado a composicao certa: **e uma tela com abas**, "Visao geral" e "Configuracoes", e a "Visao geral" nao e a cobertura de hoje -- e a **recomendacao de compra**. A fila chamava a fatia de "Cobertura/Reposicao" e estava certa: sao uma superficie so.
+
+---
+
+**A CONFERENCIA DOS CARTOES, que e a fatia inteira**
+
+O frame desenha CINCO cartoes clicaveis. O vocabulario canonico (D-150) tem **SEIS estados**, e o dado tem um **setimo grupo**. Medido no Dev:
+
+| grupo | SKUs | no frame? |
+|---|---|---|
+| ADEQUADA | 209 | sim |
+| RUPTURA | 112 | sim |
+| COMPRA_URGENTE | 93 | sim |
+| **COBERTURA_BAIXA** | **37** | **NAO** |
+| COMPRAR_EM_BREVE | 12 | sim |
+| **EXCESSO** | **0, por desenho** | sim, com numero |
+| **sem estado** | **2.817 (86%)** | **NAO** |
+
+**1. O frame omite `COBERTURA_BAIXA`**, que existe e e "o territorio em que a sugestao de compra ja da numero > 0". Um estado que existe e nao aparece faz os cartoes nao fecharem com a tabela.
+
+**2. O frame desenha "Excesso" com numero, e ele e o unico estado que depende de CONFIGURACAO.** D-148: *"sem teto configurado, EXCESSO nunca e afirmado -- quanto e demais e decisao do ADMIN, nao constante do codigo"*. Nenhuma politica tem teto hoje, entao o cartao mostra zero **dizendo por que**: "exige teto de cobertura configurado". Zero cru leria como "nao ha excesso", que e afirmacao diferente.
+
+**3. Falta o bucket de RECUSA, e ele e 86% do catalogo.** Nao e lacuna: sao cinco portas documentadas (sem configuracao, estoque virtual, historico furado, amostra insuficiente, sem demanda recente). **Sem esse cartao, os cinco do frame somariam 463 embaixo de uma tabela que anuncia 3.280** -- a tela se contradizendo em dois numeros que o olho compara sozinho, um do lado do outro.
+
+**O teste que fixa isso e o mais importante da fatia:** a soma das contagens tem de ser exatamente o `total_count` sem filtro.
+
+---
+
+**A CONTAGEM DELEGA, E ISSO E O DESENHO**
+
+`get_purchase_state_counts` chama `get_purchase_suggestions` e agrupa. E mais caro que reimplementar o `case`, e e o certo: o estado tem UMA definicao (D-150). Uma copia aqui divergiria no primeiro ajuste de politica, e os cartoes diriam um estado enquanto a linha da tabela diria outro -- na mesma tela. Mesmo padrao de `get_stock_coverage_summary` desde D-131.
+
+Os cartoes recebem marca e busca, **menos o estado**: eles precisam continuar mostrando os outros quando um esta ativo.
+
+**O estado subiu para CTE** porque no `select` final nao ha como aplicar `where`. Na mesma passagem, `total_count` saiu de `count(*) over ()` para subconsulta sobre o conjunto FILTRADO (D-167). **A ordem de prioridade de D-150 nao mudou** -- virou coluna, calculada uma vez em vez de repetida no `order by`.
+
+**O corpo da funcao foi EXTRAIDO do arquivo, nao transcrito.** Sao 177 linhas ate a CTE `verdict`, e retypar isso a mao para mudar a cauda seria convidar um erro silencioso. O guarda que provou o rearranjo ja existia: o teste de **equivalencia SQL x dominio de D-150** compara linha a linha, e passou.
+
+---
+
+**A ASSINATURA FOI CONFERIDA NAS DUAS METADES, antes de escrever**
+
+A licao que o HANDOFF registrou depois de D-237: `pg_proc` so enxerga dentro do banco, e o Copiloto chamava uma RPC de fora dele. Aqui as duas rodaram primeiro:
+
+    catalogo   nenhum chamador de get_purchase_suggestions dentro do banco
+    monorepo   so apps/web/app/reposicao/page.tsx e os testes -- nada em apps/api
+
+**Um defeito meu, pego antes de subir:** usei `--sb-surface-hover` nos cartoes e a variavel **nao existia**. Variavel indefinida invalida a declaracao inteira em silencio -- a mesma classe que D-249 pegou com `--sb-space-6`, agora introduzida por mim. O token entrou definido, com o valor do frame.
+
+**Verificacao:** `check` 29/29, build 8/8, **593/593** de integracao em banco recriado (588 + 5 novos), `check:waterfalls` 60, **30/30 Playwright**. A tela foi aberta no navegador com login real: os sete cartoes, o "Excesso" explicando o zero, e o filtro provado **nos dois sentidos** -- `?estado=RUPTURA` esvazia a tabela, `?estado=SEM_ESTADO` traz a linha.
+
+**Impacto:** `supabase/migrations/20260905003000_purchase_state_cards.sql`, `apps/web/app/reposicao/page.tsx`, `apps/web/lib/replenishment-filters.ts`, `apps/web/app/globals.css`, `packages/db/src/types.ts` (a mao, D-213), `packages/db/src/rls.integration.test.ts`, `apps/web/lib/replenishment-filters.test.ts`.
+
 ## Como adicionar nova decisao
 
 Registrar:

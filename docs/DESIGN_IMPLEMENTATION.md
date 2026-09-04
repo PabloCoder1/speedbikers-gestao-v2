@@ -607,7 +607,8 @@ que ele renderiza.**
 | **A2** | **Acabamento das superfícies migradas** (paleta Ctrl+K, `.sb-modal`, selo Curva ABC, chips na aba Full, custo como cartão) | **CONCLUÍDO** |
 | **D13** | **Dashboard do Anúncio** (`/anuncios/[itemId]`) — cabeçalho de entidade + as oito abas do frame | **CONCLUÍDO** |
 | D14 | **Estoque** — `PageTitle` + `KpiStrip` + `Panel` + `.sb-table`; três das seis células do frame recusadas por medição (D-249) | ✔ |
-| D15–D20 | Cobertura/Reposição, Curva ABC, Movimentações, NF-e, Compras, Fornecedores | fila |
+| D15 | **Cobertura/Reposição** — o frame é UMA tela com abas; sete cartões de estado em vez de cinco, e o filtro que eles prometem (D-250) | ✔ |
+| D16–D20 | Curva ABC, Movimentações, NF-e, Compras, Fornecedores | fila |
 | D21–D30 | Vinculações, Diagnóstico, Ações, Alterações, Preços, Full, Tráfego, Atendimento, Conhecimento, Central | fila |
 | D31–D36 | Usuários, Integrações, Sincronização, Saúde, Configurações, Copiloto | fila |
 | D37 | Passe visual global | fila |
@@ -718,31 +719,36 @@ resultado, visão salva e apagada) e capturados.
 
 ## Próxima fatia segura
 
-**D14 entregue (D-249).** `/estoque` adotou `PageTitle` + `KpiStrip` + `Panel`
-+ `.sb-table`, e a conferência célula a célula reprovou **três das seis
-células** da faixa do frame:
+**D15 entregue (D-250).** `/reposicao` adotou `PageTitle` + `Panel` +
+`.sb-table`, ganhou os cartões de estado do frame e o acesso a Configurações.
+A conferência achou três diferenças entre os cinco cartões desenhados e o
+vocabulário real:
 
 | | |
 |---|---|
-| Unidades local / Valor estimado | somariam **sentinela**: mediana de 997 unidades por SKU, e `stock_is_virtual_set_at` nulo em 3.554 de 3.554 — o `false` do banco é o default da coluna. A RPC soma só o confirmado por gente, e a recusa **se desfaz sozinha** conforme `/produtos` avança |
-| Em trânsito | **ausência estrutural**: zero `stock_movements` de TRANSITO, sempre |
-| Fornecedor / Origem (colunas) | removidas por D-174 e D-129/D-139 — desvios registrados na decisão |
+| `COBERTURA_BAIXA` | existe (37 SKUs) e o frame **omite** |
+| `EXCESSO` | o frame desenha com número, mas ele só é afirmado com **teto configurado** (D-148) — o cartão mostra zero *dizendo por quê* |
+| **bucket de recusa** | **2.817 SKUs, 86% do catálogo**, e o frame não tem. Sem ele os cinco somariam 463 embaixo de uma tabela que anuncia 3.280 |
 
-⚠️ **O procedimento de conferir célula a célula pagou pela segunda fatia
-seguida.** Em D13 pegou o grão errado do Full; aqui, três números falsos na
-tela principal de estoque. **Manter como primeiro passo de toda fatia de
-tabela.**
+⚠️ **O procedimento de conferir célula a célula pagou pela TERCEIRA fatia
+seguida** — grão errado do Full em D13, três números falsos em D14, e aqui um
+estado omitido mais um bucket de 86%. **É o primeiro passo de toda fatia.**
 
-⚠️ **Terceira fatia seguida com defeito que só a tela mostrou** — desta vez uma
-ressalva que se contradizia ("nenhum SKU classificado ainda — 0 pendentes").
-Typecheck, lint e 588 testes passaram por cima dela. **Abrir no navegador não
-é opcional.**
+⚠️ **Ao mudar assinatura de RPC, as DUAS metades** (catálogo + `grep` no
+monorepo) — a lição de D-237 rodou antes de escrever, e as duas vieram limpas.
 
-**D15 — Cobertura/Reposição.** As duas telas dividem o mesmo vocabulário
-(cobertura, ruptura, tendência) e já têm o selo de tendência compartilhado desde
-D-147. Antes de desenhar, conferir célula por célula contra o frame — e
-atenção: a Cobertura já ganhou filtro de marca em D-236 e **não leva filtro de
-conta de propósito** (estoque físico é da organização).
+⚠️ **Corpo longo de função se EXTRAI, não se transcreve.** Aqui foram 177
+linhas até a CTE `verdict`; retypá-las para mudar só a cauda convidaria um
+erro silencioso. O guarda que provou o rearranjo já existia: a equivalência
+SQL × domínio de D-150.
+
+**D16 — Curva ABC (`/curva-abc`) contra o frame `Abc` (App.tsx@3080).** O
+frame traz três cartões de classe com faturamento, percentual e contagem de
+SKUs, um seletor segmentado (Faturamento / Unidades / Pedidos) e uma tabela de
+detalhe com filtros rápidos ("Sem Full", "Em ruptura", "Baixa cobertura"). A
+tela real já tem critério, período, conta e marca — **conferir célula a célula
+antes de desenhar**, com atenção aos três filtros rápidos: dois deles nomeiam
+estados que vivem em RPCs diferentes.
 
 Depois, pela fila: Cobertura/Reposição, Curva ABC, Movimentações, NF-e,
 Compras, Fornecedores — todas candidatas naturais a adotar `.sb-table` e apagar
