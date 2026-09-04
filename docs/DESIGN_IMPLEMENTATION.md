@@ -396,12 +396,12 @@ que ele renderiza.**
 | D2 | Shell + o passo branco (superfícies declaram fundo) | **CONCLUÍDO** |
 | — | O passo cinza (`--sb-ground` no `<main>`) | fila, com pré-requisitos medidos |
 | D3 | Moldura: sidebar vertical, grupos e seção atual | **CONCLUÍDO** · refeita pelo frame |
-| D4 | Home orientada à atenção | **CONCLUÍDO** · `REVISÃO VISUAL NECESSÁRIA` |
+| D4 | Home orientada à atenção | **CONCLUÍDO** · composição refeita em R3 |
 | D5 | Vendas — gráfico (seção 12 do brief) | **CONCLUÍDO** |
 | D6 | Vendas — composição, refeita a partir do Figma | **CONCLUÍDO** |
 | R1 | Retrabalho da moldura, pelo **frame** do Figma | **CONCLUÍDO** |
 | R2 | Sistema tipográfico e densidade (Inter + DM Mono) | **CONCLUÍDO** |
-| R3 | Retrabalho da Home, pelo frame do Figma | próximo |
+| R3 | Home, refeita pelo frame do Figma | **CONCLUÍDO** |
 | D7 | Produtos | fila |
 
 | D6–D10 | Dashboard de SKU (fundação + 4 pares de abas) | fila |
@@ -415,68 +415,56 @@ que ele renderiza.**
 
 ## Revisão visual necessária
 
-Telas migradas **antes** da correção de direção de 2026-09-04, que seguem
-presas à composição antiga. Não serão refeitas agora — a fila não para — mas
-cada uma precisa de um passe Figma-first antes de a frente fechar.
+**Nenhuma.** A auditoria de retrabalho fechou: a moldura (R1) e a Home (R3)
+foram refeitas a partir dos frames, `/vendas` (D6) já nasceu Figma-first, e
+D1/D2/D5 não têm composição a revisar.
 
-**Auditoria do que já foi feito**, pedida pelo usuário depois da correção de
-direção. Nem tudo precisava de retrabalho, e refazer o que já estava certo seria
-desperdício:
-
-| fatia | tem composição? | veredito |
-|---|---|---|
-| D0 (auditoria) | documento | nada a refazer |
-| D1 (tokens de cor) | não | nada a refazer |
-| D2 (passo branco) | não | nada a refazer |
-| D3 (moldura) | sim | **refeita** — veio do brief, não do frame |
-| D4 (Home) | sim | **pendente** — grade de cards herdada |
-| D5 (gráfico) | componente | compatível |
-| D6 (`/vendas`) | sim | já foi Figma-first |
-
-| Superfície | O que está preso ao legado |
-|---|---|
-| `/` (D4) | conteúdo e severidade estão certos; a composição é grade de cards herdada, não o `.kpi-strip` + `.attention-card` do Figma |
+O que resta são superfícies **ainda não migradas** — a fila D7 em diante.
 
 ## Última fatia concluída
 
-**R2 — o sistema tipográfico.** O usuário disse que o app não estava "harmônico
-igual ao Figma", e a causa principal era esta: **as fontes nunca foram
-aplicadas.** D1 adiou tipografia como "fatia própria" e a fatia nunca veio — o
-app inteiro renderizava na pilha do sistema enquanto o Figma é Inter + DM Mono.
+**R3 — a Home, refeita a partir do frame `Home`.** Última da auditoria de
+retrabalho. D4 tinha posto a severidade certa (`actions.severity` é coluna real)
+mas manteve a composição herdada: uma grade solta de cartões.
 
-O que a extração do export mostrou, e o que foi aplicado:
+| antes | agora, como no frame |
+|---|---|
+| `<h1>` + parágrafo | cabeçalho compacto: sobrancelha com a **data de hoje**, saudação por hora de São Paulo, subtítulo |
+| grade solta de 6 cartões | **painel "Atenção necessária"** com ponto, contador de situações e a grade dentro |
+| cartão com pílula à esquerda | cartão com **borda no tom**, título + selo no topo, número grande, detalhe e CTA |
+| `<h2>` "Últimos 30 dias" | **rótulo de seção** "Indicadores gerais" com a janela à direita |
+| grade de 4 cartões | **faixa de indicadores** com a célula-âncora navy |
+| — | **grade inferior**: gráfico de faturamento diário (área) + atividade recente |
 
-| medido no export | estava | agora |
-|---|---|---|
-| `--font-sans: 'Inter'` | pilha do sistema | Inter por `next/font` |
-| `--font-mono: 'DM Mono'` em **38 seletores** | nenhum | mono na sobrancelha, pílula, cabeçalho de tabela, eixos do gráfico, `kbd`, avatar, marca, id de métrica |
-| `body{font-size:13px}` | 16px do navegador | 13px |
-| 213 de ~300 regras em 9/10/11px | 12–14px | escala aproximada |
-| `.status`: mono 10px, caixa-alta, **raio 4px** | 12px, sans, **raio 999px** | chip do Figma |
-| `.table-wrap th`: mono 9px, caixa-alta, fundo `#faf9fb` | 12px sans, sem fundo | regra global de `th` — alcança as **44 tabelas** |
-| `.chart-y`/`.chart-x`: mono 9px | 10px sans | mono 9px |
+**O que o frame pede e não existia, e é dado REAL:** o gráfico de 14 dias vem da
+mesma `get_sales_daily_series` de `/vendas`, e a atividade recente das mesmas
+`notifications` de `/notificacoes`, com `eventTypeLabel`/`severityLabel`
+canônicos. Nada foi inventado.
 
-**Uma paleta, não duas.** Os fundos suaves passaram a ser os exatos do Figma
-(`#eaf8f2`, `#fff8df`, `#fff0f0`) e as tintas continuam as medidas em D1/D2 —
-porque a `success` dele (`#178263`) dá **4,36x** sobre o próprio fundo e reprova
-AA, enquanto as daqui passam nos fundos dele **melhor** do que nos antigos
-(5,96x contra 5,74x). Todo par ≥ 4,51x.
+**A saudação só existe se houver a quem saudar.** `profiles.full_name` nulo faz
+o `<h1>` voltar a ser a pergunta do produto — inventar um nome a partir do
+e-mail seria familiaridade sem lastro.
 
-**O cabeçalho de tabela é regra global pelo mesmo motivo do fundo (D2):** são 44
-tabelas e só duas telas importam o módulo único. Estilo inline vence folha de
-estilo, então a regra alcança o que o inline NÃO declara — família, peso,
-`letter-spacing`, caixa-alta e fundo. O tamanho segue vindo do inline onde ele
-existe.
+**O gráfico ganhou uma variante de área**, com o degradê do frame. É a mesma
+função de `/vendas`, com uma opção: lá o assunto é a variação (linha), aqui é o
+volume (área). Não é um segundo componente de gráfico.
 
-**Verificado no navegador, por estilo computado:** corpo `Inter 13px`;
-cabeçalho de tabela `DM Mono uppercase bg #faf9fb`; pílula `DM Mono 10px raio
-4px uppercase`; sobrancelha, `kbd` e avatar em `DM Mono`.
+**Uma decisão contra o frame, registrada:** o ponto do cabeçalho **não pisca**.
+Animação infinita em elemento de alerta é ruído para quem tem sensibilidade a
+movimento, e `prefers-reduced-motion` resolveria só metade.
 
-**Verificação:** `check` 29/29, build 8/8, integração 582/582, 21/21 Playwright,
-`check:waterfalls`, `check:server-actions`, `docs:check`.
+**O teste acompanhou a composição sem afrouxar.** `e2e/home.spec.ts` deixou de
+afirmar um `<h2>` que sumiu e passou a afirmar a região "Atenção necessária", os
+dois painéis da grade inferior e o **id da métrica** na faixa — que sai com dado
+ou sem, e por isso não depende do seed. A guarda negativa continua: nenhum card
+pode dizer "Não foi possível carregar".
+
+**Verificação:** `check` 29/29, build 8/8, integração 582/582, **21/21
+Playwright**, `check:waterfalls`, `check:server-actions`, `docs:check`.
 
 ## Próxima fatia segura
 
-**R3 — a Home, pelo frame.** É a última da auditoria de retrabalho: o conteúdo e
-a severidade estão certos (D4), a composição é grade de cards herdada. Ler o
-frame `Home` do export primeiro — ele nunca foi consultado.
+**D7 — `/produtos`.** Ler o frame primeiro. É a tela da curadoria das duas
+colunas que só uma pessoa pode preencher (`stock_is_virtual`,
+`supplier_brand`), então o que precisa sobreviver é a **escrita** — não só a
+leitura, como em `/vendas` e na Home.

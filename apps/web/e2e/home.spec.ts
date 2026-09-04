@@ -31,7 +31,10 @@ test("Home: os seis cards de atenção carregam, e nenhum deles falha", async ({
   await page.getByRole("button", { name: "Entrar" }).click();
 
   await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByRole("heading", { level: 1, name: "O que precisa da sua atenção hoje?" })).toBeVisible();
+  // O `<h1>` é a saudação quando o perfil tem `full_name`, e a pergunta do
+  // produto quando não tem. O que NÃO muda é o painel de atenção — é ele que
+  // este teste está protegendo.
+  await expect(page.getByRole("region", { name: "Atenção necessária" })).toBeVisible();
 
   const cards = [
     "SKUs em ruptura",
@@ -58,5 +61,14 @@ test("Home: os seis cards de atenção carregam, e nenhum deles falha", async ({
 
   // Comparação de período existe e NÃO é porcentagem (D-023): a tela mostra os
   // dois valores lado a lado, e o rótulo do anterior é o que prova isso.
-  await expect(page.getByRole("heading", { level: 2, name: /Últimos 30 dias/ })).toBeVisible();
+  await expect(page.getByText("Indicadores gerais", { exact: true })).toBeVisible();
+  // O id da métrica sai em todas as células da faixa, com dado ou sem — é a
+  // rastreabilidade até `metric_definitions`, e não depende do seed ter
+  // métrica calculada (com a tabela vazia a tela diz "nunca calculado", que é
+  // o estado certo, e a linha de "período anterior" nem existe).
+  await expect(page.getByText("receita_bruta", { exact: true })).toBeVisible();
+
+  // Os dois painéis da grade inferior, que o frame do Figma põe lado a lado.
+  await expect(page.getByRole("region", { name: "Faturamento diário" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Atividade recente" })).toBeVisible();
 });

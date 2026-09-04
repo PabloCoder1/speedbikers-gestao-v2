@@ -96,6 +96,7 @@ export function SalesChart({
   rangeTo,
   previousRangeFrom,
   previousRangeTo,
+  area = false,
 }: {
   points: DailyPoint[];
   previousPoints: DailyPoint[];
@@ -104,6 +105,14 @@ export function SalesChart({
   rangeTo: string;
   previousRangeFrom: string;
   previousRangeTo: string;
+  /**
+   * Preenchimento sob a linha, com o degradê do frame `Home` do Figma
+   * (`#373993` de 20% a 0%). Lá a Home usa área e `/vendas` usa linha — a
+   * área diz "volume" num relance, e a linha diz "variação" com precisão.
+   * É a mesma série, então é a mesma função com uma opção, e não um segundo
+   * componente de gráfico.
+   */
+  area?: boolean;
 }): ReactNode {
   if (points.length === 0) return null;
 
@@ -228,6 +237,27 @@ export function SalesChart({
             strokeWidth={1.5}
             strokeDasharray="4 3"
           />
+        )}
+
+        {area && (
+          <>
+            <defs>
+              <linearGradient id="sb-chart-area" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0" stopColor="var(--sb-secondary)" stopOpacity="0.2" />
+                <stop offset="1" stopColor="var(--sb-secondary)" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            {/*
+              A área fecha o traço até a linha de base. `points` já está
+              ordenado por dia, então o fecho é o último x, o primeiro x e o
+              chão do gráfico.
+            */}
+            <path
+              d={`${pathFor(points, rangeFrom)} L${xAt(offsetInPeriod(points[points.length - 1]?.metric_date ?? rangeFrom, rangeFrom)).toFixed(1)},${(PADDING_TOP + innerHeight).toFixed(1)} L${xAt(offsetInPeriod(points[0]?.metric_date ?? rangeFrom, rangeFrom)).toFixed(1)},${(PADDING_TOP + innerHeight).toFixed(1)} Z`}
+              fill="url(#sb-chart-area)"
+              stroke="none"
+            />
+          </>
         )}
 
         <path d={pathFor(points, rangeFrom)} fill="none" stroke="var(--sb-primary)" strokeWidth={2} />

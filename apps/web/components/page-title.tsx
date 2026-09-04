@@ -21,14 +21,18 @@ export function PageTitle({
   title,
   subtitle,
   aside,
+  compacto = false,
 }: {
   eyebrow: string;
   title: string;
   subtitle?: ReactNode;
   aside?: ReactNode;
+  /** `.page-title.compact` do Figma — margem inferior menor, para a tela que
+   *  abre com um painel logo abaixo do cabeçalho em vez de filtros. */
+  compacto?: boolean;
 }): ReactNode {
   return (
-    <div className="sb-page-title">
+    <div className={compacto ? "sb-page-title sb-page-title-compacto" : "sb-page-title"}>
       <div style={{ minWidth: 0 }}>
         <span className="sb-eyebrow">{eyebrow}</span>
         <h1>{title}</h1>

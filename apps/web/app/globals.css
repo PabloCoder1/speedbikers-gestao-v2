@@ -659,6 +659,11 @@ body {
   margin-bottom: var(--sb-space-4);
 }
 
+/* `.page-title.compact` do Figma. */
+.sb-page-title-compacto {
+  margin-bottom: var(--sb-space-3);
+}
+
 /* Sem isto o bloco de título ocupa a linha inteira e a barra desce — foi o que
    a primeira renderização mostrou. `1 1 24rem` deixa os dois lado a lado
    enquanto couberem, e só então quebra. */
@@ -955,6 +960,207 @@ body {
   .sb-chart-band:hover .sb-chart-hover {
     opacity: 1;
   }
+}
+
+/*
+ * A HOME, do frame `Home` do Figma.
+ *
+ * A composição dele é: cabeçalho compacto → painel "Atenção Necessária" com
+ * uma grade de cartões → rótulo de seção → faixa de indicadores → grade
+ * inferior de duas colunas (gráfico + atividade recente).
+ *
+ * O que o app tinha era uma grade solta de seis cartões e um bloco de KPIs.
+ * O conteúdo estava certo (D4 pôs severidade real vinda de `actions.severity`);
+ * a composição era herdada, e essa é a diferença que esta fatia corrige.
+ */
+
+/* Rótulo de seção (`.section-label` / `.metric-title`) */
+.sb-section-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--sb-space-2);
+  margin: var(--sb-space-5) 0 0.6875rem;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.sb-section-label .sb-section-note {
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--sb-text-soft);
+}
+
+/*
+ * Painel "Atenção Necessária" — o bloco que abre a Home.
+ *
+ * No frame o cabeçalho tem um ponto pulsante vermelho. Aqui o ponto é estático:
+ * animação infinita em elemento de alerta é ruído para quem tem sensibilidade a
+ * movimento, e `prefers-reduced-motion` resolveria só metade do problema. O
+ * ponto continua marcando a seção; o que ele NÃO faz é piscar.
+ */
+.sb-attention {
+  padding: var(--sb-space-3);
+  background: var(--sb-surface);
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius);
+  box-shadow: var(--sb-shadow-panel);
+}
+
+.sb-attention-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sb-space-2);
+  margin-bottom: var(--sb-space-3);
+}
+
+.sb-attention-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.sb-attention-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+}
+
+.sb-attention-count {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--sb-text-soft);
+}
+
+.sb-attention-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: var(--sb-space-3);
+}
+
+/*
+ * Cartão de atenção. No frame a borda inteira leva o tom e a sombra é do tom
+ * também, a 8% — é o que separa "crítico" de "importante" sem precisar de
+ * fundo colorido. `--sb-tone` é preenchida por linha, e por isso a regra é uma
+ * só para os três estados.
+ */
+.sb-attention-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: var(--sb-space-3);
+  background: var(--sb-surface);
+  border: 1px solid var(--sb-tone, var(--sb-border));
+  border-radius: var(--sb-radius-md);
+  color: inherit;
+  text-decoration: none;
+}
+
+.sb-attention-card:hover {
+  background: var(--sb-bg-soft);
+}
+
+.sb-attention-card h3 {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--sb-primary);
+}
+
+.sb-attention-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--sb-space-2);
+}
+
+.sb-attention-value {
+  font-size: 1.375rem;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+}
+
+.sb-attention-card p {
+  flex: 1;
+  margin: 0;
+  font-size: 0.625rem;
+  line-height: 1.45;
+  color: var(--sb-text-soft);
+}
+
+.sb-attention-cta {
+  margin-top: 0.375rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--sb-secondary);
+}
+
+/* Grade inferior: gráfico largo + coluna de atividade (`.lower-grid`) */
+.sb-lower-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.75fr) minmax(17rem, 0.9fr);
+  gap: 0.875rem;
+  margin-top: 0.875rem;
+}
+
+@media (max-width: 900px) {
+  .sb-lower-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Atividade recente (`.feed` / `.feed-row`) */
+.sb-feed-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5625rem;
+  padding: 0.75rem var(--sb-space-3);
+  border-top: 1px solid var(--sb-border);
+  color: inherit;
+  text-decoration: none;
+}
+
+.sb-feed-row:first-of-type {
+  margin-top: var(--sb-space-3);
+}
+
+.sb-feed-row:hover {
+  background: var(--sb-bg-soft);
+}
+
+.sb-feed-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: var(--sb-tone, var(--sb-muted-ink));
+}
+
+.sb-feed-row b,
+.sb-feed-row small {
+  display: block;
+  font-size: 0.625rem;
+}
+
+.sb-feed-row small {
+  margin-top: 3px;
+  font-size: 0.5625rem;
+  color: var(--sb-text-soft);
 }
 
 /*
