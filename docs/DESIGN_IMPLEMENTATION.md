@@ -606,7 +606,8 @@ que ele renderiza.**
 | **A1** | **Auditoria de fidelidade Figma × V3** + correções P0/P1 nas superfícies migradas + dead code pass | **CONCLUÍDO** |
 | **A2** | **Acabamento das superfícies migradas** (paleta Ctrl+K, `.sb-modal`, selo Curva ABC, chips na aba Full, custo como cartão) | **CONCLUÍDO** |
 | **D13** | **Dashboard do Anúncio** (`/anuncios/[itemId]`) — cabeçalho de entidade + as oito abas do frame | **CONCLUÍDO** |
-| D14–D20 | Estoque, Cobertura/Reposição, Curva ABC, Movimentações, NF-e, Compras, Fornecedores | fila |
+| D14 | **Estoque** — `PageTitle` + `KpiStrip` + `Panel` + `.sb-table`; três das seis células do frame recusadas por medição (D-249) | ✔ |
+| D15–D20 | Cobertura/Reposição, Curva ABC, Movimentações, NF-e, Compras, Fornecedores | fila |
 | D21–D30 | Vinculações, Diagnóstico, Ações, Alterações, Preços, Full, Tráfego, Atendimento, Conhecimento, Central | fila |
 | D31–D36 | Usuários, Integrações, Sincronização, Saúde, Configurações, Copiloto | fila |
 | D37 | Passe visual global | fila |
@@ -717,13 +718,31 @@ resultado, visão salva e apagada) e capturados.
 
 ## Próxima fatia segura
 
-**D14 — Estoque (`/estoque`).** Volta às telas de tabela, que são o resto da
-fila. O design system já está completo para elas: `.sb-table`, `.sb-input`,
-`.sb-menu`/`FilterMenu`, `.sb-status`/`tone.ts`, `.sb-empty`, `Panel`,
-`PageTitle`, `KpiStrip` e `.sb-modal`. Antes de desenhar, conferir o que
-`/estoque` mede hoje contra o frame `Inventory` (App.tsx@2954) e registrar cada
-célula que o sistema não observa — o mesmo procedimento que pegou o grão errado
-do Full em D13.
+**D14 entregue (D-249).** `/estoque` adotou `PageTitle` + `KpiStrip` + `Panel`
++ `.sb-table`, e a conferência célula a célula reprovou **três das seis
+células** da faixa do frame:
+
+| | |
+|---|---|
+| Unidades local / Valor estimado | somariam **sentinela**: mediana de 997 unidades por SKU, e `stock_is_virtual_set_at` nulo em 3.554 de 3.554 — o `false` do banco é o default da coluna. A RPC soma só o confirmado por gente, e a recusa **se desfaz sozinha** conforme `/produtos` avança |
+| Em trânsito | **ausência estrutural**: zero `stock_movements` de TRANSITO, sempre |
+| Fornecedor / Origem (colunas) | removidas por D-174 e D-129/D-139 — desvios registrados na decisão |
+
+⚠️ **O procedimento de conferir célula a célula pagou pela segunda fatia
+seguida.** Em D13 pegou o grão errado do Full; aqui, três números falsos na
+tela principal de estoque. **Manter como primeiro passo de toda fatia de
+tabela.**
+
+⚠️ **Terceira fatia seguida com defeito que só a tela mostrou** — desta vez uma
+ressalva que se contradizia ("nenhum SKU classificado ainda — 0 pendentes").
+Typecheck, lint e 588 testes passaram por cima dela. **Abrir no navegador não
+é opcional.**
+
+**D15 — Cobertura/Reposição.** As duas telas dividem o mesmo vocabulário
+(cobertura, ruptura, tendência) e já têm o selo de tendência compartilhado desde
+D-147. Antes de desenhar, conferir célula por célula contra o frame — e
+atenção: a Cobertura já ganhou filtro de marca em D-236 e **não leva filtro de
+conta de propósito** (estoque físico é da organização).
 
 Depois, pela fila: Cobertura/Reposição, Curva ABC, Movimentações, NF-e,
 Compras, Fornecedores — todas candidatas naturais a adotar `.sb-table` e apagar

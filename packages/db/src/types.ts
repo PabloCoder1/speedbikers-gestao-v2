@@ -4752,6 +4752,28 @@ export type Database = {
       // NUNCA marca argumento de RPC como nulo, e os argumentos abaixo
       // aceitam NULL de verdade (e o valor que significa "sem filtro" --
       // ou, nos obrigatorios, que carrega significado proprio).
+      get_stock_summary: {
+        Args: {
+          p_category?: string | null
+          p_only_negative?: boolean
+          p_organization_id: string
+          p_search?: string | null
+          p_supplier_brand?: string | null
+        }
+        Returns: {
+          full_quantity: number
+          reservado: number
+          skus_confirmados_fisicos: number
+          skus_nao_classificados: number
+          skus_no_recorte: number
+          transito: number
+          // CORRECAO MANUAL (classe D-133): distingue ausencia estrutural de
+          // saldo zero -- nao ha NENHUM stock_movement de TRANSITO (D-249).
+          transito_tem_registro: boolean
+          unidades_local: number
+          valor_estimado: number
+        }[]
+      }
       get_stock_balances: {
         Args: {
           p_category?: string | null

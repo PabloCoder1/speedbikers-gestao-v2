@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **243** (D-001 a D-248).
+Decisões registradas: **244** (D-001 a D-249).
 
 ## Por domínio
 
-### atendimento (33)
+### atendimento (34)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -51,6 +51,7 @@ Decisões registradas: **243** (D-001 a D-248).
 - **D-229** — A varredura de custos falhava em TODO pedido real, e repetia o fracasso oito vezes por dia
 - **D-231** — A Central de Integracoes compoe e aponta: tres perguntas por integracao, e configuracao nunca e verde
 - **D-232** — A revisao adversarial de D-231: uma lista com dois consumidores, e o defeito que so aparece no segundo usuario
+- **D-249** — D14: a faixa de KPIs do frame pedia seis numeros, e tres nao existem
 
 ### banco/rls (25)
 

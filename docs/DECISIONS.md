@@ -5690,6 +5690,58 @@ E estava certa, e **insuficiente**: `pg_proc` so enxerga dentro do banco. **O Co
 
 **Impacto:** `apps/web/app/page.tsx`, `apps/web/components/{shell,nav}.tsx`, `apps/web/app/globals.css`, `apps/web/app/atendimento/conhecimento/{actions.ts,constants.ts,new-knowledge-form.tsx}`, `apps/web/app/sugestoes/{actions.ts,constants.ts,suggestion-row.tsx}`, `apps/web/scripts/check-server-actions.mjs`, `apps/web/e2e/{home,login}.spec.ts`, `.github/workflows/ci.yml`, `docs/DESIGN_IMPLEMENTATION.md`, mais 16 arquivos do passo branco de D2.
 
+## D-249 - D14: a faixa de KPIs do frame pedia seis numeros, e tres nao existem
+
+**Contexto:** fatia D14 do trilho visual -- `/estoque` contra o frame `Inventory`. O procedimento estava escrito na propria fila: *"conferir o que /estoque mede hoje contra o frame e registrar cada celula que o sistema nao observa -- o mesmo procedimento que pegou o grao errado do Full em D13"*. Ele pagou de novo, e maior.
+
+---
+
+**A CONFERENCIA CELULA A CELULA, com o numero de cada uma**
+
+| celula do frame | frame desenha | o sistema mede | veredito |
+|---|---|---|---|
+| Unidades local | 18.426 | **5.861.031** | **recusada** |
+| Reservado | 1.872 | 686 | ok |
+| Em transito | 3.240 | **zero, sempre** | **ausencia** |
+| Full | 5.918 | 9.182 | ok |
+| Valor estimado | R$ 2,18 mi | **R$ 376.106.618** | **recusada** |
+| Em ruptura | 17 SKUs | existe (dono canonico) | ok, com janela |
+
+**As duas recusas sao a mesma causa, e ela ja tinha nome.** O saldo do ERP e **sentinela, nao contagem** (D-127). O que faltava era medir o quanto:
+
+    mediana de saldo por SKU     997 unidades
+    p95                        9.996 unidades
+    maior saldo               28.700 unidades
+    top 10 SKUs                  2,4% do total   <- NAO sao outliers
+
+**A distribuicao inteira tem forma de sentinela** -- nao e um punhado de linhas ruins. E a classificacao **nunca foi feita**: `stock_is_virtual_set_at` e NULO em **3.554 de 3.554** SKUs, ou seja, o `stock_is_virtual = false` que esta no banco e o **default da coluna**, nao o julgamento de ninguem. Somar isso e chamar de "posicao de estoque" seria a tela afirmando com confianca um numero falso; multiplicado por custo, seria afirmando **dinheiro**.
+
+**A recusa e DINAMICA, e e isso que a separa de um zero cravado.** A RPC soma so o que um humano confirmou como fisico. Hoje da zero e a tela diz **por que** da zero, com link para `/produtos`. O teste de integracao prova os dois lados: com nada classificado, dois SKUs de 100 unidades somam **0**; classificando um, a mesma chamada passa a devolver **100 unidades e R$ 1.000** -- sem tocar em codigo.
+
+**"Em transito" nao e saldo zero, e ausencia estrutural.** Nao existe **UM** `stock_movement` de `TRANSITO`; os unicos tipos ja escritos sao LOCAL e RESERVADO. A RPC devolve `transito_tem_registro` junto da soma para a tela poder dizer *"nenhum movimento de transito registrado"* em vez de "0" -- afirmacoes diferentes (D-067).
+
+---
+
+**DUAS COLUNAS DA TABELA SAIRAM, e as duas por medicao ja registrada**
+
+> **Superficie:** `/estoque` · **Figma:** coluna `Fornecedor` · **V3 real:** nao existe vinculo fornecedor->SKU · **Decisao:** coluna removida · **Motivo:** dado inexistente -- D-174 mediu: `supplier_product_links` nunca foi criada, `skus` nao tem `supplier_id`, e ha 1 fornecedor cadastrado com 1 pedido (cancelado).
+
+> **Superficie:** `/estoque` · **Figma:** coluna e filtro `Origem` · **V3 real:** `is_imported` e origem FISCAL · **Decisao:** removidos · **Motivo:** regra funcional -- D-129/D-139 mediram que **187 dos 228 SKUs NAVETEC constam "nacionais"**, contra a rota de compra real. Mostrar "Nacional" para Navetec seria a tela afirmando com confianca algo falso.
+
+> **Superficie:** `/estoque` · **Figma:** nao tem `Aproveitavel` · **V3 real:** metrica canonica (D-146, METRICS 5D) · **Decisao:** coluna MANTIDA · **Motivo:** metrica canonica vence o Figma pela propria regra de conflito do documento -- e ela ja recusa o total para SKU virtual.
+
+**A faixa recebe os MESMOS filtros da tabela.** Uma faixa que ignora o recorte de baixo faz cabecalho e corpo falarem de conjuntos diferentes na mesma tela -- o defeito que D-236 mediu em `/cobertura`. E "Em ruptura" **nao** foi recriada aqui: ela tem dono canonico em `get_stock_coverage_summary` (D-131), e uma segunda contagem seria a segunda definicao da mesma palavra.
+
+---
+
+**O DEFEITO QUE SO A TELA MOSTROU** -- terceira fatia seguida em que isso acontece. A primeira versao da ressalva imprimia **"nenhum SKU classificado ainda — 0 pendentes"**: uma frase que se contradiz na propria linha. A causa foi eu tratar `confirmados === 0` como "ninguem classificou", quando ele tambem cobre "classificaram, e todos sao sentinela" -- que e exatamente o estado do seed. Typecheck, lint e 588 testes passaram por cima da frase sem ver nada.
+
+**Legado removido:** `<h1>` proprio da pagina, o paragrafo de contexto inline e as constantes `th`/`td`/`tdNumber` -- a tabela adotou `.sb-table` e a pagina, `PageTitle`/`KpiStrip`/`Panel`.
+
+**Verificacao:** `check` 29/29, build 8/8, **588/588** de integracao em banco recriado (583 + 5 novos), `check:waterfalls` 60, `docs:check`, **30/30 Playwright**. A tela foi aberta no navegador com login real e conferida contra o frame -- foi assim que o defeito da ressalva apareceu.
+
+**Impacto:** `supabase/migrations/20260904234500_stock_summary_rpc.sql`, `apps/web/app/estoque/page.tsx`, `packages/db/src/types.ts` (a mao, D-213), `packages/db/src/rls.integration.test.ts`.
+
 ## Como adicionar nova decisao
 
 Registrar:

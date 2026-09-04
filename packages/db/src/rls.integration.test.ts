@@ -2718,6 +2718,110 @@ describe("observabilidade de sincronização", () => {
   });
 });
 
+// get_stock_summary (20260904234500, D-249) -- a faixa de KPIs de /estoque, e
+// a recusa que se desfaz sozinha quando o ato humano acontece.
+describe("get_stock_summary (D-249)", () => {
+  const SKU_SENTINELA = "SUMTEST-sentinela";
+  const SKU_CONFIRMADO = "SUMTEST-confirmado";
+  let sentinelaId = "";
+  let confirmadoId = "";
+
+  beforeAll(async () => {
+    const skus = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind, purchase_cost, supplier_brand, supplier_brand_source)
+       values ($1,$2,'PRODUTO',10,'SUMMARCA','DERIVED'),
+              ($1,$3,'PRODUTO',10,'SUMMARCA','DERIVED')
+       returning id`,
+      [ORG_SB, SKU_SENTINELA, SKU_CONFIRMADO],
+    );
+    sentinelaId = skus.rows[0]?.id ?? "";
+    confirmadoId = skus.rows[1]?.id ?? "";
+
+    // Os dois com o MESMO saldo: a diferença entre eles vai ser só a
+    // classificação humana, e é isso que os testes isolam.
+    for (const id of [sentinelaId, confirmadoId]) {
+      await client.query(
+        `insert into public.stock_movements
+           (organization_id, sku_id, location_kind, qty_delta, movement_type, source_type, source_id, idempotency_key, occurred_at)
+         values ($1,$2::uuid,'LOCAL',100,'ENTRADA_NFE','DOCUMENT','sumtest-doc',$3::text,now())`,
+        [ORG_SB, id, 'sumtest:' + id],
+      );
+    }
+  });
+
+  it("nao soma saldo que ninguem classificou -- o `false` do banco e default, nao julgamento", async () => {
+    const rows = await asUser<{ unidades_local: string; valor_estimado: string; skus_nao_classificados: string }>(
+      ADMIN_SB,
+      `select * from public.get_stock_summary('${ORG_SB}','SUMMARCA')`,
+    );
+
+    // Os dois SKUs tem 100 unidades cada, e a soma crua daria 200. Ela nao
+    // aparece: `stock_is_virtual_set_at` e nulo nos dois, entao o saldo do ERP
+    // ainda e sentinela (D-127) e a tela nao tem o que afirmar.
+    expect(Number(rows[0]?.unidades_local)).toBe(0);
+    expect(Number(rows[0]?.valor_estimado)).toBe(0);
+    // E a faixa sabe DIZER quantos faltam, em vez de so mostrar zero.
+    expect(Number(rows[0]?.skus_nao_classificados)).toBe(2);
+  });
+
+  it("a recusa se desfaz SOZINHA quando um humano confirma o SKU como fisico", async () => {
+    // Este e o teste que separa "regra dinamica" de "zero cravado no codigo".
+    await client.query(
+      `update public.skus set stock_is_virtual = false, stock_is_virtual_set_at = now() where id = $1`,
+      [confirmadoId],
+    );
+
+    const rows = await asUser<{
+      unidades_local: string;
+      valor_estimado: string;
+      skus_confirmados_fisicos: string;
+      skus_nao_classificados: string;
+    }>(ADMIN_SB, `select * from public.get_stock_summary('${ORG_SB}','SUMMARCA')`);
+
+    // So o confirmado entra: 100 unidades a R$ 10.
+    expect(Number(rows[0]?.unidades_local)).toBe(100);
+    expect(Number(rows[0]?.valor_estimado)).toBe(1000);
+    expect(Number(rows[0]?.skus_confirmados_fisicos)).toBe(1);
+    expect(Number(rows[0]?.skus_nao_classificados)).toBe(1);
+
+    // Desfaz, para nao contaminar os outros describes.
+    await client.query(`update public.skus set stock_is_virtual_set_at = null where id = $1`, [confirmadoId]);
+  });
+
+  it("transito_tem_registro distingue ausencia estrutural de saldo zero", async () => {
+    const rows = await asUser<{ transito: string; transito_tem_registro: boolean }>(
+      ADMIN_SB,
+      `select * from public.get_stock_summary('${ORG_SB}')`,
+    );
+
+    // Nao existe UM movimento de TRANSITO no sistema. "0" afirmaria que nada
+    // esta a caminho; o booleano deixa a tela dizer que o tipo de local nunca
+    // foi escrito (D-067).
+    expect(Number(rows[0]?.transito)).toBe(0);
+    expect(rows[0]?.transito_tem_registro).toBe(false);
+  });
+
+  it("a faixa respeita o MESMO filtro da tabela", async () => {
+    const daMarca = await asUser<{ skus_no_recorte: string }>(
+      ADMIN_SB,
+      `select * from public.get_stock_summary('${ORG_SB}','SUMMARCA')`,
+    );
+    const semFiltro = await asUser<{ skus_no_recorte: string }>(
+      ADMIN_SB,
+      `select * from public.get_stock_summary('${ORG_SB}')`,
+    );
+
+    // Sem isso, cabecalho e tabela falariam de conjuntos diferentes na mesma
+    // tela -- o defeito que D-236 mediu em /cobertura.
+    expect(Number(daMarca[0]?.skus_no_recorte)).toBe(2);
+    expect(Number(semFiltro[0]?.skus_no_recorte)).toBeGreaterThan(2);
+  });
+
+  it("anon nao executa get_stock_summary", async () => {
+    await expect(asAnon(`select * from public.get_stock_summary('${ORG_SB}')`)).rejects.toThrow(/permission denied/i);
+  });
+});
+
 describe("ledger de estoque", () => {
   // Nome fora do padrão `RLSTEST%` que o afterAll global apaga: uma vez que
   // o SKU tiver stock_movements, `on delete restrict` o torna indeletável —
