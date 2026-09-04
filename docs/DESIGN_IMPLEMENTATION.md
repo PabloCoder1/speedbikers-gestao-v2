@@ -125,33 +125,41 @@ ajuste fino.
 "O passo branco e o passo cinza", abaixo. A resposta curta é que ele não é uma
 linha — é a última linha de uma sequência, e a sequência é o trabalho.
 
-### Tipografia
+### Tipografia — extraída do export, não estimada
 
-Sem `next/font`: o real usa a pilha do sistema. O Figma pede **Inter** (texto)
-e **DM Mono** (números/IDs).
+**Inter** (texto) e **DM Mono** (rótulos e números), carregadas por `next/font`
+em `app/layout.tsx`: baixadas no build e servidas do próprio domínio, sem
+requisição ao Google em tempo de execução.
 
-**A fonte não entrou em D1, de propósito.** Cor e métrica de fonte são classes
-de risco diferentes: cor se prova com número (contraste), fonte se prova com
-tela renderizada (deslocamento de layout em tabela densa). Juntas numa fatia
-só, uma tabela quebrada não diria qual das duas a quebrou — a mesma classe de
-erro da D-200. A fonte é fatia própria, com telas densas renderizadas antes e
-depois. A escala do Figma é densa — `text-[10px]` é o segundo seletor mais
-usado do protótipo inteiro:
+**A escala do Figma é MUITO mais densa do que parecia.** Contadas todas as
+regras de `font-size` do export:
 
-| Uso | Figma | real (inline) |
-|---|---|---|
-| Rótulo/eyebrow | 10px, maiúsculas, `letter-spacing` | 0.6875rem / 0.75rem |
-| Corpo denso | 12px (`text-xs`) | 0.8125rem |
-| Corpo | 14px (`text-sm`) | 0.875rem |
-| Título de seção | 17–20px | 1.0625rem |
-| Título de página | 24px | 1.375rem |
+| tamanho | regras |
+|---|---|
+| 9px | 69 |
+| 10px | 90 |
+| 11px | 54 |
+| 12px | 14 |
+| 13px | 10 |
+| 14–31px | 65 somados |
+
+**213 das ~300 regras estão em 9, 10 e 11px.** O corpo é `body{font-size:13px}`
+— o app herdava os 16px do navegador. Pesos usados: 400, 500, 600, 700.
+
+**O mono aparece em 38 seletores**, e essa alternância é o que dá a "cara" do
+desenho — nenhuma cor substitui: sobrancelha, **pílula de status**, **cabeçalho
+de tabela**, **eixos do gráfico**, tecla de atalho, avatar, marca de conta,
+identificador de métrica, quantidade.
 
 ### Espaçamento e raio
 
-Real: escala de 5 (`--sb-space-1..5` = 0.25/0.5/1/1.5/2.5rem) e **um** raio
-(`--sb-radius` 0.5rem = 8px, que é o `lg` do Figma). Figma: `p-3`/`p-4`/`p-6`
-e raio em escala (4/6/8/12px). A escala de raio entra quando um componente
-pedir — hoje nenhum pede, e token sem leitor não entra (regra de D1).
+Raios contados no export: **8px (18×), 6px (16×), 5px (15×), 50% (13×), 7px
+(13×), 4px (9×)**. Definidos aqui: `--sb-radius-sm` 4px (a pílula de estado),
+`--sb-radius-md` 6px (item de menu, botão) e `--sb-radius` 8px (cartão).
+
+**Sombra:** o Figma tem 16 distintas; a do cartão é `0 6px 18px #0e125908` —
+navy a 3%. O brief proíbe "sombras fortes", então é uma só e é fraca
+(`--sb-shadow-panel`).
 
 ### Componentes do Figma (de `DesignSystem.tsx`)
 
@@ -392,7 +400,8 @@ que ele renderiza.**
 | D5 | Vendas — gráfico (seção 12 do brief) | **CONCLUÍDO** |
 | D6 | Vendas — composição, refeita a partir do Figma | **CONCLUÍDO** |
 | R1 | Retrabalho da moldura, pelo **frame** do Figma | **CONCLUÍDO** |
-| R2 | Retrabalho da Home, pelo frame do Figma | próximo |
+| R2 | Sistema tipográfico e densidade (Inter + DM Mono) | **CONCLUÍDO** |
+| R3 | Retrabalho da Home, pelo frame do Figma | próximo |
 | D7 | Produtos | fila |
 
 | D6–D10 | Dashboard de SKU (fundação + 4 pares de abas) | fila |
@@ -430,40 +439,44 @@ desperdício:
 
 ## Última fatia concluída
 
-**R1 — a moldura, refeita a partir do FRAME.** D3 tinha vindo do *brief*
-("sidebar escura", "não usar dezenas de links horizontalmente no topo") e parou
-aí. O frame tem mais, e o que faltava mudava a composição:
+**R2 — o sistema tipográfico.** O usuário disse que o app não estava "harmônico
+igual ao Figma", e a causa principal era esta: **as fontes nunca foram
+aplicadas.** D1 adiou tipografia como "fatia própria" e a fatia nunca veio — o
+app inteiro renderizava na pilha do sistema enquanto o Figma é Inter + DM Mono.
 
-| faltava | agora |
-|---|---|
-| marca era um link de texto | `.brand` de 78px com símbolo, nome e sobrancelha "GESTÃO V3", separado por borda |
-| nav sem ícones | glifo por item — é o que o próprio Figma faz (`function Icon` é um `<span>` com um caractere) |
-| sem contador no item | "Caixa de Entrada" mostra atendimentos abertos, o `.nav-item em` do frame — **número real**, não o "3" do desenho |
-| sem rodapé na sidebar | `.sidebar-bottom` com organização e contas conectadas, ligando a `/contas` |
-| topbar improvisado | 78px, busca à ESQUERDA ocupando metade da barra, ações à direita com divisor |
-| busca era um botão pequeno | o campo `.search` do Figma, com o texto do que se pode buscar e a tecla num `<kbd>` |
-| usuário era texto solto | `.profile` com avatar de iniciais, e-mail e papel |
-| a página inteira rolava | **chrome fixo, só o conteúdo rola** — em tela longa a navegação e a busca continuam alcançáveis |
+O que a extração do export mostrou, e o que foi aplicado:
 
-**Duas leituras do Shell nasceram com o frame** e custam zero ida: contas
-conectadas e atendimentos abertos entram no `Promise.all` que já existia
-(D-185 — o custo é o round trip). São números **reais**: o frame desenha um
-"3", e desenho não é dado.
+| medido no export | estava | agora |
+|---|---|---|
+| `--font-sans: 'Inter'` | pilha do sistema | Inter por `next/font` |
+| `--font-mono: 'DM Mono'` em **38 seletores** | nenhum | mono na sobrancelha, pílula, cabeçalho de tabela, eixos do gráfico, `kbd`, avatar, marca, id de métrica |
+| `body{font-size:13px}` | 16px do navegador | 13px |
+| 213 de ~300 regras em 9/10/11px | 12–14px | escala aproximada |
+| `.status`: mono 10px, caixa-alta, **raio 4px** | 12px, sans, **raio 999px** | chip do Figma |
+| `.table-wrap th`: mono 9px, caixa-alta, fundo `#faf9fb` | 12px sans, sem fundo | regra global de `th` — alcança as **44 tabelas** |
+| `.chart-y`/`.chart-x`: mono 9px | 10px sans | mono 9px |
 
-**Dois defeitos que só a tela mostrou.** O glifo da lupa pegava o `flex: 1` da
-regra do rótulo e empurrava o texto para o meio da barra. E o menu parecia
-passar por baixo do rodapé — a sonda desmentiu: ele **rola** (1140px de
-conteúdo em 1100px de área), e o item cortado é o fim da lista, não um erro de
-empilhamento. Medir antes de "consertar" evitou quebrar o que estava certo.
+**Uma paleta, não duas.** Os fundos suaves passaram a ser os exatos do Figma
+(`#eaf8f2`, `#fff8df`, `#fff0f0`) e as tintas continuam as medidas em D1/D2 —
+porque a `success` dele (`#178263`) dá **4,36x** sobre o próprio fundo e reprova
+AA, enquanto as daqui passam nos fundos dele **melhor** do que nos antigos
+(5,96x contra 5,74x). Todo par ≥ 4,51x.
 
-**Verificação:** `check` 29/29, build 8/8, integração 582/582, **21/21
-Playwright**, `check:waterfalls`, `check:server-actions`, `docs:check`. Medido
-no navegador: topbar 78px, sidebar 250px, a página não rola e o conteúdo rola
-sozinho.
+**O cabeçalho de tabela é regra global pelo mesmo motivo do fundo (D2):** são 44
+tabelas e só duas telas importam o módulo único. Estilo inline vence folha de
+estilo, então a regra alcança o que o inline NÃO declara — família, peso,
+`letter-spacing`, caixa-alta e fundo. O tamanho segue vindo do inline onde ele
+existe.
+
+**Verificado no navegador, por estilo computado:** corpo `Inter 13px`;
+cabeçalho de tabela `DM Mono uppercase bg #faf9fb`; pílula `DM Mono 10px raio
+4px uppercase`; sobrancelha, `kbd` e avatar em `DM Mono`.
+
+**Verificação:** `check` 29/29, build 8/8, integração 582/582, 21/21 Playwright,
+`check:waterfalls`, `check:server-actions`, `docs:check`.
 
 ## Próxima fatia segura
 
-**R2 — a Home, pelo frame.** É a que sobrou da auditoria: o conteúdo e a
-severidade estão certos (D4), a composição é grade de cards herdada. Ler o
-frame `Home` do export primeiro — ele não foi consultado em D4, e é essa a
-falha que esta rodada de retrabalho existe para corrigir.
+**R3 — a Home, pelo frame.** É a última da auditoria de retrabalho: o conteúdo e
+a severidade estão certos (D4), a composição é grade de cards herdada. Ler o
+frame `Home` do export primeiro — ele nunca foi consultado.

@@ -207,7 +207,7 @@ export function SalesChart({
                 stroke="var(--sb-border)"
                 strokeWidth={1}
               />
-              <text x={PADDING_LEFT - 8} y={yPos + 4} textAnchor="end" fontSize={10} fill="var(--sb-text-soft)">
+              <text x={PADDING_LEFT - 8} y={yPos + 4} textAnchor="end" fontSize={9} fontFamily="var(--sb-mono)" fill="var(--sb-text-soft)">
                 {gridLabel(value)}
               </text>
             </g>
@@ -322,7 +322,7 @@ export function SalesChart({
               </g>
 
               {offset % labelStep === 0 && (
-                <text x={x} y={HEIGHT - 8} textAnchor="middle" fontSize={10} fill="var(--sb-text-soft)">
+                <text x={x} y={HEIGHT - 8} textAnchor="middle" fontSize={9} fontFamily="var(--sb-mono)" fill="var(--sb-text-soft)">
                   {formatBusinessDate(dia).slice(0, 5)}
                 </text>
               )}
