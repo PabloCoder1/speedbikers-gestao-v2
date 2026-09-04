@@ -4757,8 +4757,20 @@ export type Database = {
           p_supplier_brand?: string | null
         }
         Returns: {
-          avg_daily_sales: number
-          days_of_coverage: number
+            // CORRECAO MANUAL sobre o arquivo gerado (classe D-133): os dois
+            // sao NULOS por contrato, e o gerador nao ve isso.
+            //
+            // `days_of_coverage` e explicitamente `null` quando
+            // `stock_is_virtual` — e o "em branco de proposito" de D-127: sem
+            // saldo real, um numero de dias seria resposta errada com cara de
+            // precisa. Sem esta correcao o TypeScript deixa a tela escrever
+            // `Math.round(days_of_coverage)` e imprimir "0 dias" para todo SKU
+            // virtual.
+            //
+            // `avg_daily_sales` divide por `nullif(p_date_to - p_date_from + 1,
+            // 0)` — janela de zero dia devolve nulo.
+            avg_daily_sales: number | null
+            days_of_coverage: number | null
           history_days_90: number
           is_ruptura: boolean
           local_quantity: number

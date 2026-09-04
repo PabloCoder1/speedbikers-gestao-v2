@@ -24,7 +24,15 @@ test("dashboard de SKU mostra saldo local do seed", async ({ page }) => {
   await expect(page.getByRole("heading", { level: 1, name: "Produto de teste E2E" })).toBeVisible();
   await expect(page.getByText(`SKU ${seed.skuCode}`, { exact: true })).toBeVisible();
 
-  await expect(statValue(page, "Local")).toContainText("50");
+  // O cartão de estoque consolidou os quatro saldos: o valor é o LOCAL e a
+  // nota carrega reservado, trânsito e Full. Nenhum sumiu — o que não existe é
+  // uma soma dos quatro, que seria um agregado sem definição.
+  const estoque = page.locator(".sb-stat", { hasText: "Estoque local" });
+
+  await expect(estoque.locator(".sb-stat-value")).toHaveText("50");
+  await expect(estoque.locator(".sb-stat-note")).toContainText("reservado");
+  await expect(estoque.locator(".sb-stat-note")).toContainText("em trânsito");
+  await expect(estoque.locator(".sb-stat-note")).toContainText("no Full");
 
   // Abas (D-169): "Anúncios" virou aba própria — navegar por ela cobre a
   // navegação junto. O locator escopa pelo nav das abas porque o menu

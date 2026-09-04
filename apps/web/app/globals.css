@@ -1164,6 +1164,67 @@ body {
 }
 
 /*
+ * CARTÃO DE INDICADOR (`.sb-stat`) — os quatro do topo da aba de resumo no
+ * frame `SkuDetailScreen`.
+ *
+ * Diferente da faixa (`.sb-kpi-strip`), que é UM cartão dividido: aqui são
+ * cartões separados numa grade, porque um deles pode levar **borda no tom** — o
+ * frame pinta o de "Cobertura" quando ele está abaixo do lead time, e borda de
+ * tom não existe numa faixa contínua.
+ *
+ * `--sb-tone` e `--sb-tone-ink` são preenchidas por cartão. Sem elas, o cartão
+ * é neutro: pintar todos seria ruído, e o tom só vale quando o estado merece.
+ */
+.sb-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: var(--sb-space-3);
+}
+
+.sb-stat {
+  padding: var(--sb-space-3);
+  background: var(--sb-surface);
+  border: 1px solid var(--sb-tone, var(--sb-border));
+  border-radius: var(--sb-radius-md);
+  box-shadow: var(--sb-shadow-panel);
+}
+
+.sb-stat-label {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--sb-tone-ink, var(--sb-text-soft));
+}
+
+.sb-stat-value {
+  display: block;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  font-variant-numeric: tabular-nums;
+  color: var(--sb-tone-ink, var(--sb-primary));
+}
+
+.sb-stat-note {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.625rem;
+  line-height: 1.4;
+  color: var(--sb-text-soft);
+}
+
+/* Dois painéis lado a lado, como a grade inferior do frame. */
+.sb-pair-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: var(--sb-space-3);
+  margin-top: var(--sb-space-3);
+}
+
+/*
  * CABEÇALHO DE ENTIDADE (`Object Header` do `DesignSystem.tsx`).
  *
  * O design system o declara como o padrão de SKU, anúncio, pedido de compra e

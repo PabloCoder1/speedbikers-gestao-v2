@@ -301,6 +301,21 @@ branco embutido.
 
 ### Desvios registrados, no formato curto
 
+> **Superfície:** `/skus/[id]`, aba Visão geral · **Figma:** cartão "Estoque
+> Total 32 un · 29 Local · 3 Full" · **V3 real:** "Estoque local 50 · 0
+> reservado · 0 em trânsito · 0 no Full" · **Decisão:** consolidar os quatro
+> cartões num só, mas **sem somar** · **Motivo:** métrica canônica — a soma de
+> Local + Reservado + Trânsito + Full é um agregado que o sistema não define, e
+> agregado sem definição não entra. Nenhum dos quatro números sumiu.
+
+> **Superfície:** `/skus/[id]`, aba Visão geral · **Figma:** cada indicador tem
+> uma variação ("↗ +12%", "Margem: 32%") · **V3 real:** a nota diz o que o
+> número é · **Decisão:** trocar o conteúdo, manter a linha · **Motivo:**
+> D-023 — variação percentual não tem definição em `metric_definitions`, e
+> margem por SKU não é observada (a margem existe por PEDIDO, D-166).
+
+
+
 > **Superfície:** `/skus/[id]` · **Figma:** abas incluem TRÁFEGO e ATENDIMENTO ·
 > **V3 real:** nove abas, sem essas duas · **Decisão:** manter as nove ·
 > **Motivo:** regra funcional — visita é medida por `item_id` e o dono é o
@@ -454,44 +469,38 @@ O que resta são superfícies **ainda não migradas** — a fila D7 em diante.
 
 ## Última fatia concluída
 
-**D8 — a fundação do Dashboard de SKU**, e ela nasceu componente: o
-`ObjectHeader`, que o `DesignSystem.tsx` declara como **o padrão de SKU,
-anúncio, pedido de compra e fornecedor**. Quatro telas de detalhe montavam
-quatro cabeçalhos diferentes; agora há um.
+**D9 — a aba Visão geral do SKU**, do frame `SkuDetailScreen`.
 
-| antes | agora, do frame |
+| antes | agora |
 |---|---|
-| `← Estoque` solto no topo | ação à direita do cabeçalho |
-| `<h1>E2E-SKU-001</h1>` | **identificador em monoespaçado**, e o `<h1>` é o nome do produto |
-| nome do produto como parágrafo cinza | título |
-| — | **selos de estado**: Ativo/Inativo/Descontinuado, Estoque virtual, marca do fornecedor, Importado |
-| — | "atualizado em …" |
-| abas soltas acima do conteúdo | abas **dentro do cartão**, caixa-alta, com sublinhado na atual |
-| conteúdo solto na página | conteúdo da aba **no mesmo cartão**, sobre o fundo de apoio |
+| 4 caixas de saldo + 3 caixas de venda, soltas | **4 cartões de indicador** numa grade |
+| — | o de **Cobertura leva borda no tom** quando o estado merece: perigo em ruptura, atenção quando virtual |
+| ponteiro em texto para as outras abas | **dois painéis**: anúncios vinculados e últimas decisões, cada um com "Ver aba →" |
 
-**O código do SKU é chave, não título.** Quem lê a tela procura o produto; quem
-copia procura a chave. Inverter isso é a mudança mais simples e a que mais muda
-a leitura.
+**O cartão de cobertura descobriu um defeito de tipo.** O lint exigiu remover a
+guarda de nulo em `days_of_coverage` porque o tipo gerado diz não-nulo. Fui ao
+SQL antes de obedecer: a função devolve **`null` explicitamente quando
+`stock_is_virtual`** — é o "em branco de propósito" de D-127. Sem a guarda, todo
+SKU virtual imprimiria **"0 dias"**: número errado com cara de preciso, a classe
+que este projeto persegue. `packages/db/src/types.ts` recebeu a correção manual
+(classe D-133) em `days_of_coverage` e `avg_daily_sales`, com o motivo escrito.
 
-**Os selos custam zero ida.** `is_active`, `is_discontinued`, `is_imported`,
-`stock_is_virtual`, `supplier_brand` e `updated_at` estão na MESMA linha de
-`skus` que a tela já lia — bastou pedi-los no `select` (D-185: o custo é o round
-trip, não as colunas). Nenhum selo é decorativo.
+**Uma guarda saiu, e essa era invenção minha:** `linha.ml_accounts?.label ??
+"conta não identificada"`. `listings.ml_account_id` é `NOT NULL` — o embed nunca
+falta, e a própria tela já o acessava direto em outra aba. Guarda para o que o
+banco garante é ruído que faz o leitor duvidar do que é certo.
 
-**As abas já estavam na ordem aprovada** (Visão Geral, Vendas, Estoque,
-Anúncios, Preços, Full, Histórico, Diagnóstico, Decisões) — o que mudou foi a
-forma, não a lista. Tráfego e Atendimento seguem fora, registrados acima.
-
-**O teste acompanhou:** `sku-dashboard.spec.ts` afirmava `<h1>` com o código do
-SKU; passou a afirmar o `<h1>` com o nome **e** o identificador `SKU …` — duas
-asserções onde havia uma.
+**Três leituras entraram na aba sem custar ida**: cobertura, anúncios e
+decisões passaram a incluir `visao-geral` nas flags de progressive disclosure —
+todas no `Promise.all` que já existia.
 
 **Verificação:** `check` 29/29, build 8/8, integração 582/582, **22/22
-Playwright**, `check:waterfalls`, `check:server-actions`, `docs:check`.
+Playwright** (a asserção de estoque acompanhou a consolidação: valor no cartão,
+e os outros três saldos conferidos na nota), `check:waterfalls`,
+`check:server-actions`, `docs:check`.
 
 ## Próxima fatia segura
 
-**D9 — o conteúdo das abas do SKU, em pares.** A fundação está de pé; agora cada
-par de abas ganha a composição do frame (cartões de indicador com tom por
-estado, painéis lado a lado). Começar por **Visão geral + Vendas**, que são as
-duas mais vistas.
+**D10 — abas Vendas e Estoque do SKU.** Vendas já tem três grãos (total, conta,
+dia) e Estoque tem o simulador de cobertura (D-080); as duas ganham a
+composição de painel e os cartões de indicador desta fatia.

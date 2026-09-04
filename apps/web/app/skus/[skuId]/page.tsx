@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { ObjectHeader, type ObjectBadge } from "../../../components/object-header";
+import { Panel } from "../../../components/panel";
 import { Shell } from "../../../components/shell";
 import { StatusPill } from "../../../components/status-pill";
 import { formatDecisionSnapshot, OUTCOME_WINDOWS_DAYS, outcomeWindowLabel } from "../../../lib/decision-format";
@@ -297,13 +298,13 @@ export default async function SkuDashboardPage({
   // de verdade, não só visual); o que a aba ativa não usa vira
   // Promise.resolve — mesmo padrão do Full no Dashboard de Anúncio.
   const needsDashboard = tab === "visao-geral" || tab === "estoque";
-  const needsCoverage = tab === "estoque";
-  const needsListings = tab === "anuncios";
+  const needsCoverage = tab === "visao-geral" || tab === "estoque";
+  const needsListings = tab === "visao-geral" || tab === "anuncios";
   const needsHistory = tab === "historico";
   const needsFull = tab === "full";
   const needsPrices = tab === "precos";
   const needsSales = tab === "vendas";
-  const needsDecisions = tab === "decisoes";
+  const needsDecisions = tab === "visao-geral" || tab === "decisoes";
 
   const [
     dashboardResult,
@@ -471,6 +472,20 @@ export default async function SkuDashboardPage({
    * nenhum é decorativo e nenhum custa ida nova. A ordem é a do frame: estado
    * primeiro, classificação depois, procedência por último.
    */
+  /*
+   * O tom do cartão de cobertura. Só existe quando o estado MERECE tom: em
+   * ruptura é perigo, virtual é atenção (o número está em branco de propósito),
+   * e o resto é o cartão neutro. Pintar todos seria ruído.
+   */
+  const coberturaTom =
+    coverage === null
+      ? null
+      : coverage.is_ruptura
+        ? "var(--sb-danger)"
+        : coverage.stock_is_virtual
+          ? "var(--sb-accent-ink)"
+          : null;
+
   const badges: ObjectBadge[] = [
     sku.data.is_discontinued
       ? { label: "Descontinuado", tom: "perigo" as const }
@@ -511,26 +526,149 @@ export default async function SkuDashboardPage({
 
           {dashboard !== null && (
             <>
-              <StockBoxes dashboard={dashboard} />
+              {/*
+                Os quatro indicadores do frame. O terceiro leva BORDA NO TOM
+                quando o estado importa — é o gesto do `.attention-card`, aqui
+                aplicado ao número que decide reposição.
 
-              <div
-                style={{ display: "flex", gap: "var(--sb-space-3)", flexWrap: "wrap", marginBottom: "var(--sb-space-4)" }}
-              >
-                <div style={statBox}>
-                  <div style={statLabel}>Vendido ({LOOKBACK_DAYS}d)</div>
-                  <div style={statValue}>{formatCount(dashboard.units_sold)}</div>
+                **Estoque não vira soma.** O frame mostra "Estoque Total 32 un ·
+                29 Local · 3 Full"; somar Local + Reservado + Trânsito + Full
+                seria um agregado que o sistema não define, e agregado sem
+                definição é a classe de número que este projeto recusa. O
+                cartão mostra o LOCAL — o saldo físico da organização — e a
+                nota carrega os outros três, sem perder nenhum.
+              */}
+              <div className="sb-stat-grid">
+                <div className="sb-stat">
+                  <span className="sb-stat-label">Vendas ({LOOKBACK_DAYS}d)</span>
+                  <b className="sb-stat-value">{formatCount(dashboard.units_sold)}</b>
+                  <span className="sb-stat-note">unidades de pedidos válidos</span>
                 </div>
-                <div style={statBox}>
-                  <div style={statLabel}>Receita ({LOOKBACK_DAYS}d)</div>
-                  <div style={statValue}>{formatCurrency(dashboard.gross_revenue)}</div>
+
+                <div className="sb-stat">
+                  <span className="sb-stat-label">Faturamento ({LOOKBACK_DAYS}d)</span>
+                  <b className="sb-stat-value">{formatCurrency(dashboard.gross_revenue)}</b>
+                  <span className="sb-stat-note">
+                    receita bruta —{" "}
+                    {sku.data.purchase_cost === null
+                      ? "sem custo cadastrado"
+                      : `custo cadastrado ${formatCurrency(sku.data.purchase_cost)}`}
+                  </span>
                 </div>
-                <div style={statBox}>
-                  <div style={statLabel}>Custo cadastrado</div>
-                  <div style={statValue}>{formatCurrency(sku.data.purchase_cost)}</div>
+
+                <div
+                  className="sb-stat"
+                  style={
+                    coberturaTom === null
+                      ? undefined
+                      : { ["--sb-tone" as string]: coberturaTom, ["--sb-tone-ink" as string]: coberturaTom }
+                  }
+                >
+                  <span className="sb-stat-label">Cobertura</span>
+                  <b className="sb-stat-value">
+                    {coverage?.days_of_coverage == null
+                      ? "—"
+                      : `${formatCount(Math.round(coverage.days_of_coverage))} dias`}
+                  </b>
+                  <span className="sb-stat-note">
+                    {coverage === null
+                      ? "não calculada para este SKU"
+                      : coverage.stock_is_virtual
+                        ? "em branco de propósito: o saldo do ERP é sentinela, não contagem (D-127)"
+                        : coverage.is_ruptura
+                          ? "em ruptura — vende e está sem saldo para vender"
+                          : `venda média de ${formatCount(Math.round((coverage.avg_daily_sales ?? 0) * 10) / 10)}/dia`}
+                  </span>
+                </div>
+
+                <div className="sb-stat">
+                  <span className="sb-stat-label">Estoque local</span>
+                  <b className="sb-stat-value">{formatCount(dashboard.local_quantity)}</b>
+                  <span className="sb-stat-note">
+                    {formatCount(dashboard.reservado_quantity)} reservado ·{" "}
+                    {formatCount(dashboard.transito_quantity)} em trânsito ·{" "}
+                    {formatCount(dashboard.full_quantity)} no Full
+                  </span>
                 </div>
               </div>
 
-              <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+              {/*
+                Os dois painéis do frame. Eles não substituem as abas: são o
+                atalho para o que se olha primeiro, e cada um leva à aba dona do
+                assunto — "um dado, um dono" (D-224).
+              */}
+              <div className="sb-pair-grid">
+                <Panel
+                  title="Anúncios vinculados"
+                  subtitle={
+                    listingsResult.error !== null
+                      ? "não foi possível carregar"
+                      : `${formatCount(listings.length)} ${listings.length === 1 ? "anúncio" : "anúncios"} deste SKU`
+                  }
+                  aside={
+                    <Link href={`/skus/${skuId}?aba=anuncios`} style={{ color: "var(--sb-secondary)", textDecoration: "none" }}>
+                      Ver aba →
+                    </Link>
+                  }
+                >
+                  {listings.length === 0 ? (
+                    <p style={{ margin: 0, padding: "var(--sb-space-3)", color: "var(--sb-text-soft)", fontSize: "0.6875rem" }}>
+                      Nenhum anúncio vinculado a este SKU.
+                    </p>
+                  ) : (
+                    listings.slice(0, 4).map((linha) => (
+                      <div key={linha.id} className="sb-feed-row">
+                        <span style={{ flex: 1, minWidth: 0 }}>
+                          <b style={{ display: "block", fontFamily: "var(--sb-mono)", fontSize: "0.625rem" }}>
+                            {linha.item_id}
+                          </b>
+                          <small style={{ display: "block", marginTop: 3, fontSize: "0.5625rem", color: "var(--sb-text-soft)" }}>
+                            {linha.ml_accounts.label}
+                          </small>
+                        </span>
+                        <span style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                          <b style={{ display: "block", fontSize: "0.625rem" }}>{formatCurrency(linha.price)}</b>
+                          <StatusPill code={linha.status} label={listingStatusLabel(linha.status)} />
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </Panel>
+
+                <Panel
+                  title="Últimas decisões"
+                  subtitle={
+                    decisionsResult.error !== null
+                      ? "não foi possível carregar"
+                      : `${formatCount(decisions.length)} registrada(s) para este SKU`
+                  }
+                  aside={
+                    <Link href={`/skus/${skuId}?aba=decisoes`} style={{ color: "var(--sb-secondary)", textDecoration: "none" }}>
+                      Ver aba →
+                    </Link>
+                  }
+                >
+                  {decisions.length === 0 ? (
+                    <p style={{ margin: 0, padding: "var(--sb-space-3)", color: "var(--sb-text-soft)", fontSize: "0.6875rem" }}>
+                      Nenhuma decisão registrada. Uma decisão nasce em <Link href="/acoes">Ações</Link>, e é ela que
+                      permite medir o depois contra o antes.
+                    </p>
+                  ) : (
+                    decisions.slice(0, 3).map((linha) => (
+                      <div key={linha.id} className="sb-feed-row">
+                        <span style={{ flex: 1, minWidth: 0 }}>
+                          <b style={{ display: "block" }}>{linha.decision}</b>
+                          <small style={{ display: "block", marginTop: 3, fontSize: "0.5625rem", color: "var(--sb-text-soft)" }}>
+                            {formatDateTime(linha.created_at)}
+                          </small>
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </Panel>
+              </div>
+
+              <p style={{ margin: "var(--sb-space-3) 0 0", fontSize: "0.6875rem", color: "var(--sb-text-soft)" }}>
                 Pedidos, ticket médio e vendas por conta e por dia na aba Vendas; simulador de cobertura na aba
                 Estoque; mudanças de custo e linha do tempo na aba Histórico.
               </p>
