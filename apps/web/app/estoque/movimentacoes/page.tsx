@@ -3,8 +3,11 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 
 import { FILTER_SUBMIT_STYLE, FilterPill } from "../../../components/filter-pill";
+import { KpiStrip, type KpiCellData } from "../../../components/kpi-strip";
+import { PageTitle } from "../../../components/page-title";
+import { Panel } from "../../../components/panel";
 import { Shell } from "../../../components/shell";
-import { formatDateTime } from "../../../lib/format";
+import { formatDateTime, formatCount } from "../../../lib/format";
 import {
   LOCATION_KINDS,
   MOVEMENT_TYPES,
@@ -59,17 +62,6 @@ interface MovementRow {
   total_count: number;
 }
 
-const th: React.CSSProperties = {
-  textAlign: "left",
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.75rem",
-  textTransform: "uppercase",
-  letterSpacing: "0.04em",
-  color: "var(--sb-text-soft)",
-  whiteSpace: "nowrap",
-};
-
 const td: React.CSSProperties = {
   padding: "0.5rem 0.75rem",
   borderBottom: "1px solid var(--sb-border)",
@@ -98,19 +90,72 @@ export default async function MovimentacoesPage({
     );
   }
 
-  const { data, error } = await supabase.rpc("get_stock_movements", {
+  // O recorte é o MESMO nas duas: uma faixa que ignora o filtro da tabela faz
+  // cabeçalho e corpo falarem de conjuntos diferentes na mesma tela (D-236).
+  const recorte = {
     p_organization_id: organizationId,
-    p_limit: PAGE_SIZE,
-    p_offset: (filters.page - 1) * PAGE_SIZE,
     p_search: filters.search,
     p_movement_type: filters.movementType,
     p_location_kind: filters.locationKind,
     p_source_type: filters.sourceType,
     p_date_from: filters.dateFrom,
     p_date_to: filters.dateTo,
-  });
+  };
+
+  const [ledger, resumo] = await Promise.all([
+    supabase.rpc("get_stock_movements", {
+      ...recorte,
+      p_limit: PAGE_SIZE,
+      p_offset: (filters.page - 1) * PAGE_SIZE,
+    }),
+    supabase.rpc("get_stock_movements_summary", recorte).maybeSingle(),
+  ]);
+
+  const { data, error } = ledger;
 
   const rows = (data ?? []) as MovementRow[];
+
+  /*
+    Os três cartões do frame CONTAM movimentação, nunca somam unidade — e a
+    diferença é medida (D-252). `AJUSTE_RECONCILIACAO` despeja o saldo
+    sentinela do ERP no ledger: +9,6 milhões e −3,5 milhões de unidades em 30
+    dias, contra ~29,5 mil de venda real. Um cartão "Entradas: 9.638.833
+    unidades" seria a tela afirmando movimento físico que não houve.
+
+    Contando linha, os três fecham: 36.360 = 6.776 entradas + 29.584 saídas.
+  */
+  const total = resumo.data;
+
+  const celulas: readonly KpiCellData[] = [
+    {
+      label: "Movimentações no recorte",
+      formula: "Linhas do ledger que passam pelos filtros atuais — contagem, nunca soma de quantidade.",
+      value: formatCount(total?.movimentacoes ?? 0),
+      previous: null,
+      tom: "neutro",
+    },
+    {
+      label: "Entradas",
+      formula: "Movimentações com delta positivo. O sinal decide, não o tipo: AJUSTE_RECONCILIACAO produz os dois.",
+      value: formatCount(total?.entradas ?? 0),
+      previous: null,
+      tom: "ok",
+    },
+    {
+      label: "Saídas",
+      formula: "Movimentações com delta negativo, pelo mesmo critério de sinal.",
+      value: formatCount(total?.saidas ?? 0),
+      previous: null,
+      tom: "atencao",
+    },
+    {
+      label: "SKUs tocados",
+      formula: "Quantos SKUs distintos aparecem no recorte.",
+      value: formatCount(total?.skus_tocados ?? 0),
+      previous: null,
+      tom: "neutro",
+    },
+  ];
   const totalCount = rows[0]?.total_count ?? 0;
   const window = summarizePagedWindow({
     page: filters.page,
@@ -123,7 +168,14 @@ export default async function MovimentacoesPage({
 
   return (
     <Shell>
-      <h1 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.375rem" }}>Movimentações de Estoque</h1>
+      {/* Sobrancelha e título do frame `ProcessScreen type="movements"`. */}
+      <PageTitle
+        eyebrow="ESTOQUE / OPERAÇÃO"
+        title="Movimentações"
+        subtitle="Histórico auditável de entradas, saídas e ajustes de estoque."
+      />
+
+      <KpiStrip cells={celulas} />
 
       <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
         O extrato do ledger — cada linha é um movimento auditável, com origem e motivo. Estoque físico
@@ -231,23 +283,21 @@ export default async function MovimentacoesPage({
       )}
 
       {error === null && (
-        <p style={{ margin: "0 0 var(--sb-space-2)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
-          {window.label}
-        </p>
-      )}
+        <Panel title="Ledger de estoque" subtitle={window.label}>
+          {rows.length === 0 && <p className="sb-empty">Nenhum movimento encontrado com estes filtros.</p>}
 
-      {error === null && rows.length > 0 && (
+          {rows.length > 0 && (
         <div style={{ overflowX: "auto" }}>
-          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "62rem" }}>
+          <table className="sb-table">
             <thead>
               <tr>
-                <th style={th}>Quando</th>
-                <th style={th}>SKU</th>
-                <th style={th}>Tipo</th>
-                <th style={th}>Local</th>
-                <th style={{ ...th, textAlign: "right" }}>Δ</th>
-                <th style={th}>Origem</th>
-                <th style={th}>Motivo / Por</th>
+                <th>Quando</th>
+                <th>SKU</th>
+                <th>Tipo</th>
+                <th>Local</th>
+                <th className="sb-num">Δ</th>
+                <th>Origem</th>
+                <th>Motivo / Por</th>
               </tr>
             </thead>
             <tbody>
@@ -262,8 +312,8 @@ export default async function MovimentacoesPage({
                       </div>
                     )}
                   </td>
-                  <td style={td}>{movementTypeLabel(row.movement_type)}</td>
-                  <td style={td}>{locationKindLabel(row.location_kind)}</td>
+                  <td>{movementTypeLabel(row.movement_type)}</td>
+                  <td>{locationKindLabel(row.location_kind)}</td>
                   <td
                     style={{
                       ...td,
@@ -274,7 +324,7 @@ export default async function MovimentacoesPage({
                   >
                     {formatQtyDelta(row.qty_delta)}
                   </td>
-                  <td style={td}>{movementSourceLabel(row.source_type, row.source_id)}</td>
+                  <td>{movementSourceLabel(row.source_type, row.source_id)}</td>
                   <td style={{ ...td, color: "var(--sb-text-soft)" }}>
                     {row.reason ?? "—"}
                     {row.created_by_name !== null && (
@@ -286,6 +336,8 @@ export default async function MovimentacoesPage({
             </tbody>
           </table>
         </div>
+          )}
+        </Panel>
       )}
 
       {error === null && window.totalPages > 1 && (

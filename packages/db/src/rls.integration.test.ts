@@ -2822,6 +2822,96 @@ describe("get_stock_summary (D-249)", () => {
   });
 });
 
+// get_stock_movements_summary (20260905030000, D-252) -- a faixa de KPIs de
+// /estoque/movimentacoes, e a razao de ela CONTAR em vez de somar.
+describe("get_stock_movements_summary (D-252)", () => {
+  const SKU_MOV = "MOVSUMTEST-cabo";
+  let movSkuId = "";
+
+  beforeAll(async () => {
+    const sku = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind) values ($1,$2,'PRODUTO') returning id`,
+      [ORG_SB, SKU_MOV],
+    );
+    movSkuId = sku.rows[0]?.id ?? "";
+
+    // Uma entrada grande e duas saidas pequenas: se a faixa somasse UNIDADE em
+    // vez de contar LINHA, "entradas" dominaria e o numero perderia sentido --
+    // e o Dev mostra isso em escala (ajustes de reconciliacao despejam
+    // milhoes de unidades contra ~29 mil de venda real).
+    for (const [delta, chave] of [
+      [10000, "movsum:entrada"],
+      [-1, "movsum:saida-1"],
+      [-2, "movsum:saida-2"],
+    ] as const) {
+      await client.query(
+        `insert into public.stock_movements
+           (organization_id, sku_id, location_kind, qty_delta, movement_type, source_type, source_id, idempotency_key, occurred_at)
+         values ($1,$2::uuid,'LOCAL',$3::int,$4,'DOCUMENT','movsum-doc',$5::text,now())`,
+        [ORG_SB, movSkuId, delta, delta > 0 ? "ENTRADA_NFE" : "AJUSTE_RECONCILIACAO", chave],
+      );
+    }
+  });
+
+  it("os tres numeros FECHAM: movimentacoes = entradas + saidas", async () => {
+    const rows = await asUser<{ movimentacoes: string; entradas: string; saidas: string }>(
+      ADMIN_SB,
+      `select * from public.get_stock_movements_summary('${ORG_SB}',null,null,null,null,null,'${SKU_MOV}')`,
+    );
+
+    expect(Number(rows[0]?.movimentacoes)).toBe(3);
+    expect(Number(rows[0]?.entradas)).toBe(1);
+    expect(Number(rows[0]?.saidas)).toBe(2);
+    expect(Number(rows[0]?.entradas) + Number(rows[0]?.saidas)).toBe(Number(rows[0]?.movimentacoes));
+  });
+
+  it("CONTA linha, nunca soma unidade -- 10.000 numa entrada nao vira 10.000 entradas", async () => {
+    // A guarda contra o defeito que a medicao no Dev revelou: somar quantidade
+    // faria os ajustes de reconciliacao (sentinela do ERP, D-127) engolirem a
+    // operacao inteira.
+    const rows = await asUser<{ entradas: string }>(
+      ADMIN_SB,
+      `select * from public.get_stock_movements_summary('${ORG_SB}',null,null,null,null,null,'${SKU_MOV}')`,
+    );
+
+    expect(Number(rows[0]?.entradas)).toBe(1);
+    expect(Number(rows[0]?.entradas)).not.toBe(10000);
+  });
+
+  it("o SINAL decide, nao o tipo -- e por isso um ajuste cai no lado certo", async () => {
+    // `AJUSTE_MANUAL``AJUSTE_RECONCILIACAO` aparece nas duas saidas do fixture, e em producao ele produz os DOIS sinais. Se a classificacao
+    // fosse por movement_type, o tipo inteiro cairia num lado so.
+    const soAjustes = await asUser<{ entradas: string; saidas: string }>(
+      ADMIN_SB,
+      `select * from public.get_stock_movements_summary('${ORG_SB}',null,null,'AJUSTE_RECONCILIACAO',null,null,'')`,
+    );
+
+    expect(Number(soAjustes[0]?.saidas)).toBe(2);
+    expect(Number(soAjustes[0]?.entradas)).toBe(0);
+  });
+
+  it("a faixa recebe os MESMOS filtros da tabela", async () => {
+    const comFiltro = await asUser<{ movimentacoes: string }>(
+      ADMIN_SB,
+      `select * from public.get_stock_movements_summary('${ORG_SB}',null,null,null,null,null,'${SKU_MOV}')`,
+    );
+    const semFiltro = await asUser<{ movimentacoes: string }>(
+      ADMIN_SB,
+      `select * from public.get_stock_movements_summary('${ORG_SB}')`,
+    );
+
+    // Sem a guarda, os dois lados poderiam ser iguais por acaso (D-197).
+    expect(Number(comFiltro[0]?.movimentacoes)).toBe(3);
+    expect(Number(semFiltro[0]?.movimentacoes)).toBeGreaterThan(3);
+  });
+
+  it("anon nao executa get_stock_movements_summary", async () => {
+    await expect(
+      asAnon(`select * from public.get_stock_movements_summary('${ORG_SB}')`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+});
+
 describe("ledger de estoque", () => {
   // Nome fora do padrão `RLSTEST%` que o afterAll global apaga: uma vez que
   // o SKU tiver stock_movements, `on delete restrict` o torna indeletável —

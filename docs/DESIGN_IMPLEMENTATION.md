@@ -609,7 +609,8 @@ que ele renderiza.**
 | D14 | **Estoque** — `PageTitle` + `KpiStrip` + `Panel` + `.sb-table`; três das seis células do frame recusadas por medição (D-249) | ✔ |
 | D15 | **Cobertura/Reposição** — o frame é UMA tela com abas; sete cartões de estado em vez de cinco, e o filtro que eles prometem (D-250) | ✔ |
 | D16 | **Curva ABC** — três cartões de classe com soma no banco; dois filtros rápidos devolvidos ao dono deles (D-251) | ✔ |
-| D17–D20 | Movimentações, NF-e, Compras, Fornecedores | fila |
+| D17 | **Movimentações** — KPIs que CONTAM linha; somar unidade daria milhões falsos (D-252) | ✔ |
+| D18–D20 | NF-e, Compras, Fornecedores | fila |
 | D21–D30 | Vinculações, Diagnóstico, Ações, Alterações, Preços, Full, Tráfego, Atendimento, Conhecimento, Central | fila |
 | D31–D36 | Usuários, Integrações, Sincronização, Saúde, Configurações, Copiloto | fila |
 | D37 | Passe visual global | fila |
@@ -720,32 +721,28 @@ resultado, visão salva e apagada) e capturados.
 
 ## Próxima fatia segura
 
-**D16 entregue (D-251).** `/curva-abc` adotou `PageTitle` + `Panel` +
-`.sb-table`, ganhou os três cartões de classe do frame — com a soma por classe
-vindo de **janela no banco**, antes do limit — e devolveu dois filtros rápidos
-ao dono deles.
+**D17 entregue (D-252).** `/estoque/movimentacoes` adotou `PageTitle` +
+`KpiStrip` + `Panel` + `.sb-table` e ganhou a faixa do frame.
+
+**A pergunta que motivou o aviso foi respondida: não há componente novo a
+extrair.** As cinco variações do `ProcessScreen` são a mesma anatomia —
+cabeçalho (sobrancelha, título, texto, ação opcional), painel com barra de
+ferramentas, tabela — e isso já é `PageTitle` (com `aside`), `Panel` e
+`.sb-table`. **D18, D19 e D20 reusam o que existe.**
 
 | achado | decisão |
 |---|---|
-| valor por classe não existia | virou coluna, não RPC: a janela custa **0,2 ms** sobre uma função de **332 ms**, e uma segunda chamada dobraria o custo da tela |
-| "Em ruptura" e "Baixa cobertura" | são estados de `get_purchase_suggestions` (D-150) — viraram **link para `/reposicao?estado=…`**, que D-250 acabara de construir |
-| barra "SKUs com risco" | "risco" não é termo definido; entrou "sem Full", que a curva sabe e já filtra |
+| KPIs de Entradas/Saídas | **contam linha, nunca somam unidade**: `AJUSTE_RECONCILIACAO` despeja **+9,6 mi / −3,5 mi** de unidades em 30 dias (sentinela do ERP, D-127) contra ~29,5 mil de venda real |
+| classificação | pelo **sinal** do delta, não pelo tipo — o ajuste produz os dois, e por tipo os 6.202 cairiam de um lado só |
 
-⚠️ **A conferência célula a célula pagou pela QUARTA fatia seguida.** É o
-primeiro passo, sempre.
+⚠️ **A conferência célula a célula pagou pela QUINTA fatia seguida.**
 
-⚠️ **Confira o estado da própria aba antes de acusar o código.** Um cartão
-parecia perder o parâmetro no link; a aba é que continuava no filtro anterior,
-e o link corretamente o desligava. Alternar funcionando.
-
-**D17 — Movimentações (`/estoque/movimentacoes`) contra o frame
-`ProcessScreen type="movements"` (App.tsx@3160).** É a primeira das quatro
-telas de PROCESSO, e o frame usa **um componente só** para movimentações,
-NF-e, compras, fornecedores e vinculações — vale ler as cinco variações antes
-de desenhar a primeira, porque o que for extraído aqui serve as outras quatro.
-A tela real já tem filtros na URL e paginação com contagem sobre o conjunto
-filtrado (D-131), e **não tem filtro de conta de propósito**: estoque físico é
-da organização.
+**D18 — NF-e / Entradas (`/notas-fiscais`) contra `ProcessScreen type="nfe"`.**
+O frame compartilha o corpo com `suppliers` e traz uma **ação no cabeçalho**
+("Upload XML") — a primeira das telas de processo com ação primária, então vale
+conferir o que o fluxo real de importação já faz antes de desenhar o botão. A
+tela real tem conferência de NF-e e vínculo item→SKU (o e2e `nota-fiscal.spec`
+exercita esse caminho); **preservar esse fluxo é requisito, não opção.**
 
 Depois, pela fila: Cobertura/Reposição, Curva ABC, Movimentações, NF-e,
 Compras, Fornecedores — todas candidatas naturais a adotar `.sb-table` e apagar

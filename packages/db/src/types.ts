@@ -4879,6 +4879,23 @@ export type Database = {
       // CORRECAO MANUAL sobre o arquivo gerado (classe D-133): o gerador
       // NUNCA marca argumento de RPC como nulo, e os filtros abaixo aceitam
       // NULL de verdade (e o valor que significa "sem filtro").
+      get_stock_movements_summary: {
+        Args: {
+          p_date_from?: string | null
+          p_date_to?: string | null
+          p_location_kind?: string | null
+          p_movement_type?: string | null
+          p_organization_id: string
+          p_search?: string | null
+          p_source_type?: string | null
+        }
+        Returns: {
+          entradas: number
+          movimentacoes: number
+          saidas: number
+          skus_tocados: number
+        }[]
+      }
       get_stock_movements: {
         Args: {
           p_date_from?: string | null

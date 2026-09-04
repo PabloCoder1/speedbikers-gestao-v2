@@ -5860,6 +5860,45 @@ Nenhum consumidor le por posicao. A prova de que o rearranjo nao mexeu em nada: 
 
 **Impacto:** `supabase/migrations/20260905013000_abc_class_totals.sql`, `apps/web/app/curva-abc/page.tsx`, `apps/web/app/globals.css`, `packages/db/src/types.ts` (a mao, D-213).
 
+## D-252 - D17: os KPIs de Movimentacoes CONTAM linha, e somar unidade seria mentira de milhoes
+
+**Contexto:** fatia D17 -- `/estoque/movimentacoes` contra `ProcessScreen type="movements"`. A fila mandava ler as **cinco variacoes** do frame antes de desenhar a primeira, porque ele usa um componente so para movimentacoes, NF-e, compras, fornecedores e vinculacoes.
+
+**A leitura das cinco respondeu a pergunta que motivou o aviso: nao ha componente novo a extrair.** As cinco sao a mesma anatomia -- cabecalho (sobrancelha, titulo, texto, acao opcional), painel com barra de ferramentas, tabela --, e isso ja e `PageTitle` (com `aside`), `Panel` e `.sb-table`. **O "componente unico" do frame ja existe no design system**; as quatro fatias seguintes reusam o que esta ali, sem abstracao nova.
+
+---
+
+**O ACHADO: CONTAR LINHA OU SOMAR UNIDADE MUDA A ORDEM DE GRANDEZA**
+
+O frame mostra 1.248 / 842 / 391, e 842+391 fecha com 1.248 -- sao **contagens de linha**. Seguir isso nao foi copia: e a unica forma honesta, e o dado diz por que. Medido no Dev, 30 dias:
+
+| tipo | linhas | soma de `qty_delta` |
+|---|---|---|
+| VENDA_ML | 28.830 | -29.513 |
+| **AJUSTE_RECONCILIACAO** | 6.202 | **+9.638.833 / -3.549.634** |
+| CANCELAMENTO_ML | 1.043 | +1.058 |
+| DEVOLUCAO_ML | 285 | +287 |
+
+**Os ajustes de reconciliacao despejam milhoes de unidades** contra ~29,5 mil de venda real: e o saldo sentinela do ERP (D-127) entrando no ledger como delta. Um cartao *"Entradas: 9.638.833 unidades"* seria a tela afirmando movimento fisico que nao houve -- a mesma armadilha que D-249 pegou em `/estoque`, agora numa tabela em vez de num saldo.
+
+Contando LINHA, os numeros fecham e dizem a verdade: **36.360 = 6.776 entradas + 29.584 saidas**, zero neutras.
+
+**O SINAL decide, nao o tipo.** `AJUSTE_RECONCILIACAO` produz entrada E saida; classificar por `movement_type` poria os 6.202 ajustes inteiros de um lado so. Ha teste fixando isso: filtrando so o tipo do ajuste, as duas saidas do fixture aparecem como saida e nenhuma como entrada.
+
+**E ha teste contra o defeito, nao so a favor do acerto** (D-197): o fixture tem uma entrada de **10.000 unidades**, e o teste afirma que "entradas" vale **1**, nunca 10.000.
+
+---
+
+**O de sempre, e vale registrar que foi de primeira:** a faixa recebe os MESMOS filtros da tabela (periodo, tipo, local, origem, busca) -- cabecalho e corpo falando do mesmo conjunto, a licao de D-236 que D-249 e D-250 ja tinham aplicado. E a conferencia de assinatura nas duas metades: a funcao e NOVA (nao ha chamador a quebrar) e `get_stock_movements`, que ela espelha, so tem consumidor em TypeScript.
+
+**Uma constraint do ledger recusou meu fixture, e estava certa.** Tentei plantar as saidas como `AJUSTE_MANUAL` e `stock_movements_manual_has_creator` barrou: ajuste manual exige autor. Troquei por `AJUSTE_RECONCILIACAO`, que alem de nao precisar de autor e **exatamente o tipo que produz os dois sinais em producao** -- o teste ficou melhor por causa da recusa.
+
+**Legado removido:** `<h1>` proprio e as constantes `th`/`td`/`tdNumber` -- a tela adotou `PageTitle`, `KpiStrip`, `Panel` e `.sb-table`.
+
+**Verificacao:** `check` 29/29, build 8/8, **598/598** de integracao em banco recriado (593 + 5 novos), `check:waterfalls` 60, **30/30 Playwright**. A tela foi aberta no navegador com login real: os quatro cartoes fecham (1 = 1 + 0 no seed) e o painel "Ledger de estoque" traz a linha.
+
+**Impacto:** `supabase/migrations/20260905030000_stock_movements_summary.sql`, `apps/web/app/estoque/movimentacoes/page.tsx`, `packages/db/src/types.ts` (a mao, D-213), `packages/db/src/rls.integration.test.ts`.
+
 ## Como adicionar nova decisao
 
 Registrar:
