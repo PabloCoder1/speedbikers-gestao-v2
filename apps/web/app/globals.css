@@ -213,6 +213,33 @@ body {
 }
 
 /*
+ * HOVER DO GRÁFICO DE VENDAS (D5) — e ele é CSS puro, de propósito.
+ *
+ * O brief pede "tooltip detalhado" e "hover" (`speed-bikers-design.md`, seção
+ * 12). O que existia era o `<title>` nativo de SVG num círculo de raio 3: para
+ * ler um valor era preciso acertar 6 pixels, e com 90 dias isso é impraticável.
+ *
+ * Cada dia do período tem uma faixa invisível de altura inteira; `:hover` sobre
+ * o `<g>` dela acende a linha vertical, engorda o ponto e abre a caixa de
+ * leitura. Sem estado, sem hidratação, sem componente cliente — o gráfico
+ * continua sendo Server Component, como o resto da tela. Mesma escolha do
+ * `<details>` na navegação.
+ *
+ * `@media (hover: none)`: em tela de toque o `:hover` GRUDA depois do toque, e
+ * a caixa ficaria aberta sobre o gráfico sem forma de fechar. Ali ela não
+ * existe, e o `<title>` de cada ponto continua sendo a leitura.
+ */
+.sb-chart-hover {
+  opacity: 0;
+}
+
+@media (hover: hover) {
+  .sb-chart-band:hover .sb-chart-hover {
+    opacity: 1;
+  }
+}
+
+/*
  * A TABELA DECLARA O SEU FUNDO — e por que isto é regra de folha de estilo, e
  * não uma edição em 32 arquivos (D2 da frente visual).
  *

@@ -1,4 +1,4 @@
-import { businessDateRangeLength } from "@sb/domain";
+import { businessDateRangeLength, shiftBusinessDate } from "@sb/domain";
 import type { ReactNode } from "react";
 
 import { formatBusinessDate, formatCount, formatCurrency } from "../../lib/format";
@@ -14,12 +14,16 @@ interface DailyPoint {
   purchases_count: number | null;
 }
 
-const WIDTH = 800;
-const HEIGHT = 220;
+const WIDTH = 900;
+const HEIGHT = 260;
 const PADDING_LEFT = 64;
 const PADDING_RIGHT = 16;
 const PADDING_TOP = 16;
 const PADDING_BOTTOM = 28;
+
+/** Caixa de leitura que aparece no hover. Medidas em unidades do `viewBox`. */
+const READ_W = 250;
+const READ_H = 62;
 
 /**
  * Gráfico de tendência de `/vendas` — SVG estático, sem biblioteca de
@@ -45,16 +49,44 @@ const PADDING_BOTTOM = 28;
  * DIFERENTE do índice 5 da outra — e o gráfico afirmaria "este dia contra o
  * mesmo dia do período anterior" sobre dois dias que não se correspondem.
  *
- * Medido em 2026-08-29: hoje as duas janelas estão completas (30/30 dias
- * cada), então o alinhamento por índice funcionaria — **por sorte**. É a
- * classe de defeito que este projeto persegue: correto hoje, silenciosamente
- * errado no primeiro dia em que uma janela tiver lacuna e a outra não. A
- * própria tela já prevê esse estado, exibindo "Só N dias têm métrica
- * calculada" quando a série vem incompleta.
- *
  * As duas janelas têm o MESMO comprimento por construção
  * (`previousBusinessDateRange`), então o offset `0..length-1` mapeia 1:1
  * entre elas e o alinhamento é bem definido.
+ *
+ * ## D5 da frente visual — o que mudou, e por quê
+ *
+ * **1. A série de comparação era invisível, e isso é defeito medido, não
+ * gosto.** Ela usava `--sb-muted` (`#ccc5d5`), que dá **1,68:1** contra o
+ * cartão branco — a WCAG 1.4.11 pede **3:1** de objeto gráfico que carrega
+ * informação, e uma tracejada de 1,5px é o caso mais frágil possível: sem
+ * preenchimento, sem borda, sem nada atrás. O gráfico desenhava a comparação
+ * e o usuário não a via. Agora usa `--sb-muted-ink` (`#746d88`, **4,90:1**),
+ * que ainda fica a 3,45:1 da série atual — as duas continuam distinguíveis
+ * entre si, e a hierarquia se mantém por PESO e TRAÇO (1,5px tracejada contra
+ * 2px sólida), não por apagamento.
+ *
+ * **2. Hover por FAIXA, não por ponto.** O brief pede "tooltip detalhado" e
+ * "hover" (`speed-bikers-design.md`, seção 12). O que existia era o `<title>`
+ * nativo de SVG num círculo de raio 3 — para ler um valor era preciso acertar
+ * 6px, e com 90 dias isso é impraticável. Agora cada dia tem uma faixa
+ * invisível de altura inteira; passar em qualquer altura da coluna acende a
+ * linha vertical, engorda o ponto e abre a leitura.
+ *
+ * **É CSS puro, sem componente cliente.** `:hover` sobre um `<g>` faz tudo;
+ * não há estado, não há hidratação, e o componente continua sendo Server
+ * Component como o resto da tela. Mesma escolha do `<details>` na navegação.
+ *
+ * **3. As faixas cobrem o PERÍODO, não os pontos.** Dia sem métrica calculada
+ * também tem faixa, e a leitura dele diz isso em vez de nada — a série não
+ * fabrica zero (`get_sales_daily_series`), então o dia existe no calendário e
+ * não existe no dado, e essas são afirmações diferentes. Antes esses dias eram
+ * silêncio: o traço passava por cima e ninguém sabia que ali não havia medição.
+ *
+ * **O que o hover NÃO resolve, dito para não confundir com garantia:** quem
+ * não usa ponteiro continua com o `<title>` de cada ponto e com o
+ * `aria-label` do gráfico. Leitura ponto a ponto por teclado exigiria 30 a 90
+ * paradas de foco, que é pior que o problema; a saída boa é uma tabela
+ * equivalente, e ela é fatia própria.
  */
 export function SalesChart({
   points,
@@ -136,6 +168,7 @@ export function SalesChart({
   // `undefined` (não 0) quando o dia não existe do outro lado: "sem dado" e
   // "vendeu zero" são afirmações diferentes, e a RPC não fabrica zero.
   const previousByOffset = indexByOffset(previousPoints, previousRangeFrom);
+  const currentByOffset = indexByOffset(points, rangeFrom);
 
   const hasComparison = previousPoints.length > 0;
 
@@ -147,6 +180,8 @@ export function SalesChart({
   // empilha texto ilegível.
   const labelStep = Math.max(1, Math.ceil(periodLength / 7));
 
+  const bandWidth = periodLength > 1 ? innerWidth / (periodLength - 1) : innerWidth;
+
   return (
     <figure style={{ margin: 0 }}>
       <svg
@@ -157,7 +192,7 @@ export function SalesChart({
             ? `${metric.heading} no período selecionado, comparado com o período anterior`
             : `${metric.heading} no período selecionado`
         }
-        style={{ width: "100%", height: "auto", maxWidth: `${String(WIDTH)}px`, display: "block" }}
+        style={{ width: "100%", height: "auto", display: "block" }}
       >
         {gridLines.map((value) => {
           const yPos = yAt(value);
@@ -182,14 +217,14 @@ export function SalesChart({
         {/*
           Período anterior ANTES do atual no DOM: em SVG a ordem é a ordem de
           pintura, então desenhar depois colocaria a linha de referência por
-          cima da linha que interessa. Tracejada e em cor apagada porque é
-          contexto, não o assunto — hierarquia visual, docs/PROMPT_MASTER.md §19.
+          cima da linha que interessa. Tracejada e mais fina porque é contexto,
+          não o assunto — mas NÃO apagada: ver o item 1 do cabeçalho.
         */}
         {hasComparison && (
           <path
             d={pathFor(previousPoints, previousRangeFrom)}
             fill="none"
-            stroke="var(--sb-muted)"
+            stroke="var(--sb-muted-ink)"
             strokeWidth={1.5}
             strokeDasharray="4 3"
           />
@@ -199,28 +234,96 @@ export function SalesChart({
 
         {points.map((point) => {
           const offset = offsetInPeriod(point.metric_date, rangeFrom);
-          const previousPoint = previousByOffset.get(offset);
-          const comparison =
-            previousPoint === undefined
+          const anterior = previousByOffset.get(offset);
+          // O `<title>` carrega a MESMA informação que a caixa de hover, e não
+          // uma versão pobre dela: quem não usa ponteiro não pode receber
+          // menos. A primeira versão desta fatia tinha deixado a comparação de
+          // fora aqui, o que teria trocado um ganho para uns por uma perda
+          // para outros.
+          const comparacao =
+            anterior === undefined
               ? "sem dado no período anterior"
-              : `período anterior (${formatBusinessDate(previousPoint.metric_date)}): ${formatValue(valueAt(previousPoint))}`;
+              : `período anterior (${formatBusinessDate(anterior.metric_date)}): ${formatValue(valueAt(anterior))}`;
 
           return (
-            <g key={point.metric_date}>
-              <circle cx={xAt(offset)} cy={yAt(valueAt(point))} r={3} fill="var(--sb-primary)">
-                {/*
-                  Um filho de texto só, não vários interpolados — vários filhos
-                  dentro de <title> de SVG produziu divergência de hidratação
-                  (servidor x cliente viam a mesma string dividida diferente).
-                */}
-                <title>
-                  {`${formatBusinessDate(point.metric_date)}: ${formatValue(valueAt(point))} · ${comparison}`}
-                </title>
-              </circle>
+            <circle
+              key={point.metric_date}
+              cx={xAt(offset)}
+              cy={yAt(valueAt(point))}
+              r={3}
+              fill="var(--sb-primary)"
+            >
+              {/*
+                Um filho de texto só, não vários interpolados — vários filhos
+                dentro de <title> de SVG produziu divergência de hidratação
+                (servidor x cliente viam a mesma string dividida diferente).
+              */}
+              <title>
+                {`${formatBusinessDate(point.metric_date)}: ${formatValue(valueAt(point))} · ${comparacao}`}
+              </title>
+            </circle>
+          );
+        })}
+
+        {Array.from({ length: periodLength }, (_unused, offset) => offset).map((offset) => {
+          const x = xAt(offset);
+          const dia = shiftBusinessDate(rangeFrom, offset);
+          const atual = currentByOffset.get(offset);
+          const anterior = previousByOffset.get(offset);
+
+          // A caixa foge do ponto: na metade esquerda ela abre à direita, e
+          // vice-versa. Sem isso ela cobriria justamente o trecho que a pessoa
+          // está olhando.
+          const readX = offset < periodLength / 2 ? WIDTH - PADDING_RIGHT - READ_W : PADDING_LEFT;
+
+          return (
+            <g key={dia} className="sb-chart-band">
+              <rect
+                x={x - bandWidth / 2}
+                y={PADDING_TOP}
+                width={bandWidth}
+                height={innerHeight}
+                fill="transparent"
+                style={{ pointerEvents: "all" }}
+              />
+
+              <g className="sb-chart-hover" style={{ pointerEvents: "none" }}>
+                <line x1={x} x2={x} y1={PADDING_TOP} y2={PADDING_TOP + innerHeight} stroke="var(--sb-muted-ink)" strokeWidth={1} />
+
+                {atual !== undefined && (
+                  <circle cx={x} cy={yAt(valueAt(atual))} r={5} fill="var(--sb-primary)" />
+                )}
+
+                <rect
+                  x={readX}
+                  y={PADDING_TOP}
+                  width={READ_W}
+                  height={READ_H}
+                  rx={6}
+                  fill="var(--sb-surface)"
+                  stroke="var(--sb-border)"
+                />
+
+                <text x={readX + 10} y={PADDING_TOP + 18} fontSize={11} fill="var(--sb-text)" fontWeight={600}>
+                  {formatBusinessDate(dia)}
+                </text>
+
+                <text x={readX + 10} y={PADDING_TOP + 36} fontSize={11} fill="var(--sb-text)">
+                  {atual === undefined
+                    ? "sem métrica calculada neste dia"
+                    : `${metric.label}: ${formatValue(valueAt(atual))}`}
+                </text>
+
+                <text x={readX + 10} y={PADDING_TOP + 52} fontSize={11} fill="var(--sb-text-soft)">
+                  {anterior === undefined
+                    ? "período anterior: sem dado"
+                    : `período anterior (${formatBusinessDate(anterior.metric_date)}): ${formatValue(valueAt(anterior))}`}
+                </text>
+              </g>
 
               {offset % labelStep === 0 && (
-                <text x={xAt(offset)} y={HEIGHT - 8} textAnchor="middle" fontSize={10} fill="var(--sb-text-soft)">
-                  {formatBusinessDate(point.metric_date).slice(0, 5)}
+                <text x={x} y={HEIGHT - 8} textAnchor="middle" fontSize={10} fill="var(--sb-text-soft)">
+                  {formatBusinessDate(dia).slice(0, 5)}
                 </text>
               )}
             </g>
@@ -257,7 +360,7 @@ export function SalesChart({
                 y1="4"
                 x2="18"
                 y2="4"
-                stroke="var(--sb-muted)"
+                stroke="var(--sb-muted-ink)"
                 strokeWidth={1.5}
                 strokeDasharray="4 3"
               />
@@ -270,6 +373,7 @@ export function SalesChart({
             */}
             Período anterior ({formatBusinessDate(previousRangeFrom)} a {formatBusinessDate(previousRangeTo)})
           </span>
+          <span>Passe o ponteiro sobre um dia para ver os dois valores.</span>
         </figcaption>
       )}
     </figure>

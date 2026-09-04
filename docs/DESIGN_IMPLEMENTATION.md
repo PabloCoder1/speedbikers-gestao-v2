@@ -18,11 +18,67 @@ completos), `src/DesignSystem.tsx` (padrões de componente) e nove briefs em
 `src/imports/pasted_text/`. Consultar o MCP só quando o export não responder —
 `src/App.tsx` tem 228 KB e é monólito de protótipo: **referência, nunca base**.
 
-## Princípio
+## Princípio — CORRIGIDO em 2026-09-04
 
-**Figma = verdade visual/UX. Código, migrations, `METRICS.md` e `DECISIONS.md`
-= verdade funcional.** Onde divergirem, o comportamento real vence e o layout
-do Figma acomoda o significado real.
+**O Figma é a REFERÊNCIA PRINCIPAL da experiência visual final.** Correção de
+direção dada pelo usuário: as fatias D1–D5 vinham *adaptando a tela antiga* com
+as cores do Figma, e não é isso que esta frente existe para fazer.
+
+| O Figma dita | O código real dita |
+|---|---|
+| estrutura visual, composição, hierarquia | dados, comportamento, regras de negócio |
+| navegação, tabs, cards, filtros, tabelas | permissões, RLS, integrações |
+| drawers, modais, densidade, spacing | Server Actions, RPCs, estados reais |
+| identidade visual, UX final | métricas canônicas, lógica de domínio |
+
+**Não é** "tela antiga + cores do Figma". **É** "tela do Figma + dados e
+comportamento reais da V3".
+
+### Ordem obrigatória antes de mexer em qualquer tela
+
+1. ler este documento;
+2. **ler a tela correspondente no Figma** (o frame, não só os tokens);
+3. entender a composição do Figma;
+4. **só então** abrir a implementação antiga;
+5. mapear quais dados e comportamentos precisam sobreviver;
+6. reconstruir a apresentação seguindo o Figma.
+
+Nunca o contrário. A pergunta não é "como adapto esta tela ao Figma", é
+**"como implemento esta tela do Figma com os dados reais que já temos"**.
+
+### Regra de conflito
+
+| conflito | quem vence |
+|---|---|
+| Figma × UI antiga | **Figma** |
+| Figma × regra funcional real | regra funcional |
+| Figma × segurança | segurança |
+| Figma × métrica canônica | métrica canônica |
+| Figma × feature fora de escopo | escopo aprovado |
+
+Quando o Figma mostra algo que o sistema não tem (Ads, ROAS, concorrência,
+automação), **mantém-se o desenho e remove-se o conteúdo incompatível** —
+recompondo o bloco sem ele, nunca preenchendo com número falso.
+
+### Classificação do legado, por superfície
+
+`KEEP` comportamento continua adequado · `ADAPT` lógica boa, apresentação segue
+o Figma · `MERGE` duplicação vira componente único · `REMOVE` ficou sem
+consumidor depois da migração · `DEFER` fora do escopo atual.
+
+**Dead code pass** depois de cada superfície migrada e validada: imports,
+componentes, rotas, links, busca universal, testes, CSS. Não deixar duas
+implementações da mesma interface convivendo, e **nunca** `DashboardV2` ao lado
+de `Dashboard`. Backend (RPC, migration, tabela, policy, job, contrato) **não**
+se remove por não aparecer no Figma — a limpeza é de frontend.
+
+### Formato de desvio intencional
+
+> **Superfície:** `/rota` · **Figma:** … · **V3 real:** … · **Decisão:** … ·
+> **Motivo:** dado inexistente / decisão de produto / segurança / regra
+> funcional / escopo enxuto.
+
+Serve para distinguir "não ficou igual" de "não **deveria** ficar igual".
 
 ---
 
@@ -278,8 +334,9 @@ que ele renderiza.**
 | D2 | Shell + o passo branco (superfícies declaram fundo) | **CONCLUÍDO** |
 | — | O passo cinza (`--sb-ground` no `<main>`) | fila, com pré-requisitos medidos |
 | D3 | Moldura: sidebar vertical, grupos e seção atual | **CONCLUÍDO** |
-| D4 | Home orientada à atenção | **CONCLUÍDO** |
-| D5 | Vendas | próximo |
+| D4 | Home orientada à atenção | **CONCLUÍDO** · `REVISÃO VISUAL NECESSÁRIA` |
+| D5 | Vendas — gráfico (seção 12 do brief) | **CONCLUÍDO** |
+| D6 | Vendas — composição, refeita a partir do Figma | próximo |
 | D6 | Produtos | fila |
 | D6–D10 | Dashboard de SKU (fundação + 4 pares de abas) | fila |
 | D11–D12 | Anúncios (listagem, depois dashboard em lotes) | fila |
@@ -290,51 +347,65 @@ que ele renderiza.**
 | D37 | Passe visual global | fila |
 | — | Tipografia (Inter + DM Mono) | fatia própria, sem posição fixa |
 
+## Revisão visual necessária
+
+Telas migradas **antes** da correção de direção de 2026-09-04, que seguem
+presas à composição antiga. Não serão refeitas agora — a fila não para — mas
+cada uma precisa de um passe Figma-first antes de a frente fechar.
+
+| Superfície | O que está preso ao legado |
+|---|---|
+| `/` (D4) | conteúdo e severidade estão certos; a composição é grade de cards herdada, não o `.kpi-strip` + `.attention-card` do Figma |
+| `/vendas` (D5) | só o gráfico foi refeito; cabeçalho, filtros em linhas de pílulas e os três blocos de cards são a estrutura antiga — é o assunto de D6 |
+
 ## Última fatia concluída
 
-**D4 — Home orientada à atenção.** O brief pede cards priorizados por
-severidade, com explicação e ação (`speed-bikers-design.md`, seção 10). A
-severidade **não foi inventada**: `actions.severity` é coluna real com CHECK em
-`baixa|media|alta`, e ruptura vem de `get_stock_coverage_summary`, a mesma
-função que `/cobertura` usa no cabeçalho.
+**D5 — o gráfico de vendas** (seção 12 do brief: "tooltip detalhado; zoom/hover;
+legenda"). Duas coisas, e a primeira é defeito medido:
 
-Seis cards em três degraus de ordem — o que **falhou** primeiro ("não sei" é
-mais urgente que qualquer número), depois o que **tem** número por severidade,
-e só então o que está **limpo**. A primeira versão ordenava só por severidade e
-a tela renderizada mostrou o erro: um crítico zerado ficava à frente de um
-importante com 1. Zero não pede atenção, ainda que a categoria seja grave.
+**A série de comparação era invisível.** Usava `--sb-muted` (`#ccc5d5`) —
+**1,68:1** contra o cartão branco, onde a WCAG 1.4.11 pede **3:1** de objeto
+gráfico que carrega informação. Uma tracejada de 1,5px é o caso mais frágil que
+existe: sem preenchimento, sem borda, sem nada atrás. O gráfico desenhava a
+comparação e ninguém a via. Agora é `--sb-muted-ink` (**4,90:1**), que ainda
+fica a 3,45:1 da série atual — a hierarquia se mantém por peso e traço, não por
+apagamento.
 
-**Nada some quando é zero.** Um card zerado é a diferença entre "medi e está
-limpo" e "não medi" — perde a cor de severidade e ganha o rótulo "Limpo", mas
-fica. E um card que falhou não anuncia severidade: dizer "Crítico" sobre um
-número que não foi lido é afirmar o que não se sabe.
+**Hover por faixa, não por ponto.** O que existia era o `<title>` nativo num
+círculo de raio 3: para ler um valor era preciso acertar 6px, e com 90 dias isso
+é impraticável. Agora cada dia do período tem faixa invisível de altura inteira;
+passar em qualquer altura acende a cruz, engorda o ponto e abre a leitura com os
+dois valores. **CSS puro** — `:hover` sobre um `<g>`, sem estado, sem
+hidratação, sem componente cliente. E `@media (hover: hover)`, porque em tela de
+toque o `:hover` gruda e a caixa ficaria aberta sem forma de fechar.
 
-**Três achados funcionais**, todos registrados em `docs/DECISIONS.md` (D-241):
+**As faixas cobrem o período, não os pontos.** Dia sem métrica calculada agora
+**diz** que não tem métrica, onde antes era silêncio — a série não fabrica zero,
+então "o dia não existe no dado" e "o dia vendeu zero" são afirmações
+diferentes.
 
-1. **O contador de notificações da Home nunca funcionou.** Pedia `.select("id")`
-   em `notification_recipients` — tabela cuja chave é composta
-   `(notification_id, user_id)` e que **não tem coluna `id`**. Ninguém viu
-   porque D-067 manda falha aparecer como "—", e um "—" passa por discrição em
-   vez de defeito.
-2. **Ruptura não gera ação.** O motor emite `venda_anomala`,
-   `reclamacoes_recorrentes` e `republicacao` — e o primeiro exemplo de crítico
-   do brief é ruptura. A lacuna fica registrada; enquanto isso a Home lê a
-   cobertura direto, com a ida em série declarada.
-3. **Duas armadilhas locais de e2e**, com o mecanismo: servidor de dev na porta
-   3000 faz o Playwright reusá-lo e o Next recusa `127.0.0.1` com 403 (a suíte
-   morre no login sem parecer login); e sem servidor de dev o Playwright sobe
-   `next start`, que serve o **último build** — corrigir o fonte sem buildar
-   testa o código anterior.
+**Verificado com dado**, o que exigiu um fixture local de 60 dias (o seed não
+tem série): 30 faixas em 30 dias e 90 em 90; exatamente **uma** leitura abre por
+vez; a formatação segue a métrica (`R$ 1.279,70` em faturamento, `19` em
+unidades); e a recusa de D-237 continua intacta — sob "Compras + Sem marca" o
+gráfico não desenha nada e explica por quê.
 
-**Verificação:** `check` 29/29, build 8/8, integração 582/582 em banco
-recriado, **20/20 Playwright** (o novo `e2e/home.spec.ts` afirma o negativo —
-nenhum card pode dizer "Não foi possível carregar" — e foi provado contra o
-código de antes), `check:waterfalls`, `check:server-actions`, `docs:check`.
+**Verificação:** `check` 29/29, build 8/8, integração 582/582 em banco recriado,
+20/20 Playwright, `check:waterfalls`, `check:server-actions`, `docs:check`.
 
 ## Próxima fatia segura
 
-**D5 — Vendas.** A tela mais densa do app e a que o brief detalha mais
-(`speed-bikers-design.md`, seção 11). Ela já tem filtros salvos, recorte por
-marca com contrato NULL (D-237), gráfico que recusa em vez de plotar zero, e o
-bloco de margem — nada disso pode regredir. É a primeira fatia em que o
-`.kpi-strip` do Figma encontra um bloco de KPIs real e grande.
+**D6 — a composição de `/vendas`, refeita a partir do Figma.** Não é adaptar o
+que está lá: é implementar o frame `Sales` do Figma com os dados reais. A
+composição dele, já extraída:
+
+`page-title` (eyebrow "COMERCIAL / RESULTADOS" + h1 + subtítulo, com toolbar de
+botões-fantasma à direita) → `kpi-strip` (UM cartão dividido em 5 células, a
+primeira com fundo navy) → `panel` do gráfico (cabeçalho com título, subtítulo e
+legenda à direita; controle segmentado de métrica; eixo Y fora do SVG) →
+`table-panel` "Produtos que mais contribuíram".
+
+**Desvios já conhecidos:** o `kpi-strip` do Figma traz "Receita líquida ML"
+(nome vetado, METRICS 5C.1) e uma variação percentual em cada célula (proibida
+por D-023 sem `metric_definitions`) — a composição fica, o conteúdo vira o valor
+do período anterior, que é o que `/vendas` já mostra hoje.
