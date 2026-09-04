@@ -1216,6 +1216,18 @@ body {
   color: var(--sb-text-soft);
 }
 
+/*
+ * Corpo de painel com respiro. As tabelas do app trazem a própria margem, mas
+ * os parágrafos de ressalva encostariam na borda do cartão sem isto.
+ */
+.sb-panel-body {
+  padding: var(--sb-space-3);
+}
+
+.sb-panel-body > p:first-child {
+  margin-top: 0;
+}
+
 /* Dois painéis lado a lado, como a grade inferior do frame. */
 .sb-pair-grid {
   display: grid;

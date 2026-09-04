@@ -844,8 +844,8 @@ export default async function SkuDashboardPage({
       )}
 
       {tab === "anuncios" && (
-        <>
-          <h2 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.0625rem" }}>Anúncios vinculados</h2>
+        <Panel title="Anúncios vinculados">
+          <div className="sb-panel-body">
 
           {listingsResult.error !== null && (
             <p role="alert" style={{ color: "var(--sb-danger)" }}>
@@ -895,12 +895,13 @@ export default async function SkuDashboardPage({
               </table>
             </div>
           )}
-        </>
+          </div>
+        </Panel>
       )}
 
       {tab === "full" && (
-        <>
-          <h2 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.0625rem" }}>Full por conta</h2>
+        <Panel title="Full por conta">
+          <div className="sb-panel-body">
 
           <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
             Saldo no Full de cada conta, somado por bucket de variação — o grão que D-173 mediu como certo. O
@@ -962,12 +963,13 @@ export default async function SkuDashboardPage({
               </table>
             </div>
           )}
-        </>
+          </div>
+        </Panel>
       )}
 
       {tab === "precos" && (
-        <>
-          <h2 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.0625rem" }}>Mudanças de preço observadas</h2>
+        <Panel title="Mudanças de preço observadas">
+          <div className="sb-panel-body">
 
           {/*
             D-226. A palavra "observadas" não é enfeite: `listing.price.changed`
@@ -1048,11 +1050,14 @@ export default async function SkuDashboardPage({
               </table>
             </div>
           )}
-        </>
+          </div>
+        </Panel>
       )}
 
       {tab === "historico" && (
         <>
+        <Panel title="Custo cadastrado">
+          <div className="sb-panel-body">
           {/*
             Custo cadastrado + histórico (D-149). Duas honestidades: o
             registro começa em 30/08/2026 (não há como historiar o que a
@@ -1060,7 +1065,6 @@ export default async function SkuDashboardPage({
             número — vive em purchase_order_items.unit_cost e nunca escreve
             de volta aqui.
           */}
-          <h2 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.0625rem" }}>Custo cadastrado</h2>
 
           <p style={{ margin: "0 0 var(--sb-space-2)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
             Custo atual: <strong>{formatCurrency(sku.data.purchase_cost)}</strong> — sobrescrito a cada importação do
@@ -1112,6 +1116,12 @@ export default async function SkuDashboardPage({
             </div>
           )}
 
+          </div>
+        </Panel>
+
+        <div style={{ marginTop: "var(--sb-space-3)" }}>
+          <Panel title="Linha do tempo">
+            <div className="sb-panel-body">
           {/*
             Linha do tempo (D-153) — a ordem dos acontecimentos. Vocabulário
             ABERTO de propósito (contrato oposto ao da correlação): história
@@ -1119,7 +1129,6 @@ export default async function SkuDashboardPage({
             (formatEventDiff devolve null para o resto — nunca leitura
             inventada).
           */}
-          <h2 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.0625rem" }}>Linha do tempo</h2>
 
           {timelineResult.error !== null && (
             <p role="alert" style={{ color: "var(--sb-danger)" }}>
@@ -1183,14 +1192,17 @@ export default async function SkuDashboardPage({
               </div>
             </>
           )}
+          </div>
+          </Panel>
+        </div>
         </>
       )}
 
       {tab === "diagnostico" && <DiagnosisPanel skuId={sku.data.id} />}
 
       {tab === "decisoes" && (
-        <>
-          <h2 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.0625rem" }}>Decisões registradas</h2>
+        <Panel title="Decisões registradas">
+          <div className="sb-panel-body">
 
           {/*
             D-228. Memória de decisões (Fase 6, D-064/D-065): a decisão nasce de
@@ -1296,7 +1308,8 @@ export default async function SkuDashboardPage({
               })}
             </div>
           )}
-        </>
+          </div>
+        </Panel>
       )}
       </ObjectHeader>
     </Shell>

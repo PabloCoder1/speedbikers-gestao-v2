@@ -466,7 +466,7 @@ que ele renderiza.**
 | D7 | Produtos | fila |
 
 | D8–D12 | Dashboard de SKU (fundação + 4 pares de abas) | fila |
-| D11–D12 | Anúncios (listagem, depois dashboard em lotes) | fila |
+
 | D13 | Republicação (só UX; motor real preservado) | fila |
 | D14–D20 | Estoque, Cobertura/Reposição, Curva ABC, Movimentações, NF-e, Compras, Fornecedores | fila |
 | D21–D30 | Vinculações, Diagnóstico, Ações, Alterações, Preços, Full, Tráfego, Atendimento, Conhecimento, Central | fila |
@@ -484,40 +484,36 @@ O que resta são superfícies **ainda não migradas** — a fila D7 em diante.
 
 ## Última fatia concluída
 
-**D10 — abas Vendas e Estoque do SKU.** E a primeira descoberta foi que **o
-frame não desenha essas abas**: no export, tudo que não é "Resumo" mostra
-*"Conteúdo da aba em construção"*. Onde o Figma não fala, vale o design system —
-inventar um frame seria pior que aplicar o vocabulário já estabelecido.
+**D11 — as seis abas restantes do SKU**, fechando a tela. Mesma substituição de
+D10, repetida: cada `<h2>` + explicação virou um **painel** com o título no
+cabeçalho, e o conteúdo passou a viver sobre superfície branca em vez de flutuar
+no fundo tingido da aba.
 
-| antes | agora |
+| aba | virou |
 |---|---|
-| `<h2>` + parágrafo explicativo | **rótulo de seção** com a nota à direita |
-| caixas de saldo/venda com estilo inline | **cartões de indicador** (`.sb-stat`), cada um com a sua nota |
-| tabelas soltas sobre o fundo tingido da aba | cada tabela num **painel** branco, com título e ressalva no cabeçalho |
-| simulador solto | painel "Simulador de cobertura", com "Ajustar estoque →" na ação |
+| Anúncios, Full, Preços, Decisões | um painel cada |
+| Histórico | **dois** painéis — "Custo cadastrado" e "Linha do tempo" são assuntos distintos e estavam no mesmo bloco |
+| Diagnóstico | intocada: `DiagnosisPanel` já é um cartão próprio |
 
-**As quatro caixas de saldo ganharam nota**, e isso é conteúdo, não enfeite:
-"saldo físico da organização", "comprometido com pedido", "comprado e ainda não
-recebido", "no centro do Mercado Livre". Os quatro estados do ledger deixaram de
-ser quatro rótulos sem explicação.
+**Cartão-dentro-de-cartão, resolvido na origem.** `SimulatorPanel` trazia a
+própria moldura e o próprio `<h2>` — dentro do painel de D10 virava moldura
+dupla. Os dois saíram do componente: quem diz o título agora é o painel que o
+contém. É o mesmo raciocínio de "um dado, um dono", aplicado à moldura.
 
-**Dead code pass:** `statLabel` e `statValue` (os estilos inline) ficaram sem
-consumidor e saíram. O helper `statValue` do e2e **fica** — duas outras specs
-ainda o usam; só o import do spec de SKU foi removido.
-
-**Um susto no caminho:** a substituição do `StockBoxes` engoliu, por um recorte
-largo demais, o `SalesCard`/`buildSalesCards` que vivia entre os dois
-componentes. O `typecheck` acusou na hora e o bloco voltou do commit anterior —
-é para isso que a bateria roda antes do commit, e não depois.
+**Verificado tela a tela, não por amostra:** uma sonda percorreu as **nove
+abas** e mediu, em cada uma, o HTTP, quantos painéis, quantos cartões de
+indicador e quantos `<h2>` de estilo antigo restaram. O resultado final é
+`h2-antigos=0` nas nove, com todas em 200.
 
 **Verificação:** `check` 29/29, build 8/8, integração 582/582, **22/22
-Playwright** (duas asserções acompanharam a mudança de estrutura: o `<h2>` que
-virou rótulo, e o XPath do helper que não casa com o cartão novo),
-`check:waterfalls`, `check:server-actions`, `docs:check`.
+Playwright**, `check:waterfalls`, `check:server-actions`, `docs:check`.
 
 ## Próxima fatia segura
 
-**D11 — as seis abas restantes do SKU** (Anúncios, Preços, Full, Histórico,
-Diagnóstico, Decisões). É a mesma substituição de D10, repetida: rótulo de
-seção, cartão de indicador, painel por tabela. Fechá-las na mesma fatia evita
-deixar a tela com dois vocabulários convivendo.
+**D12 — Anúncios.** O brief pede que a tela "NÃO pareça somente uma tabela de
+anúncios" (`speed-bikers-design.md`, seção 13): resumo por estado (ativos,
+pausados, sem estoque, Full, sem Full, sem vínculo, com queda, com problema) e
+filtros. O `ObjectHeader` de D8 já serve o dashboard de um anúncio; a listagem
+ganha a composição de faixa + painel. **Antes de implementar, conferir quais
+daqueles oito estados o sistema mede de verdade** — o brief lista mais do que a
+V3 observa hoje.

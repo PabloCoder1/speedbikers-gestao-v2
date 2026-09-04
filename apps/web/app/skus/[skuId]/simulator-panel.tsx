@@ -69,8 +69,12 @@ export function SimulatorPanel({
   const ruptureDate = rupture?.ruptureDate ?? null;
 
   return (
-    <div style={{ marginBottom: "var(--sb-space-4)", border: "1px solid var(--sb-border)", borderRadius: "var(--sb-radius)", padding: "var(--sb-space-3)" }}>
-      <h2 style={{ margin: "0 0 var(--sb-space-1)", fontSize: "1.0625rem" }}>Simular cenário</h2>
+    /*
+      Sem moldura própria: desde D11 este componente vive DENTRO do painel
+      "Simulador de cobertura" da aba Estoque, e a moldura dupla era
+      cartão-dentro-de-cartão. O título também saiu — quem o diz é o painel.
+    */
+    <div>
 
       <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
         Simulação, não previsão — os campos abaixo partem da venda média observada nos últimos 30 dias, ajuste
