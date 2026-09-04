@@ -17,7 +17,12 @@ test("dashboard de SKU mostra saldo local do seed", async ({ page }) => {
   await login(page, `/skus/${seed.skuId}`);
 
   await expect(page).toHaveURL(new RegExp(`/skus/${seed.skuId}$`));
-  await expect(page.getByRole("heading", { level: 1, name: seed.skuCode })).toBeVisible();
+  // O `<h1>` é o NOME do produto e o código do SKU é o identificador em
+  // monoespaçado acima dele — o cabeçalho de entidade do Figma. Era o
+  // contrário: `<h1>E2E-SKU-001</h1>` com o nome como parágrafo cinza. O código
+  // é chave (o que se copia e se cola em outro sistema), não título.
+  await expect(page.getByRole("heading", { level: 1, name: "Produto de teste E2E" })).toBeVisible();
+  await expect(page.getByText(`SKU ${seed.skuCode}`, { exact: true })).toBeVisible();
 
   await expect(statValue(page, "Local")).toContainText("50");
 

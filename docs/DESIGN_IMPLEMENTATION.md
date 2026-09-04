@@ -273,6 +273,7 @@ branco embutido.
 | `FilterPill` | `components/filter-pill.tsx` | ≈ filtros do Figma |
 | `SavedFilters` | `components/saved-filters.tsx` | alinhado |
 | `CommandPalette` | `components/command-palette.tsx` | alinhado |
+| `ObjectHeader` | `components/object-header.tsx` | **novo em D8** — o padrão de SKU, anúncio, pedido e fornecedor |
 | `th`/`td`/`tdNumber`/`cardStyle` | `components/table-styles.ts` | **2 telas importam; 3 têm cópia nomeada; o resto é estilo inline ad-hoc** |
 
 **Não criar `Card`, `CardV2`, `FigmaCard`.** Adaptar o que existe.
@@ -299,6 +300,21 @@ branco embutido.
 | Trilho de 58px só com ícones | o app não tem **nenhum** ícone (medido: sem `<img>`, sem SVG, sem `public/`) — um trilho sem ícone é uma coluna vazia | — |
 
 ### Desvios registrados, no formato curto
+
+> **Superfície:** `/skus/[id]` · **Figma:** abas incluem TRÁFEGO e ATENDIMENTO ·
+> **V3 real:** nove abas, sem essas duas · **Decisão:** manter as nove ·
+> **Motivo:** regra funcional — visita é medida por `item_id` e o dono é o
+> Dashboard do Anúncio (D-224); e não existe vínculo confiável SKU →
+> `support_case` (D-084). É também a ordem que o usuário aprovou.
+
+> **Superfície:** `/skus/[id]` · **Figma:** miniatura de 64px com a imagem do
+> produto e um botão primário "Ações ⌄" · **V3 real:** sem miniatura, e a única
+> ação é voltar para Estoque · **Decisão:** omitir os dois · **Motivo:** dado
+> inexistente (`image_url` existe na tabela mas nenhuma tela do app carrega
+> imagem — não há `public/`, nem `<img>`) e escopo (não existe menu de ações de
+> SKU; inventá-lo seria inventar produto).
+
+
 
 > **Superfície:** `/produtos` · **Figma:** tabela com 5 colunas (Produto/SKU,
 > Marca, Tipo de Estoque, Anúncios) · **V3 real:** 8 colunas — acrescenta
@@ -438,46 +454,44 @@ O que resta são superfícies **ainda não migradas** — a fila D7 em diante.
 
 ## Última fatia concluída
 
-**D7 — `/produtos`, a curadoria.** Primeira superfície da fila normal sob a
-regra nova, e a primeira em que **o que precisa sobreviver é a ESCRITA**.
+**D8 — a fundação do Dashboard de SKU**, e ela nasceu componente: o
+`ObjectHeader`, que o `DesignSystem.tsx` declara como **o padrão de SKU,
+anúncio, pedido de compra e fornecedor**. Quatro telas de detalhe montavam
+quatro cabeçalhos diferentes; agora há um.
 
-Composição, do frame `ProductsCuration`:
-
-| antes | agora |
+| antes | agora, do frame |
 |---|---|
-| `<h1>` + parágrafo | `PageTitle` com sobrancelha "INTELIGÊNCIA / CURADORIA" e a barra de filtros à direita |
-| três linhas de pílulas + busca | três menus `<details>` + busca, na barra |
-| tarja cinza com os contadores em texto corrido | rótulo de seção "Retrato do ERP" + **faixa de indicadores** com quatro contagens |
-| barra `sticky` solta acima da tabela | **cabeçalho do cartão**: "Selecionar todos", contagem e ações, sobre o fundo de apoio |
-| colunas SKU e Título separadas | célula única **"Produto / SKU"** — título em negrito, SKU em monoespaçado embaixo |
+| `← Estoque` solto no topo | ação à direita do cabeçalho |
+| `<h1>E2E-SKU-001</h1>` | **identificador em monoespaçado**, e o `<h1>` é o nome do produto |
+| nome do produto como parágrafo cinza | título |
+| — | **selos de estado**: Ativo/Inativo/Descontinuado, Estoque virtual, marca do fornecedor, Importado |
+| — | "atualizado em …" |
+| abas soltas acima do conteúdo | abas **dentro do cartão**, caixa-alta, com sublinhado na atual |
+| conteúdo solto na página | conteúdo da aba **no mesmo cartão**, sobre o fundo de apoio |
 
-**O `sticky` saiu porque deixou de fazer sentido:** desde R1 a moldura rola só o
-conteúdo, então a barra já não sai de vista.
+**O código do SKU é chave, não título.** Quem lê a tela procura o produto; quem
+copia procura a chave. Inverter isso é a mudança mais simples e a que mais muda
+a leitura.
 
-**A faixa de indicadores estreou sem id de métrica.** As quatro contagens são
-estados do catálogo ("nunca classificados", "a revisar"), não métricas de
-`metric_definitions` — `metricId` virou opcional no componente, porque apontar
-para uma definição que não existe é pior do que não apontar.
+**Os selos custam zero ida.** `is_active`, `is_discontinued`, `is_imported`,
+`stock_is_virtual`, `supplier_brand` e `updated_at` estão na MESMA linha de
+`skus` que a tela já lia — bastou pedi-los no `select` (D-185: o custo é o round
+trip, não as colunas). Nenhum selo é decorativo.
 
-**A escrita foi exercitada inteira, até o banco.** O novo `e2e/produtos.spec.ts`
-percorre o caminho na ordem que a tela impõe: ação nasce desabilitada →
-selecionar habilita e o contador acompanha → a confirmação mostra a
-**CONSEQUÊNCIA** ("a Cobertura deixará de calcular dias") → confirmar escreve e
-oferece **desfazer**. Verificado também por consulta direta: `stock_is_virtual`
-saiu de nulo para `true`.
+**As abas já estavam na ordem aprovada** (Visão Geral, Vendas, Estoque,
+Anúncios, Preços, Full, Histórico, Diagnóstico, Decisões) — o que mudou foi a
+forma, não a lista. Tráfego e Atendimento seguem fora, registrados acima.
 
-O passo da consequência é o que mais importa: sem ele, um clique em "É virtual"
-apaga da Cobertura o cálculo de dias de 2.306 SKUs sem que ninguém tenha lido o
-que isso significa.
+**O teste acompanhou:** `sku-dashboard.spec.ts` afirmava `<h1>` com o código do
+SKU; passou a afirmar o `<h1>` com o nome **e** o identificador `SKU …` — duas
+asserções onde havia uma.
 
 **Verificação:** `check` 29/29, build 8/8, integração 582/582, **22/22
 Playwright**, `check:waterfalls`, `check:server-actions`, `docs:check`.
 
 ## Próxima fatia segura
 
-**D8 — Dashboard de SKU, a fundação.** O brief pede header persistente + KPIs +
-abas (`speed-bikers-design.md`, seção 17), e a regra especial do usuário fixa a
-ordem: Visão Geral, Vendas, Estoque, Anúncios, Preços, Full, Histórico,
-Diagnóstico, Decisões. A tela já tem abas; o que muda é a composição do
-cabeçalho e a ordem. **Atendimento e Tráfego seguem fora** — diferenças
-intencionais registradas (D-084, D-224).
+**D9 — o conteúdo das abas do SKU, em pares.** A fundação está de pé; agora cada
+par de abas ganha a composição do frame (cartões de indicador com tom por
+estado, painéis lado a lado). Começar por **Visão geral + Vendas**, que são as
+duas mais vistas.

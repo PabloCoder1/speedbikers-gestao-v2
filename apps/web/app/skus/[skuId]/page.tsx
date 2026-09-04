@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { ObjectHeader, type ObjectBadge } from "../../../components/object-header";
 import { Shell } from "../../../components/shell";
 import { StatusPill } from "../../../components/status-pill";
 import { formatDecisionSnapshot, OUTCOME_WINDOWS_DAYS, outcomeWindowLabel } from "../../../lib/decision-format";
@@ -272,7 +273,13 @@ export default async function SkuDashboardPage({
 
   const sku = await supabase
     .from("skus")
-    .select("id, sku, title, organization_id, purchase_cost")
+    .select(
+      // Os campos dos SELOS vêm da MESMA linha — zero ida a mais
+      // (D-185: o custo é o round trip). `brand` é a CATEGORIA do UpSeller
+      // (D-129) e por isso não vira selo de marca; quem é marca é
+      // `supplier_brand`, que é decisão humana.
+      "id, sku, title, organization_id, purchase_cost, is_active, is_discontinued, is_imported, stock_is_virtual, supplier_brand, updated_at",
+    )
     .eq("id", skuId)
     .maybeSingle();
 
@@ -459,52 +466,40 @@ export default async function SkuDashboardPage({
   const decisions = decisionsResult.data ?? [];
   const openActions = openActionsResult.count ?? null;
 
+  /*
+   * Os selos do cabeçalho de entidade. Todos vêm da linha de `skus` já lida —
+   * nenhum é decorativo e nenhum custa ida nova. A ordem é a do frame: estado
+   * primeiro, classificação depois, procedência por último.
+   */
+  const badges: ObjectBadge[] = [
+    sku.data.is_discontinued
+      ? { label: "Descontinuado", tom: "perigo" as const }
+      : sku.data.is_active
+        ? { label: "Ativo", tom: "ok" as const }
+        : { label: "Inativo", tom: "neutro" as const },
+    ...(sku.data.stock_is_virtual ? [{ label: "Estoque virtual", tom: "atencao" as const }] : []),
+    ...(sku.data.supplier_brand !== null ? [{ label: sku.data.supplier_brand, tom: "info" as const }] : []),
+    ...(sku.data.is_imported ? [{ label: "Importado", tom: "neutro" as const }] : []),
+  ];
+
   return (
     <Shell>
-      <p style={{ margin: 0, fontSize: "0.875rem" }}>
-        <Link href="/estoque">← Estoque</Link>
-      </p>
-
-      <h1 style={{ margin: "var(--sb-space-2) 0", fontSize: "1.375rem" }}>{sku.data.sku}</h1>
-
-      {sku.data.title !== null && (
-        <p style={{ margin: "0 0 var(--sb-space-2)", color: "var(--sb-text-soft)" }}>{sku.data.title}</p>
-      )}
-
-      {/*
-        aria-label próprio: os rótulos "Anúncios"/"Estoque"/"Diagnóstico"
-        também existem no menu lateral — o nome distingue os dois navs para
-        leitores de tela e para o Playwright.
-      */}
-      <nav
-        aria-label="Abas do SKU"
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "var(--sb-space-1)",
-          borderBottom: "1px solid var(--sb-border)",
-          margin: "var(--sb-space-2) 0 var(--sb-space-4)",
-        }}
-      >
-        {TAB_KEYS.map((key) => (
-          <Link
-            key={key}
-            href={key === "visao-geral" ? `/skus/${skuId}` : `/skus/${skuId}?aba=${key}`}
-            aria-current={key === tab ? "page" : undefined}
-            style={{
-              padding: "0.5rem 0.75rem",
-              fontSize: "0.875rem",
-              textDecoration: "none",
-              color: key === tab ? "inherit" : "var(--sb-text-soft)",
-              fontWeight: key === tab ? 600 : 400,
-              borderBottom: key === tab ? "2px solid var(--sb-accent-ink)" : "2px solid transparent",
-              marginBottom: "-1px",
-            }}
-          >
-            {TAB_LABELS[key]}
+      <ObjectHeader
+        identificador={`SKU ${sku.data.sku}`}
+        titulo={sku.data.title ?? sku.data.sku}
+        badges={badges}
+        meta={`atualizado em ${formatDateTime(sku.data.updated_at)}`}
+        acoes={
+          <Link href="/estoque" className="sb-button">
+            ← Estoque
           </Link>
-        ))}
-      </nav>
+        }
+        abas={TAB_KEYS.map((key) => ({
+          href: key === "visao-geral" ? `/skus/${skuId}` : `/skus/${skuId}?aba=${key}`,
+          label: TAB_LABELS[key],
+          active: key === tab,
+        }))}
+      >
 
       {tab === "visao-geral" && (
         <>
@@ -1165,6 +1160,7 @@ export default async function SkuDashboardPage({
           )}
         </>
       )}
+      </ObjectHeader>
     </Shell>
   );
 }

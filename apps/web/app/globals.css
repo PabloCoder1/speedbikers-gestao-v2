@@ -1164,6 +1164,114 @@ body {
 }
 
 /*
+ * CABEÇALHO DE ENTIDADE (`Object Header` do `DesignSystem.tsx`).
+ *
+ * O design system o declara como o padrão de SKU, anúncio, pedido de compra e
+ * fornecedor — quatro telas de detalhe que montavam quatro cabeçalhos
+ * diferentes. O corpo da aba fica DENTRO do mesmo cartão, sobre o fundo de
+ * apoio, como no frame `SkuDetailScreen`.
+ */
+.sb-object {
+  background: var(--sb-surface);
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius);
+  box-shadow: var(--sb-shadow-panel);
+  overflow: hidden;
+}
+
+.sb-object-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: var(--sb-space-3);
+  padding: var(--sb-space-4) var(--sb-space-4) var(--sb-space-3);
+}
+
+/* O IDENTIFICADOR, em monoespaçado: é chave, não título. */
+.sb-object-id {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-family: var(--sb-mono);
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--sb-secondary);
+}
+
+.sb-object-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+  color: var(--sb-primary);
+}
+
+.sb-object-badges {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.625rem;
+}
+
+.sb-object-meta {
+  margin-left: 0.25rem;
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-object-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sb-space-2);
+}
+
+/*
+ * Abas com sublinhado — o frame marca a atual com `border-b-2` em navy e
+ * caixa-alta. A borda superior separa as abas do cabeçalho, como no
+ * `DesignSystem.tsx`.
+ */
+.sb-object-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sb-space-3);
+  padding: 0 var(--sb-space-4);
+  border-top: 1px solid var(--sb-border);
+  border-bottom: 1px solid var(--sb-border);
+}
+
+.sb-object-tabs a {
+  padding: 0.75rem 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  color: var(--sb-text-soft);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.sb-object-tabs a:hover {
+  color: var(--sb-secondary);
+}
+
+.sb-object-tabs a[aria-current="page"] {
+  border-bottom-color: var(--sb-primary);
+  color: var(--sb-primary);
+}
+
+.sb-object-body {
+  padding: var(--sb-space-4);
+  background: var(--sb-bg-soft);
+}
+
+/*
  * BARRA DE AÇÕES EM LOTE — o cabeçalho do cartão de curadoria no frame
  * `ProductsCuration`: seleção à esquerda, contagem e ações à direita, sobre o
  * fundo de apoio e separada da tabela por uma borda.
