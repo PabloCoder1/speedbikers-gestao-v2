@@ -5,6 +5,9 @@ import { formatCount } from "../../lib/format";
 import { createClient } from "../../lib/supabase/server";
 
 import { CurationTable, type CurationRow } from "./curation-table";
+import { KpiStrip } from "../../components/kpi-strip";
+import { PageTitle } from "../../components/page-title";
+import { Panel } from "../../components/panel";
 import { currentMembership } from "../../lib/membership";
 
 export const metadata = { title: "Produtos — Speed Bikers Gestão" };
@@ -56,22 +59,6 @@ function lerPagina(bruto: string | undefined): number {
   return Number.isInteger(n) && n >= 1 ? n : 1;
 }
 
-const pill: React.CSSProperties = {
-  display: "inline-block",
-  padding: "0.125rem 0.5rem",
-  borderRadius: "999px",
-  border: "1px solid var(--sb-border)",
-  fontSize: "0.8125rem",
-  textDecoration: "none",
-  color: "var(--sb-text)",
-};
-
-const pillAtiva: React.CSSProperties = {
-  ...pill,
-  background: "var(--sb-accent-ink)",
-  color: "var(--sb-white)",
-  borderColor: "var(--sb-accent-ink)",
-};
 
 /**
  * O gerador de tipos NÃO marca nulidade de `returns table` — declara tudo
@@ -211,154 +198,222 @@ export default async function ProdutosPage({
   const semMarcaTotal = porMarca.find((l) => l.supplier_brand === null)?.total ?? 0;
   const retrato = total?.snapshot_captured_at ?? null;
 
+  const rotuloEstado =
+    atual.estado === "pendente"
+      ? "Não classificados"
+      : atual.estado === "virtual"
+        ? "Virtuais"
+        : atual.estado === "fisico"
+          ? "Físicos"
+          : "Todos os estados";
+
+  const rotuloSinal =
+    atual.sinal === null
+      ? "Qualquer sinal"
+      : atual.sinal === "sentinela"
+        ? "Parece sentinela"
+        : atual.sinal === "sem-sinal"
+          ? "Não parece sentinela"
+          : atual.sinal === "sem-retrato"
+            ? "Sem retrato"
+            : "Divergentes";
+
   return (
     <Shell>
-      <h1 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.375rem" }}>Produtos</h1>
-
-      <p style={{ margin: "0 0 var(--sb-space-2)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
-        Curadoria do catálogo: as duas coisas que só uma pessoa pode decidir. <strong>Estoque virtual</strong> é o
-        SKU cujo saldo no ERP é um sentinela — número alto para o anúncio não pausar, não contagem física (D-127).{" "}
-        <strong>Marca do fornecedor</strong> existe porque a coluna <code>Categorias</code> do UpSeller não é marca
-        (D-129). A sugestão abaixo é medida, e <strong>nunca</strong> aplicada sozinha.
-      </p>
-
-      {/* Tarja de contexto: o retrato do ERP tem data, e a tela é obrigada a
-          dizê-la — sem isso a sugestão parece atual quando pode estar velha. */}
-      <p
-        style={{
-          margin: "0 0 var(--sb-space-3)",
-          padding: "var(--sb-space-2)",
-          borderRadius: "var(--sb-radius)",
-          background: "var(--sb-muted)",
-          fontSize: "0.8125rem",
-        }}
-      >
-        {retrato === null ? (
-          <>Nenhuma planilha de estoque aplicada ainda — sem retrato do ERP, não há sugestão para dar.</>
-        ) : (
+      <PageTitle
+        eyebrow="INTELIGÊNCIA / CURADORIA"
+        title="Curadoria de produtos"
+        subtitle={
           <>
-            Retrato do ERP de <strong>{new Date(retrato).toLocaleDateString("pt-BR")}</strong> ·{" "}
-            <strong>{formatCount(total?.unclassified ?? 0)}</strong> nunca classificados ·{" "}
-            <strong>{formatCount(semMarcaTotal)}</strong> sem marca ·{" "}
-            <strong>{formatCount(total?.virtual_marked ?? 0)}</strong> marcados como virtual
-            {(total?.diverging ?? 0) > 0 && (
-              <>
-                {" · "}
-                <strong style={{ color: "var(--sb-accent-ink)" }}>
-                  {formatCount(total?.diverging ?? 0)} a revisar
-                </strong>{" "}
-                (o ERP mudou debaixo de uma decisão já tomada)
-              </>
-            )}
+            As duas coisas que só uma pessoa pode decidir. <strong>Estoque virtual</strong> é o SKU cujo saldo no
+            ERP é um sentinela — número alto para o anúncio não pausar, não contagem física (D-127).{" "}
+            <strong>Marca do fornecedor</strong> existe porque a coluna <code>Categorias</code> do UpSeller não é
+            marca (D-129). A sugestão é medida, e <strong>nunca</strong> aplicada sozinha.
           </>
-        )}
-      </p>
+        }
+        aside={
+          <>
+            {/*
+              Os filtros viraram a barra de menus do Figma, como em `/vendas`.
+              Todo o recorte continua na URL, nunca em estado React — só assim os
+              Filtros Salvos continuam funcionando e o link de ida de
+              `/cobertura` chega com o recorte certo.
+            */}
+            <details className="sb-menu">
+              <summary className="sb-button">{rotuloEstado} ▾</summary>
+              <div className="sb-menu-panel">
+                {(["pendente", "virtual", "fisico", "todos"] as EstadoChave[]).map((chave) => (
+                  <a
+                    key={chave}
+                    className="sb-menu-item"
+                    aria-current={atual.estado === chave ? "true" : undefined}
+                    href={buildHref(atual, { estado: chave, page: 1 })}
+                  >
+                    {chave === "pendente"
+                      ? "Não classificados"
+                      : chave === "virtual"
+                        ? "Virtuais"
+                        : chave === "fisico"
+                          ? "Físicos"
+                          : "Todos os estados"}
+                  </a>
+                ))}
+              </div>
+            </details>
 
-      <div style={{ display: "flex", gap: "0.375rem", flexWrap: "wrap", marginBottom: "var(--sb-space-2)" }}>
-        {(["pendente", "virtual", "fisico", "todos"] as EstadoChave[]).map((chave) => (
-          <a
-            key={chave}
-            href={buildHref(atual, { estado: chave, page: 1 })}
-            style={atual.estado === chave ? pillAtiva : pill}
-          >
-            {chave === "pendente"
-              ? "Não classificados"
-              : chave === "virtual"
-                ? "Virtuais"
-                : chave === "fisico"
-                  ? "Físicos"
-                  : "Todos"}
-          </a>
-        ))}
+            <details className="sb-menu">
+              <summary className="sb-button">{rotuloSinal} ▾</summary>
+              <div className="sb-menu-panel">
+                <a
+                  className="sb-menu-item"
+                  aria-current={atual.sinal === null ? "true" : undefined}
+                  href={buildHref(atual, { sinal: null, page: 1 })}
+                >
+                  Qualquer sinal
+                </a>
+                {(["sentinela", "sem-sinal", "sem-retrato", "divergente"] as SinalChave[]).map((chave) => (
+                  <a
+                    key={chave}
+                    className="sb-menu-item"
+                    aria-current={atual.sinal === chave ? "true" : undefined}
+                    href={buildHref(atual, { sinal: chave, page: 1 })}
+                  >
+                    {chave === "sentinela"
+                      ? "Parece sentinela"
+                      : chave === "sem-sinal"
+                        ? "Não parece sentinela"
+                        : chave === "sem-retrato"
+                          ? "Sem retrato"
+                          : "Divergentes"}
+                  </a>
+                ))}
+              </div>
+            </details>
 
-        <span style={{ width: "1px", height: "1.5rem", background: "var(--sb-border)" }} />
+            <details className="sb-menu">
+              <summary className="sb-button">{semMarca ? "Sem marca" : "Todas as marcas"} ▾</summary>
+              <div className="sb-menu-panel">
+                <a
+                  className="sb-menu-item"
+                  aria-current={semMarca ? undefined : "true"}
+                  href={buildHref(atual, { marca: null, page: 1 })}
+                >
+                  Todas as marcas
+                </a>
+                <a
+                  className="sb-menu-item"
+                  aria-current={semMarca ? "true" : undefined}
+                  href={buildHref(atual, { marca: "__sem__", page: 1 })}
+                >
+                  Sem marca
+                </a>
+              </div>
+            </details>
 
-        {(["sentinela", "sem-sinal", "sem-retrato", "divergente"] as SinalChave[]).map((chave) => (
-          <a
-            key={chave}
-            href={buildHref(atual, { sinal: atual.sinal === chave ? null : chave, page: 1 })}
-            style={atual.sinal === chave ? pillAtiva : pill}
-          >
-            {chave === "sentinela"
-              ? "Parece sentinela"
-              : chave === "sem-sinal"
-                ? "Não parece"
-                : chave === "sem-retrato"
-                  ? "Sem retrato"
-                  : "Divergentes"}
-          </a>
-        ))}
+            <form method="get" action="/produtos" style={{ display: "flex", gap: "0.375rem" }}>
+              {atual.estado !== "pendente" && <input type="hidden" name="estado" value={atual.estado} />}
+              {atual.sinal !== null && <input type="hidden" name="sinal" value={atual.sinal} />}
+              {atual.marca !== null && <input type="hidden" name="marca" value={atual.marca} />}
+              <input
+                type="search"
+                name="busca"
+                defaultValue={atual.busca}
+                placeholder="SKU ou título"
+                aria-label="Buscar SKU ou título"
+                style={{
+                  height: "2rem",
+                  padding: "0 0.625rem",
+                  borderRadius: "var(--sb-radius-md)",
+                  border: "1px solid var(--sb-border)",
+                  fontSize: "0.6875rem",
+                  minWidth: "12rem",
+                }}
+              />
+              <button type="submit" className="sb-button">
+                Buscar
+              </button>
+            </form>
+          </>
+        }
+      />
 
-        <span style={{ width: "1px", height: "1.5rem", background: "var(--sb-border)" }} />
-
-        <a
-          href={buildHref(atual, { marca: semMarca ? null : "__sem__", page: 1 })}
-          style={semMarca ? pillAtiva : pill}
-        >
-          Sem marca
-        </a>
+      <div className="sb-section-label">
+        <span>Retrato do ERP</span>
+        <span className="sb-section-note">
+          {retrato === null
+            ? "nenhuma planilha de estoque aplicada ainda — sem retrato, não há sugestão para dar"
+            : `capturado em ${new Date(retrato).toLocaleDateString("pt-BR")} — a sugestão vale para este retrato, não para hoje`}
+        </span>
       </div>
 
-      <form method="get" action="/produtos" style={{ marginBottom: "var(--sb-space-3)", display: "flex", gap: "0.375rem" }}>
-        {atual.estado !== "pendente" && <input type="hidden" name="estado" value={atual.estado} />}
-        {atual.sinal !== null && <input type="hidden" name="sinal" value={atual.sinal} />}
-        {atual.marca !== null && <input type="hidden" name="marca" value={atual.marca} />}
-        <input
-          type="search"
-          name="busca"
-          defaultValue={atual.busca}
-          placeholder="SKU ou título"
-          style={{
-            padding: "0.375rem 0.5rem",
-            borderRadius: "var(--sb-radius)",
-            border: "1px solid var(--sb-border)",
-            fontSize: "0.875rem",
-            minWidth: "16rem",
-          }}
-        />
-        <button
-          type="submit"
-          style={{
-            padding: "0.375rem 0.75rem",
-            borderRadius: "var(--sb-radius)",
-            border: "1px solid var(--sb-border)",
-            background: "var(--sb-surface)",
-            fontSize: "0.8125rem",
-            cursor: "pointer",
-          }}
-        >
-          Buscar
-        </button>
-      </form>
+      {/*
+        Os contadores do retrato viram a faixa do Figma. Eles NÃO levam id de
+        métrica: são estados do catálogo, não métricas catalogadas em
+        `metric_definitions`, e apontar para uma definição que não existe é pior
+        do que não apontar.
+      */}
+      <KpiStrip
+        ancora
+        cells={[
+          {
+            label: "Nunca classificados",
+            formula: "SKUs sem decisão de estoque virtual",
+            value: formatCount(total?.unclassified ?? 0),
+            previous: null,
+          },
+          {
+            label: "Sem marca do fornecedor",
+            formula: "SKUs com supplier_brand nulo",
+            value: formatCount(semMarcaTotal),
+            previous: null,
+          },
+          {
+            label: "Marcados como virtual",
+            formula: "SKUs com stock_is_virtual = true",
+            value: formatCount(total?.virtual_marked ?? 0),
+            previous: null,
+          },
+          {
+            label: "A revisar",
+            formula: "o ERP mudou debaixo de uma decisão já tomada",
+            value: formatCount(total?.diverging ?? 0),
+            previous: null,
+          },
+        ]}
+      />
 
-      {rows.length === 0 ? (
-        <p style={{ color: "var(--sb-text-soft)" }}>Nenhum SKU neste recorte.</p>
-      ) : (
-        <>
-          <CurationTable organizationId={organizationId} rows={rows} marcasConhecidas={marcasConhecidas} />
+      <div style={{ marginTop: "var(--sb-space-3)" }}>
+        {rows.length === 0 ? (
+          <Panel title="Catálogo" subtitle="Nenhum SKU neste recorte.">
+            <p style={{ margin: 0, padding: "var(--sb-space-2) var(--sb-space-3) var(--sb-space-3)", color: "var(--sb-text-soft)", fontSize: "0.6875rem" }}>
+              Tire um filtro ou busque outro termo.
+            </p>
+          </Panel>
+        ) : (
+          <>
+            <CurationTable organizationId={organizationId} rows={rows} marcasConhecidas={marcasConhecidas} />
 
-          <p style={{ margin: "var(--sb-space-2) 0 0", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
-            {formatCount(rows.length)} de {formatCount(totalFiltrado)} neste recorte
-            {atual.page > 1 && (
-              <>
-                {" · "}
-                <a href={buildHref(atual, { page: atual.page - 1 })}>Anterior</a>
-              </>
-            )}
-            {atual.page * PAGE_SIZE < totalFiltrado && (
-              <>
-                {" · "}
-                <a href={buildHref(atual, { page: atual.page + 1 })}>Próxima</a>
-              </>
-            )}
-          </p>
-        </>
-      )}
-
-      <p style={{ margin: "var(--sb-space-3) 0 0", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
-        {formatCount(total?.virtual_marked ?? 0)} SKU(s) marcados como estoque virtual — em{" "}
-        <a href="/cobertura">Cobertura</a> a cobertura deles fica em branco de propósito.
-      </p>
+            <p style={{ margin: "var(--sb-space-2) 0 0", fontSize: "0.6875rem", color: "var(--sb-text-soft)" }}>
+              {formatCount(rows.length)} de {formatCount(totalFiltrado)} neste recorte
+              {atual.page > 1 && (
+                <>
+                  {" · "}
+                  <a href={buildHref(atual, { page: atual.page - 1 })}>Anterior</a>
+                </>
+              )}
+              {atual.page * PAGE_SIZE < totalFiltrado && (
+                <>
+                  {" · "}
+                  <a href={buildHref(atual, { page: atual.page + 1 })}>Próxima</a>
+                </>
+              )}
+              {" · "}
+              {formatCount(total?.virtual_marked ?? 0)} marcados como virtual têm a cobertura em branco de
+              propósito em <a href="/cobertura">Cobertura</a>.
+            </p>
+          </>
+        )}
+      </div>
     </Shell>
   );
 }

@@ -166,27 +166,32 @@ export function CurationTable({
   const marcaNormalizada = marca.replace(/\s+/g, " ").trim().toUpperCase();
 
   return (
-    <>
-      <div
-        style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 1,
-          background: "var(--sb-surface)",
-          borderBottom: "1px solid var(--sb-border)",
-          padding: "var(--sb-space-2) 0",
-          marginBottom: "var(--sb-space-2)",
-          display: "flex",
-          gap: "var(--sb-space-2)",
-          alignItems: "center",
-          flexWrap: "wrap",
-        }}
-      >
-        <strong style={{ fontSize: "0.875rem" }}>{formatCount(ids.length)} selecionado(s)</strong>
+    <section className="sb-panel" aria-label="Catálogo e ações em lote">
+      {/*
+        A barra de ações é o CABEÇALHO do cartão, como no frame: seleção à
+        esquerda, contagem e ações à direita, tudo sobre o fundo de apoio. Era
+        uma faixa `sticky` solta acima da tabela — e `sticky` deixou de fazer
+        sentido quando a moldura passou a rolar só o conteúdo (R1): a barra já
+        não sai de vista.
+      */}
+      <div className="sb-bulk-bar">
+        <label className="sb-bulk-select">
+          <input
+            type="checkbox"
+            aria-label="Selecionar esta página"
+            checked={rows.length > 0 && ids.length === rows.length}
+            onChange={(e) => {
+              selecionarPagina(e.target.checked);
+            }}
+          />
+          Selecionar todos
+        </label>
+
+        <span className="sb-bulk-count">{formatCount(ids.length)} selecionado(s)</span>
 
         <button
           type="button"
-          style={botao}
+          className="sb-button"
           disabled={nada || emCurso}
           onClick={() => {
             setPendente({
@@ -203,7 +208,7 @@ export function CurationTable({
 
         <button
           type="button"
-          style={botao}
+          className="sb-button"
           disabled={nada || emCurso}
           onClick={() => {
             setPendente({
@@ -220,7 +225,7 @@ export function CurationTable({
 
         <button
           type="button"
-          style={botao}
+          className="sb-button"
           disabled={nada || emCurso}
           onClick={() => {
             setPendente({
@@ -259,7 +264,7 @@ export function CurationTable({
 
         <button
           type="button"
-          style={botao}
+          className="sb-button"
           disabled={nada || emCurso || marcaNormalizada === ""}
           onClick={() => {
             setPendente({
@@ -276,7 +281,7 @@ export function CurationTable({
 
         <button
           type="button"
-          style={{ ...botao, color: "var(--sb-danger)" }}
+          className="sb-button" style={{ color: "var(--sb-danger)" }}
           disabled={nada || emCurso}
           onClick={() => {
             // window.confirm APENAS aqui: é a única ação que apaga trabalho
@@ -329,7 +334,7 @@ export function CurationTable({
             </button>
             <button
               type="button"
-              style={botao}
+              className="sb-button"
               disabled={emCurso}
               onClick={() => {
                 setPendente(null);
@@ -362,7 +367,7 @@ export function CurationTable({
           {resultado.desfazer.length > 0 && (
             <button
               type="button"
-              style={botao}
+              className="sb-button"
               disabled={emCurso}
               onClick={() => {
                 aplicar(
@@ -382,17 +387,8 @@ export function CurationTable({
         <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "62rem" }}>
           <thead>
             <tr>
-              <th style={th}>
-                <input
-                  type="checkbox"
-                  aria-label="Selecionar esta página"
-                  checked={rows.length > 0 && ids.length === rows.length}
-                  onChange={(e) => {
-                    selecionarPagina(e.target.checked);
-                  }}
-                />
-              </th>
-              <th style={th}>SKU</th>
+              <th style={{ ...th, width: "2.5rem" }} />
+              <th style={th}>Produto / SKU</th>
               {/* NUNCA "Marca": `brand` guarda a CATEGORIA do UpSeller (D-129). */}
               <th style={th}>Categoria (ERP)</th>
               <th style={th}>Marca do fornecedor</th>
@@ -420,10 +416,13 @@ export function CurationTable({
                   />
                 </td>
                 <td style={td}>
-                  <span style={{ fontFamily: "ui-monospace, monospace" }}>{row.sku}</span>
-                  {row.title !== null && (
-                    <div style={{ color: "var(--sb-text-soft)", fontSize: "0.75rem" }}>{row.title}</div>
-                  )}
+                  {/* Título em cima e SKU em monoespaçado embaixo — a célula
+                      "Produto / SKU" do frame. Eram duas colunas; juntá-las
+                      devolve largura para o que a curadoria precisa ler. */}
+                  <b style={{ display: "block", color: "var(--sb-primary)" }}>{row.title ?? "—"}</b>
+                  <span style={{ display: "block", fontFamily: "var(--sb-mono)", fontSize: "0.5625rem", color: "var(--sb-text-soft)" }}>
+                    SKU {row.sku}
+                  </span>
                   {row.decision_diverges_from_signature && (
                     <div style={{ color: "var(--sb-accent-ink)", fontSize: "0.75rem" }}>
                       Revisar: o ERP não parece mais sentinela
@@ -454,6 +453,6 @@ export function CurationTable({
           </tbody>
         </table>
       </div>
-    </>
+    </section>
   );
 }

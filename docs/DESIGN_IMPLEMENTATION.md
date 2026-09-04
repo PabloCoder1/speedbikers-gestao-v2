@@ -300,6 +300,21 @@ branco embutido.
 
 ### Desvios registrados, no formato curto
 
+> **Superfície:** `/produtos` · **Figma:** tabela com 5 colunas (Produto/SKU,
+> Marca, Tipo de Estoque, Anúncios) · **V3 real:** 8 colunas — acrescenta
+> Categoria (ERP), Saldo no ERP, Vendas 90d, Sugestão e Classificação ·
+> **Decisão:** manter as oito · **Motivo:** regra funcional — a decisão de
+> curadoria se toma OLHANDO o sinal (saldo do ERP contra venda de 90 dias); sem
+> essas colunas a tela vira uma lista, e a sugestão medida perde o lastro.
+
+> **Superfície:** `/produtos` · **Figma:** ações em lote esmaecidas e
+> `cursor-not-allowed` · **V3 real:** `disabled` de verdade, e **visíveis** ·
+> **Decisão:** não escondê-las quando nada está selecionado · **Motivo:** um
+> botão que só aparece depois da seleção esconde do operador o que ele PODE
+> fazer antes de decidir selecionar.
+
+
+
 > **Superfície:** moldura · **Figma:** `.brand` com arquivo de logo · **V3
 > real:** símbolo com as iniciais da organização · **Decisão:** usar a variante
 > `.brand-symbol` que o próprio Figma declara · **Motivo:** dado inexistente —
@@ -404,7 +419,7 @@ que ele renderiza.**
 | R3 | Home, refeita pelo frame do Figma | **CONCLUÍDO** |
 | D7 | Produtos | fila |
 
-| D6–D10 | Dashboard de SKU (fundação + 4 pares de abas) | fila |
+| D8–D12 | Dashboard de SKU (fundação + 4 pares de abas) | fila |
 | D11–D12 | Anúncios (listagem, depois dashboard em lotes) | fila |
 | D13 | Republicação (só UX; motor real preservado) | fila |
 | D14–D20 | Estoque, Cobertura/Reposição, Curva ABC, Movimentações, NF-e, Compras, Fornecedores | fila |
@@ -423,48 +438,46 @@ O que resta são superfícies **ainda não migradas** — a fila D7 em diante.
 
 ## Última fatia concluída
 
-**R3 — a Home, refeita a partir do frame `Home`.** Última da auditoria de
-retrabalho. D4 tinha posto a severidade certa (`actions.severity` é coluna real)
-mas manteve a composição herdada: uma grade solta de cartões.
+**D7 — `/produtos`, a curadoria.** Primeira superfície da fila normal sob a
+regra nova, e a primeira em que **o que precisa sobreviver é a ESCRITA**.
 
-| antes | agora, como no frame |
+Composição, do frame `ProductsCuration`:
+
+| antes | agora |
 |---|---|
-| `<h1>` + parágrafo | cabeçalho compacto: sobrancelha com a **data de hoje**, saudação por hora de São Paulo, subtítulo |
-| grade solta de 6 cartões | **painel "Atenção necessária"** com ponto, contador de situações e a grade dentro |
-| cartão com pílula à esquerda | cartão com **borda no tom**, título + selo no topo, número grande, detalhe e CTA |
-| `<h2>` "Últimos 30 dias" | **rótulo de seção** "Indicadores gerais" com a janela à direita |
-| grade de 4 cartões | **faixa de indicadores** com a célula-âncora navy |
-| — | **grade inferior**: gráfico de faturamento diário (área) + atividade recente |
+| `<h1>` + parágrafo | `PageTitle` com sobrancelha "INTELIGÊNCIA / CURADORIA" e a barra de filtros à direita |
+| três linhas de pílulas + busca | três menus `<details>` + busca, na barra |
+| tarja cinza com os contadores em texto corrido | rótulo de seção "Retrato do ERP" + **faixa de indicadores** com quatro contagens |
+| barra `sticky` solta acima da tabela | **cabeçalho do cartão**: "Selecionar todos", contagem e ações, sobre o fundo de apoio |
+| colunas SKU e Título separadas | célula única **"Produto / SKU"** — título em negrito, SKU em monoespaçado embaixo |
 
-**O que o frame pede e não existia, e é dado REAL:** o gráfico de 14 dias vem da
-mesma `get_sales_daily_series` de `/vendas`, e a atividade recente das mesmas
-`notifications` de `/notificacoes`, com `eventTypeLabel`/`severityLabel`
-canônicos. Nada foi inventado.
+**O `sticky` saiu porque deixou de fazer sentido:** desde R1 a moldura rola só o
+conteúdo, então a barra já não sai de vista.
 
-**A saudação só existe se houver a quem saudar.** `profiles.full_name` nulo faz
-o `<h1>` voltar a ser a pergunta do produto — inventar um nome a partir do
-e-mail seria familiaridade sem lastro.
+**A faixa de indicadores estreou sem id de métrica.** As quatro contagens são
+estados do catálogo ("nunca classificados", "a revisar"), não métricas de
+`metric_definitions` — `metricId` virou opcional no componente, porque apontar
+para uma definição que não existe é pior do que não apontar.
 
-**O gráfico ganhou uma variante de área**, com o degradê do frame. É a mesma
-função de `/vendas`, com uma opção: lá o assunto é a variação (linha), aqui é o
-volume (área). Não é um segundo componente de gráfico.
+**A escrita foi exercitada inteira, até o banco.** O novo `e2e/produtos.spec.ts`
+percorre o caminho na ordem que a tela impõe: ação nasce desabilitada →
+selecionar habilita e o contador acompanha → a confirmação mostra a
+**CONSEQUÊNCIA** ("a Cobertura deixará de calcular dias") → confirmar escreve e
+oferece **desfazer**. Verificado também por consulta direta: `stock_is_virtual`
+saiu de nulo para `true`.
 
-**Uma decisão contra o frame, registrada:** o ponto do cabeçalho **não pisca**.
-Animação infinita em elemento de alerta é ruído para quem tem sensibilidade a
-movimento, e `prefers-reduced-motion` resolveria só metade.
+O passo da consequência é o que mais importa: sem ele, um clique em "É virtual"
+apaga da Cobertura o cálculo de dias de 2.306 SKUs sem que ninguém tenha lido o
+que isso significa.
 
-**O teste acompanhou a composição sem afrouxar.** `e2e/home.spec.ts` deixou de
-afirmar um `<h2>` que sumiu e passou a afirmar a região "Atenção necessária", os
-dois painéis da grade inferior e o **id da métrica** na faixa — que sai com dado
-ou sem, e por isso não depende do seed. A guarda negativa continua: nenhum card
-pode dizer "Não foi possível carregar".
-
-**Verificação:** `check` 29/29, build 8/8, integração 582/582, **21/21
+**Verificação:** `check` 29/29, build 8/8, integração 582/582, **22/22
 Playwright**, `check:waterfalls`, `check:server-actions`, `docs:check`.
 
 ## Próxima fatia segura
 
-**D7 — `/produtos`.** Ler o frame primeiro. É a tela da curadoria das duas
-colunas que só uma pessoa pode preencher (`stock_is_virtual`,
-`supplier_brand`), então o que precisa sobreviver é a **escrita** — não só a
-leitura, como em `/vendas` e na Home.
+**D8 — Dashboard de SKU, a fundação.** O brief pede header persistente + KPIs +
+abas (`speed-bikers-design.md`, seção 17), e a regra especial do usuário fixa a
+ordem: Visão Geral, Vendas, Estoque, Anúncios, Preços, Full, Histórico,
+Diagnóstico, Decisões. A tela já tem abas; o que muda é a composição do
+cabeçalho e a ordem. **Atendimento e Tráfego seguem fora** — diferenças
+intencionais registradas (D-084, D-224).

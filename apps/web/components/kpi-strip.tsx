@@ -32,10 +32,18 @@ import type { ReactNode } from "react";
  * dois sai.
  */
 export interface KpiCellData {
-  /** Id catalogado em `metric_definitions` — a rastreabilidade da métrica. */
-  readonly metricId: string;
+  /**
+   * Id catalogado em `metric_definitions` — a rastreabilidade da métrica.
+   *
+   * **Opcional de propósito.** Nem toda faixa mostra métrica de negócio: a
+   * curadoria de `/produtos`, por exemplo, conta ESTADOS do catálogo ("não
+   * classificados", "a revisar"), que não estão no catálogo de métricas. Pôr um
+   * id ali seria apontar para uma definição que não existe — pior do que não
+   * apontar. Sem id, a linha não sai.
+   */
+  readonly metricId?: string;
   readonly label: string;
-  /** Fórmula canônica, no `title` da célula. */
+  /** Fórmula canônica ou explicação da contagem, no `title` da célula. */
   readonly formula: string;
   readonly value: string;
   /** `null` quando a comparação não se aplica (a seção "hoje" não compara). */
@@ -54,7 +62,7 @@ export function KpiStrip({
   return (
     <div className={ancora ? "sb-kpi-strip sb-kpi-strip-ancora" : "sb-kpi-strip"}>
       {cells.map((cell) => (
-        <div className="sb-kpi" key={cell.metricId} title={cell.formula}>
+        <div className="sb-kpi" key={cell.metricId ?? cell.label} title={cell.formula}>
           <span className="sb-kpi-label">{cell.label}</span>
           <strong className="sb-kpi-value">{cell.value}</strong>
 
@@ -64,7 +72,7 @@ export function KpiStrip({
 
           {cell.ressalva !== undefined && <span className="sb-kpi-note">{cell.ressalva}</span>}
 
-          <span className="sb-kpi-id">{cell.metricId}</span>
+          {cell.metricId !== undefined && <span className="sb-kpi-id">{cell.metricId}</span>}
         </div>
       ))}
     </div>

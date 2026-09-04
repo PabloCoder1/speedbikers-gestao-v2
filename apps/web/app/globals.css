@@ -1164,6 +1164,43 @@ body {
 }
 
 /*
+ * BARRA DE AÇÕES EM LOTE — o cabeçalho do cartão de curadoria no frame
+ * `ProductsCuration`: seleção à esquerda, contagem e ações à direita, sobre o
+ * fundo de apoio e separada da tabela por uma borda.
+ *
+ * No frame as ações ficam desabilitadas e esmaecidas enquanto nada está
+ * selecionado. Aqui elas continuam `disabled` de verdade (o componente já
+ * fazia), e o esmaecimento é do navegador — o que não se faz é escondê-las: um
+ * botão que aparece só depois da seleção esconde do operador o que ele PODE
+ * fazer antes de decidir selecionar.
+ */
+.sb-bulk-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sb-space-2);
+  padding: var(--sb-space-3);
+  background: var(--sb-bg-soft);
+  border-bottom: 1px solid var(--sb-border);
+}
+
+.sb-bulk-select {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--sb-primary);
+  cursor: pointer;
+}
+
+.sb-bulk-count {
+  margin-right: auto;
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+}
+
+/*
  * PÍLULA DE ESTADO (`.status` do Figma).
  *
  * O export declara `font: 500 9px "DM Mono"; text-transform: uppercase;
