@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 
 import { Shell } from "../../components/shell";
-import { toneColor } from "../../components/state-pill";
+import { StatePill } from "../../components/state-pill";
+import { TOM, tomDeStatus } from "../../components/tone";
 import { formatCount, formatDateTime } from "../../lib/format";
 import { mlAccountStatusLabel, statusTone } from "../../lib/labels";
 import { sanitizeErrorText } from "../../lib/sanitize";
@@ -186,14 +187,14 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
             }}
           >
             {accounts.map((account) => {
-              const tone = { color: toneColor(statusTone(account.status)), label: mlAccountStatusLabel(account.status) };
+              const tone = { tom: tomDeStatus(statusTone(account.status)), label: mlAccountStatusLabel(account.status) };
 
               return (
                 <li
                   key={account.id}
                   style={{
                     border: "1px solid var(--sb-border)",
-                    borderLeft: `3px solid ${tone.color}`,
+                    borderLeft: `3px solid ${TOM[tone.tom].color}`,
                     borderRadius: "var(--sb-radius)",
                     padding: "0.375rem 0.75rem",
                     fontSize: "0.8125rem",
@@ -203,7 +204,7 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
                   }}
                 >
                   <strong>{account.label}</strong>
-                  <span style={{ color: tone.color, fontWeight: 600 }}>{tone.label}</span>
+                  <StatePill tone={tone} />
                   {account.status === "ERROR" && account.last_error !== null && (
                     <span style={{ color: "var(--sb-danger)" }}>{sanitizeErrorText(account.last_error)}</span>
                   )}

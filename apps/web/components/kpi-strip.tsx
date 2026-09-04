@@ -75,8 +75,16 @@ export function KpiStrip({
   cells: readonly KpiCellData[];
   ancora?: boolean;
 }): ReactNode {
+  // Colunas FIXAS, como `.kpi-strip{repeat(5,1fr)}` do export: a faixa declara
+  // quantas células tem e o CSS nunca deixa uma órfã. Faixas de 5 ou mais
+  // descem a 3 colunas em 1150px (o degrau do `.ops-metrics`); todas descem a
+  // 2 em 850px.
+  const classes = ["sb-kpi-strip", ancora ? "sb-kpi-strip-ancora" : null, cells.length >= 5 ? "sb-kpi-strip-larga" : null]
+    .filter((c): c is string => c !== null)
+    .join(" ");
+
   return (
-    <div className={ancora ? "sb-kpi-strip sb-kpi-strip-ancora" : "sb-kpi-strip"}>
+    <div className={classes} style={{ ["--sb-kpi-cols" as string]: String(cells.length) }}>
       {cells.map((cell) => (
         <div className="sb-kpi" key={cell.metricId ?? cell.label} title={cell.formula}>
           <span className="sb-kpi-label">{cell.label}</span>

@@ -114,6 +114,15 @@
    * brief proíbe "sombras fortes", então é uma só, e é fraca.
    */
   --sb-shadow-panel: 0 6px 18px rgba(15, 17, 88, 0.03);
+  /* Camada flutuante — as sombras do export sao todas tintadas de navy
+     (`#0f115833`, `#0e125908`), nunca pretas. */
+  --sb-shadow-pop: 0 8px 20px rgba(15, 17, 88, 0.12);
+  --sb-shadow-float: 0 18px 50px rgba(15, 17, 88, 0.2);
+  /* Cabecalho de tabela: o bloco "CORRECOES DE ACESSIBILIDADE" do export
+     sobrescreve o th base (9px, #92909a) com 11px/700 #4a4d65 sobre #f0f1f5
+     — foi acrescentado de proposito, para legibilidade, e e a ultima palavra
+     do designer. 8,2:1 medido. */
+  --sb-table-head-ink: #4a4d65;
 
   /* A escala de raio do Figma (`--radius-sm/md/lg/xl` = 4/6/8/12px). D1 deixou
      `sm` de fora porque nenhum componente o usava; a pílula de estado passou a
@@ -155,7 +164,7 @@
   --sb-bg-soft: #f8f9fc;
 
   /* Fundo do cabeçalho de tabela — o `.table-wrap th` do Figma. */
-  --sb-table-head: #faf9fb;
+  --sb-table-head: #f0f1f5;
   /* Corpo e fio da `.sb-table` (D-242): #464352 dá 8,9:1 sobre branco; o fio
      é mais claro que `--sb-border` de propósito — ver o comentário da classe. */
   --sb-table-ink: #464352;
@@ -239,7 +248,9 @@ body {
   flex: 1;
   min-width: 0;
   overflow: auto;
-  padding: var(--sb-space-4);
+  /* `.content{padding:31px 36px 80px}` — o 80px inferior existe para a
+     barra de selecao/flutuante nao cobrir a ultima linha. */
+  padding: 31px 36px 80px;
   background: var(--sb-surface);
 }
 
@@ -602,39 +613,64 @@ body {
     width: 215px;
   }
 
+  .sb-content {
+    padding: 25px;
+  }
+
   .sb-topbar {
     padding: 0 1.125rem;
   }
 }
 
-@media (max-width: 900px) {
-  .sb-shell {
-    flex-direction: column;
-    height: auto;
-    min-height: 100dvh;
-    overflow: visible;
-  }
-
+@media (max-width: 850px) {
+  /*
+    O TRILHO de 58px do Figma (`@media(max-width:850px){.sidebar{width:58px}
+    ...}`): a sidebar continua AO LADO do conteudo, so o item ativo fica —
+    centralizado, so o glifo —, somem os rotulos de grupo, os outros itens,
+    o rodape e o texto da marca e do perfil. Era um empilhamento (sidebar
+    virava faixa de 45vh no topo) — a solucao antiga, registrada como adiada
+    porque "o app nao tem icone"; os glifos existem desde R1 em nav.tsx.
+  */
   .sb-sidebar {
-    width: 100%;
-    max-height: 45vh;
-    border-right: 0;
-    border-bottom: 1px solid var(--sb-primary-border);
+    width: 58px;
   }
 
-  .sb-workspace,
-  .sb-content {
-    overflow: visible;
+  .sb-brand {
+    padding: 0 0.5rem;
+    justify-content: center;
+  }
+
+  .sb-brand > :not(.sb-brand-symbol),
+  .sb-nav-label,
+  .sb-nav-link:not([aria-current="page"]),
+  .sb-nav-count,
+  .sb-sidebar-bottom,
+  .sb-profile > :not(.sb-avatar) {
+    display: none;
+  }
+
+  .sb-nav-group-menu {
+    padding: 0 0.375rem;
+  }
+
+  .sb-nav-link[aria-current="page"] {
+    /* `font-size:0` esconde o rotulo (texto solto) e o glifo volta a 14px —
+       o mesmo truque do export para `.nav-item.selected`. */
+    font-size: 0;
+    justify-content: center;
+    padding: 0.625rem 0;
+  }
+
+  .sb-nav-link[aria-current="page"] .sb-nav-icon {
+    font-size: 0.875rem;
   }
 
   .sb-topbar {
-    height: auto;
-    flex-wrap: wrap;
-    padding: var(--sb-space-2) var(--sb-space-3);
+    padding: 0 1.125rem;
   }
 
-  .sb-search {
-    width: 100%;
+  .sb-content {
+    padding: 20px;
   }
 }
 
@@ -767,12 +803,32 @@ body {
  */
 .sb-kpi-strip {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
+  /*
+    Colunas FIXAS, como `.kpi-strip{repeat(5,1fr)}` e `.ops-metrics{repeat(6,1fr)}`
+    do export: o `auto-fit` anterior quebrava 5 celulas em 4 + 1 orfa a 1100px.
+    O componente declara `--sb-kpi-cols` com o numero de celulas; os degraus
+    de 1150 e 850 sao os do Figma.
+  */
+  grid-template-columns: repeat(var(--sb-kpi-cols, 5), 1fr);
   gap: 1px;
   background: var(--sb-border);
   border: 1px solid var(--sb-border);
   border-radius: var(--sb-radius);
+  box-shadow: var(--sb-shadow-panel);
   overflow: hidden;
+}
+
+@media (max-width: 1150px) {
+  .sb-kpi-strip-larga {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 850px) {
+  .sb-kpi-strip,
+  .sb-kpi-strip-larga {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 .sb-kpi {
@@ -786,7 +842,8 @@ body {
 
 /* A métrica-âncora, como no Figma. Medido: branco 16,92x, rótulo 9,16x. */
 .sb-kpi-strip-ancora .sb-kpi:first-child {
-  background: var(--sb-primary);
+  /* `linear-gradient(135deg,#0E1259,#3F44A6)` do export, nos dois tokens. */
+  background: linear-gradient(135deg, var(--sb-primary), var(--sb-secondary));
 }
 
 .sb-kpi-label,
@@ -853,6 +910,88 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.4);
 }
 
+/*
+  Estado vazio de painel — o unico idioma de vazio do export e o bloco
+  centralizado com respiro (`py-20 text-center text-muted`). Era um <p> cinza
+  alinhado a esquerda, colado a ressalva, em cada aba.
+*/
+.sb-empty {
+  margin: 0;
+  padding: var(--sb-space-6) var(--sb-space-3);
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--sb-text-soft);
+}
+
+/*
+  Campo de formulario (`.input`/`input` do export: 32px, raio 5, borda
+  `--line`, 11px). Havia 81 inputs desenhados a mao, cada um com o seu
+  tamanho; esta e a forma unica.
+*/
+.sb-input {
+  height: 2rem;
+  padding: 0 0.625rem;
+  border: 1px solid var(--sb-border);
+  border-radius: 5px;
+  background: var(--sb-surface);
+  font: inherit;
+  font-size: 0.6875rem;
+  color: var(--sb-text);
+}
+
+.sb-input:focus {
+  outline: 2px solid var(--sb-secondary);
+  outline-offset: 1px;
+}
+
+.sb-input::placeholder {
+  color: var(--sb-muted-ink);
+}
+
+/*
+  Variante PEQUENA dos controles dentro de cartao (`h-7 text-[10px]` no frame
+  da curadoria): 28px, 10px. A de 32px e a da barra do cabecalho da pagina.
+*/
+.sb-button-sm {
+  height: 1.75rem;
+  padding: 0 0.5rem;
+  font-size: 0.625rem;
+}
+
+.sb-input-sm {
+  height: 1.75rem;
+  font-size: 0.625rem;
+}
+
+/* As acoes da barra de lote, agrupadas a direita como no frame. */
+.sb-bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+/* Menu com BOTOES (escolha de estado do cliente) usa o mesmo item dos menus
+   de filtro com links. */
+button.sb-menu-item {
+  width: 100%;
+  border: 0;
+  background: none;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+button.sb-menu-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+summary[aria-disabled="true"] {
+  opacity: 0.5;
+}
+
 /* --- botões (`.button`, `.button ghost`, `.button primary`) --- */
 .sb-button {
   display: inline-flex;
@@ -909,6 +1048,14 @@ body {
   display: none;
 }
 
+/* O chevron do `.button.ghost` do export (`<Icon>⌄</Icon>`): um span a 60%. */
+.sb-menu-chevron {
+  margin-left: 0.125rem;
+  opacity: 0.6;
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
 .sb-menu-panel {
   position: absolute;
   top: calc(100% + 0.375rem);
@@ -921,7 +1068,7 @@ body {
   background: var(--sb-surface);
   border: 1px solid var(--sb-border);
   border-radius: var(--sb-radius);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--sb-shadow-pop);
 }
 
 .sb-menu-item {
@@ -1081,8 +1228,52 @@ body {
 
 .sb-attention-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  /* `lg:grid-cols-4` no frame; a regra CSS do export desce a 3 em 1150 e a 2
+     em 850. Colunas fixas para nunca sobrar cartao orfao. */
+  grid-template-columns: repeat(4, 1fr);
   gap: var(--sb-space-3);
+}
+
+@media (max-width: 1150px) {
+  .sb-attention-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 850px) {
+  .sb-attention-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/*
+  A linha dos medidos-e-limpos. O frame so desenha as situacoes DETECTADAS
+  (`attention.map(...)` sobre 4 itens) e conta "N situacoes detectadas"; os
+  contadores zerados nao viram cartao — viram esta linha compacta, para o
+  numero nao sumir (medido e limpo e diferente de nao medido, D-067) sem
+  ocupar a grade.
+*/
+.sb-attention-clean {
+  margin: var(--sb-space-3) 0 0;
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem 0.75rem;
+  align-items: center;
+}
+
+.sb-attention-clean a {
+  color: var(--sb-text);
+  text-decoration: none;
+}
+
+.sb-attention-clean a:hover {
+  text-decoration: underline;
+}
+
+.sb-attention-clean a b {
+  font-weight: 700;
 }
 
 /*
@@ -1122,13 +1313,6 @@ body {
   gap: var(--sb-space-2);
 }
 
-.sb-attention-value {
-  font-size: 1.375rem;
-  font-weight: 700;
-  line-height: 1.1;
-  letter-spacing: -0.025em;
-}
-
 .sb-attention-card p {
   flex: 1;
   margin: 0;
@@ -1138,10 +1322,42 @@ body {
 }
 
 .sb-attention-cta {
-  margin-top: 0.375rem;
+  /* `<Button variant=primary|ghost className="w-full text-xs">` no frame:
+     e um botao, nao um link-texto. Empurrado para o rodape do cartao. */
+  margin-top: auto;
+  padding-top: var(--sb-space-2);
+}
+
+.sb-attention-cta > span {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 2rem;
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius-md);
+  background: var(--sb-surface);
   font-size: 0.6875rem;
   font-weight: 600;
-  color: var(--sb-secondary);
+  color: var(--sb-primary);
+}
+
+.sb-attention-card-critico .sb-attention-cta > span {
+  background: var(--sb-primary);
+  border-color: var(--sb-primary);
+  color: var(--sb-white);
+}
+
+.sb-attention-card:hover .sb-attention-cta > span {
+  border-color: var(--sb-secondary);
+}
+
+/* A frase de impacto do frame (`<b class="text-danger">R$ 18.720 em vendas em
+   risco</b>`): o numero passa a ser lido dentro de uma frase, no tom. */
+.sb-attention-impact {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--sb-tone-ink, var(--sb-text));
 }
 
 /* Grade inferior: gráfico largo + coluna de atividade (`.lower-grid`) */
@@ -1152,7 +1368,7 @@ body {
   margin-top: 0.875rem;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 850px) {
   .sb-lower-grid {
     grid-template-columns: 1fr;
   }
@@ -1212,8 +1428,15 @@ body {
  */
 .sb-stat-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  /* `grid-cols-2 md:grid-cols-4` no frame do SKU: nunca 3 + 1 orfao. */
+  grid-template-columns: repeat(var(--sb-stat-cols, 4), 1fr);
   gap: var(--sb-space-3);
+}
+
+@media (max-width: 850px) {
+  .sb-stat-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 .sb-stat {
@@ -1345,8 +1568,12 @@ body {
  */
 .sb-object-tabs {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--sb-space-3);
+  /* `flex gap-6 overflow-x-auto border-b` no frame: as abas ROLAM, nunca
+     quebram em duas linhas. */
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  gap: 1.5rem;
   padding: 0 var(--sb-space-4);
   border-top: 1px solid var(--sb-border);
   border-bottom: 1px solid var(--sb-border);
@@ -1357,7 +1584,7 @@ body {
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
   color: var(--sb-text-soft);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -1488,9 +1715,10 @@ body {
  */
 th {
   font-family: var(--sb-mono);
-  font-weight: 500;
-  letter-spacing: 0.04em;
+  font-weight: 700;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
+  color: var(--sb-table-head-ink);
   background: var(--sb-table-head);
 }
 
@@ -1549,9 +1777,26 @@ table {
 
 .sb-table th {
   padding: 0.5625rem 0.75rem;
-  font-size: 0.5625rem;
-  color: var(--sb-muted-ink);
+  font-size: 0.6875rem;
+  color: var(--sb-table-head-ink);
   border-top: 1px solid var(--sb-border);
+}
+
+/* Identificador em celula (`.mono` do export): DM Mono 10px violeta, sem
+   sublinhado — o sublinhado so no hover, como `.sb-entity`. */
+.sb-table .sb-mono {
+  font-family: var(--sb-mono);
+  font-size: 0.625rem;
+  color: var(--sb-secondary);
+}
+
+.sb-table .sb-mono a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.sb-table .sb-mono a:hover {
+  text-decoration: underline;
 }
 
 .sb-table td {

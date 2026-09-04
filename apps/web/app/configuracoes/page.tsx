@@ -37,11 +37,11 @@ export const dynamic = "force-dynamic";
  */
 
 const STATE_TONE: Record<SettingState, PillTone> = {
-  configurado: { color: "var(--sb-secondary)", label: "Configurado" },
-  parcial: { color: "var(--sb-accent-ink)", label: "Parcial" },
-  nao_configurado: { color: "var(--sb-muted-ink)", label: "Não configurado" },
-  nao_editavel: { color: "var(--sb-text-soft)", label: "Não editável aqui" },
-  indisponivel: { color: "var(--sb-danger)", label: "Indisponível" },
+  configurado: { tom: "ok", label: "Configurado" },
+  parcial: { tom: "atencao", label: "Parcial" },
+  nao_configurado: { tom: "neutro", label: "Não configurado" },
+  nao_editavel: { tom: "neutro", label: "Não editável aqui" },
+  indisponivel: { tom: "perigo", label: "Indisponível" },
 };
 
 export default async function ConfiguracoesPage(): Promise<ReactNode> {

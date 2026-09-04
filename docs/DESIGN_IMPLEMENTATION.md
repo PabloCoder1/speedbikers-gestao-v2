@@ -264,17 +264,20 @@ branco embutido.
 
 ## Componentes reais reutilizáveis
 
-| Componente | Caminho | Situação |
+| Componente | Caminho | Situação (auditoria de 2026-09-04) |
 |---|---|---|
-| Shell (sidebar + grupos) | `components/shell.tsx` | adaptar em D2 |
-| `StatusPill` (fundo por tom) | `components/status-pill.tsx` | ≈ Badge do Figma |
-| `StatePill` (contorno) | `components/state-pill.tsx` | ≈ Badge, variante |
-| `TrendBadge` | `components/trend-badge.tsx` | alinhado |
-| `FilterPill` | `components/filter-pill.tsx` | ≈ filtros do Figma |
-| `SavedFilters` | `components/saved-filters.tsx` | alinhado |
-| `CommandPalette` | `components/command-palette.tsx` | alinhado |
-| `ObjectHeader` | `components/object-header.tsx` | **novo em D8** — o padrão de SKU, anúncio, pedido e fornecedor |
-| `th`/`td`/`tdNumber`/`cardStyle` | `components/table-styles.ts` | **2 telas importam; 3 têm cópia nomeada; o resto é estilo inline ad-hoc** |
+| Shell (sidebar + grupos + topbar) | `components/shell.tsx`, `nav.tsx` | **camada nova**, refeita pelo frame; trilho de 58px em ≤850 desde A1 |
+| `PageTitle`, `Panel`, `KpiStrip`, `ObjectHeader` | `components/*.tsx` | **camada nova** — `.page-title`, `.panel`, `.kpi-strip`/`.ops-metrics`, Object Header do Figma |
+| `FilterMenu` | `components/filter-menu.tsx` | **novo em A1** — o `.button.ghost ⌄` com dropdown; substituiu dez cópias de `<details class="sb-menu">` |
+| `tone.ts` (`TOM`, `tomDeStatus`) | `components/tone.ts` | **dono único** dos cinco tons do `.status`; `StatusPill`, `StatePill`, `KpiStrip`, `ObjectHeader` e a Home leem daqui (eram cinco mapas) |
+| `StatusPill` (código do banco → tom) | `components/status-pill.tsx` | alinhado — `.sb-status` + `tone.ts` |
+| `StatePill` (vocabulário da tela → tom) | `components/state-pill.tsx` | alinhado — era cápsula de contorno; virou o mesmo chip |
+| `.sb-table`, `.sb-input`, `.sb-empty`, `.sb-menu` | `app/globals.css` | as formas únicas de tabela, campo, vazio e menu; **adotar ao migrar cada tela** |
+| `TrendBadge` | `components/trend-badge.tsx` | alinhado (texto, não chip) |
+| `SavedFilters` | `components/saved-filters.tsx` | funcional, **visual legado** (pílulas 999px, `window.prompt`) — ADAPT quando `.sb-modal` nascer |
+| `CommandPalette` | `components/command-palette.tsx` | gatilho alinhado; **caixa aberta legada** (inline, sem `.command`) — ADAPT em A2 |
+| `FilterPill` | `components/filter-pill.tsx` | **legado** — 8 telas não migradas ainda o usam; some quando a fila D13+ fechar |
+| `th`/`td`/`tdNumber`/`cardStyle` | `components/table-styles.ts` | **legado** — 2 telas não migradas (`/integracoes`, `/configuracoes`); MERGE em `.sb-table` ao migrá-las. **Nenhuma tela migrada tem mais const inline de tabela.** |
 
 **Não criar `Card`, `CardV2`, `FigmaCard`.** Adaptar o que existe.
 
@@ -285,19 +288,24 @@ branco embutido.
 | Figma | Motivo | Fonte |
 |---|---|---|
 | "Margem" como tela própria | margem é seção de `/vendas`, e sai NULL sob recorte de marca | D-166, D-237 |
-| Ads / ROAS / investimento | sem integração Mercado Ads aprovada | ROADMAP (C) |
-| Seis telas de Atendimento (Perguntas, Mensagens, Reclamações, Devoluções, Mediações) | devem ser **filtros da mesma Caixa de Entrada**, não seis sistemas | brief D28 do usuário |
+| Ads / ROAS / investimento; tela "Insights" | sem integração Mercado Ads aprovada; impressões não existem | ROADMAP (C) |
+| Seis telas de Atendimento (Perguntas, Mensagens, Reclamações, Devoluções, Mediações) | devem ser **filtros da mesma Caixa de Entrada**, não seis sistemas — nem como itens de menu | brief D28 do usuário |
 | Aba Atendimento no SKU | não existe vínculo confiável SKU → `support_case` | D-084, D-224 |
 | Aba Tráfego no SKU | visita é medida por `item_id`; o dono é o Dashboard do Anúncio | D-224 |
 | "Enviar X unidades ao Full" | sem política logística defensável | auditoria corretiva do próprio Figma, item 6 |
 | Receita líquida | nome vetado; existe margem operacional observada | METRICS 5C.1 |
-| Variação percentual entre períodos na Home | `variacao_percentual_periodo` está pendente em METRICS 5.4, e D-023 proíbe número sintetizado sem `metric_definitions` — a tela mostra os dois valores lado a lado | D-023 |
-| "Faturamento hoje" na Home | `/vendas` já tem o bloco "Hoje" com o aviso de dia parcial; repetir seria dois donos do mesmo dado com o mesmo aviso | D-224 |
-| Seletor de organização na sidebar | não há segunda organização, e `lib/membership.ts` **nomeia** esse estado em vez de escolher uma | D-232 |
-| Central de Ajuda | não existe | — |
-| Menu de perfil | esconderia o "Sair" atrás de um dropdown que não foi desenhado | — |
-| Botão flutuante do Copiloto | Copiloto é rota, e está no menu | — |
-| Trilho de 58px só com ícones | o app não tem **nenhum** ícone (medido: sem `<img>`, sem SVG, sem `public/`) — um trilho sem ícone é uma coluna vazia | — |
+| Variação percentual entre períodos | `variacao_percentual_periodo` está pendente em METRICS 5.4, e D-023 proíbe número sintetizado sem `metric_definitions` — a célula mostra os dois valores | D-023 |
+| "Faturamento hoje" na Home | `/vendas` já tem o bloco "Hoje" com o aviso de dia parcial; repetir seria dois donos do mesmo dado | D-224 |
+| "Estoque Full baixo — cobertura < 7 dias" na Home | cobertura de Full não é calculada (só a local, `get_stock_coverage`); número inventado | D-067 |
+| **Seletor global de conta** no rodapé da sidebar (modal "Definir escopo da aplicação") | a V3 recorta por conta **tela a tela** (menu "Todas as contas ▾" em `/vendas`, `/anuncios`…), com o recorte na URL — compartilhável e com voltar; um escopo global em cookie quebraria isso. O bloco mostra a organização e as contas conectadas (dado real) e leva a `/contas`. **O motivo anterior ("não há segunda organização") respondia a uma pergunta que o frame não faz** — corrigido na auditoria | A1 |
+| Central de Ajuda | não existe conteúdo de ajuda | — |
+| Menu de perfil (dropdown) | esconderia o "Sair" atrás de um dropdown que não foi desenhado | — |
+| Botão flutuante do Copiloto (drawer contextual) | Copiloto é rota, e está no menu — um segundo Copiloto é escopo vetado | — |
+| Logo em imagem na marca | o export traz uma captura de tela, não o asset da marca; sem `public/` nem logo por organização. Entra quando existir asset oficial | — |
+| Botão de recolher a sidebar (`.collapse`) | o trilho de 58px existe em ≤850 (A1); recolher por clique em tela larga é estado de cliente sem frame de "recolhida" — fila A2 | — |
+| Drawer "Inspeção Rápida" (produtos) e `MlbDetailDrawer` (anúncios) | padrão válido, mas caminho NOVO (client component + `.sb-drawer`), não substituição de apresentação antiga; as linhas levam ao dashboard completo, que é o destino que os drawers apontam | escopo |
+| Célula "Com queda" e coluna "Saúde" em Anúncios | sem detecção de anomalia por anúncio e sem definição canônica de "saúde" | D-023 |
+| Ação "Novo anúncio" | a V3 não cria anúncio no Mercado Livre — escrita no ML é ato com aprovação humana | escopo e segurança |
 
 ### Desvios registrados, no formato curto
 
@@ -315,21 +323,85 @@ branco embutido.
 > fechar.
 
 > **Superfície:** `/anuncios`, faixa de resumo · **Figma:** seis células —
-> Ativos, Pausados, Sem estoque, **No Full**, Sem vínculo, **Com queda** ·
-> **V3 real:** mede quatro; "No Full" é fato de **SKU** (`listings` não tem
-> coluna de logística; o Full vive em `fulfillment_stock_snapshots`, grão de
-> SKU) e "Com queda" não tem detecção por anúncio nem entrada em
-> `metric_definitions` · **Decisão:** cinco células — **Total** na âncora mais as
-> quatro medidas; as duas ausentes ficam de fora · **Motivo:** métrica canônica
-> (D-023) e grão — contar anúncio "no Full" trocaria o grão no meio da faixa, e
-> "queda" sem definição seria número sintetizado.
+> Ativos, Pausados, Sem estoque, No Full, Sem vínculo, **Com queda** ·
+> **V3 real:** mede **cinco** — "No Full" entrou em A1 (D-243): o snapshot de
+> Full (`fulfillment_stock_snapshots`) carrega `item_id`, o MLB, e a RPC passou
+> a devolver `full_quantity` por anúncio (último snapshot por `inventory_id` nos
+> últimos 3 dias — a definição canônica de D-173/D-204) e a filtrar por `p_full`. **O desvio
+> anterior dizia que Full era grão de SKU — estava errado**, e a auditoria de
+> fidelidade o pegou conferindo o schema. "Com queda" continua de fora: não há
+> detecção por anúncio nem entrada em `metric_definitions` · **Decisão:** seis
+> células — Total na âncora, Ativos, Pausados, Sem estoque, No Full, Sem vínculo ·
+> **Motivo:** métrica canônica (D-023) para "queda"; Full agora é medido no grão
+> certo.
 
 > **Superfície:** `/anuncios`, tabela · **Figma:** colunas **Full** e **Saúde**
-> ("Em risco", "Saudável") · **V3 real:** Full é de SKU, e "saúde" de anúncio
-> não existe como veredito · **Decisão:** as duas colunas saem; entram Visitas e
-> Obs., que o frame não tem e a V3 mede · **Motivo:** regra funcional — a
-> conversão só é honesta ao lado dos dias observados (D-123), e um selo "Em
-> risco" sem regra por trás é o oposto do que esta frente persegue.
+> ("Em risco", "Saudável") · **V3 real:** Full por anúncio existe (D-243);
+> "saúde" de anúncio não existe como veredito · **Decisão:** a coluna Full entra
+> (NULA sem snapshot vira "—", nunca "0"); "Saúde" sai; entram Visitas e Obs., que
+> o frame não tem e a V3 mede; "Sincronizado em" vira `title` da célula do
+> anúncio · **Motivo:** regra funcional — a conversão só é honesta ao lado dos
+> dias observados (D-123), e um selo "Em risco" sem regra por trás é o oposto do
+> que esta frente persegue.
+
+> **Superfície:** `/anuncios`, filtros · **Figma:** o cabeçalho tem "Filtros ⌄" e
+> a ação primária; **Status** e **Com estoque** ficam na barra do painel ·
+> **V3 real:** tinha seis controles no cabeçalho · **Decisão:** cabeçalho com
+> Conta, Vínculo e busca; barra do painel com Estado, Estoque, Full e a
+> paginação · **Motivo:** composição do frame — o cabeçalho recorta *o que se
+> olha*, a barra recorta *o estado da tabela*.
+
+> **Superfície:** `/vendas`, blocos · **Figma:** três blocos — faixa, gráfico,
+> tabela "Produtos que mais contribuíram" · **V3 real:** tem mais três (Hoje,
+> métricas secundárias, Margem), todos com dado real e dono · **Decisão:** os
+> três do frame primeiro, na ordem do frame, com a faixa âncora na composição dele
+> (Receita bruta · Taxas ML · Unidades · Taxa de cancelamento · Pedidos); os blocos
+> reais vêm DEPOIS, e "Cancelamentos e taxas" virou a faixa secundária "Mais
+> sobre o período" · **Motivo:** conteúdo real preservado, apresentação do
+> Figma. A tabela que faltava ganhou RPC própria (`get_sales_top_skus`, D-244).
+
+> **Superfície:** `/vendas` e Home, estado "nunca calculado" · **Figma:** faixa e
+> gráfico incondicionais · **V3 real:** trocava a composição inteira por um
+> parágrafo · **Decisão:** a composição fica; as células mostram "—" com a
+> ressalva e o painel do gráfico mostra o vazio honesto · **Motivo:** D-023
+> continua valendo (nada vira zero) e a tela passa a ser reconhecível em qualquer
+> estado.
+
+> **Superfície:** `/produtos` · **Figma:** cabeçalho → cartão, sem faixa no meio;
+> barra de lote com "Selecionar Todos", contagem e DUAS ações agrupadas; tabela
+> de 5 colunas com "Anúncios" · **V3 real:** tinha uma faixa "Retrato do ERP"
+> inventada, sete controles na barra e nenhuma coluna de anúncios · **Decisão:**
+> faixa removida (as contagens moram no cabeçalho do cartão, onde o frame põe
+> "N resultados"); barra com "Classificar estoque ⌄" + campo/botões de marca;
+> coluna Anúncios com dado real (D-245: vínculo direto OU por variação, a
+> definição de D-122); as colunas extras da V3 (Categoria, Saldo, Vendas 90d,
+> Sugestão) ficam, porque a decisão se toma olhando saldo × venda · **Motivo:**
+> composição do frame + regra funcional.
+
+> **Superfície:** `/skus/[id]`, cabeçalho · **Figma:** cabeçalho de página
+> ("CATÁLOGO / DETALHE DO PRODUTO" + "Detalhe do SKU") acima do cartão de
+> entidade; ações "Risco de Ruptura !" (perigo) e "Ações ⌄" (primário); selos
+> Ativo · **Curva A** · marca · **V3 real:** abria direto no cartão, com "←
+> Estoque" como única ação · **Decisão:** cabeçalho de página + cartão (nome do
+> produto vira `h2`); "Risco de ruptura" só quando a cobertura diz ruptura;
+> "Ações ⌄" com as ações reais (ajustar estoque, registrar decisão, ver
+> cobertura, voltar); o selo de curva ABC fica para A2 (precisa de `p_sku_id` em
+> `get_sku_abc_curve`) · **Motivo:** composição do frame; o estado como ação só
+> quando é medido.
+
+> **Superfície:** Home, painel de atenção · **Figma:** só as situações
+> DETECTADAS viram cartão, com frase de impacto em negrito e botão de largura
+> total; 4 colunas · **V3 real:** seis cartões fixos, quatro deles "LIMPO 0" ·
+> **Decisão:** a grade só com o que pede atenção (ou falhou — "não sei" é mais
+> urgente); os medidos-e-limpos numa linha compacta com o zero visível; frase de
+> impacto com a contagem dentro; CTA como botão (primário no crítico); entra o
+> cartão "Anúncios pausados" (com estoque — dado real de `/anuncios`) ·
+> **Motivo:** composição do frame; D-067 (o zero medido continua visível).
+
+> **Superfície:** shell, ≤850px · **Figma:** trilho de 58px só com o item ativo ·
+> **V3 real:** empilhava a sidebar sobre o conteúdo · **Decisão:** o trilho, em
+> CSS puro — os glifos existem desde R1 (o motivo registrado para adiar, "o app
+> não tem ícone", tinha caducado) · **Motivo:** composição do frame.
 
 > **Superfície:** `/anuncios`, cabeçalho · **Figma:** ação **"Novo anúncio"** ·
 > **V3 real:** a V3 não cria anúncio no Mercado Livre — o catálogo é lido, e
@@ -485,81 +557,137 @@ que ele renderiza.**
 | D2 | Shell + o passo branco (superfícies declaram fundo) | **CONCLUÍDO** |
 | — | O passo cinza (`--sb-ground` no `<main>`) | fila, com pré-requisitos medidos |
 | D3 | Moldura: sidebar vertical, grupos e seção atual | **CONCLUÍDO** · refeita pelo frame |
-| D4 | Home orientada à atenção | **CONCLUÍDO** · composição refeita em R3 |
+| D4 | Home orientada à atenção | **CONCLUÍDO** · composição refeita em R3 e A1 |
 | D5 | Vendas — gráfico (seção 12 do brief) | **CONCLUÍDO** |
-| D6 | Vendas — composição, refeita a partir do Figma | **CONCLUÍDO** |
+| D6 | Vendas — composição, refeita a partir do Figma | **CONCLUÍDO** · reordenada em A1 |
 | R1 | Retrabalho da moldura, pelo **frame** do Figma | **CONCLUÍDO** |
 | R2 | Sistema tipográfico e densidade (Inter + DM Mono) | **CONCLUÍDO** |
 | R3 | Home, refeita pelo frame do Figma | **CONCLUÍDO** |
-| D7 | Produtos | **CONCLUÍDO** |
-| D8–D11 | Dashboard de SKU (fundação + nove abas) | **CONCLUÍDO** |
-| D12 | Anúncios — faixa de estados + painel, pelo frame `Listings` | **CONCLUÍDO** |
+| D7 | Produtos | **CONCLUÍDO** · composição corrigida em A1 |
+| D8–D11 | Dashboard de SKU (fundação + nove abas) | **CONCLUÍDO** · cabeçalho, tabelas e abas corrigidos em A1 |
+| D12 | Anúncios — faixa de estados + painel, pelo frame `Listings` | **CONCLUÍDO** · Full por anúncio em A1 |
+| **A1** | **Auditoria de fidelidade Figma × V3** + correções P0/P1 nas superfícies migradas + dead code pass | **CONCLUÍDO** |
+| A2 | Acabamento das superfícies migradas (P2 restantes: paleta Ctrl+K, `.sb-modal`, selo Curva ABC, chips na aba Full) | fila |
 | D13 | Republicação (só UX; motor real preservado) | fila |
 | D14–D20 | Estoque, Cobertura/Reposição, Curva ABC, Movimentações, NF-e, Compras, Fornecedores | fila |
 | D21–D30 | Vinculações, Diagnóstico, Ações, Alterações, Preços, Full, Tráfego, Atendimento, Conhecimento, Central | fila |
 | D31–D36 | Usuários, Integrações, Sincronização, Saúde, Configurações, Copiloto | fila |
 | D37 | Passe visual global | fila |
-| — | Tipografia (Inter + DM Mono) | fatia própria, sem posição fixa |
+
+## Auditoria de Fidelidade Figma
+
+Feita em 2026-09-04 (A1), **renderizando** cada superfície migrada (screenshots a
+1440, 1100 e 850) e lendo o frame correspondente no export — nove leituras
+independentes, cada achado com evidência dos dois lados (`App.tsx:linha` e
+arquivo:linha da V3). A pergunta de controle em cada uma: *parece o Figma, ou
+parece a aplicação antiga com o tema do Figma?*
+
+| Superfície | Fidelidade antes → depois | Status | Diferença principal que restou | Código legado |
+|---|---:|---|---|---|
+| Shell (sidebar, topbar, busca) | 78% → **86%** | ALINHADO | paleta Ctrl+K aberta ainda inline; sem botão de recolher em tela larga; logo em texto | nav horizontal antiga: **removida** (não existia mais consumidor); `command-palette.tsx` ADAPT |
+| Design system (tokens, componentes) | 70% → **80%** | REVISÃO FIGMA | faltam `.sb-modal`/`.sb-drawer`/`.sb-text-button`; 30 telas não migradas ainda com `th`/`td` inline | cinco mapas de tom → **um** (`tone.ts`); `StatePill` cápsula → chip; `table-styles.ts` MERGE pendente (2 consumidores não migrados) |
+| Home | 78% → **87%** | ALINHADO | seletor "14 dias ⌄" do gráfico; hora relativa no feed | `TOM` local **removido**; `.sb-attention-value` **removida** |
+| Vendas | 70% → **85%** | ALINHADO | legenda do gráfico no rodapé (frame põe no cabeçalho); altura do SVG proporcional | `FILTER_DATE_STYLE` **removido**; 3 menus → `FilterMenu`; painel "Cancelamentos e taxas" **dissolvido** |
+| Produtos | 68% → **83%** | ALINHADO | drawer "Inspeção Rápida" (adiado); botão "Buscar" visível (frame submete por Enter) | consts `th`/`td` **removidos**; faixa inventada **removida**; 3 menus → `FilterMenu` |
+| SKU — Visão geral, Vendas, Estoque | 78% → **85%** | ALINHADO | selo Curva ABC (RPC precisa de `p_sku_id`); tom "abaixo do lead time" na cobertura | `statBox`/`th`/`td`/`tdNumber`/`SalesMetricCard` **removidos** (7 tabelas em `.sb-table`) |
+| SKU — Anúncios, Preços, Full, Histórico, Diagnóstico, Decisões | 62% → **78%** | REVISÃO FIGMA | chips de estado na aba Full; "Custo cadastrado" como cartão; ressalvas longas nos corpos | `buttonStyle`/`cardStyle` do diagnóstico **removidos** |
+| Anúncios | 72% → **86%** | ALINHADO | drawer `MlbDetailDrawer` (adiado); chip "ver lista" em sans (frame usa mono) | rodapé de metodologia **removido** (mora no `title` dos cabeçalhos); 4 menus → `FilterMenu` |
+
+**Três achados que não eram de design.** (1) O seed nunca criou métricas de
+conta: `/vendas` e a Home renderizavam "nunca calculado" em todo teste e em toda
+captura — a composição principal do frame nunca tinha sido vista rodando.
+(2) O desvio do Full em `/anuncios` estava **factualmente errado** (o snapshot
+carrega o MLB). (3) `summarizePagedWindow` dizia "1 anúncios." — visível pela
+primeira vez quando o rótulo ganhou destaque no cabeçalho do painel.
+
+**Superfícies alinhadas:** shell, Home, Vendas, Produtos, SKU (abas principais),
+Anúncios. **Precisam de revisão (A2):** design system (modal/drawer/text-button;
+paleta Ctrl+K) e as abas secundárias do SKU.
+
+**Riscos encontrados:** nenhum de segurança. Dois de contrato: `get_listings_dashboard`
+e `get_sku_curation` foram recriadas (DROP + CREATE) com argumento/coluna novos
+**no fim**, e os grants recriados com `authenticated, service_role`; a suíte de
+integração (583) e o guard D-182 são o que provam que nada abriu.
+
+### Progresso visual Figma
+
+Ponderado, não por contagem de páginas. Uma superfície "implementada" mas
+distante do frame não vale 100: estrutura = 50, + dados reais = 65, + design
+próximo = 80, validada contra o Figma = 95, + cleanup + testes = 100.
+
+| Bloco | Peso | Feito |
+|---|---:|---:|
+| Shell + navegação | 8 | 86% |
+| Design system (tokens, componentes, tabela, campo, menu, chip) | 10 | 80% |
+| Home | 6 | 87% |
+| Vendas | 8 | 85% |
+| Produtos | 5 | 83% |
+| Dashboard de SKU (nove abas) | 10 | 82% |
+| Anúncios | 6 | 86% |
+| 24 telas ainda não migradas (D13–D36) | 46 | 25% (moldura, fontes e regras globais já as alcançam) |
+| Drawers e modais do frame | 4 | 0% |
+| Passe visual global + passo cinza | 3 | 0% |
+
+**≈ 51% concluído · ≈ 49% restante.** O número só sobe quando o resultado
+renderizado se aproxima do frame — não quando código é escrito.
 
 ## Revisão visual necessária
 
-**Nenhuma.** A auditoria de retrabalho fechou: a moldura (R1) e a Home (R3)
-foram refeitas a partir dos frames, `/vendas` (D6) já nasceu Figma-first, e
-D1/D2/D5 não têm composição a revisar.
-
-O que resta são superfícies **ainda não migradas** — a fila D7 em diante.
+**A2 — acabamento das superfícies migradas**, uma fatia só: paleta Ctrl+K com a
+composição `.command` do frame; `.sb-modal` (o "nomear filtro" de `SavedFilters`
+ainda usa `window.prompt`); selo **Curva A/B/C** no cabeçalho do SKU
+(`get_sku_abc_curve` com `p_sku_id`, por último na assinatura); chips de estado
+na aba Full; "Custo cadastrado" como cartão de indicador no Histórico. Nenhuma
+delas muda dado; todas são componente.
 
 ## Última fatia concluída
 
-**D12 — Anúncios**, pelo frame `Listings`. A tela deixou de abrir com um `<h1>`
-e dois parágrafos sobre uma tabela crua e passou a ter a composição do frame:
-sobrancelha `COMERCIAL / CATÁLOGO`, barra de menus (conta, estado, vínculo,
-**estoque**, busca), **faixa de cinco estados** com âncora navy e chips "ver
-lista" tonalizados, e o painel "Anúncios monitorados" com a linha *Filtros
-ativos:* dizendo o recorte real.
+**A1 — Auditoria de fidelidade Figma × V3, e as correções que ela pediu.** O
+dono da frente perguntou: *"o que já construímos segue o Figma, ou ainda estamos
+presos à interface antiga com o tema do Figma?"* A resposta, medida: **a moldura
+seguia; o miolo de várias telas não.** Nove leituras independentes (uma por
+superfície, cada uma renderizando a V3 a 1440/1100/850 e lendo o frame) acharam 3
+P0 e 16 P1 não intencionais. Todos os P0 e os P1 de composição foram corrigidos
+nesta fatia; os P2 de componente ficaram para A2, listados acima.
 
-**O frame pedia seis células; a V3 mede quatro.** "No Full" é fato de SKU e
-"Com queda" não existe — as duas ficaram de fora, com o motivo no registro de
-desvios. A âncora recebeu o **total**, que é medido e é o denominador das
-outras.
+**O que mudou de composição.** Home: só as situações detectadas viram cartão,
+com frase de impacto e botão — e ganhou "Anúncios pausados", lido da mesma RPC
+de `/anuncios`. Vendas: faixa âncora na ordem do frame, gráfico e faixa sempre
+presentes (com "—" honesto), e a tabela "Produtos que mais contribuíram" que
+fechava o frame e não existia — RPC nova, `get_sales_top_skus` (D-244). Produtos:
+a faixa inventada saiu, a barra de lote virou os dois controles do frame, a
+tabela é `.sb-table` com chips e a coluna "Anúncios" com dado real (D-245). SKU:
+cabeçalho de página acima do cartão, "Risco de ruptura" e "Ações ⌄" reais, os
+seis números de venda numa faixa, sete tabelas em `.sb-table`, Diagnóstico e
+Decisões dentro do design system. Anúncios: **Full por anúncio** (D-243 — o
+desvio de D-242 estava errado), filtros de estado na barra do painel, coluna
+"Sincronizado em" vira `title`. Shell: trilho de 58px em ≤850, rótulos do
+catálogo do Figma, nome e papel no perfil.
 
-**Uma capacidade que a tela não tinha, para a faixa ser honesta.** A célula
-"Sem estoque" e o botão "Com estoque" do frame são o mesmo predicado, e a RPC
-não o conhecia. `get_listings_dashboard` ganhou `p_stock` ('all' | 'out' |
-'in'), **por último na assinatura** — a suíte de integração a chama
-posicionalmente, e um argumento no meio quebraria todo chamador SQL existente.
-Cada célula lê o `total_count` da mesma função que monta a lista, então clicar
-mostra exatamente o que o número prometeu.
+**O que mudou de sistema.** `tone.ts` virou o único dono dos tons (eram cinco
+mapas); `FilterMenu` substituiu dez cópias do menu; `.sb-input`, `.sb-empty`,
+`.sb-button-sm`, `.sb-kpi-link` e os tokens de sombra navy nasceram; a faixa de
+KPIs passou a colunas fixas com os degraus do frame (nunca célula órfã); `th`
+segue o bloco de acessibilidade do export (11px/700 sobre `#f0f1f5`).
 
-**A tela nunca teve e2e, e o motivo era invisível:** o seed não criava anúncio
-nenhum; os do banco local eram resíduo da suíte de integração. O seed passou a
-criar quatro (um por estado, mais um de vínculo por variação para provar
-D-122), e três specs novos derivam as contagens do fixture. A suíte foi de 22
-para **25**.
+**Dead code pass.** Nas superfícies migradas não restou nenhuma const inline de
+tabela nem de cartão; `SalesMetricCard`, `FILTER_DATE_STYLE`, `buttonStyle`,
+`cardStyle`, o `TOM` da Home e `.sb-attention-value` saíram. `FilterPill` e
+`table-styles.ts` FICAM: 8 e 2 telas não migradas ainda os usam — somem com a
+fila. Nenhum backend foi tocado além de três migrations **aditivas**.
 
-**O guard D-182 pegou uma regressão real na primeira versão da migration:** sem
-o `revoke ... from public, anon`, o Postgres deu EXECUTE a PUBLIC na função
-recriada. Corrigido; a migration explica.
-
-**`.sb-table` nasceu aqui.** Cada tabela migrada carregava seus próprios
-`th`/`td` inline; a classe da casa vem das medidas do frame (`th` 9px DM Mono
-sobre `#faf9fb`, `td` 11px com 12px de respiro, fio `#f0eef3`) e é **opt-in**:
-44 tabelas no app, trocar o `td` global mudaria todas sem medir nenhuma. As
-outras adotam ao migrar.
-
-**Verificação:** `check` 29/29, build 8/8, integração **583/583** (uma nova
-para `p_stock`), **25/25 Playwright**, `check:waterfalls`,
-`check:server-actions`, `docs:check`.
+**Verificação:** `check` 29/29, build 8/8, integração 583/583, Playwright
+25/25 (specs de Home, SKU, Produtos e Anúncios atualizados para a composição
+nova), `check:waterfalls`, `check:server-actions`, `docs:check`. As telas foram
+renderizadas de novo depois das correções (capturas em `scratchpad/audit/`).
 
 ## Próxima fatia segura
 
-**D13 — Republicação (`/republicacao`).** Só a apresentação: o motor de relist,
-a fila, os eventos e a primeira republicação real deliberada (ainda pendente de
-ato humano em `docs/HANDOFF.md`) não mudam. O frame a consultar é o de
-Republicação do export; antes de desenhar, conferir o que a tela mede hoje —
-candidatos, agendados, executados, falhas — contra o que o frame mostra, e
-registrar cada célula que o sistema não observa em vez de estampá-la.
-
-Depois, pela fila: Estoque, Cobertura/Reposição, Curva ABC, Movimentações —
-todas tabelas, todas candidatas naturais a adotar `.sb-table` e apagar os
-consts inline ao migrar.
+**A2 — acabamento das superfícies migradas.** UMA fatia, só componente: paleta
+Ctrl+K com a composição `.command` do frame (520px, 16vh, cabeçalho, ✕, ícone,
+grupos por tipo — `search_entities` já devolve `entity_type`); `.sb-modal` e o
+"nomear filtro" de `SavedFilters` sem `window.prompt`; selo Curva A/B/C no
+cabeçalho do SKU (`get_sku_abc_curve` ganha `p_sku_id` **por último**); chips de
+estado na aba Full do SKU; "Custo cadastrado" como cartão no Histórico. Nada
+disso muda dado; ao fechar, as sete superfícies migradas ficam **CONCLUÍDAS** e
+a fila D13+ (Republicação em primeiro) segue com o design system completo.

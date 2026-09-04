@@ -1,6 +1,6 @@
 import { type Page, expect, test } from "@playwright/test";
 
-import { E2E_LISTINGS, E2E_LISTING_TRAFFIC } from "./constants.js";
+import { E2E_LISTINGS, E2E_LISTING_FULL, E2E_LISTING_TRAFFIC } from "./constants.js";
 import { login } from "./helpers.js";
 
 /**
@@ -51,6 +51,9 @@ test("/anuncios: a faixa de estados conta o que a lista mostra", async ({ page }
   await expect(celula(page, "Ativos").locator(".sb-kpi-value")).toHaveText(String(ESPERADO.ativos));
   await expect(celula(page, "Pausados").locator(".sb-kpi-value")).toHaveText(String(ESPERADO.pausados));
   await expect(celula(page, "Sem estoque").locator(".sb-kpi-value")).toHaveText(String(ESPERADO.semEstoque));
+  // "No Full" (D-243): só o primeiro anúncio tem snapshot no seed. O desvio
+  // anterior dizia que Full era grão de SKU; o snapshot carrega o MLB.
+  await expect(celula(page, "No Full").locator(".sb-kpi-value")).toHaveText("1");
   await expect(celula(page, "Sem vínculo").locator(".sb-kpi-value")).toHaveText(String(ESPERADO.semVinculo));
 
   // Nenhuma célula pode ter falhado em silêncio virando zero (D-067): "—" é o
@@ -115,10 +118,16 @@ test("/anuncios: vínculo por variação não é fila de trabalho, e conversão 
 
   await expect(comTrafego).toContainText("250");
   await expect(comTrafego).toContainText(`1/30`);
+  // A coluna Full mostra a quantidade do snapshot no anúncio que tem um…
+  await expect(comTrafego.locator("td").nth(7)).toHaveText(String(E2E_LISTING_FULL));
 
   const semTrafego = E2E_LISTINGS.find((a) => a.itemId !== E2E_LISTING_TRAFFIC.itemId && a.vinculo === "nenhum");
   const linhaSemTrafego = page.locator("tbody tr", { hasText: semTrafego?.itemId ?? "" });
 
-  await expect(linhaSemTrafego.locator("td").nth(10)).toHaveText("—");
+  // …e "—" (não "0") no que nunca teve snapshot, ao lado de visitas e
+  // conversão também indefinidas. Colunas: Anúncio, MLB, SKU, Conta, Status,
+  // Preço, Estoque, Full, Unidades, Faturamento, Visitas, Obs., Conversão.
+  await expect(linhaSemTrafego.locator("td").nth(7)).toHaveText("—");
   await expect(linhaSemTrafego.locator("td").nth(11)).toHaveText("—");
+  await expect(linhaSemTrafego.locator("td").nth(12)).toHaveText("—");
 });

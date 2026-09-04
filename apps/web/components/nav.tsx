@@ -52,8 +52,8 @@ const NAV_GROUPS: readonly NavGroup[] = [
   {
     title: "Visão geral",
     items: [
-      { label: "Painel", href: "/", icon: "⌂" },
-      { label: "Ações", href: "/acoes", icon: "◎" },
+      { label: "Home", href: "/", icon: "⌂" },
+      { label: "Central de Ações", href: "/acoes", icon: "◎" },
       { label: "Diagnóstico", href: "/diagnostico", icon: "◍" },
     ],
   },
@@ -63,10 +63,10 @@ const NAV_GROUPS: readonly NavGroup[] = [
       { label: "Vendas", href: "/vendas", icon: "↗" },
       { label: "Anúncios", href: "/anuncios", icon: "▤" },
       { label: "Estoque", href: "/estoque", icon: "▦" },
+      { label: "Central Full", href: "/full", icon: "▣" },
       { label: "Movimentações", href: "/estoque/movimentacoes", icon: "⇄" },
-      { label: "Full", href: "/full", icon: "▣" },
       { label: "Reposição", href: "/reposicao", icon: "⟳" },
-      { label: "Notas Fiscais", href: "/notas-fiscais", icon: "▤" },
+      { label: "NF-e / Entradas", href: "/notas-fiscais", icon: "▤" },
       { label: "Compras", href: "/compras", icon: "⊞" },
       { label: "Fornecedores", href: "/fornecedores", icon: "⊟" },
       { label: "Importações", href: "/importacoes", icon: "⇪" },
@@ -94,7 +94,7 @@ const NAV_GROUPS: readonly NavGroup[] = [
     title: "Administração",
     items: [
       { label: "Usuários", href: "/usuarios", icon: "□" },
-      { label: "Contas ML", href: "/contas", icon: "□" },
+      { label: "Contas Mercado Livre", href: "/contas", icon: "□" },
       { label: "Integrações", href: "/integracoes", icon: "⧉" },
       { label: "Sincronização", href: "/sincronizacao", icon: "⟲" },
       { label: "Saúde do Sistema", href: "/saude", icon: "◇" },

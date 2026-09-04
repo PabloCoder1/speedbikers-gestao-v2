@@ -3,8 +3,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { KpiStrip, type KpiCellData } from "../../../components/kpi-strip";
 import { ObjectHeader, type ObjectBadge } from "../../../components/object-header";
+import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
+import { TOM } from "../../../components/tone";
 import { Shell } from "../../../components/shell";
 import { StatusPill } from "../../../components/status-pill";
 import { formatDecisionSnapshot, OUTCOME_WINDOWS_DAYS, outcomeWindowLabel } from "../../../lib/decision-format";
@@ -105,34 +108,6 @@ interface TimelineRow {
   account_label: string | null;
 }
 
-const statBox: React.CSSProperties = {
-  border: "1px solid var(--sb-border)",
-  borderRadius: "var(--sb-radius)",
-  background: "var(--sb-surface)",
-  padding: "var(--sb-space-3)",
-  minWidth: "9rem",
-};
-
-
-
-const th: React.CSSProperties = {
-  textAlign: "left",
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.75rem",
-  textTransform: "uppercase",
-  letterSpacing: "0.04em",
-  color: "var(--sb-text-soft)",
-  whiteSpace: "nowrap",
-};
-
-const td: React.CSSProperties = {
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.875rem",
-};
-
-const tdNumber: React.CSSProperties = { ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" };
 
 function StockBoxes({
   dashboard,
@@ -228,23 +203,19 @@ function buildSalesCards(total: SalesTotals): SalesCard[] {
 }
 
 /**
- * Mesmo desenho do `MetricCard` de `/vendas` (rótulo, valor, id canônico em
- * monoespaçado, fórmula no `title`) — em `div`s, e não `span`s, de propósito:
- * é a forma `<div><div>{label}</div><div>{value}</div></div>` que o helper
- * `statValue` do Playwright já sabe ler nesta página.
+ * Os seis números como UMA faixa de KPIs — a mesma apresentação que `/vendas`
+ * dá às mesmas métricas (mesmos ids canônicos). Eram seis cartões soltos em
+ * `auto-fit`, que a 1440px quebravam em 5 + 1 órfão; a auditoria de
+ * fidelidade apontou, e o design system já tinha a resposta.
  */
-function SalesMetricCard({ card }: { card: SalesCard }): ReactNode {
-  return (
-    <div className="sb-stat" title={card.formula}>
-      <span className="sb-stat-label">{card.label}</span>
-      <b className="sb-stat-value">{card.value}</b>
-      {/* O id da métrica não é enfeite: é a rastreabilidade até a definição
-          canônica em `metric_definitions`. */}
-      <span className="sb-stat-note" style={{ fontFamily: "var(--sb-mono)" }}>
-        {card.metricId}
-      </span>
-    </div>
-  );
+function salesCells(total: SalesTotals): KpiCellData[] {
+  return buildSalesCards(total).map((card) => ({
+    metricId: card.metricId,
+    label: card.label,
+    formula: card.formula,
+    value: card.value,
+    previous: null,
+  }));
 }
 
 export default async function SkuDashboardPage({
@@ -286,7 +257,6 @@ export default async function SkuDashboardPage({
   // de verdade, não só visual); o que a aba ativa não usa vira
   // Promise.resolve — mesmo padrão do Full no Dashboard de Anúncio.
   const needsDashboard = tab === "visao-geral" || tab === "estoque";
-  const needsCoverage = tab === "visao-geral" || tab === "estoque";
   const needsListings = tab === "visao-geral" || tab === "anuncios";
   const needsHistory = tab === "historico";
   const needsFull = tab === "full";
@@ -326,16 +296,17 @@ export default async function SkuDashboardPage({
     // Mesma janela de 30 dias do resumo — venda média diária real, só para
     // pré-preencher a premissa do simulador (D-080); o usuário pode ajustar
     // livremente a partir daí.
-    needsCoverage
-      ? supabase
-          .rpc("get_stock_coverage", {
-            p_organization_id: sku.data.organization_id,
-            p_date_from: dateFrom,
-            p_date_to: dateTo,
-            p_sku_id: sku.data.id,
-          })
-          .maybeSingle()
-      : Promise.resolve({ data: null, error: null }),
+    // Em TODAS as abas: o cabeçalho de entidade precisa da cobertura para o
+    // "Risco de ruptura" (o botão em tom de perigo do frame) — uma linha por
+    // SKU, custo desprezível dentro do mesmo `Promise.all`.
+    supabase
+      .rpc("get_stock_coverage", {
+        p_organization_id: sku.data.organization_id,
+        p_date_from: dateFrom,
+        p_date_to: dateTo,
+        p_sku_id: sku.data.id,
+      })
+      .maybeSingle(),
     // Histórico de custo cadastrado (D-149) — alimentado por trigger a cada
     // mudança de `skus.purchase_cost`. Sem backfill: o registro começa em
     // 30/08/2026 e a tela diz isso.
@@ -487,15 +458,66 @@ export default async function SkuDashboardPage({
 
   return (
     <Shell>
+      {/*
+        Como no frame: a página abre com um cabeçalho de página (sobrancelha +
+        "Detalhe do SKU" + uma linha), e o cartão de entidade vem abaixo com o
+        nome do produto como título do cartão. O h1 da tela é o cabeçalho.
+      */}
+      <PageTitle
+        compacto
+        eyebrow="CATÁLOGO / DETALHE DO PRODUTO"
+        title="Detalhe do SKU"
+        subtitle="Visão completa de performance, estoque e histórico."
+      />
+
       <ObjectHeader
         identificador={`SKU ${sku.data.sku}`}
         titulo={sku.data.title ?? sku.data.sku}
         badges={badges}
         meta={`atualizado em ${formatDateTime(sku.data.updated_at)}`}
         acoes={
-          <Link href="/estoque" className="sb-button">
-            ← Estoque
-          </Link>
+          <>
+            {/*
+              O ESTADO como ação, como no frame ("Risco de Ruptura !" em tom de
+              perigo): só aparece quando a cobertura diz ruptura, e leva à tela
+              que explica. Nunca decorativo.
+            */}
+            {coverage?.is_ruptura === true && (
+              <Link
+                href="/cobertura"
+                className="sb-button"
+                style={{ color: "var(--sb-danger)", borderColor: "var(--sb-danger)" }}
+              >
+                Risco de ruptura
+                <span className="sb-status" style={TOM.perigo}>
+                  !
+                </span>
+              </Link>
+            )}
+            {/* "Ações ⌄" — o menu primário do frame, com as ações REAIS do SKU. */}
+            <details className="sb-menu">
+              <summary className="sb-button sb-button-primary">
+                Ações
+                <span aria-hidden="true" className="sb-menu-chevron">
+                  ⌄
+                </span>
+              </summary>
+              <div className="sb-menu-panel" style={{ right: 0, left: "auto" }}>
+                <Link className="sb-menu-item" href={`/estoque/${skuId}/ajuste`}>
+                  Ajustar estoque
+                </Link>
+                <Link className="sb-menu-item" href="/acoes">
+                  Registrar decisão na Central de Ações
+                </Link>
+                <Link className="sb-menu-item" href="/cobertura">
+                  Ver cobertura
+                </Link>
+                <Link className="sb-menu-item" href="/estoque">
+                  Voltar ao estoque
+                </Link>
+              </div>
+            </details>
+          </>
         }
         abas={TAB_KEYS.map((key) => ({
           href: key === "visao-geral" ? `/skus/${skuId}` : `/skus/${skuId}?aba=${key}`,
@@ -656,10 +678,6 @@ export default async function SkuDashboardPage({
                 </Panel>
               </div>
 
-              <p style={{ margin: "var(--sb-space-3) 0 0", fontSize: "0.6875rem", color: "var(--sb-text-soft)" }}>
-                Pedidos, ticket médio e vendas por conta e por dia na aba Vendas; simulador de cobertura na aba
-                Estoque; mudanças de custo e linha do tempo na aba Histórico.
-              </p>
             </>
           )}
         </>
@@ -680,11 +698,6 @@ export default async function SkuDashboardPage({
             somar entre dias também: medido em 03/09/2026, 172.624 packs, ZERO
             em mais de um dia.
           */}
-          <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
-            Vendas válidas deste SKU (pedidos pagos ou parcialmente reembolsados) nos últimos {LOOKBACK_DAYS} dias,
-            somadas entre as contas <strong>no banco</strong>. Vêm do recálculo por conta e por dia, refeito a cada
-            reconciliação de pedidos — não é leitura ao vivo. Cada número carrega o id da sua definição canônica.
-          </p>
 
           {salesResult.error !== null && (
             <p role="alert" style={{ color: "var(--sb-danger)" }}>
@@ -693,26 +706,17 @@ export default async function SkuDashboardPage({
           )}
 
           {salesResult.error === null && salesTotal === null && (
-            <p style={{ color: "var(--sb-text-soft)" }}>Sem dado de vendas para este SKU.</p>
+            <p className="sb-empty">Sem dado de vendas para este SKU.</p>
           )}
 
           {salesResult.error === null && salesTotal !== null && (
             <>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(11rem, 1fr))",
-                  gap: "var(--sb-space-3)",
-                  marginBottom: "var(--sb-space-3)",
-                }}
-              >
-                {buildSalesCards(salesTotal).map((card) => (
-                  <SalesMetricCard key={card.metricId} card={card} />
-                ))}
+              <div style={{ marginBottom: "var(--sb-space-3)" }}>
+                <KpiStrip ancora cells={salesCells(salesTotal)} />
               </div>
 
               {salesTotal.units_sold === 0 && (
-                <p style={{ color: "var(--sb-text-soft)", fontSize: "0.8125rem", marginBottom: "var(--sb-space-4)" }}>
+                <p style={{ color: "var(--sb-text-soft)", fontSize: "0.6875rem", marginBottom: "var(--sb-space-3)" }}>
                   Nenhuma venda válida contabilizada para este SKU no período. É o que o recálculo registrou: um
                   pedido ainda não reconciliado, ou vendido por anúncio sem vínculo com este SKU, não entra aqui.
                 </p>
@@ -720,17 +724,17 @@ export default async function SkuDashboardPage({
 
               {salesByAccount.length > 0 && (
                   <Panel title="Por conta" subtitle="Ticket médio e preço médio são razões sobre as somas de cada conta — nunca média das médias diárias.">
-                  <div style={{ overflowX: "auto", marginBottom: "var(--sb-space-4)" }}>
-                    <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "44rem" }}>
+                  <div style={{ overflowX: "auto" }}>
+                    <table className="sb-table" style={{ minWidth: "44rem" }}>
                       <thead>
                         <tr>
-                          <th style={th}>Conta</th>
-                          <th style={{ ...th, textAlign: "right" }}>Unidades</th>
-                          <th style={{ ...th, textAlign: "right" }}>Receita bruta</th>
-                          <th style={{ ...th, textAlign: "right" }}>Pedidos</th>
-                          <th style={{ ...th, textAlign: "right" }}>Compras</th>
-                          <th style={{ ...th, textAlign: "right" }}>Ticket médio</th>
-                          <th style={{ ...th, textAlign: "right" }}>Preço médio</th>
+                          <th>Conta</th>
+                          <th className="sb-num">Unidades</th>
+                          <th className="sb-num">Receita bruta</th>
+                          <th className="sb-num">Pedidos</th>
+                          <th className="sb-num">Compras</th>
+                          <th className="sb-num">Ticket médio</th>
+                          <th className="sb-num">Preço médio</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -739,13 +743,13 @@ export default async function SkuDashboardPage({
                             {/* `account_label` vem de LEFT JOIN em ml_accounts: uma conta
                                 que a RLS não mostre (ou que tenha sido removida) deixa a
                                 venda visível e o rótulo nulo — a venda aconteceu. */}
-                            <td style={td}>{linha.account_label ?? "Conta não identificada"}</td>
-                            <td style={tdNumber}>{formatCount(linha.units_sold)}</td>
-                            <td style={tdNumber}>{formatCurrency(linha.gross_revenue)}</td>
-                            <td style={tdNumber}>{formatCount(linha.orders_count)}</td>
-                            <td style={tdNumber}>{formatCount(linha.purchases_count)}</td>
-                            <td style={tdNumber}>{formatCurrency(linha.average_ticket)}</td>
-                            <td style={tdNumber}>{formatCurrency(linha.average_selling_price)}</td>
+                            <td>{linha.account_label ?? "Conta não identificada"}</td>
+                            <td className="sb-num">{formatCount(linha.units_sold)}</td>
+                            <td className="sb-num">{formatCurrency(linha.gross_revenue)}</td>
+                            <td className="sb-num">{formatCount(linha.orders_count)}</td>
+                            <td className="sb-num">{formatCount(linha.purchases_count)}</td>
+                            <td className="sb-num">{formatCurrency(linha.average_ticket)}</td>
+                            <td className="sb-num">{formatCurrency(linha.average_selling_price)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -756,15 +760,15 @@ export default async function SkuDashboardPage({
 
               {salesByDay.length > 0 && (
                   <Panel title="Por dia" subtitle="Dias sem venda registrada não aparecem — o recálculo não fabrica zero (mesmo contrato de /vendas). Duas contas no mesmo dia viram uma linha só.">
-                  <div style={{ overflowX: "auto", marginBottom: "var(--sb-space-3)" }}>
-                    <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "32rem" }}>
+                  <div style={{ overflowX: "auto" }}>
+                    <table className="sb-table" style={{ minWidth: "32rem" }}>
                       <thead>
                         <tr>
-                          <th style={th}>Dia</th>
-                          <th style={{ ...th, textAlign: "right" }}>Unidades</th>
-                          <th style={{ ...th, textAlign: "right" }}>Receita bruta</th>
-                          <th style={{ ...th, textAlign: "right" }}>Pedidos</th>
-                          <th style={{ ...th, textAlign: "right" }}>Compras</th>
+                          <th>Dia</th>
+                          <th className="sb-num">Unidades</th>
+                          <th className="sb-num">Receita bruta</th>
+                          <th className="sb-num">Pedidos</th>
+                          <th className="sb-num">Compras</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -772,13 +776,13 @@ export default async function SkuDashboardPage({
                           <tr key={linha.metric_date ?? "dia"}>
                             {/* `metric_date` é DATA DE NEGÓCIO (YYYY-MM-DD): formatar por
                                 string, nunca por `new Date` (deslocaria o dia civil). */}
-                            <td style={{ ...td, whiteSpace: "nowrap" }}>
+                            <td style={{ whiteSpace: "nowrap" }}>
                               {linha.metric_date === null ? "—" : formatBusinessDate(linha.metric_date)}
                             </td>
-                            <td style={tdNumber}>{formatCount(linha.units_sold)}</td>
-                            <td style={tdNumber}>{formatCurrency(linha.gross_revenue)}</td>
-                            <td style={tdNumber}>{formatCount(linha.orders_count)}</td>
-                            <td style={tdNumber}>{formatCount(linha.purchases_count)}</td>
+                            <td className="sb-num">{formatCount(linha.units_sold)}</td>
+                            <td className="sb-num">{formatCurrency(linha.gross_revenue)}</td>
+                            <td className="sb-num">{formatCount(linha.orders_count)}</td>
+                            <td className="sb-num">{formatCount(linha.purchases_count)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -859,20 +863,20 @@ export default async function SkuDashboardPage({
 
           {listingsResult.error === null && listings.length > 0 && (
             <div style={{ overflowX: "auto" }}>
-              <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "36rem" }}>
+              <table className="sb-table" style={{ minWidth: "36rem" }}>
                 <thead>
                   <tr>
-                    <th style={th}>Anúncio</th>
-                    <th style={th}>Conta</th>
-                    <th style={th}>Estado</th>
-                    <th style={th}>Preço</th>
+                    <th>Anúncio</th>
+                    <th>Conta</th>
+                    <th>Estado</th>
+                    <th>Preço</th>
                   </tr>
                 </thead>
 
                 <tbody>
                   {listings.map((listing) => (
                     <tr key={listing.id}>
-                      <td style={td}>
+                      <td>
                         {listing.title}
                         <div
                           style={{
@@ -884,11 +888,11 @@ export default async function SkuDashboardPage({
                           <Link href={`/anuncios/${listing.item_id}`}>{listing.item_id}</Link>
                         </div>
                       </td>
-                      <td style={td}>{listing.ml_accounts.label}</td>
-                      <td style={td}>
+                      <td>{listing.ml_accounts.label}</td>
+                      <td>
                         <StatusPill code={listing.status} label={listingStatusLabel(listing.status)} />
                       </td>
-                      <td style={tdNumber}>{formatCurrency(listing.price)}</td>
+                      <td className="sb-num">{formatCurrency(listing.price)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -924,28 +928,28 @@ export default async function SkuDashboardPage({
 
           {fullResult.error === null && full.length > 0 && (
             <div style={{ overflowX: "auto" }}>
-              <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "40rem" }}>
+              <table className="sb-table" style={{ minWidth: "40rem" }}>
                 <thead>
                   <tr>
-                    <th style={th}>Conta</th>
-                    <th style={{ ...th, textAlign: "right" }}>No Full</th>
-                    <th style={{ ...th, textAlign: "right" }}>Buckets</th>
-                    <th style={{ ...th, textAlign: "right" }}>Local (org.)</th>
-                    <th style={{ ...th, textAlign: "right" }}>Vendas {LOOKBACK_DAYS}d</th>
-                    <th style={th}>Situação</th>
-                    <th style={th}>Capturado</th>
+                    <th>Conta</th>
+                    <th className="sb-num">No Full</th>
+                    <th className="sb-num">Buckets</th>
+                    <th className="sb-num">Local (org.)</th>
+                    <th className="sb-num">Vendas {LOOKBACK_DAYS}d</th>
+                    <th>Situação</th>
+                    <th>Capturado</th>
                   </tr>
                 </thead>
 
                 <tbody>
                   {full.map((linha) => (
                     <tr key={linha.ml_account_id}>
-                      <td style={td}>{linha.account_label}</td>
-                      <td style={tdNumber}>{formatCount(linha.full_quantity)}</td>
-                      <td style={tdNumber}>{formatCount(linha.buckets)}</td>
-                      <td style={tdNumber}>{formatCount(linha.local_quantity)}</td>
-                      <td style={tdNumber}>{formatCount(linha.units_sold)}</td>
-                      <td style={{ ...td, color: linha.situation === "ruptura" ? "var(--sb-danger)" : undefined }}>
+                      <td>{linha.account_label}</td>
+                      <td className="sb-num">{formatCount(linha.full_quantity)}</td>
+                      <td className="sb-num">{formatCount(linha.buckets)}</td>
+                      <td className="sb-num">{formatCount(linha.local_quantity)}</td>
+                      <td className="sb-num">{formatCount(linha.units_sold)}</td>
+                      <td style={{ color: linha.situation === "ruptura" ? "var(--sb-danger)" : undefined }}>
                         <span title={fullSituationCriterion(linha.situation)}>
                           {fullSituationLabel(linha.situation)}
                         </span>
@@ -954,7 +958,7 @@ export default async function SkuDashboardPage({
                           compilador (D-192/D-206): a consulta é DIRIGIDA pelo snapshot —
                           `vendas` e `saldo_local` é que entram por left join —, então
                           toda linha devolvida tem `captured_at`. O nulo é inalcançável. */}
-                      <td style={{ ...td, fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+                      <td style={{ fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
                         {formatDateTime(linha.captured_at)}
                       </td>
                     </tr>
@@ -998,16 +1002,16 @@ export default async function SkuDashboardPage({
 
           {pricesResult.error === null && prices.length > 0 && (
             <div style={{ overflowX: "auto" }}>
-              <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "42rem" }}>
+              <table className="sb-table" style={{ minWidth: "42rem" }}>
                 <thead>
                   <tr>
-                    <th style={th}>Quando</th>
-                    <th style={th}>Anúncio</th>
-                    <th style={th}>Conta</th>
-                    <th style={{ ...th, textAlign: "right" }}>De</th>
-                    <th style={{ ...th, textAlign: "right" }}>Para</th>
-                    <th style={{ ...th, textAlign: "right" }}>Δ</th>
-                    <th style={{ ...th, textAlign: "right" }}>Δ %</th>
+                    <th>Quando</th>
+                    <th>Anúncio</th>
+                    <th>Conta</th>
+                    <th className="sb-num">De</th>
+                    <th className="sb-num">Para</th>
+                    <th className="sb-num">Δ</th>
+                    <th className="sb-num">Δ %</th>
                   </tr>
                 </thead>
 
@@ -1018,10 +1022,10 @@ export default async function SkuDashboardPage({
 
                     return (
                       <tr key={linha.event_id}>
-                        <td style={{ ...td, fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+                        <td style={{ fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
                           {formatDateTime(linha.occurred_at)}
                         </td>
-                        <td style={td}>
+                        <td>
                           <Link href={`/anuncios/${linha.item_id}`}>{linha.item_id}</Link>
                           {/* Título vem de LEFT JOIN: o anúncio pode ter saído do
                               catálogo depois do evento, e o evento continua sendo
@@ -1031,14 +1035,14 @@ export default async function SkuDashboardPage({
                             <div style={{ fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>{linha.title}</div>
                           )}
                         </td>
-                        <td style={td}>{linha.account_label}</td>
-                        <td style={tdNumber}>{formatCurrency(linha.price_before)}</td>
-                        <td style={tdNumber}>{formatCurrency(linha.price_after)}</td>
-                        <td style={{ ...tdNumber, color: cor }}>
+                        <td>{linha.account_label}</td>
+                        <td className="sb-num">{formatCurrency(linha.price_before)}</td>
+                        <td className="sb-num">{formatCurrency(linha.price_after)}</td>
+                        <td className="sb-num" style={{ color: cor }}>
                           {subiu ? "+" : ""}
                           {formatCurrency(linha.delta)}
                         </td>
-                        <td style={{ ...tdNumber, color: cor }}>
+                        <td className="sb-num" style={{ color: cor }}>
                           {/* NULL quando o preço anterior era zero — a fração não
                               existe, e "0%" seria mentira. */}
                           {linha.delta_ratio === null ? "—" : `${subiu ? "+" : ""}${formatPercent(linha.delta_ratio)}`}
@@ -1085,24 +1089,24 @@ export default async function SkuDashboardPage({
           )}
 
           {costHistoryResult.error === null && costHistory.length > 0 && (
-            <div style={{ overflowX: "auto", marginBottom: "var(--sb-space-4)" }}>
-              <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "32rem" }}>
+            <div style={{ overflowX: "auto" }}>
+              <table className="sb-table" style={{ minWidth: "32rem" }}>
                 <thead>
                   <tr>
-                    <th style={th}>Quando</th>
-                    <th style={th}>De</th>
-                    <th style={th}>Para</th>
-                    <th style={th}>Origem</th>
+                    <th>Quando</th>
+                    <th>De</th>
+                    <th>Para</th>
+                    <th>Origem</th>
                   </tr>
                 </thead>
                 <tbody>
                   {costHistory.map((entry) => (
                     <tr key={entry.id}>
-                      <td style={{ ...td, whiteSpace: "nowrap" }}>{formatDateTime(entry.changed_at)}</td>
+                      <td style={{ whiteSpace: "nowrap" }}>{formatDateTime(entry.changed_at)}</td>
                       {/* `De` vazio = primeiro registro (o SKU nasceu com custo). */}
-                      <td style={tdNumber}>{formatCurrency(entry.previous_cost)}</td>
-                      <td style={tdNumber}>{formatCurrency(entry.new_cost)}</td>
-                      <td style={{ ...td, color: "var(--sb-text-soft)" }}>
+                      <td className="sb-num">{formatCurrency(entry.previous_cost)}</td>
+                      <td className="sb-num">{formatCurrency(entry.new_cost)}</td>
+                      <td style={{ color: "var(--sb-text-soft)" }}>
                         {entry.changed_by_role === "service_role"
                           ? "importação (worker)"
                           : entry.changed_by_role === "postgres"
@@ -1150,21 +1154,21 @@ export default async function SkuDashboardPage({
                   Mostrando os {TIMELINE_LIMIT} eventos mais recentes.
                 </p>
               )}
-              <div style={{ overflowX: "auto", marginBottom: "var(--sb-space-4)" }}>
-                <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "48rem" }}>
+              <div style={{ overflowX: "auto" }}>
+                <table className="sb-table" style={{ minWidth: "48rem" }}>
                   <thead>
                     <tr>
-                      <th style={th}>Quando</th>
-                      <th style={th}>Evento</th>
-                      <th style={th}>Mudança</th>
-                      <th style={th}>Onde</th>
+                      <th>Quando</th>
+                      <th>Evento</th>
+                      <th>Mudança</th>
+                      <th>Onde</th>
                     </tr>
                   </thead>
                   <tbody>
                     {timeline.map((entry) => (
                       <tr key={entry.id}>
-                        <td style={{ ...td, whiteSpace: "nowrap" }}>{formatDateTime(entry.occurred_at)}</td>
-                        <td style={td}>
+                        <td style={{ whiteSpace: "nowrap" }}>{formatDateTime(entry.occurred_at)}</td>
+                        <td>
                           <span
                             style={
                               entry.severity === "critico"
@@ -1177,8 +1181,8 @@ export default async function SkuDashboardPage({
                             {eventTypeLabel(entry.event_type)}
                           </span>
                         </td>
-                        <td style={td}>{formatEventDiff(entry.event_type, entry.before, entry.after) ?? "—"}</td>
-                        <td style={{ ...td, color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
+                        <td>{formatEventDiff(entry.event_type, entry.before, entry.after) ?? "—"}</td>
+                        <td style={{ color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
                           {entityLabel(entry.entity_type)}
                           {entry.entity_type !== "sku" && (
                             <span style={{ fontFamily: "ui-monospace, monospace" }}> {entry.entity_id}</span>
@@ -1245,7 +1249,7 @@ export default async function SkuDashboardPage({
           )}
 
           {decisionsResult.error === null && decisions.length > 0 && (
-            <div style={{ display: "grid", gap: "var(--sb-space-3)" }}>
+            <div style={{ margin: "0 calc(-1 * var(--sb-space-3))" }}>
               {decisions.map((decision) => {
                 // A visão normalizada da ação (`describeActionEvidence` é total
                 // para qualquer `kind`, D-116) — a mesma que a Central usa.
@@ -1257,49 +1261,57 @@ export default async function SkuDashboardPage({
                 );
 
                 return (
-                  <article key={decision.id} style={{ ...statBox, minWidth: 0 }}>
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: "0.5rem",
-                        alignItems: "center",
-                        flexWrap: "wrap",
-                        fontSize: "0.8125rem",
-                        color: "var(--sb-text-soft)",
-                        marginBottom: "var(--sb-space-1)",
-                      }}
-                    >
-                      <span>
-                        {acao.kindLabel}
-                        {acao.direcaoLabel !== null && ` · ${acao.direcaoLabel}`}
+                  /*
+                    Uma decisão é um item de FEED (título em negrito, uma linha
+                    de contexto, o instante) seguido do retrato "antes × depois"
+                    em tabela — em vez de cinco parágrafos iguais. A comparação
+                    continua bruta e lado a lado (D-228).
+                  */
+                  <article key={decision.id} className="sb-panel-body" style={{ borderTop: "1px solid var(--sb-border)" }}>
+                    <div style={{ display: "flex", gap: "0.5rem", alignItems: "flex-start", flexWrap: "wrap" }}>
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <b style={{ display: "block", fontSize: "0.75rem" }}>{decision.decision}</b>
+                        <small style={{ display: "block", marginTop: 3, fontSize: "0.625rem", color: "var(--sb-text-soft)" }}>
+                          {acao.kindLabel}
+                          {acao.direcaoLabel !== null && ` · ${acao.direcaoLabel}`}
+                          {` · ${formatDateTime(decision.created_at)}`}
+                        </small>
                       </span>
                       <StatusPill code={decision.actions.status} label={actionStatusLabel(decision.actions.status)} />
                     </div>
 
-                    <p style={{ margin: "0 0 var(--sb-space-1)", fontSize: "0.9375rem" }}>
-                      <strong>Decisão ({formatDateTime(decision.created_at)}):</strong> {decision.decision}
-                    </p>
-
-                    <p style={{ margin: "0 0 var(--sb-space-1)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+                    <p style={{ margin: "var(--sb-space-2) 0", fontSize: "0.6875rem", color: "var(--sb-text-soft)" }}>
                       Recomendação da ação: {decision.actions.recommendation}
                     </p>
 
-                    <p style={{ margin: "0 0 0.125rem", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
-                      No momento da decisão — {formatDecisionSnapshot(decision.baseline_snapshot)}
-                    </p>
-
-                    {medidas.map((medida) => (
-                      <p
-                        key={medida.window_days}
-                        style={{ margin: "0 0 0.125rem", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}
-                      >
-                        {outcomeWindowLabel(medida.window_days)} ({formatDateTime(medida.measured_at)}) —{" "}
-                        {formatDecisionSnapshot(medida.outcome_snapshot)}
-                      </p>
-                    ))}
+                    <table className="sb-table">
+                      <thead>
+                        <tr>
+                          <th>Momento</th>
+                          <th>Retrato</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td style={{ whiteSpace: "nowrap" }}>No momento da decisão</td>
+                          <td style={{ whiteSpace: "normal" }}>{formatDecisionSnapshot(decision.baseline_snapshot)}</td>
+                        </tr>
+                        {medidas.map((medida) => (
+                          <tr key={medida.window_days}>
+                            <td style={{ whiteSpace: "nowrap" }}>
+                              {outcomeWindowLabel(medida.window_days)}
+                              <span style={{ display: "block", fontSize: "0.625rem", color: "var(--sb-text-soft)" }}>
+                                {formatDateTime(medida.measured_at)}
+                              </span>
+                            </td>
+                            <td style={{ whiteSpace: "normal" }}>{formatDecisionSnapshot(medida.outcome_snapshot)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
 
                     {pendentes.length > 0 && (
-                      <p style={{ margin: "var(--sb-space-1) 0 0", fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
+                      <p style={{ margin: "var(--sb-space-2) 0 0", fontSize: "0.625rem", color: "var(--sb-text-soft)" }}>
                         Ainda sem medição: {pendentes.map(outcomeWindowLabel).join(", ")}.
                       </p>
                     )}

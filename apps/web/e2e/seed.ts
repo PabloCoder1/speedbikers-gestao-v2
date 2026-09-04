@@ -39,6 +39,7 @@ import {
   E2E_GESTOR_EMAIL,
   E2E_GESTOR_PASSWORD,
   E2E_LISTINGS,
+  E2E_LISTING_FULL,
   E2E_LISTING_TRAFFIC,
   E2E_SKU_SALES,
   E2E_USER_EMAIL,
@@ -628,6 +629,42 @@ async function main(): Promise<void> {
 
   if (listings.error !== null) {
     throw listings.error;
+  }
+
+  // Full DO ANÚNCIO (D-243): UM snapshot, só para o primeiro anúncio. Os outros
+  // três ficam sem snapshot de propósito — é o que prova na tela que ausência
+  // de snapshot vira "—" e não "0" (D-067), e que a célula "No Full" conta
+  // exatamente um. `inventory_id` é o id do Mercado Livre; no fixture é uma
+  // chave estável derivada do MLB.
+  // Existe-então-insere, não upsert: `service_role` tem INSERT mas não UPDATE
+  // nesta tabela (o snapshot é imutável por desenho — quem escreve é o job de
+  // Full, e ele só acrescenta). Rodar o seed duas vezes não duplica.
+  const fullExistente = await db
+    .from("fulfillment_stock_snapshots")
+    .select("id")
+    .eq("ml_account_id", mlAccountId)
+    .eq("inventory_id", `INV-${E2E_LISTING_TRAFFIC.itemId}`)
+    .limit(1)
+    .maybeSingle();
+
+  if (fullExistente.error !== null) {
+    throw fullExistente.error;
+  }
+
+  if (fullExistente.data === null) {
+    const fullSnapshot = await db.from("fulfillment_stock_snapshots").insert({
+      organization_id: organizationId,
+      ml_account_id: mlAccountId,
+      inventory_id: `INV-${E2E_LISTING_TRAFFIC.itemId}`,
+      item_id: E2E_LISTING_TRAFFIC.itemId,
+      sku_id: skuId,
+      quantity: E2E_LISTING_FULL,
+      captured_at: new Date().toISOString(),
+    });
+
+    if (fullSnapshot.error !== null) {
+      throw fullSnapshot.error;
+    }
   }
 
   const porVariacao = E2E_LISTINGS.find((anuncio) => anuncio.vinculo === "variacao");

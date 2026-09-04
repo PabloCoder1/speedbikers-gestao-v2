@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **237** (D-001 a D-242).
+Decisões registradas: **241** (D-001 a D-246).
 
 ## Por domínio
 
@@ -123,7 +123,7 @@ Decisões registradas: **237** (D-001 a D-242).
 - **D-234** — O defeito que D-119 achou, adiou e ninguem colheu: 26 telas quebravam no segundo usuario
 - **D-241** — A frente visual como varredura: tres telas mortas e uma coluna fantasma que build verde nao pegava
 
-### mercado-livre (40)
+### mercado-livre (42)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -165,6 +165,8 @@ Decisões registradas: **237** (D-001 a D-242).
 - **D-222** — O expurgo do entulho de webhook: limpeza unica, nao politica de retencao
 - **D-230** — O snapshot do Full morreu no dia em que a escrita passou a abortar, e a causa era dois anuncios com um estoque
 - **D-242** — Anuncios pelo frame: a faixa que so conta o que se mede, e a RPC que ganhou um filtro para a faixa ser honesta
+- **D-243** — Full por anuncio em /anuncios: o desvio de D-242 estava errado, e a auditoria o pegou conferindo o schema
+- **D-245** — Curadoria ganha a coluna "Anuncios" do frame, com a definicao de vinculado de D-122
 
 ### outros (38)
 
@@ -211,7 +213,7 @@ Decisões registradas: **237** (D-001 a D-242).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (15)
+### vendas/métricas (16)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -228,8 +230,9 @@ Decisões registradas: **237** (D-001 a D-242).
 - **D-227** — A aba Vendas: tres perguntas, um round trip, e a soma que precisou ser medida antes de ser somada
 - **D-235** — Marca na Curva ABC: a coluna certa, a semantica certa, e um chamador que so existia no banco
 - **D-237** — Marca em /vendas: o filtro entra, e o que nao tem resposta por marca volta NULL
+- **D-244** — Produtos que mais contribuiram: a tabela que fechava o frame de Vendas, com RPC propria
 
-### worker/infra (48)
+### worker/infra (49)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -279,4 +282,5 @@ Decisões registradas: **237** (D-001 a D-242).
 - **D-217** — Incidente: a representacao virou valor, e 13 horas de sincronizacao pararam
 - **D-219** — O frescor de /saude passa a ser contra a cadencia, e o incidente de ontem vira teste
 - **D-221** — A garantia append-only de job_runs nao tinha guarda, e eu ia precisar dela
+- **D-246** — A auditoria de fidelidade: o que "Figma-first" escondia, e cinco mapas de tom que viraram um
 

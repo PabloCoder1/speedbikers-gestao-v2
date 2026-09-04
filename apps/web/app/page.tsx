@@ -7,9 +7,10 @@ import { PageTitle } from "../components/page-title";
 import { Panel } from "../components/panel";
 import { SalesChart } from "./vendas/sales-chart";
 import { Shell } from "../components/shell";
+import { TOM, type Tom } from "../components/tone";
 import { DEFAULT_SALES_METRIC } from "../lib/sales-metric";
 import { eventTypeLabel, severityLabel } from "../lib/labels";
-import { formatCount, formatCurrency, formatDateTime } from "../lib/format";
+import { formatBusinessDate, formatCount, formatCurrency, formatDateTime } from "../lib/format";
 import { createClient } from "../lib/supabase/server";
 import { currentMembership } from "../lib/membership";
 
@@ -71,25 +72,15 @@ const ATIVIDADE_LIMITE = 5;
 
 type Severidade = "critico" | "importante" | "acompanhar";
 
-const TOM: Record<Severidade, { rotulo: string; cor: string; pilulaFundo: string; pilulaTinta: string }> = {
-  critico: {
-    rotulo: "Crítico",
-    cor: "var(--sb-danger)",
-    pilulaFundo: "var(--sb-danger-soft)",
-    pilulaTinta: "var(--sb-danger-ink)",
-  },
-  importante: {
-    rotulo: "Importante",
-    cor: "var(--sb-accent-ink)",
-    pilulaFundo: "var(--sb-accent-soft)",
-    pilulaTinta: "var(--sb-accent-ink)",
-  },
-  acompanhar: {
-    rotulo: "Acompanhar",
-    cor: "var(--sb-secondary)",
-    pilulaFundo: "var(--sb-neutral-soft)",
-    pilulaTinta: "var(--sb-secondary)",
-  },
+/*
+ * Rótulo, cor da borda e TOM do selo por severidade. O selo lê `tone.ts`, o
+ * dono único dos cinco pares do Figma — este arquivo carregava o quarto mapa
+ * de tom do app (a auditoria de fidelidade contou cinco).
+ */
+const SEVERIDADE: Record<Severidade, { rotulo: string; cor: string; tom: Tom }> = {
+  critico: { rotulo: "Crítico", cor: "var(--sb-danger)", tom: "perigo" },
+  importante: { rotulo: "Importante", cor: "var(--sb-accent-ink)", tom: "atencao" },
+  acompanhar: { rotulo: "Acompanhar", cor: "var(--sb-secondary)", tom: "info" },
 };
 
 const ORDEM: Record<Severidade, number> = { critico: 0, importante: 1, acompanhar: 2 };
@@ -106,6 +97,12 @@ interface Card {
   readonly caption: string;
   readonly href: string;
   readonly cta: string;
+  /**
+   * A linha de IMPACTO do frame ("R$ 18.720 em vendas em risco", "3 casos
+   * próximos do prazo"): o número lido dentro de uma frase de negócio, no tom.
+   * Recebe a contagem e devolve a frase — nada é estimado além do que se mediu.
+   */
+  readonly impacto: (n: number) => string;
   readonly count: number | null;
   readonly severidade: Severidade;
   /** Falha de leitura NUNCA vira zero (D-067) — some o número e aparece o aviso. */
@@ -115,15 +112,21 @@ interface Card {
 function AttentionCard({ card }: { card: Card }): ReactNode {
   const vazio = !card.failed && (card.count ?? 0) === 0;
   const neutro = card.failed || vazio;
-  const tom = TOM[card.severidade];
+  const sev = SEVERIDADE[card.severidade];
+  const selo = neutro ? TOM.neutro : TOM[sev.tom];
 
   return (
     <Link
       href={card.href}
-      className="sb-attention-card"
+      className={
+        !neutro && card.severidade === "critico" ? "sb-attention-card sb-attention-card-critico" : "sb-attention-card"
+      }
       // A borda inteira leva o tom, como no frame. `--sb-tone` é lida pela
       // classe, então a regra de CSS é uma só para os três estados.
-      style={{ ["--sb-tone" as string]: neutro ? "var(--sb-border)" : tom.cor }}
+      style={{
+        ["--sb-tone" as string]: neutro ? "var(--sb-border)" : sev.cor,
+        ["--sb-tone-ink" as string]: neutro ? "var(--sb-text)" : selo.color,
+      }}
     >
       <div className="sb-attention-card-head">
         <h3>{card.label}</h3>
@@ -132,24 +135,25 @@ function AttentionCard({ card }: { card: Card }): ReactNode {
             distinguem vermelho de verde — a mesma doutrina de `StatusPill`.
             E um card que falhou NÃO anuncia severidade: dizer "Crítico" sobre
             um número que não foi lido é afirmar o que não se sabe. */}
-        <span
-          className="sb-status"
-          style={{
-            background: neutro ? "var(--sb-neutral-soft)" : tom.pilulaFundo,
-            color: neutro ? "var(--sb-neutral-ink)" : tom.pilulaTinta,
-          }}
-        >
-          {card.failed ? "Não medido" : vazio ? "Limpo" : tom.rotulo}
+        <span className="sb-status" style={selo}>
+          {card.failed ? "Não medido" : vazio ? "Limpo" : sev.rotulo}
         </span>
       </div>
 
-      <div className="sb-attention-value" style={{ color: neutro ? "var(--sb-text)" : tom.cor }}>
-        {card.failed ? "—" : formatCount(card.count)}
-      </div>
+      {/*
+        Como no frame: uma frase de impacto em negrito no tom, e a legenda
+        embaixo. O número grande solto saiu — "1" não diz nada; "1 ação de
+        severidade alta aberta" diz. Falha de leitura NUNCA vira zero (D-067).
+      */}
+      <p className="sb-attention-impact">{card.failed ? "Leitura indisponível" : card.impacto(card.count ?? 0)}</p>
 
       <p>{card.failed ? "Não foi possível carregar" : card.caption}</p>
 
-      <span className="sb-attention-cta">{card.cta} →</span>
+      {/* `<Button variant=primary|ghost className="w-full">` no frame — um
+          botão de largura total no rodapé, primário quando é crítico. */}
+      <span className="sb-attention-cta">
+        <span>{card.cta}</span>
+      </span>
     </Link>
   );
 }
@@ -192,14 +196,38 @@ function primeira(data: unknown): SalesSummaryRow | null {
  * vez de inventar um nome a partir do e-mail.
  */
 function saudacao(nome: string | null, agora: Date): string {
-  if (nome === null || nome.trim() === "") return "O que precisa da sua atenção hoje?";
-
   const hora = Number(
     new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", hour: "numeric", hour12: false }).format(agora),
   );
   const parte = hora < 12 ? "Bom dia" : hora < 18 ? "Boa tarde" : "Boa noite";
 
+  // Sem nome, a saudação fica só com a parte do dia — o h1 não troca de
+  // assunto, e a pergunta do produto mora no subtítulo, como no frame.
+  if (nome === null || nome.trim() === "") return `${parte}.`;
+
   return `${parte}, ${nome.trim().split(/\s+/)[0] ?? nome}.`;
+}
+
+/**
+ * A sobrancelha com data do frame: "TERÇA, 18 AGO" — dia da semana curto, sem
+ * "-feira", sem "DE" e sem ponto. O `Intl` produz "SEXTA-FEIRA, 04 DE SET.";
+ * por isso os mapas fixos.
+ */
+const DIAS = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SÁB"] as const;
+const MESES = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"] as const;
+
+function sobrancelhaData(agora: Date): string {
+  const partes = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Sao_Paulo",
+    weekday: "short",
+    day: "2-digit",
+    month: "numeric",
+  }).formatToParts(agora);
+  const pegar = (tipo: string): string => partes.find((p) => p.type === tipo)?.value ?? "";
+  const semana = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(pegar("weekday"));
+  const mes = Number(pegar("month")) - 1;
+
+  return `${DIAS[semana] ?? ""}, ${pegar("day")} ${MESES[mes] ?? ""}`;
 }
 
 export default async function HomePage(): Promise<ReactNode> {
@@ -215,6 +243,15 @@ export default async function HomePage(): Promise<ReactNode> {
   // (`docs/ARCHITECTURE.md` secao 21, regra 4). Nenhuma delas recebe
   // organização — quem restringe é a RLS —, então todas cabem numa ida só
   // (D-185: o custo é o round trip, não o SQL).
+  // O id do usuário vem do cookie (`getSession()`), sem ida ao Auth: só para
+  // filtrar a PRÓPRIA linha de `profiles`. Sem o filtro, com dois perfis
+  // visíveis (D-234), `maybeSingle()` falhava e a saudação nunca tinha nome —
+  // a auditoria de fidelidade viu "Boa tarde." onde o frame diz "Bom dia, João."
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const userId = session?.user.id ?? null;
+
   const [membership, acoesAltas, acoesOutras, openCases, mediations, unread, vendas, vendasAntes, serieDiaria, atividade, perfil] =
     await Promise.all([
       currentMembership(supabase),
@@ -256,7 +293,9 @@ export default async function HomePage(): Promise<ReactNode> {
         .select("id, created_at, domain_events(event_type, entity_type, severity, ml_accounts(label))")
         .order("created_at", { ascending: false })
         .limit(ATIVIDADE_LIMITE),
-      supabase.from("profiles").select("full_name").maybeSingle(),
+      userId === null
+        ? Promise.resolve({ data: null, error: null })
+        : supabase.from("profiles").select("full_name").eq("id", userId).maybeSingle(),
     ]);
 
   const organizationId = membership.organizationId;
@@ -276,13 +315,29 @@ export default async function HomePage(): Promise<ReactNode> {
   // a organização só se conhece depois da leitura acima. É UMA ida a mais, e
   // ela compra o card que o brief põe como primeiro exemplo de crítico —
   // ruptura, que o motor de ações não emite.
-  const coverage = await supabase.rpc("get_stock_coverage_summary", {
-    p_organization_id: organizationId,
-    p_date_from: janela.from,
-    p_date_to: janela.to,
-  });
+  const [coverage, pausados] = await Promise.all([
+    supabase.rpc("get_stock_coverage_summary", {
+      p_organization_id: organizationId,
+      p_date_from: janela.from,
+      p_date_to: janela.to,
+    }),
+    // "Anúncios pausados" é um dos quatro cartões do frame da Home, e tem dado
+    // real: a MESMA função de `/anuncios`, com o MESMO predicado do link —
+    // pausado E com estoque (um pausado sem estoque não tem o que reativar).
+    supabase.rpc("get_listings_dashboard", {
+      p_organization_id: organizationId,
+      p_date_from: janela.from,
+      p_date_to: janela.to,
+      p_status: "paused",
+      p_stock: "in",
+      p_limit: 1,
+    }),
+  ]);
 
   const coverageRow = primeira(coverage.data) as { em_ruptura: number | null } | null;
+  const pausadosRow = Array.isArray(pausados.data) && pausados.data.length > 0
+    ? (pausados.data[0] as { total_count: number })
+    : null;
 
   const cards: readonly Card[] = [
     {
@@ -290,6 +345,7 @@ export default async function HomePage(): Promise<ReactNode> {
       caption: "vendem e estão sem saldo para vender",
       href: "/cobertura",
       cta: "Ver cobertura",
+      impacto: (n) => `${formatCount(n)} ${n === 1 ? "SKU vendendo sem saldo" : "SKUs vendendo sem saldo"}`,
       count: coverageRow?.em_ruptura ?? null,
       severidade: "critico",
       failed: coverage.error !== null,
@@ -299,6 +355,7 @@ export default async function HomePage(): Promise<ReactNode> {
       caption: "com representante do Mercado Livre; subconjunto dos atendimentos abertos",
       href: "/atendimento?canal=CLAIM",
       cta: "Ver mediações",
+      impacto: (n) => `${formatCount(n)} ${n === 1 ? "caso em disputa" : "casos em disputa"}`,
       count: mediations.count,
       severidade: "critico",
       failed: mediations.error !== null,
@@ -308,6 +365,7 @@ export default async function HomePage(): Promise<ReactNode> {
       caption: "severidade alta, ordenadas por impacto financeiro estimado",
       href: "/acoes",
       cta: "Ver ações",
+      impacto: (n) => `${formatCount(n)} ${n === 1 ? "ação de severidade alta aberta" : "ações de severidade alta abertas"}`,
       count: acoesAltas.count,
       severidade: "critico",
       failed: acoesAltas.error !== null,
@@ -317,6 +375,7 @@ export default async function HomePage(): Promise<ReactNode> {
       caption: "severidade média e baixa",
       href: "/acoes",
       cta: "Ver ações",
+      impacto: (n) => `${formatCount(n)} ${n === 1 ? "ação aberta" : "ações abertas"} de menor severidade`,
       count: acoesOutras.count,
       severidade: "importante",
       failed: acoesOutras.error !== null,
@@ -326,6 +385,7 @@ export default async function HomePage(): Promise<ReactNode> {
       caption: "perguntas, mensagens e reclamações, incluindo as em mediação",
       href: "/atendimento",
       cta: "Ver caixa de entrada",
+      impacto: (n) => `${formatCount(n)} ${n === 1 ? "atendimento aguardando resposta" : "atendimentos aguardando resposta"}`,
       count: openCases.count,
       severidade: "importante",
       failed: openCases.error !== null,
@@ -335,9 +395,20 @@ export default async function HomePage(): Promise<ReactNode> {
       caption: "eventos que ainda não foram vistos",
       href: "/notificacoes",
       cta: "Ver notificações",
+      impacto: (n) => `${formatCount(n)} ${n === 1 ? "evento ainda não visto" : "eventos ainda não vistos"}`,
       count: unread.count,
       severidade: "acompanhar",
       failed: unread.error !== null,
+    },
+    {
+      label: "Anúncios pausados",
+      caption: "pausados com estoque disponível — têm o que reativar",
+      href: "/anuncios?estado=paused&estoque=in",
+      cta: "Ver anúncios",
+      impacto: (n) => `${formatCount(n)} ${n === 1 ? "anúncio pausado com estoque" : "anúncios pausados com estoque"}`,
+      count: pausados.error !== null ? null : (pausadosRow?.total_count ?? 0),
+      severidade: "importante",
+      failed: pausados.error !== null,
     },
   ];
 
@@ -355,6 +426,13 @@ export default async function HomePage(): Promise<ReactNode> {
 
   const pedemAtencao = cards.filter((card) => grau(card) < 2).length;
 
+  // O frame só desenha as situações DETECTADAS (`attention.map(...)`) e conta
+  // "N situações detectadas". O que está medido e limpo não vira cartão — vira
+  // uma linha compacta abaixo da grade, para o número continuar visível
+  // (medido e limpo é diferente de não medido, D-067) sem ocupar a grade.
+  const detectados = ordenados.filter((card) => grau(card) < 2);
+  const limpos = ordenados.filter((card) => grau(card) === 2);
+
   const atual = primeira(vendas.data);
   const antes = primeira(vendasAntes.data);
   // "Nunca calculado" e "calculado e zero" são estados diferentes — o mesmo
@@ -370,18 +448,18 @@ export default async function HomePage(): Promise<ReactNode> {
       previous: semJanela ? null : formatCurrency(antes?.gross_revenue ?? null),
     },
     {
-      metricId: "unidades_vendidas",
-      label: "Unidades vendidas",
-      formula: "SUM(units_sold) no grão dia/conta",
-      value: semJanela ? "—" : formatCount(atual.units_sold),
-      previous: semJanela ? null : formatCount(antes?.units_sold ?? null),
-    },
-    {
       metricId: "pedidos",
       label: "Pedidos",
       formula: "SUM(orders_count) no grão dia/conta",
       value: semJanela ? "—" : formatCount(atual.orders_count),
       previous: semJanela ? null : formatCount(antes?.orders_count ?? null),
+    },
+    {
+      metricId: "unidades_vendidas",
+      label: "Unidades vendidas",
+      formula: "SUM(units_sold) no grão dia/conta",
+      value: semJanela ? "—" : formatCount(atual.units_sold),
+      previous: semJanela ? null : formatCount(antes?.units_sold ?? null),
     },
     {
       metricId: "ticket_medio",
@@ -402,22 +480,13 @@ export default async function HomePage(): Promise<ReactNode> {
 
   const nome = perfil.error === null ? (perfil.data?.full_name ?? null) : null;
 
-  const dataDeHoje = new Intl.DateTimeFormat("pt-BR", {
-    timeZone: "America/Sao_Paulo",
-    weekday: "long",
-    day: "2-digit",
-    month: "short",
-  })
-    .format(agora)
-    .toUpperCase();
-
   return (
     <Shell>
       <PageTitle
         compacto
-        eyebrow={`VISÃO GERAL / ${dataDeHoje}`}
+        eyebrow={`VISÃO GERAL / ${sobrancelhaData(agora)}`}
         title={saudacao(nome, agora)}
-        subtitle="Cada número abaixo é lido do mesmo dado que a tela correspondente mostra. Zero não some da lista: medido e limpo é diferente de não medido."
+        subtitle="O que precisa da sua atenção hoje na operação."
       />
 
       <section className="sb-attention" aria-label="Atenção necessária">
@@ -438,18 +507,33 @@ export default async function HomePage(): Promise<ReactNode> {
           </span>
         </div>
 
-        <div className="sb-attention-grid">
-          {ordenados.map((card) => (
-            <AttentionCard card={card} key={card.label} />
-          ))}
-        </div>
+        {detectados.length > 0 && (
+          <div className="sb-attention-grid">
+            {detectados.map((card) => (
+              <AttentionCard card={card} key={card.label} />
+            ))}
+          </div>
+        )}
+
+        {limpos.length > 0 && (
+          <p className="sb-attention-clean">
+            <span>Medidos e limpos:</span>
+            {limpos.map((card) => (
+              <Link key={card.label} href={card.href} title={card.caption}>
+                <b>0</b> {card.label}
+              </Link>
+            ))}
+          </p>
+        )}
       </section>
 
       <div className="sb-section-label">
         <span>Indicadores gerais</span>
+        {/* Sem porcentagem de variação: D-023 (a justificativa mora no
+            `title` de cada célula, não na tela). */}
         <span className="sb-section-note">
-          {janela.from} a {janela.to}, comparado com {anterior.from} a {anterior.to} — os dois valores lado a
-          lado, sem porcentagem (D-023)
+          últimos {JANELA_DIAS} dias ({formatBusinessDate(janela.from)} a {formatBusinessDate(janela.to)}) ·
+          comparado com os {JANELA_DIAS} dias anteriores
         </span>
       </div>
 

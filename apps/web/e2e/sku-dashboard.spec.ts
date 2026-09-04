@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { E2E_DECISION_TEXT, E2E_LISTINGS, E2E_SKU_SALES } from "./constants.js";
+import { E2E_DECISION_TEXT, E2E_LISTINGS, E2E_LISTING_FULL, E2E_SKU_SALES } from "./constants.js";
 import { login } from "./helpers.js";
 import { readSeedOutput } from "./seed-output.js";
 
@@ -17,11 +17,11 @@ test("dashboard de SKU mostra saldo local do seed", async ({ page }) => {
   await login(page, `/skus/${seed.skuId}`);
 
   await expect(page).toHaveURL(new RegExp(`/skus/${seed.skuId}$`));
-  // O `<h1>` é o NOME do produto e o código do SKU é o identificador em
-  // monoespaçado acima dele — o cabeçalho de entidade do Figma. Era o
-  // contrário: `<h1>E2E-SKU-001</h1>` com o nome como parágrafo cinza. O código
-  // é chave (o que se copia e se cola em outro sistema), não título.
-  await expect(page.getByRole("heading", { level: 1, name: "Produto de teste E2E" })).toBeVisible();
+  // Como no frame: a página abre com o cabeçalho "Detalhe do SKU" (h1) e o
+  // cartão de entidade traz o nome do produto como título do cartão (h2), com
+  // o identificador em mono acima dele.
+  await expect(page.getByRole("heading", { level: 1, name: "Detalhe do SKU" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Produto de teste E2E" })).toBeVisible();
   await expect(page.getByText(`SKU ${seed.skuCode}`, { exact: true })).toBeVisible();
 
   // O cartão de estoque consolidou os quatro saldos: o valor é o LOCAL e a
@@ -54,14 +54,16 @@ test("dashboard de SKU mostra saldo local do seed", async ({ page }) => {
 });
 
 /**
- * Aba Full (D-224/D-225) — a fiação, e o estado vazio HONESTO.
+ * Aba Full (D-224/D-225/D-243) — a fiação, e o número certo por conta.
  *
- * O seed não cria snapshot de Full de propósito: é o estado mais comum de um
- * SKU qualquer, e é onde a tela pode mentir. A regra de D-067 é que ausência
- * de dado nunca vira zero — aqui isso significa dizer "não há snapshot", e
- * não estampar "0 no Full", que é uma afirmação diferente e falsa.
+ * O seed grava UM snapshot de Full (`E2E_LISTING_FULL`) no anúncio vinculado a
+ * este SKU. A tabela por conta tem de mostrar exatamente essa quantidade na
+ * conta do seed — lida do último snapshot, nunca somada com os históricos e
+ * nunca inventada. (O estado vazio honesto, "ausência de snapshot não é saldo
+ * zero", continua sendo o texto da aba quando não há snapshot; com o fixture
+ * atual ele não aparece, e é a linha que se afirma.)
  */
-test("aba Full existe e distingue ausência de snapshot de saldo zero", async ({ page }) => {
+test("aba Full mostra o snapshot do seed por conta", async ({ page }) => {
   const seed = await readSeedOutput();
 
   await login(page, `/skus/${seed.skuId}`);
@@ -70,7 +72,11 @@ test("aba Full existe e distingue ausência de snapshot de saldo zero", async ({
 
   await expect(page).toHaveURL(/aba=full/);
   await expect(page.getByRole("heading", { name: "Full por conta" })).toBeVisible();
-  await expect(page.getByText("Ausência de snapshot não é o mesmo que saldo zero")).toBeVisible();
+
+  const linhaConta = page.getByRole("row", { name: new RegExp(seed.mlAccountLabel) });
+
+  await expect(linhaConta).toBeVisible();
+  await expect(linhaConta.locator("td").nth(1)).toHaveText(String(E2E_LISTING_FULL));
 });
 
 /**
@@ -118,7 +124,10 @@ test("aba Vendas mostra total, ticket médio e a conta — somados no banco", as
   // título da seção, e cada número no seu cartão.
   await expect(page.getByText("Vendas do SKU", { exact: true })).toBeVisible();
 
-  const cartao = (rotulo: string) => page.locator(".sb-stat", { hasText: rotulo }).locator(".sb-stat-value");
+  // Os seis números canônicos viraram UMA faixa de KPIs (a mesma apresentação
+  // que /vendas dá às mesmas métricas), em vez de seis cartões soltos.
+  const cartao = (rotulo: string) =>
+    page.locator(".sb-kpi", { has: page.getByText(rotulo, { exact: true }) }).locator(".sb-kpi-value");
 
   await expect(cartao("Unidades vendidas")).toHaveText(String(unidades));
   // Razão sobre as SOMAS (500 / 5 = R$ 100,00), não média das razões diárias.
@@ -154,7 +163,9 @@ test("aba Decisões mostra a decisão do seed com o antes e o depois lado a lado
 
   await expect(page.getByText(E2E_DECISION_TEXT)).toBeVisible();
   await expect(page.getByText("Venda anômala · Queda")).toBeVisible();
-  await expect(page.getByText("No momento da decisão — Vendido (7d): 2")).toBeVisible();
-  await expect(page.getByText(/7 dias depois \(.*\) — Vendido \(7d\): 5/)).toBeVisible();
+  // O retrato "antes × depois" é uma tabela: cada linha nomeia o momento e
+  // carrega o retrato bruto — nenhuma porcentagem sintetizada (D-228).
+  await expect(page.getByRole("row", { name: /No momento da decisão/ })).toContainText("Vendido (7d): 2");
+  await expect(page.getByRole("row", { name: /7 dias depois/ })).toContainText("Vendido (7d): 5");
   await expect(page.getByText("Ainda sem medição: 15 dias depois, 30 dias depois.")).toBeVisible();
 });

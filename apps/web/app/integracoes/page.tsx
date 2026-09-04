@@ -48,13 +48,13 @@ export const dynamic = "force-dynamic";
  */
 
 const STATE_TONE: Record<IntegrationState, PillTone> = {
-  ok: { color: "var(--sb-secondary)", label: "OK" },
-  atencao: { color: "var(--sb-accent-ink)", label: "Atenção" },
-  erro: { color: "var(--sb-danger)", label: "Erro" },
-  observado: { color: "var(--sb-text-soft)", label: "Observado" },
-  sem_atividade: { color: "var(--sb-muted-ink)", label: "Sem atividade" },
-  nao_configurado: { color: "var(--sb-muted-ink)", label: "Não configurado" },
-  nao_verificavel: { color: "var(--sb-text-soft)", label: "Não verificável" },
+  ok: { tom: "ok", label: "OK" },
+  atencao: { tom: "atencao", label: "Atenção" },
+  erro: { tom: "perigo", label: "Erro" },
+  observado: { tom: "info", label: "Observado" },
+  sem_atividade: { tom: "neutro", label: "Sem atividade" },
+  nao_configurado: { tom: "neutro", label: "Não configurado" },
+  nao_verificavel: { tom: "neutro", label: "Não verificável" },
 };
 
 const DIMENSION_LABEL = {

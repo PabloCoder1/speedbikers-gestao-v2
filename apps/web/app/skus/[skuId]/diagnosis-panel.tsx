@@ -24,30 +24,20 @@ import { diagnoseSku, type SkuDiagnosisResult } from "./actions";
  * corpo do pedido — a `api` revalida que o usuário alcança o SKU antes
  * de narrar, mas não recalcula o diagnóstico (evita duplicar a agregação
  * pesada de `get_sku_sales_baseline`/`domain_events`).
+ *
+ * ## Composição (auditoria de fidelidade, P0)
+ *
+ * Era um `<button>` com estilo próprio solto sobre o corpo cinza do cartão de
+ * entidade, e o resultado um cartão desenhado à mão — a aplicação antiga
+ * intacta dentro da moldura nova. O frame do SKU não desenha esta aba
+ * ("Conteúdo da aba em construção"), então vale o design system: um painel
+ * com título e ressalva no cabeçalho, a ação como `.sb-button` no canto do
+ * painel, e o resultado como `.sb-stat`s + lista dentro do corpo. O painel é
+ * markup, não componente: `Panel` é Server Component e este arquivo é
+ * cliente — as classes são as mesmas, então a forma é uma só.
  */
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
-
-const buttonStyle: React.CSSProperties = {
-  padding: "0.375rem 0.875rem",
-  borderRadius: "var(--sb-radius)",
-  border: "1px solid var(--sb-border)",
-  background: "transparent",
-  fontSize: "0.8125rem",
-  cursor: "pointer",
-};
-
-const cardStyle: React.CSSProperties = {
-  marginTop: "var(--sb-space-2)",
-  padding: "var(--sb-space-3)",
-  border: "1px solid var(--sb-border)",
-  borderRadius: "var(--sb-radius)",
-  background: "var(--sb-surface)",
-  fontSize: "0.875rem",
-  display: "grid",
-  gap: "0.375rem",
-  maxWidth: "36rem",
-};
 
 export function DiagnosisPanel({ skuId }: { skuId: string }): ReactNode {
   const [result, setResult] = useState<SkuDiagnosisResult | null>(null);
@@ -120,87 +110,128 @@ export function DiagnosisPanel({ skuId }: { skuId: string }): ReactNode {
     setNarrating(false);
   }
 
+  const anomalia = result !== null && result.ok && result.status === "anomaly" ? result.diagnosis : null;
+
   return (
-    <div style={{ marginBottom: "var(--sb-space-4)" }}>
-      <button
-        type="button"
-        disabled={busy}
-        onClick={() => {
-          void handleClick();
-        }}
-        style={buttonStyle}
-      >
-        {busy ? "Analisando…" : "O que aconteceu?"}
-      </button>
+    <section className="sb-panel" aria-label="Diagnóstico de venda">
+      <div className="sb-panel-head">
+        <div style={{ minWidth: 0 }}>
+          <h2>Diagnóstico de venda</h2>
+          <p>
+            Compara a venda de ontem com o mesmo dia da semana nas últimas semanas (D-078). Nada é calculado até
+            você pedir.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="sb-button sb-button-primary"
+          disabled={busy}
+          onClick={() => {
+            void handleClick();
+          }}
+        >
+          {busy ? "Analisando…" : "O que aconteceu?"}
+        </button>
+      </div>
+
+      {result === null && (
+        <p className="sb-empty">Clique em “O que aconteceu?” para comparar a venda de ontem com o padrão do dia.</p>
+      )}
 
       {result !== null && !result.ok && (
-        <p role="alert" style={{ marginTop: "var(--sb-space-2)", fontSize: "0.8125rem", color: "var(--sb-danger)" }}>
+        <p role="alert" className="sb-panel-body" style={{ color: "var(--sb-danger)" }}>
           {result.message}
         </p>
       )}
 
       {result !== null && result.ok && result.status === "insufficient_sample" && (
-        <p style={{ marginTop: "var(--sb-space-2)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+        <p className="sb-empty">
           Histórico insuficiente para comparar — menos de 4 ocorrências do mesmo dia da semana com venda calculada.
         </p>
       )}
 
       {result !== null && result.ok && result.status === "no_anomaly" && (
-        <p style={{ marginTop: "var(--sb-space-2)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+        <p className="sb-empty">
           Venda de ontem dentro do padrão esperado para o mesmo dia da semana — nenhuma anomalia detectada.
         </p>
       )}
 
-      {result !== null && result.ok && result.status === "anomaly" && result.diagnosis !== null && (
-        <div style={{ ...cardStyle, background: result.diagnosis.direcao === "queda" ? "var(--sb-danger-soft)" : "var(--sb-success-soft)" }}>
-          <div style={{ fontWeight: 700 }}>
-            {result.diagnosis.direcao === "queda" ? "Queda" : "Alta"} de venda — confiança{" "}
-            {result.diagnosis.confianca === "alta" ? "alta" : "média"}
+      {result !== null && result.ok && anomalia !== null && (
+        <div className="sb-panel-body" style={{ display: "grid", gap: "var(--sb-space-3)" }}>
+          {/*
+            Os dois números do diagnóstico como cartões de indicador, com o tom
+            do veredito na borda — o mesmo gesto do cartão Cobertura da Visão
+            geral. Queda é perigo; alta é ok.
+          */}
+          <div className="sb-stat-grid">
+            <div
+              className="sb-stat"
+              style={{
+                ["--sb-tone" as string]: anomalia.direcao === "queda" ? "var(--sb-danger)" : "var(--sb-success)",
+                ["--sb-tone-ink" as string]: anomalia.direcao === "queda" ? "var(--sb-danger-ink)" : "var(--sb-success)",
+              }}
+            >
+              <span className="sb-stat-label">Veredito</span>
+              <b className="sb-stat-value">{anomalia.direcao === "queda" ? "Queda" : "Alta"} de venda</b>
+              <span className="sb-stat-note">confiança {anomalia.confianca === "alta" ? "alta" : "média"}</span>
+            </div>
+
+            <div className="sb-stat">
+              <span className="sb-stat-label">Impacto estimado</span>
+              <b className="sb-stat-value">{result.impactBrl === null ? "—" : formatCurrency(result.impactBrl)}</b>
+              <span className="sb-stat-note">
+                {result.impactBrl === null ? "sem preço médio para estimar" : "diferença × preço médio praticado"}
+              </span>
+            </div>
           </div>
-
-          {result.diagnosis.evidencias.map((evidence, index) => (
-            <div key={`${evidence.tipo}-${String(index)}`}>{evidence.descricao}</div>
-          ))}
-
-          {result.impactBrl !== null && <div>Impacto estimado: {formatCurrency(result.impactBrl)}</div>}
 
           <div>
-            <strong>Causa candidata:</strong>{" "}
-            {result.diagnosis.causasCandidatas.length === 0
-              ? "nenhum evento correlato encontrado"
-              : result.diagnosis.causasCandidatas.map((cause) => cause.descricao).join(" ")}
+            <div className="sb-section-label" style={{ marginTop: 0 }}>
+              <span>Evidências</span>
+            </div>
+            <ul style={{ margin: 0, paddingLeft: "1.125rem", fontSize: "0.6875rem", display: "grid", gap: "0.25rem" }}>
+              {anomalia.evidencias.map((evidence, index) => (
+                <li key={`${evidence.tipo}-${String(index)}`}>{evidence.descricao}</li>
+              ))}
+            </ul>
           </div>
 
-          <div>
-            <strong>Próximos passos:</strong> {result.diagnosis.proximosPassos.join(" ")}
+          <div style={{ fontSize: "0.6875rem", display: "grid", gap: "0.375rem" }}>
+            <p style={{ margin: 0 }}>
+              <strong>Causa candidata:</strong>{" "}
+              {anomalia.causasCandidatas.length === 0
+                ? "nenhum evento correlato encontrado"
+                : anomalia.causasCandidatas.map((cause) => cause.descricao).join(" ")}
+            </p>
+            <p style={{ margin: 0 }}>
+              <strong>Próximos passos:</strong> {anomalia.proximosPassos.join(" ")}
+            </p>
           </div>
 
-          <div style={{ marginTop: "var(--sb-space-2)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--sb-space-2)", flexWrap: "wrap" }}>
             <button
               type="button"
+              className="sb-button"
               disabled={narrating}
               onClick={() => {
-                if (result.diagnosis !== null) {
-                  void handleNarrate(result.diagnosis, result.impactBrl);
-                }
+                void handleNarrate(anomalia, result.impactBrl);
               }}
-              style={buttonStyle}
             >
               {narrating ? "Narrando…" : "Narrar com IA"}
             </button>
 
             {narrationError !== null && (
-              <p role="alert" style={{ marginTop: "var(--sb-space-2)", fontSize: "0.8125rem", color: "var(--sb-danger)" }}>
+              <span role="alert" style={{ fontSize: "0.6875rem", color: "var(--sb-danger)" }}>
                 {narrationError}
-              </p>
-            )}
-
-            {narrativa !== null && (
-              <p style={{ marginTop: "var(--sb-space-2)", fontSize: "0.875rem", fontStyle: "italic" }}>{narrativa}</p>
+              </span>
             )}
           </div>
+
+          {narrativa !== null && (
+            <p style={{ margin: 0, fontSize: "0.75rem", fontStyle: "italic", color: "var(--sb-text)" }}>{narrativa}</p>
+          )}
         </div>
       )}
-    </div>
+    </section>
   );
 }

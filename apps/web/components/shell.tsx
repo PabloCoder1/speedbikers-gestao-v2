@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { roleLabel } from "../lib/labels";
 import { createClient } from "../lib/supabase/server";
 import { CommandPalette } from "./command-palette";
 import type { NotificationPreferenceRule } from "../lib/notification-preferences";
@@ -72,7 +73,18 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
   // inteira. Enfileirá-lo não protegia nada: quem barra a rota é o `proxy.ts`,
   // que já chamou `getUser()` nesta mesma requisição e redirecionou para
   // `/login` sem sessão. As outras são restringidas pela RLS.
-  const [{ data: auth }, membership, unread, preferences, contas, atendimentos] = await Promise.all([
+  // O id do usuário SEM ida ao servidor de Auth: `getSession()` lê o cookie.
+  // Serve só para filtrar a linha de `profiles` — quem autoriza é a RLS, e
+  // quem barra a rota é o `proxy.ts`, que já validou o token com `getUser()`.
+  // Sem o filtro, um membro que enxerga os perfis da organização (D-234: há
+  // dois desde o seed) recebia PGRST116 em `maybeSingle()` e o nome sumia
+  // em silêncio — o cabeçalho voltava ao e-mail.
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const userId = session?.user.id ?? null;
+
+  const [{ data: auth }, membership, unread, preferences, contas, atendimentos, perfil] = await Promise.all([
     supabase.auth.getUser(),
     currentMembership(supabase),
     // Badge de não lidas (Fase 7, item 4) — `notification_recipients_select_own`
@@ -86,6 +98,13 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
     supabase.from("notification_preferences").select("event_type, ml_account_id, min_severity, enabled"),
     supabase.from("ml_accounts").select("id", { count: "exact", head: true }).eq("status", "CONNECTED"),
     supabase.from("support_cases").select("id", { count: "exact", head: true }).neq("internal_status", "RESOLVIDO"),
+    // O NOME da pessoa, para o bloco de perfil (o frame mostra "João Martins
+    // / Administrador", não o e-mail cru e o enum). A policy de `profiles`
+    // já restringe à própria linha; sem nome, o e-mail continua sendo o que
+    // identifica.
+    userId === null
+      ? Promise.resolve({ data: null, error: null })
+      : supabase.from("profiles").select("full_name").eq("id", userId).maybeSingle(),
   ]);
 
   // Falha aqui degrada para "sem regra", que é o mesmo que o componente fazia
@@ -116,6 +135,8 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
   const atendimentosAbertos = atendimentos.error === null ? atendimentos.count : null;
 
   const email = auth.user?.email ?? "—";
+  const nome = perfil.error === null ? (perfil.data?.full_name ?? null) : null;
+  const quem = nome !== null && nome.trim() !== "" ? nome.trim() : email;
 
   return (
     <div className="sb-shell">
@@ -179,12 +200,12 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
 
             <div className="sb-profile">
               <span aria-hidden="true" className="sb-avatar">
-                {iniciais(email)}
+                {iniciais(quem)}
               </span>
-              <span style={{ minWidth: 0 }}>
-                <b>{email}</b>
+              <span style={{ minWidth: 0 }} title={email}>
+                <b>{quem}</b>
                 <small>
-                  {role ?? "sem papel"}
+                  {role === null ? "sem papel" : roleLabel(role)}
                   {membershipError && (
                     <span
                       role="alert"

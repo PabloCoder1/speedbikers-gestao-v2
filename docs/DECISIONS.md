@@ -5721,3 +5721,49 @@ Não reverter decisão existente silenciosamente. Registrar nova decisão que su
 **6. `.sb-table` e opt-in.** A classe vem das medidas do frame. O app tem 44 `<table>`, cada uma com `th`/`td` inline; trocar o `td` global mudaria as 44 sem medir nenhuma — a mesma classe de risco do fundo cinza (D2). Cada tabela adota ao migrar e apaga os consts. `/anuncios` foi a primeira.
 
 **Como aplicar:** (a) celula de resumo so existe se o predicado dela existir na funcao que monta a lista — e o link da celula aplica esse predicado; (b) argumento novo em RPC chamada por SQL vai no fim da assinatura; (c) toda migration com DROP + CREATE de funcao repete `revoke ... from public, anon` e o `grant` COMPLETO anterior; (d) tela sem seed e tela sem teste — antes de migrar uma tela, conferir se o `db reset` + seed a deixa com dado. (e) o `check` do turbo e por CACHE de pacote: um arquivo editado DEPOIS do ultimo `check` fica fora dele em silencio — foi assim que um `Number()` redundante no teste de integracao passou local e reprovou o Lint do CI. A ultima rodada antes do commit e `pnpm run check --force`.
+
+## D-243 - Full por anuncio em /anuncios: o desvio de D-242 estava errado, e a auditoria o pegou conferindo o schema
+
+**Contexto:** D-242 deixou a celula "No Full" e a coluna "Full" do frame `Listings` de fora com o motivo "Full e fato de SKU; `listings` nao tem coluna de logistica". A auditoria de fidelidade (A1, `docs/DESIGN_IMPLEMENTATION.md`) conferiu `fulfillment_stock_snapshots` e o motivo nao batia: a tabela carrega `item_id` (o MLB) e `variation_id` — o snapshot de Full e capturado POR ANUNCIO, e e assim que `get_sku_dashboard` ja o le (`distinct on (ml_account_id, item_id, variation_id) ... order by captured_at desc`). O grao existia; faltava olhar.
+
+**1. A RPC devolve `full_quantity` por anuncio e filtra por `p_full`.** Soma, por anuncio, do ultimo snapshot de cada bucket (`inventory_id`) dos ultimos 3 dias — a DEFINICAO CANONICA de D-173/D-204, a mesma de `get_sku_dashboard`. A primeira versao usava (item_id, variation_id) sem janela e o guard de D-204 a barrou na suite de integracao antes do CI: e para isso que ele existe. NULA sem snapshot recente: ausencia nao e zero (D-067), e a tela mostra "—". `p_full` ('all' | 'with' | 'without') faz a celula "No Full" e o recorte da lista sairem do MESMO predicado, como `p_stock` em D-242. Os dois argumentos novos entram DEPOIS de `p_limit`/`p_offset` (licao de D-242: a suite de integracao chama por posicao).
+
+**2. O seed grava UM snapshot, so no primeiro anuncio.** Os outros tres ficam sem snapshot de proposito: e o que prova na tela "—" em vez de "0" e a celula "No Full" contando exatamente um. `service_role` tem INSERT mas nao UPDATE na tabela (o snapshot e imutavel por desenho), entao o seed usa existe-entao-insere, nao upsert.
+
+**3. Um desvio registrado com motivo errado e pior que a ausencia do desvio.** Ele encerra a pergunta. A regra que fica: desvio por "o dado nao existe" so entra no registro depois de olhar a tabela — nao depois de ler o codigo da tela.
+
+## D-244 - Produtos que mais contribuiram: a tabela que fechava o frame de Vendas, com RPC propria
+
+**Contexto:** o frame `Sales` termina em `<DataTable title="Produtos que mais contribuiram" />` e `/vendas` nao tinha tabela nenhuma — a auditoria classificou como P0 porque o dado existe (`daily_sku_metrics` por conta, SKU e dia).
+
+**1. `get_sales_top_skus`.** Soma por SKU ordenada pela metrica escolhida (`p_order_by`: receita default, unidades, pedidos, compras — a mesma do segmentado do grafico), com o MESMO recorte de conta e marca de `get_sales_summary` (o ramo `p_sem_marca` e o `p_supplier_brand` sao os de D-237). Razoes sobre as somas, nulas com denominador zero; `share` = receita do SKU / receita do recorte. Sem `p_organization_id`, como as demais RPCs de vendas: quem restringe e a RLS (security invoker).
+
+**2. Itens vendidos sem vinculo de SKU ficam FORA da tabela.** Nao ha produto a nomear numa linha, e uma linha "sem SKU" nao e produto. O total desse bucket continua visivel na faixa (`get_sales_summary` o inclui) — a tela diz isso no subtitulo.
+
+**3. A composicao de /vendas passou a ser a do frame, e o que a V3 tem a mais vem depois.** Faixa ancora na ordem do frame (Receita bruta · Taxas ML · Unidades · Taxa de cancelamento · Pedidos — "Receita liquida" e nome vetado, METRICS 5C.1), grafico, tabela; e so entao Hoje, a faixa secundaria "Mais sobre o periodo" (o antigo painel "Cancelamentos e taxas" dissolvido) e a Margem. Nenhuma metrica saiu. A faixa e o grafico passaram a ser INCONDICIONAIS: "nunca calculado" vira "—" com ressalva na celula, nao uma tela diferente.
+
+## D-245 - Curadoria ganha a coluna "Anuncios" do frame, com a definicao de vinculado de D-122
+
+**Contexto:** o frame `ProductsCuration` tem cinco colunas e a quinta e a contagem de anuncios do produto. A V3 tinha oito colunas — as ACRESCENTADAS estavam registradas como desvio, a do frame que faltava nao.
+
+**1. `listing_count` em `get_sku_curation`.** Conta os anuncios que VENDEM o SKU: vinculo direto (`listings.sku_id`) OU por variacao (`sku_listing_links`, `ref_kind = 'ITEM'`), uma vez por (conta, anuncio). Contar so o direto diria "0" para um SKU que vende por variacao — a subcontagem que D-122 mediu (1.013 anuncios). Coluna no FIM da lista de retorno; DROP + CREATE com o guard `private.check_sku_curation_writer` intacto.
+
+**2. A faixa "Retrato do ERP" saiu.** Era invencao da V3: o frame vai do cabecalho direto ao cartao. As contagens (nunca classificados, sem marca, a revisar) moram no cabecalho do cartao, onde o frame poe "N resultados". Elas nao sao metricas catalogadas — sao estados do catalogo — e por isso nunca tiveram id de metrica.
+
+**3. A barra de lote virou os dois controles do frame.** "Classificar estoque" (menu com E virtual / Nao e virtual / Limpar classificacao) e o campo de marca com Aplicar/Limpar. O painel de conferencia com a CONSEQUENCIA (D-127) continua obrigatorio; o e2e abre o menu antes de clicar.
+
+## D-246 - A auditoria de fidelidade: o que "Figma-first" escondia, e cinco mapas de tom que viraram um
+
+**Contexto:** o dono da frente perguntou se o que estava construido seguia o Figma ou era "a aplicacao antiga com o tema do Figma". A resposta foi medida (A1 em `docs/DESIGN_IMPLEMENTATION.md`): nove leituras independentes, cada superficie RENDERIZADA a 1440/1100/850 e comparada ao frame, com evidencia dos dois lados. Tres P0 e dezesseis P1 nao intencionais. O que fica registrado aqui e o que nao e de design.
+
+**1. O seed nunca tinha exercitado a composicao principal de /vendas e da Home.** `get_sales_summary` e `get_sales_daily_series` leem `daily_account_metrics` sem recorte de marca; o seed so gravava `daily_sku_metrics`. Toda captura e todo teste viam "Nenhuma metrica calculada" — a faixa e o grafico do frame nunca tinham sido vistos rodando. O seed passou a gravar as mesmas duas vendas no grao de conta. Regra: fixture que nao alcanca o estado PRINCIPAL da tela nao e fixture.
+
+**2. A saudacao da Home nunca teve nome, e o motivo era D-234.** `profiles.select("full_name").maybeSingle()` sem filtro por usuario: com dois perfis visiveis (o segundo membro do seed), PGRST116 e nome nulo — desde R3, em silencio. O shell repetiu o padrao em A1 e caiu no mesmo buraco. Correcao: `getSession()` (le o cookie, sem ida ao Auth) da o id e a leitura filtra a PROPRIA linha. A RLS continua sendo quem autoriza; o filtro so escolhe.
+
+**3. Cinco mapas de tom para o mesmo chip.** `tone.ts` (canonico), `TONES` em `status-pill.tsx`, `toneColor` em `state-pill.tsx`, `TOM` na Home, mais os `STATE_TONE` por tela. `tone.ts` virou o dono unico (`TOM`, `tomDeStatus`); `StatePill` deixou de ser capsula de contorno — o Figma so tem UMA forma de estado. Quem paga a segunda copia e quem descobre que elas divergiram.
+
+**4. `summarizePagedWindow` dizia "1 anuncios."** Tres telas flexionavam por conta propria antes de chamar; cinco nao. O tipo passou a exigir `{ singular, plural }` para o compilador enumerar as telas em vez de deixar a quarta copia do ternario nascer.
+
+**5. Dez copias do mesmo menu, trinta consts de tabela.** `FilterMenu` substituiu as dez; nas superficies migradas nao restou const inline de tabela nem de cartao (`.sb-table`, `.sb-stat`, `.sb-panel`). `FilterPill` e `table-styles.ts` FICAM ate a fila D13+ migrar as telas que os usam — remover antes seria apagar consumidor vivo. Nenhum backend foi removido; tres migrations ADITIVAS (D-243/D-244/D-245).
+
+**6. O trilho de 58px estava adiado por um motivo que tinha caducado.** "O app nao tem icone" era verdade em D3; os glifos existem desde R1. Desvio registrado envelhece: a auditoria e o que o re-le.

@@ -61,7 +61,12 @@ export function ObjectHeader({
       <div className="sb-object-head">
         <div style={{ minWidth: 0 }}>
           <span className="sb-object-id">{identificador}</span>
-          <h1 className="sb-object-title">{titulo}</h1>
+          {/*
+            `h2`, não `h1`: no frame o cartão de entidade vem DEPOIS de um
+            cabeçalho de página ("CATÁLOGO / DETALHE DO PRODUTO" + "Detalhe do
+            SKU"), que é o h1 da tela. O nome do produto é o título do cartão.
+          */}
+          <h2 className="sb-object-title">{titulo}</h2>
 
           {(badges.length > 0 || meta !== undefined) && (
             <div className="sb-object-badges">

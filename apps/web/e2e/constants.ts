@@ -86,6 +86,9 @@ export const E2E_LISTINGS = [
   },
 ] as const;
 
+/** Full DO ANÚNCIO do primeiro anúncio (D-243) — o único com snapshot no seed. */
+export const E2E_LISTING_FULL = 3;
+
 /**
  * Tráfego e venda do PRIMEIRO anúncio, e só dele.
  *

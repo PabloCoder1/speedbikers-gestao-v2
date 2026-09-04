@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 
 import { Shell } from "../../components/shell";
-import { toneColor } from "../../components/state-pill";
+import { StatePill } from "../../components/state-pill";
+import { TOM, tomDeStatus } from "../../components/tone";
 import { formatDateTime } from "../../lib/format";
 import { mlAccountStatusLabel, statusTone } from "../../lib/labels";
 import { sanitizeErrorText } from "../../lib/sanitize";
@@ -64,7 +65,7 @@ export default async function ContasPage(): Promise<ReactNode> {
           {accounts.map((account) => {
             // Rótulo e tom do vocabulário único (D-232) — este mapa vivia copiado aqui,
             // em /sincronizacao e em /integracoes.
-            const tone = { color: toneColor(statusTone(account.status)), label: mlAccountStatusLabel(account.status) };
+            const tone = { tom: tomDeStatus(statusTone(account.status)), label: mlAccountStatusLabel(account.status) };
 
             return (
               <li
@@ -77,7 +78,7 @@ export default async function ContasPage(): Promise<ReactNode> {
                   padding: "var(--sb-space-3)",
                   border: "1px solid var(--sb-border)",
                   borderRadius: "var(--sb-radius)",
-                  borderLeft: `3px solid ${tone.color}`,
+                  borderLeft: `3px solid ${TOM[tone.tom].color}`,
                   background: "var(--sb-surface)",
                 }}
               >
@@ -89,7 +90,7 @@ export default async function ContasPage(): Promise<ReactNode> {
                   {account.slug}
                 </span>
 
-                <span style={{ fontSize: "0.8125rem", fontWeight: 700, color: tone.color }}>{tone.label}</span>
+                <StatePill tone={tone} />
 
                 {account.status === "CONNECTED" && (
                   <span style={{ color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>

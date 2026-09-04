@@ -4242,6 +4242,7 @@ export type Database = {
           p_search?: string | null
           p_status?: string | null
           p_stock?: string | null
+          p_full?: string | null
         }
         Returns: {
           account_label: string
@@ -4249,6 +4250,8 @@ export type Database = {
           // CORRECAO MANUAL (classe D-133): NULL sem visita observada (D-170).
           conversion_rate: number | null
           days_observed: number
+          // CORRECAO MANUAL (classe D-133): NULA sem snapshot de Full (D-243).
+          full_quantity: number | null
           gross_revenue: number
           item_id: string
           link_state: string
@@ -4402,6 +4405,30 @@ export type Database = {
           orders_covered: number | null
           orders_total: number | null
           taxas_ml_covered: number | null
+        }[]
+      }
+      get_sales_top_skus: {
+        Args: {
+          p_date_from: string
+          p_date_to: string
+          p_limit?: number
+          p_ml_account_id?: string | null
+          p_order_by?: string
+          p_sem_marca?: boolean
+          p_supplier_brand?: string | null
+        }
+        Returns: {
+          // CORRECAO MANUAL (classe D-133): as razoes sao NULAS com denominador zero.
+          average_selling_price: number | null
+          gross_revenue: number
+          orders_count: number
+          purchases_count: number
+          share: number | null
+          sku: string
+          sku_id: string
+          supplier_brand: string | null
+          title: string | null
+          units_sold: number
         }[]
       }
       get_sales_summary: {
@@ -4627,6 +4654,8 @@ export type Database = {
           supplier_brand_source: string
           title: string
           total_count: number
+          // D-245: anuncios que vendem o SKU (direto OU por variacao).
+          listing_count: number
           units_sold_90d: number
         }[]
       }

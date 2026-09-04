@@ -19,6 +19,7 @@ import { formatBusinessDate, formatCount, formatCurrency, formatDateTime, format
 import { createClient } from "../../lib/supabase/server";
 import { DEFAULT_SALES_METRIC, SALES_METRICS, resolveSalesMetric } from "../../lib/sales-metric";
 import { SalesChart } from "./sales-chart";
+import { FilterMenu } from "../../components/filter-menu";
 import { currentMembership } from "../../lib/membership";
 
 export const metadata = { title: "Dashboard de Vendas — Speed Bikers Gestão" };
@@ -155,24 +156,75 @@ interface MetricCardSpec {
  * compara (o dia não fechou), e a margem só compara quando o período anterior
  * teve pedido coberto.
  */
-function toCells(cards: readonly MetricCardSpec[], showPrevious: boolean): KpiCellData[] {
+function toCells(cards: readonly MetricCardSpec[], showPrevious: boolean, indisponivel?: string): KpiCellData[] {
   return cards.map((card) => ({
     metricId: card.metricId,
     label: card.label,
     formula: card.formula,
-    value: card.format(card.current),
-    previous: showPrevious ? (card.previous === null ? "sem dado" : card.format(card.previous)) : null,
+    // Com `indisponivel` a COMPOSIÇÃO fica e o número vira "—": a faixa e o
+    // gráfico são incondicionais no frame, e "nunca calculado" é um estado
+    // declarado na célula, não uma tela diferente (D-023 continua valendo —
+    // nada aqui vira zero).
+    value: indisponivel === undefined ? card.format(card.current) : "—",
+    previous: showPrevious && indisponivel === undefined ? (card.previous === null ? "sem dado" : card.format(card.previous)) : null,
     // `exactOptionalPropertyTypes`: a propriedade opcional não aceita
     // `undefined` explícito — ou ela existe, ou não está no objeto.
-    ...(card.ressalva === undefined ? {} : { ressalva: card.ressalva }),
+    ...(indisponivel !== undefined
+      ? { ressalva: indisponivel }
+      : card.ressalva === undefined
+        ? {}
+        : { ressalva: card.ressalva }),
   }));
 }
 
-const FILTER_DATE_STYLE: React.CSSProperties = {
-  padding: "0.25rem 0.5rem",
-  borderRadius: "var(--sb-radius-md)",
-  border: "1px solid var(--sb-border)",
-  fontSize: "0.8125rem",
+/**
+ * A faixa âncora na ORDEM DO FRAME (`KpiStrip sales`: Receita bruta · Receita
+ * líquida ML · Taxas Mercado Livre · Unidades vendidas · Cancelamentos), com o
+ * que existe: "Receita líquida" é nome vetado (METRICS 5C.1) e fica de fora;
+ * Taxas e Taxa de cancelamento vêm da leitura 5C (`get_sales_expanded_summary`)
+ * — antes moravam num painel próprio abaixo do gráfico, e a auditoria de
+ * fidelidade apontou que o frame as põe NA FAIXA. Pedidos fecha a faixa em 5.
+ * As demais métricas (compras, ticket, preço médio, cancelados, valor
+ * cancelado, SKUs distintos) continuam na tela, numa faixa secundária.
+ */
+function pick(cards: readonly MetricCardSpec[], ids: readonly string[]): MetricCardSpec[] {
+  return ids.flatMap((id) => {
+    const card = cards.find((c) => c.metricId === id);
+
+    return card === undefined ? [] : [card];
+  });
+}
+
+const ANCORA_IDS = ["receita_bruta", "taxas_ml", "unidades_vendidas", "taxa_cancelamento", "pedidos"] as const;
+const SECUNDARIA_IDS = [
+  "pedidos_por_pack",
+  "ticket_medio",
+  "preco_medio_praticado",
+  "pedidos_cancelados",
+  "valor_cancelado",
+  "skus_distintos_vendidos",
+] as const;
+
+/** Linha da tabela "Produtos que mais contribuíram" (D-244). */
+interface TopSkuRow {
+  sku_id: string;
+  sku: string;
+  title: string | null;
+  supplier_brand: string | null;
+  units_sold: number;
+  gross_revenue: number;
+  orders_count: number;
+  purchases_count: number;
+  average_selling_price: number | null;
+  share: number | null;
+}
+
+/** A coluna do ranking segue a métrica do segmentado do gráfico. */
+const ORDEM_POR_METRICA: Record<string, string> = {
+  faturamento: "receita",
+  unidades: "unidades",
+  pedidos: "pedidos",
+  packs: "compras",
 };
 
 const MARGIN_NOTE_STYLE: React.CSSProperties = {
@@ -541,6 +593,7 @@ export default async function VendasPage({
     brandsResult,
     marginResult,
     previousMarginResult,
+    topResult,
   ] = await Promise.all([
     supabase
       .rpc("get_sales_summary", { p_date_from: range.from, p_date_to: range.to, ...accountFilter, ...brandFilter })
@@ -600,6 +653,17 @@ export default async function VendasPage({
         ...accountFilter, ...brandFilter,
       })
       .single(),
+    // Décima primeira (D-244): os produtos que mais contribuíram — a tabela
+    // que fecha o frame `Sales`. Mesmo recorte de conta e marca; a coluna do
+    // ranking é a métrica do segmentado.
+    supabase.rpc("get_sales_top_skus", {
+      p_date_from: range.from,
+      p_date_to: range.to,
+      ...accountFilter,
+      ...brandFilter,
+      p_order_by: ORDEM_POR_METRICA[metric.key] ?? "receita",
+      p_limit: 10,
+    }),
   ]);
 
   const brands = (brandsResult.data ?? []).map((r) => r.supplier_brand);
@@ -637,6 +701,9 @@ export default async function VendasPage({
   const todaySummary: TodaySummary | null = todayResult.data ?? null;
   const margin: MarginSummary | null = marginResult.data ?? null;
   const previousMargin: MarginSummary | null = previousMarginResult.data ?? null;
+  // Falha aqui NÃO derruba a tela: a tabela recusa sozinha, com o aviso, e o
+  // resto continua — o ranking é leitura própria, não parte do resumo.
+  const topSkus: TopSkuRow[] = topResult.error === null && Array.isArray(topResult.data) ? topResult.data : [];
 
   const lastComputedAt = summary?.last_computed_at ?? null;
   const freshness = classifySyncFreshness(lastComputedAt === null ? null : new Date(lastComputedAt), now);
@@ -674,28 +741,21 @@ export default async function VendasPage({
               primeiro número.
             */}
             {accountsResult.error === null && accounts.length > 0 && (
-              <details className="sb-menu">
-                <summary className="sb-button">{contaLabel} ▾</summary>
-                <div className="sb-menu-panel">
-                  <Link
-                    className="sb-menu-item"
-                    aria-current={selectedAccount === null ? "true" : undefined}
-                    href={buildHref({ period, accountSlug, metricKey: metric.key, brand }, { accountSlug: null })}
-                  >
-                    Todas as contas
-                  </Link>
-                  {accounts.map((account) => (
-                    <Link
-                      key={account.id}
-                      className="sb-menu-item"
-                      aria-current={selectedAccount?.id === account.id ? "true" : undefined}
-                      href={buildHref({ period, accountSlug, metricKey: metric.key, brand }, { accountSlug: account.slug })}
-                    >
-                      {account.label}
-                    </Link>
-                  ))}
-                </div>
-              </details>
+              <FilterMenu
+                rotulo={contaLabel}
+                opcoes={[
+                  {
+                    href: buildHref({ period, accountSlug, metricKey: metric.key, brand }, { accountSlug: null }),
+                    ativo: selectedAccount === null,
+                    label: "Todas as contas",
+                  },
+                  ...accounts.map((account) => ({
+                    href: buildHref({ period, accountSlug, metricKey: metric.key, brand }, { accountSlug: account.slug }),
+                    ativo: selectedAccount?.id === account.id,
+                    label: account.label,
+                  })),
+                ]}
+              />
             )}
 
             {/*
@@ -704,50 +764,35 @@ export default async function VendasPage({
               opção, somar as marcas não chegaria ao total e um quarto do
               faturamento sumiria sem explicação (D-237).
             */}
-            <details className="sb-menu">
-              <summary className="sb-button">{marcaLabel} ▾</summary>
-              <div className="sb-menu-panel">
-                <Link
-                  className="sb-menu-item"
-                  aria-current={brand.kind === "todas" ? "true" : undefined}
-                  href={buildHref({ period, accountSlug, metricKey: metric.key, brand }, { brand: { kind: "todas" } })}
-                >
-                  Todas as marcas
-                </Link>
-                <Link
-                  className="sb-menu-item"
-                  aria-current={brand.kind === "sem_marca" ? "true" : undefined}
-                  href={buildHref({ period, accountSlug, metricKey: metric.key, brand }, { brand: { kind: "sem_marca" } })}
-                >
-                  Sem marca
-                </Link>
-                {brands.map((nome) => (
-                  <Link
-                    key={nome}
-                    className="sb-menu-item"
-                    aria-current={brand.kind === "marca" && brand.value === nome ? "true" : undefined}
-                    href={buildHref({ period, accountSlug, metricKey: metric.key, brand }, { brand: { kind: "marca", value: nome } })}
-                  >
-                    {nome}
-                  </Link>
-                ))}
-              </div>
-            </details>
+            <FilterMenu
+              rotulo={marcaLabel}
+              opcoes={[
+                {
+                  href: buildHref({ period, accountSlug, metricKey: metric.key, brand }, { brand: { kind: "todas" } }),
+                  ativo: brand.kind === "todas",
+                  label: "Todas as marcas",
+                },
+                {
+                  href: buildHref({ period, accountSlug, metricKey: metric.key, brand }, { brand: { kind: "sem_marca" } }),
+                  ativo: brand.kind === "sem_marca",
+                  label: "Sem marca",
+                },
+                ...brands.map((nome) => ({
+                  href: buildHref({ period, accountSlug, metricKey: metric.key, brand }, { brand: { kind: "marca", value: nome } }),
+                  ativo: brand.kind === "marca" && brand.value === nome,
+                  label: nome,
+                })),
+              ]}
+            />
 
-            <details className="sb-menu">
-              <summary className="sb-button">{periodoLabel} ▾</summary>
-              <div className="sb-menu-panel">
-                {PRESET_DAYS.map((preset) => (
-                  <Link
-                    key={preset}
-                    className="sb-menu-item"
-                    aria-current={!isCustom && days === preset ? "true" : undefined}
-                    href={buildHref({ period, accountSlug, metricKey: metric.key, brand }, { period: { days: preset } })}
-                  >
-                    Últimos {preset} dias
-                  </Link>
-                ))}
-
+            <FilterMenu
+              rotulo={periodoLabel}
+              opcoes={PRESET_DAYS.map((preset) => ({
+                href: buildHref({ period, accountSlug, metricKey: metric.key, brand }, { period: { days: preset } }),
+                ativo: !isCustom && days === preset,
+                label: `Últimos ${String(preset)} dias`,
+              }))}
+            >
                 <form
                   method="get"
                   style={{
@@ -778,21 +823,20 @@ export default async function VendasPage({
                     name="from"
                     defaultValue={isCustom ? range.from : undefined}
                     aria-label="Data inicial"
-                    style={FILTER_DATE_STYLE}
+                    className="sb-input"
                   />
                   <input
                     type="date"
                     name="to"
                     defaultValue={isCustom ? range.to : undefined}
                     aria-label="Data final"
-                    style={FILTER_DATE_STYLE}
+                    className="sb-input"
                   />
                   <button type="submit" className="sb-button sb-button-primary" style={{ justifyContent: "center" }}>
                     Aplicar período
                   </button>
                 </form>
-              </div>
-            </details>
+            </FilterMenu>
 
             {organizationId !== null && (
               <SavedFilters screen="/vendas" organizationId={organizationId} filters={savedFilters} />
@@ -846,18 +890,24 @@ export default async function VendasPage({
         </p>
       )}
 
-      {error === null && neverComputed && (
-        <p style={{ margin: "0 0 var(--sb-space-3)", color: "var(--sb-text-soft)" }}>
-          Nenhuma métrica calculada para este período ainda. As contas conectadas ainda estão trazendo o
-          histórico (backfill) — o recálculo só materializa dias tocados pela reconciliação.
-        </p>
+      {/*
+        A faixa âncora é INCONDICIONAL, como no frame. "Nunca calculado" não
+        troca a tela: cada célula mostra "—" com a ressalva, e a composição
+        continua a mesma que o operador vai reconhecer quando o recálculo
+        alcançar a janela (D-023: nada aqui vira zero).
+      */}
+      {error === null && summary !== null && expanded !== null && (
+        <KpiStrip
+          ancora
+          cells={toCells(
+            pick([...buildCards(summary, previousSummary), ...buildExpandedCards(expanded, previousExpanded)], ANCORA_IDS),
+            previousHasData,
+            neverComputed ? "não calculado para este período — o recálculo só materializa dias tocados pela reconciliação" : undefined,
+          )}
+        />
       )}
 
-      {error === null && summary !== null && !neverComputed && (
-        <KpiStrip ancora cells={toCells(buildCards(summary, previousSummary), previousHasData)} />
-      )}
-
-      {error === null && dailySeries.length > 0 && (
+      {error === null && summary !== null && (
         <div style={{ marginTop: "var(--sb-space-3)" }}>
           <Panel
             title="Desempenho no período"
@@ -865,7 +915,7 @@ export default async function VendasPage({
               <>
                 {formatBusinessDate(range.from)} a {formatBusinessDate(range.to)}
                 {previousDailySeries.length > 0 ? " · comparação com o período anterior" : ""}
-                {dailySeries.length < businessDateRangeLength(range.from, range.to)
+                {dailySeries.length > 0 && dailySeries.length < businessDateRangeLength(range.from, range.to)
                   ? ` · só ${String(dailySeries.length)} ${dailySeries.length === 1 ? "dia tem" : "dias têm"} métrica calculada`
                   : ""}
               </>
@@ -883,17 +933,90 @@ export default async function VendasPage({
               ))}
             </div>
 
-            <div style={{ padding: "var(--sb-space-2) var(--sb-space-3) var(--sb-space-3)" }}>
-              <SalesChart
-                points={dailySeries}
-                previousPoints={previousDailySeries}
-                metric={metric}
-                rangeFrom={range.from}
-                rangeTo={range.to}
-                previousRangeFrom={previousRange.from}
-                previousRangeTo={previousRange.to}
-              />
-            </div>
+            {dailySeries.length === 0 ? (
+              <p className="sb-empty">
+                Nenhum dia com métrica calculada neste período — o recálculo só materializa dias tocados pela
+                reconciliação, e não fabrica zero.
+              </p>
+            ) : (
+              <div style={{ padding: "var(--sb-space-2) var(--sb-space-3) var(--sb-space-3)" }}>
+                <SalesChart
+                  points={dailySeries}
+                  previousPoints={previousDailySeries}
+                  metric={metric}
+                  rangeFrom={range.from}
+                  rangeTo={range.to}
+                  previousRangeFrom={previousRange.from}
+                  previousRangeTo={previousRange.to}
+                />
+              </div>
+            )}
+          </Panel>
+        </div>
+      )}
+
+      {/*
+        A tabela que fecha o frame `Sales` (D-244): os produtos que mais
+        contribuíram, no MESMO recorte da faixa, ordenados pela métrica do
+        segmentado. Itens vendidos sem vínculo de SKU ficam de fora — não há
+        produto a nomear —, e o total deles continua na faixa acima.
+      */}
+      {error === null && summary !== null && (
+        <div style={{ marginTop: "var(--sb-space-3)" }}>
+          <Panel
+            title="Produtos que mais contribuíram"
+            subtitle={`top ${String(topSkus.length === 0 ? 10 : topSkus.length)} por ${metric.label.toLowerCase()} · ${contaLabel.toLowerCase()}, ${marcaLabel.toLowerCase()} · itens vendidos sem vínculo de SKU ficam de fora`}
+            aside={
+              <Link href="/curva-abc" style={{ color: "var(--sb-secondary)", textDecoration: "none", fontSize: "0.6875rem" }}>
+                Curva ABC →
+              </Link>
+            }
+          >
+            {topResult.error !== null ? (
+              <p role="alert" className="sb-empty" style={{ color: "var(--sb-danger)" }}>
+                Não foi possível carregar o ranking: {topResult.error.message}
+              </p>
+            ) : topSkus.length === 0 ? (
+              <p className="sb-empty">Nenhum SKU com venda calculada neste recorte.</p>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table className="sb-table">
+                  <thead>
+                    <tr>
+                      <th>Produto</th>
+                      <th>Marca</th>
+                      <th className="sb-num">Unidades</th>
+                      <th className="sb-num">Faturamento</th>
+                      <th className="sb-num">Pedidos</th>
+                      <th className="sb-num">Compras</th>
+                      <th className="sb-num">Preço médio</th>
+                      <th className="sb-num">Participação</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {topSkus.map((linha) => (
+                      <tr key={linha.sku_id}>
+                        <td>
+                          <Link className="sb-entity" href={`/skus/${linha.sku_id}`}>
+                            {linha.title ?? linha.sku}
+                          </Link>
+                          <span style={{ display: "block", fontFamily: "var(--sb-mono)", fontSize: "0.625rem", color: "var(--sb-text-soft)" }}>
+                            SKU {linha.sku}
+                          </span>
+                        </td>
+                        <td style={{ color: "var(--sb-text-soft)" }}>{linha.supplier_brand ?? "—"}</td>
+                        <td className="sb-num">{formatCount(linha.units_sold)}</td>
+                        <td className="sb-num">{formatCurrency(linha.gross_revenue)}</td>
+                        <td className="sb-num">{formatCount(linha.orders_count)}</td>
+                        <td className="sb-num">{formatCount(linha.purchases_count)}</td>
+                        <td className="sb-num">{formatCurrency(linha.average_selling_price)}</td>
+                        <td className="sb-num">{formatPercent(linha.share)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </Panel>
         </div>
       )}
@@ -929,13 +1052,27 @@ export default async function VendasPage({
         tocou a janela. A nota declara a fonte, porque os números podem
         divergir ligeiramente dos números L3 acima (atraso do recálculo).
       */}
-      {error === null && expanded !== null && (
+      {/*
+        Os blocos que a V3 tem ALÉM do frame (Hoje, esta faixa e a margem)
+        vêm DEPOIS dos três blocos do frame — desvio registrado em
+        docs/DESIGN_IMPLEMENTATION.md: conteúdo real preservado, na
+        composição do Figma. Esta faixa reúne o que não coube na âncora: as
+        razões e os cancelamentos em valor. Cancelamentos e taxas são lidos
+        dos pedidos (L1) e podem divergir minimamente do recálculo (L3).
+      */}
+      {error === null && summary !== null && expanded !== null && (
         <div style={{ marginTop: "var(--sb-space-3)" }}>
           <Panel
-            title="Cancelamentos e taxas"
-            subtitle="Calculado dos pedidos diretamente (visão operacional) — pode divergir minimamente dos números acima, que vêm do recálculo diário. Não é receita líquida: frete, taxa fixa, parcelamento e impostos não são observados."
+            title="Mais sobre o período"
+            subtitle="Razões sobre as somas e cancelamentos em valor. Cancelamentos e taxas vêm dos pedidos diretamente e podem divergir minimamente do recálculo diário. Não é receita líquida: frete, taxa fixa, parcelamento e impostos não são observados."
           >
-            <KpiStrip cells={toCells(buildExpandedCards(expanded, previousExpanded), previousExpanded !== null)} />
+            <KpiStrip
+              cells={toCells(
+                pick([...buildCards(summary, previousSummary), ...buildExpandedCards(expanded, previousExpanded)], SECUNDARIA_IDS),
+                previousHasData || previousExpanded !== null,
+                neverComputed ? "não calculado para este período" : undefined,
+              )}
+            />
           </Panel>
         </div>
       )}

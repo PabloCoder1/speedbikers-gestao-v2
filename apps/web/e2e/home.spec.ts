@@ -36,18 +36,25 @@ test("Home: os seis cards de atenção carregam, e nenhum deles falha", async ({
   // este teste está protegendo.
   await expect(page.getByRole("region", { name: "Atenção necessária" })).toBeVisible();
 
-  const cards = [
-    "SKUs em ruptura",
-    "Em mediação",
-    "Ações de impacto alto",
-    "Outras ações abertas",
-    "Atendimentos abertos",
-    "Notificações não lidas",
-  ];
+  // Como no frame, a grade só desenha as situações DETECTADAS; as medidas e
+  // limpas viram a linha "Medidos e limpos" abaixo dela — o número zero não
+  // some (medido e limpo é diferente de não medido, D-067), só sai da grade.
+  // O seed tem uma ação alta, um atendimento aberto e um anúncio pausado com
+  // estoque; ruptura, mediação, outras ações e notificações estão em zero.
+  const grade = page.locator(".sb-attention-grid");
+  const limpos = page.locator(".sb-attention-clean");
 
-  for (const label of cards) {
-    await expect(page.getByText(label, { exact: true })).toBeVisible();
+  for (const label of ["Ações de impacto alto", "Atendimentos abertos", "Anúncios pausados"]) {
+    await expect(grade.getByRole("heading", { level: 3, name: label })).toBeVisible();
   }
+
+  for (const label of ["SKUs em ruptura", "Em mediação", "Outras ações abertas", "Notificações não lidas"]) {
+    await expect(limpos.getByRole("link", { name: `0 ${label}` })).toBeVisible();
+  }
+
+  // O cartão diz o impacto numa frase, não num número solto; e o CTA é botão.
+  await expect(grade.getByText("1 ação de severidade alta aberta", { exact: true })).toBeVisible();
+  await expect(page.getByText("3 situações detectadas", { exact: true })).toBeVisible();
 
   // A guarda de verdade: leitura que falha vira "—" e este aviso (D-067). Um
   // único card falhando reprova a suíte, e o nome dele sai no diff.

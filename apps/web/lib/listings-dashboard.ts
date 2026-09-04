@@ -50,6 +50,25 @@ export function resolveStockFilter(raw: unknown): string {
   return typeof raw === "string" && STOCK_KEYS.has(raw) ? raw : "all";
 }
 
+/**
+ * Recorte por Full DO ANÚNCIO (D-243) — a soma do último snapshot por bucket
+ * (`inventory_id`) dos últimos 3 dias em `fulfillment_stock_snapshots`, a
+ * definição canônica de D-173/D-204; o snapshot carrega o `item_id`.
+ * "with" = está no Full hoje (> 0); "without" = não está (sem snapshot OU
+ * zerado — a coluna distingue os dois).
+ */
+export const FULL_FILTERS = [
+  { key: "all", label: "Full ou não" },
+  { key: "with", label: "No Full" },
+  { key: "without", label: "Fora do Full" },
+] as const;
+
+const FULL_KEYS = new Set(FULL_FILTERS.map((f) => f.key as string));
+
+export function resolveFullFilter(raw: unknown): string {
+  return typeof raw === "string" && FULL_KEYS.has(raw) ? raw : "all";
+}
+
 export function resolveLinkStateFilter(raw: unknown): string {
   return typeof raw === "string" && LINK_STATE_KEYS.has(raw) ? raw : "all";
 }

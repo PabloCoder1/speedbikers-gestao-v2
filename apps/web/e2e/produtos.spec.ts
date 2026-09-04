@@ -33,9 +33,14 @@ test("/produtos: a curadoria em lote só escreve depois de dizer a consequência
   await expect(page).toHaveURL(/\/produtos/);
   await expect(page.getByRole("heading", { level: 1, name: "Curadoria de produtos" })).toBeVisible();
 
-  const virtual = page.getByRole("button", { name: "É virtual", exact: true });
+  // As três decisões de estoque moram no menu "Classificar estoque" (o
+  // "Classificar Estoque ⌄" do frame da curadoria); abrir o menu é parte do
+  // caminho que o operador percorre.
+  const menu = page.locator("details.sb-menu", { hasText: "Classificar estoque" });
+  const virtual = menu.getByRole("button", { name: "É virtual", exact: true });
 
   // 1. Sem seleção, a ação não existe como possibilidade.
+  await menu.locator("summary").click();
   await expect(virtual).toBeDisabled();
   await expect(page.getByText("0 selecionado(s)")).toBeVisible();
 

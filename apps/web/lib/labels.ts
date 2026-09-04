@@ -401,3 +401,25 @@ export function statusTone(code: string): "ok" | "warn" | "bad" | null {
   // nível que não deve competir visualmente com importante/crítico.
   return null;
 }
+
+/**
+ * Papel de `organization_members.role` em português — o bloco de perfil do
+ * shell mostra "Administrador", não "ADMIN" (o frame do Figma). Lista fechada
+ * pelo CHECK da tabela; valor fora dela volta cru, nunca inventado.
+ */
+export function roleLabel(role: string): string {
+  switch (role) {
+    case "ADMIN":
+      return "Administrador";
+    case "GESTOR":
+      return "Gestor";
+    case "ANALISTA":
+      return "Analista";
+    case "OPERADOR":
+      return "Operador";
+    case "VISUALIZADOR":
+      return "Visualizador";
+    default:
+      return role;
+  }
+}
