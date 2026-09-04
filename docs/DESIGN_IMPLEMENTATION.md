@@ -290,6 +290,35 @@ branco embutido.
 | Botão flutuante do Copiloto | Copiloto é rota, e está no menu | — |
 | Trilho de 58px só com ícones | o app não tem **nenhum** ícone (medido: sem `<img>`, sem SVG, sem `public/`) — um trilho sem ícone é uma coluna vazia | — |
 
+### Desvios registrados, no formato curto
+
+> **Superfície:** `/vendas` · **Figma:** célula "Receita líquida ML" na faixa de
+> KPIs · **V3 real:** a célula não existe · **Decisão:** recompor a faixa sem
+> ela · **Motivo:** nome vetado por METRICS 5C.1 — existe margem operacional
+> observada, que tem painel próprio.
+
+> **Superfície:** `/vendas` · **Figma:** cada célula da faixa mostra variação
+> percentual ("+9,3%") · **V3 real:** mostra o valor do período anterior ·
+> **Decisão:** manter a terceira linha da célula, trocar o conteúdo ·
+> **Motivo:** `variacao_percentual_periodo` está pendente em METRICS 5.4, e
+> D-023 proíbe número sintetizado sem `metric_definitions`.
+
+> **Superfície:** `/vendas` · **Figma:** célula da faixa tem 3 linhas · **V3
+> real:** tem até 5 · **Decisão:** acrescentar id da métrica e ressalva ·
+> **Motivo:** METRICS 5C.2 exige a ressalva "visível ao lado do número, nunca
+> só em tooltip", e o id é a rastreabilidade até a definição canônica.
+
+> **Superfície:** `/vendas` · **Figma:** `page-title` sem selo de estado · **V3
+> real:** tem o veredito de frescor na barra · **Decisão:** manter ·
+> **Motivo:** regra funcional — D-143/D-219 fazem de `lib/sync-health.ts` o
+> dono único do veredito, e ele diz se o número lido foi recalculado.
+
+> **Superfície:** `/vendas` · **Figma:** tabela "Produtos que mais
+> contribuíram" ao pé da tela · **V3 real:** ausente · **Decisão:** adiar ·
+> **Motivo:** escopo — exige uma consulta que a tela não faz hoje; `/curva-abc`
+> já responde a mesma pergunta e é para lá que o link deve apontar quando a
+> tabela entrar.
+
 **A auditoria corretiva do Figma pede a mesma honestidade que o sistema já
 pratica** ("Requer política logística", "Quantidade ainda não calculada",
 "Não afirmar causalidade"). Nesses pontos os dois lados concordam.
@@ -336,8 +365,9 @@ que ele renderiza.**
 | D3 | Moldura: sidebar vertical, grupos e seção atual | **CONCLUÍDO** |
 | D4 | Home orientada à atenção | **CONCLUÍDO** · `REVISÃO VISUAL NECESSÁRIA` |
 | D5 | Vendas — gráfico (seção 12 do brief) | **CONCLUÍDO** |
-| D6 | Vendas — composição, refeita a partir do Figma | próximo |
-| D6 | Produtos | fila |
+| D6 | Vendas — composição, refeita a partir do Figma | **CONCLUÍDO** |
+| D7 | Produtos | próximo |
+
 | D6–D10 | Dashboard de SKU (fundação + 4 pares de abas) | fila |
 | D11–D12 | Anúncios (listagem, depois dashboard em lotes) | fila |
 | D13 | Republicação (só UX; motor real preservado) | fila |
@@ -356,56 +386,50 @@ cada uma precisa de um passe Figma-first antes de a frente fechar.
 | Superfície | O que está preso ao legado |
 |---|---|
 | `/` (D4) | conteúdo e severidade estão certos; a composição é grade de cards herdada, não o `.kpi-strip` + `.attention-card` do Figma |
-| `/vendas` (D5) | só o gráfico foi refeito; cabeçalho, filtros em linhas de pílulas e os três blocos de cards são a estrutura antiga — é o assunto de D6 |
 
 ## Última fatia concluída
 
-**D5 — o gráfico de vendas** (seção 12 do brief: "tooltip detalhado; zoom/hover;
-legenda"). Duas coisas, e a primeira é defeito medido:
+**D6 — a composição de `/vendas`, refeita a partir do Figma.** Primeira fatia
+sob a regra nova, e a ordem foi a que ela manda: ler o frame `Sales` do export,
+entender a composição, **só então** abrir a tela antiga — e abri-la para
+descobrir o que precisava sobreviver, não para adaptá-la.
 
-**A série de comparação era invisível.** Usava `--sb-muted` (`#ccc5d5`) —
-**1,68:1** contra o cartão branco, onde a WCAG 1.4.11 pede **3:1** de objeto
-gráfico que carrega informação. Uma tracejada de 1,5px é o caso mais frágil que
-existe: sem preenchimento, sem borda, sem nada atrás. O gráfico desenhava a
-comparação e ninguém a via. Agora é `--sb-muted-ink` (**4,90:1**), que ainda
-fica a 3,45:1 da série atual — a hierarquia se mantém por peso e traço, não por
-apagamento.
+**O que mudou de composição:**
 
-**Hover por faixa, não por ponto.** O que existia era o `<title>` nativo num
-círculo de raio 3: para ler um valor era preciso acertar 6px, e com 90 dias isso
-é impraticável. Agora cada dia do período tem faixa invisível de altura inteira;
-passar em qualquer altura acende a cruz, engorda o ponto e abre a leitura com os
-dois valores. **CSS puro** — `:hover` sobre um `<g>`, sem estado, sem
-hidratação, sem componente cliente. E `@media (hover: hover)`, porque em tela de
-toque o `:hover` gruda e a caixa ficaria aberta sem forma de fechar.
+| antes | agora, como no Figma |
+|---|---|
+| `<h1>` + selo de frescor, e um parágrafo | `page-title`: sobrancelha "COMERCIAL / RESULTADOS", título, subtítulo, barra à direita |
+| três linhas de pílulas (conta, marca, período) empurrando o conteúdo para baixo | três menus `<details>` na barra, com o rótulo dizendo o estado |
+| 6 cartões soltos numa grade | **uma** faixa dividida em células, a primeira navy — a métrica-âncora |
+| 4 blocos de `<h2>` + grade de cartões | 4 `panel` com `panel-head` (título, subtítulo, conteúdo) |
+| pílulas de métrica ao lado do título do gráfico | controle segmentado dentro do painel do gráfico |
 
-**As faixas cobrem o período, não os pontos.** Dia sem métrica calculada agora
-**diz** que não tem métrica, onde antes era silêncio — a série não fabrica zero,
-então "o dia não existe no dado" e "o dia vendeu zero" são afirmações
-diferentes.
+Três componentes base nasceram e vão servir todas as telas: `PageTitle`,
+`Panel`, `KpiStrip`.
 
-**Verificado com dado**, o que exigiu um fixture local de 60 dias (o seed não
-tem série): 30 faixas em 30 dias e 90 em 90; exatamente **uma** leitura abre por
-vez; a formatação segue a métrica (`R$ 1.279,70` em faturamento, `19` em
-unidades); e a recusa de D-237 continua intacta — sob "Compras + Sem marca" o
-gráfico não desenha nada e explica por quê.
+**Duas correções que só a tela renderizada mostrou.** A barra de ferramentas
+quebrava para baixo do subtítulo (o bloco de título ocupava a linha inteira —
+faltava `flex: 1 1 24rem`); e a célula navy aparecia nas **três** faixas
+empilhadas, transformando ênfase em ruído. A âncora virou opção, e só a faixa
+principal a recebe.
 
-**Verificação:** `check` 29/29, build 8/8, integração 582/582 em banco recriado,
-20/20 Playwright, `check:waterfalls`, `check:server-actions`, `docs:check`.
+**Nada de comportamento saiu**, e o novo `e2e/vendas.spec.ts` é o guarda disso:
+ele aplica conta → marca → período → métrica e exige que os quatro sobrevivam
+**juntos** na URL. Era o caso que o formulário de período personalizado já tinha
+errado uma vez (o `metric` se perdia e o gráfico voltava para faturamento
+sozinho); agora `marca`/`semMarca` entraram na mesma conta de campos ocultos.
+
+**Dead code pass:** `MetricCard` ficou sem consumidor e saiu. `FilterPill` e
+`FILTER_SUBMIT_STYLE` **ficam** — seis outras telas ainda os usam; só o import
+de `/vendas` foi removido.
+
+**Verificação:** `check` 29/29, build 8/8, integração 582/582 em banco
+recriado, **21/21 Playwright**, `check:waterfalls`, `check:server-actions`,
+`docs:check`.
 
 ## Próxima fatia segura
 
-**D6 — a composição de `/vendas`, refeita a partir do Figma.** Não é adaptar o
-que está lá: é implementar o frame `Sales` do Figma com os dados reais. A
-composição dele, já extraída:
-
-`page-title` (eyebrow "COMERCIAL / RESULTADOS" + h1 + subtítulo, com toolbar de
-botões-fantasma à direita) → `kpi-strip` (UM cartão dividido em 5 células, a
-primeira com fundo navy) → `panel` do gráfico (cabeçalho com título, subtítulo e
-legenda à direita; controle segmentado de métrica; eixo Y fora do SVG) →
-`table-panel` "Produtos que mais contribuíram".
-
-**Desvios já conhecidos:** o `kpi-strip` do Figma traz "Receita líquida ML"
-(nome vetado, METRICS 5C.1) e uma variação percentual em cada célula (proibida
-por D-023 sem `metric_definitions`) — a composição fica, o conteúdo vira o valor
-do período anterior, que é o que `/vendas` já mostra hoje.
+**D7 — `/produtos`.** Ler o frame no Figma primeiro. É a tela da curadoria das
+duas colunas que só uma pessoa pode preencher (`stock_is_virtual`,
+`supplier_brand`), então o que precisa sobreviver é a escrita — não só a
+leitura, como em `/vendas`.

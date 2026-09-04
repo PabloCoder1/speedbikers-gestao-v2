@@ -9,8 +9,11 @@ import {
 import type { ReactNode } from "react";
 
 import type { SavedFilter } from "../../components/saved-filters";
+import Link from "next/link";
 import { SavedFilters } from "../../components/saved-filters";
-import { FILTER_SUBMIT_STYLE, FilterPill } from "../../components/filter-pill";
+import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
+import { PageTitle } from "../../components/page-title";
+import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
 import { formatBusinessDate, formatCount, formatCurrency, formatDateTime, formatPercent } from "../../lib/format";
 import { createClient } from "../../lib/supabase/server";
@@ -139,6 +142,45 @@ interface MetricCardSpec {
   /** Ressalva OBRIGATÓRIA de docs/METRICS.md 5C.2 — visível ao lado do número, nunca só em tooltip. */
   ressalva?: string;
 }
+
+/**
+ * `MetricCardSpec` -> célula da faixa do Figma.
+ *
+ * Os construtores (`buildCards`, `buildTodayCards`, `buildExpandedCards`,
+ * `buildMarginCards`) não mudaram uma linha: eles são verdade funcional —
+ * fórmula canônica, id catalogado e ressalva de METRICS 5C.2. O que mudou é
+ * para onde eles vão. Este adaptador é a fronteira entre as duas coisas.
+ *
+ * `showPrevious` continua sendo decisão de CADA bloco: a seção "hoje" não
+ * compara (o dia não fechou), e a margem só compara quando o período anterior
+ * teve pedido coberto.
+ */
+function toCells(cards: readonly MetricCardSpec[], showPrevious: boolean): KpiCellData[] {
+  return cards.map((card) => ({
+    metricId: card.metricId,
+    label: card.label,
+    formula: card.formula,
+    value: card.format(card.current),
+    previous: showPrevious ? (card.previous === null ? "sem dado" : card.format(card.previous)) : null,
+    // `exactOptionalPropertyTypes`: a propriedade opcional não aceita
+    // `undefined` explícito — ou ela existe, ou não está no objeto.
+    ...(card.ressalva === undefined ? {} : { ressalva: card.ressalva }),
+  }));
+}
+
+const FILTER_DATE_STYLE: React.CSSProperties = {
+  padding: "0.25rem 0.5rem",
+  borderRadius: "var(--sb-radius-md)",
+  border: "1px solid var(--sb-border)",
+  fontSize: "0.8125rem",
+};
+
+const MARGIN_NOTE_STYLE: React.CSSProperties = {
+  margin: 0,
+  padding: "var(--sb-space-2) var(--sb-space-3) var(--sb-space-3)",
+  color: "var(--sb-text-soft)",
+  fontSize: "0.8125rem",
+};
 
 function buildCards(current: SalesSummary, previous: SalesSummary | null): MetricCardSpec[] {
   return [
@@ -330,44 +372,6 @@ function buildMarginCards(margin: MarginSummary, previous: MarginSummary | null)
   ];
 }
 
-function MetricCard({ card, showPrevious }: { card: MetricCardSpec; showPrevious: boolean }): ReactNode {
-  return (
-    <div
-      title={card.formula}
-      style={{
-        padding: "var(--sb-space-3)",
-        border: "1px solid var(--sb-border)",
-        borderRadius: "var(--sb-radius)",
-        background: "var(--sb-surface)",
-        display: "grid",
-        gap: "0.25rem",
-      }}
-    >
-      <span style={{ fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>{card.label}</span>
-      <span style={{ fontSize: "1.5rem", fontWeight: 700 }}>{card.format(card.current)}</span>
-
-      {showPrevious && (
-        <span style={{ fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
-          período anterior: {card.previous === null ? "sem dado" : card.format(card.previous)}
-        </span>
-      )}
-
-      {card.ressalva !== undefined && (
-        <span style={{ fontSize: "0.6875rem", color: "var(--sb-text-soft)" }}>{card.ressalva}</span>
-      )}
-
-      <span
-        style={{
-          fontSize: "0.6875rem",
-          color: "var(--sb-muted-ink)",
-          fontFamily: "ui-monospace, monospace",
-        }}
-      >
-        {card.metricId}
-      </span>
-    </div>
-  );
-}
 
 interface DateRange {
   from: string;
@@ -643,33 +647,178 @@ export default async function VendasPage({
   const neverComputed = summary !== null && lastComputedAt === null;
   const previousHasData = previousSummary !== null && previousSummary.last_computed_at !== null;
 
+  const contaLabel = selectedAccount === null ? "Todas as contas" : selectedAccount.label;
+  const periodoLabel = isCustom ? "Período personalizado" : `Últimos ${String(days)} dias`;
+  const marcaLabel =
+    brand.kind === "todas" ? "Todas as marcas" : brand.kind === "sem_marca" ? "Sem marca" : brand.value;
+
   return (
     <Shell>
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          alignItems: "baseline",
-          justifyContent: "space-between",
-          gap: "var(--sb-space-2)",
-          marginBottom: "var(--sb-space-1)",
-        }}
-      >
-        <h1 style={{ margin: 0, fontSize: "1.375rem" }}>Dashboard de Vendas</h1>
+      <PageTitle
+        eyebrow="COMERCIAL / RESULTADOS"
+        title="Dashboard de vendas"
+        subtitle={
+          <>
+            {contaLabel}, {formatBusinessDate(range.from)} até {formatBusinessDate(range.to)} — comparado com{" "}
+            {formatBusinessDate(previousRange.from)} até {formatBusinessDate(previousRange.to)}.
+          </>
+        }
+        aside={
+          <>
+            {/*
+              Os filtros saíram das linhas de pílulas e viraram a barra de menus
+              do Figma. O comportamento é o mesmo — link com `href`, estado na
+              URL, sem componente cliente —, e o `<details>` nativo faz o
+              dropdown, como na navegação. Eram TRÊS linhas de pílulas (conta,
+              marca, período) empurrando o conteúdo para baixo antes do
+              primeiro número.
+            */}
+            {accountsResult.error === null && accounts.length > 0 && (
+              <details className="sb-menu">
+                <summary className="sb-button">{contaLabel} ▾</summary>
+                <div className="sb-menu-panel">
+                  <Link
+                    className="sb-menu-item"
+                    aria-current={selectedAccount === null ? "true" : undefined}
+                    href={buildHref({ period, accountSlug, metricKey: metric.key, brand }, { accountSlug: null })}
+                  >
+                    Todas as contas
+                  </Link>
+                  {accounts.map((account) => (
+                    <Link
+                      key={account.id}
+                      className="sb-menu-item"
+                      aria-current={selectedAccount?.id === account.id ? "true" : undefined}
+                      href={buildHref({ period, accountSlug, metricKey: metric.key, brand }, { accountSlug: account.slug })}
+                    >
+                      {account.label}
+                    </Link>
+                  ))}
+                </div>
+              </details>
+            )}
 
-        {summary !== null && (
-          <span style={{ fontSize: "0.8125rem", fontWeight: 700, color: freshnessTone.color }}>
-            {freshnessTone.label}
-            {lastComputedAt !== null && ` · calculado até ${formatDateTime(lastComputedAt)}`}
-          </span>
-        )}
-      </div>
+            {/*
+              "Sem marca" NÃO é ausência de filtro: é a venda que nenhuma marca
+              alcança — item sem SKU vinculado, 23,2% da receita. Sem essa
+              opção, somar as marcas não chegaria ao total e um quarto do
+              faturamento sumiria sem explicação (D-237).
+            */}
+            <details className="sb-menu">
+              <summary className="sb-button">{marcaLabel} ▾</summary>
+              <div className="sb-menu-panel">
+                <Link
+                  className="sb-menu-item"
+                  aria-current={brand.kind === "todas" ? "true" : undefined}
+                  href={buildHref({ period, accountSlug, metricKey: metric.key, brand }, { brand: { kind: "todas" } })}
+                >
+                  Todas as marcas
+                </Link>
+                <Link
+                  className="sb-menu-item"
+                  aria-current={brand.kind === "sem_marca" ? "true" : undefined}
+                  href={buildHref({ period, accountSlug, metricKey: metric.key, brand }, { brand: { kind: "sem_marca" } })}
+                >
+                  Sem marca
+                </Link>
+                {brands.map((nome) => (
+                  <Link
+                    key={nome}
+                    className="sb-menu-item"
+                    aria-current={brand.kind === "marca" && brand.value === nome ? "true" : undefined}
+                    href={buildHref({ period, accountSlug, metricKey: metric.key, brand }, { brand: { kind: "marca", value: nome } })}
+                  >
+                    {nome}
+                  </Link>
+                ))}
+              </div>
+            </details>
 
-      <p style={{ margin: "0 0 var(--sb-space-3)", color: "var(--sb-text-soft)", fontSize: "0.9375rem" }}>
-        {selectedAccount === null ? "Todas as contas conectadas" : selectedAccount.label},{" "}
-        {formatBusinessDate(range.from)} até {formatBusinessDate(range.to)} — comparado com{" "}
-        {formatBusinessDate(previousRange.from)} até {formatBusinessDate(previousRange.to)}.
-      </p>
+            <details className="sb-menu">
+              <summary className="sb-button">{periodoLabel} ▾</summary>
+              <div className="sb-menu-panel">
+                {PRESET_DAYS.map((preset) => (
+                  <Link
+                    key={preset}
+                    className="sb-menu-item"
+                    aria-current={!isCustom && days === preset ? "true" : undefined}
+                    href={buildHref({ period, accountSlug, metricKey: metric.key, brand }, { period: { days: preset } })}
+                  >
+                    Últimos {preset} dias
+                  </Link>
+                ))}
+
+                <form
+                  method="get"
+                  style={{
+                    display: "grid",
+                    gap: "0.375rem",
+                    padding: "0.5rem 0.625rem 0.375rem",
+                    borderTop: "1px solid var(--sb-border)",
+                    marginTop: "0.25rem",
+                  }}
+                >
+                  {accountSlug !== null && <input type="hidden" name="account" value={accountSlug} />}
+                  {/*
+                    Mesmo motivo do hidden de `account` logo acima: um GET
+                    nativo envia SÓ os campos do formulário, então sem isto
+                    escolher um período personalizado descartaria a métrica
+                    escolhida e o gráfico voltaria para faturamento sozinho.
+                    O recorte de marca entrou na mesma conta — antes ele se
+                    perdia, e este é o segundo campo que a varredura achou.
+                  */}
+                  {metric.key !== DEFAULT_SALES_METRIC.key && (
+                    <input type="hidden" name="metric" value={metric.key} />
+                  )}
+                  {brand.kind === "marca" && <input type="hidden" name="marca" value={brand.value} />}
+                  {brand.kind === "sem_marca" && <input type="hidden" name="semMarca" value="1" />}
+
+                  <input
+                    type="date"
+                    name="from"
+                    defaultValue={isCustom ? range.from : undefined}
+                    aria-label="Data inicial"
+                    style={FILTER_DATE_STYLE}
+                  />
+                  <input
+                    type="date"
+                    name="to"
+                    defaultValue={isCustom ? range.to : undefined}
+                    aria-label="Data final"
+                    style={FILTER_DATE_STYLE}
+                  />
+                  <button type="submit" className="sb-button sb-button-primary" style={{ justifyContent: "center" }}>
+                    Aplicar período
+                  </button>
+                </form>
+              </div>
+            </details>
+
+            {organizationId !== null && (
+              <SavedFilters screen="/vendas" organizationId={organizationId} filters={savedFilters} />
+            )}
+
+            {/*
+              O veredito de frescor é verdade funcional (D-143/D-219) e não sai
+              da tela por não estar no frame do Figma: ele diz se o número que
+              está sendo lido foi recalculado.
+            */}
+            {summary !== null && (
+              <span
+                style={{
+                  fontSize: "0.6875rem",
+                  fontWeight: 700,
+                  color: freshnessTone.color,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {freshnessTone.label}
+                {lastComputedAt !== null && ` · até ${formatDateTime(lastComputedAt)}`}
+              </span>
+            )}
+          </>
+        }
+      />
 
       {(accountsResult.error !== null || membershipResult.error !== null || savedFiltersResult.error !== null) && (
         <p role="alert" style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-danger)" }}>
@@ -685,158 +834,68 @@ export default async function VendasPage({
         </p>
       )}
 
-      {accountsResult.error === null && accounts.length > 0 && (
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            alignItems: "center",
-            gap: "var(--sb-space-2)",
-            marginBottom: "var(--sb-space-2)",
-          }}
-        >
-          <FilterPill
-            href={buildHref({ period, accountSlug, metricKey: metric.key, brand }, { accountSlug: null })} active={selectedAccount === null}
-          >
-            Todas as contas
-          </FilterPill>
-
-          {accounts.map((account) => (
-            <FilterPill
-              key={account.id}
-              href={buildHref({ period, accountSlug, metricKey: metric.key, brand }, { accountSlug: account.slug })} active={selectedAccount?.id === account.id}
-            >
-              {account.label}
-            </FilterPill>
-          ))}
-        </div>
-      )}
-
-      {/*
-        "Sem marca" NÃO é ausência de filtro: é a venda que nenhuma marca
-        alcança — item sem SKU vinculado, 23,2% da receita. Sem essa pílula,
-        somar as marcas não chegaria ao total e um quarto do faturamento
-        sumiria sem explicação (D-237).
-      */}
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          alignItems: "center",
-          gap: "var(--sb-space-2)",
-          marginBottom: "var(--sb-space-2)",
-        }}
-      >
-        <span style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)", minWidth: "4rem" }}>Marca</span>
-        <FilterPill
-          href={buildHref({ period, accountSlug, metricKey: metric.key, brand }, { brand: { kind: "todas" } })}
-          active={brand.kind === "todas"}
-        >
-          Todas
-        </FilterPill>
-        <FilterPill
-          href={buildHref({ period, accountSlug, metricKey: metric.key, brand }, { brand: { kind: "sem_marca" } })}
-          active={brand.kind === "sem_marca"}
-        >
-          Sem marca
-        </FilterPill>
-        {brands.map((nome) => (
-          <FilterPill
-            key={nome}
-            href={buildHref({ period, accountSlug, metricKey: metric.key, brand }, { brand: { kind: "marca", value: nome } })}
-            active={brand.kind === "marca" && brand.value === nome}
-          >
-            {nome}
-          </FilterPill>
-        ))}
-      </div>
-
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          alignItems: "center",
-          gap: "var(--sb-space-2)",
-          marginBottom: "var(--sb-space-4)",
-        }}
-      >
-        {PRESET_DAYS.map((preset) => (
-          <FilterPill
-            key={preset}
-            href={buildHref({ period, accountSlug, metricKey: metric.key, brand }, { period: { days: preset } })} active={!isCustom && days === preset}
-          >
-            {preset} dias
-          </FilterPill>
-        ))}
-
-        <form
-          method="get"
-          style={{ display: "flex", alignItems: "center", gap: "0.375rem", fontSize: "0.8125rem" }}
-        >
-          {accountSlug !== null && <input type="hidden" name="account" value={accountSlug} />}
-          {/*
-            Mesmo motivo do hidden de `account` logo acima: um GET nativo
-            envia SÓ os campos do formulário, então sem isto escolher um
-            período personalizado descartaria a métrica escolhida e o
-            gráfico voltaria para faturamento sozinho.
-          */}
-          {metric.key !== DEFAULT_SALES_METRIC.key && (
-            <input type="hidden" name="metric" value={metric.key} />
-          )}
-          <input
-            type="date"
-            name="from"
-            defaultValue={isCustom ? range.from : undefined}
-            aria-label="Data inicial"
-            style={{
-              padding: "0.25rem 0.5rem",
-              borderRadius: "var(--sb-radius)",
-              border: "1px solid var(--sb-border)",
-              fontSize: "0.8125rem",
-            }}
-          />
-          <span style={{ color: "var(--sb-text-soft)" }}>até</span>
-          <input
-            type="date"
-            name="to"
-            defaultValue={isCustom ? range.to : undefined}
-            aria-label="Data final"
-            style={{
-              padding: "0.25rem 0.5rem",
-              borderRadius: "var(--sb-radius)",
-              border: "1px solid var(--sb-border)",
-              fontSize: "0.8125rem",
-            }}
-          />
-          <button type="submit" style={FILTER_SUBMIT_STYLE}>
-            Personalizado
-          </button>
-        </form>
-      </div>
-
-      {organizationId !== null && (
-        <div style={{ marginBottom: "var(--sb-space-4)" }}>
-          <SavedFilters screen="/vendas" organizationId={organizationId} filters={savedFilters} />
-        </div>
-      )}
-
       {invalidCustom && (
-        <p role="alert" style={{ color: "var(--sb-danger)" }}>
+        <p role="alert" style={{ margin: "0 0 var(--sb-space-3)", color: "var(--sb-danger)" }}>
           Período personalizado inválido — mostrando os últimos {DEFAULT_DAYS} dias.
         </p>
       )}
 
       {error !== null && (
-        <p role="alert" style={{ color: "var(--sb-danger)" }}>
+        <p role="alert" style={{ margin: "0 0 var(--sb-space-3)", color: "var(--sb-danger)" }}>
           Não foi possível carregar as métricas: {error.message}
         </p>
       )}
 
       {error === null && neverComputed && (
-        <p style={{ color: "var(--sb-text-soft)" }}>
+        <p style={{ margin: "0 0 var(--sb-space-3)", color: "var(--sb-text-soft)" }}>
           Nenhuma métrica calculada para este período ainda. As contas conectadas ainda estão trazendo o
           histórico (backfill) — o recálculo só materializa dias tocados pela reconciliação.
         </p>
+      )}
+
+      {error === null && summary !== null && !neverComputed && (
+        <KpiStrip ancora cells={toCells(buildCards(summary, previousSummary), previousHasData)} />
+      )}
+
+      {error === null && dailySeries.length > 0 && (
+        <div style={{ marginTop: "var(--sb-space-3)" }}>
+          <Panel
+            title="Desempenho no período"
+            subtitle={
+              <>
+                {formatBusinessDate(range.from)} a {formatBusinessDate(range.to)}
+                {previousDailySeries.length > 0 ? " · comparação com o período anterior" : ""}
+                {dailySeries.length < businessDateRangeLength(range.from, range.to)
+                  ? ` · só ${String(dailySeries.length)} ${dailySeries.length === 1 ? "dia tem" : "dias têm"} métrica calculada`
+                  : ""}
+              </>
+            }
+          >
+            <div className="sb-segmented" role="group" aria-label="Métrica do gráfico">
+              {SALES_METRICS.map((option) => (
+                <Link
+                  key={option.key}
+                  href={buildHref({ period, accountSlug, metricKey: metric.key, brand }, { metricKey: option.key })}
+                  aria-current={option.key === metric.key ? "true" : undefined}
+                >
+                  {option.label}
+                </Link>
+              ))}
+            </div>
+
+            <div style={{ padding: "var(--sb-space-2) var(--sb-space-3) var(--sb-space-3)" }}>
+              <SalesChart
+                points={dailySeries}
+                previousPoints={previousDailySeries}
+                metric={metric}
+                rangeFrom={range.from}
+                rangeTo={range.to}
+                previousRangeFrom={previousRange.from}
+                previousRangeTo={previousRange.to}
+              />
+            </div>
+          </Panel>
+        </div>
       )}
 
       {/*
@@ -846,41 +905,21 @@ export default async function VendasPage({
         webhook traz pedidos em segundos), diferente de "nunca calculado".
       */}
       {error === null && todaySummary !== null && (
-        <div style={{ marginBottom: "var(--sb-space-4)" }}>
-          <h2 style={{ fontSize: "1.0625rem", margin: "0 0 var(--sb-space-1)" }}>Hoje — dia em andamento</h2>
-          <p style={{ margin: "0 0 var(--sb-space-2)", color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
-            Números parciais por construção: o dia só fecha à meia-noite (São Paulo) e não é comparável com
-            períodos encerrados.{" "}
-            {todaySummary.last_order_at === null
-              ? "Nenhuma venda registrada até agora."
-              : `Última venda registrada às ${formatDateTime(todaySummary.last_order_at)}.`}
-          </p>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(13rem, 1fr))",
-              gap: "var(--sb-space-3)",
-            }}
+        <div style={{ marginTop: "var(--sb-space-3)" }}>
+          <Panel
+            title="Hoje — dia em andamento"
+            subtitle={
+              <>
+                Números parciais por construção: o dia só fecha à meia-noite (São Paulo) e não é comparável com
+                períodos encerrados.{" "}
+                {todaySummary.last_order_at === null
+                  ? "Nenhuma venda registrada até agora."
+                  : `Última venda registrada às ${formatDateTime(todaySummary.last_order_at)}.`}
+              </>
+            }
           >
-            {buildTodayCards(todaySummary).map((card) => (
-              <MetricCard key={`hoje-${card.metricId}`} card={card} showPrevious={false} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {error === null && summary !== null && !neverComputed && (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(13rem, 1fr))",
-            gap: "var(--sb-space-3)",
-          }}
-        >
-          {buildCards(summary, previousSummary).map((card) => (
-            <MetricCard key={card.metricId} card={card} showPrevious={previousHasData} />
-          ))}
+            <KpiStrip cells={toCells(buildTodayCards(todaySummary), false)} />
+          </Panel>
         </div>
       )}
 
@@ -888,28 +927,16 @@ export default async function VendasPage({
         Seção 5C (D-157) — NÃO condicionada a neverComputed: cancelamento vem
         de `orders` direto (L1) e existe mesmo quando o recálculo L3 ainda não
         tocou a janela. A nota declara a fonte, porque os números podem
-        divergir ligeiramente dos cards L3 acima (atraso do recálculo).
+        divergir ligeiramente dos números L3 acima (atraso do recálculo).
       */}
       {error === null && expanded !== null && (
-        <div style={{ marginTop: "var(--sb-space-4)" }}>
-          <h2 style={{ fontSize: "1.0625rem", margin: "0 0 var(--sb-space-1)" }}>Cancelamentos e taxas</h2>
-          <p style={{ margin: "0 0 var(--sb-space-2)", color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
-            Calculado dos pedidos diretamente (visão operacional) — pode divergir minimamente dos cards acima,
-            que vêm do recálculo diário. Não é receita líquida: frete, taxa fixa, parcelamento e impostos não
-            são observados.
-          </p>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(13rem, 1fr))",
-              gap: "var(--sb-space-3)",
-            }}
+        <div style={{ marginTop: "var(--sb-space-3)" }}>
+          <Panel
+            title="Cancelamentos e taxas"
+            subtitle="Calculado dos pedidos diretamente (visão operacional) — pode divergir minimamente dos números acima, que vêm do recálculo diário. Não é receita líquida: frete, taxa fixa, parcelamento e impostos não são observados."
           >
-            {buildExpandedCards(expanded, previousExpanded).map((card) => (
-              <MetricCard key={card.metricId} card={card} showPrevious={previousExpanded !== null} />
-            ))}
-          </div>
+            <KpiStrip cells={toCells(buildExpandedCards(expanded, previousExpanded), previousExpanded !== null)} />
+          </Panel>
         </div>
       )}
 
@@ -919,97 +946,37 @@ export default async function VendasPage({
         cobertura, a seção RECUSA em vez de fingir número.
       */}
       {error === null && margin !== null && (
-        <div style={{ marginTop: "var(--sb-space-4)" }}>
-          <h2 style={{ fontSize: "1.0625rem", margin: "0 0 var(--sb-space-1)" }}>
-            Margem operacional — estimativa por pedido
-          </h2>
-
-          {margin.orders_covered === null ? (
-            <p style={{ margin: 0, color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
-              <strong>Não há margem por marca.</strong> Frete e desconto do vendedor são do PEDIDO — um pedido
-              tem um frete, não um frete por item —, então não existe cota de marca para descontar. Mostrar a
-              receita da marca menos o custo da operação inteira seria número errado com cara de preciso. Tire o
-              recorte de marca para ver a margem.
-            </p>
-          ) : margin.orders_covered === 0 ? (
-            <p style={{ margin: 0, color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
-              Nenhum dos {formatCount(margin.orders_total ?? 0)} pedidos válidos do período tem frete e desconto
-              capturados ainda — a captura diária de custos começou em 31/08/2026 e a margem só é exibida
-              sobre pedidos cobertos, nunca estimada por cima.
-            </p>
-          ) : (
-            <>
-              <p style={{ margin: "0 0 var(--sb-space-2)", color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
-                Calculada sobre {formatCount(margin.orders_covered)} de {formatCount(margin.orders_total ?? 0)}{" "}
-                pedidos válidos do período (
-                {formatPercent(margin.orders_covered / Math.max(margin.orders_total ?? 1, 1))}) — os que têm frete e
-                desconto observados. <strong>Não é receita líquida</strong>: taxa fixa por pedido, parcelamento,
-                custo de cobrança do Mercado Pago, impostos retidos e reembolsos posteriores não são observados.
-              </p>
-
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(13rem, 1fr))",
-                  gap: "var(--sb-space-3)",
-                }}
-              >
-                {buildMarginCards(margin, previousMargin).map((card) => (
-                  <MetricCard
-                    key={card.metricId}
-                    card={card}
-                    showPrevious={previousMargin !== null && (previousMargin.orders_covered ?? 0) > 0}
-                  />
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {error === null && dailySeries.length > 0 && (
-        <div style={{ marginTop: "var(--sb-space-5)" }}>
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              alignItems: "baseline",
-              justifyContent: "space-between",
-              gap: "var(--sb-space-2)",
-              margin: "0 0 var(--sb-space-2)",
-            }}
+        <div style={{ marginTop: "var(--sb-space-3)" }}>
+          <Panel
+            title="Margem operacional — estimativa por pedido"
+            subtitle={
+              margin.orders_covered === null || margin.orders_covered === 0
+                ? undefined
+                : `Calculada sobre ${formatCount(margin.orders_covered)} de ${formatCount(margin.orders_total ?? 0)} pedidos válidos do período (${formatPercent(margin.orders_covered / Math.max(margin.orders_total ?? 1, 1))}) — os que têm frete e desconto observados. Não é receita líquida: taxa fixa por pedido, parcelamento, custo de cobrança do Mercado Pago, impostos retidos e reembolsos posteriores não são observados.`
+            }
           >
-            <h2 style={{ fontSize: "1.0625rem", margin: 0 }}>{metric.heading}</h2>
-
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)" }} role="group" aria-label="Métrica do gráfico">
-              {SALES_METRICS.map((option) => (
-                <FilterPill
-                  key={option.key}
-                  href={buildHref({ period, accountSlug, metricKey: metric.key, brand }, { metricKey: option.key })} active={option.key === metric.key}
-                  aria-current={option.key === metric.key ? "true" : undefined}
-                >
-                  {option.label}
-                </FilterPill>
-              ))}
-            </div>
-          </div>
-
-          {dailySeries.length < businessDateRangeLength(range.from, range.to) && (
-            <p style={{ margin: "0 0 var(--sb-space-2)", color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
-              Só {dailySeries.length} {dailySeries.length === 1 ? "dia tem" : "dias têm"} métrica calculada
-              dentro do período — o restante ainda não foi tocado pela reconciliação ou pelo backfill.
-            </p>
-          )}
-
-          <SalesChart
-            points={dailySeries}
-            previousPoints={previousDailySeries}
-            metric={metric}
-            rangeFrom={range.from}
-            rangeTo={range.to}
-            previousRangeFrom={previousRange.from}
-            previousRangeTo={previousRange.to}
-          />
+            {margin.orders_covered === null ? (
+              <p style={MARGIN_NOTE_STYLE}>
+                <strong>Não há margem por marca.</strong> Frete e desconto do vendedor são do PEDIDO — um pedido
+                tem um frete, não um frete por item —, então não existe cota de marca para descontar. Mostrar a
+                receita da marca menos o custo da operação inteira seria número errado com cara de preciso. Tire
+                o recorte de marca para ver a margem.
+              </p>
+            ) : margin.orders_covered === 0 ? (
+              <p style={MARGIN_NOTE_STYLE}>
+                Nenhum dos {formatCount(margin.orders_total ?? 0)} pedidos válidos do período tem frete e
+                desconto capturados ainda — a captura diária de custos começou em 31/08/2026 e a margem só é
+                exibida sobre pedidos cobertos, nunca estimada por cima.
+              </p>
+            ) : (
+              <KpiStrip
+                cells={toCells(
+                  buildMarginCards(margin, previousMargin),
+                  previousMargin !== null && (previousMargin.orders_covered ?? 0) > 0,
+                )}
+              />
+            )}
+          </Panel>
         </div>
       )}
     </Shell>
