@@ -71,7 +71,7 @@ export function summarizeStockWindow(page: number, totalCount: number, rowsOnPag
     totalCount,
     rowsOnPage,
     pageSize: PAGE_SIZE,
-    noun: "SKUs",
+    noun: { singular: "SKU", plural: "SKUs" },
     trailing: ", em ordem de SKU",
     emptyLabel: "Nenhum SKU no filtro atual.",
   });

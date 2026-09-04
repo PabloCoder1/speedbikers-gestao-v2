@@ -138,7 +138,7 @@ export default async function FullPage({
     totalCount,
     rowsOnPage: rows.length,
     pageSize: PAGE_SIZE,
-    noun: totalCount === 1 ? "SKU por conta" : "SKUs por conta",
+    noun: { singular: "SKU por conta", plural: "SKUs por conta" },
     emptyLabel: "Nenhum SKU encontrado com estes filtros.",
   });
 

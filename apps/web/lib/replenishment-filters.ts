@@ -70,7 +70,7 @@ export function summarizeReplenishmentWindow(
     totalCount,
     rowsOnPage,
     pageSize: PAGE_SIZE,
-    noun: "SKUs",
+    noun: { singular: "SKU", plural: "SKUs" },
     trailing: ", em ordem de prioridade de compra",
     emptyLabel: "Nenhum SKU no filtro atual.",
   });

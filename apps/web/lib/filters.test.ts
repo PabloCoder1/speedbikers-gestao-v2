@@ -53,7 +53,7 @@ describe("summarizePagedWindow", () => {
       totalCount: 5085,
       rowsOnPage: 50,
       pageSize: 50,
-      noun: "anúncios",
+      noun: { singular: "anúncio", plural: "anúncios" },
       emptyLabel: "vazio",
     });
 
@@ -67,7 +67,7 @@ describe("summarizePagedWindow", () => {
       totalCount: 1492,
       rowsOnPage: 92,
       pageSize: 200,
-      noun: "SKUs na curva",
+      noun: { singular: "SKU na curva", plural: "SKUs na curva" },
       emptyLabel: "vazio",
     });
 
@@ -76,7 +76,7 @@ describe("summarizePagedWindow", () => {
 
   /** `trailing` só faz sentido quando existe faixa — numa página só vira ruído. */
   it("trailing entra na multi-página e some na página única", () => {
-    const comum = { totalCount: 3174, pageSize: 100, noun: "SKUs", trailing: ", em ordem de SKU", emptyLabel: "vazio" };
+    const comum = { totalCount: 3174, pageSize: 100, noun: { singular: "SKU", plural: "SKUs" }, trailing: ", em ordem de SKU", emptyLabel: "vazio" };
 
     expect(summarizePagedWindow({ ...comum, page: 1, rowsOnPage: 100 }).label).toContain(", em ordem de SKU.");
     expect(summarizePagedWindow({ ...comum, totalCount: 40, page: 1, rowsOnPage: 40 }).label).toBe("40 SKUs.");
@@ -88,12 +88,26 @@ describe("summarizePagedWindow", () => {
       totalCount: 12,
       rowsOnPage: 12,
       pageSize: 50,
-      noun: "anúncios",
+      noun: { singular: "anúncio", plural: "anúncios" },
       emptyLabel: "vazio",
     });
 
     expect(r.label).toBe("12 anúncios.");
     expect(r.totalPages).toBe(1);
+  });
+
+  /**
+   * Um total de exatamente UM. Antes o helper recebia só o plural e três das
+   * oito telas flexionavam por conta própria; as outras cinco diziam
+   * "1 anúncios." — visto pela primeira vez no cabeçalho do painel de
+   * `/anuncios` (D12), onde o rótulo ganhou destaque.
+   */
+  it("total de um flexiona para o singular, e o plural volta a partir de dois", () => {
+    const comum = { page: 1, pageSize: 50, noun: { singular: "anúncio", plural: "anúncios" }, emptyLabel: "vazio" };
+
+    expect(summarizePagedWindow({ ...comum, totalCount: 1, rowsOnPage: 1 }).label).toBe("1 anúncio.");
+    expect(summarizePagedWindow({ ...comum, totalCount: 2, rowsOnPage: 2 }).label).toBe("2 anúncios.");
+    expect(summarizePagedWindow({ ...comum, totalCount: 4, rowsOnPage: 4 }).label).toBe("4 anúncios.");
   });
 
   it("zero é resultado e usa a frase da tela, não uma genérica", () => {
@@ -102,7 +116,7 @@ describe("summarizePagedWindow", () => {
       totalCount: 0,
       rowsOnPage: 0,
       pageSize: 50,
-      noun: "anúncios",
+      noun: { singular: "anúncio", plural: "anúncios" },
       emptyLabel: "Nenhum anúncio no filtro atual.",
     });
 

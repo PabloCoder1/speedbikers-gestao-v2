@@ -485,6 +485,30 @@ async function main(): Promise<void> {
     throw sales.error;
   }
 
+  // O MESMO recálculo no grão de CONTA. `/vendas` lê `daily_account_metrics`
+  // quando não há filtro de marca (`get_sales_summary`, `get_sales_daily_series`)
+  // e, sem estas linhas, a tela renderizava "Nenhuma métrica calculada para
+  // este período" em todo teste e em toda captura — a faixa de KPIs e o gráfico,
+  // que são a composição principal do frame, nunca eram exercitados. A conta
+  // tem um SKU só, então as linhas são as mesmas: o total da conta É o do SKU.
+  const accountRows = salesRows.map((linha) => ({
+    organization_id: linha.organization_id,
+    ml_account_id: linha.ml_account_id,
+    metric_date: linha.metric_date,
+    units_sold: linha.units_sold,
+    gross_revenue: linha.gross_revenue,
+    orders_count: linha.orders_count,
+    purchases_count: linha.purchases_count,
+  }));
+
+  const accountSales = await db
+    .from("daily_account_metrics")
+    .upsert(accountRows, { onConflict: "ml_account_id,metric_date" });
+
+  if (accountSales.error !== null) {
+    throw accountSales.error;
+  }
+
   // Memória de decisões (aba Decisões, D-228): UMA ação do SKU, UMA decisão
   // com baseline e UMA medição (7 dias) — o e2e prova o lado a lado e as
   // janelas ainda sem medição. A ação entra pela chave estável (`dedup_key`);

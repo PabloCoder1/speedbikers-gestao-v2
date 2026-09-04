@@ -109,7 +109,7 @@ export function summarizeAbcWindow(page: number, totalCount: number, rowsOnPage:
     totalCount,
     rowsOnPage,
     pageSize: PAGE_SIZE,
-    noun: "SKUs na curva",
+    noun: { singular: "SKU na curva", plural: "SKUs na curva" },
     emptyLabel: "Nenhum SKU com venda no período e escopo escolhidos.",
   });
 }

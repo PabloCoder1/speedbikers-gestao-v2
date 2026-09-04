@@ -117,7 +117,7 @@ export default async function MovimentacoesPage({
     totalCount,
     rowsOnPage: rows.length,
     pageSize: PAGE_SIZE,
-    noun: "movimentos",
+    noun: { singular: "movimento", plural: "movimentos" },
     emptyLabel: "Nenhum movimento encontrado com estes filtros.",
   });
 

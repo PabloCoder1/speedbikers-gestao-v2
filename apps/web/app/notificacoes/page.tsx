@@ -113,7 +113,7 @@ export default async function NotificacoesPage(): Promise<ReactNode> {
           totalCount,
           rowsOnPage: rows.length,
           pageSize: PAGE_SIZE,
-          noun: totalCount === 1 ? "notificação" : "notificações",
+          noun: { singular: "notificação", plural: "notificações" },
           emptyLabel: "Nenhuma notificação ainda.",
           trailing: ", as mais recentes",
         });

@@ -86,7 +86,7 @@ export function summarizeWindow(page: number, totalCount: number, rowsOnPage: nu
     totalCount,
     rowsOnPage,
     pageSize: PAGE_SIZE,
-    noun: "anúncios",
+    noun: { singular: "anúncio", plural: "anúncios" },
     emptyLabel: "Nenhum anúncio no filtro atual.",
   });
 }

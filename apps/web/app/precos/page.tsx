@@ -138,10 +138,7 @@ export default async function PrecosPage({
     totalCount,
     rowsOnPage: rows.length,
     pageSize: PAGE_SIZE,
-    // `summarizePagedWindow` não flexiona número (as demais telas exibem "1
-    // anúncios"); aqui o singular é resolvido antes de entrar. Corrigir o
-    // helper para todas as telas é fatia própria.
-    noun: totalCount === 1 ? "mudança de preço" : "mudanças de preço",
+    noun: { singular: "mudança de preço", plural: "mudanças de preço" },
     emptyLabel: "Nenhuma mudança de preço encontrada com estes filtros.",
   });
 

@@ -77,20 +77,26 @@ export interface PagedWindow {
  * real era 790 (D-140). Em nenhum dos casos havia como distinguir "estes são
  * todos" de "estes são os primeiros N".
  *
- * `noun` é a frase no plural ("anúncios", "SKUs", "SKUs na curva") e `trailing`
- * é o complemento que só faz sentido quando há mais de uma página (", em ordem
- * de SKU"). Uma página só não recebe faixa: "1 a 12 de 12" é ruído.
+ * `noun` traz as DUAS formas ("anúncio"/"anúncios", "SKU na curva"/"SKUs na
+ * curva") e a função escolhe pelo total. Era uma string no plural, e três das
+ * oito telas flexionavam por conta própria antes de chamar — as outras cinco
+ * mostravam "1 anúncios." e ninguém via, porque um total de exatamente um é
+ * raro em produção e nunca aparecia no seed. Exigir as duas formas no tipo faz
+ * o compilador enumerar as telas em vez de deixar a quarta cópia do ternário
+ * nascer. `trailing` é o complemento que só faz sentido quando há mais de uma
+ * página (", em ordem de SKU"). Uma página só não recebe faixa: "1 a 12 de 12"
+ * é ruído.
  */
 export function summarizePagedWindow(input: {
   page: number;
   totalCount: number;
   rowsOnPage: number;
   pageSize: number;
-  noun: string;
+  noun: { singular: string; plural: string };
   emptyLabel: string;
   trailing?: string;
 }): PagedWindow {
-  const { page, totalCount, rowsOnPage, pageSize, noun, emptyLabel } = input;
+  const { page, totalCount, rowsOnPage, pageSize, emptyLabel } = input;
   const trailing = input.trailing ?? "";
 
   if (totalCount === 0) {
@@ -99,6 +105,9 @@ export function summarizePagedWindow(input: {
 
   const totalPages = Math.ceil(totalCount / pageSize);
   const formatted = new Intl.NumberFormat("pt-BR");
+  // Flexiona pelo TOTAL, não pela página: "Mostrando 1 a 1 de 1 anúncio" e
+  // "1 anúncio." são a mesma unidade, e é o total que a frase nomeia.
+  const noun = totalCount === 1 ? input.noun.singular : input.noun.plural;
 
   if (totalPages === 1) {
     return { label: `${formatted.format(totalCount)} ${noun}.`, totalPages };
