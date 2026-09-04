@@ -5516,7 +5516,8 @@ describe("get_listings_dashboard (D-138; conversão canônica em D-170)", () => 
     );
 
     expect(zerados.map((r) => r.item_id)).toContain(ITEM_ZERADO);
-    expect(zerados.every((r) => Number(r.available_quantity) === 0)).toBe(true);
+    // `integer` chega como number do pg (bigint chegaria como string).
+    expect(zerados.every((r) => r.available_quantity === 0)).toBe(true);
   });
 
   it("anon não executa get_listings_dashboard", async () => {
