@@ -113,17 +113,7 @@ const statBox: React.CSSProperties = {
   minWidth: "9rem",
 };
 
-const statLabel: React.CSSProperties = {
-  fontSize: "0.75rem",
-  textTransform: "uppercase",
-  letterSpacing: "0.04em",
-  color: "var(--sb-text-soft)",
-};
 
-const statValue: React.CSSProperties = {
-  fontSize: "1.375rem",
-  fontVariantNumeric: "tabular-nums",
-};
 
 const th: React.CSSProperties = {
   textAlign: "left",
@@ -155,23 +145,19 @@ function StockBoxes({
   };
 }): ReactNode {
   return (
-    <div style={{ display: "flex", gap: "var(--sb-space-3)", flexWrap: "wrap", marginBottom: "var(--sb-space-2)" }}>
-      <div style={statBox}>
-        <div style={statLabel}>Local</div>
-        <div style={statValue}>{formatCount(dashboard.local_quantity)}</div>
-      </div>
-      <div style={statBox}>
-        <div style={statLabel}>Reservado</div>
-        <div style={statValue}>{formatCount(dashboard.reservado_quantity)}</div>
-      </div>
-      <div style={statBox}>
-        <div style={statLabel}>Em trânsito</div>
-        <div style={statValue}>{formatCount(dashboard.transito_quantity)}</div>
-      </div>
-      <div style={statBox}>
-        <div style={statLabel}>Full</div>
-        <div style={statValue}>{formatCount(dashboard.full_quantity)}</div>
-      </div>
+    <div className="sb-stat-grid" style={{ marginBottom: "var(--sb-space-3)" }}>
+      {[
+        { rotulo: "Local", valor: dashboard.local_quantity, nota: "saldo físico da organização" },
+        { rotulo: "Reservado", valor: dashboard.reservado_quantity, nota: "comprometido com pedido" },
+        { rotulo: "Em trânsito", valor: dashboard.transito_quantity, nota: "comprado e ainda não recebido" },
+        { rotulo: "Full", valor: dashboard.full_quantity, nota: "no centro do Mercado Livre" },
+      ].map((caixa) => (
+        <div className="sb-stat" key={caixa.rotulo}>
+          <span className="sb-stat-label">{caixa.rotulo}</span>
+          <b className="sb-stat-value">{formatCount(caixa.valor)}</b>
+          <span className="sb-stat-note">{caixa.nota}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -249,12 +235,14 @@ function buildSalesCards(total: SalesTotals): SalesCard[] {
  */
 function SalesMetricCard({ card }: { card: SalesCard }): ReactNode {
   return (
-    <div title={card.formula} style={{ ...statBox, display: "grid", gap: "0.25rem" }}>
-      <div style={statLabel}>{card.label}</div>
-      <div style={statValue}>{card.value}</div>
-      <div style={{ fontSize: "0.6875rem", color: "var(--sb-muted-ink)", fontFamily: "ui-monospace, monospace" }}>
+    <div className="sb-stat" title={card.formula}>
+      <span className="sb-stat-label">{card.label}</span>
+      <b className="sb-stat-value">{card.value}</b>
+      {/* O id da métrica não é enfeite: é a rastreabilidade até a definição
+          canônica em `metric_definitions`. */}
+      <span className="sb-stat-note" style={{ fontFamily: "var(--sb-mono)" }}>
         {card.metricId}
-      </div>
+      </span>
     </div>
   );
 }
@@ -679,7 +667,10 @@ export default async function SkuDashboardPage({
 
       {tab === "vendas" && (
         <>
-          <h2 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.0625rem" }}>Vendas do SKU</h2>
+          <div className="sb-section-label" style={{ marginTop: 0 }}>
+            <span>Vendas do SKU</span>
+            <span className="sb-section-note">últimos {LOOKBACK_DAYS} dias, somadas entre as contas no banco</span>
+          </div>
 
           {/*
             D-227. A fonte é o recálculo por conta e por dia (`daily_sku_metrics`,
@@ -728,12 +719,7 @@ export default async function SkuDashboardPage({
               )}
 
               {salesByAccount.length > 0 && (
-                <>
-                  <h3 style={{ margin: "0 0 var(--sb-space-1)", fontSize: "0.9375rem" }}>Por conta</h3>
-                  <p style={{ margin: "0 0 var(--sb-space-2)", fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
-                    Ticket médio e preço médio são razões sobre as somas de cada conta — nunca média das médias
-                    diárias.
-                  </p>
+                  <Panel title="Por conta" subtitle="Ticket médio e preço médio são razões sobre as somas de cada conta — nunca média das médias diárias.">
                   <div style={{ overflowX: "auto", marginBottom: "var(--sb-space-4)" }}>
                     <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "44rem" }}>
                       <thead>
@@ -765,16 +751,11 @@ export default async function SkuDashboardPage({
                       </tbody>
                     </table>
                   </div>
-                </>
+                </Panel>
               )}
 
               {salesByDay.length > 0 && (
-                <>
-                  <h3 style={{ margin: "0 0 var(--sb-space-1)", fontSize: "0.9375rem" }}>Por dia</h3>
-                  <p style={{ margin: "0 0 var(--sb-space-2)", fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
-                    Dias sem venda registrada não aparecem — o recálculo não fabrica zero (mesmo contrato de /vendas).
-                    Duas contas no mesmo dia viram uma linha só.
-                  </p>
+                  <Panel title="Por dia" subtitle="Dias sem venda registrada não aparecem — o recálculo não fabrica zero (mesmo contrato de /vendas). Duas contas no mesmo dia viram uma linha só.">
                   <div style={{ overflowX: "auto", marginBottom: "var(--sb-space-3)" }}>
                     <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "32rem" }}>
                       <thead>
@@ -803,7 +784,7 @@ export default async function SkuDashboardPage({
                       </tbody>
                     </table>
                   </div>
-                </>
+                </Panel>
               )}
 
               {salesTotal.last_computed_at !== null && (
@@ -826,18 +807,37 @@ export default async function SkuDashboardPage({
 
           {dashboard !== null && (
             <>
+              <div className="sb-section-label" style={{ marginTop: 0 }}>
+                <span>Saldo por local</span>
+                <span className="sb-section-note">
+                  os quatro estados do ledger — nenhum deles é a soma dos outros
+                </span>
+              </div>
+
               <StockBoxes dashboard={dashboard} />
 
-              <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.875rem" }}>
-                <Link href={`/estoque/${skuId}/ajuste`}>Ajustar estoque</Link> — todo ajuste manual exige motivo e
-                fica no ledger.
-              </p>
+              <Panel
+                title="Simulador de cobertura"
+                subtitle="Premissas pré-preenchidas com o saldo local e a venda média medida; mudar qualquer uma delas muda só a simulação, nunca o dado."
+                aside={
+                  <Link href={`/estoque/${skuId}/ajuste`} style={{ color: "var(--sb-secondary)", textDecoration: "none" }}>
+                    Ajustar estoque →
+                  </Link>
+                }
+              >
+                <div style={{ padding: "var(--sb-space-2) var(--sb-space-3) var(--sb-space-3)" }}>
+                  <SimulatorPanel
+                    asOf={dateTo}
+                    initialStockQuantity={coverage?.local_quantity ?? 0}
+                    initialAvgDailySales={coverage?.avg_daily_sales ?? 0}
+                  />
 
-              <SimulatorPanel
-                asOf={dateTo}
-                initialStockQuantity={coverage?.local_quantity ?? 0}
-                initialAvgDailySales={coverage?.avg_daily_sales ?? 0}
-              />
+                  <p style={{ margin: "var(--sb-space-2) 0 0", fontSize: "0.625rem", color: "var(--sb-text-soft)" }}>
+                    Todo ajuste manual de estoque exige motivo e fica no ledger — ele é movimento auditável, não
+                    correção silenciosa.
+                  </p>
+                </div>
+              </Panel>
             </>
           )}
         </>

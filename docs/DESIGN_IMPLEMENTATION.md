@@ -301,6 +301,21 @@ branco embutido.
 
 ### Desvios registrados, no formato curto
 
+> **Superfície:** `/skus/[id]`, abas que não a Visão geral · **Figma:** o frame
+> mostra *"Conteúdo da aba em construção"* para todas · **V3 real:** conteúdo
+> completo · **Decisão:** aplicar o **design system** (rótulo de seção, cartão
+> de indicador, painel), não inventar um frame · **Motivo:** escopo — o Figma
+> não desenhou essas abas, e o Design Contract é o que resolve componentes
+> recorrentes quando o frame não fala.
+
+> **Superfície:** Figma tem um **drawer de "Inspeção Rápida"** disparado da
+> tabela de produtos · **V3 real:** não existe · **Decisão:** adiar ·
+> **Motivo:** escopo — é padrão desenhado e válido, mas acrescenta caminho novo
+> em vez de substituir apresentação antiga; entra quando a fila de migração
+> fechar.
+
+
+
 > **Superfície:** `/skus/[id]`, aba Visão geral · **Figma:** cartão "Estoque
 > Total 32 un · 29 Local · 3 Full" · **V3 real:** "Estoque local 50 · 0
 > reservado · 0 em trânsito · 0 no Full" · **Decisão:** consolidar os quatro
@@ -469,38 +484,40 @@ O que resta são superfícies **ainda não migradas** — a fila D7 em diante.
 
 ## Última fatia concluída
 
-**D9 — a aba Visão geral do SKU**, do frame `SkuDetailScreen`.
+**D10 — abas Vendas e Estoque do SKU.** E a primeira descoberta foi que **o
+frame não desenha essas abas**: no export, tudo que não é "Resumo" mostra
+*"Conteúdo da aba em construção"*. Onde o Figma não fala, vale o design system —
+inventar um frame seria pior que aplicar o vocabulário já estabelecido.
 
 | antes | agora |
 |---|---|
-| 4 caixas de saldo + 3 caixas de venda, soltas | **4 cartões de indicador** numa grade |
-| — | o de **Cobertura leva borda no tom** quando o estado merece: perigo em ruptura, atenção quando virtual |
-| ponteiro em texto para as outras abas | **dois painéis**: anúncios vinculados e últimas decisões, cada um com "Ver aba →" |
+| `<h2>` + parágrafo explicativo | **rótulo de seção** com a nota à direita |
+| caixas de saldo/venda com estilo inline | **cartões de indicador** (`.sb-stat`), cada um com a sua nota |
+| tabelas soltas sobre o fundo tingido da aba | cada tabela num **painel** branco, com título e ressalva no cabeçalho |
+| simulador solto | painel "Simulador de cobertura", com "Ajustar estoque →" na ação |
 
-**O cartão de cobertura descobriu um defeito de tipo.** O lint exigiu remover a
-guarda de nulo em `days_of_coverage` porque o tipo gerado diz não-nulo. Fui ao
-SQL antes de obedecer: a função devolve **`null` explicitamente quando
-`stock_is_virtual`** — é o "em branco de propósito" de D-127. Sem a guarda, todo
-SKU virtual imprimiria **"0 dias"**: número errado com cara de preciso, a classe
-que este projeto persegue. `packages/db/src/types.ts` recebeu a correção manual
-(classe D-133) em `days_of_coverage` e `avg_daily_sales`, com o motivo escrito.
+**As quatro caixas de saldo ganharam nota**, e isso é conteúdo, não enfeite:
+"saldo físico da organização", "comprometido com pedido", "comprado e ainda não
+recebido", "no centro do Mercado Livre". Os quatro estados do ledger deixaram de
+ser quatro rótulos sem explicação.
 
-**Uma guarda saiu, e essa era invenção minha:** `linha.ml_accounts?.label ??
-"conta não identificada"`. `listings.ml_account_id` é `NOT NULL` — o embed nunca
-falta, e a própria tela já o acessava direto em outra aba. Guarda para o que o
-banco garante é ruído que faz o leitor duvidar do que é certo.
+**Dead code pass:** `statLabel` e `statValue` (os estilos inline) ficaram sem
+consumidor e saíram. O helper `statValue` do e2e **fica** — duas outras specs
+ainda o usam; só o import do spec de SKU foi removido.
 
-**Três leituras entraram na aba sem custar ida**: cobertura, anúncios e
-decisões passaram a incluir `visao-geral` nas flags de progressive disclosure —
-todas no `Promise.all` que já existia.
+**Um susto no caminho:** a substituição do `StockBoxes` engoliu, por um recorte
+largo demais, o `SalesCard`/`buildSalesCards` que vivia entre os dois
+componentes. O `typecheck` acusou na hora e o bloco voltou do commit anterior —
+é para isso que a bateria roda antes do commit, e não depois.
 
 **Verificação:** `check` 29/29, build 8/8, integração 582/582, **22/22
-Playwright** (a asserção de estoque acompanhou a consolidação: valor no cartão,
-e os outros três saldos conferidos na nota), `check:waterfalls`,
-`check:server-actions`, `docs:check`.
+Playwright** (duas asserções acompanharam a mudança de estrutura: o `<h2>` que
+virou rótulo, e o XPath do helper que não casa com o cartão novo),
+`check:waterfalls`, `check:server-actions`, `docs:check`.
 
 ## Próxima fatia segura
 
-**D10 — abas Vendas e Estoque do SKU.** Vendas já tem três grãos (total, conta,
-dia) e Estoque tem o simulador de cobertura (D-080); as duas ganham a
-composição de painel e os cartões de indicador desta fatia.
+**D11 — as seis abas restantes do SKU** (Anúncios, Preços, Full, Histórico,
+Diagnóstico, Decisões). É a mesma substituição de D10, repetida: rótulo de
+seção, cartão de indicador, painel por tabela. Fechá-las na mesma fatia evita
+deixar a tela com dois vocabulários convivendo.

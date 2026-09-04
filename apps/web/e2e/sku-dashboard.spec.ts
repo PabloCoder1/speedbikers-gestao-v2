@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { E2E_DECISION_TEXT, E2E_SKU_SALES } from "./constants.js";
-import { login, statValue } from "./helpers.js";
+import { login } from "./helpers.js";
 import { readSeedOutput } from "./seed-output.js";
 
 /**
@@ -101,11 +101,16 @@ test("aba Vendas mostra total, ticket médio e a conta — somados no banco", as
   await page.getByRole("navigation", { name: "Abas do SKU" }).getByRole("link", { name: "Vendas" }).click();
 
   await expect(page).toHaveURL(/aba=vendas/);
-  await expect(page.getByRole("heading", { name: "Vendas do SKU" })).toBeVisible();
+  // O `<h2>` virou rótulo de seção e os números viraram cartões de indicador —
+  // o vocabulário do design system. O que se afirma continua sendo o mesmo: o
+  // título da seção, e cada número no seu cartão.
+  await expect(page.getByText("Vendas do SKU", { exact: true })).toBeVisible();
 
-  await expect(statValue(page, "Unidades vendidas")).toHaveText(String(unidades));
+  const cartao = (rotulo: string) => page.locator(".sb-stat", { hasText: rotulo }).locator(".sb-stat-value");
+
+  await expect(cartao("Unidades vendidas")).toHaveText(String(unidades));
   // Razão sobre as SOMAS (500 / 5 = R$ 100,00), não média das razões diárias.
-  await expect(statValue(page, "Ticket médio")).toContainText(`${String(receita / compras)},00`);
+  await expect(cartao("Ticket médio")).toContainText(`${String(receita / compras)},00`);
 
   // A conta do seed aparece na tabela por conta, com as mesmas unidades.
   const linhaConta = page.getByRole("row", { name: new RegExp(seed.mlAccountLabel) });
