@@ -403,6 +403,43 @@ branco embutido.
 > CSS puro — os glifos existem desde R1 (o motivo registrado para adiar, "o app
 > não tem ícone", tinha caducado) · **Motivo:** composição do frame.
 
+> **Superfície:** `/anuncios/[itemId]` · **Figma:** o anúncio é um **drawer**
+> de 600px (`MlbDetailDrawer`) · **V3 real:** é uma ROTA desde D-168, linkada
+> pela lista, pelo SKU e pelas notificações · **Decisão:** continua página, com a
+> COMPOSIÇÃO do drawer (cabeçalho de entidade + as oito abas) · **Motivo:** no
+> protótipo o anúncio não tem URL — o drawer nasce de `useState`, e é essa a
+> razão de ele ser drawer. O próprio frame comenta o bloco como *"Operational
+> Object Header"*, o mesmo da tela de SKU.
+
+> **Superfície:** `/anuncios/[itemId]`, cabeçalho · **Figma:** miniatura 80×80,
+> **"Tipo: Premium"** e **"Catálogo: Vencedor"** · **V3 real:** `listings` tem 14
+> colunas e nenhuma é tipo de anúncio, catálogo ou imagem · **Decisão:** os três
+> ficam de fora · **Motivo:** dado inexistente.
+
+> **Superfície:** `/anuncios/[itemId]`, Visão geral · **Figma:** faixa **"Exposição
+> em Risco"** com botão "Repor Full", e painel **"Saúde do Anúncio"**
+> (competitividade de preço, qualidade das fotos) · **V3 real:** nenhuma das três
+> tem fonte; a faixa ainda encadeia catálogo e Full numa relação causal ·
+> **Decisão:** os quatro cartões medidos ficam, a faixa e o painel saem; do que
+> era "saúde" sobra o Full, que é medido e tem painel próprio · **Motivo:**
+> métrica canônica (D-023) e a regra da própria tela — história, nunca causa.
+
+> **Superfície:** `/anuncios/[itemId]` · **Figma:** botão **"Republicar anúncio"**
+> e o `RepublicationModal`, um assistente de cinco passos cujo passo 2 EXECUTA ·
+> **V3 real:** o motor existe e só o worker escreve; a primeira republicação real
+> é ato humano deliberado, pendente em `docs/HANDOFF.md` · **Decisão:** a aba
+> Histórico LÊ o histórico de republicação (pai, filho, estado, motivo da falha)
+> e **nenhum caminho de UI dispara** — o e2e afirma a ausência do botão ·
+> **Motivo:** segurança. O preflight do frame ainda diverge do real em
+> severidade: ele mostra Full e Catálogo como aviso, e no código os dois são
+> BLOQUEIO.
+
+> **Superfície:** `/anuncios/[itemId]`, aba Diagnóstico · **Figma:** não desenha ·
+> **V3 real:** o diagnóstico de venda anômala usa a baseline do SKU; não existe
+> baseline por anúncio · **Decisão:** a aba RECUSA e explica, levando ao
+> diagnóstico do SKU vinculado · **Motivo:** D-023 — a mesma fórmula sobre outro
+> grão é outro número com a mesma cara.
+
 > **Superfície:** `/anuncios`, cabeçalho · **Figma:** ação **"Novo anúncio"** ·
 > **V3 real:** a V3 não cria anúncio no Mercado Livre — o catálogo é lido, e
 > escrita no ML é ato com aprovação humana · **Decisão:** sem ação no cabeçalho ·
@@ -568,7 +605,7 @@ que ele renderiza.**
 | D12 | Anúncios — faixa de estados + painel, pelo frame `Listings` | **CONCLUÍDO** · Full por anúncio em A1 |
 | **A1** | **Auditoria de fidelidade Figma × V3** + correções P0/P1 nas superfícies migradas + dead code pass | **CONCLUÍDO** |
 | **A2** | **Acabamento das superfícies migradas** (paleta Ctrl+K, `.sb-modal`, selo Curva ABC, chips na aba Full, custo como cartão) | **CONCLUÍDO** |
-| D13 | Republicação (só UX; motor real preservado) | fila |
+| **D13** | **Dashboard do Anúncio** (`/anuncios/[itemId]`) — cabeçalho de entidade + as oito abas do frame | **CONCLUÍDO** |
 | D14–D20 | Estoque, Cobertura/Reposição, Curva ABC, Movimentações, NF-e, Compras, Fornecedores | fila |
 | D21–D30 | Vinculações, Diagnóstico, Ações, Alterações, Preços, Full, Tráfego, Atendimento, Conhecimento, Central | fila |
 | D31–D36 | Usuários, Integrações, Sincronização, Saúde, Configurações, Copiloto | fila |
@@ -591,7 +628,8 @@ parece a aplicação antiga com o tema do Figma?*
 | Produtos | 68% → **83%** | ALINHADO | drawer "Inspeção Rápida" (adiado); botão "Buscar" visível (frame submete por Enter) | consts `th`/`td` **removidos**; faixa inventada **removida**; 3 menus → `FilterMenu` |
 | SKU — Visão geral, Vendas, Estoque | 78% → 85% → **89%** (A2) | ALINHADO | tom "abaixo do lead time" na cobertura | `statBox`/`th`/`td`/`tdNumber`/`SalesMetricCard` **removidos** (7 tabelas em `.sb-table`); selo Curva ABC entrou (D-247) |
 | SKU — Anúncios, Preços, Full, Histórico, Diagnóstico, Decisões | 62% → 78% → **86%** (A2) | ALINHADO | ressalvas longas nos corpos de alguns painéis | `buttonStyle`/`cardStyle` do diagnóstico **removidos**; chips na aba Full e cartões no Histórico entraram |
-| Anúncios | 72% → **86%** | ALINHADO | drawer `MlbDetailDrawer` (adiado); chip "ver lista" em sans (frame usa mono) | rodapé de metodologia **removido** (mora no `title` dos cabeçalhos); 4 menus → `FilterMenu` |
+| Anúncios (lista) | 72% → **86%** | ALINHADO | drawer `MlbDetailDrawer` (adiado); chip "ver lista" em sans (frame usa mono) | rodapé de metodologia **removido** (mora no `title` dos cabeçalhos); 4 menus → `FilterMenu` |
+| Anúncio (detalhe) | — → **84%** (D13) | ALINHADO | miniatura do frame (sem coluna de imagem); `listing_relist_events` ainda não lido | `<h1>/<h2>` e consts `th`/`td` inline **removidos**; `SummaryCard` local **removido** |
 
 **Três achados que não eram de design.** (1) O seed nunca criou métricas de
 conta: `/vendas` e a Home renderizavam "nunca calculado" em todo teste e em toda
@@ -615,23 +653,22 @@ Ponderado, não por contagem de páginas. Uma superfície "implementada" mas
 distante do frame não vale 100: estrutura = 50, + dados reais = 65, + design
 próximo = 80, validada contra o Figma = 95, + cleanup + testes = 100.
 
-| Bloco | Peso | A1 | A2 |
-|---|---:|---:|---:|
-| Shell + navegação | 8 | 86% | **91%** |
-| Design system (tokens, componentes, tabela, campo, menu, chip, modal) | 10 | 80% | **88%** |
-| Home | 6 | 87% | 87% |
-| Vendas | 8 | 85% | **88%** |
-| Produtos | 5 | 83% | 83% |
-| Dashboard de SKU (nove abas) | 10 | 82% | **88%** |
-| Anúncios | 6 | 86% | 86% |
-| 24 telas ainda não migradas (D13–D36) | 46 | 25% | 25% |
-| Drawers do frame (Inspeção Rápida, MLB, pedido, fornecedor, usuário) | 4 | 0% | 0% |
-| Passe visual global + passo cinza | 3 | 0% | 0% |
+| Bloco | Peso | A1 | A2 | D13 |
+|---|---:|---:|---:|---:|
+| Shell + navegação | 8 | 86% | 91% | 91% |
+| Design system (tokens, componentes, tabela, campo, menu, chip, modal) | 10 | 80% | 88% | 88% |
+| Home | 6 | 87% | 87% | 87% |
+| Vendas | 8 | 85% | 88% | 88% |
+| Produtos | 5 | 83% | 83% | 83% |
+| Dashboard de SKU (nove abas) | 10 | 82% | 88% | 88% |
+| Anúncios — lista | 6 | 86% | 86% | 86% |
+| **Anúncio — detalhe (oito abas)** | 5 | 25% | 25% | **84%** |
+| 23 telas ainda não migradas (D14–D36) | 41 | 25% | 25% | 25% |
+| Drawers do frame (Inspeção Rápida, MLB, pedido, fornecedor, usuário) | 4 | 0% | 0% | 0% |
+| Passe visual global + passo cinza | 3 | 0% | 0% | 0% |
 
-**≈ 53% concluído · ≈ 47% restante.** O número só sobe quando o resultado
-renderizado se aproxima do frame — não quando código é escrito. A2 moveu 2
-pontos: ela fechou componentes que sete superfícies compartilham, e não
-superfícies novas.
+**≈ 56% concluído · ≈ 44% restante.** O número só sobe quando o resultado
+renderizado se aproxima do frame — não quando código é escrito.
 
 ## Revisão visual necessária
 
@@ -680,15 +717,14 @@ resultado, visão salva e apagada) e capturados.
 
 ## Próxima fatia segura
 
-**D13 — Republicação (`/republicacao`).** Volta a fila de superfícies. Só a
-apresentação: o motor de relist, a fila, os eventos e a primeira republicação
-real deliberada (ainda pendente de ato humano em `docs/HANDOFF.md`) não mudam.
-Antes de desenhar, conferir o que a tela mede hoje — candidatos, agendados,
-executados, falhas — contra o que o frame de Republicação mostra, e registrar
-cada célula que o sistema não observa em vez de estampá-la. O design system
-está completo para tabela, campo, menu, chip, painel, faixa, vazio e modal;
-falta só o drawer, e ele é caminho novo, não substituição.
+**D14 — Estoque (`/estoque`).** Volta às telas de tabela, que são o resto da
+fila. O design system já está completo para elas: `.sb-table`, `.sb-input`,
+`.sb-menu`/`FilterMenu`, `.sb-status`/`tone.ts`, `.sb-empty`, `Panel`,
+`PageTitle`, `KpiStrip` e `.sb-modal`. Antes de desenhar, conferir o que
+`/estoque` mede hoje contra o frame `Inventory` (App.tsx@2954) e registrar cada
+célula que o sistema não observa — o mesmo procedimento que pegou o grão errado
+do Full em D13.
 
-Depois, pela fila: Estoque, Cobertura/Reposição, Curva ABC, Movimentações —
-todas tabelas, todas candidatas naturais a adotar `.sb-table` e apagar os
-consts inline ao migrar.
+Depois, pela fila: Cobertura/Reposição, Curva ABC, Movimentações, NF-e,
+Compras, Fornecedores — todas candidatas naturais a adotar `.sb-table` e apagar
+os consts inline ao migrar.

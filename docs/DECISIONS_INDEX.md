@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **242** (D-001 a D-247).
+Decisões registradas: **243** (D-001 a D-248).
 
 ## Por domínio
 
@@ -123,7 +123,7 @@ Decisões registradas: **242** (D-001 a D-247).
 - **D-234** — O defeito que D-119 achou, adiou e ninguem colheu: 26 telas quebravam no segundo usuario
 - **D-241** — A frente visual como varredura: tres telas mortas e uma coluna fantasma que build verde nao pegava
 
-### mercado-livre (42)
+### mercado-livre (43)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -167,6 +167,7 @@ Decisões registradas: **242** (D-001 a D-247).
 - **D-242** — Anuncios pelo frame: a faixa que so conta o que se mede, e a RPC que ganhou um filtro para a faixa ser honesta
 - **D-243** — Full por anuncio em /anuncios: o desvio de D-242 estava errado, e a auditoria o pegou conferindo o schema
 - **D-245** — Curadoria ganha a coluna "Anuncios" do frame, com a definicao de vinculado de D-122
+- **D-248** — Dashboard do Anuncio em oito abas: a fila pedia uma tela que nao existe, e a republicacao nao e tela
 
 ### outros (38)
 

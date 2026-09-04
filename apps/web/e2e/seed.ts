@@ -39,7 +39,10 @@ import {
   E2E_GESTOR_EMAIL,
   E2E_GESTOR_PASSWORD,
   E2E_LISTINGS,
+  E2E_LISTING_DECISION_TEXT,
   E2E_LISTING_FULL,
+  E2E_LISTING_PRICE_EVENT,
+  E2E_LISTING_RELIST,
   E2E_LISTING_TRAFFIC,
   E2E_SKU_SALES,
   E2E_USER_EMAIL,
@@ -740,6 +743,142 @@ async function main(): Promise<void> {
 
   if (metricasAnuncio.error !== null) {
     throw metricasAnuncio.error;
+  }
+
+  // ------------------------------------------------------------------
+  // O Dashboard do Anúncio (D13) tem abas de Preço, Histórico e Decisões que
+  // só existem se houver EVENTO, REPUBLICAÇÃO e AÇÃO deste anúncio. O seed não
+  // criava nenhum dos três: as abas nasceriam vazias, sem o que afirmar nem o
+  // que capturar — a mesma lição de D-242 e da auditoria A1.
+  // ------------------------------------------------------------------
+  // Existe-então-insere, e não `upsert`: `service_role` tem INSERT em
+  // `domain_events` mas NÃO tem UPDATE — a tabela é append-only por desenho, e
+  // `upsert` é INSERT … ON CONFLICT DO UPDATE, que exige o privilégio que ela
+  // deliberadamente nega. Um evento de domínio não se corrige: se estivesse
+  // errado, o certo é um evento novo. A idempotência vem do `dedup_key`.
+  const precoDedupKey = `e2e:seed:price:${E2E_LISTING_TRAFFIC.itemId}`;
+
+  const precoExistente = await db
+    .from("domain_events")
+    .select("id")
+    .eq("dedup_key", precoDedupKey)
+    .maybeSingle();
+
+  if (precoExistente.error !== null) {
+    throw precoExistente.error;
+  }
+
+  if (precoExistente.data === null) {
+    const precoEvento = await db.from("domain_events").insert({
+      organization_id: organizationId,
+      ml_account_id: mlAccountId,
+      occurred_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+      event_type: "listing.price.changed",
+      entity_type: "listing",
+      entity_id: E2E_LISTING_TRAFFIC.itemId,
+      before: { price: E2E_LISTING_PRICE_EVENT.de },
+      after: { price: E2E_LISTING_PRICE_EVENT.para },
+      severity: "informativo",
+      source: "sync",
+      dedup_key: precoDedupKey,
+    });
+
+    if (precoEvento.error !== null) {
+      throw precoEvento.error;
+    }
+  }
+
+  // Uma republicação em estado terminal de FALHA — o estado que a tela precisa
+  // mostrar bem (o motivo aparece na tabela) e o único que não exige inventar
+  // um anúncio filho. Existe-então-insere: não há chave natural.
+  const relistExistente = await db
+    .from("listing_relists")
+    .select("id")
+    .eq("ml_account_id", mlAccountId)
+    .eq("parent_item_id", E2E_LISTING_TRAFFIC.itemId)
+    .maybeSingle();
+
+  if (relistExistente.error !== null) {
+    throw relistExistente.error;
+  }
+
+  if (relistExistente.data === null) {
+    const relist = await db.from("listing_relists").insert({
+      organization_id: organizationId,
+      ml_account_id: mlAccountId,
+      parent_item_id: E2E_LISTING_TRAFFIC.itemId,
+      status: E2E_LISTING_RELIST.status,
+      failure_reason: E2E_LISTING_RELIST.failureReason,
+      requested_by: userId,
+      // NOT NULL por contrato: o retrato do PAI no instante do pedido é o que
+      // permite recriar o anúncio; sem ele não há republicação a auditar.
+      parent_snapshot: {
+        title: E2E_LISTINGS[0].title,
+        price: E2E_LISTINGS[0].price,
+        status: E2E_LISTINGS[0].status,
+        available_quantity: E2E_LISTINGS[0].available,
+      },
+    });
+
+    if (relist.error !== null) {
+      throw relist.error;
+    }
+  }
+
+  // A ação do seed já existe com `sku_id`; esta é a MESMA anomalia vista pelo
+  // anúncio (`mlb_id`), que é como o Dashboard do Anúncio a encontra.
+  const acaoDoAnuncio = await db
+    .from("actions")
+    .upsert(
+      {
+        organization_id: organizationId,
+        kind: "venda_anomala",
+        severity: "media",
+        confidence: "media",
+        ml_account_id: mlAccountId,
+        mlb_id: E2E_LISTING_TRAFFIC.itemId,
+        evidence: {
+          direcao: "queda",
+          evidencias: [{ tipo: "visitas", descricao: "Visitas caíram sem queda de preço." }],
+          causas_candidatas: [],
+        },
+        recommendation: "Conferir se o anúncio perdeu exposição antes de mexer no preço.",
+        status: "novo",
+        created_by: "system",
+        dedup_key: `e2e:seed:venda_anomala:${E2E_LISTING_TRAFFIC.itemId}`,
+      },
+      { onConflict: "organization_id,dedup_key" },
+    )
+    .select("id")
+    .single();
+
+  if (acaoDoAnuncio.error !== null) {
+    throw acaoDoAnuncio.error;
+  }
+
+  // E uma DECISÃO sobre ela, para a aba Decisões do anúncio ter conteúdo.
+  const decisaoExistente = await db
+    .from("action_decisions")
+    .select("id")
+    .eq("action_id", acaoDoAnuncio.data.id)
+    .maybeSingle();
+
+  if (decisaoExistente.error !== null) {
+    throw decisaoExistente.error;
+  }
+
+  if (decisaoExistente.data === null) {
+    const decisao = await db.from("action_decisions").insert({
+      organization_id: organizationId,
+      action_id: acaoDoAnuncio.data.id,
+      decision: E2E_LISTING_DECISION_TEXT,
+      baseline_snapshot: { as_of: new Date().toISOString().slice(0, 10), units_sold_7d: 2, stock_local: 12 },
+      created_by: userId,
+    });
+
+    if (decisao.error !== null) {
+      throw decisao.error;
+    }
   }
 
   const output: SeedOutput = {

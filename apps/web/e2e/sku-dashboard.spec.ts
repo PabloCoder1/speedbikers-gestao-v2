@@ -97,7 +97,14 @@ test("aba Preços existe e não confunde ausência de evento com preço parado",
 
   await expect(page).toHaveURL(/aba=precos/);
   await expect(page.getByRole("heading", { name: "Mudanças de preço observadas" })).toBeVisible();
-  await expect(page.getByText("Nenhuma mudança de preço observada neste período")).toBeVisible();
+
+  // Desde D13 o seed grava um evento `listing.price.changed` no anúncio
+  // vinculado a este SKU, então a aba tem UMA linha — e é ela que prova a
+  // fiação: a mudança de preço de um ANÚNCIO aparece no SKU que ele vende.
+  await expect(page.locator("tbody tr")).toHaveCount(1);
+
+  // A ressalva que impede a leitura errada continua, com ou sem linha: "sem
+  // evento" nunca quer dizer "preço parado".
   await expect(page.getByText("uma alteração feita e desfeita entre duas sincronizações não deixa registro")).toBeVisible();
 });
 

@@ -67,8 +67,30 @@ describe("entityHref", () => {
     expect(entityHref("sku", "abc-123")).toBe("/skus/abc-123");
   });
 
-  it("listing e order não têm tela própria ainda — sem link", () => {
-    expect(entityHref("listing", "MLB123")).toBeNull();
+  /**
+   * `entity_id` de um evento de anúncio é o `item_id` (o MLB), que é o
+   * parâmetro da rota `/anuncios/[itemId]` — a mesma chave que o Dashboard do
+   * Anúncio usa para se achar. A rota existe desde D-168; o link só entrou em
+   * D13, quando a migração da tela releu o registro envelhecido que dizia
+   * "anúncio ainda não tem tela própria".
+   */
+  it("listing vira link pro Dashboard do Anúncio, pelo MLB", () => {
+    expect(entityHref("listing", "MLB123")).toBe("/anuncios/MLB123");
+  });
+
+  /**
+   * A guarda que impede o link quebrado: `listing.fulfillment.entered` grava o
+   * `inventoryId` em `entity_id` com `entity_type = "listing"`, e inventory e
+   * item são identificadores diferentes (`fulfillment_stock_snapshots` guarda
+   * os dois em colunas separadas). Sem conferir o formato, essa notificação
+   * apontaria para uma página que não existe.
+   */
+  it("listing cujo entity_id NÃO é um MLB não vira link — é o inventory_id do evento de Full", () => {
+    expect(entityHref("listing", "INV-88231")).toBeNull();
+    expect(entityHref("listing", "88231")).toBeNull();
+  });
+
+  it("order continua sem tela própria — sem link", () => {
     expect(entityHref("order", "999")).toBeNull();
   });
 });

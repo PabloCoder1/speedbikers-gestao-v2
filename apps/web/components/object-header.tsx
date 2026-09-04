@@ -45,6 +45,7 @@ export function ObjectHeader({
   meta,
   acoes,
   abas,
+  rotuloAbas = "Abas",
   children,
 }: {
   identificador: string;
@@ -53,6 +54,13 @@ export function ObjectHeader({
   meta?: ReactNode;
   acoes?: ReactNode;
   abas?: readonly ObjectTab[];
+  /**
+   * Nome acessível da fileira de abas. Era a string fixa "Abas do SKU", que
+   * este componente já servia a mais de uma entidade — num anúncio, o leitor
+   * de tela anunciava a navegação com o nome da entidade errada. Cada tela diz
+   * a sua.
+   */
+  rotuloAbas?: string;
   /** Conteúdo da aba, dentro do mesmo cartão — como no frame. */
   children?: ReactNode;
 }): ReactNode {
@@ -84,7 +92,7 @@ export function ObjectHeader({
       </div>
 
       {abas !== undefined && abas.length > 0 && (
-        <nav aria-label="Abas do SKU" className="sb-object-tabs">
+        <nav aria-label={rotuloAbas} className="sb-object-tabs">
           {abas.map((aba) => (
             <Link key={aba.href} href={aba.href} aria-current={aba.active ? "page" : undefined}>
               {aba.label}

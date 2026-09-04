@@ -107,3 +107,24 @@ export const E2E_LISTING_TRAFFIC = {
   revenue: 1519.2,
   orders: 8,
 } as const;
+
+/**
+ * Uma mudança de preço observada no primeiro anúncio (D13). O Dashboard do
+ * Anúncio tem abas de Preço e Histórico que só existem se houver evento de
+ * domínio — e o seed não criava nenhum, então as duas abas nasceriam vazias e
+ * não haveria o que afirmar (a mesma lição de D-242 e da auditoria A1).
+ */
+export const E2E_LISTING_PRICE_EVENT = { de: 199.9, para: 189.9 } as const;
+
+/**
+ * Uma republicação do primeiro anúncio, em estado terminal de falha. Falha é o
+ * estado que a tela precisa mostrar bem — o motivo aparece na tabela —, e é o
+ * único que não exige inventar um anúncio filho.
+ */
+export const E2E_LISTING_RELIST = {
+  status: "PREFLIGHT_FAILED",
+  failureReason: "Anúncio com venda nos últimos 60 dias — republicação não recomendada.",
+} as const;
+
+/** Texto da decisão sobre a ação DO ANÚNCIO (aba Decisões, D13). */
+export const E2E_LISTING_DECISION_TEXT = "Manter o preço e observar visitas por mais 7 dias — decisão de teste E2E";

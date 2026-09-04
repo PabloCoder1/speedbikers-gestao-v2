@@ -39,22 +39,30 @@ test("Home: os seis cards de atenção carregam, e nenhum deles falha", async ({
   // Como no frame, a grade só desenha as situações DETECTADAS; as medidas e
   // limpas viram a linha "Medidos e limpos" abaixo dela — o número zero não
   // some (medido e limpo é diferente de não medido, D-067), só sai da grade.
-  // O seed tem uma ação alta, um atendimento aberto e um anúncio pausado com
-  // estoque; ruptura, mediação, outras ações e notificações estão em zero.
+  // O seed cobre CINCO das seis situações: uma ação alta, uma de severidade
+  // média (a do anúncio, D13), um atendimento aberto, um anúncio pausado com
+  // estoque e a notificação que o evento de domínio do anúncio gerou. Só
+  // ruptura e mediação estão em zero — e o zero delas continua visível.
   const grade = page.locator(".sb-attention-grid");
   const limpos = page.locator(".sb-attention-clean");
 
-  for (const label of ["Ações de impacto alto", "Atendimentos abertos", "Anúncios pausados"]) {
+  for (const label of [
+    "Ações de impacto alto",
+    "Outras ações abertas",
+    "Atendimentos abertos",
+    "Notificações não lidas",
+    "Anúncios pausados",
+  ]) {
     await expect(grade.getByRole("heading", { level: 3, name: label })).toBeVisible();
   }
 
-  for (const label of ["SKUs em ruptura", "Em mediação", "Outras ações abertas", "Notificações não lidas"]) {
+  for (const label of ["SKUs em ruptura", "Em mediação"]) {
     await expect(limpos.getByRole("link", { name: `0 ${label}` })).toBeVisible();
   }
 
   // O cartão diz o impacto numa frase, não num número solto; e o CTA é botão.
   await expect(grade.getByText("1 ação de severidade alta aberta", { exact: true })).toBeVisible();
-  await expect(page.getByText("3 situações detectadas", { exact: true })).toBeVisible();
+  await expect(page.getByText("5 situações detectadas", { exact: true })).toBeVisible();
 
   // A guarda de verdade: leitura que falha vira "—" e este aviso (D-067). Um
   // único card falhando reprova a suíte, e o nome dele sai no diff.

@@ -53,14 +53,33 @@ export function formatEventDiff(
  * Link pra entidade afetada (docs/NOTIFICATIONS.md secao 7) só quando a rota
  * existe de verdade: `/skus/[skuId]` usa o UUID de `skus.id` diretamente, o
  * mesmo valor que `entity_id` carrega pra `entity_type = "sku"`
- * (`packages/domain/src/events/fulfillment-events.ts`). Anúncio e pedido
- * ainda não têm tela própria — mostrar só o texto em vez de um link morto.
+ * (`packages/domain/src/events/fulfillment-events.ts`).
+ *
+ * **Anúncio entrou em D13, e a ausência era um registro envelhecido:** o
+ * comentário aqui dizia "anúncio ainda não tem tela própria", mas
+ * `/anuncios/[itemId]` existe desde D-168 e o parâmetro da rota é o MLB.
+ * Enquanto isso ficou assim, toda notificação de preço, título ou quantidade
+ * de anúncio mostrava texto sem destino, tendo destino.
+ *
+ * **E é por isso que o MLB é conferido, não presumido.** Nem todo evento de
+ * `entity_type = "listing"` carrega um MLB em `entity_id`:
+ * `listing.fulfillment.entered` grava o `inventoryId` ali
+ * (`packages/domain/src/events/fulfillment-events.ts`), que é outro
+ * identificador — `fulfillment_stock_snapshots` guarda `inventory_id` e
+ * `item_id` como colunas separadas. Linkar sem conferir mandaria essas
+ * notificações para uma página 404. O formato do MLB é o mesmo que o banco
+ * exige nas colunas de anúncio (`^MLB[0-9]+$`), então ele é o teste.
+ *
+ * Pedido continua sem tela própria.
  */
+const MLB = /^MLB[0-9]+$/;
+
 export function entityHref(entityType: string, entityId: string): string | null {
   if (entityType === "sku") return `/skus/${entityId}`;
   // D-110: primeiro evento cujo destino tem tela de detalhe própria (D-095).
   // `entity_id` é o `support_cases.id`, o mesmo UUID da rota.
   if (entityType === "support_case") return `/atendimento/${entityId}`;
+  if (entityType === "listing" && MLB.test(entityId)) return `/anuncios/${entityId}`;
 
   return null;
 }

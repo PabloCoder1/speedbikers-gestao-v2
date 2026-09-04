@@ -557,6 +557,7 @@ export default async function SkuDashboardPage({
             </details>
           </>
         }
+        rotuloAbas="Abas do SKU"
         abas={TAB_KEYS.map((key) => ({
           href: key === "visao-geral" ? `/skus/${skuId}` : `/skus/${skuId}?aba=${key}`,
           label: TAB_LABELS[key],
@@ -1025,10 +1026,18 @@ export default async function SkuDashboardPage({
             sobe e volta dentro da mesma janela não existe aqui, e a primeira
             aparição de um anúncio não gera evento (não há "antes").
           */}
+          {/*
+            A ressalva do DIFF vive aqui, no texto permanente, e não só no
+            estado vazio: "uma alteração feita e desfeita entre duas
+            sincronizações não deixa registro" continua verdade quando há
+            linhas — e é aí que ela mais importa, porque a lista cheia parece
+            completa. Ela morava só no ramo `prices.length === 0`.
+          */}
           <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
             Preço de cada anúncio deste SKU, comparado a cada sincronização (de 6 em 6 horas), nos últimos{" "}
-            {LOOKBACK_DAYS} dias. <strong>Não há análise de impacto</strong>: a série começa em 24/08/2026 e a
-            mediana é de uma mudança por SKU — ligar preço a venda com isso seria inventar causa.
+            {LOOKBACK_DAYS} dias — uma alteração feita e desfeita entre duas sincronizações não deixa registro.{" "}
+            <strong>Não há análise de impacto</strong>: a série começa em 24/08/2026 e a mediana é de uma mudança
+            por SKU — ligar preço a venda com isso seria inventar causa.
           </p>
 
           {pricesResult.error !== null && (
@@ -1038,9 +1047,9 @@ export default async function SkuDashboardPage({
           )}
 
           {pricesResult.error === null && prices.length === 0 && (
-            <p style={{ color: "var(--sb-text-soft)" }}>
+            <p className="sb-empty">
               Nenhuma mudança de preço observada neste período. Isso <strong>não</strong> quer dizer que o preço
-              ficou parado: uma alteração feita e desfeita entre duas sincronizações não deixa registro.
+              ficou parado.
             </p>
           )}
 
