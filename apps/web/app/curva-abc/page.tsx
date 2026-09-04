@@ -1,6 +1,9 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { FilterPill } from "../../components/filter-pill";
+import { PageTitle } from "../../components/page-title";
+import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
 import {
   ABC_CRITERIA,
@@ -10,7 +13,7 @@ import {
   resolveAbcFilters,
   summarizeAbcWindow,
 } from "../../lib/abc-filters";
-import { formatCount, formatCurrency } from "../../lib/format";
+import { formatCount, formatCurrency, formatPercent } from "../../lib/format";
 import { createClient } from "../../lib/supabase/server";
 import { currentMembership } from "../../lib/membership";
 
@@ -46,6 +49,11 @@ interface AbcRow {
   full_quantity: number;
   total_count: number;
   class_a_count: number;
+  class_a_value: number;
+  class_b_value: number;
+  class_c_value: number;
+  /** Quantos SKUs do recorte estão SEM Full — pareia com o filtro que já existe. */
+  without_full_count: number;
   class_b_count: number;
   class_c_count: number;
 }
@@ -55,25 +63,6 @@ const CLASS_TONE: Record<string, { background: string; color: string }> = {
   B: { background: "var(--sb-accent-soft)", color: "var(--sb-accent-ink)" },
   C: { background: "var(--sb-muted)", color: "var(--sb-text)" },
 };
-
-const th: React.CSSProperties = {
-  textAlign: "left",
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.75rem",
-  textTransform: "uppercase",
-  letterSpacing: "0.04em",
-  color: "var(--sb-text-soft)",
-  whiteSpace: "nowrap",
-};
-
-const td: React.CSSProperties = {
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.875rem",
-};
-
-const tdNumber: React.CSSProperties = { ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" };
 
 
 export default async function CurvaAbcPage({
@@ -157,7 +146,12 @@ export default async function CurvaAbcPage({
 
   return (
     <Shell>
-      <h1 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.375rem" }}>Curva ABC</h1>
+      {/* Sobrancelha e título do frame `Abc` (ESTOQUE / CLASSIFICAÇÃO). */}
+      <PageTitle
+        eyebrow="ESTOQUE / CLASSIFICAÇÃO"
+        title="Curva ABC"
+        subtitle="Onde receita, volume e disponibilidade se concentram."
+      />
 
       <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
         Últimos {filters.days} dias ({dateFrom} a {dateTo}), por {filters.criterion.label.toLowerCase()}
@@ -166,11 +160,89 @@ export default async function CurvaAbcPage({
         {first !== undefined && (
           <>
             {" "}
-            Classe A: {formatCount(first.class_a_count)} · B: {formatCount(first.class_b_count)} · C:{" "}
-            {formatCount(first.class_c_count)}.
           </>
         )}
       </p>
+
+      {/*
+        Os três cartões de classe do frame `Abc`. O valor por classe vem de
+        JANELA no banco, calculada antes do limit (D-251): somar em JavaScript
+        daria o valor da PÁGINA, não do recorte — a classe de defeito que
+        D-131 mediu.
+
+        A participação é razão entre dois totais já fornecidos, não agregação:
+        `classe ÷ (A+B+C)`.
+      */}
+      {first !== undefined && (
+        <div className="sb-abc-cards">
+          {(
+            [
+              { classe: "A", cor: "var(--sb-danger)", valor: first.class_a_value, skus: first.class_a_count },
+              { classe: "B", cor: "var(--sb-accent-ink)", valor: first.class_b_value, skus: first.class_b_count },
+              { classe: "C", cor: "var(--sb-secondary)", valor: first.class_c_value, skus: first.class_c_count },
+            ] as const
+          ).map((c) => {
+            const totalDasClasses = first.class_a_value + first.class_b_value + first.class_c_value;
+
+            return (
+              <section className="sb-abc-card" key={c.classe} aria-label={`Classe ${c.classe}`}>
+                <span style={{ color: c.cor }}>CLASSE {c.classe}</span>
+                <strong>{formatValue(c.valor)}</strong>
+                <p>
+                  {totalDasClasses === 0 ? "sem base para percentual" : `${formatPercent(c.valor / totalDasClasses)} do total`}
+                </p>
+                <div>
+                  <b>{formatCount(c.skus)} SKUs</b>
+                  <small>concentram este resultado</small>
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      )}
+
+      {/*
+        Os filtros rápidos do frame, e a diferença entre eles é a fatia toda.
+
+        "Sem Full" PERTENCE à curva: `p_only_without_full` já existe, e o
+        número da barra ao lado é o mesmo conjunto.
+
+        "Em ruptura" e "Baixa cobertura" NÃO pertencem: são estados
+        operacionais com dono (`get_purchase_suggestions`, D-150), com a
+        política de reposição inteira por trás. Reimplementá-los aqui seria a
+        segunda definição de "ruptura" na mesma base, e as duas telas
+        discordariam no primeiro ajuste de política. Viram LINK para a tela
+        dona, que sabe responder (D-224).
+      */}
+      {first !== undefined && (
+        <div className="sb-abc-bars">
+          <div>
+            <b>Sem estoque no Full</b>
+            <span>
+              <i style={{ width: `${String(Math.min(100, Math.round((first.without_full_count / Math.max(first.total_count, 1)) * 100)))}%` }} />
+              {formatCount(first.without_full_count)} de {formatCount(first.total_count)} SKUs
+            </span>
+            <FilterPill
+              href={buildAbcHref(filters, { onlyWithoutFull: !filters.onlyWithoutFull })}
+              active={filters.onlyWithoutFull}
+            >
+              {filters.onlyWithoutFull ? "mostrando só estes" : "ver só estes"}
+            </FilterPill>
+          </div>
+
+          <div>
+            <b>Risco operacional</b>
+            <span className="sb-abc-bars-nota">
+              Ruptura e cobertura baixa são estados da <strong>política de reposição</strong>, não da curva — a
+              mesma palavra calculada em dois lugares divergiria no primeiro ajuste.
+            </span>
+            <span style={{ display: "flex", gap: "var(--sb-space-2)", flexWrap: "wrap" }}>
+              <Link href="/reposicao?estado=RUPTURA">Em ruptura →</Link>
+              <Link href="/reposicao?estado=COBERTURA_BAIXA">Cobertura baixa →</Link>
+            </span>
+          </div>
+        </div>
+      )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--sb-space-2)", marginBottom: "var(--sb-space-3)" }}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", alignItems: "center" }}>
@@ -235,29 +307,30 @@ export default async function CurvaAbcPage({
       )}
 
       {error === null && (
-        <p style={{ margin: "0 0 var(--sb-space-2)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
-          {windowInfo.label}
-        </p>
-      )}
+        <Panel
+          title={filters.onlyWithoutFull ? "SKUs sem estoque no Full" : "SKUs por participação"}
+          subtitle={windowInfo.label}
+        >
+          {rows.length === 0 && <p className="sb-empty">Nenhum SKU com venda no período e escopo escolhidos.</p>}
 
-      {error === null && rows.length > 0 && (
+          {rows.length > 0 && (
         <div style={{ overflowX: "auto" }}>
-          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "44rem" }}>
+          <table className="sb-table">
             <thead>
               <tr>
-                <th style={th}>Classe</th>
-                <th style={th}>SKU</th>
-                <th style={th}>{filters.criterion.label}</th>
-                <th style={th}>% do total</th>
-                <th style={th}>% acumulado</th>
-                <th style={th}>Estoque Full</th>
+                <th>Classe</th>
+                <th>SKU</th>
+                <th>{filters.criterion.label}</th>
+                <th>% do total</th>
+                <th>% acumulado</th>
+                <th>Estoque Full</th>
               </tr>
             </thead>
 
             <tbody>
               {rows.map((row) => (
                 <tr key={row.sku_id}>
-                  <td style={td}>
+                  <td>
                     <span
                       style={{
                         ...CLASS_TONE[row.abc_class],
@@ -271,7 +344,7 @@ export default async function CurvaAbcPage({
                       {row.abc_class}
                     </span>
                   </td>
-                  <td style={{ ...td, fontFamily: "ui-monospace, monospace" }}>
+                  <td className="sb-mono">
                     {row.sku}
                     {row.title !== null && (
                       <div style={{ fontFamily: "inherit", color: "var(--sb-text-soft)", fontSize: "0.75rem" }}>
@@ -279,15 +352,17 @@ export default async function CurvaAbcPage({
                       </div>
                     )}
                   </td>
-                  <td style={tdNumber}>{formatValue(row.metric_value)}</td>
-                  <td style={tdNumber}>{row.metric_share}%</td>
-                  <td style={tdNumber}>{row.cumulative_share}%</td>
-                  <td style={tdNumber}>{formatCount(row.full_quantity)}</td>
+                  <td className="sb-num">{formatValue(row.metric_value)}</td>
+                  <td className="sb-num">{row.metric_share}%</td>
+                  <td className="sb-num">{row.cumulative_share}%</td>
+                  <td className="sb-num">{formatCount(row.full_quantity)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+          )}
+        </Panel>
       )}
 
       {error === null && windowInfo.totalPages > 1 && (

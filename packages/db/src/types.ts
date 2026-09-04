@@ -4609,8 +4609,11 @@ export type Database = {
         Returns: {
           abc_class: string
           class_a_count: number
+          class_a_value: number
           class_b_count: number
+          class_b_value: number
           class_c_count: number
+          class_c_value: number
           cumulative_share: number
           full_quantity: number
           metric_share: number
@@ -4619,6 +4622,10 @@ export type Database = {
           sku_id: string
           title: string
           total_count: number
+          // CORRECAO MANUAL (classe D-133): quantos SKUs do recorte estao SEM Full.
+          // Pareia com p_only_without_full -- a barra promete um numero e o
+          // filtro entrega a lista (D-251).
+          without_full_count: number
         }[]
       }
       get_sku_average_prices: {

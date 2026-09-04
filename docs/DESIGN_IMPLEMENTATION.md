@@ -608,7 +608,8 @@ que ele renderiza.**
 | **D13** | **Dashboard do Anúncio** (`/anuncios/[itemId]`) — cabeçalho de entidade + as oito abas do frame | **CONCLUÍDO** |
 | D14 | **Estoque** — `PageTitle` + `KpiStrip` + `Panel` + `.sb-table`; três das seis células do frame recusadas por medição (D-249) | ✔ |
 | D15 | **Cobertura/Reposição** — o frame é UMA tela com abas; sete cartões de estado em vez de cinco, e o filtro que eles prometem (D-250) | ✔ |
-| D16–D20 | Curva ABC, Movimentações, NF-e, Compras, Fornecedores | fila |
+| D16 | **Curva ABC** — três cartões de classe com soma no banco; dois filtros rápidos devolvidos ao dono deles (D-251) | ✔ |
+| D17–D20 | Movimentações, NF-e, Compras, Fornecedores | fila |
 | D21–D30 | Vinculações, Diagnóstico, Ações, Alterações, Preços, Full, Tráfego, Atendimento, Conhecimento, Central | fila |
 | D31–D36 | Usuários, Integrações, Sincronização, Saúde, Configurações, Copiloto | fila |
 | D37 | Passe visual global | fila |
@@ -719,36 +720,32 @@ resultado, visão salva e apagada) e capturados.
 
 ## Próxima fatia segura
 
-**D15 entregue (D-250).** `/reposicao` adotou `PageTitle` + `Panel` +
-`.sb-table`, ganhou os cartões de estado do frame e o acesso a Configurações.
-A conferência achou três diferenças entre os cinco cartões desenhados e o
-vocabulário real:
+**D16 entregue (D-251).** `/curva-abc` adotou `PageTitle` + `Panel` +
+`.sb-table`, ganhou os três cartões de classe do frame — com a soma por classe
+vindo de **janela no banco**, antes do limit — e devolveu dois filtros rápidos
+ao dono deles.
 
-| | |
+| achado | decisão |
 |---|---|
-| `COBERTURA_BAIXA` | existe (37 SKUs) e o frame **omite** |
-| `EXCESSO` | o frame desenha com número, mas ele só é afirmado com **teto configurado** (D-148) — o cartão mostra zero *dizendo por quê* |
-| **bucket de recusa** | **2.817 SKUs, 86% do catálogo**, e o frame não tem. Sem ele os cinco somariam 463 embaixo de uma tabela que anuncia 3.280 |
+| valor por classe não existia | virou coluna, não RPC: a janela custa **0,2 ms** sobre uma função de **332 ms**, e uma segunda chamada dobraria o custo da tela |
+| "Em ruptura" e "Baixa cobertura" | são estados de `get_purchase_suggestions` (D-150) — viraram **link para `/reposicao?estado=…`**, que D-250 acabara de construir |
+| barra "SKUs com risco" | "risco" não é termo definido; entrou "sem Full", que a curva sabe e já filtra |
 
-⚠️ **O procedimento de conferir célula a célula pagou pela TERCEIRA fatia
-seguida** — grão errado do Full em D13, três números falsos em D14, e aqui um
-estado omitido mais um bucket de 86%. **É o primeiro passo de toda fatia.**
+⚠️ **A conferência célula a célula pagou pela QUARTA fatia seguida.** É o
+primeiro passo, sempre.
 
-⚠️ **Ao mudar assinatura de RPC, as DUAS metades** (catálogo + `grep` no
-monorepo) — a lição de D-237 rodou antes de escrever, e as duas vieram limpas.
+⚠️ **Confira o estado da própria aba antes de acusar o código.** Um cartão
+parecia perder o parâmetro no link; a aba é que continuava no filtro anterior,
+e o link corretamente o desligava. Alternar funcionando.
 
-⚠️ **Corpo longo de função se EXTRAI, não se transcreve.** Aqui foram 177
-linhas até a CTE `verdict`; retypá-las para mudar só a cauda convidaria um
-erro silencioso. O guarda que provou o rearranjo já existia: a equivalência
-SQL × domínio de D-150.
-
-**D16 — Curva ABC (`/curva-abc`) contra o frame `Abc` (App.tsx@3080).** O
-frame traz três cartões de classe com faturamento, percentual e contagem de
-SKUs, um seletor segmentado (Faturamento / Unidades / Pedidos) e uma tabela de
-detalhe com filtros rápidos ("Sem Full", "Em ruptura", "Baixa cobertura"). A
-tela real já tem critério, período, conta e marca — **conferir célula a célula
-antes de desenhar**, com atenção aos três filtros rápidos: dois deles nomeiam
-estados que vivem em RPCs diferentes.
+**D17 — Movimentações (`/estoque/movimentacoes`) contra o frame
+`ProcessScreen type="movements"` (App.tsx@3160).** É a primeira das quatro
+telas de PROCESSO, e o frame usa **um componente só** para movimentações,
+NF-e, compras, fornecedores e vinculações — vale ler as cinco variações antes
+de desenhar a primeira, porque o que for extraído aqui serve as outras quatro.
+A tela real já tem filtros na URL e paginação com contagem sobre o conjunto
+filtrado (D-131), e **não tem filtro de conta de propósito**: estoque físico é
+da organização.
 
 Depois, pela fila: Cobertura/Reposição, Curva ABC, Movimentações, NF-e,
 Compras, Fornecedores — todas candidatas naturais a adotar `.sb-table` e apagar

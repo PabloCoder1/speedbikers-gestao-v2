@@ -5797,6 +5797,69 @@ A licao que o HANDOFF registrou depois de D-237: `pg_proc` so enxerga dentro do 
 
 **Impacto:** `supabase/migrations/20260905003000_purchase_state_cards.sql`, `apps/web/app/reposicao/page.tsx`, `apps/web/lib/replenishment-filters.ts`, `apps/web/app/globals.css`, `packages/db/src/types.ts` (a mao, D-213), `packages/db/src/rls.integration.test.ts`, `apps/web/lib/replenishment-filters.test.ts`.
 
+## D-251 - D16: a Curva ABC ganha os cartoes de classe, e devolve dois filtros ao dono deles
+
+**Contexto:** fatia D16 -- `/curva-abc` contra o frame `Abc`. A tela estava inteira sem migrar: `<h1>` proprio, constantes `th`/`td` inline, e as contagens por classe numa linha de texto.
+
+---
+
+**OS TRES CARTOES DE CLASSE, e por que as somas foram para o BANCO**
+
+O frame mostra, por classe: valor, participacao e contagem de SKUs. A contagem ja existia (`class_a_count` e irmas); **o valor nao**. Somar `metric_value` por classe em JavaScript daria o valor da **pagina**, nao do recorte -- a classe de defeito que D-131 mediu quando a tela contava sobre uma amostra arbitraria de 1.000 linhas.
+
+Medido no Dev, o dado e rico e casa com a forma do frame:
+
+| classe | SKUs | valor | participacao | com Full |
+|---|---|---|---|---|
+| A | 288 | R$ 5.068.228,81 | 80,01% | 183 |
+| B | 470 | R$ 947.404,32 | 15,10% | 117 |
+| C | 972 | R$ 316.904,64 | 4,15% | 28 |
+
+**As somas viraram COLUNAS, nao uma RPC de resumo -- e a escolha e medida.** Em D-249 e D-250 o resumo virou funcao propria; aqui isso custaria caro:
+
+    funcao inteira (o que a tela ja paga)   332 ms   39.982 buffers
+    as janelas novas em cima dela           0,2 ms
+
+Uma segunda chamada **dobraria** os 332 ms para produzir tres numeros. As janelas rodam sobre `filtrada` **antes do limit** -- a mesma posicao das contagens que ja estavam ali --, entao falam do recorte inteiro.
+
+A participacao nao virou coluna: e razao entre dois totais ja fornecidos (`classe / (A+B+C)`), aritmetica sobre tres numeros, nao agregacao sobre linhas.
+
+---
+
+**DOIS DOS TRES FILTROS RAPIDOS NAO SAO DA CURVA, E ESSE E O ACHADO**
+
+O painel de detalhe do frame traz **Sem Full**, **Em ruptura** e **Baixa cobertura**.
+
+**"Sem Full" pertence a curva:** `p_only_without_full` ja existia, e agora a barra ao lado mostra o numero do mesmo conjunto (`without_full_count`) -- a barra promete e o filtro entrega.
+
+**"Em ruptura" e "Baixa cobertura" NAO pertencem.** Sao estados operacionais com dono: `get_purchase_suggestions` (D-150), com a politica de reposicao inteira por tras -- prazo, ponto de pedido, teto -- e as proprias recusas. Reimplementa-los aqui seria **a segunda definicao de "ruptura" na mesma base**, e as duas telas discordariam no primeiro ajuste de politica. Viraram **link para `/reposicao?estado=...`**, que existe desde D-250 -- a fatia anterior construiu exatamente o destino que esta precisava.
+
+**A barra "SKUs com risco" saiu pela mesma porta.** "Risco" nao e termo definido em lugar nenhum do sistema, e fixar um limiar aqui seria constante de codigo no lugar de decisao do ADMIN -- o mesmo raciocinio que D-148 aplica ao teto de cobertura. No lugar dela entra "sem Full", que a curva **sabe**.
+
+---
+
+**MUDAR O RETORNO EXIGIU A CONFERENCIA, E ELA VEIO LIMPA**
+
+Trocar o `returns table` obriga a derrubar e recriar. As duas metades, antes de escrever:
+
+    catalogo   UM chamador no banco -- `get_purchase_suggestions`, que faz
+               `select a.sku_id, a.abc_class from get_sku_abc_curve(...)`:
+               colunas NOMEADAS, imunes a coluna nova
+    monorepo   `/curva-abc`, `/skus/[skuId]`, testes e `types.ts` -- todos
+               em TypeScript, com acesso nomeado
+
+Nenhum consumidor le por posicao. A prova de que o rearranjo nao mexeu em nada: **593/593** de integracao, incluindo os testes de `get_purchase_suggestions` que dependem da curva.
+
+**Um alarme falso que quase virei defeito:** ao abrir a tela, o setimo cartao de `/reposicao` linkava para `/reposicao` sem parametro, enquanto os outros seis carregavam o estado. Fui investigar `buildFilterHref` antes de "consertar" -- e a aba ainda estava em `?estado=SEM_ESTADO`, entao aquele cartao estava **ativo** e o link corretamente desligava o filtro. Alternar funcionando. **Conferir o estado da propria aba antes de acusar o codigo.**
+
+**Um defeito visual real, que so a tela mostrou** (quarta fatia seguida): a pilula "ver so estes" esticava na largura toda da coluna, lendo como campo em vez de acao -- `.sb-abc-bars > div` e grid, e o filho estica por padrao.
+
+**Legado removido:** `<h1>` proprio e as constantes `th`/`td`/`tdNumber` -- a tela adotou `PageTitle`, `Panel` e `.sb-table`.
+
+**Verificacao:** `check` 29/29, build 8/8, **593/593** de integracao em banco recriado, `check:waterfalls` 60, **30/30 Playwright**. A tela foi aberta no navegador com login real e conferida contra o frame.
+
+**Impacto:** `supabase/migrations/20260905013000_abc_class_totals.sql`, `apps/web/app/curva-abc/page.tsx`, `apps/web/app/globals.css`, `packages/db/src/types.ts` (a mao, D-213).
+
 ## Como adicionar nova decisao
 
 Registrar:
