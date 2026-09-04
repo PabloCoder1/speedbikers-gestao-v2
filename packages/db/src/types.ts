@@ -4587,6 +4587,8 @@ export type Database = {
           p_only_without_full?: boolean
           p_organization_id: string
           p_supplier_brand?: string | null
+          // D-247: um SKU so, filtrado DEPOIS do ranking.
+          p_sku_id?: string | null
         }
         Returns: {
           abc_class: string

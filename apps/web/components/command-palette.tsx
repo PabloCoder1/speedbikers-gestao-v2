@@ -14,9 +14,21 @@ import { createClient } from "../lib/supabase/browser";
  * caracteres antes de consultar) — `search_entities` já limita 5 por tipo,
  * então o resultado nunca é grande o bastante para justificar debounce.
  *
- * "Filtros salvos" (mesma linha do checklist original) fica de fora desta
- * fatia — ver decisão. `organizationId` vem do `Shell` (resolvido no
- * servidor), não é buscado de novo aqui.
+ * ## A caixa aberta, pelo frame (A2)
+ *
+ * O gatilho já era o `.search` do topbar desde R1; a CAIXA ainda era a antiga,
+ * desenhada com `style={{}}`: 32rem a 10vh, sombra preta, lista plana com o
+ * tipo repetido em cada linha. O `.command` do export é outra coisa —
+ * **520px encostados a 16vh**, cabeçalho "BUSCAR NA SPEED BIKERS" com um ✕, o
+ * campo com a lupa e um `ESC`, e os resultados **agrupados por tipo** sob um
+ * rótulo monoespaçado, cada linha com um `↵` à direita.
+ *
+ * O agrupamento não é enfeite: `search_entities` devolve até 5 por tipo, então
+ * uma lista plana de 25 linhas repete "SKU" cinco vezes e depois "ANÚNCIO"
+ * cinco vezes. O rótulo de grupo diz isso uma vez.
+ *
+ * `organizationId` vem do `Shell` (resolvido no servidor), não é buscado de
+ * novo aqui.
  */
 
 interface SearchResult {
@@ -24,6 +36,26 @@ interface SearchResult {
   label: string;
   sublabel: string;
   href: string;
+}
+
+/**
+ * Agrupa preservando a ordem em que os tipos apareceram — a RPC já devolve na
+ * ordem de relevância dela, e reordenar aqui seria inventar outra.
+ */
+function agrupar(results: readonly SearchResult[]): { tipo: string; linhas: SearchResult[] }[] {
+  const grupos: { tipo: string; linhas: SearchResult[] }[] = [];
+
+  for (const linha of results) {
+    const atual = grupos.find((g) => g.tipo === linha.entity_type);
+
+    if (atual === undefined) {
+      grupos.push({ tipo: linha.entity_type, linhas: [linha] });
+    } else {
+      atual.linhas.push(linha);
+    }
+  }
+
+  return grupos;
 }
 
 export function CommandPalette({ organizationId }: { organizationId: string | null }): ReactNode {
@@ -83,6 +115,10 @@ export function CommandPalette({ organizationId }: { organizationId: string | nu
     setResults(data);
   }
 
+  function fechar(): void {
+    setOpen(false);
+  }
+
   function go(href: string): void {
     setOpen(false);
     setQuery("");
@@ -98,6 +134,11 @@ export function CommandPalette({ organizationId }: { organizationId: string | nu
      * a diferença não é cosmética: no Figma a busca é o elemento MAIS À
      * ESQUERDA e o mais largo do topbar, porque ela é a forma primária de
      * navegar num sistema com 28 telas.
+     *
+     * O texto nomeia o que a RPC REALMENTE busca. O frame diz "SKU, pedido,
+     * anúncio ou ação"; `search_entities` cobre SKU, anúncio, conta,
+     * fornecedor e pedido de compra — prometer "ação" seria mandar procurar o
+     * que não se acha.
      */
     return (
       <button
@@ -108,116 +149,88 @@ export function CommandPalette({ organizationId }: { organizationId: string | nu
         }}
       >
         <span aria-hidden="true" className="sb-search-icon">⌕</span>
-        <span className="sb-search-label">Buscar SKU, pedido, anúncio ou ação…</span>
+        <span className="sb-search-label">Buscar SKU, anúncio, conta, fornecedor ou pedido de compra…</span>
         <kbd>Ctrl K</kbd>
       </button>
     );
   }
 
+  const grupos = agrupar(results);
+
   return (
     <div
-      role="dialog"
-      aria-modal="true"
-      onClick={() => {
-        setOpen(false);
-      }}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.4)",
-        display: "flex",
-        alignItems: "flex-start",
-        justifyContent: "center",
-        paddingTop: "10vh",
-        zIndex: 100,
-      }}
+      className="sb-backdrop sb-backdrop-topo"
+      onClick={fechar}
+      // O `role` fica no CARTÃO, não no fundo: o fundo é a área de clique que
+      // fecha, e um diálogo cujo rótulo é a página inteira não ajuda ninguém.
     >
-      <div
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-label="Buscar na Speed Bikers"
+        className="sb-command"
         onClick={(event) => {
           event.stopPropagation();
         }}
-        style={{
-          background: "var(--sb-surface)",
-          borderRadius: "var(--sb-radius)",
-          width: "32rem",
-          maxWidth: "90vw",
-          maxHeight: "70vh",
-          overflowY: "auto",
-          boxShadow: "0 8px 30px rgba(0,0,0,0.2)",
-        }}
       >
-        <input
-          type="text"
-          autoFocus
-          value={query}
-          onChange={(event) => {
-            void search(event.target.value);
-          }}
-          placeholder="Buscar SKU, anúncio, conta, fornecedor, pedido de compra…"
-          style={{
-            width: "100%",
-            padding: "0.75rem 1rem",
-            border: "none",
-            borderBottom: "1px solid var(--sb-border)",
-            fontSize: "0.9375rem",
-            outline: "none",
-            background: "transparent",
-            color: "inherit",
-          }}
-        />
+        <div className="sb-command-head">
+          <span className="sb-modal-eyebrow">Buscar na Speed Bikers</span>
+          <button type="button" className="sb-close" aria-label="Fechar busca" onClick={fechar}>
+            ✕
+          </button>
+        </div>
+
+        <div className="sb-command-input">
+          <span aria-hidden="true" className="sb-search-icon">⌕</span>
+          <input
+            type="text"
+            autoFocus
+            value={query}
+            onChange={(event) => {
+              void search(event.target.value);
+            }}
+            placeholder="Busque por SKU, MLB, título, fornecedor, pedido…"
+            aria-label="Buscar"
+          />
+          <kbd>ESC</kbd>
+        </div>
 
         {searchError !== null && (
-          <p role="alert" style={{ padding: "1rem", margin: 0, color: "var(--sb-danger)", fontSize: "0.8125rem" }}>
+          <p role="alert" className="sb-empty" style={{ color: "var(--sb-danger)" }}>
             {searchError}
           </p>
         )}
 
         {searchError === null && query.trim().length >= 2 && results.length === 0 && (
-          <p style={{ padding: "1rem", margin: 0, color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
-            Nada encontrado.
-          </p>
+          <p className="sb-empty">Nada encontrado para “{query.trim()}”.</p>
         )}
 
-        {results.length > 0 && (
-          <ul style={{ listStyle: "none", margin: 0, padding: "0.5rem 0" }}>
-            {results.map((result, index) => (
-              <li key={`${result.entity_type}:${result.href}:${String(index)}`}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    go(result.href);
-                  }}
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    textAlign: "left",
-                    padding: "0.5rem 1rem",
-                    border: "none",
-                    background: "transparent",
-                    cursor: "pointer",
-                    color: "inherit",
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: "0.6875rem",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.04em",
-                      color: "var(--sb-text-soft)",
-                    }}
-                  >
-                    {searchEntityLabel(result.entity_type)}
-                  </span>
-                  <div style={{ fontSize: "0.875rem" }}>{result.label}</div>
-                  {result.sublabel !== "" && (
-                    <div style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>{result.sublabel}</div>
-                  )}
-                </button>
-              </li>
-            ))}
-          </ul>
+        {searchError === null && query.trim().length < 2 && (
+          <p className="sb-empty">Digite ao menos duas letras.</p>
         )}
-      </div>
+
+        {grupos.map((grupo) => (
+          <div key={grupo.tipo}>
+            <span className="sb-command-label">{searchEntityLabel(grupo.tipo)}</span>
+            {grupo.linhas.map((result, index) => (
+              <button
+                key={`${result.href}:${String(index)}`}
+                type="button"
+                className="sb-command-row"
+                onClick={() => {
+                  go(result.href);
+                }}
+              >
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <b>{result.label}</b>
+                  {result.sublabel !== "" && <small>{result.sublabel}</small>}
+                </span>
+                <kbd>↵</kbd>
+              </button>
+            ))}
+          </div>
+        ))}
+      </section>
     </div>
   );
 }

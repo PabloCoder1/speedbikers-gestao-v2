@@ -8,6 +8,7 @@
  */
 
 import { buildFilterHref, resolvePageParam, summarizePagedWindow } from "./filters";
+import type { Tom } from "../components/tone";
 
 export const PAGE_SIZE = 50;
 
@@ -20,6 +21,24 @@ export type FullSituation = (typeof FULL_SITUATIONS)[number];
  * nome — "ruptura" sem a regra ao lado é um julgamento sem base declarada.
  * Função TOTAL: situação desconhecida degrada para o valor cru.
  */
+/**
+ * Tom do chip de situação do Full — o vocabulário desta tela mapeado nos cinco
+ * tons do Figma (`components/tone.ts`). Ruptura é perigo; parado pede atenção;
+ * "fora do Full" é ausência, não problema, e fica neutro.
+ */
+export function fullSituationTom(value: string): Tom {
+  switch (value) {
+    case "saudavel":
+      return "ok";
+    case "ruptura":
+      return "perigo";
+    case "parado":
+      return "atencao";
+    default:
+      return "neutro";
+  }
+}
+
 export function fullSituationLabel(value: string): string {
   switch (value) {
     case "saudavel":

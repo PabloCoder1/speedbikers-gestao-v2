@@ -118,6 +118,9 @@
      (`#0f115833`, `#0e125908`), nunca pretas. */
   --sb-shadow-pop: 0 8px 20px rgba(15, 17, 88, 0.12);
   --sb-shadow-float: 0 18px 50px rgba(15, 17, 88, 0.2);
+  /* Vidro do fundo de modal e drawer — `#0f11582e` do export: navy a 18%,
+     nunca preto. */
+  --sb-backdrop: rgba(15, 17, 88, 0.18);
   /* Cabecalho de tabela: o bloco "CORRECOES DE ACESSIBILIDADE" do export
      sobrescreve o th base (9px, #92909a) com 11px/700 #4a4d65 sobre #f0f1f5
      — foi acrescentado de proposito, para legibilidade, e e a ultima palavra
@@ -810,8 +813,16 @@ body {
     de 1150 e 850 sao os do Figma.
   */
   grid-template-columns: repeat(var(--sb-kpi-cols, 5), 1fr);
-  gap: 1px;
-  background: var(--sb-border);
+  /*
+    Os fios entre as células são SOMBRA da célula, não `gap` sobre um fundo de
+    borda. O truque do gap exige a grade CHEIA: com 5 células em 3 colunas
+    (o degrau de 1150px) sobra um buraco, e o buraco mostrava o fundo de borda
+    como um bloco cinza — visto na tela, a 961px. Sombra não ocupa espaço, o
+    `overflow: hidden` do cartão apara a da última coluna e da última linha, e
+    slot vazio simplesmente não desenha nada.
+  */
+  gap: 0;
+  background: var(--sb-surface);
   border: 1px solid var(--sb-border);
   border-radius: var(--sb-radius);
   box-shadow: var(--sb-shadow-panel);
@@ -832,6 +843,7 @@ body {
 }
 
 .sb-kpi {
+  box-shadow: 1px 0 0 var(--sb-border), 0 1px 0 var(--sb-border);
   display: grid;
   align-content: start;
   gap: 0.25rem;
@@ -841,6 +853,15 @@ body {
 }
 
 /* A métrica-âncora, como no Figma. Medido: branco 16,92x, rótulo 9,16x. */
+/*
+  A ÚLTIMA célula ocupa o resto da linha. Cinco células em três colunas (o
+  degrau de 1150px) deixavam uma fatia vazia com moldura; assim a faixa fecha
+  sempre, em qualquer combinação de contagem e breakpoint.
+*/
+.sb-kpi:last-child {
+  grid-column: auto / -1;
+}
+
 .sb-kpi-strip-ancora .sb-kpi:first-child {
   /* `linear-gradient(135deg,#0E1259,#3F44A6)` do export, nos dois tokens. */
   background: linear-gradient(135deg, var(--sb-primary), var(--sb-secondary));
@@ -917,7 +938,14 @@ body {
 */
 .sb-empty {
   margin: 0;
-  padding: var(--sb-space-6) var(--sb-space-3);
+  /*
+    `--sb-space-5`, e nao um token novo: a primeira versao usava
+    `--sb-space-6`, que NAO existe na escala — e uma variavel indefinida
+    invalida a declaracao inteira, entao o vazio ficava com `padding: 0px`
+    (medido no app antes de corrigir). Variavel que nao existe nao cai no
+    fallback: some.
+  */
+  padding: var(--sb-space-5) var(--sb-space-3);
   text-align: center;
   font-size: 0.75rem;
   color: var(--sb-text-soft);
@@ -990,6 +1018,219 @@ button.sb-menu-item:disabled {
 
 summary[aria-disabled="true"] {
   opacity: 0.5;
+}
+
+/*
+  A CAMADA FLUTUANTE do Figma — `.modal-backdrop`, `.modal`, `.command`,
+  `.close` e `kbd` do export. Antes eram estilos inline dentro dos dois
+  componentes que a usam (paleta de comando e filtros salvos), com sombra
+  preta e medidas proprias.
+*/
+.sb-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: var(--sb-space-3);
+  background: var(--sb-backdrop);
+}
+
+.sb-modal {
+  position: relative;
+  width: 420px;
+  max-width: 100%;
+  padding: 28px;
+  border-radius: 10px;
+  background: var(--sb-surface);
+  box-shadow: var(--sb-shadow-float);
+}
+
+.sb-modal h2 {
+  margin: 0 0 7px;
+  font-size: 1.25rem;
+  letter-spacing: -0.04em;
+  color: var(--sb-primary);
+}
+
+.sb-modal p {
+  margin: 0;
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  color: var(--sb-text-soft);
+}
+
+/* Sobrancelha do modal e da paleta: o rotulo em caixa-alta acima do titulo. */
+.sb-modal-eyebrow {
+  display: block;
+  font-family: var(--sb-mono);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--sb-muted-ink);
+}
+
+.sb-close {
+  border: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--sb-neutral-soft);
+  color: var(--sb-neutral-ink);
+  font-size: 1.125rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sb-close:hover {
+  background: var(--sb-border);
+}
+
+/*
+  A paleta de comando (`.command`): 520px, encostada no topo a 16vh — nao
+  centralizada —, com padding de 8px, porque as linhas de resultado e que
+  levam o respiro.
+*/
+.sb-backdrop-topo {
+  align-items: flex-start;
+}
+
+.sb-command {
+  position: relative;
+  width: 520px;
+  max-width: 100%;
+  max-height: 68vh;
+  margin-top: 16vh;
+  padding: 8px;
+  border-radius: 10px;
+  background: var(--sb-surface);
+  box-shadow: var(--sb-shadow-float);
+  overflow-y: auto;
+}
+
+.sb-command-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sb-space-2);
+  padding: 4px 5px 12px;
+}
+
+.sb-command-input {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px;
+  border-bottom: 1px solid var(--sb-border);
+}
+
+.sb-command-input input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--sb-text);
+}
+
+.sb-command-input input::placeholder {
+  color: var(--sb-muted-ink);
+}
+
+/* Rótulo de grupo ("Recentes", "Produtos" no frame) — aqui, o tipo da entidade. */
+.sb-command-label {
+  display: block;
+  padding: 15px 9px 6px;
+  font-family: var(--sb-mono);
+  font-size: 0.5625rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--sb-muted-ink);
+}
+
+.sb-command-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 9px;
+  padding: 10px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--sb-surface);
+  text-align: left;
+  font: inherit;
+  font-size: 0.6875rem;
+  color: var(--sb-table-ink);
+  cursor: pointer;
+}
+
+.sb-command-row:hover,
+.sb-command-row:focus-visible {
+  background: var(--sb-bg-soft);
+}
+
+.sb-command-row b {
+  display: block;
+  color: var(--sb-primary);
+}
+
+.sb-command-row small {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-command-row kbd {
+  margin-left: auto;
+}
+
+/* A tecla, igual em toda a camada (`kbd` do export). */
+.sb-command kbd,
+.sb-modal kbd {
+  flex: none;
+  padding: 2px 4px;
+  border: 1px solid var(--sb-border);
+  border-radius: 4px;
+  background: var(--sb-neutral-soft);
+  color: var(--sb-neutral-ink);
+  font-family: var(--sb-mono);
+  font-size: 0.625rem;
+}
+
+/* Linha de menu com uma ação à direita (a visão salva e o seu "apagar"). */
+.sb-menu-row {
+  display: flex;
+  align-items: center;
+}
+
+.sb-menu-row .sb-menu-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.sb-menu-remove {
+  flex: none;
+  border: 0;
+  background: none;
+  padding: 0 0.625rem;
+  color: var(--sb-text-soft);
+  font-size: 0.875rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sb-menu-remove:hover {
+  color: var(--sb-danger);
+}
+
+.sb-menu-remove:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* --- botões (`.button`, `.button ghost`, `.button primary`) --- */
