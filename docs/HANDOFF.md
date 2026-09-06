@@ -12,14 +12,14 @@
 
 | | |
 |---|---|
-| **Atualizado em** | 2026-09-02 |
+| **Atualizado em** | 2026-09-06 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `a3a42e4` (D-222) — esta fatia, D-223/D-224, é o commit seguinte |
+| **HEAD conhecido** | `c4bf574` (D-252, D17) — esta fatia, D18/D-253, é o commit seguinte |
 | **Fechamento da V3** | **185 de 213 itens do ROADMAP fechados (87%)** — 26 abertos e 2 parciais. Dos 26, **6 são bloqueadores**, e todos são hardening/lançamento: nenhum é feature faltando (D-223) |
 | **Deploy no ar** | **`0702969` — o mesmo do `HEAD`, sem atraso** (`api-00030-gqw` / `worker-00045-cwq`, 2026-09-02). Depois de 66 commits parado. Verificado contra a infraestrutura, não contra o script: `APP_COMMIT=0702969` nos dois serviços, imagem `api:0702969`, `/health` respondendo `{"commit":"0702969"}` e **zero `ERROR`** no Cloud Logging desde o boot |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
-| **Migrations** | **131 locais, 130 no Dev** — o expurgo (`20260903120000`) está no git e **não pousou**; a CI não o aplicou, sem drift — D-209→D-212 aplicadas pela CI em 2026-09-02 e CONFERIDAS lá (`anon` alcança 0 funções; `ml_accounts` sem UPDATE/DELETE para `authenticated`; `created_by` presente). O caminho é o push, **nunca** o MCP (lição de D-207) |
-| **Frente atual** | Trilha 8B — P0 fechado (A–H); em P1 |
+| **Migrations** | ⚠️ **148 locais, 147 no Dev** — `20260906140000_purchase_orders_list.sql` (D-255) está no git e **NÃO foi aplicada**: até a CI aplicá-la, `get_purchase_orders` não existe e `/compras` responde erro. O caminho é o push, **nunca** o MCP (D-207). Antes dela: **131 locais, 130 no Dev** — o expurgo (`20260903120000`) está no git e **não pousou**; a CI não o aplicou, sem drift — D-209→D-212 aplicadas pela CI em 2026-09-02 e CONFERIDAS lá (`anon` alcança 0 funções; `ml_accounts` sem UPDATE/DELETE para `authenticated`; `created_by` presente). O caminho é o push, **nunca** o MCP (lição de D-207) |
+| **Frente atual** | **Frente visual** (`docs/DESIGN_IMPLEMENTATION.md`): D18, D19 e D20 entregues, mais D-254. **Próxima: a segunda metade de Fornecedores** (colunas "último pedido"/"valor comprado" + o `coalesce(sum,0)` de `get_supplier_overview`, que tem o defeito de D-254 e entra na MESMA fatia). Trilha 8B com P0 fechado (A–H) e em P1 |
 
 ### O que está pronto
 

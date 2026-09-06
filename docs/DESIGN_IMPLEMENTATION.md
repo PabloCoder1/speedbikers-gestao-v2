@@ -610,7 +610,9 @@ que ele renderiza.**
 | D15 | **Cobertura/Reposição** — o frame é UMA tela com abas; sete cartões de estado em vez de cinco, e o filtro que eles prometem (D-250) | ✔ |
 | D16 | **Curva ABC** — três cartões de classe com soma no banco; dois filtros rápidos devolvidos ao dono deles (D-251) | ✔ |
 | D17 | **Movimentações** — KPIs que CONTAM linha; somar unidade daria milhões falsos (D-252) | ✔ |
-| D18–D20 | NF-e, Compras, Fornecedores | fila |
+| D18 | **NF-e / Entradas** — `PageTitle` + `Panel` + `.sb-table`, e **sem faixa de KPIs**: o frame desta variação é um esboço, não um desenho (D-253) | ✔ |
+| D19 | **Compras** — `PageTitle` + `Panel` + `.sb-table` + RPC `get_purchase_orders`; duas colunas do frame não eram colunas, e o seed passou a existir (D-255) | ✔ *(migration pendente de CI)* |
+| D20 | **Fornecedores** — mesmo esboço da `nfe`; a linha de apoio do frame prometia lead time por fornecedor, que não existe no modelo (D-256) | ✔ |
 | D21–D30 | Vinculações, Diagnóstico, Ações, Alterações, Preços, Full, Tráfego, Atendimento, Conhecimento, Central | fila |
 | D31–D36 | Usuários, Integrações, Sincronização, Saúde, Configurações, Copiloto | fila |
 | D37 | Passe visual global | fila |
@@ -674,6 +676,14 @@ próximo = 80, validada contra o Figma = 95, + cleanup + testes = 100.
 **≈ 56% concluído · ≈ 44% restante.** O número só sobe quando o resultado
 renderizado se aproxima do frame — não quando código é escrito.
 
+⚠️ **A tabela acima está parada em D13, e cinco fatias já passaram** (D14–D18).
+Ela não foi estendida de propósito: pela própria regra do bloco, a coluna só
+existe depois de comparar o **renderizado** com o frame, e as capturas de
+D14–D18 não foram refeitas. Estender por contagem de código produziria
+exatamente o número que esta seção existe para não produzir. **A próxima
+auditoria de fidelidade (A3) mede as cinco de uma vez** — até lá, o 56% é o
+piso conhecido, não o valor corrente.
+
 ## Revisão visual necessária
 
 **Nenhuma nas superfícies migradas.** A2 fechou os P2 de componente que A1
@@ -681,69 +691,73 @@ listou. O que resta nelas são P3 de acabamento, registrados na tabela acima
 (legenda do gráfico, altura do SVG, tom de lead time na cobertura) — nenhum
 muda composição, e todos cabem no passe visual global (D37).
 
-O que resta é a fila **D13 em diante**: 24 superfícies ainda não migradas.
+O que resta é a fila **D13 em diante**: 24 superfícies ainda não migradas.## Última fatia concluída
 
-## Última fatia concluída
+**D20 — Fornecedores (`/fornecedores`), pelo frame `ProcessScreen type="suppliers"`.**
+A variação divide o corpo com a `nfe`, então herda o esboço de D-253 — e é a
+**terceira tela seguida sem faixa de KPIs**, porque o frame não desenha cartão.
 
-**A2 — acabamento das superfícies migradas.** Cinco itens de componente, todos
-sem inventar dado, e três achados que valeram registro (D-247).
+**O achado é o subtítulo do próprio frame.** Ele diz *"Lead time, cobertura e
+relacionamento em uma única visão"* — e duas das três não são fato de
+fornecedor: `replenishment_settings` é escopada por organização, **marca
+(texto)** ou SKU, nunca por `supplier_id`, e `skus.supplier_id` **não existe de
+propósito** (está escrito na migration, e D-174 mediu o limite disso). Não é
+coluna faltando, é **eixo diferente**: a política da casa é por marca.
 
-**A paleta de comando virou o `.command` do frame:** 520px encostados a 16vh,
-cabeçalho "BUSCAR NA SPEED BIKERS" com ✕, campo com a lupa e um `ESC`, e os
-resultados **agrupados por tipo** sob rótulo monoespaçado, cada linha com `↵`.
-O agrupamento não é enfeite: `search_entities` devolve até 5 por tipo, então a
-lista plana repetia "SKU" cinco vezes. O placeholder passou a nomear o que a
-RPC realmente busca — o texto do frame prometia "ação", que não está na união.
+Pelo Design Contract, o desenho fica e a promessa sai. A linha virou *"Cadastro
+e relacionamento de compra — o que foi pedido a cada fornecedor"*, e **há e2e
+fixando a recomposição**: a regressão aqui é silenciosa, bastaria colar o texto
+do frame de volta.
 
-**Os filtros salvos saíram do `window.prompt`.** O modal mostra o recorte antes
-de nomear ("Serão salvos 2 parâmetros da URL: days=7 · account=e2e-loja"), que
-é o que o prompt do navegador nunca disse — a doutrina do painel de conferência
-de D-127, em escala menor. As visões viraram um `.sb-menu`, e com isso a última
-pílula de raio 999px saiu do app.
+**O defeito silencioso, irmão mais fraco do de `/compras`:** a tela lia
+`.limit(200)` e não dizia nada. Em `/compras` havia um número *errado*; aqui um
+número *ausente*. Mesma classe (D-131), mesma correção.
 
-**O selo "Curva A" entrou no cabeçalho do SKU** (D-247). `get_sku_abc_curve`
-ganhou `p_sku_id` **depois do ranking** — provado com três SKUs numa transação
-revertida: pedindo só a cauda, ela volta C com acumulado 100,00, idêntico ao da
-curva inteira. O custo da leitura (~196 ms medidos em D-166) está declarado no
-código, com a saída registrada caso pese.
-
-**Dois defeitos que só a tela mostrou.** A faixa de KPIs deixava uma **fatia
-cinza** quando cinco células caíam em três colunas: o truque de `gap` sobre
-fundo de borda exige a grade cheia, e A1 tinha trocado o `auto-fit` por colunas
-fixas. Agora os fios são sombra da célula e a última fecha a linha. E
-`.sb-empty` pedia `--sb-space-6`, que **não existe** — variável indefinida
-invalida a declaração inteira, então todo estado vazio estava com `padding: 0`.
-
-**Verificação:** `check` 29/29, build 8/8, integração 583/583, Playwright 25/25
-sobre seed limpo, `check:waterfalls`, `check:server-actions`, `docs:check`. A
-paleta, o modal e o SKU foram dirigidos no navegador (login real, busca com
-resultado, visão salva e apagada) e capturados.
-
-## Próxima fatia segura
-
-**D17 entregue (D-252).** `/estoque/movimentacoes` adotou `PageTitle` +
-`KpiStrip` + `Panel` + `.sb-table` e ganhou a faixa do frame.
-
-**A pergunta que motivou o aviso foi respondida: não há componente novo a
-extrair.** As cinco variações do `ProcessScreen` são a mesma anatomia —
-cabeçalho (sobrancelha, título, texto, ação opcional), painel com barra de
-ferramentas, tabela — e isso já é `PageTitle` (com `aside`), `Panel` e
-`.sb-table`. **D18, D19 e D20 reusam o que existe.**
+Das 9 colunas do brief §24, **4 existem** (fornecedor, último pedido, valor
+comprado, status). O filtro tem uma dimensão só — `is_active` —, e há teste
+afirmando que `marca`, `leadTime` e `origem` na URL são **ignorados**.
 
 | achado | decisão |
 |---|---|
-| KPIs de Entradas/Saídas | **contam linha, nunca somam unidade**: `AJUSTE_RECONCILIACAO` despeja **+9,6 mi / −3,5 mi** de unidades em 30 dias (sentinela do ERP, D-127) contra ~29,5 mil de venda real |
-| classificação | pelo **sinal** do delta, não pelo tipo — o ajuste produz os dois, e por tipo os 6.202 cairiam de um lado só |
+| subtítulo promete lead time/cobertura por fornecedor | recomposto; e2e fixa a recomposição |
+| `.limit(200)` sem total nem página | `count` filtrado + janela declarada |
+| seed com um fornecedor só | segundo fornecedor, **inativo**, para o filtro ter dois alvos |
+| `get_supplier_overview` tem o `coalesce(sum,0)` de D-254 | **não corrigido aqui, de propósito** — ver abaixo |
 
-⚠️ **A conferência célula a célula pagou pela QUINTA fatia seguida.**
+**Verificação:** `check` **29/29** (315 testes em `apps/web`), build **8/8**,
+`check:waterfalls` 60, `check:server-actions` 17, `docs:check`. Sem migration.
+E2E não rodou aqui (sem Docker/Supabase local, limitação de D-195); **não
+conferida no navegador**, pelo mesmo motivo de D18 e D19.
 
-**D18 — NF-e / Entradas (`/notas-fiscais`) contra `ProcessScreen type="nfe"`.**
-O frame compartilha o corpo com `suppliers` e traz uma **ação no cabeçalho**
-("Upload XML") — a primeira das telas de processo com ação primária, então vale
-conferir o que o fluxo real de importação já faz antes de desenhar o botão. A
-tela real tem conferência de NF-e e vínculo item→SKU (o e2e `nota-fiscal.spec`
-exercita esse caminho); **preservar esse fluxo é requisito, não opção.**
+## Próxima fatia segura
 
-Depois, pela fila: Cobertura/Reposição, Curva ABC, Movimentações, NF-e,
-Compras, Fornecedores — todas candidatas naturais a adotar `.sb-table` e apagar
-os consts inline ao migrar.
+**A tela de Fornecedores tem uma segunda metade, e ela vem com defeito
+nomeado.** O brief §24 pede as colunas **"último pedido"** e **"valor
+comprado"**, que D20 não entregou porque precisam de RPC (agregação por
+fornecedor sobre `purchase_orders`). E `get_supplier_overview`, que já calcula
+esses números para o dashboard individual, carrega o **mesmo defeito que D-254
+corrigiu**:
+
+```
+coalesce(round(sum(quantity_ordered * unit_cost), 2), 0)
+```
+
+`sum()` sobre itens todos sem custo é NULO, e o `coalesce` transforma
+"desconhecido" em **R$ 0,00** — provado no Dev com conjunto sintético. As duas
+coisas **entram na mesma fatia de propósito**: corrigir a definição agora e
+adicionar a coluna depois criaria uma janela em que lista e detalhe discordam,
+e manter uma definição só é a lição de D-255 (as duas implementações conferidas
+caso a caso, quatro de quatro). O `coalesce` está *certo* para "fornecedor sem
+item nenhum" — ali o zero é sabido; é só o caso "itens sem custo" que ele
+estraga, e a função precisa da separação de três saídas.
+
+Depois, pela fila: **Vinculações**, cuja variação `links` é a mais completa do
+frame — **cinco cartões com faixa** (a primeira tela de processo a ter uma) e
+sete colunas. É também a que mais promete: "Vendidos sem vínculo" e "Candidatos
+pendentes" precisam existir como recorte na consulta antes de virarem célula
+(regra de D-242), e "sem vínculo" **não é `sku_id is null`** (D-122).
+
+**A tela de conferência da NF-e (`/notas-fiscais/[id]`) continua aberta** — o
+brief §25 traz o fluxo em seis passos, a tabela de sete colunas e o botão
+"Confirmar Entrada". Dois dos quatro estados de item que ele pede (`SUGESTÃO`,
+`CONFLITO`) não têm dado em `document_items` (D-253).

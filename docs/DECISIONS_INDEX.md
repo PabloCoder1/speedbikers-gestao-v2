@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **247** (D-001 a D-252).
+Decisões registradas: **252** (D-001 a D-256).
 
 ## Por domínio
 
-### atendimento (34)
+### atendimento (35)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -52,6 +52,7 @@ Decisões registradas: **247** (D-001 a D-252).
 - **D-231** — A Central de Integracoes compoe e aponta: tres perguntas por integracao, e configuracao nunca e verde
 - **D-232** — A revisao adversarial de D-231: uma lista com dois consumidores, e o defeito que so aparece no segundo usuario
 - **D-249** — D14: a faixa de KPIs do frame pedia seis numeros, e tres nao existem
+- **D-256** — D20: a linha de apoio do frame prometia lead time por fornecedor, e isso nao existe no modelo
 
 ### banco/rls (25)
 
@@ -105,7 +106,7 @@ Decisões registradas: **247** (D-001 a D-252).
 - **D-236** — Marca na Cobertura: a licao de D-235 aplicada ANTES do erro, e uma coluna que NAO segue o filtro
 - **D-252** — D17: os KPIs de Movimentacoes CONTAM linha, e somar unidade seria mentira de milhoes
 
-### interface (17)
+### interface (20)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -120,10 +121,13 @@ Decisões registradas: **247** (D-001 a D-252).
 - **D-190** — A pagina vira a unidade de escrita
 - **D-194** — O filtro de marcas escondia 10 das 19, e eu tinha chamado isso de cosmetico
 - **D-195** — O waterfall que se paga em toda tela estava no cabecalho, e a varredura quase nao olhou la
+- **D-196** — O read model que o ROADMAP pedia nao era necessario: bastava paginar antes de enriquecer
 - **D-224** — O Dashboard de SKU encolhe de 11 abas para 9, e as duas que saem tem motivo
 - **D-226** — A aba Precos sai por reuso, e o barato so apareceu porque a forma obvia foi MEDIDA
 - **D-234** — O defeito que D-119 achou, adiou e ninguem colheu: 26 telas quebravam no segundo usuario
 - **D-241** — A frente visual como varredura: tres telas mortas e uma coluna fantasma que build verde nao pegava
+- **D-253** — D18: o frame da NF-e e um ESBOCO, e por isso esta tela nao ganhou faixa de KPIs
+- **D-254** — "Valor estimado" somava custo AUSENTE como zero, e a mesma tela mostrava "—" na linha do item
 
 ### mercado-livre (43)
 
@@ -171,7 +175,7 @@ Decisões registradas: **247** (D-001 a D-252).
 - **D-245** — Curadoria ganha a coluna "Anuncios" do frame, com a definicao de vinculado de D-122
 - **D-248** — Dashboard do Anuncio em oito abas: a fila pedia uma tela que nao existe, e a republicacao nao e tela
 
-### outros (38)
+### outros (39)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -211,6 +215,7 @@ Decisões registradas: **247** (D-001 a D-252).
 - **D-213** — Como atualizar o contrato gerado sem perder as correcoes manuais
 - **D-218** — A retencao nao era o problema: 335 mil linhas custavam 1,1 s por causa de UMA consulta
 - **D-233** — Hub de Configuracoes: a resposta e APONTAR, e o que torna isso seguro e o Hub nao saber editar
+- **D-255** — D19: as duas colunas do frame que nao sao colunas, e o seed que se recusava a existir
 
 ### processo/docs (1)
 

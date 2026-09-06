@@ -44,6 +44,9 @@ import {
   E2E_LISTING_PRICE_EVENT,
   E2E_LISTING_RELIST,
   E2E_LISTING_TRAFFIC,
+  E2E_PURCHASE_ORDERS,
+  E2E_SUPPLIER,
+  E2E_SUPPLIER_INATIVO,
   E2E_SKU_SALES,
   E2E_USER_EMAIL,
   E2E_USER_PASSWORD,
@@ -878,6 +881,131 @@ async function main(): Promise<void> {
 
     if (decisao.error !== null) {
       throw decisao.error;
+    }
+  }
+
+  /*
+    Fila de `/compras` (D19, D-255). O seed não criava pedido nenhum, com a
+    justificativa de que o teste de CRIAÇÃO não precisava — verdade para
+    aquele teste, falsa para a LISTA, que sem várias linhas em estados
+    diferentes não tem como provar filtro, contagem, janela nem a coluna de
+    valor. É a lição (d) de D-242: tela sem seed é tela sem teste.
+
+    Idempotente pela chave natural (`suppliers_org_name_unique` e o par
+    organização + destino/estado não servem), então os pedidos são
+    identificados por `notes`, que carrega a chave do fixture. Reexecutar sem
+    `db reset` não duplica.
+  */
+  const fornecedor = await db
+    .from("suppliers")
+    .upsert(
+      {
+        organization_id: organizationId,
+        name: E2E_SUPPLIER.name,
+        document: E2E_SUPPLIER.document,
+        created_by: userId,
+      },
+      { onConflict: "organization_id,name" },
+    )
+    .select("id")
+    .single();
+
+  if (fornecedor.error !== null) {
+    throw fornecedor.error;
+  }
+
+  // O segundo fornecedor existe SÓ para a lista ter dois estados. Ele não
+  // recebe pedido: um fornecedor sem relacionamento de compra também é um caso
+  // que a tela mostra, e o dashboard dele (D-174) precisa saber dizer isso.
+  const inativo = await db
+    .from("suppliers")
+    .upsert(
+      {
+        organization_id: organizationId,
+        name: E2E_SUPPLIER_INATIVO.name,
+        document: E2E_SUPPLIER_INATIVO.document,
+        is_active: false,
+        created_by: userId,
+      },
+      { onConflict: "organization_id,name" },
+    )
+    .select("id")
+    .single();
+
+  if (inativo.error !== null) {
+    throw inativo.error;
+  }
+
+  for (const pedido of E2E_PURCHASE_ORDERS) {
+    const marca = `e2e:compras:${pedido.chave}`;
+
+    const existente = await db
+      .from("purchase_orders")
+      .select("id")
+      .eq("organization_id", organizationId)
+      .eq("notes", marca)
+      .maybeSingle();
+
+    if (existente.error !== null) {
+      throw existente.error;
+    }
+
+    if (existente.data !== null) {
+      continue;
+    }
+
+    /*
+      As quatro `check` constraints de coerência exigem o carimbo do estado:
+      `APPROVED`/`ORDERED`/`RECEIVED` pedem `approved_at`, os dois últimos
+      pedem `ordered_at`, `RECEIVED` pede `received_at` e `CANCELLED` pede
+      `cancelled_at`. Preencher só o `status` faz o insert ser RECUSADO — e a
+      recusa está certa: um pedido aprovado sem data de aprovação é um
+      histórico que mente.
+    */
+    const agora = new Date().toISOString();
+    const carimbos: Record<string, string | null> = {
+      approved_at: ["APPROVED", "ORDERED", "RECEIVED"].includes(pedido.status) ? agora : null,
+      ordered_at: ["ORDERED", "RECEIVED"].includes(pedido.status) ? agora : null,
+      received_at: pedido.status === "RECEIVED" ? agora : null,
+      cancelled_at: pedido.status === "CANCELLED" ? agora : null,
+    };
+
+    const criado = await db
+      .from("purchase_orders")
+      .insert({
+        organization_id: organizationId,
+        status: pedido.status,
+        notes: marca,
+        created_by: userId,
+        ...(pedido.comFornecedor ? { supplier_id: fornecedor.data.id } : {}),
+        ...(pedido.destino !== null ? { destination_warehouse_name: pedido.destino } : {}),
+        ...(pedido.status === "RECEIVED" ? { expected_at: agora } : {}),
+        ...Object.fromEntries(Object.entries(carimbos).filter(([, valor]) => valor !== null)),
+      })
+      .select("id")
+      .single();
+
+    if (criado.error !== null) {
+      throw criado.error;
+    }
+
+    if (pedido.itens.length > 0) {
+      const itens = await db.from("purchase_order_items").insert(
+        pedido.itens.map((item, indice) => ({
+          organization_id: organizationId,
+          purchase_order_id: criado.data.id,
+          position: indice,
+          sku_snapshot: item.sku,
+          quantity_ordered: item.quantidade,
+          // `unit_cost` NULO de propósito em parte dos itens: é o que prova na
+          // tela que custo ausente não vira R$ 0,00 (D-254).
+          ...(item.custo !== null ? { unit_cost: item.custo } : {}),
+        })),
+      );
+
+      if (itens.error !== null) {
+        throw itens.error;
+      }
     }
   }
 

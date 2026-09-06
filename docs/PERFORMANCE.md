@@ -347,6 +347,55 @@ gera trabalho. Isso não é desperdício de fila — é filtro de domínio, e fi
 
 ---
 
+### O read model pedido não era necessário (D-196)
+
+O P1 pedia "read models para o que é consultado repetidamente (último
+movimento por SKU, Full atual)". Medido antes de construir, **nenhum dos dois
+precisa de tabela**: o problema não era de onde os números vinham, e sim
+**quando** eram calculados.
+
+Varredura por `pg_proc`, não por memória:
+
+| Número | Onde aparece | Veredito |
+|---|---|---|
+| último movimento por SKU | **1** RPC | não é "repetido" — é caro numa só |
+| Full atual | **5** RPCs | repetido, e com **três definições diferentes** |
+
+**O custo dentro de `get_stock_balances`** (usuário autenticado, transação
+revertida, segunda passada):
+
+| Nó | Linhas lidas | Tempo |
+|---|---|---|
+| `ultimo_movimento` | 227.264 | 85,7 ms / 19.675 buffers |
+| `full_por_sku` | 86.677 | 49,5 ms / 4.651 buffers |
+| | **313.941 linhas para enriquecer 50** | |
+
+Nenhum dos dois é critério de filtro nem de ordenação — então não precisam
+existir antes do `limit`. É o **page-first** que D-181 registrou como recurso
+não gasto.
+
+| Chamada | Antes | Depois |
+|---|---|---|
+| `limit 50` | 685 ms / 29.376 | **21,7 ms / 2.333** |
+| `limit 100` (o `PAGE_SIZE` real de `/estoque`) | — | **23,5 ms / 2.634** |
+| `limit 5000` (pior caso, 3.175 linhas) | — | 103 ms / 43.374 |
+
+**O pior caso é declarado.** Com a página inteira, as laterais rodam 3.175
+vezes e os buffers passam os do desenho antigo — o tempo ainda cai. Page-first
+vence em todo tamanho que a tela usa, e a tela usa 100.
+
+**Cache frio, terceira vez.** `ultimo_movimento` mediu **1.670 ms** na primeira
+passada (`read=2249` blocos de disco) e **75 ms** na segunda. Fosse a primeira
+o número, a correção teria sido dimensionada para um problema 22× maior.
+
+**Como provar equivalência num banco vivo.** A primeira tentativa gravou a
+saída antiga numa tabela, trocou a função e comparou: **4 linhas diferentes** —
+todas com `last_movement_at` mais recente e uma unidade a menos, porque houve
+venda no Dev entre as duas capturas. A comparação correta roda as duas
+definições **na mesma consulta, sobre o mesmo snapshot MVCC**: zero
+divergências em 3.175 SKUs. Num banco que recebe escrita, medir "antes" e
+"depois" em momentos diferentes compara duas coisas ao mesmo tempo.
+
 ## Histórico de otimizações medidas
 
 Cada linha tem o antes/depois real, não estimativa.
@@ -362,6 +411,7 @@ Cada linha tem o antes/depois real, não estimativa.
 | 2026-09-01 | `get_listings_dashboard` | timeout > 60 s | **271 ms / 21.739** | idem — nenhuma linha da RPC mudou | D-181 |
 | 2026-09-01 | `get_sku_sales_baseline` | 1.334 ms / 4.136 | **49 ms** | `current_day as materialized` (o CTE inlineado virava o lado interno de um nested loop, 440 loops × 31 mil linhas) + filtro de dia da semana empurrado para o agregado | D-183 |
 | 2026-09-01 | Filtro de marcas (3 telas) | 34 kB de corpo, **9 de 19 marcas** | 606 bytes, **19 de 19** | `distinct` no Postgres (`get_supplier_brands`) no lugar de `new Set(...)` sobre 3.550 linhas truncadas em 1.000 | D-194 |
+| 2026-09-02 | `get_stock_balances` | 685 ms / 29.376 buffers | **21,7 ms / 2.333** | page-first: Full e último movimento por `lateral` DEPOIS do `limit` — nenhum dos dois filtra ou ordena | D-196 |
 | 2026-09-02 | `Shell` (cabeçalho de **toda** tela) | 3 idas em série, em cada navegação | 1 ida | `Promise.all` — o waterfall de maior alcance do app | D-195 |
 | 2026-09-02 | Leituras em fila em 9 telas | 2 a 3 idas em série antes de renderizar | 1 ida | `Promise.all` nas leituras independentes; **14 sítios** no total, guarda `check:waterfalls` no CI | D-195 |
 | 2026-09-02 | 8 sítios que a regex não via | 2 a 3 idas em série (uma delas saindo do navegador) | 1 ida | `Promise.all`, filtro redundante removido, preferências do toast vindas do servidor | D-197 |

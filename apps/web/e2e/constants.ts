@@ -128,3 +128,92 @@ export const E2E_LISTING_RELIST = {
 
 /** Texto da decisão sobre a ação DO ANÚNCIO (aba Decisões, D13). */
 export const E2E_LISTING_DECISION_TEXT = "Manter o preço e observar visitas por mais 7 dias — decisão de teste E2E";
+
+/**
+ * Fornecedor e pedidos de compra da fila de `/compras` (D19, D-255).
+ *
+ * **O seed não criava pedido nenhum, e a justificativa estava escrita:** *"não
+ * precisa de seed: o formulário de `/compras/novo` aceita SKU em texto livre"*.
+ * Era verdade enquanto o teste exercitava a CRIAÇÃO. Deixa de ser quando a
+ * fatia é a LISTA — filtro por estado, contagem, janela paginada e a coluna de
+ * valor não têm o que afirmar com um pedido só, criado pelo próprio teste.
+ *
+ * Cada pedido abaixo existe para PROVAR uma coisa na tela, no espírito de
+ * D-242: nenhum é decoração.
+ */
+export const E2E_SUPPLIER = { name: "Fornecedor E2E", document: "12345678000199" } as const;
+
+/**
+ * Um SEGUNDO fornecedor, e ele é INATIVO de propósito (D20).
+ *
+ * Com um fornecedor só, `/fornecedores` não tinha como provar nada: o filtro
+ * de estado teria sempre o mesmo alvo e a janela declararia sempre "1
+ * fornecedor". O inativo é o que faz "Ativos" e "Inativos" recortarem
+ * conjuntos diferentes — e é a mesma razão pela qual o seed de `/anuncios`
+ * cria um anúncio por estado da faixa (D-242).
+ */
+export const E2E_SUPPLIER_INATIVO = { name: "Fornecedor E2E Inativo", document: "98765432000188" } as const;
+
+export const E2E_PURCHASE_ORDERS = [
+  /**
+   * O caso normal: dois itens, ambos com custo. Valor estimado fechado
+   * (2 × 100,00 + 5 × 10,50 = 252,50) e nenhuma ressalva.
+   */
+  {
+    chave: "completo",
+    status: "APPROVED",
+    comFornecedor: true,
+    destino: "Depósito Central",
+    itens: [
+      { sku: "E2E-PC-001", quantidade: 2, custo: 100 },
+      { sku: "E2E-PC-002", quantidade: 5, custo: 10.5 },
+    ],
+  },
+  /**
+   * **Custo PARCIAL** — a prova de D-254 na lista: um item com custo e outro
+   * sem. O valor tem de sair 52,50 **com a ressalva "1 de 2 sem custo"**,
+   * nunca 52,50 calado (que leria como total fechado).
+   */
+  {
+    chave: "parcial",
+    status: "DRAFT",
+    comFornecedor: true,
+    destino: null,
+    itens: [
+      { sku: "E2E-PC-003", quantidade: 5, custo: 10.5 },
+      { sku: "E2E-PC-004", quantidade: 3, custo: null },
+    ],
+  },
+  /**
+   * **Nenhum item com custo, e SEM fornecedor** — dois "—" numa linha só. O
+   * valor estimado tem de ser "—", nunca "R$ 0,00": o rascunho recém-criado,
+   * antes de o custo ser negociado, é o estado mais comum da fila. Fornecedor
+   * nulo é permitido por desenho ("um rascunho pode nascer antes do
+   * fornecedor estar decidido").
+   */
+  {
+    chave: "sem-custo",
+    status: "DRAFT",
+    comFornecedor: false,
+    destino: null,
+    itens: [{ sku: "E2E-PC-005", quantidade: 7, custo: null }],
+  },
+  /**
+   * **Pedido sem item nenhum** — aqui o zero é SABIDO, e a tela mostra
+   * "R$ 0,00" de propósito. É o par do caso acima: os dois zeros da tela
+   * significam coisas diferentes, e o seed carrega os dois para que a
+   * diferença seja visível lado a lado.
+   */
+  { chave: "vazio", status: "CANCELLED", comFornecedor: true, destino: null, itens: [] },
+  /**
+   * Estado terminal com data de previsão — a quinta linha existe para o filtro
+   * de estado ter mais de um alvo e para a coluna Previsão sair do "—".
+   */
+  {
+    chave: "recebido",
+    status: "RECEIVED",
+    comFornecedor: true,
+    destino: "Depósito Central",
+    itens: [{ sku: "E2E-PC-006", quantidade: 1, custo: 42 }],
+  },
+] as const;

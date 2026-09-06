@@ -4028,6 +4028,80 @@ Mais `/sugestoes` (papel e listagem sao independentes) e `/compras/novo` (fornec
 
 **Impacto:** `apps/web/components/shell.tsx`, nove `page.tsx`, `apps/web/scripts/check-waterfalls.mjs` (novo), `apps/web/{package.json,eslint.config.js}` e o passo novo no CI.
 
+## D-196 - O read model que o ROADMAP pedia nao era necessario: bastava paginar antes de enriquecer
+
+**Contexto:** o item do P1 dizia *"read models para o que e consultado repetidamente (ultimo movimento por SKU, Full atual), sempre reconstruiveis da fonte"*. Medi antes de construir, e a conclusao inverteu o item: **os dois numeros ficam baratos lendo a FONTE** — o problema nunca foi de onde vinham, e sim QUANDO eram calculados.
+
+**Onde estavam os dois numeros.** Varredura por `pg_proc`, nao por memoria:
+
+| Numero | Onde | Veredito |
+|---|---|---|
+| "ultimo movimento por SKU" | **1** RPC (`get_stock_balances`) | nao e "consultado repetidamente" — e caro numa so |
+| "Full atual" | **5** RPCs | repetido de verdade, e com **tres definicoes diferentes** |
+
+**O custo, medido como usuario autenticado real, em transacao revertida.** `get_stock_balances`, a RPC mais lenta que sobrou depois de D-181:
+
+| No | Linhas lidas | Tempo |
+|---|---|---|
+| `ultimo_movimento` (`max(occurred_at) group by sku_id`) | **227.264** | **85,7 ms** / 19.675 buffers |
+| `full_por_sku` (Seq Scan do snapshot) | **86.677** | **49,5 ms** / 4.651 buffers |
+| | **313.941 linhas para enriquecer as 50 da tela** | |
+
+**A chave: nenhum dos dois filtra nem ordena.** Os filtros da tela sao `supplier_brand`, `category`, `search` e `only_negative`; a ordem e por `sku`. Full e ultimo movimento so aparecem na saida. Logo nao ha razao para calcula-los antes do `limit` — e o **page-first** que D-181 registrou como "recurso ainda nao gasto, caso o crescimento peca". O crescimento pediu.
+
+**Por que NAO um read model.** Uma tabela materializada precisaria de gatilho ou job, de reconciliacao e de uma segunda fonte de verdade para um numero que o indice ja responde por SKU: `stock_movements_sku_timeline_idx (organization_id, sku_id, occurred_at DESC)` transforma o `max` num `limit 1`. Sao **50 descidas de indice** no lugar de 227.264 linhas. Ler a fonte e a forma mais forte de "sempre reconstruivel da fonte" — o proprio item pedia isso, e a resposta certa era nao construir nada.
+
+**Antes e depois** (mesma funcao, mesmos parametros, usuario autenticado, duas passadas):
+
+| | Antes | Depois |
+|---|---|---|
+| `limit 50` | **685 ms** / 29.376 buffers | **21,7 ms** / 2.333 |
+| `limit 100` (o `PAGE_SIZE` real de `/estoque`) | — | **23,5 ms** / 2.634 |
+| `limit 5000` (pior caso, 3.175 linhas) | — | **103 ms** / 43.374 |
+
+**31,5x mais rapido** no caso medido dos dois lados. O pior caso e declarado de proposito: com a pagina inteira, as laterais rodam 3.175 vezes e os buffers passam os do desenho antigo (43.374 contra 29.376) — mesmo assim o tempo cai. Page-first e melhor em todo tamanho que a tela usa, e a tela usa 100.
+
+**O cache frio quase me enganou de novo.** A primeira medicao de `ultimo_movimento` deu **1.670 ms**, com `read=2249` blocos vindo do disco. A segunda, **75 ms**. Fosse a primeira o numero, eu teria dimensionado a correcao para um problema 22x maior do que ele e. E a terceira vez que a regra de D-183 se paga.
+
+---
+
+### A definicao de "Full atual" tambem mudou, e isso e deliberado
+
+A casa tinha **tres** definicoes em cinco RPCs:
+
+| # | Definicao | Onde |
+|---|---|---|
+| 1 | por bucket (`inventory_id`) + janela de 3 dias | `get_fulfillment_overview`, `get_sku_abc_curve` — **canonica**, D-173 |
+| 2 | por `item_id`/`variation_id`, sem janela | `get_sku_dashboard` |
+| 3 | `max(captured_at)` por conta, sem janela | `get_stock_balances`, `get_purchase_suggestions` |
+
+Esta fatia move `get_stock_balances` de (3) para (1). **Nao e mudanca de numero**, e a prova precisou de duas tentativas:
+
+A primeira comparacao gravou a saida antiga numa tabela, trocou a funcao e comparou — e acusou **4 linhas diferentes**. Olhando, as diferencas eram so em `local_quantity` e `last_movement_at`, sempre com valor MAIS RECENTE do lado novo (00:46 -> 00:49) e uma unidade a menos: **o Dev esta vivo e houve venda entre as duas capturas**. `full_quantity` era identico nas quatro.
+
+Mas "olhando, parece" nao e medicao. A segunda comparacao roda as duas definicoes **na mesma consulta, sobre o mesmo snapshot MVCC**, eliminando o desvio de tempo:
+
+| Comparacao, 3.175 SKUs no mesmo instante | Divergencias |
+|---|---|
+| `full_quantity` (definicao 3 contra 1) | **0** |
+| `last_movement_at` (agregado contra lateral) | **0** |
+
+As tres definicoes concordam hoje porque a captura diaria grava o lote inteiro com o mesmo `captured_at`. **A divergencia e LATENTE, nao viva:** bastaria uma captura parcial, carimbando timestamps distintos, para (3) descartar linhas em silencio. Alinhar custa zero em numero e elimina um dos tres dialetos — `docs/METRICS.md` pede metrica canonica.
+
+**`get_purchase_suggestions` NAO foi alterada**, e o motivo e concreto, nao cautela generica: o fixture dela em `rls.integration.test.ts` insere snapshot com data fixa `2026-08-22`, que esta **fora** de qualquer janela de 3 dias. Aplicar a janela ali quebraria o teste — e isso e informacao, nao obstaculo: significa que a migracao daquela RPC exige mexer no fixture junto, o que e outra fatia. Fica no ROADMAP com o motivo escrito.
+
+**Nenhum indice novo.** Os dois que o plano usa ja existiam.
+
+---
+
+**ESTA DECISAO CHEGOU DEPOIS DA MIGRATION QUE ELA EXPLICA, e o registro importa.** A fatia foi escrita e APLICADA ao Supabase Dev em 02/09/2026 por uma frente de trabalho que nunca deu `push` — a mesma que D-207 chama de "OUTRA FRENTE". O SQL chegou ao repositorio em `38d339a`, recuperado palavra por palavra de `supabase_migrations.schema_migrations.statements` para destravar o `supabase db push`, sem que ninguem soubesse POR QUE ele existia. O `comment on function` recuperado cita "Page-first (D-196)" e apontava para uma decisao que nao estava em lugar nenhum: **referencia pendurada de 02/09 a 06/09/2026.**
+
+Este texto fecha essa ponta. O que o acompanha e `packages/db/src/stock-balances.integration.test.ts`, que a recuperacao tambem nao trouxe — o SQL estava no banco, o teste que o prova estava so na maquina da outra frente. Conferido antes de registrar: o SQL recuperado e o SQL local sao **funcionalmente identicos**, e a unica diferenca sao os comentarios internos, que o Postgres nao guarda.
+
+**O guarda contra a repeticao ja existe e nao e este texto:** o job de migrations do CI (D-207) fica vermelho quando o remoto tem versao que o `git` nao tem. O que faltava era o caminho inverso — DDL no banco, explicacao em lugar nenhum —, e a unica defesa dele e `push` na mesma fatia que aplica.
+
+---
+
 ## D-197 - O guarda de D-195 estava cego para quatro classes, e quem mostrou foi uma varredura que LEU o codigo
 
 **Contexto:** D-195 fechou os waterfalls que uma varredura por regex conseguia ver e deixou `check:waterfalls` como guarda. Esta fatia rodou por cima dele uma varredura de agentes com cinco angulos independentes (N+1 por laco, N+1 por nivel, aba nao aberta, sobre-busca, cliente refazendo trabalho do servidor), cada achado passando por dois ceticos que **abriam o arquivo** para tentar refutar. **Doze achados, seis sobreviveram** — e quatro deles eram invisiveis para o guarda que eu tinha acabado de escrever.
@@ -5898,6 +5972,228 @@ Contando LINHA, os numeros fecham e dizem a verdade: **36.360 = 6.776 entradas +
 **Verificacao:** `check` 29/29, build 8/8, **598/598** de integracao em banco recriado (593 + 5 novos), `check:waterfalls` 60, **30/30 Playwright**. A tela foi aberta no navegador com login real: os quatro cartoes fecham (1 = 1 + 0 no seed) e o painel "Ledger de estoque" traz a linha.
 
 **Impacto:** `supabase/migrations/20260905030000_stock_movements_summary.sql`, `apps/web/app/estoque/movimentacoes/page.tsx`, `packages/db/src/types.ts` (a mao, D-213), `packages/db/src/rls.integration.test.ts`.
+
+## D-253 - D18: o frame da NF-e e um ESBOCO, e por isso esta tela nao ganhou faixa de KPIs
+
+**Contexto:** fatia D18 -- `/notas-fiscais` contra `ProcessScreen type="nfe"`. A fila de `docs/DESIGN_IMPLEMENTATION.md` dizia, desde D-252, que "D18, D19 e D20 reusam o que existe: `PageTitle` + `KpiStrip` + `Panel` + `.sb-table`". Isso foi escrito depois de ler as cinco variacoes como ANATOMIA -- e a anatomia esta certa. O que a frase nao disse, porque nao era a pergunta daquela fatia, e que **as cinco nao estao no mesmo estagio de acabamento.**
+
+---
+
+**O ACHADO: A VARIACAO `nfe` NAO TEM CORPO DESENHADO**
+
+Lidas lado a lado no export (`src/App.tsx`, funcao `ProcessScreen`):
+
+| variacao | cartoes | tabela |
+|---|---|---|
+| `movements` | 3 | completa, 7 colunas |
+| `links` | 5 | completa, 7 colunas |
+| `purchases` | 0 | completa, 7 colunas + busca no painel |
+| **`nfe`** (divide o corpo com `suppliers`) | **0** | **nenhuma** |
+
+No lugar da tabela, a `nfe` tem um paragrafo de reserva: *"Lista de notas carregada e validada. Para detalhar o conteudo, utilize a funcionalidade de Quick Drawer nas tabelas de itens vinculados."* O corpo do painel e um placeholder de prototipo, nao um desenho.
+
+**Decisao: esta tela NAO recebe `KpiStrip`.** A fila previa a faixa antes de alguem abrir o frame; o frame nao a pede. Inventar quatro numeros para preencher um espaco que o desenho nao reservou e o espelho do erro que D-249 e D-252 evitaram do outro lado -- la se recusou celula por falta de DADO, aqui se recusa por falta de DESENHO. As duas recusas tem a mesma raiz: **a faixa existe para dizer algo que alguem decidiu mostrar, nao para ocupar a faixa.**
+
+O que o frame DITA e a tela cumpre, verbatim: sobrancelha `ESTOQUE / OPERACAO`, titulo "NF-e / Entradas", a linha "Receba XMLs com vinculacao, conferencia e rastreabilidade.", a acao primaria "Upload XML" no cabecalho (`OpsHeader` so a renderiza quando `action` existe -- e esta e a primeira tela de processo que tem uma) e o painel "Historico de Notas" com o controle de filtros na barra dele.
+
+---
+
+**O SEGUNDO ACHADO, QUE NAO E DE DESIGN: A LISTA ERA CORTADA EM SILENCIO**
+
+A tela lia `.limit(50)` sem `count`, sem janela e sem pagina seguinte. Com 51 notas, a 51a simplesmente nao existia para quem olhava -- e nada na tela dizia isso. E a classe de D-131 ("nunca uma lista silenciosamente cortada"), viva numa tela que ninguem tinha revisitado desde que foi escrita.
+
+O tamanho continua 50. O que mudou: `count: "exact"` sobre o conjunto FILTRADO (antes do `range`, entao e o total da busca e nao o da pagina), a frase de `summarizePagedWindow` na barra do painel, e Anterior/Proxima. O teste fixa o caso que motivou: com 63 notas, a pagina 1 AFIRMA "Mostrando 1 a 50 de 63 notas."
+
+---
+
+**O QUE FICOU DE FORA, E POR QUE**
+
+**Busca: nao entrou, e a ausencia e do frame.** A variacao `purchases` do mesmo componente traz um campo ("Buscar PC, fornecedor..."); a `nfe` NAO -- o cabecalho do painel dela tem so "Filtros ⌄". Inventa-la seria inventar. De quebra, evitou um risco concreto: busca multi-coluna em PostgREST exige `.or()`, cuja sintaxe e uma STRING com virgula e parenteses como separadores -- valor vindo da URL entraria nela sem escape. Nao ha precedente de `.or()` com `ilike` no repositorio, e esta fatia nao criou o primeiro.
+
+**Os filtros sao as duas COLUNAS que a tabela ja mostra** -- `status` (os sete estados de `docs/NFE.md`) e `operation_type` (as duas direcoes). O frame diz "Filtros" sem dizer de que; quem decide sao os dados. Cabecalho e corpo recebem o mesmo recorte (licao de D-236, como em D-249/D-250/D-252): o `count` sai da mesma consulta filtrada que a tabela, nunca de uma segunda contagem. Estado fora da lista fechada cai em "todos" e NAO vai ao banco -- zero linhas seria indistinguivel de filtro legitimo sem resultado (D-242).
+
+---
+
+**O DESVIO QUE ESTA FATIA REGISTRA SEM FECHAR**
+
+> **Superficie:** `/notas-fiscais/[id]` · **Figma:** o brief `speed-bikers-design.md` secao 25 ("NF-e / ENTRADA") desenha a tela de CONFERENCIA, com fluxo em seis passos e quatro estados por item -- `VINCULADO`, `SUGESTAO`, `SEM VINCULO`, `CONFLITO` · **V3 real:** `document_items` tem `sku_id` anulavel e mais nada; ha dois estados possiveis, vinculado e sem vinculo · **Decisao:** a tela de conferencia NAO entrou nesta fatia, e quando entrar so podera mostrar os dois estados que existem · **Motivo:** dado inexistente -- `SUGESTAO` exigiria um mecanismo de candidato por item de nota (existe para anuncio, em `link_candidates`, nao para NF-e) e `CONFLITO` exigiria deteccao que ninguem escreveu. Pinta-los com o que ha seria inventar dois estados.
+
+Fica dito porque o brief e a parte do design onde a NF-e foi realmente desenhada -- o frame da lista e esboco, a secao 25 nao e. Quem pegar a proxima fatia da NF-e comeca por ela, e comeca sabendo que dois dos quatro estados sao trabalho de backend antes de serem trabalho de tela.
+
+---
+
+**Legado removido:** o `<h1>` proprio e as constantes `th`/`td` inline -- a tela adotou `PageTitle`, `Panel` e `.sb-table`.
+
+**Impacto:** `apps/web/app/notas-fiscais/page.tsx`, `apps/web/lib/document-filters.ts` (novo) e `apps/web/lib/document-filters.test.ts` (novo). **Sem migration e sem RPC nova** -- a fatia inteira e frontend sobre colunas que ja existiam, e e por nao ter faixa de KPIs que ela nao precisou de funcao de resumo.
+
+## D-254 - "Valor estimado" somava custo AUSENTE como zero, e a mesma tela mostrava "—" na linha do item
+
+**Contexto:** achado ao levantar D19 (`/compras` contra `ProcessScreen type="purchases"`). O frame pede uma coluna **Valor Estimado** na LISTA, o que obrigou a perguntar de onde esse numero sai hoje -- e a resposta estava na tela de DETALHE, errada.
+
+**O defeito.** `apps/web/app/compras/[id]/page.tsx` calculava o resumo assim:
+
+```
+items.data.reduce((sum, item) => sum + item.quantity_ordered * (item.unit_cost ?? 0), 0)
+```
+
+`unit_cost` e **anulavel por desenho** (`purchase_order_items`: `unit_cost is null or unit_cost >= 0`) -- e nulo e o estado normal de um rascunho cujo custo ainda nao foi negociado. Com `?? 0`, um item de custo DESCONHECIDO entrava no total como R$ 0,00.
+
+**O que torna isso mais que um arredondamento: a tela se contradizia consigo mesma.** Trinta linhas abaixo, a mesma pagina renderiza cada item com `item.unit_cost === null ? "—" : ...`. A linha dizia "nao sei"; o total, somando a mesma celula, dizia "zero". O usuario via um **Valor estimado MENOR que o real, com a aparencia de numero fechado** -- pior que um "—", porque um numero errado nao pede conferencia.
+
+**O comentario que ja estava la mirava a metade certa do problema.** Ele explicava, corretamente, que falha de LEITURA nao pode virar "0 itens, R$ 0,00" -- e o codigo tratava esse caso. A ausencia de DADO, que e a outra metade, passou. Duas ausencias diferentes, e so uma tinha guarda.
+
+**Decisao.** O calculo saiu de dentro do componente para `apps/web/lib/purchase-order-cost.ts`, puro e testado, com tres saidas distintas onde antes havia uma:
+
+| situacao | antes | agora |
+|---|---|---|
+| todos os itens com custo | soma | soma (igual) |
+| **alguns sem custo** | **soma parcial disfarcada de total** | soma parcial **+ ressalva "N de M sem custo"** ao lado do numero |
+| **nenhum com custo** | **R$ 0,00** | **"—"** (desconhecido) |
+| pedido sem item nenhum | R$ 0,00 | R$ 0,00 -- aqui o zero e **sabido**, e continua |
+| falha de leitura | "—" | "—" (igual) |
+
+A ressalva fica **ao lado do numero**, nao no `title`, como `docs/METRICS.md` 5C.2 exige. E custo **zero** continua sendo um custo: `0` e conhecido, `null` nao -- ha teste separando os dois, porque e exatamente a distincao que o `??` apagava.
+
+**Extraido porque havia defeito, nao por antecipacao** (`docs/ARCHITECTURE.md` §1). O motivo de virar helper e que dentro do Server Component nao havia como testar: os 296 testes de `apps/web` sao de funcao pura, e nao ha harness de componente (D-195). Sem a extracao, a correcao ficaria sem guarda -- e **ha teste contra o defeito, nao so a favor do acerto** (D-197): o caso "5 x 10,50 + 3 x null" afirma **52,50 e ressalva**, nunca 52,50 calado.
+
+**Por que a soma continua em JavaScript, com `AGENTS.md` mandando agregar em SQL.** A regra existe contra ler linha para somar no cliente. Aqui os itens **ja foram lidos** para renderizar a tabela logo abaixo -- somar os mesmos objetos nao acrescenta consulta nenhuma. Se um dia o total tiver de aparecer sem a tabela (e e o caso da coluna "Valor Estimado" da LISTA, em D19), ai sim ele nasce em SQL, porque ai a alternativa seria ler os itens de todos os pedidos da pagina so para somar.
+
+**Impacto:** `apps/web/lib/purchase-order-cost.ts` (novo), `apps/web/lib/purchase-order-cost.test.ts` (novo, 6 casos), `apps/web/app/compras/[id]/page.tsx` (o `Stat` local ganhou `note`). **Sem migration.**
+
+**Verificacao:** `check` **29/29** (296 testes em `apps/web`, 6 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17, `docs:check`. **Nao conferido no navegador**: o Dev tem **1 pedido de compra com 2 itens, ambos COM custo**, entao o caminho corrigido nao tem como aparecer numa captura -- e essa escassez de dado e, ela propria, um achado de D19 (registrado abaixo).
+
+## D-255 - D19: as duas colunas do frame que nao sao colunas, e o seed que se recusava a existir
+
+**Contexto:** fatia D19 -- `/compras` contra `ProcessScreen type="purchases"`, a variacao **completa** do frame (ao contrario da `nfe`, que D-253 mostrou ser esboco): cabecalho com acao "Novo Pedido", painel "Fila de Pedidos" com busca e menu de estado, e tabela de sete colunas. **Continua sem faixa de KPIs** -- o frame nao desenha cartao nenhum aqui, e a pergunta ja tinha resposta antes de comecar.
+
+---
+
+**DUAS DAS SETE COLUNAS NAO SAO COLUNAS DO BANCO**
+
+`Itens` e contagem e `Valor Estimado` e `sum(quantidade x custo)`. A segunda e uma **expressao**, nao um agregado de coluna, e os agregados do PostgREST nao a expressam. Somar no navegador exigiria ler os itens de TODOS os pedidos da pagina so para somar -- exatamente o que `AGENTS.md` proibe. Dai a RPC `get_purchase_orders`.
+
+**Page-first, pela licao de D-196.** Nenhuma das duas agregacoes filtra ou ordena: elas so aparecem na saida. A CTE `base` recorta e pagina; as duas saem por `lateral` **depois** do `limit`, so para os pedidos que a pagina devolve. Com 1 pedido no Dev isso nao se mede -- e essa e a razao de escrever assim agora: o desenho errado so aparece quando ja doi, e D-196 ja pagou essa conta em `get_stock_balances` (313.941 linhas para enriquecer 50).
+
+**`total_count` sai de `count(*) over ()` dentro do recorte filtrado, antes da paginacao.** A tela lia `.limit(100)` e o rodape dizia `{data.length} pedido(s)` -- com 100 pedidos ou mais, isso **AFIRMAVA como total o tamanho da pagina**. Nao e "faltava informacao": e um numero errado na tela, classe de D-131. (E o `(s)` era a flexao que `summarizePagedWindow` existe para resolver -- o mesmo defeito que a auditoria A1 achou em `/anuncios`.)
+
+---
+
+**O VALOR ESTIMADO TEM TRES SAIDAS, E ELAS VIERAM DE D-254**
+
+`unit_cost` e anulavel por desenho: custo nao preenchido e o estado normal de um rascunho antes da negociacao. Entao:
+
+| situacao | `estimated_value` | por que |
+|---|---|---|
+| pedido sem item | **0** | zero **sabido** |
+| itens, nenhum com custo | **NULL** -> a tela mostra "—" | desconhecido, nunca "R$ 0,00" |
+| itens, alguns com custo | soma parcial + `items_missing_cost` > 0 | mostra o que sabe, e **diz** quanto nao sabe |
+
+`sum()` ja ignora NULL, entao a soma parcial sai de graca; o `case` existe para separar o zero SABIDO (sem item) do zero FALSO (itens sem custo). **As duas saidas de zero da tela significam coisas diferentes, e o seed carrega as duas** para que a diferenca fique visivel lado a lado.
+
+**Ha DUAS implementacoes desta definicao, e e deliberado.** Esta, em SQL, para a LISTA (onde os itens nao sao lidos); e `apps/web/lib/purchase-order-cost.ts`, em TypeScript, para o DETALHE (onde ja foram lidos para a tabela, e uma segunda consulta seria desperdicio). Nao e o "segundo dono do mesmo numero" de D-224 -- e a MESMA regra escrita duas vezes porque os contextos tem custos diferentes. **Conferidas uma contra a outra, caso a caso, contra o banco de verdade:**
+
+| caso | SQL | TypeScript |
+|---|---|---|
+| 5 x 10,50 + 3 x null | 52,5 / falta 1 | 52,5 / falta 1 |
+| so nulos | **null** | **null** |
+| custo zero | 0 / falta 0 | 0 / falta 0 |
+| sem item | 0 / falta 0 | 0 / falta 0 |
+
+Quatro de quatro. Mudar uma sem a outra e o defeito a vigiar, e ha teste dos dois lados.
+
+---
+
+**CINCO ESTADOS, NAO OS SETE DO BRIEF -- E QUEM RECUSA E O ESQUEMA**
+
+O brief secao 23 lista sete status (inclui "Em transito" e "Recebido parcialmente") e o frame desenha um badge "Recebimento Parcial". A `check` constraint de `purchase_orders` aceita `DRAFT/APPROVED/ORDERED/RECEIVED/CANCELLED` e nada mais. **Recebimento parcial exigiria quantidade RECEBIDA por item**, que `purchase_order_items` nao tem -- nao e lacuna de tela, e trabalho de dominio que ninguem fez.
+
+Estado fora da lista fechada nao vai ao banco: quem valida e o TypeScript, pelo motivo de D-242 -- ir e voltar vazio seria indistinguivel de filtro legitimo sem resultado. Ha teste dos dois lados (o TS recusa `RECEBIDO_PARCIALMENTE`; a RPC, se perguntada, devolve zero linhas).
+
+> **Superficie:** `/compras` · **Figma:** badge "Recebimento Parcial"; brief §23 pede 7 status e a coluna "origem" · **V3 real:** 5 status por constraint; sem quantidade recebida por item · **Decisao:** mostrar os cinco que existem · **Motivo:** dado inexistente. "Origem" tem recusa propria e anterior -- `is_imported` e fiscal e contradiz a rota de compra (D-129).
+
+---
+
+**O SEED SE RECUSAVA A EXISTIR, COM JUSTIFICATIVA ESCRITA**
+
+`e2e/seed.ts` dizia: *"Pedido de compra nao precisa de seed: o formulario de `/compras/novo` aceita SKU em texto livre"*. **Era verdade, e deixou de ser.** Verdade enquanto o unico teste CRIAVA um pedido pela UI (`pedido-compra.spec.ts`); falsa quando a fatia e a LISTA -- filtro, contagem, janela e coluna de valor nao tem o que afirmar com um pedido so. Medido antes de escrever: o Dev tem **1 pedido, 2 itens, 1 fornecedor**.
+
+E a licao (d) de D-242 batendo de novo: *"tela sem seed e tela sem teste"*. O seed passou a criar um fornecedor e **cinco pedidos, cada um provando uma coisa** -- o parcial (a ressalva), o sem-custo-nenhum (o "—" em vez de zero, e sem fornecedor, provando os dois travessoes), o vazio (o zero sabido), o completo e o recebido (o filtro ter mais de um alvo, e a coluna Previsao sair do "—").
+
+**Uma coisa que o fixture ensinou:** as quatro `check` constraints de coerencia recusam pedido com estado sem carimbo (`APPROVED` sem `approved_at`, etc.). A recusa esta certa -- pedido aprovado sem data de aprovacao e historico que mente -- e o seed passou a carimbar por estado.
+
+---
+
+**Legado removido:** o `<h1>` proprio e as constantes `th`/`td` inline -- a tela adotou `PageTitle`, `Panel` e `.sb-table`.
+
+**Impacto:** `supabase/migrations/20260906140000_purchase_orders_list.sql` (novo), `apps/web/app/compras/page.tsx`, `apps/web/lib/purchase-order-filters.ts` + teste (novos), `apps/web/e2e/{constants.ts,seed.ts}`, `apps/web/e2e/compras.spec.ts` (novo), `packages/db/src/types.ts` (a mao, D-213), `packages/db/src/rls.integration.test.ts` (+6).
+
+---
+
+**VERIFICACAO -- e o que dela NAO foi feito, dito antes de alguem supor**
+
+Verde nesta maquina: `check` **29/29** (307 testes em `apps/web`, 11 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17, `docs:check`.
+
+**A migration NAO foi aplicada.** Ela vai pelo `push`, que e o caminho que o HANDOFF manda usar desde a licao de D-207 -- **nunca** pelo MCP. Ate a CI aplica-la, `get_purchase_orders` **nao existe no Dev**, e `/compras` responde erro. Isso e esperado, e e o motivo de a fatia nao poder ser chamada de "no ar" antes do CI verde.
+
+**Os seis testes de integracao e o spec de e2e NAO rodaram aqui:** o Docker Desktop nao sobe o motor Linux nesta maquina (a mesma limitacao registrada em D-195), entao nao ha Supabase local. Eles rodam no CI, que sobe o proprio.
+
+**O que FOI verificado contra banco de verdade, sem aplicar nada:** o corpo da consulta foi executado como `select` read-only no Dev (a funcao ainda nao existe la; o que rodou foi o SQL dela, inline), e as quatro saidas do valor estimado foram provadas com um conjunto sintetico -- e sao elas que batem com o TypeScript na tabela acima. **Nao substitui a suite**, mas e mais do que "compila".
+
+## D-256 - D20: a linha de apoio do frame prometia lead time por fornecedor, e isso nao existe no modelo
+
+**Contexto:** fatia D20 -- `/fornecedores` contra `ProcessScreen type="suppliers"`. A variacao **divide o corpo com a `nfe`** no export, entao herda o esboco que D-253 descreveu: cabecalho, painel "Base de Fornecedores" com "Filtros ⌄", e um paragrafo de reserva no lugar da tabela. Sem cartao desenhado, logo **sem faixa de KPIs** -- terceira tela seguida em que a resposta vem do frame, nao de uma escolha.
+
+---
+
+**O ACHADO: O SUBTITULO PROMETE TRES COISAS, E DUAS NAO SAO FATO DE FORNECEDOR**
+
+O `OpsHeader` da variacao diz, textualmente: *"Lead time, cobertura e relacionamento em uma unica visao."* Conferido contra o esquema:
+
+| o que a frase promete | onde isso vive de verdade |
+|---|---|
+| **lead time** | `replenishment_settings.lead_time_days`, escopada por **organizacao, marca (texto) ou SKU** -- nunca por `supplier_id` |
+| **cobertura** | `target_coverage_days`, na MESMA tabela e nos mesmos tres escopos |
+| relacionamento | existe: e o que foi COMPRADO (D-174) |
+
+**Nao e coluna faltando: e eixo diferente.** A politica de reposicao da casa e por MARCA (`supplier_brand`, o eixo de D-129), e `skus.supplier_id` **nao existe de proposito** -- esta escrito no comentario da propria migration de `replenishment_settings`, e D-174 mediu o limite disso ao desenhar o dashboard individual. Marca nao e fornecedor: `supplier_brand` e texto livre em `skus`, sem FK nenhuma para `suppliers`.
+
+**Decisao: o desenho fica, a promessa sai.** O Design Contract manda "manter o desenho e remover o conteudo incompativel, recompondo o bloco sem ele". A linha virou *"Cadastro e relacionamento de compra -- o que foi pedido a cada fornecedor"*: a parte verdadeira da frase original, sem as duas que a tela nao pode cumprir. **Ha teste de e2e fixando a recomposicao**, porque a regressao aqui e silenciosa -- alguem colar o texto do frame de volta e a tela volta a prometer o que nao mostra.
+
+> **Superficie:** `/fornecedores` · **Figma:** subtitulo "Lead time, cobertura e relacionamento em uma unica visao"; brief §24 pede 9 colunas (fornecedor, origem, marcas, lead time, cobertura alvo, politica de reposicao, ultimo pedido, valor comprado, status) · **V3 real:** 4 das 9 existem (fornecedor, ultimo pedido, valor comprado, status); lead time / cobertura / politica sao escopadas por marca ou SKU, "marcas" exigiria um vinculo fornecedor->SKU que nao existe (D-174), e "origem" tem recusa propria e anterior (`is_imported` e fiscal, D-129) · **Decisao:** subtitulo recomposto; a tabela mantem as colunas de cadastro que ja mostrava · **Motivo:** dado inexistente e eixo diferente.
+
+---
+
+**O DEFEITO SILENCIOSO, MENOR QUE O DE `/compras` E DA MESMA CLASSE**
+
+A tela lia `.limit(200)` e **nao dizia nada** -- sem total, sem pagina seguinte. E o irmao mais fraco do que D-255 achou em `/compras`: la havia um numero ERRADO (`{data.length} pedido(s)` afirmando o tamanho da pagina como total), aqui ha um numero AUSENTE. A classe e D-131 e a correcao e a mesma: `count: "exact"` sobre o conjunto filtrado, janela de `summarizePagedWindow`, Anterior/Proxima.
+
+**O filtro tem UMA dimensao, e e a unica que existe por fornecedor:** `is_active`. O "Filtros ⌄" do frame nao diz de que; quem decide sao os dados, e as cinco do brief §24 nao sao fato de fornecedor neste modelo. Ha teste afirmando que `marca`, `leadTime` e `origem` na URL sao **ignorados** -- um parametro que a tela nao oferece nao pode virar recorte silencioso.
+
+**O seed ganhou um SEGUNDO fornecedor, inativo.** Com um so, "Ativos" e "Inativos" devolveriam o mesmo conjunto e o filtro passaria sem provar nada -- a mesma razao pela qual `/anuncios` semeia um anuncio por estado da faixa (D-242). Ele nao recebe pedido de proposito: fornecedor sem relacionamento de compra tambem e um caso que a tela mostra.
+
+---
+
+**UM ACHADO QUE ESTA FATIA NAO FECHA, e o motivo de nao fechar**
+
+`get_supplier_overview` (D-174) carrega o **mesmo defeito que D-254 corrigiu do outro lado**:
+
+```
+coalesce(round(sum(quantity_ordered * unit_cost), 2), 0)
+```
+
+`sum()` sobre itens todos sem custo e NULO, e o `coalesce` transforma "desconhecido" em **R$ 0,00** -- provado no Dev com conjunto sintetico. Um fornecedor cujos pedidos ainda nao tem custo negociado aparece com "R$ 0,00 comprados", que se le como "comprou nada" em vez de "nao sei quanto".
+
+**Por que nao foi corrigido aqui.** A correcao e `create or replace` da funcao, e ela deve entrar JUNTO com a coluna "valor comprado" da lista -- que o brief §24 pede e esta fatia nao entregou, porque precisaria de RPC. Fazer as duas na mesma fatia mantem **uma definicao so** entre lista e detalhe, que e a licao de D-255 (as duas implementacoes conferidas caso a caso, quatro de quatro). Corrigir agora e adicionar a coluna depois criaria uma janela em que os dois lados discordam. **Fica como a proxima fatia da tela, com o defeito nomeado para ninguem "descobrir" de novo.**
+
+**Nota de escopo honesta:** o `coalesce(...,0)` esta correto para o caso "fornecedor SEM item nenhum" -- ali o zero e sabido. E so o caso "itens sem custo" que ele estraga. A funcao precisa da mesma separacao de tres saidas de D-254/D-255.
+
+---
+
+**Legado removido:** o `<h1>` proprio e as constantes `th`/`td` inline -- a tela adotou `PageTitle`, `Panel` e `.sb-table`.
+
+**Impacto:** `apps/web/app/fornecedores/page.tsx`, `apps/web/lib/supplier-filters.ts` + teste (novos), `apps/web/e2e/{constants.ts,seed.ts}`, `apps/web/e2e/fornecedores.spec.ts` (novo). **Sem migration** -- a fatia inteira e frontend sobre colunas que ja existiam.
+
+**Verificacao:** `check` **29/29** (315 testes em `apps/web`, 8 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17, `docs:check`. **O spec de e2e nao rodou aqui** (sem Docker, sem Supabase local -- limitacao de D-195); roda no CI. **Nao conferida no navegador**, pelo mesmo motivo de D18 e D19: a tela exige sessao real no Dev.
 
 ## Como adicionar nova decisao
 
