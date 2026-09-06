@@ -2912,6 +2912,135 @@ describe("get_stock_movements_summary (D-252)", () => {
   });
 });
 
+// get_purchase_orders (20260906140000, D-255) -- a fila de /compras pelo frame
+// `ProcessScreen type="purchases"`, e as TRES saidas do valor estimado.
+describe("get_purchase_orders (D-255)", () => {
+  const MARCA = "POLISTTEST";
+  let supplierId = "";
+
+  beforeAll(async () => {
+    const fornecedor = await client.query<{ id: string }>(
+      `insert into public.suppliers (organization_id, name) values ($1,$2) returning id`,
+      [ORG_SB, `${MARCA}-fornecedor`],
+    );
+    supplierId = fornecedor.rows[0]?.id ?? "";
+
+    // Quatro pedidos, um por saida possivel do valor estimado. As `check`
+    // constraints de coerencia exigem o carimbo do estado, entao `APPROVED`
+    // leva `approved_at` -- um pedido aprovado sem data de aprovacao e um
+    // historico que mente, e o banco recusa com razao.
+    const pedidos: readonly (readonly [string, string, readonly (readonly [number, number | null])[]])[] = [
+      ["parcial", "DRAFT", [[5, 10.5], [3, null]]],
+      ["sem-custo", "DRAFT", [[7, null]]],
+      ["vazio", "DRAFT", []],
+      ["recebido", "APPROVED", [[2, 100]]],
+    ];
+
+    for (const [chave, status, itens] of pedidos) {
+      const pedido = await client.query<{ id: string }>(
+        `insert into public.purchase_orders
+           (organization_id, supplier_id, status, notes, created_by, approved_at)
+         values ($1,$2::uuid,$3,$4,$5::uuid, case when $3 = 'APPROVED' then now() else null end)
+         returning id`,
+        [ORG_SB, supplierId, status, `${MARCA}:${chave}`, ADMIN_SB],
+      );
+
+      const pedidoId = pedido.rows[0]?.id ?? "";
+
+      for (const [posicao, [quantidade, custo]] of itens.entries()) {
+        await client.query(
+          `insert into public.purchase_order_items
+             (organization_id, purchase_order_id, position, sku_snapshot, quantity_ordered, unit_cost)
+           values ($1,$2::uuid,$3::int,$4,$5::numeric,$6::numeric)`,
+          [ORG_SB, pedidoId, posicao, `${MARCA}-${chave}-${String(posicao)}`, quantidade, custo],
+        );
+      }
+    }
+  });
+
+  async function pedido(chave: string) {
+    const rows = await asUser<{
+      items_count: string;
+      items_missing_cost: string;
+      estimated_value: string | null;
+      total_count: string;
+    }>(
+      ADMIN_SB,
+      `select * from public.get_purchase_orders('${ORG_SB}',100,0,null,'${MARCA}-fornecedor') o
+         join public.purchase_orders po on po.id = o.id
+        where po.notes = '${MARCA}:${chave}'`,
+    );
+
+    return rows[0];
+  }
+
+  it("custo ausente NAO vira zero: a soma e parcial e diz quanto falta (D-254)", async () => {
+    const linha = await pedido("parcial");
+
+    // 5 x 10,50 = 52,50. O item sem custo fica de fora da soma E aparece na
+    // contagem de faltantes -- e a ressalva na tela nasce desse par.
+    expect(Number(linha?.estimated_value)).toBe(52.5);
+    expect(Number(linha?.items_count)).toBe(2);
+    expect(Number(linha?.items_missing_cost)).toBe(1);
+  });
+
+  it("itens sem NENHUM custo devolvem NULO, nunca R$ 0,00", async () => {
+    const linha = await pedido("sem-custo");
+
+    // A guarda contra o defeito de D-254 na origem: `sum()` sobre so-nulos e
+    // nulo, e o `case` existe para nao transformar isso em zero.
+    expect(linha?.estimated_value).toBeNull();
+    expect(Number(linha?.items_missing_cost)).toBe(1);
+  });
+
+  it("pedido SEM item vale zero, e esse zero e SABIDO", async () => {
+    const linha = await pedido("vazio");
+
+    // O par do teste acima: os dois zeros da tela significam coisas
+    // diferentes, e a funcao precisa distingui-los.
+    expect(Number(linha?.estimated_value)).toBe(0);
+    expect(Number(linha?.items_count)).toBe(0);
+    expect(Number(linha?.items_missing_cost)).toBe(0);
+  });
+
+  it("total_count e o total FILTRADO, nunca o tamanho da pagina (D-131)", async () => {
+    const primeira = await asUser<{ total_count: string }>(
+      ADMIN_SB,
+      `select * from public.get_purchase_orders('${ORG_SB}',2,0,null,'${MARCA}-fornecedor')`,
+    );
+
+    // Pagina de 2 sobre 4 pedidos: duas linhas, e as duas anunciando 4.
+    expect(primeira).toHaveLength(2);
+    expect(Number(primeira[0]?.total_count)).toBe(4);
+  });
+
+  it("o filtro de estado recorta, e o estado que o banco nao tem nao existe", async () => {
+    const aprovados = await asUser<{ total_count: string }>(
+      ADMIN_SB,
+      `select * from public.get_purchase_orders('${ORG_SB}',100,0,'APPROVED','${MARCA}-fornecedor')`,
+    );
+
+    expect(aprovados).toHaveLength(1);
+
+    // "Recebido parcialmente" e "Em transito" estao no brief e no frame; a
+    // `check` constraint de purchase_orders nao os conhece. Pedir um deles a
+    // funcao devolve VAZIO -- e e por isso que quem valida a lista fechada e o
+    // TypeScript, antes de chegar aqui (licao de D-242).
+    const inexistente = await asUser(
+      ADMIN_SB,
+      `select * from public.get_purchase_orders('${ORG_SB}',100,0,'RECEBIDO_PARCIALMENTE','${MARCA}-fornecedor')`,
+    );
+
+    expect(inexistente).toHaveLength(0);
+  });
+
+  it("anon nao executa get_purchase_orders", async () => {
+    await expect(asAnon(`select * from public.get_purchase_orders('${ORG_SB}')`)).rejects.toThrow(
+      /permission denied/i,
+    );
+  });
+});
+
 describe("ledger de estoque", () => {
   // Nome fora do padrão `RLSTEST%` que o afterAll global apaga: uma vez que
   // o SKU tiver stock_movements, `on delete restrict` o torna indeletável —
