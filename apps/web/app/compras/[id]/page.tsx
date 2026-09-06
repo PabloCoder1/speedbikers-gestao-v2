@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { Shell } from "../../../components/shell";
 import { StatusPill } from "../../../components/status-pill";
 import { formatCurrency, formatDateTime } from "../../../lib/format";
+import { purchaseOrderCostNote, summarizePurchaseOrderCost } from "../../../lib/purchase-order-cost";
 import { purchaseOrderEventLabel, purchaseOrderStatusLabel } from "../../../lib/labels";
 import { createClient } from "../../../lib/supabase/server";
 import { ActionsPanel } from "./actions-panel";
@@ -36,11 +37,14 @@ const td: React.CSSProperties = {
   verticalAlign: "top",
 };
 
-function Stat({ label, value }: { label: string; value: string }): ReactNode {
+function Stat({ label, value, note }: { label: string; value: string; note?: string }): ReactNode {
   return (
     <div>
       <div style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>{label}</div>
       <div style={{ fontSize: "1.125rem", fontWeight: 600 }}>{value}</div>
+      {note !== undefined && (
+        <div style={{ fontSize: "0.6875rem", color: "var(--sb-accent-ink)" }}>{note}</div>
+      )}
     </div>
   );
 }
@@ -97,13 +101,13 @@ export default async function PedidoDeCompraPage({
 
   const info = order.data;
 
-  // `null` distinto de 0: uma falha de leitura não pode aparecer como "0
-  // itens, R$ 0,00" no topo — parece um pedido vazio de verdade em vez de
-  // um erro (a tabela abaixo já mostra o erro explícito, isso é só o resumo).
-  const totalValue =
-    items.error !== null
-      ? null
-      : items.data.reduce((sum, item) => sum + item.quantity_ordered * (item.unit_cost ?? 0), 0);
+  // Duas ausências distintas, e nenhuma delas é zero: falha de LEITURA e custo
+  // não preenchido. O porquê e os casos estão em `lib/purchase-order-cost.ts`,
+  // com teste. Somar em JavaScript aqui não é a agregação que `AGENTS.md`
+  // proíbe: os itens já foram lidos para a tabela abaixo, então não há leitura
+  // acrescentada — é a mesma linha, contada uma vez.
+  const cost = summarizePurchaseOrderCost(items.error !== null ? null : items.data);
+  const costNote = purchaseOrderCostNote(cost);
 
   return (
     <Shell>
@@ -129,7 +133,22 @@ export default async function PedidoDeCompraPage({
         <Stat label="Destino" value={info.destination_warehouse_name ?? "—"} />
         <Stat label="Previsão" value={info.expected_at === null ? "—" : formatDateTime(info.expected_at)} />
         <Stat label="Itens" value={items.error !== null ? "—" : String(items.data.length)} />
-        <Stat label="Valor estimado" value={formatCurrency(totalValue)} />
+        {/*
+          A ressalva fica AO LADO do número, nunca só no `title`
+          (`docs/METRICS.md` 5C.2): um total que soma parte dos itens precisa
+          dizer que é parcial na mesma linha em que se apresenta.
+        */}
+        {/*
+          Spread condicional, não `note={... : undefined}`:
+          `exactOptionalPropertyTypes` exige a chave de fato AUSENTE, não
+          `undefined` atribuído — o mesmo motivo já registrado em
+          `apps/web/app/notas-fiscais/actions.ts`.
+        */}
+        <Stat
+          label="Valor estimado"
+          value={formatCurrency(cost.total)}
+          {...(costNote === null ? {} : { note: costNote })}
+        />
 
         <div style={{ display: "flex", gap: "var(--sb-space-2)", marginLeft: "auto" }}>
           {info.status === "DRAFT" && (
