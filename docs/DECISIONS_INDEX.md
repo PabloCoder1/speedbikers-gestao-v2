@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **252** (D-001 a D-256).
+Decisões registradas: **253** (D-001 a D-257).
 
 ## Por domínio
 
@@ -54,7 +54,7 @@ Decisões registradas: **252** (D-001 a D-256).
 - **D-249** — D14: a faixa de KPIs do frame pedia seis numeros, e tres nao existem
 - **D-256** — D20: a linha de apoio do frame prometia lead time por fornecedor, e isso nao existe no modelo
 
-### banco/rls (25)
+### banco/rls (26)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -81,6 +81,7 @@ Decisões registradas: **252** (D-001 a D-256).
 - **D-207** — A migration que existia so no banco volta para o git
 - **D-225** — A aba Full do SKU sai sem SQL novo, e a suite cobrou duas armadilhas de ambiente
 - **D-228** — A aba Decisoes fecha as nove, e a prova do embed e a paridade das policies, nao o texto delas
+- **D-257** — A trava "so aplica migration depois da esteira verde" NAO existe: quem aplica e o Supabase, nao a CI
 
 ### estoque (21)
 

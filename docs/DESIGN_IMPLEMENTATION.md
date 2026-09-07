@@ -611,7 +611,7 @@ que ele renderiza.**
 | D16 | **Curva ABC** — três cartões de classe com soma no banco; dois filtros rápidos devolvidos ao dono deles (D-251) | ✔ |
 | D17 | **Movimentações** — KPIs que CONTAM linha; somar unidade daria milhões falsos (D-252) | ✔ |
 | D18 | **NF-e / Entradas** — `PageTitle` + `Panel` + `.sb-table`, e **sem faixa de KPIs**: o frame desta variação é um esboço, não um desenho (D-253) | ✔ |
-| D19 | **Compras** — `PageTitle` + `Panel` + `.sb-table` + RPC `get_purchase_orders`; duas colunas do frame não eram colunas, e o seed passou a existir (D-255) | ✔ *(migration pendente de CI)* |
+| D19 | **Compras** — `PageTitle` + `Panel` + `.sb-table` + RPC `get_purchase_orders`; duas colunas do frame não eram colunas, e o seed passou a existir (D-255) | ✔ |
 | D20 | **Fornecedores** — mesmo esboço da `nfe`; a linha de apoio do frame prometia lead time por fornecedor, que não existe no modelo (D-256) | ✔ |
 | D21–D30 | Vinculações, Diagnóstico, Ações, Alterações, Preços, Full, Tráfego, Atendimento, Conhecimento, Central | fila |
 | D31–D36 | Usuários, Integrações, Sincronização, Saúde, Configurações, Copiloto | fila |

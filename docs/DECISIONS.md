@@ -6139,6 +6139,17 @@ Verde nesta maquina: `check` **29/29** (307 testes em `apps/web`, 11 novos), bui
 
 **O que FOI verificado contra banco de verdade, sem aplicar nada:** o corpo da consulta foi executado como `select` read-only no Dev (a funcao ainda nao existe la; o que rodou foi o SQL dela, inline), e as quatro saidas do valor estimado foram provadas com um conjunto sintetico -- e sao elas que batem com o TypeScript na tabela acima. **Nao substitui a suite**, mas e mais do que "compila".
 
+**DESFECHO (2026-09-06, commit `4d04b55`).** A migration foi ao remoto e **pousou no Dev -- mas nao foi a CI que a aplicou** (a CI ficou VERMELHA e o job de aplicar ficou `skipped`). Quem aplicou foi a integracao GitHub do proprio Supabase; ver **D-257**, que e a decisao sobre essa descoberta. **Conferido no banco, nao no script** -- que e a regra da casa para nao confundir commit com deploy:
+
+| conferencia | resultado |
+|---|---|
+| `get_purchase_orders` em `pg_proc` | existe |
+| versao em `supabase_migrations.schema_migrations` | `20260906140000` registrada |
+| `anon` executa? | **nao** -- o guarda de D-182 segurou |
+| `authenticated` / `service_role` executam? | sim, os dois (o worker nao perdeu acesso) |
+| `prosecdef` | `false` -- `security invoker`, a RLS decide |
+| chamada real contra a organizacao | devolve a linha, com `total_count` e as duas agregacoes |
+
 ## D-256 - D20: a linha de apoio do frame prometia lead time por fornecedor, e isso nao existe no modelo
 
 **Contexto:** fatia D20 -- `/fornecedores` contra `ProcessScreen type="suppliers"`. A variacao **divide o corpo com a `nfe`** no export, entao herda o esboco que D-253 descreveu: cabecalho, painel "Base de Fornecedores" com "Filtros ⌄", e um paragrafo de reserva no lugar da tabela. Sem cartao desenhado, logo **sem faixa de KPIs** -- terceira tela seguida em que a resposta vem do frame, nao de uma escolha.
@@ -6194,6 +6205,70 @@ coalesce(round(sum(quantity_ordered * unit_cost), 2), 0)
 **Impacto:** `apps/web/app/fornecedores/page.tsx`, `apps/web/lib/supplier-filters.ts` + teste (novos), `apps/web/e2e/{constants.ts,seed.ts}`, `apps/web/e2e/fornecedores.spec.ts` (novo). **Sem migration** -- a fatia inteira e frontend sobre colunas que ja existiam.
 
 **Verificacao:** `check` **29/29** (315 testes em `apps/web`, 8 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17, `docs:check`. **O spec de e2e nao rodou aqui** (sem Docker, sem Supabase local -- limitacao de D-195); roda no CI. **Nao conferida no navegador**, pelo mesmo motivo de D18 e D19: a tela exige sessao real no Dev.
+
+## D-257 - A trava "so aplica migration depois da esteira verde" NAO existe: quem aplica e o Supabase, nao a CI
+
+**Contexto:** o push de D18-D20 (`06f5f7f`) deixou a CI **VERMELHA** -- `integration` e `e2e` falharam, os dois jobs que exercitam os testes novos daquelas fatias. Mesmo assim, a migration `20260906140000_purchase_orders_list.sql` **estava aplicada no Supabase Dev** minutos depois do push. Fui reconciliar as duas coisas e a explicacao muda uma garantia que o repositorio afirma por escrito.
+
+---
+
+**O QUE O WORKFLOW PROMETE, EM COMENTARIO PROPRIO**
+
+`.github/workflows/ci.yml`, no job `aplicar migrations no Supabase Dev`:
+
+```yaml
+# So depois da esteira verde: migration aplicada a partir de codigo que nao
+# compila e como se corrompe um ambiente.
+needs: [check, scripts, integration, e2e]
+```
+
+A trava esta escrita, e ela **funciona como escrito**: com `integration` e `e2e` vermelhos, o job ficou `skipped`. Confirmado na API do GitHub, run `34061044339`, tentativa 1, execucao unica.
+
+**E a migration entrou assim mesmo.**
+
+---
+
+**QUEM APLICOU**
+
+O projeto Supabase tem uma branch integrada ao Git:
+
+```
+name: main · is_default: true · git_branch: "v3"
+project_ref == parent_project_ref == nmgccyqquwxecqffsidr
+created_at: 2026-09-03T19:41:10Z
+```
+
+E a **integracao GitHub do proprio Supabase**, apontada para a branch `v3`, criada em 03/09/2026. Ela observa o repositorio e aplica migrations novas **no push**, sem saber que existe uma CI, quanto mais se ela esta verde.
+
+**Descartadas as alternativas, uma a uma:** (a) a CI nao aplicou -- job `skipped`; (b) os jobs `integration` e `e2e` sobem Supabase **local**, nao tocam o Dev; (c) nao houve segunda run nem re-tentativa -- a API lista uma; (d) nenhuma chamada desta sessao ao MCP foi DDL: todas foram `select`, e a ultima leitura antes do push confirmava `funcao_existe = 0` com `ultima_versao = 20260905030000`.
+
+---
+
+**POR QUE ISSO IMPORTA MAIS DO QUE PARECE**
+
+**1. A garantia que o comentario descreve nao e a garantia que existe.** Quem le o `ci.yml` conclui que codigo vermelho nao alcanca o Dev. Alcanca. O job gated e, na pratica, **redundante no caminho feliz e inutil no caminho ruim** -- ele so age quando tudo ja esta verde, que e exatamente quando a protecao nao era necessaria.
+
+**2. Isso reescreve a licao de D-207.** O HANDOFF repete desde entao: *"O caminho e o push, **nunca** o MCP"*. A frase continua certa, mas por um motivo diferente do registrado: nao e a CI que torna o push o caminho seguro -- e a integracao do Supabase que torna o push o caminho **automatico**. A diferenca aparece justamente quando a esteira quebra.
+
+**3. E a integracao e POSTERIOR a D-207** (03/09 contra 02/09). Ou seja: a lição de D-207 foi escrita num mundo em que quem aplicava era a CI, e o mundo mudou um dia depois sem que o documento fosse revisto. **Nao ha culpado; ha um documento descrevendo uma infraestrutura que deixou de existir.**
+
+---
+
+**O QUE ESTA DECISAO NAO FAZ**
+
+**Nao desfaz a migration.** Ela e aditiva (uma funcao nova, `create function`), esta conferida no banco (`anon` nao executa, `security invoker`, grants de `authenticated`/`service_role` presentes) e nao altera tabela nem dado. Reverter para "respeitar o processo" trocaria um risco teorico por uma mudanca real no Dev.
+
+**Nao escolhe a correcao**, porque sao tres caminhos com trocas diferentes e a escolha e de quem opera:
+
+| caminho | o que ganha | o que custa |
+|---|---|---|
+| desligar a integracao GitHub do Supabase e deixar so o job gated | a trava do `ci.yml` volta a ser verdade | aplicar passa a depender da esteira inteira ficar verde |
+| manter a integracao e **apagar** o job gated + o comentario | o `ci.yml` para de prometer o que nao cumpre | nenhuma trava: todo push aplica |
+| manter as duas e **reescrever o comentario** | menor mudanca | continua sem trava; so para de mentir |
+
+**O que NAO pode ficar como esta e o comentario**: um `needs:` com a frase "so depois da esteira verde" ao lado de uma integracao que ignora a esteira e a forma mais eficiente de alguem confiar numa protecao que nao existe.
+
+**Impacto:** nenhum codigo. `docs/HANDOFF.md` corrigido (dizia "aplicada pela CI", que era falso), e o desfecho de D-255 corrigido pelo mesmo motivo.
 
 ## Como adicionar nova decisao
 

@@ -63,11 +63,21 @@ async function ok(operacao: PromiseLike<{ error: { message: string } | null }>):
   }
 }
 
+/**
+ * `numeric` do Postgres chega como NUMERO em JSON, nao como string. A primeira
+ * versao destes tipos dizia `string` e cravava `"7.000"` nas assercoes -- o
+ * arquivo nunca tinha rodado contra um banco de verdade (nao havia Docker na
+ * maquina em que foi escrito), e a CI o reprovou na primeira execucao.
+ *
+ * A licao e a mesma que o proprio arquivo ja aplicava ao timestamp logo abaixo:
+ * **o formato de serializacao e assunto do PostgREST, nao deste teste.** O que
+ * o teste afirma e o VALOR.
+ */
 interface Linha {
   sku: string;
-  full_quantity: string | null;
+  full_quantity: number | null;
   last_movement_at: string | null;
-  local_quantity: string;
+  local_quantity: number;
   total_count: number;
 }
 
@@ -80,7 +90,10 @@ async function balancos(limite: number, offset: number): Promise<Linha[]> {
 
   if (error !== null) throw new Error(error.message);
 
-  return data as unknown as Linha[];
+  // Sem cast: com `full_quantity`/`local_quantity` tipados como numero, `Linha`
+  // passou a BATER com o tipo gerado da RPC. O `as unknown as` que estava aqui
+  // era consequencia do tipo errado, nao necessidade.
+  return data;
 }
 
 const idPorSku = new Map<string, string>();
@@ -243,7 +256,7 @@ describe("get_stock_balances page-first (D-196)", () => {
 
     // 3 (conta A) + 4 (conta B). O 999 é da mesma dupla conta+bucket numa
     // captura anterior: se entrasse, o número seria 1.006 ou 1.003.
-    expect(sku01?.full_quantity).toBe("7.000");
+    expect(Number(sku01?.full_quantity)).toBe(7);
   });
 
   it("pega o MAIOR occurred_at, não o primeiro que o índice devolver", async () => {
@@ -270,7 +283,13 @@ describe("get_stock_balances page-first (D-196)", () => {
     // O Full de 55 pertence ao SKU 08 e a nenhum outro — é este o teste que
     // falha se a lateral for aplicada sobre a janela errada.
     for (const linha of segunda) {
-      expect(linha.full_quantity).toBe(linha.sku === nomeDoSku(8) ? "55.000" : null);
+      if (linha.sku === nomeDoSku(8)) {
+        expect(Number(linha.full_quantity)).toBe(55);
+      } else {
+        // Sem snapshot recente o Full e NULO, nunca 0 (D-067) -- e preservar
+        // essa distincao e justamente o que a lateral pode quebrar.
+        expect(linha.full_quantity).toBeNull();
+      }
     }
 
     // E o último movimento acompanha o SKU, não a posição na página.
@@ -298,7 +317,7 @@ describe("get_stock_balances page-first (D-196)", () => {
 
   it("a página inteira concorda com a soma linha a linha", async () => {
     const todas = await balancos(TOTAL_SKUS, 0);
-    const soma = todas.reduce((acc, l) => acc + Number(l.full_quantity ?? 0), 0);
+    const soma = todas.reduce((acc, l) => acc + (l.full_quantity ?? 0), 0);
 
     expect(todas).toHaveLength(TOTAL_SKUS);
     expect(soma).toBe(7 + 55);

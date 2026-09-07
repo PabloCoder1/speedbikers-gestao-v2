@@ -74,8 +74,17 @@ test("/compras: a fila mostra o frame, e o valor estimado diz o que não sabe", 
 test("/compras: o filtro de estado recorta, e são os cinco do banco", async ({ page }) => {
   await login(page, "/compras");
 
+  /*
+    O `FilterMenu` é `<details>`/`<summary>` nativo, e o painel fica FECHADO —
+    as opções não são clicáveis antes de abrir o menu. É o padrão que
+    `produtos.spec` e `vendas.spec` já usam; clicar direto no link falha por
+    elemento invisível.
+  */
+  const menuEstado = page.locator("details.sb-menu", { hasText: "Estado" });
+  await menuEstado.locator("summary").click();
+
   // "Recebido" tem exatamente um pedido no fixture, e é o único com previsão.
-  await page.getByRole("link", { name: "Recebido", exact: true }).click();
+  await menuEstado.getByRole("link", { name: "Recebido", exact: true }).click();
 
   await expect(page).toHaveURL(/\/compras\?estado=RECEIVED/);
 
@@ -90,6 +99,11 @@ test("/compras: o filtro de estado recorta, e são os cinco do banco", async ({ 
     zero linhas seria indistinguível de um filtro legítimo sem resultado.
   */
   await page.goto("/compras?estado=RECEBIDO_PARCIALMENTE");
+
+  // O recorte cai em "todos": a tabela volta cheia e o menu volta a dizer
+  // "Estado" (o rótulo do não-filtrado), em vez de nomear um estado que não
+  // existe. Afirmado pelo texto do `<summary>`, e não por `role: button` --
+  // o mapeamento de <summary> para role é detalhe do navegador.
   await expect(page.locator("tbody tr").first()).toBeVisible();
-  await expect(page.getByRole("button", { name: /^Estado/ })).toBeVisible();
+  await expect(page.locator("details.sb-menu summary").filter({ hasText: "Estado" })).toBeVisible();
 });

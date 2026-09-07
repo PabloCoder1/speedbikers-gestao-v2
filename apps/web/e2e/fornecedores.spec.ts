@@ -40,19 +40,25 @@ test("/fornecedores: o frame, a janela declarada e o filtro de estado", async ({
   await expect(page.getByRole("heading", { name: "Base de Fornecedores", level: 2 })).toBeVisible();
   await expect(page.getByText(/\d+ fornecedores?\.|Mostrando \d+ a \d+ de \d+/)).toBeVisible();
 
+  /*
+    `exact: true` NAO e detalhe: `getByRole` casa o nome por SUBSTRING, e
+    "Fornecedor E2E" acha tambem "Fornecedor E2E Inativo" -- duas linhas, e o
+    strict mode do Playwright reprova. O nome do segundo fixture conter o do
+    primeiro e proposital (eles sao par), entao a exatidao mora aqui.
+  */
   // Os dois do seed aparecem quando o recorte é "todos".
-  await expect(page.getByRole("link", { name: E2E_SUPPLIER.name })).toBeVisible();
-  await expect(page.getByRole("link", { name: E2E_SUPPLIER_INATIVO.name })).toBeVisible();
+  await expect(page.getByRole("link", { name: E2E_SUPPLIER.name, exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: E2E_SUPPLIER_INATIVO.name, exact: true })).toBeVisible();
 });
 
 test("/fornecedores: Ativos e Inativos recortam conjuntos diferentes", async ({ page }) => {
   await login(page, "/fornecedores?estado=inativos");
 
-  await expect(page.getByRole("link", { name: E2E_SUPPLIER_INATIVO.name })).toBeVisible();
-  await expect(page.getByRole("link", { name: E2E_SUPPLIER.name })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: E2E_SUPPLIER_INATIVO.name, exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: E2E_SUPPLIER.name, exact: true })).toHaveCount(0);
 
   await page.goto("/fornecedores?estado=ativos");
 
-  await expect(page.getByRole("link", { name: E2E_SUPPLIER.name })).toBeVisible();
-  await expect(page.getByRole("link", { name: E2E_SUPPLIER_INATIVO.name })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: E2E_SUPPLIER.name, exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: E2E_SUPPLIER_INATIVO.name, exact: true })).toHaveCount(0);
 });
