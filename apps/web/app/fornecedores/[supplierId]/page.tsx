@@ -185,10 +185,21 @@ export default async function FornecedorPage({
         </div>
         <div style={statBox}>
           <div style={statLabel}>Comprado</div>
+          {/*
+            `formatCurrency(null)` é "—", e desde D-258 o NULO chega de
+            verdade: `valor_pedido` deixou de usar `coalesce(sum, 0)`, que
+            transformava custo DESCONHECIDO em R$ 0,00 — lido como "comprou
+            nada" em vez de "não sei quanto".
+          */}
           <div style={statValue}>{formatCurrency(overview.valor_pedido)}</div>
           <div style={{ fontSize: "0.6875rem", color: "var(--sb-muted-ink)" }}>
             {formatCount(overview.unidades_pedidas)} unidade(s), sem os cancelados
           </div>
+          {overview.itens_sem_custo > 0 && (
+            <div style={{ fontSize: "0.6875rem", color: "var(--sb-accent-ink)" }}>
+              {formatCount(overview.itens_sem_custo)} item(ns) sem custo — o valor é parcial
+            </div>
+          )}
         </div>
         <div style={statBox}>
           <div style={statLabel}>Cancelado</div>
@@ -198,6 +209,11 @@ export default async function FornecedorPage({
           <div style={{ fontSize: "0.6875rem", color: "var(--sb-muted-ink)" }}>
             {formatCount(overview.orders_cancelled)} pedido(s), {formatCount(overview.unidades_canceladas)} unidade(s)
           </div>
+          {overview.itens_cancelados_sem_custo > 0 && (
+            <div style={{ fontSize: "0.6875rem", color: "var(--sb-accent-ink)" }}>
+              {formatCount(overview.itens_cancelados_sem_custo)} item(ns) sem custo
+            </div>
+          )}
         </div>
         <div style={statBox}>
           <div style={statLabel}>SKUs comprados</div>

@@ -613,6 +613,7 @@ que ele renderiza.**
 | D18 | **NF-e / Entradas** — `PageTitle` + `Panel` + `.sb-table`, e **sem faixa de KPIs**: o frame desta variação é um esboço, não um desenho (D-253) | ✔ |
 | D19 | **Compras** — `PageTitle` + `Panel` + `.sb-table` + RPC `get_purchase_orders`; duas colunas do frame não eram colunas, e o seed passou a existir (D-255) | ✔ |
 | D20 | **Fornecedores** — mesmo esboço da `nfe`; a linha de apoio do frame prometia lead time por fornecedor, que não existe no modelo (D-256) | ✔ |
+| D20b | **Fornecedores, 2ª metade** — "último pedido" e "valor comprado" pela RPC `get_suppliers`, e o `coalesce(sum,0)` que eu reintroduzi na função criada para tirá-lo (D-258) | ✔ |
 | D21–D30 | Vinculações, Diagnóstico, Ações, Alterações, Preços, Full, Tráfego, Atendimento, Conhecimento, Central | fila |
 | D31–D36 | Usuários, Integrações, Sincronização, Saúde, Configurações, Copiloto | fila |
 | D37 | Passe visual global | fila |
@@ -691,71 +692,68 @@ listou. O que resta nelas são P3 de acabamento, registrados na tabela acima
 (legenda do gráfico, altura do SVG, tom de lead time na cobertura) — nenhum
 muda composição, e todos cabem no passe visual global (D37).
 
-O que resta é a fila **D13 em diante**: 24 superfícies ainda não migradas.## Última fatia concluída
+O que resta é a fila **D21 em diante**: 21 superfícies ainda não migradas.
+## Última fatia concluída
 
-**D20 — Fornecedores (`/fornecedores`), pelo frame `ProcessScreen type="suppliers"`.**
-A variação divide o corpo com a `nfe`, então herda o esboço de D-253 — e é a
-**terceira tela seguida sem faixa de KPIs**, porque o frame não desenha cartão.
+**Fornecedores, segunda metade (D-258)** — as duas dívidas que D20 deixou
+nomeadas, fechadas na **mesma fatia** de propósito: a coluna "valor comprado" da
+lista e o `coalesce(sum, 0)` de `get_supplier_overview`. Separá-las abriria uma
+janela em que lista e detalhe respondem diferente para a mesma pergunta (D-224).
 
-**O achado é o subtítulo do próprio frame.** Ele diz *"Lead time, cobertura e
-relacionamento em uma única visão"* — e duas das três não são fato de
-fornecedor: `replenishment_settings` é escopada por organização, **marca
-(texto)** ou SKU, nunca por `supplier_id`, e `skus.supplier_id` **não existe de
-propósito** (está escrito na migration, e D-174 mediu o limite disso). Não é
-coluna faltando, é **eixo diferente**: a política da casa é por marca.
+**O achado foi meu próprio erro, e é o mais instrutivo da sessão.** A função
+NOVA nasceu com `coalesce(p.valor_pedido, 0)` no select externo — posto para o
+caso "fornecedor sem pedido" — e ele **engolia o NULO legítimo** de "tem itens,
+nenhum com custo". A migration que existe para tirar o `coalesce` do detalhe
+nasceu com o mesmo `coalesce` na lista. E ele nem era necessário: a lateral é
+agregada sem `group by`, então nunca devolve nulo.
 
-Pelo Design Contract, o desenho fica e a promessa sai. A linha virou *"Cadastro
-e relacionamento de compra — o que foi pedido a cada fornecedor"*, e **há e2e
-fixando a recomposição**: a regressão aqui é silenciosa, bastaria colar o texto
-do frame de volta.
+**Pego rodando as duas funções lado a lado contra o Postgres local, antes de
+qualquer push** — o primeiro achado que a máquina local produziu. Até aqui,
+migration e teste iam ao CI sem nunca terem rodado nesta máquina: D-255 e D-257
+foram consertos *depois* do push; este foi *antes*.
 
-**O defeito silencioso, irmão mais fraco do de `/compras`:** a tela lia
-`.limit(200)` e não dizia nada. Em `/compras` havia um número *errado*; aqui um
-número *ausente*. Mesma classe (D-131), mesma correção.
+| caso | lista | detalhe |
+|---|---|---|
+| 5 × 10,50 + 3 × null | 52,50 / falta 1 | 52,50 / falta 1 |
+| só nulos | **NULL** | **NULL** |
+| sem pedido | 0 | 0 |
+| só cancelado | 0 | 0, cancelado 198,00 |
 
-Das 9 colunas do brief §24, **4 existem** (fornecedor, último pedido, valor
-comprado, status). O filtro tem uma dimensão só — `is_active` —, e há teste
-afirmando que `marca`, `leadTime` e `origem` na URL são **ignorados**.
+Há teste fixando a **comparação** entre as duas, não só os casos.
 
-| achado | decisão |
-|---|---|
-| subtítulo promete lead time/cobertura por fornecedor | recomposto; e2e fixa a recomposição |
-| `.limit(200)` sem total nem página | `count` filtrado + janela declarada |
-| seed com um fornecedor só | segundo fornecedor, **inativo**, para o filtro ter dois alvos |
-| `get_supplier_overview` tem o `coalesce(sum,0)` de D-254 | **não corrigido aqui, de propósito** — ver abaixo |
+**Das nove colunas do brief §24, seis existem agora.** Continuam fora origem,
+marcas, lead time, cobertura alvo e política — nenhuma é coluna faltando, são
+eixo diferente (D-174/D-256).
 
-**Verificação:** `check` **29/29** (315 testes em `apps/web`), build **8/8**,
-`check:waterfalls` 60, `check:server-actions` 17, `docs:check`. Sem migration.
-E2E não rodou aqui (sem Docker/Supabase local, limitação de D-195); **não
-conferida no navegador**, pelo mesmo motivo de D18 e D19.
+**Verificação — desta vez local, não só na CI:** `check` **29/29**, integração
+**617/617** (6 novos), e2e **34/34**, build **8/8**, `check:waterfalls` 60,
+`check:server-actions` 17, `docs:check`. A migration foi aplicada e conferida no
+Postgres local com `db reset`; **não** foi ao Dev antes do push.
 
 ## Próxima fatia segura
 
-**A tela de Fornecedores tem uma segunda metade, e ela vem com defeito
-nomeado.** O brief §24 pede as colunas **"último pedido"** e **"valor
-comprado"**, que D20 não entregou porque precisam de RPC (agregação por
-fornecedor sobre `purchase_orders`). E `get_supplier_overview`, que já calcula
-esses números para o dashboard individual, carrega o **mesmo defeito que D-254
-corrigiu**:
+**D21 — Vinculações (`/vinculacoes`) contra `ProcessScreen type="links"`.** É a
+variação **mais completa** do frame e a primeira tela de processo com **faixa de
+KPIs desenhada** — cinco cartões (Total de Anúncios, Vinculados, Sem vínculo,
+Vendidos sem vínculo, Candidatos pendentes) e sete colunas (Anúncio, MLB,
+Variação, SKU Sistema, Estado, Vendas 30d, Ação).
 
-```
-coalesce(round(sum(quantity_ordered * unit_cost), 2), 0)
-```
+**Três coisas ditas de antemão, porque cada uma já tem regra na casa:**
 
-`sum()` sobre itens todos sem custo é NULO, e o `coalesce` transforma
-"desconhecido" em **R$ 0,00** — provado no Dev com conjunto sintético. As duas
-coisas **entram na mesma fatia de propósito**: corrigir a definição agora e
-adicionar a coluna depois criaria uma janela em que lista e detalhe discordam,
-e manter uma definição só é a lição de D-255 (as duas implementações conferidas
-caso a caso, quatro de quatro). O `coalesce` está *certo* para "fornecedor sem
-item nenhum" — ali o zero é sabido; é só o caso "itens sem custo" que ele
-estraga, e a função precisa da separação de três saídas.
+- **cada célula da faixa só existe se o predicado dela existir na consulta que
+  monta a lista**, e o link da célula tem de aplicar esse predicado (D-242).
+  "Vendidos sem vínculo" e "Candidatos pendentes" precisam ser recortes reais,
+  nunca contagens paralelas;
+- **"sem vínculo" NÃO é `sku_id is null`** (D-122). O anúncio com vínculo por
+  VARIAÇÃO tem `sku_id` nulo e não é fila de trabalho — o seed de `/anuncios` já
+  tem um caso exatamente para isso, e `anuncios.spec` o afirma;
+- a coluna **Ação** do frame ("Vincular", "Aprovar", "Desfazer") são escritas, e
+  a Central de Vinculações real já tem `resolve_link_candidate` /
+  `dismiss_link_candidate` — o que precisa conferência é quais ações o frame
+  promete contra as que a RPC oferece.
 
-Depois, pela fila: **Vinculações**, cuja variação `links` é a mais completa do
-frame — **cinco cartões com faixa** (a primeira tela de processo a ter uma) e
-sete colunas. É também a que mais promete: "Vendidos sem vínculo" e "Candidatos
-pendentes" precisam existir como recorte na consulta antes de virarem célula
-(regra de D-242), e "sem vínculo" **não é `sku_id is null`** (D-122).
+Depois, pela fila: Diagnóstico, Ações, Alterações, Preços, Full, Tráfego,
+Atendimento, Conhecimento, Central.
 
 **A tela de conferência da NF-e (`/notas-fiscais/[id]`) continua aberta** — o
 brief §25 traz o fluxo em seis passos, a tabela de sete colunas e o botão

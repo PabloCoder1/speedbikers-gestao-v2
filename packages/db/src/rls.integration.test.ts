@@ -3041,6 +3041,123 @@ describe("get_purchase_orders (D-255)", () => {
   });
 });
 
+// get_suppliers + get_supplier_overview (20260907130000, D-258) -- "valor
+// comprado" na lista, e o custo AUSENTE que deixou de virar R$ 0,00.
+describe("valor comprado por fornecedor (D-258)", () => {
+  const MARCA = "FORNVALTEST";
+  const forn: Record<string, string> = {};
+
+  beforeAll(async () => {
+    // Quatro fornecedores, um por saida possivel do valor. O "so cancelado"
+    // existe porque `valor_pedido` EXCLUI cancelados (D-174): sem ele, a
+    // exclusao passaria despercebida.
+    for (const chave of ["parcial", "sem-custo", "sem-pedido", "so-cancelado"]) {
+      const r = await client.query<{ id: string }>(
+        `insert into public.suppliers (organization_id, name) values ($1,$2) returning id`,
+        [ORG_SB, `${MARCA}-${chave}`],
+      );
+      forn[chave] = r.rows[0]?.id ?? "";
+    }
+
+    const pedidos: readonly (readonly [string, string, readonly (readonly [number, number | null])[]])[] = [
+      ["parcial", "DRAFT", [[5, 10.5], [3, null]]],
+      ["sem-custo", "DRAFT", [[7, null]]],
+      ["so-cancelado", "CANCELLED", [[2, 99]]],
+    ];
+
+    for (const [chave, status, itens] of pedidos) {
+      const po = await client.query<{ id: string }>(
+        `insert into public.purchase_orders
+           (organization_id, supplier_id, status, created_by, cancelled_at)
+         values ($1,$2::uuid,$3,$4::uuid, case when $3 = 'CANCELLED' then now() else null end)
+         returning id`,
+        [ORG_SB, forn[chave], status, ADMIN_SB],
+      );
+
+      for (const [posicao, [qtd, custo]] of itens.entries()) {
+        await client.query(
+          `insert into public.purchase_order_items
+             (organization_id, purchase_order_id, position, sku_snapshot, quantity_ordered, unit_cost)
+           values ($1,$2::uuid,$3::int,$4,$5::numeric,$6::numeric)`,
+          [ORG_SB, po.rows[0]?.id ?? "", posicao, `${MARCA}-${chave}-${String(posicao)}`, qtd, custo],
+        );
+      }
+    }
+  });
+
+  async function naLista(chave: string) {
+    const rows = await asUser<{ valor_pedido: string | null; itens_sem_custo: string; orders_total: string }>(
+      ADMIN_SB,
+      `select * from public.get_suppliers('${ORG_SB}',200,0,null) where name = '${MARCA}-${chave}'`,
+    );
+
+    return rows[0];
+  }
+
+  async function noDetalhe(chave: string) {
+    const rows = await asUser<{ valor_pedido: string | null; itens_sem_custo: string; valor_cancelado: string | null }>(
+      ADMIN_SB,
+      `select * from public.get_supplier_overview('${ORG_SB}','${forn[chave] ?? ""}')`,
+    );
+
+    return rows[0];
+  }
+
+  it("custo ausente NAO vira zero: soma parcial e a ressalva do quanto falta", async () => {
+    const lista = await naLista("parcial");
+
+    expect(Number(lista?.valor_pedido)).toBe(52.5);
+    expect(Number(lista?.itens_sem_custo)).toBe(1);
+  });
+
+  it("itens sem NENHUM custo devolvem NULO na lista, nunca R$ 0,00", async () => {
+    const lista = await naLista("sem-custo");
+
+    // A guarda contra a regressao que EU introduzi ao escrever a funcao: um
+    // `coalesce(p.valor_pedido, 0)` no select externo -- posto para o caso
+    // "sem pedido" -- engolia este nulo e reintroduzia o defeito de D-254 na
+    // lista. Foi pego rodando lista e detalhe lado a lado.
+    expect(lista?.valor_pedido).toBeNull();
+    expect(Number(lista?.itens_sem_custo)).toBe(1);
+  });
+
+  it("fornecedor sem pedido vale zero, e esse zero e SABIDO", async () => {
+    const lista = await naLista("sem-pedido");
+
+    expect(Number(lista?.valor_pedido)).toBe(0);
+    expect(Number(lista?.orders_total)).toBe(0);
+  });
+
+  it("cancelado NAO entra em valor comprado, e tem coluna propria no detalhe", async () => {
+    const lista = await naLista("so-cancelado");
+    const detalhe = await noDetalhe("so-cancelado");
+
+    // 2 x 99 = 198 existe, mas como CANCELADO -- somar afirmaria compra que
+    // nao houve (D-174/D-157).
+    expect(Number(lista?.valor_pedido)).toBe(0);
+    expect(Number(detalhe?.valor_cancelado)).toBe(198);
+  });
+
+  it("LISTA e DETALHE respondem o MESMO para os quatro casos (D-224)", async () => {
+    for (const chave of ["parcial", "sem-custo", "sem-pedido", "so-cancelado"]) {
+      const lista = await naLista(chave);
+      const detalhe = await noDetalhe(chave);
+
+      // Duas implementacoes de uma definicao so: se divergirem, o numero
+      // passou a ter dois donos.
+      expect(lista?.valor_pedido === null).toBe(detalhe?.valor_pedido === null);
+      expect(Number(lista?.valor_pedido)).toBe(Number(detalhe?.valor_pedido));
+      expect(Number(lista?.itens_sem_custo)).toBe(Number(detalhe?.itens_sem_custo));
+    }
+  });
+
+  it("anon nao executa get_suppliers", async () => {
+    await expect(asAnon(`select * from public.get_suppliers('${ORG_SB}')`)).rejects.toThrow(
+      /permission denied/i,
+    );
+  });
+});
+
 describe("ledger de estoque", () => {
   // Nome fora do padrão `RLSTEST%` que o afterAll global apaga: uma vez que
   // o SKU tiver stock_movements, `on delete restrict` o torna indeletável —

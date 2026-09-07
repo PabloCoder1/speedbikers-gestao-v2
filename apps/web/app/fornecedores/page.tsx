@@ -5,6 +5,8 @@ import { FilterMenu } from "../../components/filter-menu";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
+import { formatCount, formatCurrency, formatDateTime } from "../../lib/format";
+import { currentMembership } from "../../lib/membership";
 import { createClient } from "../../lib/supabase/server";
 import {
   PAGE_SIZE,
@@ -20,22 +22,41 @@ export const metadata = { title: "Fornecedores — Speed Bikers Gestão" };
 export const dynamic = "force-dynamic";
 
 /**
- * Fornecedores — a lista, pelo frame `ProcessScreen type="suppliers"` (D20).
+ * Fornecedores — a lista, pelo frame `ProcessScreen type="suppliers"` (D20),
+ * com "último pedido" e "valor comprado" acrescentados em D-258.
  *
  * **O frame é o MESMO esboço da `nfe`** — as duas variações dividem o corpo no
- * export, e o corpo é um parágrafo de reserva ("Lista de fornecedores carregada
- * e validada…"). Então, como em D-253: cabeçalho e painel do frame, tabela real
- * vestida de `.sb-table`, e **sem faixa de KPIs**, porque não há cartão
- * desenhado.
+ * export, e o corpo é um parágrafo de reserva. Então: cabeçalho e painel do
+ * frame, tabela real vestida de `.sb-table`, e **sem faixa de KPIs**, porque
+ * não há cartão desenhado.
  *
  * **A linha de apoio do frame promete o que o modelo não tem.** Ela diz "Lead
- * time, cobertura e relacionamento em uma única visão" — e nenhuma das três
- * primeiras existe POR FORNECEDOR: `skus.supplier_id` não existe de propósito
+ * time, cobertura e relacionamento em uma única visão" — e as duas primeiras
+ * não existem POR FORNECEDOR: `skus.supplier_id` não existe de propósito
  * (D-174) e `replenishment_settings` é escopada por organização, marca (texto)
- * ou SKU, nunca por fornecedor. Manter a frase seria a tela prometendo colunas
- * que ela não pode mostrar; o desenho fica e o conteúdo incompatível sai, que é
- * a regra do Design Contract.
+ * ou SKU. O desenho fica e o conteúdo incompatível sai, que é a regra do
+ * Design Contract.
+ *
+ * **Das nove colunas do brief §24, seis existem agora.** Fornecedor, status,
+ * último pedido e valor comprado saem de `get_suppliers`; origem, marcas, lead
+ * time, cobertura alvo e política de reposição continuam fora, cada uma com
+ * recusa registrada.
  */
+
+interface SupplierRow {
+  id: string;
+  name: string;
+  legal_name: string | null;
+  document: string | null;
+  contact_name: string | null;
+  phone: string | null;
+  is_active: boolean;
+  orders_total: number;
+  ultimo_pedido_em: string | null;
+  valor_pedido: number | null;
+  itens_sem_custo: number;
+  total_count: number;
+}
 
 const ESTADOS = [
   { chave: "todos", label: "Todos os estados" },
@@ -52,27 +73,32 @@ export default async function FornecedoresPage({
   const filters = resolveSupplierFilters(query);
   const supabase = await createClient();
 
-  const from = (filters.page - 1) * PAGE_SIZE;
+  const membership = await currentMembership(supabase);
+  const organizationId = membership.organizationId;
 
-  // Sem filtro por organização: a policy já restringe (suppliers_select_permitted).
-  //
-  // `count: "exact"` sobre o conjunto FILTRADO, antes do `range`: a tela lia
-  // `.limit(200)` e não declarava nada — nem total, nem página seguinte
-  // (D-131).
-  let consulta = supabase
-    .from("suppliers")
-    .select("id, name, legal_name, document, contact_name, phone, is_active", { count: "exact" });
-
-  if (filters.state !== "todos") {
-    consulta = consulta.eq("is_active", filters.state === "ativos");
+  if (organizationId === null) {
+    return (
+      <Shell>
+        <PageTitle
+          eyebrow="ESTOQUE / OPERAÇÃO"
+          title="Fornecedores"
+          subtitle="Cadastro e relacionamento de compra — o que foi pedido a cada fornecedor."
+        />
+        <p className="sb-empty">Sua conta não está associada a nenhuma organização.</p>
+      </Shell>
+    );
   }
 
-  const { data, error, count } = await consulta
-    .order("name")
-    .range(from, from + PAGE_SIZE - 1);
+  const { data, error } = await supabase.rpc("get_suppliers", {
+    p_organization_id: organizationId,
+    p_limit: PAGE_SIZE,
+    p_offset: (filters.page - 1) * PAGE_SIZE,
+    ...(filters.state === "todos" ? {} : { p_only_active: filters.state === "ativos" }),
+  });
 
-  const rows = data ?? [];
-  const window = summarizeSupplierWindow(filters.page, count ?? 0, rows.length);
+  const rows = (data ?? []) as unknown as SupplierRow[];
+  const totalCount = rows[0]?.total_count ?? 0;
+  const window = summarizeSupplierWindow(filters.page, totalCount, rows.length);
 
   const rotuloEstado = ESTADOS.find((e) => e.chave === filters.state)?.label ?? "Estado";
 
@@ -104,6 +130,7 @@ export default async function FornecedoresPage({
       {error === null && (
         <Panel
           title="Base de Fornecedores"
+          subtitle="Valor comprado exclui pedidos cancelados — eles têm coluna própria no dashboard do fornecedor."
           aside={
             <>
               <span style={{ fontSize: "0.6875rem", color: "var(--sb-text-soft)", whiteSpace: "nowrap" }}>
@@ -129,9 +156,7 @@ export default async function FornecedoresPage({
         >
           {rows.length === 0 && (
             <p className="sb-empty">
-              {filters.state === "todos"
-                ? "Nenhum fornecedor cadastrado ainda."
-                : window.label}
+              {filters.state === "todos" ? "Nenhum fornecedor cadastrado ainda." : window.label}
             </p>
           )}
 
@@ -141,10 +166,11 @@ export default async function FornecedoresPage({
                 <thead>
                   <tr>
                     <th>Nome</th>
-                    <th>Razão social</th>
                     <th>Documento</th>
                     <th>Contato</th>
-                    <th>Telefone</th>
+                    <th className="sb-num">Pedidos</th>
+                    <th>Último pedido</th>
+                    <th className="sb-num">Valor comprado</th>
                     <th>Estado</th>
                   </tr>
                 </thead>
@@ -157,11 +183,38 @@ export default async function FornecedoresPage({
                         <Link className="sb-entity" href={`/fornecedores/${supplier.id}`}>
                           {supplier.name}
                         </Link>
+                        {supplier.legal_name !== null && (
+                          <div style={{ color: "var(--sb-text-soft)", fontSize: "0.625rem" }}>
+                            {supplier.legal_name}
+                          </div>
+                        )}
                       </td>
-                      <td style={{ color: "var(--sb-text-soft)" }}>{supplier.legal_name ?? "—"}</td>
                       <td className="sb-mono">{supplier.document ?? "—"}</td>
-                      <td>{supplier.contact_name ?? "—"}</td>
-                      <td>{supplier.phone ?? "—"}</td>
+                      <td>{supplier.contact_name ?? supplier.phone ?? "—"}</td>
+                      <td className="sb-num">{formatCount(supplier.orders_total)}</td>
+                      {/*
+                        Sem pedido, "—" em vez de uma data inventada: a coluna
+                        fala de um fato que não aconteceu.
+                      */}
+                      <td>
+                        {supplier.ultimo_pedido_em === null
+                          ? "—"
+                          : formatDateTime(supplier.ultimo_pedido_em)}
+                      </td>
+                      {/*
+                        Custo ausente não vira zero (D-254/D-258):
+                        `valor_pedido` é NULO quando há itens e nenhum tem
+                        custo, e a ressalva aparece quando só alguns têm
+                        (`docs/METRICS.md` 5C.2).
+                      */}
+                      <td className="sb-num">
+                        {formatCurrency(supplier.valor_pedido)}
+                        {supplier.itens_sem_custo > 0 && (
+                          <div style={{ fontSize: "0.625rem", color: "var(--sb-accent-ink)" }}>
+                            {formatCount(supplier.itens_sem_custo)} item(ns) sem custo
+                          </div>
+                        )}
+                      </td>
                       <td style={{ color: supplier.is_active ? undefined : "var(--sb-text-soft)" }}>
                         {supplier.is_active ? "Ativo" : "Inativo"}
                       </td>

@@ -6270,6 +6270,65 @@ E a **integracao GitHub do proprio Supabase**, apontada para a branch `v3`, cria
 
 **Impacto:** nenhum codigo. `docs/HANDOFF.md` corrigido (dizia "aplicada pela CI", que era falso), e o desfecho de D-255 corrigido pelo mesmo motivo.
 
+## D-258 - "Valor comprado" por fornecedor, e o coalesce que eu reintroduzi na funcao que existia para tira-lo
+
+**Contexto:** segunda metade de Fornecedores. D20 (D-256) entregou a composicao da lista pelo frame e deixou **duas divid;as nomeadas**: as colunas "ultimo pedido" e "valor comprado" do brief secao 24, que exigem agregacao, e o `coalesce(round(sum(quantity_ordered * unit_cost), 2), 0)` de `get_supplier_overview` -- o mesmo defeito que D-254 corrigiu do lado do TypeScript, vivo no SQL desde D-174.
+
+**As duas entraram na MESMA fatia, e essa era a decisao de D-256.** Corrigir a definicao primeiro e adicionar a coluna depois abriria uma janela em que lista e detalhe respondem diferente para a mesma pergunta -- o "segundo dono do numero" de D-224.
+
+---
+
+**O DEFEITO ANTIGO**
+
+`sum()` sobre itens todos sem custo e NULO, e o `coalesce` o convertia em **R$ 0,00**. Um fornecedor cujos pedidos ainda nao tem custo negociado aparecia com "Comprado: R$ 0,00" -- lido como "comprou nada" em vez de "nao sei quanto". `unit_cost` e anulavel POR DESENHO: custo em aberto e o estado normal de um rascunho.
+
+**O `coalesce` nao estava todo errado**, e por isso a correcao nao foi apaga-lo: para fornecedor SEM item o zero e SABIDO. So o caso "ha itens, nenhum com custo" precisava virar nulo. As tres saidas sao as de D-254/D-255, agora em SQL nas duas funcoes, mais `itens_sem_custo` para a ressalva de `docs/METRICS.md` 5C.2.
+
+**As unidades continuam com `coalesce`**, e a assimetria e deliberada: `quantity_ordered` e NOT NULL, entao ali o zero e sempre sabido. E so o VALOR que tem ausencia possivel.
+
+---
+
+**O ACHADO DA FATIA: EU REINTRODUZI O DEFEITO NA FUNCAO NOVA**
+
+`get_suppliers` nasceu com isto no select externo:
+
+```sql
+coalesce(p.valor_pedido, 0)
+```
+
+Posto para o caso "fornecedor sem pedido" -- e ele **engolia o NULO legitimo** que a lateral produzia para "tem itens, nenhum com custo". Ou seja: a migration que existe para tirar o `coalesce` do detalhe nasceu com o mesmo `coalesce` na lista.
+
+**Pego rodando as duas funcoes lado a lado contra o Postgres LOCAL, antes de qualquer push:**
+
+| fornecedor | lista (1a versao) | detalhe |
+|---|---|---|
+| B, um item sem custo | **0** | NULL |
+
+E o `coalesce` **nem era necessario**: a lateral e agregada sem `group by`, entao devolve sempre uma linha -- `p` nunca e nulo, e o caso "sem pedido" ja cai no `count(*) = 0` de dentro.
+
+**Isto e o primeiro achado que a maquina local produziu**, e vale registrar o metodo tanto quanto o defeito: ate esta fatia, migration e teste iam para o CI sem nunca terem rodado aqui (nao havia Docker). D-255 e D-257 foram consertos depois do push; este foi conserto **antes**.
+
+Depois da correcao, as duas concordam nos quatro casos -- inclusive na ESCALA, depois que a lista tambem passou a `round(...,2)`:
+
+| caso | lista | detalhe |
+|---|---|---|
+| 5 x 10,50 + 3 x null | 52,50 / falta 1 | 52,50 / falta 1 |
+| so nulos | **NULL** / falta 1 | **NULL** / falta 1 |
+| sem pedido | 0 | 0 |
+| so cancelado | 0 | 0, cancelado 198,00 |
+
+**Ha teste fixando a comparacao**, nao so os casos: um `it` percorre os quatro e afirma que lista e detalhe devolvem o mesmo, inclusive a nulidade. E o guarda contra o numero voltar a ter dois donos.
+
+---
+
+**CANCELADO CONTINUA SEPARADO** (D-174/D-157). `valor_pedido` exclui `CANCELLED`; a lista mostra so ele, que e o que "valor comprado" quer dizer. O fixture tem um fornecedor **so com pedido cancelado** justamente para que a exclusao nao passe despercebida: 2 x 99 = 198 existe, e nao entra.
+
+**DROP + CREATE, com o que isso obriga.** `create or replace` nao muda tipo de retorno, e `itens_sem_custo` e coluna nova. A funcao caiu e nasceu -- e com ela os grants. Repetidos `revoke ... from public, anon` e o `grant` COMPLETO (incluindo `service_role`, ou o worker perderia acesso em silencio), pela licao de D-242.
+
+**Das nove colunas do brief secao 24, seis existem agora.** Faltam origem (`is_imported` e fiscal, D-129), marcas, lead time, cobertura alvo e politica de reposicao -- as quatro ultimas porque `skus.supplier_id` nao existe de proposito e `replenishment_settings` e escopada por organizacao, marca ou SKU (D-174/D-256). Nenhuma delas e coluna faltando: sao eixo diferente.
+
+**Impacto:** `supabase/migrations/20260907130000_supplier_purchase_value.sql` (novo), `apps/web/app/fornecedores/page.tsx`, `apps/web/app/fornecedores/[supplierId]/page.tsx`, `packages/db/src/types.ts` (a mao, D-213), `packages/db/src/rls.integration.test.ts` (+6).
+
 ## Como adicionar nova decisao
 
 Registrar:

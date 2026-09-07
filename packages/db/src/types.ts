@@ -4521,6 +4521,28 @@ export type Database = {
           supplier_brand: string
         }[]
       }
+      get_suppliers: {
+        Args: {
+          p_limit?: number
+          p_offset?: number
+          p_only_active?: boolean | null
+          p_organization_id: string
+        }
+        Returns: {
+          contact_name: string
+          document: string
+          id: string
+          is_active: boolean
+          itens_sem_custo: number
+          legal_name: string
+          name: string
+          orders_total: number
+          phone: string
+          total_count: number
+          ultimo_pedido_em: string
+          valor_pedido: number
+        }[]
+      }
       get_supplier_overview: {
         Args: { p_organization_id: string; p_supplier_id: string }
         Returns: {
@@ -4542,6 +4564,8 @@ export type Database = {
           orders_total: number
           phone: string | null
           primeiro_pedido_em: string | null
+          itens_cancelados_sem_custo: number
+          itens_sem_custo: number
           skus_distintos: number
           supplier_id: string
           ultimo_pedido_em: string | null
