@@ -52,6 +52,23 @@ const KIND_LABELS: Readonly<Record<string, string>> = {
   republicacao: "Republicação",
 };
 
+/**
+ * Rótulo humano de um `kind` de ação.
+ *
+ * Existe como função exportada desde D23: o painel de filtros de `/acoes`
+ * precisa nomear os tipos que vêm das FACETAS (contagens por `kind`), onde não
+ * há evidência para descrever — e a alternativa era uma segunda tabela de
+ * rótulos, que sairia de sincronia com esta na primeira mudança (D-224).
+ *
+ * **Degrada para o `kind` cru de propósito.** `actions.kind` não tem `check`
+ * constraint, então o detector pode gravar um tipo que esta tabela não conhece.
+ * Mostrar `tipo_novo` é feio; inventar "Outro" ou esconder a linha seria
+ * mentira — o operador ficaria sem saber que existe uma fila inteira ali.
+ */
+export function actionKindLabel(kind: string): string {
+  return KIND_LABELS[kind] ?? kind;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -130,7 +147,7 @@ export function describeActionEvidence(kind: string, raw: unknown): ActionEviden
   const direcao = readDirecao(raw);
 
   return {
-    kindLabel: KIND_LABELS[kind] ?? kind,
+    kindLabel: actionKindLabel(kind),
     direcaoLabel: direcao === null ? null : direcao === "queda" ? "Queda" : "Alta",
     tone: toneFor(kind, direcao),
     evidencias: readEvidencias(raw),

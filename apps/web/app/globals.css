@@ -2464,3 +2464,235 @@ table {
     display: none;
   }
 }
+
+/* ===========================================================
+   D23 — Central de Ações, pelo frame `IntelligenceScreen type="actions"`.
+
+   Primeira tela da frente com PAINEL DE FILTROS lateral: as demais põem os
+   controles na barra do cabeçalho. Medidas do export: `w-64` (16rem),
+   `gap-4` (1rem), `p-4`/`p-3`, `rounded-lg`/`rounded-md`.
+   =========================================================== */
+.sb-inbox-layout {
+  display: grid;
+  grid-template-columns: 16rem minmax(0, 1fr);
+  gap: var(--sb-space-3);
+  align-items: start;
+}
+
+/* `h-max` do frame: o painel acompanha o próprio conteúdo, não a altura da
+   fila — com 25 cartões ele ficaria com 2m de borda vazia. */
+.sb-inbox-filters {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sb-space-1);
+  padding: var(--sb-space-3);
+}
+
+.sb-inbox-filters > span {
+  margin: 0 0.5rem var(--sb-space-2);
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--sb-text-soft);
+}
+
+.sb-inbox-filters hr {
+  width: 100%;
+  margin: var(--sb-space-2) 0;
+  border: 0;
+  border-top: 1px solid var(--sb-border);
+}
+
+.sb-inbox-filter {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sb-space-2);
+  padding: var(--sb-space-2);
+  border-radius: var(--sb-radius-md);
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+  text-align: left;
+  text-decoration: none;
+}
+
+.sb-inbox-filter:hover {
+  background: var(--sb-surface-hover);
+}
+
+/* `bg-brand-dark text-white font-bold` do frame. */
+.sb-inbox-filter[aria-current="true"] {
+  background: var(--sb-primary);
+  color: var(--sb-white);
+  font-weight: 700;
+}
+
+/* A contagem NUNCA herda a cor do rótulo quando ele está ativo: em cima do
+   azul escuro, `--sb-text-soft` ficaria ilegível. */
+.sb-inbox-filter[aria-current="true"] span {
+  color: inherit;
+}
+
+/* Barra de cabeçalho da fila (`bg-surface-hover border-b p-3`). */
+.sb-inbox-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sb-space-2);
+  padding: 0.75rem;
+  background: var(--sb-surface-hover);
+  border-bottom: 1px solid var(--sb-border);
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-inbox-bar b {
+  color: var(--sb-text);
+}
+
+/* Um cartão da fila (`p-4 flex gap-4 items-start`, com `divide-y` entre eles). */
+.sb-action-card {
+  display: flex;
+  gap: var(--sb-space-3);
+  align-items: flex-start;
+  padding: var(--sb-space-3);
+  border-top: 1px solid var(--sb-table-rule);
+}
+
+.sb-action-card:first-child {
+  border-top: 0;
+}
+
+.sb-action-card:hover {
+  background: var(--sb-surface-hover);
+}
+
+.sb-action-card > div:last-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.sb-action-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--sb-space-2);
+  margin-bottom: 0.25rem;
+}
+
+.sb-action-head h3 {
+  margin: 0;
+  font-size: 0.8125rem;
+  letter-spacing: -0.01em;
+}
+
+.sb-action-head > span {
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+  white-space: nowrap;
+}
+
+/* Linha de metadados: fio à esquerda separando os grupos, como no frame
+   (`border-l border-border pl-3`), e não `gap` sozinho. */
+.sb-action-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-action-meta > .sb-divide {
+  padding-left: 0.75rem;
+  border-left: 1px solid var(--sb-border);
+}
+
+/* `text-violet font-mono bg-violet/5 px-2 py-0.5 rounded` — o chip de
+   identificador do cartão. O `.sb-mono` da tabela não serve: lá não há fundo,
+   e ele está preso ao escopo `.sb-table`. */
+.sb-action-ref {
+  padding: 0.125rem 0.5rem;
+  border-radius: var(--sb-radius-sm);
+  background: #f3f2fa;
+  font-family: var(--sb-mono);
+  font-size: 0.625rem;
+  color: var(--sb-secondary);
+}
+
+.sb-action-card p {
+  margin: 0 0 0.5rem;
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
+/* ATENÇÃO — divergência deliberada do frame.
+
+   O frame põe `opacity-0 group-hover:opacity-100` nos botões: eles só existem
+   sob o mouse. Aqui ficam SEMPRE visíveis, por três motivos medidos:
+
+   1. `opacity: 0` não tira do foco. Quem navega por teclado tabula para botões
+      invisíveis e dispara "Resolver" sem ver o que focou.
+   2. Sem ponteiro (toque) não há hover: no tablet os botões seriam
+      inalcançáveis, e esta é a tela onde a ação É o conteúdo.
+   3. Com 25 cartões, aparecer/sumir a cada passagem do mouse desloca layout o
+      tempo todo.
+
+   O frame desenha 2 botões; aqui são 5 (Assumir, Resolver, Descartar,
+   Registrar decisão, Explicar com IA) — o que reforça 3. */
+.sb-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sb-space-2);
+}
+
+@media (max-width: 60rem) {
+  .sb-inbox-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Em coluna única o painel vira faixa de chips: uma lista vertical de 7
+     filtros empurraria a fila para baixo da dobra. */
+  .sb-inbox-filters {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .sb-inbox-filters > span,
+  .sb-inbox-filters hr {
+    display: none;
+  }
+}
+
+/* TOM da ação (D-064: problema e oportunidade são o mesmo objeto com sinal
+   invertido) como FIO à esquerda, não como fundo.
+
+   A linha da tabela antiga pintava o fundo inteiro (`--sb-danger-soft`). Num
+   cartão isso brigaria com o `:hover` da fila — fundo inline vence classe, e a
+   fila perderia a resposta ao mouse justamente nos cartões que mais importam.
+   O fio diz a mesma coisa sem disputar a superfície. */
+.sb-action-card[data-tone="problema"] {
+  box-shadow: inset 0.1875rem 0 0 var(--sb-danger);
+}
+
+.sb-action-card[data-tone="oportunidade"] {
+  box-shadow: inset 0.1875rem 0 0 var(--sb-success);
+}
+
+/* Evidência e atalhos abaixo da recomendação, menores que ela. */
+.sb-action-evidence {
+  margin: 0 0 0.5rem;
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-action-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sb-space-2);
+  margin-bottom: 0.5rem;
+  font-size: 0.625rem;
+}

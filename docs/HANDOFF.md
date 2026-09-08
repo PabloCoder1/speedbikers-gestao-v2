@@ -19,7 +19,7 @@
 | **Deploy no ar** | **`0702969` — o mesmo do `HEAD`, sem atraso** (`api-00030-gqw` / `worker-00045-cwq`, 2026-09-02). Depois de 66 commits parado. Verificado contra a infraestrutura, não contra o script: `APP_COMMIT=0702969` nos dois serviços, imagem `api:0702969`, `/health` respondendo `{"commit":"0702969"}` e **zero `ERROR`** no Cloud Logging desde o boot |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | **150 locais, 150 no Dev** — `20260907160000` (D-259) aplicada e CONFERIDA no banco: função com 12 argumentos, `anon` sem acesso, `service_role` preservado. ⚠️ Quem aplica no Dev é a integração GitHub do Supabase, **não** a CI (D-257). Antes dela: **131 locais, 130 no Dev** — o expurgo (`20260903120000`) está no git e **não pousou**; a CI não o aplicou, sem drift — D-209→D-212 aplicadas pela CI em 2026-09-02 e CONFERIDAS lá (`anon` alcança 0 funções; `ml_accounts` sem UPDATE/DELETE para `authenticated`; `created_by` presente). O caminho é o push, **nunca** o MCP (lição de D-207) |
-| **Frente atual** | **Frente visual**: D18→D22 entregues, mais A3/A3b. A lição do A3b virou o guarda `check:table-styles` (D-262), que reprova a migração pela metade — e cobre **uma metade só**: a tela que nunca declarou `.sb-table` continua dependendo da captura. ⚠️ **`/cobertura` nunca foi migrada** — o doc de design afirmava que sim (D-261). **Próxima: D23 — Central de Ações** — e o "aviso" que eu tinha registrado ("0 abertas") era ERRO MEU de medição: consultei `status = 'OPEN'`, e o vocabulário real é `novo`/`em_andamento`/`resolvido`/`descartado`. São **1.307 abertas**. Trilha 8B com P0 fechado (A–H) e em P1 |
+| **Frente atual** | **Frente visual**: D18→D23 entregues, mais A3/A3b. A lição do A3b virou o guarda `check:table-styles` (D-262), que reprova a migração pela metade — e cobre **uma metade só**: a tela que nunca declarou `.sb-table` continua dependendo da captura. ⚠️ **`/cobertura` nunca foi migrada** — o doc de design afirmava que sim (D-261). **D23 achou D-131 vivo**: `/acoes` lia sem `limit` contra o `max_rows = 1000` do PostgREST e imprimia "1.000 aberto(s)" com **1.449 abertas** no Dev — escondia 449 e chamava o teto do servidor de total (D-263). **Próxima: D24 — Alterações/Preços**, e a pergunta de abertura é se o aviso "Dados Insuficientes para Análise Causal", que o próprio frame já traz escrito, é verdade aqui. Trilha 8B com P0 fechado (A–H) e em P1 |
 
 ### O que está pronto
 
@@ -128,6 +128,15 @@ Números completos e método: `docs/PERFORMANCE.md`.
   conferência produziu **476 linhas de diff** que não tinham nada a ver com a
   mudança. Para "a assinatura mudou?", a fonte é o catálogo
   (`pg_get_function_result`), não o gerador.
+- **O teto de 1000 do PostgREST, e a única tela que ainda o ignora.**
+  `max_rows = 1000` (`supabase/config.toml`). Ler uma tabela sem `limit` e
+  imprimir `rows.length` como total faz a tela publicar o **teto do servidor**
+  achando que é o total — foi o que D-263 achou em `/acoes`, com 1.449 abertas.
+  Varri as demais páginas: sobra **uma**, `/sugestoes`, que conta por `.length`
+  sem janela. Hoje é **latente, não vivo** — `feature_suggestions` tem **0
+  linhas** no Dev (medido em 2026-09-08), e uma lista de sugestões enviadas por
+  humanos não chega a mil tão cedo. Fica registrado para não ser redescoberto;
+  vira dívida real no dia em que essa tabela crescer.
 - **`n_live_tup` mente, e mentiu feio.** As estatísticas do Dev estão velhas:
   `job_runs` estimava ~6 mil e tem **271.184**; `ml_credentials` estimava 0 e
   tem **4 credenciais reais**. Para qualquer raciocínio de segurança ou de

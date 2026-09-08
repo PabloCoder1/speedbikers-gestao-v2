@@ -2,7 +2,7 @@ import { formatCurrency } from "./format";
 
 /**
  * Formatação da memória de decisões (Fase 6, D-064/D-065) — extraída de
- * `apps/web/app/acoes/action-row.tsx` em D-228, porque a aba `Decisões` do
+ * `apps/web/app/acoes/action-card.tsx` em D-228, porque a aba `Decisões` do
  * Dashboard de SKU (um Server Component) precisa do MESMO texto que a Central
  * de Ações mostra, e um módulo `"use client"` não é lugar de onde um Server
  * Component importa função. Um formato, dois lugares: se a forma do snapshot

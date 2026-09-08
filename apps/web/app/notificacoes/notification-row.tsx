@@ -11,7 +11,7 @@ import { markNotificationRead } from "./actions";
 
 /**
  * Uma notificação na Central (Fase 7, item 4) — mesmo padrão de
- * `apps/web/app/acoes/action-row.tsx`: componente cliente por linha (estado
+ * `apps/web/app/acoes/action-card.tsx`: componente cliente por linha (estado
  * local de lida/ocupado/erro), Server Action por clique, sem RPC.
  *
  * Leitura de `before`/`after`/entidade compartilhada com os toasts em tempo

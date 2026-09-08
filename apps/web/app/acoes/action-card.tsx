@@ -5,22 +5,28 @@ import { useState, type ReactNode } from "react";
 
 import Link from "next/link";
 
+import { StatusPill } from "../../components/status-pill";
 import type { ActionShortcut } from "../../lib/action-shortcuts";
 import { formatCurrency } from "../../lib/format";
 import { formatDecisionSnapshot, outcomeWindowLabel } from "../../lib/decision-format";
-import { actionStatusLabel } from "../../lib/labels";
+import { actionSeverityLabel, actionStatusLabel } from "../../lib/labels";
 import { createClient } from "../../lib/supabase/browser";
 import { claimAction, dismissAction, registerDecision, resolveAction } from "./actions";
 
 /**
- * Uma linha da Central de Ações (Fase 6, D-064) — mesmo padrão de
- * `apps/web/app/vinculacoes/candidate-row.tsx`: componente cliente por linha
- * (estado local de "ocupado"/erro), Server Action por clique.
+ * Um cartão da Central de Ações, pelo frame `IntelligenceScreen type="actions"`
+ * (D23, D-263). Era `action-row.tsx`, uma `<tr>` de oito colunas — o frame não
+ * desenha tabela aqui, e o nome do arquivo acompanhou.
  *
- * A linha NÃO conhece o formato bruto de `actions.evidence`: ela recebe a
- * visão já normalizada por `describeActionEvidence`, que é total para
- * qualquer `kind`. Antes daqui a tela lia a forma de `venda_anomala` como se
- * fosse a única existente.
+ * Continua sendo componente cliente por item (estado local de "ocupado"/erro) e
+ * Server Action por clique, como `vinculacoes/candidate-row.tsx`. **Nada de
+ * funcionalidade saiu na migração**: as cinco escritas, a explicação sob
+ * demanda e o histórico de decisões estão todos aqui. O Design Contract manda
+ * remover conteúdo incompatível com o frame, não funcionalidade que o frame
+ * simplesmente não desenhou.
+ *
+ * O cartão NÃO conhece o formato bruto de `actions.evidence`: recebe a visão já
+ * normalizada por `describeActionEvidence`, total para qualquer `kind`.
  */
 
 export interface OutcomeData {
@@ -37,10 +43,12 @@ export interface DecisionData {
   outcomes: OutcomeData[];
 }
 
-export interface ActionRowData {
+export interface ActionCardData {
   id: string;
   sku: string | null;
   title: string | null;
+  mlbId: string | null;
+  accountLabel: string | null;
   severity: string;
   confidence: string;
   estimated_impact_brl: number | null;
@@ -48,17 +56,12 @@ export interface ActionRowData {
   recommendation: string;
   status: string;
   assignee_id: string | null;
+  /** Já formatado no servidor: "há 12 min", ou a data absoluta se for velha. */
+  age: string;
   decisions: DecisionData[];
   /** Atalhos operacionais (D-154), calculados no servidor — só telas que existem. */
   shortcuts: ActionShortcut[];
 }
-
-const td: React.CSSProperties = {
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.875rem",
-  verticalAlign: "top",
-};
 
 const buttonStyle: React.CSSProperties = {
   padding: "0.25rem 0.625rem",
@@ -68,16 +71,6 @@ const buttonStyle: React.CSSProperties = {
   fontSize: "0.75rem",
   cursor: "pointer",
   whiteSpace: "nowrap",
-};
-
-/**
- * Fundo por tom, não por direção: uma ação sem direção (padrão de
- * reclamações, D-116) caía no `else` e ficava VERDE, lendo como oportunidade.
- */
-const TONE_BACKGROUND: Readonly<Record<string, string | undefined>> = {
-  problema: "var(--sb-danger-soft)",
-  oportunidade: "var(--sb-success-soft)",
-  neutro: undefined,
 };
 
 function formatDate(iso: string): string {
@@ -93,7 +86,7 @@ function formatDate(iso: string): string {
  */
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
-export function ActionRow({ action, userId }: { action: ActionRowData; userId: string }): ReactNode {
+export function ActionCard({ action, userId }: { action: ActionCardData; userId: string }): ReactNode {
   const [status, setStatus] = useState(action.status);
   const [assigneeId, setAssigneeId] = useState(action.assignee_id);
   const [busy, setBusy] = useState(false);
@@ -191,63 +184,88 @@ export function ActionRow({ action, userId }: { action: ActionRowData; userId: s
     }
   }
 
+  // O identificador do frame é um chip só. A ação tem SKU **ou** MLB (no Dev,
+  // 100% das abertas têm SKU e nenhuma tem MLB), então o chip mostra o que
+  // existe e "—" quando nenhum dos dois existe — nunca um dos dois inventado.
+  const referencia = action.sku ?? action.mlbId;
+
+  const aberta = status === "novo" || status === "em_andamento";
+
   return (
-    <>
-    <tr style={{ background: TONE_BACKGROUND[action.evidence.tone] }}>
-      <td style={{ ...td, fontFamily: "ui-monospace, monospace" }}>
-        {action.sku ?? "—"}
-        {action.title !== null && (
-          <div style={{ fontFamily: "inherit", color: "var(--sb-text-soft)", fontSize: "0.75rem" }}>
-            {action.title}
-          </div>
+    <article className="sb-action-card" data-tone={action.evidence.tone}>
+      <StatusPill code={`severidade_${action.severity}`} label={actionSeverityLabel(action.severity)} />
+
+      <div>
+        <div className="sb-action-head">
+          <h3>
+            {action.evidence.kindLabel}
+            {action.evidence.direcaoLabel !== null && ` · ${action.evidence.direcaoLabel}`}
+          </h3>
+          <span>{action.age}</span>
+        </div>
+
+        <div className="sb-action-meta">
+          <span className="sb-action-ref">{referencia ?? "—"}</span>
+
+          {action.title !== null && <span>{action.title}</span>}
+
+          {/*
+            "Impacto: R$ X" do frame. Só aparece QUANDO EXISTE: 63 das abertas
+            do Dev têm `estimated_impact_brl` nulo, e impacto desconhecido não é
+            impacto zero (D-067). O frame também esconde a célula quando o valor
+            é "-", então aqui frame e regra concordam.
+          */}
+          {action.estimated_impact_brl !== null && (
+            <span className="sb-divide">
+              Impacto: <strong>{formatCurrency(action.estimated_impact_brl)}</strong>
+            </span>
+          )}
+
+          <span className="sb-divide">
+            Confiança {action.confidence === "alta" ? "alta" : "média"}
+          </span>
+
+          {/*
+            O chip de conta do frame ("Speed Bikers"). `ml_account_id` é nulo em
+            100% das abertas do Dev — a detecção de venda anômala trabalha por
+            SKU, que atravessa contas —, então na prática ele quase nunca
+            nasce. Fica porque a coluna existe e o seed prova o caminho.
+          */}
+          {action.accountLabel !== null && <span className="sb-divide">{action.accountLabel}</span>}
+
+          {!aberta && <span className="sb-divide">{actionStatusLabel(status)}</span>}
+
+          {assigneeId !== null && aberta && (
+            <span className="sb-divide">{assigneeId === userId ? "Atribuída a você" : "Atribuída"}</span>
+          )}
+        </div>
+
+        <p>{action.recommendation}</p>
+
+        {action.evidence.evidencias.length > 0 && (
+          <p className="sb-action-evidence">
+            {action.evidence.evidencias.map((item) => item.descricao).join(" ")}
+            {action.evidence.causas.length > 0 &&
+              ` ${action.evidence.causas.map((cause) => cause.descricao).join(" ")}`}
+          </p>
         )}
-      </td>
-      <td style={td}>
-        {action.evidence.kindLabel}
-        {action.evidence.direcaoLabel !== null && (
-          <div style={{ color: "var(--sb-text-soft)", fontSize: "0.75rem" }}>{action.evidence.direcaoLabel}</div>
-        )}
-      </td>
-      <td style={td}>{action.confidence === "alta" ? "Alta" : "Média"}</td>
-      <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-        {formatCurrency(action.estimated_impact_brl)}
-      </td>
-      <td style={td}>
-        {action.evidence.evidencias.map((item) => item.descricao).join(" ")}
-        {action.evidence.causas.length > 0 && (
-          <div style={{ marginTop: "0.25rem", color: "var(--sb-text-soft)" }}>
-            {action.evidence.causas.map((cause) => cause.descricao).join(" ")}
-          </div>
-        )}
-      </td>
-      <td style={td}>
-        {action.recommendation}
+
         {/*
           Atalhos operacionais (D-154): a recomendação deixou de mandar o
-          operador procurar telas — os caminhos que EXISTEM estão a um
-          clique, embaixo dela.
+          operador procurar telas — os caminhos que EXISTEM estão a um clique.
         */}
         {action.shortcuts.length > 0 && (
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.375rem" }}>
+          <div className="sb-action-links">
             {action.shortcuts.map((shortcut) => (
-              <Link key={shortcut.href} href={shortcut.href} style={{ fontSize: "0.75rem", whiteSpace: "nowrap" }}>
+              <Link key={shortcut.href} href={shortcut.href}>
                 {shortcut.label} →
               </Link>
             ))}
           </div>
         )}
-      </td>
-      <td style={td}>
-        {actionStatusLabel(status)}
-        {assigneeId !== null && (
-          <div style={{ color: "var(--sb-text-soft)", fontSize: "0.75rem" }}>
-            {assigneeId === userId ? "Atribuído a você" : "Atribuído"}
-          </div>
-        )}
-      </td>
-      <td style={td}>
-        {(status === "novo" || status === "em_andamento") && (
-          <div style={{ display: "flex", gap: "0.375rem", flexWrap: "wrap" }}>
+
+        {aberta && (
+          <div className="sb-action-buttons">
             {status === "novo" && (
               <button
                 type="button"
@@ -291,8 +309,8 @@ export function ActionRow({ action, userId }: { action: ActionRowData; userId: s
               Registrar decisão
             </button>
             {/*
-              IA explicando a AÇÃO (D-155, último item da Fase 6B) — nunca no
-              carregamento da página (docs/COPILOT.md secao 9), só em clique.
+              IA explicando a AÇÃO (D-155) — nunca no carregamento da página
+              (docs/COPILOT.md secao 9), só em clique.
             */}
             <button
               type="button"
@@ -306,54 +324,66 @@ export function ActionRow({ action, userId }: { action: ActionRowData; userId: s
             </button>
           </div>
         )}
+
         {explainError !== null && (
           <p role="alert" style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", color: "var(--sb-danger)" }}>
             {explainError}
           </p>
         )}
+
         {error !== null && (
           <p role="alert" style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", color: "var(--sb-danger)" }}>
             {error}
           </p>
         )}
-      </td>
-    </tr>
 
-    {explanation !== null && (
-      <tr style={{ background: "var(--sb-bg-soft)" }}>
-        <td colSpan={8} style={{ ...td, fontSize: "0.8125rem" }}>
-          <strong>Explicação (IA):</strong>
-          {/* As cinco seções chegam separadas por quebra de linha — pre-line as preserva. */}
-          <div style={{ whiteSpace: "pre-line", marginTop: "0.25rem", fontStyle: "italic" }}>{explanation}</div>
-        </td>
-      </tr>
-    )}
-
-    {action.decisions.length > 0 && (
-      <tr style={{ background: "var(--sb-bg-soft)" }}>
-        <td colSpan={8} style={{ ...td, fontSize: "0.8125rem" }}>
-          {action.decisions.map((decision) => (
-            <div key={decision.id} style={{ marginBottom: "0.5rem" }}>
-              <div>
-                <strong>Decisão ({formatDate(decision.createdAt)}):</strong> {decision.decision}
-              </div>
-              <div style={{ color: "var(--sb-text-soft)", marginTop: "0.125rem" }}>
-                No momento da decisão — {formatDecisionSnapshot(decision.baselineSnapshot)}
-              </div>
-              {decision.outcomes.map((outcome) => (
-                <div
-                  key={outcome.windowDays}
-                  style={{ color: "var(--sb-text-soft)", marginTop: "0.125rem" }}
-                >
-                  {outcomeWindowLabel(outcome.windowDays)} ({formatDate(outcome.measuredAt)}) —{" "}
-                  {formatDecisionSnapshot(outcome.outcomeSnapshot)}
-                </div>
-              ))}
+        {explanation !== null && (
+          <div
+            style={{
+              marginTop: "0.5rem",
+              padding: "0.625rem",
+              borderRadius: "var(--sb-radius-md)",
+              background: "var(--sb-bg-soft)",
+              fontSize: "0.6875rem",
+            }}
+          >
+            <strong>Explicação (IA):</strong>
+            {/* As cinco seções chegam separadas por quebra de linha — pre-line as preserva. */}
+            <div style={{ whiteSpace: "pre-line", marginTop: "0.25rem", fontStyle: "italic" }}>
+              {explanation}
             </div>
-          ))}
-        </td>
-      </tr>
-    )}
-    </>
+          </div>
+        )}
+
+        {action.decisions.length > 0 && (
+          <div
+            style={{
+              marginTop: "0.5rem",
+              padding: "0.625rem",
+              borderRadius: "var(--sb-radius-md)",
+              background: "var(--sb-bg-soft)",
+              fontSize: "0.6875rem",
+            }}
+          >
+            {action.decisions.map((decision) => (
+              <div key={decision.id} style={{ marginBottom: "0.5rem" }}>
+                <div>
+                  <strong>Decisão ({formatDate(decision.createdAt)}):</strong> {decision.decision}
+                </div>
+                <div style={{ color: "var(--sb-text-soft)", marginTop: "0.125rem" }}>
+                  No momento da decisão — {formatDecisionSnapshot(decision.baselineSnapshot)}
+                </div>
+                {decision.outcomes.map((outcome) => (
+                  <div key={outcome.windowDays} style={{ color: "var(--sb-text-soft)", marginTop: "0.125rem" }}>
+                    {outcomeWindowLabel(outcome.windowDays)} ({formatDate(outcome.measuredAt)}) —{" "}
+                    {formatDecisionSnapshot(outcome.outcomeSnapshot)}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </article>
   );
 }

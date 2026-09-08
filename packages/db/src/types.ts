@@ -4115,6 +4115,41 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      // ACRESCIMO MANUAL (D-263): a funcao existe na migration
+      // `20260908120000_actions_queue.sql` e no Postgres LOCAL, mas ainda nao
+      // no Dev -- e o gerador do MCP le o Dev. Sem esta entrada, `/acoes` nao
+      // compila. Quando a migration chegar ao Dev e os tipos forem regerados,
+      // ela passa a sair sozinha e este comentario pode cair.
+      get_actions_queue: {
+        Args: {
+          p_kind?: string | null
+          p_limit?: number
+          p_offset?: number
+          p_organization_id: string
+          p_severity?: string | null
+        }
+        Returns: {
+          account_label: string | null
+          assignee_id: string | null
+          confidence: string
+          created_at: string
+          estimated_impact_brl: number | null
+          evidence: Json
+          facet_kind: Json
+          facet_severity: Json
+          id: string
+          kind: string
+          mlb_id: string | null
+          open_total: number
+          recommendation: string
+          severity: string
+          sku: string | null
+          sku_id: string | null
+          sku_title: string | null
+          status: string
+          total_count: number
+        }[]
+      }
       get_ai_monthly_cost_usd: {
         Args: { p_from: string; p_organization_id: string; p_to: string }
         Returns: number

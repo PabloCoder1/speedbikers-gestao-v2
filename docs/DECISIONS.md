@@ -6535,6 +6535,96 @@ A linha D15 da tabela de status dizia "**Cobertura/Reposicao** -- o frame e UMA 
 
 **Impacto:** enquanto restarem ~22 telas por migrar, o modo de falhar segue disponivel, e cada migracao futura passa a ter de ser inteira ou vermelha. Duas afirmacoes falsas de D-261 tambem foram corrigidas aqui, medindo o que elas diziam de memoria.
 
+## D-263 - D23: a Central de Acoes pelo frame, e a tela escondia 449 acoes chamando isso de total
+
+**Contexto:** `/acoes` pelo frame `IntelligenceScreen type="actions"` -- painel de filtros a esquerda com contagens, fila em CARTOES a direita. Nao e variacao do `ProcessScreen`: e composicao propria, e a primeira tela da frente com painel lateral em vez de controles na barra do cabecalho.
+
+---
+
+**1. O ACHADO QUE NAO ERA DE DESIGN: D-131 VIVO, E EM PRODUCAO**
+
+A tela lia `actions` pelo PostgREST **sem `limit` e sem paginacao**, e imprimia "N aberto(s)" com N = `rows.length`. O `max_rows` deste projeto e **1000** (`supabase/config.toml`). Medido no Dev em 2026-09-08: **1.449 abertas**.
+
+Ou seja: ela devolvia 1.000 linhas, escondia **449** sem dizer nada, e imprimia "1.000 aberto(s)" -- um numero que nao era o total nem o da pagina, e sim o TETO DO SERVIDOR. Ninguem tinha somado 1.449 > 1.000. A fila cresce sozinha: eram **1.307** na sessao anterior (D-261), 24h antes.
+
+A migracao de composicao trocou isso pela janela declarada de `summarizePagedWindow`, a mesma que oito telas ja usam.
+
+**2. UMA RPC, E A RAZAO NAO E A PAGINACAO**
+
+`range()` + `count: 'exact'` resolveria janela e total. O que ele **nao** resolve sao as CONTAGENS do painel -- a metade esquerda do frame. Cada faceta e um `select` proprio: quatro filtros, quatro idas ao banco, e D-185 mede custo por IDA. `get_actions_queue` devolve pagina, total e facetas numa viagem.
+
+Efeito colateral bom: `action_decisions` e `action_outcomes` sao lidos por `.in(...)` sobre os ids da PAGINA. Antes essa lista chegava a **1.000 ids numa query string**.
+
+**3. A LINHA-SENTINELA, e o teste que a exigiu**
+
+Primeira versao: `base cross join facetas`. Com filtro que nao casa nada, `base` fica vazia e o `cross join` devolve **zero linhas** -- levando junto `open_total` e as facetas. O painel inteiro sumia exatamente quando o operador precisa dele para voltar a "Todas".
+
+Virou `facetas left join base on true`. `facetas` tem sempre uma linha (agregados sem `from`), entao a pagina vazia devolve UMA linha com as colunas da acao em NULL. Quem chama descarta por `id is null` (`isQueueRow`), e o contrato tem teste dos dois lados.
+
+**Foi o teste manual da funcao que pegou**, antes de qualquer TypeScript existir: `p_kind = 'nao_existe'` devolvia 0 linhas e nenhuma contagem.
+
+**4. AS FACETAS NAO SEGUEM O FILTRO ATIVO**
+
+`escopo` e o inbox inteiro e as facetas saem dele; so `total_count` segue `p_severity`/`p_kind`. Se as facetas seguissem, escolher "Alta" zeraria a contagem de "Media" -- e o painel deixaria de dizer quanto trabalho existe FORA do recorte, que e a unica coisa que ele tem para dizer.
+
+**5. O DESEMPATE E OBRIGATORIO, e sem ele a paginacao perde linha em silencio**
+
+A ordem canonica e `estimated_impact_brl desc` (ARCHITECTURE secao 16 -- nunca por contagem, nunca por data). Mas **63 das 1.449 abertas tem impacto NULL** e empatam entre si. Ordenacao nao-deterministica com `offset` faz o Postgres devolver a MESMA linha em duas paginas e nenhuma linha para outra. Sem erro, sem aviso. `created_at desc, id` fecha, e ha teste que pagina e conta ids distintos.
+
+**6. TRES RECUSAS AO FRAME, todas por medicao**
+
+| o frame pede | o sistema tem | decisao |
+|---|---|---|
+| **"Executar fila em lote"** | escritas por acao (`claimAction`/`resolveAction`/`dismissAction`) | **recusa** |
+| prioridade **"Critica"** | `check (severity in ('baixa','media','alta'))` | recusa; as tres entram |
+| **"Ordenar: Impacto Financeiro"** como MENU | ordem unica e canonica | vira FRASE |
+
+A recusa do lote nao e so "nao existe": seria escrita em massa sobre objetos **heterogeneos** -- "executar" significa coisa diferente para cada `kind`, e resolver anomalia de venda nao e responder reclamacao. A casa ja tem doutrina: a curadoria em lote de `/produtos` *so escreve depois de dizer a consequencia*. Um botao que executa 1.449 acoes sem poder enunciar o que causa e o oposto disso.
+
+**7. TRES ELEMENTOS DO CARTAO NAO TEM DADO, e dois deles ficaram mesmo assim**
+
+Medido nas 1.449 abertas: `ml_account_id` **NULL em 100%** (o chip "Speed Bikers" do frame) e `mlb_id` **NULL em 100%** (o chip `MLB440901`). A deteccao de venda anomala trabalha por SKU, que atravessa contas. Os dois ficam no codigo porque as colunas existem, o seed prova o caminho, e um deles nasce quando a acao vem do anuncio -- mas a tela nao finge: chip so aparece com valor.
+
+`severity = 'baixa'` tambem tem **zero linhas**, e ai a decisao foi a inversa: **"Baixa 0" APARECE**. O mapa de facetas sai de `jsonb_object_agg` sobre o inbox inteiro, entao chave ausente e valor SEM LINHA -- zero medido, nao desconhecido. Esconder a linha e que seria a mentira (D-250).
+
+**8. `facet_kind` e jsonb porque `kind` nao tem `check` constraint**
+
+`severity` e fechado e poderia virar tres colunas. `kind` e texto livre: dois valores hoje (`venda_anomala` 1.402, `reclamacoes_recorrentes` 47) e o detector pode gravar um terceiro sem tocar no banco. Colunas fixas exigiriam migration por tipo novo e -- pior -- fariam o tipo desconhecido **sumir do painel sem aviso**. A lista do painel vem do DADO.
+
+**9. DUAS DIVERGENCIAS DELIBERADAS DO FRAME, ambas de acessibilidade e forma**
+
+**Os botoes ficam sempre visiveis.** O frame usa `opacity-0 group-hover:opacity-100`. Tres motivos: `opacity: 0` **nao tira do foco** (quem navega por teclado tabula para botoes invisiveis e dispara "Resolver" sem ver o que focou); sem ponteiro nao ha hover, e no tablet eles seriam inalcancaveis numa tela onde a acao E o conteudo; e com 25 cartoes aparecer/sumir desloca layout o tempo todo. O frame desenha 2 botoes, aqui sao 5.
+
+**O tom virou FIO a esquerda, nao fundo.** A linha da tabela antiga pintava o fundo inteiro (`--sb-danger-soft`). Num cartao isso brigaria com o `:hover` da fila -- estilo inline vence classe -- e a fila perderia a resposta ao mouse justamente nos cartoes que mais importam. O sinal de D-064 (problema/oportunidade) continua, sem disputar a superficie.
+
+**10. DOIS VOCABULARIOS COM O MESMO NOME, e um deles ia entrar mudo**
+
+`severityLabel` **ja existia** em `lib/labels.ts` -- e e de `domain_events.severity` (`informativo`/`importante`/`critico`). `actions.severity` e `baixa`/`media`/`alta`. Passar uma pela outra nao quebra: devolve o codigo cru na tela, que e o modo de falhar mais silencioso que existe. Virou `actionSeverityLabel`, com a armadilha escrita no doc da funcao. Foi o `tsc` que pegou, por duplicidade de identificador -- eu escrevi a segunda sem procurar a primeira.
+
+Pelo mesmo motivo os codigos de tom sao **prefixados** (`severidade_alta`): `"ALTA"` cru ja existe em `statusTone` como prioridade do Atendimento, onde e `warn` porque "CRITICA" ocupa o vermelho; e `"alta"` e tambem valor de `confidence`, onde vermelho seria o oposto do significado.
+
+E `actionKindLabel` saiu de dentro de `describeActionEvidence` para `@sb/domain`: o painel precisa nomear tipos vindos das FACETAS, onde nao ha evidencia para descrever, e a alternativa era uma segunda tabela de rotulos que sairia de sincronia na primeira mudanca (D-224).
+
+**11. O SEED, e por que a severidade da fixture nao e indiferente**
+
+Faltava a segunda especie de acao: com um `kind` so, o filtro de tipo nao recortaria nada. `E2E_ACAO_RECLAMACAO` entrou com `severity: 'media'` **de proposito**. `alta` quebraria a Home, que afirma o texto EXATO "1 acao de severidade alta aberta"; e deixar `baixa` em zero e o que permite provar na tela que "Baixa 0" aparece. Vai no SKU da anomalia, nao no principal, porque `/skus/[skuId]` conta acoes abertas do SKU.
+
+Desta vez a regra de D-260 foi aplicada ANTES: medi quem le `actions` (quatro telas) e o que os specs afirmam, e escolhi a fixture para nao deslocar nenhum. A suite inteira confirmou.
+
+**12. QUATRO ERROS MEUS**
+
+(a) **A mesma frase duas vezes.** A barra dizia "Nenhuma acao neste recorte." (o `emptyLabel` da janela) e o corpo repetia a sentenca inteira. O teste falhou por *strict mode violation* -- ambiguidade de seletor -- e o defeito estava na TELA, nao no seletor: o corpo passou a dizer o que a barra nao diz. Um teste que reclama de ambiguidade costuma estar apontando redundancia real.
+
+(b) **`"900.00"` contra `"900"`**: `numeric` sem escala declarada nao formata. Comparado como numero, que e o que o teste protege.
+
+(c) **Rodei a suite de integracao duas vezes sem `db reset`** e li 15 falhas espalhadas por dez `describe` alheios como se fossem minhas. Nao eram: a suite nao e idempotente, e e exatamente o que D-225 documenta. Com banco recriado, 627/627.
+
+(d) **`beforeAll` escrito torto** -- `acoes.entries() ? ... : []` (sempre verdadeiro) e `indexOf` de um array literal (sempre -1). Reescrito com `entries()` de verdade.
+
+**Impacto:** `supabase/migrations/20260908120000_actions_queue.sql` (nova), `apps/web/app/acoes/{page,action-card}.tsx` (`action-row.tsx` removido -- nao e mais linha), `apps/web/lib/{action-filters,relative-time}.ts` + testes (28 novos), `apps/web/lib/labels.ts`, `apps/web/app/globals.css`, `packages/domain/src/diagnostics/action-evidence.ts`, `packages/db/src/{types.ts,rls.integration.test.ts}` (+6), `apps/web/e2e/{seed,constants,acoes.spec}.ts` (+3). Seis ponteiros de comentario que apontavam para `action-row.tsx` foram corrigidos; as duas linhas de D-228 que o citam ficaram, porque sao registro historico do nome que o arquivo tinha entao.
+
+**Verificacao, local:** `check` **29/29** (365 testes, 28 novos), integracao **627/627** em banco recriado (6 novos), e2e **42/42** (3 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17, `check:table-styles` 13, `docs:check`. Tela capturada a 1440px contra o Supabase local, nos dois estados -- fila cheia e recorte vazio.
+
 ## Como adicionar nova decisao
 
 Registrar:

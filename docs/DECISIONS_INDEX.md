@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **258** (D-001 a D-262).
+Decisões registradas: **259** (D-001 a D-263).
 
 ## Por domínio
 
@@ -109,7 +109,7 @@ Decisões registradas: **258** (D-001 a D-262).
 - **D-236** — Marca na Cobertura: a licao de D-235 aplicada ANTES do erro, e uma coluna que NAO segue o filtro
 - **D-252** — D17: os KPIs de Movimentacoes CONTAM linha, e somar unidade seria mentira de milhoes
 
-### interface (22)
+### interface (23)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -133,6 +133,7 @@ Decisões registradas: **258** (D-001 a D-262).
 - **D-254** — "Valor estimado" somava custo AUSENTE como zero, e a mesma tela mostrava "—" na linha do item
 - **D-259** — D21: a tela mudou de assunto, e as duas fontes de "vendeu" discordam em 12
 - **D-261** — A3b: as duas dividas de acabamento eram codigo, e uma migracao declarada nao tinha sido feita
+- **D-263** — D23: a Central de Acoes pelo frame, e a tela escondia 449 acoes chamando isso de total
 
 ### mercado-livre (43)
 

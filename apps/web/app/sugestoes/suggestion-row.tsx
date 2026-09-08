@@ -38,7 +38,7 @@ const STRUCTURED_LABELS: readonly [keyof StructuredFields, string][] = [
 
 /**
  * Uma sugestão na Central (Fase 7, item 9, D-079) — mesmo padrão de
- * `apps/web/app/acoes/action-row.tsx`: componente cliente por linha
+ * `apps/web/app/acoes/action-card.tsx`: componente cliente por linha
  * (estado local de ocupado/erro), Server Action por clique, sem RPC.
  */
 

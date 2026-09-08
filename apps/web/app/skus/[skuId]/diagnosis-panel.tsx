@@ -10,7 +10,7 @@ import { diagnoseSku, type SkuDiagnosisResult } from "./actions";
 /**
  * Ação contextual "O que aconteceu?" (Fase 7, item 8, D-078) — botão +
  * card de resultado no Dashboard de SKU. Mesmo padrão de componente
- * cliente por ação de `apps/web/app/acoes/action-row.tsx`: estado local,
+ * cliente por ação de `apps/web/app/acoes/action-card.tsx`: estado local,
  * Server Action por clique, sem RPC direto do cliente.
  *
  * **Narração por IA (D-082)**: opcional, só aparece quando há anomalia.

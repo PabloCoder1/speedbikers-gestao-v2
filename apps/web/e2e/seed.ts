@@ -36,6 +36,7 @@ import { shiftBusinessDate, toSalesMetricDate } from "@sb/domain";
 import { createClient } from "@supabase/supabase-js";
 
 import {
+  E2E_ACAO_RECLAMACAO,
   E2E_ANOMALIA,
   E2E_DECISION_TEXT,
   E2E_GESTOR_EMAIL,
@@ -1127,6 +1128,39 @@ async function main(): Promise<void> {
 
   if (metricasGravadas.error !== null) {
     throw metricasGravadas.error;
+  }
+
+  /*
+    A SEGUNDA espécie de ação (D23). Sem ela o painel de filtros de `/acoes`
+    teria um tipo só, e o filtro por tipo não exercitaria nada.
+
+    Sem `direcao` na evidência de propósito: reclamação não tem direção, e o
+    tom vem do `kind` (D-116). É o caminho que `toneFor` trata por último.
+  */
+  const acaoReclamacao = await db
+    .from("actions")
+    .upsert(
+      {
+        organization_id: organizationId,
+        kind: "reclamacoes_recorrentes",
+        severity: "media",
+        confidence: "alta",
+        estimated_impact_brl: 480,
+        sku_id: anomaliaSku.data.id,
+        evidence: {
+          evidencias: [{ tipo: "reclamacoes", descricao: E2E_ACAO_RECLAMACAO.evidencia }],
+          causas_candidatas: [],
+        },
+        recommendation: E2E_ACAO_RECLAMACAO.recomendacao,
+        status: "novo",
+        created_by: "system",
+        dedup_key: `e2e:seed:reclamacoes:${anomaliaSku.data.id}`,
+      },
+      { onConflict: "organization_id,dedup_key" },
+    );
+
+  if (acaoReclamacao.error !== null) {
+    throw acaoReclamacao.error;
   }
 
   const output: SeedOutput = {

@@ -1,13 +1,26 @@
-import { describeActionEvidence } from "@sb/domain";
+import { actionKindLabel, describeActionEvidence } from "@sb/domain";
+import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { PageTitle } from "../../components/page-title";
 import { Shell } from "../../components/shell";
+import {
+  ACTIONS_PAGE_SIZE,
+  buildActionsHref,
+  facetEntries,
+  isQueueRow,
+  readFacet,
+  resolveActionFilters,
+  toRpcArgs,
+} from "../../lib/action-filters";
 import { actionShortcuts } from "../../lib/action-shortcuts";
-import { formatCount } from "../../lib/format";
-import { createClient } from "../../lib/supabase/server";
-import type { ActionRowData, DecisionData, OutcomeData } from "./action-row";
-import { ActionRow } from "./action-row";
+import { summarizePagedWindow } from "../../lib/filters";
+import { formatBusinessDate, formatCount } from "../../lib/format";
 import { currentMembership } from "../../lib/membership";
+import { formatAge } from "../../lib/relative-time";
+import { createClient } from "../../lib/supabase/server";
+import type { ActionCardData, DecisionData, OutcomeData } from "./action-card";
+import { ActionCard } from "./action-card";
 
 export const metadata = { title: "Central de Ações — Speed Bikers Gestão" };
 
@@ -16,60 +29,64 @@ export const metadata = { title: "Central de Ações — Speed Bikers Gestão" }
 export const dynamic = "force-dynamic";
 
 /**
- * Central de Ações (Fase 6, D-064, `docs/ARCHITECTURE.md` secao 16) —
- * problema e oportunidade unificados numa tabela só. Só os itens ABERTOS
- * (`novo`/`em_andamento`) por padrão: "cinco mil alertas não são cinco mil
- * problemas" — a tela some da lista assim que resolvida/descartada, não
- * porque o registro sumiu.
+ * Central de Ações (`/acoes`) pelo frame `IntelligenceScreen type="actions"`
+ * (D23, D-263) — painel de filtros à esquerda, fila em CARTÕES à direita.
  *
- * Ordenado por impacto financeiro estimado, NUNCA por contagem ou data —
- * mesma regra documentada em ARCHITECTURE.md secao 16.
+ * **Duas recusas ao frame, e as duas por medição:**
+ *
+ * 1. **"Executar fila em lote"** (o botão do cabeçalho). Não existe: as
+ *    escritas são por ação (`claimAction`, `resolveAction`, `dismissAction`).
+ *    Seria escrita em massa sobre objetos HETEROGÊNEOS — "executar" significa
+ *    coisa diferente para cada `kind`, e resolver uma anomalia de venda não é
+ *    responder uma reclamação. A casa já tem doutrina: a curadoria em lote de
+ *    `/produtos` só escreve depois de dizer a consequência. Um botão que
+ *    executa 1.449 ações sem poder enunciar o que causa é o oposto disso.
+ * 2. **"Ordenar: Impacto Financeiro"** como MENU. A ordem é única e canônica
+ *    (`ARCHITECTURE.md` secao 16: nunca por contagem, nunca por data). Um menu
+ *    com uma opção promete alternativas que não existem — virou a frase que
+ *    declara a ordem.
+ *
+ * **E a prioridade "Crítica" do frame não existe**: `severity` tem três
+ * valores. Ver `lib/action-filters.ts`.
  */
 
-interface ActionQueryRow {
-  id: string;
-  kind: string;
-  sku_id: string | null;
-  severity: string;
-  confidence: string;
+interface QueueRow {
+  id: string | null;
+  kind: string | null;
+  severity: string | null;
+  confidence: string | null;
   estimated_impact_brl: number | null;
+  sku_id: string | null;
+  sku: string | null;
+  sku_title: string | null;
+  mlb_id: string | null;
+  account_label: string | null;
   evidence: unknown;
-  recommendation: string;
-  status: string;
+  recommendation: string | null;
+  status: string | null;
   assignee_id: string | null;
-  skus: { sku: string; title: string | null } | null;
+  created_at: string | null;
+  total_count: number;
+  open_total: number;
+  facet_severity: unknown;
+  facet_kind: unknown;
 }
 
-const th: React.CSSProperties = {
-  textAlign: "left",
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.75rem",
-  textTransform: "uppercase",
-  letterSpacing: "0.04em",
-  color: "var(--sb-text-soft)",
-  whiteSpace: "nowrap",
-};
-
-export default async function AcoesPage(): Promise<ReactNode> {
+export default async function AcoesPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}): Promise<ReactNode> {
+  const filters = resolveActionFilters(await searchParams);
   const supabase = await createClient();
 
-  // Três leituras independentes, juntas desde D-195 — eram três idas ao banco
-  // em fila. `getUser()` revalida o token contra o servidor de Auth e custa
-  // uma ida inteira: enfileirá-lo não protegia nada, porque quem barra a rota
-  // é o `proxy.ts`, que já chamou `getUser()` nesta mesma requisição. E as
-  // ações não ficam desprotegidas por saírem junto: a RLS decide o que volta,
-  // e o `organizationId` abaixo só serve ao guarda de "sem organização".
-  const [{ data: auth }, membership, actionsResult] = await Promise.all([
+  // `getUser()` revalida o token contra o servidor de Auth e custa uma ida
+  // inteira; sai junto com a organização porque nenhum dos dois depende do
+  // outro. A RPC abaixo NÃO pode entrar aqui: ela recebe `p_organization_id`,
+  // então depende do resultado desta leitura — mesma forma de `/compras`.
+  const [{ data: auth }, membership] = await Promise.all([
     supabase.auth.getUser(),
     currentMembership(supabase),
-    supabase
-      .from("actions")
-      .select(
-        "id, kind, sku_id, severity, confidence, estimated_impact_brl, evidence, recommendation, status, assignee_id, skus(sku, title)",
-      )
-      .in("status", ["novo", "em_andamento"])
-      .order("estimated_impact_brl", { ascending: false, nullsFirst: false }),
   ]);
 
   const userId = auth.user?.id ?? null;
@@ -78,19 +95,30 @@ export default async function AcoesPage(): Promise<ReactNode> {
   if (organizationId === null || userId === null) {
     return (
       <Shell>
-        <h1 style={{ margin: "0 0 var(--sb-space-3)", fontSize: "1.375rem" }}>Central de Ações</h1>
-        <p style={{ color: "var(--sb-text-soft)" }}>Sua conta não está associada a nenhuma organização.</p>
+        <PageTitle eyebrow="VISÃO GERAL / INBOX" title="Central de Ações" />
+        <p className="sb-empty">Sua conta não está associada a nenhuma organização.</p>
       </Shell>
     );
   }
 
-  const { data, error: actionsError } = actionsResult;
+  const { data, error: queueError } = await supabase.rpc("get_actions_queue", {
+    p_organization_id: organizationId,
+    ...toRpcArgs(filters),
+  });
 
-  const actionIds = (data ?? []).map((row) => row.id);
+  const linhas = (data ?? []) as QueueRow[];
 
-  // Memória de decisões (Fase 6, PROMPT_MASTER secao 29) — decisões e
-  // resultados medidos das ações listadas acima. Ação sem decisão registrada
-  // simplesmente não aparece nos dois mapas abaixo.
+  // A linha-sentinela carrega as facetas quando a página está vazia; qualquer
+  // linha serve para lê-las, porque as três colunas de faceta se repetem.
+  const facetas = linhas[0] ?? null;
+  const abertas = facetas?.open_total ?? 0;
+  const totalFiltrado = facetas?.total_count ?? 0;
+
+  const acoes = linhas.filter(isQueueRow);
+  const actionIds = acoes.map((row) => row.id);
+
+  // Memória de decisões (Fase 6, PROMPT_MASTER secao 29). Dependem dos ids da
+  // PÁGINA — antes de D23 esta lista chegava a 1.000 ids numa query string só.
   const decisionsResult =
     actionIds.length > 0
       ? await supabase
@@ -123,11 +151,11 @@ export default async function AcoesPage(): Promise<ReactNode> {
     outcomesByDecision.set(row.action_decision_id, list);
   }
 
-  // Falha ao ler decisões/outcomes ficava invisível antes: a Central de
-  // Ações mostraria cada ação sem nenhuma decisão registrada, indistinguível
-  // de "ninguém registrou uma decisão ainda" (D-067).
+  // Falha ao ler decisões/outcomes ficava invisível antes: a Central mostraria
+  // cada ação sem nenhuma decisão registrada, indistinguível de "ninguém
+  // registrou uma decisão ainda" (D-067).
   const error =
-    actionsError ??
+    queueError ??
     ("error" in decisionsResult ? decisionsResult.error : null) ??
     ("error" in outcomesResult ? outcomesResult.error : null);
 
@@ -145,34 +173,56 @@ export default async function AcoesPage(): Promise<ReactNode> {
     decisionsByAction.set(row.action_id, list);
   }
 
-  const rows = ((data ?? []) as ActionQueryRow[]).map(
-    (row): ActionRowData => ({
+  const agora = new Date();
+
+  const cartoes = acoes.map(
+    (row): ActionCardData => ({
       id: row.id,
-      sku: row.skus?.sku ?? null,
-      title: row.skus?.title ?? null,
-      severity: row.severity,
-      confidence: row.confidence,
+      sku: row.sku,
+      title: row.sku_title,
+      mlbId: row.mlb_id,
+      accountLabel: row.account_label,
+      severity: row.severity ?? "media",
+      confidence: row.confidence ?? "media",
       estimated_impact_brl: row.estimated_impact_brl,
-      evidence: describeActionEvidence(row.kind, row.evidence),
-      recommendation: row.recommendation,
-      status: row.status,
+      evidence: describeActionEvidence(row.kind ?? "", row.evidence),
+      recommendation: row.recommendation ?? "",
+      status: row.status ?? "novo",
       assignee_id: row.assignee_id,
+      // Duração enquanto ela informa; acima de 7 dias a data absoluta diz mais
+      // (`lib/relative-time.ts`), e ela sai de `formatBusinessDate`, que é o
+      // único dono do fuso de negócio no projeto.
+      age:
+        formatAge(row.created_at, agora) ??
+        (row.created_at === null ? "—" : formatBusinessDate(row.created_at)),
       decisions: decisionsByAction.get(row.id) ?? [],
-      // Atalhos operacionais (D-154): só para telas que existem, com o
-      // filtro que elas realmente têm — calculados no servidor, a linha só
-      // renderiza.
-      shortcuts: actionShortcuts({ kind: row.kind, skuId: row.sku_id, sku: row.skus?.sku ?? null }),
+      shortcuts: actionShortcuts({ kind: row.kind ?? "", skuId: row.sku_id, sku: row.sku }),
     }),
   );
 
+  const janela = summarizePagedWindow({
+    page: filters.page,
+    totalCount: totalFiltrado,
+    rowsOnPage: cartoes.length,
+    pageSize: ACTIONS_PAGE_SIZE,
+    noun: { singular: "ação pendente", plural: "ações pendentes" },
+    emptyLabel: "Nenhuma ação neste recorte.",
+    trailing: ", em ordem de impacto",
+  });
+
+  const severidades = [
+    { chave: "alta" as const, rotulo: "Alta prioridade" },
+    { chave: "media" as const, rotulo: "Média" },
+    { chave: "baixa" as const, rotulo: "Baixa" },
+  ];
+
   return (
     <Shell>
-      <h1 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.375rem" }}>Central de Ações</h1>
-
-      <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
-        Problemas e oportunidades detectados automaticamente, ordenados por impacto financeiro estimado — não por
-        contagem. {formatCount(rows.length)} aberto(s).
-      </p>
+      <PageTitle
+        eyebrow="VISÃO GERAL / INBOX"
+        title="Central de Ações"
+        subtitle="Seu inbox operacional: problemas e oportunidades priorizados por impacto."
+      />
 
       {error !== null && (
         <p role="alert" style={{ color: "var(--sb-danger)" }}>
@@ -180,30 +230,101 @@ export default async function AcoesPage(): Promise<ReactNode> {
         </p>
       )}
 
-      {error === null && rows.length === 0 && <p style={{ color: "var(--sb-text-soft)" }}>Nenhuma ação aberta.</p>}
+      {error === null && (
+        <div className="sb-inbox-layout">
+          {/* PAINEL DE FILTROS — a metade esquerda do frame. */}
+          <nav className="sb-panel sb-inbox-filters" aria-label="Filtros da fila">
+            <span>Filtros (inbox)</span>
 
-      {error === null && rows.length > 0 && (
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "64rem" }}>
-            <thead>
-              <tr>
-                <th style={th}>SKU</th>
-                <th style={th}>Tipo</th>
-                <th style={th}>Confiança</th>
-                <th style={th}>Impacto (R$)</th>
-                <th style={th}>Evidência</th>
-                <th style={th}>Recomendação</th>
-                <th style={th}>Status</th>
-                <th style={th}>Ações</th>
-              </tr>
-            </thead>
+            <Link
+              className="sb-inbox-filter"
+              aria-current={filters.severity === "todas" && filters.kind === null ? "true" : undefined}
+              href={buildActionsHref(filters, { severity: "todas", kind: null })}
+            >
+              Todas as ações <span>{formatCount(abertas)}</span>
+            </Link>
 
-            <tbody>
-              {rows.map((row) => (
-                <ActionRow key={row.id} action={row} userId={userId} />
-              ))}
-            </tbody>
-          </table>
+            {/*
+              Três níveis, não os quatro do frame. "Baixa 0" fica: o mapa de
+              facetas sai do inbox inteiro, então chave ausente é zero MEDIDO —
+              e esconder a linha seria a mentira, não mostrá-la (D-250).
+            */}
+            {severidades.map(({ chave, rotulo }) => (
+              <Link
+                key={chave}
+                className="sb-inbox-filter"
+                aria-current={filters.severity === chave ? "true" : undefined}
+                href={buildActionsHref(filters, { severity: chave })}
+              >
+                {rotulo} <span>{formatCount(readFacet(facetas?.facet_severity, chave))}</span>
+              </Link>
+            ))}
+
+            {/*
+              Os filtros de domínio do frame são "Estoque / Anúncios /
+              Atendimento". Aqui a lista vem do DADO (`kind` não tem `check`
+              constraint), então um tipo novo gravado pelo detector aparece
+              sozinho em vez de sumir do painel sem aviso.
+            */}
+            {facetEntries(facetas?.facet_kind).length > 0 && <hr />}
+
+            {facetEntries(facetas?.facet_kind).map(({ key, count }) => (
+              <Link
+                key={key}
+                className="sb-inbox-filter"
+                aria-current={filters.kind === key ? "true" : undefined}
+                href={buildActionsHref(filters, { kind: filters.kind === key ? null : key })}
+              >
+                {actionKindLabel(key)} <span>{formatCount(count)}</span>
+              </Link>
+            ))}
+          </nav>
+
+          <div>
+            <section className="sb-panel" aria-label="Fila de ações">
+              <div className="sb-inbox-bar">
+                <b>{janela.label}</b>
+                {/*
+                  O frame põe um MENU "Ordenar: Impacto Financeiro". A ordem é
+                  única e canônica (ARCHITECTURE secao 16) — um menu de uma
+                  opção prometeria alternativas inexistentes.
+                */}
+                <span>Ordenado por impacto financeiro estimado</span>
+              </div>
+
+              {cartoes.length === 0 ? (
+                /*
+                  A barra acima JÁ diz "Nenhuma ação neste recorte." (é o
+                  `emptyLabel` da janela). Repetir a frase aqui era o que estava
+                  escrito antes, e o teste pegou por ambiguidade — duas vezes a
+                  mesma sentença, empilhadas. O corpo diz o que a barra NÃO diz:
+                  para onde ir.
+                */
+                <p className="sb-empty">
+                  {abertas === 0
+                    ? "Nada pendente: a fila está vazia."
+                    : "O painel à esquerda conta o que a fila tem fora deste recorte."}
+                </p>
+              ) : (
+                cartoes.map((cartao) => <ActionCard key={cartao.id} action={cartao} userId={userId} />)
+              )}
+            </section>
+
+            {janela.totalPages > 1 && (
+              <div style={{ display: "flex", gap: "var(--sb-space-2)", marginTop: "var(--sb-space-3)" }}>
+                {filters.page > 1 && (
+                  <Link className="sb-button" href={buildActionsHref(filters, { page: filters.page - 1 })}>
+                    ← Anterior
+                  </Link>
+                )}
+                {filters.page < janela.totalPages && (
+                  <Link className="sb-button" href={buildActionsHref(filters, { page: filters.page + 1 })}>
+                    Próxima →
+                  </Link>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </Shell>

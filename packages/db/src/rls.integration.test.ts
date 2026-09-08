@@ -11395,3 +11395,126 @@ describe("replenishment_settings (Configuração de reposição, D-144)", () => 
     await client.query(`delete from public.replenishment_settings where id = $1`, [inserted.rows[0]?.id]);
   });
 });
+
+// get_actions_queue (20260908120000, D-263) -- a fila de /acoes pelo frame
+// `IntelligenceScreen type="actions"`. O que estes testes protegem NAO e a
+// aparencia: e a linha-sentinela e a independencia das facetas, que sao as
+// duas decisoes das quais a tela depende para nao ficar muda.
+describe("get_actions_queue (D-263)", () => {
+  const CHAVE = "ACOESTEST";
+
+  beforeAll(async () => {
+    // Quatro acoes: duas severidades, dois tipos, e uma SEM impacto -- que e o
+    // caso do desempate, porque impacto NULL empata com todo outro NULL.
+    const acoes: readonly (readonly [string, string, number | null])[] = [
+      ["venda_anomala", "alta", 900],
+      ["venda_anomala", "media", 100],
+      ["reclamacoes_recorrentes", "media", null],
+      ["reclamacoes_recorrentes", "media", null],
+    ];
+
+    for (const [posicao, [kind, severity, impacto]] of acoes.entries()) {
+      await client.query(
+        `insert into public.actions
+           (organization_id, kind, severity, confidence, estimated_impact_brl,
+            evidence, recommendation, status, created_by, dedup_key)
+         values ($1,$2,$3,'alta',$4::numeric,'{}'::jsonb,$5,'novo','system',$6)`,
+        [ORG_SB, kind, severity, impacto, `${CHAVE} recomendacao`, `${CHAVE}:${String(posicao)}`],
+      );
+    }
+  });
+
+  afterAll(async () => {
+    await client.query(`delete from public.actions where dedup_key like $1`, [`${CHAVE}:%`]);
+  });
+
+  it("anon nao executa get_actions_queue (D-182)", async () => {
+    await expect(asAnon(`select * from public.get_actions_queue('${ORG_SB}')`)).rejects.toThrow(
+      /permission denied/i,
+    );
+  });
+
+  it("impacto NULL vai para o FIM, nunca para o topo como se fosse zero", async () => {
+    const linhas = await asUser<{ estimated_impact_brl: string | null; recommendation: string }>(
+      ADMIN_SB,
+      `select estimated_impact_brl, recommendation from public.get_actions_queue('${ORG_SB}', 100, 0, null, null)
+        where recommendation = '${CHAVE} recomendacao'`,
+    );
+
+    const impactos = linhas.map((l) => l.estimated_impact_brl);
+
+    // Comparado como NUMERO: `numeric` sem escala declarada volta "900", nao
+    // "900.00", e a forma do texto nao e o que este teste protege.
+    expect(impactos.filter((i) => i !== null).map(Number)).toEqual([900, 100]);
+    expect(impactos.slice(-2)).toEqual([null, null]);
+  });
+
+  /**
+   * A DECISAO CENTRAL: as facetas contam o inbox INTEIRO, nao o recorte. Se
+   * seguissem `p_severity`, escolher "alta" zeraria a contagem de "media" e o
+   * painel deixaria de dizer quanto trabalho existe fora do filtro -- que e a
+   * unica coisa que ele tem para dizer.
+   */
+  it("as facetas NAO seguem o filtro; o total da busca, sim", async () => {
+    const [semFiltro] = await asUser<{ total_count: string; open_total: string }>(
+      ADMIN_SB,
+      `select total_count, open_total from public.get_actions_queue('${ORG_SB}', 1, 0, null, null)`,
+    );
+
+    const [comFiltro] = await asUser<{ total_count: string; open_total: string }>(
+      ADMIN_SB,
+      `select total_count, open_total from public.get_actions_queue('${ORG_SB}', 1, 0, 'alta', null)`,
+    );
+
+    // O inbox e o mesmo nos dois; o total da BUSCA encolhe com o filtro.
+    expect(comFiltro?.open_total).toBe(semFiltro?.open_total);
+    expect(Number(comFiltro?.total_count)).toBeLessThan(Number(semFiltro?.total_count));
+  });
+
+  /**
+   * A LINHA-SENTINELA. Antes dela (`base cross join facetas`), um filtro sem
+   * resultado devolvia ZERO linhas e as contagens do painel sumiam junto: a
+   * tela ficava sem numero e sem caminho de volta.
+   */
+  it("recorte vazio ainda devolve UMA linha, com as facetas e sem acao", async () => {
+    const linhas = await asUser<{ id: string | null; open_total: string; facet_severity: unknown }>(
+      ADMIN_SB,
+      `select id, open_total, facet_severity from public.get_actions_queue('${ORG_SB}', 25, 0, null, 'tipo_que_nao_existe')`,
+    );
+
+    expect(linhas).toHaveLength(1);
+    expect(linhas[0]?.id).toBeNull();
+    expect(Number(linhas[0]?.open_total)).toBeGreaterThan(0);
+    expect(linhas[0]?.facet_severity).not.toBeNull();
+  });
+
+  it("offset alem do fim tambem preserva o painel", async () => {
+    const linhas = await asUser<{ id: string | null; total_count: string }>(
+      ADMIN_SB,
+      `select id, total_count from public.get_actions_queue('${ORG_SB}', 25, 9999, null, null)`,
+    );
+
+    expect(linhas).toHaveLength(1);
+    expect(linhas[0]?.id).toBeNull();
+    // Sem linha na pagina, o total da busca cai para 0 -- `coalesce` explicito.
+    expect(linhas[0]?.total_count).toBe("0");
+  });
+
+  /**
+   * O DESEMPATE E OBRIGATORIO, nao cosmetico: com `order by impacto desc` puro,
+   * duas acoes de impacto NULL empatam e o Postgres pode devolver a MESMA numa
+   * pagina e nenhuma na outra. Perda silenciosa, sem erro.
+   */
+  it("paginar nao repete nem perde linha", async () => {
+    const pagina = async (offset: number) =>
+      asUser<{ id: string }>(
+        ADMIN_SB,
+        `select id from public.get_actions_queue('${ORG_SB}', 2, ${String(offset)}, null, null) where id is not null`,
+      );
+
+    const [p1, p2] = [await pagina(0), await pagina(2)];
+    const ids = [...p1, ...p2].map((l) => l.id);
+
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});

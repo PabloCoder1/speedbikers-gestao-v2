@@ -164,6 +164,24 @@ export const E2E_LISTING_SOLD_UNLINKED = {
  */
 export const E2E_SKU_CODE = "E2E-SKU-001";
 
+/**
+ * A SEGUNDA espécie de ação, e ela existe para o painel de filtros de D23 ter
+ * o que recortar: com um `kind` só, a lista de tipos nasceria com uma entrada
+ * e o filtro não provaria nada.
+ *
+ * **Severidade `media`, e a escolha não é indiferente.** `alta` quebraria a
+ * Home, que afirma o texto exato "1 ação de severidade alta aberta"; e deixar
+ * `baixa` em ZERO é o que permite provar na tela que "Baixa 0" aparece — o
+ * zero medido do painel, que é verdade e não ausência disfarçada (D-067).
+ *
+ * Vai no SKU da anomalia, não no principal: `/skus/[skuId]` conta ações
+ * abertas do SKU, e o principal já é afirmado por outros specs.
+ */
+export const E2E_ACAO_RECLAMACAO = {
+  recomendacao: "Responder as reclamações abertas e revisar a descrição do anúncio.",
+  evidencia: "3 reclamações sobre o mesmo defeito nos últimos 30 dias.",
+} as const;
+
 export const E2E_ANOMALIA = {
   sku: "E2E-ANOMALIA-001",
   titulo: "Coroa de Transmissão E2E — caiu a zero",

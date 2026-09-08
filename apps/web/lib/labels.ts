@@ -294,7 +294,7 @@ const SEARCH_ENTITY: Record<SearchEntityType, string> = {
 
 /**
  * `actions.status` (D-064) — vocabulário fechado no CHECK da tabela. Vivia
- * privado em `apps/web/app/acoes/action-row.tsx`; extraído em D-228 porque a
+ * privado em `apps/web/app/acoes/action-card.tsx`; extraído em D-228 porque a
  * aba Decisões do SKU mostra o mesmo status e não pode importar de um módulo
  * `"use client"`.
  */
@@ -387,6 +387,17 @@ export function statusTone(code: string): "ok" | "warn" | "bad" | null {
   }
   if (code === "ALTA") return "warn";
   if (code === "CRITICA" || code === "BLOCKED") return "bad";
+
+  // Severidade de `actions` (D23), com PREFIXO de propósito. As strings cruas
+  // colidiriam duas vezes: "ALTA" logo acima é a prioridade do Atendimento, e
+  // ali ela e warn porque CRITICA ocupa o vermelho -- em `actions` nao existe
+  // critica, entao alta E o topo e leva bad. E "alta"/"media" sao tambem os
+  // valores de `confidence`, onde vermelho seria o oposto do significado
+  // (confianca alta e boa). Prefixar e o que impede o proximo a mexer aqui de
+  // pintar uma confianca alta de vermelho sem perceber.
+  if (code === "severidade_alta") return "bad";
+  if (code === "severidade_media") return "warn";
+  if (code === "severidade_baixa") return null;
   if (
     code === "FAILED" ||
     code === "INVALID" ||
@@ -400,6 +411,28 @@ export function statusTone(code: string): "ok" | "warn" | "bad" | null {
   // "informativo" cai no padrão (null, sem destaque) de propósito — é o
   // nível que não deve competir visualmente com importante/crítico.
   return null;
+}
+
+/**
+ * Severidade de uma AÇÃO em português.
+ *
+ * **Não confundir com `severityLabel`, logo acima.** As duas colunas se chamam
+ * `severity` e não compartilham nada: `domain_events.severity` é
+ * `informativo`/`importante`/`critico`, e `actions.severity` é
+ * `baixa`/`media`/`alta`. Passar uma pela outra não quebra — devolve o código
+ * cru na tela, que é o modo de falhar mais silencioso que existe. Os nomes
+ * separados são o que impede isso.
+ *
+ * Lista FECHADA pelo `check` da tabela; valor fora dela volta cru, nunca
+ * inventado. O frame desenha quatro níveis e o primeiro é "Crítica" — ele não
+ * existe, e é a recusa central de D23.
+ */
+export function actionSeverityLabel(severity: string): string {
+  if (severity === "alta") return "Alta";
+  if (severity === "media") return "Média";
+  if (severity === "baixa") return "Baixa";
+
+  return severity;
 }
 
 /**

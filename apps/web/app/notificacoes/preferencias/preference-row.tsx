@@ -7,7 +7,7 @@ import { deletePreference, updatePreference } from "./actions";
 
 /**
  * Uma preferência configurada (Fase 7, item 6, D-076) — mesmo padrão de
- * `apps/web/app/acoes/action-row.tsx`: componente cliente por linha (estado
+ * `apps/web/app/acoes/action-card.tsx`: componente cliente por linha (estado
  * local de ocupado/erro), Server Action por clique, sem RPC.
  *
  * `eventType`/`accountId` são fixos depois de criada — mudar QUAL evento a

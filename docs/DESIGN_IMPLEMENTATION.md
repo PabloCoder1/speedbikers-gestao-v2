@@ -616,7 +616,8 @@ que ele renderiza.**
 | D20b | **Fornecedores, 2ª metade** — "último pedido" e "valor comprado" pela RPC `get_suppliers`, e o `coalesce(sum,0)` que eu reintroduzi na função criada para tirá-lo (D-258) | ✔ |
 | D21 | **Vinculações → Integridade de Catálogo** — a tela mudou de assunto, e as duas fontes de "vendeu" divergem em 12 (D-259) | ✔ |
 | D22 | **Diagnóstico** — primeira tela mestre-detalhe da frente; o "91%" do frame não tem fonte e virou o z-score (D-260) | ✔ |
-| D23–D30 | Ações, Alterações, Preços, Full, Tráfego, Atendimento, Conhecimento, Central | fila |
+| D23 | **Central de Ações** — frame `IntelligenceScreen`, não `ProcessScreen`: painel de filtros lateral + fila em cartões. A tela escondia 449 ações chamando isso de total (D-263) | ✔ |
+| D24–D30 | Alterações, Preços, Full, Tráfego, Atendimento, Conhecimento, Central | fila |
 | D31–D36 | Usuários, Integrações, Sincronização, Saúde, Configurações, Copiloto | fila |
 | D37 | Passe visual global | fila |
 
@@ -797,134 +798,114 @@ anterior: `/reposicao` tinha **19 de 22** células sobrepondo a classe (não 23)
 `/estoque/movimentacoes` não era vazamento parcial de 3 células — eram **todas**
 as 13.
 
-O que resta é a fila **D23 em diante**: 15 superfícies ainda não migradas.
+O que resta é a fila **D24 em diante**: 14 superfícies ainda não migradas.
 
 ## Última fatia concluída
 
-**D22 — Diagnóstico, pelo frame `Diagnostic` (D-260).** É a **primeira tela da
-frente que não é cabeçalho + faixa + tabela**: o frame é mestre-detalhe, e
-trouxe CSS novo com as medidas do `index.css` do export.
+**D23 — Central de Ações, pelo frame `IntelligenceScreen type="actions"`
+(D-263).** Não é variação do `ProcessScreen`: composição própria, com painel de
+filtros lateral (`w-64`, com contagens) e a fila em **cartões**, não em tabela.
 
-**A recusa principal: o percentual de confiança não existe.** O frame mostra
-"Alta · 91%". `DiagnosisConfidence` tem **dois** valores, por limiar de z-score
-(|z| ≥ 2 anomalia, ≥ 3 confiança alta) — não há escala contínua, e 91% seria
-número sintetizado sem definição catalogada (D-023). No lugar dele a tela mostra
-**"Alta" com `z = -11.24`**: o insumo real, que explica de onde veio o "Alta".
+**O achado não foi de design: a tela escondia 449 ações e chamava isso de
+total.** Ela lia `actions` sem `limit` contra o `max_rows = 1000` do PostgREST e
+imprimia "N aberto(s)" com N = o que tinha voltado. O Dev tem **1.449 abertas**
+(eram 1.307 24h antes — a fila cresce sozinha). O número exibido não era o total
+nem o da página: era o **teto do servidor**. D-131 vivo, e ninguém tinha somado
+1.449 > 1.000.
 
-**Um segundo controle do frame também ficou fora:** o menu "Todas as contas". O
-diagnóstico é por SKU e `get_sku_sales_baseline` não recebe conta nem a conhece.
+**A RPC não existe pela paginação, existe pelas contagens.** `range()` +
+`count: 'exact'` resolveria a janela; o painel do frame é que não — cada faceta
+seria um `select` próprio, quatro filtros são quatro idas, e D-185 mede custo
+por ida. `get_actions_queue` devolve página, total e facetas numa viagem.
 
-O que o frame pede e **existe**, entrou: causa mais provável, impacto estimado
-(nulo sem preço médio, D-067), evidências, próximos passos e a "ANÁLISE DO
-COPILOTO" — que não é texto novo: `DiagnosisPanel` já existia e chama
-`/v1/copilot/query`, cujo prompt diz que ele *narra* diagnóstico já calculado.
-Sob demanda, nunca automática.
+### A decisão da qual a tela inteira depende: a linha-sentinela
 
-**A tela nascia vazia, e a captura provou:** "0 SKU(s) com histórico
-suficiente". O baseline exige 4 amostras do mesmo dia da semana e |z| ≥ 2;
-nenhum SKU do seed chegava perto. `E2E_ANOMALIA` existe para isso.
+Primeira versão, `base cross join facetas`: um filtro sem resultado devolvia
+**zero linhas**, e as contagens do painel iam junto — a tela ficava sem número e
+sem caminho de volta, exatamente quando o operador precisa dos dois. Virou
+`facetas left join base on true`, e a página vazia devolve **uma** linha com as
+colunas da ação em `null`, só para carregar o painel.
 
-### O achado mais útil: o seed compartilhado tem raio maior que a fatia
+Pegou no teste manual da função, antes de existir TypeScript. As capturas dos
+dois estados estão no scratchpad; a do recorte vazio é a que prova isto.
 
-Acrescentar **um** SKU quebrou duas telas que D22 não toca — a Home passou a ver
-"1 SKU em ruptura" onde afirmava 0, e `/produtos` passou a ver um "não
-classificado" sobrando. Não eram bugs de produto: eram asserções acopladas à
-composição exata do catálogo.
+**As facetas não seguem o filtro ativo**, e é deliberado: se seguissem, escolher
+"Alta" zeraria a contagem de "Média", e o painel deixaria de dizer quanto
+trabalho existe **fora** do recorte — que é a única coisa que ele tem a dizer.
 
-A correção não foi afrouxar teste, foi **o fixture dizer a verdade sobre si
-mesmo** — ele tem venda e não tem movimento de estoque, então declara
-`stock_is_virtual`, o que o tira da ruptura pela regra que já existia (D-127) e
-o marca como classificado.
+### Três recusas ao frame
 
-E aí apareceu a segunda camada: a curadoria ordena por
-`decision_diverges_from_signature desc` **antes** do código, e um SKU virtual
-sem assinatura sentinela diverge — subiu ao topo. O `.first()` do
-`produtos.spec` passou a marcar o SKU errado e a escrita virava no-op. Ele era
-frágil desde sempre; agora escolhe a linha **pelo SKU**, com `E2E_SKU_CODE`
-promovido a constante compartilhada.
+| o frame pede | decisão |
+|---|---|
+| **"Executar fila em lote"** | **recusa** — escrita em massa sobre objetos heterogêneos; "executar" é coisa diferente por `kind` |
+| prioridade **"Crítica"** | recusa — `severity` tem três valores e nenhum é crítico |
+| **"Ordenar: Impacto Financeiro"** como menu | vira frase — a ordem é única e canônica |
 
-**Regra que fica:** depois de acrescentar fixture ao seed, a verificação é a
-**suíte inteira**, não o spec novo.
+E **duas divergências deliberadas**: os botões ficam sempre visíveis (o frame os
+esconde até o hover, e `opacity: 0` não tira do foco — teclado tabula para botão
+invisível; sem ponteiro não há hover), e o tom de D-064 virou **fio à esquerda**
+em vez de fundo, que brigaria com o `:hover` da fila.
 
-### Quatro erros meus, e o padrão é um só
+### O que o dado nega, e as duas respostas opostas
 
-`p_from`/`p_to` (são `p_date_from`/`p_date_to`); escrever `average_selling_price`
-(é coluna gerada); semear o dia da queda com zeros (`check units_sold > 0` — a
-tabela guarda *dias com venda*, e a ausência **é** o zero); e datas por
-`toISOString()` quando a tela usa `toSalesMetricDate` (um dia de diferença
-desloca todo o histórico para outro dia da semana).
+`ml_account_id` e `mlb_id` são **nulos em 100%** das abertas — os dois chips do
+frame quase nunca nascem. Ficam no código (as colunas existem, o seed prova o
+caminho), mas a tela não finge: chip só aparece com valor.
 
-Os quatro são **escrever a interface de memória em vez de conferi-la**. A única
-decisão em que acertei de primeira foi a única em que li o SQL antes. O seed
-passou a importar as funções de data do domínio: uma definição, não duas.
+`severity = 'baixa'` também tem zero linhas, e aí a resposta foi a **inversa**:
+**"Baixa 0" aparece**. O mapa de facetas sai do inbox inteiro, então chave
+ausente é valor sem linha — zero medido, não desconhecido. Esconder a linha é
+que seria a mentira (D-250).
 
-Também corrigi um erro no código de produção: eu usava a janela de *correlação*
-(3 dias) para buscar preço médio, quando existe `AVERAGE_PRICE_WINDOW_DAYS = 30`,
-já usada por `/skus/[skuId]` e pelo worker. Três consumidores, uma janela.
+### A regra de D-260 aplicada ANTES, pela primeira vez
 
-**Verificação, local:** `check` **29/29** (337 testes, 12 novos), integração
-**621/621**, e2e **39/39** (2 novos), build **8/8**, `check:waterfalls` 60,
-`check:server-actions` 17, `docs:check`. Tela capturada a 1440px contra o
-Supabase local.
+O seed ganhou a segunda espécie de ação (`reclamacoes_recorrentes`), sem a qual
+o filtro de tipo não recortaria nada. A severidade **não** foi indiferente: medi
+quem lê `actions` (quatro telas) e o que os specs afirmam antes de escolher.
+`alta` quebraria a Home, que afirma o texto exato "1 ação de severidade alta
+aberta"; `media` protege a Home **e** mantém `baixa` em zero, que é o que
+permite provar "Baixa 0" na tela. A suíte inteira confirmou: nenhum spec alheio
+se deslocou.
+
+**Verificação, local:** `check` **29/29** (365 testes, 28 novos), integração
+**627/627** em banco recriado (6 novos), e2e **42/42** (3 novos), build **8/8**,
+`check:waterfalls` 60, `check:server-actions` 17, `check:table-styles` 13,
+`docs:check`. Capturada a 1440px contra o Supabase local, nos dois estados.
+
+⚠️ **Quatro erros meus**, e o mais instrutivo: a barra e o corpo diziam a
+**mesma frase** no estado vazio, e o teste falhou por ambiguidade de seletor —
+o defeito estava na tela, não no seletor. Teste que reclama de ambiguidade
+costuma estar apontando redundância real. Os outros três: `"900.00"` contra
+`"900"` (`numeric` sem escala não formata), um `beforeAll` escrito torto, e
+**rodar a suíte de integração duas vezes sem `db reset`** — li 15 falhas de dez
+`describe` alheios como se fossem minhas, e eram exatamente o que D-225
+documenta.
 
 ## Próxima fatia segura
 
-**D23 — Central de Ações (`/acoes`).** É a irmã do Diagnóstico: onde D22 calcula
-a anomalia ao vivo, a Central persiste o diagnóstico como item acionável
-(`actions`, com `evidence` em `jsonb` lido defensivamente por
-`action-evidence.ts`, D-064). **O frame NÃO é uma variação do `ProcessScreen`** —
-é `IntelligenceScreen type="actions"`, com composição própria: painel de filtros
-à esquerda (largura fixa, com contagens) e a fila à direita em CARTÕES, não em
-tabela.
+**D24 — Alterações / Preços.** O frame é `IntelligenceScreen type="pricing"`
+("Histórico de Preços"), e ele já foi visto de relance nesta fatia: traz quatro
+cartões (Alterações 30d, Aumentos, Reduções, Anúncios Afetados), busca, dois
+menus (Direção, Conta) e — o item que exige medição antes de desenhar — um aviso
+de **"Dados Insuficientes para Análise Causal"** já escrito no próprio frame.
 
-### O frame já foi lido, e o veredito contra os dados está aqui
+**A pergunta de abertura é se esse aviso é verdade aqui.** Ele afirma que o
+sistema mostrará tendências "após 7 dias da mudança"; isso é promessa de
+comportamento futuro, e D-023 proíbe número sintetizado sem definição
+catalogada. Conferir o que `listing_price_history` (ou equivalente) sustenta
+antes de reproduzir a frase.
 
-| o frame pede | o sistema tem | decisão |
-|---|---|---|
-| prioridade **Crítica**/Alta/Média/Baixa | `severity`: `baixa` · `media` · `alta` — **três** | as três; "Crítica" fica fora |
-| "Impacto: R$ X" | `estimated_impact_brl`, coluna própria | entra |
-| "Ordenar: Impacto Financeiro" | a tela **já** ordena assim (D-064) | mantém |
-| filtros por domínio (Estoque/Anúncios/Atendimento) | `kind` tem 2 valores reais (`venda_anomala`, `reclamacoes_recorrentes`) | recorte pelos que existem |
-| **"Executar fila em lote"** | **não existe** — as escritas são POR AÇÃO (`claimAction`, `resolveAction`, `dismissAction`, `registerDecision`) | **recusa** |
+E a rotina de sempre, agora com duas perguntas: **o `db reset` + seed deixa a
+tela com dado?** e **quantas linhas ela tem no Dev?** — a segunda passou a ser
+obrigatória depois de D-263, onde o volume era o defeito.
 
-**A recusa da execução em lote não é só "não existe".** Seria escrita em massa
-sobre objetos **heterogêneos**: "executar" significa coisa diferente para cada
-`kind` — resolver uma anomalia de venda não é responder uma reclamação. E a casa
-já tem doutrina sobre isso: a curadoria em lote de `/produtos` *"só escreve
-depois de dizer a consequência"*. Um botão que executa 1.307 ações sem poder
-enunciar o que causa é o oposto disso.
-
-**O que já está certo e não deve regredir:** a tela filtra abertas
-(`novo`/`em_andamento`) por padrão e ordena por `estimated_impact_brl` desc,
-nunca por data ou contagem — regra de `ARCHITECTURE.md` §16. A migração é de
-composição; a consulta pode ficar como está.
-
-**Atenção ao volume:** 1.307 abertas. A tela hoje não pagina — conferir se a
-janela declarada (D-131) entra nesta fatia.
-
-**O que foi medido de antemão — e a correção de um erro meu.** Eu tinha
-registrado aqui "1.309 ações, **0 abertas**", como aviso de que a fila
-nasceria vazia. **Estava errado:** consultei `status = 'OPEN'`, e o vocabulário
-real é `novo` / `em_andamento` / `resolvido` / `descartado`. O literal não
-existe, então a contagem voltou zero por eu ter perguntado errado — não por não
-haver fila.
-
-O real: **1.307 abertas** (1.263 `venda_anomala` + 44 `reclamacoes_recorrentes`)
-e 2 resolvidas. A tela tem fila de sobra; o problema dela é o oposto do que eu
-supus.
-
-E a rotina que D-260 tornou obrigatória: **o `db reset` + seed deixa `/acoes` com
-dado?** Se o fixture entrar, a verificação é a suíte inteira.
-
-Depois, pela fila: Alterações, Preços, Full, Tráfego, Atendimento, Conhecimento,
-Central; e então D31–D36 (Usuários, Integrações, Sincronização, Saúde,
-Configurações, Copiloto) e o passe visual global (D37).
-
-**Duas dívidas de acabamento seguem abertas**, ambas de design system e por isso
-com fatia própria: os chips "ver lista" da faixa desalinham quando uma célula
-tem ressalva de duas linhas (A3), e D14–D17 nunca foram capturadas — é o que
-falta para a coluna A3 da tabela de progresso ficar completa.
+Depois, pela fila: Full, Tráfego, Atendimento, Conhecimento, Central; e então
+D31–D36 (Usuários, Integrações, Sincronização, Saúde, Configurações, Copiloto)
+e o passe visual global (D37).
 
 **A tela de conferência da NF-e (`/notas-fiscais/[id]`) continua aberta** — o
 brief §25 traz o fluxo em seis passos e o botão "Confirmar Entrada". Dois dos
 quatro estados de item que ele pede não têm dado em `document_items` (D-253).
+
+**`/cobertura` também continua aberta** — o frame trata Cobertura e Reposição
+como uma tela com abas, e unificá-las é composição, não acabamento (D-261).
