@@ -14,11 +14,11 @@
 |---|---|
 | **Atualizado em** | 2026-09-06 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `765e7f9` (D-258) — esta fatia, D21/D-259, é o commit seguinte. Verificada localmente antes do push (Docker + Supabase local desde 2026-09-07) |
+| **HEAD conhecido** | `45b8983` (D-259, D21) — CI verde, migration aplicada e conferida no Dev. A auditoria **A3** (conferência visual de D18–D21) é o commit seguinte |
 | **Fechamento da V3** | **185 de 213 itens do ROADMAP fechados (87%)** — 26 abertos e 2 parciais. Dos 26, **6 são bloqueadores**, e todos são hardening/lançamento: nenhum é feature faltando (D-223) |
 | **Deploy no ar** | **`0702969` — o mesmo do `HEAD`, sem atraso** (`api-00030-gqw` / `worker-00045-cwq`, 2026-09-02). Depois de 66 commits parado. Verificado contra a infraestrutura, não contra o script: `APP_COMMIT=0702969` nos dois serviços, imagem `api:0702969`, `/health` respondendo `{"commit":"0702969"}` e **zero `ERROR`** no Cloud Logging desde o boot |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
-| **Migrations** | **150 locais, 149 no Dev** — `20260907160000_listings_sold_predicate.sql` (D-259) está no git e ainda **não** foi ao remoto. Aplicada e conferida no Postgres **local**. ⚠️ Quem aplica no Dev é a integração GitHub do Supabase, **não** a CI (D-257). Antes dela: **131 locais, 130 no Dev** — o expurgo (`20260903120000`) está no git e **não pousou**; a CI não o aplicou, sem drift — D-209→D-212 aplicadas pela CI em 2026-09-02 e CONFERIDAS lá (`anon` alcança 0 funções; `ml_accounts` sem UPDATE/DELETE para `authenticated`; `created_by` presente). O caminho é o push, **nunca** o MCP (lição de D-207) |
+| **Migrations** | **150 locais, 150 no Dev** — `20260907160000` (D-259) aplicada e CONFERIDA no banco: função com 12 argumentos, `anon` sem acesso, `service_role` preservado. ⚠️ Quem aplica no Dev é a integração GitHub do Supabase, **não** a CI (D-257). Antes dela: **131 locais, 130 no Dev** — o expurgo (`20260903120000`) está no git e **não pousou**; a CI não o aplicou, sem drift — D-209→D-212 aplicadas pela CI em 2026-09-02 e CONFERIDAS lá (`anon` alcança 0 funções; `ml_accounts` sem UPDATE/DELETE para `authenticated`; `created_by` presente). O caminho é o push, **nunca** o MCP (lição de D-207) |
 | **Frente atual** | **Frente visual**: D18→D21 entregues (D-253→D-259). **Próxima: D22 — Diagnóstico**, e ela não tem variação do `ProcessScreen`: o frame próprio precisa ser localizado no export antes de desenhar. Trilha 8B com P0 fechado (A–H) e em P1 |
 
 ### O que está pronto

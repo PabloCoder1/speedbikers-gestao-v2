@@ -661,22 +661,40 @@ Ponderado, não por contagem de páginas. Uma superfície "implementada" mas
 distante do frame não vale 100: estrutura = 50, + dados reais = 65, + design
 próximo = 80, validada contra o Figma = 95, + cleanup + testes = 100.
 
-| Bloco | Peso | A1 | A2 | D13 |
-|---|---:|---:|---:|---:|
-| Shell + navegação | 8 | 86% | 91% | 91% |
-| Design system (tokens, componentes, tabela, campo, menu, chip, modal) | 10 | 80% | 88% | 88% |
-| Home | 6 | 87% | 87% | 87% |
-| Vendas | 8 | 85% | 88% | 88% |
-| Produtos | 5 | 83% | 83% | 83% |
-| Dashboard de SKU (nove abas) | 10 | 82% | 88% | 88% |
-| Anúncios — lista | 6 | 86% | 86% | 86% |
-| **Anúncio — detalhe (oito abas)** | 5 | 25% | 25% | **84%** |
-| 23 telas ainda não migradas (D14–D36) | 41 | 25% | 25% | 25% |
-| Drawers do frame (Inspeção Rápida, MLB, pedido, fornecedor, usuário) | 4 | 0% | 0% | 0% |
-| Passe visual global + passo cinza | 3 | 0% | 0% | 0% |
+| Bloco | Peso | A1 | A2 | D13 | **A3** |
+|---|---:|---:|---:|---:|---:|
+| Shell + navegação | 8 | 86% | 91% | 91% | 91% |
+| Design system (tokens, componentes, tabela, campo, menu, chip, modal) | 10 | 80% | 88% | 88% | 88% |
+| Home | 6 | 87% | 87% | 87% | 87% |
+| Vendas | 8 | 85% | 88% | 88% | 88% |
+| Produtos | 5 | 83% | 83% | 83% | 83% |
+| Dashboard de SKU (nove abas) | 10 | 82% | 88% | 88% | 88% |
+| Anúncios — lista | 6 | 86% | 86% | 86% | 86% |
+| **Anúncio — detalhe (oito abas)** | 5 | 25% | 25% | **84%** | 84% |
+| **D14–D17** (Estoque, Cobertura, Curva ABC, Movimentações) | 8 | 25% | 25% | 25% | **80%** |
+| **D18/D20** (NF-e, Fornecedores) — frames que são ESBOÇO | 4 | 25% | 25% | 25% | **90%** |
+| **D19** (Compras) | 3 | 25% | 25% | 25% | **95%** |
+| **D21** (Integridade de Catálogo) | 4 | 25% | 25% | 25% | **92%** |
+| 16 telas ainda não migradas (D22–D36) | 22 | 25% | 25% | 25% | 25% |
+| Drawers do frame (Inspeção Rápida, MLB, pedido, fornecedor, usuário) | 4 | 0% | 0% | 0% | 0% |
+| Passe visual global + passo cinza | 3 | 0% | 0% | 0% | 0% |
 
-**≈ 56% concluído · ≈ 44% restante.** O número só sobe quando o resultado
+**≈ 70% concluído · ≈ 30% restante.** O número só sobe quando o resultado
 renderizado se aproxima do frame — não quando código é escrito.
+
+**A coluna A3 é a primeira em que essa regra foi cumprida desde D13.** As
+fatias D14–D21 tinham ficado sem coluna de propósito: o bloco estava marcado
+como parado porque não havia render para comparar, e estender por contagem de
+código produziria exatamente o número que esta seção existe para não produzir.
+As capturas de A3 (1440px, Supabase local, login real pelo Playwright)
+destravaram a medição.
+
+**Por que D18/D20 recebem 90 e não 95:** os frames dessas duas variações são
+ESBOÇO — cabeçalho e painel desenhados, corpo com parágrafo de reserva. A tela
+cumpre tudo o que o frame dita, mas "validada contra o Figma" vale menos quando
+o Figma tem menos a dizer. **D14–D17 ficam em 80** porque não foram
+recapturadas nesta auditoria: o valor vem do que os commits registram, não de
+render conferido, e sobe quando alguém as fotografar.
 
 ⚠️ **A tabela acima está parada em D13, e cinco fatias já passaram** (D14–D18).
 Ela não foi estendida de propósito: pela própria regra do bloco, a coluna só
@@ -686,14 +704,81 @@ exatamente o número que esta seção existe para não produzir. **A próxima
 auditoria de fidelidade (A3) mede as cinco de uma vez** — até lá, o 56% é o
 piso conhecido, não o valor corrente.
 
+## Auditoria A3 — conferência visual de D18 a D21
+
+Feita em 2026-09-07, **renderizando** as quatro superfícies a 1440px contra o
+Supabase **local**, com login real pelo Playwright. É a primeira vez que a
+frente visual foi conferida nesta máquina: até D-257 não havia Docker aqui, e
+"entregue" vinha significando "verde no CI", não "visto rodando".
+
+**As quatro estão certas, e três coisas só o render provou:**
+
+- **D19** mostra as três saídas do valor estimado LADO A LADO — `R$ 52,50` com
+  "1 de 2 sem custo", `—` com "1 de 1 sem custo", e `R$ 0,00` com zero itens.
+  O D-254 deixou de ser argumento e virou imagem;
+- **D20** fecha a aritmética na tela: R$ 347,00 = 252,50 + 52,50 + 42,00,
+  **excluindo o cancelado**, com a ressalva do item sem custo;
+- **D21** mostra o D-122 numa linha só: "Guidão — vínculo por variação" com SKU
+  "—" e estado **Por variação**. Quem contasse `sku_id is null` marcaria essa
+  linha como fila de trabalho.
+
+### Os dois achados
+
+**P3 — os chips "ver lista" da faixa desalinham.** A ressalva da célula "Sem
+vínculo" ocupa duas linhas e empurra o chip ~34px abaixo dos vizinhos; no frame
+os cartões alinham. Causa: `.sb-kpi` é `grid` com `align-content: start`, então
+cada célula empilha a partir do topo e o link fica onde o conteúdo o deixa.
+
+**Não corrigido aqui, de propósito.** O conserto é pequeno (flex-column +
+`margin-top: auto` no link) mas muda o **design system** para as 7+ faixas do
+app — Home, Vendas, Estoque, Movimentações, Curva ABC, Cobertura, Anúncios. É a
+mesma classe de risco que D-242 registrou sobre trocar o `td` global: mudar
+todas num gesto sem medir nenhuma. Vai para uma fatia de acabamento, com
+captura de cada faixa antes e depois.
+
+**Cobertura ausente, não defeito:** duas coisas de D21 não aparecem com este
+seed — a ressalva de divergência entre as fontes ("12 a mais pela fonte
+independente") e a linha de receita sem vínculo. As duas saem de `order_items`,
+e o seed cria métricas mas não pedidos. Fica anotado para quem semear pedidos.
+
+### O erro de processo que a auditoria expôs
+
+A primeira rodada de capturas saiu **toda igual**: as quatro imagens com
+exatamente 22.784 bytes, mostrando a tela de login com "E-mail ou senha
+incorretos". A causa não era a tela — era o **bundle apontando para o Dev**,
+porque a verificação final tinha rodado `pnpm run build` sem exportar as
+variáveis do Supabase local. A tentativa de login foi contra o ambiente
+compartilhado com credenciais de fixture; falhou, e nada foi escrito.
+
+**A lição operacional:** `NEXT_PUBLIC_*` é embutida NO BUILD, então rodar
+`build` e `e2e`/captura em shells com ambientes diferentes produz um app que
+fala com o banco errado — e o sintoma (login falhando) não aponta para a causa.
+A guarda que ficou: **antes de capturar ou semear, conferir que
+`.next/static` e `.next/server` não contêm o ref do Dev** — e varrer só esses
+dois, nunca `.next/dev` ou `.next/cache`, que guardam resíduo do dev server e
+dão falso positivo.
+
+
 ## Revisão visual necessária
 
-**Nenhuma nas superfícies migradas.** A2 fechou os P2 de componente que A1
-listou. O que resta nelas são P3 de acabamento, registrados na tabela acima
-(legenda do gráfico, altura do SVG, tom de lead time na cobertura) — nenhum
-muda composição, e todos cabem no passe visual global (D37).
+**Uma, e ela é de design system:** os chips "ver lista" da faixa de KPIs
+desalinham quando uma célula tem ressalva de duas linhas (A3, acima). `.sb-kpi`
+é `grid` com `align-content: start`, então o link fica onde o conteúdo o deixa.
+**Não é de uma tela** — é das 7+ faixas do app, e por isso pede fatia própria,
+com captura de cada uma antes e depois.
 
-O que resta é a fila **D22 em diante**: 20 superfícies ainda não migradas.
+Fora dela, **nenhuma nas superfícies migradas**. A2 fechou os P2 de componente
+que A1 listou, e A3 confirmou D18–D21 renderizadas. O que resta são P3 de
+acabamento já registrados (legenda do gráfico, altura do SVG, tom de lead time
+na cobertura) — nenhum muda composição, e todos cabem no passe visual global
+(D37).
+
+**D14–D17 nunca foram capturadas.** Estão em 80% na tabela por isso: o valor vem
+do que os commits registram, não de render conferido. Fotografá-las é o passo
+que falta para a coluna A3 ficar completa.
+
+O que resta é a fila **D22 em diante**: 16 superfícies ainda não migradas.
+
 ## Última fatia concluída
 
 **D21 — Vinculações, pelo frame `ProcessScreen type="links"` (D-259).** A
