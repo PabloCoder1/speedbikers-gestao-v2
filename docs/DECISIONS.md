@@ -6800,6 +6800,57 @@ O GRAO. `ultimo_bucket` continua `distinct on (ml_account_id, inventory_id)` e `
 
 **Verificacao, local:** `check` **29/29**, integracao **633/633** em banco recriado (3 novos), e2e **48/48** (3 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17, `check:table-styles` **15**, `docs:check`. Capturada a 1440px contra o Supabase local.
 
+## D-266 - D26 (Trafego) NAO vira tela: o frame inteiro depende de dado que o sistema nao tem
+
+**Contexto:** a fila da frente visual listava "Trafego" como D26, e o export tem o frame `IntelligenceScreen type="traffic"` ("Insights e Conversao"). Todas as fatias ate aqui recusaram ELEMENTOS de um frame. Esta e a primeira em que a recusa e da TELA -- e por isso ela precisa ficar escrita com a medicao, nao com opiniao.
+
+---
+
+**1. O INVENTARIO DO FRAME CONTRA O ESQUEMA**
+
+O frame tem dois paineis. Item por item:
+
+| o frame pede | onde estaria | existe? |
+|---|---|---|
+| "Impressoes / Aparicoes" (1.482.000) -- topo do funil | -- | **nao** |
+| "queda de 45% nas visitas ORGANICAS" | split organico/pago | **nao** |
+| "perdeu o selo de Mercado Lider" | reputacao do vendedor | **nao** |
+| botao "Campanhas Ads" / "Criar campanha" | integracao de Ads | **nao** |
+| "conversao 3x acima da media da conta" | comparativo sintetizado | derivavel, mas de que? |
+| Visitas -> Vendas e a taxa de conversao | `daily_listing_visits` + metricas de venda | **sim** |
+
+**Medido, e nao inferido:** uma varredura em `information_schema.columns` sobre todo o schema `public` por `impress`, `campaign`, `organic` e `reputation` devolve **ZERO colunas**. Nao ha tabela de Ads, nem de impressao, nem de reputacao. A unica fonte de trafego e `daily_listing_visits`: **30.622 linhas, 3.445 anuncios, 2026-08-21 a 2026-09-08**, com **295.373 visitas** na janela de 30 dias.
+
+**2. O QUE SOBRA JA EXISTE, E JA E HONESTO**
+
+Visita e conversao POR ANUNCIO ja estao em `/anuncios`, com a metodologia nos cabecalhos: coluna **Visitas**, coluna **Obs.** ("dias com visitas observadas na janela -- a base do denominador") e coluna **Conversao** ("pedidos dos dias com visita observada / visitas -- indefinida sem visita, nunca 0%"). E ha a aba **Trafego** em `/anuncios/[itemId]`, por anuncio.
+
+Essa honestidade nao e acidental: D-170 mediu que as visitas sao **esporadicas -- media de 4,9 dias observados em 31**. Uma taxa calculada sobre elas sem dizer sobre quantos dias corre e numero sem base.
+
+Construir `/trafego` repetindo isso seria a **copia divergente** que a casa evita por escrito -- a mesma regra que fez `/full` apontar para `/curva-abc?semFull=1` em vez de recriar o criterio: "duas telas com a mesma pergunta e respostas diferentes".
+
+**3. O UNICO ITEM GENUINAMENTE AUSENTE, E POR QUE ELE NAO E UMA TELA**
+
+O funil **agregado** da organizacao (visitas totais -> vendas totais, com a taxa global) nao existe em lugar nenhum -- nem na Home, nem em `/vendas`. E lacuna real.
+
+Mas ele tem **dois niveis, nao tres** (o topo do frame e impressao, que nao existe), e resume-se a um numero com ressalva. Uma rota inteira para isso seria moldura sem quadro. Se a lacuna incomodar, o lugar dela e a faixa de `/anuncios`, onde o volume ja mora -- registrado como candidata, nao como fatia de design.
+
+**4. O QUE MUDARIA ESTA DECISAO**
+
+Ela e sobre o ESTADO DO DADO, nao sobre o frame ser ruim. Reabre-se sozinha se qualquer uma destas chegar:
+
+- integracao de **Mercado Livre Ads** (campanhas, investimento, ACOS);
+- **impressoes** na API de visitas (hoje ela devolve visita, nao aparicao);
+- **reputacao/selo** do vendedor sincronizada.
+
+Com Ads, o frame passa a ter os dois paineis sustentados e vira fatia legitima. Sem, ele e uma tela de promessas.
+
+**5. A REGRA QUE FICA**
+
+O Design Contract manda "manter o desenho e remover o conteudo incompativel". **Quando o conteudo incompativel e TODO o conteudo, nao sobra desenho a manter** -- e insistir produziria uma tela cuja unica funcao seria parecer com o Figma. A fila de design nao e contrato de entrega: ela e a lista de frames a AVALIAR, e avaliar inclui concluir que um deles nao tem o que mostrar.
+
+**Impacto:** nenhuma mudanca de codigo. `docs/DESIGN_IMPLEMENTATION.md` registra D26 como **recusada com medicao** e a fila segue para Atendimento.
+
 ## Como adicionar nova decisao
 
 Registrar:

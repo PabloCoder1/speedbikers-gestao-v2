@@ -619,7 +619,8 @@ que ele renderiza.**
 | D23 | **Central de Ações** — frame `IntelligenceScreen`, não `ProcessScreen`: painel de filtros lateral + fila em cartões. A tela escondia 449 ações chamando isso de total (D-263) | ✔ |
 | D24 | **Histórico de Preços** — "Alterações" e "Preços" da fila eram a MESMA tela. A recusa é uma promessa com prazo, não um número (D-264) | ✔ |
 | D25 | **Central Full** — o frame particiona errado: os três cartões dele somam o total e escondem o MAIOR estado, 41% do conjunto (D-265) | ✔ |
-| D26–D30 | Tráfego, Atendimento, Conhecimento, Central | fila |
+| ~~D26~~ | ~~**Tráfego**~~ — **RECUSADA COM MEDIÇÃO** (D-266): zero colunas de impressão/Ads/reputação no schema inteiro; o funil do frame perde o topo e os dois cartões de sinais não têm fonte. O que sobra já vive em `/anuncios` | ✖ |
+| D27–D30 | Atendimento, Conhecimento, Central | fila |
 | D31–D36 | Usuários, Integrações, Sincronização, Saúde, Configurações, Copiloto | fila |
 | D37 | Passe visual global | fila |
 
@@ -800,7 +801,7 @@ anterior: `/reposicao` tinha **19 de 22** células sobrepondo a classe (não 23)
 `/estoque/movimentacoes` não era vazamento parcial de 3 células — eram **todas**
 as 13.
 
-O que resta é a fila **D26 em diante**: 12 superfícies ainda não migradas.
+O que resta é a fila **D27 em diante**: 11 superfícies ainda não migradas — D26 (Tráfego) saiu da conta por avaliação, não por adiamento (D-266).
 
 ## Última fatia concluída
 
@@ -880,19 +881,25 @@ segunda vez nesta sessão.
 
 ## Próxima fatia segura
 
-**D26 — Tráfego.** O frame é `IntelligenceScreen type="traffic"`, e a pergunta de
-abertura já tem número conhecido: **D-170 mediu média de 4,9 dias observados em
-31** — as visitas por anúncio são esporádicas, e qualquer taxa de conversão
-calculada sobre elas precisa dizer sobre quantos dias de coleta ela corre. A
-Home e `/anuncios` já carregam essa ressalva ("observadas em N de 30 dias"); a
-tela de Tráfego é onde ela mais importa.
+**D27 — Atendimento.** D26 (Tráfego) foi **avaliada e recusada** (D-266): uma
+varredura no schema inteiro por `impress`, `campaign`, `organic` e `reputation`
+devolveu **zero colunas**, então o funil do frame perde o topo e os dois cartões
+de sinais não têm fonte. O que sobra — visita e conversão por anúncio — já vive
+em `/anuncios` com a metodologia de D-170 nos cabeçalhos, e repetir aquilo seria
+a cópia divergente que a casa evita.
 
-E a rotina, com as três perguntas que as fatias anteriores acrescentaram: **o
-`db reset` + seed deixa a tela com dado?**, **quantas linhas ela tem no Dev?** e
-**a faixa conta o mesmo conjunto da tabela ou é navegação?** — a terceira decide
-sozinha se há sentinela.
+**A fila de design não é contrato de entrega**: ela é a lista de frames a
+AVALIAR, e avaliar inclui concluir que um deles não tem o que mostrar. D-266
+registra o que faria a decisão se reabrir sozinha (Ads, impressões ou reputação
+chegando ao modelo).
 
-Depois, pela fila: Atendimento, Conhecimento, Central; e então D31–D36 (Usuários,
+Para D27 a rotina é a de sempre, com as três perguntas que as fatias anteriores
+acrescentaram: **o `db reset` + seed deixa a tela com dado?**, **quantas linhas
+ela tem no Dev?** e **a faixa conta o mesmo conjunto da tabela ou é navegação?**
+— a terceira decide sozinha se há linha-sentinela. E, desde D-266, uma quarta que
+vem antes de todas: **o frame tem fonte para o que desenha?**
+
+Depois, pela fila: Conhecimento, Central; e então D31–D36 (Usuários,
 Integrações, Sincronização, Saúde, Configurações, Copiloto) e o passe visual
 global (D37).
 
