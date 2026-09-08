@@ -6470,6 +6470,50 @@ O `.first()` era fragil desde sempre: assumia catalogo de um SKU so. Passou a es
 
 **Verificacao, local:** `check` **29/29** (337 testes, 12 novos), integracao **621/621**, e2e **39/39** (2 novos), build **8/8**, guardas verdes. **A tela foi capturada a 1440px** contra o Supabase local: o mestre-detalhe renderiza, o impacto sai R$ 1.499,00 (10 un x 149,90) e a confianca aparece como "Alta" com `z = -11.24`.
 
+## D-261 - A3b: as duas dividas de acabamento eram codigo, e uma migracao declarada nao tinha sido feita
+
+**Contexto:** as duas pendencias que A3 (D-259) deixou nomeadas -- o alinhamento dos chips da faixa e a captura de D14-D17 -- fechadas numa fatia so, porque **D14-D17 sao exatamente telas COM faixa**: uma passada de capturas serve as duas.
+
+---
+
+**1. OS CHIPS, E O RAIO ERA MENOR DO QUE EU DISSE**
+
+A3 registrou "7+ telas com faixa". Sao **8**, e nenhuma delas e Cobertura ou Curva ABC -- essas usam cartoes proprios, nao `.sb-kpi`. Contei antes de mexer, e a contagem mudou o tamanho do risco.
+
+O defeito: `.sb-kpi` era `grid` com `align-content: start`, entao cada celula empilhava do topo e o chip "ver lista" ficava onde o conteudo o deixasse. Uma celula com ressalva de duas linhas empurrava o chip **~34px** abaixo dos vizinhos -- medido em `/vinculacoes`, onde "Sem vinculo" carrega a ressalva de D-122.
+
+A correcao e uma linha de conceito: **coluna flex com `margin-top: auto` no link**. A grade ja estica as celulas a mesma altura; o `auto` empurra todos os chips para o rodape. Faixa sem link nao muda -- nao ha o que empurrar.
+
+**Verificado com captura ANTES e DEPOIS das 9 telas**, nao por leitura de CSS. E o metodo que a fatia de acabamento exige: mudanca de design system se prova vendo todas as consumidoras, nao a que motivou.
+
+---
+
+**2. O ACHADO QUE NAO ERA DE ACABAMENTO: MIGRACAO DECLARADA E NAO FEITA**
+
+Capturando D17 (`/estoque/movimentacoes`) apareceram fios estranhos na tabela. A causa nao era CSS novo -- era o **`const td` inline sobrevivendo**, usado em 3 celulas enquanto outras 3 usavam a `.sb-table`. Padding (`0.5rem 0.75rem` contra `0.75rem`) e borda (`bottom` contra `top`) diferentes **na mesma linha**.
+
+**O commit de D-252 afirma: "Legado removido: as constantes `th`/`td`/`tdNumber`".** Nao foram. A afirmacao estava errada, e ficou quatro fatias sem ser notada porque ninguem tinha aberto a tela.
+
+**`/reposicao` (D15) era pior.** Tem `<table className="sb-table">` e as **23 celulas** usando os consts inline -- a classe aplicada ao elemento e sobrescrita em todas as celulas. Adocao **cosmetica**: o seletor estava la e nao governava nada.
+
+As duas foram migradas de verdade nesta fatia: `th`/`td`/`tdNumber` apagados, e as celulas passaram para `.sb-table`, `.sb-num` e `.sb-mono`.
+
+**A licao nao e sobre CSS.** "Legado removido" e uma afirmacao verificavel -- `grep -n "^const td"` responde em um segundo -- e foi escrita sem verificar. O guarda barato que fica: **antes de afirmar remocao no commit, procurar o simbolo.**
+
+---
+
+**3. O DOC AFIRMAVA MAIS DO QUE FOI FEITO**
+
+A linha D15 da tabela de status dizia "**Cobertura/Reposicao** -- o frame e UMA tela com abas". Foi migrada **so `/reposicao`**. `/cobertura` continua com `<h1>` proprio, sem `PageTitle` e sem `.sb-table`.
+
+**Nao unifiquei as duas rotas**, e a recusa e deliberada: o frame as trata como uma tela com abas, entao juntar e decisao de COMPOSICAO -- fatia propria, com leitura do frame -- e nao acabamento. A linha do doc foi corrigida para dizer o que existe.
+
+---
+
+**Impacto:** `apps/web/app/globals.css` (`.sb-kpi`, `.sb-kpi-link`), `apps/web/app/estoque/movimentacoes/page.tsx`, `apps/web/app/reposicao/page.tsx`. **Sem migration, sem mudanca de dado.**
+
+**Verificacao:** `check` **29/29**, integracao **621/621**, e2e **39/39**, build **8/8**, guardas verdes. **Nove telas capturadas antes e depois** a 1440px contra o Supabase local; D14-D17 fotografadas pela primeira vez, o que fecha a coluna A3 da tabela de progresso.
+
 ## Como adicionar nova decisao
 
 Registrar:

@@ -62,13 +62,6 @@ interface MovementRow {
   total_count: number;
 }
 
-const td: React.CSSProperties = {
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.875rem",
-  verticalAlign: "top",
-};
-
 export default async function MovimentacoesPage({
   searchParams,
 }: {
@@ -303,8 +296,8 @@ export default async function MovimentacoesPage({
             <tbody>
               {rows.map((row) => (
                 <tr key={row.id}>
-                  <td style={{ ...td, whiteSpace: "nowrap" }}>{formatDateTime(row.occurred_at)}</td>
-                  <td style={{ ...td, fontFamily: "ui-monospace, monospace" }}>
+                  <td style={{ whiteSpace: "nowrap" }}>{formatDateTime(row.occurred_at)}</td>
+                  <td className="sb-mono">
                     <Link href={`/skus/${row.sku_id}`}>{row.sku}</Link>
                     {row.sku_title !== null && (
                       <div style={{ color: "var(--sb-text-soft)", fontSize: "0.75rem", fontFamily: "inherit" }}>
@@ -315,17 +308,13 @@ export default async function MovimentacoesPage({
                   <td>{movementTypeLabel(row.movement_type)}</td>
                   <td>{locationKindLabel(row.location_kind)}</td>
                   <td
-                    style={{
-                      ...td,
-                      textAlign: "right",
-                      fontVariantNumeric: "tabular-nums",
-                      color: row.qty_delta > 0 ? "var(--sb-secondary)" : "var(--sb-danger)",
-                    }}
+                    className="sb-num"
+                    style={{ color: row.qty_delta > 0 ? "var(--sb-secondary)" : "var(--sb-danger)" }}
                   >
                     {formatQtyDelta(row.qty_delta)}
                   </td>
                   <td>{movementSourceLabel(row.source_type, row.source_id)}</td>
-                  <td style={{ ...td, color: "var(--sb-text-soft)" }}>
+                  <td style={{ color: "var(--sb-text-soft)" }}>
                     {row.reason ?? "—"}
                     {row.created_by_name !== null && (
                       <div style={{ fontSize: "0.75rem" }}>por {row.created_by_name}</div>

@@ -14,12 +14,12 @@
 |---|---|
 | **Atualizado em** | 2026-09-06 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `97476c1` (A3) — esta fatia, D22/D-260, é o commit seguinte. Verificada localmente e CAPTURADA antes do push |
+| **HEAD conhecido** | `adde36a` (D-260, D22) — esta fatia, A3b/D-261 (acabamento da faixa + captura de D14–D17), é o commit seguinte |
 | **Fechamento da V3** | **185 de 213 itens do ROADMAP fechados (87%)** — 26 abertos e 2 parciais. Dos 26, **6 são bloqueadores**, e todos são hardening/lançamento: nenhum é feature faltando (D-223) |
 | **Deploy no ar** | **`0702969` — o mesmo do `HEAD`, sem atraso** (`api-00030-gqw` / `worker-00045-cwq`, 2026-09-02). Depois de 66 commits parado. Verificado contra a infraestrutura, não contra o script: `APP_COMMIT=0702969` nos dois serviços, imagem `api:0702969`, `/health` respondendo `{"commit":"0702969"}` e **zero `ERROR`** no Cloud Logging desde o boot |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | **150 locais, 150 no Dev** — `20260907160000` (D-259) aplicada e CONFERIDA no banco: função com 12 argumentos, `anon` sem acesso, `service_role` preservado. ⚠️ Quem aplica no Dev é a integração GitHub do Supabase, **não** a CI (D-257). Antes dela: **131 locais, 130 no Dev** — o expurgo (`20260903120000`) está no git e **não pousou**; a CI não o aplicou, sem drift — D-209→D-212 aplicadas pela CI em 2026-09-02 e CONFERIDAS lá (`anon` alcança 0 funções; `ml_accounts` sem UPDATE/DELETE para `authenticated`; `created_by` presente). O caminho é o push, **nunca** o MCP (lição de D-207) |
-| **Frente atual** | **Frente visual**: D18→D22 entregues (D-253→D-260). **Próxima: D23 — Central de Ações**, e há um aviso medido: o Dev tem 1.309 ações e **0 abertas** — conferir se o zero é verdadeiro antes de desenhar a fila. Trilha 8B com P0 fechado (A–H) e em P1 |
+| **Frente atual** | **Frente visual**: D18→D22 entregues, mais A3/A3b. ⚠️ **`/cobertura` nunca foi migrada** — o doc de design afirmava que sim (D-261). **Próxima: D23 — Central de Ações**, e há um aviso medido: 1.309 ações e **0 abertas**, conferir se o zero é verdadeiro antes de desenhar. Trilha 8B com P0 fechado (A–H) e em P1 |
 
 ### O que está pronto
 

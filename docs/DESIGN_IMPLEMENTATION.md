@@ -607,7 +607,7 @@ que ele renderiza.**
 | **A2** | **Acabamento das superfícies migradas** (paleta Ctrl+K, `.sb-modal`, selo Curva ABC, chips na aba Full, custo como cartão) | **CONCLUÍDO** |
 | **D13** | **Dashboard do Anúncio** (`/anuncios/[itemId]`) — cabeçalho de entidade + as oito abas do frame | **CONCLUÍDO** |
 | D14 | **Estoque** — `PageTitle` + `KpiStrip` + `Panel` + `.sb-table`; três das seis células do frame recusadas por medição (D-249) | ✔ |
-| D15 | **Cobertura/Reposição** — o frame é UMA tela com abas; sete cartões de estado em vez de cinco, e o filtro que eles prometem (D-250) | ✔ |
+| D15 | **Reposição** (`/reposicao`) — sete cartões de estado em vez dos cinco do frame, e o filtro que eles prometem (D-250). ⚠️ **`/cobertura` NÃO foi migrada**: o frame trata as duas como uma tela com abas, e unificá-las é composição, não acabamento (D-261) | parcial |
 | D16 | **Curva ABC** — três cartões de classe com soma no banco; dois filtros rápidos devolvidos ao dono deles (D-251) | ✔ |
 | D17 | **Movimentações** — KPIs que CONTAM linha; somar unidade daria milhões falsos (D-252) | ✔ |
 | D18 | **NF-e / Entradas** — `PageTitle` + `Panel` + `.sb-table`, e **sem faixa de KPIs**: o frame desta variação é um esboço, não um desenho (D-253) | ✔ |
@@ -672,7 +672,7 @@ próximo = 80, validada contra o Figma = 95, + cleanup + testes = 100.
 | Dashboard de SKU (nove abas) | 10 | 82% | 88% | 88% | 88% |
 | Anúncios — lista | 6 | 86% | 86% | 86% | 86% |
 | **Anúncio — detalhe (oito abas)** | 5 | 25% | 25% | **84%** | 84% |
-| **D14–D17** (Estoque, Cobertura, Curva ABC, Movimentações) | 8 | 25% | 25% | 25% | **80%** |
+| **D14–D17** (Estoque, Reposição, Curva ABC, Movimentações) | 8 | 25% | 25% | 25% | **88%** |
 | **D18/D20** (NF-e, Fornecedores) — frames que são ESBOÇO | 4 | 25% | 25% | 25% | **90%** |
 | **D19** (Compras) | 3 | 25% | 25% | 25% | **95%** |
 | **D21** (Integridade de Catálogo) | 4 | 25% | 25% | 25% | **92%** |
@@ -680,7 +680,7 @@ próximo = 80, validada contra o Figma = 95, + cleanup + testes = 100.
 | Drawers do frame (Inspeção Rápida, MLB, pedido, fornecedor, usuário) | 4 | 0% | 0% | 0% | 0% |
 | Passe visual global + passo cinza | 3 | 0% | 0% | 0% | 0% |
 
-**≈ 70% concluído · ≈ 30% restante.** O número só sobe quando o resultado
+**≈ 72% concluído · ≈ 28% restante.** O número só sobe quando o resultado
 renderizado se aproxima do frame — não quando código é escrito.
 
 **A coluna A3 é a primeira em que essa regra foi cumprida desde D13.** As
@@ -693,9 +693,10 @@ destravaram a medição.
 **Por que D18/D20 recebem 90 e não 95:** os frames dessas duas variações são
 ESBOÇO — cabeçalho e painel desenhados, corpo com parágrafo de reserva. A tela
 cumpre tudo o que o frame dita, mas "validada contra o Figma" vale menos quando
-o Figma tem menos a dizer. **D14–D17 ficam em 80** porque não foram
-recapturadas nesta auditoria: o valor vem do que os commits registram, não de
-render conferido, e sobe quando alguém as fotografar.
+o Figma tem menos a dizer. **D14–D17 subiram para 88 em A3b** (D-261): foram fotografadas, e a captura
+achou o que só ela acharia — o `const td` inline sobrevivendo em duas delas,
+contra o que o commit de D-252 afirmava. Não chegam a 95 porque `/cobertura`
+continua fora da migração, e o frame a trata como parte da mesma tela.
 
 ⚠️ **A tabela acima está parada em D13, e cinco fatias já passaram** (D14–D18).
 Ela não foi estendida de propósito: pela própria regra do bloco, a coluna só
@@ -762,11 +763,11 @@ dão falso positivo.
 
 ## Revisão visual necessária
 
-**Uma, e ela é de design system:** os chips "ver lista" da faixa de KPIs
-desalinham quando uma célula tem ressalva de duas linhas (A3, acima). `.sb-kpi`
-é `grid` com `align-content: start`, então o link fica onde o conteúdo o deixa.
-**Não é de uma tela** — é das 7+ faixas do app, e por isso pede fatia própria,
-com captura de cada uma antes e depois.
+**Nenhuma.** A dívida que A3 deixou — os chips "ver lista" desalinhando quando
+uma célula tem ressalva de duas linhas — foi fechada em **A3b** (D-261):
+`.sb-kpi` virou coluna flex com `margin-top: auto` no link, verificado com
+captura antes/depois das **8** telas com faixa (eram 8, não "7+": Cobertura e
+Curva ABC usam cartões próprios).
 
 Fora dela, **nenhuma nas superfícies migradas**. A2 fechou os P2 de componente
 que A1 listou, e A3 confirmou D18–D21 renderizadas. O que resta são P3 de
@@ -774,9 +775,10 @@ acabamento já registrados (legenda do gráfico, altura do SVG, tom de lead time
 na cobertura) — nenhum muda composição, e todos cabem no passe visual global
 (D37).
 
-**D14–D17 nunca foram capturadas.** Estão em 80% na tabela por isso: o valor vem
-do que os commits registram, não de render conferido. Fotografá-las é o passo
-que falta para a coluna A3 ficar completa.
+**D14–D17 foram capturadas em A3b** (D-261), e a captura virou correção de
+código: o `const td` inline sobrevivia em `/estoque/movimentacoes` e
+`/reposicao`, contra o que os commits afirmavam. O que resta ali é `/cobertura`,
+que nunca passou pela frente.
 
 O que resta é a fila **D23 em diante**: 15 superfícies ainda não migradas.
 

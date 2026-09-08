@@ -847,10 +847,24 @@ body {
   }
 }
 
+/*
+  FLEX, não grid, e a diferença é o chip "ver lista" (A3).
+  
+  Com `grid` + `align-content: start` cada célula empilhava a partir do topo, e
+  o chip ficava onde o conteúdo o deixasse. Bastava UMA célula ter ressalva de
+  duas linhas para o chip dela descer ~34px em relação aos vizinhos — medido na
+  captura de `/vinculacoes`, onde "Sem vínculo" carrega a ressalva de D-122. No
+  frame os cartões alinham.
+
+  Em coluna flex, `margin-top: auto` no link empurra TODOS para o rodapé da
+  célula, e a grade já estica as células à mesma altura. Nada muda para as
+  faixas sem ressalva: sem o link, não há o que empurrar.
+*/
 .sb-kpi {
   box-shadow: 1px 0 0 var(--sb-border), 0 1px 0 var(--sb-border);
-  display: grid;
-  align-content: start;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 0.25rem;
   min-width: 0;
   padding: 0.875rem 1rem;
@@ -897,9 +911,10 @@ body {
   grid — sem isso o `max-content` ainda esticaria até a borda.
 */
 .sb-kpi-link {
-  justify-self: start;
   width: max-content;
-  margin-top: 0.125rem;
+  /* O que alinha os chips entre células de alturas diferentes. */
+  margin-top: auto;
+  padding-top: 0.125rem;
   padding: 0.125rem 0.25rem;
   border-radius: var(--sb-radius-sm);
   font-size: 0.625rem;

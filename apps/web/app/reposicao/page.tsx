@@ -51,24 +51,6 @@ export const dynamic = "force-dynamic";
  * Número só quando defensável.
  */
 
-const th: React.CSSProperties = {
-  textAlign: "left",
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.75rem",
-  textTransform: "uppercase",
-  letterSpacing: "0.04em",
-  color: "var(--sb-text-soft)",
-  whiteSpace: "nowrap",
-};
-
-const td: React.CSSProperties = {
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.875rem",
-};
-
-const tdNumber: React.CSSProperties = { ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" };
 
 /** Nulidade real conferida contra o corpo da RPC — o gerador não a marca. */
 interface SuggestionRow {
@@ -360,21 +342,21 @@ export default async function ReposicaoPage({
           <table className="sb-table">
             <thead>
               <tr>
-                <th style={th} title="Marque para levar ao pedido de compra — só linhas com sugestão defensável">
+                <th title="Marque para levar ao pedido de compra — só linhas com sugestão defensável">
                   Pedido
                 </th>
-                <th style={th}>SKU</th>
-                <th style={th}>Marca</th>
-                <th style={th} title="Curva ABC por faturamento, 90 dias (D-140) — segunda chave da prioridade">
+                <th>SKU</th>
+                <th>Marca</th>
+                <th title="Curva ABC por faturamento, 90 dias (D-140) — segunda chave da prioridade">
                   Classe
                 </th>
-                <th style={th}>Venda/dia (30d)</th>
-                <th style={th}>Tendência</th>
-                <th style={th}>Aproveitável</th>
-                <th style={th}>Janela (dias)</th>
-                <th style={th}>Estado</th>
-                <th style={th}>Sugestão</th>
-                <th style={th}>Custo estimado</th>
+                <th>Venda/dia (30d)</th>
+                <th>Tendência</th>
+                <th>Aproveitável</th>
+                <th>Janela (dias)</th>
+                <th>Estado</th>
+                <th>Sugestão</th>
+                <th>Custo estimado</th>
               </tr>
             </thead>
 
@@ -406,7 +388,7 @@ export default async function ReposicaoPage({
 
                 return (
                   <tr key={row.sku_id}>
-                    <td style={{ ...td, textAlign: "center" }}>
+                    <td style={{ textAlign: "center" }}>
                       {/*
                         Checkbox só onde há SUGESTÃO defensável e positiva —
                         linha recusada ou coberta não tem o que pedir; itens
@@ -421,7 +403,7 @@ export default async function ReposicaoPage({
                         />
                       )}
                     </td>
-                    <td style={{ ...td, fontFamily: "ui-monospace, monospace" }}>
+                    <td className="sb-mono">
                       {row.sku}
                       {row.title !== null && (
                         <div style={{ fontFamily: "inherit", color: "var(--sb-text-soft)", fontSize: "0.75rem" }}>
@@ -430,13 +412,13 @@ export default async function ReposicaoPage({
                       )}
                     </td>
                     {/* Marca vazia é estado legítimo (36% preenchidos, D-129). */}
-                    <td style={td}>{row.supplier_brand ?? "—"}</td>
+                    <td>{row.supplier_brand ?? "—"}</td>
                     {/* "—" = sem venda no período da curva, não classe faltando. */}
-                    <td style={{ ...td, fontWeight: row.abc_class === "A" ? 600 : undefined }}>
+                    <td style={{ fontWeight: row.abc_class === "A" ? 600 : undefined }}>
                       {row.abc_class ?? "—"}
                     </td>
-                    <td style={tdNumber}>{RATE.format(breakdown.dailyRate)}</td>
-                    <td style={td}>
+                    <td className="sb-num">{RATE.format(breakdown.dailyRate)}</td>
+                    <td>
                       <TrendBadge
                         units15={row.units_15d}
                         units30={row.units_30d}
@@ -445,7 +427,7 @@ export default async function ReposicaoPage({
                         historyDays90={row.history_days_90}
                       />
                     </td>
-                    <td style={tdNumber}>
+                    <td className="sb-num">
                       {usable.total === null ? (
                         <span style={{ color: "var(--sb-text-soft)", fontSize: "0.75rem" }}>estoque virtual</span>
                       ) : (
@@ -457,7 +439,7 @@ export default async function ReposicaoPage({
                         </span>
                       )}
                     </td>
-                    <td style={tdNumber}>
+                    <td className="sb-num">
                       {policy === null || breakdown.demandWindowDays === null ? (
                         "—"
                       ) : (
@@ -468,7 +450,7 @@ export default async function ReposicaoPage({
                         </span>
                       )}
                     </td>
-                    <td style={td}>
+                    <td>
                       {stockState.state === null ? (
                         <span
                           style={{ color: "var(--sb-muted-ink)", fontSize: "0.75rem", whiteSpace: "nowrap" }}
@@ -494,7 +476,7 @@ export default async function ReposicaoPage({
                         </span>
                       )}
                     </td>
-                    <td style={tdNumber}>
+                    <td className="sb-num">
                       {suggestion.suggestedQuantity === null ? (
                         <span style={{ color: "var(--sb-muted-ink)", fontSize: "0.75rem", whiteSpace: "nowrap" }}>
                           {suggestion.refusals.map((r) => REFUSAL_LABEL[r]).join(" · ")}
@@ -515,7 +497,7 @@ export default async function ReposicaoPage({
                         </span>
                       )}
                     </td>
-                    <td style={tdNumber}>
+                    <td className="sb-num">
                       {suggestion.suggestedQuantity !== null &&
                       suggestion.suggestedQuantity > 0 &&
                       row.purchase_cost !== null ? (
