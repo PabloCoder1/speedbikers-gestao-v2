@@ -855,12 +855,46 @@ Supabase local.
 **D23 — Central de Ações (`/acoes`).** É a irmã do Diagnóstico: onde D22 calcula
 a anomalia ao vivo, a Central persiste o diagnóstico como item acionável
 (`actions`, com `evidence` em `jsonb` lido defensivamente por
-`action-evidence.ts`, D-064). O frame é `ProcessScreen type="actions"`.
+`action-evidence.ts`, D-064). **O frame NÃO é uma variação do `ProcessScreen`** —
+é `IntelligenceScreen type="actions"`, com composição própria: painel de filtros
+à esquerda (largura fixa, com contagens) e a fila à direita em CARTÕES, não em
+tabela.
 
-**Duas coisas medidas de antemão:** o Dev tem **1.309 ações**, sendo 1.265
-`venda_anomala` e o resto `reclamacoes_recorrentes` — mas **0 abertas**. Um
-frame que abrir na fila de trabalho vai mostrar vazio, e a pergunta será a mesma
-de D21: o zero é verdadeiro ou o mecanismo parou? Conferir antes de desenhar.
+### O frame já foi lido, e o veredito contra os dados está aqui
+
+| o frame pede | o sistema tem | decisão |
+|---|---|---|
+| prioridade **Crítica**/Alta/Média/Baixa | `severity`: `baixa` · `media` · `alta` — **três** | as três; "Crítica" fica fora |
+| "Impacto: R$ X" | `estimated_impact_brl`, coluna própria | entra |
+| "Ordenar: Impacto Financeiro" | a tela **já** ordena assim (D-064) | mantém |
+| filtros por domínio (Estoque/Anúncios/Atendimento) | `kind` tem 2 valores reais (`venda_anomala`, `reclamacoes_recorrentes`) | recorte pelos que existem |
+| **"Executar fila em lote"** | **não existe** — as escritas são POR AÇÃO (`claimAction`, `resolveAction`, `dismissAction`, `registerDecision`) | **recusa** |
+
+**A recusa da execução em lote não é só "não existe".** Seria escrita em massa
+sobre objetos **heterogêneos**: "executar" significa coisa diferente para cada
+`kind` — resolver uma anomalia de venda não é responder uma reclamação. E a casa
+já tem doutrina sobre isso: a curadoria em lote de `/produtos` *"só escreve
+depois de dizer a consequência"*. Um botão que executa 1.307 ações sem poder
+enunciar o que causa é o oposto disso.
+
+**O que já está certo e não deve regredir:** a tela filtra abertas
+(`novo`/`em_andamento`) por padrão e ordena por `estimated_impact_brl` desc,
+nunca por data ou contagem — regra de `ARCHITECTURE.md` §16. A migração é de
+composição; a consulta pode ficar como está.
+
+**Atenção ao volume:** 1.307 abertas. A tela hoje não pagina — conferir se a
+janela declarada (D-131) entra nesta fatia.
+
+**O que foi medido de antemão — e a correção de um erro meu.** Eu tinha
+registrado aqui "1.309 ações, **0 abertas**", como aviso de que a fila
+nasceria vazia. **Estava errado:** consultei `status = 'OPEN'`, e o vocabulário
+real é `novo` / `em_andamento` / `resolvido` / `descartado`. O literal não
+existe, então a contagem voltou zero por eu ter perguntado errado — não por não
+haver fila.
+
+O real: **1.307 abertas** (1.263 `venda_anomala` + 44 `reclamacoes_recorrentes`)
+e 2 resolvidas. A tela tem fila de sobra; o problema dela é o oposto do que eu
+supus.
 
 E a rotina que D-260 tornou obrigatória: **o `db reset` + seed deixa `/acoes` com
 dado?** Se o fixture entrar, a verificação é a suíte inteira.
