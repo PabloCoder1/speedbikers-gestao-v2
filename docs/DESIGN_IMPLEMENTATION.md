@@ -780,6 +780,23 @@ código: o `const td` inline sobrevivia em `/estoque/movimentacoes` e
 `/reposicao`, contra o que os commits afirmavam. O que resta ali é `/cobertura`,
 que nunca passou pela frente.
 
+**Essa lição virou guarda em D-262** — `check:table-styles`, na esteira. Ele
+reprova o arquivo que declara `.sb-table` e mantém a tipografia de célula
+antiga, que é a **migração pela metade**: enquanto restarem ~22 telas por
+migrar, esse modo de falhar continua disponível, e agora cada migração tem de
+ser inteira ou vermelha.
+
+**Ele cobre uma metade só, e a outra é justamente esta rotina.** Sem a classe
+declarada não há contradição dentro do arquivo — foi o caso de
+`/estoque/movimentacoes`, que não tinha `sb-table` nenhuma e onde a migração de
+D-252 simplesmente nunca aconteceu. Quem pega isso é **abrir a tela**. É o
+motivo de a captura do A3 ser rotina obrigatória e não acabamento.
+
+Duas afirmações desta seção estavam erradas e foram corrigidas medindo o commit
+anterior: `/reposicao` tinha **19 de 22** células sobrepondo a classe (não 23), e
+`/estoque/movimentacoes` não era vazamento parcial de 3 células — eram **todas**
+as 13.
+
 O que resta é a fila **D23 em diante**: 15 superfícies ainda não migradas.
 
 ## Última fatia concluída

@@ -19,7 +19,7 @@
 | **Deploy no ar** | **`0702969` — o mesmo do `HEAD`, sem atraso** (`api-00030-gqw` / `worker-00045-cwq`, 2026-09-02). Depois de 66 commits parado. Verificado contra a infraestrutura, não contra o script: `APP_COMMIT=0702969` nos dois serviços, imagem `api:0702969`, `/health` respondendo `{"commit":"0702969"}` e **zero `ERROR`** no Cloud Logging desde o boot |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | **150 locais, 150 no Dev** — `20260907160000` (D-259) aplicada e CONFERIDA no banco: função com 12 argumentos, `anon` sem acesso, `service_role` preservado. ⚠️ Quem aplica no Dev é a integração GitHub do Supabase, **não** a CI (D-257). Antes dela: **131 locais, 130 no Dev** — o expurgo (`20260903120000`) está no git e **não pousou**; a CI não o aplicou, sem drift — D-209→D-212 aplicadas pela CI em 2026-09-02 e CONFERIDAS lá (`anon` alcança 0 funções; `ml_accounts` sem UPDATE/DELETE para `authenticated`; `created_by` presente). O caminho é o push, **nunca** o MCP (lição de D-207) |
-| **Frente atual** | **Frente visual**: D18→D22 entregues, mais A3/A3b. ⚠️ **`/cobertura` nunca foi migrada** — o doc de design afirmava que sim (D-261). **Próxima: D23 — Central de Ações** — e o "aviso" que eu tinha registrado ("0 abertas") era ERRO MEU de medição: consultei `status = 'OPEN'`, e o vocabulário real é `novo`/`em_andamento`/`resolvido`/`descartado`. São **1.307 abertas**. Trilha 8B com P0 fechado (A–H) e em P1 |
+| **Frente atual** | **Frente visual**: D18→D22 entregues, mais A3/A3b. A lição do A3b virou o guarda `check:table-styles` (D-262), que reprova a migração pela metade — e cobre **uma metade só**: a tela que nunca declarou `.sb-table` continua dependendo da captura. ⚠️ **`/cobertura` nunca foi migrada** — o doc de design afirmava que sim (D-261). **Próxima: D23 — Central de Ações** — e o "aviso" que eu tinha registrado ("0 abertas") era ERRO MEU de medição: consultei `status = 'OPEN'`, e o vocabulário real é `novo`/`em_andamento`/`resolvido`/`descartado`. São **1.307 abertas**. Trilha 8B com P0 fechado (A–H) e em P1 |
 
 ### O que está pronto
 
@@ -324,9 +324,21 @@ outro lugar (D-208, D-227).
 pnpm exec supabase db reset && pnpm --filter @sb/db run test:integration && pnpm run check && pnpm run build && pnpm exec supabase db reset && pnpm --filter web run e2e:seed && pnpm --filter web run e2e
 ```
 
-⚠️ **`check:embeds` e `check:waterfalls` não estão no `check`** e cada um
-mora num pacote: `pnpm --filter @sb/db run check:embeds` (exige as variáveis
-do `supabase status` exportadas) e `pnpm --filter web run check:waterfalls`.
+⚠️ **Os quatro guardas estáticos não estão no `check`** — rodam como passos
+próprios da esteira, e cada um mora num pacote:
+
+| guarda | onde | o que reprova |
+|---|---|---|
+| `check:embeds` | `pnpm --filter @sb/db run check:embeds` (exige as variáveis do `supabase status` exportadas) | embed do PostgREST sem FK que o sustente |
+| `check:waterfalls` | `pnpm --filter web run check:waterfalls` | leitura em fila sem dependência num Server Component (D-195/D-197) |
+| `check:server-actions` | `pnpm --filter web run check:server-actions` | export que não é função assíncrona em módulo `"use server"` (D-234) |
+| `check:table-styles` | `pnpm --filter web run check:table-styles` | tela que declara `.sb-table` e mantém o `const td` antigo — a migração pela metade (D-262) |
+
+Os três de `web` são estáticos e não precisam de banco. **`check:waterfalls` e
+`check:table-styles` se auto-provam na carga** — se a detecção quebrar numa
+manutenção, falham alto em vez de ficar verdes sem detectar nada. **`check:server-actions`
+não tem essa rede**: é a regex mais simples dos três, mas hoje nada avisaria se
+ela parasse de casar.
 
 ---
 

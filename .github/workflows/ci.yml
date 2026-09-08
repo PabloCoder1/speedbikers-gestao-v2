@@ -61,6 +61,14 @@ jobs:
       - name: Guarda de export em "use server"
         run: pnpm --filter @sb/web run check:server-actions
 
+      # A migracao pela METADE: a tela poe `.sb-table` e mantem parte dos
+      # `style={td}`, entao a classe e o inline disputam o mesmo pixel e o
+      # inline vence. Build, typecheck e lint passam. O A3b achou assim em
+      # /reposicao, 19 celulas sobrepondo a classe que o arquivo declarava,
+      # quatro fatias depois da migracao. Estatico, sem banco -- mora aqui.
+      - name: Guarda de tipografia de celula
+        run: pnpm --filter @sb/web run check:table-styles
+
       - name: Build
         run: pnpm run build
 

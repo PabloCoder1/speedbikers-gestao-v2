@@ -6490,11 +6490,13 @@ A correcao e uma linha de conceito: **coluna flex com `margin-top: auto` no link
 
 **2. O ACHADO QUE NAO ERA DE ACABAMENTO: MIGRACAO DECLARADA E NAO FEITA**
 
-Capturando D17 (`/estoque/movimentacoes`) apareceram fios estranhos na tabela. A causa nao era CSS novo -- era o **`const td` inline sobrevivendo**, usado em 3 celulas enquanto outras 3 usavam a `.sb-table`. Padding (`0.5rem 0.75rem` contra `0.75rem`) e borda (`bottom` contra `top`) diferentes **na mesma linha**.
+Capturando D17 (`/estoque/movimentacoes`) apareceram fios estranhos na tabela. A causa nao era CSS novo -- era o **`const td` inline sobrevivendo**. Padding (`0.5rem 0.75rem` contra `0.75rem`) e borda (`bottom` contra `top`) diferentes **na mesma linha**.
+
+> **Correcao (D-262).** A frase original dizia "usado em 3 celulas enquanto outras 3 usavam a `.sb-table`". **Falso, e o erro subestimava o achado.** Medido no commit anterior (`3a37d09`): o arquivo tinha **zero** ocorrencia de `sb-table` -- a `<table>` levava `style={{ borderCollapse... }}` e as 13 celulas estavam todas no sistema antigo. Nao houve migracao parcial: **a migracao de D-252 nunca aconteceu neste arquivo**, e o A3b fez a que o commit dizia ter feito.
 
 **O commit de D-252 afirma: "Legado removido: as constantes `th`/`td`/`tdNumber`".** Nao foram. A afirmacao estava errada, e ficou quatro fatias sem ser notada porque ninguem tinha aberto a tela.
 
-**`/reposicao` (D15) era pior.** Tem `<table className="sb-table">` e as **23 celulas** usando os consts inline -- a classe aplicada ao elemento e sobrescrita em todas as celulas. Adocao **cosmetica**: o seletor estava la e nao governava nada.
+**`/reposicao` (D15) era pior.** Tem `<table className="sb-table">` e **19 das suas 22 celulas** usando os consts inline (11 `th`, 5 `tdNumber`, 3 `td`) -- a classe aplicada ao elemento e sobrescrita quase por toda parte. *(O "23" da versao original nao correspondia a nenhuma contagem; corrigido em D-262 recontando no `3a37d09`.)* Adocao **cosmetica**: o seletor estava la e nao governava nada.
 
 As duas foram migradas de verdade nesta fatia: `th`/`td`/`tdNumber` apagados, e as celulas passaram para `.sb-table`, `.sb-num` e `.sb-mono`.
 
@@ -6513,6 +6515,25 @@ A linha D15 da tabela de status dizia "**Cobertura/Reposicao** -- o frame e UMA 
 **Impacto:** `apps/web/app/globals.css` (`.sb-kpi`, `.sb-kpi-link`), `apps/web/app/estoque/movimentacoes/page.tsx`, `apps/web/app/reposicao/page.tsx`. **Sem migration, sem mudanca de dado.**
 
 **Verificacao:** `check` **29/29**, integracao **621/621**, e2e **39/39**, build **8/8**, guardas verdes. **Nove telas capturadas antes e depois** a 1440px contra o Supabase local; D14-D17 fotografadas pela primeira vez, o que fecha a coluna A3 da tabela de progresso.
+
+## D-262 - A licao do A3b virou guarda, e ela so cobre METADE do achado
+
+**Contexto:** o A3b (D-261) encontrou uma migracao declarada e nao feita. A casa converte licao em script (`check:waterfalls`, `check:server-actions`) porque licao que nao vira guarda volta. Esta e a conversao -- e a parte mais util do registro e onde ela NAO alcanca.
+
+**Decisao:** `apps/web/scripts/check-table-styles.mjs`, ligado em `check:table-styles` e na esteira ao lado dos outros dois. Ele reprova o arquivo que declara `.sb-table` e **mantem** a tipografia de celula antiga (`const td` / `style={td}`).
+
+**Medido antes de escrever, e a medicao mudou o desenho.** A primeira ideia era reprovar `const td` em qualquer lugar. Sao **22 arquivos** com esse const e apenas **13** telas com `.sb-table`: a frente visual migrou ~13 de ~35 telas, e nas outras o const e o sistema antigo INTEIRO e coerente, correto onde a frente nao chegou. Um guarda assim daria 22 falsos positivos no primeiro dia -- e guarda que berra por nada e como a acusacao verdadeira deixa de ser lida. O alvo virou a **contradicao dentro do mesmo arquivo**, que hoje esta em zero.
+
+**Tambem medido:** os 96 `<td style={{...}}>` do repo **nao** sao o alvo. Sao cor dependente do dado (`n < 0 ? "var(--sb-danger)"`), que classe estatica nao expressa -- e sao **zero** hex e **zero** px cru, em qualquer tela. A disciplina de token ja era total; o problema nunca foi o inline, foi o inline REDECLARANDO o que a classe governa.
+
+**O que ele nao pega, e e metade do achado do A3b.** `/estoque/movimentacoes` nao tinha `sb-table` nenhuma. Sem a classe declarada nao existe contradicao no arquivo, e de fora essa tela e indistinguivel de uma que ainda nao chegou na fila. Quem sabe a diferenca e a tabela de progresso do doc, que e prosa: parsea-la por regex seria inventar precisao sobre linhas que misturam rota em backtick e nome em negrito. **Essa metade continua dependendo da captura do A3** -- abrir a tela --, que e o motivo de o A3 existir como rotina e nao como acabamento.
+
+**Duas conferencias antes de confiar nele:**
+
+1. **Auto-prova (D-195/D-197).** Cinco casos rodam na carga; os dois que mais importam sao NEGATIVOS -- tela nao migrada e cor dependente do dado. O auto-teste **pegou um defeito real**: as regexes montadas com `new RegExp` e barra dupla nasceram `^s*consts+`, casando com nada, porque a camada de escape por onde o arquivo foi escrito colapsa barra dupla em barra simples. Viraram literais. Sem o auto-teste a esteira ficaria verde com a deteccao morta -- o falso negativo de D-197 outra vez.
+2. **Prova historica.** Rodado contra `3a37d09` (o commit anterior a correcao), acusa `/reposicao` com 19 celulas. Guarda que nunca detectou nada nao e guarda.
+
+**Impacto:** enquanto restarem ~22 telas por migrar, o modo de falhar segue disponivel, e cada migracao futura passa a ter de ser inteira ou vermelha. Duas afirmacoes falsas de D-261 tambem foram corrigidas aqui, medindo o que elas diziam de memoria.
 
 ## Como adicionar nova decisao
 
