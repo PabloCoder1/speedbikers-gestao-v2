@@ -32,9 +32,11 @@ import { dirname } from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 
 import type { Database } from "@sb/db";
+import { shiftBusinessDate, toSalesMetricDate } from "@sb/domain";
 import { createClient } from "@supabase/supabase-js";
 
 import {
+  E2E_ANOMALIA,
   E2E_DECISION_TEXT,
   E2E_GESTOR_EMAIL,
   E2E_GESTOR_PASSWORD,
@@ -48,6 +50,7 @@ import {
   E2E_PURCHASE_ORDERS,
   E2E_SUPPLIER,
   E2E_SUPPLIER_INATIVO,
+  E2E_SKU_CODE,
   E2E_SKU_SALES,
   E2E_USER_EMAIL,
   E2E_USER_PASSWORD,
@@ -58,7 +61,7 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:5
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const ORG_SLUG = "e2e-speed-bikers";
-const SKU_CODE = "E2E-SKU-001";
+const SKU_CODE = E2E_SKU_CODE;
 const DOCUMENT_CONTENT_HASH = createHash("sha256").update("e2e-fixture-nfe").digest("hex");
 const ML_ACCOUNT_SLUG = "e2e-loja";
 const ML_ACCOUNT_LABEL = "Loja E2E";
@@ -1033,6 +1036,97 @@ async function main(): Promise<void> {
         throw itens.error;
       }
     }
+  }
+
+  /*
+    A ANOMALIA DE VENDA do Diagnóstico (D22).
+
+    `asOf` da tela é ONTEM (as métricas de hoje ainda estão incompletas), e o
+    baseline compara o MESMO dia da semana nas últimas 8 ocorrências, exigindo
+    4 amostras no mínimo. Então o histórico vai de 7 em 7 dias a partir de
+    ontem — qualquer outro passo cai em dias da semana diferentes e o SKU nem
+    aparece na consulta.
+
+    `average_selling_price` NÃO é escrita: é coluna GERADA
+    (`gross_revenue / nullif(units_sold, 0)`). Basta a receita coerente com as
+    unidades — 10 x 149,90 — e o preço médio sai sozinho. No dia da queda,
+    `units_sold` é 0 e a gerada vira NULA, que é o certo: não houve venda, logo
+    não há preço.
+  */
+  const anomaliaSku = await db
+    .from("skus")
+    .upsert(
+      {
+        organization_id: organizationId,
+        sku: E2E_ANOMALIA.sku,
+        title: E2E_ANOMALIA.titulo,
+        kind: "PRODUTO",
+        /*
+          CLASSIFICADO E VIRTUAL, e as duas coisas por necessidade, não por
+          enfeite. Este SKU existe para a ANOMALIA DE VENDA; acrescentá-lo cru
+          ao catálogo quebrou duas telas que ele não deveria tocar: a Home
+          passou a ver "1 SKU em ruptura" (era 0) e `/produtos` passou a ver um
+          "não classificado" sobrando depois da curadoria em lote.
+
+          `stock_is_virtual` resolve as duas de forma honesta: a cobertura
+          devolve NULL para SKU virtual (`when sk.stock_is_virtual then null`,
+          D-127) — logo, fora da ruptura —, e `set_at` preenchido é o que
+          significa "um humano já classificou". E é a verdade do fixture: ele
+          tem venda, não tem movimento de estoque.
+        */
+        stock_is_virtual: true,
+        stock_is_virtual_set_at: new Date().toISOString(),
+      },
+      { onConflict: "organization_id,sku_key" },
+    )
+    .select("id")
+    .single();
+
+  if (anomaliaSku.error !== null) {
+    throw anomaliaSku.error;
+  }
+
+  /*
+    A data vem de `toSalesMetricDate` + `shiftBusinessDate`, as MESMAS funções
+    que `/diagnostico` usa para calcular o `asOf` — não de `toISOString()`.
+
+    Foi erro meu na primeira tentativa: `toISOString()` dá a data em UTC, e a
+    tela usa o fuso de negócio. Um dia de diferença desloca TODO o histórico
+    para outro dia da semana, e o baseline (que compara o MESMO dia da semana)
+    passa a não achar amostra nenhuma. A tela mostrava "0 SKU(s) com histórico"
+    enquanto a RPC, chamada direto com outra data, devolvia a linha.
+  */
+  const asOfSeed = shiftBusinessDate(toSalesMetricDate(new Date()), -1);
+  const diaDe = (semanasAtras: number): string => shiftBusinessDate(asOfSeed, -7 * semanasAtras);
+
+  /*
+    A QUEDA A ZERO É A AUSÊNCIA DA LINHA, não uma linha com zero.
+
+    `daily_sku_metrics` tem `check (units_sold > 0)`, `orders_count > 0` e
+    `purchases_count > 0`: a tabela guarda DIAS COM VENDA, não todos os dias. E
+    `get_sku_sales_baseline` faz `left join` no dia corrente com
+    `coalesce(units_sold, 0)` — então não ter linha JÁ significa zero.
+
+    Tentei semear o dia da queda com zeros e o banco recusou, com razão: uma
+    linha de venda que não houve seria registro inventado.
+  */
+  const metricasAnomalia = E2E_ANOMALIA.historico.map((h) => ({
+    organization_id: organizationId,
+    ml_account_id: mlAccountId,
+    sku_id: anomaliaSku.data.id,
+    metric_date: diaDe(h.semanasAtras),
+    units_sold: h.unidades,
+    gross_revenue: h.unidades * E2E_ANOMALIA.precoMedio,
+    orders_count: h.unidades,
+    purchases_count: h.unidades,
+  }));
+
+  const metricasGravadas = await db
+    .from("daily_sku_metrics")
+    .upsert(metricasAnomalia, { onConflict: "ml_account_id,sku_id,metric_date" });
+
+  if (metricasGravadas.error !== null) {
+    throw metricasGravadas.error;
   }
 
   const output: SeedOutput = {

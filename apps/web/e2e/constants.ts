@@ -145,6 +145,45 @@ export const E2E_LISTING_SOLD_UNLINKED = {
   orders: 3,
 } as const;
 
+/**
+ * A anomalia de venda que o Diagnóstico precisa para ter o que mostrar (D22).
+ *
+ * **Sem isto a tela nasce vazia**, e foi o que a primeira captura mostrou: "0
+ * anomalia(s), entre 0 SKU(s) com histórico suficiente". `get_sku_sales_baseline`
+ * exige **4 amostras** do MESMO dia da semana, e `diagnoseSalesAnomaly` exige
+ * |z| >= 2 — nenhum SKU do seed chegava perto.
+ *
+ * O histórico varia de propósito (9/10/11): com valores idênticos o desvio
+ * padrão seria zero e o z-score, indefinido. A queda a 0 sobre média 10 dá
+ * |z| ~ 11, bem acima do limiar de confiança alta (3).
+ */
+/**
+ * O SKU principal do seed. Estava só dentro de `seed.ts`, e os specs que
+ * precisavam dele o escreviam à mão — acoplamento que só apareceu quando o
+ * catálogo deixou de ter um SKU só (D22).
+ */
+export const E2E_SKU_CODE = "E2E-SKU-001";
+
+export const E2E_ANOMALIA = {
+  sku: "E2E-ANOMALIA-001",
+  titulo: "Coroa de Transmissão E2E — caiu a zero",
+  /** Semanas atrás, no mesmo dia da semana de `asOf` (que é ONTEM). */
+  historico: [
+    { semanasAtras: 1, unidades: 10 },
+    { semanasAtras: 2, unidades: 9 },
+    { semanasAtras: 3, unidades: 11 },
+    { semanasAtras: 4, unidades: 10 },
+    { semanasAtras: 5, unidades: 9 },
+    { semanasAtras: 6, unidades: 11 },
+  ],
+  /**
+   * No dia do diagnóstico não há linha nenhuma — `daily_sku_metrics` só guarda
+   * dias COM venda (`check units_sold > 0`), e o baseline faz
+   * `coalesce(units_sold, 0)`. A ausência É o zero.
+   */
+  precoMedio: 149.9,
+} as const;
+
 export const E2E_LISTING_PRICE_EVENT = { de: 199.9, para: 189.9 } as const;
 
 /**

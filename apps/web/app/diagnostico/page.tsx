@@ -1,11 +1,22 @@
-import { diagnoseSalesAnomaly, shiftBusinessDate, toSalesMetricDate } from "@sb/domain";
+import { diagnoseSalesAnomaly, estimateImpactBrl, shiftBusinessDate, toSalesMetricDate } from "@sb/domain";
 import type { CorrelatedEvent, SalesAnomalyDiagnosis } from "@sb/domain";
+import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { FilterMenu } from "../../components/filter-menu";
+import { PageTitle } from "../../components/page-title";
 import { Shell } from "../../components/shell";
-import { formatBusinessDate, formatCount } from "../../lib/format";
+import { StatusPill } from "../../components/status-pill";
+import {
+  buildDiagnosticHref,
+  filterByConfidence,
+  resolveDiagnosticFilters,
+  selectDiagnosis,
+} from "../../lib/diagnostic-filters";
+import { formatBusinessDate, formatCount, formatCurrency } from "../../lib/format";
 import { createClient } from "../../lib/supabase/server";
 import { currentMembership } from "../../lib/membership";
+import { DiagnosisPanel } from "../skus/[skuId]/diagnosis-panel";
 
 export const metadata = { title: "Diagnóstico — Speed Bikers Gestão" };
 
@@ -46,30 +57,18 @@ interface BaselineRow {
 }
 
 const CORRELATION_WINDOW_DAYS_BEFORE = 3;
+
+/** Janela do preço médio para o impacto — a mesma dos outros dois consumidores. */
+const AVERAGE_PRICE_WINDOW_DAYS = 30;
 const CORRELATION_WINDOW_DAYS_AFTER = 1;
 
-const th: React.CSSProperties = {
-  textAlign: "left",
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.75rem",
-  textTransform: "uppercase",
-  letterSpacing: "0.04em",
-  color: "var(--sb-text-soft)",
-  whiteSpace: "nowrap",
-};
-
-const td: React.CSSProperties = {
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.875rem",
-  verticalAlign: "top",
-};
-
-const tdNumber: React.CSSProperties = { ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" };
-
-export default async function DiagnosticoPage(): Promise<ReactNode> {
+export default async function DiagnosticoPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}): Promise<ReactNode> {
   const supabase = await createClient();
+  const filters = resolveDiagnosticFilters(await searchParams);
 
   const membership = await currentMembership(supabase);
   const organizationId = membership.organizationId;
@@ -90,8 +89,12 @@ export default async function DiagnosticoPage(): Promise<ReactNode> {
   if (organizationId === null) {
     return (
       <Shell>
-        <h1 style={{ margin: "0 0 var(--sb-space-3)", fontSize: "1.375rem" }}>Diagnóstico</h1>
-        <p style={{ color: "var(--sb-text-soft)" }}>Sua conta não está associada a nenhuma organização.</p>
+        <PageTitle
+          eyebrow="INTELIGÊNCIA / DETECÇÃO"
+          title="Diagnóstico"
+          subtitle="Da anomalia à ação recomendada, com evidências rastreáveis."
+        />
+        <p className="sb-empty">Sua conta não está associada a nenhuma organização.</p>
       </Shell>
     );
   }
@@ -219,15 +222,95 @@ export default async function DiagnosticoPage(): Promise<ReactNode> {
 
   diagnoses.sort((a, b) => Math.abs(b.zScore) - Math.abs(a.zScore));
 
+  /*
+    IMPACTO ESTIMADO — a terceira célula da grade do frame (D22).
+
+    Preço médio só para os SKUs JÁ confirmados como anomalia, nunca para o
+    catálogo inteiro: é a razão de `estimateImpactBrl` ser função separada de
+    `diagnoseSalesAnomaly`, chamada depois. Sem anomalia, nenhuma leitura.
+
+    `null` quando não há preço médio no período: **impacto desconhecido é
+    diferente de impacto zero** (D-067), e a tela mostra "—".
+  */
+  const impactoPorSku = new Map<string, number | null>();
+
+  if (diagnoses.length > 0) {
+    const precos = await supabase.rpc("get_sku_average_prices", {
+      p_organization_id: organizationId,
+      p_sku_ids: diagnoses.map((d) => d.escopo.skuId),
+      // Janela do PREÇO, não a da correlação: são coisas diferentes e eu
+      // tinha reusado a errada. 30 dias é o que `/skus/[skuId]/actions.ts` e o
+      // worker de detecção já usam — três consumidores, uma janela.
+      p_date_from: shiftBusinessDate(asOf, -AVERAGE_PRICE_WINDOW_DAYS),
+      p_date_to: asOf,
+    });
+
+    const precoPorSku = new Map(
+      (precos.data ?? []).map((linha) => [linha.sku_id, linha.average_price]),
+    );
+
+    for (const diagnosis of diagnoses) {
+      impactoPorSku.set(
+        diagnosis.escopo.skuId,
+        estimateImpactBrl(diagnosis.unitsDelta, precoPorSku.get(diagnosis.escopo.skuId) ?? null),
+      );
+    }
+  }
+
+  // O recorte de confiança age sobre diagnósticos JÁ calculados — mesmo
+  // conjunto, sem leitura nova.
+  const visiveis = filterByConfidence(diagnoses, filters.confidence);
+  const selecionado = selectDiagnosis(visiveis, filters.selectedSkuId);
+
+  const rotuloConfianca =
+    filters.confidence === "alta"
+      ? "Alta confiança"
+      : filters.confidence === "media"
+        ? "Confiança média"
+        : "Todas as confianças";
+
   return (
     <Shell>
-      <h1 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.375rem" }}>Diagnóstico</h1>
+      {/* `page-title` do frame, com a barra à direita. */}
+      <PageTitle
+        eyebrow="INTELIGÊNCIA / DETECÇÃO"
+        title="Diagnóstico"
+        subtitle="Da anomalia à ação recomendada, com evidências rastreáveis."
+        aside={
+          /*
+            O frame põe DOIS menus aqui: "Todas as contas" e "Alta confiança".
+            Só o segundo entrou. O diagnóstico é por SKU e
+            `get_sku_sales_baseline` não recebe conta nem a conhece — um menu de
+            conta seria um controle que não recorta nada.
+          */
+          <FilterMenu
+            rotulo={rotuloConfianca}
+            opcoes={[
+              {
+                href: buildDiagnosticHref(filters, { confidence: "todas", selectedSkuId: null }),
+                label: "Todas as confianças",
+                ativo: filters.confidence === "todas",
+              },
+              {
+                href: buildDiagnosticHref(filters, { confidence: "alta", selectedSkuId: null }),
+                label: "Alta confiança",
+                ativo: filters.confidence === "alta",
+              },
+              {
+                href: buildDiagnosticHref(filters, { confidence: "media", selectedSkuId: null }),
+                label: "Confiança média",
+                ativo: filters.confidence === "media",
+              },
+            ]}
+          />
+        }
+      />
 
-      <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+      <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
         Venda de {formatBusinessDate(asOf)} comparada ao baseline do mesmo dia da semana (últimas 8 ocorrências,
-        média ± desvio padrão). Sem machine learning — estatística e correlação com eventos registrados
-        (`domain_events`). {formatCount(diagnoses.length)} anomalia(s) encontrada(s) entre{" "}
-        {formatCount(signals.length)} SKU(s) com histórico suficiente.
+        média ± desvio padrão). Sem machine learning — estatística e correlação com eventos registrados.{" "}
+        <strong>{formatCount(visiveis.length)}</strong> anomalia(s) no recorte, entre {formatCount(signals.length)}{" "}
+        SKU(s) com histórico suficiente.
       </p>
 
       {error !== null && (
@@ -236,59 +319,165 @@ export default async function DiagnosticoPage(): Promise<ReactNode> {
         </p>
       )}
 
-      {error === null && diagnoses.length === 0 && (
-        <p style={{ color: "var(--sb-text-soft)" }}>Nenhuma anomalia detectada.</p>
+      {error === null && visiveis.length === 0 && (
+        <p className="sb-empty">
+          {diagnoses.length === 0
+            ? "Nenhuma anomalia detectada — a venda do dia ficou dentro do baseline em todos os SKUs com histórico."
+            : "Nenhuma anomalia com esta confiança."}
+        </p>
       )}
 
-      {error === null && diagnoses.length > 0 && (
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "56rem" }}>
-            <thead>
-              <tr>
-                <th style={th}>SKU</th>
-                <th style={th}>Direção</th>
-                <th style={th}>Confiança</th>
-                <th style={th}>Vendido</th>
-                <th style={th}>Baseline</th>
-                <th style={th}>Causa candidata</th>
-                <th style={th}>Próximos passos</th>
-              </tr>
-            </thead>
+      {error === null && selecionado !== null && (
+        <div className="sb-diagnostic-layout">
+          {/* MESTRE — a lista do frame, ordenada por |z| decrescente. */}
+          <section className="sb-panel sb-diagnostic-list" aria-label="Anomalias detectadas">
+            {visiveis.map((diagnosis) => {
+              const linha = skuLookup.get(diagnosis.escopo.skuId);
+              const impacto = impactoPorSku.get(diagnosis.escopo.skuId) ?? null;
+              const causa = diagnosis.causasCandidatas[0];
 
-            <tbody>
-              {diagnoses.map((diagnosis) => {
-                const row = skuLookup.get(diagnosis.escopo.skuId);
+              return (
+                <Link
+                  key={diagnosis.escopo.skuId}
+                  className="sb-diagnostic-item"
+                  href={buildDiagnosticHref(filters, { selectedSkuId: diagnosis.escopo.skuId })}
+                  aria-current={diagnosis.escopo.skuId === selecionado.escopo.skuId ? "true" : undefined}
+                >
+                  <StatusPill
+                    code={diagnosis.direcao === "queda" ? "FAILED" : "APPLIED"}
+                    label={diagnosis.direcao === "queda" ? "Queda" : "Alta"}
+                  />
+                  <b>
+                    {linha?.sku}
+                    {causa !== undefined ? ` · ${causa.eventType}` : ""}
+                  </b>
+                  <span>
+                    Confiança {diagnosis.confianca === "alta" ? "Alta" : "Média"}
+                    {/*
+                      "—" quando não há preço médio: impacto DESCONHECIDO não é
+                      impacto zero (D-067).
+                    */}
+                    <strong>{formatCurrency(impacto)}</strong>
+                  </span>
+                </Link>
+              );
+            })}
+          </section>
 
-                return (
-                  <tr
-                    key={diagnosis.escopo.skuId}
-                    style={diagnosis.direcao === "queda" ? { background: "var(--sb-danger-soft)" } : { background: "var(--sb-success-soft)" }}
-                  >
-                    <td style={{ ...td, fontFamily: "ui-monospace, monospace" }}>
-                      {row?.sku}
-                      {row?.title !== null && row?.title !== undefined && (
-                        <div style={{ fontFamily: "inherit", color: "var(--sb-text-soft)", fontSize: "0.75rem" }}>
-                          {row.title}
-                        </div>
-                      )}
-                    </td>
-                    <td style={td}>{diagnosis.direcao === "queda" ? "Queda" : "Alta"}</td>
-                    <td style={td}>{diagnosis.confianca === "alta" ? "Alta" : "Média"}</td>
-                    <td style={tdNumber}>{row?.current_units_sold}</td>
-                    <td style={tdNumber}>
-                      {row?.baseline_mean} ± {row?.baseline_stddev}
-                    </td>
-                    <td style={td}>
-                      {diagnosis.causasCandidatas.length === 0
-                        ? "—"
-                        : diagnosis.causasCandidatas.map((cause) => cause.descricao).join(" ")}
-                    </td>
-                    <td style={td}>{diagnosis.proximosPassos.join(" ")}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          {/* DETALHE — o painel `.diagnosis` do frame. */}
+          <section className="sb-panel sb-diagnosis" aria-label="Diagnóstico da anomalia selecionada">
+            <div className="sb-panel-head">
+              <div style={{ minWidth: 0 }}>
+                <StatusPill
+                  code={selecionado.direcao === "queda" ? "FAILED" : "APPLIED"}
+                  label={selecionado.direcao === "queda" ? "Queda de venda" : "Alta de venda"}
+                />
+                <h2>
+                  {skuLookup.get(selecionado.escopo.skuId)?.title ??
+                    skuLookup.get(selecionado.escopo.skuId)?.sku}
+                </h2>
+                <p>
+                  <span className="sb-mono">{skuLookup.get(selecionado.escopo.skuId)?.sku}</span> ·{" "}
+                  {formatBusinessDate(asOf)}
+                </p>
+              </div>
+            </div>
+
+            <div className="sb-diagnosis-grid">
+              <div>
+                <span>Causa mais provável</span>
+                {/*
+                  Sem causa correlacionada a tela DIZ isso, em vez de repetir a
+                  direção como se fosse explicação.
+                */}
+                <b>{selecionado.causasCandidatas[0]?.descricao ?? "Sem causa correlacionada"}</b>
+              </div>
+              <div>
+                <span>Confiança</span>
+                {/*
+                  O frame mostra "Alta · 91%". O PERCENTUAL NÃO EXISTE:
+                  `DiagnosisConfidence` tem dois valores, por limiar de z-score
+                  (|z| >= 2 é anomalia, >= 3 sobe a confiança). Exibir 91% seria
+                  número sintetizado sem definição catalogada (D-023). No lugar
+                  dele a tela mostra o z-score, que é o insumo REAL da
+                  classificação — mais honesto e mais útil.
+                */}
+                <b style={{ color: selecionado.confianca === "alta" ? "var(--sb-success)" : undefined }}>
+                  {selecionado.confianca === "alta" ? "Alta" : "Média"}
+                </b>
+                <span style={{ fontFamily: "var(--sb-mono)" }}>z = {selecionado.zScore.toFixed(2)}</span>
+              </div>
+              <div>
+                <span>Impacto estimado</span>
+                <b>{formatCurrency(impactoPorSku.get(selecionado.escopo.skuId) ?? null)}</b>
+                <span>
+                  {selecionado.unitsDelta > 0 ? "+" : ""}
+                  {formatCount(selecionado.unitsDelta)} un. × preço médio
+                </span>
+              </div>
+            </div>
+
+            <h3 style={{ margin: "var(--sb-space-3) 1.25rem 0.5rem", fontSize: "0.6875rem" }}>Evidências</h3>
+
+            <ul className="sb-evidence">
+              {selecionado.evidencias.map((evidencia) => (
+                <li key={`${evidencia.tipo}-${evidencia.descricao}`}>
+                  {/* A cor do marcador diz o TOM da evidência, não a ordem. */}
+                  <i
+                    className={
+                      evidencia.tipo.includes("baseline") || evidencia.tipo.includes("desvio")
+                        ? "sb-dot-violet"
+                        : selecionado.direcao === "queda"
+                          ? "sb-dot-danger"
+                          : "sb-dot-success"
+                    }
+                  />
+                  {evidencia.descricao}
+                </li>
+              ))}
+            </ul>
+
+            {selecionado.proximosPassos.length > 0 && (
+              <>
+                <h3 style={{ margin: "var(--sb-space-3) 1.25rem 0.5rem", fontSize: "0.6875rem" }}>
+                  Próximos passos
+                </h3>
+                <ul className="sb-evidence">
+                  {selecionado.proximosPassos.map((passo) => (
+                    <li key={passo}>
+                      <i className="sb-dot-violet" />
+                      {passo}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+
+            {/*
+              A "ANÁLISE DO COPILOTO" do frame. Não é texto novo: `DiagnosisPanel`
+              já existe (aba Diagnóstico do SKU) e chama `/v1/copilot/query`,
+              cujo prompt diz que ele NARRA um diagnóstico já calculado por um
+              sistema determinístico separado. Sob demanda, nunca automática — a
+              chamada custa, e a tela não a faz sem o operador pedir.
+            */}
+            <div className="sb-copilot-note">
+              <span>✦ ANÁLISE DO COPILOTO</span>
+              <DiagnosisPanel skuId={selecionado.escopo.skuId} />
+            </div>
+
+            {/*
+              As duas ações do frame ("Ver cobertura", "Criar pedido de compra"),
+              como LINKS para as telas donas — esta tela é leitura, não escreve.
+            */}
+            <div className="sb-action-row">
+              <Link className="sb-button" href={`/skus/${selecionado.escopo.skuId}`}>
+                Ver o SKU
+              </Link>
+              <Link className="sb-button sb-button-primary" href="/compras/novo">
+                Criar pedido de compra
+              </Link>
+            </div>
+          </section>
         </div>
       )}
     </Shell>

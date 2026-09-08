@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { E2E_USER_EMAIL, E2E_USER_PASSWORD } from "./constants.js";
+import { E2E_SKU_CODE, E2E_USER_EMAIL, E2E_USER_PASSWORD } from "./constants.js";
 
 /**
  * `/produtos` — a curadoria, depois da migração da composição para o Figma.
@@ -44,8 +44,20 @@ test("/produtos: a curadoria em lote só escreve depois de dizer a consequência
   await expect(virtual).toBeDisabled();
   await expect(page.getByText("0 selecionado(s)")).toBeVisible();
 
-  // 2. Selecionar habilita e o contador acompanha.
-  await page.locator("tbody tr input[type=checkbox]").first().check();
+  /*
+    2. Selecionar habilita e o contador acompanha.
+
+    A linha é escolhida pelo SKU, não por `.first()`: a ordem da curadoria é
+    `decision_diverges_from_signature desc` antes do código, então "a primeira"
+    muda quando o catálogo muda. Foi o que aconteceu em D22 — um SKU novo,
+    classificado como virtual e sem assinatura sentinela, passou a divergir e
+    subiu para o topo; o teste marcava ELE, a classificação virava no-op e o
+    "Desfazer" nunca aparecia.
+  */
+  await page
+    .locator("tbody tr", { hasText: E2E_SKU_CODE })
+    .locator("input[type=checkbox]")
+    .check();
   await expect(page.getByText("1 selecionado(s)")).toBeVisible();
   await expect(virtual).toBeEnabled();
 

@@ -2293,3 +2293,159 @@ table {
 .sb-abc-bars-nota {
   line-height: 1.4;
 }
+
+/*
+ * --- Diagnóstico: o layout mestre-detalhe do frame `Diagnostic` (D22) ---
+ *
+ * Primeira tela da frente visual que NÃO é cabeçalho + faixa + tabela. O frame
+ * põe a lista de anomalias à esquerda e o diagnóstico da selecionada à direita,
+ * e as medidas abaixo são as do export (`.diagnostic-layout` 320px, `gap` 14px,
+ * `.diagnosis-grid` em três colunas com fio entre elas).
+ *
+ * A seleção mora na URL (`?sku=`), não em estado React: é o que mantém o link
+ * compartilhável e o voltar do navegador funcionando — a mesma regra dos
+ * filtros em todas as telas desta frente.
+ */
+.sb-diagnostic-layout {
+  display: grid;
+  grid-template-columns: 20rem minmax(0, 1fr);
+  gap: var(--sb-space-3);
+}
+
+.sb-diagnostic-list {
+  padding: 0.4375rem;
+  overflow: hidden;
+}
+
+.sb-diagnostic-item {
+  display: grid;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.8125rem;
+  border: 0;
+  border-bottom: 1px solid var(--sb-table-rule);
+  border-radius: var(--sb-radius-md);
+  background: var(--sb-surface);
+  color: inherit;
+  text-align: left;
+  text-decoration: none;
+}
+
+.sb-diagnostic-item:hover,
+.sb-diagnostic-item[aria-current="true"] {
+  background: #f5f4fc;
+}
+
+.sb-diagnostic-item b {
+  font-size: 0.6875rem;
+}
+
+.sb-diagnostic-item > span {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sb-space-2);
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-diagnostic-item > span strong {
+  color: var(--sb-text);
+}
+
+/* Grade de três células do frame, com fio entre elas e não `gap`. */
+.sb-diagnosis-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-top: 1px solid var(--sb-border);
+  border-bottom: 1px solid var(--sb-border);
+}
+
+.sb-diagnosis-grid > div {
+  padding: 0.875rem 1.25rem;
+  border-right: 1px solid var(--sb-border);
+}
+
+.sb-diagnosis-grid > div:last-child {
+  border-right: 0;
+}
+
+.sb-diagnosis-grid span {
+  display: block;
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-diagnosis-grid b {
+  display: block;
+  margin-top: 0.3125rem;
+  font-size: 0.8125rem;
+}
+
+.sb-evidence {
+  margin: 0;
+  padding: 0 1.25rem;
+  list-style: none;
+}
+
+.sb-evidence li {
+  padding: 0.4375rem 0;
+  font-size: 0.6875rem;
+}
+
+/* O marcador colorido do frame: a cor diz o TOM da evidência, não a ordem. */
+.sb-evidence i {
+  display: inline-block;
+  width: 0.4375rem;
+  height: 0.4375rem;
+  margin-right: 0.5rem;
+  border-radius: 50%;
+  background: var(--sb-muted-ink);
+}
+
+.sb-evidence i.sb-dot-danger { background: var(--sb-danger); }
+.sb-evidence i.sb-dot-violet { background: var(--sb-secondary); }
+.sb-evidence i.sb-dot-success { background: var(--sb-success); }
+
+.sb-copilot-note {
+  margin: var(--sb-space-3) 1.25rem 0;
+  padding: 0.8125rem;
+  border-radius: 0.4375rem;
+  border-left: 3px solid var(--sb-secondary);
+  background: #f3f2fa;
+}
+
+.sb-copilot-note > span {
+  font-family: var(--sb-mono);
+  font-size: 0.5625rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--sb-secondary);
+}
+
+.sb-copilot-note p {
+  margin: 0.4375rem 0;
+  font-size: 0.6875rem;
+  line-height: 1.5;
+}
+
+.sb-action-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sb-space-2);
+  margin: var(--sb-space-3) 1.25rem 0;
+}
+
+/*
+  Os degraus do export: a 850px a lista some e o diagnóstico ocupa a largura.
+  Some de propósito — numa tela estreita, a lista empurraria o detalhe para
+  fora da primeira dobra, e o detalhe é o que a tela existe para mostrar.
+*/
+@media (max-width: 850px) {
+  .sb-diagnostic-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .sb-diagnostic-list {
+    display: none;
+  }
+}

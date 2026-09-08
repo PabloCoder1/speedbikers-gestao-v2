@@ -6405,6 +6405,71 @@ A fila de candidatos e a **vinculacao manual** continuam, em painel proprio. O D
 
 **Impacto:** `supabase/migrations/20260907160000_listings_sold_predicate.sql` (novo), `apps/web/app/vinculacoes/page.tsx`, `apps/web/lib/link-integrity-filters.ts` + teste (novos), `apps/web/e2e/vinculacoes.spec.ts` (novo), `apps/web/e2e/{constants.ts,seed.ts}`, `packages/db/src/types.ts` (a mao, D-213), `packages/db/src/rls.integration.test.ts` (+4).
 
+## D-260 - D22: o Diagnostico pelo frame, e o "91%" que nao tem fonte
+
+**Contexto:** fatia D22 -- `/diagnostico` contra o frame `Diagnostic`. **E a primeira tela da frente visual que NAO e cabecalho + faixa + tabela**: o frame e mestre-detalhe, com a lista de anomalias a esquerda e o diagnostico da selecionada a direita. Trouxe CSS novo (`.sb-diagnostic-layout`, `.sb-diagnosis-grid`, `.sb-evidence`, `.sb-copilot-note`, `.sb-action-row`), com as medidas tiradas do `index.css` do export.
+
+---
+
+**A RECUSA PRINCIPAL: O PERCENTUAL DE CONFIANCA NAO EXISTE**
+
+O frame mostra, na segunda celula da grade: **"Alta · 91%"**.
+
+`DiagnosisConfidence` tem **DOIS** valores -- `media` e `alta` --, por limiar de z-score: |z| >= 2 e anomalia, |z| >= 3 sobe a confianca. **Nao ha escala continua**, e nao ha nada em `metric_definitions` que defina "91%". Exibi-lo seria numero sintetizado sem definicao catalogada, que e o que D-023 proibe.
+
+**O que entrou no lugar e melhor que o desenho:** a tela mostra "Alta" e, embaixo, **`z = -11.24`** -- o insumo REAL da classificacao. Quem olha entende de onde veio o "Alta", o que o percentual inventado nao daria.
+
+**Um segundo controle do frame tambem ficou de fora.** A barra tem "Todas as contas ⌄" e "Alta confianca ⌄"; so o segundo entrou. O diagnostico e por SKU, e `get_sku_sales_baseline` **nao recebe conta nem a conhece** -- um menu de conta seria controle que nao recorta nada.
+
+> **Superficie:** `/diagnostico` · **Figma:** "Alta · 91%" e menu "Todas as contas" · **V3 real:** confianca categorica de dois niveis por limiar de z; baseline sem eixo de conta · **Decisao:** mostrar "Alta"/"Media" com o z-score ao lado; sem menu de conta · **Motivo:** dado inexistente (D-023).
+
+**O que o frame pede e EXISTE, e entrou:** causa mais provavel (`causasCandidatas[0]`), impacto estimado (`estimateImpactBrl`, NULO sem preco medio -- D-067), evidencias com marcador colorido, proximos passos, e a "ANALISE DO COPILOTO" -- que nao e texto novo: `DiagnosisPanel` ja existia na aba do SKU e chama `/v1/copilot/query`, cujo prompt diz que ele NARRA um diagnostico ja calculado por um sistema deterministico. **Sob demanda, nunca automatica.**
+
+---
+
+**A TELA NASCIA VAZIA, E A CAPTURA PROVOU**
+
+Primeira renderizacao: *"0 anomalia(s) no recorte, entre **0 SKU(s) com historico suficiente**"*. `get_sku_sales_baseline` exige 4 amostras do MESMO dia da semana e `diagnoseSalesAnomaly` exige |z| >= 2; nenhum SKU do seed chegava perto. O mestre-detalhe -- o ponto da fatia -- nao tinha o que renderizar.
+
+`E2E_ANOMALIA` existe para isso: 6 semanas de historico (9/10/11 unidades, variando de proposito -- com valores identicos o desvio seria zero e o z indefinido) e a queda a zero no dia do diagnostico. Da |z| ~ 11.
+
+---
+
+**QUATRO ERROS MEUS PARA CHEGAR LA, E O PADRAO E UM SO**
+
+| erro | realidade |
+|---|---|
+| `p_from`/`p_to` na RPC de precos | sao `p_date_from`/`p_date_to` |
+| escrevi `average_selling_price` | e coluna **GERADA** (`gross_revenue / nullif(units_sold,0)`) |
+| semeei o dia da queda com zeros | `daily_sku_metrics` tem `check (units_sold > 0)`: a tabela guarda **dias com venda**, e a AUSENCIA da linha e o zero (`left join` + `coalesce`) |
+| datas por `toISOString()` | a tela usa `toSalesMetricDate` (fuso de negocio); um dia de diferenca desloca TODO o historico para outro dia da semana, e o baseline nao acha amostra |
+
+**Os quatro sao a mesma coisa: escrever a interface de memoria em vez de conferi-la.** A unica decisao em que acertei de primeira -- estoque virtual sair da ruptura -- foi a unica em que li o SQL antes. O seed passou a importar `toSalesMetricDate`/`shiftBusinessDate` do dominio: **uma definicao de "data de metrica", nao duas**.
+
+**E um erro no codigo de producao, nao so no fixture:** eu usava a janela de CORRELACAO (3 dias) para buscar preco medio. Existe `AVERAGE_PRICE_WINDOW_DAYS = 30`, ja usada por `/skus/[skuId]` e pelo worker de deteccao. Tres consumidores, uma janela.
+
+---
+
+**O ACHADO MAIS UTIL: UM SKU NOVO NO SEED QUEBROU DUAS TELAS QUE A FATIA NAO TOCA**
+
+A Home passou a ver "1 SKU em ruptura" onde afirmava 0, e `/produtos` passou a ver um "nao classificado" sobrando. **Nao eram bugs de produto** -- eram assercoes acopladas a composicao exata do catalogo.
+
+A correcao NAO foi afrouxar teste. Foi **o fixture dizer a verdade sobre si mesmo**: ele tem venda e nao tem movimento de estoque, entao declara `stock_is_virtual: true` com `set_at` preenchido. Isso o tira da ruptura pela regra que ja existia (`when sk.stock_is_virtual then null`, D-127) e o marca como classificado.
+
+**E ai apareceu a segunda camada.** `produtos.spec` continuou vermelho, agora no "Desfazer": a curadoria ordena por **`decision_diverges_from_signature desc`** antes do codigo, e um SKU virtual sem assinatura sentinela **diverge** -- subiu ao topo. O teste marcava `.first()`, que agora era o MEU SKU, ja classificado; a escrita virava no-op.
+
+O `.first()` era fragil desde sempre: assumia catalogo de um SKU so. Passou a escolher a linha **pelo SKU**, e `E2E_SKU_CODE` virou constante compartilhada -- estava so dentro de `seed.ts`, e os specs escreveriam o literal a mao. **A assercao nao foi enfraquecida**: prova o mesmo, sem depender de qual linha o banco devolve primeiro.
+
+**A licao para a fila:** mexer no seed compartilhado tem raio maior que a fatia. Depois de acrescentar fixture, a suite inteira e a verificacao -- nao so o spec novo.
+
+---
+
+**Legado removido:** o `<h1>` proprio e as constantes `th`/`td`/`tdNumber` inline -- a tela adotou `PageTitle`, `Panel` e o layout do frame.
+
+**Impacto:** `apps/web/app/diagnostico/page.tsx`, `apps/web/app/globals.css` (CSS do mestre-detalhe), `apps/web/lib/diagnostic-filters.ts` + teste (novos), `apps/web/e2e/diagnostico.spec.ts` (novo), `apps/web/e2e/{constants.ts,seed.ts,produtos.spec.ts}`. **Sem migration** -- a fatia inteira e frontend sobre RPCs que ja existiam.
+
+**Verificacao, local:** `check` **29/29** (337 testes, 12 novos), integracao **621/621**, e2e **39/39** (2 novos), build **8/8**, guardas verdes. **A tela foi capturada a 1440px** contra o Supabase local: o mestre-detalhe renderiza, o impacto sai R$ 1.499,00 (10 un x 149,90) e a confianca aparece como "Alta" com `z = -11.24`.
+
 ## Como adicionar nova decisao
 
 Registrar:

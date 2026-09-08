@@ -615,7 +615,8 @@ que ele renderiza.**
 | D20 | **Fornecedores** — mesmo esboço da `nfe`; a linha de apoio do frame prometia lead time por fornecedor, que não existe no modelo (D-256) | ✔ |
 | D20b | **Fornecedores, 2ª metade** — "último pedido" e "valor comprado" pela RPC `get_suppliers`, e o `coalesce(sum,0)` que eu reintroduzi na função criada para tirá-lo (D-258) | ✔ |
 | D21 | **Vinculações → Integridade de Catálogo** — a tela mudou de assunto, e as duas fontes de "vendeu" divergem em 12 (D-259) | ✔ |
-| D22–D30 | Diagnóstico, Ações, Alterações, Preços, Full, Tráfego, Atendimento, Conhecimento, Central | fila |
+| D22 | **Diagnóstico** — primeira tela mestre-detalhe da frente; o "91%" do frame não tem fonte e virou o z-score (D-260) | ✔ |
+| D23–D30 | Ações, Alterações, Preços, Full, Tráfego, Atendimento, Conhecimento, Central | fila |
 | D31–D36 | Usuários, Integrações, Sincronização, Saúde, Configurações, Copiloto | fila |
 | D37 | Passe visual global | fila |
 
@@ -777,77 +778,100 @@ na cobertura) — nenhum muda composição, e todos cabem no passe visual global
 do que os commits registram, não de render conferido. Fotografá-las é o passo
 que falta para a coluna A3 ficar completa.
 
-O que resta é a fila **D22 em diante**: 16 superfícies ainda não migradas.
+O que resta é a fila **D23 em diante**: 15 superfícies ainda não migradas.
 
 ## Última fatia concluída
 
-**D21 — Vinculações, pelo frame `ProcessScreen type="links"` (D-259).** A
-variação mais completa do frame e a **primeira tela de processo com faixa de
-KPIs desenhada** — `nfe`, `suppliers` e `purchases` não têm cartão nenhum.
+**D22 — Diagnóstico, pelo frame `Diagnostic` (D-260).** É a **primeira tela da
+frente que não é cabeçalho + faixa + tabela**: o frame é mestre-detalhe, e
+trouxe CSS novo com as medidas do `index.css` do export.
 
-**O frame REENQUADRA a tela, e os dados concordam com ele.** Era "Central de
-Vinculações", uma fila de `link_candidates`; virou **"Integridade de Catálogo"**
-sobre anúncios, com candidato como um estado entre outros. Medido antes de
-aceitar: 5.089 anúncios, 863 sem vínculo e **0 candidatos** — a fila que era o
-assunto da tela está vazia, e o que importa está na outra ponta.
+**A recusa principal: o percentual de confiança não existe.** O frame mostra
+"Alta · 91%". `DiagnosisConfidence` tem **dois** valores, por limiar de z-score
+(|z| ≥ 2 anomalia, ≥ 3 confiança alta) — não há escala contínua, e 91% seria
+número sintetizado sem definição catalogada (D-023). No lugar dele a tela mostra
+**"Alta" com `z = -11.24`**: o insumo real, que explica de onde veio o "Alta".
 
-**O achado principal: duas fontes de "vendeu", divergindo em 12.** Eu ia criar
-um segundo dono do número — `get_link_integrity` já entregava as cinco células,
-o percentual do brief e `receita_sem_vinculo`. Só que ela conta venda a partir
-de **pedidos** (`order_items`), enquanto a tabela conta a partir do **pipeline
-de métricas**: **349 contra 337**. Os 12 são anúncios que geraram pedido e o
-pipeline não conhece — o que a tela existe para expor.
+**Um segundo controle do frame também ficou fora:** o menu "Todas as contas". O
+diagnóstico é por SKU e `get_sku_sales_baseline` não recebe conta nem a conhece.
 
-A resolução: a célula usa o número da **tabela** (para clicar mostrar as linhas
-que ela promete, D-242, e cabeçalho e corpo não discordarem, D-236), e o número
-independente aparece **na ressalva**, nomeando a diferença. Mais a linha de
-**R$ 260.149,08** de receita sem vínculo, que traduz o problema em dinheiro.
+O que o frame pede e **existe**, entrou: causa mais provável, impacto estimado
+(nulo sem preço médio, D-067), evidências, próximos passos e a "ANÁLISE DO
+COPILOTO" — que não é texto novo: `DiagnosisPanel` já existia e chama
+`/v1/copilot/query`, cujo prompt diz que ele *narra* diagnóstico já calculado.
+Sob demanda, nunca automática.
 
-**Duas células só são honestas com ressalva:**
+**A tela nascia vazia, e a captura provou:** "0 SKU(s) com histórico
+suficiente". O baseline exige 4 amostras do mesmo dia da semana e |z| ≥ 2;
+nenhum SKU do seed chegava perto. `E2E_ANOMALIA` existe para isso.
 
-| célula | ressalva | por quê |
-|---|---|---|
-| Sem vínculo (863) | "vínculo por variação conta como vinculado" | `sku_id is null` diria **1.876** (D-122) |
-| Candidatos (0) | "nenhuma linha do ERP ficou sem SKU" | 27.709 linhas resolveram; 3.274 são de outro canal. O zero é verdadeiro, mas cru leria como "não há trabalho" (D-250) |
+### O achado mais útil: o seed compartilhado tem raio maior que a fatia
 
-**`p_sold` existe para o LINK da célula, não para o número** — "Vendidos sem
-vínculo" é a interseção de `p_link_state='unlinked'` com `p_sold='with'`.
+Acrescentar **um** SKU quebrou duas telas que D22 não toca — a Home passou a ver
+"1 SKU em ruptura" onde afirmava 0, e `/produtos` passou a ver um "não
+classificado" sobrando. Não eram bugs de produto: eram asserções acopladas à
+composição exata do catálogo.
 
-**O que o frame não desenha e a tela mantém:** a fila de candidatos e a
-vinculação manual. O Design Contract manda remover conteúdo *incompatível*, não
-funcionalidade ausente do frame.
+A correção não foi afrouxar teste, foi **o fixture dizer a verdade sobre si
+mesmo** — ele tem venda e não tem movimento de estoque, então declara
+`stock_is_virtual`, o que o tira da ruptura pela regra que já existia (D-127) e
+o marca como classificado.
 
-**O seed ganhou um quinto anúncio** — "vendeu sem vínculo" —, porque sem ele a
-célula mais acionável nasceria com 0 e nada a afirmar.
+E aí apareceu a segunda camada: a curadoria ordena por
+`decision_diverges_from_signature desc` **antes** do código, e um SKU virtual
+sem assinatura sentinela diverge — subiu ao topo. O `.first()` do
+`produtos.spec` passou a marcar o SKU errado e a escrita virava no-op. Ele era
+frágil desde sempre; agora escolhe a linha **pelo SKU**, com `E2E_SKU_CODE`
+promovido a constante compartilhada.
 
-**Verificação, local:** `check` **29/29** (325 testes, 10 novos), integração
-**621/621** (4 novos), e2e **37/37** (3 novos), build **8/8**,
-`check:waterfalls` 60, `check:server-actions` 17, `docs:check`. A migration foi
-aplicada e conferida no Postgres **local**; não foi ao Dev antes do push.
+**Regra que fica:** depois de acrescentar fixture ao seed, a verificação é a
+**suíte inteira**, não o spec novo.
 
-⚠️ **Três erros meus no fixture de integração**, todos suposições sobre o
-esquema e nenhum sobre a lógica: coluna `ml_user_id` (é `seller_id`), slug em
-maiúsculas (a constraint exige minúsculas) e `currency_id` esquecido (NOT NULL).
-Na terceira parei de adivinhar e copiei um `insert` que já funcionava no
-arquivo — que é o que a migration desta fatia também faz com o corpo do SQL.
+### Quatro erros meus, e o padrão é um só
+
+`p_from`/`p_to` (são `p_date_from`/`p_date_to`); escrever `average_selling_price`
+(é coluna gerada); semear o dia da queda com zeros (`check units_sold > 0` — a
+tabela guarda *dias com venda*, e a ausência **é** o zero); e datas por
+`toISOString()` quando a tela usa `toSalesMetricDate` (um dia de diferença
+desloca todo o histórico para outro dia da semana).
+
+Os quatro são **escrever a interface de memória em vez de conferi-la**. A única
+decisão em que acertei de primeira foi a única em que li o SQL antes. O seed
+passou a importar as funções de data do domínio: uma definição, não duas.
+
+Também corrigi um erro no código de produção: eu usava a janela de *correlação*
+(3 dias) para buscar preço médio, quando existe `AVERAGE_PRICE_WINDOW_DAYS = 30`,
+já usada por `/skus/[skuId]` e pelo worker. Três consumidores, uma janela.
+
+**Verificação, local:** `check` **29/29** (337 testes, 12 novos), integração
+**621/621**, e2e **39/39** (2 novos), build **8/8**, `check:waterfalls` 60,
+`check:server-actions` 17, `docs:check`. Tela capturada a 1440px contra o
+Supabase local.
 
 ## Próxima fatia segura
 
-**D22 — Diagnóstico (`/diagnostico`).** Não há variação do `ProcessScreen` para
-ela; é preciso localizar o frame próprio no export antes de desenhar, e a
-pergunta de abertura é a de sempre: **o frame promete número que o sistema
-mede?** O Diagnóstico é onde essa pergunta mais tende a doer, porque o brief
-fala de causas e recomendações — território de `metric_definitions` (D-023), que
-proíbe exibir número sintetizado sem definição catalogada.
+**D23 — Central de Ações (`/acoes`).** É a irmã do Diagnóstico: onde D22 calcula
+a anomalia ao vivo, a Central persiste o diagnóstico como item acionável
+(`actions`, com `evidence` em `jsonb` lido defensivamente por
+`action-evidence.ts`, D-064). O frame é `ProcessScreen type="actions"`.
 
-Antes de começar, a rotina que D-255 tornou obrigatória: **o `db reset` + seed
-deixa `/diagnostico` com dado?** Se não, o seed entra na fatia.
+**Duas coisas medidas de antemão:** o Dev tem **1.309 ações**, sendo 1.265
+`venda_anomala` e o resto `reclamacoes_recorrentes` — mas **0 abertas**. Um
+frame que abrir na fila de trabalho vai mostrar vazio, e a pergunta será a mesma
+de D21: o zero é verdadeiro ou o mecanismo parou? Conferir antes de desenhar.
 
-Depois, pela fila: Ações, Alterações, Preços, Full, Tráfego, Atendimento,
-Conhecimento, Central; e então D31–D36 (Usuários, Integrações, Sincronização,
-Saúde, Configurações, Copiloto) e o passe visual global (D37).
+E a rotina que D-260 tornou obrigatória: **o `db reset` + seed deixa `/acoes` com
+dado?** Se o fixture entrar, a verificação é a suíte inteira.
+
+Depois, pela fila: Alterações, Preços, Full, Tráfego, Atendimento, Conhecimento,
+Central; e então D31–D36 (Usuários, Integrações, Sincronização, Saúde,
+Configurações, Copiloto) e o passe visual global (D37).
+
+**Duas dívidas de acabamento seguem abertas**, ambas de design system e por isso
+com fatia própria: os chips "ver lista" da faixa desalinham quando uma célula
+tem ressalva de duas linhas (A3), e D14–D17 nunca foram capturadas — é o que
+falta para a coluna A3 da tabela de progresso ficar completa.
 
 **A tela de conferência da NF-e (`/notas-fiscais/[id]`) continua aberta** — o
-brief §25 traz o fluxo em seis passos, a tabela de sete colunas e o botão
-"Confirmar Entrada". Dois dos quatro estados de item que ele pede (`SUGESTÃO`,
-`CONFLITO`) não têm dado em `document_items` (D-253).
+brief §25 traz o fluxo em seis passos e o botão "Confirmar Entrada". Dois dos
+quatro estados de item que ele pede não têm dado em `document_items` (D-253).
