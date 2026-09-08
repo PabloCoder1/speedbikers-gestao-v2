@@ -108,4 +108,41 @@ export function buildFullHref(current: FullFilters, override: Partial<FullFilter
   );
 }
 
+/** As colunas que uma linha REAL de `get_fulfillment_overview` sempre tem. */
+interface LinhaFullPreenchida {
+  ml_account_id: string;
+  account_label: string;
+  sku_id: string;
+  sku: string;
+  situation: string;
+  full_quantity: number;
+  buckets: number;
+  captured_at: string;
+  local_quantity: number;
+  units_sold: number;
+}
+
+/**
+ * Descarta a LINHA-SENTINELA de D-265 **e estreita o tipo**.
+ *
+ * `get_fulfillment_overview` faz `facetas left join pagina`, então uma página
+ * vazia ainda devolve uma linha — com todas as colunas do SKU em `null` — só
+ * para carregar `facet_situation`. Sem isso, escolher uma situação sem
+ * resultado apagaria as contagens da faixa, que são a navegação da tela.
+ *
+ * **Por que conferir UM campo licencia estreitar TODOS.** A nulidade não vem do
+ * schema: vem do `left join`, e ele preenche ou zera a linha inteira de uma vez.
+ * Numa linha real, `situation` sai de um `case` que sempre devolve valor, `sku`
+ * e `account_label` vêm de `join` (não `left`), e os números são `coalesce`. O
+ * único anulável de verdade é `sku_title`, e ele fica de fora deste contrato.
+ *
+ * O guarda existe para essa regra morar em UM lugar: os três consumidores da
+ * função a aplicam, e `sku_title` continua sendo tratado como anulável onde é.
+ */
+export function isFullRow<T extends { sku_id: string | null }>(
+  row: T,
+): row is T & LinhaFullPreenchida {
+  return row.sku_id !== null;
+}
+
 export { summarizePagedWindow };

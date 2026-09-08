@@ -4197,20 +4197,27 @@ export type Database = {
           p_situation?: string | null
           p_sku_id?: string | null
         }
+        // ACRESCIMO MANUAL (D-265): a funcao ganhou `facet_situation` e uma
+        // LINHA-SENTINELA. Pagina vazia devolve uma linha com TODAS as colunas
+        // do SKU em NULL, so para carregar as contagens da faixa de /full --
+        // por isso os campos abaixo passaram a ser anulaveis. Os tres
+        // chamadores descartam por `sku_id is null`; o gerador nunca enxergaria
+        // essa nulidade, porque ela vem do `left join` e nao do schema.
         Returns: {
-          account_label: string
-          buckets: number
-          captured_at: string
-          full_quantity: number
-          local_quantity: number
-          ml_account_id: string
-          situation: string
-          sku: string
-          sku_id: string
+          account_label: string | null
+          buckets: number | null
+          captured_at: string | null
+          facet_situation: Json
+          full_quantity: number | null
+          local_quantity: number | null
+          ml_account_id: string | null
+          situation: string | null
+          sku: string | null
+          sku_id: string | null
           // LEFT do proprio cadastro: SKU pode nao ter titulo.
           sku_title: string | null
           total_count: number
-          units_sold: number
+          units_sold: number | null
         }[]
       }
       get_listing_dashboard_summary: {

@@ -20,7 +20,7 @@ import {
   formatPercent,
 } from "../../../lib/format";
 import { actionStatusLabel, eventTypeLabel, listingStatusLabel } from "../../../lib/labels";
-import { fullSituationCriterion, fullSituationLabel, fullSituationTom } from "../../../lib/full-filters";
+import { fullSituationCriterion, fullSituationLabel, fullSituationTom, isFullRow } from "../../../lib/full-filters";
 import { createClient } from "../../../lib/supabase/server";
 import { DiagnosisPanel } from "./diagnosis-panel";
 import { SimulatorPanel } from "./simulator-panel";
@@ -448,7 +448,11 @@ export default async function SkuDashboardPage({
   const abcClass = abcResult.error === null ? (abcResult.data?.abc_class ?? null) : null;
   const costHistory = costHistoryResult.data ?? [];
   const timeline = (timelineResult.data ?? []) as unknown as TimelineRow[];
-  const full = fullResult.data ?? [];
+  // Descarta a LINHA-SENTINELA de D-265: `get_fulfillment_overview` devolve
+  // sempre ao menos uma linha, com as colunas do SKU em NULL, para as contagens
+  // da faixa de `/full` sobreviverem a um recorte vazio. Sem o filtro, um SKU
+  // sem saldo no Full renderizaria uma linha fantasma em vez do estado vazio.
+  const full = (fullResult.data ?? []).filter(isFullRow);
   const prices = pricesResult.data ?? [];
   const sales = salesResult.data ?? [];
   // Particionar as (no máximo) 1 + contas + 30 linhas por `grain` não é

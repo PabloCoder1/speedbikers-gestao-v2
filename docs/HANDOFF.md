@@ -19,7 +19,7 @@
 | **Deploy no ar** | **`0702969` — o mesmo do `HEAD`, sem atraso** (`api-00030-gqw` / `worker-00045-cwq`, 2026-09-02). Depois de 66 commits parado. Verificado contra a infraestrutura, não contra o script: `APP_COMMIT=0702969` nos dois serviços, imagem `api:0702969`, `/health` respondendo `{"commit":"0702969"}` e **zero `ERROR`** no Cloud Logging desde o boot |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | **150 locais, 150 no Dev** — `20260907160000` (D-259) aplicada e CONFERIDA no banco: função com 12 argumentos, `anon` sem acesso, `service_role` preservado. ⚠️ Quem aplica no Dev é a integração GitHub do Supabase, **não** a CI (D-257). Antes dela: **131 locais, 130 no Dev** — o expurgo (`20260903120000`) está no git e **não pousou**; a CI não o aplicou, sem drift — D-209→D-212 aplicadas pela CI em 2026-09-02 e CONFERIDAS lá (`anon` alcança 0 funções; `ml_accounts` sem UPDATE/DELETE para `authenticated`; `created_by` presente). O caminho é o push, **nunca** o MCP (lição de D-207) |
-| **Frente atual** | **Frente visual**: D18→D23 entregues, mais A3/A3b. A lição do A3b virou o guarda `check:table-styles` (D-262), que reprova a migração pela metade — e cobre **uma metade só**: a tela que nunca declarou `.sb-table` continua dependendo da captura. ⚠️ **`/cobertura` nunca foi migrada** — o doc de design afirmava que sim (D-261). **D23 achou D-131 vivo**: `/acoes` lia sem `limit` contra o `max_rows = 1000` do PostgREST e imprimia "1.000 aberto(s)" com **1.449 abertas** no Dev — escondia 449 e chamava o teto do servidor de total (D-263). **D24 fechou Preços** (era a mesma tela que "Alterações"): a recusa ali foi a uma PROMESSA — o frame diz que o sistema mostrará tendências "após 7 dias da mudança" e nada implementa isso (D-264). **Próxima: D25 — Central Full**, onde a pergunta já tem dono: D-173 mediu que o saldo do Full é por bucket (`inventory_id`) e colapsar por `(sku, conta)` perde **15,6% das unidades**. Trilha 8B com P0 fechado (A–H) e em P1 |
+| **Frente atual** | **Frente visual**: D18→D23 entregues, mais A3/A3b. A lição do A3b virou o guarda `check:table-styles` (D-262), que reprova a migração pela metade — e cobre **uma metade só**: a tela que nunca declarou `.sb-table` continua dependendo da captura. ⚠️ **`/cobertura` nunca foi migrada** — o doc de design afirmava que sim (D-261). **D23 achou D-131 vivo**: `/acoes` lia sem `limit` contra o `max_rows = 1000` do PostgREST e imprimia "1.000 aberto(s)" com **1.449 abertas** no Dev — escondia 449 e chamava o teto do servidor de total (D-263). **D24 fechou Preços** (era a mesma tela que "Alterações"): a recusa ali foi a uma PROMESSA — o frame diz que o sistema mostrará tendências "após 7 dias da mudança" e nada implementa isso (D-264). **D25 fechou a Central Full**: o frame particiona errado — os três cartões dele somam o total e escondem o MAIOR estado, 778 de 1.915 SKUs (D-265). **Próxima: D26 — Tráfego**, onde a pergunta é a de D-170: as visitas são esporádicas (média de **4,9 dias observados em 31**), e toda taxa calculada sobre elas precisa dizer sobre quantos dias de coleta ela corre. Trilha 8B com P0 fechado (A–H) e em P1 |
 
 ### O que está pronto
 
@@ -90,7 +90,23 @@ Números completos e método: `docs/PERFORMANCE.md`.
   Playwright depois (usuários criados por SQL deixam `confirmation_token`
   nulo, e o seed morre em `AuthRetryableFetchError: Database error finding
   users`). **`supabase db reset` antes de CADA uma das duas** — o risco já
-  estava escrito aqui e mesmo assim custou uma rodada (D-225).
+  estava escrito aqui e mesmo assim custou uma rodada (D-225), e uma segunda em
+  D-265. O sintoma exato está no log do container
+  (`docker logs supabase_auth_...`): `Scan error on column index 3, name
+  "confirmation_token": converting NULL to string is unsupported`. Quando o
+  reset sozinho não bastar, o reparo é normalizar os oito campos de token:
+
+  ```sql
+  update auth.users set
+    confirmation_token = coalesce(confirmation_token,''),
+    recovery_token = coalesce(recovery_token,''),
+    email_change = coalesce(email_change,''),
+    email_change_token_new = coalesce(email_change_token_new,''),
+    email_change_token_current = coalesce(email_change_token_current,''),
+    phone_change = coalesce(phone_change,''),
+    phone_change_token = coalesce(phone_change_token,''),
+    reauthentication_token = coalesce(reauthentication_token,'');
+  ```
 - **O Playwright reusa servidor existente fora da CI** (`reuseExistingServer`).
   Um `next dev` esquecido na porta 3000 faz a suíte rodar contra o dev
   server, que compila sob demanda, e 13 casos estouram por timeout. Não é
@@ -128,26 +144,6 @@ Números completos e método: `docs/PERFORMANCE.md`.
   conferência produziu **476 linhas de diff** que não tinham nada a ver com a
   mudança. Para "a assinatura mudou?", a fonte é o catálogo
   (`pg_get_function_result`), não o gerador.
-- **Depois de `supabase db reset`, o Auth local fica quebrado — e o seed não roda.**
-  O sintoma é `AuthRetryableFetchError: Database error finding users`; a causa
-  está no log do container (`docker logs supabase_auth_...`):
-  `Scan error on column index 3, name "confirmation_token": converting NULL to
-  string is unsupported`. As linhas de `auth.users` sobrevivem ao reset com os
-  campos de token NULOS, e o `listUsers` do GoTrue não lê nulo ali. Não é
-  defeito do projeto. **Refaça isto depois de cada `db reset`, antes do seed:**
-
-  ```sql
-  update auth.users set
-    confirmation_token = coalesce(confirmation_token,''),
-    recovery_token = coalesce(recovery_token,''),
-    email_change = coalesce(email_change,''),
-    email_change_token_new = coalesce(email_change_token_new,''),
-    email_change_token_current = coalesce(email_change_token_current,''),
-    phone_change = coalesce(phone_change,''),
-    phone_change_token = coalesce(phone_change_token,''),
-    reauthentication_token = coalesce(reauthentication_token,'');
-  ```
-
 - **Docker não está no PATH do shell.** Existe em
   `C:\Program Files\Docker\Docker\resources\bin`; exporte antes de
   `supabase status`/`db reset`, senão a CLI diz "docker: command not found" como

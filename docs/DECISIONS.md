@@ -6708,7 +6708,16 @@ Faltava o segundo SENTIDO: com uma reducao so, a faixa nasce com "Aumentos 0" e 
 
 (b) `getByText("AUMENTO")` casou TRES elementos: o rotulo "Aumentos" do cartao e a opcao "Aumentos" do menu, alem do badge. `getByText` compara substring sem diferenciar caixa. Escopado ao `tbody` e com `exact`.
 
-**10. ACHADO DE AMBIENTE: o `db reset` deixa o Auth quebrado**
+**10. ACHADO DE AMBIENTE -- que NAO era achado, e a correcao esta em D-265**
+
+> **Correcao (D-265).** Esta secao foi escrita como descoberta. **Nao era:**
+> `docs/HANDOFF.md` ja trazia o risco desde D-225 ("as duas suites locais nao
+> convivem no mesmo banco"), e com a causa MAIS PRECISA do que a minha. Quem
+> deixa `confirmation_token` nulo nao e o `db reset` -- e a **suite de
+> integracao**, que cria usuarios por SQL em vez de pelo GoTrue. Eu registrei o
+> sintoma como fato novo, num segundo lugar, com a causa errada: dois donos do
+> mesmo fato, e o novo pior que o velho. O reparo concreto foi fundido no risco
+> original e a duplicata saiu.
 
 Depois de `supabase db reset`, o seed passou a falhar com `AuthRetryableFetchError: Database error finding users`. A causa esta no log do container: `Scan error on column index 3, name "confirmation_token": converting NULL to string is unsupported`. As 13 linhas de `auth.users` sobrevivem ao reset com os campos de token NULOS, e o `listUsers` do GoTrue nao le nulo ali.
 
@@ -6717,6 +6726,79 @@ Nao e defeito do projeto nem da fatia -- e do ambiente local. O reparo e um `upd
 **Impacto:** `supabase/migrations/20260908180000_price_changes_summary.sql` (nova, DROP+CREATE com os CTEs EXTRAIDOS do arquivo anterior, nao redigitados -- licao de D-259), `apps/web/app/precos/page.tsx` (reescrita), `apps/web/app/globals.css`, `apps/web/app/diagnostico/page.tsx` (passa a usar a base), `packages/db/src/{types.ts,rls.integration.test.ts}` (+3), `apps/web/e2e/{seed,constants,precos.spec}.ts` (+3).
 
 **Verificacao, local:** `check` **29/29** (365 testes), integracao **630/630** em banco recriado (3 novos), e2e **45/45** (3 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17, `check:table-styles` **14** -- `/precos` entrou na conta do guarda de D-262 e passou limpa na primeira migracao depois dele existir --, `docs:check`. Capturada a 1440px contra o Supabase local.
+
+## D-265 - D25: Central Full pelo frame, e o estado que ele esconde e o MAIOR de todos
+
+**Contexto:** `/full` pelo frame `IntelligenceScreen type="full"` -- faixa de situacoes + painel "Monitoramento de Fulfillment". A tela ja existia com dado real desde D-173, e o grao ja estava certo; a fatia e de composicao, faixa e recusas.
+
+---
+
+**1. O FRAME PARTICIONA ERRADO, E DA PARA VER NA ARITMETICA DELE**
+
+Ele desenha tres cartoes -- Em Ruptura 17, Parados 84, Saudaveis 427 -- e um total de 528. **17 + 84 + 427 = 528**: os numeros do proprio frame afirmam que so existem tres situacoes.
+
+Sao quatro. Medido no Dev:
+
+| situacao | SKUs | unidades Full | buckets |
+|---|---|---|---|
+| **ausente** ("Fora do Full") | **778** | 0 | 857 |
+| saudavel | 588 | 8.549 | 709 |
+| ruptura | 489 | 0 | 578 |
+| parado | 60 | 281 | 65 |
+
+`ausente` e **41% do conjunto** -- o maior estado, e o unico sem cartao no frame. Tres cartoes somariam 1.137 de **1.915** e esconderiam 778 sem dizer. A faixa aqui tem CINCO celulas (o total e as quatro situacoes), e ai sim elas fecham.
+
+O vocabulario ja existia e ja batia com o frame (`fullSituationLabel`: Saudavel, Parado, Ruptura, Fora do Full), com uma coisa a mais que o frame nao tem: `fullSituationCriterion`, que poe a REGRA na tela -- "ruptura" sem o criterio ao lado e julgamento sem base declarada.
+
+**2. TRES RECUSAS, todas por falta de fonte**
+
+| o frame pede | por que fica fora |
+|---|---|
+| coluna **"Ult. Envio"** | **nao existe tabela de envio ao Full** em lugar nenhum do esquema |
+| botao **"Repor Full"** | e ESCRITA, e nao ha politica logistica (custo de envio, lote minimo, prazo) |
+| **"Atualizado ha 2 min"** no cabecalho | afirma UMA frescura para a pagina inteira; cada bucket tem a sua `captured_at` |
+
+No lugar de "Ult. Envio" ficou **"Capturado"**, que e a informacao do mesmo TIPO que existe -- e e ela que sustenta a regra dos 3 dias (bucket que o ML parou de reportar nao e estoque atual).
+
+**3. AS FACETAS SAEM DE `base` E NAO CUSTAM NADA**
+
+`base` -- o conjunto depois de conta e busca, ANTES da situacao -- ja e calculada por toda chamada. As contagens sao um `group by` sobre ela: nenhum dos tres chamadores paga leitura nova, e nao ha funcao de resumo separada (segundo dono do numero, D-224; segunda ida, D-185).
+
+**4. COM SENTINELA AQUI, E O CRITERIO E O DE D-264**
+
+D-263 pos sentinela; D-264 nao. O que decide nao e o gosto: **e se a faixa conta o MESMO conjunto que a tabela mostra.**
+
+Em `/precos` (D-264) conta -- recorte vazio tem de verdade quatro zeros e assumir zero e a verdade. Aqui a faixa e **NAVEGACAO**: clicar num cartao filtra por aquela situacao, logo ela conta um conjunto diferente sempre que ha filtro. Escolher "Parado" e nao achar nada nao significa que "Ruptura" tambem seja zero. Sem sentinela, o operador perderia as contagens e o caminho de volta ao mesmo tempo.
+
+**Uma distincao que so apareceu no teste:** esvaziar por BUSCA zera as facetas com razao -- a busca filtra `base`, e nao ha nada naquele escopo. So o filtro de situacao separa `filtrado` de `base`, e e ai que a sentinela tem trabalho. Meu primeiro teste usava busca e falhou dizendo isso.
+
+**5. A MUDANCA DE CONTRATO ALCANCOU TRES TELAS, E UMA DELAS QUEBRARIA FEIO**
+
+`get_fulfillment_overview` tem tres consumidores. `/anuncios/[itemId]` le com `.maybeSingle()`: com a sentinela, um SKU sem saldo no Full passaria a chegar como **objeto de nulos em vez de `null`**, e a aba renderizaria Full que nao existe. Os dois outros chamadores foram atualizados nesta mesma fatia -- mudanca de contrato nao se deixa para quem tropecar nela.
+
+O descarte mora num guarda so, `isFullRow` em `lib/full-filters.ts`, e ele ESTREITA o tipo. Conferir um campo licencia estreitar todos porque **a nulidade nao vem do schema, vem do `left join`** -- que preenche ou zera a linha inteira de uma vez. Numa linha real `situation` sai de um `case` que sempre devolve valor, `sku` e `account_label` vem de `join` (nao `left`) e os numeros sao `coalesce`; o unico anulavel de verdade e `sku_title`, e ele fica fora do contrato. Ha teste de integracao para isso.
+
+**Declarar a nulidade em `types.ts` foi o que enumerou os pontos afetados.** O `tsc` apontou dez linhas em tres arquivos -- exatamente as que assumiam colunas preenchidas. Um cast teria escondido as dez.
+
+**6. UM TESTE DE ISOLAMENTO QUEBROU, E A GARANTIA NAO MUDOU**
+
+"Usuario de outra organizacao nao ve o Full desta" afirmava **zero linhas**. Com a sentinela toda chamada devolve ao menos uma, entao "nao ve nada" passou a ser "nenhuma linha COM SKU". A sentinela nao carrega dado: todas as colunas nulas e faceta vazia -- e o teste agora afirma as duas coisas. Vale registrar que a mudanca foi de FORMA, nao de garantia: quem ler o diff precisa saber disso.
+
+**7. O QUE NAO PODIA REGREDIR, E NAO REGREDIU**
+
+O GRAO. `ultimo_bucket` continua `distinct on (ml_account_id, inventory_id)` e `as materialized`. D-173 mediu as duas coisas: colapsar por `(sku, conta)` perde **15,6% das unidades**, e sem `as materialized` o planner reexecuta a varredura para a contagem (**53 ms contra 899 ms**). A tela tambem continua nao somando Full com Local (autoridades diferentes, regra do PRD), nao sugerindo quanto enviar e nao inventando score de saude.
+
+**8. TRES ERROS MEUS**
+
+(a) **Link com filtro fantasma.** A acao do frame e "Ver cobertura", e eu escrevi `/cobertura?busca=SKU`. **`/cobertura` so aceita `?marca=`** -- o parametro seria ignorado e o operador cairia na lista inteira. E a classe exata que D-154 existe para impedir ("so se aponta para tela que EXISTE, com o filtro que ela realmente tem"). Virou `/reposicao?busca=`, que aceita `busca` desde D-147 e e a tela que responde "devo repor este SKU?".
+
+(b) **`StatusPill` para as situacoes do Full.** Ele mapeia por `statusTone`, que nao conhece `saudavel`/`ruptura`/`parado`/`ausente` -- os quatro sairiam neutros. O componente certo era `StatePill`, que recebe o tom pronto, e o mapa certo ja existia em `fullSituationTom`.
+
+(c) **Rodei a suite de integracao duas vezes sem `db reset`**, de novo, e li 14 falhas alheias antes de lembrar. Segunda vez nesta sessao; e o que D-225 documenta.
+
+**Impacto:** `supabase/migrations/20260908210000_fulfillment_situation_facets.sql` (nova, DROP+CREATE com os CTEs EXTRAIDOS do arquivo anterior), `apps/web/app/full/page.tsx` (reescrita), `apps/web/lib/full-filters.ts` (`isFullRow`), `apps/web/app/skus/[skuId]/page.tsx` e `apps/web/app/anuncios/[itemId]/page.tsx` (descarte da sentinela), `packages/db/src/{types.ts,rls.integration.test.ts}` (+3, e um existente atualizado), `apps/web/e2e/{seed,constants,full.spec}.ts` (+3).
+
+**Verificacao, local:** `check` **29/29**, integracao **633/633** em banco recriado (3 novos), e2e **48/48** (3 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17, `check:table-styles` **15**, `docs:check`. Capturada a 1440px contra o Supabase local.
 
 ## Como adicionar nova decisao
 

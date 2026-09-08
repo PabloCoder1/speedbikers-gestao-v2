@@ -12,7 +12,7 @@ import { TOM, tomDeStatus } from "../../../components/tone";
 import { formatEventDiff } from "../../../lib/event-format";
 import { formatBusinessDate, formatCount, formatCurrency, formatDateTime, formatPercent } from "../../../lib/format";
 import { actionStatusLabel, eventTypeLabel, listingStatusLabel, statusTone } from "../../../lib/labels";
-import { fullSituationCriterion, fullSituationLabel, fullSituationTom } from "../../../lib/full-filters";
+import { fullSituationCriterion, fullSituationLabel, fullSituationTom, isFullRow } from "../../../lib/full-filters";
 import { formatDecisionSnapshot } from "../../../lib/decision-format";
 import { createClient } from "../../../lib/supabase/server";
 
@@ -336,7 +336,16 @@ export default async function AnuncioPage({
   // `full_quantity` é NULA sem snapshot recente (D-243): ausência não é zero.
   const linhaDoAnuncio = (fullDoAnuncioResult.data ?? []) as { full_quantity: number | null }[];
   const fullDoAnuncio = fullDoAnuncioResult.error === null ? (linhaDoAnuncio[0]?.full_quantity ?? null) : null;
-  const full = fullResult.data;
+  /*
+    A LINHA-SENTINELA de D-265. `get_fulfillment_overview` passou a devolver
+    sempre ao menos uma linha — com as colunas do SKU em NULL — para as
+    contagens da faixa de `/full` sobreviverem a um recorte vazio.
+
+    Aqui isso importa MUITO: com `.maybeSingle()`, um SKU sem saldo no Full
+    passaria a chegar como objeto de nulos em vez de `null`, e a aba renderizaria
+    Full que não existe. O descarte é por `sku_id`.
+  */
+  const full = fullResult.data !== null && isFullRow(fullResult.data) ? fullResult.data : null;
   const timeline = (timelineResult.data ?? []) as unknown as TimelineEventRow[];
   const actions = actionsResult.data ?? [];
   const daily = (dailyResult.data ?? []) as unknown as DiaMetricaRow[];

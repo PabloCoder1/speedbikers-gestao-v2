@@ -39,6 +39,7 @@ import {
   E2E_ACAO_RECLAMACAO,
   E2E_ANOMALIA,
   E2E_DECISION_TEXT,
+  E2E_FULL_RUPTURA,
   E2E_GESTOR_EMAIL,
   E2E_GESTOR_PASSWORD,
   E2E_LISTINGS,
@@ -1167,6 +1168,44 @@ async function main(): Promise<void> {
 
   if (metricasGravadas.error !== null) {
     throw metricasGravadas.error;
+  }
+
+  /*
+    A SEGUNDA situação do Full (D25): saldo ZERO com venda na janela = ruptura.
+    Sem ela a faixa de `/full` nasce com uma célula em 1 e três em 0.
+
+    Vai neste SKU porque ele não tem anúncio — `/anuncios` afirma que a célula
+    "No Full" conta exatamente 1, e um SKU sem anúncio não desloca aquilo.
+
+    Existe-então-insere, como o snapshot de cima: `service_role` tem INSERT mas
+    não UPDATE nesta tabela (o snapshot é imutável por desenho).
+  */
+  const fullRupturaExistente = await db
+    .from("fulfillment_stock_snapshots")
+    .select("id")
+    .eq("ml_account_id", mlAccountId)
+    .eq("inventory_id", `INV-${E2E_FULL_RUPTURA.itemId}`)
+    .limit(1)
+    .maybeSingle();
+
+  if (fullRupturaExistente.error !== null) {
+    throw fullRupturaExistente.error;
+  }
+
+  if (fullRupturaExistente.data === null) {
+    const snapshotRuptura = await db.from("fulfillment_stock_snapshots").insert({
+      organization_id: organizationId,
+      ml_account_id: mlAccountId,
+      inventory_id: `INV-${E2E_FULL_RUPTURA.itemId}`,
+      item_id: E2E_FULL_RUPTURA.itemId,
+      sku_id: anomaliaSku.data.id,
+      quantity: E2E_FULL_RUPTURA.quantity,
+      captured_at: new Date().toISOString(),
+    });
+
+    if (snapshotRuptura.error !== null) {
+      throw snapshotRuptura.error;
+    }
   }
 
   /*

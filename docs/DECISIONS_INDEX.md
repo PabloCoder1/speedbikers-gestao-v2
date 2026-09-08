@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **260** (D-001 a D-264).
+Decisões registradas: **261** (D-001 a D-265).
 
 ## Por domínio
 
@@ -85,7 +85,7 @@ Decisões registradas: **260** (D-001 a D-264).
 - **D-228** — A aba Decisoes fecha as nove, e a prova do embed e a paridade das policies, nao o texto delas
 - **D-257** — A trava "so aplica migration depois da esteira verde" NAO existe: quem aplica e o Supabase, nao a CI
 
-### estoque (21)
+### estoque (22)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -108,6 +108,7 @@ Decisões registradas: **260** (D-001 a D-264).
 - **D-204** — Tres definicoes de "Full atual", e as tres devolviam o mesmo numero
 - **D-236** — Marca na Cobertura: a licao de D-235 aplicada ANTES do erro, e uma coluna que NAO segue o filtro
 - **D-252** — D17: os KPIs de Movimentacoes CONTAM linha, e somar unidade seria mentira de milhoes
+- **D-265** — D25: Central Full pelo frame, e o estado que ele esconde e o MAIOR de todos
 
 ### interface (23)
 

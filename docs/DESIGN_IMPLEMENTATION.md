@@ -618,7 +618,8 @@ que ele renderiza.**
 | D22 | **Diagnóstico** — primeira tela mestre-detalhe da frente; o "91%" do frame não tem fonte e virou o z-score (D-260) | ✔ |
 | D23 | **Central de Ações** — frame `IntelligenceScreen`, não `ProcessScreen`: painel de filtros lateral + fila em cartões. A tela escondia 449 ações chamando isso de total (D-263) | ✔ |
 | D24 | **Histórico de Preços** — "Alterações" e "Preços" da fila eram a MESMA tela. A recusa é uma promessa com prazo, não um número (D-264) | ✔ |
-| D25–D30 | Full, Tráfego, Atendimento, Conhecimento, Central | fila |
+| D25 | **Central Full** — o frame particiona errado: os três cartões dele somam o total e escondem o MAIOR estado, 41% do conjunto (D-265) | ✔ |
+| D26–D30 | Tráfego, Atendimento, Conhecimento, Central | fila |
 | D31–D36 | Usuários, Integrações, Sincronização, Saúde, Configurações, Copiloto | fila |
 | D37 | Passe visual global | fila |
 
@@ -799,109 +800,109 @@ anterior: `/reposicao` tinha **19 de 22** células sobrepondo a classe (não 23)
 `/estoque/movimentacoes` não era vazamento parcial de 3 células — eram **todas**
 as 13.
 
-O que resta é a fila **D25 em diante**: 13 superfícies ainda não migradas.
+O que resta é a fila **D26 em diante**: 12 superfícies ainda não migradas.
 
 ## Última fatia concluída
 
-**D24 — Histórico de Preços, pelo frame `IntelligenceScreen type="pricing"`
-(D-264).** "Alterações" e "Preços", que a fila listava como duas, são a **mesma
-tela**: o frame se chama Histórico de Preços e só existe `/precos`.
+**D25 — Central Full, pelo frame `IntelligenceScreen type="full"` (D-265).** A
+tela já existia com dado real desde D-173 e o grão já estava certo; a fatia é de
+composição, faixa e recusas.
 
-**Foi a primeira fatia em que a metade difícil já estava pronta.**
-`get_price_changes` (D-172, com `p_sku_id` desde D-226) já entregava as sete
-colunas da tabela do frame, os três filtros e a janela declarada. Faltava a
-faixa, a composição — e uma decisão sobre um parágrafo.
+### O frame particiona errado, e dá para ver na aritmética dele
 
-### A recusa mudou de natureza: é uma PROMESSA, não um número
+Ele desenha três cartões — Em Ruptura 17, Parados 84, Saudáveis 427 — e um total
+de **528**. A soma bate exatamente, o que significa que os números do próprio
+frame afirmam existirem só três situações.
 
-Todas as recusas anteriores foram a número sem fonte — o "91%" de D22, a
-prioridade "Crítica" de D23. Aqui o frame traz o bloco **"Dados Insuficientes
-para Análise Causal"** e a **premissa dele é verdadeira**: a tela dizia isso
-desde D-172. O que ficou de fora é a frase seguinte —
+São quatro, e a que falta é a maior:
 
-> "O sistema apresentará tendências quando o volume de dados estabilizar
-> (geralmente após 7 dias da mudança)."
+| situação | SKUs | % |
+|---|---|---|
+| **Fora do Full** (`ausente`) | **778** | **41%** |
+| Saudável | 588 | 31% |
+| Ruptura | 489 | 26% |
+| Parado | 60 | 3% |
 
-**Nada implementa isso.** A correlação causal que existe é outra: `/diagnostico`
-liga a mudança de preço a uma anomalia de venda por **proximidade temporal**,
-não por antes/depois. Prometer comportamento futuro com prazo é pior do que não
-prometer: o operador espera uma semana por uma tela que não vai mudar. O bloco
-entrou com a composição do frame e sem a promessa.
+Três cartões somariam 1.137 de **1.915** e esconderiam 778 sem dizer. A faixa
+aqui tem **cinco** células — o total e as quatro situações — e aí sim fecham.
 
-**"Exportar Relatório" também ficou fora** — exportação existe, mas como rota
-por documento (`/compras/[id]/export/xlsx`); aqui seria feature nova, não
-composição.
+### Três recusas, todas por falta de fonte
 
-### O contraste com D23, escrito nos dois lados
+| o frame pede | por que ficou fora |
+|---|---|
+| coluna "Últ. Envio" | **não existe tabela de envio ao Full** no esquema |
+| botão "Repor Full" | é escrita, e não há política logística (custo, lote, prazo) |
+| "Atualizado há 2 min" | afirma UMA frescura para a página; cada bucket tem a sua |
 
-A faixa conta **o mesmo recorte que a tabela mostra**, então recorte vazio tem
-de verdade quatro zeros e o TypeScript assumir zero é a resposta certa. Em D23
-foi o oposto: lá o painel contava o inbox INTEIRO, um conjunto diferente da
-fila, e por isso precisou da linha-sentinela. **Mesma pergunta, respostas
-opostas, e o que decide é se o cabeçalho conta o mesmo que o corpo** (D-236).
+No lugar de "Últ. Envio" ficou **"Capturado"** — a informação do mesmo tipo que
+existe, e a que sustenta a regra dos 3 dias.
 
-Um cartão ficou **sem** o chip "ver lista": não existe filtro que devolva "os N
-anúncios afetados" — cada anúncio pode ter várias alterações —, e um link ali
-mentiria sobre o destino (D-242). A ausência é a decisão.
+### Sentinela aqui, e o critério é o de D24
 
-### Dois defeitos que a migração encontrou
+D23 pôs; D24 não. O que decide não é o gosto: **é se a faixa conta o mesmo
+conjunto que a tabela mostra.** Em `/precos` conta, então recorte vazio tem de
+verdade quatro zeros. Aqui a faixa é **navegação** — clicar filtra —, logo conta
+um conjunto diferente sempre que há filtro, e escolher "Parado" sem resultado
+não significa que "Ruptura" seja zero.
 
-**A data de início da série estava cravada no código** (`SERIES_START_LABEL =
-"24/08/2026"`), e repetida no comentário do SQL. É verdadeira — o evento mais
-antigo do Dev é 2026-08-24 — mas é propriedade **da organização**, não do
-produto: a série de cada uma começa quando a sincronização dela começou. Só uma
-org tem evento de preço hoje, então é **latente, não vivo**; é a classe de
-D-234, que custou 26 telas quebrando no segundo usuário. Agora vem do banco, e
-como `date` — `formatBusinessDate` recusa qualquer coisa com hora, então
-entregar o dia já convertido torna o erro de fuso impossível em vez de proibido
-por comentário.
+Uma distinção que só apareceu no teste: **esvaziar por busca zera as facetas com
+razão** (a busca filtra o conjunto-base, e não há nada naquele escopo). Só o
+filtro de situação separa o recorte da base, e é aí que a sentinela trabalha.
 
-**A variação se distinguia só por cor e sinal.** A coluna Direção do frame
-(AUMENTO/REDUÇÃO) é a pista textual que a casa já exige de todo estado. O frame
-estava certo e a tela estava devendo. Mas as **cores continuam sendo as daqui**:
-ele pinta aumento de verde e redução de vermelho, o que afirma que subir preço é
-bom — e o sistema não tem essa opinião. Pelo mesmo motivo os quatro cartões têm
-tom neutro.
+### A mudança de contrato alcançou três telas
 
-**Verificação, local:** `check` **29/29** (365 testes), integração **630/630** em
-banco recriado (3 novos), e2e **45/45** (3 novos), build **8/8**,
-`check:waterfalls` 60, `check:server-actions` 17, `check:table-styles` **14**,
-`docs:check`. Capturada a 1440px contra o Supabase local.
+`/anuncios/[itemId]` lê com `.maybeSingle()`: com a sentinela, um SKU sem saldo
+no Full passaria a chegar como **objeto de nulos em vez de `null`**, e a aba
+renderizaria Full inexistente. Os dois outros consumidores foram atualizados na
+mesma fatia — mudança de contrato não se deixa para quem tropeçar nela.
 
-⚠️ **Dois erros meus.** O primeiro contradizia meu próprio argumento: escrevi que
-o sistema não julga a direção e três linhas abaixo dei tom de *alerta* ao cartão
-de Reduções — só não entrou porque `"alerta"` nem existe no tipo e o `tsc`
-reprovou. O segundo: `getByText("AUMENTO")` casou três elementos, porque a
-comparação é substring sem diferenciar caixa.
+**Declarar a nulidade nos tipos foi o que enumerou os pontos afetados:** o `tsc`
+apontou dez linhas em três arquivos, exatamente as que assumiam colunas
+preenchidas. Um cast teria escondido as dez.
 
-⚠️ **E um achado de ambiente:** depois de `supabase db reset`, o seed falha com
-`Database error finding users` — as linhas de `auth.users` sobrevivem ao reset
-com os campos de token NULOS e o GoTrue não lê nulo ali. O reparo está em
-`docs/HANDOFF.md` e **precisa ser refeito a cada reset**.
+E **um teste de isolamento quebrou sem que a garantia mudasse**: "não vê o Full
+desta" afirmava zero linhas, e agora afirma nenhuma linha COM SKU. A sentinela
+não carrega dado — todas as colunas nulas e faceta vazia —, e o teste passou a
+afirmar as duas coisas.
+
+**Verificação, local:** `check` **29/29**, integração **633/633** em banco
+recriado (3 novos), e2e **48/48** (3 novos), build **8/8**, `check:waterfalls`
+60, `check:server-actions` 17, `check:table-styles` **15**, `docs:check`.
+Capturada a 1440px contra o Supabase local.
+
+⚠️ **Três erros meus.** O pior foi um **link com filtro fantasma**: a ação do
+frame é "Ver cobertura" e eu escrevi `/cobertura?busca=SKU` — mas `/cobertura`
+só aceita `?marca=`, então o parâmetro seria ignorado e o operador cairia na
+lista inteira. É a classe exata que D-154 existe para impedir. Também usei
+`StatusPill` para as situações do Full, que o mapa de `statusTone` não conhece
+(sairiam todas neutras), e rodei a integração duas vezes sem `db reset` — a
+segunda vez nesta sessão.
 
 ## Próxima fatia segura
 
-**D25 — Central Full (`/full`).** O frame é `IntelligenceScreen type="full"`, e
-a tela já existe com dado real (`get_fulfillment_overview`, D-173).
+**D26 — Tráfego.** O frame é `IntelligenceScreen type="traffic"`, e a pergunta de
+abertura já tem número conhecido: **D-170 mediu média de 4,9 dias observados em
+31** — as visitas por anúncio são esporádicas, e qualquer taxa de conversão
+calculada sobre elas precisa dizer sobre quantos dias de coleta ela corre. A
+Home e `/anuncios` já carregam essa ressalva ("observadas em N de 30 dias"); a
+tela de Tráfego é onde ela mais importa.
 
-**A pergunta de abertura tem dono conhecido:** D-173 mediu que o saldo do Full é
-por **bucket** (`inventory_id`), e colapsar por `(sku, conta)` perdia **15,6% das
-unidades**. Qualquer cartão que o frame peça somando Full precisa respeitar esse
-grão — é o erro que já foi cometido e medido uma vez.
+E a rotina, com as três perguntas que as fatias anteriores acrescentaram: **o
+`db reset` + seed deixa a tela com dado?**, **quantas linhas ela tem no Dev?** e
+**a faixa conta o mesmo conjunto da tabela ou é navegação?** — a terceira decide
+sozinha se há sentinela.
 
-E a rotina, agora com as duas perguntas que D-263 e D-264 acrescentaram: **o
-`db reset` + seed deixa a tela com dado?** e **quantas linhas ela tem no Dev?**
-
-Depois, pela fila: Tráfego, Atendimento, Conhecimento, Central; e então D31–D36
-(Usuários, Integrações, Sincronização, Saúde, Configurações, Copiloto) e o passe
-visual global (D37).
+Depois, pela fila: Atendimento, Conhecimento, Central; e então D31–D36 (Usuários,
+Integrações, Sincronização, Saúde, Configurações, Copiloto) e o passe visual
+global (D37).
 
 **Três telas seguem abertas fora da fila:**
 
-- **`/notas-fiscais/[id]`** (conferência da NF-e) — o brief §25 traz o fluxo em
-  seis passos e o botão "Confirmar Entrada"; dois dos quatro estados de item que
-  ele pede não têm dado em `document_items` (D-253).
+- **`/notas-fiscais/[id]`** (conferência da NF-e) — dois dos quatro estados de
+  item que o brief §25 pede não têm dado em `document_items` (D-253).
 - **`/cobertura`** — o frame trata Cobertura e Reposição como uma tela com abas,
-  e unificá-las é composição, não acabamento (D-261).
+  e unificá-las é composição, não acabamento (D-261). **D25 acrescentou um
+  motivo**: `/cobertura` não tem filtro por SKU, só por marca, e isso já forçou
+  um link a apontar para outro lugar.
 - **Exportação de `/precos`** — o "Exportar Relatório" recusado em D-264 é
   funcionalidade legítima, só não é fatia de design.

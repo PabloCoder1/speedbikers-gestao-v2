@@ -6521,14 +6521,97 @@ describe("get_fulfillment_overview (D-173, Central Full)", () => {
     expect(Number(rows[0]?.full_quantity)).toBe(17);
   });
 
+  /**
+   * As facetas de D-265 contam sobre `base` -- depois de conta e busca, ANTES
+   * da situacao. A faixa de /full e NAVEGACAO: se elas seguissem o filtro,
+   * escolher "Ruptura" zeraria "Parado" e a faixa deixaria de dizer o que
+   * existe fora do recorte.
+   */
+  it("as facetas NAO seguem p_situation, e o total da busca SIM", async () => {
+    const linha = async (extra?: string) =>
+      (
+        await asUser<{ total_count: string; facet_situation: Record<string, number> }>(
+          ADMIN_SB,
+          extra === undefined ? CALL() : CALL(extra),
+        )
+      )[0];
+
+    const todas = await linha();
+    const soRuptura = await linha("null, 'ruptura', null, null, 500, 0");
+
+    // O mapa e IDENTICO nos dois; so o total da busca encolhe.
+    expect(soRuptura?.facet_situation).toEqual(todas?.facet_situation);
+    expect(Number(soRuptura?.total_count)).toBe(todas?.facet_situation.ruptura);
+    expect(Number(soRuptura?.total_count)).toBeLessThan(Number(todas?.total_count));
+  });
+
+  /**
+   * A LINHA-SENTINELA. Sem ela, um recorte sem resultado devolvia zero linhas e
+   * a faixa sumia junto -- o operador ficava sem contagem e sem caminho de
+   * volta. Os TRES consumidores da funcao descartam por `sku_id is null`.
+   */
+  it("recorte vazio devolve UMA linha, com as facetas e sem SKU", async () => {
+    const rows = await asUser<{
+      sku_id: string | null;
+      total_count: string;
+      facet_situation: Record<string, number>;
+      // Esvaziado por SITUACAO, nao por busca: a busca filtra `base`, e
+      // esvaziar `base` zera as facetas COM RAZAO -- nao ha nada naquele
+      // escopo. So o filtro de situacao separa `filtrado` de `base`, que e
+      // exatamente o caso em que a sentinela tem trabalho a fazer.
+    }>(ADMIN_SB, CALL("null, 'situacao_que_nao_existe', null, null, 500, 0"));
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.sku_id).toBeNull();
+    expect(rows[0]?.total_count).toBe("0");
+    // As contagens sobrevivem: e para isso que a linha existe.
+    expect(Object.keys(rows[0]?.facet_situation ?? {}).length).toBeGreaterThan(0);
+  });
+
+  /**
+   * O contrato do qual `/skus/[skuId]` e `/anuncios/[itemId]` dependem: a
+   * sentinela e a UNICA linha com `sku_id` nulo, e numa linha real todas as
+   * colunas do SKU vem preenchidas. E o que o guarda `isFullRow` codifica.
+   */
+  it("linha real traz todas as colunas do SKU preenchidas", async () => {
+    const rows = await asUser<{
+      sku_id: string | null;
+      sku: string | null;
+      account_label: string | null;
+      situation: string | null;
+      captured_at: string | null;
+    }>(ADMIN_SB, CALL());
+
+    const reais = rows.filter((r) => r.sku_id !== null);
+
+    expect(reais.length).toBeGreaterThan(0);
+
+    for (const linha of reais) {
+      expect(linha.sku).not.toBeNull();
+      expect(linha.account_label).not.toBeNull();
+      expect(linha.situation).not.toBeNull();
+      expect(linha.captured_at).not.toBeNull();
+    }
+  });
+
   it("anon não executa get_fulfillment_overview", async () => {
     await expect(asAnon(CALL())).rejects.toThrow(/permission denied/i);
   });
 
+  /**
+   * A garantia de isolamento NAO mudou em D-265; a FORMA mudou. Com a
+   * linha-sentinela toda chamada devolve ao menos uma linha, entao "nao ve
+   * nada" deixou de ser "zero linhas" e passou a ser "nenhuma linha COM SKU"
+   * -- e a sentinela nao carrega dado: todas as colunas nulas e faceta vazia.
+   */
   it("usuário de outra organização não vê o Full desta", async () => {
-    const rows = await asUser<{ sku_id: string }>(DE_OUTRA_ORG, CALL());
+    const rows = await asUser<{ sku_id: string | null; facet_situation: Record<string, number> }>(
+      DE_OUTRA_ORG,
+      CALL(),
+    );
 
-    expect(rows).toHaveLength(0);
+    expect(rows.filter((linha) => linha.sku_id !== null)).toHaveLength(0);
+    expect(rows[0]?.facet_situation).toEqual({});
   });
 });
 

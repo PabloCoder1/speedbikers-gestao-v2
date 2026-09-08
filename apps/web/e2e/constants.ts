@@ -217,6 +217,25 @@ export const E2E_LISTING_PRICE_EVENT = { de: 199.9, para: 189.9 } as const;
  * De quebra exercita o caminho que faltava: mudança de preço num anúncio que
  * não tem SKU, onde a célula mostra "sem vínculo" em vez de um link.
  */
+/**
+ * A SEGUNDA situação do Full (D25) — sem ela a faixa de `/full` nasce com uma
+ * célula em 1 e três em 0, e o filtro por situação não recorta nada.
+ *
+ * **Saldo ZERO com venda na janela = `ruptura`**, que é o estado mais acionável
+ * e o cartão de perigo do frame. Vai no SKU da anomalia (`E2E-ANOMALIA-001`),
+ * que **não tem anúncio** — e é por isso que ele serve: `/anuncios` afirma que a
+ * célula "No Full" conta exatamente 1, e um SKU sem anúncio não desloca aquela
+ * contagem.
+ *
+ * `itemId` é sintético e não corresponde a nenhum anúncio do seed. A tabela só
+ * exige o formato `^MLB[0-9]+$`, sem chave estrangeira — e é realista: o bucket
+ * do Full aponta para um anúncio que o fixture simplesmente não modela.
+ */
+export const E2E_FULL_RUPTURA = {
+  itemId: "MLB800000009",
+  quantity: 0,
+} as const;
+
 export const E2E_LISTING_PRICE_EVENT_ALTA = {
   itemId: "MLB800000002",
   de: 124.5,
