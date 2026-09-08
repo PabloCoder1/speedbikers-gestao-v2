@@ -4240,6 +4240,7 @@ export type Database = {
           p_offset?: number
           p_organization_id: string
           p_search?: string | null
+          p_sold?: string
           p_status?: string | null
           p_stock?: string | null
           p_full?: string | null

@@ -614,7 +614,8 @@ que ele renderiza.**
 | D19 | **Compras** — `PageTitle` + `Panel` + `.sb-table` + RPC `get_purchase_orders`; duas colunas do frame não eram colunas, e o seed passou a existir (D-255) | ✔ |
 | D20 | **Fornecedores** — mesmo esboço da `nfe`; a linha de apoio do frame prometia lead time por fornecedor, que não existe no modelo (D-256) | ✔ |
 | D20b | **Fornecedores, 2ª metade** — "último pedido" e "valor comprado" pela RPC `get_suppliers`, e o `coalesce(sum,0)` que eu reintroduzi na função criada para tirá-lo (D-258) | ✔ |
-| D21–D30 | Vinculações, Diagnóstico, Ações, Alterações, Preços, Full, Tráfego, Atendimento, Conhecimento, Central | fila |
+| D21 | **Vinculações → Integridade de Catálogo** — a tela mudou de assunto, e as duas fontes de "vendeu" divergem em 12 (D-259) | ✔ |
+| D22–D30 | Diagnóstico, Ações, Alterações, Preços, Full, Tráfego, Atendimento, Conhecimento, Central | fila |
 | D31–D36 | Usuários, Integrações, Sincronização, Saúde, Configurações, Copiloto | fila |
 | D37 | Passe visual global | fila |
 
@@ -692,68 +693,74 @@ listou. O que resta nelas são P3 de acabamento, registrados na tabela acima
 (legenda do gráfico, altura do SVG, tom de lead time na cobertura) — nenhum
 muda composição, e todos cabem no passe visual global (D37).
 
-O que resta é a fila **D21 em diante**: 21 superfícies ainda não migradas.
+O que resta é a fila **D22 em diante**: 20 superfícies ainda não migradas.
 ## Última fatia concluída
 
-**Fornecedores, segunda metade (D-258)** — as duas dívidas que D20 deixou
-nomeadas, fechadas na **mesma fatia** de propósito: a coluna "valor comprado" da
-lista e o `coalesce(sum, 0)` de `get_supplier_overview`. Separá-las abriria uma
-janela em que lista e detalhe respondem diferente para a mesma pergunta (D-224).
+**D21 — Vinculações, pelo frame `ProcessScreen type="links"` (D-259).** A
+variação mais completa do frame e a **primeira tela de processo com faixa de
+KPIs desenhada** — `nfe`, `suppliers` e `purchases` não têm cartão nenhum.
 
-**O achado foi meu próprio erro, e é o mais instrutivo da sessão.** A função
-NOVA nasceu com `coalesce(p.valor_pedido, 0)` no select externo — posto para o
-caso "fornecedor sem pedido" — e ele **engolia o NULO legítimo** de "tem itens,
-nenhum com custo". A migration que existe para tirar o `coalesce` do detalhe
-nasceu com o mesmo `coalesce` na lista. E ele nem era necessário: a lateral é
-agregada sem `group by`, então nunca devolve nulo.
+**O frame REENQUADRA a tela, e os dados concordam com ele.** Era "Central de
+Vinculações", uma fila de `link_candidates`; virou **"Integridade de Catálogo"**
+sobre anúncios, com candidato como um estado entre outros. Medido antes de
+aceitar: 5.089 anúncios, 863 sem vínculo e **0 candidatos** — a fila que era o
+assunto da tela está vazia, e o que importa está na outra ponta.
 
-**Pego rodando as duas funções lado a lado contra o Postgres local, antes de
-qualquer push** — o primeiro achado que a máquina local produziu. Até aqui,
-migration e teste iam ao CI sem nunca terem rodado nesta máquina: D-255 e D-257
-foram consertos *depois* do push; este foi *antes*.
+**O achado principal: duas fontes de "vendeu", divergindo em 12.** Eu ia criar
+um segundo dono do número — `get_link_integrity` já entregava as cinco células,
+o percentual do brief e `receita_sem_vinculo`. Só que ela conta venda a partir
+de **pedidos** (`order_items`), enquanto a tabela conta a partir do **pipeline
+de métricas**: **349 contra 337**. Os 12 são anúncios que geraram pedido e o
+pipeline não conhece — o que a tela existe para expor.
 
-| caso | lista | detalhe |
+A resolução: a célula usa o número da **tabela** (para clicar mostrar as linhas
+que ela promete, D-242, e cabeçalho e corpo não discordarem, D-236), e o número
+independente aparece **na ressalva**, nomeando a diferença. Mais a linha de
+**R$ 260.149,08** de receita sem vínculo, que traduz o problema em dinheiro.
+
+**Duas células só são honestas com ressalva:**
+
+| célula | ressalva | por quê |
 |---|---|---|
-| 5 × 10,50 + 3 × null | 52,50 / falta 1 | 52,50 / falta 1 |
-| só nulos | **NULL** | **NULL** |
-| sem pedido | 0 | 0 |
-| só cancelado | 0 | 0, cancelado 198,00 |
+| Sem vínculo (863) | "vínculo por variação conta como vinculado" | `sku_id is null` diria **1.876** (D-122) |
+| Candidatos (0) | "nenhuma linha do ERP ficou sem SKU" | 27.709 linhas resolveram; 3.274 são de outro canal. O zero é verdadeiro, mas cru leria como "não há trabalho" (D-250) |
 
-Há teste fixando a **comparação** entre as duas, não só os casos.
+**`p_sold` existe para o LINK da célula, não para o número** — "Vendidos sem
+vínculo" é a interseção de `p_link_state='unlinked'` com `p_sold='with'`.
 
-**Das nove colunas do brief §24, seis existem agora.** Continuam fora origem,
-marcas, lead time, cobertura alvo e política — nenhuma é coluna faltando, são
-eixo diferente (D-174/D-256).
+**O que o frame não desenha e a tela mantém:** a fila de candidatos e a
+vinculação manual. O Design Contract manda remover conteúdo *incompatível*, não
+funcionalidade ausente do frame.
 
-**Verificação — desta vez local, não só na CI:** `check` **29/29**, integração
-**617/617** (6 novos), e2e **34/34**, build **8/8**, `check:waterfalls` 60,
-`check:server-actions` 17, `docs:check`. A migration foi aplicada e conferida no
-Postgres local com `db reset`; **não** foi ao Dev antes do push.
+**O seed ganhou um quinto anúncio** — "vendeu sem vínculo" —, porque sem ele a
+célula mais acionável nasceria com 0 e nada a afirmar.
+
+**Verificação, local:** `check` **29/29** (325 testes, 10 novos), integração
+**621/621** (4 novos), e2e **37/37** (3 novos), build **8/8**,
+`check:waterfalls` 60, `check:server-actions` 17, `docs:check`. A migration foi
+aplicada e conferida no Postgres **local**; não foi ao Dev antes do push.
+
+⚠️ **Três erros meus no fixture de integração**, todos suposições sobre o
+esquema e nenhum sobre a lógica: coluna `ml_user_id` (é `seller_id`), slug em
+maiúsculas (a constraint exige minúsculas) e `currency_id` esquecido (NOT NULL).
+Na terceira parei de adivinhar e copiei um `insert` que já funcionava no
+arquivo — que é o que a migration desta fatia também faz com o corpo do SQL.
 
 ## Próxima fatia segura
 
-**D21 — Vinculações (`/vinculacoes`) contra `ProcessScreen type="links"`.** É a
-variação **mais completa** do frame e a primeira tela de processo com **faixa de
-KPIs desenhada** — cinco cartões (Total de Anúncios, Vinculados, Sem vínculo,
-Vendidos sem vínculo, Candidatos pendentes) e sete colunas (Anúncio, MLB,
-Variação, SKU Sistema, Estado, Vendas 30d, Ação).
+**D22 — Diagnóstico (`/diagnostico`).** Não há variação do `ProcessScreen` para
+ela; é preciso localizar o frame próprio no export antes de desenhar, e a
+pergunta de abertura é a de sempre: **o frame promete número que o sistema
+mede?** O Diagnóstico é onde essa pergunta mais tende a doer, porque o brief
+fala de causas e recomendações — território de `metric_definitions` (D-023), que
+proíbe exibir número sintetizado sem definição catalogada.
 
-**Três coisas ditas de antemão, porque cada uma já tem regra na casa:**
+Antes de começar, a rotina que D-255 tornou obrigatória: **o `db reset` + seed
+deixa `/diagnostico` com dado?** Se não, o seed entra na fatia.
 
-- **cada célula da faixa só existe se o predicado dela existir na consulta que
-  monta a lista**, e o link da célula tem de aplicar esse predicado (D-242).
-  "Vendidos sem vínculo" e "Candidatos pendentes" precisam ser recortes reais,
-  nunca contagens paralelas;
-- **"sem vínculo" NÃO é `sku_id is null`** (D-122). O anúncio com vínculo por
-  VARIAÇÃO tem `sku_id` nulo e não é fila de trabalho — o seed de `/anuncios` já
-  tem um caso exatamente para isso, e `anuncios.spec` o afirma;
-- a coluna **Ação** do frame ("Vincular", "Aprovar", "Desfazer") são escritas, e
-  a Central de Vinculações real já tem `resolve_link_candidate` /
-  `dismiss_link_candidate` — o que precisa conferência é quais ações o frame
-  promete contra as que a RPC oferece.
-
-Depois, pela fila: Diagnóstico, Ações, Alterações, Preços, Full, Tráfego,
-Atendimento, Conhecimento, Central.
+Depois, pela fila: Ações, Alterações, Preços, Full, Tráfego, Atendimento,
+Conhecimento, Central; e então D31–D36 (Usuários, Integrações, Sincronização,
+Saúde, Configurações, Copiloto) e o passe visual global (D37).
 
 **A tela de conferência da NF-e (`/notas-fiscais/[id]`) continua aberta** — o
 brief §25 traz o fluxo em seis passos, a tabela de sete colunas e o botão

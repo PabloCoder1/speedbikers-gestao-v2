@@ -43,6 +43,7 @@ import {
   E2E_LISTING_FULL,
   E2E_LISTING_PRICE_EVENT,
   E2E_LISTING_RELIST,
+  E2E_LISTING_SOLD_UNLINKED,
   E2E_LISTING_TRAFFIC,
   E2E_PURCHASE_ORDERS,
   E2E_SUPPLIER,
@@ -746,6 +747,31 @@ async function main(): Promise<void> {
 
   if (metricasAnuncio.error !== null) {
     throw metricasAnuncio.error;
+  }
+
+  // Venda do quinto anuncio, que NAO tem vinculo (D-259). E o unico fixture
+  // que produz "vendidos sem vinculo" > 0; sem ele a celula mais acionavel da
+  // Integridade de Catalogo nasceria sem nada a afirmar.
+  const diaVendaSemVinculo = new Date(Date.now() - E2E_LISTING_SOLD_UNLINKED.daysAgo * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
+
+  const metricasSemVinculo = await db.from("daily_listing_metrics").upsert(
+    {
+      organization_id: organizationId,
+      ml_account_id: mlAccountId,
+      mlb_id: E2E_LISTING_SOLD_UNLINKED.itemId,
+      metric_date: diaVendaSemVinculo,
+      units_sold: E2E_LISTING_SOLD_UNLINKED.units,
+      gross_revenue: E2E_LISTING_SOLD_UNLINKED.revenue,
+      orders_count: E2E_LISTING_SOLD_UNLINKED.orders,
+      purchases_count: E2E_LISTING_SOLD_UNLINKED.orders,
+    },
+    { onConflict: "ml_account_id,mlb_id,variation_id,metric_date" },
+  );
+
+  if (metricasSemVinculo.error !== null) {
+    throw metricasSemVinculo.error;
   }
 
   // ------------------------------------------------------------------

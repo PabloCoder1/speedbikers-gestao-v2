@@ -3158,6 +3158,98 @@ describe("valor comprado por fornecedor (D-258)", () => {
   });
 });
 
+// p_sold em get_listings_dashboard (20260907160000, D-259) -- a celula
+// "Vendidos sem vinculo" da Integridade de Catalogo.
+describe("p_sold em get_listings_dashboard (D-259)", () => {
+  const CONTA = "SOLDPRED";
+  let contaId = "";
+  const JANELA = "current_date - 30, current_date";
+
+  beforeAll(async () => {
+    const acc = await client.query<{ id: string }>(
+      // Conta PROPRIA, nao `CONTA_A`: o teste conta linhas exatas, e reusar uma
+      // conta compartilhada traria anuncios de outros blocos junto.
+      `insert into public.ml_accounts (organization_id, slug, label, seller_id, status, connected_at)
+       values ($1,$2,$3,$4,'CONNECTED',now()) returning id`,
+      // slug: `^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$` -- minusculas, como a
+      // constraint exige. O rotulo pode ser qualquer coisa.
+      [ORG_SB, "soldpred-conta", `${CONTA} loja`, 987654321],
+    );
+    contaId = acc.rows[0]?.id ?? "";
+
+    // Quatro anuncios cobrindo as duas dimensoes que a celula cruza:
+    // vinculo (sim/nao) x venda (sim/nao). So um e "sem vinculo E vendeu".
+    const anuncios: readonly (readonly [string, boolean, number])[] = [
+      ["MLB900000001", true, 5],   // vinculado, vendeu
+      ["MLB900000002", true, 0],   // vinculado, nao vendeu
+      ["MLB900000003", false, 7],  // SEM vinculo, vendeu  <- o caso da celula
+      ["MLB900000004", false, 0],  // sem vinculo, nao vendeu
+    ];
+
+    const sku = await client.query<{ id: string }>(
+      `insert into public.skus (organization_id, sku, kind) values ($1,$2,'PRODUTO') returning id`,
+      [ORG_SB, `${CONTA}-SKU`],
+    );
+
+    for (const [item, vinculado, unidades] of anuncios) {
+      await client.query(
+        `insert into public.listings
+           (organization_id, ml_account_id, item_id, title, status, price, currency_id, available_quantity, synced_at, sku_id)
+         values ($1,$2::uuid,$3,$4,'active',100,'BRL',5,now(),$5)`,
+        [ORG_SB, contaId, item, `${CONTA} ${item}`, vinculado ? sku.rows[0]?.id : null],
+      );
+
+      if (unidades > 0) {
+        await client.query(
+          `insert into public.daily_listing_metrics
+             (organization_id, ml_account_id, mlb_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+           values ($1,$2::uuid,$3,current_date - 1,$4::bigint,$5::numeric,1,1)`,
+          [ORG_SB, contaId, item, unidades, unidades * 100],
+        );
+      }
+    }
+  });
+
+  async function conta(linkState: string, sold: string) {
+    const rows = await asUser<{ total_count: string }>(
+      ADMIN_SB,
+      `select * from public.get_listings_dashboard(
+         '${ORG_SB}', ${JANELA}, '${contaId}', null, '${linkState}', null, 500, 0, 'all', 'all', '${sold}')`,
+    );
+
+    return rows.length;
+  }
+
+  it("p_sold PARTICIONA o conjunto: todos = vendeu + nao vendeu", async () => {
+    const todos = await conta("all", "all");
+    const vendeu = await conta("all", "with");
+    const naoVendeu = await conta("all", "without");
+
+    expect(todos).toBe(4);
+    expect(vendeu + naoVendeu).toBe(todos);
+  });
+
+  it("a celula e a INTERSECAO de dois predicados, nao uma contagem propria", async () => {
+    // "Vendidos sem vinculo" = p_link_state 'unlinked' + p_sold 'with'. E o
+    // que permite a celula linkar para as linhas que ela promete (D-242).
+    expect(await conta("unlinked", "with")).toBe(1);
+    expect(await conta("unlinked", "all")).toBe(2);
+    expect(await conta("all", "with")).toBe(2);
+  });
+
+  it("sem metrica de venda a linha conta como NAO vendeu, e aqui isso e correto", async () => {
+    // Diferente do Full (D-067), ausencia de metrica de venda E ausencia de
+    // venda -- por isso o coalesce para zero nao mente neste predicado.
+    expect(await conta("all", "without")).toBe(2);
+  });
+
+  it("valor desconhecido em p_sold nao filtra, em vez de devolver vazio", async () => {
+    // A licao de D-242: zero linhas seria indistinguivel de filtro legitimo
+    // sem resultado. O `case ... else true` do SQL garante isso.
+    expect(await conta("all", "qualquer-coisa")).toBe(4);
+  });
+});
+
 describe("ledger de estoque", () => {
   // Nome fora do padrão `RLSTEST%` que o afterAll global apaga: uma vez que
   // o SKU tiver stock_movements, `on delete restrict` o torna indeletável —

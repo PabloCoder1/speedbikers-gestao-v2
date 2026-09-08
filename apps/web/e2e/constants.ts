@@ -84,6 +84,24 @@ export const E2E_LISTINGS = [
     /** Linha em `sku_listing_links` com `variation_id`, `listings.sku_id` NULO. */
     vinculo: "variacao",
   },
+  {
+    /**
+     * O QUINTO, e ele existe para a célula que mais importa da Integridade de
+     * Catálogo (D-259): **vendeu e não tem vínculo**. Sem ele, "Vendidos sem
+     * vínculo" mostraria 0 no seed e não haveria o que afirmar — no Dev são
+     * 337 anúncios nessa situação, receita entrando sem baixa de estoque.
+     *
+     * Não dá para reaproveitar os outros: o primeiro é vinculado, o segundo
+     * precisa continuar SEM tráfego (é ele que prova conversão "—" em vez de
+     * 0%, D-123) e o quarto tem vínculo por variação.
+     */
+    itemId: "MLB800000005",
+    title: "Bagageiro E2E — vendeu sem vínculo",
+    status: "active",
+    price: 310,
+    available: 4,
+    vinculo: "nenhum",
+  },
 ] as const;
 
 /** Full DO ANÚNCIO do primeiro anúncio (D-243) — o único com snapshot no seed. */
@@ -114,6 +132,19 @@ export const E2E_LISTING_TRAFFIC = {
  * domínio — e o seed não criava nenhum, então as duas abas nasceriam vazias e
  * não haveria o que afirmar (a mesma lição de D-242 e da auditoria A1).
  */
+/**
+ * A venda do quinto anúncio — só venda, sem visita. As duas moram em tabelas
+ * diferentes, e aqui a visita não faz falta: o que a célula "Vendidos sem
+ * vínculo" pergunta é se houve VENDA na janela.
+ */
+export const E2E_LISTING_SOLD_UNLINKED = {
+  itemId: "MLB800000005",
+  daysAgo: 2,
+  units: 3,
+  revenue: 930,
+  orders: 3,
+} as const;
+
 export const E2E_LISTING_PRICE_EVENT = { de: 199.9, para: 189.9 } as const;
 
 /**

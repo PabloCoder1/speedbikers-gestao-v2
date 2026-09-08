@@ -6329,6 +6329,82 @@ Depois da correcao, as duas concordam nos quatro casos -- inclusive na ESCALA, d
 
 **Impacto:** `supabase/migrations/20260907130000_supplier_purchase_value.sql` (novo), `apps/web/app/fornecedores/page.tsx`, `apps/web/app/fornecedores/[supplierId]/page.tsx`, `packages/db/src/types.ts` (a mao, D-213), `packages/db/src/rls.integration.test.ts` (+6).
 
+## D-259 - D21: a tela mudou de assunto, e as duas fontes de "vendeu" discordam em 12
+
+**Contexto:** fatia D21 -- `/vinculacoes` contra `ProcessScreen type="links"`, a variacao **mais completa** do frame e a **primeira tela de processo com faixa de KPIs desenhada** (`nfe`, `suppliers` e `purchases` nao tem cartao nenhum -- D-253/D-255/D-256).
+
+---
+
+**O FRAME REENQUADRA A TELA, E OS DADOS CONCORDAM COM ELE**
+
+A tela era "Central de Vinculacoes": uma fila de `link_candidates`. O frame faz dela **"Integridade de Catalogo"** -- cinco celulas e uma tabela de ANUNCIOS por estado de vinculo, em que "candidato" e um estado entre outros, nao o assunto.
+
+Medido no Dev antes de aceitar o reenquadramento:
+
+| | |
+|---|---:|
+| anuncios | 5.089 |
+| vinculados | 4.226 |
+| sem vinculo | 863 |
+| vendidos sem vinculo | 337 / 349 (ver abaixo) |
+| **candidatos abertos** | **0** |
+
+**A fila que era o assunto da tela esta vazia, e o que importa esta na outra ponta.** O frame acertou.
+
+---
+
+**O ACHADO PRINCIPAL: DUAS FONTES DE "VENDEU", DIVERGINDO EM 12**
+
+Eu ia criar um segundo dono do numero. `get_link_integrity` (D-121) **ja entregava** as cinco celulas, o percentual que o brief secao 26 pede e ainda `receita_sem_vinculo`. So que ela conta venda a partir de **`order_items`**, com este comentario no proprio SQL:
+
+> *"Fonte INDEPENDENTE: item que vendeu existe, quer a varredura o conheca ou nao. E o unico numero desta tela que nao depende do pipeline auditado."*
+
+A tabela da tela sai de `get_listings_dashboard`, que conta a partir de `daily_listing_metrics` -- o pipeline auditado. **349 contra 337.** Os 12 de diferenca sao anuncios que geraram pedido e o pipeline de metricas nao conhece.
+
+**Nao e defeito de nenhuma das duas: e exatamente o que esta tela existe para expor.**
+
+**A resolucao, e por que nao e "escolher a melhor".** Se a celula mostrasse 349 e linkasse para uma tabela que devolve 337, cabecalho e corpo discordariam (D-236). Se mostrasse so 337, esconderia o numero mais confiavel. Entao:
+
+- **a celula usa o numero da TABELA**, para que clicar nela mostre as linhas que ela promete (D-242);
+- **o numero independente aparece na ressalva**, nomeando a diferenca: *"12 a mais pela fonte independente (pedidos): 349"*;
+- e a **receita** (R$ 260.149,08 em 30 dias no Dev) vira uma linha propria, porque e ela que traduz o problema em dinheiro.
+
+Mostrar so um dos dois seria omissao. Declarar a divergencia e a mesma doutrina de `valor_cancelado` (D-157) e das tres definicoes de Full (D-204).
+
+---
+
+**`p_sold` EXISTE PARA O LINK DA CELULA, NAO PARA O NUMERO**
+
+Argumento novo em `get_listings_dashboard`, no FIM da assinatura (D-242): `'all' | 'with' | 'without'`. "Vendidos sem vinculo" e a **intersecao** de `p_link_state = 'unlinked'` com `p_sold = 'with'` -- nenhum numero novo e inventado, a celula e um recorte da mesma consulta.
+
+**Ausencia de metrica de venda E ausencia de venda**, entao o `coalesce` para zero neste predicado nao mente -- diferente do Full, onde ausencia de snapshot nao e estoque zero (D-067). Esta assimetria esta escrita no SQL para ninguem "corrigir" uma pela outra.
+
+---
+
+**DUAS CELULAS SO SAO HONESTAS COM RESSALVA**
+
+**"Sem vinculo": 863, nao 1.876.** `link_state` tem tres valores, e o vinculo por VARIACAO tem `sku_id` NULO estando ligado. Contar `sku_id is null` **dobraria** o numero (D-122). A ressalva diz isso na propria celula, e ha e2e fixando: o quarto anuncio do seed e por variacao, e se alguem trocar pelo atalho a contagem vai de 3 para 4 e o teste fica vermelho.
+
+**"Candidatos pendentes: 0" -- e o zero e VERDADEIRO, conferido.** `erp_import_rows` tem 30.983 linhas: **27.709 APPLIED/OK** (e a logica so cria candidato para linha que NAO resolve) e **3.274 SKIPPED por "canal fora do Mercado Livre"** -- fora de escopo por desenho. Entao nao ha candidato porque toda linha do ML encontrou o seu SKU. Mesmo assim a celula diz *"nenhuma linha do ERP ficou sem SKU"*: um "0" cru leria como "nao ha trabalho", que e afirmacao diferente (licao dos cartoes de D-250).
+
+---
+
+**O QUE O FRAME NAO DESENHA E A TELA MANTEM**
+
+A fila de candidatos e a **vinculacao manual** continuam, em painel proprio. O Design Contract manda remover conteudo **incompativel**, nao funcionalidade ausente do frame; e o dead code pass e sobre frontend **sem consumidor**, que nao e o caso -- `resolve_link_candidate` e `dismiss_link_candidate` sao escritas reais.
+
+**Do brief secao 26, duas coisas nao existem:** "Inconsistencias" (sem definicao no sistema) e a coluna **"Confianca"** -- `link_candidates` nao tem score, so `resolution_method` binario (`EXACT_MATCH`/`MANUAL`). O percentual que o brief mostra como 97,8% e calculavel, mas o real e **83,0%**.
+
+> **Superficie:** `/vinculacoes` · **Figma/brief:** coluna "Confianca", cartao "Inconsistencias", percentual 97,8% · **V3 real:** sem score de confianca; sem definicao de inconsistencia; percentual real 83,0% · **Decisao:** as duas primeiras ficam de fora, o percentual sai do dado · **Motivo:** dado inexistente.
+
+---
+
+**O SEED GANHOU UM QUINTO ANUNCIO**, e ele existe so para a celula que mais importa: **vendeu e nao tem vinculo**. Sem ele a celula nasceria com 0 e nada a afirmar. Nao deu para reaproveitar os outros: o primeiro e vinculado, o segundo **precisa continuar sem trafego** (e ele que prova conversao "—" em vez de 0%, D-123) e o quarto tem vinculo por variacao.
+
+**Legado removido:** o `<h1>` proprio e as constantes `th`/`td`/`tdNumber` inline -- a tela adotou `PageTitle`, `KpiStrip`, `Panel` e `.sb-table`.
+
+**Impacto:** `supabase/migrations/20260907160000_listings_sold_predicate.sql` (novo), `apps/web/app/vinculacoes/page.tsx`, `apps/web/lib/link-integrity-filters.ts` + teste (novos), `apps/web/e2e/vinculacoes.spec.ts` (novo), `apps/web/e2e/{constants.ts,seed.ts}`, `packages/db/src/types.ts` (a mao, D-213), `packages/db/src/rls.integration.test.ts` (+4).
+
 ## Como adicionar nova decisao
 
 Registrar:
