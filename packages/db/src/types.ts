@@ -4115,11 +4115,14 @@ export type Database = {
           isSetofReturn: false
         }
       }
-      // ACRESCIMO MANUAL (D-263): a funcao existe na migration
-      // `20260908120000_actions_queue.sql` e no Postgres LOCAL, mas ainda nao
-      // no Dev -- e o gerador do MCP le o Dev. Sem esta entrada, `/acoes` nao
-      // compila. Quando a migration chegar ao Dev e os tipos forem regerados,
-      // ela passa a sair sozinha e este comentario pode cair.
+      // ACRESCIMO MANUAL (D-263): escrita a mao porque, no momento do commit, a
+      // funcao existia so na migration e no Postgres LOCAL -- e o gerador do
+      // MCP le o Dev. Sem a entrada, `/acoes` nao compilava.
+      //
+      // A migration JA chegou ao Dev (2026-09-08, `20260908120000`), entao uma
+      // regeracao pelo MCP passa a produzi-la sozinha e este bloco pode sair.
+      // Nao regerar pela CLI para isso: ela apaga as correcoes manuais deste
+      // arquivo e produz centenas de linhas de diff alheio (D-209).
       get_actions_queue: {
         Args: {
           p_kind?: string | null

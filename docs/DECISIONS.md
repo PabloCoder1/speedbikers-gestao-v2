@@ -6210,6 +6210,23 @@ coalesce(round(sum(quantity_ordered * unit_cost), 2), 0)
 
 **Contexto:** o push de D18-D20 (`06f5f7f`) deixou a CI **VERMELHA** -- `integration` e `e2e` falharam, os dois jobs que exercitam os testes novos daquelas fatias. Mesmo assim, a migration `20260906140000_purchase_orders_list.sql` **estava aplicada no Supabase Dev** minutos depois do push. Fui reconciliar as duas coisas e a explicacao muda uma garantia que o repositorio afirma por escrito.
 
+> **OBSERVACAO DIRETA (2026-09-08, D-263).** Ate aqui isto era inferido da
+> configuracao da integracao. No push de D23 (`a52ed62`) foi medido AO VIVO: com
+> a esteira ainda em `in_progress`, o catalogo do Dev ja respondia
+> `get_actions_queue` presente e `schema_migrations` com `20260908120000` como
+> ultima aplicada. **Nao ha janela em que a esteira possa reprovar antes do
+> banco receber** -- a migration chega primeiro.
+>
+> E o detalhe que fecha o argumento: aquela esteira terminou **VERDE nos cinco
+> jobs**, incluindo `aplicar migrations no Supabase Dev`. O job passou tendo
+> **nada a aplicar** -- o Supabase ja tinha aplicado. Verde ali significa "nao
+> sobrou o que fazer", nao "o portao segurou". Uma esteira verde neste
+> repositorio nunca foi prova de que a trava existe, e este push mostra por que:
+> ela seria verde do mesmo jeito com a migration errada ja dentro do banco.
+>
+> A decisao segue aberta e as tres saidas abaixo continuam valendo; o que mudou
+> e que agora ha medida, nao deducao.
+
 ---
 
 **O QUE O WORKFLOW PROMETE, EM COMENTARIO PROPRIO**
