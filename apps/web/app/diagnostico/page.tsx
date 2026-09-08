@@ -460,7 +460,7 @@ export default async function DiagnosticoPage({
               sistema determinístico separado. Sob demanda, nunca automática — a
               chamada custa, e a tela não a faz sem o operador pedir.
             */}
-            <div className="sb-copilot-note">
+            <div className="sb-note sb-copilot-note">
               <span>✦ ANÁLISE DO COPILOTO</span>
               <DiagnosisPanel skuId={selecionado.escopo.skuId} />
             </div>

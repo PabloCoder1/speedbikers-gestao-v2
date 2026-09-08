@@ -2421,15 +2421,23 @@ table {
 .sb-evidence i.sb-dot-violet { background: var(--sb-secondary); }
 .sb-evidence i.sb-dot-success { background: var(--sb-success); }
 
-.sb-copilot-note {
-  margin: var(--sb-space-3) 1.25rem 0;
+/* Bloco de nota com acento violeta -- o `.notice` do export.
+   Base extraida em D24: o frame de Precos pede o MESMO bloco que D22 ja tinha
+   criado para a analise do copiloto, e duas classes com a mesma aparencia sao
+   como as cinco copias do mapa de tom que a auditoria de D-246 achou. A
+   variante do copiloto agora acrescenta so a margem de painel. */
+.sb-note {
   padding: 0.8125rem;
   border-radius: 0.4375rem;
   border-left: 3px solid var(--sb-secondary);
   background: #f3f2fa;
 }
 
-.sb-copilot-note > span {
+.sb-copilot-note {
+  margin: var(--sb-space-3) 1.25rem 0;
+}
+
+.sb-note > span {
   font-family: var(--sb-mono);
   font-size: 0.5625rem;
   font-weight: 500;
@@ -2437,7 +2445,7 @@ table {
   color: var(--sb-secondary);
 }
 
-.sb-copilot-note p {
+.sb-note p {
   margin: 0.4375rem 0;
   font-size: 0.6875rem;
   line-height: 1.5;

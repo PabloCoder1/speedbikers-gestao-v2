@@ -6324,6 +6324,63 @@ describe("get_price_changes (D-172, Central de Preços)", () => {
     expect(Number(rows[0]?.total_count)).toBe(1);
   });
 
+  /**
+   * A faixa de KPIs de D-264. As contagens correm sobre o conjunto FILTRADO --
+   * o mesmo que a tabela mostra --, entao cabecalho e corpo nao discordam
+   * (D-236). E por isso elas SEGUEM o filtro de direcao, ao contrario das
+   * facetas de `get_actions_queue` (D-263), que contam o inbox inteiro.
+   */
+  it("as contagens somam o total e SEGUEM o filtro de direcao", async () => {
+    const linha = async (extra?: string) =>
+      (
+        await asUser<{ total_count: string; increases: string; decreases: string; listings_affected: string }>(
+          ADMIN_SB,
+          extra === undefined ? CALL() : CALL(extra),
+        )
+      )[0];
+
+    const todas = await linha();
+
+    expect(Number(todas?.increases) + Number(todas?.decreases)).toBe(Number(todas?.total_count));
+    expect(Number(todas?.listings_affected)).toBeGreaterThan(0);
+    expect(Number(todas?.listings_affected)).toBeLessThanOrEqual(Number(todas?.total_count));
+
+    // Com `p_direction = 'up'`, o total da busca passa a ser exatamente o
+    // numero de aumentos, e nao ha reducao no recorte.
+    const soAumentos = await linha("null, 'up', null, null, 50, 0");
+
+    expect(Number(soAumentos?.total_count)).toBe(Number(todas?.increases));
+    expect(Number(soAumentos?.decreases)).toBe(0);
+  });
+
+  /**
+   * `series_start` e o inicio da serie DA ORGANIZACAO e ignora os filtros de
+   * proposito: a ressalva da tela fala de quando o registro comeca, nao do
+   * recorte escolhido. O fixture fora da janela (2020) e a prova -- ele nao
+   * aparece em nenhuma linha e mesmo assim define a data.
+   */
+  it("series_start ignora o filtro de data e vem como DIA CIVIL", async () => {
+    const rows = await asUser<{ series_start: string }>(
+      ADMIN_SB,
+      `select distinct series_start::text as series_start from public.get_price_changes('${ORG_SB}','${FROM}','${TO}')`,
+    );
+
+    // A janela consultada comeca em 2026-08-01; a serie, em 2020.
+    expect(rows[0]?.series_start).toBe("2020-01-02");
+  });
+
+  /**
+   * SEM linha-sentinela, e o contraste com D-263 e o ponto: la o painel contava
+   * um conjunto diferente da fila, entao pagina vazia PRECISAVA devolver uma
+   * linha. Aqui os cartoes contam o MESMO conjunto da tabela -- recorte vazio
+   * tem de verdade quatro zeros, e quem chama assume zero sem mentir.
+   */
+  it("recorte vazio nao devolve linha nenhuma, e isso e deliberado", async () => {
+    const rows = await asUser(ADMIN_SB, CALL("null, null, 'NAO-EXISTE-EM-LUGAR-NENHUM', null, 50, 0"));
+
+    expect(rows).toHaveLength(0);
+  });
+
   it("anon não executa get_price_changes", async () => {
     await expect(asAnon(CALL())).rejects.toThrow(/permission denied/i);
   });

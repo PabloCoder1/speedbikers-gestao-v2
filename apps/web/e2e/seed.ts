@@ -45,6 +45,7 @@ import {
   E2E_LISTING_DECISION_TEXT,
   E2E_LISTING_FULL,
   E2E_LISTING_PRICE_EVENT,
+  E2E_LISTING_PRICE_EVENT_ALTA,
   E2E_LISTING_RELIST,
   E2E_LISTING_SOLD_UNLINKED,
   E2E_LISTING_TRAFFIC,
@@ -818,6 +819,44 @@ async function main(): Promise<void> {
 
     if (precoEvento.error !== null) {
       throw precoEvento.error;
+    }
+  }
+
+  /*
+    O SEGUNDO SENTIDO (D24). Sem ele `/precos` nasce com "Aumentos 0" e o
+    filtro de direção não tem o que recortar. Vai no anúncio SEM vínculo, para
+    não somar uma segunda linha na aba Preços do SKU — que `sku-dashboard.spec`
+    afirma ter exatamente uma.
+  */
+  const precoAltaDedupKey = `e2e:seed:price:${E2E_LISTING_PRICE_EVENT_ALTA.itemId}`;
+
+  const precoAltaExistente = await db
+    .from("domain_events")
+    .select("id")
+    .eq("dedup_key", precoAltaDedupKey)
+    .maybeSingle();
+
+  if (precoAltaExistente.error !== null) {
+    throw precoAltaExistente.error;
+  }
+
+  if (precoAltaExistente.data === null) {
+    const precoAltaEvento = await db.from("domain_events").insert({
+      organization_id: organizationId,
+      ml_account_id: mlAccountId,
+      occurred_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+      event_type: "listing.price.changed",
+      entity_type: "listing",
+      entity_id: E2E_LISTING_PRICE_EVENT_ALTA.itemId,
+      before: { price: E2E_LISTING_PRICE_EVENT_ALTA.de },
+      after: { price: E2E_LISTING_PRICE_EVENT_ALTA.para },
+      severity: "informativo",
+      source: "sync",
+      dedup_key: precoAltaDedupKey,
+    });
+
+    if (precoAltaEvento.error !== null) {
+      throw precoAltaEvento.error;
     }
   }
 

@@ -6642,6 +6642,82 @@ Desta vez a regra de D-260 foi aplicada ANTES: medi quem le `actions` (quatro te
 
 **Verificacao, local:** `check` **29/29** (365 testes, 28 novos), integracao **627/627** em banco recriado (6 novos), e2e **42/42** (3 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17, `check:table-styles` 13, `docs:check`. Tela capturada a 1440px contra o Supabase local, nos dois estados -- fila cheia e recorte vazio.
 
+## D-264 - D24: Historico de Precos pelo frame, e a recusa e uma PROMESSA, nao um numero
+
+**Contexto:** `/precos` pelo frame `IntelligenceScreen type="pricing"` -- faixa de quatro cartoes + painel com a tabela das alteracoes observadas. Diferente das fatias anteriores, **a metade dificil ja estava pronta**: `get_price_changes` (D-172, com `p_sku_id` desde D-226) ja entregava as sete colunas da tabela do frame, os tres filtros e `total_count`. Faltava a faixa, a composicao -- e uma decisao sobre um paragrafo.
+
+---
+
+**1. A RECUSA CENTRAL NAO E UM NUMERO INVENTADO, E UMA PROMESSA COM PRAZO**
+
+Todas as recusas das fatias anteriores foram a numero sem fonte: o "91%" de D-260, a prioridade "Critica" de D-263. Esta e diferente.
+
+O frame traz um bloco pronto, **"Dados Insuficientes para Analise Causal"**, e a PREMISSA dele e verdadeira -- a tela dizia exatamente isso desde D-172 ("esta versao nao afirma impacto: comparar venda antes e depois exigiria janela comparavel dos dois lados"). O problema e a frase seguinte:
+
+> "O sistema apresentara tendencias quando o volume de dados estabilizar (geralmente apos 7 dias da mudanca)."
+
+**Nada implementa isso.** Nao ha comparacao de periodos equivalentes em lugar nenhum do produto, e nao ha nada agendado para os 7 dias. A correlacao causal que EXISTE e outra coisa: `sales-anomaly.ts` liga `listing.price.changed` a uma anomalia de venda por PROXIMIDADE temporal ("causa classica de virada na venda"), no `/diagnostico` -- nao um antes/depois.
+
+Prometer comportamento futuro com prazo e pior do que nao prometer nada: o operador espera uma semana por uma tela que nao vai mudar. **O bloco entrou com a composicao do frame e sem a promessa** -- e o texto que ficou e o que a tela ja tinha, que diz por que nao da, sem data.
+
+**2. "EXPORTAR RELATORIO" TAMBEM FICOU FORA**
+
+Exportacao existe no produto, mas como rota por documento (`/compras/[id]/export/xlsx`, `/export/pdf`). Aqui seria funcionalidade nova, nao composicao -- e um botao que nao faz nada e pior que botao nenhum. Registrada como candidata a fatia propria.
+
+**3. A FAIXA CONTA O MESMO RECORTE DA TABELA, E POR ISSO NAO PRECISA DE SENTINELA**
+
+Os quatro cartoes (Alteracoes, Aumentos, Reducoes, Anuncios afetados) saem de UMA passada sobre o conjunto FILTRADO, na mesma funcao -- nao de uma funcao de resumo separada, que seria um segundo dono do numero (D-224) e uma segunda ida ao banco (D-185) para contar as linhas que esta ja recorta.
+
+**E aqui esta o contraste deliberado com D-263, escrito nos dois lados.** Em `get_actions_queue` a pagina vazia PRECISA devolver uma linha-sentinela, porque o painel de filtros conta um conjunto DIFERENTE do que a fila mostra (o inbox inteiro): sem ela, o painel some e zero seria mentira.
+
+Aqui e o oposto. Os cartoes contam **o mesmo conjunto** da tabela, entao recorte que nao casa nada tem de verdade quatro zeros -- e o TypeScript assumir zero e a resposta correta, nao ausencia disfarcada (D-067). Sentinela aqui ainda quebraria a aba Precos do SKU (D-226), o segundo consumidor da funcao, com uma linha fantasma que ela nao pediu.
+
+**Um cartao ficou SEM o chip "ver lista", e a ausencia e a decisao.** Os tres primeiros levam a um recorte que mostra exatamente aquelas linhas. Nao existe filtro que devolva "os N anuncios afetados" -- cada anuncio pode ter varias alteracoes --, entao um chip ali mentiria sobre o destino (D-242).
+
+**4. A DATA DE INICIO DA SERIE ESTAVA CRAVADA NO CODIGO, E ERRADA POR ORGANIZACAO**
+
+`SERIES_START_LABEL = "24/08/2026"` em `page.tsx`, e a mesma data repetida no comentario da propria funcao SQL. **A data e verdadeira** -- medido: o evento de preco mais antigo do Dev e 2026-08-24. Mas ela e propriedade DA ORGANIZACAO, nao do produto: a serie de cada uma comeca quando a sincronizacao dela comecou.
+
+Hoje so uma organizacao tem evento de preco, entao o defeito e **latente, nao vivo**. E a classe de D-234, que custou 26 telas quebrando no SEGUNDO usuario: o numero cravado esta certo enquanto houver um so.
+
+Virou `series_start`, coluna da RPC, calculada sobre os eventos da organizacao **sem** os filtros -- a ressalva fala do inicio da SERIE, nao do recorte. Ha teste de integracao que prova isso com o fixture de 2020, que fica fora da janela consultada e mesmo assim define a data.
+
+**Ela volta como `date`, nao `timestamptz`, e isso e uma trava.** `formatBusinessDate` so aceita `YYYY-MM-DD` e recusa qualquer coisa com hora -- exatamente para impedir que alguem passe um instante por `new Date(...)` e desloque o dia (meia-noite UTC e 21h do dia anterior em Sao Paulo). Entregar o dia ja convertido no SQL torna esse erro impossivel de cometer, em vez de proibido por comentario. O fuso e canonico: `metric_definitions` tem `check (timezone = 'America/Sao_Paulo')` desde a Fase 0.
+
+**5. O FRAME CONSERTOU UM DEFEITO DE ACESSIBILIDADE**
+
+A coluna **Direcao** (AUMENTO/REDUCAO) nao e enfeite: a variacao se distinguia por COR e sinal. A casa ja exige o contrario em todo estado -- "cor NUNCA e a unica pista, porque cerca de 8% dos homens nao distinguem vermelho de verde" (`status-pill.tsx`). O frame estava certo e a tela estava devendo.
+
+**Mas as cores continuam sendo as daqui, nao as do frame.** Ele pinta aumento de VERDE e reducao de VERMELHO, o que afirma que subir preco e bom e baixar e ruim. O sistema nao tem essa opiniao: uma reducao pode ser promocao deliberada, um aumento pode ser repasse de custo que afunda a conversao. Violeta e vermelho distinguem SENTIDO sem julgar, e pelo mesmo motivo os quatro cartoes tem tom neutro -- o frame da borda verde a Aumentos e vermelha a Reducoes.
+
+**6. `.sb-note` SAIU DE `.sb-copilot-note`**
+
+O bloco de aviso do frame e visualmente o mesmo que D-260 ja tinha criado para a analise do copiloto. Duas classes identicas seriam as cinco copias do mapa de tom que a auditoria de D-246 achou. A base virou `.sb-note`; `.sb-copilot-note` ficou so com a margem de painel.
+
+**7. A CONTA ESTA NOS DADOS DO FRAME E ELE NAO A PINTA**
+
+A linha de exemplo do frame e `[..., "MLB440901", "5821", "Speed Bikers", 189.90, ...]` -- `row[4]` e a conta, e o JSX pula ela. A tela antiga tinha coluna propria de Conta; com "Todas as contas" selecionado, remove-la deixaria o operador sem saber de quem e a alteracao. Foi para a linha de apoio, junto de SKU e MLB, que e onde o frame junta os identificadores.
+
+**8. O SEED, e de novo a severidade da escolha**
+
+Faltava o segundo SENTIDO: com uma reducao so, a faixa nasce com "Aumentos 0" e o filtro de direcao nao recorta nada. O aumento novo vai em `MLB800000002`, o anuncio **sem vinculo** -- porque o evento existente mora em `MLB800000001`, que e o anuncio do SKU principal, e `sku-dashboard.spec` afirma que a aba Precos dele tem EXATAMENTE uma linha. De quebra exercita o caminho que faltava: mudanca de preco em anuncio sem SKU, onde a celula diz "sem vinculo" em vez de inventar link.
+
+**9. DOIS ERROS MEUS, E O PRIMEIRO CONTRADIZIA MEU PROPRIO ARGUMENTO**
+
+(a) Escrevi no codigo que o sistema nao tem opiniao sobre a direcao e, tres linhas abaixo, dei tom de **alerta** ao cartao de Reducoes. So nao passou porque `"alerta"` nem existe no tipo `Tom` e o `tsc` reprovou -- se o nome fosse valido, a incoerencia teria entrado.
+
+(b) `getByText("AUMENTO")` casou TRES elementos: o rotulo "Aumentos" do cartao e a opcao "Aumentos" do menu, alem do badge. `getByText` compara substring sem diferenciar caixa. Escopado ao `tbody` e com `exact`.
+
+**10. ACHADO DE AMBIENTE: o `db reset` deixa o Auth quebrado**
+
+Depois de `supabase db reset`, o seed passou a falhar com `AuthRetryableFetchError: Database error finding users`. A causa esta no log do container: `Scan error on column index 3, name "confirmation_token": converting NULL to string is unsupported`. As 13 linhas de `auth.users` sobrevivem ao reset com os campos de token NULOS, e o `listUsers` do GoTrue nao le nulo ali.
+
+Nao e defeito do projeto nem da fatia -- e do ambiente local. O reparo e um `update` normalizando os oito campos de token para string vazia, e **precisa ser refeito depois de cada `db reset`**. Registrado em `docs/HANDOFF.md` junto do procedimento.
+
+**Impacto:** `supabase/migrations/20260908180000_price_changes_summary.sql` (nova, DROP+CREATE com os CTEs EXTRAIDOS do arquivo anterior, nao redigitados -- licao de D-259), `apps/web/app/precos/page.tsx` (reescrita), `apps/web/app/globals.css`, `apps/web/app/diagnostico/page.tsx` (passa a usar a base), `packages/db/src/{types.ts,rls.integration.test.ts}` (+3), `apps/web/e2e/{seed,constants,precos.spec}.ts` (+3).
+
+**Verificacao, local:** `check` **29/29** (365 testes), integracao **630/630** em banco recriado (3 novos), e2e **45/45** (3 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17, `check:table-styles` **14** -- `/precos` entrou na conta do guarda de D-262 e passou limpa na primeira migracao depois dele existir --, `docs:check`. Capturada a 1440px contra o Supabase local.
+
 ## Como adicionar nova decisao
 
 Registrar:

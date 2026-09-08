@@ -617,7 +617,8 @@ que ele renderiza.**
 | D21 | **Vinculações → Integridade de Catálogo** — a tela mudou de assunto, e as duas fontes de "vendeu" divergem em 12 (D-259) | ✔ |
 | D22 | **Diagnóstico** — primeira tela mestre-detalhe da frente; o "91%" do frame não tem fonte e virou o z-score (D-260) | ✔ |
 | D23 | **Central de Ações** — frame `IntelligenceScreen`, não `ProcessScreen`: painel de filtros lateral + fila em cartões. A tela escondia 449 ações chamando isso de total (D-263) | ✔ |
-| D24–D30 | Alterações, Preços, Full, Tráfego, Atendimento, Conhecimento, Central | fila |
+| D24 | **Histórico de Preços** — "Alterações" e "Preços" da fila eram a MESMA tela. A recusa é uma promessa com prazo, não um número (D-264) | ✔ |
+| D25–D30 | Full, Tráfego, Atendimento, Conhecimento, Central | fila |
 | D31–D36 | Usuários, Integrações, Sincronização, Saúde, Configurações, Copiloto | fila |
 | D37 | Passe visual global | fila |
 
@@ -798,114 +799,109 @@ anterior: `/reposicao` tinha **19 de 22** células sobrepondo a classe (não 23)
 `/estoque/movimentacoes` não era vazamento parcial de 3 células — eram **todas**
 as 13.
 
-O que resta é a fila **D24 em diante**: 14 superfícies ainda não migradas.
+O que resta é a fila **D25 em diante**: 13 superfícies ainda não migradas.
 
 ## Última fatia concluída
 
-**D23 — Central de Ações, pelo frame `IntelligenceScreen type="actions"`
-(D-263).** Não é variação do `ProcessScreen`: composição própria, com painel de
-filtros lateral (`w-64`, com contagens) e a fila em **cartões**, não em tabela.
+**D24 — Histórico de Preços, pelo frame `IntelligenceScreen type="pricing"`
+(D-264).** "Alterações" e "Preços", que a fila listava como duas, são a **mesma
+tela**: o frame se chama Histórico de Preços e só existe `/precos`.
 
-**O achado não foi de design: a tela escondia 449 ações e chamava isso de
-total.** Ela lia `actions` sem `limit` contra o `max_rows = 1000` do PostgREST e
-imprimia "N aberto(s)" com N = o que tinha voltado. O Dev tem **1.449 abertas**
-(eram 1.307 24h antes — a fila cresce sozinha). O número exibido não era o total
-nem o da página: era o **teto do servidor**. D-131 vivo, e ninguém tinha somado
-1.449 > 1.000.
+**Foi a primeira fatia em que a metade difícil já estava pronta.**
+`get_price_changes` (D-172, com `p_sku_id` desde D-226) já entregava as sete
+colunas da tabela do frame, os três filtros e a janela declarada. Faltava a
+faixa, a composição — e uma decisão sobre um parágrafo.
 
-**A RPC não existe pela paginação, existe pelas contagens.** `range()` +
-`count: 'exact'` resolveria a janela; o painel do frame é que não — cada faceta
-seria um `select` próprio, quatro filtros são quatro idas, e D-185 mede custo
-por ida. `get_actions_queue` devolve página, total e facetas numa viagem.
+### A recusa mudou de natureza: é uma PROMESSA, não um número
 
-### A decisão da qual a tela inteira depende: a linha-sentinela
+Todas as recusas anteriores foram a número sem fonte — o "91%" de D22, a
+prioridade "Crítica" de D23. Aqui o frame traz o bloco **"Dados Insuficientes
+para Análise Causal"** e a **premissa dele é verdadeira**: a tela dizia isso
+desde D-172. O que ficou de fora é a frase seguinte —
 
-Primeira versão, `base cross join facetas`: um filtro sem resultado devolvia
-**zero linhas**, e as contagens do painel iam junto — a tela ficava sem número e
-sem caminho de volta, exatamente quando o operador precisa dos dois. Virou
-`facetas left join base on true`, e a página vazia devolve **uma** linha com as
-colunas da ação em `null`, só para carregar o painel.
+> "O sistema apresentará tendências quando o volume de dados estabilizar
+> (geralmente após 7 dias da mudança)."
 
-Pegou no teste manual da função, antes de existir TypeScript. As capturas dos
-dois estados estão no scratchpad; a do recorte vazio é a que prova isto.
+**Nada implementa isso.** A correlação causal que existe é outra: `/diagnostico`
+liga a mudança de preço a uma anomalia de venda por **proximidade temporal**,
+não por antes/depois. Prometer comportamento futuro com prazo é pior do que não
+prometer: o operador espera uma semana por uma tela que não vai mudar. O bloco
+entrou com a composição do frame e sem a promessa.
 
-**As facetas não seguem o filtro ativo**, e é deliberado: se seguissem, escolher
-"Alta" zeraria a contagem de "Média", e o painel deixaria de dizer quanto
-trabalho existe **fora** do recorte — que é a única coisa que ele tem a dizer.
+**"Exportar Relatório" também ficou fora** — exportação existe, mas como rota
+por documento (`/compras/[id]/export/xlsx`); aqui seria feature nova, não
+composição.
 
-### Três recusas ao frame
+### O contraste com D23, escrito nos dois lados
 
-| o frame pede | decisão |
-|---|---|
-| **"Executar fila em lote"** | **recusa** — escrita em massa sobre objetos heterogêneos; "executar" é coisa diferente por `kind` |
-| prioridade **"Crítica"** | recusa — `severity` tem três valores e nenhum é crítico |
-| **"Ordenar: Impacto Financeiro"** como menu | vira frase — a ordem é única e canônica |
+A faixa conta **o mesmo recorte que a tabela mostra**, então recorte vazio tem
+de verdade quatro zeros e o TypeScript assumir zero é a resposta certa. Em D23
+foi o oposto: lá o painel contava o inbox INTEIRO, um conjunto diferente da
+fila, e por isso precisou da linha-sentinela. **Mesma pergunta, respostas
+opostas, e o que decide é se o cabeçalho conta o mesmo que o corpo** (D-236).
 
-E **duas divergências deliberadas**: os botões ficam sempre visíveis (o frame os
-esconde até o hover, e `opacity: 0` não tira do foco — teclado tabula para botão
-invisível; sem ponteiro não há hover), e o tom de D-064 virou **fio à esquerda**
-em vez de fundo, que brigaria com o `:hover` da fila.
+Um cartão ficou **sem** o chip "ver lista": não existe filtro que devolva "os N
+anúncios afetados" — cada anúncio pode ter várias alterações —, e um link ali
+mentiria sobre o destino (D-242). A ausência é a decisão.
 
-### O que o dado nega, e as duas respostas opostas
+### Dois defeitos que a migração encontrou
 
-`ml_account_id` e `mlb_id` são **nulos em 100%** das abertas — os dois chips do
-frame quase nunca nascem. Ficam no código (as colunas existem, o seed prova o
-caminho), mas a tela não finge: chip só aparece com valor.
+**A data de início da série estava cravada no código** (`SERIES_START_LABEL =
+"24/08/2026"`), e repetida no comentário do SQL. É verdadeira — o evento mais
+antigo do Dev é 2026-08-24 — mas é propriedade **da organização**, não do
+produto: a série de cada uma começa quando a sincronização dela começou. Só uma
+org tem evento de preço hoje, então é **latente, não vivo**; é a classe de
+D-234, que custou 26 telas quebrando no segundo usuário. Agora vem do banco, e
+como `date` — `formatBusinessDate` recusa qualquer coisa com hora, então
+entregar o dia já convertido torna o erro de fuso impossível em vez de proibido
+por comentário.
 
-`severity = 'baixa'` também tem zero linhas, e aí a resposta foi a **inversa**:
-**"Baixa 0" aparece**. O mapa de facetas sai do inbox inteiro, então chave
-ausente é valor sem linha — zero medido, não desconhecido. Esconder a linha é
-que seria a mentira (D-250).
+**A variação se distinguia só por cor e sinal.** A coluna Direção do frame
+(AUMENTO/REDUÇÃO) é a pista textual que a casa já exige de todo estado. O frame
+estava certo e a tela estava devendo. Mas as **cores continuam sendo as daqui**:
+ele pinta aumento de verde e redução de vermelho, o que afirma que subir preço é
+bom — e o sistema não tem essa opinião. Pelo mesmo motivo os quatro cartões têm
+tom neutro.
 
-### A regra de D-260 aplicada ANTES, pela primeira vez
+**Verificação, local:** `check` **29/29** (365 testes), integração **630/630** em
+banco recriado (3 novos), e2e **45/45** (3 novos), build **8/8**,
+`check:waterfalls` 60, `check:server-actions` 17, `check:table-styles` **14**,
+`docs:check`. Capturada a 1440px contra o Supabase local.
 
-O seed ganhou a segunda espécie de ação (`reclamacoes_recorrentes`), sem a qual
-o filtro de tipo não recortaria nada. A severidade **não** foi indiferente: medi
-quem lê `actions` (quatro telas) e o que os specs afirmam antes de escolher.
-`alta` quebraria a Home, que afirma o texto exato "1 ação de severidade alta
-aberta"; `media` protege a Home **e** mantém `baixa` em zero, que é o que
-permite provar "Baixa 0" na tela. A suíte inteira confirmou: nenhum spec alheio
-se deslocou.
+⚠️ **Dois erros meus.** O primeiro contradizia meu próprio argumento: escrevi que
+o sistema não julga a direção e três linhas abaixo dei tom de *alerta* ao cartão
+de Reduções — só não entrou porque `"alerta"` nem existe no tipo e o `tsc`
+reprovou. O segundo: `getByText("AUMENTO")` casou três elementos, porque a
+comparação é substring sem diferenciar caixa.
 
-**Verificação, local:** `check` **29/29** (365 testes, 28 novos), integração
-**627/627** em banco recriado (6 novos), e2e **42/42** (3 novos), build **8/8**,
-`check:waterfalls` 60, `check:server-actions` 17, `check:table-styles` 13,
-`docs:check`. Capturada a 1440px contra o Supabase local, nos dois estados.
-
-⚠️ **Quatro erros meus**, e o mais instrutivo: a barra e o corpo diziam a
-**mesma frase** no estado vazio, e o teste falhou por ambiguidade de seletor —
-o defeito estava na tela, não no seletor. Teste que reclama de ambiguidade
-costuma estar apontando redundância real. Os outros três: `"900.00"` contra
-`"900"` (`numeric` sem escala não formata), um `beforeAll` escrito torto, e
-**rodar a suíte de integração duas vezes sem `db reset`** — li 15 falhas de dez
-`describe` alheios como se fossem minhas, e eram exatamente o que D-225
-documenta.
+⚠️ **E um achado de ambiente:** depois de `supabase db reset`, o seed falha com
+`Database error finding users` — as linhas de `auth.users` sobrevivem ao reset
+com os campos de token NULOS e o GoTrue não lê nulo ali. O reparo está em
+`docs/HANDOFF.md` e **precisa ser refeito a cada reset**.
 
 ## Próxima fatia segura
 
-**D24 — Alterações / Preços.** O frame é `IntelligenceScreen type="pricing"`
-("Histórico de Preços"), e ele já foi visto de relance nesta fatia: traz quatro
-cartões (Alterações 30d, Aumentos, Reduções, Anúncios Afetados), busca, dois
-menus (Direção, Conta) e — o item que exige medição antes de desenhar — um aviso
-de **"Dados Insuficientes para Análise Causal"** já escrito no próprio frame.
+**D25 — Central Full (`/full`).** O frame é `IntelligenceScreen type="full"`, e
+a tela já existe com dado real (`get_fulfillment_overview`, D-173).
 
-**A pergunta de abertura é se esse aviso é verdade aqui.** Ele afirma que o
-sistema mostrará tendências "após 7 dias da mudança"; isso é promessa de
-comportamento futuro, e D-023 proíbe número sintetizado sem definição
-catalogada. Conferir o que `listing_price_history` (ou equivalente) sustenta
-antes de reproduzir a frase.
+**A pergunta de abertura tem dono conhecido:** D-173 mediu que o saldo do Full é
+por **bucket** (`inventory_id`), e colapsar por `(sku, conta)` perdia **15,6% das
+unidades**. Qualquer cartão que o frame peça somando Full precisa respeitar esse
+grão — é o erro que já foi cometido e medido uma vez.
 
-E a rotina de sempre, agora com duas perguntas: **o `db reset` + seed deixa a
-tela com dado?** e **quantas linhas ela tem no Dev?** — a segunda passou a ser
-obrigatória depois de D-263, onde o volume era o defeito.
+E a rotina, agora com as duas perguntas que D-263 e D-264 acrescentaram: **o
+`db reset` + seed deixa a tela com dado?** e **quantas linhas ela tem no Dev?**
 
-Depois, pela fila: Full, Tráfego, Atendimento, Conhecimento, Central; e então
-D31–D36 (Usuários, Integrações, Sincronização, Saúde, Configurações, Copiloto)
-e o passe visual global (D37).
+Depois, pela fila: Tráfego, Atendimento, Conhecimento, Central; e então D31–D36
+(Usuários, Integrações, Sincronização, Saúde, Configurações, Copiloto) e o passe
+visual global (D37).
 
-**A tela de conferência da NF-e (`/notas-fiscais/[id]`) continua aberta** — o
-brief §25 traz o fluxo em seis passos e o botão "Confirmar Entrada". Dois dos
-quatro estados de item que ele pede não têm dado em `document_items` (D-253).
+**Três telas seguem abertas fora da fila:**
 
-**`/cobertura` também continua aberta** — o frame trata Cobertura e Reposição
-como uma tela com abas, e unificá-las é composição, não acabamento (D-261).
+- **`/notas-fiscais/[id]`** (conferência da NF-e) — o brief §25 traz o fluxo em
+  seis passos e o botão "Confirmar Entrada"; dois dos quatro estados de item que
+  ele pede não têm dado em `document_items` (D-253).
+- **`/cobertura`** — o frame trata Cobertura e Reposição como uma tela com abas,
+  e unificá-las é composição, não acabamento (D-261).
+- **Exportação de `/precos`** — o "Exportar Relatório" recusado em D-264 é
+  funcionalidade legítima, só não é fatia de design.

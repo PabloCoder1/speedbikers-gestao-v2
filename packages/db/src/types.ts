@@ -4337,6 +4337,13 @@ export type Database = {
         }
         Returns: {
           account_label: string
+          // ACRESCIMO MANUAL (D-264): `decreases`, `increases`,
+          // `listings_affected` e `series_start` sao a faixa de KPIs do frame
+          // de /precos. As tres contagens correm sobre o MESMO recorte da
+          // tabela, entao recorte vazio nao devolve linha e quem chama assume
+          // zero -- que e a verdade, nao ausencia disfarcada (contraste
+          // deliberado com a linha-sentinela de D-263).
+          decreases: number
           delta: number
           // CORRECAO MANUAL (classe D-133): colunas anulaveis que o gerador
           // nao enxerga — `delta_ratio` e NULL quando o preco anterior era
@@ -4344,11 +4351,16 @@ export type Database = {
           // saido do catalogo depois do evento).
           delta_ratio: number | null
           event_id: string
+          increases: number
           item_id: string
+          listings_affected: number
           ml_account_id: string
           occurred_at: string
           price_after: number
           price_before: number
+          // DATE (dia civil ja convertido para America/Sao_Paulo no SQL), NULL
+          // quando a organizacao nao tem nenhum evento de preco.
+          series_start: string | null
           sku: string | null
           sku_id: string | null
           status: string | null

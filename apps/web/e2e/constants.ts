@@ -205,6 +205,25 @@ export const E2E_ANOMALIA = {
 export const E2E_LISTING_PRICE_EVENT = { de: 199.9, para: 189.9 } as const;
 
 /**
+ * O segundo sentido da mudança de preço (D24) — sem ele a faixa de `/precos`
+ * nasce com "Aumentos 0" e o filtro de direção não recorta nada.
+ *
+ * **Vai no anúncio SEM vínculo (`MLB800000002`), e a escolha não é
+ * indiferente.** O evento existente mora em `MLB800000001`, que é o anúncio
+ * ligado ao SKU principal — e `sku-dashboard.spec` afirma que a aba Preços
+ * dele tem EXATAMENTE uma linha. Um segundo evento ali quebraria aquele spec
+ * sem ter nada a ver com esta fatia.
+ *
+ * De quebra exercita o caminho que faltava: mudança de preço num anúncio que
+ * não tem SKU, onde a célula mostra "sem vínculo" em vez de um link.
+ */
+export const E2E_LISTING_PRICE_EVENT_ALTA = {
+  itemId: "MLB800000002",
+  de: 124.5,
+  para: 139.9,
+} as const;
+
+/**
  * Uma republicação do primeiro anúncio, em estado terminal de falha. Falha é o
  * estado que a tela precisa mostrar bem — o motivo aparece na tabela —, e é o
  * único que não exige inventar um anúncio filho.
