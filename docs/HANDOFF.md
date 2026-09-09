@@ -70,6 +70,16 @@ Números completos e método: `docs/PERFORMANCE.md`.
 
 ## Riscos ativos
 
+- **`supabase start` da CI falha as vezes, e a falha nao se distingue de
+  defeito de migration pelo que a interface mostra** — aconteceu em `8dfea93`
+  (09/09): reprovou em *Subir Supabase local*, ANTES de migration ou teste, e a
+  anotação publica diz so `exit code 1`. **Baixar o log do job exige ADMIN**, e
+  um agente nao tem. Sem o log, o roteiro: o job de e2e roda `supabase start`
+  identico (`ci.yml` 100 e 153) — se passou no MESMO run, a stack sobe; e
+  reproduzir com `supabase stop --no-backup && supabase start`, que aplica as
+  migrations do zero como o runner. Os dois verdes e a CI vermelha = **re-run
+  do job**, nao correcao de codigo.
+
 - **Nada avisa quando o que está no ar ficou velho** (D-070). O deploy do
   Cloud Run é MANUAL; entre um e outro chegaram a se acumular 66 commits, e a
   correção que "já está pronta" não estava valendo. Quem mexe no `worker` ou
@@ -169,14 +179,10 @@ Números completos e método: `docs/PERFORMANCE.md`.
 
 Nada disto pode ser feito por um agente.
 
-1. ~~**Deploy** dos dois serviços~~ — **FEITO em 2026-09-02**, e com ele
-   entraram no ar D-162→D-216: a correção do 429, o `APP_COMMIT`, o fim dos
-   218.750 jobs vazios de webhook, a falha definitiva respondendo 200 e o
-   caminho de pedidos reescrito.
-2. ~~`bash infra/cloud-scheduler.sh`~~ — **FEITO**, 14 jobs `ENABLED`.
-   ⚠️ **O «15 esperados» que estava escrito aqui era falso.** A lista canônica
-   é `infra/cloud-scheduler.sh` (`docs/DEPLOYMENT.md` §7 diz isso), e ela tem
-   **14**. Conferido dos dois lados: 14 no script, 14 no Cloud Scheduler.
+1. ~~**Deploy** dos dois serviços~~ — **FEITO em 2026-09-02** (D-162→D-216).
+2. ~~`bash infra/cloud-scheduler.sh`~~ — **FEITO**, **14** jobs `ENABLED`. A
+   lista canônica é `infra/cloud-scheduler.sh` (`DEPLOYMENT.md` §7); o «15
+   esperados» que já esteve escrito aqui era falso.
 3. Relatar **Dashboard → Database → Backups** do projeto Dev (decide a
    abordagem de backup da Fase 8).
 3b. **Conferir o saldo do estoque contra o UpSeller** — o usuário vai subir a
@@ -198,17 +204,12 @@ Nada disto pode ser feito por um agente.
    cofre do Windows. Caminho, 30 segundos: Dashboard → projeto
    `nmgccyqquwxecqffsidr` → Authentication → Sign In / Providers → Email →
    *Prevent use of leaked passwords* → Save.
-7. ~~**Branch protection da `v3`**~~ — **FEITO em 2026-09-03**, a proteção
-   MÍNIMA e reversível: sem force-push, sem apagar a branch, **sem** PR
-   obrigatório e **sem** status check obrigatório — o fluxo de push direto na
-   `v3` continua igual. Exigir PR/CI é decisão de fluxo, não de agente; quando
-   vier, os nomes reais dos jobs estão em `.github/workflows/ci.yml`.
-8. ~~**Deploy de `worker` (e `api`) para D-229 valer.**~~ — **FEITO em
-   2026-09-03 (autorizado pelo usuário, executado pelo agente)**: `worker` e
-   `api` em `6baa641` e depois `worker` de novo com D-230. Validação no ar:
-   `v3-order-financials-sweep` disparado a mão às 14:56 UTC e
-   `order_financials` passou de **1 para centenas de linhas** em minutos, com
-   frete e desconto observados (a leitura final está em D-229/D-230).
+7. ~~**Branch protection da `v3`**~~ — **FEITO em 2026-09-03**, MÍNIMA: sem
+   force-push e sem apagar a branch; **sem** PR nem status check obrigatório, o
+   push direto continua igual. Exigir PR/CI é decisão de fluxo, não de agente.
+8. ~~**Deploy de `worker`/`api` para D-229 valer**~~ — **FEITO em
+   2026-09-03**: validado no ar com `order_financials` indo de 1 para centenas
+   de linhas (leitura em D-229/D-230).
 9. ~~**O repositório está PÚBLICO.**~~ — **DECIDIDO pelo usuário em
    2026-09-03: fica público**, porque o plano gratuito do GitHub não aceita
    mais commits em repositório privado. Consequência que vale para todo mundo
