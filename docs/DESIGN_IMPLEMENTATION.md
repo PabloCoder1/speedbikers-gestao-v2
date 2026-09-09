@@ -303,6 +303,7 @@ branco embutido.
 | "Faturamento hoje" na Home | `/vendas` já tem o bloco "Hoje" com o aviso de dia parcial; repetir seria dois donos do mesmo dado | D-224 |
 | "Estoque Full baixo — cobertura < 7 dias" na Home | cobertura de Full não é calculada (só a local, `get_stock_coverage`); número inventado | D-067 |
 | **Seletor global de conta** no rodapé da sidebar (modal "Definir escopo da aplicação") | a V3 recorta por conta **tela a tela** (menu "Todas as contas ▾" em `/vendas`, `/anuncios`…), com o recorte na URL — compartilhável e com voltar; um escopo global em cookie quebraria isso. O bloco mostra a organização e as contas conectadas (dado real) e leva a `/contas`. **O motivo anterior ("não há segunda organização") respondia a uma pergunta que o frame não faz** — corrigido na auditoria | A1 |
+| **Inbox de TRÊS COLUNAS em `/atendimento`** (fila 300px + conversa + contexto do cliente 320px) | **medido antes de recusar** (D-286): o CENTRO fica vazio em **50,7% das reclamações** (960 de 1.895 chegam do ML sem uma mensagem sequer, e reclamação é 63% da base); a DIREITA não tem fonte (sem nome — `customer_external_id` é número, D-083 —, sem miniatura, sem Copiloto com contexto, e **92,6% dos clientes têm um caso só**); e a ESQUERDA seria regressão — a fila de 300px não cabe a triagem inline, e com **939 casos em NOVO e ZERO assumidos** o gargalo medido é a triagem, não a conversa | D-286 |
 | Central de Ajuda | não existe conteúdo de ajuda | — |
 | Menu de perfil (dropdown) | esconderia o "Sair" atrás de um dropdown que não foi desenhado | — |
 | Botão flutuante do Copiloto (drawer contextual) | Copiloto é rota, e está no menu — um segundo Copiloto é escopo vetado | — |
@@ -328,6 +329,15 @@ branco embutido.
 > tabela de produtos · **V3 real:** não existe · **Decisão:** adiar~~ —
 > **ENTREGUE em D38** (D-281), quando a fila de migração fechou, como o próprio
 > adiamento previa. O que sobrou de diferença está abaixo.
+
+> **Superfície:** `/atendimento` · **Figma:** inbox de três colunas numa tela só
+> — fila, conversa e contexto do cliente · **V3 real:** lista tabular com
+> triagem inline + `/atendimento/[caseId]` · **Decisão:** manter as duas rotas,
+> e fazer o RECORTE viajar com o caso (`?volta=`) · **Motivo:** dado inexistente
+> na terceira coluna, centro vazio em metade das reclamações, e a fila estreita
+> custaria a triagem — que é o gargalo medido (D-286). O que o desenho de três
+> colunas realmente protege é não perder a fila ao responder, e isso custou um
+> parâmetro.
 
 > **Superfície:** `/produtos`, gatilho da Inspeção Rápida · **Figma:** o clique
 > na CÉLULA do produto abre a gaveta, e não há link para a página cheia — ela é
@@ -922,8 +932,9 @@ do disparo. Foi o que revelou os 1.857px de `/integracoes`.
 1. ~~**P2 — campo e botão fora do design system**~~ — **fechado em A5**
    (D-284): 194 controles com a forma do sistema, e `check:control-styles` na
    esteira para o padrão não voltar;
-2. **P2 — `/atendimento`**: o frame é inbox de três colunas e a V3 é lista +
-   rota de detalhe. Ou vira desvio registrado com motivo, ou vira fatia;
+2. ~~**P2 — `/atendimento`**~~ — **DECIDIDO em D-286**: as três colunas foram
+   recusadas com medição e o desvio está escrito; o que o desenho protegia (não
+   perder a fila ao responder) virou o parâmetro `?volta=`;
 3. **P3 — os quatro acabamentos** de A4 (chip esticado, largura ociosa em
    `/integracoes` e `/copiloto`, nota do Copiloto encaixotada) — nenhum deles
    piorou com o chão cinza; seguem em fila de acabamento.
@@ -971,57 +982,48 @@ está na "Próxima fatia segura".
 
 ## Última fatia concluída
 
-**O PASSO CINZA (D-285)** — a diferença estrutural entre o Figma e a V3, fechada.
-Sem migration.
+**A DECISÃO SOBRE O INBOX DE TRÊS COLUNAS (D-286)** — recusado com medição, e o
+que ele protegia custou um parâmetro. Sem migration.
 
-O Figma é cartão branco sobre fundo cinza; o app era branco sobre branco,
-separando por borda. Trocar isso parece uma linha, e D2 mediu oito
-pré-requisitos para provar que não era.
+A4 achou que `/atendimento` era a superfície mais distante do frame (78%) e que
+**o desvio não estava escrito em lugar nenhum**. Ou virava registro, ou virava
+fatia. Virou registro — depois de medir.
 
-### Reler a lista antes de executá-la foi a fatia inteira
+### Os três motivos, cada um com número
 
-Dos oito, **três eram registro envelhecido e um estava errado** (veredito item a
-item na seção "O que faltava para o cinza"). O que sobrou de verdade: o token
-próprio, a tinta do `--sb-muted-ink` (4,5007:1 sobre o chão — passa AA por sete
-milésimos, e por isso escureceu para 4,84), o `color-scheme` e a linha final no
-`<main>`.
+1. **O centro fica vazio em metade das reclamações.** O frame põe a conversa no
+   meio, e **960 das 1.895 reclamações não têm uma mensagem sequer** — elas
+   chegam do Mercado Livre sem transcript, e reclamação é **63%** da base. O que
+   uma reclamação precisa é prazo, estado no ML, devolução e o pedido: é o que o
+   detalhe já mostra desde D-279 (banda de prazo no topo) e D-282 (a gaveta do
+   pedido);
+2. **A direita não tem fonte.** Sem nome (`customer_external_id` é número, e
+   D-083 proíbe usar comprador como identidade), sem miniatura, sem Copiloto com
+   contexto (D-276) — e com **92,6% dos clientes tendo um caso só**, "histórico
+   do cliente" responderia "um" quase sempre;
+3. **A esquerda seria regressão.** A fila de 300px não cabe as oito colunas nem
+   a triagem inline, e com **939 casos em NOVO e ZERO assumidos** o gargalo
+   medido é a triagem, não a conversa.
 
-**A pílula de estado, que era o item mais assustador, não existia mais como
-risco:** as pílulas vivem em tabelas, e o `table { background: var(--sb-surface) }`
-do passo BRANCO — a sequência que D2 começou justamente para isto — as mantém em
-cartão branco.
+**O argumento A FAVOR do frame também foi medido, e vale dizer:** **715 dos 943
+abertos aceitam resposta pelo produto** — quem abre um caso aberto normalmente
+pode responder ali.
 
-### O item 8 estava errado, e só o render mostrou
+### O que o desenho protege de verdade custou um parâmetro
 
-D2 escreveu que o realce de "não lida" **ligaria sozinho** quando o chão se
-separasse. Não ligou: a lista mora dentro de um `.sb-panel` branco, então o
-`transparent` da linha lida mostrava o PAINEL, não o chão — os dois ramos
-continuaram brancos, como sempre foram. Apontando a lida para `--sb-ground`, o
-realce que estava escrito no código desde D-269 apareceu na tela **pela primeira
-vez** (conferido plantando um `read_at` no banco local).
+Numa tela de três colunas, responder não tira a fila da frente. Na V3, o
+"← Voltar à Caixa de Entrada" apontava para `/atendimento` pelado: quem recortou
+"prazo em risco + reclamação + Loja X" entre 943 abertos **recomeçava o recorte
+a cada caso lido**.
 
-### O que o passo arrastou: a segunda metade de A5
+O link do caso passou a carregar `?volta=<a fila com o recorte>`. A leitura é
+mais estreita que `safeNext`: só aceita `/atendimento` — um `volta=/configuracoes`
+seria interno e mesmo assim errado, porque o rótulo diz "Caixa de Entrada" e link
+que mente sobre o destino é pior que link sem parâmetro. Dois casos de e2e: a
+volta preservada e a volta forjada.
 
-Antes de trocar o chão, medidos **26 controles com a classe do design system E
-aparência inline** — `background: "transparent"` num `.sb-button` é branco sobre
-branco e vira **botão cinza dentro de cartão branco** no dia seguinte — mais
-**9 por referência** (`style={fieldStyle}`), que a primeira versão do guarda não
-via. `check:control-styles` passou a pegar as duas formas, com dois auto-testes
-novos.
-
-A docstring dele dizia que a disputa interna ficava de fora. Ficou por um dia — e
-o que a tirou de lá não foi rigor: foi o chão mudar de cor e tornar visível o
-que era invisível.
-
-### A prova, lida da tela
-
-`getComputedStyle` em dez rotas: **chão `rgb(244,245,250)`, topo BRANCO, painel
-branco, tabela branca, botão branco, campo branco**. O `<header>` ficou branco de
-graça porque quem recebeu o chão foi o `<main>`; `/login`, única tela fora do
-Shell, não foi tocada.
-
-**Verificação:** `check` 29/29, build 8/8, integração **634/634**, e2e **87/87**,
-os quatro guardas de `web` verdes.
+**Verificação:** `check` 29/29, build 8/8, e2e **89/89** (2 novos), os quatro
+guardas de `web` verdes. Números lidos do Dev por SQL no dia da decisão.
 
 ## Próxima fatia segura
 
@@ -1047,9 +1049,8 @@ Em ordem de risco medido:
 4. ~~**A5 — o passe de campo e botão**~~ — **FEITO** (D-284): 41 arquivos, 194
    controles, e o guarda `check:control-styles` na esteira. O bloco do design
    system voltou de 82% para **94%**.
-5. **`/atendimento`**: decidir entre registrar o inbox de três colunas como
-   desvio com motivo, ou implementá-lo. Hoje não é nem uma coisa nem outra —
-   e é o maior desvio não registrado que resta.
+5. ~~**`/atendimento`**~~ — **DECIDIDO** (D-286): recusado com medição, desvio
+   registrado, e o `?volta=` entregue.
 6. ~~**O passo cinza**~~ — **FEITO** (D-285). Com ele, o passe visual global
    fecha e a frente chega a **≈90%**.
 7. Os **sete itens abertos** listados abaixo.
@@ -1073,7 +1074,8 @@ registro ainda é verdade, ou a rota que ele nega já nasceu?** e, de A4,
 **existe guarda para este padrão — ou ele volta assim que eu virar as costas?**
 e, de A5, **a regex que eu usei para achar o elemento sabe onde a tag TERMINA?**
 E, do passo cinza, a mais barata de todas: **esta lista de pré-requisitos ainda
-é verdade, ou metade dela já foi paga por outras fatias?**
+é verdade, ou metade dela já foi paga por outras fatias?** De D-286: **o que
+esta composição do frame protege pode ser entregue sem ela?**
 
 **Sete itens seguem abertos fora da fila:**
 

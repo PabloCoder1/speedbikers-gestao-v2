@@ -22,6 +22,7 @@ import {
   supportReplyStateLabel,
   supportSenderKindLabel,
 } from "../../../lib/labels";
+import { safeNext } from "../../../lib/safe-next";
 import { resolveSupportCaseReference } from "../../../lib/support-case-reference";
 import { createClient } from "../../../lib/supabase/server";
 import { GavetaPedido } from "../gaveta-pedido";
@@ -109,12 +110,30 @@ function MessageBody({ message }: { message: MessageRow }): ReactNode {
   );
 }
 
+/**
+ * A VOLTA PARA A FILA, com o recorte que a pessoa aplicou (D-286).
+ *
+ * `safeNext` já recusa caminho externo e URL protocolo-relativa; aqui a
+ * exigência é mais estreita: a volta só pode ser a Caixa de Entrada. Um
+ * `volta=/configuracoes` seria interno e mesmo assim errado — o rótulo do link
+ * diz "Voltar à Caixa de Entrada", e link que mente sobre o destino é pior que
+ * link sem parâmetro.
+ */
+function voltaParaFila(bruto: string | string[] | undefined): string {
+  const destino = safeNext(typeof bruto === "string" ? bruto : null);
+
+  return destino === "/atendimento" || destino.startsWith("/atendimento?") ? destino : "/atendimento";
+}
+
 export default async function AtendimentoDetalhePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ caseId: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }): Promise<ReactNode> {
   const { caseId } = await params;
+  const volta = voltaParaFila((await searchParams).volta);
   const supabase = await createClient();
 
   // `getUser()` em paralelo com a leitura, não antes dela (D-195). Ele revalida
@@ -348,7 +367,7 @@ export default async function AtendimentoDetalhePage({
       <PageTitle
         eyebrow="ATENDIMENTO / OPERAÇÃO"
         title="Atendimento"
-        subtitle={<Link href="/atendimento">← Voltar à Caixa de Entrada</Link>}
+        subtitle={<Link href={volta}>← Voltar à Caixa de Entrada</Link>}
         compacto
       />
 

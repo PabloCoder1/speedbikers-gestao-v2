@@ -466,7 +466,19 @@ export default async function AtendimentoPage({
                       </td>
 
                       <td>
-                        <Link href={`/atendimento/${row.id}`}>{supportChannelLabel(row.channel)}</Link>
+                        {/*
+                          O RECORTE VIAJA COM O CASO (D-286).
+
+                          Abrir um atendimento e voltar devolvia a fila sem
+                          filtro nenhum: quem recortou "prazo em risco +
+                          reclamação + Loja X" entre **943 casos abertos**
+                          recomeçava do zero a cada caso lido. É a única coisa
+                          que o inbox de três colunas do frame realmente
+                          protege, e ela custa um parâmetro — não uma tela.
+                        */}
+                        <Link href={`/atendimento/${row.id}?volta=${encodeURIComponent(buildHref(current, {}))}`}>
+                          {supportChannelLabel(row.channel)}
+                        </Link>
                         {rowFacets.length > 0 && <div className="sb-mono">{rowFacets.join(" · ")}</div>}
                         <div className="sb-mono">
                           #{row.external_case_id}

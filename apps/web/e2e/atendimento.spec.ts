@@ -246,3 +246,50 @@ test("/atendimento: a janela é declarada, o SLA aparece e a ordem não é prome
   // atribuir a outro.
   await expect(page.getByRole("button", { name: /massa/i })).toHaveCount(0);
 });
+
+/**
+ * O RECORTE VOLTA COM A PESSOA (D-286).
+ *
+ * A decisão sobre o inbox de três colunas do frame foi NÃO implementá-lo — a
+ * medição está na decisão —, e este caso guarda a única coisa que aquele
+ * desenho realmente protege: quem filtra a fila, abre um caso e volta não pode
+ * cair na lista sem filtro. Com 943 casos abertos no Dev, recomeçar o recorte a
+ * cada caso lido é o custo que a tela de três colunas evitaria.
+ */
+test("/atendimento: abrir um caso e voltar preserva o recorte da fila", async ({ page }) => {
+  await login(page, "/atendimento?canal=QUESTION");
+
+  const linha = page.locator("tbody a[href^='/atendimento/']").first();
+
+  // O link do caso carrega a volta — é assim que o recorte atravessa a rota.
+  await expect(linha).toHaveAttribute("href", /volta=/);
+
+  await linha.click();
+
+  const voltar = page.getByRole("link", { name: /Voltar à Caixa de Entrada/ });
+
+  await expect(voltar).toBeVisible();
+  await expect(voltar).toHaveAttribute("href", "/atendimento?canal=QUESTION");
+
+  await voltar.click();
+
+  await expect(page).toHaveURL(/\/atendimento\?canal=QUESTION/);
+});
+
+/**
+ * E a volta NÃO aceita qualquer destino: o rótulo diz "Caixa de Entrada", e
+ * link que mente sobre para onde leva é pior que link sem parâmetro.
+ */
+test("/atendimento: a volta forjada cai na Caixa de Entrada, não no destino pedido", async ({ page }) => {
+  await login(page, "/atendimento");
+
+  const href = await page.locator("tbody a[href^='/atendimento/']").first().getAttribute("href");
+  const caseId = (href ?? "").split("?")[0] ?? "";
+
+  await page.goto(`${caseId}?volta=%2Fconfiguracoes`);
+
+  await expect(page.getByRole("link", { name: /Voltar à Caixa de Entrada/ })).toHaveAttribute(
+    "href",
+    "/atendimento",
+  );
+});

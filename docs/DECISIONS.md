@@ -7602,6 +7602,58 @@ Medidos antes de trocar o chao: **26 controles com a classe do design system E a
 
 **Verificacao:** `check` **29/29**, build **8/8**, integracao **634/634**, e2e **87/87**, os quatro guardas de `web` verdes. Dez rotas renderizadas a 1440px contra o Supabase local, com o fundo computado lido de cada uma.
 
+## D-286 - O inbox de tres colunas do frame: RECUSADO com medicao, e o que ele protegia custou um parametro
+
+**Contexto:** a auditoria A4 (D-283) achou que `/atendimento` era a superficie mais distante do frame (78%) e que **o desvio nao estava registrado em lugar nenhum** -- D-267 registrou a ORDEM da fila e as colunas sem fonte, nunca a composicao. O frame `Sac` e um inbox de TRES COLUNAS numa tela so: fila de 300px | conversa | contexto do cliente de 320px. A V3 e lista tabular mais rota de detalhe. Ou virava desvio escrito, ou virava fatia. Sem migration.
+
+---
+
+**MEDIDO NO DEV ANTES DE DECIDIR**
+
+| | |
+|---|---:|
+| atendimentos | **3.003** |
+| abertos | **943** |
+| em `NOVO` | **939** |
+| **assumidos por alguem** | **0** |
+| reclamacoes (`CLAIM`) | 1.895 (63%) |
+| **reclamacoes SEM UMA MENSAGEM SEQUER** | **960 -- 50,7% delas** |
+| perguntas e mensagens pos-venda | 614 + 494, **100% com mensagem** |
+| clientes distintos | 2.295 |
+| **clientes com UM caso so** | **2.125 -- 92,6%** |
+| resposta permitida (`ALLOWED`) | 747, sendo **715 dos abertos** |
+| prazos ativos | 1.265 |
+
+---
+
+**A DECISAO: NAO IMPLEMENTAR AS TRES COLUNAS**
+
+**1. A coluna do CENTRO fica vazia em metade das reclamacoes.** O frame poe a conversa no meio, e **960 das 1.895 reclamacoes nao tem mensagem nenhuma** -- elas chegam do Mercado Livre sem transcript. Reclamacao e 63% da base. Uma tela cuja peca central e vazia em metade do trabalho nao e a tela do trabalho.
+
+E o que uma reclamacao precisa nao e chat: e **prazo, estado no ML, devolucao/mediacao e o pedido** -- exatamente o que `/atendimento/[caseId]` ja mostra desde que D-279 subiu a banda de prazo para o topo e D-282 pos a gaveta do pedido ali.
+
+**2. A coluna da DIREITA nao tem fonte.** "Contexto do cliente" precisaria de: **nome** (nao existe -- `customer_external_id` e um numero, e D-083 proibe usar comprador como identidade), **miniatura do produto** (`listings` nao tem coluna de imagem), **Copiloto com o caso em maos** (a API nao recebe contexto, D-276) e **historico do cliente** -- que com **92,6% dos clientes tendo um caso so** responderia "um" quase sempre. Sao 320px de largura para uma pergunta que o dado quase nunca tem.
+
+**3. A coluna da ESQUERDA seria REGRESSAO, e o numero diz por que.** A fila de 300px do frame cabe chip, nome e trecho. A lista da V3 tem oito colunas e **triagem inline** -- status e prioridade em `<select>`, "Assumir" no lugar. Com **939 casos em NOVO e ZERO assumidos**, o gargalo medido da operacao e a TRIAGEM, nao a conversa. Trocar a mesa de triagem por uma fila estreita otimiza o que ja funciona e estrangula o que nao anda.
+
+**A premissa de responder, porem, se sustenta** -- e vale dizer, porque e o argumento a favor do frame: **715 dos 943 abertos aceitam resposta pelo produto**. Quem abre um caso aberto normalmente PODE responder ali.
+
+---
+
+**O QUE O FRAME PROTEGE DE VERDADE, E CUSTOU UM PARAMETRO**
+
+Numa tela de tres colunas, responder nao tira a fila da frente. Na V3, abrir um caso levava para outra rota e **o botao "Voltar a Caixa de Entrada" apontava para `/atendimento` pelado**: quem recortou "prazo em risco + reclamacao + Loja X" entre 943 abertos recomecava o recorte **a cada caso lido**.
+
+Isso e o custo real do desenho de duas rotas, e nao exige tela nova: o link do caso passa a carregar `?volta=<a fila com o recorte>`, e o detalhe volta para la.
+
+A leitura do parametro e mais estreita que `safeNext`: **so aceita `/atendimento`**. Um `volta=/configuracoes` seria interno e mesmo assim errado -- o rotulo do link diz "Voltar a Caixa de Entrada", e link que mente sobre o destino e pior que link sem parametro. Ha caso de e2e para a volta preservada e para a volta forjada.
+
+---
+
+**Impacto:** `apps/web/app/atendimento/page.tsx`, `apps/web/app/atendimento/[caseId]/page.tsx`, `apps/web/e2e/atendimento.spec.ts` (+2 casos), `docs/DESIGN_IMPLEMENTATION.md` (o desvio, agora escrito), `docs/HANDOFF.md`.
+
+**Verificacao:** `check` **29/29**, build **8/8**, e2e **89/89** (2 novos), os quatro guardas de `web` verdes. Numeros do Dev lidos por SQL no dia da decisao.
+
 ## Como adicionar nova decisao
 
 Registrar:
