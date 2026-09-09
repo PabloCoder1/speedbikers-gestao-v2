@@ -1965,11 +1965,12 @@ summary[aria-disabled="true"] {
 /*
  * CABEÇALHO DE TABELA (`.table-wrap th` do Figma), e por que é regra global.
  *
- * São 44 tabelas, e só duas telas importam `components/table-styles.ts` — o
- * resto tem `th`/`td` inline. Estilo inline vence folha de estilo, então esta
- * regra alcança o que o inline NÃO declara: a família, o peso, o
- * `letter-spacing`, o caixa-alta e o fundo. O tamanho continua vindo do inline
- * onde ele existe, e o módulo único já foi alinhado ao Figma.
+ * `components/table-styles.ts` NÃO EXISTE MAIS (D-275): a última tela que o
+ * importava migrou, e o módulo foi apagado. O que resta de `th`/`td` inline
+ * está nas telas ainda não migradas para `.sb-table`, e estilo inline vence
+ * folha de estilo — então esta regra alcança o que o inline NÃO declara: a
+ * família, o peso, o `letter-spacing`, o caixa-alta e o fundo. O tamanho
+ * continua vindo do inline onde ele existe.
  *
  * É o mesmo raciocínio da regra de fundo da tabela (D2), com a mesma
  * invariante medida: 44 tabelas, 44 wrappers.

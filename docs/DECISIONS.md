@@ -7453,3 +7453,57 @@ Cinco casos, e o quinto e o que faltava em toda a trilha 8A: **o GESTOR ve a rec
 **Impacto:** `apps/web/app/saude/page.tsx` (`PageTitle`, faixa ancora de tres, `Panel` com faixa aninhada, `.sb-table`, sem `th`/`td`/`cardStyle` locais), `apps/web/lib/labels.ts` (`runStatusLabel`), `apps/web/app/sincronizacao/page.tsx` (novo nome), `apps/web/e2e/{seed,saude.spec}.ts`, teste de `labels`. Sem migration, sem CSS novo.
 
 **Verificacao, local:** `check` **29/29**, e2e **72/72** em banco recriado (5 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17, `check:table-styles` **21**, `docs:check`. Capturada a 1440px contra o Supabase local.
+
+## D-275 - D35: Configuracoes, e interruptor mente PIOR que numero
+
+**Contexto:** `/configuracoes` pelo frame `AdminScreen` na variacao de organizacao. Quinta tela do bloco de administracao. Sem migration.
+
+---
+
+**1. OS DOIS INTERRUPTORES DO FRAME NAO TEM ONDE GRAVAR**
+
+O frame desenha um painel de detalhe com dois interruptores. Medido no esquema:
+
+| interruptor | como o frame o desenha | fonte no banco |
+|---|---|---|
+| **2FA Obrigatorio** | **LIGADO** (verde) | **0** colunas de 2FA/MFA em `public`, e **0** fatores em `auth.mfa_factors` |
+| **Modo Manutencao** | desligado | **0** colunas de manutencao ou somente-leitura |
+
+`organizations` tem **seis colunas ao todo**: `id`, `name`, `slug`, `cnpj` e os dois carimbos. Nao ha onde gravar, e nao ha quem leia.
+
+O 2FA merece a nota separada: o frame o desenha **ligado**, o que afirma que a organizacao ja exige segundo fator -- **com ninguem tendo um cadastrado**.
+
+**2. E ESSA E A DIFERENCA QUE VALE REGISTRAR: INTERRUPTOR MENTE PIOR QUE NUMERO**
+
+Todas as recusas desta frente ate aqui foram de NUMEROS sem fonte: o "91%" de D-260, o "Impacto estimado R$ 8.400" de D-269, o "99,97% de uptime" de D-274. Numero sem fonte e **lido** -- alguem confia nele e decide errado.
+
+**Interruptor sem fonte e ACIONADO.** Alguem clicaria em "Modo Manutencao" acreditando que as escritas pararam -- a republicacao, a atualizacao de preco -- e elas nao parariam. O dano nao e uma decisao mal informada; e uma acao que o operador acredita ter tomado e que nao aconteceu.
+
+Faze-los funcionar e trabalho de produto e de seguranca, nao de composicao: exige coluna, leitura em TODO caminho de escrita, e uma decisao explicita sobre o que "manutencao" bloqueia e o que ela deixa passar.
+
+**3. QUATRO ABAS PARA SETE SECOES, E O DETALHE REPETIRIA A LINHA**
+
+O frame poe navegacao lateral com quatro abas -- Organizacao, Preferencias Operacionais, Notificacoes, Politicas e Padroes -- e um painel de detalhe. Duas razoes medidas para nao adotar:
+
+1. **Sao SETE secoes, nao quatro.** As abas nao cobrem Mercado Livre, IA/Copiloto nem Reposicao -- e e justamente Reposicao que aparece "nao configurado" com a consequencia escrita ("a sugestao de compra recusa numero ate haver uma", D-144). Perder essa e perder a unica secao que hoje pede acao.
+2. **O detalhe repetiria a linha.** Cada secao tem quatro frases curtas: estado, resumo, quem altera, para onde ir. Um mestre-detalhe esconderia seis para mostrar uma, e a pergunta que a pagina existe para responder -- *"onde eu configuro X, e ja esta feito?"* -- passaria a exigir um clique por secao. E o criterio de D-269, aplicado ao contrario de D-270: detalhe que nao acrescenta campo nao entra.
+
+**4. A FAIXA RESPONDE DE RELANCE O QUE A PAGINA RESPONDE UMA SECAO POR VEZ**
+
+Seis celulas -- o total e as cinco partes -- contadas sobre o mesmo array que os paineis imprimem (D-265). No Dev do seed: **7 = 3 configuradas + 0 parciais + 3 nao configuradas + 1 nao editavel + 0 indisponiveis**.
+
+**"Nao editavel aqui" e "Indisponivel" aparecem mesmo em zero**, e nao sao enfeite: a primeira e o teto de IA, que mora no deploy; a segunda e leitura que FALHOU. Somar as duas ao balde de "nao configurado" diria que falta fazer algo que ou nao se faz aqui, ou nao se sabe (D-067).
+
+**5. `components/table-styles.ts` DEIXOU DE EXISTIR**
+
+O modulo nasceu em D-232 para acabar com tres copias de `th`/`td`/`cardStyle`. A auditoria de fidelidade pediu o MERGE dele e registrou "2 consumidores nao migrados". D-272 migrou `/integracoes`; esta fatia migrou `/configuracoes`, a ultima -- **e apagou o arquivo**.
+
+O comentario da regra global de `th` em `globals.css` dizia "so duas telas importam `components/table-styles.ts`". Ficou falso no momento em que o arquivo sumiu, e comentario que descreve o que nao existe mais e pior que comentario nenhum: foi corrigido junto.
+
+**6. AMBIGUIDADE DE SELETOR, DE NOVO, E A MESMA CAUSA**
+
+O primeiro teste da faixa falhou com dois elementos: `hasText: "Configuradas"` casa **"Nao configuradas"** tambem -- substring, sem diferenciar maiuscula. E a mesma classe que ja apareceu em D-264 (`"AUMENTO"` casando tres elementos). O conserto e regex ancorada no rotulo, e o custo de nao ter e um teste que so falha quando os dois baldes existem.
+
+**Impacto:** `apps/web/app/configuracoes/page.tsx` (`PageTitle`, faixa de seis, sete `Panel`, `.sb-pair-grid`), `apps/web/components/table-styles.ts` **apagado**, `apps/web/app/globals.css` (comentario), `apps/web/e2e/configuracoes.spec.ts` (+2). Sem migration, sem CSS novo.
+
+**Verificacao, local:** `check` **29/29**, e2e **74/74** em banco recriado (2 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17, `check:table-styles` 21, `docs:check`. Capturada a 1440px contra o Supabase local.

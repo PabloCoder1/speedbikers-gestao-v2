@@ -219,3 +219,10 @@ Cada linha nasceu de um erro real. A decisão que a gerou está em
   e não para os outros**: quando um mapa de rótulos nasce, o teste que exige
   cobertura dele nasce junto, ou a próxima chave nova aparece crua para o
   usuário.
+- **Interruptor sem fonte mente PIOR que número sem fonte.** Número sem fonte
+  é *lido*: alguém confia e decide errado. Interruptor sem fonte é *acionado*:
+  alguém clica em "modo manutenção" acreditando que as escritas pararam, e
+  elas não param. O dano deixa de ser uma decisão mal informada e passa a ser
+  uma ação que o operador acredita ter tomado. Antes de recusar um elemento do
+  desenho por falta de fonte, pergunte se ele é lido ou clicado — a régua muda
+  de lugar (D-275).

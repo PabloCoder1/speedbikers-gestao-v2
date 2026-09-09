@@ -628,7 +628,8 @@ que ele renderiza.**
 | D32 | **Integrações** — o frame nomeia Bling e Google Sheets, que têm ZERO ocorrências no repositório; e um selo por cartão desfaria a separação em três dimensões que criou a tela (D-272) | ✔ |
 | D33 | **Sincronização** — um dos oito recursos não tinha nome nem veredito, e era o de PIOR taxa de falha; o defeito estava escrito como fixture num teste verde (D-273) | ✔ |
 | D34 | **Saúde do Sistema** — o "99,97% de uptime" do frame não tem UMA tabela que o sustente; a âncora navy ganhou a pergunta que a tela nasceu para responder (D-274) | ✔ |
-| D35–D36 | Configurações, Copiloto | fila |
+| D35 | **Configurações** — os dois interruptores do frame não têm onde gravar, e interruptor mente PIOR que número: um é lido, o outro é acionado. `table-styles.ts` apagado (D-275) | ✔ |
+| D36 | Copiloto | fila |
 | D37 | Passe visual global | fila |
 
 ## Auditoria de Fidelidade Figma
@@ -812,87 +813,68 @@ O que resta é a fila **D31 em diante**: 7 superfícies ainda não migradas — 
 
 ## Última fatia concluída
 
-**D34 — Saúde do Sistema, pelo frame `AdminScreen` na variação de
-confiabilidade (D-274).** Quarta tela do bloco de administração. Sem migration.
+**D35 — Configurações, pelo frame `AdminScreen` na variação de organização
+(D-275).** Quinta tela do bloco de administração. Sem migration.
 
-### O número mais visível do frame não tem uma tabela que o sustente
+### Interruptor mente pior que número
 
-O frame abre com um banner navy e "99,97% — Uptime · 30 dias". São **zero
-tabelas** de incidente, uptime, disponibilidade ou SLA no esquema inteiro — e
-"Ver incidentes", a ação do cabeçalho, tem a mesma resposta.
+O frame desenha dois: **2FA obrigatório** (ligado) e **modo manutenção**
+(desligado). São **zero** colunas de 2FA ou MFA no esquema, **zero** fatores
+cadastrados em `auth.mfa_factors`, **zero** colunas de manutenção — e
+`organizations` tem seis colunas ao todo. Não há onde gravar nem quem leia.
 
-Derivar do heartbeat seria pior que não mostrar: `system.ping` diz que o worker
-rodou, não que o produto estava disponível. O worker pode estar batendo ponto
-com a web fora do ar.
+Todas as recusas desta frente até aqui foram de **números** sem fonte, e número
+sem fonte é *lido*. **Interruptor sem fonte é acionado**: alguém desligaria a
+operação acreditando que as escritas pararam, e elas não parariam. O dano deixa
+de ser uma decisão mal informada e passa a ser uma ação que o operador acredita
+ter tomado.
 
-### A âncora ganhou a pergunta que a tela nasceu para responder
+E o 2FA merece a nota: o frame o desenha **ligado**, afirmando que a organização
+já exige segundo fator — com ninguém tendo um.
 
-O banner navy virou a **célula âncora** da faixa, que é o gradiente que o design
-system já tem em cinco telas. No lugar do uptime inventado ela mostra o veredito
-que a tela existe para dar: *o código que está rodando é o código que eu acho
-que está rodando?* — CURRENT, OUTDATED ou UNKNOWN, com o motivo ao lado.
+### Quatro abas para sete seções
 
-Composição aplicada, conteúdo recusado: a mesma operação de D-272.
+A navegação lateral do frame não cobre Mercado Livre, IA/Copiloto nem Reposição
+— e é justamente Reposição que aparece "não configurado" com a consequência
+escrita. E o painel de detalhe repetiria a linha: cada seção tem quatro frases
+curtas, então o mestre-detalhe esconderia seis para mostrar uma, e a pergunta
+que a página existe para responder passaria a exigir um clique por seção.
 
-### Três números sem fonte e um dono alheio
+### `components/table-styles.ts` deixou de existir
 
-| cartão do frame | medição |
-|---|---|
-| Aplicação Web **42 ms**, API ML **186 ms**, Banco **12 ms** | a única coluna de latência do esquema é `ai_runs.latency_ms` |
-| Armazenamento **2,4 TB livres** | nenhuma telemetria de capacidade, e perguntá-la ao Google Cloud é a permissão que D-176 excluiu |
-| Fila de Atendimento | tem tela dona (D-224) |
-| Workers degradados | **isto a tela já mostra**, por tipo de job |
+Nasceu em D-232 para acabar com três cópias de `th`/`td`/`cardStyle`, e a
+auditoria de fidelidade pediu o merge dele. D-272 migrou a penúltima tela; esta
+migrou a última e **apagou o arquivo**. O comentário da regra global de `th`
+ainda dizia "só duas telas importam" — corrigido junto, porque comentário que
+descreve o que não existe mais é pior que comentário nenhum.
 
-### O balde que eu errei, e o mapa sabia mais que eu
-
-Ao montar o fixture escolhi o webhook como exemplo de "job sem cadência". Ele
-não é: D-232 mediu um limiar de **silêncio** para ele, 32 mil execuções em 7
-dias, porque um webhook de pedidos mudo por horas não está bem. Sem cadência de
-verdade são os raros por natureza — chave suja, backfill, importação sob
-demanda. O teste pegou.
-
-### "done", de novo, uma tela ao lado
-
-A coluna "Último estado" imprimia o valor cru. D-273 acabou de consertar isso na
-tela vizinha. As duas colunas falam o mesmo vocabulário, então o rótulo passou a
-se chamar pelo conceito e não pela tabela — generalizar uma fatia depois de
-criar é o momento certo, porque o segundo consumidor é que prova que o conceito
-é compartilhado.
-
-### Sexta tela seguida sem spec
-
-Cinco casos novos, e o quinto é o que faltava na trilha inteira: **o GESTOR vê a
-recusa**, e a recusa vem da RPC (zero linhas para quem não é ADMIN), não de um
-`if` na tela.
-
-**Verificação, local:** `check` **29/29**, e2e **72/72** em banco recriado (5
+**Verificação, local:** `check` **29/29**, e2e **74/74** em banco recriado (2
 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17,
-`check:table-styles` **21**, `docs:check`. Capturada a 1440px contra o Supabase
+`check:table-styles` 21, `docs:check`. Capturada a 1440px contra o Supabase
 local.
 
 ## Próxima fatia segura
 
-**D35–D36 — Configurações e Copiloto.** As duas existem, e são as últimas da
-fila nomeada.
+**D36 — Copiloto**, a última da fila nomeada. Depois dela, só o **passe visual
+global (D37)**.
 
-`/configuracoes` é a **última consumidora de `components/table-styles.ts`**:
-D35 pode apagar o módulo, fechando o MERGE que a auditoria de fidelidade pediu.
-O frame dela é o único do bloco com navegação lateral própria (quatro abas:
-Organização, Preferências Operacionais, Notificações, Políticas e Padrões) e
-dois interruptores — **2FA obrigatório** e **modo manutenção** —, que são a
-primeira coisa a medir: interruptor sem coluna atrás é botão que não faz nada.
+`/copiloto` é diferente de tudo o que veio antes neste bloco: é uma tela de
+**conversa**, não de tabela — então as perguntas de faixa e de tabela não se
+aplicam, e as que valem são outras. **Medir primeiro se o frame desenha um
+chat com histórico persistido**: `ai_runs` guarda execução e custo, e se o
+desenho promete uma conversa que continua entre sessões, a pergunta é se
+existe tabela de mensagem.
 
-A rotina, com as sete perguntas acumuladas: **o frame tem fonte?** (D-266),
+A rotina, com as oito perguntas acumuladas: **o frame tem fonte?** (D-266),
 **falta coluna ou falta dado?** (D-268), **quantas linhas no Dev?** (D-263), **a
 faixa conta o mesmo conjunto da tabela ou é navegação?** (D-265), **há spec?**
-(D-271), **capturei a tela depois do último build?** (D-272) e **o fixture do
-teste é um dado degradado de verdade?** (D-273).
+(D-271), **capturei a tela depois do último build?** (D-272), **o fixture do
+teste é um dado degradado de verdade?** (D-273) e **o mapa já sabe disso?**
+(D-274).
 
-D34 acrescenta a oitava, e ela é sobre mim: **o mapa já sabe disso?** — escolhi
-um exemplo por intuição e o código tinha a medição contrária escrita em
-comentário, num arquivo que eu havia lido na fatia anterior.
-
-Depois delas, só o **passe visual global (D37)**.
+D35 acrescenta a nona, e ela separa o que já era uma só: **o elemento é lido ou
+é acionado?** — porque a régua para desenho sem fonte muda de lugar quando o
+usuário pode clicar nele.
 
 **Seis itens seguem abertos fora da fila:**
 
