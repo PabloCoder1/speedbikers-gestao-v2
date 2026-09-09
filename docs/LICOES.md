@@ -197,3 +197,10 @@ Cada linha nasceu de um erro real. A decisão que a gerou está em
   quarta o defeito acima estava vivo. A cobertura seguiu as fatias de
   desenvolvimento; telas nascidas fora delas ficaram sem nenhuma (D-268 a
   D-271).
+- **Há uma classe de defeito que NENHUM guarda vê: a visual.** Alinhar seis
+  tabelas com `table-layout: fixed` fez o fim de uma frase ser cortado pelo
+  `overflow: hidden` do painel — `.sb-table` é `nowrap`, então a célula parou
+  de esticar. Não quebrou teste, não mudou o HTML, não apareceu no `tsc`. **Só
+  a captura mostrou**, e só porque a frase cortada era a mais longa da tela.
+  Capturar depois do último build não é conferência de acabamento: é o único
+  detector que existe para esta classe (D-272).

@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **267** (D-001 a D-271).
+Decisões registradas: **268** (D-001 a D-272).
 
 ## Por domínio
 
-### atendimento (37)
+### atendimento (38)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -55,6 +55,7 @@ Decisões registradas: **267** (D-001 a D-271).
 - **D-256** — D20: a linha de apoio do frame prometia lead time por fornecedor, e isso nao existe no modelo
 - **D-258** — "Valor comprado" por fornecedor, e o coalesce que eu reintroduzi na funcao que existia para tira-lo
 - **D-260** — D22: o Diagnostico pelo frame, e o "91%" que nao tem fonte
+- **D-272** — D32: Integracoes, e o frame nomeia dois parceiros que o sistema NAO TEM
 
 ### banco/rls (26)
 

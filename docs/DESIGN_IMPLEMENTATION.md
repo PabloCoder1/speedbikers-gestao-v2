@@ -625,7 +625,8 @@ que ele renderiza.**
 | D29 | **Central de Notificações** — o painel de detalhe do frame repete a linha e inventa um "Impacto estimado" que não tem coluna (D-269) | ✔ |
 | D30 | **Sugestões** — o MESMO mestre-detalhe que D29 recusou, aqui entra: nove campos estruturados contra três repetidos (D-270) | ✔ |
 | D31 | **Usuários** — três das cinco colunas e um dos cinco cartões do frame não têm fonte; e a tela tinha um DEFEITO VIVO da classe de D-234, justamente onde se cadastra o segundo usuário (D-271) | ✔ |
-| D32–D36 | Integrações, Sincronização, Saúde, Configurações, Copiloto | fila |
+| D32 | **Integrações** — o frame nomeia Bling e Google Sheets, que têm ZERO ocorrências no repositório; e um selo por cartão desfaria a separação em três dimensões que criou a tela (D-272) | ✔ |
+| D33–D36 | Sincronização, Saúde, Configurações, Copiloto | fila |
 | D37 | Passe visual global | fila |
 
 ## Auditoria de Fidelidade Figma
@@ -809,76 +810,79 @@ O que resta é a fila **D31 em diante**: 7 superfícies ainda não migradas — 
 
 ## Última fatia concluída
 
-**D31 — Usuários, pelo frame `AdminScreen` na variação de acessos (D-271).**
-Primeira fatia fora das telas de operação. Sem migration.
+**D32 — Integrações, pelo frame `AdminScreen` na variação de canais (D-272).**
+Segunda tela do bloco de administração. Sem migration.
 
-### A fatia achou um defeito VIVO, e ele estava onde menos podia estar
+### O frame nomeia dois parceiros que o sistema não tem
 
-A tela lia `organization_members` com `.maybeSingle()` **sem filtrar por
-usuário**. Com dois membros o PostgREST responde `PGRST116`, `data` vira nulo, e
-a tela dizia *"Sua conta não está associada a nenhuma organização"* — para o
-próprio ADMIN.
+Ele desenha três cartões: Mercado Livre, **Bling (ERP)** e **Google Sheets**.
+Os dois últimos têm **zero ocorrências no repositório inteiro** — código, SQL e
+documentação. Não é "ainda não integrado": é nome de parceiro que nunca existiu
+aqui, e num painel de integrações a afirmação é operacional. Alguém leria
+"Conectado" no Bling e concluiria que a NF-e de entrada chega por ali.
 
-É a classe que D-234 corrigiu em ~25 telas. A ironia explica por que ninguém
-viu: **`/usuarios` é onde se cadastra o segundo usuário**, ou seja, a tela que o
-ato quebra é a tela que o ato usa. Achado abrindo a tela, que é o primeiro passo
-da rotina. Depois da correção, **não sobrou nenhuma leitura sem filtro**.
+O sistema tem **seis** integrações, e nenhuma é as duas do frame. Ele acertou um
+número por acaso: escreve "4 contas ativas" sob o Mercado Livre, e o Dev tem
+exatamente quatro, todas conectadas.
 
-### Três das cinco colunas e um dos cinco cartões não têm fonte
+### Um selo por cartão desfaria a decisão que criou a tela
 
-| o que o frame desenha | existe? | decisão |
-|---|---|---|
-| cartão "Convites Pendentes" | não há tabela de convite | fora |
-| coluna "Status" | sem convite, todo membro é ativo por construção | fora |
-| coluna "Último Acesso" | `auth.users.last_sign_in_at`: 0 colunas e 0 funções em `public` | fora |
-| "E-mail" em "Usuário / E-mail" | `profiles` é `id, full_name` e carimbos | fora |
+O frame põe **um** selo por integração. Esta tela responde **três** perguntas
+separadas — conexão, sincronização, configuração — porque D-231 nomeia como
+risco *"declarar saúde só por haver configuração"*. E o selo do frame diz
+"Conectado", que é justamente a dimensão que menos prova: hoje o Mercado Livre
+tem conta conectada e **nenhuma chamada bem-sucedida observada**. O selo o
+pintaria de verde.
 
-**"Status" merece nota**: ela existiria com **um valor só**. Coluna de valor
-único não informa — promete que há um segundo valor. No lugar do "Último acesso"
-ficou "Desde", que é `created_at` do vínculo.
+### `table-layout: fixed` cortou texto, e só a captura mostrou
 
-### Cinco papéis, três no frame
+As seis tabelas dimensionavam as próprias colunas: "O QUE FOI OBSERVADO"
+começava em **cinco posições diferentes**. `colgroup` não bastou (em layout
+automático a largura é sugestão), `table-layout: fixed` alinhou as seis — e
+**comeu o fim da observação do Supabase**, porque `.sb-table` é `nowrap` e o
+painel tem `overflow: hidden`.
 
-O `check` conhece `ADMIN`, `GESTOR`, **`ANALISTA`**, `OPERADOR` e
-**`VISUALIZADOR`**; o frame dá cartão a três. Com três, os cartões deixariam de
-fechar com o total no dia em que alguém for analista. A faixa ficou com **seis**
-células, e as vazias mostram zero (D-250). Mesma aritmética que denunciou o
-frame da Central Full (D-265).
+Não quebrou teste, não mudou o HTML, não apareceu no `tsc`. **Só a captura
+mostrou.** O conserto é deixar a coluna de observação quebrar linha: coluna
+alinhada não vale texto perdido em silêncio.
 
-### A guarda de D-262 pegou a minha própria meia-migração
+### O que o frame de fato contribuiu
 
-Movi as duas tabelas para `.sb-table` e deixei `const th`/`const td` vivos.
-`check:table-styles`, escrito duas fatias atrás para exatamente isso, falhou na
-minha mudança — **primeiro achado dela em código novo**, não herdado.
+A **linha de escopo** de cada cartão ("Pedidos, anúncios, perguntas e Full").
+Ela responde o que a tela não respondia: *o que essa integração cobre?* É texto
+autoral, e por isso cada uma foi conferida contra os fluxos que existem.
 
-### Quarta tela seguida com escrita e zero cobertura
+O "Configurar →" virou o link para a tela dona; "Nova integração" ficou fora,
+porque não existe fluxo de provisionamento e criá-lo é feature (D-264, D-269).
 
-E a mais grave das quatro: `/usuarios` é a única tela que pode **tirar o acesso
-de alguém**. O defeito acima viveu por não existir spec. Dos cinco casos novos,
-um entra como GESTOR e prova que o papel lido é o **dele** — a leitura antiga
-não sabia dizer de quem era o papel.
+### Sobra um consumidor do `table-styles.ts`
 
-**Verificação, local:** `check` **29/29**, e2e **61/61** em banco recriado (5
+`/integracoes` era um dos dois. Migrada, o guarda de D-262 conta **19** telas, e
+**só `/configuracoes` ainda importa o módulo** — que é D36. O MERGE que a
+auditoria de fidelidade pedia fica possível naquela fatia.
+
+**Verificação, local:** `check` **29/29**, e2e **63/63** em banco recriado (2
 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17,
-`check:table-styles` 18, `docs:check`. Capturada a 1440px contra o Supabase
+`check:table-styles` **19**, `docs:check`. Capturada a 1440px contra o Supabase
 local.
 
 ## Próxima fatia segura
 
-**D32–D36 — o resto do bloco de administração**: Integrações, Sincronização,
-Saúde, Configurações e Copiloto. **As cinco existem** — a checagem de D31
-desmentiu a nota do HANDOFF que dizia faltarem Integrações e Configurações.
+**D33–D36 — Sincronização, Saúde, Configurações e Copiloto.** As quatro
+existem. Duas delas são as telas DONAS de números que `/integracoes` só aponta
+(D-224), então a pergunta de rotina ali é outra: **o frame quer que a tela dona
+mostre o mesmo que a Central já mostra?** Se sim, é duplicação de dono, não
+composição.
 
-D31 mostrou o que esperar deste bloco: **frames de administração descrevem
-produtos com fluxo de convite, provisionamento e telemetria de sessão, e este
-não tem nenhum dos três**. A pergunta "o frame tem fonte?" (D-266) rende mais
-aqui do que rendia nas telas de operação.
+`/configuracoes` é a última consumidora de `components/table-styles.ts`: D36
+pode apagar o módulo.
 
-A rotina, com as quatro perguntas acumuladas: **o frame tem fonte?** (D-266),
-**falta coluna ou falta dado?** (D-268), **quantas linhas no Dev?** (D-263) e **a
-faixa conta o mesmo conjunto da tabela ou é navegação?** (D-265). E a quinta,
-que D31 acrescenta: **há spec?** — foi ela que achou as quatro telas de escrita
-sem cobertura, e numa delas o defeito estava vivo.
+A rotina, com as cinco perguntas acumuladas: **o frame tem fonte?** (D-266),
+**falta coluna ou falta dado?** (D-268), **quantas linhas no Dev?** (D-263), **a
+faixa conta o mesmo conjunto da tabela ou é navegação?** (D-265) e **há spec?**
+(D-271). D32 acrescenta a sexta, que é de verificação e não de leitura:
+**capturei a tela depois do último build?** — o corte de texto do item 4 não
+apareceu em nenhum guarda.
 
 Depois delas, só o **passe visual global (D37)**.
 

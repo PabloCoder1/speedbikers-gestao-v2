@@ -1,10 +1,11 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { PageTitle } from "../../components/page-title";
+import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
 import { StatePill } from "../../components/state-pill";
 import type { PillTone } from "../../components/state-pill";
-import { cardStyle, td, th } from "../../components/table-styles";
 import { apiBaseUrl, fetchApiHealth } from "../../lib/api-health";
 import { formatDateTime } from "../../lib/format";
 import { describeIntegrations } from "../../lib/integrations";
@@ -66,20 +67,29 @@ const DIMENSION_LABEL = {
 function DimensionRow({ label, dimension }: { label: string; dimension: Dimension | null }): ReactNode {
   return (
     <tr>
-      <td style={{ ...td, whiteSpace: "nowrap", color: "var(--sb-text-soft)" }}>{label}</td>
+      <td style={{ whiteSpace: "nowrap", color: "var(--sb-text-soft)" }}>{label}</td>
       {dimension === null ? (
         // Dimensão que não se aplica (planilha não tem "conexão", webhook não
         // tem "sincronização") — dito, em vez de um estado inventado.
-        <td colSpan={3} style={{ ...td, color: "var(--sb-muted-ink)" }}>
+        <td colSpan={3} style={{ color: "var(--sb-muted-ink)" }}>
           — não se aplica
         </td>
       ) : (
         <>
-          <td style={td}>
+          <td>
             <StatePill tone={STATE_TONE[dimension.state]} />
           </td>
-          <td style={td}>{dimension.detail}</td>
-          <td style={{ ...td, whiteSpace: "nowrap", color: "var(--sb-text-soft)" }}>
+          {/*
+            `whiteSpace: "normal"` É OBRIGATÓRIO AQUI, não estética.
+
+            `.sb-table` é `nowrap` (as tabelas do app rolam na horizontal), e
+            com `table-layout: fixed` a frase deixa de esticar a coluna e passa
+            a ser CORTADA pelo `overflow: hidden` do painel — foi o que a
+            captura mostrou, comendo o fim da observação do Supabase. Coluna
+            alinhada não vale texto perdido em silêncio.
+          */}
+          <td style={{ whiteSpace: "normal" }}>{dimension.detail}</td>
+          <td style={{ whiteSpace: "nowrap", color: "var(--sb-text-soft)" }}>
             {dimension.observedAt === null ? "—" : formatDateTime(dimension.observedAt)}
           </td>
         </>
@@ -213,16 +223,28 @@ export default async function IntegracoesPage(): Promise<ReactNode> {
 
   return (
     <Shell>
-      <h1 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.375rem" }}>Integrações</h1>
+      <PageTitle
+        eyebrow="ADMINISTRAÇÃO / CANAIS E PARCEIROS"
+        title="Integrações"
+        subtitle="Conexões, credenciais e escopos que movimentam sua operação — cada uma respondida em três perguntas separadas, porque uma resposta não prova a outra."
+      />
 
-      <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
-        Cada integração em três perguntas separadas — <strong>está conectada?</strong>{" "}
-        <strong>está sincronizando?</strong> <strong>está configurada?</strong> — porque uma resposta não prova a
-        outra. <strong>OK</strong> só aparece com atividade observada e recente; <strong>Observado</strong> é
-        atividade sem régua de frescor (uso sob demanda), com a data ao lado; <strong>Sem atividade</strong> é o
-        que nunca rodou; <strong>Não verificável</strong> quer dizer que não há coletor daqui — e a tela diz onde a
-        resposta mora. Nada aqui é ação: cada card aponta para a tela que manda.
-      </p>
+      {/*
+        O VOCABULÁRIO DAS PÍLULAS, no bloco de ressalva do frame.
+
+        Era um parágrafo solto embaixo do título. Ele define o que cada estado
+        significa, e definição não é subtítulo: sem ela, "Observado" e "Sem
+        atividade" parecem sinônimos e o cartão inteiro fica ilegível.
+      */}
+      <div className="sb-note" style={{ marginBottom: "var(--sb-space-3)" }}>
+        <span>COMO LER OS ESTADOS</span>
+        <p style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", lineHeight: 1.6 }}>
+          <strong>OK</strong> só aparece com atividade observada e recente. <strong>Observado</strong> é
+          atividade sem régua de frescor (uso sob demanda), com a data ao lado. <strong>Sem atividade</strong> é
+          o que nunca rodou. <strong>Não verificável</strong> quer dizer que não há coletor daqui — e a linha diz
+          onde a resposta mora. Nada nesta tela é ação: cada cartão aponta para a tela que manda.
+        </p>
+      </div>
 
       {falhas.length > 0 && (
         <p role="alert" style={{ color: "var(--sb-danger)", fontSize: "0.8125rem" }}>
@@ -230,29 +252,75 @@ export default async function IntegracoesPage(): Promise<ReactNode> {
         </p>
       )}
 
+      {/*
+        UMA COLUNA, E O FRAME DESENHA DUAS.
+
+        O grid de dois do frame é dimensionado para um cartão que diz UMA coisa:
+        nome, uma linha de descrição, um selo e um horário. Este cartão diz
+        NOVE — três dimensões com estado, observação e data. As observações são
+        frases de ~110 caracteres hoje, e a de sincronização do Mercado Livre
+        concatena a contagem de **36 linhas de recurso** no Dev mais os alertas
+        e a última falha.
+
+        Em meia largura isso vira quatro linhas por célula, e a tabela deixa de
+        ser lida na horizontal — que é a única coisa que ela faz bem. É a mesma
+        classe de D-265: o desenho particiona bem um conteúdo que não é o nosso.
+      */}
       <div style={{ display: "grid", gap: "var(--sb-space-3)" }}>
         {cards.map((card) => (
-          <section key={card.id} aria-label={card.label} style={cardStyle}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "1rem" }}>
-              <h2 style={{ margin: 0, fontSize: "1.0625rem" }}>{card.label}</h2>
-              <span style={{ fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
+          <Panel
+            key={card.id}
+            title={card.label}
+            subtitle={card.scope}
+            aside={
+              /*
+                O "Configurar →" do frame vira o LINK PARA A TELA DONA.
+
+                O frame põe um botão em cada cartão. Esta tela não tem botão por
+                decisão (D-224, e o teste exige zero): reconectar conta é em
+                Contas ML, reprocessar importação é em Importações. O botão
+                sugeriria que o ato mora aqui, e ele não mora.
+              */
+              <span style={{ fontSize: "0.6875rem", whiteSpace: "nowrap" }}>
                 {card.links.map((link, index) => (
                   <span key={link.href}>
                     {index > 0 && " · "}
-                    <Link href={link.href}>{link.label}</Link>
+                    <Link href={link.href}>{link.label} →</Link>
                   </span>
                 ))}
               </span>
-            </div>
-
+            }
+          >
             <div style={{ overflowX: "auto" }}>
-              <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "40rem" }}>
+              {/*
+                `tableLayout: "fixed"` NÃO é redundante com o `colgroup`: em
+                layout automático a largura declarada é sugestão, e o navegador
+                a atropela quando o conteúdo pede mais. Foi o que aconteceu no
+                cartão do Supabase, cuja observação de configuração é a mais
+                longa das dezoito — ele saiu desalinhado dos outros cinco.
+              */}
+              <table className="sb-table" style={{ tableLayout: "fixed" }}>
+                {/*
+                  LARGURAS FIXAS, e o motivo é a pilha.
+
+                  São seis tabelas empilhadas, cada uma dimensionando as
+                  próprias colunas pelo conteúdo — na captura, "O QUE FOI
+                  OBSERVADO" começava em cinco posições diferentes. Alinhadas,
+                  a coluna vira uma só de cima a baixo, que é o que faz a pilha
+                  ser lida como uma tela e não como seis.
+                */}
+                <colgroup>
+                  <col style={{ width: "9rem" }} />
+                  <col style={{ width: "9.5rem" }} />
+                  <col />
+                  <col style={{ width: "10rem" }} />
+                </colgroup>
                 <thead>
                   <tr>
-                    <th style={th}>Dimensão</th>
-                    <th style={th}>Estado</th>
-                    <th style={th}>O que foi observado</th>
-                    <th style={th}>Quando</th>
+                    <th>Dimensão</th>
+                    <th>Estado</th>
+                    <th>O que foi observado</th>
+                    <th>Quando</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -262,13 +330,20 @@ export default async function IntegracoesPage(): Promise<ReactNode> {
                 </tbody>
               </table>
             </div>
-          </section>
+          </Panel>
         ))}
       </div>
 
       <p style={{ margin: "var(--sb-space-3) 0 0", fontSize: "0.75rem", color: "var(--sb-muted-ink)" }}>
+        {/*
+          O "Nova integração" do frame não entra: não existe fluxo de
+          provisionamento de conector, e criá-lo seria feature, não composição —
+          a mesma linha de D-264 e D-269. As duas integrações que o frame nomeia
+          e o sistema não tem (Bling e Google Sheets) estão medidas em D-272.
+        */}
         Fora desta versão, por decisão do item: painel de segredos, provisionamento de nuvem e conectores sem
-        necessidade medida. Reconectar uma conta continua em Contas ML; reprocessar uma importação, em Importações.
+        necessidade medida. Reconectar uma conta continua em Contas ML; reprocessar uma importação, em
+        Importações.
       </p>
     </Shell>
   );

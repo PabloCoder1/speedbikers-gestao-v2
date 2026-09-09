@@ -7241,3 +7241,66 @@ Os cinco casos novos incluem o que faltava: **abrir a tela com DOIS membros**. O
 **Impacto:** `apps/web/app/usuarios/page.tsx` (leitura corrigida, `PageTitle`, faixa de seis, dois `Panel`, as duas tabelas em `.sb-table`), `apps/web/e2e/usuarios.spec.ts` (novo, 5 casos). Sem migration, sem CSS novo.
 
 **Verificacao, local:** `check` **29/29**, e2e **61/61** em banco recriado (5 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17, `check:table-styles` 18, `docs:check`. Capturada a 1440px contra o Supabase local.
+
+## D-272 - D32: Integracoes, e o frame nomeia dois parceiros que o sistema NAO TEM
+
+**Contexto:** `/integracoes` pelo frame `AdminScreen` na variacao de canais. Segunda tela do bloco de administracao. Sem migration.
+
+---
+
+**1. DOIS DOS TRES CARTOES DO FRAME SAO DE INTEGRACOES INEXISTENTES**
+
+O frame desenha tres: **Mercado Livre**, **Bling (ERP)** e **Google Sheets**.
+
+| o que o frame nomeia | ocorrencias no repositorio inteiro | decisao |
+|---|---:|---|
+| Mercado Livre | o produto todo | entra |
+| **Bling (ERP)** | **0** | fora |
+| **Google Sheets** | **0** | fora |
+
+Zero em codigo, zero em SQL, zero em documentacao. Nao e "ainda nao integrado": e **nome de parceiro que nunca existiu neste sistema**. Desenhar o cartao afirmaria que a operacao tem um canal que ela nao tem -- e num painel de integracoes essa afirmacao e operacional, nao decorativa: alguem olharia o "Conectado" do Bling e concluiria que a NF-e de entrada esta chegando por ali.
+
+**O que o sistema tem sao SEIS**, e nenhuma delas e as duas do frame: Mercado Livre, Webhook do ML, UpSeller (planilha), IA/Copiloto, Supabase e Google Cloud.
+
+E o frame acertou um numero por acaso: ele escreve *"4 contas ativas"* sob o Mercado Livre, e o Dev tem exatamente **4** contas, todas `CONNECTED`.
+
+**2. UM SELO POR CARTAO SERIA DESFAZER A DECISAO QUE CRIOU A TELA**
+
+O frame poe **um** `Badge` por integracao: "Conectado", "Atencao". Esta tela responde **tres** perguntas separadas por integracao -- conexao, sincronizacao e configuracao -- e o motivo esta escrito em D-231: o item nomeia como risco *"declarar saude so por haver configuracao"*.
+
+Um selo unico e exatamente esse risco de volta. Pior: o selo do frame diz "Conectado", que e a dimensao de CONEXAO -- a que menos prova. Hoje, no Dev, o Mercado Livre tem conta conectada e **nenhuma chamada bem-sucedida observada**; o selo do frame o pintaria de verde.
+
+As tres linhas ficam. O que o frame contribui e a moldura do cartao, nao o veredito.
+
+**3. UMA COLUNA, E O FRAME DESENHA DUAS**
+
+`lg:grid-cols-2`. O grid de dois e dimensionado para um cartao que diz UMA coisa: nome, uma linha, um selo, um horario. Este cartao diz NOVE -- tres dimensoes com estado, observacao e data.
+
+Medido: as observacoes tem ~110 caracteres hoje, e a de sincronizacao do Mercado Livre concatena a contagem de **36 linhas de recurso** no Dev mais os alertas e a ultima falha. Em meia largura isso vira quatro linhas por celula e a tabela deixa de ser lida na horizontal -- a unica coisa que ela faz bem. Mesma classe de D-265: o desenho particiona bem um conteudo que nao e o nosso.
+
+**4. `table-layout: fixed` CORTOU TEXTO EM SILENCIO, E SO A CAPTURA MOSTROU**
+
+Seis tabelas empilhadas dimensionavam as proprias colunas pelo conteudo: na captura, "O QUE FOI OBSERVADO" comecava em **cinco posicoes diferentes**. Entrou `colgroup` -- e nao bastou, porque em layout automatico a largura declarada e sugestao. Entrou `table-layout: fixed`, as seis alinharam, e **o fim da observacao do Supabase sumiu**.
+
+`.sb-table` e `white-space: nowrap` (as tabelas do app rolam na horizontal). Com largura fixa, a frase deixa de esticar a coluna e passa a ser cortada pelo `overflow: hidden` do painel. O conserto e `white-space: normal` na coluna de observacao: ela quebra em duas linhas em vez de perder o fim.
+
+**Registrar porque o erro tem forma:** o alinhamento nao quebrou teste nenhum, nao mudou o HTML e nao apareceu em `tsc`. **So a captura mostrou**, e so porque a frase cortada era a mais longa das dezoito. Coluna alinhada nao vale texto perdido em silencio.
+
+**5. O BOTAO DO FRAME NAO ENTRA, E O MOTIVO JA ERA TESTE**
+
+O frame poe "Configurar →" em cada cartao e "Nova integracao" no cabecalho.
+
+- **"Configurar" virou o LINK PARA A TELA DONA** (`Contas ML →`, `Importacoes →`). Esta tela nao tem botao por decisao (D-224) e o teste de D-232 ja exigia **zero** botoes: reconectar conta e em Contas ML, reprocessar importacao e em Importacoes. Botao aqui sugeriria que o ato mora nesta tela.
+- **"Nova integracao" nao existe como fluxo.** Nao ha provisionamento de conector, e cria-lo e feature, nao composicao -- a linha de D-264 e D-269.
+
+**6. A LINHA DE ESCOPO E O QUE O FRAME REALMENTE CONTRIBUIU**
+
+A descricao do cartao do frame ("Pedidos, anuncios, perguntas e Full") virou o campo `scope`, uma linha por integracao. **E texto autoral, nao medicao** -- e por isso cada uma foi conferida contra os fluxos que existem. Ela responde a pergunta que a tela nao respondia: *o que essa integracao cobre?* Antes, quem nao conhecia o sistema lia "UpSeller (planilha)" e tres estados, sem saber o que a planilha traz.
+
+**7. RESTA UM CONSUMIDOR DO `table-styles.ts`**
+
+`/integracoes` era um dos dois. Com ele migrado para `.sb-table` (o guarda de D-262 conta **19** telas agora), **so `/configuracoes` ainda importa o modulo** -- e ela e D36. A auditoria de fidelidade pedia o MERGE do modulo; ele fica possivel na proxima fatia daquele arquivo.
+
+**Impacto:** `apps/web/lib/integrations.ts` (campo `scope`), `apps/web/app/integracoes/page.tsx` (`PageTitle`, seis `Panel`, `.sb-table`, `colgroup` + `fixed`, sem `table-styles`), `apps/web/e2e/integracoes.spec.ts` (+2). Sem migration, sem CSS novo.
+
+**Verificacao, local:** `check` **29/29**, e2e **63/63** em banco recriado (2 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17, `check:table-styles` **19**, `docs:check`. Capturada a 1440px contra o Supabase local.

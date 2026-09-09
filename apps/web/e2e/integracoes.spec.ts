@@ -54,3 +54,53 @@ test("ADMIN: a conta do seed, conectada e sem nenhum run, NÃO é ok; nenhuma co
   await expect(mercadoLivre.getByRole("link", { name: "Contas ML" })).toBeVisible();
   await expect(page.getByRole("region").getByRole("button")).toHaveCount(0);
 });
+
+/**
+ * O que D32 decidiu contra o frame `AdminScreen` na variação de canais
+ * (D-272). Três dos elementos que ele desenha não têm fonte, e este caso
+ * existe para que voltarem seja vermelho, não uma revisão de olho.
+ */
+test("/integracoes: o frame desenha três integrações, e duas delas não existem", async ({ page }) => {
+  await login(page, "/integracoes");
+
+  /*
+    Bling (ERP) e Google Sheets: ZERO ocorrências no repositório inteiro
+    (código, SQL e documentação). Desenhar um cartão para elas seria afirmar
+    que a operação tem um canal que ela não tem.
+  */
+  await expect(page.getByText(/Bling/i)).toHaveCount(0);
+  await expect(page.getByText(/Google Sheets/i)).toHaveCount(0);
+
+  // A que existe, existe: e o frame acertou até o número de contas do Dev.
+  await expect(page.getByRole("region", { name: "Mercado Livre", exact: true })).toBeVisible();
+
+  /*
+    "Nova integração" é a ação do cabeçalho do frame. Não há fluxo de
+    provisionamento de conector, e criá-lo seria feature, não composição — a
+    mesma linha de D-264 e D-269.
+  */
+  await expect(page.getByRole("button", { name: /Nova integração/i })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /Nova integração/i })).toHaveCount(0);
+});
+
+test("/integracoes: cada cartão diz o que a integração COBRE, e isso não é estado", async ({ page }) => {
+  await login(page, "/integracoes");
+
+  /*
+    A linha de escopo é a descrição do cartão do frame. Ela é autoral e
+    descreve a superfície que o código tem — por isso o teste fixa o texto de
+    duas delas: se alguém mudar o que a integração faz e esquecer a frase, a
+    tela passa a descrever um sistema que não existe mais.
+  */
+  const ml = page.getByRole("region", { name: "Mercado Livre", exact: true });
+  await expect(ml.getByText("Pedidos, anúncios, perguntas e Full, por conta conectada.")).toBeVisible();
+
+  const upseller = page.getByRole("region", { name: "UpSeller (planilha)" });
+  await expect(
+    upseller.getByText("Lotes de planilha com custos e produtos, conferidos por uma pessoa antes de aplicar."),
+  ).toBeVisible();
+
+  // E o vocabulário das pílulas continua declarado — sem ele, "Observado" e
+  // "Sem atividade" parecem sinônimos.
+  await expect(page.getByText("COMO LER OS ESTADOS")).toBeVisible();
+});

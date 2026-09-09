@@ -66,6 +66,15 @@ export interface IntegrationLink {
 export interface IntegrationCard {
   id: IntegrationId;
   label: string;
+  /**
+   * O que esta integração cobre, em uma linha (D-272).
+   *
+   * É a descrição do cartão do frame, e é TEXTO AUTORAL, não medição: descreve
+   * a superfície que o código realmente tem, e por isso cada linha foi conferida
+   * contra os fluxos que existem. Nada aqui varia com o estado — o que varia
+   * mora nas três dimensões.
+   */
+  scope: string;
   /** Telas DONAS do dado — a Central aponta, não duplica. */
   links: IntegrationLink[];
   connection: Dimension | null;
@@ -413,6 +422,7 @@ function mercadoLivre(input: IntegrationsInput): IntegrationCard {
   return {
     id: "mercado_livre",
     label: "Mercado Livre",
+    scope: "Pedidos, anúncios, perguntas e Full, por conta conectada.",
     links: ML_LINKS,
     connection: mercadoLivreConnection(input),
     sync: mercadoLivreSync(input),
@@ -462,6 +472,7 @@ function webhook(input: IntegrationsInput): IntegrationCard {
   return {
     id: "webhook",
     label: "Webhook do Mercado Livre",
+    scope: "Notificações que chegam na API e viram trabalho no worker: pedidos e pós-venda, perguntas e mensagens.",
     links: [{ label: "Saúde do Sistema", href: "/saude" }],
     connection,
     sync: null,
@@ -508,6 +519,7 @@ function upseller(input: IntegrationsInput): IntegrationCard {
   return {
     id: "upseller",
     label: "UpSeller (planilha)",
+    scope: "Lotes de planilha com custos e produtos, conferidos por uma pessoa antes de aplicar.",
     links: [{ label: "Importações", href: "/importacoes" }],
     connection: null,
     sync,
@@ -561,6 +573,7 @@ function ia(input: IntegrationsInput): IntegrationCard {
   return {
     id: "ia",
     label: "IA / Copiloto",
+    scope: "Chamadas de IA da organização e o teto mensal de custo.",
     // Custo e uso de IA não têm tela dona hoje (registrado em D-232): o teto
     // está descrito em Configurações, e o chat é o Copiloto.
     links: [
@@ -584,6 +597,7 @@ function supabase(input: IntegrationsInput): IntegrationCard {
   return {
     id: "supabase",
     label: "Supabase (banco e Auth)",
+    scope: "Banco, RLS e autenticação — a base sobre a qual todas as outras leituras acontecem.",
     links: [{ label: "Saúde do Sistema", href: "/saude" }],
     // Fato, não veredito: para esta página existir, a sessão passou pela RLS
     // e `organization_members` respondeu. Isso é observação, e é tudo que ela
@@ -629,6 +643,7 @@ function googleCloud(input: IntegrationsInput): IntegrationCard {
   return {
     id: "google_cloud",
     label: "Google Cloud (API e worker)",
+    scope: "A API que recebe os webhooks e o worker que executa as filas.",
     links: [{ label: "Saúde do Sistema", href: "/saude" }],
     connection: {
       state: worst([apiState, workerState]),
