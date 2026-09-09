@@ -293,3 +293,45 @@ test("/atendimento: a volta forjada cai na Caixa de Entrada, não no destino ped
     "/atendimento",
   );
 });
+
+/**
+ * A PAGINAÇÃO (D-289), e a página que passou do fim.
+ *
+ * A fila mostrava as 100 mais recentes e nada mais — com 929 abertos no Dev,
+ * 829 casos eram inalcançáveis por esta tela. O seed tem dois casos, então
+ * aqui não dá para atravessar páginas de verdade (a forma dos links está
+ * afirmada em `lib/support-filters.test.ts`); o que ESTA suíte guarda é o
+ * comportamento que só aparece contra o Postgres real: **`.range()` além do
+ * fim devolve 416 `PGRST103`**, e sem tratar isso a tela pinta
+ * "Não foi possível carregar" em vermelho para um link antigo perfeitamente
+ * legítimo.
+ */
+test("/atendimento: página além do fim é página vazia, não falha de leitura", async ({ page }) => {
+  await login(page, "/atendimento?pagina=2");
+
+  await expect(page.getByText(/Esta página não existe neste recorte/)).toBeVisible();
+
+  // O que NUNCA pode aparecer: o vermelho de falha de leitura.
+  await expect(page.getByText(/Não foi possível carregar/)).toHaveCount(0);
+  await expect(page.locator("tbody tr")).toHaveCount(0);
+
+  // E a única ação útil daqui funciona.
+  await page.getByRole("link", { name: "Voltar à primeira página" }).click();
+
+  await expect(page).toHaveURL(/\/atendimento$/);
+  await expect(page.locator("tbody tr").first()).toBeVisible();
+});
+
+test("/atendimento: com uma página só, o paginador não aparece", async ({ page }) => {
+  await login(page, "/atendimento?status=todos");
+
+  /*
+    Dois casos no seed contra 100 por página: `summarizePagedWindow` devolve
+    uma página, e uma página não recebe nem faixa ("1 a 2 de 2" é ruído) nem
+    botão. Paginador visível aqui significaria que o total parou de vir do
+    banco e passou a vir da contagem da página.
+  */
+  await expect(page.locator("tbody tr").first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "Próxima →" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "← Anterior" })).toHaveCount(0);
+});

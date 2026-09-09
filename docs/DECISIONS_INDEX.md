@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **284** (D-001 a D-288).
+Decisões registradas: **285** (D-001 a D-289).
 
 ## Por domínio
 
@@ -59,7 +59,7 @@ Decisões registradas: **284** (D-001 a D-288).
 - **D-278** — D37b: o importador do UpSeller, e o DENOMINADOR que inventaria 14% de falha
 - **D-286** — O inbox de tres colunas do frame: RECUSADO com medicao, e o que ele protegia custou um parametro
 
-### banco/rls (26)
+### banco/rls (27)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -87,6 +87,7 @@ Decisões registradas: **284** (D-001 a D-288).
 - **D-225** — A aba Full do SKU sai sem SQL novo, e a suite cobrou duas armadilhas de ambiente
 - **D-228** — A aba Decisoes fecha as nove, e a prova do embed e a paridade das policies, nao o texto delas
 - **D-257** — A trava "so aplica migration depois da esteira verde" NAO existe: quem aplica e o Supabase, nao a CI
+- **D-289** — A paginação da Caixa de Entrada, e o 416 que o PostgREST devolve para página que passou do fim
 
 ### estoque (23)
 

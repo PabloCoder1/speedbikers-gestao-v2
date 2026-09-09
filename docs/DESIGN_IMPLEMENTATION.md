@@ -1001,66 +1001,48 @@ está na "Próxima fatia segura".
 
 ## Última fatia concluída
 
-**A FUSÃO DE `/cobertura` COM `/reposicao` (D-288)** — o frame `Coverage` sempre
-desenhou UMA tela; o app tinha duas, medindo a mesma coisa com definições
-diferentes de ruptura. Sem migration.
+**A PAGINAÇÃO DE `/atendimento` (D-289)** — o primeiro item aberto da lista
+abaixo, e o primeiro que não é composição. (A fatia anterior foi a **fusão de
+`/cobertura` com `/reposicao`**, D-288, cujo resumo está na coluna "Fusão" da
+tabela de progresso.)
 
-### A escolha foi de produto, e o número é o argumento
+### Não era a frase, era o alcance
 
-| | |
-|---|---:|
-| SKUs em que as duas discordavam | **186** |
-| "rupturas" que `/cobertura` acusava | **325** |
-| dessas, com Full ou trânsito | **150** |
+D-267 já tinha trocado "os 100 mais recentes" por "100 de 929" — honesto, e
+insuficiente: **nenhum filtro da tela separa essas 100 do resto**, então os
+outros **829 abertos** do Dev não tinham como ser abertos por ela. `.limit(100)`
+virou `.range()`, com `PAGE_SIZE` **100** (o teto que a tela já mostrava —
+ninguém passa a ver menos fila do que via ontem).
 
-As 150 não eram erro de conta: era saldo que EXISTE e não estava na prateleira
-que ela olhava (estoque LOCAL sobre 30 dias). Venceu a definição da reposição
-— **aproveitável** (local + Full + trânsito, reservado fora) contra a venda
-média, com lead time e cobertura alvo. D-279 tinha recusado a fusão pelo motivo
-certo ("escolher a definição é decisão de produto"); a decisão veio, e a fatia
-existiu por causa dela.
+### O 416 que ninguém tinha medido
 
-### O que mudou na composição
+`.range()` além do fim **não** devolve lista vazia: o PostgREST responde
+**416 `PGRST103`** com `count` nulo. Medido no local com `support_cases`:
+`range(0, 99)` → 200 com 2 linhas; `range(100, 199)` → 416. Sem tratar,
+`?pagina=9` guardado nos Filtros Salvos vira "Não foi possível carregar" em
+vermelho, com o cartão "No recorte" mostrando **0**. Agora a tela diz que a
+página não existe e devolve à primeira **do mesmo recorte**.
 
-A coluna **"Cobertura (dias)"** — o número que dava nome à tela antiga — entrou
-em `/reposicao`; ela já existia ali, escondida no `title` da célula de estado.
-`/cobertura` virou `permanentRedirect` (308) levando `?marca=` junto, a
-navegação passou a ter **uma** entrada ("Cobertura e reposição") e o cartão da
-Home passou a dizer o que MEDE ("SKUs sem saldo local"), como o selo do SKU e a
-gaveta de Inspeção Rápida — os três liam a mesma coluna e os três a chamavam de
-ruptura.
+**Quatro telas têm a mesma exposição** (`/importacoes`, `/importacoes/[id]`,
+`/notas-fiscais`, `/sugestoes`) e ficam registradas na decisão — o detector
+(`isPageBeyondEnd`) já mora no lugar compartilhado.
 
-**A faixa de três células da tela antiga não foi recriada**, e isso é escolha:
-os cartões de estado já contam o conjunto pela definição vencedora, e
-"Com estoque virtual" já tem dona em `/produtos` (`virtual_marked`, que aponta
-para cá) — um dado, um dono.
+### A página viaja com o caso
 
-### O que a coluna custou, medido a 1440px
+Trocar filtro volta à página 1; o `?volta=` de D-286 pede a página de
+propósito, porque devolver à página 1 quem leu o caso da página 7 é o mesmo
+"recomeçar o recorte" que aquele parâmetro existe para evitar. Verificado:
+`volta=%2Fatendimento%3Fpagina%3D2`.
 
-| | |
-|---|---:|
-| colunas da tabela | **12** |
-| largura da tabela | **1.951px** |
-| painel visível | **1.116px** |
-| rolagem horizontal | **835px** (era 697) |
-| a coluna nova | **138px** |
+### Vista de pé, com dado que o seed não tem
 
-A rolagem **já existia**; a fusão a aumentou em 20%. Fica aceita e anotada:
-encolher a tabela é escolher qual coluna sai, e a de compra se lê pela esquerda.
+O seed tem dois casos, e dois não formam duas páginas: **131 casos
+temporários** foram inseridos no local, fotografados e apagados na mesma
+rodada. Página 1 com 100 linhas e "Próxima →"; página 2 com 31 e
+"← Anterior"; pílula de 32px com a forma do design system.
 
-### O que a suíte pegou, e o que só a leitura pegaria
-
-`produtos.spec.ts` marcava o SKU do seed como **virtual e não desfazia** —
-estado global —, e o teste aritmético novo nascia vermelho com cara de defeito
-da tela. O spec passou a **clicar** no "Desfazer" e a afirmar a volta, o que
-fecha o próprio passo dele. `home.spec.ts` afirmava o rótulo antigo do cartão. E
-o que nenhuma suíte pegaria: `revalidatePath("/cobertura")` em
-`produtos/actions.ts` apontava para o **redirect** — classificar como virtual
-deixaria de atualizar a tela onde a consequência aparece, sem erro nenhum, só
-número velho.
-
-**Verificação:** `check` 29/29, build 8/8, integração **634/634**, e2e **93/93**
-em base resetada e semeada, cinco guardas verdes.
+**Verificação:** `check` 29/29 (`--force`), build 8/8, integração 634/634,
+e2e **95/95**, cinco guardas verdes.
 
 ## Próxima fatia segura
 
@@ -1129,7 +1111,13 @@ do seed — ou algum spec anterior já escreveu por cima dele?**
   duas rotas (`/reposicao` e `/reposicao/configuracoes`, D-278) — desvio
   registrado, não pendência.
 - **Exportação de `/precos`** — recusada em D-264 por ser feature.
-- **Paginação de `/atendimento`** — o volume passou a justificar (D-267).
+- ~~**Paginação de `/atendimento`**~~ — **FEITA** (D-289). Não era só a frase:
+  a tela lia as 100 mais recentes e nenhum filtro dela separa essas 100 do
+  resto, então **829 dos 929 abertos do Dev não tinham como ser abertos por
+  ela**. De quebra, uma medição: `.range()` além do fim devolve **416
+  `PGRST103`**, e sem tratar isso um `?pagina=9` antigo vira página vermelha —
+  quatro outras telas com `.range()` têm a mesma exposição, registrada na
+  decisão.
 - **Filtro de não lidas em `/notificacoes`** — 8.350 de 42.511 (D-269).
 - **Lista de execuções que FALHARAM** — a versão útil da tabela que D-273
   recusou; exige RPC nova, porque `job_runs` não é legível pela web.

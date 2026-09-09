@@ -18,9 +18,10 @@
  */
 
 /**
- * Página 1 é o piso. Valor não numérico, zero, negativo ou fracionário cai em
- * 1 — `offset` negativo seria erro do Postgres, e a tela não pode exibir
- * "Página -3".
+ * Página 1 é o piso. Valor não numérico, zero ou negativo cai em 1 — `offset`
+ * negativo seria erro do Postgres, e a tela não pode exibir "Página -3".
+ * Fracionário TRUNCA ("2.9" → 2), como o teste desta função afirma desde
+ * sempre; esta linha dizia "cai em 1", e estava errada (corrigida em D-289).
  */
 export function resolvePageParam(raw: unknown): number {
   if (typeof raw !== "string") return 1;
@@ -120,4 +121,21 @@ export function summarizePagedWindow(input: {
     label: `Mostrando ${formatted.format(first)} a ${formatted.format(last)} de ${formatted.format(totalCount)} ${noun}${trailing}.`,
     totalPages,
   };
+}
+
+/**
+ * A página que passou do fim do conjunto — medido, não suposto (D-289).
+ *
+ * `.range(from, to)` com `from` maior que o total NÃO devolve lista vazia: o
+ * PostgREST responde **416 com `PGRST103` ("Requested range not satisfiable")**,
+ * e `count` volta `null` junto. Medido no local com `support_cases` (2 linhas):
+ * `range(0, 99)` → 200 com 2 linhas; `range(100, 199)` → 416.
+ *
+ * Sem esta distinção a tela mostra "Não foi possível carregar" em vermelho para
+ * um pedido perfeitamente válido — um link salvo em `?pagina=9` depois que a
+ * fila encolheu, por exemplo. Falha de leitura e página inexistente são coisas
+ * diferentes, como "sem organização" e "erro" são (D-067).
+ */
+export function isPageBeyondEnd(error: { code?: string } | null | undefined): boolean {
+  return error?.code === "PGRST103";
 }

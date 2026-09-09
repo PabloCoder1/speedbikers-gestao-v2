@@ -6,7 +6,7 @@ import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
 import { StatusPill } from "../../components/status-pill";
-import { summarizePagedWindow } from "../../lib/filters";
+import { isPageBeyondEnd } from "../../lib/filters";
 import { formatCount, formatDateTime } from "../../lib/format";
 import {
   supportChannelLabel,
@@ -16,6 +16,15 @@ import {
 } from "../../lib/labels";
 import type { SupportCaseLinkRow } from "../../lib/support-case-reference";
 import { resolveSupportCaseReference } from "../../lib/support-case-reference";
+import {
+  CHANNELS,
+  INTERNAL_STATUSES,
+  PAGE_SIZE,
+  buildSupportHref,
+  resolveSupportFilters,
+  summarizePagedWindow,
+  type SupportFilters,
+} from "../../lib/support-filters";
 import { createClient } from "../../lib/supabase/server";
 import { TriageCell } from "./triage-cell";
 import { currentMembership } from "../../lib/membership";
@@ -42,36 +51,19 @@ export const dynamic = "force-dynamic";
  * transação (D-084), e duas escritas separadas do navegador não teriam como
  * ser atômicas. É a exceção deliberada ao padrão de escrita desta tela.
  *
+ * **A fila PAGINA desde D-289.** Ela mostrava as 100 mais recentes e mais
+ * nada: com 929 abertos no Dev, 829 casos não tinham como ser alcançados por
+ * esta tela — nenhum filtro daqui separa "os 100 mais recentes" do resto, e a
+ * frase honesta de D-267 ("100 de 929") só tornava a falta visível. O
+ * vocabulário (conta, canal, status, prazo, página) mudou para
+ * `lib/support-filters.ts`, sobre a mecânica que oito telas já usam.
+ *
  * **Uma tela, não seis.** `docs/PRODUCT_REQUIREMENTS.md` lista "Perguntas",
  * "Mensagens", "Reclamações", "Mediações" e "Devoluções" como grupos da
  * Central — mas D-084 já decidiu que são FILTROS sobre a mesma projeção, não
  * cases separados (mediação e devolução são facetas do claim). Rotas
  * separadas duplicariam a mesma tabela cinco vezes.
  */
-
-/** `internal_status` é fechado em cinco valores (D-084). */
-const INTERNAL_STATUSES = [
-  "NOVO",
-  "EM_ATENDIMENTO",
-  "AGUARDANDO_CLIENTE",
-  "AGUARDANDO_MERCADO_LIVRE",
-  "RESOLVIDO",
-] as const;
-
-const CHANNELS = ["QUESTION", "POST_SALE_MESSAGE", "CLAIM"] as const;
-
-/** Teto de linhas por página. Sem paginação ainda — entra quando o volume pedir. */
-const ROW_LIMIT = 100;
-
-type Channel = (typeof CHANNELS)[number];
-type InternalStatus = (typeof INTERNAL_STATUSES)[number];
-
-/**
- * `abertos` é o padrão porque é a pergunta que a tela responde ("o que
- * precisa de mim agora?") e porque bate com o índice parcial
- * `support_cases_open_inbox_idx`, que existe justamente para essa consulta.
- */
-type StatusFilter = "abertos" | "todos" | InternalStatus;
 
 interface SupportCaseRow {
   id: string;
@@ -112,51 +104,6 @@ function prazoVigente(linhas: SupportCaseRow["support_case_deadlines"]): string 
     .sort();
 
   return ativos[0] ?? null;
-}
-
-function readParam(value: string | string[] | undefined): string | null {
-  if (Array.isArray(value)) return value[0] ?? null;
-  return value ?? null;
-}
-
-function resolveStatus(raw: string | null): StatusFilter {
-  if (raw === "todos") return "todos";
-  if (raw !== null && (INTERNAL_STATUSES as readonly string[]).includes(raw)) {
-    return raw as InternalStatus;
-  }
-  return "abertos";
-}
-
-function resolveChannel(raw: string | null): Channel | null {
-  if (raw !== null && (CHANNELS as readonly string[]).includes(raw)) {
-    return raw as Channel;
-  }
-  return null;
-}
-
-/**
- * Preserva as outras dimensões ao trocar uma — mesma ideia do `buildHref()`
- * de `/vendas`, com três dimensões em vez de duas.
- */
-function buildHref(
-  current: { account: string | null; channel: Channel | null; status: StatusFilter; prazo: boolean },
-  override: { account?: string | null; channel?: Channel | null; status?: StatusFilter; prazo?: boolean },
-): string {
-  const account = override.account !== undefined ? override.account : current.account;
-  const channel = override.channel !== undefined ? override.channel : current.channel;
-  const status = override.status ?? current.status;
-  const prazo = override.prazo ?? current.prazo;
-
-  const search = new URLSearchParams();
-
-  if (account !== null) search.set("account", account);
-  if (channel !== null) search.set("canal", channel);
-  if (status !== "abertos") search.set("status", status);
-  if (prazo) search.set("prazo", "risco");
-
-  const qs = search.toString();
-
-  return qs === "" ? "/atendimento" : `/atendimento?${qs}`;
 }
 
 /** Facetas do claim (D-084) — mostradas junto do tipo, nunca como tipo próprio. */
@@ -217,15 +164,17 @@ export default async function AtendimentoPage({
     );
   }
 
-  const accountSlug = readParam(query.account);
-  const channel = resolveChannel(readParam(query.canal));
-  const status = resolveStatus(readParam(query.status));
-  // Filtro de SLA (D-115, destravado por D-107): só cases com prazo ATIVO
-  // vencendo nas próximas 24h — ou já vencido.
-  const prazoRisco = readParam(query.prazo) === "risco";
+  /*
+    O vocabulário desta tela mora em `lib/support-filters.ts` desde D-289 —
+    incluindo `pagina`, que é a dimensão nova. O filtro de SLA (D-115,
+    destravado por D-107) continua sendo só cases com prazo ATIVO vencendo nas
+    próximas 24h, ou já vencido.
+  */
+  const filters: SupportFilters = resolveSupportFilters(query);
+  const { channel, status, prazo: prazoRisco } = filters;
 
   const accounts = accountsResult.data ?? [];
-  const selectedAccount = accounts.find((account) => account.slug === accountSlug) ?? null;
+  const selectedAccount = accounts.find((account) => account.slug === filters.account) ?? null;
 
   // O embed de `support_case_links` atravessa a FK COMPOSTA
   // (support_case_id, organization_id, ml_account_id) — é ela que garante que
@@ -249,17 +198,21 @@ export default async function AtendimentoPage({
     ? "support_case_deadlines!inner(due_at, status)"
     : "support_case_deadlines(due_at, status)";
 
+  /*
+    `count: "exact"` na MESMA viagem, e agora `.range()` no lugar do `.limit()`
+    (D-289). D-267 declarou a janela ("100 de 929") e deixou escrito que a
+    paginação ficava como dívida, não como "quando justificar" — o volume já
+    justificava. Sem as páginas 2 em diante, os outros 829 abertos do Dev eram
+    inalcançáveis por esta tela: nenhum filtro daqui separa "os 100 mais
+    recentes" do resto.
+  */
+  const desde = (filters.page - 1) * PAGE_SIZE;
+
   let casesQuery = supabase
     .from("support_cases")
-    /*
-      `count: "exact"` na MESMA viagem. A tela dizia "os 100 com atividade mais
-      recente" sem dizer 100 DE QUANTOS — janela declarada pela metade. São 929
-      abertos no Dev, então a diferença entre 100 de 101 e 100 de 929 é a
-      diferença entre "vi quase tudo" e "vi 11%".
-    */
     .select(`${baseSelect}, ${embedPrazo}`, { count: "exact" })
     .order("last_activity_at", { ascending: false })
-    .limit(ROW_LIMIT);
+    .range(desde, desde + PAGE_SIZE - 1);
 
   if (prazoRisco) {
     const em24h = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
@@ -285,28 +238,35 @@ export default async function AtendimentoPage({
 
   const casesResult = await casesQuery;
   const cases = (casesResult.data ?? []) as unknown as SupportCaseRow[];
-  const error = casesResult.error ?? accountsResult.error;
 
   /*
-    A JANELA DECLARADA, no lugar de "os 100 com atividade mais recente".
+    PÁGINA QUE PASSOU DO FIM NÃO É FALHA DE LEITURA — e o PostgREST não as
+    distingue sozinho: ele devolve **416 `PGRST103`** com `count` nulo (medido).
+    Um `?pagina=9` guardado nos Filtros Salvos depois que a fila encolheu cairia
+    aqui, e a tela pintaria "Não foi possível carregar" em vermelho para um
+    pedido legítimo. A resposta certa é dizer que a página não existe e
+    oferecer a volta — sem inventar total nenhum, porque nesta resposta não
+    veio total.
+  */
+  const paginaVazia = isPageBeyondEnd(casesResult.error);
+  const error = paginaVazia ? accountsResult.error : (casesResult.error ?? accountsResult.error);
 
-    `ROW_LIMIT` é 100 e esta tela não pagina — a nota antiga dizia "paginação
-    entra quando o volume real justificar", e o volume passou a justificar: 929
-    abertos no Dev. Enquanto a paginação não entra, a frase ao menos diz 100 DE
-    QUANTOS, que é o mínimo de D-131.
+  /*
+    A JANELA DECLARADA (D-267) agora sabe em que página está: "Mostrando 101 a
+    200 de 929", não mais "100 de 929" fixo.
   */
   const totalCount = casesResult.count ?? cases.length;
   const janela = summarizePagedWindow({
-    page: 1,
+    page: filters.page,
     totalCount,
     rowsOnPage: cases.length,
-    pageSize: ROW_LIMIT,
+    pageSize: PAGE_SIZE,
     noun: { singular: "atendimento", plural: "atendimentos" },
     emptyLabel: "Nenhum atendimento com estes filtros.",
     trailing: ", por atividade mais recente",
   });
 
-  const current = { account: accountSlug, channel, status, prazo: prazoRisco };
+  const current = filters;
 
   return (
     <Shell>
@@ -346,7 +306,7 @@ export default async function AtendimentoPage({
         risco. Afirmar priorização que não acontece é pior do que não dizer
         nada, porque o operador confiaria no topo da lista.
       */}
-      {error === null && (
+      {error === null && !paginaVazia && (
         <div className="sb-stat" style={{ marginBottom: "var(--sb-space-3)", maxWidth: "24rem" }}>
           <span className="sb-stat-label">No recorte</span>
           <b className="sb-stat-value">{formatCount(totalCount)}</b>
@@ -362,13 +322,13 @@ export default async function AtendimentoPage({
 
       {accountsResult.error === null && accounts.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", marginBottom: "var(--sb-space-2)" }}>
-          <FilterPill href={buildHref(current, { account: null })} active={selectedAccount === null}>
+          <FilterPill href={buildSupportHref(current, { account: null })} active={selectedAccount === null}>
             Todas as contas
           </FilterPill>
           {accounts.map((account) => (
             <FilterPill
               key={account.id}
-              href={buildHref(current, { account: account.slug })} active={selectedAccount?.id === account.id}
+              href={buildSupportHref(current, { account: account.slug })} active={selectedAccount?.id === account.id}
             >
               {account.label}
             </FilterPill>
@@ -377,34 +337,46 @@ export default async function AtendimentoPage({
       )}
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", marginBottom: "var(--sb-space-2)" }}>
-        <FilterPill href={buildHref(current, { channel: null })} active={channel === null}>
+        <FilterPill href={buildSupportHref(current, { channel: null })} active={channel === null}>
           Todos os tipos
         </FilterPill>
         {CHANNELS.map((code) => (
-          <FilterPill key={code} href={buildHref(current, { channel: code })} active={channel === code}>
+          <FilterPill key={code} href={buildSupportHref(current, { channel: code })} active={channel === code}>
             {supportChannelLabel(code)}
           </FilterPill>
         ))}
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", marginBottom: "var(--sb-space-4)" }}>
-        <FilterPill href={buildHref(current, { status: "abertos" })} active={status === "abertos"}>
+        <FilterPill href={buildSupportHref(current, { status: "abertos" })} active={status === "abertos"}>
           Abertos
         </FilterPill>
         {INTERNAL_STATUSES.map((code) => (
-          <FilterPill key={code} href={buildHref(current, { status: code })} active={status === code}>
+          <FilterPill key={code} href={buildSupportHref(current, { status: code })} active={status === code}>
             {supportInternalStatusLabel(code)}
           </FilterPill>
         ))}
-        <FilterPill href={buildHref(current, { status: "todos" })} active={status === "todos"}>
+        <FilterPill href={buildSupportHref(current, { status: "todos" })} active={status === "todos"}>
           Todos
         </FilterPill>
-        <FilterPill href={buildHref(current, { prazo: !prazoRisco })} active={prazoRisco} tone="danger">
+        <FilterPill href={buildSupportHref(current, { prazo: !prazoRisco })} active={prazoRisco} tone="danger">
           ⏱ Prazo em risco
         </FilterPill>
       </div>
 
-      {error === null && cases.length === 0 && (
+      {/*
+        A PÁGINA QUE NÃO EXISTE tem texto próprio, e o motivo é que ela não é
+        "fila vazia": o recorte pode estar cheio, e só esta página passou do
+        fim. Mandar de volta à primeira é a única ação útil daqui.
+      */}
+      {paginaVazia && (
+        <p style={{ color: "var(--sb-text-soft)" }}>
+          Esta página não existe neste recorte — a fila encolheu ou o link é antigo.{" "}
+          <Link href={buildSupportHref(current, { page: 1 })}>Voltar à primeira página</Link>.
+        </p>
+      )}
+
+      {error === null && !paginaVazia && cases.length === 0 && (
         <p style={{ color: "var(--sb-text-soft)" }}>
           {status === "abertos" && channel === null && selectedAccount === null
             ? "Nenhum atendimento em aberto. A sincronização traz perguntas novas pelo webhook em segundos e reconcilia a cada 6 horas."
@@ -476,7 +448,18 @@ export default async function AtendimentoPage({
                           que o inbox de três colunas do frame realmente
                           protege, e ela custa um parâmetro — não uma tela.
                         */}
-                        <Link href={`/atendimento/${row.id}?volta=${encodeURIComponent(buildHref(current, {}))}`}>
+                        <Link
+                          href={`/atendimento/${row.id}?volta=${encodeURIComponent(
+                            /*
+                              A PÁGINA VIAJA JUNTO (D-289). `buildSupportHref`
+                              volta à página 1 quando um FILTRO muda — conjunto
+                              novo, começo novo —, e aqui nada mudou: passar
+                              `page` de propósito é o que impede que ler o caso
+                              da página 7 devolva a pessoa à 1.
+                            */
+                            buildSupportHref(current, { page: current.page }),
+                          )}`}
+                        >
                           {supportChannelLabel(row.channel)}
                         </Link>
                         {rowFacets.length > 0 && <div className="sb-mono">{rowFacets.join(" · ")}</div>}
@@ -542,6 +525,28 @@ export default async function AtendimentoPage({
             </table>
           </div>
         </Panel>
+      )}
+
+      {/*
+        O PAGINADOR — mesma forma de `/precos` e `/curva-abc`: duas pílulas, e
+        só quando há mais de uma página. Sem salto para página arbitrária de
+        propósito: a fila ordena por atividade recente e muda embaixo de quem
+        lê, então "página 7" não é um lugar estável — anterior e próxima são o
+        que se pode prometer.
+      */}
+      {error === null && !paginaVazia && janela.totalPages > 1 && (
+        <div style={{ display: "flex", gap: "var(--sb-space-2)", marginTop: "var(--sb-space-3)" }}>
+          {filters.page > 1 && (
+            <FilterPill href={buildSupportHref(current, { page: filters.page - 1 })} active={false}>
+              ← Anterior
+            </FilterPill>
+          )}
+          {filters.page < janela.totalPages && (
+            <FilterPill href={buildSupportHref(current, { page: filters.page + 1 })} active={false}>
+              Próxima →
+            </FilterPill>
+          )}
+        </div>
       )}
     </Shell>
   );

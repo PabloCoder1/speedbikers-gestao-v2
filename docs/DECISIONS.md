@@ -7778,6 +7778,52 @@ Renderizada a 1440px com login real: a tabela tem **12 colunas**, **1.951px** de
 
 **Verificacao:** `check` **29/29**, build **8/8**, integracao **634/634**, e2e **93/93** em base resetada e semeada, e os cinco guardas verdes (`embeds` 35, `waterfalls` 61, `server-actions` 21, `table-styles` 29, `control-styles` 195).
 
+## D-289 - A paginação da Caixa de Entrada, e o 416 que o PostgREST devolve para página que passou do fim
+
+**Contexto:** D-267 declarou a janela de `/atendimento` ("100 de 929 abertos") e deixou escrito que a **paginação continuava não existindo**, como dívida e não como "quando o volume justificar" -- o volume já justificava. Era o próximo item aberto da lista de `docs/DESIGN_IMPLEMENTATION.md`. Sem migration.
+
+---
+
+**1. O QUE ESTAVA REALMENTE QUEBRADO NÃO ERA A FRASE, ERA O ALCANCE**
+
+A tela lia as **100 mais recentes** e ponto. Nenhum filtro dela separa "as 100 mais recentes" do resto: conta, canal, status e prazo recortam o conjunto, não a janela. Com 929 abertos no Dev, **829 casos não tinham como ser abertos por esta tela** -- só apareceriam se voltassem ao topo por atividade nova, que é exatamente o contrário da fila que se quer atender.
+
+`.limit(100)` virou `.range()`, `PAGE_SIZE` continua **100** (o teto que a tela já mostrava: a fatia acrescenta as páginas 2 em diante, não encolhe a primeira) e a frase de D-267 passou a saber onde está: **"Mostrando 101 a 131 de 131"**, medido com dado real.
+
+**2. A PÁGINA QUE PASSA DO FIM NÃO E LISTA VAZIA -- É 416, E ISSO É MEDIDO**
+
+`.range(from, to)` com `from` maior que o total **não** devolve zero linhas: o PostgREST responde **416 `PGRST103` ("Requested range not satisfiable")**, com `count` nulo junto. Medido no local sobre `support_cases` com 2 linhas:
+
+| pedido | resposta |
+|---|---|
+| `range(0, 99)` | 200, 2 linhas, `count` 2 |
+| `range(100, 199)` | **416 `PGRST103`**, `count` nulo |
+| `range(5000, 5099)` | **416 `PGRST103`**, `count` nulo |
+
+Sem distinguir isso, `?pagina=9` guardado nos Filtros Salvos depois que a fila encolheu pinta **"Não foi possível carregar"** em vermelho para um pedido legítimo -- e o cartão "No recorte" mostraria **0**, porque `count` veio nulo. É a mesma classe de D-067: ausência e falha são coisas diferentes.
+
+`isPageBeyondEnd` (em `lib/filters.ts`, junto da mecânica que oito telas compartilham) separa as duas, e a tela diz o que aconteceu -- "Esta página não existe neste recorte" -- com o único caminho útil ao lado: voltar à primeira página **do mesmo recorte** (verificado: em `?canal=CLAIM&pagina=2` o link volta para `/atendimento?canal=CLAIM`, não para a fila sem filtro).
+
+**3. A PÁGINA VIAJA COM O CASO, E ISSO É UMA EXCEÇÃO DECLARADA**
+
+`buildSupportHref` volta à página 1 quando um FILTRO muda (D-138/D-139) -- conjunto novo, começo novo. Mas o `?volta=` de D-286 precisa do contrário: quem abre um caso da página 7 e volta não pode cair na 1, que é justamente o "recomeçar o recorte a cada caso lido" que aquele parâmetro existe para evitar. Por isso a página só sobrevive quando é pedida por escrito (`{ page: current.page }`), e o link do caso pede. Verificado na página 2: `volta=%2Fatendimento%3Fpagina%3D2`.
+
+**4. O VOCABULÁRIO SAIU DA TELA (`lib/support-filters.ts`)**
+
+Não por gosto de arquivo novo: paginar acrescenta uma dimensão que todas as outras precisam respeitar, e as duas regras dela (reset ao trocar filtro, piso de página 1) já estavam escritas e testadas em `lib/filters.ts`, usadas por oito telas. As listas fechadas continuam sendo a defesa contra valor forjado na URL: `canal=DROP` cai no default e nunca chega ao `eq()`.
+
+**5. O TESTE ME CORRIGIU, E A DOCSTRING ESTAVA ERRADA**
+
+Escrevi que página fracionária cairia em 1, copiando a docstring de `resolvePageParam`. **TRUNCA**: `"2.9"` → 2, e `filters.test.ts` afirma isso desde que a função existe. Quem estava errado era o comentário, corrigido junto. Comentário que descreve comportamento sem o teste ao lado envelhece assim.
+
+**6. QUATRO OUTRAS TELAS TÊM A MESMA EXPOSIÇÃO, E ISSO FICA REGISTRADO**
+
+`/importacoes`, `/importacoes/[id]`, `/notas-fiscais` e `/sugestoes` também chamam `.range()` sobre tabela e não tratam `PGRST103` -- mesma página vermelha por link antigo. Não entraram nesta fatia porque cada uma tem estado vazio próprio para conferir; `isPageBeyondEnd` já está no lugar compartilhado para quando entrarem.
+
+**Impacto:** `app/atendimento/page.tsx`, `lib/support-filters.ts` (novo) + teste, `lib/filters.ts` (`isPageBeyondEnd` e a docstring corrigida), `e2e/atendimento.spec.ts` (dois casos novos).
+
+**Verificação:** `check` **29/29** (`--force`), build **8/8**, integração **634/634**, e2e **95/95** em base resetada, cinco guardas verdes. A paginação foi vista de pé com **131 casos temporários** no local (inseridos, fotografados e apagados na mesma rodada, porque o seed tem dois e dois não formam duas páginas): página 1 com 100 linhas e "Próxima →", página 2 com 31 e "← Anterior", pílula de 32px com a forma do design system.
+
 ## Como adicionar nova decisao
 
 Registrar:
