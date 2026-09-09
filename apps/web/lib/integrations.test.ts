@@ -252,11 +252,24 @@ describe("Mercado Livre — sincronização", () => {
     expect(ml.sync?.detail).toContain("visits: 123 de 145 execuções falharam (85%)");
   });
 
-  it("recurso sem cadência mapeada (order_financials) falhando entra como alerta, não como soma muda", () => {
+  /*
+    ESTE TESTE USAVA `order_financials` COMO EXEMPLO DE "recurso sem cadência",
+    e isso era o defeito escrito como fixture (D-273).
+
+    O recurso existe no banco desde D-165, com scheduler diário e entrada em
+    `JOB_CADENCE_MIN`. A falta dele em `RECONCILIATION_RESOURCE` não era
+    desenho: era buraco — e aqui virou o exemplo canônico do balde, o que
+    ajudou a mantê-lo invisível.
+
+    O comportamento continua valendo e continua testado; o que mudou é o
+    fixture. Recurso NOVO no banco sem entrada no mapa é o caso real do balde,
+    e é o que este teste passa a usar.
+  */
+  it("recurso sem cadência mapeada falhando entra como alerta, não como soma muda", () => {
     const input = base();
     input.syncHealth = [
       reconciliacao(CONTA_1, "orders", 0.5),
-      reconciliacao(CONTA_1, "order_financials", 5, {
+      reconciliacao(CONTA_1, "recurso_novo_do_banco", 5, {
         runs_24h: 16,
         failed_24h: 16,
         last_run_status: "failed",
@@ -268,9 +281,19 @@ describe("Mercado Livre — sincronização", () => {
 
     expect(ml.sync?.state).toBe("atencao");
     expect(ml.sync?.detail).toContain("1 sem cadência");
-    expect(ml.sync?.detail).toContain("order_financials: 16 de 16 execuções falharam (100%)");
-    expect(ml.sync?.detail).toContain("última falha: order_financials");
+    expect(ml.sync?.detail).toContain("recurso_novo_do_banco: 16 de 16 execuções falharam (100%)");
+    expect(ml.sync?.detail).toContain("última falha: recurso_novo_do_banco");
     expect(ml.sync?.detail).not.toContain("APP_USR-1234567890123456");
+  });
+
+  it("`order_financials` deixou de cair no balde: hoje ele tem cadência diária", () => {
+    const input = base();
+    input.syncHealth = [reconciliacao(CONTA_1, "order_financials", 5)];
+
+    // Cinco horas contra cadência de 1440 min: em dia. Antes de D-273 isto
+    // era "0 em dia … 1 sem cadência", e a tela mostrava a chave crua.
+    expect(card(input, "mercado_livre").sync?.detail).toContain("1 em dia");
+    expect(card(input, "mercado_livre").sync?.detail).toContain("0 sem cadência");
   });
 
   it("um recurso horário mudo há 13 h é erro — o cenário de D-217, com o veredito de D-143", () => {

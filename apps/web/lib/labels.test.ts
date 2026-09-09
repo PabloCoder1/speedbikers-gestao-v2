@@ -1,7 +1,7 @@
 import { EVENT_SEVERITY } from "@sb/domain";
 import { describe, expect, it } from "vitest";
 
-import { eventTypeLabel } from "./labels.js";
+import { eventTypeLabel, syncRunStatusLabel } from "./labels.js";
 
 /**
  * Todo tipo de evento tem rótulo (D-208).
@@ -21,5 +21,29 @@ describe("rótulos de domain_events", () => {
     const semRotulo = Object.keys(EVENT_SEVERITY).filter((tipo) => eventTypeLabel(tipo) === tipo);
 
     expect(semRotulo).toEqual([]);
+  });
+});
+
+/**
+ * O MESMO elo, para `sync_runs.status` (D-273).
+ *
+ * D-208 criou o teste acima porque `lookup()` devolve o código cru quando o
+ * rótulo falta — e isso não quebra nada, só põe inglês de banco na frente da
+ * pessoa. A tela de Sincronização mostrava exatamente isso: "done", minúsculo,
+ * numa coluna chamada Status. O elo existia para um catálogo e não para os
+ * outros.
+ */
+describe("rótulos de sync_runs.status", () => {
+  it("os três status do check têm rótulo em português", () => {
+    // `sync_runs_status_check`: done, failed, partial. Se o banco ganhar um
+    // quarto, este teste continua verde — por isso a tela também mostra o
+    // balde "Sem cadência", que é o detector do lado do dado.
+    for (const status of ["done", "failed", "partial"]) {
+      expect(syncRunStatusLabel(status), status).not.toBe(status);
+    }
+  });
+
+  it("status desconhecido devolve o código, sem inventar tradução", () => {
+    expect(syncRunStatusLabel("cancelled")).toBe("cancelled");
   });
 });

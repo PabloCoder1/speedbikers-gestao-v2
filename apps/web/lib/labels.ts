@@ -16,6 +16,18 @@ const BATCH_STATUS: Record<string, string> = {
   CANCELLED: "Cancelado",
 };
 
+/*
+  `sync_runs.status` (D-273). A tela de Sincronização imprimia o valor cru —
+  "done", em inglês e minúsculo, numa coluna chamada "Status". É a mesma
+  classe do recurso sem rótulo que esta fatia consertou: código de banco não é
+  texto de interface.
+*/
+const SYNC_RUN_STATUS: Record<string, string> = {
+  done: "Concluída",
+  partial: "Parcial",
+  failed: "Falhou",
+};
+
 const ROW_STATUS: Record<string, string> = {
   OK: "OK",
   SKIPPED: "Ignorada",
@@ -323,6 +335,7 @@ function lookup(table: Record<string, string>, code: string): string {
 }
 
 export const batchStatusLabel = (code: string): string => lookup(BATCH_STATUS, code);
+export const syncRunStatusLabel = (code: string): string => lookup(SYNC_RUN_STATUS, code);
 export const rowStatusLabel = (code: string): string => lookup(ROW_STATUS, code);
 export const applyStatusLabel = (code: string): string => lookup(APPLY_STATUS, code);
 export const kindLabel = (code: string): string => lookup(KIND, code);

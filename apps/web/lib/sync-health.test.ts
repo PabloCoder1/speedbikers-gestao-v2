@@ -5,6 +5,8 @@ import {
   classifyResourceFreshness,
   failureRateLabel,
   JOB_CADENCE_MIN,
+  RECONCILIATION_RESOURCE,
+  resourceLabel,
 } from "./sync-health";
 
 const NOW = new Date("2026-08-30T12:00:00Z");
@@ -147,5 +149,55 @@ describe("classifyJobFreshness (Saúde do Sistema, D-219)", () => {
     const invalidas = Object.entries(JOB_CADENCE_MIN).filter(([, min]) => !(min > 0));
 
     expect(invalidas).toEqual([]);
+  });
+});
+
+describe("RECONCILIATION_RESOURCE — um dono só para nome e cadência (D-273)", () => {
+  it("cobre os OITO recursos que get_sync_health devolve no canal de reconciliação", () => {
+    /*
+      Medido no Dev: 32 linhas de reconciliação = 4 contas x 8 recursos. O
+      mapa tinha SETE, e o oitavo (`order_financials`) aparecia na tela com o
+      identificador cru do banco e sem veredito.
+    */
+    expect(Object.keys(RECONCILIATION_RESOURCE).sort()).toEqual([
+      "claims",
+      "fulfillment",
+      "listings",
+      "messages",
+      "order_financials",
+      "orders",
+      "questions",
+      "visits",
+    ]);
+  });
+
+  it("nenhum recurso tem nome sem cadência nem cadência sem nome", () => {
+    // A razão de os dois campos morarem no mesmo objeto: separados, eles
+    // divergiram, e a divergência só apareceu olhando a tela.
+    for (const [chave, recurso] of Object.entries(RECONCILIATION_RESOURCE)) {
+      expect(recurso.label, chave).toBeTruthy();
+      expect(recurso.label, chave).not.toBe(chave);
+      expect(recurso.cadenceMin, chave).toBeGreaterThan(0);
+    }
+  });
+
+  it("`order_financials` ganha veredito, e não mais um travessão", () => {
+    const agora = new Date("2026-09-08T12:00:00Z");
+
+    // Cadência de 1440 min (a varredura diária das 09:30). Sucesso de uma
+    // hora atrás é "em dia"; de cinco dias, crítico.
+    expect(
+      classifyResourceFreshness("order_financials", "reconciliation", "2026-09-08T11:00:00Z", agora),
+    ).toBe("ok");
+    expect(
+      classifyResourceFreshness("order_financials", "reconciliation", "2026-09-03T11:00:00Z", agora),
+    ).toBe("critico");
+
+    // E o rótulo deixou de ser a chave do banco.
+    expect(resourceLabel("order_financials")).toBe("Custos do pedido");
+  });
+
+  it("recurso desconhecido devolve a própria chave, sem inventar nome", () => {
+    expect(resourceLabel("recurso_que_nao_existe")).toBe("recurso_que_nao_existe");
   });
 });

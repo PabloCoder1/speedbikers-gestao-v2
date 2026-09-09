@@ -7304,3 +7304,79 @@ A descricao do cartao do frame ("Pedidos, anuncios, perguntas e Full") virou o c
 **Impacto:** `apps/web/lib/integrations.ts` (campo `scope`), `apps/web/app/integracoes/page.tsx` (`PageTitle`, seis `Panel`, `.sb-table`, `colgroup` + `fixed`, sem `table-styles`), `apps/web/e2e/integracoes.spec.ts` (+2). Sem migration, sem CSS novo.
 
 **Verificacao, local:** `check` **29/29**, e2e **63/63** em banco recriado (2 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17, `check:table-styles` **19**, `docs:check`. Capturada a 1440px contra o Supabase local.
+
+## D-273 - D33: Sincronizacao, e o defeito estava ESCRITO COMO FIXTURE num teste que passava
+
+**Contexto:** `/sincronizacao` pelo frame `AdminScreen` na variacao de dados e processamentos. Terceira tela do bloco de administracao. Sem migration.
+
+---
+
+**1. UM RECURSO SEM NOME E SEM VEREDITO, E ERA O PIOR DELES**
+
+`get_sync_health` devolve **32 linhas de reconciliacao no Dev** = 4 contas x **8 recursos**. O mapa de rotulos da tela tinha **sete**. O oitavo, `order_financials`, aparecia assim:
+
+| | o que a tela mostrava | por que |
+|---|---|---|
+| nome | `order_financials` | sem entrada no mapa de rotulos, dentro de `page.tsx` |
+| situacao | `—` | sem entrada no mapa de cadencias, dentro de `lib/sync-health.ts` |
+
+E ele nao e um recurso qualquer: `sync.order-financials` teve **16 falhas em 40 execucoes (40%)** nos ultimos 7 dias no Dev -- **a pior taxa de todos os 20 jobs ativos**. A tela que existe para achar sincronizacao quebrada mostrava a mais quebrada de todas com a chave crua do banco e um travessao.
+
+**A cadencia SEMPRE existiu.** `JOB_CADENCE_MIN` -- o mapa irmao, chaveado por `job_type` -- tem `"sync.order-financials": 1440` desde D-219, com o scheduler citado no comentario. Eram tres mapas para o mesmo conjunto de coisas, e o recurso faltava em dois deles. **D-224 outra vez: nome e cadencia agora moram no mesmo objeto** (`RECONCILIATION_RESOURCE`), porque separados eles divergiram e ninguem viu.
+
+**2. O DEFEITO ESTAVA ESCRITO COMO FIXTURE, NUM TESTE VERDE**
+
+`lib/integrations.test.ts` tinha, desde D-232:
+
+> `it("recurso sem cadência mapeada (order_financials) falhando entra como alerta, não como soma muda")`
+
+Ou seja: eu peguei a **falta** de uma entrada e a usei como o exemplo canonico do balde "sem cadencia". O teste passava, descrevia o comportamento certo, e ao mesmo tempo **congelava o buraco como se fosse desenho**. Enquanto ele fosse o exemplo, ninguem ia perguntar por que aquele recurso nao tinha cadencia.
+
+O comportamento continua testado -- o fixture e que virou `recurso_novo_do_banco`, que e o caso real do balde: recurso que o banco ganhou e o mapa ainda nao conhece.
+
+**Vale como licao geral:** quando um teste precisa de um exemplo de estado degradado, **um dado real degradado e o fixture mais perigoso que existe** -- ele documenta o defeito em vez de denunciar.
+
+**3. `done`, EM INGLES E MINUSCULO, NUMA COLUNA CHAMADA STATUS**
+
+Achado na captura, na tabela de backfill. E a mesma classe do item 1, e o elo que faltava ja existia para outro catalogo: D-208 escreveu um teste que exige rotulo em portugues para todo `event_type`, exatamente porque `lookup()` devolve o codigo cru em silencio. O elo existia para um catalogo e nao para os outros dois. Agora ha `syncRunStatusLabel` e o teste equivalente.
+
+**4. A FAIXA CONTA RECURSOS, E O FRAME CONTA CONTAS**
+
+O frame desenha quatro cartoes: Contas Conectadas 4, **Atualizadas 3, Com Atencao 1, Com Erro 0** -- contando CONTAS.
+
+Contar contas e o que esta tela fazia **antes de D-143**, e a medicao que derrubou aquela versao continua valendo: uma conta "atualizada" pode ter `visits` falhando 123 de 145 vezes. Conta nao e unidade de frescor; recurso e -- porque `orders` roda de hora em hora e `visits` uma vez por dia, e um veredito unico por conta precisa escolher qual das duas reguas mentir.
+
+A faixa ficou com **seis** celulas: o total e as CINCO partes, contadas sobre o MESMO array que a tabela imprime (D-265). **"Sem cadencia" entra mesmo esperando zero**: e a celula que denuncia um recurso novo sem entrada no mapa -- o defeito do item 1 -- e escondar o balde vazio devolveria o problema ao silencio.
+
+**5. "EXECUCOES RECENTES" NAO ENTRA, E SAO QUATRO MEDICOES**
+
+O frame desenha uma tabela de execucoes individuais (Data/Hora, Conta, Recurso, Status, Itens, Duracao, Resultado). Ela nao entra, e nenhuma das razoes e estetica:
+
+| medicao | numero |
+|---|---|
+| policies de RLS em `job_runs` | **0** (RLS ligada, e `authenticated` sem `SELECT`) |
+| colunas de conta em `job_runs` | **0** -- a coluna "Conta" do frame nao tem fonte |
+| `dedupe_key` com algum UUID | **19.016 de 100.169** (19%), e UUID solto em texto nao e referencia tipada |
+| participacao do maior `job_type` | `sync.webhook.received`: **32.777 de 50.808 em 7 dias (65%)** |
+
+A ultima e a decisiva. Uma lista das "25 execucoes mais recentes" seria **25 webhooks**, e as tres linhas que o proprio frame desenha (Pedidos, Anuncios, Full) ficariam invisiveis. **O desenho pressupoe uma operacao em que as execucoes sao poucas e variadas; a nossa e um firehose com uma cauda.**
+
+E a pergunta que a tabela responderia -- o que rodou e o que falhou -- **ja e respondida logo acima**, no grao que o dado sustenta: a tabela de reconciliacao mostra falhas de 24h, taxa e ultimo motivo, por conta e recurso.
+
+Fica registrado como item aberto: uma lista **so de falhas** seria util, e exige RPC nova com decisao propria (expor log de execucao a web).
+
+**6. "SINCRONIZAR AGORA" E "FILTRAR" FICAM FORA**
+
+A tela nao escreve. Dar-lhe um gatilho de sincronizacao e funcionalidade com decisao de autorizacao propria, e filtro e feature -- a linha de D-264 e D-269.
+
+**7. QUINTA TELA SEGUIDA SEM SPEC, E A PRIMEIRA SO DE LEITURA**
+
+Depois de `/atendimento/conhecimento`, `/notificacoes`, `/sugestoes` e `/usuarios`, esta e a quinta. As quatro anteriores escreviam; esta so le -- o que mudou o tipo de risco, nao a existencia dele: o defeito do item 1 e de leitura, e viveu por nao haver spec.
+
+O seed ganhou execucoes reais de `sync_runs` (append-only de verdade: dois triggers recusam UPDATE e DELETE, entao a idempotencia checa o `job_id` antes de inserir). Uma delas e de `order_financials`, e existe para travar a regressao.
+
+**Efeito colateral honesto:** o spec de `/integracoes` afirmava "a conta do seed nunca sincronizou". Com execucoes no seed a premissa caiu, e **isso melhorou o teste**: antes ele provava so o lado negativo da regra "verde exige atividade observada"; agora prova os dois -- o Mercado Livre fica verde por ter sucesso recente, e o webhook, sem nenhuma execucao, continua "Sem atividade" na mesma pagina.
+
+**Impacto:** `apps/web/lib/sync-health.ts` (mapa unico), `apps/web/lib/labels.ts` (+`syncRunStatusLabel`), `apps/web/app/sincronizacao/page.tsx` (`PageTitle`, faixa de seis, cinco `Panel`, `.sb-table`, sem `th`/`td` locais), `apps/web/e2e/{seed,sincronizacao.spec,integracoes.spec}.ts`, testes de `sync-health`, `labels` e `integrations`. Sem migration.
+
+**Verificacao, local:** `check` **29/29** (+8 testes), e2e **67/67** em banco recriado (4 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17, `check:table-styles` **20**, `docs:check`. Capturada a 1440px contra o Supabase local.

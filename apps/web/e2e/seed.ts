@@ -348,6 +348,108 @@ async function main(): Promise<void> {
   const mlAccountId = mlAccount.data.id;
   const now = Date.now();
 
+  /*
+    EXECUÇÕES DE SINCRONIZAÇÃO (D-273), para `/sincronizacao` ter o que mostrar.
+
+    `sync_runs` é append-only de verdade: dois triggers recusam UPDATE e
+    DELETE. `upsert` não serve (é INSERT … ON CONFLICT DO UPDATE), então a
+    idempotência vem de checar o `job_id` antes de inserir — o mesmo caminho
+    que o seed já usa para `domain_events`.
+
+    As quatro linhas cobrem os três estados que a tela precisa provar:
+
+    - `orders` com sucesso recente → **Em dia**;
+    - `order_financials` com sucesso recente → **Em dia**, e é a linha que
+      trava a regressão: antes de D-273 ela aparecia como `order_financials`
+      (a chave crua do banco) e SEM veredito, porque o recurso tinha rótulo
+      e cadência em mapas diferentes e faltava nos dois;
+    - `visits` com sucesso de 5 dias atrás e uma falha de 2h → **Atrasada**
+      COM taxa de falha ao lado. É o caso real que D-143 mediu: frescor e
+      cobertura são coisas distintas, e a segunda degrada em silêncio.
+  */
+  const syncJobId = "5b1d0000-0000-4000-8000-00000000e2e0";
+
+  const syncExistente = await db.from("sync_runs").select("id").eq("job_id", syncJobId).limit(1);
+
+  if (syncExistente.error !== null) {
+    throw syncExistente.error;
+  }
+
+  if (syncExistente.data.length === 0) {
+    const minuto = 60 * 1000;
+    const janela = (inicioMin: number, duracaoMin: number): { started_at: string; finished_at: string } => ({
+      started_at: new Date(now - inicioMin * minuto).toISOString(),
+      finished_at: new Date(now - (inicioMin - duracaoMin) * minuto).toISOString(),
+    });
+
+    const syncRuns = await db.from("sync_runs").insert([
+      {
+        organization_id: organizationId,
+        ml_account_id: mlAccountId,
+        job_id: syncJobId,
+        resource: "orders",
+        channel: "reconciliation",
+        status: "done",
+        reason: null,
+        items_processed: 12,
+        latest_record_at: new Date(now - 25 * minuto).toISOString(),
+        ...janela(20, 1),
+      },
+      {
+        organization_id: organizationId,
+        ml_account_id: mlAccountId,
+        job_id: syncJobId,
+        resource: "order_financials",
+        channel: "reconciliation",
+        status: "done",
+        reason: null,
+        items_processed: 7,
+        latest_record_at: new Date(now - 200 * minuto).toISOString(),
+        ...janela(180, 2),
+      },
+      {
+        organization_id: organizationId,
+        ml_account_id: mlAccountId,
+        job_id: syncJobId,
+        resource: "visits",
+        channel: "reconciliation",
+        status: "done",
+        reason: null,
+        items_processed: 340,
+        latest_record_at: new Date(now - 5 * 24 * 60 * minuto).toISOString(),
+        ...janela(5 * 24 * 60, 3),
+      },
+      {
+        organization_id: organizationId,
+        ml_account_id: mlAccountId,
+        job_id: syncJobId,
+        resource: "visits",
+        channel: "reconciliation",
+        status: "failed",
+        reason: "429 Too Many Requests ao ler visitas",
+        items_processed: null,
+        latest_record_at: null,
+        ...janela(120, 1),
+      },
+      {
+        organization_id: organizationId,
+        ml_account_id: mlAccountId,
+        job_id: syncJobId,
+        resource: "orders",
+        channel: "backfill",
+        status: "done",
+        reason: null,
+        items_processed: 480,
+        latest_record_at: new Date(now - 10 * 24 * 60 * minuto).toISOString(),
+        ...janela(10 * 24 * 60, 40),
+      },
+    ]);
+
+    if (syncRuns.error !== null) {
+      throw syncRuns.error;
+    }
+  }
+
   const supportCases = await db
     .from("support_cases")
     .upsert(

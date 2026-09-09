@@ -204,3 +204,18 @@ Cada linha nasceu de um erro real. A decisão que a gerou está em
   a captura mostrou**, e só porque a frase cortada era a mais longa da tela.
   Capturar depois do último build não é conferência de acabamento: é o único
   detector que existe para esta classe (D-272).
+- **Um dado real degradado é o fixture mais perigoso que existe.** Um teste
+  de D-232 se chamava *"recurso sem cadência mapeada (order_financials)"*: eu
+  peguei a FALTA de uma entrada no mapa e a usei como exemplo canônico do
+  balde "sem cadência". O teste passava, descrevia o comportamento certo e
+  **congelava o buraco como se fosse desenho** — enquanto aquele recurso fosse
+  o exemplo, ninguém perguntaria por que ele não tinha cadência. Quando um
+  teste precisa de um exemplo de estado degradado, invente o exemplo; não
+  empreste um caso real que devia ser consertado (D-273).
+- **Rótulo que falta não quebra nada: só põe inglês de banco na tela.**
+  `lookup()` devolve o código cru, e três catálogos diferentes tiveram o mesmo
+  problema — `event_type` (D-208, que virou teste), `sync_runs.status` e o
+  recurso de sincronização (os dois em D-273). **O elo existia para um catálogo
+  e não para os outros**: quando um mapa de rótulos nasce, o teste que exige
+  cobertura dele nasce junto, ou a próxima chave nova aparece crua para o
+  usuário.

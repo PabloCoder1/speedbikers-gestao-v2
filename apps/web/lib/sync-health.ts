@@ -17,20 +17,49 @@
 export type SyncVerdict = "ok" | "atencao" | "critico" | "nunca" | "sem_cadencia";
 
 /**
- * Minutos entre execuções esperadas de cada recurso no canal de
- * RECONCILIAÇÃO. Backfill fica de fora de propósito: é processo finito —
- * "não rodou nas últimas 24h" é o estado NORMAL de um backfill concluído,
- * e carimbá-lo com frescor seria a tela gritando sobre o comportamento certo.
+ * Cada recurso do canal de RECONCILIAÇÃO, com o nome que a tela mostra e a
+ * cadência contra a qual o frescor é julgado — **um dono só** (D-224, D-273).
+ *
+ * Eram DOIS mapas: a cadência aqui e o rótulo dentro de
+ * `app/sincronizacao/page.tsx`. Eles divergiram, e a divergência era visível
+ * na tela: `order_financials` tinha entrada em `JOB_CADENCE_MIN` (o mapa
+ * irmão, por `job_type`) e em nenhum dos dois daqui — então a tela mostrava
+ * o identificador cru do banco no lugar do nome, e um travessão no lugar do
+ * veredito. Justamente o recurso com a PIOR taxa de falha do Dev: 16 de 40
+ * execuções em 7 dias.
+ *
+ * Chave nova sem entrada aqui volta a cair no mesmo buraco, então o teste
+ * exige que os dois campos existam juntos — não dá para rotular sem julgar
+ * nem julgar sem rotular.
+ *
+ * Backfill fica de fora de propósito: é processo finito — "não rodou nas
+ * últimas 24h" é o estado NORMAL de um backfill concluído, e carimbá-lo com
+ * frescor seria a tela gritando sobre o comportamento certo.
  */
-export const RECONCILIATION_CADENCE_MIN: Readonly<Record<string, number>> = {
-  orders: 60, // v3-reconcile-orders: "0 * * * *"
-  claims: 60, // v3-support-claims-reconcile: "15 * * * *"
-  questions: 10, // v3-support-questions-reconcile: "*/10 * * * *"
-  messages: 10, // v3-support-messages-reconcile: "*/10 * * * *"
-  listings: 360, // v3-listings-snapshot: "0 */6 * * *"
-  fulfillment: 360, // v3-fulfillment-snapshot: "0 */6 * * *"
-  visits: 1440, // v3-listing-visits-snapshot: "0 7 * * *" (diário)
+export interface ReconciliationResource {
+  /** O nome que a pessoa lê. Sem ele, a tela imprime a chave do banco. */
+  label: string;
+  /** Minutos entre execuções esperadas, do `infra/cloud-scheduler.sh`. */
+  cadenceMin: number;
+}
+
+export const RECONCILIATION_RESOURCE: Readonly<Record<string, ReconciliationResource>> = {
+  orders: { label: "Pedidos", cadenceMin: 60 }, // v3-reconcile-orders: "0 * * * *"
+  claims: { label: "Reclamações", cadenceMin: 60 }, // v3-support-claims-reconcile: "15 * * * *"
+  questions: { label: "Perguntas", cadenceMin: 10 }, // v3-support-questions-reconcile: "*/10 * * * *"
+  messages: { label: "Mensagens", cadenceMin: 10 }, // v3-support-messages-reconcile: "*/10 * * * *"
+  listings: { label: "Anúncios", cadenceMin: 360 }, // v3-listings-snapshot: "0 */6 * * *"
+  fulfillment: { label: "Full", cadenceMin: 360 }, // v3-fulfillment-snapshot: "0 */6 * * *"
+  visits: { label: "Visitas", cadenceMin: 1440 }, // v3-listing-visits-snapshot: "0 7 * * *" (diário)
+  // Frete e desconto do vendedor por pedido (D-165) — os dois custos que
+  // bloqueavam a margem operacional. Faltava aqui desde que o job nasceu.
+  order_financials: { label: "Custos do pedido", cadenceMin: 1440 }, // v3-order-financials-sweep: "30 9 * * *"
 };
+
+/** O nome do recurso na tela; chave desconhecida devolve a própria chave. */
+export function resourceLabel(resource: string): string {
+  return RECONCILIATION_RESOURCE[resource]?.label ?? resource;
+}
 
 /**
  * Minutos entre execuções esperadas de cada JOB agendado, para a Saúde do
@@ -147,7 +176,7 @@ export function classifyResourceFreshness(
     return "sem_cadencia";
   }
 
-  return verdictFromCadence(RECONCILIATION_CADENCE_MIN[resource], lastSuccessAt, now);
+  return verdictFromCadence(RECONCILIATION_RESOURCE[resource]?.cadenceMin, lastSuccessAt, now);
 }
 
 /**

@@ -626,7 +626,8 @@ que ele renderiza.**
 | D30 | **Sugestões** — o MESMO mestre-detalhe que D29 recusou, aqui entra: nove campos estruturados contra três repetidos (D-270) | ✔ |
 | D31 | **Usuários** — três das cinco colunas e um dos cinco cartões do frame não têm fonte; e a tela tinha um DEFEITO VIVO da classe de D-234, justamente onde se cadastra o segundo usuário (D-271) | ✔ |
 | D32 | **Integrações** — o frame nomeia Bling e Google Sheets, que têm ZERO ocorrências no repositório; e um selo por cartão desfaria a separação em três dimensões que criou a tela (D-272) | ✔ |
-| D33–D36 | Sincronização, Saúde, Configurações, Copiloto | fila |
+| D33 | **Sincronização** — um dos oito recursos não tinha nome nem veredito, e era o de PIOR taxa de falha; o defeito estava escrito como fixture num teste verde (D-273) | ✔ |
+| D34–D36 | Saúde, Configurações, Copiloto | fila |
 | D37 | Passe visual global | fila |
 
 ## Auditoria de Fidelidade Figma
@@ -810,83 +811,92 @@ O que resta é a fila **D31 em diante**: 7 superfícies ainda não migradas — 
 
 ## Última fatia concluída
 
-**D32 — Integrações, pelo frame `AdminScreen` na variação de canais (D-272).**
-Segunda tela do bloco de administração. Sem migration.
+**D33 — Sincronização, pelo frame `AdminScreen` na variação de dados e
+processamentos (D-273).** Terceira tela do bloco de administração. Sem
+migration.
 
-### O frame nomeia dois parceiros que o sistema não tem
+### Um recurso sem nome e sem veredito, e era o pior deles
 
-Ele desenha três cartões: Mercado Livre, **Bling (ERP)** e **Google Sheets**.
-Os dois últimos têm **zero ocorrências no repositório inteiro** — código, SQL e
-documentação. Não é "ainda não integrado": é nome de parceiro que nunca existiu
-aqui, e num painel de integrações a afirmação é operacional. Alguém leria
-"Conectado" no Bling e concluiria que a NF-e de entrada chega por ali.
+O banco devolve **oito** recursos de reconciliação; o mapa de rótulos da tela
+tinha **sete**. O oitavo, `order_financials`, aparecia com a chave crua do
+banco no lugar do nome e um travessão no lugar da situação — e é o recurso com
+a **pior taxa de falha do Dev**, 16 de 40 execuções em 7 dias.
 
-O sistema tem **seis** integrações, e nenhuma é as duas do frame. Ele acertou um
-número por acaso: escreve "4 contas ativas" sob o Mercado Livre, e o Dev tem
-exatamente quatro, todas conectadas.
+A cadência sempre existiu, no mapa irmão chaveado por `job_type`. Eram três
+mapas para o mesmo conjunto, e o recurso faltava em dois. Nome e cadência agora
+moram no mesmo objeto: separados, eles divergiram e ninguém viu (D-224).
 
-### Um selo por cartão desfaria a decisão que criou a tela
+### O defeito estava escrito como fixture, num teste verde
 
-O frame põe **um** selo por integração. Esta tela responde **três** perguntas
-separadas — conexão, sincronização, configuração — porque D-231 nomeia como
-risco *"declarar saúde só por haver configuração"*. E o selo do frame diz
-"Conectado", que é justamente a dimensão que menos prova: hoje o Mercado Livre
-tem conta conectada e **nenhuma chamada bem-sucedida observada**. O selo o
-pintaria de verde.
+Um teste de D-232 dizia, no próprio nome: *"recurso sem cadência mapeada
+(order_financials)"*. Peguei a **falta** de uma entrada e a usei como exemplo
+canônico do balde. O teste passava, descrevia o comportamento certo, e
+**congelava o buraco como se fosse desenho** — enquanto ele fosse o exemplo,
+ninguém perguntaria por que aquele recurso não tinha cadência.
 
-### `table-layout: fixed` cortou texto, e só a captura mostrou
+Vale como lição geral: quando um teste precisa de um exemplo de estado
+degradado, **um dado real degradado é o fixture mais perigoso que existe**.
 
-As seis tabelas dimensionavam as próprias colunas: "O QUE FOI OBSERVADO"
-começava em **cinco posições diferentes**. `colgroup` não bastou (em layout
-automático a largura é sugestão), `table-layout: fixed` alinhou as seis — e
-**comeu o fim da observação do Supabase**, porque `.sb-table` é `nowrap` e o
-painel tem `overflow: hidden`.
+### `done`, em inglês e minúsculo, numa coluna chamada Status
 
-Não quebrou teste, não mudou o HTML, não apareceu no `tsc`. **Só a captura
-mostrou.** O conserto é deixar a coluna de observação quebrar linha: coluna
-alinhada não vale texto perdido em silêncio.
+Achado na captura, na tabela de backfill. Mesma classe do item acima, e o elo
+que faltava já existia para outro catálogo: D-208 escreveu o teste que exige
+rótulo em português para todo tipo de evento, exatamente porque a busca devolve
+o código cru em silêncio. O elo existia para um catálogo e não para os outros.
 
-### O que o frame de fato contribuiu
+### A faixa conta recursos, e o frame conta contas
 
-A **linha de escopo** de cada cartão ("Pedidos, anúncios, perguntas e Full").
-Ela responde o que a tela não respondia: *o que essa integração cobre?* É texto
-autoral, e por isso cada uma foi conferida contra os fluxos que existem.
+O frame desenha "Atualizadas 3, Com Atenção 1, Com Erro 0" — contando contas.
+Contar contas é o que esta tela fazia **antes de D-143**, e a medição que
+derrubou aquela versão continua valendo: uma conta "atualizada" pode ter
+visitas falhando 123 de 145 vezes. Pedidos rodam de hora em hora e visitas uma
+vez por dia; um veredito único por conta precisa escolher qual régua mentir.
 
-O "Configurar →" virou o link para a tela dona; "Nova integração" ficou fora,
-porque não existe fluxo de provisionamento e criá-lo é feature (D-264, D-269).
+Seis células: o total e as cinco partes, contadas sobre o mesmo array que a
+tabela imprime. **"Sem cadência" entra mesmo esperando zero** — é a célula que
+denuncia um recurso novo sem entrada no mapa, ou seja, o defeito de cima.
 
-### Sobra um consumidor do `table-styles.ts`
+### "Execuções Recentes" não entra, e são quatro medições
 
-`/integracoes` era um dos dois. Migrada, o guarda de D-262 conta **19** telas, e
-**só `/configuracoes` ainda importa o módulo** — que é D36. O MERGE que a
-auditoria de fidelidade pedia fica possível naquela fatia.
+| medição | número |
+|---|---|
+| policies de RLS em `job_runs` | **0** (e `authenticated` sem SELECT) |
+| colunas de conta em `job_runs` | **0** — a coluna "Conta" não tem fonte |
+| participação do maior tipo de job | **65%** (32.777 de 50.808 em 7 dias) |
 
-**Verificação, local:** `check` **29/29**, e2e **63/63** em banco recriado (2
-novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17,
-`check:table-styles` **19**, `docs:check`. Capturada a 1440px contra o Supabase
-local.
+A última é a decisiva: uma lista das 25 mais recentes seria **25 webhooks**, e
+as três linhas que o próprio frame desenha ficariam invisíveis. O desenho
+pressupõe uma operação em que as execuções são poucas e variadas; a nossa é um
+firehose com uma cauda. E a pergunta que a tabela responderia já é respondida
+logo acima, no grão que o dado sustenta.
+
+**Verificação, local:** `check` **29/29** (+8 testes), e2e **67/67** em banco
+recriado (4 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions`
+17, `check:table-styles` **20**, `docs:check`. Capturada a 1440px contra o
+Supabase local.
 
 ## Próxima fatia segura
 
-**D33–D36 — Sincronização, Saúde, Configurações e Copiloto.** As quatro
-existem. Duas delas são as telas DONAS de números que `/integracoes` só aponta
-(D-224), então a pergunta de rotina ali é outra: **o frame quer que a tela dona
-mostre o mesmo que a Central já mostra?** Se sim, é duplicação de dono, não
-composição.
+**D34–D36 — Saúde do Sistema, Configurações e Copiloto.** As três existem.
+
+`/saude` é vizinha desta: as duas leem frescor contra cadência, e a diferença é
+a chave (recurso por conta lá, `job_type` aqui). **A pergunta dela é a mesma
+que D33 respondeu**: o frame quer que a tela dona mostre o que a Central já
+mostra? Se sim, é duplicação de dono (D-224).
 
 `/configuracoes` é a última consumidora de `components/table-styles.ts`: D36
 pode apagar o módulo.
 
-A rotina, com as cinco perguntas acumuladas: **o frame tem fonte?** (D-266),
+A rotina, com as seis perguntas acumuladas: **o frame tem fonte?** (D-266),
 **falta coluna ou falta dado?** (D-268), **quantas linhas no Dev?** (D-263), **a
-faixa conta o mesmo conjunto da tabela ou é navegação?** (D-265) e **há spec?**
-(D-271). D32 acrescenta a sexta, que é de verificação e não de leitura:
-**capturei a tela depois do último build?** — o corte de texto do item 4 não
-apareceu em nenhum guarda.
+faixa conta o mesmo conjunto da tabela ou é navegação?** (D-265), **há spec?**
+(D-271) e **capturei a tela depois do último build?** (D-272). D33 acrescenta a
+sétima: **o fixture do teste é um dado degradado de verdade?** — foi assim que
+um defeito ficou congelado dentro de um teste verde.
 
 Depois delas, só o **passe visual global (D37)**.
 
-**Cinco itens seguem abertos fora da fila:**
+**Seis itens seguem abertos fora da fila:**
 
 - **`/notas-fiscais/[id]`** — dois dos quatro estados de item do brief §25 não
   têm dado em `document_items` (D-253).
@@ -895,3 +905,5 @@ Depois delas, só o **passe visual global (D37)**.
 - **Exportação de `/precos`** — recusada em D-264 por ser feature.
 - **Paginação de `/atendimento`** — o volume passou a justificar (D-267).
 - **Filtro de não lidas em `/notificacoes`** — 8.350 de 42.511 (D-269).
+- **Lista de execuções que FALHARAM** — a versão útil da tabela que D-273
+  recusou; exige RPC nova, porque `job_runs` não é legível pela web.

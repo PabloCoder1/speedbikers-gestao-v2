@@ -1,26 +1,27 @@
 import { expect, test } from "@playwright/test";
 
 import { login } from "./helpers.js";
-import { readSeedOutput } from "./seed-output.js";
 
 /**
  * Central de Integrações (D-231, refeita em D-232). O que só se prova RODANDO
  * (D-188) é a fiação — as leituras sob RLS, a página inteira quando fontes
- * estão vazias — e as duas regras do item na tela servida. O teste negativo
- * com um GESTOR fica para a fatia que migra as leituras de
- * `organization_members` (ver `e2e/constants.ts`):
+ * estão vazias — e as duas regras do item na tela servida:
  *
- *  - "ok exige atividade observada": a conta do seed é CONNECTED e nunca
- *    sincronizou; a primeira versão a pintava de verde, e o teste EXIGIA isso.
- *    Agora exige o contrário.
+ *  - "ok exige atividade observada": conexão só fica verde com sincronização
+ *    recente de verdade, nunca pela flag `CONNECTED` gravada no OAuth.
  *  - "nunca verde não verificável": nenhuma linha de Configuração, em nenhuma
  *    das seis regiões, pode dizer OK.
+ *
+ * **A premissa deste arquivo mudou em D-273.** Antes o seed não tinha nenhuma
+ * execução, e o teste provava só o lado negativo da primeira regra (conta
+ * conectada e sem atividade NÃO é verde). O seed da tela de Sincronização
+ * passou a criar execuções reais, então agora os DOIS lados são exercíveis: o
+ * Mercado Livre tem sucesso recente e fica verde; o webhook não tem nenhum e
+ * continua sem atividade.
  */
-test("ADMIN: a conta do seed, conectada e sem nenhum run, NÃO é ok; nenhuma configuração é OK; zero botões", async ({
+test("ADMIN: verde exige atividade observada — nos dois sentidos; nenhuma configuração é OK; zero botões", async ({
   page,
 }) => {
-  const seed = await readSeedOutput();
-
   await login(page, "/integracoes");
 
   await expect(page).toHaveURL(/\/integracoes$/);
@@ -32,12 +33,29 @@ test("ADMIN: a conta do seed, conectada e sem nenhum run, NÃO é ok; nenhuma co
   const mercadoLivre = page.getByRole("region", { name: "Mercado Livre", exact: true });
   const conexao = mercadoLivre.getByRole("row", { name: /Conexão/ });
 
-  // `toContainText` na LINHA, não `getByText`: a pílula e a célula que a contém
-  // têm o mesmo texto, e o modo estrito recusa dois elementos.
-  await expect(conexao).toContainText("Sem atividade");
-  await expect(conexao).toContainText("nenhuma chamada ao Mercado Livre bem-sucedida");
-  await expect(conexao).toContainText(seed.mlAccountLabel);
-  await expect(conexao).not.toContainText("OK");
+  /*
+    O LADO POSITIVO: o seed tem reconciliação bem-sucedida há 20 minutos, e a
+    conexão fica verde POR ISSO — não pela flag `CONNECTED`, que já estava lá
+    antes de existir qualquer execução.
+
+    `toContainText` na LINHA, não `getByText`: a pílula e a célula que a contém
+    têm o mesmo texto, e o modo estrito recusa dois elementos.
+  */
+  await expect(conexao).toContainText("OK");
+  await expect(conexao).toContainText("todas com sincronização recente");
+
+  /*
+    O LADO NEGATIVO, na mesma página: o webhook não tem nenhuma execução
+    registrada, e a mesma régua o deixa em "Sem atividade". Duas integrações,
+    a mesma regra, dois resultados — é isso que prova que a régua é a
+    atividade e não a configuração.
+  */
+  const webhook = page.getByRole("region", { name: "Webhook do Mercado Livre" });
+  const conexaoWebhook = webhook.getByRole("row", { name: /Conexão/ });
+
+  await expect(conexaoWebhook).toContainText("Sem atividade");
+  await expect(conexaoWebhook).toContainText("nenhum webhook processado registrado");
+  await expect(conexaoWebhook).not.toContainText("OK");
 
   // Em NENHUMA das seis regiões a linha de Configuração pode ser OK.
   for (const regiao of await page.getByRole("region").all()) {
