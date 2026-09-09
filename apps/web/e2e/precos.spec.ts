@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+
 import { expect, test } from "@playwright/test";
 
 import { E2E_LISTING_PRICE_EVENT, E2E_LISTING_PRICE_EVENT_ALTA } from "./constants.js";
@@ -85,10 +87,49 @@ test("/precos: o aviso diz por que NÃO afirma impacto, e não promete prazo", a
   await expect(page.getByText(/7 dias/)).toHaveCount(0);
   await expect(page.getByText(/tendências/i)).toHaveCount(0);
 
-  // "Exportar Relatório" do frame também fica fora: exportação existe no
-  // produto, mas como rota por documento — aqui seria feature nova.
+  /*
+    O "Exportar Relatório" do frame FOI ENTREGUE em D-292 — D-264 o havia
+    recusado como botão sem função ("botão que não faz nada é pior que botão
+    nenhum") e registrado como candidata a fatia própria. O que continua
+    valendo daquela recusa é a forma: não é botão, é LINK para uma rota que
+    devolve arquivo.
+  */
   await expect(page.getByRole("button", { name: /Exportar/i })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: /Exportar/i })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Exportar XLSX" })).toHaveAttribute(
+    "href",
+    "/precos/export/xlsx",
+  );
+});
+
+/**
+ * A EXPORTAÇÃO (D-292), e o que ela promete: **o arquivo é o RECORTE que está
+ * na tela**, não "tudo". Um botão que ignorasse os filtros entregaria uma
+ * planilha que não corresponde à tela de onde saiu — e ninguém confere
+ * planilha contra tela.
+ */
+test("/precos: o link de exportação carrega o recorte, e o arquivo vem de verdade", async ({ page }) => {
+  await login(page, "/precos?direcao=down&de=2026-09-01");
+
+  const link = page.getByRole("link", { name: "Exportar XLSX" });
+
+  // O recorte viaja no href — e a PÁGINA não: a planilha é o recorte inteiro.
+  await expect(link).toHaveAttribute("href", "/precos/export/xlsx?direcao=down&de=2026-09-01");
+
+  const [download] = await Promise.all([page.waitForEvent("download"), link.click()]);
+
+  // O nome carrega o período: dois recortes diferentes não se sobrescrevem na
+  // pasta de Downloads nem se confundem.
+  expect(download.suggestedFilename()).toBe("historico-de-precos-2026-09-01-a-hoje.xlsx");
+
+  /*
+    E é um XLSX de verdade, não uma página de erro com nome de planilha: todo
+    arquivo do formato começa com a assinatura ZIP `PK`.
+  */
+  const caminho = await download.path();
+  const conteudo = await readFile(caminho);
+
+  expect(conteudo.subarray(0, 2).toString("latin1")).toBe("PK");
+  expect(conteudo.byteLength).toBeGreaterThan(1000);
 });
 
 test("/precos: o chip da faixa mostra exatamente as linhas que ele conta", async ({ page }) => {

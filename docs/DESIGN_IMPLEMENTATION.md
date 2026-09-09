@@ -1001,59 +1001,45 @@ está na "Próxima fatia segura".
 
 ## Última fatia concluída
 
-**A LISTA DE EXECUÇÕES QUE FALHARAM (D-291)** — o terceiro item aberto seguido,
-e o primeiro **com migration**. (Antes: o recorte de não lidas, D-290; a
-paginação de `/atendimento`, D-289; a fusão `/cobertura` × `/reposicao`, D-288.)
+**A EXPORTAÇÃO DE `/precos` (D-292)** — o quarto item aberto seguido. (Antes: a
+lista de falhas, D-291; o recorte de não lidas, D-290; a paginação de
+`/atendimento`, D-289; a fusão `/cobertura` × `/reposicao`, D-288.)
 
-### A lista crua não resolveria, e o número é esse
+### A recusa de D-264 era sobre a FORMA, não sobre exportar
 
-D-273 recusou a tabela do frame porque 65% das execuções são de um job só. A
-saída óbvia — "filtre por falha" — **não escapa do firehose**: das 473 falhas de
-7 dias no Dev, **370 (78%) são `sync.webhook.received`**, com **170 motivos
-distintos** entre as 473.
+"Botão que não faz nada é pior que botão nenhum." O que sobrevive dela: não há
+botão, há **link** para uma rota que devolve arquivo — e a rota lê os mesmos
+parâmetros da tela, porque o arquivo é o RECORTE que está na frente do
+operador, nunca "tudo".
 
-Quem resolve é a ASSINATURA do motivo, porque o texto do erro carrega ids:
+### O teto mora dentro do arquivo
 
-| regra | assinaturas |
-|---|---:|
-| motivos crus | 170 |
-| todo dígito vira `#` | 15 |
-| **só corridas de 4+ dígitos** | **16** |
+Exportar "inteiro" esbarra no `max_rows = 1000` do PostgREST e na memória do
+processo. A leitura pagina de mil em mil até **20.000 linhas**; passou disso, a
+planilha diz em faixa amarela, no topo, quantas de quantas ela tem. Medido no
+Dev: `listing.price.changed` tem **244 eventos no total**, então hoje nenhum
+recorte chega perto — o teto existe para o dia em que chegar.
 
-A escolhida é a de 4+, e a diferença entre 15 e 16 é o argumento: normalizar
-todo dígito apagaria o **código HTTP**, que é o diagnóstico. A regra é
-declarada no subtítulo do painel — agrupar por regra dita é diferente de
-inventar categoria.
+### Três horas de diferença, achadas ABRINDO a planilha
 
-### A decisão que D-273 adiou: expor log de execução
+O XLSX não guarda fuso: célula de data é relógio de parede. A mesma alteração
+aparecia **17:52 na tela e 20:52 no arquivo**. A conversão passou a ser
+explícita (`America/Sao_Paulo`, o fuso canônico da casa) e a coluna se chama
+"Data / Hora (São Paulo)". **Nenhum teste de tela pegaria isso** — o e2e prova
+que o download acontece e que o arquivo é um ZIP válido; quem pegou foi abrir a
+planilha e comparar célula com célula da tela.
 
-`job_runs` continua com RLS e **zero policies**. O que entrou é uma janela:
-`get_job_failures`, `security definer`, autorização ADMIN refeita dentro, saída
-agregada — sem `dedupe_key`, `job_id`, `attempt` nem `processed`. O escopo
-repete D-209 (organizações administradas **mais** os jobs de plataforma, senão
-o heartbeat some).
+### A janela ganhou um dono
 
-**A guarda de D-182 reprovou a suíte no primeiro run** (`+ "get_job_failures"`
-na lista versionada de RPCs definer) — que é exatamente o ritual que ela existe
-para forçar.
+A conversão "dia civil → `[de, ate)`" morava em `page.tsx`; duas cópias
+produziriam uma planilha de um período e uma tela de outro **com o mesmo
+link**. Virou `resolvePriceWindow`, com teste — inclusive o caso que o
+comentário afirmava e nada segurava: `ate` é inclusivo na tela e vira o início
+do dia seguinte na consulta.
 
-### O índice, medido em transação revertida contra o Dev
-
-| | tempo | buffers |
-|---|---:|---:|
-| sem índice | **82,8 ms** | 9.626 |
-| com o parcial sobre `status = 'failed'` | **7,3 ms** | 365 |
-
-### Zero linhas tem dois significados
-
-A RPC devolve vazio para "nenhuma falha" **e** para "você não é ADMIN" — a
-autorização é silenciosa de propósito. Quem desempata é o papel do chamador,
-que a página já tem: sem isso, o não-ADMIN leria "nenhuma falha" e acreditaria
-(D-067).
-
-**Verificação:** `check` 29/29 (`--force`), build 8/8, integração **643/643**
-(+9), e2e **99/99** (+2), cinco guardas verdes. Painel renderizado a 1440px.
-A migration já foi aplicada no Dev pela esteira; os tipos vieram do gerador do MCP.
+**Verificação:** `check` 29/29 (`--force`), build 8/8, integração 643/643,
+e2e **100/100** (+1), cinco guardas verdes. Planilha aberta na inspeção: "2 de
+2", congelamento, autofiltro e as horas batendo com a tela.
 
 ## Próxima fatia segura
 
@@ -1121,7 +1107,13 @@ do seed — ou algum spec anterior já escreveu por cima dele?**
   o frame ainda desenha como ABAS ("Visão geral" / "Configurações") aqui são
   duas rotas (`/reposicao` e `/reposicao/configuracoes`, D-278) — desvio
   registrado, não pendência.
-- **Exportação de `/precos`** — recusada em D-264 por ser feature.
+- ~~**Exportação de `/precos`**~~ — **FEITA** (D-292). A recusa de D-264 não era
+  contra exportar: era contra pintar o botão sem a rota. Agora é link para
+  `GET /precos/export/xlsx`, que exporta **o recorte da tela**, pagina de mil em
+  mil (teto do PostgREST) até 20.000 linhas e **imprime o teto dentro do
+  arquivo** quando o recorte é maior. A inspeção da planilha gerada pegou um
+  defeito que teste de tela nenhum pegaria: o XLSX não guarda fuso, e a mesma
+  alteração saía 17:52 na tela e **20:52 no arquivo**.
 - ~~**Paginação de `/atendimento`**~~ — **FEITA** (D-289). Não era só a frase:
   a tela lia as 100 mais recentes e nenhum filtro dela separa essas 100 do
   resto, então **829 dos 929 abertos do Dev não tinham como ser abertos por

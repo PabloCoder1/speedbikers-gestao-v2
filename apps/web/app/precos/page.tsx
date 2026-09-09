@@ -19,9 +19,11 @@ import { listingStatusLabel } from "../../lib/labels";
 import {
   PAGE_SIZE,
   PRICE_DIRECTIONS,
+  buildPriceExportHref,
   buildPriceHref,
   priceDirectionLabel,
   resolvePriceFilters,
+  resolvePriceWindow,
   summarizePagedWindow,
 } from "../../lib/price-filters";
 import { createClient } from "../../lib/supabase/server";
@@ -58,8 +60,6 @@ export const dynamic = "force-dynamic";
  * O sistema não tem opinião sobre a direção, só a registra.
  */
 
-const LOOKBACK_DAYS = 30;
-
 export default async function PrecosPage({
   searchParams,
 }: {
@@ -89,20 +89,19 @@ export default async function PrecosPage({
   const accountIds = new Set((accounts.data ?? []).map((row) => row.id));
   const account = filters.account !== null && accountIds.has(filters.account) ? filters.account : null;
 
-  // O usuário filtra por DIA; o evento tem hora. `ate` é inclusivo na tela e
-  // vira o início do dia seguinte na consulta — o intervalo é `[de, ate)`.
+  /*
+    A janela mudou de casa em D-292: `resolvePriceWindow` é o ÚNICO dono da
+    conversão "dia civil → intervalo `[de, ate)`", porque a exportação precisa
+    da MESMA conta. Duas cópias produziriam uma planilha de um período e uma
+    tela de outro, com o mesmo link.
+  */
   const now = new Date();
-  const defaultFrom = new Date(now.getTime() - (LOOKBACK_DAYS - 1) * 86_400_000).toISOString().slice(0, 10);
-  const dateFrom = filters.dateFrom ?? defaultFrom;
-  const dateTo = filters.dateTo;
+  const janelaConsulta = resolvePriceWindow(filters, now);
 
   const { data, error } = await supabase.rpc("get_price_changes", {
     p_organization_id: organizationId,
-    p_date_from: `${dateFrom}T00:00:00Z`,
-    p_date_to:
-      dateTo === null
-        ? new Date(now.getTime() + 86_400_000).toISOString()
-        : new Date(new Date(`${dateTo}T00:00:00Z`).getTime() + 86_400_000).toISOString(),
+    p_date_from: janelaConsulta.from,
+    p_date_to: janelaConsulta.to,
     p_ml_account_id: account,
     p_direction: filters.direction,
     p_search: filters.search,
@@ -205,6 +204,20 @@ export default async function PrecosPage({
         eyebrow="INTELIGÊNCIA / PREÇOS"
         title="Histórico de Preços"
         subtitle="Histórico das alterações de preço observadas nos anúncios."
+        aside={
+          /*
+            O "Exportar Relatório" do frame, entregue em D-292 — D-264 o
+            recusou como botão sem função e o registrou como candidata.
+
+            É `<a>`, não `<Link>`: o destino devolve um arquivo com
+            `Content-Disposition: attachment`, e o roteador do Next trataria
+            isso como navegação. E ele leva os filtros ATUAIS — exporta o que
+            está na tela, nunca "tudo".
+          */
+          <a className="sb-button" href={buildPriceExportHref(filters)} download>
+            Exportar XLSX
+          </a>
+        }
       />
 
       <KpiStrip cells={celulas} />

@@ -7943,6 +7943,53 @@ O seed ganhou duas falhas que diferem **so no id do anuncio** -- a miniatura do 
 
 **Verificacao, local:** `check` **29/29** (`--force`), build **8/8**, integracao **643/643** em banco recriado (+9), e2e **99/99** em banco recriado (+2), cinco guardas verdes. Painel renderizado a 1440px: duas familias, com "2 motivos nesta familia" na primeira e o `#` no lugar do MLB. (Uma rodada intermediaria acusou 1 falha que **nao se reproduziu** na rodada limpa seguinte; fica dito.)
 
+## D-292 - A exportacao de /precos: o botao que D-264 recusou, entregue com o teto declarado dentro do arquivo
+
+**Contexto:** o item aberto seguinte de `docs/DESIGN_IMPLEMENTATION.md`. D-264 deixou o "Exportar Relatorio" do frame de fora com uma frase curta -- *"aqui seria funcionalidade nova, nao composicao, e um botao que nao faz nada e pior que botao nenhum. Registrada como candidata a fatia propria"*. Esta e a fatia. Sem migration.
+
+---
+
+**1. O QUE A RECUSA DE D-264 PEDIA, E O QUE SOBREVIVE DELA**
+
+A recusa nao era contra exportar: era contra **pintar o botao sem a rota**. O que sobrevive e a forma -- nao ha botao nenhum, ha um **link** para `GET /precos/export/xlsx`, porque o destino devolve arquivo e o roteador do Next trataria um `<Link>` como navegacao.
+
+**A rota le os MESMOS parametros da tela**, e isso e o contrato: o arquivo e o RECORTE que esta na frente do operador, nunca "tudo". Um botao que ignorasse os filtros entregaria uma planilha que nao corresponde a tela de onde saiu -- e ninguem confere planilha contra tela.
+
+**2. O TETO E DECLARADO DENTRO DO ARQUIVO, e nao no codigo**
+
+Exportar "o recorte inteiro" esbarra em dois tetos, e ignorar qualquer um produz a classe de defeito de D-131/D-138 -- so que agora o numero ja saiu do sistema:
+
+| teto | consequencia de ignorar |
+|---|---|
+| `max_rows = 1000` do PostgREST | pedir "tudo" devolve mil linhas e nenhum aviso |
+| memoria do processo | planilha de 200 mil linhas derruba a rota |
+
+Entao a leitura pagina de mil em mil ate **20.000 linhas**, e quando o recorte e maior a planilha diz isso **em cima**, em faixa amarela, com o numero: *"este arquivo tem N das M alteracoes do recorte"*. Medido no Dev: `listing.price.changed` tem **244 eventos no total** (45 nos ultimos 7 dias), entao hoje nenhum recorte chega perto do teto -- ele existe para o dia em que chegar.
+
+**3. O DEFEITO QUE SO A INSPECAO DO ARQUIVO PEGOU: TRES HORAS**
+
+O XLSX **nao guarda fuso** -- celula de data e relogio de parede. Escrever `new Date(occurred_at)` fazia a planilha mostrar a hora UTC, e a mesma alteracao aparecia como **17:52 na tela e 20:52 no arquivo**. Dois lugares dizendo a mesma coisa com tres horas de diferenca e pior do que nao exportar.
+
+`toSpreadsheetInstant` monta os componentes do relogio de `America/Sao_Paulo` como se fossem UTC, que e como o Excel os le de volta, e a coluna passou a se chamar **"Data / Hora (Sao Paulo)"** -- o fuso no titulo, para ninguem precisar deduzir. Ha teste com a virada do dia (01:30 UTC = 22:30 do dia anterior em SP).
+
+Isso nao apareceria em teste de tela nenhum: o e2e afirma que o download acontece e que o arquivo e um ZIP valido. **Quem pegou foi abrir a planilha gerada e comparar celula com celula da tela** -- a mesma rotina que a frente visual usa para captura.
+
+**4. A JANELA GANHOU UM DONO (`resolvePriceWindow`)**
+
+A conversao "dia civil -> intervalo `[de, ate)`" morava dentro de `page.tsx`. A exportacao precisa da MESMA conta, e duas copias produziriam uma planilha de um periodo e uma tela de outro **com o mesmo link**. Virou funcao em `lib/price-filters.ts`, com teste -- inclusive o caso que o comentario dizia e nada segurava: `ate` e inclusivo na tela e vira o INICIO do dia seguinte na consulta; sem isso, toda alteracao do ultimo dia escolhido sumiria em silencio.
+
+**5. O QUE A PLANILHA CARREGA ALEM DAS LINHAS**
+
+Recorte (periodo, conta, direcao, busca), **alcance do registro** (a mesma ressalva da tela: a serie comeca quando a sincronizacao da organizacao comecou, e ausencia de linha nao e ausencia de mudanca) e a contagem "N de M". Sao as tres coisas que a tela diz e que um arquivo solto na pasta de Downloads perderia -- e o nome do arquivo carrega o periodo pelo mesmo motivo.
+
+Numero sai como **numero**, nao como texto formatado: quem exporta vai somar e ordenar. `delta_ratio` nulo (preco anterior zero) vira **celula vazia**, nunca 0% -- na tela um zero errado se corrige na hora seguinte; numa planilha ele vira media errada num relatorio que ninguem mais confere.
+
+**So XLSX, sem PDF.** O par PDF existe em pedido de compra porque aquilo e documento que se manda ao fornecedor. Isto e dado para cruzar em planilha.
+
+**Impacto:** `app/precos/export/{rows,load,workbook}.ts` + `rows.test.ts` (novos), `app/precos/export/xlsx/route.ts` (nova), `app/precos/page.tsx`, `lib/price-filters.ts` (+`resolvePriceWindow`, +`buildPriceExportHref`) e o teste dela, `e2e/precos.spec.ts` (asserçao de recusa atualizada + caso novo que baixa o arquivo).
+
+**Verificacao:** `check` **29/29** (`--force`), build **8/8**, integracao **643/643**, e2e **100/100** em base recriada (+1), cinco guardas verdes. Planilha gerada e ABERTA na inspecao: cabecalho, "2 de 2", congelamento na linha do cabecalho, autofiltro, e as horas batendo com a tela.
+
 ## Como adicionar nova decisao
 
 Registrar:

@@ -81,3 +81,65 @@ export function buildPriceHref(current: PriceFilters, override: Partial<PriceFil
 }
 
 export { summarizePagedWindow };
+
+/**
+ * A janela da consulta, com UM dono (D-292).
+ *
+ * O usuário filtra por DIA; o evento tem hora. `ate` é inclusivo na tela e
+ * vira o início do dia seguinte na consulta — o intervalo é `[de, ate)`. Sem
+ * filtro de data, a janela é dos últimos `LOOKBACK_DAYS` dias.
+ *
+ * Isso morava dentro de `page.tsx`, e a exportação precisa da MESMA conta:
+ * duas cópias produziriam uma planilha de um período e uma tela de outro, com
+ * o mesmo link. `now` entra por parâmetro porque é o que torna a função
+ * testável — e porque a página calcula um instante só para a requisição
+ * inteira.
+ */
+export const LOOKBACK_DAYS = 30;
+
+export interface PriceWindow {
+  /** Dia civil de início, `YYYY-MM-DD` — é o que a tela e a planilha mostram. */
+  dayFrom: string;
+  /** Dia civil de fim, ou `null` quando o filtro está aberto ("até hoje"). */
+  dayTo: string | null;
+  /** Instantes que vão para a RPC: `[from, to)`. */
+  from: string;
+  to: string;
+}
+
+export function resolvePriceWindow(filters: PriceFilters, now: Date): PriceWindow {
+  const dayFrom =
+    filters.dateFrom ?? new Date(now.getTime() - (LOOKBACK_DAYS - 1) * 86_400_000).toISOString().slice(0, 10);
+
+  return {
+    dayFrom,
+    dayTo: filters.dateTo,
+    from: `${dayFrom}T00:00:00Z`,
+    to:
+      filters.dateTo === null
+        ? new Date(now.getTime() + 86_400_000).toISOString()
+        : new Date(new Date(`${filters.dateTo}T00:00:00Z`).getTime() + 86_400_000).toISOString(),
+  };
+}
+
+/**
+ * O link da exportação (D-292): o MESMO recorte, sem a página.
+ *
+ * `pagina` fica de fora de propósito — a planilha leva o recorte inteiro, e um
+ * `?pagina=3` no link sugeriria que ela exporta só aquela fatia. É a única
+ * diferença entre este href e o da tela, e por isso ele mora aqui, ao lado do
+ * outro, em vez de ser montado à mão na página.
+ */
+export function buildPriceExportHref(current: PriceFilters): string {
+  return buildFilterHref(
+    "/precos/export/xlsx",
+    {
+      busca: current.search,
+      direcao: current.direction,
+      conta: current.account,
+      de: current.dateFrom,
+      ate: current.dateTo,
+    },
+    1,
+  );
+}
