@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { PageTitle } from "../../components/page-title";
+import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
 import { summarizePagedWindow } from "../../lib/filters";
 import { formatCount } from "../../lib/format";
@@ -120,38 +122,19 @@ export default async function NotificacoesPage(): Promise<ReactNode> {
 
   return (
     <Shell>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "flex-start",
-          justifyContent: "space-between",
-          gap: "var(--sb-space-3)",
-          marginBottom: "var(--sb-space-3)",
-          flexWrap: "wrap",
-        }}
-      >
-        <div>
-          <h1 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.375rem" }}>Central de Notificações</h1>
-
-          <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
-            {/* O helper devolve a frase já pontuada, porque as outras telas a
-                exibem sozinha. Aqui ela é o primeiro de dois fatos, então o
-                ponto final sai para o "·" não vir depois de um ponto. */}
-            {window === null
-              ? `${formatCount(rows.length)} carregadas — total indisponível.`
-              : window.label.replace(/\.$/, "")}
-            {unreadCount !== null && ` · ${formatCount(unreadCount)} não lida(s).`}
-          </p>
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--sb-space-3)" }}>
-          <Link href="/notificacoes/preferencias" style={{ fontSize: "0.8125rem", color: "var(--sb-primary)" }}>
-            Preferências
-          </Link>
-
-          {unreadCount !== null && unreadCount > 0 && <MarkAllButton />}
-        </div>
-      </div>
+      <PageTitle
+        eyebrow="CENTRAL / ALERTAS"
+        title="Central de Notificações"
+        subtitle="O que mudou na operação — com contexto suficiente para agir."
+        aside={
+          <>
+            <Link href="/notificacoes/preferencias" style={{ fontSize: "0.6875rem", color: "var(--sb-secondary)" }}>
+              Preferências
+            </Link>
+            {unreadCount !== null && unreadCount > 0 && <MarkAllButton />}
+          </>
+        }
+      />
 
       {error !== null && (
         <p role="alert" style={{ color: "var(--sb-danger)" }}>
@@ -159,16 +142,28 @@ export default async function NotificacoesPage(): Promise<ReactNode> {
         </p>
       )}
 
-      {error === null && rows.length === 0 && (
-        <p style={{ color: "var(--sb-text-soft)" }}>Nenhuma notificação ainda.</p>
-      )}
-
-      {error === null && rows.length > 0 && (
-        <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-          {rows.map((row) => (
-            <NotificationRow key={row.id} notification={row} />
-          ))}
-        </ul>
+      {error === null && (
+        <Panel
+          title="Eventos recentes"
+          subtitle={
+            <>
+              {window === null
+                ? `${formatCount(rows.length)} carregadas — total indisponível.`
+                : window.label.replace(/\.$/, "")}
+              {unreadCount !== null && ` · ${formatCount(unreadCount)} não lida(s).`}
+            </>
+          }
+        >
+          {rows.length === 0 ? (
+            <p className="sb-empty">Nenhuma notificação ainda.</p>
+          ) : (
+            <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+              {rows.map((row) => (
+                <NotificationRow key={row.id} notification={row} />
+              ))}
+            </ul>
+          )}
+        </Panel>
       )}
     </Shell>
   );

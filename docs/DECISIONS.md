@@ -6961,6 +6961,59 @@ O fixture tem tres entradas, cada uma com um papel: a VALIDADA prova a constrain
 
 **Verificacao, local:** `check` **29/29**, e2e **52/52** em banco recriado (3 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17, `check:table-styles` **17**, `docs:check`. Capturada a 1440px contra o Supabase local -- e foi a captura que achou o vazamento de enum no formulario.
 
+## D-269 - D29: Central de Notificacoes, e o painel de detalhe que repete a linha e inventa um numero
+
+**Contexto:** "Central" era um item so na fila e sao TRES telas no frame: `CentralScreen` decide por `screen.title` entre **Notificacoes**, **Sugestoes** e uma de decisoes. A terceira ja vive em `/acoes` e na aba Decisoes do SKU; as outras duas existem como rota. D29 e Notificacoes; Sugestoes fica para D30, e a fila ja as separava em dois slots.
+
+Fatia sem migration.
+
+---
+
+**1. ESTA ERA A TELA MAIS DISCIPLINADA QUE A FRENTE ENCONTROU**
+
+Ao contrario de `/acoes` (D-263) e `/atendimento` (D-267), aqui nao havia janela para consertar. Ela **ja** pagina em 100, **ja** tira o total e as nao lidas de `count: exact, head: true` e **ja** usa `summarizePagedWindow`. O motivo esta escrito no proprio arquivo, e vale repetir porque e a mesma classe que apareceu tres vezes nesta frente:
+
+> `unreadCount` era `rows.filter(...).length` -- contava as nao lidas ENTRE AS 100 CARREGADAS. O pior nao era o numero: era o BOTAO. "Marcar todas como lidas" so aparece com `unreadCount > 0`, entao bastava ler as 100 mais recentes para ele SUMIR, deixando milhares sem forma de limpar pela interface (D-183).
+
+Medido agora: **42.511 notificacoes, 8.350 nao lidas**. D29 e composicao, e o teste novo existe para que aquela contagem nao volte a sair da lista.
+
+**2. A RECUSA: O PAINEL DE DETALHE**
+
+O frame poe mestre-detalhe -- lista a esquerda, painel a direita. Aberto o painel, ele mostra:
+
+| o detalhe traz | o que e |
+|---|---|
+| selo, titulo e subtitulo | **os mesmos tres campos da linha** |
+| "Esta informacao reune os dados relevantes para uma tomada de decisao segura" | frase generica, sem conteudo |
+| **"Impacto estimado R$ 8.400 nos proximos 30 dias"** | **sem fonte** |
+| "Contexto recente" (tres eventos com hora) | funcionalidade que a tela nao tem |
+
+**`notifications` tem QUATRO colunas** -- `id`, `organization_id`, `domain_event_id`, `created_at`. Ela e um ponteiro para `domain_events` mais os destinatarios. E uma varredura por `impact`/`valor`/`brl` em `notifications`, `domain_events` e `notification_recipients` devolve **zero colunas**: o "R$ 8.400" seria numero sintetizado (D-023).
+
+O resto do detalhe a linha ja mostra: selo de severidade, tipo do evento, conta, entidade com link, **o diff** e a hora. Um painel que cobra um clique para repetir a linha e acrescentar um numero inventado nao e detalhe -- e navegacao vazia.
+
+**O mestre-detalhe foi desenhado para a variacao de DECISOES** (impacto, linha do tempo, antes/depois) e reusado nas outras duas. Numa decisao aqueles campos existem; numa notificacao, nao.
+
+**3. O PROPRIO FRAME NAO DA RESUMO A ESTA VARIACAO**
+
+`{!isNotifications && !isIdeas && (<div className="decision-summary">...)}` -- o bloco de tres numeros so renderiza na variacao de decisoes. Notificacoes recebe cabecalho e lista. Registro porque a tentacao era acrescentar uma faixa "para ficar igual as outras telas da frente", e o frame nao pede.
+
+**4. O "FILTRAR" TAMBEM FICOU FORA, e e a mesma linha de D-264**
+
+O cabecalho da lista traz o botao. A tela nao tem filtro nenhum hoje, e acrescenta-los e funcionalidade, nao composicao -- mesma decisao que recusou "Exportar Relatorio" em `/precos`.
+
+**Fica registrado como candidata, e com um numero:** com **8.350 nao lidas** de 42.511, um recorte "so nao lidas" seria util de verdade. E barato (um parametro na URL e `.is("read_at", null)`), so nao e fatia de design.
+
+**5. TELA COM DUAS ESCRITAS E ZERO COBERTURA**
+
+`/notificacoes` marca uma como lida e marca todas, e **nunca foi visitada por spec nenhum**. Ganhou o primeiro, com dois casos: a contagem que D-183 corrigiu e as recusas.
+
+Nao precisou de fixture: o seed ja produz duas notificacoes **por gatilho**, a partir dos eventos de preco que D-264 acrescentou. A fiacao evento -> notificacao se prova sozinha na captura.
+
+**Impacto:** `apps/web/app/notificacoes/page.tsx` (composicao), `apps/web/e2e/notificacoes.spec.ts` (novo, +2). Sem migration.
+
+**Verificacao, local:** `check` **29/29**, e2e **54/54** em banco recriado (2 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17, `check:table-styles` 17, `docs:check`. Capturada a 1440px contra o Supabase local.
+
 ## Como adicionar nova decisao
 
 Registrar:

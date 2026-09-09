@@ -622,7 +622,8 @@ que ele renderiza.**
 | ~~D26~~ | ~~**Tráfego**~~ — **RECUSADA COM MEDIÇÃO** (D-266): zero colunas de impressão/Ads/reputação no schema inteiro; o funil do frame perde o topo e os dois cartões de sinais não têm fonte. O que sobra já vive em `/anuncios` | ✖ |
 | D27 | **Caixa de Entrada** — a recusa é uma AFIRMAÇÃO SOBRE A ORDEM: o frame diz "fila priorizada por prazo, risco e cliente" e ela ordena por atividade (D-267) | ✔ |
 | D28 | **Base de Conhecimento** — base VAZIA no Dev, mas o esquema sustenta o frame inteiro: falta DADO, não coluna (D-268) | ✔ |
-| D29–D30 | Central | fila |
+| D29 | **Central de Notificações** — o painel de detalhe do frame repete a linha e inventa um "Impacto estimado" que não tem coluna (D-269) | ✔ |
+| D30 | **Sugestões** — a terceira variação de `CentralScreen` | fila |
 | D31–D36 | Usuários, Integrações, Sincronização, Saúde, Configurações, Copiloto | fila |
 | D37 | Passe visual global | fila |
 
@@ -803,106 +804,100 @@ anterior: `/reposicao` tinha **19 de 22** células sobrepondo a classe (não 23)
 `/estoque/movimentacoes` não era vazamento parcial de 3 células — eram **todas**
 as 13.
 
-O que resta é a fila **D29 em diante**: 9 superfícies ainda não migradas — D26 (Tráfego) saiu da conta por avaliação, não por adiamento (D-266).
+O que resta é a fila **D30 em diante**: 8 superfícies ainda não migradas — D26 (Tráfego) saiu da conta por avaliação, não por adiamento (D-266).
 
 ## Última fatia concluída
 
-**D28 — Base de Conhecimento, pelo frame `SupportScreen` na variante de
-conhecimento (D-268).** A outra metade do componente que D27 migrou. Sem
-migration.
+**D29 — Central de Notificações, pelo frame `CentralScreen` na variação de
+alertas (D-269).** "Central" era um item só na fila e são **três** telas no
+frame: `CentralScreen` decide por título entre Notificações, Sugestões e uma de
+decisões. A terceira já vive em `/acoes` e na aba do SKU; D29 é Notificações e
+D30 é Sugestões. Sem migration.
 
-### A distinção que decidiu a fatia: falta de COLUNA ≠ falta de DADO
+### Esta era a tela mais disciplinada que a frente encontrou
 
-`knowledge_entries` tem **zero linhas no Dev**, e o frame mostra 1.248
-conhecimentos com 92% validados. A tentação era repetir D26 e recusar.
+Ao contrário de `/acoes` (D23) e `/atendimento` (D27), aqui **não havia janela
+para consertar**. Ela já pagina em 100, já tira o total e as não lidas de
+`count: exact` e já usa `summarizePagedWindow`. O motivo está escrito no próprio
+arquivo, e é a mesma classe que apareceu três vezes nesta frente:
 
-Mas as duas ausências são diferentes, e a diferença decide:
+> `unreadCount` era `rows.filter(...).length` — contava as não lidas **entre as
+> 100 carregadas**. O pior não era o número: era o BOTÃO. "Marcar todas como
+> lidas" só aparece com `unreadCount > 0`, então bastava ler as 100 mais
+> recentes para ele sumir, deixando milhares sem forma de limpar (D-183).
 
-| | D26 (Tráfego) | D28 (Conhecimento) |
-|---|---|---|
-| falta | **coluna** — zero campos no schema | **dado** — a tabela sustenta o frame inteiro |
-| construível hoje | não | **sim**, e fica honesta na primeira entrada escrita |
+Medido agora: **42.511 notificações, 8.350 não lidas**. O teste novo existe para
+que aquela contagem não volte a sair da lista.
 
-Cada coluna do frame tem par no esquema. E a casa já tinha precedente: D-228
-escreveu que "o estado vazio É a tela" quando havia UMA decisão em todo o Dev.
+### A recusa: o painel de detalhe
 
-### O "92% validados" é o número mais delicado
+O frame põe mestre-detalhe. Aberto o painel, ele traz:
 
-**Percentual sobre base vazia é indefinido, não 0%** — "nenhum validado" e
-"nenhum conhecimento" são estados diferentes (D-067), e é assim que a tela
-nasce.
+| o detalhe traz | o que é |
+|---|---|
+| selo, título e subtítulo | **os mesmos três campos da linha** |
+| "reúne os dados relevantes para uma tomada de decisão segura" | frase genérica |
+| **"Impacto estimado R$ 8.400"** | **sem fonte** |
+| "Contexto recente" | funcionalidade que a tela não tem |
 
-**E o denominador precisa ser dito.** `status` tem quatro valores; rejeitados e
-obsoletos entram no total. A aritmética do próprio frame denuncia a escolha
-dele: 92% de 1.248 = 1.148, mais 94 aguardando, sobram 6 — ele divide pelo
-total. A tela faz o mesmo **e escreve isso embaixo do número**.
+`notifications` tem **quatro colunas** — é um ponteiro para `domain_events` mais
+os destinatários — e uma varredura por `impact`/`valor`/`brl` nas três tabelas
+envolvidas devolve **zero**. O resto a linha já mostra: severidade, tipo, conta,
+entidade com link, **o diff** e a hora.
 
-As duas contagens derivadas só são exatas com a busca completa; quando trunca,
-viram "—" e a tela diz por quê — contar 200 de 900 e chamar de percentual da
-base seria chamar de percentual da base o que é percentual da página.
+Um painel que cobra um clique para repetir a linha e acrescentar um número
+inventado não é detalhe: é navegação vazia. **O mestre-detalhe foi desenhado
+para a variação de decisões** — onde impacto, linha do tempo e antes/depois
+existem — e reusado nas outras duas.
 
-### Dois estados no frame, quatro na tabela — de novo
+**O próprio frame não dá resumo a esta variação:** o bloco de três números só
+renderiza para decisões. Registro porque a tentação era acrescentar uma faixa
+"para ficar igual às outras telas da frente", e o frame não pede.
 
-Esconder rejeitado e obsoleto apagaria justamente o histórico que a tabela
-existe para preservar: ela não tem DELETE para `authenticated`, e conhecimento
-errado vira REJEITADO/OBSOLETO de propósito. Mesma correção de D25 na Central
-Full.
+**E o "Filtrar" ficou fora pela linha de D24:** a tela não tem filtro nenhum, e
+acrescentá-los é funcionalidade. Fica como candidata com número — com **8.350
+não lidas**, um recorte "só não lidas" seria útil de verdade, e é barato.
 
-### Duas colunas que o esquema sustentava e ninguém buscava
+### Segunda tela seguida com escritas e zero cobertura
 
-**"Confirmado por"** é a constraint aparecendo na tela: VALIDADO exige quem *e*
-quando confirmou, porque "confirmação anônima seria o oposto do propósito da
-tabela". Como `confirmed_by` referencia `auth.users` e não `profiles`, não há
-embed — os perfis saem no mesmo `Promise.all`, em paralelo, em vez de uma
-segunda leitura dependente dos ids (D-195).
+`/notificacoes` marca uma como lida e marca todas, e nunca foi visitada por spec
+nenhum. Não precisou de fixture: o seed já produz duas notificações **por
+gatilho**, a partir dos eventos de preço que D24 acrescentou — a fiação evento →
+notificação se prova sozinha na captura.
 
-**"Atualizado"** substitui "Registrado em": numa base de conhecimento importa
-quando o fato foi tocado pela última vez, e a validação move a data.
-
-### O enum cru vazava em dois lugares, e a captura achou o segundo
-
-A coluna Fonte imprimia `CONFIRMACAO_INTERNA` direto na tela. Corrigi — e então
-**a captura mostrou os seletores do formulário oferecendo `COMPATIBILIDADE` e
-`CONFIRMACAO_INTERNA` como opções**, uma seção abaixo. Com dois consumidores, os
-três mapas de rótulo foram para `constants.ts` em vez de nascer a segunda cópia:
-é como a auditoria de D-246 achou cinco cópias do mapa de tom.
-
-### Tela com quatro escritas e zero cobertura
-
-Ela existe desde D-113 com validar, rejeitar, obsoletar e o formulário, e
-**nunca foi visitada por spec nenhum**. Com a tabela vazia, nem uma captura
-mostraria o que ela faz. As três entradas do fixture têm papéis distintos: a
-validada prova a constraint, a sugerida alimenta "aguardando revisão" e aceita
-os botões, e a obsoleta existe para a recusa dos dois estados ter o que provar.
-
-**Verificação, local:** `check` **29/29**, e2e **52/52** em banco recriado (3
+**Verificação, local:** `check` **29/29**, e2e **54/54** em banco recriado (2
 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17,
-`check:table-styles` **17**, `docs:check`. Capturada a 1440px contra o Supabase
-local — e foi a captura que achou o vazamento de enum no formulário.
+`check:table-styles` 17, `docs:check`. Capturada a 1440px contra o Supabase
+local.
 
 ## Próxima fatia segura
 
-**D29 — Central.** É o último item nomeado da fila antes do bloco de
-administração. O `copy` do export descreve as variações do `IntelligenceScreen`
-e "Central" aparece como `kind` próprio na lista de telas — **localizar o frame
-antes de desenhar**, porque pode ser mais uma variação genérica ("Módulo em
-Desenvolvimento") em vez de composição real. Se for genérica, vale a mesma
-avaliação de D-266: frame sem conteúdo não vira fatia.
+**D30 — Sugestões**, a terceira variação de `CentralScreen`. `feature_suggestions`
+tem **zero linhas** no Dev — é a situação de D28, não a de D26: o esquema existe
+(sete estados pelo `check`, segundo D-079) e falta dado, então a tela é
+construível e o vazio é o estado dela.
 
-A rotina, com as quatro perguntas acumuladas: **o frame tem fonte para o que
-desenha?** (D-266), **o `db reset` + seed deixa a tela com dado?** (D-268 mostrou
-que "não" pode ser resposta legítima, desde que o esquema sustente), **quantas
-linhas ela tem no Dev?** (D-263) e **a faixa conta o mesmo conjunto da tabela ou
-é navegação?** (D-265, decide sozinha se há linha-sentinela).
+**Duas coisas medidas de antemão.** O frame mostra "42 sugestões · 8 em análise"
+e um detalhe com cinco campos estruturados (Problema, Objetivo, Benefício,
+Critério de aceite, Dependências) que ele atribui à IA — **conferir se
+`feature_suggestions` tem esses campos** antes de desenhar, porque um detalhe
+com cinco rótulos sem coluna seria o painel vazio que D-269 acabou de recusar. E
+a tela tem escrita (mudança de estado), então provavelmente é a terceira seguida
+sem spec.
+
+A rotina, com as quatro perguntas acumuladas: **o frame tem fonte?** (D-266),
+**falta coluna ou falta dado?** (D-268), **quantas linhas no Dev?** (D-263) e **a
+faixa conta o mesmo conjunto da tabela ou é navegação?** (D-265).
 
 Depois: D31–D36 (Usuários, Integrações, Sincronização, Saúde, Configurações,
 Copiloto) e o passe visual global (D37).
 
-**Quatro itens seguem abertos fora da fila:**
+**Cinco itens seguem abertos fora da fila:**
 
 - **`/notas-fiscais/[id]`** — dois dos quatro estados de item do brief §25 não
   têm dado em `document_items` (D-253).
 - **`/cobertura`** — o frame a trata com Reposição como uma tela de abas
   (D-261); e ela não tem filtro por SKU, só por marca (D-265).
-- **Exportação de `/precos`** — recusada em D-264 por ser feature, não desenho.
+- **Exportação de `/precos`** — recusada em D-264 por ser feature.
 - **Paginação de `/atendimento`** — o volume passou a justificar (D-267).
+- **Filtro de não lidas em `/notificacoes`** — 8.350 de 42.511 (D-269).
