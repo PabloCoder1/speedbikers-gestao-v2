@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **275** (D-001 a D-279).
+Decisões registradas: **276** (D-001 a D-280).
 
 ## Por domínio
 
@@ -263,7 +263,7 @@ Decisões registradas: **275** (D-001 a D-279).
 - **D-247** — A curva ABC responde por um SKU, e a faixa de KPIs para de deixar fatia vazia
 - **D-251** — D16: a Curva ABC ganha os cartoes de classe, e devolve dois filtros ao dono deles
 
-### worker/infra (52)
+### worker/infra (53)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -317,4 +317,5 @@ Decisões registradas: **275** (D-001 a D-279).
 - **D-250** — D15: os cinco cartoes do frame contra seis estados e um bucket de recusa
 - **D-268** — D28: Base de Conhecimento, e a diferenca entre falta de COLUNA e falta de DADO
 - **D-276** — D36: Copiloto, e a fila pedia uma tela que o frame NAO TEM
+- **D-280** — o defeito nao era a conta, era o silencio: `p_date_to` nulo passa a significar HOJE
 

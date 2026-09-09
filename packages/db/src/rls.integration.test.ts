@@ -4648,6 +4648,41 @@ describe("get_purchase_suggestions (D-147, Fase 5D)", () => {
     }
   });
 
+  it("p_date_to NULO significa HOJE, nao NADA (D-280)", async () => {
+    // A armadilha: `p_date_to` nao tem default, e um nulo fazia toda
+    // comparacao de data virar NULL -- as CTEs de janela nao casavam UMA
+    // linha e `units_90d` saia 0 para o catalogo inteiro. Com a recusa
+    // `units_90d < 12` (D-147) reprovando todo SKU, a funcao devolvia TODAS
+    // as linhas sem estado: le-se "nada se qualifica", nao "voce nao me disse
+    // a data".
+    //
+    // Este caso existe porque a leitura errada JA aconteceu: um agente mediu a
+    // funcao com `null`, concluiu que havia regressao e registrou isso em tres
+    // documentos antes de conferir com data real.
+    //
+    // A afirmacao e sobre `units_90d`, e nao sobre `state`, porque e o numero
+    // que o nulo zerava -- e porque o fixture deste describe nao tem politica
+    // de reposicao, entao o estado dele e nulo com data ou sem ela. Quem cobre
+    // a classificacao e o describe PURCHPRIO, que planta politica propria.
+    const doFixture = (linhas: { sku_id: string; units_90d: string }[]): string | undefined =>
+      linhas.find((l) => l.sku_id === skuId)?.units_90d;
+
+    const comNulo = await asUser<{ sku_id: string; units_90d: string }>(
+      ADMIN_SB,
+      `select sku_id, units_90d from public.get_purchase_suggestions('${ORG_SB}', null, null, null, 5000, 0)`,
+    );
+    const comHoje = await asUser<{ sku_id: string; units_90d: string }>(
+      ADMIN_SB,
+      `select sku_id, units_90d from public.get_purchase_suggestions('${ORG_SB}','${TODAY}', null, null, 5000, 0)`,
+    );
+
+    // 15 = 10 de hoje + 5 de 40 dias atras, do fixture. O numero e o que o
+    // nulo zerava, e 15 !== 0 e afirmacao de verdade -- nao um zero que
+    // passaria de qualquer jeito (D-197).
+    expect(Number(doFixture(comHoje))).toBe(15);
+    expect(Number(doFixture(comNulo))).toBe(15);
+  });
+
   it("total_count acompanha o FILTRO de estado, nao o universo", async () => {
     const semFiltro = await asUser<{ total_count: string }>(
       ADMIN_SB,

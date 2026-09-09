@@ -832,14 +832,17 @@ Medido no Dev antes de decidir:
 | `/cobertura` | 3.257 SKUs | **324 em ruptura** |
 | `/reposicao` | 3.180 SKUs | **zero em qualquer estado** |
 
-E a causa é defeito, não configuração faltando: `get_purchase_suggestions`
-devolve `units_90d = 0` para todos, enquanto `daily_sku_metrics` tem 586 SKUs
-com 12+ unidades em 90 dias. As outras três recusas de D-147 foram descartadas
-por medição. **É regressão**: o comentário da migration de D-250 (05/09)
-registra `COBERTURA_BAIXA 37, COMPRAR_EM_BREVE 12`.
+⚠️ **A linha do `/reposicao` acima estava ERRADA, e a correção é D-280.** Eu
+chamei a RPC com `null` em `p_date_to` — parâmetro sem default —, e um nulo ali
+zera a janela de venda inteira. Com data real: **466 com estado** (RUPTURA 139,
+ADEQUADA 206, COMPRA_URGENTE 80, COBERTURA_BAIXA 26, COMPRAR_EM_BREVE 15).
+Nada regrediu — bate com o que D-250 mediu em 05/09.
 
-**Decisão: não fundir hoje** — fundir esconderia a única das duas que ainda
-responde. A direção continua certa; o motivo de não ser agora está medido.
+**A decisão de não fundir sobrevive, por um motivo melhor:** as duas discordam
+sobre "ruptura" em **185 SKUs** (324 × 139), e a divergência é legítima —
+`/cobertura` olha estoque LOCAL sobre 30 dias, `/reposicao` olha local + Full +
+trânsito com lead time e cobertura alvo. Fundir exige escolher UMA definição de
+ruptura, e essa escolha é de produto, não de passe visual.
 
 Os três números que a tela mede estavam **dentro de um parágrafo**, misturados
 com as definições. Viraram `KpiStrip` de três células, com as definições na
@@ -891,18 +894,18 @@ entregues; D26 foi recusada com medição (D-266). O guarda
 O que resta não é fatia de design — são itens de produto, cada um com dono e
 motivo já registrados. Em ordem de risco medido:
 
-1. **`get_purchase_suggestions` não classifica NENHUM SKU** (D-279). É
-   regressão contra a distribuição que D-250 mediu, a causa está dentro da
-   RPC (`units_90d = 0` com 586 SKUs elegíveis na fonte), e `/reposicao` —
-   a tela que o frame designa como superfície de decisão de compra — está
-   muda. Nenhum dos 633 testes de integração pegou, porque nenhum afirma que
-   algum SKU CHEGA a ter estado.
-2. **Fundir `/cobertura` com `/reposicao`**, como o frame desenha. Depende
-   de (1): hoje a fusão esconderia a única das duas que responde.
-3. **Os drawers do frame** (Inspeção Rápida, MLB, pedido, fornecedor,
+1. **Fundir `/cobertura` com `/reposicao`**, como o frame desenha. Exige
+   escolher UMA definição de ruptura: as duas discordam em **185 SKUs** (324 ×
+   139) porque medem coisas diferentes — local sobre 30 dias × local + Full +
+   trânsito com lead time. É decisão de produto, não de acabamento.
+2. **Os drawers do frame** (Inspeção Rápida, MLB, pedido, fornecedor,
    usuário), adiados desde A1 — são o único elemento de composição do desenho
    que a V3 nunca implementou.
-4. Os **sete itens abertos** listados abaixo.
+3. Os **sete itens abertos** listados abaixo.
+
+⚠️ **O que D-279 listou aqui como item 1 — "`get_purchase_suggestions` não
+classifica nenhum SKU" — NÃO EXISTE.** Era erro de medição meu (`p_date_to`
+nulo); corrigido em D-280, junto com a armadilha que o produziu.
 
 A rotina de medição acumulou **treze** perguntas ao longo da frente, e elas
 valem para qualquer fatia futura, não só de design: **o frame tem fonte?**

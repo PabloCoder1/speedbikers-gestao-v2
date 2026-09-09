@@ -36,21 +36,28 @@ export const dynamic = "force-dynamic";
  * painel "Recomendacao de compra" do frame sao literalmente o que `/reposicao`
  * renderiza. **Esta tela nao tem contrapartida no desenho.**
  *
- * A leitura facil seria fundi-la la. A medicao diz o contrario. Em 2026-09-09,
- * no Dev:
+ * A leitura facil seria fundi-la la. A medicao diz o contrario -- e nao pelo
+ * motivo que esta linha afirmou primeiro. **CORRIGIDO em D-280:** a versao
+ * original deste comentario dizia que `/reposicao` estava "muda por um defeito
+ * na RPC". Estava errado: a medicao que originou a frase passou `null` num
+ * `p_date_to` que nao tem default, e um nulo ali zerava toda a janela de
+ * venda. Com data real, `/reposicao` classifica normalmente.
+ *
+ * Medido no Dev em 2026-09-09, com data real nas duas:
  *
  *   /cobertura     3.257 SKUs, **324 em ruptura**
- *   /reposicao     3.180 SKUs, **zero em qualquer estado** -- todos "sem estado"
+ *   /reposicao     3.284 SKUs, **139 em RUPTURA** (2.818 sem estado)
  *
- * As duas medem coisas diferentes por caminhos diferentes: aqui e OBSERVACAO
- * (estoque local dividido pela venda media), la e RECOMENDACAO (sugestao com
- * lead time e cobertura alvo, sujeita as quatro recusas de D-147). Hoje a
- * recomendacao esta muda por um defeito na propria RPC -- `units_90d` volta 0
- * dentro dela enquanto `daily_sku_metrics` tem 586 SKUs com 12+ unidades em 90
- * dias --, e fundir esconderia a unica das duas que ainda responde.
+ * As duas discordam em 185 SKUs, e a divergencia e REAL -- elas medem coisas
+ * diferentes por caminhos diferentes:
  *
- * Fundir continua sendo a direcao certa do desenho. Nao hoje, e o motivo esta
- * medido em vez de suposto.
+ *   aqui        OBSERVACAO: estoque LOCAL dividido pela venda media de 30 dias
+ *   /reposicao  RECOMENDACAO: local + Full + transito, com lead time e
+ *               cobertura alvo, e sujeita as quatro recusas de D-147
+ *
+ * Fundir as duas exige escolher UMA definicao de ruptura, e essa escolha e de
+ * produto, nao de acabamento visual. Continua sendo a direcao certa do
+ * desenho; nao e uma fatia de passe visual.
  *
  * Janela FIXA de 30 dias — sem seletor de período nesta primeira fatia,
  * mesmo raciocínio de "escopo deliberadamente menor" já usado em outras

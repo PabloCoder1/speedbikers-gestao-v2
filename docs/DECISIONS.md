@@ -7225,13 +7225,18 @@ O frame `Coverage` desenha UMA tela com duas faces -- "Visao geral" e "Configura
     /cobertura    3.257 SKUs, **324 em ruptura**
     /reposicao    3.180 SKUs, **zero em qualquer estado** -- todos "sem estado"
 
-As duas medem coisas diferentes por caminhos diferentes: aqui e OBSERVACAO (estoque local dividido pela venda media do periodo), la e RECOMENDACAO (sugestao com lead time e cobertura alvo, sujeita as quatro recusas de D-147). E hoje a recomendacao esta **muda** -- por defeito, nao por configuracao faltando.
+As duas medem coisas diferentes por caminhos diferentes: aqui e OBSERVACAO (estoque local dividido pela venda media do periodo), la e RECOMENDACAO (sugestao com lead time e cobertura alvo, sujeita as quatro recusas de D-147). E eu li a recomendacao como **muda** -- leitura que se mostrou errada, ver a correcao abaixo.
 
-**A causa, medida:** `get_purchase_suggestions` devolve `units_90d = 0` para os 3.180, enquanto `daily_sku_metrics` tem **586** SKUs com 12+ unidades em 90 dias. A recusa `units_90d < 12` reprova o catalogo inteiro. As outras tres recusas foram descartadas por medicao: existem 16 regras cobrindo 3.213 SKUs por marca; `stock_is_virtual` e `false` para os 3.554; ha 90 dias distintos com metrica nos ultimos 90.
+**A causa disso, e aqui esta a CORRECAO desta decisao:** a frase acima ("zero em qualquer estado") estava certa sobre o que eu vi e errada sobre o que significava. Eu chamei `get_purchase_suggestions` passando `null` em `p_date_to` -- um parametro **sem default** --, e um nulo ali faz toda comparacao de data virar NULL: a janela de venda volta vazia e `units_90d` sai 0 para o catalogo inteiro. Com data real, medido no mesmo dia:
 
-**E e uma REGRESSAO.** O comentario da propria migration que criou os cartoes (`20260905003000_purchase_state_cards.sql`, D-250, escrita em 2026-09-05) registra a distribuicao da epoca: `COBERTURA_BAIXA 37, COMPRAR_EM_BREVE 12, EXCESSO 0, sem estado 2.817`. Quatro dias depois: zero em todos os estados.
+    /cobertura    3.257 SKUs, 324 em ruptura
+    /reposicao    3.284 SKUs, **466 com estado** -- RUPTURA 139, ADEQUADA 206,
+                  COMPRA_URGENTE 80, COBERTURA_BAIXA 26, COMPRAR_EM_BREVE 15,
+                  SEM_ESTADO 2.818
 
-**Decisao: NAO fundir hoje.** Fundir esconderia a unica das duas que ainda responde. A fusao continua sendo a direcao certa do desenho, e o motivo de nao ser agora esta medido em vez de suposto -- que e a diferenca entre adiar e desistir. A correcao da RPC ficou registrada como tarefa propria, com a medicao junto.
+**Nada regrediu.** A distribuicao bate com a que D-250 registrou em 05/09 (`sem estado 2.817` contra 2.818). Registrei uma regressao inexistente em tres documentos e numa tarefa antes de conferir com data real; a armadilha que produziu isso virou D-280, e o registro foi desfeito nos quatro lugares.
+
+**A decisao de nao fundir SOBREVIVE, por outro motivo -- e melhor.** As duas telas discordam sobre "ruptura" em **185 SKUs** (324 contra 139), e a divergencia e legitima: `/cobertura` olha estoque LOCAL contra venda media de 30 dias; `/reposicao` olha local + Full + transito, com lead time e cobertura alvo, e so para SKU que passa as quatro recusas de D-147. Fundir exige escolher UMA definicao de ruptura, e essa escolha e de produto -- nao cabe numa fatia de passe visual.
 
 O que `/cobertura` ganhou: `PageTitle`, `KpiStrip` de tres celulas e `Panel` + `.sb-table`. **Os tres numeros que ela mede estavam dentro de um paragrafo** -- total, ruptura e estoque virtual, misturados com as definicoes, o convite a classificar e a ressalva do saldo sentinela, tudo corrido. Numero dentro de prosa nao e numero, e ninguem some por isso: as definicoes foram para a `formula` das celulas, onde `KpiStrip` as guarda.
 
@@ -7266,6 +7271,65 @@ A licao nao e sobre tabela: **uma recusa registrada tambem precisa ser medida.**
 **Verificacao:** `check` 29/29, build 8/8, integracao 633/633 em banco recriado, e2e 82/82, `check:table-styles` 30, `check:waterfalls` 61, `check:server-actions` 17, `docs:check`. As tres telas abertas no navegador com login real.
 
 **Impacto:** `apps/web/app/cobertura/page.tsx`, `apps/web/app/atendimento/[caseId]/page.tsx`, `apps/web/app/compras/novo/purchase-order-form.tsx`.
+
+## D-280 - o defeito nao era a conta, era o silencio: `p_date_to` nulo passa a significar HOJE
+
+**Contexto:** o usuario pediu "corrige o `get_purchase_suggestions`", a partir do que D-279 tinha registrado como regressao. **Antes de corrigir, conferi a propria medicao -- e a regressao nao existia.**
+
+---
+
+**O QUE EU TINHA FEITO ERRADO**
+
+`p_date_to` e um parametro **sem default**. Eu chamei a funcao passando `null`:
+
+    select ... from public.get_purchase_suggestions(org, null, null, null, 1000000, 0, null)
+
+Com `p_date_to` nulo, `m.metric_date > p_date_to - 90` vira NULL para toda linha. As CTEs `trend_windows` e `history` nao casam UMA linha, `units_90d` sai 0 para o catalogo inteiro, e a recusa `units_90d < 12` (uma das quatro de D-147) reprova todo SKU. A funcao devolve **3.284 linhas, todas com `state` nulo**.
+
+Isso se le exatamente como *"nenhum SKU se qualifica para compra hoje"*. Nao ha erro, nao ha linha a menos, nao ha sinal nenhum de que a pergunta estava malfeita.
+
+A mesma chamada com data real, medida no Dev em 2026-09-09:
+
+| `p_date_to` | linhas | com estado |
+|---|---:|---|
+| `null` | 3.284 | **0** |
+| `current_date` | 3.284 | **466** -- RUPTURA 139, ADEQUADA 206, COMPRA_URGENTE 80, COBERTURA_BAIXA 26, COMPRAR_EM_BREVE 15, SEM_ESTADO 2.818 |
+
+**Nada regrediu.** A distribuicao bate com a que D-250 registrou em 05/09 (`sem estado 2.817` contra 2.818 hoje).
+
+---
+
+**O CUSTO, PORQUE ELE E A JUSTIFICATIVA DA CORRECAO**
+
+A leitura errada nao ficou na minha cabeca: virou **uma regressao afirmada em tres documentos** (o docstring de `/cobertura`, D-279 em `DECISIONS.md`, a "Proxima fatia" em `DESIGN_IMPLEMENTATION.md` e a linha de Frente atual do `HANDOFF.md`) **e uma tarefa registrada** para outra sessao investigar. Tudo desfeito nesta fatia.
+
+Duas afirmacoes minhas daquele registro eram falsas, e a segunda merece nota propria: eu escrevi que "nenhum dos 633 testes pegou, porque nenhum afirma que algum SKU CHEGA a ter estado". **Tambem errado** -- o describe `PURCHPRIO` tem o caso *"os quatro ramos plantados saem com o estado esperado"*, que afirma exatamente isso. Eu inferi a lacuna a partir do defeito imaginario, em vez de procura-la.
+
+---
+
+**A CORRECAO: O NULO DEIXA DE MENTIR**
+
+`coalesce(p_date_to, current_date)`, numa CTE `janela` lida pelos nove usos do parametro no corpo. A assinatura nao muda -- nenhum chamador quebra --; o que muda e o nulo passar a significar o que todo chamador ja quer dizer.
+
+**Vale mudar mesmo com um unico chamador que sempre passa a data?** Vale, e a razao nao e hipotetica: a armadilha DISPAROU, e produziu um diagnostico plausivel e falso. E a classe de defeito que este projeto persegue desde D-067 -- ausencia de resposta vestida de resposta zero. "Voce nao me disse a data" nao pode sair como "nada se qualifica".
+
+`get_purchase_state_counts` DELEGA (D-250) e herda a correcao; foi recriada junto porque `drop` da funcao delegada exige recriar a delegante.
+
+**Corpo extraido do arquivo no ar por script, nunca transcrito a mao** (D-253). O script gerador tambem falhou de um jeito que vale registrar: `String.replace` com uma STRING de substituicao trata `$$` como escape de um `$` literal, e o `as $$` do corpo virou `as $` -- `syntax error at or near "$"` na primeira aplicacao. Funcao de substituicao no lugar da string resolve, e e por isso que os outros scripts desta serie ja usavam `() => ...`.
+
+---
+
+**O TESTE: UM, E SOBRE O NUMERO QUE O NULO ZERAVA**
+
+Escrevi tres e apaguei dois. O que ficou afirma `units_90d` -- 15 no fixture (10 de hoje + 5 de 40 dias atras) --, igual com nulo e com data. **A afirmacao e sobre `units_90d` e nao sobre `state`** porque o fixture deste describe nao tem politica de reposicao: o estado dele e nulo com data ou sem ela, e um caso sobre estado ali passaria por acidente (D-197).
+
+Os dois que sairam: um duplicava o `PURCHPRIO`, e o outro exigia plantar 84 dias de historia -- fixture que contaminava o teste de filtro de marca do proprio describe, que afirma `total_count = 1` para `PURCHTEST-MARCA`.
+
+---
+
+**Impacto:** `supabase/migrations/20260909150000_purchase_suggestions_null_date.sql` (nova), `packages/db/src/rls.integration.test.ts`, `apps/web/app/cobertura/page.tsx` (correcao do docstring), `docs/DECISIONS.md` (correcao de D-279), `docs/DESIGN_IMPLEMENTATION.md`, `docs/HANDOFF.md`.
+
+**Verificacao:** integracao **634/634** em banco recriado com a migration aplicada, `check` 29/29, build 8/8, e2e 82/82.
 
 ## Como adicionar nova decisao
 
