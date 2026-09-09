@@ -300,10 +300,10 @@ export function ReplyForm({
 
       <div style={{ display: "flex", alignItems: "center", gap: "var(--sb-space-2)", flexWrap: "wrap" }}>
         <button
-          className="sb-button"
+          className="sb-button sb-button-primary"
           type="button"
           disabled={vazio || enviando || estado.kind === "queued"}
-          onClick={() => void enviar()} style={{ color: vazio || enviando ? "var(--sb-text)" : "var(--sb-white)" }}
+          onClick={() => void enviar()}
         >
           {enviando ? "Enviando…" : "Enviar resposta"}
         </button>

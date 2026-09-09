@@ -247,6 +247,19 @@ export function CopilotChat(): ReactNode {
         e o que importa na tela passa a ser a resposta.
       */}
       {exchanges.length === 0 && (
+        /*
+          A LISTA DE ESCOLHAS USA A LARGURA; A CONVERSA NÃO (P3 de A4, D-287).
+
+          O bloco inteiro nasceu para a gaveta de 430px do frame e ficou preso a
+          uma coluna estreita numa página de ~1.150px — três botões empilhados
+          com um terço da tela vazio ao lado. Sugestão é ESCOLHA, e escolha se lê
+          em paralelo: vira grade que se acomoda à largura.
+
+          **A conversa continua com a medida de 46rem**, e isso não é descuido: o
+          limite existe para a LEITURA. Linha de prosa que atravessa 1.150px é
+          pior de ler, não melhor — a largura ociosa ali é o preço de uma medida
+          legível, e o preço está certo.
+        */
         <div style={{ display: "grid", gap: "0.5rem" }}>
           <span
             style={{
@@ -260,19 +273,47 @@ export function CopilotChat(): ReactNode {
             O que dá para perguntar
           </span>
 
-          {SUGESTOES.map((sugestao) => (
-            <button
-              className="sb-button"
-              key={sugestao}
-              type="button"
-              disabled={busy}
-              onClick={() => {
-                void ask(sugestao);
-              }} style={{ textAlign: "left", color: "var(--sb-text)" }}
-            >
-              {sugestao}
-            </button>
-          ))}
+          <div
+            style={{
+              display: "grid",
+              gap: "0.5rem",
+              /*
+                13rem e não 16rem: dentro da medida de leitura de 46rem, é o
+                maior mínimo em que as TRÊS sugestões cabem numa linha só —
+                com 16rem sobrava uma órfã embaixo, que é o defeito que este
+                acabamento existe para tirar, só que na horizontal.
+              */
+              gridTemplateColumns: "repeat(auto-fit, minmax(13rem, 1fr))",
+            }}
+          >
+            {SUGESTOES.map((sugestao) => (
+              <button
+                className="sb-button"
+                key={sugestao}
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  void ask(sugestao);
+                }}
+                /*
+                  `.sb-button` é `nowrap` — certo para rótulo, errado para
+                  FRASE: na grade a do meio saía cortada ("…vendi ma"). Aqui o
+                  conteúdo é uma pergunta inteira, e ela quebra.
+                */
+                style={{
+                  textAlign: "left",
+                  color: "var(--sb-text)",
+                  whiteSpace: "normal",
+                  height: "auto",
+                  minHeight: "2rem",
+                  paddingBlock: "0.375rem",
+                  lineHeight: 1.35,
+                }}
+              >
+                {sugestao}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -294,12 +335,12 @@ export function CopilotChat(): ReactNode {
           }} style={{ flex: 1 }}
         />
         <button
-          className="sb-button"
+          className="sb-button sb-button-primary"
           type="button"
           disabled={busy || draft.trim().length === 0}
           onClick={() => {
             void ask();
-          }} style={{ color: busy ? "var(--sb-text)" : "var(--sb-white)" }}
+          }}
         >
           {busy ? "Consultando…" : "Perguntar"}
         </button>

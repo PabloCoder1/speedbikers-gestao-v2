@@ -2593,6 +2593,24 @@ table {
   background: #f5f4fc;
 }
 
+/*
+  O CHIP DENTRO DO ITEM DE LISTA NÃO ESTICA (P3 de A4, fechado em D-287).
+
+  `.sb-diagnostic-item` é `grid`, e item de grid estica por padrão: o
+  `.sb-status` ocupava a coluna inteira e virava FAIXA — 300px de fundo colorido
+  onde o Design Contract define uma pílula de raio 4px. Aparecia em
+  `/diagnostico` e em `/sugestoes`, as duas listas mestre-detalhe.
+
+  **O export tem a mesma regra** (`.diagnostic-item{display:grid}` com o
+  `Status` dentro), então isto NÃO é divergência do frame: é o frame e a V3
+  compartilhando um descuido, e a definição de chip do próprio Design Contract
+  desempatando.
+*/
+.sb-diagnostic-item > .sb-status,
+.sb-split-item > .sb-status {
+  justify-self: start;
+}
+
 .sb-diagnostic-item b {
   font-size: 0.6875rem;
 }

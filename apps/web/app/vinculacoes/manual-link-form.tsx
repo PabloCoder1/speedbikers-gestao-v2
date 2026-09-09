@@ -150,12 +150,12 @@ export function ManualLinkForm({
 
       <div style={{ marginTop: "var(--sb-space-3)", display: "flex", alignItems: "center", gap: "var(--sb-space-2)" }}>
         <button
-          className="sb-button"
+          className="sb-button sb-button-primary"
           type="button"
           disabled={busy || skuSearch.selected === null || itemId.trim() === ""}
           onClick={() => {
             void submit();
-          }} style={{ color: "var(--sb-white)" }}
+          }}
         >
           {busy ? "Vinculando…" : "Vincular"}
         </button>

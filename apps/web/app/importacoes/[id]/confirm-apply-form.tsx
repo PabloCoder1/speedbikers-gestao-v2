@@ -93,7 +93,7 @@ export function ConfirmApplyForm({ batchId }: { batchId: string }): ReactNode {
         onClick={() => {
           void confirm();
         }}
-        disabled={busy} style={{ color: "var(--sb-white)" }}
+        disabled={busy}
       >
         {busy ? "Confirmando…" : "Confirmar aplicação"}
       </button>

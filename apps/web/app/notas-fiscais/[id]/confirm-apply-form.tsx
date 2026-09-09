@@ -114,7 +114,7 @@ export function ConfirmApplyForm({
         onClick={() => {
           void confirm();
         }}
-        disabled={busy || !ready} style={{ color: "var(--sb-white)" }}
+        disabled={busy || !ready}
       >
         {busy ? "Confirmando…" : "Confirmar aplicação"}
       </button>

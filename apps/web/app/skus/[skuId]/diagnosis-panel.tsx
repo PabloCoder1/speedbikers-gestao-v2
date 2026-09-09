@@ -39,7 +39,21 @@ import { diagnoseSku, type SkuDiagnosisResult } from "./actions";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
-export function DiagnosisPanel({ skuId }: { skuId: string }): ReactNode {
+export function DiagnosisPanel({
+  skuId,
+  embutido = false,
+}: {
+  skuId: string;
+  /*
+    EMBUTIDO: sem a moldura de painel (P3 de A4, fechado em D-287).
+
+    Em `/diagnostico` este componente vive DENTRO da nota "✦ Análise do
+    Copiloto", e um painel branco com título e subtítulo próprios ali dentro
+    virava caixa dentro de caixa — o frame tem parágrafo e ação em texto, não
+    um cartão aninhado. Na aba do SKU a moldura continua: lá ele é a seção.
+  */
+  embutido?: boolean;
+}): ReactNode {
   const [result, setResult] = useState<SkuDiagnosisResult | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -112,29 +126,48 @@ export function DiagnosisPanel({ skuId }: { skuId: string }): ReactNode {
 
   const anomalia = result !== null && result.ok && result.status === "anomaly" ? result.diagnosis : null;
 
-  return (
-    <section className="sb-panel" aria-label="Diagnóstico de venda">
-      <div className="sb-panel-head">
-        <div style={{ minWidth: 0 }}>
-          <h2>Diagnóstico de venda</h2>
-          <p>
-            Compara a venda de ontem com o mesmo dia da semana nas últimas semanas (D-078). Nada é calculado até
-            você pedir.
-          </p>
-        </div>
-        <button
-          type="button"
-          className="sb-button sb-button-primary"
-          disabled={busy}
-          onClick={() => {
-            void handleClick();
-          }}
-        >
-          {busy ? "Analisando…" : "O que aconteceu?"}
-        </button>
-      </div>
+  const Moldura = embutido ? "div" : "section";
 
-      {result === null && (
+  return (
+    <Moldura className={embutido ? undefined : "sb-panel"} aria-label="Diagnóstico de venda">
+      {embutido ? (
+        <p style={{ margin: "0.4375rem 0 0.625rem", fontSize: "0.6875rem", lineHeight: 1.5 }}>
+          Compara a venda de ontem com o mesmo dia da semana nas últimas semanas (D-078). Nada é calculado até você
+          pedir.{" "}
+          <button
+            type="button"
+            className="sb-text-button"
+            disabled={busy}
+            onClick={() => {
+              void handleClick();
+            }}
+          >
+            {busy ? "Analisando…" : "O que aconteceu? →"}
+          </button>
+        </p>
+      ) : (
+        <div className="sb-panel-head">
+          <div style={{ minWidth: 0 }}>
+            <h2>Diagnóstico de venda</h2>
+            <p>
+              Compara a venda de ontem com o mesmo dia da semana nas últimas semanas (D-078). Nada é calculado até
+              você pedir.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="sb-button sb-button-primary"
+            disabled={busy}
+            onClick={() => {
+              void handleClick();
+            }}
+          >
+            {busy ? "Analisando…" : "O que aconteceu?"}
+          </button>
+        </div>
+      )}
+
+      {result === null && !embutido && (
         <p className="sb-empty">Clique em “O que aconteceu?” para comparar a venda de ontem com o padrão do dia.</p>
       )}
 
@@ -232,6 +265,6 @@ export function DiagnosisPanel({ skuId }: { skuId: string }): ReactNode {
           )}
         </div>
       )}
-    </section>
+    </Moldura>
   );
 }

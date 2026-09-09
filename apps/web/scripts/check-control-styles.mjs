@@ -168,6 +168,20 @@ function controles(bruto) {
       `check:table-styles` abre para a célula pintada por valor. O resto
       (padding, borda, fundo, fonte) a classe já manda, e o inline vence.
     */
+    /*
+      TINTA BRANCA SEM A VARIANTE QUE A SUSTENTA (D-287).
+
+      `color` fica fora da lista de aparência porque cor depende do dado — mas
+      `var(--sb-white)` num `.sb-button` sem `-primary`/`-danger` é branco sobre
+      branco, ou seja, **botão invisível**. Não é hipótese: o passo cinza tirou o
+      `background` de sete botões (a classe manda nele) e deixou a tinta, e o
+      "Perguntar" do Copiloto sumiu da tela. Nenhum teste viu; a captura viu.
+    */
+    if (/color:\s*[^,}]*var\(--sb-white\)/.test(tag) && !/sb-button-(primary|danger)/.test(tag)) {
+      achados.push({ tag: m[1], linha, motivo: "tinta branca sem variante que a sustente" });
+      continue;
+    }
+
     const literal = /style=\{\{([\s\S]*?)\}\}/.exec(tag);
 
     if (literal !== null) {
@@ -272,6 +286,16 @@ export function X() { return null; }`,
     nome: "classe E aparencia inline sao dois donos do mesmo pixel",
     fonte: `<button className="sb-button" type="button" style={{ background: "transparent", padding: "0.25rem" }}>Ir</button>`,
     acusa: 1,
+  },
+  {
+    nome: "tinta branca sem primary e botao invisivel",
+    fonte: `<button className="sb-button" type="button" style={{ color: "var(--sb-white)" }}>Ir</button>`,
+    acusa: 1,
+  },
+  {
+    nome: "tinta branca COM primary passa",
+    fonte: `<button className="sb-button sb-button-primary" type="button" style={{ color: "var(--sb-white)" }}>Ir</button>`,
+    acusa: 0,
   },
   {
     nome: "cor que depende do dado NAO e aparencia paralela",

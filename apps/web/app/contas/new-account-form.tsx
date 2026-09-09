@@ -84,7 +84,7 @@ export function NewAccountForm(): ReactNode {
         onClick={() => {
           void submit();
         }}
-        disabled={busy || label.trim() === "" || slug.trim() === ""} style={{ color: "var(--sb-white)" }}
+        disabled={busy || label.trim() === "" || slug.trim() === ""}
       >
         Cadastrar conta
       </button>

@@ -7654,6 +7654,66 @@ A leitura do parametro e mais estreita que `safeNext`: **so aceita `/atendimento
 
 **Verificacao:** `check` **29/29**, build **8/8**, e2e **89/89** (2 novos), os quatro guardas de `web` verdes. Numeros do Dev lidos por SQL no dia da decisao.
 
+## D-287 - Os quatro P3 de A4: tres feitos, um RECUSADO com numero -- e um defeito meu no meio do caminho
+
+**Contexto:** a auditoria A4 (D-283) deixou quatro acabamentos P3. Sem migration.
+
+---
+
+**P3-1 -- O CHIP QUE ESTICAVA: FEITO**
+
+`.sb-diagnostic-item` e `.sb-split-item` sao `grid`, e item de grid **estica por padrao**: o `.sb-status` ocupava a coluna inteira e virava FAIXA de ~300px onde o Design Contract define pilula de raio 4px. Em `/diagnostico` e em `/sugestoes`, as duas listas mestre-detalhe.
+
+`justify-self: start` nos dois. **Medido depois:** o chip passou de largura-da-coluna para **43px** em `/diagnostico` e **36px** em `/sugestoes`.
+
+Vale registrar por que isso NAO era divergencia do frame: o export tem a mesma regra (`.diagnostic-item{display:grid}` com o `Status` dentro). E o frame e a V3 compartilhando um descuido -- quem desempata e a definicao de chip do proprio Design Contract.
+
+---
+
+**P3-4 -- A NOTA DO COPILOTO ENCAIXOTADA: FEITO**
+
+Em `/diagnostico`, o `DiagnosisPanel` (que e um `.sb-panel` inteiro, com titulo, subtitulo e botao) vivia DENTRO da nota "✦ Analise do Copiloto": cartao branco aninhado num bloco violeta. O frame tem paragrafo + `text-button`.
+
+O componente ganhou o modo `embutido`: sem moldura, a frase vira o texto da nota e a acao vira `.sb-text-button`. **Na aba do SKU a moldura continua** -- la ele E a secao, e o frame nao desenha aquela aba (o design system e quem responde).
+
+---
+
+**P3-2 -- A LARGURA DE `/integracoes`: RECUSADO, E O NUMERO E DECISIVO**
+
+A4 anotou "1.857px de rolagem, seis paineis de largura inteira onde o frame tem grade de dois". **Medi antes de mexer, e a recusa que ja estava escrita no arquivo estava certa:**
+
+| | |
+|---|---:|
+| maior observacao | **175 caracteres** |
+| linhas que ela ocupa em largura INTEIRA | **4** |
+| linhas que ocuparia em METADE da largura | **24** |
+
+O grid de dois nao encolheria a pagina: **multiplicaria a altura da celula por seis**. A tabela de tres dimensoes so se le na horizontal, e meia largura a destroi -- a mesma classe de D-265, "o desenho particiona bem um conteudo que nao e o nosso".
+
+**A licao e sobre a auditoria, nao sobre a tela:** A4 mediu por FORA (a altura da pagina) e nao leu a justificativa que morava no proprio arquivo. Achado de auditoria tambem precisa perguntar se a recusa ja existe e por que.
+
+---
+
+**P3-3 -- A AREA MORTA DO `/copiloto`: FEITO, COM UMA DISTINCAO**
+
+A lista de sugestoes nasceu para a gaveta de 430px do frame e ficava numa coluna estreita com um terco da tela vazio ao lado. Sugestao e ESCOLHA, e escolha se le em paralelo: virou grade `auto-fit` de `minmax(13rem, 1fr)` -- 13rem e nao 16rem porque, dentro da medida de leitura, e o maior minimo em que as tres cabem numa linha (com 16rem sobrava uma orfa).
+
+**A conversa continua com `maxWidth: 46rem`, e isso nao e descuido:** o limite existe para a LEITURA. Linha de prosa atravessando 1.150px e pior de ler, nao melhor -- a largura ociosa ali e o preco de uma medida legivel.
+
+---
+
+**O DEFEITO QUE EU INTRODUZI, E QUE SO A CAPTURA PEGOU**
+
+Ao renderizar o `/copiloto` para conferir a grade, o botao **"Perguntar" tinha sumido**: fundo branco, texto branco.
+
+Causa: a limpeza de residuo do passo cinza (D-285) tirou `background` dos elementos que ja tinham a classe -- correto, a classe manda no fundo -- e **manteve `color`**, que fica de fora da lista de proposito, porque cor pode depender do dado. Sete botoes eram primary por estilo inline; perderam o fundo e ficaram com a tinta branca. Sete botoes invisiveis.
+
+Corrigidos com `.sb-button-primary`, que e o que eles sempre foram. E o guarda ganhou a regra: **`color: var(--sb-white)` num `.sb-button` sem `-primary`/`-danger` e botao invisivel** -- com auto-teste, porque nao e hipotese.
+
+**Impacto:** `apps/web/app/globals.css`, `app/skus/[skuId]/diagnosis-panel.tsx` (modo embutido), `app/diagnostico/page.tsx`, `app/copiloto/chat.tsx`, sete arquivos com o primary devolvido, `scripts/check-control-styles.mjs`.
+
+**Verificacao:** `check` **29/29**, build **8/8**, e2e **89/89**, `check:control-styles` **195**, os outros tres guardas verdes. Chip medido em 43px e 36px; `/integracoes` medida em 4 contra 24 linhas.
+
 ## Como adicionar nova decisao
 
 Registrar:

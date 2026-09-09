@@ -79,13 +79,13 @@ export function ConnectButton({ mlAccountId, label }: { mlAccountId: string; lab
   return (
     <div style={{ display: "inline-flex", flexDirection: "column", gap: "0.25rem", alignItems: "flex-start" }}>
       <button
-        className="sb-button"
+        className="sb-button sb-button-primary"
         type="button"
         onClick={() => {
           void connect();
         }}
         disabled={busy}
-        aria-label={`Conectar ${label} ao Mercado Livre`} style={{ color: "var(--sb-white)" }}
+        aria-label={`Conectar ${label} ao Mercado Livre`}
       >
         {busy ? "Abrindo o Mercado Livre…" : "Conectar"}
       </button>

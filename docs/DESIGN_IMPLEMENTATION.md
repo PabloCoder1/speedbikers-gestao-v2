@@ -895,6 +895,12 @@ fileiras de `FilterPill` onde o frame tem duas abas.
 
 ### P3 — quatro acabamentos, com evidência dos dois lados
 
+✅ **Fechados em D-287:** três feitos e **um recusado com número** — a largura de
+`/integracoes` (item 2) não muda, porque a maior observação ocupa 4 linhas em
+largura inteira e **24 em metade**. A auditoria mediu por fora e não leu a
+justificativa que já morava no arquivo; a lição é sobre o método, não sobre a
+tela.
+
 1. **o chip de estado estica** nos itens de `/diagnostico` e `/sugestoes`:
    `.sb-diagnostic-item` é `grid`, e o `.sb-status` ocupa a coluna inteira, com
    cara de faixa. **O export tem a mesma regra** (`.diagnostic-item{display:grid}`),
@@ -927,7 +933,9 @@ do disparo. Foi o que revelou os 1.857px de `/integracoes`.
 
 ## Revisão visual necessária
 
-**Uma** (a de campo e botão fechou em A5; o passo cinza levou os P3 junto):
+**NENHUMA.** As três de A4 fecharam: campo e botão em A5 (D-284), o inbox de
+três colunas em D-286 (recusado com medição) e os quatro P3 em D-287 — três
+feitos, um recusado com número. O histórico das três fica abaixo:
 
 1. ~~**P2 — campo e botão fora do design system**~~ — **fechado em A5**
    (D-284): 194 controles com a forma do sistema, e `check:control-styles` na
@@ -935,9 +943,11 @@ do disparo. Foi o que revelou os 1.857px de `/integracoes`.
 2. ~~**P2 — `/atendimento`**~~ — **DECIDIDO em D-286**: as três colunas foram
    recusadas com medição e o desvio está escrito; o que o desenho protegia (não
    perder a fila ao responder) virou o parâmetro `?volta=`;
-3. **P3 — os quatro acabamentos** de A4 (chip esticado, largura ociosa em
-   `/integracoes` e `/copiloto`, nota do Copiloto encaixotada) — nenhum deles
-   piorou com o chão cinza; seguem em fila de acabamento.
+3. ~~**P3 — os quatro acabamentos** de A4~~ — **FECHADOS em D-287**: o chip
+   deixou de esticar (43px e 36px, medidos), a nota do Copiloto perdeu a caixa
+   dentro da caixa, o `/copiloto` usa a largura onde é escolha e guarda a medida
+   onde é leitura — e a largura de `/integracoes` foi **recusada com número**: a
+   maior observação ocupa 4 linhas em largura inteira e **24 em metade**.
 
 O texto abaixo é de A3 e continua valendo para o que ele mediu.
 
@@ -982,48 +992,58 @@ está na "Próxima fatia segura".
 
 ## Última fatia concluída
 
-**A DECISÃO SOBRE O INBOX DE TRÊS COLUNAS (D-286)** — recusado com medição, e o
-que ele protegia custou um parâmetro. Sem migration.
+**OS QUATRO P3 DE A4 (D-287)** — três feitos, um recusado com número, e um
+defeito meu no meio do caminho. Sem migration.
 
-A4 achou que `/atendimento` era a superfície mais distante do frame (78%) e que
-**o desvio não estava escrito em lugar nenhum**. Ou virava registro, ou virava
-fatia. Virou registro — depois de medir.
+### O chip que esticava (feito)
 
-### Os três motivos, cada um com número
+`.sb-diagnostic-item` e `.sb-split-item` são `grid`, e item de grid estica: o
+`.sb-status` virava faixa de ~300px onde o Design Contract define pílula de 4px.
+`justify-self: start` nos dois — **medido depois: 43px em `/diagnostico`, 36px em
+`/sugestoes`**. Não era divergência do frame: o export tem a mesma regra, e quem
+desempata é a definição de chip do próprio Contract.
 
-1. **O centro fica vazio em metade das reclamações.** O frame põe a conversa no
-   meio, e **960 das 1.895 reclamações não têm uma mensagem sequer** — elas
-   chegam do Mercado Livre sem transcript, e reclamação é **63%** da base. O que
-   uma reclamação precisa é prazo, estado no ML, devolução e o pedido: é o que o
-   detalhe já mostra desde D-279 (banda de prazo no topo) e D-282 (a gaveta do
-   pedido);
-2. **A direita não tem fonte.** Sem nome (`customer_external_id` é número, e
-   D-083 proíbe usar comprador como identidade), sem miniatura, sem Copiloto com
-   contexto (D-276) — e com **92,6% dos clientes tendo um caso só**, "histórico
-   do cliente" responderia "um" quase sempre;
-3. **A esquerda seria regressão.** A fila de 300px não cabe as oito colunas nem
-   a triagem inline, e com **939 casos em NOVO e ZERO assumidos** o gargalo
-   medido é a triagem, não a conversa.
+### A nota do Copiloto encaixotada (feito)
 
-**O argumento A FAVOR do frame também foi medido, e vale dizer:** **715 dos 943
-abertos aceitam resposta pelo produto** — quem abre um caso aberto normalmente
-pode responder ali.
+O `DiagnosisPanel` é um painel inteiro e vivia DENTRO da nota violeta — cartão
+dentro de bloco. Ganhou o modo `embutido`: a frase vira o texto da nota e a ação
+vira `.sb-text-button`, como o frame. **Na aba do SKU a moldura continua**, que é
+onde ela é a seção.
 
-### O que o desenho protege de verdade custou um parâmetro
+### A largura de `/integracoes` (RECUSADO, com número)
 
-Numa tela de três colunas, responder não tira a fila da frente. Na V3, o
-"← Voltar à Caixa de Entrada" apontava para `/atendimento` pelado: quem recortou
-"prazo em risco + reclamação + Loja X" entre 943 abertos **recomeçava o recorte
-a cada caso lido**.
+| | |
+|---|---:|
+| maior observação | **175 caracteres** |
+| linhas em largura inteira | **4** |
+| linhas em METADE da largura | **24** |
 
-O link do caso passou a carregar `?volta=<a fila com o recorte>`. A leitura é
-mais estreita que `safeNext`: só aceita `/atendimento` — um `volta=/configuracoes`
-seria interno e mesmo assim errado, porque o rótulo diz "Caixa de Entrada" e link
-que mente sobre o destino é pior que link sem parâmetro. Dois casos de e2e: a
-volta preservada e a volta forjada.
+O grid de dois não encolheria a página: **multiplicaria a altura da célula por
+seis**. A recusa já estava escrita no arquivo; A4 mediu por fora (a altura) e não
+a leu. **A lição é sobre a auditoria:** achado também precisa perguntar se a
+recusa já existe — e por quê.
 
-**Verificação:** `check` 29/29, build 8/8, e2e **89/89** (2 novos), os quatro
-guardas de `web` verdes. Números lidos do Dev por SQL no dia da decisão.
+### A área morta do `/copiloto` (feito, com uma distinção)
+
+A lista de sugestões virou grade `auto-fit minmax(13rem, 1fr)` — 13rem porque é o
+maior mínimo em que as três cabem numa linha dentro da medida de leitura. **A
+conversa mantém `maxWidth: 46rem`**: o limite existe para LER, e prosa
+atravessando 1.150px é pior, não melhor.
+
+### O defeito que eu introduzi, e que só a captura pegou
+
+Renderizando para conferir a grade, o botão **"Perguntar" tinha sumido**: branco
+sobre branco. A limpeza de resíduo do passo cinza tirou o `background` dos
+elementos que já tinham a classe — correto — e manteve o `color`, que fica de
+fora da lista de propósito porque cor pode depender do dado. **Sete botões eram
+primary por estilo inline e viraram invisíveis.**
+
+Corrigidos com `.sb-button-primary`, e o guarda ganhou a regra:
+`color: var(--sb-white)` num `.sb-button` sem `-primary`/`-danger` **é botão
+invisível** — com auto-teste, porque não é hipótese.
+
+**Verificação:** `check` 29/29, build 8/8, e2e **89/89**, `check:control-styles`
+**195**, os outros três guardas verdes.
 
 ## Próxima fatia segura
 

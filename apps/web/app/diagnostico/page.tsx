@@ -462,7 +462,7 @@ export default async function DiagnosticoPage({
             */}
             <div className="sb-note sb-copilot-note">
               <span>✦ ANÁLISE DO COPILOTO</span>
-              <DiagnosisPanel skuId={selecionado.escopo.skuId} />
+              <DiagnosisPanel skuId={selecionado.escopo.skuId} embutido />
             </div>
 
             {/*
