@@ -7380,3 +7380,76 @@ O seed ganhou execucoes reais de `sync_runs` (append-only de verdade: dois trigg
 **Impacto:** `apps/web/lib/sync-health.ts` (mapa unico), `apps/web/lib/labels.ts` (+`syncRunStatusLabel`), `apps/web/app/sincronizacao/page.tsx` (`PageTitle`, faixa de seis, cinco `Panel`, `.sb-table`, sem `th`/`td` locais), `apps/web/e2e/{seed,sincronizacao.spec,integracoes.spec}.ts`, testes de `sync-health`, `labels` e `integrations`. Sem migration.
 
 **Verificacao, local:** `check` **29/29** (+8 testes), e2e **67/67** em banco recriado (4 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17, `check:table-styles` **20**, `docs:check`. Capturada a 1440px contra o Supabase local.
+
+## D-274 - D34: Saude do Sistema, e o "99,97%" do frame nao tem uma tabela que o sustente
+
+**Contexto:** `/saude` pelo frame `AdminScreen` na variacao de confiabilidade. Quarta tela do bloco de administracao. Sem migration.
+
+---
+
+**1. O NUMERO MAIS VISIVEL DO FRAME NAO TEM FONTE**
+
+O frame abre com um banner navy e, do lado direito, **"99,97% — Uptime · 30 dias"**. Medido no esquema:
+
+| o que o frame promete | fonte no banco |
+|---|---|
+| uptime de 30 dias | **0** tabelas de incidente, uptime, disponibilidade ou SLA |
+| "Ver incidentes" (acao do cabecalho) | as mesmas **0** |
+| "Todos os servicos criticos dentro do SLA" | nao ha SLA definido em lugar nenhum |
+
+**E derivar do heartbeat seria pior do que nao mostrar.** `system.ping` roda de hora em hora e deixa linha em `job_runs`; contar presenca de heartbeat e chamar isso de uptime afirmaria disponibilidade do PRODUTO a partir da execucao de um job. Sao coisas diferentes: o worker pode estar batendo ponto com a web fora do ar, e vice-versa.
+
+**2. A ANCORA GANHOU A PERGUNTA QUE A TELA NASCEU PARA RESPONDER**
+
+O banner navy do frame virou a **celula ancora** da faixa (`.sb-kpi-strip-ancora`, o gradiente navy que ja existe no design system, usado em cinco telas). No lugar do uptime inventado ela mostra o veredito que esta tela EXISTE para dar (D-176):
+
+> **o codigo que esta rodando e o codigo que eu acho que esta rodando?**
+
+`CURRENT`, `OUTDATED` ou `UNKNOWN`, com o motivo ao lado. E `UNKNOWN` nunca e lido como "tudo certo" — e a tela dizendo que nao conseguiu medir, e por que.
+
+Composicao aplicada, conteudo recusado: e a mesma operacao de D-272, onde a moldura do cartao entrou e o selo unico ficou fora.
+
+**3. OS SEIS CARTOES DE SERVICO: TRES NUMEROS SEM FONTE E UM DONO ALHEIO**
+
+O frame desenha seis servicos com uma metrica cada:
+
+| cartao do frame | medicao |
+|---|---|
+| Aplicacao Web — **42 ms** | sem fonte |
+| API Mercado Livre — **186 ms** | sem fonte |
+| Banco de Dados — **12 ms** | sem fonte |
+| Armazenamento de XML — **2,4 TB livres** | sem fonte, e fora do escopo por decisao |
+| Fila de Atendimento — Estavel | **tem dono**: `/atendimento` (D-224) |
+| Workers — Degradado, 3 filas em retry | **isto a tela ja mostra**, por tipo de job |
+
+**A unica coluna de latencia do esquema inteiro e `ai_runs.latency_ms`** — latencia de chamada de IA, nao de servico. Para armazenamento, o que existe e `documents.storage_path`, `erp_import_batches.storage_path` (caminhos) e `support_attachments.size_bytes` (tamanho de um anexo); **nenhuma telemetria de capacidade**. Perguntar espaco livre ao Google Cloud e exatamente a permissao nova que o item de D-176 excluiu, nomeando "permissoes cloud excessivas" como risco.
+
+O que sobra dos seis e o sexto, e a tela ja o faz melhor do que o cartao: estado por tipo de job, contra a cadencia de cada um.
+
+**4. A FAIXA DENTRO DO PAINEL, E O BALDE QUE EU ERREI**
+
+Cinco vereditos, contados sobre o mesmo array que a tabela imprime (D-265), numa faixa aninhada — o CSS ja trata `.sb-panel .sb-kpi-strip` (perde a moldura, fica so o fio de topo).
+
+**E aqui eu errei uma suposicao que o codigo ja tinha medido.** Ao montar o fixture, escolhi `sync.webhook.received` como exemplo de "job sem cadencia". Ele nao e: D-232 mediu um limiar de SILENCIO para ele (32.149 execucoes em 7 dias no Dev) justamente porque um webhook de pedidos que fica mudo por horas nao esta se comportando bem. **O mapa sabia mais do que eu.** Sem cadencia de verdade sao os raros por natureza — chave suja (`analytics.recompute`), backfill, importacao sob demanda —, e o fixture passou a usar esse.
+
+O teste pegou. Vale o registro porque a suposicao era plausivel e estava escrita como comentario num arquivo que eu tinha lido na fatia anterior.
+
+**5. "done", DE NOVO, UMA TELA AO LADO**
+
+A coluna "Ultimo estado" imprimia `job_runs.status` cru. D-273 acabou de consertar exatamente isso em `sync_runs.status`, na tela vizinha, e escreveu a licao: rotulo que falta nao quebra nada, so poe ingles de banco na frente da pessoa.
+
+**As duas colunas falam o mesmo vocabulario** (`job_runs`: `done`, `failed`; `sync_runs` acrescenta `partial`), entao `syncRunStatusLabel` virou **`runStatusLabel`** — o nome diz o conceito, nao a tabela. Um mapa por tabela seria a proxima copia do mesmo dicionario, que e como a auditoria de fidelidade achou cinco mapas de tom (D-246).
+
+Generalizar uma fatia depois de criar e o momento certo: o segundo consumidor apareceu, e ele e que prova que o conceito e compartilhado.
+
+**6. SEXTA TELA SEGUIDA SEM SPEC**
+
+`/saude` nunca teve. O seed ganhou execucoes de `job_runs` — append-only pelos mesmos dois triggers de `sync_runs`, e com uma barreira a mais: **`authenticated` nao tem SELECT nenhum na tabela**, quem le e a RPC `security definer`. O seed escreve com `service_role`.
+
+Um detalhe que o banco imposs: **`duration_ms` e coluna GERADA** a partir dos dois carimbos, e recusa valor explicito. Duracao e horarios nao podem divergir, por construcao.
+
+Cinco casos, e o quinto e o que faltava em toda a trilha 8A: **o GESTOR ve a recusa**, e a recusa vem da RPC (zero linhas para quem nao e ADMIN), nao de um `if` na tela.
+
+**Impacto:** `apps/web/app/saude/page.tsx` (`PageTitle`, faixa ancora de tres, `Panel` com faixa aninhada, `.sb-table`, sem `th`/`td`/`cardStyle` locais), `apps/web/lib/labels.ts` (`runStatusLabel`), `apps/web/app/sincronizacao/page.tsx` (novo nome), `apps/web/e2e/{seed,saude.spec}.ts`, teste de `labels`. Sem migration, sem CSS novo.
+
+**Verificacao, local:** `check` **29/29**, e2e **72/72** em banco recriado (5 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17, `check:table-styles` **21**, `docs:check`. Capturada a 1440px contra o Supabase local.

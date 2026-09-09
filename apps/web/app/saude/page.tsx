@@ -1,8 +1,13 @@
 import type { ReactNode } from "react";
 
+import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
+import { PageTitle } from "../../components/page-title";
+import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
+import { StatePill, type PillTone } from "../../components/state-pill";
 import { fetchApiHealth } from "../../lib/api-health";
-import { formatDateTime } from "../../lib/format";
+import { formatCount, formatDateTime } from "../../lib/format";
+import { runStatusLabel } from "../../lib/labels";
 import { sanitizeErrorText } from "../../lib/sanitize";
 import { createClient } from "../../lib/supabase/server";
 import { classifyJobFreshness } from "../../lib/sync-health";
@@ -52,52 +57,16 @@ export const dynamic = "force-dynamic";
  * Job sem cadência fixa (webhook, chave suja, backfill) não ganha selo:
  * `sem_cadencia` mostra a idade crua, que é o honesto. Mesma regra de D-143.
  */
-const JOB_VERDICT_TONE: Record<SyncVerdict, { color: string; label: string } | null> = {
-  ok: { color: "var(--sb-secondary)", label: "Em dia" },
-  atencao: { color: "var(--sb-accent-ink)", label: "Atrasando" },
-  critico: { color: "var(--sb-danger)", label: "Parado" },
-  nunca: { color: "var(--sb-muted-ink)", label: "Nunca rodou" },
+const JOB_VERDICT_TONE: Record<SyncVerdict, PillTone | null> = {
+  ok: { tom: "ok", label: "Em dia" },
+  atencao: { tom: "atencao", label: "Atrasando" },
+  critico: { tom: "perigo", label: "Parado" },
+  nunca: { tom: "neutro", label: "Nunca rodou" },
   sem_cadencia: null,
 };
 
 
 type Verdict = "CURRENT" | "OUTDATED" | "UNKNOWN";
-
-const th: React.CSSProperties = {
-  textAlign: "left",
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.75rem",
-  textTransform: "uppercase",
-  letterSpacing: "0.04em",
-  color: "var(--sb-text-soft)",
-  whiteSpace: "nowrap",
-};
-
-const td: React.CSSProperties = {
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.875rem",
-};
-
-const tdNumber: React.CSSProperties = { ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" };
-
-const cardStyle: React.CSSProperties = {
-  border: "1px solid var(--sb-border)",
-  borderRadius: "var(--sb-radius)",
-  background: "var(--sb-surface)",
-  padding: "var(--sb-space-3)",
-  minWidth: "13rem",
-  display: "grid",
-  gap: "0.25rem",
-};
-
-function verdictColor(verdict: Verdict): string {
-  if (verdict === "OUTDATED") return "var(--sb-danger)";
-  if (verdict === "UNKNOWN") return "var(--sb-text-soft)";
-
-  return "var(--sb-secondary)";
-}
 
 export default async function SaudePage(): Promise<ReactNode> {
   const supabase = await createClient();
@@ -142,16 +111,126 @@ export default async function SaudePage(): Promise<ReactNode> {
 
   const jobs = rows.filter((row) => row.job_type !== null);
 
+  /*
+    O veredito de cada job, calculado UMA vez: a faixa de dentro do painel
+    conta o mesmo array que a tabela imprime (D-265).
+  */
+  const vereditos = jobs.map((job) => ({
+    job,
+    veredito: classifyJobFreshness(job.job_type ?? "", job.job_last_run_at, agora),
+  }));
+
+  const quantos = (v: SyncVerdict): string =>
+    formatCount(vereditos.filter((item) => item.veredito === v).length);
+
+  /*
+    A CÉLULA ÂNCORA É "CÓDIGO NO AR", e no lugar dela o frame põe "99,97% de
+    uptime em 30 dias".
+
+    Esse número não tem fonte: são ZERO tabelas de incidente, uptime,
+    disponibilidade ou SLA no esquema inteiro. Derivá-lo da presença do
+    heartbeat seria pior que não mostrá-lo — `system.ping` diz que o worker
+    rodou, não que o produto estava disponível para quem usa.
+
+    O que a âncora ganha no lugar é a pergunta que ESTA tela nasceu para
+    responder (D-176): o código que está rodando é o código que eu acho que
+    está rodando?
+  */
+  const ambiente: KpiCellData[] = [
+    {
+      label: "Código no ar",
+      formula:
+        "Compara o commit da build da web (VERCEL_GIT_COMMIT_SHA) com o que a API responde no /health. UNKNOWN é falha de medição, nunca 'tudo certo'.",
+      value: verdict,
+      previous: null,
+      ressalva: motivoUnknown ?? `web ${webCommit ?? "—"} · api ${apiCommit ?? "—"}`,
+      tom: verdict === "CURRENT" ? "ok" : verdict === "OUTDATED" ? "perigo" : "neutro",
+    },
+    {
+      label: "API",
+      formula: "Resposta do /health da API no Cloud Run, com timeout de 4 s. Sem resposta é sem resposta.",
+      value: api === null ? "sem resposta" : "no ar",
+      previous: null,
+      /*
+        `exactOptionalPropertyTypes` recusa `ressalva: undefined`, e isso é bom
+        aqui: a ressalva ou EXISTE ou a chave não vem. "API no ar sem data de
+        início" é uma frase; "API no ar desde undefined" seria outra.
+      */
+      ...(api?.startedAt === undefined || api.startedAt === null
+        ? {}
+        : { ressalva: `desde ${formatDateTime(api.startedAt)}` }),
+      tom: api === null ? "perigo" : "ok",
+    },
+    {
+      label: "Migrations aplicadas",
+      formula: "Contagem e versão da última migration aplicada, lida do próprio banco.",
+      value: first === undefined ? "—" : formatCount(first.db_migrations_count),
+      previous: null,
+      ...(first === undefined
+        ? {}
+        : { ressalva: `${first.db_migration_version} · ${formatDateTime(first.db_migration_applied_at)}` }),
+      tom: "neutro",
+    },
+  ];
+
+  /*
+    A faixa DENTRO do painel (o CSS já a trata: perde a moldura e fica só com
+    o fio de topo). Total e partes, do mesmo array — e "Sem cadência" é grande
+    aqui de propósito: job movido por evento não recebe selo, e isso é a
+    maioria deles.
+  */
+  const jobCells: KpiCellData[] = [
+    {
+      label: "Jobs observados",
+      formula: "Um por tipo de job com execução registrada. É o mesmo conjunto da tabela abaixo.",
+      value: formatCount(jobs.length),
+      previous: null,
+      tom: "neutro",
+    },
+    {
+      label: "Em dia",
+      formula: "Última execução dentro de 2 ciclos da cadência do job.",
+      value: quantos("ok"),
+      previous: null,
+      tom: "ok",
+    },
+    {
+      label: "Atrasando",
+      formula: "Última execução entre 2 e 4 ciclos atrás.",
+      value: quantos("atencao"),
+      previous: null,
+      tom: "atencao",
+    },
+    {
+      label: "Parados",
+      formula: "Última execução há mais de 4 ciclos da cadência.",
+      value: quantos("critico"),
+      previous: null,
+      tom: "perigo",
+    },
+    {
+      label: "Nunca rodaram",
+      formula: "Tipo de job sem nenhuma execução registrada.",
+      value: quantos("nunca"),
+      previous: null,
+      tom: "neutro",
+    },
+    {
+      label: "Sem cadência",
+      formula: "Job movido por evento (webhook, chave suja, backfill): não recebe selo, e a idade crua é o honesto.",
+      value: quantos("sem_cadencia"),
+      previous: null,
+      tom: "neutro",
+    },
+  ];
+
   return (
     <Shell>
-      <h1 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.375rem" }}>Saúde do Sistema</h1>
-
-      <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
-        O que está no ar, medido no ar. Nenhum número desta tela vem de documentação: o commit sai do{" "}
-        <span style={{ fontFamily: "ui-monospace, monospace" }}>/health</span> da API e das variáveis de build, a
-        migration sai do próprio banco, e os jobs saem do registro do que <strong>aconteceu</strong> — não do que
-        foi agendado.
-      </p>
+      <PageTitle
+        eyebrow="ADMINISTRAÇÃO / CONFIABILIDADE"
+        title="Saúde do Sistema"
+        subtitle="O que está no ar, medido no ar. Nenhum número desta tela vem de documentação: o commit sai do /health da API e das variáveis de build, a migration sai do próprio banco, e os jobs saem do registro do que aconteceu — não do que foi agendado."
+      />
 
       {healthResult.error !== null && (
         <p role="alert" style={{ color: "var(--sb-danger)" }}>
@@ -159,126 +238,92 @@ export default async function SaudePage(): Promise<ReactNode> {
         </p>
       )}
 
-      <div style={{ display: "flex", gap: "var(--sb-space-3)", flexWrap: "wrap", marginBottom: "var(--sb-space-2)" }}>
-        <div style={cardStyle}>
-          <span style={{ fontSize: "0.75rem", textTransform: "uppercase", color: "var(--sb-text-soft)" }}>
-            Código no ar
-          </span>
-          <span style={{ fontSize: "1.375rem", fontWeight: 700, color: verdictColor(verdict) }}>{verdict}</span>
-          <span style={{ fontSize: "0.6875rem", color: "var(--sb-muted-ink)", fontFamily: "ui-monospace, monospace" }}>
-            web {webCommit ?? "—"} · api {apiCommit ?? "—"}
-          </span>
-          {motivoUnknown !== null && (
-            <span style={{ fontSize: "0.6875rem", color: "var(--sb-text-soft)" }}>{motivoUnknown}</span>
-          )}
-        </div>
+      <KpiStrip ancora cells={ambiente} />
 
-        <div style={cardStyle}>
-          <span style={{ fontSize: "0.75rem", textTransform: "uppercase", color: "var(--sb-text-soft)" }}>
-            Migration aplicada
-          </span>
-          <span style={{ fontSize: "1.375rem", fontVariantNumeric: "tabular-nums" }}>
-            {first?.db_migrations_count ?? "—"}
-          </span>
-          <span style={{ fontSize: "0.6875rem", color: "var(--sb-muted-ink)", fontFamily: "ui-monospace, monospace" }}>
-            {first?.db_migration_version ?? "—"}
-          </span>
-          {first !== undefined && (
-            <span style={{ fontSize: "0.6875rem", color: "var(--sb-text-soft)" }}>
-              {first.db_migration_name} · {formatDateTime(first.db_migration_applied_at)}
-            </span>
-          )}
-        </div>
-
-        <div style={cardStyle}>
-          <span style={{ fontSize: "0.75rem", textTransform: "uppercase", color: "var(--sb-text-soft)" }}>
-            API
-          </span>
-          <span style={{ fontSize: "1.375rem", fontWeight: 700, color: api === null ? "var(--sb-danger)" : undefined }}>
-            {api === null ? "sem resposta" : "no ar"}
-          </span>
-          {api?.startedAt !== undefined && api.startedAt !== null && (
-            <span style={{ fontSize: "0.6875rem", color: "var(--sb-text-soft)" }}>
-              desde {formatDateTime(api.startedAt)}
-            </span>
-          )}
-        </div>
+      <div className="sb-note" style={{ margin: "var(--sb-space-3) 0" }}>
+        <span>COMO LER O CÓDIGO NO AR</span>
+        <p style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", lineHeight: 1.6 }}>
+          <strong>OUTDATED</strong> significa que a web e a API estão em commits diferentes — normal por alguns
+          minutos durante um deploy, e sinal de drift se persistir. <strong>UNKNOWN</strong> nunca é lido como
+          “tudo certo”: é a tela dizendo que não conseguiu medir, e por quê.
+        </p>
       </div>
 
-      <p style={{ margin: "0 0 var(--sb-space-4)", fontSize: "0.75rem", color: "var(--sb-muted-ink)" }}>
-        <strong>OUTDATED</strong> significa que a web e a API estão em commits diferentes — normal por alguns
-        minutos durante um deploy, e sinal de drift se persistir. <strong>UNKNOWN</strong> nunca é lido como
-        “tudo certo”: é a tela dizendo que não conseguiu medir, e por quê.
-      </p>
+      <Panel
+        title="Jobs agendados"
+        subtitle="De job_runs: o que rodou de verdade. Um job que sumiu do agendador e um que falha em silêncio aparecem igual aqui, e o veredito é contra a cadência de CADA um — 13h de silêncio é catástrofe num job horário e normal num diário."
+      >
+        <KpiStrip cells={jobCells} />
 
-      <h2 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.0625rem" }}>Jobs — última execução observada</h2>
+        {jobs.length === 0 && healthResult.error === null && (
+          <div className="sb-panel-body">
+            <p style={{ margin: 0, color: "var(--sb-text-soft)", fontSize: "0.75rem" }}>
+              Nenhuma execução registrada — o que também é um sinal, não um vazio.
+            </p>
+          </div>
+        )}
 
-      <p style={{ margin: "0 0 var(--sb-space-2)", fontSize: "0.75rem", color: "var(--sb-muted-ink)" }}>
-        De <span style={{ fontFamily: "ui-monospace, monospace" }}>job_runs</span>: o que rodou de verdade. Um job
-        que sumiu do agendador e um que falha em silêncio aparecem igual aqui, e o veredito é contra a
-        <strong> cadência de cada um</strong> — 13h de silêncio é catástrofe num job horário e normal num diário.
-        Job movido por evento (webhook, chave suja, backfill) não recebe selo: a idade crua é o honesto.
-      </p>
+        {jobs.length > 0 && (
+          <div style={{ overflowX: "auto" }}>
+            <table className="sb-table">
+              <thead>
+                <tr>
+                  <th>Job</th>
+                  <th>Último estado</th>
+                  <th>Quando</th>
+                  <th>Frescor</th>
+                  <th className="sb-num">Idade (h)</th>
+                  <th className="sb-num">Falhas 24h</th>
+                </tr>
+              </thead>
+              <tbody>
+                {vereditos.map(({ job, veredito }) => {
+                  const tom = JOB_VERDICT_TONE[veredito];
 
-      {jobs.length === 0 && healthResult.error === null && (
-        <p style={{ color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
-          Nenhuma execução registrada — o que também é um sinal, não um vazio.
-        </p>
-      )}
+                  return (
+                    <tr key={job.job_type ?? ""}>
+                      <td className="sb-mono">{job.job_type}</td>
+                      {/*
+                        `runStatusLabel` e não o valor cru: a coluna mostrava
+                        "done", em inglês e minúsculo. Mesma classe do rótulo
+                        que faltava em D-273, na tela vizinha (D-274).
+                      */}
+                      <td style={{ color: job.job_status === "failed" ? "var(--sb-danger)" : undefined }}>
+                        {job.job_status === null ? "—" : runStatusLabel(job.job_status)}
+                      </td>
+                      <td>{job.job_last_run_at === null ? "—" : formatDateTime(job.job_last_run_at)}</td>
+                      <td>{tom === null ? "—" : <StatePill tone={tom} />}</td>
+                      <td className="sb-num">{job.job_age_hours ?? "—"}</td>
+                      <td
+                        className="sb-num"
+                        style={{ color: job.job_failures_24h > 0 ? "var(--sb-danger)" : undefined }}
+                      >
+                        {job.job_failures_24h}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Panel>
 
-      {jobs.length > 0 && (
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "44rem" }}>
-            <thead>
-              <tr>
-                <th style={th}>Job</th>
-                <th style={th}>Último estado</th>
-                <th style={th}>Quando</th>
-                <th style={th}>Frescor</th>
-                <th style={{ ...th, textAlign: "right" }}>Idade (h)</th>
-                <th style={{ ...th, textAlign: "right" }}>Falhas 24h</th>
-              </tr>
-            </thead>
-            <tbody>
-              {jobs.map((job) => {
-                const veredito = classifyJobFreshness(job.job_type ?? "", job.job_last_run_at, agora);
-                const tom = JOB_VERDICT_TONE[veredito];
+      {/*
+        OS SEIS CARTÕES DE SERVIÇO DO FRAME NÃO ENTRAM, e a medição está em
+        D-274. Em resumo: a única coluna de latência do esquema inteiro é
+        `ai_runs.latency_ms` (latência de chamada de IA), então "42 ms",
+        "186 ms" e "12 ms" não têm fonte; não há telemetria de capacidade de
+        armazenamento, e pedi-la ao Google Cloud é justamente a permissão nova
+        que o item de D-176 excluiu; e "Fila de Atendimento" já tem tela dona
+        (D-224).
 
-                return (
-                  <tr key={job.job_type ?? ""}>
-                    <td style={{ ...td, fontFamily: "ui-monospace, monospace", fontSize: "0.8125rem" }}>
-                      {job.job_type}
-                    </td>
-                    <td
-                      style={{
-                        ...td,
-                        color: job.job_status === "failed" ? "var(--sb-danger)" : undefined,
-                      }}
-                    >
-                      {job.job_status}
-                    </td>
-                    <td style={td}>
-                      {job.job_last_run_at === null ? "—" : formatDateTime(job.job_last_run_at)}
-                    </td>
-                    <td style={{ ...td, color: tom?.color, fontWeight: tom === null ? undefined : 600 }}>
-                      {tom?.label ?? "—"}
-                    </td>
-                    <td style={{ ...tdNumber, color: tom?.color }}>{job.job_age_hours ?? "—"}</td>
-                    <td
-                      style={{
-                        ...tdNumber,
-                        color: job.job_failures_24h > 0 ? "var(--sb-danger)" : undefined,
-                      }}
-                    >
-                      {job.job_failures_24h}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+        O que sobra dos seis é o que esta tela já mostra melhor: o estado dos
+        jobs, por tipo, contra a cadência de cada um.
+
+        "Ver incidentes" tem a mesma resposta do uptime: zero tabelas de
+        incidente no esquema.
+      */}
     </Shell>
   );
 }

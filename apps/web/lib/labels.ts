@@ -17,12 +17,19 @@ const BATCH_STATUS: Record<string, string> = {
 };
 
 /*
-  `sync_runs.status` (D-273). A tela de Sincronização imprimia o valor cru —
-  "done", em inglês e minúsculo, numa coluna chamada "Status". É a mesma
-  classe do recurso sem rótulo que esta fatia consertou: código de banco não é
-  texto de interface.
+  Estado de uma EXECUÇÃO, em `sync_runs.status` e em `job_runs.status` (D-273,
+  generalizado em D-274).
+
+  A tela de Sincronização imprimia o valor cru — "done", em inglês e minúsculo,
+  numa coluna chamada "Status" —, e a de Saúde do Sistema fazia o mesmo com a
+  outra tabela. **As duas colunas falam o mesmo vocabulário**: `job_runs` usa
+  `done` e `failed`, `sync_runs` acrescenta `partial`.
+
+  Um mapa por tabela seria a quinta cópia do mesmo dicionário, que é como a
+  auditoria de fidelidade encontrou cinco mapas de tom (D-246). O nome diz o
+  conceito — execução —, não a tabela.
 */
-const SYNC_RUN_STATUS: Record<string, string> = {
+const RUN_STATUS: Record<string, string> = {
   done: "Concluída",
   partial: "Parcial",
   failed: "Falhou",
@@ -335,7 +342,7 @@ function lookup(table: Record<string, string>, code: string): string {
 }
 
 export const batchStatusLabel = (code: string): string => lookup(BATCH_STATUS, code);
-export const syncRunStatusLabel = (code: string): string => lookup(SYNC_RUN_STATUS, code);
+export const runStatusLabel = (code: string): string => lookup(RUN_STATUS, code);
 export const rowStatusLabel = (code: string): string => lookup(ROW_STATUS, code);
 export const applyStatusLabel = (code: string): string => lookup(APPLY_STATUS, code);
 export const kindLabel = (code: string): string => lookup(KIND, code);

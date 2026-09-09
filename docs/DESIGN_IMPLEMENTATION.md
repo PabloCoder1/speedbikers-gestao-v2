@@ -627,7 +627,8 @@ que ele renderiza.**
 | D31 | **Usuários** — três das cinco colunas e um dos cinco cartões do frame não têm fonte; e a tela tinha um DEFEITO VIVO da classe de D-234, justamente onde se cadastra o segundo usuário (D-271) | ✔ |
 | D32 | **Integrações** — o frame nomeia Bling e Google Sheets, que têm ZERO ocorrências no repositório; e um selo por cartão desfaria a separação em três dimensões que criou a tela (D-272) | ✔ |
 | D33 | **Sincronização** — um dos oito recursos não tinha nome nem veredito, e era o de PIOR taxa de falha; o defeito estava escrito como fixture num teste verde (D-273) | ✔ |
-| D34–D36 | Saúde, Configurações, Copiloto | fila |
+| D34 | **Saúde do Sistema** — o "99,97% de uptime" do frame não tem UMA tabela que o sustente; a âncora navy ganhou a pergunta que a tela nasceu para responder (D-274) | ✔ |
+| D35–D36 | Configurações, Copiloto | fila |
 | D37 | Passe visual global | fila |
 
 ## Auditoria de Fidelidade Figma
@@ -811,88 +812,85 @@ O que resta é a fila **D31 em diante**: 7 superfícies ainda não migradas — 
 
 ## Última fatia concluída
 
-**D33 — Sincronização, pelo frame `AdminScreen` na variação de dados e
-processamentos (D-273).** Terceira tela do bloco de administração. Sem
-migration.
+**D34 — Saúde do Sistema, pelo frame `AdminScreen` na variação de
+confiabilidade (D-274).** Quarta tela do bloco de administração. Sem migration.
 
-### Um recurso sem nome e sem veredito, e era o pior deles
+### O número mais visível do frame não tem uma tabela que o sustente
 
-O banco devolve **oito** recursos de reconciliação; o mapa de rótulos da tela
-tinha **sete**. O oitavo, `order_financials`, aparecia com a chave crua do
-banco no lugar do nome e um travessão no lugar da situação — e é o recurso com
-a **pior taxa de falha do Dev**, 16 de 40 execuções em 7 dias.
+O frame abre com um banner navy e "99,97% — Uptime · 30 dias". São **zero
+tabelas** de incidente, uptime, disponibilidade ou SLA no esquema inteiro — e
+"Ver incidentes", a ação do cabeçalho, tem a mesma resposta.
 
-A cadência sempre existiu, no mapa irmão chaveado por `job_type`. Eram três
-mapas para o mesmo conjunto, e o recurso faltava em dois. Nome e cadência agora
-moram no mesmo objeto: separados, eles divergiram e ninguém viu (D-224).
+Derivar do heartbeat seria pior que não mostrar: `system.ping` diz que o worker
+rodou, não que o produto estava disponível. O worker pode estar batendo ponto
+com a web fora do ar.
 
-### O defeito estava escrito como fixture, num teste verde
+### A âncora ganhou a pergunta que a tela nasceu para responder
 
-Um teste de D-232 dizia, no próprio nome: *"recurso sem cadência mapeada
-(order_financials)"*. Peguei a **falta** de uma entrada e a usei como exemplo
-canônico do balde. O teste passava, descrevia o comportamento certo, e
-**congelava o buraco como se fosse desenho** — enquanto ele fosse o exemplo,
-ninguém perguntaria por que aquele recurso não tinha cadência.
+O banner navy virou a **célula âncora** da faixa, que é o gradiente que o design
+system já tem em cinco telas. No lugar do uptime inventado ela mostra o veredito
+que a tela existe para dar: *o código que está rodando é o código que eu acho
+que está rodando?* — CURRENT, OUTDATED ou UNKNOWN, com o motivo ao lado.
 
-Vale como lição geral: quando um teste precisa de um exemplo de estado
-degradado, **um dado real degradado é o fixture mais perigoso que existe**.
+Composição aplicada, conteúdo recusado: a mesma operação de D-272.
 
-### `done`, em inglês e minúsculo, numa coluna chamada Status
+### Três números sem fonte e um dono alheio
 
-Achado na captura, na tabela de backfill. Mesma classe do item acima, e o elo
-que faltava já existia para outro catálogo: D-208 escreveu o teste que exige
-rótulo em português para todo tipo de evento, exatamente porque a busca devolve
-o código cru em silêncio. O elo existia para um catálogo e não para os outros.
-
-### A faixa conta recursos, e o frame conta contas
-
-O frame desenha "Atualizadas 3, Com Atenção 1, Com Erro 0" — contando contas.
-Contar contas é o que esta tela fazia **antes de D-143**, e a medição que
-derrubou aquela versão continua valendo: uma conta "atualizada" pode ter
-visitas falhando 123 de 145 vezes. Pedidos rodam de hora em hora e visitas uma
-vez por dia; um veredito único por conta precisa escolher qual régua mentir.
-
-Seis células: o total e as cinco partes, contadas sobre o mesmo array que a
-tabela imprime. **"Sem cadência" entra mesmo esperando zero** — é a célula que
-denuncia um recurso novo sem entrada no mapa, ou seja, o defeito de cima.
-
-### "Execuções Recentes" não entra, e são quatro medições
-
-| medição | número |
+| cartão do frame | medição |
 |---|---|
-| policies de RLS em `job_runs` | **0** (e `authenticated` sem SELECT) |
-| colunas de conta em `job_runs` | **0** — a coluna "Conta" não tem fonte |
-| participação do maior tipo de job | **65%** (32.777 de 50.808 em 7 dias) |
+| Aplicação Web **42 ms**, API ML **186 ms**, Banco **12 ms** | a única coluna de latência do esquema é `ai_runs.latency_ms` |
+| Armazenamento **2,4 TB livres** | nenhuma telemetria de capacidade, e perguntá-la ao Google Cloud é a permissão que D-176 excluiu |
+| Fila de Atendimento | tem tela dona (D-224) |
+| Workers degradados | **isto a tela já mostra**, por tipo de job |
 
-A última é a decisiva: uma lista das 25 mais recentes seria **25 webhooks**, e
-as três linhas que o próprio frame desenha ficariam invisíveis. O desenho
-pressupõe uma operação em que as execuções são poucas e variadas; a nossa é um
-firehose com uma cauda. E a pergunta que a tabela responderia já é respondida
-logo acima, no grão que o dado sustenta.
+### O balde que eu errei, e o mapa sabia mais que eu
 
-**Verificação, local:** `check` **29/29** (+8 testes), e2e **67/67** em banco
-recriado (4 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions`
-17, `check:table-styles` **20**, `docs:check`. Capturada a 1440px contra o
-Supabase local.
+Ao montar o fixture escolhi o webhook como exemplo de "job sem cadência". Ele
+não é: D-232 mediu um limiar de **silêncio** para ele, 32 mil execuções em 7
+dias, porque um webhook de pedidos mudo por horas não está bem. Sem cadência de
+verdade são os raros por natureza — chave suja, backfill, importação sob
+demanda. O teste pegou.
+
+### "done", de novo, uma tela ao lado
+
+A coluna "Último estado" imprimia o valor cru. D-273 acabou de consertar isso na
+tela vizinha. As duas colunas falam o mesmo vocabulário, então o rótulo passou a
+se chamar pelo conceito e não pela tabela — generalizar uma fatia depois de
+criar é o momento certo, porque o segundo consumidor é que prova que o conceito
+é compartilhado.
+
+### Sexta tela seguida sem spec
+
+Cinco casos novos, e o quinto é o que faltava na trilha inteira: **o GESTOR vê a
+recusa**, e a recusa vem da RPC (zero linhas para quem não é ADMIN), não de um
+`if` na tela.
+
+**Verificação, local:** `check` **29/29**, e2e **72/72** em banco recriado (5
+novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17,
+`check:table-styles` **21**, `docs:check`. Capturada a 1440px contra o Supabase
+local.
 
 ## Próxima fatia segura
 
-**D34–D36 — Saúde do Sistema, Configurações e Copiloto.** As três existem.
+**D35–D36 — Configurações e Copiloto.** As duas existem, e são as últimas da
+fila nomeada.
 
-`/saude` é vizinha desta: as duas leem frescor contra cadência, e a diferença é
-a chave (recurso por conta lá, `job_type` aqui). **A pergunta dela é a mesma
-que D33 respondeu**: o frame quer que a tela dona mostre o que a Central já
-mostra? Se sim, é duplicação de dono (D-224).
+`/configuracoes` é a **última consumidora de `components/table-styles.ts`**:
+D35 pode apagar o módulo, fechando o MERGE que a auditoria de fidelidade pediu.
+O frame dela é o único do bloco com navegação lateral própria (quatro abas:
+Organização, Preferências Operacionais, Notificações, Políticas e Padrões) e
+dois interruptores — **2FA obrigatório** e **modo manutenção** —, que são a
+primeira coisa a medir: interruptor sem coluna atrás é botão que não faz nada.
 
-`/configuracoes` é a última consumidora de `components/table-styles.ts`: D36
-pode apagar o módulo.
-
-A rotina, com as seis perguntas acumuladas: **o frame tem fonte?** (D-266),
+A rotina, com as sete perguntas acumuladas: **o frame tem fonte?** (D-266),
 **falta coluna ou falta dado?** (D-268), **quantas linhas no Dev?** (D-263), **a
 faixa conta o mesmo conjunto da tabela ou é navegação?** (D-265), **há spec?**
-(D-271) e **capturei a tela depois do último build?** (D-272). D33 acrescenta a
-sétima: **o fixture do teste é um dado degradado de verdade?** — foi assim que
-um defeito ficou congelado dentro de um teste verde.
+(D-271), **capturei a tela depois do último build?** (D-272) e **o fixture do
+teste é um dado degradado de verdade?** (D-273).
+
+D34 acrescenta a oitava, e ela é sobre mim: **o mapa já sabe disso?** — escolhi
+um exemplo por intuição e o código tinha a medição contrária escrita em
+comentário, num arquivo que eu havia lido na fatia anterior.
 
 Depois delas, só o **passe visual global (D37)**.
 

@@ -1,7 +1,7 @@
 import { EVENT_SEVERITY } from "@sb/domain";
 import { describe, expect, it } from "vitest";
 
-import { eventTypeLabel, syncRunStatusLabel } from "./labels.js";
+import { eventTypeLabel, runStatusLabel } from "./labels.js";
 
 /**
  * Todo tipo de evento tem rótulo (D-208).
@@ -33,17 +33,18 @@ describe("rótulos de domain_events", () => {
  * numa coluna chamada Status. O elo existia para um catálogo e não para os
  * outros.
  */
-describe("rótulos de sync_runs.status", () => {
+describe("rótulos de estado de execução (sync_runs e job_runs)", () => {
   it("os três status do check têm rótulo em português", () => {
-    // `sync_runs_status_check`: done, failed, partial. Se o banco ganhar um
-    // quarto, este teste continua verde — por isso a tela também mostra o
-    // balde "Sem cadência", que é o detector do lado do dado.
+    // `sync_runs_status_check`: done, failed, partial. `job_runs` usa os dois
+    // primeiros (medido: são os únicos valores no Dev). Se o banco ganhar um
+    // quarto, este teste continua verde — por isso a tela de Sincronização
+    // também mostra o balde "Sem cadência", que é o detector do lado do dado.
     for (const status of ["done", "failed", "partial"]) {
-      expect(syncRunStatusLabel(status), status).not.toBe(status);
+      expect(runStatusLabel(status), status).not.toBe(status);
     }
   });
 
   it("status desconhecido devolve o código, sem inventar tradução", () => {
-    expect(syncRunStatusLabel("cancelled")).toBe("cancelled");
+    expect(runStatusLabel("cancelled")).toBe("cancelled");
   });
 });

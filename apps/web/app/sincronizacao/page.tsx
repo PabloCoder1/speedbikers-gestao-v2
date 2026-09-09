@@ -7,7 +7,7 @@ import { Shell } from "../../components/shell";
 import { StatePill, type PillTone } from "../../components/state-pill";
 import { TOM, tomDeStatus } from "../../components/tone";
 import { formatCount, formatDateTime } from "../../lib/format";
-import { mlAccountStatusLabel, statusTone, syncRunStatusLabel } from "../../lib/labels";
+import { mlAccountStatusLabel, statusTone, runStatusLabel } from "../../lib/labels";
 import { sanitizeErrorText } from "../../lib/sanitize";
 import { createClient } from "../../lib/supabase/server";
 import { classifyResourceFreshness, failureRateLabel, resourceLabel } from "../../lib/sync-health";
@@ -395,7 +395,7 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
                             (não existe denominador confiável para "quanto falta").
                           */}
                           <td>{formatDateTime(account?.backfill_covered_until ?? null)}</td>
-                          <td>{row.last_run_status === null ? "—" : syncRunStatusLabel(row.last_run_status)}</td>
+                          <td>{row.last_run_status === null ? "—" : runStatusLabel(row.last_run_status)}</td>
                         </tr>
                       );
                     })}

@@ -367,6 +367,106 @@ async function main(): Promise<void> {
       COM taxa de falha ao lado. É o caso real que D-143 mediu: frescor e
       cobertura são coisas distintas, e a segunda degrada em silêncio.
   */
+  /*
+    EXECUÇÕES DE JOB (D-274), para `/saude` ter o que mostrar.
+
+    `job_runs` é append-only como `sync_runs` — os mesmos dois triggers — e
+    além disso **`authenticated` não tem SELECT nenhum nela**: quem lê é a RPC
+    `get_system_health`, `security definer` e restrita a ADMIN. O seed escreve
+    com `service_role`, que passa por cima da RLS.
+
+    Os quatro tipos cobrem os quatro vereditos que a tela sabe dar:
+
+    - `system.ping` (horário) rodou há 20 min → **Em dia**;
+    - `sync.orders.window` (horário) rodou há 13h → **Parado**. É o cenário
+      exato de D-217: um job horário mudo por meio dia, que a versão de limiar
+      único (26h) deixava passar em silêncio;
+    - `sync.listings.snapshot` (6h) falhou há 2h → frescor ainda em dia, e
+      **uma falha em 24h ao lado**. Frescor e sucesso são coisas diferentes;
+    - `analytics.recompute` é movido por CHAVE SUJA e não tem cadência
+      nenhuma → **sem selo**, idade crua. (O webhook não serve de exemplo
+      aqui: D-232 mediu um limiar de SILÊNCIO para ele, então ele recebe
+      veredito.)
+
+    `job_runs_failure_fields_match_status` exige `retryable` não nulo quando
+    falha, e nulo (junto de `reason`) quando conclui.
+  */
+  const jobRunId = "5b1d0000-0000-4000-8000-00000000e2e1";
+
+  const jobExistente = await db.from("job_runs").select("id").eq("job_id", jobRunId).limit(1);
+
+  if (jobExistente.error !== null) {
+    throw jobExistente.error;
+  }
+
+  if (jobExistente.data.length === 0) {
+    const min = 60 * 1000;
+    // `duration_ms` NÃO entra: é coluna gerada a partir dos dois carimbos, e
+    // o banco recusa valor explícito. Duração e horários não podem divergir.
+    const execucao = (
+      inicioMin: number,
+      duracaoMin: number,
+    ): { started_at: string; finished_at: string } => ({
+      started_at: new Date(now - inicioMin * min).toISOString(),
+      finished_at: new Date(now - (inicioMin - duracaoMin) * min).toISOString(),
+    });
+
+    const jobRuns = await db.from("job_runs").insert([
+      {
+        organization_id: organizationId,
+        job_id: jobRunId,
+        job_type: "system.ping",
+        dedupe_key: "e2e:seed:ping",
+        attempt: 1,
+        status: "done",
+        retryable: null,
+        reason: null,
+        processed: 1,
+        ...execucao(20, 0.05),
+      },
+      {
+        organization_id: organizationId,
+        job_id: jobRunId,
+        job_type: "sync.orders.window",
+        dedupe_key: "e2e:seed:orders-window",
+        attempt: 1,
+        status: "done",
+        retryable: null,
+        reason: null,
+        processed: 12,
+        ...execucao(13 * 60, 1),
+      },
+      {
+        organization_id: organizationId,
+        job_id: jobRunId,
+        job_type: "sync.listings.snapshot",
+        dedupe_key: "e2e:seed:listings-snapshot",
+        attempt: 2,
+        status: "failed",
+        retryable: true,
+        reason: "429 Too Many Requests ao varrer anúncios",
+        processed: null,
+        ...execucao(120, 0.5),
+      },
+      {
+        organization_id: organizationId,
+        job_id: jobRunId,
+        job_type: "analytics.recompute",
+        dedupe_key: "e2e:seed:recompute",
+        attempt: 1,
+        status: "done",
+        retryable: null,
+        reason: null,
+        processed: 1,
+        ...execucao(5, 0.01),
+      },
+    ]);
+
+    if (jobRuns.error !== null) {
+      throw jobRuns.error;
+    }
+  }
+
   const syncJobId = "5b1d0000-0000-4000-8000-00000000e2e0";
 
   const syncExistente = await db.from("sync_runs").select("id").eq("job_id", syncJobId).limit(1);
