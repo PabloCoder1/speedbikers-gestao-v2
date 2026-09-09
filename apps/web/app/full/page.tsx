@@ -273,7 +273,8 @@ export default async function FullPage({
             name="busca"
             defaultValue={filters.search ?? ""}
             placeholder="Buscar SKU ou produto"
-            aria-label="Buscar por SKU ou título" style={{ minWidth: "16rem" }}
+            aria-label="Buscar por SKU ou título"
+            style={{ minWidth: "16rem" }}
           />
           <FilterSubmit>Filtrar</FilterSubmit>
         </form>

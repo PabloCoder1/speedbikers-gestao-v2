@@ -281,7 +281,8 @@ export default async function PrecosPage({
             name="busca"
             defaultValue={filters.search ?? ""}
             placeholder="Buscar SKU, MLB ou título"
-            aria-label="Buscar por MLB, SKU ou título" style={{ minWidth: "14rem" }}
+            aria-label="Buscar por MLB, SKU ou título"
+            style={{ minWidth: "14rem" }}
           />
           {/*
             O frame não desenha filtro de data — mas ele EXISTE e recorta de

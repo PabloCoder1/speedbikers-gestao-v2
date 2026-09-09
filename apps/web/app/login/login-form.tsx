@@ -43,15 +43,6 @@ export function LoginForm(): ReactNode {
     router.refresh();
   }
 
-  const field: React.CSSProperties = {
-    width: "100%",
-    padding: "0.625rem 0.75rem",
-    border: "1px solid var(--sb-border)",
-    borderRadius: "var(--sb-radius)",
-    fontSize: "1rem",
-    marginTop: "var(--sb-space-1)",
-  };
-
   if (missing.length > 0) {
     return (
       <p role="alert" style={{ color: "var(--sb-danger)", fontSize: "0.875rem" }}>
@@ -76,7 +67,6 @@ export function LoginForm(): ReactNode {
           onChange={(event) => { setEmail(event.target.value); }}
           required
           autoComplete="email"
-          style={field}
         />
       </label>
 
@@ -89,7 +79,6 @@ export function LoginForm(): ReactNode {
           onChange={(event) => { setPassword(event.target.value); }}
           required
           autoComplete="current-password"
-          style={field}
         />
       </label>
 

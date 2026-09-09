@@ -114,19 +114,7 @@ export function ConfirmApplyForm({
         onClick={() => {
           void confirm();
         }}
-        disabled={busy || !ready}
-        style={{
-          padding: "0.625rem 1rem",
-          border: "none",
-          borderRadius: "var(--sb-radius)",
-          background: "var(--sb-primary)",
-          color: "var(--sb-white)",
-          fontSize: "1rem",
-          fontWeight: 600,
-          cursor: busy || !ready ? "not-allowed" : "pointer",
-          opacity: busy || !ready ? 0.6 : 1,
-          whiteSpace: "nowrap",
-        }}
+        disabled={busy || !ready} style={{ color: "var(--sb-white)" }}
       >
         {busy ? "Confirmando…" : "Confirmar aplicação"}
       </button>

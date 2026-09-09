@@ -139,14 +139,6 @@ export function ManualLinkForm({
                 onClick={() => {
                   skuSearch.select(sku);
                 }}
-                style={{
-                  padding: "0.25rem 0.5rem",
-                  borderRadius: "var(--sb-radius)",
-                  border: "1px solid var(--sb-border)",
-                  background: "transparent",
-                  fontSize: "0.75rem",
-                  cursor: "pointer",
-                }}
               >
                 {sku.sku}
                 {sku.title !== null && <span style={{ color: "var(--sb-text-soft)" }}> · {sku.title}</span>}
@@ -163,18 +155,7 @@ export function ManualLinkForm({
           disabled={busy || skuSearch.selected === null || itemId.trim() === ""}
           onClick={() => {
             void submit();
-          }}
-          style={{
-            padding: "0.375rem 0.75rem",
-            borderRadius: "var(--sb-radius)",
-            border: "none",
-            background: "var(--sb-primary)",
-            color: "var(--sb-white)",
-            fontSize: "0.8125rem",
-            fontWeight: 600,
-            cursor: busy || skuSearch.selected === null ? "not-allowed" : "pointer",
-            opacity: busy || skuSearch.selected === null || itemId.trim() === "" ? 0.5 : 1,
-          }}
+          }} style={{ color: "var(--sb-white)" }}
         >
           {busy ? "Vinculando…" : "Vincular"}
         </button>

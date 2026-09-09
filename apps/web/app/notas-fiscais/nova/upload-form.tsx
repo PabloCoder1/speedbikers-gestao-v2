@@ -89,8 +89,7 @@ export function UploadForm(): ReactNode {
           onChange={(event) => {
             setFile(event.target.files?.[0] ?? null);
           }}
-          required
-          style={{ display: "block", width: "100%", marginTop: "var(--sb-space-1)" }}
+          required style={{ display: "block", width: "100%", marginTop: "var(--sb-space-1)" }}
         />
       </label>
 

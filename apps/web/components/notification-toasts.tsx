@@ -293,15 +293,6 @@ export function NotificationToasts({
                 dismiss(toast.key);
               }}
               aria-label="Fechar notificação"
-              style={{
-                border: "none",
-                background: "transparent",
-                cursor: "pointer",
-                color: "var(--sb-text-soft)",
-                fontSize: "1rem",
-                lineHeight: 1,
-                padding: 0,
-              }}
             >
               ×
             </button>

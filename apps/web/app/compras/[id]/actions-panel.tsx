@@ -122,8 +122,7 @@ export function ActionsPanel({
           disabled={busy}
           onClick={() => {
             setShowCancelPrompt(true);
-          }}
-          style={{ color: "var(--sb-danger)" }}
+          }} style={{ color: "var(--sb-danger)" }}
         >
           Cancelar pedido
         </button>
@@ -138,12 +137,6 @@ export function ActionsPanel({
               setCancelReason(event.target.value);
             }}
             placeholder="Motivo (opcional)"
-            style={{
-              padding: "0.375rem 0.5rem",
-              borderRadius: "var(--sb-radius)",
-              border: "1px solid var(--sb-border)",
-              fontSize: "0.8125rem",
-            }}
           />
           <button
             className="sb-button"

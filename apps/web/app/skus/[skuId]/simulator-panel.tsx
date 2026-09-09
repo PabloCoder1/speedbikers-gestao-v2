@@ -22,16 +22,6 @@ import { formatBusinessDate, formatCount } from "../../../lib/format";
  * (`docs/METRICS.md`), não há base matemática confiável ainda.
  */
 
-const fieldStyle: React.CSSProperties = {
-  padding: "0.375rem 0.625rem",
-  borderRadius: "var(--sb-radius)",
-  border: "1px solid var(--sb-border)",
-  background: "transparent",
-  color: "inherit",
-  fontSize: "0.8125rem",
-  width: "8rem",
-};
-
 const resultStyle: React.CSSProperties = {
   fontSize: "1.0625rem",
   fontWeight: 700,
@@ -93,7 +83,6 @@ export function SimulatorPanel({
             onChange={(event) => {
               setStockQuantity(Number(event.target.value));
             }}
-            style={fieldStyle}
           />
         </label>
 
@@ -108,7 +97,6 @@ export function SimulatorPanel({
             onChange={(event) => {
               setAvgDailySales(Number(event.target.value));
             }}
-            style={fieldStyle}
           />
         </label>
       </div>
@@ -139,7 +127,6 @@ export function SimulatorPanel({
             onChange={(event) => {
               setTargetDays(Number(event.target.value));
             }}
-            style={fieldStyle}
           />
         </label>
 

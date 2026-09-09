@@ -39,15 +39,6 @@ export function MarkAllButton(): ReactNode {
         onClick={() => {
           void handleClick();
         }}
-        style={{
-          padding: "0.375rem 0.75rem",
-          borderRadius: "var(--sb-radius)",
-          border: "1px solid var(--sb-border)",
-          background: "transparent",
-          fontSize: "0.8125rem",
-          cursor: "pointer",
-          whiteSpace: "nowrap",
-        }}
       >
         Marcar todas como lidas
       </button>

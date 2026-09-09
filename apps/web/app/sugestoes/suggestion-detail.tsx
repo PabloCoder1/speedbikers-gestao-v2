@@ -167,15 +167,7 @@ export function SuggestionDetail({
               aria-label="Status da sugestão"
               onChange={(event) => {
                 void handleStatusChange(event.target.value as SuggestionStatus);
-              }}
-              style={{
-                padding: "0.25rem 0.5rem",
-                borderRadius: "var(--sb-radius)",
-                border: "1px solid var(--sb-border)",
-                background: "transparent",
-                color: "inherit",
-                fontSize: "0.75rem",
-              }}
+              }} style={{ color: "inherit" }}
             >
               {SUGGESTION_STATUS_VALUES.map((option) => (
                 <option key={option} value={option}>

@@ -67,7 +67,18 @@ export function NotificationRow({ notification }: { notification: NotificationRo
         border: "1px solid var(--sb-border)",
         borderLeft: isUnread ? "3px solid var(--sb-primary)" : "3px solid transparent",
         borderRadius: "var(--sb-radius)",
-        background: isUnread ? "var(--sb-surface)" : "transparent",
+        /*
+          NÃO LIDA é o cartão branco; LIDA recua para o chão (D-285).
+
+          A linha era `--sb-surface` contra `transparent`, e o passo cinza
+          deveria ligá-la sozinho — foi o que o item 8 da lista de
+          pré-requisitos prometeu. **Não ligou, e o motivo é a árvore:** a lista
+          mora DENTRO de um `.sb-panel` branco, então o `transparent` da lida
+          mostrava o painel, não o chão. Com `--sb-ground` explícito o recuo
+          existe, e o realce que estava escrito no código desde sempre aparece
+          na tela pela primeira vez.
+        */
+        background: isUnread ? "var(--sb-surface)" : "var(--sb-ground)",
         marginBottom: "var(--sb-space-2)",
       }}
     >
@@ -116,17 +127,7 @@ export function NotificationRow({ notification }: { notification: NotificationRo
           disabled={busy}
           onClick={() => {
             void handleMarkRead();
-          }}
-          style={{
-            alignSelf: "flex-start",
-            padding: "0.25rem 0.625rem",
-            borderRadius: "var(--sb-radius)",
-            border: "1px solid var(--sb-border)",
-            background: "transparent",
-            fontSize: "0.75rem",
-            cursor: "pointer",
-            whiteSpace: "nowrap",
-          }}
+          }} style={{ alignSelf: "flex-start" }}
         >
           Marcar como lida
         </button>

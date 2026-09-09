@@ -85,19 +85,7 @@ export function ConnectButton({ mlAccountId, label }: { mlAccountId: string; lab
           void connect();
         }}
         disabled={busy}
-        aria-label={`Conectar ${label} ao Mercado Livre`}
-        style={{
-          padding: "0.375rem 0.875rem",
-          borderRadius: "var(--sb-radius)",
-          border: "none",
-          background: "var(--sb-primary)",
-          color: "var(--sb-white)",
-          fontWeight: 600,
-          fontSize: "0.8125rem",
-          cursor: busy ? "not-allowed" : "pointer",
-          opacity: busy ? 0.6 : 1,
-          whiteSpace: "nowrap",
-        }}
+        aria-label={`Conectar ${label} ao Mercado Livre`} style={{ color: "var(--sb-white)" }}
       >
         {busy ? "Abrindo o Mercado Livre…" : "Conectar"}
       </button>

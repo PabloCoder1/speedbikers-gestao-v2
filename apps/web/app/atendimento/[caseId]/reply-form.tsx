@@ -220,14 +220,6 @@ export function ReplyForm({
               }
             })();
           }}
-          style={{
-            border: "1px solid var(--sb-border)",
-            borderRadius: "var(--sb-radius)",
-            background: "var(--sb-surface)",
-            padding: "0.375rem 0.75rem",
-            fontSize: "0.8125rem",
-            cursor: suggesting ? "default" : "pointer",
-          }}
         >
           {suggesting ? "Gerando…" : "Sugerir com IA"}
         </button>
@@ -275,14 +267,7 @@ export function ReplyForm({
               if (estado.kind === "error") {
                 setEstado({ kind: "idle" });
               }
-            }}
-            style={{
-              padding: "0.375rem 0.5rem",
-              border: "1px solid var(--sb-border)",
-              borderRadius: "var(--sb-radius)",
-              fontSize: "0.8125rem",
-              maxWidth: "18rem",
-            }}
+            }} style={{ maxWidth: "18rem" }}
           >
             <option value="">Escolher…</option>
             {templates.map((template) => (
@@ -310,16 +295,7 @@ export function ReplyForm({
           if (estado.kind === "error") {
             setEstado({ kind: "idle" });
           }
-        }}
-        style={{
-          width: "100%",
-          padding: "0.625rem 0.75rem",
-          border: "1px solid var(--sb-border)",
-          borderRadius: "var(--sb-radius)",
-          fontSize: "0.9375rem",
-          fontFamily: "inherit",
-          resize: "vertical",
-        }}
+        }} style={{ width: "100%" }}
       />
 
       <div style={{ display: "flex", alignItems: "center", gap: "var(--sb-space-2)", flexWrap: "wrap" }}>
@@ -327,16 +303,7 @@ export function ReplyForm({
           className="sb-button"
           type="button"
           disabled={vazio || enviando || estado.kind === "queued"}
-          onClick={() => void enviar()}
-          style={{
-            border: "none",
-            borderRadius: "var(--sb-radius)",
-            background: vazio || enviando ? "var(--sb-muted)" : "var(--sb-primary)",
-            color: vazio || enviando ? "var(--sb-text)" : "var(--sb-white)",
-            padding: "0.5rem 1rem",
-            fontSize: "0.875rem",
-            cursor: vazio || enviando ? "default" : "pointer",
-          }}
+          onClick={() => void enviar()} style={{ color: vazio || enviando ? "var(--sb-text)" : "var(--sb-white)" }}
         >
           {enviando ? "Enviando…" : "Enviar resposta"}
         </button>

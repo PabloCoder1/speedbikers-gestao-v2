@@ -229,17 +229,7 @@ export function PurchaseOrderForm({
           type="button"
           onClick={() => {
             setItems((current) => [...current, emptyItem()]);
-          }}
-          style={{
-            marginTop: "var(--sb-space-2)",
-            padding: "0.375rem 0.75rem",
-            borderRadius: "var(--sb-radius)",
-            border: "1px solid var(--sb-border)",
-            background: "transparent",
-            color: "var(--sb-text)",
-            fontSize: "0.8125rem",
-            cursor: "pointer",
-          }}
+          }} style={{ marginTop: "var(--sb-space-2)", color: "var(--sb-text)" }}
         >
           + Adicionar item
         </button>
@@ -290,8 +280,7 @@ export function PurchaseOrderForm({
         type="submit"
         disabled={busy}
         /* O formulário é grid: sem isto o botão estica a linha inteira. Era o
-           `justifySelf` que morava no objeto de estilo apagado por A5. */
-        style={{ justifySelf: "start" }}
+           `justifySelf` que morava no objeto de estilo apagado por A5. */ style={{ justifySelf: "start" }}
       >
         {busy ? "Salvando…" : isEditing ? "Salvar alterações" : "Criar pedido (rascunho)"}
       </button>

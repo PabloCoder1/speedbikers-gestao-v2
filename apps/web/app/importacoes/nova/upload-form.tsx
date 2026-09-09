@@ -104,16 +104,7 @@ export function UploadForm(): ReactNode {
           value={kind}
           onChange={(event) => {
             setKind(event.target.value);
-          }}
-          style={{
-            display: "block",
-            width: "100%",
-            marginTop: "var(--sb-space-1)",
-            padding: "0.5rem",
-            borderRadius: "var(--sb-radius)",
-            border: "1px solid var(--sb-border)",
-            fontSize: "1rem",
-          }}
+          }} style={{ display: "block", width: "100%", marginTop: "var(--sb-space-1)" }}
         >
           {KINDS.map((option) => (
             <option key={option.value} value={option.value}>
@@ -139,8 +130,7 @@ export function UploadForm(): ReactNode {
           onChange={(event) => {
             setFile(event.target.files?.[0] ?? null);
           }}
-          required
-          style={{ display: "block", width: "100%", marginTop: "var(--sb-space-1)" }}
+          required style={{ display: "block", width: "100%", marginTop: "var(--sb-space-1)" }}
         />
       </label>
 

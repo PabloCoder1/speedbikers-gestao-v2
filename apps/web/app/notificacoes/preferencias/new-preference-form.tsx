@@ -11,15 +11,6 @@ const SEVERITY_OPTIONS = ["informativo", "importante", "critico"];
 const ALL_TYPES = "";
 const ALL_ACCOUNTS = "";
 
-const fieldStyle: React.CSSProperties = {
-  padding: "0.375rem 0.625rem",
-  borderRadius: "var(--sb-radius)",
-  border: "1px solid var(--sb-border)",
-  background: "transparent",
-  color: "inherit",
-  fontSize: "0.8125rem",
-};
-
 export function NewPreferenceForm({
   eventTypes,
   accounts,
@@ -86,7 +77,6 @@ export function NewPreferenceForm({
           onChange={(event) => {
             setEventType(event.target.value);
           }}
-          style={fieldStyle}
         >
           <option value={ALL_TYPES}>Todos os tipos</option>
           {eventTypes.map((type) => (
@@ -105,7 +95,6 @@ export function NewPreferenceForm({
           onChange={(event) => {
             setAccountId(event.target.value);
           }}
-          style={fieldStyle}
         >
           <option value={ALL_ACCOUNTS}>Todas as contas</option>
           {accounts.map((account) => (
@@ -124,7 +113,6 @@ export function NewPreferenceForm({
           onChange={(event) => {
             setMinSeverity(event.target.value);
           }}
-          style={fieldStyle}
         >
           {SEVERITY_OPTIONS.map((option) => (
             <option key={option} value={option}>

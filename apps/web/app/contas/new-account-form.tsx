@@ -60,8 +60,7 @@ export function NewAccountForm(): ReactNode {
             setLabel(event.target.value);
           }}
           placeholder="Speedbikers (loja 1)"
-          disabled={busy}
-          style={{ width: "16rem" }}
+          disabled={busy} style={{ width: "16rem" }}
         />
       </label>
 
@@ -75,8 +74,7 @@ export function NewAccountForm(): ReactNode {
             setSlug(event.target.value.toLowerCase());
           }}
           placeholder="speedbikers-loja-1"
-          disabled={busy}
-          style={{ width: "14rem" }}
+          disabled={busy} style={{ width: "14rem" }}
         />
       </label>
 
@@ -86,18 +84,7 @@ export function NewAccountForm(): ReactNode {
         onClick={() => {
           void submit();
         }}
-        disabled={busy || label.trim() === "" || slug.trim() === ""}
-        style={{
-          padding: "0.5rem 1rem",
-          borderRadius: "var(--sb-radius)",
-          border: "none",
-          background: "var(--sb-primary)",
-          color: "var(--sb-white)",
-          fontWeight: 600,
-          fontSize: "0.875rem",
-          cursor: busy ? "not-allowed" : "pointer",
-          opacity: busy || label.trim() === "" || slug.trim() === "" ? 0.5 : 1,
-        }}
+        disabled={busy || label.trim() === "" || slug.trim() === ""} style={{ color: "var(--sb-white)" }}
       >
         Cadastrar conta
       </button>

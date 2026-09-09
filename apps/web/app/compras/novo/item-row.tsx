@@ -143,17 +143,7 @@ export function ItemRow({
                   type="button"
                   onClick={() => {
                     select(sku);
-                  }}
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    textAlign: "left",
-                    padding: "0.375rem 0.5rem",
-                    border: "none",
-                    background: "transparent",
-                    cursor: "pointer",
-                    fontSize: "0.8125rem",
-                  }}
+                  }} style={{ display: "block", width: "100%", textAlign: "left" }}
                 >
                   <strong>{sku.sku}</strong>
                   {sku.title !== null && ` — ${sku.title}`}

@@ -16,13 +16,6 @@ import { changeMemberRole, grantAccountAccess, revokeAccountAccess } from "./act
 
 const ROLES = ["ADMIN", "GESTOR", "ANALISTA", "OPERADOR", "VISUALIZADOR"] as const;
 
-const selectStyle: React.CSSProperties = {
-  padding: "0.25rem 0.5rem",
-  borderRadius: "var(--sb-radius)",
-  border: "1px solid var(--sb-border)",
-  fontSize: "0.8125rem",
-};
-
 export interface AccountOption {
   id: string;
   label: string;
@@ -70,7 +63,6 @@ export function RoleSelect({
         value={role}
         disabled={busy}
         onChange={(event) => void change(event.target.value)}
-        style={selectStyle}
       >
         {ROLES.map((option) => (
           <option key={option} value={option}>

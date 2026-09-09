@@ -268,18 +268,7 @@ export function CopilotChat(): ReactNode {
               disabled={busy}
               onClick={() => {
                 void ask(sugestao);
-              }}
-              style={{
-                textAlign: "left",
-                background: "var(--sb-surface)",
-                border: "1px solid var(--sb-border)",
-                borderRadius: "var(--sb-radius)",
-                padding: "0.625rem 0.75rem",
-                fontSize: "0.8125rem",
-                fontFamily: "inherit",
-                color: "var(--sb-text)",
-                cursor: busy ? "default" : "pointer",
-              }}
+              }} style={{ textAlign: "left", color: "var(--sb-text)" }}
             >
               {sugestao}
             </button>
@@ -302,15 +291,7 @@ export function CopilotChat(): ReactNode {
             if (event.key === "Enter") {
               void ask();
             }
-          }}
-          style={{
-            flex: 1,
-            padding: "0.625rem 0.75rem",
-            border: "1px solid var(--sb-border)",
-            borderRadius: "var(--sb-radius)",
-            fontSize: "0.9375rem",
-            fontFamily: "inherit",
-          }}
+          }} style={{ flex: 1 }}
         />
         <button
           className="sb-button"
@@ -318,16 +299,7 @@ export function CopilotChat(): ReactNode {
           disabled={busy || draft.trim().length === 0}
           onClick={() => {
             void ask();
-          }}
-          style={{
-            border: "none",
-            borderRadius: "var(--sb-radius)",
-            background: busy ? "var(--sb-muted)" : "var(--sb-primary)",
-            color: busy ? "var(--sb-text)" : "var(--sb-white)",
-            padding: "0.5rem 1rem",
-            fontSize: "0.875rem",
-            cursor: busy ? "default" : "pointer",
-          }}
+          }} style={{ color: busy ? "var(--sb-text)" : "var(--sb-white)" }}
         >
           {busy ? "Consultando…" : "Perguntar"}
         </button>

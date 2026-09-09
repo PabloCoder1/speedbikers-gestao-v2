@@ -14,12 +14,16 @@
  * Campo e botão não tinham guarda — e o padrão volta quando não há quem o
  * reprove.
  *
+ * **Ele pega as DUAS metades desde o passo cinza (D-285).** A primeira versão
+ * media só a ausência da classe, e escreveu aqui que a disputa dentro do
+ * elemento que já a tem ficava de fora. Ficou por pouco tempo: o passo cinza
+ * mediu **26 elementos com a classe E aparência inline** — `background:
+ * "transparent"` num `.sb-button`, que sobre chão branco é branco e sobre chão
+ * cinza vira um botão cinza dentro de um cartão branco. O que era invisível
+ * passou a ser visível no dia em que o chão mudou.
+ *
  * **O que ele NÃO pega**, dito para ninguém confundir silêncio com garantia:
  *
- *   - **aparência declarada dentro do `style` de um elemento que JÁ tem a
- *     classe.** A classe e o inline podem continuar disputando o mesmo pixel
- *     ali; o que se mede aqui é a ausência da classe, que é o caso que
- *     produziu o botão nativo na tela;
  *   - **um controle desenhado com `<div role="button">`** — não existe no
  *     repositório hoje (medido), e reprovar `div` por precaução acusaria a
  *     tela inteira;
@@ -60,6 +64,29 @@ const CLASSES = [
   "sb-account",
   "sb-brand",
   "sb-help",
+];
+
+/**
+ * As propriedades que a CLASSE manda. `color` não está aqui de propósito: cor
+ * que depende do dado é legítima e nenhuma classe estática a expressa — mesma
+ * exceção que `check:table-styles` abre para a célula pintada por valor.
+ */
+const APARENCIA = [
+  "padding",
+  "paddingLeft",
+  "paddingRight",
+  "paddingTop",
+  "paddingBottom",
+  "border",
+  "borderRadius",
+  "borderColor",
+  "background",
+  "backgroundColor",
+  "fontSize",
+  "fontWeight",
+  "fontFamily",
+  "cursor",
+  "opacity",
 ];
 
 /** Campos que não têm forma: a caixa e o rádio desenham a si mesmos. */
@@ -125,9 +152,57 @@ function controles(bruto) {
     const tag = texto.slice(m.index, fim + 1);
 
     if (SEM_FORMA.test(tag)) continue;
-    if (CLASSES.some((c) => tag.includes(c))) continue;
 
-    achados.push({ tag: m[1], linha: texto.slice(0, m.index).split("\n").length });
+    const linha = texto.slice(0, m.index).split("\n").length;
+
+    if (!CLASSES.some((c) => tag.includes(c))) {
+      achados.push({ tag: m[1], linha, motivo: "sem classe" });
+      continue;
+    }
+
+    /*
+      A SEGUNDA METADE: tem a classe e declara aparência ao lado dela.
+
+      `color` fica de fora da lista porque cor que depende do DADO é legítima e
+      nenhuma classe estática a expressa — é a mesma exceção que
+      `check:table-styles` abre para a célula pintada por valor. O resto
+      (padding, borda, fundo, fonte) a classe já manda, e o inline vence.
+    */
+    const literal = /style=\{\{([\s\S]*?)\}\}/.exec(tag);
+
+    if (literal !== null) {
+      const disputa = APARENCIA.filter((prop) => new RegExp(`(^|[{,\\s])${prop}\\s*:`).test(literal[1]));
+
+      if (disputa.length > 0) {
+        achados.push({ tag: m[1], linha, motivo: `inline: ${disputa.join(", ")}` });
+      }
+
+      continue;
+    }
+
+    /*
+      E a MESMA disputa por REFERÊNCIA: `style={fieldStyle}`.
+
+      Três formulários declaravam um objeto com padding, borda e
+      `background: "transparent"` e o aplicavam ao lado da classe. Sobre chão
+      branco isso é invisível; sobre o chão cinza vira campo cinza dentro de
+      cartão branco. O guarda procura a declaração no MESMO arquivo — objeto
+      importado de outro módulo continua fora do alcance, e isso fica dito para
+      ninguém confundir silêncio com garantia.
+    */
+    const referencia = /style=\{([A-Za-z_$][\w$]*)\}/.exec(tag);
+
+    if (referencia === null) continue;
+
+    const decl = new RegExp(`const ${referencia[1]}[^=]*=\\s*\\{([\\s\\S]*?)\\n\\s*\\}`).exec(texto);
+
+    if (decl === null) continue;
+
+    const disputa = APARENCIA.filter((prop) => new RegExp(`(^|[{,\\s])${prop}\\s*:`).test(decl[1]));
+
+    if (disputa.length > 0) {
+      achados.push({ tag: m[1], linha, motivo: `style={${referencia[1]}}: ${disputa.join(", ")}` });
+    }
   }
 
   return achados;
@@ -193,6 +268,29 @@ export function X() { return null; }`,
     acusa: 0,
   },
   {
+    // A segunda metade, medida no passo cinza: 26 elementos assim.
+    nome: "classe E aparencia inline sao dois donos do mesmo pixel",
+    fonte: `<button className="sb-button" type="button" style={{ background: "transparent", padding: "0.25rem" }}>Ir</button>`,
+    acusa: 1,
+  },
+  {
+    nome: "cor que depende do dado NAO e aparencia paralela",
+    fonte: `<button className="sb-button" type="button" style={{ color: "var(--sb-danger)" }}>Cancelar</button>`,
+    acusa: 0,
+  },
+  {
+    // O buraco que a primeira versão da segunda metade deixou: três
+    // formulários aplicavam a aparência por referência, não por literal.
+    nome: "aparencia por REFERENCIA tambem e disputa",
+    fonte: `const fieldStyle = {\n  padding: "0.375rem",\n  background: "transparent",\n};\n<input className="sb-input" style={fieldStyle} />`,
+    acusa: 1,
+  },
+  {
+    nome: "layout ao lado da classe passa",
+    fonte: `<input className="sb-input" type="search" style={{ minWidth: "12rem" }} />`,
+    acusa: 0,
+  },
+  {
     nome: "outro componente do design system passa",
     fonte: `<button className="sb-menu-item" type="button" onClick={() => { pick(); }}>Escolher</button>`,
     acusa: 0,
@@ -240,7 +338,7 @@ if (problemas.length > 0) {
   console.error(`check:control-styles — ${String(quantos)} controle(s) fora do design system, em ${String(problemas.length)} arquivo(s):\n`);
 
   for (const p of problemas) {
-    const onde = p.achados.map((a) => `${a.tag}:${String(a.linha)}`).join(", ");
+    const onde = p.achados.map((a) => `${a.tag}:${String(a.linha)} (${a.motivo})`).join(", ");
 
     console.error(`  ${p.caminho}  (${onde})`);
   }

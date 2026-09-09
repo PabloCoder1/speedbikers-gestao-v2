@@ -263,7 +263,8 @@ export default async function EstoquePage({
               name="busca"
               defaultValue={filters.search ?? ""}
               placeholder="SKU ou título"
-              aria-label="Buscar por SKU ou título" style={{ minWidth: "14rem" }}
+              aria-label="Buscar por SKU ou título"
+              style={{ minWidth: "14rem" }}
             />
             <FilterSubmit>Buscar</FilterSubmit>
           </form>

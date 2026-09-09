@@ -117,9 +117,10 @@ mesma fatia.* Token declarado sem leitor é promessa, não fato. Por isso a
 escala de raio e o fundo cinza ficaram de fora — e por isso as cinco cores de
 estado entraram: elas já tinham 16 consumidores, escritos como hex literal.
 
-**A diferença estrutural é uma só:** o Figma é **cartão branco sobre fundo
-cinza**; o app real é branco sobre branco, separando por borda. Tudo o mais é
-ajuste fino.
+~~**A diferença estrutural é uma só:** o Figma é **cartão branco sobre fundo
+cinza**; o app real é branco sobre branco, separando por borda.~~ — **FECHADA em
+D-285**: o chão é `--sb-ground` (`#f4f5fa`) no `<main>`, medido na tela em dez
+rotas. O que resta é ajuste fino, e agora isso é literal.
 
 **Por que o fundo cinza não entrou nem em D1 nem em D2:** ver
 "O passo branco e o passo cinza", abaixo. A resposta curta é que ele não é uma
@@ -215,42 +216,45 @@ nulo, pode ser fatiado à vontade, sem estado intermediário quebrado em tela
 nenhuma. A ordem inversa quebra 46 telas ao mesmo tempo, pelo tempo que as
 fatias seguintes levarem, e sem nenhum teste para pegar.
 
-### O que ainda falta para o cinza — medido, não estimado
+### O que faltava para o cinza — e o veredito de cada item quando o passo foi dado
 
-Cada item abaixo foi verificado no código; nenhum é hipótese.
+✅ **O passo cinza FOI DADO em D-285.** A lista abaixo é de 2026-09-03 e foi
+conferida item a item antes de executar: **três eram registro envelhecido, um
+estava errado, e quatro eram verdade.** O veredito está em cada um; o texto
+original fica porque a lista é o que tornou a troca uma linha só.
 
-1. **`--sb-surface` significa duas coisas.** É o fundo do `body` **e** o token
+1. ✅ **VERDADE, resolvido com `--sb-ground`.** **`--sb-surface` significa duas coisas.** É o fundo do `body` **e** o token
    de "cartão branco" em 15 lugares. Repontá-lo para cinza pintaria de cinza a
    camada flutuante inteira — o dropdown da navegação, a paleta `Ctrl+K`, os
    toasts, a barra sticky da curadoria — que é justamente a camada cuja única
    função é parecer *acima*. **O cinza precisa de token próprio (`--sb-ground`),
    e `--sb-surface` continua branco.** É violação de "um dado, um dono"
    (D-224) que só a coincidência de ambos serem brancos escondia.
-2. **Pintar o `<main>`, não o `body`.** O `<header>` é irmão do `<main>`: com o
+2. ✅ **VERDADE, e foi a linha final.** **Pintar o `<main>`, não o `body`.** O `<header>` é irmão do `<main>`: com o
    `body` cinza ele vai junto em 46 telas; com o `<main>` cinza ele fica branco
    de graça. E `app/login/page.tsx`, a única tela fora do Shell, fica intocada.
    D2 já pôs o `background` no `<main>` — trocar o token ali é a linha final.
-3. **`status-pill.tsx` não tem borda: o fundo *é* a forma da pílula.** Sobre o
+3. ⬜ **NÃO SE APLICA MAIS** — as pílulas vivem em tabelas, e `table { background: var(--sb-surface) }` (o passo branco de D2) as mantém em cartão branco; só **uma** `.sb-table` está fora de painel, e ela também é branca. **`status-pill.tsx` não tem borda: o fundo *é* a forma da pílula.** Sobre o
    cinza, `warn` (`#fff8dc`) fica **mais claro que o chão** e inverte, a
    1,02:1; `ok` e `bad` perdem 68% e 59% da separação. E elas vivem em tabelas
    que ficam direto no chão. **O cinza destruiria as pílulas que D1 consertou**
    se as tabelas já não fossem brancas — por isso a regra da tabela veio antes.
-4. **`--sb-bg-soft` (`#f8f9fc`) colide com o cinza e é mais claro que ele.** As
+4. ⬜ **NÃO SE APLICA** — as 15 ocorrências vivem DENTRO de cartão (cabeçalho de tabela, hover, bloco de decisão de `/acoes`); sobre branco ele recua e nunca encosta no chão. **`--sb-bg-soft` (`#f8f9fc`) colide com o cinza e é mais claro que ele.** As
    linhas de apoio de `/acoes` inverteriam de recuo para destaque, a 1,03:1.
    Precisa ser reescolhido contra o novo chão.
-5. **Toda razão de contraste cai 8,2% de uma vez.** `--sb-muted-ink` (`#746d88`)
+5. ✅ **VERDADE, e por um fio: 4,5007:1.** Passa AA por sete milésimos, e por isso a tinta escureceu para `#6f6883` (4,84 no chão). **Toda razão de contraste cai 8,2% de uma vez.** `--sb-muted-ink` (`#746d88`)
    vai de 4,90 para **4,499** — abaixo de AA, em ~30 lugares. A escolha de D1
    mirou 4,50 sobre o cinza e ficou de fora por arredondamento; ou escurece, ou
    o texto passa a viver dentro de cartão branco.
-6. **A série de comparação do gráfico de `/vendas` já reprova hoje.** A
+6. ⬜ **JÁ ESTAVA CONSERTADO** — a série usa `--sb-muted-ink` desde D6, não `--sb-muted`; o registro envelheceu. **A série de comparação do gráfico de `/vendas` já reprova hoje.** A
    tracejada do período anterior é `--sb-muted` a **1,68:1**, contra os 3:1 que
    a WCAG 1.4.11 pede de objeto gráfico que carrega informação. O cinza leva a
    1,54:1. É defeito existente, e é achado próprio desta fatia.
-7. **~90 controles nativos.** Não há `color-scheme` em lugar nenhum: o
+7. ✅ **VERDADE** — `color-scheme: light` entrou no `:root`, e os `background: "transparent"` caíram de 31 para 3 (A5 comeu o resto). **~90 controles nativos.** Não há `color-scheme` em lugar nenhum: o
    navegador pinta os campos de branco, e os 31 `background: "transparent"`
    explícitos ficariam cinza — dois tipos de campo, duas cores, às vezes na
    mesma célula.
-8. **Uma dívida que o cinza *paga*:** `app/notificacoes/notification-row.tsx:70`
+8. ❌ **ERRADO, e a correção é a parte boa: NÃO ligou sozinho.** A lista mora dentro de um `.sb-panel` branco, então o `transparent` da linha lida mostrava o PAINEL, não o chão — os dois ramos continuaram brancos. A lida passou a apontar para `--sb-ground` e o realce apareceu na tela pela primeira vez. **Uma dívida que o cinza *paga*:** `app/notificacoes/notification-row.tsx:70`
    distingue lida de não-lida com `--sb-surface` vs `transparent`. Os dois
    ramos rendem branco hoje — **o realce existe no código e nunca apareceu na
    tela.** Com o chão separado, liga sozinho.
@@ -603,7 +607,7 @@ que ele renderiza.**
 | D0 | Auditoria visual + Design Contract | **CONCLUÍDO** |
 | D1 | Design foundation (tokens de cor) | **CONCLUÍDO** |
 | D2 | Shell + o passo branco (superfícies declaram fundo) | **CONCLUÍDO** |
-| — | O passo cinza (`--sb-ground` no `<main>`) | fila, com pré-requisitos medidos |
+| **—** | **O passo cinza (`--sb-ground` no `<main>`)** | **CONCLUÍDO em D-285** — chão `#f4f5fa` medido na tela; três dos oito pré-requisitos eram registro envelhecido e um estava errado |
 | D3 | Moldura: sidebar vertical, grupos e seção atual | **CONCLUÍDO** · refeita pelo frame |
 | D4 | Home orientada à atenção | **CONCLUÍDO** · composição refeita em R3 e A1 |
 | D5 | Vendas — gráfico (seção 12 do brief) | **CONCLUÍDO** |
@@ -689,23 +693,23 @@ Ponderado, não por contagem de páginas. Uma superfície "implementada" mas
 distante do frame não vale 100: estrutura = 50, + dados reais = 65, + design
 próximo = 80, validada contra o Figma = 95, + cleanup + testes = 100.
 
-| Bloco | Peso | A1 | A2 | D13 | A3 | D38/D39 | A4 | **A5** |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| Shell + navegação | 8 | 86% | 91% | 91% | 91% | 91% | 91% | 91% |
-| Design system (tokens, componentes, tabela, campo, menu, chip, modal) | 10 | 80% | 88% | 88% | 88% | 88% | **82%** | **94%** |
-| Home | 6 | 87% | 87% | 87% | 87% | 87% | 87% | 87% |
-| Vendas | 8 | 85% | 88% | 88% | 88% | 88% | 88% | 88% |
-| **Produtos** | 5 | 83% | 83% | 83% | 83% | **90%** | 90% | 90% |
-| Dashboard de SKU (nove abas) | 10 | 82% | 88% | 88% | 88% | 88% | 88% | 88% |
-| Anúncios — lista | 6 | 86% | 86% | 86% | 86% | 86% | 86% | 86% |
-| **Anúncio — detalhe (oito abas)** | 5 | 25% | 25% | **84%** | 84% | 84% | 84% | 84% |
-| **D14–D17** (Estoque, Reposição, Curva ABC, Movimentações) | 8 | 25% | 25% | 25% | **88%** | 88% | 88% | **90%** |
-| **D18/D20** (NF-e, Fornecedores) — frames que são ESBOÇO | 4 | 25% | 25% | 25% | **90%** | 90% | 90% | 90% |
-| **D19** (Compras) | 3 | 25% | 25% | 25% | **95%** | 95% | 95% | 95% |
-| **D21** (Integridade de Catálogo) | 4 | 25% | 25% | 25% | **92%** | 92% | 92% | 92% |
-| **14 telas D22–D36** (eram "16" por contagem errada) | 22 | 25% | 25% | 25% | 25% | 25% | **88%** | **90%** |
-| **Drawers do frame** (Inspeção Rápida, MLB, pedido, fornecedor, usuário) | 4 | 0% | 0% | 0% | 0% | **86%** | 86% | 86% |
-| Passe visual global + passo cinza | 3 | 0% | 0% | 0% | 0% | 0% | 0% | **40%** |
+| Bloco | Peso | A1 | A2 | D13 | A3 | D38/D39 | A4 | A5 | **Cinza** |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Shell + navegação | 8 | 86% | 91% | 91% | 91% | 91% | 91% | 91% | 91% |
+| Design system (tokens, componentes, tabela, campo, menu, chip, modal) | 10 | 80% | 88% | 88% | 88% | 88% | **82%** | **94%** | **97%** |
+| Home | 6 | 87% | 87% | 87% | 87% | 87% | 87% | 87% | 87% |
+| Vendas | 8 | 85% | 88% | 88% | 88% | 88% | 88% | 88% | 88% |
+| **Produtos** | 5 | 83% | 83% | 83% | 83% | **90%** | 90% | 90% | 90% |
+| Dashboard de SKU (nove abas) | 10 | 82% | 88% | 88% | 88% | 88% | 88% | 88% | 88% |
+| Anúncios — lista | 6 | 86% | 86% | 86% | 86% | 86% | 86% | 86% | 86% |
+| **Anúncio — detalhe (oito abas)** | 5 | 25% | 25% | **84%** | 84% | 84% | 84% | 84% | 84% |
+| **D14–D17** (Estoque, Reposição, Curva ABC, Movimentações) | 8 | 25% | 25% | 25% | **88%** | 88% | 88% | **90%** | **90%** |
+| **D18/D20** (NF-e, Fornecedores) — frames que são ESBOÇO | 4 | 25% | 25% | 25% | **90%** | 90% | 90% | 90% | 90% |
+| **D19** (Compras) | 3 | 25% | 25% | 25% | **95%** | 95% | 95% | 95% | 95% |
+| **D21** (Integridade de Catálogo) | 4 | 25% | 25% | 25% | **92%** | 92% | 92% | 92% | 92% |
+| **14 telas D22–D36** (eram "16" por contagem errada) | 22 | 25% | 25% | 25% | 25% | 25% | **88%** | **90%** | **90%** |
+| **Drawers do frame** (Inspeção Rápida, MLB, pedido, fornecedor, usuário) | 4 | 0% | 0% | 0% | 0% | **86%** | 86% | 86% | 86% |
+| Passe visual global + passo cinza | 3 | 0% | 0% | 0% | 0% | 0% | 0% | **40%** | **100%** |
 
 **A coluna D38/D39 mexe em DUAS linhas, e só nelas.** São as duas que estas
 fatias renderizaram (1440px e 850px, Supabase local, login real): `/produtos`,
@@ -722,13 +726,15 @@ as catorze foram, e o bloco subiu para 88%. A regra continua valendo para
 qualquer bloco futuro: **coluna nova só depois de comparar o renderizado com o
 frame** — nunca por contagem de código.
 
-**≈ 88% concluído · ≈ 12% restante** (A5). O número só sobe quando o resultado
+**≈ 90% concluído · ≈ 10% restante** (passo cinza). O número só sobe quando o resultado
 renderizado se aproxima do frame — não quando código é escrito, e **também
 desce**: em A4 o bloco do design system caiu de 88% para 82% porque a auditoria
 fotografou duas gramáticas de controle na mesma tela. **A5 devolveu o bloco a
 94%** — campo e botão passaram a ter UMA forma, medida no navegador
-(32px/11px/raio 6 no botão, 5 no campo, em seis telas), e o passe visual global
-saiu de 0 para 40%: metade dele era isto, a outra metade é o passo cinza.
+(32px/11px/raio 6 no botão, 5 no campo, em seis telas) —, e **o passo cinza
+fechou o passe visual global**: 0 → 40% (A5) → **100%**. A diferença
+ESTRUTURAL que o Design Contract nomeava desde D0 — "o Figma é cartão branco
+sobre fundo cinza; o app é branco sobre branco" — deixou de existir.
 
 O ≈72% anterior era o piso de A3, e o que o segurava era uma linha de 22 pontos
 contada a 25% sem nunca ter sido medida. Agora foi: **88%** nas catorze telas de
@@ -911,7 +917,7 @@ do disparo. Foi o que revelou os 1.857px de `/integracoes`.
 
 ## Revisão visual necessária
 
-**Duas** (a primeira das três de A4 fechou em A5):
+**Uma** (a de campo e botão fechou em A5; o passo cinza levou os P3 junto):
 
 1. ~~**P2 — campo e botão fora do design system**~~ — **fechado em A5**
    (D-284): 194 controles com a forma do sistema, e `check:control-styles` na
@@ -919,7 +925,8 @@ do disparo. Foi o que revelou os 1.857px de `/integracoes`.
 2. **P2 — `/atendimento`**: o frame é inbox de três colunas e a V3 é lista +
    rota de detalhe. Ou vira desvio registrado com motivo, ou vira fatia;
 3. **P3 — os quatro acabamentos** de A4 (chip esticado, largura ociosa em
-   `/integracoes` e `/copiloto`, nota do Copiloto encaixotada).
+   `/integracoes` e `/copiloto`, nota do Copiloto encaixotada) — nenhum deles
+   piorou com o chão cinza; seguem em fila de acabamento.
 
 O texto abaixo é de A3 e continua valendo para o que ele mediu.
 
@@ -964,62 +971,57 @@ está na "Próxima fatia segura".
 
 ## Última fatia concluída
 
-**A5 — campo e botão entram no design system, e o guarda entra junto (D-284).**
+**O PASSO CINZA (D-285)** — a diferença estrutural entre o Figma e a V3, fechada.
 Sem migration.
 
-A4 mediu 59 campos em 29 arquivos e 59 botões em 35 com estilo inline —
-incluindo quatro cópias de um `const buttonStyle`. Depois deste passe:
-**`check:control-styles ok — 194 controle(s), todos com a forma do design
-system`**, e o `getComputedStyle` de seis telas devolve **32px / 11px / raio 6**
-no botão e **32px / 11px / raio 5** no campo.
+O Figma é cartão branco sobre fundo cinza; o app era branco sobre branco,
+separando por borda. Trocar isso parece uma linha, e D2 mediu oito
+pré-requisitos para provar que não era.
 
-### Três peças precisaram nascer antes
+### Reler a lista antes de executá-la foi a fatia inteira
 
-1. **`select.sb-input` e `textarea.sb-input`** — `.sb-input` travava a altura em
-   32px, o que serve ao `<input>` de uma linha e a mais nada. Metade da razão de
-   59 campos terem ficado inline é que **a classe existia e não servia para
-   eles**;
-2. **`.sb-button-danger` e `.sb-button:disabled`** — o primeiro com um consumidor
-   só, de propósito: o filtro "Prazo em risco", onde ligado significa risco e
-   não seleção (a exceção de D-141 sobrevive à migração em vez de ser apagada
-   por ela). O segundo apaga o `opacity` inline de 12 arquivos;
-3. **`FilterPill` saiu do inline** — era o último controle da casa fora do
-   sistema, e por isso `/precos` e `/full` mostravam duas gramáticas de filtro
-   na mesma tela. `FILTER_SUBMIT_STYLE`, a constante que existia para o botão
-   "Filtrar" ter "o mesmo desenho" da pílula, virou `<FilterSubmit>`: agora é
-   literalmente a mesma regra CSS.
+Dos oito, **três eram registro envelhecido e um estava errado** (veredito item a
+item na seção "O que faltava para o cinza"). O que sobrou de verdade: o token
+próprio, a tinta do `--sb-muted-ink` (4,5007:1 sobre o chão — passa AA por sete
+milésimos, e por isso escureceu para 4,84), o `color-scheme` e a linha final no
+`<main>`.
 
-### O defeito que o próprio passe cometeu — e virou auto-teste
+**A pílula de estado, que era o item mais assustador, não existia mais como
+risco:** as pílulas vivem em tabelas, e o `table { background: var(--sb-surface) }`
+do passo BRANCO — a sequência que D2 começou justamente para isto — as mantém em
+cartão branco.
 
-A regex de elemento (`<button[^>]*?>`) **para no primeiro `>`, e `=>` tem um**.
-Todo controle com `onClick={() => …}` recebeu a classe e manteve o
-`style={buttonStyle}` que vinha depois da seta: os dois donos do mesmo pixel,
-dentro do mesmo elemento. Foram 15 sobras.
+### O item 8 estava errado, e só o render mostrou
 
-O guarda não usa regex de elemento — tem um scanner que conta chaves —, e o
-caso *"a seta do onClick NÃO fecha a tag"* está entre os auto-testes dele
-porque não é hipótese. O segundo auto-teste veio do primeiro resultado da
-varredura: ela acusou a palavra `<button>` dentro de um **docstring**.
+D2 escreveu que o realce de "não lida" **ligaria sozinho** quando o chão se
+separasse. Não ligou: a lista mora dentro de um `.sb-panel` branco, então o
+`transparent` da linha lida mostrava o PAINEL, não o chão — os dois ramos
+continuaram brancos, como sempre foram. Apontando a lida para `--sb-ground`, o
+realce que estava escrito no código desde D-269 apareceu na tela **pela primeira
+vez** (conferido plantando um `read_at` no banco local).
 
-### Três achados que só o guarda viu
+### O que o passo arrastou: a segunda metade de A5
 
-A varredura de A4 lia `app/`; estes moram em `components/`: o **fechar do
-toast** (virou `.sb-close`), o **campo da paleta Ctrl+K** — que dependia de
-VIZINHANÇA (`.sb-command-input input`), e forma que só existe por posição na
-árvore não é forma do sistema — e o próprio `FilterSubmit`.
+Antes de trocar o chão, medidos **26 controles com a classe do design system E
+aparência inline** — `background: "transparent"` num `.sb-button` é branco sobre
+branco e vira **botão cinza dentro de cartão branco** no dia seguinte — mais
+**9 por referência** (`style={fieldStyle}`), que a primeira versão do guarda não
+via. `check:control-styles` passou a pegar as duas formas, com dois auto-testes
+novos.
 
-### Duas regressões achadas RENDERIZANDO
+A docstring dele dizia que a disputa interna ficava de fora. Ficou por um dia — e
+o que a tirou de lá não foi rigor: foi o chão mudar de cor e tornar visível o
+que era invisível.
 
-Os campos que tinham `width: "100%"` dentro do const apagado ficaram com 160px
-(corrigido com `.sb-input-full` em sete arquivos), e o submit de `/compras/novo`
-esticou a linha inteira porque o `justifySelf` morava no mesmo objeto. **Nenhuma
-das duas quebra teste; as duas quebram a tela** — é a terceira vez nesta série
-em que a captura pega o que a suíte não pega.
+### A prova, lida da tela
 
-**Verificação:** `check` 29/29, build 8/8, integração **634/634**, e2e
-**87/87**, `check:control-styles` **194**, `check:table-styles` 30,
-`check:server-actions` 21, `check:waterfalls` 61. Seis telas renderizadas a
-1440px com o `getComputedStyle` lido da tela.
+`getComputedStyle` em dez rotas: **chão `rgb(244,245,250)`, topo BRANCO, painel
+branco, tabela branca, botão branco, campo branco**. O `<header>` ficou branco de
+graça porque quem recebeu o chão foi o `<main>`; `/login`, única tela fora do
+Shell, não foi tocada.
+
+**Verificação:** `check` 29/29, build 8/8, integração **634/634**, e2e **87/87**,
+os quatro guardas de `web` verdes.
 
 ## Próxima fatia segura
 
@@ -1048,8 +1050,8 @@ Em ordem de risco medido:
 5. **`/atendimento`**: decidir entre registrar o inbox de três colunas como
    desvio com motivo, ou implementá-lo. Hoje não é nem uma coisa nem outra —
    e é o maior desvio não registrado que resta.
-6. **O passo cinza** (`--sb-ground` no `<main>`), que é a outra metade do passe
-   visual global e continua com os oito pré-requisitos medidos lá em cima.
+6. ~~**O passo cinza**~~ — **FEITO** (D-285). Com ele, o passe visual global
+   fecha e a frente chega a **≈90%**.
 7. Os **sete itens abertos** listados abaixo.
 
 ⚠️ **O que D-279 listou aqui como item 1 — "`get_purchase_suggestions` não
@@ -1070,6 +1072,8 @@ afirmando aparece no `innerText` — ou só na captura?** e, de D-282, **este
 registro ainda é verdade, ou a rota que ele nega já nasceu?** e, de A4,
 **existe guarda para este padrão — ou ele volta assim que eu virar as costas?**
 e, de A5, **a regex que eu usei para achar o elemento sabe onde a tag TERMINA?**
+E, do passo cinza, a mais barata de todas: **esta lista de pré-requisitos ainda
+é verdade, ou metade dela já foi paga por outras fatias?**
 
 **Sete itens seguem abertos fora da fila:**
 

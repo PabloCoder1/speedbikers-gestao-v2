@@ -82,15 +82,7 @@ export function PreferenceRow({ preference }: { preference: PreferenceRowData })
           disabled={busy}
           onChange={(event) => {
             void save({ minSeverity: event.target.value, enabled });
-          }}
-          style={{
-            padding: "0.25rem 0.5rem",
-            borderRadius: "var(--sb-radius)",
-            border: "1px solid var(--sb-border)",
-            background: "transparent",
-            color: "inherit",
-            fontSize: "0.8125rem",
-          }}
+          }} style={{ color: "inherit" }}
         >
           {SEVERITY_OPTIONS.map((option) => (
             <option key={option} value={option}>
@@ -119,15 +111,6 @@ export function PreferenceRow({ preference }: { preference: PreferenceRowData })
           disabled={busy}
           onClick={() => {
             void handleDelete();
-          }}
-          style={{
-            padding: "0.25rem 0.625rem",
-            borderRadius: "var(--sb-radius)",
-            border: "1px solid var(--sb-border)",
-            background: "transparent",
-            fontSize: "0.75rem",
-            cursor: "pointer",
-            whiteSpace: "nowrap",
           }}
         >
           Remover

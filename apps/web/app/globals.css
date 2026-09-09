@@ -16,6 +16,19 @@
  */
 
 :root {
+  /*
+   * O NAVEGADOR PRECISA SABER QUE A INTERFACE É CLARA (D-285).
+   *
+   * Não havia `color-scheme` em lugar nenhum — medido antes do passo cinza —, e
+   * quem pinta `<select>`, `<input type="date">` e a barra de rolagem é o
+   * navegador, não esta folha. Sem a declaração, num sistema em modo escuro ele
+   * escolhe sozinho: campo escuro dentro de cartão branco, seta ilegível.
+   *
+   * `light` e não `light dark`: a V3 não tem tema escuro, e prometer um que não
+   * existe é pior do que não prometer nenhum.
+   */
+  color-scheme: light;
+
   --sb-white: #ffffff;
   --sb-primary: #0f1158;
   --sb-secondary: #373993;
@@ -28,6 +41,20 @@
   --sb-accent: #f8e523;
 
   --sb-surface: var(--sb-white);
+
+  /*
+   * O CHÃO (D-285) — `#f4f5fa`, o fundo de página do Figma.
+   *
+   * **Token próprio, e `--sb-surface` continua branco.** Repontar `--sb-surface`
+   * para cinza pintaria a camada flutuante inteira — dropdown, paleta `Ctrl+K`,
+   * toasts —, que é justamente a camada cuja única função é parecer ACIMA. Era
+   * violação de "um dado, um dono" (D-224) que só a coincidência de os dois
+   * serem brancos escondia.
+   *
+   * O cartão branco NÃO se separa do cinza sozinho: 1,09:1, medido. Quem separa
+   * é a borda, antes e depois; o cinza compra hierarquia, não separação.
+   */
+  --sb-ground: #f4f5fa;
   /* Hover de superfície do frame (`.nav-item:hover`, `.coverage-card:hover`).
      Token NOVO em D-250: os cartões de estado precisavam dele, e usar uma
      variável indefinida invalida a declaração inteira em silêncio — a classe
@@ -78,8 +105,15 @@
   --sb-accent-ink: #807100;
   --sb-accent-soft: #fff8df;
 
-  /* Era #7c7590: 4,37x sobre branco, reprovava. Agora 4,90x. */
-  --sb-muted-ink: #746d88;
+  /*
+   * Era #7c7590 (4,37x sobre branco, reprovava) e virou #746d88 (4,90x).
+   *
+   * **Escureceu de novo no passo cinza (D-285), e por um fio.** Sobre o chão
+   * `#f4f5fa` o #746d88 dá **4,5007:1** — passa em AA por sete milésimos, que
+   * é o tipo de margem que some no primeiro ajuste de tom. #6f6883 dá **4,84**
+   * sobre o chão e 5,27 sobre o cartão branco, com a mesma matiz.
+   */
+  --sb-muted-ink: #6f6883;
 
   /*
    * SUPERFÍCIE ESCURA — a sidebar (D3).
@@ -259,7 +293,18 @@ body {
   /* `.content{padding:31px 36px 80px}` — o 80px inferior existe para a
      barra de selecao/flutuante nao cobrir a ultima linha. */
   padding: 31px 36px 80px;
-  background: var(--sb-surface);
+  /*
+   * O CHÃO, e ele é do `<main>` — não do `body` (D-285).
+   *
+   * O `<header>` é irmão do `<main>`: com o `body` cinza ele iria junto nas 46
+   * telas; com o `<main>` cinza ele fica branco de graça, e `app/login` — a
+   * única tela fora do Shell — não é tocada.
+   *
+   * D2 já tinha posto um `background` aqui, apontando para `--sb-surface`. Esta
+   * é a linha final da sequência que ele começou: **trocar o token**. As oito
+   * medições que faltavam estão em `docs/DESIGN_IMPLEMENTATION.md`.
+   */
+  background: var(--sb-ground);
 }
 
 /* --- bloco de marca (`.brand`) --- */

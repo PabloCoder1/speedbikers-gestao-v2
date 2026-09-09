@@ -7553,6 +7553,55 @@ O passe e visivel: as fileiras de filtro de 11 telas encolheram de 13px para 11p
 
 **Verificacao:** `check` **29/29**, build **8/8**, integracao **634/634**, e2e **87/87**, `check:control-styles` **194**, `check:table-styles` 30, `check:server-actions` 21, `check:waterfalls` 61. Seis telas renderizadas a 1440px com o `getComputedStyle` de campo e botao lido da tela.
 
+## D-285 - O PASSO CINZA: o chao muda de cor, e cinco dos oito pre-requisitos ja nao existiam
+
+**Contexto:** a diferenca ESTRUTURAL entre o Figma e a V3 era uma so, e estava escrita desde D2: **o Figma e cartao branco sobre fundo cinza; o app era branco sobre branco, separando por borda**. A troca parece uma linha (`background: #f4f5fa`) e D2 mediu oito pre-requisitos para ela nao ser. Sem migration.
+
+---
+
+**PRIMEIRO, MEDIR DE NOVO -- E CINCO DOS OITO TINHAM SIDO PAGOS PELO CAMINHO**
+
+A lista era de 2026-09-03. Conferida hoje, item a item:
+
+| item de D2 | hoje |
+|---|---|
+| 1. `--sb-surface` significa duas coisas | **verdade** -- resolvido aqui com `--sb-ground` |
+| 2. pintar o `<main>`, nao o `body` | **verdade** -- e a linha final |
+| 3. a pilula de estado inverte sobre o cinza | **NAO SE APLICA MAIS**: as pilulas vivem em tabelas, e `table { background: var(--sb-surface) }` (o passo branco de D2) as mantem em cartao branco. So **uma** `.sb-table` esta fora de painel (`/compras/novo`), e mesmo ela e branca |
+| 4. `--sb-bg-soft` colide com o cinza | **NAO SE APLICA**: as 15 ocorrencias vivem DENTRO de cartao (cabecalho de tabela, hover, o bloco de decisao de `/acoes`). Sobre branco ele recua; nunca encosta no chao |
+| 5. contraste cai 8,2% | **verdade, e por um fio**: `--sb-muted-ink` da **4,5007:1** sobre o chao -- passa AA por sete milesimos. Escureceu para `#6f6883` (**4,84** no chao, 5,27 no cartao) |
+| 6. a tracejada de `/vendas` reprova | **JA CONSERTADO**: a serie usa `--sb-muted-ink` desde D6, nao `--sb-muted`. O registro envelheceu |
+| 7. ~90 controles nativos, sem `color-scheme` | **verdade** -- `color-scheme: light` no `:root`. E os `background: "transparent"` cairam de 31 para 3 (A5 comeu o resto) |
+| 8. o cinza PAGA a divida do realce de lida/nao-lida | **ERRADO, e a correcao e a parte boa** -- abaixo |
+
+**Tres dos oito eram registro envelhecido, e um estava errado.** Reler a lista antes de executa-la e o que separou uma fatia de duas horas de uma reescrita de tela.
+
+---
+
+**O ITEM 8 ESTAVA ERRADO, E SO O RENDER MOSTROU**
+
+D2 escreveu que o realce de nao-lida "liga sozinho" quando o chao se separar, porque a linha ja distinguia `--sb-surface` de `transparent`. **Nao ligou.** A lista mora DENTRO de um `.sb-panel` branco, entao o `transparent` da linha lida mostra o PAINEL, nao o chao -- os dois ramos continuaram brancos, exatamente como antes.
+
+Corrigido apontando a lida para `var(--sb-ground)`: dentro do cartao branco, ela recua. **O realce que estava escrito no codigo desde D-269 apareceu na tela pela primeira vez** -- conferido plantando um `read_at` no banco local e comparando as duas linhas lado a lado.
+
+---
+
+**O QUE O PASSO ARRASTOU CONSIGO: A SEGUNDA METADE DE A5**
+
+Medidos antes de trocar o chao: **26 controles com a classe do design system E aparencia inline** -- `background: "transparent"` num `.sb-button`, que sobre branco e branco e sobre cinza vira botao cinza dentro de cartao branco. Mais **9 por REFERENCIA** (`style={fieldStyle}`), que a primeira versao do guarda nao via.
+
+`check:control-styles` passou a pegar as duas formas, com dois auto-testes novos. **A propria docstring dele dizia que a disputa interna ficava de fora; ficou por um dia** -- e o que a tirou de la nao foi rigor, foi o chao ter mudado de cor e tornado visivel o que era invisivel.
+
+---
+
+**A PROVA, LIDA DA TELA**
+
+`getComputedStyle` em dez rotas: **chao `rgb(244,245,250)`, topo BRANCO, painel branco, tabela branca, botao branco, campo branco**. O `<header>` ficou branco de graca porque quem recebeu o chao foi o `<main>` -- e `/login`, unica tela fora do Shell, nao foi tocada.
+
+**Impacto:** `apps/web/app/globals.css` (`--sb-ground`, `color-scheme: light`, `--sb-muted-ink` escurecido, `.sb-content`), `app/notificacoes/notification-row.tsx`, 39 arquivos de controle (a segunda metade de A5), `scripts/check-control-styles.mjs`.
+
+**Verificacao:** `check` **29/29**, build **8/8**, integracao **634/634**, e2e **87/87**, os quatro guardas de `web` verdes. Dez rotas renderizadas a 1440px contra o Supabase local, com o fundo computado lido de cada uma.
+
 ## Como adicionar nova decisao
 
 Registrar:

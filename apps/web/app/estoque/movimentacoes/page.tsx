@@ -241,7 +241,8 @@ export default async function MovimentacoesPage({
           name="busca"
           defaultValue={filters.search ?? ""}
           placeholder="SKU ou título"
-          aria-label="Buscar por SKU ou título" style={{ minWidth: "14rem" }}
+          aria-label="Buscar por SKU ou título"
+          style={{ minWidth: "14rem" }}
         />
         <input
           className="sb-input"
