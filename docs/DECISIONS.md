@@ -7507,3 +7507,72 @@ O primeiro teste da faixa falhou com dois elementos: `hasText: "Configuradas"` c
 **Impacto:** `apps/web/app/configuracoes/page.tsx` (`PageTitle`, faixa de seis, sete `Panel`, `.sb-pair-grid`), `apps/web/components/table-styles.ts` **apagado**, `apps/web/app/globals.css` (comentario), `apps/web/e2e/configuracoes.spec.ts` (+2). Sem migration, sem CSS novo.
 
 **Verificacao, local:** `check` **29/29**, e2e **74/74** em banco recriado (2 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17, `check:table-styles` 21, `docs:check`. Capturada a 1440px contra o Supabase local.
+
+## D-276 - D36: Copiloto, e a fila pedia uma tela que o frame NAO TEM
+
+**Contexto:** ultima fatia da fila nomeada. Sem migration.
+
+---
+
+**1. NAO EXISTE TELA DE COPILOTO NO FRAME**
+
+A fila registrava "D36 — Copiloto" como tela. Lendo o export: o grupo ADMINISTRACAO termina em Configuracoes, e **nao ha entrada de Copiloto na lista de telas**. O Copiloto do Figma e uma **GAVETA de 420px a direita**, aberta de qualquer pagina por um icone na barra de topo e por um botao flutuante.
+
+E a segunda vez que a fila pede algo que o frame nao sustenta -- D-266 recusou Trafego por falta de fonte no banco; aqui a falta e do outro lado. **A fila e lista de frames a avaliar, nao contrato de entrega**, e isso agora tem duas ocorrencias.
+
+**2. O CORACAO DA GAVETA E UM CONTEXTO QUE A API NAO RECEBE**
+
+A gaveta tem cinco blocos, e tres dependem do mesmo: saber em que tela voce esta.
+
+| bloco | o que promete | o que existe |
+|---|---|---|
+| selo "Contexto Atual" + *"o Copiloto lera os dados desta tela"* | resposta embasada na tela aberta | `/v1/copilot/chat` recebe `{ message }` -- **sem parametro de tela** |
+| "Sugestoes para o contexto" | perguntas por entidade (anuncio, pedido, SKU) | as ferramentas nao conhecem entidade |
+| "Analise Pronta" | um paragrafo de diagnostico | texto fixo do desenho, sem calculo atras |
+
+**Fazer a gaveta hoje seria construir a moldura da ideia e chamar de pronto.** Ela fica registrada como item aberto, com a pre-condicao dita: parametro de contexto na API e ferramentas alem de venda.
+
+**3. ONZE DAS DOZE PERGUNTAS SUGERIDAS NAO TEM COMO SER RESPONDIDAS**
+
+`CHAT_TOOLS` tem **tres** ferramentas, todas de venda: `sales_summary`, `sales_period_comparison`, `sales_account_comparison`. As doze sugestoes do frame, conferidas uma a uma:
+
+| contexto | sugestao | responde? |
+|---|---|---|
+| Geral | "Quais produtos estao em risco de ruptura?" | nao (estoque) |
+| Geral | **"Resumo das vendas de hoje"** | **sim** |
+| Geral | "Existe algum anuncio com problema?" | nao (anuncios) |
+| Anuncio | "Analisar conversao" | nao (visitas) |
+| Anuncio | "Sugerir novo preco" | nao (preco) |
+| Anuncio | **"Ver historico de exposicao"** | nao -- **e o dado de trafego que D-266 mediu como INEXISTENTE no esquema** |
+| Pedido | "Resumir este caso" / "Risco de mediacao?" / "Rastreio detalhado" | nao (atendimento, reclamacoes, envio) |
+| SKU | "Por que a cobertura caiu?" / "Quanto enviar ao Full?" / "Ultimas movimentacoes" | nao (cobertura, Full, movimentacoes) |
+
+**Uma de doze.** E a de trafego e a mais reveladora: o desenho e coerente consigo mesmo -- ele tem tela de Trafego -- e incoerente com o sistema **duas vezes pelo mesmo motivo**.
+
+**Sugestao que o sistema nao responde e pior que campo vazio**: o campo nao promete nada; a sugestao promete, e falha **depois de gastar uma chamada paga**. E a mesma regua de D-275 (lido contra acionado), agora num elemento que tambem custa dinheiro.
+
+**4. O QUE O FRAME CONTRIBUIU: A LISTA DE FERRAMENTAS, EM PORTUGUES**
+
+A ideia de sugerir e boa -- campo em branco e a pior afordancia de um chat. Entraram **tres**, uma por ferramenta que existe:
+
+- "Como foram as vendas nos ultimos 7 dias?" (`sales_summary`)
+- "Comparado com o periodo anterior, vendi mais ou menos?" (`sales_period_comparison`)
+- "Qual conta vendeu mais neste mes?" (`sales_account_comparison`)
+
+Elas aparecem **so no estado vazio**: depois da primeira pergunta viram ruido, e o que importa na tela passa a ser a resposta.
+
+**Detalhe de implementacao que vale a nota:** a pergunta vai por PARAMETRO para `ask`, nao pelo estado do campo. `setDraft` e assincrono, e ler `draft` logo depois de escreve-lo mandaria a pergunta anterior -- ou vazia, na primeira vez.
+
+**5. UM TESTE QUE PASSOU VERDE NA TELA DE LOGIN**
+
+O caso "as onze perguntas nao aparecem" passou **rodando contra a tela de login**: o banco estava sem seed, o login falhou, e um teste que so afirma AUSENCIA passa em qualquer pagina -- inclusive na errada.
+
+Os outros tres casos falharam, e foi so por isso que eu olhei. **Teste de ausencia precisa de ancora positiva**, e este ganhou uma. Vale como classe: a suite tem varios `toHaveCount(0)` escritos nesta frente, e o que os protege e sempre haver, no mesmo caso, uma afirmacao que so a pagina certa satisfaz.
+
+**6. SETIMA TELA SEGUIDA SEM SPEC**
+
+`/copiloto` nunca teve. A API nao sobe na suite de e2e, entao o que se prova aqui e o que a web possui: as sugestoes, o envio pelo clique, o estado vazio e a falha declarada quando a API nao responde -- a tela diz que nao conseguiu, em vez de girar para sempre. A conversa em si ja tem teste em `apps/api`.
+
+**Impacto:** `apps/web/app/copiloto/page.tsx` (`PageTitle`, `Panel`), `apps/web/app/copiloto/chat.tsx` (sugestoes, `ask` por parametro), `apps/web/e2e/copiloto.spec.ts` (novo, 4 casos). Sem migration, sem CSS novo.
+
+**Verificacao, local:** `check` **29/29**, e2e **78/78** em banco recriado (4 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17, `check:table-styles` 21, `docs:check`. Capturada a 1440px contra o Supabase local.

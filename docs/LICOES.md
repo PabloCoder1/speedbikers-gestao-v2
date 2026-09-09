@@ -226,3 +226,9 @@ Cada linha nasceu de um erro real. A decisão que a gerou está em
   uma ação que o operador acredita ter tomado. Antes de recusar um elemento do
   desenho por falta de fonte, pergunte se ele é lido ou clicado — a régua muda
   de lugar (D-275).
+- **Teste que só afirma AUSÊNCIA passa na tela errada.** Um caso feito de
+  `toHaveCount(0)` rodou verde contra a tela de LOGIN: o banco estava sem seed,
+  o login falhou, e nenhuma das coisas que ele negava existia mesmo ali. Os
+  outros casos do arquivo falharam, e foi só por isso que alguém olhou. Todo
+  teste de ausência precisa, no mesmo caso, de uma âncora positiva que só a
+  página certa satisfaz (D-276).

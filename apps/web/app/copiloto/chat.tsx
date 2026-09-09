@@ -15,6 +15,24 @@ import { createClient } from "../../lib/supabase/browser";
  * memória é evolução separada — o transporte já a comporta.
  */
 
+/**
+ * As sugestões do frame, refeitas: **uma por ferramenta que existe** (D-276).
+ *
+ * O drawer do Figma oferece doze perguntas prontas, e o Copiloto tem TRÊS
+ * ferramentas, todas de venda. Onze das doze não têm como ser respondidas —
+ * uma delas pede "histórico de exposição", que é justamente o dado de tráfego
+ * que D-266 mediu como inexistente no esquema.
+ *
+ * Sugestão que o sistema não responde é pior que campo vazio: o campo vazio
+ * não promete nada, e a sugestão promete e falha depois de gastar uma chamada
+ * paga. Estas três são a lista de ferramentas escrita em português.
+ */
+const SUGESTOES = [
+  "Como foram as vendas nos últimos 7 dias?",
+  "Comparado com o período anterior, vendi mais ou menos?",
+  "Qual conta vendeu mais neste mês?",
+] as const;
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 const TOOL_LABEL: Record<string, string> = {
@@ -56,8 +74,13 @@ export function CopilotChat(): ReactNode {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }
 
-  async function ask(): Promise<void> {
-    const question = draft.trim();
+  /*
+    A pergunta vem por PARÂMETRO quando parte de uma sugestão: `setDraft` é
+    assíncrono, e ler `draft` logo depois de escrevê-lo mandaria a pergunta
+    anterior — ou vazia, na primeira vez.
+  */
+  async function ask(pergunta?: string): Promise<void> {
+    const question = (pergunta ?? draft).trim();
 
     if (question.length === 0 || busy) {
       return;
@@ -217,6 +240,51 @@ export function CopilotChat(): ReactNode {
           </div>
         ))}
       </div>
+
+      {/*
+        As sugestões só aparecem no ESTADO VAZIO. Depois da primeira pergunta
+        elas viram ruído: quem já perguntou uma vez sabe o que pode perguntar,
+        e o que importa na tela passa a ser a resposta.
+      */}
+      {exchanges.length === 0 && (
+        <div style={{ display: "grid", gap: "0.5rem" }}>
+          <span
+            style={{
+              fontFamily: "var(--sb-mono)",
+              fontSize: "0.5625rem",
+              letterSpacing: "0.04em",
+              textTransform: "uppercase",
+              color: "var(--sb-text-soft)",
+            }}
+          >
+            O que dá para perguntar
+          </span>
+
+          {SUGESTOES.map((sugestao) => (
+            <button
+              key={sugestao}
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                void ask(sugestao);
+              }}
+              style={{
+                textAlign: "left",
+                background: "var(--sb-surface)",
+                border: "1px solid var(--sb-border)",
+                borderRadius: "var(--sb-radius)",
+                padding: "0.625rem 0.75rem",
+                fontSize: "0.8125rem",
+                fontFamily: "inherit",
+                color: "var(--sb-text)",
+                cursor: busy ? "default" : "pointer",
+              }}
+            >
+              {sugestao}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: "var(--sb-space-2)" }}>
         <input

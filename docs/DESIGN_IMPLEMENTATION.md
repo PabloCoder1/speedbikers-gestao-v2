@@ -629,7 +629,7 @@ que ele renderiza.**
 | D33 | **Sincronização** — um dos oito recursos não tinha nome nem veredito, e era o de PIOR taxa de falha; o defeito estava escrito como fixture num teste verde (D-273) | ✔ |
 | D34 | **Saúde do Sistema** — o "99,97% de uptime" do frame não tem UMA tabela que o sustente; a âncora navy ganhou a pergunta que a tela nasceu para responder (D-274) | ✔ |
 | D35 | **Configurações** — os dois interruptores do frame não têm onde gravar, e interruptor mente PIOR que número: um é lido, o outro é acionado. `table-styles.ts` apagado (D-275) | ✔ |
-| D36 | Copiloto | fila |
+| D36 | **Copiloto** — a fila pedia uma TELA, e o frame tem uma gaveta; 11 das 12 perguntas que ela sugere não têm como ser respondidas (D-276) | ✔ |
 | D37 | Passe visual global | fila |
 
 ## Auditoria de Fidelidade Figma
@@ -813,70 +813,85 @@ O que resta é a fila **D31 em diante**: 7 superfícies ainda não migradas — 
 
 ## Última fatia concluída
 
-**D35 — Configurações, pelo frame `AdminScreen` na variação de organização
-(D-275).** Quinta tela do bloco de administração. Sem migration.
+**D36 — Copiloto (D-276).** A última da fila nomeada. Sem migration.
 
-### Interruptor mente pior que número
+### A fila pedia uma tela que o frame não tem
 
-O frame desenha dois: **2FA obrigatório** (ligado) e **modo manutenção**
-(desligado). São **zero** colunas de 2FA ou MFA no esquema, **zero** fatores
-cadastrados em `auth.mfa_factors`, **zero** colunas de manutenção — e
-`organizations` tem seis colunas ao todo. Não há onde gravar nem quem leia.
+O grupo de Administração do desenho termina em Configurações: **não há entrada
+de Copiloto na lista de telas**. O Copiloto do Figma é uma **gaveta de 420px à
+direita**, aberta de qualquer página.
 
-Todas as recusas desta frente até aqui foram de **números** sem fonte, e número
-sem fonte é *lido*. **Interruptor sem fonte é acionado**: alguém desligaria a
-operação acreditando que as escritas pararam, e elas não parariam. O dano deixa
-de ser uma decisão mal informada e passa a ser uma ação que o operador acredita
-ter tomado.
+É a segunda vez que a fila pede algo que o frame não sustenta — D-266 recusou
+Tráfego por falta de fonte no banco; aqui a falta é do outro lado. A fila é
+lista de frames a avaliar, não contrato de entrega, e isso agora tem duas
+ocorrências.
 
-E o 2FA merece a nota: o frame o desenha **ligado**, afirmando que a organização
-já exige segundo fator — com ninguém tendo um.
+### O coração da gaveta é um contexto que a API não recebe
 
-### Quatro abas para sete seções
+Três dos cinco blocos dependem de saber em que tela você está — o selo
+"Contexto Atual", as sugestões por entidade e a "Análise Pronta". E
+`/v1/copilot/chat` recebe `{ message }`, **sem parâmetro de tela**. Fazer a
+gaveta hoje seria construir a moldura da ideia e chamar de pronto.
 
-A navegação lateral do frame não cobre Mercado Livre, IA/Copiloto nem Reposição
-— e é justamente Reposição que aparece "não configurado" com a consequência
-escrita. E o painel de detalhe repetiria a linha: cada seção tem quatro frases
-curtas, então o mestre-detalhe esconderia seis para mostrar uma, e a pergunta
-que a página existe para responder passaria a exigir um clique por seção.
+### Onze das doze perguntas sugeridas não têm como ser respondidas
 
-### `components/table-styles.ts` deixou de existir
+O Copiloto tem **três** ferramentas, todas de venda. Das doze sugestões do
+frame, **uma** é respondível. E a mais reveladora pede "histórico de exposição"
+— o dado de tráfego que D-266 mediu como inexistente no esquema. O desenho é
+coerente consigo mesmo e incoerente com o sistema **duas vezes pelo mesmo
+motivo**.
 
-Nasceu em D-232 para acabar com três cópias de `th`/`td`/`cardStyle`, e a
-auditoria de fidelidade pediu o merge dele. D-272 migrou a penúltima tela; esta
-migrou a última e **apagou o arquivo**. O comentário da regra global de `th`
-ainda dizia "só duas telas importam" — corrigido junto, porque comentário que
-descreve o que não existe mais é pior que comentário nenhum.
+Sugestão que o sistema não responde é pior que campo vazio: o campo não promete
+nada; a sugestão promete e falha **depois de gastar uma chamada paga**.
 
-**Verificação, local:** `check` **29/29**, e2e **74/74** em banco recriado (2
+### O que o frame contribuiu: a lista de ferramentas, em português
+
+Sugerir é boa ideia — campo em branco é a pior afordância de um chat. Entraram
+três, uma por ferramenta que existe, e só no estado vazio: depois da primeira
+pergunta viram ruído.
+
+### Um teste que passou verde na tela de login
+
+O caso "as onze perguntas não aparecem" passou **rodando contra a tela de
+login**: o banco estava sem seed, o login falhou, e um teste que só afirma
+ausência passa em qualquer página — inclusive na errada. Os outros três
+falharam, e foi só por isso que eu olhei.
+
+**Verificação, local:** `check` **29/29**, e2e **78/78** em banco recriado (4
 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17,
 `check:table-styles` 21, `docs:check`. Capturada a 1440px contra o Supabase
 local.
 
 ## Próxima fatia segura
 
-**D36 — Copiloto**, a última da fila nomeada. Depois dela, só o **passe visual
-global (D37)**.
+**D37 — o passe visual global**, e é a última da frente. A fila nomeada fechou:
+D18→D25 e D27→D36 entregues, D26 recusada com medição.
 
-`/copiloto` é diferente de tudo o que veio antes neste bloco: é uma tela de
-**conversa**, não de tabela — então as perguntas de faixa e de tabela não se
-aplicam, e as que valem são outras. **Medir primeiro se o frame desenha um
-chat com histórico persistido**: `ai_runs` guarda execução e custo, e se o
-desenho promete uma conversa que continua entre sessões, a pergunta é se
-existe tabela de mensagem.
+O passe não é "olhar tudo de novo". O que a frente acumulou dá um roteiro
+concreto, e ele tem duas metades:
 
-A rotina, com as oito perguntas acumuladas: **o frame tem fonte?** (D-266),
+1. **O que os guardas já sabem apontar.** `check:table-styles` conta **21**
+   telas migradas; o app tem 44 tabelas. A diferença são as telas que nunca
+   declararam `.sb-table` — a metade cega do guarda (D-262), que só a captura
+   encontra. Essa é a lista a fechar.
+2. **O que só a captura encontra.** Larguras a 1150px e 850px, o corte de
+   texto da classe de D-272, e as telas que ainda não têm `PageTitle`.
+
+**Duas telas seguem fora de qualquer fatia**: `/cobertura` nunca foi migrada
+(D-261) e `/estoque/movimentacoes` declarou `.sb-table` sem completar a
+migração (medido em D-261).
+
+A rotina, com as nove perguntas acumuladas: **o frame tem fonte?** (D-266),
 **falta coluna ou falta dado?** (D-268), **quantas linhas no Dev?** (D-263), **a
 faixa conta o mesmo conjunto da tabela ou é navegação?** (D-265), **há spec?**
 (D-271), **capturei a tela depois do último build?** (D-272), **o fixture do
-teste é um dado degradado de verdade?** (D-273) e **o mapa já sabe disso?**
-(D-274).
+teste é um dado degradado de verdade?** (D-273), **o mapa já sabe disso?**
+(D-274) e **o elemento é lido ou é acionado?** (D-275).
 
-D35 acrescenta a nona, e ela separa o que já era uma só: **o elemento é lido ou
-é acionado?** — porque a régua para desenho sem fonte muda de lugar quando o
-usuário pode clicar nele.
+D36 acrescenta a décima, sobre teste: **este caso passa na tela errada?** — um
+`toHaveCount(0)` sozinho passa em qualquer página, e a suíte tem vários.
 
-**Seis itens seguem abertos fora da fila:**
+**Sete itens seguem abertos fora da fila:**
 
 - **`/notas-fiscais/[id]`** — dois dos quatro estados de item do brief §25 não
   têm dado em `document_items` (D-253).
@@ -887,3 +902,5 @@ usuário pode clicar nele.
 - **Filtro de não lidas em `/notificacoes`** — 8.350 de 42.511 (D-269).
 - **Lista de execuções que FALHARAM** — a versão útil da tabela que D-273
   recusou; exige RPC nova, porque `job_runs` não é legível pela web.
+- **A gaveta do Copiloto** — precisa de parâmetro de contexto na API e de
+  ferramentas além de venda (D-276).
