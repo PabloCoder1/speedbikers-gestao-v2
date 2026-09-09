@@ -2,11 +2,16 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { ObjectHeader, type ObjectBadge } from "../../../components/object-header";
+import { PageTitle } from "../../../components/page-title";
+import { Panel } from "../../../components/panel";
+import { ProcessSteps } from "../../../components/process-steps";
 import { Shell } from "../../../components/shell";
-import { StatusPill } from "../../../components/status-pill";
+import { TOM, tomDeStatus } from "../../../components/tone";
 import { formatCurrency, formatDateTime } from "../../../lib/format";
 import { purchaseOrderCostNote, summarizePurchaseOrderCost } from "../../../lib/purchase-order-cost";
-import { purchaseOrderEventLabel, purchaseOrderStatusLabel } from "../../../lib/labels";
+import { purchaseOrderEtapas } from "../../../lib/purchase-order-steps";
+import { purchaseOrderEventLabel, purchaseOrderStatusLabel, statusTone } from "../../../lib/labels";
 import { createClient } from "../../../lib/supabase/server";
 import { ActionsPanel } from "./actions-panel";
 
@@ -17,37 +22,13 @@ export const dynamic = "force-dynamic";
  * do SKU) e histórico por evento (`purchase_order_events`, append-only) —
  * o item "histórico por evento" do checklist da Fase 4 é literalmente esta
  * seção.
+ *
+ * Migrada em D-277 (fatia D37), e o frame não desenha esta tela: o
+ * `OrderDetailDrawer` do protótipo é de PEDIDO DE VENDA do Mercado Livre
+ * (comprador, conta, logística, mediação), não de compra. O que ele
+ * contribuiu foi a **linha do tempo** — e ela já tem forma no design system,
+ * `.sb-feed-row`, a mesma da atividade recente da Home.
  */
-
-const th: React.CSSProperties = {
-  textAlign: "left",
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.75rem",
-  textTransform: "uppercase",
-  letterSpacing: "0.04em",
-  color: "var(--sb-text-soft)",
-  whiteSpace: "nowrap",
-};
-
-const td: React.CSSProperties = {
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.875rem",
-  verticalAlign: "top",
-};
-
-function Stat({ label, value, note }: { label: string; value: string; note?: string }): ReactNode {
-  return (
-    <div>
-      <div style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>{label}</div>
-      <div style={{ fontSize: "1.125rem", fontWeight: 600 }}>{value}</div>
-      {note !== undefined && (
-        <div style={{ fontSize: "0.6875rem", color: "var(--sb-accent-ink)" }}>{note}</div>
-      )}
-    </div>
-  );
-}
 
 export default async function PedidoDeCompraPage({
   params,
@@ -109,190 +90,232 @@ export default async function PedidoDeCompraPage({
   const cost = summarizePurchaseOrderCost(items.error !== null ? null : items.data);
   const costNote = purchaseOrderCostNote(cost);
 
+  const etapas = purchaseOrderEtapas({
+    status: info.status,
+    approvedAt: info.approved_at,
+    orderedAt: info.ordered_at,
+    receivedAt: info.received_at,
+    cancelledAt: info.cancelled_at,
+  });
+
+  const badges: readonly ObjectBadge[] = [
+    { label: purchaseOrderStatusLabel(info.status), tom: tomDeStatus(statusTone(info.status)) },
+  ];
+
+  // Os fatos do pedido. "Valor estimado" carrega a ressalva AO LADO do número,
+  // nunca só no `title` (`docs/METRICS.md` 5C.2): um total que soma parte dos
+  // itens precisa dizer que é parcial na mesma linha em que se apresenta.
+  const fatos: readonly (readonly [string, ReactNode])[] = [
+    ["Destino", info.destination_warehouse_name ?? "—"],
+    ["Previsão", info.expected_at === null ? "—" : formatDateTime(info.expected_at)],
+    ["Itens", items.error !== null ? "—" : String(items.data.length)],
+    [
+      "Valor estimado",
+      <>
+        {formatCurrency(cost.total)}
+        {costNote !== null && (
+          <span style={{ display: "block", fontSize: "0.6875rem", color: "var(--sb-accent-ink)" }}>
+            {costNote}
+          </span>
+        )}
+      </>,
+    ],
+  ];
+
+  const acaoStyle: React.CSSProperties = { textDecoration: "none" };
+
   return (
     <Shell>
-      <p style={{ margin: 0, fontSize: "0.875rem" }}>
-        <Link href="/compras">← Pedidos de Compra</Link>
-      </p>
+      <PageTitle
+        eyebrow="ESTOQUE / OPERAÇÃO"
+        title="Pedidos de Compra"
+        subtitle={<Link href="/compras">← Voltar aos pedidos de compra</Link>}
+        compacto
+      />
 
-      <h1 style={{ margin: "var(--sb-space-2) 0", fontSize: "1.375rem" }}>
-        Pedido #{info.order_number}
-        {info.suppliers?.name !== undefined && ` — ${info.suppliers.name}`}
-      </h1>
+      <ObjectHeader
+        identificador={`PEDIDO #${String(info.order_number)}`}
+        titulo={info.suppliers?.name ?? "Fornecedor não informado"}
+        badges={badges}
+        meta={`Criado em ${formatDateTime(info.created_at)}`}
+        acoes={
+          <>
+            {info.status === "DRAFT" && (
+              <Link className="sb-button" href={`/compras/${info.id}/editar`} style={acaoStyle}>
+                Editar
+              </Link>
+            )}
 
-      <div
-        style={{
-          display: "flex",
-          gap: "var(--sb-space-4)",
-          alignItems: "center",
-          flexWrap: "wrap",
-          marginBottom: "var(--sb-space-4)",
-        }}
+            <a className="sb-button" href={`/compras/${info.id}/export/xlsx`} style={acaoStyle}>
+              Exportar Excel
+            </a>
+            <a className="sb-button" href={`/compras/${info.id}/export/pdf`} style={acaoStyle}>
+              Exportar PDF
+            </a>
+          </>
+        }
       >
-        <StatusPill code={info.status} label={purchaseOrderStatusLabel(info.status)} />
-        <Stat label="Destino" value={info.destination_warehouse_name ?? "—"} />
-        <Stat label="Previsão" value={info.expected_at === null ? "—" : formatDateTime(info.expected_at)} />
-        <Stat label="Itens" value={items.error !== null ? "—" : String(items.data.length)} />
-        {/*
-          A ressalva fica AO LADO do número, nunca só no `title`
-          (`docs/METRICS.md` 5C.2): um total que soma parte dos itens precisa
-          dizer que é parcial na mesma linha em que se apresenta.
-        */}
-        {/*
-          Spread condicional, não `note={... : undefined}`:
-          `exactOptionalPropertyTypes` exige a chave de fato AUSENTE, não
-          `undefined` atribuído — o mesmo motivo já registrado em
-          `apps/web/app/notas-fiscais/actions.ts`.
-        */}
-        <Stat
-          label="Valor estimado"
-          value={formatCurrency(cost.total)}
-          {...(costNote === null ? {} : { note: costNote })}
-        />
+        <dl className="sb-fact-grid">
+          {fatos.map(([rotulo, valor]) => (
+            <div key={rotulo}>
+              <dt>{rotulo}</dt>
+              <dd>{valor}</dd>
+            </div>
+          ))}
+        </dl>
+      </ObjectHeader>
 
-        <div style={{ display: "flex", gap: "var(--sb-space-2)", marginLeft: "auto" }}>
-          {info.status === "DRAFT" && (
-            <Link
-              href={`/compras/${info.id}/editar`}
-              style={{
-                padding: "0.375rem 0.75rem",
-                borderRadius: "var(--sb-radius)",
-                border: "1px solid var(--sb-border)",
-                fontSize: "0.8125rem",
-                textDecoration: "none",
-                color: "var(--sb-text)",
-              }}
-            >
-              Editar
-            </Link>
-          )}
-
-          <a
-            href={`/compras/${info.id}/export/xlsx`}
-            style={{
-              padding: "0.375rem 0.75rem",
-              borderRadius: "var(--sb-radius)",
-              border: "1px solid var(--sb-border)",
-              fontSize: "0.8125rem",
-              textDecoration: "none",
-              color: "var(--sb-text)",
-            }}
-          >
-            Exportar Excel
-          </a>
-          <a
-            href={`/compras/${info.id}/export/pdf`}
-            style={{
-              padding: "0.375rem 0.75rem",
-              borderRadius: "var(--sb-radius)",
-              border: "1px solid var(--sb-border)",
-              fontSize: "0.8125rem",
-              textDecoration: "none",
-              color: "var(--sb-text)",
-            }}
-          >
-            Exportar PDF
-          </a>
-        </div>
-      </div>
-
-      <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
-        A exportação usa um layout provisório — será ajustado quando o modelo de referência oficial chegar.
-      </p>
-
+      {/*
+        A observação escrita por quem criou o pedido. Ela chegou a ocupar o
+        subtítulo do painel de itens nesta migração, e a tela renderizada mostrou
+        o erro: texto livre do usuário no lugar onde o painel explica o que a
+        tabela é. São coisas diferentes, e a nota é sobre o PEDIDO.
+      */}
       {info.notes !== null && (
-        <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.875rem", color: "var(--sb-text-soft)" }}>
+        <p
+          style={{
+            margin: "var(--sb-space-3) 0 0",
+            fontSize: "0.8125rem",
+            color: "var(--sb-text-soft)",
+          }}
+        >
           {info.notes}
         </p>
       )}
 
+      <div style={{ marginTop: "var(--sb-space-3)" }}>
+        {/*
+          O ciclo é explícito no banco, e cada etapa concluída mostra QUANDO:
+          as quatro `CHECK` de coerência de `purchase_orders` impedem estado sem
+          data, então a nota não é adivinhação (D-277).
+        */}
+        <ProcessSteps etapas={etapas} rotulo="Etapas deste pedido de compra" />
+      </div>
+
       {info.status === "CANCELLED" && info.cancel_reason !== null && (
-        <p role="alert" style={{ color: "var(--sb-danger)" }}>
+        <p
+          role="alert"
+          style={{
+            ...TOM.perigo,
+            margin: "0 0 var(--sb-space-3)",
+            padding: "var(--sb-space-3)",
+            borderRadius: "var(--sb-radius)",
+            fontSize: "0.8125rem",
+            lineHeight: 1.5,
+          }}
+        >
           Cancelado: {info.cancel_reason}
         </p>
       )}
 
       <ActionsPanel purchaseOrderId={info.id} status={info.status} expectedAt={info.expected_at} />
 
-      <h2 style={{ fontSize: "1rem", margin: "var(--sb-space-4) 0 var(--sb-space-2)" }}>Itens</h2>
+      <div style={{ marginTop: "var(--sb-space-3)" }}>
+        <Panel
+          title="Itens do pedido"
+          subtitle="SKU, origem e custo travados no momento do pedido — o preço de hoje não reescreve o de ontem."
+          aside={
+            <span style={{ fontSize: "0.6875rem", color: "var(--sb-text-soft)" }}>
+              A exportação usa um layout provisório — será ajustado quando o modelo de referência oficial chegar.
+            </span>
+          }
+        >
+          {items.error !== null && (
+            <p role="alert" style={{ color: "var(--sb-danger)" }}>
+              Não foi possível carregar os itens: {items.error.message}
+            </p>
+          )}
 
-      {items.error !== null && (
-        <p role="alert" style={{ color: "var(--sb-danger)" }}>
-          Não foi possível carregar os itens: {items.error.message}
-        </p>
-      )}
+          {items.error === null && items.data.length === 0 && (
+            <p className="sb-empty">Nenhum item neste pedido ainda.</p>
+          )}
 
-      {items.error === null && items.data.length > 0 && (
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "42rem" }}>
-            <thead>
-              <tr>
-                <th style={th}>SKU</th>
-                <th style={th}>Origem</th>
-                <th style={th}>Quantidade</th>
-                <th style={th}>Custo unitário</th>
-                <th style={th}>Subtotal</th>
-              </tr>
-            </thead>
+          {items.error === null && items.data.length > 0 && (
+            <div style={{ overflowX: "auto" }}>
+              <table className="sb-table">
+                <thead>
+                  <tr>
+                    <th>SKU</th>
+                    <th>Origem</th>
+                    <th className="sb-num">Quantidade</th>
+                    <th className="sb-num">Custo unitário</th>
+                    <th className="sb-num">Subtotal</th>
+                  </tr>
+                </thead>
 
-            <tbody>
-              {items.data.map((item) => (
-                <tr key={item.id}>
-                  <td style={{ ...td, fontFamily: "ui-monospace, monospace" }}>
-                    {item.sku_snapshot}
-                    {item.title_snapshot !== null && (
-                      <div style={{ fontFamily: "inherit", color: "var(--sb-text-soft)", fontSize: "0.75rem" }}>
-                        {item.title_snapshot}
-                      </div>
-                    )}
-                  </td>
-                  <td style={td}>
-                    {item.skus?.is_imported === true ? "Importado" : item.skus?.is_imported === false ? "Nacional" : "—"}
-                  </td>
-                  <td style={td}>{item.quantity_ordered}</td>
-                  <td style={td}>{item.unit_cost === null ? "—" : formatCurrency(item.unit_cost)}</td>
-                  <td style={td}>
-                    {item.unit_cost === null ? "—" : formatCurrency(item.quantity_ordered * item.unit_cost)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+                <tbody>
+                  {items.data.map((item) => (
+                    <tr key={item.id}>
+                      <td className="sb-mono">
+                        {item.sku_snapshot}
+                        {item.title_snapshot !== null && (
+                          <div
+                            style={{
+                              fontFamily: "inherit",
+                              color: "var(--sb-text-soft)",
+                              fontSize: "0.75rem",
+                            }}
+                          >
+                            {item.title_snapshot}
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        {item.skus?.is_imported === true
+                          ? "Importado"
+                          : item.skus?.is_imported === false
+                            ? "Nacional"
+                            : "—"}
+                      </td>
+                      <td className="sb-num">{item.quantity_ordered}</td>
+                      <td className="sb-num">
+                        {item.unit_cost === null ? "—" : formatCurrency(item.unit_cost)}
+                      </td>
+                      <td className="sb-num">
+                        {item.unit_cost === null ? "—" : formatCurrency(item.quantity_ordered * item.unit_cost)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Panel>
+      </div>
 
-      <h2 style={{ fontSize: "1rem", margin: "var(--sb-space-4) 0 var(--sb-space-2)" }}>Histórico</h2>
+      <div style={{ marginTop: "var(--sb-space-3)" }}>
+        <Panel title="Histórico" subtitle="Append-only: uma linha por transição, nunca reescrita.">
+          {events.error !== null && (
+            <p role="alert" style={{ color: "var(--sb-danger)" }}>
+              Não foi possível carregar o histórico: {events.error.message}
+            </p>
+          )}
 
-      {events.error !== null && (
-        <p role="alert" style={{ color: "var(--sb-danger)" }}>
-          Não foi possível carregar o histórico: {events.error.message}
-        </p>
-      )}
+          {events.error === null && events.data.length === 0 && (
+            <p className="sb-empty">Sem eventos ainda.</p>
+          )}
 
-      {events.error === null && events.data.length === 0 && (
-        <p style={{ color: "var(--sb-text-soft)" }}>Sem eventos ainda.</p>
-      )}
+          {/*
+            A linha do tempo do frame, na forma que o design system já tem
+            (`.sb-feed-row`, a mesma da atividade recente da Home). O ponto
+            recebe o tom do evento — cancelamento não se lê igual a aprovação.
+          */}
+          {events.error === null &&
+            events.data.map((event) => (
+              <div key={event.id} className="sb-feed-row">
+                <span
+                  className="sb-feed-dot"
+                  style={{ ["--sb-tone" as string]: TOM[tomDeStatus(statusTone(event.event_type))].color }}
+                />
 
-      {events.error === null && events.data.length > 0 && (
-        <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: "0.375rem" }}>
-          {events.data.map((event) => (
-            <li
-              key={event.id}
-              style={{
-                display: "flex",
-                gap: "var(--sb-space-3)",
-                alignItems: "baseline",
-                padding: "0.375rem 0",
-                borderBottom: "1px solid var(--sb-border)",
-                fontSize: "0.875rem",
-              }}
-            >
-              <strong style={{ minWidth: "10rem" }}>{purchaseOrderEventLabel(event.event_type)}</strong>
-              <span style={{ color: "var(--sb-text-soft)" }}>{formatDateTime(event.occurred_at)}</span>
-            </li>
-          ))}
-        </ul>
-      )}
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <b>{purchaseOrderEventLabel(event.event_type)}</b>
+                  <small>{formatDateTime(event.occurred_at)}</small>
+                </span>
+              </div>
+            ))}
+        </Panel>
+      </div>
     </Shell>
   );
 }

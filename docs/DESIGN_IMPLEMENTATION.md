@@ -630,7 +630,8 @@ que ele renderiza.**
 | D34 | **Saúde do Sistema** — o "99,97% de uptime" do frame não tem UMA tabela que o sustente; a âncora navy ganhou a pergunta que a tela nasceu para responder (D-274) | ✔ |
 | D35 | **Configurações** — os dois interruptores do frame não têm onde gravar, e interruptor mente PIOR que número: um é lido, o outro é acionado. `table-styles.ts` apagado (D-275) | ✔ |
 | D36 | **Copiloto** — a fila pedia uma TELA, e o frame tem uma gaveta; 11 das 12 perguntas que ela sugere não têm como ser respondidas (D-276) | ✔ |
-| D37 | Passe visual global | fila |
+| D37a | **As tres telas de DETALHE** (`/notas-fiscais/[id]`, `/compras/[id]`, `/fornecedores/[supplierId]`) — listas migradas, detalhes antigos; `ProcessSteps` extraido no segundo consumidor (D-277) | ✔ |
+| D37b | Passe visual global — o que resta: 6 tabelas sem `.sb-table` e as telas sem `PageTitle` | fila |
 
 ## Auditoria de Fidelidade Figma
 
@@ -813,88 +814,104 @@ O que resta é a fila **D31 em diante**: 7 superfícies ainda não migradas — 
 
 ## Última fatia concluída
 
-**D36 — Copiloto (D-276).** A última da fila nomeada. Sem migration.
+**D37a — as três telas de detalhe (D-277).** Primeira fatia do passe visual.
+Sem migration.
 
-### A fila pedia uma tela que o frame não tem
+### O recorte saiu de uma medição, não de uma lista
 
-O grupo de Administração do desenho termina em Configurações: **não há entrada
-de Copiloto na lista de telas**. O Copiloto do Figma é uma **gaveta de 420px à
-direita**, aberta de qualquer página.
+`check:table-styles` contava **21** telas migradas contra 44 tabelas no app.
+Medida a diferença antes de escrever: **8 arquivos** com `<table>` e nenhum
+`.sb-table`, **17** `page.tsx` sem `PageTitle` nem `ObjectHeader`.
 
-É a segunda vez que a fila pede algo que o frame não sustenta — D-266 recusou
-Tráfego por falta de fonte no banco; aqui a falta é do outro lado. A fila é
-lista de frames a avaliar, não contrato de entrega, e isso agora tem duas
-ocorrências.
+Das oito, três têm o mesmo defeito visível: são os DETALHES de listas que D18,
+D19 e D20 já migraram. A lista tem a cara do Figma, a linha clicada cai no app
+antigo. E o design system do próprio Figma nomeia duas delas — o `Object
+Header` é declarado como "o padrão de SKU, anúncio, **pedido de compra** e
+**fornecedor**".
 
-### O coração da gaveta é um contexto que a API não recebe
+### O componente foi extraído no SEGUNDO consumidor, não antes
 
-Três dos cinco blocos dependem de saber em que tela você está — o selo
-"Contexto Atual", as sugestões por entidade e a "Análise Pronta". E
-`/v1/copilot/chat` recebe `{ message }`, **sem parâmetro de tela**. Fazer a
-gaveta hoje seria construir a moldura da ideia e chamar de pronto.
+`ProcessSteps` nasceu em D-277 com o tipo dentro de `lib/nfe-steps.ts` e a nota
+de que subiria quando houvesse um segundo. Ele apareceu na mesma fatia:
+`purchase_orders` tem `DRAFT → APPROVED → ORDERED → RECEIVED`.
 
-### Onze das doze perguntas sugeridas não têm como ser respondidas
+| | NF-e | Pedido de compra |
+|---|---|---|
+| frame | SEIS passos | **não desenha esta tela** |
+| estados reais | 4 — três passos do frame são o mesmo `PARSED` | 4, nomeados no `CHECK` |
+| nota da etapa | fração `resolvidos de total` | **carimbo de tempo** |
 
-O Copiloto tem **três** ferramentas, todas de venda. Das doze sugestões do
-frame, **uma** é respondível. E a mais reveladora pede "histórico de exposição"
-— o dado de tráfego que D-266 mediu como inexistente no esquema. O desenho é
-coerente consigo mesmo e incoerente com o sistema **duas vezes pelo mesmo
-motivo**.
+No pedido a nota não é adivinhação: as quatro `CHECK` de coerência de
+`purchase_orders` impedem estado sem data.
 
-Sugestão que o sistema não responde é pior que campo vazio: o campo não promete
-nada; a sugestão promete e falha **depois de gastar uma chamada paga**.
+### Cinco contagens que a RPC já devolvia e a tela não mostrava
 
-### O que o frame contribuiu: a lista de ferramentas, em português
+O frame desenha o fornecedor como gaveta com cinco abas, **três delas marcadas
+"em construção" no próprio protótipo**, e resume pedidos em três estados. O
+sistema mede **cinco**, e `get_supplier_overview` já devolvia os cinco
+(`orders_draft`, `orders_approved`, `orders_ordered`, `orders_received`,
+`orders_cancelled`) — a tela mostrava só o total. Colapsá-los esconderia a
+diferença que decide o que fazer com o pedido. Mesma classe de D-250 e D-265.
 
-Sugerir é boa ideia — campo em branco é a pior afordância de um chat. Entraram
-três, uma por ferramenta que existe, e só no estado vazio: depois da primeira
-pergunta viram ruído.
+**E os cartões não são links, de propósito:** `/compras` filtra por estado, não
+por fornecedor — "2 aprovados" levaria à lista de todos. A lista que eles
+resumem está três linhas abaixo, na mesma tela.
 
-### Um teste que passou verde na tela de login
+### A armadilha do frame: o "Detalhe de Pedido" é de VENDA
 
-O caso "as onze perguntas não aparecem" passou **rodando contra a tela de
-login**: o banco estava sem seed, o login falhou, e um teste que só afirma
-ausência passa em qualquer página — inclusive na errada. Os outros três
-falharam, e foi só por isso que eu olhei.
+O `OrderDetailDrawer` do protótipo tem comprador, conta, logística e mediação —
+é pedido do Mercado Livre, não pedido de compra. Desenhar `/compras/[id]` por
+ele teria trocado a entidade. O que ele contribuiu foi a **linha do tempo**, e
+ela já tinha forma: `.sb-feed-row`, a mesma da atividade recente da Home.
 
-**Verificação, local:** `check` **29/29**, e2e **78/78** em banco recriado (4
-novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17,
-`check:table-styles` 21, `docs:check`. Capturada a 1440px contra o Supabase
-local.
+### Um defeito meu, pego por um teste recém-escrito
+
+O estado `cancelada` procurava a etapa marcada como `atual` para convertê-la —
+e `CANCELLED` não é `PARSED`, então **nenhuma** etapa chega em curso e o
+documento cancelado saía sem lugar de parada. A regra certa é "a primeira que
+não chegou ao fim".
+
+**Legado removido:** `th`/`td`/`tdNumber`, `Stat`, `statBox`/`statLabel`/
+`statValue` nas três telas, e o helper de e2e `statValue` — sem nenhum
+consumidor depois da última migração.
 
 ## Próxima fatia segura
 
-**D37 — o passe visual global**, e é a última da frente. A fila nomeada fechou:
-D18→D25 e D27→D36 entregues, D26 recusada com medição.
+**D37b — o resto do passe visual.** D37a fechou as três telas de detalhe; o
+que sobra está medido, não estimado.
 
-O passe não é "olhar tudo de novo". O que a frente acumulou dá um roteiro
-concreto, e ele tem duas metades:
+**Seis arquivos com `<table>` e nenhum `.sb-table`** — a metade cega do guarda
+(D-262), que só a captura encontra:
 
-1. **O que os guardas já sabem apontar.** `check:table-styles` conta **21**
-   telas migradas; o app tem 44 tabelas. A diferença são as telas que nunca
-   declararam `.sb-table` — a metade cega do guarda (D-262), que só a captura
-   encontra. Essa é a lista a fechar.
-2. **O que só a captura encontra.** Larguras a 1150px e 850px, o corte de
-   texto da classe de D-272, e as telas que ainda não têm `PageTitle`.
+| arquivo | nota |
+|---|---|
+| `/cobertura` | nunca passou pela frente (D-261); o frame a trata com Reposição como UMA tela de abas, então é composição, não acabamento |
+| `/importacoes` e `/importacoes/[id]` | o importador do UpSeller — mesmo fluxo `upload → parse → conferência → aplicação` da NF-e, então é o **terceiro** candidato a `ProcessSteps` |
+| `/compras/novo` (formulário) | tabela de entrada, não de leitura — conferir se `.sb-table` cabe antes de aplicar |
+| `/notificacoes/preferencias` | `preference-row.tsx` também carrega consts próprias |
+| `/reposicao/configuracoes` | — |
 
-**Duas telas seguem fora de qualquer fatia**: `/cobertura` nunca foi migrada
-(D-261) e `/estoque/movimentacoes` declarou `.sb-table` sem completar a
-migração (medido em D-261).
+**Dezesseis `page.tsx` sem `PageTitle`** (17 medidos menos `/login`, que fica
+fora do `Shell` de propósito). `/notas-fiscais/nova` já tem o cabeçalho novo
+mas não a migração completa — conferir na captura.
 
-A rotina, com as nove perguntas acumuladas: **o frame tem fonte?** (D-266),
+A rotina, com as dez perguntas acumuladas: **o frame tem fonte?** (D-266),
 **falta coluna ou falta dado?** (D-268), **quantas linhas no Dev?** (D-263), **a
 faixa conta o mesmo conjunto da tabela ou é navegação?** (D-265), **há spec?**
 (D-271), **capturei a tela depois do último build?** (D-272), **o fixture do
 teste é um dado degradado de verdade?** (D-273), **o mapa já sabe disso?**
-(D-274) e **o elemento é lido ou é acionado?** (D-275).
+(D-274), **o elemento é lido ou é acionado?** (D-275) e **este caso passa na
+tela errada?** (D-276).
 
-D36 acrescenta a décima, sobre teste: **este caso passa na tela errada?** — um
-`toHaveCount(0)` sozinho passa em qualquer página, e a suíte tem vários.
+D37a acrescenta a décima primeira, e ela é sobre o frame: **o desenho é desta
+ENTIDADE?** — o "Detalhe de Pedido" do protótipo é de venda, não de compra, e
+usá-lo teria trocado o assunto da tela sem que nada acusasse.
 
 **Sete itens seguem abertos fora da fila:**
 
-- **`/notas-fiscais/[id]`** — dois dos quatro estados de item do brief §25 não
-  têm dado em `document_items` (D-253).
+- ~~**`/notas-fiscais/[id]`**~~ — **migrada em D-277**. Segue valendo a medição:
+  dois dos quatro estados de item do brief §25 (`SUGESTAO`, `CONFLITO`) não têm
+  dado em `document_items`, e são trabalho de backend antes de serem de tela.
 - **`/cobertura`** — o frame a trata com Reposição como uma tela de abas
   (D-261); e ela não tem filtro por SKU, só por marca (D-265).
 - **Exportação de `/precos`** — recusada em D-264 por ser feature.

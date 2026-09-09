@@ -2131,20 +2131,31 @@ table {
  */
 .sb-state-cards {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  /* Sete e o padrao (`/reposicao`, D-250). O numero vem por variavel desde
+     D-277, quando `/fornecedores/[supplierId]` trouxe CINCO estados de pedido:
+     sete colunas para cinco cartoes deixava dois vaos mortos a direita. Mesmo
+     mecanismo de `--sb-kpi-cols` na faixa de indicadores. */
+  grid-template-columns: repeat(var(--sb-state-cols, 7), 1fr);
   gap: var(--sb-space-2);
   margin-bottom: var(--sb-space-3);
 }
 
+/*
+ * Os degraus tambem vem por variavel, e o motivo foi VISTO na tela (D-277):
+ * `repeat(4, 1fr)` fixo servia aos sete cartoes de `/reposicao` (4+3) e
+ * quebrava os cinco de `/fornecedores/[supplierId]` em 4+1 -- um orfao, a
+ * mesma classe da "fatia cinza" que A2 pegou na faixa de indicadores. Quem
+ * declara quantos cartoes tem declara tambem em quantos eles cabem.
+ */
 @media (max-width: 1150px) {
   .sb-state-cards {
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(var(--sb-state-cols-md, 4), 1fr);
   }
 }
 
 @media (max-width: 850px) {
   .sb-state-cards {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(var(--sb-state-cols-sm, 2), 1fr);
   }
 }
 
@@ -2770,4 +2781,164 @@ table {
   gap: var(--sb-space-2);
   font-size: 0.625rem;
   color: var(--sb-text-soft);
+}
+
+/*
+ * `.sb-process-steps` — o `.process-steps` do frame (`ProcessScreen
+ * type="nfe"`), medido no export: cartão branco com borda, bolinhas de 19px
+ * ligadas por um fio de 1px, a etapa ativa em navy.
+ *
+ * Duas diferenças do frame, as duas por medição (D-277):
+ *
+ * 1. São QUATRO etapas, não seis. "Itens encontrados", "Vinculação" e
+ *    "Conferência" do frame são o MESMO `documents.status = 'PARSED'` — três
+ *    bolinhas para um estado só acenderiam sem que nada tivesse acontecido.
+ *    O raciocínio inteiro mora em `lib/nfe-steps.ts`.
+ *
+ * 2. Existe estado de FALHA. O frame só tem "ativa" e "inativa"; um documento
+ *    em `FAILED` mostrando o caminho feliz seria a tela mentindo.
+ *
+ * A bolinha carrega glifo além da cor (`✓`, `!`), porque cor sozinha não é
+ * pista — a mesma regra da pílula de status.
+ */
+.sb-process-steps {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  margin: 0 0 var(--sb-space-3);
+  padding: var(--sb-space-3) var(--sb-space-4);
+  list-style: none;
+  background: var(--sb-surface);
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius);
+  box-shadow: var(--sb-shadow-panel);
+}
+
+.sb-process-step {
+  display: flex;
+  align-items: center;
+  gap: 0.4375rem;
+  flex: 1;
+  min-width: 0;
+  font-size: 0.75rem;
+  color: var(--sb-text-soft);
+}
+
+/* O fio que liga uma etapa à seguinte, como no export. */
+.sb-process-step:not(:last-child)::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  margin: 0 0.625rem;
+  background: var(--sb-border);
+}
+
+.sb-process-step > b {
+  display: grid;
+  place-items: center;
+  flex: none;
+  height: 19px;
+  width: 19px;
+  border-radius: 50%;
+  background: var(--sb-surface-hover);
+  color: var(--sb-text-soft);
+  font-family: var(--sb-mono);
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+.sb-process-step > span {
+  min-width: 0;
+}
+
+.sb-process-step > span > small {
+  display: block;
+  margin-top: 0.125rem;
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-process-step-concluida > b {
+  background: var(--sb-success-soft);
+  color: var(--sb-success);
+}
+
+.sb-process-step-atual {
+  color: var(--sb-text);
+  font-weight: 600;
+}
+
+.sb-process-step-atual > b {
+  background: var(--sb-primary);
+  color: var(--sb-white);
+}
+
+.sb-process-step-falhou {
+  color: var(--sb-danger-ink);
+  font-weight: 600;
+}
+
+.sb-process-step-falhou > b {
+  background: var(--sb-danger-soft);
+  color: var(--sb-danger-ink);
+}
+
+/* Cancelada nao e falha: o processo parou por decisao humana, e a etapa fica
+   riscada em tom neutro, nao em vermelho de alarme. */
+.sb-process-step-cancelada {
+  color: var(--sb-text-soft);
+  text-decoration: line-through;
+}
+
+.sb-process-step-cancelada > b {
+  background: var(--sb-neutral-soft);
+  color: var(--sb-neutral-ink);
+  text-decoration: none;
+}
+
+/* Na tela estreita a fileira rola em vez de espremer os rótulos (export). */
+@media (max-width: 850px) {
+  .sb-process-steps {
+    overflow-x: auto;
+  }
+
+  .sb-process-step {
+    min-width: 8rem;
+  }
+}
+
+/*
+ * `.sb-fact-grid` — os fatos de um documento dentro do corpo do
+ * `ObjectHeader` (D-277).
+ *
+ * NÃO vem do frame: o protótipo nunca desenhou o detalhe da NF-e. Vem da tela
+ * antiga, que mostrava chave de acesso, emitente e destinatário como
+ * parágrafos soltos abaixo do título.
+ *
+ * Não é `.sb-stat`: aqueles são cartões com número grande, e oito fatos de
+ * documento (série, CNPJ, chave de 44 dígitos) viram oito cartões barulhentos
+ * dizendo coisas quietas. Aqui o rótulo tem o mesmo tratamento de
+ * `.sb-stat-label` e o valor fica em texto de leitura.
+ */
+.sb-fact-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--sb-space-3);
+  margin: 0;
+}
+
+.sb-fact-grid dt {
+  margin-bottom: 0.125rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--sb-text-soft);
+}
+
+.sb-fact-grid dd {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }

@@ -2,6 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { ObjectHeader, type ObjectBadge } from "../../../components/object-header";
+import { PageTitle } from "../../../components/page-title";
+import { Panel } from "../../../components/panel";
 import { Shell } from "../../../components/shell";
 import { StatusPill } from "../../../components/status-pill";
 import { formatCount, formatCurrency, formatDateTime } from "../../../lib/format";
@@ -32,44 +35,23 @@ export const dynamic = "force-dynamic";
  * Cancelado aparece SEPARADO, nunca somado nem escondido: hoje o único pedido
  * da base está cancelado, e um total único mostraria "R$ 0,00" sem explicar
  * que houve R$ 4.644,00 pedidos e desfeitos.
+ *
+ * ---------------------------------------------------------------------------
+ * Migrada em D-277 (fatia D37) contra o `SupplierDetailDrawer` do frame
+ * ---------------------------------------------------------------------------
+ *
+ * O frame desenha esta tela como GAVETA de 600px com cinco abas, três delas
+ * marcadas "em construção" no próprio protótipo. Gavetas seguem adiadas nesta
+ * frente; o que transferiu foi a composição: cabeçalho de entidade, o "Resumo
+ * de Pedidos" em cartões, e as duas tabelas.
+ *
+ * **O resumo do frame tem três estados; o sistema mede CINCO** — e as cinco
+ * contagens já vinham de `get_supplier_overview` (`orders_draft`,
+ * `orders_approved`, `orders_ordered`, `orders_received`, `orders_cancelled`)
+ * sem que a tela mostrasse nenhuma delas. Colapsar rascunho, aprovado e
+ * enviado num "Em Aberto" esconderia exatamente a diferença que decide o que
+ * fazer com o pedido. Mesma classe de D-250 e D-265.
  */
-
-
-const th: React.CSSProperties = {
-  textAlign: "left",
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.75rem",
-  textTransform: "uppercase",
-  letterSpacing: "0.04em",
-  color: "var(--sb-text-soft)",
-  whiteSpace: "nowrap",
-};
-
-const td: React.CSSProperties = {
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.875rem",
-  verticalAlign: "top",
-};
-
-const tdNumber: React.CSSProperties = { ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" };
-
-const statBox: React.CSSProperties = {
-  border: "1px solid var(--sb-border)",
-  borderRadius: "var(--sb-radius)",
-  padding: "var(--sb-space-3)",
-  minWidth: "9rem",
-};
-
-const statLabel: React.CSSProperties = {
-  fontSize: "0.75rem",
-  textTransform: "uppercase",
-  letterSpacing: "0.04em",
-  color: "var(--sb-text-soft)",
-};
-
-const statValue: React.CSSProperties = { fontSize: "1.375rem", fontVariantNumeric: "tabular-nums" };
 
 function Contato({ label, value }: { label: string; value: string | null }): ReactNode {
   if (value === null || value.trim() === "") return null;
@@ -95,8 +77,8 @@ export default async function FornecedorPage({
   if (organizationId === null) {
     return (
       <Shell>
-        <h1 style={{ margin: "0 0 var(--sb-space-3)", fontSize: "1.375rem" }}>Fornecedor</h1>
-        <p style={{ color: "var(--sb-text-soft)" }}>Sua conta não está associada a nenhuma organização.</p>
+        <PageTitle eyebrow="ESTOQUE / OPERAÇÃO" title="Fornecedor" compacto />
+        <p className="sb-empty">Sua conta não está associada a nenhuma organização.</p>
       </Shell>
     );
   }
@@ -134,192 +116,254 @@ export default async function FornecedorPage({
   const orders = ordersResult.data ?? [];
   const secondaryError = skusResult.error ?? ordersResult.error;
 
+  const badges: readonly ObjectBadge[] = [
+    overview.is_active ? { label: "Ativo", tom: "ok" } : { label: "Inativo", tom: "atencao" },
+  ];
+
+  const contatos: readonly (readonly [string, string | null])[] = [
+    ["Razão social", overview.legal_name],
+    ["Documento", overview.document],
+    ["Contato", overview.contact_name],
+    ["Telefone", overview.phone],
+    ["WhatsApp", overview.whatsapp],
+    ["E-mail", overview.email],
+    ["Site", overview.website],
+  ];
+
+  // As CINCO contagens de estado que a RPC já devolvia e a tela não mostrava.
+  // Não são links: `/compras` filtra por estado, mas não por fornecedor, então
+  // "#{n} aprovados" levaria à lista de TODOS os fornecedores — um cartão
+  // prometendo um recorte e entregando outro (a armadilha de D-250). A lista
+  // que eles resumem está três linhas abaixo, nesta mesma tela.
+  const estados: readonly (readonly [string, number])[] = [
+    ["Rascunho", overview.orders_draft],
+    ["Aprovado", overview.orders_approved],
+    ["Pedido enviado", overview.orders_ordered],
+    ["Recebido", overview.orders_received],
+    ["Cancelado", overview.orders_cancelled],
+  ];
+
   return (
     <Shell>
-      <p style={{ margin: 0, fontSize: "0.875rem" }}>
-        <Link href="/fornecedores">← Fornecedores</Link>
-      </p>
+      <PageTitle
+        eyebrow="ESTOQUE / OPERAÇÃO"
+        title="Fornecedores"
+        subtitle={<Link href="/fornecedores">← Voltar aos fornecedores</Link>}
+        compacto
+      />
 
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          alignItems: "baseline",
-          gap: "var(--sb-space-2)",
-          margin: "var(--sb-space-2) 0 0",
-        }}
+      <ObjectHeader
+        identificador="FORNECEDOR"
+        titulo={overview.name}
+        badges={badges}
+        meta={
+          overview.ultimo_pedido_em === null
+            ? "Nenhum pedido registrado"
+            : `Último pedido em ${formatDateTime(overview.ultimo_pedido_em)}`
+        }
       >
-        <h1 style={{ margin: 0, fontSize: "1.375rem" }}>{overview.name}</h1>
-        {!overview.is_active && <span style={{ fontSize: "0.8125rem", color: "var(--sb-accent-ink)" }}>inativo</span>}
-      </div>
-
-      <p
-        style={{
-          margin: "var(--sb-space-1) 0 var(--sb-space-3)",
-          color: "var(--sb-text-soft)",
-          fontSize: "0.875rem",
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "0.75rem",
-        }}
-      >
-        <Contato label="Razão social" value={overview.legal_name} />
-        <Contato label="Documento" value={overview.document} />
-        <Contato label="Contato" value={overview.contact_name} />
-        <Contato label="Telefone" value={overview.phone} />
-        <Contato label="WhatsApp" value={overview.whatsapp} />
-        <Contato label="E-mail" value={overview.email} />
-        <Contato label="Site" value={overview.website} />
-      </p>
+        <p
+          style={{
+            margin: 0,
+            color: "var(--sb-text-soft)",
+            fontSize: "0.8125rem",
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "0.75rem",
+          }}
+        >
+          {contatos.map(([label, value]) => (
+            <Contato key={label} label={label} value={value} />
+          ))}
+        </p>
+      </ObjectHeader>
 
       {secondaryError !== null && (
-        <p role="alert" style={{ color: "var(--sb-danger)" }}>
+        <p role="alert" style={{ color: "var(--sb-danger)", marginTop: "var(--sb-space-3)" }}>
           Não foi possível carregar parte do dashboard: {secondaryError.message}
         </p>
       )}
 
-      <div style={{ display: "flex", gap: "var(--sb-space-3)", flexWrap: "wrap", marginBottom: "var(--sb-space-2)" }}>
-        <div style={statBox}>
-          <div style={statLabel}>Pedidos</div>
-          <div style={statValue}>{formatCount(overview.orders_total)}</div>
-        </div>
-        <div style={statBox}>
-          <div style={statLabel}>Comprado</div>
+      <div style={{ marginTop: "var(--sb-space-3)" }}>
+        <Panel
+          title="Resumo de pedidos"
+          subtitle={`${formatCount(overview.orders_total)} pedido(s) no total — as cinco parcelas fecham com ele.`}
+        >
+          <div
+            className="sb-state-cards"
+            style={{
+              // Cinco cartoes: 5 -> 3+2 -> 2+2+1. O degrau padrao (4) deixaria
+              // 4+1, com um orfao -- visto na tela a 1150px.
+              ["--sb-state-cols" as string]: "5",
+              ["--sb-state-cols-md" as string]: "3",
+              margin: "var(--sb-space-3)",
+            }}
+          >
+            {estados.map(([label, quantidade]) => (
+              <div key={label} className="sb-state-card">
+                <span>{label}</span>
+                <strong>{formatCount(quantidade)}</strong>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      </div>
+
+      <div className="sb-stat-grid" style={{ ["--sb-stat-cols" as string]: "3", marginTop: "var(--sb-space-3)" }}>
+        <div className="sb-stat">
+          <span className="sb-stat-label">Comprado</span>
           {/*
             `formatCurrency(null)` é "—", e desde D-258 o NULO chega de
             verdade: `valor_pedido` deixou de usar `coalesce(sum, 0)`, que
             transformava custo DESCONHECIDO em R$ 0,00 — lido como "comprou
             nada" em vez de "não sei quanto".
           */}
-          <div style={statValue}>{formatCurrency(overview.valor_pedido)}</div>
-          <div style={{ fontSize: "0.6875rem", color: "var(--sb-muted-ink)" }}>
+          <b className="sb-stat-value">{formatCurrency(overview.valor_pedido)}</b>
+          <span className="sb-stat-note">
             {formatCount(overview.unidades_pedidas)} unidade(s), sem os cancelados
-          </div>
-          {overview.itens_sem_custo > 0 && (
-            <div style={{ fontSize: "0.6875rem", color: "var(--sb-accent-ink)" }}>
-              {formatCount(overview.itens_sem_custo)} item(ns) sem custo — o valor é parcial
-            </div>
-          )}
+            {overview.itens_sem_custo > 0 && (
+              <span style={{ display: "block", color: "var(--sb-accent-ink)" }}>
+                {formatCount(overview.itens_sem_custo)} item(ns) sem custo — o valor é parcial
+              </span>
+            )}
+          </span>
         </div>
-        <div style={statBox}>
-          <div style={statLabel}>Cancelado</div>
-          <div style={{ ...statValue, color: overview.orders_cancelled > 0 ? "var(--sb-danger)" : undefined }}>
-            {formatCurrency(overview.valor_cancelado)}
-          </div>
-          <div style={{ fontSize: "0.6875rem", color: "var(--sb-muted-ink)" }}>
-            {formatCount(overview.orders_cancelled)} pedido(s), {formatCount(overview.unidades_canceladas)} unidade(s)
-          </div>
-          {overview.itens_cancelados_sem_custo > 0 && (
-            <div style={{ fontSize: "0.6875rem", color: "var(--sb-accent-ink)" }}>
-              {formatCount(overview.itens_cancelados_sem_custo)} item(ns) sem custo
-            </div>
-          )}
+
+        <div
+          className="sb-stat"
+          {...(overview.orders_cancelled > 0
+            ? {
+                style: {
+                  ["--sb-tone" as string]: "var(--sb-danger-soft)",
+                  ["--sb-tone-ink" as string]: "var(--sb-danger-ink)",
+                },
+              }
+            : {})}
+        >
+          <span className="sb-stat-label">Cancelado</span>
+          <b className="sb-stat-value">{formatCurrency(overview.valor_cancelado)}</b>
+          <span className="sb-stat-note">
+            {formatCount(overview.orders_cancelled)} pedido(s), {formatCount(overview.unidades_canceladas)}{" "}
+            unidade(s)
+            {overview.itens_cancelados_sem_custo > 0 && (
+              <span style={{ display: "block", color: "var(--sb-accent-ink)" }}>
+                {formatCount(overview.itens_cancelados_sem_custo)} item(ns) sem custo
+              </span>
+            )}
+          </span>
         </div>
-        <div style={statBox}>
-          <div style={statLabel}>SKUs comprados</div>
-          <div style={statValue}>{formatCount(overview.skus_distintos)}</div>
+
+        <div className="sb-stat">
+          <span className="sb-stat-label">SKUs comprados</span>
+          <b className="sb-stat-value">{formatCount(overview.skus_distintos)}</b>
+          <span className="sb-stat-note">
+            distintos nos itens dos pedidos
+            {overview.primeiro_pedido_em !== null && (
+              <span style={{ display: "block" }}>
+                primeiro pedido em {formatDateTime(overview.primeiro_pedido_em)}
+              </span>
+            )}
+          </span>
         </div>
       </div>
 
-      <p style={{ margin: "0 0 var(--sb-space-4)", fontSize: "0.75rem", color: "var(--sb-muted-ink)" }}>
+      <p style={{ margin: "var(--sb-space-3) 0", fontSize: "0.75rem", color: "var(--sb-muted-ink)" }}>
         Tudo nesta tela vem dos <strong>pedidos de compra</strong>. Não existe catálogo de produtos por fornecedor
-        no sistema — a marca do SKU (
-        <span style={{ fontFamily: "ui-monospace, monospace" }}>supplier_brand</span>) é um eixo separado e{" "}
+        no sistema — a marca do SKU (<span className="sb-mono">supplier_brand</span>) é um eixo separado e{" "}
         <strong>não</strong> é o mesmo que fornecedor.
-        {overview.primeiro_pedido_em !== null && <> Primeiro pedido em {formatDateTime(overview.primeiro_pedido_em)}.</>}
       </p>
 
-      <h2 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.0625rem" }}>Pedidos de compra</h2>
+      <Panel title="Pedidos de compra" subtitle="Os 50 mais recentes, do último para o primeiro.">
+        {orders.length === 0 && ordersResult.error === null && (
+          <p className="sb-empty">Nenhum pedido de compra para este fornecedor.</p>
+        )}
 
-      {orders.length === 0 && ordersResult.error === null && (
-        <p style={{ color: "var(--sb-text-soft)", fontSize: "0.8125rem", marginBottom: "var(--sb-space-4)" }}>
-          Nenhum pedido de compra para este fornecedor.
-        </p>
-      )}
-
-      {orders.length > 0 && (
-        <div style={{ overflowX: "auto", marginBottom: "var(--sb-space-4)" }}>
-          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "34rem" }}>
-            <thead>
-              <tr>
-                <th style={th}>Pedido</th>
-                <th style={th}>Estado</th>
-                <th style={th}>Previsto</th>
-                <th style={th}>Criado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders.map((order) => (
-                <tr key={order.id}>
-                  <td style={td}>
-                    <Link href={`/compras/${order.id}`}>#{order.order_number}</Link>
-                  </td>
-                  <td style={td}>
-                    <StatusPill code={order.status} label={purchaseOrderStatusLabel(order.status)} />
-                  </td>
-                  <td style={td}>{order.expected_at === null ? "—" : formatDateTime(order.expected_at)}</td>
-                  <td style={td}>{formatDateTime(order.created_at)}</td>
+        {orders.length > 0 && (
+          <div style={{ overflowX: "auto" }}>
+            <table className="sb-table">
+              <thead>
+                <tr>
+                  <th>Pedido</th>
+                  <th>Estado</th>
+                  <th>Previsto</th>
+                  <th>Criado</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </thead>
+              <tbody>
+                {orders.map((order) => (
+                  <tr key={order.id}>
+                    <td className="sb-mono">
+                      <Link href={`/compras/${order.id}`}>#{order.order_number}</Link>
+                    </td>
+                    <td>
+                      <StatusPill code={order.status} label={purchaseOrderStatusLabel(order.status)} />
+                    </td>
+                    <td>{order.expected_at === null ? "—" : formatDateTime(order.expected_at)}</td>
+                    <td style={{ whiteSpace: "nowrap" }}>{formatDateTime(order.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Panel>
 
-      <h2 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.0625rem" }}>SKUs já comprados</h2>
+      <div style={{ marginTop: "var(--sb-space-3)" }}>
+        <Panel
+          title="SKUs já comprados"
+          subtitle="Derivado dos itens dos pedidos — é o único vínculo real entre fornecedor e produto. O custo é o do último pedido em que o item apareceu, nunca a média entre épocas, e não altera o custo cadastrado do SKU."
+        >
+          {skus.length === 0 && skusResult.error === null && (
+            <p className="sb-empty">Nenhum item comprado deste fornecedor ainda.</p>
+          )}
 
-      <p style={{ margin: "0 0 var(--sb-space-2)", fontSize: "0.75rem", color: "var(--sb-muted-ink)" }}>
-        Derivado dos itens dos pedidos — é o único vínculo real entre fornecedor e produto. O custo é o do{" "}
-        <strong>último pedido</strong> em que o item apareceu, nunca a média entre épocas, e não altera o custo
-        cadastrado do SKU.
-      </p>
-
-      {skus.length === 0 && skusResult.error === null && (
-        <p style={{ color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
-          Nenhum item comprado deste fornecedor ainda.
-        </p>
-      )}
-
-      {skus.length > 0 && (
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "44rem" }}>
-            <thead>
-              <tr>
-                <th style={th}>SKU</th>
-                <th style={{ ...th, textAlign: "right" }}>Pedidos</th>
-                <th style={{ ...th, textAlign: "right" }}>Unidades</th>
-                <th style={{ ...th, textAlign: "right" }}>Canceladas</th>
-                <th style={{ ...th, textAlign: "right" }}>Último custo</th>
-                <th style={th}>Último pedido</th>
-              </tr>
-            </thead>
-            <tbody>
-              {skus.map((row) => (
-                <tr key={`${row.sku_id ?? "livre"}:${row.sku}`}>
-                  <td style={{ ...td, fontFamily: "ui-monospace, monospace" }}>
-                    {/* Item digitado livre não tem vínculo — vira texto, não link morto. */}
-                    {row.sku_id === null ? row.sku : <Link href={`/skus/${row.sku_id}`}>{row.sku}</Link>}
-                    {row.title !== null && (
-                      <div style={{ color: "var(--sb-text-soft)", fontSize: "0.75rem", fontFamily: "inherit" }}>
-                        {row.title}
-                      </div>
-                    )}
-                  </td>
-                  <td style={tdNumber}>{formatCount(row.pedidos)}</td>
-                  <td style={tdNumber}>{formatCount(row.unidades_pedidas)}</td>
-                  <td style={{ ...tdNumber, color: row.unidades_canceladas > 0 ? "var(--sb-danger)" : undefined }}>
-                    {formatCount(row.unidades_canceladas)}
-                  </td>
-                  <td style={tdNumber}>{formatCurrency(row.ultimo_custo)}</td>
-                  <td style={{ ...td, whiteSpace: "nowrap" }}>
-                    #{row.ultimo_pedido_numero} · {formatDateTime(row.ultimo_pedido_em)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+          {skus.length > 0 && (
+            <div style={{ overflowX: "auto" }}>
+              <table className="sb-table">
+                <thead>
+                  <tr>
+                    <th>SKU</th>
+                    <th className="sb-num">Pedidos</th>
+                    <th className="sb-num">Unidades</th>
+                    <th className="sb-num">Canceladas</th>
+                    <th className="sb-num">Último custo</th>
+                    <th>Último pedido</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {skus.map((row) => (
+                    <tr key={`${row.sku_id ?? "livre"}:${row.sku}`}>
+                      <td className="sb-mono">
+                        {/* Item digitado livre não tem vínculo — vira texto, não link morto. */}
+                        {row.sku_id === null ? row.sku : <Link href={`/skus/${row.sku_id}`}>{row.sku}</Link>}
+                        {row.title !== null && (
+                          <div
+                            style={{ color: "var(--sb-text-soft)", fontSize: "0.75rem", fontFamily: "inherit" }}
+                          >
+                            {row.title}
+                          </div>
+                        )}
+                      </td>
+                      <td className="sb-num">{formatCount(row.pedidos)}</td>
+                      <td className="sb-num">{formatCount(row.unidades_pedidas)}</td>
+                      <td
+                        className="sb-num"
+                        {...(row.unidades_canceladas > 0 ? { style: { color: "var(--sb-danger)" } } : {})}
+                      >
+                        {formatCount(row.unidades_canceladas)}
+                      </td>
+                      <td className="sb-num">{formatCurrency(row.ultimo_custo)}</td>
+                      <td style={{ whiteSpace: "nowrap" }}>
+                        #{row.ultimo_pedido_numero} · {formatDateTime(row.ultimo_pedido_em)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Panel>
+      </div>
     </Shell>
   );
 }

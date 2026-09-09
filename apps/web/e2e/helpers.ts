@@ -25,14 +25,17 @@ export async function loginAs(page: Page, email: string, password: string, redir
 }
 
 /**
- * Valor de um "Stat" (`<div><div>{label}</div><div>{value}</div></div>`,
- * padrão repetido em `/compras/[id]`, `/notas-fiscais/[id]`, `/skus/[id]`).
+ * Valor de um fato na grade do `ObjectHeader` (`<dl class="sb-fact-grid">`,
+ * D-277).
  *
- * `getByText(label, { exact: true })` sozinho pode bater em mais de um lugar
- * — ex.: o rótulo "Itens" também é o texto de um `<h2>` na mesma tela — daí o
- * xpath: só conta um `div` cujo FILHO direto seja um `div` com esse texto
- * exato, isolando o par rótulo/valor do Stat de qualquer heading homônimo.
+ * Substituiu o `statValue`, que lia o `Stat` inline
+ * (`<div><div>rótulo</div><div>valor</div></div>`) das telas de detalhe. Com
+ * `/notas-fiscais/[id]` e `/compras/[id]` migradas, aquele helper ficou sem
+ * nenhum consumidor e saiu junto.
+ *
+ * O xpath ancora no `dt` de texto EXATO e pega o `dd` irmão: rótulos como
+ * "Itens" também aparecem como cabeçalho na mesma tela.
  */
-export function statValue(page: Page, label: string): Locator {
-  return page.locator(`xpath=//div[div[normalize-space(text())="${label}"]]/div[2]`);
+export function factValue(page: Page, label: string): Locator {
+  return page.locator(`xpath=//dl[@class="sb-fact-grid"]/div[dt[normalize-space(text())="${label}"]]/dd`);
 }

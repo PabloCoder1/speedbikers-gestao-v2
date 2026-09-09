@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { login, statValue } from "./helpers.js";
+import { factValue, login } from "./helpers.js";
 
 /**
  * "Pedido de compra" (docs/TESTING.md) — cria um rascunho do zero pela UI.
@@ -29,6 +29,16 @@ test("cria um pedido de compra com item em texto livre e mostra o resumo certo",
 
   await expect(page).toHaveURL(/\/compras\/[0-9a-f-]{36}$/);
 
-  await expect(statValue(page, "Itens")).toContainText("1");
-  await expect(statValue(page, "Valor estimado")).toContainText("52,50");
+  // O par rótulo/valor saiu do `Stat` inline e virou a grade de fatos do
+  // `ObjectHeader` na migração de D-277. O locator acompanhou; a guarda de
+  // regressão de D-067 continua sendo a mesma afirmação.
+  await expect(factValue(page, "Itens")).toContainText("1");
+  await expect(factValue(page, "Valor estimado")).toContainText("52,50");
+
+  // O rascunho recém-criado está na primeira etapa, e a aprovação é a
+  // próxima — indicador de processo e selo de estado têm de concordar.
+  await expect(page.getByRole("listitem").filter({ hasText: "Aprovado" })).toHaveAttribute(
+    "aria-current",
+    "step",
+  );
 });

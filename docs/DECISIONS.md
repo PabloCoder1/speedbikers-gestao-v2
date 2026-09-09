@@ -7066,6 +7066,83 @@ So nao mentia porque a tabela esta **vazia** -- e foi essa mesma tela que a varr
 
 **Verificacao, local:** `check` **29/29** (11 testes novos), e2e **56/56** em banco recriado (2 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17, `check:table-styles` 17, `docs:check`. Capturada a 1440px contra o Supabase local.
 
+## D-277 - D37a: as tres telas de DETALHE que a frente deixou para tras, e o indicador de etapas que ganhou o segundo consumidor
+
+**Contexto:** primeira fatia do passe visual global (D37). A fila NOMEADA fechou em D36; o que sobrou nao e uma tela, e uma DIFERENCA: `check:table-styles` contava **21** telas migradas e o app tem 44 tabelas. Essa diferenca e a metade CEGA do guarda (D-262) -- arquivo que nunca declarou `.sb-table` nao tem contradicao interna para o script achar, e so a captura pega.
+
+Medida a diferenca antes de escrever: **8 arquivos** com `<table>` e nenhum `.sb-table`, e **17** `page.tsx` sem `PageTitle` nem `ObjectHeader`.
+
+---
+
+**O RECORTE: TELA DE LISTA MIGRADA, TELA DE DETALHE ANTIGA**
+
+Das oito, tres formam um grupo com o mesmo defeito visivel: `/notas-fiscais/[id]`, `/compras/[id]` e `/fornecedores/[supplierId]` sao os DETALHES de listas que D18, D19 e D20 ja migraram. O usuario ve a lista com a cara do Figma, clica numa linha e cai no app antigo. Nenhuma das tres tinha sido esquecida por acaso:
+
+- `/notas-fiscais/[id]` foi adiada **de proposito** em D-253 (o frame da `nfe` e esboco; quem desenha a conferencia e o brief secao 25);
+- `/compras/[id]` e `/fornecedores/[supplierId]` nunca estiveram em fatia nenhuma -- D19 e D20 eram as listas.
+
+O design system do proprio Figma nomeia as duas ultimas: o `Object Header` e declarado como "o padrao de SKU, anuncio, **pedido de compra** e **fornecedor**".
+
+---
+
+**O COMPONENTE: EXTRAIDO NO SEGUNDO CONSUMIDOR, COMO MANDA A REGRA**
+
+`ProcessSteps` (o `.process-steps` do frame) nasceu com o tipo dentro de `lib/nfe-steps.ts` e a nota de que subiria quando houvesse um segundo. O segundo apareceu nesta fatia: `purchase_orders` tem `DRAFT -> APPROVED -> ORDERED -> RECEIVED`. O tipo subiu para `components/process-steps.tsx`; cada tela mantem o vocabulario em `lib/*-steps.ts`.
+
+**As duas leituras do mesmo desenho sao diferentes, e a diferenca e o dado:**
+
+| | NF-e | Pedido de compra |
+|---|---|---|
+| frame | SEIS passos | nao desenha esta tela |
+| estados reais | 4 (tres passos do frame sao o MESMO `PARSED`) | 4, nomeados no `CHECK` |
+| nota da etapa | fracao `resolvidos de total` | **carimbo de tempo** |
+
+No pedido de compra a nota nao e adivinhacao: `approved_at`, `ordered_at`, `received_at` e `cancelled_at` existem, e as quatro `CHECK` de coerencia de `20260822234353_create_purchasing.sql` impedem estado sem data. Etapa concluida pode dizer QUANDO porque o banco nao aceitaria o contrario.
+
+---
+
+**UM DEFEITO MEU, PEGO POR UM TESTE QUE EU TINHA ACABADO DE ESCREVER**
+
+Introduzi o estado `cancelada` para que o cancelamento tivesse LUGAR em vez de sumir. A primeira implementacao procurava a etapa marcada como `atual` e a convertia. Vermelho no primeiro run: **`CANCELLED` nao e `PARSED`**, entao nenhuma etapa chega marcada como em curso, e um documento cancelado saia com quatro etapas e nenhum lugar de parada. A regra certa e "a PRIMEIRA que nao chegou ao fim". O caso equivalente foi escrito de proposito no lado do pedido de compra, citando o defeito.
+
+---
+
+**O FORNECEDOR: CINCO CONTAGENS QUE A RPC JA DEVOLVIA E A TELA NAO MOSTRAVA**
+
+O frame desenha o fornecedor como gaveta de 600px com cinco abas -- **tres delas marcadas "em construcao" no proprio prototipo**. Gavetas seguem adiadas; o que transferiu foi a composicao, e com ela o "Resumo de Pedidos" em quatro cartoes: Total, Em Aberto, Concluidos, Cancelados.
+
+**O sistema mede CINCO estados, nao tres**, e `get_supplier_overview` ja devolvia `orders_draft`, `orders_approved`, `orders_ordered`, `orders_received` e `orders_cancelled` -- a tela nao mostrava **nenhum** deles, so o total. Colapsar rascunho, aprovado e enviado num "Em Aberto" esconderia exatamente a diferenca que decide o que fazer com o pedido: rascunho espera decisao, aprovado espera envio, enviado espera chegada. Mesma classe de D-250 (sete cartoes contra cinco) e D-265 (a particao do frame escondia o maior estado).
+
+**E eles NAO sao links, de proposito.** `/compras` filtra por estado (`?estado=`), mas nao por fornecedor: "2 aprovados" levaria a lista de TODOS os fornecedores -- cartao prometendo um recorte e entregando outro, a armadilha que D-250 evitou do lado oposto. A lista que eles resumem esta tres linhas abaixo, na mesma tela.
+
+---
+
+**O QUE O `OrderDetailDrawer` DO FRAME REALMENTE E, E A ARMADILHA QUE ELE ARMA**
+
+Existe um "Detalhe de Pedido" no prototipo, e ele **nao e de pedido de compra**: e de PEDIDO DE VENDA do Mercado Livre -- comprador, conta, logistica, mediacao. Desenhar `/compras/[id]` por ele teria trocado a entidade. O que ele contribuiu foi a **linha do tempo**, e ela ja tinha forma no design system: `.sb-feed-row`, a mesma da atividade recente da Home. O historico de `purchase_order_events` (append-only) passou de `<ul>` sem forma para essa fileira, com o ponto tingido pelo tom do evento.
+
+---
+
+---
+
+**DOIS DEFEITOS QUE SO A TELA RENDERIZADA MOSTROU**
+
+Os dois passaram por typecheck, lint, 404 unitarios e 79 de Playwright.
+
+**1. O texto do usuario ocupando o lugar da explicacao.** Escrevi o painel de itens como `subtitle={info.notes ?? "SKU, origem e custo travados no momento do pedido..."}`. Na tela, o pedido do seed tem `notes`, e o subtitulo do painel virou **`e2ecompras:recebido`**. Sao coisas diferentes: o subtitulo do painel diz o que a TABELA e; `notes` e observacao sobre o PEDIDO. A nota voltou para junto da entidade.
+
+**2. Um cartao orfao a 1150px.** `.sb-state-cards` tinha `repeat(4, 1fr)` fixo no degrau de 1150 -- correto para os sete cartoes de `/reposicao` (4+3), errado para os cinco do fornecedor: **4+1**. E a mesma classe da "fatia cinza" que A2 pegou na faixa de indicadores, onde colunas fixas e contagem declarada discordavam. Os degraus passaram a vir por variavel (`--sb-state-cols-md`, `--sb-state-cols-sm`), o fornecedor declara 3, e `/reposicao` continua em 4 -- conferido nos dois, medindo `gridTemplateColumns` no navegador.
+
+**Nenhum dos dois tinha como aparecer em teste**, e e por isso que a captura e rotina obrigatoria desta frente desde A3, nao acabamento.
+
+---
+
+**Legado removido:** `th`/`td`/`tdNumber`, `Stat`, `statBox`/`statLabel`/`statValue` nas tres telas; e o helper de e2e `statValue`, que ficou **sem nenhum consumidor** quando a ultima das tres migrou -- saiu junto, substituido por `factValue`.
+
+**Verificacao:** `check` 29/29, build 8/8, `check:table-styles` **21 -> 24**, `check:waterfalls` 61, `check:server-actions` 17, unitarios do web **392 -> 404**. As tres telas abertas no navegador com login real.
+
+**Impacto:** `apps/web/components/process-steps.tsx` (novo), `apps/web/lib/nfe-steps.ts` + teste (novos), `apps/web/lib/purchase-order-steps.ts` + teste (novos), `apps/web/app/notas-fiscais/[id]/page.tsx`, `apps/web/app/compras/[id]/page.tsx`, `apps/web/app/fornecedores/[supplierId]/page.tsx`, `apps/web/app/globals.css`, `apps/web/e2e/helpers.ts`, `apps/web/e2e/nota-fiscal.spec.ts`, `apps/web/e2e/pedido-compra.spec.ts`.
+
 ## Como adicionar nova decisao
 
 Registrar:
