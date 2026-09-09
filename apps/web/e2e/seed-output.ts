@@ -15,6 +15,7 @@ export interface SeedOutput {
   skuCode: string;
   documentId: string;
   documentItemId: number;
+  importBatchId: string;
   mlAccountLabel: string;
   supportOpenExternalId: string;
   supportResolvedExternalId: string;

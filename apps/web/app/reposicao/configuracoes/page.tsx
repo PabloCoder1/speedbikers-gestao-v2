@@ -1,5 +1,8 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { PageTitle } from "../../../components/page-title";
+import { Panel } from "../../../components/panel";
 import { Shell } from "../../../components/shell";
 import { formatDateTime } from "../../../lib/format";
 import { createClient } from "../../../lib/supabase/server";
@@ -25,41 +28,9 @@ export const dynamic = "force-dynamic";
  * para nacional. Referência é o que o ADMIN digita, não o que o código assume.
  */
 
-const th: React.CSSProperties = {
-  textAlign: "left",
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.75rem",
-  textTransform: "uppercase",
-  letterSpacing: "0.04em",
-  color: "var(--sb-text-soft)",
-  whiteSpace: "nowrap",
-};
-
-const td: React.CSSProperties = {
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.875rem",
-  verticalAlign: "middle",
-};
-
-const inputStyle: React.CSSProperties = {
-  padding: "0.25rem 0.5rem",
-  borderRadius: "var(--sb-radius)",
-  border: "1px solid var(--sb-border)",
-  fontSize: "0.8125rem",
-  width: "5rem",
-};
-
-const buttonStyle: React.CSSProperties = {
-  padding: "0.25rem 0.625rem",
-  borderRadius: "var(--sb-radius)",
-  border: "1px solid var(--sb-border)",
-  background: "transparent",
-  color: "var(--sb-text-soft)",
-  fontSize: "0.8125rem",
-  cursor: "pointer",
-};
+/* Os quatro numeros da linha sao campos estreitos: o resto da forma vem de
+   `.sb-input`, e a largura e o unico ajuste local. */
+const inputStyle: React.CSSProperties = { width: "5rem" };
 
 interface SettingRow {
   id: string;
@@ -97,8 +68,8 @@ export default async function ReposicaoConfigPage({
   if (organizationId === null) {
     return (
       <Shell>
-        <h1 style={{ margin: "0 0 var(--sb-space-3)", fontSize: "1.375rem" }}>Configuração de Reposição</h1>
-        <p style={{ color: "var(--sb-text-soft)" }}>Sua conta não está associada a nenhuma organização.</p>
+        <PageTitle eyebrow="ESTOQUE / PLANEJAMENTO" title="Configuração de Reposição" compacto />
+        <p className="sb-empty">Sua conta não está associada a nenhuma organização.</p>
       </Shell>
     );
   }
@@ -124,7 +95,12 @@ export default async function ReposicaoConfigPage({
 
   return (
     <Shell>
-      <h1 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.375rem" }}>Configuração de Reposição</h1>
+      <PageTitle
+        eyebrow="ESTOQUE / PLANEJAMENTO"
+        title="Configuração de Reposição"
+        subtitle={<Link href="/reposicao">← Voltar à Reposição</Link>}
+        compacto
+      />
 
       <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
         Prazo de reposição, cobertura desejada e estoque de segurança — por marca do fornecedor ou como padrão da
@@ -146,36 +122,41 @@ export default async function ReposicaoConfigPage({
         </p>
       )}
 
-      {error === null && rows.length === 0 && (
-        <p style={{ color: "var(--sb-text-soft)", marginBottom: "var(--sb-space-3)" }}>
-          Nenhuma configuração ainda — e, de propósito, nada vem preenchido de fábrica. Enquanto isso, a sugestão de
-          compra fica indisponível para todos os SKUs.
-        </p>
-      )}
+      {error === null && (
+        <Panel
+          title="Regras de reposição"
+          subtitle="O escopo mais específico vence: uma regra por marca sobrepõe o padrão da organização."
+        >
+        {rows.length === 0 && (
+          <p className="sb-empty">
+            Nenhuma configuração ainda — e, de propósito, nada vem preenchido de fábrica. Enquanto isso, a
+            sugestão de compra fica indisponível para todos os SKUs.
+          </p>
+        )}
 
-      {error === null && rows.length > 0 && (
-        <div style={{ overflowX: "auto", marginBottom: "var(--sb-space-4)" }}>
-          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "56rem" }}>
+        {rows.length > 0 && (
+        <div style={{ overflowX: "auto" }}>
+          <table className="sb-table">
             <thead>
               <tr>
-                <th style={th}>Escopo</th>
-                <th style={th}>Prazo (dias)</th>
-                <th style={th}>Cobertura (dias)</th>
-                <th style={th}>Segurança (dias)</th>
-                <th style={th} title="O buffer máximo: cobertura acima disso é EXCESSO. Vazio = excesso nunca é afirmado.">
+                <th>Escopo</th>
+                <th>Prazo (dias)</th>
+                <th>Cobertura (dias)</th>
+                <th>Segurança (dias)</th>
+                <th title="O buffer máximo: cobertura acima disso é EXCESSO. Vazio = excesso nunca é afirmado.">
                   Teto (dias)
                 </th>
-                <th style={th}>Nota</th>
-                <th style={th}>Atualizado</th>
-                {canWrite && <th style={th}></th>}
+                <th>Nota</th>
+                <th>Atualizado</th>
+                {canWrite && <th></th>}
               </tr>
             </thead>
             <tbody>
               {rows.map((row) => (
                 <tr key={row.id}>
-                  <td style={{ ...td, fontWeight: 600 }}>{scopeLabel(row)}</td>
+                  <td style={{ fontWeight: 600 }}>{scopeLabel(row)}</td>
                   {canWrite ? (
-                    <td style={td} colSpan={4}>
+                    <td colSpan={4}>
                       {/*
                         Editar é um form por linha: os quatro números mudam, o
                         ESCOPO nunca — mudar a marca de uma regra existente
@@ -189,7 +170,7 @@ export default async function ReposicaoConfigPage({
                           name="lead_time_days"
                           defaultValue={row.lead_time_days}
                           aria-label="Prazo de reposição em dias"
-                          style={inputStyle}
+                          className="sb-input" style={inputStyle}
                           min={1}
                           max={365}
                         />
@@ -198,7 +179,7 @@ export default async function ReposicaoConfigPage({
                           name="target_coverage_days"
                           defaultValue={row.target_coverage_days}
                           aria-label="Cobertura desejada em dias"
-                          style={inputStyle}
+                          className="sb-input" style={inputStyle}
                           min={1}
                           max={365}
                         />
@@ -207,7 +188,7 @@ export default async function ReposicaoConfigPage({
                           name="safety_stock_days"
                           defaultValue={row.safety_stock_days}
                           aria-label="Estoque de segurança em dias"
-                          style={inputStyle}
+                          className="sb-input" style={inputStyle}
                           min={0}
                           max={365}
                         />
@@ -217,32 +198,32 @@ export default async function ReposicaoConfigPage({
                           defaultValue={row.max_coverage_days ?? ""}
                           aria-label="Teto de cobertura em dias (buffer máximo, opcional)"
                           placeholder="teto"
-                          style={inputStyle}
+                          className="sb-input" style={inputStyle}
                           min={1}
                           max={1095}
                         />
-                        <button type="submit" style={buttonStyle}>
+                        <button type="submit" className="sb-button">
                           Salvar
                         </button>
                       </form>
                     </td>
                   ) : (
                     <>
-                      <td style={td}>{row.lead_time_days}</td>
-                      <td style={td}>{row.target_coverage_days}</td>
-                      <td style={td}>{row.safety_stock_days}</td>
-                      <td style={td}>{row.max_coverage_days ?? "—"}</td>
+                      <td>{row.lead_time_days}</td>
+                      <td>{row.target_coverage_days}</td>
+                      <td>{row.safety_stock_days}</td>
+                      <td>{row.max_coverage_days ?? "—"}</td>
                     </>
                   )}
-                  <td style={{ ...td, color: "var(--sb-text-soft)", maxWidth: "16rem" }}>{row.policy_note ?? "—"}</td>
-                  <td style={{ ...td, whiteSpace: "nowrap", color: "var(--sb-text-soft)" }}>
+                  <td style={{ color: "var(--sb-text-soft)", maxWidth: "16rem" }}>{row.policy_note ?? "—"}</td>
+                  <td style={{ whiteSpace: "nowrap", color: "var(--sb-text-soft)" }}>
                     {formatDateTime(row.updated_at)}
                   </td>
                   {canWrite && (
-                    <td style={td}>
+                    <td>
                       <form action={deleteSetting}>
                         <input type="hidden" name="id" value={row.id} />
-                        <button type="submit" style={{ ...buttonStyle, color: "var(--sb-danger)" }}>
+                        <button type="submit" className="sb-button" style={{ color: "var(--sb-danger)" }}>
                           Remover
                         </button>
                       </form>
@@ -253,19 +234,21 @@ export default async function ReposicaoConfigPage({
             </tbody>
           </table>
         </div>
+        )}
+        </Panel>
       )}
 
       {canWrite && (
-        <>
-          <h2 style={{ fontSize: "1.0625rem", margin: "0 0 var(--sb-space-2)" }}>Nova configuração</h2>
-
+        <div style={{ marginTop: "var(--sb-space-3)" }}>
+        <Panel title="Nova configuração" subtitle="Uma marca já configurada não aparece na lista de escopo.">
+          <div className="sb-panel-body">
           <form
             action={createSetting}
             style={{ display: "flex", flexWrap: "wrap", gap: "var(--sb-space-2)", alignItems: "flex-end" }}
           >
             <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.75rem" }}>
               Escopo
-              <select name="supplier_brand" style={{ ...inputStyle, width: "14rem" }}>
+              <select name="supplier_brand" className="sb-input" style={{ width: "14rem" }}>
                 <option value="">Padrão da organização</option>
                 {brands.map((brand) => (
                   <option key={brand} value={brand} disabled={configuredBrands.has(brand)}>
@@ -277,36 +260,38 @@ export default async function ReposicaoConfigPage({
             </label>
             <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.75rem" }}>
               Prazo (dias)
-              <input type="number" name="lead_time_days" style={inputStyle} min={1} max={365} required />
+              <input type="number" name="lead_time_days" className="sb-input" style={inputStyle} min={1} max={365} required />
             </label>
             <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.75rem" }}>
               Cobertura (dias)
-              <input type="number" name="target_coverage_days" style={inputStyle} min={1} max={365} required />
+              <input type="number" name="target_coverage_days" className="sb-input" style={inputStyle} min={1} max={365} required />
             </label>
             <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.75rem" }}>
               Segurança (dias)
-              <input type="number" name="safety_stock_days" style={inputStyle} min={0} max={365} defaultValue={0} />
+              <input type="number" name="safety_stock_days" className="sb-input" style={inputStyle} min={0} max={365} defaultValue={0} />
             </label>
             <label
               style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.75rem" }}
               title="Cobertura acima disso é EXCESSO. Vazio = excesso nunca é afirmado. Precisa ser ≥ prazo + cobertura + segurança."
             >
               Teto (dias, opcional)
-              <input type="number" name="max_coverage_days" style={inputStyle} min={1} max={1095} />
+              <input type="number" name="max_coverage_days" className="sb-input" style={inputStyle} min={1} max={1095} />
             </label>
             <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.75rem" }}>
               Nota (opcional)
-              <input type="text" name="policy_note" style={{ ...inputStyle, width: "18rem" }} maxLength={500} />
+              <input type="text" name="policy_note" className="sb-input" style={{ width: "18rem" }} maxLength={500} />
             </label>
-            <button type="submit" style={buttonStyle}>
+            <button type="submit" className="sb-button sb-button-primary">
               Criar
             </button>
           </form>
-        </>
+          </div>
+        </Panel>
+        </div>
       )}
 
       {!canWrite && (
-        <p style={{ color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
+        <p style={{ marginTop: "var(--sb-space-3)", color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
           Somente ADMIN e GESTOR alteram a configuração de reposição.
         </p>
       )}

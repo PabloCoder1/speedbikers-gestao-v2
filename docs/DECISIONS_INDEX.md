@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **273** (D-001 a D-277).
+Decisões registradas: **274** (D-001 a D-278).
 
 ## Por domínio
 
-### atendimento (38)
+### atendimento (39)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -56,6 +56,7 @@ Decisões registradas: **273** (D-001 a D-277).
 - **D-258** — "Valor comprado" por fornecedor, e o coalesce que eu reintroduzi na funcao que existia para tira-lo
 - **D-260** — D22: o Diagnostico pelo frame, e o "91%" que nao tem fonte
 - **D-272** — D32: Integracoes, e o frame nomeia dois parceiros que o sistema NAO TEM
+- **D-278** — D37b: o importador do UpSeller, e o DENOMINADOR que inventaria 14% de falha
 
 ### banco/rls (26)
 

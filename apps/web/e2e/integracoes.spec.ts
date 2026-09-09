@@ -65,8 +65,16 @@ test("ADMIN: verde exige atividade observada — nos dois sentidos; nenhuma conf
     await expect(configuracao).not.toContainText("OK");
   }
 
-  // O seed não tem lote do UpSeller: "não configurado", não zero fingido nem erro.
-  await expect(page.getByRole("region", { name: "UpSeller (planilha)" }).getByText(/nenhuma importação registrada/)).toBeVisible();
+  // O seed passou a ter um lote do UpSeller (D-278), e o caso ficou MAIS forte
+  // por isso: antes ele exercitava o caminho vazio, que os unitários de
+  // `lib/integrations.ts` já cobrem; agora exercita o caminho COM dado, que é
+  // onde a regra "fonte sob demanda nunca vira verde" pode ser violada. Lote
+  // aplicado é **Observado**, com a data — nunca OK.
+  const upseller = page.getByRole("region", { name: "UpSeller (planilha)" });
+
+  await expect(upseller).toContainText("Observado");
+  await expect(upseller).toContainText("último lote: Aplicado");
+  await expect(upseller.getByRole("row", { name: /Sincronização/ })).not.toContainText("OK");
 
   // Um dado, um dono: cada card aponta para a tela dona; nada aqui é ação.
   await expect(mercadoLivre.getByRole("link", { name: "Contas ML" })).toBeVisible();

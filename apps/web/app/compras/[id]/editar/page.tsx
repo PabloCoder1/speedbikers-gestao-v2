@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { PageTitle } from "../../../../components/page-title";
 import { Shell } from "../../../../components/shell";
 import { createClient } from "../../../../lib/supabase/server";
 import type { DraftItem } from "../../novo/item-row";
@@ -114,13 +115,12 @@ export default async function EditarPedidoDeCompraPage({
 
   return (
     <Shell>
-      <p style={{ margin: 0, fontSize: "0.875rem" }}>
-        <Link href={`/compras/${id}`}>← Voltar ao pedido</Link>
-      </p>
-
-      <h1 style={{ margin: "var(--sb-space-2) 0 var(--sb-space-4)", fontSize: "1.375rem" }}>
-        Editar pedido de compra
-      </h1>
+      <PageTitle
+        eyebrow="ESTOQUE / OPERAÇÃO"
+        title="Editar pedido de compra"
+        subtitle={<Link href={`/compras/${id}`}>← Voltar ao pedido</Link>}
+        compacto
+      />
 
       {suppliers.error !== null && (
         <p role="alert" style={{ color: "var(--sb-danger)", fontSize: "0.875rem" }}>

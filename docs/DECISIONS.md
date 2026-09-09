@@ -7143,6 +7143,73 @@ Os dois passaram por typecheck, lint, 404 unitarios e 79 de Playwright.
 
 **Impacto:** `apps/web/components/process-steps.tsx` (novo), `apps/web/lib/nfe-steps.ts` + teste (novos), `apps/web/lib/purchase-order-steps.ts` + teste (novos), `apps/web/app/notas-fiscais/[id]/page.tsx`, `apps/web/app/compras/[id]/page.tsx`, `apps/web/app/fornecedores/[supplierId]/page.tsx`, `apps/web/app/globals.css`, `apps/web/e2e/helpers.ts`, `apps/web/e2e/nota-fiscal.spec.ts`, `apps/web/e2e/pedido-compra.spec.ts`.
 
+## D-278 - D37b: o importador do UpSeller, e o DENOMINADOR que inventaria 14% de falha
+
+**Contexto:** segunda fatia do passe visual (D37). D37a fechou as tres telas de detalhe; sobravam **6 arquivos** com `<table>` e nenhum `.sb-table` e **11** `page.tsx` sem `PageTitle`. Esta fatia pega o importador do UpSeller (lista + conferencia + envio) e o varrimento de cabecalho.
+
+---
+
+**O ACHADO: A APLICACAO MEDE SOBRE AS APROVADAS, NUNCA SOBRE O TOTAL LIDO**
+
+`erp_import_batches` tem os MESMOS sete estados de `documents` -- e por isso o `.process-steps` entra aqui como TERCEIRO consumidor. Mas o que cada etapa mede e diferente nos tres, e essa e a prova de que o componente generalizou por necessidade e nao por gosto:
+
+| consumidor | nota da etapa |
+|---|---|
+| NF-e (D-277) | fracao ANTES do ato -- quantos itens ja tem vinculo |
+| Pedido de compra (D-277) | carimbo de tempo -- quando cada transicao ocorreu |
+| **Importacao** | **fracao DEPOIS do ato** -- quanto da aplicacao de fato entrou |
+
+E o denominador dessa fracao e onde a mentira moraria. `apps/worker/src/handlers/erp-import-apply.ts` diz e faz: *"So processa linhas com `status = 'OK'` -- o que a conferencia aprovou"*, com `.eq("status", "OK")`. Medido no Dev, o lote real de `LINKS`:
+
+    23.924 linhas lidas = 20.650 OK + 3.274 IGNORADAS
+    aplicadas: 20.650
+
+Contra `total_rows` isso vira **86%** -- a tela anunciando **14% de falha** num lote que aplicou tudo o que devia. Linha ignorada nao e falha: e decisao do parse. Contra `ok_rows`, 20.650 de 20.650.
+
+O fixture do e2e reproduz a FORMA desse lote em escala legivel (100 = 80 OK + 20 ignoradas, 80 aplicadas). **Sem a linha ignorada os dois numeros seriam iguais e o caso passaria por acaso** (D-197); com ela, `not.toContainText("100")` e uma afirmacao de verdade.
+
+---
+
+**A LISTA REPETIA O DEFEITO QUE D-253 JA TINHA CORRIGIDO NA VIZINHA**
+
+`/importacoes` lia `.limit(50)` sem `count`, sem janela e sem pagina seguinte -- com 51 lotes, o 51o nao existia para quem olhava (classe D-131). E exatamente o que `/notas-fiscais` tinha, corrigido em D-253, na tela ao lado. Agora tem `count: "exact"` sobre o conjunto FILTRADO, janela e paginacao; os dois filtros saem dos conjuntos fechados do banco (`erp_import_batches_kind_check` e `_status_check`), que e o que permite RECUSAR valor adulterado na URL.
+
+A conferencia ja tinha filtro e paginacao, mas com um `href()` local reimplementando `buildFilterHref` e **pilulas de raio 999px** -- a forma que o design system aposentou em D-232. As duas mecanicas foram para `lib/import-filters.ts`, com teste.
+
+---
+
+**O VARRIMENTO DE CABECALHO: OITO TELAS, NENHUMA DECISAO DE COMPOSICAO**
+
+As oito tinham o mesmo par `<p><Link>← X</Link></p>` + `<h1>` inline, ou `<h1>` + paragrafo de apoio -- que e literalmente `PageTitle` com `subtitle`. Entraram juntas porque nenhuma exigia medicao: `/notas-fiscais/nova`, `/importacoes/nova`, `/fornecedores/novo`, `/compras/novo`, `/compras/[id]/editar`, `/estoque/[skuId]/ajuste`, `/contas`, `/atendimento/metricas`, `/atendimento/templates`.
+
+Uma so teve escolha a fazer: em `/estoque/[skuId]/ajuste` o `<h1>` era **"Ajustar E2E-SKU-001"**. O codigo do SKU e chave, nao titulo (a regra do `ObjectHeader`): foi para a sobrancelha, e o titulo virou o ATO -- "Ajuste de saldo".
+
+**Resultado medido:** `.sb-table` de **24 para 28**; telas sem `PageTitle` de **11 para 3**, e das tres uma e `/login`, que fica fora do `Shell` de proposito.
+
+---
+
+**MEU FIXTURE QUEBROU UM TESTE VERDE, E O TESTE FICOU MELHOR**
+
+`integracoes.spec` afirmava *"o seed nao tem lote do UpSeller"* -- uma premissa sobre o seed, escrita quando o seed nao tinha um. Plantar o lote a invalidou.
+
+O conserto nao foi restaurar a premissa: foi **trocar o caminho exercitado**. Antes o caso cobria o vazio, que os unitarios de `lib/integrations.ts` ja cobrem nos cinco estados; agora cobre o caminho COM dado, que e onde a regra "fonte sob demanda nunca vira verde" pode de fato ser violada. Lote aplicado e **Observado**, com a data -- nunca OK.
+
+---
+
+**E O FIXTURE ESTAVA ERRADO DE UM JEITO QUE SO A TELA MOSTROU**
+
+Inventei o payload como `{ sku, mlb }`. A tela renderizou **"—"** na coluna "Conteudo lido": `summarize` le `storeLabel` e `ref.{kind,itemId,userProductId}`, e nao tinha o que descrever. Aquela coluna existe para mostrar **o que o sistema ENTENDEU** da linha -- um fixture de forma errada a deixaria muda sem ninguem notar, e o teste passaria. Conferi a forma real no Dev e o fixture passou a usa-la.
+
+---
+
+**Legado removido:** `th`/`td` em `/importacoes`, `/importacoes/[id]`, `/reposicao/configuracoes` e `/notificacoes/preferencias` (mais o `preference-row.tsx`), o `Stat` local da conferencia, o `href()` reimplementado e as pilulas de 999px.
+
+**O que NAO entrou, e por que:** `/cobertura` (o frame a trata com Reposicao como UMA tela de abas -- composicao, nao acabamento, registrado em D-261), a tabela de ENTRADA de `/compras/novo` (campos, nao leitura: `.sb-table` e tipografia de celula de leitura) e `/atendimento/[caseId]` (509 linhas, tela de detalhe que pede `ObjectHeader`).
+
+**Verificacao:** `check` 29/29, build 8/8, integracao 633/633 em banco recriado, e2e **82/82** (3 novos), unitarios do web **413**, `check:table-styles` **24 -> 28**, `check:waterfalls` 61, `check:server-actions` 17, `docs:check`. As duas telas do importador abertas no navegador com login real a 1440px.
+
+**Impacto:** `apps/web/lib/erp-import-steps.ts` + teste (novos), `apps/web/lib/import-filters.ts` + teste (novos), `apps/web/app/importacoes/page.tsx`, `apps/web/app/importacoes/[id]/page.tsx`, `apps/web/app/importacoes/nova/page.tsx`, `apps/web/app/reposicao/configuracoes/page.tsx`, `apps/web/app/notificacoes/preferencias/{page,preference-row}.tsx`, mais as seis telas do varrimento de cabecalho, `apps/web/e2e/{seed.ts,seed-output.ts,importacoes.spec.ts,integracoes.spec.ts}`.
+
 ## Como adicionar nova decisao
 
 Registrar:

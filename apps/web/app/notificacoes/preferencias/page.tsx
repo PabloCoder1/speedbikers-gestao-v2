@@ -2,6 +2,8 @@ import { EVENT_SEVERITY } from "@sb/domain";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { PageTitle } from "../../../components/page-title";
+import { Panel } from "../../../components/panel";
 import { Shell } from "../../../components/shell";
 import { createClient } from "../../../lib/supabase/server";
 import { NewPreferenceForm } from "./new-preference-form";
@@ -38,17 +40,6 @@ interface PreferenceQueryRow {
   ml_accounts: { label: string } | null;
 }
 
-const th: React.CSSProperties = {
-  textAlign: "left",
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.75rem",
-  textTransform: "uppercase",
-  letterSpacing: "0.04em",
-  color: "var(--sb-text-soft)",
-  whiteSpace: "nowrap",
-};
-
 export default async function PreferenciasPage(): Promise<ReactNode> {
   const supabase = await createClient();
 
@@ -75,23 +66,14 @@ export default async function PreferenciasPage(): Promise<ReactNode> {
 
   return (
     <Shell>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "var(--sb-space-3)",
-          marginBottom: "var(--sb-space-2)",
-          flexWrap: "wrap",
-        }}
-      >
-        <h1 style={{ margin: 0, fontSize: "1.375rem" }}>Preferências de Notificação</h1>
+      <PageTitle
+        eyebrow="ADMINISTRAÇÃO / NOTIFICAÇÕES"
+        title="Preferências de Notificação"
+        subtitle={<Link href="/notificacoes">← Voltar à Central de Notificações</Link>}
+        compacto
+      />
 
-        <Link href="/notificacoes" style={{ marginLeft: "auto", fontSize: "0.8125rem", color: "var(--sb-primary)" }}>
-          ← Central de Notificações
-        </Link>
-      </div>
-
-      <p style={{ margin: "0 0 var(--sb-space-4)", fontSize: "0.8125rem", color: "var(--sb-text-soft)", maxWidth: "42rem" }}>
+      <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)", maxWidth: "42rem" }}>
         Controla só o alerta em tempo real (o toast) — o histórico completo continua sempre na Central de
         Notificações, mesmo pro que estiver desativado ou abaixo da severidade mínima aqui. Sem nenhuma regra, todo
         evento vira toast por padrão.
@@ -105,35 +87,40 @@ export default async function PreferenciasPage(): Promise<ReactNode> {
 
       {error === null && (
         <>
-          {rows.length === 0 && (
-            <p style={{ color: "var(--sb-text-soft)", marginBottom: "var(--sb-space-3)" }}>
-              Nenhuma preferência configurada — todo evento vira toast por padrão.
-            </p>
-          )}
+          <Panel
+            title="Regras de alerta"
+            subtitle="A regra mais específica vence; sem nenhuma, todo evento vira toast."
+          >
+            {rows.length === 0 && (
+              <p className="sb-empty">Nenhuma preferência configurada — todo evento vira toast por padrão.</p>
+            )}
 
-          {rows.length > 0 && (
-            <div style={{ overflowX: "auto", marginBottom: "var(--sb-space-4)" }}>
-              <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "40rem" }}>
-                <thead>
-                  <tr>
-                    <th style={th}>Tipo de evento</th>
-                    <th style={th}>Conta</th>
-                    <th style={th}>Severidade mínima</th>
-                    <th style={th}>Estado</th>
-                    <th style={th}>Ações</th>
-                  </tr>
-                </thead>
+            {rows.length > 0 && (
+              <div style={{ overflowX: "auto" }}>
+                <table className="sb-table">
+                  <thead>
+                    <tr>
+                      <th>Tipo de evento</th>
+                      <th>Conta</th>
+                      <th>Severidade mínima</th>
+                      <th>Estado</th>
+                      <th>Ações</th>
+                    </tr>
+                  </thead>
 
-                <tbody>
-                  {rows.map((row) => (
-                    <PreferenceRow key={row.id} preference={row} />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  <tbody>
+                    {rows.map((row) => (
+                      <PreferenceRow key={row.id} preference={row} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Panel>
 
-          <NewPreferenceForm eventTypes={eventTypes} accounts={accounts} />
+          <div style={{ marginTop: "var(--sb-space-3)" }}>
+            <NewPreferenceForm eventTypes={eventTypes} accounts={accounts} />
+          </div>
         </>
       )}
     </Shell>

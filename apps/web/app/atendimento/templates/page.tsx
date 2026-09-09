@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { PageTitle } from "../../../components/page-title";
 import { Shell } from "../../../components/shell";
 import { createClient } from "../../../lib/supabase/server";
 import { NewTemplateForm } from "./new-template-form";
@@ -39,12 +40,12 @@ export default async function TemplatesPage(): Promise<ReactNode> {
         </Link>
       </p>
 
-      <h1 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.375rem" }}>Templates de resposta</h1>
-
-      <p style={{ margin: "0 0 var(--sb-space-4)", color: "var(--sb-text-soft)", fontSize: "0.9375rem" }}>
-        Textos prontos que a equipe insere na caixa de resposta e edita antes de confirmar — o
-        template nunca envia sozinho.
-      </p>
+      <PageTitle
+        eyebrow="ATENDIMENTO / OPERAÇÃO"
+        title="Templates de resposta"
+        subtitle="Textos prontos que a equipe insere na caixa de resposta e edita antes de confirmar — o template nunca envia sozinho."
+        compacto
+      />
 
       {templatesResult.error !== null ? (
         <p role="alert" style={{ color: "var(--sb-danger)" }}>

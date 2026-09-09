@@ -3,10 +3,30 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { AutoRefresh } from "../../../components/auto-refresh";
+import { FilterPill } from "../../../components/filter-pill";
+import { ObjectHeader, type ObjectBadge } from "../../../components/object-header";
+import { PageTitle } from "../../../components/page-title";
+import { Panel } from "../../../components/panel";
+import { ProcessSteps } from "../../../components/process-steps";
 import { Shell } from "../../../components/shell";
 import { StatusPill } from "../../../components/status-pill";
+import { TOM, tomDeStatus } from "../../../components/tone";
+import { erpImportEtapas } from "../../../lib/erp-import-steps";
 import { formatCount, formatDateTime } from "../../../lib/format";
-import { applyStatusLabel, batchStatusLabel, kindLabel, rowStatusLabel } from "../../../lib/labels";
+import {
+  ROW_PAGE_SIZE,
+  ROW_STATUSES,
+  buildRowHref,
+  resolveRowFilters,
+  summarizeRowWindow,
+} from "../../../lib/import-filters";
+import {
+  applyStatusLabel,
+  batchStatusLabel,
+  kindLabel,
+  rowStatusLabel,
+  statusTone,
+} from "../../../lib/labels";
 import { createClient } from "../../../lib/supabase/server";
 import { ConfirmApplyForm } from "./confirm-apply-form";
 import { summarize } from "./summarize";
@@ -22,43 +42,12 @@ export const dynamic = "force-dynamic";
  *
  * A ordem padrão é por linha, e não por status, porque quem confere está com a
  * planilha aberta ao lado — a linha 4.312 aqui tem que ser a linha 4.312 lá.
+ *
+ * Migrada em D-278 (fatia D37b). O indicador de etapas é o terceiro consumidor
+ * do `.process-steps`, e o que ele mede aqui é diferente dos outros dois: a
+ * aplicação declara a fração DEPOIS do ato, sobre as linhas APROVADAS — o
+ * raciocínio e a medição estão em `lib/erp-import-steps.ts`.
  */
-
-const PAGE_SIZE = 100;
-
-const FILTERS = [
-  { key: "all", label: "Todas" },
-  { key: "INVALID", label: "Inválidas" },
-  { key: "SKIPPED", label: "Ignoradas" },
-  { key: "OK", label: "OK" },
-] as const;
-
-const th: React.CSSProperties = {
-  textAlign: "left",
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.75rem",
-  textTransform: "uppercase",
-  letterSpacing: "0.04em",
-  color: "var(--sb-text-soft)",
-  whiteSpace: "nowrap",
-};
-
-const td: React.CSSProperties = {
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.875rem",
-  verticalAlign: "top",
-};
-
-function Stat({ label, value }: { label: string; value: string }): ReactNode {
-  return (
-    <div>
-      <div style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>{label}</div>
-      <div style={{ fontSize: "1.125rem", fontWeight: 600 }}>{value}</div>
-    </div>
-  );
-}
 
 export default async function ConferenciaPage({
   params,
@@ -70,8 +59,7 @@ export default async function ConferenciaPage({
   const { id } = await params;
   const query = await searchParams;
 
-  const filter = typeof query.status === "string" ? query.status : "all";
-  const page = Math.max(1, Number(typeof query.page === "string" ? query.page : "1") || 1);
+  const filters = resolveRowFilters(query);
 
   const supabase = await createClient();
 
@@ -83,26 +71,26 @@ export default async function ConferenciaPage({
   //
   // A consulta das linhas é montada ANTES do `Promise.all` porque o filtro de
   // status é opcional; montar não dispara nada, o `await` é que dispara.
-  const from = (page - 1) * PAGE_SIZE;
+  const from = (filters.page - 1) * ROW_PAGE_SIZE;
 
   let rowsQuery = supabase
     .from("erp_import_rows")
     .select("row_number, status, reason, sku_key, payload, apply_status, apply_reason", { count: "exact" })
     .eq("batch_id", id);
 
-  if (filter !== "all") {
-    rowsQuery = rowsQuery.eq("status", filter);
+  if (filters.status !== null) {
+    rowsQuery = rowsQuery.eq("status", filters.status);
   }
 
   const [batch, rows] = await Promise.all([
     supabase
       .from("erp_import_batches")
       .select(
-        "id, kind, status, file_name, total_rows, ok_rows, skipped_rows, invalid_rows, applied_rows, unresolved_rows, parsed_at, last_error",
+        "id, kind, status, file_name, total_rows, ok_rows, skipped_rows, invalid_rows, applied_rows, unresolved_rows, parsed_at, created_at, last_error",
       )
       .eq("id", id)
       .maybeSingle(),
-    rowsQuery.order("row_number").range(from, from + PAGE_SIZE - 1),
+    rowsQuery.order("row_number").range(from, from + ROW_PAGE_SIZE - 1),
   ]);
 
   // `null` aqui pode ser "não existe" ou "a policy escondeu". A tela responde
@@ -117,170 +105,194 @@ export default async function ConferenciaPage({
   // uma propriedade, porque nada garante que ela nao mudou nesse meio-tempo.
   const info = batch.data;
 
-  const total = rows.count ?? 0;
-  const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
-
-  function href(next: { status?: string; page?: number }): string {
-    const search = new URLSearchParams();
-    const status = next.status ?? filter;
-    const target = next.page ?? 1;
-
-    if (status !== "all") search.set("status", status);
-    if (target > 1) search.set("page", String(target));
-
-    const qs = search.toString();
-
-    return qs === "" ? `/importacoes/${id}` : `/importacoes/${id}?${qs}`;
-  }
+  const janela = summarizeRowWindow(filters.page, rows.count ?? 0, rows.data?.length ?? 0);
 
   // Estados de trabalho em curso. Fora deles nada muda sozinho, e recarregar
   // seria so gasto.
   const working = info.status === "UPLOADED" || info.status === "PARSING" || info.status === "APPLYING";
 
+  const etapas = erpImportEtapas({
+    status: info.status,
+    parsedAt: info.parsed_at,
+    totalRows: info.total_rows,
+    okRows: info.ok_rows,
+    appliedRows: info.applied_rows,
+    unresolvedRows: info.unresolved_rows,
+  });
+
+  const badges: readonly ObjectBadge[] = [
+    { label: batchStatusLabel(info.status), tom: tomDeStatus(statusTone(info.status)) },
+    { label: kindLabel(info.kind), tom: "info" },
+  ];
+
+  // Os fatos do lote. "Aplicadas" e "Pendentes" só entram depois que a
+  // aplicação começou: antes disso não são zero, são inexistentes (D-067).
+  const fatos: readonly (readonly [string, string])[] = [
+    ["Linhas", formatCount(info.total_rows)],
+    ["OK", formatCount(info.ok_rows)],
+    ["Ignoradas", formatCount(info.skipped_rows)],
+    ["Inválidas", formatCount(info.invalid_rows)],
+    ...(info.status === "APPLYING" || info.status === "APPLIED"
+      ? ([
+          ["Aplicadas", formatCount(info.applied_rows)],
+          ["Pendentes", formatCount(info.unresolved_rows)],
+        ] as const)
+      : []),
+  ];
+
   return (
     <Shell>
       {working && <AutoRefresh />}
 
-      <p style={{ margin: 0, fontSize: "0.875rem" }}>
-        <Link href="/importacoes">← Importações</Link>
-      </p>
+      <PageTitle
+        eyebrow="ESTOQUE / OPERAÇÃO"
+        title="Importações"
+        subtitle={<Link href="/importacoes">← Voltar ao histórico de importações</Link>}
+        compacto
+      />
 
-      <h1 style={{ margin: "var(--sb-space-2) 0", fontSize: "1.375rem" }}>
-        {info.file_name ?? info.id}
-      </h1>
-
-      <div
-        style={{
-          display: "flex",
-          gap: "var(--sb-space-4)",
-          alignItems: "center",
-          flexWrap: "wrap",
-          marginBottom: "var(--sb-space-4)",
-        }}
+      <ObjectHeader
+        identificador="IMPORTAÇÃO"
+        titulo={info.file_name ?? info.id}
+        badges={badges}
+        meta={info.parsed_at === null ? undefined : `Lido em ${formatDateTime(info.parsed_at)}`}
       >
-        <StatusPill code={info.status} label={batchStatusLabel(info.status)} />
-        <Stat label="Tipo" value={kindLabel(info.kind)} />
-        <Stat label="Linhas" value={formatCount(info.total_rows)} />
-        <Stat label="OK" value={formatCount(info.ok_rows)} />
-        <Stat label="Ignoradas" value={formatCount(info.skipped_rows)} />
-        <Stat label="Inválidas" value={formatCount(info.invalid_rows)} />
-        <Stat label="Lido em" value={formatDateTime(info.parsed_at)} />
-        {(info.status === "APPLYING" || info.status === "APPLIED") && (
-          <>
-            <Stat label="Aplicadas" value={formatCount(info.applied_rows)} />
-            <Stat label="Pendentes" value={formatCount(info.unresolved_rows)} />
-          </>
-        )}
+        <dl className="sb-fact-grid">
+          {fatos.map(([rotulo, valor]) => (
+            <div key={rotulo}>
+              <dt>{rotulo}</dt>
+              <dd>{valor}</dd>
+            </div>
+          ))}
+        </dl>
+      </ObjectHeader>
+
+      <div style={{ marginTop: "var(--sb-space-3)" }}>
+        <ProcessSteps etapas={etapas} rotulo="Etapas desta importação" />
       </div>
 
       {info.last_error !== null && (
-        <p role="alert" style={{ color: "var(--sb-danger)" }}>
+        <p
+          role="alert"
+          style={{
+            ...TOM.perigo,
+            margin: "0 0 var(--sb-space-3)",
+            padding: "var(--sb-space-3)",
+            borderRadius: "var(--sb-radius)",
+            fontSize: "0.8125rem",
+            lineHeight: 1.5,
+          }}
+        >
           {info.last_error}
         </p>
       )}
 
       {info.status === "PARSED" && <ConfirmApplyForm batchId={info.id} />}
 
-      <div style={{ display: "flex", gap: "var(--sb-space-2)", marginBottom: "var(--sb-space-3)" }}>
-        {FILTERS.map((option) => (
-          <Link
-            key={option.key}
-            href={href({ status: option.key, page: 1 })}
-            style={{
-              padding: "0.25rem 0.75rem",
-              borderRadius: "999px",
-              border: "1px solid var(--sb-border)",
-              fontSize: "0.8125rem",
-              textDecoration: "none",
-              background: filter === option.key ? "var(--sb-primary)" : "transparent",
-              color: filter === option.key ? "var(--sb-white)" : "var(--sb-text-soft)",
-            }}
-          >
-            {option.label}
-          </Link>
-        ))}
+      <div style={{ marginTop: "var(--sb-space-3)" }}>
+        <Panel
+          title="Linhas da planilha"
+          subtitle={janela.label}
+          aside={
+            /* Eram pílulas de raio 999px — a forma que o design system
+               substituiu pelo `FilterPill` do frame (D-232). */
+            <>
+              <FilterPill
+                href={buildRowHref(info.id, filters, { status: null })}
+                active={filters.status === null}
+              >
+                Todas
+              </FilterPill>
+              {ROW_STATUSES.map((estado) => (
+                <FilterPill
+                  key={estado}
+                  href={buildRowHref(info.id, filters, { status: estado })}
+                  active={filters.status === estado}
+                >
+                  {rowStatusLabel(estado)}
+                </FilterPill>
+              ))}
+            </>
+          }
+        >
+          {rows.error !== null && (
+            <p role="alert" style={{ color: "var(--sb-danger)" }}>
+              Não foi possível carregar as linhas: {rows.error.message}
+            </p>
+          )}
+
+          {rows.error === null && rows.data.length === 0 && (
+            <p className="sb-empty">Nenhuma linha neste filtro.</p>
+          )}
+
+          {rows.error === null && rows.data.length > 0 && (
+            <div style={{ overflowX: "auto" }}>
+              <table className="sb-table">
+                <thead>
+                  <tr>
+                    <th className="sb-num">Linha</th>
+                    <th>Estado</th>
+                    <th>SKU</th>
+                    <th>Conteúdo lido</th>
+                    {info.status === "APPLIED" && <th>Aplicação</th>}
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {rows.data.map((row) => (
+                    <tr key={row.row_number}>
+                      <td className="sb-num">{row.row_number}</td>
+                      <td>
+                        <StatusPill code={row.status} label={rowStatusLabel(row.status)} />
+                      </td>
+                      <td className="sb-mono">{row.sku_key ?? "—"}</td>
+                      <td
+                        {...(row.reason === null ? {} : { style: { color: "var(--sb-text-soft)" } })}
+                      >
+                        {row.reason ?? summarize(info.kind, row.payload)}
+                      </td>
+                      {info.status === "APPLIED" && (
+                        <td>
+                          {row.apply_status === null ? (
+                            "—"
+                          ) : (
+                            <StatusPill code={row.apply_status} label={applyStatusLabel(row.apply_status)} />
+                          )}
+                          {row.apply_reason !== null && (
+                            <div
+                              style={{
+                                fontSize: "0.75rem",
+                                color: "var(--sb-text-soft)",
+                                marginTop: "0.125rem",
+                              }}
+                            >
+                              {row.apply_reason}
+                            </div>
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Panel>
       </div>
 
-      {rows.error !== null && (
-        <p role="alert" style={{ color: "var(--sb-danger)" }}>
-          Não foi possível carregar as linhas: {rows.error.message}
-        </p>
-      )}
-
-      {rows.error === null && rows.data.length === 0 && (
-        <p style={{ color: "var(--sb-text-soft)" }}>Nenhuma linha neste filtro.</p>
-      )}
-
-      {rows.error === null && rows.data.length > 0 && (
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "42rem" }}>
-            <thead>
-              <tr>
-                <th style={{ ...th, width: "5rem" }}>Linha</th>
-                <th style={{ ...th, width: "7rem" }}>Estado</th>
-                <th style={th}>SKU</th>
-                <th style={th}>Conteúdo lido</th>
-                {info.status === "APPLIED" && <th style={{ ...th, width: "9rem" }}>Aplicação</th>}
-              </tr>
-            </thead>
-
-            <tbody>
-              {rows.data.map((row) => (
-                <tr key={row.row_number}>
-                  <td style={{ ...td, fontVariantNumeric: "tabular-nums" }}>{row.row_number}</td>
-                  <td style={td}>
-                    <StatusPill code={row.status} label={rowStatusLabel(row.status)} />
-                  </td>
-                  <td style={{ ...td, fontFamily: "ui-monospace, monospace" }}>
-                    {row.sku_key ?? "—"}
-                  </td>
-                  <td
-                    style={{
-                      ...td,
-                      color: row.reason === null ? undefined : "var(--sb-text-soft)",
-                    }}
-                  >
-                    {row.reason ?? summarize(info.kind, row.payload)}
-                  </td>
-                  {info.status === "APPLIED" && (
-                    <td style={td}>
-                      {row.apply_status === null ? (
-                        "—"
-                      ) : (
-                        <StatusPill code={row.apply_status} label={applyStatusLabel(row.apply_status)} />
-                      )}
-                      {row.apply_reason !== null && (
-                        <div style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)", marginTop: "0.125rem" }}>
-                          {row.apply_reason}
-                        </div>
-                      )}
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {janela.totalPages > 1 && (
+        <div style={{ display: "flex", gap: "var(--sb-space-2)", marginTop: "var(--sb-space-3)" }}>
+          {filters.page > 1 && (
+            <FilterPill href={buildRowHref(info.id, filters, { page: filters.page - 1 })} active={false}>
+              ← Anterior
+            </FilterPill>
+          )}
+          {filters.page < janela.totalPages && (
+            <FilterPill href={buildRowHref(info.id, filters, { page: filters.page + 1 })} active={false}>
+              Próxima →
+            </FilterPill>
+          )}
         </div>
-      )}
-
-      {lastPage > 1 && (
-        <nav
-          style={{
-            display: "flex",
-            gap: "var(--sb-space-3)",
-            alignItems: "center",
-            marginTop: "var(--sb-space-3)",
-            fontSize: "0.875rem",
-          }}
-        >
-          {page > 1 && <Link href={href({ page: page - 1 })}>← Anterior</Link>}
-
-          <span style={{ color: "var(--sb-text-soft)" }}>
-            Página {formatCount(page)} de {formatCount(lastPage)} · {formatCount(total)} linhas
-          </span>
-
-          {page < lastPage && <Link href={href({ page: page + 1 })}>Próxima →</Link>}
-        </nav>
       )}
     </Shell>
   );

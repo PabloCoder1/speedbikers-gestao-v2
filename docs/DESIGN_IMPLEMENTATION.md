@@ -631,7 +631,8 @@ que ele renderiza.**
 | D35 | **Configurações** — os dois interruptores do frame não têm onde gravar, e interruptor mente PIOR que número: um é lido, o outro é acionado. `table-styles.ts` apagado (D-275) | ✔ |
 | D36 | **Copiloto** — a fila pedia uma TELA, e o frame tem uma gaveta; 11 das 12 perguntas que ela sugere não têm como ser respondidas (D-276) | ✔ |
 | D37a | **As tres telas de DETALHE** (`/notas-fiscais/[id]`, `/compras/[id]`, `/fornecedores/[supplierId]`) — listas migradas, detalhes antigos; `ProcessSteps` extraido no segundo consumidor (D-277) | ✔ |
-| D37b | Passe visual global — o que resta: 6 tabelas sem `.sb-table` e as telas sem `PageTitle` | fila |
+| D37b | **Importador do UpSeller** (lista, conferência, envio) + varrimento de `PageTitle` em 8 telas; o denominador da aplicação é `ok_rows`, e medir contra o total inventaria 14% de falha (D-278) | ✔ |
+| D37c | O que sobrou: `/cobertura`, a tabela de ENTRADA de `/compras/novo` e `/atendimento/[caseId]` | fila |
 
 ## Auditoria de Fidelidade Figma
 
@@ -814,98 +815,89 @@ O que resta é a fila **D31 em diante**: 7 superfícies ainda não migradas — 
 
 ## Última fatia concluída
 
-**D37a — as três telas de detalhe (D-277).** Primeira fatia do passe visual.
-Sem migration.
+**D37b — o importador do UpSeller, e o varrimento de cabeçalho (D-278).** Sem
+migration.
 
-### O recorte saiu de uma medição, não de uma lista
+### O denominador da aplicação
 
-`check:table-styles` contava **21** telas migradas contra 44 tabelas no app.
-Medida a diferença antes de escrever: **8 arquivos** com `<table>` e nenhum
-`.sb-table`, **17** `page.tsx` sem `PageTitle` nem `ObjectHeader`.
+`erp_import_batches` tem os MESMOS sete estados de `documents`, então o
+`.process-steps` entrou como **terceiro** consumidor. E o que cada etapa mede é
+diferente nos três — a prova de que o componente generalizou por necessidade:
 
-Das oito, três têm o mesmo defeito visível: são os DETALHES de listas que D18,
-D19 e D20 já migraram. A lista tem a cara do Figma, a linha clicada cai no app
-antigo. E o design system do próprio Figma nomeia duas delas — o `Object
-Header` é declarado como "o padrão de SKU, anúncio, **pedido de compra** e
-**fornecedor**".
+| consumidor | nota da etapa |
+|---|---|
+| NF-e | fração ANTES do ato — quantos itens já têm vínculo |
+| Pedido de compra | carimbo de tempo — quando cada transição ocorreu |
+| **Importação** | **fração DEPOIS do ato** — quanto da aplicação de fato entrou |
 
-### O componente foi extraído no SEGUNDO consumidor, não antes
+O `apply` só processa `status = 'OK'` (dito e feito em
+`erp-import-apply.ts`). Medido no Dev, o lote real de `LINKS`: **23.924 lidas
+= 20.650 OK + 3.274 ignoradas**, aplicadas **20.650**. Contra `total_rows` isso
+vira 86% — a tela anunciando **14% de falha** num lote que aplicou tudo o que
+devia. Linha ignorada não é falha: é decisão do parse.
 
-`ProcessSteps` nasceu em D-277 com o tipo dentro de `lib/nfe-steps.ts` e a nota
-de que subiria quando houvesse um segundo. Ele apareceu na mesma fatia:
-`purchase_orders` tem `DRAFT → APPROVED → ORDERED → RECEIVED`.
+### A lista repetia o defeito que D-253 corrigiu na tela ao lado
 
-| | NF-e | Pedido de compra |
-|---|---|---|
-| frame | SEIS passos | **não desenha esta tela** |
-| estados reais | 4 — três passos do frame são o mesmo `PARSED` | 4, nomeados no `CHECK` |
-| nota da etapa | fração `resolvidos de total` | **carimbo de tempo** |
+`.limit(50)` sem `count`, sem janela e sem página seguinte. Agora `count`
+sobre o conjunto filtrado, janela e paginação; os dois filtros saem dos
+conjuntos fechados do banco. A conferência tinha `href()` local e pílulas de
+raio 999px — a forma aposentada em D-232.
 
-No pedido a nota não é adivinhação: as quatro `CHECK` de coerência de
-`purchase_orders` impedem estado sem data.
+### O varrimento: oito telas, nenhuma decisão de composição
 
-### Cinco contagens que a RPC já devolvia e a tela não mostrava
+Todas tinham `<h1>` inline mais link de volta, ou `<h1>` mais parágrafo de
+apoio — que é literalmente `PageTitle` com `subtitle`. Uma só teve escolha:
+`/estoque/[skuId]/ajuste` abria com **"Ajustar E2E-SKU-001"**, e o código do
+SKU é chave, não título. Foi para a sobrancelha; o título virou o ato.
 
-O frame desenha o fornecedor como gaveta com cinco abas, **três delas marcadas
-"em construção" no próprio protótipo**, e resume pedidos em três estados. O
-sistema mede **cinco**, e `get_supplier_overview` já devolvia os cinco
-(`orders_draft`, `orders_approved`, `orders_ordered`, `orders_received`,
-`orders_cancelled`) — a tela mostrava só o total. Colapsá-los esconderia a
-diferença que decide o que fazer com o pedido. Mesma classe de D-250 e D-265.
+**Medido:** `.sb-table` de **24 para 28**; telas sem `PageTitle` de **11 para
+3**, e uma das três é `/login`, fora do `Shell` de propósito.
 
-**E os cartões não são links, de propósito:** `/compras` filtra por estado, não
-por fornecedor — "2 aprovados" levaria à lista de todos. A lista que eles
-resumem está três linhas abaixo, na mesma tela.
+### Meu fixture quebrou um teste verde, e o teste ficou melhor
 
-### A armadilha do frame: o "Detalhe de Pedido" é de VENDA
+`integracoes.spec` afirmava *"o seed não tem lote do UpSeller"* — premissa
+escrita quando não havia um. O conserto não foi restaurar a premissa: foi
+trocar o caminho exercitado. Antes cobria o vazio (que os unitários já cobrem
+nos cinco estados); agora cobre o caminho COM dado, onde a regra "fonte sob
+demanda nunca vira verde" pode de fato ser violada.
 
-O `OrderDetailDrawer` do protótipo tem comprador, conta, logística e mediação —
-é pedido do Mercado Livre, não pedido de compra. Desenhar `/compras/[id]` por
-ele teria trocado a entidade. O que ele contribuiu foi a **linha do tempo**, e
-ela já tinha forma: `.sb-feed-row`, a mesma da atividade recente da Home.
+### E o fixture estava errado de um jeito que só a tela mostrou
 
-### Um defeito meu, pego por um teste recém-escrito
+Inventei o payload como `{ sku, mlb }`, e a coluna "Conteúdo lido" renderizou
+**"—"**: `summarize` lê `storeLabel` e `ref`. Aquela coluna existe para mostrar
+o que o sistema ENTENDEU da linha — um fixture de forma errada a deixaria muda
+e o teste passaria. A forma real foi conferida no Dev.
 
-O estado `cancelada` procurava a etapa marcada como `atual` para convertê-la —
-e `CANCELLED` não é `PARSED`, então **nenhuma** etapa chega em curso e o
-documento cancelado saía sem lugar de parada. A regra certa é "a primeira que
-não chegou ao fim".
-
-**Legado removido:** `th`/`td`/`tdNumber`, `Stat`, `statBox`/`statLabel`/
-`statValue` nas três telas, e o helper de e2e `statValue` — sem nenhum
-consumidor depois da última migração.
+**Verificação:** `check` 29/29, build 8/8, integração **633/633** em banco
+recriado, e2e **82/82** (3 novos), unitários do web **413**,
+`check:table-styles` 24 → **28**, `check:waterfalls` 61, `docs:check`. As duas
+telas do importador abertas no navegador com login real.
 
 ## Próxima fatia segura
 
-**D37b — o resto do passe visual.** D37a fechou as três telas de detalhe; o
-que sobra está medido, não estimado.
+**D37c — o que sobrou do passe, e cada um sobrou por um motivo diferente.**
+Nenhum é acabamento; os três pedem decisão antes de código.
 
-**Seis arquivos com `<table>` e nenhum `.sb-table`** — a metade cega do guarda
-(D-262), que só a captura encontra:
-
-| arquivo | nota |
+| superfície | por que ficou de fora |
 |---|---|
-| `/cobertura` | nunca passou pela frente (D-261); o frame a trata com Reposição como UMA tela de abas, então é composição, não acabamento |
-| `/importacoes` e `/importacoes/[id]` | o importador do UpSeller — mesmo fluxo `upload → parse → conferência → aplicação` da NF-e, então é o **terceiro** candidato a `ProcessSteps` |
-| `/compras/novo` (formulário) | tabela de entrada, não de leitura — conferir se `.sb-table` cabe antes de aplicar |
-| `/notificacoes/preferencias` | `preference-row.tsx` também carrega consts próprias |
-| `/reposicao/configuracoes` | — |
+| **`/cobertura`** | o frame a trata com Reposição como **UMA tela com abas** (D-261). Unificá-las é composição, não acabamento — e ela não tem filtro por SKU, só por marca (D-265). É a última superfície da frente que nunca passou por fatia nenhuma |
+| **`/compras/novo`** (a tabela) | é tabela de **ENTRADA**, não de leitura: as células são campos. `.sb-table` é tipografia de célula de leitura, e aplicá-la ali seria responder a pergunta de D-275 pelo lado errado — o elemento é acionado, não lido |
+| **`/atendimento/[caseId]`** | 509 linhas, tela de detalhe com dois `<h1>`. Pede `ObjectHeader`, como as três de D37a — mas é a maior delas, e o corpo é a conversa, não uma tabela |
 
-**Dezesseis `page.tsx` sem `PageTitle`** (17 medidos menos `/login`, que fica
-fora do `Shell` de propósito). `/notas-fiscais/nova` já tem o cabeçalho novo
-mas não a migração completa — conferir na captura.
+Depois disso a frente visual fecha, e o que resta são os **sete itens abertos**
+abaixo mais os drawers (adiados desde A1).
 
-A rotina, com as dez perguntas acumuladas: **o frame tem fonte?** (D-266),
+A rotina, com as onze perguntas acumuladas: **o frame tem fonte?** (D-266),
 **falta coluna ou falta dado?** (D-268), **quantas linhas no Dev?** (D-263), **a
 faixa conta o mesmo conjunto da tabela ou é navegação?** (D-265), **há spec?**
 (D-271), **capturei a tela depois do último build?** (D-272), **o fixture do
 teste é um dado degradado de verdade?** (D-273), **o mapa já sabe disso?**
-(D-274), **o elemento é lido ou é acionado?** (D-275) e **este caso passa na
-tela errada?** (D-276).
+(D-274), **o elemento é lido ou é acionado?** (D-275), **este caso passa na tela
+errada?** (D-276) e **o desenho é desta ENTIDADE?** (D-277).
 
-D37a acrescenta a décima primeira, e ela é sobre o frame: **o desenho é desta
-ENTIDADE?** — o "Detalhe de Pedido" do protótipo é de venda, não de compra, e
-usá-lo teria trocado o assunto da tela sem que nada acusasse.
+D37b acrescenta a décima segunda, e ela é sobre fixture: **a FORMA do meu
+fixture é a forma real?** — um payload inventado deixou a coluna "Conteúdo
+lido" muda, e o teste teria passado assim.
 
 **Sete itens seguem abertos fora da fila:**
 

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { PageTitle } from "../../../components/page-title";
 import { Shell } from "../../../components/shell";
 import { formatCount } from "../../../lib/format";
 import { createClient } from "../../../lib/supabase/server";
@@ -119,12 +120,12 @@ export default async function MetricasSacPage(): Promise<ReactNode> {
         </Link>
       </p>
 
-      <h1 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.375rem" }}>Métricas de SAC</h1>
-
-      <p style={{ margin: "0 0 var(--sb-space-4)", color: "var(--sb-text-soft)", fontSize: "0.875rem" }}>
-        Definições canônicas em docs/METRICS.md §5B. Tempo de resolução fica de fora por enquanto:
-        os relógios de criação e resolução não são comparáveis ainda.
-      </p>
+      <PageTitle
+        eyebrow="ATENDIMENTO / OPERAÇÃO"
+        title="Métricas de SAC"
+        subtitle="Definições canônicas em docs/METRICS.md §5B. Tempo de resolução fica de fora por enquanto: os relógios de criação e resolução não são comparáveis ainda."
+        compacto
+      />
 
       <h2 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1rem" }}>Agora</h2>
       <div style={grid}>

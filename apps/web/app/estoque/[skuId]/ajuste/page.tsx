@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { PageTitle } from "../../../../components/page-title";
 import { Shell } from "../../../../components/shell";
 import { formatCount } from "../../../../lib/format";
 import { locationKindLabel } from "../../../../lib/labels";
@@ -41,15 +42,14 @@ export default async function AjusteEstoquePage({
 
   return (
     <Shell>
-      <p style={{ margin: 0, fontSize: "0.875rem" }}>
-        <Link href="/estoque">← Estoque</Link>
-      </p>
-
-      <h1 style={{ margin: "var(--sb-space-2) 0", fontSize: "1.375rem" }}>Ajustar {sku.data.sku}</h1>
-
-      {sku.data.title !== null && (
-        <p style={{ margin: "0 0 var(--sb-space-3)", color: "var(--sb-text-soft)" }}>{sku.data.title}</p>
-      )}
+      {/* O CODIGO do SKU e chave, nao titulo: vai na sobrancelha, em mono,
+          como manda o `ObjectHeader` do design system. O titulo e o ato. */}
+      <PageTitle
+        eyebrow={`ESTOQUE / ${sku.data.sku}`}
+        title="Ajuste de saldo"
+        subtitle={sku.data.title ?? <Link href="/estoque">← Voltar ao estoque</Link>}
+        compacto
+      />
 
       {balances.error !== null && (
         <p role="alert" style={{ color: "var(--sb-danger)", fontSize: "0.875rem", marginBottom: "var(--sb-space-3)" }}>

@@ -25,12 +25,7 @@ export interface PreferenceRowData {
 
 const SEVERITY_OPTIONS = ["informativo", "importante", "critico"];
 
-const td: React.CSSProperties = {
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.875rem",
-  verticalAlign: "middle",
-};
+
 
 export function PreferenceRow({ preference }: { preference: PreferenceRowData }): ReactNode {
   const [minSeverity, setMinSeverity] = useState(preference.minSeverity);
@@ -78,9 +73,9 @@ export function PreferenceRow({ preference }: { preference: PreferenceRowData })
 
   return (
     <tr>
-      <td style={td}>{preference.eventType === null ? "Todos os tipos" : eventTypeLabel(preference.eventType)}</td>
-      <td style={td}>{preference.accountLabel ?? "Todas as contas"}</td>
-      <td style={td}>
+      <td>{preference.eventType === null ? "Todos os tipos" : eventTypeLabel(preference.eventType)}</td>
+      <td>{preference.accountLabel ?? "Todas as contas"}</td>
+      <td>
         <select
           value={minSeverity}
           disabled={busy}
@@ -103,7 +98,7 @@ export function PreferenceRow({ preference }: { preference: PreferenceRowData })
           ))}
         </select>
       </td>
-      <td style={td}>
+      <td>
         <label style={{ display: "flex", alignItems: "center", gap: "0.375rem", fontSize: "0.8125rem", cursor: "pointer" }}>
           <input
             type="checkbox"
@@ -116,7 +111,7 @@ export function PreferenceRow({ preference }: { preference: PreferenceRowData })
           {enabled ? "Ativa" : "Desativada"}
         </label>
       </td>
-      <td style={td}>
+      <td>
         <button
           type="button"
           disabled={busy}

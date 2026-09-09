@@ -68,6 +68,7 @@ const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ORG_SLUG = "e2e-speed-bikers";
 const SKU_CODE = E2E_SKU_CODE;
 const DOCUMENT_CONTENT_HASH = createHash("sha256").update("e2e-fixture-nfe").digest("hex");
+const IMPORT_CONTENT_HASH = createHash("sha256").update("e2e-fixture-import").digest("hex");
 const ML_ACCOUNT_SLUG = "e2e-loja";
 const ML_ACCOUNT_LABEL = "Loja E2E";
 const ML_SELLER_ID = 419_059_118;
@@ -1536,6 +1537,108 @@ async function main(): Promise<void> {
     }
   }
 
+  // ------------------------------------------------------------------
+  // Lote de importacao do UpSeller (D-278).
+  //
+  // A FORMA e a do lote real de `LINKS` medido no Dev -- 23.924 linhas =
+  // 20.650 OK + 3.274 ignoradas, aplicadas 20.650 --, em escala legivel: o
+  // que importa e que `total > ok` e que `applied == ok`. E esse o fixture que
+  // permite ao teste afirmar o DENOMINADOR: medir a aplicacao contra o total
+  // mostraria 80 de 100 e anunciaria 20% de falha num lote que aplicou tudo o
+  // que devia.
+  //
+  // Sem linha ignorada o caso passaria por acaso, porque 100 e 80 seriam o
+  // mesmo numero (D-197).
+  // ------------------------------------------------------------------
+  const loteExistente = await db
+    .from("erp_import_batches")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("content_hash", IMPORT_CONTENT_HASH)
+    .maybeSingle();
+
+  if (loteExistente.error !== null) {
+    throw loteExistente.error;
+  }
+
+  let importBatchId: string;
+
+  if (loteExistente.data !== null) {
+    importBatchId = loteExistente.data.id;
+  } else {
+    const lote = await db
+      .from("erp_import_batches")
+      .insert({
+        organization_id: organizationId,
+        kind: "LINKS",
+        status: "APPLIED",
+        storage_path: "e2e/fixture-import.xlsx",
+        file_name: "fixture-links.xlsx",
+        content_hash: IMPORT_CONTENT_HASH,
+        total_rows: 100,
+        ok_rows: 80,
+        skipped_rows: 20,
+        invalid_rows: 0,
+        applied_rows: 80,
+        unresolved_rows: 0,
+        parsed_at: new Date().toISOString(),
+        applied_at: new Date().toISOString(),
+        applied_by: userId,
+      })
+      .select("id")
+      .single();
+
+    if (lote.error !== null) {
+      throw lote.error;
+    }
+
+    importBatchId = lote.data.id;
+
+    // Duas linhas: uma OK e uma IGNORADA. A ignorada e a que prova que o
+    // filtro recorta de verdade, e `erp_import_rows_reason_matches_status`
+    // exige que so a nao-OK tenha motivo.
+    // `erp_import_rows` NAO tem `organization_id`: o escopo chega pelo
+    // `batch_id`, e a policy le a organizacao do lote.
+    const linhas = await db.from("erp_import_rows").insert([
+      {
+        batch_id: importBatchId,
+        row_number: 1,
+        status: "OK",
+        sku_key: SKU_CODE,
+        // A forma REAL do payload de LINKS, conferida no Dev: `storeLabel` +
+        // `ref`. A primeira versao deste fixture inventou `{ sku, mlb }`, e a
+        // tela renderizou "—" -- `summarize` nao tinha o que descrever. O
+        // resumo existe justamente para mostrar o que o sistema ENTENDEU, e um
+        // fixture de forma errada o deixaria mudo sem ninguem notar.
+        payload: {
+          ref: { kind: "USER_PRODUCT", userProductId: "MLBU4818089142" },
+          skuKey: SKU_CODE,
+          storeSlug: "e2e-loja",
+          storeLabel: ML_ACCOUNT_LABEL,
+          channelSku: SKU_CODE,
+        },
+        apply_status: "APPLIED",
+      },
+      {
+        batch_id: importBatchId,
+        row_number: 2,
+        status: "SKIPPED",
+        reason: "SKU sem vinculo na planilha",
+        sku_key: "E2E-SKU-IGNORADO",
+        payload: {
+          ref: { kind: "ITEM", itemId: "MLB1623490410" },
+          skuKey: "E2E-SKU-IGNORADO",
+          storeSlug: "e2e-loja",
+          storeLabel: ML_ACCOUNT_LABEL,
+        },
+      },
+    ]);
+
+    if (linhas.error !== null) {
+      throw linhas.error;
+    }
+  }
+
   const output: SeedOutput = {
     organizationId,
     userId,
@@ -1543,6 +1646,7 @@ async function main(): Promise<void> {
     skuCode: SKU_CODE,
     documentId,
     documentItemId: item.data.id,
+    importBatchId,
     mlAccountLabel: ML_ACCOUNT_LABEL,
     supportOpenExternalId: SUPPORT_OPEN_EXTERNAL_ID,
     supportResolvedExternalId: SUPPORT_RESOLVED_EXTERNAL_ID,

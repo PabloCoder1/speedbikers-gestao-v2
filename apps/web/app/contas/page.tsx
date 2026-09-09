@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { PageTitle } from "../../components/page-title";
 import { Shell } from "../../components/shell";
 import { StatePill } from "../../components/state-pill";
 import { TOM, tomDeStatus } from "../../components/tone";
@@ -40,13 +41,12 @@ export default async function ContasPage(): Promise<ReactNode> {
 
   return (
     <Shell>
-      <h1 style={{ margin: "0 0 var(--sb-space-1)", fontSize: "1.375rem" }}>Contas Mercado Livre</h1>
-
-      <p style={{ margin: "0 0 var(--sb-space-4)", color: "var(--sb-text-soft)", fontSize: "0.9375rem" }}>
-        Cadastre a conta e clique em Conectar — você vai logar no Mercado Livre como administrador
-        daquela loja específica. Depois de conectada, ninguém mais precisa reautenticar; o backfill
-        de história começa sozinho.
-      </p>
+      <PageTitle
+        eyebrow="ADMINISTRAÇÃO / CANAIS E PARCEIROS"
+        title="Contas Mercado Livre"
+        subtitle="Cadastre a conta e clique em Conectar — você vai logar no Mercado Livre como administrador daquela loja específica. Depois de conectada, ninguém mais precisa reautenticar; o backfill de história começa sozinho."
+        compacto
+      />
 
       <NewAccountForm />
 
