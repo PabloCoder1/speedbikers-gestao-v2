@@ -78,6 +78,18 @@ test("/produtos: a curadoria em lote só escreve depois de dizer a consequência
 
   // E a tela reflete a escrita: o SKU deixou de estar "não classificado".
   await expect(page.getByText("não classificado", { exact: true })).toHaveCount(0);
+
+  /*
+    5. E DESFAZER desfaz — clicar aqui não é limpeza de cortesia.
+
+    `stock_is_virtual` é estado GLOBAL do SKU: deixar E2E-SKU-001 virtual ao
+    sair daqui apaga a cobertura em dias dele em toda tela que roda depois
+    nesta suíte (foi assim que `reposicao.spec.ts` nasceu vermelho, D-288).
+    Clicar também fecha o passo 4: um "Desfazer" que aparece e não volta é
+    pior do que não existir.
+  */
+  await page.getByRole("button", { name: "Desfazer" }).click();
+  await expect(page.getByText("não classificado", { exact: true }).first()).toBeVisible({ timeout: 15000 });
 });
 
 /**

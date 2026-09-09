@@ -336,7 +336,7 @@ export default async function ProdutosPage({
           </>
         )}
         {formatCount(total?.virtual_marked ?? 0)} marcados como virtual têm a cobertura em branco de propósito em{" "}
-        <a href="/cobertura">Cobertura</a>.
+        <a href="/reposicao">Cobertura e reposição</a>.
       </p>
     </Shell>
   );

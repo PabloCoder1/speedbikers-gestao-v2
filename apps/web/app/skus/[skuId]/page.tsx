@@ -521,16 +521,24 @@ export default async function SkuDashboardPage({
           <>
             {/*
               O ESTADO como ação, como no frame ("Risco de Ruptura !" em tom de
-              perigo): só aparece quando a cobertura diz ruptura, e leva à tela
-              que explica. Nunca decorativo.
+              perigo): só aparece quando o saldo LOCAL acabou, e leva à tela que
+              dá o veredito. Nunca decorativo.
+
+              **O rótulo deixou de dizer "ruptura" em D-288.** `is_ruptura` de
+              `get_stock_coverage` mede uma coisa boa e barata — vende e o
+              estoque local zerou —, mas não é o veredito de ruptura da casa
+              desde a fusão: **150 dos 325 SKUs que ela acusava tinham Full ou
+              trânsito**. O selo passou a dizer o que mede, e a palavra
+              "ruptura" tem um dono só: o estado da tela de Cobertura e
+              reposição, que é para onde este botão leva — já com o SKU buscado.
             */}
             {coverage?.is_ruptura === true && (
               <Link
-                href="/cobertura"
+                href={`/reposicao?busca=${encodeURIComponent(sku.data.sku)}`}
                 className="sb-button"
                 style={{ color: "var(--sb-danger)", borderColor: "var(--sb-danger)" }}
               >
-                Risco de ruptura
+                Sem saldo local
                 <span className="sb-status" style={TOM.perigo}>
                   !
                 </span>
@@ -551,8 +559,8 @@ export default async function SkuDashboardPage({
                 <Link className="sb-menu-item" href="/acoes">
                   Registrar decisão na Central de Ações
                 </Link>
-                <Link className="sb-menu-item" href="/cobertura">
-                  Ver cobertura
+                <Link className="sb-menu-item" href={`/reposicao?busca=${encodeURIComponent(sku.data.sku)}`}>
+                  Ver cobertura e reposição
                 </Link>
                 <Link className="sb-menu-item" href="/estoque">
                   Voltar ao estoque
@@ -629,7 +637,7 @@ export default async function SkuDashboardPage({
                       : coverage.stock_is_virtual
                         ? "em branco de propósito: o saldo do ERP é sentinela, não contagem (D-127)"
                         : coverage.is_ruptura
-                          ? "em ruptura — vende e está sem saldo para vender"
+                          ? "vende e o saldo LOCAL acabou — o veredito de ruptura olha Full e trânsito, e mora em Cobertura e reposição"
                           : `venda média de ${formatCount(Math.round((coverage.avg_daily_sales ?? 0) * 10) / 10)}/dia`}
                   </span>
                 </div>

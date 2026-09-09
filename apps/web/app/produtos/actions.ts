@@ -91,9 +91,11 @@ export async function classifySkus(
   // fora, e antes do sucesso seria mentira na tela.
   revalidatePath("/produtos");
 
-  // `/cobertura` lê `stock_is_virtual` para RECUSAR cobertura (D-127), então
-  // ela fica errada até revalidar. É a tela onde a consequência aparece.
-  revalidatePath("/cobertura");
+  // `/reposicao` lê `stock_is_virtual` para RECUSAR cobertura (D-127), então
+  // ela fica errada até revalidar. É a tela onde a consequência aparece —
+  // desde a fusão de D-288 ela é a única: `/cobertura` virou redirect, e
+  // revalidar um redirect não atualiza nada.
+  revalidatePath("/reposicao");
 
   return { ok: true, message: null, outcome };
 }

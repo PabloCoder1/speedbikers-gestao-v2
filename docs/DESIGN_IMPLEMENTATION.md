@@ -703,23 +703,31 @@ Ponderado, não por contagem de páginas. Uma superfície "implementada" mas
 distante do frame não vale 100: estrutura = 50, + dados reais = 65, + design
 próximo = 80, validada contra o Figma = 95, + cleanup + testes = 100.
 
-| Bloco | Peso | A1 | A2 | D13 | A3 | D38/D39 | A4 | A5 | **Cinza** |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| Shell + navegação | 8 | 86% | 91% | 91% | 91% | 91% | 91% | 91% | 91% |
-| Design system (tokens, componentes, tabela, campo, menu, chip, modal) | 10 | 80% | 88% | 88% | 88% | 88% | **82%** | **94%** | **97%** |
-| Home | 6 | 87% | 87% | 87% | 87% | 87% | 87% | 87% | 87% |
-| Vendas | 8 | 85% | 88% | 88% | 88% | 88% | 88% | 88% | 88% |
-| **Produtos** | 5 | 83% | 83% | 83% | 83% | **90%** | 90% | 90% | 90% |
-| Dashboard de SKU (nove abas) | 10 | 82% | 88% | 88% | 88% | 88% | 88% | 88% | 88% |
-| Anúncios — lista | 6 | 86% | 86% | 86% | 86% | 86% | 86% | 86% | 86% |
-| **Anúncio — detalhe (oito abas)** | 5 | 25% | 25% | **84%** | 84% | 84% | 84% | 84% | 84% |
-| **D14–D17** (Estoque, Reposição, Curva ABC, Movimentações) | 8 | 25% | 25% | 25% | **88%** | 88% | 88% | **90%** | **90%** |
-| **D18/D20** (NF-e, Fornecedores) — frames que são ESBOÇO | 4 | 25% | 25% | 25% | **90%** | 90% | 90% | 90% | 90% |
-| **D19** (Compras) | 3 | 25% | 25% | 25% | **95%** | 95% | 95% | 95% | 95% |
-| **D21** (Integridade de Catálogo) | 4 | 25% | 25% | 25% | **92%** | 92% | 92% | 92% | 92% |
-| **14 telas D22–D36** (eram "16" por contagem errada) | 22 | 25% | 25% | 25% | 25% | 25% | **88%** | **90%** | **90%** |
-| **Drawers do frame** (Inspeção Rápida, MLB, pedido, fornecedor, usuário) | 4 | 0% | 0% | 0% | 0% | **86%** | 86% | 86% | 86% |
-| Passe visual global + passo cinza | 3 | 0% | 0% | 0% | 0% | 0% | 0% | **40%** | **100%** |
+| Bloco | Peso | A1 | A2 | D13 | A3 | D38/D39 | A4 | A5 | **Cinza** | **Fusão** |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Shell + navegação | 8 | 86% | 91% | 91% | 91% | 91% | 91% | 91% | 91% | 91% |
+| Design system (tokens, componentes, tabela, campo, menu, chip, modal) | 10 | 80% | 88% | 88% | 88% | 88% | **82%** | **94%** | **97%** | **97%** |
+| Home | 6 | 87% | 87% | 87% | 87% | 87% | 87% | 87% | 87% | 87% |
+| Vendas | 8 | 85% | 88% | 88% | 88% | 88% | 88% | 88% | 88% | 88% |
+| **Produtos** | 5 | 83% | 83% | 83% | 83% | **90%** | 90% | 90% | 90% | 90% |
+| Dashboard de SKU (nove abas) | 10 | 82% | 88% | 88% | 88% | 88% | 88% | 88% | 88% | 88% |
+| Anúncios — lista | 6 | 86% | 86% | 86% | 86% | 86% | 86% | 86% | 86% | 86% |
+| **Anúncio — detalhe (oito abas)** | 5 | 25% | 25% | **84%** | 84% | 84% | 84% | 84% | 84% | 84% |
+| **D14–D17** (Estoque, Reposição, Curva ABC, Movimentações) | 8 | 25% | 25% | 25% | **88%** | 88% | 88% | **90%** | **90%** | **93%** |
+| **D18/D20** (NF-e, Fornecedores) — frames que são ESBOÇO | 4 | 25% | 25% | 25% | **90%** | 90% | 90% | 90% | 90% | 90% |
+| **D19** (Compras) | 3 | 25% | 25% | 25% | **95%** | 95% | 95% | 95% | 95% | 95% |
+| **D21** (Integridade de Catálogo) | 4 | 25% | 25% | 25% | **92%** | 92% | 92% | 92% | 92% | 92% |
+| **14 telas D22–D36** (eram "16" por contagem errada) | 22 | 25% | 25% | 25% | 25% | 25% | **88%** | **90%** | **90%** | **90%** |
+| **Drawers do frame** (Inspeção Rápida, MLB, pedido, fornecedor, usuário) | 4 | 0% | 0% | 0% | 0% | **86%** | 86% | 86% | 86% | 86% |
+| Passe visual global + passo cinza | 3 | 0% | 0% | 0% | 0% | 0% | 0% | **40%** | **100%** | **100%** |
+
+**A coluna "Fusão" mexe em UMA linha.** `/reposicao` foi renderizada a 1440px
+com login real depois da fusão (D-288): a diferença de composição que restava
+naquele bloco era o frame desenhar UMA tela onde o app tinha duas, e ela deixou
+de existir — 90% → **93%**. Não vai mais alto porque o frame ainda desenha
+"Visão geral" e "Configurações" como ABAS, e aqui são duas rotas (D-278), e
+porque a tabela rola **835px** na horizontal (medido; 138 deles são da coluna
+nova). As outras linhas são cópia da coluna anterior, não medição nova.
 
 **A coluna D38/D39 mexe em DUAS linhas, e só nelas.** São as duas que estas
 fatias renderizaram (1440px e 850px, Supabase local, login real): `/produtos`,
@@ -965,8 +973,9 @@ na cobertura) — nenhum muda composição, e todos cabem no passe visual global
 
 **D14–D17 foram capturadas em A3b** (D-261), e a captura virou correção de
 código: o `const td` inline sobrevivia em `/estoque/movimentacoes` e
-`/reposicao`, contra o que os commits afirmavam. O que resta ali é `/cobertura`,
-que nunca passou pela frente.
+`/reposicao`, contra o que os commits afirmavam. O que restava ali era
+`/cobertura`, que nunca passou pela frente — **e deixou de existir em D-288**:
+foi fundida em `/reposicao`, que é migrada.
 
 **Essa lição virou guarda em D-262** — `check:table-styles`, na esteira. Ele
 reprova o arquivo que declara `.sb-table` e mantém a tipografia de célula
@@ -992,73 +1001,83 @@ está na "Próxima fatia segura".
 
 ## Última fatia concluída
 
-**OS QUATRO P3 DE A4 (D-287)** — três feitos, um recusado com número, e um
-defeito meu no meio do caminho. Sem migration.
+**A FUSÃO DE `/cobertura` COM `/reposicao` (D-288)** — o frame `Coverage` sempre
+desenhou UMA tela; o app tinha duas, medindo a mesma coisa com definições
+diferentes de ruptura. Sem migration.
 
-### O chip que esticava (feito)
-
-`.sb-diagnostic-item` e `.sb-split-item` são `grid`, e item de grid estica: o
-`.sb-status` virava faixa de ~300px onde o Design Contract define pílula de 4px.
-`justify-self: start` nos dois — **medido depois: 43px em `/diagnostico`, 36px em
-`/sugestoes`**. Não era divergência do frame: o export tem a mesma regra, e quem
-desempata é a definição de chip do próprio Contract.
-
-### A nota do Copiloto encaixotada (feito)
-
-O `DiagnosisPanel` é um painel inteiro e vivia DENTRO da nota violeta — cartão
-dentro de bloco. Ganhou o modo `embutido`: a frase vira o texto da nota e a ação
-vira `.sb-text-button`, como o frame. **Na aba do SKU a moldura continua**, que é
-onde ela é a seção.
-
-### A largura de `/integracoes` (RECUSADO, com número)
+### A escolha foi de produto, e o número é o argumento
 
 | | |
 |---|---:|
-| maior observação | **175 caracteres** |
-| linhas em largura inteira | **4** |
-| linhas em METADE da largura | **24** |
+| SKUs em que as duas discordavam | **186** |
+| "rupturas" que `/cobertura` acusava | **325** |
+| dessas, com Full ou trânsito | **150** |
 
-O grid de dois não encolheria a página: **multiplicaria a altura da célula por
-seis**. A recusa já estava escrita no arquivo; A4 mediu por fora (a altura) e não
-a leu. **A lição é sobre a auditoria:** achado também precisa perguntar se a
-recusa já existe — e por quê.
+As 150 não eram erro de conta: era saldo que EXISTE e não estava na prateleira
+que ela olhava (estoque LOCAL sobre 30 dias). Venceu a definição da reposição
+— **aproveitável** (local + Full + trânsito, reservado fora) contra a venda
+média, com lead time e cobertura alvo. D-279 tinha recusado a fusão pelo motivo
+certo ("escolher a definição é decisão de produto"); a decisão veio, e a fatia
+existiu por causa dela.
 
-### A área morta do `/copiloto` (feito, com uma distinção)
+### O que mudou na composição
 
-A lista de sugestões virou grade `auto-fit minmax(13rem, 1fr)` — 13rem porque é o
-maior mínimo em que as três cabem numa linha dentro da medida de leitura. **A
-conversa mantém `maxWidth: 46rem`**: o limite existe para LER, e prosa
-atravessando 1.150px é pior, não melhor.
+A coluna **"Cobertura (dias)"** — o número que dava nome à tela antiga — entrou
+em `/reposicao`; ela já existia ali, escondida no `title` da célula de estado.
+`/cobertura` virou `permanentRedirect` (308) levando `?marca=` junto, a
+navegação passou a ter **uma** entrada ("Cobertura e reposição") e o cartão da
+Home passou a dizer o que MEDE ("SKUs sem saldo local"), como o selo do SKU e a
+gaveta de Inspeção Rápida — os três liam a mesma coluna e os três a chamavam de
+ruptura.
 
-### O defeito que eu introduzi, e que só a captura pegou
+**A faixa de três células da tela antiga não foi recriada**, e isso é escolha:
+os cartões de estado já contam o conjunto pela definição vencedora, e
+"Com estoque virtual" já tem dona em `/produtos` (`virtual_marked`, que aponta
+para cá) — um dado, um dono.
 
-Renderizando para conferir a grade, o botão **"Perguntar" tinha sumido**: branco
-sobre branco. A limpeza de resíduo do passo cinza tirou o `background` dos
-elementos que já tinham a classe — correto — e manteve o `color`, que fica de
-fora da lista de propósito porque cor pode depender do dado. **Sete botões eram
-primary por estilo inline e viraram invisíveis.**
+### O que a coluna custou, medido a 1440px
 
-Corrigidos com `.sb-button-primary`, e o guarda ganhou a regra:
-`color: var(--sb-white)` num `.sb-button` sem `-primary`/`-danger` **é botão
-invisível** — com auto-teste, porque não é hipótese.
+| | |
+|---|---:|
+| colunas da tabela | **12** |
+| largura da tabela | **1.951px** |
+| painel visível | **1.116px** |
+| rolagem horizontal | **835px** (era 697) |
+| a coluna nova | **138px** |
 
-**Verificação:** `check` 29/29, build 8/8, e2e **89/89**, `check:control-styles`
-**195**, os outros três guardas verdes.
+A rolagem **já existia**; a fusão a aumentou em 20%. Fica aceita e anotada:
+encolher a tabela é escolher qual coluna sai, e a de compra se lê pela esquerda.
+
+### O que a suíte pegou, e o que só a leitura pegaria
+
+`produtos.spec.ts` marcava o SKU do seed como **virtual e não desfazia** —
+estado global —, e o teste aritmético novo nascia vermelho com cara de defeito
+da tela. O spec passou a **clicar** no "Desfazer" e a afirmar a volta, o que
+fecha o próprio passo dele. `home.spec.ts` afirmava o rótulo antigo do cartão. E
+o que nenhuma suíte pegaria: `revalidatePath("/cobertura")` em
+`produtos/actions.ts` apontava para o **redirect** — classificar como virtual
+deixaria de atualizar a tela onde a consequência aparece, sem erro nenhum, só
+número velho.
+
+**Verificação:** `check` 29/29, build 8/8, integração **634/634**, e2e **93/93**
+em base resetada e semeada, cinco guardas verdes.
 
 ## Próxima fatia segura
 
 **A COMPOSIÇÃO DO FIGMA FECHOU.** D0→D25, D27→D36, o passe D37a/b/c e **as
 cinco gavetas** (D38, D39) estão entregues; D26 foi recusada com medição
-(D-266). O guarda `check:table-styles` conta **30** telas e não há mais nenhuma
+(D-266). O guarda `check:table-styles` conta **29** telas — eram 30 até D-288,
+e a que saiu foi `/cobertura`, que virou redirect — e não há mais nenhuma
 fora. Não resta elemento do desenho por implementar.
 
 O que resta é MEDIÇÃO e produto, cada item com dono e motivo já registrados.
 Em ordem de risco medido:
 
-1. **Fundir `/cobertura` com `/reposicao`**, como o frame desenha. Exige
-   escolher UMA definição de ruptura: as duas discordam em **185 SKUs** (324 ×
-   139) porque medem coisas diferentes — local sobre 30 dias × local + Full +
-   trânsito com lead time. É decisão de produto, não de acabamento.
+1. ~~**Fundir `/cobertura` com `/reposicao`**~~ — **FEITA** (D-288). A
+   definição escolhida foi a da reposição, e o número que decidiu é este: das
+   **325** "rupturas" que `/cobertura` acusava, **150 tinham Full ou trânsito**
+   — as duas discordavam em **186 SKUs**. `/cobertura` virou redirect 308 com
+   o recorte junto.
 2. ~~**Os drawers do frame**~~ — **as cinco entregues** (D38/D-281 e
    D39/D-282), sob a regra de que a gaveta resume e leva à tela. O que
    permanece fora são as ABAS que o frame desenha dentro de duas delas, e isso
@@ -1095,15 +1114,20 @@ registro ainda é verdade, ou a rota que ele nega já nasceu?** e, de A4,
 e, de A5, **a regex que eu usei para achar o elemento sabe onde a tag TERMINA?**
 E, do passo cinza, a mais barata de todas: **esta lista de pré-requisitos ainda
 é verdade, ou metade dela já foi paga por outras fatias?** De D-286: **o que
-esta composição do frame protege pode ser entregue sem ela?**
+esta composição do frame protege pode ser entregue sem ela?** E, de D-288, a
+que custou uma suíte inteira de diagnóstico: **o estado que este teste afirma é
+do seed — ou algum spec anterior já escreveu por cima dele?**
 
 **Sete itens seguem abertos fora da fila:**
 
 - ~~**`/notas-fiscais/[id]`**~~ — **migrada em D-277**. Segue valendo a medição:
   dois dos quatro estados de item do brief §25 (`SUGESTAO`, `CONFLITO`) não têm
   dado em `document_items`, e são trabalho de backend antes de serem de tela.
-- **`/cobertura`** — o frame a trata com Reposição como uma tela de abas
-  (D-261); e ela não tem filtro por SKU, só por marca (D-265).
+- ~~**`/cobertura`**~~ — **fundida em D-288**: virou `/reposicao`, com a
+  definição de ruptura da reposição e o `?marca=` preservado no redirect. O que
+  o frame ainda desenha como ABAS ("Visão geral" / "Configurações") aqui são
+  duas rotas (`/reposicao` e `/reposicao/configuracoes`, D-278) — desvio
+  registrado, não pendência.
 - **Exportação de `/precos`** — recusada em D-264 por ser feature.
 - **Paginação de `/atendimento`** — o volume passou a justificar (D-267).
 - **Filtro de não lidas em `/notificacoes`** — 8.350 de 42.511 (D-269).

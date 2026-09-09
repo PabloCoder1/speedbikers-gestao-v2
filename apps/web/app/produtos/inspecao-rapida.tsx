@@ -151,7 +151,8 @@ function Retrato({ retrato }: { retrato: SkuInspection }): ReactNode {
         <p className="sb-note sb-note-perigo" style={{ marginBottom: "var(--sb-space-3)" }}>
           <span>Atenção operacional</span>
           <span style={{ display: "block", fontFamily: "var(--sb-sans)", fontSize: "0.6875rem", marginTop: "0.375rem" }}>
-            Em ruptura: vende e está sem saldo para vender.
+            Vende e o saldo LOCAL acabou. O veredito de ruptura considera Full e trânsito e mora em Cobertura e
+            reposição (D-288).
           </span>
         </p>
       )}

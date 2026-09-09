@@ -341,11 +341,21 @@ export default async function HomePage(): Promise<ReactNode> {
 
   const cards: readonly Card[] = [
     {
-      label: "SKUs em ruptura",
-      caption: "vendem e estão sem saldo para vender",
-      href: "/cobertura",
-      cta: "Ver cobertura",
-      impacto: (n) => `${formatCount(n)} ${n === 1 ? "SKU vendendo sem saldo" : "SKUs vendendo sem saldo"}`,
+      /*
+        O CARTÃO PASSOU A DIZER O QUE MEDE (D-288).
+
+        `get_stock_coverage_summary` conta quem vende e tem saldo LOCAL zerado —
+        barato, uma ida, e um sinal real. Mas não é o veredito de ruptura da
+        casa desde a fusão: das 325 que ele contava, **150 tinham Full ou
+        trânsito**. Chamá-lo de "ruptura" aqui e de outra coisa na tela dona
+        seriam duas definições da mesma palavra, que é justamente o que a fusão
+        veio fechar.
+      */
+      label: "SKUs sem saldo local",
+      caption: "vendem e o estoque local zerou — o veredito de ruptura olha Full e trânsito",
+      href: "/reposicao",
+      cta: "Ver cobertura e reposição",
+      impacto: (n) => `${formatCount(n)} ${n === 1 ? "SKU vendendo sem saldo local" : "SKUs vendendo sem saldo local"}`,
       count: coverageRow?.em_ruptura ?? null,
       severidade: "critico",
       failed: coverage.error !== null,

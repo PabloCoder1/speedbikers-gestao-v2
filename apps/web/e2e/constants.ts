@@ -104,6 +104,16 @@ export const E2E_LISTINGS = [
   },
 ] as const;
 
+/**
+ * O saldo LOCAL do SKU do seed, gravado por um movimento `ENTRADA_NFE`.
+ *
+ * Virou constante na fusão de `/cobertura` com `/reposicao` (D-288): a
+ * cobertura em dias que a tela fundida mostra é
+ * `(local + Full) ÷ venda média`, e o spec recalcula os dois lados a partir
+ * daqui — mudar o fixture muda a asserção junto.
+ */
+export const E2E_LOCAL_STOCK = 50;
+
 /** Full DO ANÚNCIO do primeiro anúncio (D-243) — o único com snapshot no seed. */
 export const E2E_LISTING_FULL = 3;
 

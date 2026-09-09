@@ -42,7 +42,10 @@ test("Home: os seis cards de atenção carregam, e nenhum deles falha", async ({
   // O seed cobre CINCO das seis situações: uma ação alta, uma de severidade
   // média (a do anúncio, D13), um atendimento aberto, um anúncio pausado com
   // estoque e a notificação que o evento de domínio do anúncio gerou. Só
-  // ruptura e mediação estão em zero — e o zero delas continua visível.
+  // "sem saldo local" e mediação estão em zero — e o zero delas continua
+  // visível. O cartão chamava-se "SKUs em ruptura" até a fusão de `/cobertura`
+  // com `/reposicao` (D-288): ruptura passou a ter UMA dona, e o que a Home
+  // mede — vende e o saldo LOCAL zerou — não é o veredito dela.
   const grade = page.locator(".sb-attention-grid");
   const limpos = page.locator(".sb-attention-clean");
 
@@ -56,7 +59,7 @@ test("Home: os seis cards de atenção carregam, e nenhum deles falha", async ({
     await expect(grade.getByRole("heading", { level: 3, name: label })).toBeVisible();
   }
 
-  for (const label of ["SKUs em ruptura", "Em mediação"]) {
+  for (const label of ["SKUs sem saldo local", "Em mediação"]) {
     await expect(limpos.getByRole("link", { name: `0 ${label}` })).toBeVisible();
   }
 

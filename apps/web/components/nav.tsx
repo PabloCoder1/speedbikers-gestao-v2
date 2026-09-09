@@ -65,7 +65,9 @@ const NAV_GROUPS: readonly NavGroup[] = [
       { label: "Estoque", href: "/estoque", icon: "▦" },
       { label: "Central Full", href: "/full", icon: "▣" },
       { label: "Movimentações", href: "/estoque/movimentacoes", icon: "⇄" },
-      { label: "Reposição", href: "/reposicao", icon: "⟳" },
+      // Uma entrada só desde a fusão de D-288: a tela responde as duas
+      // perguntas — quantos dias faltam, e o que comprar por causa disso.
+      { label: "Cobertura e reposição", href: "/reposicao", icon: "⟳" },
       { label: "NF-e / Entradas", href: "/notas-fiscais", icon: "▤" },
       { label: "Compras", href: "/compras", icon: "⊞" },
       { label: "Fornecedores", href: "/fornecedores", icon: "⊟" },
@@ -79,7 +81,6 @@ const NAV_GROUPS: readonly NavGroup[] = [
       { label: "Vinculações", href: "/vinculacoes", icon: "⇢" },
       { label: "Preços", href: "/precos", icon: "◈" },
       { label: "Curva ABC", href: "/curva-abc", icon: "▲" },
-      { label: "Cobertura", href: "/cobertura", icon: "◔" },
       { label: "Copiloto", href: "/copiloto", icon: "✦" },
     ],
   },

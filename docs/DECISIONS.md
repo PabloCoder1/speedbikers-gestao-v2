@@ -7714,6 +7714,70 @@ Corrigidos com `.sb-button-primary`, que e o que eles sempre foram. E o guarda g
 
 **Verificacao:** `check` **29/29**, build **8/8**, e2e **89/89**, `check:control-styles` **195**, os outros tres guardas verdes. Chip medido em 43px e 36px; `/integracoes` medida em 4 contra 24 linhas.
 
+## D-288 - A FUSAO de `/cobertura` com `/reposicao`: uma tela, uma definicao de ruptura
+
+**Contexto:** as duas telas mediam a mesma coisa com definicoes diferentes, e o frame `Coverage` sempre as tratou como UMA (D-261). D-279 recusou a fusao com o motivo certo -- "escolher uma definicao de ruptura e decisao de produto, nao de acabamento visual". **A decisao veio: a definicao da REPOSICAO.** Sem migration.
+
+---
+
+**O NUMERO QUE DECIDE, E POR QUE ELE E O ARGUMENTO**
+
+Medido no Dev com data real nas duas telas:
+
+| | |
+|---|---:|
+| SKUs em que as duas discordavam | **186** |
+| "rupturas" que a cobertura acusava | **325** |
+| dessas, com Full ou transito | **150** |
+
+As 150 nao eram erro de conta: eram saldo que EXISTE e nao estava na prateleira que `/cobertura` olhava (estoque LOCAL sobre a venda de 30 dias). A reposicao ja media o **aproveitavel** -- local + Full + transito, reservado fora --, com lead time, cobertura alvo e as quatro recusas de D-147. Uma das duas tinha de ser a dona da palavra "ruptura"; a que sabe do saldo inteiro venceu.
+
+---
+
+**O QUE MUDOU DE LUGAR**
+
+1. **A coluna "Cobertura (dias)" entrou em `/reposicao`.** Era o numero que dava NOME a tela antiga, e aqui ele ja existia -- escondido no `title` da celula de estado. Agora e coluna, com a conta da casa: aproveitavel / venda media diaria. Em branco para saldo sentinela (D-127) e para SKU sem venda na janela -- nos dois casos com o motivo no `title`, porque numero ali seria resposta errada com cara de precisa.
+
+2. **`/cobertura` virou `permanentRedirect` (308), com o recorte junto.** Link salvo, historico e Filtros Salvos com `?marca=X` chegam em `/reposicao?marca=X`. 308 preserva metodo e diz que a mudanca e definitiva; 307 mentiria dizendo "temporario".
+
+3. **A navegacao tem UMA entrada** -- "Cobertura e reposicao" -- e ela responde as duas perguntas: quantos dias faltam, e o que comprar por causa disso.
+
+4. **O cartao da Home passou a dizer o que MEDE.** `get_stock_coverage_summary` conta quem vende com saldo LOCAL zerado: sinal real, uma ida, barato. So nao e o veredito de ruptura -- eram exatamente aquelas 325. Virou "SKUs sem saldo local", com a ressalva ao lado. Mesma correcao no selo do Dashboard do SKU e na gaveta de Inspecao Rapida: os tres liam a mesma coluna e os tres a chamavam de ruptura.
+
+---
+
+**O QUE A FUSAO NAO LEVOU, E QUEM PASSOU A RESPONDER**
+
+A faixa de tres celulas da tela antiga (SKUs no recorte / Em ruptura / Com estoque virtual) NAO foi recriada. Os cartoes de estado de `/reposicao` ja contam o conjunto pela definicao vencedora, e recriar "Em ruptura" pela definicao perdedora seria devolver o problema que a fusao veio fechar. **"Com estoque virtual" ja tem dona:** `/produtos` mostra `virtual_marked` e aponta para ca -- um dado, um dono (D-224). As colunas "Estoque local" e "Vendido no periodo" tambem nao voltaram: a primeira vive no `title` do aproveitavel (`local X + full Y + transito Z`), a segunda virou "Venda/dia (30d)", que e o que a conta usa.
+
+---
+
+**TRES DEFEITOS QUE A SUITE PEGOU -- E UM QUE SO A LEITURA PEGARIA**
+
+1. **`produtos.spec.ts` deixava o SKU do seed VIRTUAL para o resto da suite.** Ele marca "E virtual" e conferia o "Desfazer" sem clicar; `stock_is_virtual` e estado global, entao `/reposicao` recusava cobertura para E2E-SKU-001 e o teste aritmetico novo nascia vermelho -- com cara de defeito da tela, sendo residuo do teste anterior. O spec passou a **clicar** no Desfazer e a afirmar a volta: fecha o proprio passo 4 (um "Desfazer" que aparece e nao volta e pior do que nao existir) e devolve o banco ao seed.
+
+2. **`home.spec.ts` afirmava o rotulo antigo do cartao.** Renomear cartao sem o spec junto e renomear pela metade.
+
+3. **`revalidatePath("/cobertura")` em `produtos/actions.ts` apontava para o redirect.** Classificar como virtual deixava de atualizar a tela onde a consequencia aparece -- e ninguem veria erro nenhum: so numero velho. Passou a revalidar `/reposicao`. Nao ha guarda para isso; achado de leitura.
+
+4. **`lib/coverage-filters.ts` e o teste dele foram apagados** com a tela: filtro sem tela e codigo que so o `lint` defende.
+
+---
+
+**O QUE A COLUNA NOVA CUSTOU, MEDIDO**
+
+Renderizada a 1440px com login real: a tabela tem **12 colunas**, **1.951px** dentro de um painel de **1.116px** -- **835px** de rolagem horizontal. A coluna nova responde por **138px** disso; sem ela a tabela media 1.813px, ou seja, **a rolagem ja existia** (697px) e a fusao a aumentou em 20%. Fica aceita e ANOTADA: a tabela e de decisao de compra e se le pela esquerda (SKU, venda, aproveitavel, cobertura, estado); encolher isso e escolher qual coluna sai, e isso e decisao de produto -- nao acabamento que eu tome sozinho.
+
+---
+
+**O TESTE QUE IMPEDE A VOLTA ATRAS**
+
+`e2e/reposicao.spec.ts` (4 casos). O central e aritmetico e deriva do fixture: com **50** de saldo local e **3** no Full, a cobertura tem de ser `53 / venda media`, e o spec afirma tambem que o numero do estoque LOCAL **nao** aparece na linha. As duas contas divergem no seed de proposito -- se um dia alguem repontar a coluna para o local, o teste fica vermelho em vez de a definicao mudar em silencio. `E2E_LOCAL_STOCK` virou constante do fixture (o seed usava 50 cru).
+
+**Impacto:** `app/cobertura/page.tsx` (redirect), `app/reposicao/page.tsx`, `app/page.tsx`, `app/skus/[skuId]/page.tsx`, `app/produtos/page.tsx`, `app/produtos/actions.ts`, `app/produtos/inspecao-rapida.tsx`, `components/nav.tsx`, `lib/coverage-filters.ts(+test)` apagados, `e2e/{constants,seed,home.spec,produtos.spec}.ts`, `e2e/reposicao.spec.ts` novo.
+
+**Verificacao:** `check` **29/29**, build **8/8**, integracao **634/634**, e2e **93/93** em base resetada e semeada, e os cinco guardas verdes (`embeds` 35, `waterfalls` 61, `server-actions` 21, `table-styles` 29, `control-styles` 195).
+
 ## Como adicionar nova decisao
 
 Registrar:

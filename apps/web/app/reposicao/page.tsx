@@ -233,7 +233,7 @@ export default async function ReposicaoPage({
       <PageTitle
         eyebrow="ESTOQUE / PLANEJAMENTO"
         title="Cobertura e reposição"
-        subtitle="Priorize capital onde o risco e a demanda se encontram."
+        subtitle="Quantos dias faltam para esgotar, e o que comprar por causa disso — uma tela só, com UMA definição de ruptura: aproveitável (local + Full + trânsito) contra a venda média, lead time e cobertura alvo."
         aside={<Link href="/reposicao/configuracoes">Configurações de reposição →</Link>}
       />
 
@@ -346,6 +346,18 @@ export default async function ReposicaoPage({
                 <th>Venda/dia (30d)</th>
                 <th>Tendência</th>
                 <th>Aproveitável</th>
+                {/*
+                  A COLUNA QUE VEIO DE `/cobertura` NA FUSÃO (D-288).
+
+                  Era o número que dava nome àquela tela — e aqui ele já
+                  existia, escondido no `title` do estado. A diferença é a
+                  conta: lá era estoque LOCAL sobre a venda de 30 dias; aqui é
+                  o APROVEITÁVEL (local + Full + trânsito, reservado fora)
+                  sobre a mesma venda. Uma definição, e é esta.
+                */}
+                <th title="Aproveitável ÷ venda média diária dos últimos 30 dias — quantos dias faltam para esgotar no ritmo atual">
+                  Cobertura (dias)
+                </th>
                 <th>Janela (dias)</th>
                 <th>Estado</th>
                 <th>Sugestão</th>
@@ -430,6 +442,22 @@ export default async function ReposicaoPage({
                         >
                           {formatCount(usable.total)}
                         </span>
+                      )}
+                    </td>
+                    <td className="sb-num">
+                      {stockState.coverageDays === null ? (
+                        <span
+                          style={{ color: "var(--sb-text-soft)" }}
+                          title={
+                            usable.total === null
+                              ? "saldo sentinela: a cobertura fica em branco de propósito (D-127)"
+                              : "sem venda na janela — não há taxa para dividir"
+                          }
+                        >
+                          —
+                        </span>
+                      ) : (
+                        RATE.format(stockState.coverageDays)
                       )}
                     </td>
                     <td className="sb-num">
