@@ -60,14 +60,79 @@ test("/notificacoes: o detalhe do frame não entrou, e o motivo é a falta de fo
   await expect(page.getByText("DETALHE DO EVENTO")).toHaveCount(0);
 
   /*
-    E o "Filtrar" do cabeçalho da lista: a tela não tem filtro nenhum hoje, e
-    acrescentá-los é funcionalidade, não composição — mesma linha que recusou a
-    exportação de /precos (D-264). Fica registrado como candidata: com 8.350
-    não lidas, um recorte "só não lidas" seria útil.
+    O "Filtrar" do cabeçalho do frame continua fora, e agora por um motivo mais
+    forte do que "é funcionalidade": ele sugere um MENU de filtros —
+    severidade, tipo, conta — que ninguém pediu e nenhum número sustenta. O
+    que entrou em D-290 foi a única candidata que D-269 registrou COM número
+    (8.350 não lidas de 42.511), e ela é duas pílulas, não um menu.
   */
   await expect(page.getByRole("button", { name: /^Filtrar/ })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /^Não lidas/ })).toBeVisible();
 
   // A linha continua carregando tudo o que a notificação tem: selo, tipo,
   // entidade com link, o diff e a hora.
   await expect(page.getByRole("button", { name: "Marcar como lida" }).first()).toBeVisible();
+});
+
+/**
+ * O RECORTE DE NÃO LIDAS (D-290) — a candidata que D-269 registrou com número.
+ *
+ * **Este caso escreve**: marca UMA das duas notificações do seed como lida, e
+ * essa escrita é o único jeito de provar que o filtro separa alguma coisa —
+ * com as duas não lidas, "todas" e "não lidas" devolvem a mesma lista e o
+ * teste não prova nada. **Sobra uma não lida de propósito** (lição de D-289):
+ * a Home conta "Notificações não lidas" e ficaria sem o cartão se esta suíte
+ * zerasse a caixa.
+ */
+test("/notificacoes: o recorte de não lidas separa o que foi lido", async ({ page }) => {
+  await login(page, "/notificacoes");
+
+  const painel = page.getByRole("region", { name: "Eventos recentes" });
+
+  await expect(painel).toContainText("2 não lida(s)");
+
+  // Uma é lida — e a pílula passa a dizer "Não lidas (1)", porque o rótulo
+  // dela e a contagem do painel são o MESMO número.
+  await page.getByRole("button", { name: "Marcar como lida" }).first().click();
+
+  await expect(page.getByRole("link", { name: "Não lidas (1)" })).toBeVisible();
+
+  await page.getByRole("link", { name: "Não lidas (1)" }).click();
+
+  await expect(page).toHaveURL(/estado=nao-lidas/);
+
+  /*
+    UMA linha, e a janela conta o RECORTE: com o filtro ligado, dizer "de 2"
+    seria descrever um conjunto que não está na tela.
+  */
+  await expect(page.locator("main li")).toHaveCount(1);
+  // Sem ponto final: o painel corta o ponto da frase de `summarizePagedWindow`
+  // para emendá-la com o resto do subtítulo.
+  await expect(painel).toContainText("1 não lida");
+  await expect(painel).not.toContainText("de 2");
+
+  // E "Todas" traz as duas de volta.
+  await page.getByRole("link", { name: "Todas" }).click();
+
+  await expect(page).toHaveURL(/\/notificacoes$/);
+  await expect(page.locator("main li")).toHaveCount(2);
+});
+
+/**
+ * A página além do fim — e aqui ela é detectada por ARITMÉTICA, não pelo 416
+ * de D-289. Medido: o `PGRST103` só aparece quando a consulta pede
+ * `count: exact` junto do `.range()`; sem `count`, o mesmo pedido volta 200 com
+ * zero linhas. Esta tela tira as contagens de consultas próprias (D-183), então
+ * quem sabe que a página 2 não existe é o total, não o servidor.
+ */
+test("/notificacoes: página além do fim é página vazia, não falha de leitura", async ({ page }) => {
+  await login(page, "/notificacoes?pagina=2");
+
+  await expect(page.getByText(/Esta página não existe neste recorte/)).toBeVisible();
+  await expect(page.getByText(/Não foi possível carregar/)).toHaveCount(0);
+
+  await page.getByRole("link", { name: "Voltar à primeira página" }).click();
+
+  await expect(page).toHaveURL(/\/notificacoes$/);
+  await expect(page.locator("main li").first()).toBeVisible();
 });

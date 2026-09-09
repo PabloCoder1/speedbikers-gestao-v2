@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **285** (D-001 a D-289).
+Decisões registradas: **286** (D-001 a D-290).
 
 ## Por domínio
 
@@ -115,7 +115,7 @@ Decisões registradas: **285** (D-001 a D-289).
 - **D-265** — D25: Central Full pelo frame, e o estado que ele esconde e o MAIOR de todos
 - **D-288** — A FUSAO de `/cobertura` com `/reposicao`: uma tela, uma definicao de ruptura
 
-### interface (28)
+### interface (29)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -145,6 +145,7 @@ Decisões registradas: **285** (D-001 a D-289).
 - **D-277** — D37a: as tres telas de DETALHE que a frente deixou para tras, e o indicador de etapas que ganhou o segundo consumidor
 - **D-279** — D37c: a tela que o frame nao desenha e a unica das duas que ainda responde
 - **D-283** — A4: as catorze telas que ninguem tinha fotografado, e o padrao que voltou porque nao havia guarda
+- **D-290** — O recorte de nao lidas em /notificacoes, a paginacao que veio junto, e a correcao do 416 de D-289
 
 ### mercado-livre (43)
 

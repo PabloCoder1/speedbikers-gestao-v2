@@ -7792,7 +7792,9 @@ A tela lia as **100 mais recentes** e ponto. Nenhum filtro dela separa "as 100 m
 
 **2. A PÁGINA QUE PASSA DO FIM NÃO E LISTA VAZIA -- É 416, E ISSO É MEDIDO**
 
-`.range(from, to)` com `from` maior que o total **não** devolve zero linhas: o PostgREST responde **416 `PGRST103` ("Requested range not satisfiable")**, com `count` nulo junto. Medido no local sobre `support_cases` com 2 linhas:
+> ⚠️ **PRECISÃO ACRESCENTADA EM D-290:** o gatilho do 416 não é o `.range()` sozinho -- é `.range()` **junto de `count: exact` na mesma consulta**. Sem `count`, o mesmo pedido volta **200 com zero linhas** (medido nas duas tabelas). A consulta desta tela pede `count` na mesma viagem, então tudo o que está abaixo vale para ela; o parágrafo 6 e a varredura que ele propõe precisam da pergunta a mais: **aquela tela pede `count` junto?**
+
+`.range(from, to)` com `from` maior que o total, **e `count: exact` na mesma consulta**, não devolve zero linhas: o PostgREST responde **416 `PGRST103` ("Requested range not satisfiable")**, com `count` nulo junto. Medido no local sobre `support_cases` com 2 linhas:
 
 | pedido | resposta |
 |---|---|
@@ -7823,6 +7825,51 @@ Escrevi que página fracionária cairia em 1, copiando a docstring de `resolvePa
 **Impacto:** `app/atendimento/page.tsx`, `lib/support-filters.ts` (novo) + teste, `lib/filters.ts` (`isPageBeyondEnd` e a docstring corrigida), `e2e/atendimento.spec.ts` (dois casos novos).
 
 **Verificação:** `check` **29/29** (`--force`), build **8/8**, integração **634/634**, e2e **95/95** em base resetada, cinco guardas verdes. A paginação foi vista de pé com **131 casos temporários** no local (inseridos, fotografados e apagados na mesma rodada, porque o seed tem dois e dois não formam duas páginas): página 1 com 100 linhas e "Próxima →", página 2 com 31 e "← Anterior", pílula de 32px com a forma do design system.
+
+## D-290 - O recorte de nao lidas em /notificacoes, a paginacao que veio junto, e a correcao do 416 de D-289
+
+**Contexto:** o item aberto seguinte de `docs/DESIGN_IMPLEMENTATION.md`. D-269 recusou o botão "Filtrar" do frame por ser funcionalidade e deixou **uma** candidata registrada COM número: com **8.350 não lidas de 42.511**, um recorte "só não lidas" seria útil de verdade. Sem migration.
+
+---
+
+**1. UMA CANDIDATA, NÃO UM MENU**
+
+O que entrou foram **duas pílulas** -- "Todas" e "Não lidas (N)". Severidade, tipo de evento e conta continuam FORA: o desenho sugere um menu de filtros, e nenhum número pediu os outros três. A recusa de D-269 valia para o menu; o que ela registrou como candidata era este recorte, e só ele.
+
+**O filtro mora no EMBED**, `notification_recipients.read_at`, nunca em `notifications`: lido é estado POR PESSOA (`docs/NOTIFICATIONS.md` §7), e um filtro na notificação responderia "alguém leu", que é outra pergunta. Só funciona porque o embed já era `!inner`.
+
+**A contagem da pílula é a MESMA do painel** -- um dado, um dono (D-224). E a janela passou a contar o RECORTE: com o filtro ligado ela diz "Mostrando 1 a 100 de 131 não lidas", não "de 132 notificações". Cabeçalho descrevendo conjunto que não está na tela é a classe de D-236.
+
+**2. A PAGINAÇÃO VEIO JUNTO, E NÃO É ESCOPO ESTICADO**
+
+A tela lia as **100 mais recentes** e nada mais. Com o recorte ligado isso vira "as 100 não lidas mais recentes", que é o mesmo beco que D-289 acabou de tirar de `/atendimento` -- e aqui o resto é maior: **42.411 notificações fora da primeira página**. Entregar o filtro sem alcance seria entregar meia resposta à pergunta que o próprio item fez. `PAGE_SIZE` continua **100**.
+
+**3. A CORREÇÃO DE D-289, MEDIDA: O 416 EXIGE `count`**
+
+D-289 escreveu que `.range()` além do fim devolve **416 `PGRST103`**. Está certo para a consulta que ele mediu, e **incompleto como regra**. O gatilho é `.range()` **junto de `count: exact`**:
+
+| consulta | resposta |
+|---|---|
+| `support_cases` COM `count: exact`, `range(100,199)` | **416 `PGRST103`** |
+| `support_cases` SEM `count`, `range(100,199)` | **200, zero linhas** |
+| `notifications` COM `count: exact`, `range(100,199)` | **416 `PGRST103`** |
+| `notifications` com `count: planned`, `range(100,199)` | **206**, zero linhas, `count` planejado |
+
+Faz sentido: sem total, o servidor não tem como saber que a faixa é impossível.
+
+**Consequência prática:** esta tela tira as contagens de **duas consultas próprias** (D-183), então a lista não pede `count`, não há erro nenhum para detectar -- e `isPageBeyondEnd` **não serve aqui**. O que serve é melhor: com o total em mãos, "página 9 de 1" se sabe por **aritmética** (`page > totalPages`), sem depender do comportamento do servidor. As duas telas tratam o mesmo caso, cada uma pelo caminho que o dado dela oferece.
+
+Sem isso, `?pagina=2` numa lista de duas notificações mostrava o painel dizendo "2 notificações" com a lista vazia embaixo -- contradição silenciosa, que é pior que erro.
+
+**A varredura das quatro telas com `.range()` (D-289, parágrafo 6) ganha uma pergunta antes:** *aquela tela pede `count` na mesma consulta?* Se pede, o caminho é `isPageBeyondEnd`; se não pede, é a aritmética -- e usar o detector lá seria código que nunca dispara.
+
+**4. O TESTE QUE ESCREVE, E POR QUE ELE DEIXA UMA NÃO LIDA**
+
+Com as duas notificações do seed não lidas, "todas" e "não lidas" devolvem a mesma lista e o caso não prova nada. O spec marca **uma** como lida -- e **só uma**, de propósito: a Home conta "Notificações não lidas" e ficaria sem o cartão se esta suíte zerasse a caixa. É a lição de D-289 aplicada na primeira oportunidade: **estado que um spec escreve é estado que os outros herdam**.
+
+**Impacto:** `app/notificacoes/page.tsx`, `lib/notification-filters.ts` (novo) + teste, `e2e/notificacoes.spec.ts` (+2 casos, 1 asserção de recusa atualizada), nota de precisão em D-289.
+
+**Verificação:** `check` **29/29** (`--force`), build **8/8**, integração **634/634**, e2e **97/97** em base resetada, cinco guardas verdes. Renderizada a 1440px com **130 eventos temporários** no local (a fan-out de `domain_events` criou as notificações; `domain_events` não aceita DELETE por trigger, então a limpeza foi `db reset`): página 1 "1 a 100 de 132", página 2 "101 a 132", recorte "1 a 100 de 131 não lidas" com o `estado=` preservado no paginador, e a página 99 devolvendo ao começo **do mesmo recorte**.
 
 ## Como adicionar nova decisao
 

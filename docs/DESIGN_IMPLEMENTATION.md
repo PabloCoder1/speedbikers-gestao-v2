@@ -1001,48 +1001,47 @@ está na "Próxima fatia segura".
 
 ## Última fatia concluída
 
-**A PAGINAÇÃO DE `/atendimento` (D-289)** — o primeiro item aberto da lista
-abaixo, e o primeiro que não é composição. (A fatia anterior foi a **fusão de
-`/cobertura` com `/reposicao`**, D-288, cujo resumo está na coluna "Fusão" da
-tabela de progresso.)
+**O RECORTE DE NÃO LIDAS EM `/notificacoes` (D-290)** — o segundo item aberto
+seguido, e o que corrigiu uma afirmação da fatia anterior. (Antes dela:
+a paginação de `/atendimento`, D-289, e a fusão `/cobertura` × `/reposicao`,
+D-288.)
 
-### Não era a frase, era o alcance
+### Uma candidata, não um menu
 
-D-267 já tinha trocado "os 100 mais recentes" por "100 de 929" — honesto, e
-insuficiente: **nenhum filtro da tela separa essas 100 do resto**, então os
-outros **829 abertos** do Dev não tinham como ser abertos por ela. `.limit(100)`
-virou `.range()`, com `PAGE_SIZE` **100** (o teto que a tela já mostrava —
-ninguém passa a ver menos fila do que via ontem).
+D-269 recusou o "Filtrar" do frame por ser funcionalidade e deixou **uma**
+candidata com número: **8.350 não lidas de 42.511**. Entraram duas pílulas
+("Todas" / "Não lidas (N)") e mais nada — severidade, tipo e conta continuam
+fora, porque nenhum número os pediu. O filtro mora no EMBED
+(`notification_recipients.read_at`): lido é estado por PESSOA, e filtrar em
+`notifications` responderia "alguém leu".
 
-### O 416 que ninguém tinha medido
+A janela passou a contar o recorte ("1 a 100 de 131 não lidas"), e a contagem
+da pílula é a mesma do painel — um dado, um dono.
 
-`.range()` além do fim **não** devolve lista vazia: o PostgREST responde
-**416 `PGRST103`** com `count` nulo. Medido no local com `support_cases`:
-`range(0, 99)` → 200 com 2 linhas; `range(100, 199)` → 416. Sem tratar,
-`?pagina=9` guardado nos Filtros Salvos vira "Não foi possível carregar" em
-vermelho, com o cartão "No recorte" mostrando **0**. Agora a tela diz que a
-página não existe e devolve à primeira **do mesmo recorte**.
+### A paginação veio junto, e não é escopo esticado
 
-**Quatro telas têm a mesma exposição** (`/importacoes`, `/importacoes/[id]`,
-`/notas-fiscais`, `/sugestoes`) e ficam registradas na decisão — o detector
-(`isPageBeyondEnd`) já mora no lugar compartilhado.
+A tela lia as 100 mais recentes: com o recorte ligado isso vira "as 100 não
+lidas mais recentes", o mesmo beco que D-289 tirou de `/atendimento` — e aqui
+o resto é maior, **42.411 fora da primeira página**.
 
-### A página viaja com o caso
+### A correção de D-289, medida
 
-Trocar filtro volta à página 1; o `?volta=` de D-286 pede a página de
-propósito, porque devolver à página 1 quem leu o caso da página 7 é o mesmo
-"recomeçar o recorte" que aquele parâmetro existe para evitar. Verificado:
-`volta=%2Fatendimento%3Fpagina%3D2`.
+O 416 `PGRST103` **não vem do `.range()` sozinho**: vem de `.range()` junto de
+`count: exact` na mesma consulta. Sem `count`, o mesmo pedido volta **200 com
+zero linhas** (conferido em duas tabelas). Como esta tela tira as contagens de
+consultas próprias (D-183), quem sabe que a página não existe é a
+**aritmética**, não o servidor — e a varredura das quatro telas com `.range()`
+ganhou uma pergunta antes: *aquela tela pede `count` junto?*
 
-### Vista de pé, com dado que o seed não tem
+### O teste que escreve deixa uma não lida de propósito
 
-O seed tem dois casos, e dois não formam duas páginas: **131 casos
-temporários** foram inseridos no local, fotografados e apagados na mesma
-rodada. Página 1 com 100 linhas e "Próxima →"; página 2 com 31 e
-"← Anterior"; pílula de 32px com a forma do design system.
+Com as duas do seed não lidas, o filtro não prova nada; o spec marca **uma**.
+A Home conta "Notificações não lidas" e ficaria sem o cartão se a suíte
+zerasse a caixa — lição de D-289 aplicada na primeira oportunidade.
 
 **Verificação:** `check` 29/29 (`--force`), build 8/8, integração 634/634,
-e2e **95/95**, cinco guardas verdes.
+e2e **97/97**, cinco guardas verdes. Renderizada a 1440px com 130 eventos
+temporários (limpos por `db reset`, porque `domain_events` não aceita DELETE).
 
 ## Próxima fatia segura
 
@@ -1118,7 +1117,13 @@ do seed — ou algum spec anterior já escreveu por cima dele?**
   `PGRST103`**, e sem tratar isso um `?pagina=9` antigo vira página vermelha —
   quatro outras telas com `.range()` têm a mesma exposição, registrada na
   decisão.
-- **Filtro de não lidas em `/notificacoes`** — 8.350 de 42.511 (D-269).
+- ~~**Filtro de não lidas em `/notificacoes`**~~ — **FEITO** (D-290): duas
+  pílulas, não o menu de filtros que o frame sugere — severidade, tipo e conta
+  continuam fora porque nenhum número os pediu. A paginação veio junto (as
+  42.411 fora da primeira página eram o mesmo beco de D-289), e a fatia
+  **corrigiu D-289**: o 416 do PostgREST exige `count: exact` na mesma consulta
+  — sem `count` o pedido volta 200 vazio, e aí quem sabe da página inexistente
+  é a aritmética.
 - **Lista de execuções que FALHARAM** — a versão útil da tabela que D-273
   recusou; exige RPC nova, porque `job_runs` não é legível pela web.
 - **A gaveta do Copiloto** — precisa de parâmetro de contexto na API e de
