@@ -184,3 +184,16 @@ Cada linha nasceu de um erro real. A decisão que a gerou está em
   — verde desde que nasceu, e teria passado igual se a função vazasse o SQL
   inteiro das migrations. Antes de confiar num guarda, pergunte se a consulta
   dele devolve alguma linha **na versão correta** (D-209).
+- **O defeito de cardinalidade se esconde na tela que MUDA a cardinalidade.**
+  ~25 telas liam `organization_members` com `maybeSingle()` sem filtro e
+  funcionavam por acidente enquanto a organização tinha um membro só (D-234).
+  A última a ficar quebrada foi `/usuarios` — justamente onde se cadastra o
+  segundo usuário. **A tela que o ato quebra era a tela que o ato usa**, então
+  ninguém a via quebrada: para ver, era preciso já ter feito lá o que a
+  quebrava. Quando um defeito depende de "quantos existem", procure primeiro na
+  tela que cria o segundo (D-271).
+- **"Há spec?" é pergunta de rotina, não de auditoria.** Feita em quatro fatias
+  seguidas, ela achou quatro telas de escrita com zero cobertura e2e — e na
+  quarta o defeito acima estava vivo. A cobertura seguiu as fatias de
+  desenvolvimento; telas nascidas fora delas ficaram sem nenhuma (D-268 a
+  D-271).

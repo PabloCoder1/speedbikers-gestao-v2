@@ -624,7 +624,8 @@ que ele renderiza.**
 | D28 | **Base de Conhecimento** — base VAZIA no Dev, mas o esquema sustenta o frame inteiro: falta DADO, não coluna (D-268) | ✔ |
 | D29 | **Central de Notificações** — o painel de detalhe do frame repete a linha e inventa um "Impacto estimado" que não tem coluna (D-269) | ✔ |
 | D30 | **Sugestões** — o MESMO mestre-detalhe que D29 recusou, aqui entra: nove campos estruturados contra três repetidos (D-270) | ✔ |
-| D31–D36 | Usuários, Integrações, Sincronização, Saúde, Configurações, Copiloto | fila |
+| D31 | **Usuários** — três das cinco colunas e um dos cinco cartões do frame não têm fonte; e a tela tinha um DEFEITO VIVO da classe de D-234, justamente onde se cadastra o segundo usuário (D-271) | ✔ |
+| D32–D36 | Integrações, Sincronização, Saúde, Configurações, Copiloto | fila |
 | D37 | Passe visual global | fila |
 
 ## Auditoria de Fidelidade Figma
@@ -808,86 +809,76 @@ O que resta é a fila **D31 em diante**: 7 superfícies ainda não migradas — 
 
 ## Última fatia concluída
 
-**D30 — Sugestões, pelo frame `CentralScreen` na variação de ideias (D-270).**
-A terceira e última variação do componente. Sem migration. **Fecha o bloco
-nomeado da fila** — o que resta é administração e o passe global.
+**D31 — Usuários, pelo frame `AdminScreen` na variação de acessos (D-271).**
+Primeira fatia fora das telas de operação. Sem migration.
 
-### O mesmo frame, a decisão oposta — e o contraste é o registro
+### A fatia achou um defeito VIVO, e ele estava onde menos podia estar
 
-D29 recusou o painel de detalhe em `/notificacoes`. Aqui o mesmo mestre-detalhe
-**entra**, e a diferença é medida, não estética:
+A tela lia `organization_members` com `.maybeSingle()` **sem filtrar por
+usuário**. Com dois membros o PostgREST responde `PGRST116`, `data` vira nulo, e
+a tela dizia *"Sua conta não está associada a nenhuma organização"* — para o
+próprio ADMIN.
 
-| | `/notificacoes` (D29) | `/sugestoes` (D30) |
+É a classe que D-234 corrigiu em ~25 telas. A ironia explica por que ninguém
+viu: **`/usuarios` é onde se cadastra o segundo usuário**, ou seja, a tela que o
+ato quebra é a tela que o ato usa. Achado abrindo a tela, que é o primeiro passo
+da rotina. Depois da correção, **não sobrou nenhuma leitura sem filtro**.
+
+### Três das cinco colunas e um dos cinco cartões não têm fonte
+
+| o que o frame desenha | existe? | decisão |
 |---|---|---|
-| o que o detalhe teria | **os mesmos três campos da linha** | **nove campos estruturados** |
-| campos sem fonte | "Impacto estimado R$ 8.400" | nenhum |
-| como estava antes | linha completa | `<details>` dentro de uma célula |
+| cartão "Convites Pendentes" | não há tabela de convite | fora |
+| coluna "Status" | sem convite, todo membro é ativo por construção | fora |
+| coluna "Último Acesso" | `auth.users.last_sign_in_at`: 0 colunas e 0 funções em `public` | fora |
+| "E-mail" em "Usuário / E-mail" | `profiles` é `id, full_name` e carimbos | fora |
 
-A versão anterior escondia os nove campos num `<details>` na tabela, com um
-comentário que se desculpava: *"para a tabela não explodir"*. O frame resolve
-isso, e o código já sabia que tinha um problema.
+**"Status" merece nota**: ela existiria com **um valor só**. Coluna de valor
+único não informa — promete que há um segundo valor. No lugar do "Último acesso"
+ficou "Desde", que é `created_at` do vínculo.
 
-**E a tabela tem MAIS campos do que o frame desenha** — ele mostra cinco, ela
-tem nove. Esconder campo preenchido por não estar no desenho seria jogar fora
-trabalho que a IA já fez (D-112).
+### Cinco papéis, três no frame
 
-### O texto original fica, e o frame não o desenha
+O `check` conhece `ADMIN`, `GESTOR`, **`ANALISTA`**, `OPERADOR` e
+**`VISUALIZADOR`**; o frame dá cartão a três. Com três, os cartões deixariam de
+fechar com o total no dia em que alguém for analista. A faixa ficou com **seis**
+células, e as vazias mostram zero (D-250). Mesma aritmética que denunciou o
+frame da Central Full (D-265).
 
-O detalhe do frame mostra só a versão estruturada. A página promete por escrito
-que *"o que você escreve fica preservado exatamente como foi escrito"* — e
-mostrar apenas a leitura da IA **substituiria a palavra da pessoa pela da
-máquina**. O original ganhou rótulo próprio ("COMO FOI ESCRITO"), acima dos
-campos. E a sugestão ainda não estruturada **diz isso**, em vez de abrir vazia.
+### A guarda de D-262 pegou a minha própria meia-migração
 
-### O último D-131 latente que eu conhecia
+Movi as duas tabelas para `.sb-table` e deixei `const th`/`const td` vivos.
+`check:table-styles`, escrito duas fatias atrás para exatamente isso, falhou na
+minha mudança — **primeiro achado dela em código novo**, não herdado.
 
-A tela lia `feature_suggestions` **sem `limit` nenhum** e imprimia
-`rows.length` como "N sugestão(ões) registrada(s)" — a forma exata do defeito
-que `/acoes` tinha vivo (D23). Só não mentia porque a tabela está vazia, e foi
-esta mesma tela que a varredura de D23 apontou como a única suspeita restante.
-Agora tem `range`, `count: exact` e janela declarada.
+### Quarta tela seguida com escrita e zero cobertura
 
-**Sete estados, três no frame** — terceira fatia seguida com essa correção
-(D25, D28, agora).
+E a mais grave das quatro: `/usuarios` é a única tela que pode **tirar o acesso
+de alguém**. O defeito acima viveu por não existir spec. Dos cinco casos novos,
+um entra como GESTOR e prova que o papel lido é o **dele** — a leitura antiga
+não sabia dizer de quem era o papel.
 
-### O seletor órfão que quase passou
-
-`/diagnostico` e esta tela querem a mesma grade, então ela virou
-`.sb-split-layout`. **O que quase escapou:** havia um `@media (max-width: 850px)`
-mirando `.sb-diagnostic-layout`, que deixou de existir. Órfão ali **não quebra
-build nem teste** — só faz `/diagnostico` parar de colapsar em uma coluna no
-celular, em silêncio. Achado relendo o CSS depois da extração.
-
-### Terceira tela seguida com escritas e zero cobertura
-
-Depois de `/atendimento/conhecimento` e `/notificacoes`, são **três seguidas** —
-e as três apareceram pela mesma pergunta de rotina ("há spec?"), não por acaso.
-Vale como achado sobre o projeto, não sobre estas telas: **a cobertura e2e
-seguiu as fatias de desenvolvimento, e telas de escrita nascidas fora delas
-ficaram sem nenhuma.**
-
-**Verificação, local:** `check` **29/29** (11 testes novos), e2e **56/56** em
-banco recriado (2 novos), build **8/8**, `check:waterfalls` 60,
-`check:server-actions` 17, `check:table-styles` 17, `docs:check`. Capturada a
-1440px contra o Supabase local.
+**Verificação, local:** `check` **29/29**, e2e **61/61** em banco recriado (5
+novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17,
+`check:table-styles` 18, `docs:check`. Capturada a 1440px contra o Supabase
+local.
 
 ## Próxima fatia segura
 
-**D31–D36 — o bloco de administração**: Usuários, Integrações, Sincronização,
-Saúde, Configurações e Copiloto. É a primeira vez que a fila deixa as telas de
-operação e entra nas de configuração, e o frame as trata pelo `kind: "admin"` —
-**localizar essa variação antes de desenhar**, porque pode ser genérica como a
-de Tráfego era (D-266).
+**D32–D36 — o resto do bloco de administração**: Integrações, Sincronização,
+Saúde, Configurações e Copiloto. **As cinco existem** — a checagem de D31
+desmentiu a nota do HANDOFF que dizia faltarem Integrações e Configurações.
 
-Duas dessas telas nasceram na trilha 8A (Usuários em D-175, Saúde em D-176) e
-duas ainda não existem (Integrações e Configurações, pelo `docs/HANDOFF.md`).
-**Conferir quais existem antes de planejar a ordem** — migrar o que não existe
-é criar, não migrar, e D-266 já registrou que a fila é lista de frames a
-avaliar, não contrato de entrega.
+D31 mostrou o que esperar deste bloco: **frames de administração descrevem
+produtos com fluxo de convite, provisionamento e telemetria de sessão, e este
+não tem nenhum dos três**. A pergunta "o frame tem fonte?" (D-266) rende mais
+aqui do que rendia nas telas de operação.
 
 A rotina, com as quatro perguntas acumuladas: **o frame tem fonte?** (D-266),
 **falta coluna ou falta dado?** (D-268), **quantas linhas no Dev?** (D-263) e **a
-faixa conta o mesmo conjunto da tabela ou é navegação?** (D-265).
+faixa conta o mesmo conjunto da tabela ou é navegação?** (D-265). E a quinta,
+que D31 acrescenta: **há spec?** — foi ela que achou as quatro telas de escrita
+sem cobertura, e numa delas o defeito estava vivo.
 
 Depois delas, só o **passe visual global (D37)**.
 

@@ -19,7 +19,7 @@
 | **Deploy no ar** | ⚠️ **`0702969`, e o `HEAD` está 64 commits à frente** (medido em 2026-09-08). A última verificação contra a infraestrutura foi em 2026-09-02 e dizia "sem atraso" -- era verdade **naquele dia**, e esta linha continuou afirmando isso enquanto o `HEAD` andava, que é precisamente o risco de D-070. Os 64 commits **tocam `apps/api` e `apps/worker`** (copiloto, `ml-fulfillment-fetch`, `sync-fulfillment-snapshot`, `sync-order-financials`), então não é atraso só de front. **Se o deploy avançou desde então, não dá para saber daqui** -- conferir `APP_COMMIT` nos dois serviços antes de concluir qualquer coisa sobre produção. Referência da última medição: `api-00030-gqw` / `worker-00045-cwq`, `/health` em `{"commit":"0702969"}` |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | **153 locais** — as três da frente visual (`20260908120000` D-263, `20260908180000` D-264, `20260908210000` D-265). As duas primeiras CONFERIDAS no Dev pelo catálogo; a de D-265 empurrada em seguida. ⚠️ **D-257 deixou de ser inferência**: no push de D23 a função já estava no Dev com a esteira em `in_progress`, e a esteira terminou VERDE nos cinco jobs — inclusive o de aplicar migrations, que passou tendo NADA a aplicar. Verde ali significa "não sobrou o que fazer", não "o portão segurou". ⚠️ Quem aplica no Dev é a integração GitHub do Supabase, **não** a CI (D-257). Antes dela: **131 locais, 130 no Dev** — o expurgo (`20260903120000`) está no git e **não pousou**; a CI não o aplicou, sem drift — D-209→D-212 aplicadas pela CI em 2026-09-02 e CONFERIDAS lá (`anon` alcança 0 funções; `ml_accounts` sem UPDATE/DELETE para `authenticated`; `created_by` presente). O caminho é o push, **nunca** o MCP (lição de D-207) |
-| **Frente atual** | **Frente visual**: D18→D25 e D27→D30 entregues (+A3/A3b) — o bloco NOMEADO da fila fechou. **Próxima: D31–D36, administração**; D26 (Tráfego) foi avaliada e RECUSADA por falta de fonte — zero colunas de impressão/Ads/reputação no schema (D-266). ⚠️ **`/cobertura` nunca foi migrada** (D-261). O guarda `check:table-styles` (D-262) reprova a migração pela metade e cobre **uma metade só** — tela que nunca declarou `.sb-table` depende da captura. Trilha 8B com P0 fechado (A–H) e em P1 |
+| **Frente atual** | **Frente visual**: D18→D25, D27→D31 entregues (+A3/A3b). **Próxima: D32–D36, administração** (as cinco existem); D26 (Tráfego) foi avaliada e RECUSADA por falta de fonte (D-266). ⚠️ **`/cobertura` nunca foi migrada** (D-261). O guarda `check:table-styles` (D-262) reprova a migração pela metade e cobre **uma metade só** — tela que nunca declarou `.sb-table` depende da captura. Trilha 8B com P0 fechado (A–H) e em P1 |
 
 ### O que está pronto
 
@@ -27,7 +27,8 @@ Fases 0–4, 5A–5D, 6, 6B, 7, 7B e 9 (backend) concluídas nos critérios
 registrados. A trilha 5E entregou as seis centrais analíticas
 (Movimentações, Dashboard 360º do Anúncio, abas do SKU, Preços, Full,
 Fornecedor). A 8A entregou Usuários/Permissões (D-175) e Saúde do
-Sistema (D-176); faltam Integrações e Configurações.
+Sistema (D-176). **Integrações e Configurações também existem** — a checagem de
+D-271 desmentiu a nota anterior, que dizia faltarem.
 
 Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 `docs/DECISIONS_INDEX.md` → `D-xxx` em `docs/DECISIONS.md`.

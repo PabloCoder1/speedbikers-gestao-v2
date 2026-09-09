@@ -1,8 +1,13 @@
 import type { ReactNode } from "react";
 
+import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
+import { PageTitle } from "../../components/page-title";
+import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
-import { formatDateTime } from "../../lib/format";
+import { formatCount, formatDateTime } from "../../lib/format";
+import { roleLabel } from "../../lib/labels";
 import { createClient } from "../../lib/supabase/server";
+import { currentMembership } from "../../lib/membership";
 import { AccountAccessControls, RoleSelect } from "./member-controls";
 
 export const metadata = { title: "Usuários — Speed Bikers Gestão" };
@@ -40,24 +45,6 @@ interface MemberRow {
   profiles: { full_name: string | null } | null;
 }
 
-const th: React.CSSProperties = {
-  textAlign: "left",
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.75rem",
-  textTransform: "uppercase",
-  letterSpacing: "0.04em",
-  color: "var(--sb-text-soft)",
-  whiteSpace: "nowrap",
-};
-
-const td: React.CSSProperties = {
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.875rem",
-  verticalAlign: "top",
-};
-
 function eventoLabel(row: {
   event_type: string;
   previous_role: string | null;
@@ -83,13 +70,27 @@ function eventoLabel(row: {
 export default async function UsuariosPage(): Promise<ReactNode> {
   const supabase = await createClient();
 
-  const membership = await supabase
-    .from("organization_members")
-    .select("organization_id, role")
-    .maybeSingle();
+  /*
+    DEFEITO VIVO, achado abrindo a tela nesta fatia (D-271).
 
-  const organizationId = membership.data?.organization_id ?? null;
-  const myRole = membership.data?.role ?? null;
+    Isto era `.from("organization_members").select(...).maybeSingle()` — **sem
+    filtrar por usuário**. Sob RLS aquela leitura devolve TODOS os membros da
+    organização; com dois, o PostgREST responde `PGRST116`, `data` vira nulo e a
+    tela dizia "Sua conta não está associada a nenhuma organização" **para o
+    próprio ADMIN**.
+
+    É exatamente a classe que D-234 corrigiu em ~25 telas — e que passou por
+    esta. A ironia importa para entender por que ninguém viu: `/usuarios` é
+    justamente onde se cadastra o segundo usuário, ou seja, a tela que o ato
+    quebra é a tela que o ato usa.
+
+    `currentMembership` lê pela RPC `get_current_membership`, que filtra por
+    `auth.uid()`, e é o que todas as outras telas já usavam.
+  */
+  const membership = await currentMembership(supabase);
+
+  const organizationId = membership.organizationId;
+  const myRole = membership.role;
 
   if (organizationId === null) {
     return (
@@ -128,16 +129,63 @@ export default async function UsuariosPage(): Promise<ReactNode> {
 
   const erro = membersResult.error ?? accountsResult.error ?? permissionsResult.error;
 
+  /*
+    Os CINCO papéis do `check` de `organization_members`, na ordem de alcance.
+    Contados sobre a lista inteira — ela não pagina, e a RLS já a restringe à
+    organização, então `members.length` É o total, não o tamanho de uma página.
+  */
+  const PAPEIS = ["ADMIN", "GESTOR", "ANALISTA", "OPERADOR", "VISUALIZADOR"] as const;
+
+  const celulas: KpiCellData[] = [
+    {
+      label: "Membros",
+      formula: "Pessoas com vínculo ativo nesta organização, em qualquer papel.",
+      value: formatCount(members.length),
+      previous: null,
+      tom: "neutro",
+    },
+    ...PAPEIS.map(
+      (papel): KpiCellData => ({
+        label: roleLabel(papel),
+        formula: `Membros com papel ${papel}.`,
+        value: formatCount(members.filter((m) => m.role === papel).length),
+        previous: null,
+        // ADMIN é o papel que muda permissão dos outros; os demais são
+        // neutros. Nenhum é "bom" ou "ruim" — só um tem alcance diferente.
+        tom: papel === "ADMIN" ? "atencao" : "neutro",
+      }),
+    ),
+  ];
+
   return (
     <Shell>
-      <h1 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.375rem" }}>Usuários</h1>
+      <PageTitle
+        eyebrow="ADMINISTRAÇÃO / USUÁRIOS E ACESSOS"
+        title="Usuários"
+        subtitle={
+          <>
+            Pessoas, papéis e alcance de cada permissão.{" "}
+            {isAdmin
+              ? "Como ADMIN, você pode alterar papel e acesso — e o banco impede que a organização fique sem nenhum ADMIN."
+              : "Só um ADMIN altera papéis e acessos; esta tela é somente leitura para você."}
+          </>
+        }
+      />
 
-      <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
-        Membros da organização, o papel de cada um e a quais contas do Mercado Livre têm acesso.{" "}
-        {isAdmin
-          ? "Como ADMIN, você pode alterar papel e acesso — e o banco impede que a organização fique sem nenhum ADMIN."
-          : "Só um ADMIN altera papéis e acessos; esta tela é somente leitura para você."}
-      </p>
+      {/*
+        SEIS células, e o frame desenha cinco — mas não são as mesmas cinco.
+
+        Ele dá cartão a Administradores, Gestores e Operadores, e o `check` de
+        `organization_members` conhece CINCO papéis: ADMIN, GESTOR, **ANALISTA**,
+        OPERADOR e **VISUALIZADOR**. Mostrar três faria os cartões não fecharem
+        com o total no dia em que alguém for cadastrado como analista — a mesma
+        aritmética que denunciou o frame da Central Full (D-265).
+
+        E a quinta célula dele, "Convites Pendentes", NÃO ENTRA: não existe
+        tabela de convite no esquema. Um cartão sempre em zero prometeria um
+        fluxo que a tela não tem.
+      */}
+      <KpiStrip cells={celulas} />
 
       {erro !== null && (
         <p role="alert" style={{ color: "var(--sb-danger)" }}>
@@ -145,14 +193,36 @@ export default async function UsuariosPage(): Promise<ReactNode> {
         </p>
       )}
 
-      <div style={{ overflowX: "auto", marginBottom: "var(--sb-space-4)" }}>
-        <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "42rem" }}>
+      <div style={{ marginTop: "var(--sb-space-3)" }}>
+      <Panel
+        title="Gerenciar acessos"
+        subtitle="O papel decide o que a pessoa PODE fazer; as contas decidem sobre o que ela faz."
+      >
+      <div style={{ overflowX: "auto" }}>
+        <table className="sb-table">
           <thead>
             <tr>
-              <th style={th}>Pessoa</th>
-              <th style={th}>Papel</th>
-              <th style={th}>Contas com acesso</th>
-              <th style={th}>Desde</th>
+              {/*
+                O frame mostra "Usuário / E-mail". O e-mail NÃO ENTRA: `profiles`
+                tem `id`, `full_name`, `created_at` e `updated_at` — o endereço
+                vive em `auth.users`, que o PostgREST não expõe. Buscá-lo exigiria
+                uma função `security definer` só para exibir contato, e isso é
+                feature, não composição.
+              */}
+              <th>Pessoa</th>
+              <th>Papel</th>
+              <th>Contas com acesso</th>
+              {/*
+                Onde o frame põe "Status" e "Último acesso" — as duas sem fonte.
+                Status seria coluna de um valor só: não há tabela de convite, logo
+                todo membro está ativo por construção. E o último acesso é
+                `auth.users.last_sign_in_at`, fora do alcance do PostgREST;
+                nenhuma coluna nem função em `public` o expõe (medido).
+
+                "Desde" fica: é `created_at` do vínculo, e responde a pergunta
+                vizinha — há quanto tempo esta pessoa tem este acesso.
+              */}
+              <th>Desde</th>
             </tr>
           </thead>
           <tbody>
@@ -163,12 +233,12 @@ export default async function UsuariosPage(): Promise<ReactNode> {
 
               return (
                 <tr key={member.user_id}>
-                  <td style={td}>
+                  <td>
                     {member.profiles?.full_name ?? (
                       <span style={{ color: "var(--sb-text-soft)" }}>sem nome no perfil</span>
                     )}
                   </td>
-                  <td style={td}>
+                  <td>
                     {isAdmin ? (
                       <RoleSelect
                         organizationId={member.organization_id}
@@ -179,7 +249,7 @@ export default async function UsuariosPage(): Promise<ReactNode> {
                       member.role
                     )}
                   </td>
-                  <td style={td}>
+                  <td>
                     {isAdmin ? (
                       <AccountAccessControls
                         userId={member.user_id}
@@ -195,24 +265,31 @@ export default async function UsuariosPage(): Promise<ReactNode> {
                       granted.map((id) => contaPorId.get(id) ?? id).join(", ")
                     )}
                   </td>
-                  <td style={td}>{formatDateTime(member.created_at)}</td>
+                  <td style={{ whiteSpace: "nowrap" }}>{formatDateTime(member.created_at)}</td>
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
+      </Panel>
+      </div>
 
       {isAdmin && (
-        <>
-          <h2 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.0625rem" }}>Histórico de acesso</h2>
+        <div style={{ marginTop: "var(--sb-space-3)" }}>
+          {/*
+            A JANELA VAI NO SUBTÍTULO, e não no `aside` do painel.
 
-          <p style={{ margin: "0 0 var(--sb-space-2)", fontSize: "0.75rem", color: "var(--sb-muted-ink)" }}>
-            Gravado pelo próprio banco, append-only: nem esta tela nem a API conseguem editar ou apagar uma
-            linha. O registro começa em 01/09/2026 — mudanças anteriores não existem aqui, e evento sintético
-            seria dado inventado.
-          </p>
-
+            `.sb-panel-head` é flex com `wrap`: subtítulo longo empurra o
+            `aside` para a linha de baixo, à esquerda, onde "últimas 50" vira
+            um rótulo solto sem dono. O que precisa ser dito é o TAMANHO DA
+            JANELA (D-131) — dizer isso na frase custa nada e não depende do
+            comprimento do texto vizinho.
+          */}
+          <Panel
+            title="Histórico de acesso"
+            subtitle="Gravado pelo próprio banco, append-only: nem esta tela nem a API conseguem editar ou apagar uma linha. O registro começa em 01/09/2026 — mudanças anteriores não existem aqui, e evento sintético seria dado inventado. Mostra as 50 mudanças mais recentes."
+          >
           {events.length === 0 && (
             <p style={{ color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
               Nenhuma mudança de acesso registrada ainda.
@@ -221,21 +298,21 @@ export default async function UsuariosPage(): Promise<ReactNode> {
 
           {events.length > 0 && (
             <div style={{ overflowX: "auto" }}>
-              <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "42rem" }}>
+              <table className="sb-table">
                 <thead>
                   <tr>
-                    <th style={th}>Quando</th>
-                    <th style={th}>Quem mudou</th>
-                    <th style={th}>Sobre quem</th>
-                    <th style={th}>O quê</th>
-                    <th style={th}>Conta</th>
+                    <th>Quando</th>
+                    <th>Quem mudou</th>
+                    <th>Sobre quem</th>
+                    <th>O quê</th>
+                    <th>Conta</th>
                   </tr>
                 </thead>
                 <tbody>
                   {events.map((event) => (
                     <tr key={event.id}>
-                      <td style={{ ...td, whiteSpace: "nowrap" }}>{formatDateTime(event.occurred_at)}</td>
-                      <td style={td}>
+                      <td style={{ whiteSpace: "nowrap" }}>{formatDateTime(event.occurred_at)}</td>
+                      <td>
                         {event.actor_user_id === null ? (
                           // Sem humano identificado: seed, importação ou
                           // migration. Declarar é melhor que inventar.
@@ -244,9 +321,9 @@ export default async function UsuariosPage(): Promise<ReactNode> {
                           (nomePorUsuario.get(event.actor_user_id) ?? event.actor_user_id)
                         )}
                       </td>
-                      <td style={td}>{nomePorUsuario.get(event.target_user_id) ?? event.target_user_id}</td>
-                      <td style={td}>{eventoLabel(event)}</td>
-                      <td style={{ ...td, color: "var(--sb-text-soft)" }}>
+                      <td>{nomePorUsuario.get(event.target_user_id) ?? event.target_user_id}</td>
+                      <td>{eventoLabel(event)}</td>
+                      <td style={{ color: "var(--sb-text-soft)" }}>
                         {event.ml_account_id === null ? "—" : (contaPorId.get(event.ml_account_id) ?? event.ml_account_id)}
                       </td>
                     </tr>
@@ -255,7 +332,8 @@ export default async function UsuariosPage(): Promise<ReactNode> {
               </table>
             </div>
           )}
-        </>
+          </Panel>
+        </div>
       )}
     </Shell>
   );

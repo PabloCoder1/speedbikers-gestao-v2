@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **266** (D-001 a D-270).
+Decisões registradas: **267** (D-001 a D-271).
 
 ## Por domínio
 
@@ -110,7 +110,7 @@ Decisões registradas: **266** (D-001 a D-270).
 - **D-252** — D17: os KPIs de Movimentacoes CONTAM linha, e somar unidade seria mentira de milhoes
 - **D-265** — D25: Central Full pelo frame, e o estado que ele esconde e o MAIOR de todos
 
-### interface (24)
+### interface (25)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -136,6 +136,7 @@ Decisões registradas: **266** (D-001 a D-270).
 - **D-261** — A3b: as duas dividas de acabamento eram codigo, e uma migracao declarada nao tinha sido feita
 - **D-263** — D23: a Central de Acoes pelo frame, e a tela escondia 449 acoes chamando isso de total
 - **D-266** — D26 (Trafego) NAO vira tela: o frame inteiro depende de dado que o sistema nao tem
+- **D-271** — D31: Usuarios, e a tela que o ato quebra e a tela que o ato USA
 
 ### mercado-livre (43)
 

@@ -7183,3 +7183,61 @@ Não reverter decisão existente silenciosamente. Registrar nova decisão que su
 **7. `entityHref` linkava anuncio a lugar nenhum, e o conserto exigiu uma guarda.** O helper devolvia `null` para `entity_type = 'listing'` sob o comentario "anuncio ainda nao tem tela propria" — registro envelhecido desde D-168. Mas **nem todo evento de anuncio carrega um MLB em `entity_id`**: `listing.fulfillment.entered` grava o `inventoryId` ali, e inventory e item sao identificadores distintos (a tabela guarda os dois em colunas separadas). Linkar sem conferir mandaria essas notificacoes para uma pagina 404. O link so nasce quando `entity_id` casa `^MLB[0-9]+$`, e ha teste para as duas pontas. **Foi a refutacao adversarial da investigacao que pegou isso** — a versao anterior do link ja estava escrita e passava no typecheck.
 
 **8. `domain_events` e append-only para `service_role`, e o seed descobriu isso do jeito certo.** A tabela concede INSERT e nega UPDATE; `upsert` e INSERT … ON CONFLICT DO UPDATE, entao ele falha com 42501. Um evento de dominio nao se corrige — se estivesse errado, o certo e um evento novo. O seed passou a usar existe-entao-insere com `dedup_key`. Junto entraram a republicacao (em estado terminal de falha, o unico que nao exige inventar um anuncio filho), a acao com `mlb_id` e a decisao sobre ela: sem os quatro, tres abas nasceriam vazias e nao haveria o que afirmar nem o que capturar.
+
+## D-271 - D31: Usuarios, e a tela que o ato quebra e a tela que o ato USA
+
+**Contexto:** `/usuarios` pelo frame `AdminScreen` na variacao de acessos. Primeira fatia fora das telas de operacao. Sem migration.
+
+---
+
+**1. UM DEFEITO VIVO, E ELE ESTAVA EXATAMENTE ONDE MENOS DEVIA**
+
+A tela lia `organization_members` com `.maybeSingle()` **sem filtrar por usuario**. Sob RLS aquela leitura devolve TODOS os membros da organizacao; com dois, o PostgREST responde `PGRST116`, `data` vira nulo e a tela dizia *"Sua conta nao esta associada a nenhuma organizacao"* -- **para o proprio ADMIN**.
+
+E a classe que D-234 corrigiu em ~25 telas. Ela sobreviveu aqui, e a ironia nao e enfeite, e a explicacao de por que ninguem viu: **`/usuarios` e onde se cadastra o segundo usuario**. Ou seja, a tela que o ato quebra e a tela que o ato usa -- quem fosse fazer a operacao encontraria a porta fechada pela propria operacao.
+
+Trocado por `currentMembership(supabase)`, que le pela RPC `get_current_membership` filtrando por `auth.uid()` -- o que todas as outras telas ja usavam. **Varredura depois da correcao: nao ha mais nenhuma leitura de `organization_members` sem filtro** fora da lista da propria tela (que quer todos, de proposito) e da escrita em `actions.ts`.
+
+**Achado abrindo a tela.** Nao houve ferramenta: a fatia comeca lendo o frame e olhando a tela, e a tela dizia a frase errada.
+
+**2. TRES DAS CINCO COLUNAS E UM DOS CINCO CARTOES NAO TEM FONTE**
+
+Medido contra o esquema, nao estimado:
+
+| o que o frame desenha | existe? | onde estaria | decisao |
+|---|---|---|---|
+| cartao "Convites Pendentes" | **nao** | nao ha tabela de convite (`0` tabelas com `invit`/`convite` no nome) | fora |
+| coluna "Status" | **nao** | sem convite, todo membro esta ativo por construcao | fora |
+| coluna "Ultimo Acesso" | **nao** | `auth.users.last_sign_in_at`: **0** colunas e **0** funcoes em `public` o alcancam | fora |
+| metade "E-mail" de "Usuario / E-mail" | **nao** | `profiles` e `id, full_name, created_at, updated_at` | fora |
+| coluna "Papel" | sim | `organization_members.role` | entra |
+
+**"Status" merece o registro separado**: ela existiria e teria **um valor so**. Coluna de valor unico nao informa -- ela PROMETE que ha um segundo valor. Sem fluxo de convite, "Ativo" em toda linha e ruido com cara de dado.
+
+Buscar o e-mail exigiria uma funcao `security definer` so para exibir contato: **isso e feature, nao composicao** -- a mesma linha que recusou a exportacao em D-264 e o filtro em D-269. No lugar do "Ultimo Acesso" ficou **"Desde"**, que e `created_at` do vinculo e responde a pergunta vizinha: ha quanto tempo esta pessoa tem este acesso.
+
+**3. CINCO PAPEIS, TRES NO FRAME -- E A CONTA E QUE DECIDE**
+
+O frame da cartao a Administradores, Gestores e Operadores. O `check` de `organization_members` conhece **cinco**: `ADMIN`, `GESTOR`, **`ANALISTA`**, `OPERADOR` e **`VISUALIZADOR`**.
+
+Com tres, os cartoes deixariam de fechar com o total no dia em que alguem for cadastrado como analista -- e um painel cujas partes nao somam o todo e pior que um painel sem partes. A faixa ficou com **seis** celulas: Membros mais os cinco papeis. **Os tres papeis vazios aparecem em ZERO**, porque esconder linha vazia faria os cartoes mentirem sobre o que EXISTE (D-250).
+
+E a mesma aritmetica que denunciou o frame da Central Full (D-265). Terceira fatia seguida em que o desenho mostra menos estados do que o banco tem.
+
+**4. A GUARDA DE D-262 PEGOU A MINHA PROPRIA MEIA-MIGRACAO**
+
+Movi as duas tabelas para `.sb-table` e **deixei `const th` e `const td` vivos no arquivo**. `check:table-styles`, escrito duas fatias atras justamente para isso, falhou na minha mudanca. E o primeiro achado dela em codigo novo, e nao em codigo herdado.
+
+**5. QUARTA TELA SEGUIDA COM ESCRITA E ZERO COBERTURA**
+
+Depois de `/atendimento/conhecimento` (D-268), `/notificacoes` (D-269) e `/sugestoes` (D-270), esta e a **quarta**. E a mais grave das quatro: `/usuarios` altera papel e acesso, e **e a unica tela do produto que pode tirar o acesso de alguem**. O defeito do item 1 viveu por nao existir spec.
+
+Os cinco casos novos incluem o que faltava: **abrir a tela com DOIS membros**. O seed ja tinha o segundo (D-234 o criou exatamente para expor esta classe) -- faltava alguem olhar `/usuarios` com ele. Um dos casos entra como GESTOR, e prova que o papel lido e o **dele**: a leitura antiga devolvia a lista inteira e nao sabia dizer de quem era o papel.
+
+**6. A JANELA VAI NO SUBTITULO, NAO NO `aside`**
+
+`.sb-panel-head` e flex com `wrap`: subtitulo longo empurra o `aside` para a linha de baixo, a esquerda, onde "ultimas 50" vira rotulo solto sem dono. O que precisa ser dito e o TAMANHO DA JANELA (D-131), e dizer isso na frase nao depende do comprimento do texto vizinho. O historico de acesso passou a declarar "Mostra as 50 mudancas mais recentes" no proprio subtitulo.
+
+**Impacto:** `apps/web/app/usuarios/page.tsx` (leitura corrigida, `PageTitle`, faixa de seis, dois `Panel`, as duas tabelas em `.sb-table`), `apps/web/e2e/usuarios.spec.ts` (novo, 5 casos). Sem migration, sem CSS novo.
+
+**Verificacao, local:** `check` **29/29**, e2e **61/61** em banco recriado (5 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17, `check:table-styles` 18, `docs:check`. Capturada a 1440px contra o Supabase local.
