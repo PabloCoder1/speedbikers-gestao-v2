@@ -117,3 +117,59 @@ test("/sincronizacao: o que o frame desenha e a tela recusa não aparece", async
   await expect(bf.getByRole("cell", { name: "Concluída" })).toBeVisible();
   await expect(bf.getByText("done", { exact: true })).toHaveCount(0);
 });
+
+/**
+ * A LISTA DE FALHAS (D-291) — o item que D-273 deixou aberto por escrito.
+ *
+ * Ela não lê `job_runs`: a tabela continua com RLS e zero policies. Quem lê é
+ * `get_job_failures`, `security definer` com a autorização ADMIN refeita
+ * dentro, devolvendo AGREGADO — nunca a linha de execução.
+ *
+ * **O caso central é o agrupamento**, e ele é a razão de a lista existir: no
+ * Dev, 473 falhas de 7 dias carregam 170 motivos crus e viram 16 assinaturas,
+ * porque o texto do erro traz o id da entidade. O seed reproduz isso em
+ * miniatura: duas falhas que diferem só no MLB precisam virar UMA linha.
+ */
+test("/sincronizacao: as falhas vêm agrupadas por motivo, com o id fora da assinatura", async ({ page }) => {
+  await login(page, "/sincronizacao");
+
+  const painel = page.getByRole("region", { name: "Execuções que falharam" });
+
+  await expect(painel).toBeVisible();
+
+  // As duas falhas de `/items/MLB…` do seed: uma linha só, com o id virando #.
+  const familia = painel.getByRole("row", { name: /GET \/items\/MLB#/ });
+
+  await expect(familia).toHaveCount(1);
+  await expect(familia).toContainText("2 motivos nesta família");
+
+  // O código HTTP SOBREVIVE à assinatura — é ele que diz o que investigar, e
+  // por isso a normalização só apaga corridas de 4+ dígitos.
+  await expect(familia).toContainText("404");
+
+  // E o exemplo cru devolve o id que a assinatura apagou.
+  await expect(familia).toContainText("MLB440000000");
+
+  // A falha 429 do seed é outra família, e traz o retryable do banco.
+  await expect(painel.getByRole("row", { name: /429 Too Many Requests/ })).toHaveCount(1);
+});
+
+/**
+ * A recusa de D-273 continua de pé, e é maior que a lista que entrou: o frame
+ * desenha execuções INDIVIDUAIS, com uma coluna "Conta" que `job_runs` não
+ * tem.
+ */
+test("/sincronizacao: a lista de falhas não virou o log cru que o frame desenha", async ({ page }) => {
+  await login(page, "/sincronizacao");
+
+  const painel = page.getByRole("region", { name: "Execuções que falharam" });
+
+  // Sem colunas de execução individual: conta, duração e itens processados.
+  await expect(painel.getByRole("columnheader", { name: "Conta" })).toHaveCount(0);
+  await expect(painel.getByRole("columnheader", { name: /Dura/ })).toHaveCount(0);
+  await expect(painel.getByRole("columnheader", { name: /Itens/ })).toHaveCount(0);
+
+  // E as chaves internas do worker não vazam para a tela.
+  await expect(painel.getByText(/dedupe/i)).toHaveCount(0);
+  await expect(painel.getByText(/e2e:seed:/)).toHaveCount(0);
+});

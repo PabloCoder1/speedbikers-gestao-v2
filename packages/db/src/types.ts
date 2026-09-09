@@ -4314,6 +4314,26 @@ export type Database = {
           visits: number
         }[]
       }
+      // ENTRADA MANUAL (D-291): a migration `20260909190000` ainda nao passou
+      // pelo gerador do MCP, que le o Dev. A assinatura aqui foi copiada de
+      // `pg_get_function_result` no banco local, e o teste de integracao a fixa
+      // -- se divergirem, ele reprova antes do CI.
+      get_job_failures: {
+        Args: { p_days?: number | null; p_limit?: number | null }
+        Returns: {
+          job_type: string
+          reason_signature: string
+          failures: number
+          distinct_reasons: number
+          retryable_failures: number
+          first_failed_at: string
+          last_failed_at: string
+          // O `array_agg(...)[1]` devolve NULL quando a familia inteira nao
+          // tem motivo registrado -- `reason` e opcional em `failed` (o CHECK
+          // exige `retryable`, nao `reason`).
+          sample_reason: string | null
+        }[]
+      }
       get_processing_health: {
         Args: { p_organization_id: string }
         Returns: {

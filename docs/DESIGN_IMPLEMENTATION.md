@@ -1001,47 +1001,59 @@ está na "Próxima fatia segura".
 
 ## Última fatia concluída
 
-**O RECORTE DE NÃO LIDAS EM `/notificacoes` (D-290)** — o segundo item aberto
-seguido, e o que corrigiu uma afirmação da fatia anterior. (Antes dela:
-a paginação de `/atendimento`, D-289, e a fusão `/cobertura` × `/reposicao`,
-D-288.)
+**A LISTA DE EXECUÇÕES QUE FALHARAM (D-291)** — o terceiro item aberto seguido,
+e o primeiro **com migration**. (Antes: o recorte de não lidas, D-290; a
+paginação de `/atendimento`, D-289; a fusão `/cobertura` × `/reposicao`, D-288.)
 
-### Uma candidata, não um menu
+### A lista crua não resolveria, e o número é esse
 
-D-269 recusou o "Filtrar" do frame por ser funcionalidade e deixou **uma**
-candidata com número: **8.350 não lidas de 42.511**. Entraram duas pílulas
-("Todas" / "Não lidas (N)") e mais nada — severidade, tipo e conta continuam
-fora, porque nenhum número os pediu. O filtro mora no EMBED
-(`notification_recipients.read_at`): lido é estado por PESSOA, e filtrar em
-`notifications` responderia "alguém leu".
+D-273 recusou a tabela do frame porque 65% das execuções são de um job só. A
+saída óbvia — "filtre por falha" — **não escapa do firehose**: das 473 falhas de
+7 dias no Dev, **370 (78%) são `sync.webhook.received`**, com **170 motivos
+distintos** entre as 473.
 
-A janela passou a contar o recorte ("1 a 100 de 131 não lidas"), e a contagem
-da pílula é a mesma do painel — um dado, um dono.
+Quem resolve é a ASSINATURA do motivo, porque o texto do erro carrega ids:
 
-### A paginação veio junto, e não é escopo esticado
+| regra | assinaturas |
+|---|---:|
+| motivos crus | 170 |
+| todo dígito vira `#` | 15 |
+| **só corridas de 4+ dígitos** | **16** |
 
-A tela lia as 100 mais recentes: com o recorte ligado isso vira "as 100 não
-lidas mais recentes", o mesmo beco que D-289 tirou de `/atendimento` — e aqui
-o resto é maior, **42.411 fora da primeira página**.
+A escolhida é a de 4+, e a diferença entre 15 e 16 é o argumento: normalizar
+todo dígito apagaria o **código HTTP**, que é o diagnóstico. A regra é
+declarada no subtítulo do painel — agrupar por regra dita é diferente de
+inventar categoria.
 
-### A correção de D-289, medida
+### A decisão que D-273 adiou: expor log de execução
 
-O 416 `PGRST103` **não vem do `.range()` sozinho**: vem de `.range()` junto de
-`count: exact` na mesma consulta. Sem `count`, o mesmo pedido volta **200 com
-zero linhas** (conferido em duas tabelas). Como esta tela tira as contagens de
-consultas próprias (D-183), quem sabe que a página não existe é a
-**aritmética**, não o servidor — e a varredura das quatro telas com `.range()`
-ganhou uma pergunta antes: *aquela tela pede `count` junto?*
+`job_runs` continua com RLS e **zero policies**. O que entrou é uma janela:
+`get_job_failures`, `security definer`, autorização ADMIN refeita dentro, saída
+agregada — sem `dedupe_key`, `job_id`, `attempt` nem `processed`. O escopo
+repete D-209 (organizações administradas **mais** os jobs de plataforma, senão
+o heartbeat some).
 
-### O teste que escreve deixa uma não lida de propósito
+**A guarda de D-182 reprovou a suíte no primeiro run** (`+ "get_job_failures"`
+na lista versionada de RPCs definer) — que é exatamente o ritual que ela existe
+para forçar.
 
-Com as duas do seed não lidas, o filtro não prova nada; o spec marca **uma**.
-A Home conta "Notificações não lidas" e ficaria sem o cartão se a suíte
-zerasse a caixa — lição de D-289 aplicada na primeira oportunidade.
+### O índice, medido em transação revertida contra o Dev
 
-**Verificação:** `check` 29/29 (`--force`), build 8/8, integração 634/634,
-e2e **97/97**, cinco guardas verdes. Renderizada a 1440px com 130 eventos
-temporários (limpos por `db reset`, porque `domain_events` não aceita DELETE).
+| | tempo | buffers |
+|---|---:|---:|
+| sem índice | **82,8 ms** | 9.626 |
+| com o parcial sobre `status = 'failed'` | **7,3 ms** | 365 |
+
+### Zero linhas tem dois significados
+
+A RPC devolve vazio para "nenhuma falha" **e** para "você não é ADMIN" — a
+autorização é silenciosa de propósito. Quem desempata é o papel do chamador,
+que a página já tem: sem isso, o não-ADMIN leria "nenhuma falha" e acreditaria
+(D-067).
+
+**Verificação:** `check` 29/29 (`--force`), build 8/8, integração **643/643**
+(+9), e2e **99/99** (+2), cinco guardas verdes. Painel renderizado a 1440px.
+**Pendente:** `db push` para o Dev e tipos pelo MCP.
 
 ## Próxima fatia segura
 
@@ -1124,7 +1136,12 @@ do seed — ou algum spec anterior já escreveu por cima dele?**
   **corrigiu D-289**: o 416 do PostgREST exige `count: exact` na mesma consulta
   — sem `count` o pedido volta 200 vazio, e aí quem sabe da página inexistente
   é a aritmética.
-- **Lista de execuções que FALHARAM** — a versão útil da tabela que D-273
-  recusou; exige RPC nova, porque `job_runs` não é legível pela web.
+- ~~**Lista de execuções que FALHARAM**~~ — **FEITA** (D-291), com migration.
+  A RPC `get_job_failures` é a janela: `job_runs` continua com RLS e zero
+  policies, e quem lê é uma função `security definer` com autorização ADMIN
+  refeita dentro, devolvendo AGREGADO. O firehose ATRAVESSA o recorte de falhas
+  (78% delas também são webhook), então a lista crua não resolveria — quem
+  resolve é agrupar por assinatura do motivo: **170 motivos crus viram 16
+  linhas**. **Pendente:** `db push` para o Dev e regeração dos tipos pelo MCP.
 - **A gaveta do Copiloto** — precisa de parâmetro de contexto na API e de
   ferramentas além de venda (D-276).

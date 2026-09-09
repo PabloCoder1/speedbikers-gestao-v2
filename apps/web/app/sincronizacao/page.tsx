@@ -106,6 +106,13 @@ interface EventRow {
   ml_accounts: { label: string } | null;
 }
 
+/**
+ * A janela da lista de falhas (D-291). Sete dias é a mesma janela em que a
+ * medição foi feita (473 falhas, 16 assinaturas no Dev) e a mesma do resto
+ * desta tela; a RPC aceita de 1 a 90.
+ */
+const FAILURE_WINDOW_DAYS = 7;
+
 export default async function SincronizacaoPage(): Promise<ReactNode> {
   const supabase = await createClient();
   const now = new Date();
@@ -122,7 +129,7 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
     );
   }
 
-  const [accountsResult, healthResult, processingResult, eventsResult] = await Promise.all([
+  const [accountsResult, healthResult, processingResult, eventsResult, failuresResult] = await Promise.all([
     supabase
       .from("ml_accounts")
       .select("id, label, slug, status, last_error, backfill_covered_until")
@@ -134,17 +141,38 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
       .select("id, event_type, entity_type, entity_id, severity, occurred_at, ml_accounts(label)")
       .order("occurred_at", { ascending: false })
       .limit(30),
+    /*
+      A LISTA DE FALHAS (D-291) — o item que D-273 deixou aberto por escrito.
+      Ela não lê `job_runs`: a tabela continua com RLS e ZERO policies. Quem
+      lê é a RPC `security definer`, que refaz a autorização (ADMIN) dentro e
+      devolve AGREGADO — nunca a linha de execução.
+    */
+    supabase.rpc("get_job_failures", { p_days: FAILURE_WINDOW_DAYS, p_limit: 30 }),
   ]);
 
   const accounts = accountsResult.data ?? [];
   const health = (healthResult.data ?? []) as HealthRow[];
   const processing = (processingResult.data ?? []) as ProcessingRow[];
   const events = (eventsResult.data ?? []) as EventRow[];
+  const failures = failuresResult.data ?? [];
 
-  // Falha em QUALQUER uma das quatro: mostrar erro, nunca "sem dado" (D-067)
+  // Falha em QUALQUER uma das cinco: mostrar erro, nunca "sem dado" (D-067)
   // — numa tela que existe para pegar exatamente esse tipo de problema.
   const error =
-    accountsResult.error ?? healthResult.error ?? processingResult.error ?? eventsResult.error;
+    accountsResult.error ??
+    healthResult.error ??
+    processingResult.error ??
+    eventsResult.error ??
+    failuresResult.error;
+
+  /*
+    ZERO LINHAS TEM DOIS SIGNIFICADOS, e a tela precisa saber qual é (D-067):
+    a RPC devolve vazio tanto para "nenhuma falha na janela" quanto para "você
+    não é ADMIN", porque a autorização dela é silênciosa de propósito (erro
+    vazaria a existência do dado). Quem desempata aqui é o próprio papel do
+    chamador, que a página já tem em mãos.
+  */
+  const ehAdmin = membership.role === "ADMIN";
 
   const reconciliation = health.filter((row) => row.channel === "reconciliation");
   const backfill = health.filter((row) => row.channel === "backfill");
@@ -490,15 +518,96 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
             </Panel>
           </div>
 
+          <div style={{ marginTop: "var(--sb-space-3)" }}>
+            <Panel
+              title="Execuções que falharam"
+              subtitle={`Agrupadas por job e por MOTIVO, nos últimos ${String(FAILURE_WINDOW_DAYS)} dias. Corridas de quatro ou mais dígitos viram # na assinatura do motivo — assim o código HTTP sobrevive e o id da entidade não fragmenta a lista. No Dev isso reduz 473 falhas de 170 motivos a 16 linhas.`}
+            >
+              <div className="sb-panel-body">
+                {!ehAdmin && (
+                  <p style={{ margin: 0, color: "var(--sb-text-soft)", fontSize: "0.75rem" }}>
+                    O log de execução é restrito a ADMIN.
+                  </p>
+                )}
+
+                {ehAdmin && failures.length === 0 && (
+                  <p style={{ margin: 0, color: "var(--sb-text-soft)", fontSize: "0.75rem" }}>
+                    Nenhuma execução falhou nos últimos {FAILURE_WINDOW_DAYS} dias.
+                  </p>
+                )}
+
+                {ehAdmin && failures.length > 0 && (
+                  <div style={{ overflowX: "auto" }}>
+                    <table className="sb-table">
+                      <thead>
+                        <tr>
+                          <th>Job</th>
+                          <th>Motivo</th>
+                          <th className="sb-num">Falhas</th>
+                          {/*
+                            `retryable` é do próprio banco (`job_runs`): true = a
+                            fila repete (503); false = a fila descarta (422). A
+                            diferença decide quem age — uma se resolve sozinha,
+                            a outra não.
+                          */}
+                          <th className="sb-num">Retentadas</th>
+                          <th>Última</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {failures.map((row) => (
+                          <tr key={`${row.job_type}:${row.reason_signature}`}>
+                            <td className="sb-mono">{row.job_type}</td>
+                            <td>
+                              <span style={{ display: "block", maxWidth: "42rem" }}>{row.reason_signature}</span>
+                              {/*
+                                O exemplo CRU devolve o id que a assinatura
+                                apagou — sem ele a linha não dá para investigar.
+                                Só aparece quando difere da assinatura.
+                              */}
+                              {row.sample_reason !== null && row.sample_reason !== row.reason_signature && (
+                                <small style={{ display: "block", color: "var(--sb-text-soft)" }}>
+                                  {row.distinct_reasons > 1
+                                    ? `${formatCount(row.distinct_reasons)} motivos nesta família · último: `
+                                    : "motivo: "}
+                                  {row.sample_reason.slice(0, 180)}
+                                </small>
+                              )}
+                            </td>
+                            <td className="sb-num">{formatCount(row.failures)}</td>
+                            <td className="sb-num">
+                              {row.retryable_failures === 0 ? (
+                                <span style={{ color: "var(--sb-text-soft)" }} title="a fila descartou: ninguém tenta de novo sozinho">
+                                  —
+                                </span>
+                              ) : (
+                                formatCount(row.retryable_failures)
+                              )}
+                            </td>
+                            <td style={{ whiteSpace: "nowrap" }}>{formatDateTime(row.last_failed_at)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </Panel>
+          </div>
+
           {/*
-            "EXECUÇÕES RECENTES" DO FRAME NÃO ENTRA, e são quatro medições, não
-            uma preferência — o detalhe está em D-273. Em resumo: job_runs não
-            é legível pela web (RLS ligada, ZERO policies, e `authenticated` sem
-            SELECT); a coluna "Conta" do frame não tem fonte (zero colunas de
-            conta na tabela); e 65% das execuções são de um job só
-            (`sync.webhook.received`, 32.777 de 50.808 em 7 dias), então uma
-            lista das "mais recentes" mostraria 25 webhooks e esconderia
-            justamente as linhas que o frame desenha.
+            A TABELA "EXECUÇÕES RECENTES" DO FRAME CONTINUA FORA — o que entrou
+            em D-291 foi a lista de FALHAS, agrupada, que é outra coisa. As
+            quatro medições de D-273 seguem valendo, e uma delas atravessa o
+            recorte: 78% das falhas de 7 dias também são de
+            `sync.webhook.received` (370 de 473), então nem uma lista crua de
+            falhas escaparia do firehose — quem escapa é o agrupamento por
+            assinatura de motivo. O resto da recusa segue de pé: a coluna "Conta"
+            do frame não tem fonte (zero colunas de conta em `job_runs`), e uma
+            lista das "mais recentes" mostraria 25 webhooks — 65% das execuções
+            são desse job (32.777 de 50.808 em 7 dias), escondendo justamente as
+            linhas que o frame desenha. `job_runs` também continua sem policy
+            nenhuma: quem lê é a RPC, nunca a tabela.
 
             "Sincronizar agora" e "Filtrar" ficam fora pela linha de D-264 e
             D-269: a tela não escreve, e dar-lhe um gatilho de sincronização é

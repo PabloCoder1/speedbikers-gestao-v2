@@ -7255,6 +7255,191 @@ describe("get_system_health (D-176, Saúde do Sistema)", () => {
   });
 });
 
+// get_job_failures (20260909190000, D-291) — a lista de execucoes que
+// FALHARAM, agrupada por assinatura de motivo. D-273 recusou a tabela de
+// execucoes individuais do frame e deixou esta RPC como item aberto, com o
+// motivo escrito: expor log de execucao a web e decisao propria.
+describe("get_job_failures (D-291, execucoes que falharam)", () => {
+  /**
+   * Mesma tecnica do bloco de `get_system_health`, e pelo mesmo motivo:
+   * `job_runs` e append-only por trigger (20260820160000) e o banco RECUSA o
+   * DELETE, entao semear e consultar na MESMA transacao revertida e a unica
+   * forma de nao deixar linha de teste para tras.
+   */
+  async function comFalhas<T>(seed: string, userId: string, sql: string): Promise<T[]> {
+    await client.query("begin");
+
+    try {
+      await client.query(seed);
+      await client.query("set local role authenticated");
+      await client.query("select set_config('request.jwt.claims', $1, true)", [
+        JSON.stringify({ sub: userId }),
+      ]);
+
+      const result = await client.query(sql);
+
+      return result.rows as T[];
+    } finally {
+      await client.query("rollback");
+    }
+  }
+
+  function inserirFalha(org: string, tipo: string, motivo: string | null, quando: string): string {
+    const reason = motivo === null ? "null" : `'${motivo}'`;
+
+    return `insert into public.job_runs
+              (organization_id, job_id, job_type, dedupe_key, attempt, status, retryable, reason, started_at, finished_at)
+            values ('${org}', gen_random_uuid(), '${tipo}', gen_random_uuid()::text, 1, 'failed', false, ${reason}, ${quando}, ${quando})`;
+  }
+
+  const CONSULTA = `select job_type, reason_signature, failures, distinct_reasons,
+                           retryable_failures, last_failed_at
+                      from public.get_job_failures(7, 50)`;
+
+  /**
+   * O CASO CENTRAL, e a razao de a lista existir. No Dev, 473 falhas de 7 dias
+   * carregam 170 motivos crus e viram 16 assinaturas — porque o texto do erro
+   * traz o id da entidade. Duas falhas que diferem so no id sao UMA familia.
+   */
+  it("agrupa motivos que diferem so no id, e conta os motivos crus da familia", async () => {
+    const rows = await comFalhas<{
+      reason_signature: string;
+      failures: string;
+      distinct_reasons: string;
+    }>(
+      [
+        inserirFalha(ORG_SB, "rlstest.falhas", "Mercado Livre respondeu 404 para GET /items/MLB4400000001.", "now()"),
+        inserirFalha(ORG_SB, "rlstest.falhas", "Mercado Livre respondeu 404 para GET /items/MLB4400000002.", "now()"),
+      ].join(";"),
+      ADMIN_SB,
+      CONSULTA,
+    );
+
+    const familia = rows.find((r) => r.reason_signature.includes("/items/MLB#"));
+
+    expect(familia).toBeDefined();
+    expect(familia?.failures).toBe("2");
+    expect(familia?.distinct_reasons).toBe("2");
+  });
+
+  /**
+   * A regra de normalizacao e 4+ DIGITOS, e a diferenca decide o valor da
+   * lista: apagar todo digito juntaria 403, 404 e 500 do mesmo endpoint numa
+   * linha so — e o codigo e o diagnostico. Medido no Dev: 15 assinaturas com
+   * todo digito, 16 com a regra de 4+.
+   */
+  it("preserva o codigo HTTP na assinatura e apaga so a corrida longa", async () => {
+    const rows = await comFalhas<{ reason_signature: string; failures: string }>(
+      [
+        inserirFalha(ORG_SB, "rlstest.falhas", "Mercado Livre respondeu 404 para GET /items/MLB4400000001.", "now()"),
+        inserirFalha(ORG_SB, "rlstest.falhas", "Mercado Livre respondeu 500 para GET /items/MLB4400000002.", "now()"),
+      ].join(";"),
+      ADMIN_SB,
+      CONSULTA,
+    );
+
+    const assinaturas = rows
+      .filter((r) => r.reason_signature.includes("/items/MLB#"))
+      .map((r) => r.reason_signature);
+
+    expect(assinaturas).toHaveLength(2);
+    expect(assinaturas.some((a) => a.includes("404"))).toBe(true);
+    expect(assinaturas.some((a) => a.includes("500"))).toBe(true);
+  });
+
+  /** `reason` e opcional em `failed` (o CHECK exige `retryable`), e ausencia se NOMEIA. */
+  it("falha sem motivo registrado vira linha nomeada, nunca sumico", async () => {
+    const rows = await comFalhas<{ reason_signature: string; failures: string }>(
+      inserirFalha(ORG_SB, "rlstest.falhas.mudas", null, "now()"),
+      ADMIN_SB,
+      CONSULTA,
+    );
+
+    const muda = rows.find((r) => r.reason_signature === "(sem motivo registrado)");
+
+    expect(muda?.failures).toBe("1");
+  });
+
+  it("execucao ANTIGA fica fora da janela pedida", async () => {
+    const rows = await comFalhas<{ reason_signature: string }>(
+      inserirFalha(ORG_SB, "rlstest.falhas.velhas", "falha de outro mes", "now() - interval '40 days'"),
+      ADMIN_SB,
+      CONSULTA,
+    );
+
+    expect(rows.map((r) => r.reason_signature)).not.toContain("falha de outro mes");
+  });
+
+  it("falha de OUTRA organizacao nao aparece", async () => {
+    const rows = await comFalhas<{ reason_signature: string }>(
+      inserirFalha(ORG_SB, "rlstest.falhas.alheias", "falha da organizacao vizinha", "now()"),
+      DE_OUTRA_ORG,
+      CONSULTA,
+    );
+
+    expect(rows.map((r) => r.reason_signature)).not.toContain("falha da organizacao vizinha");
+  });
+
+  /**
+   * O heartbeat e de PLATAFORMA (organizacao sentinela que nao existe em
+   * `organizations`), e o escopo nao pode apaga-lo — e a licao de D-209, aqui
+   * de novo porque a funcao repete aquele predicado.
+   */
+  it("falha de job de PLATAFORMA continua visivel", async () => {
+    const rows = await comFalhas<{ job_type: string }>(
+      inserirFalha("00000000-0000-4000-8000-000000000000", "system.ping", "heartbeat falhou", "now()"),
+      ADMIN_SB,
+      CONSULTA,
+    );
+
+    expect(rows.map((r) => r.job_type)).toContain("system.ping");
+  });
+
+  it("quem nao e ADMIN recebe ZERO linhas, nao erro e nao dado", async () => {
+    const rows = await comFalhas(
+      inserirFalha(ORG_SB, "rlstest.falhas", "qualquer coisa", "now()"),
+      ANALISTA_SB,
+      CONSULTA,
+    );
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("anon nao executa get_job_failures", async () => {
+    await expect(asAnon("select * from public.get_job_failures()")).rejects.toThrow(
+      /permission denied/i,
+    );
+  });
+
+  /**
+   * A assinatura e contrato: `apps/web/app/sincronizacao/page.tsx` le estas
+   * colunas e `packages/db/src/types.ts` carrega a ENTRADA MANUAL delas (a
+   * migration ainda nao passou pelo gerador do MCP). Se divergirem, este teste
+   * reprova antes do CI — e o que NAO pode aparecer aqui e chave interna do
+   * worker: `dedupe_key` (19% carregam UUID solto), `job_id`, `attempt`.
+   */
+  it("mantem as 8 colunas do contrato, e nenhuma chave interna do worker", async () => {
+    const assinatura = await client.query<{ result: string }>(
+      `select pg_get_function_result(p.oid) as result
+         from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' and p.proname = 'get_job_failures'`,
+    );
+
+    const result = assinatura.rows[0]?.result ?? "";
+
+    expect(result).toBe(
+      "TABLE(job_type text, reason_signature text, failures bigint, " +
+        "distinct_reasons bigint, retryable_failures bigint, " +
+        "first_failed_at timestamp with time zone, last_failed_at timestamp with time zone, " +
+        "sample_reason text)",
+    );
+
+    for (const interna of ["dedupe_key", "job_id", "attempt", "processed"]) {
+      expect(result).not.toContain(interna);
+    }
+  });
+});
+
 // Busca Universal (search_entities) — o item do Checkpoint P1 que pedia as
 // entidades com destino REAL. A regra de D-060 e a que continua valendo: so
 // entra o que leva a algum lugar.
@@ -10827,7 +11012,8 @@ describe("guarda de GRANTs (D-066/D-098/D-130)", () => {
   // `triage_support_case` valida a mesma coluna e explica por que.
   //
   // As 25 foram auditadas em 2026-09-01: todas sao chamadas pelo app (zero
-  // superficie morta) e todas tem `search_path` travado.
+  // superficie morta) e todas tem `search_path` travado. A 26a entrou em
+  // 2026-09-09 (D-291), sob a mesma conferencia.
   const RPCS_DEFINER_EXPOSTAS = [
     "approve_purchase_order",
     "cancel_purchase_order",
@@ -10839,6 +11025,11 @@ describe("guarda de GRANTs (D-066/D-098/D-130)", () => {
     "create_supplier",
     "delete_saved_filter",
     "dismiss_link_candidate",
+    // D-291: LEITURA de log de execucao, agregada. Entrou na lista com a
+    // auditoria feita: autorizacao ADMIN refeita dentro, `search_path`
+    // travado, escopo de organizacao com o predicado de plataforma de D-209,
+    // e a saida nao carrega chave interna do worker (dedupe_key, job_id).
+    "get_job_failures",
     "get_sku_curation",
     "get_sku_curation_summary",
     "get_system_health",

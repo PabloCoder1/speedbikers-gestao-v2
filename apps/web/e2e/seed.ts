@@ -451,6 +451,43 @@ async function main(): Promise<void> {
         processed: null,
         ...execucao(120, 0.5),
       },
+      /*
+        AS DUAS FALHAS DA MESMA FAMÍLIA (D-291), para a lista de falhas ter o
+        que agrupar.
+
+        Elas diferem SÓ no id do anúncio, que é exatamente o caso real: no Dev,
+        170 motivos crus viram 16 assinaturas porque o texto carrega ids. Aqui
+        as duas têm de virar UMA linha, com "2 motivos nesta família".
+
+        São de `sync.listings.snapshot` — job que o seed JÁ tem — e ficam
+        **fora das 24h** de propósito: um tipo novo mudaria a contagem de
+        `/saude` (que afirma quatro), e uma falha dentro de 24h mudaria a
+        contagem de falhas dela. Janelas diferentes, telas diferentes.
+      */
+      {
+        organization_id: organizationId,
+        job_id: jobRunId,
+        job_type: "sync.listings.snapshot",
+        dedupe_key: "e2e:seed:listings-404-a",
+        attempt: 1,
+        status: "failed",
+        retryable: false,
+        reason: "Mercado Livre respondeu 404 para GET /items/MLB4400000001.",
+        processed: null,
+        ...execucao(30 * 60, 0.2),
+      },
+      {
+        organization_id: organizationId,
+        job_id: jobRunId,
+        job_type: "sync.listings.snapshot",
+        dedupe_key: "e2e:seed:listings-404-b",
+        attempt: 1,
+        status: "failed",
+        retryable: false,
+        reason: "Mercado Livre respondeu 404 para GET /items/MLB4400000002.",
+        processed: null,
+        ...execucao(40 * 60, 0.2),
+      },
       {
         organization_id: organizationId,
         job_id: jobRunId,

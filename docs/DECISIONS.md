@@ -7871,6 +7871,78 @@ Com as duas notificações do seed não lidas, "todas" e "não lidas" devolvem a
 
 **Verificação:** `check` **29/29** (`--force`), build **8/8**, integração **634/634**, e2e **97/97** em base resetada, cinco guardas verdes. Renderizada a 1440px com **130 eventos temporários** no local (a fan-out de `domain_events` criou as notificações; `domain_events` não aceita DELETE por trigger, então a limpeza foi `db reset`): página 1 "1 a 100 de 132", página 2 "101 a 132", recorte "1 a 100 de 131 não lidas" com o `estado=` preservado no paginador, e a página 99 devolvendo ao começo **do mesmo recorte**.
 
+## D-291 - A lista de execucoes que FALHARAM: uma RPC nova, e o agrupamento que a torna legivel
+
+**Contexto:** o item aberto seguinte de `docs/DESIGN_IMPLEMENTATION.md`, deixado por escrito em D-273: *"uma lista so de falhas seria util, e exige RPC nova com decisao propria (expor log de execucao a web)"*. **Com migration** (`20260909190000`).
+
+---
+
+**1. O FIREHOSE ATRAVESSA O RECORTE DE FALHAS -- e e por isso que a lista crua nao serve**
+
+D-273 recusou a tabela "Execucoes recentes" do frame porque 65% das execucoes sao de UM job (`sync.webhook.received`): "as 25 mais recentes" seriam 25 webhooks. A tentacao obvia era "entao filtre por falha". Medido no Dev, isso **nao resolve**:
+
+| medicao (7 dias) | numero |
+|---|---:|
+| execucoes | 51.896 |
+| falhas | **473** |
+| delas, `sync.webhook.received` | **370 (78%)** |
+| motivos DISTINTOS entre as 473 | **170** |
+
+Uma lista crua de falhas seria a mesma tela inutil com outro filtro. **O que muda o resultado e agrupar por ASSINATURA do motivo:** os textos carregam ids ("404 para GET /post-purchase/v2/claims/5570387932/returns"), e sem eles as 473 falhas viram poucas familias.
+
+| regra de normalizacao | assinaturas |
+|---|---:|
+| motivos crus | 170 |
+| todo digito vira `#` | **15** |
+| **so corridas de 4+ digitos** | **16** |
+
+**A escolhida e a de 4+ digitos, e a diferenca entre 15 e 16 e o argumento inteiro:** normalizar todo digito apaga o CODIGO HTTP -- 403, 404 e 500 do mesmo endpoint viram uma linha -- e o codigo e justamente o diagnostico. Com 4+, `404` sobrevive e o id de dez digitos vira `#`. Praticamente a mesma compressao, com a informacao que decide o que fazer.
+
+A regra e **declarada na tela**, no subtitulo do painel. Agrupar por regra dita e diferente de inventar categoria (D-023); esconder a regra seria a segunda coisa.
+
+**2. A DECISAO DE EXPOSICAO, QUE E O QUE D-273 ADIOU**
+
+`job_runs` tem RLS ligada e **ZERO policies** desde `20260820130000`: ninguem le pela Data API. **Isso nao mudou** -- o teste "job_runs permanece fechada" continua verde. O que entrou foi uma JANELA: `get_job_failures`, `security definer`, com a autorizacao ADMIN **refeita dentro** e saida AGREGADA.
+
+Ficam de fora do agregado, de proposito: `dedupe_key` (19% carregam UUID solto, medido em D-273), `job_id`, `attempt` e `processed` -- chaves internas do worker. A pergunta da tela e "o que esta quebrado", nunca "qual foi a execucao 4.312". Ha teste de assinatura que reprova se alguma delas aparecer.
+
+O escopo copia D-209: organizacoes onde o chamador e ADMIN **mais** os jobs de plataforma (organizacao que nao existe no catalogo) -- sem essa segunda metade o escopo apagaria o heartbeat.
+
+**A guarda da casa fez o trabalho dela:** a lista versionada de RPCs `SECURITY DEFINER` expostas a `authenticated` (D-182) reprovou a suite no primeiro `run`, com `+ "get_job_failures"`. A funcao entrou na lista com a conferencia escrita ao lado, que e exatamente o ritual que aquela guarda existe para forcar.
+
+**3. O INDICE, MEDIDO ANTES E DEPOIS**
+
+Em transacao revertida contra o Dev:
+
+| | tempo | buffers |
+|---|---:|---:|
+| sem indice (Seq Scan, descartando 106.071 linhas) | **82,8 ms** | 9.626 |
+| com o parcial `(finished_at desc) where status = 'failed'` | **7,3 ms** | 365 |
+
+11x, e o indice e barato: parcial sobre 2.967 das 106.543 linhas (2,8%).
+
+**4. O QUE A TELA MOSTRA, E O QUE ELA CONTINUA RECUSANDO**
+
+Painel "Execucoes que falharam" em `/sincronizacao`: job, motivo (assinatura + um exemplo CRU, que devolve o id apagado), falhas, retentadas e ultima ocorrencia. `retryable` vem do banco e distingue "a fila repete" de "a fila descartou" -- a diferenca decide quem age.
+
+**Zero linhas tem dois significados**, e a tela sabe qual e: a RPC devolve vazio tanto para "nenhuma falha" quanto para "voce nao e ADMIN" (a autorizacao e silenciosa de proposito -- erro vazaria a existencia do dado). Quem desempata e o papel do chamador, que a pagina ja tem. Sem isso, o nao-ADMIN leria "nenhuma falha nos ultimos 7 dias" e acreditaria (D-067).
+
+A recusa de D-273 continua de pe no que era dela: nao ha coluna "Conta" (zero colunas de conta em `job_runs`), nao ha execucao individual, e "Sincronizar agora"/"Filtrar" seguem fora.
+
+**5. O FIXTURE QUE PROVA O AGRUPAMENTO, E ONDE ELE FOI POSTO**
+
+O seed ganhou duas falhas que diferem **so no id do anuncio** -- a miniatura do caso real. Elas sao de `sync.listings.snapshot` (job que o seed ja tinha) e ficam **fora das 24h**: um `job_type` novo mudaria a contagem de `/saude` (que afirma quatro) e uma falha recente mudaria a contagem de falhas de 24h dela. Janelas diferentes, telas diferentes -- e o fixture de uma nao pode mexer no veredito da outra.
+
+**6. O TIPO ENTROU A MAO, E ISSO ESTA MARCADO**
+
+`packages/db/src/types.ts` e gerado pelo MCP a partir do **Dev**, e esta migration ainda nao foi empurrada. A entrada de `get_job_failures` foi escrita a mao, copiada de `pg_get_function_result` no banco local e marcada como ENTRADA MANUAL -- com o teste de assinatura fixando as 8 colunas, para que a divergencia reprove antes do CI em vez de aparecer em producao.
+
+**PENDENTE, e e o proximo passo desta fatia:** `supabase db push` para o Dev (migration nunca vai por MCP) e regeracao dos tipos pelo MCP depois.
+
+**Impacto:** `supabase/migrations/20260909190000_create_job_failures_rpc.sql` (novo), `apps/web/app/sincronizacao/page.tsx`, `packages/db/src/types.ts` (entrada manual), `packages/db/src/rls.integration.test.ts` (+9 casos e a lista de D-182), `apps/web/e2e/{seed,sincronizacao.spec}.ts` (+2 casos).
+
+**Verificacao, local:** `check` **29/29** (`--force`), build **8/8**, integracao **643/643** em banco recriado (+9), e2e **99/99** em banco recriado (+2), cinco guardas verdes. Painel renderizado a 1440px: duas familias, com "2 motivos nesta familia" na primeira e o `#` no lugar do MLB. (Uma rodada intermediaria acusou 1 falha que **nao se reproduziu** na rodada limpa seguinte; fica dito.)
+
 ## Como adicionar nova decisao
 
 Registrar:
