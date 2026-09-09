@@ -7331,6 +7331,70 @@ Os dois que sairam: um duplicava o `PURCHPRIO`, e o outro exigia plantar 84 dias
 
 **Verificacao:** integracao **634/634** em banco recriado com a migration aplicada, `check` 29/29, build 8/8, e2e 82/82.
 
+## D-281 - D38: a primeira gaveta do Figma, e os dois defeitos que so a captura mostrou
+
+**Contexto:** a frente visual fechou em D37c, e o proprio `DESIGN_IMPLEMENTATION.md` registrou o que sobrou: *"os drawers do frame (Inspecao Rapida, MLB, pedido, fornecedor, usuario), adiados desde A1 -- sao o unico elemento de composicao do desenho que a V3 nunca implementou"*. O item 1 daquela lista (fundir `/cobertura` com `/reposicao`) exige escolher UMA definicao de ruptura, o que e decisao de produto. Sobrou o item 2, e esta fatia entrega a PRIMEIRA das cinco. Sem migration.
+
+---
+
+**POR QUE ESSA GAVETA, E NAO OUTRA**
+
+As cinco nao sao equivalentes. Quatro delas (MLB, pedido, fornecedor, usuario) mostram uma entidade que **ja tem tela cheia migrada** -- `/anuncios/[itemId]` (D13), `/compras/[id]` e `/fornecedores/[supplierId]` (D-277), `/usuarios` (D-271). Colocar uma gaveta ali e decidir se ela SUBSTITUI ou DUPLICA a tela, e duas implementacoes da mesma interface convivendo e exatamente o que o Design Contract proibe.
+
+A "Inspecao Rapida" nao tem esse problema: ela nao repete nenhuma tela: e um retrato de seis fatos dentro da lista onde a decisao de curadoria acontece, e o botao dela LEVA ao dashboard do SKU -- que ja era o destino do link do titulo.
+
+---
+
+**NENHUM NUMERO NOVO NASCE NA GAVETA**
+
+Cada valor vem da funcao que ja e dona dele em outra tela, com a mesma janela de 30 dias:
+
+| valor | fonte | quem mais le |
+|---|---|---|
+| cobertura, ruptura, vendas 30d, saldo sentinela | `get_stock_coverage` com `p_sku_id` | o cartao "Cobertura" do dashboard de SKU e `/cobertura` |
+| Full, reservado, transito, fisico | `get_sku_dashboard` | o cartao "Estoque local" do dashboard de SKU |
+| cobertura alvo | `replenishment_settings` + `resolveReplenishmentPolicy` | `/reposicao` |
+| ultima movimentacao | `stock_movements` pelo indice de extrato do SKU | `/estoque/movimentacoes` (pela RPC, que pagina) |
+
+**Duas fontes obvias foram RECUSADAS, e as duas recusas sao sobre a forma da pergunta:**
+
+1. `get_purchase_suggestions` traria tudo numa ida -- e e funcao de LISTA: filtra por `ilike` DEPOIS de agregar o catalogo inteiro, e achar "o SKU certo" dentro de uma pagina ordenada por prioridade e recorte, nao leitura. As quatro escolhidas recebem `sku_id` e respondem sobre ele.
+2. `get_stock_movements` (a RPC de `/estoque/movimentacoes`) filtra por TEXTO. O codigo de um SKU casa qualquer outro que o contenha: a linha mais recente do conjunto poderia ser de outro produto, com a cara de ser deste. A leitura direta usa `stock_movements_sku_timeline_idx (organization_id, sku_id, occurred_at desc)`, cujo comentario na migration do ledger e literalmente *"extrato de um SKU, mais recente primeiro"*.
+
+E o que o frame mostra e a V3 nao tem: *"Risco de ruptura iminente em 12 anuncios"*. **Nao existe deteccao de anomalia por anuncio** (a mesma recusa de D-023 que ja tinha tirado a coluna "Saude" de `/anuncios`). O alerta ficou, o numero saiu: ele aparece quando `is_ruptura` -- a mesma coluna que pinta o selo "Risco de ruptura" no cabecalho do dashboard de SKU.
+
+---
+
+**O DEFEITO QUE SO A CAPTURA MOSTROU (1): A GAVETA HERDAVA A FONTE DE ONDE O BOTAO MORA**
+
+O gatilho vive dentro da celula "SKU 1234", que e monoespacada de proposito (o mono do Figma, D-007/R2). A gaveta e `position: fixed` -- solta do layout --, mas continuava **herdando** a fonte: titulo, valores e botoes sairam todos em DM Mono. O texto do teste passava; a tela estava errada.
+
+Correcao: `createPortal` para `document.body`. Nao e preferencia de arquitetura -- e a regra de que **camada flutuante nao pode depender de onde o botao que a abre esta**. Vale para as quatro gavetas seguintes.
+
+**(2): A NOTA DE RUPTURA SAIA VIOLETA**
+
+`.sb-note-perigo` foi escrita junto da camada flutuante, ~1.100 linhas ACIMA de `.sb-note`. Mesma especificidade, a ultima vence: o fundo e o acento da base ganhavam, e o alerta de ruptura saia com a cara de informacao. As duas variantes de tom passaram a morar logo depois da base.
+
+**Os dois so aparecem RENDERIZANDO.** Nenhum lint, nenhum tipo e nenhuma asercao de texto os pega -- `innerText` e identico nos dois casos. E a mesma licao que a auditoria A3 registrou sobre a migracao pela metade das tabelas: o que pega e abrir a tela.
+
+---
+
+**O QUE FICOU DIFERENTE DO FRAME, DE PROPOSITO**
+
+No frame o clique na CELULA do produto abre a gaveta, e nao ha link para a pagina cheia -- ela e o botao do rodape. Aqui o titulo continua sendo um `<Link>` de verdade e a gaveta ganhou gatilho proprio ("Inspecionar"). **Link e comportamento, nao aparencia**: abre em nova aba, tem alvo de teclado, sobrevive ao meio-clique. E a regra de conflito do Design Contract -- Figma perde para regra funcional.
+
+Tambem entra no design system o que a auditoria A1 listava como ausente: `.sb-drawer` (com `.sb-backdrop-lateral`, `.sb-drawer-head/-body/-foot` e `.sb-detail-row`) e `.sb-text-button`. Os dois nascem com consumidor na mesma fatia -- a regra de D1 sobre token sem leitor.
+
+---
+
+**O TESTE AFIRMA A RECUSA, NAO A SOMA**
+
+O SKU do seed nao tem politica de reposicao, entao "Cobertura alvo" tem de sair `—` **com o motivo escrito**. Se alguem puser um default ali um dia, o valor aparece e o caso fica vermelho. Os dois numeros afirmados sao DERIVADOS do seed (`E2E_SKU_SALES` e `E2E_LISTING_FULL`), pela mesma regra dos specs de vendas: mudar o fixture muda os dois lados juntos.
+
+**Impacto:** `apps/web/components/drawer.tsx` (novo), `apps/web/app/produtos/inspecao.ts` (novo), `apps/web/app/produtos/inspecao-rapida.tsx` (novo), `apps/web/app/produtos/curation-table.tsx`, `apps/web/app/globals.css`, `apps/web/e2e/produtos.spec.ts`, `docs/DESIGN_IMPLEMENTATION.md`, `docs/HANDOFF.md`.
+
+**Verificacao, local:** `check` **29/29**, build **8/8**, integracao **634/634** e e2e **83/83** em banco recriado (1 novo), `check:table-styles` 30, `check:server-actions` 18, `check:waterfalls` 61. Renderizada a 1440px e a 850px contra o Supabase local, com login real -- e o estado de RUPTURA conferido plantando `stock_is_virtual = false` no SKU da anomalia e desfazendo em seguida.
+
 ## Como adicionar nova decisao
 
 Registrar:

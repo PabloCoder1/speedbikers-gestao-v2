@@ -1222,6 +1222,130 @@ summary[aria-disabled="true"] {
   font-size: 0.625rem;
 }
 
+/*
+  A GAVETA (`.drawer` do export) — a última peça de composição do Figma que a
+  V3 não tinha, adiada desde A1 e listada como ausente na auditoria de
+  fidelidade ("falta `.sb-drawer`").
+
+  Ela reusa o MESMO fundo de vidro do modal (`--sb-backdrop`, navy a 18%): o
+  export declara `.drawer-backdrop,.modal-backdrop` na mesma regra, e é por
+  isso que aqui a diferença é um modificador de alinhamento, não uma segunda
+  camada. `.sb-backdrop-lateral` encosta à direita e estica na altura, como
+  `.sb-backdrop-topo` já fazia pela paleta.
+
+  A medida é a do export (410px) arredondada para os 420 do frame React, que é
+  o desenho mais recente das duas. `max-width: 100%` porque abaixo de 420px a
+  gaveta vira a tela inteira — sem isso ela sangraria para fora no celular.
+*/
+.sb-backdrop-lateral {
+  justify-content: flex-end;
+  align-items: stretch;
+  padding: 0;
+}
+
+.sb-drawer {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 420px;
+  max-width: 100%;
+  height: 100%;
+  border-left: 1px solid var(--sb-border);
+  background: var(--sb-surface);
+  /* `-8px 0 30px #0f11581f` do export: a sombra vem da esquerda, porque a
+     gaveta encosta na direita. Tintada de navy, como toda a camada. */
+  box-shadow: -8px 0 30px rgba(15, 17, 88, 0.12);
+}
+
+/* Cabeçalho, corpo e rodapé são TRÊS faixas: só o corpo rola. Um `overflow`
+   na gaveta inteira levaria as ações para fora da vista quando a lista
+   crescesse — e são elas que dizem para onde a inspeção leva. */
+.sb-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sb-space-2);
+  flex: none;
+  padding: var(--sb-space-3);
+  border-bottom: 1px solid var(--sb-border);
+}
+
+.sb-drawer-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sb-space-3);
+}
+
+.sb-drawer-foot {
+  display: grid;
+  gap: var(--sb-space-2);
+  flex: none;
+  padding: var(--sb-space-3);
+  border-top: 1px solid var(--sb-border);
+  background: var(--sb-bg-soft);
+}
+
+/* `w-full justify-center` do frame: as ações da gaveta ocupam a largura e o
+   rótulo fica centrado — são duas escolhas empilhadas, não uma barra. */
+.sb-drawer-foot .sb-button {
+  justify-content: center;
+}
+
+/* `.detail-row` do export: rótulo à esquerda, valor à direita, linha em cima.
+   É a forma de "lista de fatos" da camada flutuante — a tabela do corpo da
+   página não serve aqui, porque não há colunas, há pares. */
+.sb-detail-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sb-space-3);
+  padding: 10px 0;
+  border-top: 1px solid var(--sb-border);
+  font-size: 0.6875rem;
+}
+
+.sb-detail-row > span {
+  color: var(--sb-text-soft);
+}
+
+.sb-detail-row > b {
+  color: var(--sb-primary);
+  text-align: right;
+}
+
+/* A ressalva da linha, quando o valor precisa dizer DE ONDE vem. */
+.sb-detail-row small {
+  display: block;
+  font-weight: 400;
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+}
+
+/* `.text-button` do export — ação em texto, sem moldura. A auditoria A1
+   listou a ausência dele junto com a do modal e a da gaveta; entra agora
+   porque a gaveta é o consumidor (a regra de D1: token sem leitor é
+   promessa, não fato). */
+.sb-text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  /* Declarada, não herdada: o primeiro consumidor vive dentro da célula
+     monoespaçada da tabela de produtos, e `font: inherit` sairia em DM Mono. */
+  font-family: var(--sb-sans);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--sb-secondary);
+  cursor: pointer;
+}
+
+.sb-text-button:hover {
+  text-decoration: underline;
+}
+
 /* Linha de menu com uma ação à direita (a visão salva e o seu "apagar"). */
 .sb-menu-row {
   display: flex;
@@ -2465,6 +2589,36 @@ table {
   margin: 0.4375rem 0;
   font-size: 0.6875rem;
   line-height: 1.5;
+}
+
+/*
+  As duas VARIANTES DE TOM da nota — o "Atenção Operacional" do frame da
+  gaveta. Mesma forma (uma só), muda o acento e o fundo: duas classes com a
+  mesma aparência foi o achado de D-246.
+
+  **Moram aqui, logo depois da base, e isso não é organização — é correção.**
+  Escritas junto da camada flutuante, ~1.100 linhas ACIMA de `.sb-note`, elas
+  perdiam por ordem de cascata (mesma especificidade, a última vence): a nota
+  de ruptura saía violeta na captura, com a cara de informação, não de alerta.
+*/
+.sb-note-perigo {
+  border-left-color: var(--sb-danger);
+  background: var(--sb-danger-soft);
+}
+
+.sb-note-perigo > span {
+  color: var(--sb-danger-ink);
+}
+
+/* O estado que não é falha, mas muda a leitura do número ao lado (o saldo
+   sentinela de D-127). */
+.sb-note-atencao {
+  border-left-color: var(--sb-accent-ink);
+  background: var(--sb-accent-soft);
+}
+
+.sb-note-atencao > span {
+  color: var(--sb-accent-ink);
 }
 
 .sb-action-row {

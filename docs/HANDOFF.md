@@ -14,12 +14,12 @@
 |---|---|
 | **Atualizado em** | 2026-09-09 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `4ee0a5f` (D-279, **D37c**). **A FRENTE VISUAL FECHOU**: D0→D25, D27→D36 e o passe D37a/b/c entregues; D26 recusada com medição (D-266) |
+| **HEAD conhecido** | `45c5440` (D-281, **D38**) — a **primeira gaveta do Figma** (`Drawer` + `.sb-drawer` + "Inspeção Rápida" em `/produtos`). Antes: `4ee0a5f` (D-279, D37c), quando a migração de superfícies fechou (D0→D25, D27→D36 + passe D37a/b/c; D26 recusada com medição, D-266) |
 | **Fechamento da V3** | **185 de 213 itens do ROADMAP fechados (87%)** — 26 abertos e 2 parciais. Dos 26, **6 são bloqueadores**, e todos são hardening/lançamento: nenhum é feature faltando (D-223) |
-| **Deploy no ar** | ⚠️ **`0702969`, e o `HEAD` está 76 commits à frente** (`git rev-list --count 0702969..HEAD` em 2026-09-09; eram 64 em 08/09). A última verificação contra a infraestrutura foi em 2026-09-02 e dizia "sem atraso" -- era verdade **naquele dia**, e esta linha continuou afirmando isso enquanto o `HEAD` andava, que é precisamente o risco de D-070. Os 64 commits **tocam `apps/api` e `apps/worker`** (copiloto, `ml-fulfillment-fetch`, `sync-fulfillment-snapshot`, `sync-order-financials`), então não é atraso só de front. **Se o deploy avançou desde então, não dá para saber daqui** -- conferir `APP_COMMIT` nos dois serviços antes de concluir qualquer coisa sobre produção. Referência da última medição: `api-00030-gqw` / `worker-00045-cwq`, `/health` em `{"commit":"0702969"}` |
+| **Deploy no ar** | ⚠️ **`0702969`, e o `HEAD` está 76 commits à frente** (`git rev-list --count 0702969..HEAD` em 2026-09-09; eram 64 em 08/09). A última verificação contra a infraestrutura foi em 2026-09-02 e dizia "sem atraso" — verdade **naquele dia**, e a linha continuou afirmando isso enquanto o `HEAD` andava: o risco de D-070. Os commits **tocam `apps/api` e `apps/worker`** (copiloto, `ml-fulfillment-fetch`, `sync-fulfillment-snapshot`, `sync-order-financials`), então não é atraso só de front. **Se o deploy avançou desde então, não dá para saber daqui** -- conferir `APP_COMMIT` nos dois serviços antes de concluir qualquer coisa sobre produção. Referência da última medição: `api-00030-gqw` / `worker-00045-cwq`, `/health` em `{"commit":"0702969"}` |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | **153 locais** — as três da frente visual (`20260908120000` D-263, `20260908180000` D-264, `20260908210000` D-265). As duas primeiras CONFERIDAS no Dev pelo catálogo; a de D-265 empurrada em seguida. ⚠️ **D-257 deixou de ser inferência**: no push de D23 a função já estava no Dev com a esteira em `in_progress`, e a esteira terminou VERDE nos cinco jobs — inclusive o de aplicar migrations, que passou tendo NADA a aplicar. Verde ali significa "não sobrou o que fazer", não "o portão segurou". ⚠️ Quem aplica no Dev é a integração GitHub do Supabase, **não** a CI (D-257). Antes dela: **131 locais, 130 no Dev** — o expurgo (`20260903120000`) está no git e **não pousou**; a CI não o aplicou, sem drift — D-209→D-212 aplicadas pela CI em 2026-09-02 e CONFERIDAS lá (`anon` alcança 0 funções; `ml_accounts` sem UPDATE/DELETE para `authenticated`; `created_by` presente). O caminho é o push, **nunca** o MCP (lição de D-207) |
-| **Frente atual** | **A frente visual FECHOU.** `check:table-styles` conta **30** telas e **nenhum arquivo do app tem `<table>` sem `.sb-table`**; a única `page.tsx` sem `PageTitle` ou `ObjectHeader` é `/login`, fora do `Shell` de propósito. ⚠️ **A linha anterior aqui afirmava que `get_purchase_suggestions` não classificava nenhum SKU — era ERRO DE MEDIÇÃO meu** (`p_date_to` nulo, parâmetro sem default, zera a janela de venda). Com data real ela classifica **466** SKUs, batendo com o que D-250 mediu em 05/09; a armadilha do nulo virou D-280. O que resta: **fundir `/cobertura` com `/reposicao`** (exige escolher UMA definição de ruptura — as duas discordam em 185 SKUs porque medem coisas diferentes), os drawers adiados desde A1 e os sete itens abertos. Trilha 8B com P0 fechado (A–H) e em P1 |
+| **Frente atual** | **A migração de superfícies FECHOU, e D38 entregou o que sobrava de COMPOSIÇÃO: a primeira das cinco gavetas do frame** (D-281) — `Drawer` + `.sb-drawer` no design system e a "Inspeção Rápida" em `/produtos`, com quatro fontes que já eram donas dos números e nenhum número novo. `check:table-styles` conta **30** telas e **nenhum arquivo do app tem `<table>` sem `.sb-table`**; a única `page.tsx` sem `PageTitle` ou `ObjectHeader` é `/login`, fora do `Shell` de propósito. `get_purchase_suggestions` classifica **466** SKUs com data real; um `p_date_to` nulo zerava a janela e produziu uma regressão que nunca existiu — a armadilha virou D-280. O que resta: **fundir `/cobertura` com `/reposicao`** (exige escolher UMA definição de ruptura — as duas discordam em 185 SKUs porque medem coisas diferentes), **as quatro gavetas restantes** (MLB, pedido, fornecedor, usuário — todas esbarram na mesma pergunta: gaveta SUBSTITUI ou DUPLICA a tela cheia que a entidade já tem?), **a auditoria de render de D22–D36** (16 telas entregues e nunca re-fotografadas, que seguram 22 dos 106 pontos do bloco de progresso em 25%) e os sete itens abertos. Trilha 8B com P0 fechado (A–H) e em P1 |
 
 ### O que está pronto
 
@@ -52,11 +52,9 @@ Medidos contra o Dev em 2026-09-01, não herdados de documentação.
 
 **Todo o P0 da trilha 8B fechou** — A a H. A frente passa para o P1.
 
-✅ **E agora o bloco P0 está completo de verdade — os nomeados E os três
-sem letra.** A ressalva abaixo nasceu porque "P0 fechado — A a H" era o
-recorte dos itens que tinham letra: o bloco do `docs/ROADMAP.md` tinha mais
-três, e chamá-lo de fechado os tornava invisíveis. Ficam listados porque a
-lição é essa, não porque restem:
+✅ **O bloco P0 está completo — os nomeados E os três sem letra.** Ficam
+listados porque "P0 fechado, A a H" já foi o recorte só dos que tinham letra, e
+isso tornava os outros três invisíveis:
 
 | item | estado |
 |---|---|
@@ -292,9 +290,7 @@ ficaria vermelha se alguém reintroduzir a leitura sem filtro.
 
 ✅ **Filtro de Marca em `/curva-abc` (D-235) e `/cobertura` (D-236).** Marca é
 `skus.supplier_brand` — `skus.brand` guarda a categoria do UpSeller e diverge
-em 2.320 dos 3.554 SKUs. Na curva, o recorte **recalcula** as classes; na
-cobertura, os totais do cabeçalho (que vêm de outra RPC) recebem o mesmo
-filtro, e `history_days_90` **não** segue o recorte de propósito.
+em 2.320 dos 3.554 SKUs.
 
 ✅ **Filtro de Marca em `/vendas` (D-237) — item P1 dos filtros CONCLUÍDO.** A
 mais difícil das três, e a dificuldade não era SQL: **nem todo número de vendas

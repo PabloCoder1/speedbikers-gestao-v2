@@ -7,6 +7,7 @@ import { TOM } from "../../components/tone";
 import { formatCount } from "../../lib/format";
 import { describeOutcome, MAX_SELECAO, type CurationOutcome } from "../../lib/sku-curation";
 import { classifySkus, setSupplierBrand } from "./actions";
+import { InspecaoRapida } from "./inspecao-rapida";
 
 /**
  * A mesa de trabalho da curadoria (D-133).
@@ -76,18 +77,23 @@ function Sugestao({ row }: { row: CurationRow }): ReactNode {
  * `atencao` para o indefinido ("Requer revisão" no frame). O texto continua
  * dizendo tudo; o tom só reforça.
  */
-function Classificacao({ row }: { row: CurationRow }): ReactNode {
+function classificacaoDe(row: CurationRow): { texto: string; tom: "info" | "atencao" } {
   if (row.stock_is_virtual_set_at === null) {
-    return (
-      <span className="sb-status" style={TOM.atencao}>
-        não classificado
-      </span>
-    );
+    return { texto: "não classificado", tom: "atencao" };
   }
 
+  return { texto: row.stock_is_virtual ? "estoque virtual" : "estoque físico", tom: "info" };
+}
+
+function Classificacao({ row }: { row: CurationRow }): ReactNode {
+  const { texto, tom } = classificacaoDe(row);
+
+  // A gaveta de inspeção mostra o MESMO chip, e por isso a decisão de
+  // vocabulário sai da renderização e vira `classificacaoDe`: duas cópias do
+  // texto seriam duas verdades sobre a mesma coluna.
   return (
-    <span className="sb-status" style={TOM.info}>
-      {row.stock_is_virtual ? "estoque virtual" : "estoque físico"}
+    <span className="sb-status" style={TOM[tom]}>
+      {texto}
     </span>
   );
 }
@@ -439,8 +445,32 @@ export function CurationTable({
                     <Link className="sb-entity" href={`/skus/${row.sku_id}`}>
                       {row.title ?? row.sku}
                     </Link>
-                    <span style={{ display: "block", fontFamily: "var(--sb-mono)", fontSize: "0.625rem", color: "var(--sb-text-soft)" }}>
+                    <span
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "var(--sb-space-2)",
+                        fontFamily: "var(--sb-mono)",
+                        fontSize: "0.625rem",
+                        color: "var(--sb-text-soft)",
+                      }}
+                    >
                       SKU {row.sku}
+                      {/*
+                        O disparo da gaveta "Inspeção Rápida" do frame. No
+                        desenho é a célula inteira que abre; aqui o título
+                        continua sendo link de verdade (navegação real vence
+                        aparência) e a gaveta ganha um alvo próprio.
+                      */}
+                      <InspecaoRapida
+                        organizationId={organizationId}
+                        skuId={row.sku_id}
+                        sku={row.sku}
+                        title={row.title}
+                        supplierBrand={row.supplier_brand}
+                        classificacao={classificacaoDe(row)}
+                        listingCount={row.listing_count}
+                      />
                     </span>
                     {row.decision_diverges_from_signature && (
                       <div style={{ color: "var(--sb-accent-ink)", fontSize: "0.625rem" }}>

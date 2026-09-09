@@ -1,6 +1,12 @@
 import { expect, test } from "@playwright/test";
 
-import { E2E_SKU_CODE, E2E_USER_EMAIL, E2E_USER_PASSWORD } from "./constants.js";
+import {
+  E2E_LISTING_FULL,
+  E2E_SKU_CODE,
+  E2E_SKU_SALES,
+  E2E_USER_EMAIL,
+  E2E_USER_PASSWORD,
+} from "./constants.js";
 
 /**
  * `/produtos` — a curadoria, depois da migração da composição para o Figma.
@@ -72,4 +78,48 @@ test("/produtos: a curadoria em lote só escreve depois de dizer a consequência
 
   // E a tela reflete a escrita: o SKU deixou de estar "não classificado".
   await expect(page.getByText("não classificado", { exact: true })).toHaveCount(0);
+});
+
+/**
+ * A gaveta "Inspeção Rápida" (D38) — a primeira das cinco do Figma.
+ *
+ * **O que este teste protege é a RECUSA.** Os números da gaveta vêm de quatro
+ * fontes que já são donas deles em outras telas, e o risco de uma gaveta de
+ * resumo não é errar a soma: é preencher o que não sabe. O SKU do seed **não
+ * tem política de reposição**, então "Cobertura alvo" tem de sair `—` com o
+ * motivo escrito — se um dia alguém puser um default ali, o valor aparece e
+ * este teste fica vermelho.
+ *
+ * Os dois números afirmados são DERIVADOS do seed (mesma regra de
+ * `E2E_SKU_SALES` nos specs de vendas): mudar o fixture muda os dois lados
+ * juntos, nunca só um.
+ */
+test("/produtos: a Inspeção Rápida mostra o retrato real e recusa o que não tem fonte", async ({ page }) => {
+  await page.goto("/login?next=%2Fprodutos%3Festado%3Dtodos");
+  await page.getByLabel("E-mail").fill(E2E_USER_EMAIL);
+  await page.getByLabel("Senha").fill(E2E_USER_PASSWORD);
+  await page.getByRole("button", { name: "Entrar" }).click();
+
+  await expect(page).toHaveURL(/\/produtos/);
+
+  await page.locator("tbody tr", { hasText: E2E_SKU_CODE }).getByRole("button", { name: "Inspecionar" }).click();
+
+  const gaveta = page.getByRole("dialog");
+
+  await expect(gaveta).toBeVisible();
+  await expect(gaveta.getByText(`SKU ${E2E_SKU_CODE}`)).toBeVisible();
+
+  const vendas30d = E2E_SKU_SALES.reduce((total, dia) => total + dia.units, 0);
+
+  await expect(gaveta.getByText(`${String(vendas30d)} un`, { exact: true })).toBeVisible();
+  await expect(gaveta.getByText(`${String(E2E_LISTING_FULL)} un`, { exact: true })).toBeVisible();
+
+  // A RECUSA: sem política aplicável, o alvo não é chutado (D-144).
+  await expect(gaveta.getByText("nenhuma política de reposição alcança este SKU")).toBeVisible();
+
+  // E a gaveta leva à tela cheia, que é o destino que o frame dá a ela.
+  await expect(gaveta.getByRole("link", { name: /Abrir página completa/ })).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });

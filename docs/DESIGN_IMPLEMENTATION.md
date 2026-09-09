@@ -273,11 +273,12 @@ branco embutido.
 | `StatusPill` (código do banco → tom) | `components/status-pill.tsx` | alinhado — `.sb-status` + `tone.ts` |
 | `StatePill` (vocabulário da tela → tom) | `components/state-pill.tsx` | alinhado — era cápsula de contorno; virou o mesmo chip |
 | `.sb-table`, `.sb-input`, `.sb-empty`, `.sb-menu`, `.sb-modal`, `.sb-backdrop`, `.sb-close` | `app/globals.css` | as formas únicas de tabela, campo, vazio, menu e camada flutuante; **adotar ao migrar cada tela** |
+| `Drawer` + `.sb-drawer` | `components/drawer.tsx`, `app/globals.css` | **novo em D38** — a moldura das cinco gavetas do frame (sobrancelha + fechar, corpo que rola, ações no rodapé), com `.sb-detail-row` para a lista de fatos e `.sb-text-button` para o gatilho. **Renderiza por portal**: dentro da célula que a dispara, ela herdava a fonte mono (D-281) |
 | `TrendBadge` | `components/trend-badge.tsx` | alinhado (texto, não chip) |
 | `SavedFilters` | `components/saved-filters.tsx` | alinhado em A2 — `.sb-menu` para as visões e `.sb-modal` para nomear (o `window.prompt` saiu) |
 | `CommandPalette` | `components/command-palette.tsx` | alinhado em A2 — `.sb-command` (520px a 16vh, cabeçalho, ✕, `ESC`, resultados agrupados por tipo) |
 | `FilterPill` | `components/filter-pill.tsx` | **legado** — 8 telas não migradas ainda o usam; some quando a fila D13+ fechar |
-| `th`/`td`/`tdNumber`/`cardStyle` | `components/table-styles.ts` | **legado** — 2 telas não migradas (`/integracoes`, `/configuracoes`); MERGE em `.sb-table` ao migrá-las. **Nenhuma tela migrada tem mais const inline de tabela.** |
+| ~~`th`/`td`/`tdNumber`/`cardStyle`~~ | ~~`components/table-styles.ts`~~ | **NÃO EXISTE MAIS** — apagado em D35 (D-275), quando os dois últimos consumidores migraram. A linha anterior aqui ainda o dava como legado vivo; conferido em D38, o arquivo não está no repositório |
 
 **Não criar `Card`, `CardV2`, `FigmaCard`.** Adaptar o que existe.
 
@@ -303,7 +304,8 @@ branco embutido.
 | Botão flutuante do Copiloto (drawer contextual) | Copiloto é rota, e está no menu — um segundo Copiloto é escopo vetado | — |
 | Logo em imagem na marca | o export traz uma captura de tela, não o asset da marca; sem `public/` nem logo por organização. Entra quando existir asset oficial | — |
 | Botão de recolher a sidebar (`.collapse`) | o trilho de 58px existe em ≤850 (A1); recolher por clique em tela larga é estado de cliente sem frame de "recolhida" — fila A2 | — |
-| Drawer "Inspeção Rápida" (produtos) e `MlbDetailDrawer` (anúncios) | padrão válido, mas caminho NOVO (client component + `.sb-drawer`), não substituição de apresentação antiga; as linhas levam ao dashboard completo, que é o destino que os drawers apontam | escopo |
+| ~~Drawer "Inspeção Rápida" (produtos)~~ | **entregue em D38** (D-281) — a linha continua levando ao dashboard completo, e a gaveta também | — |
+| `MlbDetailDrawer` (anúncios) e as outras três (pedido, fornecedor, usuário) | as quatro mostram entidade que **já tem tela cheia migrada**; pôr gaveta ali é decidir se ela SUBSTITUI ou DUPLICA a tela, e isso é composição, não acabamento (D-281) | escopo |
 | Célula "Com queda" e coluna "Saúde" em Anúncios | sem detecção de anomalia por anúncio e sem definição canônica de "saúde" | D-023 |
 | Ação "Novo anúncio" | a V3 não cria anúncio no Mercado Livre — escrita no ML é ato com aprovação humana | escopo e segurança |
 
@@ -316,11 +318,18 @@ branco embutido.
 > não desenhou essas abas, e o Design Contract é o que resolve componentes
 > recorrentes quando o frame não fala.
 
-> **Superfície:** Figma tem um **drawer de "Inspeção Rápida"** disparado da
-> tabela de produtos · **V3 real:** não existe · **Decisão:** adiar ·
-> **Motivo:** escopo — é padrão desenhado e válido, mas acrescenta caminho novo
-> em vez de substituir apresentação antiga; entra quando a fila de migração
-> fechar.
+> ~~**Superfície:** Figma tem um **drawer de "Inspeção Rápida"** disparado da
+> tabela de produtos · **V3 real:** não existe · **Decisão:** adiar~~ —
+> **ENTREGUE em D38** (D-281), quando a fila de migração fechou, como o próprio
+> adiamento previa. O que sobrou de diferença está abaixo.
+
+> **Superfície:** `/produtos`, gatilho da Inspeção Rápida · **Figma:** o clique
+> na CÉLULA do produto abre a gaveta, e não há link para a página cheia — ela é
+> o botão do rodapé · **V3 real:** o título continua `<Link>` e a gaveta tem
+> gatilho próprio ("Inspecionar") · **Decisão:** manter os dois ·
+> **Motivo:** regra funcional — link é comportamento (nova aba, teclado,
+> meio-clique), não aparência, e trocá-lo por `onClick` perderia navegação real
+> para ganhar semelhança.
 
 > **Superfície:** `/anuncios`, faixa de resumo · **Figma:** seis células —
 > Ativos, Pausados, Sem estoque, No Full, Sem vínculo, **Com queda** ·
@@ -633,6 +642,7 @@ que ele renderiza.**
 | D37a | **As tres telas de DETALHE** (`/notas-fiscais/[id]`, `/compras/[id]`, `/fornecedores/[supplierId]`) — listas migradas, detalhes antigos; `ProcessSteps` extraido no segundo consumidor (D-277) | ✔ |
 | D37b | **Importador do UpSeller** (lista, conferência, envio) + varrimento de `PageTitle` em 8 telas; o denominador da aplicação é `ok_rows`, e medir contra o total inventaria 14% de falha (D-278) | ✔ |
 | D37c | **`/cobertura`, `/atendimento/[caseId]` e a tabela de `/compras/novo`** — o passe FECHOU: nenhuma tabela sem `.sb-table`, e só `/login` sem `PageTitle` (D-279) | ✔ |
+| **D38** | **A GAVETA** — `.sb-drawer` no design system + a primeira das cinco do frame ("Inspeção Rápida" em `/produtos`). Quatro fontes que já eram donas dos números; o "12 anúncios em risco" do frame não tem detecção por anúncio e saiu. Dois defeitos que só o render pegou: herança de fonte (corrigida com portal) e ordem de cascata (D-281) | ✔ |
 
 ## Auditoria de Fidelidade Figma
 
@@ -645,10 +655,10 @@ parece a aplicação antiga com o tema do Figma?*
 | Superfície | Fidelidade antes → depois | Status | Diferença principal que restou | Código legado |
 |---|---:|---|---|---|
 | Shell (sidebar, topbar, busca) | 78% → 86% → **91%** (A2) | ALINHADO | sem botão de recolher em tela larga; logo em texto | nav horizontal antiga: **removida** (não existia mais consumidor); paleta refeita pelo `.command` |
-| Design system (tokens, componentes) | 70% → 80% → **88%** (A2) | ALINHADO | falta `.sb-drawer` (drawers adiados); 30 telas não migradas ainda com `th`/`td` inline | cinco mapas de tom → **um** (`tone.ts`); `StatePill` cápsula → chip; `.sb-modal`/`.sb-command` nasceram; `table-styles.ts` MERGE pendente (2 consumidores não migrados) |
+| Design system (tokens, componentes) | 70% → 80% → **88%** (A2) | ALINHADO | ~~falta `.sb-drawer`~~ — **nasceu em D38** (D-281), com `.sb-detail-row` e `.sb-text-button`; `table-styles.ts` foi apagado em D-275 | cinco mapas de tom → **um** (`tone.ts`); `StatePill` cápsula → chip; `.sb-modal`/`.sb-command` nasceram; `table-styles.ts` MERGE pendente (2 consumidores não migrados) |
 | Home | 78% → **87%** | ALINHADO | seletor "14 dias ⌄" do gráfico; hora relativa no feed | `TOM` local **removido**; `.sb-attention-value` **removida** |
 | Vendas | 70% → 85% → **88%** (A2) | ALINHADO | legenda do gráfico no rodapé (frame põe no cabeçalho); altura do SVG proporcional | `FILTER_DATE_STYLE` **removido**; 3 menus → `FilterMenu`; "Cancelamentos e taxas" **dissolvido**; `SavedFilters` no design system |
-| Produtos | 68% → **83%** | ALINHADO | drawer "Inspeção Rápida" (adiado); botão "Buscar" visível (frame submete por Enter) | consts `th`/`td` **removidos**; faixa inventada **removida**; 3 menus → `FilterMenu` |
+| Produtos | 68% → 83% → **90%** (D38) | ALINHADO | botão "Buscar" visível (frame submete por Enter) — a gaveta "Inspeção Rápida" **entrou em D38** | consts `th`/`td` **removidos**; faixa inventada **removida**; 3 menus → `FilterMenu` |
 | SKU — Visão geral, Vendas, Estoque | 78% → 85% → **89%** (A2) | ALINHADO | tom "abaixo do lead time" na cobertura | `statBox`/`th`/`td`/`tdNumber`/`SalesMetricCard` **removidos** (7 tabelas em `.sb-table`); selo Curva ABC entrou (D-247) |
 | SKU — Anúncios, Preços, Full, Histórico, Diagnóstico, Decisões | 62% → 78% → **86%** (A2) | ALINHADO | ressalvas longas nos corpos de alguns painéis | `buttonStyle`/`cardStyle` do diagnóstico **removidos**; chips na aba Full e cartões no Histórico entraram |
 | Anúncios (lista) | 72% → **86%** | ALINHADO | drawer `MlbDetailDrawer` (adiado); chip "ver lista" em sans (frame usa mono) | rodapé de metodologia **removido** (mora no `title` dos cabeçalhos); 4 menus → `FilterMenu` |
@@ -676,25 +686,40 @@ Ponderado, não por contagem de páginas. Uma superfície "implementada" mas
 distante do frame não vale 100: estrutura = 50, + dados reais = 65, + design
 próximo = 80, validada contra o Figma = 95, + cleanup + testes = 100.
 
-| Bloco | Peso | A1 | A2 | D13 | **A3** |
-|---|---:|---:|---:|---:|---:|
-| Shell + navegação | 8 | 86% | 91% | 91% | 91% |
-| Design system (tokens, componentes, tabela, campo, menu, chip, modal) | 10 | 80% | 88% | 88% | 88% |
-| Home | 6 | 87% | 87% | 87% | 87% |
-| Vendas | 8 | 85% | 88% | 88% | 88% |
-| Produtos | 5 | 83% | 83% | 83% | 83% |
-| Dashboard de SKU (nove abas) | 10 | 82% | 88% | 88% | 88% |
-| Anúncios — lista | 6 | 86% | 86% | 86% | 86% |
-| **Anúncio — detalhe (oito abas)** | 5 | 25% | 25% | **84%** | 84% |
-| **D14–D17** (Estoque, Reposição, Curva ABC, Movimentações) | 8 | 25% | 25% | 25% | **88%** |
-| **D18/D20** (NF-e, Fornecedores) — frames que são ESBOÇO | 4 | 25% | 25% | 25% | **90%** |
-| **D19** (Compras) | 3 | 25% | 25% | 25% | **95%** |
-| **D21** (Integridade de Catálogo) | 4 | 25% | 25% | 25% | **92%** |
-| 16 telas ainda não migradas (D22–D36) | 22 | 25% | 25% | 25% | 25% |
-| Drawers do frame (Inspeção Rápida, MLB, pedido, fornecedor, usuário) | 4 | 0% | 0% | 0% | 0% |
-| Passe visual global + passo cinza | 3 | 0% | 0% | 0% | 0% |
+| Bloco | Peso | A1 | A2 | D13 | A3 | **D38** |
+|---|---:|---:|---:|---:|---:|---:|
+| Shell + navegação | 8 | 86% | 91% | 91% | 91% | 91% |
+| Design system (tokens, componentes, tabela, campo, menu, chip, modal) | 10 | 80% | 88% | 88% | 88% | 88% |
+| Home | 6 | 87% | 87% | 87% | 87% | 87% |
+| Vendas | 8 | 85% | 88% | 88% | 88% | 88% |
+| **Produtos** | 5 | 83% | 83% | 83% | 83% | **90%** |
+| Dashboard de SKU (nove abas) | 10 | 82% | 88% | 88% | 88% | 88% |
+| Anúncios — lista | 6 | 86% | 86% | 86% | 86% | 86% |
+| **Anúncio — detalhe (oito abas)** | 5 | 25% | 25% | **84%** | 84% | 84% |
+| **D14–D17** (Estoque, Reposição, Curva ABC, Movimentações) | 8 | 25% | 25% | 25% | **88%** | 88% |
+| **D18/D20** (NF-e, Fornecedores) — frames que são ESBOÇO | 4 | 25% | 25% | 25% | **90%** | 90% |
+| **D19** (Compras) | 3 | 25% | 25% | 25% | **95%** | 95% |
+| **D21** (Integridade de Catálogo) | 4 | 25% | 25% | 25% | **92%** | 92% |
+| 16 telas D22–D36 — **entregues, nunca re-fotografadas** | 22 | 25% | 25% | 25% | 25% | 25% |
+| **Drawers do frame** (Inspeção Rápida, MLB, pedido, fornecedor, usuário) | 4 | 0% | 0% | 0% | 0% | **18%** |
+| Passe visual global + passo cinza | 3 | 0% | 0% | 0% | 0% | 0% |
 
-**≈ 72% concluído · ≈ 28% restante.** O número só sobe quando o resultado
+**A coluna D38 mexe em DUAS linhas, e só nelas.** São as duas que esta fatia
+renderizou (1440px e 850px, Supabase local, login real): `/produtos`, cuja
+única diferença de composição que restava era a gaveta adiada — sobra o botão
+"Buscar" visível, que é acabamento —, e o bloco das gavetas, onde **uma das
+cinco** está entregue e validada contra o frame (≈90 de 5 → 18%). As outras
+treze linhas são cópia de A3, não medição nova.
+
+⚠️ **O total ponderado continua sendo o de A3, e ele está DEFASADO PARA BAIXO.**
+A linha das "16 telas D22–D36" vale 22 pontos e está em 25% porque nenhuma foi
+re-fotografada — mas as dezesseis foram entregues (D-260→D-276). Corrigir esse
+número exige a auditoria de render que a própria regra deste bloco impõe, e
+estender por contagem de código produziria exatamente o número que esta seção
+existe para não produzir. **É a maior fatia de medição pendente da frente.**
+
+**≈ 72% concluído · ≈ 28% restante** — número de A3, e o aviso acima explica
+por que ele é PISO, não valor corrente. O número só sobe quando o resultado
 renderizado se aproxima do frame — não quando código é escrito.
 
 **A coluna A3 é a primeira em que essa regra foi cumprida desde D13.** As
@@ -811,79 +836,82 @@ anterior: `/reposicao` tinha **19 de 22** células sobrepondo a classe (não 23)
 `/estoque/movimentacoes` não era vazamento parcial de 3 células — eram **todas**
 as 13.
 
-O que resta é a fila **D31 em diante**: 7 superfícies ainda não migradas — D26 (Tráfego) saiu da conta por avaliação, não por adiamento (D-266).
+⚠️ **Esta linha dizia "o que resta é a fila D31 em diante: 7 superfícies ainda
+não migradas", e estava VELHA** — D31→D36 fecharam (D-271→D-276) e o passe
+D37a/b/c também. Corrigida em D38: não resta superfície por migrar; o que resta
+está na "Próxima fatia segura".
 
 ## Última fatia concluída
 
-**D37c — as três que sobraram, e o passe fechou (D-279).** Sem migration.
+**D38 — a primeira gaveta do Figma (D-281).** Sem migration.
 
-### `/cobertura`: a fusão que o frame pede, e a medição que a desaconselha HOJE
+A frente visual tinha fechado em D37c, e o que restava de COMPOSIÇÃO eram as
+cinco gavetas adiadas desde A1. Esta entrega a primeira, e com ela o
+`.sb-drawer` que a auditoria de fidelidade listava como a peça ausente do
+design system.
 
-Fui ler o frame `Coverage` para decidir como fundir, e a leitura respondeu
-outra coisa: **as duas faces do frame já existem migradas** — `/reposicao`
-(D-250) e `/reposicao/configuracoes` (D-278). Sobrancelha, título, cartões de
-estado e painel "Recomendação de compra" são literalmente o que `/reposicao`
-renderiza. `/cobertura` **não tem contrapartida no desenho**.
+### Por que a "Inspeção Rápida", e não outra das cinco
 
-Medido no Dev antes de decidir:
+As cinco não são equivalentes. Quatro (MLB, pedido, fornecedor, usuário)
+mostram entidade que **já tem tela cheia migrada** — `/anuncios/[itemId]`
+(D13), `/compras/[id]` e `/fornecedores/[supplierId]` (D-277), `/usuarios`
+(D-271). Pôr gaveta ali é decidir se ela SUBSTITUI ou DUPLICA a tela, e duas
+implementações da mesma interface convivendo é o que o Design Contract proíbe.
 
-| tela | conjunto | sinal |
-|---|---|---|
-| `/cobertura` | 3.257 SKUs | **324 em ruptura** |
-| `/reposicao` | 3.180 SKUs | **zero em qualquer estado** |
+A Inspeção Rápida não tem esse problema: é um retrato de seis fatos dentro da
+lista onde a decisão de curadoria acontece, e o botão dela leva ao dashboard do
+SKU — que já era o destino do link do título.
 
-⚠️ **A linha do `/reposicao` acima estava ERRADA, e a correção é D-280.** Eu
-chamei a RPC com `null` em `p_date_to` — parâmetro sem default —, e um nulo ali
-zera a janela de venda inteira. Com data real: **466 com estado** (RUPTURA 139,
-ADEQUADA 206, COMPRA_URGENTE 80, COBERTURA_BAIXA 26, COMPRAR_EM_BREVE 15).
-Nada regrediu — bate com o que D-250 mediu em 05/09.
+### Nenhum número nasce na gaveta
 
-**A decisão de não fundir sobrevive, por um motivo melhor:** as duas discordam
-sobre "ruptura" em **185 SKUs** (324 × 139), e a divergência é legítima —
-`/cobertura` olha estoque LOCAL sobre 30 dias, `/reposicao` olha local + Full +
-trânsito com lead time e cobertura alvo. Fundir exige escolher UMA definição de
-ruptura, e essa escolha é de produto, não de passe visual.
+Cada valor vem da função que já é dona dele em outra tela, na mesma janela de
+30 dias: `get_stock_coverage` (cobertura, ruptura, vendas 30d, saldo
+sentinela), `get_sku_dashboard` (físico, reservado, trânsito, Full),
+`replenishment_settings` + `resolveReplenishmentPolicy` (cobertura alvo) e
+`stock_movements` pelo índice de extrato do SKU (última movimentação).
 
-Os três números que a tela mede estavam **dentro de um parágrafo**, misturados
-com as definições. Viraram `KpiStrip` de três células, com as definições na
-`formula`. Não há quarta: "vendas perdidas estimadas" segue fora por falta de
-saldo inicial no ledger (D-061).
+**Duas fontes óbvias foram recusadas, e as duas recusas são sobre a FORMA da
+pergunta.** `get_purchase_suggestions` traria tudo numa ida e é função de
+LISTA — filtra por `ilike` depois de agregar o catálogo inteiro, e achar "o SKU
+certo" numa página ordenada por prioridade é recorte, não leitura. E a RPC de
+`/estoque/movimentacoes` filtra por TEXTO: o código de um SKU casa qualquer
+outro que o contenha, e a linha mais recente do conjunto poderia ser de outro
+produto com a cara de ser deste.
 
-### `/atendimento/[caseId]`: o frame desenha esta tela, e dá ao prazo o topo
+O frame mostra *"Risco de ruptura iminente em 12 anúncios"*. **Não existe
+detecção de anomalia por anúncio** (a recusa de D-023 que já tinha tirado a
+coluna "Saúde" de `/anuncios`). O alerta ficou, o número saiu.
 
-Diferente de `/compras/[id]` (onde o "Detalhe de Pedido" era de pedido de
-VENDA — a armadilha de D-277), aqui há `CaseDetail` de verdade. E o que ele põe
-logo abaixo do título é uma **banda de prazo**. Na V3 o prazo existia e era
-lista com marcador **depois da conversa inteira**: o dado que expira, lido por
-último.
+### Os dois defeitos que só a captura mostrou
 
-A banda subiu, **sem contagem regressiva** — página renderizada no servidor
-congela o número, e relógio parado que parece andar é pior que instante
-nenhum. Mostra o instante, a fonte (D-084) e a comparação entre dois instantes.
+**A gaveta herdava a fonte de onde o botão mora.** O gatilho vive dentro da
+célula "SKU 1234", monoespaçada de propósito. `position: fixed` solta do
+layout, não da herança: título, valores e botões saíram todos em DM Mono. O
+`innerText` do teste era idêntico. Correção: `createPortal` para o
+`document.body` — camada flutuante não pode depender de onde o botão que a abre
+está, e isso vale para as quatro gavetas seguintes.
 
-Duas correções vieram de ler o esquema depois de escrever: a banda ignorava
-`status` (um prazo `MET` apareceria como vencido) e mostrava a fonte como enum
-cru; agora filtra `ACTIVE` e traduz — a distinção que importa em D-084 é
-interna vs. Mercado Livre, e o rótulo a preserva.
+**A nota de ruptura saía violeta.** `.sb-note-perigo` foi escrita junto da
+camada flutuante, ~1.100 linhas ACIMA de `.sb-note`: mesma especificidade, a
+última vence, e o alerta ficou com a cara de informação. As variantes de tom
+passaram a morar logo depois da base.
 
-### `/compras/novo`: eu tinha registrado uma recusa, e a tela desmentiu
+**Nenhum lint, tipo ou asserção de texto pega esses dois.** É a mesma lição que
+A3 registrou sobre a migração pela metade das tabelas: o que pega é abrir a
+tela.
 
-D-278 registrou que a tabela de entrada ficaria de fora porque "as células são
-campos" — a pergunta de D-275 respondida por raciocínio, sem abrir a tela.
-Testei: **o cabeçalho rotula as MESMAS colunas que `/compras/[id]` mostra
-depois**, e tipá-los diferente era a inconsistência que o passe existe para
-remover. **Uma recusa registrada também precisa ser medida.**
+### O que ficou diferente do frame, de propósito
 
-### O passe fechou
+No frame o clique na célula abre a gaveta e não há link para a página cheia —
+ela é o botão do rodapé. Aqui o título continua `<Link>` e a gaveta ganhou
+gatilho próprio. Link é comportamento (nova aba, teclado, meio-clique), não
+aparência: é a regra de conflito em que o Figma perde para a função.
 
-`check:table-styles` de **21** (início de D37a) para **30**. **Nenhum arquivo
-com `<table>` sem `.sb-table`**; a única `page.tsx` sem `PageTitle` ou
-`ObjectHeader` é `/login`, fora do `Shell` de propósito.
-
-**Verificação:** `check` 29/29, build 8/8, integração **633/633**, e2e
-**82/82**, unitários 413, `check:waterfalls` 61, `docs:check`. As três telas
-abertas no navegador com login real — a banda de prazo conferida com um prazo
-plantado no banco local e removido depois.
+**Verificação:** `check` 29/29, build 8/8, integração **634/634**, e2e
+**83/83** (1 novo), `check:table-styles` 30, `check:server-actions` 18,
+`check:waterfalls` 61. Renderizada a 1440px e 850px contra o Supabase local com
+login real; o estado de RUPTURA conferido plantando `stock_is_virtual = false`
+no SKU da anomalia e desfazendo em seguida.
 
 ## Próxima fatia segura
 
@@ -898,10 +926,17 @@ motivo já registrados. Em ordem de risco medido:
    escolher UMA definição de ruptura: as duas discordam em **185 SKUs** (324 ×
    139) porque medem coisas diferentes — local sobre 30 dias × local + Full +
    trânsito com lead time. É decisão de produto, não de acabamento.
-2. **Os drawers do frame** (Inspeção Rápida, MLB, pedido, fornecedor,
-   usuário), adiados desde A1 — são o único elemento de composição do desenho
-   que a V3 nunca implementou.
-3. Os **sete itens abertos** listados abaixo.
+2. ~~**Os drawers do frame**~~ — **a primeira saiu em D38** (D-281): a moldura
+   (`Drawer` + `.sb-drawer`) existe e está renderizada. As **quatro restantes**
+   (MLB, pedido, fornecedor, usuário) esbarram todas na MESMA pergunta, e ela
+   não é de acabamento: cada uma mostra entidade que já tem tela cheia migrada,
+   então a gaveta ou substitui a tela ou a duplica. **Decidir isso é
+   composição** — e a decisão vale para as quatro de uma vez, não uma a uma.
+3. **A auditoria de render de D22–D36** — dezesseis telas entregues e nunca
+   re-fotografadas. Valem 22 dos 106 pontos do bloco de progresso e continuam
+   contadas a 25%; é a maior fatia de MEDIÇÃO pendente da frente, e o método já
+   existe (A3/A3b).
+4. Os **sete itens abertos** listados abaixo.
 
 ⚠️ **O que D-279 listou aqui como item 1 — "`get_purchase_suggestions` não
 classifica nenhum SKU" — NÃO EXISTE.** Era erro de medição meu (`p_date_to`
@@ -915,8 +950,9 @@ valem para qualquer fatia futura, não só de design: **o frame tem fonte?**
 fixture do teste é um dado degradado de verdade?** (D-273), **o mapa já sabe
 disso?** (D-274), **o elemento é lido ou é acionado?** (D-275), **este caso
 passa na tela errada?** (D-276), **o desenho é desta ENTIDADE?** (D-277), **a
-FORMA do meu fixture é a forma real?** (D-278) e, de D-279, **a recusa que eu
-registrei foi medida ou só raciocinada?**
+FORMA do meu fixture é a forma real?** (D-278), de D-279, **a recusa que eu
+registrei foi medida ou só raciocinada?** e, de D-281, **o que eu estou
+afirmando aparece no `innerText` — ou só na captura?**
 
 **Sete itens seguem abertos fora da fila:**
 
