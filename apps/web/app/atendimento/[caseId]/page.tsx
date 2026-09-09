@@ -24,6 +24,7 @@ import {
 } from "../../../lib/labels";
 import { resolveSupportCaseReference } from "../../../lib/support-case-reference";
 import { createClient } from "../../../lib/supabase/server";
+import { GavetaPedido } from "../gaveta-pedido";
 import { TriageCell } from "../triage-cell";
 import { ReplyForm } from "./reply-form";
 
@@ -234,6 +235,10 @@ export default async function AtendimentoDetalhePage({
   }
   const reference = resolveSupportCaseReference(supportCase.support_case_links);
 
+  // O primeiro vínculo de PEDIDO, independentemente da referência escolhida.
+  const pedidoVinculado =
+    supportCase.support_case_links.find((link) => link.order_id !== null)?.order_id ?? null;
+
   /*
     O PRAZO VIGENTE: o ATIVO que vence primeiro. Mesma escolha de
     `/atendimento` (`prazoVigente`), e pelo mesmo motivo — com mais de um
@@ -298,6 +303,26 @@ export default async function AtendimentoDetalhePage({
         </Link>
       ),
     ],
+    /*
+      O PEDIDO, e ele é linha PRÓPRIA — não a referência.
+
+      `resolveSupportCaseReference` escolhe UM vínculo para representar o caso, e
+      o pedido é a quarta preferência dela: um caso que também tem SKU nunca
+      mostrava o pedido, embora o vínculo estivesse ali. E o número sozinho
+      nunca levou a lugar nenhum, porque **pedido de venda não tem tela na V3**
+      — a gaveta (D39) é a primeira superfície a responder o que foi comprado.
+    */
+    ...(pedidoVinculado === null
+      ? []
+      : ([
+          [
+            "Pedido",
+            <span key="pedido" style={{ display: "flex", gap: "var(--sb-space-2)", alignItems: "center" }}>
+              <span className="sb-mono">{pedidoVinculado}</span>
+              <GavetaPedido orderId={pedidoVinculado} />
+            </span>,
+          ],
+        ] as const)),
     ["Estado no Mercado Livre", supportCase.external_status ?? "—"],
     ["Subestado", supportCase.external_substatus ?? "—"],
     [

@@ -61,7 +61,7 @@ describe("resolveSupportCaseReference", () => {
     });
   });
 
-  it("anúncio NÃO ganha link — `/anuncios` é lista, não tem página por item (mesmo critério de D-074)", () => {
+  it("anúncio RESOLVIDO ganha link para o dashboard dele; o externo continua sem", () => {
     const resolvido = resolveSupportCaseReference([
       link({ listing_id: LISTING_ID, listings: { item_id: "MLB1", title: null } }),
     ]);
@@ -69,7 +69,15 @@ describe("resolveSupportCaseReference", () => {
       link({ external_entity_kind: "LISTING", external_entity_id: "MLB1" }),
     ]);
 
-    expect(resolvido?.href).toBeNull();
+    // `/anuncios/[itemId]` existe desde D13 — o `href: null` daqui era registro
+    // envelhecido, e o atendimento mostrava o MLB como texto morto (D39).
+    expect(resolvido?.href).toBe("/anuncios/MLB1");
+
+    /*
+      O EXTERNO continua sem link, e a diferença não é descuido: `listings` não
+      tem esse anúncio: ele veio do vínculo cru que D-086 preserva. Mandar para
+      `/anuncios/MLB1` levaria a uma página que não acha a linha.
+    */
     expect(externo?.href).toBeNull();
   });
 

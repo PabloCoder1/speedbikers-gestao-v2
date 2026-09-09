@@ -273,7 +273,7 @@ branco embutido.
 | `StatusPill` (código do banco → tom) | `components/status-pill.tsx` | alinhado — `.sb-status` + `tone.ts` |
 | `StatePill` (vocabulário da tela → tom) | `components/state-pill.tsx` | alinhado — era cápsula de contorno; virou o mesmo chip |
 | `.sb-table`, `.sb-input`, `.sb-empty`, `.sb-menu`, `.sb-modal`, `.sb-backdrop`, `.sb-close` | `app/globals.css` | as formas únicas de tabela, campo, vazio, menu e camada flutuante; **adotar ao migrar cada tela** |
-| `Drawer` + `.sb-drawer` | `components/drawer.tsx`, `app/globals.css` | **novo em D38** — a moldura das cinco gavetas do frame (sobrancelha + fechar, corpo que rola, ações no rodapé), com `.sb-detail-row` para a lista de fatos e `.sb-text-button` para o gatilho. **Renderiza por portal**: dentro da célula que a dispara, ela herdava a fonte mono (D-281) |
+| `Drawer` + `DetailRow` + `.sb-drawer` | `components/drawer.tsx`, `app/globals.css` | **novo em D38, com CINCO consumidores desde D39** — a moldura das gavetas do frame (sobrancelha + fechar, corpo que rola, ações no rodapé), `DetailRow` para a linha de fato e `.sb-text-button` para o gatilho. **Renderiza por portal**: dentro da célula que a dispara, ela herdava a fonte mono (D-281). As gavetas vivem em `app/<rota>/inspecao*.tsx` — cada uma lê o que a lista dela não carrega |
 | `TrendBadge` | `components/trend-badge.tsx` | alinhado (texto, não chip) |
 | `SavedFilters` | `components/saved-filters.tsx` | alinhado em A2 — `.sb-menu` para as visões e `.sb-modal` para nomear (o `window.prompt` saiu) |
 | `CommandPalette` | `components/command-palette.tsx` | alinhado em A2 — `.sb-command` (520px a 16vh, cabeçalho, ✕, `ESC`, resultados agrupados por tipo) |
@@ -305,7 +305,9 @@ branco embutido.
 | Logo em imagem na marca | o export traz uma captura de tela, não o asset da marca; sem `public/` nem logo por organização. Entra quando existir asset oficial | — |
 | Botão de recolher a sidebar (`.collapse`) | o trilho de 58px existe em ≤850 (A1); recolher por clique em tela larga é estado de cliente sem frame de "recolhida" — fila A2 | — |
 | ~~Drawer "Inspeção Rápida" (produtos)~~ | **entregue em D38** (D-281) — a linha continua levando ao dashboard completo, e a gaveta também | — |
-| `MlbDetailDrawer` (anúncios) e as outras três (pedido, fornecedor, usuário) | as quatro mostram entidade que **já tem tela cheia migrada**; pôr gaveta ali é decidir se ela SUBSTITUI ou DUPLICA a tela, e isso é composição, não acabamento (D-281) | escopo |
+| ~~`MlbDetailDrawer` e as outras três~~ | **entregues em D39** (D-282). O que ficou de fora são as ABAS que o frame desenha dentro de duas delas — oito no anúncio, cinco no fornecedor: elas são as telas cheias que já existem (D13, D-174), e reproduzi-las na gaveta seria a segunda implementação da mesma interface | — |
+| Nome do comprador, logística e timeline da transportadora na gaveta do pedido | conferido em `\d`: `orders` guarda `buyer_id` (um número) e `shipping_id`, e não há tabela de envio nem de comprador. O que existe é o registro de EXCEÇÕES em `domain_events` | D-282 |
+| "Saúde do Anúncio" (Full ativo · competitividade de preço · qualidade das fotos) | dos três sinais só o Full tem fonte — concorrência não é coletada e qualidade de foto não existe no esquema. Um bloco com um sinal de três não é o bloco do frame | D-282 |
 | Célula "Com queda" e coluna "Saúde" em Anúncios | sem detecção de anomalia por anúncio e sem definição canônica de "saúde" | D-023 |
 | Ação "Novo anúncio" | a V3 não cria anúncio no Mercado Livre — escrita no ML é ato com aprovação humana | escopo e segurança |
 
@@ -643,6 +645,7 @@ que ele renderiza.**
 | D37b | **Importador do UpSeller** (lista, conferência, envio) + varrimento de `PageTitle` em 8 telas; o denominador da aplicação é `ok_rows`, e medir contra o total inventaria 14% de falha (D-278) | ✔ |
 | D37c | **`/cobertura`, `/atendimento/[caseId]` e a tabela de `/compras/novo`** — o passe FECHOU: nenhuma tabela sem `.sb-table`, e só `/login` sem `PageTitle` (D-279) | ✔ |
 | **D38** | **A GAVETA** — `.sb-drawer` no design system + a primeira das cinco do frame ("Inspeção Rápida" em `/produtos`). Quatro fontes que já eram donas dos números; o "12 anúncios em risco" do frame não tem detecção por anúncio e saiu. Dois defeitos que só o render pegou: herança de fonte (corrigida com portal) e ordem de cascata (D-281) | ✔ |
+| **D39** | **AS QUATRO GAVETAS RESTANTES** — anúncio, fornecedor, usuário e pedido. A regra que decidiu as quatro de uma vez: a gaveta RESUME e leva à tela, então as abas do frame não entram. A do pedido é superfície NOVA (não existe tela de pedido de venda); o seed passou a criar um. Dois achados fora da fatia: link morto para `/anuncios/[itemId]` no Atendimento e o segundo mapa de tom prestes a nascer (D-282) | ✔ |
 
 ## Auditoria de Fidelidade Figma
 
@@ -686,7 +689,7 @@ Ponderado, não por contagem de páginas. Uma superfície "implementada" mas
 distante do frame não vale 100: estrutura = 50, + dados reais = 65, + design
 próximo = 80, validada contra o Figma = 95, + cleanup + testes = 100.
 
-| Bloco | Peso | A1 | A2 | D13 | A3 | **D38** |
+| Bloco | Peso | A1 | A2 | D13 | A3 | **D38/D39** |
 |---|---:|---:|---:|---:|---:|---:|
 | Shell + navegação | 8 | 86% | 91% | 91% | 91% | 91% |
 | Design system (tokens, componentes, tabela, campo, menu, chip, modal) | 10 | 80% | 88% | 88% | 88% | 88% |
@@ -701,15 +704,17 @@ próximo = 80, validada contra o Figma = 95, + cleanup + testes = 100.
 | **D19** (Compras) | 3 | 25% | 25% | 25% | **95%** | 95% |
 | **D21** (Integridade de Catálogo) | 4 | 25% | 25% | 25% | **92%** | 92% |
 | 16 telas D22–D36 — **entregues, nunca re-fotografadas** | 22 | 25% | 25% | 25% | 25% | 25% |
-| **Drawers do frame** (Inspeção Rápida, MLB, pedido, fornecedor, usuário) | 4 | 0% | 0% | 0% | 0% | **18%** |
+| **Drawers do frame** (Inspeção Rápida, MLB, pedido, fornecedor, usuário) | 4 | 0% | 0% | 0% | 0% | **86%** |
 | Passe visual global + passo cinza | 3 | 0% | 0% | 0% | 0% | 0% |
 
-**A coluna D38 mexe em DUAS linhas, e só nelas.** São as duas que esta fatia
-renderizou (1440px e 850px, Supabase local, login real): `/produtos`, cuja
-única diferença de composição que restava era a gaveta adiada — sobra o botão
-"Buscar" visível, que é acabamento —, e o bloco das gavetas, onde **uma das
-cinco** está entregue e validada contra o frame (≈90 de 5 → 18%). As outras
-treze linhas são cópia de A3, não medição nova.
+**A coluna D38/D39 mexe em DUAS linhas, e só nelas.** São as duas que estas
+fatias renderizaram (1440px e 850px, Supabase local, login real): `/produtos`,
+cuja única diferença de composição que restava era a gaveta adiada — sobra o
+botão "Buscar" visível, que é acabamento —, e o bloco das gavetas, agora com
+**as cinco entregues e fotografadas**. Ele não vai a 100 porque duas delas
+recusam abas que o frame desenha (as oito do anúncio, as cinco do fornecedor),
+e recusa medida continua sendo diferença. As outras treze linhas são cópia de
+A3, não medição nova.
 
 ⚠️ **O total ponderado continua sendo o de A3, e ele está DEFASADO PARA BAIXO.**
 A linha das "16 telas D22–D36" vale 22 pontos e está em 25% porque nenhuma foi
@@ -843,95 +848,91 @@ está na "Próxima fatia segura".
 
 ## Última fatia concluída
 
-**D38 — a primeira gaveta do Figma (D-281).** Sem migration.
+**D39 — as quatro gavetas restantes, e a composição do Figma fechou (D-282).**
+Sem migration.
 
-A frente visual tinha fechado em D37c, e o que restava de COMPOSIÇÃO eram as
-cinco gavetas adiadas desde A1. Esta entrega a primeira, e com ela o
-`.sb-drawer` que a auditoria de fidelidade listava como a peça ausente do
-design system.
+D38 entregou a primeira e deixou a pergunta escrita: anúncio, pedido,
+fornecedor e usuário mostram entidade que **já tem tela cheia**, então a gaveta
+ou substitui a tela ou a duplica. Esta fatia responde a pergunta uma vez, para
+as quatro.
 
-### Por que a "Inspeção Rápida", e não outra das cinco
+### A regra, e ela vale para as cinco
 
-As cinco não são equivalentes. Quatro (MLB, pedido, fornecedor, usuário)
-mostram entidade que **já tem tela cheia migrada** — `/anuncios/[itemId]`
-(D13), `/compras/[id]` e `/fornecedores/[supplierId]` (D-277), `/usuarios`
-(D-271). Pôr gaveta ali é decidir se ela SUBSTITUI ou DUPLICA a tela, e duas
-implementações da mesma interface convivendo é o que o Design Contract proíbe.
+**A gaveta é um RESUMO que leva à tela; nunca uma segunda versão dela.** Daí o
+corte mais visível: **as abas do frame não entram**. O `MlbDetailDrawer`
+desenha, dentro da gaveta, as mesmas oito abas do dashboard do anúncio; o
+`SupplierDetailDrawer`, cinco. As duas telas existem migradas (D13, D-277).
 
-A Inspeção Rápida não tem esse problema: é um retrato de seis fatos dentro da
-lista onde a decisão de curadoria acontece, e o botão dela leva ao dashboard do
-SKU — que já era o destino do link do título.
+O que sobra para a gaveta é o que a LISTA não mostra:
 
-### Nenhum número nasce na gaveta
+| gaveta | o que ela acrescenta à linha |
+|---|---|
+| anúncio | frescor (`synced_at`), estado da **republicação** e os cinco últimos eventos de domínio |
+| fornecedor | canais de contato, decomposição dos pedidos por estado e a ressalva de custo ausente |
+| usuário | a proteção do último ADMIN e o histórico de acesso **daquela pessoa** |
+| pedido | tudo: **não existe tela de pedido de venda na V3** |
 
-Cada valor vem da função que já é dona dele em outra tela, na mesma janela de
-30 dias: `get_stock_coverage` (cobertura, ruptura, vendas 30d, saldo
-sentinela), `get_sku_dashboard` (físico, reservado, trânsito, Full),
-`replenishment_settings` + `resolveReplenishmentPolicy` (cobertura alvo) e
-`stock_movements` pelo índice de extrato do SKU (última movimentação).
+### A do pedido não resume nada — é superfície nova
 
-**Duas fontes óbvias foram recusadas, e as duas recusas são sobre a FORMA da
-pergunta.** `get_purchase_suggestions` traria tudo numa ida e é função de
-LISTA — filtra por `ilike` depois de agregar o catálogo inteiro, e achar "o SKU
-certo" numa página ordenada por prioridade é recorte, não leitura. E a RPC de
-`/estoque/movimentacoes` filtra por TEXTO: o código de um SKU casa qualquer
-outro que o contenha, e a linha mais recente do conjunto poderia ser de outro
-produto com a cara de ser deste.
+`resolveSupportCaseReference` devolvia `href: null` para `ORDER` porque não
+havia destino. Quem atendia via um número de 16 dígitos e abria o painel do
+Mercado Livre para saber o que fora comprado.
 
-O frame mostra *"Risco de ruptura iminente em 12 anúncios"*. **Não existe
-detecção de anomalia por anúncio** (a recusa de D-023 que já tinha tirado a
-coluna "Saúde" de `/anuncios`). O alerta ficou, o número saiu.
+O que o frame promete e o esquema não tem — conferido em `\d`, não no código da
+tela: **nome do comprador** (`orders` guarda `buyer_id`), **logística** (existe
+`shipping_id` e nada mais) e a **timeline da transportadora**. O que existe é o
+registro de EXCEÇÕES em `domain_events`, e o silêncio ali é declarado: "só
+cancelamento, devolução e reversão perdida geram registro".
 
-### Os dois defeitos que só a captura mostrou
+**O seed não criava um pedido sequer** — a lição de D-242 outra vez. Passou a
+criar, com dois itens cuja diferença é o teste: um vinculado ao SKU (vira link)
+e um sem vínculo (mostra o `seller_sku` cru).
 
-**A gaveta herdava a fonte de onde o botão mora.** O gatilho vive dentro da
-célula "SKU 1234", monoespaçada de propósito. `position: fixed` solta do
-layout, não da herança: título, valores e botões saíram todos em DM Mono. O
-`innerText` do teste era idêntico. Correção: `createPortal` para o
-`document.body` — camada flutuante não pode depender de onde o botão que a abre
-está, e isso vale para as quatro gavetas seguintes.
+### Dois achados que não eram desta fatia
 
-**A nota de ruptura saía violeta.** `.sb-note-perigo` foi escrita junto da
-camada flutuante, ~1.100 linhas ACIMA de `.sb-note`: mesma especificidade, a
-última vence, e o alerta ficou com a cara de informação. As variantes de tom
-passaram a morar logo depois da base.
+1. **Link morto no Atendimento.** `support-case-reference.ts` dizia, com
+   comentário e teste, que "anúncio não tem página de detalhe própria".
+   `/anuncios/[itemId]` existe desde **D13** — o registro envelheceu e o código
+   continuou obedecendo a ele.
+2. **`relistTom` ia virar a segunda cópia de um mapa de tom** — subiu para
+   `components/tone.ts` como `tomDeRelist`.
 
-**Nenhum lint, tipo ou asserção de texto pega esses dois.** É a mesma lição que
-A3 registrou sobre a migração pela metade das tabelas: o que pega é abrir a
-tela.
+### O defeito que um teste antigo pegou, e o que só a captura pegou
 
-### O que ficou diferente do frame, de propósito
+O gatilho da gaveta de usuário nasceu dentro da célula "Pessoa" e mudou o nome
+acessível dela de `"E2E"` para `"E2E Inspecionar"`; `usuarios.spec.ts` afirma a
+célula EXATA desde D-234 e ficou vermelho. **A correção não era afrouxar o
+teste** — ele guarda a regressão do segundo membro — e sim tirar o controle de
+dentro do dado: célula própria, sem rótulo, como a do checkbox em `/produtos`.
 
-No frame o clique na célula abre a gaveta e não há link para a página cheia —
-ela é o botão do rodapé. Aqui o título continua `<Link>` e a gaveta ganhou
-gatilho próprio. Link é comportamento (nova aba, teclado, meio-clique), não
-aparência: é a regra de conflito em que o Figma perde para a função.
+E a primeira colocação dessa célula estava errada de um jeito que **nenhum
+teste vê**: entrou depois de "Pessoa" em vez do fim da linha, e as colunas
+desalinharam do cabeçalho. Quem pegou foi o render — terceira vez nesta série
+(a fonte herdada e a cascata em D38, o desalinhamento aqui).
 
 **Verificação:** `check` 29/29, build 8/8, integração **634/634**, e2e
-**83/83** (1 novo), `check:table-styles` 30, `check:server-actions` 18,
-`check:waterfalls` 61. Renderizada a 1440px e 850px contra o Supabase local com
-login real; o estado de RUPTURA conferido plantando `stock_is_virtual = false`
-no SKU da anomalia e desfazendo em seguida.
+**87/87** (4 novos), `check:table-styles` 30, `check:server-actions` 21,
+`check:waterfalls` 61. As quatro renderizadas a 1440px contra o Supabase local
+com login real.
 
 ## Próxima fatia segura
 
-**A frente visual FECHOU.** D0→D25, D27→D36 e o passe D37a/b/c estão
-entregues; D26 foi recusada com medição (D-266). O guarda
-`check:table-styles` conta **30** telas e não há mais nenhuma fora.
+**A COMPOSIÇÃO DO FIGMA FECHOU.** D0→D25, D27→D36, o passe D37a/b/c e **as
+cinco gavetas** (D38, D39) estão entregues; D26 foi recusada com medição
+(D-266). O guarda `check:table-styles` conta **30** telas e não há mais nenhuma
+fora. Não resta elemento do desenho por implementar.
 
-O que resta não é fatia de design — são itens de produto, cada um com dono e
-motivo já registrados. Em ordem de risco medido:
+O que resta é MEDIÇÃO e produto, cada item com dono e motivo já registrados.
+Em ordem de risco medido:
 
 1. **Fundir `/cobertura` com `/reposicao`**, como o frame desenha. Exige
    escolher UMA definição de ruptura: as duas discordam em **185 SKUs** (324 ×
    139) porque medem coisas diferentes — local sobre 30 dias × local + Full +
    trânsito com lead time. É decisão de produto, não de acabamento.
-2. ~~**Os drawers do frame**~~ — **a primeira saiu em D38** (D-281): a moldura
-   (`Drawer` + `.sb-drawer`) existe e está renderizada. As **quatro restantes**
-   (MLB, pedido, fornecedor, usuário) esbarram todas na MESMA pergunta, e ela
-   não é de acabamento: cada uma mostra entidade que já tem tela cheia migrada,
-   então a gaveta ou substitui a tela ou a duplica. **Decidir isso é
-   composição** — e a decisão vale para as quatro de uma vez, não uma a uma.
+2. ~~**Os drawers do frame**~~ — **as cinco entregues** (D38/D-281 e
+   D39/D-282), sob a regra de que a gaveta resume e leva à tela. O que
+   permanece fora são as ABAS que o frame desenha dentro de duas delas, e isso
+   é recusa medida, não pendência.
 3. **A auditoria de render de D22–D36** — dezesseis telas entregues e nunca
    re-fotografadas. Valem 22 dos 106 pontos do bloco de progresso e continuam
    contadas a 25%; é a maior fatia de MEDIÇÃO pendente da frente, e o método já
@@ -951,8 +952,9 @@ fixture do teste é um dado degradado de verdade?** (D-273), **o mapa já sabe
 disso?** (D-274), **o elemento é lido ou é acionado?** (D-275), **este caso
 passa na tela errada?** (D-276), **o desenho é desta ENTIDADE?** (D-277), **a
 FORMA do meu fixture é a forma real?** (D-278), de D-279, **a recusa que eu
-registrei foi medida ou só raciocinada?** e, de D-281, **o que eu estou
-afirmando aparece no `innerText` — ou só na captura?**
+registrei foi medida ou só raciocinada?**, de D-281, **o que eu estou
+afirmando aparece no `innerText` — ou só na captura?** e, de D-282, **este
+registro ainda é verdade, ou a rota que ele nega já nasceu?**
 
 **Sete itens seguem abertos fora da fila:**
 

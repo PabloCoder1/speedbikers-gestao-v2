@@ -26,6 +26,35 @@ import { createPortal } from "react-dom";
  * mesma camada. Aprofundar acessibilidade da camada é uma fatia própria, e
  * vale para as três de uma vez.
  */
+/**
+ * A LINHA DE FATO da gaveta (`.detail-row` do export): rótulo à esquerda,
+ * valor à direita, ressalva embaixo do valor.
+ *
+ * Nasceu componente na segunda gaveta, não na primeira: com um consumidor era
+ * markup; com cinco, seria a mesma marcação repetida cinco vezes — que é como
+ * os cinco mapas de tom de D-246 apareceram.
+ */
+export function DetailRow({
+  label,
+  value,
+  note,
+}: {
+  label: string;
+  value: ReactNode;
+  /** A ressalva que diz DE ONDE o valor vem, ou por que ele é "—". */
+  note?: ReactNode;
+}): ReactNode {
+  return (
+    <div className="sb-detail-row">
+      <span>{label}</span>
+      <b>
+        {value}
+        {note !== undefined && <small>{note}</small>}
+      </b>
+    </div>
+  );
+}
+
 export function Drawer({
   eyebrow,
   label,

@@ -8,6 +8,7 @@ import { formatCount, formatDateTime } from "../../lib/format";
 import { roleLabel } from "../../lib/labels";
 import { createClient } from "../../lib/supabase/server";
 import { currentMembership } from "../../lib/membership";
+import { DetalheUsuario } from "./detalhe-usuario";
 import { AccountAccessControls, RoleSelect } from "./member-controls";
 
 export const metadata = { title: "Usuários — Speed Bikers Gestão" };
@@ -136,6 +137,14 @@ export default async function UsuariosPage(): Promise<ReactNode> {
   */
   const PAPEIS = ["ADMIN", "GESTOR", "ANALISTA", "OPERADOR", "VISUALIZADOR"] as const;
 
+  /*
+    Quantos ADMIN existem. É o que decide se a gaveta mostra a "Proteção ativa"
+    do frame — e o número é o MESMO que o trigger `guard_last_admin` consulta
+    para recusar a escrita. A tela não protege nada; ela conta a mesma coisa
+    que o banco conta, e diz.
+  */
+  const admins = members.filter((m) => m.role === "ADMIN").length;
+
   const celulas: KpiCellData[] = [
     {
       label: "Membros",
@@ -223,6 +232,8 @@ export default async function UsuariosPage(): Promise<ReactNode> {
                 vizinha — há quanto tempo esta pessoa tem este acesso.
               */}
               <th>Desde</th>
+              {/* Coluna do gatilho da gaveta: sem rótulo, como a do checkbox. */}
+              <th style={{ width: "6rem" }} />
             </tr>
           </thead>
           <tbody>
@@ -230,6 +241,15 @@ export default async function UsuariosPage(): Promise<ReactNode> {
               const granted = permissions
                 .filter((p) => p.user_id === member.user_id)
                 .map((p) => p.ml_account_id);
+
+              // O texto das contas é o MESMO da célula abaixo, resolvido uma
+              // vez: a gaveta e a tabela não podem discordar sobre alcance.
+              const contasTexto =
+                member.role === "ADMIN"
+                  ? "todas as contas (por ser ADMIN)"
+                  : granted.length === 0
+                    ? "nenhuma"
+                    : granted.map((id) => contaPorId.get(id) ?? id).join(", ");
 
               return (
                 <tr key={member.user_id}>
@@ -266,6 +286,44 @@ export default async function UsuariosPage(): Promise<ReactNode> {
                     )}
                   </td>
                   <td style={{ whiteSpace: "nowrap" }}>{formatDateTime(member.created_at)}</td>
+                  {/*
+                    A gaveta do frame, em CÉLULA PRÓPRIA — e a razão é um teste.
+
+                    O gatilho nasceu dentro da célula "Pessoa", e isso mudou o
+                    nome acessível dela de "E2E" para "E2E Inspecionar":
+                    `usuarios.spec.ts` afirma a célula EXATA desde D-234, e
+                    ficou vermelho. A correção certa não era afrouxar o teste —
+                    ele guarda a regressão do segundo membro — e sim tirar o
+                    controle de dentro do dado. A coluna fica sem rótulo, como a
+                    do checkbox em `/produtos`.
+                  */}
+                  <td>
+                      <DetalheUsuario
+                        nome={member.profiles?.full_name ?? null}
+                        userId={member.user_id}
+                        role={member.role}
+                        roleLabel={roleLabel(member.role)}
+                        contas={contasTexto}
+                        desde={formatDateTime(member.created_at)}
+                        ehUltimoAdmin={member.role === "ADMIN" && admins === 1}
+                        historicoVisivel={isAdmin}
+                        historico={events
+                          .filter((evento) => evento.target_user_id === member.user_id)
+                          .map((evento) => ({
+                            id: evento.id,
+                            quando: formatDateTime(evento.occurred_at),
+                            oQue: eventoLabel(evento),
+                            quemMudou:
+                              evento.actor_user_id === null
+                                ? "sistema"
+                                : (nomePorUsuario.get(evento.actor_user_id) ?? evento.actor_user_id),
+                            conta:
+                              evento.ml_account_id === null
+                                ? null
+                                : (contaPorId.get(evento.ml_account_id) ?? evento.ml_account_id),
+                          }))}
+                      />
+                  </td>
                 </tr>
               );
             })}

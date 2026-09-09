@@ -15,6 +15,8 @@ import {
   summarizeSupplierWindow,
 } from "../../lib/supplier-filters";
 
+import { InspecaoFornecedor } from "./inspecao-fornecedor";
+
 export const metadata = { title: "Fornecedores — Speed Bikers Gestão" };
 
 // A sessão vem de cookie: pré-renderizar no build mostraria dado de outra
@@ -188,6 +190,16 @@ export default async function FornecedoresPage({
                             {supplier.legal_name}
                           </div>
                         )}
+                        {/* A gaveta do frame: resumo aqui, tela cheia no link
+                            acima. Em bloco próprio — inline, o gatilho encostava
+                            no nome ("Fornecedor E2EInspecionar"). */}
+                        <div>
+                          <InspecaoFornecedor
+                            organizationId={organizationId}
+                            supplierId={supplier.id}
+                            nome={supplier.name}
+                          />
+                        </div>
                       </td>
                       <td className="sb-mono">{supplier.document ?? "—"}</td>
                       <td>{supplier.contact_name ?? supplier.phone ?? "—"}</td>

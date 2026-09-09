@@ -323,6 +323,36 @@ export const E2E_LISTING_RELIST = {
   failureReason: "Anúncio com venda nos últimos 60 dias — republicação não recomendada.",
 } as const;
 
+/**
+ * O PEDIDO DE VENDA do seed (D39) — e o seed nunca criou nenhum.
+ *
+ * Foi a mesma lacuna de D-242 em `/anuncios`: enquanto nada consumia `orders`
+ * na web, a ausência não incomodava. A gaveta do pedido consome, e sem uma
+ * linha aqui ela nasceria vazia em toda captura e em todo teste.
+ *
+ * **Dois itens, e a diferença entre eles é o teste.** O primeiro é vinculado ao
+ * SKU do seed (a célula vira link para `/skus/[skuId]`); o segundo NÃO tem
+ * vínculo — é o caso real que `/vinculacoes` conta como "vendido sem vínculo",
+ * e na gaveta ele tem de aparecer com o `seller_sku` cru, sem link.
+ *
+ * O `id` é sintético e tem a FORMA de um id do Mercado Livre (16 dígitos):
+ * `orders.id` é o id remoto, não uma sequência local.
+ */
+export const E2E_ORDER = {
+  id: 2_000_000_000_000_001,
+  status: "paid",
+  totalAmount: 379.8,
+  paidAmount: 379.8,
+  buyerId: 123_456_789,
+  /** O que o vendedor pagou de frete e concedeu de desconto (D-229). */
+  sellerShippingCost: 21.9,
+  sellerDiscount: 0,
+  itens: [
+    { itemId: "MLB800000001", title: "Kit Relação E2E — vende e tem visita", quantity: 1, unitPrice: 189.9, comSku: true },
+    { itemId: "MLB800000005", title: "Bagageiro E2E — vendeu sem vínculo", quantity: 1, unitPrice: 189.9, comSku: false },
+  ],
+} as const;
+
 /** Texto da decisão sobre a ação DO ANÚNCIO (aba Decisões, D13). */
 export const E2E_LISTING_DECISION_TEXT = "Manter o preço e observar visitas por mais 7 dias — decisão de teste E2E";
 

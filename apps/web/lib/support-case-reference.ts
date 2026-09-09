@@ -69,9 +69,14 @@ export function resolveSupportCaseReference(
       code: withListing.listings.item_id,
       title: withListing.listings.title,
       kind: "LISTING",
-      // Anúncio não tem página de detalhe própria (só a lista `/anuncios`) —
-      // não inventar rota que não existe, mesmo critério de D-074.
-      href: null,
+      /*
+        O anúncio GANHOU página em D13 (`/anuncios/[itemId]`, e o parâmetro da
+        rota é o MLB). Esta linha dizia "anúncio não tem página de detalhe
+        própria" e virou registro envelhecido: o destino existia e o
+        atendimento continuava mostrando o código como texto morto. Achado ao
+        ligar a gaveta do pedido (D39) na mesma tela.
+      */
+      href: `/anuncios/${withListing.listings.item_id}`,
     };
   }
 

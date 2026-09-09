@@ -26,6 +26,8 @@ import { buildFilterHref } from "../../lib/filters";
 import { createClient } from "../../lib/supabase/server";
 import { currentMembership } from "../../lib/membership";
 
+import { InspecaoAnuncio } from "./inspecao-anuncio";
+
 export const metadata = { title: "Anúncios — Speed Bikers Gestão" };
 
 // A sessão vem de cookie: pré-renderizar no build mostraria dado de outra
@@ -531,6 +533,27 @@ export default async function AnunciosPage({
                             <Link className="sb-entity" href={`/anuncios/${row.item_id}`}>
                               {row.title}
                             </Link>
+                          </span>
+                          {/*
+                            A gaveta do frame: frescor, republicação e o que
+                            aconteceu — o que a linha não carrega. O recuo
+                            alinha o gatilho com o TÍTULO, não com a miniatura:
+                            é a largura do monograma (1,75rem) mais o gap da
+                            célula (0,5rem).
+                          */}
+                          <span style={{ display: "block", paddingLeft: "2.25rem" }}>
+                          <InspecaoAnuncio
+                            mlAccountId={row.ml_account_id}
+                            itemId={row.item_id}
+                            title={row.title}
+                            status={row.status}
+                            price={row.price}
+                            availableQuantity={row.available_quantity}
+                            fullQuantity={row.full_quantity}
+                            accountLabel={row.account_label}
+                            sku={row.sku}
+                            skuId={row.sku_id}
+                          />
                           </span>
                         </td>
                         <td className="sb-mono">

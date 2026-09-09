@@ -51,6 +51,7 @@ import {
   E2E_LISTING_RELIST,
   E2E_LISTING_SOLD_UNLINKED,
   E2E_LISTING_TRAFFIC,
+  E2E_ORDER,
   E2E_PURCHASE_ORDERS,
   E2E_SUPPLIER,
   E2E_SUPPLIER_INATIVO,
@@ -658,6 +659,88 @@ async function main(): Promise<void> {
     throw messages.error;
   }
 
+  /*
+    O PEDIDO DE VENDA, e o seed nunca criou um (D39).
+
+    Vem ANTES dos vínculos porque o caso aberto passa a apontar para ele: é
+    assim que a gaveta do pedido aparece no Atendimento, que é onde o frame a
+    dispara. `upsert` pelo id remoto — rodar o seed duas vezes não duplica.
+  */
+  const pedido = await db.from("orders").upsert(
+    {
+      id: E2E_ORDER.id,
+      organization_id: organizationId,
+      ml_account_id: mlAccountId,
+      status: E2E_ORDER.status,
+      date_created: new Date(now - 172_800_000).toISOString(),
+      date_last_updated: new Date(now - 86_400_000).toISOString(),
+      total_amount: E2E_ORDER.totalAmount,
+      paid_amount: E2E_ORDER.paidAmount,
+      currency_id: "BRL",
+      buyer_id: E2E_ORDER.buyerId,
+    },
+    { onConflict: "id" },
+  );
+
+  if (pedido.error !== null) {
+    throw pedido.error;
+  }
+
+  const pedidoItens = await db.from("order_items").upsert(
+    E2E_ORDER.itens.map((item, indice) => ({
+      order_id: E2E_ORDER.id,
+      organization_id: organizationId,
+      ml_account_id: mlAccountId,
+      position: indice + 1,
+      item_id: item.itemId,
+      title: item.title,
+      // `seller_sku` é o código que o Mercado Livre carrega; `sku_id` é o
+      // vínculo local. O segundo item tem o primeiro e não o segundo — é
+      // exatamente a linha que a gaveta mostra sem link.
+      seller_sku: item.comSku ? E2E_SKU_CODE : "E2E-SEM-VINCULO",
+      quantity: item.quantity,
+      unit_price: item.unitPrice,
+      currency_id: "BRL",
+      sku_id: item.comSku ? skuId : null,
+    })),
+    { onConflict: "order_id,position" },
+  );
+
+  if (pedidoItens.error !== null) {
+    throw pedidoItens.error;
+  }
+
+  /*
+    Existe-então-insere, e não `upsert`: `service_role` tem INSERT e **não
+    UPDATE** em `order_financials` — a tabela é uma captura, e quem escreve é a
+    varredura financeira (D-229). O `upsert` falhou com `42501` na primeira
+    tentativa, e o privilégio é a regra, não o obstáculo: mesmo desenho de
+    `fulfillment_stock_snapshots` acima.
+  */
+  const financeiroExistente = await db
+    .from("order_financials")
+    .select("order_id")
+    .eq("order_id", E2E_ORDER.id)
+    .maybeSingle();
+
+  if (financeiroExistente.error !== null) {
+    throw financeiroExistente.error;
+  }
+
+  if (financeiroExistente.data === null) {
+    const pedidoFinanceiro = await db.from("order_financials").insert({
+      order_id: E2E_ORDER.id,
+      organization_id: organizationId,
+      ml_account_id: mlAccountId,
+      seller_shipping_cost: E2E_ORDER.sellerShippingCost,
+      seller_discount: E2E_ORDER.sellerDiscount,
+    });
+
+    if (pedidoFinanceiro.error !== null) {
+      throw pedidoFinanceiro.error;
+    }
+  }
+
   const links = await db.from("support_case_links").insert([
     {
       organization_id: organizationId,
@@ -665,6 +748,15 @@ async function main(): Promise<void> {
       support_case_id: openCaseId,
       sku_id: skuId,
       link_source: "LISTING_DERIVED",
+    },
+    // O vínculo de PEDIDO do caso aberto: é ele que faz a gaveta existir na
+    // tela de detalhe do atendimento.
+    {
+      organization_id: organizationId,
+      ml_account_id: mlAccountId,
+      support_case_id: openCaseId,
+      order_id: E2E_ORDER.id,
+      link_source: "REMOTE",
     },
     {
       organization_id: organizationId,

@@ -105,6 +105,26 @@ const LISTING_STATUS: Record<string, string> = {
 };
 
 /**
+ * `orders.status` — os NOVE do `check` da tabela, não os que aparecem hoje.
+ *
+ * A lista fechada é a do banco porque é ela que pode chegar: um estado raro
+ * traduzido é melhor que um estado raro em inglês no dia em que aparecer. A
+ * gaveta do pedido (D39) é o primeiro leitor; até ela, nenhuma tela mostrava
+ * estado de pedido de VENDA — `/vendas` agrega, não lista pedido a pedido.
+ */
+const ORDER_STATUS: Record<string, string> = {
+  confirmed: "Confirmado",
+  payment_required: "Aguardando pagamento",
+  payment_in_process: "Pagamento em processamento",
+  partially_paid: "Parcialmente pago",
+  paid: "Pago",
+  partially_refunded: "Parcialmente estornado",
+  pending_cancel: "Cancelamento pendente",
+  cancelled: "Cancelado",
+  invalid: "Inválido",
+};
+
+/**
  * `domain_events.event_type` (docs/API.md secao 4) — mesmo texto do catálogo,
  * só traduzido. Código sem tradução cai no fallback de `lookup()`: mostra o
  * `dominio.entidade.acao` bruto em vez de travar, mesmo raciocínio do resto
@@ -364,6 +384,7 @@ export const purchaseOrderStatusLabel = (code: string): string => lookup(PURCHAS
 export const purchaseOrderEventLabel = (code: string): string => lookup(PURCHASE_ORDER_EVENT, code);
 export const locationKindLabel = (code: string): string => lookup(LOCATION_KIND, code);
 export const listingStatusLabel = (code: string): string => lookup(LISTING_STATUS, code);
+export const orderStatusLabel = (code: string): string => lookup(ORDER_STATUS, code);
 export const actionStatusLabel = (code: string): string => lookup(ACTION_STATUS, code);
 export const mlAccountStatusLabel = (code: string): string => lookup(ML_ACCOUNT_STATUS, code);
 export const eventTypeLabel = (code: string): string => lookup(EVENT_TYPE, code);
@@ -404,6 +425,26 @@ export function statusTone(code: string): "ok" | "warn" | "bad" | null {
 
   if (code === "active") return "ok";
   if (code === "paused") return "warn";
+
+  /*
+    Pedido de VENDA (D39). `paid` é o estado saudável; `cancelled` e `invalid`
+    são o oposto; os intermediários de pagamento são espera, não problema.
+
+    `partially_refunded` fica em `warn` e não em `bad` de propósito: estorno
+    parcial é um fato que MERECE atenção, e chamá-lo de falha faria a gaveta
+    contradizer a Central de Atendimento, onde devolução é curso normal.
+  */
+  if (code === "paid") return "ok";
+  if (code === "cancelled" || code === "invalid") return "bad";
+  if (
+    code === "payment_required" ||
+    code === "payment_in_process" ||
+    code === "partially_paid" ||
+    code === "partially_refunded" ||
+    code === "pending_cancel"
+  ) {
+    return "warn";
+  }
 
   // Conta do Mercado Livre (D-232): conectada é ok; aguardando é warn; revogada
   // e erro são bad — mesma leitura que `/contas` e `/sincronizacao` já faziam

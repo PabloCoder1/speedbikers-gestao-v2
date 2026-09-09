@@ -8,7 +8,7 @@ import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
 import { Shell } from "../../../components/shell";
 import { StatusPill } from "../../../components/status-pill";
-import { TOM, tomDeStatus } from "../../../components/tone";
+import { TOM, tomDeRelist, tomDeStatus } from "../../../components/tone";
 import { formatEventDiff } from "../../../lib/event-format";
 import { formatBusinessDate, formatCount, formatCurrency, formatDateTime, formatPercent } from "../../../lib/format";
 import { actionStatusLabel, eventTypeLabel, listingStatusLabel, statusTone } from "../../../lib/labels";
@@ -133,18 +133,6 @@ interface DecisionRow {
   baseline_snapshot: unknown;
   created_at: string;
   actions: { kind: string; status: string; recommendation: string } | null;
-}
-
-/**
- * Tom do estado do relist. Nove estados, três desfechos: terminou bem, está a
- * caminho, ou falhou — e falha nunca fica neutra.
- */
-function relistTom(status: string): "ok" | "atencao" | "perigo" | "neutro" {
-  if (status === "REMAPPED" || status === "RELISTED") return "ok";
-  if (status.endsWith("_FAILED")) return "perigo";
-  if (status === "REQUESTED" || status === "CLOSING" || status === "RELISTING") return "atencao";
-
-  return "neutro";
 }
 
 export default async function AnuncioPage({
@@ -906,7 +894,7 @@ export default async function AnuncioPage({
                           <tr key={relist.id}>
                             <td style={{ whiteSpace: "nowrap" }}>{formatDateTime(relist.created_at)}</td>
                             <td>
-                              <span className="sb-status" style={TOM[relistTom(relist.status)]}>
+                              <span className="sb-status" style={TOM[tomDeRelist(relist.status)]}>
                                 {relist.status}
                               </span>
                             </td>

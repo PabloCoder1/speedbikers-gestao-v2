@@ -33,6 +33,22 @@ export function tomDeStatus(tone: "ok" | "warn" | "bad" | null): Tom {
   }
 }
 
+/**
+ * Tom do estado da REPUBLICAÇÃO. Nove estados, três desfechos: terminou bem,
+ * está a caminho, ou falhou — e falha nunca fica neutra.
+ *
+ * Morava dentro de `/anuncios/[itemId]` e subiu quando a gaveta do anúncio
+ * (D39) virou o segundo leitor: a alternativa era a segunda cópia de um mapa
+ * de tom, que é exatamente o que a auditoria de D-246 encontrou cinco vezes.
+ */
+export function tomDeRelist(status: string): Tom {
+  if (status === "REMAPPED" || status === "RELISTED") return "ok";
+  if (status.endsWith("_FAILED")) return "perigo";
+  if (status === "REQUESTED" || status === "CLOSING" || status === "RELISTING") return "atencao";
+
+  return "neutro";
+}
+
 export const TOM: Record<Tom, { background: string; color: string }> = {
   neutro: { background: "var(--sb-neutral-soft)", color: "var(--sb-neutral-ink)" },
   ok: { background: "var(--sb-success-soft)", color: "var(--sb-success)" },

@@ -7395,6 +7395,66 @@ O SKU do seed nao tem politica de reposicao, entao "Cobertura alvo" tem de sair 
 
 **Verificacao, local:** `check` **29/29**, build **8/8**, integracao **634/634** e e2e **83/83** em banco recriado (1 novo), `check:table-styles` 30, `check:server-actions` 18, `check:waterfalls` 61. Renderizada a 1440px e a 850px contra o Supabase local, com login real -- e o estado de RUPTURA conferido plantando `stock_is_virtual = false` no SKU da anomalia e desfazendo em seguida.
 
+## D-282 - D39: as quatro gavetas que faltavam, e a regra que decidiu as quatro de uma vez
+
+**Contexto:** D38 entregou a primeira gaveta do Figma e deixou escrito que as outras quatro esbarravam todas na MESMA pergunta -- anuncio, pedido, fornecedor e usuario mostram entidade que ja tem tela cheia, entao a gaveta ou SUBSTITUI a tela ou a DUPLICA. O usuario pediu as quatro. Sem migration.
+
+---
+
+**A REGRA, E ELA VALE PARA AS CINCO**
+
+**A gaveta e um RESUMO que leva a tela; nunca uma segunda versao dela.** Do que decorre o corte mais visivel desta fatia: **as abas do frame nao entram**. O `MlbDetailDrawer` desenha, dentro da gaveta, as mesmas oito abas do dashboard do anuncio; o `SupplierDetailDrawer` desenha cinco. As duas telas existem migradas (D13, D-174/D-277). Reproduzi-las na gaveta seria a segunda implementacao da mesma interface -- o que o Design Contract proibe desde a primeira linha dele.
+
+O que sobra para a gaveta e o que a LISTA nao mostra. Foi assim que cada uma ganhou conteudo:
+
+| gaveta | o que ela acrescenta a linha da tabela |
+|---|---|
+| anuncio | frescor (`synced_at`, hoje escondido no `title` do cursor), estado da REPUBLICACAO e os cinco ultimos eventos de dominio do anuncio |
+| fornecedor | os canais de contato (e-mail, telefone, WhatsApp, site), a decomposicao dos pedidos por estado e a ressalva de custo ausente |
+| usuario | a protecao do ultimo ADMIN e o historico de acesso **daquela pessoa** -- o painel da tela mostra o log da organizacao inteira |
+| pedido | tudo: **nao existe tela de pedido de venda na V3** |
+
+---
+
+**A GAVETA DO PEDIDO NAO E RESUMO DE NADA -- E SUPERFICIE NOVA**
+
+`resolveSupportCaseReference` devolvia `href: null` para `ORDER` porque nao havia destino. Quem atendia via um numero de 16 digitos e abria o painel do Mercado Livre para saber o que fora comprado. Agora ve estado, valor, frete e desconto do vendedor, itens (com link para o SKU quando ha vinculo) e os eventos excepcionais.
+
+**Ela e a unica das cinco sem rodape**, e a ausencia e a afirmacao: nao ha "pagina completa" para apontar.
+
+O que o frame promete e o esquema nao tem -- conferido em `\d`, nao no codigo da tela: **nome do comprador** (`orders` guarda `buyer_id`, um numero), **logistica** ("Coleta"; existe `shipping_id` e nada mais) e a **timeline da transportadora** ("Despachado", "Nova previsao"). O que existe e o registro de EXCECOES em `domain_events`; o pedido normal nao gera evento nenhum, e a gaveta diz isso em vez de mostrar area vazia.
+
+---
+
+**O SEED NAO CRIAVA UM PEDIDO SEQUER, E ISSO E A LICAO DE D-242 DE NOVO**
+
+Enquanto nada na web consumia `orders`, a ausencia nao incomodava. A gaveta consome, e sem uma linha ela nasceria vazia em toda captura e em todo teste. O fixture tem **dois itens, e a diferenca entre eles e o teste**: um vinculado ao SKU (a celula vira link) e um sem vinculo (mostra o `seller_sku` cru) -- a linha que `/vinculacoes` conta como "vendido sem vinculo".
+
+`order_financials` entrou por **existe-entao-insere**, nao `upsert`: `service_role` tem INSERT e nao UPDATE ali (a tabela e captura, quem escreve e a varredura de D-229). O `upsert` falhou com `42501` na primeira tentativa -- o privilegio e a regra, nao o obstaculo.
+
+---
+
+**DOIS ACHADOS QUE NAO ERAM DESTA FATIA**
+
+1. **Link morto no Atendimento.** `resolveSupportCaseReference` dizia, com comentario e teste, *"anuncio nao tem pagina de detalhe propria (so a lista `/anuncios`)"*. **`/anuncios/[itemId]` existe desde D13**, e o parametro da rota e o MLB. O registro envelheceu e o codigo continuou obedecendo a ele: o MLB aparecia como texto morto. Corrigido, com o teste invertido -- e o vinculo EXTERNO (D-086) continua sem link de proposito, porque esse anuncio nao esta em `listings` e a pagina nao acharia a linha.
+2. **`relistTom` ia virar a segunda copia de um mapa de tom.** Morava dentro de `/anuncios/[itemId]`; a gaveta seria o segundo leitor. Subiu para `components/tone.ts` como `tomDeRelist`, ao lado de `tomDeStatus` -- a auditoria de D-246 achou CINCO copias desse mesmo padrao.
+
+---
+
+**O DEFEITO QUE UM TESTE ANTIGO PEGOU, E POR QUE ELE ESTAVA CERTO**
+
+O gatilho da gaveta de usuario nasceu dentro da celula "Pessoa", e isso mudou o nome acessivel dela de `"E2E"` para `"E2E Inspecionar"`. `usuarios.spec.ts` afirma a celula EXATA desde D-234 e ficou vermelho.
+
+**A correcao certa nao era afrouxar o teste** -- ele guarda a regressao do segundo membro, que e um defeito real e caro. Era tirar o controle de dentro do dado: o gatilho ganhou celula propria, no fim da linha, com cabecalho sem rotulo (como a do checkbox em `/produtos`). Um `exact: true` que incomoda costuma estar defendendo alguma coisa.
+
+**E a primeira colocacao dessa celula estava ERRADA de um jeito que so a captura mostra:** ela entrou depois de "Pessoa" em vez do fim da linha, e as colunas desalinharam do cabecalho -- "Papel" passou a exibir o gatilho. Nenhum teste viu; o render viu.
+
+---
+
+**Impacto:** `apps/web/app/anuncios/inspecao.ts` + `inspecao-anuncio.tsx` (novos), `apps/web/app/fornecedores/inspecao.ts` + `inspecao-fornecedor.tsx` (novos), `apps/web/app/usuarios/detalhe-usuario.tsx` (novo), `apps/web/app/atendimento/pedido.ts` + `gaveta-pedido.tsx` (novos), `components/drawer.tsx` (`DetailRow`), `components/tone.ts` (`tomDeRelist`), `lib/labels.ts` (`orderStatusLabel` + tom dos nove estados de pedido), `lib/support-case-reference.ts` (+ teste), as quatro paginas donas, `e2e/constants.ts`, `e2e/seed.ts` e `e2e/gavetas.spec.ts` (novo, 4 casos).
+
+**Verificacao, local:** `check` **29/29**, build **8/8**, integracao **634/634** e e2e **87/87** em banco recriado (4 novos), `check:table-styles` 30, `check:server-actions` 21, `check:waterfalls` 61. As quatro renderizadas a 1440px contra o Supabase local com login real.
+
 ## Como adicionar nova decisao
 
 Registrar:
