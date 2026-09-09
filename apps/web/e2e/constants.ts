@@ -218,6 +218,49 @@ export const E2E_LISTING_PRICE_EVENT = { de: 199.9, para: 189.9 } as const;
  * não tem SKU, onde a célula mostra "sem vínculo" em vez de um link.
  */
 /**
+ * A Base de Conhecimento (D28) — a tela existe desde D-113 com escritas
+ * (validar/rejeitar/obsoletar e o formulário) e **nunca teve dado nem spec**.
+ * `knowledge_entries` tem zero linhas no Dev.
+ *
+ * Três entradas, escolhidas para exercitar o que a tela afirma:
+ *
+ * - a VALIDADA prova a constraint `knowledge_entries_validation_coherent`, que
+ *   exige `confirmed_by` **e** `confirmed_at` — "confirmação anônima seria o
+ *   oposto do propósito da tabela" —, e é a única com nome na coluna
+ *   "Confirmado por";
+ * - a SUGERIDA alimenta "Aguardando revisão" e é a única que aceita os botões
+ *   Validar/Rejeitar;
+ * - a OBSOLETA existe porque o frame desenha DOIS estados e a tabela tem
+ *   QUATRO: sem ela, a recusa de D-268 não teria o que provar na tela.
+ *
+ * A obsoleta é **sem SKU** de propósito: conhecimento geral vale para o
+ * catálogo inteiro, e a célula mostra "geral", não "—".
+ */
+export const E2E_CONHECIMENTO = [
+  {
+    kind: "COMPATIBILIDADE",
+    content: "Serve na Honda XRE 300 2021–2025.",
+    source: "CONFIRMACAO_INTERNA",
+    status: "VALIDADO",
+    comSku: true,
+  },
+  {
+    kind: "ESPECIFICACAO",
+    content: "Material cerâmico, par dianteiro.",
+    source: "FABRICANTE",
+    status: "SUGERIDO",
+    comSku: true,
+  },
+  {
+    kind: "POLITICA",
+    content: "Troca em 7 dias vale para todo o catálogo.",
+    source: "DOCUMENTACAO",
+    status: "OBSOLETO",
+    comSku: false,
+  },
+] as const;
+
+/**
  * A SEGUNDA situação do Full (D25) — sem ela a faixa de `/full` nasce com uma
  * célula em 1 e três em 0, e o filtro por situação não recorta nada.
  *

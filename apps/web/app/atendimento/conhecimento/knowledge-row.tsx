@@ -5,6 +5,11 @@ import { useState, type ReactNode } from "react";
 import { StatusPill } from "../../../components/status-pill";
 import { formatDateTime } from "../../../lib/format";
 import { setKnowledgeStatus } from "./actions";
+import {
+  KNOWLEDGE_KIND_LABEL,
+  KNOWLEDGE_SOURCE_LABEL,
+  KNOWLEDGE_STATUS_LABEL,
+} from "./constants";
 
 export interface KnowledgeRowData {
   id: string;
@@ -14,29 +19,10 @@ export interface KnowledgeRowData {
   source: string;
   status: string;
   skuCode: string | null;
-  createdAt: string;
+  /** Quem confirmou — só existe em VALIDADO, por constraint do banco. */
+  confirmedByName: string | null;
+  updatedAt: string;
 }
-
-const KIND_LABEL: Record<string, string> = {
-  COMPATIBILIDADE: "Compatibilidade",
-  ESPECIFICACAO: "Especificação",
-  POLITICA: "Política",
-  OUTRO: "Outro",
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  SUGERIDO: "Sugerido",
-  VALIDADO: "Validado",
-  REJEITADO: "Rejeitado",
-  OBSOLETO: "Obsoleto",
-};
-
-const td: React.CSSProperties = {
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.875rem",
-  verticalAlign: "top",
-};
 
 export function KnowledgeRow({
   entry,
@@ -83,18 +69,35 @@ export function KnowledgeRow({
 
   return (
     <tr>
-      <td style={td}>{entry.skuCode ?? "geral"}</td>
-      <td style={td}>{KIND_LABEL[entry.kind] ?? entry.kind}</td>
-      <td style={{ ...td, whiteSpace: "pre-wrap", maxWidth: "26rem" }}>
+      {/* "geral" e não "—": conhecimento sem SKU vale para o catálogo inteiro,
+          o que é uma afirmação, não uma ausência. */}
+      <td className="sb-mono">{entry.skuCode ?? "geral"}</td>
+
+      <td>{KNOWLEDGE_KIND_LABEL[entry.kind] ?? entry.kind}</td>
+
+      <td style={{ whiteSpace: "pre-wrap", maxWidth: "26rem" }}>
         {entry.content}
         {entry.note !== null && (
-          <span style={{ display: "block", color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>{entry.note}</span>
+          <span style={{ display: "block", color: "var(--sb-text-soft)", fontSize: "0.625rem" }}>{entry.note}</span>
         )}
       </td>
-      <td style={td}>{entry.source}</td>
-      <td style={{ ...td, whiteSpace: "nowrap" }}>{formatDateTime(entry.createdAt)}</td>
-      <td style={td}>
-        <StatusPill code={entry.status} label={STATUS_LABEL[entry.status] ?? entry.status} />
+
+      <td>{KNOWLEDGE_SOURCE_LABEL[entry.source] ?? entry.source}</td>
+
+      {/*
+        "Confirmado por" do frame. Só VALIDADO tem — a constraint
+        `knowledge_entries_validation_coherent` exige quem e quando, porque
+        "confirmação anônima seria o oposto do propósito da tabela". O "—" aqui
+        é a ausência CORRETA, não um dado que faltou carregar.
+      */}
+      <td>
+        {entry.confirmedByName ?? <span style={{ color: "var(--sb-text-soft)" }}>—</span>}
+      </td>
+
+      <td style={{ whiteSpace: "nowrap" }}>{formatDateTime(entry.updatedAt)}</td>
+
+      <td>
+        <StatusPill code={entry.status} label={KNOWLEDGE_STATUS_LABEL[entry.status] ?? entry.status} />
 
         {canManage && (
           <div style={{ display: "flex", gap: "0.375rem", marginTop: "0.375rem", flexWrap: "wrap" }}>

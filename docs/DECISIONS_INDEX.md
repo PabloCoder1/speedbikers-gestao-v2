@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **263** (D-001 a D-267).
+Decisões registradas: **264** (D-001 a D-268).
 
 ## Por domínio
 
@@ -253,7 +253,7 @@ Decisões registradas: **263** (D-001 a D-267).
 - **D-247** — A curva ABC responde por um SKU, e a faixa de KPIs para de deixar fatia vazia
 - **D-251** — D16: a Curva ABC ganha os cartoes de classe, e devolve dois filtros ao dono deles
 
-### worker/infra (50)
+### worker/infra (51)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -305,4 +305,5 @@ Decisões registradas: **263** (D-001 a D-267).
 - **D-221** — A garantia append-only de job_runs nao tinha guarda, e eu ia precisar dela
 - **D-246** — A auditoria de fidelidade: o que "Figma-first" escondia, e cinco mapas de tom que viraram um
 - **D-250** — D15: os cinco cartoes do frame contra seis estados e um bucket de recusa
+- **D-268** — D28: Base de Conhecimento, e a diferenca entre falta de COLUNA e falta de DADO
 

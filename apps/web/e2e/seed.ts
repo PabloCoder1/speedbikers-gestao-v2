@@ -38,6 +38,7 @@ import { createClient } from "@supabase/supabase-js";
 import {
   E2E_ACAO_RECLAMACAO,
   E2E_ANOMALIA,
+  E2E_CONHECIMENTO,
   E2E_DECISION_TEXT,
   E2E_FULL_RUPTURA,
   E2E_GESTOR_EMAIL,
@@ -1239,6 +1240,53 @@ async function main(): Promise<void> {
 
   if (acaoReclamacao.error !== null) {
     throw acaoReclamacao.error;
+  }
+
+  /*
+    BASE DE CONHECIMENTO (D28). A tabela tem zero linhas no Dev e a tela nunca
+    teve spec — sem fixture, a captura mostraria página vazia e o e2e não teria
+    o que afirmar.
+
+    Existe-então-insere por (organização, conteúdo): não há chave natural, e
+    `content` é único o bastante entre estes três. Rodar o seed duas vezes não
+    duplica.
+  */
+  for (const fato of E2E_CONHECIMENTO) {
+    const jaExiste = await db
+      .from("knowledge_entries")
+      .select("id")
+      .eq("organization_id", organizationId)
+      .eq("content", fato.content)
+      .maybeSingle();
+
+    if (jaExiste.error !== null) {
+      throw jaExiste.error;
+    }
+
+    if (jaExiste.data !== null) continue;
+
+    /*
+      A constraint `knowledge_entries_validation_coherent` exige que VALIDADO
+      traga quem e quando confirmou. Não é detalhe de fixture: é a regra que
+      separa "fato confirmado" de "alguém escreveu isso uma vez".
+    */
+    const confirmado = fato.status === "VALIDADO";
+
+    const criado = await db.from("knowledge_entries").insert({
+      organization_id: organizationId,
+      sku_id: fato.comSku ? skuId : null,
+      kind: fato.kind,
+      content: fato.content,
+      source: fato.source,
+      status: fato.status,
+      created_by: userId,
+      confirmed_by: confirmado ? userId : null,
+      confirmed_at: confirmado ? new Date().toISOString() : null,
+    });
+
+    if (criado.error !== null) {
+      throw criado.error;
+    }
   }
 
   const output: SeedOutput = {

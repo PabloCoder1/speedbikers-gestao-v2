@@ -3,7 +3,14 @@
 import { useState, type ReactNode } from "react";
 
 import { createKnowledgeEntry } from "./actions";
-import { KNOWLEDGE_KINDS, KNOWLEDGE_SOURCES, type KnowledgeKind, type KnowledgeSource } from "./constants";
+import {
+  KNOWLEDGE_KINDS,
+  KNOWLEDGE_KIND_LABEL,
+  KNOWLEDGE_SOURCES,
+  KNOWLEDGE_SOURCE_LABEL,
+  type KnowledgeKind,
+  type KnowledgeSource,
+} from "./constants";
 
 /**
  * Registro de conhecimento (D-113) — qualquer membro sugere; nasce SUGERIDO
@@ -33,9 +40,10 @@ export function NewKnowledgeForm(): ReactNode {
         <label style={{ fontSize: "0.8125rem", display: "grid", gap: "0.25rem" }}>
           Tipo
           <select value={kind} style={input} onChange={(event) => { setKind(event.target.value as KnowledgeKind); }}>
+            {/* O VALOR continua sendo o enum; só o rótulo é humano. */}
             {KNOWLEDGE_KINDS.map((option) => (
               <option key={option} value={option}>
-                {option}
+                {KNOWLEDGE_KIND_LABEL[option] ?? option}
               </option>
             ))}
           </select>
@@ -46,7 +54,7 @@ export function NewKnowledgeForm(): ReactNode {
           <select value={source} style={input} onChange={(event) => { setSource(event.target.value as KnowledgeSource); }}>
             {KNOWLEDGE_SOURCES.map((option) => (
               <option key={option} value={option}>
-                {option}
+                {KNOWLEDGE_SOURCE_LABEL[option] ?? option}
               </option>
             ))}
           </select>

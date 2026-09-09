@@ -6903,6 +6903,64 @@ Nao mentia como `/acoes` mentia (D-263), mas nao dizia **100 DE QUANTOS**. Sao *
 
 **Verificacao, local:** `check` **29/29**, e2e **49/49** em banco recriado (1 novo), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17, `check:table-styles` **16**, `docs:check`. Integracao nao foi rodada nesta fatia porque nao ha mudanca de esquema nem teste novo la. Capturada a 1440px contra o Supabase local.
 
+## D-268 - D28: Base de Conhecimento, e a diferenca entre falta de COLUNA e falta de DADO
+
+**Contexto:** `/atendimento/conhecimento` pelo frame `SupportScreen` na variante de conhecimento -- a outra metade do componente que D-267 migrou. Fatia sem migration.
+
+---
+
+**1. `knowledge_entries` TEM ZERO LINHAS NO DEV, e mesmo assim a fatia se sustenta**
+
+O frame mostra **1.248 conhecimentos, 92% validados, 94 aguardando**. O real e **zero**.
+
+A tentacao era repetir D-266 e recusar a tela. Mas as duas ausencias sao de naturezas diferentes, e a distincao decide a fatia:
+
+| | D-266 (Trafego) | D-268 (Conhecimento) |
+|---|---|---|
+| o que falta | **coluna** -- zero campos de impressao/Ads/reputacao no schema | **dado** -- a tabela existe e sustenta o frame inteiro |
+| construivel hoje | nao | **sim**, e fica honesta no minuto em que alguem escrever a primeira entrada |
+| o que a tela mostra | nada que se possa medir | o estado vazio, que E a tela |
+
+`knowledge_entries` tem `kind`, `content`, `source`, `status`, `confirmed_by`, `updated_at` e `sku_id`: **cada coluna do frame tem par**. A casa ja tem precedente para construir sobre base vazia -- D-228 escreveu que "o estado vazio E a tela" quando havia UMA decisao em todo o Dev.
+
+**2. O "92% VALIDADOS" E O NUMERO MAIS DELICADO DA TELA**
+
+Duas coisas nele:
+
+**Percentual sobre base vazia e INDEFINIDO, nao 0%.** "Nenhum conhecimento validado" e "nenhum conhecimento" sao estados diferentes, e `formatPercent(null)` imprime "—" (D-067). Com a tabela zerada no Dev, e assim que a tela nasce.
+
+**E o denominador precisa ser dito.** `status` tem QUATRO valores; rejeitados e obsoletos entram no total. A aritmetica do proprio frame denuncia a escolha dele: 92% de 1.248 = 1.148, mais 94 aguardando, sobram 6 -- ou seja, ele divide pelo total. A tela faz o mesmo **e escreve embaixo do numero** que rejeitados e obsoletos estao no denominador. Sem essa frase, "33,3%" seria ambiguo.
+
+**As duas contagens derivadas so sao exatas com a busca completa.** Contar VALIDADO e SUGERIDO sobre 200 de 900 e chamar de percentual da base seria chamar de percentual da base o que e percentual da pagina; quando trunca, as duas viram "—" e a tela diz por que.
+
+**3. DOIS ESTADOS NO FRAME, QUATRO NA TABELA -- de novo**
+
+O frame desenha "Validado" e "Sugerido". A `check` conhece tambem `REJEITADO` e `OBSOLETO`, e esconde-los apagaria justamente o historico que a tabela existe para preservar: o comentario dela diz que "conhecimento errado vira REJEITADO/OBSOLETO, preservando o historico da decisao" e que NAO ha DELETE para `authenticated`. Mesma correcao de D-265 na Central Full.
+
+**4. DUAS COLUNAS QUE O ESQUEMA SUSTENTAVA E NINGUEM BUSCAVA**
+
+**"Confirmado por"** e a constraint `knowledge_entries_validation_coherent` aparecendo na tela: VALIDADO exige `confirmed_by` **e** `confirmed_at`, porque "confirmacao anonima seria o oposto do proposito da tabela". O "—" nas outras linhas e a ausencia CORRETA, nao dado que faltou carregar.
+
+`confirmed_by` referencia `auth.users`, nao `profiles`, entao **nao ha embed possivel**. Buscar os nomes depois, a partir dos ids das linhas, seria leitura em fila (D-195); os perfis saem no mesmo `Promise.all`, em paralelo -- a equipe e pequena.
+
+**"Atualizado"** (`updated_at`) substitui "Registrado em" (`created_at`), como o frame pede: numa base de conhecimento importa quando o fato foi tocado pela ultima vez, e a validacao move a data.
+
+**5. O ENUM CRU VAZAVA PARA O OPERADOR EM DOIS LUGARES**
+
+A coluna Fonte imprimia `CONFIRMACAO_INTERNA` direto na tela -- os mapas de tipo e status existiam desde D-113, o de fonte nunca. **E a CAPTURA mostrou o segundo:** os seletores do formulario ofereciam `COMPATIBILIDADE` e `CONFIRMACAO_INTERNA` como opcoes.
+
+Eu tinha corrigido so a tabela. Com dois consumidores, os tres mapas foram para `constants.ts` -- que ja era o modulo compartilhado desta tela, nem `"use server"` nem cliente -- em vez de nascer a segunda copia. E a auditoria de D-246 achou cinco copias do mapa de tom justamente por ninguem ter feito isso na primeira vez.
+
+**6. TELA COM QUATRO ESCRITAS E ZERO COBERTURA**
+
+Ela existe desde D-113 com validar, rejeitar, obsoletar e o formulario -- e **nunca foi visitada por spec nenhum**. Com a tabela vazia, nem uma captura mostraria o que ela faz.
+
+O fixture tem tres entradas, cada uma com um papel: a VALIDADA prova a constraint e e a unica com nome em "Confirmado por"; a SUGERIDA alimenta "Aguardando revisao" e e a unica que aceita Validar/Rejeitar; a OBSOLETA existe porque sem ela a recusa dos dois estados nao teria o que provar na tela. A obsoleta e **sem SKU**, para exercitar o "geral" -- conhecimento geral vale para o catalogo inteiro, e isso e afirmacao, nao ausencia.
+
+**Impacto:** `apps/web/app/atendimento/conhecimento/{page,knowledge-row,new-knowledge-form,constants}.tsx`, `apps/web/e2e/{seed,constants}.ts`, `apps/web/e2e/conhecimento.spec.ts` (novo, +3). Sem migration.
+
+**Verificacao, local:** `check` **29/29**, e2e **52/52** em banco recriado (3 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17, `check:table-styles` **17**, `docs:check`. Capturada a 1440px contra o Supabase local -- e foi a captura que achou o vazamento de enum no formulario.
+
 ## Como adicionar nova decisao
 
 Registrar:

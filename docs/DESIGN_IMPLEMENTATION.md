@@ -621,7 +621,8 @@ que ele renderiza.**
 | D25 | **Central Full** — o frame particiona errado: os três cartões dele somam o total e escondem o MAIOR estado, 41% do conjunto (D-265) | ✔ |
 | ~~D26~~ | ~~**Tráfego**~~ — **RECUSADA COM MEDIÇÃO** (D-266): zero colunas de impressão/Ads/reputação no schema inteiro; o funil do frame perde o topo e os dois cartões de sinais não têm fonte. O que sobra já vive em `/anuncios` | ✖ |
 | D27 | **Caixa de Entrada** — a recusa é uma AFIRMAÇÃO SOBRE A ORDEM: o frame diz "fila priorizada por prazo, risco e cliente" e ela ordena por atividade (D-267) | ✔ |
-| D28–D30 | Conhecimento, Central | fila |
+| D28 | **Base de Conhecimento** — base VAZIA no Dev, mas o esquema sustenta o frame inteiro: falta DADO, não coluna (D-268) | ✔ |
+| D29–D30 | Central | fila |
 | D31–D36 | Usuários, Integrações, Sincronização, Saúde, Configurações, Copiloto | fila |
 | D37 | Passe visual global | fila |
 
@@ -802,103 +803,106 @@ anterior: `/reposicao` tinha **19 de 22** células sobrepondo a classe (não 23)
 `/estoque/movimentacoes` não era vazamento parcial de 3 células — eram **todas**
 as 13.
 
-O que resta é a fila **D28 em diante**: 10 superfícies ainda não migradas — D26 (Tráfego) saiu da conta por avaliação, não por adiamento (D-266).
+O que resta é a fila **D29 em diante**: 9 superfícies ainda não migradas — D26 (Tráfego) saiu da conta por avaliação, não por adiamento (D-266).
 
 ## Última fatia concluída
 
-**D27 — Caixa de Entrada, pelo frame `SupportScreen` (D-267).** Fatia sem
-migration: tudo o que ela precisava já estava no banco, e parte estava
-invisível.
+**D28 — Base de Conhecimento, pelo frame `SupportScreen` na variante de
+conhecimento (D-268).** A outra metade do componente que D27 migrou. Sem
+migration.
 
-### A recusa não é um número nem uma promessa — é a ORDEM
+### A distinção que decidiu a fatia: falta de COLUNA ≠ falta de DADO
 
-O frame escreve, na legenda, **"Fila priorizada por prazo, risco e cliente"**.
-A consulta ordena por `last_activity_at desc` — não por prazo, não por risco, e
-cliente nem existe.
+`knowledge_entries` tem **zero linhas no Dev**, e o frame mostra 1.248
+conhecimentos com 92% validados. A tentação era repetir D26 e recusar.
 
-Afirmar priorização que não acontece é pior do que não dizer nada sobre a ordem:
-o operador confiaria no topo da lista para saber o que atender primeiro, e o
-topo é só o caso que se mexeu por último. Ordenar de fato por prazo seria
-mudança de **comportamento**, não de composição — fica como candidata, com o
-dado já disponível.
+Mas as duas ausências são diferentes, e a diferença decide:
 
-**"Cliente" também sai, e a ausência é anterior a esta fatia:**
-`support_cases` guarda `customer_external_id` (o id numérico do ML), nunca o
-nome, e o comentário da própria coluna diz por quê — D-083 proíbe usar comprador
-como identificador.
+| | D26 (Tráfego) | D28 (Conhecimento) |
+|---|---|---|
+| falta | **coluna** — zero campos no schema | **dado** — a tabela sustenta o frame inteiro |
+| construível hoje | não | **sim**, e fica honesta na primeira entrada escrita |
 
-**"Atribuir em massa" contradiz uma regra deliberada:** a atribuição é por caso
-e **só a si mesmo** (`assignToMe` diz por escrito que o botão não vira jeito de
-atribuir a outro). Um botão de massa não seria só escrita em lote — seria a
-reversão de uma decisão, vinda de um frame.
+Cada coluna do frame tem par no esquema. E a casa já tinha precedente: D-228
+escreveu que "o estado vazio É a tela" quando havia UMA decisão em todo o Dev.
 
-### O que o frame acrescentou e o dado já sustentava
+### O "92% validados" é o número mais delicado
 
-`support_case_deadlines` tem **2.059 prazos, todos com `due_at`** — e até aqui o
-prazo só era lido quando o filtro "prazo em risco" estava ligado, como
-predicado. **A coluna SLA nunca existiu.** O frame pediu, o dado estava lá.
+**Percentual sobre base vazia é indefinido, não 0%** — "nenhum validado" e
+"nenhum conhecimento" são estados diferentes (D-067), e é assim que a tela
+nasce.
 
-Sem prazo ativo a célula mostra "—", nunca "no prazo": ninguém mediu isso.
+**E o denominador precisa ser dito.** `status` tem quatro valores; rejeitados e
+obsoletos entram no total. A aritmética do próprio frame denuncia a escolha
+dele: 92% de 1.248 = 1.148, mais 94 aguardando, sobram 6 — ele divide pelo
+total. A tela faz o mesmo **e escreve isso embaixo do número**.
 
-### A janela estava declarada pela metade
+As duas contagens derivadas só são exatas com a busca completa; quando trunca,
+viram "—" e a tela diz por quê — contar 200 de 900 e chamar de percentual da
+base seria chamar de percentual da base o que é percentual da página.
 
-A tela dizia *"Mostrando os 100 atendimentos com atividade mais recente"* — sem
-dizer **100 de quantos**. São **929 abertos** no Dev: a diferença entre 100 de
-101 e 100 de 929 é a diferença entre "vi quase tudo" e "vi 11%". Não mentia como
-`/acoes` mentia, mas informava metade.
+### Dois estados no frame, quatro na tabela — de novo
 
-`count: "exact"` na mesma viagem resolve. **A paginação continua não existindo**,
-e agora a tela diz isso com número — dívida registrada, não escondida atrás de
-"quando o volume justificar".
+Esconder rejeitado e obsoleto apagaria justamente o histórico que a tabela
+existe para preservar: ela não tem DELETE para `authenticated`, e conhecimento
+errado vira REJEITADO/OBSOLETO de propósito. Mesma correção de D25 na Central
+Full.
 
-### As cinco telas do frame já eram uma, e a decisão não é desta fatia
+### Duas colunas que o esquema sustentava e ninguém buscava
 
-D-084 já decidiu que Perguntas, Mensagens, Reclamações, Devoluções e Mediações
-são filtros sobre a mesma projeção. Registro porque quase escrevi como conclusão
-minha. Medido: POST_SALE_MESSAGE **473**, CLAIM **351**, QUESTION **105** em
-aberto; mediação **210** e devolução **281** atravessam os três.
+**"Confirmado por"** é a constraint aparecendo na tela: VALIDADO exige quem *e*
+quando confirmou, porque "confirmação anônima seria o oposto do propósito da
+tabela". Como `confirmed_by` referencia `auth.users` e não `profiles`, não há
+embed — os perfis saem no mesmo `Promise.all`, em paralelo, em vez de uma
+segunda leitura dependente dos ids (D-195).
 
-**Verificação, local:** `check` **29/29**, e2e **49/49** em banco recriado (1
-novo), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17,
-`check:table-styles` **16**, `docs:check`. Integração não foi rodada: não há
-mudança de esquema nem teste novo lá. Capturada a 1440px contra o Supabase
-local.
+**"Atualizado"** substitui "Registrado em": numa base de conhecimento importa
+quando o fato foi tocado pela última vez, e a validação move a data.
 
-⚠️ **Dois erros meus.** O splice da tabela recortou até o **primeiro**
-`</Shell>` — o do retorno antecipado de "sem organização", não o final — e
-duplicou o render inteiro (443 → 876 linhas); o `tsc` reprovou com erro de parse
-e eu reverti e refiz. E rodei a suíte e2e duas vezes sem `db reset`, lendo a
-falha de "assumir" como regressão minha: era a rodada anterior tendo atribuído o
-caso. **Terceira vez nesta sessão** que a não-idempotência me pega, e ela está
-nos riscos do HANDOFF desde D-225.
+### O enum cru vazava em dois lugares, e a captura achou o segundo
+
+A coluna Fonte imprimia `CONFIRMACAO_INTERNA` direto na tela. Corrigi — e então
+**a captura mostrou os seletores do formulário oferecendo `COMPATIBILIDADE` e
+`CONFIRMACAO_INTERNA` como opções**, uma seção abaixo. Com dois consumidores, os
+três mapas de rótulo foram para `constants.ts` em vez de nascer a segunda cópia:
+é como a auditoria de D-246 achou cinco cópias do mapa de tom.
+
+### Tela com quatro escritas e zero cobertura
+
+Ela existe desde D-113 com validar, rejeitar, obsoletar e o formulário, e
+**nunca foi visitada por spec nenhum**. Com a tabela vazia, nem uma captura
+mostraria o que ela faz. As três entradas do fixture têm papéis distintos: a
+validada prova a constraint, a sugerida alimenta "aguardando revisão" e aceita
+os botões, e a obsoleta existe para a recusa dos dois estados ter o que provar.
+
+**Verificação, local:** `check` **29/29**, e2e **52/52** em banco recriado (3
+novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17,
+`check:table-styles` **17**, `docs:check`. Capturada a 1440px contra o Supabase
+local — e foi a captura que achou o vazamento de enum no formulário.
 
 ## Próxima fatia segura
 
-**D28 — Base de Conhecimento.** É a outra metade do mesmo componente:
-`SupportScreen` decide por `screen.title === "Base de conhecimento"` e o frame
-já está lido de relance nesta fatia. Ele pede três números no topo (1.248
-registrados, **92% validados**, 94 aguardando revisão) e uma tabela com SKU e
-tipo.
+**D29 — Central.** É o último item nomeado da fila antes do bloco de
+administração. O `copy` do export descreve as variações do `IntelligenceScreen`
+e "Central" aparece como `kind` próprio na lista de telas — **localizar o frame
+antes de desenhar**, porque pode ser mais uma variação genérica ("Módulo em
+Desenvolvimento") em vez de composição real. Se for genérica, vale a mesma
+avaliação de D-266: frame sem conteúdo não vira fatia.
 
-**A pergunta de abertura é o percentual.** "92% validados" pressupõe um estado
-de validação por conhecimento — conferir se `knowledge_*` tem esse campo antes
-de desenhar, porque um percentual sem coluna é número sintetizado (D-023). A
-tela `/atendimento/conhecimento` já existe.
-
-E a rotina, com as quatro perguntas acumuladas: **o frame tem fonte para o que
-desenha?** (D-266), **o `db reset` + seed deixa a tela com dado?**, **quantas
+A rotina, com as quatro perguntas acumuladas: **o frame tem fonte para o que
+desenha?** (D-266), **o `db reset` + seed deixa a tela com dado?** (D-268 mostrou
+que "não" pode ser resposta legítima, desde que o esquema sustente), **quantas
 linhas ela tem no Dev?** (D-263) e **a faixa conta o mesmo conjunto da tabela ou
 é navegação?** (D-265, decide sozinha se há linha-sentinela).
 
-Depois: Central; e então D31–D36 (Usuários, Integrações, Sincronização, Saúde,
-Configurações, Copiloto) e o passe visual global (D37).
+Depois: D31–D36 (Usuários, Integrações, Sincronização, Saúde, Configurações,
+Copiloto) e o passe visual global (D37).
 
 **Quatro itens seguem abertos fora da fila:**
 
-- **`/notas-fiscais/[id]`** — dois dos quatro estados de item que o brief §25
-  pede não têm dado em `document_items` (D-253).
-- **`/cobertura`** — o frame a trata com Reposição como uma tela de abas, e
-  unificá-las é composição (D-261). D-265 acrescentou que ela não tem filtro por
-  SKU, só por marca.
+- **`/notas-fiscais/[id]`** — dois dos quatro estados de item do brief §25 não
+  têm dado em `document_items` (D-253).
+- **`/cobertura`** — o frame a trata com Reposição como uma tela de abas
+  (D-261); e ela não tem filtro por SKU, só por marca (D-265).
 - **Exportação de `/precos`** — recusada em D-264 por ser feature, não desenho.
 - **Paginação de `/atendimento`** — o volume passou a justificar (D-267).
