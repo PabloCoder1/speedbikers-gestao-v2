@@ -109,6 +109,7 @@ export function ConfirmApplyForm({
       </p>
 
       <button
+        className="sb-button sb-button-primary"
         type="button"
         onClick={() => {
           void confirm();

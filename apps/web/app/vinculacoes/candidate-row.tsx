@@ -13,24 +13,6 @@ import { dismissLinkCandidate, resolveLinkCandidate } from "./actions";
  * não precisa de Server Action.
  */
 
-const inputStyle: React.CSSProperties = {
-  padding: "0.375rem 0.5rem",
-  borderRadius: "var(--sb-radius)",
-  border: "1px solid var(--sb-border)",
-  fontSize: "0.875rem",
-  width: "100%",
-};
-
-const buttonStyle: React.CSSProperties = {
-  padding: "0.375rem 0.75rem",
-  borderRadius: "var(--sb-radius)",
-  border: "none",
-  fontSize: "0.8125rem",
-  fontWeight: 600,
-  cursor: "pointer",
-  whiteSpace: "nowrap",
-};
-
 export function CandidateRow({ candidateId }: { candidateId: string }): ReactNode {
   const skuSearch = useSkuSearch();
   const [busy, setBusy] = useState(false);
@@ -79,6 +61,7 @@ export function CandidateRow({ candidateId }: { candidateId: string }): ReactNod
     <div style={{ display: "grid", gap: "0.375rem", minWidth: "16rem" }}>
       <div style={{ display: "flex", gap: "0.375rem", position: "relative" }}>
         <input
+          className="sb-input sb-input-full"
           type="text"
           value={skuSearch.query}
           onChange={(event) => {
@@ -86,38 +69,26 @@ export function CandidateRow({ candidateId }: { candidateId: string }): ReactNod
           }}
           placeholder="Buscar SKU…"
           disabled={busy}
-          style={inputStyle}
         />
 
         <button
+          className="sb-button sb-button-primary"
           type="button"
           onClick={() => {
             void confirm();
           }}
           disabled={busy || skuSearch.selected === null}
-          style={{
-            ...buttonStyle,
-            background: "var(--sb-primary)",
-            color: "var(--sb-white)",
-            opacity: busy || skuSearch.selected === null ? 0.5 : 1,
-            cursor: busy || skuSearch.selected === null ? "not-allowed" : "pointer",
-          }}
         >
           Vincular
         </button>
 
         <button
+          className="sb-button"
           type="button"
           onClick={() => {
             void dismiss();
           }}
           disabled={busy}
-          style={{
-            ...buttonStyle,
-            background: "transparent",
-            border: "1px solid var(--sb-border)",
-            color: "var(--sb-text-soft)",
-          }}
         >
           Descartar
         </button>
@@ -145,20 +116,12 @@ export function CandidateRow({ candidateId }: { candidateId: string }): ReactNod
           {skuSearch.results.map((sku) => (
             <li key={sku.id}>
               <button
+                className="sb-menu-item"
                 type="button"
                 onClick={() => {
                   skuSearch.select(sku);
                 }}
-                style={{
-                  display: "block",
-                  width: "100%",
-                  textAlign: "left",
-                  padding: "0.375rem 0.5rem",
-                  border: "none",
-                  background: "transparent",
-                  cursor: "pointer",
-                  fontSize: "0.8125rem",
-                }}
+                style={{ width: "100%", textAlign: "left" }}
               >
                 <strong>{sku.sku}</strong>
                 {sku.title !== null && ` — ${sku.title}`}

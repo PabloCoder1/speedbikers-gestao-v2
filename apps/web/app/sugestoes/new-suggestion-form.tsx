@@ -63,6 +63,7 @@ export function NewSuggestionForm(): ReactNode {
       <label style={{ fontSize: "0.875rem", fontWeight: 600 }}>
         Sugerir uma melhoria
         <textarea
+          className="sb-input"
           value={text}
           onChange={(event) => {
             setText(event.target.value);
@@ -76,17 +77,9 @@ export function NewSuggestionForm(): ReactNode {
 
       <div style={{ display: "flex", alignItems: "center", gap: "var(--sb-space-2)" }}>
         <button
+          className="sb-button sb-button-primary"
           type="submit"
           disabled={busy || text.trim().length === 0}
-          style={{
-            padding: "0.375rem 0.875rem",
-            borderRadius: "var(--sb-radius)",
-            border: "1px solid var(--sb-primary)",
-            background: "var(--sb-primary)",
-            color: "var(--sb-white)",
-            fontSize: "0.8125rem",
-            cursor: "pointer",
-          }}
         >
           {busy ? "Enviando…" : "Enviar sugestão"}
         </button>

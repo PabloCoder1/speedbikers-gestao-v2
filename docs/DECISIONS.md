@@ -7507,6 +7507,52 @@ D-267 registrou a ORDEM da fila e as colunas sem fonte. **A composicao de tres c
 
 **Verificacao:** as catorze renderizadas a 1440px (e cinco tambem a 850px) contra o Supabase local com seed do e2e, login real pelo Playwright, `.next` conferido sem o ref do Dev antes de capturar (a licao de A3).
 
+## D-284 - A5: campo e botao entram no design system, e o guarda entra junto
+
+**Contexto:** a auditoria A4 (D-283) mediu **59 campos em 29 arquivos** e **59 botoes em 35** com estilo inline, incluindo **quatro copias** de um `const buttonStyle` (raio 8px, 12px) contra o `.sb-button` da casa (32px, 11px, raio 6px). Na Base de Conhecimento isso aparecia como um botao NATIVO do sistema operacional logo abaixo de um painel migrado. Sem migration.
+
+---
+
+**O PASSE: 41 ARQUIVOS, 194 CONTROLES, UMA GRAMATICA**
+
+Depois: `check:control-styles ok -- 194 controle(s), todos com a forma do design system`. Medido no navegador, nao afirmado: em seis telas o `getComputedStyle` devolve **32px / 11px / raio 6px** no botao e **32px / 11px / raio 5px** no campo.
+
+Tres coisas precisaram nascer antes de o passe ser possivel:
+
+1. **`select.sb-input` e `textarea.sb-input`.** `.sb-input` travava altura em 32px, o que serve ao `<input>` de uma linha e nao aos outros dois. **Metade da razao de 59 campos terem ficado inline e que a classe existia e nao servia para eles**;
+2. **`.sb-button-danger` e `.sb-button:disabled`.** O primeiro tem um consumidor so, de proposito -- o filtro "Prazo em risco" de `/atendimento`, onde LIGADO significa risco e nao selecao (a excecao que D-141 registrou). O segundo apaga o `opacity` inline que 12 arquivos declaravam, cada um com o seu valor;
+3. **`FilterPill` saiu do inline.** Ela era o ULTIMO controle da casa fora do sistema -- 13px e raio 8px --, e por isso `/precos` e `/full` mostravam DUAS gramaticas de filtro na mesma tela: o `FilterMenu` (que e `.sb-button`) no cabecalho e a pilula logo abaixo. O ativo virou `.sb-button-primary`, que e o que o frame faz no painel de filtros da Central de Acoes. `FILTER_SUBMIT_STYLE` -- a constante que existia para o botao "Filtrar" ter "o mesmo desenho" da pilula -- virou `<FilterSubmit>`: agora e literalmente a mesma regra CSS, nao uma copia para manter em sincronia.
+
+---
+
+**O DEFEITO QUE O PROPRIO PASSE COMETEU, E QUE VIROU O AUTO-TESTE DO GUARDA**
+
+A regex de elemento (`<button[^>]*?>`) **para no primeiro `>`**, e `=>` tem um. Todo controle com `onClick={() => {…}}` recebeu a classe e **manteve o `style={buttonStyle}` que vinha depois da seta**: os dois donos do mesmo pixel, dentro do mesmo elemento -- exatamente o defeito que o passe existia para fechar. Foram 15 sobras, achadas por uma segunda varredura por linha.
+
+O guarda nao usa regex de elemento: tem um scanner que conta chaves e ignora string para achar o `>` que FECHA a tag. E o caso `a seta do onClick NAO fecha a tag` esta entre os auto-testes dele, porque nao e hipotese -- e o erro que aconteceu.
+
+O **segundo** auto-teste veio do primeiro resultado da varredura: ela acusou a palavra `<button>` dentro do **docstring** de `filter-pill.tsx`. Guarda que berra por nada e como a acusacao verdadeira deixa de ser lida; blocos de comentario somem antes da leitura.
+
+---
+
+**TRES ACHADOS QUE SO O GUARDA VIU** (a varredura de A4 lia so `app/`, e eles moram em `components/`)
+
+- o botao de fechar do **toast** era `<button>` cru com estilo inline: virou `.sb-close`, que ja era a forma da casa para fechar;
+- o campo da **paleta Ctrl+K** dependia de VIZINHANCA (`.sb-command-input input`). Forma de controle que so existe por posicao na arvore nao e forma do sistema, e uma refatoracao do container a apagaria sem aviso: virou `.sb-command-field`, com a mesma regra;
+- e o proprio `FilterSubmit`, que nasceu nesta fatia.
+
+---
+
+**O QUE MUDOU NA TELA, E O QUE NAO PODE MUDAR**
+
+O passe e visivel: as fileiras de filtro de 11 telas encolheram de 13px para 11px e ganharam a altura de 32px; os formularios de `/compras/novo`, `/fornecedores/novo`, `/estoque/[skuId]/ajuste` e da Base de Conhecimento passaram a ter rotulo em cima, campo de largura inteira e um primary so.
+
+**Duas regressoes foram achadas RENDERIZANDO, nao no diff:** os campos que tinham `width: "100%"` dentro do const apagado ficaram com 160px (corrigido com `.sb-input-full`, sete arquivos), e o submit de `/compras/novo` esticou a linha inteira porque o `justifySelf: "start"` morava no mesmo objeto. Nenhuma das duas quebra teste; as duas quebram a tela.
+
+**Impacto:** `apps/web/app/globals.css` (`select.sb-input`, `textarea.sb-input`, `.sb-input-full`, `.sb-button-danger`, `.sb-button:disabled`, `.sb-button-full`, `.sb-command-field`), `components/filter-pill.tsx` (`FilterSubmit` no lugar de `FILTER_SUBMIT_STYLE`), `components/notification-toasts.tsx`, `components/command-palette.tsx`, **38 telas**, `scripts/check-control-styles.mjs` (novo), `package.json`, `.github/workflows/ci.yml`.
+
+**Verificacao:** `check` **29/29**, build **8/8**, integracao **634/634**, e2e **87/87**, `check:control-styles` **194**, `check:table-styles` 30, `check:server-actions` 21, `check:waterfalls` 61. Seis telas renderizadas a 1440px com o `getComputedStyle` de campo e botao lido da tela.
+
 ## Como adicionar nova decisao
 
 Registrar:

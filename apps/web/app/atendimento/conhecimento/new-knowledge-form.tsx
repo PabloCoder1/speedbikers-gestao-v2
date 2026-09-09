@@ -26,20 +26,12 @@ export function NewKnowledgeForm(): ReactNode {
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const input = {
-    padding: "0.5rem 0.625rem",
-    border: "1px solid var(--sb-border)",
-    borderRadius: "var(--sb-radius)",
-    fontSize: "0.875rem",
-    fontFamily: "inherit",
-  } as const;
-
   return (
     <div style={{ display: "grid", gap: "var(--sb-space-2)", maxWidth: "40rem" }}>
       <div style={{ display: "flex", gap: "var(--sb-space-2)", flexWrap: "wrap" }}>
         <label style={{ fontSize: "0.8125rem", display: "grid", gap: "0.25rem" }}>
           Tipo
-          <select value={kind} style={input} onChange={(event) => { setKind(event.target.value as KnowledgeKind); }}>
+          <select className="sb-input" value={kind} onChange={(event) => { setKind(event.target.value as KnowledgeKind); }}>
             {/* O VALOR continua sendo o enum; só o rótulo é humano. */}
             {KNOWLEDGE_KINDS.map((option) => (
               <option key={option} value={option}>
@@ -51,7 +43,7 @@ export function NewKnowledgeForm(): ReactNode {
 
         <label style={{ fontSize: "0.8125rem", display: "grid", gap: "0.25rem" }}>
           Fonte
-          <select value={source} style={input} onChange={(event) => { setSource(event.target.value as KnowledgeSource); }}>
+          <select className="sb-input" value={source} onChange={(event) => { setSource(event.target.value as KnowledgeSource); }}>
             {KNOWLEDGE_SOURCES.map((option) => (
               <option key={option} value={option}>
                 {KNOWLEDGE_SOURCE_LABEL[option] ?? option}
@@ -62,7 +54,7 @@ export function NewKnowledgeForm(): ReactNode {
 
         <label style={{ fontSize: "0.8125rem", display: "grid", gap: "0.25rem" }}>
           SKU (vazio = geral)
-          <input value={skuCode} style={input} onChange={(event) => { setSkuCode(event.target.value); }} />
+          <input className="sb-input" value={skuCode} onChange={(event) => { setSkuCode(event.target.value); }} />
         </label>
       </div>
 
@@ -70,21 +62,22 @@ export function NewKnowledgeForm(): ReactNode {
         Fato (ex.: “Compatível com Honda X-ADV 750 2022-2025”)
       </label>
       <textarea
+        className="sb-input"
         id="fato"
         value={content}
         rows={2}
         maxLength={500}
-        style={{ ...input, resize: "vertical" }}
         onChange={(event) => { setContent(event.target.value); }}
       />
 
       <label htmlFor="obs" style={{ fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
         Observação (opcional)
       </label>
-      <input id="obs" value={note} maxLength={1000} style={input} onChange={(event) => { setNote(event.target.value); }} />
+      <input className="sb-input" id="obs" value={note} maxLength={1000} onChange={(event) => { setNote(event.target.value); }} />
 
       <div>
         <button
+          className="sb-button sb-button-primary"
           type="button"
           disabled={busy}
           onClick={() => {

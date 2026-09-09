@@ -31,23 +31,23 @@ export function FilterPill({
   tone?: "primary" | "danger";
   children: ReactNode;
 }): ReactNode {
-  const accent = tone === "danger" ? "var(--sb-danger)" : "var(--sb-primary)";
+  /*
+    A5: as classes do design system, no lugar do estilo inline.
+
+    A pílula era o ÚLTIMO controle da casa fora do sistema — 13px e raio 8px
+    contra os 11px, 32px e raio 6px de `.sb-button`. Por isso `/precos` e
+    `/full` mostravam DUAS gramáticas de filtro na mesma tela: o `FilterMenu`
+    (que é `.sb-button`) no cabeçalho do painel e a pílula logo abaixo. A
+    auditoria A4 fotografou as duas e contou 11 telas com ela.
+
+    O ativo vira `.sb-button-primary` — que é o que o frame faz no painel de
+    filtros da Central de Ações (`bg-brand-dark text-white`) — e o tom de
+    perigo continua sendo caso próprio, agora como `.sb-button-danger`.
+  */
+  const variante = active ? (tone === "danger" ? " sb-button-danger" : " sb-button-primary") : "";
 
   return (
-    <Link
-      href={href}
-      aria-current={active ? "true" : undefined}
-      style={{
-        padding: "0.25rem 0.625rem",
-        borderRadius: "var(--sb-radius)",
-        border: `1px solid ${active ? accent : "var(--sb-border)"}`,
-        background: active ? accent : "transparent",
-        color: active ? "var(--sb-white)" : "var(--sb-text-soft)",
-        textDecoration: "none",
-        fontSize: "0.8125rem",
-        whiteSpace: "nowrap",
-      }}
-    >
+    <Link href={href} aria-current={active ? "true" : undefined} className={`sb-button${variante}`}>
       {children}
     </Link>
   );
@@ -55,18 +55,19 @@ export function FilterPill({
 
 /**
  * O gêmeo em `<button>` do `FilterPill`, para o submit nativo dos formulários
- * de busca — que precisa continuar sendo botão, não link. Mesmo desenho, para
- * a barra de filtros não ter duas aparências lado a lado.
+ * de busca — que precisa continuar sendo botão, não link.
+ *
+ * **Era uma constante de estilo (`FILTER_SUBMIT_STYLE`) e virou componente com
+ * classe**: o "mesmo desenho" que ela existia para garantir agora é literalmente
+ * a mesma regra CSS da pílula, não uma cópia para manter em sincronia.
  */
-export const FILTER_SUBMIT_STYLE: React.CSSProperties = {
-  padding: "0.25rem 0.625rem",
-  borderRadius: "var(--sb-radius)",
-  border: "1px solid var(--sb-border)",
-  background: "transparent",
-  color: "var(--sb-text-soft)",
-  fontSize: "0.8125rem",
-  cursor: "pointer",
-};
+export function FilterSubmit({ children = "Filtrar" }: { children?: ReactNode }): ReactNode {
+  return (
+    <button type="submit" className="sb-button">
+      {children}
+    </button>
+  );
+}
 
 /**
  * O rótulo de um grupo de filtros ("Conta", "Marca", "Critério"). Largura

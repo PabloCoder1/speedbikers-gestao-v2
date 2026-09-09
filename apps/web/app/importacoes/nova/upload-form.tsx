@@ -100,6 +100,7 @@ export function UploadForm(): ReactNode {
       <label style={{ fontSize: "0.875rem", fontWeight: 600 }}>
         Qual arquivo é este?
         <select
+          className="sb-input"
           value={kind}
           onChange={(event) => {
             setKind(event.target.value);
@@ -132,6 +133,7 @@ export function UploadForm(): ReactNode {
       <label style={{ fontSize: "0.875rem", fontWeight: 600 }}>
         Arquivo (.xlsx)
         <input
+          className="sb-input"
           type="file"
           accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           onChange={(event) => {
@@ -156,19 +158,9 @@ export function UploadForm(): ReactNode {
       )}
 
       <button
+        className="sb-button sb-button-primary"
         type="submit"
         disabled={busy || file === null}
-        style={{
-          padding: "0.625rem",
-          border: "none",
-          borderRadius: "var(--sb-radius)",
-          background: "var(--sb-primary)",
-          color: "var(--sb-white)",
-          fontSize: "1rem",
-          fontWeight: 600,
-          cursor: busy || file === null ? "not-allowed" : "pointer",
-          opacity: busy || file === null ? 0.6 : 1,
-        }}
       >
         {busy ? "Enviando…" : "Enviar para conferência"}
       </button>

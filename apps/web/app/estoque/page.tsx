@@ -2,7 +2,7 @@ import { computeUsableStock } from "@sb/domain";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { FILTER_SUBMIT_STYLE, FilterPill } from "../../components/filter-pill";
+import { FilterPill, FilterSubmit } from "../../components/filter-pill";
 import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
@@ -258,22 +258,14 @@ export default async function EstoquePage({
             {filters.category !== null && <input type="hidden" name="categoria" value={filters.category} />}
             {filters.onlyNegative && <input type="hidden" name="negativo" value="1" />}
             <input
+              className="sb-input"
               type="search"
               name="busca"
               defaultValue={filters.search ?? ""}
               placeholder="SKU ou título"
-              aria-label="Buscar por SKU ou título"
-              style={{
-                padding: "0.25rem 0.5rem",
-                borderRadius: "var(--sb-radius)",
-                border: "1px solid var(--sb-border)",
-                fontSize: "0.8125rem",
-                minWidth: "14rem",
-              }}
+              aria-label="Buscar por SKU ou título" style={{ minWidth: "14rem" }}
             />
-            <button type="submit" style={FILTER_SUBMIT_STYLE}>
-              Buscar
-            </button>
+            <FilterSubmit>Buscar</FilterSubmit>
           </form>
         </div>
       </div>

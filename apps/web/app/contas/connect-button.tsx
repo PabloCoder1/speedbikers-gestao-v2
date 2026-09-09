@@ -79,6 +79,7 @@ export function ConnectButton({ mlAccountId, label }: { mlAccountId: string; lab
   return (
     <div style={{ display: "inline-flex", flexDirection: "column", gap: "0.25rem", alignItems: "flex-start" }}>
       <button
+        className="sb-button"
         type="button"
         onClick={() => {
           void connect();

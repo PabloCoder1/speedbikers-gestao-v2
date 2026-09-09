@@ -28,23 +28,6 @@ const INTERNAL_STATUSES = [
 
 const PRIORITIES = ["NORMAL", "ALTA", "CRITICA"];
 
-const select: React.CSSProperties = {
-  border: "1px solid var(--sb-border)",
-  borderRadius: "var(--sb-radius)",
-  padding: "0.125rem 0.25rem",
-  fontSize: "0.75rem",
-  maxWidth: "100%",
-};
-
-const button: React.CSSProperties = {
-  border: "1px solid var(--sb-border)",
-  borderRadius: "999px",
-  background: "transparent",
-  padding: "0.125rem 0.5rem",
-  fontSize: "0.75rem",
-  cursor: "pointer",
-  whiteSpace: "nowrap",
-};
 
 export interface TriageCellData {
   id: string;
@@ -78,10 +61,10 @@ export function TriageCell({ triage }: { triage: TriageCellData }): ReactNode {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
       <select
+        className="sb-input"
         aria-label="Status interno"
         value={triage.internalStatus}
         disabled={busy}
-        style={select}
         onChange={(event) => void run(() => changeInternalStatus(triage.id, event.target.value))}
       >
         {INTERNAL_STATUSES.map((code) => (
@@ -92,10 +75,10 @@ export function TriageCell({ triage }: { triage: TriageCellData }): ReactNode {
       </select>
 
       <select
+        className="sb-input"
         aria-label="Prioridade"
         value={triage.priority}
         disabled={busy}
-        style={select}
         onChange={(event) => void run(() => changePriority(triage.id, event.target.value))}
       >
         {PRIORITIES.map((code) => (
@@ -106,7 +89,7 @@ export function TriageCell({ triage }: { triage: TriageCellData }): ReactNode {
       </select>
 
       {triage.assigneeId === null ? (
-        <button type="button" disabled={busy} style={button} onClick={() => void run(() => assignToMe(triage.id))}>
+        <button type="button" className="sb-button sb-button-sm" disabled={busy} onClick={() => void run(() => assignToMe(triage.id))}>
           Assumir
         </button>
       ) : (
@@ -114,7 +97,7 @@ export function TriageCell({ triage }: { triage: TriageCellData }): ReactNode {
           <span style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
             {mine ? "Você" : (triage.assigneeName ?? "Outro usuário")}
           </span>
-          <button type="button" disabled={busy} style={button} onClick={() => void run(() => unassign(triage.id))}>
+          <button type="button" className="sb-button sb-button-sm" disabled={busy} onClick={() => void run(() => unassign(triage.id))}>
             Liberar
           </button>
         </div>

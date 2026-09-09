@@ -85,6 +85,7 @@ export function SimulatorPanel({
         <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.75rem" }}>
           Estoque hipotético
           <input
+            className="sb-input"
             type="number"
             min={0}
             step="any"
@@ -99,6 +100,7 @@ export function SimulatorPanel({
         <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.75rem" }}>
           Venda média diária (premissa)
           <input
+            className="sb-input"
             type="number"
             min={0}
             step="any"
@@ -129,6 +131,7 @@ export function SimulatorPanel({
         <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.75rem" }}>
           Dias de cobertura desejados
           <input
+            className="sb-input"
             type="number"
             min={0}
             step="any"

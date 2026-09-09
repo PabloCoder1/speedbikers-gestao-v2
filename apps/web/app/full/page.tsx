@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 import Link from "next/link";
 
-import { FILTER_SUBMIT_STYLE, FilterPill } from "../../components/filter-pill";
+import { FilterPill, FilterSubmit } from "../../components/filter-pill";
 import { FilterMenu } from "../../components/filter-menu";
 import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
 import { PageTitle } from "../../components/page-title";
@@ -268,22 +268,14 @@ export default async function FullPage({
           {filters.situation !== null && <input type="hidden" name="situacao" value={filters.situation} />}
           {account !== null && <input type="hidden" name="conta" value={account} />}
           <input
+            className="sb-input"
             type="search"
             name="busca"
             defaultValue={filters.search ?? ""}
             placeholder="Buscar SKU ou produto"
-            aria-label="Buscar por SKU ou título"
-            style={{
-              padding: "0.25rem 0.5rem",
-              borderRadius: "var(--sb-radius)",
-              border: "1px solid var(--sb-border)",
-              fontSize: "0.8125rem",
-              minWidth: "16rem",
-            }}
+            aria-label="Buscar por SKU ou título" style={{ minWidth: "16rem" }}
           />
-          <button type="submit" style={FILTER_SUBMIT_STYLE}>
-            Filtrar
-          </button>
+          <FilterSubmit>Filtrar</FilterSubmit>
         </form>
 
         {error !== null && (

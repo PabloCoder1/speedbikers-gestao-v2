@@ -65,6 +65,7 @@ export function RoleSelect({
   return (
     <div style={{ display: "grid", gap: "0.25rem" }}>
       <select
+        className="sb-input"
         aria-label="Papel do membro"
         value={role}
         disabled={busy}

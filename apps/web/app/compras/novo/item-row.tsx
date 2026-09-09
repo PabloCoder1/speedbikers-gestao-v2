@@ -43,15 +43,6 @@ function originLabel(isImported: boolean | null): string {
 
   return isImported ? "Importado" : "Nacional";
 }
-
-const inputStyle: React.CSSProperties = {
-  padding: "0.375rem 0.5rem",
-  borderRadius: "var(--sb-radius)",
-  border: "1px solid var(--sb-border)",
-  fontSize: "0.8125rem",
-  width: "100%",
-};
-
 export function ItemRow({
   item,
   onChange,
@@ -119,6 +110,7 @@ export function ItemRow({
     <tr>
       <td style={{ padding: "0.375rem", verticalAlign: "top", position: "relative" }}>
         <input
+          className="sb-input sb-input-full"
           type="text"
           value={item.skuSnapshot}
           onChange={(event) => {
@@ -126,7 +118,6 @@ export function ItemRow({
           }}
           placeholder="SKU ou nome…"
           required
-          style={inputStyle}
         />
 
         {results.length > 0 && (
@@ -148,6 +139,7 @@ export function ItemRow({
             {results.map((sku) => (
               <li key={sku.id}>
                 <button
+                  className="sb-button"
                   type="button"
                   onClick={() => {
                     select(sku);
@@ -193,6 +185,7 @@ export function ItemRow({
 
       <td style={{ padding: "0.375rem", verticalAlign: "top" }}>
         <input
+          className="sb-input sb-input-full"
           type="number"
           min="0.001"
           step="0.001"
@@ -201,12 +194,12 @@ export function ItemRow({
             onChange({ ...item, quantityOrdered: event.target.value });
           }}
           required
-          style={inputStyle}
         />
       </td>
 
       <td style={{ padding: "0.375rem", verticalAlign: "top" }}>
         <input
+          className="sb-input sb-input-full"
           type="number"
           min="0"
           step="0.01"
@@ -214,7 +207,6 @@ export function ItemRow({
           onChange={(event) => {
             onChange({ ...item, unitCost: event.target.value, unitCostSuggested: false });
           }}
-          style={inputStyle}
         />
         {item.unitCostSuggested === true && (
           <div style={{ fontSize: "0.6875rem", color: "var(--sb-text-soft)", marginTop: "0.25rem" }}>
@@ -225,17 +217,9 @@ export function ItemRow({
 
       <td style={{ padding: "0.375rem", verticalAlign: "top" }}>
         <button
+          className="sb-button"
           type="button"
           onClick={onRemove}
-          style={{
-            padding: "0.375rem 0.625rem",
-            borderRadius: "var(--sb-radius)",
-            border: "1px solid var(--sb-border)",
-            background: "transparent",
-            color: "var(--sb-text-soft)",
-            fontSize: "0.75rem",
-            cursor: "pointer",
-          }}
         >
           Remover
         </button>

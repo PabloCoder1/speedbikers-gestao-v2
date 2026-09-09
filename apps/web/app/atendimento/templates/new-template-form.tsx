@@ -11,36 +11,28 @@ export function NewTemplateForm(): ReactNode {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const input = {
-    width: "100%",
-    padding: "0.5rem 0.625rem",
-    border: "1px solid var(--sb-border)",
-    borderRadius: "var(--sb-radius)",
-    fontSize: "0.875rem",
-    fontFamily: "inherit",
-  } as const;
-
   return (
     <div style={{ display: "grid", gap: "var(--sb-space-2)", maxWidth: "40rem" }}>
       <label htmlFor="novo-nome" style={{ fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
         Nome
       </label>
-      <input id="novo-nome" value={name} maxLength={80} style={input} onChange={(event) => { setName(event.target.value); }} />
+      <input className="sb-input" id="novo-nome" value={name} maxLength={80} onChange={(event) => { setName(event.target.value); }} />
 
       <label htmlFor="novo-texto" style={{ fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
         Texto
       </label>
       <textarea
+        className="sb-input"
         id="novo-texto"
         value={body}
         rows={4}
         maxLength={2000}
-        style={{ ...input, resize: "vertical" }}
         onChange={(event) => { setBody(event.target.value); }}
       />
 
       <div>
         <button
+          className="sb-button sb-button-primary"
           type="button"
           disabled={busy}
           onClick={() => {

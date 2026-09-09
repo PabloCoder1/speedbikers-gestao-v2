@@ -287,6 +287,7 @@ export function NotificationToasts({
             </Link>
 
             <button
+              className="sb-close"
               type="button"
               onClick={() => {
                 dismiss(toast.key);

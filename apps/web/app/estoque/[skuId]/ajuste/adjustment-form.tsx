@@ -5,15 +5,6 @@ import { useState, type ReactNode } from "react";
 
 import { createManualStockAdjustment } from "../../actions";
 
-const inputStyle: React.CSSProperties = {
-  display: "block",
-  width: "100%",
-  marginTop: "var(--sb-space-1)",
-  padding: "0.5rem",
-  borderRadius: "var(--sb-radius)",
-  border: "1px solid var(--sb-border)",
-  fontSize: "1rem",
-};
 
 export function AdjustmentForm({ skuId }: { skuId: string }): ReactNode {
   const router = useRouter();
@@ -70,7 +61,7 @@ export function AdjustmentForm({ skuId }: { skuId: string }): ReactNode {
     >
       <label style={{ fontSize: "0.875rem", fontWeight: 600 }}>
         Local
-        <select name="locationKind" defaultValue="LOCAL" style={inputStyle}>
+        <select className="sb-input sb-input-full" name="locationKind" defaultValue="LOCAL">
           <option value="LOCAL">Local</option>
           <option value="RESERVADO">Reservado</option>
           <option value="TRANSITO">Em trânsito</option>
@@ -79,12 +70,12 @@ export function AdjustmentForm({ skuId }: { skuId: string }): ReactNode {
 
       <label style={{ fontSize: "0.875rem", fontWeight: 600 }}>
         Quantidade (positiva = entrada, negativa = saída)
-        <input name="qtyDelta" type="number" step="any" required style={inputStyle} />
+        <input className="sb-input sb-input-full" name="qtyDelta" type="number" step="any" required />
       </label>
 
       <label style={{ fontSize: "0.875rem", fontWeight: 600 }}>
         Motivo
-        <textarea name="reason" rows={3} required style={{ ...inputStyle, resize: "vertical" }} />
+        <textarea className="sb-input sb-input-full" name="reason" rows={3} required />
       </label>
 
       {error !== null && (
@@ -94,19 +85,9 @@ export function AdjustmentForm({ skuId }: { skuId: string }): ReactNode {
       )}
 
       <button
+        className="sb-button sb-button-primary"
         type="submit"
         disabled={busy}
-        style={{
-          padding: "0.625rem",
-          border: "none",
-          borderRadius: "var(--sb-radius)",
-          background: "var(--sb-primary)",
-          color: "var(--sb-white)",
-          fontSize: "1rem",
-          fontWeight: 600,
-          cursor: busy ? "not-allowed" : "pointer",
-          opacity: busy ? 0.6 : 1,
-        }}
       >
         {busy ? "Salvando…" : "Registrar ajuste"}
       </button>

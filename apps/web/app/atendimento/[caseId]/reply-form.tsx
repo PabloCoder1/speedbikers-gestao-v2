@@ -151,6 +151,7 @@ export function ReplyForm({
 
       <div style={{ display: "flex", alignItems: "center", gap: "var(--sb-space-2)", flexWrap: "wrap" }}>
         <button
+          className="sb-button"
           type="button"
           disabled={suggesting || enviando || estado.kind === "queued"}
           onClick={() => {
@@ -244,6 +245,7 @@ export function ReplyForm({
             Inserir template
           </label>
           <select
+            className="sb-input"
             id="template"
             value=""
             disabled={enviando || estado.kind === "queued"}
@@ -296,6 +298,7 @@ export function ReplyForm({
         Sua resposta
       </label>
       <textarea
+        className="sb-input"
         id="resposta"
         value={text}
         rows={4}
@@ -321,6 +324,7 @@ export function ReplyForm({
 
       <div style={{ display: "flex", alignItems: "center", gap: "var(--sb-space-2)", flexWrap: "wrap" }}>
         <button
+          className="sb-button"
           type="button"
           disabled={vazio || enviando || estado.kind === "queued"}
           onClick={() => void enviar()}

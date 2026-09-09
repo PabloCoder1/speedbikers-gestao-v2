@@ -70,6 +70,7 @@ export function LoginForm(): ReactNode {
       <label style={{ fontSize: "0.875rem", fontWeight: 600 }}>
         E-mail
         <input
+          className="sb-input"
           type="email"
           value={email}
           onChange={(event) => { setEmail(event.target.value); }}
@@ -82,6 +83,7 @@ export function LoginForm(): ReactNode {
       <label style={{ fontSize: "0.875rem", fontWeight: 600 }}>
         Senha
         <input
+          className="sb-input"
           type="password"
           value={password}
           onChange={(event) => { setPassword(event.target.value); }}
@@ -98,19 +100,9 @@ export function LoginForm(): ReactNode {
       )}
 
       <button
+        className="sb-button sb-button-primary"
         type="submit"
         disabled={busy}
-        style={{
-          padding: "0.625rem",
-          border: "none",
-          borderRadius: "var(--sb-radius)",
-          background: "var(--sb-primary)",
-          color: "var(--sb-white)",
-          fontSize: "1rem",
-          fontWeight: 600,
-          cursor: busy ? "progress" : "pointer",
-          opacity: busy ? 0.7 : 1,
-        }}
       >
         {busy ? "Entrando…" : "Entrar"}
       </button>

@@ -18,14 +18,6 @@ export interface AccountOption {
   label: string;
 }
 
-const inputStyle: React.CSSProperties = {
-  padding: "0.375rem 0.5rem",
-  borderRadius: "var(--sb-radius)",
-  border: "1px solid var(--sb-border)",
-  fontSize: "0.875rem",
-  width: "100%",
-};
-
 const labelStyle: React.CSSProperties = {
   display: "block",
   fontSize: "0.75rem",
@@ -103,12 +95,12 @@ export function ManualLinkForm({
             Conta
           </label>
           <select
+            className="sb-input sb-input-full"
             id="manual-link-account"
             value={mlAccountId}
             onChange={(event) => {
               setMlAccountId(event.target.value);
             }}
-            style={inputStyle}
           >
             {accounts.map((account) => (
               <option key={account.id} value={account.id}>
@@ -123,6 +115,7 @@ export function ManualLinkForm({
             MLB do anúncio
           </label>
           <input
+            className="sb-input sb-input-full"
             id="manual-link-item"
             value={itemId}
             placeholder="MLB123456789"
@@ -130,39 +123,8 @@ export function ManualLinkForm({
               setItemId(event.target.value);
               setDone(null);
             }}
-            style={{ ...inputStyle, fontFamily: "ui-monospace, monospace" }}
-          />
-        </div>
 
-        <div>
-          <label style={labelStyle} htmlFor="manual-link-variation">
-            Variação (opcional)
-          </label>
-          <input
-            id="manual-link-variation"
-            value={variationId}
-            placeholder="em branco = anúncio inteiro"
-            onChange={(event) => {
-              setVariationId(event.target.value);
-              setDone(null);
-            }}
-            style={{ ...inputStyle, fontFamily: "ui-monospace, monospace" }}
-          />
-        </div>
 
-        <div>
-          <label style={labelStyle} htmlFor="manual-link-sku">
-            SKU de destino
-          </label>
-          <input
-            id="manual-link-sku"
-            value={skuSearch.query}
-            placeholder="buscar SKU…"
-            onChange={(event) => {
-              setDone(null);
-              void skuSearch.search(event.target.value);
-            }}
-            style={inputStyle}
           />
         </div>
       </div>
@@ -172,6 +134,7 @@ export function ManualLinkForm({
           {skuSearch.results.map((sku) => (
             <li key={sku.id}>
               <button
+                className="sb-menu-item"
                 type="button"
                 onClick={() => {
                   skuSearch.select(sku);
@@ -195,6 +158,7 @@ export function ManualLinkForm({
 
       <div style={{ marginTop: "var(--sb-space-3)", display: "flex", alignItems: "center", gap: "var(--sb-space-2)" }}>
         <button
+          className="sb-button"
           type="button"
           disabled={busy || skuSearch.selected === null || itemId.trim() === ""}
           onClick={() => {

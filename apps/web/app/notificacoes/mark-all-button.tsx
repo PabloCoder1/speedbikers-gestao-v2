@@ -33,6 +33,7 @@ export function MarkAllButton(): ReactNode {
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.25rem" }}>
       <button
+        className="sb-button"
         type="button"
         disabled={busy}
         onClick={() => {

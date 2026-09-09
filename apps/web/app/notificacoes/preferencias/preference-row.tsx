@@ -77,6 +77,7 @@ export function PreferenceRow({ preference }: { preference: PreferenceRowData })
       <td>{preference.accountLabel ?? "Todas as contas"}</td>
       <td>
         <select
+          className="sb-input"
           value={minSeverity}
           disabled={busy}
           onChange={(event) => {
@@ -113,6 +114,7 @@ export function PreferenceRow({ preference }: { preference: PreferenceRowData })
       </td>
       <td>
         <button
+          className="sb-button"
           type="button"
           disabled={busy}
           onClick={() => {

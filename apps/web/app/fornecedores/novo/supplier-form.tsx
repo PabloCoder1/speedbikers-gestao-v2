@@ -16,15 +16,6 @@ const FIELDS = [
   { name: "website", label: "Site" },
 ] as const;
 
-const inputStyle: React.CSSProperties = {
-  display: "block",
-  width: "100%",
-  marginTop: "var(--sb-space-1)",
-  padding: "0.5rem",
-  borderRadius: "var(--sb-radius)",
-  border: "1px solid var(--sb-border)",
-  fontSize: "1rem",
-};
 
 export function SupplierForm(): ReactNode {
   const router = useRouter();
@@ -83,13 +74,13 @@ export function SupplierForm(): ReactNode {
       {FIELDS.map((field) => (
         <label key={field.name} style={{ fontSize: "0.875rem", fontWeight: 600 }}>
           {field.label}
-          <input name={field.name} required={"required" in field && field.required} style={inputStyle} />
+          <input className="sb-input sb-input-full" name={field.name} required={"required" in field && field.required} />
         </label>
       ))}
 
       <label style={{ fontSize: "0.875rem", fontWeight: 600 }}>
         Observações
-        <textarea name="notes" rows={3} style={{ ...inputStyle, resize: "vertical" }} />
+        <textarea className="sb-input sb-input-full" name="notes" rows={3} />
       </label>
 
       {error !== null && (
@@ -99,19 +90,9 @@ export function SupplierForm(): ReactNode {
       )}
 
       <button
+        className="sb-button sb-button-primary"
         type="submit"
         disabled={busy}
-        style={{
-          padding: "0.625rem",
-          border: "none",
-          borderRadius: "var(--sb-radius)",
-          background: "var(--sb-primary)",
-          color: "var(--sb-white)",
-          fontSize: "1rem",
-          fontWeight: 600,
-          cursor: busy ? "not-allowed" : "pointer",
-          opacity: busy ? 0.6 : 1,
-        }}
       >
         {busy ? "Salvando…" : "Cadastrar fornecedor"}
       </button>

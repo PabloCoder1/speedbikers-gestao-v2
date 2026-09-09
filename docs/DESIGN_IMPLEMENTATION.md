@@ -689,23 +689,23 @@ Ponderado, não por contagem de páginas. Uma superfície "implementada" mas
 distante do frame não vale 100: estrutura = 50, + dados reais = 65, + design
 próximo = 80, validada contra o Figma = 95, + cleanup + testes = 100.
 
-| Bloco | Peso | A1 | A2 | D13 | A3 | D38/D39 | **A4** |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| Shell + navegação | 8 | 86% | 91% | 91% | 91% | 91% | 91% |
-| Design system (tokens, componentes, tabela, campo, menu, chip, modal) | 10 | 80% | 88% | 88% | 88% | 88% | **82%** |
-| Home | 6 | 87% | 87% | 87% | 87% | 87% | 87% |
-| Vendas | 8 | 85% | 88% | 88% | 88% | 88% | 88% |
-| **Produtos** | 5 | 83% | 83% | 83% | 83% | **90%** | 90% |
-| Dashboard de SKU (nove abas) | 10 | 82% | 88% | 88% | 88% | 88% | 88% |
-| Anúncios — lista | 6 | 86% | 86% | 86% | 86% | 86% | 86% |
-| **Anúncio — detalhe (oito abas)** | 5 | 25% | 25% | **84%** | 84% | 84% | 84% |
-| **D14–D17** (Estoque, Reposição, Curva ABC, Movimentações) | 8 | 25% | 25% | 25% | **88%** | 88% | 88% |
-| **D18/D20** (NF-e, Fornecedores) — frames que são ESBOÇO | 4 | 25% | 25% | 25% | **90%** | 90% | 90% |
-| **D19** (Compras) | 3 | 25% | 25% | 25% | **95%** | 95% | 95% |
-| **D21** (Integridade de Catálogo) | 4 | 25% | 25% | 25% | **92%** | 92% | 92% |
-| **14 telas D22–D36** (eram "16" por contagem errada) | 22 | 25% | 25% | 25% | 25% | 25% | **88%** |
-| **Drawers do frame** (Inspeção Rápida, MLB, pedido, fornecedor, usuário) | 4 | 0% | 0% | 0% | 0% | **86%** | 86% |
-| Passe visual global + passo cinza | 3 | 0% | 0% | 0% | 0% | 0% | 0% |
+| Bloco | Peso | A1 | A2 | D13 | A3 | D38/D39 | A4 | **A5** |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Shell + navegação | 8 | 86% | 91% | 91% | 91% | 91% | 91% | 91% |
+| Design system (tokens, componentes, tabela, campo, menu, chip, modal) | 10 | 80% | 88% | 88% | 88% | 88% | **82%** | **94%** |
+| Home | 6 | 87% | 87% | 87% | 87% | 87% | 87% | 87% |
+| Vendas | 8 | 85% | 88% | 88% | 88% | 88% | 88% | 88% |
+| **Produtos** | 5 | 83% | 83% | 83% | 83% | **90%** | 90% | 90% |
+| Dashboard de SKU (nove abas) | 10 | 82% | 88% | 88% | 88% | 88% | 88% | 88% |
+| Anúncios — lista | 6 | 86% | 86% | 86% | 86% | 86% | 86% | 86% |
+| **Anúncio — detalhe (oito abas)** | 5 | 25% | 25% | **84%** | 84% | 84% | 84% | 84% |
+| **D14–D17** (Estoque, Reposição, Curva ABC, Movimentações) | 8 | 25% | 25% | 25% | **88%** | 88% | 88% | **90%** |
+| **D18/D20** (NF-e, Fornecedores) — frames que são ESBOÇO | 4 | 25% | 25% | 25% | **90%** | 90% | 90% | 90% |
+| **D19** (Compras) | 3 | 25% | 25% | 25% | **95%** | 95% | 95% | 95% |
+| **D21** (Integridade de Catálogo) | 4 | 25% | 25% | 25% | **92%** | 92% | 92% | 92% |
+| **14 telas D22–D36** (eram "16" por contagem errada) | 22 | 25% | 25% | 25% | 25% | 25% | **88%** | **90%** |
+| **Drawers do frame** (Inspeção Rápida, MLB, pedido, fornecedor, usuário) | 4 | 0% | 0% | 0% | 0% | **86%** | 86% | 86% |
+| Passe visual global + passo cinza | 3 | 0% | 0% | 0% | 0% | 0% | 0% | **40%** |
 
 **A coluna D38/D39 mexe em DUAS linhas, e só nelas.** São as duas que estas
 fatias renderizaram (1440px e 850px, Supabase local, login real): `/produtos`,
@@ -722,10 +722,13 @@ as catorze foram, e o bloco subiu para 88%. A regra continua valendo para
 qualquer bloco futuro: **coluna nova só depois de comparar o renderizado com o
 frame** — nunca por contagem de código.
 
-**≈ 85% concluído · ≈ 15% restante** (A4). O número só sobe quando o resultado
+**≈ 88% concluído · ≈ 12% restante** (A5). O número só sobe quando o resultado
 renderizado se aproxima do frame — não quando código é escrito, e **também
-desce**: o bloco do design system caiu de 88% para 82% porque a auditoria
-fotografou duas gramáticas de controle na mesma tela.
+desce**: em A4 o bloco do design system caiu de 88% para 82% porque a auditoria
+fotografou duas gramáticas de controle na mesma tela. **A5 devolveu o bloco a
+94%** — campo e botão passaram a ter UMA forma, medida no navegador
+(32px/11px/raio 6 no botão, 5 no campo, em seis telas), e o passe visual global
+saiu de 0 para 40%: metade dele era isto, a outra metade é o passo cinza.
 
 O ≈72% anterior era o piso de A3, e o que o segurava era uma linha de 22 pontos
 contada a 25% sem nunca ter sido medida. Agora foi: **88%** nas catorze telas de
@@ -908,11 +911,11 @@ do disparo. Foi o que revelou os 1.857px de `/integracoes`.
 
 ## Revisão visual necessária
 
-**Três, e todas achadas por A4** (detalhe e evidência na seção da auditoria):
+**Duas** (a primeira das três de A4 fechou em A5):
 
-1. **P2 — campo e botão fora do design system**, em 29 e 35 arquivos, com
-   quatro cópias de um `const buttonStyle`. É a próxima fatia (A5) e leva um
-   guarda junto, no molde de `check:table-styles`;
+1. ~~**P2 — campo e botão fora do design system**~~ — **fechado em A5**
+   (D-284): 194 controles com a forma do sistema, e `check:control-styles` na
+   esteira para o padrão não voltar;
 2. **P2 — `/atendimento`**: o frame é inbox de três colunas e a V3 é lista +
    rota de detalhe. Ou vira desvio registrado com motivo, ou vira fatia;
 3. **P3 — os quatro acabamentos** de A4 (chip esticado, largura ociosa em
@@ -961,72 +964,62 @@ está na "Próxima fatia segura".
 
 ## Última fatia concluída
 
-**D39 — as quatro gavetas restantes, e a composição do Figma fechou (D-282).**
+**A5 — campo e botão entram no design system, e o guarda entra junto (D-284).**
 Sem migration.
 
-D38 entregou a primeira e deixou a pergunta escrita: anúncio, pedido,
-fornecedor e usuário mostram entidade que **já tem tela cheia**, então a gaveta
-ou substitui a tela ou a duplica. Esta fatia responde a pergunta uma vez, para
-as quatro.
+A4 mediu 59 campos em 29 arquivos e 59 botões em 35 com estilo inline —
+incluindo quatro cópias de um `const buttonStyle`. Depois deste passe:
+**`check:control-styles ok — 194 controle(s), todos com a forma do design
+system`**, e o `getComputedStyle` de seis telas devolve **32px / 11px / raio 6**
+no botão e **32px / 11px / raio 5** no campo.
 
-### A regra, e ela vale para as cinco
+### Três peças precisaram nascer antes
 
-**A gaveta é um RESUMO que leva à tela; nunca uma segunda versão dela.** Daí o
-corte mais visível: **as abas do frame não entram**. O `MlbDetailDrawer`
-desenha, dentro da gaveta, as mesmas oito abas do dashboard do anúncio; o
-`SupplierDetailDrawer`, cinco. As duas telas existem migradas (D13, D-277).
+1. **`select.sb-input` e `textarea.sb-input`** — `.sb-input` travava a altura em
+   32px, o que serve ao `<input>` de uma linha e a mais nada. Metade da razão de
+   59 campos terem ficado inline é que **a classe existia e não servia para
+   eles**;
+2. **`.sb-button-danger` e `.sb-button:disabled`** — o primeiro com um consumidor
+   só, de propósito: o filtro "Prazo em risco", onde ligado significa risco e
+   não seleção (a exceção de D-141 sobrevive à migração em vez de ser apagada
+   por ela). O segundo apaga o `opacity` inline de 12 arquivos;
+3. **`FilterPill` saiu do inline** — era o último controle da casa fora do
+   sistema, e por isso `/precos` e `/full` mostravam duas gramáticas de filtro
+   na mesma tela. `FILTER_SUBMIT_STYLE`, a constante que existia para o botão
+   "Filtrar" ter "o mesmo desenho" da pílula, virou `<FilterSubmit>`: agora é
+   literalmente a mesma regra CSS.
 
-O que sobra para a gaveta é o que a LISTA não mostra:
+### O defeito que o próprio passe cometeu — e virou auto-teste
 
-| gaveta | o que ela acrescenta à linha |
-|---|---|
-| anúncio | frescor (`synced_at`), estado da **republicação** e os cinco últimos eventos de domínio |
-| fornecedor | canais de contato, decomposição dos pedidos por estado e a ressalva de custo ausente |
-| usuário | a proteção do último ADMIN e o histórico de acesso **daquela pessoa** |
-| pedido | tudo: **não existe tela de pedido de venda na V3** |
+A regex de elemento (`<button[^>]*?>`) **para no primeiro `>`, e `=>` tem um**.
+Todo controle com `onClick={() => …}` recebeu a classe e manteve o
+`style={buttonStyle}` que vinha depois da seta: os dois donos do mesmo pixel,
+dentro do mesmo elemento. Foram 15 sobras.
 
-### A do pedido não resume nada — é superfície nova
+O guarda não usa regex de elemento — tem um scanner que conta chaves —, e o
+caso *"a seta do onClick NÃO fecha a tag"* está entre os auto-testes dele
+porque não é hipótese. O segundo auto-teste veio do primeiro resultado da
+varredura: ela acusou a palavra `<button>` dentro de um **docstring**.
 
-`resolveSupportCaseReference` devolvia `href: null` para `ORDER` porque não
-havia destino. Quem atendia via um número de 16 dígitos e abria o painel do
-Mercado Livre para saber o que fora comprado.
+### Três achados que só o guarda viu
 
-O que o frame promete e o esquema não tem — conferido em `\d`, não no código da
-tela: **nome do comprador** (`orders` guarda `buyer_id`), **logística** (existe
-`shipping_id` e nada mais) e a **timeline da transportadora**. O que existe é o
-registro de EXCEÇÕES em `domain_events`, e o silêncio ali é declarado: "só
-cancelamento, devolução e reversão perdida geram registro".
+A varredura de A4 lia `app/`; estes moram em `components/`: o **fechar do
+toast** (virou `.sb-close`), o **campo da paleta Ctrl+K** — que dependia de
+VIZINHANÇA (`.sb-command-input input`), e forma que só existe por posição na
+árvore não é forma do sistema — e o próprio `FilterSubmit`.
 
-**O seed não criava um pedido sequer** — a lição de D-242 outra vez. Passou a
-criar, com dois itens cuja diferença é o teste: um vinculado ao SKU (vira link)
-e um sem vínculo (mostra o `seller_sku` cru).
+### Duas regressões achadas RENDERIZANDO
 
-### Dois achados que não eram desta fatia
-
-1. **Link morto no Atendimento.** `support-case-reference.ts` dizia, com
-   comentário e teste, que "anúncio não tem página de detalhe própria".
-   `/anuncios/[itemId]` existe desde **D13** — o registro envelheceu e o código
-   continuou obedecendo a ele.
-2. **`relistTom` ia virar a segunda cópia de um mapa de tom** — subiu para
-   `components/tone.ts` como `tomDeRelist`.
-
-### O defeito que um teste antigo pegou, e o que só a captura pegou
-
-O gatilho da gaveta de usuário nasceu dentro da célula "Pessoa" e mudou o nome
-acessível dela de `"E2E"` para `"E2E Inspecionar"`; `usuarios.spec.ts` afirma a
-célula EXATA desde D-234 e ficou vermelho. **A correção não era afrouxar o
-teste** — ele guarda a regressão do segundo membro — e sim tirar o controle de
-dentro do dado: célula própria, sem rótulo, como a do checkbox em `/produtos`.
-
-E a primeira colocação dessa célula estava errada de um jeito que **nenhum
-teste vê**: entrou depois de "Pessoa" em vez do fim da linha, e as colunas
-desalinharam do cabeçalho. Quem pegou foi o render — terceira vez nesta série
-(a fonte herdada e a cascata em D38, o desalinhamento aqui).
+Os campos que tinham `width: "100%"` dentro do const apagado ficaram com 160px
+(corrigido com `.sb-input-full` em sete arquivos), e o submit de `/compras/novo`
+esticou a linha inteira porque o `justifySelf` morava no mesmo objeto. **Nenhuma
+das duas quebra teste; as duas quebram a tela** — é a terceira vez nesta série
+em que a captura pega o que a suíte não pega.
 
 **Verificação:** `check` 29/29, build 8/8, integração **634/634**, e2e
-**87/87** (4 novos), `check:table-styles` 30, `check:server-actions` 21,
-`check:waterfalls` 61. As quatro renderizadas a 1440px contra o Supabase local
-com login real.
+**87/87**, `check:control-styles` **194**, `check:table-styles` 30,
+`check:server-actions` 21, `check:waterfalls` 61. Seis telas renderizadas a
+1440px com o `getComputedStyle` lido da tela.
 
 ## Próxima fatia segura
 
@@ -1049,14 +1042,15 @@ Em ordem de risco medido:
 3. ~~**A auditoria de render de D22–D36**~~ — **FEITA (A4)**: as catorze telas
    renderizadas e medidas, bloco de 25% para **88%**, e o total da frente de
    ≈72% (piso) para **≈85% medido**.
-4. **A5 — o passe de campo e botão**, que é o que A4 achou de mais sistêmico:
-   `.sb-input` e `.sb-button` nos **29 + 35 arquivos** que ainda declaram estilo
-   inline (quatro deles com um `const buttonStyle` próprio), **mais o guarda**
-   `check:control-styles` na esteira, no molde de `check:table-styles`. Sem o
-   guarda, o padrão volta — foi assim que ele voltou depois da migração.
+4. ~~**A5 — o passe de campo e botão**~~ — **FEITO** (D-284): 41 arquivos, 194
+   controles, e o guarda `check:control-styles` na esteira. O bloco do design
+   system voltou de 82% para **94%**.
 5. **`/atendimento`**: decidir entre registrar o inbox de três colunas como
-   desvio com motivo, ou implementá-lo. Hoje não é nem uma coisa nem outra.
-6. Os **sete itens abertos** listados abaixo.
+   desvio com motivo, ou implementá-lo. Hoje não é nem uma coisa nem outra —
+   e é o maior desvio não registrado que resta.
+6. **O passo cinza** (`--sb-ground` no `<main>`), que é a outra metade do passe
+   visual global e continua com os oito pré-requisitos medidos lá em cima.
+7. Os **sete itens abertos** listados abaixo.
 
 ⚠️ **O que D-279 listou aqui como item 1 — "`get_purchase_suggestions` não
 classifica nenhum SKU" — NÃO EXISTE.** Era erro de medição meu (`p_date_to`
@@ -1075,6 +1069,7 @@ registrei foi medida ou só raciocinada?**, de D-281, **o que eu estou
 afirmando aparece no `innerText` — ou só na captura?** e, de D-282, **este
 registro ainda é verdade, ou a rota que ele nega já nasceu?** e, de A4,
 **existe guarda para este padrão — ou ele volta assim que eu virar as costas?**
+e, de A5, **a regex que eu usei para achar o elemento sabe onde a tag TERMINA?**
 
 **Sete itens seguem abertos fora da fila:**
 

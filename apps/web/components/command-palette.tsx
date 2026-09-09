@@ -183,6 +183,7 @@ export function CommandPalette({ organizationId }: { organizationId: string | nu
         <div className="sb-command-input">
           <span aria-hidden="true" className="sb-search-icon">⌕</span>
           <input
+            className="sb-command-field"
             type="text"
             autoFocus
             value={query}

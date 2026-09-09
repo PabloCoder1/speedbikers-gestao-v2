@@ -62,17 +62,6 @@ export interface ActionCardData {
   /** Atalhos operacionais (D-154), calculados no servidor — só telas que existem. */
   shortcuts: ActionShortcut[];
 }
-
-const buttonStyle: React.CSSProperties = {
-  padding: "0.25rem 0.625rem",
-  borderRadius: "var(--sb-radius)",
-  border: "1px solid var(--sb-border)",
-  background: "transparent",
-  fontSize: "0.75rem",
-  cursor: "pointer",
-  whiteSpace: "nowrap",
-};
-
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("pt-BR");
 }
@@ -268,43 +257,43 @@ export function ActionCard({ action, userId }: { action: ActionCardData; userId:
           <div className="sb-action-buttons">
             {status === "novo" && (
               <button
+                className="sb-button"
                 type="button"
                 disabled={busy}
                 onClick={() => {
                   void run(() => claimAction(action.id, userId), "em_andamento", userId);
                 }}
-                style={buttonStyle}
               >
                 Assumir
               </button>
             )}
             <button
+              className="sb-button"
               type="button"
               disabled={busy}
               onClick={() => {
                 void run(() => resolveAction(action.id), "resolvido");
               }}
-              style={buttonStyle}
             >
               Resolver
             </button>
             <button
+              className="sb-button"
               type="button"
               disabled={busy}
               onClick={() => {
                 void run(() => dismissAction(action.id), "descartado");
               }}
-              style={buttonStyle}
             >
               Descartar
             </button>
             <button
+              className="sb-button"
               type="button"
               disabled={busy}
               onClick={() => {
                 void handleRegisterDecision();
               }}
-              style={buttonStyle}
             >
               Registrar decisão
             </button>
@@ -313,12 +302,12 @@ export function ActionCard({ action, userId }: { action: ActionCardData; userId:
               (docs/COPILOT.md secao 9), só em clique.
             */}
             <button
+              className="sb-button"
               type="button"
               disabled={explaining}
               onClick={() => {
                 void handleExplain();
               }}
-              style={buttonStyle}
             >
               {explaining ? "Explicando…" : "Explicar com IA"}
             </button>

@@ -8,15 +8,6 @@ import { ItemRow } from "./item-row";
 import type { DraftItem } from "./item-row";
 import { detectOriginMix } from "./prefill";
 
-const inputStyle: React.CSSProperties = {
-  display: "block",
-  width: "100%",
-  marginTop: "var(--sb-space-1)",
-  padding: "0.5rem",
-  borderRadius: "var(--sb-radius)",
-  border: "1px solid var(--sb-border)",
-  fontSize: "1rem",
-};
 
 let keyCounter = 0;
 
@@ -141,11 +132,11 @@ export function PurchaseOrderForm({
         <label style={{ fontSize: "0.875rem", fontWeight: 600 }}>
           Fornecedor
           <select
+            className="sb-input sb-input-full"
             value={supplierId}
             onChange={(event) => {
               setSupplierId(event.target.value);
             }}
-            style={inputStyle}
           >
             <option value="">Sem fornecedor definido ainda</option>
             {suppliers.map((supplier) => (
@@ -159,23 +150,23 @@ export function PurchaseOrderForm({
         <label style={{ fontSize: "0.875rem", fontWeight: 600 }}>
           Armazém de destino
           <input
+            className="sb-input sb-input-full"
             value={destinationWarehouseName}
             onChange={(event) => {
               setDestinationWarehouseName(event.target.value);
             }}
-            style={inputStyle}
           />
         </label>
 
         <label style={{ fontSize: "0.875rem", fontWeight: 600 }}>
           Previsão de chegada
           <input
+            className="sb-input sb-input-full"
             type="date"
             value={expectedAt}
             onChange={(event) => {
               setExpectedAt(event.target.value);
             }}
-            style={inputStyle}
           />
         </label>
       </div>
@@ -183,12 +174,13 @@ export function PurchaseOrderForm({
       <label style={{ fontSize: "0.875rem", fontWeight: 600, maxWidth: "40rem" }}>
         Observações
         <textarea
+          className="sb-input sb-input-full"
           value={notes}
           onChange={(event) => {
             setNotes(event.target.value);
           }}
           rows={3}
-          style={{ ...inputStyle, resize: "vertical" }}
+          
         />
       </label>
 
@@ -233,6 +225,7 @@ export function PurchaseOrderForm({
         </div>
 
         <button
+          className="sb-button"
           type="button"
           onClick={() => {
             setItems((current) => [...current, emptyItem()]);
@@ -293,20 +286,12 @@ export function PurchaseOrderForm({
       )}
 
       <button
+        className="sb-button sb-button-primary"
         type="submit"
         disabled={busy}
-        style={{
-          padding: "0.625rem 1rem",
-          border: "none",
-          borderRadius: "var(--sb-radius)",
-          background: "var(--sb-primary)",
-          color: "var(--sb-white)",
-          fontSize: "1rem",
-          fontWeight: 600,
-          cursor: busy ? "not-allowed" : "pointer",
-          opacity: busy ? 0.6 : 1,
-          justifySelf: "start",
-        }}
+        /* O formulário é grid: sem isto o botão estica a linha inteira. Era o
+           `justifySelf` que morava no objeto de estilo apagado por A5. */
+        style={{ justifySelf: "start" }}
       >
         {busy ? "Salvando…" : isEditing ? "Salvar alterações" : "Criar pedido (rascunho)"}
       </button>

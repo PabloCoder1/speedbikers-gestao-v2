@@ -21,24 +21,6 @@ interface SkuResult {
   title: string | null;
 }
 
-const inputStyle: React.CSSProperties = {
-  padding: "0.375rem 0.5rem",
-  borderRadius: "var(--sb-radius)",
-  border: "1px solid var(--sb-border)",
-  fontSize: "0.875rem",
-  width: "100%",
-};
-
-const buttonStyle: React.CSSProperties = {
-  padding: "0.375rem 0.75rem",
-  borderRadius: "var(--sb-radius)",
-  border: "none",
-  fontSize: "0.8125rem",
-  fontWeight: 600,
-  cursor: "pointer",
-  whiteSpace: "nowrap",
-};
-
 export function DocumentItemRow({
   itemId,
   documentId,
@@ -146,15 +128,10 @@ export function DocumentItemRow({
         </span>
 
         <button
+          className="sb-button"
           type="button"
           onClick={() => {
             setEditing(true);
-          }}
-          style={{
-            ...buttonStyle,
-            background: "transparent",
-            border: "1px solid var(--sb-border)",
-            color: "var(--sb-text-soft)",
           }}
         >
           Trocar
@@ -167,6 +144,7 @@ export function DocumentItemRow({
     <div style={{ display: "grid", gap: "0.375rem", minWidth: "16rem" }}>
       <div style={{ display: "flex", gap: "0.375rem", position: "relative" }}>
         <input
+          className="sb-input sb-input-full"
           type="text"
           value={query}
           onChange={(event) => {
@@ -174,39 +152,27 @@ export function DocumentItemRow({
           }}
           placeholder="Buscar SKU…"
           disabled={busy}
-          style={inputStyle}
         />
 
         <button
+          className="sb-button sb-button-primary"
           type="button"
           onClick={() => {
             void confirm();
           }}
           disabled={busy || selected === null}
-          style={{
-            ...buttonStyle,
-            background: "var(--sb-primary)",
-            color: "var(--sb-white)",
-            opacity: busy || selected === null ? 0.5 : 1,
-            cursor: busy || selected === null ? "not-allowed" : "pointer",
-          }}
         >
           Vincular
         </button>
 
         {current !== null && (
           <button
+            className="sb-button"
             type="button"
             onClick={() => {
               void unlink();
             }}
             disabled={busy}
-            style={{
-              ...buttonStyle,
-              background: "transparent",
-              border: "1px solid var(--sb-border)",
-              color: "var(--sb-text-soft)",
-            }}
           >
             Cancelar
           </button>
@@ -235,6 +201,7 @@ export function DocumentItemRow({
           {results.map((sku) => (
             <li key={sku.id}>
               <button
+                className="sb-button"
                 type="button"
                 onClick={() => {
                   setSelected(sku);

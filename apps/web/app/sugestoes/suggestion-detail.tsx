@@ -52,15 +52,6 @@ const STRUCTURED_LABELS: readonly [keyof StructuredFields, string][] = [
   ["dependenciesRisks", "Dependências/riscos"],
   ["complexity", "Complexidade"],
 ];
-
-const botao: React.CSSProperties = {
-  border: "1px solid var(--sb-border)",
-  borderRadius: "var(--sb-radius)",
-  background: "var(--sb-surface)",
-  padding: "0.25rem 0.625rem",
-  fontSize: "0.75rem",
-};
-
 /**
  * O detalhe de uma sugestão (D30, D-270) — o painel direito do frame
  * `CentralScreen` na variação de ideias.
@@ -170,6 +161,7 @@ export function SuggestionDetail({
         <div className="sb-panel-aside">
           {canManage ? (
             <select
+              className="sb-input"
               value={status}
               disabled={busy}
               aria-label="Status da sugestão"
@@ -228,7 +220,7 @@ export function SuggestionDetail({
 
       {canManage && (
         <div style={{ display: "flex", gap: "var(--sb-space-2)", padding: "0 1.25rem var(--sb-space-3)" }}>
-          <button type="button" disabled={structuring} onClick={structure} style={botao}>
+          <button className="sb-button" type="button" disabled={structuring} onClick={structure}>
             {structuring ? "Estruturando…" : preenchidos.length > 0 ? "Estruturar de novo" : "Estruturar com IA"}
           </button>
         </div>

@@ -81,6 +81,7 @@ export function NewPreferenceForm({
       <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.75rem" }}>
         Tipo de evento
         <select
+          className="sb-input"
           value={eventType}
           onChange={(event) => {
             setEventType(event.target.value);
@@ -99,6 +100,7 @@ export function NewPreferenceForm({
       <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.75rem" }}>
         Conta
         <select
+          className="sb-input"
           value={accountId}
           onChange={(event) => {
             setAccountId(event.target.value);
@@ -117,6 +119,7 @@ export function NewPreferenceForm({
       <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.75rem" }}>
         Severidade mínima
         <select
+          className="sb-input"
           value={minSeverity}
           onChange={(event) => {
             setMinSeverity(event.target.value);
@@ -143,17 +146,9 @@ export function NewPreferenceForm({
       </label>
 
       <button
+        className="sb-button sb-button-primary"
         type="submit"
         disabled={busy}
-        style={{
-          padding: "0.375rem 0.875rem",
-          borderRadius: "var(--sb-radius)",
-          border: "1px solid var(--sb-primary)",
-          background: "var(--sb-primary)",
-          color: "var(--sb-white)",
-          fontSize: "0.8125rem",
-          cursor: "pointer",
-        }}
       >
         Adicionar preferência
       </button>

@@ -40,15 +40,6 @@ export function TemplateRow({ template, canManage }: { template: TemplateRowData
     setEditing(false);
   }
 
-  const input = {
-    width: "100%",
-    padding: "0.5rem 0.625rem",
-    border: "1px solid var(--sb-border)",
-    borderRadius: "var(--sb-radius)",
-    fontSize: "0.875rem",
-    fontFamily: "inherit",
-  } as const;
-
   return (
     <li
       style={{
@@ -62,20 +53,21 @@ export function TemplateRow({ template, canManage }: { template: TemplateRowData
     >
       {editing ? (
         <>
-          <input aria-label="Nome do template" value={name} maxLength={80} style={input} onChange={(event) => { setName(event.target.value); }} />
+          <input className="sb-input" aria-label="Nome do template" value={name} maxLength={80} onChange={(event) => { setName(event.target.value); }} />
           <textarea
+            className="sb-input"
             aria-label="Texto do template"
             value={body}
             rows={4}
             maxLength={2000}
-            style={{ ...input, resize: "vertical" }}
             onChange={(event) => { setBody(event.target.value); }}
           />
           <div style={{ display: "flex", gap: "var(--sb-space-2)" }}>
-            <button type="button" disabled={busy} onClick={() => void run(() => updateTemplate(template.id, name, body))}>
+            <button className="sb-button" type="button" disabled={busy} onClick={() => void run(() => updateTemplate(template.id, name, body))}>
               {busy ? "Salvando…" : "Salvar"}
             </button>
             <button
+              className="sb-button"
               type="button"
               disabled={busy}
               onClick={() => {
@@ -97,10 +89,10 @@ export function TemplateRow({ template, canManage }: { template: TemplateRowData
           </p>
           {canManage && (
             <div style={{ display: "flex", gap: "var(--sb-space-2)" }}>
-              <button type="button" disabled={busy} onClick={() => { setEditing(true); }}>
+              <button className="sb-button" type="button" disabled={busy} onClick={() => { setEditing(true); }}>
                 Editar
               </button>
-              <button type="button" disabled={busy} onClick={() => void run(() => deleteTemplate(template.id))}>
+              <button className="sb-button" type="button" disabled={busy} onClick={() => void run(() => deleteTemplate(template.id))}>
                 {busy ? "…" : "Apagar"}
               </button>
             </div>

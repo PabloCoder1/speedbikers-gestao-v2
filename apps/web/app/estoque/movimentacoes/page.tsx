@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 import Link from "next/link";
 
-import { FILTER_SUBMIT_STYLE, FilterPill } from "../../../components/filter-pill";
+import { FilterPill, FilterSubmit } from "../../../components/filter-pill";
 import { KpiStrip, type KpiCellData } from "../../../components/kpi-strip";
 import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
@@ -236,37 +236,29 @@ export default async function MovimentacoesPage({
         {filters.locationKind !== null && <input type="hidden" name="local" value={filters.locationKind} />}
         {filters.sourceType !== null && <input type="hidden" name="origem" value={filters.sourceType} />}
         <input
+          className="sb-input"
           type="search"
           name="busca"
           defaultValue={filters.search ?? ""}
           placeholder="SKU ou título"
-          aria-label="Buscar por SKU ou título"
-          style={{
-            padding: "0.25rem 0.5rem",
-            borderRadius: "var(--sb-radius)",
-            border: "1px solid var(--sb-border)",
-            fontSize: "0.8125rem",
-            minWidth: "14rem",
-          }}
+          aria-label="Buscar por SKU ou título" style={{ minWidth: "14rem" }}
         />
         <input
+          className="sb-input"
           type="date"
           name="de"
           defaultValue={filters.dateFrom ?? undefined}
           aria-label="Data inicial"
-          style={{ padding: "0.25rem 0.5rem", borderRadius: "var(--sb-radius)", border: "1px solid var(--sb-border)", fontSize: "0.8125rem" }}
         />
         <span style={{ color: "var(--sb-text-soft)" }}>até</span>
         <input
+          className="sb-input"
           type="date"
           name="ate"
           defaultValue={filters.dateTo ?? undefined}
           aria-label="Data final"
-          style={{ padding: "0.25rem 0.5rem", borderRadius: "var(--sb-radius)", border: "1px solid var(--sb-border)", fontSize: "0.8125rem" }}
         />
-        <button type="submit" style={FILTER_SUBMIT_STYLE}>
-          Filtrar
-        </button>
+        <FilterSubmit>Filtrar</FilterSubmit>
       </form>
 
       {error !== null && (

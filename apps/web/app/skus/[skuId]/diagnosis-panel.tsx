@@ -27,7 +27,7 @@ import { diagnoseSku, type SkuDiagnosisResult } from "./actions";
  *
  * ## Composição (auditoria de fidelidade, P0)
  *
- * Era um `<button>` com estilo próprio solto sobre o corpo cinza do cartão de
+ * Era um `<button className="sb-button">` com estilo próprio solto sobre o corpo cinza do cartão de
  * entidade, e o resultado um cartão desenhado à mão — a aplicação antiga
  * intacta dentro da moldura nova. O frame do SKU não desenha esta aba
  * ("Conteúdo da aba em construção"), então vale o design system: um painel

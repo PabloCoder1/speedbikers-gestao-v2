@@ -262,6 +262,7 @@ export function CopilotChat(): ReactNode {
 
           {SUGESTOES.map((sugestao) => (
             <button
+              className="sb-button"
               key={sugestao}
               type="button"
               disabled={busy}
@@ -288,6 +289,7 @@ export function CopilotChat(): ReactNode {
 
       <div style={{ display: "flex", gap: "var(--sb-space-2)" }}>
         <input
+          className="sb-input"
           aria-label="Pergunta ao Copiloto"
           value={draft}
           placeholder="Ex.: como foram as vendas nos últimos 7 dias?"
@@ -311,6 +313,7 @@ export function CopilotChat(): ReactNode {
           }}
         />
         <button
+          className="sb-button"
           type="button"
           disabled={busy || draft.trim().length === 0}
           onClick={() => {

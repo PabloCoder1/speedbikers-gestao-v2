@@ -111,6 +111,7 @@ export function NotificationRow({ notification }: { notification: NotificationRo
 
       {isUnread && (
         <button
+          className="sb-button"
           type="button"
           disabled={busy}
           onClick={() => {

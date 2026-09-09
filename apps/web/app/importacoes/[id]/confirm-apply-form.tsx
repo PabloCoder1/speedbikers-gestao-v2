@@ -88,6 +88,7 @@ export function ConfirmApplyForm({ batchId }: { batchId: string }): ReactNode {
       </p>
 
       <button
+        className="sb-button sb-button-primary"
         type="button"
         onClick={() => {
           void confirm();

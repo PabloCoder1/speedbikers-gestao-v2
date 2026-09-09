@@ -49,6 +49,7 @@ export function KnowledgeRow({
 
   const actionButton = (label: string, status: "VALIDADO" | "REJEITADO" | "OBSOLETO"): ReactNode => (
     <button
+      className="sb-button"
       type="button"
       disabled={busy}
       onClick={() => {

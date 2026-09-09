@@ -69,6 +69,15 @@ jobs:
       - name: Guarda de tipografia de celula
         run: pnpm --filter @sb/web run check:table-styles
 
+      # O mesmo modo de falhar, na outra metade da interface: o Figma tem UMA
+      # forma de campo e uma de botao, a casa tem `.sb-input` e `.sb-button`, e
+      # a auditoria A4 (D-283) fotografou 59 campos e 59 botoes com estilo
+      # inline -- incluindo quatro copias de um `const buttonStyle`. A tabela
+      # tinha guarda desde D-262 e parou de divergir; campo e botao nao tinham,
+      # e o padrao voltou DEPOIS da migracao. Estatico, sem banco.
+      - name: Guarda de forma de campo e botao
+        run: pnpm --filter @sb/web run check:control-styles
+
       - name: Build
         run: pnpm run build
 

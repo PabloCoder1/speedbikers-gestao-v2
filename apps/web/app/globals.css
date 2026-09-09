@@ -997,6 +997,35 @@ body {
 }
 
 /*
+  AS TRÊS FORMAS DO CAMPO (A5).
+
+  `.sb-input` nasceu para `<input>` de uma linha, e por isso trava a altura em
+  32px. `select` e `textarea` precisam do que a altura fixa não dá — e a falta
+  dessas duas linhas é metade da razão de 59 campos terem continuado com estilo
+  inline: a classe existia e não servia para eles.
+
+  O `select` fica com o `padding-right` menor porque a seta do navegador ocupa
+  a direita; o `textarea` solta a altura e cresce só na vertical (redimensionar
+  na horizontal quebraria a grade da tela).
+*/
+select.sb-input {
+  padding-right: 0.25rem;
+}
+
+textarea.sb-input {
+  height: auto;
+  min-height: 4rem;
+  padding: 0.5rem 0.625rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+/* Campo que ocupa a linha inteira do formulário. */
+.sb-input-full {
+  width: 100%;
+}
+
+/*
   Variante PEQUENA dos controles dentro de cartao (`h-7 text-[10px]` no frame
   da curadoria): 28px, 10px. A de 32px e a da barra do cabecalho da pagina.
 */
@@ -1146,7 +1175,10 @@ summary[aria-disabled="true"] {
   border-bottom: 1px solid var(--sb-border);
 }
 
-.sb-command-input input {
+/* O campo da paleta tem classe PRÓPRIA desde A5: a regra dependia da posição
+   (`.sb-command-input input`), e uma forma de controle que só existe por
+   vizinhança não é uma forma do sistema — é uma coincidência de árvore. */
+.sb-command-field {
   flex: 1;
   min-width: 0;
   border: 0;
@@ -1157,7 +1189,7 @@ summary[aria-disabled="true"] {
   color: var(--sb-text);
 }
 
-.sb-command-input input::placeholder {
+.sb-command-field::placeholder {
   color: var(--sb-muted-ink);
 }
 
@@ -1411,6 +1443,31 @@ summary[aria-disabled="true"] {
   background: var(--sb-secondary);
   border-color: var(--sb-secondary);
   color: var(--sb-white);
+}
+
+/*
+  A variante de PERIGO, e ela tem um consumidor só, de propósito: o filtro
+  "⏱ Prazo em risco" de `/atendimento`, onde LIGADO significa risco e não
+  seleção. Era a única das dezoito pílulas que divergia (D-141), e a diferença
+  sobrevive à migração para o design system em vez de ser apagada por ela.
+*/
+.sb-button-danger {
+  background: var(--sb-danger);
+  border-color: var(--sb-danger);
+  color: var(--sb-white);
+}
+
+.sb-button-danger:hover {
+  background: var(--sb-danger-ink);
+  border-color: var(--sb-danger-ink);
+  color: var(--sb-white);
+}
+
+/* Botão desabilitado, em qualquer variante — era `opacity` inline em 12
+   arquivos, cada um com o seu valor. */
+.sb-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 /*

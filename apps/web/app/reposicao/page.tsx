@@ -15,7 +15,7 @@ import type {
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { FILTER_SUBMIT_STYLE, FilterGroup, FilterPill } from "../../components/filter-pill";
+import { FilterGroup, FilterPill, FilterSubmit } from "../../components/filter-pill";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
@@ -301,22 +301,14 @@ export default async function ReposicaoPage({
           {/* Hidden por dimensão ativa: GET nativo só envia campos do form (D-136). */}
           {filters.brand !== null && <input type="hidden" name="marca" value={filters.brand} />}
           <input
+            className="sb-input"
             type="search"
             name="busca"
             defaultValue={filters.search ?? ""}
             placeholder="SKU ou título"
-            aria-label="Buscar por SKU ou título"
-            style={{
-              padding: "0.25rem 0.5rem",
-              borderRadius: "var(--sb-radius)",
-              border: "1px solid var(--sb-border)",
-              fontSize: "0.8125rem",
-              minWidth: "14rem",
-            }}
+            aria-label="Buscar por SKU ou título" style={{ minWidth: "14rem" }}
           />
-          <button type="submit" style={FILTER_SUBMIT_STYLE}>
-            Buscar
-          </button>
+          <FilterSubmit>Buscar</FilterSubmit>
         </form>
       </div>
 
@@ -515,7 +507,7 @@ export default async function ReposicaoPage({
           </table>
         </div>
 
-        <button type="submit" style={{ ...FILTER_SUBMIT_STYLE, marginTop: "var(--sb-space-2)" }}>
+        <button type="submit" className="sb-button" style={{ marginTop: "var(--sb-space-2)" }}>
           Criar pedido com os selecionados →
         </button>
         <span style={{ marginLeft: "var(--sb-space-2)", fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>

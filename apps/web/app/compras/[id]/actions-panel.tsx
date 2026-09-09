@@ -23,16 +23,6 @@ import {
  * próxima etapa.
  */
 
-const buttonStyle: React.CSSProperties = {
-  padding: "0.5rem 0.875rem",
-  borderRadius: "var(--sb-radius)",
-  border: "none",
-  fontSize: "0.875rem",
-  fontWeight: 600,
-  cursor: "pointer",
-  whiteSpace: "nowrap",
-};
-
 export function ActionsPanel({
   purchaseOrderId,
   status,
@@ -88,12 +78,12 @@ export function ActionsPanel({
     >
       {actions.includes("APPROVE") && (
         <button
+          className="sb-button sb-button-primary"
           type="button"
           disabled={busy}
           onClick={() => {
             void run(() => approvePurchaseOrder(purchaseOrderId));
           }}
-          style={{ ...buttonStyle, background: "var(--sb-primary)", color: "var(--sb-white)" }}
         >
           Aprovar
         </button>
@@ -101,12 +91,12 @@ export function ActionsPanel({
 
       {actions.includes("MARK_ORDERED") && (
         <button
+          className="sb-button sb-button-primary"
           type="button"
           disabled={busy}
           onClick={() => {
             void run(() => markPurchaseOrderOrdered(purchaseOrderId, expectedAt));
           }}
-          style={{ ...buttonStyle, background: "var(--sb-primary)", color: "var(--sb-white)" }}
         >
           Marcar como enviado pelo fornecedor
         </button>
@@ -114,12 +104,12 @@ export function ActionsPanel({
 
       {actions.includes("RECEIVE") && (
         <button
+          className="sb-button sb-button-primary"
           type="button"
           disabled={busy}
           onClick={() => {
             void run(() => receivePurchaseOrder(purchaseOrderId));
           }}
-          style={{ ...buttonStyle, background: "var(--sb-secondary)", color: "var(--sb-white)" }}
         >
           Confirmar recebimento
         </button>
@@ -127,12 +117,13 @@ export function ActionsPanel({
 
       {actions.includes("CANCEL") && !showCancelPrompt && (
         <button
+          className="sb-button"
           type="button"
           disabled={busy}
           onClick={() => {
             setShowCancelPrompt(true);
           }}
-          style={{ ...buttonStyle, background: "transparent", border: "1px solid var(--sb-border)", color: "var(--sb-danger)" }}
+          style={{ color: "var(--sb-danger)" }}
         >
           Cancelar pedido
         </button>
@@ -141,6 +132,7 @@ export function ActionsPanel({
       {actions.includes("CANCEL") && showCancelPrompt && (
         <div style={{ display: "flex", gap: "var(--sb-space-2)", alignItems: "center", flexWrap: "wrap" }}>
           <input
+            className="sb-input"
             value={cancelReason}
             onChange={(event) => {
               setCancelReason(event.target.value);
@@ -154,22 +146,22 @@ export function ActionsPanel({
             }}
           />
           <button
+            className="sb-button"
             type="button"
             disabled={busy}
             onClick={() => {
               void run(() => cancelPurchaseOrder(purchaseOrderId, cancelReason.trim() === "" ? null : cancelReason.trim()));
             }}
-            style={{ ...buttonStyle, background: "var(--sb-danger)", color: "var(--sb-white)" }}
           >
             Confirmar cancelamento
           </button>
           <button
+            className="sb-button"
             type="button"
             disabled={busy}
             onClick={() => {
               setShowCancelPrompt(false);
             }}
-            style={{ ...buttonStyle, background: "transparent", color: "var(--sb-text-soft)" }}
           >
             Voltar
           </button>

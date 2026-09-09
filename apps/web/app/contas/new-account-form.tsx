@@ -12,12 +12,6 @@ import { createMlAccount } from "./actions";
  * `client_secret` que só a `api` conhece.
  */
 
-const inputStyle: React.CSSProperties = {
-  padding: "0.5rem 0.625rem",
-  borderRadius: "var(--sb-radius)",
-  border: "1px solid var(--sb-border)",
-  fontSize: "0.875rem",
-};
 
 export function NewAccountForm(): ReactNode {
   const [label, setLabel] = useState("");
@@ -59,6 +53,7 @@ export function NewAccountForm(): ReactNode {
       <label style={{ display: "grid", gap: "0.25rem", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
         Rótulo
         <input
+          className="sb-input"
           type="text"
           value={label}
           onChange={(event) => {
@@ -66,13 +61,14 @@ export function NewAccountForm(): ReactNode {
           }}
           placeholder="Speedbikers (loja 1)"
           disabled={busy}
-          style={{ ...inputStyle, width: "16rem" }}
+          style={{ width: "16rem" }}
         />
       </label>
 
       <label style={{ display: "grid", gap: "0.25rem", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
         Identificador (nomeia a fila interna)
         <input
+          className="sb-input sb-mono"
           type="text"
           value={slug}
           onChange={(event) => {
@@ -80,11 +76,12 @@ export function NewAccountForm(): ReactNode {
           }}
           placeholder="speedbikers-loja-1"
           disabled={busy}
-          style={{ ...inputStyle, width: "14rem", fontFamily: "ui-monospace, monospace" }}
+          style={{ width: "14rem" }}
         />
       </label>
 
       <button
+        className="sb-button sb-button-primary"
         type="button"
         onClick={() => {
           void submit();
