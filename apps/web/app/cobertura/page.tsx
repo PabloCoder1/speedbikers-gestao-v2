@@ -1,7 +1,12 @@
 import { toSalesMetricDate } from "@sb/domain";
 import type { ReactNode } from "react";
 
+import Link from "next/link";
+
 import { FilterPill } from "../../components/filter-pill";
+import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
+import { PageTitle } from "../../components/page-title";
+import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
 import { TrendBadge } from "../../components/trend-badge";
 import { formatCount } from "../../lib/format";
@@ -20,6 +25,32 @@ export const dynamic = "force-dynamic";
  * 5B, docs/ROADMAP.md). Cobertura e ruptura só — "vendas perdidas
  * estimadas" fica de fora desta fatia, ver comentário na migration
  * (`get_stock_coverage`, `20260823175030_create_stock_coverage_rpc.sql`).
+ *
+ * ---------------------------------------------------------------------------
+ * POR QUE ELA NAO FOI FUNDIDA COM `/reposicao` (D-279, fatia D37c)
+ * ---------------------------------------------------------------------------
+ *
+ * O frame `Coverage` desenha UMA tela com duas faces -- "Visao geral" e
+ * "Configuracoes" -- e as duas ja existem migradas: `/reposicao` (D-250) e
+ * `/reposicao/configuracoes` (D-278). Sobrancelha, titulo, cartoes de estado e
+ * painel "Recomendacao de compra" do frame sao literalmente o que `/reposicao`
+ * renderiza. **Esta tela nao tem contrapartida no desenho.**
+ *
+ * A leitura facil seria fundi-la la. A medicao diz o contrario. Em 2026-09-09,
+ * no Dev:
+ *
+ *   /cobertura     3.257 SKUs, **324 em ruptura**
+ *   /reposicao     3.180 SKUs, **zero em qualquer estado** -- todos "sem estado"
+ *
+ * As duas medem coisas diferentes por caminhos diferentes: aqui e OBSERVACAO
+ * (estoque local dividido pela venda media), la e RECOMENDACAO (sugestao com
+ * lead time e cobertura alvo, sujeita as quatro recusas de D-147). Hoje a
+ * recomendacao esta muda por um defeito na propria RPC -- `units_90d` volta 0
+ * dentro dela enquanto `daily_sku_metrics` tem 586 SKUs com 12+ unidades em 90
+ * dias --, e fundir esconderia a unica das duas que ainda responde.
+ *
+ * Fundir continua sendo a direcao certa do desenho. Nao hoje, e o motivo esta
+ * medido em vez de suposto.
  *
  * Janela FIXA de 30 dias — sem seletor de período nesta primeira fatia,
  * mesmo raciocínio de "escopo deliberadamente menor" já usado em outras
@@ -54,25 +85,6 @@ interface CoverageRow {
   history_days_90: number;
 }
 
-const th: React.CSSProperties = {
-  textAlign: "left",
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.75rem",
-  textTransform: "uppercase",
-  letterSpacing: "0.04em",
-  color: "var(--sb-text-soft)",
-  whiteSpace: "nowrap",
-};
-
-const td: React.CSSProperties = {
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.875rem",
-};
-
-const tdNumber: React.CSSProperties = { ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" };
-
 /**
  * Quantas linhas a tela mostra por vez. O conjunto real passa de 2.600 e o
  * teto do PostgREST é 1.000 — pedir "tudo" nunca trouxe tudo, só escondia o
@@ -95,8 +107,8 @@ export default async function CoberturaPage({
   if (organizationId === null) {
     return (
       <Shell>
-        <h1 style={{ margin: "0 0 var(--sb-space-3)", fontSize: "1.375rem" }}>Cobertura de estoque</h1>
-        <p style={{ color: "var(--sb-text-soft)" }}>Sua conta não está associada a nenhuma organização.</p>
+        <PageTitle eyebrow="ESTOQUE / PLANEJAMENTO" title="Cobertura de estoque" compacto />
+        <p className="sb-empty">Sua conta não está associada a nenhuma organização.</p>
       </Shell>
     );
   }
@@ -153,28 +165,79 @@ export default async function CoberturaPage({
   const virtualCount = totals?.virtuais ?? 0;
   const totalCount = totals?.total ?? rows.length;
 
+  /*
+    Os tres numeros que esta tela MEDE, tirados do paragrafo onde estavam
+    misturados com as definicoes. O paragrafo dizia o total, a ruptura, a
+    ressalva do estoque virtual e o convite a classificar, tudo corrido -- os
+    numeros ficavam invisiveis no meio do texto (D-279).
+
+    Nao ha quarta celula. "Vendas perdidas estimadas" e o que o item do ROADMAP
+    pede junto de cobertura e ruptura, e continua fora por falta de saldo
+    inicial no ledger (D-061): a estimativa exigiria saber o estoque no comeco
+    do periodo, e o ledger comeca depois.
+  */
+  const celulas: readonly KpiCellData[] = [
+    {
+      label: "SKUs no recorte",
+      formula:
+        "SKUs com estoque local ou venda registrada nos ultimos 30 dias. O total vem do Postgres sobre o conjunto inteiro, nunca de contar a pagina.",
+      value: formatCount(totalCount),
+      previous: null,
+      tom: "neutro",
+    },
+    {
+      label: "Em ruptura",
+      formula:
+        "Sem estoque local E com venda registrada no periodo -- demanda perdida agora. Zero estoque sem venda nao e ruptura, e catalogo parado.",
+      value: formatCount(rupturaCount),
+      previous: null,
+      tom: "perigo",
+    },
+    {
+      label: "Com estoque virtual",
+      formula:
+        "Saldo sentinela do ERP, nao contagem fisica (D-127). Para esses a cobertura fica em branco de proposito.",
+      value: formatCount(virtualCount),
+      previous: null,
+      // Spread condicional, nao `ressalva: ... : undefined`:
+      // `exactOptionalPropertyTypes` exige a chave de fato AUSENTE (o mesmo
+      // motivo ja registrado em `notas-fiscais/actions.ts`).
+      ...(virtualCount > 0
+        ? {
+            ressalva:
+              "cobertura em branco: sem saldo real, um numero seria resposta errada com cara de precisa",
+          }
+        : {}),
+      href: "/produtos?estado=pendente&sinal=sentinela",
+      tom: "atencao",
+    },
+  ];
+
   return (
     <Shell>
-      <h1 style={{ margin: "0 0 var(--sb-space-2)", fontSize: "1.375rem" }}>Cobertura de estoque</h1>
+      <PageTitle
+        eyebrow="ESTOQUE / PLANEJAMENTO"
+        title="Cobertura de estoque"
+        subtitle={`Estoque local dividido pela venda média diária — quantos dias faltam para esgotar no ritmo atual. Últimos ${String(LOOKBACK_DAYS)} dias (${dateFrom} a ${dateTo})${filters.brand === null ? "" : `, só ${filters.brand}`}.`}
+        aside={
+          /*
+            O par desta tela. Aqui e OBSERVACAO -- onde o estoque esta; la e
+            RECOMENDACAO -- o que comprar, com lead time e cobertura alvo. O
+            frame trata as duas como uma tela so, e a fusao continua sendo a
+            direcao certa; o motivo de nao ser hoje esta medido no topo do
+            arquivo (D-279).
+          */
+          <Link className="sb-button" href="/reposicao" style={{ textDecoration: "none" }}>
+            Sugestão de compra →
+          </Link>
+        }
+      />
 
-      <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
-        Últimos {LOOKBACK_DAYS} dias ({dateFrom} a {dateTo})
-        {filters.brand === null ? "" : `, só ${filters.brand}`}. Cobertura é o estoque local dividido pela venda média
-        diária do período — quantos dias faltam para esgotar no ritmo atual. Ruptura: sem estoque local, mas com
-        venda registrada no período (indica demanda perdida agora).
-        {rupturaCount > 0 && (
-          <strong style={{ color: "var(--sb-danger)" }}> {formatCount(rupturaCount)} SKU(s) em ruptura.</strong>
-        )}{" "}
-        <a href="/produtos?estado=pendente&amp;sinal=sentinela">Classificar estoque virtual</a> — SKU com saldo
-        sentinela ainda não classificado aparece aqui como se o número fosse real.
-        {virtualCount > 0 && (
-          <>
-            {" "}
-            {formatCount(virtualCount)} SKU(s) com <strong>estoque virtual</strong> — saldo sentinela no ERP, não
-            contagem física (D-127). Para esses a cobertura fica em branco de propósito: sem saldo real, um número
-            aqui seria resposta errada com cara de precisa.
-          </>
-        )}
+      <KpiStrip cells={celulas} />
+
+      <p style={{ margin: "var(--sb-space-3) 0", fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
+        SKU com saldo sentinela ainda não classificado aparece aqui como se o número fosse real —{" "}
+        <Link href="/produtos?estado=pendente&amp;sinal=sentinela">classificar estoque virtual</Link>.
       </p>
 
       {/*
@@ -208,32 +271,34 @@ export default async function CoberturaPage({
         </p>
       )}
 
-      {error === null && totalCount > rows.length && (
-        <p style={{ margin: "0 0 var(--sb-space-2)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
-          Mostrando os <strong>{formatCount(rows.length)}</strong> mais urgentes de{" "}
-          <strong>{formatCount(totalCount)}</strong> SKUs. Os totais acima são do conjunto inteiro, não desta página.
-        </p>
-      )}
+      {error === null && (
+        <Panel
+          title="Cobertura por SKU"
+          subtitle={
+            totalCount > rows.length
+              ? `Mostrando os ${formatCount(rows.length)} mais urgentes de ${formatCount(totalCount)} SKUs — ruptura primeiro, depois menor cobertura. Os números acima são do conjunto inteiro, não desta página.`
+              : `${formatCount(totalCount)} SKU(s) — ruptura primeiro, depois menor cobertura.`
+          }
+        >
+        {rows.length === 0 && (
+          <p className="sb-empty">
+            {filters.brand === null
+              ? "Nenhum SKU com estoque local ou venda recente."
+              : `Nenhum SKU de ${filters.brand} com estoque local ou venda recente. A operação inteira pode ter — este é o recorte da marca.`}
+          </p>
+        )}
 
-      {error === null && rows.length === 0 && (
-        <p style={{ color: "var(--sb-text-soft)" }}>
-          {filters.brand === null
-            ? "Nenhum SKU com estoque local ou venda recente."
-            : `Nenhum SKU de ${filters.brand} com estoque local ou venda recente. A operação inteira pode ter — este é o recorte da marca.`}
-        </p>
-      )}
-
-      {error === null && rows.length > 0 && (
+        {rows.length > 0 && (
         <div style={{ overflowX: "auto" }}>
-          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "40rem" }}>
+          <table className="sb-table">
             <thead>
               <tr>
-                <th style={th}>SKU</th>
-                <th style={th}>Estoque local</th>
-                <th style={th}>Vendido no período</th>
-                <th style={th}>Média/dia</th>
-                <th style={th}>Cobertura (dias)</th>
-                <th style={th}>Tendência</th>
+                <th>SKU</th>
+                <th className="sb-num">Estoque local</th>
+                <th className="sb-num">Vendido no período</th>
+                <th className="sb-num">Média/dia</th>
+                <th className="sb-num">Cobertura (dias)</th>
+                <th>Tendência</th>
               </tr>
             </thead>
 
@@ -249,7 +314,7 @@ export default async function CoberturaPage({
                         : undefined
                   }
                 >
-                  <td style={{ ...td, fontFamily: "ui-monospace, monospace" }}>
+                  <td className="sb-mono">
                     {row.sku}
                     {row.title !== null && (
                       <div style={{ fontFamily: "inherit", color: "var(--sb-text-soft)", fontSize: "0.75rem" }}>
@@ -257,17 +322,17 @@ export default async function CoberturaPage({
                       </div>
                     )}
                   </td>
-                  <td style={tdNumber}>{formatCount(row.local_quantity)}</td>
-                  <td style={tdNumber}>{formatCount(row.units_sold)}</td>
-                  <td style={tdNumber}>{row.avg_daily_sales}</td>
-                  <td style={tdNumber}>
+                  <td className="sb-num">{formatCount(row.local_quantity)}</td>
+                  <td className="sb-num">{formatCount(row.units_sold)}</td>
+                  <td className="sb-num">{row.avg_daily_sales}</td>
+                  <td className="sb-num">
                     {row.stock_is_virtual
                       ? "estoque virtual"
                       : row.is_ruptura
                         ? "Em ruptura"
                         : (row.days_of_coverage ?? "—")}
                   </td>
-                  <td style={td}>
+                  <td>
                     {/* Classificação e aparência compartilhadas com /reposicao (D-147). */}
                     <TrendBadge
                       units15={row.units_15d}
@@ -282,6 +347,8 @@ export default async function CoberturaPage({
             </tbody>
           </table>
         </div>
+        )}
+        </Panel>
       )}
     </Shell>
   );

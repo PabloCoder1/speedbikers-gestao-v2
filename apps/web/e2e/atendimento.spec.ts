@@ -133,9 +133,13 @@ test("detalhe mostra a conversa e distingue conteúdo banido de mensagem vazia",
     .getByRole("link", { name: "Pergunta" })
     .click();
 
-  await expect(
-    page.getByRole("heading", { level: 1, name: new RegExp(seed.supportOpenExternalId) }),
-  ).toBeVisible();
+  // O numero do caso saiu do `<h1>` e virou o IDENTIFICADOR do `ObjectHeader`
+  // na migracao de D-279 -- o codigo e chave, nao titulo, e o `<h1>` da tela
+  // passou a ser "Atendimento". As duas afirmacoes juntas provam que abriu a
+  // tela certa E que ela tem cabecalho de nivel 1 (a falta dele foi o defeito
+  // que este caso pegou).
+  await expect(page.getByRole("heading", { level: 1, name: "Atendimento" })).toBeVisible();
+  await expect(page.locator(".sb-object-id")).toHaveText(new RegExp(seed.supportOpenExternalId));
 
   // O texto real da pergunta — é isto que faltava para conseguir responder.
   await expect(page.getByText(seed.supportQuestionText)).toBeVisible();

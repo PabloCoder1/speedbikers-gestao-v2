@@ -7210,6 +7210,63 @@ Inventei o payload como `{ sku, mlb }`. A tela renderizou **"—"** na coluna "C
 
 **Impacto:** `apps/web/lib/erp-import-steps.ts` + teste (novos), `apps/web/lib/import-filters.ts` + teste (novos), `apps/web/app/importacoes/page.tsx`, `apps/web/app/importacoes/[id]/page.tsx`, `apps/web/app/importacoes/nova/page.tsx`, `apps/web/app/reposicao/configuracoes/page.tsx`, `apps/web/app/notificacoes/preferencias/{page,preference-row}.tsx`, mais as seis telas do varrimento de cabecalho, `apps/web/e2e/{seed.ts,seed-output.ts,importacoes.spec.ts,integracoes.spec.ts}`.
 
+## D-279 - D37c: a tela que o frame nao desenha e a unica das duas que ainda responde
+
+**Contexto:** terceira e ultima fatia do passe visual (D37). Sobravam tres superficies, e o registro de D-278 dizia que cada uma sobrou por um motivo DIFERENTE -- nenhuma era acabamento. Cada uma exigiu decisao antes de codigo, e duas delas mudaram a decisao que eu mesmo tinha registrado.
+
+---
+
+**`/cobertura`: a fusao que o frame pede, e a medicao que a desaconselha HOJE**
+
+O frame `Coverage` desenha UMA tela com duas faces -- "Visao geral" e "Configuracoes". Fui ler para decidir como fundir `/cobertura` nela, e a leitura respondeu outra coisa: **as duas faces ja existem migradas.** Sobrancelha ("ESTOQUE / PLANEJAMENTO"), titulo ("Cobertura e reposicao"), os cinco cartoes de estado e o painel "Recomendacao de compra" do frame sao literalmente o que `/reposicao` (D-250) renderiza, e a face de configuracao e `/reposicao/configuracoes` (D-278).
+
+**`/cobertura` nao tem contrapartida no desenho.** A leitura facil seria fundi-la la e encerrar. Medi antes, no Dev, em 2026-09-09:
+
+    /cobertura    3.257 SKUs, **324 em ruptura**
+    /reposicao    3.180 SKUs, **zero em qualquer estado** -- todos "sem estado"
+
+As duas medem coisas diferentes por caminhos diferentes: aqui e OBSERVACAO (estoque local dividido pela venda media do periodo), la e RECOMENDACAO (sugestao com lead time e cobertura alvo, sujeita as quatro recusas de D-147). E hoje a recomendacao esta **muda** -- por defeito, nao por configuracao faltando.
+
+**A causa, medida:** `get_purchase_suggestions` devolve `units_90d = 0` para os 3.180, enquanto `daily_sku_metrics` tem **586** SKUs com 12+ unidades em 90 dias. A recusa `units_90d < 12` reprova o catalogo inteiro. As outras tres recusas foram descartadas por medicao: existem 16 regras cobrindo 3.213 SKUs por marca; `stock_is_virtual` e `false` para os 3.554; ha 90 dias distintos com metrica nos ultimos 90.
+
+**E e uma REGRESSAO.** O comentario da propria migration que criou os cartoes (`20260905003000_purchase_state_cards.sql`, D-250, escrita em 2026-09-05) registra a distribuicao da epoca: `COBERTURA_BAIXA 37, COMPRAR_EM_BREVE 12, EXCESSO 0, sem estado 2.817`. Quatro dias depois: zero em todos os estados.
+
+**Decisao: NAO fundir hoje.** Fundir esconderia a unica das duas que ainda responde. A fusao continua sendo a direcao certa do desenho, e o motivo de nao ser agora esta medido em vez de suposto -- que e a diferenca entre adiar e desistir. A correcao da RPC ficou registrada como tarefa propria, com a medicao junto.
+
+O que `/cobertura` ganhou: `PageTitle`, `KpiStrip` de tres celulas e `Panel` + `.sb-table`. **Os tres numeros que ela mede estavam dentro de um paragrafo** -- total, ruptura e estoque virtual, misturados com as definicoes, o convite a classificar e a ressalva do saldo sentinela, tudo corrido. Numero dentro de prosa nao e numero, e ninguem some por isso: as definicoes foram para a `formula` das celulas, onde `KpiStrip` as guarda.
+
+**Nao ha quarta celula.** "Vendas perdidas estimadas" e o que o item do ROADMAP pede junto de cobertura e ruptura, e continua fora por falta de saldo inicial no ledger (D-061).
+
+---
+
+**`/atendimento/[caseId]`: o frame DESENHA esta tela, e da ao prazo a posicao que a V3 dava por ultimo**
+
+Diferente de `/compras/[id]` (onde o "Detalhe de Pedido" do prototipo era de pedido de VENDA -- a armadilha de D-277), aqui o frame tem `CaseDetail` de verdade, como painel direito de um mestre-detalhe. E o que ele poe logo abaixo do titulo e uma **banda de prazo**, com icone, chamada em negrito e sub-linha.
+
+Na V3 o prazo existia -- `support_case_deadlines`, com `due_at` e `source` -- e era renderizado como **lista com marcador, DEPOIS da conversa inteira**. O dado que expira era o ultimo a ser lido.
+
+A banda subiu. **Sem contagem regressiva, e a ausencia e o cuidado:** o frame escreve "8 min restantes"; uma pagina renderizada no servidor congela esse numero no instante da renderizacao, e relogio parado que parece andar e pior do que instante nenhum. `lib/relative-time.ts` ja registra a razao de so tratar duracoes passadas -- ela devolve `null` para o futuro de proposito, por causa de desvio de relogio. A banda mostra o INSTANTE, a FONTE (obrigatoria por D-084) e uma comparacao entre dois instantes -- vencido ou nao --, que e a unica leitura que nao depende de fuso nem de quando a pagina foi desenhada.
+
+O cartao de quatro blocos virou `ObjectHeader`: situacao, prioridade e estado da resposta viraram SELOS, a triagem virou a ACAO do cabecalho, e "produto / referencia" foi para a grade de fatos junto com estado externo, subestado, natureza e pack. As cinco secoes viraram `Panel`, cada uma ganhando o subtitulo que o `<h2>` solto nao tinha onde por.
+
+---
+
+**`/compras/novo`: eu tinha registrado uma recusa, e a tela desmentiu**
+
+D-278 registrou que a tabela de entrada ficaria de fora porque "as celulas sao campos, e `.sb-table` e tipografia de celula de leitura" -- a pergunta de D-275 respondida por raciocinio.
+
+Testei em vez de repetir. **O cabecalho desta tabela rotula as MESMAS colunas que `/compras/[id]` mostra depois** (SKU, quantidade, custo unitario), e tipar os dois de formas diferentes era precisamente a inconsistencia que este passe existe para remover. A classe entrou; as celulas mantem o proprio espacamento, porque o que mora nelas tem altura de campo e nao de linha de texto.
+
+A licao nao e sobre tabela: **uma recusa registrada tambem precisa ser medida.** Escrevi a minha com a forma de uma medicao ("as celulas sao campos") sem ter aberto a tela.
+
+---
+
+**O PASSE FECHOU, e o numero e verificavel:** `check:table-styles` foi de **21** (inicio de D37a) para **30**. **Nenhum arquivo do app tem `<table>` sem `.sb-table`**, e a unica `page.tsx` sem `PageTitle` ou `ObjectHeader` e `/login`, que vive fora do `Shell` de proposito.
+
+**Verificacao:** `check` 29/29, build 8/8, integracao 633/633 em banco recriado, e2e 82/82, `check:table-styles` 30, `check:waterfalls` 61, `check:server-actions` 17, `docs:check`. As tres telas abertas no navegador com login real.
+
+**Impacto:** `apps/web/app/cobertura/page.tsx`, `apps/web/app/atendimento/[caseId]/page.tsx`, `apps/web/app/compras/novo/purchase-order-form.tsx`.
+
 ## Como adicionar nova decisao
 
 Registrar:

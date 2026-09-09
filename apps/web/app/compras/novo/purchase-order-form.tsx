@@ -18,15 +18,6 @@ const inputStyle: React.CSSProperties = {
   fontSize: "1rem",
 };
 
-const th: React.CSSProperties = {
-  textAlign: "left",
-  padding: "0.375rem",
-  fontSize: "0.75rem",
-  textTransform: "uppercase",
-  letterSpacing: "0.04em",
-  color: "var(--sb-text-soft)",
-};
-
 let keyCounter = 0;
 
 function emptyItem(): DraftItem {
@@ -205,13 +196,22 @@ export function PurchaseOrderForm({
         <h2 style={{ fontSize: "1rem", margin: "0 0 var(--sb-space-2)" }}>Itens</h2>
 
         <div style={{ overflowX: "auto" }}>
-          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: "40rem" }}>
+          {/*
+            `.sb-table` tambem aqui, e a duvida era legitima: as celulas desta
+            tabela sao CAMPOS, nao texto (a pergunta de D-275). A resposta veio
+            da tela, nao do raciocinio -- o cabecalho rotula as MESMAS colunas
+            que `/compras/[id]` mostra depois (SKU, quantidade, custo), e tipar
+            os dois de formas diferentes era a inconsistencia que este passe
+            existe para remover. As celulas mantem o proprio espacamento porque
+            o que mora nelas tem altura de campo, nao de linha de texto.
+          */}
+          <table className="sb-table" style={{ minWidth: "40rem" }}>
             <thead>
               <tr>
-                <th style={{ ...th, width: "20rem" }}>SKU</th>
-                <th style={{ ...th, width: "8rem" }}>Quantidade</th>
-                <th style={{ ...th, width: "8rem" }}>Custo unitário</th>
-                <th style={{ ...th, width: "6rem" }} />
+                <th style={{ width: "20rem" }}>SKU</th>
+                <th style={{ width: "8rem" }}>Quantidade</th>
+                <th style={{ width: "8rem" }}>Custo unitário</th>
+                <th style={{ width: "6rem" }} />
               </tr>
             </thead>
 

@@ -632,7 +632,7 @@ que ele renderiza.**
 | D36 | **Copiloto** — a fila pedia uma TELA, e o frame tem uma gaveta; 11 das 12 perguntas que ela sugere não têm como ser respondidas (D-276) | ✔ |
 | D37a | **As tres telas de DETALHE** (`/notas-fiscais/[id]`, `/compras/[id]`, `/fornecedores/[supplierId]`) — listas migradas, detalhes antigos; `ProcessSteps` extraido no segundo consumidor (D-277) | ✔ |
 | D37b | **Importador do UpSeller** (lista, conferência, envio) + varrimento de `PageTitle` em 8 telas; o denominador da aplicação é `ok_rows`, e medir contra o total inventaria 14% de falha (D-278) | ✔ |
-| D37c | O que sobrou: `/cobertura`, a tabela de ENTRADA de `/compras/novo` e `/atendimento/[caseId]` | fila |
+| D37c | **`/cobertura`, `/atendimento/[caseId]` e a tabela de `/compras/novo`** — o passe FECHOU: nenhuma tabela sem `.sb-table`, e só `/login` sem `PageTitle` (D-279) | ✔ |
 
 ## Auditoria de Fidelidade Figma
 
@@ -815,89 +815,105 @@ O que resta é a fila **D31 em diante**: 7 superfícies ainda não migradas — 
 
 ## Última fatia concluída
 
-**D37b — o importador do UpSeller, e o varrimento de cabeçalho (D-278).** Sem
-migration.
+**D37c — as três que sobraram, e o passe fechou (D-279).** Sem migration.
 
-### O denominador da aplicação
+### `/cobertura`: a fusão que o frame pede, e a medição que a desaconselha HOJE
 
-`erp_import_batches` tem os MESMOS sete estados de `documents`, então o
-`.process-steps` entrou como **terceiro** consumidor. E o que cada etapa mede é
-diferente nos três — a prova de que o componente generalizou por necessidade:
+Fui ler o frame `Coverage` para decidir como fundir, e a leitura respondeu
+outra coisa: **as duas faces do frame já existem migradas** — `/reposicao`
+(D-250) e `/reposicao/configuracoes` (D-278). Sobrancelha, título, cartões de
+estado e painel "Recomendação de compra" são literalmente o que `/reposicao`
+renderiza. `/cobertura` **não tem contrapartida no desenho**.
 
-| consumidor | nota da etapa |
-|---|---|
-| NF-e | fração ANTES do ato — quantos itens já têm vínculo |
-| Pedido de compra | carimbo de tempo — quando cada transição ocorreu |
-| **Importação** | **fração DEPOIS do ato** — quanto da aplicação de fato entrou |
+Medido no Dev antes de decidir:
 
-O `apply` só processa `status = 'OK'` (dito e feito em
-`erp-import-apply.ts`). Medido no Dev, o lote real de `LINKS`: **23.924 lidas
-= 20.650 OK + 3.274 ignoradas**, aplicadas **20.650**. Contra `total_rows` isso
-vira 86% — a tela anunciando **14% de falha** num lote que aplicou tudo o que
-devia. Linha ignorada não é falha: é decisão do parse.
+| tela | conjunto | sinal |
+|---|---|---|
+| `/cobertura` | 3.257 SKUs | **324 em ruptura** |
+| `/reposicao` | 3.180 SKUs | **zero em qualquer estado** |
 
-### A lista repetia o defeito que D-253 corrigiu na tela ao lado
+E a causa é defeito, não configuração faltando: `get_purchase_suggestions`
+devolve `units_90d = 0` para todos, enquanto `daily_sku_metrics` tem 586 SKUs
+com 12+ unidades em 90 dias. As outras três recusas de D-147 foram descartadas
+por medição. **É regressão**: o comentário da migration de D-250 (05/09)
+registra `COBERTURA_BAIXA 37, COMPRAR_EM_BREVE 12`.
 
-`.limit(50)` sem `count`, sem janela e sem página seguinte. Agora `count`
-sobre o conjunto filtrado, janela e paginação; os dois filtros saem dos
-conjuntos fechados do banco. A conferência tinha `href()` local e pílulas de
-raio 999px — a forma aposentada em D-232.
+**Decisão: não fundir hoje** — fundir esconderia a única das duas que ainda
+responde. A direção continua certa; o motivo de não ser agora está medido.
 
-### O varrimento: oito telas, nenhuma decisão de composição
+Os três números que a tela mede estavam **dentro de um parágrafo**, misturados
+com as definições. Viraram `KpiStrip` de três células, com as definições na
+`formula`. Não há quarta: "vendas perdidas estimadas" segue fora por falta de
+saldo inicial no ledger (D-061).
 
-Todas tinham `<h1>` inline mais link de volta, ou `<h1>` mais parágrafo de
-apoio — que é literalmente `PageTitle` com `subtitle`. Uma só teve escolha:
-`/estoque/[skuId]/ajuste` abria com **"Ajustar E2E-SKU-001"**, e o código do
-SKU é chave, não título. Foi para a sobrancelha; o título virou o ato.
+### `/atendimento/[caseId]`: o frame desenha esta tela, e dá ao prazo o topo
 
-**Medido:** `.sb-table` de **24 para 28**; telas sem `PageTitle` de **11 para
-3**, e uma das três é `/login`, fora do `Shell` de propósito.
+Diferente de `/compras/[id]` (onde o "Detalhe de Pedido" era de pedido de
+VENDA — a armadilha de D-277), aqui há `CaseDetail` de verdade. E o que ele põe
+logo abaixo do título é uma **banda de prazo**. Na V3 o prazo existia e era
+lista com marcador **depois da conversa inteira**: o dado que expira, lido por
+último.
 
-### Meu fixture quebrou um teste verde, e o teste ficou melhor
+A banda subiu, **sem contagem regressiva** — página renderizada no servidor
+congela o número, e relógio parado que parece andar é pior que instante
+nenhum. Mostra o instante, a fonte (D-084) e a comparação entre dois instantes.
 
-`integracoes.spec` afirmava *"o seed não tem lote do UpSeller"* — premissa
-escrita quando não havia um. O conserto não foi restaurar a premissa: foi
-trocar o caminho exercitado. Antes cobria o vazio (que os unitários já cobrem
-nos cinco estados); agora cobre o caminho COM dado, onde a regra "fonte sob
-demanda nunca vira verde" pode de fato ser violada.
+Duas correções vieram de ler o esquema depois de escrever: a banda ignorava
+`status` (um prazo `MET` apareceria como vencido) e mostrava a fonte como enum
+cru; agora filtra `ACTIVE` e traduz — a distinção que importa em D-084 é
+interna vs. Mercado Livre, e o rótulo a preserva.
 
-### E o fixture estava errado de um jeito que só a tela mostrou
+### `/compras/novo`: eu tinha registrado uma recusa, e a tela desmentiu
 
-Inventei o payload como `{ sku, mlb }`, e a coluna "Conteúdo lido" renderizou
-**"—"**: `summarize` lê `storeLabel` e `ref`. Aquela coluna existe para mostrar
-o que o sistema ENTENDEU da linha — um fixture de forma errada a deixaria muda
-e o teste passaria. A forma real foi conferida no Dev.
+D-278 registrou que a tabela de entrada ficaria de fora porque "as células são
+campos" — a pergunta de D-275 respondida por raciocínio, sem abrir a tela.
+Testei: **o cabeçalho rotula as MESMAS colunas que `/compras/[id]` mostra
+depois**, e tipá-los diferente era a inconsistência que o passe existe para
+remover. **Uma recusa registrada também precisa ser medida.**
 
-**Verificação:** `check` 29/29, build 8/8, integração **633/633** em banco
-recriado, e2e **82/82** (3 novos), unitários do web **413**,
-`check:table-styles` 24 → **28**, `check:waterfalls` 61, `docs:check`. As duas
-telas do importador abertas no navegador com login real.
+### O passe fechou
+
+`check:table-styles` de **21** (início de D37a) para **30**. **Nenhum arquivo
+com `<table>` sem `.sb-table`**; a única `page.tsx` sem `PageTitle` ou
+`ObjectHeader` é `/login`, fora do `Shell` de propósito.
+
+**Verificação:** `check` 29/29, build 8/8, integração **633/633**, e2e
+**82/82**, unitários 413, `check:waterfalls` 61, `docs:check`. As três telas
+abertas no navegador com login real — a banda de prazo conferida com um prazo
+plantado no banco local e removido depois.
 
 ## Próxima fatia segura
 
-**D37c — o que sobrou do passe, e cada um sobrou por um motivo diferente.**
-Nenhum é acabamento; os três pedem decisão antes de código.
+**A frente visual FECHOU.** D0→D25, D27→D36 e o passe D37a/b/c estão
+entregues; D26 foi recusada com medição (D-266). O guarda
+`check:table-styles` conta **30** telas e não há mais nenhuma fora.
 
-| superfície | por que ficou de fora |
-|---|---|
-| **`/cobertura`** | o frame a trata com Reposição como **UMA tela com abas** (D-261). Unificá-las é composição, não acabamento — e ela não tem filtro por SKU, só por marca (D-265). É a última superfície da frente que nunca passou por fatia nenhuma |
-| **`/compras/novo`** (a tabela) | é tabela de **ENTRADA**, não de leitura: as células são campos. `.sb-table` é tipografia de célula de leitura, e aplicá-la ali seria responder a pergunta de D-275 pelo lado errado — o elemento é acionado, não lido |
-| **`/atendimento/[caseId]`** | 509 linhas, tela de detalhe com dois `<h1>`. Pede `ObjectHeader`, como as três de D37a — mas é a maior delas, e o corpo é a conversa, não uma tabela |
+O que resta não é fatia de design — são itens de produto, cada um com dono e
+motivo já registrados. Em ordem de risco medido:
 
-Depois disso a frente visual fecha, e o que resta são os **sete itens abertos**
-abaixo mais os drawers (adiados desde A1).
+1. **`get_purchase_suggestions` não classifica NENHUM SKU** (D-279). É
+   regressão contra a distribuição que D-250 mediu, a causa está dentro da
+   RPC (`units_90d = 0` com 586 SKUs elegíveis na fonte), e `/reposicao` —
+   a tela que o frame designa como superfície de decisão de compra — está
+   muda. Nenhum dos 633 testes de integração pegou, porque nenhum afirma que
+   algum SKU CHEGA a ter estado.
+2. **Fundir `/cobertura` com `/reposicao`**, como o frame desenha. Depende
+   de (1): hoje a fusão esconderia a única das duas que responde.
+3. **Os drawers do frame** (Inspeção Rápida, MLB, pedido, fornecedor,
+   usuário), adiados desde A1 — são o único elemento de composição do desenho
+   que a V3 nunca implementou.
+4. Os **sete itens abertos** listados abaixo.
 
-A rotina, com as onze perguntas acumuladas: **o frame tem fonte?** (D-266),
-**falta coluna ou falta dado?** (D-268), **quantas linhas no Dev?** (D-263), **a
-faixa conta o mesmo conjunto da tabela ou é navegação?** (D-265), **há spec?**
-(D-271), **capturei a tela depois do último build?** (D-272), **o fixture do
-teste é um dado degradado de verdade?** (D-273), **o mapa já sabe disso?**
-(D-274), **o elemento é lido ou é acionado?** (D-275), **este caso passa na tela
-errada?** (D-276) e **o desenho é desta ENTIDADE?** (D-277).
-
-D37b acrescenta a décima segunda, e ela é sobre fixture: **a FORMA do meu
-fixture é a forma real?** — um payload inventado deixou a coluna "Conteúdo
-lido" muda, e o teste teria passado assim.
+A rotina de medição acumulou **treze** perguntas ao longo da frente, e elas
+valem para qualquer fatia futura, não só de design: **o frame tem fonte?**
+(D-266), **falta coluna ou falta dado?** (D-268), **quantas linhas no Dev?**
+(D-263), **a faixa conta o mesmo conjunto da tabela ou é navegação?** (D-265),
+**há spec?** (D-271), **capturei a tela depois do último build?** (D-272), **o
+fixture do teste é um dado degradado de verdade?** (D-273), **o mapa já sabe
+disso?** (D-274), **o elemento é lido ou é acionado?** (D-275), **este caso
+passa na tela errada?** (D-276), **o desenho é desta ENTIDADE?** (D-277), **a
+FORMA do meu fixture é a forma real?** (D-278) e, de D-279, **a recusa que eu
+registrei foi medida ou só raciocinada?**
 
 **Sete itens seguem abertos fora da fila:**
 

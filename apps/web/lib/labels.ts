@@ -256,6 +256,19 @@ const REPLY_ATTEMPT_STATUS: Record<string, string> = {
 };
 
 /** `support_case_deadlines.deadline_kind` (D-084). */
+/**
+ * `support_case_deadlines.source` — de ONDE o prazo veio, e a distinção que
+ * importa é interna vs. Mercado Livre: prazo nosso a gente escolhe, prazo
+ * deles obriga. D-084 torna a fonte obrigatória na exibição justamente para
+ * que um prazo interno nunca seja lido como oficial.
+ */
+const SUPPORT_DEADLINE_SOURCE: Record<string, string> = {
+  INTERNAL_POLICY: "política interna",
+  ML_MESSAGE_RULE: "regra de mensagens do Mercado Livre",
+  ML_CLAIM_DETAIL: "reclamação no Mercado Livre",
+  ML_AVAILABLE_ACTION: "ação disponível no Mercado Livre",
+};
+
 const SUPPORT_DEADLINE_KIND: Record<string, string> = {
   FIRST_RESPONSE: "Primeira resposta",
   NEXT_ACTION: "Próxima ação",
@@ -363,6 +376,7 @@ export const supportReplyStateLabel = (code: string): string => lookup(SUPPORT_R
 export const supportBodyStateLabel = (code: string): string => lookup(SUPPORT_BODY_STATE, code);
 export const supportSenderKindLabel = (code: string): string => lookup(SUPPORT_SENDER_KIND, code);
 export const supportDeadlineKindLabel = (code: string): string => lookup(SUPPORT_DEADLINE_KIND, code);
+export const supportDeadlineSourceLabel = (code: string): string => lookup(SUPPORT_DEADLINE_SOURCE, code);
 export const supportCaseEventLabel = (code: string): string => lookup(SUPPORT_CASE_EVENT, code);
 export const searchEntityLabel = (code: string): string => lookup(SEARCH_ENTITY, code);
 export const replyAttemptLabel = (code: string): string => lookup(REPLY_ATTEMPT_STATUS, code);

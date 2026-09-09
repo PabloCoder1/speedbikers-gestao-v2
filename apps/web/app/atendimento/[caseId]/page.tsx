@@ -2,15 +2,21 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { ObjectHeader, type ObjectBadge } from "../../../components/object-header";
+import { PageTitle } from "../../../components/page-title";
+import { Panel } from "../../../components/panel";
 import { Shell } from "../../../components/shell";
 import { StatusPill } from "../../../components/status-pill";
+import { TOM, tomDeStatus } from "../../../components/tone";
 import { formatDateTime } from "../../../lib/format";
 import {
   replyAttemptLabel,
+  statusTone,
   supportBodyStateLabel,
   supportCaseEventLabel,
   supportChannelLabel,
   supportDeadlineKindLabel,
+  supportDeadlineSourceLabel,
   supportInternalStatusLabel,
   supportPriorityLabel,
   supportReplyStateLabel,
@@ -57,6 +63,7 @@ interface DeadlineRow {
   source: string;
   due_at: string | null;
   started_at: string | null;
+  status: string;
 }
 
 interface ReplyAttemptRow {
@@ -71,11 +78,6 @@ interface ReplyAttemptRow {
 
 
 const section: React.CSSProperties = { marginTop: "var(--sb-space-4)" };
-
-const sectionTitle: React.CSSProperties = {
-  margin: "0 0 var(--sb-space-2)",
-  fontSize: "1rem",
-};
 
 const meta: React.CSSProperties = {
   fontSize: "0.75rem",
@@ -156,7 +158,7 @@ export default async function AtendimentoDetalhePage({
       .order("occurred_at", { ascending: true }),
     supabase
       .from("support_case_deadlines")
-      .select("id, deadline_kind, source, due_at, started_at")
+      .select("id, deadline_kind, source, due_at, started_at, status")
       .eq("support_case_id", caseId)
       .order("due_at", { ascending: true }),
     supabase
@@ -182,9 +184,7 @@ export default async function AtendimentoDetalhePage({
   if (caseResult.error !== null) {
     return (
       <Shell>
-        <h1 style={{ margin: "0 0 var(--sb-space-3)", fontSize: "1.375rem" }}>
-          Atendimento
-        </h1>
+        <PageTitle eyebrow="ATENDIMENTO / OPERAÇÃO" title="Atendimento" compacto />
         <p role="alert" style={{ color: "var(--sb-danger)" }}>
           Não foi possível carregar o atendimento: {caseResult.error.message}
         </p>
@@ -234,34 +234,170 @@ export default async function AtendimentoDetalhePage({
   }
   const reference = resolveSupportCaseReference(supportCase.support_case_links);
 
+  /*
+    O PRAZO VIGENTE: o ATIVO que vence primeiro. Mesma escolha de
+    `/atendimento` (`prazoVigente`), e pelo mesmo motivo — com mais de um
+    prazo aberto, quem decide o que fazer agora olha o mais próximo.
+
+    A comparação é entre dois INSTANTES, não entre datas: fuso não entra, e é
+    a propriedade que `lib/relative-time.ts` registra como a razão de preferir
+    duração a "hoje".
+  */
+  const agora = Date.now();
+
+  const prazo =
+    deadlines
+      // So `ACTIVE`, como `prazoVigente` em `/atendimento`. Um prazo `MET` ou
+      // `CANCELLED` com `due_at` no passado seria pintado de "vencido" pela
+      // comparacao de instantes -- e cumprido no prazo e o oposto de vencido.
+      // O esquema tem os quatro estados (`ACTIVE`, `MET`, `BREACHED`,
+      // `CANCELLED`) desde `20260825170000`; a primeira versao desta faixa
+      // ignorava a coluna.
+      .filter((linha) => linha.status === "ACTIVE" && linha.due_at !== null)
+      .sort((a, b) => (a.due_at ?? "").localeCompare(b.due_at ?? ""))
+      .map((linha) => ({
+        kind: linha.deadline_kind,
+        source: linha.source,
+        dueAt: linha.due_at,
+        vencido: linha.due_at !== null && Date.parse(linha.due_at) < agora,
+      }))[0] ?? null;
+
+  const selos: readonly ObjectBadge[] = [
+    {
+      label: supportInternalStatusLabel(supportCase.internal_status),
+      tom: tomDeStatus(statusTone(supportCase.internal_status)),
+    },
+    {
+      label: supportPriorityLabel(supportCase.priority),
+      tom: tomDeStatus(statusTone(supportCase.priority)),
+    },
+    {
+      label: supportReplyStateLabel(supportCase.remote_reply_state),
+      tom: tomDeStatus(statusTone(supportCase.remote_reply_state)),
+    },
+  ];
+
+  /*
+    Os fatos do atendimento. "Produto / referência" era um dos quatro blocos do
+    cartão antigo; os outros três viraram selos (situação, prioridade, resposta)
+    e ação (triagem), que é onde o `ObjectHeader` os põe.
+
+    Campo ausente vira "—" e continua na grade: sumir seria a tela dizendo que
+    o campo não existe quando ele só veio vazio (D-067).
+  */
+  const fatos: readonly (readonly [string, ReactNode])[] = [
+    [
+      "Produto / referência",
+      reference === null ? (
+        "—"
+      ) : reference.href === null ? (
+        <span className="sb-mono">{reference.code}</span>
+      ) : (
+        <Link className="sb-mono" href={reference.href}>
+          {reference.code}
+        </Link>
+      ),
+    ],
+    ["Estado no Mercado Livre", supportCase.external_status ?? "—"],
+    ["Subestado", supportCase.external_substatus ?? "—"],
+    [
+      "Natureza",
+      [supportCase.is_mediation ? "Mediação" : null, supportCase.has_return ? "Devolução" : null]
+        .filter((parte): parte is string => parte !== null)
+        .join(" · ") || "—",
+    ],
+    ["Pack", supportCase.pack_id === null ? "—" : String(supportCase.pack_id)],
+    ...(supportCase.remote_reply_block_reason === null
+      ? []
+      : ([["Bloqueio da resposta", supportCase.remote_reply_block_reason]] as const)),
+  ];
+
   return (
     <Shell>
-      <p style={{ margin: "0 0 var(--sb-space-1)", fontSize: "0.8125rem" }}>
-        <Link href="/atendimento" style={{ color: "var(--sb-primary)" }}>
-          ← Caixa de Entrada
-        </Link>
-      </p>
+      {/*
+        O `<h1>` da TELA. O `ObjectHeader` renderiza `<h2>` de proposito -- no
+        frame o cartao de entidade vem depois de um cabecalho de pagina --, e
+        sem este bloco a tela ficava sem nivel 1 nenhum. Foi o e2e de
+        `/atendimento` que apontou, afirmando um `<h1>` com o numero do caso.
+      */}
+      <PageTitle
+        eyebrow="ATENDIMENTO / OPERAÇÃO"
+        title="Atendimento"
+        subtitle={<Link href="/atendimento">← Voltar à Caixa de Entrada</Link>}
+        compacto
+      />
 
-      <h1 style={{ margin: "0 0 var(--sb-space-1)", fontSize: "1.375rem" }}>
-        {supportChannelLabel(supportCase.channel)} #
-        {supportCase.external_case_id}
-      </h1>
-
-      <p style={{ ...meta, margin: "0 0 var(--sb-space-3)" }}>
       {/* Sem `?.` desde D-206 -- mesma razao de `/anuncios/[itemId]`: a policy
           de `support_cases` filtra por `accessible_accounts()`, derivada da
           propria `ml_accounts`, entao um orfao esconde o ATENDIMENTO em vez de
           devolver a conta nula. */}
-        {supportCase.ml_accounts.label}
-        {supportCase.external_status !== null &&
-          ` · Mercado Livre: ${supportCase.external_status}`}
-        {supportCase.external_substatus !== null &&
-          ` (${supportCase.external_substatus})`}
-        {supportCase.is_mediation && " · Mediação"}
-        {supportCase.has_return && " · Devolução"}
-        {supportCase.pack_id !== null &&
-          ` · Pack ${String(supportCase.pack_id)}`}
-      </p>
+      <ObjectHeader
+        identificador={`#${supportCase.external_case_id}`}
+        titulo={supportChannelLabel(supportCase.channel)}
+        badges={selos}
+        meta={supportCase.ml_accounts.label}
+        acoes={
+          <TriageCell
+            triage={{
+              id: supportCase.id,
+              internalStatus: supportCase.internal_status,
+              priority: supportCase.priority,
+              assigneeId: supportCase.assignee_id,
+              assigneeName: supportCase.profiles?.full_name ?? null,
+              viewerId,
+            }}
+          />
+        }
+      >
+        <dl className="sb-fact-grid">
+          {fatos.map(([rotulo, valor]) => (
+            <div key={rotulo}>
+              <dt>{rotulo}</dt>
+              <dd>{valor}</dd>
+            </div>
+          ))}
+        </dl>
+      </ObjectHeader>
+
+      {/*
+        A FAIXA DE PRAZO, na posição que o frame lhe dá (D-279).
+
+        O `CaseDetail` do desenho põe o prazo logo abaixo do título, em banda
+        própria — é o dado que expira, e por isso o primeiro a ser lido. Aqui
+        ele estava numa lista com marcador DEPOIS da conversa inteira.
+
+        **Não há contagem regressiva, e a ausência é deliberada.** O frame
+        escreve "8 min restantes"; uma página renderizada no servidor congela
+        esse número no instante da renderização, e um relógio parado que parece
+        andar é pior do que instante nenhum. A faixa mostra o INSTANTE, a fonte
+        (obrigatória por D-084) e uma comparação entre dois instantes — vencido
+        ou não —, que é a única leitura que não depende de fuso nem de quando a
+        página foi desenhada. `formatAge` não serve: ela devolve `null` para o
+        futuro, de propósito, e prazo é sempre futuro.
+      */}
+      {prazo !== null && (
+        <p
+          style={{
+            ...(prazo.vencido ? TOM.perigo : TOM.info),
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "0.5rem",
+            alignItems: "baseline",
+            margin: "var(--sb-space-3) 0 0",
+            padding: "var(--sb-space-3)",
+            borderRadius: "var(--sb-radius)",
+            fontSize: "0.8125rem",
+          }}
+        >
+          <strong>
+            {prazo.vencido ? "Prazo vencido" : "Prazo em aberto"} ·{" "}
+            {supportDeadlineKindLabel(prazo.kind)}
+          </strong>
+          <span>
+            {prazo.dueAt === null ? "sem prazo definido" : formatDateTime(prazo.dueAt)} · fonte: {supportDeadlineSourceLabel(prazo.source)}
+          </span>
+        </p>
+      )}
 
       {sideError !== null && (
         <p role="alert" style={{ color: "var(--sb-danger)" }}>
@@ -269,88 +405,8 @@ export default async function AtendimentoDetalhePage({
         </p>
       )}
 
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "var(--sb-space-4)",
-          alignItems: "flex-start",
-          border: "1px solid var(--sb-border)",
-          borderRadius: "var(--sb-radius)",
-          padding: "var(--sb-space-3)",
-        }}
-      >
-        <div>
-          <div style={meta}>Situação</div>
-          <div
-            style={{ display: "flex", gap: "0.25rem", marginTop: "0.25rem" }}
-          >
-            <StatusPill
-              code={supportCase.internal_status}
-              label={supportInternalStatusLabel(supportCase.internal_status)}
-            />
-            <StatusPill
-              code={supportCase.priority}
-              label={supportPriorityLabel(supportCase.priority)}
-            />
-          </div>
-        </div>
-
-        <div>
-          <div style={meta}>Resposta no Mercado Livre</div>
-          <div style={{ marginTop: "0.25rem" }}>
-            <StatusPill
-              code={supportCase.remote_reply_state}
-              label={supportReplyStateLabel(supportCase.remote_reply_state)}
-            />
-          </div>
-          {supportCase.remote_reply_block_reason !== null && (
-            <div style={{ ...meta, marginTop: "0.25rem" }}>
-              {supportCase.remote_reply_block_reason}
-            </div>
-          )}
-        </div>
-
-        <div>
-          <div style={meta}>Produto / referência</div>
-          <div style={{ marginTop: "0.25rem", fontSize: "0.875rem" }}>
-            {reference === null ? (
-              "—"
-            ) : reference.href === null ? (
-              reference.code
-            ) : (
-              <Link
-                href={reference.href}
-                style={{ color: "var(--sb-primary)" }}
-              >
-                {reference.code}
-              </Link>
-            )}
-            {reference?.title != null && (
-              <div style={meta}>{reference.title}</div>
-            )}
-          </div>
-        </div>
-
-        <div style={{ minWidth: "12rem" }}>
-          <div style={meta}>Triagem</div>
-          <div style={{ marginTop: "0.25rem" }}>
-            <TriageCell
-              triage={{
-                id: supportCase.id,
-                internalStatus: supportCase.internal_status,
-                priority: supportCase.priority,
-                assigneeId: supportCase.assignee_id,
-                assigneeName: supportCase.profiles?.full_name ?? null,
-                viewerId,
-              }}
-            />
-          </div>
-        </div>
-      </div>
-
-      <section style={section}>
-        <h2 style={sectionTitle}>Conversa</h2>
+      <div style={{ marginTop: "var(--sb-space-3)" }}>
+      <Panel title="Conversa" subtitle="Vendedor à direita, cliente à esquerda — a direção é o que se lê primeiro.">
 
         {messages.length === 0 ? (
           <p style={{ color: "var(--sb-text-soft)" }}>
@@ -398,11 +454,15 @@ export default async function AtendimentoDetalhePage({
             })}
           </ol>
         )}
-      </section>
+      </Panel>
+      </div>
 
-      {deadlines.length > 0 && (
-        <section style={section}>
-          <h2 style={sectionTitle}>Prazos</h2>
+      {/* A faixa acima mostra o prazo VIGENTE. Esta lista continua porque um
+          atendimento pode ter mais de um (resposta, envio, devolução), e a
+          faixa só cabe um. */}
+      {deadlines.length > 1 && (
+        <div style={{ marginTop: "var(--sb-space-3)" }}>
+        <Panel title="Todos os prazos" subtitle="A fonte acompanha cada prazo: prazo ausente nunca vira estimativa apresentada como oficial (D-084).">
           <ul
             style={{ margin: 0, paddingLeft: "1.25rem", fontSize: "0.875rem" }}
           >
@@ -414,28 +474,32 @@ export default async function AtendimentoDetalhePage({
                   : formatDateTime(deadline.due_at)}
                 {/* A FONTE do prazo é obrigatória na exibição (D-084): prazo
                     ausente nunca pode virar estimativa apresentada como oficial. */}
-                <span style={meta}> · fonte: {deadline.source}</span>
+                <span style={meta}> · fonte: {supportDeadlineSourceLabel(deadline.source)}</span>
               </li>
             ))}
           </ul>
-        </section>
+        </Panel>
+        </div>
       )}
 
       {podeResponder && (
-        <section style={section}>
-          <h2 style={sectionTitle}>Responder</h2>
+        <div style={{ marginTop: "var(--sb-space-3)" }}>
+        <Panel title="Responder" subtitle="A resposta vai para o Mercado Livre — revise antes de enviar.">
+          <div className="sb-panel-body">
           <ReplyForm
             caseId={supportCase.id}
             remoteReplyState={supportCase.remote_reply_state}
             remoteReplyBlockReason={supportCase.remote_reply_block_reason}
             templates={templates}
           />
-        </section>
+          </div>
+        </Panel>
+        </div>
       )}
 
       {attempts.length > 0 && (
-        <section style={section}>
-          <h2 style={sectionTitle}>Tentativas de envio</h2>
+        <div style={{ marginTop: "var(--sb-space-3)" }}>
+        <Panel title="Tentativas de envio" subtitle="Cada tentativa fica registrada, inclusive as que falharam.">
           <ul
             style={{ margin: 0, paddingLeft: "1.25rem", fontSize: "0.875rem" }}
           >
@@ -465,11 +529,12 @@ export default async function AtendimentoDetalhePage({
               </li>
             ))}
           </ul>
-        </section>
+        </Panel>
+        </div>
       )}
 
-      <section style={section}>
-        <h2 style={sectionTitle}>Histórico</h2>
+      <div style={{ marginTop: "var(--sb-space-3)" }}>
+      <Panel title="Histórico" subtitle="Append-only: uma linha por evento do atendimento.">
 
         {events.length === 0 ? (
           <p style={{ color: "var(--sb-text-soft)" }}>
@@ -493,7 +558,8 @@ export default async function AtendimentoDetalhePage({
             ))}
           </ul>
         )}
-      </section>
+      </Panel>
+      </div>
 
       <p style={{ ...meta, ...section }}>
         Última atividade: {formatDateTime(supportCase.last_activity_at)}
