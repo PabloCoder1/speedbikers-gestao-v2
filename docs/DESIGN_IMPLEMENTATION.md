@@ -620,7 +620,8 @@ que ele renderiza.**
 | D24 | **Histórico de Preços** — "Alterações" e "Preços" da fila eram a MESMA tela. A recusa é uma promessa com prazo, não um número (D-264) | ✔ |
 | D25 | **Central Full** — o frame particiona errado: os três cartões dele somam o total e escondem o MAIOR estado, 41% do conjunto (D-265) | ✔ |
 | ~~D26~~ | ~~**Tráfego**~~ — **RECUSADA COM MEDIÇÃO** (D-266): zero colunas de impressão/Ads/reputação no schema inteiro; o funil do frame perde o topo e os dois cartões de sinais não têm fonte. O que sobra já vive em `/anuncios` | ✖ |
-| D27–D30 | Atendimento, Conhecimento, Central | fila |
+| D27 | **Caixa de Entrada** — a recusa é uma AFIRMAÇÃO SOBRE A ORDEM: o frame diz "fila priorizada por prazo, risco e cliente" e ela ordena por atividade (D-267) | ✔ |
+| D28–D30 | Conhecimento, Central | fila |
 | D31–D36 | Usuários, Integrações, Sincronização, Saúde, Configurações, Copiloto | fila |
 | D37 | Passe visual global | fila |
 
@@ -801,115 +802,103 @@ anterior: `/reposicao` tinha **19 de 22** células sobrepondo a classe (não 23)
 `/estoque/movimentacoes` não era vazamento parcial de 3 células — eram **todas**
 as 13.
 
-O que resta é a fila **D27 em diante**: 11 superfícies ainda não migradas — D26 (Tráfego) saiu da conta por avaliação, não por adiamento (D-266).
+O que resta é a fila **D28 em diante**: 10 superfícies ainda não migradas — D26 (Tráfego) saiu da conta por avaliação, não por adiamento (D-266).
 
 ## Última fatia concluída
 
-**D25 — Central Full, pelo frame `IntelligenceScreen type="full"` (D-265).** A
-tela já existia com dado real desde D-173 e o grão já estava certo; a fatia é de
-composição, faixa e recusas.
+**D27 — Caixa de Entrada, pelo frame `SupportScreen` (D-267).** Fatia sem
+migration: tudo o que ela precisava já estava no banco, e parte estava
+invisível.
 
-### O frame particiona errado, e dá para ver na aritmética dele
+### A recusa não é um número nem uma promessa — é a ORDEM
 
-Ele desenha três cartões — Em Ruptura 17, Parados 84, Saudáveis 427 — e um total
-de **528**. A soma bate exatamente, o que significa que os números do próprio
-frame afirmam existirem só três situações.
+O frame escreve, na legenda, **"Fila priorizada por prazo, risco e cliente"**.
+A consulta ordena por `last_activity_at desc` — não por prazo, não por risco, e
+cliente nem existe.
 
-São quatro, e a que falta é a maior:
+Afirmar priorização que não acontece é pior do que não dizer nada sobre a ordem:
+o operador confiaria no topo da lista para saber o que atender primeiro, e o
+topo é só o caso que se mexeu por último. Ordenar de fato por prazo seria
+mudança de **comportamento**, não de composição — fica como candidata, com o
+dado já disponível.
 
-| situação | SKUs | % |
-|---|---|---|
-| **Fora do Full** (`ausente`) | **778** | **41%** |
-| Saudável | 588 | 31% |
-| Ruptura | 489 | 26% |
-| Parado | 60 | 3% |
+**"Cliente" também sai, e a ausência é anterior a esta fatia:**
+`support_cases` guarda `customer_external_id` (o id numérico do ML), nunca o
+nome, e o comentário da própria coluna diz por quê — D-083 proíbe usar comprador
+como identificador.
 
-Três cartões somariam 1.137 de **1.915** e esconderiam 778 sem dizer. A faixa
-aqui tem **cinco** células — o total e as quatro situações — e aí sim fecham.
+**"Atribuir em massa" contradiz uma regra deliberada:** a atribuição é por caso
+e **só a si mesmo** (`assignToMe` diz por escrito que o botão não vira jeito de
+atribuir a outro). Um botão de massa não seria só escrita em lote — seria a
+reversão de uma decisão, vinda de um frame.
 
-### Três recusas, todas por falta de fonte
+### O que o frame acrescentou e o dado já sustentava
 
-| o frame pede | por que ficou fora |
-|---|---|
-| coluna "Últ. Envio" | **não existe tabela de envio ao Full** no esquema |
-| botão "Repor Full" | é escrita, e não há política logística (custo, lote, prazo) |
-| "Atualizado há 2 min" | afirma UMA frescura para a página; cada bucket tem a sua |
+`support_case_deadlines` tem **2.059 prazos, todos com `due_at`** — e até aqui o
+prazo só era lido quando o filtro "prazo em risco" estava ligado, como
+predicado. **A coluna SLA nunca existiu.** O frame pediu, o dado estava lá.
 
-No lugar de "Últ. Envio" ficou **"Capturado"** — a informação do mesmo tipo que
-existe, e a que sustenta a regra dos 3 dias.
+Sem prazo ativo a célula mostra "—", nunca "no prazo": ninguém mediu isso.
 
-### Sentinela aqui, e o critério é o de D24
+### A janela estava declarada pela metade
 
-D23 pôs; D24 não. O que decide não é o gosto: **é se a faixa conta o mesmo
-conjunto que a tabela mostra.** Em `/precos` conta, então recorte vazio tem de
-verdade quatro zeros. Aqui a faixa é **navegação** — clicar filtra —, logo conta
-um conjunto diferente sempre que há filtro, e escolher "Parado" sem resultado
-não significa que "Ruptura" seja zero.
+A tela dizia *"Mostrando os 100 atendimentos com atividade mais recente"* — sem
+dizer **100 de quantos**. São **929 abertos** no Dev: a diferença entre 100 de
+101 e 100 de 929 é a diferença entre "vi quase tudo" e "vi 11%". Não mentia como
+`/acoes` mentia, mas informava metade.
 
-Uma distinção que só apareceu no teste: **esvaziar por busca zera as facetas com
-razão** (a busca filtra o conjunto-base, e não há nada naquele escopo). Só o
-filtro de situação separa o recorte da base, e é aí que a sentinela trabalha.
+`count: "exact"` na mesma viagem resolve. **A paginação continua não existindo**,
+e agora a tela diz isso com número — dívida registrada, não escondida atrás de
+"quando o volume justificar".
 
-### A mudança de contrato alcançou três telas
+### As cinco telas do frame já eram uma, e a decisão não é desta fatia
 
-`/anuncios/[itemId]` lê com `.maybeSingle()`: com a sentinela, um SKU sem saldo
-no Full passaria a chegar como **objeto de nulos em vez de `null`**, e a aba
-renderizaria Full inexistente. Os dois outros consumidores foram atualizados na
-mesma fatia — mudança de contrato não se deixa para quem tropeçar nela.
+D-084 já decidiu que Perguntas, Mensagens, Reclamações, Devoluções e Mediações
+são filtros sobre a mesma projeção. Registro porque quase escrevi como conclusão
+minha. Medido: POST_SALE_MESSAGE **473**, CLAIM **351**, QUESTION **105** em
+aberto; mediação **210** e devolução **281** atravessam os três.
 
-**Declarar a nulidade nos tipos foi o que enumerou os pontos afetados:** o `tsc`
-apontou dez linhas em três arquivos, exatamente as que assumiam colunas
-preenchidas. Um cast teria escondido as dez.
+**Verificação, local:** `check` **29/29**, e2e **49/49** em banco recriado (1
+novo), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17,
+`check:table-styles` **16**, `docs:check`. Integração não foi rodada: não há
+mudança de esquema nem teste novo lá. Capturada a 1440px contra o Supabase
+local.
 
-E **um teste de isolamento quebrou sem que a garantia mudasse**: "não vê o Full
-desta" afirmava zero linhas, e agora afirma nenhuma linha COM SKU. A sentinela
-não carrega dado — todas as colunas nulas e faceta vazia —, e o teste passou a
-afirmar as duas coisas.
-
-**Verificação, local:** `check` **29/29**, integração **633/633** em banco
-recriado (3 novos), e2e **48/48** (3 novos), build **8/8**, `check:waterfalls`
-60, `check:server-actions` 17, `check:table-styles` **15**, `docs:check`.
-Capturada a 1440px contra o Supabase local.
-
-⚠️ **Três erros meus.** O pior foi um **link com filtro fantasma**: a ação do
-frame é "Ver cobertura" e eu escrevi `/cobertura?busca=SKU` — mas `/cobertura`
-só aceita `?marca=`, então o parâmetro seria ignorado e o operador cairia na
-lista inteira. É a classe exata que D-154 existe para impedir. Também usei
-`StatusPill` para as situações do Full, que o mapa de `statusTone` não conhece
-(sairiam todas neutras), e rodei a integração duas vezes sem `db reset` — a
-segunda vez nesta sessão.
+⚠️ **Dois erros meus.** O splice da tabela recortou até o **primeiro**
+`</Shell>` — o do retorno antecipado de "sem organização", não o final — e
+duplicou o render inteiro (443 → 876 linhas); o `tsc` reprovou com erro de parse
+e eu reverti e refiz. E rodei a suíte e2e duas vezes sem `db reset`, lendo a
+falha de "assumir" como regressão minha: era a rodada anterior tendo atribuído o
+caso. **Terceira vez nesta sessão** que a não-idempotência me pega, e ela está
+nos riscos do HANDOFF desde D-225.
 
 ## Próxima fatia segura
 
-**D27 — Atendimento.** D26 (Tráfego) foi **avaliada e recusada** (D-266): uma
-varredura no schema inteiro por `impress`, `campaign`, `organic` e `reputation`
-devolveu **zero colunas**, então o funil do frame perde o topo e os dois cartões
-de sinais não têm fonte. O que sobra — visita e conversão por anúncio — já vive
-em `/anuncios` com a metodologia de D-170 nos cabeçalhos, e repetir aquilo seria
-a cópia divergente que a casa evita.
+**D28 — Base de Conhecimento.** É a outra metade do mesmo componente:
+`SupportScreen` decide por `screen.title === "Base de conhecimento"` e o frame
+já está lido de relance nesta fatia. Ele pede três números no topo (1.248
+registrados, **92% validados**, 94 aguardando revisão) e uma tabela com SKU e
+tipo.
 
-**A fila de design não é contrato de entrega**: ela é a lista de frames a
-AVALIAR, e avaliar inclui concluir que um deles não tem o que mostrar. D-266
-registra o que faria a decisão se reabrir sozinha (Ads, impressões ou reputação
-chegando ao modelo).
+**A pergunta de abertura é o percentual.** "92% validados" pressupõe um estado
+de validação por conhecimento — conferir se `knowledge_*` tem esse campo antes
+de desenhar, porque um percentual sem coluna é número sintetizado (D-023). A
+tela `/atendimento/conhecimento` já existe.
 
-Para D27 a rotina é a de sempre, com as três perguntas que as fatias anteriores
-acrescentaram: **o `db reset` + seed deixa a tela com dado?**, **quantas linhas
-ela tem no Dev?** e **a faixa conta o mesmo conjunto da tabela ou é navegação?**
-— a terceira decide sozinha se há linha-sentinela. E, desde D-266, uma quarta que
-vem antes de todas: **o frame tem fonte para o que desenha?**
+E a rotina, com as quatro perguntas acumuladas: **o frame tem fonte para o que
+desenha?** (D-266), **o `db reset` + seed deixa a tela com dado?**, **quantas
+linhas ela tem no Dev?** (D-263) e **a faixa conta o mesmo conjunto da tabela ou
+é navegação?** (D-265, decide sozinha se há linha-sentinela).
 
-Depois, pela fila: Conhecimento, Central; e então D31–D36 (Usuários,
-Integrações, Sincronização, Saúde, Configurações, Copiloto) e o passe visual
-global (D37).
+Depois: Central; e então D31–D36 (Usuários, Integrações, Sincronização, Saúde,
+Configurações, Copiloto) e o passe visual global (D37).
 
-**Três telas seguem abertas fora da fila:**
+**Quatro itens seguem abertos fora da fila:**
 
-- **`/notas-fiscais/[id]`** (conferência da NF-e) — dois dos quatro estados de
-  item que o brief §25 pede não têm dado em `document_items` (D-253).
-- **`/cobertura`** — o frame trata Cobertura e Reposição como uma tela com abas,
-  e unificá-las é composição, não acabamento (D-261). **D25 acrescentou um
-  motivo**: `/cobertura` não tem filtro por SKU, só por marca, e isso já forçou
-  um link a apontar para outro lugar.
-- **Exportação de `/precos`** — o "Exportar Relatório" recusado em D-264 é
-  funcionalidade legítima, só não é fatia de design.
+- **`/notas-fiscais/[id]`** — dois dos quatro estados de item que o brief §25
+  pede não têm dado em `document_items` (D-253).
+- **`/cobertura`** — o frame a trata com Reposição como uma tela de abas, e
+  unificá-las é composição (D-261). D-265 acrescentou que ela não tem filtro por
+  SKU, só por marca.
+- **Exportação de `/precos`** — recusada em D-264 por ser feature, não desenho.
+- **Paginação de `/atendimento`** — o volume passou a justificar (D-267).

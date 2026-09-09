@@ -6851,6 +6851,58 @@ O Design Contract manda "manter o desenho e remover o conteudo incompativel". **
 
 **Impacto:** nenhuma mudanca de codigo. `docs/DESIGN_IMPLEMENTATION.md` registra D26 como **recusada com medicao** e a fila segue para Atendimento.
 
+## D-267 - D27: Caixa de Entrada pelo frame, e a recusa e uma afirmacao sobre a ORDEM
+
+**Contexto:** `/atendimento` pelo frame `SupportScreen` -- cabecalho, bloco de visao geral com um numero, e painel com a fila. Fatia sem migration: tudo o que ela precisa ja estava no banco, e parte estava invisivel.
+
+---
+
+**1. A RECUSA CENTRAL NAO E UM NUMERO NEM UMA PROMESSA: E A ORDEM**
+
+O frame escreve, na legenda, **"Fila priorizada por prazo, risco e cliente"**. A consulta ordena por `last_activity_at desc` -- nao por prazo, nao por risco, e cliente nem existe.
+
+Afirmar uma priorizacao que nao acontece e pior do que nao dizer nada sobre a ordem: o operador confiaria no topo da lista para saber o que atender primeiro, e o topo e so o caso que se mexeu por ultimo. A legenda diz o que e verdade, e a ordem aparece na janela declarada ("por atividade mais recente").
+
+Ordenar de fato por prazo seria mudanca de comportamento, nao de composicao -- fica como candidata, com o dado ja disponivel (`support_case_deadlines.due_at`).
+
+**2. "CLIENTE" NAO TEM FONTE, E A AUSENCIA E DELIBERADA**
+
+A coluna "Cliente: Lucas Almeida" do frame nao existe: `support_cases` guarda **`customer_external_id bigint`** -- o id numerico do Mercado Livre --, nunca o nome. E o comentario da propria coluna diz por que: *"Exibicao/contexto somente; D-083 proibe usar comprador/from/to como ID"*. Nao e lacuna a preencher: e uma decisao anterior.
+
+**3. "ATRIBUIR EM MASSA" CONTRADIZ UMA RESTRICAO QUE JA EXISTE**
+
+O cabecalho do frame traz o botao. A atribuicao na V3 e por caso **e so a si mesmo**: `assignToMe` tem escrito que "o botao nao vira um jeito de atribuir" a outro. Um botao de massa nao seria so escrita em lote (a recusa de D-263) -- seria a reversao de uma regra deliberada, vinda de um frame.
+
+**4. AS CINCO TELAS DO FRAME JA ERAM UMA, E A DECISAO NAO E DESTA FATIA**
+
+O frame trata Perguntas, Mensagens, Reclamacoes, Devolucoes e Mediacoes como cinco telas. **D-084 ja decidiu** que sao filtros sobre a mesma projecao -- mediacao e devolucao sao FACETAS do claim, nao canais proprios --, e o cabecalho de `page.tsx` diz isso desde entao: *"uma tela, nao seis"*.
+
+Registro isso porque quase o escrevi como conclusao minha. Medido, para quem for reabrir: os canais abertos no Dev sao POST_SALE_MESSAGE **473**, CLAIM **351** e QUESTION **105**; mediacao **210** e devolucao **281** atravessam esses tres.
+
+**5. O QUE O FRAME ACRESCENTOU E O DADO JA SUSTENTAVA: A COLUNA SLA**
+
+`support_case_deadlines` tem **2.059 prazos, todos com `due_at`** -- e ate aqui o prazo so era lido quando o filtro "prazo em risco" estava ligado, como predicado. A coluna nunca existiu. O frame pediu, o dado estava la.
+
+O embed passou a vir sempre (`!inner` continua so no caso do filtro, onde ele E o predicado), e `prazoVigente` escolhe o `ACTIVE` que vence primeiro. Escolher em TypeScript aqui nao e a agregacao que `AGENTS.md` proibe: as linhas ja vieram no mesmo `select`, e e o que `resolveSupportCaseReference` faz com os vinculos ao lado. **Sem prazo ativo a celula mostra "—", nunca "no prazo"** -- ninguem mediu isso.
+
+**6. A JANELA ESTAVA DECLARADA PELA METADE**
+
+A tela dizia *"Mostrando os 100 atendimentos com atividade mais recente. Use os filtros para estreitar -- paginacao entra quando o volume real justificar."*
+
+Nao mentia como `/acoes` mentia (D-263), mas nao dizia **100 DE QUANTOS**. Sao **929 abertos** no Dev: a diferenca entre 100 de 101 e 100 de 929 e a diferenca entre "vi quase tudo" e "vi 11%". `count: "exact"` na MESMA viagem resolve, e `summarizePagedWindow` da a frase que oito telas ja usam.
+
+**A paginacao continua nao existindo**, e agora a tela diz isso com numero. O volume ja justifica -- fica registrado como divida, nao escondido atras de "quando justificar".
+
+**7. DOIS ERROS MEUS**
+
+(a) **Meu splice duplicou o render inteiro.** Recortei o bloco da tabela ate o PRIMEIRO `</Shell>` do arquivo -- que e o do retorno antecipado de "sem organizacao", nao o final. O arquivo foi de 443 para 876 linhas e o `tsc` reprovou com erro de parse na ultima. Revertido e refeito com os blocos vindos de arquivo e o limite ancorado no fim, nao no primeiro casamento.
+
+(b) **Rodei a suite e2e duas vezes sem `db reset`**, e li a falha de "assumir um atendimento" como regressao da minha mudanca. Nao era: a rodada anterior ja tinha atribuido o caso. **Terceira vez nesta sessao** que a nao-idempotencia das suites me pega, e ela esta escrita nos riscos do HANDOFF desde D-225.
+
+**Impacto:** `apps/web/app/atendimento/page.tsx` (composicao, SLA, janela declarada, `prazoVigente`), `apps/web/e2e/atendimento.spec.ts` (+1). Sem migration e sem mudanca de esquema.
+
+**Verificacao, local:** `check` **29/29**, e2e **49/49** em banco recriado (1 novo), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17, `check:table-styles` **16**, `docs:check`. Integracao nao foi rodada nesta fatia porque nao ha mudanca de esquema nem teste novo la. Capturada a 1440px contra o Supabase local.
+
 ## Como adicionar nova decisao
 
 Registrar:

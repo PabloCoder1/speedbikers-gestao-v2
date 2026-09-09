@@ -196,3 +196,49 @@ test("atendimento RESOLVIDO não oferece formulário de resposta", async ({ page
 
   await expect(page.getByLabel("Sua resposta")).toHaveCount(0);
 });
+
+/**
+ * A migração para o frame `SupportScreen` (D27, D-267).
+ *
+ * **A recusa central é uma AFIRMAÇÃO SOBRE A ORDEM.** O frame escreve "Fila
+ * priorizada por prazo, risco e cliente" — e a fila ordena por
+ * `last_activity_at desc`. Prometer priorização que não acontece é pior do que
+ * não dizer nada sobre a ordem, porque o operador confiaria no topo da lista.
+ *
+ * E "Cliente" não tem fonte: `support_cases` guarda `customer_external_id`, o
+ * id numérico do ML, nunca o nome — D-083 proíbe usar comprador como
+ * identificador.
+ */
+test("/atendimento: a janela é declarada, o SLA aparece e a ordem não é prometida", async ({ page }) => {
+  await login(page, "/atendimento");
+
+  await expect(page.getByRole("heading", { name: "Caixa de Entrada", level: 1 })).toBeVisible();
+  await expect(page.getByText("ATENDIMENTO / OPERAÇÃO")).toBeVisible();
+
+  /*
+    A JANELA DECLARADA. A tela dizia "Mostrando os 100 atendimentos com
+    atividade mais recente" — 100 de quantos, ninguém sabia. São 929 abertos no
+    Dev; a diferença entre 100 de 101 e 100 de 929 é a diferença entre "vi quase
+    tudo" e "vi 11%".
+  */
+  await expect(page.locator(".sb-stat-note")).toContainText("atendimento");
+  await expect(page.getByText(/Mostrando os 100 atendimentos/)).toHaveCount(0);
+
+  /*
+    A COLUNA QUE O DADO JÁ SUSTENTAVA SEM APARECER. `due_at` existe em 2.059
+    prazos no Dev e até aqui só servia de filtro.
+  */
+  await expect(page.getByRole("columnheader", { name: "SLA" })).toBeVisible();
+
+  /*
+    AS DUAS RECUSAS. "Cliente" não tem fonte, e a legenda do frame afirma uma
+    priorização que a consulta não faz.
+  */
+  await expect(page.getByRole("columnheader", { name: /Cliente/i })).toHaveCount(0);
+  await expect(page.getByText(/priorizada por prazo/i)).toHaveCount(0);
+
+  // "Atribuir em massa" do cabeçalho do frame: a atribuição é por caso e só a
+  // si mesmo — `assignToMe` diz por escrito que o botão não vira jeito de
+  // atribuir a outro.
+  await expect(page.getByRole("button", { name: /massa/i })).toHaveCount(0);
+});

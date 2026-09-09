@@ -2,9 +2,12 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { FilterPill } from "../../components/filter-pill";
+import { PageTitle } from "../../components/page-title";
+import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
 import { StatusPill } from "../../components/status-pill";
-import { formatDateTime } from "../../lib/format";
+import { summarizePagedWindow } from "../../lib/filters";
+import { formatCount, formatDateTime } from "../../lib/format";
 import {
   supportChannelLabel,
   supportInternalStatusLabel,
@@ -85,26 +88,31 @@ interface SupportCaseRow {
   ml_accounts: { label: string } | null;
   profiles: { full_name: string | null } | null;
   support_case_links: SupportCaseLinkRow[] | null;
+  support_case_deadlines: { due_at: string | null; status: string }[] | null;
 }
 
+/**
+ * O prazo VIGENTE de um caso — o `ACTIVE` que vence primeiro.
+ *
+ * Um caso pode ter mais de um prazo (2.059 para 2.840 casos no Dev, então menos
+ * de um em média, mas nada impede dois). Escolher o mais próximo em TypeScript
+ * não é a agregação que `AGENTS.md` proíbe: as linhas já vieram do banco no
+ * mesmo `select`, e é o mesmo que `resolveSupportCaseReference` faz com os
+ * vínculos logo ao lado.
+ *
+ * `null` quando não há prazo ativo — e a célula mostra "—", nunca uma data
+ * inventada nem um "no prazo" que ninguém mediu.
+ */
+function prazoVigente(linhas: SupportCaseRow["support_case_deadlines"]): string | null {
+  if (linhas === null) return null;
 
-const th: React.CSSProperties = {
-  textAlign: "left",
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.75rem",
-  textTransform: "uppercase",
-  letterSpacing: "0.04em",
-  color: "var(--sb-text-soft)",
-  whiteSpace: "nowrap",
-};
+  const ativos = linhas
+    .filter((linha): linha is { due_at: string; status: string } => linha.status === "ACTIVE" && linha.due_at !== null)
+    .map((linha) => linha.due_at)
+    .sort();
 
-const td: React.CSSProperties = {
-  padding: "0.5rem 0.75rem",
-  borderBottom: "1px solid var(--sb-border)",
-  fontSize: "0.875rem",
-  verticalAlign: "top",
-};
+  return ativos[0] ?? null;
+}
 
 function readParam(value: string | string[] | undefined): string | null {
   if (Array.isArray(value)) return value[0] ?? null;
@@ -229,9 +237,27 @@ export default async function AtendimentoPage({
   const baseSelect =
     "id, channel, external_case_id, external_status, internal_status, priority, remote_reply_state, is_mediation, has_return, last_activity_at, assignee_id, ml_accounts(label), profiles(full_name), support_case_links(order_id, sku_id, listing_id, external_entity_kind, external_entity_id, skus(sku), listings(item_id, title))";
 
+  /*
+    O prazo passa a vir SEMPRE (D-267). Antes ele só era embutido quando o
+    filtro "prazo em risco" estava ligado — servia para recortar e nunca
+    aparecia. `due_at` existe em 2.059 prazos no Dev, e o frame pede a coluna
+    SLA: o dado estava lá, invisível.
+
+    `!inner` continua só no caso do filtro, porque ali o embed É o predicado.
+  */
+  const embedPrazo = prazoRisco
+    ? "support_case_deadlines!inner(due_at, status)"
+    : "support_case_deadlines(due_at, status)";
+
   let casesQuery = supabase
     .from("support_cases")
-    .select(prazoRisco ? `${baseSelect}, support_case_deadlines!inner(due_at, status)` : baseSelect)
+    /*
+      `count: "exact"` na MESMA viagem. A tela dizia "os 100 com atividade mais
+      recente" sem dizer 100 DE QUANTOS — janela declarada pela metade. São 929
+      abertos no Dev, então a diferença entre 100 de 101 e 100 de 929 é a
+      diferença entre "vi quase tudo" e "vi 11%".
+    */
+    .select(`${baseSelect}, ${embedPrazo}`, { count: "exact" })
     .order("last_activity_at", { ascending: false })
     .limit(ROW_LIMIT);
 
@@ -261,27 +287,72 @@ export default async function AtendimentoPage({
   const cases = (casesResult.data ?? []) as unknown as SupportCaseRow[];
   const error = casesResult.error ?? accountsResult.error;
 
+  /*
+    A JANELA DECLARADA, no lugar de "os 100 com atividade mais recente".
+
+    `ROW_LIMIT` é 100 e esta tela não pagina — a nota antiga dizia "paginação
+    entra quando o volume real justificar", e o volume passou a justificar: 929
+    abertos no Dev. Enquanto a paginação não entra, a frase ao menos diz 100 DE
+    QUANTOS, que é o mínimo de D-131.
+  */
+  const totalCount = casesResult.count ?? cases.length;
+  const janela = summarizePagedWindow({
+    page: 1,
+    totalCount,
+    rowsOnPage: cases.length,
+    pageSize: ROW_LIMIT,
+    noun: { singular: "atendimento", plural: "atendimentos" },
+    emptyLabel: "Nenhum atendimento com estes filtros.",
+    trailing: ", por atividade mais recente",
+  });
+
   const current = { account: accountSlug, channel, status, prazo: prazoRisco };
 
   return (
     <Shell>
-      <div style={{ display: "flex", alignItems: "baseline", gap: "var(--sb-space-3)", flexWrap: "wrap" }}>
-        <h1 style={{ margin: "0 0 var(--sb-space-1)", fontSize: "1.375rem" }}>Caixa de Entrada</h1>
-        <Link href="/atendimento/templates" style={{ fontSize: "0.8125rem", color: "var(--sb-secondary)" }}>
-          Templates de resposta
-        </Link>
-        <Link href="/atendimento/conhecimento" style={{ fontSize: "0.8125rem", color: "var(--sb-secondary)" }}>
-          Base de Conhecimento
-        </Link>
-        <Link href="/atendimento/metricas" style={{ fontSize: "0.8125rem", color: "var(--sb-secondary)" }}>
-          Métricas
-        </Link>
-      </div>
-      <p style={{ margin: "0 0 var(--sb-space-3)", color: "var(--sb-text-soft)", fontSize: "0.875rem" }}>
-        {/* Corrigido em D-111 — dizia "só perguntas são sincronizadas",
-            congelado de D-090; os três canais sincronizam desde D-097/D-108. */}
-        Perguntas, mensagens pós-venda e reclamações das contas Mercado Livre.
-      </p>
+      <PageTitle
+        eyebrow="ATENDIMENTO / OPERAÇÃO"
+        title="Caixa de Entrada"
+        subtitle={
+          <>
+            {/* Corrigido em D-111 — dizia "só perguntas são sincronizadas",
+                congelado de D-090; os três canais sincronizam desde D-097/D-108. */}
+            Perguntas, mensagens pós-venda e reclamações das contas Mercado Livre.
+          </>
+        }
+        aside={
+          <>
+            <Link href="/atendimento/templates" style={{ fontSize: "0.6875rem", color: "var(--sb-secondary)" }}>
+              Templates de resposta
+            </Link>
+            <Link href="/atendimento/conhecimento" style={{ fontSize: "0.6875rem", color: "var(--sb-secondary)" }}>
+              Base de Conhecimento
+            </Link>
+            <Link href="/atendimento/metricas" style={{ fontSize: "0.6875rem", color: "var(--sb-secondary)" }}>
+              Métricas
+            </Link>
+          </>
+        }
+      />
+
+      {/*
+        O `support-overview` do frame: um selo, UM número e uma nota — não é
+        faixa de KPIs. Ele trata cada fila como tela própria, e o número dele é
+        o daquela fila; aqui é o do RECORTE ATUAL, que é exatamente o que a
+        tabela mostra, para cabeçalho e corpo não discordarem (D-236).
+
+        A legenda do frame ("Fila priorizada por prazo, risco e cliente") NÃO
+        entrou: a fila ordena por `last_activity_at desc`, não por prazo nem
+        risco. Afirmar priorização que não acontece é pior do que não dizer
+        nada, porque o operador confiaria no topo da lista.
+      */}
+      {error === null && (
+        <div className="sb-stat" style={{ marginBottom: "var(--sb-space-3)", maxWidth: "24rem" }}>
+          <span className="sb-stat-label">No recorte</span>
+          <b className="sb-stat-value">{formatCount(totalCount)}</b>
+          <span className="sb-stat-note">{janela.label}</span>
+        </div>
+      )}
 
       {error !== null && (
         <p role="alert" style={{ color: "var(--sb-danger)" }}>
@@ -342,42 +413,70 @@ export default async function AtendimentoPage({
       )}
 
       {error === null && cases.length > 0 && (
-        <>
+        <Panel
+          title="Fila de atendimentos"
+          subtitle="Prazo, tipo, produto e conta visíveis antes de abrir o caso."
+        >
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <table className="sb-table">
               <thead>
                 <tr>
-                  <th style={th}>Conta</th>
-                  <th style={th}>Tipo</th>
-                  <th style={th}>Produto / referência</th>
-                  <th style={th}>Triagem</th>
-                  <th style={th}>Resposta</th>
-                  <th style={th}>Última atividade</th>
+                  <th>Prioridade</th>
+                  {/*
+                    O frame trata Perguntas, Mensagens, Reclamações, Devoluções
+                    e Mediações como CINCO telas. Aqui são cinco recortes de uma
+                    fila só — e essa decisão não é desta fatia: **D-084 já a
+                    tomou**, porque mediação e devolução são FACETAS do claim,
+                    não canais próprios. O cabeçalho deste arquivo diz isso
+                    desde então ("uma tela, não seis").
+
+                    Por isso o tipo precisa ser coluna: com as cinco filas
+                    juntas, sem ela a linha não diz de qual veio.
+                  */}
+                  <th>Tipo</th>
+                  <th>Conta</th>
+                  <th>Produto / referência</th>
+                  {/*
+                    A coluna que o frame acrescenta e que o dado já sustentava
+                    sem aparecer: `due_at` existe em 2.059 prazos no Dev e até
+                    aqui só servia de filtro.
+                  */}
+                  <th>SLA</th>
+                  <th>Status</th>
+                  {/*
+                    Onde o frame põe "Responsável". A célula é maior que o
+                    rótulo dele: `TriageCell` controla prioridade E atribuição
+                    na mesma escrita atômica (D-094), então o cabeçalho diz o
+                    que ela é de verdade.
+                  */}
+                  <th>Triagem</th>
+                  <th>Última atividade</th>
                 </tr>
               </thead>
               <tbody>
                 {cases.map((row) => {
                   const reference = resolveSupportCaseReference(row.support_case_links);
                   const rowFacets = facets(row);
+                  const prazo = prazoVigente(row.support_case_deadlines);
 
                   return (
                     <tr key={row.id}>
-                      <td style={td}>{row.ml_accounts?.label ?? "—"}</td>
-                      <td style={td}>
-                        <Link href={`/atendimento/${row.id}`} style={{ color: "var(--sb-primary)" }}>
-                          {supportChannelLabel(row.channel)}
-                        </Link>
-                        {rowFacets.length > 0 && (
-                          <div style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
-                            {rowFacets.join(" · ")}
-                          </div>
-                        )}
-                        <div style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
+                      <td>
+                        <StatusPill code={row.priority} label={supportPriorityLabel(row.priority)} />
+                      </td>
+
+                      <td>
+                        <Link href={`/atendimento/${row.id}`}>{supportChannelLabel(row.channel)}</Link>
+                        {rowFacets.length > 0 && <div className="sb-mono">{rowFacets.join(" · ")}</div>}
+                        <div className="sb-mono">
                           #{row.external_case_id}
                           {row.external_status !== null && ` · ${row.external_status}`}
                         </div>
                       </td>
-                      <td style={td}>
+
+                      <td>{row.ml_accounts?.label ?? "—"}</td>
+
+                      <td>
                         {reference === null ? (
                           "—"
                         ) : (
@@ -385,26 +484,32 @@ export default async function AtendimentoPage({
                             {reference.href === null ? (
                               <span>{reference.code}</span>
                             ) : (
-                              <Link href={reference.href} style={{ color: "var(--sb-primary)" }}>
-                                {reference.code}
-                              </Link>
+                              <Link href={reference.href}>{reference.code}</Link>
                             )}
-                            {reference.title !== null && (
-                              <div style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
-                                {reference.title}
-                              </div>
-                            )}
+                            {reference.title !== null && <div className="sb-mono">{reference.title}</div>}
                           </>
                         )}
                       </td>
-                      <td style={td}>
-                        <div style={{ display: "flex", gap: "0.25rem", marginBottom: "0.25rem" }}>
+
+                      {/* Sem prazo ativo é "—", nunca "no prazo": ninguém mediu isso. */}
+                      <td style={{ whiteSpace: "nowrap" }}>
+                        {prazo === null ? <span style={{ color: "var(--sb-text-soft)" }}>—</span> : formatDateTime(prazo)}
+                      </td>
+
+                      <td>
+                        <StatusPill
+                          code={row.internal_status}
+                          label={supportInternalStatusLabel(row.internal_status)}
+                        />
+                        <div style={{ marginTop: "0.25rem" }}>
                           <StatusPill
-                            code={row.internal_status}
-                            label={supportInternalStatusLabel(row.internal_status)}
+                            code={row.remote_reply_state}
+                            label={supportReplyStateLabel(row.remote_reply_state)}
                           />
-                          <StatusPill code={row.priority} label={supportPriorityLabel(row.priority)} />
                         </div>
+                      </td>
+
+                      <td>
                         <TriageCell
                           triage={{
                             id: row.id,
@@ -416,27 +521,15 @@ export default async function AtendimentoPage({
                           }}
                         />
                       </td>
-                      <td style={td}>
-                        <StatusPill
-                          code={row.remote_reply_state}
-                          label={supportReplyStateLabel(row.remote_reply_state)}
-                        />
-                      </td>
-                      <td style={td}>{formatDateTime(row.last_activity_at)}</td>
+
+                      <td style={{ whiteSpace: "nowrap" }}>{formatDateTime(row.last_activity_at)}</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
-
-          {cases.length === ROW_LIMIT && (
-            <p style={{ marginTop: "var(--sb-space-2)", color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
-              Mostrando os {ROW_LIMIT} atendimentos com atividade mais recente. Use os filtros para
-              estreitar — paginação entra quando o volume real justificar.
-            </p>
-          )}
-        </>
+        </Panel>
       )}
     </Shell>
   );
