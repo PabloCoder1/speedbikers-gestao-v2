@@ -1053,7 +1053,7 @@ que a página já tem: sem isso, o não-ADMIN leria "nenhuma falha" e acreditari
 
 **Verificação:** `check` 29/29 (`--force`), build 8/8, integração **643/643**
 (+9), e2e **99/99** (+2), cinco guardas verdes. Painel renderizado a 1440px.
-**Pendente:** `db push` para o Dev e tipos pelo MCP.
+A migration já foi aplicada no Dev pela esteira; os tipos vieram do gerador do MCP.
 
 ## Próxima fatia segura
 
@@ -1142,6 +1142,6 @@ do seed — ou algum spec anterior já escreveu por cima dele?**
   refeita dentro, devolvendo AGREGADO. O firehose ATRAVESSA o recorte de falhas
   (78% delas também são webhook), então a lista crua não resolveria — quem
   resolve é agrupar por assinatura do motivo: **170 motivos crus viram 16
-  linhas**. **Pendente:** `db push` para o Dev e regeração dos tipos pelo MCP.
+  linhas**. A migration foi aplicada no Dev pela esteira, e os tipos já vieram do gerador do MCP.
 - **A gaveta do Copiloto** — precisa de parâmetro de contexto na API e de
   ferramentas além de venda (D-276).

@@ -7413,8 +7413,9 @@ describe("get_job_failures (D-291, execucoes que falharam)", () => {
 
   /**
    * A assinatura e contrato: `apps/web/app/sincronizacao/page.tsx` le estas
-   * colunas e `packages/db/src/types.ts` carrega a ENTRADA MANUAL delas (a
-   * migration ainda nao passou pelo gerador do MCP). Se divergirem, este teste
+   * colunas e `packages/db/src/types.ts` as carrega a partir do gerador do MCP
+   * (a entrada nasceu manual, e foi substituida pela gerada assim que a
+   * migration chegou ao Dev). Se divergirem, este teste
    * reprova antes do CI — e o que NAO pode aparecer aqui e chave interna do
    * worker: `dedupe_key` (19% carregam UUID solto), `job_id`, `attempt`.
    */

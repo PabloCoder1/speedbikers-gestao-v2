@@ -4157,6 +4157,22 @@ export type Database = {
         Args: { p_from: string; p_organization_id: string; p_to: string }
         Returns: number
       }
+      get_job_failures: {
+        Args: { p_days?: number; p_limit?: number }
+        Returns: {
+          distinct_reasons: number
+          failures: number
+          first_failed_at: string
+          job_type: string
+          last_failed_at: string
+          reason_signature: string
+          retryable_failures: number
+          // CORRECAO MANUAL (classe D-133): o `array_agg(...)[1]` devolve NULL
+          // quando a familia inteira nao tem motivo registrado -- `reason` e
+          // opcional em `failed` (o CHECK exige `retryable`, nao `reason`).
+          sample_reason: string | null
+        }[]
+      }
       get_link_integrity: {
         Args: { p_days?: number; p_organization_id: string }
         Returns: {
@@ -4312,26 +4328,6 @@ export type Database = {
           total_count: number
           units_sold: number
           visits: number
-        }[]
-      }
-      // ENTRADA MANUAL (D-291): a migration `20260909190000` ainda nao passou
-      // pelo gerador do MCP, que le o Dev. A assinatura aqui foi copiada de
-      // `pg_get_function_result` no banco local, e o teste de integracao a fixa
-      // -- se divergirem, ele reprova antes do CI.
-      get_job_failures: {
-        Args: { p_days?: number | null; p_limit?: number | null }
-        Returns: {
-          job_type: string
-          reason_signature: string
-          failures: number
-          distinct_reasons: number
-          retryable_failures: number
-          first_failed_at: string
-          last_failed_at: string
-          // O `array_agg(...)[1]` devolve NULL quando a familia inteira nao
-          // tem motivo registrado -- `reason` e opcional em `failed` (o CHECK
-          // exige `retryable`, nao `reason`).
-          sample_reason: string | null
         }[]
       }
       get_processing_health: {

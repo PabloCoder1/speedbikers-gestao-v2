@@ -7937,7 +7937,7 @@ O seed ganhou duas falhas que diferem **so no id do anuncio** -- a miniatura do 
 
 `packages/db/src/types.ts` e gerado pelo MCP a partir do **Dev**, e esta migration ainda nao foi empurrada. A entrada de `get_job_failures` foi escrita a mao, copiada de `pg_get_function_result` no banco local e marcada como ENTRADA MANUAL -- com o teste de assinatura fixando as 8 colunas, para que a divergencia reprove antes do CI em vez de aparecer em producao.
 
-**PENDENTE, e e o proximo passo desta fatia:** `supabase db push` para o Dev (migration nunca vai por MCP) e regeracao dos tipos pelo MCP depois.
+**RESOLVIDO no mesmo dia:** a branch foi empurrada, a CI aplicou a migration no Dev (`supabase_migrations.schema_migrations` em `20260909190000`, funcao e indice conferidos), e os tipos foram regerados pelo MCP -- a entrada manual deu lugar a gerada, na posicao em que o gerador a poe, com UMA correcao manual marcada (`sample_reason` anulavel, classe D-133). Migration nunca vai por MCP: quem aplica e o `db push` da esteira.
 
 **Impacto:** `supabase/migrations/20260909190000_create_job_failures_rpc.sql` (novo), `apps/web/app/sincronizacao/page.tsx`, `packages/db/src/types.ts` (entrada manual), `packages/db/src/rls.integration.test.ts` (+9 casos e a lista de D-182), `apps/web/e2e/{seed,sincronizacao.spec}.ts` (+2 casos).
 
