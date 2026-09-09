@@ -689,23 +689,23 @@ Ponderado, não por contagem de páginas. Uma superfície "implementada" mas
 distante do frame não vale 100: estrutura = 50, + dados reais = 65, + design
 próximo = 80, validada contra o Figma = 95, + cleanup + testes = 100.
 
-| Bloco | Peso | A1 | A2 | D13 | A3 | **D38/D39** |
-|---|---:|---:|---:|---:|---:|---:|
-| Shell + navegação | 8 | 86% | 91% | 91% | 91% | 91% |
-| Design system (tokens, componentes, tabela, campo, menu, chip, modal) | 10 | 80% | 88% | 88% | 88% | 88% |
-| Home | 6 | 87% | 87% | 87% | 87% | 87% |
-| Vendas | 8 | 85% | 88% | 88% | 88% | 88% |
-| **Produtos** | 5 | 83% | 83% | 83% | 83% | **90%** |
-| Dashboard de SKU (nove abas) | 10 | 82% | 88% | 88% | 88% | 88% |
-| Anúncios — lista | 6 | 86% | 86% | 86% | 86% | 86% |
-| **Anúncio — detalhe (oito abas)** | 5 | 25% | 25% | **84%** | 84% | 84% |
-| **D14–D17** (Estoque, Reposição, Curva ABC, Movimentações) | 8 | 25% | 25% | 25% | **88%** | 88% |
-| **D18/D20** (NF-e, Fornecedores) — frames que são ESBOÇO | 4 | 25% | 25% | 25% | **90%** | 90% |
-| **D19** (Compras) | 3 | 25% | 25% | 25% | **95%** | 95% |
-| **D21** (Integridade de Catálogo) | 4 | 25% | 25% | 25% | **92%** | 92% |
-| 16 telas D22–D36 — **entregues, nunca re-fotografadas** | 22 | 25% | 25% | 25% | 25% | 25% |
-| **Drawers do frame** (Inspeção Rápida, MLB, pedido, fornecedor, usuário) | 4 | 0% | 0% | 0% | 0% | **86%** |
-| Passe visual global + passo cinza | 3 | 0% | 0% | 0% | 0% | 0% |
+| Bloco | Peso | A1 | A2 | D13 | A3 | D38/D39 | **A4** |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Shell + navegação | 8 | 86% | 91% | 91% | 91% | 91% | 91% |
+| Design system (tokens, componentes, tabela, campo, menu, chip, modal) | 10 | 80% | 88% | 88% | 88% | 88% | **82%** |
+| Home | 6 | 87% | 87% | 87% | 87% | 87% | 87% |
+| Vendas | 8 | 85% | 88% | 88% | 88% | 88% | 88% |
+| **Produtos** | 5 | 83% | 83% | 83% | 83% | **90%** | 90% |
+| Dashboard de SKU (nove abas) | 10 | 82% | 88% | 88% | 88% | 88% | 88% |
+| Anúncios — lista | 6 | 86% | 86% | 86% | 86% | 86% | 86% |
+| **Anúncio — detalhe (oito abas)** | 5 | 25% | 25% | **84%** | 84% | 84% | 84% |
+| **D14–D17** (Estoque, Reposição, Curva ABC, Movimentações) | 8 | 25% | 25% | 25% | **88%** | 88% | 88% |
+| **D18/D20** (NF-e, Fornecedores) — frames que são ESBOÇO | 4 | 25% | 25% | 25% | **90%** | 90% | 90% |
+| **D19** (Compras) | 3 | 25% | 25% | 25% | **95%** | 95% | 95% |
+| **D21** (Integridade de Catálogo) | 4 | 25% | 25% | 25% | **92%** | 92% | 92% |
+| **14 telas D22–D36** (eram "16" por contagem errada) | 22 | 25% | 25% | 25% | 25% | 25% | **88%** |
+| **Drawers do frame** (Inspeção Rápida, MLB, pedido, fornecedor, usuário) | 4 | 0% | 0% | 0% | 0% | **86%** | 86% |
+| Passe visual global + passo cinza | 3 | 0% | 0% | 0% | 0% | 0% | 0% |
 
 **A coluna D38/D39 mexe em DUAS linhas, e só nelas.** São as duas que estas
 fatias renderizaram (1440px e 850px, Supabase local, login real): `/produtos`,
@@ -716,16 +716,21 @@ recusam abas que o frame desenha (as oito do anúncio, as cinco do fornecedor),
 e recusa medida continua sendo diferença. As outras treze linhas são cópia de
 A3, não medição nova.
 
-⚠️ **O total ponderado continua sendo o de A3, e ele está DEFASADO PARA BAIXO.**
-A linha das "16 telas D22–D36" vale 22 pontos e está em 25% porque nenhuma foi
-re-fotografada — mas as dezesseis foram entregues (D-260→D-276). Corrigir esse
-número exige a auditoria de render que a própria regra deste bloco impõe, e
-estender por contagem de código produziria exatamente o número que esta seção
-existe para não produzir. **É a maior fatia de medição pendente da frente.**
+✅ **A dívida de medição que esta seção anunciava FOI PAGA em A4.** A linha
+valia 22 pontos e estava em 25% porque nenhuma das telas fora re-fotografada;
+as catorze foram, e o bloco subiu para 88%. A regra continua valendo para
+qualquer bloco futuro: **coluna nova só depois de comparar o renderizado com o
+frame** — nunca por contagem de código.
 
-**≈ 72% concluído · ≈ 28% restante** — número de A3, e o aviso acima explica
-por que ele é PISO, não valor corrente. O número só sobe quando o resultado
-renderizado se aproxima do frame — não quando código é escrito.
+**≈ 85% concluído · ≈ 15% restante** (A4). O número só sobe quando o resultado
+renderizado se aproxima do frame — não quando código é escrito, e **também
+desce**: o bloco do design system caiu de 88% para 82% porque a auditoria
+fotografou duas gramáticas de controle na mesma tela.
+
+O ≈72% anterior era o piso de A3, e o que o segurava era uma linha de 22 pontos
+contada a 25% sem nunca ter sido medida. Agora foi: **88%** nas catorze telas de
+D22–D36. O que resta é quase todo o **passe visual global + passo cinza**, que
+segue em 0.
 
 **A coluna A3 é a primeira em que essa regra foi cumprida desde D13.** As
 fatias D14–D21 tinham ficado sem coluna de propósito: o bloco estava marcado
@@ -805,9 +810,117 @@ dois, nunca `.next/dev` ou `.next/cache`, que guardam resíduo do dev server e
 dão falso positivo.
 
 
+## Auditoria A4 — as 14 telas de D22 a D36, renderizadas
+
+Feita em 2026-09-09, **renderizando as catorze** a 1440px contra o Supabase
+local com login real, e as cinco de mestre-detalhe também a 850px. Cada uma
+comparada ao frame que a origina no export. É a medição que faltava desde D22:
+o bloco valia 22 dos 106 pontos do progresso e estava contado a 25% porque
+**nenhuma tinha sido fotografada** — não porque alguém as tivesse medido baixo.
+
+**Primeiro achado, e é de contagem:** a linha dizia "16 telas". São **14**.
+D22→D36 são quinze fatias, D26 (Tráfego) foi recusada com medição (D-266), e
+nenhuma das outras entregou duas rotas. O 16 nunca foi contado.
+
+### O veredito por superfície
+
+| Tela | Frame | Antes → depois | O que restou |
+|---|---|---:|---|
+| `/diagnostico` (D22) | `Diagnostic` | 25 → **90%** | a nota do Copiloto embrulha um cartão branco com botão; o frame tem parágrafo + `text-button` |
+| `/acoes` (D23) | `IntelligenceScreen actions` | 25 → **95%** | a mais fiel do lote: painel de filtros, fila em cartões e as três recusas (lote, menu de ordenação, hover) medidas em D-263 |
+| `/precos` (D24) | `IntelligenceScreen pricing` | 25 → **92%** | a faixa é `KpiStrip` onde o frame tem quatro cartões com borda de tom; "Direção" é texto, o frame usa chip |
+| `/full` (D25) | `IntelligenceScreen full` | 25 → **92%** | cinco células contra as quatro do frame — e a partição fecha (D-265); "Atualizado há X" virou a coluna CAPTURADO |
+| `/atendimento` (D27) | `Sac` | 25 → **78%** | **a mais distante, e o desvio não estava escrito** — ver abaixo |
+| `/atendimento/conhecimento` (D28) | `KnowledgeScreen` | 25 → **80%** | metade de cima migrada; o formulário tem campo e botão CRUS |
+| `/notificacoes` (D29) | `CentralScreen` | 25 → **85%** | o mestre-detalhe foi recusado com medição (D-269); o que sobrou é a lista mais simples do lote |
+| `/sugestoes` (D30) | `CentralScreen` | 25 → **92%** | mestre-detalhe fiel ao `.central-list`/`.central-detail`, com a sobrancelha exata do frame |
+| `/usuarios` (D31) | `AdminScreen users` | 25 → **90%** | o papel é `<select>` e não selo — é controle, não leitura (D-275); sem busca no painel |
+| `/integracoes` (D32) | `AdminScreen integrations` | 25 → **88%** | seis painéis de largura inteira onde o frame tem grade de dois: **1.857px**, a tela mais alta do lote |
+| `/sincronizacao` (D33) | `AdminScreen admin` | 25 → **90%** | painel "Contas conectadas" com um chip só ocupa uma faixa inteira |
+| `/saude` (D34) | `AdminScreen systemHealth` | 25 → **92%** | a âncora navy ficou no lugar do banner de uptime que não tem fonte (D-274) |
+| `/configuracoes` (D35) | `AdminScreen settings` | 25 → **90%** | grade de três; o frame tem nav lateral + dois interruptores, recusados em D-275 |
+| `/copiloto` (D36) | gaveta do Copiloto | 25 → **85%** | a gaveta de 430px virou página de 1.150px e a lista de prompts herdou a largura estreita |
+
+**Média do bloco: 88%.** Nenhuma das catorze tem defeito funcional: as catorze
+responderam **200**, zero erro de console (fora o WebSocket do realtime local,
+que não sobe no `supabase start`), e o `UNKNOWN` de `/saude` é o estado honesto
+de quem capturou sem a API no ar.
+
+### P2-1 — campo e botão nunca entraram no design system, e voltaram a nascer inline DEPOIS da migração
+
+O achado mais caro da auditoria, e ele é sistêmico:
+
+| | |
+|---|---|
+| evidência V3 | `app/atendimento/conhecimento/new-knowledge-form.tsx` declara `const input` (14px, raio 8px) em vez de `.sb-input`; **quatro** arquivos declaram um `const buttonStyle` próprio — `/acoes/action-card.tsx:66`, `/compras/[id]/actions-panel.tsx`, `/notas-fiscais/[id]/document-item-row.tsx`, `/vinculacoes/candidate-row.tsx` — com raio 8px e 12px |
+| medido | **59 campos em 29 arquivos** sem `.sb-input`; **59 botões em 35 arquivos** sem classe do design system |
+| evidência Figma | o export tem UMA forma de botão (`.button`: 32px, 11px, raio 6px) e uma de campo |
+| por que passou | `check:table-styles` guarda a TABELA (D-262). **Campo e botão não têm guarda** — e é exatamente onde a migração pela metade reapareceu |
+
+É a mesma classe dos cinco mapas de tom de D-246 e do `const td` que A3b achou:
+o padrão volta quando não há quem o reprove. **Por isso o bloco "Design system"
+CAI de 88% para 82% nesta coluna** — a auditoria mede o que está na tela, e o
+que está na tela são duas gramáticas de controle convivendo.
+
+### P2-2 — `/atendimento` é a superfície mais distante, e o desvio não estava registrado
+
+O frame `Sac` é um **inbox de três colunas numa tela só** — fila de 300px,
+conversa no centro, contexto do cliente em 320px. A V3 é uma **lista tabular**,
+e a conversa mora em `/atendimento/[caseId]`, outra rota.
+
+D-267 registrou a ORDEM da fila e as colunas que o dado não sustenta. **A
+composição de três colunas não está registrada em lugar nenhum** — não é recusa
+medida, é diferença que ninguém escreveu. Some-se: a faixa tem **uma célula
+só** ("No recorte 1"), que é um `KpiStrip` virando cartão solitário, e três
+fileiras de `FilterPill` onde o frame tem duas abas.
+
+### P3 — quatro acabamentos, com evidência dos dois lados
+
+1. **o chip de estado estica** nos itens de `/diagnostico` e `/sugestoes`:
+   `.sb-diagnostic-item` é `grid`, e o `.sb-status` ocupa a coluna inteira, com
+   cara de faixa. **O export tem a mesma regra** (`.diagnostic-item{display:grid}`),
+   então é herdado — mas o Design Contract define o chip como pílula de 4px, e
+   `width: max-content` é uma linha;
+2. **`/integracoes` desperdiça largura**: tabelas de três linhas em painéis de
+   largura inteira, 1.857px de rolagem contra os ~880px de `/configuracoes`,
+   que resolve o mesmo problema com grade de três;
+3. **`/copiloto` tem área morta à direita** — a lista de prompts nasceu para
+   uma gaveta de 430px;
+4. **a nota do Copiloto em `/diagnostico`** virou caixa dentro de caixa.
+
+### O que a auditoria NÃO achou
+
+Nenhum defeito de dado, nenhuma tabela sem `.sb-table`, nenhum `PageTitle`
+faltando, nenhuma tela sem `ObjectHeader` onde o frame pede um. As recusas
+registradas (D-260, D-263, D-265, D-269, D-271, D-274, D-275, D-276)
+**conferem uma a uma com o que a tela mostra** — foram conferidas contra o
+render, não contra o texto delas.
+
+### Método, para a próxima repetir
+
+Um probe único: login real, navegação pelas catorze rotas, e em cada uma
+`screenshot` + um JSON estrutural (sobrancelha, h1, subtítulo, células da
+faixa, títulos de painel, cabeçalhos de tabela, contagem de linhas, estados
+vazios, alertas). **A captura de página inteira não funciona neste shell**: o
+`<html>` tem altura fixa e quem rola é `.sb-content`, então `fullPage: true`
+devolve sempre a dobra — a viewport cresce até `.sb-content.scrollHeight` antes
+do disparo. Foi o que revelou os 1.857px de `/integracoes`.
+
 ## Revisão visual necessária
 
-**Nenhuma.** A dívida que A3 deixou — os chips "ver lista" desalinhando quando
+**Três, e todas achadas por A4** (detalhe e evidência na seção da auditoria):
+
+1. **P2 — campo e botão fora do design system**, em 29 e 35 arquivos, com
+   quatro cópias de um `const buttonStyle`. É a próxima fatia (A5) e leva um
+   guarda junto, no molde de `check:table-styles`;
+2. **P2 — `/atendimento`**: o frame é inbox de três colunas e a V3 é lista +
+   rota de detalhe. Ou vira desvio registrado com motivo, ou vira fatia;
+3. **P3 — os quatro acabamentos** de A4 (chip esticado, largura ociosa em
+   `/integracoes` e `/copiloto`, nota do Copiloto encaixotada).
+
+O texto abaixo é de A3 e continua valendo para o que ele mediu.
+
+**Nenhuma** (à época de A3). A dívida que A3 deixou — os chips "ver lista" desalinhando quando
 uma célula tem ressalva de duas linhas — foi fechada em **A3b** (D-261):
 `.sb-kpi` virou coluna flex com `margin-top: auto` no link, verificado com
 captura antes/depois das **8** telas com faixa (eram 8, não "7+": Cobertura e
@@ -933,11 +1046,17 @@ Em ordem de risco medido:
    D39/D-282), sob a regra de que a gaveta resume e leva à tela. O que
    permanece fora são as ABAS que o frame desenha dentro de duas delas, e isso
    é recusa medida, não pendência.
-3. **A auditoria de render de D22–D36** — dezesseis telas entregues e nunca
-   re-fotografadas. Valem 22 dos 106 pontos do bloco de progresso e continuam
-   contadas a 25%; é a maior fatia de MEDIÇÃO pendente da frente, e o método já
-   existe (A3/A3b).
-4. Os **sete itens abertos** listados abaixo.
+3. ~~**A auditoria de render de D22–D36**~~ — **FEITA (A4)**: as catorze telas
+   renderizadas e medidas, bloco de 25% para **88%**, e o total da frente de
+   ≈72% (piso) para **≈85% medido**.
+4. **A5 — o passe de campo e botão**, que é o que A4 achou de mais sistêmico:
+   `.sb-input` e `.sb-button` nos **29 + 35 arquivos** que ainda declaram estilo
+   inline (quatro deles com um `const buttonStyle` próprio), **mais o guarda**
+   `check:control-styles` na esteira, no molde de `check:table-styles`. Sem o
+   guarda, o padrão volta — foi assim que ele voltou depois da migração.
+5. **`/atendimento`**: decidir entre registrar o inbox de três colunas como
+   desvio com motivo, ou implementá-lo. Hoje não é nem uma coisa nem outra.
+6. Os **sete itens abertos** listados abaixo.
 
 ⚠️ **O que D-279 listou aqui como item 1 — "`get_purchase_suggestions` não
 classifica nenhum SKU" — NÃO EXISTE.** Era erro de medição meu (`p_date_to`
@@ -954,7 +1073,8 @@ passa na tela errada?** (D-276), **o desenho é desta ENTIDADE?** (D-277), **a
 FORMA do meu fixture é a forma real?** (D-278), de D-279, **a recusa que eu
 registrei foi medida ou só raciocinada?**, de D-281, **o que eu estou
 afirmando aparece no `innerText` — ou só na captura?** e, de D-282, **este
-registro ainda é verdade, ou a rota que ele nega já nasceu?**
+registro ainda é verdade, ou a rota que ele nega já nasceu?** e, de A4,
+**existe guarda para este padrão — ou ele volta assim que eu virar as costas?**
 
 **Sete itens seguem abertos fora da fila:**
 

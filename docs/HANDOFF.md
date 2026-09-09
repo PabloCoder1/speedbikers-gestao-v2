@@ -14,12 +14,12 @@
 |---|---|
 | **Atualizado em** | 2026-09-09 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `9e0d06e` (D-282, **D39**) — **as cinco gavetas do Figma entregues** (D38 a primeira, D39 as quatro restantes) e **a composição do desenho fechou**: não resta elemento do frame por implementar. Antes: `4ee0a5f` (D-279, D37c), quando a migração de superfícies fechou (D0→D25, D27→D36 + passe D37a/b/c; D26 recusada com medição, D-266) |
+| **HEAD conhecido** | **A4** (D-283) — auditoria de render de D22–D36. Antes: `9e0d06e` (D-282, **D39**) — **as cinco gavetas do Figma entregues** (D38 a primeira, D39 as quatro restantes) e **a composição do desenho fechou**: não resta elemento do frame por implementar. Antes: `4ee0a5f` (D-279, D37c), quando a migração de superfícies fechou (D0→D25, D27→D36 + passe D37a/b/c; D26 recusada com medição, D-266) |
 | **Fechamento da V3** | **185 de 213 itens do ROADMAP fechados (87%)** — 26 abertos e 2 parciais. Dos 26, **6 são bloqueadores**, e todos são hardening/lançamento: nenhum é feature faltando (D-223) |
 | **Deploy no ar** | ⚠️ **`0702969`, e o `HEAD` está 76 commits à frente** (`git rev-list --count 0702969..HEAD` em 2026-09-09; eram 64 em 08/09). A última verificação contra a infraestrutura foi em 2026-09-02 e dizia "sem atraso" — verdade **naquele dia**, e a linha continuou afirmando isso enquanto o `HEAD` andava: o risco de D-070. Os commits **tocam `apps/api` e `apps/worker`** (copiloto, `ml-fulfillment-fetch`, `sync-fulfillment-snapshot`, `sync-order-financials`), então não é atraso só de front. **Se o deploy avançou desde então, não dá para saber daqui** -- conferir `APP_COMMIT` nos dois serviços antes de concluir qualquer coisa sobre produção. Referência da última medição: `api-00030-gqw` / `worker-00045-cwq`, `/health` em `{"commit":"0702969"}` |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | **153 locais** — as três da frente visual (`20260908120000` D-263, `20260908180000` D-264, `20260908210000` D-265). As duas primeiras CONFERIDAS no Dev pelo catálogo; a de D-265 empurrada em seguida. ⚠️ **D-257 deixou de ser inferência**: no push de D23 a função já estava no Dev com a esteira em `in_progress`, e a esteira terminou VERDE nos cinco jobs — inclusive o de aplicar migrations, que passou tendo NADA a aplicar. Verde ali significa "não sobrou o que fazer", não "o portão segurou". ⚠️ Quem aplica no Dev é a integração GitHub do Supabase, **não** a CI (D-257). Antes dela: **131 locais, 130 no Dev** — o expurgo (`20260903120000`) está no git e **não pousou**; a CI não o aplicou, sem drift — D-209→D-212 aplicadas pela CI em 2026-09-02 e CONFERIDAS lá (`anon` alcança 0 funções; `ml_accounts` sem UPDATE/DELETE para `authenticated`; `created_by` presente). O caminho é o push, **nunca** o MCP (lição de D-207) |
-| **Frente atual** | **A COMPOSIÇÃO DO FIGMA FECHOU** (D-281, D-282): as cinco gavetas estão entregues e renderizadas, sob a regra de que **a gaveta resume e leva à tela** — por isso as abas que o frame desenha dentro de duas delas não entraram (são as telas cheias que já existem). A do PEDIDO é superfície nova: não existe tela de pedido de venda, e o Atendimento mostrava o número como texto morto. `check:table-styles` conta **30** telas e **nenhum arquivo do app tem `<table>` sem `.sb-table`**; a única `page.tsx` sem `PageTitle` ou `ObjectHeader` é `/login`, fora do `Shell` de propósito. `get_purchase_suggestions` classifica **466** SKUs com data real; um `p_date_to` nulo zerava a janela e produziu uma regressão que nunca existiu — a armadilha virou D-280. O que resta: **fundir `/cobertura` com `/reposicao`** (exige escolher UMA definição de ruptura — as duas discordam em 185 SKUs porque medem coisas diferentes), **a auditoria de render de D22–D36** (16 telas entregues e nunca re-fotografadas, que seguram 22 dos 106 pontos do bloco de progresso em 25% — a maior fatia de MEDIÇÃO pendente) e os sete itens abertos. Trilha 8B com P0 fechado (A–H) e em P1 |
+| **Frente atual** | **A COMPOSIÇÃO DO FIGMA FECHOU** (D-281, D-282): as cinco gavetas estão entregues e renderizadas, sob a regra de que **a gaveta resume e leva à tela** — por isso as abas que o frame desenha dentro de duas delas não entraram (são as telas cheias que já existem). A do PEDIDO é superfície nova: não existe tela de pedido de venda, e o Atendimento mostrava o número como texto morto. `check:table-styles` conta **30** telas e **nenhum arquivo do app tem `<table>` sem `.sb-table`**; a única `page.tsx` sem `PageTitle` ou `ObjectHeader` é `/login`, fora do `Shell` de propósito. `get_purchase_suggestions` classifica **466** SKUs com data real; um `p_date_to` nulo zerava a janela e produziu uma regressão que nunca existiu — a armadilha virou D-280. **A auditoria de render de D22–D36 FOI FEITA (A4, D-283)**: catorze telas (não dezesseis — a contagem estava errada), todas 200 e sem erro de console, bloco de 25% para **88%** e a frente de ≈72% (piso) para **≈85% medido**. Ela achou o que só o render acha: **campo e botão nunca entraram no design system** (59 campos em 29 arquivos, 59 botões em 35, quatro cópias de um `const buttonStyle`) porque `check:table-styles` guarda a tabela e nada guarda esses dois. O que resta: **A5 — o passe de campo e botão com o guarda junto**, decidir o inbox de três colunas de `/atendimento` (desvio ou fatia), **fundir `/cobertura` com `/reposicao`** (exige escolher UMA definição de ruptura — as duas discordam em 185 SKUs) e os sete itens abertos. Trilha 8B com P0 fechado (A–H) e em P1 |
 
 ### O que está pronto
 
@@ -39,18 +39,11 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 
 Medidos contra o Dev em 2026-09-01, não herdados de documentação.
 
-| | Item | Evidência |
-|---|---|---|
-| ~~P0-A~~ | ~~Contexto dos agentes~~ | ✅ corrigido em D-177 — bootstrap de ~1.245 KB para **7,6 KB**; `pnpm docs:check` guarda |
-| ~~P0-B~~ | ~~Writes sem verificação~~ | ✅ corrigido em D-178 — `assertWritten` aborta; 3 testes provam que nada posterior roda |
-| ~~P0-C~~ | ~~Webhooks sem consumidor viram task~~ | ✅ corrigido em D-179 — allowlist em `@sb/contracts`; **218.750 execuções/zero trabalho** deixam de ser enfileiradas — **no ar desde 2026-09-02** |
-| ~~P0-D~~ | ~~`has_role` sem organização~~ | ✅ corrigido em D-180 — `has_org_role` em 21 policies e 8 funções; `has_role` removido; +5 testes cross-org |
-| ~~P0-E~~ | ~~`SECURITY DEFINER` / `search_path` / policies duplicadas~~ | ✅ inventariado em D-182 — **nenhum dos três tinha vulnerabilidade**; advisor 33 → 26 WARN; allowlist das 25 RPCs virou teste de CI |
-| ~~P0-F~~ | ~~`get_stock_balances`~~ | ✅ corrigido em D-181 — **9.104 ms → 681 ms**, sem tocar na RPC |
-| ~~P0-G~~ | ~~`get_listings_dashboard`~~ | ✅ corrigido em D-181 — **timeout em 60 s → 271 ms**, sem tocar na RPC |
-| ~~P0-H~~ | ~~Demais RPCs fora do budget~~ | ✅ fechado em D-183 — `get_sku_sales_baseline` **1.334 ms → 49 ms**; `get_sku_timeline` nunca foi problema (3.308 ms era cache frio, o real é 57 ms); a Central de Notificações não estava lenta, estava **contando errado** |
-
-**Todo o P0 da trilha 8B fechou** — A a H. A frente passa para o P1.
+**Todo o P0 da trilha 8B fechou** — A a H, cada um com a sua decisão: contexto
+dos agentes (D-177), writes sem verificação (D-178), webhooks sem consumidor
+(D-179), `has_role` sem organização (D-180), `SECURITY DEFINER` (D-182, sem
+vulnerabilidade), e as três de desempenho (D-181, D-183). A frente passa para o
+P1.
 
 ✅ **O bloco P0 está completo — os nomeados E os três sem letra.** Ficam
 listados porque "P0 fechado, A a H" já foi o recorte só dos que tinham letra, e

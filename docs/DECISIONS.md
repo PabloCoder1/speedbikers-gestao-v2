@@ -7455,6 +7455,58 @@ O gatilho da gaveta de usuario nasceu dentro da celula "Pessoa", e isso mudou o 
 
 **Verificacao, local:** `check` **29/29**, build **8/8**, integracao **634/634** e e2e **87/87** em banco recriado (4 novos), `check:table-styles` 30, `check:server-actions` 21, `check:waterfalls` 61. As quatro renderizadas a 1440px contra o Supabase local com login real.
 
+## D-283 - A4: as catorze telas que ninguem tinha fotografado, e o padrao que voltou porque nao havia guarda
+
+**Contexto:** o bloco "16 telas D22-D36" valia **22 dos 106 pontos** do progresso visual e estava contado a **25%** -- nao porque alguem as tivesse medido baixo, mas porque **nenhuma tinha sido renderizada**. A propria regra do bloco proibe estender por contagem de codigo, entao o numero da frente inteira (≈72%) era piso, nao valor. O usuario pediu a auditoria.
+
+---
+
+**ANTES DE MEDIR, UM ERRO DE CONTAGEM**
+
+Sao **14**, nao 16. D22→D36 sao quinze fatias, D26 foi recusada com medicao (D-266) e nenhuma outra entregou duas rotas. O "16" nunca tinha sido contado -- e estava numa tabela que existe justamente para nao publicar numero nao medido.
+
+---
+
+**O RESULTADO: 25% → 88% NO BLOCO, ≈72% → ≈85% NA FRENTE**
+
+As catorze responderam **200**, sem um erro de console. Nenhum defeito de dado, nenhuma tabela fora de `.sb-table`, nenhuma tela sem `PageTitle`. As oito recusas registradas (D-260, D-263, D-265, D-269, D-271, D-274, D-275, D-276) foram conferidas **contra o render**, nao contra o texto delas, e conferem uma a uma.
+
+A tabela por tela esta em `docs/DESIGN_IMPLEMENTATION.md`, secao "Auditoria A4". Extremos: `/acoes` **95%** (a mais fiel do lote) e `/atendimento` **78%**.
+
+---
+
+**P2-1 -- CAMPO E BOTAO NUNCA ENTRARAM NO DESIGN SYSTEM, E VOLTARAM A NASCER INLINE DEPOIS DA MIGRACAO**
+
+O achado mais caro, e ele e sistemico:
+
+- `app/atendimento/conhecimento/new-knowledge-form.tsx` declara um `const input` (14px, raio 8px) em vez de `.sb-input` -- por isso o formulario da Base de Conhecimento aparece na captura com **botao nativo do sistema operacional** embaixo de um painel migrado;
+- **quatro** arquivos declaram um `const buttonStyle` proprio: `/acoes/action-card.tsx:66`, `/compras/[id]/actions-panel.tsx`, `/notas-fiscais/[id]/document-item-row.tsx`, `/vinculacoes/candidate-row.tsx` -- todos com raio 8px e 12px, contra `.sb-button` (32px de altura, 11px, raio 6px);
+- medido no repositorio: **59 campos em 29 arquivos** sem `.sb-input` e **59 botoes em 35 arquivos** sem classe do design system.
+
+**Por que passou:** `check:table-styles` guarda a TABELA (D-262). Campo e botao nao tem guarda -- e e exatamente onde a migracao pela metade reapareceu. E a mesma classe dos cinco mapas de tom de D-246 e do `const td` que A3b achou: **o padrao volta quando nao ha quem o reprove.**
+
+Consequencia na medicao: o bloco "Design system" **CAI de 88% para 82%**. Auditoria que so sobe numero nao esta medindo.
+
+---
+
+**P2-2 -- `/atendimento` E A MAIS DISTANTE, E O DESVIO NAO ESTAVA ESCRITO**
+
+O frame `Sac` e um inbox de **tres colunas numa tela so** (fila 300px | conversa | contexto 320px). A V3 e lista tabular, com a conversa em `/atendimento/[caseId]`.
+
+D-267 registrou a ORDEM da fila e as colunas sem fonte. **A composicao de tres colunas nao esta registrada em lugar nenhum**: nao e recusa medida, e diferenca que ninguem escreveu -- que e precisamente a distincao que o "Formato de desvio intencional" existe para manter. Some-se a faixa de UMA celula ("No recorte 1") e as tres fileiras de `FilterPill` onde o frame tem duas abas.
+
+---
+
+**O QUE O METODO APRENDEU, E VALE PARA A PROXIMA AUDITORIA**
+
+`fullPage: true` **nao funciona neste shell**: o `<html>` tem altura fixa e quem rola e `.sb-content`, entao a captura devolvia sempre a dobra -- as catorze telas relatavam `scrollHeight` 900, identico, que era o sinal. A viewport passa a crescer ate `.sb-content.scrollHeight` antes do disparo, e foi isso que revelou os **1.857px** de `/integracoes` (seis paineis de largura inteira onde o frame tem grade de dois).
+
+---
+
+**Impacto:** `docs/DESIGN_IMPLEMENTATION.md` (secao "Auditoria A4", coluna A4 na tabela de progresso, "Revisao visual necessaria" e "Proxima fatia segura"), `docs/HANDOFF.md`. Nenhuma linha de codigo: auditoria mede, nao conserta -- o conserto e A5.
+
+**Verificacao:** as catorze renderizadas a 1440px (e cinco tambem a 850px) contra o Supabase local com seed do e2e, login real pelo Playwright, `.next` conferido sem o ref do Dev antes de capturar (a licao de A3).
+
 ## Como adicionar nova decisao
 
 Registrar:
