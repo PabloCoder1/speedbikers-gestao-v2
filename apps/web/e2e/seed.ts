@@ -56,6 +56,7 @@ import {
   E2E_SUPPLIER_INATIVO,
   E2E_SKU_CODE,
   E2E_SKU_SALES,
+  E2E_SUGESTOES,
   E2E_USER_EMAIL,
   E2E_USER_PASSWORD,
 } from "./constants.js";
@@ -1286,6 +1287,50 @@ async function main(): Promise<void> {
 
     if (criado.error !== null) {
       throw criado.error;
+    }
+  }
+
+  /*
+    CENTRAL DE SUGESTÕES (D30). Zero linhas no Dev, e a tela tem duas escritas
+    sem spec. Duas entradas, e a diferença entre elas é o teste: a estruturação
+    por IA é sob demanda (D-112), então uma sugestão recém-escrita não tem os
+    nove campos — e o detalhe precisa dizer isso em vez de abrir vazio.
+
+    Existe-então-insere por (organização, texto original): não há chave natural.
+  */
+  for (const sugestao of [E2E_SUGESTOES.estruturada, E2E_SUGESTOES.crua]) {
+    const jaExiste = await db
+      .from("feature_suggestions")
+      .select("id")
+      .eq("organization_id", organizationId)
+      .eq("original_text", sugestao.originalText)
+      .maybeSingle();
+
+    if (jaExiste.error !== null) {
+      throw jaExiste.error;
+    }
+
+    if (jaExiste.data !== null) continue;
+
+    const estruturada = "title" in sugestao;
+
+    const criada = await db.from("feature_suggestions").insert({
+      organization_id: organizationId,
+      created_by: userId,
+      original_text: sugestao.originalText,
+      status: sugestao.status,
+      ...(estruturada
+        ? {
+            title: sugestao.title,
+            problem: sugestao.problem,
+            objective: sugestao.objective,
+            expected_benefit: sugestao.expectedBenefit,
+          }
+        : {}),
+    });
+
+    if (criada.error !== null) {
+      throw criada.error;
     }
   }
 

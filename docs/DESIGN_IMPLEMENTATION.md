@@ -623,7 +623,7 @@ que ele renderiza.**
 | D27 | **Caixa de Entrada** — a recusa é uma AFIRMAÇÃO SOBRE A ORDEM: o frame diz "fila priorizada por prazo, risco e cliente" e ela ordena por atividade (D-267) | ✔ |
 | D28 | **Base de Conhecimento** — base VAZIA no Dev, mas o esquema sustenta o frame inteiro: falta DADO, não coluna (D-268) | ✔ |
 | D29 | **Central de Notificações** — o painel de detalhe do frame repete a linha e inventa um "Impacto estimado" que não tem coluna (D-269) | ✔ |
-| D30 | **Sugestões** — a terceira variação de `CentralScreen` | fila |
+| D30 | **Sugestões** — o MESMO mestre-detalhe que D29 recusou, aqui entra: nove campos estruturados contra três repetidos (D-270) | ✔ |
 | D31–D36 | Usuários, Integrações, Sincronização, Saúde, Configurações, Copiloto | fila |
 | D37 | Passe visual global | fila |
 
@@ -804,93 +804,92 @@ anterior: `/reposicao` tinha **19 de 22** células sobrepondo a classe (não 23)
 `/estoque/movimentacoes` não era vazamento parcial de 3 células — eram **todas**
 as 13.
 
-O que resta é a fila **D30 em diante**: 8 superfícies ainda não migradas — D26 (Tráfego) saiu da conta por avaliação, não por adiamento (D-266).
+O que resta é a fila **D31 em diante**: 7 superfícies ainda não migradas — D26 (Tráfego) saiu da conta por avaliação, não por adiamento (D-266).
 
 ## Última fatia concluída
 
-**D29 — Central de Notificações, pelo frame `CentralScreen` na variação de
-alertas (D-269).** "Central" era um item só na fila e são **três** telas no
-frame: `CentralScreen` decide por título entre Notificações, Sugestões e uma de
-decisões. A terceira já vive em `/acoes` e na aba do SKU; D29 é Notificações e
-D30 é Sugestões. Sem migration.
+**D30 — Sugestões, pelo frame `CentralScreen` na variação de ideias (D-270).**
+A terceira e última variação do componente. Sem migration. **Fecha o bloco
+nomeado da fila** — o que resta é administração e o passe global.
 
-### Esta era a tela mais disciplinada que a frente encontrou
+### O mesmo frame, a decisão oposta — e o contraste é o registro
 
-Ao contrário de `/acoes` (D23) e `/atendimento` (D27), aqui **não havia janela
-para consertar**. Ela já pagina em 100, já tira o total e as não lidas de
-`count: exact` e já usa `summarizePagedWindow`. O motivo está escrito no próprio
-arquivo, e é a mesma classe que apareceu três vezes nesta frente:
+D29 recusou o painel de detalhe em `/notificacoes`. Aqui o mesmo mestre-detalhe
+**entra**, e a diferença é medida, não estética:
 
-> `unreadCount` era `rows.filter(...).length` — contava as não lidas **entre as
-> 100 carregadas**. O pior não era o número: era o BOTÃO. "Marcar todas como
-> lidas" só aparece com `unreadCount > 0`, então bastava ler as 100 mais
-> recentes para ele sumir, deixando milhares sem forma de limpar (D-183).
+| | `/notificacoes` (D29) | `/sugestoes` (D30) |
+|---|---|---|
+| o que o detalhe teria | **os mesmos três campos da linha** | **nove campos estruturados** |
+| campos sem fonte | "Impacto estimado R$ 8.400" | nenhum |
+| como estava antes | linha completa | `<details>` dentro de uma célula |
 
-Medido agora: **42.511 notificações, 8.350 não lidas**. O teste novo existe para
-que aquela contagem não volte a sair da lista.
+A versão anterior escondia os nove campos num `<details>` na tabela, com um
+comentário que se desculpava: *"para a tabela não explodir"*. O frame resolve
+isso, e o código já sabia que tinha um problema.
 
-### A recusa: o painel de detalhe
+**E a tabela tem MAIS campos do que o frame desenha** — ele mostra cinco, ela
+tem nove. Esconder campo preenchido por não estar no desenho seria jogar fora
+trabalho que a IA já fez (D-112).
 
-O frame põe mestre-detalhe. Aberto o painel, ele traz:
+### O texto original fica, e o frame não o desenha
 
-| o detalhe traz | o que é |
-|---|---|
-| selo, título e subtítulo | **os mesmos três campos da linha** |
-| "reúne os dados relevantes para uma tomada de decisão segura" | frase genérica |
-| **"Impacto estimado R$ 8.400"** | **sem fonte** |
-| "Contexto recente" | funcionalidade que a tela não tem |
+O detalhe do frame mostra só a versão estruturada. A página promete por escrito
+que *"o que você escreve fica preservado exatamente como foi escrito"* — e
+mostrar apenas a leitura da IA **substituiria a palavra da pessoa pela da
+máquina**. O original ganhou rótulo próprio ("COMO FOI ESCRITO"), acima dos
+campos. E a sugestão ainda não estruturada **diz isso**, em vez de abrir vazia.
 
-`notifications` tem **quatro colunas** — é um ponteiro para `domain_events` mais
-os destinatários — e uma varredura por `impact`/`valor`/`brl` nas três tabelas
-envolvidas devolve **zero**. O resto a linha já mostra: severidade, tipo, conta,
-entidade com link, **o diff** e a hora.
+### O último D-131 latente que eu conhecia
 
-Um painel que cobra um clique para repetir a linha e acrescentar um número
-inventado não é detalhe: é navegação vazia. **O mestre-detalhe foi desenhado
-para a variação de decisões** — onde impacto, linha do tempo e antes/depois
-existem — e reusado nas outras duas.
+A tela lia `feature_suggestions` **sem `limit` nenhum** e imprimia
+`rows.length` como "N sugestão(ões) registrada(s)" — a forma exata do defeito
+que `/acoes` tinha vivo (D23). Só não mentia porque a tabela está vazia, e foi
+esta mesma tela que a varredura de D23 apontou como a única suspeita restante.
+Agora tem `range`, `count: exact` e janela declarada.
 
-**O próprio frame não dá resumo a esta variação:** o bloco de três números só
-renderiza para decisões. Registro porque a tentação era acrescentar uma faixa
-"para ficar igual às outras telas da frente", e o frame não pede.
+**Sete estados, três no frame** — terceira fatia seguida com essa correção
+(D25, D28, agora).
 
-**E o "Filtrar" ficou fora pela linha de D24:** a tela não tem filtro nenhum, e
-acrescentá-los é funcionalidade. Fica como candidata com número — com **8.350
-não lidas**, um recorte "só não lidas" seria útil de verdade, e é barato.
+### O seletor órfão que quase passou
 
-### Segunda tela seguida com escritas e zero cobertura
+`/diagnostico` e esta tela querem a mesma grade, então ela virou
+`.sb-split-layout`. **O que quase escapou:** havia um `@media (max-width: 850px)`
+mirando `.sb-diagnostic-layout`, que deixou de existir. Órfão ali **não quebra
+build nem teste** — só faz `/diagnostico` parar de colapsar em uma coluna no
+celular, em silêncio. Achado relendo o CSS depois da extração.
 
-`/notificacoes` marca uma como lida e marca todas, e nunca foi visitada por spec
-nenhum. Não precisou de fixture: o seed já produz duas notificações **por
-gatilho**, a partir dos eventos de preço que D24 acrescentou — a fiação evento →
-notificação se prova sozinha na captura.
+### Terceira tela seguida com escritas e zero cobertura
 
-**Verificação, local:** `check` **29/29**, e2e **54/54** em banco recriado (2
-novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17,
-`check:table-styles` 17, `docs:check`. Capturada a 1440px contra o Supabase
-local.
+Depois de `/atendimento/conhecimento` e `/notificacoes`, são **três seguidas** —
+e as três apareceram pela mesma pergunta de rotina ("há spec?"), não por acaso.
+Vale como achado sobre o projeto, não sobre estas telas: **a cobertura e2e
+seguiu as fatias de desenvolvimento, e telas de escrita nascidas fora delas
+ficaram sem nenhuma.**
+
+**Verificação, local:** `check` **29/29** (11 testes novos), e2e **56/56** em
+banco recriado (2 novos), build **8/8**, `check:waterfalls` 60,
+`check:server-actions` 17, `check:table-styles` 17, `docs:check`. Capturada a
+1440px contra o Supabase local.
 
 ## Próxima fatia segura
 
-**D30 — Sugestões**, a terceira variação de `CentralScreen`. `feature_suggestions`
-tem **zero linhas** no Dev — é a situação de D28, não a de D26: o esquema existe
-(sete estados pelo `check`, segundo D-079) e falta dado, então a tela é
-construível e o vazio é o estado dela.
+**D31–D36 — o bloco de administração**: Usuários, Integrações, Sincronização,
+Saúde, Configurações e Copiloto. É a primeira vez que a fila deixa as telas de
+operação e entra nas de configuração, e o frame as trata pelo `kind: "admin"` —
+**localizar essa variação antes de desenhar**, porque pode ser genérica como a
+de Tráfego era (D-266).
 
-**Duas coisas medidas de antemão.** O frame mostra "42 sugestões · 8 em análise"
-e um detalhe com cinco campos estruturados (Problema, Objetivo, Benefício,
-Critério de aceite, Dependências) que ele atribui à IA — **conferir se
-`feature_suggestions` tem esses campos** antes de desenhar, porque um detalhe
-com cinco rótulos sem coluna seria o painel vazio que D-269 acabou de recusar. E
-a tela tem escrita (mudança de estado), então provavelmente é a terceira seguida
-sem spec.
+Duas dessas telas nasceram na trilha 8A (Usuários em D-175, Saúde em D-176) e
+duas ainda não existem (Integrações e Configurações, pelo `docs/HANDOFF.md`).
+**Conferir quais existem antes de planejar a ordem** — migrar o que não existe
+é criar, não migrar, e D-266 já registrou que a fila é lista de frames a
+avaliar, não contrato de entrega.
 
 A rotina, com as quatro perguntas acumuladas: **o frame tem fonte?** (D-266),
 **falta coluna ou falta dado?** (D-268), **quantas linhas no Dev?** (D-263) e **a
 faixa conta o mesmo conjunto da tabela ou é navegação?** (D-265).
 
-Depois: D31–D36 (Usuários, Integrações, Sincronização, Saúde, Configurações,
-Copiloto) e o passe visual global (D37).
+Depois delas, só o **passe visual global (D37)**.
 
 **Cinco itens seguem abertos fora da fila:**
 

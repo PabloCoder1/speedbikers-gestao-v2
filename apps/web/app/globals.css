@@ -2321,7 +2321,11 @@ table {
  * compartilhável e o voltar do navegador funcionando — a mesma regra dos
  * filtros em todas as telas desta frente.
  */
-.sb-diagnostic-layout {
+/* Mestre-detalhe: lista estreita a esquerda, painel a direita.
+   Extraida de `.sb-diagnostic-layout` em D30 -- `/diagnostico` (D-260) e
+   `/sugestoes` querem a MESMA grade, e duas classes identicas com nomes de tela
+   sao como a auditoria de D-246 achou cinco copias do mapa de tom. */
+.sb-split-layout {
   display: grid;
   grid-template-columns: 20rem minmax(0, 1fr);
   gap: var(--sb-space-3);
@@ -2464,7 +2468,10 @@ table {
   fora da primeira dobra, e o detalhe é o que a tela existe para mostrar.
 */
 @media (max-width: 850px) {
-  .sb-diagnostic-layout {
+  /* Segue a classe que a grade tem HOJE. Ao extrair `.sb-split-layout` em D30
+     este seletor ficou órfão por um momento — e órfão aqui não quebra build
+     nem teste: só faz a tela parar de colapsar em uma coluna, em silêncio. */
+  .sb-split-layout {
     grid-template-columns: 1fr;
   }
 
@@ -2703,4 +2710,63 @@ table {
   gap: var(--sb-space-2);
   margin-bottom: 0.5rem;
   font-size: 0.625rem;
+}
+
+/* Lista de campos rotulados dentro de um painel -- o `central-fields` do
+   export. `<dl>` porque e literalmente uma lista de descricoes: o rotulo e o
+   termo, o conteudo e a definicao. */
+.sb-fields {
+  margin: var(--sb-space-3) 0 0;
+  padding: 0 1.25rem var(--sb-space-3);
+  display: grid;
+  gap: var(--sb-space-3);
+}
+
+.sb-fields dt {
+  margin-bottom: 0.1875rem;
+  font-size: 0.5625rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sb-text-soft);
+}
+
+.sb-fields dd {
+  margin: 0;
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+/* Um item da lista mestre. Mesma forma do `.sb-diagnostic-item`, sem o nome de
+   uma tela so -- os dois mestre-detalhe da frente usam este. */
+.sb-split-item {
+  display: grid;
+  gap: 0.375rem;
+  width: 100%;
+  padding: 0.8125rem;
+  border: 0;
+  border-bottom: 1px solid var(--sb-table-rule);
+  border-radius: var(--sb-radius-md);
+  background: var(--sb-surface);
+  color: inherit;
+  text-align: left;
+  text-decoration: none;
+}
+
+.sb-split-item:hover,
+.sb-split-item[aria-current="true"] {
+  background: #f5f4fc;
+}
+
+.sb-split-item b {
+  font-size: 0.6875rem;
+}
+
+.sb-split-item > span {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sb-space-2);
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
 }

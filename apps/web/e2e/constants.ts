@@ -218,6 +218,34 @@ export const E2E_LISTING_PRICE_EVENT = { de: 199.9, para: 189.9 } as const;
  * não tem SKU, onde a célula mostra "sem vínculo" em vez de um link.
  */
 /**
+ * A Central de Sugestões (D30) — `feature_suggestions` tem zero linhas no Dev,
+ * e a tela tem duas escritas (mudar status e estruturar com IA) sem spec.
+ *
+ * **Duas entradas, e a diferença entre elas é o teste.** O detalhe do frame
+ * mostra campos estruturados; a estruturação é feita pela IA sob demanda
+ * (D-112), então uma sugestão recém-escrita NÃO os tem. A tela precisa dizer
+ * isso em vez de mostrar painel vazio — e sem as duas não daria para provar os
+ * dois caminhos.
+ *
+ * O texto original é preservado nas duas: é a promessa que a página faz por
+ * escrito ("o que você escreve fica preservado exatamente como foi escrito").
+ */
+export const E2E_SUGESTOES = {
+  estruturada: {
+    originalText: "Seria bom ver o estoque do Full separado por conta.",
+    status: "em_analise",
+    title: "Estoque Full por conta",
+    problem: "A operação não consegue saber de qual conta é o saldo no Full.",
+    objective: "Mostrar o saldo do Full por conta, sem somar autoridades diferentes.",
+    expectedBenefit: "Decidir reposição sem abrir o painel do Mercado Livre.",
+  },
+  crua: {
+    originalText: "Avisar antes de uma alteração de preço impactar os anúncios.",
+    status: "nova",
+  },
+} as const;
+
+/**
  * A Base de Conhecimento (D28) — a tela existe desde D-113 com escritas
  * (validar/rejeitar/obsoletar e o formulário) e **nunca teve dado nem spec**.
  * `knowledge_entries` tem zero linhas no Dev.

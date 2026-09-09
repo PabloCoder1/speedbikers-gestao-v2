@@ -7014,6 +7014,58 @@ Nao precisou de fixture: o seed ja produz duas notificacoes **por gatilho**, a p
 
 **Verificacao, local:** `check` **29/29**, e2e **54/54** em banco recriado (2 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17, `check:table-styles` 17, `docs:check`. Capturada a 1440px contra o Supabase local.
 
+## D-270 - D30: Sugestoes, e o mestre-detalhe que se justifica -- ao contrario do de ontem
+
+**Contexto:** `/sugestoes` pelo frame `CentralScreen` na variacao de ideias, a terceira e ultima do componente. Fatia sem migration.
+
+---
+
+**1. O MESMO FRAME, A DECISAO OPOSTA -- e o contraste e o registro**
+
+D-269 recusou o painel de detalhe em `/notificacoes`: ele repetia os tres campos da linha e acrescentava um numero sem fonte. **Aqui o mesmo mestre-detalhe entra**, e a diferenca e medida, nao estetica:
+
+| | `/notificacoes` (D-269) | `/sugestoes` (D-270) |
+|---|---|---|
+| o que o detalhe teria | selo, titulo e subtitulo -- **os mesmos da linha** | **nove campos estruturados** |
+| campos sem fonte | "Impacto estimado R$ 8.400" | nenhum |
+| como estava antes | linha completa, sem detalhe | `<details>` dentro de uma celula |
+
+A versao anterior escondia os nove campos num `<details>` na tabela, com um comentario que se desculpava: *"para a tabela nao explodir"*. O frame resolve isso, e o codigo ja sabia que tinha um problema.
+
+**A tabela tem MAIS campos do que o frame desenha.** Ele mostra cinco (Problema, Objetivo, Beneficio, Criterio de aceite, Dependencias); `feature_suggestions` tem tambem `title`, `impacted_users`, `suggested_flow` e `complexity`. Esconder campo PREENCHIDO por nao estar no desenho seria jogar fora trabalho que a IA ja fez (D-112).
+
+**2. O TEXTO ORIGINAL FICA, E O FRAME NAO O DESENHA**
+
+O detalhe do frame mostra so a versao estruturada. A pagina promete por escrito que *"o que voce escreve fica preservado exatamente como foi escrito"* -- e mostrar apenas a leitura da IA **substituiria a palavra da pessoa pela da maquina**. O original ganhou rotulo proprio ("COMO FOI ESCRITO"), acima dos campos.
+
+**E a sugestao ainda NAO estruturada diz isso**, em vez de abrir painel vazio: a estruturacao e sob demanda, nao automatica.
+
+**3. MAIS UM D-131 LATENTE, E ERA O ULTIMO QUE EU CONHECIA**
+
+A tela lia `feature_suggestions` **sem `limit` nenhum** e imprimia `formatCount(rows.length)` como *"N sugestao(oes) registrada(s)"*. E exatamente a forma do defeito que `/acoes` tinha vivo (D-263): com o teto de 1.000 do PostgREST, a frase passaria a mentir sem aviso.
+
+So nao mentia porque a tabela esta **vazia** -- e foi essa mesma tela que a varredura de D-263 apontou como unica suspeita restante, registrada no HANDOFF como "latente, nao viva". Agora tem `range`, `count: exact` e janela declarada.
+
+**4. SETE ESTADOS, TRES NO FRAME**
+
+`nova`, `em_analise`, `aprovada`, `planejada`, `em_desenvolvimento`, `entregue`, `recusada`. O frame desenha tres. O seletor de status ja oferecia os sete -- a LISTA e que precisava poder mostra-los. Terceira fatia seguida com essa correcao (D-265, D-268, agora).
+
+**5. `.sb-split-layout` SAIU DE `.sb-diagnostic-layout`, E O SELETOR ORFAO QUASE PASSOU**
+
+`/diagnostico` (D-260) e esta tela querem a MESMA grade de mestre-detalhe. Duas classes identicas com nome de tela sao como a auditoria de D-246 achou cinco copias do mapa de tom, entao a grade virou `.sb-split-layout` e `/diagnostico` passou a usa-la.
+
+**O que quase escapou:** havia uma regra `@media (max-width: 850px)` mirando `.sb-diagnostic-layout`, que deixou de existir. Orfa ali **nao quebra build nem teste** -- so faz `/diagnostico` parar de colapsar em uma coluna no celular, em silencio. Achado relendo o CSS depois da extracao, e o comentario da regra agora diz por que ela segue a classe atual.
+
+**6. TERCEIRA TELA SEGUIDA COM ESCRITAS E ZERO COBERTURA**
+
+`/sugestoes` muda status e estrutura com IA, e nunca foi visitada por spec. Depois de `/atendimento/conhecimento` (D-268) e `/notificacoes` (D-269), sao **tres seguidas** -- e as tres foram encontradas pela mesma pergunta de rotina ("ha spec?"), nao por acaso. O fixture tem duas entradas porque a diferenca entre elas E o teste: uma estruturada e uma crua provam os dois caminhos do detalhe.
+
+**O "Filtrar" do frame ficou fora**, pela linha de D-264 e D-269: a tela nao tem filtro, e acrescenta-los e funcionalidade.
+
+**Impacto:** `apps/web/lib/suggestion-filters.ts` + teste (11 novos), `apps/web/app/sugestoes/{page,suggestion-detail}.tsx` (`suggestion-row.tsx` removido -- nao e mais linha), `apps/web/app/globals.css`, `apps/web/app/diagnostico/page.tsx` (usa a classe generica), `apps/web/e2e/{seed,constants,sugestoes.spec}.ts` (+2). Sem migration.
+
+**Verificacao, local:** `check` **29/29** (11 testes novos), e2e **56/56** em banco recriado (2 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17, `check:table-styles` 17, `docs:check`. Capturada a 1440px contra o Supabase local.
+
 ## Como adicionar nova decisao
 
 Registrar:

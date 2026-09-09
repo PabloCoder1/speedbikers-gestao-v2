@@ -328,7 +328,7 @@ export default async function DiagnosticoPage({
       )}
 
       {error === null && selecionado !== null && (
-        <div className="sb-diagnostic-layout">
+        <div className="sb-split-layout">
           {/* MESTRE — a lista do frame, ordenada por |z| decrescente. */}
           <section className="sb-panel sb-diagnostic-list" aria-label="Anomalias detectadas">
             {visiveis.map((diagnosis) => {
