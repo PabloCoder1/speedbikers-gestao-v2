@@ -8471,6 +8471,58 @@ Nao implanta. Deploy e ato de producao com ordem propria (worker → api, D-088)
 
 **Verificacao:** `check` 29/29 (`--force`), build 8/8, e2e 113/113, cinco guardas verdes. E a medicao contra a `api` REAL de producao, que e onde o defeito vive.
 
+## D-302 - "Como vou saber a senha dela?" -- nao ha senha a passar, faltava a tela de DEFINIR
+
+**Contexto:** o convite funcionou em producao, e o usuario perguntou: *"porem como vou saber qual a senha dela pra eu passar?"*. A resposta certa e **nenhuma** -- ninguem define a senha pela pessoa. Mas ela nao era verdade inteira: o lugar de ELA definir a dela nao existia.
+
+---
+
+**1. O QUE FOI MEDIDO, SEGUINDO UM CONVITE DE VERDADE ATE O NAVEGADOR**
+
+O link do convite e do proprio Supabase (`/auth/v1/verify?token=...&type=invite&redirect_to=...`). Seguindo ele em 2026-09-10, o navegador parou em:
+
+```
+http://127.0.0.1:3000/login?next=%2F#access_token=eyJ...&refresh_token=...&type=invite
+```
+
+Tres fatos, e cada um decide uma linha do codigo:
+
+| fato | consequencia |
+|---|---|
+| a sessao vem no **fragmento**, que nunca chega ao servidor | o proxy nao viu cookie e mandou para `/login` |
+| o fragmento **sobrevive ao redirect** | quem o le e a tela de entrada, nao uma rota nova |
+| o convidado **nao tem senha** -- ninguem a definiu | sem tela para defini-la, o link terminava ali |
+
+Ou seja: token valido na URL e **nenhum campo que o usasse**. A pessoa chegava numa tela pedindo uma senha que ela nunca teve.
+
+**2. A ACEITACAO MORA NA TELA DE ENTRADA, e isso e medicao, nao economia**
+
+A alternativa obvia -- uma rota `/convite` -- exigiria `redirectTo` no `generateLink` **e** aquela URL na lista de permitidas do projeto Supabase, configuracao que vive no painel, fora do repositorio. No dia em que o endereco do site mudasse, o link levaria para o lugar errado e ninguem lembraria por que. Como o fragmento ja chega em `/login` sozinho, a tela de entrada muda de identidade: `h1` "Defina sua senha", dois campos, e o formulario normal de volta quando nao ha convite.
+
+Por isso o `h1` **desceu do servidor para o cliente**: so o cliente enxerga o fragmento, e um titulo fixo diria "Entrar" acima de um formulario que pede senha nova.
+
+**3. O QUE O MODULO RECUSA, E POR QUE ELE E MODULO**
+
+`lerConviteDaUrl` e uma funcao pura com sete casos, e a lista de `type` e FECHADA: `invite` e `recovery` (o "esqueci a senha" do dia em que existir). **`magiclink` tambem chega por fragmento e tambem traz sessao** -- mas quem chega por ele ja esta dentro, e pedir senha ali seria uma tela de "defina sua senha" aparecendo para quem nao pediu nada.
+
+E ha o ramo do link vencido: o Auth devolve `error=access_denied&error_code=otp_expired` no mesmo fragmento. Sem ele a tela mostraria "Entrar" como se nada tivesse acontecido -- mandando a pessoa tentar, de novo, uma senha que ela nunca definiu.
+
+**4. DUAS RECUSAS ANTES DA IDA AO SERVIDOR**
+
+Minimo de 6 caracteres (o `minimum_password_length` do projeto) e as duas iguais. A segunda existe porque **nao ha conserto depois**: sem SMTP nao existe "esqueci minha senha" (D-296), entao senha digitada errada e confirmada errada e uma conta inalcancavel ate alguem convidar de novo.
+
+**5. O TOKEN SAI DA URL ANTES DE QUALQUER OUTRA COISA**
+
+`history.replaceState` limpa o fragmento assim que ele e lido. Ele e credencial: ficaria no historico do navegador, na aba compartilhada numa chamada e em qualquer captura de tela daquela pagina.
+
+**6. A METADE QUE O TESTE NAO PODIA DEIXAR PASSAR**
+
+A sessao do convite dura **uma hora**. Um teste que so afirmasse "entrou" passaria mesmo que `updateUser` nao gravasse nada -- e a pessoa descobriria no dia seguinte. Por isso o caso termina pedindo um token com e-mail e a senha nova: **200**. E o convite do e2e e gerado pela Admin API de verdade, o mesmo caminho da `api`.
+
+**Impacto:** `apps/web/lib/{invite-hash.ts,invite-hash.test.ts}` (novos), `apps/web/app/login/{login-form.tsx,page.tsx}`, `apps/web/e2e/convite-aceite.spec.ts` (novo).
+
+**Verificacao:** `check` 29/29 (`--force`, 460 unitarios com os 7 novos), build 8/8, e2e **116/116** (+3), cinco guardas verdes. E o fluxo seguido a mao no navegador, ponta a ponta: link → "Defina sua senha" → dentro da aplicacao → token 200 com a senha nova.
+
 ## Como adicionar nova decisao
 
 Registrar:

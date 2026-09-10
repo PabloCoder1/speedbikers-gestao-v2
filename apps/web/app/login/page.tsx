@@ -27,10 +27,12 @@ export default function LoginPage(): ReactNode {
           Speed Bikers Gestão
         </p>
 
-        <h1 style={{ margin: "var(--sb-space-2) 0 var(--sb-space-4)", fontSize: "1.5rem" }}>
-          Entrar
-        </h1>
-
+        {/*
+          O TÍTULO MORA NO FORMULÁRIO desde D-302: só o cliente enxerga o
+          fragmento do convite, e é ele que decide se esta tela é "Entrar" ou
+          "Defina sua senha". Um `h1` fixo no servidor diria "Entrar" acima de
+          um formulário que pede senha nova.
+        */}
         {/*
           `useSearchParams` le algo que so existe na requisicao. Sem o limite de
           Suspense, o Next tenta pre-renderizar a pagina no build e falha.
