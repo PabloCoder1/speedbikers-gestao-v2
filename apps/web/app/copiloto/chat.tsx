@@ -2,6 +2,7 @@
 
 import { useRef, useState, type ReactNode } from "react";
 
+import type { CopilotScreenContext } from "../../components/copilot-context";
 import { createClient } from "../../lib/supabase/browser";
 
 /**
@@ -33,12 +34,26 @@ const SUGESTOES = [
   "Qual conta vendeu mais neste mês?",
 ] as const;
 
+/*
+  AS FERRAMENTAS DE D-293 NÃO GANHARAM SUGESTÃO AQUI, e a ausência é a decisão.
+
+  "Como está o estoque do SKU …?" precisa de um código, e esta tela não sabe
+  qual — uma sugestão com lacuna para o operador preencher é pior do que
+  nenhuma: ela promete um clique e entrega uma tarefa. As duas são alcançáveis
+  digitando, e onde elas viram sugestão de UM clique é na gaveta, que sabe o
+  SKU ou o anúncio aberto.
+*/
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 const TOOL_LABEL: Record<string, string> = {
   sales_summary: "consultou vendas do período",
   sales_period_comparison: "comparou com o período anterior",
   sales_account_comparison: "comparou as contas",
+  // As duas de D-293. O marcador existe para o ESCOPO ficar visível: sem ele,
+  // uma resposta sobre estoque e uma sobre venda chegam iguais na tela.
+  sku_replenishment: "consultou estoque e reposição do SKU",
+  listing_performance: "consultou desempenho do anúncio",
 };
 
 interface Exchange {
@@ -54,7 +69,21 @@ type ChatEvent =
   | { type: "done"; toolsUsed: string[] }
   | { type: "error"; message: string };
 
-export function CopilotChat(): ReactNode {
+export function CopilotChat({
+  contexto = null,
+  sugestoes = SUGESTOES,
+  compacto = false,
+}: {
+  /**
+   * O contexto de tela (D-294). Vai no corpo do pedido e aparece como selo —
+   * a gaveta o tem; a tela cheia, não.
+   */
+  contexto?: CopilotScreenContext | null;
+  /** As sugestões deste lugar: as três de venda aqui, as do contexto na gaveta. */
+  sugestoes?: readonly string[];
+  /** Dentro da gaveta a medida é a dela, não os 46rem de leitura da página. */
+  compacto?: boolean;
+} = {}): ReactNode {
   const [exchanges, setExchanges] = useState<Exchange[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -105,7 +134,23 @@ export function CopilotChat(): ReactNode {
       const response = await fetch(`${API_URL}/v1/copilot/chat`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-        body: JSON.stringify({ message: question }),
+        /*
+          O CONTEXTO VIAJA COM A PERGUNTA (D-294). Só o par que a ferramenta
+          usa — `kind`, `id` e a conta quando é anúncio; o rótulo é da tela e
+          não interessa à API.
+        */
+        body: JSON.stringify({
+          message: question,
+          ...(contexto === null
+            ? {}
+            : {
+                context: {
+                  kind: contexto.kind,
+                  id: contexto.id,
+                  ...(contexto.mlAccountId === undefined ? {} : { mlAccountId: contexto.mlAccountId }),
+                },
+              }),
+        }),
       });
 
       if (!response.ok || response.body === null) {
@@ -190,7 +235,7 @@ export function CopilotChat(): ReactNode {
   }
 
   return (
-    <div style={{ display: "grid", gap: "var(--sb-space-3)", maxWidth: "46rem" }}>
+    <div style={{ display: "grid", gap: "var(--sb-space-3)", ...(compacto ? {} : { maxWidth: "46rem" }) }}>
       <div
         ref={listRef}
         style={{
@@ -283,10 +328,10 @@ export function CopilotChat(): ReactNode {
                 com 16rem sobrava uma órfã embaixo, que é o defeito que este
                 acabamento existe para tirar, só que na horizontal.
               */
-              gridTemplateColumns: "repeat(auto-fit, minmax(13rem, 1fr))",
+              gridTemplateColumns: compacto ? "1fr" : "repeat(auto-fit, minmax(13rem, 1fr))",
             }}
           >
-            {SUGESTOES.map((sugestao) => (
+            {sugestoes.map((sugestao) => (
               <button
                 className="sb-button"
                 key={sugestao}

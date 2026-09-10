@@ -1,9 +1,17 @@
 import type { AdminClient, UserClient } from "@sb/db";
 import { recordAiRun } from "@sb/db";
-import { describeActionEvidence, previousBusinessDateRange } from "@sb/domain";
+import {
+  composeSkuReplenishment,
+  describeActionEvidence,
+  previousBusinessDateRange,
+  toSalesMetricDate,
+  type ReplenishmentSetting,
+} from "@sb/domain";
 import type {
   CopilotQueryRequest,
   CopilotToolName,
+  ListingPerformanceInput,
+  ListingPerformanceOutput,
   NarrateActionInput,
   NarrateActionOutput,
   NarrateSkuDiagnosisInput,
@@ -15,10 +23,14 @@ import type {
   SalesSummary,
   SalesSummaryInput,
   SalesSummaryOutput,
+  SkuReplenishmentInput,
+  SkuReplenishmentOutput,
 } from "@sb/contracts";
 import {
+  listingPerformanceInputSchema,
   narrateActionInputSchema,
   narrateSkuDiagnosisInputSchema,
+  skuReplenishmentInputSchema,
   salesAccountComparisonInputSchema,
   salesPeriodComparisonInputSchema,
   salesSummaryInputSchema,
@@ -350,7 +362,15 @@ interface ToolOutcome {
 
 interface ToolDefinition {
   inputSchema: ZodType;
-  run: (userClient: UserClient, input: never, deps: CopilotDeps) => Promise<ToolOutcome>;
+  /*
+    `caller` entrou em D-293: `get_purchase_suggestions` e
+    `get_listing_dashboard_summary` exigem `p_organization_id`, ao contrário de
+    `get_sales_summary`, que resolve a organização sozinha. O id vem de quem a
+    autenticação já resolveu — nunca do payload —, e a RLS continua sendo a
+    autorização real: passar a organização não abre nada, só diz qual RPC
+    consultar.
+  */
+  run: (userClient: UserClient, input: never, deps: CopilotDeps, caller: Caller) => Promise<ToolOutcome>;
 }
 
 const TOOLS: Record<CopilotToolName, ToolDefinition> = {
@@ -370,6 +390,22 @@ const TOOLS: Record<CopilotToolName, ToolDefinition> = {
     inputSchema: salesAccountComparisonInputSchema,
     run: async (userClient, input) => ({
       data: await runSalesAccountComparison(userClient, input),
+      llmUsed: false,
+      costUsd: null,
+    }),
+  },
+  sku_replenishment: {
+    inputSchema: skuReplenishmentInputSchema,
+    run: async (userClient, input, _deps, caller) => ({
+      data: await runSkuReplenishment(userClient, input, caller.organizationId),
+      llmUsed: false,
+      costUsd: null,
+    }),
+  },
+  listing_performance: {
+    inputSchema: listingPerformanceInputSchema,
+    run: async (userClient, input, _deps, caller) => ({
+      data: await runListingPerformance(userClient, input, caller.organizationId),
       llmUsed: false,
       costUsd: null,
     }),
@@ -443,7 +479,7 @@ export async function handleCopilotQuery(
   let outcome: ToolOutcome;
 
   try {
-    outcome = await definition.run(userClient, parsedInput.data as never, deps);
+    outcome = await definition.run(userClient, parsedInput.data as never, deps, caller);
   } catch (error) {
     const message = error instanceof CopilotToolError ? error.message : "falha ao executar a ferramenta";
 
@@ -472,5 +508,163 @@ export async function handleCopilotQuery(
   return {
     status: 200,
     body: { tool: request.tool, escopo: parsedInput.data, confianca: "alta", data },
+  };
+}
+
+/**
+ * `sku_replenishment` — a primeira ferramenta ALÉM DE VENDA (D-293).
+ *
+ * A pré-condição que D-276 escreveu para a gaveta do Copiloto era esta: sem
+ * ferramenta de estoque, onze das doze perguntas sugeridas pelo desenho não
+ * tinham como ser respondidas.
+ *
+ * **Ela não recalcula nada.** A linha vem de `get_purchase_suggestions` (a
+ * mesma RPC de `/reposicao`) e o veredito sai de `composeSkuReplenishment`, a
+ * composição canônica de `@sb/domain` — as MESMAS peças que a tela usa. É por
+ * construção que o Copiloto e a tela dizem o mesmo número: um assistente que
+ * contradiz a tela aberta ao lado é a pior forma de errar que este produto
+ * tem.
+ *
+ * O `p_search` da RPC casa SKU **ou** título, então o casamento exato é
+ * refeito aqui: pedir "SB-001" e receber a linha de "SB-0010" seria responder
+ * sobre outro produto com toda a confiança do mundo.
+ */
+export async function runSkuReplenishment(
+  userClient: UserClient,
+  input: SkuReplenishmentInput,
+  organizationId: string,
+): Promise<SkuReplenishmentOutput> {
+  const hoje = toSalesMetricDate(new Date());
+
+  const [linhas, configuracoes] = await Promise.all([
+    userClient.rpc("get_purchase_suggestions", {
+      p_organization_id: organizationId,
+      p_date_to: hoje,
+      p_search: input.sku,
+      p_limit: 20,
+    }),
+    userClient
+      .from("replenishment_settings")
+      .select("supplier_brand, sku_id, lead_time_days, target_coverage_days, safety_stock_days, max_coverage_days, policy_note"),
+  ]);
+
+  if (linhas.error !== null) {
+    throw new CopilotToolError(linhas.error.message);
+  }
+
+  if (configuracoes.error !== null) {
+    throw new CopilotToolError(configuracoes.error.message);
+  }
+
+  // `data` nao e anulavel depois da checagem de erro; o lint acusa a condicao
+  // morta, e condicao morta esconde a leitura real.
+  const alvo = linhas.data.find((linha) => linha.sku.toUpperCase() === input.sku.trim().toUpperCase());
+
+  if (alvo === undefined) {
+    throw new CopilotToolError(
+      `Nenhum SKU com o código "${input.sku}" foi encontrado nas contas que você acessa.`,
+    );
+  }
+
+  const settings: ReplenishmentSetting[] = configuracoes.data.map((linha) => ({
+    supplierBrand: linha.supplier_brand,
+    skuId: linha.sku_id,
+    leadTimeDays: linha.lead_time_days,
+    targetCoverageDays: linha.target_coverage_days,
+    safetyStockDays: linha.safety_stock_days,
+    maxCoverageDays: linha.max_coverage_days,
+    policyNote: linha.policy_note,
+  }));
+
+  const veredito = composeSkuReplenishment(alvo, settings);
+
+  return {
+    sku: alvo.sku,
+    title: alvo.title,
+    supplierBrand: alvo.supplier_brand,
+    abcClass: alvo.abc_class,
+    usableStock: veredito.usable.total,
+    stockParts: {
+      local: veredito.usable.components.local,
+      full: veredito.usable.components.full,
+      transit: veredito.usable.components.transit,
+      reservedExcluded: veredito.usable.components.reservedExcluded,
+    },
+    units: { d15: alvo.units_15d, d30: alvo.units_30d, d60: alvo.units_60d, d90: alvo.units_90d },
+    trend: veredito.trend.trend,
+    coverageDays: veredito.stockState.coverageDays,
+    state: veredito.stockState.state,
+    // As recusas viajam JUNTO do nulo: é o que impede o modelo de ler
+    // "coverageDays: null" como zero e narrar ruptura onde há saldo sentinela.
+    refusals: [...new Set([...veredito.suggestion.refusals, ...veredito.stockState.refusals])],
+    suggestedQuantity: veredito.suggestion.suggestedQuantity,
+    policy:
+      veredito.policy === null
+        ? null
+        : {
+            scope: veredito.policy.scope,
+            leadTimeDays: veredito.policy.leadTimeDays,
+            targetCoverageDays: veredito.policy.targetCoverageDays,
+            safetyStockDays: veredito.policy.safetyStockDays,
+            maxCoverageDays: veredito.policy.maxCoverageDays,
+          },
+  };
+}
+
+/**
+ * `listing_performance` — visitas, venda e CONVERSÃO de um anúncio (D-293).
+ *
+ * Fonte única: `get_listing_dashboard_summary`, a mesma de
+ * `/anuncios/[itemId]`. O cadastro do anúncio (título, situação, preço) vem
+ * de `listings` na mesma ida.
+ *
+ * **`conversion` nula não é zero** (D-123): sem visita no período não há
+ * denominador, e a diferença entre "ninguém comprou" e "ninguém viu" é o
+ * diagnóstico inteiro. O contrato declara a nulidade para o modelo não
+ * preencher a lacuna sozinho.
+ */
+export async function runListingPerformance(
+  userClient: UserClient,
+  input: ListingPerformanceInput,
+  organizationId: string,
+): Promise<ListingPerformanceOutput> {
+  const [resumo, cadastro] = await Promise.all([
+    userClient
+      .rpc("get_listing_dashboard_summary", {
+        p_organization_id: organizationId,
+        p_ml_account_id: input.mlAccountId,
+        p_item_id: input.itemId,
+        p_date_from: input.dateFrom,
+        p_date_to: input.dateTo,
+      })
+      .single(),
+    userClient
+      .from("listings")
+      .select("title, status, price, available_quantity")
+      .eq("ml_account_id", input.mlAccountId)
+      .eq("item_id", input.itemId)
+      .maybeSingle(),
+  ]);
+
+  if (resumo.error !== null) {
+    throw new CopilotToolError(resumo.error.message);
+  }
+
+  if (cadastro.error !== null) {
+    throw new CopilotToolError(cadastro.error.message);
+  }
+
+  return {
+    itemId: input.itemId,
+    title: cadastro.data?.title ?? null,
+    status: cadastro.data?.status ?? null,
+    price: cadastro.data?.price ?? null,
+    availableQuantity: cadastro.data?.available_quantity ?? null,
+    visits: resumo.data.visits,
+    unitsSold: resumo.data.units_sold,
+    ordersCount: resumo.data.orders_count,
+    grossRevenue: resumo.data.gross_revenue,
+    conversion: resumo.data.conversion,
+    daysObserved: resumo.data.days_observed,
   };
 }

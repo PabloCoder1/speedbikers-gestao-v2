@@ -11,7 +11,9 @@ import {
   runNarrateSkuDiagnosis,
   runSalesAccountComparison,
   runSalesPeriodComparison,
+  runListingPerformance,
   runSalesSummary,
+  runSkuReplenishment,
 } from "./copilot.js";
 
 const CALLER: Caller = { userId: "u1", organizationId: "org-1", role: "ANALISTA" };
@@ -434,5 +436,209 @@ describe("handleCopilotQuery", () => {
     });
 
     expect(outcome.status).toBe(200);
+  });
+});
+
+
+/**
+ * As DUAS FERRAMENTAS ALÉM DE VENDA (D-293) — a pré-condição que D-276
+ * escreveu para a gaveta do Copiloto.
+ */
+
+/**
+ * Fake para as ferramentas novas: elas usam `.rpc(...)` SEM `.single()` e
+ * `.from(...).select(...)`, ao contrário das de venda.
+ */
+function fakeStockClient(input: {
+  suggestions: { data: unknown; error: { message: string } | null };
+  settings: { data: unknown; error: { message: string } | null };
+}): { userClient: UserClient; calls: RpcCall[] } {
+  const calls: RpcCall[] = [];
+
+  const client = {
+    rpc: vi.fn((name: string, args: Record<string, unknown>) => {
+      calls.push({ name, args });
+
+      return Promise.resolve(input.suggestions);
+    }),
+    from: vi.fn(() => ({ select: () => Promise.resolve(input.settings) })),
+  };
+
+  return { userClient: client as unknown as UserClient, calls };
+}
+
+const LINHA_SKU = {
+  sku_id: "11111111-1111-4111-8111-111111111111",
+  sku: "SB-001",
+  title: "Pneu 29",
+  supplier_brand: "VAZ",
+  abc_class: "A",
+  local_quantity: 30,
+  full_quantity: 10,
+  transito: 5,
+  reservado: 4,
+  stock_is_virtual: false,
+  units_15d: 45,
+  units_30d: 90,
+  units_60d: 180,
+  units_90d: 270,
+  history_days_90: 90,
+  purchase_cost: 50,
+  coverage_days: 15,
+  state: "COMPRAR_EM_BREVE",
+  suggested_quantity: 90,
+  total_count: 1,
+};
+
+const CONFIG_PADRAO = {
+  supplier_brand: null,
+  sku_id: null,
+  lead_time_days: 10,
+  target_coverage_days: 30,
+  safety_stock_days: 5,
+  max_coverage_days: null,
+  policy_note: null,
+};
+
+describe("runSkuReplenishment (D-293)", () => {
+  it("compõe o veredito pelas peças canônicas e devolve a decomposição inteira", async () => {
+    const { userClient, calls } = fakeStockClient({
+      suggestions: { data: [LINHA_SKU], error: null },
+      settings: { data: [CONFIG_PADRAO], error: null },
+    });
+
+    const result = await runSkuReplenishment(userClient, { sku: "SB-001" }, "org-1");
+
+    expect(calls[0]?.name).toBe("get_purchase_suggestions");
+    expect(calls[0]?.args.p_organization_id).toBe("org-1");
+    expect(calls[0]?.args.p_search).toBe("SB-001");
+
+    // Os mesmos números que `/reposicao` mostra, porque é a MESMA composição.
+    expect(result.usableStock).toBe(45);
+    expect(result.coverageDays).toBe(15);
+    expect(result.state).toBe("COMPRAR_EM_BREVE");
+    expect(result.suggestedQuantity).toBe(90);
+    expect(result.policy?.scope).toBe("PADRAO");
+    expect(result.refusals).toEqual([]);
+  });
+
+  /*
+    `p_search` casa SKU **ou** título, então "SB-001" traz "SB-0010" junto.
+    Responder sobre o SKU errado com toda a confiança do mundo é o defeito que
+    este caso existe para impedir.
+  */
+  it("exige casamento EXATO do código — prefixo não serve", async () => {
+    const { userClient } = fakeStockClient({
+      suggestions: { data: [{ ...LINHA_SKU, sku: "SB-0010" }], error: null },
+      settings: { data: [CONFIG_PADRAO], error: null },
+    });
+
+    await expect(runSkuReplenishment(userClient, { sku: "SB-001" }, "org-1")).rejects.toBeInstanceOf(
+      CopilotToolError,
+    );
+  });
+
+  /*
+    A recusa viaja JUNTO do nulo: sem ela o modelo lê "coverageDays: null" como
+    zero e narra ruptura onde há saldo sentinela (D-127).
+  */
+  it("SKU virtual devolve nulo COM a recusa ao lado", async () => {
+    const { userClient } = fakeStockClient({
+      suggestions: { data: [{ ...LINHA_SKU, stock_is_virtual: true }], error: null },
+      settings: { data: [CONFIG_PADRAO], error: null },
+    });
+
+    const result = await runSkuReplenishment(userClient, { sku: "SB-001" }, "org-1");
+
+    expect(result.usableStock).toBeNull();
+    expect(result.coverageDays).toBeNull();
+    expect(result.refusals).toContain("ESTOQUE_VIRTUAL");
+  });
+
+  it("sem configuração de reposição, a sugestão recusa e a cobertura continua", async () => {
+    const { userClient } = fakeStockClient({
+      suggestions: { data: [LINHA_SKU], error: null },
+      settings: { data: [], error: null },
+    });
+
+    const result = await runSkuReplenishment(userClient, { sku: "SB-001" }, "org-1");
+
+    expect(result.suggestedQuantity).toBeNull();
+    expect(result.refusals).toContain("SEM_CONFIGURACAO");
+    expect(result.coverageDays).toBe(15);
+    expect(result.policy).toBeNull();
+  });
+});
+
+/** Fake para `listing_performance`: `.rpc(...).single()` mais um `.from(...)` encadeado. */
+function fakeListingClient(input: {
+  summary: { data: unknown; error: { message: string } | null };
+  listing: { data: unknown; error: { message: string } | null };
+}): { userClient: UserClient; calls: RpcCall[] } {
+  const calls: RpcCall[] = [];
+
+  const client = {
+    rpc: vi.fn((name: string, args: Record<string, unknown>) => {
+      calls.push({ name, args });
+
+      return { single: () => Promise.resolve(input.summary) };
+    }),
+    from: vi.fn(() => ({
+      select: () => ({
+        eq: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve(input.listing) }) }),
+      }),
+    })),
+  };
+
+  return { userClient: client as unknown as UserClient, calls };
+}
+
+describe("runListingPerformance (D-293)", () => {
+  const RESUMO = {
+    visits: 120,
+    units_sold: 6,
+    orders_count: 6,
+    gross_revenue: 900,
+    conversion: 0.05,
+    days_observed: 30,
+  };
+
+  it("junta desempenho e cadastro do anúncio numa resposta só", async () => {
+    const { userClient, calls } = fakeListingClient({
+      summary: { data: RESUMO, error: null },
+      listing: { data: { title: "Pneu 29", status: "active", price: 150, available_quantity: 3 }, error: null },
+    });
+
+    const result = await runListingPerformance(
+      userClient,
+      { itemId: "MLB1", mlAccountId: "22222222-2222-4222-8222-222222222222", dateFrom: "2026-08-01", dateTo: "2026-08-30" },
+      "org-1",
+    );
+
+    expect(calls[0]?.args.p_organization_id).toBe("org-1");
+    expect(result.visits).toBe(120);
+    expect(result.conversion).toBe(0.05);
+    expect(result.title).toBe("Pneu 29");
+    expect(result.price).toBe(150);
+  });
+
+  /* Sem visita não há denominador: conversão é NULA, nunca 0% (D-123). */
+  it("conversão nula atravessa como nula", async () => {
+    const { userClient } = fakeListingClient({
+      summary: { data: { ...RESUMO, visits: 0, conversion: null }, error: null },
+      listing: { data: null, error: null },
+    });
+
+    const result = await runListingPerformance(
+      userClient,
+      { itemId: "MLB1", mlAccountId: "22222222-2222-4222-8222-222222222222", dateFrom: "2026-08-01", dateTo: "2026-08-30" },
+      "org-1",
+    );
+
+    expect(result.conversion).toBeNull();
+    expect(result.visits).toBe(0);
+    // Anúncio fora do cadastro não inventa título nem preço.
+    expect(result.title).toBeNull();
+    expect(result.price).toBeNull();
   });
 });

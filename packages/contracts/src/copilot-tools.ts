@@ -180,6 +180,9 @@ export const COPILOT_TOOL_NAMES = [
   "sales_summary",
   "sales_period_comparison",
   "sales_account_comparison",
+  // Segunda leva (D-293): as ferramentas alem de venda.
+  "sku_replenishment",
+  "listing_performance",
   "narrate_sku_diagnosis",
   "narrate_action",
   "suggest_support_reply",
@@ -192,3 +195,91 @@ export const copilotQueryRequestSchema = z.object({
   input: z.unknown(),
 });
 export type CopilotQueryRequest = z.infer<typeof copilotQueryRequestSchema>;
+
+/**
+ * SEGUNDA LEVA (D-293) — as ferramentas ALÉM DE VENDA, que são a pré-condição
+ * que D-276 escreveu para a gaveta do Copiloto.
+ *
+ * A medição de D-276: das doze perguntas sugeridas pelo desenho, **uma** tinha
+ * como ser respondida, porque as três ferramentas eram todas de venda. Estas
+ * duas atacam os dois contextos que o produto de fato sustenta hoje — o SKU e
+ * o anúncio —, e cada uma nasce colada numa fonte que já é dona do número:
+ *
+ *  - `sku_replenishment` compõe `get_purchase_suggestions` com as peças de
+ *    `@sb/domain` (`composeSkuReplenishment`), as MESMAS que `/reposicao`
+ *    usa. O Copiloto e a tela respondem o mesmo, por construção;
+ *  - `listing_performance` lê `get_listing_dashboard_summary`, dona de visitas
+ *    e conversão por anúncio.
+ *
+ * **O que continua sem ferramenta, e por quê:** "quanto enviar ao Full" (não
+ * há política logística — a mesma recusa de D-147), "histórico de exposição"
+ * (o dado de tráfego não existe no esquema, D-266) e o contexto de pedido/
+ * atendimento (rastreio e risco de mediação não têm fonte). Sugerir pergunta
+ * que o sistema não responde é pior que campo vazio: a sugestão promete e
+ * falha DEPOIS de gastar uma chamada paga.
+ */
+export const skuReplenishmentInputSchema = z.object({
+  /** O CÓDIGO do SKU (o que aparece na tela), não o UUID: é o que o usuário digita e o que o modelo enxerga. */
+  sku: z.string().min(1).max(80),
+});
+export type SkuReplenishmentInput = z.infer<typeof skuReplenishmentInputSchema>;
+
+export const skuReplenishmentOutputSchema = z.object({
+  sku: z.string(),
+  title: z.string().nullable(),
+  supplierBrand: z.string().nullable(),
+  abcClass: z.string().nullable(),
+  /** Aproveitável: local + Full + trânsito, reservado FORA. Nulo para saldo sentinela (D-127). */
+  usableStock: z.number().nullable(),
+  stockParts: z.object({
+    local: z.number(),
+    full: z.number(),
+    transit: z.number(),
+    reservedExcluded: z.number(),
+  }),
+  units: z.object({ d15: z.number(), d30: z.number(), d60: z.number(), d90: z.number() }),
+  /** Tendência classificada (`ACELERANDO`, `ESTAVEL`, …) ou a recusa dela. */
+  trend: z.string(),
+  /** `aproveitável ÷ venda média diária de 30 dias`; nulo quando indefinida. */
+  coverageDays: z.number().nullable(),
+  /** Estado operacional (`RUPTURA`, `COMPRA_URGENTE`, …); nulo sob recusa. */
+  state: z.string().nullable(),
+  /** As recusas em vigor — é o que impede o modelo de tratar nulo como zero. */
+  refusals: z.array(z.string()),
+  suggestedQuantity: z.number().nullable(),
+  policy: z
+    .object({
+      scope: z.string(),
+      leadTimeDays: z.number(),
+      targetCoverageDays: z.number(),
+      safetyStockDays: z.number(),
+      maxCoverageDays: z.number().nullable(),
+    })
+    .nullable(),
+});
+export type SkuReplenishmentOutput = z.infer<typeof skuReplenishmentOutputSchema>;
+
+export const listingPerformanceInputSchema = z.object({
+  /** O MLB do anúncio. */
+  itemId: z.string().min(1).max(40),
+  mlAccountId: z.uuid(),
+  dateFrom: dateSchema,
+  dateTo: dateSchema,
+});
+export type ListingPerformanceInput = z.infer<typeof listingPerformanceInputSchema>;
+
+export const listingPerformanceOutputSchema = z.object({
+  itemId: z.string(),
+  title: z.string().nullable(),
+  status: z.string().nullable(),
+  price: z.number().nullable(),
+  availableQuantity: z.number().nullable(),
+  visits: z.number(),
+  unitsSold: z.number(),
+  ordersCount: z.number(),
+  grossRevenue: z.number(),
+  /** NULO sem visita no período — conversão sem denominador não é 0% (D-123). */
+  conversion: z.number().nullable(),
+  daysObserved: z.number(),
+});
+export type ListingPerformanceOutput = z.infer<typeof listingPerformanceOutputSchema>;

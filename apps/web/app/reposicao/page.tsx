@@ -1,11 +1,4 @@
-import {
-  classifySalesTrend,
-  classifyStockState,
-  computePurchaseSuggestion,
-  computeUsableStock,
-  resolveReplenishmentPolicy,
-  toSalesMetricDate,
-} from "@sb/domain";
+import { composeSkuReplenishment, toSalesMetricDate } from "@sb/domain";
 import type {
   PurchaseSuggestionRefusal,
   ReplenishmentSetting,
@@ -367,29 +360,17 @@ export default async function ReposicaoPage({
 
             <tbody>
               {rows.map((row) => {
-                // A composição inteira vem das peças canônicas — a tela nunca
-                // refaz uma conta por dentro (regra da fórmula única).
-                const trend = classifySalesTrend({
-                  units15: row.units_15d,
-                  units30: row.units_30d,
-                  units60: row.units_60d,
-                  units90: row.units_90d,
-                  historyDays90: row.history_days_90,
-                });
-                const usable = computeUsableStock({
-                  localQuantity: row.local_quantity,
-                  fullQuantity: row.full_quantity,
-                  transitQuantity: row.transito,
-                  reservedQuantity: row.reservado,
-                  stockIsVirtual: row.stock_is_virtual,
-                });
-                const policy = resolveReplenishmentPolicy(settings, {
-                  id: row.sku_id,
-                  supplierBrand: row.supplier_brand,
-                });
-                const suggestion = computePurchaseSuggestion({ policy, trend, usable });
+                /*
+                  A composição inteira vem das peças canônicas — a tela nunca
+                  refaz uma conta por dentro (regra da fórmula única). O
+                  ARRANJO delas saiu daqui em D-293, quando ganhou um segundo
+                  consumidor: as ferramentas do Copiloto. Duas composições
+                  paralelas divergiriam no primeiro ajuste de qualquer peça, e
+                  a divergência apareceria como o assistente contradizendo esta
+                  tabela.
+                */
+                const { usable, policy, suggestion, stockState } = composeSkuReplenishment(row, settings);
                 const { breakdown } = suggestion;
-                const stockState = classifyStockState({ policy, trend, usable });
 
                 return (
                   <tr key={row.sku_id}>

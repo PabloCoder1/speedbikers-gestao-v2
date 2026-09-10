@@ -7990,6 +7990,63 @@ Numero sai como **numero**, nao como texto formatado: quem exporta vai somar e o
 
 **Verificacao:** `check` **29/29** (`--force`), build **8/8**, integracao **643/643**, e2e **100/100** em base recriada (+1), cinco guardas verdes. Planilha gerada e ABERTA na inspecao: cabecalho, "2 de 2", congelamento na linha do cabecalho, autofiltro, e as horas batendo com a tela.
 
+## D-293 - A pre-condicao da gaveta do Copiloto: o contexto que a API nao recebia, e as duas ferramentas alem de venda
+
+**Contexto:** o ultimo item aberto de `docs/DESIGN_IMPLEMENTATION.md` e a gaveta do Copiloto, e D-276 nao a recusou por gosto -- escreveu a PRE-CONDICAO: *"parametro de contexto na API e ferramentas alem de venda"*. Esta fatia paga a pre-condicao inteira. Sem migration.
+
+---
+
+**1. O NUMERO QUE D-276 MEDIU, E O QUE ELE PEDIA**
+
+Das **doze** perguntas que o desenho sugere na gaveta, **uma** tinha como ser respondida: `CHAT_TOOLS` tinha tres ferramentas, todas de venda. E o selo "Contexto Atual" prometia *"o Copiloto lera os dados desta tela"* sobre uma rota que recebia `{ message }` e mais nada.
+
+Construir a gaveta antes disso seria erguer a moldura da ideia e chamar de pronto. Agora existem as duas metades.
+
+**2. O CONTEXTO ENTRA COMO DADO, NUNCA COMO AUTORIDADE**
+
+`{ kind, id, mlAccountId? }`, com `kind` em conjunto FECHADO (`sku` | `listing`) -- so os contextos que existem como ferramenta. Tres decisoes o mantem honesto:
+
+| | |
+|---|---|
+| `kind` desconhecido | **recusado** pelo schema, nunca ignorado em silencio |
+| o `id` | entra no PROMPT ("o usuario esta com o SKU X aberto"), e quem le o dado e a ferramenta, sob a RLS do chamador. Id de outra organizacao nao vira vazamento: vira ferramenta que nao acha nada |
+| contexto vira ordem? | **nao.** O prompt diz explicitamente para IGNORAR o contexto quando a pergunta for outra -- senao "quanto vendi ontem?" viraria consulta sobre o SKU aberto |
+
+E a observabilidade grava o **tipo** de contexto, nunca a entidade: `ai_runs.scope` recebe `context_kind`, e ha teste afirmando que o codigo do SKU nao aparece la.
+
+**3. AS DUAS FERRAMENTAS, E O QUE ELAS NAO RESPONDEM**
+
+- **`sku_replenishment`** (codigo do SKU): aproveitavel decomposto, venda de 15/30/60/90 dias, tendencia, cobertura em dias, estado operacional, quantidade sugerida e a politica que a sustenta;
+- **`listing_performance`** (MLB + conta + periodo): visitas, unidades, pedidos, receita, conversao, mais preco e situacao do cadastro.
+
+**A descricao de cada uma diz o que ela NAO responde**, e isso e parte do contrato com o modelo: "nao responde quanto enviar ao Full (nao ha politica logistica)" e "nao responde historico de exposicao (o dado de trafego por dia nao existe)". Ferramenta que se anuncia larga demais e escolhida para a pergunta errada, e ai o modelo narra em cima de um numero que nao e daquilo.
+
+**Continua sem ferramenta, de proposito:** pedido/atendimento (rastreio e risco de mediacao nao tem fonte), envio ao Full (D-147) e trafego por dia (D-266). Sao as mesmas recusas de sempre, agora ditas para o planner em vez de so para a tela.
+
+**4. A COMPOSICAO GANHOU UM DONO -- E ESSE E O PONTO DELICADO DA FATIA**
+
+`sku_replenishment` **nao recalcula nada**: le `get_purchase_suggestions` (a mesma RPC de `/reposicao`) e compoe o veredito com `composeSkuReplenishment`, peca nova de `@sb/domain`.
+
+O arranjo das cinco pecas canonicas (tendencia, aproveitavel, politica, sugestao, estado) morava inline em `page.tsx`. Extrair foi a regra de contencao da casa cumprida ao pe da letra -- peca compartilhada quando o SEGUNDO consumidor aparece --, mas o motivo e mais forte que estilo: **o Copiloto e a tela precisam responder o MESMO numero**. Duas composicoes paralelas divergiriam no primeiro ajuste de qualquer peca, e a divergencia apareceria como o assistente contradizendo a tela que o operador tem aberta ao lado. Nao existe forma pior de errar neste produto.
+
+**5. A RECUSA VIAJA JUNTO DO NULO**
+
+A saida carrega `refusals` ao lado de `coverageDays`, `state` e `suggestedQuantity` nulos, e o prompt ganhou a regra: *"numero ausente NAO e zero"*. Sem isso, o modelo le `coverageDays: null` e narra ruptura onde ha **saldo sentinela** (D-127) ou **falta de configuracao** (D-144) -- inventando o pior caso justamente onde a casa recusa afirmar qualquer caso. Mesma coisa com `conversion` nula: sem visita nao ha denominador, e 0% seria resposta errada (D-123).
+
+**6. `p_search` CASA TITULO TAMBEM, E ISSO QUASE VIROU DEFEITO**
+
+A RPC recebe um termo, nao uma chave: pedir `SB-001` traz `SB-0010` junto. O casamento exato e refeito em codigo, com teste -- responder sobre o SKU errado com toda a confianca do mundo e o defeito mais caro que uma ferramenta de dados pode ter.
+
+**7. O QUE A TELA `/copiloto` GANHOU, E O QUE ELA NAO GANHOU**
+
+Ganhou os marcadores das duas ferramentas ("consultou estoque e reposicao do SKU"), porque escopo visivel e requisito desde D-114. **Nao ganhou sugestoes novas**, e a ausencia e a decisao: "Como esta o estoque do SKU ...?" precisa de um codigo que esta tela nao sabe, e sugestao com lacuna para o operador preencher promete um clique e entrega uma tarefa. Onde elas viram sugestao de um clique e na gaveta, que sabe o que esta aberto.
+
+**Impacto:** `packages/domain/src/purchasing/sku-replenishment.ts` (+teste), `packages/contracts/src/copilot-tools.ts` (+dois pares de schema, +dois nomes), `apps/api/src/copilot.ts` (+dois runners, `caller` na assinatura das ferramentas), `apps/api/src/copilot-chat.ts` (contexto, +duas ferramentas no planner, regra do nulo), `apps/web/app/reposicao/page.tsx` (usa a composicao), `apps/web/app/copiloto/chat.tsx` (marcadores), testes de `copilot`, `copilot-chat` e do dominio.
+
+**Verificacao:** `check` **29/29** (`--force`), build **8/8**, integracao **643/643**, e2e **100/100**, cinco guardas verdes. As ferramentas novas nao aparecem no e2e porque **a API nao sobe na suite de Playwright** (D-276) -- elas sao provadas por teste de unidade com fake de cliente, incluindo as recusas.
+
+**Fica aberto, e agora COM a pre-condicao paga:** a gaveta em si.
+
 ## Como adicionar nova decisao
 
 Registrar:

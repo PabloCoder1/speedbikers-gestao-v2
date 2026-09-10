@@ -1,16 +1,24 @@
 import { recordAiRun } from "@sb/db";
 import { toSalesMetricDate } from "@sb/domain";
 import {
+  listingPerformanceInputSchema,
   salesAccountComparisonInputSchema,
   salesPeriodComparisonInputSchema,
   salesSummaryInputSchema,
+  skuReplenishmentInputSchema,
 } from "@sb/contracts";
 import { z } from "zod";
 
 import type { PlanBlock, PlanMessage, PlanToolDefinition } from "./anthropic-client.js";
 import type { Caller } from "./auth.js";
 import type { CopilotDeps } from "./copilot.js";
-import { runSalesAccountComparison, runSalesPeriodComparison, runSalesSummary } from "./copilot.js";
+import {
+  runListingPerformance,
+  runSalesAccountComparison,
+  runSalesPeriodComparison,
+  runSalesSummary,
+  runSkuReplenishment,
+} from "./copilot.js";
 
 /**
  * Planner por linguagem natural (Fase 7, D-114) — o chat do Copiloto.
@@ -28,8 +36,35 @@ import { runSalesAccountComparison, runSalesPeriodComparison, runSalesSummary } 
  * verificar as vendas…"), que é exatamente o feedback que um chat precisa.
  */
 
+/**
+ * O CONTEXTO DE TELA (D-293) — a pré-condição que D-276 escreveu.
+ *
+ * A gaveta do Figma promete "o Copiloto lerá os dados desta tela", e a rota
+ * recebia `{ message }` e mais nada. Aqui ele entra como um par fechado
+ * `{ kind, id }`, e três coisas o mantêm honesto:
+ *
+ *  1. **`kind` é conjunto fechado** — só os contextos que existem como
+ *     ferramenta. Um `kind` novo no payload é recusado, não ignorado;
+ *  2. **o id NÃO é autoridade**: ele entra no prompt como "o usuário está
+ *     olhando X", e quem lê o dado é a ferramenta, sob a RLS do chamador. Um
+ *     id de outra organização não vira vazamento — vira ferramenta que não
+ *     acha nada;
+ *  3. **contexto não é ordem**: o modelo continua livre para responder outra
+ *     coisa se a pergunta for outra. Amarrar a resposta à tela transformaria
+ *     "quanto vendi ontem?" numa consulta sobre o SKU aberto.
+ */
+export const copilotContextSchema = z.object({
+  kind: z.enum(["sku", "listing"]),
+  /** O código do SKU ou o MLB do anúncio — o mesmo identificador que a tela mostra. */
+  id: z.string().min(1).max(80),
+  /** Só para anúncio: a conta dona dele, que a ferramenta exige. */
+  mlAccountId: z.uuid().optional(),
+});
+export type CopilotContext = z.infer<typeof copilotContextSchema>;
+
 export const copilotChatRequestSchema = z.object({
   message: z.string().min(1).max(1_000),
+  context: copilotContextSchema.optional(),
 });
 export type CopilotChatRequest = z.infer<typeof copilotChatRequestSchema>;
 
@@ -94,20 +129,90 @@ const CHAT_TOOLS: PlanToolDefinition[] = [
       required: ["dateFrom", "dateTo", "mlAccountIds"],
     },
   },
+  /*
+    AS DUAS FERRAMENTAS ALÉM DE VENDA (D-293). A descrição de cada uma diz o
+    que ela NÃO responde — é o que impede o modelo de escolher a ferramenta
+    errada e narrar em cima de um número que não é daquilo.
+  */
+  {
+    name: "sku_replenishment",
+    description:
+      "Estoque e reposição de UM SKU pelo código: aproveitável (local + Full + trânsito), venda de 15/30/60/90 dias, tendência, cobertura em dias, estado operacional e quantidade sugerida de compra. Não responde quanto enviar ao Full (não há política logística) nem movimentações individuais.",
+    input_schema: {
+      type: "object",
+      properties: {
+        sku: { type: "string", description: "O código do SKU, como aparece na tela (ex.: SB-001)" },
+      },
+      required: ["sku"],
+    },
+  },
+  {
+    name: "listing_performance",
+    description:
+      "Desempenho de UM anúncio no período: visitas, unidades vendidas, pedidos, receita e conversão, mais preço e situação do cadastro. Conversão NULA significa que não houve visita no período — nunca 0%. Não responde histórico de exposição (o dado de tráfego por dia não existe no sistema).",
+    input_schema: {
+      type: "object",
+      properties: {
+        itemId: { type: "string", description: "O MLB do anúncio" },
+        mlAccountId: { type: "string", description: "UUID da conta dona do anúncio (da lista do contexto)" },
+        dateFrom: DATE_PROPERTY,
+        dateTo: DATE_PROPERTY,
+      },
+      required: ["itemId", "mlAccountId", "dateFrom", "dateTo"],
+    },
+  },
 ];
 
 interface ChatToolRunner {
   schema: z.ZodType;
-  run: (userClient: ReturnType<CopilotDeps["createUserClient"]>, input: never) => Promise<unknown>;
+  /*
+    `organizationId` entrou em D-293 junto das ferramentas de estoque e
+    anúncio: as RPCs delas exigem `p_organization_id`. O id vem da
+    autenticação, nunca do payload — e a RLS continua sendo a autorização.
+  */
+  run: (
+    userClient: ReturnType<CopilotDeps["createUserClient"]>,
+    input: never,
+    organizationId: string,
+  ) => Promise<unknown>;
 }
 
 const RUNNERS: Record<string, ChatToolRunner> = {
   sales_summary: { schema: salesSummaryInputSchema, run: runSalesSummary },
   sales_period_comparison: { schema: salesPeriodComparisonInputSchema, run: runSalesPeriodComparison },
   sales_account_comparison: { schema: salesAccountComparisonInputSchema, run: runSalesAccountComparison },
+  sku_replenishment: { schema: skuReplenishmentInputSchema, run: runSkuReplenishment },
+  listing_performance: { schema: listingPerformanceInputSchema, run: runListingPerformance },
 };
 
-function buildSystemPrompt(today: string, accounts: { id: string; label: string }[]): string {
+/**
+ * A frase de contexto (D-293). Ela diz ao modelo O QUE o usuário está olhando
+ * e nada mais: o dado continua vindo da ferramenta, sob a RLS de quem
+ * perguntou. É deliberado que não seja uma ordem — "responda sobre este SKU"
+ * transformaria "quanto vendi ontem?" numa consulta sobre o SKU aberto.
+ */
+function describeContext(context: CopilotContext | undefined): string[] {
+  if (context === undefined) {
+    return [];
+  }
+
+  const alvo =
+    context.kind === "sku"
+      ? `o SKU ${context.id}`
+      : `o anúncio ${context.id}${context.mlAccountId === undefined ? "" : ` (conta ${context.mlAccountId})`}`;
+
+  return [
+    `Contexto: o usuário está com ${alvo} aberto na tela.`,
+    "- Se a pergunta for sobre 'este SKU', 'este anúncio' ou 'aqui', use o contexto acima para preencher os argumentos da ferramenta.",
+    "- Se a pergunta for sobre outra coisa, IGNORE o contexto — ele diz onde a pessoa está, não sobre o que ela pode perguntar.",
+  ];
+}
+
+function buildSystemPrompt(
+  today: string,
+  accounts: { id: string; label: string }[],
+  context: CopilotContext | undefined,
+): string {
   const accountList =
     accounts.length > 0
       ? accounts.map((account) => `- ${account.label}: ${account.id}`).join("\n")
@@ -118,11 +223,13 @@ function buildSystemPrompt(today: string, accounts: { id: string; label: string 
     `Hoje é ${today} (fuso America/Sao_Paulo). Use esta data para calcular períodos como "últimos 7 dias".`,
     "Contas Mercado Livre que este usuário pode consultar (rótulo: UUID):",
     accountList,
+    ...describeContext(context),
     "Regras estritas:",
     "- Responda SOMENTE com base nos resultados das ferramentas. Nunca invente número, conta ou período.",
     "- Sempre diga qual período e qual conta (ou consolidado) a resposta cobre.",
     "- Valores monetários em reais (R$). Seja conciso.",
-    "- Se a pergunta não puder ser respondida pelas ferramentas disponíveis (vendas por período, comparação de períodos, comparação entre contas), diga isso e aponte o que você consegue responder — nunca improvise.",
+    "- Se a pergunta não puder ser respondida pelas ferramentas disponíveis (vendas por período, comparação de períodos, comparação entre contas, estoque e reposição de um SKU, desempenho de um anúncio), diga isso e aponte o que você consegue responder — nunca improvise.",
+    "- Número ausente NÃO é zero: cobertura, estado e sugestão vêm nulos sob recusa (sem configuração de reposição, saldo sentinela, histórico incompleto), e conversão vem nula quando não houve visita. Diga a recusa em vez de preencher a lacuna.",
     "- Perguntas sobre um dia ainda em andamento podem estar incompletas — as métricas fecham por dia.",
   ].join("\n");
 }
@@ -149,7 +256,7 @@ export async function runCopilotChat(
     const accountsResult = await userClient.from("ml_accounts").select("id, label").order("label");
     const accounts = accountsResult.error === null ? accountsResult.data : [];
 
-    const system = buildSystemPrompt(toSalesMetricDate(new Date()), accounts);
+    const system = buildSystemPrompt(toSalesMetricDate(new Date()), accounts, request.context);
     const messages: PlanMessage[] = [{ role: "user", content: request.message }];
 
     for (let round = 0; round < MAX_ROUNDS; round += 1) {
@@ -210,7 +317,7 @@ export async function runCopilotChat(
         }
 
         try {
-          const data = await runner.run(userClient, parsed.data as never);
+          const data = await runner.run(userClient, parsed.data as never, caller.organizationId);
 
           toolResults.push({ type: "tool_result", tool_use_id: toolUse.id, content: JSON.stringify(data) });
         } catch (error) {
@@ -246,7 +353,7 @@ export async function runCopilotChat(
     organization_id: caller.organizationId,
     user_id: caller.userId,
     tool_names: ["copilot_chat", ...new Set(toolsUsed)],
-    scope: { message_length: request.message.length },
+    scope: { message_length: request.message.length, context_kind: request.context?.kind ?? null },
     llm_used: true,
     cost_usd: costUsd,
     latency_ms: Date.now() - startedAt,

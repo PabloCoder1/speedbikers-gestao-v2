@@ -1001,45 +1001,52 @@ está na "Próxima fatia segura".
 
 ## Última fatia concluída
 
-**A EXPORTAÇÃO DE `/precos` (D-292)** — o quarto item aberto seguido. (Antes: a
-lista de falhas, D-291; o recorte de não lidas, D-290; a paginação de
-`/atendimento`, D-289; a fusão `/cobertura` × `/reposicao`, D-288.)
+**A PRÉ-CONDIÇÃO DA GAVETA DO COPILOTO (D-293)** — o quinto item aberto
+seguido, e o primeiro que é backend. (Antes: a exportação de `/precos`, D-292;
+a lista de falhas, D-291; o recorte de não lidas, D-290; a paginação de
+`/atendimento`, D-289.)
 
-### A recusa de D-264 era sobre a FORMA, não sobre exportar
+### D-276 não recusou a gaveta por gosto — escreveu a pré-condição
 
-"Botão que não faz nada é pior que botão nenhum." O que sobrevive dela: não há
-botão, há **link** para uma rota que devolve arquivo — e a rota lê os mesmos
-parâmetros da tela, porque o arquivo é o RECORTE que está na frente do
-operador, nunca "tudo".
+Das **doze** perguntas que o desenho sugere, **uma** tinha como ser
+respondida: as três ferramentas eram todas de venda. E o selo "Contexto Atual"
+prometia "o Copiloto lerá os dados desta tela" sobre uma rota que recebia
+`{ message }` e mais nada. Esta fatia paga as duas metades.
 
-### O teto mora dentro do arquivo
+### O contexto entra como DADO, nunca como autoridade
 
-Exportar "inteiro" esbarra no `max_rows = 1000` do PostgREST e na memória do
-processo. A leitura pagina de mil em mil até **20.000 linhas**; passou disso, a
-planilha diz em faixa amarela, no topo, quantas de quantas ela tem. Medido no
-Dev: `listing.price.changed` tem **244 eventos no total**, então hoje nenhum
-recorte chega perto — o teto existe para o dia em que chegar.
+`{ kind, id }` com `kind` em conjunto fechado (`sku` | `listing`). O id vai
+para o prompt; quem lê o dado é a ferramenta, **sob a RLS de quem perguntou** —
+um id de outra organização não vira vazamento, vira ferramenta que não acha
+nada. E o prompt diz para **IGNORAR** o contexto quando a pergunta for outra:
+senão "quanto vendi ontem?" viraria consulta sobre o SKU aberto.
 
-### Três horas de diferença, achadas ABRINDO a planilha
+### Duas ferramentas, e a descrição de cada uma diz o que ela NÃO responde
 
-O XLSX não guarda fuso: célula de data é relógio de parede. A mesma alteração
-aparecia **17:52 na tela e 20:52 no arquivo**. A conversão passou a ser
-explícita (`America/Sao_Paulo`, o fuso canônico da casa) e a coluna se chama
-"Data / Hora (São Paulo)". **Nenhum teste de tela pegaria isso** — o e2e prova
-que o download acontece e que o arquivo é um ZIP válido; quem pegou foi abrir a
-planilha e comparar célula com célula da tela.
+`sku_replenishment` (aproveitável, tendência, cobertura, estado, sugestão) e
+`listing_performance` (visitas, venda, conversão, preço). Continuam sem
+ferramenta, de propósito: envio ao Full (não há política logística, D-147),
+tráfego por dia (não existe no esquema, D-266) e pedido/atendimento.
 
-### A janela ganhou um dono
+### A composição ganhou um dono, e esse é o ponto delicado
 
-A conversão "dia civil → `[de, ate)`" morava em `page.tsx`; duas cópias
-produziriam uma planilha de um período e uma tela de outro **com o mesmo
-link**. Virou `resolvePriceWindow`, com teste — inclusive o caso que o
-comentário afirmava e nada segurava: `ate` é inclusivo na tela e vira o início
-do dia seguinte na consulta.
+O arranjo das cinco peças canônicas morava inline em `/reposicao/page.tsx`.
+Virou `composeSkuReplenishment` em `@sb/domain`, usado pelos dois — porque
+**o Copiloto e a tela precisam responder o mesmo número**. Duas composições
+paralelas divergiriam no primeiro ajuste de qualquer peça, e a divergência
+apareceria como o assistente contradizendo a tela aberta ao lado.
+
+### A recusa viaja junto do nulo
+
+A saída carrega `refusals` ao lado de cada nulo, e o prompt ganhou a regra
+"número ausente NÃO é zero". Sem isso o modelo lê `coverageDays: null` e narra
+ruptura onde há saldo sentinela — inventando o pior caso justamente onde a casa
+recusa afirmar qualquer caso.
 
 **Verificação:** `check` 29/29 (`--force`), build 8/8, integração 643/643,
-e2e **100/100** (+1), cinco guardas verdes. Planilha aberta na inspeção: "2 de
-2", congelamento, autofiltro e as horas batendo com a tela.
+e2e 100/100, cinco guardas verdes. As ferramentas novas não aparecem no e2e
+porque **a API não sobe na suíte de Playwright** (D-276) — são provadas por
+teste de unidade com fake de cliente, incluindo as recusas.
 
 ## Próxima fatia segura
 
@@ -1135,5 +1142,9 @@ do seed — ou algum spec anterior já escreveu por cima dele?**
   (78% delas também são webhook), então a lista crua não resolveria — quem
   resolve é agrupar por assinatura do motivo: **170 motivos crus viram 16
   linhas**. A migration foi aplicada no Dev pela esteira, e os tipos já vieram do gerador do MCP.
-- **A gaveta do Copiloto** — precisa de parâmetro de contexto na API e de
-  ferramentas além de venda (D-276).
+- **A gaveta do Copiloto** — a PRÉ-CONDIÇÃO foi paga em **D-293**: a rota
+  `/v1/copilot/chat` passou a receber contexto de tela (`{ kind, id }`, conjunto
+  fechado, e o id é dado, nunca autoridade) e ganhou **duas ferramentas além de
+  venda** — `sku_replenishment` (compõe a MESMA composição de `/reposicao`,
+  `composeSkuReplenishment`, para o assistente não contradizer a tela) e
+  `listing_performance`. Falta a gaveta em si.

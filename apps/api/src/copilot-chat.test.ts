@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AnthropicClient, PlanResult } from "./anthropic-client.js";
 import type { Caller } from "./auth.js";
-import type { CopilotChatEvent } from "./copilot-chat.js";
-import { runCopilotChat } from "./copilot-chat.js";
+import type { CopilotChatEvent, CopilotContext } from "./copilot-chat.js";
+import { copilotChatRequestSchema, runCopilotChat } from "./copilot-chat.js";
 import type { CopilotDeps } from "./copilot.js";
 
 const CALLER: Caller = {
@@ -77,11 +77,11 @@ function deps(plans: PlanResult[]) {
   return { copilot, plan, recorded };
 }
 
-async function run(plans: PlanResult[], message = "como foram as vendas?") {
+async function run(plans: PlanResult[], message = "como foram as vendas?", context?: CopilotContext) {
   const { copilot, plan, recorded } = deps(plans);
   const events: CopilotChatEvent[] = [];
 
-  await runCopilotChat(copilot, CALLER, "token", { message }, (event) => {
+  await runCopilotChat(copilot, CALLER, "token", { message, ...(context === undefined ? {} : { context }) }, (event) => {
     events.push(event);
 
     return Promise.resolve();
@@ -209,5 +209,76 @@ describe("runCopilotChat (D-114)", () => {
     expect(run0.cost_usd).toBeCloseTo(0.003);
     expect(run0.tool_names).toEqual(["copilot_chat", "sales_summary"]);
     expect(run0.llm_used).toBe(true);
+  });
+});
+
+/**
+ * O CONTEXTO DE TELA (D-293) — a pré-condição que D-276 escreveu para a gaveta
+ * do Copiloto: a rota recebia `{ message }` e nada mais, então o selo
+ * "o Copiloto lerá os dados desta tela" era moldura sem função.
+ */
+describe("contexto de tela (D-293)", () => {
+  it("sem contexto, o prompt não fala de tela nenhuma", async () => {
+    const { plan } = await run([finalText("ok")]);
+
+    expect(plan.mock.calls[0]?.[0]?.system ?? "").not.toContain("Contexto:");
+  });
+
+  it("com contexto, o prompt diz o que está aberto — e diz para IGNORAR quando a pergunta é outra", async () => {
+    const { plan } = await run([finalText("ok")], "como está o estoque daqui?", {
+      kind: "sku",
+      id: "SB-001",
+    });
+
+    const system = plan.mock.calls[0]?.[0]?.system ?? "";
+
+    expect(system).toContain("o SKU SB-001 aberto na tela");
+    // A frase que impede o contexto de virar ordem: "quanto vendi ontem?" não
+    // pode virar consulta sobre o SKU aberto.
+    expect(system).toMatch(/IGNORE o contexto/);
+  });
+
+  it("o contexto de anúncio carrega a conta, que é o que a ferramenta exige", async () => {
+    const { plan } = await run([finalText("ok")], "e a conversão?", {
+      kind: "listing",
+      id: "MLB123",
+      mlAccountId: "33333333-3333-4333-8333-333333333333",
+    });
+
+    expect(plan.mock.calls[0]?.[0]?.system ?? "").toContain("o anúncio MLB123 (conta 33333333");
+  });
+
+  /*
+    O id do contexto NÃO é autoridade: quem lê o dado é a ferramenta, sob a RLS
+    de quem perguntou. O que o schema garante é que `kind` seja um dos
+    contextos que EXISTEM como ferramenta — um `kind` novo é recusado, não
+    ignorado em silêncio.
+  */
+  it("`kind` fora do conjunto fechado é recusado pelo schema", () => {
+    expect(copilotChatRequestSchema.safeParse({ message: "oi", context: { kind: "pedido", id: "1" } }).success).toBe(
+      false,
+    );
+    expect(copilotChatRequestSchema.safeParse({ message: "oi", context: { kind: "sku", id: "SB-1" } }).success).toBe(
+      true,
+    );
+  });
+
+  it("as ferramentas além de venda são oferecidas ao modelo", async () => {
+    const { plan } = await run([finalText("ok")]);
+
+    const nomes = (plan.mock.calls[0]?.[0]?.tools ?? []).map((tool) => tool.name);
+
+    expect(nomes).toContain("sku_replenishment");
+    expect(nomes).toContain("listing_performance");
+  });
+
+  /* `ai_runs` registra QUE houve contexto, nunca o id — o id é dado do usuário. */
+  it("a observabilidade grava o tipo de contexto, não a entidade", async () => {
+    const { recorded } = await run([finalText("ok")], "e aqui?", { kind: "sku", id: "SB-001" });
+
+    const escopo = (recorded[0] as { scope: Record<string, unknown> }).scope;
+
+    expect(escopo.context_kind).toBe("sku");
+    expect(JSON.stringify(escopo)).not.toContain("SB-001");
   });
 });
