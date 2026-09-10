@@ -9319,3 +9319,85 @@ O risco no HANDOFF foi reescrito. A forma medida e mais estreita: a doenca do pl
 **Impacto:** `supabase/migrations/20260910230000_sales_expanded_single_pass.sql`, `docs/HANDOFF.md`.
 
 **Verificacao:** `db reset` local aplicou as migrations em ordem; `rls.integration` **630/630**, incluindo o bloco proprio de `get_sales_expanded_summary` (D-157) que cobre escopo por conta, por organizacao e marca inexistente.
+
+## D-307 - a varredura das 19 achou UMA doente, e ela estava ARMADA na tela inicial
+
+**Contexto:** D-305 curou `/anuncios`; D-306 mediu as duas seguintes da lista e nao achou doenca nenhuma. O usuario pediu a varredura das 19 restantes com o ensaio de execucoes consecutivas.
+
+---
+
+**PRIMEIRO, UMA CORRECAO DE METODO**
+
+Eu tinha descrito o ensaio como "o sinal e o salto na SEXTA execucao". Isso vale para **plpgsql/SPI**, que usa plano custom nas cinco primeiras e so entao migra. Numa funcao `language sql` do PostgreSQL 17 o corpo e planejado **uma vez, sem os valores dos argumentos** -- ja nasce generico, e nao ha salto. O sinal ali e **estado estavel desproporcional**, e as 6 a 8 execucoes servem para separa-lo de cache frio.
+
+Foi assim que `/anuncios` se comportou: estourou na PRIMEIRA chamada, nao na sexta.
+
+---
+
+**O ACHADO: `get_stock_coverage`, 27 SEGUNDOS**
+
+Contra um teto de 8 s para `authenticated`. E nao as vezes -- nas quatro execucoes: **27.103, 26.987, 26.675, 28.016 ms**. E o estado normal dela.
+
+O corpo, com os mesmos valores como literais: **19 ms**. Mil e quatrocentas vezes. Assinatura identica a de D-305.
+
+**Por que ninguem tinha visto, e esta e a parte que interessa:**
+
+| | |
+|---|---|
+| `pg_stat_statements` dizia | **89 ms de media, 1.425 ms de pior caso** |
+| por isso ela | nem estava na lista de suspeitas de D-305 |
+
+Duas razoes:
+
+1. **as chamadas de tela passam `p_sku_id`** (cartao "Cobertura" do dashboard de SKU, e `produtos/inspecao.ts`) -- com UM SKU ela e barata;
+2. a unica chamada SEM `p_sku_id` vem de `get_stock_coverage_summary`, e as **3 chamadas** registradas dela sao de **2026-09-01**, quando a base era menor. Nove dias sem ninguem abrir a tela.
+
+**E a tela e a INICIAL** (`apps/web/app/page.tsx`, cartao "SKUs sem saldo local"). Isto nao era defeito ativo sendo tolerado: era defeito **armado**. O proximo carregamento da Home o encontraria.
+
+**A licao sobre a fonte:** `pg_stat_statements` mede o que foi chamado, nao o que pode ser chamado. Uma funcao cara so na forma que ninguem exercitou ha nove dias aparece barata. **Media de producao nao e cobertura** -- e por isso a varredura pediu chamada deliberada de cada forma, nao leitura de estatistica.
+
+---
+
+**A CURA, E O RESULTADO CONFERIDO**
+
+A de D-305: `plpgsql` + `plan_cache_mode = 'force_custom_plan'`.
+
+    md5 das 3.259 linhas, funcao atual x nova    IDENTICO
+    6 execucoes seguidas   49, 49, 50, 49, 49, 49 ms
+
+**27.000 ms -> 49 ms.**
+
+**Nenhuma alteracao textual foi necessaria**, diferente de D-305: aqui tudo ja estava qualificado, inclusive `sales.units_sold` e `stock.local_quantity` no CTE `combined` -- que sao exatamente os nomes que colidiriam com as variaveis de `returns table`. `get_stock_coverage_summary` nao precisou mudar: e um agregado sobre esta funcao e herda o plano custom da interna.
+
+---
+
+**O RESTO DA VARREDURA: 16 SAUDAVEIS**
+
+Estado estavel, como `authenticated` real:
+
+| | | | |
+|---|---|---|---|
+| `get_purchase_state_counts` | 778-986 ms | `get_stock_movements` | 148-149 ms |
+| `get_purchase_suggestions` | 771-1200 ms | `get_sales_margin_summary` | 88-93 ms |
+| `get_stock_movements_summary` | 418-430 ms | `get_sku_sales_baseline` | 50-53 ms |
+| `get_link_integrity` | 251-389 ms | `get_sku_timeline` | 48-50 ms |
+| `get_sku_abc_curve` | 224-297 ms | `get_unlinked_listings` | 31-33 ms |
+| `get_fulfillment_overview` | 100-103 ms | `get_sales_today_summary` | 18-31 ms |
+| `get_stock_balances` | 14-15 ms | `get_sales_summary` | 2 ms |
+| `get_system_health` | 1 ms | `get_sales_daily_series` | 1 ms |
+
+Nenhuma perto do teto. As duas de ~800 ms a 1,2 s sao as de `/reposicao`, e ficam **anotadas, nao consertadas**: 1,2 s e folgado contra 8 s e nao ha defeito medido nelas, so custo. Consertar sem defeito e o erro que D-306 registrou.
+
+`compute_erp_target_balances` e `compute_inventory_balances_from_ledger` saem da conta: **`authenticated` nao as executa** (permission denied). Sao caminho de `service_role`, e apareciam na lista porque a `api` as chama com a chave de servico.
+
+---
+
+**UM ERRO MEU QUE A SUITE PEGOU, e vale registrar**
+
+A migration nasceu como `20260910240000` -- **hora 24**, que nao existe. `get_system_health` converte a versao da migration em timestamp, e seis casos ficaram vermelhos com `date/time field value out of range`. Renomeada para `20260910235000`.
+
+Nao ha guarda dedicada para isso, e nem precisa: **o teste de `get_system_health` E a guarda**, porque ele le a versao como data de verdade. Vale saber que ela existe -- o nome do arquivo de migration precisa ser um instante valido, nao so um numero crescente.
+
+**Impacto:** `supabase/migrations/20260910235000_stock_coverage_custom_plan.sql`, `docs/HANDOFF.md`.
+
+**Verificacao:** `db reset` local aplicou as 162 migrations em ordem; a funcao resultante e `plpgsql`/`stable`/invoker com `search_path=""` e `plan_cache_mode=force_custom_plan`; `rls.integration` **630/630**, incluindo o bloco proprio de `get_stock_coverage` (D-058).

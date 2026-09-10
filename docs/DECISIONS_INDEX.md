@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **302** (D-001 a D-306).
+Decisões registradas: **303** (D-001 a D-307).
 
 ## Por domínio
 
@@ -285,7 +285,7 @@ Decisões registradas: **302** (D-001 a D-306).
 - **D-251** — D16: a Curva ABC ganha os cartoes de classe, e devolve dois filtros ao dono deles
 - **D-293** — A pre-condicao da gaveta do Copiloto: o contexto que a API nao recebia, e as duas ferramentas alem de venda
 
-### worker/infra (57)
+### worker/infra (58)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -344,4 +344,5 @@ Decisões registradas: **302** (D-001 a D-306).
 - **D-285** — O PASSO CINZA: o chao muda de cor, e cinco dos oito pre-requisitos ja nao existiam
 - **D-295** — A superficie de confirmacao humana da republicacao: dois atos, e o segundo exige um gesto a mais
 - **D-304** — "Calculo desatualizado" com o recalculo rodando: o carimbo media a MUDANCA, e a tela precisava da CONFERENCIA
+- **D-307** — a varredura das 19 achou UMA doente, e ela estava ARMADA na tela inicial
 
