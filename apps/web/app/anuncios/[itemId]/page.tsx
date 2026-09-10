@@ -12,10 +12,12 @@ import { StatusPill } from "../../../components/status-pill";
 import { TOM, tomDeRelist, tomDeStatus } from "../../../components/tone";
 import { formatEventDiff } from "../../../lib/event-format";
 import { formatBusinessDate, formatCount, formatCurrency, formatDateTime, formatPercent } from "../../../lib/format";
-import { actionStatusLabel, eventTypeLabel, listingStatusLabel, statusTone } from "../../../lib/labels";
+import { actionStatusLabel, eventTypeLabel, listingStatusLabel, relistStatusLabel, statusTone } from "../../../lib/labels";
 import { fullSituationCriterion, fullSituationLabel, fullSituationTom, isFullRow } from "../../../lib/full-filters";
 import { formatDecisionSnapshot } from "../../../lib/decision-format";
+import { currentMembership } from "../../../lib/membership";
 import { createClient } from "../../../lib/supabase/server";
+import { RelistPanel } from "./relist-panel";
 
 export const metadata = { title: "Dashboard do Anúncio — Speed Bikers Gestão" };
 
@@ -51,10 +53,12 @@ export const dynamic = "force-dynamic";
  * registrados. E "Saúde do Anúncio" (competitividade de preço, qualidade das
  * fotos) não tem fonte: do painel sobra o que é medido, que é o Full.
  *
- * **Republicar não sai daqui.** O motor de relist existe (`listing_relists`,
- * nove estados, escrito pelo worker e pela API), mas a primeira republicação
- * real é ato humano deliberado, ainda pendente em `docs/HANDOFF.md`. A tela
- * LÊ o histórico de republicação na aba Histórico e não oferece disparo.
+ * **Republicar SAI daqui desde D-295**, e em dois atos. O motor existe desde a
+ * Fase 9 (`listing_relists`, nove estados, worker e API); o que faltava era o
+ * lugar onde uma pessoa autoriza. O pedido roda a conferência prévia e não
+ * fecha nada; a execução fecha o anúncio pai no Mercado Livre, e fechar é
+ * IRREVERSÍVEL — por isso ela exige um gesto a mais. Papel e escopo por conta
+ * continuam impostos no servidor: o botão escondido é cortesia, não defesa.
  *
  * ## Leitura
  *
@@ -121,6 +125,7 @@ interface DiaVisitaRow {
 
 interface RelistRow {
   id: string;
+  parent_item_id: string;
   child_item_id: string | null;
   status: string;
   failure_reason: string | null;
@@ -190,6 +195,13 @@ export default async function AnuncioPage({
     pricesResult,
     relistsResult,
     decisionsResult,
+    /*
+      O PAPEL, para a aba Histórico decidir se oferece o disparo (D-295). Entra
+      no `Promise.all` que já existe: em fila seria uma ida somada ao custo da
+      página (D-185, o custo é o round trip). Esconder o botão de quem não pode
+      é CORTESIA — a autorização real é do servidor (D-161).
+    */
+    membership,
   ] = await Promise.all([
     needsSummary
       ? supabase
@@ -304,7 +316,7 @@ export default async function AnuncioPage({
     needsRelists
       ? supabase
           .from("listing_relists")
-          .select("id, child_item_id, status, failure_reason, created_at, updated_at")
+          .select("id, parent_item_id, child_item_id, status, failure_reason, created_at, updated_at")
           .or(`parent_item_id.eq.${row.item_id},child_item_id.eq.${row.item_id}`)
           .order("created_at", { ascending: false })
           .limit(20)
@@ -319,6 +331,7 @@ export default async function AnuncioPage({
           .order("created_at", { ascending: false })
           .limit(20)
       : Promise.resolve({ data: null, error: null }),
+    needsRelists ? currentMembership(supabase) : Promise.resolve(null),
   ]);
 
   const summary = summaryResult.data;
@@ -341,6 +354,14 @@ export default async function AnuncioPage({
   const visits = (visitsResult.data ?? []) as unknown as DiaVisitaRow[];
   const prices = (pricesResult.data ?? []) as unknown as TimelineEventRow[];
   const relists = (relistsResult.data ?? []) as unknown as RelistRow[];
+
+  /*
+    A operação deste anúncio COMO PAI — a mais recente. A tabela lista os dois
+    lados (pai e filho), mas quem pode ser republicado é o pai: oferecer o
+    botão na linha do filho seria oferecer outra operação, sobre outro anúncio.
+  */
+  const operacaoComoPai = relists.find((relist) => relist.parent_item_id === row.item_id) ?? null;
+  const papel = membership?.role ?? null;
   const decisions = (decisionsResult.data ?? []) as unknown as DecisionRow[];
 
   // Falha em qualquer consulta secundária aparece como ERRO, nunca como
@@ -885,7 +906,25 @@ export default async function AnuncioPage({
             <div style={{ marginTop: "var(--sb-space-3)" }}>
               <Panel
                 title="Republicações"
-                subtitle="Como pai (foi republicado) ou como filho (nasceu de uma republicação). Esta tela lê o histórico; republicar é ato humano deliberado, fora da interface."
+                subtitle="Como pai (foi republicado) ou como filho (nasceu de uma republicação). O pedido e a execução são dois atos humanos separados — o segundo fecha este anúncio, e fechar é irreversível."
+                aside={
+                  <RelistPanel
+                    itemId={row.item_id}
+                    mlAccountId={row.ml_account_id}
+                    podeRepublicar={papel === "ADMIN" || papel === "GESTOR"}
+                    operacao={
+                      operacaoComoPai === null
+                        ? null
+                        : {
+                            id: operacaoComoPai.id,
+                            status: operacaoComoPai.status,
+                            failureReason: operacaoComoPai.failure_reason,
+                            childItemId: operacaoComoPai.child_item_id,
+                            createdAt: operacaoComoPai.created_at,
+                          }
+                    }
+                  />
+                }
               >
                 {relists.length === 0 ? (
                   <p className="sb-empty">Nenhuma republicação registrada para este anúncio.</p>
@@ -906,8 +945,13 @@ export default async function AnuncioPage({
                           <tr key={relist.id}>
                             <td style={{ whiteSpace: "nowrap" }}>{formatDateTime(relist.created_at)}</td>
                             <td>
+                              {/*
+                                O RÓTULO, não o código (D-295): esta coluna imprimia
+                                `PREFLIGHT_FAILED` na frente de quem opera — a mesma
+                                classe que D-273 achou em Sincronização.
+                              */}
                               <span className="sb-status" style={TOM[tomDeRelist(relist.status)]}>
-                                {relist.status}
+                                {relistStatusLabel(relist.status)}
                               </span>
                             </td>
                             <td className="sb-mono">

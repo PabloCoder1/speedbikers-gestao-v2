@@ -1,7 +1,7 @@
 import { EVENT_SEVERITY } from "@sb/domain";
 import { describe, expect, it } from "vitest";
 
-import { eventTypeLabel, runStatusLabel } from "./labels.js";
+import { eventTypeLabel, relistStatusLabel, runStatusLabel } from "./labels.js";
 
 /**
  * Todo tipo de evento tem rótulo (D-208).
@@ -46,5 +46,35 @@ describe("rótulos de estado de execução (sync_runs e job_runs)", () => {
 
   it("status desconhecido devolve o código, sem inventar tradução", () => {
     expect(runStatusLabel("cancelled")).toBe("cancelled");
+  });
+});
+
+/**
+ * O MESMO elo, para `listing_relists.status` (D-295).
+ *
+ * A tabela de republicações mostrava `PREFLIGHT_FAILED` cru, e a fatia que
+ * abriu o disparo humano precisa dizer em português onde a operação está — é
+ * por esse texto que alguém decide se aperta o botão irreversível.
+ */
+describe("rótulos de estado de republicação (D-295)", () => {
+  it("os nove estados do CHECK têm rótulo em português", () => {
+    // `listing_relists_status_check`, migration 20260831123707.
+    for (const status of [
+      "REQUESTED",
+      "PREFLIGHT_FAILED",
+      "CLOSING",
+      "CLOSED",
+      "CLOSE_FAILED",
+      "RELISTING",
+      "RELISTED",
+      "RELIST_FAILED",
+      "REMAPPED",
+    ]) {
+      expect(relistStatusLabel(status), status).not.toBe(status);
+    }
+  });
+
+  it("estado desconhecido devolve o código, sem inventar tradução", () => {
+    expect(relistStatusLabel("PAUSED")).toBe("PAUSED");
   });
 });

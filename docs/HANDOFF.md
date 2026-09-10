@@ -227,7 +227,7 @@ Nada disto pode ser feito por um agente.
 | load tests e revisão de `pg_stat_statements` | — |
 | Supabase e Cloud Run de **produção** | depende de ato humano para criar |
 | rollout da V3 | — |
-| UX final da republicação | backend pronto (D-159→D-164); falta a superfície de confirmação humana |
+| ~~UX final da republicação~~ | ✅ **FEITA em D-295** — dois atos separados no Dashboard do Anúncio: pedir (roda a conferência, não fecha nada) e executar (fecha o pai, irreversível, com caixa de ciência). Falta só o **ensaio humano** com anúncio sacrificável, que é ato humano e está na seção própria |
 
 **Pendências saudáveis (B)** — agregam e cabem antes do lançamento:
 

@@ -90,18 +90,20 @@ test("Dashboard do Anúncio: Preço e Full mostram o que foi observado, com o me
   );
 });
 
-test("Dashboard do Anúncio: Histórico lê a republicação e NÃO oferece disparo", async ({ page }) => {
+test("Dashboard do Anúncio: Histórico mostra a republicação em PORTUGUÊS", async ({ page }) => {
   await login(page, `/anuncios/${COM_DADO}?aba=historico`);
 
   await expect(page.getByRole("heading", { name: "Republicações" })).toBeVisible();
-  await expect(page.getByText(E2E_LISTING_RELIST.status, { exact: true })).toBeVisible();
-  await expect(page.getByText(E2E_LISTING_RELIST.failureReason)).toBeVisible();
 
-  // A guarda que importa: nenhum caminho de UI dispara republicação. O motor
-  // vive no worker e na API, e a primeira republicação real é ato humano
-  // deliberado (docs/HANDOFF.md).
-  await expect(page.getByRole("button", { name: /republicar/i })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: /republicar/i })).toHaveCount(0);
+  /*
+    O ESTADO É RÓTULO, NÃO CÓDIGO (D-295). Esta tabela imprimia
+    `PREFLIGHT_FAILED` na frente de quem opera — a mesma classe que D-273 achou
+    em Sincronização ("done", minúsculo, numa coluna chamada Status). Aqui pesa
+    mais: é por este texto que alguém decide se aperta o botão irreversível.
+  */
+  await expect(page.getByText("Reprovada na conferência").first()).toBeVisible();
+  await expect(page.getByText(E2E_LISTING_RELIST.status, { exact: true })).toHaveCount(0);
+  await expect(page.getByText(E2E_LISTING_RELIST.failureReason)).toBeVisible();
 });
 
 test("Dashboard do Anúncio: Diagnóstico recusa por anúncio, e as abas sem dado dizem ausência", async ({ page }) => {

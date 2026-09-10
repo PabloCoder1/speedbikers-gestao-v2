@@ -8094,6 +8094,57 @@ O chat da gaveta e o MESMO componente da tela cheia, com `contexto`, `sugestoes`
 
 **COM ELA, A LISTA DE ITENS ABERTOS DA FRENTE VISUAL FECHOU.**
 
+## D-295 - A superficie de confirmacao humana da republicacao: dois atos, e o segundo exige um gesto a mais
+
+**Contexto:** com a lista da frente visual fechada (D-294), o proximo item aberto do HANDOFF e "UX final da republicacao -- backend pronto (D-159→D-164); falta a superficie de confirmacao humana". D-164 tinha declarado a lacuna com todas as letras: *"o que NAO existe: UI"*. Sem migration.
+
+---
+
+**1. O QUE JA EXISTIA, E POR QUE A INTERFACE NAO PODIA SER UM BOTAO SO**
+
+A Fase 9 inteira esta no backend desde 31/08: modelo com nove estados e idempotencia propria (D-159), preflight fail-safe (D-160), pedido (D-161), executor re-entrante (D-162), remapeamento (D-163) e medicao 7/15/30 (D-164). A tela do anuncio LIA o historico e dizia por escrito que nao disparava.
+
+**O backend separa pedido e execucao de proposito, e a interface respeita isso:**
+
+| ato | o que faz | o que a confirmacao diz |
+|---|---|---|
+| **Pedir** | guarda o retrato e roda a conferência previa | *"este ato NAO fecha nada"* |
+| **Executar** | fecha o pai no Mercado Livre e republica | *"fechar e IRREVERSIVEL"*, com caixa de ciencia |
+
+Colapsar os dois num clique seria transformar uma conferência inofensiva no gatilho do irreversivel. E dizer que o pedido e inofensivo tambem importa **no outro sentido**: se o ato inocente assustar como o perigoso, a pessoa hesita no lugar errado e relaxa no lugar certo.
+
+**2. O GESTO A MAIS, e por que ele nao e atrito decorativo**
+
+O botao de execucao nasce TRAVADO; so a caixa "Entendo que fechar este anuncio e irreversivel" o destrava. Fechar um anuncio nao volta atras (secao 2.16), e um clique errado nao pode bastar. A caixa diz, alem disso, o que o PRD proibe prometer: **o filho nasce com outro MLB e nao herda visitas nem vendas** -- exposicao nao e prometida por ninguem, nem pelo ML, nem por esta tela.
+
+**3. A INTERFACE NAO DECIDE NADA, E ISSO ESTA ESCRITO**
+
+Papel (ADMIN/GESTOR) e escopo por conta sao impostos no servidor (D-161), e o worker **re-roda o preflight na hora da execucao** de qualquer forma -- o estado do anuncio muda entre um ato e outro. Esconder o botao de quem nao pode e CORTESIA, nao defesa: oferecer o que o servidor vai negar e pior do que nao oferecer.
+
+**O erro do servidor chega inteiro na tela**, e isso e deliberado: 403 de papel, 409 de estado, 404 de anuncio de outra conta. Traduzir tudo em "nao foi possivel" apagaria justamente a informacao que faz a pessoa entender o proximo passo.
+
+**4. UMA OPERACAO VIVA POR PAI, E A TELA MOSTRA EM VEZ DE PROMETER**
+
+`listing_relists_one_live_per_parent` admite uma operacao viva por anuncio pai. Com uma delas em curso, oferecer "Pedir republicacao" prometeria um 409 -- a tela mostra o estado e o caminho que ele permite. `PREFLIGHT_FAILED` fica FORA do indice (e terminal): ali pedir de novo e legitimo, executar nao.
+
+**5. O CODIGO CRU QUE ESTAVA NA FRENTE DE QUEM OPERA**
+
+A tabela imprimia `PREFLIGHT_FAILED`. E a mesma classe que D-273 achou em Sincronizacao ("done", minusculo, numa coluna chamada Status) e que D-208 transformou em teste: `lookup()` devolve o codigo cru em silencio quando o rotulo falta. Aqui pesa mais -- **e por esse texto que alguem decide se aperta o botao irreversivel**. Os nove estados ganharam rotulo em portugues e um teste que exige rotulo para cada valor do CHECK.
+
+**6. O CASO DE E2E QUE ME CORRIGIU**
+
+Escrevi "GESTOR tambem ve o botao" e ele reprovou: **o GESTOR do seed nao enxerga o anuncio nenhum**. Nao e defeito -- e D-117 funcionando: `has_account_access` da acesso a ADMIN por organizacao e a todo o resto SO por `user_account_permissions`, que o seed nao concede.
+
+O caso virou a afirmacao mais forte: **a superficie do ato irreversivel nao aparece nem por engano para quem o servidor recusaria -- a pagina inteira some antes disso.** Com ancora positiva ao lado (D-276 §5), porque um caso que so afirma ausencia passa ate na tela de login.
+
+**7. O QUE CONTINUA FORA**
+
+A primeira republicacao real contra o Mercado Livre segue sendo **ensaio humano deliberado, pos-deploy, com anuncio sacrificavel** (D-162) -- esta fatia entrega o lugar onde esse ensaio acontece, nao o ensaio. E a `api` nao sobe na suite de Playwright: nada aqui republica de verdade; o que os casos guardam e quem ve o botao, o que a confirmacao diz e o que ela exige antes de deixar apertar.
+
+**Impacto:** `app/anuncios/[itemId]/relist-panel.tsx` (novo), `app/anuncios/[itemId]/page.tsx` (papel no `Promise.all` que ja existia, operacao viva, rotulo no lugar do codigo, docstring corrigida), `lib/labels.ts` + teste (nove estados), `e2e/republicacao.spec.ts` (novo, 5 casos), `e2e/anuncio-detalhe.spec.ts` (o caso que afirmava a ausencia do disparo) e `e2e/seed.ts` (uma operacao AGUARDANDO EXECUCAO, no segundo anuncio -- a primeira e terminal e nao exercita o caminho perigoso).
+
+**Verificacao:** `check` **29/29** (`--force`), build **8/8**, integracao **643/643** em banco recriado, e2e **109/109** (+5), cinco guardas verdes (`control-styles` foi a **201**). Painel e caixa de confirmacao renderizados a 1440px, com o botao vermelho travado ate a ciencia ser marcada.
+
 ## Como adicionar nova decisao
 
 Registrar:

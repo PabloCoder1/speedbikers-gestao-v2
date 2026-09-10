@@ -1233,6 +1233,49 @@ async function main(): Promise<void> {
     }
   }
 
+  /*
+    UMA REPUBLICAÇÃO AGUARDANDO EXECUÇÃO (D-295), em OUTRO anúncio.
+
+    A de cima e terminal (reprovada na conferência) e existe para a tela
+    mostrar o motivo; esta é o estado em que a superfície humana oferece o ato
+    IRREVERSÍVEL, e sem ela o caminho perigoso ficaria sem teste.
+
+    Fica no segundo anúncio de propósito: `listing_relists_one_live_per_parent`
+    admite uma viva por pai, e pô-la no primeiro esconderia o botão "Pedir
+    republicação" que o outro caso afirma.
+  */
+  const pendenteExistente = await db
+    .from("listing_relists")
+    .select("id")
+    .eq("ml_account_id", mlAccountId)
+    .eq("parent_item_id", E2E_LISTINGS[1].itemId)
+    .maybeSingle();
+
+  if (pendenteExistente.error !== null) {
+    throw pendenteExistente.error;
+  }
+
+  if (pendenteExistente.data === null) {
+    const pendente = await db.from("listing_relists").insert({
+      organization_id: organizationId,
+      ml_account_id: mlAccountId,
+      parent_item_id: E2E_LISTINGS[1].itemId,
+      status: "REQUESTED",
+      failure_reason: null,
+      requested_by: userId,
+      parent_snapshot: {
+        title: E2E_LISTINGS[1].title,
+        price: E2E_LISTINGS[1].price,
+        status: E2E_LISTINGS[1].status,
+        available_quantity: E2E_LISTINGS[1].available,
+      },
+    });
+
+    if (pendente.error !== null) {
+      throw pendente.error;
+    }
+  }
+
   // A ação do seed já existe com `sku_id`; esta é a MESMA anomalia vista pelo
   // anúncio (`mlb_id`), que é como o Dashboard do Anúncio a encontra.
   const acaoDoAnuncio = await db

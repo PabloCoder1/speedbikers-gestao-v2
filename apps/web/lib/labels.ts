@@ -35,6 +35,31 @@ const RUN_STATUS: Record<string, string> = {
   failed: "Falhou",
 };
 
+/*
+  Os nove estados de `listing_relists.status` (D-159), em português (D-295).
+
+  A tabela "Republicações" imprimia o código cru — `PREFLIGHT_FAILED` na
+  frente de quem opera —, que é a MESMA classe que D-273 achou em
+  Sincronização ("done", minúsculo, numa coluna chamada Status). E aqui pesa
+  mais: a superfície que oferece o ato irreversível precisa dizer, em
+  português, em que ponto a operação está.
+
+  Os rótulos dizem o ESTADO, não o passo interno: "Aguardando execução" é o
+  que REQUESTED significa para quem lê — preflight aprovado, nada destrutivo
+  ainda feito.
+*/
+const RELIST_STATUS: Record<string, string> = {
+  REQUESTED: "Aguardando execução",
+  PREFLIGHT_FAILED: "Reprovada na conferência",
+  CLOSING: "Fechando o anúncio",
+  CLOSED: "Anúncio fechado",
+  CLOSE_FAILED: "Falhou ao fechar",
+  RELISTING: "Republicando",
+  RELISTED: "Republicado",
+  RELIST_FAILED: "Falhou ao republicar",
+  REMAPPED: "Concluída",
+};
+
 const ROW_STATUS: Record<string, string> = {
   OK: "OK",
   SKIPPED: "Ignorada",
@@ -401,6 +426,7 @@ export const supportDeadlineSourceLabel = (code: string): string => lookup(SUPPO
 export const supportCaseEventLabel = (code: string): string => lookup(SUPPORT_CASE_EVENT, code);
 export const searchEntityLabel = (code: string): string => lookup(SEARCH_ENTITY, code);
 export const replyAttemptLabel = (code: string): string => lookup(REPLY_ATTEMPT_STATUS, code);
+export const relistStatusLabel = (code: string): string => lookup(RELIST_STATUS, code);
 
 /** Cor de destaque por estado. `null` = sem destaque, o padrão da tabela. */
 export function statusTone(code: string): "ok" | "warn" | "bad" | null {
