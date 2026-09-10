@@ -7441,6 +7441,114 @@ describe("get_job_failures (D-291, execucoes que falharam)", () => {
   });
 });
 
+// get_ml_account_cards (20260910180000, D-299) -- a janela para os dois
+// derivados de `ml_credentials`, que e cofre de token: RLS ligada, ZERO
+// policies e ZERO grants para a web. O que se testa aqui, antes do desenho, e
+// quem alcanca e o que NAO sai.
+describe("get_ml_account_cards (D-299)", () => {
+  const CONSULTA = `select id, label, listings_count, scope_count, token_expired,
+                           credential_updated_at, last_sync_at
+                      from public.get_ml_account_cards('${ORG_SB}')`;
+
+  it("ADMIN recebe as contas da organizacao com as contagens", async () => {
+    const rows = await asUser<{ label: string; listings_count: string }>(ADMIN_SB, CONSULTA);
+
+    expect(rows.length).toBeGreaterThan(0);
+    // A contagem vem do banco, nunca de uma consulta por cartao no servidor do
+    // Next. Afirmar "nao e nulo" nao dizia nada -- o tipo ja garante --, entao
+    // a afirmacao e sobre o NUMERO: toda conta devolve inteiro nao-negativo, e
+    // ao menos uma tem anuncio (o fixture planta).
+    expect(rows.every((r) => Number.isInteger(Number(r.listings_count)) && Number(r.listings_count) >= 0)).toBe(true);
+    expect(rows.some((r) => Number(r.listings_count) > 0)).toBe(true);
+  });
+
+  /*
+    O PREDICADO E COPIA do de `ml_accounts_select_permitted`, e este caso e o
+    que impede a copia de virar divergencia: quem NAO e ADMIN e nao tem conta
+    atribuida nao ve conta nenhuma -- nem pela funcao, nem pela tabela. Se o
+    guard fosse "membro da organizacao", este caso ficaria vermelho.
+  */
+  it("quem nao e ADMIN so ve as contas que a POLICY ja lhe dava", async () => {
+    const pelaFuncao = await asUser<{ id: string }>(ANALISTA_SB, CONSULTA);
+    const pelaTabela = await asUser<{ id: string }>(
+      ANALISTA_SB,
+      `select id from public.ml_accounts where organization_id = '${ORG_SB}'`,
+    );
+
+    const ids = (linhas: { id: string }[]): string => linhas.map((l) => l.id).sort().join(",");
+
+    expect(ids(pelaFuncao)).toBe(ids(pelaTabela));
+  });
+
+  it("ADMIN de OUTRA organizacao nao ve as contas desta", async () => {
+    const rows = await asUser(DE_OUTRA_ORG, CONSULTA);
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("anon nao executa get_ml_account_cards", async () => {
+    await expect(asAnon(`select * from public.get_ml_account_cards('${ORG_SB}')`)).rejects.toThrow(
+      /permission denied/i,
+    );
+  });
+
+  /**
+   * A TRAVA QUE MAIS IMPORTA: `security definer` sobre um cofre significa que
+   * a lista de colunas do retorno E a fronteira. Este caso falha se alguem
+   * acrescentar um campo de credencial ao `returns table` -- inclusive por
+   * engano, ao "so expor o instante de expiracao tambem".
+   */
+  it("NENHUM campo de credencial sai -- nem cifrado, nem o instante de expiracao", async () => {
+    const colunas = await asUser<{ column_name: string }>(
+      ADMIN_SB,
+      `select p.column_name
+         from information_schema.columns p
+        where false
+        union all
+        select unnest(proargnames)
+          from pg_proc
+         where proname = 'get_ml_account_cards'`,
+    );
+
+    const nomes = colunas.map((c) => c.column_name);
+
+    for (const proibido of [
+      "access_token_ciphertext",
+      "refresh_token_ciphertext",
+      "encryption_key_version",
+      "access_token_expires_at",
+      "refresh_locked_until",
+      "scopes",
+    ]) {
+      expect(nomes).not.toContain(proibido);
+    }
+
+    // E a guarda a favor: os dois derivados acordados ESTAO la (D-197 -- sem
+    // isto, uma funcao que devolvesse nada passaria neste caso).
+    expect(nomes).toContain("scope_count");
+    expect(nomes).toContain("token_expired");
+  });
+
+  it("token_expired NULO nao e 'em dia' -- e ausencia de credencial", async () => {
+    // Conta recem-criada, sem `ml_credentials`: a coluna volta nula, e a tela
+    // diz "sem credencial" em vez de pintar de verde (D-067).
+    await client.query(
+      `insert into public.ml_accounts (organization_id, label, slug)
+       values ($1,'CARDTEST sem credencial','cardtest-sem-credencial')`,
+      [ORG_SB],
+    );
+
+    const rows = await asUser<{ label: string; scope_count: string | null; token_expired: boolean | null }>(
+      ADMIN_SB,
+      CONSULTA,
+    );
+    const semCredencial = rows.find((r) => r.label === "CARDTEST sem credencial");
+
+    expect(semCredencial?.token_expired).toBeNull();
+    expect(semCredencial?.scope_count).toBeNull();
+  });
+});
+
 // get_organization_members (20260910120000, D-296) — a janela para os tres
 // campos de `auth.users` que D-271 recusou por falta de fonte. O dado e do
 // TENANT (e-mail de gente), entao o guard e diferente do de get_system_health:
@@ -11099,6 +11207,18 @@ describe("guarda de GRANTs (D-066/D-098/D-130)", () => {
     // travado, escopo de organizacao com o predicado de plataforma de D-209,
     // e a saida nao carrega chave interna do worker (dedupe_key, job_id).
     "get_job_failures",
+    // D-299: LEITURA dos dois derivados de `ml_credentials` -- quantos escopos
+    // e se o token venceu. Entrou com a conferencia feita, e ela e a mais
+    // delicada da lista porque a tabela e COFRE DE TOKEN (RLS ligada, zero
+    // policies, zero grants para a web):
+    //   - o predicado de autorizacao e COPIA do de `ml_accounts_select_permitted`
+    //     (`accessible_accounts()` ou ADMIN da organizacao), entao a funcao nao
+    //     alcanca uma conta que a policy ja nao desse;
+    //   - `search_path` travado, `revoke` de public/anon;
+    //   - NENHUM campo cifrado sai, e nem o instante de expiracao: o retorno e
+    //     `scope_count` (contagem) e `token_expired` (booleano). Ha caso
+    //     proprio afirmando essa fronteira coluna a coluna.
+    "get_ml_account_cards",
     // D-296: LEITURA dos membros com os tres campos que vivem em `auth.users`
     // (e-mail, ultimo login, convite aceito). Entrou com a conferencia feita:
     // autorizacao ADMIN DAQUELA organizacao refeita dentro, `search_path`

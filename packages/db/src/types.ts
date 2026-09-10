@@ -4333,6 +4333,30 @@ export type Database = {
       // ENTRADA MANUAL (D-296): a migration `20260910120000` ainda nao passou
       // pelo gerador do MCP, que le o Dev. A assinatura veio de
       // `pg_get_function_result` no banco local, e o teste de integracao a fixa.
+      // CORRECAO MANUAL (D-213/D-299): escrito a mao, como toda entrada desta
+      // secao. O gerador da CLI produz outro formato e apaga estas notas.
+      get_ml_account_cards: {
+        Args: { p_organization_id: string }
+        Returns: {
+          id: string
+          label: string
+          slug: string
+          // `seller_id` e nulo enquanto a conta nao conectou.
+          seller_id: number | null
+          status: string
+          connected_at: string | null
+          last_error: string | null
+          listings_count: number
+          // Nulo quando a conta nunca teve sincronizacao concluida.
+          last_sync_at: string | null
+          // Os dois derivados de `ml_credentials` -- nulos quando a conta
+          // ainda nao tem credencial. `token_expired` nulo NAO e "em dia":
+          // e "nao ha o que afirmar" (D-067).
+          scope_count: number | null
+          credential_updated_at: string | null
+          token_expired: boolean | null
+        }[]
+      }
       get_organization_members: {
         Args: { p_organization_id: string }
         Returns: {

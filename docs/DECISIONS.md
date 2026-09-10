@@ -8294,6 +8294,83 @@ A rota, o guard de ADMIN, a criacao do usuario e o link. Com a `api` no ar, `POS
 
 **Verificacao:** `check` 29/29, build 8/8, e2e **113/113**, cinco guardas verdes. E o fluxo real no navegador, que e o unico lugar onde este defeito existia.
 
+## D-299 - A8: `/contas` contra o frame, e o token que vive SEIS HORAS
+
+**Contexto:** a auditoria do grupo ADMINISTRACAO seguia, e o registro apontava `/contas` como a proxima -- **a unica tela que nunca esteve em fatia nenhuma**, nem em D0→D37 nem nas auditorias. Ela ja tinha `PageTitle` (varrimento de D-278), mas nunca tinha sido comparada com o desenho.
+
+---
+
+**O FRAME PEDE TRES NUMEROS, E OS TRES TEM FONTE**
+
+O `Accounts` do prototipo poe tres linhas de detalhe em cada cartao. Medido antes de desenhar:
+
+| o que ele desenha | tem fonte? |
+|---|---|
+| "Ultima sincronizacao" | SIM -- `sync_runs.finished_at`, por conta |
+| "Anuncios sincronizados" | SIM -- `listings`, por conta |
+| "Permissoes" | SIM -- `ml_credentials.scopes` |
+
+E raro as tres passarem: nas fatias anteriores a conta costumava dar 2 de 3 ou pior (D-271 recusou tres colunas de cinco; D-272 recusou dois parceiros inteiros). **Aqui a tela e que estava atrasada em relacao ao banco**, nao o contrario.
+
+Medido no Dev em 2026-09-10:
+
+    GMR                    1.196 anuncios   17 escopos
+    SbMotos                1.308 anuncios   17 escopos
+    Speedbikers (loja 1)   1.273 anuncios   17 escopos
+    Speedbikers (loja 2)   1.312 anuncios   17 escopos
+
+---
+
+**O ACHADO: O TOKEN VIVE 6,0 HORAS, E ISSO DESMONTA A CELULA DO FRAME**
+
+O frame escreve **"Token expira em 2 dias"**, tratando expiracao como alerta. Medido nas quatro contas, sem excecao:
+
+| | vida do token | renovada ha | falta para expirar |
+|---|---|---|---|
+| GMR | 6,0 h | 2,2 h | 3,8 h |
+| SbMotos | 6,0 h | 1,7 h | 4,3 h |
+| Speedbikers (loja 1) | 6,0 h | 4,5 h | 1,5 h |
+| Speedbikers (loja 2) | 6,0 h | 4,4 h | 1,6 h |
+
+Duas ficcoes numa frase: o token nao dura dias, dura **seis horas**; e expirar nao e evento, e o **ciclo normal** -- o worker renova o dia inteiro.
+
+Uma contagem regressiva na tela estaria SEMPRE em "expira em poucas horas", numa operacao perfeitamente saudavel. Alarme permanente e a forma mais rapida de ensinar alguem a ignorar alarme -- a mesma licao que D-217/D-229 pagaram do outro lado (o vermelho que ninguem le).
+
+**O que a expiracao diz de verdade e o caso raro:** token VENCIDO numa conta `CONNECTED` significa que a renovacao parou. So isso vira aviso. O resto da tela mostra "credencial renovada ha X", que e o ciclo dizendo que esta vivo.
+
+Por isso o retorno da funcao e `token_expired` **booleano**, e nao o instante: a tela nao tem o que fazer com o instante, e num cofre divulgar menos e melhor.
+
+---
+
+**`ml_credentials` E COFRE, E A JANELA FOI DESENHADA COMO TAL**
+
+Medido antes de escrever uma linha: a tabela tem **RLS ligada, ZERO policies e ZERO grants** para `anon` e `authenticated`. Isso e desenho da plataforma, nao lacuna -- e nao seria uma fatia de tela que ia abrir.
+
+`get_ml_account_cards` e `security definer` com quatro travas, e a primeira e a que mais me interessa:
+
+1. **o predicado de autorizacao e COPIA do de `ml_accounts_select_permitted`** -- `id in (accessible_accounts()) or has_org_role(org, ADMIN)`. Nao inventei guard novo, e as duas alternativas obvias estavam erradas nas duas direcoes: "ADMIN da organizacao" seria mais RESTRITO que a tela (o GESTOR perderia as contas que ja ve), e "membro da organizacao" seria mais FROUXO. Ha caso de integracao comparando, linha a linha, o que a funcao devolve com o que a TABELA devolve para o mesmo usuario nao-ADMIN;
+2. nenhum campo cifrado sai -- nem o `encryption_key_version`;
+3. nem o instante de expiracao sai;
+4. `search_path` travado, `revoke` de `public`/`anon`, `grant` explicito.
+
+**O guarda de D-182 reprovou a fatia, e estava certo.** A allowlist versionada de funcoes `security definer` expostas a `authenticated` e um teste: funcao nova entra por decisao, nunca por descuido. Entrou com a auditoria escrita ao lado do nome.
+
+E ha um caso que afirma a FRONTEIRA coluna a coluna -- ele fica vermelho se alguem acrescentar campo de credencial ao `returns table`, inclusive "so o instante de expiracao tambem".
+
+---
+
+**"Todas as permissoes" vira "17 escopos", e a diferenca nao e estilo**
+
+O frame escreve "Todas as permissoes". **"Todas" exigiria uma lista canonica do que o Mercado Livre oferece, que ninguem definiu** -- e um escopo a menos apareceria como "todas" do mesmo jeito, que e precisamente o modo de falhar que importa aqui. Contar e o que da para afirmar.
+
+---
+
+**Legado removido:** a lista de linhas com faixa colorida a esquerda. A composicao mudou porque a QUANTIDADE de dado mudou -- tres linhas de detalhe nao cabem numa linha de lista.
+
+**Verificacao:** integracao **654/654** em banco recriado (6 novos), `check` 29/29, build 8/8, e2e, `check:waterfalls` 61, `check:table-styles` 29, `docs:check`. A tela aberta no navegador com login real.
+
+**Impacto:** `supabase/migrations/20260910180000_create_ml_account_cards_rpc.sql` (nova), `apps/web/app/contas/page.tsx`, `apps/web/app/globals.css`, `packages/db/src/types.ts` (a mao, D-213), `packages/db/src/rls.integration.test.ts`.
+
 ## Como adicionar nova decisao
 
 Registrar:

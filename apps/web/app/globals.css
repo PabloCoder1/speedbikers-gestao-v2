@@ -3306,3 +3306,121 @@ table {
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
+
+/*
+ * `.sb-account-cards` — os cartoes de conta do frame `Accounts`
+ * (`.account-cards` / `.ml-account`, medidos no export), em `/contas` (D-299).
+ *
+ * A tela era uma LISTA de linhas com faixa colorida a esquerda. O frame poe
+ * duas colunas de cartao, e cada cartao carrega tres linhas de detalhe --
+ * ultima sincronizacao, anuncios sincronizados e permissoes -- que a lista nao
+ * tinha onde por. A composicao muda porque os dados mudaram de quantidade.
+ *
+ * O `.ml-logo` do frame e um disco amarelo com "ML": e o amarelo de marca
+ * (`--sb-accent`) sobre navy, o unico lugar do app onde ele aparece como fundo
+ * de peca -- e D-007 reserva o accent exatamente para destaque de fundo.
+ */
+.sb-account-cards {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--sb-space-3);
+}
+
+@media (max-width: 1050px) {
+  .sb-account-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+.sb-account-card {
+  display: flex;
+  flex-direction: column;
+  padding: var(--sb-space-3);
+  background: var(--sb-surface);
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius);
+  box-shadow: var(--sb-shadow-panel);
+}
+
+.sb-account-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5625rem;
+}
+
+.sb-account-head > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.sb-account-head h2 {
+  margin: 0 0 0.125rem;
+  font-size: 0.8125rem;
+}
+
+.sb-account-logo {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--sb-accent);
+  color: var(--sb-primary);
+  font-family: var(--sb-mono);
+  font-size: 0.5625rem;
+  font-weight: 700;
+}
+
+/* A faixa de conexao: no frame ela e um fio entre duas bordas. */
+.sb-account-link {
+  margin: var(--sb-space-3) 0 0;
+  padding: 0.5625rem 0;
+  border-top: 1px solid var(--sb-border);
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-account-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--sb-tone, var(--sb-muted-ink));
+}
+
+/* `.detail-row` do export: rotulo a esquerda, valor a direita, fio em cima. */
+.sb-account-card dl {
+  margin: 0;
+  display: grid;
+}
+
+.sb-account-card dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sb-space-2);
+  padding: 0.625rem 0;
+  border-top: 1px solid var(--sb-border);
+  font-size: 0.6875rem;
+}
+
+.sb-account-card dt {
+  color: var(--sb-text-soft);
+}
+
+.sb-account-card dd {
+  margin: 0;
+  font-weight: 600;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.sb-account-card footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sb-space-2);
+  margin-top: auto;
+  padding-top: var(--sb-space-3);
+}
