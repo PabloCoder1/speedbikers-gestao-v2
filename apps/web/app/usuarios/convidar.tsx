@@ -120,11 +120,24 @@ export function ConvidarUsuario({ accounts }: { accounts: AccountOption[] }): Re
           `api`: é o Next servindo 404 em HTML porque o endereço aponta para
           ele, ou um proxy no meio. A mensagem diz isso em vez de acusar a API.
         */
+        /*
+          401 tem texto PROPRIO, e ele nasceu de um diagnostico que custou uma
+          tarde (D-300). A API recusa o token quando ele foi emitido por OUTRO
+          projeto Supabase -- e isso acontece sozinho: `SUPABASE_URL` exportada
+          no ambiente vence o `.env.local`, porque `--env-file` do Node nao
+          sobrescreve variavel que ja existe. A web fala com um Supabase, a API
+          com outro, e todo token legitimo e recusado.
+
+          "Nao autorizado" mandaria conferir papel, que esta certo. A frase
+          abaixo manda conferir o que de fato esta errado, e diz onde ler.
+        */
         setEstado({
           kind: "erro",
           mensagem:
             corpo?.error?.message ??
-            `${API_URL} não respondeu como a API (HTTP ${String(response.status)}). Confira o endereço e se a API está no ar.`,
+            (response.status === 401
+              ? "A API recusou o token. Se você entrou normalmente, o mais provável é que web e API estejam apontando para projetos Supabase DIFERENTES — o log de boot da API mostra o `supabase_host` que ela usa."
+              : `${API_URL} não respondeu como a API (HTTP ${String(response.status)}). Confira o endereço e se a API está no ar.`),
         });
 
         return;

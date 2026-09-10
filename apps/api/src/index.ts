@@ -91,5 +91,18 @@ const app = createApp({
 });
 
 serve({ fetch: app.fetch, port: env.PORT }, (info) => {
-  logger.info("api_started", { port: info.port });
+  /*
+    O HOST do Supabase entra no log de boot, e a razao e uma tarde inteira de
+    diagnostico (D-300).
+
+    `SUPABASE_URL` exportada no ambiente VENCE o `.env.local`: `--env-file` do
+    Node nao sobrescreve variavel que ja existe. Quando isso acontece com a
+    web apontando para o Supabase local e a API para o remoto, todo token
+    legitimo vira "token invalido" -- 401 em cada rota, sem que nada em tela ou
+    em log diga que sao DOIS projetos diferentes.
+
+    Uma linha no boot torna isso legivel em cinco segundos. So o HOST: chave
+    nunca entra em log (D-232).
+  */
+  logger.info("api_started", { port: info.port, supabase_host: new URL(env.SUPABASE_URL).host });
 });

@@ -8371,6 +8371,69 @@ O frame escreve "Todas as permissoes". **"Todas" exigiria uma lista canonica do 
 
 **Impacto:** `supabase/migrations/20260910180000_create_ml_account_cards_rpc.sql` (nova), `apps/web/app/contas/page.tsx`, `apps/web/app/globals.css`, `packages/db/src/types.ts` (a mao, D-213), `packages/db/src/rls.integration.test.ts`.
 
+## D-300 - o convite que "ainda nao vai": `--env-file` NAO sobrescreve variavel ja exportada
+
+**Contexto:** o usuario reportou pela segunda vez que nao consegue criar usuario, com a tela dizendo **"Recurso nao encontrado."**. D-298 tinha corrigido a causa anterior (endereco de api ausente) e nao era mais isso.
+
+---
+
+**A CAUSA, E ELA NAO ESTAVA NO CODIGO**
+
+`SUPABASE_URL` estava **exportada no ambiente do shell**, apontando para o projeto **Dev remoto**. E `--env-file`/`--env-file-if-exists` do Node **nao sobrescreve variavel que ja existe** -- ele so preenche o que falta.
+
+Resultado:
+
+    web  -> emite token no Supabase LOCAL   (apps/web/.env.local, lido pelo Next)
+    api  -> valida token no Supabase REMOTO (ambiente vencendo o .env.local)
+
+O token esta perfeito. So nao foi emitido pelo projeto que a `api` consulta. `db.auth.getUser(token)` erra, e o codigo respondia **401 com o motivo "token invalido"** -- que manda procurar defeito no token, no login, no papel. Tres lugares certos, nenhum deles o problema.
+
+---
+
+**COMO FOI ISOLADO, porque o metodo importa mais que o achado**
+
+Cada passo eliminou uma hipotese inteira, e o teste de controle foi o que virou a chave:
+
+| passo | resultado |
+|---|---|
+| `POST /v1/organization/invites` sem token | **401** |
+| `POST /v1/rota-que-nao-existe-jamais` | **404 "Recurso nao encontrado."** |
+
+**Esse par prova que a rota EXISTE** -- o 404 do usuario tinha vindo de outro momento, com a api mais velha. E prova, junto, que o bloqueio de agora e o 401, nao o 404.
+
+Depois:
+
+- token testado direto em `/auth/v1/user` do Supabase local: **valido**;
+- `getUser` reproduzido em script isolado com o env do arquivo: **funciona**;
+- api subida numa segunda porta com o env do arquivo forcado: **convite entregue** (`status: invited`, com link);
+- `echo $SUPABASE_URL` no shell: **o projeto remoto**.
+
+Subir uma SEGUNDA instancia em vez de reiniciar a do usuario foi deliberado: a do usuario e ambiente dele, e derrubar processo alheio para testar hipotese e o tipo de ato que se faz depois de perguntar, nao antes.
+
+---
+
+**O QUE FOI CORRIGIDO NO CODIGO: o silencio, nao a variavel**
+
+A variavel e da maquina de quem desenvolve -- nao cabe ao codigo reescrever o shell de ninguem. O que cabe e nunca mais isso custar uma tarde:
+
+1. **o boot diz contra qual Supabase a api valida.** `api_started` ganhou `supabase_host`. Uma linha, todo boot, e a divergencia fica legivel em cinco segundos. **So o host** -- chave nunca entra em log (D-232);
+2. **a recusa de token nomeia o projeto**: `token nao reconhecido pelo Supabase desta API (<host>)`. O host sai do proprio cliente, nao de um parametro, para nao existir como a mensagem divergir do endereco realmente usado;
+3. **o modal diz o que conferir.** 401 tinha caido no texto generico de "a API nao respondeu"; agora diz que web e api podem estar em projetos diferentes, e aponta para o `supabase_host` do log.
+
+Ha quatro casos de unidade novos em `apps/api/src/auth.test.ts`, e eles guardam a MENSAGEM: que ela nomeia o host, que **nao** carrega a URL inteira nem a chave, que "header ausente" continua sendo motivo distinto de "token recusado", e que URL malformada degrada em vez de derrubar o caminho de erro.
+
+---
+
+**O DESBLOQUEIO IMEDIATO, que e ato de quem desenvolve**
+
+`SUPABASE_URL` exportada no ambiente precisa sair, ou apontar para o local, antes de subir a `api`. Depois disso o convite funciona -- foi verificado ponta a ponta nesta fatia.
+
+**A licao generaliza para todo o `.env.local`:** qualquer variavel ja exportada no shell vence o arquivo, em silencio. `SUPABASE_SERVICE_ROLE_KEY` estava vazia no ambiente e por isso vinha do arquivo; `SUPABASE_URL` nao estava, e por isso nao vinha. Meia configuracao de cada lugar.
+
+**Impacto:** `apps/api/src/index.ts`, `apps/api/src/auth.ts`, `apps/api/src/auth.test.ts` (novo), `apps/web/app/usuarios/convidar.tsx`, `.env.example`.
+
+**Verificacao:** `check` 29/29 (unitarios da api **326**, com os 4 novos), build 8/8. A divergencia foi reproduzida numa instancia separada e o log passou a dizer `supabase_host: nmgccyqquwxecqffsidr.supabase.co` no boot e o mesmo host no motivo da recusa; com o endereco local, o convite foi entregue.
+
 ## Como adicionar nova decisao
 
 Registrar:

@@ -10,6 +10,25 @@ import type { AdminClient } from "@sb/db";
  * A `api` reavalia papel e organização no servidor, sempre.
  */
 
+/**
+ * O HOST do Supabase que este cliente usa -- para a recusa de token poder
+ * dizer CONTRA QUEM validou (D-300).
+ *
+ * Sai do proprio cliente em vez de receber a URL por parametro: assim nao ha
+ * como o texto da mensagem divergir do endereco realmente usado. `host`, nunca
+ * a URL inteira, e jamais a chave.
+ */
+function supabaseHost(db: AdminClient): string {
+  try {
+    // `supabaseUrl` e publico no cliente; o `catch` cobre uma URL malformada,
+    // que nao deveria passar do `createAdminClient` mas nao vale derrubar o
+    // caminho de erro por causa dela.
+    return new URL((db as unknown as { supabaseUrl: string }).supabaseUrl).host;
+  } catch {
+    return "endereco desconhecido";
+  }
+}
+
 export type Role = "ADMIN" | "GESTOR" | "ANALISTA" | "OPERADOR" | "VISUALIZADOR";
 
 export interface Caller {
@@ -63,7 +82,15 @@ export function createAuthenticator(db: AdminClient): Authenticator {
       // `getUser` devolve união discriminada: sem erro, `data.user` existe.
       // Checar os dois seria redundante e o lint com tipos acusa.
       if (error !== null) {
-        return { ok: false, status: 401, reason: "token inválido" };
+        // O HOST entra no motivo porque "token invalido" manda procurar
+        // defeito no token, e a causa mais comum e outra: web e API apontando
+        // para projetos Supabase DIFERENTES (D-300). O token esta perfeito --
+        // so nao foi emitido por este projeto. Host, nunca chave.
+        return {
+          ok: false,
+          status: 401,
+          reason: `token nao reconhecido pelo Supabase desta API (${supabaseHost(db)})`,
+        };
       }
 
       // Papel e organização vêm do BANCO, nunca do token. Claim é editável no
