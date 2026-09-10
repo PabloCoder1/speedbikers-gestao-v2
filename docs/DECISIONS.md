@@ -8570,6 +8570,70 @@ O aviso "Trate como senha" + a caixa do link + "Copiar link" viraram `LinkDeAces
 
 **PENDENTE, e nao e codigo:** no painel do Supabase, a URL da aplicacao precisa entrar em **URL Configuration** (Site URL e Redirect URLs). Ate la, todo link continua caindo em `http://localhost:3000`.
 
+## D-304 - "Calculo desatualizado" com o recalculo rodando: o carimbo media a MUDANCA, e a tela precisava da CONFERENCIA
+
+**Contexto:** o usuario mandou a captura de `/vendas` -- *"Cálculo desatualizado · até 10/09/2026, 01:02"* -- as duas da tarde, e pediu: *"quero que voce fique ligado porque as vezes desatualizado, ou atrasado e etc... quero que voce faca o worker nao deixar isso acontecer"*.
+
+---
+
+**1. O PIPELINE ESTAVA VIVO. MEDIDO ANTES DE ESCREVER UMA LINHA.**
+
+| pergunta | resposta medida na producao em 2026-09-10 17:55 UTC |
+|---|---|
+| o recalculo roda? | **1.357 execucoes em 24h**, todas `done` |
+| ele alcanca HOJE? | sim: **4 chaves por hora** com a data de hoje, uma por conta |
+| ele escreve? | **325 linhas nas ultimas 3 horas** |
+| entao por que o selo? | `computed_at` da linha de hoje = 04:02 UTC, com **`xmin` de uma transacao das 17:01** |
+
+O `xmin` e a prova: a linha FOI escrita as 17:01 e o carimbo ficou nas 04:02.
+
+**2. A CAUSA: D-199 TROCOU O SENTIDO DA COLUNA SEM QUERER**
+
+A convergencia de D-199 (`20260902115548`) substituiu DELETE+INSERT por `insert ... on conflict do update set <4 medidas> where a linha DIFERE`. Os tres `do update set` atualizam os valores e **nao tocam `computed_at`** -- que so recebe valor pelo `default now()` do INSERT. A coluna deixou de significar "quando foi calculado" e passou a significar "quando a linha nasceu".
+
+Como a linha de cada dia nasce ~00:0x e nunca mais e reinserida, o selo (3h atencao, 12h critico) virava vermelho **todo dia depois do meio-dia**, para sempre, com o sistema inteiro funcionando.
+
+**A regressao tem data, e os proprios dados a contam:** as linhas de 28/08 a 02/09 compartilham `computed_at` de **02/09 11:01-11:02** -- a ultima passada do caminho antigo, que reinseria a linha e renovava o `default now()`. De 03/09 em diante cada dia congela no proprio amanhecer. Oito dias de selo vermelho no horario comercial antes de alguem olhar a tela e perguntar.
+
+**3. POR QUE NAO FOI SO CARIMBAR NO UPSERT**
+
+Porque sao DUAS perguntas, e a tela precisava da segunda:
+
+1. *"quando este numero mudou?"* -> `computed_at`, e ele ja responde;
+2. *"quando alguem conferiu que ele ainda e este?"* -> nao existia.
+
+Numa madrugada sem venda a resposta certa para (1) e "ontem" e para (2) e "ha dois minutos". Carimbar `computed_at` no upsert responderia (1) de novo, e o selo continuaria vermelho na noite em que TUDO esta certo -- porque nenhuma linha muda quando ninguem compra.
+
+E ha o custo: D-199 nasceu de **485 mil escritas/dia** com o decodificador de WAL do Realtime em 43,4% do tempo do banco. Carimbar toda linha a cada passada traria as 485 mil de volta. `metric_refresh_state` custa **uma linha por conta por passada** -- ~57 escritas/hora contra as quatro contas. Tres ordens de grandeza menos, a mesma informacao.
+
+**4. A GARANTIA, QUE E O QUE O USUARIO PEDIU**
+
+Consertar o carimbo nao bastaria: `analytics.recompute` sempre foi movido por CHAVE SUJA, e chave suja depende de venda. Hora sem pedido, nenhuma data suja, nenhuma passada, carimbo parado -- e o selo voltaria a mentir na madrugada de domingo.
+
+O piso e `v3-refresh-sales-metrics` (`35 * * * *`) -> `POST /internal/schedule/metrics-refresh` -> `analytics.recompute` de **hoje e ontem** para toda conta CONNECTED, tenha havido venda ou nao. Nao e job novo: e o mesmo trabalho, com outro pedinte. Ontem entra porque a compra das 23h58 chega pelo webhook depois da virada.
+
+Cadencia horaria contra 3h/12h: **tres passadas perdidas antes do primeiro degrau**.
+
+**5. O SILENCIO DELE VIROU DEFEITO, E A CASA JA SABIA GRITAR**
+
+`analytics.recompute` estava fora de `JOB_CADENCE_MIN` de proposito -- "carimbar frescor num job orientado a evento seria gritar sobre o comportamento certo". Com o piso, ele TEM cadencia fixa: entrou no mapa com 60 minutos, e `/saude` passa a dar veredito a ele como da aos outros doze. O conserto do desenho tornou o monitoramento correto, em vez de exigir um mecanismo novo de alerta.
+
+**6. O QUE A TELA DIZ AGORA**
+
+`get_sales_summary` e `get_processing_health` devolvem `last_refreshed_at` ao lado de `last_computed_at`. `/vendas` classifica pelo primeiro e escreve "Cálculo em dia · conferido 14:47" -- **"conferido", nao "ate"**: "ate" prometia cobertura de periodo, que e outra coisa e nunca foi o que aquele numero dizia. `/sincronizacao` mostra as DUAS colunas: divergirem e o estado saudavel de um dia sem venda; a segunda parar e que e defeito.
+
+`last_computed_at` **nao sai e nao muda de sentido**: a Home usa a nulidade dele para separar "nunca calculado" de "calculado e deu zero" (D-023), e esse contrato continua de pe.
+
+**7. A ARMADILHA QUE FICA REGISTRADA**
+
+Se alguem um dia mover `computed_at` para DENTRO do `is distinct from` da comparacao, `excluded.computed_at` sera o `now()` do statement e vai diferir SEMPRE: toda linha igual volta a ser reescrita e as 485 mil/dia voltam em silencio. O teste de integracao novo afirma `escritas = 0` numa passada sem mudanca -- e reprova essa volta.
+
+**Impacto:** migration `20260910200000_metric_refresh_state.sql` (tabela nova + `private.refresh_daily_sales_metrics` + `get_sales_summary` + `get_processing_health`), `apps/api/src/{metrics-refresh-schedule.ts,metrics-refresh-schedule.test.ts}` (novos), `apps/api/src/{app.ts,index.ts}`, `infra/cloud-scheduler.sh` (13o job), `apps/web/lib/sync-health.ts` (+teste), `apps/web/app/{vendas,sincronizacao,skus/[skuId]}/page.tsx`, `packages/db/src/types.ts` (entradas manuais), `packages/db/src/rls.integration.test.ts` (+3), `apps/web/e2e/{seed.ts,vendas.spec.ts,saude.spec.ts}`.
+
+**Verificacao:** `check` 29/29, build 8/8, integracao **657/657** em banco recriado (+3), e2e **117/117** (+1), cinco guardas verdes. Provado localmente que uma passada sem mudanca escreve **zero** linha de metrica e ainda assim anda com a conferencia.
+
+**Dois casos de e2e MUDARAM DE LADO**, e isso e o registro de que o desenho mudou: `/saude` afirmava que o recalculo NAO tinha veredito, e agora afirma "Em dia"; a faixa de vereditos era 2 em dia + 1 sem cadencia e passou a 3 + 0.
+
 ## Como adicionar nova decisao
 
 Registrar:

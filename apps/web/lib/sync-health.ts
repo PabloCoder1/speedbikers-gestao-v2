@@ -70,14 +70,22 @@ export function resourceLabel(resource: string): string {
  * que aparece em `job_runs`. Conferido contra o Cloud Scheduler real, não só
  * contra o script.
  *
- * **Só entra job com cadência FIXA.** `analytics.recompute` (chave suja),
- * `sync.webhook.received`, `sync.support.questions`/`.messages` (webhook),
- * `backfill.orders` (finito) e os de import/relist (sob demanda) ficam de
- * fora de propósito: carimbar frescor num job orientado a evento seria gritar
- * sobre o comportamento certo — a mesma decisão que D-143 tomou para backfill.
+ * **Só entra job com cadência FIXA.** `sync.webhook.received`,
+ * `sync.support.questions`/`.messages` (webhook), `backfill.orders` (finito) e
+ * os de import/relist (sob demanda) ficam de fora de propósito: carimbar
+ * frescor num job orientado a evento seria gritar sobre o comportamento certo
+ * — a mesma decisão que D-143 tomou para backfill.
+ *
+ * **`analytics.recompute` ENTROU em D-304**, e a razão é que ele mudou de
+ * natureza. Ele era movido só por chave suja — por isso ficava de fora, e a
+ * exclusão estava certa. Agora existe o piso `v3-refresh-sales-metrics`
+ * (`35 * * * *`), que pede o recálculo de hoje e ontem para toda conta
+ * CONNECTED tenha havido venda ou não: a cadência passou a ser fixa, e o
+ * silêncio dele passou a ser defeito de verdade.
  */
 export const JOB_CADENCE_MIN: Readonly<Record<string, number>> = {
   "system.ping": 60, // v3-heartbeat: "0 * * * *"
+  "analytics.recompute": 60, // v3-refresh-sales-metrics: "35 * * * *" (piso de D-304)
   "sync.orders.window": 60, // v3-reconcile-orders: "0 * * * *"
   "sync.support.claims.reconcile": 60, // v3-support-claims-reconcile: "15 * * * *"
   "sync.support.questions.reconcile": 10, // v3-support-questions-reconcile: "*/10 * * * *"

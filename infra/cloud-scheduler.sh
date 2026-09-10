@@ -73,6 +73,22 @@ upsert_job \
   "${API_URL}/internal/schedule/reconcile" \
   "Reconciliacao por janela de pedidos, por conta Mercado Livre CONNECTED"
 
+# PISO DE FRESCOR DAS METRICAS (D-304). O recalculo sempre foi movido por
+# CHAVE SUJA -- a reconciliacao marca as datas que mudaram --, o que amarra o
+# frescor ao fluxo de venda: numa hora sem pedido, nada e recalculado e o
+# carimbo de "conferido em" para de andar. Esta varredura pede HOJE e ONTEM
+# para toda conta CONNECTED, tenha vendido ou nao.
+#
+# :35 e escolha, nao gosto: :00 ja tem quatro jobs e o de perguntas roda a
+# cada dez minutos (:00 :10 :20 :30 :40 :50). Cadencia horaria contra os
+# limiares do selo (3h atencao, 12h critico) da tres chances antes do
+# primeiro degrau.
+upsert_job \
+  "v3-refresh-sales-metrics" \
+  "35 * * * *" \
+  "${API_URL}/internal/schedule/metrics-refresh" \
+  "Piso de frescor: recalculo de metricas de hoje e ontem por conta CONNECTED, independente de venda"
+
 # Captura de estoque Full por conta: cadencia menor que a de pedidos --
 # Full nao muda tao rapido, e cada execucao faz duas chamadas HTTP por item
 # sem variacao da conta. Mais conservador com o orcamento de rate limit nao

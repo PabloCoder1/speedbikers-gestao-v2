@@ -18,6 +18,8 @@ import type { DecisionOutcomesScheduleDeps } from "./decision-outcomes-schedule.
 import { triggerDecisionOutcomesMeasurement } from "./decision-outcomes-schedule.js";
 import type { Enqueuer } from "./enqueue.js";
 import type { ImportDeps } from "./erp-import.js";
+import type { MetricsRefreshScheduleDeps } from "./metrics-refresh-schedule.js";
+import { triggerMetricsRefresh } from "./metrics-refresh-schedule.js";
 import type { AiBudgetScheduleDeps } from "./ai-budget-schedule.js";
 import { triggerAiBudgetCheck } from "./ai-budget-schedule.js";
 import { confirmApply, isImportKind, receiveUpload } from "./erp-import.js";
@@ -105,6 +107,7 @@ export interface AppDependencies {
   supportReply?: SupportReplyDeps;
   relist?: RelistDeps;
   invites?: InviteDeps;
+  metricsRefreshSchedule?: MetricsRefreshScheduleDeps;
   salesAnomalyActionsSchedule?: SalesAnomalyActionsScheduleDeps;
   decisionOutcomesSchedule?: DecisionOutcomesScheduleDeps;
   aiBudgetSchedule?: AiBudgetScheduleDeps;
@@ -369,6 +372,24 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     const outcome = await triggerFulfillmentSnapshot(fulfillmentSchedule);
+
+    return context.json(outcome);
+  });
+
+  // --------------------------------------------------------------------
+  // PISO DE FRESCOR DAS MÉTRICAS (D-304). O recálculo sempre foi movido por
+  // chave suja — o que amarra o frescor ao fluxo de venda. Esta rota pede o
+  // recálculo de HOJE e ONTEM para toda conta CONNECTED, hora a hora, tenha
+  // vendido ou não. Cadência em `infra/cloud-scheduler.sh`.
+  // --------------------------------------------------------------------
+  app.post("/internal/schedule/metrics-refresh", async (context) => {
+    const metricsRefreshSchedule = dependencies.metricsRefreshSchedule;
+
+    if (metricsRefreshSchedule === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const outcome = await triggerMetricsRefresh(metricsRefreshSchedule);
 
     return context.json(outcome);
   });

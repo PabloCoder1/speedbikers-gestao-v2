@@ -94,6 +94,9 @@ interface ProcessingRow {
   account_label: string;
   latest_metric_date: string | null;
   last_computed_at: string | null;
+  /** A passada do recálculo, que anda mesmo quando nada muda (D-304). */
+  last_refreshed_at: string | null;
+  last_rows_written: number | null;
 }
 
 interface EventRow {
@@ -452,7 +455,15 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
                     <tr>
                       <th>Conta</th>
                       <th>Métricas calculadas até</th>
-                      <th>Último recálculo</th>
+                      {/*
+                        DUAS DATAS, e elas respondem perguntas diferentes
+                        (D-304): "última mudança" é quando algum número daquela
+                        conta mudou; "última conferência" é quando o recálculo
+                        passou por lá. Divergirem é o estado SAUDÁVEL de um dia
+                        sem venda — a segunda parar é que é defeito.
+                      */}
+                      <th>Última mudança</th>
+                      <th>Última conferência</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -461,6 +472,7 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
                         <td>{row.account_label}</td>
                         <td>{row.latest_metric_date ?? "—"}</td>
                         <td>{formatDateTime(row.last_computed_at)}</td>
+                        <td>{formatDateTime(row.last_refreshed_at)}</td>
                       </tr>
                     ))}
                   </tbody>

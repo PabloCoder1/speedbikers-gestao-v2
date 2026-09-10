@@ -62,3 +62,36 @@ test("/vendas: conta, marca, período e métrica compõem sem se descartar", asy
   await expect(menus.nth(1).locator("summary")).toContainText("Sem marca");
   await expect(menus.nth(2).locator("summary")).toContainText("Últimos 7 dias");
 });
+
+
+/**
+ * O SELO DE FRESCOR (D-304) — o defeito que o usuário trouxe com uma captura:
+ * "Cálculo desatualizado · até 10/09/2026, 01:02" às duas da tarde, com o
+ * recálculo rodando de hora em hora o tempo todo.
+ *
+ * A causa era o selo medir a coisa errada. `computed_at` é o carimbo de quando
+ * a LINHA NASCEU — desde D-199 uma linha só é reescrita quando algum número
+ * dela muda, e o carimbo não acompanhava a reescrita. O selo passou a ler
+ * `last_refreshed_at`, que anda a cada PASSADA do recálculo, tenha ela escrito
+ * ou não.
+ *
+ * Este caso guarda a diferença: com o estado de recálculo fresco (o seed o
+ * carimba em agora), a tela precisa dizer que está em dia — mesmo que a última
+ * MUDANÇA de número seja de dias atrás, que é o caso do fixture.
+ */
+test("/vendas: o selo mede a CONFERÊNCIA do cálculo, não a última mudança", async ({ page }) => {
+  await page.goto("/login?next=%2Fvendas");
+  await page.getByLabel("E-mail").fill(E2E_USER_EMAIL);
+  await page.getByLabel("Senha").fill(E2E_USER_PASSWORD);
+  await page.getByRole("button", { name: "Entrar" }).click();
+
+  await expect(page.getByRole("heading", { level: 1, name: "Dashboard de vendas" })).toBeVisible();
+
+  /*
+    As vendas do fixture são de 1 e 3 dias atrás (`E2E_SKU_SALES`), então a
+    última MUDANÇA é velha. Se o selo ainda medisse `computed_at`, ele diria
+    "Cálculo desatualizado" aqui — que é exatamente o defeito.
+  */
+  await expect(page.getByText(/Cálculo em dia · conferido/)).toBeVisible();
+  await expect(page.getByText("Cálculo desatualizado")).toHaveCount(0);
+});

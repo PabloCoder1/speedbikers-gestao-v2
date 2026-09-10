@@ -1175,6 +1175,100 @@ describe("métricas diárias de venda", () => {
     expect(counts.rows[0]?.total).toBe("5");
   });
 
+  /**
+   * O PISO DE FRESCOR (D-304) — a propriedade que o usuário pediu com as
+   * palavras "faça o worker não deixar isso acontecer".
+   *
+   * O que se prova aqui é a separação entre DUAS perguntas que `computed_at`
+   * respondia como se fossem uma: "o número mudou?" e "alguém conferiu?". Numa
+   * madrugada sem venda a resposta certa é "não" para a primeira e "há dois
+   * minutos" para a segunda, e era essa segunda que a tela não tinha.
+   */
+  it("passada que não muda NADA ainda assim registra a conferência", async () => {
+    // Convergir primeiro: depois desta chamada o dia está materializado e a
+    // próxima passada não tem o que escrever.
+    await client.query(`select public.recompute_daily_sales_metrics($1,$2,'2026-08-20')`, [ORG_SB, CONTA_A]);
+
+    const antes = await client.query<{ last_refresh_at: string; last_change_at: string | null }>(
+      `select last_refresh_at, last_change_at from public.metric_refresh_state where ml_account_id = $1`,
+      [CONTA_A],
+    );
+
+    expect(antes.rows[0]).toBeDefined();
+
+    // `pg_sleep` de 10ms: sem ele os dois carimbos podem cair no mesmo
+    // microssegundo e a comparação viraria empate — o teste passaria por
+    // acidente em vez de por comportamento.
+    await client.query("select pg_sleep(0.01)");
+
+    const escritas = await client.query<{ escritas: number }>(
+      `select public.recompute_daily_sales_metrics($1,$2,'2026-08-20') as escritas`,
+      [ORG_SB, CONTA_A],
+    );
+
+    const depois = await client.query<{ last_refresh_at: string; last_change_at: string | null; last_rows_written: number }>(
+      `select last_refresh_at, last_change_at, last_rows_written
+         from public.metric_refresh_state where ml_account_id = $1`,
+      [CONTA_A],
+    );
+
+    // A METADE QUE PROTEGE D-199: nada mudou, então nada foi escrito nas
+    // tabelas de métrica. Se este número deixar de ser zero, a convergência
+    // foi desfeita e as 485 mil escritas/dia voltaram.
+    expect(escritas.rows[0]?.escritas).toBe(0);
+    expect(depois.rows[0]?.last_rows_written).toBe(0);
+
+    // A METADE NOVA: a conferência andou mesmo assim.
+    expect(new Date(depois.rows[0]?.last_refresh_at ?? 0).getTime()).toBeGreaterThan(
+      new Date(antes.rows[0]?.last_refresh_at ?? 0).getTime(),
+    );
+
+    // E a "última mudança" NÃO andou — ela é a outra pergunta.
+    expect(depois.rows[0]?.last_change_at).toEqual(antes.rows[0]?.last_change_at);
+  });
+
+  /**
+   * O selo das telas lê daqui. Se a leitura não trouxer a conferência, o
+   * conserto de D-304 existe no banco e não chega na tela — que é exatamente
+   * como o defeito original passou despercebido por oito dias.
+   */
+  it("get_sales_summary devolve a CONFERÊNCIA além da mudança", async () => {
+    await client.query(`select public.recompute_daily_sales_metrics($1,$2,'2026-08-20')`, [ORG_SB, CONTA_A]);
+
+    const linhas = await asUser<{ last_computed_at: string | null; last_refreshed_at: string | null }>(
+      ADMIN_SB,
+      `select last_computed_at, last_refreshed_at
+         from public.get_sales_summary('2026-08-01','2026-08-31')`,
+    );
+
+    expect(linhas[0]?.last_refreshed_at).not.toBeNull();
+  });
+
+  /**
+   * A tabela nova entra com o MESMO alcance por conta das métricas (D-117):
+   * quem não alcança a conta não vê o estado dela. Sem isto, o frescor de uma
+   * organização vazaria para outra pela porta dos fundos.
+   */
+  it("metric_refresh_state respeita o alcance por conta", async () => {
+    /*
+      A afirmação é sobre a CONTA, não sobre a contagem total: o usuário de
+      outra organização tem contas próprias, e o estado delas é legitimamente
+      visível para ele. O que não pode acontecer é ver o estado desta.
+    */
+    const doAdmin = await asUser<{ id: string }>(
+      ADMIN_SB,
+      `select ml_account_id as id from public.metric_refresh_state where ml_account_id = '${CONTA_A}'`,
+    );
+
+    const deOutraOrg = await asUser<{ id: string }>(
+      DE_OUTRA_ORG,
+      `select ml_account_id as id from public.metric_refresh_state where ml_account_id = '${CONTA_A}'`,
+    );
+
+    expect(doAdmin).toHaveLength(1);
+    expect(deOutraOrg).toHaveLength(0);
+  });
+
   it("incremental apaga projeção obsoleta quando o dia fica sem venda válida", async () => {
     try {
       await client.query(

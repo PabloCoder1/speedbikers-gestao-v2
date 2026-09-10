@@ -112,9 +112,24 @@ describe("classifyJobFreshness (Saúde do Sistema, D-219)", () => {
    * minutos na semana, e o tirou daqui (ver o teste seguinte).
    */
   it("job sem cadência fixa e raro por natureza não ganha veredito", () => {
-    for (const semCadencia of ["analytics.recompute", "backfill.orders", "erp.import.apply"]) {
+    for (const semCadencia of ["backfill.orders", "erp.import.apply"]) {
       expect(classifyJobFreshness(semCadencia, minutesAgo(9999), NOW)).toBe("sem_cadencia");
     }
+  });
+
+  /**
+   * `analytics.recompute` SAIU da lista dos sem cadência em D-304, e o motivo
+   * é que ele mudou de natureza: era movido só por chave suja — nenhuma venda
+   * na hora, nenhum recálculo — e ganhou um piso agendado
+   * (`v3-refresh-sales-metrics`, de hora em hora). Com cadência fixa, o
+   * silêncio dele virou defeito de verdade, e defeito de verdade merece
+   * veredito.
+   */
+  it("o recálculo de métricas GANHOU cadência com o piso de D-304", () => {
+    expect(classifyJobFreshness("analytics.recompute", minutesAgo(90), NOW)).toBe("ok");
+    expect(classifyJobFreshness("analytics.recompute", minutesAgo(180), NOW)).toBe("atencao");
+    expect(classifyJobFreshness("analytics.recompute", minutesAgo(300), NOW)).toBe("critico");
+    expect(classifyJobFreshness("analytics.recompute", null, NOW)).toBe("nunca");
   });
 
   /**

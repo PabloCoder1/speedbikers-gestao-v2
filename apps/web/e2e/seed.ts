@@ -386,10 +386,10 @@ async function main(): Promise<void> {
       único (26h) deixava passar em silêncio;
     - `sync.listings.snapshot` (6h) falhou há 2h → frescor ainda em dia, e
       **uma falha em 24h ao lado**. Frescor e sucesso são coisas diferentes;
-    - `analytics.recompute` é movido por CHAVE SUJA e não tem cadência
-      nenhuma → **sem selo**, idade crua. (O webhook não serve de exemplo
-      aqui: D-232 mediu um limiar de SILÊNCIO para ele, então ele recebe
-      veredito.)
+    - `analytics.recompute` rodou há 5 min → **Em dia**. Ele era o exemplo do
+      job SEM cadência (chave suja) até D-304, quando ganhou o piso agendado
+      `v3-refresh-sales-metrics` e, com ele, veredito. Quem sobrou sem selo
+      são os raros por natureza: backfill e importação sob demanda.
 
     `job_runs_failure_fields_match_status` exige `retryable` não nulo quando
     falha, e nulo (junto de `reason`) quando conclui.
@@ -832,6 +832,30 @@ async function main(): Promise<void> {
 
   if (sales.error !== null) {
     throw sales.error;
+  }
+
+  /*
+    O ESTADO DO RECÁLCULO (D-304). O seed escreve as métricas direto, sem
+    passar pela RPC — então nada preencheria `metric_refresh_state`, e o selo
+    de `/vendas` mostraria "Nunca calculado" em todo teste e em toda captura.
+
+    O carimbo aqui é AGORA de propósito: é o estado saudável, o que a tela deve
+    mostrar quando o pipeline está vivo. Um teste que só conhece o estado
+    quebrado não guarda o conserto.
+  */
+  const estadoRecalculo = await db.from("metric_refresh_state").upsert(
+    {
+      ml_account_id: mlAccountId,
+      organization_id: organizationId,
+      last_refresh_at: new Date(now).toISOString(),
+      last_change_at: new Date(now).toISOString(),
+      last_rows_written: 0,
+    },
+    { onConflict: "ml_account_id" },
+  );
+
+  if (estadoRecalculo.error !== null) {
+    throw estadoRecalculo.error;
   }
 
   // O MESMO recálculo no grão de CONTA. `/vendas` lê `daily_account_metrics`

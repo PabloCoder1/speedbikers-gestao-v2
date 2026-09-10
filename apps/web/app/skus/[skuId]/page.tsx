@@ -852,7 +852,7 @@ export default async function SkuDashboardPage({
 
               {salesTotal.last_computed_at !== null && (
                 <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
-                  Recálculo mais recente entre as linhas mostradas: {formatDateTime(salesTotal.last_computed_at)}.
+                  Última mudança entre as linhas mostradas: {formatDateTime(salesTotal.last_computed_at)}.
                 </p>
               )}
             </>

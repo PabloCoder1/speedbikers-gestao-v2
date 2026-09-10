@@ -59,11 +59,17 @@ test("/saude: os quatro vereditos de job aparecem, e as partes fecham com o tota
 
   expect(emDia + atrasando + parados + nunca + semCadencia).toBe(total);
 
-  // O seed cria quatro tipos, um por veredito que a tela sabe dar.
+  /*
+    O seed cria quatro tipos. Eram um por veredito ate D-304, quando
+    `analytics.recompute` ganhou cadencia (o piso `v3-refresh-sales-metrics`) e
+    passou de "sem cadencia" para "em dia" — ele roda ha 5 minutos no fixture.
+    "Sem cadencia" deixou de ter exemplo aqui, e isso e o certo: quem sobrou
+    sem cadencia sao os raros por natureza, que o seed nao cria.
+  */
   expect(total).toBe(4);
-  expect(emDia).toBe(2);
+  expect(emDia).toBe(3);
   expect(parados).toBe(1);
-  expect(semCadencia).toBe(1);
+  expect(semCadencia).toBe(0);
 });
 
 test("/saude: o job horário mudo há 13h é 'Parado' — o cenário de D-217", async ({ page }) => {
@@ -81,19 +87,22 @@ test("/saude: o job horário mudo há 13h é 'Parado' — o cenário de D-217", 
   await expect(orders).toContainText("Parado");
 
   /*
-    E o recálculo de métricas, movido por CHAVE SUJA, não ganha selo: a idade
-    crua é o honesto.
+    O RECÁLCULO DE MÉTRICAS MUDOU DE LADO EM D-304, e este caso mudou com ele.
 
-    O webhook NÃO serve de exemplo disso, e essa foi a minha suposição errada
-    ao escrever este arquivo: D-232 mediu um limiar de silêncio para
-    `sync.webhook.received` (32 mil execuções em 7 dias no Dev), então ele
-    recebe veredito. Sem cadência de verdade são os raros por natureza —
-    chave suja, backfill, importação sob demanda.
+    Ele era o exemplo do job sem cadência: movido por chave suja, nenhuma
+    venda na hora significava nenhum recálculo, e carimbar atraso ali seria
+    gritar sobre o comportamento certo. Agora existe o piso
+    `v3-refresh-sales-metrics` (de hora em hora, tenha havido venda ou não): a
+    cadência é fixa, o silêncio virou defeito, e defeito merece veredito.
+
+    Sem cadência continuam os raros por natureza — backfill, importação sob
+    demanda. O webhook nunca foi exemplo disso: D-232 mediu um limiar de
+    silêncio para ele.
   */
   const recompute = painel.getByRole("row", { name: /analytics\.recompute/ });
 
-  await expect(recompute).not.toContainText("Em dia");
-  await expect(recompute).not.toContainText("Parado");
+  // O seed o faz rodar há 5 minutos, contra uma cadência de 60.
+  await expect(recompute).toContainText("Em dia");
 });
 
 test("/saude: o estado da execução é texto, não código de banco", async ({ page }) => {

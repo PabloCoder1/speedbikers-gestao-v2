@@ -61,8 +61,23 @@ export const dynamic = "force-dynamic";
 const PRESET_DAYS = [7, 15, 30, 60, 90] as const;
 const DEFAULT_DAYS = 30;
 
+/**
+ * O SELO MEDE A CONFERÊNCIA, NÃO A MUDANÇA (D-304).
+ *
+ * Ele lia `last_computed_at`, que desde D-199 é o carimbo de quando a LINHA
+ * NASCEU: uma linha de métrica só é reescrita quando algum número dela muda, e
+ * o carimbo não acompanhava a reescrita. Resultado medido em produção — todo
+ * dia, em todas as contas, a linha nascia ~00:0x e o selo virava "Cálculo
+ * desatualizado" ao meio-dia seguinte, com o recálculo rodando de hora em hora
+ * o tempo todo.
+ *
+ * Agora ele lê `last_refreshed_at`, que anda a cada passada do recálculo tenha
+ * ela escrito ou não. É a diferença entre "este número mudou faz tempo" (o que
+ * pode ser um dia tranquilo) e "ninguém confere este número faz tempo" (o que
+ * é sempre defeito).
+ */
 const FRESHNESS_TONE: Record<FreshnessLevel, { color: string; label: string }> = {
-  ok: { color: "var(--sb-secondary)", label: "Atualizado" },
+  ok: { color: "var(--sb-secondary)", label: "Cálculo em dia" },
   atencao: { color: "var(--sb-accent-ink)", label: "Cálculo atrasando" },
   critico: { color: "var(--sb-danger)", label: "Cálculo desatualizado" },
   nunca_sincronizado: { color: "var(--sb-muted-ink)", label: "Nunca calculado" },
@@ -78,6 +93,12 @@ interface SalesSummary {
   average_ticket: number | null;
   average_selling_price: number | null;
   last_computed_at: string | null;
+  /**
+   * Quando o recálculo PASSOU por último — diferente de `last_computed_at`,
+   * que é quando o número mudou (D-304). Numa madrugada sem venda os dois
+   * divergem, e é o segundo que diz se o cálculo está vivo.
+   */
+  last_refreshed_at: string | null;
 }
 
 /**
@@ -706,7 +727,14 @@ export default async function VendasPage({
   const topSkus: TopSkuRow[] = topResult.error === null && Array.isArray(topResult.data) ? topResult.data : [];
 
   const lastComputedAt = summary?.last_computed_at ?? null;
-  const freshness = classifySyncFreshness(lastComputedAt === null ? null : new Date(lastComputedAt), now);
+  /*
+    O FRESCOR VEM DA PASSADA DO RECÁLCULO (D-304), não do carimbo da linha.
+    `lastComputedAt` continua vivo logo abaixo, para a outra pergunta: se ele é
+    nulo, a janela nunca foi calculada — e isso não é o mesmo que "calculada e
+    deu zero".
+  */
+  const lastRefreshedAt = summary?.last_refreshed_at ?? null;
+  const freshness = classifySyncFreshness(lastRefreshedAt === null ? null : new Date(lastRefreshedAt), now);
   const freshnessTone = FRESHNESS_TONE[freshness];
 
   // "Nunca calculado" é diferente de "calculado e deu zero" — a primeira não
@@ -857,7 +885,12 @@ export default async function VendasPage({
                 }}
               >
                 {freshnessTone.label}
-                {lastComputedAt !== null && ` · até ${formatDateTime(lastComputedAt)}`}
+                {/*
+                  "conferido" e não "até": a data é a da última passada do
+                  recálculo. "até" prometia cobertura de período, que é outra
+                  coisa e nunca foi o que este número dizia.
+                */}
+                {lastRefreshedAt !== null && ` · conferido ${formatDateTime(lastRefreshedAt)}`}
               </span>
             )}
           </>

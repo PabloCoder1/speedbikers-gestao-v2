@@ -1575,6 +1575,47 @@ export type Database = {
         }
         Relationships: []
       }
+      // ENTRADA MANUAL (D-304), a ser substituida pelo gerador do MCP na
+      // proxima regeracao: o estado do recalculo por conta.
+      metric_refresh_state: {
+        Row: {
+          last_change_at: string | null
+          last_refresh_at: string
+          last_rows_written: number
+          ml_account_id: string
+          organization_id: string
+        }
+        Insert: {
+          last_change_at?: string | null
+          last_refresh_at?: string
+          last_rows_written?: number
+          ml_account_id: string
+          organization_id: string
+        }
+        Update: {
+          last_change_at?: string | null
+          last_refresh_at?: string
+          last_rows_written?: number
+          ml_account_id?: string
+          organization_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "metric_refresh_state_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: true
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "metric_refresh_state_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ml_accounts: {
         Row: {
           backfill_covered_until: string | null
@@ -4377,6 +4418,10 @@ export type Database = {
         Returns: {
           account_label: string
           last_computed_at: string
+          // ENTRADA MANUAL (D-304): a passada do recalculo e o que ela
+          // escreveu. Nulas para conta sem estado registrado ainda.
+          last_refreshed_at: string | null
+          last_rows_written: number | null
           latest_metric_date: string
           ml_account_id: string
         }[]
@@ -4579,6 +4624,10 @@ export type Database = {
           average_ticket: number | null
           gross_revenue: number
           last_computed_at: string
+          // ENTRADA MANUAL (D-304): "quando o recalculo PASSOU por ultimo",
+          // diferente de last_computed_at ("quando o numero mudou"). Nula
+          // enquanto nenhuma conta alcancavel tiver estado registrado.
+          last_refreshed_at: string | null
           orders_count: number
           purchases_count: number | null
           units_sold: number
