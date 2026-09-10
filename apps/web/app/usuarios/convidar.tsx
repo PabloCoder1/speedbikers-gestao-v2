@@ -27,6 +27,15 @@ import type { AccountOption } from "./member-controls";
  * desta tela.
  */
 
+/**
+ * O endereço da `api`. Ele é embutido NO BUILD (`NEXT_PUBLIC_*`), então uma
+ * instalação que não o declara chega aqui como string vazia — e a chamada sai
+ * relativa, batendo no próprio Next, que responde 404 em HTML.
+ *
+ * Isso não é hipótese: foi o que aconteceu na primeira vez que o botão foi
+ * usado nesta máquina, e a tela dizia só "A API recusou o convite (HTTP 404)"
+ * — mensagem que manda procurar defeito na API que sequer foi chamada.
+ */
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 /** Os cinco papéis do `check`, na ordem de alcance — a mesma de `member-controls`. */
@@ -59,6 +68,21 @@ export function ConvidarUsuario({ accounts }: { accounts: AccountOption[] }): Re
   const pedeContas = papel !== "ADMIN";
 
   async function convidar(): Promise<void> {
+    /*
+      SEM ENDEREÇO NÃO HÁ CHAMADA. Criar usuário exige a chave de service role,
+      que vive só na `api` (D-012): sem o endereço dela, não existe caminho —
+      e dizer isso é melhor que gastar uma ida contra o próprio Next.
+    */
+    if (API_URL === "") {
+      setEstado({
+        kind: "erro",
+        mensagem:
+          "Esta instalação não sabe o endereço da API (NEXT_PUBLIC_API_URL). O convite é escrita privilegiada e não acontece sem ela.",
+      });
+
+      return;
+    }
+
     setEstado({ kind: "enviando" });
 
     const supabase = createClient();
@@ -87,12 +111,20 @@ export function ConvidarUsuario({ accounts }: { accounts: AccountOption[] }): Re
         | null;
 
       if (!response.ok) {
-        // O texto do servidor chega inteiro: 403 de papel, 400 de conta de
-        // outra organização. Traduzir tudo em "não foi possível" apagaria o
-        // que faz a pessoa entender o próximo passo.
+        /*
+          O texto do servidor chega inteiro: 403 de papel, 400 de conta de
+          outra organização. Traduzir tudo em "não foi possível" apagaria o
+          que faz a pessoa entender o próximo passo.
+
+          E quando NÃO vem corpo de erro nenhum, quem respondeu quase nunca é a
+          `api`: é o Next servindo 404 em HTML porque o endereço aponta para
+          ele, ou um proxy no meio. A mensagem diz isso em vez de acusar a API.
+        */
         setEstado({
           kind: "erro",
-          mensagem: corpo?.error?.message ?? `A API recusou o convite (HTTP ${String(response.status)}).`,
+          mensagem:
+            corpo?.error?.message ??
+            `${API_URL} não respondeu como a API (HTTP ${String(response.status)}). Confira o endereço e se a API está no ar.`,
         });
 
         return;
@@ -108,7 +140,9 @@ export function ConvidarUsuario({ accounts }: { accounts: AccountOption[] }): Re
         setEstado({ kind: "vinculado" });
       }
     } catch {
-      setEstado({ kind: "erro", mensagem: "Falha de conexão com a API." });
+      // O endereço entra na frase: "falha de conexão" sozinho não diz COM O
+      // QUE, e é o endereço que a pessoa vai conferir a seguir.
+      setEstado({ kind: "erro", mensagem: `Falha de conexão com a API em ${API_URL}.` });
     }
   }
 

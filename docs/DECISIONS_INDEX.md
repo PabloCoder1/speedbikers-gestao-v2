@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **293** (D-001 a D-297).
+Decisões registradas: **294** (D-001 a D-298).
 
 ## Por domínio
 
-### atendimento (42)
+### atendimento (43)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -60,6 +60,7 @@ Decisões registradas: **293** (D-001 a D-297).
 - **D-286** — O inbox de tres colunas do frame: RECUSADO com medicao, e o que ele protegia custou um parametro
 - **D-294** — A GAVETA DO COPILOTO: o ultimo item aberto da frente visual
 - **D-296** — A6: a auditoria da ADMINISTRACAO, e o CONVITE de usuario -- a recusa que virou pedido
+- **D-298** — O convite que "nao ia": endereco de api ausente, e a mensagem que acusava a api errada
 
 ### banco/rls (27)
 

@@ -8262,6 +8262,38 @@ O frame pinta "Convites Pendentes" com borda e numero em ambar. A faixa desta ca
 
 **O caso de e2e que mudou de SINAL:** `gavetas.spec.ts` afirmava `/nao ha e-mail aqui/` -- a recusa de D-271, verdadeira enquanto a janela nao existia. Agora afirma o contrario: o endereco aparece sob o nome. Guarda que envelhece e trocada, nao afrouxada.
 
+## D-298 - O convite que "nao ia": endereco de api ausente, e a mensagem que acusava a api errada
+
+**Contexto:** o usuario disse *"o botao de criar o usuario nao vai"*. O convite de D-296 tinha teste de unidade (6 casos), teste de e2e do formulario e fluxo exercitado ponta a ponta contra a `api` local -- e mesmo assim nao funcionava na maquina dele. **Nada disso era falso: o que faltava nao estava no codigo, estava no ambiente**, e a tela nao sabia dizer isso.
+
+---
+
+**1. O QUE ESTAVA ACONTECENDO, MEDIDO**
+
+`apps/web/.env.local` tinha duas variaveis (URL e chave publicavel do Supabase) e **nao tinha `NEXT_PUBLIC_API_URL`**. O componente le `process.env.NEXT_PUBLIC_API_URL ?? ""`, entao o `fetch` saia **relativo**: ia para `http://localhost:3000/v1/organization/invites`, que e o proprio Next, que responde **404 em HTML**.
+
+E a mensagem dizia: *"A API recusou o convite (HTTP 404)"* -- acusando um servico que **sequer foi chamado**. Quem le isso vai procurar defeito na `api`, no papel do usuario, na rota. O defeito estava a um `.env` de distancia.
+
+**2. TRES CONSERTOS, DO MAIS BARATO AO MAIS DURAVEL**
+
+| onde | o que mudou |
+|---|---|
+| tela | sem endereco, **nao ha chamada**: a recusa e imediata e nomeia a variavel. Com endereco e sem corpo de erro, a frase passa a ser "`<endereco>` nao respondeu como a API" -- porque quem responde 404 sem corpo quase nunca e a `api` |
+| `apps/api` | o script de `dev` passa a carregar o `.env.local` da RAIZ (`tsx watch --env-file-if-exists=../../.env.local`). Antes ele nao lia arquivo nenhum: subir a `api` local exigia exportar quinze variaveis a mao, e quem nao sabia disso simplesmente nao tinha `api` |
+| `.env.example` | escrito **onde cada app le**: a `api` no `.env.local` da raiz; o `web` so em `apps/web/.env.local`, porque o Next nao enxerga o da raiz -- e toda `NEXT_PUBLIC_*` e embutida NO BUILD |
+
+**3. A LICAO QUE VALE ALEM DESTE BOTAO**
+
+`NEXT_PUBLIC_API_URL` ausente derruba **toda escrita que passa pela api**: conectar conta ML, importacao do ERP, upload de NF-e, republicacao, Copiloto e agora o convite -- **doze componentes** com o mesmo `?? ""`. Nenhum deles distingue "endereco nao configurado" de "api recusou". Esta fatia consertou o que o usuario apontou e **deixa o padrao registrado**: a mesma frase honesta nos outros onze e fatia propria, com um `apiFetch` de dono unico em vez de doze copias -- e a regra da casa e extrair na SEGUNDA copia, nao na decima terceira.
+
+**4. O QUE NAO ERA O PROBLEMA, e foi verificado antes de mexer**
+
+A rota, o guard de ADMIN, a criacao do usuario e o link. Com a `api` no ar, `POST /v1/organization/invites` respondeu **200** com `status: "invited"` e link real -- primeiro por `curl` com JWT de verdade, depois **pelo botao**, no navegador, com a faixa de indicadores subindo de 6 para 8 membros e de 2 para 4 convites pendentes.
+
+**Impacto:** `apps/web/app/usuarios/convidar.tsx`, `apps/api/package.json` (script de `dev`), `.env.example`.
+
+**Verificacao:** `check` 29/29, build 8/8, e2e **113/113**, cinco guardas verdes. E o fluxo real no navegador, que e o unico lugar onde este defeito existia.
+
 ## Como adicionar nova decisao
 
 Registrar:
