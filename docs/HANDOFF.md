@@ -14,7 +14,7 @@
 |---|---|
 | **Atualizado em** | 2026-09-09 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `b65cd6f` (D-295) — a superfície de confirmação humana da republicação. Antes: `1172eeb` (D-294) — a GAVETA do Copiloto, e com ela a lista de itens abertos da frente visual fechou. Antes: `07d22df` (D-293) — o contexto de tela e as duas ferramentas do Copiloto além de venda. Antes: `8445cb9` (D-292) — a exportação de `/precos`, com o teto declarado dentro do arquivo. Antes: `816a53f` (D-291) — a lista de execuções que falharam, com a migration já aplicada no Dev pela esteira. Antes: `f83d03f` (D-290) — o recorte de não lidas em `/notificacoes`. Antes: `856daec` (D-289) — a paginação da Caixa de Entrada. Antes: `1dd2c7b` (D-288) — a FUSÃO de `/cobertura` com `/reposicao`. Antes: `c468881` (D-287), `c4fad81` (D-286), `a725f1f` (D-285, passo cinza), `d949183` (D-284, A5), A4 (D-283) e `9e0d06e` (D-282, D39) — quando a composição do Figma fechou. Antes: `4ee0a5f` (D-279, D37c), quando a migração de superfícies fechou (D0→D25, D27→D36 + passe D37a/b/c; D26 recusada com medição, D-266) |
+| **HEAD conhecido** | `b65cd6f` (D-295) — a superfície de confirmação humana da republicação. Antes: `1172eeb` (D-294) — a GAVETA do Copiloto, que fechou a lista de itens abertos da frente visual. Antes: `07d22df` (D-293), `8445cb9` (D-292), `816a53f` (D-291), `f83d03f` (D-290), `856daec` (D-289) e `1dd2c7b` (D-288) — os itens abertos, um por commit. Antes: `4ee0a5f` (D-279, D37c), quando a migração de superfícies fechou (D0→D25, D27→D36 + passe D37a/b/c; D26 recusada com medição, D-266) |
 | **Fechamento da V3** | **185 de 213 itens do ROADMAP fechados (87%)** — 26 abertos e 2 parciais. Dos 26, **6 são bloqueadores**, e todos são hardening/lançamento: nenhum é feature faltando (D-223) |
 | **Deploy no ar** | ⚠️ **`0702969`, e o `HEAD` está 76 commits à frente** (`git rev-list --count 0702969..HEAD` em 2026-09-09; eram 64 em 08/09). A última verificação contra a infraestrutura foi em 2026-09-02 e dizia "sem atraso" — verdade **naquele dia**, e a linha continuou afirmando isso enquanto o `HEAD` andava: o risco de D-070. Os commits **tocam `apps/api` e `apps/worker`** (copiloto, `ml-fulfillment-fetch`, `sync-fulfillment-snapshot`, `sync-order-financials`), então não é atraso só de front. **Se o deploy avançou desde então, não dá para saber daqui** -- conferir `APP_COMMIT` nos dois serviços antes de concluir qualquer coisa sobre produção. Referência da última medição: `api-00030-gqw` / `worker-00045-cwq`, `/health` em `{"commit":"0702969"}` |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
@@ -227,7 +227,7 @@ Nada disto pode ser feito por um agente.
 | load tests e revisão de `pg_stat_statements` | — |
 | Supabase e Cloud Run de **produção** | depende de ato humano para criar |
 | rollout da V3 | — |
-| ~~UX final da republicação~~ | ✅ **FEITA em D-295** — dois atos separados no Dashboard do Anúncio: pedir (roda a conferência, não fecha nada) e executar (fecha o pai, irreversível, com caixa de ciência). Falta só o **ensaio humano** com anúncio sacrificável, que é ato humano e está na seção própria |
+| ~~UX final da republicação~~ | ✅ **FEITA em D-295** — pedir e executar, dois atos, no Dashboard do Anúncio. Falta o **ensaio humano** (seção própria) |
 
 **Pendências saudáveis (B)** — agregam e cabem antes do lançamento:
 
