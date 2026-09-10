@@ -61,6 +61,8 @@ Ao liberar um caminho público, o teste prova que **apenas** aquele caminho foi 
 
 **Quando uma tela NOVA merece spec** (regra acrescentada em 2026-08-25, D-090): quando ela lê por um caminho que nenhum outro teste exercita. A Caixa de Entrada entrou porque o embed de `support_case_links` atravessa uma **FK composta** no PostgREST — comportamento de plataforma que não se prova por revisão de código. O gatilho para escrever a regra foi D-074/D-075/D-076, que fecharam três entregas seguidas com a mesma ressalva ("a tela não é visitada por nenhum spec"): a ressalva repetida virou sinal de que faltava critério, não de que faltava disciplina.
 
+**Armadilha conhecida (2026-09-10):** rodar a suíte de INTEGRAÇÃO deixa o Auth local quebrado até o próximo `db reset`. Os fixtures de RLS inserem em `auth.users` por SQL, e `confirmation_token` nasce **NULO** — o GoTrue lê aquela coluna como `string` e responde **500** em `GET /admin/users` (`"converting NULL to string is unsupported"`) para a listagem INTEIRA, não só para a linha ruim. Quem depende de `auth.admin.listUsers` para de funcionar: `e2e/seed.ts` (que procura o usuário pelo e-mail) e o convite de D-296. A ordem segura é **integração e e2e nunca compartilharem o mesmo banco sem reset entre elas**. E a lição vale além do teste: **linha de `auth.users` criada por SQL envenena a listagem do projeto todo** — quem criar usuário fora do GoTrue precisa gravar `''`, não `NULL`.
+
 **Armadilha conhecida:** `expect(page.getByRole("alert")).toHaveCount(0)` NUNCA vale num app Next.js. O framework mantém um `#__next-route-announcer__` com `role="alert"` em toda página — live region que anuncia o título na navegação client-side. Para afirmar "não há erro na tela", asserte o TEXTO do banner.
 
 ---
