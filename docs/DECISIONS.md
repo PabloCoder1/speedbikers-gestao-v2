@@ -8630,7 +8630,21 @@ Se alguem um dia mover `computed_at` para DENTRO do `is distinct from` da compar
 
 **Impacto:** migration `20260910200000_metric_refresh_state.sql` (tabela nova + `private.refresh_daily_sales_metrics` + `get_sales_summary` + `get_processing_health`), `apps/api/src/{metrics-refresh-schedule.ts,metrics-refresh-schedule.test.ts}` (novos), `apps/api/src/{app.ts,index.ts}`, `infra/cloud-scheduler.sh` (13o job), `apps/web/lib/sync-health.ts` (+teste), `apps/web/app/{vendas,sincronizacao,skus/[skuId]}/page.tsx`, `packages/db/src/types.ts` (entradas manuais), `packages/db/src/rls.integration.test.ts` (+3), `apps/web/e2e/{seed.ts,vendas.spec.ts,saude.spec.ts}`.
 
-**Verificacao:** `check` 29/29, build 8/8, integracao **657/657** em banco recriado (+3), e2e **117/117** (+1), cinco guardas verdes. Provado localmente que uma passada sem mudanca escreve **zero** linha de metrica e ainda assim anda com a conferencia.
+**Verificacao:** `check` 29/29, build 8/8, integracao **658/658** em banco recriado (+4), e2e **117/117** (+1), cinco guardas verdes. Provado localmente, nas duas pontas: passada sem mudanca escreve **zero** linha de metrica e ainda assim anda com a conferencia; linha que muda recebe carimbo novo e a que nao muda mantem o dela.
+
+**AS TRES CORRECOES DA REVISAO (migration `20260910210000`)**
+
+Um painel de revisao adversarial leu a fatia recem-empurrada e achou tres defeitos. Os tres eram reais, e dois deles da MESMA CLASSE que a fatia existe para combater -- tela dizendo o que o dado nao sustenta:
+
+| defeito | por que era defeito | correcao |
+|---|---|---|
+| `computed_at` continuava sendo "quando a linha nasceu" | a fatia batizou a coluna de **"Ultima mudanca"** em `/sincronizacao` e `/skus/[skuId]` sem que ela fosse isso: a segunda mentira no lugar da primeira | o carimbo entra na lista do `do update set` -- **zero linha a mais**, porque a tupla ja esta sendo reescrita quando o `is distinct from` deixa passar |
+| conta REVOKED congelava o selo | conta desconectada para de ser recalculada **de proposito**; o `min(last_refresh_at)` grudava no instante da desconexao e o selo ficava vermelho para sempre | o `min()` passa a olhar so contas CONNECTED |
+| conta sem metrica sumia de `/sincronizacao` | `get_processing_health` partia das METRICAS; a conta recem-conectada, que e a que mais se olha, nao aparecia | passa a partir de `ml_accounts`: "nunca" vira linha visivel em vez de ausencia |
+
+E a guarda de catalogo de D-199 foi **reemitida** na migration nova, com duas linhas a mais: `computed_at` precisa aparecer nos tres upserts, e `excluded.computed_at` **nao pode** aparecer em lugar nenhum -- dentro do `is distinct from` ele diferiria sempre e traria de volta as 485 mil escritas/dia sem quebrar teste nenhum. Reemitir a funcao sem reemitir a prova foi exatamente o buraco por onde `computed_at` se perdeu em D-199.
+
+**O QUE A GUARDA DE `/saude` NAO PEGA, e fica dito:** `analytics.recompute` com cadencia de 60 min fica verde enquanto a CHAVE SUJA estiver movendo o recalculo (~56 execucoes/hora hoje). Se o piso agendado morrer sozinho, com venda entrando, o selo continua verde -- e a madrugada seguinte e que revelaria. Um probe especifico do piso pediria um `job_type` proprio, e isso e fatia com deploy de worker; a alternativa aceita hoje e que o proprio selo de `/vendas` mede o que importa (a conferencia), e ele nao depende de venda.
 
 **Dois casos de e2e MUDARAM DE LADO**, e isso e o registro de que o desenho mudou: `/saude` afirmava que o recalculo NAO tinha veredito, e agora afirma "Em dia"; a faixa de vereditos era 2 em dia + 1 sem cadencia e passou a 3 + 0.
 

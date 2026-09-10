@@ -1228,6 +1228,62 @@ describe("métricas diárias de venda", () => {
   });
 
   /**
+   * O CARIMBO DA MUDANÇA (D-304, segunda fatia). `computed_at` foi rebatizado
+   * de "última mudança" nas telas — e só passou a ser isso quando entrou na
+   * lista do `do update set`. Antes ele era "quando a linha nasceu", e o
+   * rótulo novo teria sido a segunda mentira no lugar da primeira.
+   */
+  it("linha que MUDA recebe carimbo novo; linha que não muda mantém o dela", async () => {
+    await client.query(`select public.recompute_daily_sales_metrics($1,$2,'2026-08-20')`, [ORG_SB, CONTA_A]);
+
+    const antes = await client.query<{ computed_at: string }>(
+      `select computed_at from public.daily_account_metrics
+        where ml_account_id = $1 and metric_date = '2026-08-20'`,
+      [CONTA_A],
+    );
+
+    expect(antes.rows[0]).toBeDefined();
+
+    await client.query("select pg_sleep(0.01)");
+
+    // Passada SEM mudança: o carimbo da linha fica onde está.
+    await client.query(`select public.recompute_daily_sales_metrics($1,$2,'2026-08-20')`, [ORG_SB, CONTA_A]);
+
+    const semMudanca = await client.query<{ computed_at: string }>(
+      `select computed_at from public.daily_account_metrics
+        where ml_account_id = $1 and metric_date = '2026-08-20'`,
+      [CONTA_A],
+    );
+
+    expect(semMudanca.rows[0]?.computed_at).toEqual(antes.rows[0]?.computed_at);
+
+    try {
+      // Um pedido dos três sai da conta: a linha continua existindo, com outro
+      // número — que é exatamente o caso em que o carimbo TEM de andar.
+      await client.query(`update public.orders set status = 'cancelled' where id = $1`, [ORDER_IDS[0]]);
+
+      const escritas = await client.query<{ escritas: number }>(
+        `select public.recompute_daily_sales_metrics($1,$2,'2026-08-20') as escritas`,
+        [ORG_SB, CONTA_A],
+      );
+
+      const depois = await client.query<{ computed_at: string }>(
+        `select computed_at from public.daily_account_metrics
+          where ml_account_id = $1 and metric_date = '2026-08-20'`,
+        [CONTA_A],
+      );
+
+      expect(escritas.rows[0]?.escritas).toBeGreaterThan(0);
+      expect(new Date(depois.rows[0]?.computed_at ?? 0).getTime()).toBeGreaterThan(
+        new Date(antes.rows[0]?.computed_at ?? 0).getTime(),
+      );
+    } finally {
+      await client.query(`update public.orders set status = 'paid' where id = $1`, [ORDER_IDS[0]]);
+      await client.query(`select public.recompute_daily_sales_metrics($1,$2,'2026-08-20')`, [ORG_SB, CONTA_A]);
+    }
+  });
+
+  /**
    * O selo das telas lê daqui. Se a leitura não trouxer a conferência, o
    * conserto de D-304 existe no banco e não chega na tela — que é exatamente
    * como o defeito original passou despercebido por oito dias.
