@@ -14,11 +14,11 @@
 |---|---|
 | **Atualizado em** | 2026-09-10 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `f522ee2` (D-306) — uma passada por `orders` em `get_sales_expanded_summary` (−49% de buffers), e a **correção** da generalização de D-305: medidas, as duas RPCs de 7,4 s NÃO tinham a doença do plano genérico. Antes: `a4a3098` (D-305) — o timeout de `/anuncios` era o plano: `language sql` planeja o corpo sem os valores dos argumentos (228 ms → +60 s); curada com `plpgsql` + `force_custom_plan`. Antes: `f1a3d4f` (D-304) — o piso de frescor das métricas. ⚠️ **a api e o Cloud Scheduler NÃO foram implantados** (escolha do usuário): o piso (`/internal/schedule/metrics-refresh` + `v3-refresh-sales-metrics`) está no código e fora do ar — rodar `deploy-cloud-run.sh api` e `cloud-scheduler.sh`. Antes: `3a2d570` (D-303) — link de acesso reemitível. ⚠️ **falta a URL da aplicação nos redirecionamentos do projeto Supabase** (painel, fora do repositório): sem ela todo link cai em `http://localhost:3000`. |
+| **HEAD conhecido** | `4d44a6a` (D-307) — a varredura das 22 RPCs: `get_stock_coverage` custava **27 s** na forma que a tela inicial usa, e `pg_stat_statements` a mostrava com 89 ms de média. Curada (49 ms); 16 saudáveis. Antes: `f522ee2` (D-306) — uma passada por `orders` (−49% de buffers) e a correção da generalização de D-305. Antes: `a4a3098` (D-305) — o timeout de `/anuncios` era o plano: `language sql` planeja o corpo sem os valores dos argumentos. Antes: `f1a3d4f` (D-304) — o piso de frescor das métricas. ⚠️ **a api e o Cloud Scheduler NÃO foram implantados** (escolha do usuário): rodar `deploy-cloud-run.sh api` e `cloud-scheduler.sh`. ⚠️ **falta a URL da aplicação nos redirecionamentos do projeto Supabase** (painel, fora do repositório): sem ela todo link de acesso cai em `http://localhost:3000` (D-303). |
 | **Fechamento da V3** | **185 de 213 itens do ROADMAP fechados (87%)** — 26 abertos e 2 parciais. Dos 26, **6 são bloqueadores**, e todos são hardening/lançamento: nenhum é feature faltando (D-223) |
 | **Deploy no ar** | ✅ **`721f4c6`, implantado em 2026-09-10** — worker (`worker-00049-r62`) e depois api (`api-00033-cmn`), na ordem de D-088, autorizado pelo usuário. `GET /health` da api responde `{"commit":"721f4c6"}` e `POST /v1/organization/invites` responde **401 em vez de 404**: a rota existe. **O que motivou o deploy foi um defeito de usuário**: o botão de convidar respondia 404 em produção porque a api no ar era `6baa641`, de 07/09, e a rota nasceu em `4ef8d18`, três dias depois (D-301) — 110 commits de atraso, 32 tocando `apps/api` ou `packages/`. **Esta linha envelhece sozinha** (o risco de D-070): ela dizia "sem atraso" em 02/09, `0702969` em 09/09, e nos dois casos o `HEAD` seguiu andando. Deploy é manual: `bash infra/deploy-cloud-run.sh` com `MERCADO_LIVRE_CLIENT_ID` no ambiente. **O worker não é medível por fora** — `/health` dele responde 403 sem credencial —, então o que se afirma dele é a revisão, não o commit que responde. |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
-| **Migrations** | **161 locais, 160 no Dev** — conferido pelo catálogo em 2026-09-10: a última no Dev é `20260910220000` (D-305), e a 161ª (`20260910230000`, D-306) ainda não foi empurrada. ⚠️ Quem aplica no Dev é a integração GitHub do Supabase, **não** a CI (D-257); o caminho é o push, **nunca** o MCP (D-207). Verde no job de migrations significa "não sobrou o que aplicar", não "o portão segurou" |
+| **Migrations** | **162 locais** — a última é `20260910235000` (D-307). ⚠️ Quem aplica no Dev é a integração GitHub do Supabase, **não** a CI (D-257); o caminho é o push, **nunca** o MCP (D-207). O nome do arquivo precisa ser um **instante válido**, não só um número crescente: `...240000` (hora 24) deixou seis casos de `get_system_health` vermelhos, e é esse teste que serve de guarda (D-307) |
 | **Frente atual** | **Desempenho de RPC (D-305, D-306).** `/anuncios` caía com `statement timeout`: no PostgreSQL 17 o corpo de uma função `language sql` é planejado **sem os valores dos argumentos**, e o plano genérico estimava 66 linhas onde havia 5.089 — nested loop no lugar de hash join, 228 ms virando mais de 60 s. Curada com `plpgsql` + `plan_cache_mode = force_custom_plan`; medida no Dev depois de aplicada: **~200 ms, estável na oitava execução**, e as seis células da faixa voltaram (5.089 / 3.292 / 1.305 / 1.510 / 640 / 863). **D-306 desfez a generalização**: as duas RPCs seguintes da lista foram medidas e não têm a doença — o que têm é custo linear, e os 7,4 s eram cache frio. Em `get_sales_expanded_summary` o EXPLAIN achou outra coisa: `orders` lido duas vezes na mesma janela, agora uma. `get_sku_correlated_events` ficou como estava, de propósito. **Antes:** A8 — `/contas` refeita contra o frame (D-299), com o achado de que o token do ML vive 6,0 h e contagem regressiva seria alarme permanente. **Próxima da auditoria: `/saude`, com seis cartões de serviço a medir** |
 
 ### O que está pronto
@@ -61,16 +61,17 @@ Números completos e método: `docs/PERFORMANCE.md`.
 
 ## Riscos ativos
 
-- **A doença do plano genérico existe, mas NÃO se presume por `language sql`
-  (D-305, corrigido por D-306).** Verificada em UMA função
-  (`get_listings_dashboard`: 200 ms viram dezenas de segundos na **sexta**
-  execução) e **ausente** nas duas seguintes da lista — medidas, as duas
-  atravessam a sexta sem mexer. O que elas têm é custo linear com o trabalho,
-  e os 7,4 s do `pg_stat_statements` são **cache frio** (365 dias: 12.115 ms
-  na primeira contra 1.458 ms quente). **Diagnóstico antes de cura:** oito
-  execuções consecutivas como `authenticated`, e o sinal é o salto na sexta.
-  Sem esse salto, `plpgsql` + `force_custom_plan` é remédio para doença que
-  a função não tem.
+- **As 22 RPCs foram varridas; sobra vigilância, não suspeita (D-305→D-307).**
+  **Duas** tinham a doença do plano genérico
+  (`get_listings_dashboard`, `get_stock_coverage`), uma tinha desperdício
+  (`get_sales_expanded_summary`, `orders` lido duas vezes) e **16 estão
+  saudáveis** — de 1 ms a 1,2 s de estado estável, nenhuma perto do teto de
+  8 s. **A lição que fica é sobre a FONTE:** `get_stock_coverage` aparecia
+  com 89 ms de média no `pg_stat_statements` e custava **27 s** na forma que
+  a tela inicial usa — a estatística mede o que foi chamado, não o que pode
+  ser. Toda RPC nova, ou toda mudança de volume, pede o ensaio deliberado:
+  6 a 8 execuções como `authenticated`, **cada forma de chamada**, e comparar
+  com o mesmo corpo em literais. Corpo rápido + função lenta = é o plano.
 
 - **`supabase start` da CI falha as vezes, e a falha nao se distingue de
   defeito de migration pelo que a interface mostra** — aconteceu em `8dfea93`
