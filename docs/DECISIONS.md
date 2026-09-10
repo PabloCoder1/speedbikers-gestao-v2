@@ -9158,3 +9158,94 @@ Os outros tres casos falharam, e foi so por isso que eu olhei. **Teste de ausenc
 **Impacto:** `apps/web/app/copiloto/page.tsx` (`PageTitle`, `Panel`), `apps/web/app/copiloto/chat.tsx` (sugestoes, `ask` por parametro), `apps/web/e2e/copiloto.spec.ts` (novo, 4 casos). Sem migration, sem CSS novo.
 
 **Verificacao, local:** `check` **29/29**, e2e **78/78** em banco recriado (4 novos), build **8/8**, `check:waterfalls` 60, `check:server-actions` 17, `check:table-styles` 21, `docs:check`. Capturada a 1440px contra o Supabase local.
+
+## D-305 - o timeout de /anuncios era o PLANO, e as tres hipoteses obvias estavam erradas
+
+**Contexto:** a tela `/anuncios` respondia **"Nao foi possivel carregar: canceling statement due to statement timeout"**, com as seis celulas da faixa em "—". O teto de `authenticated` e **8 s**.
+
+---
+
+**AS HIPOTESES QUE A MEDICAO DERRUBOU**
+
+Vale registrar as tres, porque cada uma tinha precedente nesta base e as tres eram plausiveis:
+
+| hipotese | precedente | o que a medicao disse |
+|---|---|---|
+| a janela `count(*) over ()` | D-167 trocou exatamente essa forma em `get_purchase_suggestions` | o `WindowAgg` custa **2 ms** de 567. Nao e ela |
+| RLS avaliada por linha | D-181, e o sintoma foi este mesmo | nao voltou: **toda** policy aparece como `hashed SubPlan`, `rows=4 loops=1` |
+| volume de dados | 167.598 snapshots, 57.847 metricas | os CTEs isolados custam 27 ms (Full), 17 ms (visitas), 102 ms (metricas) |
+
+A janela era a minha suspeita principal, pelo precedente. Estava errada, e so o EXPLAIN disse isso.
+
+---
+
+**O PAR DE MEDIDAS QUE ISOLOU A CAUSA**
+
+Como `authenticated` real (`luiz@speedbikers.com`, ANALISTA, 4 contas), RLS ligada, mesmos parametros:
+
+    o CORPO da funcao          228 ms
+    a FUNCAO                > 60.000 ms
+
+**O mesmo SQL.** A diferenca nao esta no que se pergunta — esta em como e planejado.
+
+Detalhe que quase me enganou: as medidas iniciais rodaram como `postgres`, que tem **BYPASSRLS**. Os 4.518 ms de la eram sem RLS nenhuma. Medir o custo de uma tela exige o papel da tela.
+
+---
+
+**A CAUSA**
+
+No PostgreSQL 17 o corpo de uma funcao `language sql` e planejado **uma vez, sem os valores dos argumentos**; e funcao com clausula `SET` (aqui `search_path = ''`) nunca e *inlined*. O corpo roda sempre com o plano **generico**.
+
+O generico erra por duas ordens de grandeza, porque `metric_date between $2 and $3` com parametro cai no padrao de 0,5% do Postgres, e `($4 is null or coluna = $4)` idem:
+
+| no | estimado | real |
+|---|---|---|
+| `metricas_dia` | 137 | 13.799 |
+| seq scan em `listings` | 66 | 5.089 |
+| `visitas` | 84 | 3.477 |
+
+Estimando ~1 linha em todo lugar, ele troca hash join por **nested loop**, e o `GroupAggregate` de `visitas` — que agrega 34.502 linhas — fica do lado interno **sem `Materialize`**: reexecutado uma vez por linha de `listings`. Cinco mil vezes.
+
+E o generico **parece mais barato** (custo 9.961 contra 11.989 do custom), justamente porque as estimativas estao erradas. O Postgres o escolhe e nunca volta atras.
+
+---
+
+**O CONSERTO, E O ENSAIO DE CONTROLE**
+
+`language plpgsql` faz o corpo passar pelo SPI, que aceita plano custom; `set plan_cache_mode = 'force_custom_plan'` impede o SPI de migrar para o generico depois da quinta execucao. **As duas sao necessarias:**
+
+    plpgsql COM o set, 8 execucoes:  220, 201, 199, 199, 199, 219, 234, 200 ms
+    plpgsql SEM o set, mesmas 8:     1 a 5 em ~200 ms; a SEXTA consumiu 99 s
+
+A sexta execucao e literalmente onde o plancache troca. Sem o controle eu teria creditado o conserto ao plpgsql e enviado uma funcao que degrada no sexto acesso — isto e, que passa em qualquer teste curto.
+
+Os dois ensaios rodaram em funcao de nome proprio dentro de transacao **revertida**: nada foi criado no Dev para medir.
+
+---
+
+**O QUE NAO MUDOU:** assinatura, 12 argumentos na mesma ordem, tipo de retorno, `security invoker`, `search_path = ''`, `stable`, e o SQL do corpo — extraido do arquivo da migration anterior, nao transcrito.
+
+**A unica alteracao textual:** `returns table (...)` transforma cada coluna de saida em variavel do plpgsql, e o CTE `filtrado` referenciava `link_state` sem qualificar. Virou `base.link_state`. O padrao `variable_conflict = error` foi mantido de proposito: colisao futura falha alto.
+
+---
+
+**O ALCANCE, e o que NAO foi feito**
+
+`pg_stat_statements` do Dev: **toda** RPC acima de 500 ms e `language sql`, e a unica `plpgsql` da lista e a mais rapida.
+
+| funcao | linguagem | media | pior |
+|---|---|---|---|
+| `get_sales_expanded_summary` | sql | 1.146 ms | **7.416 ms** |
+| `get_sku_correlated_events` | sql | 2.248 ms | **7.392 ms** |
+| `get_listings_dashboard` | sql | 2.079 ms | 5.495 ms |
+| `get_link_integrity` | sql | 871 ms | 5.454 ms |
+| … mais 18, todas sql | | | |
+| `get_sku_curation` | plpgsql | 200 ms | 786 ms |
+
+Duas ja encostaram no teto de 8 s. **Esta fatia conserta apenas a tela que caiu.** As outras ficam medidas e nomeadas — converter vinte funcoes de uma vez, cada uma com a sua revisao de colisao de variavel, e decisao de quem toca o roadmap, nao efeito colateral de um conserto.
+
+Nao foi mexido tambem no fato de `/anuncios` disparar **7** chamadas em paralelo da mesma funcao (a lista + 6 celulas, desenho de D-242). A ~200 ms cada isso deixou de ser problema; a 2 s cada, era o amplificador.
+
+**Impacto:** `supabase/migrations/20260910220000_listings_dashboard_custom_plan.sql`.
+
+**Verificacao:** `db reset` local aplicou as migrations em ordem sem erro; a funcao resultante e `plpgsql`/`stable`/invoker com `search_path=""` e `plan_cache_mode=force_custom_plan`; `rls.integration` **630/630** (inclui o guard de grao de D-204 e os de exposicao de D-182, e os casos que chamam esta RPC por posicao).
