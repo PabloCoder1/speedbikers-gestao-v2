@@ -59,9 +59,17 @@ export function ReemitirLink({ userId, nome }: { userId: string; nome: string })
     }
 
     try {
+      /*
+        CORPO VAZIO EXPLÍCITO. A rota não lê payload nenhum — o que ela precisa
+        está no caminho e no token —, mas um POST sem `content-length` é
+        recusado com **411** pela borda do Cloud Run antes de chegar à
+        aplicação (medido em produção). `"{}"` custa dois bytes e tira a
+        resposta mais confusa possível do caminho.
+      */
       const response = await fetch(`${API_URL}/v1/organization/members/${userId}/access-link`, {
         method: "POST",
-        headers: { authorization: `Bearer ${token}` },
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: "{}",
       });
 
       const corpo = (await response.json().catch(() => null)) as
