@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
 import { PageTitle } from "../../components/page-title";
+import { TOM } from "../../components/tone";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
 import { formatCount, formatDateTime } from "../../lib/format";
@@ -10,6 +11,7 @@ import { createClient } from "../../lib/supabase/server";
 import { currentMembership } from "../../lib/membership";
 import { DetalheUsuario } from "./detalhe-usuario";
 import { AccountAccessControls, RoleSelect } from "./member-controls";
+import { ConvidarUsuario } from "./convidar";
 
 export const metadata = { title: "Usuários — Speed Bikers Gestão" };
 
@@ -104,7 +106,7 @@ export default async function UsuariosPage(): Promise<ReactNode> {
 
   const isAdmin = myRole === "ADMIN";
 
-  const [membersResult, accountsResult, permissionsResult, eventsResult] = await Promise.all([
+  const [membersResult, accountsResult, permissionsResult, eventsResult, detalheResult] = await Promise.all([
     supabase
       .from("organization_members")
       .select("organization_id, user_id, role, created_at, profiles(full_name)")
@@ -118,6 +120,21 @@ export default async function UsuariosPage(): Promise<ReactNode> {
       .select("id, event_type, target_user_id, ml_account_id, previous_role, new_role, actor_user_id, occurred_at")
       .order("occurred_at", { ascending: false })
       .limit(50),
+    /*
+      OS TRÊS CAMPOS QUE VIVEM EM `auth.users` (D-296): e-mail, último acesso e
+      se o convite já foi aceito. D-271 recusou as três colunas do frame por
+      falta de fonte — e a fonte não era o esquema, era a JANELA: `auth.users`
+      não é alcançável pela Data API, de propósito.
+
+      `get_organization_members` é essa janela, `security definer` com
+      autorização ADMIN DAQUELA organização refeita dentro. Para quem não é
+      ADMIN ela devolve zero linhas, e as colunas somem — em vez de aparecerem
+      vazias, que seria pior: a tela prometeria um dado que aquele usuário não
+      tem como ver.
+    */
+    isAdmin
+      ? supabase.rpc("get_organization_members", { p_organization_id: organizationId })
+      : Promise.resolve({ data: null, error: null }),
   ]);
 
   const members = (membersResult.data ?? []) as unknown as MemberRow[];
@@ -125,7 +142,30 @@ export default async function UsuariosPage(): Promise<ReactNode> {
   const permissions = permissionsResult.data ?? [];
   const events = eventsResult.data ?? [];
 
-  const nomePorUsuario = new Map(members.map((m) => [m.user_id, m.profiles?.full_name ?? m.user_id]));
+  const detalhePorUsuario = new Map(
+    (detalheResult.data ?? []).map((linha) => [
+      linha.user_id,
+      { email: linha.email, ultimoAcesso: linha.last_sign_in_at, aceitou: linha.invite_accepted },
+    ]),
+  );
+
+  /** Convidados que ainda não entraram — o cartão que o frame desenha. */
+  const pendentes = (detalheResult.data ?? []).filter((linha) => !linha.invite_accepted).length;
+
+  /*
+    O nome que o histórico usa. Convidado que ainda não entrou NÃO TEM perfil —
+    `profiles` nasce no primeiro acesso —, e antes de D-296 isso não aparecia
+    porque não havia como criar gente pela tela. Agora há: sem o e-mail no
+    meio, a linha do histórico mostraria um UUID cru para quem acabou de ser
+    convidado, que é o defeito de D-273 em outra tela ("done" na frente de
+    quem opera).
+  */
+  const nomePorUsuario = new Map(
+    members.map((m) => [
+      m.user_id,
+      m.profiles?.full_name ?? detalhePorUsuario.get(m.user_id)?.email ?? m.user_id,
+    ]),
+  );
   const contaPorId = new Map(accounts.map((a) => [a.id, a.label]));
 
   const erro = membersResult.error ?? accountsResult.error ?? permissionsResult.error;
@@ -153,6 +193,26 @@ export default async function UsuariosPage(): Promise<ReactNode> {
       previous: null,
       tom: "neutro",
     },
+    /*
+      "CONVITES PENDENTES" DO FRAME, agora com fonte (D-296). D-271 o recusou
+      porque não havia convite nenhum: um cartão sempre em zero prometeria um
+      fluxo que a tela não tinha. Agora ela tem — e o zero, quando aparecer,
+      será um zero medido.
+
+      Só para ADMIN: o número vem da RPC, e ela não responde a mais ninguém.
+    */
+    ...(isAdmin
+      ? [
+          {
+            label: "Convites pendentes",
+            formula:
+              "Pessoas com vínculo criado que ainda não entraram nenhuma vez (`auth.users.last_sign_in_at` nulo).",
+            value: formatCount(pendentes),
+            previous: null,
+            tom: pendentes > 0 ? ("atencao" as const) : ("neutro" as const),
+          } satisfies KpiCellData,
+        ]
+      : []),
     ...PAPEIS.map(
       (papel): KpiCellData => ({
         label: roleLabel(papel),
@@ -169,6 +229,7 @@ export default async function UsuariosPage(): Promise<ReactNode> {
   return (
     <Shell>
       <PageTitle
+        aside={isAdmin ? <ConvidarUsuario accounts={accounts} /> : undefined}
         eyebrow="ADMINISTRAÇÃO / USUÁRIOS E ACESSOS"
         title="Usuários"
         subtitle={
@@ -222,6 +283,15 @@ export default async function UsuariosPage(): Promise<ReactNode> {
               <th>Papel</th>
               <th>Contas com acesso</th>
               {/*
+                STATUS e ÚLTIMO ACESSO entram para ADMIN (D-296), pela janela
+                que `get_organization_members` abriu — e na ORDEM do frame
+                (usuário, papel, contas, status, último acesso). Para quem não é
+                ADMIN elas somem: coluna vazia prometeria um dado que aquele
+                usuário não tem como ver.
+              */}
+              {isAdmin && <th>Status</th>}
+              {isAdmin && <th>Último acesso</th>}
+              {/*
                 Onde o frame põe "Status" e "Último acesso" — as duas sem fonte.
                 Status seria coluna de um valor só: não há tabela de convite, logo
                 todo membro está ativo por construção. E o último acesso é
@@ -257,6 +327,14 @@ export default async function UsuariosPage(): Promise<ReactNode> {
                     {member.profiles?.full_name ?? (
                       <span style={{ color: "var(--sb-text-soft)" }}>sem nome no perfil</span>
                     )}
+                    {/*
+                      O e-mail embaixo do nome, como o frame desenha ("Usuário /
+                      E-mail"). Só para ADMIN, e sem inventar: quem não tem
+                      e-mail no Auth aparece sem a linha, não com um traço.
+                    */}
+                    {isAdmin && detalhePorUsuario.get(member.user_id)?.email !== null && (
+                      <div className="sb-mono">{detalhePorUsuario.get(member.user_id)?.email}</div>
+                    )}
                   </td>
                   <td>
                     {isAdmin ? (
@@ -285,6 +363,28 @@ export default async function UsuariosPage(): Promise<ReactNode> {
                       granted.map((id) => contaPorId.get(id) ?? id).join(", ")
                     )}
                   </td>
+                  {isAdmin && (
+                    <td>
+                      {detalhePorUsuario.get(member.user_id)?.aceitou === false ? (
+                        <span className="sb-status" style={TOM.atencao}>
+                          Convite pendente
+                        </span>
+                      ) : (
+                        <span className="sb-status" style={TOM.ok}>
+                          Ativo
+                        </span>
+                      )}
+                    </td>
+                  )}
+                  {isAdmin && (
+                    <td style={{ whiteSpace: "nowrap" }}>
+                      {/*
+                        Nunca entrou é "—", não uma data inventada: o convite
+                        pode estar aberto há semanas, e o traço diz isso.
+                      */}
+                      {formatDateTime(detalhePorUsuario.get(member.user_id)?.ultimoAcesso ?? null)}
+                    </td>
+                  )}
                   <td style={{ whiteSpace: "nowrap" }}>{formatDateTime(member.created_at)}</td>
                   {/*
                     A gaveta do frame, em CÉLULA PRÓPRIA — e a razão é um teste.

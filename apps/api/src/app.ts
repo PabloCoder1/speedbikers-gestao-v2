@@ -35,6 +35,8 @@ import type { SupportQuestionsScheduleDeps } from "./support-questions-schedule.
 import type { SupportClaimsScheduleDeps } from "./support-claims-schedule.js";
 import { triggerSupportClaimsReconcile } from "./support-claims-schedule.js";
 import { triggerSupportQuestionsReconcile } from "./support-questions-schedule.js";
+import type { InviteDeps } from "./invites.js";
+import { inviteOrganizationMember, inviteRequestSchema } from "./invites.js";
 import type { RelistDeps } from "./relist.js";
 import { relistRequestSchema, requestListingRelist, requestListingRelistExecution } from "./relist.js";
 import type { SupportReplyDeps } from "./support-reply.js";
@@ -101,6 +103,7 @@ export interface AppDependencies {
   supportMessagesSchedule?: SupportMessagesScheduleDeps;
   supportReply?: SupportReplyDeps;
   relist?: RelistDeps;
+  invites?: InviteDeps;
   salesAnomalyActionsSchedule?: SalesAnomalyActionsScheduleDeps;
   decisionOutcomesSchedule?: DecisionOutcomesScheduleDeps;
   aiBudgetSchedule?: AiBudgetScheduleDeps;
@@ -557,6 +560,61 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
   });
 
   // --------------------------------------------------------------------
+  // --------------------------------------------------------------------
+  // Convite de usuario (D-296): o botao que o frame desenha desde sempre e
+  // que D-271 recusou por ser feature. Criar usuario exige service role, que
+  // nunca alcanca o navegador -- por isso a escrita nasce aqui.
+  // --------------------------------------------------------------------
+  app.post("/v1/organization/invites", async (context) => {
+    const auth = dependencies.auth;
+    const invites = dependencies.invites;
+
+    if (auth === undefined || invites === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    // ADMIN e so: quem convida decide papel e alcance de outra pessoa.
+    const authorized = await auth.authenticate(context.req.header("authorization"), ["ADMIN"]);
+
+    if (!authorized.ok) {
+      dependencies.logger.warn("invite_unauthorized", {
+        request_id: context.get("requestId"),
+        reason: authorized.reason,
+      });
+
+      return context.json({ error: { code: "unauthorized" } }, authorized.status);
+    }
+
+    let rawBody: unknown;
+
+    try {
+      rawBody = await context.req.json();
+    } catch {
+      return context.json({ error: { code: "invalid_payload", message: "corpo não é JSON" } }, 400);
+    }
+
+    const parsed = inviteRequestSchema.safeParse(rawBody);
+
+    if (!parsed.success) {
+      return context.json(
+        { error: { code: "invalid_payload", message: parsed.error.issues[0]?.message ?? "payload inválido" } },
+        400,
+      );
+    }
+
+    const outcome = await inviteOrganizationMember(invites, authorized.caller, parsed.data);
+
+    if (outcome.status === "invalid") {
+      return context.json({ error: { code: "invalid_payload", message: outcome.reason } }, 400);
+    }
+
+    if (outcome.status === "error") {
+      return context.json({ error: { code: "internal", message: outcome.reason } }, 500);
+    }
+
+    return context.json(outcome);
+  });
+
   // Pedido de republicacao (Fase 9, D-161): a api autoriza e enfileira; o
   // worker captura o snapshot e roda o preflight. NADA destrutivo nesta
   // rota -- o fechamento do pai e o POST /relist sao fatia propria.

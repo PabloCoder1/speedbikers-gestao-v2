@@ -8145,6 +8145,70 @@ A primeira republicacao real contra o Mercado Livre segue sendo **ensaio humano 
 
 **Verificacao:** `check` **29/29** (`--force`), build **8/8**, integracao **643/643** em banco recriado, e2e **109/109** (+5), cinco guardas verdes (`control-styles` foi a **201**). Painel e caixa de confirmacao renderizados a 1440px, com o botao vermelho travado ate a ciencia ser marcada.
 
+## D-296 - A6: a auditoria da ADMINISTRACAO, e o CONVITE de usuario -- a recusa que virou pedido
+
+**Contexto:** o usuario mandou o export do Figma de novo e pediu foco no grupo ADMINISTRACAO (Usuarios, Contas ML, Integracoes, Sincronizacao, Saude, Configuracoes), dizendo que muita coisa do desenho ainda nao existe **"inclusive o botao de colocar novos usuarios"**. Esta fatia e a auditoria das seis telas mais o primeiro item dela. **Com migration** (`20260910120000`).
+
+---
+
+**1. A AUDITORIA, TELA A TELA (renderizadas a 1440px contra o Supabase local, e lidas contra o `AdminScreen`/`Accounts` do export)**
+
+| tela | o que o frame tem e a V3 nao | veredito |
+|---|---|---|
+| **Usuarios** | acao "Convidar usuario"; colunas Status e Ultimo acesso; e-mail sob o nome; cartao "Convites pendentes" | **FEITO nesta fatia** |
+| **Contas ML** | a composicao inteira: cartao por conta com selo, seller_id, ultima sincronizacao, anuncios sincronizados, permissoes e rodape com acoes | **NUNCA MIGRADA** -- `/contas` nao esta em D0→D37; hoje e formulario + uma linha por conta. Proxima fatia |
+| **Saude** | seis cartoes de servico (web, API ML, workers, banco, storage, fila) com latencia | a medir: `/health` da api responde, mas latencia por servico nao tem fonte hoje |
+| **Integracoes** | cartao por parceiro com "Configurar →" | recusa MEDIDA e mantida (D-272 + D-287): a tabela de tres dimensoes ocupa 4 linhas em largura inteira e **24 em metade** |
+| **Sincronizacao** | quatro cartoes contando CONTAS | recusa MEDIDA e mantida (D-273): conta nao e unidade de frescor -- uma conta "atualizada" pode ter `visits` falhando 123 de 145 vezes |
+| **Configuracoes** | trilho de quatro secoes + interruptores (2FA, modo manutencao) | recusa MEDIDA e mantida (D-275): os dois interruptores nao tem onde gravar, e interruptor mente pior que numero |
+
+**2. A RECUSA DE D-271 ESTAVA CERTA, E O QUE MUDOU NAO FOI O ESQUEMA**
+
+D-271 recusou tres colunas e um cartao do frame com medicao:
+
+> "Ultimo Acesso": `auth.users.last_sign_in_at` -- **0** colunas e **0** funcoes em `public` o alcancam · "E-mail": `profiles` e `id, full_name, created_at, updated_at` · "Status": sem fluxo de convite, todo membro esta ativo por construcao · "Convites Pendentes": **0** tabelas com `invit`/`convite` no nome.
+
+Tudo isso continua verdade. **O que faltava nao era o dado: era a JANELA e o FLUXO** -- e os dois eram feature, que e exatamente o que aquela fatia (visual) nao entregava. O usuario pediu a feature.
+
+**3. A JANELA: `get_organization_members`, com o guard do TENANT**
+
+`auth.users` nao e alcancavel pela Data API de proposito. A funcao e `security definer` com tres travas: **ADMIN DAQUELA organizacao** (nao "ADMIN de alguma", que e o guard de `get_system_health` e cabe la porque aquilo e telemetria de PLATAFORMA); o join parte de `organization_members`, entao ninguem de fora dela aparece; e so **tres** campos de auth saem -- e-mail, ultimo login e o carimbo. Ha teste de assinatura que reprova se `token`, `password`, `provider` ou `metadata` encostarem na saida.
+
+**A guarda de D-182 reprovou a suite no primeiro run** (`+ "get_organization_members"`), como em D-291. A funcao entrou na lista versionada com a conferencia escrita ao lado.
+
+`invite_accepted` **nao** usa `confirmed_at`: com `enable_confirmations = false`, ele nasce preenchido no proprio convite, e a coluna diria "ativo" para quem nunca entrou. O criterio e `last_sign_in_at is not null` -- entrou alguma vez.
+
+**4. O FLUXO: LINK, e nao e-mail enviado**
+
+`inviteUserByEmail` depende do SMTP do projeto, que nao existe. Um convite que depende de entrega que ninguem provou e a promessa que esta casa recusa em toda fatia: a tela diria "convite enviado" e o e-mail nao chegaria.
+
+`generateLink({ type: "invite" })` cria o usuario e **devolve o link**, sem mandar nada. Quem convida copia e envia pelo canal que ja usa. **O link e credencial** -- quem o abrir define a senha daquela conta --, e a tela diz isso em nota de atencao, mostra uma vez e nao guarda.
+
+**5. O QUE A ROTA IMPOE (e foi exercitado contra a `api` de verdade, com o Supabase local)**
+
+| pedido | resposta medida |
+|---|---|
+| ADMIN convida e-mail novo | **200** `invited`, com link de convite real |
+| ADMIN convida o MESMO de novo | **200** `already_member` -- sem segunda escrita |
+| conta de outra organizacao no payload | **400** "conta que nao pertence a esta organizacao" |
+| GESTOR tenta convidar | **403** |
+| e-mail invalido | **400** "e-mail invalido" |
+
+A fronteira de organizacao e imposta **em codigo**, nao pela RLS: `AdminClient` a atravessa (licao de D-161). E o e-mail nunca vai para o log -- nem em erro; so o dominio, com teste afirmando isso.
+
+**6. DOIS DEFEITOS QUE SO A CAPTURA E A SUITE PEGARAM**
+
+- **cabecalho e celula em ordens diferentes**: pus os `th` de Status/Ultimo acesso depois de "Papel" e as `td` antes dela. A tabela renderizou com "Ativo" embaixo de "Papel". Corrigido para a ordem do frame (usuario, papel, contas, status, ultimo acesso);
+- **o caso da regressao de D-234 ficou vermelho**: ele afirma a celula EXATA ("E2E"), e o e-mail passou a viver na mesma celula. A correcao foi atualizar o esperado, **nao afrouxar para `contains`** -- a guarda existe para provar que a linha do membro certo renderiza. E a mesma decisao de D-281, com o sinal trocado: la o que invadiu a celula era CONTROLE e saiu; aqui e DADO do frame e fica.
+
+**7. UM TERCEIRO, DE LEITURA:** convidado nao tem `profiles` (o perfil nasce no primeiro acesso), e o historico de acesso mostrava o **UUID cru** de quem acabou de ser convidado. Passou a cair no e-mail antes do id.
+
+**Impacto:** migration `20260910120000`, `apps/api/src/{invites.ts,invites.test.ts}` (novos), `apps/api/src/{app.ts,index.ts}`, `apps/web/app/usuarios/{convidar.tsx (novo),page.tsx}`, `packages/db/src/types.ts` (entrada manual), `packages/db/src/rls.integration.test.ts` (+5 casos e a lista de D-182), `apps/web/e2e/usuarios.spec.ts`.
+
+**Verificacao:** `check` **29/29** (`--force`), build **8/8**, integracao **648/648** em banco recriado (+5), e2e **111/111** (+2), cinco guardas verdes. Fluxo exercitado ponta a ponta contra a `api` local; tela renderizada a 1440px com o convidado aparecendo como "Convite pendente" e o cartao em 1.
+
+**PENDENTE:** `db push` da migration para o Dev (a esteira aplica no push da `v3`) e regeracao dos tipos pelo MCP.
+
 ## Como adicionar nova decisao
 
 Registrar:

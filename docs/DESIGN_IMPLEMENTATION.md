@@ -1001,50 +1001,47 @@ está na "Próxima fatia segura".
 
 ## Última fatia concluída
 
-**A GAVETA DO COPILOTO (D-294)** — o último item aberto da frente visual, e o
-único elemento do frame que ficou de fora por **pré-condição**, não por gosto.
-Com ela, **a lista de itens abertos fechou**.
+**A6 — A AUDITORIA DA ADMINISTRAÇÃO, E O CONVITE DE USUÁRIO (D-296)** — o
+usuário mandou o export do Figma de novo e pediu foco no grupo, dizendo que
+muita coisa do desenho ainda não existe nele, "inclusive o botão de colocar
+novos usuários".
 
-### O ✦ deixou de ser link
+### As seis telas, renderizadas a 1440px e lidas contra o frame
 
-O frame nunca teve tela de Copiloto: desenha uma gaveta de 420px à direita,
-aberta de qualquer página pelo ícone da barra de topo. Até aqui aquele ícone
-levava para `/copiloto` — perguntar sobre o SKU aberto custava **sair** dele. A
-moldura é a `Drawer` das outras cinco (D-281): zero CSS novo.
-
-### O contexto não vem da URL, e isso não é preferência
-
-| tela | a rota traz | a ferramenta pede |
+| tela | o que o frame tem e a V3 não | veredito |
 |---|---|---|
-| `/skus/[skuId]` | o **UUID** | o **código** do SKU |
-| `/anuncios/[itemId]` | o MLB | o MLB **e a conta dona dele** |
+| **Usuários** | "Convidar usuário"; Status; Último acesso; e-mail; cartão de convites | **FEITO** |
+| **Contas ML** | a composição inteira (cartão por conta: selo, seller_id, última sync, anúncios, permissões, ações) | **NUNCA MIGRADA** — `/contas` não está em D0→D37. Próxima fatia |
+| **Saúde** | seis cartões de serviço com latência | a medir: latência por serviço não tem fonte hoje |
+| **Integrações** | cartão por parceiro | recusa medida e mantida (D-272 + D-287: 4 linhas × **24** em meia largura) |
+| **Sincronização** | quatro cartões contando CONTAS | recusa medida e mantida (D-273: conta não é unidade de frescor) |
+| **Configurações** | trilho + interruptores (2FA, manutenção) | recusa medida e mantida (D-275: não há onde gravar) |
 
-Então quem sabe publica: a página renderiza um beacon, e um provider no shell
-— ancestral comum da barra de topo e do `<main>` — leva isso até a gaveta. **O
-beacon limpa o contexto ao desmontar**, e é esse detalhe que separa a
-implementação da promessa vazia: sair do anúncio e continuar afirmando o
-contexto dele faria a resposta vir sobre outra entidade. Há caso de e2e só para
-isso.
+### A recusa de D-271 estava certa — e o que mudou não foi o esquema
 
-### As recusas sobreviveram à gaveta
+`auth.users.last_sign_in_at` continua fora do alcance da Data API, e `profiles`
+continua sem e-mail. **O que faltava era a JANELA e o FLUXO**, e os dois eram
+feature — exatamente o que uma fatia visual não entrega. O usuário pediu a
+feature.
 
-Sem contexto, as três de venda; com SKU, três que `sku_replenishment`
-responde; com anúncio, duas que `listing_performance` responde. Continuam fora
-"Quanto enviar ao Full?" (sem política logística, D-147) e "histórico de
-exposição" (o dado não existe, D-266) — com asserção de e2e e **âncora
-positiva** ao lado, que é a lição de D-276 §5.
+A janela é `get_organization_members`, `security definer` com o guard do
+**tenant** (ADMIN daquela organização, não "ADMIN de alguma") e só três campos
+de auth na saída, com teste que reprova se `token`/`password`/`metadata`
+encostarem nela. O fluxo é `generateLink` — **link, não e-mail enviado**: o
+projeto não tem SMTP, e dizer "convite enviado" sobre entrega que ninguém
+provou seria a promessa que esta casa recusa.
 
-### Um caso verde que virou mentira
+### Dois defeitos que só a captura e a suíte pegaram
 
-`copiloto.spec.ts` tinha *"a gaveta do frame não entrou"*. Continuava passando,
-e o nome passou a afirmar algo falso sobre o produto — virou *"a TELA não finge
-ser a gaveta"*. **Teste verde com premissa velha é pior que teste vermelho:** o
-vermelho chama; o verde mente em silêncio para quem ler o arquivo depois.
+Pus os `th` de Status/Último acesso depois de "Papel" e as `td` antes dela — a
+tabela renderizou "Ativo" embaixo de "Papel". E o caso da regressão de D-234
+ficou vermelho porque afirma a célula EXATA, e o e-mail passou a viver nela: a
+correção foi atualizar o esperado, **não afrouxar para `contains`**.
 
-**Verificação:** `check` 29/29 (`--force`), build 8/8, integração 643/643,
-e2e **104/104** (+4), cinco guardas verdes (`control-styles` foi a 196 com o
-gatilho novo). Renderizada a 1440px nos dois estados: sem contexto e com o SKU
-aberto.
+**Verificação:** `check` 29/29 (`--force`), build 8/8, integração **648/648**
+(+5), e2e **111/111** (+2), cinco guardas verdes. Fluxo exercitado ponta a
+ponta contra a `api` local: 200 com link, `already_member` na repetição, 400 na
+conta de outra organização, 403 para GESTOR.
 
 ## Próxima fatia segura
 

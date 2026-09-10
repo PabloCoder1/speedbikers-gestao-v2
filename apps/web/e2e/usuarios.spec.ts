@@ -41,8 +41,17 @@ test("/usuarios: com DOIS membros a tela abre — a regressão de D-234", async 
   */
   const gerenciar = page.getByRole("region", { name: "Gerenciar acessos" });
 
-  await expect(gerenciar.getByRole("cell", { name: "E2E", exact: true })).toBeVisible();
-  await expect(gerenciar.getByRole("cell", { name: "E2E Gestor", exact: true })).toBeVisible();
+  /*
+    O NOME DA CÉLULA MUDOU EM D-296, e continua EXATO de propósito: o e-mail
+    passou a viver embaixo do nome, como o frame desenha ("Usuário / E-mail"),
+    então o nome acessível da célula é o par. Afrouxar para `contains` seria
+    perder a guarda — ela existe para provar que a linha do membro CERTO
+    renderiza, e não uma linha qualquer.
+  */
+  await expect(gerenciar.getByRole("cell", { name: "E2E e2e@speedbikers.test", exact: true })).toBeVisible();
+  await expect(
+    gerenciar.getByRole("cell", { name: "E2E Gestor gestor@speedbikers.test", exact: true }),
+  ).toBeVisible();
 });
 
 test("/usuarios: o histórico de acesso mostra as duas entradas que o banco gravou", async ({ page }) => {
@@ -86,28 +95,80 @@ test("/usuarios: a faixa tem os CINCO papéis do check, não os três do frame",
   }
 });
 
-test("/usuarios: as três colunas sem fonte do frame não entraram", async ({ page }) => {
+test("/usuarios: as três colunas que D-271 recusou ENTRARAM, pela janela de D-296", async ({ page }) => {
   await login(page, "/usuarios");
 
   /*
-    "Convites Pendentes" (cartão) e "Status" (coluna): não existe tabela de
-    convite no esquema, então todo membro está ativo por construção — um cartão
-    sempre em zero e uma coluna de um valor só prometeriam um fluxo que a tela
-    não tem.
-  */
-  await expect(page.getByText(/Convites Pendentes/i)).toHaveCount(0);
-  await expect(page.getByRole("columnheader", { name: "Status" })).toHaveCount(0);
+    D-271 recusou "Status", "Último acesso" e o e-mail por FALTA DE FONTE — e a
+    falta não era do esquema, era da JANELA: `auth.users` não é alcançável pela
+    Data API, de propósito. `get_organization_members` é a janela, `security
+    definer` com autorização ADMIN daquela organização refeita dentro.
 
-  /*
-    "Último Acesso": é `auth.users.last_sign_in_at`, e o PostgREST não expõe o
-    schema `auth` — nenhuma coluna nem função em `public` o alcança (medido).
-    "Desde" fica no lugar, que é `created_at` do vínculo.
+    E "Convites pendentes" deixou de ser cartão sempre em zero: com o convite
+    de D-296, ele conta gente de verdade — quem tem vínculo e nunca entrou.
   */
-  await expect(page.getByRole("columnheader", { name: /Último acesso/i })).toHaveCount(0);
+  await expect(page.getByRole("columnheader", { name: "Status" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: /Último acesso/i })).toBeVisible();
+  await expect(page.getByText(/Convites pendentes/i)).toBeVisible();
+
+  // "Desde" continua: é `created_at` do vínculo, e responde outra pergunta.
   await expect(page.getByRole("columnheader", { name: "Desde" })).toBeVisible();
 
-  // E o e-mail sob o nome: `profiles` tem só id, full_name e carimbos.
-  await expect(page.getByText(/@speedbikers/)).toHaveCount(0);
+  // O e-mail sob o nome, como o frame desenha.
+  await expect(page.getByText("e2e@speedbikers.test").first()).toBeVisible();
+});
+
+/**
+ * O CONVITE (D-296) — o botão que o usuário pediu e que D-271 recusou por ser
+ * feature.
+ *
+ * **A `api` não sobe na suíte de e2e**, então nada aqui cria usuário de
+ * verdade: a criação exige service role e tem teste próprio em
+ * `apps/api/src/invites.test.ts`, fronteira de organização incluída. O que
+ * este arquivo guarda é o que a web possui — quem vê o botão, o que o
+ * formulário pede e o que ele recusa antes de chamar.
+ */
+test("/usuarios: o convite pede e-mail, papel e alcance — e o alcance some para ADMIN", async ({ page }) => {
+  await login(page, "/usuarios");
+
+  await page.getByRole("button", { name: "Convidar usuário" }).click();
+
+  const caixa = page.getByRole("dialog", { name: "Convidar usuário" });
+
+  await expect(caixa).toBeVisible();
+
+  // Sem e-mail válido não há chamada: a recusa acontece antes de gastar a ida.
+  const convidar = caixa.getByRole("button", { name: "Convidar", exact: true });
+
+  await expect(convidar).toBeDisabled();
+
+  await caixa.getByLabel("E-mail").fill("nova.pessoa@empresa.com");
+  await expect(convidar).toBeEnabled();
+
+  /*
+    O ALCANCE É O QUE O PAPEL NÃO DECIDE (D-117): papel diz o que a pessoa pode
+    fazer; conta diz sobre o que ela faz. ADMIN alcança todas por PAPEL, então
+    a lista de contas some para ele em vez de ficar ali sem efeito.
+  */
+  await expect(caixa.getByText("Contas que essa pessoa vai alcançar")).toBeVisible();
+
+  await caixa.getByLabel("Papel").selectOption("ADMIN");
+
+  await expect(caixa.getByText("Contas que essa pessoa vai alcançar")).toHaveCount(0);
+});
+
+test("/usuarios: o GESTOR não vê o botão de convidar", async ({ page }) => {
+  await loginAs(page, E2E_GESTOR_EMAIL, E2E_GESTOR_PASSWORD, "/usuarios");
+
+  // Âncora positiva: a tela é a certa e abriu para ele (a lição de D-276 §5).
+  await expect(page.getByRole("heading", { name: "Usuários", level: 1 })).toBeVisible();
+
+  /*
+    Esconder é CORTESIA: a rota exige ADMIN e a RPC devolve zero linhas para
+    quem não é. Oferecer o que o servidor vai negar é pior que não oferecer.
+  */
+  await expect(page.getByRole("button", { name: "Convidar usuário" })).toHaveCount(0);
+  await expect(page.getByRole("columnheader", { name: "Status" })).toHaveCount(0);
 });
 
 test("/usuarios: o GESTOR vê a tela em leitura, e o papel lido é o DELE", async ({ page }) => {

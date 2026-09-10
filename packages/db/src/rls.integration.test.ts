@@ -7441,6 +7441,74 @@ describe("get_job_failures (D-291, execucoes que falharam)", () => {
   });
 });
 
+// get_organization_members (20260910120000, D-296) — a janela para os tres
+// campos de `auth.users` que D-271 recusou por falta de fonte. O dado e do
+// TENANT (e-mail de gente), entao o guard e diferente do de get_system_health:
+// ADMIN DAQUELA organizacao, nao "ADMIN de alguma".
+describe("get_organization_members (D-296)", () => {
+  const CONSULTA = `select user_id, full_name, email, role, invite_accepted
+                      from public.get_organization_members('${ORG_SB}')`;
+
+  it("ADMIN recebe os membros COM e-mail e o estado do convite", async () => {
+    const rows = await asUser<{ email: string | null; role: string; invite_accepted: boolean }>(ADMIN_SB, CONSULTA);
+
+    expect(rows.length).toBeGreaterThan(0);
+    // O e-mail e o campo que a Data API nao alcanca: se ele vier nulo aqui, a
+    // janela nao esta abrindo o que existe para abrir.
+    expect(rows.every((r) => r.email !== null)).toBe(true);
+    expect(rows.map((r) => r.role)).toContain("ADMIN");
+  });
+
+  /*
+    A recusa e SILENCIOSA, como em get_system_health: erro revelaria a
+    existencia da organizacao pedida. Zero linhas, e a tela traduz isso em
+    coluna que nao aparece.
+  */
+  it("quem nao e ADMIN recebe ZERO linhas, nao erro", async () => {
+    const rows = await asUser(ANALISTA_SB, CONSULTA);
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("ADMIN de OUTRA organizacao nao ve os membros desta", async () => {
+    const rows = await asUser(DE_OUTRA_ORG, CONSULTA);
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("anon nao executa get_organization_members", async () => {
+    await expect(asAnon(`select * from public.get_organization_members('${ORG_SB}')`)).rejects.toThrow(
+      /permission denied/i,
+    );
+  });
+
+  /**
+   * A assinatura e contrato: `apps/web/app/usuarios/page.tsx` le estas colunas
+   * e `packages/db/src/types.ts` as declara. E o que NAO pode aparecer aqui e
+   * campo de autenticacao alem dos tres acordados -- token, senha, provedor,
+   * metadata.
+   */
+  it("mantem as 7 colunas do contrato, e nada mais de auth", async () => {
+    const assinatura = await client.query<{ result: string }>(
+      `select pg_get_function_result(p.oid) as result
+         from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' and p.proname = 'get_organization_members'`,
+    );
+
+    const result = assinatura.rows[0]?.result ?? "";
+
+    expect(result).toBe(
+      "TABLE(user_id uuid, full_name text, email text, role text, " +
+        "member_since timestamp with time zone, last_sign_in_at timestamp with time zone, " +
+        "invite_accepted boolean)",
+    );
+
+    for (const proibido of ["token", "password", "encrypted", "provider", "metadata", "confirmation"]) {
+      expect(result).not.toContain(proibido);
+    }
+  });
+});
+
 // Busca Universal (search_entities) — o item do Checkpoint P1 que pedia as
 // entidades com destino REAL. A regra de D-060 e a que continua valendo: so
 // entra o que leva a algum lugar.
@@ -11014,7 +11082,7 @@ describe("guarda de GRANTs (D-066/D-098/D-130)", () => {
   //
   // As 25 foram auditadas em 2026-09-01: todas sao chamadas pelo app (zero
   // superficie morta) e todas tem `search_path` travado. A 26a entrou em
-  // 2026-09-09 (D-291), sob a mesma conferencia.
+  // 2026-09-09 (D-291) e a 27a em 2026-09-10 (D-296), sob a mesma conferencia.
   const RPCS_DEFINER_EXPOSTAS = [
     "approve_purchase_order",
     "cancel_purchase_order",
@@ -11031,6 +11099,12 @@ describe("guarda de GRANTs (D-066/D-098/D-130)", () => {
     // travado, escopo de organizacao com o predicado de plataforma de D-209,
     // e a saida nao carrega chave interna do worker (dedupe_key, job_id).
     "get_job_failures",
+    // D-296: LEITURA dos membros com os tres campos que vivem em `auth.users`
+    // (e-mail, ultimo login, convite aceito). Entrou com a conferencia feita:
+    // autorizacao ADMIN DAQUELA organizacao refeita dentro, `search_path`
+    // travado, o join parte de `organization_members` (ninguem de fora dela
+    // aparece) e so tres campos de auth saem -- nada de token nem metadata.
+    "get_organization_members",
     "get_sku_curation",
     "get_sku_curation_summary",
     "get_system_health",

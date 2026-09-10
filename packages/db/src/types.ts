@@ -4330,6 +4330,24 @@ export type Database = {
           visits: number
         }[]
       }
+      // ENTRADA MANUAL (D-296): a migration `20260910120000` ainda nao passou
+      // pelo gerador do MCP, que le o Dev. A assinatura veio de
+      // `pg_get_function_result` no banco local, e o teste de integracao a fixa.
+      get_organization_members: {
+        Args: { p_organization_id: string }
+        Returns: {
+          user_id: string
+          // Anulaveis de verdade: `profiles.full_name` aceita NULL, e
+          // `auth.users.email`/`last_sign_in_at` sao nulos para quem foi
+          // convidado e nunca entrou.
+          full_name: string | null
+          email: string | null
+          role: string
+          member_since: string
+          last_sign_in_at: string | null
+          invite_accepted: boolean
+        }[]
+      }
       get_processing_health: {
         Args: { p_organization_id: string }
         Returns: {
