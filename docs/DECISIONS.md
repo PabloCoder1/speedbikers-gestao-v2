@@ -8047,6 +8047,53 @@ Ganhou os marcadores das duas ferramentas ("consultou estoque e reposicao do SKU
 
 **Fica aberto, e agora COM a pre-condicao paga:** a gaveta em si.
 
+## D-294 - A GAVETA DO COPILOTO: o ultimo item aberto da frente visual
+
+**Contexto:** D-276 mediu que a gaveta do frame prometia o que nao existia e a deixou registrada como item aberto **com a pre-condicao escrita**. D-293 pagou a pre-condicao (contexto na rota, ferramentas de estoque e de anuncio). Esta fatia e a gaveta. Sem migration.
+
+---
+
+**1. O ✦ DEIXOU DE SER LINK**
+
+O frame nunca teve TELA de Copiloto: ele desenha uma gaveta de 420px à direita, aberta de qualquer pagina pelo icone da barra de topo. Ate aqui aquele icone levava para `/copiloto` -- perguntar sobre o SKU aberto custava SAIR do SKU, que e o oposto do que a gaveta existe para fazer.
+
+A moldura e a `Drawer` das outras cinco (D-281): mesma camada, mesmo `Escape`, mesmo portal. Zero CSS novo.
+
+**2. O CONTEXTO NAO VEM DA URL, E ISSO NAO E PREFERENCIA**
+
+A gaveta mora no shell: ela nao sabe em que pagina esta. Derivar da rota parece mais simples e **nao funciona para nenhum dos dois casos reais**:
+
+| tela | a rota traz | a ferramenta pede |
+|---|---|---|
+| `/skus/[skuId]` | o **UUID** | o **codigo** do SKU |
+| `/anuncios/[itemId]` | o MLB | o MLB **e a conta dona dele** |
+
+Entao quem sabe publica: a pagina renderiza um `<CopilotContextBeacon>` com o que ja tem em maos, e um provider no shell -- ancestral comum da barra de topo e do `<main>` -- carrega isso ate a gaveta.
+
+**O beacon LIMPA o contexto ao desmontar**, e esse detalhe e o que separa a implementacao da promessa vazia: sair do anuncio para a Home e continuar afirmando "voce esta no MLB123" faria a resposta vir sobre outra entidade. Ha caso de e2e so para isso.
+
+**3. SUGESTAO POR CONTEXTO, E AS RECUSAS SOBREVIVEM**
+
+Sem contexto, as tres de venda -- as que funcionam de qualquer lugar. Com SKU, tres que `sku_replenishment` responde; com anuncio, duas que `listing_performance` responde. **Continuam fora**, e sao as mesmas de D-276: "Quanto enviar ao Full?" (sem politica logistica, D-147) e "Ver historico de exposicao" (o dado de trafego nao existe, D-266). Ha asserçao de e2e para as duas ausencias, com **ancora positiva** ao lado (a licao de D-276 §5: caso que so afirma ausencia passa ate na tela de login).
+
+**4. "ANALISE PRONTA" CONTINUA FORA**
+
+O frame traz um paragrafo de diagnostico ja escrito, sem calculo atras. O que existe de analise pronta nesta casa e a narracao do diagnostico do SKU, que tem botao onde o dado mora e e gerada sob demanda. Um paragrafo fixo aqui seria texto de desenho passando por resposta (D-023) -- e pre-carregar uma geracao paga numa gaveta que talvez ninguem abra seria pior ainda.
+
+**5. UMA CONVERSA, DOIS LUGARES**
+
+O chat da gaveta e o MESMO componente da tela cheia, com `contexto`, `sugestoes` e `compacto` por props. Duas implementacoes divergiriam no primeiro ajuste -- e a gaveta e onde o operador vai perguntar mais. A tela cheia continua existindo, alcancavel pelo rodape da gaveta: ela e a conversa longa, e continua **sem** selo de contexto, porque nao esta em cima de entidade nenhuma.
+
+**6. O CASO DE `/copiloto` QUE VIROU MENTIRA, E FOI CORRIGIDO**
+
+`copiloto.spec.ts` tinha um caso chamado *"a gaveta do frame nao entrou"*. Ele continuava passando -- a tela cheia realmente nao tem selo de contexto --, mas o NOME e o comentario passaram a afirmar algo falso sobre o produto. Virou *"a TELA nao finge ser a gaveta"*, com o motivo certo escrito. **Teste verde com premissa velha e pior que teste vermelho:** o vermelho chama; o verde mente em silencio para quem for ler o arquivo depois.
+
+**Impacto:** `components/copilot-context.tsx` e `components/copilot-launcher.tsx` (novos), `components/shell.tsx` (provider + gatilho), `app/copiloto/chat.tsx` (props), `app/skus/[skuId]/page.tsx` e `app/anuncios/[itemId]/page.tsx` (beacons), `e2e/copiloto-gaveta.spec.ts` (novo, 4 casos) e `e2e/copiloto.spec.ts` (o caso renomeado).
+
+**Verificacao:** `check` **29/29** (`--force`), build **8/8**, integracao **643/643** em banco recriado, e2e **104/104** (+4), cinco guardas verdes (`check:control-styles` foi a **196** com o gatilho novo). Gaveta renderizada a 1440px nos dois estados: sem contexto (curadoria) e com o SKU aberto.
+
+**COM ELA, A LISTA DE ITENS ABERTOS DA FRENTE VISUAL FECHOU.**
+
 ## Como adicionar nova decisao
 
 Registrar:

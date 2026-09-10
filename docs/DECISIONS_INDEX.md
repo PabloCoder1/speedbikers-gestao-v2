@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **289** (D-001 a D-293).
+Decisões registradas: **290** (D-001 a D-294).
 
 ## Por domínio
 
-### atendimento (40)
+### atendimento (41)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -58,6 +58,7 @@ Decisões registradas: **289** (D-001 a D-293).
 - **D-272** — D32: Integracoes, e o frame nomeia dois parceiros que o sistema NAO TEM
 - **D-278** — D37b: o importador do UpSeller, e o DENOMINADOR que inventaria 14% de falha
 - **D-286** — O inbox de tres colunas do frame: RECUSADO com medicao, e o que ele protegia custou um parametro
+- **D-294** — A GAVETA DO COPILOTO: o ultimo item aberto da frente visual
 
 ### banco/rls (27)
 

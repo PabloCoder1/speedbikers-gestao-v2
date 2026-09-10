@@ -5,6 +5,8 @@ import { roleLabel } from "../lib/labels";
 import { createClient } from "../lib/supabase/server";
 import { CommandPalette } from "./command-palette";
 import type { NotificationPreferenceRule } from "../lib/notification-preferences";
+import { CopilotContextProvider } from "./copilot-context";
+import { CopilotLauncher } from "./copilot-launcher";
 import { NotificationToasts } from "./notification-toasts";
 import { SidebarNav } from "./nav";
 import { currentMembership } from "../lib/membership";
@@ -139,6 +141,13 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
   const quem = nome !== null && nome.trim() !== "" ? nome.trim() : email;
 
   return (
+    /*
+      O provider do contexto do Copiloto (D-294) envolve o shell INTEIRO: a
+      gaveta mora na barra de topo e o beacon que publica o contexto mora na
+      página, que é filha de `<main>`. Só um ancestral comum dos dois faz a
+      informação chegar de um ao outro.
+    */
+    <CopilotContextProvider>
     <div className="sb-shell">
       <aside className="sb-sidebar">
         <Link href="/" className="sb-brand">
@@ -176,9 +185,13 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
           <CommandPalette organizationId={organizationId} />
 
           <div className="sb-top-actions">
-            <Link href="/copiloto" className="sb-icon-button" title="Copiloto" aria-label="Copiloto">
-              <span aria-hidden="true">✦</span>
-            </Link>
+            {/*
+              O ✦ deixou de ser LINK e virou o gatilho da gaveta (D-294) — que
+              é o que o frame sempre desenhou: o Copiloto abre por cima da tela
+              em que você está, e a tela cheia continua alcançável pelo rodapé
+              dela. Perguntar sobre o SKU aberto deixou de custar sair dele.
+            */}
+            <CopilotLauncher />
 
             <Link
               href="/notificacoes"
@@ -232,5 +245,6 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
 
       <NotificationToasts userId={auth.user?.id ?? null} preferenceRules={preferenceRules} />
     </div>
+    </CopilotContextProvider>
   );
 }

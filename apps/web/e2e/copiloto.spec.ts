@@ -14,6 +14,12 @@ import { login } from "./helpers.js";
  * A API não sobe na suíte de e2e, então o que se prova aqui é o que a web
  * possui: as sugestões, o envio e o estado vazio. A conversa em si tem teste
  * próprio em `apps/api`.
+ *
+ * ⚠️ **A GAVETA ENTROU EM D-294**, depois que D-293 pagou a pré-condição
+ * (contexto na API e ferramentas além de venda). Ela tem suíte própria em
+ * `copiloto-gaveta.spec.ts`; o que este arquivo guarda é a TELA CHEIA, que
+ * continua sendo a conversa longa e continua sem contexto — porque não está
+ * em cima de entidade nenhuma.
  */
 
 test("/copiloto: as sugestões são as três ferramentas que existem, em português", async ({ page }) => {
@@ -94,11 +100,17 @@ test("/copiloto: clicar numa sugestão pergunta, e as sugestões saem de cena", 
   await expect(conversa.getByText(/Não foi possível consultar o Copiloto|Falha de conexão/)).toBeVisible();
 });
 
-test("/copiloto: a gaveta do frame não entrou, e a tela diz que não guarda histórico", async ({ page }) => {
+test("/copiloto: a TELA não finge ser a gaveta, e diz que não guarda histórico", async ({ page }) => {
   await login(page, "/copiloto");
 
-  // Nada de "Contexto Atual", nem de botão flutuante, nem de análise pronta.
-  await expect(page.getByText(/Contexto Atual/i)).toHaveCount(0);
+  /*
+    A gaveta EXISTE desde D-294 — e ela mora na barra de topo, aberta por cima
+    da tela em que você está (`copiloto-gaveta.spec.ts`). Esta tela continua
+    sendo a conversa longa, e por isso continua sem selo de contexto: ela não
+    está em cima de SKU nenhum, e afirmar contexto aqui seria a promessa vazia
+    que D-276 recusou.
+  */
+  await expect(page.getByText(/Contexto atual/i)).toHaveCount(0);
   await expect(page.getByText(/Análise Pronta/i)).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Gerar ação/i })).toHaveCount(0);
 

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { KpiStrip, type KpiCellData } from "../../../components/kpi-strip";
+import { CopilotContextBeacon } from "../../../components/copilot-context";
 import { ObjectHeader, type ObjectBadge } from "../../../components/object-header";
 import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
@@ -377,6 +378,17 @@ export default async function AnuncioPage({
         eyebrow="COMERCIAL / CATÁLOGO"
         title="Detalhe do anúncio"
         subtitle="Estado, desempenho, Full e a história de um anúncio do Mercado Livre."
+      />
+
+      {/*
+        O contexto para a gaveta do Copiloto (D-294): o MLB E a conta dona
+        dele, que `listing_performance` exige e que a rota sozinha não carrega.
+      */}
+      <CopilotContextBeacon
+        kind="listing"
+        id={row.item_id}
+        mlAccountId={row.ml_account_id}
+        label={`Anúncio ${row.item_id}`}
       />
 
       <ObjectHeader

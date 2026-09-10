@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { KpiStrip, type KpiCellData } from "../../../components/kpi-strip";
+import { CopilotContextBeacon } from "../../../components/copilot-context";
 import { ObjectHeader, type ObjectBadge } from "../../../components/object-header";
 import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
@@ -511,6 +512,13 @@ export default async function SkuDashboardPage({
         title="Detalhe do SKU"
         subtitle="Visão completa de performance, estoque e histórico."
       />
+
+      {/*
+        O contexto para a gaveta do Copiloto (D-294). Ele publica o CÓDIGO do
+        SKU, não o UUID da rota: é o código que a ferramenta usa e o que o
+        operador lê. Some sozinho ao sair da tela.
+      */}
+      <CopilotContextBeacon kind="sku" id={sku.data.sku} label={`SKU ${sku.data.sku}`} />
 
       <ObjectHeader
         identificador={`SKU ${sku.data.sku}`}

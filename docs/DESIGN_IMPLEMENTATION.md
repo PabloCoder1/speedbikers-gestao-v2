@@ -1001,52 +1001,50 @@ está na "Próxima fatia segura".
 
 ## Última fatia concluída
 
-**A PRÉ-CONDIÇÃO DA GAVETA DO COPILOTO (D-293)** — o quinto item aberto
-seguido, e o primeiro que é backend. (Antes: a exportação de `/precos`, D-292;
-a lista de falhas, D-291; o recorte de não lidas, D-290; a paginação de
-`/atendimento`, D-289.)
+**A GAVETA DO COPILOTO (D-294)** — o último item aberto da frente visual, e o
+único elemento do frame que ficou de fora por **pré-condição**, não por gosto.
+Com ela, **a lista de itens abertos fechou**.
 
-### D-276 não recusou a gaveta por gosto — escreveu a pré-condição
+### O ✦ deixou de ser link
 
-Das **doze** perguntas que o desenho sugere, **uma** tinha como ser
-respondida: as três ferramentas eram todas de venda. E o selo "Contexto Atual"
-prometia "o Copiloto lerá os dados desta tela" sobre uma rota que recebia
-`{ message }` e mais nada. Esta fatia paga as duas metades.
+O frame nunca teve tela de Copiloto: desenha uma gaveta de 420px à direita,
+aberta de qualquer página pelo ícone da barra de topo. Até aqui aquele ícone
+levava para `/copiloto` — perguntar sobre o SKU aberto custava **sair** dele. A
+moldura é a `Drawer` das outras cinco (D-281): zero CSS novo.
 
-### O contexto entra como DADO, nunca como autoridade
+### O contexto não vem da URL, e isso não é preferência
 
-`{ kind, id }` com `kind` em conjunto fechado (`sku` | `listing`). O id vai
-para o prompt; quem lê o dado é a ferramenta, **sob a RLS de quem perguntou** —
-um id de outra organização não vira vazamento, vira ferramenta que não acha
-nada. E o prompt diz para **IGNORAR** o contexto quando a pergunta for outra:
-senão "quanto vendi ontem?" viraria consulta sobre o SKU aberto.
+| tela | a rota traz | a ferramenta pede |
+|---|---|---|
+| `/skus/[skuId]` | o **UUID** | o **código** do SKU |
+| `/anuncios/[itemId]` | o MLB | o MLB **e a conta dona dele** |
 
-### Duas ferramentas, e a descrição de cada uma diz o que ela NÃO responde
+Então quem sabe publica: a página renderiza um beacon, e um provider no shell
+— ancestral comum da barra de topo e do `<main>` — leva isso até a gaveta. **O
+beacon limpa o contexto ao desmontar**, e é esse detalhe que separa a
+implementação da promessa vazia: sair do anúncio e continuar afirmando o
+contexto dele faria a resposta vir sobre outra entidade. Há caso de e2e só para
+isso.
 
-`sku_replenishment` (aproveitável, tendência, cobertura, estado, sugestão) e
-`listing_performance` (visitas, venda, conversão, preço). Continuam sem
-ferramenta, de propósito: envio ao Full (não há política logística, D-147),
-tráfego por dia (não existe no esquema, D-266) e pedido/atendimento.
+### As recusas sobreviveram à gaveta
 
-### A composição ganhou um dono, e esse é o ponto delicado
+Sem contexto, as três de venda; com SKU, três que `sku_replenishment`
+responde; com anúncio, duas que `listing_performance` responde. Continuam fora
+"Quanto enviar ao Full?" (sem política logística, D-147) e "histórico de
+exposição" (o dado não existe, D-266) — com asserção de e2e e **âncora
+positiva** ao lado, que é a lição de D-276 §5.
 
-O arranjo das cinco peças canônicas morava inline em `/reposicao/page.tsx`.
-Virou `composeSkuReplenishment` em `@sb/domain`, usado pelos dois — porque
-**o Copiloto e a tela precisam responder o mesmo número**. Duas composições
-paralelas divergiriam no primeiro ajuste de qualquer peça, e a divergência
-apareceria como o assistente contradizendo a tela aberta ao lado.
+### Um caso verde que virou mentira
 
-### A recusa viaja junto do nulo
-
-A saída carrega `refusals` ao lado de cada nulo, e o prompt ganhou a regra
-"número ausente NÃO é zero". Sem isso o modelo lê `coverageDays: null` e narra
-ruptura onde há saldo sentinela — inventando o pior caso justamente onde a casa
-recusa afirmar qualquer caso.
+`copiloto.spec.ts` tinha *"a gaveta do frame não entrou"*. Continuava passando,
+e o nome passou a afirmar algo falso sobre o produto — virou *"a TELA não finge
+ser a gaveta"*. **Teste verde com premissa velha é pior que teste vermelho:** o
+vermelho chama; o verde mente em silêncio para quem ler o arquivo depois.
 
 **Verificação:** `check` 29/29 (`--force`), build 8/8, integração 643/643,
-e2e 100/100, cinco guardas verdes. As ferramentas novas não aparecem no e2e
-porque **a API não sobe na suíte de Playwright** (D-276) — são provadas por
-teste de unidade com fake de cliente, incluindo as recusas.
+e2e **104/104** (+4), cinco guardas verdes (`control-styles` foi a 196 com o
+gatilho novo). Renderizada a 1440px nos dois estados: sem contexto e com o SKU
+aberto.
 
 ## Próxima fatia segura
 
@@ -1142,9 +1140,9 @@ do seed — ou algum spec anterior já escreveu por cima dele?**
   (78% delas também são webhook), então a lista crua não resolveria — quem
   resolve é agrupar por assinatura do motivo: **170 motivos crus viram 16
   linhas**. A migration foi aplicada no Dev pela esteira, e os tipos já vieram do gerador do MCP.
-- **A gaveta do Copiloto** — a PRÉ-CONDIÇÃO foi paga em **D-293**: a rota
-  `/v1/copilot/chat` passou a receber contexto de tela (`{ kind, id }`, conjunto
-  fechado, e o id é dado, nunca autoridade) e ganhou **duas ferramentas além de
-  venda** — `sku_replenishment` (compõe a MESMA composição de `/reposicao`,
-  `composeSkuReplenishment`, para o assistente não contradizer a tela) e
-  `listing_performance`. Falta a gaveta em si.
+- ~~**A gaveta do Copiloto**~~ — **FEITA** (D-294), depois que D-293 pagou a
+  pré-condição. O ✦ da barra de topo deixou de ser link: abre a gaveta por cima
+  da tela em que você está, com o contexto publicado pela própria página (a
+  rota traz o UUID e o MLB; a ferramenta pede o **código** do SKU e a **conta**
+  do anúncio). As recusas sobreviveram — "Quanto enviar ao Full?" e "histórico
+  de exposição" continuam fora, com asserção de e2e.
