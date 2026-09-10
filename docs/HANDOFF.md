@@ -61,14 +61,16 @@ Números completos e método: `docs/PERFORMANCE.md`.
 
 ## Riscos ativos
 
-- **Toda RPC acima de 500 ms neste banco é `language sql`, e isso não é
-  coincidência (D-305).** O corpo dessas funções é planejado sem os valores
-  dos argumentos, e o plano genérico erra as estimativas por 100x. Medido no
-  Dev: `get_sales_expanded_summary` **7.416 ms** e `get_sku_correlated_events`
-  **7.392 ms** de pior caso, contra um teto de **8 s** para `authenticated`.
-  Duas já encostaram. A cura é a de D-305 (`plpgsql` + `force_custom_plan`),
-  uma função por vez, cada uma com revisão de colisão de variável — não em
-  lote silencioso.
+- **A doença do plano genérico existe, mas NÃO se presume por `language sql`
+  (D-305, corrigido por D-306).** Verificada em UMA função
+  (`get_listings_dashboard`: 200 ms viram dezenas de segundos na **sexta**
+  execução) e **ausente** nas duas seguintes da lista — medidas, as duas
+  atravessam a sexta sem mexer. O que elas têm é custo linear com o trabalho,
+  e os 7,4 s do `pg_stat_statements` são **cache frio** (365 dias: 12.115 ms
+  na primeira contra 1.458 ms quente). **Diagnóstico antes de cura:** oito
+  execuções consecutivas como `authenticated`, e o sinal é o salto na sexta.
+  Sem esse salto, `plpgsql` + `force_custom_plan` é remédio para doença que
+  a função não tem.
 
 - **`supabase start` da CI falha as vezes, e a falha nao se distingue de
   defeito de migration pelo que a interface mostra** — aconteceu em `8dfea93`

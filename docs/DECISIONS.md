@@ -9249,3 +9249,73 @@ Nao foi mexido tambem no fato de `/anuncios` disparar **7** chamadas em paralelo
 **Impacto:** `supabase/migrations/20260910220000_listings_dashboard_custom_plan.sql`.
 
 **Verificacao:** `db reset` local aplicou as migrations em ordem sem erro; a funcao resultante e `plpgsql`/`stable`/invoker com `search_path=""` e `plan_cache_mode=force_custom_plan`; `rls.integration` **630/630** (inclui o guard de grao de D-204 e os de exposicao de D-182, e os casos que chamam esta RPC por posicao).
+
+## D-306 - a generalizacao de D-305 estava errada, e a medicao de duas funcoes desfez
+
+**Contexto:** D-305 consertou `/anuncios` e registrou, como risco ativo, que "toda RPC acima de 500 ms neste banco e `language sql`, e isso nao e coincidencia -- o plano generico erra as estimativas por 100x". O usuario pediu para consertar as duas piores da lista: `get_sales_expanded_summary` (7.416 ms) e `get_sku_correlated_events` (7.392 ms).
+
+---
+
+**A CORRECAO, QUE E O ACHADO PRINCIPAL**
+
+A frase de D-305 era **inferencia**, nao medicao: eu vi `language sql` + tempo maximo alto e concluí a mesma causa. Medidas as duas, como `authenticated` real:
+
+| funcao | cenario | resultado |
+|---|---|---|
+| `get_sales_expanded_summary` | 30d, 8 execucoes | 1868 (fria), 186, 221, 201, 200, **173**, 171, 172 |
+| `get_sku_correlated_events` | 50 SKUs/10d, 8 execucoes | 520 (fria), 44, 44, 45, 44, **44**, 44, 44 |
+
+**A sexta execucao -- onde `get_listings_dashboard` saltava de 200 ms para dezenas de segundos -- nao mexeu em nenhuma das duas.** Nenhuma tem a doenca de D-305.
+
+O que elas tem e crescimento **linear com o trabalho**, que e o que uma consulta honesta faz:
+
+    get_sales_expanded_summary      get_sku_correlated_events
+      7d    67 ms                     200 SKUs    24 ms
+     30d   179 ms                    1000 SKUs    70 ms
+     90d   415 ms                    3554 SKUs   428 ms  <- TODOS os SKUs
+    365d  1458 ms
+
+Os 7,4 s do `pg_stat_statements` sao compativeis com **cache frio**: a primeira execucao de 365 dias custou **12.115 ms** contra 1.458 ms quente, e a primeira de 50 SKUs custou 520 ms contra 44 ms. Fator 8 a 12 entre frio e quente, nas duas. Cache frio nao e defeito de consulta.
+
+**Licao, e ela e a mesma de D-305 vista do outro lado:** la, a hipotese obvia (`count(*) over ()`, com precedente em D-167) estava errada e a medicao derrubou. Aqui, a hipotese era minha propria decisao anterior -- e uma decisao registrada nao vale mais que uma suspeita quando o assunto e desempenho. **So a medicao no papel certo decide.**
+
+---
+
+**O QUE FOI CONSERTADO: uma passada em vez de duas**
+
+O EXPLAIN de `get_sales_expanded_summary` mostrou algo real, e nao era o plano generico: `fees` e `counts` percorriam **a mesma janela de `orders`, cada uma por sua conta**. Em 365 dias, 317.185 buffers cada, de 647.414 no total -- **98% do custo eram duas leituras da mesma coisa**.
+
+`pedidos` passou a ser uma CTE materializada unica. E `count(distinct o.id)` virou `count(*)`, valido porque a CTE tem uma linha por pedido (filtro sobre `orders`, sem join, `id` e chave primaria); a distincao custava um **sort externo de 11 MB**.
+
+| | atual | nova |
+|---|---|---|
+| buffers (365d) | 647.414 | **330.423** (-49%) |
+| sort externo | 11 MB | nenhum |
+| 7d | 67 ms | 50 ms |
+| 30d | 179 ms | 155 ms |
+| 90d | 415 ms | 358 ms |
+| 365d | 1458 ms | 1263 ms |
+
+Mais rapida em **todas** as janelas. A verificacao no caso pequeno existe porque materializar podia te-lo piorado, e o pequeno e o comum: os presets de `/vendas` sao 7/15/30/60/90 dias, e a tela chama cada RPC **duas vezes** (periodo atual e comparativo). A janela larga so e alcancavel pelo periodo personalizado, que e livre.
+
+**Resultado identico, conferido e nao suposto:** oito cenarios comparados com `is not distinct from` (entao NULL igual a NULL) -- 7d/30d/90d/365d sem recorte, 30d com marca `OFF RACER`, 30d `p_sem_marca`, 30d com uma conta, e janela vazia. Os NULLs do trio de cancelamento sob recorte sao o ponto sensivel do contrato de D-237, e ha caso para eles.
+
+---
+
+**O QUE FICOU COMO ESTAVA, e por que isso e a resposta certa**
+
+`get_sku_correlated_events` **nao foi tocada**. Pior caso medido: 428 ms com os 3.554 SKUs da base inteira como candidatos -- cenario impossivel, porque exigiria que toda a base fosse anomalia no mesmo dia. Sem degradacao na sexta, sem no caro no plano.
+
+Nao ha defeito. Mexer numa funcao cujo pior caso medido e meio segundo, para cumprir uma expectativa que a medicao ja desfez, seria risco sem beneficio -- e teria transformado um diagnostico errado em codigo.
+
+**`get_sales_expanded_summary` tambem continua `language sql`**, pelo mesmo motivo: converte-la para `plpgsql` + `force_custom_plan` seria remedio para doenca que ela nao tem.
+
+---
+
+**O QUE ISSO MUDA NO RISCO DE D-305**
+
+O risco no HANDOFF foi reescrito. A forma medida e mais estreita: a doenca do plano generico e **real e verificada em uma funcao** (`get_listings_dashboard`), e **ausente nas duas seguintes da lista**. Ela nao se presume por `language sql` -- diagnostica-se com o ensaio das oito execucoes, e o sinal e o salto na **sexta**.
+
+**Impacto:** `supabase/migrations/20260910230000_sales_expanded_single_pass.sql`, `docs/HANDOFF.md`.
+
+**Verificacao:** `db reset` local aplicou as migrations em ordem; `rls.integration` **630/630**, incluindo o bloco proprio de `get_sales_expanded_summary` (D-157) que cobre escopo por conta, por organizacao e marca inexistente.

@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **301** (D-001 a D-305).
+Decisões registradas: **302** (D-001 a D-306).
 
 ## Por domínio
 
@@ -202,7 +202,7 @@ Decisões registradas: **301** (D-001 a D-305).
 - **D-248** — Dashboard do Anuncio em oito abas: a fila pedia uma tela que nao existe, e a republicacao nao e tela
 - **D-305** — o timeout de /anuncios era o PLANO, e as tres hipoteses obvias estavam erradas
 
-### outros (53)
+### outros (54)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -257,6 +257,7 @@ Decisões registradas: **301** (D-001 a D-305).
 - **D-291** — A lista de execucoes que FALHARAM: uma RPC nova, e o agrupamento que a torna legivel
 - **D-297** — /usuarios refeita contra o desenho: a tabela volta a ser tabela, e o controle vai para a gaveta
 - **D-299** — A8: `/contas` contra o frame, e o token que vive SEIS HORAS
+- **D-306** — a generalizacao de D-305 estava errada, e a medicao de duas funcoes desfez
 
 ### processo/docs (1)
 
