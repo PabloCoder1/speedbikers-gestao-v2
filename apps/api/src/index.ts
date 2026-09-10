@@ -30,13 +30,21 @@ const nfeImportDeps =
     ? { db, enqueuer, logger, store: createFileStore(env.DOCUMENTS_BUCKET) }
     : undefined;
 
+/*
+  As origens do `web`, na ordem declarada. A PRIMEIRA é para onde o link de
+  convite leva depois de verificado (D-303): sem ela o Auth usa a "Site URL" do
+  projeto, que em 2026-09-10 era `http://localhost:3000` — todo convite mandava
+  a pessoa para a máquina dela.
+*/
+const webOrigins = (env.WEB_ORIGINS ?? "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter((origin) => origin !== "");
+
 const app = createApp({
   logger,
   enqueuer,
-  webOrigins: (env.WEB_ORIGINS ?? "")
-    .split(",")
-    .map((origin) => origin.trim())
-    .filter((origin) => origin !== ""),
+  webOrigins,
   oidc: createOidcVerifier({
     audience: env.API_URL,
     allowedServiceAccounts: [env.SCHEDULER_INVOKER_SERVICE_ACCOUNT],
@@ -77,7 +85,7 @@ const app = createApp({
   supportMessagesSchedule: { db, enqueuer, logger },
   supportReply: { db, enqueuer, logger },
   relist: { db, enqueuer, logger },
-  invites: { db, logger },
+  invites: { db, logger, ...(webOrigins[0] === undefined ? {} : { webUrl: webOrigins[0] }) },
   salesAnomalyActionsSchedule: { db, enqueuer, logger },
   decisionOutcomesSchedule: { db, enqueuer, logger },
   aiBudgetSchedule: { db, enqueuer, logger },

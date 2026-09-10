@@ -7,6 +7,7 @@ import { TOM } from "../../components/tone";
 import { memberStatusLabel, type MemberStatus } from "../../lib/member-filters";
 import { tomDePapel } from "../../lib/role-tone";
 import { AccountAccessControls, RoleSelect, type AccountOption } from "./member-controls";
+import { ReemitirLink } from "./reemitir-link";
 
 /**
  * A gaveta "Detalhe do Usuário" do frame (D39 — a quarta das cinco; refeita
@@ -242,6 +243,12 @@ export function DetalheUsuario({
             <DetailRow label="Membro desde" value={desde} />
             <DetailRow label="Identificador" value={<span className="sb-mono">{userId}</span>} />
           </div>
+
+          {/*
+            A SAÍDA PARA QUEM NÃO CONSEGUE ENTRAR (D-303). Só para quem edita, e
+            só depois de confirmar: o link vale como senha da conta de destino.
+          */}
+          {editavel && <ReemitirLink userId={userId} nome={nome ?? email ?? "esta pessoa"} />}
 
           <h4 className="sb-section-label" style={{ marginTop: "var(--sb-space-3)" }}>
             Mudanças de acesso desta pessoa

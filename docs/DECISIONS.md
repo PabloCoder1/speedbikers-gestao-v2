@@ -8523,6 +8523,53 @@ A sessao do convite dura **uma hora**. Um teste que so afirmasse "entrou" passar
 
 **Verificacao:** `check` 29/29 (`--force`, 460 unitarios com os 7 novos), build 8/8, e2e **116/116** (+3), cinco guardas verdes. E o fluxo seguido a mao no navegador, ponta a ponta: link → "Defina sua senha" → dentro da aplicacao → token 200 com a senha nova.
 
+## D-303 - O link que apontava para a maquina de quem clicava, e a saida para quem perdeu o dele
+
+**Contexto:** com a tela de definir senha no ar (D-302), o convite ainda nao fechava. Duas coisas apareceram medindo o caso REAL do primeiro convidado de producao.
+
+---
+
+**1. TODO CONVITE APONTAVA PARA `http://localhost:3000`**
+
+`generateLink` sem `redirectTo` usa a **Site URL do projeto**. Medido em 2026-09-10 contra o projeto de producao: pedir `redirect_to` da URL da Vercel devolveu, nas duas tentativas (aninhado em `options` e no topo do corpo), um link com
+
+```
+redirect_to=http://localhost:3000
+```
+
+O GoTrue **ignora em silencio** o `redirect_to` que nao esta na lista de permitidos e cai na Site URL. Ou seja: quem recebia o convite era mandado para a **propria maquina**. O primeiro convidado de verdade abriu o link `19 segundos` depois de criado (`created_at` 13:56:52, `last_sign_in_at` 13:57:11) -- e nao chegou a lugar nenhum.
+
+O codigo passa a **pedir** o destino: `InviteDeps.webUrl` e a primeira origem de `WEB_ORIGINS`, e vai como `redirectTo` no convite e na reemissao. **Isso e metade da correcao, e a outra metade nao esta no repositorio**: a URL precisa estar na lista de redirecionamentos permitidos do projeto Supabase, que vive no painel. Enquanto nao estiver, o GoTrue continua caindo na Site URL -- em silencio, que e o pior modo de falhar. `supabase/config.toml` ganhou `http://localhost:3000` na lista local, para o ambiente de casa se comportar como o de fora.
+
+**2. QUEM PERDEU O LINK NAO TINHA SAIDA**
+
+O convite mostra o link UMA VEZ e nao o guarda -- ele e credencial. Convidar de novo devolve `already_member` **sem link**, de proposito: repetir o convite nao pode mudar papel nem alcance. Sobrava o caso real, e ele apareceu no primeiro uso: link perdido, ou aberto antes de a tela de D-302 existir. A pessoa fica com vinculo, conta no Auth e **nenhum caminho de entrada**; a unica saida seria apagar o usuario, que apaga junto a trilha de acesso dela.
+
+`POST /v1/organization/members/:userId/access-link` (ADMIN) emite um link novo. **Tipo `recovery`, nao `invite`**: `invite` recusa e-mail que ja existe, e `recovery` cai na mesma tela de definir senha (D-302 aceita os dois tipos), sem derrubar a senha antiga ate a nova ser salva.
+
+| pedido | resposta medida contra a `api` local |
+|---|---|
+| ADMIN, membro desta organizacao | **200** `issued`, com link de verdade |
+| ADMIN, id que nao e membro daqui | **404** -- mesma resposta de "nao existe" |
+| id fora do formato de uuid | **400**, e nao 500 do Postgres |
+| sem token | **401** |
+
+**A fronteira e a mesma de D-161, no ponto onde ela custa mais caro:** `AdminClient` atravessa a RLS, entao sem a checagem de membro um ADMIN emitiria acesso para a conta de **qualquer usuario do sistema**, inclusive de outra empresa. E o que resta de poder fica DITO: um ADMIN pode emitir link para outro membro da propria organizacao e, com ele, definir a senha daquela conta -- menos do que ele ja pode (mudar papel, revogar acesso), e a tela avisa antes de gerar, num segundo clique.
+
+**3. NEM O E-MAIL NEM O LINK VAO PARA O LOG**
+
+Os dois sao credencial, e log e o lugar que mais gente le depois. O caso de teste afirma a ausencia dos dois, como o do convite ja fazia com o e-mail.
+
+**4. A SEGUNDA COPIA E ONDE SE EXTRAI**
+
+O aviso "Trate como senha" + a caixa do link + "Copiar link" viraram `LinkDeAcesso`, usado pelo convite e pela reemissao. Na primeira copia era marcacao; na segunda seria a duplicata que sai de sincronia.
+
+**Impacto:** `apps/api/src/{invites.ts,invites.test.ts,app.ts,index.ts}`, `apps/web/app/usuarios/{link-de-acesso.tsx,reemitir-link.tsx}` (novos), `apps/web/app/usuarios/{convidar.tsx,detalhe-usuario.tsx}`, `apps/web/e2e/usuarios.spec.ts`, `supabase/config.toml`.
+
+**Verificacao:** `check` 29/29, build 8/8, e2e **116/116**, cinco guardas verdes. Rota exercitada ponta a ponta contra a `api` local: 200 com link, 404 para nao-membro, 400 para id invalido, 401 sem token.
+
+**PENDENTE, e nao e codigo:** no painel do Supabase, a URL da aplicacao precisa entrar em **URL Configuration** (Site URL e Redirect URLs). Ate la, todo link continua caindo em `http://localhost:3000`.
+
 ## Como adicionar nova decisao
 
 Registrar:

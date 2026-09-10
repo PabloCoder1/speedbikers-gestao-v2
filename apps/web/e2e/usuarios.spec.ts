@@ -161,6 +161,15 @@ test("/usuarios: a tabela não tem controle, e a edição mora na gaveta (D-297)
   await expect(gaveta.getByText("Membro desde")).toBeVisible();
 
   /*
+    A SAÍDA DE D-303, para quem tem vínculo e não consegue entrar. Ela pede
+    confirmação antes de gerar porque o link vale como senha da conta — um
+    clique sem aviso seria fácil demais para o que ele faz.
+  */
+  await gaveta.getByRole("button", { name: "Gerar novo link de acesso" }).click();
+  await expect(gaveta.getByText("O link vale como senha")).toBeVisible();
+  await expect(gaveta.getByRole("button", { name: "Gerar link" })).toBeVisible();
+
+  /*
     "Proteção Ativa" do frame: o seed tem UM ADMIN, e quem recusa rebaixá-lo é
     o trigger `guard_last_admin`, não esta tela.
   */
@@ -245,6 +254,16 @@ test("/usuarios: o GESTOR não vê o botão de convidar", async ({ page }) => {
   */
   await expect(page.getByRole("button", { name: "Convidar usuário" })).toHaveCount(0);
   await expect(page.getByRole("columnheader", { name: "Status" })).toHaveCount(0);
+
+  /*
+    E nem o link de acesso (D-303): emitir credencial de outra pessoa é poder de
+    ADMIN, e a rota exige ADMIN. Esconder aqui é cortesia; quem recusa é o
+    servidor.
+  */
+  await page.getByRole("button", { name: "E2E Gestor", exact: true }).click();
+
+  await expect(page.getByRole("dialog", { name: /Detalhe do usuário/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Gerar novo link de acesso" })).toHaveCount(0);
 });
 
 test("/usuarios: o GESTOR vê a tela em leitura, e o papel lido é o DELE", async ({ page }) => {

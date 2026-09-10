@@ -5,6 +5,7 @@ import type { Logger } from "@sb/observability";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
+import { z } from "zod";
 
 import type { Authenticator } from "./auth.js";
 import { extractBearerToken } from "./auth.js";
@@ -36,7 +37,7 @@ import type { SupportClaimsScheduleDeps } from "./support-claims-schedule.js";
 import { triggerSupportClaimsReconcile } from "./support-claims-schedule.js";
 import { triggerSupportQuestionsReconcile } from "./support-questions-schedule.js";
 import type { InviteDeps } from "./invites.js";
-import { inviteOrganizationMember, inviteRequestSchema } from "./invites.js";
+import { inviteOrganizationMember, inviteRequestSchema, reissueAccessLink } from "./invites.js";
 import type { RelistDeps } from "./relist.js";
 import { relistRequestSchema, requestListingRelist, requestListingRelistExecution } from "./relist.js";
 import type { SupportReplyDeps } from "./support-reply.js";
@@ -606,6 +607,58 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
 
     if (outcome.status === "invalid") {
       return context.json({ error: { code: "invalid_payload", message: outcome.reason } }, 400);
+    }
+
+    if (outcome.status === "error") {
+      return context.json({ error: { code: "internal", message: outcome.reason } }, 500);
+    }
+
+    return context.json(outcome);
+  });
+
+  // --------------------------------------------------------------------
+  // REEMITIR LINK DE ACESSO de um membro (D-303). O convite mostra o link uma
+  // vez e nao o guarda; quando ele se perde, a pessoa fica com vinculo e sem
+  // caminho de entrada. Apagar e convidar de novo apagaria a trilha dela.
+  // --------------------------------------------------------------------
+  app.post("/v1/organization/members/:userId/access-link", async (context) => {
+    const auth = dependencies.auth;
+    const invites = dependencies.invites;
+
+    if (auth === undefined || invites === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    // ADMIN e so: o link vale como senha da conta de destino.
+    const authorized = await auth.authenticate(context.req.header("authorization"), ["ADMIN"]);
+
+    if (!authorized.ok) {
+      dependencies.logger.warn("access_link_unauthorized", {
+        request_id: context.get("requestId"),
+        reason: authorized.reason,
+      });
+
+      return context.json({ error: { code: "unauthorized" } }, authorized.status);
+    }
+
+    const userId = context.req.param("userId");
+
+    /*
+      O id vem do CAMINHO, e caminho é entrada do mundo. Validar o formato aqui
+      evita mandar lixo ao Postgres, que responderia com erro de sintaxe de
+      uuid — 500 onde a resposta certa é 400.
+    */
+    if (!z.uuid().safeParse(userId).success) {
+      return context.json({ error: { code: "invalid_payload", message: "identificador inválido" } }, 400);
+    }
+
+    const outcome = await reissueAccessLink(invites, authorized.caller, userId);
+
+    if (outcome.status === "not_member") {
+      return context.json(
+        { error: { code: "not_found", message: "esta pessoa não é membro desta organização" } },
+        404,
+      );
     }
 
     if (outcome.status === "error") {

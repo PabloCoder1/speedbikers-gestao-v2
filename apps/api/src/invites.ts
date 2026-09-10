@@ -39,6 +39,20 @@ import type { Caller } from "./auth.js";
 export interface InviteDeps {
   db: AdminClient;
   logger: Logger;
+  /**
+   * Para onde o link leva depois de verificado — a primeira origem de
+   * `WEB_ORIGINS`.
+   *
+   * **Sem ela o Auth usa a "Site URL" do projeto**, e em 2026-09-10 essa URL
+   * era `http://localhost:3000`: todo convite mandava a pessoa para a MÁQUINA
+   * DELA. O convidado abria o link e não chegava a lugar nenhum (D-303).
+   *
+   * Opcional porque o ambiente pode não declarar `WEB_ORIGINS` (serviço que só
+   * recebe chamada servidor a servidor). E ela só vale se a URL estiver na
+   * lista de redirecionamentos permitidos do projeto Supabase — o GoTrue cai
+   * de volta na Site URL em silêncio quando não está.
+   */
+  webUrl?: string;
 }
 
 /** Os cinco papéis do `check` de `organization_members` (D-271). */
@@ -107,7 +121,11 @@ export async function inviteOrganizationMember(
   let inviteLink: string | null = null;
 
   if (userId === null) {
-    const gerado = await deps.db.auth.admin.generateLink({ type: "invite", email });
+    const gerado = await deps.db.auth.admin.generateLink({
+      type: "invite",
+      email,
+      ...(deps.webUrl === undefined ? {} : { options: { redirectTo: deps.webUrl } }),
+    });
 
     // `user` nao e anulavel no tipo quando `error` e nulo; a condicao morta
     // esconderia a leitura real (regra do lint desta casa).
@@ -213,4 +231,111 @@ async function encontrarPorEmail(
   }
 
   return { status: "error", reason: "a base de usuários passou do teto de varredura do convite" };
+}
+
+/**
+ * REEMITIR O LINK DE ACESSO de quem já é membro (D-303).
+ *
+ * ---------------------------------------------------------------------------
+ * POR QUE EXISTE
+ * ---------------------------------------------------------------------------
+ *
+ * O convite de D-296 mostra o link UMA VEZ e não o guarda — ele é credencial.
+ * Convidar a mesma pessoa de novo devolve `already_member` sem link, de
+ * propósito: repetir o convite não pode mudar papel nem alcance.
+ *
+ * Sobrou um caso real, e ele apareceu no primeiro uso de verdade: o link se
+ * perdeu (ou foi aberto antes de a tela de definir senha existir, que foi o
+ * que aconteceu em 2026-09-10). A pessoa tem vínculo, tem conta no Auth, e
+ * **não tem como entrar**. Sem esta rota, o caminho seria apagar o usuário e
+ * convidar de novo — que apaga junto a trilha de acesso dela.
+ *
+ * ---------------------------------------------------------------------------
+ * É `recovery`, NÃO `invite`
+ * ---------------------------------------------------------------------------
+ *
+ * `invite` recusa e-mail que já existe. `recovery` é o mesmo mecanismo do
+ * "esqueci minha senha": leva à tela de definir senha (D-302 aceita os dois
+ * tipos), e a senha antiga, se houver, continua valendo até a nova ser salva.
+ *
+ * ---------------------------------------------------------------------------
+ * O QUE ELA IMPÕE
+ * ---------------------------------------------------------------------------
+ *
+ * **A pessoa precisa ser membro DESTA organização.** `AdminClient` atravessa a
+ * RLS: sem esta checagem, um ADMIN emitiria link de acesso para a conta de
+ * qualquer usuário do sistema — inclusive de outra empresa. É a fronteira de
+ * D-161, no ponto onde ela mais custa.
+ *
+ * O poder que resta é real e fica dito: um ADMIN pode emitir link para outro
+ * membro da própria organização e, com ele, definir a senha daquela conta.
+ * Isso é menos do que ele já pode fazer (mudar papel, revogar acesso), e a
+ * tela avisa antes de gerar.
+ */
+export type ReissueOutcome =
+  | { status: "issued"; link: string }
+  | { status: "not_member" }
+  | { status: "error"; reason: string };
+
+export async function reissueAccessLink(
+  deps: InviteDeps,
+  caller: Caller,
+  userId: string,
+): Promise<ReissueOutcome> {
+  const membro = await deps.db
+    .from("organization_members")
+    .select("user_id")
+    .eq("organization_id", caller.organizationId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (membro.error !== null) {
+    return { status: "error", reason: membro.error.message };
+  }
+
+  // Não é membro daqui: a resposta é a mesma para "não existe" e "existe em
+  // outra organização" — distinguir as duas contaria quem existe no sistema.
+  if (membro.data === null) {
+    return { status: "not_member" };
+  }
+
+  const pessoa = await deps.db.auth.admin.getUserById(userId);
+
+  if (pessoa.error !== null) {
+    return { status: "error", reason: pessoa.error.message };
+  }
+
+  const email = pessoa.data.user.email ?? "";
+
+  // Membro sem e-mail no Auth não tem por onde receber link — e inventar um
+  // seria criar acesso para um endereço que ninguém escolheu.
+  if (email === "") {
+    return { status: "error", reason: "esta pessoa não tem e-mail no Auth" };
+  }
+
+  const gerado = await deps.db.auth.admin.generateLink({
+    type: "recovery",
+    email,
+    ...(deps.webUrl === undefined ? {} : { options: { redirectTo: deps.webUrl } }),
+  });
+
+  if (gerado.error !== null) {
+    deps.logger.error("access_link_failed", {
+      organization_id: caller.organizationId,
+      email_domain: dominio(email),
+      error: gerado.error.message,
+    });
+
+    return { status: "error", reason: gerado.error.message };
+  }
+
+  // O e-mail e o link ficam FORA do log: os dois são credencial, e log é o
+  // lugar que mais gente lê depois.
+  deps.logger.info("access_link_issued", {
+    organization_id: caller.organizationId,
+    actor_user_id: caller.userId,
+    target_user_id: userId,
+  });
+
+  return { status: "issued", link: gerado.data.properties.action_link };
 }

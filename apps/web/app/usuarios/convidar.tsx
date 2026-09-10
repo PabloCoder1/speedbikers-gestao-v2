@@ -5,6 +5,7 @@ import { useState, type ReactNode } from "react";
 
 import { explicar404 } from "../../lib/api-desatualizada";
 import { createClient } from "../../lib/supabase/browser";
+import { LinkDeAcesso } from "./link-de-acesso";
 import type { AccountOption } from "./member-controls";
 
 /**
@@ -63,7 +64,6 @@ export function ConvidarUsuario({ accounts }: { accounts: AccountOption[] }): Re
   const [email, setEmail] = useState("");
   const [papel, setPapel] = useState<string>("OPERADOR");
   const [contas, setContas] = useState<string[]>([]);
-  const [copiado, setCopiado] = useState(false);
 
   /** ADMIN alcança todas as contas por PAPEL: pedir contas para ele seria ruído. */
   const pedeContas = papel !== "ADMIN";
@@ -176,7 +176,6 @@ export function ConvidarUsuario({ accounts }: { accounts: AccountOption[] }): Re
     setEstado({ kind: "fechado" });
     setEmail("");
     setContas([]);
-    setCopiado(false);
   }
 
   const emailValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
@@ -312,38 +311,13 @@ export function ConvidarUsuario({ accounts }: { accounts: AccountOption[] }): Re
                 </p>
 
                 {/*
-                  O AVISO NÃO É ENFEITE: o link é credencial. Quem o abrir define
-                  a senha daquela conta, e ele não volta a aparecer aqui.
+                  O aviso, a caixa e o "copiar" moram em `LinkDeAcesso` desde
+                  D-303: a reemissão na gaveta é o segundo consumidor, e a
+                  segunda cópia é onde esta casa extrai.
                 */}
-                <p className="sb-note sb-note-atencao" style={{ margin: 0 }}>
-                  <span>Trate como senha</span>
-                  <span
-                    style={{
-                      display: "block",
-                      fontFamily: "var(--sb-sans)",
-                      fontSize: "0.6875rem",
-                      marginTop: "0.375rem",
-                    }}
-                  >
-                    Quem abrir este link define a senha da conta. Ele aparece uma vez só e não fica guardado nesta
-                    tela.
-                  </span>
-                </p>
+                <LinkDeAcesso link={estado.link} />
 
-                <textarea className="sb-input sb-input-full" readOnly rows={3} value={estado.link} />
-
-                <div style={{ display: "flex", gap: "var(--sb-space-2)", justifyContent: "flex-end" }}>
-                  <button
-                    type="button"
-                    className="sb-button"
-                    onClick={() => {
-                      void navigator.clipboard.writeText(estado.link).then(() => {
-                        setCopiado(true);
-                      });
-                    }}
-                  >
-                    {copiado ? "Copiado" : "Copiar link"}
-                  </button>
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
                   <button type="button" className="sb-button sb-button-primary" onClick={fechar}>
                     Concluir
                   </button>

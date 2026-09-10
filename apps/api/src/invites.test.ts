@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Caller } from "./auth.js";
 import type { InviteDeps } from "./invites.js";
-import { inviteOrganizationMember } from "./invites.js";
+import { inviteOrganizationMember, reissueAccessLink } from "./invites.js";
 
 /**
  * Convite de usuário (D-296).
@@ -19,6 +19,10 @@ const CONTA = "aaaaaaaa-0000-4000-8000-000000000001";
 const ADMIN: Caller = { userId: "u-admin", organizationId: ORG, role: "ADMIN" };
 
 interface FakeOptions {
+  /** Membro encontrado (ou não) pela consulta de `reissueAccessLink`. */
+  membroExiste?: boolean;
+  /** E-mail devolvido por `getUserById`. */
+  emailDoAlvo?: string | null;
   /** Contas que a consulta por organização devolve (o filtro é do fake). */
   contasDaOrganizacao?: string[];
   /** Usuários já existentes no Auth, por e-mail. */
@@ -42,7 +46,13 @@ function fakeDeps(options: FakeOptions = {}): { deps: InviteDeps; escritas: { ta
           // organization_members: .select().eq(org).eq(user).maybeSingle()
           eq: () => ({
             maybeSingle: () =>
-              Promise.resolve({ data: options.jaMembro === true ? { user_id: "u-existente" } : null, error: null }),
+              Promise.resolve({
+                data:
+                  options.jaMembro === true || options.membroExiste === true
+                    ? { user_id: "u-existente" }
+                    : null,
+                error: null,
+              }),
           }),
         }),
       }),
@@ -59,6 +69,11 @@ function fakeDeps(options: FakeOptions = {}): { deps: InviteDeps; escritas: { ta
     auth: {
       admin: {
         listUsers: () => Promise.resolve({ data: { users: usuarios }, error: null }),
+        getUserById: (id: string) =>
+          Promise.resolve({
+            data: { user: { id, email: options.emailDoAlvo === undefined ? "alvo@empresa.com" : options.emailDoAlvo } },
+            error: null,
+          }),
         generateLink: ({ email }: { email: string }) =>
           Promise.resolve({
             data: {
@@ -173,5 +188,63 @@ describe("inviteOrganizationMember (D-296)", () => {
 
     expect(JSON.stringify(registros)).not.toContain("sigilo@empresa.com");
     expect(JSON.stringify(registros)).toContain("invite_created");
+  });
+});
+
+/**
+ * REEMITIR LINK DE ACESSO (D-303).
+ *
+ * O que estes casos protegem é a mesma fronteira do convite, no ponto onde ela
+ * custa mais caro: o link vale como senha da conta de destino, e `AdminClient`
+ * atravessa a RLS. Sem a checagem de membro, um ADMIN emitiria acesso para a
+ * conta de qualquer usuário do sistema — inclusive de outra empresa.
+ */
+describe("reissueAccessLink (D-303)", () => {
+  it("membro desta organização recebe um link novo", async () => {
+    const { deps } = fakeDeps({ membroExiste: true });
+
+    const outcome = await reissueAccessLink(deps, ADMIN, "u-existente");
+
+    expect(outcome.status).toBe("issued");
+    expect(outcome).toHaveProperty("link", expect.stringContaining("https://auth.local/invite"));
+  });
+
+  /*
+    A FRONTEIRA. "Não é membro daqui" e "não existe" têm a MESMA resposta:
+    distinguir as duas contaria a um ADMIN quem existe no sistema inteiro.
+  */
+  it("quem não é membro desta organização NÃO recebe link", async () => {
+    const { deps } = fakeDeps({ membroExiste: false });
+
+    const outcome = await reissueAccessLink(deps, ADMIN, "u-de-outra-empresa");
+
+    expect(outcome).toEqual({ status: "not_member" });
+  });
+
+  /** Sem e-mail no Auth não há para onde mandar — e inventar um seria criar
+   *  acesso para um endereço que ninguém escolheu. */
+  it("membro sem e-mail no Auth é recusado com o motivo", async () => {
+    const { deps } = fakeDeps({ membroExiste: true, emailDoAlvo: null });
+
+    const outcome = await reissueAccessLink(deps, ADMIN, "u-existente");
+
+    expect(outcome.status).toBe("error");
+    expect(outcome).toHaveProperty("reason", expect.stringContaining("não tem e-mail"));
+  });
+
+  /** Nem o e-mail nem o LINK vão para o log: os dois são credencial, e log é o
+   *  lugar que mais gente lê depois. */
+  it("o log não carrega e-mail nem link", async () => {
+    const registros: unknown[] = [];
+    const { deps } = fakeDeps({ membroExiste: true, emailDoAlvo: "sigilo@empresa.com" });
+    const logger = createLogger({}, { sink: (linha) => registros.push(linha) });
+
+    await reissueAccessLink({ ...deps, logger }, ADMIN, "u-existente");
+
+    const escrito = JSON.stringify(registros);
+
+    expect(escrito).not.toContain("sigilo@empresa.com");
+    expect(escrito).not.toContain("https://auth.local");
+    expect(escrito).toContain("access_link_issued");
   });
 });
