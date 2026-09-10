@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
+import { explicar404 } from "../../lib/api-desatualizada";
 import { createClient } from "../../lib/supabase/browser";
 import type { AccountOption } from "./member-controls";
 
@@ -112,24 +113,36 @@ export function ConvidarUsuario({ accounts }: { accounts: AccountOption[] }): Re
 
       if (!response.ok) {
         /*
+          404 NUMA ROTA QUE ESTÁ NO CÓDIGO quase nunca é "recurso não
+          encontrado": é a `api` no ar sendo mais velha que a tela, porque o
+          deploy do Cloud Run é manual (D-070). Foi o que aconteceu com este
+          botão em 2026-09-10 — a rota entrou em `4ef8d18`, e a produção rodava
+          `6baa641`, de três dias antes (D-301).
+
+          `explicar404` pergunta ao `/health` qual commit está rodando e monta a
+          frase. Só no caminho de erro: o caminho feliz não ganha ida nenhuma.
+        */
+        if (response.status === 404) {
+          setEstado({ kind: "erro", mensagem: await explicar404(API_URL) });
+
+          return;
+        }
+
+        /*
           O texto do servidor chega inteiro: 403 de papel, 400 de conta de
           outra organização. Traduzir tudo em "não foi possível" apagaria o
           que faz a pessoa entender o próximo passo.
 
-          E quando NÃO vem corpo de erro nenhum, quem respondeu quase nunca é a
-          `api`: é o Next servindo 404 em HTML porque o endereço aponta para
-          ele, ou um proxy no meio. A mensagem diz isso em vez de acusar a API.
-        */
-        /*
-          401 tem texto PROPRIO, e ele nasceu de um diagnostico que custou uma
-          tarde (D-300). A API recusa o token quando ele foi emitido por OUTRO
-          projeto Supabase -- e isso acontece sozinho: `SUPABASE_URL` exportada
-          no ambiente vence o `.env.local`, porque `--env-file` do Node nao
-          sobrescreve variavel que ja existe. A web fala com um Supabase, a API
-          com outro, e todo token legitimo e recusado.
+          401 tem texto PRÓPRIO, e ele nasceu de um diagnóstico que custou uma
+          tarde (D-300): a API recusa o token quando ele foi emitido por OUTRO
+          projeto Supabase — e isso acontece sozinho, porque `SUPABASE_URL`
+          exportada no ambiente vence o `.env.local` (o `--env-file` do Node não
+          sobrescreve variável que já existe). "Não autorizado" mandaria
+          conferir papel, que está certo.
 
-          "Nao autorizado" mandaria conferir papel, que esta certo. A frase
-          abaixo manda conferir o que de fato esta errado, e diz onde ler.
+          E quando NÃO vem corpo de erro nenhum, quem respondeu quase nunca é a
+          `api`: é o Next servindo a resposta porque o endereço aponta para ele,
+          ou um proxy no meio.
         */
         setEstado({
           kind: "erro",

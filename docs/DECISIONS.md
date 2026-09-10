@@ -8434,6 +8434,43 @@ Ha quatro casos de unidade novos em `apps/api/src/auth.test.ts`, e eles guardam 
 
 **Verificacao:** `check` 29/29 (unitarios da api **326**, com os 4 novos), build 8/8. A divergencia foi reproduzida numa instancia separada e o log passou a dizer `supabase_host: nmgccyqquwxecqffsidr.supabase.co` no boot e o mesmo host no motivo da recusa; com o endereco local, o convite foi entregue.
 
+## D-301 - "Recurso nao encontrado" era a API em PRODUCAO tres dias mais velha que a tela
+
+**Contexto:** o usuario mandou a captura do convite recusado com **"Recurso nao encontrado"**, e o console dizia `POST https://api-rrquw5upla-rj.a.run.app/v1/organization/invites 404`. Nao e mais o ambiente local de D-298 e D-300: e **producao**, com o endereco certo e o token certo.
+
+---
+
+**1. A MEDICAO, ANTES DE QUALQUER CONSERTO**
+
+| pergunta | resposta medida em 2026-09-10 |
+|---|---|
+| que commit a `api` em producao roda? | `6baa641`, **no ar desde 07/09** (`GET /health`) |
+| quanto o `HEAD` esta a frente? | **110 commits** |
+| quantos tocam a `api`? | **5** em `apps/api`, **32** contando `packages/` que ela empacota |
+| onde nasceu a rota do convite? | `4ef8d18` (D-296), **tres dias depois** do que esta rodando |
+
+**Nada estava quebrado.** A rota existe no codigo, tem teste de unidade, teste de integracao e fluxo exercitado ponta a ponta contra a `api` local. Ela simplesmente **nao foi implantada** -- o deploy do Cloud Run e manual (D-070), e a linha "Deploy no ar" do HANDOFF vinha avisando disso ha semanas.
+
+**2. O QUE A TELA DIZIA, E POR QUE ERA A PERGUNTA ERRADA**
+
+"Recurso nao encontrado" e a traducao literal de 404 e manda procurar o RECURSO. O que faltava era a VERSAO. Entre as duas frases ha uma tarde de procura no lugar errado -- e esta e a terceira vez seguida que o mesmo botao ensina a mesma licao: **em fatia que atravessa a fronteira web→api, a mensagem de erro faz parte da entrega** (D-298: endereco ausente; D-300: token de outro projeto Supabase; aqui: versao velha).
+
+**3. O DIAGNOSTICO SE MEDE, NAO SE ADIVINHA**
+
+`GET /health` devolve `APP_COMMIT` -- ele existe desde D-070 exatamente para responder "o que esta no ar?". Um 404 numa rota que o cliente SABE existir e a pergunta; `/health` e a resposta. `explicar404` junta as duas e escreve, por exemplo:
+
+> A API em `https://api-...run.app` nao conhece esta rota. Ela esta no commit `6baa641`, no ar desde 07/09/2026, 10:18. O mais provavel e que a versao no ar seja anterior a esta tela -- o deploy do Cloud Run e manual.
+
+**Ele nunca afirma o que nao mediu:** sem `/health`, ou com `commit` nulo (o caso local, onde `APP_COMMIT` nao existe), a frase encurta e para. Cinco casos de teste guardam as duas metades -- a que nomeia o commit e a que se cala.
+
+**4. O QUE ESTA FATIA NAO FAZ**
+
+Nao implanta. Deploy e ato de producao com ordem propria (worker → api, D-088) e autorizacao do usuario; o que o codigo pode fazer e **parar de mandar procurar no lugar errado**. E so o convite ganha a frase: os outros onze componentes que chamam a `api` seguem com o texto generico, e uni-los num `apiFetch` de dono unico continua sendo a fatia registrada em D-298.
+
+**Impacto:** `apps/web/lib/{api-desatualizada.ts,api-desatualizada.test.ts}` (novos), `apps/web/app/usuarios/convidar.tsx`.
+
+**Verificacao:** `check` 29/29 (`--force`), build 8/8, e2e 113/113, cinco guardas verdes. E a medicao contra a `api` REAL de producao, que e onde o defeito vive.
+
 ## Como adicionar nova decisao
 
 Registrar:
