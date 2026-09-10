@@ -66,6 +66,21 @@ export interface KpiCellData {
   readonly href?: string;
   /** Tom do chip, como no frame: cada estado tem o seu. */
   readonly tom?: Tom;
+  /**
+   * PINTA A PRÓPRIA CÉLULA — rótulo e número —, e não o chip.
+   *
+   * Existe porque o frame da Administração desenha "Convites Pendentes" com
+   * borda e número em âmbar enquanto os quatro vizinhos ficam em navy (D-297).
+   * Numa faixa que é UM cartão dividido em células não há borda por célula para
+   * tingir, e o que resta é a tinta do número, que é justamente o que o olho
+   * procura.
+   *
+   * Separado de `tom` de propósito: `tom` veste o chip "ver lista", e seis telas
+   * já o declaram em todas as células — reaproveitá-lo aqui pintaria faixa
+   * inteira de colorido, que é ênfase em tudo, ou seja, ênfase em nada. Só quem
+   * pede destaque recebe.
+   */
+  readonly destaque?: Tom;
 }
 
 export function KpiStrip({
@@ -87,8 +102,18 @@ export function KpiStrip({
     <div className={classes} style={{ ["--sb-kpi-cols" as string]: String(cells.length) }}>
       {cells.map((cell) => (
         <div className="sb-kpi" key={cell.metricId ?? cell.label} title={cell.formula}>
-          <span className="sb-kpi-label">{cell.label}</span>
-          <strong className="sb-kpi-value">{cell.value}</strong>
+          <span
+            className="sb-kpi-label"
+            style={cell.destaque === undefined ? undefined : { color: TOM[cell.destaque].color }}
+          >
+            {cell.label}
+          </span>
+          <strong
+            className="sb-kpi-value"
+            style={cell.destaque === undefined ? undefined : { color: TOM[cell.destaque].color }}
+          >
+            {cell.value}
+          </strong>
 
           {cell.previous !== null && (
             <span className="sb-kpi-prev">período anterior: {cell.previous}</span>

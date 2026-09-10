@@ -1001,47 +1001,71 @@ está na "Próxima fatia segura".
 
 ## Última fatia concluída
 
-**A6 — A AUDITORIA DA ADMINISTRAÇÃO, E O CONVITE DE USUÁRIO (D-296)** — o
-usuário mandou o export do Figma de novo e pediu foco no grupo, dizendo que
-muita coisa do desenho ainda não existe nele, "inclusive o botão de colocar
-novos usuários".
+**A7 — `/usuarios` REFEITA CONTRA O DESENHO (D-297)** — o usuário comparou a
+captura do frame com a nossa tela: *"o seu está muito inferior, acompanhe 100%
+o design figma"*. D-296 tinha entregado o DADO que faltava; o que ele estava
+vendo era **composição**.
 
-### As seis telas, renderizadas a 1440px e lidas contra o frame
+### O que estava inferior tinha número
+
+Cada linha carregava um `<select>` de papel e **uma caixa por conta** — com
+quatro contas, **cinco controles por pessoa**. Uma tabela assim não se lê: ela
+se preenche. O frame põe **selo** em Papel, **texto** em contas, e abre a pessoa
+numa **gaveta**.
+
+| o frame | o que estava | agora |
+|---|---|---|
+| Papel como selo colorido | `<select>` em toda linha | selo (ADMIN perigo, GESTOR atenção, resto info) |
+| contas em texto | uma caixa por conta, por linha | texto (`Loja A · Loja B`) |
+| linha clicável abre a gaveta | coluna extra "Inspecionar" | o **nome** é o gatilho, e a coluna saiu |
+| busca + "Status ⌄" no painel | nenhum recorte | os dois, na URL (`lib/member-filters.ts`) |
+| "Convites Pendentes" em âmbar | célula neutra | célula pintada (`destaque` na faixa) |
+
+### O controle mudou de lugar, não sumiu
+
+Papel e alcance são editados no cartão "Papel e Permissões" **da gaveta**, que é
+onde o frame já os desenha. Mesmos componentes, mesmas Server Actions, mesma
+autorização (policies `*_admin_writes` + `guard_last_admin`). O caso de e2e
+guarda **as duas metades juntas** — tabela sem controle E menu de papel vivo
+dentro da gaveta —, porque separá-las deixaria passar a "correção" que some com
+a edição em vez de movê-la.
+
+E dentro da gaveta vale a mesma regra: quem edita vê o CONTROLE, quem lê vê o
+SELO. A primeira versão mostrava os dois, "GESTOR" em cima de um menu já em
+GESTOR — a captura pegou.
+
+### "Desde" saiu da tabela
+
+Ela entrou em D-271 como substituta de "Último acesso", que não tinha fonte.
+D-296 abriu a fonte; manter os dois carimbos deixaria **seis** colunas onde o
+frame tem cinco, para responder o que a gaveta já responde em "Membro desde".
+
+**Verificação:** `check` 29/29 (`--force`, 448 unitários com os 13 novos), build
+8/8, e2e **113/113** em banco recriado (+2), integração 648/648, cinco guardas
+verdes. Renderizada a
+1440px com seis membros de verdade — convite pendente, membro sem perfil, três
+papéis — e a gaveta aberta em cada um.
+
+### A auditoria do grupo, que continua valendo (A6, D-296)
+
+O usuário pediu foco na ADMINISTRAÇÃO dizendo que muita coisa do desenho ainda
+não existe nela, "inclusive o botão de colocar novos usuários". As seis telas
+foram renderizadas a 1440px e lidas contra o frame:
 
 | tela | o que o frame tem e a V3 não | veredito |
 |---|---|---|
-| **Usuários** | "Convidar usuário"; Status; Último acesso; e-mail; cartão de convites | **FEITO** |
+| **Usuários** | "Convidar usuário"; Status; Último acesso; e-mail; cartão de convites | **FEITO** (D-296), e a composição refeita em D-297 |
 | **Contas ML** | a composição inteira (cartão por conta: selo, seller_id, última sync, anúncios, permissões, ações) | **NUNCA MIGRADA** — `/contas` não está em D0→D37. Próxima fatia |
 | **Saúde** | seis cartões de serviço com latência | a medir: latência por serviço não tem fonte hoje |
 | **Integrações** | cartão por parceiro | recusa medida e mantida (D-272 + D-287: 4 linhas × **24** em meia largura) |
 | **Sincronização** | quatro cartões contando CONTAS | recusa medida e mantida (D-273: conta não é unidade de frescor) |
 | **Configurações** | trilho + interruptores (2FA, manutenção) | recusa medida e mantida (D-275: não há onde gravar) |
 
-### A recusa de D-271 estava certa — e o que mudou não foi o esquema
-
-`auth.users.last_sign_in_at` continua fora do alcance da Data API, e `profiles`
-continua sem e-mail. **O que faltava era a JANELA e o FLUXO**, e os dois eram
-feature — exatamente o que uma fatia visual não entrega. O usuário pediu a
-feature.
-
-A janela é `get_organization_members`, `security definer` com o guard do
-**tenant** (ADMIN daquela organização, não "ADMIN de alguma") e só três campos
-de auth na saída, com teste que reprova se `token`/`password`/`metadata`
-encostarem nela. O fluxo é `generateLink` — **link, não e-mail enviado**: o
-projeto não tem SMTP, e dizer "convite enviado" sobre entrega que ninguém
-provou seria a promessa que esta casa recusa.
-
-### Dois defeitos que só a captura e a suíte pegaram
-
-Pus os `th` de Status/Último acesso depois de "Papel" e as `td` antes dela — a
-tabela renderizou "Ativo" embaixo de "Papel". E o caso da regressão de D-234
-ficou vermelho porque afirma a célula EXATA, e o e-mail passou a viver nela: a
-correção foi atualizar o esperado, **não afrouxar para `contains`**.
-
-**Verificação:** `check` 29/29 (`--force`), build 8/8, integração **648/648**
-(+5), e2e **111/111** (+2), cinco guardas verdes. Fluxo exercitado ponta a
-ponta contra a `api` local: 200 com link, `already_member` na repetição, 400 na
-conta de outra organização, 403 para GESTOR.
+A janela que abriu as três colunas é `get_organization_members`, `security
+definer` com o guard do **tenant** (ADMIN daquela organização, não "ADMIN de
+alguma"). O fluxo do convite é `generateLink` — **link, não e-mail enviado**: o
+projeto não tem SMTP, e dizer "convite enviado" sobre entrega que ninguém provou
+seria a promessa que esta casa recusa.
 
 ## Próxima fatia segura
 

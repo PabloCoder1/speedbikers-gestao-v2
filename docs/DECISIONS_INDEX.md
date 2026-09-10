@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **292** (D-001 a D-296).
+Decisões registradas: **293** (D-001 a D-297).
 
 ## Por domínio
 
@@ -196,7 +196,7 @@ Decisões registradas: **292** (D-001 a D-296).
 - **D-245** — Curadoria ganha a coluna "Anuncios" do frame, com a definicao de vinculado de D-122
 - **D-248** — Dashboard do Anuncio em oito abas: a fila pedia uma tela que nao existe, e a republicacao nao e tela
 
-### outros (51)
+### outros (52)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -249,6 +249,7 @@ Decisões registradas: **292** (D-001 a D-296).
 - **D-284** — A5: campo e botao entram no design system, e o guarda entra junto
 - **D-287** — Os quatro P3 de A4: tres feitos, um RECUSADO com numero -- e um defeito meu no meio do caminho
 - **D-291** — A lista de execucoes que FALHARAM: uma RPC nova, e o agrupamento que a torna legivel
+- **D-297** — /usuarios refeita contra o desenho: a tabela volta a ser tabela, e o controle vai para a gaveta
 
 ### processo/docs (1)
 

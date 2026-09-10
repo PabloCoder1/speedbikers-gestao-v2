@@ -88,16 +88,19 @@ test("gaveta do fornecedor: a decomposição por estado FECHA com o total", asyn
   await expect(gaveta.getByRole("link", { name: /Abrir página completa/ })).toBeVisible();
 });
 
-test("gaveta do usuário: a proteção do último ADMIN é dita, e o e-mail não é inventado", async ({ page }) => {
+test("gaveta do usuário: a proteção do último ADMIN é dita, e o e-mail agora existe", async ({ page }) => {
   await login(page, "/usuarios");
 
-  // A primeira linha é o ADMIN (a tabela ordena por papel).
-  await page.locator("tbody tr").first().getByRole("button", { name: "Inspecionar" }).click();
+  /*
+    O GATILHO É O NOME desde D-297, como a linha clicável do frame — antes era
+    um botão "Inspecionar" em coluna própria, e o frame não tem essa coluna. A
+    primeira linha é o ADMIN (a tabela ordena por papel).
+  */
+  await page.locator("tbody tr").first().getByRole("button", { name: "E2E", exact: true }).click();
 
   const gaveta = page.getByRole("dialog");
 
   await expect(gaveta).toBeVisible();
-  await expect(gaveta.getByText("Administrador").first()).toBeVisible();
 
   /*
     A PROTEÇÃO: o seed tem um ADMIN e um GESTOR, então o ADMIN é o último —
@@ -108,14 +111,19 @@ test("gaveta do usuário: a proteção do último ADMIN é dita, e o e-mail não
   await expect(gaveta.getByText("Proteção ativa")).toBeVisible();
   await expect(gaveta.getByText(/único ADMIN da organização/)).toBeVisible();
 
-  // O e-mail do frame não entra: ele vive em `auth.users` (D-271).
-  await expect(gaveta.getByText(/não há e-mail aqui/)).toBeVisible();
+  /*
+    O E-MAIL DO FRAME ENTROU (D-296), e este caso mudou de sinal: ele afirmava
+    a recusa de D-271 ("não há e-mail aqui"), que era verdadeira enquanto a
+    JANELA para `auth.users` não existia. Agora existe, e o que se guarda é o
+    contrário — o endereço aparece sob o nome, como o desenho manda.
+  */
+  await expect(gaveta.getByText("e2e@speedbikers.test")).toBeVisible();
 
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
 
   // E a segunda linha (GESTOR) NÃO carrega a proteção.
-  await page.locator("tbody tr").nth(1).getByRole("button", { name: "Inspecionar" }).click();
+  await page.locator("tbody tr").nth(1).getByRole("button", { name: "E2E Gestor", exact: true }).click();
   await expect(page.getByRole("dialog").getByText("Proteção ativa")).toHaveCount(0);
 });
 

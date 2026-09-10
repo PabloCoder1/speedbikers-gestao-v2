@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { FilterMenu } from "../../components/filter-menu";
 import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
 import { PageTitle } from "../../components/page-title";
 import { TOM } from "../../components/tone";
@@ -7,10 +8,19 @@ import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
 import { formatCount, formatDateTime } from "../../lib/format";
 import { roleLabel } from "../../lib/labels";
+import {
+  MEMBER_STATUSES,
+  buildMemberHref,
+  matchesMemberFilters,
+  memberStatusLabel,
+  resolveMemberFilters,
+  summarizeMemberWindow,
+  type MemberStatus,
+} from "../../lib/member-filters";
+import { tomDePapel } from "../../lib/role-tone";
 import { createClient } from "../../lib/supabase/server";
 import { currentMembership } from "../../lib/membership";
 import { DetalheUsuario } from "./detalhe-usuario";
-import { AccountAccessControls, RoleSelect } from "./member-controls";
 import { ConvidarUsuario } from "./convidar";
 
 export const metadata = { title: "Usuários — Speed Bikers Gestão" };
@@ -18,11 +28,11 @@ export const metadata = { title: "Usuários — Speed Bikers Gestão" };
 export const dynamic = "force-dynamic";
 
 /**
- * Administração de Usuários e Permissões (D-175, trilha 8A).
+ * Administração de Usuários e Permissões (D-175, trilha 8A; refeita contra o
+ * frame em D-297).
  *
- * A tela é a parte MENOS importante desta fatia, e isso é de propósito. O
- * item nomeia "segurança apenas visual" como risco, então a autorização vive
- * inteira no banco:
+ * A autorização vive inteira no banco, e isso é de propósito — o item da
+ * trilha nomeia "segurança apenas visual" como risco:
  *
  * - quem pode escrever: as policies `*_admin_writes`, que já existiam;
  * - o que não pode acontecer nunca: o trigger `guard_last_admin`, que impede
@@ -33,11 +43,24 @@ export const dynamic = "force-dynamic";
  * Esconder os controles de quem não é ADMIN é conveniência. Se alguém chamar
  * a Server Action direto, a policy recusa igual.
  *
- * **Convite/ativação de usuário novo NÃO entra aqui**: criar conta exige a
- * Admin API do Auth com `service_role` (a `web` não tem, e não deve ter — a
- * chave viveria no processo que serve a interface). Isso é rota da `api` com
- * decisão de produto própria (quem convida, e-mail, expiração), e inventá-la
- * agora seria decidir por baixo do pano.
+ * ## A TABELA VOLTOU A SER TABELA (D-297)
+ *
+ * O usuário comparou esta tela com o frame e disse que a nossa estava "muito
+ * inferior". Estava, e o motivo era mensurável: **cada linha carregava um
+ * `<select>` de papel e uma caixa por conta** — com quatro contas, são cinco
+ * controles por pessoa, e a tabela virou um formulário empilhado. O frame põe
+ * SELO em Papel, TEXTO em contas, e abre a pessoa numa gaveta.
+ *
+ * Os controles não sumiram: eles moram na gaveta, que é onde se olha uma pessoa
+ * por vez. Quem pode editar continua podendo; quem não pode, continua não
+ * podendo — nada de autorização mudou nesta fatia, só o lugar do controle.
+ *
+ * As cinco colunas são as do frame, nesta ordem: Usuário / E-mail, Papel,
+ * Contas ML permitidas, Status, Último acesso (à direita). **"Desde" saiu da
+ * tabela e virou "Membro desde" na gaveta**: ele entrou em D-271 como
+ * substituto de "Último acesso", que não tinha fonte; com a fonte aberta em
+ * D-296, manter os dois carimbos lado a lado era uma coluna a mais que o frame
+ * não tem para responder uma pergunta que a gaveta já responde.
  */
 
 interface MemberRow {
@@ -70,7 +93,12 @@ function eventoLabel(row: {
   }
 }
 
-export default async function UsuariosPage(): Promise<ReactNode> {
+export default async function UsuariosPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}): Promise<ReactNode> {
+  const filters = resolveMemberFilters(await searchParams);
   const supabase = await createClient();
 
   /*
@@ -185,6 +213,41 @@ export default async function UsuariosPage(): Promise<ReactNode> {
   */
   const admins = members.filter((m) => m.role === "ADMIN").length;
 
+  /*
+    AS LINHAS, com tudo já resolvido pelo servidor: nome, e-mail, estado,
+    alcance e histórico. A gaveta recebe os mesmos valores que a célula mostra,
+    de uma composição só — as duas não podem discordar sobre alcance.
+  */
+  const linhas = members.map((member) => {
+    const detalhe = detalhePorUsuario.get(member.user_id);
+    const granted = permissions.filter((p) => p.user_id === member.user_id).map((p) => p.ml_account_id);
+    const todasPorAdmin = member.role === "ADMIN";
+
+    /*
+      Sem a janela (quem não é ADMIN), `detalhe` é `undefined` e o estado cai em
+      "ativo" — mas a coluna nem é renderizada para ele, então o valor não
+      aparece em tela. Ele existe para o filtro ter um tipo total.
+    */
+    const status: MemberStatus = detalhe === undefined || detalhe.aceitou ? "ativo" : "pendente";
+
+    return {
+      member,
+      granted,
+      todasPorAdmin,
+      contas: granted.map((id) => contaPorId.get(id) ?? id),
+      nome: member.profiles?.full_name ?? null,
+      email: detalhe?.email ?? null,
+      ultimoAcesso: detalhe?.ultimoAcesso ?? null,
+      status,
+    };
+  });
+
+  const visiveis = linhas.filter((linha) =>
+    matchesMemberFilters({ nome: linha.nome, email: linha.email, status: linha.status }, filters),
+  );
+
+  const janela = summarizeMemberWindow(linhas.length, visiveis.length, filters);
+
   const celulas: KpiCellData[] = [
     {
       label: "Membros",
@@ -200,6 +263,9 @@ export default async function UsuariosPage(): Promise<ReactNode> {
       será um zero medido.
 
       Só para ADMIN: o número vem da RPC, e ela não responde a mais ninguém.
+      O frame pinta este cartão de atenção (borda e número em âmbar) quando há
+      convite aberto, e `destaque` é isso (D-297) — sem convite nenhum, ele
+      volta a ser uma célula como as outras, porque nada pede atenção.
     */
     ...(isAdmin
       ? [
@@ -210,6 +276,7 @@ export default async function UsuariosPage(): Promise<ReactNode> {
             value: formatCount(pendentes),
             previous: null,
             tom: pendentes > 0 ? ("atencao" as const) : ("neutro" as const),
+            ...(pendentes > 0 ? { destaque: "atencao" as const } : {}),
           } satisfies KpiCellData,
         ]
       : []),
@@ -236,7 +303,7 @@ export default async function UsuariosPage(): Promise<ReactNode> {
           <>
             Pessoas, papéis e alcance de cada permissão.{" "}
             {isAdmin
-              ? "Como ADMIN, você pode alterar papel e acesso — e o banco impede que a organização fique sem nenhum ADMIN."
+              ? "Como ADMIN, você pode alterar papel e acesso na gaveta de cada pessoa — e o banco impede que a organização fique sem nenhum ADMIN."
               : "Só um ADMIN altera papéis e acessos; esta tela é somente leitura para você."}
           </>
         }
@@ -251,9 +318,8 @@ export default async function UsuariosPage(): Promise<ReactNode> {
         com o total no dia em que alguém for cadastrado como analista — a mesma
         aritmética que denunciou o frame da Central Full (D-265).
 
-        E a quinta célula dele, "Convites Pendentes", NÃO ENTRA: não existe
-        tabela de convite no esquema. Um cartão sempre em zero prometeria um
-        fluxo que a tela não tem.
+        A quinta célula dele, "Convites Pendentes", ENTROU em D-296, quando o
+        convite passou a existir.
       */}
       <KpiStrip cells={celulas} />
 
@@ -266,170 +332,178 @@ export default async function UsuariosPage(): Promise<ReactNode> {
       <div style={{ marginTop: "var(--sb-space-3)" }}>
       <Panel
         title="Gerenciar acessos"
-        subtitle="O papel decide o que a pessoa PODE fazer; as contas decidem sobre o que ela faz."
+        /*
+          A janela só entra no subtítulo quando HÁ linhas. Sem isso ela aparecia
+          duas vezes na tela vazia — uma no subtítulo, outra no lugar da tabela
+          —, e a mesma frase repetida a 3cm de distância lê-se como defeito.
+        */
+        subtitle={
+          visiveis.length === 0
+            ? "O papel decide o que a pessoa PODE fazer; as contas decidem sobre o que ela faz."
+            : `O papel decide o que a pessoa PODE fazer; as contas decidem sobre o que ela faz. ${janela}`
+        }
+        aside={
+          <>
+            {/*
+              A busca do frame ("Buscar usuário ou e-mail…"), como GET nativo: o
+              recorte fica na URL, nunca em estado React. O `hidden` do estado é
+              obrigatório porque um form GET só envia os campos que tem — sem
+              ele, buscar limparia o filtro de Status (a regra de `/compras`).
+            */}
+            <form method="get" style={{ display: "flex", gap: "0.375rem", alignItems: "center" }}>
+              {filters.status !== null && <input type="hidden" name="estado" value={filters.status} />}
+              <input
+                className="sb-input"
+                type="search"
+                name="busca"
+                defaultValue={filters.search ?? ""}
+                placeholder={isAdmin ? "Buscar usuário ou e-mail…" : "Buscar usuário…"}
+                aria-label={isAdmin ? "Buscar por nome ou e-mail" : "Buscar por nome"}
+                style={{ minWidth: "12rem" }}
+              />
+            </form>
+
+            {/*
+              O "Status ⌄" do frame — e só para ADMIN, porque o estado vem da
+              janela de D-296. Oferecer o menu a quem não recebe o dado seria um
+              filtro que não recorta nada.
+            */}
+            {isAdmin && (
+              <FilterMenu
+                rotulo={filters.status === null ? "Status" : memberStatusLabel(filters.status)}
+                opcoes={[
+                  {
+                    href: buildMemberHref(filters, { status: null }),
+                    label: "Todos os status",
+                    ativo: filters.status === null,
+                  },
+                  ...MEMBER_STATUSES.map((estado) => ({
+                    href: buildMemberHref(filters, { status: estado }),
+                    label: memberStatusLabel(estado),
+                    ativo: filters.status === estado,
+                  })),
+                ]}
+              />
+            )}
+          </>
+        }
       >
+      {visiveis.length === 0 ? (
+        <p className="sb-empty">{janela}</p>
+      ) : (
       <div style={{ overflowX: "auto" }}>
         <table className="sb-table">
           <thead>
             <tr>
               {/*
-                O frame mostra "Usuário / E-mail". O e-mail NÃO ENTRA: `profiles`
-                tem `id`, `full_name`, `created_at` e `updated_at` — o endereço
-                vive em `auth.users`, que o PostgREST não expõe. Buscá-lo exigiria
-                uma função `security definer` só para exibir contato, e isso é
-                feature, não composição.
+                As colunas do frame, na ordem dele. "Usuário / E-mail" traz o
+                e-mail sob o nome desde D-296, pela janela de `auth.users`.
               */}
-              <th>Pessoa</th>
+              <th>Usuário / E-mail</th>
               <th>Papel</th>
-              <th>Contas com acesso</th>
+              <th>Contas ML permitidas</th>
               {/*
-                STATUS e ÚLTIMO ACESSO entram para ADMIN (D-296), pela janela
-                que `get_organization_members` abriu — e na ORDEM do frame
-                (usuário, papel, contas, status, último acesso). Para quem não é
-                ADMIN elas somem: coluna vazia prometeria um dado que aquele
+                STATUS e ÚLTIMO ACESSO entram para ADMIN (D-296). Para quem não
+                é ADMIN elas somem: coluna vazia prometeria um dado que aquele
                 usuário não tem como ver.
               */}
               {isAdmin && <th>Status</th>}
-              {isAdmin && <th>Último acesso</th>}
-              {/*
-                Onde o frame põe "Status" e "Último acesso" — as duas sem fonte.
-                Status seria coluna de um valor só: não há tabela de convite, logo
-                todo membro está ativo por construção. E o último acesso é
-                `auth.users.last_sign_in_at`, fora do alcance do PostgREST;
-                nenhuma coluna nem função em `public` o expõe (medido).
-
-                "Desde" fica: é `created_at` do vínculo, e responde a pergunta
-                vizinha — há quanto tempo esta pessoa tem este acesso.
-              */}
-              <th>Desde</th>
-              {/* Coluna do gatilho da gaveta: sem rótulo, como a do checkbox. */}
-              <th style={{ width: "6rem" }} />
+              {isAdmin && <th className="sb-num">Último acesso</th>}
             </tr>
           </thead>
           <tbody>
-            {members.map((member) => {
-              const granted = permissions
-                .filter((p) => p.user_id === member.user_id)
-                .map((p) => p.ml_account_id);
-
-              // O texto das contas é o MESMO da célula abaixo, resolvido uma
-              // vez: a gaveta e a tabela não podem discordar sobre alcance.
-              const contasTexto =
-                member.role === "ADMIN"
-                  ? "todas as contas (por ser ADMIN)"
-                  : granted.length === 0
-                    ? "nenhuma"
-                    : granted.map((id) => contaPorId.get(id) ?? id).join(", ");
-
-              return (
-                <tr key={member.user_id}>
-                  <td>
-                    {member.profiles?.full_name ?? (
-                      <span style={{ color: "var(--sb-text-soft)" }}>sem nome no perfil</span>
-                    )}
-                    {/*
-                      O e-mail embaixo do nome, como o frame desenha ("Usuário /
-                      E-mail"). Só para ADMIN, e sem inventar: quem não tem
-                      e-mail no Auth aparece sem a linha, não com um traço.
-                    */}
-                    {isAdmin && detalhePorUsuario.get(member.user_id)?.email !== null && (
-                      <div className="sb-mono">{detalhePorUsuario.get(member.user_id)?.email}</div>
-                    )}
-                  </td>
-                  <td>
-                    {isAdmin ? (
-                      <RoleSelect
-                        organizationId={member.organization_id}
-                        userId={member.user_id}
-                        role={member.role}
-                      />
-                    ) : (
-                      member.role
-                    )}
-                  </td>
-                  <td>
-                    {isAdmin ? (
-                      <AccountAccessControls
-                        userId={member.user_id}
-                        role={member.role}
-                        accounts={accounts}
-                        granted={granted}
-                      />
-                    ) : member.role === "ADMIN" ? (
-                      "todas as contas (por ser ADMIN)"
-                    ) : granted.length === 0 ? (
-                      "nenhuma"
-                    ) : (
-                      granted.map((id) => contaPorId.get(id) ?? id).join(", ")
-                    )}
-                  </td>
-                  {isAdmin && (
-                    <td>
-                      {detalhePorUsuario.get(member.user_id)?.aceitou === false ? (
-                        <span className="sb-status" style={TOM.atencao}>
-                          Convite pendente
-                        </span>
-                      ) : (
-                        <span className="sb-status" style={TOM.ok}>
-                          Ativo
-                        </span>
-                      )}
-                    </td>
-                  )}
-                  {isAdmin && (
-                    <td style={{ whiteSpace: "nowrap" }}>
-                      {/*
-                        Nunca entrou é "—", não uma data inventada: o convite
-                        pode estar aberto há semanas, e o traço diz isso.
-                      */}
-                      {formatDateTime(detalhePorUsuario.get(member.user_id)?.ultimoAcesso ?? null)}
-                    </td>
-                  )}
-                  <td style={{ whiteSpace: "nowrap" }}>{formatDateTime(member.created_at)}</td>
+            {visiveis.map((linha) => (
+              <tr key={linha.member.user_id}>
+                <td>
                   {/*
-                    A gaveta do frame, em CÉLULA PRÓPRIA — e a razão é um teste.
-
-                    O gatilho nasceu dentro da célula "Pessoa", e isso mudou o
-                    nome acessível dela de "E2E" para "E2E Inspecionar":
-                    `usuarios.spec.ts` afirma a célula EXATA desde D-234, e
-                    ficou vermelho. A correção certa não era afrouxar o teste —
-                    ele guarda a regressão do segundo membro — e sim tirar o
-                    controle de dentro do dado. A coluna fica sem rótulo, como a
-                    do checkbox em `/produtos`.
+                    O NOME É O GATILHO da gaveta, como a linha clicável do
+                    frame — e a coluna "Inspecionar" que existia aqui saiu com
+                    ele. O nome acessível desta célula continua sendo nome +
+                    e-mail, que é o que `usuarios.spec.ts` afirma (D-234).
                   */}
+                  <DetalheUsuario
+                    accounts={accounts}
+                    contas={linha.contas}
+                    desde={formatDateTime(linha.member.created_at)}
+                    editavel={isAdmin}
+                    ehUltimoAdmin={linha.member.role === "ADMIN" && admins === 1}
+                    email={linha.email}
+                    granted={linha.granted}
+                    historicoVisivel={isAdmin}
+                    nome={linha.nome}
+                    organizationId={linha.member.organization_id}
+                    role={linha.member.role}
+                    roleLabel={roleLabel(linha.member.role)}
+                    status={linha.status}
+                    todasPorAdmin={linha.todasPorAdmin}
+                    ultimoAcesso={formatDateTime(linha.ultimoAcesso)}
+                    userId={linha.member.user_id}
+                    historico={events
+                      .filter((evento) => evento.target_user_id === linha.member.user_id)
+                      .map((evento) => ({
+                        id: evento.id,
+                        quando: formatDateTime(evento.occurred_at),
+                        oQue: eventoLabel(evento),
+                        quemMudou:
+                          evento.actor_user_id === null
+                            ? "sistema"
+                            : (nomePorUsuario.get(evento.actor_user_id) ?? evento.actor_user_id),
+                        conta:
+                          evento.ml_account_id === null
+                            ? null
+                            : (contaPorId.get(evento.ml_account_id) ?? evento.ml_account_id),
+                      }))}
+                  />
+
+                  {/*
+                    O e-mail embaixo do nome, como o frame desenha. Só para
+                    ADMIN, e sem inventar: quem não tem e-mail no Auth aparece
+                    sem a linha, não com um traço.
+                  */}
+                  {linha.email !== null && (
+                    <div style={{ fontSize: "0.625rem", color: "var(--sb-text-soft)" }}>{linha.email}</div>
+                  )}
+                </td>
+                <td>
+                  {/*
+                    SELO, não `<select>` (D-297). O menu de papel mora na
+                    gaveta: cinco controles por linha faziam a tabela se ler
+                    como formulário, que é o que o usuário comparou com o frame.
+                  */}
+                  <span className="sb-status" style={TOM[tomDePapel(linha.member.role)]}>
+                    {roleLabel(linha.member.role)}
+                  </span>
+                </td>
+                <td style={{ color: "var(--sb-text-soft)" }}>
+                  {linha.todasPorAdmin
+                    ? "Todas as contas"
+                    : linha.contas.length === 0
+                      ? "Nenhuma conta associada"
+                      : linha.contas.join(" · ")}
+                </td>
+                {isAdmin && (
                   <td>
-                      <DetalheUsuario
-                        nome={member.profiles?.full_name ?? null}
-                        userId={member.user_id}
-                        role={member.role}
-                        roleLabel={roleLabel(member.role)}
-                        contas={contasTexto}
-                        desde={formatDateTime(member.created_at)}
-                        ehUltimoAdmin={member.role === "ADMIN" && admins === 1}
-                        historicoVisivel={isAdmin}
-                        historico={events
-                          .filter((evento) => evento.target_user_id === member.user_id)
-                          .map((evento) => ({
-                            id: evento.id,
-                            quando: formatDateTime(evento.occurred_at),
-                            oQue: eventoLabel(evento),
-                            quemMudou:
-                              evento.actor_user_id === null
-                                ? "sistema"
-                                : (nomePorUsuario.get(evento.actor_user_id) ?? evento.actor_user_id),
-                            conta:
-                              evento.ml_account_id === null
-                                ? null
-                                : (contaPorId.get(evento.ml_account_id) ?? evento.ml_account_id),
-                          }))}
-                      />
+                    <span className="sb-status" style={linha.status === "ativo" ? TOM.ok : TOM.neutro}>
+                      {memberStatusLabel(linha.status)}
+                    </span>
                   </td>
-                </tr>
-              );
-            })}
+                )}
+                {isAdmin && (
+                  /*
+                    À direita, como no frame. Nunca entrou é "—", não uma data
+                    inventada: o convite pode estar aberto há semanas, e o traço
+                    diz isso.
+                  */
+                  <td className="sb-num" style={{ whiteSpace: "nowrap" }}>
+                    {formatDateTime(linha.ultimoAcesso)}
+                  </td>
+                )}
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
+      )}
       </Panel>
       </div>
 

@@ -111,11 +111,87 @@ test("/usuarios: as três colunas que D-271 recusou ENTRARAM, pela janela de D-2
   await expect(page.getByRole("columnheader", { name: /Último acesso/i })).toBeVisible();
   await expect(page.getByText(/Convites pendentes/i)).toBeVisible();
 
-  // "Desde" continua: é `created_at` do vínculo, e responde outra pergunta.
-  await expect(page.getByRole("columnheader", { name: "Desde" })).toBeVisible();
+  /*
+    "Desde" SAIU DA TABELA em D-297 e virou "Membro desde" na gaveta. Ele entrou
+    em D-271 como substituto de "Último acesso", que não tinha fonte; com a
+    fonte aberta, dois carimbos lado a lado eram uma coluna a mais que o frame
+    não tem para responder o que a gaveta já responde.
+  */
+  await expect(page.getByRole("columnheader", { name: "Desde" })).toHaveCount(0);
 
   // O e-mail sob o nome, como o frame desenha.
   await expect(page.getByText("e2e@speedbikers.test").first()).toBeVisible();
+});
+
+/**
+ * A COMPOSIÇÃO DO FRAME (D-297) — a fatia que o usuário pediu ao comparar as
+ * duas telas: "o seu está muito inferior, acompanhe 100% o design figma".
+ *
+ * O que ele viu tem nome: cada linha carregava um `<select>` de papel e uma
+ * caixa por conta, e uma tabela com cinco controles por pessoa se lê como
+ * formulário empilhado. O frame põe SELO em Papel, TEXTO em contas, e abre a
+ * pessoa numa gaveta.
+ *
+ * Este caso guarda as duas metades juntas — a tabela sem controle E o controle
+ * vivo na gaveta —, porque separá-las deixaria passar a "correção" que some com
+ * a edição em vez de mudá-la de lugar.
+ */
+test("/usuarios: a tabela não tem controle, e a edição mora na gaveta (D-297)", async ({ page }) => {
+  await login(page, "/usuarios");
+
+  const gerenciar = page.getByRole("region", { name: "Gerenciar acessos" });
+
+  await expect(gerenciar.getByRole("combobox")).toHaveCount(0);
+  await expect(gerenciar.getByRole("checkbox")).toHaveCount(0);
+
+  // Papel e Status como selo, com o texto do frame.
+  await expect(gerenciar.getByRole("cell", { name: "Administrador", exact: true })).toBeVisible();
+  await expect(gerenciar.getByRole("cell", { name: "Ativo", exact: true }).first()).toBeVisible();
+
+  // O NOME é o gatilho, como a linha clicável do frame.
+  await gerenciar.getByRole("button", { name: "E2E", exact: true }).click();
+
+  const gaveta = page.getByRole("dialog", { name: /Detalhe do usuário/ });
+
+  await expect(gaveta).toBeVisible();
+
+  // O menu de papel que saiu da tabela está aqui — a edição mudou de lugar,
+  // não desapareceu.
+  await expect(gaveta.getByLabel("Papel do membro")).toBeVisible();
+  await expect(gaveta.getByText("Membro desde")).toBeVisible();
+
+  /*
+    "Proteção Ativa" do frame: o seed tem UM ADMIN, e quem recusa rebaixá-lo é
+    o trigger `guard_last_admin`, não esta tela.
+  */
+  await expect(gaveta.getByText("Proteção ativa")).toBeVisible();
+});
+
+/**
+ * A busca e o menu "Status ⌄" que o frame desenha no cabeçalho do painel
+ * (D-297). Os dois vivem na URL, não em estado React — o recorte é
+ * compartilhável e o "voltar" do navegador funciona.
+ */
+test("/usuarios: a busca recorta a tabela e a tela DIZ o recorte", async ({ page }) => {
+  await login(page, "/usuarios");
+
+  await page.getByLabel("Buscar por nome ou e-mail").fill("gestor");
+  await page.getByLabel("Buscar por nome ou e-mail").press("Enter");
+
+  const gerenciar = page.getByRole("region", { name: "Gerenciar acessos" });
+
+  await expect(
+    gerenciar.getByRole("cell", { name: "E2E Gestor gestor@speedbikers.test", exact: true }),
+  ).toBeVisible();
+
+  await expect(gerenciar.getByRole("cell", { name: "E2E e2e@speedbikers.test", exact: true })).toHaveCount(0);
+
+  /*
+    A FRASE É A GUARDA: sem ela a tela mostraria uma linha sem dizer que a
+    outra foi escondida — o mesmo defeito que `summarizePagedWindow` existe
+    para impedir na paginação (D-131).
+  */
+  await expect(page.getByText(/1 de 2 pessoas, por busca/)).toBeVisible();
 });
 
 /**

@@ -43,6 +43,10 @@ const CLASSES = [
   "sb-menu-item",
   "sb-close",
   "sb-text-button",
+  // O nome da pessoa como gatilho da gaveta (D-297): o frame faz a linha
+  // inteira clicável, e aqui o clique mora num botão de verdade para existir
+  // também no teclado. A forma é a do `.sb-entity` que já veste o nome-link.
+  "sb-entity-button",
   "sb-nav-link",
   "sb-nav-label",
   "sb-icon-button",

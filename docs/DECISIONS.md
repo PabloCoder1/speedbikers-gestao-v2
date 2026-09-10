@@ -8209,6 +8209,59 @@ A fronteira de organizacao e imposta **em codigo**, nao pela RLS: `AdminClient` 
 
 **PENDENTE:** `db push` da migration para o Dev (a esteira aplica no push da `v3`) e regeracao dos tipos pelo MCP.
 
+## D-297 - /usuarios refeita contra o desenho: a tabela volta a ser tabela, e o controle vai para a gaveta
+
+**Contexto:** o usuario comparou a captura do frame com a nossa tela e disse: *"compare o design das duas, o seu esta muito inferior, acompanhe 100% o design figma"*. D-296 tinha entregado o DADO que faltava (convite, e-mail, status, ultimo acesso); o que ele estava vendo era **composicao**, e ele tinha razao.
+
+---
+
+**1. O QUE ESTAVA INFERIOR TINHA NUMERO**
+
+Cada linha da tabela carregava um `<select>` de papel e **uma caixa por conta**. Com quatro contas sao **cinco controles por pessoa** -- vinte numa organizacao de quatro membros. Uma tabela assim nao se le: ela se preenche. O frame poe **selo** em Papel, **texto** em contas, e abre a pessoa numa **gaveta**.
+
+Nao e questao de gosto: controle dentro de celula muda o que a coluna significa. "Papel" deixava de ser um fato sobre a pessoa e virava um campo de formulario, e o olho que percorre a coluna via cinco caixas cinza em vez de cinco papeis.
+
+**2. O CONTROLE NAO SUMIU -- MUDOU DE LUGAR**
+
+Papel e alcance passam a ser editados no cartao "Papel e Permissoes" **da gaveta**, que e onde o frame ja os desenha e onde se olha uma pessoa por vez. `RoleSelect` e `AccountAccessControls` sao os MESMOS componentes, com as mesmas Server Actions.
+
+**Nada de autorizacao mudou nesta fatia.** Continua nas policies `*_admin_writes` e no trigger `guard_last_admin`; esconder controle de quem nao e ADMIN segue sendo cortesia. Uma "correcao" que sumisse com a edicao em vez de move-la seria regressao de funcao vestida de fidelidade -- por isso o caso de e2e guarda **as duas metades juntas**: tabela sem controle E menu de papel vivo dentro da gaveta.
+
+**3. UM DONO POR DADO, TAMBEM DENTRO DA GAVETA**
+
+A primeira versao mostrava o SELO do papel **e** o menu logo abaixo: "GESTOR" em cima de um menu ja em GESTOR, a dois centimetros. A captura mostrou. Quem edita ve o CONTROLE; quem le ve o SELO -- e quem edita continua vendo o selo na tabela, na mesma tela.
+
+**4. "DESDE" SAIU DA TABELA**
+
+Ela entrou em D-271 como SUBSTITUTA de "Ultimo Acesso", que naquele dia nao tinha fonte. D-296 abriu a fonte. Manter os dois carimbos lado a lado deixaria a tabela com **seis** colunas onde o frame tem cinco, para responder uma pergunta que a gaveta ja responde em "Membro desde". A coluna do gatilho ("Inspecionar") saiu junto: o gatilho e o NOME, como a linha clicavel do frame.
+
+**Por que o nome e nao a linha inteira:** `onClick` em `<tr>` nao recebe foco nem responde a Enter -- a gaveta ficaria inalcancavel sem mouse. O botao tem a forma do frame (`.sb-entity-button`: sem moldura, navy, sublinhado so no hover) e o nome acessivel da celula continua sendo nome + e-mail, que e o que `usuarios.spec.ts` afirma desde D-234.
+
+**5. BUSCA E "STATUS", COMO O FRAME DESENHA -- E POR QUE O RECORTE E EM MEMORIA**
+
+O cabecalho do painel ganhou a caixa "Buscar usuario ou e-mail..." e o menu "Status ⌄", os dois na URL (`lib/member-filters.ts`, 13 casos). O recorte acontece **em memoria**, e a razao e medida: a lista de membros nao pagina (a RLS ja a restringe, e `members.length` E o total), e o e-mail vem de OUTRA fonte que nao a tabela -- `get_organization_members`, a janela de `auth.users`. Mandar a busca ao PostgREST seria recortar em dois lugares a mesma frase.
+
+E a tela **DIZ o recorte**: "1 de 2 pessoas, por busca ...". Sem essa frase, filtrar 18 para 3 mostraria tres linhas sem contar que quinze sumiram -- o defeito que `summarizePagedWindow` existe para impedir na paginacao (D-131).
+
+**6. O CARTAO DE ATENCAO DO FRAME, NUMA FAIXA QUE E UM CARTAO SO**
+
+O frame pinta "Convites Pendentes" com borda e numero em ambar. A faixa desta casa e **um** cartao dividido em celulas (decisao registrada, e o proprio `.kpi-strip` do export), entao nao ha borda por celula para tingir: o que resta e a tinta do numero, que e justamente o que o olho procura. `destaque` e isso -- campo separado de `tom`, que veste o chip "ver lista" e ja e declarado em todas as celulas de seis telas. Sem convite aberto, a celula volta ao neutro: nada pede atencao.
+
+**7. O QUE CONTINUA DIVERGINDO DO FRAME, DE PROPOSITO**
+
+| frame | aqui | por que |
+|---|---|---|
+| botao "Filtros ⌄" no cabecalho | so a acao "Convidar usuario" | o `OpsHeader` do export poe esse botao em TODA tela e ele nao filtra nada; os filtros de verdade vivem no cabecalho do painel, como em `/compras` |
+| cinco cartoes (Ativos, Admins, Gestores, Operadores, Pendentes) | seis celulas | o `check` de `organization_members` conhece CINCO papeis; com tres, os cartoes deixam de fechar com o total (D-265) |
+| "Proteção Ativa" em vermelho | tom de atencao | perigo aqui e coisa errada acontecendo, e nada esta errado: uma protecao esta de pe (D39) |
+| frase descrevendo o que cada papel pode fazer | ausente | a autorizacao real sao as policies e o `check`; prosa aqui arrisca DESCREVER ERRADO o que o banco permite |
+
+**Impacto:** `apps/web/lib/{member-filters.ts,member-filters.test.ts,role-tone.ts}` (novos), `apps/web/app/usuarios/{page.tsx,detalhe-usuario.tsx}`, `apps/web/components/kpi-strip.tsx` (`destaque`), `apps/web/app/globals.css` (`.sb-drawer-card`, `.sb-badge-row`, `.sb-avatar-grande`, `.sb-entity-button`), `apps/web/scripts/check-control-styles.mjs` (a classe nova entra na lista), `apps/web/e2e/{usuarios.spec.ts,gavetas.spec.ts}`.
+
+**Verificacao:** `check` **29/29** (`--force`, **448** unitarios com os 13 novos), build **8/8**, e2e **113/113** em banco recriado (+2), integracao **648/648** (esta fatia nao toca o banco), cinco guardas verdes. Tela renderizada a 1440px com seis membros de verdade -- um convite pendente, um sem perfil, tres papeis diferentes -- e a gaveta aberta em cada um.
+
+**O caso de e2e que mudou de SINAL:** `gavetas.spec.ts` afirmava `/nao ha e-mail aqui/` -- a recusa de D-271, verdadeira enquanto a janela nao existia. Agora afirma o contrario: o endereco aparece sob o nome. Guarda que envelhece e trocada, nao afrouxada.
+
 ## Como adicionar nova decisao
 
 Registrar:

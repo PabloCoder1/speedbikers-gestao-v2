@@ -1399,6 +1399,96 @@ summary[aria-disabled="true"] {
   color: var(--sb-text-soft);
 }
 
+/*
+ * CARTÃO DENTRO DA GAVETA (`bg-white border border-border p-4 rounded-lg
+ * shadow-sm` do `UserDetailDrawer`) — o agrupador de "Papel e Permissões"
+ * (D-297).
+ *
+ * Existe porque a gaveta do usuário é a única das cinco em que o corpo não é só
+ * lista de fatos: papel e alcance são dois campos COM CONTROLE dentro, e o
+ * `.sb-detail-row` (rótulo à esquerda, valor à direita) não tem onde pôr um
+ * menu de papel e quatro caixas de conta sem empurrar tudo contra a margem.
+ */
+.sb-drawer-card {
+  margin-top: var(--sb-space-3);
+  padding: var(--sb-space-3);
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius);
+  background: var(--sb-surface);
+  box-shadow: var(--sb-shadow-panel);
+}
+
+.sb-drawer-card > h4 {
+  margin: 0 0 var(--sb-space-2);
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--sb-border);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--sb-text-soft);
+}
+
+/* As metades do cartão, separadas por fio (`pt-3 border-t` do frame). O fio só
+   aparece ENTRE elas: na primeira ele duplicaria o do cabeçalho. */
+.sb-drawer-card-parte + .sb-drawer-card-parte {
+  margin-top: var(--sb-space-2);
+  padding-top: var(--sb-space-2);
+  border-top: 1px solid var(--sb-border);
+}
+
+.sb-drawer-card-parte > span:first-child {
+  display: block;
+  margin-bottom: 0.375rem;
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
+/* Os selos de conta do frame, em linha que dobra — quatro contas em 420px não
+   cabem numa linha só, e `nowrap` as empurraria para fora da gaveta. */
+.sb-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+/*
+ * O avatar da gaveta. O frame desenha 64px em 480px de largura; esta gaveta tem
+ * 420 (a medida do export, D39), e 64 ali rouba da coluna do nome — 56 é a
+ * mesma proporção (64 × 420/480), não um arredondamento de gosto.
+ */
+.sb-avatar-grande {
+  width: 56px;
+  height: 56px;
+  font-size: 1.25rem;
+}
+
+/*
+ * O NOME COMO GATILHO da gaveta (D-297).
+ *
+ * No frame a LINHA INTEIRA é clicável (`cursor-pointer` + `onClick` no `<tr>`).
+ * Aqui o gatilho é o nome, e a razão é teclado: `onClick` em `<tr>` não recebe
+ * foco e não responde a Enter, então a gaveta ficaria inalcançável sem mouse —
+ * e a casa já tem uma forma de abrir camada flutuante (botão de verdade). O
+ * efeito visual é o do frame: sem moldura, navy, negrito, e o sublinhado só no
+ * hover, como `.sb-entity` já faz para o nome que é LINK.
+ */
+.sb-table .sb-entity-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--sb-sans);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--sb-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.sb-table .sb-entity-button:hover {
+  text-decoration: underline;
+}
+
 /* `.text-button` do export — ação em texto, sem moldura. A auditoria A1
    listou a ausência dele junto com a do modal e a da gaveta; entra agora
    porque a gaveta é o consumidor (a regra de D1: token sem leitor é
