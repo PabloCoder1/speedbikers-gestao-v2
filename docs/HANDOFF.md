@@ -14,7 +14,7 @@
 |---|---|
 | **Atualizado em** | 2026-09-10 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `f1a3d4f` (D-304) — o piso de frescor das métricas e o carimbo que media a coisa errada. ⚠️ **a api e o Cloud Scheduler NÃO foram implantados** (escolha do usuário): o piso (`/internal/schedule/metrics-refresh` + `v3-refresh-sales-metrics`) está no código e fora do ar — rodar `deploy-cloud-run.sh api` e `cloud-scheduler.sh` para ativá-lo. Antes: `3a2d570` (D-303) — link de acesso reemitível, e o convite que apontava para a máquina de quem clicava. ⚠️ **falta a URL da aplicação na lista de redirecionamentos do projeto Supabase** (painel, fora do repositório): sem ela todo link continua caindo em `http://localhost:3000`. Antes: `2946648` (D-302) — a aceitação do convite: quem foi convidado define a própria senha na tela de entrada. Antes: `57099c9` (D-301) — o 404 do convite era a api de PRODUÇÃO três dias mais velha que a tela; a frase de erro passa a nomear o commit no ar. Antes: **D-299** (A8 — `/contas` contra o frame `Accounts`). Antes: `c6b18fc` (D-298, o convite que "não ia") e `50e4a21` (D-297, `/usuarios` refeita) |
+| **HEAD conhecido** | `a4a3098` (D-305) — o timeout de `/anuncios` era o **plano**: no PostgreSQL 17 o corpo de uma funcao `language sql` e planejado sem os valores dos argumentos, e o generico troca hash join por nested loop (228 ms → +60 s). Corrigida com `plpgsql` + `plan_cache_mode = force_custom_plan`. Antes: `f1a3d4f` (D-304) — o piso de frescor das métricas. ⚠️ **a api e o Cloud Scheduler NÃO foram implantados** (escolha do usuário): o piso (`/internal/schedule/metrics-refresh` + `v3-refresh-sales-metrics`) está no código e fora do ar — rodar `deploy-cloud-run.sh api` e `cloud-scheduler.sh` para ativá-lo. Antes: `3a2d570` (D-303) — link de acesso reemitível. ⚠️ **falta a URL da aplicação na lista de redirecionamentos do projeto Supabase** (painel, fora do repositório): sem ela todo link continua caindo em `http://localhost:3000`. |
 | **Fechamento da V3** | **185 de 213 itens do ROADMAP fechados (87%)** — 26 abertos e 2 parciais. Dos 26, **6 são bloqueadores**, e todos são hardening/lançamento: nenhum é feature faltando (D-223) |
 | **Deploy no ar** | ✅ **`721f4c6`, implantado em 2026-09-10** — worker (`worker-00049-r62`) e depois api (`api-00033-cmn`), na ordem de D-088, autorizado pelo usuário. `GET /health` da api responde `{"commit":"721f4c6"}` e `POST /v1/organization/invites` responde **401 em vez de 404**: a rota existe. **O que motivou o deploy foi um defeito de usuário**: o botão de convidar respondia 404 em produção porque a api no ar era `6baa641`, de 07/09, e a rota nasceu em `4ef8d18`, três dias depois (D-301) — 110 commits de atraso, 32 tocando `apps/api` ou `packages/`. **Esta linha envelhece sozinha** (o risco de D-070): ela dizia "sem atraso" em 02/09, `0702969` em 09/09, e nos dois casos o `HEAD` seguiu andando. Deploy é manual: `bash infra/deploy-cloud-run.sh` com `MERCADO_LIVRE_CLIENT_ID` no ambiente. **O worker não é medível por fora** — `/health` dele responde 403 sem credencial —, então o que se afirma dele é a revisão, não o commit que responde. |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
@@ -60,6 +60,15 @@ Números completos e método: `docs/PERFORMANCE.md`.
 ---
 
 ## Riscos ativos
+
+- **Toda RPC acima de 500 ms neste banco é `language sql`, e isso não é
+  coincidência (D-305).** O corpo dessas funções é planejado sem os valores
+  dos argumentos, e o plano genérico erra as estimativas por 100x. Medido no
+  Dev: `get_sales_expanded_summary` **7.416 ms** e `get_sku_correlated_events`
+  **7.392 ms** de pior caso, contra um teto de **8 s** para `authenticated`.
+  Duas já encostaram. A cura é a de D-305 (`plpgsql` + `force_custom_plan`),
+  uma função por vez, cada uma com revisão de colisão de variável — não em
+  lote silencioso.
 
 - **`supabase start` da CI falha as vezes, e a falha nao se distingue de
   defeito de migration pelo que a interface mostra** — aconteceu em `8dfea93`
