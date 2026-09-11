@@ -24,6 +24,9 @@ import { actionStatusLabel, eventTypeLabel, listingStatusLabel } from "../../../
 import { fullSituationCriterion, fullSituationLabel, fullSituationTom, isFullRow } from "../../../lib/full-filters";
 import { createClient } from "../../../lib/supabase/server";
 import { descreverCobertura } from "../../../lib/sku-coverage-display";
+import { acaoDeVinculo, lerAnuncio, resumoDeAnuncios, type AnuncioDoSku, type LinhaDeAnuncio } from "../../../lib/sku-listings";
+import { RemoverVinculo } from "./remover-vinculo";
+import { VincularAnuncio } from "./vincular-anuncio";
 import { DiagnosisPanel } from "./diagnosis-panel";
 import { SimulatorPanel } from "./simulator-panel";
 
@@ -275,6 +278,7 @@ export default async function SkuDashboardPage({
   const [
     dashboardResult,
     listingsResult,
+    contasResult,
     coverageResult,
     abcResult,
     costHistoryResult,
@@ -295,12 +299,34 @@ export default async function SkuDashboardPage({
           })
           .single()
       : Promise.resolve({ data: null, error: null }),
+    /*
+      OS ANÚNCIOS DO SKU, PELA DEFINIÇÃO CANÔNICA (D-316).
+
+      Era `.eq("sku_id", ...)` — a definição MAIS ESTREITA de "vinculado" que
+      este repositório tem, e ela perde o vínculo por VARIAÇÃO: D-122 mediu
+      1.013 de 1.917 anúncios (52,8%) com `sku_id` nulo E vínculo em
+      `sku_listing_links`. A tela dizia "1 anúncio deste SKU" onde `/produtos`
+      dizia 2, para o mesmo SKU, porque a coluna de lá já usa a régua certa
+      desde D-245.
+
+      A união é SQL (`get_sku_listings`) e não duas idas: o PostgREST não tem
+      relação entre `listings` e `sku_listing_links` para embutir, e agregar
+      duas listas em JS seria a terceira definição da mesma palavra.
+    */
     needsListings
-      ? supabase
-          .from("listings")
-          .select("id, item_id, title, status, price, ml_accounts(label)")
-          .eq("sku_id", sku.data.id)
-          .order("title")
+      ? supabase.rpc("get_sku_listings", {
+          p_organization_id: sku.data.organization_id,
+          p_sku_id: sku.data.id,
+        })
+      : Promise.resolve({ data: null, error: null }),
+    /*
+      As contas para o seletor de "Vincular anúncio" — só as CONECTADAS.
+      Vincular a uma conta revogada gravaria um vínculo que o sync nunca vai
+      reconciliar, porque ele só varre `CONNECTED`. Mesma ida do `Promise.all`,
+      e só na aba que tem o botão.
+    */
+    needsListings
+      ? supabase.from("ml_accounts").select("id, label").eq("status", "CONNECTED").order("label")
       : Promise.resolve({ data: null, error: null }),
     // Mesma janela de 30 dias do resumo — venda média diária real, só para
     // pré-preencher a premissa do simulador (D-080); o usuário pode ajustar
@@ -443,7 +469,11 @@ export default async function SkuDashboardPage({
   ]);
 
   const dashboard = dashboardResult.data;
-  const listings = listingsResult.data ?? [];
+  const listings: AnuncioDoSku[] = ((listingsResult.data ?? []) as LinhaDeAnuncio[]).map(lerAnuncio);
+  const contasParaVinculo = contasResult.data ?? [];
+  // Capturado aqui porque dentro do JSX o compilador perde o estreitamento de
+  // `sku.data`, e um `!` esconderia justamente o caso de a leitura mudar.
+  const skuCode = sku.data.sku;
   const coverage = coverageResult.data;
   // Falha ou SKU sem venda no período: NENHUM selo. Um SKU fora da curva não é
   // "classe C" — ele não foi classificado, e afirmar C seria inventar posição.
@@ -697,9 +727,7 @@ export default async function SkuDashboardPage({
                 <Panel
                   title="Anúncios vinculados"
                   subtitle={
-                    listingsResult.error !== null
-                      ? "não foi possível carregar"
-                      : `${formatCount(listings.length)} ${listings.length === 1 ? "anúncio" : "anúncios"} deste SKU`
+                    listingsResult.error !== null ? "não foi possível carregar" : resumoDeAnuncios(listings.length)
                   }
                   aside={
                     <Link href={`/skus/${skuId}?aba=anuncios`} style={{ color: "var(--sb-secondary)", textDecoration: "none" }}>
@@ -713,18 +741,22 @@ export default async function SkuDashboardPage({
                     </p>
                   ) : (
                     listings.slice(0, 4).map((linha) => (
-                      <div key={linha.id} className="sb-feed-row">
+                      <div key={`${linha.ml_account_id}:${linha.item_id}`} className="sb-feed-row">
                         <span style={{ flex: 1, minWidth: 0 }}>
                           <b style={{ display: "block", fontFamily: "var(--sb-mono)", fontSize: "0.625rem" }}>
                             {linha.item_id}
                           </b>
                           <small style={{ display: "block", marginTop: 3, fontSize: "0.5625rem", color: "var(--sb-text-soft)" }}>
-                            {linha.ml_accounts.label}
+                            {linha.account_label ?? "conta desconhecida"}
                           </small>
                         </span>
                         <span style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                           <b style={{ display: "block", fontSize: "0.625rem" }}>{formatCurrency(linha.price)}</b>
-                          <StatusPill code={linha.status} label={listingStatusLabel(linha.status)} />
+                          {linha.status === null ? (
+                            <small style={{ color: "var(--sb-text-soft)" }}>não sincronizado</small>
+                          ) : (
+                            <StatusPill code={linha.status} label={listingStatusLabel(linha.status)} />
+                          )}
                         </span>
                       </div>
                     ))
@@ -934,7 +966,16 @@ export default async function SkuDashboardPage({
       )}
 
       {tab === "anuncios" && (
-        <Panel title="Anúncios vinculados">
+        <Panel
+          title="Anúncios vinculados"
+          subtitle={listingsResult.error === null ? resumoDeAnuncios(listings.length) : undefined}
+          /*
+            O BOTÃO DO PEDIDO, no slot que o `Panel` já tem. A lista de contas
+            é a das CONECTADAS: vincular a uma conta revogada gravaria um
+            vínculo que o sync nunca vai reconciliar.
+          */
+          aside={<VincularAnuncio skuId={sku.data.id} skuCode={skuCode} contas={contasParaVinculo} />}
+        >
           <div className="sb-panel-body">
 
           {listingsResult.error !== null && (
@@ -949,41 +990,107 @@ export default async function SkuDashboardPage({
 
           {listingsResult.error === null && listings.length > 0 && (
             <div style={{ overflowX: "auto" }}>
-              <table className="sb-table" style={{ minWidth: "36rem" }}>
+              <table className="sb-table" style={{ minWidth: "48rem" }}>
                 <thead>
                   <tr>
-                    <th>Anúncio</th>
                     <th>Conta</th>
+                    <th>Anúncio</th>
                     <th>Estado</th>
-                    <th>Preço</th>
+                    <th className="sb-num">Estoque</th>
+                    <th className="sb-num">Preço</th>
+                    <th>Vínculo</th>
+                    <th>Ações</th>
                   </tr>
                 </thead>
 
                 <tbody>
-                  {listings.map((listing) => (
-                    <tr key={listing.id}>
-                      <td>
-                        {listing.title}
-                        <div
-                          style={{
-                            fontFamily: "ui-monospace, monospace",
-                            color: "var(--sb-text-soft)",
-                            fontSize: "0.75rem",
-                          }}
+                  {listings.map((listing) => {
+                    const acao = acaoDeVinculo(listing);
+
+                    return (
+                      <tr key={`${listing.ml_account_id}:${listing.item_id}`}>
+                        <td>{listing.account_label ?? "—"}</td>
+                        <td>
+                          {/*
+                            O anúncio pode ter vínculo e ainda não ter sido
+                            sincronizado: o que falta é a linha de `listings`,
+                            não o vínculo. A tela mostra o MLB e diz o resto.
+                          */}
+                          {listing.title ?? <span style={{ color: "var(--sb-text-soft)" }}>ainda não sincronizado</span>}
+                          <div
+                            style={{
+                              fontFamily: "var(--sb-mono)",
+                              color: "var(--sb-text-soft)",
+                              fontSize: "0.75rem",
+                            }}
+                          >
+                            <Link href={`/anuncios/${listing.item_id}`}>{listing.item_id}</Link>
+                          </div>
+                        </td>
+                        <td>
+                          {listing.status === null ? (
+                            "—"
+                          ) : (
+                            <StatusPill code={listing.status} label={listingStatusLabel(listing.status)} />
+                          )}
+                        </td>
+                        {/*
+                          ESTOQUE DO ANÚNCIO, e o rótulo da coluna não basta:
+                          esta tela mostra três saldos de origens diferentes
+                          (o do anúncio no ML, o do Full e o do ERP). O `title`
+                          carrega a qualificação, como a faixa de KPIs faz.
+                        */}
+                        <td
+                          className="sb-num"
+                          title="estoque DESTE anúncio no Mercado Livre, na última sincronização — não é o saldo do ERP nem o do Full"
                         >
-                          <Link href={`/anuncios/${listing.item_id}`}>{listing.item_id}</Link>
-                        </div>
-                      </td>
-                      <td>{listing.ml_accounts.label}</td>
-                      <td>
-                        <StatusPill code={listing.status} label={listingStatusLabel(listing.status)} />
-                      </td>
-                      <td className="sb-num">{formatCurrency(listing.price)}</td>
-                    </tr>
-                  ))}
+                          {listing.available_quantity === null ? "—" : formatCount(listing.available_quantity)}
+                        </td>
+                        <td className="sb-num">{formatCurrency(listing.price)}</td>
+                        <td style={{ fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>{acao.rotuloForma}</td>
+                        <td>
+                          <span style={{ display: "flex", gap: "var(--sb-space-2)", alignItems: "center" }}>
+                            <Link className="sb-text-button" href={`/anuncios/${listing.item_id}`}>
+                              Ver
+                            </Link>
+
+                            {acao.linkId === null ? (
+                              /*
+                                SEM LINHA DE VÍNCULO NÃO HÁ O QUE REMOVER, e
+                                a tela diz isso em vez de mostrar um botão que
+                                a RPC recusaria com "vinculo nao encontrado".
+                              */
+                              <span title={acao.motivoSemAcao ?? undefined} style={{ fontSize: "0.6875rem" }}>
+                                —
+                              </span>
+                            ) : (
+                              <RemoverVinculo
+                                linkId={acao.linkId}
+                                itemId={listing.item_id}
+                                skuCode={skuCode}
+                              />
+                            )}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
+          )}
+
+          {/*
+            A RÉGUA, ESCRITA. O número de anúncios SUBIU quando a tela passou a
+            usar a definição canônica (D-316), e número que sobe sem explicação
+            se lê como defeito.
+          */}
+          {listingsResult.error === null && (
+            <p style={{ margin: "var(--sb-space-3) 0 0", fontSize: "0.6875rem", color: "var(--sb-text-soft)" }}>
+              Conta como vinculado o anúncio que aponta para este SKU pela última sincronização <strong>ou</strong>{" "}
+              que tem linha de vínculo — a mesma régua de <Link href="/vinculacoes">Vinculações</Link> e de{" "}
+              <Link href="/produtos">Produtos</Link>. Estoque e preço são os da última sincronização do anúncio.
+            </p>
           )}
           </div>
         </Panel>

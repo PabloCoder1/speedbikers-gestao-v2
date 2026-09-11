@@ -12111,6 +12111,140 @@ describe("replenishment_settings (Configuração de reposição, D-144)", () => 
 // `IntelligenceScreen type="actions"`. O que estes testes protegem NAO e a
 // aparencia: e a linha-sentinela e a independencia das facetas, que sao as
 // duas decisoes das quais a tela depende para nao ficar muda.
+describe("get_sku_listings — os anuncios de um SKU pela regua canonica (D-316)", () => {
+  const CONTA = "dddd4444-0000-4000-8000-000000000044";
+  const CONTA_SEM_ACESSO = "dddd4444-0000-4000-8000-000000000045";
+  const SKU = "dddd4444-0000-4000-8000-0000000000a1";
+
+  beforeAll(async () => {
+    await client.query(
+      // CONNECTED exige `seller_id` e `connected_at` pela constraint
+      // `ml_accounts_status_coherent` — o estado e coerente por desenho.
+      `insert into public.ml_accounts (id, organization_id, label, slug, status, seller_id, connected_at)
+       values ($1,$2,'Conta do vinculo','skulistings-conta','CONNECTED',770000001,now()),
+              ($3,$2,'Conta sem acesso','skulistings-outra','CONNECTED',770000002,now())
+       on conflict do nothing`,
+      [CONTA, ORG_SB, CONTA_SEM_ACESSO],
+    );
+
+    await client.query(
+      `insert into public.skus (id, organization_id, sku, kind)
+       values ($1,$2,'RLSTEST-SKULIST','PRODUTO')
+       on conflict (id) do nothing`,
+      [SKU, ORG_SB],
+    );
+
+    /*
+      TRES SITUACOES, e sao elas que a funcao existe para distinguir:
+      - MLB700000001: vinculo DIRETO (listings.sku_id) e nenhuma linha de
+        vinculo -- o cache que o sync escreve;
+      - MLB700000002: sem `sku_id` e COM vinculo por variacao -- os 52,8% que a
+        consulta antiga da tela perdia (D-122);
+      - MLB700000003: nenhum dos dois -- nao pode aparecer.
+    */
+    await client.query(
+      `insert into public.listings
+         (organization_id, ml_account_id, item_id, title, status, price, currency_id, available_quantity, sku_id)
+       values ($1,$2,'MLB700000001','Direto','active',10,'BRL',7,$3),
+              ($1,$2,'MLB700000002','Por variacao','paused',20,'BRL',0,null),
+              ($1,$2,'MLB700000003','Sem vinculo','active',30,'BRL',3,null)
+       on conflict do nothing`,
+      [ORG_SB, CONTA, SKU],
+    );
+
+    await client.query(
+      `insert into public.sku_listing_links
+         (organization_id, ml_account_id, ref_kind, item_id, variation_id, sku_id, source)
+       values ($1,$2,'ITEM','MLB700000002','77',$3,'MANUAL')
+       on conflict do nothing`,
+      [ORG_SB, CONTA, SKU],
+    );
+
+    // A conta que o ANALISTA nao alcanca, com um anuncio vinculado ao MESMO
+    // SKU: e o caso negativo por CONTA, que a RLS tem de esconder.
+    await client.query(
+      `insert into public.listings
+         (organization_id, ml_account_id, item_id, title, status, price, currency_id, available_quantity, sku_id)
+       values ($1,$2,'MLB700000009','De outra conta','active',40,'BRL',1,$3)
+       on conflict do nothing`,
+      [ORG_SB, CONTA_SEM_ACESSO, SKU],
+    );
+
+    await client.query(
+      `insert into public.user_account_permissions (user_id, ml_account_id)
+       values ($1,$2) on conflict do nothing`,
+      [ANALISTA_SB, CONTA],
+    );
+  });
+
+  it("devolve o vinculo DIRETO e o vinculo por VARIACAO — e nao o anuncio sem vinculo", async () => {
+    const linhas = await asUser<{ item_id: string; vinculo_forma: string; apenas_cache: boolean }>(
+      ADMIN_SB,
+      `select item_id, vinculo_forma, apenas_cache
+       from public.get_sku_listings('${ORG_SB}', '${SKU}')
+       where ml_account_id = '${CONTA}'
+       order by item_id`,
+    );
+
+    expect(linhas.map((l) => l.item_id)).toEqual(["MLB700000001", "MLB700000002"]);
+
+    // O direto sem linha de vinculo: nao ha o que remover, e a tela precisa saber.
+    expect(linhas[0]?.vinculo_forma).toBe("cache_sem_linha");
+    expect(linhas[0]?.apenas_cache).toBe(true);
+
+    // O por variacao: tem link_id, entao a tela pode oferecer a remocao.
+    expect(linhas[1]?.vinculo_forma).toBe("variacao");
+    expect(linhas[1]?.apenas_cache).toBe(false);
+  });
+
+  it("uma linha por (conta, anuncio), mesmo com duas variacoes vinculadas", async () => {
+    await client.query(
+      `insert into public.sku_listing_links
+         (organization_id, ml_account_id, ref_kind, item_id, variation_id, sku_id, source)
+       values ($1,$2,'ITEM','MLB700000002','78',$3,'MANUAL')
+       on conflict do nothing`,
+      [ORG_SB, CONTA, SKU],
+    );
+
+    const linhas = await asUser<{ item_id: string; links: unknown }>(
+      ADMIN_SB,
+      `select item_id, links from public.get_sku_listings('${ORG_SB}', '${SKU}')
+       where item_id = 'MLB700000002'`,
+    );
+
+    expect(linhas).toHaveLength(1);
+    expect(JSON.parse(JSON.stringify(linhas[0]?.links))).toHaveLength(2);
+  });
+
+  /*
+    OS DOIS NEGATIVOS que TESTING.md secao 2 regra 2 exige. O primeiro e por
+    ORGANIZACAO; o segundo e o que a funcao tem de especial — ela e
+    `security invoker`, entao a RLS de `listings` recorta POR CONTA dentro da
+    mesma organizacao.
+  */
+  it("usuario de outra organizacao nao ve nada", async () => {
+    const linhas = await asUser(DE_OUTRA_ORG, `select * from public.get_sku_listings('${ORG_SB}', '${SKU}')`);
+
+    expect(linhas).toHaveLength(0);
+  });
+
+  it("membro sem acesso AQUELA conta nao ve o anuncio dela", async () => {
+    const linhas = await asUser<{ item_id: string }>(
+      ANALISTA_SB,
+      `select item_id from public.get_sku_listings('${ORG_SB}', '${SKU}')`,
+    );
+
+    expect(linhas.map((l) => l.item_id)).not.toContain("MLB700000009");
+    expect(linhas.length).toBeGreaterThan(0);
+  });
+
+  it("anon nao executa — o GRANT e a primeira barreira", async () => {
+    await expect(
+      asAnon(`select * from public.get_sku_listings('${ORG_SB}', '${SKU}')`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+});
+
 describe("get_actions_queue (D-263)", () => {
   const CHAVE = "ACOESTEST";
 

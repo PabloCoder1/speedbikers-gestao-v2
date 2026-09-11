@@ -9087,6 +9087,92 @@ Usar o Full que o cartao vizinho ja imprime mantem a tela coerente consigo mesma
 
 **Verificacao:** `check` 29/29 (`--force`, com 5 casos novos no dominio e 7 no web), build 8/8, integracao 658/658 em banco recriado, e2e **132/132** -- a suite inclui as fatias em voo de outra sessao que trabalha no mesmo repo; desta fatia sao 1 caso novo e as assercoes acrescentadas ao caso da gaveta. Cinco guardas verdes. Renderizado a 1440px: o cartao mostra `318,0 dias · aproveitavel 53 ÷ 0,17/dia`.
 
+## D-316 - Gerir o vinculo de anuncio DENTRO do SKU, com a regua canonica e com confirmacao antes de gravar
+
+**Contexto:** pedido do dono do produto, em duas partes. (1) A area de anuncios do Dashboard do SKU deveria ser tambem ponto de GESTAO -- adicionar por MLB, remover, e ver conta/MLB/titulo/status/estoque/preco. (2) "A tela de Detalhes do SKU e a tela de Vinculacoes devem trabalhar sobre a MESMA fonte de dados. Nao criar dois sistemas separados de vinculacao."
+
+Esta decisao entrega a parte (1) e (2). O diagnostico do SKU, que e a outra metade do pedido, fica para as fatias seguintes -- com o que tem fonte separado do que nao tem, registrado abaixo.
+
+---
+
+**1. A TELA ESTAVA CONTANDO ERRADO, E O ERRO TINHA TAMANHO MEDIDO**
+
+A aba lia `listings.sku_id = :sku`. Essa e a definicao **mais estreita** de "vinculado" que este repositorio tem, e ela perde o vinculo por VARIACAO: D-122 mediu **1.013 de 1.917 anuncios (52,8%)** com `sku_id` nulo e vinculo em `sku_listing_links`.
+
+Resultado visivel: a tela do SKU dizia "1 anuncio deste SKU" onde `/produtos` dizia 2, para o MESMO SKU -- porque a coluna de la usa a regua certa desde D-245. No seed, o numero subiu de 1 para 2 ao trocar a leitura.
+
+A uniao virou `get_sku_listings`, funcao nova e estreita. **Nao** foi um `p_sku_id` em `get_listings_dashboard`: aquela e a funcao que D-305 teve de mover para plpgsql com `force_custom_plan` porque o plano generico passava de 60 s. E nao foram duas idas somadas em JS -- o PostgREST nao tem relacao entre `listings` e `sku_listing_links` para embutir, e agregar duas listas na tela seria a terceira definicao da mesma palavra.
+
+**O numero que sobe precisa vir com a regua.** O painel e a aba dizem, em texto: conta como vinculado o anuncio que aponta para o SKU pela ultima sincronizacao **ou** que tem linha de vinculo. Sem a frase, quem viu 1 ontem e 2 hoje le defeito.
+
+---
+
+**2. A CONFIRMACAO EXISTE POR UM DEFEITO MEDIDO, NAO POR ESTETICA**
+
+`create_sku_listing_link` **nao confere se o anuncio existe**: `sku_listing_links.item_id` nao tem chave estrangeira, so o regex `^MLB[0-9]+$`. Hoje um MLB digitado errado e aceito em silencio e vira **vinculo morto** -- um SKU apontando para um anuncio que nao existe, e ninguem descobre ate procurar a venda que nao apareceu.
+
+Por isso a modal procura ANTES e so entao oferece gravar. O que ela pode afirmar, e o que nao pode:
+
+| | |
+|---|---|
+| a busca | `listings` sob RLS, por (conta, anuncio) -- o indice unico da tabela. Do navegador, como `use-sku-search.ts` ja faz com `skus` |
+| quando acha | mostra titulo, MLB, estado, estoque e preco, e o botao "Confirmar vinculacao" aparece |
+| quando NAO acha | **nao diz "este MLB nao existe"** -- nao sabemos. Pode ser MLB errado, conta nao conectada (o sync so varre `CONNECTED`), conta que a RLS esconde deste usuario, ou anuncio real ainda nao sincronizado (o catalogo roda de 6 em 6 h). A tela lista as quatro causas e recusa a gravacao |
+
+**Nao ha chamada ao Mercado Livre, e isso e decisao de arquitetura, nao limitacao de fatia:** `apps/web` nunca fala com o ML, nunca usa service role e nunca guarda segredo (ARCHITECTURE §101), e nao existe rota na `api` nem funcao no pacote que busque um item sob demanda. Buscar ao vivo seria rota nova + credencial + fila -- outra fatia, com outro risco.
+
+**A variacao nao e confirmada, e a tela diz isso.** `listings` e uma linha por (conta, anuncio) e o sync nao le `variations[]`; nao existe tabela de variacao nesta base. O vinculo criado aqui e sempre do ANUNCIO INTEIRO, e vincular variacao continua sendo trabalho da Central de Vinculacoes, que tem o campo.
+
+---
+
+**3. REMOVER: A MESMA RPC, E A FRASE QUE FALTAVA**
+
+`removeLink` e `retargetLink` existiam completas em `app/vinculacoes/actions.ts` com **zero chamadores em todo o repositorio** -- a interface so sabia CRIAR vinculo. A tela do SKU passou a ser o primeiro consumidor de `removeLink`.
+
+A confirmacao diz o que o dono pediu e o que o codigo garante: **nada acontece no Mercado Livre**. Sai a relacao entre o anuncio e o SKU dentro do sistema; o anuncio continua no ar, com o mesmo preco e o mesmo estoque. Num sistema que tambem republica anuncio, essa frase e a diferenca entre um clique tranquilo e um susto.
+
+O motivo nao e digitado. `remove_sku_listing_link` exige `p_reason` nao vazio e o texto fica no historico (`sku_listing_link_events.reason`); pedir uma frase a cada clique produziria "asdf" no registro de auditoria. Fica gravado "Removido no Dashboard do SKU {codigo}" -- de onde veio e sobre o que.
+
+**Trocar o SKU do vinculo NAO entrou**: `retargetLink` preserva o id do vinculo e com ele os ponteiros ja gravados em `order_items` (D-125), mas trocar exige escolher OUTRO SKU, e a tela com busca de SKU e Vinculacoes. Um segundo seletor de SKU dentro da tela de um SKU seria a confusao que a fatia veio evitar.
+
+---
+
+**4. O QUE A LINHA PODE OFERECER, E QUANDO NAO PODE NADA**
+
+`remove_sku_listing_link` age sobre UM `link_id`, e `listings` nao tem id de vinculo. A RPC devolve `links` (jsonb com os vinculos daquele par conta+anuncio), `vinculo_forma` e `apenas_cache` -- e a tela decide:
+
+| forma | o que a tela faz |
+|---|---|
+| anuncio inteiro | oferece Remover, alvo e esse vinculo |
+| uma variacao | oferece Remover daquela variacao |
+| varias variacoes, sem vinculo do anuncio inteiro | **nao escolhe por quem opera**: manda para Vinculacoes |
+| so o cache (`listings.sku_id` sem linha de vinculo) | **nao ha o que remover**, e a tela diz isso em vez de mostrar um botao que a RPC recusaria com "vinculo nao encontrado" |
+
+A ultima linha tem duas causas possiveis -- vinculo removido cujo sync (6 em 6 h) ainda nao reescreveu a projecao, ou remapeamento de republicacao, que copia o `sku_id` do anuncio pai. Por isso a coluna chama `apenas_cache` e nao "obsoleto": ela diz o FATO, nao a causa.
+
+---
+
+**5. AS DUAS TELAS SAO A MESMA FONTE, POR CONSTRUCAO**
+
+Nao ha caminho de escrita novo: a tela do SKU chama as MESMAS Server Actions de `/vinculacoes`, que chamam as MESMAS RPCs, que gravam nas MESMAS tabelas e no MESMO historico. O que muda e de onde se clica. E a leitura das duas telas usa a mesma regua de vinculado, a que D-313 acabou de padronizar em `get_link_integrity`.
+
+---
+
+**6. O QUE O PEDIDO PEDE E NAO TEM FONTE (registrado para nao voltar como esquecimento)**
+
+- **Shopee, e "plataforma" como dimensao.** Nao existe. D-037 restringe a V3 ao Mercado Livre, o esquema e ML cravado (`ml_accounts`, `item_id ~ '^MLB[0-9]+$'`), e a unica mencao a Shopee no repositorio e o filtro que a EXCLUI na importacao do UpSeller. O campo "Plataforma" da modal existe com um valor so, visivel e desabilitado: esconder faria parecer que a pergunta nao foi feita.
+- **Tipo de anuncio (Premium/Classico), catalogo/buy box, logistica e qualidade da publicacao.** Nenhuma coluna, e o sync nem pede os campos (`ITEM_ATTRIBUTES` traz id, title, status, price, currency_id, available_quantity, category_id).
+- **Substatus de pausa.** `paused` nao distingue "sem estoque" de "pausado pelo vendedor".
+- **Quem vinculou antes de 28/08/2026.** A auditoria de `sku_listing_link_events` comeca nessa data e nao houve backfill; os vinculos anteriores nao tem ator.
+
+---
+
+**Impacto:** `supabase/migrations/20260911190000_get_sku_listings.sql` (RPC nova), `packages/db/src/types.ts` (bloco escrito a mao, como o cabecalho do arquivo manda -- regenerar apaga os ~18 sitios de correcao manual, D-213), `apps/web/lib/sku-listings.{ts,test.ts}` (novos), `apps/web/app/skus/[skuId]/{page.tsx,vincular-anuncio.tsx,remover-vinculo.tsx}`, `apps/web/e2e/sku-dashboard.spec.ts`, `packages/db/src/rls.integration.test.ts`.
+
+**Verificacao:** `check` 29/29 (`--force`), build 8/8, integracao **663/663** em banco recriado (+5: as duas formas de vinculo, uma linha por par com duas variacoes, e os dois negativos -- outra organizacao e membro sem acesso AQUELA conta), e2e 7/7 em `sku-dashboard.spec.ts` (+1: o ciclo inteiro -- MLB inexistente recusado, MLB real confirmado, vinculado, removido), cinco guardas verdes.
+
+**Nota de convivencia, porque esta fatia foi feita com OUTRA sessao trabalhando no mesmo repositorio ao mesmo tempo:** o servidor da porta 3000 e um so, e o Playwright o reusa fora do CI -- sete casos meus falharam com "This page couldn't load" servidos por um build que nao era o meu. A saida foi cada sessao com a sua porta (`next start -p 3100` + `E2E_BASE_URL`). O banco local tambem e um so, e a suite e stateful: `db reset` virou acao combinada entre as duas sessoes, nunca unilateral.
+
 ## Como adicionar nova decisao
 
 Registrar:

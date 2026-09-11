@@ -4849,12 +4849,16 @@ export type Database = {
           p_limit?: number
           p_missing_brand?: boolean
           p_offset?: number
+          p_order?: string
           p_organization_id: string
           p_search?: string
           p_signal?: string
         }
         Returns: {
           brand: string
+          // D-315: as duas datas saem para a tela, que ordena por elas.
+          created_at: string
+          updated_at: string
           decision_diverges_from_signature: boolean
           has_sentinel_signature: boolean
           sku: string
@@ -4905,6 +4909,23 @@ export type Database = {
       get_sku_decision_snapshot: {
         Args: { p_as_of: string; p_organization_id: string; p_sku_id: string }
         Returns: Json
+      }
+      get_sku_listings: {
+        Args: { p_organization_id: string; p_sku_id: string }
+        Returns: {
+          account_label: string
+          apenas_cache: boolean
+          available_quantity: number
+          item_id: string
+          links: Json
+          listing_id: string
+          ml_account_id: string
+          price: number
+          status: string
+          synced_at: string
+          title: string
+          vinculo_forma: string
+        }[]
       }
       get_sku_sales_baseline: {
         Args: { p_as_of: string; p_organization_id: string; p_sku_id?: string }

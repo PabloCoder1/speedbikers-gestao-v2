@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **310** (D-001 a D-314).
+Decisões registradas: **311** (D-001 a D-316).
 
 ## Por domínio
 
@@ -158,7 +158,7 @@ Decisões registradas: **310** (D-001 a D-314).
 - **D-303** — O link que apontava para a maquina de quem clicava, e a saida para quem perdeu o dele
 - **D-313** — A tela de vinculacao tinha parado de vincular em D-284, e nenhum teste viu -- mais as duas leituras por conta que D-259 perdeu
 
-### mercado-livre (46)
+### mercado-livre (47)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -206,6 +206,7 @@ Decisões registradas: **310** (D-001 a D-314).
 - **D-305** — o timeout de /anuncios era o PLANO, e as tres hipoteses obvias estavam erradas
 - **D-308** — Os dois filtros que faltavam em /anuncios: periodo e "com/sem venda"
 - **D-310** — A10: o cabecalho do anuncio ganha os dois fatos que devia desde D-168, e o caminho ate a republicacao
+- **D-316** — Gerir o vinculo de anuncio DENTRO do SKU, com a regua canonica e com confirmacao antes de gravar
 
 ### outros (55)
 

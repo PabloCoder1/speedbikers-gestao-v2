@@ -45,18 +45,36 @@ test("dashboard de SKU mostra saldo local do seed", async ({ page }) => {
   // lateral também tem um link "Anúncios".
   await page.getByRole("navigation", { name: "Abas do SKU" }).getByRole("link", { name: "Anúncios" }).click();
 
-  // O seed passou a criar anúncios (D-242), então esta aba deixou de provar só
-  // o estado vazio e passa a provar o VÍNCULO: o único anúncio com `sku_id`
-  // deste SKU aparece, e os outros três — inclusive o de vínculo por variação,
-  // que não preenche `listings.sku_id` — não.
-  const vinculado = E2E_LISTINGS.filter((anuncio) => anuncio.vinculo === "sku");
+  /*
+    A ABA PROVA O VÍNCULO — E A DEFINIÇÃO MUDOU EM D-316.
 
-  expect(vinculado).toHaveLength(1);
-  await expect(page.getByText(vinculado[0]?.itemId ?? "")).toBeVisible();
+    Este caso AFIRMAVA a perda: dizia que o anúncio vinculado por VARIAÇÃO não
+    aparecia, porque a tela filtrava por `listings.sku_id` e essa coluna é nula
+    para ele. Era a definição mais estreita de "vinculado" do repositório, e
+    D-122 mediu o tamanho do buraco: 1.013 de 1.917 anúncios (52,8%).
 
-  for (const outro of E2E_LISTINGS.filter((anuncio) => anuncio.vinculo !== "sku")) {
+    Agora a aba usa a régua canônica — vínculo direto OU linha em
+    `sku_listing_links` —, a mesma de `/produtos` e de `/vinculacoes`. Os dois
+    do seed aparecem; os que não têm vínculo nenhum continuam fora.
+  */
+  const vinculados = E2E_LISTINGS.filter((anuncio) => anuncio.vinculo !== "nenhum");
+
+  expect(vinculados.length).toBeGreaterThan(1);
+
+  for (const anuncio of vinculados) {
+    await expect(page.getByText(anuncio.itemId)).toBeVisible();
+  }
+
+  for (const outro of E2E_LISTINGS.filter((anuncio) => anuncio.vinculo === "nenhum")) {
     await expect(page.getByText(outro.itemId)).toHaveCount(0);
   }
+
+  // E a coluna Estoque, que existia no esquema e não era lida (D-316).
+  const comEstoque = vinculados.find((anuncio) => anuncio.available > 0);
+
+  await expect(page.locator("tbody tr", { hasText: comEstoque?.itemId ?? "" })).toContainText(
+    String(comEstoque?.available ?? ""),
+  );
 });
 
 /**
@@ -217,4 +235,69 @@ test("dashboard de SKU: a Cobertura conta o APROVEITÁVEL, e é o mesmo número 
   // A ressalva carrega a CONTA — é por ela que alguém percebe uma divergência
   // futura sem precisar abrir duas telas.
   await expect(cartao.locator(".sb-stat-note")).toContainText(`aproveitável ${String(aproveitavel)}`);
+});
+
+
+/**
+ * GERIR O VÍNCULO DE DENTRO DO SKU (D-316).
+ *
+ * O pedido do dono: adicionar por MLB com confirmação, remover com
+ * confirmação, e as duas telas trabalhando sobre a MESMA fonte. Este caso
+ * percorre o ciclo inteiro numa corrida só — vincular, ver aparecer, remover,
+ * ver sumir —, porque as duas metades separadas passariam mesmo se a escrita
+ * fosse para um lugar que a leitura não lê.
+ */
+test("Dashboard do SKU: vincular um anúncio por MLB e remover o vínculo, com confirmação", async ({ page }) => {
+  const seed = await readSeedOutput();
+  // O anúncio sem vínculo nenhum do seed — é o que dá para vincular sem
+  // desfazer nada.
+  const alvo = E2E_LISTINGS.find((anuncio) => anuncio.vinculo === "nenhum");
+
+  await login(page, `/skus/${seed.skuId}?aba=anuncios`);
+
+  await expect(page.getByRole("region", { name: "Anúncios vinculados" })).toBeVisible();
+  await expect(page.getByText(alvo?.itemId ?? "")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "+ Vincular anúncio" }).click();
+
+  const modal = page.getByRole("dialog", { name: "Vincular anúncio" });
+
+  await expect(modal).toBeVisible();
+
+  /*
+    A CONFIRMAÇÃO É O PONTO DA FATIA: `create_sku_listing_link` não confere se
+    o anúncio existe (não há FK, só o regex), então um MLB errado viraria
+    vínculo morto em silêncio. A tela procura ANTES e, quando não acha, recusa
+    — e não afirma que o anúncio não existe, porque não sabemos.
+  */
+  await modal.getByLabel("MLB / id do anúncio").fill("MLB999999999");
+  await modal.getByRole("button", { name: "Procurar anúncio" }).click();
+
+  await expect(modal.getByText("Não encontramos este anúncio")).toBeVisible();
+  await expect(modal.getByRole("button", { name: "Confirmar vinculação" })).toHaveCount(0);
+
+  // Agora o MLB de verdade: a tela mostra o que encontrou antes de gravar.
+  await modal.getByLabel("MLB / id do anúncio").fill(alvo?.itemId ?? "");
+  await modal.getByRole("button", { name: "Procurar anúncio" }).click();
+
+  await expect(modal.getByText("Anúncio encontrado")).toBeVisible();
+  await expect(modal).toContainText(alvo?.title ?? "");
+
+  await modal.getByRole("button", { name: "Confirmar vinculação" }).click();
+
+  const linha = page.locator("tbody tr", { hasText: alvo?.itemId ?? "" });
+
+  await expect(linha).toBeVisible();
+
+  // E a remoção, com a frase que o dono pediu: nada acontece no Mercado Livre.
+  await linha.getByRole("button", { name: "Remover" }).click();
+
+  const confirmacao = page.getByRole("dialog", { name: "Remover vinculação" });
+
+  await expect(confirmacao).toContainText("não");
+  await expect(confirmacao).toContainText("Mercado Livre");
+
+  await confirmacao.getByRole("button", { name: "Remover vinculação" }).click();
+
+  await expect(page.locator("tbody tr", { hasText: alvo?.itemId ?? "" })).toHaveCount(0);
 });
