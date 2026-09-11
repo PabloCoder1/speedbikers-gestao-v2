@@ -613,7 +613,12 @@ D3 trocou a moldura. O agrupamento é o do Figma (`VISÃO GERAL | OPERAÇÃO |
 INTELIGÊNCIA | ATENDIMENTO | ADMINISTRAÇÃO`), com duas regras:
 
 - **nenhuma tela real ficou de fora por não estar no Figma** — Reposição,
-  Importações, Copiloto e Sugestões entraram no grupo que lhes cabe;
+  Importações, Copiloto e Sugestões entraram no grupo que lhes cabe.
+  **Importações mudou de grupo em D-312**, por decisão do dono do produto:
+  saiu de OPERAÇÃO para ADMINISTRAÇÃO, ao lado de Sincronização (as duas são as
+  portas de entrada de dado), e é o **primeiro item do menu recortado por
+  papel** — só ADMIN o vê. O recorte do menu é cortesia; as três telas recusam
+  no servidor;
 - **nenhuma tela do Figma que não existe foi inventada** — Margem, Insights,
   Design System e as cinco de Atendimento seguem como diferenças intencionais.
 

@@ -160,7 +160,7 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
           </span>
         </Link>
 
-        <SidebarNav contagens={{ "/atendimento": atendimentosAbertos }} />
+        <SidebarNav contagens={{ "/atendimento": atendimentosAbertos }} papel={role} />
 
         <div className="sb-sidebar-bottom">
           <Link href="/contas" className="sb-account">

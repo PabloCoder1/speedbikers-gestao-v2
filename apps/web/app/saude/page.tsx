@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { AcessoRestrito } from "../../components/acesso-restrito";
 import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
@@ -82,12 +83,7 @@ export default async function SaudePage(): Promise<ReactNode> {
   // A RPC devolve zero linhas para quem não é ADMIN (a autorização é dela,
   // não desta tela).
   if (healthResult.error === null && rows.length === 0) {
-    return (
-      <Shell>
-        <h1 style={{ margin: "0 0 var(--sb-space-3)", fontSize: "1.375rem" }}>Saúde do Sistema</h1>
-        <p style={{ color: "var(--sb-text-soft)" }}>Esta tela é restrita a ADMIN.</p>
-      </Shell>
-    );
+    return <AcessoRestrito titulo="Saúde do Sistema" />;
   }
 
   const first = rows[0];

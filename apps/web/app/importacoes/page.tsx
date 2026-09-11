@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { AcessoRestrito } from "../../components/acesso-restrito";
 import { FilterMenu } from "../../components/filter-menu";
 import { FilterPill } from "../../components/filter-pill";
 import { PageTitle } from "../../components/page-title";
@@ -19,6 +20,7 @@ import {
   summarizeBatchWindow,
 } from "../../lib/import-filters";
 import { createClient } from "../../lib/supabase/server";
+import { currentMembership } from "../../lib/membership";
 
 export const metadata = { title: "Importações — Speed Bikers Gestão" };
 
@@ -58,9 +60,29 @@ export default async function ImportacoesPage({
 
   const from = (filters.page - 1) * BATCH_PAGE_SIZE;
 
-  const { data, error, count } = await consulta
-    .order("created_at", { ascending: false })
-    .range(from, from + BATCH_PAGE_SIZE - 1);
+  /*
+    O papel entra no MESMO `Promise.all` da listagem: em fila seriam duas
+    latências onde uma resolve, e o guarda `check:waterfalls` reprova a fila.
+  */
+  const [membership, { data, error, count }] = await Promise.all([
+    currentMembership(supabase),
+    consulta.order("created_at", { ascending: false }).range(from, from + BATCH_PAGE_SIZE - 1),
+  ]);
+
+/*
+  RESTRITA A ADMIN (D-312). Importar uma planilha do UpSeller reescreve o
+  catálogo, e o dono do produto decidiu que a porta é de quem administra a
+  base — a tela saiu de "Operação" e foi para "Administração" no menu.
+
+  A recusa é no SERVIDOR, e não só no menu escondido: quem tem o endereço
+  chega aqui (D-295 §3). O que esta linha AINDA não é: a última defesa. As
+  policies de `erp_import_batches`/`erp_import_rows` e as rotas da api
+  continuam autorizando ADMIN **e GESTOR** — fechar isso é migration e está
+  registrado como pendência.
+*/
+  if (membership.role !== "ADMIN") {
+    return <AcessoRestrito titulo="Importações" />;
+  }
 
   const rows = data ?? [];
   const janela = summarizeBatchWindow(filters.page, count ?? 0, rows.length);
@@ -68,7 +90,7 @@ export default async function ImportacoesPage({
   return (
     <Shell>
       <PageTitle
-        eyebrow="ESTOQUE / OPERAÇÃO"
+        eyebrow="ADMINISTRAÇÃO / DADOS E PROCESSAMENTOS"
         title="Importações"
         subtitle="Planilhas do UpSeller: leitura, conferência e aplicação no catálogo."
         aside={

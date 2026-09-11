@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
-import { factValue, login } from "./helpers.js";
+import { E2E_GESTOR_EMAIL, E2E_GESTOR_PASSWORD } from "./constants.js";
+import { factValue, login, loginAs } from "./helpers.js";
 import { readSeedOutput } from "./seed-output.js";
 
 /**
@@ -83,4 +84,49 @@ test("o filtro de linha recorta, e a janela diz a ordem", async ({ page }) => {
   await expect(painel).toContainText("SKU sem vinculo na planilha");
   // A linha OK saiu do recorte, e com ela o resumo do payload dela.
   await expect(painel).not.toContainText("MLBU4818089142");
+});
+
+
+/**
+ * IMPORTAÇÕES É DE ADMIN, E MUDOU DE GRUPO (D-312).
+ *
+ * Importar uma planilha do UpSeller reescreve o catálogo: a tela saiu de
+ * "Operação" — onde ficava entre Compras e Fornecedores — e foi para
+ * "Administração", ao lado de Sincronização, que é a outra porta de entrada de
+ * dado.
+ *
+ * O caso guarda as DUAS metades na mesma corrida, porque separá-las deixaria
+ * passar tanto o menu que esconde uma tela aberta quanto a tela que recusa
+ * enquanto o menu continua oferecendo.
+ */
+test("Importações mora em Administração, e o ADMIN a vê lá", async ({ page }) => {
+  await login(page, "/importacoes");
+
+  const administracao = page.locator("details.sb-nav-group").filter({ hasText: "Administração" });
+  const operacao = page.locator("details.sb-nav-group").filter({ hasText: "Operação" });
+
+  await expect(administracao.getByRole("link", { name: "Importações" })).toBeVisible();
+  await expect(operacao.getByRole("link", { name: "Importações" })).toHaveCount(0);
+
+  // E a sobrancelha da tela diz o mesmo grupo do menu.
+  await expect(page.getByText("ADMINISTRAÇÃO / DADOS E PROCESSAMENTOS")).toBeVisible();
+});
+
+test("quem não é ADMIN não vê Importações no menu — e a tela recusa no servidor", async ({ page }) => {
+  await loginAs(page, E2E_GESTOR_EMAIL, E2E_GESTOR_PASSWORD, "/");
+
+  // Âncora positiva: a sessão do GESTOR está viva e o menu carregou (a lição
+  // de D-276 §5 — o que sumiu é o item, não a aplicação).
+  await expect(page.locator("details.sb-nav-group").filter({ hasText: "Administração" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Importações" })).toHaveCount(0);
+
+  /*
+    ESCONDER É CORTESIA (D-295 §3): quem tem o endereço chega. As três telas
+    respondem a mesma coisa, e é o servidor que responde.
+  */
+  for (const rota of ["/importacoes", "/importacoes/nova"]) {
+    await page.goto(rota);
+    await expect(page.getByText("Esta tela é restrita a ADMIN.")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Histórico de importações" })).toHaveCount(0);
+  }
 });

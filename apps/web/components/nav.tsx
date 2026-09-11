@@ -16,8 +16,9 @@ import type { ReactNode } from "react";
  *
  * **Por que é client component**, sendo que todo o resto do Shell é servidor:
  * "destacar seção atual" exige a rota atual, e o App Router não a entrega a um
- * Server Component. `usePathname` é a única leitura daqui — nenhum dado,
- * nenhuma consulta, nenhuma sessão. A lista é estática e pública.
+ * Server Component. `usePathname` é a única leitura daqui — nenhum dado e
+ * nenhuma consulta: a lista é estática, e o PAPEL que recorta um item dela
+ * chega como prop do Shell, que já o lê para o bloco de perfil (D-312).
  *
  * **Destaque não é só cor** (mesma doutrina de `components/filter-pill.tsx`):
  * o item ativo leva `aria-current="page"`, então quem navega por leitor de tela
@@ -41,6 +42,15 @@ interface NavItem {
   label: string;
   href: string;
   icon: string;
+  /**
+   * Item que só aparece para ADMIN.
+   *
+   * **Esconder é cortesia, não defesa** (D-295 §3): quem sabe o endereço
+   * continua chegando nele, e é por isso que cada tela marcada assim recusa no
+   * SERVIDOR — e é por isso que esta prop não vale como autorização de nada.
+   * Ela existe para o menu não oferecer o que a pessoa não pode abrir.
+   */
+  somenteAdmin?: true;
 }
 
 interface NavGroup {
@@ -71,7 +81,6 @@ const NAV_GROUPS: readonly NavGroup[] = [
       { label: "NF-e / Entradas", href: "/notas-fiscais", icon: "▤" },
       { label: "Compras", href: "/compras", icon: "⊞" },
       { label: "Fornecedores", href: "/fornecedores", icon: "⊟" },
-      { label: "Importações", href: "/importacoes", icon: "⇪" },
     ],
   },
   {
@@ -98,6 +107,14 @@ const NAV_GROUPS: readonly NavGroup[] = [
       { label: "Contas Mercado Livre", href: "/contas", icon: "□" },
       { label: "Integrações", href: "/integracoes", icon: "⧉" },
       { label: "Sincronização", href: "/sincronizacao", icon: "⟲" },
+      /*
+        IMPORTAÇÕES SAIU DE "OPERAÇÃO" (D-312). Ela ficava ao lado de Compras e
+        Fornecedores, entre telas que todo mundo usa todo dia; mas importar uma
+        planilha do UpSeller **reescreve o catálogo inteiro**, e quem faz isso é
+        quem administra a base — o vizinho certo é Sincronização, que é a outra
+        porta de entrada de dado.
+      */
+      { label: "Importações", href: "/importacoes", icon: "⇪", somenteAdmin: true },
       { label: "Saúde do Sistema", href: "/saude", icon: "◇" },
       { label: "Configurações", href: "/configuracoes", icon: "⚙" },
       { label: "Sugestões", href: "/sugestoes", icon: "□" },
@@ -122,6 +139,7 @@ function estaAtivo(href: string, pathname: string, todos: readonly string[]): bo
 
 export function SidebarNav({
   contagens,
+  papel,
 }: {
   /**
    * Contadores por rota, do frame do Figma (`.nav-item em`, o "3" na Caixa de
@@ -130,13 +148,27 @@ export function SidebarNav({
    * projeto persegue. Ausente ou nulo simplesmente não desenha o emblema.
    */
   contagens?: Readonly<Record<string, number | null>>;
+  /**
+   * O papel de quem está logado, lido pelo Shell. Ausente ou desconhecido
+   * recorta como NÃO-ADMIN: falha de leitura não pode abrir menu (D-067).
+   */
+  papel?: string | null;
 }): ReactNode {
   const pathname = usePathname();
-  const todos = NAV_GROUPS.flatMap((g) => g.items.map((i) => i.href));
+  const ehAdmin = papel === "ADMIN";
+
+  const grupos = NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => item.somenteAdmin !== true || ehAdmin),
+  })).filter((group) => group.items.length > 0);
+
+  // O conjunto de rotas que decide o item ativo é o VISÍVEL: uma rota
+  // escondida não pode reivindicar o destaque de um prefixo que ela não mostra.
+  const todos = grupos.flatMap((g) => g.items.map((i) => i.href));
 
   return (
     <nav aria-label="Navegação principal" className="sb-nav">
-      {NAV_GROUPS.map((group) => (
+      {grupos.map((group) => (
         /*
          * Os cinco grupos nascem ABERTOS, como no Figma. A primeira versão
          * abria só o que continha a rota atual, e a tela mostrou o defeito:

@@ -8884,6 +8884,59 @@ Com o subtitulo mais longo, `.sb-panel-head` -- que e `flex-wrap: wrap` -- quebr
 
 **Verificacao:** `check` 29/29 (`--force`, com os 7 casos novos de `period.test.ts`), build 8/8, e2e **127/127** em banco recriado (+2), integracao 658/658, cinco guardas verdes. A Home foi renderizada a 1440px em tres estados do painel: padrao (15 dias), `?serie=7` e com a ressalva de serie parcial visivel.
 
+## D-312 - Importacoes e de ADMIN, e mudou de grupo -- com a recusa no servidor, nao so no menu
+
+**Contexto:** pedido do dono do produto: *"Importacao voce pode deixar visivel apenas pra quem e administrador e pode deixar ela dentro de categoria administracao, onde ficam as outras telas"*.
+
+---
+
+**1. O QUE MUDOU**
+
+| | antes | agora |
+|---|---|---|
+| grupo no menu | OPERACAO, entre Compras e Fornecedores | **ADMINISTRACAO**, logo depois de Sincronizacao |
+| quem ve o item | todo mundo | **so ADMIN** |
+| as tres telas (`/importacoes`, `/importacoes/nova`, `/importacoes/[id]`) | qualquer membro com papel que a RLS aceitasse | recusam no SERVIDOR quem nao e ADMIN |
+| sobrancelha | `ESTOQUE / OPERACAO` | `ADMINISTRACAO / DADOS E PROCESSAMENTOS` -- a mesma de `/sincronizacao` |
+
+O vizinho certo e Sincronizacao: importar uma planilha do UpSeller **reescreve o catalogo**, e as duas sao as portas de entrada de dado da casa. Ao lado de Compras e Fornecedores, a tela ficava entre coisas que se usam todo dia.
+
+---
+
+**2. ESCONDER E CORTESIA, E ESTA FATIA NAO FECHA A PORTA INTEIRA**
+
+A regra de D-295 §3 vale aqui em letra: **o botao escondido nao e defesa**. Por isso a recusa nao mora so no menu -- as tres telas conferem o papel no servidor e respondem "Esta tela e restrita a ADMIN".
+
+**E ainda assim, o que autoriza de verdade continua aceitando GESTOR:**
+
+| camada | quem autoriza hoje |
+|---|---|
+| `erp_import_batches` / `erp_import_rows` (RLS `select`) | `has_org_role(..., ARRAY['ADMIN','GESTOR'])` |
+| `POST /v1/erp-imports` (o envio da planilha) | ADMIN **e** GESTOR |
+| `POST /v1/erp-imports/:id/apply` (a aplicacao no catalogo) | ADMIN **e** GESTOR |
+
+Ou seja: um GESTOR com o endereco ou com um cliente REST continua lendo os lotes e continua conseguindo importar. **Fechar isso e migration + api**, e ficou registrado como pendencia para decisao -- nao foi feito em silencio junto com uma mudanca de menu, porque narrow de policy muda quem trabalha, nao so quem enxerga.
+
+---
+
+**3. A PECA QUE NASCEU, E A COPIA QUE ELA ABSORVEU**
+
+A recusa de tela inteira existia inline em `/saude` desde D-176. Com tres telas novas precisando da mesma resposta, a quarta copia seria a que sairia de sincronia (D-246 mediu isso cinco vezes com mapas de tom). Nasceu `components/acesso-restrito.tsx`, e `/saude` passou a usa-la -- mesmo texto, mesmo markup, e o caso de e2e de la continuou verde sem tocar em uma linha.
+
+---
+
+**4. A ARMADILHA QUE ESTA FATIA DESCOBRIU: a suite de integracao NAO e idempotente**
+
+Rodei `test:integration` duas vezes no mesmo banco e a segunda reprovou **15 casos** -- incluindo tres de isolamento entre organizacoes ("usuario de outra organizacao nao enxerga nenhum", esperava 0 e viu 1). Assusta e nao e defeito: os fixtures da propria suite ficam no banco, e a segunda rodada os encontra como se fossem dado de producao.
+
+`db reset` + UMA rodada: **658/658**. Ficou registrado em `docs/TESTING.md` junto das outras armadilhas, porque o vermelho que ela produz aponta para o lugar errado -- parece falha de RLS.
+
+---
+
+**Impacto:** `apps/web/components/{nav,shell,acesso-restrito}.tsx`, `apps/web/app/importacoes/{page,nova/page,[id]/page}.tsx`, `apps/web/app/saude/page.tsx`, `apps/web/e2e/importacoes.spec.ts` (+2), `docs/{DESIGN_IMPLEMENTATION,TESTING,HANDOFF}.md`. **Sem migration** -- e e justamente por isso que a pendencia acima existe.
+
+**Verificacao:** `check` 29/29 (`--force`), build 8/8, e2e **129/129** em banco recriado (+2), integracao 658/658 (em banco recriado), cinco guardas verdes -- inclusive `check:waterfalls`, porque a leitura de papel entrou nos `Promise.all` que as telas ja faziam. Renderizado a 1440px nos dois papeis: o ADMIN com o item em Administracao e a sobrancelha nova, e o GESTOR com o menu sem o item e a recusa na tela.
+
 ## Como adicionar nova decisao
 
 Registrar:

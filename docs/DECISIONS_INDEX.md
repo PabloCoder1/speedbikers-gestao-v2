@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **307** (D-001 a D-311).
+Decisões registradas: **308** (D-001 a D-312).
 
 ## Por domínio
 
@@ -205,7 +205,7 @@ Decisões registradas: **307** (D-001 a D-311).
 - **D-308** — Os dois filtros que faltavam em /anuncios: periodo e "com/sem venda"
 - **D-310** — A10: o cabecalho do anuncio ganha os dois fatos que devia desde D-168, e o caminho ate a republicacao
 
-### outros (54)
+### outros (55)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -261,6 +261,7 @@ Decisões registradas: **307** (D-001 a D-311).
 - **D-297** — /usuarios refeita contra o desenho: a tabela volta a ser tabela, e o controle vai para a gaveta
 - **D-299** — A8: `/contas` contra o frame, e o token que vive SEIS HORAS
 - **D-306** — a generalizacao de D-305 estava errada, e a medicao de duas funcoes desfez
+- **D-312** — Importacoes e de ADMIN, e mudou de grupo -- com a recusa no servidor, nao so no menu
 
 ### processo/docs (1)
 

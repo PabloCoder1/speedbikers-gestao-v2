@@ -8,6 +8,7 @@ import { ObjectHeader, type ObjectBadge } from "../../../components/object-heade
 import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
 import { ProcessSteps } from "../../../components/process-steps";
+import { AcessoRestrito } from "../../../components/acesso-restrito";
 import { Shell } from "../../../components/shell";
 import { StatusPill } from "../../../components/status-pill";
 import { TOM, tomDeStatus } from "../../../components/tone";
@@ -28,6 +29,7 @@ import {
   statusTone,
 } from "../../../lib/labels";
 import { createClient } from "../../../lib/supabase/server";
+import { currentMembership } from "../../../lib/membership";
 import { ConfirmApplyForm } from "./confirm-apply-form";
 import { summarize } from "./summarize";
 
@@ -82,7 +84,8 @@ export default async function ConferenciaPage({
     rowsQuery = rowsQuery.eq("status", filters.status);
   }
 
-  const [batch, rows] = await Promise.all([
+  const [membership, batch, rows] = await Promise.all([
+    currentMembership(supabase),
     supabase
       .from("erp_import_batches")
       .select(
@@ -92,6 +95,21 @@ export default async function ConferenciaPage({
       .maybeSingle(),
     rowsQuery.order("row_number").range(from, from + ROW_PAGE_SIZE - 1),
   ]);
+
+/*
+  RESTRITA A ADMIN (D-312). Importar uma planilha do UpSeller reescreve o
+  catálogo, e o dono do produto decidiu que a porta é de quem administra a
+  base — a tela saiu de "Operação" e foi para "Administração" no menu.
+
+  A recusa é no SERVIDOR, e não só no menu escondido: quem tem o endereço
+  chega aqui (D-295 §3). O que esta linha AINDA não é: a última defesa. As
+  policies de `erp_import_batches`/`erp_import_rows` e as rotas da api
+  continuam autorizando ADMIN **e GESTOR** — fechar isso é migration e está
+  registrado como pendência.
+*/
+  if (membership.role !== "ADMIN") {
+    return <AcessoRestrito titulo="Importações" />;
+  }
 
   // `null` aqui pode ser "não existe" ou "a policy escondeu". A tela responde
   // igual nos dois casos de propósito: confirmar a existência de um lote de
@@ -145,7 +163,7 @@ export default async function ConferenciaPage({
       {working && <AutoRefresh />}
 
       <PageTitle
-        eyebrow="ESTOQUE / OPERAÇÃO"
+        eyebrow="ADMINISTRAÇÃO / DADOS E PROCESSAMENTOS"
         title="Importações"
         subtitle={<Link href="/importacoes">← Voltar ao histórico de importações</Link>}
         compacto
