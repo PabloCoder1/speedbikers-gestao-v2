@@ -64,6 +64,38 @@ export function buildFilterHref(
   return qs === "" ? basePath : `${basePath}?${qs}`;
 }
 
+/**
+ * Os tamanhos de página que as telas oferecem — a lista do UpSeller (D-315).
+ *
+ * **É mecânica, não vocabulário**, e por isso mora aqui: "20, 50, 100 ou 300
+ * linhas" quer dizer a mesma coisa em `/produtos`, `/anuncios` ou `/estoque`.
+ * O que cada tela decide é o PADRÃO dela, que continua sendo dela.
+ *
+ * O teto de 300 existe: a lista é paginada no banco, e um `limit` aberto pela
+ * URL devolveria o catálogo inteiro numa resposta só.
+ */
+export const PAGE_SIZES = [20, 50, 100, 300] as const;
+
+export type PageSize = (typeof PAGE_SIZES)[number];
+
+/**
+ * Resolve contra a lista FECHADA e cai no padrão da tela em silêncio — a URL é
+ * entrada de terceiro, e "300000" não pode virar `limit`.
+ */
+export function resolvePageSize(raw: unknown, padrao: PageSize): PageSize {
+  if (typeof raw !== "string") return padrao;
+
+  /*
+    `Number`, e não `Number.parseInt`: o `parseInt` lê "50abc" como 50, e aqui
+    não há motivo para adivinhar. `resolvePageParam` é leniente de propósito
+    (uma página fora do fim ainda é uma pergunta razoável); um TAMANHO é uma
+    escolha de menu, e o que não é exatamente um dos quatro valores é ruído.
+  */
+  const parsed = Number(raw);
+
+  return (PAGE_SIZES as readonly number[]).includes(parsed) ? (parsed as PageSize) : padrao;
+}
+
 export interface PagedWindow {
   label: string;
   totalPages: number;

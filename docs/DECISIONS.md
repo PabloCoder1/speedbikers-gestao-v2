@@ -9087,6 +9087,75 @@ Usar o Full que o cartao vizinho ja imprime mantem a tela coerente consigo mesma
 
 **Verificacao:** `check` 29/29 (`--force`, com 5 casos novos no dominio e 7 no web), build 8/8, integracao 658/658 em banco recriado, e2e **132/132** -- a suite inclui as fatias em voo de outra sessao que trabalha no mesmo repo; desta fatia sao 1 caso novo e as assercoes acrescentadas ao caso da gaveta. Cinco guardas verdes. Renderizado a 1440px: o cartao mostra `318,0 dias · aproveitavel 53 ÷ 0,17/dia`.
 
+## D-315 - `/produtos` ganha as duas opcoes do UpSeller: quantos por pagina e em que ordem -- e a ordem obrigou uma migration
+
+**Contexto:** pedido do dono do produto, com o print do UpSeller ao lado: *"aqui eu quero que voce coloque as mesmas opcoes q o upseller da, diminua tambem a quantidade de produtos por tela, para ver se isso deixa mais rapido o site, 50 produtos por pagina, porem uma opcao de aumentar a quantidade 20-50-100-300 opcao de ordenar e etc.."*.
+
+A tela do print e a lista de produtos do ERP que a V3 substitui; a equivalente aqui e `/produtos`, a Curadoria -- e era a que estava em **100 por pagina**, o que explica o "diminua".
+
+---
+
+**1. O QUE ENTROU, E O QUE JA EXISTIA SEM CONTROLE**
+
+| opcao | antes | agora |
+|---|---|---|
+| quantos por pagina | 100, fixo no codigo | menu **20 / 50 / 100 / 300**, padrao **50** |
+| ordem | uma so, implicita no SQL | menu: **Fila de curadoria** (padrao), **Atualizados primeiro**, **Criados primeiro** |
+| onde se esta no conjunto | so "Anterior / Proxima" | **"Pagina X de Y"** ao lado -- o `1/65` do print |
+| a data | nao aparecia | coluna **Criado/Atualizado**, a do print |
+
+**A ordem NAO substituiu a fila de curadoria, e isso e a decisao.** A ordem antiga -- divergente primeiro, depois quem tem assinatura de sentinela -- e o que faz a tela ser uma FILA DE TRABALHO: ela poe na frente o que precisa de decisao humana (D-127/D-133). Troca-la pelo padrao do UpSeller teria dado a opcao pedida e tirado o proposito da tela. Ela continua sendo o padrao e ganhou nome proprio no menu; as datas sao o que o UpSeller oferece, e servem para achar "o que eu mexi agora".
+
+---
+
+**2. POR QUE A ORDEM VIROU MIGRATION, E NAO `rows.sort()`**
+
+A lista e PAGINADA no banco. Ordenar o array que chegou ordenaria **a pagina**, nao o conjunto: com 50 de 3.242, "atualizados primeiro" mostraria os mais recentes DENTRE os 50 que ja vieram pela outra ordem. E o mesmo motivo pelo qual `total_count` sai de `count(*) over ()` desde D-138.
+
+Entao `get_sku_curation` ganhou `p_order` no FIM da assinatura (D-242: quem nao passa continua igual, e a suite de integracao, que chama por POSICAO, nao se desloca) e passou a devolver `created_at`/`updated_at`.
+
+**O DESEMPATE ESTAVEL E A PARTE QUE NAO SE VE.** Toda ordem termina em `f.sku`. Sem isso, `updated_at` repetido -- e ele repete com facilidade, porque **uma importacao do ERP grava o mesmo instante em centenas de SKUs** -- deixaria o `ORDER BY ... OFFSET` livre para devolver a mesma linha em duas paginas e nunca devolver uma terceira. O operador veria um SKU duas vezes e outro nenhuma, sem nada na tela denunciando.
+
+Medido no local, como usuario AUTENTICADO (a guarda `check_sku_curation_writer` le `auth.uid()`, e medir como `postgres` so devolve "sem permissao"):
+
+- `curadoria` -> a ordem de sempre;
+- `atualizado` -> ordem diferente da anterior, e correta;
+- `criado` -> os dois SKUs no mesmo instante, desempatados por `sku` -- exatamente o caso que o desempate existe para cobrir;
+- `'xpto'` -> cai em `curadoria`, nao numa ordem vazia;
+- a chamada POSICIONAL antiga, sem o argumento novo, continua valendo.
+
+---
+
+**3. O VOCABULARIO SAIU DE DENTRO DA TELA (D-141, com sete anos de atraso)**
+
+`page.tsx` tinha `buildHref` inline com cinco dimensoes e nenhum teste; com tamanho e ordem seriam sete. Nasceu `lib/curation-filters.ts`, como `/vinculacoes` e as outras seis fizeram em D-141: a mecanica compartilhada (href, pagina, janela) fica em `lib/filters.ts`, o vocabulario desta tela fica no modulo dela.
+
+**E o teste pegou um defeito no primeiro run.** `buildFilterHref` escreve `?pagina=`; `/produtos` era a UNICA tela que lia `?page=`. A escrita unificou no nome da casa e a **leitura aceita os dois** -- link salvo e aba aberta de ontem continuam caindo na pagina certa. Sem o teste, a paginacao teria travado na primeira pagina em silencio.
+
+`resolvePageSize` entrou em `lib/filters.ts` porque "20, 50, 100 ou 300 linhas" quer dizer a mesma coisa em qualquer tela; o PADRAO continua sendo de cada uma. Ele e estrito de proposito (`Number`, nao `parseInt`): o valor vira `limit` de RPC, e `?tamanho=300000` cai no padrao em vez de pedir o catalogo inteiro numa resposta so.
+
+---
+
+**4. A COLUNA NOVA CABE, MAS A TABELA JA NAO CABIA**
+
+Medido a 1440px, antes desta fatia: **1.124px de conteudo numa caixa de 1.116px**. A tabela ja rolava na horizontal com nove colunas. A decima levou para 1.220px.
+
+O que deu para fazer sem decidir pelo dono do produto: o cabecalho quebra em duas linhas (o `nowrap` da `.sb-table` fazia o TITULO mandar na largura -- 146px, mais que o conteudo) e a celula mostra so a data, com a hora no `title`. Sobrou 1.220px. **Encolher de verdade e escolher o que SAI da tabela, e isso e decisao de produto, nao de implementacao** -- fica registrado, nao resolvido em silencio.
+
+---
+
+**5. SOBRE "PARA VER SE ISSO DEIXA MAIS RAPIDO"**
+
+Metade das linhas renderizadas e metade do `limit`. Mas o custo desta tela nao esta na renderizacao: `get_sku_curation` varre o catalogo para montar o `total_count`, e isso independe do tamanho da pagina. **Se a lentidao continuar, o proximo passo e medir a funcao, nao diminuir mais a pagina** -- e a licao de D-303/D-311, onde o numero mediu o contrario do palpite.
+
+---
+
+**Impacto:** `apps/web/app/produtos/{page,curation-table}.tsx`, `apps/web/lib/curation-filters.{ts,test.ts}` (novo, +13 casos), `apps/web/lib/filters.{ts,test.ts}` (`PAGE_SIZES`/`resolvePageSize`, +3), `apps/web/lib/format.ts` (`formatDay`), `apps/web/e2e/produtos.spec.ts` (+1), `supabase/migrations/20260911210000_sku_curation_order_and_dates.sql`, `docs/{DECISIONS,DECISIONS_INDEX,TESTING,HANDOFF}.md`. `packages/db/src/types.ts` levou as quatro linhas correspondentes e foi commitado em D-316, com a razao dita na mensagem de la -- duas sessoes no mesmo arquivo, sem staging interativo.
+
+**Verificacao, LOCAL:** `check` 29/29 (510 testes, 28 novos), **integracao 663/663** e **e2e 126/126 do que e desta fatia** -- os dois em banco recriado (`db reset` + UMA rodada, a regra de D-312). As 8 falhas que a suite inteira mostrou no meio do caminho eram de `sku-dashboard.spec.ts`, a fatia irma em edicao, e a sessao que a escreveu confirmou depois: build velho na porta 3000, nao codigo. Guardas do web verdes (`waterfalls` 62, `server-actions` 21, `table-styles` 29, `control-styles` 236) e `docs:check`. A migration foi aplicada e conferida no Postgres LOCAL; nao foi ao Dev.
+
+**Duas sessoes no mesmo repositorio, e o que isso custou** (vale para a proxima vez): a porta 3000 e UMA, e o `next start` de uma sessao serve o build da outra -- o sintoma e teste parado na tela de login ou "This page couldn't load", nunca uma assercao errada. Combinamos uma porta por sessao (3000 e 3100, via `E2E_BASE_URL`). O banco tambem e um: quem for rodar avisa, reseta, roda UMA vez e devolve. E a armadilha do PGRST205 depois do `db reset` entrou em `docs/TESTING.md` nesta fatia.
+
 ## D-316 - Gerir o vinculo de anuncio DENTRO do SKU, com a regua canonica e com confirmacao antes de gravar
 
 **Contexto:** pedido do dono do produto, em duas partes. (1) A area de anuncios do Dashboard do SKU deveria ser tambem ponto de GESTAO -- adicionar por MLB, remover, e ver conta/MLB/titulo/status/estoque/preco. (2) "A tela de Detalhes do SKU e a tela de Vinculacoes devem trabalhar sobre a MESMA fonte de dados. Nao criar dois sistemas separados de vinculacao."

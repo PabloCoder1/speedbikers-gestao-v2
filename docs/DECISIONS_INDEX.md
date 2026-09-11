@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **311** (D-001 a D-316).
+Decisões registradas: **312** (D-001 a D-316).
 
 ## Por domínio
 
@@ -64,7 +64,7 @@ Decisões registradas: **311** (D-001 a D-316).
 - **D-300** — o convite que "ainda nao vai": `--env-file` NAO sobrescreve variavel ja exportada
 - **D-311** — A11: a Home contra o frame -- o controle que o painel devia ter, a idade do FATO, e as duas recusas que a revisao produziu
 
-### banco/rls (27)
+### banco/rls (28)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -93,6 +93,7 @@ Decisões registradas: **311** (D-001 a D-316).
 - **D-228** — A aba Decisoes fecha as nove, e a prova do embed e a paridade das policies, nao o texto delas
 - **D-257** — A trava "so aplica migration depois da esteira verde" NAO existe: quem aplica e o Supabase, nao a CI
 - **D-289** — A paginação da Caixa de Entrada, e o 416 que o PostgREST devolve para página que passou do fim
+- **D-315** — `/produtos` ganha as duas opcoes do UpSeller: quantos por pagina e em que ordem -- e a ordem obrigou uma migration
 
 ### estoque (24)
 

@@ -1,6 +1,39 @@
 import { describe, expect, it } from "vitest";
 
-import { buildFilterHref, resolvePageParam, summarizePagedWindow } from "./filters";
+import { PAGE_SIZES, buildFilterHref, resolvePageParam, resolvePageSize, summarizePagedWindow } from "./filters";
+
+describe("resolvePageSize", () => {
+  it("aceita só o que está na lista fechada", () => {
+    for (const tamanho of PAGE_SIZES) {
+      expect(resolvePageSize(String(tamanho), 50)).toBe(tamanho);
+    }
+  });
+
+  /**
+   * O valor vira `limit` numa RPC. Fora da lista ele cai no padrão da tela —
+   * `?tamanho=300000` não pode virar "traga o catálogo inteiro", e `?tamanho=0`
+   * não pode virar uma página vazia permanente.
+   */
+  it("o que não está na lista cai no padrão da tela", () => {
+    expect(resolvePageSize("300000", 50)).toBe(50);
+    expect(resolvePageSize("0", 50)).toBe(50);
+    expect(resolvePageSize("-20", 50)).toBe(50);
+    expect(resolvePageSize("abc", 20)).toBe(20);
+    expect(resolvePageSize(undefined, 100)).toBe(100);
+    expect(resolvePageSize(50, 20)).toBe(20);
+  });
+
+  /**
+   * "50abc" NÃO é 50 aqui. `resolvePageParam` é leniente de propósito, mas um
+   * tamanho é escolha de menu: o que não é exatamente um dos quatro valores é
+   * ruído, e ruído cai no padrão.
+   */
+  it("número com sujeira não vira tamanho", () => {
+    expect(resolvePageSize("50abc", 20)).toBe(20);
+    expect(resolvePageSize("", 20)).toBe(20);
+    expect(resolvePageSize("50.5", 20)).toBe(20);
+  });
+});
 
 describe("resolvePageParam", () => {
   it("aceita página válida e impõe piso 1", () => {

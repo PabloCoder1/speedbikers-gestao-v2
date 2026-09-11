@@ -151,3 +151,79 @@ test("/produtos: a Inspeção Rápida mostra o retrato real e recusa o que não 
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
+
+
+/**
+ * As opcoes que o UpSeller da e esta tela nao tinha (D-315): quantos itens por
+ * pagina, e em que ordem.
+ *
+ * **O que este caso protege e a URL.** Tamanho e ordem sao recorte, e recorte
+ * desta casa mora na URL -- se um dia virarem estado React, o Filtro Salvo e o
+ * link colado no WhatsApp param de significar a mesma coisa, e nada na tela
+ * denuncia isso. Ele afirma tambem o que o teste unitario nao alcanca: que a
+ * ESCOLHA chega ao banco, porque e o `p_limit` que muda o numero de linhas.
+ */
+test("/produtos: da para escolher quantos por pagina e em que ordem, e o recorte vive na URL", async ({
+  page,
+}) => {
+  await page.goto("/login?next=%2Fprodutos%3Festado%3Dtodos");
+  await page.getByLabel("E-mail").fill(E2E_USER_EMAIL);
+  await page.getByLabel("Senha").fill(E2E_USER_PASSWORD);
+  await page.getByRole("button", { name: "Entrar" }).click();
+
+  await expect(page).toHaveURL(/\/produtos/);
+
+  /*
+    `FilterMenu` e `<details>`/`<summary>` nativo, e o painel nasce FECHADO --
+    o menu abre pelo `summary`, nunca por `role: button` (o mapeamento de
+    <summary> para papel e detalhe do navegador, licao de /compras).
+  */
+  const menus = page.locator("details.sb-menu");
+
+  // O padrao e 50, e ele fica FORA da URL: /produtos limpo continua igual.
+  await expect(menus.filter({ hasText: "50 por página" })).toBeVisible();
+
+  const linhas = page.locator("tbody tr");
+  const quantasNoPadrao = await linhas.count();
+
+  // A ordem padrao e a FILA DE CURADORIA, nao uma data -- e ela e o motivo de a
+  // tela existir: poe na frente o que precisa de decisao.
+  const menuOrdem = menus.filter({ hasText: "Fila de curadoria" });
+  await expect(menuOrdem).toBeVisible();
+
+  await menuOrdem.locator("summary").click();
+  await menuOrdem.getByRole("link", { name: "Atualizados primeiro" }).click();
+
+  await expect(page).toHaveURL(/ordem=atualizado/);
+  // Trocar a ordem NAO descarta o estado que ja estava no recorte.
+  await expect(page).toHaveURL(/estado=todos/);
+
+  const menuTamanho = menus.filter({ hasText: "por página" }).last();
+  await menuTamanho.locator("summary").click();
+  await menuTamanho.getByRole("link", { name: "20 por página" }).click();
+
+  await expect(page).toHaveURL(/tamanho=20/);
+  await expect(page).toHaveURL(/ordem=atualizado/);
+  await expect(menus.filter({ hasText: "20 por página" })).toBeVisible();
+
+  // O limite chegou ao banco: com 20 a lista nao pode ter mais linhas que isso.
+  const quantasCom20 = await linhas.count();
+  expect(quantasCom20).toBeLessThanOrEqual(20);
+  expect(quantasCom20).toBeLessThanOrEqual(quantasNoPadrao);
+
+  // A coluna que as duas ordens de data usam: ordenar por uma data invisivel
+  // seria pedir fe.
+  await expect(page.getByRole("columnheader", { name: /Criado\s+Atualizado/ })).toBeVisible();
+
+  // Buscar NAO pode descartar o que ja estava escolhido -- o GET manda so o que
+  // esta no formulario, e e por isso que os campos ocultos existem.
+  // Escopado ao formulario da tela: o shell tem a busca global, e "Buscar"
+  // sozinho casa com as duas.
+  const buscaDaTela = page.locator('form[action="/produtos"]');
+  await buscaDaTela.getByRole("searchbox", { name: "Buscar SKU ou título" }).fill(E2E_SKU_CODE);
+  await buscaDaTela.getByRole("button", { name: "Buscar" }).click();
+
+  await expect(page).toHaveURL(/tamanho=20/);
+  await expect(page).toHaveURL(/ordem=atualizado/);
+  await expect(page).toHaveURL(new RegExp(`busca=${E2E_SKU_CODE}`));
+});

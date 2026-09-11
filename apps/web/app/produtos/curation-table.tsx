@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState, useTransition, type ReactNode } from "react";
 
 import { TOM } from "../../components/tone";
-import { formatCount } from "../../lib/format";
+import { formatCount, formatDateTime, formatDay } from "../../lib/format";
 import { describeOutcome, MAX_SELECAO, type CurationOutcome } from "../../lib/sku-curation";
 import { classifySkus, setSupplierBrand } from "./actions";
 import { InspecaoRapida } from "./inspecao-rapida";
@@ -53,6 +53,9 @@ export interface CurationRow {
   decision_diverges_from_signature: boolean;
   total_count: number;
   listing_count: number;
+  /** D-315: saem da RPC porque sao elas que ordenam a lista. */
+  created_at: string;
+  updated_at: string;
 }
 
 /** Cor nunca é a única pista — o texto sempre acompanha (status-pill.tsx). */
@@ -419,6 +422,21 @@ export function CurationTable({
                 <th className="sb-num">Anúncios</th>
                 <th>Sugestão</th>
                 <th>Classificação</th>
+                {/*
+                  A coluna "Criado/Atualizado" do UpSeller. Ela existe porque
+                  duas das tres ordens sao ELA: ordenar por uma data que a
+                  tabela nao mostra e pedir fe.
+
+                  `whiteSpace: normal` vence o `nowrap` da `.sb-table` so aqui:
+                  em uma linha o CABECALHO e quem manda na largura da coluna
+                  (146px medidos, mais que o conteudo dela), e a tabela ja
+                  passava da largura util antes desta coluna existir.
+                */}
+                <th style={{ whiteSpace: "normal" }}>
+                  Criado
+                  <br />
+                  Atualizado
+                </th>
               </tr>
             </thead>
 
@@ -502,6 +520,21 @@ export function CurationTable({
                   </td>
                   <td>
                     <Classificacao row={row} />
+                  </td>
+                  {/*
+                    Duas linhas, como no UpSeller: criação em cima, última
+                    alteração embaixo.
+
+                    Só a DATA na célula, e a hora no `title`. A tabela tem dez
+                    colunas e já passava da largura útil ANTES desta — medido a
+                    1440px: 1.124px de conteúdo em 1.116px de caixa. Com data e
+                    hora a coluna pedia 146px; só com a data, 105px. A hora não
+                    decide nada aqui (quem confere contra a planilha quer o
+                    dia), e fica a um `hover` em vez de sumir.
+                  */}
+                  <td style={{ whiteSpace: "nowrap", color: "var(--sb-text-soft)", fontSize: "0.6875rem" }}>
+                    <div title={`Criado em ${formatDateTime(row.created_at)}`}>{formatDay(row.created_at)}</div>
+                    <div title={`Atualizado em ${formatDateTime(row.updated_at)}`}>{formatDay(row.updated_at)}</div>
                   </td>
                 </tr>
               ))}

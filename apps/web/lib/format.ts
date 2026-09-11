@@ -11,6 +11,12 @@ const DATE_TIME = new Intl.DateTimeFormat("pt-BR", {
   timeZone: "America/Sao_Paulo",
 });
 
+/** O mesmo instante, só o DIA — mesmo fuso, pelo mesmo motivo (D-315). */
+const DAY = new Intl.DateTimeFormat("pt-BR", {
+  dateStyle: "short",
+  timeZone: "America/Sao_Paulo",
+});
+
 /**
  * Fuso fixado em America/Sao_Paulo.
  *
@@ -22,6 +28,20 @@ export function formatDateTime(value: string | null): string {
   if (value === null) return "—";
 
   return DATE_TIME.format(new Date(value));
+}
+
+/**
+ * O DIA de um instante (`timestamptz`), sem a hora — para tabela larga, onde a
+ * hora custa largura e não decide nada (D-315).
+ *
+ * **Não confundir com `formatBusinessDate`**, logo abaixo: aquela recebe
+ * `YYYY-MM-DD` e NÃO pode passar por `new Date`. Esta recebe um instante e
+ * precisa do fuso, exatamente como `formatDateTime`.
+ */
+export function formatDay(value: string | null): string {
+  if (value === null) return "—";
+
+  return DAY.format(new Date(value));
 }
 
 /**

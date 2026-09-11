@@ -65,6 +65,15 @@ Ao liberar um caminho público, o teste prova que **apenas** aquele caminho foi 
 
 **Armadilha conhecida (2026-09-11):** a suíte de INTEGRAÇÃO **não é idempotente**. Rodá-la duas vezes no mesmo banco reprova ~15 casos, e o vermelho aponta para o lugar errado — três deles são de isolamento entre organizações ("usuário de outra organização não enxerga nenhum": esperava 0, viu 1), o que se lê como falha de RLS e é resíduo dos fixtures da rodada anterior. A ordem que conta é `db reset` + UMA rodada (D-312).
 
+**Armadilha conhecida (2026-09-11):** depois de `supabase db reset`, o **PostgREST continua com o schema cache VELHO**, e a primeira coisa que fala com ele morre com `PGRST205: Could not find the table 'public.organizations' in the schema cache`. Lê-se como migration quebrada e não é — as tabelas estão lá, medido com `psql` no mesmo instante. Quem bate nisso primeiro é `e2e/seed.ts`, que escreve por PostgREST; a suíte de integração não vê nada, porque fala `pg` direto. Se o seed morrer assim, a suíte inteira roda contra um banco VAZIO e produz ~59 vermelhos que apontam para todo lado menos para a causa. A saída é recarregar o cache antes de semear (D-315):
+
+```bash
+docker exec supabase_db_<projeto> psql -U postgres -d postgres -c "notify pgrst, 'reload schema';"
+docker restart supabase_rest_<projeto>
+```
+
+Não acontece toda vez: depende de o seed começar antes de o `reset` ter avisado o PostgREST. É corrida, então a ausência do erro numa rodada não prova que ele não vai aparecer na próxima.
+
 **Armadilha conhecida (2026-09-10):** rodar a suíte de INTEGRAÇÃO deixa o Auth local quebrado até o próximo `db reset`. Os fixtures de RLS inserem em `auth.users` por SQL, e `confirmation_token` nasce **NULO** — o GoTrue lê aquela coluna como `string` e responde **500** em `GET /admin/users` (`"converting NULL to string is unsupported"`) para a listagem INTEIRA, não só para a linha ruim. Quem depende de `auth.admin.listUsers` para de funcionar: `e2e/seed.ts` (que procura o usuário pelo e-mail) e o convite de D-296. A ordem segura é **integração e e2e nunca compartilharem o mesmo banco sem reset entre elas**. E a lição vale além do teste: **linha de `auth.users` criada por SQL envenena a listagem do projeto todo** — quem criar usuário fora do GoTrue precisa gravar `''`, não `NULL`.
 
 **Armadilha conhecida (2026-09-11):** o Playwright sobe `pnpm run start`, que serve o `.next` **ja construido** -- e com `reuseExistingServer` fora do CI. Editar a tela e rodar a suite na sequencia testa o BUILD ANTERIOR: a assercao nova fica vermelha e o codigo esta certo. Aconteceu em D-309 com duas assercoes (uma cor e um paragrafo novos). Depois de mexer em `app/`, `components/` ou `lib/`, a ordem e `pnpm build` **antes** de `playwright test` -- e derrubar o `next start` que sobrou, senao o reuso serve o build velho mesmo apos o build novo.
