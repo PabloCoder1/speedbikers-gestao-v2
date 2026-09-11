@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **313** (D-001 a D-317).
+Decisões registradas: **315** (D-001 a D-319).
 
 ## Por domínio
 
@@ -122,7 +122,7 @@ Decisões registradas: **313** (D-001 a D-317).
 - **D-288** — A FUSAO de `/cobertura` com `/reposicao`: uma tela, uma definicao de ruptura
 - **D-314** — "Cobertura" de um SKU passa a ter UMA conta: a que D-288 aposentou saiu das duas telas que faltavam
 
-### interface (35)
+### interface (36)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -159,6 +159,7 @@ Decisões registradas: **313** (D-001 a D-317).
 - **D-303** — O link que apontava para a maquina de quem clicava, e a saida para quem perdeu o dele
 - **D-313** — A tela de vinculacao tinha parado de vincular em D-284, e nenhum teste viu -- mais as duas leituras por conta que D-259 perdeu
 - **D-317** — O diagnostico do SKU: tres niveis com regua escrita, e um painel do que a tela NAO julga
+- **D-319** — `/produtos` nao estava lenta pela pagina: `get_sku_curation` salta de ~20 ms para 360-4.000 ms A PARTIR DA SEXTA EXECUCAO da conexao
 
 ### mercado-livre (47)
 
@@ -210,7 +211,7 @@ Decisões registradas: **313** (D-001 a D-317).
 - **D-310** — A10: o cabecalho do anuncio ganha os dois fatos que devia desde D-168, e o caminho ate a republicacao
 - **D-316** — Gerir o vinculo de anuncio DENTRO do SKU, com a regua canonica e com confirmacao antes de gravar
 
-### outros (55)
+### outros (56)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -267,6 +268,7 @@ Decisões registradas: **313** (D-001 a D-317).
 - **D-299** — A8: `/contas` contra o frame, e o token que vive SEIS HORAS
 - **D-306** — a generalizacao de D-305 estava errada, e a medicao de duas funcoes desfez
 - **D-312** — Importacoes e de ADMIN, e mudou de grupo -- com a recusa no servidor, nao so no menu
+- **D-318** — O teto de dispersao de preco: 10% sobre o MENOR, por organizacao -- a regua que faltava para o selo existir
 
 ### processo/docs (1)
 

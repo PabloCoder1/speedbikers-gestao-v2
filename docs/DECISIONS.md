@@ -9302,6 +9302,46 @@ A entidade "problema com causa, impacto e recomendacao" ja existe: `public.actio
 
 **Verificacao:** `check` 29/29 (`--force`), build 8/8, e2e **135/135** em banco recriado (+1), integracao 663/663 em banco recriado, cinco guardas verdes. Renderizado a 1440px: com o seed, o SKU sai **Critico** por causa da acao aberta de severidade alta, com 26,4% de dispersao de preco impressa como numero e sem selo.
 
+## D-318 - O teto de dispersao de preco: 10% sobre o MENOR, por organizacao -- a regua que faltava para o selo existir
+
+**Contexto:** D-317 entregou o diagnostico do SKU com uma lacuna deliberada. A dispersao de preco entre os anuncios saia como NUMERO e nao como selo, porque D-148 e explicita -- *"quanto e demais e decisao do ADMIN, nao constante do codigo"* -- e nao havia teto configurado em lugar nenhum do esquema. A tela dizia isso em voz alta, no painel do que ela nao julga.
+
+O dono do produto decidiu: **10% sobre o menor preco, para a organizacao inteira.**
+
+---
+
+**1. O QUE MUDA COM A REGUA**
+
+A verificacao passa a existir, com a condicao escrita na propria linha do problema: `(maior − menor) ÷ menor > 10% (teto da organizacao)`. E a linha correspondente some do painel "o que esta tela NAO julga" -- o caminho completo, de lacuna declarada a verificacao, em duas fatias.
+
+**Sobre o MENOR, e nao sobre a media**, porque foi o que o dono escolheu -- e e a leitura mais dura das duas: a mesma diferenca absoluta da percentual maior quando o divisor e o menor preco. A base aparece na tela junto do numero ("26,4% sobre o menor (teto 10%)"), porque percentual sem dizer de que e nao se confere.
+
+**ATENCAO, e nao critico.** O critico desta tela e reservado para o que PARA a venda -- anuncio ativo sem estoque, estoque sem vitrine. Preco torto entre contas corroi margem e confunde quem compara precos, mas o produto continua vendendo.
+
+**Estritamente MAIOR que o teto.** Exatamente 10% nao acende. O caso de unidade fixa isso, porque "no limite" e a fronteira que toda regua precisa ter decidida antes da primeira discussao.
+
+---
+
+**2. UMA ORGANIZACAO, UM TETO -- e o que isso adia de proposito**
+
+A pergunta ao dono foi se o teto valia tambem por marca de fornecedor e por SKU, como `replenishment_settings` faz em tres escopos. A resposta foi organizacao. Entao o numero e **uma constante nomeada**, com a decisao registrada aqui e o valor visivel na tela -- nao uma tabela.
+
+Tabela para um numero unico seria cerimonia: mais migration, mais policy, mais tela de edicao e mais teste negativo para guardar um valor que ninguem pediu para variar. Quando a operacao quiser tetos diferentes por marca, o caminho ja existe e tem forma conhecida (`replenishment_settings`: tabela com escopo, tela dona, policy), e esta constante vira o padrao dela.
+
+O que NAO se faz enquanto isso: mudar o numero sem mudar este registro. A constante e `TETO_DISPERSAO_PCT` em `apps/web/lib/sku-diagnostico.ts`, e o docblock dela diz de onde o 10 veio.
+
+---
+
+**3. O ESCOPO DA COMPARACAO SEGUE O ESCOPO DA TELA**
+
+Na visao geral, a dispersao e entre TODOS os anuncios do SKU; com o diagnostico recortado numa conta, e entre os anuncios daquela conta. O teto e o mesmo -- ele e da organizacao --, mas o conjunto comparado e o que esta na tela. Alternativa seria comparar sempre o conjunto inteiro e mostrar um selo que nao corresponde as linhas visiveis, que e a classe de incoerencia que D-236 registrou ("cabecalho e tabela falando do mesmo recorte").
+
+---
+
+**Impacto:** `apps/web/lib/sku-diagnostico.{ts,test.ts}` (+3 casos: acima do teto, no teto, e o numero saindo sem acender), `apps/web/app/skus/[skuId]/page.tsx`, `apps/web/e2e/sku-dashboard.spec.ts`. **Sem migration.**
+
+**Verificacao:** `check` 29/29 (`--force`), build 8/8, e2e em banco recriado, cinco guardas verdes. Com o seed, os dois anuncios do SKU estao a 189,90 e 240,00 -- **26,4% sobre o menor**, acima do teto, e o selo de atencao acende com a regua ao lado.
+
 ## Como adicionar nova decisao
 
 Registrar:
@@ -10055,3 +10095,92 @@ Nao ha guarda dedicada para isso, e nem precisa: **o teste de `get_system_health
 **Impacto:** `supabase/migrations/20260910235000_stock_coverage_custom_plan.sql`, `docs/HANDOFF.md`.
 
 **Verificacao:** `db reset` local aplicou as 162 migrations em ordem; a funcao resultante e `plpgsql`/`stable`/invoker com `search_path=""` e `plan_cache_mode=force_custom_plan`; `rls.integration` **630/630**, incluindo o bloco proprio de `get_stock_coverage` (D-058).
+## D-319 - `/produtos` nao estava lenta pela pagina: `get_sku_curation` salta de ~20 ms para 360-4.000 ms A PARTIR DA SEXTA EXECUCAO da conexao
+
+**Contexto:** o dono do produto disse que a tela parecia lenta, e D-315 baixou a pagina de 100 para 50 *"para ver se isso deixa mais rapido o site"*. Aquela fatia registrou a ressalva de que o custo provavelmente nao estava ali e que o proximo passo era medir a funcao. O usuario pediu a medicao. A ressalva estava certa, e o motivo nao era o que ninguem imaginava.
+
+---
+
+**1. O SALTO NA SEXTA**
+
+Oito chamadas IDENTICAS, na MESMA conexao, como usuario autenticado, com catalogo sintetico de 3.502 SKUs. Tres repeticoes do ensaio:
+
+| execucoes | tempo |
+|---|---|
+| 1a a 5a | 15 - 36 ms |
+| **6a a 8a** | **360 - 550 ms** |
+
+A funcao e `language plpgsql` e nao tinha `plan_cache_mode`: o SPI planeja CUSTOM nas cinco primeiras execucoes de uma conexao e migra para o GENERICO na sexta — e o generico planeja sem os valores dos argumentos, erra as estimativas e escolhe o plano errado.
+
+**A MAGNITUDE VARIA COM A ESTATISTICA; O SALTO NAO.** Numa PRIMEIRA carga sintetica, com a mesma forma e o mesmo volume, a sexta mediu **3.938 ms** (7a e 8a: 4.110 e 4.077) — 230x. Noutra carga, 360-550 ms. O numero absoluto da penalidade e sorteado pelo plano que o generico escolhe; o que se repetiu em TODAS as medicoes foi a existencia do salto e o fato de ele comecar na sexta.
+
+**Isto quase entrou no registro como "230x" e um numero so.** Entrou como faixa porque a segunda carga discordou da primeira — e um numero de sorte no cabecalho de uma migration vira folclore em duas semanas.
+
+**E na tela real e pior que em qualquer teste:** o pool do PostgREST reusa conexoes, entao quem paga e o usuario de sempre, na conexao quente. O primeiro acesso da manha e o rapido — o oposto da intuicao de quem investiga "por que as vezes demora".
+
+---
+
+**2. D-315 NAO CAUSOU ISSO — conferido, nao suposto**
+
+D-315 acrescentou `p_order` e duas datas, e o `order by` novo usa `case`. Era plausivel que o plano generico tivesse piorado por causa dele, e essa hipotese foi MEDIDA restaurando a definicao anterior (a de `20260904194000`) no MESMO volume:
+
+| versao | 1a a 5a | 6a em diante |
+|---|---|---|
+| antes de D-315 | 24 - 34 ms | **412 - 526 ms** |
+| depois de D-315 | 15 - 36 ms | **360 - 550 ms** |
+
+A doenca ja estava la, e a fatia anterior nao a piorou.
+
+---
+
+**3. O QUE A MESMA MEDICAO DESMENTIU**
+
+Com o plano generico no lugar, **nada que a tela escolhe muda o custo** (numeros da carga em que a penalidade foi de 4 s):
+
+| tamanho da pagina | tempo | | outro recorte | tempo |
+|---|---|---|---|---|
+| 20 | 4.032 ms | | ordem `curadoria` | 3.958 ms |
+| 50 | 3.917 ms | | ordem `atualizado` | 3.934 ms |
+| 100 | 3.926 ms | | pagina 61 (offset 3.000) | 4.127 ms |
+| 300 | 4.030 ms | | sem filtro de estado | 3.967 ms |
+
+**A mudanca de 100 para 50 de D-315 nao deixou nada mais rapido.** Ela continua valendo pelo que e — uma opcao que o dono pediu e que o UpSeller tem —, nao como otimizacao. Desmentir a hipotese com numero vale mais do que confirma-la sem.
+
+`get_sku_curation_summary`, que roda no MESMO `Promise.all` da tela, mede 5,7-6,8 ms e nao entra nesta correcao.
+
+---
+
+**4. A CURA, E POR QUE A VARREDURA DE D-307 NAO PEGOU ESTA**
+
+Uma linha: `set plan_cache_mode = 'force_custom_plan'`. Depois dela, tres repeticoes de oito execucoes: **16 - 34 ms do comeco ao fim**, sem salto.
+
+Por que ela escapou da varredura das 19, e esta e a parte que interessa:
+
+| | |
+|---|---|
+| na tabela de D-305 (`pg_stat_statements` do Dev) | **200 ms de media, 786 ms de pior caso** |
+| e ela era | a UNICA `plpgsql` da lista, e a mais rapida |
+| por isso | ficou FORA das 19 varridas em D-307 — nao esta entre as 16 declaradas sadias |
+
+Ela chegou a sustentar a generalizacao de D-305 ("toda RPC lenta aqui e `language sql`"), que D-306 depois desfez medindo.
+
+**A licao de D-307 era exatamente esta, e ela mordeu de novo:** `pg_stat_statements` mede o que foi chamado, nao o que pode ser chamado; media de producao nao e cobertura. A funcao parecia barata porque ninguem tinha exercitado a forma cara dela, na conexao certa, o numero certo de vezes.
+
+**Fica a pergunta aberta:** a varredura de D-307 usou o criterio certo para `language sql` (estado estavel desproporcional, porque ali o corpo ja nasce generico). Para `plpgsql` o sinal e outro — a SEXTA execucao — e essa varredura nunca foi feita. Quantas outras `plpgsql` sem `plan_cache_mode` estao assim? E fatia propria, e o metodo cabe numa linha.
+
+---
+
+**5. ONDE ISSO FOI MEDIDO, E O QUE NAO PROVA**
+
+No Postgres LOCAL, com catalogo SINTETICO de 3.502 SKUs, 8.400 retratos do ERP (**tres por SKU**, para o `distinct on` custar de verdade), 12.608 linhas de metrica, 5.005 anuncios e datas espalhadas em **423 dias distintos** (insercao em massa daria o mesmo instante para tudo, e o desempate por `sku` de D-315 viraria o trabalho inteiro do sort).
+
+Nao ha acesso ao Dev a partir desta sessao: o `.env.local` aponta tudo para `127.0.0.1` e o projeto nao esta linkado. **Os milissegundos absolutos NAO valem para o Dev**, e a propria medicao mostrou que a magnitude depende da estatistica. O que vale, e independe de maquina, e a FORMA: o salto comeca na sexta, e o tamanho da pagina nao importa. A cura tem dois precedentes medidos no Dev.
+
+Tres cuidados com o sintetico vieram da sessao paralela e os tres importaram: sem as oito execucoes a medicao teria parado em 20 ms; sem os tres retratos por SKU a CTE mais cara sumiria; sem espalhar as datas o ensaio mediria o pior caso do desempate.
+
+---
+
+**Impacto:** `supabase/migrations/20260911230000_sku_curation_custom_plan.sql`, `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,HANDOFF}.md`. **Nenhuma linha de aplicacao** — assinatura, corpo e retorno sao os de D-315.
+
+**Verificacao, LOCAL:** a migration aplicada em banco recriado, e **integracao 663/663** com ela. `check` 29/29. **O e2e desta rodada NAO conta como verificacao, e o motivo fica registrado:** as duas sessoes rodaram a suite no mesmo banco ao mesmo tempo (o GoTrue registrou `400 Invalid login credentials` alternando entre `127.0.0.1:3000` e `127.0.0.1:3100`), e o catalogo sintetico desta medicao tira `E2E-SKU-001` da primeira pagina de tres telas, o que reprova specs que procuram a linha dele. Nenhuma das duas coisas e defeito de codigo, e as duas sao consequencia de duas sessoes compartilharem um banco. Nao foi ao Dev.
+
