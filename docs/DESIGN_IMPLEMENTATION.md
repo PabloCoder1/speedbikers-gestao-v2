@@ -302,6 +302,8 @@ branco embutido.
 | Variação percentual entre períodos | `variacao_percentual_periodo` está pendente em METRICS 5.4, e D-023 proíbe número sintetizado sem `metric_definitions` — a célula mostra os dois valores | D-023 |
 | "Faturamento hoje" na Home | `/vendas` já tem o bloco "Hoje" com o aviso de dia parcial; repetir seria dois donos do mesmo dado | D-224 |
 | "Estoque Full baixo — cobertura < 7 dias" na Home | cobertura de Full não é calculada (só a local, `get_stock_coverage`); número inventado | D-067 |
+| **A quinta célula da faixa da Home** ("Estoque em risco · 19 SKUs") | seria o **mesmo escalar com outro nome a um scroll de distância**: `em_ruptura` já é impresso acima, no cartão "SKUs sem saldo local", **com o mesmo destino `/reposicao`**. E a delta "− 3 hoje" do frame não tem fonte — `get_stock_coverage_summary` é agregado do instante, sem série | D-311, D-224 |
+| **O segundo cartão CRÍTICO da Home** ("Reclamações críticas · 3 casos próximos do SLA") | a lacuna é real (a Home não tem sinal de prazo), mas ler `get_support_metrics` faria o cartão e o link discordarem: a função conta **linhas** de `support_case_deadlines` e **exclui vencido**, e `/atendimento?prazo=risco` conta **casos** e **inclui vencido**. A forma defensável é a de D-242/D-243 — a MESMA consulta do link, em `head count`, dentro do `Promise.all` que já existe | D-311 |
 | **Seletor global de conta** no rodapé da sidebar (modal "Definir escopo da aplicação") | a V3 recorta por conta **tela a tela** (menu "Todas as contas ▾" em `/vendas`, `/anuncios`…), com o recorte na URL — compartilhável e com voltar; um escopo global em cookie quebraria isso. O bloco mostra a organização e as contas conectadas (dado real) e leva a `/contas`. **O motivo anterior ("não há segunda organização") respondia a uma pergunta que o frame não faz** — corrigido na auditoria | A1 |
 | **Inbox de TRÊS COLUNAS em `/atendimento`** (fila 300px + conversa + contexto do cliente 320px) | **medido antes de recusar** (D-286): o CENTRO fica vazio em **50,7% das reclamações** (960 de 1.895 chegam do ML sem uma mensagem sequer, e reclamação é 63% da base); a DIREITA não tem fonte (sem nome — `customer_external_id` é número, D-083 —, sem miniatura, sem Copiloto com contexto, e **92,6% dos clientes têm um caso só**); e a ESQUERDA seria regressão — a fila de 300px não cabe a triagem inline, e com **939 casos em NOVO e ZERO assumidos** o gargalo medido é a triagem, não a conversa | D-286 |
 | Central de Ajuda | não existe conteúdo de ajuda | — |
@@ -723,7 +725,7 @@ próximo = 80, validada contra o Figma = 95, + cleanup + testes = 100.
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | Shell + navegação | 8 | 86% | 91% | 91% | 91% | 91% | 91% | 91% | 91% | 91% |
 | Design system (tokens, componentes, tabela, campo, menu, chip, modal) | 10 | 80% | 88% | 88% | 88% | 88% | **82%** | **94%** | **97%** | **97%** |
-| Home | 6 | 87% | 87% | 87% | 87% | 87% | 87% | 87% | 87% | 87% |
+| Home | 6 | 87% | 87% | 87% | 87% | 87% | 87% | 87% | 87% | 87% → **90%** (A11) |
 | Vendas | 8 | 85% | 88% | 88% | 88% | 88% | 88% | 88% | 88% | 88% |
 | **Produtos** | 5 | 83% | 83% | 83% | 83% | **90%** | 90% | 90% | 90% | 90% |
 | Dashboard de SKU (nove abas) | 10 | 82% | 88% | 88% | 88% | 88% | 88% | 88% | 88% | 88% |
@@ -736,6 +738,13 @@ próximo = 80, validada contra o Figma = 95, + cleanup + testes = 100.
 | **14 telas D22–D36** (eram "16" por contagem errada) | 22 | 25% | 25% | 25% | 25% | 25% | **88%** | **90%** | **90%** | **90%** |
 | **Drawers do frame** (Inspeção Rápida, MLB, pedido, fornecedor, usuário) | 4 | 0% | 0% | 0% | 0% | **86%** | 86% | 86% | 86% | 86% |
 | Passe visual global + passo cinza | 3 | 0% | 0% | 0% | 0% | 0% | 0% | **40%** | **100%** | **100%** |
+
+**A11 mexe em UMA linha, e por medição.** A Home foi renderizada a 1440px com
+login real e comparada ao frame `Home`: as duas diferenças que o registro nomeava
+desde 04/09 — o seletor de janela e a hora relativa — deixaram de existir, **87%
+→ 90%**. Não vai mais alto porque três diferenças permanecem, e as três são
+**recusa medida**: a quinta célula da faixa, o segundo cartão crítico e a
+variação percentual da terceira linha. Recusa continua sendo diferença.
 
 **A10 mexe em UMA linha, e por medição.** `/anuncios/[itemId]` foi renderizada a
 1440px e 1100px com login real, em três situações, e comparada ao
@@ -1026,6 +1035,59 @@ está na "Próxima fatia segura".
 
 ## Última fatia concluída
 
+**A11 — A HOME CONTRA O FRAME (D-311)** — a Home era a **única superfície nunca
+remedida** desde a primeira auditoria (04/09, 87%). A varredura de A10 a leu de
+novo e achou quatro diferenças; cada uma foi atacada por um cético com uma lente
+própria, e **duas caíram**. As duas que sobreviveram são esta fatia; as duas que
+caíram viraram linha na tabela de "Diferenças intencionais", que é entrega
+também.
+
+| o frame | o que estava | agora |
+|---|---|---|
+| controle "14 dias ⌄" no cabeçalho do gráfico | um link para **fora** da tela ocupando o lugar do controle | `FilterMenu` com os cinco presets do app, e o link continua ao lado |
+| "4 min atrás" no feed | data e hora absolutas | **a idade do FATO** (`occurred_at`), com o instante exato no `title` |
+
+### O vocabulário de período ganhou dono antes de ganhar o terceiro consumidor
+
+O achado propunha 7/14/30. A casa tem **uma lista fechada** — 7/15/30/60/90 — e
+D-308 escreveu a regra em geral: *"últimos 30 dias" precisa querer dizer a mesma
+coisa nas duas telas*. Então a fatia começa mudando o trio de casa: de
+`lib/listings-dashboard.ts` (batizado por UMA tela) para **`lib/period.ts`**, e
+`/vendas` apagou a própria cópia da lista. **O tipo virou a guarda**: o `fallback`
+de `resolvePeriodDays` é tipado como `PeriodPreset`, então *"14 dias" não
+compila*. O padrão da Home é 15 — um dia de diferença na leitura, em troca de uma
+lista só no app inteiro.
+
+### `?serie=` termina na série
+
+A Home tem duas janelas na mesma tela: a faixa em 30 dias e o gráfico. Ligar o
+seletor na `janela` faria os contadores dos cartões de atenção mudarem por causa
+de um controle que está no cabeçalho de outro bloco. O caso de e2e afirma as duas
+metades juntas: com `?serie=7`, o gráfico diz 7 e a faixa continua dizendo 30.
+
+### A idade do FATO, não a do aviso
+
+`formatAge` — a ferramenta que faltava — **nasceu quatro dias depois da auditoria
+que registrou a lacuna**. Mas a proposta ao pé da letra estava errada e a revisão
+pegou: `notifications.created_at` é quando o fan-out gravou, `domain_events.occurred_at`
+é quando a mudança aconteceu, e o desvio máximo já medido entre as duas é de
+**278 dias**. O embed ganhou `occurred_at` — a mesma expressão que
+`/notificacoes` já usava, então as duas telas passaram a dizer o mesmo instante
+para o mesmo evento.
+
+### O que só a captura acharia (de novo)
+
+Com o subtítulo mais longo, `.sb-panel-head` — que é `flex-wrap: wrap` — quebrou
+em duas linhas e o `aside` foi para a **esquerda**: `justify-content:
+space-between` não faz nada quando há um item por linha. `.sb-panel-aside` ganhou
+`margin-left: auto`, que não muda nada na linha única e resolve a quebrada.
+
+**Verificação:** `check` 29/29 (`--force`), build 8/8, e2e **127/127** em banco
+recriado (+2), integração 658/658, cinco guardas verdes. Renderizada a 1440px em
+três estados do painel: padrão, `?serie=7` e com a ressalva de série parcial.
+
+## Fatias anteriores
+
 **A10 — O CABEÇALHO DO ANÚNCIO (D-310)** — com a Administração fechada, a
 pergunta virou *qual é a próxima fatia?*, e a resposta foi medida: **sete
 superfícies lidas contra o frame**, com evidência dos dois lados, e os achados
@@ -1087,8 +1149,6 @@ recriado (+3), integração 658/658, cinco guardas verdes. Renderizado a 1440px 
 1100px em três situações: com preço e saldo, com `available_quantity = 0` (o
 zero aparece — e há caso de e2e para reprovar quem "melhorar" isso com guarda
 falsy) e na aba Histórico, onde o caminho some.
-
-## Fatias anteriores
 
 **A9 — `/saude` CONTRA O FRAME (D-309)** — A6 (D-296) deixou uma linha em aberto
 na tabela da Administração: *"Saúde — seis cartões de serviço com latência — **a

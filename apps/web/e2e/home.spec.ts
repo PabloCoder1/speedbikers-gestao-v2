@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { E2E_USER_EMAIL, E2E_USER_PASSWORD } from "./constants.js";
+import { login } from "./helpers.js";
 
 /**
  * Home orientada à atenção (D4).
@@ -89,4 +90,79 @@ test("Home: os seis cards de atenção carregam, e nenhum deles falha", async ({
   // Os dois painéis da grade inferior, que o frame do Figma põe lado a lado.
   await expect(page.getByRole("region", { name: "Faturamento diário" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Atividade recente" })).toBeVisible();
+});
+
+
+/**
+ * O SELETOR DE JANELA DO GRÁFICO (D-311) — o controle que o frame põe no
+ * cabeçalho do painel, e que na V3 estava ocupado por um link para FORA da
+ * tela.
+ *
+ * O caso guarda as duas metades juntas, e a segunda é a que importa: **`?serie=`
+ * termina na série**. A faixa de indicadores continua em 30 dias enquanto o
+ * gráfico vai a 7 — se um dia alguém ligar o seletor na `janela`, os
+ * contadores dos cartões de atenção passam a mudar por causa de um controle
+ * que está noutro bloco, e é esta linha que fica vermelha.
+ */
+test("Home: o seletor do gráfico existe, e ele termina na série", async ({ page }) => {
+  await login(page, "/");
+
+  const grafico = page.getByRole("region", { name: "Faturamento diário" });
+  const menu = grafico.locator("details.sb-menu");
+
+  // O padrão é 15, e não os 14 do frame: 14 não está na lista fechada do app
+  // (`lib/period.ts`), e uma sexta opção só para a Home recriaria a divergência
+  // de vocabulário que D-308 fechou.
+  await expect(menu.locator("summary")).toContainText("Últimos 15 dias");
+  await expect(grafico.getByText(/últimos 15 dias · todas as contas conectadas/)).toBeVisible();
+
+  // A faixa, em 30 dias — o outro bloco, com a outra janela.
+  await expect(page.getByText(/últimos 30 dias \(/)).toBeVisible();
+
+  await menu.locator("summary").click();
+  await menu.getByRole("link", { name: "Últimos 7 dias" }).click();
+
+  await expect(page).toHaveURL(/\?serie=7$/);
+  await expect(grafico.getByText(/últimos 7 dias/)).toBeVisible();
+
+  // A PROVA: a faixa não se mexeu.
+  await expect(page.getByText(/últimos 30 dias \(/)).toBeVisible();
+
+  // E o padrão fica FORA da URL: `/` continua sendo o endereço da Home padrão.
+  await menu.locator("summary").click();
+  await menu.getByRole("link", { name: "Últimos 15 dias" }).click();
+
+  await expect(page).toHaveURL(/\/$/);
+});
+
+/**
+ * A IDADE DO FATO, NÃO A DO AVISO (D-311).
+ *
+ * O feed mostrava `notifications.created_at`, o instante em que o fan-out
+ * gravou o aviso. O seed torna a diferença visível de propósito: os dois
+ * eventos de preço nascem com `occurred_at` de **2 dias** e **1 dia** atrás,
+ * enquanto as notificações são gravadas no instante do seed. Lendo a coluna
+ * errada, as duas linhas diriam a mesma idade fresca; lendo a certa, elas
+ * dizem quando o preço mudou.
+ *
+ * O desvio máximo já medido nesta casa entre as duas colunas foi de 278 dias
+ * (D-060), num backfill — o caso existe para que ninguém volte a coluna.
+ */
+test("Home: o feed diz a idade do FATO, e não a do aviso", async ({ page }) => {
+  await login(page, "/");
+
+  const feed = page.getByRole("region", { name: "Atividade recente" });
+
+  await expect(feed.getByText(/há 2 dias/)).toBeVisible();
+  await expect(feed.getByText(/há 1 dia/)).toBeVisible();
+
+  /*
+    E a data exata não se perde: ela vive no `title` da linha, que é onde uma
+    auditoria vai procurar. `formatAge` devolve `null` acima de sete dias e a
+    linha volta a mostrar o absoluto — por isso a asserção é sobre o atributo,
+    e não sobre a ausência de data no texto.
+  */
+  const primeira = feed.locator("small").first();
+
+  await expect(primeira).toHaveAttribute("title", /\d{2}\/\d{2}\/\d{4}/);
 });

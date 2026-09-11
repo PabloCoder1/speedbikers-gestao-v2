@@ -16,6 +16,7 @@ import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
 import { formatBusinessDate, formatCount, formatCurrency, formatDateTime, formatPercent } from "../../lib/format";
+import { DEFAULT_PERIOD_DAYS, PERIOD_PRESETS } from "../../lib/period";
 import { createClient } from "../../lib/supabase/server";
 import { DEFAULT_SALES_METRIC, SALES_METRICS, resolveSalesMetric } from "../../lib/sales-metric";
 import { SalesChart } from "./sales-chart";
@@ -58,8 +59,14 @@ export const dynamic = "force-dynamic";
  * de fingir um número que ainda não existe.
  */
 
-const PRESET_DAYS = [7, 15, 30, 60, 90] as const;
-const DEFAULT_DAYS = 30;
+/*
+  A LISTA VEIO PARA CÁ EM D-308 E SAIU EM D-311. Ela era a segunda cópia dos
+  mesmos cinco presets; com a Home querendo a terceira, o vocabulário ganhou
+  dono próprio (`lib/period.ts`). Os aliases locais ficam para não reescrever
+  as sete referências desta tela — o valor é o mesmo objeto importado.
+*/
+const PRESET_DAYS = PERIOD_PRESETS;
+const DEFAULT_DAYS = DEFAULT_PERIOD_DAYS;
 
 /**
  * O SELO MEDE A CONFERÊNCIA, NÃO A MUDANÇA (D-304).

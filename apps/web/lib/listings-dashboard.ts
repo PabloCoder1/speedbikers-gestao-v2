@@ -101,35 +101,20 @@ export function resolveSoldFilter(raw: unknown): string {
   return typeof raw === "string" && SOLD_KEYS.has(raw) ? raw : "all";
 }
 
-/**
- * O seletor de período (D-308). **Os mesmos cinco presets de `/vendas`**, de
- * propósito: "últimos 30 dias" precisa querer dizer a mesma coisa nas duas
- * telas, senão o mesmo anúncio conta uma venda aqui e outra lá.
- *
- * A janela mexe SÓ nas colunas de desempenho — venda, receita, visitas, dias
- * observados, conversão — e no predicado `p_sold`. **As contagens da faixa não
- * mudam com ela**, e isso é correto: `metricas` e `visitas` entram na RPC por
- * `left join`, então trocar o período não tira nem põe anúncio no conjunto.
- * Total, ativos, pausados, sem estoque, no Full e sem vínculo são fatos do
- * catálogo, não da janela.
- */
-export const PERIOD_PRESETS = [7, 15, 30, 60, 90] as const;
+/*
+  O SELETOR DE PERÍODO MUDOU DE CASA (D-311). `PERIOD_PRESETS`,
+  `DEFAULT_PERIOD_DAYS` e `resolvePeriodDays` moram em `lib/period.ts` desde
+  que a Home virou a TERCEIRA tela a querer um seletor. O motivo é o mesmo que
+  D-308 escreveu ao criar o segundo consumidor: "últimos 30 dias" precisa
+  querer dizer a mesma coisa em todas as telas — e um vocabulário compartilhado
+  não podia continuar morando num módulo batizado por UMA delas.
 
-/** O que a tela sempre mostrou antes de haver seletor. Fica fora da URL. */
-export const DEFAULT_PERIOD_DAYS = 30;
-
-const PERIOD_VALUES = new Set<number>(PERIOD_PRESETS);
-
-/**
- * Lista fechada pelo mesmo motivo de `STATUS_KEYS`: um valor arbitrário
- * viajaria até `p_date_from` e devolveria uma janela que ninguém pediu — ou,
- * com número enorme, uma varredura cara que a tela não anuncia.
- */
-export function resolvePeriodDays(raw: unknown): number {
-  const dias = typeof raw === "string" ? Number.parseInt(raw, 10) : Number.NaN;
-
-  return PERIOD_VALUES.has(dias) ? dias : DEFAULT_PERIOD_DAYS;
-}
+  A regra que este módulo continua guardando: a janela mexe SÓ nas colunas de
+  desempenho — venda, receita, visitas, dias observados, conversão — e no
+  predicado `p_sold`. **As contagens da faixa não mudam com ela**: `metricas` e
+  `visitas` entram na RPC por `left join`, então trocar o período não tira nem
+  põe anúncio no conjunto.
+*/
 
 export function resolveLinkStateFilter(raw: unknown): string {
   return typeof raw === "string" && LINK_STATE_KEYS.has(raw) ? raw : "all";

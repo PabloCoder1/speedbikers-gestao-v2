@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { previousBusinessDateRange, shiftBusinessDate, toSalesMetricDate } from "@sb/domain";
+import { businessDateRangeLength, previousBusinessDateRange, shiftBusinessDate, toSalesMetricDate } from "@sb/domain";
 import type { ReactNode } from "react";
 
+import { FilterMenu } from "../components/filter-menu";
 import { KpiStrip, type KpiCellData } from "../components/kpi-strip";
 import { PageTitle } from "../components/page-title";
 import { Panel } from "../components/panel";
@@ -13,6 +14,9 @@ import { eventTypeLabel, severityLabel } from "../lib/labels";
 import { formatBusinessDate, formatCount, formatCurrency, formatDateTime } from "../lib/format";
 import { createClient } from "../lib/supabase/server";
 import { currentMembership } from "../lib/membership";
+import { buildFilterHref } from "../lib/filters";
+import { formatAge } from "../lib/relative-time";
+import { HOME_SERIE_DEFAULT_DAYS, PERIOD_PRESETS, resolvePeriodDays } from "../lib/period";
 
 export const metadata = { title: "Visão Geral — Speed Bikers Gestão" };
 
@@ -67,8 +71,18 @@ export const dynamic = "force-dynamic";
  */
 
 const JANELA_DIAS = 30;
-const SERIE_DIAS = 14;
 const ATIVIDADE_LIMITE = 5;
+
+/*
+  `SERIE_DIAS = 14` ERA CONSTANTE DE MÓDULO e virou seletor (D-311). O frame põe
+  um controle no cabeçalho do gráfico ("14 dias ⌄") e a V3 tinha ali um link
+  para FORA da tela — o inverso do que o desenho faz naquele canto.
+
+  O padrão passou de 14 para 15 porque 14 não está na lista fechada do app e 15
+  está: a leitura muda em um dia e o vocabulário de período passa a ser um só
+  (`lib/period.ts`). O "14" do frame não defende nada — o botão do protótipo não
+  oferece opção nenhuma.
+*/
 
 type Severidade = "critico" | "importante" | "acompanhar";
 
@@ -181,6 +195,8 @@ interface AtividadeLinha {
     event_type: string;
     entity_type: string;
     severity: string;
+    /** Quando a mudança ACONTECEU — ver o comentário do `select` (D-311). */
+    occurred_at: string;
     ml_accounts: { label: string } | null;
   } | null;
 }
@@ -230,14 +246,30 @@ function sobrancelhaData(agora: Date): string {
   return `${DIAS[semana] ?? ""}, ${pegar("day")} ${MESES[mes] ?? ""}`;
 }
 
-export default async function HomePage(): Promise<ReactNode> {
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}): Promise<ReactNode> {
   const supabase = await createClient();
+  const query = await searchParams;
 
   const agora = new Date();
   const hoje = toSalesMetricDate(agora);
   const janela = { from: shiftBusinessDate(hoje, -(JANELA_DIAS - 1)), to: hoje };
   const anterior = previousBusinessDateRange(janela.from, janela.to);
-  const serie = { from: shiftBusinessDate(hoje, -(SERIE_DIAS - 1)), to: hoje };
+
+  /*
+    `?serie=` TERMINA NA SÉRIE, e o nome do parâmetro é a defesa disso.
+
+    `janela` (30 dias) alimenta a faixa de indicadores, a comparação com o
+    período anterior, a cobertura e a contagem de anúncios pausados — os
+    números dos cartões de atenção. Ligar o seletor do GRÁFICO nela faria os
+    contadores da tela inteira mudarem por causa de um controle que está no
+    cabeçalho de um painel, e ninguém pediu isso. Um controle, um bloco.
+  */
+  const serieDias = resolvePeriodDays(query.serie, HOME_SERIE_DEFAULT_DAYS);
+  const serie = { from: shiftBusinessDate(hoje, -(serieDias - 1)), to: hoje };
 
   // Consultas independentes em paralelo, nunca em cascata
   // (`docs/ARCHITECTURE.md` secao 21, regra 4). Nenhuma delas recebe
@@ -290,7 +322,18 @@ export default async function HomePage(): Promise<ReactNode> {
       // já restringe o embed à própria linha do usuário.
       supabase
         .from("notifications")
-        .select("id, created_at, domain_events(event_type, entity_type, severity, ml_accounts(label))")
+        /*
+          `occurred_at` ENTRA NO EMBED (D-311), e a coluna importa: ela é
+          QUANDO A MUDANÇA ACONTECEU, enquanto `notifications.created_at` é o
+          instante em que o fan-out gravou o aviso. Os dois costumam ser
+          próximos e não são a mesma coisa — o desvio máximo medido nesta base
+          foi de 278 dias (D-060), num backfill. Uma linha dizendo "há 12 min"
+          sobre um fato de março seria número inventado.
+
+          É a mesma expressão que `/notificacoes` já usa, e depois desta fatia
+          as duas telas passam a mostrar o mesmo instante para o mesmo evento.
+        */
+        .select("id, created_at, domain_events(event_type, entity_type, severity, occurred_at, ml_accounts(label))")
         .order("created_at", { ascending: false })
         .limit(ATIVIDADE_LIMITE),
       userId === null
@@ -552,11 +595,55 @@ export default async function HomePage(): Promise<ReactNode> {
       <div className="sb-lower-grid">
         <Panel
           title="Faturamento diário"
-          subtitle={`últimos ${String(SERIE_DIAS)} dias · todas as contas conectadas`}
+          subtitle={
+            <>
+              {/*
+                O SUBTÍTULO FICA CURTO DE PROPÓSITO. A primeira versão trazia o
+                intervalo resolvido entre parênteses e a captura mostrou o
+                custo: `.sb-panel-head` quebra em duas linhas quando título e
+                `aside` não cabem juntos, e o controle — que o frame põe à
+                direita — descia para baixo do texto. A faixa de indicadores,
+                logo acima, já imprime um intervalo; dois numa tela é ruído.
+              */}
+              últimos {serieDias} dias · todas as contas conectadas
+              {/*
+                A RESSALVA DE SÉRIE PARCIAL entra junto com o seletor, e é ele
+                que a torna provável: escolher 90 dias numa base que só
+                materializou 2 desenha uma área que parece cobrir a janela
+                inteira. É a mesma frase de `/vendas`, palavra por palavra —
+                duas telas que mostram a mesma série não podem qualificá-la de
+                jeitos diferentes.
+              */}
+              {pontos.length > 0 && pontos.length < businessDateRangeLength(serie.from, serie.to)
+                ? ` · só ${String(pontos.length)} ${pontos.length === 1 ? "dia tem" : "dias têm"} métrica calculada`
+                : ""}
+            </>
+          }
           aside={
-            <Link href="/vendas" style={{ color: "var(--sb-secondary)", textDecoration: "none" }}>
-              Ver o Dashboard de Vendas →
-            </Link>
+            <>
+              <Link href="/vendas" style={{ color: "var(--sb-secondary)", textDecoration: "none" }}>
+                Ver o Dashboard de Vendas →
+              </Link>
+              {/*
+                O CONTROLE QUE O FRAME PÕE AQUI (D-311). Ele é o ÚLTIMO filho do
+                `aside` de propósito: `.sb-menu-panel` abre alinhado à direita, e
+                o botão fica na borda do painel como no desenho. O link para
+                `/vendas` fica — é o caminho para a tela DONA do número, e o
+                frame não tem essa tela para onde ir.
+
+                As opções são as cinco do app (`lib/period.ts`), nunca uma lista
+                própria: "últimos 30 dias" tem de querer dizer a mesma coisa
+                aqui, em `/vendas` e em `/anuncios`.
+              */}
+              <FilterMenu
+                rotulo={`Últimos ${String(serieDias)} dias`}
+                opcoes={PERIOD_PRESETS.map((dias) => ({
+                  href: buildFilterHref("/", { serie: dias === HOME_SERIE_DEFAULT_DAYS ? null : String(dias) }, 1),
+                  ativo: dias === serieDias,
+                  label: `Últimos ${String(dias)} dias`,
+                }))}
+              />
+            </>
           }
         >
           <div style={{ padding: "var(--sb-space-2) var(--sb-space-3) var(--sb-space-3)" }}>
@@ -594,7 +681,16 @@ export default async function HomePage(): Promise<ReactNode> {
               Nenhum evento registrado ainda.
             </p>
           ) : (
-            eventos.map((evento) => (
+            eventos.map((evento) => {
+              /*
+                O INSTANTE DO FATO, com o carimbo do aviso como reserva — a
+                mesma expressão de `/notificacoes`. O embed só vem nulo quando
+                o evento sumiu debaixo da notificação, e aí a linha continua
+                povoada em vez de ficar sem data.
+              */
+              const instante = evento.domain_events?.occurred_at ?? evento.created_at;
+
+              return (
               <Link key={evento.id} href="/notificacoes" className="sb-feed-row">
                 <span
                   aria-hidden="true"
@@ -606,8 +702,21 @@ export default async function HomePage(): Promise<ReactNode> {
                 />
                 <span style={{ flex: 1, minWidth: 0 }}>
                   <b>{eventTypeLabel(evento.domain_events?.event_type ?? "—")}</b>
-                  <small>
-                    {formatDateTime(evento.created_at)}
+                  {/*
+                    A IDADE, como no frame ("4 min atrás"), com a data exata no
+                    `title` — o padrão de `/acoes` e `/contas`.
+
+                    `formatAge` recebe o `agora` desta renderização de
+                    propósito: um relógio por render, o mesmo que a saudação e a
+                    sobrancelha de data já usam. A duração CONGELA na tela de
+                    quem deixa a aba aberta — exposição que esta página já
+                    aceita duas vezes (o "Bom dia" também envelhece), e a janela
+                    útil de `formatAge` é de sete dias: acima disso ela devolve
+                    `null` e a linha volta a mostrar a data absoluta, que é o
+                    que informa.
+                  */}
+                  <small title={formatDateTime(instante)}>
+                    {formatAge(instante, agora) ?? formatDateTime(instante)}
                     {evento.domain_events !== null && ` · ${severityLabel(evento.domain_events.severity)}`}
                     {evento.domain_events?.ml_accounts != null && ` · ${evento.domain_events.ml_accounts.label}`}
                   </small>
@@ -616,7 +725,8 @@ export default async function HomePage(): Promise<ReactNode> {
                   ›
                 </span>
               </Link>
-            ))
+              );
+            })
           )}
         </Panel>
       </div>

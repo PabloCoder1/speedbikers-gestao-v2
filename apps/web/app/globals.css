@@ -845,6 +845,14 @@ body {
   gap: var(--sb-space-2);
   font-size: 0.6875rem;
   color: var(--sb-text-soft);
+  /*
+   * `margin-left: auto` para o caso em que o cabeçalho QUEBRA (D-311). Com
+   * `flex-wrap: wrap`, título e `aside` que não cabem na mesma linha viram duas
+   * linhas — e aí `justify-content: space-between` não faz nada, porque há um
+   * item só em cada. A âncora ia para a esquerda, embaixo do subtítulo; no
+   * frame o controle está SEMPRE na direita. Na linha única não muda nada.
+   */
+  margin-left: auto;
 }
 
 /*

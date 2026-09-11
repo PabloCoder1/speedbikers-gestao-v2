@@ -8829,6 +8829,61 @@ E a mesma rodada relembrou a outra: rodar a suite duas vezes no mesmo banco seme
 
 **Verificacao:** `check` 29/29 (`--force`), build 8/8, e2e **125/125** em banco recriado (+3), integracao 658/658, cinco guardas verdes. O cabecalho foi renderizado a **1440px e 1100px**, em tres situacoes: anuncio com preco e saldo, anuncio com `available_quantity = 0` (o zero aparece, e o caso de e2e existe para reprovar quem "melhorar" isso com guarda falsy) e na aba Historico, onde o caminho some.
 
+## D-311 - A11: a Home contra o frame -- o controle que o painel devia ter, a idade do FATO, e as duas recusas que a revisao produziu
+
+**Contexto:** a Home era a unica superficie que **nunca tinha sido remedida** desde a primeira auditoria (2026-09-04, 87%). A varredura de D-310 leu-a de novo e achou quatro diferencas acionaveis; cada uma foi entao atacada por um cetico com uma lente propria, e **duas cairam**. Esta fatia entrega as duas que sobreviveram, e registra as duas que cairam -- porque recusa medida vale tanto quanto entrega.
+
+---
+
+**1. O VOCABULARIO DE PERIODO GANHOU DONO ANTES DE GANHAR O TERCEIRO CONSUMIDOR**
+
+O achado propunha um seletor de 7/14/30 dias no grafico. O cetico derrubou a PROPOSTA sem derrubar o achado, e a diferenca e o resultado da revisao: a casa tem **uma lista fechada** -- `PERIOD_PRESETS = [7, 15, 30, 60, 90]` -- e D-308 escreveu a regra em geral, nao so para `/anuncios`: *"'ultimos 30 dias' precisa querer dizer a mesma coisa nas duas telas"*. 7/14/30 seria o **terceiro** vocabulario.
+
+Entao a fatia comeca mudando o trio de casa: `PERIOD_PRESETS`, `DEFAULT_PERIOD_DAYS` e `resolvePeriodDays` saem de `lib/listings-dashboard.ts` -- modulo batizado por UMA tela -- para **`lib/period.ts`**, e `/vendas` apaga a propria copia da lista (`PRESET_DAYS`, que era a segunda). Duas copias sao coincidencia; tres e divergencia esperando acontecer, e esta casa ja pagou essa conta cinco vezes com mapas de tom (D-246).
+
+**O tipo virou a guarda.** `resolvePeriodDays(raw, fallback: PeriodPreset)` so aceita como padrao um dos cinco literais -- entao **"14 dias", o numero que o frame desenha no botao, nao compila**. O padrao da Home e 15: a leitura muda em UM dia, nenhum numero de negocio depende disso, e em troca o app inteiro tem uma lista so. O "14" do frame nao defende nada, porque o botao do prototipo nao oferece opcao nenhuma.
+
+---
+
+**2. `?serie=` TERMINA NA SERIE, E O NOME DO PARAMETRO E A DEFESA**
+
+A Home tem DUAS janelas na mesma tela: a faixa de indicadores em 30 dias e o grafico. Ligar o seletor do grafico na `janela` de 30 faria os contadores dos cartoes de atencao, a cobertura e a contagem de anuncios pausados mudarem por causa de um controle que esta no cabecalho de outro bloco. **Um controle, um bloco** -- e o caso de e2e afirma as duas metades juntas: com `?serie=7`, o grafico diz 7 dias e a faixa continua dizendo 30.
+
+O default fica FORA da URL: `/` continua sendo o endereco da Home padrao.
+
+---
+
+**3. A IDADE DO FATO, E NAO A DO AVISO**
+
+O frame escreve "4 min atras" no feed; a V3 escrevia data e hora absolutas. A ferramenta que faltava -- `formatAge`, so duracoes, nunca "Hoje/Ontem" (a armadilha de fuso de D-260) -- **nasceu quatro dias DEPOIS da auditoria que registrou a lacuna**. A pergunta de D-282 respondida com hash de commit.
+
+Mas a proposta ao pe da letra estava errada, e o cetico pegou: `formatAge(notifications.created_at)` veste o carimbo do **aviso** como idade do **fato**. `domain_events.occurred_at` e quando a mudanca aconteceu; `notifications.created_at` e quando o fan-out gravou. O desvio maximo medido nesta base entre as duas colunas foi de **278 dias** (D-060), num backfill. O embed ganhou `occurred_at` e a linha passou a ler a coluna certa -- a mesma expressao que `/notificacoes` ja usava, entao as duas telas passaram a dizer o mesmo instante para o mesmo evento.
+
+O seed mostra a diferenca na tela: os dois eventos de preco nascem com `occurred_at` de 2 dias e 1 dia atras enquanto as notificacoes sao gravadas no instante do seed. Lendo a coluna errada, as duas linhas diriam a mesma idade fresca.
+
+**A data exata nao se perde:** ela vive no `title` da linha, e acima de sete dias `formatAge` devolve `null` e o texto volta a ser a data absoluta.
+
+---
+
+**4. AS DUAS QUE CAIRAM, E ELAS VALEM TANTO QUANTO AS QUE ENTRARAM**
+
+| achado | por que caiu |
+|---|---|
+| **A quinta celula da faixa** ("Estoque em risco", como no frame) | seria o **mesmo escalar, com outro nome, a um scroll de distancia**: `em_ruptura` ja e impresso na Home, no cartao "SKUs sem saldo local", com o **mesmo destino** `/reposicao`. Dois donos do mesmo dado (D-224) -- a regra pela qual a propria tabela de desvios ja recusa "Faturamento hoje" na Home |
+| **O segundo cartao CRITICO do frame** ("casos proximos do prazo") | a lacuna existe -- a Home nao tem sinal de prazo --, mas a proposta era ler `get_support_metrics`, e os predicados **divergem**: a funcao conta LINHAS de `support_case_deadlines` e exclui vencido, enquanto `/atendimento?prazo=risco` conta CASOS e inclui vencido. Cartao que promete um numero e link que abre outro recorte e exatamente o defeito que D-242/D-243 fecharam. A forma defensavel esta escrita no registro: a mesma consulta do link, em `head count`, dentro do `Promise.all` que ja existe |
+
+---
+
+**5. O QUE SO A CAPTURA ACHARIA (de novo)**
+
+Com o subtitulo mais longo, `.sb-panel-head` -- que e `flex-wrap: wrap` -- quebrou em duas linhas, e o `aside` foi para a ESQUERDA, embaixo do texto: `justify-content: space-between` nao faz nada quando ha um item por linha. O frame poe o controle sempre a direita. `.sb-panel-aside` ganhou `margin-left: auto`, que nao muda nada na linha unica e resolve a quebrada. E o subtitulo perdeu o intervalo entre parenteses: a faixa logo acima ja imprime um, e dois intervalos numa tela e ruido.
+
+---
+
+**Impacto:** `apps/web/lib/period.ts` e `period.test.ts` (novos), `apps/web/lib/listings-dashboard.{ts,test.ts}` (o trio saiu), `apps/web/app/{page,vendas/page,anuncios/page}.tsx`, `apps/web/app/globals.css`, `apps/web/e2e/home.spec.ts` (+2). **Sem migration, sem RPC nova e sem leitura nova:** o seletor reusa a janela que a RPC ja aceita, e `occurred_at` entrou num embed que ja existia.
+
+**Verificacao:** `check` 29/29 (`--force`, com os 7 casos novos de `period.test.ts`), build 8/8, e2e **127/127** em banco recriado (+2), integracao 658/658, cinco guardas verdes. A Home foi renderizada a 1440px em tres estados do painel: padrao (15 dias), `?serie=7` e com a ressalva de serie parcial visivel.
+
 ## Como adicionar nova decisao
 
 Registrar:
