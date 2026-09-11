@@ -30,6 +30,22 @@ Uma função SQL aparece como `Function Scan` e esconde o plano interno. Para
 ver o nó dominante, rode o corpo da função como consulta solta, com os mesmos
 parâmetros.
 
+⚠️ **Em `plpgsql`, meça OITO vezes na MESMA conexão e olhe a SEXTA** (D-319). O
+SPI planeja com plano *custom* nas cinco primeiras execuções de uma conexão e
+migra para o *genérico* na sexta — e o genérico planeja sem os valores dos
+argumentos. Uma medição de uma execução mede o caso bom e vai embora feliz:
+`get_sku_curation` mediu 15-36 ms até a quinta e **360 a 4.000 ms da sexta em
+diante**. Em `language sql` não há salto (o corpo já nasce genérico) e o sinal é
+outro — estado estável desproporcional, como D-307 registrou.
+
+**A magnitude da penalidade varia com a estatística; o salto, não.** A mesma
+função, no mesmo volume, com duas cargas sintéticas diferentes, saltou para
+3.938 ms numa e para 365 ms na outra. Registre faixa, não um número de sorte.
+
+⚠️ **`pg_stat_statements` mede o que foi chamado, não o que pode ser chamado.**
+Foi por parecer barata ali (200 ms de média) que `get_sku_curation` ficou fora
+da varredura de D-307 — e ela estava doente. Média de produção não é cobertura.
+
 ## Budget de arquitetura
 
 Não são testes de CI (seriam instáveis). São o alvo para benchmark
@@ -418,6 +434,7 @@ Cada linha tem o antes/depois real, não estimativa.
 | 2026-09-02 | Materialização das métricas diárias | **218,5** linhas escritas por recompute | **1,5** | `on conflict do update ... where a linha difere` no lugar de apaga-e-insere; remedido no Dev com tráfego real | D-199 |
 | 2026-09-02 | `get_system_health` (escopo de organização) | 308,7 / 287,9 ms | **261,9 / 267,7 ms** | filtrar `job_runs` por CONJUNTO antes do `distinct on`; a correção de segurança saiu **mais barata** que o defeito | D-209 |
 | 2026-09-03 | Caminho de pedidos (janela) — **medido em produção** | 743 / 608 / 541 ms por pedido | **43,4 / 29,4 / 19,0** | lote de leitura e de escrita por página (D-186/D-188/D-190), agora com tráfego real; ganho de **17× a 28×**, por faixa de lote | D-220 |
+| 2026-09-11 | `get_sku_curation` — **da 6ª execução em diante** | 360 a 4.000 ms | **16 a 34 ms** | `plan_cache_mode = 'force_custom_plan'`; nenhuma linha do corpo mudou. Medido em LOCAL com catálogo sintético de 3.502 SKUs | D-319 |
 
 **Lição de D-195 — o piso de latência, e o que ele NÃO é.** Deste ambiente
 contra o Supabase Dev, uma leitura trivial (`organizations?select=id&limit=1`)
