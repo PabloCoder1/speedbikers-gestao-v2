@@ -333,8 +333,12 @@ test("Dashboard do SKU: o diagnóstico julga com régua, e diz o que não julga"
   // exigiria o mesmo grão.
   await expect(saude.locator(".sb-stat", { hasText: "Estoque anunciado" })).toContainText("interno:");
 
-  // A dispersão de preço é NÚMERO, não alerta.
-  await expect(saude.locator(".sb-stat", { hasText: "Preço anunciado" })).toContainText("% de diferença");
+  /*
+    A DISPERSÃO DE PREÇO ESPEROU A RÉGUA. Em D-317 ela era número sem selo;
+    o dono decidiu o teto (10% sobre o menor, por organização, D-318) e ela
+    virou verificação — o número continua ao lado, com o teto junto.
+  */
+  await expect(saude.locator(".sb-stat", { hasText: "Preço anunciado" })).toContainText("sobre o menor (teto 10%)");
 
   const problemas = page.getByRole("region", { name: "Problemas encontrados" });
 
@@ -349,10 +353,14 @@ test("Dashboard do SKU: o diagnóstico julga com régua, e diz o que não julga"
     mentir: sem teto configurado não há selo de dispersão, e sem tabela de
     outra plataforma não há diagnóstico de Shopee.
   */
+  // O seed tem 26,4% de diferença entre os dois anúncios: acima do teto.
+  await expect(problemas).toContainText("Preços muito diferentes entre os anúncios");
+  await expect(problemas).toContainText("teto da organização");
+
   const naoJulga = page.getByRole("region", { name: "O que esta tela NÃO julga" });
 
-  await expect(naoJulga).toContainText("teto de dispersão");
   await expect(naoJulga).toContainText("Mercado Livre");
+  await expect(naoJulga).toContainText("catálogo");
 
   // O motor de anomalia de venda continua onde estava, e continua sob demanda.
   await expect(page.getByRole("button", { name: "O que aconteceu?" })).toBeVisible();

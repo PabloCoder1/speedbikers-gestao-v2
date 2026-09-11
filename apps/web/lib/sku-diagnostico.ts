@@ -15,9 +15,11 @@ import type { AnuncioDoSku } from "./sku-listings";
  * tem condição escrita **não vira selo**: vira linha em `semRegua`.
  *
  * A regra da casa por trás disso é D-148: "quanto é demais é decisão do ADMIN,
- * não constante do código". Por isso a dispersão de preço aparece como NÚMERO
- * e não como alerta — não há teto configurado em lugar nenhum, e inventar 10%
- * aqui seria exatamente a constante que aquela decisão proíbe.
+ * não constante do código". A dispersão de preço passou por ela: nasceu como
+ * NÚMERO SEM SELO em D-317, porque não havia teto; o dono decidiu **10% sobre
+ * o menor preço, para a organização** (D-318), e só então ela virou
+ * verificação. O caminho — número primeiro, selo depois da régua — é o que
+ * esta casa faz com limiar de negócio.
  *
  * ## O que ele NÃO faz
  *
@@ -101,6 +103,28 @@ export interface DiagnosticoDoSku {
 */
 const CATALOGO_CADENCIA_MIN = RECONCILIATION_RESOURCE.listings?.cadenceMin ?? 360;
 const TOLERANCIA_JANELAS = 2;
+
+/**
+ * O TETO DE DISPERSÃO DE PREÇO — **10% sobre o MENOR preço**, para a
+ * organização inteira (D-318).
+ *
+ * Este número não é do código: é a decisão do dono do produto, pedida em
+ * D-317 justamente porque D-148 proíbe a constante inventada ("quanto é demais
+ * é decisão do ADMIN"). Até ela existir, a tela imprimia a dispersão como
+ * número e recusava o selo; agora há régua, e o selo acende.
+ *
+ * **Sobre o MENOR, e não sobre a média**: foi o que o dono escolheu, e é a
+ * leitura mais dura das duas — a mesma diferença absoluta dá percentual maior
+ * sobre o menor preço. A base aparece na tela junto do número, porque "11%"
+ * sem dizer de que é não se confere.
+ *
+ * **Uma organização, um teto**: não há teto por marca nem por SKU (a pergunta
+ * foi feita e a resposta foi "por organização"). Se um dia a operação quiser
+ * tetos diferentes por marca, o caminho é o de `replenishment_settings` —
+ * tabela com escopo, tela dona e policy —, e esta constante vira o padrão
+ * dela. Enquanto for uma só, tabela para um número seria cerimônia.
+ */
+export const TETO_DISPERSAO_PCT = 10;
 
 function pior(a: NivelDiagnostico | null, b: NivelDiagnostico): NivelDiagnostico {
   if (a === null) return b;
@@ -263,10 +287,24 @@ export function diagnosticarSku(entrada: EntradaDoDiagnostico): DiagnosticoDoSku
       dispersaoPct: menor === 0 ? 0 : Math.round(((maior - menor) / menor) * 1000) / 10,
     };
 
-    if (precosLidos.length > 1 && maior > menor) {
-      semRegua.push(
-        "Dispersão de preço entre os anúncios: o número está no bloco de preços, sem selo. Não há teto de dispersão configurado, e afirmar “alto” sem régua seria palpite com cara de veredito.",
-      );
+    /*
+      DISPERSÃO ACIMA DO TETO — atenção, e não crítico: preço diferente entre
+      anúncios não impede a venda, ele corrói margem e confunde quem compara.
+      O crítico desta tela é reservado para o que PARA a venda.
+    */
+    if (precosLidos.length > 1 && precos.dispersaoPct > TETO_DISPERSAO_PCT) {
+      problemas.push({
+        chave: "dispersao-de-preco",
+        titulo: "Preços muito diferentes entre os anúncios",
+        nivel: "atencao",
+        onde: null,
+        problema: `O mesmo SKU está anunciado de ${precos.menor.toFixed(2)} a ${precos.maior.toFixed(2)} — ${String(precos.dispersaoPct).replace(".", ",")}% sobre o menor preço, acima do teto de ${String(TETO_DISPERSAO_PCT)}% da organização.`,
+        causa:
+          "Reajuste aplicado em parte dos anúncios, promoção que não foi desfeita, ou preço de conta nova que nunca foi alinhado.",
+        recomendacao:
+          "Conferir em Preços qual anúncio está fora da faixa e alinhar — ou registrar que a diferença é proposital.",
+        regua: `(maior − menor) ÷ menor > ${String(TETO_DISPERSAO_PCT)}% (teto da organização)`,
+      });
     }
   }
 

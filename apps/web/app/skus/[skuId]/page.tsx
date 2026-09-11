@@ -25,7 +25,13 @@ import { fullSituationCriterion, fullSituationLabel, fullSituationTom, isFullRow
 import { createClient } from "../../../lib/supabase/server";
 import { descreverCobertura } from "../../../lib/sku-coverage-display";
 import { acaoDeVinculo, lerAnuncio, resumoDeAnuncios, type AnuncioDoSku, type LinhaDeAnuncio } from "../../../lib/sku-listings";
-import { compararPrecoDaConta, diagnosticarSku, NIVEL, type AcaoAberta } from "../../../lib/sku-diagnostico";
+import {
+  compararPrecoDaConta,
+  diagnosticarSku,
+  NIVEL,
+  TETO_DISPERSAO_PCT,
+  type AcaoAberta,
+} from "../../../lib/sku-diagnostico";
 import { FilterMenu } from "../../../components/filter-menu";
 import { RemoverVinculo } from "./remover-vinculo";
 import { VincularAnuncio } from "./vincular-anuncio";
@@ -1616,7 +1622,7 @@ export default async function SkuDashboardPage({
                   <span className="sb-stat-note">
                     {diagnostico.precos === null
                       ? "nenhum preço sincronizado"
-                      : `menor ${formatCurrency(diagnostico.precos.menor)} · maior ${formatCurrency(diagnostico.precos.maior)} · ${String(diagnostico.precos.dispersaoPct).replace(".", ",")}% de diferença`}
+                      : `menor ${formatCurrency(diagnostico.precos.menor)} · maior ${formatCurrency(diagnostico.precos.maior)} · ${String(diagnostico.precos.dispersaoPct).replace(".", ",")}% sobre o menor (teto ${String(TETO_DISPERSAO_PCT)}%)`}
                   </span>
                 </div>
               </div>
@@ -1700,8 +1706,16 @@ export default async function SkuDashboardPage({
             </Panel>
           </div>
 
-          {diagnostico.semRegua.length > 0 && (
-            <div style={{ marginTop: "var(--sb-space-3)" }}>
+          {/*
+            ESTE PAINEL NÃO É CONDICIONAL, e a primeira versão dele era — o que
+            deixava a tela calada justamente no SKU sem nenhuma ressalva
+            situacional. As duas últimas linhas são verdade SEMPRE (não há
+            outra plataforma nesta base, e quatro campos do Mercado Livre não
+            são sincronizados), e limite permanente que só aparece às vezes é
+            pior do que limite nenhum: ensina que a ausência significa "tudo
+            coberto".
+          */}
+          <div style={{ marginTop: "var(--sb-space-3)" }}>
               <Panel
                 title="O que esta tela NÃO julga"
                 subtitle="cada linha é uma pergunta que a fonte não responde — dizer isso é o que impede a tela de responder errado"
@@ -1722,8 +1736,7 @@ export default async function SkuDashboardPage({
                   </ul>
                 </div>
               </Panel>
-            </div>
-          )}
+          </div>
 
           <div style={{ marginTop: "var(--sb-space-3)" }}>
             <DiagnosisPanel skuId={sku.data.id} />

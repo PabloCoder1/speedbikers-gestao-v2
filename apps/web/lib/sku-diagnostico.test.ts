@@ -126,21 +126,49 @@ describe("diagnosticarSku", () => {
   });
 
   /*
-    A DISPERSÃO DE PREÇO É NÚMERO, NUNCA SELO. D-148: "quanto é demais é
-    decisão do ADMIN, não constante do código" — e não há teto configurado.
+    A DISPERSÃO DE PREÇO ESPEROU A RÉGUA PARA VIRAR SELO. Em D-317 ela era
+    número puro, porque não havia teto — D-148 proíbe a constante inventada. O
+    dono decidiu 10% sobre o MENOR preço, para a organização (D-318), e é esse
+    limite que estes três casos guardam: o número continua saindo sempre, e o
+    selo só acende acima do teto.
   */
-  it("preços divergentes dão NÚMERO e uma linha de `semRegua`, não um alerta", () => {
+  it("acima do teto vira ATENÇÃO — não crítico: preço torto não para a venda", () => {
     const d = diagnosticarSku(
       entrada({
         anuncios: [anuncio({ price: 89.9 }), anuncio({ item_id: "MLB2", ml_account_id: "c2", price: 99.9 })],
       }),
     );
 
-    expect(d.precos?.menor).toBe(89.9);
-    expect(d.precos?.maior).toBe(99.9);
     expect(d.precos?.dispersaoPct).toBe(11.1);
+    expect(d.nivel).toBe("atencao");
+
+    const problema = d.problemas.find((p) => p.chave === "dispersao-de-preco");
+
+    expect(problema?.regua).toBe("(maior − menor) ÷ menor > 10% (teto da organização)");
+    expect(problema?.problema).toContain("sobre o menor preço");
+  });
+
+  it("NO teto não acende — o limite é estritamente maior que 10%", () => {
+    const d = diagnosticarSku(
+      entrada({
+        anuncios: [anuncio({ price: 100 }), anuncio({ item_id: "MLB2", ml_account_id: "c2", price: 110 })],
+      }),
+    );
+
+    expect(d.precos?.dispersaoPct).toBe(10);
+    expect(d.problemas.map((p) => p.chave)).not.toContain("dispersao-de-preco");
     expect(d.nivel).toBe("ok");
-    expect(d.semRegua.join(" ")).toContain("teto de dispersão");
+  });
+
+  it("o número da dispersão sai mesmo quando não acende — fato antes de veredito", () => {
+    const d = diagnosticarSku(
+      entrada({
+        anuncios: [anuncio({ price: 100 }), anuncio({ item_id: "MLB2", ml_account_id: "c2", price: 103 })],
+      }),
+    );
+
+    expect(d.precos?.dispersaoPct).toBe(3);
+    expect(d.problemas).toHaveLength(0);
   });
 
   it("no escopo de UMA conta, a tela diz que estoque interno não tem conta", () => {
