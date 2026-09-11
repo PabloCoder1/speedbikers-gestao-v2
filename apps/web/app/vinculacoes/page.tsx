@@ -10,6 +10,7 @@ import { formatCount, formatCurrency, formatDateTime } from "../../lib/format";
 import {
   PAGE_SIZE,
   buildLinkIntegrityHref,
+  buildManualLinkHref,
   resolveLinkIntegrityFilters,
   summarizeLinkIntegrityWindow,
   toRpcArgs,
@@ -55,10 +56,24 @@ export const dynamic = "force-dynamic";
  * um dos dois seria omissão.
  */
 
+/** Uma linha de `get_link_integrity` — a fonte INDEPENDENTE, por conta. */
+interface LinkIntegrityRow {
+  ml_account_id: string;
+  account_label: string;
+  listings_total: number;
+  com_vinculo: number;
+  sem_vinculo: number;
+  pct_vinculado: number;
+  candidatos_abertos: number;
+  vendidos_sem_vinculo: number;
+  receita_sem_vinculo: number;
+}
+
 interface ListingRow {
   listing_id: string;
   item_id: string;
   title: string;
+  ml_account_id: string;
   account_label: string;
   sku: string | null;
   sku_id: string | null;
@@ -98,8 +113,21 @@ export default async function VinculacoesPage({
   const query = await searchParams;
   const filters = resolveLinkIntegrityFilters(query);
 
-  const membership = await currentMembership(supabase);
+  /*
+    As contas vêm ANTES do resto, e não junto: a lista e as cinco contagens
+    precisam do id da conta escolhida, e a URL traz o SLUG. Mesma ordem de
+    `/anuncios` (D-242) — duas idas em série, não seis.
+  */
+  const [membership, contas] = await Promise.all([
+    currentMembership(supabase),
+    // Só as contas que o usuário alcança — a RLS de `ml_accounts` decide.
+    supabase.from("ml_accounts").select("id, slug, label").order("label"),
+  ]);
+
   const organizationId = membership.organizationId;
+  const accounts = contas.data ?? [];
+  // Slug desconhecido cai em "todas as contas" em silêncio, como em `/anuncios`.
+  const contaEscolhida = accounts.find((a) => a.slug === filters.accountSlug) ?? null;
 
   if (organizationId === null) {
     return (
@@ -120,6 +148,13 @@ export default async function VinculacoesPage({
     p_organization_id: organizationId,
     p_date_from: desde.toISOString().slice(0, 10),
     p_date_to: hoje.toISOString().slice(0, 10),
+    /*
+      A conta entra na JANELA, não no recorte: ela vale para a lista E para as
+      cinco contagens. Fora daqui, a faixa falaria da organização inteira
+      enquanto a tabela mostra uma conta só — o desacordo entre cabeçalho e
+      corpo que D-236 proíbe.
+    */
+    p_ml_account_id: contaEscolhida?.id ?? null,
   };
 
   const recorte = toRpcArgs(filters);
@@ -136,7 +171,25 @@ export default async function VinculacoesPage({
   const contagem = (extra: Record<string, string>) =>
     supabase.rpc("get_listings_dashboard", { ...janela, p_limit: 1, p_offset: 0, ...extra });
 
-  const [lista, cTotal, cVinculados, cSemVinculo, cVendidosSemVinculo, integridade, candidatos, contas, manuais] =
+  /*
+    As duas leituras por tabela seguem o MESMO recorte de conta. A célula
+    "Candidatos pendentes" e a fila abaixo dela saem daqui: deixá-las fora do
+    filtro faria a tela dizer "3 candidatos" numa conta que não tem nenhum.
+  */
+  const candidatosBase = supabase
+    .from("link_candidates")
+    .select("id, sku_key, ref_kind, item_id, variation_id, user_product_id, created_at, ml_accounts(label)")
+    .eq("status", "OPEN");
+
+  const manuaisBase = supabase
+    .from("sku_listing_links")
+    .select("id, item_id, variation_id, confirmed_at, skus(sku), ml_accounts(label)")
+    .eq("source", "MANUAL");
+
+  const naConta = <T extends { eq: (coluna: "ml_account_id", valor: string) => T }>(consulta: T): T =>
+    contaEscolhida === null ? consulta : consulta.eq("ml_account_id", contaEscolhida.id);
+
+  const [lista, cTotal, cVinculados, cSemVinculo, cVendidosSemVinculo, integridade, candidatos, manuais] =
     await Promise.all([
       supabase.rpc("get_listings_dashboard", {
         ...janela,
@@ -152,19 +205,8 @@ export default async function VinculacoesPage({
       // A fonte INDEPENDENTE (pedidos). Não alimenta as células — alimenta a
       // ressalva que declara a divergência.
       supabase.rpc("get_link_integrity", { p_organization_id: organizationId, p_days: JANELA_DIAS }),
-      supabase
-        .from("link_candidates")
-        .select("id, sku_key, ref_kind, item_id, variation_id, user_product_id, created_at, ml_accounts(label)")
-        .eq("status", "OPEN")
-        .order("created_at", { ascending: true })
-        .limit(200),
-      supabase.from("ml_accounts").select("id, label").order("label"),
-      supabase
-        .from("sku_listing_links")
-        .select("id, item_id, variation_id, confirmed_at, skus(sku), ml_accounts(label)")
-        .eq("source", "MANUAL")
-        .order("confirmed_at", { ascending: false, nullsFirst: false })
-        .limit(10),
+      naConta(candidatosBase).order("created_at", { ascending: true }).limit(200),
+      naConta(manuaisBase).order("confirmed_at", { ascending: false, nullsFirst: false }).limit(10),
     ]);
 
   const rows = (lista.data ?? []) as unknown as ListingRow[];
@@ -177,10 +219,24 @@ export default async function VinculacoesPage({
   const totalAnuncios = conta(cTotal);
   const vendidosSemVinculoTabela = conta(cVendidosSemVinculo);
 
-  const porPedidos = ((integridade.data ?? []) as { vendidos_sem_vinculo: number; receita_sem_vinculo: number }[]);
-  const vendidosPorPedido = porPedidos.reduce((soma, l) => soma + l.vendidos_sem_vinculo, 0);
-  const receitaSemVinculo = porPedidos.reduce((soma, l) => soma + l.receita_sem_vinculo, 0);
+  /*
+    `get_link_integrity` devolve UMA LINHA POR CONTA, e é essa granularidade que
+    sustenta a comparação entre contas do painel lá embaixo. A faixa quer o
+    total; ela nunca soube que havia linhas.
+
+    O total tem que respeitar o filtro de conta, senão a ressalva compararia a
+    organização inteira (fonte independente) com uma conta só (tabela) e
+    inventaria uma divergência que não existe.
+  */
+  const porPedidos = (integridade.data ?? []) as LinkIntegrityRow[];
+  const doRecorte =
+    contaEscolhida === null ? porPedidos : porPedidos.filter((l) => l.ml_account_id === contaEscolhida.id);
+  const vendidosPorPedido = doRecorte.reduce((soma, l) => soma + l.vendidos_sem_vinculo, 0);
+  const receitaSemVinculo = doRecorte.reduce((soma, l) => soma + l.receita_sem_vinculo, 0);
   const divergencia = vendidosPorPedido - vendidosSemVinculoTabela;
+
+  /** `ml_account_id` → slug, para a comparação linkar no filtro desta mesma tela. */
+  const slugDaConta = new Map(accounts.map((a) => [a.id, a.slug]));
 
   const abertos = candidatos.data ?? [];
 
@@ -242,6 +298,7 @@ export default async function VinculacoesPage({
 
   const rotuloEstado = ESTADOS.find((e) => e.chave === filters.state)?.label ?? "Estado";
   const rotuloVenda = VENDAS.find((v) => v.chave === filters.sold)?.label ?? "Venda";
+  const rotuloConta = contaEscolhida?.label ?? "Todas as contas";
 
   return (
     <Shell>
@@ -281,6 +338,8 @@ export default async function VinculacoesPage({
               <form method="get" style={{ display: "flex", gap: "0.375rem", alignItems: "center" }}>
                 {filters.state !== "todos" && <input type="hidden" name="estado" value={filters.state} />}
                 {filters.sold !== "todos" && <input type="hidden" name="venda" value={filters.sold} />}
+                {/* Sem isto, buscar descartaria a conta escolhida — o GET manda só o que está no formulário. */}
+                {contaEscolhida !== null && <input type="hidden" name="conta" value={contaEscolhida.slug} />}
                 <input
                   className="sb-input"
                   type="search"
@@ -291,6 +350,28 @@ export default async function VinculacoesPage({
                   style={{ minWidth: "11rem" }}
                 />
               </form>
+
+              {/*
+                O recorte por conta, ao lado dos outros dois. A dimensão já
+                existia na URL e na RPC (`p_ml_account_id`) desde sempre; o que
+                faltava era o controle — e sem ele "ver só a Loja X" não tinha
+                caminho nenhum na tela.
+              */}
+              <FilterMenu
+                rotulo={rotuloConta}
+                opcoes={[
+                  {
+                    href: buildLinkIntegrityHref(filters, { accountSlug: null }),
+                    label: "Todas as contas",
+                    ativo: contaEscolhida === null,
+                  },
+                  ...accounts.map((a) => ({
+                    href: buildLinkIntegrityHref(filters, { accountSlug: a.slug }),
+                    label: a.label,
+                    ativo: contaEscolhida?.id === a.id,
+                  })),
+                ]}
+              />
 
               <FilterMenu
                 rotulo={rotuloEstado}
@@ -326,6 +407,7 @@ export default async function VinculacoesPage({
                     <th>Estado</th>
                     <th className="sb-num">Vendas ({JANELA_DIAS}d)</th>
                     <th className="sb-num">Preço</th>
+                    <th>Ação</th>
                   </tr>
                 </thead>
 
@@ -364,6 +446,28 @@ export default async function VinculacoesPage({
                           {formatCount(row.units_sold)}
                         </td>
                         <td className="sb-num">{formatCurrency(row.price)}</td>
+                        {/*
+                          O caminho da linha até a ação. A tabela mostra 863
+                          anúncios sem vínculo e, sem esta coluna, a única forma
+                          de vincular um deles era copiar o MLB à mão para o
+                          formulário lá embaixo — a tela dizia o problema e não
+                          oferecia a saída.
+                        */}
+                        <td>
+                          {row.link_state === "unlinked" ? (
+                            <Link
+                              className="sb-button"
+                              href={buildManualLinkHref(filters, {
+                                accountSlug: slugDaConta.get(row.ml_account_id) ?? filters.accountSlug,
+                                itemId: row.item_id,
+                              })}
+                            >
+                              Vincular
+                            </Link>
+                          ) : (
+                            <span style={{ color: "var(--sb-text-soft)" }}>—</span>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
@@ -386,6 +490,116 @@ export default async function VinculacoesPage({
               Próxima →
             </Link>
           )}
+        </div>
+      )}
+
+      {/*
+        COMPARAÇÃO ENTRE CONTAS — a leitura que D-128 criou e o reenquadramento
+        de D-259 reduziu a um `reduce` (D-313).
+
+        Ela NÃO obedece ao filtro de conta de propósito: comparar é o serviço
+        que este painel presta, e um painel de comparação recortado numa conta
+        só não compara nada. A conta escolhida aparece destacada, e cada linha
+        leva ao filtro — é daqui que se entra em "ver só esta conta".
+
+        A fonte é a INDEPENDENTE (`get_link_integrity`, a partir de
+        `order_items`), a mesma da ressalva da faixa. Por isso o cabeçalho diz
+        de onde vêm os números: sem isso, um número daqui ao lado de um da
+        tabela leria como erro de uma das duas.
+      */}
+      {porPedidos.length > 0 && (
+        <div style={{ marginTop: "var(--sb-space-5)" }}>
+          <Panel
+            title="Comparação entre contas"
+            subtitle={`Uma linha por conta, sem o filtro acima — comparar é o serviço deste painel. As colunas de catálogo usam a MESMA definição de vínculo da faixa (D-122), e por isso somam com ela; a última vem dos pedidos dos últimos ${String(JANELA_DIAS)} dias, a fonte independente. Clique numa conta para recortar a tabela acima nela.`}
+          >
+            <div style={{ overflowX: "auto" }}>
+              <table className="sb-table">
+                <thead>
+                  <tr>
+                    <th>Conta</th>
+                    <th className="sb-num">Anúncios</th>
+                    <th className="sb-num">Vinculados</th>
+                    <th className="sb-num">Sem vínculo</th>
+                    <th className="sb-num">% vinculado</th>
+                    <th className="sb-num">Candidatos</th>
+                    <th className="sb-num">Vendidos sem vínculo</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {porPedidos.map((linha) => {
+                    const slug = slugDaConta.get(linha.ml_account_id) ?? null;
+                    const selecionada = contaEscolhida?.id === linha.ml_account_id;
+
+                    return (
+                      <tr
+                        key={linha.ml_account_id}
+                        style={selecionada ? { background: "var(--sb-surface-soft, transparent)" } : undefined}
+                      >
+                        <td>
+                          {slug === null ? (
+                            linha.account_label
+                          ) : (
+                            <Link
+                              className="sb-entity"
+                              aria-current={selecionada ? "true" : undefined}
+                              href={buildLinkIntegrityHref(filters, { accountSlug: selecionada ? null : slug, page: 1 })}
+                            >
+                              {linha.account_label}
+                            </Link>
+                          )}
+                          {selecionada && (
+                            <span style={{ color: "var(--sb-text-soft)", fontSize: "0.6875rem" }}> · em foco</span>
+                          )}
+                        </td>
+                        <td className="sb-num">{formatCount(linha.listings_total)}</td>
+                        <td className="sb-num">{formatCount(linha.com_vinculo)}</td>
+                        <td className="sb-num">{formatCount(linha.sem_vinculo)}</td>
+                        {/* Sem anúncio nenhum não há percentual — "0%" afirmaria que nenhum está vinculado. */}
+                        <td className="sb-num">
+                          {linha.listings_total === 0 ? "—" : `${String(linha.pct_vinculado)}%`}
+                        </td>
+                        <td className="sb-num">{formatCount(linha.candidatos_abertos)}</td>
+                        <td className="sb-num">
+                          {linha.vendidos_sem_vinculo > 0 ? (
+                            <strong style={{ color: "var(--sb-danger-ink)" }}>
+                              {formatCount(linha.vendidos_sem_vinculo)}
+                            </strong>
+                          ) : (
+                            formatCount(0)
+                          )}
+                          <div style={{ color: "var(--sb-text-soft)", fontSize: "0.75rem", fontWeight: 400 }}>
+                            {formatCurrency(linha.receita_sem_vinculo)}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/*
+              A divergência que D-117 mediu: a fila de candidatos só conhece a
+              planilha do UpSeller, então conta com venda sem vínculo E zero
+              candidato é conta que a fila nunca vai resolver sozinha.
+            */}
+            {porPedidos.some((l) => l.vendidos_sem_vinculo > 0 && l.candidatos_abertos === 0) && (
+              <p
+                style={{
+                  margin: "var(--sb-space-2) 0 0",
+                  padding: "0 var(--sb-space-3) var(--sb-space-3)",
+                  fontSize: "0.8125rem",
+                  color: "var(--sb-danger-ink)",
+                }}
+              >
+                <strong>Divergência:</strong> há conta com anúncio que vendeu sem vínculo e fila de candidatos
+                vazia. A fila nunca soube desses anúncios — o gerador de candidatos só conhece a planilha do
+                UpSeller. Esses saem pela vinculação manual, na tabela acima.
+              </p>
+            )}
+          </Panel>
         </div>
       )}
 
@@ -450,9 +664,22 @@ export default async function VinculacoesPage({
       </div>
 
       <div style={{ marginTop: "var(--sb-space-4)" }}>
+        {/*
+          `conta` na URL é SLUG (o mesmo do filtro); o formulário precisa do id.
+          A tradução é aqui, e é ela que faz um link só recortar a tabela e
+          preencher o formulário ao mesmo tempo.
+        */}
         <ManualLinkForm
-          accounts={contas.data ?? []}
-          {...(typeof query.conta === "string" ? { initialAccountId: query.conta } : {})}
+          /*
+            A `key` é o que faz o pré-preenchimento FUNCIONAR. `initialItemId`
+            vira `useState` na montagem, e a navegação do `Link` re-renderiza o
+            componente sem remontá-lo: sem isto o campo continua vazio depois de
+            clicar em "Vincular" numa linha — que foi exatamente o que o e2e
+            pegou. Trocando a identidade, o React remonta com o alvo novo.
+          */
+          key={`${contaEscolhida?.id ?? ""}:${typeof query.item === "string" ? query.item : ""}`}
+          accounts={accounts}
+          {...(contaEscolhida !== null ? { initialAccountId: contaEscolhida.id } : {})}
           {...(typeof query.item === "string" ? { initialItemId: query.item } : {})}
         />
 

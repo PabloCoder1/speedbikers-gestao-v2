@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   PAGE_SIZE,
   buildLinkIntegrityHref,
+  buildManualLinkHref,
   resolveLinkState,
   resolveSold,
   summarizeLinkIntegrityWindow,
@@ -83,6 +84,33 @@ describe("href", () => {
     );
     expect(buildLinkIntegrityHref(atual, { page: 2 })).toBe(
       "/vinculacoes?estado=sem-vinculo&pagina=2",
+    );
+  });
+});
+
+describe("href da vinculação manual", () => {
+  /**
+   * O link da linha carrega as DUAS coisas na mesma URL: o recorte de conta
+   * (slug, o mesmo vocabulário do filtro) e o MLB que o formulário pré-preenche.
+   * Um id cru aqui abriria um segundo vocabulário para a dimensão "conta".
+   */
+  it("leva conta e MLB, e termina no formulário", () => {
+    expect(buildManualLinkHref(base, { accountSlug: "e2e-loja", itemId: "MLB123" })).toBe(
+      "/vinculacoes?conta=e2e-loja&item=MLB123#vincular-a-mao",
+    );
+  });
+
+  it("preserva o recorte de quem clicou, menos a página", () => {
+    const atual: LinkIntegrityFilters = { ...base, state: "sem-vinculo", sold: "vendeu", search: "PNEU", page: 4 };
+
+    expect(buildManualLinkHref(atual, { accountSlug: "e2e-loja", itemId: "MLB123" })).toBe(
+      "/vinculacoes?estado=sem-vinculo&venda=vendeu&conta=e2e-loja&busca=PNEU&item=MLB123#vincular-a-mao",
+    );
+  });
+
+  it("sem conta conhecida, o MLB ainda viaja", () => {
+    expect(buildManualLinkHref(base, { accountSlug: null, itemId: "MLB123" })).toBe(
+      "/vinculacoes?item=MLB123#vincular-a-mao",
     );
   });
 });

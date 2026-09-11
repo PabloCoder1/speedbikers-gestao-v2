@@ -34,6 +34,14 @@ export const E2E_SKU_SALES = [
 export const E2E_DECISION_TEXT = "Repor 10 unidades e revisar o preço — decisão de teste E2E";
 
 /**
+ * A conta Mercado Livre do fixture. Estava declarada só dentro de `seed.ts`, e
+ * saiu para cá quando um spec precisou dela: o filtro por conta e a comparação
+ * entre contas de `/vinculacoes` (D-313) afirmam sobre o slug e o rótulo, e
+ * duas cópias do literal seriam duas verdades.
+ */
+export const E2E_ML_ACCOUNT = { slug: "e2e-loja", label: "Loja E2E" } as const;
+
+/**
  * Anúncios do seed (D-242). **O seed não criava nenhum** — os que existiam no
  * banco local eram resíduo da suíte de integração, e por isso `/anuncios`
  * chegou até aqui sem e2e nenhum: depois de um `db reset` a tela ficava vazia e

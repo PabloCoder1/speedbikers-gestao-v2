@@ -8937,6 +8937,96 @@ Rodei `test:integration` duas vezes no mesmo banco e a segunda reprovou **15 cas
 
 **Verificacao:** `check` 29/29 (`--force`), build 8/8, e2e **129/129** em banco recriado (+2), integracao 658/658 (em banco recriado), cinco guardas verdes -- inclusive `check:waterfalls`, porque a leitura de papel entrou nos `Promise.all` que as telas ja faziam. Renderizado a 1440px nos dois papeis: o ADMIN com o item em Administracao e a sobrancelha nova, e o GESTOR com o menu sem o item e a recusa na tela.
 
+## D-313 - A tela de vinculacao tinha parado de vincular em D-284, e nenhum teste viu -- mais as duas leituras por conta que D-259 perdeu
+
+**Contexto:** relato do dono do produto: *"Tela de vinculacao pos adicionar o design ela perdeu a sua funcao, vincular os MLB aos SKUs e nessa mesma tela ficou faltando a opcao de comparar com outras contas e um filtro para ver apenas de determinada conta"*.
+
+Os tres pedidos tinham causas diferentes: o primeiro e um DEFEITO introduzido por uma fatia de estilo, e os outros dois sao leituras que existiam no banco e nao na tela.
+
+---
+
+**1. O DEFEITO: uma fatia de ESTILO apagou dois campos, e a cadeia de consequencias foi ate o botao**
+
+`d949183` (D-284, "campo e botao entram no design system") trocou `style` inline por classe em `manual-link-form.tsx`. No mesmo diff, dois blocos inteiros sairam: **"Variacao (opcional)"** e **"SKU de destino"**.
+
+Sem o campo de SKU a cadeia inteira morre, e em silencio:
+
+| passo | com o campo | sem o campo |
+|---|---|---|
+| digitar | `skuSearch.search(valor)` | ninguem chama |
+| `skuSearch.query` | muda | fica `""` para sempre |
+| `results` | lista de SKUs | vazia |
+| `selected` | o SKU escolhido | `null` |
+| botao "Vincular" | habilita | **nasce `disabled` e nunca sai disso** |
+
+A tela cujo nome e vinculacao nao vinculava desde aquela fatia. Nao havia mensagem de erro, nao havia linha vermelha: havia um botao cinza, que se le como "escolha alguma coisa antes".
+
+**Por que nenhum teste viu.** Os tres casos de `vinculacoes.spec.ts` (D-259) afirmavam sobre a faixa de KPIs e sobre a tabela. A vinculacao manual tinha UMA asercao, e ela era `expect(heading "Vincular um anuncio a mao").toBeVisible()` -- o titulo do formulario, que continuou visivel o tempo todo. **Um teste de presenca sobre a moldura, nenhum sobre o caminho.** O caso novo desta fatia percorre o caminho inteiro: clica no "Vincular" da linha, confere o pre-preenchimento, exige que o botao esteja DESABILITADO antes de escolher o SKU e HABILITADO depois.
+
+---
+
+**2. AS DUAS LEITURAS POR CONTA: o banco ja sabia, a tela e que nao perguntava**
+
+Nenhuma das duas precisou de argumento novo, de RPC nova ou de tabela nova.
+
+| pedido | o que ja existia | o que faltava |
+|---|---|---|
+| filtro por conta | `p_ml_account_id` em `get_listings_dashboard`; `accountSlug` resolvido em `link-integrity-filters` e ja escrito no href | o CONTROLE, e a traducao para a RPC -- o slug ia parar na URL e morria ali |
+| comparar contas | `get_link_integrity` devolve UMA LINHA POR CONTA desde D-128 | D-259 passou a somar as linhas num `reduce` e jogar a granularidade fora |
+
+O filtro entra na JANELA, nao no recorte: ele vale para a lista, para as cinco contagens, para a fila de candidatos e para os ultimos vinculos manuais, juntos. Fora dali a faixa falaria da organizacao inteira enquanto a tabela mostra uma conta so -- o desacordo entre cabecalho e corpo que D-236 proibe.
+
+A comparacao, ao contrario, **ignora o filtro de proposito**: comparar e o servico que aquele painel presta, e um painel de comparacao recortado numa conta so nao compara nada. A conta escolhida aparece destacada, e cada linha leva ao recorte dela.
+
+---
+
+**3. O CAMINHO DA LINHA ATE A ACAO, e a `key` que faz o pre-preenchimento existir**
+
+A tabela mostrava 863 anuncios sem vinculo (no Dev) e nao oferecia saida nenhuma: para vincular um deles era preciso copiar o MLB a mao para o formulario la embaixo. Voltou a coluna "Acao" (era de D-122, perdida em D-259), com um link que carrega as DUAS coisas na mesma URL: `?conta=<slug>&item=<MLB>#vincular-a-mao`. A conta viaja como SLUG, o mesmo vocabulario do filtro -- um id cru abriria um segundo vocabulario para a mesma dimensao.
+
+**E o pre-preenchimento nao funcionou de primeira.** `initialItemId` vira `useState` na MONTAGEM, e a navegacao do `<Link>` re-renderiza o componente sem remonta-lo: o campo continuava vazio depois do clique. A correcao e uma `key` ancorada no alvo (`conta:item`), que troca a identidade e forca a remontagem. **Quem pegou isso foi o e2e novo**, no primeiro run -- o mesmo caso que existe por causa do item 1.
+
+---
+
+**4. O NUMERO QUE A COMPARACAO TROUXE DE VOLTA: 3 contra 4, na mesma tela**
+
+Com o painel de volta, a tela passou a dizer duas coisas sobre a mesma palavra: a faixa contava **3** anuncios sem vinculo e a comparacao, dois paineis abaixo, contava **4**. Nao era arredondamento -- eram DEFINICOES diferentes de "vinculado":
+
+| funcao | o que contava como vinculado |
+|---|---|
+| `get_listings_dashboard` | `l.sku_id is not null` **ou** existe linha em `sku_listing_links` |
+| `get_link_integrity` | **so** existe linha em `sku_listing_links` |
+
+Ou seja: o vinculo gravado na propria coluna `sku_id` do anuncio nao contava em `com_vinculo`. A coluna dizia menos que a verdade desde D-128, e ninguem viu **porque o unico consumidor somava as linhas num total e descartava a granularidade** -- o defeito ficou escondido exatamente pelo mesmo `reduce` do item 2.
+
+Medido no local antes e depois, conta `e2e-loja`, 5 anuncios:
+
+| | antes | depois |
+|---|---|---|
+| `com_vinculo` | 1 | **2** |
+| `sem_vinculo` | 4 | **3** (igual a faixa) |
+| `pct_vinculado` | 20% | **40%** |
+
+A migration usa textualmente a mesma condicao do `link_state` do dashboard -- o CTE `vinculos` dele nao filtra por variacao, entao a identidade e exata, nao aproximada. `vendidos_sem_vinculo` e `receita_sem_vinculo` NAO mudam: essas contam a partir de `order_items`, a fonte independente, e continuam sendo a coluna decisiva do painel.
+
+Assinatura identica `(uuid, integer)`: nenhuma chamada muda e os tipos gerados continuam validos. Consumidor unico conferido antes de escrever (`apps/web/app/vinculacoes/page.tsx`; nenhuma funcao SQL a chama).
+
+---
+
+**5. O QUE ESTA FATIA NAO FEZ**
+
+- **Nao mexeu nas Server Actions nem nas RPCs de escrita.** `createManualLink`, `removeLink`, `retargetLink`, `create_sku_listing_link` e `remove_sku_listing_link` estao como estavam -- a fatia irma (vinculos dentro de `/skus/[skuId]`) reusa essas mesmas pecas, e disputar a assinatura no meio criaria o segundo sistema de vinculacao que o dono do produto pediu para nao existir.
+- **Nao ha caminho de escrita para desfazer o vinculo "direto", e nao precisa haver.** `listings.sku_id` e DERIVADO: o handler de sincronizacao (`ml-listings-fetch.ts`) monta o mapa a partir de `sku_listing_links` e grava a coluna no upsert. Remover a linha do vinculo JA e o caminho completo; a coluna acompanha na proxima sincronizacao. Ficou escrito aqui porque a pergunta ja foi feita uma vez.
+- **A comparacao entre contas com UMA conta prova pouco.** No seed ha uma conta so; e no Dev, com varias, que o painel e o filtro ganham sentido. Nao foi conferido no Dev.
+
+---
+
+**Impacto:** `apps/web/app/vinculacoes/{page,manual-link-form}.tsx`, `apps/web/lib/link-integrity-filters.{ts,test.ts}` (+3), `apps/web/e2e/{vinculacoes.spec,constants,seed}.ts` (+2 casos; `E2E_ML_ACCOUNT` saiu de dentro do seed para ser importado pelos dois lados), `supabase/migrations/20260911180000_link_integrity_com_vinculo_d122.sql`, `docs/{DECISIONS,DECISIONS_INDEX,HANDOFF}.md`.
+
+**Verificacao:** `check` 29/29 (489 testes), e2e **132/132** e integracao **658/658**, os dois em banco recriado (`db reset` + seed + UMA rodada, a regra de D-312), quatro guardas do web verdes (`waterfalls` 62, `server-actions` 21, `table-styles` 29, `control-styles` 224) e `docs:check`. A migration foi aplicada e conferida no Postgres LOCAL, nao foi ao Dev. Renderizado a 1440px.
+
+Duas armadilhas do ambiente local custaram tempo e ficaram anotadas: depois de `db reset` o PostgREST serve o schema cache VELHO e o seed morre com `PGRST205` (resolve com `notify pgrst, 'reload schema'` + restart do container `supabase_rest_*`); e a Admin API do GoTrue responde 500 quando `auth.users` tem token NULO (`confirmation_token`), o que derruba o seed e o login. Nenhuma das duas e do codigo desta fatia.
+
 ## D-314 - "Cobertura" de um SKU passa a ter UMA conta: a que D-288 aposentou saiu das duas telas que faltavam
 
 **Contexto:** a varredura de design de D-310 leu o Dashboard de SKU contra o frame e um dos achados nao era de design. O cartao "Cobertura" imprimia `days_of_coverage` de `get_stock_coverage` -- **`local ÷ venda media`** --, e essa e a definicao que **D-288 aposentou** ao fundir `/cobertura` com `/reposicao`. Aquela fatia corrigiu a PALAVRA em tres lugares ("ruptura" virou "sem saldo local"); faltou a CONTA em dois.

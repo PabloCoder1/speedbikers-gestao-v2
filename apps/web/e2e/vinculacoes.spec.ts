@@ -1,6 +1,6 @@
 import { type Page, expect, test } from "@playwright/test";
 
-import { E2E_LISTINGS, E2E_LISTING_SOLD_UNLINKED } from "./constants.js";
+import { E2E_LISTINGS, E2E_LISTING_SOLD_UNLINKED, E2E_ML_ACCOUNT, E2E_SKU_CODE } from "./constants.js";
 import { login } from "./helpers.js";
 
 /**
@@ -66,7 +66,9 @@ test("/vinculacoes: clicar em 'Vendidos sem vínculo' mostra exatamente aquelas 
 
   await expect(page).toHaveURL(/estado=sem-vinculo&venda=vendeu/);
 
-  const linhas = page.locator("tbody tr");
+  // Escopado ao painel: a tela tem uma SEGUNDA tabela (comparação entre
+  // contas), e `tbody tr` solto passaria a contar as linhas das duas.
+  const linhas = page.getByRole("region", { name: "Tabela de Vinculações" }).locator("tbody tr");
   await expect(linhas).toHaveCount(1);
   await expect(linhas.first()).toContainText(E2E_LISTING_SOLD_UNLINKED.itemId);
   await expect(linhas.first()).toContainText("Sem vínculo");
@@ -88,4 +90,80 @@ test("/vinculacoes: o zero de candidatos diz por que é zero, e a vinculação m
 
   // Funcionalidade que o frame não desenha e a tela real tem: ela sobrevive.
   await expect(page.getByRole("heading", { name: "Vincular um anúncio à mão" })).toBeVisible();
+});
+
+/**
+ * O DEFEITO QUE ESTE BLOCO IMPEDE DE VOLTAR (D-313).
+ *
+ * D-284 trocou `style` inline por classe do design system no formulário e
+ * apagou JUNTO dois campos — "Variação" e "SKU de destino". Sem o campo de SKU,
+ * `skuSearch.query` nunca muda, `selected` fica null para sempre e o botão
+ * "Vincular" nasce desabilitado: a tela cujo NOME é vinculação parou de
+ * vincular, e nenhum teste viu, porque todos afirmavam sobre a faixa e a
+ * tabela. Este afirma sobre o CAMINHO INTEIRO — da linha até o botão habilitado.
+ */
+test("/vinculacoes: a linha sem vínculo leva ao formulário, e o formulário vincula", async ({ page }) => {
+  await login(page, "/vinculacoes?estado=sem-vinculo");
+
+  const tabela = page.getByRole("region", { name: "Tabela de Vinculações" });
+  const linha = tabela.locator("tbody tr").filter({ hasText: E2E_LISTING_SOLD_UNLINKED.itemId });
+
+  // O caminho de volta: a linha que expõe o problema oferece a saída.
+  await linha.getByRole("link", { name: "Vincular" }).click();
+
+  // A conta viaja como slug e o MLB como `item` — um link, as duas coisas.
+  await expect(page).toHaveURL(new RegExp(`conta=${E2E_ML_ACCOUNT.slug}&item=${E2E_LISTING_SOLD_UNLINKED.itemId}`));
+  await expect(page.getByLabel("MLB do anúncio")).toHaveValue(E2E_LISTING_SOLD_UNLINKED.itemId);
+
+  // Os dois campos que D-284 apagou.
+  await expect(page.getByLabel("Variação (opcional)")).toBeVisible();
+
+  const vincular = page.getByRole("button", { name: "Vincular" });
+  await expect(vincular).toBeDisabled();
+
+  await page.getByLabel("SKU de destino").fill(E2E_SKU_CODE);
+  await page.getByRole("button", { name: new RegExp(E2E_SKU_CODE) }).click();
+
+  // Com conta, MLB e SKU escolhidos, a ação existe de verdade.
+  await expect(vincular).toBeEnabled();
+});
+
+/**
+ * As duas leituras POR CONTA que o reenquadramento de D-259 perdeu: o recorte
+ * (ver uma conta só) e a comparação (ver as contas lado a lado). A RPC sempre
+ * aceitou `p_ml_account_id` e `get_link_integrity` sempre devolveu uma linha por
+ * conta — o que faltava era tela.
+ */
+test("/vinculacoes: dá para recortar numa conta e comparar as contas entre si", async ({ page }) => {
+  await login(page, "/vinculacoes");
+
+  const comparacao = page.getByRole("region", { name: "Comparação entre contas" });
+  await expect(comparacao).toBeVisible();
+
+  const linhaDaConta = comparacao.locator("tbody tr").filter({ hasText: E2E_ML_ACCOUNT.label });
+
+  /*
+    E A COMPARAÇÃO SOMA COM A FAIXA — a afirmação que custou uma migration.
+
+    `get_link_integrity.com_vinculo` contava só o vínculo gravado em
+    `sku_listing_links` e ignorava o vínculo DIRETO (`listings.sku_id`): a faixa
+    dizia 3 sem vínculo e a comparação, dois painéis abaixo, dizia 4. Duas
+    definições da mesma palavra na mesma tela. D-313 alinhou a função com D-122;
+    estas três células ficam vermelhas se alguém desalinhar de novo.
+  */
+  const celulas = linhaDaConta.locator("td");
+  await expect(celulas.nth(1)).toHaveText(String(ESPERADO.total));
+  await expect(celulas.nth(2)).toHaveText(String(ESPERADO.vinculados));
+  await expect(celulas.nth(3)).toHaveText(String(ESPERADO.semVinculo));
+
+  // Da comparação para o recorte: clicar na conta filtra a tabela acima.
+  await linhaDaConta.getByRole("link", { name: E2E_ML_ACCOUNT.label }).click();
+
+  await expect(page).toHaveURL(new RegExp(`conta=${E2E_ML_ACCOUNT.slug}`));
+  await expect(page.getByRole("region", { name: "Tabela de Vinculações" }).locator("tbody tr")).toHaveCount(
+    ESPERADO.total,
+  );
+
+  // A faixa acompanha o recorte: cabeçalho e corpo falam da mesma conta (D-236).
+  await expect(celula(page, "Anúncios sincronizados")).toContainText(String(ESPERADO.total));
 });

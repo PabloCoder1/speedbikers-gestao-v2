@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **309** (D-001 a D-314).
+Decisões registradas: **310** (D-001 a D-314).
 
 ## Por domínio
 
@@ -121,7 +121,7 @@ Decisões registradas: **309** (D-001 a D-314).
 - **D-288** — A FUSAO de `/cobertura` com `/reposicao`: uma tela, uma definicao de ruptura
 - **D-314** — "Cobertura" de um SKU passa a ter UMA conta: a que D-288 aposentou saiu das duas telas que faltavam
 
-### interface (33)
+### interface (34)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -156,6 +156,7 @@ Decisões registradas: **309** (D-001 a D-314).
 - **D-301** — "Recurso nao encontrado" era a API em PRODUCAO tres dias mais velha que a tela
 - **D-302** — "Como vou saber a senha dela?" -- nao ha senha a passar, faltava a tela de DEFINIR
 - **D-303** — O link que apontava para a maquina de quem clicava, e a saida para quem perdeu o dele
+- **D-313** — A tela de vinculacao tinha parado de vincular em D-284, e nenhum teste viu -- mais as duas leituras por conta que D-259 perdeu
 
 ### mercado-livre (46)
 

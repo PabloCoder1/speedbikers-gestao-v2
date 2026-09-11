@@ -75,6 +75,9 @@ export function ManualLinkForm({
 
   return (
     <section
+      // Alvo do link "Vincular" de cada linha sem vínculo: a linha pré-preenche
+      // o formulário pela URL e o `#` traz a página até ele.
+      id="vincular-a-mao"
       style={{
         border: "1px solid var(--sb-border)",
         borderRadius: "var(--sb-radius)",
@@ -86,7 +89,9 @@ export function ManualLinkForm({
       <h2 style={{ margin: "0 0 var(--sb-space-1)", fontSize: "1rem" }}>Vincular um anúncio à mão</h2>
 
       <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
-        Para anúncios que a lista abaixo não mostra — ela só conhece o que veio da planilha do UpSeller.
+        Vale para qualquer anúncio: o da tabela acima (o botão <strong>Vincular</strong> da linha preenche
+        conta e MLB aqui) e também o que a fila de candidatos não conhece — ela só vê o que veio da planilha do
+        UpSeller.
       </p>
 
       <div style={{ display: "grid", gap: "var(--sb-space-2)", gridTemplateColumns: "repeat(auto-fit, minmax(11rem, 1fr))" }}>
@@ -123,8 +128,45 @@ export function ManualLinkForm({
               setItemId(event.target.value);
               setDone(null);
             }}
+          />
+        </div>
 
+        <div>
+          <label style={labelStyle} htmlFor="manual-link-variation">
+            Variação (opcional)
+          </label>
+          <input
+            className="sb-input sb-input-full"
+            id="manual-link-variation"
+            value={variationId}
+            placeholder="em branco = anúncio inteiro"
+            onChange={(event) => {
+              setVariationId(event.target.value);
+              setDone(null);
+            }}
+          />
+        </div>
 
+        {/*
+          O campo que faz a tela ser o que ela é: sem ele `skuSearch.query`
+          nunca muda, `selected` fica null para sempre e o botão "Vincular"
+          nasce desabilitado — a tela inteira vira leitura. Ele foi apagado sem
+          querer em D-284, junto com os `style` inline que a fatia trocava por
+          classe.
+        */}
+        <div>
+          <label style={labelStyle} htmlFor="manual-link-sku">
+            SKU de destino
+          </label>
+          <input
+            className="sb-input sb-input-full"
+            id="manual-link-sku"
+            value={skuSearch.query}
+            placeholder="buscar SKU…"
+            onChange={(event) => {
+              setDone(null);
+              void skuSearch.search(event.target.value);
+            }}
           />
         </div>
       </div>

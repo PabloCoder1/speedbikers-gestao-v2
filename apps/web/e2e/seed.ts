@@ -52,6 +52,7 @@ import {
   E2E_LISTING_SOLD_UNLINKED,
   E2E_LISTING_TRAFFIC,
   E2E_LOCAL_STOCK,
+  E2E_ML_ACCOUNT,
   E2E_ORDER,
   E2E_PURCHASE_ORDERS,
   E2E_SUPPLIER,
@@ -71,8 +72,8 @@ const ORG_SLUG = "e2e-speed-bikers";
 const SKU_CODE = E2E_SKU_CODE;
 const DOCUMENT_CONTENT_HASH = createHash("sha256").update("e2e-fixture-nfe").digest("hex");
 const IMPORT_CONTENT_HASH = createHash("sha256").update("e2e-fixture-import").digest("hex");
-const ML_ACCOUNT_SLUG = "e2e-loja";
-const ML_ACCOUNT_LABEL = "Loja E2E";
+const ML_ACCOUNT_SLUG = E2E_ML_ACCOUNT.slug;
+const ML_ACCOUNT_LABEL = E2E_ML_ACCOUNT.label;
 const ML_SELLER_ID = 419_059_118;
 const SUPPORT_OPEN_EXTERNAL_ID = "900001";
 const SUPPORT_RESOLVED_EXTERNAL_ID = "900002";
