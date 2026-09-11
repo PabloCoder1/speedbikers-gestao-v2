@@ -12,14 +12,14 @@
 
 | | |
 |---|---|
-| **Atualizado em** | 2026-09-10 |
+| **Atualizado em** | 2026-09-11 |
 | **Branch** | `v3` (a `main` é a V2, só referência — nunca copiar) |
-| **HEAD conhecido** | `912746c` (D-308) — os dois filtros que o PRD pedia em `/anuncios`: período (os mesmos cinco presets de `/vendas`) e "com/sem venda", o predicado `p_sold` que existia na RPC desde D-259 sem tela que o expusesse. Antes: `4d44a6a` (D-307) — a varredura das 22 RPCs: `get_stock_coverage` custava **27 s** na forma que a tela inicial usa, e `pg_stat_statements` a mostrava com 89 ms de média. Curada (49 ms); 16 saudáveis. Antes: `f522ee2` (D-306) — uma passada por `orders` (−49% de buffers) e a correção da generalização de D-305. Antes: `a4a3098` (D-305) — o timeout de `/anuncios` era o plano: `language sql` planeja o corpo sem os valores dos argumentos. Antes: `f1a3d4f` (D-304) — o piso de frescor das métricas. O piso de frescor dele entrou no ar em 11/09 (ver "Deploy no ar"). ⚠️ **falta a URL da aplicação nos redirecionamentos do projeto Supabase** (painel, fora do repositório): sem ela todo link de acesso cai em `http://localhost:3000` (D-303). |
+| **HEAD conhecido** | `66ef20d` (D-309) — **A9 da auditoria de design**: os seis cartões de serviço do frame de `/saude` foram REMEDIDOS contra o esquema de hoje e continuam fora. O mais duro é "Banco · 12 ms": `pg_stat_statements` sustenta **0,268 / 0,540 / 45,5 / 122,2 ms no mesmo instante** — 456×; um número ali seria a escolha de um agregado, não uma medição. Entraram duas coisas só: o link "Execuções que falharam" (o frame pedia "Ver incidentes", e incidente não é entidade desta casa) e o **tempo da ida ao `/health`**, que a tela já fazia. Antes: `1f18147` — o deploy da api em `8ebf022`, com o piso de frescor de D-304 no ar. Antes: `912746c` (D-308) — período e "com/sem venda" em `/anuncios`, fechando a lista de filtros do PRD. Antes: `4d44a6a` (D-307) — a varredura das 22 RPCs: `get_stock_coverage` custava **27 s** na forma que a tela inicial usa, curada para 49 ms. |
 | **Fechamento da V3** | **185 de 213 itens do ROADMAP fechados (87%)** — 26 abertos e 2 parciais. Dos 26, **6 são bloqueadores**, e todos são hardening/lançamento: nenhum é feature faltando (D-223) |
 | **Deploy no ar** | ✅ **`8ebf022`, implantado em 2026-09-11** — api `api-00035-6fw`; `GET /health` responde `{"commit":"8ebf022"}`. **O worker NÃO foi reimplantado, e isso é medição, não esquecimento**: `git rev-list --count 0470036..HEAD -- apps/worker` = **0**. A ordem consumidor-antes-de-produtor (D-088) existe para o caso de a api passar a enfileirar um tipo de job que o worker antigo recusa; esta api só enfileira `analytics.recompute`, que o worker conhece desde sempre. **O PISO DE FRESCOR ENTROU NO AR** (D-304): `v3-refresh-sales-metrics`, `35 * * * *` em `America/Sao_Paulo`, e o caminho inteiro foi exercitado com um disparo manual — a api registrou `4 contas, 8 enfileirados, 0 deduplicados, datas 2026-09-10 e 2026-09-11`, e o worker executou os oito em sete segundos, escrevendo 83 linhas. Antes: `0470036` (10/09) e `721f4c6` (10/09). **Esta linha envelhece sozinha** (D-070): quem a ler depois de qualquer fatia confira `/health` antes de acreditar nela. |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | **162 locais** — a última é `20260910235000` (D-307). ⚠️ Quem aplica no Dev é a integração GitHub do Supabase, **não** a CI (D-257); o caminho é o push, **nunca** o MCP (D-207). O nome do arquivo precisa ser um **instante válido**, não só um número crescente: `...240000` (hora 24) deixou seis casos de `get_system_health` vermelhos, e é esse teste que serve de guarda (D-307) |
-| **Frente atual** | **`/anuncios` fechou a lista de filtros do PRD (D-308):** período e "com/sem venda" entraram, e com eles conta, status, SKU/MLB (busca), Full, estoque, vínculo e venda cobrem a linha 723 do PRD. **Antes: desempenho de RPC (D-305 → D-307)** — o `statement timeout` de `/anuncios` era o plano genérico de uma função `language sql`; a varredura das 22 RPCs que veio depois achou `get_stock_coverage` custando **27 s** na forma que a tela inicial usa (curada para 49 ms). **Próxima da auditoria de Administração: `/saude`, com seis cartões de serviço a medir.** Pendências de produção que não são código: a api e o Cloud Scheduler de D-304 não implantados, e a URL da aplicação fora dos redirecionamentos do Supabase (D-303) |
+| **Frente atual** | **A AUDITORIA DA ADMINISTRAÇÃO FECHOU (D-309).** Das seis telas de A6, duas foram refeitas — `/usuarios` (D-296 + D-297) e `/contas` (D-299) — e quatro têm recusa **medida**: Integrações (D-272 + D-287), Sincronização (D-273), Configurações (D-275) e Saúde (D-309). Nenhuma tela do grupo ficou com pergunta em aberto. **Antes:** `/anuncios` fechou a lista de filtros do PRD (D-308), e a série de desempenho de RPC (D-305 → D-307). **Produção, o que era pendência e não é mais:** a api e o Cloud Scheduler de D-304 entraram no ar em 11/09 (ver "Deploy no ar"), e a URL da aplicação foi configurada nos redirecionamentos do Supabase pelo dono do projeto no mesmo dia — os links de acesso de D-303 passaram a abrir na aplicação, não em `localhost`. |
 
 ### O que está pronto
 
@@ -324,11 +324,6 @@ de insert, então a fatia é sobre o que ALIMENTA sugestões) e os **filtros de
 Conta e Marca** em telas ainda não cobertas — este item acabou de fechar para
 as três telas que o mediam, então reabri-lo exige medir onde mais faz sentido.
 Ler o item no ROADMAP e a tela dona antes de escrever.
-
-⚠️ **Dívida menor, registrada para não virar terceira cópia:** `/saude`,
-`/sincronizacao` e `/skus/[skuId]` ainda carregam suas próprias cópias de
-`th`/`td`/`tdNumber`/`cardStyle`; o módulo único é
-`components/table-styles.ts` (D-232). É uma linha por tela.
 
 ---
 
