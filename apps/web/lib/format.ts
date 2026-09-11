@@ -64,3 +64,22 @@ export function formatPercent(value: number | null): string {
 
   return PERCENT.format(value);
 }
+
+/**
+ * Duração curta, em milissegundos (D-309).
+ *
+ * **Não é `formatCount`, e a diferença é um defeito real que a revisão pegou:**
+ * `formatCount` agrupa milhar em pt-BR, então 3842 vira `3.842`, que se lê como
+ * três vírgula oito. O pior tempo que a medição consegue produzir — quase o
+ * limite de 4 s do timeout — seria justamente o que pareceria melhor.
+ *
+ * Abaixo de mil, milissegundo cru, sem agrupamento. De mil para cima, segundo
+ * com uma casa: `3842` vira `3,8 s`, que ninguém confunde com rápido.
+ */
+export function formatLatency(ms: number | null): string {
+  if (ms === null) return "—";
+
+  if (ms < 1000) return `${String(Math.round(ms))} ms`;
+
+  return `${(ms / 1000).toFixed(1).replace(".", ",")} s`;
+}

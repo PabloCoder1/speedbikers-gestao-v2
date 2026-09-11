@@ -8684,6 +8684,75 @@ Com periodo e venda, a lista de filtros do PRD para esta tela fica **completa**:
 
 **Verificacao:** `check` 29/29, build 8/8, integracao 658/658, e2e **119/119** (+2), cinco guardas verdes. Os casos novos guardam as duas coisas que dao errado sozinhas: filtro que descarta o vizinho (a classe que ja mordeu `/vendas` duas vezes) e denominador que nao acompanha a janela.
 
+## D-309 - A9: /saude contra o frame -- os seis cartoes continuam fora, e o unico numero de latencia que esta casa pode dizer
+
+**Contexto:** a auditoria da Administracao (A6, D-296) deixou UMA linha em aberto na tabela das seis telas: "Saude -- seis cartoes de servico com latencia -- **a medir**". Esta fatia mediu. Entre A6 e agora o esquema ganhou `metric_refresh_state` (D-304), `job_runs.duration_ms` e a varredura de `pg_stat_statements` de D-305 a D-307 -- entao a pergunta de D-282 era obrigatoria: *o registro ainda e verdade, ou a fonte que ele nega ja nasceu?*
+
+---
+
+**1. OS SEIS CARTOES, CARTAO A CARTAO -- SEIS RECUSAS, TODAS REMEDIDAS**
+
+| cartao do frame | a fonte, conferida agora | veredito |
+|---|---|---|
+| **Aplicacao Web -- 42 ms** | zero cronometro em `apps/web`: nenhum `performance.now`, nenhum `instrumentation.ts`, nenhum web-vitals | fora -- e a celula ancora ja diz MAIS: CURRENT/OUTDATED/UNKNOWN com o motivo |
+| **API Mercado Livre -- 186 ms** | o cliente HTTP do ML nao se cronometra; `job_runs.duration_ms` e a janela do handler INTEIRO, com o backoff de ate 30 s dentro dela | fora -- um 429 entraria como "latencia" |
+| **Workers -- 3 filas em retry** | fila nao existe no Postgres (o nome dela morre no enfileiramento) e "em retry" e presente do verbo: `job_runs` so guarda execucao ENCERRADA | fora -- o estado vivo mora no Cloud Tasks, e perguntar a ele e a permissao de nuvem que D-176 excluiu |
+| **Banco -- 12 ms** | `pg_stat_statements` esta instalado e povoado, e e ele que prova a impossibilidade: no MESMO instante sustenta 0,268 / 0,540 / 45,5 / 122,2 ms -- **456x** de distancia | fora -- "12 ms" nao seria medicao, seria a escolha de um agregado |
+| **Armazenamento -- 2,4 TB livres** | `documents` conta XML, ninguem guarda bytes, e "livres" e cota do provedor | fora -- a mesma permissao excluida |
+| **Fila de Atendimento -- Estavel** | a profundidade TEM fonte (`support_cases.internal_status`), mas "estavel" e veredito sem limiar: nao ha meta de fila no esquema | fora -- e a fila tem tela dona (D-224) |
+
+E a faixa navy com **"99,97% de uptime"** segue sem fonte: zero tabelas, views ou colunas de incidente, uptime, SLA ou indisponibilidade no esquema inteiro. Deriva-la do heartbeat seria PIOR -- `system.ping` diz que o worker rodou, nao que o produto estava disponivel para quem usa.
+
+**A recusa nao e teimosia de registro anterior: ela foi remedida contra o esquema de hoje.** Duas fontes nasceram desde A6 e nenhuma das duas serve para estes cartoes, o que e exatamente o tipo de coisa que so se descobre olhando.
+
+---
+
+**2. O QUE ENTROU E POUCO DE PROPOSITO: UM LINK E UM CRONOMETRO**
+
+**(a) A acao do cabecalho.** O frame desenha "Ver incidentes". Incidente promete abertura, dono e fechamento -- o que esta casa tem sao **familias de execucoes agrupadas por assinatura de motivo** (D-291), e elas tem tela. O link leva o NOME DO PAINEL que abre, palavra por palavra: **"Execucoes que falharam"**, apontando para `/sincronizacao`. Sem contagem no rotulo: um numero ali obrigaria esta tela a uma terceira leitura so para enfeitar o texto, com janela de 7 dias brigando com a coluna "Falhas 24h" que a tabela logo abaixo ja imprime.
+
+**(b) O tempo da ida ao `/health`.** A tela JA fazia a chamada para comparar commits; cronometra-la nao custa leitura nova. E o unico numero de latencia que esta casa pode imprimir honestamente, porque e o unico que mede o que o nome promete: *quanto demorou ESTA ida, do servidor da web ate o Cloud Run*. Tres regras o cercam:
+
+- **medido com `performance.now()`**, nao `Date.now()`: o relogio de parede pode saltar no meio da ida (ajuste de NTP) e produzir numero negativo justamente no caso raro;
+- **sem resposta nao tem tempo de resposta**: as tres formas de falhar -- HTTP de erro, rede, timeout de 4 s -- dao todas em `null`, e a celula diz "sem resposta". Numero impresso quando a ida falhou seria pior que nenhum, numa tela que existe para mostrar o que nao responde;
+- **a qualificacao viaja com o numero**: "uma ida, agora: 842 ms". "842 ms" sozinho le-se como a latencia da API.
+
+E a tela diz o que o numero NAO prova: o `/health` devolve objeto literal -- **nao consulta o banco e nao autentica**. Rapido ali significa "o processo esta de pe", nao "o sistema esta saudavel".
+
+---
+
+**3. TRES CORRECOES DA REVISAO ADVERSARIAL, E AS TRES ERAM REAIS**
+
+| o que eu tinha escrito | por que estava errado |
+|---|---|
+| `tom: "perigo"` para pintar a celula quando a API cai | **`tom` nao pinta celula nenhuma** em `KpiStrip` -- ele veste o chip "ver lista", e esta celula nao tem chip. "sem resposta" sairia no mesmo navy de "no ar". Quem tinge rotulo e valor e `destaque` (D-297) |
+| `formatCount(api.latencyMs)` + `" ms"` | `formatCount` agrupa milhar em pt-BR: **3842 ms viraria "3.842 ms"**, que se le como tres milissegundos e pouco. O tempo MAIS LENTO que a medicao produz seria o que parece mais rapido na tela. Entrou `formatLatency`, que troca de unidade acima de 1 s ("3,8 s") |
+| o numero sem a ressalva do que ele nao cobre | faltava dizer que o `/health` nao toca o banco -- sem isso o numero convida a leitura que nao sustenta |
+
+A segunda e a que mais interessa: nao era um erro de formatacao, era um formatador **certo para contagem** aplicado a uma grandeza com unidade. O teste novo de `formatLatency` guarda os dois lados do degrau de 1 s.
+
+---
+
+**4. A SIGLA "SLA" NAO ENTRA NEM PARA SER NEGADA**
+
+A qualificacao do numero nasceu como "nao e media nem SLA" -- e o e2e desta tela a **recusou**: `e2e/saude.spec.ts` proibe a palavra desde a primeira fatia, porque o frame a usava para um compromisso sem fonte. A guarda estava certa e a frase mudou para "nao e media nem compromisso de tempo de resposta".
+
+**Uma proibicao que abre excecao para "o caso em que e obvio que esta tudo bem" nao proibe mais nada.** O comentario da guarda agora registra que a excecao foi pedida e negada -- que e a parte que impede a proxima tentativa de parecer inedita.
+
+---
+
+**5. A ARMADILHA DE PROCESSO QUE CUSTOU DOIS VERMELHOS FALSOS**
+
+O Playwright sobe `pnpm run start`, que serve o `.next` **ja construido**, e com `reuseExistingServer` fora do CI. Duas assercoes novas ficaram vermelhas contra o build VELHO: a cor que a pagina ainda nao tinha e o paragrafo que ainda nao existia. A leitura correta nao era "o codigo esta errado", era **"falta `pnpm build`"**. Ficou registrado em `docs/TESTING.md` junto das outras tres armadilhas conhecidas.
+
+---
+
+**Impacto:** `apps/web/lib/api-health.ts` (+ `latencyMs`), `apps/web/lib/format.ts` (+ `formatLatency`), `apps/web/app/saude/page.tsx`, `apps/web/e2e/saude.spec.ts` (+2 casos), `apps/web/lib/{api-health,format}.test.ts`, `docs/{DESIGN_IMPLEMENTATION,TESTING,HANDOFF}.md`. **Sem migration:** nenhuma fonte nova foi necessaria -- e o achado desta fatia e justamente que nenhuma existe.
+
+**Verificacao:** `check` 29/29 (`--force`), build 8/8, integracao **658/658**, e2e **122/122** em banco recriado (+2), cinco guardas verdes. A celula da API foi exercitada nos DOIS estados, renderizada a 1440px: com a api local de pe a ressalva saiu **`uma ida, agora: 16 ms - desde 11/09/2026, 10:52`**, e sem ela o "sem resposta" sai em vermelho -- com o caso de e2e afirmando a tinta `--sb-danger-ink`, porque foi justamente a pintura que a revisao pegou errada. A suite roda no segundo estado de proposito (`copiloto.spec.ts` afirma a falha de conexao), entao o primeiro foi conferido a mao, com a api local de pe e derrubada depois.
+
+**Com esta fatia a auditoria da Administracao fecha:** das seis telas de A6, duas foram refeitas (`/usuarios` em D-296 + D-297, `/contas` em D-299) e quatro tem recusa MEDIDA -- Integracoes (D-272 + D-287), Sincronizacao (D-273), Configuracoes (D-275) e Saude (esta).
+
 ## Como adicionar nova decisao
 
 Registrar:

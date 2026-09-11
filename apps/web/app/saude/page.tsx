@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
@@ -6,7 +7,7 @@ import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
 import { StatePill, type PillTone } from "../../components/state-pill";
 import { fetchApiHealth } from "../../lib/api-health";
-import { formatCount, formatDateTime } from "../../lib/format";
+import { formatCount, formatDateTime, formatLatency } from "../../lib/format";
 import { runStatusLabel } from "../../lib/labels";
 import { sanitizeErrorText } from "../../lib/sanitize";
 import { createClient } from "../../lib/supabase/server";
@@ -148,17 +149,47 @@ export default async function SaudePage(): Promise<ReactNode> {
     },
     {
       label: "API",
-      formula: "Resposta do /health da API no Cloud Run, com timeout de 4 s. Sem resposta é sem resposta.",
+      formula:
+        "Resposta do /health da API no Cloud Run, com timeout de 4 s. Sem resposta é sem resposta. O tempo é o desta ida, cronometrado no servidor da web: uma amostra, não média, não p95, não compromisso de tempo de resposta.",
       value: api === null ? "sem resposta" : "no ar",
       previous: null,
       /*
         `exactOptionalPropertyTypes` recusa `ressalva: undefined`, e isso é bom
         aqui: a ressalva ou EXISTE ou a chave não vem. "API no ar sem data de
         início" é uma frase; "API no ar desde undefined" seria outra.
+
+        O TEMPO ENTRA NA RESSALVA, e não na `formula` (D-309): `KpiStrip` só
+        imprime `ressalva` como texto — `formula` vira `title`, que ninguém lê
+        de passagem e nenhum teste consegue afirmar sem ler atributo. A lição é
+        de D-281: o que se afirma precisa aparecer no texto.
+
+        E ele vem com a palavra que o limita. "42 ms" sozinho lê-se como a
+        latência da API; "uma ida, agora: 42 ms" lê-se como o que é — uma
+        amostra desta renderização, do servidor da web até o Cloud Run.
       */
-      ...(api?.startedAt === undefined || api.startedAt === null
+      ...(api === null
         ? {}
-        : { ressalva: `desde ${formatDateTime(api.startedAt)}` }),
+        : {
+            ressalva: [
+              /*
+                `formatLatency` e NÃO `formatCount`: o segundo agrupa milhar em
+                pt-BR, e 3842 sairia "3.842 ms" — que se lê como três
+                milissegundos e pouco. O tempo mais LENTO que esta medição
+                consegue produzir seria o que pareceria mais rápido na tela.
+              */
+              api.latencyMs === null ? null : `uma ida, agora: ${formatLatency(api.latencyMs)}`,
+              api.startedAt === null ? null : `desde ${formatDateTime(api.startedAt)}`,
+            ]
+              .filter((parte): parte is string => parte !== null)
+              .join(" · "),
+          }),
+      /*
+        `tom` NÃO PINTA A CÉLULA — ele veste o chip "ver lista", e esta célula
+        não tem chip. Sem `destaque`, "sem resposta" sairia no mesmo navy de "no
+        ar", e depois desta fatia o número passaria a ser a única coisa que o
+        olho pega ali. `destaque` (D-297) é o que tinge rótulo e valor.
+      */
+      ...(api === null ? { destaque: "perigo" as const } : {}),
       tom: api === null ? "perigo" : "ok",
     },
     {
@@ -230,6 +261,19 @@ export default async function SaudePage(): Promise<ReactNode> {
         eyebrow="ADMINISTRAÇÃO / CONFIABILIDADE"
         title="Saúde do Sistema"
         subtitle="O que está no ar, medido no ar. Nenhum número desta tela vem de documentação: o commit sai do /health da API e das variáveis de build, a migration sai do próprio banco, e os jobs saem do registro do que aconteceu — não do que foi agendado."
+        /*
+          A AÇÃO DO FRAME É "Ver incidentes", e o rótulo mudou porque a entidade
+          não existe (D-309): zero tabelas, colunas ou RPCs de incidente,
+          uptime, SLA ou indisponibilidade no esquema inteiro. "Incidente"
+          promete abertura, dono e fechamento; o que esta casa tem são famílias
+          de execuções agrupadas por assinatura de motivo (D-291).
+
+          O link leva o NOME DO PAINEL que ele abre, palavra por palavra, e
+          não carrega contagem: um número aqui obrigaria esta tela a uma
+          terceira leitura só para enfeitar o rótulo — e com janela de 7 dias
+          brigando com a coluna "Falhas 24h" que a tabela abaixo já imprime.
+        */
+        aside={<Link href="/sincronizacao">Execuções que falharam →</Link>}
       />
 
       {healthResult.error !== null && (
@@ -246,6 +290,25 @@ export default async function SaudePage(): Promise<ReactNode> {
           <strong>OUTDATED</strong> significa que a web e a API estão em commits diferentes — normal por alguns
           minutos durante um deploy, e sinal de drift se persistir. <strong>UNKNOWN</strong> nunca é lido como
           “tudo certo”: é a tela dizendo que não conseguiu medir, e por quê.
+        </p>
+        {/*
+          O QUE O TEMPO DA API NÃO DIZ (D-309). O `/health` devolve um objeto
+          literal: não consulta o banco, não autentica e não toca nenhuma rota
+          de negócio. Uma ida rápida prova que o processo está de pé e
+          alcançável — nada além disso. Sem esta frase, o número convida à
+          leitura que ele não sustenta, e foi por não a ter que os "42 ms" do
+          frame não entraram como cartão.
+        */}
+        {/*
+          A SIGLA "SLA" NÃO ENTRA, nem para ser negada (D-309): `e2e/saude.spec.ts`
+          proíbe a palavra nesta tela desde a primeira fatia, e a tentação de
+          abrir exceção para uma negação é exatamente como a proibição morreria.
+          "compromisso de tempo de resposta" diz o mesmo e não gasta a guarda.
+        */}
+        <p style={{ margin: "0.5rem 0 0", fontSize: "0.75rem", lineHeight: 1.6 }}>
+          O tempo ao lado de <strong>API</strong> é o desta ida ao <code>/health</code>, uma amostra só — não é
+          média nem compromisso de tempo de resposta. E o <code>/health</code> responde sem consultar o banco:
+          rápido ali significa “o processo está de pé”, não “o sistema está saudável”.
         </p>
       </div>
 
@@ -310,19 +373,42 @@ export default async function SaudePage(): Promise<ReactNode> {
       </Panel>
 
       {/*
-        OS SEIS CARTÕES DE SERVIÇO DO FRAME NÃO ENTRAM, e a medição está em
-        D-274. Em resumo: a única coluna de latência do esquema inteiro é
-        `ai_runs.latency_ms` (latência de chamada de IA), então "42 ms",
-        "186 ms" e "12 ms" não têm fonte; não há telemetria de capacidade de
-        armazenamento, e pedi-la ao Google Cloud é justamente a permissão nova
-        que o item de D-176 excluiu; e "Fila de Atendimento" já tem tela dona
-        (D-224).
+        OS SEIS CARTÕES DE SERVIÇO DO FRAME CONTINUAM FORA, e a recusa foi
+        REMEDIDA em D-309 — a pergunta de D-282 aplicada a este registro: *ele
+        ainda é verdade, ou a fonte que ele nega já nasceu?* Desde D-274 o
+        esquema ganhou `metric_refresh_state`, `job_runs.duration_ms` e uma
+        varredura inteira de desempenho com `pg_stat_statements`. A resposta,
+        cartão a cartão:
 
-        O que sobra dos seis é o que esta tela já mostra melhor: o estado dos
-        jobs, por tipo, contra a cadência de cada um.
+        - **"Aplicação Web · 42 ms"**: zero cronômetro em `apps/web` (nenhum
+          `performance.now`, nenhum `instrumentation.ts`, nenhum web-vitals), e
+          o único detalhe honesto — "no ar, commit X" — É a célula âncora, que
+          diz mais: CURRENT/OUTDATED/UNKNOWN com o motivo;
+        - **"API Mercado Livre · 186 ms"**: o cliente HTTP do ML não se
+          cronometra, e `job_runs.duration_ms` é a janela do handler inteiro,
+          com o backoff de até 30 s DENTRO dela — um 429 entraria como
+          "latência". O número que existe mede a ida até a api DESTA casa, e
+          está onde ele é verdade: na ressalva da célula "API";
+        - **"Workers · 3 filas em retry"**: fila não existe no Postgres (o nome
+          dela morre no enfileiramento) e "em retry" é presente do verbo —
+          `job_runs` só guarda execução encerrada. O estado vivo mora no Cloud
+          Tasks, e perguntar a ele é a permissão de nuvem que D-176 excluiu;
+        - **"Banco · 12 ms"**: `pg_stat_statements` está instalado e povoado, e
+          é ele que prova a impossibilidade: no mesmo instante ele sustenta
+          0,268 ms, 0,540 ms, 45,5 ms e 122,2 ms — 456× de distância. "12 ms"
+          não seria uma medição, seria a escolha de um agregado;
+        - **"Armazenamento · 2,4 TB livres"**: `documents` conta XML, mas
+          ninguém guarda bytes, e "livres" é cota do provedor — a mesma
+          permissão excluída;
+        - **"Fila de Atendimento · Estável"**: a profundidade tem fonte
+          (`support_cases.internal_status`), mas "estável" é veredito sem
+          limiar — não há meta de fila no esquema —, e a fila tem tela dona
+          (D-224).
 
-        "Ver incidentes" tem a mesma resposta do uptime: zero tabelas de
-        incidente no esquema.
+        A faixa navy com "99,97% de uptime" segue sem fonte: zero tabelas,
+        views ou colunas de incidente, uptime, SLA ou indisponibilidade.
+        Derivá-la do heartbeat seria pior — `system.ping` diz que o worker
+        rodou, não que o produto estava disponível para quem usa.
       */}
     </Shell>
   );

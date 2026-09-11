@@ -1001,6 +1001,69 @@ está na "Próxima fatia segura".
 
 ## Última fatia concluída
 
+**A9 — `/saude` CONTRA O FRAME (D-309)** — A6 (D-296) deixou uma linha em aberto
+na tabela da Administração: *"Saúde — seis cartões de serviço com latência — **a
+medir**"*. Esta fatia mediu, e o resultado é **seis recusas e duas entradas**.
+
+### Os seis cartões, cartão a cartão
+
+| cartão do frame | a fonte, conferida agora | veredito |
+|---|---|---|
+| **Aplicação Web · 42 ms** | zero cronômetro em `apps/web` (nenhum `performance.now`, nenhum `instrumentation.ts`, nenhum web-vitals) | fora — e a célula âncora já diz MAIS: CURRENT/OUTDATED/UNKNOWN com o motivo |
+| **API Mercado Livre · 186 ms** | o cliente HTTP do ML não se cronometra; `job_runs.duration_ms` é a janela do handler INTEIRO, com backoff de até 30 s dentro dela | fora — um 429 entraria como "latência" |
+| **Workers · 3 filas em retry** | fila não existe no Postgres, e "em retry" é presente do verbo: `job_runs` só guarda execução encerrada | fora — o estado vivo é do Cloud Tasks, a permissão que D-176 excluiu |
+| **Banco · 12 ms** | `pg_stat_statements` está povoado, e é ele que prova a impossibilidade: no mesmo instante sustenta 0,268 / 0,540 / 45,5 / 122,2 ms — **456×** | fora — seria a escolha de um agregado, não uma medição |
+| **Armazenamento · 2,4 TB livres** | `documents` conta XML; ninguém guarda bytes, e "livres" é cota do provedor | fora — a mesma permissão excluída |
+| **Fila de Atendimento · Estável** | a profundidade TEM fonte (`support_cases.internal_status`), mas "estável" é veredito sem limiar | fora — e a fila tem tela dona (D-224) |
+
+A faixa navy com **"99,97% de uptime"** segue sem fonte: zero tabelas, views ou
+colunas de incidente, uptime, SLA ou indisponibilidade. **A recusa foi
+REMEDIDA, não herdada** — desde A6 nasceram `metric_refresh_state` (D-304) e a
+varredura de `pg_stat_statements` (D-305→D-307), e era obrigatório conferir se
+alguma delas servia. Nenhuma serve.
+
+### O que entrou, e é pouco de propósito
+
+**A ação do cabeçalho.** "Ver incidentes" do frame virou **"Execuções que
+falharam →"** para `/sincronizacao`: incidente promete abertura, dono e
+fechamento, e o que existe são famílias de execuções por assinatura de motivo
+(D-291). O link leva o nome do painel que abre, palavra por palavra, e **sem
+contagem** — um número ali brigaria com a coluna "Falhas 24h" da tabela logo
+abaixo.
+
+**O tempo da ida ao `/health`.** A tela já fazia a chamada para comparar
+commits; cronometrá-la não custa leitura nova, e é o único número de latência
+que esta casa pode imprimir honestamente — porque é o único que mede o que o
+nome promete. Sai com a qualificação ao lado (*"uma ida, agora: 842 ms"*), e
+**sem resposta não tem tempo de resposta**: as três formas de falhar dão em
+"sem resposta", em vermelho.
+
+### Três correções que a revisão adversarial pegou
+
+| o que eu tinha escrito | por que estava errado |
+|---|---|
+| `tom: "perigo"` para pintar a célula quando a API cai | **`tom` não pinta célula** em `KpiStrip` — veste o chip "ver lista", que esta célula não tem. Quem tinge rótulo e valor é `destaque` (D-297) |
+| `formatCount(ms)` + `" ms"` | `formatCount` agrupa milhar: **3842 viraria "3.842 ms"**, que se lê como três milissegundos. O tempo mais LENTO pareceria o mais rápido. Entrou `formatLatency`, com degrau em 1 s |
+| o número sem dizer o que ele não cobre | o `/health` devolve objeto literal: **não consulta o banco**. Rápido ali é "o processo está de pé", não "o sistema está saudável" |
+
+E uma quarta, vinda da própria suíte: a qualificação nasceu como *"não é média
+nem SLA"* e o e2e **recusou a palavra** — ele proíbe "SLA" nesta tela desde a
+primeira fatia. A frase mudou; a guarda ficou. Proibição que abre exceção para
+o caso óbvio não proíbe mais nada.
+
+**Verificação:** `check` 29/29 (`--force`), build 8/8, e2e **122/122** em banco
+recriado (+2), integração 658/658, cinco guardas verdes. A célula da API foi
+exercitada nos dois estados — com a api local de pé e sem ela —, e o caso novo
+afirma a tinta `--sb-danger-ink` no "sem resposta", porque foi exatamente a
+pintura que a revisão pegou errada.
+
+## Fatias anteriores
+
+**A8 — `/contas` CONTRA O FRAME (D-299)** — a tela que nunca tinha passado pelo
+desenho (não estava em D0→D37) virou cartão por conta: selo, `seller_id`,
+última sync, anúncios, permissões e ações. O registro completo, incluindo o
+token que vive seis horas, está em `docs/DECISIONS.md` D-299.
+
 **A7 — `/usuarios` REFEITA CONTRA O DESENHO (D-297)** — o usuário comparou a
 captura do frame com a nossa tela: *"o seu está muito inferior, acompanhe 100%
 o design figma"*. D-296 tinha entregado o DADO que faltava; o que ele estava
@@ -1056,7 +1119,7 @@ foram renderizadas a 1440px e lidas contra o frame:
 |---|---|---|
 | **Usuários** | "Convidar usuário"; Status; Último acesso; e-mail; cartão de convites | **FEITO** (D-296), e a composição refeita em D-297 |
 | **Contas ML** | a composição inteira (cartão por conta: selo, seller_id, última sync, anúncios, permissões, ações) | **NUNCA MIGRADA** — `/contas` não está em D0→D37. Próxima fatia |
-| **Saúde** | seis cartões de serviço com latência | a medir: latência por serviço não tem fonte hoje |
+| **Saúde** | seis cartões de serviço com latência; "Ver incidentes"; 99,97% de uptime | recusa **medida** e mantida (D-309: as seis fontes conferidas uma a uma). O link do cabeçalho entrou com o nome do painel que existe, e a ida ao `/health` entrou cronometrada |
 | **Integrações** | cartão por parceiro | recusa medida e mantida (D-272 + D-287: 4 linhas × **24** em meia largura) |
 | **Sincronização** | quatro cartões contando CONTAS | recusa medida e mantida (D-273: conta não é unidade de frescor) |
 | **Configurações** | trilho + interruptores (2FA, manutenção) | recusa medida e mantida (D-275: não há onde gravar) |
@@ -1118,7 +1181,10 @@ registro ainda é verdade, ou a rota que ele nega já nasceu?** e, de A4,
 **existe guarda para este padrão — ou ele volta assim que eu virar as costas?**
 e, de A5, **a regex que eu usei para achar o elemento sabe onde a tag TERMINA?**
 E, do passo cinza, a mais barata de todas: **esta lista de pré-requisitos ainda
-é verdade, ou metade dela já foi paga por outras fatias?** De D-286: **o que
+é verdade, ou metade dela já foi paga por outras fatias?** E, de D-309, duas que
+valem para qualquer número novo: **o formatador que eu reusei foi feito para
+esta GRANDEZA — ou só para contar coisas?** e **a propriedade que eu passei
+pinta o que eu acho que ela pinta?** De D-286: **o que
 esta composição do frame protege pode ser entregue sem ela?** E, de D-288, a
 que custou uma suíte inteira de diagnóstico: **o estado que este teste afirma é
 do seed — ou algum spec anterior já escreveu por cima dele?**

@@ -65,6 +65,8 @@ Ao liberar um caminho público, o teste prova que **apenas** aquele caminho foi 
 
 **Armadilha conhecida (2026-09-10):** rodar a suíte de INTEGRAÇÃO deixa o Auth local quebrado até o próximo `db reset`. Os fixtures de RLS inserem em `auth.users` por SQL, e `confirmation_token` nasce **NULO** — o GoTrue lê aquela coluna como `string` e responde **500** em `GET /admin/users` (`"converting NULL to string is unsupported"`) para a listagem INTEIRA, não só para a linha ruim. Quem depende de `auth.admin.listUsers` para de funcionar: `e2e/seed.ts` (que procura o usuário pelo e-mail) e o convite de D-296. A ordem segura é **integração e e2e nunca compartilharem o mesmo banco sem reset entre elas**. E a lição vale além do teste: **linha de `auth.users` criada por SQL envenena a listagem do projeto todo** — quem criar usuário fora do GoTrue precisa gravar `''`, não `NULL`.
 
+**Armadilha conhecida (2026-09-11):** o Playwright sobe `pnpm run start`, que serve o `.next` **ja construido** -- e com `reuseExistingServer` fora do CI. Editar a tela e rodar a suite na sequencia testa o BUILD ANTERIOR: a assercao nova fica vermelha e o codigo esta certo. Aconteceu em D-309 com duas assercoes (uma cor e um paragrafo novos). Depois de mexer em `app/`, `components/` ou `lib/`, a ordem e `pnpm build` **antes** de `playwright test` -- e derrubar o `next start` que sobrou, senao o reuso serve o build velho mesmo apos o build novo.
+
 **Armadilha conhecida:** `expect(page.getByRole("alert")).toHaveCount(0)` NUNCA vale num app Next.js. O framework mantém um `#__next-route-announcer__` com `role="alert"` em toda página — live region que anuncia o título na navegação client-side. Para afirmar "não há erro na tela", asserte o TEXTO do banner.
 
 ---

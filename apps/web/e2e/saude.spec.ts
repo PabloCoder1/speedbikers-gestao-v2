@@ -35,6 +35,12 @@ test("/saude: a âncora responde 'código no ar', e o uptime do frame não exist
   // Nenhum número de disponibilidade: não há fonte para ele.
   await expect(page.getByText(/uptime/i)).toHaveCount(0);
   await expect(page.getByText(/99,9/)).toHaveCount(0);
+  /*
+    A PALAVRA "SLA" NÃO APARECE NEM NEGADA. D-309 quis escrever "não é média nem
+    SLA" na qualificação do tempo da API e esta linha recusou — corretamente: uma
+    proibição que abre exceção para "o caso em que é óbvio que está tudo bem" não
+    proíbe mais nada. A tela diz "compromisso de tempo de resposta".
+  */
   await expect(page.getByText(/SLA/)).toHaveCount(0);
 
   // "Ver incidentes" tem a mesma resposta: zero tabelas de incidente.
@@ -136,4 +142,74 @@ test("/saude: quem não é ADMIN vê a recusa, e a recusa vem da RPC", async ({ 
   */
   await expect(page.getByText("Esta tela é restrita a ADMIN.")).toBeVisible();
   await expect(page.getByRole("region", { name: "Jobs agendados" })).toHaveCount(0);
+});
+
+
+/**
+ * A AUDITORIA DE D-309 deixou duas coisas na tela, e as duas são sobre NÃO
+ * inventar número.
+ *
+ * O frame desenha seis cartões de serviço com latência ("42 ms", "186 ms",
+ * "12 ms") e uma ação "Ver incidentes". Nenhum dos seis entrou, e a medição
+ * está no comentário do arquivo da tela. O que entrou foi o link com o nome do
+ * painel que ele abre — e o tempo da única ida que a tela de fato faz.
+ */
+test("/saude: a ação do cabeçalho leva ao painel que existe, com o nome dele", async ({ page }) => {
+  await login(page, "/saude");
+
+  const acao = page.getByRole("link", { name: /Execuções que falharam/ });
+
+  await expect(acao).toBeVisible();
+
+  // O rótulo do frame ("Ver incidentes") promete entidade que o esquema não
+  // tem: zero tabelas de incidente. O destino é o painel de falhas agrupadas.
+  await expect(page.getByRole("link", { name: /Ver incidentes/ })).toHaveCount(0);
+
+  await acao.click();
+
+  await expect(page).toHaveURL(/\/sincronizacao/);
+  await expect(page.getByRole("region", { name: /Execuções que falharam/ })).toBeVisible();
+});
+
+/**
+ * SEM RESPOSTA NÃO TEM TEMPO DE RESPOSTA. Na suíte a `api` não sobe, então a
+ * célula precisa dizer "sem resposta" e **não** imprimir milissegundo nenhum —
+ * que é exatamente o defeito que o cartão "42 ms" do frame teria todo dia.
+ */
+test("/saude: a célula da API não inventa milissegundo quando ninguém respondeu", async ({ page }) => {
+  await login(page, "/saude");
+
+  const celula = page.locator(".sb-kpi", { has: page.getByText("API", { exact: true }) });
+
+  await expect(celula.locator(".sb-kpi-value")).toHaveText("sem resposta");
+  await expect(celula).not.toContainText("ms");
+  await expect(celula).not.toContainText("uma ida");
+
+  /*
+    E "sem resposta" precisa SER VISTO. `tom` não pinta célula nenhuma neste
+    componente — ele veste o chip "ver lista", que esta célula não tem —, então
+    sem `destaque` a falha sairia no mesmo navy do estado saudável, com o
+    número sendo a única coisa que o olho pega. A revisão adversarial de D-309
+    pegou isso antes da tela.
+
+    `rgb(214, 26, 24)` é `--sb-danger-ink` (#d61a18). O valor literal está aqui
+    de propósito: se o token mudar, este caso falha e manda ler este comentário
+    — é mais barato que descobrir pela tela que "sem resposta" voltou a sair da
+    cor de "no ar".
+  */
+  await expect(celula.locator(".sb-kpi-value")).toHaveCSS("color", "rgb(214, 26, 24)");
+});
+
+/**
+ * A QUALIFICAÇÃO QUE AUTORIZA O NÚMERO (D-309). O `/health` da api devolve um
+ * objeto literal: não consulta o banco e não autentica. Uma ida rápida prova
+ * que o processo está de pé, e nada além. Sem esta frase na tela, o número
+ * convida à leitura que ele não sustenta — e foi exatamente por não ter como
+ * qualificá-los que os "42 ms" e "12 ms" do frame não viraram cartão.
+ */
+test("/saude: a tela diz o que o tempo da API NÃO prova", async ({ page }) => {
+  await login(page, "/saude");
+
+  await expect(page.getByText(/responde sem consultar o banco/)).toBeVisible();
+  await expect(page.getByText(/não é média nem compromisso de tempo de resposta/)).toBeVisible();
 });
