@@ -10,14 +10,19 @@ import { StatusPill } from "../../components/status-pill";
 import { formatCount, formatCurrency, formatDateTime, formatPercent } from "../../lib/format";
 import { listingStatusLabel } from "../../lib/labels";
 import {
+  DEFAULT_PERIOD_DAYS,
   FULL_FILTERS,
   LINK_STATE_FILTERS,
   PAGE_SIZE,
+  PERIOD_PRESETS,
+  SOLD_FILTERS,
   STOCK_FILTERS,
   linkStateBadge,
   resolveFullFilter,
   resolveLinkStateFilter,
   resolvePage,
+  resolvePeriodDays,
+  resolveSoldFilter,
   resolveStatusFilter,
   resolveStockFilter,
   summarizeWindow,
@@ -73,7 +78,6 @@ export const dynamic = "force-dynamic";
  * `docs/DESIGN_IMPLEMENTATION.md` com o motivo.
  */
 
-const LOOKBACK_DAYS = 30;
 
 interface DashboardRow {
   listing_id: string;
@@ -104,6 +108,10 @@ interface Filters {
   link: string;
   stock: string;
   full: string;
+  /** 'all' | 'with' | 'without' — venda na janela (D-308, predicado de D-259). */
+  sold: string;
+  /** Dias da janela. Muda venda/visitas/conversão e o predicado `sold` (D-308). */
+  days: number;
   search: string | null;
   page: number;
 }
@@ -128,6 +136,10 @@ function buildHref(current: Filters, override: Partial<Filters>): string {
       vinculo: next.link === "all" ? null : next.link,
       estoque: next.stock === "all" ? null : next.stock,
       full: next.full === "all" ? null : next.full,
+      venda: next.sold === "all" ? null : next.sold,
+      // O padrão fica fora da URL, como os demais: `/anuncios` continua
+      // sendo o endereço da janela de 30 dias.
+      dias: next.days === DEFAULT_PERIOD_DAYS ? null : String(next.days),
       busca: next.search,
     },
     override.page === undefined ? 1 : next.page,
@@ -201,10 +213,6 @@ export default async function AnunciosPage({
     );
   }
 
-  const now = new Date();
-  const dateTo = now.toISOString().slice(0, 10);
-  const dateFrom = new Date(now.getTime() - (LOOKBACK_DAYS - 1) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-
   const accounts = accountsResult.data ?? [];
 
   const requestedAccount = typeof query.conta === "string" ? query.conta : null;
@@ -218,9 +226,18 @@ export default async function AnunciosPage({
     link: resolveLinkStateFilter(query.vinculo),
     stock: resolveStockFilter(query.estoque),
     full: resolveFullFilter(query.full),
+    sold: resolveSoldFilter(query.venda),
+    days: resolvePeriodDays(query.dias),
     search: typeof query.busca === "string" && query.busca.trim() !== "" ? query.busca.trim() : null,
     page: resolvePage(query.pagina),
   };
+
+  // A janela sai do filtro (D-308) — era fixa em 30 dias. `days - 1` porque o
+  // intervalo da RPC é fechado nas duas pontas: "últimos 7 dias" é hoje mais
+  // seis, não hoje mais sete.
+  const now = new Date();
+  const dateTo = now.toISOString().slice(0, 10);
+  const dateFrom = new Date(now.getTime() - (filters.days - 1) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
   const escopo = {
     p_organization_id: organizationId,
@@ -254,6 +271,7 @@ export default async function AnunciosPage({
       p_link_state: filters.link,
       p_stock: filters.stock,
       p_full: filters.full,
+      p_sold: filters.sold,
       p_limit: PAGE_SIZE,
       p_offset: (filters.page - 1) * PAGE_SIZE,
     }),
@@ -285,7 +303,7 @@ export default async function AnunciosPage({
       formula: "Total no escopo atual (conta e busca), sem filtro de estado.",
       value: numero(contagem(total)),
       previous: null,
-      href: buildHref(filters, { status: null, link: "all", stock: "all", full: "all" }),
+      href: buildHref(filters, { sold: "all", status: null, link: "all", stock: "all", full: "all" }),
       tom: "info",
     },
     {
@@ -293,7 +311,7 @@ export default async function AnunciosPage({
       formula: "listings.status = 'active' no escopo atual.",
       value: numero(contagem(ativos)),
       previous: null,
-      href: buildHref(filters, { status: "active", link: "all", stock: "all", full: "all" }),
+      href: buildHref(filters, { sold: "all", status: "active", link: "all", stock: "all", full: "all" }),
       tom: "ok",
     },
     {
@@ -301,7 +319,7 @@ export default async function AnunciosPage({
       formula: "listings.status = 'paused' no escopo atual.",
       value: numero(contagem(pausados)),
       previous: null,
-      href: buildHref(filters, { status: "paused", link: "all", stock: "all", full: "all" }),
+      href: buildHref(filters, { sold: "all", status: "paused", link: "all", stock: "all", full: "all" }),
       tom: "neutro",
     },
     {
@@ -309,7 +327,7 @@ export default async function AnunciosPage({
       formula: "listings.available_quantity = 0 — estoque DO ANÚNCIO, não o do ERP nem o do Full.",
       value: numero(contagem(semEstoque)),
       previous: null,
-      href: buildHref(filters, { stock: "out", status: null, link: "all", full: "all" }),
+      href: buildHref(filters, { sold: "all", stock: "out", status: null, link: "all", full: "all" }),
       tom: "perigo",
     },
     {
@@ -317,7 +335,7 @@ export default async function AnunciosPage({
       formula: "Full do anúncio > 0 — soma do último snapshot por inventory_id nos últimos 3 dias (definição canônica D-173/D-204).",
       value: numero(contagem(noFull)),
       previous: null,
-      href: buildHref(filters, { full: "with", status: null, link: "all", stock: "all" }),
+      href: buildHref(filters, { sold: "all", full: "with", status: null, link: "all", stock: "all" }),
       tom: "info",
     },
     {
@@ -325,7 +343,7 @@ export default async function AnunciosPage({
       formula: "Nem por anúncio nem por variação — a fila da Central de Vinculações (D-122).",
       value: numero(contagem(semVinculo)),
       previous: null,
-      href: buildHref(filters, { link: "unlinked", status: null, stock: "all", full: "all" }),
+      href: buildHref(filters, { sold: "all", link: "unlinked", status: null, stock: "all", full: "all" }),
       tom: "atencao",
     },
   ];
@@ -335,16 +353,20 @@ export default async function AnunciosPage({
   const rotuloVinculo = LINK_STATE_FILTERS.find((f) => f.key === filters.link)?.label ?? "Todos";
   const rotuloEstoque = STOCK_FILTERS.find((f) => f.key === filters.stock)?.label ?? "Qualquer estoque";
   const rotuloFull = FULL_FILTERS.find((f) => f.key === filters.full)?.label ?? "Full ou não";
+  const rotuloVenda = SOLD_FILTERS.find((f) => f.key === filters.sold)?.label ?? "Com ou sem venda";
+  const rotuloPeriodo = `Últimos ${String(filters.days)} dias`;
 
   // A linha "Filtros ativos: …" do frame, com os filtros que estão de fato
-  // ativos — não um texto fixo.
+  // ativos — não um texto fixo. O período entra SEMPRE, porque ele não tem
+  // posição neutra: toda leitura de venda desta tela é de alguma janela.
   const filtrosAtivos = [
     rotuloConta,
-    `últimos ${String(LOOKBACK_DAYS)} dias`,
+    rotuloPeriodo.toLowerCase(),
     ...(filters.status === null ? [] : [rotuloEstado]),
     ...(filters.link === "all" ? [] : [rotuloVinculo.toLowerCase()]),
     ...(filters.stock === "all" ? [] : [rotuloEstoque.toLowerCase()]),
     ...(filters.full === "all" ? [] : [rotuloFull.toLowerCase()]),
+    ...(filters.sold === "all" ? [] : [rotuloVenda.toLowerCase()]),
     ...(filters.search === null ? [] : [`busca “${filters.search}”`]),
   ].join(" · ");
 
@@ -356,7 +378,7 @@ export default async function AnunciosPage({
         subtitle={
           <>
             Catálogo do Mercado Livre sincronizado a cada 6h — estado, estoque, Full, venda, visitas e conversão
-            dos últimos {LOOKBACK_DAYS} dias. A fila dos sem vínculo está na{" "}
+            dos últimos {filters.days} dias. A fila dos sem vínculo está na{" "}
             <Link href="/vinculacoes">Central de Vinculações</Link>.
           </>
         }
@@ -387,6 +409,20 @@ export default async function AnunciosPage({
               ]}
             />
 
+            {/*
+              O período mora no CABEÇALHO, com conta e vínculo, porque é "o que
+              se olha" e não estado da tabela: ele muda o significado das
+              colunas de venda, visitas e conversão de toda a tela.
+            */}
+            <FilterMenu
+              rotulo={rotuloPeriodo}
+              opcoes={PERIOD_PRESETS.map((dias) => ({
+                href: buildHref(filters, { days: dias }),
+                ativo: filters.days === dias,
+                label: `Últimos ${String(dias)} dias`,
+              }))}
+            />
+
             <FilterMenu
               rotulo={rotuloVinculo}
               opcoes={LINK_STATE_FILTERS.map((option) => ({
@@ -407,6 +443,10 @@ export default async function AnunciosPage({
               {filters.link !== "all" && <input type="hidden" name="vinculo" value={filters.link} />}
               {filters.stock !== "all" && <input type="hidden" name="estoque" value={filters.stock} />}
               {filters.full !== "all" && <input type="hidden" name="full" value={filters.full} />}
+              {filters.sold !== "all" && <input type="hidden" name="venda" value={filters.sold} />}
+              {filters.days !== DEFAULT_PERIOD_DAYS && (
+                <input type="hidden" name="dias" value={String(filters.days)} />
+              )}
               <input
                 type="search"
                 name="busca"
@@ -429,7 +469,15 @@ export default async function AnunciosPage({
       <div style={{ marginTop: "var(--sb-space-3)" }}>
         <Panel
           title="Anúncios monitorados"
-          subtitle={`Filtros ativos: ${filtrosAtivos}`}
+          subtitle={
+            filters.sold === "without"
+              ? // A ressalva só aparece quando é ela que está em jogo. "Sem
+                // venda" é ausência de MÉTRICA no período, e o recálculo só
+                // materializa dias tocados pela reconciliação — dizer isso aqui
+                // evita ler "não vendeu" onde pode ser "não foi calculado".
+                `Filtros ativos: ${filtrosAtivos} · sem venda = nenhuma métrica de venda no período, e o recálculo só materializa dias tocados pela reconciliação`
+              : `Filtros ativos: ${filtrosAtivos}`
+          }
           aside={
             <>
               {error === null && (
@@ -461,6 +509,14 @@ export default async function AnunciosPage({
                 opcoes={FULL_FILTERS.map((option) => ({
                   href: buildHref(filters, { full: option.key }),
                   ativo: filters.full === option.key,
+                  label: option.label,
+                }))}
+              />
+              <FilterMenu
+                rotulo={rotuloVenda}
+                opcoes={SOLD_FILTERS.map((option) => ({
+                  href: buildHref(filters, { sold: option.key }),
+                  ativo: filters.sold === option.key,
                   label: option.label,
                 }))}
               />
@@ -601,7 +657,7 @@ export default async function AnunciosPage({
                           cobrisse os 30 dias.
                         */}
                         <td className="sb-num" style={{ color: "var(--sb-text-soft)" }} title="Dias com visitas observadas na janela">
-                          {row.days_observed === 0 ? "—" : `${String(row.days_observed)}/${String(LOOKBACK_DAYS)}`}
+                          {row.days_observed === 0 ? "—" : `${String(row.days_observed)}/${String(filters.days)}`}
                         </td>
                         <td className="sb-num">
                           {formatPercent(row.conversion_rate)}

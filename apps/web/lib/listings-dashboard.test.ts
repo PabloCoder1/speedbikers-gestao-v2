@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  DEFAULT_PERIOD_DAYS,
   PAGE_SIZE,
+  PERIOD_PRESETS,
+  SOLD_FILTERS,
   linkStateBadge,
   resolveLinkStateFilter,
   resolvePage,
+  resolvePeriodDays,
+  resolveSoldFilter,
   resolveStatusFilter,
   summarizeWindow,
 } from "./listings-dashboard";
@@ -108,5 +113,67 @@ describe("linkStateBadge — os dois casos que a tela antiga confundia", () => {
 
   it("os dois estados produzem rótulos DIFERENTES — era esse o defeito", () => {
     expect(linkStateBadge("linked_variation").label).not.toBe(linkStateBadge("unlinked").label);
+  });
+});
+
+/**
+ * Os dois controles que D-308 acrescentou a `/anuncios`: período e "com/sem
+ * venda". `docs/PRODUCT_REQUIREMENTS.md` pedia os dois desde sempre, e o
+ * predicado `p_sold` existia na RPC desde D-259 sem tela que o expusesse.
+ *
+ * Os casos guardam a REGRA, não a implementação: lista fechada nos dois, e o
+ * padrão de 30 dias preservado — a tela sempre mostrou 30, e mudar isso em
+ * silêncio mudaria todo número de venda que alguém já viu.
+ */
+describe("período e venda em /anuncios (D-308)", () => {
+  it("os presets são os MESMOS de /vendas — 30 dias precisa querer dizer a mesma coisa nas duas telas", () => {
+    expect([...PERIOD_PRESETS]).toEqual([7, 15, 30, 60, 90]);
+  });
+
+  it("o padrão continua 30 dias, que é o que a tela mostrava antes de existir seletor", () => {
+    expect(DEFAULT_PERIOD_DAYS).toBe(30);
+    expect(resolvePeriodDays(undefined)).toBe(30);
+    expect(resolvePeriodDays(null)).toBe(30);
+  });
+
+  it("período fora da lista cai no padrão — nunca vira janela que ninguém pediu", () => {
+    // 3650 dias varreria dez anos de métrica sem a tela anunciar.
+    expect(resolvePeriodDays("3650")).toBe(30);
+    expect(resolvePeriodDays("0")).toBe(30);
+    expect(resolvePeriodDays("-7")).toBe(30);
+    expect(resolvePeriodDays("abacaxi")).toBe(30);
+  });
+
+  it("preset legítimo passa", () => {
+    expect(resolvePeriodDays("7")).toBe(7);
+    expect(resolvePeriodDays("90")).toBe(90);
+  });
+
+  it("`7` como NÚMERO não passa — a URL entrega string, e aceitar os dois esconderia um chamador errado", () => {
+    expect(resolvePeriodDays(7)).toBe(30);
+  });
+
+  it("venda tem três posições e a neutra é `all`", () => {
+    expect(SOLD_FILTERS.map((f) => f.key)).toEqual(["all", "with", "without"]);
+    expect(resolveSoldFilter(undefined)).toBe("all");
+    expect(resolveSoldFilter("qualquer-coisa")).toBe("all");
+  });
+
+  it("`with` e `without` passam — são os dois valores que a RPC conhece (D-259)", () => {
+    expect(resolveSoldFilter("with")).toBe("with");
+    expect(resolveSoldFilter("without")).toBe("without");
+  });
+
+  /**
+   * O rótulo é parte do contrato aqui: "sem venda" sozinho leria como "nunca
+   * vendeu", que é outra pergunta e outra resposta. `p_sold` compara a venda
+   * agregada ENTRE as datas.
+   */
+  it("os rótulos dizem PERÍODO — sem isso a tela afirmaria `nunca vendeu`", () => {
+    const semVenda = SOLD_FILTERS.find((f) => f.key === "without");
+    const comVenda = SOLD_FILTERS.find((f) => f.key === "with");
+
+    expect(semVenda?.label).toContain("período");
+    expect(comVenda?.label).toContain("período");
   });
 });

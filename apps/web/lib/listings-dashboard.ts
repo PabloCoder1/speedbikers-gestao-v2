@@ -69,6 +69,68 @@ export function resolveFullFilter(raw: unknown): string {
   return typeof raw === "string" && FULL_KEYS.has(raw) ? raw : "all";
 }
 
+/**
+ * Recorte por VENDA na janela (D-308) — o predicado `p_sold` que a RPC já
+ * tinha desde D-259 e que nenhuma tela expunha.
+ *
+ * `docs/PRODUCT_REQUIREMENTS.md` pede "com/sem venda" entre os filtros desta
+ * tela desde sempre; o argumento nasceu para a célula "Vendidos sem vínculo"
+ * de `/vinculacoes` e ficou só lá.
+ *
+ * **"Sem venda" é sobre o PERÍODO, nunca "nunca vendeu".** `p_sold` compara
+ * `units_sold` agregado entre `p_date_from` e `p_date_to`, então a resposta
+ * muda com o seletor de período — e é por isso que os dois controles entraram
+ * na mesma fatia: um sem o outro seria uma pergunta pela metade.
+ *
+ * **A ressalva que o rótulo carrega:** ausência de métrica é lida como
+ * ausência de venda (a RPC faz `coalesce(md.units_sold, 0) = 0`), e o
+ * recálculo só materializa dias tocados pela reconciliação. Medido no Dev em
+ * 2026-09-10: **30 de 30 dias** da janela têm métrica, e 90 de 90 — então hoje
+ * a leitura é fiel. Se o pipeline parar, "sem venda" passa a incluir "não
+ * calculado", e é isso que a dica do filtro diz em vez de deixar implícito.
+ */
+export const SOLD_FILTERS = [
+  { key: "all", label: "Com ou sem venda" },
+  { key: "with", label: "Vendeu no período" },
+  { key: "without", label: "Sem venda no período" },
+] as const;
+
+const SOLD_KEYS = new Set(SOLD_FILTERS.map((f) => f.key as string));
+
+export function resolveSoldFilter(raw: unknown): string {
+  return typeof raw === "string" && SOLD_KEYS.has(raw) ? raw : "all";
+}
+
+/**
+ * O seletor de período (D-308). **Os mesmos cinco presets de `/vendas`**, de
+ * propósito: "últimos 30 dias" precisa querer dizer a mesma coisa nas duas
+ * telas, senão o mesmo anúncio conta uma venda aqui e outra lá.
+ *
+ * A janela mexe SÓ nas colunas de desempenho — venda, receita, visitas, dias
+ * observados, conversão — e no predicado `p_sold`. **As contagens da faixa não
+ * mudam com ela**, e isso é correto: `metricas` e `visitas` entram na RPC por
+ * `left join`, então trocar o período não tira nem põe anúncio no conjunto.
+ * Total, ativos, pausados, sem estoque, no Full e sem vínculo são fatos do
+ * catálogo, não da janela.
+ */
+export const PERIOD_PRESETS = [7, 15, 30, 60, 90] as const;
+
+/** O que a tela sempre mostrou antes de haver seletor. Fica fora da URL. */
+export const DEFAULT_PERIOD_DAYS = 30;
+
+const PERIOD_VALUES = new Set<number>(PERIOD_PRESETS);
+
+/**
+ * Lista fechada pelo mesmo motivo de `STATUS_KEYS`: um valor arbitrário
+ * viajaria até `p_date_from` e devolveria uma janela que ninguém pediu — ou,
+ * com número enorme, uma varredura cara que a tela não anuncia.
+ */
+export function resolvePeriodDays(raw: unknown): number {
+  const dias = typeof raw === "string" ? Number.parseInt(raw, 10) : Number.NaN;
+
+  return PERIOD_VALUES.has(dias) ? dias : DEFAULT_PERIOD_DAYS;
+}
+
 export function resolveLinkStateFilter(raw: unknown): string {
   return typeof raw === "string" && LINK_STATE_KEYS.has(raw) ? raw : "all";
 }

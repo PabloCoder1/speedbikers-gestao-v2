@@ -131,3 +131,89 @@ test("/anuncios: vínculo por variação não é fila de trabalho, e conversão 
   await expect(linhaSemTrafego.locator("td").nth(11)).toHaveText("—");
   await expect(linhaSemTrafego.locator("td").nth(12)).toHaveText("—");
 });
+
+
+/**
+ * PERÍODO E "COM/SEM VENDA" (D-308) — os dois controles que
+ * `docs/PRODUCT_REQUIREMENTS.md` pedia desde sempre e que a tela não tinha.
+ * O predicado `p_sold` existia na RPC desde D-259, sem nenhuma tela que o
+ * expusesse.
+ *
+ * O que este caso guarda são as duas coisas que dão errado sozinhas:
+ *
+ *  1. **filtro que descarta o vizinho.** É a classe que já mordeu `/vendas`
+ *     duas vezes (a métrica sumindo no formulário de período, e depois a
+ *     marca). Por isso a afirmação é de COMPOSIÇÃO: os dois juntos, na URL e
+ *     na tela;
+ *  2. **janela que muda o número sem mudar o rótulo.** "12/30" e "12/7" são
+ *     leituras diferentes do mesmo dado; se o denominador não acompanhar o
+ *     seletor, a tela mente sobre a cobertura da observação.
+ */
+test("/anuncios: venda e período compõem, e a janela muda o denominador observado", async ({ page }) => {
+  await login(page, "/anuncios");
+
+  await expect(page.locator("tbody tr")).toHaveCount(ESPERADO.total);
+
+  const menus = page.locator("details.sb-menu");
+  const menuVenda = menus.filter({ hasText: "Com ou sem venda" });
+
+  // "Vendeu no período": só os dois do fixture com métrica de venda — o
+  // primeiro (tem visita) e o quinto (vendeu sem vínculo).
+  await menuVenda.locator("summary").click();
+  await menuVenda.getByRole("link", { name: "Vendeu no período" }).click();
+
+  await expect(page).toHaveURL(/venda=with/);
+  await expect(page.locator("tbody tr")).toHaveCount(2);
+  await expect(page.getByText(E2E_LISTING_TRAFFIC.itemId)).toBeVisible();
+
+  // O complemento fecha com o total: 2 + 3 = 5. Se o predicado não chegasse ao
+  // Postgres, os dois recortes devolveriam cinco.
+  const menuVendaAtivo = menus.filter({ hasText: "Vendeu no período" });
+
+  await menuVendaAtivo.locator("summary").click();
+  await menuVendaAtivo.getByRole("link", { name: "Sem venda no período" }).click();
+
+  await expect(page).toHaveURL(/venda=without/);
+  await expect(page.locator("tbody tr")).toHaveCount(ESPERADO.total - 2);
+
+  /*
+    A RESSALVA APARECE SÓ AQUI, e é por isso que ela é afirmada aqui: "sem
+    venda" é ausência de MÉTRICA no período, e o recálculo só materializa dias
+    tocados pela reconciliação. Sem a frase, a tela leria "não vendeu" onde
+    pode ser "não foi calculado".
+  */
+  await expect(page.getByText(/sem venda = nenhuma métrica de venda no período/)).toBeVisible();
+
+  // Agora o período, com o recorte de venda de pé.
+  const menuPeriodo = menus.filter({ hasText: "Últimos 30 dias" });
+
+  await menuPeriodo.locator("summary").click();
+  await menuPeriodo.getByRole("link", { name: "Últimos 7 dias" }).click();
+
+  // OS DOIS JUNTOS — a linha que pega o recorte descartado em silêncio.
+  await expect(page).toHaveURL(/dias=7/);
+  await expect(page).toHaveURL(/venda=without/);
+
+  // E o rótulo do menu diz o estado: filtro aplicado e invisível é pior que
+  // filtro nenhum.
+  await expect(menus.filter({ hasText: "Últimos 7 dias" }).locator("summary")).toContainText("Últimos 7 dias");
+});
+
+/**
+ * O DENOMINADOR SEGUE A JANELA. O fixture observa UM dia de visita; com 30
+ * dias a célula diz "1/30" e com 7 diz "1/7" — o mesmo dado, duas leituras de
+ * cobertura.
+ */
+test("/anuncios: os dias observados são contados contra a janela escolhida", async ({ page }) => {
+  await login(page, "/anuncios");
+
+  const linhaComTrafego = page.locator("tbody tr", { hasText: E2E_LISTING_TRAFFIC.itemId });
+
+  await expect(linhaComTrafego.getByText("1/30")).toBeVisible();
+
+  // `goto`, não `login`: a sessão já está de pé, e o helper esperaria por um
+  // formulário de entrada que não existe mais.
+  await page.goto("/anuncios?dias=7");
+
+  await expect(page.locator("tbody tr", { hasText: E2E_LISTING_TRAFFIC.itemId }).getByText("1/7")).toBeVisible();
+});

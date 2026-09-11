@@ -8648,6 +8648,42 @@ E a guarda de catalogo de D-199 foi **reemitida** na migration nova, com duas li
 
 **Dois casos de e2e MUDARAM DE LADO**, e isso e o registro de que o desenho mudou: `/saude` afirmava que o recalculo NAO tinha veredito, e agora afirma "Em dia"; a faixa de vereditos era 2 em dia + 1 sem cadencia e passou a 3 + 0.
 
+## D-308 - Os dois filtros que faltavam em /anuncios: periodo e "com/sem venda"
+
+**Contexto:** `docs/PRODUCT_REQUIREMENTS.md` (linha 723) lista, para esta tela, "Filtros por conta, status, SKU, MLB, **periodo**, com/sem Full, com/sem estoque, vinculado/sem vinculo, **com/sem venda**". Os dois em negrito nao existiam -- e o predicado `p_sold` estava na RPC **desde D-259**, sem nenhuma tela que o expusesse. A janela era a constante `LOOKBACK_DAYS = 30`, escrita no arquivo.
+
+---
+
+**1. OS DOIS ENTRAM NA MESMA FATIA PORQUE UM SEM O OUTRO E MEIA PERGUNTA**
+
+`p_sold` compara `units_sold` agregado **entre `p_date_from` e `p_date_to`**. Com a janela fixa, "sem venda" so podia significar "sem venda nos ultimos 30 dias" -- e quem pergunta "o que nao vendeu?" quase sempre quer escolher o prazo. Filtro de venda sem seletor de periodo seria uma resposta com o recorte escondido no codigo.
+
+**2. OS PRESETS SAO OS MESMOS DE `/vendas`**
+
+7, 15, 30, 60 e 90 -- os de `PRESET_DAYS` da outra tela. Nao e economia de decisao: **"ultimos 30 dias" precisa querer dizer a mesma coisa nas duas telas**, senao o mesmo anuncio conta uma venda aqui e outra la, e a pessoa descobre a divergencia comparando dois numeros que deviam bater.
+
+O padrao continua **30**, que e o que a tela sempre mostrou, e ele fica FORA da URL: `/anuncios` continua sendo o endereco da janela de trinta dias.
+
+**3. A JANELA MEXE NO DESEMPENHO, NAO NO CONJUNTO -- e isso e verificavel**
+
+Venda, receita, visitas, dias observados, conversao e o predicado `p_sold` mudam com o periodo. **As contagens da faixa nao mudam**, e esta correto: `metricas` e `visitas` entram na RPC por `left join`, entao trocar o periodo nao tira nem poe anuncio no conjunto. Total, ativos, pausados, sem estoque, no Full e sem vinculo sao fatos do CATALOGO, nao da janela.
+
+O denominador dos dias observados passa a seguir o seletor: "1/30" com trinta dias e "1/7" com sete. O mesmo dado, duas leituras de cobertura -- e um denominador que nao acompanha o seletor e a tela mentindo sobre a observacao.
+
+**4. A RESSALVA QUE O ROTULO CARREGA, E SO QUANDO E ELA QUE ESTA EM JOGO**
+
+A RPC faz `coalesce(md.units_sold, 0) = 0`: ausencia de metrica e lida como ausencia de venda. Isso e correto para venda (e diferente do Full, onde ausencia de snapshot NAO e estoque zero -- D-067), mas depende de o recalculo ter materializado os dias da janela.
+
+Medido no Dev em 2026-09-10: **30 de 30 dias** da janela padrao tem metrica, e 90 de 90 na maior. Hoje a leitura e fiel. Se o pipeline parar, "sem venda" passa a incluir "nao calculado" -- e a tela **diz isso**, no subtitulo do painel, **so quando o filtro "sem venda" esta ativo**. Ressalva permanente vira ruido que ninguem le; ressalva no momento em que ela decide a leitura, nao.
+
+**5. O QUE FECHA COM ESTA FATIA**
+
+Com periodo e venda, a lista de filtros do PRD para esta tela fica **completa**: conta, status, SKU e MLB (os dois pela busca, que casa `item_id`, `title` e `sku`), periodo, Full, estoque, vinculo e venda.
+
+**Impacto:** `apps/web/lib/{listings-dashboard.ts,listings-dashboard.test.ts}`, `apps/web/app/anuncios/page.tsx`, `apps/web/e2e/anuncios.spec.ts`. **Sem migration:** o predicado ja existia (D-259) e a assinatura da RPC nao muda.
+
+**Verificacao:** `check` 29/29, build 8/8, integracao 658/658, e2e **119/119** (+2), cinco guardas verdes. Os casos novos guardam as duas coisas que dao errado sozinhas: filtro que descarta o vizinho (a classe que ja mordeu `/vendas` duas vezes) e denominador que nao acompanha a janela.
+
 ## Como adicionar nova decisao
 
 Registrar:
