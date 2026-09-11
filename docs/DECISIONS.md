@@ -8937,6 +8937,66 @@ Rodei `test:integration` duas vezes no mesmo banco e a segunda reprovou **15 cas
 
 **Verificacao:** `check` 29/29 (`--force`), build 8/8, e2e **129/129** em banco recriado (+2), integracao 658/658 (em banco recriado), cinco guardas verdes -- inclusive `check:waterfalls`, porque a leitura de papel entrou nos `Promise.all` que as telas ja faziam. Renderizado a 1440px nos dois papeis: o ADMIN com o item em Administracao e a sobrancelha nova, e o GESTOR com o menu sem o item e a recusa na tela.
 
+## D-314 - "Cobertura" de um SKU passa a ter UMA conta: a que D-288 aposentou saiu das duas telas que faltavam
+
+**Contexto:** a varredura de design de D-310 leu o Dashboard de SKU contra o frame e um dos achados nao era de design. O cartao "Cobertura" imprimia `days_of_coverage` de `get_stock_coverage` -- **`local ÷ venda media`** --, e essa e a definicao que **D-288 aposentou** ao fundir `/cobertura` com `/reposicao`. Aquela fatia corrigiu a PALAVRA em tres lugares ("ruptura" virou "sem saldo local"); faltou a CONTA em dois.
+
+**Medido no seed:** o cartao dizia **300 dias** e `/reposicao` diz **318** para o MESMO SKU -- e o botao do cabecalho desta tela leva justamente para la. Duas contas com o mesmo nome, na mesma casa.
+
+---
+
+**1. A CONTA CANONICA, E SO ELA**
+
+A regua e a de METRICS §5D.4: **aproveitavel ÷ taxa dos ultimos 30 dias**, onde aproveitavel e `local + Full + transito` e o **reservado fica de fora** (ja esta comprometido). E a mesma que `/reposicao`, o Copiloto (D-293) e `classifyStockState` usam.
+
+`computeUsableCoverageDays` nasceu extraindo de dentro de `classifyStockState` o trecho que ja fazia essa conta -- **uma formula, um lugar**. O teste de unidade fixa a IDENTIDADE entre as duas sobre amostra diversa: se elas puderem divergir, a tela volta a dizer um numero e `/reposicao` outro, que e o defeito que a fatia veio curar.
+
+Ela e exposta **sem estado** de proposito: quem so quer o numero nao precisa de politica, e `classifyStockState` recusa o veredito sem ela (86% do catalogo nao tem configuracao que o alcance). Cobertura e aritmetica; estado operacional e julgamento.
+
+---
+
+**2. UM MODULO, DUAS SUPERFICIES**
+
+`apps/web/lib/sku-coverage-display.ts` monta as tres strings -- valor, ressalva visivel e o `title` com as parcelas -- e as duas telas leem dele, entao elas **nao conseguem** imprimir textos diferentes. Sete casos de unidade, e nenhum deles emite veredito:
+
+| situacao | valor | ressalva |
+|---|---|---|
+| normal | `318,0 dias` | `aproveitavel 53 ÷ 0,17/dia` |
+| aproveitavel ≤ 0 com demanda | `0,0 dias` | idem |
+| saldo sentinela (D-127) | `—` | `em branco de proposito: o saldo do ERP e sentinela, nao contagem` |
+| taxa zero | `—` | `sem venda nos ultimos 30 dias -- nao ha taxa para dividir` |
+| sem linha de cobertura | `—` | `nao calculada para este SKU` |
+
+A ressalva carrega a CONTA, nao um adjetivo: e por ela que alguem percebe uma divergencia futura sem abrir duas telas.
+
+---
+
+**3. O QUE SAIU JUNTO, E POR QUE ISSO IMPORTA**
+
+- **`is_ruptura` deixou de pintar o cartao.** Aquele flag descreve o saldo LOCAL; pintar com ele um numero que ja nao e local reemitiria a incoerencia que D-288 fechou -- o cartao diria "perigo" com 318 dias de cobertura porque o local zerou, enquanto o Full sustenta a venda. O sinal nao se perde: mora no botao "Sem saldo local" do cabecalho, onde D-288 o pos. Sobrou UM tom, e ele nao e veredito: estoque virtual em atencao, porque o numero esta em branco de proposito.
+- **`SkuInspection.avgDailySales` foi apagado.** Era o divisor da conta antiga e ficou sem nenhum leitor. Campo desses e o numero velho a um `{retrato.avgDailySales}` de distancia de voltar a tela.
+
+---
+
+**4. O QUE NAO ENTROU, com motivo**
+
+- **Lead time, em qualquer forma** -- a comparacao "cobertura ≤ prazo" e a nota "Abaixo do Lead Time (11d)" que o frame desenha em tom de perigo. Foi DERRUBADA na rodada adversarial: o veredito tem nome, dono e regua (`COMPRA_URGENTE`), e `classifyStockState` nunca o afirma sem politica.
+- **Nenhuma leitura nova.** As parcelas ja vinham nas duas RPCs que cada superficie ja lia; `get_stock_coverage` continua com a coluna `days_of_coverage` intacta (aposentar coluna e migration, e depois de varredura de consumidores).
+
+---
+
+**5. A RESSALVA QUE FICA: o Full desta conta e o do cartao vizinho**
+
+`get_sku_dashboard` agrupa o Full por (conta, anuncio, variacao) **sem janela de frescor**; a definicao canonica de D-173, que `get_purchase_suggestions` usa, agrupa por (conta, `inventory_id`) com **3 dias**. A migration `20260909150000` mediu as duas no Dev em 02/09: **mesmo numero** (648 SKUs, 7.873 unidades) -- a divergencia e **latente, nao ativa**.
+
+Usar o Full que o cartao vizinho ja imprime mantem a tela coerente consigo mesma. Se a latente acender, as parcelas no `title` mostram onde -- e e por isso que elas estao la.
+
+---
+
+**Impacto:** `packages/domain/src/purchasing/stock-state.{ts,test.ts}` (+ `computeUsableCoverageDays`), `apps/web/lib/sku-coverage-display.{ts,test.ts}` (novos), `apps/web/app/skus/[skuId]/page.tsx`, `apps/web/app/produtos/{inspecao.ts,inspecao-rapida.tsx}`, `apps/web/e2e/{sku-dashboard,produtos}.spec.ts`. **Sem migration.**
+
+**Verificacao:** `check` 29/29 (`--force`, com 5 casos novos no dominio e 7 no web), build 8/8, integracao 658/658 em banco recriado, e2e **132/132** -- a suite inclui as fatias em voo de outra sessao que trabalha no mesmo repo; desta fatia sao 1 caso novo e as assercoes acrescentadas ao caso da gaveta. Cinco guardas verdes. Renderizado a 1440px: o cartao mostra `318,0 dias · aproveitavel 53 ÷ 0,17/dia`.
+
 ## Como adicionar nova decisao
 
 Registrar:

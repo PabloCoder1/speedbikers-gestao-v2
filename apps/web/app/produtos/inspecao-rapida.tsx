@@ -186,17 +186,17 @@ function Retrato({ retrato }: { retrato: SkuInspection }): ReactNode {
         <b>{formatCount(retrato.fullQuantity)} un</b>
       </div>
 
+      {/*
+        A MESMA CONTA E O MESMO TEXTO do cartão "Cobertura" do dashboard de SKU
+        (D-314): as duas superfícies leem `descreverCobertura`, então não
+        conseguem divergir. Antes daqui a gaveta imprimia `local ÷ venda
+        média`, a definição que D-288 aposentou.
+      */}
       <div className="sb-detail-row">
         <span>Cobertura</span>
-        <b>
-          {retrato.coverageDays === null ? "—" : `${formatCount(Math.round(retrato.coverageDays))} dias`}
-          <small>
-            {retrato.coverageDays === null
-              ? retrato.stockIsVirtual
-                ? "não calculada para saldo sentinela"
-                : "sem venda na janela — não há taxa para dividir"
-              : `venda média de ${formatCount(Math.round((retrato.avgDailySales ?? 0) * 10) / 10)}/dia`}
-          </small>
+        <b title={retrato.cobertura.titulo}>
+          {retrato.cobertura.valor}
+          <small>{retrato.cobertura.ressalva}</small>
         </b>
       </div>
 

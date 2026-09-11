@@ -3,6 +3,7 @@
 import { resolveReplenishmentPolicy, type ReplenishmentSetting } from "@sb/domain";
 
 import { createClient } from "../../lib/supabase/server";
+import { descreverCobertura, type CoberturaDescrita } from "../../lib/sku-coverage-display";
 
 /**
  * O retrato que a gaveta "Inspeção Rápida" mostra (fatia D38).
@@ -21,7 +22,8 @@ import { createClient } from "../../lib/supabase/server";
  *
  * | valor | fonte | quem mais usa |
  * |---|---|---|
- * | cobertura, ruptura, vendas 30d | `get_stock_coverage` (`p_sku_id`) | o cartão "Cobertura" do dashboard de SKU e `/cobertura` |
+ * | ruptura, vendas 30d, janelas de tendência | `get_stock_coverage` (`p_sku_id`) | o cartão "Cobertura" do dashboard de SKU |
+ * | **cobertura em dias** | `descreverCobertura` sobre as parcelas das duas RPCs (D-314) | o MESMO módulo que o cartão "Cobertura" do dashboard de SKU usa, e a mesma conta de `/reposicao` |
  * | Full, reservado, trânsito, físico | `get_sku_dashboard` | o cartão "Estoque local" do dashboard de SKU |
  * | cobertura alvo | `replenishment_settings` + `resolveReplenishmentPolicy` | `/reposicao` |
  * | última movimentação | `stock_movements` pelo índice de extrato do SKU | `/estoque/movimentacoes` (pela RPC, que pagina) |
@@ -47,11 +49,24 @@ import { createClient } from "../../lib/supabase/server";
 const LOOKBACK_DAYS = 30;
 
 export interface SkuInspection {
-  /** Cobertura em dias — nula quando não há venda ou o saldo é sentinela. */
-  coverageDays: number | null;
+  /**
+   * A cobertura já DESCRITA — valor, ressalva e a decomposição do `title`
+   * (D-314).
+   *
+   * Era `coverageDays: number | null` com o `days_of_coverage` cru da RPC, que
+   * é `local ÷ venda média` — a conta que D-288 aposentou. A gaveta e o cartão
+   * do dashboard de SKU passam pelo mesmo módulo, então não conseguem imprimir
+   * textos diferentes para o mesmo SKU.
+   */
+  cobertura: CoberturaDescrita;
   isRuptura: boolean | null;
   stockIsVirtual: boolean;
-  avgDailySales: number | null;
+  /*
+    `avgDailySales` SAIU (D-314). Ele era o divisor da conta antiga
+    (`local ÷ venda média`) e, depois que a cobertura passou a vir descrita,
+    ficou sem nenhum leitor — um campo desses é o número velho a um
+    `{retrato.avgDailySales}` de distância de voltar à tela.
+  */
   units30d: number | null;
   localQuantity: number | null;
   reservedQuantity: number | null;
@@ -71,10 +86,9 @@ export interface SkuInspection {
 }
 
 const VAZIO: SkuInspection = {
-  coverageDays: null,
+  cobertura: descreverCobertura(null),
   isRuptura: null,
   stockIsVirtual: false,
-  avgDailySales: null,
   units30d: null,
   localQuantity: null,
   reservedQuantity: null,
@@ -167,10 +181,29 @@ export async function inspecionarSku(
   const movement = movementResult.data;
 
   return {
-    coverageDays: coverage?.days_of_coverage ?? null,
+    /*
+      As parcelas saem das DUAS leituras que este `Promise.all` já faz: as
+      quantidades de `get_sku_dashboard` e as janelas de venda de
+      `get_stock_coverage`. Zero ida nova.
+    */
+    cobertura: descreverCobertura(
+      coverage === null || dashboard === null
+        ? null
+        : {
+            local: dashboard.local_quantity,
+            full: dashboard.full_quantity,
+            transito: dashboard.transito_quantity,
+            reservado: dashboard.reservado_quantity,
+            stockIsVirtual: coverage.stock_is_virtual,
+            units15: coverage.units_15d,
+            units30: coverage.units_30d,
+            units60: coverage.units_60d,
+            units90: coverage.units_90d,
+            historyDays90: coverage.history_days_90,
+          },
+    ),
     isRuptura: coverage?.is_ruptura ?? null,
     stockIsVirtual: coverage?.stock_is_virtual ?? false,
-    avgDailySales: coverage?.avg_daily_sales ?? null,
     units30d: coverage?.units_30d ?? null,
     localQuantity: dashboard?.local_quantity ?? null,
     reservedQuantity: dashboard?.reservado_quantity ?? null,

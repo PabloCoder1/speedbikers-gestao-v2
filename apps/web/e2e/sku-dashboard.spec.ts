@@ -1,6 +1,12 @@
 import { expect, test } from "@playwright/test";
 
-import { E2E_DECISION_TEXT, E2E_LISTINGS, E2E_LISTING_FULL, E2E_SKU_SALES } from "./constants.js";
+import {
+  E2E_DECISION_TEXT,
+  E2E_LISTINGS,
+  E2E_LISTING_FULL,
+  E2E_LOCAL_STOCK,
+  E2E_SKU_SALES,
+} from "./constants.js";
 import { login } from "./helpers.js";
 import { readSeedOutput } from "./seed-output.js";
 
@@ -175,4 +181,40 @@ test("aba Decisões mostra a decisão do seed com o antes e o depois lado a lado
   await expect(page.getByRole("row", { name: /No momento da decisão/ })).toContainText("Vendido (7d): 2");
   await expect(page.getByRole("row", { name: /7 dias depois/ })).toContainText("Vendido (7d): 5");
   await expect(page.getByText("Ainda sem medição: 15 dias depois, 30 dias depois.")).toBeVisible();
+});
+
+
+/**
+ * UMA CONTA DE COBERTURA, DUAS TELAS (D-314).
+ *
+ * O cartão imprimia `local ÷ venda média`, a definição que D-288 aposentou ao
+ * fundir `/cobertura` com `/reposicao`: eram **300 dias** aqui contra **318**
+ * em `/reposicao`, para o MESMO SKU, na tela cujo cabeçalho leva justamente
+ * para lá.
+ *
+ * Os dois números são DERIVADOS do seed, como faz o spec de `/reposicao` —
+ * mudar o fixture move os dois lados juntos. E o caso afirma a ausência do
+ * número velho: sem isso, ele passaria se alguém imprimisse os dois.
+ */
+test("dashboard de SKU: a Cobertura conta o APROVEITÁVEL, e é o mesmo número de /reposicao", async ({ page }) => {
+  const seed = await readSeedOutput();
+
+  const vendaDiaria = E2E_SKU_SALES.reduce((total, dia) => total + dia.units, 0) / 30;
+  const aproveitavel = E2E_LOCAL_STOCK + E2E_LISTING_FULL;
+  const pelaReposicao = Math.round((aproveitavel / vendaDiaria) * 10) / 10;
+  const peloEstoqueLocal = Math.round((E2E_LOCAL_STOCK / vendaDiaria) * 10) / 10;
+
+  // As duas definições PRECISAM divergir, senão o caso não prova nada.
+  expect(pelaReposicao).not.toBe(peloEstoqueLocal);
+
+  await login(page, `/skus/${seed.skuId}`);
+
+  const cartao = page.locator(".sb-stat", { hasText: "Cobertura" });
+
+  await expect(cartao.locator(".sb-stat-value")).toHaveText(`${pelaReposicao.toFixed(1).replace(".", ",")} dias`);
+  await expect(cartao).not.toContainText(peloEstoqueLocal.toFixed(1).replace(".", ","));
+
+  // A ressalva carrega a CONTA — é por ela que alguém percebe uma divergência
+  // futura sem precisar abrir duas telas.
+  await expect(cartao.locator(".sb-stat-note")).toContainText(`aproveitável ${String(aproveitavel)}`);
 });

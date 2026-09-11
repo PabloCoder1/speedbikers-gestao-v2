@@ -76,6 +76,34 @@ export interface StockStateResult {
   readonly thresholds: StockStateThresholds;
 }
 
+/**
+ * A COBERTURA EM DIAS, sozinha — `aproveitável ÷ taxa dos últimos 30 dias`
+ * (METRICS §5D.4), a mesma conta que `classifyStockState` usa como régua.
+ *
+ * Extraída em D-314 porque nasceu um segundo consumidor: o cartão "Cobertura"
+ * do Dashboard do SKU e a gaveta Inspeção Rápida imprimiam
+ * `local ÷ venda média`, a definição que **D-288 aposentou** quando fundiu
+ * `/cobertura` com `/reposicao`. Duas contas com o mesmo nome davam números
+ * diferentes na mesma casa — 300 dias numa tela e 318 na outra, para o mesmo
+ * SKU do seed.
+ *
+ * Ela é EXPOSTA SEM ESTADO de propósito. Quem só quer o número não precisa de
+ * política, e `classifyStockState` recusa o veredito sem ela (86% do catálogo
+ * não tem configuração alcançando-o). Cobertura e veredito são coisas
+ * diferentes: a primeira é aritmética, o segundo é julgamento.
+ *
+ * `null` nos dois casos em que o número seria mentira: estoque não confiável
+ * (SKU virtual — o saldo do ERP é sentinela, D-127) e taxa zero, em que a
+ * cobertura é INDEFINIDA e não "infinita" (o contrato de D-080).
+ */
+export function computeUsableCoverageDays(usable: UsableStockResult, trend: SalesTrendResult): number | null {
+  const rate = trend.rateRecent;
+
+  if (usable.total === null || rate <= 0) return null;
+
+  return simulateCoverageDays(Math.max(usable.total, 0), rate).coverageDays;
+}
+
 export function classifyStockState(input: StockStateInput): StockStateResult {
   const refusals: StockStateRefusal[] = [];
 
@@ -91,14 +119,11 @@ export function classifyStockState(input: StockStateInput): StockStateResult {
     maxCoverageDays: input.policy?.maxCoverageDays ?? null,
   };
 
-  const rate = input.trend.rateRecent;
-
   // A cobertura não depende da política: computável sempre que há estoque
   // confiável e demanda recente — exposta mesmo sob recusa de configuração.
-  const coverageDays =
-    input.usable.total === null || rate <= 0
-      ? null
-      : simulateCoverageDays(Math.max(input.usable.total, 0), rate).coverageDays;
+  const coverageDays = computeUsableCoverageDays(input.usable, input.trend);
+
+  const rate = input.trend.rateRecent;
 
   if (rate <= 0 && input.usable.total !== null && refusals.length === 0) {
     refusals.push("SEM_DEMANDA_RECENTE");

@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **308** (D-001 a D-312).
+Decisões registradas: **309** (D-001 a D-314).
 
 ## Por domínio
 
@@ -94,7 +94,7 @@ Decisões registradas: **308** (D-001 a D-312).
 - **D-257** — A trava "so aplica migration depois da esteira verde" NAO existe: quem aplica e o Supabase, nao a CI
 - **D-289** — A paginação da Caixa de Entrada, e o 416 que o PostgREST devolve para página que passou do fim
 
-### estoque (23)
+### estoque (24)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -119,6 +119,7 @@ Decisões registradas: **308** (D-001 a D-312).
 - **D-252** — D17: os KPIs de Movimentacoes CONTAM linha, e somar unidade seria mentira de milhoes
 - **D-265** — D25: Central Full pelo frame, e o estado que ele esconde e o MAIOR de todos
 - **D-288** — A FUSAO de `/cobertura` com `/reposicao`: uma tela, uma definicao de ruptura
+- **D-314** — "Cobertura" de um SKU passa a ter UMA conta: a que D-288 aposentou saiu das duas telas que faltavam
 
 ### interface (33)
 

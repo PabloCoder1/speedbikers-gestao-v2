@@ -23,6 +23,7 @@ import {
 import { actionStatusLabel, eventTypeLabel, listingStatusLabel } from "../../../lib/labels";
 import { fullSituationCriterion, fullSituationLabel, fullSituationTom, isFullRow } from "../../../lib/full-filters";
 import { createClient } from "../../../lib/supabase/server";
+import { descreverCobertura } from "../../../lib/sku-coverage-display";
 import { DiagnosisPanel } from "./diagnosis-panel";
 import { SimulatorPanel } from "./simulator-panel";
 
@@ -470,18 +471,54 @@ export default async function SkuDashboardPage({
    * primeiro, classificação depois, procedência por último.
    */
   /*
-   * O tom do cartão de cobertura. Só existe quando o estado MERECE tom: em
-   * ruptura é perigo, virtual é atenção (o número está em branco de propósito),
-   * e o resto é o cartão neutro. Pintar todos seria ruído.
-   */
-  const coberturaTom =
-    coverage === null
+    A COBERTURA, PELA CONTA CANÔNICA (D-314).
+
+    O cartão imprimia `days_of_coverage` da RPC, que é `local ÷ venda média` —
+    a definição que D-288 aposentou. Agora ele lê a mesma peça de `/reposicao`
+    (`aproveitável ÷ taxa de 30 dias`), com as quatro parcelas que esta página
+    JÁ tem em mãos: zero consulta nova.
+
+    A ressalva sai do mesmo módulo, então as duas superfícies que mostram
+    cobertura de SKU — este cartão e a gaveta Inspeção Rápida — não conseguem
+    divergir no texto.
+
+    ⚠️ O Full aqui vem de `get_sku_dashboard`, que agrupa por
+    (conta, anúncio, variação) SEM janela de frescor, enquanto a definição
+    canônica de D-173 agrupa por (conta, inventory_id) com 3 dias. A migration
+    20260909150000 mediu as duas no Dev em 02/09: **mesmo número** (648 SKUs,
+    7.873 unidades) — a divergência é LATENTE. Usar o Full que o cartão vizinho
+    já imprime mantém a tela coerente consigo mesma; se a latente acender, as
+    parcelas no `title` mostram onde.
+  */
+  const cobertura = descreverCobertura(
+    coverage === null || dashboard === null
       ? null
-      : coverage.is_ruptura
-        ? "var(--sb-danger)"
-        : coverage.stock_is_virtual
-          ? "var(--sb-accent-ink)"
-          : null;
+      : {
+          local: dashboard.local_quantity,
+          full: dashboard.full_quantity,
+          transito: dashboard.transito_quantity,
+          reservado: dashboard.reservado_quantity,
+          stockIsVirtual: coverage.stock_is_virtual,
+          units15: coverage.units_15d,
+          units30: coverage.units_30d,
+          units60: coverage.units_60d,
+          units90: coverage.units_90d,
+          historyDays90: coverage.history_days_90,
+        },
+  );
+
+  /*
+   * O tom do cartão de cobertura. `is_ruptura` SAIU daqui (D-314): aquele flag
+   * descreve o saldo LOCAL, e pintar com ele um número que já não é local
+   * reemitiria a incoerência que D-288 fechou — o cartão diria "perigo" com
+   * 318 dias de cobertura porque o local zerou, enquanto o Full sustenta a
+   * venda. O sinal de saldo local zerado não se perde: ele mora no botão "Sem
+   * saldo local" do cabeçalho, onde D-288 o pôs.
+   *
+   * Fica UM caso, e ele não é veredito: estoque virtual em tom de atenção,
+   * porque o número está em branco de propósito.
+   */
+  const coberturaTom = coverage?.stock_is_virtual === true ? "var(--sb-accent-ink)" : null;
 
   const badges: ObjectBadge[] = [
     sku.data.is_discontinued
@@ -634,20 +671,10 @@ export default async function SkuDashboardPage({
                   }
                 >
                   <span className="sb-stat-label">Cobertura</span>
-                  <b className="sb-stat-value">
-                    {coverage?.days_of_coverage == null
-                      ? "—"
-                      : `${formatCount(Math.round(coverage.days_of_coverage))} dias`}
+                  <b className="sb-stat-value" title={cobertura.titulo}>
+                    {cobertura.valor}
                   </b>
-                  <span className="sb-stat-note">
-                    {coverage === null
-                      ? "não calculada para este SKU"
-                      : coverage.stock_is_virtual
-                        ? "em branco de propósito: o saldo do ERP é sentinela, não contagem (D-127)"
-                        : coverage.is_ruptura
-                          ? "vende e o saldo LOCAL acabou — o veredito de ruptura olha Full e trânsito, e mora em Cobertura e reposição"
-                          : `venda média de ${formatCount(Math.round((coverage.avg_daily_sales ?? 0) * 10) / 10)}/dia`}
-                  </span>
+                  <span className="sb-stat-note">{cobertura.ressalva}</span>
                 </div>
 
                 <div className="sb-stat">

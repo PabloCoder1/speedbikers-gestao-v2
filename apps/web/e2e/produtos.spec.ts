@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import {
   E2E_LISTING_FULL,
+  E2E_LOCAL_STOCK,
   E2E_SKU_CODE,
   E2E_SKU_SALES,
   E2E_USER_EMAIL,
@@ -125,6 +126,21 @@ test("/produtos: a Inspeção Rápida mostra o retrato real e recusa o que não 
 
   await expect(gaveta.getByText(`${String(vendas30d)} un`, { exact: true })).toBeVisible();
   await expect(gaveta.getByText(`${String(E2E_LISTING_FULL)} un`, { exact: true })).toBeVisible();
+
+  /*
+    A COBERTURA É A MESMA DO DASHBOARD DE SKU E DA /reposicao (D-314). A gaveta
+    imprimia `local ÷ venda média`, a conta que D-288 aposentou — e as três
+    superfícies agora passam pelo mesmo módulo.
+  */
+  const vendaDiaria = vendas30d / 30;
+  const aproveitavel = E2E_LOCAL_STOCK + E2E_LISTING_FULL;
+  const pelaReposicao = Math.round((aproveitavel / vendaDiaria) * 10) / 10;
+  const peloEstoqueLocal = Math.round((E2E_LOCAL_STOCK / vendaDiaria) * 10) / 10;
+
+  expect(pelaReposicao).not.toBe(peloEstoqueLocal);
+
+  await expect(gaveta).toContainText(`${pelaReposicao.toFixed(1).replace(".", ",")} dias`);
+  await expect(gaveta).not.toContainText(peloEstoqueLocal.toFixed(1).replace(".", ","));
 
   // A RECUSA: sem política aplicável, o alvo não é chutado (D-144).
   await expect(gaveta.getByText("nenhuma política de reposição alcança este SKU")).toBeVisible();

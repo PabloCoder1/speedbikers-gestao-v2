@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { classifySalesTrend } from "./sales-trend.js";
-import { classifyStockState } from "./stock-state.js";
+import { classifyStockState, computeUsableCoverageDays } from "./stock-state.js";
 import { computeUsableStock } from "./usable-stock.js";
 import type { ResolvedReplenishmentPolicy } from "./replenishment-policy.js";
 
@@ -124,5 +124,65 @@ describe("classifyStockState", () => {
 
     expect(r.coverageDays).toBe(214.3);
     expect(r.state).toBe("ADEQUADA");
+  });
+});
+
+/**
+ * A COBERTURA SOZINHA (D-314) — a mesma conta, exposta sem estado.
+ *
+ * O que estes casos guardam é a IDENTIDADE: se as duas contas puderem
+ * divergir, a tela do SKU volta a dizer um número e `/reposicao` outro, que é
+ * exatamente o defeito que a extração veio curar.
+ */
+describe("computeUsableCoverageDays", () => {
+  it("é o MESMO número que o estado publica, sobre amostra diversa", () => {
+    for (const local of [0, 1, 7, 15, 30, 53, 119, 240, 1000]) {
+      const usable = stock(local);
+
+      expect(computeUsableCoverageDays(usable, trend)).toBe(
+        classifyStockState({ policy, trend, usable }).coverageDays,
+      );
+    }
+  });
+
+  it("não depende da política — é aritmética, não julgamento", () => {
+    const usable = stock(53);
+
+    expect(computeUsableCoverageDays(usable, trend)).toBe(
+      classifyStockState({ policy: null, trend, usable }).coverageDays,
+    );
+  });
+
+  it("soma o aproveitável, e não só o local: é a diferença que D-288 aposentou", () => {
+    // 50 local + 3 no Full + 0 em trânsito, a 1 un/dia: 53 dias, não 50.
+    const usable = computeUsableStock({
+      localQuantity: 50,
+      fullQuantity: 3,
+      transitQuantity: 0,
+      reservedQuantity: 0,
+      stockIsVirtual: false,
+    });
+
+    expect(computeUsableCoverageDays(usable, trend)).toBe(53);
+  });
+
+  it("reservado fica FORA da conta — já está comprometido", () => {
+    const usable = computeUsableStock({
+      localQuantity: 50,
+      fullQuantity: 0,
+      transitQuantity: 0,
+      reservedQuantity: 20,
+      stockIsVirtual: false,
+    });
+
+    expect(computeUsableCoverageDays(usable, trend)).toBe(50);
+  });
+
+  it("estoque virtual e taxa zero devolvem null — indefinida, nunca infinita", () => {
+    expect(computeUsableCoverageDays(stock(50, true), trend)).toBeNull();
+
+    const semVenda = classifySalesTrend({ units15: 0, units30: 0, units60: 0, units90: 0, historyDays90: 90 });
+
+    expect(computeUsableCoverageDays(stock(50), semVenda)).toBeNull();
   });
 });
