@@ -9242,6 +9242,66 @@ Nao ha caminho de escrita novo: a tela do SKU chama as MESMAS Server Actions de 
 
 **Nota de convivencia, porque esta fatia foi feita com OUTRA sessao trabalhando no mesmo repositorio ao mesmo tempo:** o servidor da porta 3000 e um so, e o Playwright o reusa fora do CI -- sete casos meus falharam com "This page couldn't load" servidos por um build que nao era o meu. A saida foi cada sessao com a sua porta (`next start -p 3100` + `E2E_BASE_URL`). O banco local tambem e um so, e a suite e stateful: `db reset` virou acao combinada entre as duas sessoes, nunca unilateral.
 
+## D-317 - O diagnostico do SKU: tres niveis com regua escrita, e um painel do que a tela NAO julga
+
+**Contexto:** segunda metade do pedido do dono do produto. Ele descreveu um diagnostico com quatro niveis (verde, amarelo, laranja, vermelho), escopo por plataforma e por conta, divergencia de estoque por conta, alerta de dispersao de preco, e cada problema com **problema, possivel causa, impacto e recomendacao**. Perguntado, escolheu **tres niveis com regua** quando soube que esta casa nao tem escala de quatro com limiar definido.
+
+A aba era UMA LINHA de `page.tsx`: um botao que calculava anomalia de venda no clique. Zero leitura no carregamento -- e a acao que o job diario ja tinha persistido para o MESMO SKU nao aparecia ali, embora a Central de Acoes ja mandasse o operador para esta aba.
+
+---
+
+**1. TRES NIVEIS, E A REGUA DE CADA UM APARECE NA TELA**
+
+`ok` · `atencao` · `critico` -- os mesmos de `sync-health.ts`, nao um vocabulario novo. O que faz a diferenca nao e o numero de niveis: e **cada selo carregar, em texto, a condicao exata que o acendeu**, na propria linha do problema ("acendeu por: status = ativo e estoque anunciado = 0"). E a primeira coisa que alguem quer conferir quando discorda do selo.
+
+| verificacao | nivel | regua escrita |
+|---|---|---|
+| anuncio ativo com zero anunciado | critico | `status = ativo e estoque anunciado = 0` |
+| anuncio pausado com estoque interno | atencao | `status = pausado e (estoque local + Full) > 0` |
+| estoque sem nenhum anuncio ativo | critico | `(local + Full) > 0, ao menos um anuncio com estado lido, e nenhum ativo` |
+| retrato do anuncio velho | atencao | `synced_at mais velho que 2x a cadencia do catalogo (360 min)` |
+| acao aberta do sistema | a severidade DELA | `acao com status aberto e severidade X` |
+
+**Nenhum numero novo nasceu.** A cadencia de 360 minutos vem de `sync-health.ts`, que a le de `infra/cloud-scheduler.sh`; a tolerancia de duas janelas e a mesma da Saude da Sincronizacao ("uma janela perdida e ruido, duas sao sinal"); e a severidade das acoes e a que `actions` ja tem -- a tela **nao recalcula** nada.
+
+---
+
+**2. O QUE NAO TEM REGUA NAO VIRA SELO: VIRA PAINEL**
+
+A parte mais util da fatia e a que nao julga. "O que esta tela NAO julga" lista, em texto, cada pergunta do pedido que a fonte nao responde:
+
+- **dispersao de preco** -- o numero aparece (menor, maior, media e a diferenca percentual), e o SELO nao. D-148 e explicita: *"quanto e demais e decisao do ADMIN, nao constante do codigo"*. Inventar 10% aqui seria a constante que aquela decisao proibe. Quando houver teto configurado, o numero vira selo sem mexer na tela;
+- **divergencia de estoque POR CONTA** -- nao e calculavel. O anunciado e por conta (`listings`, unique `(ml_account_id, item_id)`); o interno **nao tem coluna de conta em ponto nenhum da cadeia** -- nem `inventory_balances` (unique `(sku_id, location_kind)`), nem `stock_movements`, nem `erp_stock_snapshots` (por warehouse). Sao N numeros anunciados contra UM numero da organizacao. A tela os poe LADO A LADO e nao subtrai;
+- **saldo sentinela** (D-127): SKU com estoque virtual nao gera veredito de estoque nenhum, porque o numero do ERP existe para o anuncio nao pausar;
+- **Shopee e a dimensao plataforma** -- D-037 restringe a V3 ao Mercado Livre e o esquema e ML cravado. Um seletor com uma opcao vazia prometeria integracao que nao existe;
+- **tipo de anuncio, catalogo, logistica, qualidade da publicacao** -- nenhuma dessas colunas e sincronizada.
+
+---
+
+**3. O ESCOPO POR CONTA VIVE NA URL, E AS CONTAS SAEM DOS DADOS**
+
+`?escopo=` com lista fechada -- as contas que ESTE SKU alcanca --, e valor desconhecido cai em "Visao geral" ANTES de tocar o banco (o molde de `parseTab`). **Conta nova aparece sozinha**, porque as opcoes saem dos anuncios e nao de uma lista escrita: e o "adicionar contas sem mexer na estrutura da tela" que o dono pediu. Com uma conta so, o seletor nao aparece -- um menu de uma opcao e ruido.
+
+No escopo de uma conta entra a comparacao que o pedido chama de diagnostico comparativo: preco medio daquela conta contra a media das demais, com a diferenca percentual. Ela e `null` quando nao ha outra conta -- comparar contra si mesma daria 0% e pareceria medicao. E a frase ao lado diz o que o numero nao diz: preco diferente entre contas pode ser estrategia.
+
+---
+
+**4. "EXECUTAR NOVAMENTE" E "ULTIMA ANALISE", SEM TABELA NOVA**
+
+A aba e Server Component e le a cada renderizacao: nao existe cache de analise a invalidar, entao "Reler agora" e recarregar, e nao ha carimbo de "ultima analise" a guardar. O instante do dado e o `synced_at` de cada anuncio -- e e por isso que "retrato do anuncio velho" e uma das verificacoes. A alternativa (persistir o resultado) seria tabela nova mais RPC de escrita, porque o navegador nao insere em `actions`, e nada no pedido exige que a analise de ontem sobreviva.
+
+---
+
+**5. O QUE A TELA REUSA EM VEZ DE INVENTAR**
+
+A entidade "problema com causa, impacto e recomendacao" ja existe: `public.actions`, com `kind`, `evidence`, `recommendation`, `severity` e grao de SKU e de anuncio, escrita por tres detectores do worker. A aba **le** as acoes abertas deste SKU e as mostra com a severidade e a recomendacao que elas ja tem. Criar acao a partir da tela seria uma segunda maquina de diagnostico -- e o navegador nem tem caminho de escrita em `actions`.
+
+---
+
+**Impacto:** `apps/web/lib/sku-diagnostico.{ts,test.ts}` (novos, 13 casos), `apps/web/app/skus/[skuId]/page.tsx`, `apps/web/e2e/sku-dashboard.spec.ts`. **Sem migration e sem RPC nova:** o diagnostico e calculado no servidor sobre o que a pagina ja lia, mais UMA leitura de `actions` que entra no `Promise.all` existente e so na aba de diagnostico.
+
+**Verificacao:** `check` 29/29 (`--force`), build 8/8, e2e **135/135** em banco recriado (+1), integracao 663/663 em banco recriado, cinco guardas verdes. Renderizado a 1440px: com o seed, o SKU sai **Critico** por causa da acao aberta de severidade alta, com 26,4% de dispersao de preco impressa como numero e sem selo.
+
 ## Como adicionar nova decisao
 
 Registrar:

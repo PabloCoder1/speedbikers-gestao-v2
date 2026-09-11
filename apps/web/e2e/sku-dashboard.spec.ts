@@ -301,3 +301,59 @@ test("Dashboard do SKU: vincular um anúncio por MLB e remover o vínculo, com c
 
   await expect(page.locator("tbody tr", { hasText: alvo?.itemId ?? "" })).toHaveCount(0);
 });
+
+
+/**
+ * A ABA DIAGNÓSTICO (D-317) — três níveis, cada um com régua escrita.
+ *
+ * A aba era UMA LINHA: um botão que calculava a anomalia de venda no clique, e
+ * nada mais. A ação que o job diário já tinha persistido para este mesmo SKU
+ * não aparecia em lugar nenhum dela, embora a Central de Ações mandasse o
+ * operador para cá.
+ *
+ * O que estes casos guardam é o que separa diagnóstico de enfeite: todo selo
+ * mostra a CONDIÇÃO que o acendeu, e o que não tem condição escrita não vira
+ * selo — vai para o painel do que a tela não julga.
+ */
+test("Dashboard do SKU: o diagnóstico julga com régua, e diz o que não julga", async ({ page }) => {
+  const seed = await readSeedOutput();
+
+  await login(page, `/skus/${seed.skuId}?aba=diagnostico`);
+
+  const saude = page.getByRole("region", { name: "Saúde do SKU" });
+
+  await expect(saude).toBeVisible();
+
+  // O seed tem uma ação ABERTA de severidade alta para este SKU: o nível do
+  // SKU é o pior entre as verificações, então ele é Crítico.
+  await expect(saude.locator(".sb-stat", { hasText: "Nível" }).locator(".sb-stat-value")).toHaveText("Crítico");
+
+  // Estoque anunciado e interno LADO A LADO, sem subtração: o interno é da
+  // organização e o anunciado é por anúncio — grãos diferentes, e "divergência"
+  // exigiria o mesmo grão.
+  await expect(saude.locator(".sb-stat", { hasText: "Estoque anunciado" })).toContainText("interno:");
+
+  // A dispersão de preço é NÚMERO, não alerta.
+  await expect(saude.locator(".sb-stat", { hasText: "Preço anunciado" })).toContainText("% de diferença");
+
+  const problemas = page.getByRole("region", { name: "Problemas encontrados" });
+
+  // As quatro partes que o dono pediu, e a régua junto de cada uma.
+  await expect(problemas).toContainText("Problema");
+  await expect(problemas).toContainText("Possível causa");
+  await expect(problemas).toContainText("Recomendação");
+  await expect(problemas).toContainText("acendeu por:");
+
+  /*
+    E A LISTA DO QUE NÃO DÁ PARA JULGAR. Ela é a metade que impede a outra de
+    mentir: sem teto configurado não há selo de dispersão, e sem tabela de
+    outra plataforma não há diagnóstico de Shopee.
+  */
+  const naoJulga = page.getByRole("region", { name: "O que esta tela NÃO julga" });
+
+  await expect(naoJulga).toContainText("teto de dispersão");
+  await expect(naoJulga).toContainText("Mercado Livre");
+
+  // O motor de anomalia de venda continua onde estava, e continua sob demanda.
+  await expect(page.getByRole("button", { name: "O que aconteceu?" })).toBeVisible();
+});

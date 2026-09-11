@@ -25,6 +25,8 @@ import { fullSituationCriterion, fullSituationLabel, fullSituationTom, isFullRow
 import { createClient } from "../../../lib/supabase/server";
 import { descreverCobertura } from "../../../lib/sku-coverage-display";
 import { acaoDeVinculo, lerAnuncio, resumoDeAnuncios, type AnuncioDoSku, type LinhaDeAnuncio } from "../../../lib/sku-listings";
+import { compararPrecoDaConta, diagnosticarSku, NIVEL, type AcaoAberta } from "../../../lib/sku-diagnostico";
+import { FilterMenu } from "../../../components/filter-menu";
 import { RemoverVinculo } from "./remover-vinculo";
 import { VincularAnuncio } from "./vincular-anuncio";
 import { DiagnosisPanel } from "./diagnosis-panel";
@@ -267,8 +269,15 @@ export default async function SkuDashboardPage({
   // Cada aba só dispara as consultas de que precisa (progressive disclosure
   // de verdade, não só visual); o que a aba ativa não usa vira
   // Promise.resolve — mesmo padrão do Full no Dashboard de Anúncio.
-  const needsDashboard = tab === "visao-geral" || tab === "estoque";
-  const needsListings = tab === "visao-geral" || tab === "anuncios";
+  /*
+    O DIAGNÓSTICO PASSA A LER (D-317). A aba era uma linha só — um botão que
+    calculava no clique —, então ela não disparava consulta nenhuma. Agora ela
+    precisa dos anúncios (estado, preço, estoque por conta), do estoque interno
+    e das ações abertas; as três entram nos gates que já existem, no MESMO
+    `Promise.all`.
+  */
+  const needsDashboard = tab === "visao-geral" || tab === "estoque" || tab === "diagnostico";
+  const needsListings = tab === "visao-geral" || tab === "anuncios" || tab === "diagnostico";
   const needsHistory = tab === "historico";
   const needsFull = tab === "full";
   const needsPrices = tab === "precos";
@@ -288,6 +297,7 @@ export default async function SkuDashboardPage({
     salesResult,
     decisionsResult,
     openActionsResult,
+    acoesAbertasResult,
   ] = await Promise.all([
     needsDashboard
       ? supabase
@@ -466,11 +476,83 @@ export default async function SkuDashboardPage({
           .eq("sku_id", sku.data.id)
           .in("status", ["novo", "em_andamento"])
       : Promise.resolve({ data: null, error: null, count: null }),
+    /*
+      AS AÇÕES ABERTAS COM DETALHE, só no diagnóstico (D-317). A Central de
+      Ações já manda o operador para esta aba, e até aqui a ação que o job
+      diário persistiu para este mesmo SKU não aparecia em lugar nenhum dela.
+      A tela LÊ o que já existe — não cria ação, e não recalcula severidade.
+    */
+    tab === "diagnostico"
+      ? supabase
+          .from("actions")
+          .select("id, kind, severity, recommendation, mlb_id")
+          .eq("sku_id", sku.data.id)
+          .in("status", ["novo", "em_andamento"])
+          .order("severity")
+      : Promise.resolve({ data: null, error: null }),
   ]);
 
   const dashboard = dashboardResult.data;
   const listings: AnuncioDoSku[] = ((listingsResult.data ?? []) as LinhaDeAnuncio[]).map(lerAnuncio);
   const contasParaVinculo = contasResult.data ?? [];
+
+  /*
+    O ESCOPO DO DIAGNÓSTICO vive na URL, como a aba (D-317): lista fechada
+    (as contas que ESTE SKU alcança) e valor desconhecido cai em "visão geral"
+    ANTES de tocar qualquer conta — o mesmo molde de `parseTab`.
+
+    Novas contas entram sozinhas: as opções saem dos anúncios, não de uma lista
+    escrita. Plataforma não é dimensão aqui porque não existe no esquema — a
+    tela diz isso em vez de oferecer um seletor que não recorta nada.
+  */
+  const contasDoSku = [...new Map(listings.map((l) => [l.ml_account_id, l.account_label])).entries()].map(
+    ([id, label]) => ({ id, label: label ?? "conta desconhecida" }),
+  );
+  const escopoBruto = typeof query.escopo === "string" ? query.escopo : null;
+  const contaEscopo = contasDoSku.find((c) => c.id === escopoBruto) ?? null;
+  const anunciosDoEscopo =
+    contaEscopo === null ? listings : listings.filter((l) => l.ml_account_id === contaEscopo.id);
+  /*
+    O DIAGNÓSTICO é calculado aqui, no servidor, sobre o que a página já leu —
+    nenhuma ida nova, nenhuma escrita, nenhum veredito persistido. "Reler
+    agora" é recarregar a página: os dados são lidos a cada renderização, então
+    não existe cache de análise a invalidar nem carimbo de "última análise" a
+    guardar — o instante do dado é o `synced_at` de cada anúncio, que a aba
+    Anúncios mostra.
+  */
+  const diagnostico = diagnosticarSku({
+    anuncios: anunciosDoEscopo,
+    estoqueInterno:
+      dashboard === null
+        ? null
+        : {
+            local: dashboard.local_quantity,
+            reservado: dashboard.reservado_quantity,
+            transito: dashboard.transito_quantity,
+            full: dashboard.full_quantity,
+            virtual: sku.data.stock_is_virtual,
+          },
+    acoesAbertas: ((acoesAbertasResult.data ?? []) as {
+      id: string;
+      kind: string;
+      severity: string;
+      recommendation: string | null;
+      mlb_id: string | null;
+    }[]).map(
+      (linha): AcaoAberta => ({
+        id: linha.id,
+        kind: linha.kind,
+        severity: linha.severity,
+        recommendation: linha.recommendation,
+        mlbId: linha.mlb_id,
+      }),
+    ),
+    agora: new Date(),
+    contaEscopo: contaEscopo?.label ?? null,
+  });
+
+  const comparacaoDeConta = contaEscopo === null ? null : compararPrecoDaConta(listings, contaEscopo.id);
+
   // Capturado aqui porque dentro do JSX o compilador perde o estreitamento de
   // `sku.data`, e um `!` esconderia justamente o caso de a leitura mudar.
   const skuCode = sku.data.sku;
@@ -1434,7 +1516,220 @@ export default async function SkuDashboardPage({
         </>
       )}
 
-      {tab === "diagnostico" && <DiagnosisPanel skuId={sku.data.id} />}
+      {tab === "diagnostico" && (
+        <>
+          {/*
+            O DIAGNÓSTICO (D-317). Três níveis, cada um com régua escrita: o
+            dono pediu quatro e escolheu três quando soube que esta casa não
+            tem escala de quatro com limiar definido. O que não tem régua não
+            vira selo — vira linha em "o que não dá para julgar", logo abaixo.
+          */}
+          <Panel
+            title="Saúde do SKU"
+            subtitle={
+              diagnostico.nivel === null
+                ? "sem anúncio vinculado — não há o que diagnosticar"
+                : `${String(diagnostico.anuncios)} anúncio(s) · ${String(diagnostico.contas)} conta(s) · ${String(diagnostico.problemas.length)} problema(s)`
+            }
+            aside={
+              <span style={{ display: "flex", gap: "var(--sb-space-2)", alignItems: "center" }}>
+                {/*
+                  O SELETOR DE ESCOPO, na URL. As opções saem dos anúncios
+                  deste SKU, então conta nova aparece sozinha — o pedido do
+                  dono de "adicionar contas sem mexer na estrutura da tela".
+                */}
+                {contasDoSku.length > 1 && (
+                  <FilterMenu
+                    rotulo={contaEscopo === null ? "Visão geral" : contaEscopo.label}
+                    opcoes={[
+                      {
+                        href: `/skus/${skuId}?aba=diagnostico`,
+                        label: "Visão geral",
+                        ativo: contaEscopo === null,
+                      },
+                      ...contasDoSku.map((c) => ({
+                        href: `/skus/${skuId}?aba=diagnostico&escopo=${encodeURIComponent(c.id)}`,
+                        label: c.label,
+                        ativo: contaEscopo?.id === c.id,
+                      })),
+                    ]}
+                  />
+                )}
+                <Link href={`/skus/${skuId}?aba=diagnostico${contaEscopo === null ? "" : `&escopo=${contaEscopo.id}`}`}>
+                  Reler agora →
+                </Link>
+              </span>
+            }
+          >
+            <div className="sb-panel-body">
+              <div className="sb-stat-grid">
+                <div
+                  className="sb-stat"
+                  style={
+                    diagnostico.nivel === null
+                      ? undefined
+                      : {
+                          ["--sb-tone" as string]: TOM[NIVEL[diagnostico.nivel].tom].color,
+                          ["--sb-tone-ink" as string]: TOM[NIVEL[diagnostico.nivel].tom].color,
+                        }
+                  }
+                >
+                  <span className="sb-stat-label">Nível</span>
+                  <b className="sb-stat-value">
+                    {diagnostico.nivel === null ? "—" : NIVEL[diagnostico.nivel].rotulo}
+                  </b>
+                  <span className="sb-stat-note">
+                    {contaEscopo === null ? "todas as contas deste SKU" : contaEscopo.label}
+                  </span>
+                </div>
+
+                <div className="sb-stat">
+                  <span className="sb-stat-label">Anúncios</span>
+                  <b className="sb-stat-value">{formatCount(diagnostico.anuncios)}</b>
+                  <span className="sb-stat-note">
+                    {formatCount(diagnostico.ativos)} ativos · {formatCount(diagnostico.pausados)} pausados
+                    {diagnostico.outros > 0 && ` · ${formatCount(diagnostico.outros)} em outro estado`}
+                  </span>
+                </div>
+
+                {/*
+                  ESTOQUE: o anunciado é a soma do que os anúncios declaram no
+                  ML; o interno é da ORGANIZAÇÃO. Os dois lado a lado, sem
+                  subtração — "divergência" exigiria que os dois tivessem o
+                  mesmo grão, e o interno não tem conta em tabela nenhuma.
+                */}
+                <div className="sb-stat">
+                  <span className="sb-stat-label">Estoque anunciado</span>
+                  <b className="sb-stat-value">{formatCount(diagnostico.estoqueAnunciado)}</b>
+                  <span className="sb-stat-note">
+                    {dashboard === null
+                      ? "estoque interno não lido"
+                      : `interno: ${formatCount(dashboard.local_quantity)} local · ${formatCount(dashboard.full_quantity)} no Full`}
+                  </span>
+                </div>
+
+                <div className="sb-stat">
+                  <span className="sb-stat-label">Preço anunciado</span>
+                  <b className="sb-stat-value">
+                    {diagnostico.precos === null ? "—" : formatCurrency(diagnostico.precos.media)}
+                  </b>
+                  <span className="sb-stat-note">
+                    {diagnostico.precos === null
+                      ? "nenhum preço sincronizado"
+                      : `menor ${formatCurrency(diagnostico.precos.menor)} · maior ${formatCurrency(diagnostico.precos.maior)} · ${String(diagnostico.precos.dispersaoPct).replace(".", ",")}% de diferença`}
+                  </span>
+                </div>
+              </div>
+
+              {/*
+                A COMPARAÇÃO COM AS DEMAIS CONTAS (o "diagnóstico comparativo"
+                do pedido). Só existe com outra conta para comparar: contra si
+                mesma daria 0% e pareceria medição.
+              */}
+              {comparacaoDeConta !== null && (
+                <p style={{ margin: "var(--sb-space-3) 0 0", fontSize: "0.8125rem" }}>
+                  Preço médio nesta conta: <strong>{formatCurrency(comparacaoDeConta.daConta)}</strong> · nas demais:{" "}
+                  <strong>{formatCurrency(comparacaoDeConta.dasOutras)}</strong> ·{" "}
+                  <strong>
+                    {comparacaoDeConta.diferencaPct > 0 ? "+" : ""}
+                    {String(comparacaoDeConta.diferencaPct).replace(".", ",")}%
+                  </strong>{" "}
+                  de diferença. É um fato, não um veredito: preço diferente entre contas pode ser estratégia.
+                </p>
+              )}
+            </div>
+          </Panel>
+
+          <div style={{ marginTop: "var(--sb-space-3)" }}>
+            <Panel
+              title="Problemas encontrados"
+              subtitle={
+                diagnostico.problemas.length === 0
+                  ? "nenhum problema com régua escrita — o que não tem régua está listado abaixo"
+                  : `${String(diagnostico.problemas.length)} problema(s), do mais grave para o menos`
+              }
+            >
+              <div className="sb-panel-body">
+                {diagnostico.problemas.length === 0 ? (
+                  <p style={{ margin: 0, color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
+                    Nenhuma das verificações acendeu. Isso não quer dizer "tudo certo em tudo": quer dizer que as
+                    condições que esta tela sabe julgar não foram satisfeitas.
+                  </p>
+                ) : (
+                  [...diagnostico.problemas]
+                    .sort((a, b) => (a.nivel === b.nivel ? 0 : a.nivel === "critico" ? -1 : 1))
+                    .map((problema) => (
+                      <div key={problema.chave} className="sb-drawer-card" style={{ marginBottom: "var(--sb-space-3)" }}>
+                        <span style={{ display: "flex", gap: "var(--sb-space-2)", alignItems: "center" }}>
+                          <span className="sb-status" style={TOM[NIVEL[problema.nivel].tom]}>
+                            {NIVEL[problema.nivel].rotulo}
+                          </span>
+                          <b>{problema.titulo}</b>
+                          {problema.onde !== null && (
+                            <small style={{ color: "var(--sb-text-soft)" }}>{problema.onde}</small>
+                          )}
+                        </span>
+
+                        <dl className="sb-fact-grid" style={{ marginTop: "var(--sb-space-2)" }}>
+                          <div>
+                            <dt>Problema</dt>
+                            <dd>{problema.problema}</dd>
+                          </div>
+                          <div>
+                            <dt>Possível causa</dt>
+                            <dd>{problema.causa}</dd>
+                          </div>
+                          <div>
+                            <dt>Recomendação</dt>
+                            <dd>{problema.recomendacao}</dd>
+                          </div>
+                        </dl>
+
+                        {/*
+                          A RÉGUA FICA VISÍVEL. É ela que separa um veredito de
+                          um palpite, e é o primeiro que alguém vai querer
+                          conferir quando discordar do selo.
+                        */}
+                        <small style={{ display: "block", marginTop: "0.5rem", color: "var(--sb-text-soft)" }}>
+                          acendeu por: {problema.regua}
+                        </small>
+                      </div>
+                    ))
+                )}
+              </div>
+            </Panel>
+          </div>
+
+          {diagnostico.semRegua.length > 0 && (
+            <div style={{ marginTop: "var(--sb-space-3)" }}>
+              <Panel
+                title="O que esta tela NÃO julga"
+                subtitle="cada linha é uma pergunta que a fonte não responde — dizer isso é o que impede a tela de responder errado"
+              >
+                <div className="sb-panel-body">
+                  <ul style={{ margin: 0, paddingLeft: "1.1rem", fontSize: "0.8125rem", lineHeight: 1.6 }}>
+                    {diagnostico.semRegua.map((linha) => (
+                      <li key={linha}>{linha}</li>
+                    ))}
+                    <li>
+                      Shopee e outras plataformas: esta base é do Mercado Livre. Não há tabela de outra plataforma, e
+                      um seletor com uma opção vazia prometeria integração que não existe.
+                    </li>
+                    <li>
+                      Tipo de anúncio, catálogo, logística e qualidade da publicação: nenhuma dessas colunas é
+                      sincronizada hoje.
+                    </li>
+                  </ul>
+                </div>
+              </Panel>
+            </div>
+          )}
+
+          <div style={{ marginTop: "var(--sb-space-3)" }}>
+            <DiagnosisPanel skuId={sku.data.id} />
+          </div>
+        </>
+      )}
 
       {tab === "decisoes" && (
         <Panel title="Decisões registradas">
