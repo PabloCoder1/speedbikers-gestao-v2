@@ -439,7 +439,16 @@ branco embutido.
 > **Superfície:** `/anuncios/[itemId]`, cabeçalho · **Figma:** miniatura 80×80,
 > **"Tipo: Premium"** e **"Catálogo: Vencedor"** · **V3 real:** `listings` tem 14
 > colunas e nenhuma é tipo de anúncio, catálogo ou imagem · **Decisão:** os três
-> ficam de fora · **Motivo:** dado inexistente.
+> ficam de fora · **Motivo:** dado inexistente — reconferido no esquema em D-310.
+
+> **Superfície:** `/anuncios/[itemId]`, a FILEIRA de fatos do cabeçalho ·
+> **Figma:** três células separadas por fio — Preço · Tipo · Catálogo ·
+> **V3 real:** duas — **Preço atual** e **Disponível (este anúncio)** ·
+> **Decisão:** a composição do frame com os fatos que existem (D-310) ·
+> **Motivo:** Tipo e Catálogo não têm coluna; `price` e `available_quantity` são
+> NOT NULL, já vinham no `select` e **não eram impressos em nenhuma das oito
+> abas**. Os rótulos são qualificados porque a tela mostra três saldos de
+> origens diferentes e uma aba chamada "Preço".
 
 > **Superfície:** `/anuncios/[itemId]`, Visão geral · **Figma:** faixa **"Exposição
 > em Risco"** com botão "Repor Full", e painel **"Saúde do Anúncio"**
@@ -450,14 +459,21 @@ branco embutido.
 > métrica canônica (D-023) e a regra da própria tela — história, nunca causa.
 
 > **Superfície:** `/anuncios/[itemId]` · **Figma:** botão **"Republicar anúncio"**
-> e o `RepublicationModal`, um assistente de cinco passos cujo passo 2 EXECUTA ·
-> **V3 real:** o motor existe e só o worker escreve; a primeira republicação real
-> é ato humano deliberado, pendente em `docs/HANDOFF.md` · **Decisão:** a aba
-> Histórico LÊ o histórico de republicação (pai, filho, estado, motivo da falha)
-> e **nenhum caminho de UI dispara** — o e2e afirma a ausência do botão ·
-> **Motivo:** segurança. O preflight do frame ainda diverge do real em
-> severidade: ele mostra Full e Catálogo como aviso, e no código os dois são
-> BLOQUEIO.
+> no cabeçalho e o `RepublicationModal`, um assistente de cinco passos cujo passo
+> 2 EXECUTA · **V3 real:** os dois atos existem desde **D-295** — o pedido, que
+> roda a conferência prévia e não fecha nada, e a execução, que fecha o anúncio
+> pai e é irreversível —, e moram no painel "Republicações" da aba Histórico ·
+> **Decisão:** o cabeçalho leva ao painel com **"Republicações →"** (D-310), o
+> nome do que ele abre; o ato fica onde está · **Motivo:** o rótulo do frame
+> prometeria a quem não tem papel (ADMIN/GESTOR) um ato que o servidor recusa, e
+> decidir o rótulo pelo papel custaria uma leitura nas oito abas. Caminho no
+> cabeçalho, ato no painel, um lugar só de escrita. O assistente de cinco passos
+> segue fora: o preflight do frame mostra Full e Catálogo como aviso, e no código
+> os dois são BLOQUEIO.
+>
+> ⚠️ Este desvio dizia *"nenhum caminho de UI dispara — o e2e afirma a ausência
+> do botão"*, e era **falso desde D-295**. Ficou aqui cinco fatias porque
+> ninguém releu o registro ao entregar a feature que o contradizia.
 
 > **Superfície:** `/anuncios/[itemId]`, aba Diagnóstico · **Figma:** não desenha ·
 > **V3 real:** o diagnóstico de venda anômala usa a baseline do SKU; não existe
@@ -712,7 +728,7 @@ próximo = 80, validada contra o Figma = 95, + cleanup + testes = 100.
 | **Produtos** | 5 | 83% | 83% | 83% | 83% | **90%** | 90% | 90% | 90% | 90% |
 | Dashboard de SKU (nove abas) | 10 | 82% | 88% | 88% | 88% | 88% | 88% | 88% | 88% | 88% |
 | Anúncios — lista | 6 | 86% | 86% | 86% | 86% | 86% | 86% | 86% | 86% | 86% |
-| **Anúncio — detalhe (oito abas)** | 5 | 25% | 25% | **84%** | 84% | 84% | 84% | 84% | 84% | 84% |
+| **Anúncio — detalhe (oito abas)** | 5 | 25% | 25% | **84%** | 84% | 84% | 84% | 84% | 84% | 84% → **88%** (A10) |
 | **D14–D17** (Estoque, Reposição, Curva ABC, Movimentações) | 8 | 25% | 25% | 25% | **88%** | 88% | 88% | **90%** | **90%** | **93%** |
 | **D18/D20** (NF-e, Fornecedores) — frames que são ESBOÇO | 4 | 25% | 25% | 25% | **90%** | 90% | 90% | 90% | 90% | 90% |
 | **D19** (Compras) | 3 | 25% | 25% | 25% | **95%** | 95% | 95% | 95% | 95% | 95% |
@@ -720,6 +736,15 @@ próximo = 80, validada contra o Figma = 95, + cleanup + testes = 100.
 | **14 telas D22–D36** (eram "16" por contagem errada) | 22 | 25% | 25% | 25% | 25% | 25% | **88%** | **90%** | **90%** | **90%** |
 | **Drawers do frame** (Inspeção Rápida, MLB, pedido, fornecedor, usuário) | 4 | 0% | 0% | 0% | 0% | **86%** | 86% | 86% | 86% | 86% |
 | Passe visual global + passo cinza | 3 | 0% | 0% | 0% | 0% | 0% | 0% | **40%** | **100%** | **100%** |
+
+**A10 mexe em UMA linha, e por medição.** `/anuncios/[itemId]` foi renderizada a
+1440px e 1100px com login real, em três situações, e comparada ao
+`MlbDetailDrawer` do export: a diferença de composição que restava no cabeçalho
+— a fileira de fatos e a ação — deixou de existir, **84% → 88%**. Não vai mais
+alto porque a miniatura, "Tipo" e "Catálogo" continuam sem coluna no esquema
+(recusa reconferida), e porque sobraram dois achados vivos DENTRO da aba
+Histórico: o veredito por condição do preflight e `listing_relist_events`, que
+nunca foi lido. As outras linhas são cópia da coluna anterior, não medição nova.
 
 **A coluna "Fusão" mexe em UMA linha.** `/reposicao` foi renderizada a 1440px
 com login real depois da fusão (D-288): a diferença de composição que restava
@@ -1001,6 +1026,70 @@ está na "Próxima fatia segura".
 
 ## Última fatia concluída
 
+**A10 — O CABEÇALHO DO ANÚNCIO (D-310)** — com a Administração fechada, a
+pergunta virou *qual é a próxima fatia?*, e a resposta foi medida: **sete
+superfícies lidas contra o frame**, com evidência dos dois lados, e os achados
+acionáveis passados por uma rodada adversarial antes de virarem trabalho.
+
+### O que a varredura achou
+
+| | |
+|---|---|
+| achados | **49**, em 7 superfícies (Home, Vendas, Anúncios, Anúncio, SKU, Shell, gavetas) |
+| acionáveis | 28 |
+| recusa registrada e **ainda** verdadeira | 13 |
+| registro velho (já estava feito) | 4 |
+| sem fonte no esquema | 4 |
+
+**Nenhuma superfície estava desalinhada na composição principal** — os sete
+relatórios dizem o mesmo com palavras diferentes: os blocos do frame existem, na
+ordem do frame. O que sobrou são fatos que o cabeçalho não diz, ação no lugar
+errado e densidade. Dos oito melhores acionáveis, **sete sobreviveram à rodada
+adversarial e um caiu**: a largura das gavetas (420px para as cinco) — 420 é a
+largura do design system do export, e a pergunta já tinha sido decidida com
+medição em D-297.
+
+### A fatia, e por que não a de maior peso
+
+`/anuncios/[itemId]` estava em **84%**, o menor percentual absoluto entre as
+migradas, e foi a única com **dois achados que se resolvem na mesma passada, no
+mesmo componente**. SKU (peso 10) e Vendas (peso 8) têm lacuna ponderada maior,
+mas o que sobrou neles é um painel de três itens e uma proporção de SVG:
+acabamento. Composição primeiro.
+
+| o frame | o que estava | agora |
+|---|---|---|
+| fileira de fatos abaixo do título (Preço · Tipo · Catálogo) | nada — o preço só como rabisco na nota de outro cartão | **Preço atual · Disponível (este anúncio)**, com fio entre as duas |
+| "Republicar anúncio ›" no cabeçalho | a única escrita da tela invisível, no `aside` de um painel da aba Histórico | **"Republicações →"** no cabeçalho, que LEVA ao painel e some quando já se está nele |
+
+**`available_quantity` era select morto**: vinha na consulta desde D13 e não era
+impresso em nenhuma das oito abas. O preço tinha dono duplicado — saiu da nota
+do cartão de Faturamento e do subtítulo da aba Preço.
+
+### O rótulo que mudou, e por quê
+
+O frame promete o ATO; aqui o cabeçalho promete o CAMINHO. A republicação é
+gated por papel (ADMIN/GESTOR, D-295) e o papel só é lido na aba Histórico —
+prometer "Republicar" a quem o servidor recusa seria promessa falsa, e ler o
+papel nas oito abas para decidir o rótulo custaria uma ida em todas elas. A
+regra é a de D-309: **o link leva o nome do painel que abre**.
+
+### O que só a captura acharia
+
+`.sb-text-button` nasceu em D-281 vestindo `<button>` e nunca declarou
+`text-decoration`. Este é o primeiro consumidor `<a>`: o sublinhado nativo do
+link deixava a forma sublinhada **em repouso**, e o `:hover` — que é justamente
+o sublinhado — parou de dizer qualquer coisa. Corrigido na classe; os cinco
+consumidores em `<button>` não mudam de pixel. Nenhum teste pegaria isso.
+
+**Verificação:** `check` 29/29 (`--force`), build 8/8, e2e **125/125** em banco
+recriado (+3), integração 658/658, cinco guardas verdes. Renderizado a 1440px e
+1100px em três situações: com preço e saldo, com `available_quantity = 0` (o
+zero aparece — e há caso de e2e para reprovar quem "melhorar" isso com guarda
+falsy) e na aba Histórico, onde o caminho some.
+
+## Fatias anteriores
+
 **A9 — `/saude` CONTRA O FRAME (D-309)** — A6 (D-296) deixou uma linha em aberto
 na tabela da Administração: *"Saúde — seis cartões de serviço com latência — **a
 medir**"*. Esta fatia mediu, e o resultado é **seis recusas e duas entradas**.
@@ -1056,8 +1145,6 @@ recriado (+2), integração 658/658, cinco guardas verdes. A célula da API foi
 exercitada nos dois estados — com a api local de pé e sem ela —, e o caso novo
 afirma a tinta `--sb-danger-ink` no "sem resposta", porque foi exatamente a
 pintura que a revisão pegou errada.
-
-## Fatias anteriores
 
 **A8 — `/contas` CONTRA O FRAME (D-299)** — a tela que nunca tinha passado pelo
 desenho (não estava em D0→D37) virou cartão por conta: selo, `seller_id`,

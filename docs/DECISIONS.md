@@ -8753,6 +8753,82 @@ O Playwright sobe `pnpm run start`, que serve o `.next` **ja construido**, e com
 
 **Com esta fatia a auditoria da Administracao fecha:** das seis telas de A6, duas foram refeitas (`/usuarios` em D-296 + D-297, `/contas` em D-299) e quatro tem recusa MEDIDA -- Integracoes (D-272 + D-287), Sincronizacao (D-273), Configuracoes (D-275) e Saude (esta).
 
+## D-310 - A10: o cabecalho do anuncio ganha os dois fatos que devia desde D-168, e o caminho ate a republicacao
+
+**Contexto:** com a Administracao fechada (D-309), a pergunta virou "qual e a proxima fatia de design?". A resposta foi medida: **sete superficies lidas contra o frame** -- Home, Vendas, Anuncios (lista), Anuncio (detalhe), Dashboard de SKU, Shell e as cinco gavetas --, cada uma com evidencia dos dois lados (`App.tsx:linha` do export e `arquivo:linha` da V3), e os achados acionaveis passados por uma rodada **adversarial** antes de virarem trabalho.
+
+---
+
+**1. O QUE A VARREDURA ACHOU, E O QUE ISSO DIZ DA FRENTE**
+
+| | |
+|---|---|
+| achados | **49**, em 7 superficies |
+| acionaveis | 28 |
+| recusa ja registrada e AINDA verdadeira | 13 |
+| ja feito (registro velho) | 4 |
+| sem fonte no esquema | 4 |
+
+**Nenhuma superficie estava desalinhada na composicao principal.** Os sete relatorios dizem a mesma coisa com palavras diferentes: os blocos do frame existem, na ordem do frame. O que sobrou sao fatos que o cabecalho nao diz, acoes que estao no lugar errado da tela e densidade -- e 13 recusas que a rodada reconferiu **no esquema**, nao no codigo da tela.
+
+Os 8 melhores acionaveis (impacto menos custo) foram para a rodada adversarial. **Sete sobreviveram, um caiu**: a largura das gavetas (420px para as cinco, contra 420-600 no frame) -- o refutador mostrou que 420 e a largura do DESIGN SYSTEM do export e que a pergunta ja tinha sido decidida com medicao em D-297. Registro que envelheceu era a premissa do achado, e nao havia envelhecido.
+
+---
+
+**2. A FATIA ESCOLHIDA, E POR QUE NAO A DE MAIOR PESO**
+
+`/anuncios/[itemId]` esta em **84%** -- o menor percentual absoluto entre as superficies migradas -- e foi a unica com **dois achados que se resolvem na mesma passada, no mesmo componente**. SKU (peso 10) e Vendas (peso 8) tem lacuna ponderada maior, mas o que sobrou neles e um painel de tres itens e uma proporcao de SVG: acabamento, e a regra da casa e preferir composicao.
+
+---
+
+**3. OS DOIS FATOS QUE O CABECALHO DEVIA DESDE D-168**
+
+A versao anterior desta tela abria com "conta, status, **preco**, **disponivel**, SKU, frescor". A migracao para abas (D13) levou os dois junto, e ninguem notou porque o preco continuou aparecendo -- **como rabisco dentro da nota de outro cartao**, e so quando a RPC de resumo devolvia linha. `available_quantity` ficou pior: **vinha no `select` e nao era impresso em nenhuma das oito abas**. Select morto por sete fatias.
+
+O frame poe tres celulas abaixo do titulo do objeto (`App.tsx:4097-4103`), separadas por fio vertical: Preco, Tipo, Catalogo. Entram **duas**: "Tipo" (Premium/Classico) e "Catalogo" (Vencedor) nao existem em `listings` -- recusa registrada, reconferida no esquema nesta fatia.
+
+Os rotulos carregam o que separa estes numeros dos vizinhos:
+
+- **"Preco atual"**, e nao "Preco", porque a fileira de abas tem uma aba chamada Preco -- que e a HISTORIA dele;
+- **"Disponivel (este anuncio)"**, pelo mesmo motivo que a aba Full diz "No Full (este anuncio)": a tela mostra tres saldos de origens diferentes (anuncio, Full, ERP) e um rotulo cru convidaria a soma-los.
+
+A fileira nasce como prop OPCIONAL de `ObjectHeader` (`metricas`), que serve **sete rotas de detalhe**. Quem nao passa nao muda de pixel, e a adocao de cada tela e fatia com render proprio -- nunca efeito colateral desta.
+
+---
+
+**4. O CAMINHO, E NAO O ATO -- a mudanca de rotulo que o proprio registro de D-309 exigiu**
+
+O frame desenha **"Republicar anuncio ›"** no cabecalho, ao lado dos selos. Na V3 a republicacao existe (D-295) e sao **dois atos**: o pedido, que roda a conferencia previa e nao fecha nada; e a execucao, que fecha o anuncio pai no Mercado Livre e e **irreversivel**. Os dois moram no painel "Republicacoes" da aba Historico.
+
+O cabecalho ganhou **"Republicacoes →"** -- o nome do painel que ele abre, a regra registrada em D-309. Duas razoes para nao prometer o ato no rotulo:
+
+1. o ato e **gated por papel** (ADMIN ou GESTOR), e o papel so e lido na aba Historico. Prometer "Republicar" a quem nao pode seria promessa falsa; ler o papel nas oito abas para decidir o rotulo custaria uma ida em todas elas, contra o progressive disclosure que esta tela declara;
+2. **o cabecalho nao e lugar de gatilho irreversivel.** Caminho no cabecalho, ato no painel, um lugar so de escrita.
+
+E ele **some na aba Historico**: link para a aba aberta e afordancia que nao leva a lugar nenhum. O caso de e2e afirma as duas metades JUNTAS -- o link leva, e nenhum dos dois botoes de escrita aparece no cabecalho --, porque a falha perigosa e alguem mover o gatilho para ca e dois casos separados continuarem verdes um de cada vez.
+
+---
+
+**5. O QUE SO A CAPTURA ACHARIA: `.sb-text-button` sublinhado em repouso**
+
+A classe nasceu em D-281 vestindo `<button>`, e nao declarava `text-decoration`. Este e o **primeiro consumidor `<a>`**: o sublinhado nativo do link deixava a forma sublinhada parada, e entao o `:hover` -- que e justamente `text-decoration: underline` -- nao dizia mais nada. Corrigido na classe (`text-decoration: none`), e os cinco consumidores em `<button>` nao mudam de pixel.
+
+Nenhum teste pegaria isso. A regra de A3 continua sendo a que paga: **renderizar antes de dizer que esta pronto.**
+
+---
+
+**6. A ARMADILHA QUE VOLTOU, COM UMA CARA NOVA**
+
+`docs/TESTING.md` ja registrava que uma `api` local ligada deixa `copiloto.spec.ts` vermelho. O detalhe que faltava: **`pnpm --filter @sb/api run dev` roda com WATCHER** -- matar o processo que escuta na 8080 nao basta, porque o watcher o ressuscita na proxima escrita de arquivo. Foi assim que a suite inteira reprovou UM caso de `/saude` (a celula da API dizendo "no ar" onde o teste espera "sem resposta") depois de eu ter matado a api. Mata-se a TAREFA, nao o processo.
+
+E a mesma rodada relembrou a outra: rodar a suite duas vezes no mesmo banco semeado reprova os specs que MUTAM estado (NF-e, notificacoes). Reset + seed antes de cada rodada que conta.
+
+---
+
+**Impacto:** `apps/web/components/object-header.tsx` (+ `ObjectMetric`, prop `metricas`), `apps/web/app/globals.css` (`.sb-object-metrics` e o `text-decoration` de `.sb-text-button`), `apps/web/app/anuncios/[itemId]/page.tsx`, `apps/web/e2e/{anuncio-detalhe,republicacao}.spec.ts`, `docs/{DESIGN_IMPLEMENTATION,TESTING,HANDOFF}.md`. **Sem migration e sem consulta nova:** os dois campos ja vinham no `select`, e o caminho da republicacao nao le nada.
+
+**Verificacao:** `check` 29/29 (`--force`), build 8/8, e2e **125/125** em banco recriado (+3), integracao 658/658, cinco guardas verdes. O cabecalho foi renderizado a **1440px e 1100px**, em tres situacoes: anuncio com preco e saldo, anuncio com `available_quantity = 0` (o zero aparece, e o caso de e2e existe para reprovar quem "melhorar" isso com guarda falsy) e na aba Historico, onde o caminho some.
+
 ## Como adicionar nova decisao
 
 Registrar:

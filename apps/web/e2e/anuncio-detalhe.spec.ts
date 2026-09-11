@@ -26,9 +26,11 @@ import { login } from "./helpers.js";
  *     tentação de rodar a fórmula do SKU sobre o recálculo por anúncio produz
  *     um número com a mesma cara e outra definição (D-023). Se um dia a aba
  *     passar a estampar número, este teste fica vermelho.
- *  2. **A tela não republica.** O motor existe e a primeira republicação real é
- *     ato humano deliberado (`docs/HANDOFF.md`). A aba Histórico LÊ o
- *     histórico; nenhum botão dispara.
+ *  2. **O cabeçalho LEVA à republicação, e não republica.** Este item dizia "a
+ *     tela não republica" e ficou falso em D-295, que trouxe os dois atos para
+ *     a aba Histórico. Desde D-310 o cabeçalho aponta para lá — e o que se
+ *     guarda agora é a separação: caminho no cabeçalho, ato no painel, um
+ *     lugar só de escrita.
  *  3. **Full é o mesmo número da lista.** O anúncio tem grão próprio de Full
  *     (D-243); mostrar aqui o total do SKU na conta seria dois números sob o
  *     mesmo rótulo.
@@ -69,14 +71,100 @@ test("Dashboard do Anúncio: cabeçalho, oito abas e a Visão geral com número 
   await expect(page.getByText("Conferir se o anúncio perdeu exposição antes de mexer no preço.")).toBeVisible();
 });
 
+/**
+ * A FILEIRA DE FATOS DO CABEÇALHO (D-310).
+ *
+ * O frame põe "Preço · Tipo · Catálogo" abaixo do título do objeto. Tipo e
+ * Catálogo não existem em `listings`; preço e `available_quantity` existem, são
+ * NOT NULL e já vinham no `select` — e `available_quantity` não era impresso em
+ * NENHUMA das oito abas. Este caso guarda os dois números no lugar onde o
+ * cabeçalho os promete: visível em qualquer aba, e não dentro da nota de um
+ * cartão que só existe quando a RPC de resumo devolve linha.
+ */
+test("Dashboard do Anúncio: o cabeçalho diz preço e disponível, e o preço tem UM dono", async ({ page }) => {
+  await login(page, `/anuncios/${COM_DADO}`);
+
+  const fato = (rotulo: string) =>
+    page.locator(".sb-object-metric", { has: page.getByText(rotulo, { exact: true }) });
+
+  const seed = E2E_LISTINGS.find((a) => a.itemId === COM_DADO);
+
+  /*
+    `toContainText` com o número, e NÃO a string "R$ 189,90": o `Intl` pt-BR
+    separa símbolo e valor com espaço NÃO SEPARÁVEL (U+00A0), e a igualdade
+    com espaço comum reprova sem que nada esteja errado.
+  */
+  await expect(fato("Preço atual")).toContainText(String(seed?.price ?? "").replace(".", ","));
+  await expect(fato("Disponível (este anúncio)").locator(".sb-object-metric-value")).toHaveText(
+    String(seed?.available ?? ""),
+  );
+
+  /*
+    UM DONO POR DADO, na mesma afirmação. O preço morava também na nota do
+    cartão de Faturamento; deixar os dois seria a tela dizendo o mesmo número
+    em dois lugares, e separar este caso em dois deixaria passar tanto a
+    "correção" que devolve o rabisco quanto a que apaga a nota sem pôr a faixa.
+  */
+  await expect(page.locator(".sb-stat-note", { hasText: "preço atual" })).toHaveCount(0);
+});
+
+test("Dashboard do Anúncio: zero disponível é zero MEDIDO, e aparece", async ({ page }) => {
+  const semEstoque = E2E_LISTINGS.find((a) => a.available === 0);
+
+  await login(page, `/anuncios/${semEstoque?.itemId ?? ""}`);
+
+  /*
+    `available_quantity` é NOT NULL: zero aqui é fato, não ausência. O caso
+    fica vermelho se alguém "melhorar" a célula com guarda falsy
+    (`available_quantity || "—"`), que trocaria um fato medido por um traço de
+    não-medido — a classe de mentira de D-067.
+  */
+  await expect(
+    page
+      .locator(".sb-object-metric", { has: page.getByText("Disponível (este anúncio)", { exact: true }) })
+      .locator(".sb-object-metric-value"),
+  ).toHaveText("0");
+});
+
+/**
+ * CAMINHO NO CABEÇALHO, ATO NO PAINEL (D-310).
+ *
+ * As duas metades no MESMO caso de propósito: a falha perigosa é alguém mover
+ * o gatilho de escrita para o cabeçalho, e dois casos separados continuariam
+ * verdes um de cada vez.
+ */
+test("Dashboard do Anúncio: o cabeçalho leva à republicação — e não republica", async ({ page }) => {
+  await login(page, `/anuncios/${COM_DADO}`);
+
+  const caminho = page.getByRole("link", { name: /Republicações/ });
+
+  await expect(caminho).toBeVisible();
+
+  // Nenhum dos dois atos de D-295 encosta no cabeçalho.
+  await expect(page.getByRole("button", { name: "Pedir republicação" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Executar republicação" })).toHaveCount(0);
+
+  await caminho.click();
+
+  await expect(page).toHaveURL(/\?aba=historico$/);
+  await expect(page.getByRole("heading", { name: "Republicações" })).toBeVisible();
+
+  // E lá dentro, sim: o ato existe, para quem tem papel.
+  await expect(page.getByRole("button", { name: "Pedir republicação" })).toBeVisible();
+
+  // Chegando, o caminho some — link para a aba aberta não leva a lugar nenhum.
+  await expect(page.getByRole("link", { name: /Republicações/ })).toHaveCount(0);
+});
+
 test("Dashboard do Anúncio: Preço e Full mostram o que foi observado, com o mesmo grão da lista", async ({ page }) => {
   await login(page, `/anuncios/${COM_DADO}?aba=preco`);
 
   // A mudança de preço observada vem do evento de domínio, formatada como diff.
   await expect(page.getByRole("heading", { name: "Mudanças de preço observadas" })).toBeVisible();
 
-  // Escopado à TABELA: o preço atual também aparece no subtítulo do painel, e
-  // o que se afirma aqui é o diff observado (de → para), não o preço de hoje.
+  // Escopado à TABELA: o preço atual vive no CABEÇALHO desde D-310 (saiu do
+  // subtítulo deste painel), e o que se afirma aqui é o diff observado
+  // (de → para), não o preço de hoje.
   const linhaDoDiff = page.locator("tbody tr").first();
 
   await expect(linhaDoDiff).toContainText(String(E2E_LISTING_PRICE_EVENT.de).replace(".", ","));

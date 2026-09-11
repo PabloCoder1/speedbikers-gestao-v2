@@ -1507,6 +1507,11 @@ summary[aria-disabled="true"] {
   font-weight: 600;
   color: var(--sb-secondary);
   cursor: pointer;
+  /* Declarado por causa do PRIMEIRO consumidor que é `<a>` e não `<button>`
+     (D-310): o sublinhado nativo do link deixava a forma sublinhada em
+     repouso, e então o `:hover` abaixo não dizia mais nada. Os cinco
+     consumidores em `<button>` não mudam de pixel. */
+  text-decoration: none;
 }
 
 .sb-text-button:hover {
@@ -2136,6 +2141,54 @@ summary[aria-disabled="true"] {
   align-items: center;
   flex-wrap: wrap;
   gap: var(--sb-space-2);
+}
+
+/*
+ * A FILEIRA DE FATOS do cabeçalho de entidade (D-310).
+ *
+ * O frame do anúncio põe três células — Preço · Tipo · Catálogo — abaixo do
+ * título, separadas por um fio vertical (`w-px h-8 bg-border`). Aqui o fio é
+ * `border-left` da célula seguinte, e não um elemento: com `gap` dos dois
+ * lados ele fica centrado sem nenhum nó a mais, e a primeira célula nunca
+ * nasce com traço sobrando.
+ *
+ * NÃO é `.sb-kpi-strip`. Aquela é a faixa de PÁGINA — um cartão dividido em
+ * células, com degraus de coluna em 1150px e 850px. Esta é uma fileira DENTRO
+ * do cartão de entidade, e confundir as duas daria ao anúncio dois cartões de
+ * indicador empilhados dizendo coisas diferentes.
+ */
+.sb-object-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--sb-space-4);
+  margin-top: 0.75rem;
+}
+
+.sb-object-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.sb-object-metric + .sb-object-metric {
+  padding-left: var(--sb-space-4);
+  border-left: 1px solid var(--sb-border);
+}
+
+.sb-object-metric-label {
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sb-text-soft);
+}
+
+.sb-object-metric-value {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--sb-primary);
 }
 
 /*

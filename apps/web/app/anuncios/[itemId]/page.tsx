@@ -47,7 +47,9 @@ export const dynamic = "force-dynamic";
  *
  * ## O que o frame mostra e a V3 não tem
  *
- * "Tipo" (Premium/Clássico) e "Catálogo" (Vencedor) não existem em `listings`.
+ * "Tipo" (Premium/Clássico) e "Catálogo" (Vencedor) não existem em `listings`
+ * — por isso a fileira de fatos do cabeçalho (D-310) tem DUAS células onde o
+ * frame tem três: preço e disponível, que existem e são NOT NULL.
  * O bloco "Exposição em Risco" com o botão "Repor Full" é veredito sintetizado
  * mais ação de escrita sem política logística — os dois já são desvios
  * registrados. E "Saúde do Anúncio" (competitividade de preço, qualidade das
@@ -417,8 +419,65 @@ export default async function AnuncioPage({
         titulo={row.title}
         badges={badges}
         meta={`sincronizado em ${formatDateTime(row.synced_at)}`}
+        /*
+          OS DOIS FATOS QUE O CABEÇALHO DEVE, e devia desde D-168 (D-310).
+          Aquela versão da tela abria com "conta, status, PREÇO, DISPONÍVEL,
+          SKU, frescor"; a migração para abas de D13 levou os dois junto, e o
+          preço passou a aparecer só como rabisco dentro da nota de OUTRO
+          cartão — que só existe quando a RPC de resumo devolve linha.
+          `available_quantity` ficou pior: vinha no `select` e não era
+          impresso em nenhuma das oito abas.
+
+          DUAS células, e o frame desenha três: "Tipo" (Premium/Clássico) e
+          "Catálogo" (Vencedor) não existem em `listings` — recusa registrada,
+          reconferida no esquema nesta fatia.
+
+          Os rótulos carregam o que separa estes números dos vizinhos. "Preço
+          atual" porque a fileira de abas tem uma aba chamada "Preço", que é a
+          HISTÓRIA dele; "Disponível (este anúncio)" pelo mesmo motivo que a
+          aba Full diz "No Full (este anúncio)" — a tela mostra três saldos de
+          origens diferentes, e um rótulo cru convidaria a somá-los.
+        */
+        metricas={[
+          {
+            rotulo: "Preço atual",
+            valor: formatCurrency(row.price),
+            nota: "preço deste anúncio no Mercado Livre, como veio na última sincronização",
+          },
+          {
+            rotulo: "Disponível (este anúncio)",
+            valor: formatCount(row.available_quantity),
+            nota: "estoque DESTE anúncio no Mercado Livre — não é o saldo do ERP nem o do Full",
+          },
+        ]}
         acoes={
-          <details className="sb-menu">
+          <>
+            {/*
+              O CAMINHO ATÉ A REPUBLICAÇÃO (D-310). O frame põe "Republicar
+              anúncio ›" no cabeçalho, ao lado dos selos; aqui ele LEVA ao
+              painel onde o ato mora, e por isso leva o nome do painel — a
+              regra de D-309. Duas razões para não prometer o ato no rótulo:
+
+              1. o ato é gated por papel (ADMIN ou GESTOR, D-295), e o papel só
+                 é lido na aba Histórico. Prometer "Republicar" a quem não pode
+                 seria a promessa falsa; ler o papel nas oito abas para decidir
+                 o rótulo custaria uma ida em todas elas, contra o progressive
+                 disclosure declarado acima;
+              2. a republicação são DOIS atos (pedir e executar), e a execução
+                 fecha o anúncio pai — irreversível. O cabeçalho não é lugar de
+                 gatilho assim.
+
+              Some quando já se está no destino: link para a aba aberta é
+              afordância que não leva a lugar nenhum.
+            */}
+            {tab !== "historico" && (
+              <Link className="sb-text-button" href={href("historico")}>
+                Republicações
+                <span aria-hidden="true">→</span>
+              </Link>
+            )}
+
+            <details className="sb-menu">
             <summary className="sb-button sb-button-primary">
               Ações
               <span aria-hidden="true" className="sb-menu-chevron">
@@ -442,7 +501,8 @@ export default async function AnuncioPage({
                 Voltar ao catálogo
               </Link>
             </div>
-          </details>
+            </details>
+          </>
         }
         rotuloAbas="Abas do anúncio"
         abas={TAB_KEYS.map((key) => ({ href: href(key), label: TAB_LABELS[key], active: key === tab }))}
@@ -509,8 +569,8 @@ export default async function AnuncioPage({
                   <b className="sb-stat-value">{formatCurrency(summary.gross_revenue)}</b>
                   <span className="sb-stat-note">
                     {summary.units_sold === 0
-                      ? `sem venda registrada · preço atual ${formatCurrency(row.price)}`
-                      : `receita bruta · preço atual ${formatCurrency(row.price)}`}
+                      ? "sem venda registrada"
+                      : "receita bruta"}
                   </span>
                 </div>
               </div>
@@ -722,7 +782,7 @@ export default async function AnuncioPage({
         {tab === "preco" && (
           <Panel
             title="Mudanças de preço observadas"
-            subtitle={`Preço atual ${formatCurrency(row.price)}. As mudanças são o DIFF entre duas sincronizações de 6 em 6 horas — uma alteração feita e desfeita entre elas não deixa registro.`}
+            subtitle="As mudanças são o DIFF entre duas sincronizações de 6 em 6 horas — uma alteração feita e desfeita entre elas não deixa registro."
           >
             {prices.length === 0 ? (
               <p className="sb-empty">
@@ -899,9 +959,14 @@ export default async function AnuncioPage({
 
             {/*
               REPUBLICAÇÃO — a fila que a fatia D13 original queria como tela
-              própria. Ela não é tela: é a história deste anúncio. A tela LÊ e
-              não dispara: a primeira republicação real é ato humano deliberado
-              (`docs/HANDOFF.md`), e o motor vive no worker e na API.
+              própria. Ela não é tela: é a história deste anúncio.
+
+              ⚠️ Este comentário dizia "a tela LÊ e não dispara" e ficou FALSO
+              em D-295, que trouxe os dois atos para cá (o pedido, que roda a
+              conferência prévia e não fecha nada; e a execução, que fecha o
+              anúncio pai e é irreversível). Os dois moram no `aside` abaixo,
+              com gate de papel no servidor. Desde D-310 o cabeçalho aponta
+              para este painel — aponta, não dispara.
             */}
             <div style={{ marginTop: "var(--sb-space-3)" }}>
               <Panel

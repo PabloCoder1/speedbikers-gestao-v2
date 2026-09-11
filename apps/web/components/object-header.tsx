@@ -26,10 +26,32 @@ import { TOM, type Tom } from "./tone";
  * `meta` é opcional e fica ao lado dos selos: no Figma é "Atualizado há 3
  * minutos". Só entra quando existe um instante real para mostrar — data
  * inventada de frescor é a classe de mentira que este projeto persegue.
+ *
+ * `metricas` é a FILEIRA de fatos do objeto, abaixo dos selos (D-310) — no
+ * frame do anúncio são "Preço · Tipo · Catálogo", separados por fio vertical,
+ * dentro da coluna da identidade. É **opcional**, e isso é decisão, não
+ * preguiça: sete rotas de detalhe montam este cabeçalho e cada uma tem os seus
+ * fatos de identidade (o pedido de compra tem valor e fornecedor; a nota tem
+ * chave e emitente). Quem não passa `metricas` não muda de pixel, e a adoção de
+ * cada tela é fatia com render próprio — nunca um efeito colateral desta.
  */
 export interface ObjectBadge {
   readonly label: string;
   readonly tom: Tom;
+}
+
+/**
+ * Um fato de identidade do objeto: rótulo curto, valor, e a qualificação que
+ * não cabe na célula.
+ *
+ * `nota` vira `title` — o mesmo device de `KpiStrip` (a `formula` da célula).
+ * Uma terceira linha por célula transformaria a fileira num parágrafo dentro
+ * do cabeçalho, que é exatamente o que o frame não faz.
+ */
+export interface ObjectMetric {
+  readonly rotulo: string;
+  readonly valor: string;
+  readonly nota?: string;
 }
 
 export interface ObjectTab {
@@ -43,6 +65,7 @@ export function ObjectHeader({
   titulo,
   badges = [],
   meta,
+  metricas = [],
   acoes,
   abas,
   rotuloAbas = "Abas",
@@ -52,6 +75,8 @@ export function ObjectHeader({
   titulo: string;
   badges?: readonly ObjectBadge[];
   meta?: ReactNode;
+  /** Fatos de identidade do objeto, na fileira abaixo dos selos (D-310). */
+  metricas?: readonly ObjectMetric[];
   acoes?: ReactNode;
   abas?: readonly ObjectTab[];
   /**
@@ -84,6 +109,28 @@ export function ObjectHeader({
                 </span>
               ))}
               {meta !== undefined && <span className="sb-object-meta">{meta}</span>}
+            </div>
+          )}
+
+          {/*
+            A fileira fica DENTRO da coluna da identidade, abaixo dos selos, e
+            não como faixa da largura do cartão: no frame ela é alinhada ao
+            título (App.tsx:4097-4103), e uma faixa de ponta a ponta viraria a
+            faixa de PÁGINA (`.sb-kpi-strip`), que é outro componente com outro
+            significado.
+          */}
+          {metricas.length > 0 && (
+            <div className="sb-object-metrics">
+              {metricas.map((metrica) => (
+                <div
+                  className="sb-object-metric"
+                  key={metrica.rotulo}
+                  {...(metrica.nota === undefined ? {} : { title: metrica.nota })}
+                >
+                  <span className="sb-object-metric-label">{metrica.rotulo}</span>
+                  <b className="sb-object-metric-value">{metrica.valor}</b>
+                </div>
+              ))}
             </div>
           )}
         </div>

@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **305** (D-001 a D-309).
+Decisões registradas: **306** (D-001 a D-310).
 
 ## Por domínio
 
@@ -155,7 +155,7 @@ Decisões registradas: **305** (D-001 a D-309).
 - **D-302** — "Como vou saber a senha dela?" -- nao ha senha a passar, faltava a tela de DEFINIR
 - **D-303** — O link que apontava para a maquina de quem clicava, e a saida para quem perdeu o dele
 
-### mercado-livre (45)
+### mercado-livre (46)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -202,6 +202,7 @@ Decisões registradas: **305** (D-001 a D-309).
 - **D-248** — Dashboard do Anuncio em oito abas: a fila pedia uma tela que nao existe, e a republicacao nao e tela
 - **D-305** — o timeout de /anuncios era o PLANO, e as tres hipoteses obvias estavam erradas
 - **D-308** — Os dois filtros que faltavam em /anuncios: periodo e "com/sem venda"
+- **D-310** — A10: o cabecalho do anuncio ganha os dois fatos que devia desde D-168, e o caminho ate a republicacao
 
 ### outros (54)
 

@@ -120,6 +120,10 @@ test("quem não alcança a conta não vê nem a tela — a superfície some ante
   await expect(page.getByRole("heading", { name: "Republicações" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Pedir republicação" })).toHaveCount(0);
 
+  // E o CAMINHO até o painel some junto (D-310): a afordância nova do
+  // cabeçalho não pode sobreviver à tela que a RLS recusou.
+  await expect(page.getByRole("link", { name: /Republicações/ })).toHaveCount(0);
+
   // Âncora positiva: a sessão do GESTOR está viva e a aplicação respondeu — o
   // que sumiu foi o anúncio, não o login (a lição de D-276 §5).
   await expect(page.getByText(/não encontrad|404/i).first()).toBeVisible();
