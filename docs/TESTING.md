@@ -87,6 +87,12 @@ export NEXT_PUBLIC_SUPABASE_URL="$API_URL" NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 
 A CLI 2.115 imprime os nomes **sem** prefixo (`API_URL`, `SERVICE_ROLE_KEY`), e a suíte de integração lê `SUPABASE_SERVICE_ROLE_KEY`: só o `eval` não basta, e os quatro arquivos que precisam da chave reprovam na carga.
 
+**Armadilha conhecida (2026-09-12):** o repositório mora em `OneDrive\Desktop`, e o OneDrive se apropria do `.next` de um build anterior — os diretórios ficam `ReadOnly, ReparsePoint`. O `next build` seguinte morre com `EPERM: operation not permitted, unlink '...\.next\server\app\...'`, **não gera build nenhum**, e o Playwright então reprova a rodada inteira em "Could not find a production build" sem rodar um caso sequer. Não há processo segurando o arquivo (conferido: nenhum `node` vivo); é o atributo. Tirar o somente-leitura e apagar o `.next` antes de construir resolveu (D-321):
+
+```powershell
+attrib -R "apps\web\.next\*" /S /D; attrib -R "apps\web\.next"; Remove-Item -LiteralPath "apps\web\.next" -Recurse -Force
+```
+
 **Armadilha conhecida:** `expect(page.getByRole("alert")).toHaveCount(0)` NUNCA vale num app Next.js. O framework mantém um `#__next-route-announcer__` com `role="alert"` em toda página — live region que anuncia o título na navegação client-side. Para afirmar "não há erro na tela", asserte o TEXTO do banner.
 
 ---

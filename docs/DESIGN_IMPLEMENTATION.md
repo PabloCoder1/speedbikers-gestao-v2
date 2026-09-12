@@ -314,6 +314,8 @@ branco embutido.
 | ~~Drawer "Inspeção Rápida" (produtos)~~ | **entregue em D38** (D-281) — a linha continua levando ao dashboard completo, e a gaveta também | — |
 | ~~`MlbDetailDrawer` e as outras três~~ | **entregues em D39** (D-282). O que ficou de fora são as ABAS que o frame desenha dentro de duas delas — oito no anúncio, cinco no fornecedor: elas são as telas cheias que já existem (D13, D-174), e reproduzi-las na gaveta seria a segunda implementação da mesma interface | — |
 | Nome do comprador, logística e timeline da transportadora na gaveta do pedido | conferido em `\d`: `orders` guarda `buyer_id` (um número) e `shipping_id`, e não há tabela de envio nem de comprador. O que existe é o registro de EXCEÇÕES em `domain_events` | D-282 |
+| Célula **"Logística"** na grade do cabeçalho da gaveta do pedido | sem fonte — a célula dá lugar ao frete e desconto do vendedor (`order_financials`), que ocupam o mesmo lugar no ritmo 2×2; o e2e afirma a ausência | D-321, D-282 |
+| **Chão cinza** no corpo das gavetas de anúncio, fornecedor e usuário (`bg-background`) | o chão só vale sob cartão branco (D-285). Essas três são lista de fatos em `.sb-detail-row`, e cinza sob fio sem cartão seria o passo cinza pela metade. A gaveta do pedido, que é de cartões, tem o chão (`Drawer chao`). **Condição, não pendência:** entra em cada uma quando o conteúdo dela virar cartão | D-321 |
 | "Saúde do Anúncio" (Full ativo · competitividade de preço · qualidade das fotos) | dos três sinais só o Full tem fonte — concorrência não é coletada e qualidade de foto não existe no esquema. Um bloco com um sinal de três não é o bloco do frame | D-282 |
 | Avatar **"IA"** no painel "Últimas decisões" do SKU ("Sistema sugeriu envio de 48 unidades ao Full") | `action_decisions.created_by` referencia `auth.users`: **toda decisão é humana por esquema**. O que o frame chama de decisão da IA é a RECOMENDAÇÃO de uma ação, que mora em `actions` e o diagnóstico do SKU já mostra (D-317). E o exemplo do frame é "enviar ao Full", recusado por não ter política logística | D-320 |
 | Célula "Com queda" e coluna "Saúde" em Anúncios | sem detecção de anomalia por anúncio e sem definição canônica de "saúde" | D-023 |
@@ -1041,6 +1043,50 @@ está na "Próxima fatia segura".
 
 ## Última fatia concluída
 
+**A13 — A GAVETA DO PEDIDO EM CARTÕES (D-321)** — o segundo da fila de A10. A
+gaveta nasceu em D-282 como lista corrida de fatos sobre branco; o frame compõe
+a mesma informação em três cartões brancos sobre o chão cinza.
+
+| o frame | o que estava | agora |
+|---|---|---|
+| cartão de cabeçalho com grade 2×2 | id solto e até sete linhas de fato em fila | id, comprador (id no ML), selo e a grade: Conta · Comprado em · Valor total · Frete e desconto |
+| um cartão por item, monograma de 48px e "Qtd" | "1×" e o título numa linha de fato | monograma do título, produto, código em mono e a quantidade à direita |
+| "Timeline do Pedido" | "O que aconteceu" em linhas | o mesmo conteúdo dentro de cartão |
+
+### A célula "Logística" troca de conteúdo
+
+A grade de quatro é o ritmo do frame. "Logística" não tem fonte (`shipping_id` e
+nada mais); frete e desconto do vendedor têm, e ocupam a célula. O e2e afirma a
+ausência de "Logística" junto da presença do valor.
+
+### O chão cinza é opcional
+
+Quatro das cinco gavetas do frame têm o chão; só a do pedido é composta de
+cartões. Cinza sob `.sb-detail-row` sem cartão branco em volta seria o passo
+cinza pela metade — então `Drawer` ganhou `chao`, e as outras três ficam brancas
+até o conteúdo delas virar cartão (linha nova em "Diferenças intencionais").
+
+### Um monograma de produto
+
+`monograma` saiu de `/anuncios` para `lib/initials.ts` como
+`monogramaDeProduto`, ao lado do de pessoa — regras diferentes de propósito, com
+teste que fixa onde ("Guidão" dá "Gu" para produto e "G" para gente).
+
+### O que só a captura acharia (de novo)
+
+Com build, e2e e `check` verdes, o título do item vinculado saía **azul e
+sublinhado** — a cor do `<b>` não chega ao `<a>` de dentro. `.sb-entity` já
+resolvia isso, mas só existia como `.sb-table .sb-entity`; o seletor foi
+alargado para o cartão de item, em vez de nascer uma terceira forma de link.
+
+**Verificação:** `check` 29/29 (`--force`), build 8/8, integração 663/663, e2e
+**136/136** em banco recriado depois da correção do link, cinco guardas verdes.
+Renderizado a 1440px e medido no DOM: chão `#f4f5fa` sob 4 cartões brancos,
+grade de duas colunas de 168,5px, monograma 48×48; a gaveta de `/usuarios`, como
+controle, continua sem chão.
+
+## Fatias anteriores
+
 **A12 — "ÚLTIMAS DECISÕES" DO SKU (D-320)** — o primeiro da fila que a
 varredura de A10 deixou. O Dashboard de SKU tem o maior peso da frente (10), e a
 lacuna registrada nele era este painel: a linha dizia o texto da decisão e a
@@ -1081,8 +1127,6 @@ recriado (+1), integração 663/663, cinco guardas verdes. Renderizado a 1440px 
 1100px, conferido no `innerText`: avatar de 24px com "E", "Venda anômala ·
 Queda", o texto, "E2E · há 10 min" e a data exata no `title`; a aba Decisões com
 o autor; a gaveta de `/usuarios` em "EG".
-
-## Fatias anteriores
 
 **A11 — A HOME CONTRA O FRAME (D-311)** — a Home era a **única superfície nunca
 remedida** desde a primeira auditoria (04/09, 87%). A varredura de A10 a leu de

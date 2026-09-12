@@ -10256,3 +10256,63 @@ O frame mistura no mesmo feed uma decisao humana ("Joao Martins reduziu o preco"
 
 **A armadilha que custou uma rodada inteira, e ela nao e desta fatia:** `apps/web/.env.local` aponta `NEXT_PUBLIC_SUPABASE_URL` para o projeto **Dev**. `NEXT_PUBLIC_*` e embutida NO BUILD, entao um build sem as variaveis locais exportadas manda o login do e2e para o Dev -- onde o usuario do seed nao existe --, e os 136 casos reprovam em "E-mail ou senha incorretos." sem que o GoTrue local receba um `/token` sequer. O seed passa (ele usa a chave de servico local), o que torna a falha enganosa. O remedio e o da CI: exportar `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` e `SUPABASE_SERVICE_ROLE_KEY` a partir de `supabase status -o env` ANTES do `build`. Registrado em `docs/TESTING.md`.
 
+## D-321 - A13: a gaveta do pedido em cartoes, e o chao cinza que so vale onde ha cartao
+
+**Contexto:** o segundo da fila de D-310, "os cartoes da gaveta do pedido". A gaveta nasceu em D-282 como uma lista corrida de `DetailRow` sobre branco. O frame (`OrderDetailDrawer`, `App.tsx:4182-4270`) compoe a mesma informacao em TRES cartoes brancos sobre o chao cinza, e e a composicao que faz a gaveta se ler de uma passada: o que e o pedido, o que foi comprado, o que saiu do trilho.
+
+---
+
+**1. O QUE O FRAME COMPOE, E O QUE ENTROU**
+
+| frame | antes | agora |
+|---|---|---|
+| cartao de cabecalho: id em mono, "Comprador: Lucas Almeida", selo, grade 2x2 (Conta, Logistica, Data da Compra, Valor Total) | id solto, selos de estado e de conta, e ate sete linhas de fato em fila (quatro fixas e tres condicionais) | cartao com o id, o comprador como ID do Mercado Livre, o selo de estado e a grade 2x2 (Conta, Comprado em, Valor total, Frete · desconto) |
+| "Itens do Pedido": cartao com monograma de 48px, titulo, "SKU 5821" em mono e "Qtd 1x" | uma linha de fato por item ("1×" a esquerda, titulo a direita) | um cartao por item: monograma do titulo, produto (link quando ha SKU), codigo em mono, preco por unidade e a quantidade a direita |
+| "Timeline do Pedido" (transportadora) | "O que aconteceu", em linhas | o mesmo conteudo, dentro de cartao |
+
+Nada da leitura mudou: `inspecionarPedido` continua com as mesmas quatro consultas no mesmo `Promise.all`. A fatia e de composicao.
+
+---
+
+**2. A CELULA "LOGISTICA" TROCA DE CONTEUDO -- nao some, e nao e inventada**
+
+A grade de quatro e o ritmo do frame, e uma grade de tres deixaria um buraco que se leria como dado faltando. "Logistica" nao tem fonte (D-282: `orders` guarda `shipping_id` e nada mais). O frete e o desconto **pagos pelo vendedor** tem (`order_financials`, D-229), e ja apareciam na gaveta como linha solta -- entao a quarta celula passa a ser eles, com a ressalva quando a varredura financeira ainda nao passou pelo pedido.
+
+O caso de e2e afirma a ausencia de "Logistica" junto da presenca do valor: quem "completar" a grade com a celula do desenho deixa o teste vermelho.
+
+---
+
+**3. O COMPRADOR E UM NUMERO, E A LINHA DIZ ISSO**
+
+O frame escreve "Comprador: Lucas Almeida". A linha diz **"Comprador (id no Mercado Livre): 123456789"**. Um numero sob o rotulo "Comprador" se leria como nome que nao carregou; com o parentese, e o dado que existe dito pelo que ele e.
+
+---
+
+**4. O CHAO CINZA E OPCIONAL, E SO ONDE HA CARTAO**
+
+Medido no frame: **quatro das cinco gavetas** pintam o corpo de `bg-background` (anuncio, pedido, fornecedor, usuario); so a Inspecao Rapida e branca. Na V3, `.sb-drawer-body` e branco nas cinco.
+
+Levar o cinza para as quatro seria o passo cinza pela metade: D-285 pos o chao sob a pagina PORQUE o conteudo e cartao branco, e as gavetas de anuncio, fornecedor e usuario sao lista de fatos em `.sb-detail-row` -- fio sobre cinza, sem cartao em volta. Entao `Drawer` ganhou a prop `chao`, e so a gaveta do pedido a usa. As outras tres ficam brancas ate o conteudo delas virar cartao, e isso esta escrito em "Diferencas intencionais" -- nao como pendencia esquecida, como condicao.
+
+---
+
+**5. UM MONOGRAMA DE PRODUTO, NAO DOIS**
+
+`monograma(titulo)` era privada de `/anuncios`. Com o segundo consumidor, saiu para `lib/initials.ts` como `monogramaDeProduto`, ao lado de `iniciais` (D-320) -- e as duas regras continuam DIFERENTES de proposito, com teste que fixa onde: titulo de produto so conta palavra com letra e, com uma palavra so, devolve duas letras dela ("Guidao" → "Gu"), onde a regra de pessoa devolve uma ("G"). Um modulo, duas entidades, e o docblock diz por que nao sao a mesma funcao.
+
+---
+
+**6. O QUE SO A CAPTURA ACHOU**
+
+Build, e2e 136/136 e `check` 29/29 passaram com um defeito na tela: o titulo do item VINCULADO saia **azul e sublinhado**, a cor de link do navegador, enquanto o item sem vinculo -- texto puro -- saia no navy negrito do frame. A cor que o cartao declara pousa no `<b>`, e o `<a>` dentro dele nao herda. O `innerText` nao mostra cor, e nenhuma assercao olha para ela.
+
+A casa ja tinha a resposta, e ela estava presa a um lugar: `.sb-entity` (nome de entidade que e link, navy negrito, sublinhado so no hover) so existia como `.sb-table .sb-entity`. O seletor foi alargado para `.sb-drawer-item .sb-entity`, e o link ganhou a classe -- a mesma regra, nao uma terceira forma de link.
+
+---
+
+**Impacto:** `apps/web/app/atendimento/gaveta-pedido.tsx`, `apps/web/components/drawer.tsx` (prop `chao`), `apps/web/lib/initials.{ts,test.ts}` (`monogramaDeProduto`, +3 casos), `apps/web/app/anuncios/page.tsx` (a funcao privada saiu), `apps/web/app/globals.css` (`.sb-drawer-body-chao`, `.sb-drawer-item*`, `.sb-product-thumb-grande`, a grade e as linhas dentro do cartao), `apps/web/e2e/gavetas.spec.ts` (valor na grade, ausencia de "Logistica", um cartao por item, monograma e quantidade). **Sem migration e sem leitura nova.**
+
+**Verificacao:** `check` **29/29** (`--force`, web 538 casos com os 3 novos), build 8/8, integracao **663/663** em banco recriado, e2e **136/136** em banco recriado DEPOIS da correcao do link (as assercoes novas entraram no caso da gaveta que ja existia), cinco guardas verdes (`check:embeds` com 36 projecoes). Capturado a 1440px com o servidor de producao e medido no DOM: chao `#f4f5fa` sob **4 cartoes brancos**, grade de **duas colunas de 168,5px**, monograma **48x48**, primeiro cartao encostado no topo (margem 0); e a gaveta de `/usuarios` como controle, com o corpo **sem fundo proprio** e a margem de 16px de sempre -- o `chao` opcional nao vazou. A imagem confirmou o titulo do item vinculado em navy negrito.
+
+Duas armadilhas de ambiente custaram rodadas nesta fatia, e nenhuma e de codigo: o `.env.local` apontando para o Dev (D-320) e o OneDrive marcando o `.next` como somente-leitura, que fez o `next build` morrer em `EPERM` sem gerar build. As duas estao em `docs/TESTING.md`.
+

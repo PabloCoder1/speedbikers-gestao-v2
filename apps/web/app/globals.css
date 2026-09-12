@@ -1362,6 +1362,18 @@ summary[aria-disabled="true"] {
   padding: var(--sb-space-3);
 }
 
+/* O CHÃO da gaveta composta de cartões (A13, D-321): o `bg-background` do
+   frame, o mesmo `--sb-ground` que D-285 pôs sob a página. O primeiro cartão
+   encosta no topo — a margem dele existe para separar cartões, não para afastar
+   o corpo do cabeçalho. */
+.sb-drawer-body-chao {
+  background: var(--sb-ground);
+}
+
+.sb-drawer-body-chao > .sb-drawer-card:first-child {
+  margin-top: 0;
+}
+
 .sb-drawer-foot {
   display: grid;
   gap: var(--sb-space-2);
@@ -1450,6 +1462,73 @@ summary[aria-disabled="true"] {
   margin-bottom: 0.375rem;
   font-size: 0.6875rem;
   color: var(--sb-text-soft);
+}
+
+/*
+ * O cartão logo abaixo de um rótulo de seção não soma a margem dele à do rótulo
+ * — seriam dois espaços para um intervalo só (A13, D-321).
+ */
+.sb-section-label + .sb-drawer-card {
+  margin-top: 0;
+}
+
+/* A primeira linha de fato do cartão não repete o fio: a borda do cartão já
+   separa. */
+.sb-drawer-card > .sb-detail-row:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+/* A grade de fatos do cabeçalho do pedido: `grid grid-cols-2 border-t pt-4
+   mt-2` do `OrderDetailDrawer`. Duas colunas fixas — `auto-fit` decidiria pela
+   largura, e a gaveta tem uma largura só. */
+.sb-drawer-card > .sb-fact-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: var(--sb-space-3);
+  padding-top: var(--sb-space-3);
+  border-top: 1px solid var(--sb-border);
+}
+
+.sb-drawer-card > .sb-fact-grid small {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+}
+
+/*
+ * O CARTÃO DE ITEM (A13, D-321) — `flex items-center gap-4` do
+ * `OrderDetailDrawer`: monograma, o produto, e a quantidade à direita.
+ */
+.sb-drawer-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sb-space-3);
+}
+
+.sb-drawer-item-texto {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.75rem;
+}
+
+.sb-drawer-item-texto > b {
+  display: block;
+  color: var(--sb-primary);
+}
+
+.sb-drawer-item-texto small,
+.sb-drawer-item-qtd small {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-drawer-item-qtd {
+  flex: none;
+  text-align: right;
+  font-size: 0.875rem;
 }
 
 /* Os selos de conta do frame, em linha que dobra — quatro contas em 420px não
@@ -2355,6 +2434,16 @@ summary[aria-disabled="true"] {
   text-transform: uppercase;
 }
 
+/* O monograma do item na gaveta do pedido: `w-12 h-12 border font-bold
+   text-lg` do frame (A13, D-321). */
+.sb-product-thumb-grande {
+  width: 3rem;
+  height: 3rem;
+  border: 1px solid var(--sb-border);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
 .sb-status {
   display: inline-block;
   padding: 3px 5px;
@@ -2487,14 +2576,20 @@ table {
   do texto em vez de virar azul sublinhado. Numa tabela em que MLB e SKU já são
   links, um terceiro sublinhado por linha vira ruído — o nome é clicável, mas é
   o hover que o diz.
+
+  O cartão de item da gaveta do pedido é o segundo lugar (A13, D-321): o frame
+  põe o nome do produto em navy negrito, e sem a classe o link saía azul e
+  sublinhado — a única linha de cor de navegador numa gaveta toda no desenho.
 */
-.sb-table .sb-entity {
+.sb-table .sb-entity,
+.sb-drawer-item .sb-entity {
   font-weight: 600;
   color: var(--sb-primary);
   text-decoration: none;
 }
 
-.sb-table .sb-entity:hover {
+.sb-table .sb-entity:hover,
+.sb-drawer-item .sb-entity:hover {
   text-decoration: underline;
 }
 

@@ -60,6 +60,7 @@ export function Drawer({
   label,
   onClose,
   footer,
+  chao = false,
   children,
 }: {
   /** A sobrancelha do frame: "INSPEÇÃO RÁPIDA", "DETALHE DE ANÚNCIO"… */
@@ -69,6 +70,16 @@ export function Drawer({
   onClose: () => void;
   /** As ações do rodapé. Sem elas o rodapé não é renderizado. */
   footer?: ReactNode;
+  /**
+   * O CHÃO cinza sob o corpo (`bg-background` do frame), para a gaveta cujo
+   * conteúdo é CARTÃO (A13, D-321).
+   *
+   * Opcional, e não o padrão: quatro das cinco gavetas do frame têm o chão, mas
+   * só a do pedido é composta de cartões. As outras são lista de fatos em
+   * `.sb-detail-row`, e fio sobre cinza sem cartão branco em volta seria o passo
+   * cinza pela metade (D-285).
+   */
+  chao?: boolean;
   children: ReactNode;
 }): ReactNode {
   useEffect(() => {
@@ -115,7 +126,7 @@ export function Drawer({
           </button>
         </div>
 
-        <div className="sb-drawer-body">{children}</div>
+        <div className={chao ? "sb-drawer-body sb-drawer-body-chao" : "sb-drawer-body"}>{children}</div>
 
         {footer !== undefined && <div className="sb-drawer-foot">{footer}</div>}
       </aside>

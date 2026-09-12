@@ -150,6 +150,27 @@ test("gaveta do pedido: a primeira superfície de venda da V3, com item vinculad
   await expect(gaveta.getByText("Pago", { exact: true })).toBeVisible();
 
   /*
+    OS CARTÕES DO FRAME (A13, D-321). O cabeçalho carrega a grade de fatos, e o
+    fato que o frame chama de "Logística" NÃO aparece: `orders` guarda
+    `shipping_id` e nada mais (D-282). A ausência é afirmada junto da presença —
+    quem "completar" a grade com a célula do desenho deixa isto vermelho.
+  */
+  const valorTotal = gaveta
+    .locator(".sb-fact-grid > div", { has: page.getByText("Valor total", { exact: true }) })
+    .locator("dd");
+
+  await expect(valorTotal).toContainText("379,80");
+  await expect(gaveta.getByText("Logística")).toHaveCount(0);
+
+  // Um cartão por item, com o monograma do TÍTULO (regra de produto, não de
+  // pessoa) e a quantidade à direita.
+  const primeiroItem = gaveta.locator(".sb-drawer-item").first();
+
+  await expect(gaveta.locator(".sb-drawer-item")).toHaveCount(E2E_ORDER.itens.length);
+  await expect(primeiroItem.locator(".sb-product-thumb")).toHaveText("KR");
+  await expect(primeiroItem.locator(".sb-drawer-item-qtd b")).toHaveText(`${String(E2E_ORDER.itens[0].quantity)}×`);
+
+  /*
     Os DOIS itens, e a diferença entre eles é o teste: o primeiro é link para o
     dashboard do SKU; o segundo mostra o `seller_sku` cru, porque `sku_id` é
     nulo — a linha que `/vinculacoes` conta como "vendido sem vínculo".

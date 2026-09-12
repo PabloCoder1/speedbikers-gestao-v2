@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { iniciais } from "./initials.js";
+import { iniciais, monogramaDeProduto } from "./initials.js";
 
 /**
  * O monograma do avatar (A12, D-320) — três consumidores: o perfil e a marca no
@@ -33,5 +33,26 @@ describe("iniciais", () => {
 
   it("rótulo feito só de separadores cai na primeira letra do texto", () => {
     expect(iniciais("@@")).toBe("@");
+  });
+});
+
+/**
+ * O monograma de PRODUTO (A13, D-321) — `/anuncios` e a gaveta do pedido. A
+ * regra é outra que a de pessoa, e os casos fixam exatamente onde elas diferem.
+ */
+describe("monogramaDeProduto", () => {
+  it("usa a primeira letra das duas primeiras palavras, ignorando o que não tem letra", () => {
+    expect(monogramaDeProduto("Kit Relação E2E — vende e tem visita")).toBe("KR");
+    expect(monogramaDeProduto("12 Pastilha de Freio")).toBe("Pd");
+  });
+
+  it("título de uma palavra dá DUAS letras dela — onde a regra de pessoa daria uma", () => {
+    expect(monogramaDeProduto("Guidão")).toBe("Gu");
+    expect(iniciais("Guidão")).toBe("G");
+  });
+
+  it("título sem letra nenhuma vira —, nunca um quadrado vazio", () => {
+    expect(monogramaDeProduto("— 123")).toBe("—");
+    expect(monogramaDeProduto("   ")).toBe("—");
   });
 });

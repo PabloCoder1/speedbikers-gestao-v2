@@ -8,6 +8,7 @@ import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
 import { StatusPill } from "../../components/status-pill";
 import { formatCount, formatCurrency, formatDateTime, formatPercent } from "../../lib/format";
+import { monogramaDeProduto } from "../../lib/initials";
 import { listingStatusLabel } from "../../lib/labels";
 import {
   FULL_FILTERS,
@@ -142,28 +143,6 @@ function buildHref(current: Filters, override: Partial<Filters>): string {
     },
     override.page === undefined ? 1 : next.page,
   );
-}
-
-/**
- * As duas letras do `.product-thumb` do frame.
- *
- * O Figma mostra "XR", "PF", "CB" — iniciais, não foto. Sai do próprio título,
- * então é sempre verdade sobre o anúncio que está na linha. Título de uma
- * palavra devolve as duas primeiras letras dela; título vazio não existe
- * (`listings.title` é NOT NULL), mas se existisse cairia em "—".
- */
-function monograma(titulo: string): string {
-  const palavras = titulo.trim().split(/\s+/).filter((p) => /\p{L}/u.test(p));
-
-  if (palavras.length === 0) {
-    return "—";
-  }
-
-  if (palavras.length === 1) {
-    return (palavras[0] ?? "").slice(0, 2);
-  }
-
-  return `${(palavras[0] ?? "").slice(0, 1)}${(palavras[1] ?? "").slice(0, 1)}`;
 }
 
 /**
@@ -582,7 +561,7 @@ export default async function AnunciosPage({
                           {/* `.product-cell` do frame: monograma + nome. */}
                           <span className="sb-product-cell" title={`Sincronizado em ${formatDateTime(row.synced_at)}`}>
                             <span className="sb-product-thumb" aria-hidden="true">
-                              {monograma(row.title)}
+                              {monogramaDeProduto(row.title)}
                             </span>
                             <Link className="sb-entity" href={`/anuncios/${row.item_id}`}>
                               {row.title}
