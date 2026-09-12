@@ -78,6 +78,15 @@ Não acontece toda vez: depende de o seed começar antes de o `reset` ter avisad
 
 **Armadilha conhecida (2026-09-11):** o Playwright sobe `pnpm run start`, que serve o `.next` **ja construido** -- e com `reuseExistingServer` fora do CI. Editar a tela e rodar a suite na sequencia testa o BUILD ANTERIOR: a assercao nova fica vermelha e o codigo esta certo. Aconteceu em D-309 com duas assercoes (uma cor e um paragrafo novos). Depois de mexer em `app/`, `components/` ou `lib/`, a ordem e `pnpm build` **antes** de `playwright test` -- e derrubar o `next start` que sobrou, senao o reuso serve o build velho mesmo apos o build novo.
 
+**Armadilha conhecida (2026-09-12):** `apps/web/.env.local` pode apontar `NEXT_PUBLIC_SUPABASE_URL` para o projeto **Dev**, e `NEXT_PUBLIC_*` é embutida **no build**. Um `pnpm run build` sem as variáveis locais exportadas manda o login do e2e para o Dev, onde o usuário do seed não existe: os 136 casos reprovam em "E-mail ou senha incorretos." e o GoTrue local **não recebe um `/token` sequer** (é assim que se reconhece — `docker logs supabase_auth_...` sem login nenhum da rodada). O seed passa, porque usa a chave de serviço local, e isso torna a falha enganosa. Não se edita o `.env.local` de quem trabalha contra o Dev; exporta-se o que a CI exporta, **antes** do build (D-320):
+
+```bash
+eval "$(pnpm exec supabase status -o env)"
+export NEXT_PUBLIC_SUPABASE_URL="$API_URL" NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="$ANON_KEY" SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY"
+```
+
+A CLI 2.115 imprime os nomes **sem** prefixo (`API_URL`, `SERVICE_ROLE_KEY`), e a suíte de integração lê `SUPABASE_SERVICE_ROLE_KEY`: só o `eval` não basta, e os quatro arquivos que precisam da chave reprovam na carga.
+
 **Armadilha conhecida:** `expect(page.getByRole("alert")).toHaveCount(0)` NUNCA vale num app Next.js. O framework mantém um `#__next-route-announcer__` com `role="alert"` em toda página — live region que anuncia o título na navegação client-side. Para afirmar "não há erro na tela", asserte o TEXTO do banner.
 
 ---

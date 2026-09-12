@@ -2005,6 +2005,34 @@ summary[aria-disabled="true"] {
 }
 
 /*
+ * O CORPO de um item de feed (A12, D-320) — no frame, a linha entre o título e
+ * o carimbo ("João Martins reduziu o preço do MLB440901 para R$ 189,90."):
+ * 10px, tom suave, colada ao título. Classe e não `p`: o item é um `span`, e
+ * parágrafo dentro de `span` é aninhamento inválido.
+ */
+.sb-feed-text {
+  display: block;
+  margin-top: 3px;
+  font-size: 0.625rem;
+  line-height: 1.45;
+  color: var(--sb-text-soft);
+}
+
+/*
+ * O avatar DENTRO do feed: 24px, neutro e com borda (`w-6 h-6
+ * bg-surface-hover border` no frame), contra os 30px em tom de marca do perfil
+ * no topo. O tom neutro é o que o frame usa para PESSOA; o violeta dele é o do
+ * avatar "IA", que aqui não existe — decisão é humana por esquema.
+ */
+.sb-avatar-feed {
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--sb-border);
+  background: var(--sb-surface-hover);
+  color: var(--sb-text);
+}
+
+/*
  * CARTÃO DE INDICADOR (`.sb-stat`) — os quatro do topo da aba de resumo no
  * frame `SkuDetailScreen`.
  *

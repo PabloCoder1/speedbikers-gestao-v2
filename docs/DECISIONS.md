@@ -10184,3 +10184,75 @@ Tres cuidados com o sintetico vieram da sessao paralela e os tres importaram: se
 
 **Verificacao, LOCAL:** a migration aplicada em banco recriado, e **integracao 663/663** com ela. `check` 29/29. **O e2e desta rodada NAO conta como verificacao, e o motivo fica registrado:** as duas sessoes rodaram a suite no mesmo banco ao mesmo tempo (o GoTrue registrou `400 Invalid login credentials` alternando entre `127.0.0.1:3000` e `127.0.0.1:3100`), e o catalogo sintetico desta medicao tira `E2E-SKU-001` da primeira pagina de tres telas, o que reprova specs que procuram a linha dele. Nenhuma das duas coisas e defeito de codigo, e as duas sao consequencia de duas sessoes compartilharem um banco. Nao foi ao Dev.
 
+## D-320 - A12: o painel "Ultimas decisoes" do SKU contra o frame -- QUEM decidiu, sobre O QUE, ha quanto tempo, e o avatar "IA" que o esquema nao tem
+
+**Contexto:** a varredura de D-310 deixou uma fila de sobreviventes da rodada adversarial: o painel "Ultimas decisoes" do SKU, os cartoes da gaveta do pedido, a altura do SVG de `/vendas` e o rotulo da busca do shell. D-310 e D-311 atacaram outras superficies; o Dashboard de SKU tem o **maior peso da frente (10)**, e este painel era a lacuna registrada nele. E o primeiro da fila.
+
+---
+
+**1. O QUE O FRAME DESENHA, E O QUE A LINHA DIZIA**
+
+| | frame (`App.tsx:3973-3992`) | V3 ate aqui |
+|---|---|---|
+| avatar | 24px, monograma ("JM") ou "IA" | nenhum |
+| titulo em negrito | curto, o TIPO do fato ("Preco ajustado") | o texto inteiro da decisao |
+| corpo | a narrativa ("Joao Martins reduziu o preco do MLB440901...") | nenhum |
+| carimbo | relativo ("Ontem, 14:20") | data e hora absolutas |
+
+Faltavam as duas coisas que quem discorda de uma decisao pergunta primeiro: **quem decidiu** e **em resposta a que**.
+
+---
+
+**2. QUEM: o autor tinha fonte desde a primeira migration, e nenhuma tela o mostrava**
+
+A policy `profiles_select_self_or_colleague` (`20260820150000_create_identity.sql`) foi escrita, nas palavras do proprio comentario, para *"exibir responsavel por acao, autor de decisao"*. Vinte e tres dias depois, nenhuma tela exibia autor de decisao.
+
+**O caminho da leitura nao e o embed**, e o motivo e o esquema: `action_decisions.created_by` referencia `auth.users`, nao `profiles` -- sem FK, o PostgREST nao embute. Ler os perfis DEPOIS das decisoes seria a leitura em fila que `check:waterfalls` reprova. Entao os membros da organizacao entram no MESMO `Promise.all`, com `organization_members.select("user_id, profiles(full_name)")`: ali a FK existe (`user_id references profiles`), e a policy de membros e `is_member_of` -- **qualquer membro ve os colegas**, entao o GESTOR ve o autor como o ADMIN ve. A leitura so dispara nas duas abas que mostram decisao.
+
+**"Quem decidiu" tem quatro respostas, e a linha nao imprime o mesmo "—" para tres delas** (`autorDaDecisao`, em `lib/decision-format.ts`, com teste por caminho):
+
+| caso | rotulo | por que e diferente |
+|---|---|---|
+| membro com nome | o nome, com as iniciais no avatar | — |
+| perfil sem nome | "membro sem nome no perfil" | `full_name` e opcional |
+| nao esta entre os membros de hoje | "fora da organizacao" | a decisao e da organizacao e fica; quem sai some de `organization_members` e a policy de perfis deixa de mostra-lo. O rotulo e verdade tanto para quem saiu quanto para quem nunca foi membro |
+| a leitura dos membros falhou | "autor nao carregado" | dizer "fora da organizacao" aqui seria afirmar um fato que ninguem mediu |
+
+O monograma e `?` nos tres caminhos sem nome: as iniciais de "fora da organizacao" seriam "FD", letras de uma pessoa que nao existe.
+
+---
+
+**3. SOBRE O QUE: o titulo e o TIPO da acao que originou a decisao**
+
+O frame poe o tipo em negrito ("Preco ajustado") e a narrativa embaixo. Aqui o titulo e `describeActionEvidence(kind).kindLabel` com a direcao ("Venda anomala · Queda") -- a mesma visao que a aba Decisoes e a Central de Acoes ja usam, nenhum vocabulario novo -- e o corpo e o texto da decisao, inteiro.
+
+**A aba dona ganhou o autor tambem.** O painel da visao geral e o atalho; se ele dissesse QUEM e a aba Decisoes nao, o resumo saberia mais que o dono do dado (D-224).
+
+---
+
+**4. HA QUANTO TEMPO: a idade de D-311, e aqui ela e a do fato sem ressalva**
+
+`formatAge(created_at, now)` com o instante exato no `title`, e a data absoluta de volta acima de sete dias -- o padrao que a Home adotou em D-311. Nunca "Hoje" nem "Ontem", como o frame escreve: dia depende de fuso, e D-260 pagou essa conta.
+
+A distincao que D-311 teve de fazer (carimbo do AVISO contra instante do FATO, 278 dias de desvio medido) **nao se aplica aqui**: `create_action_decision` recebe so `p_action_id` e `p_decision`, e a linha e gravada no ato de decidir. `created_at` e o instante da decisao.
+
+---
+
+**5. O AVATAR "IA" NAO ENTRA -- e a recusa esta no esquema, nao no gosto**
+
+O frame mistura no mesmo feed uma decisao humana ("Joao Martins reduziu o preco") e uma "do sistema" ("Sistema sugeriu envio de 48 unidades ao Full"). Nesta casa **toda decisao e humana por construcao**: `created_by uuid not null references auth.users`. O que o sistema produz e a RECOMENDACAO de uma acao, que mora em `actions` e que o diagnostico do SKU ja mostra com a severidade dela (D-317). Pintar um avatar "IA" aqui chamaria recomendacao de decisao -- a confusao que a Memoria de Decisoes (D-065) existe para nao ter. De quebra, o exemplo do frame e "enviar ao Full", recusado desde a auditoria corretiva por nao ter politica logistica. Registrado em "Diferencas intencionais".
+
+---
+
+**6. UM MONOGRAMA, NAO DOIS**
+
+`iniciais` era funcao privada de `components/shell.tsx`. A gaveta de `/usuarios` calculava a sua versao, `charAt(0)` -- entao a mesma pessoa era "EG" no topo da tela e "E" na gaveta. Com o terceiro consumidor chegando, a regra saiu para `lib/initials.ts` (6 casos) e os tres leem dela. A gaveta passa a duas letras, que e o que o frame desenha ("JM"). Duas regras para o mesmo desenho e a divergencia que D-246 pagou cinco vezes com mapas de tom.
+
+---
+
+**Impacto:** `apps/web/lib/initials.{ts,test.ts}` (novos), `apps/web/lib/decision-format.{ts,test.ts}` (`autorDaDecisao`, +4 casos), `apps/web/app/skus/[skuId]/page.tsx`, `apps/web/components/shell.tsx`, `apps/web/app/usuarios/detalhe-usuario.tsx`, `apps/web/app/globals.css` (`.sb-feed-text`, `.sb-avatar-feed`), `apps/web/e2e/sku-dashboard.spec.ts` (+1 caso, e o autor afirmado na aba Decisoes). **Sem migration e sem RPC:** `created_by` entrou num `select` existente, e a leitura dos membros entrou no `Promise.all` que ja existia.
+
+**Verificacao:** `check` **29/29** (`--force`, web 535 casos com os 10 novos), build 8/8, integracao **663/663** em banco recriado, e2e **136/136** em banco recriado (+1), cinco guardas verdes (`check:embeds` com 36 projecoes). Capturado a 1440px e 1100px com o servidor de producao, e a afirmacao conferida no `innerText` e nao so na imagem: avatar **24x24**, fundo `#f6f5f8`, borda `#ccc5d5`, letra "E"; a linha diz "Venda anomala · Queda / o texto / E2E · ha 10 min" com `title` "12/09/2026, 17:43"; a aba Decisoes diz "Venda anomala · Queda · E2E · 12/09/2026, 17:43"; a gaveta de `/usuarios` passou a "EG".
+
+**A armadilha que custou uma rodada inteira, e ela nao e desta fatia:** `apps/web/.env.local` aponta `NEXT_PUBLIC_SUPABASE_URL` para o projeto **Dev**. `NEXT_PUBLIC_*` e embutida NO BUILD, entao um build sem as variaveis locais exportadas manda o login do e2e para o Dev -- onde o usuario do seed nao existe --, e os 136 casos reprovam em "E-mail ou senha incorretos." sem que o GoTrue local receba um `/token` sequer. O seed passa (ele usa a chave de servico local), o que torna a falha enganosa. O remedio e o da CI: exportar `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` e `SUPABASE_SERVICE_ROLE_KEY` a partir de `supabase status -o env` ANTES do `build`. Registrado em `docs/TESTING.md`.
+

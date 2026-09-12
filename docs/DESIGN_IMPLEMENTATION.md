@@ -315,6 +315,7 @@ branco embutido.
 | ~~`MlbDetailDrawer` e as outras três~~ | **entregues em D39** (D-282). O que ficou de fora são as ABAS que o frame desenha dentro de duas delas — oito no anúncio, cinco no fornecedor: elas são as telas cheias que já existem (D13, D-174), e reproduzi-las na gaveta seria a segunda implementação da mesma interface | — |
 | Nome do comprador, logística e timeline da transportadora na gaveta do pedido | conferido em `\d`: `orders` guarda `buyer_id` (um número) e `shipping_id`, e não há tabela de envio nem de comprador. O que existe é o registro de EXCEÇÕES em `domain_events` | D-282 |
 | "Saúde do Anúncio" (Full ativo · competitividade de preço · qualidade das fotos) | dos três sinais só o Full tem fonte — concorrência não é coletada e qualidade de foto não existe no esquema. Um bloco com um sinal de três não é o bloco do frame | D-282 |
+| Avatar **"IA"** no painel "Últimas decisões" do SKU ("Sistema sugeriu envio de 48 unidades ao Full") | `action_decisions.created_by` referencia `auth.users`: **toda decisão é humana por esquema**. O que o frame chama de decisão da IA é a RECOMENDAÇÃO de uma ação, que mora em `actions` e o diagnóstico do SKU já mostra (D-317). E o exemplo do frame é "enviar ao Full", recusado por não ter política logística | D-320 |
 | Célula "Com queda" e coluna "Saúde" em Anúncios | sem detecção de anomalia por anúncio e sem definição canônica de "saúde" | D-023 |
 | Ação "Novo anúncio" | a V3 não cria anúncio no Mercado Livre — escrita no ML é ato com aprovação humana | escopo e segurança |
 
@@ -699,7 +700,7 @@ parece a aplicação antiga com o tema do Figma?*
 | Home | 78% → **87%** | ALINHADO | seletor "14 dias ⌄" do gráfico; hora relativa no feed | `TOM` local **removido**; `.sb-attention-value` **removida** |
 | Vendas | 70% → 85% → **88%** (A2) | ALINHADO | legenda do gráfico no rodapé (frame põe no cabeçalho); altura do SVG proporcional | `FILTER_DATE_STYLE` **removido**; 3 menus → `FilterMenu`; "Cancelamentos e taxas" **dissolvido**; `SavedFilters` no design system |
 | Produtos | 68% → 83% → **90%** (D38) | ALINHADO | botão "Buscar" visível (frame submete por Enter) — a gaveta "Inspeção Rápida" **entrou em D38** | consts `th`/`td` **removidos**; faixa inventada **removida**; 3 menus → `FilterMenu` |
-| SKU — Visão geral, Vendas, Estoque | 78% → 85% → **89%** (A2) | ALINHADO | tom "abaixo do lead time" na cobertura | `statBox`/`th`/`td`/`tdNumber`/`SalesMetricCard` **removidos** (7 tabelas em `.sb-table`); selo Curva ABC entrou (D-247) |
+| SKU — Visão geral, Vendas, Estoque | 78% → 85% → **89%** (A2) → **91%** (A12) | ALINHADO | tom "abaixo do lead time" na cobertura; ~~"Últimas decisões" sem autor nem tipo~~ — **entrou em A12** (D-320), sem o avatar "IA" | `statBox`/`th`/`td`/`tdNumber`/`SalesMetricCard` **removidos** (7 tabelas em `.sb-table`); selo Curva ABC entrou (D-247) |
 | SKU — Anúncios, Preços, Full, Histórico, Diagnóstico, Decisões | 62% → 78% → **86%** (A2) | ALINHADO | ressalvas longas nos corpos de alguns painéis | `buttonStyle`/`cardStyle` do diagnóstico **removidos**; chips na aba Full e cartões no Histórico entraram |
 | Anúncios (lista) | 72% → **86%** | ALINHADO | drawer `MlbDetailDrawer` (adiado); chip "ver lista" em sans (frame usa mono) | rodapé de metodologia **removido** (mora no `title` dos cabeçalhos); 4 menus → `FilterMenu` |
 | Anúncio (detalhe) | — → **84%** (D13) | ALINHADO | miniatura do frame (sem coluna de imagem); `listing_relist_events` ainda não lido | `<h1>/<h2>` e consts `th`/`td` inline **removidos**; `SummaryCard` local **removido** |
@@ -733,7 +734,7 @@ próximo = 80, validada contra o Figma = 95, + cleanup + testes = 100.
 | Home | 6 | 87% | 87% | 87% | 87% | 87% | 87% | 87% | 87% | 87% → **90%** (A11) |
 | Vendas | 8 | 85% | 88% | 88% | 88% | 88% | 88% | 88% | 88% | 88% |
 | **Produtos** | 5 | 83% | 83% | 83% | 83% | **90%** | 90% | 90% | 90% | 90% |
-| Dashboard de SKU (nove abas) | 10 | 82% | 88% | 88% | 88% | 88% | 88% | 88% | 88% | 88% |
+| Dashboard de SKU (nove abas) | 10 | 82% | 88% | 88% | 88% | 88% | 88% | 88% | 88% | 88% → **89%** (A12) |
 | Anúncios — lista | 6 | 86% | 86% | 86% | 86% | 86% | 86% | 86% | 86% | 86% |
 | **Anúncio — detalhe (oito abas)** | 5 | 25% | 25% | **84%** | 84% | 84% | 84% | 84% | 84% | 84% → **88%** (A10) |
 | **D14–D17** (Estoque, Reposição, Curva ABC, Movimentações) | 8 | 25% | 25% | 25% | **88%** | 88% | 88% | **90%** | **90%** | **93%** |
@@ -1040,6 +1041,49 @@ está na "Próxima fatia segura".
 
 ## Última fatia concluída
 
+**A12 — "ÚLTIMAS DECISÕES" DO SKU (D-320)** — o primeiro da fila que a
+varredura de A10 deixou. O Dashboard de SKU tem o maior peso da frente (10), e a
+lacuna registrada nele era este painel: a linha dizia o texto da decisão e a
+data absoluta, e não dizia **quem** decidiu nem **em resposta a quê**.
+
+| o frame | o que estava | agora |
+|---|---|---|
+| avatar de 24px com monograma | nenhum | as iniciais de quem decidiu — `?` quando não há nome a dar |
+| título curto ("Preço ajustado") | o texto inteiro da decisão, em negrito | o TIPO da ação que a originou ("Venda anômala · Queda") |
+| a narrativa, embaixo | — | o texto da decisão |
+| "Ontem, 14:20" | data e hora absolutas | autor · idade, com o instante exato no `title` |
+
+### O autor tinha fonte desde a primeira migration
+
+A policy de `profiles` foi escrita *"para exibir responsável por ação, autor de
+decisão"* — e nenhuma tela exibia. Não dá embed (`created_by` referencia
+`auth.users`, não `profiles`), e ler os perfis depois das decisões seria fila;
+os membros da organização entram no **mesmo** `Promise.all`. "Quem decidiu" tem
+quatro respostas — nome, perfil sem nome, fora da organização, leitura que
+falhou — e a linha não imprime o mesmo "—" para as três últimas. A aba Decisões
+ganhou o autor junto: o atalho não pode saber mais que a aba dona.
+
+### O "IA" do frame não entra
+
+Toda decisão é humana por esquema (`created_by … references auth.users`). O que
+o frame chama de decisão da IA é a **recomendação** de uma ação, e ela já tem
+lugar — o diagnóstico do SKU (D-317). Linha nova em "Diferenças intencionais".
+
+### Um monograma, não dois
+
+`iniciais` era privada do shell, e a gaveta de `/usuarios` fazia a sua com
+`charAt(0)`: a mesma pessoa era "EG" no topo e "E" na gaveta. Saiu para
+`lib/initials.ts` com o terceiro consumidor, e a gaveta passa a duas letras,
+como o "JM" do frame.
+
+**Verificação:** `check` 29/29 (`--force`), build 8/8, e2e **136/136** em banco
+recriado (+1), integração 663/663, cinco guardas verdes. Renderizado a 1440px e
+1100px, conferido no `innerText`: avatar de 24px com "E", "Venda anômala ·
+Queda", o texto, "E2E · há 10 min" e a data exata no `title`; a aba Decisões com
+o autor; a gaveta de `/usuarios` em "EG".
+
+## Fatias anteriores
+
 **A11 — A HOME CONTRA O FRAME (D-311)** — a Home era a **única superfície nunca
 remedida** desde a primeira auditoria (04/09, 87%). A varredura de A10 a leu de
 novo e achou quatro diferenças; cada uma foi atacada por um cético com uma lente
@@ -1090,8 +1134,6 @@ space-between` não faz nada quando há um item por linha. `.sb-panel-aside` gan
 **Verificação:** `check` 29/29 (`--force`), build 8/8, e2e **127/127** em banco
 recriado (+2), integração 658/658, cinco guardas verdes. Renderizada a 1440px em
 três estados do painel: padrão, `?serie=7` e com a ressalva de série parcial.
-
-## Fatias anteriores
 
 **A10 — O CABEÇALHO DO ANÚNCIO (D-310)** — com a Administração fechada, a
 pergunta virou *qual é a próxima fatia?*, e a resposta foi medida: **sete

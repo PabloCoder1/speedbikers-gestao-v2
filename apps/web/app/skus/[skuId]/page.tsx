@@ -11,7 +11,12 @@ import { Panel } from "../../../components/panel";
 import { TOM } from "../../../components/tone";
 import { Shell } from "../../../components/shell";
 import { StatusPill } from "../../../components/status-pill";
-import { formatDecisionSnapshot, OUTCOME_WINDOWS_DAYS, outcomeWindowLabel } from "../../../lib/decision-format";
+import {
+  autorDaDecisao,
+  formatDecisionSnapshot,
+  OUTCOME_WINDOWS_DAYS,
+  outcomeWindowLabel,
+} from "../../../lib/decision-format";
 import { entityLabel, formatEventDiff } from "../../../lib/event-format";
 import {
   formatBusinessDate,
@@ -22,6 +27,7 @@ import {
 } from "../../../lib/format";
 import { actionStatusLabel, eventTypeLabel, listingStatusLabel } from "../../../lib/labels";
 import { fullSituationCriterion, fullSituationLabel, fullSituationTom, isFullRow } from "../../../lib/full-filters";
+import { formatAge } from "../../../lib/relative-time";
 import { createClient } from "../../../lib/supabase/server";
 import { descreverCobertura } from "../../../lib/sku-coverage-display";
 import { acaoDeVinculo, lerAnuncio, resumoDeAnuncios, type AnuncioDoSku, type LinhaDeAnuncio } from "../../../lib/sku-listings";
@@ -304,6 +310,7 @@ export default async function SkuDashboardPage({
     decisionsResult,
     openActionsResult,
     acoesAbertasResult,
+    membrosResult,
   ] = await Promise.all([
     needsDashboard
       ? supabase
@@ -466,7 +473,7 @@ export default async function SkuDashboardPage({
       ? supabase
           .from("action_decisions")
           .select(
-            "id, decision, baseline_snapshot, created_at, actions!inner(id, kind, status, evidence, recommendation), action_outcomes(window_days, outcome_snapshot, measured_at)",
+            "id, decision, baseline_snapshot, created_at, created_by, actions!inner(id, kind, status, evidence, recommendation), action_outcomes(window_days, outcome_snapshot, measured_at)",
           )
           .eq("actions.sku_id", sku.data.id)
           .order("created_at", { ascending: false })
@@ -495,6 +502,22 @@ export default async function SkuDashboardPage({
           .eq("sku_id", sku.data.id)
           .in("status", ["novo", "em_andamento"])
           .order("severity")
+      : Promise.resolve({ data: null, error: null }),
+    /*
+      QUEM DECIDIU (A12, D-320). `action_decisions.created_by` referencia
+      `auth.users`, e não `profiles` — não há FK para o embed do PostgREST, e
+      ler os perfis DEPOIS das decisões seria a leitura em fila que
+      `check:waterfalls` reprova. Então os membros da organização entram no
+      MESMO `Promise.all`: `organization_members.user_id` referencia
+      `profiles`, a policy de membros é `is_member_of` (qualquer membro vê os
+      colegas, não só o ADMIN), e a de perfis foi escrita, nas palavras da
+      própria migration, para "exibir responsável por ação, autor de decisão".
+    */
+    needsDecisions
+      ? supabase
+          .from("organization_members")
+          .select("user_id, profiles(full_name)")
+          .eq("organization_id", sku.data.organization_id)
       : Promise.resolve({ data: null, error: null }),
   ]);
 
@@ -582,6 +605,12 @@ export default async function SkuDashboardPage({
   const salesByDay = sales.filter((linha) => linha.grain === "dia");
   const decisions = decisionsResult.data ?? [];
   const openActions = openActionsResult.count ?? null;
+  // `null` quando a leitura falhou: aí ninguém vira "fora da organização" por
+  // engano — `autorDaDecisao` diz que o autor não carregou.
+  const membros =
+    membrosResult.error !== null || membrosResult.data === null
+      ? null
+      : new Map(membrosResult.data.map((membro) => [membro.user_id, membro.profiles.full_name]));
 
   /*
    * Os selos do cabeçalho de entidade. Todos vêm da linha de `skus` já lida —
@@ -870,16 +899,45 @@ export default async function SkuDashboardPage({
                       permite medir o depois contra o antes.
                     </p>
                   ) : (
-                    decisions.slice(0, 3).map((linha) => (
-                      <div key={linha.id} className="sb-feed-row">
-                        <span style={{ flex: 1, minWidth: 0 }}>
-                          <b style={{ display: "block" }}>{linha.decision}</b>
-                          <small style={{ display: "block", marginTop: 3, fontSize: "0.5625rem", color: "var(--sb-text-soft)" }}>
-                            {formatDateTime(linha.created_at)}
-                          </small>
-                        </span>
-                      </div>
-                    ))
+                    /*
+                      A ANATOMIA DO FRAME (A12, D-320): avatar de quem decidiu,
+                      título curto, o texto, e autor · idade. Até aqui a linha
+                      era só o texto e a data absoluta — sem QUEM, que é a
+                      primeira pergunta de quem discorda de uma decisão, e sem
+                      o PORQUÊ, que é a ação que a originou.
+
+                      O título é o TIPO da ação ("Venda anômala · Queda"), como
+                      o frame põe "Preço ajustado" em negrito e a narrativa
+                      embaixo. A idade é a de D-311 — `formatAge` com o `now`
+                      desta renderização e a data exata no `title`.
+
+                      O avatar "IA" do frame NÃO entra: `created_by` referencia
+                      `auth.users`, então toda decisão é humana por esquema. A
+                      recomendação do sistema mora na AÇÃO, e o diagnóstico
+                      (D-317) já a mostra.
+                    */
+                    decisions.slice(0, 3).map((linha) => {
+                      const acao = describeActionEvidence(linha.actions.kind, linha.actions.evidence);
+                      const autor = autorDaDecisao(linha.created_by, membros);
+
+                      return (
+                        <div key={linha.id} className="sb-feed-row">
+                          <span aria-hidden="true" className="sb-avatar sb-avatar-feed">
+                            {autor.monograma}
+                          </span>
+                          <span style={{ flex: 1, minWidth: 0 }}>
+                            <b>
+                              {acao.kindLabel}
+                              {acao.direcaoLabel !== null && ` · ${acao.direcaoLabel}`}
+                            </b>
+                            <span className="sb-feed-text">{linha.decision}</span>
+                            <small title={formatDateTime(linha.created_at)}>
+                              {autor.rotulo} · {formatAge(linha.created_at, now) ?? formatDateTime(linha.created_at)}
+                            </small>
+                          </span>
+                        </div>
+                      );
+                    })
                   )}
                 </Panel>
               </div>
@@ -1814,6 +1872,8 @@ export default async function SkuDashboardPage({
                         <small style={{ display: "block", marginTop: 3, fontSize: "0.625rem", color: "var(--sb-text-soft)" }}>
                           {acao.kindLabel}
                           {acao.direcaoLabel !== null && ` · ${acao.direcaoLabel}`}
+                          {/* O autor também aqui (D-320): o painel da visão geral não pode dizer mais que a aba dona. */}
+                          {` · ${autorDaDecisao(decision.created_by, membros).rotulo}`}
                           {` · ${formatDateTime(decision.created_at)}`}
                         </small>
                       </span>

@@ -1,4 +1,5 @@
 import { formatCurrency } from "./format";
+import { iniciais } from "./initials";
 
 /**
  * Formatação da memória de decisões (Fase 6, D-064/D-065) — extraída de
@@ -41,4 +42,38 @@ export const OUTCOME_WINDOWS_DAYS: readonly number[] = [7, 15, 30];
 
 export function outcomeWindowLabel(days: number): string {
   return `${String(days)} dias depois`;
+}
+
+/**
+ * QUEM DECIDIU, e as quatro respostas que essa pergunta tem (A12, D-320).
+ *
+ * `action_decisions.created_by` é um `uuid` de `auth.users`; o nome mora em
+ * `profiles.full_name`, lido pelos membros da organização. Entre o id e o nome
+ * há três maneiras de não chegar a um nome, e cada uma diz uma coisa diferente
+ * — por isso a linha não imprime o mesmo "—" para as três:
+ *
+ * - **a leitura dos membros falhou** (`membros === null`): não se sabe nada, e
+ *   dizer "fora da organização" seria afirmar um fato que ninguém mediu;
+ * - **o autor não está entre os membros de hoje**: a decisão é da organização
+ *   e fica; quem saiu some de `organization_members`, e a policy de `profiles`
+ *   (`shares_org_with`) deixa de mostrá-lo. "Fora da organização" é verdade
+ *   tanto para quem saiu quanto para quem nunca foi membro;
+ * - **o perfil existe e não tem nome** — `full_name` é opcional.
+ *
+ * O monograma é `?` nos três casos: iniciais de um rótulo como "fora da
+ * organização" seriam "FD", letras de uma pessoa que não existe.
+ */
+export function autorDaDecisao(
+  createdBy: string,
+  membros: ReadonlyMap<string, string | null> | null,
+): { rotulo: string; monograma: string } {
+  if (membros === null) return { rotulo: "autor não carregado", monograma: "?" };
+
+  if (!membros.has(createdBy)) return { rotulo: "fora da organização", monograma: "?" };
+
+  const nome = membros.get(createdBy)?.trim() ?? "";
+
+  if (nome === "") return { rotulo: "membro sem nome no perfil", monograma: "?" };
+
+  return { rotulo: nome, monograma: iniciais(nome) };
 }

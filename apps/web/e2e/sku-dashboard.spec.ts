@@ -193,12 +193,43 @@ test("aba Decisões mostra a decisão do seed com o antes e o depois lado a lado
   await expect(page.getByRole("heading", { name: "Decisões registradas" })).toBeVisible();
 
   await expect(page.getByText(E2E_DECISION_TEXT)).toBeVisible();
-  await expect(page.getByText("Venda anômala · Queda")).toBeVisible();
+  // O autor entre o tipo e a data (D-320): a aba dona diz quem decidiu, como o
+  // painel da visão geral — o seed grava a decisão com o ADMIN "E2E".
+  await expect(page.getByText("Venda anômala · Queda · E2E ·")).toBeVisible();
   // O retrato "antes × depois" é uma tabela: cada linha nomeia o momento e
   // carrega o retrato bruto — nenhuma porcentagem sintetizada (D-228).
   await expect(page.getByRole("row", { name: /No momento da decisão/ })).toContainText("Vendido (7d): 2");
   await expect(page.getByRole("row", { name: /7 dias depois/ })).toContainText("Vendido (7d): 5");
   await expect(page.getByText("Ainda sem medição: 15 dias depois, 30 dias depois.")).toBeVisible();
+});
+
+/**
+ * "Últimas decisões" na visão geral, na anatomia do frame (A12, D-320): avatar
+ * de quem decidiu, o TIPO da ação como título, o texto, e autor · idade.
+ *
+ * As afirmações só valem juntas. O monograma é "E" — o ADMIN do seed se chama
+ * "E2E", uma parte só, e "EE" seria a regra errada. A linha de baixo é IDADE e
+ * não data (a decisão acabou de ser gravada pelo seed, dentro da janela de
+ * `formatAge`), e a data exata não se perde: está no `title`. A decisão do
+ * ANÚNCIO, que o seed também grava, não entra aqui — a ação dela não tem
+ * `sku_id`, e é por isso que a linha do SKU é a primeira.
+ */
+test("visão geral: Últimas decisões diz quem decidiu, sobre o quê e há quanto tempo", async ({ page }) => {
+  const seed = await readSeedOutput();
+
+  await login(page, `/skus/${seed.skuId}`);
+
+  const painel = page.getByRole("region", { name: "Últimas decisões" });
+  const linha = painel.locator(".sb-feed-row").first();
+
+  await expect(linha.locator(".sb-avatar")).toHaveText("E");
+  await expect(linha.locator("b")).toHaveText("Venda anômala · Queda");
+  await expect(linha.locator(".sb-feed-text")).toHaveText(E2E_DECISION_TEXT);
+
+  const carimbo = linha.locator("small");
+
+  await expect(carimbo).toHaveText(/^E2E · (agora há pouco|há \d+ (min|h|dias?))$/);
+  await expect(carimbo).toHaveAttribute("title", /\d{2}\/\d{2}\/\d{4}/);
 });
 
 

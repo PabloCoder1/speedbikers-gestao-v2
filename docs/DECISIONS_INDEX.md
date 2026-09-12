@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **315** (D-001 a D-319).
+Decisões registradas: **316** (D-001 a D-320).
 
 ## Por domínio
 
@@ -296,7 +296,7 @@ Decisões registradas: **315** (D-001 a D-319).
 - **D-251** — D16: a Curva ABC ganha os cartoes de classe, e devolve dois filtros ao dono deles
 - **D-293** — A pre-condicao da gaveta do Copiloto: o contexto que a API nao recebia, e as duas ferramentas alem de venda
 
-### worker/infra (59)
+### worker/infra (60)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -357,4 +357,5 @@ Decisões registradas: **315** (D-001 a D-319).
 - **D-304** — "Calculo desatualizado" com o recalculo rodando: o carimbo media a MUDANCA, e a tela precisava da CONFERENCIA
 - **D-307** — a varredura das 19 achou UMA doente, e ela estava ARMADA na tela inicial
 - **D-309** — A9: /saude contra o frame -- os seis cartoes continuam fora, e o unico numero de latencia que esta casa pode dizer
+- **D-320** — A12: o painel "Ultimas decisoes" do SKU contra o frame -- QUEM decidiu, sobre O QUE, ha quanto tempo, e o avatar "IA" que o esquema nao tem
 

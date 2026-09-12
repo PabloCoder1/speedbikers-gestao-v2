@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 
 import { DetailRow, Drawer } from "../../components/drawer";
 import { TOM } from "../../components/tone";
+import { iniciais } from "../../lib/initials";
 import { memberStatusLabel, type MemberStatus } from "../../lib/member-filters";
 import { tomDePapel } from "../../lib/role-tone";
 import { AccountAccessControls, RoleSelect, type AccountOption } from "./member-controls";
@@ -105,7 +106,9 @@ export function DetalheUsuario({
   const [aberta, setAberta] = useState(false);
 
   const rotulo = nome ?? email ?? userId;
-  const monograma = rotulo.trim().charAt(0).toUpperCase();
+  // A MESMA regra do avatar do topo e do autor de decisão (D-320) — era
+  // `charAt(0)`, uma letra, e a mesma pessoa tinha dois monogramas no app.
+  const monograma = iniciais(rotulo);
 
   return (
     <>

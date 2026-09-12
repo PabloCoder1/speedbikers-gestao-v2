@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { iniciais } from "../lib/initials";
 import { roleLabel } from "../lib/labels";
 import { createClient } from "../lib/supabase/server";
 import { CommandPalette } from "./command-palette";
@@ -44,17 +45,6 @@ import { currentMembership } from "../lib/membership";
  *
  * Tudo registrado em `docs/DESIGN_IMPLEMENTATION.md`.
  */
-function iniciais(texto: string): string {
-  const limpo = texto.trim();
-
-  if (limpo === "") return "?";
-
-  const partes = limpo.split(/[\s@._-]+/).filter((parte) => parte !== "");
-  const letras = partes.slice(0, 2).map((parte) => parte.charAt(0));
-
-  return letras.join("").toUpperCase() || limpo.charAt(0).toUpperCase();
-}
-
 export async function Shell({ children }: { children: ReactNode }): Promise<ReactNode> {
   const supabase = await createClient();
 
