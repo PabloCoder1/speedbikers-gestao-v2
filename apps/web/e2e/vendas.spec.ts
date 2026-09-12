@@ -95,3 +95,83 @@ test("/vendas: o selo mede a CONFERÊNCIA do cálculo, não a última mudança",
   await expect(page.getByText(/Cálculo em dia · conferido/)).toBeVisible();
   await expect(page.getByText("Cálculo desatualizado")).toHaveCount(0);
 });
+
+/**
+ * A ALTURA DO FRAME, E O TEXTO QUE NÃO ENCOLHE (A14, D-322).
+ *
+ * O gráfico tinha `viewBox` 900×260 com `height: auto`, e tudo dentro dele
+ * escalava com a largura — medido antes da fatia: **70px de altura e eixo em
+ * 2,4px** numa tela de 375px, e eixo em 7px na Home a 1440px. Nenhum caso olhava
+ * para isso, e por isso durou.
+ *
+ * O caso afirma as duas metades em duas larguras bem diferentes: a área de
+ * plotagem tem a altura FIXA do frame (224px aqui, 165px na Home), e o rótulo
+ * do eixo tem 9px nas duas. Se alguém devolver `height: auto`, ou mover o texto
+ * de volta para dentro do SVG, uma das larguras reprova.
+ */
+test("/vendas e Home: o gráfico tem a altura do frame e o eixo legível em qualquer largura", async ({ page }) => {
+  await page.goto("/login?next=%2Fvendas");
+  await page.getByLabel("E-mail").fill(E2E_USER_EMAIL);
+  await page.getByLabel("Senha").fill(E2E_USER_PASSWORD);
+  await page.getByRole("button", { name: "Entrar" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Dashboard de vendas" })).toBeVisible();
+
+  const casos = [
+    { rota: "/vendas", altura: 224 },
+    { rota: "/", altura: 165 },
+  ];
+
+  for (const largura of [1440, 375]) {
+    await page.setViewportSize({ width: largura, height: 900 });
+
+    for (const caso of casos) {
+      await page.goto(caso.rota);
+
+      const plotagem = page.locator(".sb-chart-plot").first();
+
+      await expect(plotagem).toBeVisible();
+      await expect(page.getByRole("img", { name: /no período selecionado/ }).first()).toBeVisible();
+
+      const alturaMedida = await plotagem.evaluate((elemento) => elemento.getBoundingClientRect().height);
+      const fonteDoEixo = await page
+        .locator(".sb-chart-y span")
+        .first()
+        .evaluate((elemento) => getComputedStyle(elemento).fontSize);
+
+      expect(alturaMedida, `${caso.rota} a ${String(largura)}px`).toBe(caso.altura);
+      expect(fonteDoEixo, `${caso.rota} a ${String(largura)}px`).toBe("9px");
+
+      /*
+        OS DOIS ACHADOS DA CAPTURA. Com texto de tamanho fixo, dois defeitos que
+        a escala escondia apareceram: o rótulo do TOPO do eixo Y saía cortado
+        pela borda da figura, e a 375px as seis datas do eixo X se encostavam.
+        Nenhum dos dois aparece em `innerText` — por isso a medida é de caixa.
+      */
+      const geometria = await page
+        .locator("figure.sb-chart")
+        .first()
+        .evaluate((figura) => {
+          const caixa = figura.getBoundingClientRect();
+          const topo = figura.querySelector(".sb-chart-y span")?.getBoundingClientRect();
+          const rotulos = Array.from(figura.querySelectorAll(".sb-chart-x span"))
+            .filter((span) => getComputedStyle(span).display !== "none")
+            .map((span) => span.getBoundingClientRect());
+          const encostados = rotulos.some((atual, indice) => {
+            const anterior = rotulos[indice - 1];
+
+            return anterior !== undefined && atual.left < anterior.right + 4;
+          });
+
+          return {
+            topoDentro: topo !== undefined && topo.top >= caixa.top,
+            encostados,
+            visiveis: rotulos.length,
+          };
+        });
+
+      expect(geometria.topoDentro, `${caso.rota} a ${String(largura)}px: rótulo do topo dentro da figura`).toBe(true);
+      expect(geometria.encostados, `${caso.rota} a ${String(largura)}px: datas do eixo X sem se encostar`).toBe(false);
+      expect(geometria.visiveis, `${caso.rota} a ${String(largura)}px: o eixo X ainda tem datas`).toBeGreaterThan(1);
+    }
+  }
+});

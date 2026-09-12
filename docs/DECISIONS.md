@@ -10316,3 +10316,89 @@ A casa ja tinha a resposta, e ela estava presa a um lugar: `.sb-entity` (nome de
 
 Duas armadilhas de ambiente custaram rodadas nesta fatia, e nenhuma e de codigo: o `.env.local` apontando para o Dev (D-320) e o OneDrive marcando o `.next` como somente-leitura, que fez o `next build` morrer em `EPERM` sem gerar build. As duas estao em `docs/TESTING.md`.
 
+## D-322 - A14: o grafico de vendas com a altura do frame, e o texto que saiu do SVG porque encolhia com a largura
+
+**Contexto:** o terceiro da fila de D-310, registrado desde A2 como "altura do SVG proporcional". A medicao feita ANTES de mexer mostrou que o nome subestimava o defeito: nao era so a altura que seguia a largura -- era todo o texto de dentro do SVG.
+
+---
+
+**1. O QUE FOI MEDIDO ANTES**
+
+`SalesChart` desenhava num `viewBox` de 900×260 com `width: 100%; height: auto`. Medido no servidor de producao, com o banco semeado:
+
+| superficie @ largura | SVG renderizado | rotulo do eixo | caixa de leitura |
+|---|---|---|---|
+| `/vendas` @1440 | 1084×313 | 10,8px | 13,2px |
+| `/vendas` @1100 | 801×231 | 8px | 9,8px |
+| `/vendas` @768 | 636×184 | 6,4px | 7,8px |
+| `/vendas` @375 | **243×70** | **2,4px** | **3px** |
+| Home @1440 | 695×201 | **7px** | 8,5px |
+| Home @1100 | 508×147 | 5,1px | 6,2px |
+
+O frame tem altura FIXA -- `.big-chart{height:250px}` em `/vendas` (224px de area de plotagem) e `.chart svg{height:165px}` na Home --, estica so a largura (`preserveAspectRatio="none"`) e poe os rotulos FORA do SVG. Num celular a V3 desenhava um grafico de 70px com eixo ilegivel; na Home, o eixo ja estava abaixo de 8px numa tela larga.
+
+---
+
+**2. POR QUE NAO BASTAVA UMA LINHA**
+
+As duas trocas de uma linha foram consideradas e as duas quebram outra coisa:
+
+- **`height: 224px` com o `preserveAspectRatio` padrao** -- o desenho encolhe para caber e sobram faixas vazias dos lados: a altura fica certa e a largura fica errada;
+- **`preserveAspectRatio="none"` no SVG que existia** -- estica o que tem forma: o texto sai achatado e o circulo de cada ponto vira elipse.
+
+O frame nao tem esse problema porque la o SVG so desenha LINHA.
+
+---
+
+**3. A ANATOMIA DO FRAME**
+
+O SVG passa a desenhar so linhas, num `viewBox 0 0 100 100` com `preserveAspectRatio="none"`, e cada traco com `vector-effect: non-scaling-stroke` -- o traco nao engorda quando a largura estica. Tudo o que tem forma ou texto virou HTML, posicionado pelas mesmas contas em porcentagem:
+
+- **eixo Y** numa coluna propria (`grid-template-rows: 0 1fr 0 1fr 0`): cada rotulo fica centrado na linha de grade que nomeia, e a coluna ganha a largura do maior deles;
+- **eixo X** numa faixa embaixo;
+- **pontos**, **linha de hover**, **ponto engordado** e **caixa de leitura**.
+
+O texto tem tamanho de CSS -- **9px nos eixos e 11px na leitura, em qualquer largura**.
+
+**O hover continua CSS puro, e o componente continua Server Component.** O grupo de cada dia nao tem caixa propria: os filhos sao absolutos em relacao a AREA DE PLOTAGEM, e `:hover` no grupo vale quando o ponteiro esta sobre o alvo dele. Assim a caixa de leitura e posicionada contra o grafico inteiro, e nao contra a faixa estreita do dia.
+
+As contas moram em `lib/sales-chart-geometry.ts`, sem React, com 11 casos que fixam as BORDAS -- primeiro e ultimo dia, periodo de um dia, serie toda em zero, e a faixa de hover cortada nas bordas, somando exatamente a area inteira. Em HTML, ao contrario do SVG, sair da caixa e ocupar o espaco de outro elemento.
+
+---
+
+**4. DUAS ALTURAS, UMA PROP SEPARADA DE `area`**
+
+`altura: "grande" | "compacta"` -- 224px em `/vendas`, 165px na Home, os dois numeros do frame. Separada de `area` de proposito: o que o grafico preenche e quanto espaco ele ocupa sao escolhas diferentes, e amarrar uma na outra faria a proxima tela que quiser area em tamanho grande ganhar um parametro falso.
+
+---
+
+**5. O PRIMEIRO CASO QUE OLHA PARA O GRAFICO**
+
+Nenhum e2e olhava para o grafico -- e por isso o defeito durou desde A2. O caso novo afirma, em `/vendas` e na Home, a 1440px e a 375px, que a area de plotagem tem a altura do frame e que o rotulo do eixo tem 9px. Se alguem devolver `height: auto`, ou mover o texto de volta para dentro do SVG, uma das larguras reprova.
+
+---
+
+**6. O QUE FICOU DE FORA, E POR QUE**
+
+- **A legenda continua no rodape.** O frame a poe no cabecalho do painel. Ela depende de `hasComparison`, que o componente calcula; subir para o `aside` do `Panel` e mexer na pagina, e e achado proprio da mesma linha da auditoria;
+- **a caixa de leitura da Home ainda diz "periodo anterior: sem dado"**, embora a Home nao compare periodos -- comportamento anterior a esta fatia, notado na leitura do componente e nao tocado para nao misturar uma mudanca de texto com uma de anatomia.
+
+---
+
+**7. O QUE SO A CAPTURA ACHOU -- e os dois defeitos eram a escala antiga escondendo**
+
+Com build, e2e 137/137, `check` 29/29 e a medicao dizendo 224px e 9px em todas as larguras, a imagem mostrou duas coisas que nenhum numero mostrava:
+
+- **o rotulo do topo do eixo Y saia cortado ao meio.** Ele e centrado na linha do teto, entao metade dele fica acima da area de plotagem -- e acima da borda da figura. A figura ganhou um respiro no topo;
+- **a 375px, as seis datas do eixo X se encostavam** ("14/08 19/08 24/08..."). Antes elas "cabiam" porque encolhiam para 2,4px junto com a largura; com 9px de verdade, seis datas nao cabem em 186px de plotagem. Quantas cabem depende da largura do GRAFICO, nao da tela -- a Home a 1440px tem um grafico mais estreito que `/vendas` a 768px --, entao a figura virou `container-type: inline-size`, e abaixo de 420px um rotulo sim, outro nao.
+
+Os dois viraram assercao de CAIXA no caso de e2e (rotulo do topo dentro da figura; datas visiveis sem se encostar), porque nenhum dos dois aparece em `innerText`. E a licao e a de sempre, com uma variacao: **tirar a escala de cima do texto revela o que a escala escondia.** O texto ilegivel era o defeito medido; a colisao estava debaixo dele.
+
+---
+
+**Impacto:** `apps/web/lib/sales-chart-geometry.{ts,test.ts}` (novos, 11 casos), `apps/web/app/vendas/sales-chart.tsx` (reescrito na anatomia do frame; a recusa de D-237, a escala compartilhada de D-137, a legenda e o `aria-label` preservados), `apps/web/app/page.tsx` (`altura="compacta"`), `apps/web/app/globals.css` (`.sb-chart*`), `apps/web/e2e/vendas.spec.ts` (+1 caso). **Sem migration e sem leitura nova.**
+
+**Verificacao:** `check` **29/29** (`--force`, web 549 casos com os 11 de geometria), build 8/8, e2e **137/137** em banco recriado (+1, e ele ja com as assercoes de caixa dos dois achados da captura), `check:embeds` com 36 projecoes e os quatro guardas de `web` verdes. **A integracao NAO rodou nesta fatia**, e isso e escolha, nao esquecimento: nao ha migration nem SQL, e a ultima rodada (663/663, A13) foi sobre as mesmas migrations.
+
+Medido DEPOIS, no servidor de producao, nas mesmas quatro larguras da medicao de antes: area de plotagem **224px em `/vendas` e 165px na Home em 1440, 1100, 768 e 375**, rotulo do eixo **9px** e caixa de leitura **11px** em todas, e **nenhum `<text>`** dentro do SVG. O hover a 90% da largura abre a caixa (250×67) com a data, o valor e a linha do periodo anterior. As imagens confirmam o rotulo do topo inteiro e, a 375px, as datas do eixo X alternadas sem se encostar.
+

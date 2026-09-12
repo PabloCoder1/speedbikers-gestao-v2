@@ -659,6 +659,7 @@ export default async function HomePage({
                  no gráfico, e passar série vazia faz a legenda sumir sozinha. */
               <SalesChart
                 area
+                altura="compacta"
                 points={pontos}
                 previousPoints={[]}
                 metric={DEFAULT_SALES_METRIC}

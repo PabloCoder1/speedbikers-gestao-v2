@@ -700,7 +700,7 @@ parece a aplicação antiga com o tema do Figma?*
 | Shell (sidebar, topbar, busca) | 78% → 86% → **91%** (A2) | ALINHADO | sem botão de recolher em tela larga; logo em texto | nav horizontal antiga: **removida** (não existia mais consumidor); paleta refeita pelo `.command` |
 | Design system (tokens, componentes) | 70% → 80% → **88%** (A2) | ALINHADO | ~~falta `.sb-drawer`~~ — **nasceu em D38** (D-281), com `.sb-detail-row` e `.sb-text-button`; `table-styles.ts` foi apagado em D-275 | cinco mapas de tom → **um** (`tone.ts`); `StatePill` cápsula → chip; `.sb-modal`/`.sb-command` nasceram; `table-styles.ts` MERGE pendente (2 consumidores não migrados) |
 | Home | 78% → **87%** | ALINHADO | seletor "14 dias ⌄" do gráfico; hora relativa no feed | `TOM` local **removido**; `.sb-attention-value` **removida** |
-| Vendas | 70% → 85% → **88%** (A2) | ALINHADO | legenda do gráfico no rodapé (frame põe no cabeçalho); altura do SVG proporcional | `FILTER_DATE_STYLE` **removido**; 3 menus → `FilterMenu`; "Cancelamentos e taxas" **dissolvido**; `SavedFilters` no design system |
+| Vendas | 70% → 85% → **88%** (A2) → **90%** (A14) | ALINHADO | legenda do gráfico no rodapé (frame põe no cabeçalho); ~~altura do SVG proporcional~~ — **entrou em A14** (D-322): altura fixa do frame e texto fora do SVG | `FILTER_DATE_STYLE` **removido**; 3 menus → `FilterMenu`; "Cancelamentos e taxas" **dissolvido**; `SavedFilters` no design system |
 | Produtos | 68% → 83% → **90%** (D38) | ALINHADO | botão "Buscar" visível (frame submete por Enter) — a gaveta "Inspeção Rápida" **entrou em D38** | consts `th`/`td` **removidos**; faixa inventada **removida**; 3 menus → `FilterMenu` |
 | SKU — Visão geral, Vendas, Estoque | 78% → 85% → **89%** (A2) → **91%** (A12) | ALINHADO | tom "abaixo do lead time" na cobertura; ~~"Últimas decisões" sem autor nem tipo~~ — **entrou em A12** (D-320), sem o avatar "IA" | `statBox`/`th`/`td`/`tdNumber`/`SalesMetricCard` **removidos** (7 tabelas em `.sb-table`); selo Curva ABC entrou (D-247) |
 | SKU — Anúncios, Preços, Full, Histórico, Diagnóstico, Decisões | 62% → 78% → **86%** (A2) | ALINHADO | ressalvas longas nos corpos de alguns painéis | `buttonStyle`/`cardStyle` do diagnóstico **removidos**; chips na aba Full e cartões no Histórico entraram |
@@ -734,7 +734,7 @@ próximo = 80, validada contra o Figma = 95, + cleanup + testes = 100.
 | Shell + navegação | 8 | 86% | 91% | 91% | 91% | 91% | 91% | 91% | 91% | 91% |
 | Design system (tokens, componentes, tabela, campo, menu, chip, modal) | 10 | 80% | 88% | 88% | 88% | 88% | **82%** | **94%** | **97%** | **97%** |
 | Home | 6 | 87% | 87% | 87% | 87% | 87% | 87% | 87% | 87% | 87% → **90%** (A11) |
-| Vendas | 8 | 85% | 88% | 88% | 88% | 88% | 88% | 88% | 88% | 88% |
+| Vendas | 8 | 85% | 88% | 88% | 88% | 88% | 88% | 88% | 88% | 88% → **90%** (A14) |
 | **Produtos** | 5 | 83% | 83% | 83% | 83% | **90%** | 90% | 90% | 90% | 90% |
 | Dashboard de SKU (nove abas) | 10 | 82% | 88% | 88% | 88% | 88% | 88% | 88% | 88% | 88% → **89%** (A12) |
 | Anúncios — lista | 6 | 86% | 86% | 86% | 86% | 86% | 86% | 86% | 86% | 86% |
@@ -1043,6 +1043,58 @@ está na "Próxima fatia segura".
 
 ## Última fatia concluída
 
+**A14 — O GRÁFICO DE VENDAS COM A ALTURA DO FRAME (D-322)** — o terceiro da
+fila de A10, registrado desde A2 como "altura do SVG proporcional". Medido antes
+de mexer, o nome subestimava: com `height: auto`, a altura seguia a largura e o
+**texto dentro do SVG também**.
+
+| superfície | antes | agora |
+|---|---|---|
+| `/vendas` @375 | gráfico de **70px**, eixo em **2,4px** | área de plotagem de 224px, eixo em 9px |
+| `/vendas` @1440 | 313px de altura, eixo em 10,8px | 224px, eixo em 9px |
+| Home @1440 | eixo em **7px** | 165px, eixo em 9px |
+
+### Por que não bastava uma linha
+
+`height` fixo com o `preserveAspectRatio` padrão sobra faixa vazia dos lados;
+`preserveAspectRatio="none"` no SVG antigo achata o texto e transforma ponto em
+elipse. O frame não tem o problema porque lá o SVG só desenha linha.
+
+### A anatomia do frame
+
+O SVG (`viewBox 0 0 100 100`, `none`, `non-scaling-stroke`) desenha só linhas.
+Eixos, pontos, linha de hover e caixa de leitura viraram HTML posicionado pelas
+mesmas contas em porcentagem (`lib/sales-chart-geometry.ts`, 11 casos). O hover
+continua CSS puro: o grupo do dia não tem caixa própria, e os filhos se
+posicionam contra a área de plotagem inteira. Duas alturas, as do frame —
+`altura="grande"` (224px) e `"compacta"` (165px, Home).
+
+### O primeiro caso que olha para o gráfico
+
+Nenhum e2e olhava, e por isso durou desde A2. O novo afirma altura e eixo de 9px
+em `/vendas` e na Home, a 1440px e a 375px.
+
+### O que só a captura acharia (de novo)
+
+Com tudo verde e a medição dizendo 224px e 9px, a imagem mostrou o rótulo do
+topo do eixo Y **cortado ao meio** pela borda da figura, e a 375px as seis datas
+do eixo X **se encostando** — antes elas "cabiam" porque encolhiam para 2,4px.
+Respiro no topo, e `container-type` na figura com um rótulo sim, outro não
+abaixo de 420px: quem decide é a largura do gráfico, não a da tela. Os dois
+viraram asserção de caixa no e2e. Tirar a escala de cima do texto revelou o que
+a escala escondia.
+
+**Fica:** a legenda no rodapé (o frame a põe no cabeçalho do painel) — achado
+próprio, porque subir para o `aside` mexe na página.
+
+**Verificação:** `check` 29/29 (`--force`), build 8/8, e2e **137/137** em banco
+recriado (+1), `check:embeds` e os guardas de `web` verdes; integração não rodou
+(sem migration nem SQL). Medido depois nas quatro larguras: plotagem de 224px e
+165px fixa, eixo em 9px, leitura em 11px, nenhum texto dentro do SVG. As imagens
+confirmam o rótulo do topo inteiro e as datas alternadas a 375px.
+
+## Fatias anteriores
+
 **A13 — A GAVETA DO PEDIDO EM CARTÕES (D-321)** — o segundo da fila de A10. A
 gaveta nasceu em D-282 como lista corrida de fatos sobre branco; o frame compõe
 a mesma informação em três cartões brancos sobre o chão cinza.
@@ -1084,8 +1136,6 @@ alargado para o cartão de item, em vez de nascer uma terceira forma de link.
 Renderizado a 1440px e medido no DOM: chão `#f4f5fa` sob 4 cartões brancos,
 grade de duas colunas de 168,5px, monograma 48×48; a gaveta de `/usuarios`, como
 controle, continua sem chão.
-
-## Fatias anteriores
 
 **A12 — "ÚLTIMAS DECISÕES" DO SKU (D-320)** — o primeiro da fila que a
 varredura de A10 deixou. O Dashboard de SKU tem o maior peso da frente (10), e a

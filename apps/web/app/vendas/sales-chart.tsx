@@ -2,6 +2,7 @@ import { businessDateRangeLength, shiftBusinessDate } from "@sb/domain";
 import type { ReactNode } from "react";
 
 import { formatBusinessDate, formatCount, formatCurrency } from "../../lib/format";
+import { caminho, faixaDoDia, tetoDaEscala, xPct, yPct, type Ponto } from "../../lib/sales-chart-geometry";
 import type { SalesMetric } from "../../lib/sales-metric";
 import { indexByOffset, offsetInPeriod } from "../../lib/series-alignment";
 
@@ -13,17 +14,6 @@ interface DailyPoint {
   /** NULL sob recorte de marca (D-237) — ver a recusa logo abaixo. */
   purchases_count: number | null;
 }
-
-const WIDTH = 900;
-const HEIGHT = 260;
-const PADDING_LEFT = 64;
-const PADDING_RIGHT = 16;
-const PADDING_TOP = 16;
-const PADDING_BOTTOM = 28;
-
-/** Caixa de leitura que aparece no hover. Medidas em unidades do `viewBox`. */
-const READ_W = 250;
-const READ_H = 62;
 
 /**
  * Gráfico de tendência de `/vendas` — SVG estático, sem biblioteca de
@@ -58,35 +48,38 @@ const READ_H = 62;
  * **1. A série de comparação era invisível, e isso é defeito medido, não
  * gosto.** Ela usava `--sb-muted` (`#ccc5d5`), que dá **1,68:1** contra o
  * cartão branco — a WCAG 1.4.11 pede **3:1** de objeto gráfico que carrega
- * informação, e uma tracejada de 1,5px é o caso mais frágil possível: sem
- * preenchimento, sem borda, sem nada atrás. O gráfico desenhava a comparação
- * e o usuário não a via. Agora usa `--sb-muted-ink` (`#746d88`, **4,90:1**),
- * que ainda fica a 3,45:1 da série atual — as duas continuam distinguíveis
- * entre si, e a hierarquia se mantém por PESO e TRAÇO (1,5px tracejada contra
- * 2px sólida), não por apagamento.
+ * informação. Agora usa `--sb-muted-ink` (`#746d88`, **4,90:1**), e a
+ * hierarquia se mantém por PESO e TRAÇO (1,5px tracejada contra 2px sólida),
+ * não por apagamento.
  *
- * **2. Hover por FAIXA, não por ponto.** O brief pede "tooltip detalhado" e
- * "hover" (`speed-bikers-design.md`, seção 12). O que existia era o `<title>`
- * nativo de SVG num círculo de raio 3 — para ler um valor era preciso acertar
- * 6px, e com 90 dias isso é impraticável. Agora cada dia tem uma faixa
- * invisível de altura inteira; passar em qualquer altura da coluna acende a
- * linha vertical, engorda o ponto e abre a leitura.
- *
- * **É CSS puro, sem componente cliente.** `:hover` sobre um `<g>` faz tudo;
- * não há estado, não há hidratação, e o componente continua sendo Server
- * Component como o resto da tela. Mesma escolha do `<details>` na navegação.
+ * **2. Hover por FAIXA, não por ponto.** Cada dia tem uma faixa invisível de
+ * altura inteira; passar em qualquer altura da coluna acende a linha vertical,
+ * engorda o ponto e abre a leitura. **É CSS puro, sem componente cliente** —
+ * `:hover` sobre o grupo do dia faz tudo, e o componente continua sendo Server
+ * Component como o resto da tela.
  *
  * **3. As faixas cobrem o PERÍODO, não os pontos.** Dia sem métrica calculada
- * também tem faixa, e a leitura dele diz isso em vez de nada — a série não
- * fabrica zero (`get_sales_daily_series`), então o dia existe no calendário e
- * não existe no dado, e essas são afirmações diferentes. Antes esses dias eram
- * silêncio: o traço passava por cima e ninguém sabia que ali não havia medição.
+ * também tem faixa, e a leitura dele diz isso em vez de nada.
  *
- * **O que o hover NÃO resolve, dito para não confundir com garantia:** quem
- * não usa ponteiro continua com o `<title>` de cada ponto e com o
- * `aria-label` do gráfico. Leitura ponto a ponto por teclado exigiria 30 a 90
- * paradas de foco, que é pior que o problema; a saída boa é uma tabela
- * equivalente, e ela é fatia própria.
+ * **O que o hover NÃO resolve:** quem não usa ponteiro continua com o `title` de
+ * cada ponto e com o `aria-label` do gráfico. Leitura ponto a ponto por teclado
+ * exigiria 30 a 90 paradas de foco; a saída boa é uma tabela equivalente, e ela
+ * é fatia própria.
+ *
+ * ## A14 — altura fixa, e o texto sai do SVG (D-322)
+ *
+ * O `viewBox` era 900×260 com `height: auto`: a altura seguia a largura, e o
+ * texto de dentro do SVG TAMBÉM. Medido antes de mexer: em `/vendas` o gráfico
+ * tinha 313px de altura a 1440px e **70px a 375px**, com o eixo em **2,4px**; na
+ * Home, o eixo já estava em **7px a 1440px**. O frame tem altura FIXA (224px em
+ * `/vendas`, 165px na Home) e estica só a largura.
+ *
+ * Esticar só a largura deforma o que tem forma, então a anatomia passou a ser a
+ * do frame: o SVG (`viewBox 0 0 100 100`, `preserveAspectRatio="none"`) desenha
+ * só LINHAS, com `vector-effect: non-scaling-stroke` para o traço não engordar;
+ * eixos, pontos, linha de hover e caixa de leitura são HTML posicionado pelas
+ * mesmas contas em porcentagem (`lib/sales-chart-geometry.ts`). O texto tem
+ * tamanho de CSS — 9px nos eixos e 11px na leitura, em qualquer largura.
  */
 export function SalesChart({
   points,
@@ -97,6 +90,7 @@ export function SalesChart({
   previousRangeFrom,
   previousRangeTo,
   area = false,
+  altura = "grande",
 }: {
   points: DailyPoint[];
   previousPoints: DailyPoint[];
@@ -109,18 +103,21 @@ export function SalesChart({
    * Preenchimento sob a linha, com o degradê do frame `Home` do Figma
    * (`#373993` de 20% a 0%). Lá a Home usa área e `/vendas` usa linha — a
    * área diz "volume" num relance, e a linha diz "variação" com precisão.
-   * É a mesma série, então é a mesma função com uma opção, e não um segundo
-   * componente de gráfico.
    */
   area?: boolean;
+  /**
+   * As duas alturas do frame (A14, D-322): `grande` é a de `/vendas` (224px),
+   * `compacta` a da Home (165px). Separada de `area` de propósito — o que o
+   * gráfico preenche e quanto espaço ele ocupa são duas escolhas.
+   */
+  altura?: "grande" | "compacta";
 }): ReactNode {
   if (points.length === 0) return null;
 
   // RECUSA EM VEZ DE ZERO (D-237). Sob recorte de marca, `purchases_count` vem
   // NULL: pack atravessa SKU e não existe "compras da marca X". Plotar `?? 0`
   // desenharia uma linha rente ao eixo — visualmente idêntica a "esta marca
-  // não teve compras", que é afirmação diferente e falsa. Mesma disciplina de
-  // D-127 com cobertura de estoque virtual.
+  // não teve compras", que é afirmação diferente e falsa.
   const indisponivel = [...points, ...previousPoints].some((p) => p[metric.field] === null);
 
   if (indisponivel) {
@@ -134,46 +131,23 @@ export function SalesChart({
   }
 
   // Contagem NUNCA é formatada como moeda: "R$ 12" numa série de unidades
-  // vendidas seria um número errado com aparência de certo — a classe de
-  // defeito que este projeto persegue desde D-131.
+  // vendidas seria um número errado com aparência de certo (D-131).
   const formatValue = metric.format === "currency" ? formatCurrency : formatCount;
   // Depois da recusa acima, o campo é numérico em todos os pontos.
   const valueAt = (point: DailyPoint): number => point[metric.field] ?? 0;
 
   const periodLength = businessDateRangeLength(rangeFrom, rangeTo);
 
-  // Escala COMPARTILHADA pelas duas séries. São a mesma métrica na mesma
-  // unidade, então dois eixos Y seriam mentira visual; e usar só o máximo da
-  // série atual faria a linha anterior sair do quadro sempre que o período
-  // passado tivesse vendido mais — justamente o caso que a comparação existe
-  // para mostrar.
-  const allValues = [...points.map(valueAt), ...previousPoints.map(valueAt)];
-  const maxValue = Math.max(...allValues, 0);
-  const chartMax = maxValue === 0 ? 1 : maxValue * 1.1;
+  // Escala COMPARTILHADA pelas duas séries: dois eixos Y seriam mentira visual,
+  // e usar só o máximo da série atual faria a linha anterior sair do quadro
+  // justamente quando o período passado vendeu mais.
+  const chartMax = tetoDaEscala([...points.map(valueAt), ...previousPoints.map(valueAt)]);
 
-  const innerWidth = WIDTH - PADDING_LEFT - PADDING_RIGHT;
-  const innerHeight = HEIGHT - PADDING_TOP - PADDING_BOTTOM;
-
-  function xAt(offset: number): number {
-    if (periodLength === 1) return PADDING_LEFT + innerWidth / 2;
-
-    return PADDING_LEFT + (innerWidth * offset) / (periodLength - 1);
+  function pontoDe(point: DailyPoint, inicio: string): Ponto {
+    return { x: xPct(offsetInPeriod(point.metric_date, inicio), periodLength), y: yPct(valueAt(point), chartMax) };
   }
 
-  function yAt(value: number): number {
-    return PADDING_TOP + innerHeight - (innerHeight * value) / chartMax;
-  }
-
-  function pathFor(series: DailyPoint[], periodStart: string): string {
-    return series
-      .map(
-        (point, index) =>
-          `${index === 0 ? "M" : "L"}${xAt(offsetInPeriod(point.metric_date, periodStart)).toFixed(1)},${yAt(valueAt(point)).toFixed(1)}`,
-      )
-      .join(" ");
-  }
-
-  // Valor do período anterior no MESMO offset, para a dica de cada ponto.
+  // Valor do período anterior no MESMO offset, para a leitura de cada dia.
   // `undefined` (não 0) quando o dia não existe do outro lado: "sem dado" e
   // "vendeu zero" são afirmações diferentes, e a RPC não fabrica zero.
   const previousByOffset = indexByOffset(previousPoints, previousRangeFrom);
@@ -181,185 +155,178 @@ export function SalesChart({
 
   const hasComparison = previousPoints.length > 0;
 
-  const gridLines = [0, 0.5, 1].map((fraction) => chartMax * fraction);
+  // Do topo para a base, na ordem em que a coluna do eixo Y os empilha.
+  const gridLines = [1, 0.5, 0].map((fraction) => chartMax * fraction);
   const gridLabel = (value: number): string =>
     metric.format === "count" ? formatValue(Math.round(value)) : formatValue(value);
 
-  // No máximo ~7 rótulos no eixo X, mesmo com 90 dias — mais que isso
-  // empilha texto ilegível.
+  // No máximo ~7 rótulos no eixo X, mesmo com 90 dias — mais que isso empilha
+  // texto ilegível.
   const labelStep = Math.max(1, Math.ceil(periodLength / 7));
+  const offsets = Array.from({ length: periodLength }, (_unused, offset) => offset);
 
-  const bandWidth = periodLength > 1 ? innerWidth / (periodLength - 1) : innerWidth;
+  const atuais = points.map((point) => pontoDe(point, rangeFrom));
+  const linhaAtual = caminho(atuais);
 
   return (
-    <figure style={{ margin: 0 }}>
-      <svg
-        viewBox={`0 0 ${String(WIDTH)} ${String(HEIGHT)}`}
-        role="img"
-        aria-label={
-          hasComparison
-            ? `${metric.heading} no período selecionado, comparado com o período anterior`
-            : `${metric.heading} no período selecionado`
-        }
-        style={{ width: "100%", height: "auto", display: "block" }}
-      >
-        {gridLines.map((value) => {
-          const yPos = yAt(value);
+    <figure className={`sb-chart sb-chart-${altura}`}>
+      {/*
+        O EIXO Y FORA DO SVG, como a `.chart-y` do frame. Três rótulos nas três
+        linhas de grade; a coluna tem a largura do maior deles, e cada rótulo
+        fica centrado na linha que nomeia.
+      */}
+      <div className="sb-chart-y" aria-hidden="true">
+        {gridLines.map((value, indice) => (
+          <span key={indice} style={{ gridRow: indice * 2 + 1 }}>
+            {gridLabel(value)}
+          </span>
+        ))}
+      </div>
 
-          return (
-            <g key={value}>
-              <line
-                x1={PADDING_LEFT}
-                x2={WIDTH - PADDING_RIGHT}
-                y1={yPos}
-                y2={yPos}
-                stroke="var(--sb-border)"
-                strokeWidth={1}
-              />
-              <text x={PADDING_LEFT - 8} y={yPos + 4} textAnchor="end" fontSize={9} fontFamily="var(--sb-mono)" fill="var(--sb-text-soft)">
-                {gridLabel(value)}
-              </text>
-            </g>
-          );
-        })}
-
-        {/*
-          Período anterior ANTES do atual no DOM: em SVG a ordem é a ordem de
-          pintura, então desenhar depois colocaria a linha de referência por
-          cima da linha que interessa. Tracejada e mais fina porque é contexto,
-          não o assunto — mas NÃO apagada: ver o item 1 do cabeçalho.
-        */}
-        {hasComparison && (
-          <path
-            d={pathFor(previousPoints, previousRangeFrom)}
-            fill="none"
-            stroke="var(--sb-muted-ink)"
-            strokeWidth={1.5}
-            strokeDasharray="4 3"
-          />
-        )}
-
-        {area && (
-          <>
-            <defs>
-              <linearGradient id="sb-chart-area" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0" stopColor="var(--sb-secondary)" stopOpacity="0.2" />
-                <stop offset="1" stopColor="var(--sb-secondary)" stopOpacity="0" />
-              </linearGradient>
-            </defs>
-            {/*
-              A área fecha o traço até a linha de base. `points` já está
-              ordenado por dia, então o fecho é o último x, o primeiro x e o
-              chão do gráfico.
-            */}
-            <path
-              d={`${pathFor(points, rangeFrom)} L${xAt(offsetInPeriod(points[points.length - 1]?.metric_date ?? rangeFrom, rangeFrom)).toFixed(1)},${(PADDING_TOP + innerHeight).toFixed(1)} L${xAt(offsetInPeriod(points[0]?.metric_date ?? rangeFrom, rangeFrom)).toFixed(1)},${(PADDING_TOP + innerHeight).toFixed(1)} Z`}
-              fill="url(#sb-chart-area)"
-              stroke="none"
+      <div className="sb-chart-plot">
+        <svg
+          className="sb-chart-svg"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          role="img"
+          aria-label={
+            hasComparison
+              ? `${metric.heading} no período selecionado, comparado com o período anterior`
+              : `${metric.heading} no período selecionado`
+          }
+        >
+          {gridLines.map((value, indice) => (
+            <line
+              key={indice}
+              x1={0}
+              x2={100}
+              y1={yPct(value, chartMax)}
+              y2={yPct(value, chartMax)}
+              stroke="var(--sb-border)"
+              strokeWidth={1}
+              vectorEffect="non-scaling-stroke"
             />
-          </>
-        )}
+          ))}
 
-        <path d={pathFor(points, rangeFrom)} fill="none" stroke="var(--sb-primary)" strokeWidth={2} />
+          {/*
+            Período anterior ANTES do atual no DOM: em SVG a ordem é a ordem de
+            pintura. Tracejada e mais fina porque é contexto — mas NÃO apagada.
+          */}
+          {hasComparison && (
+            <path
+              d={caminho(previousPoints.map((point) => pontoDe(point, previousRangeFrom)))}
+              fill="none"
+              stroke="var(--sb-muted-ink)"
+              strokeWidth={1.5}
+              strokeDasharray="4 3"
+              vectorEffect="non-scaling-stroke"
+            />
+          )}
 
-        {points.map((point) => {
-          const offset = offsetInPeriod(point.metric_date, rangeFrom);
-          const anterior = previousByOffset.get(offset);
-          // O `<title>` carrega a MESMA informação que a caixa de hover, e não
-          // uma versão pobre dela: quem não usa ponteiro não pode receber
-          // menos. A primeira versão desta fatia tinha deixado a comparação de
-          // fora aqui, o que teria trocado um ganho para uns por uma perda
-          // para outros.
+          {area && atuais.length > 0 && (
+            <>
+              <defs>
+                <linearGradient id="sb-chart-area" x1="0" x2="0" y1="0" y2="1">
+                  <stop offset="0" stopColor="var(--sb-secondary)" stopOpacity="0.2" />
+                  <stop offset="1" stopColor="var(--sb-secondary)" stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              {/* A área fecha o traço até a linha de base: último x, primeiro x, chão. */}
+              <path
+                d={`${linhaAtual} L${(atuais[atuais.length - 1]?.x ?? 0).toFixed(2)},100 L${(atuais[0]?.x ?? 0).toFixed(2)},100 Z`}
+                fill="url(#sb-chart-area)"
+                stroke="none"
+              />
+            </>
+          )}
+
+          <path d={linhaAtual} fill="none" stroke="var(--sb-primary)" strokeWidth={2} vectorEffect="non-scaling-stroke" />
+        </svg>
+
+        {points.map((point, indice) => {
+          const anterior = previousByOffset.get(offsetInPeriod(point.metric_date, rangeFrom));
+          const ponto = atuais[indice];
+          // O `title` carrega a MESMA informação que a caixa de hover: quem não
+          // usa ponteiro não pode receber menos.
           const comparacao =
             anterior === undefined
               ? "sem dado no período anterior"
               : `período anterior (${formatBusinessDate(anterior.metric_date)}): ${formatValue(valueAt(anterior))}`;
 
-          return (
-            <circle
+          return ponto === undefined ? null : (
+            <span
               key={point.metric_date}
-              cx={xAt(offset)}
-              cy={yAt(valueAt(point))}
-              r={3}
-              fill="var(--sb-primary)"
-            >
-              {/*
-                Um filho de texto só, não vários interpolados — vários filhos
-                dentro de <title> de SVG produziu divergência de hidratação
-                (servidor x cliente viam a mesma string dividida diferente).
-              */}
-              <title>
-                {`${formatBusinessDate(point.metric_date)}: ${formatValue(valueAt(point))} · ${comparacao}`}
-              </title>
-            </circle>
+              className="sb-chart-point"
+              aria-hidden="true"
+              style={{ left: `${ponto.x.toFixed(2)}%`, top: `${ponto.y.toFixed(2)}%` }}
+              title={`${formatBusinessDate(point.metric_date)}: ${formatValue(valueAt(point))} · ${comparacao}`}
+            />
           );
         })}
 
-        {Array.from({ length: periodLength }, (_unused, offset) => offset).map((offset) => {
-          const x = xAt(offset);
+        {offsets.map((offset) => {
+          const x = xPct(offset, periodLength);
+          const faixa = faixaDoDia(offset, periodLength);
           const dia = shiftBusinessDate(rangeFrom, offset);
           const atual = currentByOffset.get(offset);
           const anterior = previousByOffset.get(offset);
 
-          // A caixa foge do ponto: na metade esquerda ela abre à direita, e
-          // vice-versa. Sem isso ela cobriria justamente o trecho que a pessoa
-          // está olhando.
-          const readX = offset < periodLength / 2 ? WIDTH - PADDING_RIGHT - READ_W : PADDING_LEFT;
-
           return (
-            <g key={dia} className="sb-chart-band">
-              <rect
-                x={x - bandWidth / 2}
-                y={PADDING_TOP}
-                width={bandWidth}
-                height={innerHeight}
-                fill="transparent"
-                style={{ pointerEvents: "all" }}
+            /*
+              O grupo do dia não tem caixa própria: os filhos são absolutos em
+              relação à ÁREA DE PLOTAGEM, e `:hover` no grupo vale quando o
+              ponteiro está sobre o alvo dele. Assim a linha e a caixa de leitura
+              são posicionadas contra o gráfico inteiro, não contra a faixa
+              estreita do dia.
+            */
+            <div key={dia} className="sb-chart-band">
+              <div
+                className="sb-chart-alvo"
+                style={{ left: `${faixa.esquerda.toFixed(2)}%`, width: `${faixa.largura.toFixed(2)}%` }}
               />
 
-              <g className="sb-chart-hover" style={{ pointerEvents: "none" }}>
-                <line x1={x} x2={x} y1={PADDING_TOP} y2={PADDING_TOP + innerHeight} stroke="var(--sb-muted-ink)" strokeWidth={1} />
+              <div className="sb-chart-hover" aria-hidden="true">
+                <div className="sb-chart-hover-linha" style={{ left: `${x.toFixed(2)}%` }} />
 
                 {atual !== undefined && (
-                  <circle cx={x} cy={yAt(valueAt(atual))} r={5} fill="var(--sb-primary)" />
+                  <div
+                    className="sb-chart-hover-ponto"
+                    style={{ left: `${x.toFixed(2)}%`, top: `${yPct(valueAt(atual), chartMax).toFixed(2)}%` }}
+                  />
                 )}
 
-                <rect
-                  x={readX}
-                  y={PADDING_TOP}
-                  width={READ_W}
-                  height={READ_H}
-                  rx={6}
-                  fill="var(--sb-surface)"
-                  stroke="var(--sb-border)"
-                />
-
-                <text x={readX + 10} y={PADDING_TOP + 18} fontSize={11} fill="var(--sb-text)" fontWeight={600}>
-                  {formatBusinessDate(dia)}
-                </text>
-
-                <text x={readX + 10} y={PADDING_TOP + 36} fontSize={11} fill="var(--sb-text)">
-                  {atual === undefined
-                    ? "sem métrica calculada neste dia"
-                    : `${metric.label}: ${formatValue(valueAt(atual))}`}
-                </text>
-
-                <text x={readX + 10} y={PADDING_TOP + 52} fontSize={11} fill="var(--sb-text-soft)">
-                  {anterior === undefined
-                    ? "período anterior: sem dado"
-                    : `período anterior (${formatBusinessDate(anterior.metric_date)}): ${formatValue(valueAt(anterior))}`}
-                </text>
-              </g>
-
-              {offset % labelStep === 0 && (
-                <text x={x} y={HEIGHT - 8} textAnchor="middle" fontSize={9} fontFamily="var(--sb-mono)" fill="var(--sb-text-soft)">
-                  {formatBusinessDate(dia).slice(0, 5)}
-                </text>
-              )}
-            </g>
+                {/*
+                  A caixa foge do ponto: na metade esquerda ela abre à direita, e
+                  vice-versa — senão cobriria o trecho que a pessoa está olhando.
+                */}
+                <div className="sb-chart-leitura" style={offset < periodLength / 2 ? { right: "0.5rem" } : { left: "0.5rem" }}>
+                  <b>{formatBusinessDate(dia)}</b>
+                  <span>
+                    {atual === undefined
+                      ? "sem métrica calculada neste dia"
+                      : `${metric.label}: ${formatValue(valueAt(atual))}`}
+                  </span>
+                  <span className="sb-chart-leitura-anterior">
+                    {anterior === undefined
+                      ? "período anterior: sem dado"
+                      : `período anterior (${formatBusinessDate(anterior.metric_date)}): ${formatValue(valueAt(anterior))}`}
+                  </span>
+                </div>
+              </div>
+            </div>
           );
         })}
-      </svg>
+      </div>
+
+      <div className="sb-chart-x" aria-hidden="true">
+        {offsets
+          .filter((offset) => offset % labelStep === 0)
+          .map((offset) => (
+            <span key={offset} style={{ left: `${xPct(offset, periodLength).toFixed(2)}%` }}>
+              {formatBusinessDate(shiftBusinessDate(rangeFrom, offset)).slice(0, 5)}
+            </span>
+          ))}
+      </div>
 
       {/*
         A legenda só existe quando há o que legendar. Sem dado no período
@@ -369,6 +336,7 @@ export function SalesChart({
       {hasComparison && (
         <figcaption
           style={{
+            gridColumn: "1 / -1",
             display: "flex",
             flexWrap: "wrap",
             gap: "var(--sb-space-3)",
@@ -398,8 +366,7 @@ export function SalesChart({
             {/*
               A janela REAL, não a data do último ponto com dado: se o último
               dia do período anterior não tiver métrica calculada, rotular
-              pelo último ponto encolheria a janela na legenda e o usuário
-              compararia 30 dias contra "28 dias" sem saber.
+              pelo último ponto encolheria a janela na legenda.
             */}
             Período anterior ({formatBusinessDate(previousRangeFrom)} a {formatBusinessDate(previousRangeTo)})
           </span>
