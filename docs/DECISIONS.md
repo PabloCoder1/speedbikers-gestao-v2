@@ -10460,3 +10460,69 @@ Medido DEPOIS no servidor de producao: o gatilho "Buscar SKU, anuncio, NF-e..." 
 
 **Uma captura minha nao prova o que parecia provar, e fica dito:** a imagem da barra a 1440px foi tirada com a caixa AINDA ABERTA, e o componente troca o gatilho pela caixa enquanto ela esta aberta -- entao a barra aparece sem campo nenhum, atras do fundo escurecido. O gatilho a 1440px esta provado pela medida de DOM, nao por aquela imagem. E a troca em si e comportamento anterior a esta fatia, fora do escopo: abrir a busca TIRA o campo da barra e desloca os botoes por tras do fundo. Registrado como observacao em aberto.
 
+## D-324 - A varredura das plpgsql que D-319 deixou aberta: nenhuma doente, e o remedio de D-319 PIORARIA as escritas em lote
+
+**Contexto:** D-319 curou `get_sku_curation`, que saltava de ~20 ms para 360-4.000 ms a partir da SEXTA execucao da conexao, e deixou a pergunta escrita: *quantas outras `plpgsql` sem `plan_cache_mode` estao assim?* A varredura de D-307 tinha usado o criterio de `language sql` (estado estavel desproporcional), que nao pega o salto do `plpgsql`. Esta fatia faz a varredura com o criterio certo. **Sem migration: a conclusao e nao mudar nada, e o motivo e medido.**
+
+---
+
+**1. O CATALOGO, E A TRIAGEM PELA FORMA**
+
+28 funcoes `plpgsql` em `public`. **Tres ja tem `force_custom_plan`** (`get_listings_dashboard`, `get_sku_curation`, `get_stock_coverage` -- D-305, D-307, D-319). Das 25 sem:
+
+- **uma leitura:** `get_sku_curation_summary`, que agrega a organizacao inteira a partir do ultimo retrato do ERP de cada SKU (`distinct on` + `grouping sets`);
+- **24 escritas**, triadas pelo catalogo em vez de lidas uma a uma -- contagem de `= any(`, `unnest(`, `join`, `group by` e `loop` no corpo. **21 sao busca por id de poucas linhas**, onde o plano generico e o custom sao o mesmo indice. **Tres tinham predicado sensivel:** `set_skus_supplier_brand` e `set_skus_stock_virtual` (lote de ate 500 ids por `= any`) e `apply_support_remote_transition` (dois `= any`, mas sobre a lista de estados esperados, com o id da PK na mesma condicao).
+
+---
+
+**2. O METODO**
+
+Sem acesso ao Dev desta sessao, a medicao foi LOCAL, com carga sintetica na forma de D-319: **3.500 SKUs, 8.376 retratos do ERP em tres lotes** (o `distinct on` precisa de mais de um por SKU para custar), **2.334 SKUs sem marca**, decisoes e retratos com datas espalhadas em 423 dias, e `ANALYZE` -- o plano generico depende da estatistica. Uma sessao autenticada como o ADMIN do seed, e tres blocos por funcao: **(A)** oito execucoes no padrao, olhando a sexta; **(B)** `force_generic_plan`; **(C)** `force_custom_plan`. A contagem de linhas saiu em toda chamada.
+
+---
+
+**3. A LEITURA: SEM SALTO**
+
+`get_sku_curation_summary` devolveu 43 linhas em todas as chamadas.
+
+| bloco | tempos (ms) |
+|---|---|
+| A · padrao, 8x | 13,5 · 9,7 · 10,3 · 10,4 · 10,2 · **10,8 (sexta)** · 9,2 · 9,8 |
+| B · generico | 9,2 · 9,6 · 10,2 |
+| C · custom | 11,6 · 9,4 · 10,4 |
+
+Um parametro so (`p_organization_id`), sem paginacao, ordem ou filtro escolhidos pela tela: o plano generico nao tem valor de argumento para errar. E o oposto de `get_sku_curation`, que carrega pagina, ordem e filtros.
+
+---
+
+**4. AS ESCRITAS EM LOTE: O GENERICO E MAIS RAPIDO -- e a primeira medicao quase disse o contrario, pelo motivo errado**
+
+A primeira rodada foi numa transacao so, e o tempo **subiu aos poucos** do comeco ao fim (15,7 → 19,2 ms e 22 → 31 ms): cada chamada reescreve as mesmas 300 linhas, e as versoes mortas se acumulam. O bloco custom rodou por ultimo e pagou o inchaco todo (29-45 ms). Isso nao e plano, e a conclusao nao podia sair dali.
+
+O controle pos cada bloco na PROPRIA transacao, revertida, alternando custom e generico duas vezes:
+
+| funcao (300 ids aplicados) | custom | generico |
+|---|---|---|
+| `set_skus_supplier_brand`, rodada 1 | 23,3 - 25,5 ms | **13,9 - 16,8 ms** |
+| `set_skus_supplier_brand`, rodada 2 | 22,2 - 26,7 ms | **16,1 - 17,8 ms** |
+| `set_skus_stock_virtual`, rodada 1 | 23,5 - 29,9 ms | **18,7 - 20,4 ms** |
+| `set_skus_stock_virtual`, rodada 2 | 22,0 - 28,9 ms | **16,8 - 16,9 ms** |
+
+Nas duas rodadas, nas duas funcoes, **o generico ganhou**. O custom replaneja a cada chamada os statements que carregam o array de 300 ids; o generico planeja uma vez -- e para busca por chave primaria o plano e o mesmo indice.
+
+**A consequencia e a parte que vale a fatia:** `force_custom_plan` **nao e remedio universal**. Aplicar a cura de D-305/D-307/D-319 por padrao em toda `plpgsql` -- a generalizacao tentadora depois de tres curas seguidas -- deixaria as escritas em lote **30 a 40% mais lentas**. O criterio fica escrito em `docs/PERFORMANCE.md`: leitura parametrizada que agrega e ordena, e salta na sexta → custom; busca por chave → deixar no automatico. Medir continua sendo o unico jeito de saber de que lado a funcao esta.
+
+---
+
+**5. O QUE NAO FOI MEDIDO, dito**
+
+- **`apply_support_remote_transition` e as 21 escritas de uma linha** foram classificadas pela FORMA (id da PK na condicao), nao cronometradas. A primeira e `security invoker` e dirigida pelo worker; medi-la pediria um tipo de evento valido e um caso real. Se alguma aparecer lenta no `pg_stat_statements`, o metodo esta em `PERFORMANCE.md`;
+- **as magnitudes sao locais, com carga sintetica** -- nao valem para o Dev. O que se leva e a FORMA: nenhum salto na sexta, e generico ≥ custom nas escritas;
+- **os scripts da carga e da medicao nao foram versionados:** carregam o id da organizacao e do ADMIN do seed, que muda a cada `db reset`. A receita esta aqui e em `PERFORMANCE.md`.
+
+---
+
+**Impacto:** `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,HANDOFF}.md`. **Nenhuma linha de codigo e nenhuma migration.**
+
+**Verificacao:** as medicoes acima, no Postgres local com a carga sintetica, e o `db reset` depois para apagar os dados `SYN-`.
+
