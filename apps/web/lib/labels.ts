@@ -425,6 +425,34 @@ export const supportDeadlineKindLabel = (code: string): string => lookup(SUPPORT
 export const supportDeadlineSourceLabel = (code: string): string => lookup(SUPPORT_DEADLINE_SOURCE, code);
 export const supportCaseEventLabel = (code: string): string => lookup(SUPPORT_CASE_EVENT, code);
 export const searchEntityLabel = (code: string): string => lookup(SEARCH_ENTITY, code);
+
+/**
+ * O que a Busca Universal alcança, numa frase — DERIVADA da lista (A15, D-323).
+ *
+ * O texto do gatilho da busca era escrito à mão e dizia cinco entidades. D-216
+ * levou `search_entities` a SETE (atendimento e NF-e) e ninguém voltou ao texto:
+ * a frase que existia para ser a verdade deixou de ser. Saindo daqui, entidade
+ * nova muda a frase sozinha — e o teste exato de `labels.test.ts` reprova, o que
+ * obriga alguém a ler a frase nova antes de ela ir para a tela.
+ *
+ * Nome de entidade vira minúsculo no meio da frase ("anúncio", "pedido de
+ * compra"); sigla mantém a caixa ("SKU", "NF-e") — a regra é a segunda letra do
+ * rótulo já ser maiúscula.
+ */
+export function textoDasEntidadesBuscaveis(): string {
+  const nomes = SEARCH_ENTITY_TYPES.map((tipo) => {
+    const rotulo = SEARCH_ENTITY[tipo];
+    const segunda = rotulo.charAt(1);
+    const ehSigla = segunda !== segunda.toLowerCase();
+
+    return ehSigla ? rotulo : rotulo.charAt(0).toLowerCase() + rotulo.slice(1);
+  });
+  const ultimo = nomes[nomes.length - 1];
+
+  if (nomes.length < 2 || ultimo === undefined) return nomes.join("");
+
+  return `${nomes.slice(0, -1).join(", ")} e ${ultimo}`;
+}
 export const replyAttemptLabel = (code: string): string => lookup(REPLY_ATTEMPT_STATUS, code);
 export const relistStatusLabel = (code: string): string => lookup(RELIST_STATUS, code);
 

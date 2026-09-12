@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
-import { searchEntityLabel } from "../lib/labels";
+import { searchEntityLabel, textoDasEntidadesBuscaveis } from "../lib/labels";
 import { createClient } from "../lib/supabase/browser";
 
 /**
@@ -135,10 +135,17 @@ export function CommandPalette({ organizationId }: { organizationId: string | nu
      * ESQUERDA e o mais largo do topbar, porque ela é a forma primária de
      * navegar num sistema com 28 telas.
      *
-     * O texto nomeia o que a RPC REALMENTE busca. O frame diz "SKU, pedido,
-     * anúncio ou ação"; `search_entities` cobre SKU, anúncio, conta,
-     * fornecedor e pedido de compra — prometer "ação" seria mandar procurar o
-     * que não se acha.
+     * O TEXTO É CURTO E VERDADEIRO, E A PROMESSA INTEIRA MORA NA CAIXA (A15,
+     * D-323). Este comentário dizia que o texto "nomeia o que a RPC REALMENTE
+     * busca" — e ele nomeava cinco entidades desde que D-216 levou
+     * `search_entities` a sete. Completar a lista não cabe: medido, as sete por
+     * extenso pedem 474px e o campo tem 362px a 1440px (e 232px a 900px). Então
+     * o gatilho diz três entidades verdadeiras com reticências, cabendo em todas
+     * as larguras de tela larga, e a lista completa — derivada da lista de
+     * entidades, com teste exato — aparece na caixa aberta, onde há espaço.
+     *
+     * O frame diz "SKU, pedido, anúncio ou ação", e as duas recusas continuam:
+     * "ação" não tem destino por id, e "pedido" de VENDA não tem página.
      */
     return (
       <button
@@ -149,7 +156,7 @@ export function CommandPalette({ organizationId }: { organizationId: string | nu
         }}
       >
         <span aria-hidden="true" className="sb-search-icon">⌕</span>
-        <span className="sb-search-label">Buscar SKU, anúncio, conta, fornecedor ou pedido de compra…</span>
+        <span className="sb-search-label">Buscar SKU, anúncio, NF-e…</span>
         <kbd>Ctrl K</kbd>
       </button>
     );
@@ -190,7 +197,9 @@ export function CommandPalette({ organizationId }: { organizationId: string | nu
             onChange={(event) => {
               void search(event.target.value);
             }}
-            placeholder="Busque por SKU, MLB, título, fornecedor, pedido…"
+            // O que se DIGITA, e não uma segunda lista de entidades — a lista mora
+            // na frase abaixo. "pedido" sozinho prometia pedido de venda.
+            placeholder="Código, título, MLB, documento ou número…"
             aria-label="Buscar"
           />
           <kbd>ESC</kbd>
@@ -207,7 +216,7 @@ export function CommandPalette({ organizationId }: { organizationId: string | nu
         )}
 
         {searchError === null && query.trim().length < 2 && (
-          <p className="sb-empty">Digite ao menos duas letras.</p>
+          <p className="sb-empty">Digite ao menos duas letras. A busca alcança {textoDasEntidadesBuscaveis()}.</p>
         )}
 
         {grupos.map((grupo) => (

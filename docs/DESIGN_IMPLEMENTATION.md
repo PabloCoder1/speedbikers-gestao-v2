@@ -314,6 +314,7 @@ branco embutido.
 | ~~Drawer "Inspeção Rápida" (produtos)~~ | **entregue em D38** (D-281) — a linha continua levando ao dashboard completo, e a gaveta também | — |
 | ~~`MlbDetailDrawer` e as outras três~~ | **entregues em D39** (D-282). O que ficou de fora são as ABAS que o frame desenha dentro de duas delas — oito no anúncio, cinco no fornecedor: elas são as telas cheias que já existem (D13, D-174), e reproduzi-las na gaveta seria a segunda implementação da mesma interface | — |
 | Nome do comprador, logística e timeline da transportadora na gaveta do pedido | conferido em `\d`: `orders` guarda `buyer_id` (um número) e `shipping_id`, e não há tabela de envio nem de comprador. O que existe é o registro de EXCEÇÕES em `domain_events` | D-282 |
+| Texto da busca do topbar "**Buscar SKU, pedido, anúncio ou ação**" | "ação" não tem destino por id (não há rota por ação) e "pedido" de VENDA não tem página (D-060). O gatilho diz "Buscar SKU, anúncio, NF-e…" — curto para caber sem corte — e a lista completa das sete entidades aparece na caixa aberta, derivada da lista e com teste exato | D-323, D-216, D-060 |
 | Célula **"Logística"** na grade do cabeçalho da gaveta do pedido | sem fonte — a célula dá lugar ao frete e desconto do vendedor (`order_financials`), que ocupam o mesmo lugar no ritmo 2×2; o e2e afirma a ausência | D-321, D-282 |
 | **Chão cinza** no corpo das gavetas de anúncio, fornecedor e usuário (`bg-background`) | o chão só vale sob cartão branco (D-285). Essas três são lista de fatos em `.sb-detail-row`, e cinza sob fio sem cartão seria o passo cinza pela metade. A gaveta do pedido, que é de cartões, tem o chão (`Drawer chao`). **Condição, não pendência:** entra em cada uma quando o conteúdo dela virar cartão | D-321 |
 | "Saúde do Anúncio" (Full ativo · competitividade de preço · qualidade das fotos) | dos três sinais só o Full tem fonte — concorrência não é coletada e qualidade de foto não existe no esquema. Um bloco com um sinal de três não é o bloco do frame | D-282 |
@@ -697,7 +698,7 @@ parece a aplicação antiga com o tema do Figma?*
 
 | Superfície | Fidelidade antes → depois | Status | Diferença principal que restou | Código legado |
 |---|---:|---|---|---|
-| Shell (sidebar, topbar, busca) | 78% → 86% → **91%** (A2) | ALINHADO | sem botão de recolher em tela larga; logo em texto | nav horizontal antiga: **removida** (não existia mais consumidor); paleta refeita pelo `.command` |
+| Shell (sidebar, topbar, busca) | 78% → 86% → **91%** (A2) → **92%** (A15) | ALINHADO | sem botão de recolher em tela larga; logo em texto; ~~texto da busca desatualizado e cortado~~ — **entrou em A15** (D-323) | nav horizontal antiga: **removida** (não existia mais consumidor); paleta refeita pelo `.command` |
 | Design system (tokens, componentes) | 70% → 80% → **88%** (A2) | ALINHADO | ~~falta `.sb-drawer`~~ — **nasceu em D38** (D-281), com `.sb-detail-row` e `.sb-text-button`; `table-styles.ts` foi apagado em D-275 | cinco mapas de tom → **um** (`tone.ts`); `StatePill` cápsula → chip; `.sb-modal`/`.sb-command` nasceram; `table-styles.ts` MERGE pendente (2 consumidores não migrados) |
 | Home | 78% → **87%** | ALINHADO | seletor "14 dias ⌄" do gráfico; hora relativa no feed | `TOM` local **removido**; `.sb-attention-value` **removida** |
 | Vendas | 70% → 85% → **88%** (A2) → **90%** (A14) | ALINHADO | legenda do gráfico no rodapé (frame põe no cabeçalho); ~~altura do SVG proporcional~~ — **entrou em A14** (D-322): altura fixa do frame e texto fora do SVG | `FILTER_DATE_STYLE` **removido**; 3 menus → `FilterMenu`; "Cancelamentos e taxas" **dissolvido**; `SavedFilters` no design system |
@@ -731,7 +732,7 @@ próximo = 80, validada contra o Figma = 95, + cleanup + testes = 100.
 
 | Bloco | Peso | A1 | A2 | D13 | A3 | D38/D39 | A4 | A5 | **Cinza** | **Fusão** |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| Shell + navegação | 8 | 86% | 91% | 91% | 91% | 91% | 91% | 91% | 91% | 91% |
+| Shell + navegação | 8 | 86% | 91% | 91% | 91% | 91% | 91% | 91% | 91% | 91% → **92%** (A15) |
 | Design system (tokens, componentes, tabela, campo, menu, chip, modal) | 10 | 80% | 88% | 88% | 88% | 88% | **82%** | **94%** | **97%** | **97%** |
 | Home | 6 | 87% | 87% | 87% | 87% | 87% | 87% | 87% | 87% | 87% → **90%** (A11) |
 | Vendas | 8 | 85% | 88% | 88% | 88% | 88% | 88% | 88% | 88% | 88% → **90%** (A14) |
@@ -1043,6 +1044,33 @@ está na "Próxima fatia segura".
 
 ## Última fatia concluída
 
+**A15 — O RÓTULO DA BUSCA DO SHELL (D-323)** — o último da fila de A10. O texto
+do gatilho já divergia do frame de propósito ("nomeia o que a RPC realmente
+busca"), mas D-216 levou a busca de cinco para **sete** entidades e o texto
+ficou dizendo cinco.
+
+| | medido antes | agora |
+|---|---|---|
+| gatilho | 5 entidades, **cortado a partir de 1100px** | "Buscar SKU, anúncio, NF-e…", inteiro a 1440, 1100 e 900px |
+| as 7 por extenso | pedem 474px — não cabem nem a 1440px | moram na caixa aberta, em frase derivada da lista |
+| placeholder | "…fornecedor, pedido…" (pedido de compra, sem dizer) | "Código, título, MLB, documento ou número…" |
+
+A frase sai de `SEARCH_ENTITY_TYPES` com teste **exato** — conferir "cada rótulo
+aparece" compararia o mapa com ele mesmo (D-209). As recusas do frame ("ação",
+"pedido" de venda) saíram do comentário para "Diferenças intencionais", e
+`e2e/busca.spec.ts` é o primeiro caso que olha para a busca.
+
+**Verificação:** `check` 29/29 (`--force`), build 8/8, e2e **138/138** em banco
+recriado (+1), `check:embeds` e os guardas de `web` verdes; integração não rodou
+(sem migration nem SQL). Medido depois: o gatilho inteiro a 1440, 1280, 1100, 900
+e 768px; a frase da caixa sem transbordar; o placeholder com folga.
+
+**Em aberto, achado na captura e anterior a esta fatia:** o componente troca o
+gatilho pela caixa enquanto ela está aberta, então abrir a busca **tira o campo
+da barra** e desloca os botões por trás do fundo escurecido.
+
+## Fatias anteriores
+
 **A14 — O GRÁFICO DE VENDAS COM A ALTURA DO FRAME (D-322)** — o terceiro da
 fila de A10, registrado desde A2 como "altura do SVG proporcional". Medido antes
 de mexer, o nome subestimava: com `height: auto`, a altura seguia a largura e o
@@ -1092,8 +1120,6 @@ recriado (+1), `check:embeds` e os guardas de `web` verdes; integração não ro
 (sem migration nem SQL). Medido depois nas quatro larguras: plotagem de 224px e
 165px fixa, eixo em 9px, leitura em 11px, nenhum texto dentro do SVG. As imagens
 confirmam o rótulo do topo inteiro e as datas alternadas a 375px.
-
-## Fatias anteriores
 
 **A13 — A GAVETA DO PEDIDO EM CARTÕES (D-321)** — o segundo da fila de A10. A
 gaveta nasceu em D-282 como lista corrida de fatos sobre branco; o frame compõe

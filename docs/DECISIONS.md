@@ -10402,3 +10402,61 @@ Os dois viraram assercao de CAIXA no caso de e2e (rotulo do topo dentro da figur
 
 Medido DEPOIS, no servidor de producao, nas mesmas quatro larguras da medicao de antes: area de plotagem **224px em `/vendas` e 165px na Home em 1440, 1100, 768 e 375**, rotulo do eixo **9px** e caixa de leitura **11px** em todas, e **nenhum `<text>`** dentro do SVG. O hover a 90% da largura abre a caixa (250×67) com a data, o valor e a linha do periodo anterior. As imagens confirmam o rotulo do topo inteiro e, a 375px, as datas do eixo X alternadas sem se encostar.
 
+## D-323 - A15: o rotulo da busca do shell tinha envelhecido em D-216, e a promessa inteira nao cabe no campo
+
+**Contexto:** o ultimo da fila de D-310. O texto do gatilho da busca ja divergia do frame DE PROPOSITO: o comentario do componente dizia que ele "nomeia o que a RPC REALMENTE busca" e recusava "acao". Mas D-216 levou `search_entities` de cinco para **sete** entidades (atendimento e NF-e) e ninguem voltou ao texto -- a frase que existia para ser a verdade tinha deixado de ser. A pergunta de D-282, de novo: *este registro ainda e verdade?*
+
+---
+
+**1. O QUE FOI MEDIDO ANTES**
+
+O campo e `min(455px, 50%)` da barra e corta com reticencias. Medido no servidor de producao, injetando cada texto no DOM:
+
+| largura | texto de hoje (5 entidades) | as 7 por extenso | texto do frame |
+|---|---|---|---|
+| 1440 e 1280 | cabe (362 de 362px) | **cortado** (pede 474px) | cabe |
+| 1100 | **cortado** (362 de 332px) | cortado | cabe |
+| 900 | **cortado** (362 de 232px) | cortado | cabe |
+
+E a caixa aberta tinha o mesmo defeito por outro caminho: o placeholder dizia "Busque por SKU, MLB, titulo, fornecedor, pedido..." -- "pedido" ali e pedido de COMPRA, e faltavam conta, atendimento e NF-e. Nenhum teste afirmava nenhum dos dois textos.
+
+---
+
+**2. COMPLETAR A LISTA NAO CABE -- entao a promessa inteira mudou de lugar**
+
+A correcao obvia (escrever as sete) mede 474px e nao cabe nem na tela mais larga. Encurtar a lista escolhendo entidades faz o texto cortado mentir menos, mas continua cortado a partir de 1100px. A saida separa as duas funcoes que o texto acumulava:
+
+- **o gatilho diz pouco e diz certo:** "Buscar SKU, anuncio, NF-e..." -- tres entidades verdadeiras com reticencias, cabendo a 1440, 1100 e 900px;
+- **a promessa inteira mora na caixa aberta**, que tem 520px e quebra linha: *"Digite ao menos duas letras. A busca alcanca SKU, anuncio, conta, fornecedor, pedido de compra, atendimento e NF-e."*;
+- **o placeholder diz o que se DIGITA**, nao uma segunda lista: "Codigo, titulo, MLB, documento ou numero...".
+
+---
+
+**3. A FRASE SAI DA LISTA, E O TESTE NAO COMPARA O MAPA COM ELE MESMO**
+
+`textoDasEntidadesBuscaveis()` em `lib/labels.ts` monta a frase a partir de `SEARCH_ENTITY_TYPES` e do mapa de rotulos -- nome vira minusculo no meio da frase, sigla mantem a caixa. Entidade nova muda a frase sozinha.
+
+O teste unitario e a **frase exata**, de proposito. "Cada rotulo aparece na frase" seria o guarda vazio de D-209: a frase sai do mesmo mapa, entao passaria sempre. A frase exata reprova quando a oitava entidade chegar, e e esse o momento em que alguem precisa ler o que a tela vai prometer. A corrente fica inteira: SQL → teste de integracao → tupla → `Record` que nao compila sem rotulo → frase derivada → teste exato → e2e.
+
+---
+
+**4. AS RECUSAS DO FRAME, AGORA ESCRITAS NA TABELA**
+
+O frame diz "SKU, pedido, anuncio ou acao". As duas recusas continuam e so viviam no comentario do componente: **"acao"** nao tem destino por id (nao existe rota por acao), e **"pedido" de venda** nao tem pagina (D-060; a gaveta do pedido de D-282 e superficie dentro do atendimento, nao destino de navegacao). Entraram em "Diferencas intencionais".
+
+---
+
+**5. O PRIMEIRO CASO QUE OLHA PARA A BUSCA**
+
+`e2e/busca.spec.ts`: o gatilho nao e cortado a 1440, 1100 e 900px e nao promete "acao"; a caixa aberta diz a frase exata; e a busca continua achando -- o codigo do SKU do seed leva a linha dele.
+
+---
+
+**Impacto:** `apps/web/lib/labels.{ts,test.ts}` (`textoDasEntidadesBuscaveis`, +2 casos), `apps/web/components/command-palette.tsx` (gatilho, placeholder e a frase na caixa), `apps/web/e2e/busca.spec.ts` (novo). **Sem migration e sem mudanca na RPC.**
+
+**Verificacao:** `check` **29/29** (`--force`, web 551 casos com os 2 novos), build 8/8, e2e **138/138** em banco recriado (+1, `busca.spec.ts`), `check:embeds` com 36 projecoes e os quatro guardas de `web` verdes. A integracao nao rodou: nao ha migration nem SQL, e a ultima (663/663, A13) foi sobre as mesmas migrations.
+
+Medido DEPOIS no servidor de producao: o gatilho "Buscar SKU, anuncio, NF-e..." **nao e cortado em nenhuma das cinco larguras** (1440, 1280, 1100, 900 e 768 -- a 1100px ocupa 332 de 332px, a 900px 232 de 232px); a frase da caixa sai inteira (504×116px, sem transbordar); o placeholder pede 253px de um campo de 432px. A imagem da caixa mostra a frase centrada em duas linhas, e a da barra a 900px mostra o gatilho inteiro com o `Ctrl K`.
+
+**Uma captura minha nao prova o que parecia provar, e fica dito:** a imagem da barra a 1440px foi tirada com a caixa AINDA ABERTA, e o componente troca o gatilho pela caixa enquanto ela esta aberta -- entao a barra aparece sem campo nenhum, atras do fundo escurecido. O gatilho a 1440px esta provado pela medida de DOM, nao por aquela imagem. E a troca em si e comportamento anterior a esta fatia, fora do escopo: abrir a busca TIRA o campo da barra e desloca os botoes por tras do fundo. Registrado como observacao em aberto.
+

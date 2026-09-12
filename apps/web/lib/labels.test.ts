@@ -1,7 +1,14 @@
 import { EVENT_SEVERITY } from "@sb/domain";
 import { describe, expect, it } from "vitest";
 
-import { eventTypeLabel, relistStatusLabel, runStatusLabel } from "./labels.js";
+import {
+  eventTypeLabel,
+  relistStatusLabel,
+  runStatusLabel,
+  SEARCH_ENTITY_TYPES,
+  searchEntityLabel,
+  textoDasEntidadesBuscaveis,
+} from "./labels.js";
 
 /**
  * Todo tipo de evento tem rótulo (D-208).
@@ -76,5 +83,28 @@ describe("rótulos de estado de republicação (D-295)", () => {
 
   it("estado desconhecido devolve o código, sem inventar tradução", () => {
     expect(relistStatusLabel("PAUSED")).toBe("PAUSED");
+  });
+});
+
+/**
+ * O que a busca alcança, numa frase (A15, D-323).
+ *
+ * O teste é a FRASE EXATA de propósito. Conferir "cada rótulo aparece na frase"
+ * seria o guarda vazio de D-209 — a frase sai do mesmo mapa, então passaria
+ * sempre. A frase exata reprova quando `search_entities` ganha a oitava
+ * entidade, e é esse o momento em que alguém precisa ler o que a tela vai
+ * prometer.
+ */
+describe("texto das entidades da Busca Universal", () => {
+  it("diz as sete entidades, com siglas em caixa alta e o resto no meio da frase", () => {
+    expect(textoDasEntidadesBuscaveis()).toBe(
+      "SKU, anúncio, conta, fornecedor, pedido de compra, atendimento e NF-e",
+    );
+  });
+
+  it("toda entidade da lista tem rótulo, e nenhum volta cru para a frase", () => {
+    for (const tipo of SEARCH_ENTITY_TYPES) {
+      expect(searchEntityLabel(tipo), tipo).not.toBe(tipo);
+    }
   });
 });
