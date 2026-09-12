@@ -245,7 +245,7 @@ Nada disto pode ser feito por um agente.
 
 | | |
 |---|---|
-| filtros de Conta e Marca | **PARCIAL**: `/curva-abc` (D-235) e `/cobertura` (D-236) feitos; falta `/vendas`. **Origem fica de fora** — `is_imported` medido como não confiável |
+| ~~filtros de Conta e Marca~~ | ✅ **CONCLUÍDO** nas três telas que o mediam (D-235→D-237). **Origem fica de fora** — `is_imported` medido como não confiável |
 
 **Dependentes de dado/tempo (D)** — não é possível hoje, e forçar seria inventar:
 
@@ -271,59 +271,12 @@ expansão do "O que aconteceu?" · eventos adicionais de SAC · os 2 pedidos sem
 
 ### Próxima tarefa segura
 
-✅ **Entregues e verificados** (o porquê de cada um está na decisão; aqui só o
-que já não é pendência): as **nove abas do Dashboard de SKU** (D-224 fechado em
-D-228, três das quatro últimas por reuso), a **Central de Integrações**
-(D-231), a **revisão adversarial dela** (D-232 — sanitizador de erro nas cinco
-telas, uma lista de chave sensível com dois consumidores) e o **Hub de
-Configurações** (D-233 — sete seções numa viagem, o Hub não edita, aponta).
-Bateria da última: **577/577**, 29/29, 8/8, **33** embeds, 55, **19/19** (com
-os DOIS membros no seed).
-
----
-
-✅ **D-234 fechou o defeito do segundo usuário.** 26 telas liam
-`organization_members` sem filtrar por usuário e devolviam `PGRST116` assim
-que a organização ganhava o segundo membro — *"sem organização"* para o
-próprio ADMIN. Agora leem `lib/membership.ts`, que chama
-`get_current_membership()`: o filtro por `auth.uid()` acontece no BANCO, então
-continua sendo **uma ida** (fazer em JS exigiria `getUser()` antes da consulta,
-e as duas ficariam em série). **O seed cria o segundo usuário**, e a suíte
-ficaria vermelha se alguém reintroduzir a leitura sem filtro.
-
-⚠️ **`/usuarios` continua lendo direto, de propósito** — ela lista membros.
-
-✅ **Filtro de Marca em `/curva-abc` (D-235) e `/cobertura` (D-236).** Marca é
-`skus.supplier_brand` — `skus.brand` guarda a categoria do UpSeller e diverge
-em 2.320 dos 3.554 SKUs.
-
-✅ **Filtro de Marca em `/vendas` (D-237) — item P1 dos filtros CONCLUÍDO.** A
-mais difícil das três, e a dificuldade não era SQL: **nem todo número de vendas
-tem versão por marca**. O que decompõe foi provado (a soma dos itens bate
-exatamente com o total dos pedidos); o que não decompõe volta **NULL** —
-compras por pack, ticket médio, trio de cancelamento e a margem inteira. A
-tabela por métrica está em `docs/METRICS.md` **5E**, e é lá que se consulta
-antes de recortar qualquer número de vendas por marca de novo.
-
-🟡 **A lição desta fatia, e ela custou um build vermelho:** a conferência de
-D-236 (*"pergunte ao catálogo quem chama, ANTES de escrever"*) estava certa e
-**insuficiente** — `pg_proc` só enxerga dentro do banco, e o **Copiloto
-(`apps/api/src/copilot.ts`) chama `get_sales_summary` de fora dele**. A
-pergunta certa tem duas metades: a consulta ao catálogo **e** um `grep` no
-monorepo. Faça as duas antes de mudar assinatura de RPC.
-
-⚠️ **Linha de base contra o Dev não é prova.** O Dev processa ~221 webhooks por
-hora: capturei os números antes de aplicar a migration e quatro dos cinco
-"mudaram" depois — era o banco andando, não regressão. A prova que vale compara
-a RPC com a leitura direta da mesma fonte **no mesmo instante**.
-
-🔴 **A próxima tarefa NÃO foi medida.** As pendências saudáveis (B) que restam
-no `docs/ROADMAP.md` são o **Aprendizado humano supervisionado** (reusa a Base
-de Conhecimento de D-113; a regra "nada promovido sem humano" já vive na policy
-de insert, então a fatia é sobre o que ALIMENTA sugestões) e os **filtros de
-Conta e Marca** em telas ainda não cobertas — este item acabou de fechar para
-as três telas que o mediam, então reabri-lo exige medir onde mais faz sentido.
-Ler o item no ROADMAP e a tela dona antes de escrever.
+A próxima tarefa é a fila de design da linha **Frente atual**, no topo. O
+histórico que morava aqui (entregas D-224→D-237, o segundo usuário, os filtros
+de Marca e duas lições que continuam valendo — **mudança de assinatura de RPC
+pede consulta ao catálogo E `grep` no monorepo**, e **linha de base contra o Dev
+só prova no mesmo instante**) está em
+`docs/archive/handoffs/2026-09-02_a_2026-09-12.md`.
 
 ---
 
