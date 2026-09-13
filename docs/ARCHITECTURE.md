@@ -112,7 +112,7 @@ Servidor HTTP (Hono), `min-instances=1`, timeout curto, concorrência alta.
 
 **Faz:**
 
-- `POST /webhooks/mercado-livre` — ACK em milissegundos, **zero chamada de rede**, grava a notificação e enfileira.
+- `POST /webhooks/mercado-livre` — ACK dentro dos 500 ms do Mercado Livre, e enfileira. Tópico sem consumidor responde sem I/O; os com trabalho fazem duas idas de rede antes do ACK (a conta no Postgres e a Cloud Task) — D-339.
 - OAuth do Mercado Livre: início e callback com PKCE S256, guarda e refresh de token. O verifier PKCE e os tokens ficam cifrados; é onde os segredos vivem (D-046, D-049).
 - **Comandos privilegiados** que o `web` não pode executar: disparar sync manual, confirmar NF-e, aprovar pedido de compra, disparar diagnóstico.
 - **Copiloto**: orquestra ferramentas determinísticas; desde D-082, `narrate_sku_diagnosis` usa Claude Haiku 4.5 para narrar um contrato já calculado. Planner por linguagem natural, streaming SSE real e UI de chat ainda não estão implementados.
@@ -209,7 +209,8 @@ Detalhamento completo em `docs/DATABASE.md`.
 
 ```text
 Webhook ML -> api  POST /webhooks/mercado-livre
-   ACK <200ms. Zero chamada de rede. Grava notificação e cria Cloud Task
+   ACK < 500ms (regra do ML). Tópico sem consumidor: ACK sem I/O (D-339).
+   Tópico com trabalho: resolve a conta e cria Cloud Task
    com nome = hash(recurso) -> notificações repetidas colapsam numa só.
                          |
 Cloud Scheduler -> api --+ reconciliação por janela + backfill (fila de prioridade baixa)

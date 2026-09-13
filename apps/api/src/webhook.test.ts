@@ -341,6 +341,75 @@ describe("receiveWebhook — tópico questions", () => {
     expect(registro?.fields).toMatchObject({ topic: "shipments", resource: "/shipments/44556677" });
   });
 
+  /**
+   * D-339 — o pico diário: 776 notificações em 25 s, TODAS de tópico sem
+   * consumidor, e cada uma consultava `ml_accounts` antes do ACK. O banco que
+   * explode ao ser tocado é a prova de que o ramo responde sem I/O nenhum.
+   */
+  function dbQueExplode(): WebhookDeps["db"] {
+    return {
+      from: () => {
+        throw new Error("consultou o banco");
+      },
+    } as unknown as WebhookDeps["db"];
+  }
+
+  it.each([
+    ["items_prices", "/items/MLB1054990648/prices"],
+    ["public_offers", "/seller-promotions/offers/OFFER-MLB1054990648-1"],
+    ["items", "/items/MLB1054990648"],
+  ])("tópico %s sem consumidor responde sem consultar o banco", async (topic, resource) => {
+    const ctx = deps();
+    ctx.deps.db = dbQueExplode();
+
+    const outcome = await receiveWebhook(ctx.deps, { ...NOTIFICATION, topic, resource });
+
+    expect(outcome).toEqual({ status: "no_consumer", topic });
+    expect(ctx.enqueued).toHaveLength(0);
+  });
+
+  it("o log do tópico sem consumidor identifica a conta pelo user_id da notificação", async () => {
+    const registros: { event: string; fields: Record<string, unknown> }[] = [];
+    const ctx = deps();
+    ctx.deps.db = dbQueExplode();
+
+    ctx.deps.logger = {
+      ...ctx.deps.logger,
+      info: (event: string, fields: Record<string, unknown>) => {
+        registros.push({ event, fields });
+      },
+    } as typeof ctx.deps.logger;
+
+    await receiveWebhook(ctx.deps, { ...NOTIFICATION, topic: "public_offers", resource: "/seller-promotions/offers/X" });
+
+    const registro = registros.find((r) => r.event === "ml_webhook_topic_without_consumer");
+
+    expect(registro?.fields).toMatchObject({ topic: "public_offers", user_id: NOTIFICATION.user_id });
+    expect(registro?.fields).not.toHaveProperty("ml_account_id");
+  });
+
+  it("conta desconhecida em tópico sem consumidor: ACK sem consulta, porque não há trabalho que a conta mudaria", async () => {
+    const ctx = deps({ accountExists: false });
+
+    const outcome = await receiveWebhook(ctx.deps, { ...NOTIFICATION, topic: "shipments", resource: "/shipments/44556677" });
+
+    expect(outcome).toEqual({ status: "no_consumer", topic: "shipments" });
+    expect(ctx.lines.join()).not.toContain("ml_webhook_unknown_account");
+  });
+
+  it.each([
+    ["questions", "/questions/12345678901"],
+    ["messages", "fd1d2e37ad004ede9e0bf25d1215002d"],
+    ["orders_v2", "/orders/2000003508426396"],
+    ["post_purchase", "/post-purchase/v1/claims/5000000001"],
+  ])("tópico %s tem trabalho: continua resolvendo a conta antes de enfileirar", async (topic, resource) => {
+    const ctx = deps();
+    ctx.deps.db = dbQueExplode();
+
+    await expect(receiveWebhook(ctx.deps, { ...NOTIFICATION, topic, resource })).rejects.toThrow("consultou o banco");
+    expect(ctx.enqueued).toHaveLength(0);
+  });
+
   it("mensagem NÃO cai mais no caminho genérico — tem job próprio agora", async () => {
     const ctx = deps();
 

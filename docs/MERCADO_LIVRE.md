@@ -234,7 +234,9 @@ Tópicos "com subtópicos" (`messages`, `vis_leads`, `post_purchase`) trazem tam
 
 **O corpo não traz o objeto de negócio — só um ponteiro `resource`.** A integração faz um GET subsequente para obter o detalhe. Confirma o desenho já previsto em `docs/ARCHITECTURE.md` secao 10 (worker busca no ML após receber a notificação).
 
-**Regra dura de tempo:** responder HTTP 200 em até **500 ms**, sem chamada de rede no handler — já é o desenho da `api`. Um tópico que falhar repetidamente pode ser **desativado por fallback**, exigindo reinscrição manual.
+**Regra dura de tempo:** responder HTTP 200 em até **500 ms**, sem chamada de rede no handler. Um tópico que falhar repetidamente pode ser **desativado por fallback**, exigindo reinscrição manual.
+
+**O que a `api` cumpre dessa regra, medido em 2026-09-13 (D-339):** esta seção dizia "já é o desenho da `api`", e não era. Toda notificação consultava `ml_accounts` no Postgres antes do ACK, e as com trabalho ainda criam a Cloud Task. Fora de pico o p95 do ACK é ~260 ms; **nos picos passou de 7 s** (um lote de 776 notificações de `items_prices`/`public_offers`/`items` em 25 s, todas sem consumidor). Desde D-339 o tópico sem consumidor — 76% do volume — responde antes de qualquer I/O. Os tópicos com trabalho (`orders_v2`, `post_purchase`, `questions`, `messages`) continuam com duas idas de rede no caminho do ACK.
 
 **Avisos de depreciação já publicados** (nenhum bloqueia a V3 hoje, registrados para não implementar campo que vai sumir):
 

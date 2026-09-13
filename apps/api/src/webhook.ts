@@ -123,7 +123,7 @@ function isReadOnlyNotification(notification: MercadoLivreNotification): boolean
 function routeJob(
   notification: MercadoLivreNotification,
   mlAccountId: string,
-): RoutedJob | "no_consumer" | null {
+): RoutedJob | null {
   if (notification.topic === "questions") {
     const match = QUESTION_RESOURCE_PATTERN.exec(notification.resource);
     const questionId = match === null ? Number.NaN : Number(match[1]);
@@ -153,17 +153,24 @@ function routeJob(
     };
   }
 
-  // Topico sem consumidor NAO vira job (D-179). Antes, tudo que nao fosse
-  // `questions`/`messages` caia no generico, o worker devolvia
-  // `done / processed: 0`, e a notificacao tinha custado uma Cloud Task, uma
-  // invocacao de Cloud Run e uma linha de `job_runs` para nada — 218.750
-  // execucoes medidas assim. A lista vive em `@sb/contracts` para a `api` e
-  // o `worker` nunca discordarem sobre o que tem consumidor.
-  if (!hasWebhookConsumer(notification.topic)) {
-    return "no_consumer";
-  }
-
+  // Chega aqui só tópico com consumidor no caminho genérico: o sem consumidor
+  // já respondeu em `receiveWebhook`, antes de resolver a conta (D-339).
   return { jobType: "sync.webhook.received", payload: { ...notification, mlAccountId } };
+}
+
+/** Tópicos com job PRÓPRIO em `routeJob` — não entram na lista de `@sb/contracts`. */
+const TOPICS_WITH_OWN_JOB = ["questions", "messages"] as const;
+
+/**
+ * Tópico sem consumidor NÃO vira job (D-179). Antes, tudo que não fosse
+ * `questions`/`messages` caía no genérico, o worker devolvia
+ * `done / processed: 0`, e a notificação tinha custado uma Cloud Task, uma
+ * invocação de Cloud Run e uma linha de `job_runs` para nada — 218.750
+ * execuções medidas assim. A lista vive em `@sb/contracts` para a `api` e o
+ * `worker` nunca discordarem sobre o que tem consumidor.
+ */
+function topicHasJob(topic: string): boolean {
+  return (TOPICS_WITH_OWN_JOB as readonly string[]).includes(topic) || hasWebhookConsumer(topic);
 }
 
 export async function receiveWebhook(deps: WebhookDeps, rawBody: unknown): Promise<WebhookOutcome> {
@@ -177,6 +184,25 @@ export async function receiveWebhook(deps: WebhookDeps, rawBody: unknown): Promi
   }
 
   const notification = parsed.data;
+
+  // D-339 — tópico sem trabalho responde ANTES de qualquer I/O. Até aqui ele
+  // consultava `ml_accounts` primeiro, e é o volume dele que faz o pico: em
+  // 13/09, 776 notificações em 25 s, TODAS sem consumidor (`items_prices`,
+  // `public_offers`, `items`), cada uma com uma ida ao Postgres antes do ACK.
+  // A fila cresceu, o Cloud Run subiu nove instâncias a frio, e o ACK chegou a
+  // 11 s contra a regra de 500 ms do Mercado Livre (`docs/MERCADO_LIVRE.md`
+  // secao 2.4). A conta não muda nada para quem não tem trabalho a fazer.
+  if (!topicHasJob(notification.topic)) {
+    deps.logger.info("ml_webhook_topic_without_consumer", {
+      topic: notification.topic,
+      resource: notification.resource,
+      // O `seller_id` da notificação identifica a conta sem ir ao banco — o
+      // `ml_account_id` custava justamente a consulta que este ramo evita.
+      user_id: notification.user_id,
+    });
+
+    return { status: "no_consumer", topic: notification.topic };
+  }
 
   // Papel confiável NÃO vem da notificação (qualquer um pode alegar um
   // seller_id) — vem de existir uma conta nossa com esse seller_id. A
@@ -218,19 +244,6 @@ export async function receiveWebhook(deps: WebhookDeps, rawBody: unknown): Promi
   }
 
   const job = routeJob(notification, account.data.id);
-
-  if (job === "no_consumer") {
-    // ACK + log estruturado, sem fila. A observabilidade continua: o que
-    // deixa de existir e a linha de `job_runs` que so registrava trabalho
-    // nenhum.
-    deps.logger.info("ml_webhook_topic_without_consumer", {
-      topic: notification.topic,
-      resource: notification.resource,
-      ml_account_id: account.data.id,
-    });
-
-    return { status: "no_consumer", topic: notification.topic };
-  }
 
   if (job === null) {
     // Não é transitório: reenviar o mesmo `resource` malformado não muda o

@@ -71,7 +71,7 @@ controlado:
 | Home, Vendas, Estoque | < 1,5 s |
 | Anúncios, SKU (por aba) | < 1,5–2 s |
 | Busca universal | percepção instantânea |
-| Webhook (ACK) | imediato, sem I/O externo |
+| Webhook (ACK) | **< 500 ms, também no pico** — regra dura do Mercado Livre; tópico sem consumidor responde sem I/O (D-339) |
 
 ---
 
@@ -729,6 +729,27 @@ reais e simulou uma regressão que não existia. Se uma medição de RLS mudar
 de forma inexplicável, confira primeiro se o papel realmente trocou.
 
 ---
+
+### A carga real, e o ACK do webhook no pico (D-339)
+
+Medido em 2026-09-13 nos logs de requisição do Cloud Run, sem tocar em nada — só latência, status e caminho.
+
+| `api`, `/webhooks/mercado-livre` | valor |
+|---|---|
+| notificações em 24 h | **65.801** (média de 2.742/h) |
+| por minuto | p50 36 · p95 115 · **máx. 1.050** (09:00 UTC) |
+| ACK geral | p50 61 ms · p95 260 ms · p99 829 ms |
+| ACK nos 10 minutos mais cheios | p50 114 ms · **p95 7.866 ms** · máx. 11.654 ms |
+
+**O que é o pico.** Em 13/09, das 09:00:15 às 09:00:40 UTC: 776 notificações, 773 da mesma conta — 354 `items_prices`, 354 `public_offers`, 65 `items` — **todas de tópico sem consumidor**. Em 12/09, às 09:01–09:02, houve outro maior (mais de 5.000, 1.668 acima de 2 s); em 11/09, nenhum.
+
+**Onde vai o tempo.** Cerca de 630 requisições em 6 s na única instância quente (`min-instances=1`). O autoscaling subiu **nove instâncias a frio** entre 09:00:21 e 09:00:25, e as requisições roteadas para elas esperaram o boot (`api_started` ~4 s depois de `Starting new instance`): p50 de 5 a 11 s nessas instâncias. A quente também sofreu (p95 2,4 s). As 497 requisições acima de 2 s caíram todas nesses dez segundos.
+
+**Por que o tópico sem consumidor pesava.** `receiveWebhook` consultava `ml_accounts` no Postgres antes de decidir que a notificação não tinha trabalho. Desde D-339 a decisão vem antes da consulta, e o lote inteiro das 09:00 responderia sem I/O. **O efeito só se confirma no primeiro pico depois do deploy** — a conferência é a mesma medição: p95 do ACK nos minutos mais cheios e `Starting new instance` na janela.
+
+**Worker, no mesmo dia:** 5.724 invocações, p50 588 ms, p95 5,5 s. As 39 acima de 30 s são varreduras agendadas (casadas pelo instante de fim com o log `*_done` do mesmo segundo): `sync.fulfillment.snapshot` 266–323 s, a cada 6 h por conta; `sync.listing-visits.snapshot` 313–364 s, uma vez ao dia; `sync.order-financials` até 131 s; `sync.listings.snapshot` até 42 s. A maior usa 40% do timeout de 900 s.
+
+**Tráfego de usuário na `api`:** 89 chamadas de `/v1` em 7 dias. As telas leem o Supabase direto, e esse lado não aparece nestes logs — é a revisão de `pg_stat_statements` que o mede.
 
 ## Relatório de saúde — `report:health` (D-205)
 

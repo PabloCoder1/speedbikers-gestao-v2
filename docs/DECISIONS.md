@@ -11208,3 +11208,62 @@ Conferido antes de rodar:
 
 **Impacto:** Cloud Run (`api` e `worker` em `d828eac`), `docs/archive/handoffs/2026-09-13_a_2026-09-13.md` (novo), `docs/{DECISIONS,DECISIONS_INDEX,HANDOFF}.md`. Nenhuma linha de codigo.
 
+## D-339 - A carga real, medida nos logs: 65 mil webhooks por dia, e o ACK passando de 7 s no pico porque o topico sem consumidor ia ao Postgres antes de responder
+
+**Contexto:** o bloqueador "testes de carga e revisao de `pg_stat_statements`" nao tinha uma medicao sequer. Carga sintetica contra o Dev bate no ambiente que a operacao usa e exige credencial. Mas a carga REAL ja passa pelo Cloud Run todo dia, e o log de requisicao guarda latencia, status e caminho -- medido ali, sem tocar em nada.
+
+---
+
+**1. O QUE A CARGA E** (2026-09-13, 24 h)
+
+| superficie | medido |
+|---|---|
+| `api`, `/webhooks/mercado-livre` | **65.801** notificacoes (2.742/h); por minuto p50 36, p95 115, **max 1.050**; ACK p50 61 ms, p95 260 ms, p99 829 ms; todas 200 |
+| `worker`, `/internal/jobs` | 5.724 invocacoes; p50 588 ms, p95 5,5 s; 39 acima de 30 s, nenhuma acima de 600 s |
+| `api`, `/v1/*` (usuario) | 89 chamadas em **7 dias** |
+
+D-332 escreveu "~221 webhooks por hora". Sao 2.742.
+
+---
+
+**2. O PICO, E ONDE VAI O TEMPO**
+
+Nos 10 minutos mais cheios, o ACK vai a **p95 7.866 ms, max 11.654 ms** -- contra a regra de **500 ms** do Mercado Livre, que reenvia ate 8 vezes em 1 h e pode **desativar o topico** que falha repetidamente (`MERCADO_LIVRE.md` 2.4 e 2.5).
+
+O de 13/09, das 09:00:15 as 09:00:40 UTC: **776 notificacoes, 773 da mesma conta** -- 354 `items_prices`, 354 `public_offers`, 65 `items`. **Todas de topico sem consumidor.** Cerca de 630 requisicoes em 6 s na unica instancia quente; o autoscaling subiu **nove instancias a frio** entre 09:00:21 e 09:00:25, e o que foi roteado para elas esperou o boot (`api_started` ~4 s depois de `Starting new instance`): p50 de 5 a 11 s. A instancia quente tambem sofreu (p95 2,4 s). As 497 requisicoes acima de 2 s cairam todas nesses dez segundos. Em 12/09 houve um maior (mais de 5.000 em dois minutos, 1.668 acima de 2 s); em 11/09, nenhum.
+
+---
+
+**3. A CAUSA ESTAVA ESCRITA COMO ACEITA**
+
+`receiveWebhook` fazia, nesta ordem: validar o corpo, **consultar `ml_accounts` por `seller_id`**, e so depois rotear -- e o roteamento e que descobria que o topico nao tinha consumidor. O cabecalho de `webhook.ts` justificava: *"zero chamada de rede e sobre NAO chamar o Mercado Livre -- nao sobre evitar o proprio Postgres: uma busca indexada por `seller_id` e rapida"*. Rapida sozinha. Seiscentas e trinta em seis segundos, nao.
+
+E quatro documentos diziam o contrario do codigo: "**zero chamada de rede**" em `API.md` e duas vezes em `ARCHITECTURE.md` ("ACK <200ms"), e "ja e o desenho da `api`" em `MERCADO_LIVRE.md`. Os quatro foram corrigidos para o que e.
+
+---
+
+**4. A CORRECAO**
+
+`topicHasJob` -- os topicos de job proprio (`questions`, `messages`) mais `WEBHOOK_TOPICS_WITH_CONSUMER` (D-179) -- e decidido **logo depois de validar o corpo**. Topico sem trabalho responde antes de qualquer I/O, e o log `ml_webhook_topic_without_consumer` passa a carregar o `user_id` da notificacao no lugar do `ml_account_id`, que custava justamente a consulta evitada. `routeJob` perdeu o ramo que ficou inalcancavel.
+
+**Uma mudanca de comportamento, deliberada:** notificacao de seller desconhecido em topico sem consumidor responde `no_consumer`, e nao mais `unknown_account`. As duas respondem 200 ao Mercado Livre, nao ha trabalho que a conta mudaria, e nenhum consumidor le esse aviso alem dos testes.
+
+**O que NAO foi tocado:** topicos com trabalho (`orders_v2`, `post_purchase`, `questions`, `messages`) continuam com duas idas de rede antes do ACK -- a conta e a Cloud Task. Sao 24% do volume e nenhum apareceu nos picos medidos; tira-los do caminho do ACK e outro desenho (landing sem fila), e nao ha medicao que o peca hoje.
+
+---
+
+**5. COMO FOI PROVADO**
+
+- `@sb/api`: typecheck, lint e **344 testes** (`webhook.test.ts` 43, **+9**): tres topicos sem consumidor contra um banco que **explode ao ser tocado**; o log com `user_id` e sem `ml_account_id`; conta desconhecida em topico sem consumidor; e os quatro topicos com trabalho **ainda consultando** a conta (o mesmo banco explode, e eles precisam explodir).
+- **Mutacao:** com o retorno antecipado desligado (`if (false && ...)`), **12 FALHA** -- os seis de D-179, o do log e os cinco novos do ramo sem consumidor. Os quatro "tem trabalho" seguem verdes, como devem. Arquivo restaurado e conferido byte a byte.
+
+**Nao provado aqui, e escrito como tal:** que o pico deixa de subir instancias a frio. Depende do deploy -- ato que o usuario autoriza -- e do proximo pico. A conferencia e a mesma medicao desta decisao: p95 do ACK nos minutos mais cheios e `Starting new instance` na janela (`PERFORMANCE.md`). A revisao de `pg_stat_statements` do Dev continua humana: `report:health` pede a URL do banco com senha.
+
+---
+
+**6. DE CARONA: O WORKER NAO ESTA PERTO DO TETO**
+
+As 39 invocacoes acima de 30 s sao varreduras agendadas, casadas pelo instante de fim com o log `*_done`: `sync.fulfillment.snapshot` 266-323 s (a cada 6 h, por conta), `sync.listing-visits.snapshot` 313-364 s (uma vez ao dia), `sync.order-financials` ate 131 s, `sync.listings.snapshot` ate 42 s. A maior usa 40% do timeout de 900 s -- margem que acaba se o catalogo crescer 2,5 vezes, e fica registrada para ser remedida.
+
+**Impacto:** `apps/api/src/{webhook.ts,webhook.test.ts}`, `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,MERCADO_LIVRE,API,ARCHITECTURE,ROADMAP,HANDOFF}.md`. Sem migration. **Nao esta no ar.**
+

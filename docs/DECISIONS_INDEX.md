@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **334** (D-001 a D-338).
+Decisões registradas: **335** (D-001 a D-339).
 
 ## Por domínio
 
@@ -65,7 +65,7 @@ Decisões registradas: **334** (D-001 a D-338).
 - **D-311** — A11: a Home contra o frame -- o controle que o painel devia ter, a idade do FATO, e as duas recusas que a revisao produziu
 - **D-330** — Revisao de seguranca, fatia 3: o logger redigia pelo NOME da chave e deixava passar o VALOR -- e a "uma lista, dois consumidores" de D-232 estava pela metade
 
-### banco/rls (31)
+### banco/rls (32)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -98,6 +98,7 @@ Decisões registradas: **334** (D-001 a D-338).
 - **D-324** — A varredura das plpgsql que D-319 deixou aberta: nenhuma doente, e o remedio de D-319 PIORARIA as escritas em lote
 - **D-334** — Migration de PRODUCAO nao tinha caminho -- e agora tem um workflow que so aplica com ambiente travado, CI verde e o Dev ja migrado
 - **D-335** — O workflow de migrations de producao nao existia para o GitHub -- e a v3 virou a branch padrao do repositorio
+- **D-339** — A carga real, medida nos logs: 65 mil webhooks por dia, e o ACK passando de 7 s no pico porque o topico sem consumidor ia ao Postgres antes de responder
 
 ### estoque (25)
 
