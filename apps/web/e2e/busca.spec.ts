@@ -36,11 +36,27 @@ test("busca do shell: o gatilho cabe sem cortar a promessa, e a caixa diz tudo o
   }
 
   await page.setViewportSize({ width: 1440, height: 900 });
+
+  const perfilAntes = await page.locator(".sb-profile").boundingBox();
+
   await gatilho.click();
 
   const caixa = page.getByRole("dialog", { name: "Buscar na Speed Bikers" });
 
   await expect(caixa).toBeVisible();
+
+  /*
+    O CAMPO NÃO SAI DA BARRA AO ABRIR (D-326). O componente devolvia a caixa no
+    lugar do gatilho, e o bloco do perfil escorregava para a esquerda por trás do
+    fundo escurecido. As duas metades juntas: o gatilho continua lá, e o perfil
+    não muda de posição.
+  */
+  await expect(gatilho).toBeVisible();
+
+  const perfilDepois = await page.locator(".sb-profile").boundingBox();
+
+  expect(perfilAntes).not.toBeNull();
+  expect(perfilDepois?.x, "o bloco do perfil não se desloca ao abrir a busca").toBe(perfilAntes?.x);
   await expect(caixa.getByText(/A busca alcança/)).toHaveText(
     "Digite ao menos duas letras. A busca alcança SKU, anúncio, conta, fornecedor, pedido de compra, atendimento e NF-e.",
   );

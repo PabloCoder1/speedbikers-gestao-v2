@@ -126,6 +126,29 @@ export function CommandPalette({ organizationId }: { organizationId: string | nu
     router.push(href);
   }
 
+  /*
+   * O GATILHO FICA NA BARRA TAMBÉM COM A CAIXA ABERTA (D-326).
+   *
+   * O componente devolvia a caixa NO LUGAR do gatilho: abrir a busca tirava o
+   * campo do topbar, e os botões à direita escorregavam por trás do fundo
+   * escurecido. Achado na captura de A15. A caixa é `position: fixed` e não
+   * ocupa espaço, então o gatilho pode continuar onde está — a barra atrás do
+   * fundo fica igual à barra de antes de abrir.
+   */
+  const gatilho = (
+    <button
+      type="button"
+      className="sb-search"
+      onClick={() => {
+        setOpen(true);
+      }}
+    >
+      <span aria-hidden="true" className="sb-search-icon">⌕</span>
+      <span className="sb-search-label">Buscar SKU, anúncio, NF-e…</span>
+      <kbd>Ctrl K</kbd>
+    </button>
+  );
+
   if (!open) {
     /*
      * O gatilho é o campo de busca do topbar do Figma (`.search`): 36px de
@@ -147,24 +170,14 @@ export function CommandPalette({ organizationId }: { organizationId: string | nu
      * O frame diz "SKU, pedido, anúncio ou ação", e as duas recusas continuam:
      * "ação" não tem destino por id, e "pedido" de VENDA não tem página.
      */
-    return (
-      <button
-        type="button"
-        className="sb-search"
-        onClick={() => {
-          setOpen(true);
-        }}
-      >
-        <span aria-hidden="true" className="sb-search-icon">⌕</span>
-        <span className="sb-search-label">Buscar SKU, anúncio, NF-e…</span>
-        <kbd>Ctrl K</kbd>
-      </button>
-    );
+    return gatilho;
   }
 
   const grupos = agrupar(results);
 
   return (
+    <>
+    {gatilho}
     <div
       className="sb-backdrop sb-backdrop-topo"
       onClick={fechar}
@@ -242,5 +255,6 @@ export function CommandPalette({ organizationId }: { organizationId: string | nu
         ))}
       </section>
     </div>
+    </>
   );
 }

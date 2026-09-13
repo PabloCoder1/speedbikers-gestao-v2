@@ -1044,6 +1044,20 @@ está na "Próxima fatia segura".
 
 ## Última fatia concluída
 
+**A17 — O GATILHO DA BUSCA FICA NA BARRA (D-326)** — o item em aberto que a
+captura de A15 achou. `CommandPalette` devolvia a caixa no lugar do gatilho:
+abrir a busca tirava o campo do topbar e deslocava o perfil e os botões por trás
+do fundo escurecido — e, ao fechar, a barra pulava de volta. O gatilho agora é
+renderizado nos dois estados, com a caixa como irmã; ela já era `position:
+fixed`, e nada na barra tinha motivo para se mover. O e2e afirma as duas metades
+juntas: o gatilho visível com a caixa aberta, e o perfil na mesma posição.
+
+**Verificação:** build 8/8, e2e **138/138** em banco recriado, `check` 29/29
+(`--force`). Medido a 1440px antes e depois de abrir: gatilho em x=278 (455px)
+e perfil em x=1249 (108px) nos dois estados.
+
+## Fatias anteriores
+
 **A16 — A LEITURA DO GRÁFICO SEM COMPARAÇÃO (D-325)** — um dos itens em aberto
 que A14 registrou. A caixa de hover do gráfico, e o `title` de cada ponto,
 diziam **"período anterior: sem dado"** também onde não há comparação: na Home,
@@ -1057,8 +1071,6 @@ período anterior se e somente se a legenda existe.
 (`--force`). Conferido no DOM na Home e em `/vendas`: o `title` dos pontos e a
 caixa de leitura sem a linha de período anterior, e a caixa com a altura das
 duas linhas que sobraram.
-
-## Fatias anteriores
 
 **A15 — O RÓTULO DA BUSCA DO SHELL (D-323)** — o último da fila de A10. O texto
 do gatilho já divergia do frame de propósito ("nomeia o que a RPC realmente
@@ -1081,9 +1093,10 @@ recriado (+1), `check:embeds` e os guardas de `web` verdes; integração não ro
 (sem migration nem SQL). Medido depois: o gatilho inteiro a 1440, 1280, 1100, 900
 e 768px; a frase da caixa sem transbordar; o placeholder com folga.
 
-**Em aberto, achado na captura e anterior a esta fatia:** o componente troca o
-gatilho pela caixa enquanto ela está aberta, então abrir a busca **tira o campo
-da barra** e desloca os botões por trás do fundo escurecido.
+**Achado na captura, anterior a esta fatia — tratado em A17 (D-326):** o
+componente trocava o gatilho pela caixa enquanto ela estava aberta, então abrir
+a busca **tirava o campo da barra** e deslocava os botões por trás do fundo
+escurecido.
 
 **A14 — O GRÁFICO DE VENDAS COM A ALTURA DO FRAME (D-322)** — o terceiro da
 fila de A10, registrado desde A2 como "altura do SVG proporcional". Medido antes

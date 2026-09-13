@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **321** (D-001 a D-325).
+Decisões registradas: **322** (D-001 a D-326).
 
 ## Por domínio
 
@@ -212,7 +212,7 @@ Decisões registradas: **321** (D-001 a D-325).
 - **D-310** — A10: o cabecalho do anuncio ganha os dois fatos que devia desde D-168, e o caminho ate a republicacao
 - **D-316** — Gerir o vinculo de anuncio DENTRO do SKU, com a regua canonica e com confirmacao antes de gravar
 
-### outros (56)
+### outros (57)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -270,6 +270,7 @@ Decisões registradas: **321** (D-001 a D-325).
 - **D-306** — a generalizacao de D-305 estava errada, e a medicao de duas funcoes desfez
 - **D-312** — Importacoes e de ADMIN, e mudou de grupo -- com a recusa no servidor, nao so no menu
 - **D-318** — O teto de dispersao de preco: 10% sobre o MENOR, por organizacao -- a regua que faltava para o selo existir
+- **D-326** — O gatilho da busca fica na barra com a caixa aberta
 
 ### processo/docs (1)
 

@@ -10542,3 +10542,19 @@ Nas duas rodadas, nas duas funcoes, **o generico ganhou**. O custom replaneja a 
 
 Capturado no servidor de producao e conferido no DOM, na Home e em `/vendas` (as duas sem legenda, portanto sem comparacao): o `title` dos pontos diz so data e valor ("10/09/2026: R$ 200,00") -- antes carregava "· sem dado no periodo anterior" --, e a caixa de leitura aberta diz "11/09/2026 / sem metrica calculada neste dia", **sem a linha de periodo anterior**. A caixa ajusta a altura as duas linhas, sem vao onde a terceira estava.
 
+## D-326 - O gatilho da busca fica na barra com a caixa aberta
+
+**Contexto:** achado na captura de A15 (D-323) e registrado como em aberto -- anterior aquela fatia, nao causado por ela. `CommandPalette` devolvia a caixa NO LUGAR do gatilho: abrir a busca tirava o campo do topbar, e o bloco do perfil e os botoes da direita escorregavam para a esquerda por tras do fundo escurecido. Ao fechar (Esc ou ✕), a barra pulava de volta.
+
+**Por que importa, se esta atras do fundo:** o fundo escurece mas nao esconde. A barra continua visivel, e um pulo de layout no instante exato de abrir -- e de novo ao fechar -- e o movimento que o olho le como defeito, na tela que o frame poe como a forma primaria de navegar.
+
+**A correcao e de estrutura, nao de estilo:** o gatilho virou uma constante renderizada nos DOIS estados, e a caixa aberta passa a ser irma dele. A caixa ja era `position: fixed` e nao ocupava espaco na barra -- nada ali tinha motivo para se mover; se movia porque o elemento que ocupava o espaco deixava de existir.
+
+**O e2e afirma as duas metades juntas:** com a caixa aberta, o gatilho continua visivel, E o bloco do perfil tem a mesma posicao horizontal de antes de abrir. So a primeira passaria com um gatilho invisivel de largura zero; so a segunda, com o layout salvo por acaso.
+
+**Impacto:** `apps/web/components/command-palette.tsx`, `apps/web/e2e/busca.spec.ts`. Sem migration.
+
+**Verificacao:** build 8/8, e2e **138/138** em banco recriado (o caso da busca com as duas asserções novas), `check` **29/29** (`--force`, web 551). A integracao nao rodou: nao ha SQL.
+
+Medido no servidor de producao, a 1440px, antes e depois de abrir a caixa: o gatilho em **x=278, 455px de largura** e o bloco do perfil em **x=1249, 108px** -- os mesmos quatro numeros nos dois estados, com a caixa aberta. Antes da correcao, o gatilho nao existia com a caixa aberta, e a captura de A15 mostrou a barra sem campo por tras do fundo.
+
