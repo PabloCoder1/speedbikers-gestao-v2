@@ -10745,3 +10745,52 @@ Antes de escrever, as pre-condicoes foram conferidas: `proxy.ts` nao mexe em cab
 
 **O lint pegou o que o typecheck deixou passar:** a primeira versao declarava `async headers()` sem `await`, e `require-await` reprovou. A bateria que ja corria com essa versao foi PARADA antes do e2e e refeita com `Promise.resolve` -- a troca e equivalente, mas o commit precisa carregar o codigo que foi testado, nao um vizinho dele.
 
+## D-330 - Revisao de seguranca, fatia 3: o logger redigia pelo NOME da chave e deixava passar o VALOR -- e a "uma lista, dois consumidores" de D-232 estava pela metade
+
+**Contexto:** a ultima pergunta aberta das tres primeiras fatias era a redacao de log fora das telas. O logger de `@sb/observability` redigia por **nome de chave** (`token`, `secret`, `authorization`, `cookie`...), e isso e bom para o caso que ele nasceu para cobrir -- alguem despejando um objeto de credencial inteiro. Nao cobre o caso comum: **`{ reason: error.message }`**, onde a chave e inocente e o valor e a mensagem de um cliente de terceiro.
+
+---
+
+**1. A EXPOSICAO ERA ESTRUTURAL, E A MEDICAO DISSE QUE AINDA NAO VAZOU**
+
+Quantas chamadas passam texto de terceiro por uma chave inocente: das **185** chamadas de log fora de teste em `api` e `worker`, dezenas levam `reason: <erro>.message`, e tres levam o `Error` inteiro (`unhandled_request_error`, `copilot_chat_failed`, `copilot_tool_failed`) -- que `serializeError` expande em `message` **e `stack`**, os dois em claro. `ml_oauth_exchange_failed` leva a mensagem da troca de codigo com o Mercado Livre.
+
+**Medido antes de mexer**, nos logs do Dev (`api` + `worker`), sete dias, contagem sem nunca imprimir valor:
+
+| padrao | 7 dias |
+|---|---|
+| `APP_USR-` (token do ML) | **0** |
+| `TG-` (refresh do ML) | **0** |
+| `sk-ant-` | **0** |
+| inicio de JWT | **0** |
+| `Bearer ` | **0** |
+| `job_failed` -- **controle**, o termo que TEM de aparecer | 432 |
+
+A fonte e limpa hoje, e o controle prova que a consulta funciona (a licao de D-329, onde um erro escondido virou "zero"). Esta fatia e a rede para o dia em que ela deixar de ser -- a mesma classe de fatia de D-208: **o preventivo era a entrega**.
+
+---
+
+**2. A REGRA JA EXISTIA -- SO NA TELA**
+
+D-232 fechou metade de "uma lista, dois consumidores": os NOMES de chave passaram a ser compartilhados entre o logger e `apps/web/lib/sanitize.ts`. As regras de VALOR -- rotulo + forma (`chave=valor`, `Authorization: Bearer`), senha em DSN, e forma sem rotulo (`APP_USR-`, `TG-`, JWT, `sk-ant-`) -- ficaram so na tela. A tela sabia reconhecer um token que o log deixava passar.
+
+**A correcao completa a lista, em vez de copiar:** as tres familias sairam da `web` para `packages/observability/src/sensitive.ts` (`redactSecretText(texto, marcador)`), junto com `SENSITIVE_KEY_NAMES` -- que saiu de `logger.ts` para os dois modulos nao se importarem em ciclo. A ordem e a heuristica sao as de sempre, e a heuristica fica escrita com o buraco dela: um valor rotulado so e segredo se tiver digito ou for longo, para "troca de token: invalid_client" continuar legivel; `senha=correcthorse` passa, e nenhum segredo de maquina tem essa forma.
+
+**Consumidores:**
+
+- **o logger** aplica as regras em **toda string**, inclusive `message` e `stack` de um `Error` serializado, e agora **desce em arrays** -- antes uma lista de strings passava intacta. A camada por nome de chave continua na frente;
+- **a tela** importa a funcao com o marcador `[oculto]` e guarda so o que e dela: esconder query string, juntar espacos e cortar no tamanho. Nenhum dos tres e segredo, e leitura. **Os casos de `sanitize.test.ts` ficaram como estavam** -- sao eles que provam que a tela nao mudou um caractere.
+
+---
+
+**3. O QUE ESTA FATIA NAO FAZ**
+
+- **nao muda nenhuma chamada de log.** A tentacao era trocar `reason: error.message` por um campo "seguro" em cada um dos pontos; a redacao por valor no logger cobre todos de uma vez, e cobre o proximo que for escrito;
+- **nao e criptografia nem garantia.** Um segredo sem rotulo e sem prefixo conhecido (a `ML_TOKEN_ENCRYPTION_KEY` em hex, se um dia vazasse numa mensagem) nao tem forma reconhecivel. O que protege essa chave e ela nunca entrar em mensagem -- e a varredura de D-328 mostra que nao entra.
+
+---
+
+**Impacto:** `packages/observability/src/sensitive.ts` e `sensitive.test.ts` (novos), `packages/observability/src/{logger,logger.test,index}.ts`, `apps/web/lib/sanitize.ts`, `docs/{DECISIONS,DECISIONS_INDEX,ROADMAP,HANDOFF}.md`. Sem migration.
+
+**Verificacao:** `check` **29/29** (`--force`): `@sb/observability` de 23 para **35** casos (7 das regras de texto, 5 da redacao por valor no logger -- token numa chave inocente, JWT com `Bearer` na mensagem E na stack de um `Error`, string dentro de array, numero/booleano/nulo intocados, e a mensagem benigna legivel); **web 551, api 335 e worker 527, os tres sem mudar** -- nenhum teste existente dependia de um log carregar valor com forma de token, e `sanitize.test.ts` passou sem ser tocado, que e a prova de que a tela nao mudou. Build **8/8**, `db reset`, seed e e2e **140/140** em banco recriado, com a `web` importando `redactSecretText` do build de `@sb/observability`. A integracao nao rodou: nao ha SQL.
+

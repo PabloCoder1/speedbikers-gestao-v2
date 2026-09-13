@@ -26,46 +26,45 @@ export interface LoggerOptions {
   now?: () => Date;
 }
 
-const REDACTED = "[REDACTED]";
+import { redactSecretText, SENSITIVE_KEY_NAMES } from "./sensitive.js";
 
-/**
- * Chaves cujo valor nunca pode chegar ao log.
- *
- * `docs/ARCHITECTURE.md` secao 18: token do Mercado Livre nunca em log, nem
- * parcialmente. Redigir por nome de chave é o único filtro que continua
- * funcionando quando alguém despeja um objeto inteiro por engano.
- */
-// Exportada (D-232) porque a tela tem o MESMO problema em texto: o sanitizador
-// de `apps/web/lib/sanitize.ts` monta o seu regex a partir desta lista, em vez
-// de manter uma segunda lista de "parece segredo" que divergiria da primeira.
-export const SENSITIVE_KEY_NAMES: readonly string[] = [
-  "token",
-  "secret",
-  "password",
-  "passwd",
-  "authorization",
-  "api[-_]?key",
-  "credential",
-  "cookie",
-];
+const REDACTED = "[REDACTED]";
 
 const SENSITIVE_KEY = new RegExp(SENSITIVE_KEY_NAMES.join("|"), "i");
 
+/**
+ * Redige um VALOR qualquer: string passa pelas regras de texto, objeto e array
+ * descem, o resto (número, booleano, nulo) volta como veio.
+ */
+function redactValue(value: unknown): unknown {
+  if (typeof value === "string") return redactSecretText(value, REDACTED);
+
+  if (Array.isArray(value)) return value.map(redactValue);
+
+  if (value !== null && typeof value === "object") return redact(value as LogContext);
+
+  return value;
+}
+
+/**
+ * Duas camadas, e a segunda nasceu em D-330.
+ *
+ * 1. **Por NOME de chave** (`docs/ARCHITECTURE.md` secao 18): `access_token`,
+ *    `authorization`… viram `[REDACTED]` inteiros, seja qual for o valor. É o
+ *    único filtro que continua funcionando quando alguém despeja um objeto
+ *    inteiro por engano.
+ * 2. **Por VALOR**, em toda string: a camada 1 deixava passar `{ reason:
+ *    error.message }`, e é por esse campo que a mensagem de um cliente de
+ *    terceiro chega aqui. Vale para `message` e `stack` de um `Error`, que
+ *    `serializeError` já transformou em objeto antes de chegar a esta função.
+ *
+ * Arrays também descem agora — antes uma lista de strings passava intacta.
+ */
 export function redact(context: LogContext): LogContext {
   const result: LogContext = {};
 
   for (const [key, value] of Object.entries(context)) {
-    if (SENSITIVE_KEY.test(key)) {
-      result[key] = REDACTED;
-      continue;
-    }
-
-    if (value !== null && typeof value === "object" && !Array.isArray(value)) {
-      result[key] = redact(value as LogContext);
-      continue;
-    }
-
-    result[key] = value;
+    result[key] = SENSITIVE_KEY.test(key) ? REDACTED : redactValue(value);
   }
 
   return result;

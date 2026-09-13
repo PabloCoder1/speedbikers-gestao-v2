@@ -114,3 +114,48 @@ describe("redact", () => {
     expect(line).not.toContain("123456");
   });
 });
+
+/**
+ * A SEGUNDA CAMADA (D-330): o valor, e não só o nome da chave.
+ *
+ * O caso que motivou: `{ reason: error.message }` — a chave é inocente, e a
+ * mensagem de um cliente de terceiro pode carregar o token. Todos os valores
+ * abaixo são FIXTURE.
+ */
+describe("redact por valor", () => {
+  it("troca o token que chega dentro de uma chave inocente", () => {
+    const line = JSON.stringify(redact({ reason: "troca falhou: APP_USR-1234567890-fixture" }));
+
+    expect(line).not.toContain("APP_USR-1234567890");
+    expect(line).toContain("troca falhou");
+  });
+
+  it("troca o JWT depois de Bearer na mensagem E na stack de um Error", () => {
+    const { lines, logger } = captureLogger();
+    const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJmaXh0dXJlIn0.assinaturafixture123";
+
+    logger.error("chamada_falhou", { error: new Error(`401 com Authorization: Bearer ${jwt}`) });
+
+    const linha = lines[0] ?? "";
+    const error = parse(linha).error as Record<string, unknown>;
+
+    expect(linha).not.toContain(jwt);
+    expect(error.message).toContain("401");
+    expect(String(error.stack)).not.toContain("eyJhbGciOi");
+  });
+
+  it("desce em array de strings, que antes passava intacto", () => {
+    const output = redact({ tentativas: ["ok", "sk-ant-fixture-1234567"] }) as { tentativas: string[] };
+
+    expect(output.tentativas[0]).toBe("ok");
+    expect(output.tentativas[1]).not.toContain("sk-ant-fixture");
+  });
+
+  it("não mexe em número, booleano e nulo", () => {
+    expect(redact({ unidades: 12, retry: true, conta: null })).toEqual({ unidades: 12, retry: true, conta: null });
+  });
+
+  it("não come a mensagem benigna — ela precisa continuar dizendo o que aconteceu", () => {
+    expect(redact({ reason: "troca de token: invalid_client" })).toEqual({ reason: "troca de token: invalid_client" });
+  });
+});
