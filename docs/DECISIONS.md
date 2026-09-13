@@ -11098,3 +11098,55 @@ A moderada e a de D-328, e continua inalcancavel -- relido agora no codigo insta
 
 **Impacto:** `.github/workflows/ci.yml` (passo novo na job `check`), `docs/{DECISIONS,DECISIONS_INDEX,ROADMAP,HANDOFF}.md`. Nenhuma dependencia alterada.
 
+## D-337 - O fechamento da V3 contava 186 com 188 no arquivo, e um checkbox seguia aberto para uma UX ja entregue
+
+**Contexto:** com todos os bloqueadores restantes dependendo de ato humano, a pergunta foi se o que HANDOFF e ROADMAP dizem do fechamento bate com o arquivo e com o codigo. **Nao batia em cinco pontos.**
+
+---
+
+**1. A CONTAGEM**
+
+Recontada no ROADMAP (`- [x]`, `- [ ]`, `- [~]`) antes desta fatia: **188 / 23 / 2**, total 213. O HANDOFF dizia **186 / 25 / 2**. Rastreada commit a commit com `git show <commit>:docs/ROADMAP.md`: **o arquivo ja tinha 188 no proprio commit em que a linha foi escrita** (`434e4a8`, D-331). A serie e 186 em D-228 (`9952b28`), 187 em D-237 (`5e9b5f0`) e 188 em D-331 (`df938ba`) -- a linha pulou o passo de D-237 e contou o de D-331 a partir de um numero velho.
+
+E dizia **5 bloqueadores** quando a tabela do proprio HANDOFF so tinha quatro abertos. O quinto era a UX da republicacao: feita na tabela, aberta no checkbox.
+
+**Regra que fica: contagem se RECONTA no arquivo, nunca se incrementa de memoria.** Depois desta fatia: **189 / 22 / 2**, e 4 bloqueadores (backup e restore verificados, testes de carga, producao, rollout).
+
+---
+
+**2. A UX DA REPUBLICACAO, CONFERIDA ITEM A ITEM NO CODIGO**
+
+| o item pede | onde esta |
+|---|---|
+| acao secundaria | "Republicacoes →" no cabecalho do anuncio, que leva ao painel (D-310) |
+| superficie de seguranca | painel com confirmacao; a execucao nasce travada ate a caixa de ciencia (D-295) |
+| preflight e riscos visiveis | o texto do pedido diz o que a conferencia recusa -- ja republicado, estoque no Full, catalogo, ja filho -- e o motivo da falha e coluna da tabela |
+| Full, catalogo e variacoes | Full tem aba propria, somado por bucket de variacao; catalogo como atributo nao existe em `listings` (recusa registrada na pagina) |
+| dois atos | pedir e executar (D-295) |
+| progresso por estado | nove estados com rotulo em portugues, e teste que exige rotulo para cada valor do CHECK |
+| pai → filho | a leitura pega o anuncio nos dois lados (`parent_item_id` ou `child_item_id`), com link para o filho |
+| remapeamento | estado `REMAPPED` (D-163) |
+| acompanhamento 7/15/30 | **nao no painel do anuncio**: a medicao de D-164 e uma decisao com `action_outcomes`, e as janelas aparecem na aba Decisoes do SKU, que filtra por `actions.sku_id` -- republicacao sem SKU vinculado nao aparece ali |
+
+Lido em `app/anuncios/[itemId]/relist-panel.tsx`, `app/anuncios/[itemId]/page.tsx` e `app/skus/[skuId]/page.tsx`. **Veredito: `[x]`**, com a ressalva do 7/15/30 escrita no proprio item. Fora continua o de sempre: o ensaio real contra o Mercado Livre (D-162).
+
+---
+
+**3. TRES LINHAS QUE ENVELHECERAM**
+
+- **ROADMAP, retencao de `job_runs`:** "Aguardando a CI aplicar no Dev (130 de 131)". A migration `20260903120000_job_runs_expurgo_unico.sql` esta no repositorio, e a job de migrations do Dev saiu verde em `39b2dae` e `6ad0c82` -- `db push` verde e nada pendente.
+- **ROADMAP, Nacional x Importado e alias fornecedor → SKU:** abertos sem motivo escrito, embora o HANDOFF ja os classificasse como dependentes de dado. Agora o item diz: a mistura ja e **avisada** (`detectOriginMix`, D-151), e bloquear exige uma origem que nenhuma coluna fiscal da (`origin_code` contradiz a rota de compra em 707 SKUs, D-129; `is_imported` em 187 dos 228 NAVETEC, D-139). O alias depende de uma relacao que D-174 mediu inexistente. **Nenhum dos dois mudou de estado.**
+- **HANDOFF, revisao de seguranca:** "fica uma decisao de fluxo, sem dono: guarda de `pnpm audit`" -- decidida em D-336.
+
+---
+
+**4. A TROCA DA BRANCH PADRAO NAO MEXEU NA VERCEL** (conferencia que D-335 nao fez)
+
+Os dois projetos da Vercel ligados ao repositorio, listados depois da troca: `speedbikers-gestao-v2-m71j` (V3) publicou `7ac21dd` -- enviado depois da troca -- com alvo `production` e estado READY, como todos os anteriores; `speedbikers-gestao-v2` (o projeto antigo da V2) cancelou o mesmo commit, sem alvo, como todos os anteriores. **Nenhum dos dois mudou de comportamento.**
+
+---
+
+**Impacto:** `docs/{DECISIONS,DECISIONS_INDEX,ROADMAP,HANDOFF}.md`. Nenhuma linha de codigo, nenhum checkbox fechado sem conferencia no codigo.
+
+**Verificacao:** recontagem por `grep -cE` no arquivo antes e depois (188/23/2 → 189/22/2); a serie por commit; e cada linha da tabela da secao 2 lida no arquivo de onde saiu.
+
