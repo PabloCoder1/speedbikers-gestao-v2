@@ -14,12 +14,12 @@
 |---|---|
 | **Atualizado em** | 2026-09-13 |
 | **Branch** | `v3`, **branch padrão do repositório desde 2026-09-13** (D-335) — a `main` é a V2, só referência, nunca copiar |
-| **HEAD conhecido** | `9f1b5da` (D-337) — **fechamento recontado no arquivo: 189 de 213, 4 bloqueadores**. `3022ff6` (D-336): `pnpm audit --prod` na CI, verde. `c8bb539` (D-335): **a `v3` virou a branch padrão** — sem isso `migrations-producao.yml` nem existia para o GitHub (404). `765d8c0` (D-334): esse workflow só aplica com o ambiente `producao` travado e a CI do commit verde e já aplicada no Dev; **hoje para no primeiro job**, porque o ambiente não existe (ato humano, `DEPLOYMENT.md` 8.2). Antes: `db7890b` (D-333) `AMBIENTE` explícito em `infra/` · `536e2ae` (D-332) ensaio de restore pronto — **falta o restore real** (ato humano, 8.1). ⚠️ **Toda página nova precisa ser dinâmica** (D-331): estática sai sem nonce e a CSP a bloqueia em silêncio. ⚠️ **Armadilhas de ambiente em `TESTING.md`:** `.env.local` aponta para o Dev (exporte as variáveis locais ANTES do `build`); o OneDrive trava o `.next` em `EPERM`; e o Docker Desktop pode não subir depois de reiniciar — **nunca "Reset to factory defaults"**, que apaga os volumes; mova a pasta `run`. Antes: `df938ba` (D-331) CSP com nonce e a revisão de segurança fechada · `9ad7432` (D-330) · `d94aba7` (D-329) · `d7114bd` (D-328) · `f9b59cd` (D-327) frente de desenho sem item acionável · `6dd7bb9` (D-324) varredura das `plpgsql` · `1dd0638` (D-319). |
+| **HEAD conhecido** | `9f1b5da` (D-337) — **fechamento recontado no arquivo: 189 de 213, 4 bloqueadores**. `3022ff6` (D-336): `pnpm audit --prod` na CI, verde. `c8bb539` (D-335): **a `v3` virou a branch padrão** — sem isso `migrations-producao.yml` nem existia para o GitHub (404). `765d8c0` (D-334): esse workflow só aplica com o ambiente `producao` travado e a CI do commit verde e já aplicada no Dev; **hoje para no primeiro job**, porque o ambiente não existe (ato humano, `DEPLOYMENT.md` 8.2). Antes: `db7890b` (D-333) `AMBIENTE` explícito em `infra/` · `536e2ae` (D-332) ensaio de restore pronto — **falta o restore real** (ato humano, 8.1). ⚠️ **Toda página nova precisa ser dinâmica** (D-331): estática sai sem nonce e a CSP a bloqueia em silêncio. ⚠️ **Armadilhas de ambiente em `TESTING.md`:** `.env.local` aponta para o Dev (exporte as variáveis locais ANTES do `build`); o OneDrive trava o `.next` em `EPERM`; e o Docker Desktop pode não subir depois de reiniciar — **nunca "Reset to factory defaults"**, que apaga os volumes; mova a pasta `run`. Hashes anteriores: `docs/archive/handoffs/2026-09-13_a_2026-09-13.md`. |
 | **Fechamento da V3** | **189 de 213 itens do ROADMAP fechados (89%)** — 22 abertos e 2 parciais, **recontados no arquivo em 2026-09-13 (D-337)**. Dos 22, **4 são bloqueadores**, todos hardening/lançamento (D-223): backup e restore verificados, testes de carga, produção e rollout. Saíram a revisão de segurança (D-331) e a UX da republicação (D-295; o checkbox só fechou em D-337) |
-| **Deploy no ar** | ✅ **`8ebf022`, implantado em 2026-09-11** — api `api-00035-6fw`; `GET /health` responde `{"commit":"8ebf022"}`. **O worker NÃO foi reimplantado, e isso é medição, não esquecimento**: `git rev-list --count 0470036..HEAD -- apps/worker` = **0**. A ordem consumidor-antes-de-produtor (D-088) existe para o caso de a api passar a enfileirar um tipo de job que o worker antigo recusa; esta api só enfileira `analytics.recompute`, que o worker conhece desde sempre. **O PISO DE FRESCOR ENTROU NO AR** (D-304): `v3-refresh-sales-metrics`, `35 * * * *` em `America/Sao_Paulo`, e o caminho inteiro foi exercitado com um disparo manual — a api registrou `4 contas, 8 enfileirados, 0 deduplicados, datas 2026-09-10 e 2026-09-11`, e o worker executou os oito em sete segundos, escrevendo 83 linhas. Antes: `0470036` (10/09) e `721f4c6` (10/09). **Esta linha envelhece sozinha** (D-070): quem a ler depois de qualquer fatia confira `/health` antes de acreditar nela. |
+| **Deploy no ar** | ✅ **`d828eac`, implantado em 2026-09-13** (D-338) — api `api-00036-5l4` e worker `worker-00050-qnt`; `GET /health` responde `{"commit":"d828eac"}`. Levou as duas correções de segurança que estavam só no repositório: `hono` 4.13.7 (D-328) e a redação de log por valor (D-330). Configuração conferida antes: só imagem e `APP_COMMIT` mudaram. Para voltar: `api-00035-6fw` e `worker-00049-r62`. **Piso de frescor no ar** (D-304): `v3-refresh-sales-metrics`, `35 * * * *`. **Esta linha envelhece sozinha** (D-070): `/health` só cobre a api — o worker se confere por `gcloud run services describe worker`, comparando a imagem com o `HEAD`. |
 | **Supabase Dev** | `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) |
 | **Migrations** | **166 locais** — a última é `20260911230000` (D-319). ⚠️ Quem aplica no Dev é a integração GitHub do Supabase, **não** a CI (D-257); o caminho é o push, **nunca** o MCP (D-207). O nome do arquivo precisa ser um **instante válido**, não só um número crescente: `...240000` (hora 24) deixou seis casos de `get_system_health` vermelhos, e é esse teste que serve de guarda (D-307) |
-| **Frente atual** | **O pedido do dono sobre o Dashboard do SKU está entregue nas duas metades** (D-316 vínculos, D-317 diagnóstico). O que ficou registrado como SEM FONTE, e é o que impede a próxima pessoa de prometer: Shopee e a dimensão plataforma (D-037), divergência de estoque por conta (o interno é da organização, não há coluna de conta), tipo de anúncio, catálogo, logística, qualidade da publicação e substatus de pausa. ~~Uma régua espera decisão do dono~~ — **decidida em D-318** (10% sobre o menor, por organização). **A fila da auditoria de design de D-310 FECHOU** — "Últimas decisões" do SKU (D-320), gaveta do pedido em cartões (D-321), gráfico de vendas com altura fixa (D-322) e texto da busca do shell (D-323). **Em aberto, cada um com registro:** ~~a legenda do gráfico de vendas no rodapé~~ (feita em D-327, com o seed ganhando período anterior); ~~a leitura de hover da Home dizendo "período anterior: sem dado"~~ (feita em D-325: só com comparação); o chão cinza das gavetas de anúncio, fornecedor e usuário (condição: entra quando o conteúdo virar cartão); e ~~a busca que tira o campo da barra ao abrir~~ (feita em D-326: o gatilho fica). ~~A varredura das outras `plpgsql` sem `plan_cache_mode`~~ — **feita em D-324: nenhuma doente, e `force_custom_plan` deixaria as escritas em lote 30-40% mais lentas** (não é remédio universal). **Duas sessões neste repo:** portas 3000/3100 separadas e `db reset` combinado. |
+| **Frente atual** | **Sem item de desenho acionável** — a fila da auditoria de design de D-310 fechou (D-320 → D-327), e o pedido do dono sobre o Dashboard do SKU está entregue (D-316, D-317; régua em D-318). **Único item com condição:** o chão cinza das gavetas de anúncio, fornecedor e usuário, que entra quando o conteúdo delas virar cartão. **Sem fonte, e por isso não se promete:** Shopee e a dimensão plataforma (D-037), divergência de estoque por conta, tipo de anúncio, catálogo, logística, qualidade da publicação e substatus de pausa. O que falta para fechar a V3 é lançamento, e depende de ato humano. Com duas sessões no repo: portas 3000/3100 e `db reset` combinado. |
 
 ### O que está pronto
 
@@ -97,6 +97,11 @@ Números completos e método: `docs/PERFORMANCE.md`.
   Scheduler mostra verde, o endpoint responde 200, e `job_runs` simplesmente
   para de crescer. Não há linha `failed` para achar. Foi assim que 13 horas
   passaram despercebidas em D-217.
+- **Cerca de 30 `job_failed` por dia no worker são um 404 ainda não
+  explicado** (medido em 13/09): `GET /post-purchase/v2/claims/{id}/returns`
+  para reclamação que diz ter devolução, `not_retryable`, sem reentrega. Se
+  for consistência eventual, uma devolução entregue pode ficar sem estorno.
+  **Não investigado** — conferir no banco antes de concluir.
 - **Relist nunca foi exercitado contra o ML real.** A primeira execução
   precisa ser ensaio humano deliberado, com anúncio sacrificável.
 - **As duas suítes locais não convivem no mesmo banco, e a ordem é a cura.**
@@ -125,33 +130,10 @@ Números completos e método: `docs/PERFORMANCE.md`.
   Um `next dev` esquecido na porta 3000 faz a suíte rodar contra o dev
   server, que compila sob demanda, e 13 casos estouram por timeout. Não é
   regressão: é o servidor no caminho. **Encerre a 3000 antes** (D-225).
-- **2 pedidos estão sem linha em `order_items`** (`2000017347483988` e
-  `2000017394032682`): `paid`, com o movimento de estoque gravado e nenhum
-  item. A dedução está certa. **Os dois caminhos que produzem esse estado
-  estão fechados** (D-184 tirou a leitura da janela, D-189 tirou a janela e
-  parou de apagar itens a partir de resposta vazia); qual dos dois aconteceu
-  não dá para saber. **Medido em D-208, e o item mudou de natureza:**
-  - **o dano hoje é zero** — os dois estão `delivered` desde julho, com **0**
-    casos de atendimento, **0** eventos de devolução e **0** movimentos de
-    reversão. Não é "pequeno": é zero, e foi contado;
-  - **reprocessar não é ato pendente de aprovação, é ato sem mecanismo** —
-    `sync.orders.window` e `backfill.orders` só aceitam `{ mlAccountId }`, e o
-    cliente só tem `fetchOrdersWindow` por período: **não existe
-    `GET /orders/{id}` no código**. Não adianta aprovar; não há o que rodar;
-  - **reconstruir a linha do movimento seria inventar dado** — `item_id`,
-    `variation_id` e preço só o Mercado Livre tem;
-  - **o que tornava a falta perigosa já foi fechado.** `claim-return` pulava
-    com um `logger.warn` e o job fechava `done` — a reversão perdida não
-    deixava vestígio no banco, e `done` com `processed` baixo é
-    indistinguível de um no-op legítimo (D-205 mediu 4.903 deles saudáveis).
-    Agora a perda vira `order.return.unreversed`, `critico`, em
-    `domain_events`. **Isso vale para qualquer pedido futuro, não só estes
-    dois** — que é o motivo de a fatia ter sido essa, e não o reprocessamento.
-- **Conflito à vista em `20260902005023_stock_balances_page_first.sql`.**
-  D-207 recuperou essa migration do banco porque ela existia só no Dev.
-  Quando a outra frente empurrar a fatia dela, o git vai acusar conflito neste
-  arquivo: o SQL é idêntico, a diferença é o cabeçalho. **Fique com a versão
-  deles** — tem a intenção original e o registro da decisão.
+- **Se a frente de 02/09 um dia empurrar `20260902005023_stock_balances_page_first.sql`**,
+  o git acusa conflito: D-207 recuperou essa migration do banco, o SQL é
+  idêntico e muda o cabeçalho. **Fique com a versão deles.** Em 13/09, onze
+  dias depois, ela não tinha aparecido (texto completo no arquivo de 13/09).
 - **Não rode `gen:types` da CLI local para conferir tipo.** `packages/db/src/types.ts`
   é gerado pelo **MCP** e carrega correções manuais marcadas "CORRECAO MANUAL"
   (D-133/D-147). O gerador da CLI produz outro formato e as apaga: em D-209 a
@@ -275,12 +257,12 @@ expansão do "O que aconteceu?" · eventos adicionais de SAC · os 2 pedidos sem
 
 ### Próxima tarefa segura
 
-A próxima tarefa é a fila de design da linha **Frente atual**, no topo. O
-histórico que morava aqui (entregas D-224→D-237, o segundo usuário, os filtros
-de Marca e duas lições que continuam valendo — **mudança de assinatura de RPC
-pede consulta ao catálogo E `grep` no monorepo**, e **linha de base contra o Dev
-só prova no mesmo instante**) está em
-`docs/archive/handoffs/2026-09-02_a_2026-09-12.md`.
+**Não há tarefa de código segura na fila.** A de design fechou (linha **Frente
+atual**), e os 4 bloqueadores dependem de ato humano (seção própria). Antes de
+puxar item de backlog, confira a categoria dele em D-223 — quase todos dependem
+de dado. Duas lições que continuam valendo: **mudança de assinatura de RPC pede
+consulta ao catálogo E `grep` no monorepo**, e **linha de base contra o Dev só
+prova no mesmo instante** (histórico em `docs/archive/handoffs/`).
 
 ---
 

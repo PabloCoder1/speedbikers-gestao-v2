@@ -11150,3 +11150,61 @@ Os dois projetos da Vercel ligados ao repositorio, listados depois da troca: `sp
 
 **Verificacao:** recontagem por `grep -cE` no arquivo antes e depois (188/23/2 → 189/22/2); a serie por commit; e cada linha da tabela da secao 2 lida no arquivo de onde saiu.
 
+## D-338 - O que estava no ar nao era o que o HANDOFF dizia -- duas correcoes de seguranca do dia fora do Cloud Run, e o deploy que as publicou
+
+**Contexto:** a fatia era arquivar historia do HANDOFF, que estava a 579 bytes do budget. A linha "Deploy no ar" termina com "confira `/health` antes de acreditar nela" -- e a conferencia, feita antes de reescrever a linha, mudou a fatia.
+
+---
+
+**1. O QUE ESTAVA NO AR, MEDIDO**
+
+| servico | revisao | imagem e `APP_COMMIT` | o HANDOFF dizia |
+|---|---|---|---|
+| api | `api-00035-6fw` | `8ebf022` | `8ebf022` -- certo |
+| worker | `worker-00049-r62` | **`721f4c6`** | "nao reimplantado", com `0470036..HEAD -- apps/worker` = 0 |
+
+A contagem do worker partia do commit errado. Desde as imagens no ar, o que chegava ao pacote de cada servico (`apps/api` ou `apps/worker`, `@sb/domain`, `@sb/db/src`, `@sb/observability`, `@sb/contracts`, `@sb/mercado-livre` e o lockfile):
+
+| commit | o que muda no runtime da api e do worker |
+|---|---|
+| `d1b8716`, `f1a3d4f` (D-304, so no worker) | nada: `types.ts` e testes de integracao |
+| `cef72ee` (D-314) | nada: `stock-state.ts` nao e importado por nenhum dos dois (grep dos dois exports) |
+| `571da6f` (D-316) | nada: `types.ts` e teste |
+| **`d7114bd` (D-328)** | **`hono` 4.13.3 → 4.13.7**, nos dois |
+| **`9ad7432` (D-330)** | **redacao de log por VALOR**, no `@sb/observability` que os dois importam |
+
+**Duas correcoes de seguranca do dia estavam no codigo e fora do ar.** E o risco que o HANDOFF ja lista -- "nada avisa quando o que esta no ar ficou velho" (D-070) -- acontecendo na mesma sessao que deu a revisao de seguranca por fechada (D-331): a metade de plataforma conferida foi a da Vercel, e a da `api` e do `worker` ficou no repositorio.
+
+---
+
+**2. O DEPLOY, AUTORIZADO PELO USUARIO**
+
+Conferido antes de rodar:
+
+- CI de `d828eac` verde nos cinco jobs; HEAD igual ao remoto e arvore limpa, para a tag nao sair `-dirty`;
+- variaveis do shell que redirecionariam o script, limpas (a licao de D-300);
+- **a configuracao atual dos dois servicos comparada com a que o script reconstroi**: mesmas origens, redirect do OAuth, Supabase, bucket, service accounts, timeout, concorrencia, instancias, recursos e teto de IA (18). O deploy so troca imagem e `APP_COMMIT` -- o script reescreve a configuracao a partir de `lib.sh`, e uma diferenca ali seria apagada em silencio;
+- `MERCADO_LIVRE_CLIENT_ID` lido do proprio servico como VALOR numerico, nao como representacao de lista (o incidente de 03/09, escrito no script);
+- revisoes anteriores anotadas para voltar: `api-00035-6fw` e `worker-00049-r62`.
+
+**Linha de base de erro, antes** (worker, 24h): 32 ERROR. **30** sao `job_failed` de `sync.webhook.received` com 404 em `GET /post-purchase/v2/claims/{id}/returns`, nao retryable; 1 e uma corrida de refresh de token. Nenhum vem do deploy. **O 404 nao estava registrado em lugar nenhum**: o handler so chama esse endpoint quando a reclamacao diz ter devolucao, e se o 404 for consistencia eventual, uma devolucao entregue pode ficar sem estorno. Nao da para concluir sem ler o banco -- ficou como risco ativo no HANDOFF e como tarefa propria, sem conclusao inventada.
+
+`bash infra/deploy-cloud-run.sh`, worker antes da api (D-088).
+
+---
+
+**3. VERIFICACAO**
+
+- **worker:** `worker-00050-qnt`, Ready, 100% do trafego, `APP_COMMIT=d828eac`, imagem `worker:d828eac`. Nos primeiros minutos: `worker_started`, probe na primeira tentativa, tres `webhook_fast_path_done` e **zero ERROR**.
+- **api:** `api-00036-5l4`, Ready, 100% do trafego, `APP_COMMIT=d828eac`, imagem `api:d828eac`; `GET /health` responde `{"commit":"d828eac"}` com `startedAt` de 23:09 UTC. `WEB_ORIGINS` e o redirect do OAuth iguais aos de antes. Nos primeiros minutos da revisao: 108 entradas, **zero ERROR** -- 51 webhooks do Mercado Livre respondidos com 200, 9 enfileirados, e os dois agendamentos de atendimento disparados com 200.
+- **script:** `EXIT_DEPLOY=0`, `run.invoker` do worker concedido ao `v3-tasks-invoker`, e o `.env.deploy.yaml` removido. De 23:03:47 a 23:09:52 UTC.
+- **worker, depois da api no ar:** nenhum ERROR na revisao nova.
+
+---
+
+**4. O HANDOFF, ARQUIVADO**
+
+`docs/archive/handoffs/2026-09-13_a_2026-09-13.md` recebeu: a linha "Frente atual" com os itens ja riscados; a linha antiga de deploy, com a correcao da contagem do worker; a cadeia de "Antes:" do HEAD; o risco dos 2 pedidos sem `order_items` (dano medido em zero, D-208 -- a classificacao segue em "Futuro V3.1+"); e o conflito de migration que nao veio (D-207 -- onze dias sem a outra frente, e no HANDOFF ficou uma linha). "Proxima tarefa segura" deixou de apontar para a fila de design, que fechou.
+
+**Impacto:** Cloud Run (`api` e `worker` em `d828eac`), `docs/archive/handoffs/2026-09-13_a_2026-09-13.md` (novo), `docs/{DECISIONS,DECISIONS_INDEX,HANDOFF}.md`. Nenhuma linha de codigo.
+
