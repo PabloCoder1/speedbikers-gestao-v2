@@ -325,6 +325,10 @@ manutenção, falham alto em vez de ficar verdes sem detectar nada. **`check:ser
 não tem essa rede**: é a regex mais simples dos três, mas hoje nada avisaria se
 ela parasse de casar.
 
+**Fora dos cinco, um de dependências:** `pnpm audit --prod --audit-level high`, último
+passo da job `check` (D-336). Precisa de rede e **reprova pela data**: aviso alto
+publicado hoje deixa a esteira vermelha sem mudança nossa — ler antes de culpar o commit.
+
 ---
 
 ## Onde procurar o resto

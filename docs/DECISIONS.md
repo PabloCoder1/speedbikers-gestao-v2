@@ -11063,3 +11063,38 @@ A `v3` e a linha ativa desde o inicio da V3; a `main` segue intacta, como refere
 
 **Impacto:** configuracao do repositorio (branch padrao), `docs/{DECISIONS,DECISIONS_INDEX,DEPLOYMENT,HANDOFF}.md`. Nenhuma linha de codigo.
 
+## D-336 - A guarda de `pnpm audit` que D-328 deixou sem dono entrou na CI -- dependencias de producao, corte em alta
+
+**Contexto:** D-328 levou `pnpm audit --prod` de 7 avisos para 1 e deixou a guarda como decisao de fluxo, sem dono: `audit` na esteira reprova **pela data**, nao pelo codigo -- um aviso publicado hoje pinta de vermelho um commit que nao mudou nada. Posta ao usuario com tres caminhos (passo na CI so para alta e critica; workflow agendado sem bloquear; nao agora), **o usuario escolheu o passo na CI**, sabendo do vermelho pela data.
+
+---
+
+**1. MEDIDO ANTES DE ESCREVER O PASSO** (pnpm 11.22.0, 2026-09-13)
+
+| comando | resultado | saida |
+|---|---|---|
+| `pnpm audit` | 1 moderada (`uuid` < 11.1.1) | 1 |
+| `pnpm audit --dev` | nenhuma | 0 |
+| `pnpm audit --prod --audit-level high` | nada acima de moderada | **0** |
+| `pnpm audit --prod --audit-level moderate` | a mesma moderada | **1** |
+
+A moderada e a de D-328, e continua inalcancavel -- relido agora no codigo instalado: `gaxios` 6.7.1 chama `(0, uuid_1.v4)` e `exceljs` 4.4.0 chama `uuid.v1`, e o defeito e em v3/v5/v6 com `buf`; nenhum arquivo de `apps/` ou `packages/` importa `uuid`. **A ultima linha e a prova de que a guarda nao e cega**: o mesmo comando reprova hoje quando o corte desce -- a deteccao funciona, e o corte e a unica diferenca.
+
+---
+
+**2. O PASSO**
+
+`pnpm audit --prod --audit-level high`, ultimo passo da job `check` de `ci.yml`.
+
+- **`--prod`**: e o que chega a producao e o que D-328 mediu. As de desenvolvimento estavam zeradas; incluir ferramenta de build que nunca e publicada so aumentaria o vermelho pela data.
+- **`high`**: a moderada aceita em D-328 nao pinta a esteira; alta e critica reprovam -- a classe das duas criticas do `next` que D-328 corrigiu.
+- **Sem `--ignore-registry-errors`**: o `pnpm install --frozen-lockfile` da mesma job ja depende do registry, entao a guarda nao cria uma fragilidade nova -- e uma guarda que passa quando nao consegue perguntar nao guarda nada.
+- **Ultimo passo da job**: typecheck, lint, testes, as guardas estaticas e o build reportam antes.
+- **Na job `check`, e portanto antes da job `migrations`**: um aviso alto publicado num dia qualquer segura a migration do Dev ate a dependencia subir. E o custo que o usuario aceitou.
+
+**Quando ficar vermelho:** ler o aviso antes de culpar o commit. Subir a dependencia; se o vetor nao alcancar a casa, a excecao entra com o GHSA nomeado e uma decisao escrita, como o `uuid` de D-328 -- **nunca baixando o corte**.
+
+**Nao verificado aqui:** a execucao na CI, que so acontece no push.
+
+**Impacto:** `.github/workflows/ci.yml` (passo novo na job `check`), `docs/{DECISIONS,DECISIONS_INDEX,ROADMAP,HANDOFF}.md`. Nenhuma dependencia alterada.
+

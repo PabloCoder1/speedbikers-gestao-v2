@@ -81,6 +81,17 @@ jobs:
       - name: Build
         run: pnpm run build
 
+      # D-336: D-328 levou o audit de 7 avisos para 1 e deixou a guarda sem dono
+      # -- ela reprova pela DATA, nao pelo codigo. O usuario escolheu te-la.
+      # `--prod`: e o que chega a producao e o que D-328 mediu; as de
+      # desenvolvimento estavam zeradas na medicao. `high`: a moderada aceita
+      # em D-328 (`uuid`, inalcancavel) nao pinta a esteira; alta e critica sim.
+      # Sem `--ignore-registry-errors`: o `pnpm install` acima ja depende do
+      # registry, e guarda que passa quando nao consegue perguntar nao guarda.
+      # Ultimo passo da job, para os outros reportarem antes.
+      - name: Dependencias de producao sem vulnerabilidade alta ou critica
+        run: pnpm audit --prod --audit-level high
+
   integration:
     name: integração — migrations e RLS contra Postgres real
     runs-on: ubuntu-latest

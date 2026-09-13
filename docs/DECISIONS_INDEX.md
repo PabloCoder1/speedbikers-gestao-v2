@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **331** (D-001 a D-335).
+Decisões registradas: **332** (D-001 a D-336).
 
 ## Por domínio
 
@@ -307,7 +307,7 @@ Decisões registradas: **331** (D-001 a D-335).
 - **D-325** — A leitura do grafico de vendas falava de "periodo anterior" onde nao ha comparacao
 - **D-327** — A18: a legenda do grafico de vendas no cabecalho do painel, e o seed que nunca teve periodo anterior
 
-### worker/infra (64)
+### worker/infra (65)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -373,4 +373,5 @@ Decisões registradas: **331** (D-001 a D-335).
 - **D-323** — A15: o rotulo da busca do shell tinha envelhecido em D-216, e a promessa inteira nao cabe no campo
 - **D-329** — Revisao de seguranca, fatia 2: a superficie de entrada conferida AO VIVO, D-045 fechada com trafego real, e a `web` que qualquer site podia emoldurar
 - **D-333** — Os scripts de infra subiriam PRODUCAO apontando para o banco do DEV -- e agora o ambiente e explicito, com guarda testada
+- **D-336** — A guarda de `pnpm audit` que D-328 deixou sem dono entrou na CI -- dependencias de producao, corte em alta
 
