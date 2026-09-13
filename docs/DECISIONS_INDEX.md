@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **323** (D-001 a D-327).
+Decisões registradas: **324** (D-001 a D-328).
 
 ## Por domínio
 
@@ -96,7 +96,7 @@ Decisões registradas: **323** (D-001 a D-327).
 - **D-315** — `/produtos` ganha as duas opcoes do UpSeller: quantos por pagina e em que ordem -- e a ordem obrigou uma migration
 - **D-324** — A varredura das plpgsql que D-319 deixou aberta: nenhuma doente, e o remedio de D-319 PIORARIA as escritas em lote
 
-### estoque (24)
+### estoque (25)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -122,6 +122,7 @@ Decisões registradas: **323** (D-001 a D-327).
 - **D-265** — D25: Central Full pelo frame, e o estado que ele esconde e o MAIOR de todos
 - **D-288** — A FUSAO de `/cobertura` com `/reposicao`: uma tela, uma definicao de ruptura
 - **D-314** — "Cobertura" de um SKU passa a ter UMA conta: a que D-288 aposentou saiu das duas telas que faltavam
+- **D-328** — Revisao de seguranca, fatia 1: nenhum segredo real em 740 commits, e duas CRITICAS no `next` que o repositorio publico carregava
 
 ### interface (36)
 

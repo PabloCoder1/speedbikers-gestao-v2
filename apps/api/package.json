@@ -22,7 +22,7 @@
     "@sb/mercado-livre": "workspace:*",
     "@sb/observability": "workspace:*",
     "google-auth-library": "11.0.2",
-    "hono": "4.13.3",
+    "hono": "4.13.7",
     "zod": "4.4.3"
   },
   "devDependencies": {

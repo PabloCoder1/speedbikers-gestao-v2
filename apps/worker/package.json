@@ -21,7 +21,7 @@
     "@sb/mercado-livre": "workspace:*",
     "@sb/observability": "workspace:*",
     "fast-xml-parser": "5.11.0",
-    "hono": "4.13.3",
+    "hono": "4.13.7",
     "read-excel-file": "9.3.10",
     "zod": "4.4.3"
   },

@@ -87,6 +87,16 @@ export NEXT_PUBLIC_SUPABASE_URL="$API_URL" NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 
 A CLI 2.115 imprime os nomes **sem** prefixo (`API_URL`, `SERVICE_ROLE_KEY`), e a suíte de integração lê `SUPABASE_SERVICE_ROLE_KEY`: só o `eval` não basta, e os quatro arquivos que precisam da chave reprovam na carga.
 
+**E com o Docker PARADO a mesma receita envenena em silêncio (2026-09-13, D-328).** `supabase status -o env` sai **vazio e sem código de erro**, o `eval` não reclama, e o `export` põe as três variáveis **vazias** no ambiente — e uma variável vazia em `process.env` **vence** o `.env.local`. O `build` passa, embutindo URL vazia; quem acusa é o seed, com "defina SUPABASE_SERVICE_ROLE_KEY", e parece problema da chave. Aconteceu depois de a máquina reiniciar e o Docker Desktop não subir junto. Conferir antes de construir: `[ -n "$API_URL" ] && [ -n "$SERVICE_ROLE_KEY" ]`, e abortar se não.
+
+**Armadilha conhecida (2026-09-13):** depois de a máquina reiniciar, o Docker Desktop pode **não subir** e abrir um diálogo de erro com duas saídas: *Quit* ou *Reset to factory defaults*. **Não use a segunda** — ela apaga imagens e volumes, e o banco local do Supabase vai junto. A causa lida no log do backend (`%LOCALAPPDATA%\Docker\log\host\com.docker.backend.exe.log`) foi `rename …\Docker\run\sailor-ingest.sock …sailor-ingest.sock.stale: The file cannot be accessed by the system`: um `.stale` de uma sessão anterior já ocupava o nome. Esses arquivos são sockets AF_UNIX, e o Windows **não deixa movê-los um a um** ("o arquivo não pode ser acessado pelo sistema"). O que resolveu foi fechar o Docker Desktop, **mover a pasta `run` inteira** para o lado (mover diretório no mesmo volume não abre os filhos) e iniciá-lo de novo — ele recria `run`, e a pasta movida pode voltar se algo der errado:
+
+```powershell
+Get-Process -Name "Docker Desktop","com.docker.backend" -ErrorAction SilentlyContinue | Stop-Process -Force
+Move-Item -LiteralPath "$env:LOCALAPPDATA\Docker\run" -Destination "$env:LOCALAPPDATA\Docker\run-stale-backup"
+Start-Process "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+```
+
 **Armadilha conhecida (2026-09-12):** o repositório mora em `OneDrive\Desktop`, e o OneDrive se apropria do `.next` de um build anterior — os diretórios ficam `ReadOnly, ReparsePoint`. O `next build` seguinte morre com `EPERM: operation not permitted, unlink '...\.next\server\app\...'`, **não gera build nenhum**, e o Playwright então reprova a rodada inteira em "Could not find a production build" sem rodar um caso sequer. Não há processo segurando o arquivo (conferido: nenhum `node` vivo); é o atributo. Tirar o somente-leitura e apagar o `.next` antes de construir resolveu (D-321):
 
 ```powershell

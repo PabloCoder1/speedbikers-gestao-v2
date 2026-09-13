@@ -10602,3 +10602,60 @@ O caso do grafico passou a detectar comparacao pela legenda nova. Com o seed nov
 
 Medido no servidor de producao: a legenda esta **dentro do `aside` do painel, na mesma linha do titulo, a 17px da borda direita** (o respiro do painel), a 1440px **e** a 1100px, dizendo "Atual / Anterior (15/07/2026 a 13/08/2026)"; a figura tem **zero** `figcaption`. A faixa ancora de `/vendas` passou a mostrar o anterior pela primeira vez num teste -- "Receita bruta R$ 500,00 · periodo anterior: R$ 400,00", as vendas de 35 e 40 dias atras. Com `?days=7`, nao ha legenda e o subtitulo perde "comparacao com o periodo anterior".
 
+## D-328 - Revisao de seguranca, fatia 1: nenhum segredo real em 740 commits, e duas CRITICAS no `next` que o repositorio publico carregava
+
+**Contexto:** "Revisao de seguranca e de secrets" e um dos seis bloqueadores da V3 (D-223), e o unico deles que nao depende de ato humano nem de ambiente de producao. O repositorio e **PUBLICO** desde 2026-09-03 (decisao do usuario): tudo o que ja foi commitado, em qualquer ponto do historico, esta exposto. Esta fatia mede duas das perguntas do item -- **ha segredo no repositorio?** e **as dependencias de producao tem vulnerabilidade conhecida?** -- e diz com todas as letras o que ela NAO cobre.
+
+---
+
+**1. SEGREDOS: A ARVORE E O HISTORICO INTEIRO, POR FORMATO E POR NOME**
+
+Um casamento de padrao nao e vazamento, e o valor nunca foi impresso: cada achado saiu como arquivo, commit, prefixo curto e tamanho.
+
+**Por formato**, na arvore atual e nas linhas adicionadas em qualquer um dos **740 commits** de `git log --all`: token do GitHub, chave da Anthropic, chave do Google, chave privada PEM, `sb_secret_`, `sb_publishable_`, access e refresh token do Mercado Livre, JWT e URL de Postgres com senha. **27 valores distintos**, e todos caem em tres classes:
+
+| classe | exemplos |
+|---|---|
+| fixture de teste | `APP_USR-token-da-conta`, `APP_USR-TOKEN-QUE-NAO-PODE-VAZAR`, `sb_secret_chav...`, JWT com um unico claim `sub`, `postgres://...@db.abc.supabase.co` |
+| padrao local da CLI | `postgresql://postgres:postgres@127.0.0.1:54322` |
+| publico por desenho | `SUPABASE_PUBLISHABLE_KEY` do Dev em `infra/lib.sh` -- a chave que vai para o navegador, e o proprio arquivo diz "nao e segredo" |
+
+**Por nome**, porque formato nao pega segredo de formato livre (o `client_secret` do ML, a chave AES de `ML_TOKEN_ENCRYPTION_KEY`): toda atribuicao NAO vazia a variavel com `SECRET`, `SERVICE_ROLE_KEY`, `ENCRYPTION_KEY`, `PRIVATE_KEY`, `API_KEY`, `ACCESS_TOKEN`, `REFRESH_TOKEN`, `PASSWORD` no nome, fora de teste. **11 achados, nenhum valor:** sete sao declaracoes de schema (`z.string()...` em `env.ts`) e quatro sao os `SECRET_*` de `infra/lib.sh`, cujo valor e o NOME do segredo no Secret Manager -- os tamanhos batem exatamente (`MERCADO_LIVRE_CLIENT_SECRET`, 27; `SUPABASE_SERVICE_ROLE_KEY`, 25). As cinco variaveis sensiveis de `.env.example` estao **vazias**, e nenhum outro arquivo `.env` existiu no historico.
+
+**O caminho dos segredos reais e o certo:** o deploy passa `SUPABASE_SERVICE_ROLE_KEY`, `MERCADO_LIVRE_CLIENT_SECRET` e `ML_TOKEN_ENCRYPTION_KEY` ao Cloud Run por `--set-secrets` (Secret Manager), nunca por `--set-env-vars`.
+
+**Fora do alcance desta varredura, e dito:** o token OAuth do GitHub que um agente imprimiu no TRANSCRIPT de uma sessao (ato humano 10 do HANDOFF) nunca esteve no repositorio -- a varredura confirma que nao ha `gh[opsu]_` em commit nenhum, mas a rotacao continua sendo do usuario.
+
+---
+
+**2. DEPENDENCIAS: `pnpm audit --prod` DE 7 PARA 1**
+
+| pacote | antes | severidade | o vetor alcanca esta casa? | agora |
+|---|---|---|---|---|
+| `next` (direto, `web`) | 16.3.1 | **2 CRITICAS** -- RCE nao autenticado em servidor Windows; RCE no Image Optimization com AVIF | a `web` de producao roda na Vercel (Linux), mas **o `next start` do e2e roda nesta maquina Windows**, e escuta em todas as interfaces | **16.3.5** |
+| `sharp` (via `next`) | 0.35.3 | alta -- libheif | transitivo da otimizacao de imagem | **0.35.4**, arrastado pelo `next` |
+| `hono` (direto, `api` e `worker`) | 4.13.3 | 3 moderadas -- `toSSG`, aninhamento em `parseBody`, fragmento na query | `toSSG` nao e usado; `parseBody()` e chamado **sem** a opcao `dot` nas duas rotas de upload. Alcance baixo, e a correcao e patch com peer `^4` | **4.13.7** |
+| `uuid` (via `exceljs` e `gaxios`) | 8.3.2 e 9.0.1 | moderada -- falta de checagem de limite em v3/v5/v6 **quando `buf` e passado** | **nao alcanca**: `exceljs` chama `uuid.v1()` e `gaxios` chama `v4()`, os dois sem `buf` (lido no codigo instalado) | **aceito** |
+
+**Por que o `uuid` fica:** a correcao exige a MAJOR 11 dentro de duas bibliotecas de terceiros que declaram 8 e 9. Um `overrides` forcaria uma API que elas nao testaram, para fechar um vetor que nenhuma das duas percorre. O risco residual e uma moderada inalcancavel, registrada; volta a pauta quando `exceljs` ou `@google-cloud/storage` subirem a dependencia.
+
+---
+
+**3. A GUARDA QUE NAO FOI CRIADA, E A PERGUNTA QUE FICA**
+
+A pergunta de A4 -- *existe guarda para este padrao, ou ele volta assim que eu virar as costas?* -- tem resposta desconfortavel aqui. `pnpm audit` na esteira de cada push reprovaria PELA DATA, nao pelo codigo: um aviso publicado hoje deixaria vermelho um commit que nao mudou nada, e esta casa ja registrou por que teste instavel nao entra na CI. As alternativas -- job agendado separado, ou `--audit-level=critical` so em PR -- trocam instabilidade por um vermelho que ninguem abre (a licao de D-229/D-230). **Decisao de fluxo, nao de agente**: fica registrada, sem guarda criada.
+
+---
+
+**4. O QUE ESTA FATIA NAO COBRE**
+
+O item do ROADMAP continua aberto. Ja foram revistos antes, em decisoes proprias: autorizacao por organizacao (`has_role`, D-180), `SECURITY DEFINER` (D-182), escopo de `get_system_health` (D-209), writes em `ml_accounts` (D-210), `pg_default_acl` (D-211), cifra dos tokens (D-046) e o sanitizador de erro nas telas (D-232). **Faltam:** autenticacao dos endpoints internos e do webhook (a allowlist de IP de D-045 ainda pede a verificacao empirica do `X-Forwarded-For`), CORS (`WEB_ORIGINS`), cabecalhos de seguranca da `web` e a redacao de log fora das telas.
+
+---
+
+**Impacto:** `apps/web/package.json` (`next` 16.3.5), `apps/api/package.json` e `apps/worker/package.json` (`hono` 4.13.7), `pnpm-lock.yaml`, `docs/{DECISIONS,DECISIONS_INDEX,ROADMAP,TESTING,HANDOFF}.md`. **Nenhuma linha de aplicacao e nenhuma migration.**
+
+**Verificacao:** `pnpm install --frozen-lockfile` (o que a CI roda) aceitou o lockfile novo; `check` **29/29** (`--force` -- web 551, api 335, worker 527 casos, com o `hono` novo sob as rotas de upload que usam `parseBody`); build **8/8**; `db reset`, seed e e2e **139/139** em banco recriado, com o `next start` servindo o 16.3.5. `pnpm audit --prod` depois: **0 critica, 0 alta, 1 moderada** (o `uuid` aceito acima). A integracao nao rodou: nenhuma dependencia do `@sb/db` mudou.
+
+**Duas rodadas foram perdidas para o AMBIENTE, e nenhuma para o codigo -- as duas viraram registro em `docs/TESTING.md`:** (1) com o Docker parado, `supabase status -o env` sai vazio sem erro, o `export` poe variavel VAZIA no ambiente, o build embute URL vazia e os 139 casos caem em "Your project's URL and Key are required" -- lido no log antes de concluir qualquer coisa sobre o `next`; (2) depois do reinicio da maquina, o Docker Desktop nao subia: um socket `.stale` de 08/09 impedia o rename de inicializacao, e o dialogo so oferecia sair ou *Reset to factory defaults*, que apagaria os volumes. Resolvido movendo a pasta `run` inteira para o lado -- nada foi apagado.
+
