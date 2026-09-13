@@ -296,3 +296,10 @@ jobs:
       # impede que ela seja desfeita numa manutenção sem ninguém ver.
       - name: Guarda de ambiente (dev x prod)
         run: bash infra/ambiente.test.sh
+
+      # D-334: migrations-producao.yml só aplica a partir da v3, com o ambiente
+      # travado (revisor e restrição de branch) e o mesmo commit já verde e já
+      # aplicado no Dev. Uma guarda que só roda no dia de aplicar em produção
+      # seria descoberta quebrada justamente nesse dia.
+      - name: Guarda das migrations de produção
+        run: bash infra/guarda-migrations-producao.test.sh

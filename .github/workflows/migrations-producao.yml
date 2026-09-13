@@ -1,0 +1,166 @@
+name: Migrations de produção
+
+# D-334. Até aqui, migration de produção não tinha caminho: o job `migrations`
+# de ci.yml liga o Supabase do Dev, fixo, e o resto seria `db push` do
+# computador de alguém -- sem registro, sem aprovação e sem saber se aquele
+# commit passou pela CI ou já foi aplicado no Dev.
+#
+# Três jobs, em fila:
+#
+# 1. `origem`, sem segredo nenhum: recusa se o disparo não veio da v3, se o
+#    ambiente `producao` não tem revisor obrigatório nem restrição de branch,
+#    ou se a CI deste mesmo commit não passou e não aplicou no Dev.
+# 2. `plano`, com o ambiente `producao` (1ª aprovação): confere o alvo e
+#    mostra o que SERIA aplicado (`db push --dry-run`), sem aplicar.
+# 3. `aplicar`, com o ambiente `producao` de novo (2ª aprovação): aplica.
+#
+# A trava de verdade é a configuração do ambiente no GitHub, não este arquivo:
+# um workflow alterado noutra branch não passaria pela guarda, e é a
+# restrição de branch do ambiente que o impede de receber os segredos. Por
+# isso `origem` recusa um ambiente sem essa restrição.
+#
+# As decisões de recusar moram em infra/guarda-migrations-producao.sh, testada
+# caso a caso na CI. Criar o ambiente e os segredos: DEPLOYMENT.md 8.2.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmacao:
+        description: "Ref do Supabase de PRODUÇÃO (20 caracteres), para confirmar o alvo"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+# Nunca duas aplicando no mesmo banco, e nunca cancelar uma no meio.
+concurrency:
+  group: supabase-migrations-producao
+  cancel-in-progress: false
+
+jobs:
+  origem:
+    name: origem — v3, ambiente travado, CI verde e Dev já migrado
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Tudo o que vem da API entra por variável; a guarda não fala com a rede.
+      # Um commit sem CI, uma CI rodando ou um job renomeado viram "ausente" ou
+      # "pendente" -- e a guarda recusa. Na dúvida, fecha.
+      - name: Conferir o disparo, o ambiente e a CI deste commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          REF_DO_WORKFLOW: ${{ github.ref }}
+        run: |
+          if ambiente="$(gh api "repos/${REPO}/environments/producao" 2>/dev/null)"; then
+            REVISORES="$(printf '%s' "${ambiente}" | jq '[(.protection_rules // [])[] | select(.type == "required_reviewers") | (.reviewers // [])[]] | length')"
+            POLITICA_BRANCH="$(printf '%s' "${ambiente}" | jq -r 'if .deployment_branch_policy == null then "nenhuma" elif .deployment_branch_policy.protected_branches then "protegidas" elif .deployment_branch_policy.custom_branch_policies then "personalizada" else "nenhuma" end')"
+          else
+            REVISORES=0
+            POLITICA_BRANCH=ausente
+          fi
+
+          run_id="$(gh api "repos/${REPO}/actions/workflows/ci.yml/runs?head_sha=${SHA}&branch=v3&per_page=20" \
+            --jq '[.workflow_runs[] | select(.event == "push" or .event == "workflow_dispatch")] | first | .id // "ausente"')"
+          if [ "${run_id}" = "ausente" ]; then
+            CI_CONCLUSAO=ausente
+            MIGRATIONS_DEV=ausente
+          else
+            CI_CONCLUSAO="$(gh api "repos/${REPO}/actions/runs/${run_id}" --jq '.conclusion // "pendente"')"
+            MIGRATIONS_DEV="$(gh api "repos/${REPO}/actions/runs/${run_id}/jobs" \
+              --jq '[.jobs[] | select(.name == "aplicar migrations no Supabase Dev") | .conclusion] | first // "ausente"')"
+          fi
+
+          export REVISORES POLITICA_BRANCH CI_CONCLUSAO MIGRATIONS_DEV
+          bash infra/guarda-migrations-producao.sh origem
+
+  plano:
+    name: plano — o que seria aplicado em produção (1ª aprovação)
+    needs: origem
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: producao
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Ativar pnpm
+        run: corepack enable
+
+      - name: Instalar dependências
+        run: pnpm install --frozen-lockfile
+
+      # `inputs.confirmacao` entra por variável, nunca interpolado no script:
+      # texto digitado num formulário não vira comando.
+      - name: Conferir o alvo
+        env:
+          SUPABASE_PROD_PROJECT_REF: ${{ vars.SUPABASE_PROD_PROJECT_REF }}
+          SUPABASE_PROD_ACCESS_TOKEN: ${{ secrets.SUPABASE_PROD_ACCESS_TOKEN }}
+          SUPABASE_PROD_DB_PASSWORD: ${{ secrets.SUPABASE_PROD_DB_PASSWORD }}
+          CONFIRMACAO: ${{ inputs.confirmacao }}
+        run: bash infra/guarda-migrations-producao.sh alvo
+
+      # `migration list` antes do dry-run: se o remoto tiver migration que o
+      # repositório não tem, é aqui que aparece, antes de qualquer aprovação
+      # para aplicar.
+      - name: Plano (nada é aplicado)
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_PROD_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_PROD_DB_PASSWORD }}
+          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROD_PROJECT_REF }}
+        run: |
+          pnpm exec supabase link --project-ref "${SUPABASE_PROJECT_REF}" --yes
+          pnpm exec supabase migration list --linked
+          pnpm exec supabase db push --dry-run --yes
+
+  aplicar:
+    name: aplicar — db push em produção (2ª aprovação)
+    needs: plano
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: producao
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Ativar pnpm
+        run: corepack enable
+
+      - name: Instalar dependências
+        run: pnpm install --frozen-lockfile
+
+      # De novo: entre as duas aprovações alguém pode ter mudado a variável do
+      # ambiente.
+      - name: Conferir o alvo
+        env:
+          SUPABASE_PROD_PROJECT_REF: ${{ vars.SUPABASE_PROD_PROJECT_REF }}
+          SUPABASE_PROD_ACCESS_TOKEN: ${{ secrets.SUPABASE_PROD_ACCESS_TOKEN }}
+          SUPABASE_PROD_DB_PASSWORD: ${{ secrets.SUPABASE_PROD_DB_PASSWORD }}
+          CONFIRMACAO: ${{ inputs.confirmacao }}
+        run: bash infra/guarda-migrations-producao.sh alvo
+
+      # Mesmo `db push` do Dev, sem `--include-all`: aplica só o pendente no
+      # histórico remoto. O `migration list` depois fica no log como registro.
+      - name: Aplicar
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_PROD_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_PROD_DB_PASSWORD }}
+          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROD_PROJECT_REF }}
+        run: |
+          pnpm exec supabase link --project-ref "${SUPABASE_PROJECT_REF}" --yes
+          pnpm exec supabase db push --yes
+          pnpm exec supabase migration list --linked

@@ -10965,3 +10965,63 @@ E uma regra que o roteiro torna explicita: **`ML_TOKEN_ENCRYPTION_KEY` nova em p
 
 **Verificacao:** `bash infra/ambiente.test.sh` com **13/13**; `bash -n` nos sete scripts (o mesmo laco da CI); todos em LF; e a prova por mutacao acima. O Dev continua resolvendo para os mesmos quatro valores de antes -- e o primeiro caso da suite.
 
+## D-334 - Migration de PRODUCAO nao tinha caminho -- e agora tem um workflow que so aplica com ambiente travado, CI verde e o Dev ja migrado
+
+**Contexto:** D-333 deixou dois buracos escritos no roteiro de producao. O primeiro era de fluxo: o job `migrations` de `ci.yml` faz `supabase link --project-ref nmgccyqquwxecqffsidr` -- o Dev, fixo, e certo para o Dev -- e para producao o unico caminho seria `db push` do computador de alguem: sem registro, sem aprovacao e sem saber se aquele commit passou pela CI ou ja foi aplicado no Dev. Esta fatia fecha esse buraco sem criar recurso nenhum: o workflow so faz alguma coisa depois que um humano criar o ambiente `producao` no GitHub.
+
+---
+
+**1. O QUE FOI MEDIDO ANTES DE DESENHAR**
+
+| pergunta | medido em 2026-09-13 |
+|---|---|
+| o repositorio e publico? | **sim** -- ambiente com revisor obrigatorio esta disponivel no plano gratuito |
+| ja existe ambiente `producao`? | **nao** (404). Existem `Production` e `Preview`, criados pela integracao da Vercel, **sem nenhuma regra de protecao** e aceitando qualquer branch |
+| segredos do repositorio | `SUPABASE_ACCESS_TOKEN` e `SUPABASE_DB_PASSWORD` -- os do Dev |
+| branch protection da `v3` | **`protected: true`** (o ROADMAP dizia `false`), mas so contra force-push e exclusao: `required_status_checks` nulo, a CI segue nao obrigatoria |
+| `supabase db push --dry-run` | existe na CLI instalada |
+
+A terceira linha decidiu o nome dos segredos: **segredo do repositorio tambem chega a um job com ambiente**. Se o workflow de producao usasse `SUPABASE_DB_PASSWORD` e o ambiente nao tivesse o seu, o job receberia a senha do Dev, em silencio. Por isso os nomes sao `SUPABASE_PROD_*`, e a guarda recusa qualquer um vazio.
+
+---
+
+**2. O WORKFLOW: `.github/workflows/migrations-producao.yml`**
+
+So `workflow_dispatch`, com o ref de producao digitado como confirmacao; `concurrency` propria e sem cancelamento. Tres jobs em fila:
+
+1. **`origem`**, sem segredo nenhum: busca na API o ambiente `producao` (revisores obrigatorios, politica de branch) e a CI do MESMO commit na `v3` (conclusao do run e do job `aplicar migrations no Supabase Dev`), e passa tudo por variavel para a guarda.
+2. **`plano`**, com `environment: producao` (primeira aprovacao): confere o alvo e roda `migration list --linked` e `db push --dry-run`. Nada e aplicado.
+3. **`aplicar`**, com o ambiente de novo (segunda aprovacao): confere o alvo outra vez -- a variavel pode ter mudado entre as duas aprovacoes -- e roda `db push` sem `--include-all`, como o Dev.
+
+`inputs.confirmacao` entra por variavel de ambiente, nunca interpolado no script. **A trava de verdade e a configuracao do ambiente, nao o arquivo**: um workflow alterado noutra branch nao passaria pela guarda, e so a restricao de branch do ambiente impede que ele receba os segredos. Por isso `origem` recusa ambiente sem essa restricao -- o workflow nao confia na propria guarda para se proteger de uma copia sem ela.
+
+**Nao verificado, e escrito como tal:** que o GitHub peca as duas aprovacoes em separado (cada job com ambiente protegido entra em revisao quando vai comecar, e `aplicar` so comeca depois de `plano`). So se confirma no primeiro disparo real, que depende do ambiente existir. E nao ha parser de YAML nesta maquina: a sintaxe do workflow so e validada pelo GitHub no push.
+
+---
+
+**3. A GUARDA: `infra/guarda-migrations-producao.sh`**
+
+Toda decisao de recusar mora num bash puro, sem rede, para ser testavel caso a caso; o workflow so extrai valores. O modo `origem` recusa: disparo fora de `refs/heads/v3`; ambiente inexistente; ambiente aceitando qualquer branch; ambiente sem revisor (ou contagem ilegivel); CI do commit que nao seja `success` (falhou, rodando ou ausente); job do Dev que nao seja `success`. O modo `alvo` recusa: token, senha ou ref ausentes; ref fora do formato (colado como URL, tamanho diferente de 20); ref igual ao do Dev -- lido de `lib.sh`, a fonte que D-333 criou; confirmacao digitada diferente. Na duvida, fecha: commit sem CI vira `ausente`, CI rodando vira `pendente`, job renomeado vira `ausente`, e os tres recusam.
+
+---
+
+**4. COMO FOI PROVADO**
+
+- `infra/guarda-migrations-producao.test.sh`: **24 casos, 24 passam**, cada um num processo proprio com `env -i`. Um deles confere que a guarda **nao imprime** token nem senha. Entrou como passo da job `scripts de infraestrutura`.
+- **Mutacao (a)**, `fail` que nao encerra: **20 FALHA** -- todo caso de recusa.
+- **Mutacao (b)**, sem o bloco que confere politica de branch e revisores (15 linhas): **5 FALHA** -- os quatro casos de ambiente destravado e o caso feliz que depende do bloco.
+- **Contra dados reais da API**, com as mesmas expressoes `--jq` do workflow: o run da CI de `39b2dae` sai `success` e `success`; o ambiente `producao` como esta hoje sai `ausente`, e a guarda recusa ("nao existe no repositorio"); a configuracao do `Production` da Vercel (0 revisores, sem politica) sai `nenhuma`, e a guarda recusa ("aceita qualquer branch"). **Se alguem disparar o workflow hoje, ele para no primeiro job.**
+- `bash -n` nos nove scripts de `infra/`, e tudo em LF.
+
+---
+
+**5. DE CARONA: A LISTA DO ROLLOUT, PARTIDA EM D-332**
+
+Em `DEPLOYMENT.md`, os itens 5 a 7 da lista da secao 8 (testes de carga, revisao de seguranca, corte) tinham ficado depois do passo 10 do roteiro 8.2 -- `536e2ae` inseriu 8.1 entre o item 4 e o 5. Voltaram para o lugar, e a revisao de seguranca aparece como fechada (D-328 a D-331). O ROADMAP deixou de dizer `protected: false` sobre a `v3`.
+
+---
+
+**Impacto:** `.github/workflows/migrations-producao.yml` (novo), `.github/workflows/ci.yml` (passo `Guarda das migrations de producao`), `infra/guarda-migrations-producao.sh` e `infra/guarda-migrations-producao.test.sh` (novos), `infra/README.md`, `docs/{DECISIONS,DECISIONS_INDEX,DEPLOYMENT,ROADMAP,HANDOFF}.md`. **Nenhum ambiente, segredo ou recurso de nuvem criado; nenhuma linha de aplicacao.**
+
+**Ato humano que falta:** criar o ambiente `producao` (revisor obrigatorio, branches so `v3`), a variavel e os dois segredos -- `DEPLOYMENT.md` 8.2, passo 2 -- depois que o projeto Supabase de producao existir.
+

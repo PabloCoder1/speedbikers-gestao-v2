@@ -42,6 +42,12 @@ CONFIRMO_PRODUCAO=sim bash infra/deploy-cloud-run.sh
 
 A guarda existe porque, até D-333, `PROJECT_ID` era sobrescrevível e o Supabase era **fixo** no Dev: um deploy com o projeto de produção subiria apontando para o banco do Dev, sem aviso. `infra/ambiente.test.sh` prova cada caso e roda na CI.
 
+## Migrations de produção (D-334)
+
+Nenhum script de `infra/` aplica migration em produção, de propósito: o caminho é `.github/workflows/migrations-producao.yml`, disparado à mão na `v3`, com duas aprovações do ambiente `producao` do GitHub — uma para ver o plano, outra para aplicar.
+
+`guarda-migrations-producao.sh` decide as recusas — disparo fora da `v3`; ambiente `producao` inexistente, sem revisor obrigatório ou aceitando qualquer branch; CI do commit não verde ou sem ter aplicado no Dev; ref de produção ausente, fora do formato, igual ao do Dev ou diferente do digitado — e `guarda-migrations-producao.test.sh` prova cada caso na CI. Criar o ambiente: `docs/DEPLOYMENT.md` 8.2, passo 2.
+
 ## Ordem de execução
 
 ```bash

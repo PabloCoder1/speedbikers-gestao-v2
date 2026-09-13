@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **329** (D-001 a D-333).
+Decisões registradas: **330** (D-001 a D-334).
 
 ## Por domínio
 
@@ -65,7 +65,7 @@ Decisões registradas: **329** (D-001 a D-333).
 - **D-311** — A11: a Home contra o frame -- o controle que o painel devia ter, a idade do FATO, e as duas recusas que a revisao produziu
 - **D-330** — Revisao de seguranca, fatia 3: o logger redigia pelo NOME da chave e deixava passar o VALOR -- e a "uma lista, dois consumidores" de D-232 estava pela metade
 
-### banco/rls (29)
+### banco/rls (30)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -96,6 +96,7 @@ Decisões registradas: **329** (D-001 a D-333).
 - **D-289** — A paginação da Caixa de Entrada, e o 416 que o PostgREST devolve para página que passou do fim
 - **D-315** — `/produtos` ganha as duas opcoes do UpSeller: quantos por pagina e em que ordem -- e a ordem obrigou uma migration
 - **D-324** — A varredura das plpgsql que D-319 deixou aberta: nenhuma doente, e o remedio de D-319 PIORARIA as escritas em lote
+- **D-334** — Migration de PRODUCAO nao tinha caminho -- e agora tem um workflow que so aplica com ambiente travado, CI verde e o Dev ja migrado
 
 ### estoque (25)
 
