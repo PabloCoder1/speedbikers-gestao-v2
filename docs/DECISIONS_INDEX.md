@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **324** (D-001 a D-328).
+Decisões registradas: **325** (D-001 a D-329).
 
 ## Por domínio
 
@@ -302,7 +302,7 @@ Decisões registradas: **324** (D-001 a D-328).
 - **D-325** — A leitura do grafico de vendas falava de "periodo anterior" onde nao ha comparacao
 - **D-327** — A18: a legenda do grafico de vendas no cabecalho do painel, e o seed que nunca teve periodo anterior
 
-### worker/infra (62)
+### worker/infra (63)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -366,4 +366,5 @@ Decisões registradas: **324** (D-001 a D-328).
 - **D-320** — A12: o painel "Ultimas decisoes" do SKU contra o frame -- QUEM decidiu, sobre O QUE, ha quanto tempo, e o avatar "IA" que o esquema nao tem
 - **D-321** — A13: a gaveta do pedido em cartoes, e o chao cinza que so vale onde ha cartao
 - **D-323** — A15: o rotulo da busca do shell tinha envelhecido em D-216, e a promessa inteira nao cabe no campo
+- **D-329** — Revisao de seguranca, fatia 2: a superficie de entrada conferida AO VIVO, D-045 fechada com trafego real, e a `web` que qualquer site podia emoldurar
 

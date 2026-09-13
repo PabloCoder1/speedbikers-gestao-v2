@@ -10659,3 +10659,89 @@ O item do ROADMAP continua aberto. Ja foram revistos antes, em decisoes proprias
 
 **Duas rodadas foram perdidas para o AMBIENTE, e nenhuma para o codigo -- as duas viraram registro em `docs/TESTING.md`:** (1) com o Docker parado, `supabase status -o env` sai vazio sem erro, o `export` poe variavel VAZIA no ambiente, o build embute URL vazia e os 139 casos caem em "Your project's URL and Key are required" -- lido no log antes de concluir qualquer coisa sobre o `next`; (2) depois do reinicio da maquina, o Docker Desktop nao subia: um socket `.stale` de 08/09 impedia o rename de inicializacao, e o dialogo so oferecia sair ou *Reset to factory defaults*, que apagaria os volumes. Resolvido movendo a pasta `run` inteira para o lado -- nada foi apagado.
 
+## D-329 - Revisao de seguranca, fatia 2: a superficie de entrada conferida AO VIVO, D-045 fechada com trafego real, e a `web` que qualquer site podia emoldurar
+
+**Contexto:** D-328 deixou quatro perguntas abertas no bloqueador de seguranca: autenticacao dos endpoints internos e do webhook, CORS, cabecalhos da `web` e redacao de log. Esta fatia mede as tres primeiras -- **na plataforma, nao so no codigo** --, corrige a que estava aberta, e deixa a quarta para a proxima.
+
+A regra que guiou a medicao: **o script de deploy nao prova a politica em vigor.** `gcloud run deploy` sem `--[no-]allow-unauthenticated` MANTEM o IAM que o servico ja tinha; um servico publicado aberto uma vez continua aberto depois de o script ser corrigido.
+
+---
+
+**1. A SUPERFICIE DA `api`, ROTA A ROTA**
+
+| grupo | rotas | autenticacao |
+|---|---|---|
+| `/health` | 1 | nenhuma, de proposito -- devolve estado e o commit no ar (D-070) |
+| `/webhooks/*` | 1 | allowlist de IP pelo `X-Forwarded-For` mais a direita (D-043/D-045) |
+| `/oauth/mercado-livre/callback` | 1 | `state` de CSRF gravado em `ml_oauth_states` |
+| `/internal/*` | 17 | OIDC do Google: assinatura, **audience** = URL da propria `api`, e **e-mail** numa lista fechada (a service account do Scheduler) |
+| `/v1/*` | 12 | bearer do Supabase revalidado no servidor, com a lista de papeis **por rota** |
+
+**CORS** so e montado quando `WEB_ORIGINS` tem origens, e so em `/v1/*`: origem fora da lista recebe `null` -- nenhum `Access-Control-Allow-Origin`, nunca `*`. E nao e ele a fronteira: as rotas `/v1` exigem bearer de qualquer jeito.
+
+---
+
+**2. O WORKER, NA PLATAFORMA**
+
+O worker tem uma rota so (`/internal/jobs`) e **nenhuma autenticacao na aplicacao** -- a confianca e toda do IAM do Cloud Run. O script de deploy passa `--no-allow-unauthenticated` e faz o binding do invoker; pela regra acima, isso nao bastava como prova. Medido no projeto `speedbikers-gestao-v3`:
+
+- **o unico membro com `roles/run.invoker` e a service account do Cloud Tasks** (`v3-tasks-invoker`) -- nenhum `allUsers`, nenhum `allAuthenticatedUsers`;
+- **um `GET /health` sem credencial devolve 403**, da plataforma, antes de chegar ao codigo.
+
+---
+
+**3. D-045 FECHADA COM TRAFEGO REAL**
+
+D-045 pedia uma coisa desde 2026-08-21: *verificar empiricamente o `X-Forwarded-For` real recebido pelo Cloud Run* antes de confiar na allowlist. Os logs do Dev, ultimas 24 horas:
+
+| | 24 h |
+|---|---|
+| `POST /webhooks/mercado-livre` com **200** | **5.000 ou mais** (a consulta bateu no teto) |
+| com **403** | **0** |
+| `webhook_origin_rejected` | **0** |
+| `webhook_forwarded_for_unparsed` | **0** |
+
+Todo o trafego real do Mercado Livre passa, e nenhum `X-Forwarded-For` deixou de ser lido: a regra do IP mais a direita funciona no Cloud Run. **O limite do que isso prova, dito:** zero rejeicoes tambem quer dizer que nenhuma tentativa forjada apareceu nesta janela -- o caminho de RECUSA continua provado pelos testes de unidade de `ip-allowlist.ts` (inclusive o do cabecalho forjado que ja atravessou a regra antiga), nao por trafego.
+
+**Uma armadilha de medicao que quase entrou como resultado:** a primeira rodada destes numeros deu **zero em tudo**. O `gcloud` tem conta ativa e nenhum projeto padrao, a consulta falhava, e o `2>/dev/null` transformava o erro em "0 linhas". Zero onde o HANDOFF media ~221 webhooks por hora e impossivel -- e foi isso que mandou refazer com `--project` e sem esconder o erro.
+
+---
+
+**4. A `web` NAO TINHA UM CABECALHO DE SEGURANCA SEQUER**
+
+`next.config.ts` e `vercel.json` nao declaravam cabecalho nenhum, e a resposta ao vivo de `/login` no Dev confirmou: **so o `Strict-Transport-Security` que a propria Vercel acrescenta.** Nada impedia outro site de carregar o sistema num `<iframe>` e desenhar botoes por cima -- num sistema que republica anuncio (ato irreversivel, D-295), convida usuario e muda papel.
+
+Antes de escrever, as pre-condicoes foram conferidas: `proxy.ts` nao mexe em cabecalho de resposta nem gera nonce; **nada no app usa `iframe`, `postMessage` ou `window.parent`**; e o codigo nao carrega recurso de origem externa.
+
+| cabecalho | valor | por que |
+|---|---|---|
+| `Content-Security-Policy` | `frame-ancestors 'none'` | a protecao moderna contra emoldurar |
+| `X-Frame-Options` | `DENY` | a mesma coisa para navegador que nao le CSP |
+| `X-Content-Type-Options` | `nosniff` | o navegador nao adivinha tipo de arquivo |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | a URL filtrada (`?account=...`) nao vaza para fora |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=()` | o app nao usa nenhum dos tres |
+| `X-Powered-By` | **removido** (`poweredByHeader: false`) | o framework nao se anuncia |
+
+**Duas recusas deliberadas:**
+
+- **a CSP carrega SO `frame-ancestors`.** Uma CSP com `script-src` exige nonce para os scripts inline do Next, gerado no `proxy.ts` por requisicao; meia CSP mal feita quebra a aplicacao inteira sem aviso. E fatia propria, com e2e proprio;
+- **HSTS nao entra:** a Vercel ja o envia, com `preload`. Duplicar daria dois donos para o mesmo cabecalho.
+
+**A guarda:** `e2e/cabecalhos.spec.ts` le os cabecalhos na resposta de `/login` (publica) e de `/vendas` depois do login (passa pelo `proxy.ts`), e afirma a AUSENCIA de `X-Powered-By`. Uma linha de configuracao some numa refatoracao sem nenhuma tela mudar de pixel -- e exatamente o tipo de defeito que so um caso assim pega.
+
+---
+
+**5. O QUE SEGUE ABERTO NO BLOQUEADOR**
+
+- **CSP completa com nonce** (`script-src`, `style-src`, `connect-src` para o Supabase e a `api`);
+- **redacao de log fora das telas** -- `packages/observability` tem teste de redacao, e a pergunta e se todo chamador passa por ela;
+- **os cabecalhos na Vercel de verdade**: o e2e prova o `next start`; a confirmacao no Dev fica para depois do proximo deploy da `web`, com o mesmo `curl` desta fatia.
+
+---
+
+**Impacto:** `apps/web/next.config.ts`, `apps/web/e2e/cabecalhos.spec.ts` (novo), `docs/{DECISIONS,DECISIONS_INDEX,ROADMAP,HANDOFF}.md`. Sem migration.
+
+**Verificacao:** `check` **29/29** (`--force`, web 551), build **8/8**, `db reset`, seed e e2e **140/140** em banco recriado (+1, `cabecalhos.spec.ts`: os cinco cabecalhos em `/login` e em `/vendas` depois do login, e nenhum `X-Powered-By`). A integracao nao rodou: nao ha SQL. As medicoes de plataforma (IAM do worker, 403 sem credencial, logs de webhook) sao as das secoes 2 e 3, feitas no projeto `speedbikers-gestao-v3` com `--project` explicito.
+
+**O lint pegou o que o typecheck deixou passar:** a primeira versao declarava `async headers()` sem `await`, e `require-await` reprovou. A bateria que ja corria com essa versao foi PARADA antes do e2e e refeita com `Promise.resolve` -- a troca e equivalente, mas o commit precisa carregar o codigo que foi testado, nao um vizinho dele.
+
