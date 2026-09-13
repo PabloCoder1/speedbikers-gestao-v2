@@ -186,8 +186,12 @@ Nada disto pode ser feito por um agente.
 2. ~~`bash infra/cloud-scheduler.sh`~~ — **FEITO**, **14** jobs `ENABLED`. A
    lista canônica é `infra/cloud-scheduler.sh` (`DEPLOYMENT.md` §7); o «15
    esperados» que já esteve escrito aqui era falso.
-3. Relatar **Dashboard → Database → Backups** do projeto Dev (decide a
-   abordagem de backup da Fase 8).
+3. ~~Relatar **Dashboard → Database → Backups** do projeto Dev~~ — **MEDIDO
+   em 2026-09-13 (D-332)**: backup físico diário, ~7 dias de retenção. **Falta
+   só confirmar o PITR** (aba *Point in time*, que não renderizou para as
+   ferramentas). **3a. O ensaio de restore** é o próximo ato: restaurar um
+   backup num projeto NOVO e rodar `pnpm --filter @sb/db run check:restore` —
+   roteiro em `docs/DEPLOYMENT.md` 8.1. Nunca restaurar sobre o próprio Dev.
 3b. **Conferir o saldo do estoque contra o UpSeller** — o usuário vai subir a
    planilha do UpSeller quando as etapas atuais fecharem (2026-09-03). É a segunda metade da
    condição que o item da reconciliação impõe a si mesmo, e a única que falta
@@ -234,7 +238,7 @@ Nada disto pode ser feito por um agente.
 
 | | |
 |---|---|
-| backup e restore **verificados** | a metade do SCHEMA já é provada todo dia (CI recria as migrations); falta a do DADO |
+| backup e restore **verificados** | a metade do SCHEMA é provada todo dia (CI recria as migrations). A do DADO: **backup medido** (diário, ~7 dias) e **ensaio pronto** (D-332) — o comparador `check:restore` foi provado contra dano simulado. Falta o restore real num projeto novo, que é ato humano |
 | ~~revisão de segurança e de secrets~~ | ✅ **FEITA em quatro fatias**: segredos e dependências (D-328); superfície de entrada conferida ao vivo, D-045 fechada e cabeçalhos da `web` confirmados na Vercel (D-329); redação de log por VALOR (D-330); CSP completa com nonce, com e2e que exige zero violações (D-331). **Sem lacuna técnica aberta.** Fica uma decisão de fluxo, sem dono: guarda de `pnpm audit` na CI reprova pela data, não pelo código |
 | load tests e revisão de `pg_stat_statements` | — |
 | Supabase e Cloud Run de **produção** | depende de ato humano para criar |

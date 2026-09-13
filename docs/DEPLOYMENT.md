@@ -214,7 +214,26 @@ Antes de declarar qualquer mudança operacional como implantada, verificar contr
 1. Migrar `infra/` para Terraform.
 2. Criar projeto Supabase de produção e serviços Cloud Run de produção.
 3. Executar a carga inicial: backfill do Mercado Livre para pedidos e anúncios. ETL da V2 para vínculos/estoque/NF-e foi descartado por evidência medida (D-040); só resta, se ainda fizer sentido no momento, migrar o(s) pedido(s) de compra reais da V2.
-4. Verificar backup e restore — restore testado, não apenas backup configurado.
+4. Verificar backup e restore — restore testado, não apenas backup configurado. **O ensaio está pronto (D-332)**, e é o roteiro abaixo.
+
+### 8.1 Ensaio de restore
+
+O que existe, medido em 2026-09-13 no projeto Dev: **backup físico diário** (perto da meia-noite da região, ~06:00 UTC), **oito listados, ~7 dias de retenção**. PITR não confirmado. Os arquivos não moram no Supabase: estão no GCS (`erp-imports`, `documents`, `raw-ml`), com **soft delete de 7 dias** e **sem versionamento** — o backup do banco não os inclui, e o ensaio abaixo não os cobre.
+
+1. **Escolher o backup** em Database → Backups → *Scheduled backups* e anotar o instante **em UTC** — é o `BACKUP_AT`.
+2. **Restaurar num projeto NOVO** (*Restore to new project*). **Nunca** use o restore sobre o próprio Dev: ele sobrescreve o banco que está em uso. O projeto novo é cobrado enquanto existir.
+3. **Pegar as duas URLs de conexão** (Dev e restaurado), em Settings → Database → Connection string, com a senha de cada um.
+4. **Rodar a comparação** — só lê, as duas sessões abrem em `READ ONLY`, e as URLs nunca são impressas:
+
+   ```bash
+   DEV_DB_URL="postgresql://postgres:SENHA@db.<ref-dev>.supabase.co:5432/postgres" \
+   RESTORED_DB_URL="postgresql://postgres:SENHA@db.<ref-restaurado>.supabase.co:5432/postgres" \
+   BACKUP_AT="2026-09-13T05:59:13Z" \
+     pnpm --filter @sb/db run check:restore
+   ```
+
+5. **Ler o veredito.** `RESTORE_OK` exige: toda migration do restaurado existe no Dev; RLS ligada em toda tabela de `public`; as tabelas append-only com a MESMA contagem até `BACKUP_AT` nos dois lados; e o ledger de estoque batendo com a projeção dentro do restaurado. As tabelas de catálogo saem como INFO — a diferença é o Dev andando, não defeito.
+6. **Apagar o projeto restaurado** assim que o veredito estiver registrado.
 5. Testes de carga e revisão de `pg_stat_statements`.
 6. Revisão de segurança e de secrets.
 7. Corte da operação.

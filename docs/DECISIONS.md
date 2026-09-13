@@ -10856,3 +10856,57 @@ Uma CSP errada nao derruba a pagina: deixa o HTML chegar e **bloqueia em silenci
 
 **Confirmada no ar, na Vercel** (deploy de `434e4a8`), so na pagina publica de `/login` e **sem entrar** -- nenhuma credencial digitada: status 200 com nonce e `strict-dynamic`; o nonce **muda entre duas cargas**; **11 de 11** scripts com nonce; o campo de e-mail aceita digitacao, que prova que o JavaScript hidratou apesar da politica; **0** violacoes no console; e `connect-src` com exatamente o projeto Supabase do Dev (HTTPS e WSS) e a `api` do Cloud Run. As telas autenticadas nao foram abertas em producao: exigiriam credencial. Elas estao cobertas pelo e2e local, incluindo o WebSocket do Realtime.
 
+## D-332 - Backup e restore: o que existe foi MEDIDO, e o ensaio de restore esta pronto -- com um comparador que prova o que diz
+
+**Contexto:** "Backup e restore verificados" e um dos cinco bloqueadores restantes da V3. D-159 travou o item numa condicao: *nenhuma maquina propria de backup antes de saber o que o plano do Supabase oferece*. Essa pergunta ficou como ato humano desde 2026-08-31. O usuario escolheu responde-la; a leitura foi feita nesta sessao, **so leitura**, pela sessao dele no Dashboard.
+
+---
+
+**1. O QUE EXISTE -- medido, e o que nao foi**
+
+| | medido em 2026-09-13 |
+|---|---|
+| backup do banco | **fisico, diario**, perto da meia-noite da regiao (~06:00 UTC) |
+| retencao | **oito listados** (06/09 a 13/09) -- **~7 dias** |
+| perda maxima numa restauracao | ate **~24 h** (o intervalo entre dois backups) |
+| PITR | **nao confirmado**: a aba *Point in time* nao renderizou texto para as ferramentas de leitura, e o usuario vai olhar |
+| arquivos | **fora do Supabase**: o app nao usa Supabase Storage (`createFileStore` grava no GCS). O aviso do Dashboard ("Storage objects are not included") nao nos afeta |
+| buckets GCS | os tres com **soft delete de 7 dias** e **sem versionamento**, regiao unica `southamerica-east1`. `erp-imports` tem **4** objetos; `documents` e `raw-ml`, **zero** |
+
+**O que isso quer dizer para o item:** a condicao de D-159 esta satisfeita -- ha backup automatico, e nao se constroi maquina propria. O que falta e a outra metade da frase do item: **restore VERIFICADO**. Backup nunca restaurado e hipotese.
+
+---
+
+**2. O ENSAIO, E POR QUE O COMPARADOR NAO E INGENUO**
+
+A unica verificacao que prova que o dado volta e restaurar um backup num projeto novo (*Restore to new project*) e comparar com o Dev. Isso cria projeto cobrado e e clique do usuario; a parte do agente e o roteiro (`docs/DEPLOYMENT.md` 8.1) e o comparador, `packages/db/scripts/restore-check.mjs` (`pnpm --filter @sb/db run check:restore`).
+
+O backup e um instante congelado e o Dev continua andando (~221 webhooks por hora). Contar linhas nos dois lados "falharia" em toda rodada e nao provaria nada. Tres camadas:
+
+1. **As 12 tabelas append-only** -- as que tem gatilho recusando `UPDATE`/`DELETE`, **lidas no catalogo** e nao por regex (a regex achou 6; o catalogo, 12): a contagem ate `BACKUP_AT` tem de ser **identica** nos dois lados. Oito tem `created_at`, e a comparacao e exata. Quatro so tem a data do FATO (`occurred_at`, `changed_at`, `requested_at`), que pode ser retroativa; ali o Dev com mais linhas e aceito, e so o restaurado com mais seria defeito.
+2. **Invariantes dentro do restaurado**, sem olhar o Dev: toda migration do restaurado existe no Dev; RLS ligada em toda tabela de `public`; e o ledger de estoque batendo com a projecao -- `compute_inventory_balances_from_ledger` x `inventory_balances`, **a mesma regua** do job `verify-ledger-integrity`, reusada e nao reinventada.
+3. **Tabelas que mudam pouco** (catalogo, membros, contas, pedidos) saem como INFO.
+
+As duas sessoes abrem em `READ ONLY` -- um `UPDATE` por engano seria recusado pelo Postgres, nao por disciplina. As URLs vem do ambiente, com a senha do usuario, e o script nunca as imprime. Cada secao que quebra vira FAIL e o script segue: a primeira versao morria sem veredito diante de um restaurado incompleto, que e justamente o caso que o ensaio existe para pegar.
+
+---
+
+**3. O COMPARADOR FOI PROVADO NOS DOIS SENTIDOS**
+
+- **Positivo** (Dev e restaurado = o banco local): `RESTORE_OK`, **16 PASS, 0 FAIL** -- 166 migrations, RLS em 61 tabelas, as 12 append-only, `auth.users` e o ledger.
+- **Negativo** (restaurado = uma copia do banco local num banco de rascunho, com o gatilho desligado e **uma linha apagada** de `stock_movements` e uma de `domain_events`, so na copia): `RESTORE_REPROVADO`, **exatamente os 3 FAIL esperados** -- `domain_events` 2 x 1, `stock_movements` 1 x 0, e o ledger com 1 chave divergente --, com migrations e RLS continuando PASS. O comparador **isola** o defeito em vez de reprovar tudo junto. O banco de rascunho foi removido.
+
+---
+
+**4. O QUE O ENSAIO NAO PROVA, dito**
+
+- **Os arquivos do GCS.** O backup do banco nao os inclui, e o comparador nao os le. Hoje o dano possivel e pequeno -- quatro planilhas e nenhum XML --, e o soft delete de sete dias cobre apagamento acidental. Versionamento ou copia entre regioes e decisao para produção, nao para o Dev.
+- **O restore da plataforma, ate alguem rodar.** O comparador esta provado contra dano simulado; a restauracao real so e verificada quando o usuario restaurar e o script disser `RESTORE_OK`.
+- **O RPO de producao.** Sete dias e diario valem para o plano do Dev; o projeto de producao, quando existir, pede a mesma leitura -- e a pergunta sobre PITR fica mais cara la.
+
+---
+
+**Impacto:** `packages/db/scripts/restore-check.mjs` (novo), `packages/db/package.json` (`check:restore`), `docs/{DECISIONS,DECISIONS_INDEX,DEPLOYMENT,ROADMAP,HANDOFF}.md`. **Sem migration e sem codigo de aplicacao.**
+
+**Verificacao:** lint de `@sb/db`; as duas provas acima contra o Postgres local. A verificacao que fecha o item e humana: o restore num projeto novo, seguido de `check:restore`.
+
