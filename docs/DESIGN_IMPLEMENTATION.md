@@ -701,7 +701,7 @@ parece a aplicação antiga com o tema do Figma?*
 | Shell (sidebar, topbar, busca) | 78% → 86% → **91%** (A2) → **92%** (A15) | ALINHADO | sem botão de recolher em tela larga; logo em texto; ~~texto da busca desatualizado e cortado~~ — **entrou em A15** (D-323) | nav horizontal antiga: **removida** (não existia mais consumidor); paleta refeita pelo `.command` |
 | Design system (tokens, componentes) | 70% → 80% → **88%** (A2) | ALINHADO | ~~falta `.sb-drawer`~~ — **nasceu em D38** (D-281), com `.sb-detail-row` e `.sb-text-button`; `table-styles.ts` foi apagado em D-275 | cinco mapas de tom → **um** (`tone.ts`); `StatePill` cápsula → chip; `.sb-modal`/`.sb-command` nasceram; `table-styles.ts` MERGE pendente (2 consumidores não migrados) |
 | Home | 78% → **87%** | ALINHADO | seletor "14 dias ⌄" do gráfico; hora relativa no feed | `TOM` local **removido**; `.sb-attention-value` **removida** |
-| Vendas | 70% → 85% → **88%** (A2) → **90%** (A14) | ALINHADO | legenda do gráfico no rodapé (frame põe no cabeçalho); ~~altura do SVG proporcional~~ — **entrou em A14** (D-322): altura fixa do frame e texto fora do SVG | `FILTER_DATE_STYLE` **removido**; 3 menus → `FilterMenu`; "Cancelamentos e taxas" **dissolvido**; `SavedFilters` no design system |
+| Vendas | 70% → 85% → **88%** (A2) → **90%** (A14) → **92%** (A18) | ALINHADO | ~~legenda do gráfico no rodapé (frame põe no cabeçalho)~~ — **entrou em A18** (D-327); ~~altura do SVG proporcional~~ — **entrou em A14** (D-322): altura fixa do frame e texto fora do SVG | `FILTER_DATE_STYLE` **removido**; 3 menus → `FilterMenu`; "Cancelamentos e taxas" **dissolvido**; `SavedFilters` no design system |
 | Produtos | 68% → 83% → **90%** (D38) | ALINHADO | botão "Buscar" visível (frame submete por Enter) — a gaveta "Inspeção Rápida" **entrou em D38** | consts `th`/`td` **removidos**; faixa inventada **removida**; 3 menus → `FilterMenu` |
 | SKU — Visão geral, Vendas, Estoque | 78% → 85% → **89%** (A2) → **91%** (A12) | ALINHADO | tom "abaixo do lead time" na cobertura; ~~"Últimas decisões" sem autor nem tipo~~ — **entrou em A12** (D-320), sem o avatar "IA" | `statBox`/`th`/`td`/`tdNumber`/`SalesMetricCard` **removidos** (7 tabelas em `.sb-table`); selo Curva ABC entrou (D-247) |
 | SKU — Anúncios, Preços, Full, Histórico, Diagnóstico, Decisões | 62% → 78% → **86%** (A2) | ALINHADO | ressalvas longas nos corpos de alguns painéis | `buttonStyle`/`cardStyle` do diagnóstico **removidos**; chips na aba Full e cartões no Histórico entraram |
@@ -735,7 +735,7 @@ próximo = 80, validada contra o Figma = 95, + cleanup + testes = 100.
 | Shell + navegação | 8 | 86% | 91% | 91% | 91% | 91% | 91% | 91% | 91% | 91% → **92%** (A15) |
 | Design system (tokens, componentes, tabela, campo, menu, chip, modal) | 10 | 80% | 88% | 88% | 88% | 88% | **82%** | **94%** | **97%** | **97%** |
 | Home | 6 | 87% | 87% | 87% | 87% | 87% | 87% | 87% | 87% | 87% → **90%** (A11) |
-| Vendas | 8 | 85% | 88% | 88% | 88% | 88% | 88% | 88% | 88% | 88% → **90%** (A14) |
+| Vendas | 8 | 85% | 88% | 88% | 88% | 88% | 88% | 88% | 88% | 88% → **90%** (A14) → **92%** (A18) |
 | **Produtos** | 5 | 83% | 83% | 83% | 83% | **90%** | 90% | 90% | 90% | 90% |
 | Dashboard de SKU (nove abas) | 10 | 82% | 88% | 88% | 88% | 88% | 88% | 88% | 88% | 88% → **89%** (A12) |
 | Anúncios — lista | 6 | 86% | 86% | 86% | 86% | 86% | 86% | 86% | 86% | 86% |
@@ -1044,6 +1044,30 @@ está na "Próxima fatia segura".
 
 ## Última fatia concluída
 
+**A18 — A LEGENDA DO GRÁFICO NO CABEÇALHO DO PAINEL (D-327)** — o último item de
+desenho em aberto, registrado desde A2. O frame põe a legenda à direita do título
+do painel; a V3 a desenhava num rodapé embaixo do gráfico.
+
+### O achado antes do desenho
+
+A legenda **nunca tinha aparecido num teste**: o seed não tinha período anterior,
+então nenhuma rota tinha comparação. O seed ganhou vendas de 35 e 40 dias atrás,
+fora da constante que os specs somam em janelas de 30 dias.
+
+### Uma condição só
+
+`LegendaDoGrafico` mora no `aside` do painel, e a condição —
+`mostraComparacao` — é a mesma para a legenda e o subtítulo, cobrindo a recusa de
+marca, onde não há gráfico nenhum. A dica "Passe o ponteiro…" do rodapé não veio:
+o frame não a tem.
+
+**Verificação:** build 8/8, e2e **139/139** em banco recriado (+1, nenhum caso
+quebrou com o período anterior no seed), `check` 29/29 (`--force`). Medido a
+1440px e 1100px: legenda no `aside`, na linha do título, alinhada à direita, com
+a janela real; nenhum rodapé na figura; e com 7 dias, sem legenda.
+
+## Fatias anteriores
+
 **A17 — O GATILHO DA BUSCA FICA NA BARRA (D-326)** — o item em aberto que a
 captura de A15 achou. `CommandPalette` devolvia a caixa no lugar do gatilho:
 abrir a busca tirava o campo do topbar e deslocava o perfil e os botões por trás
@@ -1055,8 +1079,6 @@ juntas: o gatilho visível com a caixa aberta, e o perfil na mesma posição.
 **Verificação:** build 8/8, e2e **138/138** em banco recriado, `check` 29/29
 (`--force`). Medido a 1440px antes e depois de abrir: gatilho em x=278 (455px)
 e perfil em x=1249 (108px) nos dois estados.
-
-## Fatias anteriores
 
 **A16 — A LEITURA DO GRÁFICO SEM COMPARAÇÃO (D-325)** — um dos itens em aberto
 que A14 registrou. A caixa de hover do gráfico, e o `title` de cada ponto,

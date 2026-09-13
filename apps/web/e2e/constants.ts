@@ -30,6 +30,22 @@ export const E2E_SKU_SALES = [
   { daysAgo: 3, units: 2, revenue: 200, orders: 2, purchases: 2 },
 ] as const;
 
+/**
+ * Vendas do PERÍODO ANTERIOR (A18, D-327) — e elas moram FORA de
+ * `E2E_SKU_SALES` de propósito.
+ *
+ * Sem elas nenhuma rota do seed tinha comparação: a legenda do gráfico, a linha
+ * "anterior" da faixa de `/vendas` e o ramo "com comparação" da leitura (D-325)
+ * nunca apareciam em teste nem em captura. 35 e 40 dias atrás caem dentro do
+ * período anterior da janela padrão de 30 dias (31 a 60) e FORA de toda janela
+ * de 30 dias que os specs recalculam a partir de `E2E_SKU_SALES` — `/produtos`,
+ * `/reposicao` e a aba Vendas do SKU seguem somando só as duas de cima.
+ */
+export const E2E_SKU_SALES_ANTERIOR = [
+  { daysAgo: 35, units: 1, revenue: 150, orders: 1, purchases: 1 },
+  { daysAgo: 40, units: 2, revenue: 250, orders: 2, purchases: 2 },
+] as const;
+
 /** Texto da decisão do seed (aba Decisões, D-228) — o spec procura por ele. */
 export const E2E_DECISION_TEXT = "Repor 10 unidades e revisar o preço — decisão de teste E2E";
 

@@ -180,7 +180,7 @@ test("/vendas e Home: o gráfico tem a altura do frame e o eixo legível em qual
         compara, e o seed de `/vendas` também não tem período anterior, mas se um
         dia tiver, o caso continua valendo sem mudar.
       */
-      const temComparacao = (await page.locator("figure.sb-chart figcaption").count()) > 0;
+      const temComparacao = (await page.locator(".sb-chart-legenda").count()) > 0;
       const leituraFalaDeAnterior = await page
         .locator(".sb-chart-leitura")
         .first()
@@ -189,4 +189,39 @@ test("/vendas e Home: o gráfico tem a altura do frame e o eixo legível em qual
       expect(leituraFalaDeAnterior, `${caso.rota}: a leitura fala de período anterior só com comparação`).toBe(temComparacao);
     }
   }
+});
+
+/**
+ * A LEGENDA NO CABEÇALHO DO PAINEL (A18, D-327).
+ *
+ * O frame põe a legenda à direita do título do painel; a V3 a desenhava num
+ * rodapé embaixo do gráfico. E nenhum teste a via, porque o seed não tinha
+ * período anterior — a legenda nunca aparecia. O seed ganhou vendas de 35 e 40
+ * dias atrás, e o caso afirma as três coisas juntas:
+ *
+ * 1. com comparação, a legenda mora no `aside` do painel, com a janela REAL do
+ *    período anterior, e o gráfico não tem mais rodapé;
+ * 2. a leitura do hover fala de período anterior (o outro ramo de D-325);
+ * 3. com "Últimos 7 dias", o período anterior (8 a 14 dias atrás) não tem venda:
+ *    sem comparação, sem legenda.
+ */
+test("/vendas: com período anterior, a legenda mora no cabeçalho do painel e diz a janela real", async ({ page }) => {
+  await page.goto("/login?next=%2Fvendas");
+  await page.getByLabel("E-mail").fill(E2E_USER_EMAIL);
+  await page.getByLabel("Senha").fill(E2E_USER_PASSWORD);
+  await page.getByRole("button", { name: "Entrar" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Dashboard de vendas" })).toBeVisible();
+
+  const painel = page.getByRole("region", { name: "Desempenho no período" });
+  const legenda = painel.locator(".sb-panel-aside .sb-chart-legenda");
+
+  await expect(legenda).toBeVisible();
+  await expect(legenda).toContainText("Atual");
+  await expect(legenda).toContainText(/Anterior \(\d{2}\/\d{2}\/\d{4} a \d{2}\/\d{2}\/\d{4}\)/);
+  await expect(painel.locator("figure.sb-chart figcaption")).toHaveCount(0);
+  await expect(painel.locator(".sb-chart-leitura").first()).toContainText("período anterior");
+
+  await page.goto("/vendas?days=7");
+  await expect(painel.locator("figure.sb-chart")).toBeVisible();
+  await expect(painel.locator(".sb-chart-legenda")).toHaveCount(0);
 });

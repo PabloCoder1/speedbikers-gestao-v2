@@ -19,7 +19,7 @@ import { formatBusinessDate, formatCount, formatCurrency, formatDateTime, format
 import { DEFAULT_PERIOD_DAYS, PERIOD_PRESETS } from "../../lib/period";
 import { createClient } from "../../lib/supabase/server";
 import { DEFAULT_SALES_METRIC, SALES_METRICS, resolveSalesMetric } from "../../lib/sales-metric";
-import { SalesChart } from "./sales-chart";
+import { LegendaDoGrafico, mostraComparacao, SalesChart } from "./sales-chart";
 import { FilterMenu } from "../../components/filter-menu";
 import { currentMembership } from "../../lib/membership";
 
@@ -951,10 +951,21 @@ export default async function VendasPage({
         <div style={{ marginTop: "var(--sb-space-3)" }}>
           <Panel
             title="Desempenho no período"
+            /*
+              A LEGENDA NO CABEÇALHO, COMO NO FRAME (A18, D-327). Ela morava no
+              rodapé do gráfico; agora é o `aside` do painel, e a condição é a
+              mesma função que decide se há comparação para desenhar — inclusive
+              sob a recusa de marca, onde não há gráfico nenhum.
+            */
+            aside={
+              mostraComparacao(dailySeries, previousDailySeries, metric) ? (
+                <LegendaDoGrafico previousRangeFrom={previousRange.from} previousRangeTo={previousRange.to} />
+              ) : undefined
+            }
             subtitle={
               <>
                 {formatBusinessDate(range.from)} a {formatBusinessDate(range.to)}
-                {previousDailySeries.length > 0 ? " · comparação com o período anterior" : ""}
+                {mostraComparacao(dailySeries, previousDailySeries, metric) ? " · comparação com o período anterior" : ""}
                 {dailySeries.length > 0 && dailySeries.length < businessDateRangeLength(range.from, range.to)
                   ? ` · só ${String(dailySeries.length)} ${dailySeries.length === 1 ? "dia tem" : "dias têm"} métrica calculada`
                   : ""}
@@ -987,7 +998,6 @@ export default async function VendasPage({
                   rangeFrom={range.from}
                   rangeTo={range.to}
                   previousRangeFrom={previousRange.from}
-                  previousRangeTo={previousRange.to}
                 />
               </div>
             )}

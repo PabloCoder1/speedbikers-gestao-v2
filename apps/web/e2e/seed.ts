@@ -59,6 +59,7 @@ import {
   E2E_SUPPLIER_INATIVO,
   E2E_SKU_CODE,
   E2E_SKU_SALES,
+  E2E_SKU_SALES_ANTERIOR,
   E2E_SUGESTOES,
   E2E_USER_EMAIL,
   E2E_USER_PASSWORD,
@@ -816,7 +817,10 @@ async function main(): Promise<void> {
   // (ml_account_id, sku_id, metric_date)`), para o e2e provar que o total, a
   // linha por conta e as linhas por dia saem do banco já somados. Upsert pela
   // chave do grão: rodar o seed duas vezes não duplica venda.
-  const salesRows = E2E_SKU_SALES.map((venda) => ({
+  // Mais as do PERÍODO ANTERIOR (A18, D-327): sem elas nenhuma rota tinha
+  // comparação, e a legenda e a linha "anterior" nunca apareciam num teste.
+  // Ficam fora de `E2E_SKU_SALES`, que os specs somam em janelas de 30 dias.
+  const salesRows = [...E2E_SKU_SALES, ...E2E_SKU_SALES_ANTERIOR].map((venda) => ({
     organization_id: organizationId,
     ml_account_id: mlAccountId,
     sku_id: skuId,

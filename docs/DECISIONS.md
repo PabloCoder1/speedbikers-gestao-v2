@@ -10558,3 +10558,47 @@ Capturado no servidor de producao e conferido no DOM, na Home e em `/vendas` (as
 
 Medido no servidor de producao, a 1440px, antes e depois de abrir a caixa: o gatilho em **x=278, 455px de largura** e o bloco do perfil em **x=1249, 108px** -- os mesmos quatro numeros nos dois estados, com a caixa aberta. Antes da correcao, o gatilho nao existia com a caixa aberta, e a captura de A15 mostrou a barra sem campo por tras do fundo.
 
+## D-327 - A18: a legenda do grafico de vendas no cabecalho do painel, e o seed que nunca teve periodo anterior
+
+**Contexto:** o ultimo item de desenho em aberto, registrado desde A2 na linha de Vendas da auditoria de fidelidade -- *"legenda do grafico no rodape (frame poe no cabecalho)"*. D-322 o deixou de fora porque subir a legenda para o cabecalho mexe na pagina, e nao so no componente.
+
+---
+
+**1. O ACHADO ANTES DO DESENHO: A LEGENDA NUNCA TINHA SIDO VISTA NUM TESTE**
+
+O seed nao tinha periodo anterior. `E2E_SKU_SALES` sao vendas de 1 e 3 dias atras, e o periodo anterior da janela padrao de 30 dias (31 a 60 dias atras) ficava vazio. Entao **a legenda, a linha "anterior" da faixa de `/vendas` e o ramo "com comparacao" da leitura de D-325 nunca apareciam em nenhum teste nem em nenhuma captura**. Mover a legenda sem mudar isso seria mover algo que ninguem conseguiria ver.
+
+O seed ganhou `E2E_SKU_SALES_ANTERIOR` (35 e 40 dias atras), FORA de `E2E_SKU_SALES`, e o custo foi medido antes: os specs que somam as vendas do seed (`/produtos`, `/reposicao`, a aba Vendas do SKU) usam janelas de 30 dias, e nenhum spec afirma Curva ABC nem janela de 60 ou 90 dias.
+
+---
+
+**2. A LEGENDA NO CABECALHO, E UMA CONDICAO SO**
+
+`LegendaDoGrafico` virou componente exportado, renderizado pela pagina no `aside` do `Panel` -- "Atual" e "Anterior (janela real)", a `.legend` do frame --, e o grafico perdeu o rodape.
+
+A condicao saiu do componente para `mostraComparacao(points, previousPoints, metric)`, usada pela legenda e pelo subtitulo do painel. **Duas copias da condicao perderiam o caso de borda que existe:** sob recorte de marca, "Compras" nao tem serie (D-237) e o componente desenha a RECUSA no lugar do grafico. Uma legenda "Atual / Anterior" sobre um paragrafo de recusa descreveria linhas que nao foram desenhadas -- a regra que D5 escreveu para a legenda, e que D-325 estendeu para a leitura.
+
+O rotulo do anterior continua com a **janela real**, e nao com a data do ultimo ponto com dado (D5): se o ultimo dia do periodo anterior nao tiver metrica, rotular pelo ponto encolheria a janela.
+
+---
+
+**3. A DICA DO RODAPE NAO VEIO**
+
+*"Passe o ponteiro sobre um dia para ver os dois valores."* (D5) nao tem lugar no frame. A leitura continua a um hover de distancia, e no `title` de cada ponto para quem nao usa ponteiro.
+
+---
+
+**4. O E2E -- e ele agora exercita os dois ramos de D-325**
+
+Caso novo: com periodo anterior, a legenda mora no `aside` do painel, com a janela no formato `dd/mm/aaaa a dd/mm/aaaa`; a figura nao tem mais `figcaption`; e a leitura fala de periodo anterior. Com "Ultimos 7 dias" -- periodo anterior de 8 a 14 dias atras, sem venda --, nao ha legenda.
+
+O caso do grafico passou a detectar comparacao pela legenda nova. Com o seed novo, **`/vendas` tem comparacao e a Home nao**: a igualdade de D-325 ("a leitura fala de periodo anterior se e somente se ha legenda") deixa de ser provada so pelo ramo falso.
+
+---
+
+**Impacto:** `apps/web/app/vendas/sales-chart.tsx` (`LegendaDoGrafico`, `mostraComparacao`, rodape removido, prop `previousRangeTo` saiu), `apps/web/app/vendas/page.tsx`, `apps/web/app/page.tsx`, `apps/web/app/globals.css` (`.sb-chart-legenda`), `apps/web/e2e/{constants,seed,vendas.spec}.ts`. Sem migration.
+
+**Verificacao:** build 8/8, e2e **139/139** em banco recriado (+1, e **nenhum caso quebrou com o seed ganhando periodo anterior** -- a medicao de custo do item 1 se confirmou), `check` **29/29** (`--force`, web 551). A integracao nao rodou: nao ha SQL.
+
+Medido no servidor de producao: a legenda esta **dentro do `aside` do painel, na mesma linha do titulo, a 17px da borda direita** (o respiro do painel), a 1440px **e** a 1100px, dizendo "Atual / Anterior (15/07/2026 a 13/08/2026)"; a figura tem **zero** `figcaption`. A faixa ancora de `/vendas` passou a mostrar o anterior pela primeira vez num teste -- "Receita bruta R$ 500,00 · periodo anterior: R$ 400,00", as vendas de 35 e 40 dias atras. Com `?days=7`, nao ha legenda e o subtitulo perde "comparacao com o periodo anterior".
+

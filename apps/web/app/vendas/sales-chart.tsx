@@ -88,7 +88,6 @@ export function SalesChart({
   rangeFrom,
   rangeTo,
   previousRangeFrom,
-  previousRangeTo,
   area = false,
   altura = "grande",
 }: {
@@ -98,7 +97,6 @@ export function SalesChart({
   rangeFrom: string;
   rangeTo: string;
   previousRangeFrom: string;
-  previousRangeTo: string;
   /**
    * Preenchimento sob a linha, com o degradê do frame `Home` do Figma
    * (`#373993` de 20% a 0%). Lá a Home usa área e `/vendas` usa linha — a
@@ -340,51 +338,71 @@ export function SalesChart({
           ))}
       </div>
 
-      {/*
-        A legenda só existe quando há o que legendar. Sem dado no período
-        anterior, anunciar uma linha tracejada que não foi desenhada faria a
-        tela descrever algo que não está lá.
-      */}
-      {hasComparison && (
-        <figcaption
-          style={{
-            gridColumn: "1 / -1",
-            display: "flex",
-            flexWrap: "wrap",
-            gap: "var(--sb-space-3)",
-            marginTop: "var(--sb-space-2)",
-            fontSize: "0.75rem",
-            color: "var(--sb-text-soft)",
-          }}
-        >
-          <span style={{ display: "inline-flex", alignItems: "center", gap: "0.375rem" }}>
-            <svg width="18" height="8" aria-hidden="true" style={{ flexShrink: 0 }}>
-              <line x1="0" y1="4" x2="18" y2="4" stroke="var(--sb-primary)" strokeWidth={2} />
-            </svg>
-            Período atual
-          </span>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: "0.375rem" }}>
-            <svg width="18" height="8" aria-hidden="true" style={{ flexShrink: 0 }}>
-              <line
-                x1="0"
-                y1="4"
-                x2="18"
-                y2="4"
-                stroke="var(--sb-muted-ink)"
-                strokeWidth={1.5}
-                strokeDasharray="4 3"
-              />
-            </svg>
-            {/*
-              A janela REAL, não a data do último ponto com dado: se o último
-              dia do período anterior não tiver métrica calculada, rotular
-              pelo último ponto encolheria a janela na legenda.
-            */}
-            Período anterior ({formatBusinessDate(previousRangeFrom)} a {formatBusinessDate(previousRangeTo)})
-          </span>
-          <span>Passe o ponteiro sobre um dia para ver os dois valores.</span>
-        </figcaption>
-      )}
     </figure>
+  );
+}
+
+/**
+ * HÁ COMPARAÇÃO PARA MOSTRAR? — a condição única da legenda (A18, D-327).
+ *
+ * A legenda saiu do rodapé do gráfico para o cabeçalho do painel, e com isso a
+ * condição passou a ser avaliada FORA do componente, pela página. Duas cópias da
+ * condição divergiriam no primeiro caso de borda — e o caso de borda existe: sob
+ * recorte de marca, "Compras" não tem série (D-237) e o componente desenha a
+ * RECUSA no lugar do gráfico. Uma legenda de "Atual / Anterior" sobre um parágrafo
+ * de recusa descreveria linhas que não foram desenhadas.
+ */
+export function mostraComparacao(
+  points: readonly DailyPoint[],
+  previousPoints: readonly DailyPoint[],
+  metric: SalesMetric,
+): boolean {
+  if (points.length === 0 || previousPoints.length === 0) return false;
+
+  return ![...points, ...previousPoints].some((p) => p[metric.field] === null);
+}
+
+/**
+ * A LEGENDA NO CABEÇALHO DO PAINEL (A18, D-327) — a `.legend` do frame, à direita
+ * do título, e não mais um rodapé embaixo do gráfico.
+ *
+ * O rótulo do anterior carrega a JANELA REAL, e não a data do último ponto com
+ * dado: se o último dia do período anterior não tiver métrica calculada, rotular
+ * pelo último ponto encolheria a janela na legenda (a regra de D5, que veio junto).
+ *
+ * A dica "Passe o ponteiro sobre um dia…" do rodapé antigo não veio: o frame não
+ * a tem, e a leitura continua a um hover de distância — e no `title` de cada
+ * ponto, para quem não usa ponteiro.
+ */
+export function LegendaDoGrafico({
+  previousRangeFrom,
+  previousRangeTo,
+}: {
+  previousRangeFrom: string;
+  previousRangeTo: string;
+}): ReactNode {
+  return (
+    <span className="sb-chart-legenda">
+      <span className="sb-chart-legenda-item">
+        <svg width="18" height="8" aria-hidden="true">
+          <line x1="0" y1="4" x2="18" y2="4" stroke="var(--sb-primary)" strokeWidth={2} />
+        </svg>
+        Atual
+      </span>
+      <span className="sb-chart-legenda-item">
+        <svg width="18" height="8" aria-hidden="true">
+          <line
+            x1="0"
+            y1="4"
+            x2="18"
+            y2="4"
+            stroke="var(--sb-muted-ink)"
+            strokeWidth={1.5}
+            strokeDasharray="4 3"
+          />
+        </svg>
+        Anterior ({formatBusinessDate(previousRangeFrom)} a {formatBusinessDate(previousRangeTo)})
+      </span>
+    </span>
   );
 }

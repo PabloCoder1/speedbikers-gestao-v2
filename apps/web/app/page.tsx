@@ -666,7 +666,6 @@ export default async function HomePage({
                 rangeFrom={serie.from}
                 rangeTo={serie.to}
                 previousRangeFrom={serie.from}
-                previousRangeTo={serie.to}
               />
             )}
           </div>
