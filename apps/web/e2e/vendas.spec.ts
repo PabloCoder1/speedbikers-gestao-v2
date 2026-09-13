@@ -172,6 +172,21 @@ test("/vendas e Home: o gráfico tem a altura do frame e o eixo legível em qual
       expect(geometria.topoDentro, `${caso.rota} a ${String(largura)}px: rótulo do topo dentro da figura`).toBe(true);
       expect(geometria.encostados, `${caso.rota} a ${String(largura)}px: datas do eixo X sem se encostar`).toBe(false);
       expect(geometria.visiveis, `${caso.rota} a ${String(largura)}px: o eixo X ainda tem datas`).toBeGreaterThan(1);
+
+      /*
+        A LEITURA SÓ FALA DE PERÍODO ANTERIOR QUANDO HÁ COMPARAÇÃO (D-325). A
+        legenda é o sinal de que há: ela só existe com série anterior. As duas
+        coisas ficam amarradas numa igualdade, e não num `if` — a Home nunca
+        compara, e o seed de `/vendas` também não tem período anterior, mas se um
+        dia tiver, o caso continua valendo sem mudar.
+      */
+      const temComparacao = (await page.locator("figure.sb-chart figcaption").count()) > 0;
+      const leituraFalaDeAnterior = await page
+        .locator(".sb-chart-leitura")
+        .first()
+        .evaluate((elemento) => elemento.textContent.includes("período anterior"));
+
+      expect(leituraFalaDeAnterior, `${caso.rota}: a leitura fala de período anterior só com comparação`).toBe(temComparacao);
     }
   }
 });

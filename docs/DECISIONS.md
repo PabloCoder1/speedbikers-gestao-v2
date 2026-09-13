@@ -10526,3 +10526,19 @@ Nas duas rodadas, nas duas funcoes, **o generico ganhou**. O custom replaneja a 
 
 **Verificacao:** as medicoes acima, no Postgres local com a carga sintetica, e o `db reset` depois para apagar os dados `SYN-`.
 
+## D-325 - A leitura do grafico de vendas falava de "periodo anterior" onde nao ha comparacao
+
+**Contexto:** registrado em D-322 (item 6) e deixado de fora de proposito, para nao misturar mudanca de texto com mudanca de anatomia. A caixa de leitura do hover do grafico -- e o `title` de cada ponto -- dizia **"periodo anterior: sem dado"** tambem onde nao existe comparacao nenhuma: na Home, que passa `previousPoints={[]}` sempre, e em `/vendas` quando o periodo anterior nao tem serie. A captura de A14 mostrou isso nas duas telas.
+
+**O defeito e de significado, nao de estetica.** "Periodo anterior: sem dado" afirma que HA uma comparacao e que o dado dela faltou. Onde nao ha comparacao, a frase descreve uma segunda serie que a tela nao desenhou -- a mesma classe de erro que a legenda ja evitava desde D5: *"anunciar uma linha tracejada que nao foi desenhada faria a tela descrever algo que nao esta la"*. A legenda sumia sem comparacao; a leitura nao.
+
+**A correcao usa a MESMA condicao da legenda (`hasComparison`)** na caixa de leitura e no `title` dos pontos. Com comparacao, nada muda: continua dizendo o valor do periodo anterior ou "sem dado" quando aquele dia nao tem linha -- e ali "sem dado" volta a significar o que diz.
+
+**O e2e amarra as duas coisas numa igualdade, nao num `if`:** a leitura fala de periodo anterior **se e somente se** a legenda existe. Hoje as duas rotas do caso estao sem comparacao; se o seed ganhar periodo anterior, a asserção continua valendo sem mudar.
+
+**Impacto:** `apps/web/app/vendas/sales-chart.tsx`, `apps/web/e2e/vendas.spec.ts`. Sem migration, sem leitura nova.
+
+**Verificacao:** build 8/8, e2e **138/138** em banco recriado (o caso do grafico com a igualdade nova, nas duas rotas e nas duas larguras), `check` **29/29** (`--force`, web 551). O `check` rodou sobre a arvore que ja tinha as edicoes de D-326, entao cobre as duas. A integracao nao rodou: nao ha SQL.
+
+Capturado no servidor de producao e conferido no DOM, na Home e em `/vendas` (as duas sem legenda, portanto sem comparacao): o `title` dos pontos diz so data e valor ("10/09/2026: R$ 200,00") -- antes carregava "· sem dado no periodo anterior" --, e a caixa de leitura aberta diz "11/09/2026 / sem metrica calculada neste dia", **sem a linha de periodo anterior**. A caixa ajusta a altura as duas linhas, sem vao onde a terceira estava.
+

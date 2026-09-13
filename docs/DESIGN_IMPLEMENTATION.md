@@ -1044,6 +1044,22 @@ está na "Próxima fatia segura".
 
 ## Última fatia concluída
 
+**A16 — A LEITURA DO GRÁFICO SEM COMPARAÇÃO (D-325)** — um dos itens em aberto
+que A14 registrou. A caixa de hover do gráfico, e o `title` de cada ponto,
+diziam **"período anterior: sem dado"** também onde não há comparação: na Home,
+que nunca compara, e em `/vendas` quando o período anterior não tem série. A
+frase afirma uma comparação cujo dado faltou — descreve uma segunda série que a
+tela não desenhou. A legenda já sumia sem comparação desde D5; a leitura agora
+segue a MESMA condição. O e2e amarra as duas numa igualdade: a leitura fala de
+período anterior se e somente se a legenda existe.
+
+**Verificação:** build 8/8, e2e **138/138** em banco recriado, `check` 29/29
+(`--force`). Conferido no DOM na Home e em `/vendas`: o `title` dos pontos e a
+caixa de leitura sem a linha de período anterior, e a caixa com a altura das
+duas linhas que sobraram.
+
+## Fatias anteriores
+
 **A15 — O RÓTULO DA BUSCA DO SHELL (D-323)** — o último da fila de A10. O texto
 do gatilho já divergia do frame de propósito ("nomeia o que a RPC realmente
 busca"), mas D-216 levou a busca de cinco para **sete** entidades e o texto
@@ -1068,8 +1084,6 @@ e 768px; a frase da caixa sem transbordar; o placeholder com folga.
 **Em aberto, achado na captura e anterior a esta fatia:** o componente troca o
 gatilho pela caixa enquanto ela está aberta, então abrir a busca **tira o campo
 da barra** e desloca os botões por trás do fundo escurecido.
-
-## Fatias anteriores
 
 **A14 — O GRÁFICO DE VENDAS COM A ALTURA DO FRAME (D-322)** — o terceiro da
 fila de A10, registrado desde A2 como "altura do SVG proporcional". Medido antes

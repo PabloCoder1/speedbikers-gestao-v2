@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **320** (D-001 a D-324).
+Decisões registradas: **321** (D-001 a D-325).
 
 ## Por domínio
 
@@ -275,7 +275,7 @@ Decisões registradas: **320** (D-001 a D-324).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (20)
+### vendas/métricas (21)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -297,6 +297,7 @@ Decisões registradas: **320** (D-001 a D-324).
 - **D-251** — D16: a Curva ABC ganha os cartoes de classe, e devolve dois filtros ao dono deles
 - **D-293** — A pre-condicao da gaveta do Copiloto: o contexto que a API nao recebia, e as duas ferramentas alem de venda
 - **D-322** — A14: o grafico de vendas com a altura do frame, e o texto que saiu do SVG porque encolhia com a largura
+- **D-325** — A leitura do grafico de vendas falava de "periodo anterior" onde nao ha comparacao
 
 ### worker/infra (62)
 

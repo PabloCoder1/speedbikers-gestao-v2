@@ -247,9 +247,11 @@ export function SalesChart({
           const anterior = previousByOffset.get(offsetInPeriod(point.metric_date, rangeFrom));
           const ponto = atuais[indice];
           // O `title` carrega a MESMA informação que a caixa de hover: quem não
-          // usa ponteiro não pode receber menos.
-          const comparacao =
-            anterior === undefined
+          // usa ponteiro não pode receber menos. E, como a caixa, só fala de
+          // período anterior quando há comparação (D-325).
+          const comparacao = !hasComparison
+            ? null
+            : anterior === undefined
               ? "sem dado no período anterior"
               : `período anterior (${formatBusinessDate(anterior.metric_date)}): ${formatValue(valueAt(anterior))}`;
 
@@ -259,7 +261,7 @@ export function SalesChart({
               className="sb-chart-point"
               aria-hidden="true"
               style={{ left: `${ponto.x.toFixed(2)}%`, top: `${ponto.y.toFixed(2)}%` }}
-              title={`${formatBusinessDate(point.metric_date)}: ${formatValue(valueAt(point))} · ${comparacao}`}
+              title={`${formatBusinessDate(point.metric_date)}: ${formatValue(valueAt(point))}${comparacao === null ? "" : ` · ${comparacao}`}`}
             />
           );
         })}
@@ -306,11 +308,21 @@ export function SalesChart({
                       ? "sem métrica calculada neste dia"
                       : `${metric.label}: ${formatValue(valueAt(atual))}`}
                   </span>
-                  <span className="sb-chart-leitura-anterior">
-                    {anterior === undefined
-                      ? "período anterior: sem dado"
-                      : `período anterior (${formatBusinessDate(anterior.metric_date)}): ${formatValue(valueAt(anterior))}`}
-                  </span>
+                  {/*
+                    SÓ COM COMPARAÇÃO (D-325). A linha dizia "período anterior:
+                    sem dado" também na Home, que nunca compara períodos, e em
+                    `/vendas` sem série anterior — o que se lia como "havia uma
+                    comparação e o dado faltou". É a mesma regra da legenda, que
+                    já sumia sem comparação: a tela não descreve o que não
+                    desenhou.
+                  */}
+                  {hasComparison && (
+                    <span className="sb-chart-leitura-anterior">
+                      {anterior === undefined
+                        ? "período anterior: sem dado"
+                        : `período anterior (${formatBusinessDate(anterior.metric_date)}): ${formatValue(valueAt(anterior))}`}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
