@@ -234,6 +234,34 @@ O que existe, medido em 2026-09-13 no projeto Dev: **backup físico diário** (p
 
 5. **Ler o veredito.** `RESTORE_OK` exige: toda migration do restaurado existe no Dev; RLS ligada em toda tabela de `public`; as tabelas append-only com a MESMA contagem até `BACKUP_AT` nos dois lados; e o ledger de estoque batendo com a projeção dentro do restaurado. As tabelas de catálogo saem como INFO — a diferença é o Dev andando, não defeito.
 6. **Apagar o projeto restaurado** assim que o veredito estiver registrado.
+
+### 8.2 Criar o ambiente de produção (D-333)
+
+Todo passo abaixo é **ato humano** — criar projeto, gerar chave e colar segredo não são coisas que um agente faz. O que o repositório garante é que os scripts **recusam misturar** produção com o Dev (`infra/README.md`, seção Ambientes).
+
+**Antes de começar, dois buracos que este roteiro NÃO fecha sozinho:**
+
+- **Migrations de produção não têm caminho automático.** O job `migrations` da CI faz `supabase link --project-ref nmgccyqquwxecqffsidr` — é o Dev, fixo. Produção precisa de `supabase link` + `db push` manuais, ou de um job próprio com aprovação. Decisão de fluxo, sem dono ainda.
+- **O projeto da Vercel serve o `web` com as variáveis do Dev** — inclusive o deploy com alvo *production* da branch `v3`. Produção de verdade pede um projeto próprio na Vercel, ou variáveis escopadas por ambiente, antes do corte.
+
+**As variáveis de cada comando** (nenhuma tem padrão em produção):
+
+```bash
+export AMBIENTE=prod PROJECT_ID=<projeto-gcp-prod> \
+  SUPABASE_PROJECT_REF=<ref-prod> SUPABASE_PUBLISHABLE_KEY=<publicável-prod> \
+  WEB_ORIGINS=<https://web-prod> CONFIRMO_PRODUCAO=sim
+```
+
+1. **Projeto no Google Cloud**, com billing ligado.
+2. **Projeto no Supabase**, em `sa-east-1`. Aplicar as migrations (ver o buraco acima) e conferir: `supabase migration list --linked` sem drift.
+3. **Base do GCP**, na ordem: `bash infra/setup-dev.sh` (APIs, service accounts e `secretAccessor`), `bash infra/cloud-tasks-queues.sh`, `bash infra/storage-buckets.sh`. O nome `setup-dev.sh` é histórico; ele serve a qualquer `AMBIENTE`.
+4. **Segredos no Secret Manager DO PROJETO DE PRODUÇÃO** (seção 5): `SUPABASE_SERVICE_ROLE_KEY` do Supabase de produção; `MERCADO_LIVRE_CLIENT_SECRET`; `ANTHROPIC_API_KEY`; e **`ML_TOKEN_ENCRYPTION_KEY` NOVA** (`openssl rand`) — nunca a do Dev: é ela que cifra os tokens das contas, e compartilhar a chave entre ambientes compartilha a capacidade de ler os tokens um do outro.
+5. **Deploy**: `bash infra/deploy-cloud-run.sh`, que publica o `worker` antes da `api` (D-088). No primeiro deploy a `api` ainda não conhece a própria URL — o script avisa, e o segundo deploy a injeta.
+6. **Agendador**: `bash infra/cloud-scheduler.sh`.
+7. **Vercel**: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` e `NEXT_PUBLIC_API_URL` de produção (ver o buraco acima). `NEXT_PUBLIC_*` é embutida no build: trocar a variável exige novo deploy.
+8. **Mercado Livre**: redirect do OAuth e URL do webhook apontando para a `api` de produção (seção 6.1).
+9. **Primeiro ADMIN** (seção 10) e **conexão das contas** (seção 10.1).
+10. **Conferir antes do corte**: `GET /health` da `api` devolvendo o commit publicado; `check:restore` depois do primeiro backup (8.1); a CSP com nonce e zero violações em `/login` (D-331); e um job de cada tipo disparado à mão uma vez (seção 7).
 5. Testes de carga e revisão de `pg_stat_statements`.
 6. Revisão de segurança e de secrets.
 7. Corte da operação.

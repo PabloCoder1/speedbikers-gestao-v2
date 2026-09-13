@@ -289,3 +289,10 @@ jobs:
             exit 1
           fi
           echo "todos os arquivos em infra/ estão em LF"
+
+      # D-333: até ali, PROJECT_ID era sobrescrevível e o Supabase era FIXO no
+      # Dev — um deploy com o projeto de produção subiria apontando para o banco
+      # do Dev, sem aviso. A guarda de lib.sh recusa essa mistura; este passo
+      # impede que ela seja desfeita numa manutenção sem ninguém ver.
+      - name: Guarda de ambiente (dev x prod)
+        run: bash infra/ambiente.test.sh

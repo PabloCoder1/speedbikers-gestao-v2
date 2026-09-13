@@ -22,6 +22,26 @@ Rodar sempre pelo **Git Bash**. Se o SDK estiver em outro caminho, defina `GCLOU
 
 Rode pelo **Git Bash**, não pelo PowerShell.
 
+## Ambientes (D-333)
+
+Todo script carrega `lib.sh`, e `lib.sh` resolve o ambiente **antes de tocar a nuvem**:
+
+| | `AMBIENTE=dev` (padrão) | `AMBIENTE=prod` |
+|---|---|---|
+| projeto, ref do Supabase, chave publicável, origens do `web` | os do Dev, se não vierem do ambiente | **obrigatórios**, sem padrão |
+| confirmação | — | `CONFIRMO_PRODUCAO=sim` |
+| recusa | projeto ou Supabase que não sejam os do Dev | qualquer um dos quatro identificadores do Dev |
+
+Sem nenhuma variável, tudo continua exatamente como antes: é o Dev. Para produção:
+
+```bash
+AMBIENTE=prod PROJECT_ID=<projeto> SUPABASE_PROJECT_REF=<ref> \
+SUPABASE_PUBLISHABLE_KEY=<chave publicável> WEB_ORIGINS=<https://…> \
+CONFIRMO_PRODUCAO=sim bash infra/deploy-cloud-run.sh
+```
+
+A guarda existe porque, até D-333, `PROJECT_ID` era sobrescrevível e o Supabase era **fixo** no Dev: um deploy com o projeto de produção subiria apontando para o banco do Dev, sem aviso. `infra/ambiente.test.sh` prova cada caso e roda na CI.
+
 ## Ordem de execução
 
 ```bash

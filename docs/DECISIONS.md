@@ -10910,3 +10910,58 @@ As duas sessoes abrem em `READ ONLY` -- um `UPDATE` por engano seria recusado pe
 
 **Verificacao:** lint de `@sb/db`; as duas provas acima contra o Postgres local. A verificacao que fecha o item e humana: o restore num projeto novo, seguido de `check:restore`.
 
+## D-333 - Os scripts de infra subiriam PRODUCAO apontando para o banco do DEV -- e agora o ambiente e explicito, com guarda testada
+
+**Contexto:** dos bloqueadores restantes da V3, dois dependem de criar o ambiente de producao (Supabase e Cloud Run de producao; rollout). Criar e ato humano, mas os scripts que o humano vai rodar sao do repositorio. Antes de escrever o roteiro, a pergunta foi medida: **os scripts de `infra/` estao prontos para um segundo ambiente?**
+
+---
+
+**1. O RISCO, LIDO EM `infra/lib.sh`**
+
+| identificador | antes de D-333 |
+|---|---|
+| `PROJECT_ID` | sobrescrevivel (`${PROJECT_ID:-speedbikers-gestao-v3}`) |
+| `REGION`, `WEB_ORIGINS` | sobrescreviveis, com o padrao do Dev |
+| **`SUPABASE_PROJECT_REF`** | **FIXO**: `"nmgccyqquwxecqffsidr"`, sem sobrescrita |
+| **`SUPABASE_PUBLISHABLE_KEY`** | **FIXA**, a do Dev |
+| `SUPABASE_URL` | derivada do ref fixo |
+
+Entao `PROJECT_ID=<producao> bash infra/deploy-cloud-run.sh` subiria o Cloud Run de producao com **`SUPABASE_URL` apontando para o banco do Dev**, enquanto a chave de service role viria do Secret Manager **do projeto de producao**. No melhor caso, tudo falhando com a chave de outro banco. No pior -- alguem copiando a chave do Dev para o segredo de producao para "fazer funcionar" --, **producao escrevendo no Dev**. Nenhum aviso em nenhum ponto.
+
+---
+
+**2. O AMBIENTE PASSA A SER EXPLICITO**
+
+`AMBIENTE=dev|prod`, resolvido em `lib.sh` **antes de tocar a nuvem** -- e todo script carrega `lib.sh`:
+
+- **`dev` (padrao) mantem exatamente o comportamento de antes.** Nenhum script, nenhum comando de `DEPLOYMENT.md`, nenhuma rotina de quem opera o Dev muda. E recusa um projeto ou um Supabase que nao sejam os do Dev.
+- **`prod` nao tem padrao para nada que identifique ambiente**: projeto, ref do Supabase, chave publicavel e origens do `web` vem do ambiente, ou o script para. E exige **`CONFIRMO_PRODUCAO=sim`** -- o gesto a mais que separa um deploy de producao de uma variavel esquecida no shell.
+- **A guarda recusa mistura nos dois sentidos**, comparando cada um dos quatro identificadores com os do Dev: o projeto, o ref, a chave publicavel e a origem do `web` (esta, dentro de uma lista separada por virgula).
+
+Os valores do Dev ficam num lugar so (`DEV_*`), com o comentario de que nao sao segredo. `require_project` passa a imprimir tambem o ambiente e o ref do Supabase: quem roda o script le, antes de qualquer escrita, contra qual banco esta indo.
+
+---
+
+**3. A GUARDA TEM TESTE, E O TESTE FOI PROVADO**
+
+`infra/ambiente.test.sh` roda cada caso num `bash` proprio (o `fail` de `lib.sh` encerra o shell que o carregou) e com `GCLOUD_BIN=true` (nenhum caso chama a nuvem). **13 casos**: sem variaveis resolve para o Dev; `dev` com outro projeto ou outro Supabase recusa; `prod` sem variaveis, sem Supabase ou sem confirmacao recusa; `prod` com cada um dos quatro identificadores do Dev recusa; `prod` completo e distinto resolve o Supabase de producao; ambiente desconhecido recusa. Entrou como passo da job `scripts de infraestrutura` da CI.
+
+**E o teste foi provado cego-ou-nao por mutacao:** numa copia de `lib.sh` com o ramo `prod` sem nenhuma recusa, a mesma suite **reprova** -- os casos de recusa de producao passam a sair com codigo 0 e o script termina com falha. Um teste de guarda que continua verde sem a guarda nao protege nada (a pergunta de A4).
+
+---
+
+**4. O ROTEIRO, E OS DOIS BURACOS QUE ELE NAO FECHA SOZINHO**
+
+`docs/DEPLOYMENT.md` 8.2: os dez passos para criar producao, na ordem em que os scripts os permitem. Dois buracos ficam escritos no topo do roteiro, porque nenhum dos dois e dos scripts de `infra/`:
+
+- **Migrations de producao nao tem caminho.** A job `migrations` da CI faz `supabase link --project-ref nmgccyqquwxecqffsidr` -- o Dev, fixo, e esta certo para o Dev. Producao precisa de `link` + `db push` manuais ou de uma job propria com aprovacao: decisao de fluxo, sem dono.
+- **O projeto da Vercel serve o `web` com as variaveis do Dev**, inclusive no deploy de alvo *production* da `v3` (medido em D-331: a CSP de producao lista o Supabase do Dev em `connect-src`). Producao de verdade pede projeto proprio na Vercel ou variaveis escopadas por ambiente.
+
+E uma regra que o roteiro torna explicita: **`ML_TOKEN_ENCRYPTION_KEY` nova em producao**, nunca a do Dev -- e ela que cifra os tokens das contas do Mercado Livre, e compartilhar a chave entre ambientes compartilha a capacidade de ler os tokens um do outro.
+
+---
+
+**Impacto:** `infra/lib.sh`, `infra/ambiente.test.sh` (novo), `infra/README.md`, `.github/workflows/ci.yml` (passo `Guarda de ambiente`), `docs/{DECISIONS,DECISIONS_INDEX,DEPLOYMENT,ROADMAP,HANDOFF}.md`. **Nenhum recurso de nuvem criado ou alterado, e nenhuma linha de aplicacao.**
+
+**Verificacao:** `bash infra/ambiente.test.sh` com **13/13**; `bash -n` nos sete scripts (o mesmo laco da CI); todos em LF; e a prova por mutacao acima. O Dev continua resolvendo para os mesmos quatro valores de antes -- e o primeiro caso da suite.
+

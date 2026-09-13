@@ -6,16 +6,91 @@
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-# Constantes do ambiente de desenvolvimento
+# Saída — primeiro, porque a guarda de ambiente logo abaixo precisa de `fail`.
 # ---------------------------------------------------------------------------
 
-PROJECT_ID="${PROJECT_ID:-speedbikers-gestao-v3}"
+info()  { printf '  %s\n' "$*"; }
+step()  { printf '\n== %s\n' "$*"; }
+ok()    { printf '  [ok] %s\n' "$*"; }
+skip()  { printf '  [ja existe] %s\n' "$*"; }
+fail()  { printf '\n[ERRO] %s\n' "$*" >&2; exit 1; }
+
+# ---------------------------------------------------------------------------
+# AMBIENTE (D-333)
+#
+# Até D-333 este arquivo tinha `PROJECT_ID` sobrescrevível e o Supabase FIXO no
+# Dev: `PROJECT_ID=<produção> bash infra/deploy-cloud-run.sh` subiria o Cloud
+# Run de produção com `SUPABASE_URL` apontando para o banco do Dev — e a chave
+# de service role vinda do Secret Manager do projeto de produção. No melhor
+# caso, tudo falhando com chave de outro banco; no pior, produção escrevendo no
+# Dev. Nenhum aviso.
+#
+# Agora o ambiente é EXPLÍCITO:
+#
+# - `dev` (padrão) mantém exatamente o comportamento de antes, e recusa um
+#   `PROJECT_ID` que não seja o do Dev;
+# - `prod` NÃO TEM PADRÃO para nada que identifique ambiente — projeto, ref do
+#   Supabase, chave publicável e origens do `web` vêm do ambiente, ou o script
+#   para — e exige `CONFIRMO_PRODUCAO=sim`, para uma variável esquecida no shell
+#   não mandar um deploy para produção por acidente;
+# - a guarda recusa MISTURA nos dois sentidos, comparando com os valores do Dev.
+#
+# `infra/ambiente.test.sh` prova cada caso, e roda na CI.
+# ---------------------------------------------------------------------------
+
+# Os identificadores do Dev. Não são segredo — aparecem no dashboard, em
+# hostnames públicos e no bundle do navegador. O segredo é a chave de service
+# role, que vive no Secret Manager.
+DEV_PROJECT_ID="speedbikers-gestao-v3"
+DEV_SUPABASE_PROJECT_REF="nmgccyqquwxecqffsidr"
+# Chave PUBLICÁVEL — a mesma que `apps/web` embute no bundle do navegador.
+DEV_SUPABASE_PUBLISHABLE_KEY="sb_publishable_Ldlp0fb3PrvXn29XZ7cpag_Sqo121xo"
+DEV_WEB_ORIGIN="https://speedbikers-gestao-v2-m71j.vercel.app"
+
+AMBIENTE="${AMBIENTE:-dev}"
+
+case "${AMBIENTE}" in
+  dev)
+    PROJECT_ID="${PROJECT_ID:-${DEV_PROJECT_ID}}"
+    SUPABASE_PROJECT_REF="${SUPABASE_PROJECT_REF:-${DEV_SUPABASE_PROJECT_REF}}"
+    SUPABASE_PUBLISHABLE_KEY="${SUPABASE_PUBLISHABLE_KEY:-${DEV_SUPABASE_PUBLISHABLE_KEY}}"
+    WEB_ORIGINS="${WEB_ORIGINS:-${DEV_WEB_ORIGIN}}"
+
+    [ "${PROJECT_ID}" = "${DEV_PROJECT_ID}" ] ||
+      fail "AMBIENTE=dev com PROJECT_ID=${PROJECT_ID}. O Dev é ${DEV_PROJECT_ID}; para outro projeto, use AMBIENTE=prod com os valores dele."
+    [ "${SUPABASE_PROJECT_REF}" = "${DEV_SUPABASE_PROJECT_REF}" ] ||
+      fail "AMBIENTE=dev com um Supabase que não é o do Dev (${SUPABASE_PROJECT_REF})."
+    ;;
+  prod)
+    [ -n "${PROJECT_ID:-}" ] || fail "AMBIENTE=prod exige PROJECT_ID (sem padrão, de propósito)."
+    [ -n "${SUPABASE_PROJECT_REF:-}" ] || fail "AMBIENTE=prod exige SUPABASE_PROJECT_REF do projeto de produção."
+    [ -n "${SUPABASE_PUBLISHABLE_KEY:-}" ] || fail "AMBIENTE=prod exige SUPABASE_PUBLISHABLE_KEY do projeto de produção."
+    [ -n "${WEB_ORIGINS:-}" ] || fail "AMBIENTE=prod exige WEB_ORIGINS com as origens do web de produção."
+
+    [ "${PROJECT_ID}" != "${DEV_PROJECT_ID}" ] ||
+      fail "AMBIENTE=prod apontando para o projeto do Dev (${DEV_PROJECT_ID})."
+    [ "${SUPABASE_PROJECT_REF}" != "${DEV_SUPABASE_PROJECT_REF}" ] ||
+      fail "AMBIENTE=prod apontando para o Supabase do Dev (${DEV_SUPABASE_PROJECT_REF})."
+    [ "${SUPABASE_PUBLISHABLE_KEY}" != "${DEV_SUPABASE_PUBLISHABLE_KEY}" ] ||
+      fail "AMBIENTE=prod com a chave publicável do Dev."
+    case ",${WEB_ORIGINS}," in
+      *"${DEV_WEB_ORIGIN}"*) fail "AMBIENTE=prod com a origem do web do Dev em WEB_ORIGINS (${DEV_WEB_ORIGIN})." ;;
+    esac
+
+    [ "${CONFIRMO_PRODUCAO:-}" = "sim" ] ||
+      fail "AMBIENTE=prod exige CONFIRMO_PRODUCAO=sim — o gesto a mais que separa um deploy de produção de uma variável esquecida no shell."
+    ;;
+  *)
+    fail "AMBIENTE=${AMBIENTE} não existe. Use dev ou prod."
+    ;;
+esac
+
 REGION="${REGION:-southamerica-east1}"
 
 # Origens do `web` liberadas no CORS de /v1 da api. Allowlist explicita: o
 # upload da planilha sai do navegador direto para o Cloud Run, e e o CORS que
 # decide de onde ele pode sair. Varias origens separadas por virgula.
-WEB_ORIGINS="${WEB_ORIGINS:-https://speedbikers-gestao-v2-m71j.vercel.app}"
+# (Resolvida acima, por ambiente.)
 
 # Service accounts. Uma identidade por responsabilidade — menor privilégio
 # possível, conforme docs/PROMPT_MASTER.md secao 31.
@@ -23,24 +98,19 @@ WEB_ORIGINS="${WEB_ORIGINS:-https://speedbikers-gestao-v2-m71j.vercel.app}"
 # Estes nomes seguem a convenção JÁ EXISTENTE no projeto, criada junto com a
 # fundação do Google Cloud. Não inventar nomes novos: identidade duplicada para
 # o mesmo papel divide as permissões entre as duas e ninguém descobre qual vale.
+# Os nomes são os mesmos em todo ambiente: service account é por PROJETO.
 SA_API="v3-api-runtime"
 SA_WORKER="v3-worker-runtime"
 SA_TASKS="v3-tasks-invoker"
 SA_SCHEDULER="v3-scheduler-invoker"
 
-# Supabase Dev. O ref e a URL não são segredo — aparecem no dashboard e em
-# hostnames públicos. O segredo é a chave de service role, que vive no
-# Secret Manager.
-SUPABASE_PROJECT_REF="nmgccyqquwxecqffsidr"
+# Supabase do ambiente. O ref e a URL não são segredo; o segredo é a chave de
+# service role, no Secret Manager DO PROJETO do ambiente.
 SUPABASE_URL="https://${SUPABASE_PROJECT_REF}.supabase.co"
 SECRET_SUPABASE_KEY="SUPABASE_SERVICE_ROLE_KEY"
 
-# Chave PUBLICÁVEL — mesma que `apps/web` já embute no bundle do navegador
-# (`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`), não é segredo. Usada só pela api
-# desde D-077 (`createUserClient`, `@sb/db`): o Copiloto lê sob a RLS do
-# usuário, não com service_role, e precisa de um cliente instanciado com
-# esta chave + o JWT do request.
-SUPABASE_PUBLISHABLE_KEY="sb_publishable_Ldlp0fb3PrvXn29XZ7cpag_Sqo121xo"
+# A chave publicável é usada pela api desde D-077 (`createUserClient`, `@sb/db`):
+# o Copiloto lê sob a RLS do usuário, não com service_role. (Resolvida acima.)
 
 # OAuth do Mercado Livre (D-041, D-046). client_id e redirect_uri NÃO são
 # segredo — vão em --set-env-vars, junto dos demais identificadores de
@@ -68,16 +138,6 @@ AI_MONTHLY_BUDGET_USD="${AI_MONTHLY_BUDGET_USD:-18}"
 sa_email() {
   echo "${1}@${PROJECT_ID}.iam.gserviceaccount.com"
 }
-
-# ---------------------------------------------------------------------------
-# Saída
-# ---------------------------------------------------------------------------
-
-info()  { printf '  %s\n' "$*"; }
-step()  { printf '\n== %s\n' "$*"; }
-ok()    { printf '  [ok] %s\n' "$*"; }
-skip()  { printf '  [ja existe] %s\n' "$*"; }
-fail()  { printf '\n[ERRO] %s\n' "$*" >&2; exit 1; }
 
 # ---------------------------------------------------------------------------
 # gcloud
@@ -166,6 +226,8 @@ require_project() {
     fail "Não foi possível descrever o projeto ${PROJECT_ID}. Mensagem do gcloud acima."
   fi
 
+  info "ambiente: ${AMBIENTE}"
   info "projeto: ${PROJECT_ID}"
+  info "supabase: ${SUPABASE_PROJECT_REF}"
   info "região: ${REGION}"
 }
