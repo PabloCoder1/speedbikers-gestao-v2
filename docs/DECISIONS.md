@@ -11025,3 +11025,41 @@ Em `DEPLOYMENT.md`, os itens 5 a 7 da lista da secao 8 (testes de carga, revisao
 
 **Ato humano que falta:** criar o ambiente `producao` (revisor obrigatorio, branches so `v3`), a variavel e os dois segredos -- `DEPLOYMENT.md` 8.2, passo 2 -- depois que o projeto Supabase de producao existir.
 
+## D-335 - O workflow de migrations de producao nao existia para o GitHub -- e a v3 virou a branch padrao do repositorio
+
+**Contexto:** D-334 deixou escrito como nao verificado a sintaxe do YAML de `migrations-producao.yml`, "validada pelo GitHub no push". Depois do push de `6ad0c82`, a verificacao achou um defeito maior que sintaxe: **o workflow nao existia para o GitHub**.
+
+---
+
+**1. O QUE FOI MEDIDO**
+
+| pergunta | resposta, 2026-09-13 |
+|---|---|
+| `GET /actions/workflows` | so `CI` |
+| `GET /actions/workflows/migrations-producao.yml` | **404** |
+| branch padrao do repositorio | **`main`** -- a V2 |
+| `.github/workflows/` em `origin/main` | **vazio** |
+
+`CI` estava registrado porque roda em `push`: a primeira execucao o registra, em qualquer branch. Um workflow so `workflow_dispatch` nunca roda sozinho, e **o GitHub so oferece disparo manual para workflow que exista na branch padrao**. O passo 2 de `DEPLOYMENT.md` 8.2 mandava disparar pela aba Actions algo que nunca apareceria nela. Nenhum teste local pegaria isto: e comportamento da plataforma, e a guarda so roda depois do disparo.
+
+---
+
+**2. A DECISAO -- DO USUARIO**
+
+Tres caminhos foram postos: tornar a `v3` a branch padrao (o caminho documentado pelo GitHub); registrar o workflow com um gatilho de `push` artificial, com todos os jobs pulados fora do disparo manual (sem mexer em settings, mas com o disparo a partir de branch nao padrao so confirmavel no primeiro uso); ou deixar para o rollout, corrigindo so a documentacao. **O usuario escolheu a `v3` como branch padrao e autorizou a troca via API.**
+
+A `v3` e a linha ativa desde o inicio da V3; a `main` segue intacta, como referencia da V2 (a regra "nunca copiar" nao muda). O que muda: clone e PR sugerem a `v3`, e todo gatilho que o GitHub resolve na branch padrao -- `workflow_dispatch`, e `schedule` quando existir -- passa a ler os arquivos da `v3`. A branch de producao da Vercel e configurada na Vercel, e ja era a `v3`.
+
+---
+
+**3. VERIFICACAO**
+
+- `PATCH /repos/...` com `default_branch=v3`: antes `main`, depois `v3`.
+- Logo em seguida, `GET /actions/workflows` lista `Migrations de producao | .github/workflows/migrations-producao.yml | active`, e o GET do arquivo responde 200. **O nome veio do proprio arquivo -- o YAML foi lido pelo GitHub**, o que fecha a primeira pendencia de D-334.
+- Nenhum ambiente foi criado como efeito colateral: seguem so os quatro da integracao da Vercel.
+- CI de `6ad0c82` verde nos cinco jobs, com `Guarda de ambiente (dev x prod)` e `Guarda das migrations de producao` nos passos da job de scripts.
+
+**Continua nao verificado:** que o GitHub peca as duas aprovacoes em separado -- depende do ambiente `producao` existir.
+
+**Impacto:** configuracao do repositorio (branch padrao), `docs/{DECISIONS,DECISIONS_INDEX,DEPLOYMENT,HANDOFF}.md`. Nenhuma linha de codigo.
+
