@@ -4,6 +4,15 @@ import { LoginForm } from "./login-form";
 
 export const metadata = { title: "Entrar — Speed Bikers Gestão" };
 
+/*
+  DINÂMICA DE PROPÓSITO (D-331). O login era a ÚNICA página pré-renderizada
+  no build — as outras 50 rotas já eram dinâmicas. Com a CSP de nonce, uma
+  página estática sai com os scripts SEM o nonce (não há requisição no build
+  para gerá-lo), e `strict-dynamic` os bloqueia: o formulário renderizaria e
+  não responderia a clique nenhum. A porta de entrada do sistema trancada.
+*/
+export const dynamic = "force-dynamic";
+
 export default function LoginPage(): ReactNode {
   return (
     <main

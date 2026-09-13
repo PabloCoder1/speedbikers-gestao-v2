@@ -11,19 +11,18 @@ import type { NextConfig } from "next";
  *
  * O que entra, e o limite de cada um:
  *
- * - `frame-ancestors 'none'` + `X-Frame-Options: DENY` — os dois dizem o mesmo;
- *   o segundo cobre navegador que não lê CSP. Conferido: nada no app usa
- *   `iframe`, `postMessage` nem `window.parent`, então negar não quebra nada.
- * - A CSP carrega **só** `frame-ancestors`. Uma CSP com `script-src` exige nonce
- *   para os scripts inline do Next — é fatia própria, e meia CSP mal feita
- *   quebraria a aplicação inteira sem avisar.
+ * - `X-Frame-Options: DENY` — nega moldura para navegador que não lê CSP.
+ *   Conferido: nada no app usa `iframe`, `postMessage` nem `window.parent`.
+ * - **A CSP NÃO mora mais aqui** (D-331). D-329 pôs uma CSP estática só com
+ *   `frame-ancestors`; a completa precisa de nonce por requisição e passou a ser
+ *   escrita pelo `proxy.ts`. Deixar as duas seria dois donos para o mesmo
+ *   cabeçalho — e a estática poderia SOBRESCREVER a do proxy, apagando o nonce.
  * - `nosniff`, `Referrer-Policy` e um `Permissions-Policy` mínimo (o app não usa
  *   câmera, microfone nem localização).
  * - **HSTS não entra aqui:** a Vercel já o envia, com `preload`. Duplicar daria
  *   dois donos para o mesmo cabeçalho.
  */
 const CABECALHOS_DE_SEGURANCA = [
-  { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
   { key: "X-Frame-Options", value: "DENY" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },

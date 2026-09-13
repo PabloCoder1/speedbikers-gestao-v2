@@ -15,7 +15,8 @@ import { login } from "./helpers.js";
  * autenticada, que passa pelo `proxy.ts` antes de renderizar.
  */
 const ESPERADOS: Readonly<Record<string, RegExp>> = {
-  "content-security-policy": /frame-ancestors 'none'/,
+  // A CSP completa, com nonce, desde D-331 — `strict-dynamic` e nonce juntos.
+  "content-security-policy": /script-src 'self' 'nonce-[A-Za-z0-9+/=]+' 'strict-dynamic'.*frame-ancestors 'none'/,
   "x-frame-options": /^DENY$/,
   "x-content-type-options": /^nosniff$/,
   "referrer-policy": /^strict-origin-when-cross-origin$/,
@@ -43,4 +44,58 @@ test("cabeçalhos de segurança: a tela pública e a autenticada não podem ser 
 
   expect(autenticada?.status()).toBe(200);
   conferir(autenticada?.headers() ?? {}, "/vendas");
+
+  /*
+    O NONCE É POR REQUISIÇÃO (D-331). Um nonce fixo seria uma senha escrita no
+    HTML: quem o lesse uma vez injetaria script para sempre.
+  */
+  const nonceDe = (cabecalhos: Record<string, string>): string | undefined =>
+    /'nonce-([^']+)'/.exec(cabecalhos["content-security-policy"] ?? "")?.[1];
+  const outra = await page.goto("/vendas");
+
+  expect(nonceDe(autenticada?.headers() ?? {})).toBeDefined();
+  expect(nonceDe(outra?.headers() ?? {})).not.toBe(nonceDe(autenticada?.headers() ?? {}));
+});
+
+/**
+ * A CSP NÃO QUEBRA A APLICAÇÃO (D-331) — e é este caso, e não o de cima, que
+ * protege de verdade.
+ *
+ * Uma CSP errada não derruba a página: ela deixa o HTML chegar e BLOQUEIA em
+ * silêncio o script sem nonce, a conexão fora da lista, o WebSocket esquecido.
+ * O único sinal é a mensagem de violação no console. O caso passa pelos três
+ * caminhos que a política tem de permitir:
+ *
+ * - o login, que era a única página estática e ficaria sem nonce;
+ * - uma tela autenticada, onde o Shell abre o WebSocket do Realtime dos toasts;
+ * - a paleta de busca digitando, que chama RPC do Supabase pelo navegador.
+ *
+ * E exige zero violações — além de a paleta mostrar resultado, porque um
+ * `fetch` bloqueado também apareceria como "nada encontrado".
+ */
+test("CSP: login, tela autenticada, Realtime e busca rodam sem uma violação sequer", async ({ page }) => {
+  const violacoes: string[] = [];
+
+  page.on("console", (mensagem) => {
+    const texto = mensagem.text();
+
+    if (/Content Security Policy|Refused to (load|execute|connect|apply)/i.test(texto)) {
+      violacoes.push(texto.slice(0, 200));
+    }
+  });
+
+  await login(page, "/vendas");
+  await expect(page.getByRole("heading", { level: 1, name: "Dashboard de vendas" })).toBeVisible();
+
+  // Tempo para o Realtime dos toasts abrir o WebSocket.
+  await page.waitForTimeout(2000);
+
+  await page.locator(".sb-search").click();
+
+  const caixa = page.getByRole("dialog", { name: "Buscar na Speed Bikers" });
+
+  await caixa.getByRole("textbox", { name: "Buscar" }).fill("E2E");
+  await expect(caixa.getByRole("button").filter({ hasText: "E2E" }).first()).toBeVisible();
+
+  expect(violacoes).toEqual([]);
 });

@@ -1,6 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+import { gerarNonce, montarCsp } from "./lib/csp";
+
 /**
  * Renovação de sessão e proteção de rota.
  *
@@ -29,7 +31,36 @@ const PUBLIC_EXACT = new Set<string>();
 const PUBLIC_PREFIXES = ["/login", "/auth"];
 
 export async function proxy(request: NextRequest): Promise<NextResponse> {
-  let response = NextResponse.next({ request });
+  /*
+    A CSP COM NONCE (D-331). Um nonce novo por requisição, na política da
+    RESPOSTA (é ela que o navegador aplica) e na da REQUISIÇÃO (é dela que o Next
+    extrai o nonce, durante a renderização, e o põe nos próprios scripts).
+  */
+  const nonce = gerarNonce();
+  const csp = montarCsp({
+    nonce,
+    supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    apiUrl: process.env.NEXT_PUBLIC_API_URL,
+    dev: process.env.NODE_ENV === "development",
+  });
+
+  /*
+    Os cabeçalhos da requisição que segue para a página, montados A CADA vez a
+    partir de `request.headers`. A ordem importa: `setAll` escreve o cookie de
+    sessão renovado em `request.cookies` e recria a resposta — uma cópia feita
+    antes disso carregaria o cookie velho, e a página renderizaria sem a sessão
+    que acabou de ser renovada.
+  */
+  function seguir(): NextResponse {
+    const cabecalhos = new Headers(request.headers);
+
+    cabecalhos.set("x-nonce", nonce);
+    cabecalhos.set("content-security-policy", csp);
+
+    return NextResponse.next({ request: { headers: cabecalhos } });
+  }
+
+  let response = seguir();
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
@@ -42,7 +73,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
             request.cookies.set(name, value);
           }
 
-          response = NextResponse.next({ request });
+          response = seguir();
 
           for (const { name, value, options } of toSet) {
             response.cookies.set(name, value, options);
@@ -81,6 +112,8 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
 
     return NextResponse.redirect(login);
   }
+
+  response.headers.set("Content-Security-Policy", csp);
 
   return response;
 }

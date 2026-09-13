@@ -10794,3 +10794,63 @@ D-232 fechou metade de "uma lista, dois consumidores": os NOMES de chave passara
 
 **Verificacao:** `check` **29/29** (`--force`): `@sb/observability` de 23 para **35** casos (7 das regras de texto, 5 da redacao por valor no logger -- token numa chave inocente, JWT com `Bearer` na mensagem E na stack de um `Error`, string dentro de array, numero/booleano/nulo intocados, e a mensagem benigna legivel); **web 551, api 335 e worker 527, os tres sem mudar** -- nenhum teste existente dependia de um log carregar valor com forma de token, e `sanitize.test.ts` passou sem ser tocado, que e a prova de que a tela nao mudou. Build **8/8**, `db reset`, seed e e2e **140/140** em banco recriado, com a `web` importando `redactSecretText` do build de `@sb/observability`. A integracao nao rodou: nao ha SQL.
 
+## D-331 - Revisao de seguranca, fatia 4: a CSP completa com nonce -- e o login, a unica pagina estatica, teria ficado trancado
+
+**Contexto:** D-329 pos na `web` uma CSP estatica com **so** `frame-ancestors 'none'`, e deixou o resto para uma fatia propria: `script-src` sem nonce quebraria os scripts inline do Next. Esta e a fatia. Antes dela, a pendencia que D-329 deixou foi fechada: **os cabecalhos estao no ar na Vercel** -- a resposta de `/login` em producao (deploy `13e6f15`, estado `READY`) traz `frame-ancestors 'none'`, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, `Permissions-Policy` e o HSTS da propria Vercel, e **nenhum `X-Powered-By`**. O e2e provava o `next start`; agora esta provado na plataforma.
+
+---
+
+**1. A FONTE FOI O GUIA DO NEXT 16 EMPACOTADO, E CADA DESVIO DELE FOI MEDIDO**
+
+O Next 16 trocou `middleware.ts` por `proxy.ts` (D-105 ja registrava a armadilha do nome). O guia instalado junto com o pacote (`node_modules/next/dist/docs/01-app/02-guides/content-security-policy.md`) descreve o mecanismo: o proxy gera um nonce por requisicao, poe na CSP da requisicao e da resposta, e o Next extrai o nonce durante a renderizacao e o aplica aos proprios scripts. Tres condicoes do guia viraram tres medicoes nesta aplicacao:
+
+| o guia pressupoe | medido aqui | o que isso fez |
+|---|---|---|
+| paginas dinamicas | **50 rotas dinamicas e 2 estaticas**: `/_not-found` e **`/login`** | `/login` passou a `force-dynamic` -- ver item 2 |
+| nonce tambem em `style-src` | **999** `style={{...}}` no app, que viram ATRIBUTO `style` no HTML -- nonce nao autoriza atributo | `style-src 'self' 'unsafe-inline'`. O ganho que importa e `script-src`, por onde entra XSS |
+| `upgrade-insecure-requests` | o e2e fala com o Supabase local em `http://127.0.0.1:54321` | **fora**: trocaria o esquema e quebraria a suite. Em producao a Vercel ja forca HTTPS com HSTS `preload` |
+
+E tres conferencias que decidiram o resto da politica: nenhum `eval`/`new Function` no codigo de cliente (sem `'unsafe-eval'` em producao); nenhum `<img>`, `Worker`, `blob:` criado, `iframe` ou `EventSource` (sem origem externa de imagem, sem `worker-src`/`frame-src`); `next/font` serve as fontes do proprio dominio (`font-src 'self'`).
+
+---
+
+**2. O LOGIN TERIA FICADO TRANCADO**
+
+`/login` era a **unica** pagina pre-renderizada no build. Pagina estatica nao tem requisicao no build para gerar nonce; sob `strict-dynamic`, os scripts dela sairiam sem nonce e seriam bloqueados. O formulario renderizaria, e nao responderia a clique nenhum -- **a porta de entrada do sistema trancada, com o HTML aparentando normal**. `export const dynamic = "force-dynamic"` resolve, e o comentario na pagina diz por que.
+
+`/_not-found` continua estatica: e a pagina padrao do Next, sem interacao; os scripts dela serem bloqueados nao tira funcao nenhuma.
+
+---
+
+**3. A POLITICA**
+
+Montada por `lib/csp.ts` (`montarCsp`, funcao pura com 9 casos) a partir das variaveis de ambiente:
+
+`default-src 'self'` · `script-src 'self' 'nonce-X' 'strict-dynamic'` · `style-src 'self' 'unsafe-inline'` · `img-src 'self' data: blob:` · `font-src 'self'` · `connect-src 'self' <Supabase https> <Supabase wss> <api>` · `object-src 'none'` · `base-uri 'self'` · `form-action 'self'` · `frame-ancestors 'none'`
+
+**`connect-src` sai de `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_API_URL`**, e nao de uma lista escrita: o navegador fala com o Supabase em HTTPS **e em WebSocket** (o Realtime dos toasts de notificacao, D-075) e com a `api` (dez componentes de cliente). O mesmo codigo serve `http`/`ws` no local e `https`/`wss` no Dev; variavel vazia ou invalida some da lista em vez de virar `'null'`. `form-action 'self'` nao quebra a conexao com o Mercado Livre: o botao chama a `api` por `fetch` e navega com `window.location`, que CSP nao restringe. Em `next dev` entram `'unsafe-eval'` (pilhas de erro do React) e `ws:` (HMR).
+
+---
+
+**4. DOIS CUIDADOS DE IMPLEMENTACAO**
+
+- **A CSP estatica saiu do `next.config.ts`.** Deixar as duas seria dois donos para o mesmo cabecalho -- e a estatica podia sobrescrever a do proxy, apagando o nonce. `X-Frame-Options` e os demais continuam la.
+- **Os cabecalhos da requisicao sao remontados a cada `NextResponse.next`.** O `setAll` do cliente do Supabase grava o cookie de sessao renovado em `request.cookies` e recria a resposta; uma copia de `request.headers` feita antes disso carregaria o cookie velho, e a pagina renderizaria sem a sessao que acabou de ser renovada.
+
+---
+
+**5. A GUARDA E O CONSOLE, NAO O CABECALHO**
+
+Uma CSP errada nao derruba a pagina: deixa o HTML chegar e **bloqueia em silencio**. O unico sinal e a mensagem de violacao no console. `cabecalhos.spec.ts` ganhou dois cuidados:
+
+- o nonce aparece na CSP e **muda entre duas requisicoes** -- nonce fixo seria uma senha escrita no HTML;
+- um caso que **coleta violacoes de CSP do console** passando pelo login (a pagina que era estatica), por uma tela autenticada esperando o WebSocket do Realtime abrir, e pela paleta de busca digitando (RPC do Supabase pelo navegador) -- e exige **zero violacoes** e um resultado na busca, porque um `fetch` bloqueado tambem apareceria como "nada encontrado".
+
+---
+
+**Impacto:** `apps/web/lib/csp.ts` e `csp.test.ts` (novos), `apps/web/proxy.ts`, `apps/web/next.config.ts`, `apps/web/app/login/page.tsx`, `apps/web/e2e/cabecalhos.spec.ts`, `docs/{DECISIONS,DECISIONS_INDEX,ROADMAP,HANDOFF}.md`. Sem migration.
+
+**Verificacao:** `check` **29/29** (`--force`, web 551 para **560** com os 9 de `csp.test.ts`), build **8/8** -- e a tabela de rotas deste build confirma **`ƒ /login`**: 51 rotas dinamicas e uma estatica, `/_not-found`. `db reset`, seed e e2e **141/141** em banco recriado (+1): nenhum caso existente quebrou por script ou conexao bloqueada, e os dois de CSP passaram. A integracao nao rodou: nao ha SQL.
+
+**A guarda foi provada, e nao presumida.** "Zero violacoes" so vale se o ouvinte do console pega uma violacao real. Contra o mesmo build, com a mesma regex do spec: **0** violacoes ao carregar `/login`, e **2** capturadas depois de a pagina fazer um `fetch` para uma origem fora de `connect-src` ("Connecting to ... violates the following Content Security Policy directive: connect-src ..." e "Refused to connect ..."). Na mesma pagina, **11 de 11** scripts sairam com o nonce que o Next aplica sozinho.
+
