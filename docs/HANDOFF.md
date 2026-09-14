@@ -102,7 +102,8 @@ Números completos e método: `docs/PERFORMANCE.md`.
   até 4,1 min, e a reversão de estoque só acontece com a devolução
   `delivered`, dias depois. O worker passa a tratar 404 em claim com menos de
   60 min como `claim_return_not_yet_available` (info); fora da janela segue
-  falha, com `claim_return_missing` (warn) e a idade. **Ainda não publicado.**
+  falha, com `claim_return_missing` (warn) e a idade. **No ar desde
+  2026-09-14 09:51 UTC** (`worker-00051-thq`).
 - **Relist nunca foi exercitado contra o ML real.** A primeira execução
   precisa ser ensaio humano deliberado, com anúncio sacrificável.
 - **As duas suítes locais não convivem no mesmo banco, e a ordem é a cura.**
