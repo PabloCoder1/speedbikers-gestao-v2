@@ -26,15 +26,12 @@ build_and_deploy() {
   local app="$1"
   local image="${REGISTRY}/${app}:${TAG}"
 
-  step "Build da imagem: ${app}"
-  info "${image}"
-  gc builds submit \
-    --config infra/cloudbuild.yaml \
-    --substitutions "_APP=${app},_IMAGE=${image}" \
-    .
-
-  step "Deploy: ${app}"
-
+  # As guardas vêm ANTES do build (D-349). Nenhuma delas depende da imagem, e o
+  # build não é barato: sobe o contexto inteiro e roda no Cloud Build. Recusar
+  # depois dele é pagar um build para descobrir uma variável errada — foi assim
+  # que a falta do repositório do Artifact Registry apareceu, na primeira
+  # publicação de produção, depois de dois builds completos.
+  #
   # Os dois serviços chamam o Mercado Livre (api troca o code; worker renova
   # com refresh_token) — checar aqui, para os DOIS ramos, e não só dentro do
   # `if [ "${app}" = "api" ]`. É exatamente o tipo de vácuo que já causou
@@ -64,6 +61,15 @@ build_and_deploy() {
       fail "MERCADO_LIVRE_CLIENT_ID='${MERCADO_LIVRE_CLIENT_ID}' tem caractere nao numerico. O client id do Mercado Livre e so digitos — se voce a extraiu do gcloud, provavelmente pegou a representacao de lista (['...']) em vez do valor."
       ;;
   esac
+
+  step "Build da imagem: ${app}"
+  info "${image}"
+  gc builds submit \
+    --config infra/cloudbuild.yaml \
+    --substitutions "_APP=${app},_IMAGE=${image}" \
+    .
+
+  step "Deploy: ${app}"
 
   if [ "${app}" = "api" ]; then
     # A api precisa conhecer a própria URL (audience do OIDC) e a do worker.
@@ -120,6 +126,13 @@ SCHEDULER_INVOKER_SERVICE_ACCOUNT: "$(sa_email "${SA_SCHEDULER}")"
 SUPABASE_URL: "${SUPABASE_URL}"
 SUPABASE_PUBLISHABLE_KEY: "${SUPABASE_PUBLISHABLE_KEY}"
 ERP_IMPORTS_BUCKET: "${PROJECT_ID}-erp-imports"
+# D-349. Esta variável é o INTERRUPTOR da NF-e: \`app.ts\` só registra a rota de
+# upload quando ela existe, e o worker só registra o handler de parse. Ela é
+# opcional no schema porque, quando foi escrita, o bucket de documentos ainda
+# não existia no GCP — mas \`infra/storage-buckets.sh\` passou a criá-lo e a dar
+# as permissões, e o script de deploy nunca foi atualizado. Resultado: a NF-e
+# nascia DESLIGADA, em silêncio, com o bucket pronto do lado.
+DOCUMENTS_BUCKET: "${PROJECT_ID}-documents"
 WEB_ORIGINS: "${WEB_ORIGINS}"
 MERCADO_LIVRE_CLIENT_ID: "${MERCADO_LIVRE_CLIENT_ID}"
 MERCADO_LIVRE_REDIRECT_URI: "${ml_redirect_uri}"
@@ -167,7 +180,7 @@ YAML
       --concurrency 4 \
       --timeout 900s \
       --cpu 1 --memory 512Mi \
-      --set-env-vars "NODE_ENV=production,APP_COMMIT=${TAG},SUPABASE_URL=${SUPABASE_URL},ERP_IMPORTS_BUCKET=${PROJECT_ID}-erp-imports,MERCADO_LIVRE_CLIENT_ID=${MERCADO_LIVRE_CLIENT_ID},GCP_PROJECT_ID=${PROJECT_ID},GCP_REGION=${REGION},WORKER_URL=${self_url},TASKS_INVOKER_SERVICE_ACCOUNT=$(sa_email "${SA_TASKS}"),AI_MONTHLY_BUDGET_USD=${AI_MONTHLY_BUDGET_USD}" \
+      --set-env-vars "NODE_ENV=production,APP_COMMIT=${TAG},SUPABASE_URL=${SUPABASE_URL},ERP_IMPORTS_BUCKET=${PROJECT_ID}-erp-imports,DOCUMENTS_BUCKET=${PROJECT_ID}-documents,MERCADO_LIVRE_CLIENT_ID=${MERCADO_LIVRE_CLIENT_ID},GCP_PROJECT_ID=${PROJECT_ID},GCP_REGION=${REGION},WORKER_URL=${self_url},TASKS_INVOKER_SERVICE_ACCOUNT=$(sa_email "${SA_TASKS}"),AI_MONTHLY_BUDGET_USD=${AI_MONTHLY_BUDGET_USD}" \
       --set-secrets "SUPABASE_SERVICE_ROLE_KEY=${SECRET_SUPABASE_KEY}:latest,MERCADO_LIVRE_CLIENT_SECRET=${SECRET_ML_CLIENT_SECRET}:latest,ML_TOKEN_ENCRYPTION_KEY=${SECRET_ML_TOKEN_KEY}:latest" \
       --quiet
 

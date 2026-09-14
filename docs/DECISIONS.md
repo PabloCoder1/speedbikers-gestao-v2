@@ -11752,3 +11752,60 @@ O relatorio de saude do Dev, rodado no mesmo dia pelo SQL Editor, mostrou `n_tup
 **Roteiro que compensa um defeito preserva o defeito.** Os tres achados estavam sendo contornados a mao no passo a passo do corte: um bloco de quatro `add-iam-policy-binding` colado depois do `setup-dev.sh`, um paragrafo explicando o formato do `WEB_ORIGINS` que nada validava, e um aviso para ler "restaurado maior" como expurgo. Cada um desses paragrafos e a confissao de um buraco -- e o proximo a rodar os scripts nao tera o paragrafo. A pergunta que fica: **quando o roteiro precisa avisar, da para o codigo recusar?**
 
 **Impacto:** `infra/setup-dev.sh` (concessao por tabela, e parada em prod com segredo ausente), `infra/lib.sh` (validacao de formato do `WEB_ORIGINS`), `infra/ambiente.test.sh` (11 casos novos), `packages/db/scripts/restore-check.mjs` (janela datada nas 8 tabelas exatas, INFO de expurgo, cabecalho), `docs/DEPLOYMENT.md` (8.1: a janela datada e a leitura de "restaurado maior"; 8.2: itens 3 e 4, a armadilha do dominio proprio no `m71j` e o formato do `WEB_ORIGINS`), `docs/{DECISIONS,DECISIONS_INDEX}.md`. Sem migration.
+
+---
+
+## D-349 - O primeiro deploy de producao pagou dois builds para descobrir uma linha que faltava -- e subiu com a NF-e desligada em silencio
+
+**Contexto:** D-348 fechou tres buracos entre o Dev e o corte, e no mesmo dia o dono rodou o roteiro inteiro em producao pela primeira vez. A tabela de segredos do `setup-dev.sh` funcionou na estreia -- concedeu os quatro, inclusive os dois que nunca tiveram concessao scriptada. **Mas rodar de verdade achou o que ler nao tinha achado.** Os tres itens abaixo vem da execucao real, nao de leitura.
+
+---
+
+**1. NADA CRIAVA O REPOSITORIO DO ARTIFACT REGISTRY**
+
+`deploy-cloud-run.sh` publica em `${REGION}-docker.pkg.dev/${PROJECT_ID}/speedbikers-v3`. `setup-dev.sh` liga a API `artifactregistry.googleapis.com` e para por ai: o REPOSITORIO nunca foi criado por script. No Dev ele foi feito a mao quando o ambiente nasceu, e por isso a falta era invisivel -- a mesma forma exata do buraco de IAM de D-348, no mesmo arquivo.
+
+**O agravante e QUANDO aparece.** O Cloud Build sobe o contexto (880 arquivos, 8,7 MiB), constroi a imagem inteira, e so entao o push falha:
+
+```
+name unknown: Repository "speedbikers-v3" not found
+```
+
+Aconteceu duas vezes, uma por servico, antes de alguem ler a mensagem. Dois builds pagos para descobrir uma linha.
+
+**Agora `setup-dev.sh` cria o repositorio**, idempotente como o resto, com o nome preso ao `REPO` do deploy pela mesma regra de manutencao da tabela de segredos: as duas pontas moram em arquivos diferentes e o que as mantem juntas e a frase escrita ao lado.
+
+---
+
+**2. AS GUARDAS RODAVAM DEPOIS DO BUILD**
+
+`build_and_deploy` construia a imagem e so entao conferia `MERCADO_LIVRE_CLIENT_ID` -- presenca e formato. Nenhuma das duas depende da imagem. Com o placeholder `<so-digitos>` esquecido no `export` (o que quase aconteceu: o primeiro bloco colado tinha o placeholder, e so o segundo trouxe o valor), o script pagaria o build inteiro para recusar uma variavel que ja estava errada antes de comecar.
+
+As guardas subiram para antes do `gc builds submit`. **A regra que fica: guarda que nao depende do artefato roda antes de produzir o artefato.**
+
+---
+
+**3. `DOCUMENTS_BUCKET` NUNCA CHEGOU AO CONTAINER -- E ELA E O INTERRUPTOR DA NF-e**
+
+Ela e opcional nos dois `envSchema`, e o comentario diz por que: *"o bucket real ainda nao existe no GCP -- declarar como obrigatorio derrubaria o boot antes da infra existir"*. Mas `storage-buckets.sh` cria `${PROJECT_ID}-documents` e concede `objectAdmin` a api e `objectViewer` ao worker. **O comentario envelheceu; o bucket existe desde entao.**
+
+O que `deploy-cloud-run.sh` nunca fez foi passar a variavel. E ela nao e decorativa: `app.ts` so registra a rota de upload de NF-e quando ela esta presente, e o `index.ts` do worker so registra o handler de parse. Sem ela o sistema sobe **verde, completo e com a NF-e desligada**, com o bucket pronto e as permissoes dadas do lado. Conferido no Cloud Run de producao: as 14 variaveis da api e as 10 do worker estavam la, e esta faltava nas duas.
+
+Agora o deploy passa `DOCUMENTS_BUCKET=${PROJECT_ID}-documents` nos dois servicos, e os comentarios dos dois schemas dizem o que e verdade hoje: a variavel continua opcional -- ambiente sem bucket ainda sobe --, mas quem a apaga desliga a NF-e.
+
+---
+
+**4. O QUE A EXECUCAO CONFIRMOU QUE ESTA CERTO**
+
+- **A tabela de segredos de D-348 funcionou na estreia:** `v3-api-runtime` e `v3-worker-runtime` receberam `SUPABASE_SERVICE_ROLE_KEY`, `MERCADO_LIVRE_CLIENT_SECRET` e `ML_TOKEN_ENCRYPTION_KEY`, e a api tambem a `ANTHROPIC_API_KEY`. A prova de que os quatro montaram e a api responder: `GET /health` devolveu `{"status":"ok","commit":"b0d31d4"}` -- o Zod recusaria o boot se faltasse uma.
+- **A validacao de formato do `WEB_ORIGINS`** (D-348) aceitou `https://speedbikers-prod.vercel.app` e a variavel chegou intacta ao container.
+- **A dança de duas fases** da api funcionou: `generation: 2`, com `API_URL` real no lugar do `placeholder.invalid`.
+- **Uma sutileza que o roteiro nao dizia:** o Cloud Run da DUAS URLs ao mesmo servico -- a nova (`api-<numero>.<regiao>.run.app`, que o console exibe no cabecalho) e a legada (`api-<hash>-<rg>.a.run.app`, que `status.url` devolve). O script le `status.url`, entao e a LEGADA que virou `API_URL`, audience do OIDC, e o padrao de `MERCADO_LIVRE_REDIRECT_URI`. Copiar a do console para o `NEXT_PUBLIC_API_URL` daria dois nomes para a mesma api. Esta escrito na 8.2.
+
+---
+
+**5. A LICAO**
+
+**Roteiro lido nao e roteiro rodado.** D-348 saiu de uma leitura atenta dos scripts e achou tres coisas reais; a primeira execucao de verdade, horas depois, achou outras tres que a leitura nao tinha como achar -- porque duas delas so existem em projeto NOVO, e a terceira so aparece como ausencia de comportamento. A pergunta que fica: **o que neste ambiente foi feito a mao uma vez e nunca virou script?** Ate agora a resposta foi o IAM dos segredos e o repositorio de imagens. Provavelmente nao acabou.
+
+**Impacto:** `infra/setup-dev.sh` (cria o repositorio do Artifact Registry), `infra/deploy-cloud-run.sh` (guardas antes do build; `DOCUMENTS_BUCKET` nos dois servicos), `apps/api/src/env.ts` e `apps/worker/src/env.ts` (so o comentario de `DOCUMENTS_BUCKET`), `docs/DEPLOYMENT.md` (8.2: o repositorio, a NF-e e as duas URLs do Cloud Run), `docs/{DECISIONS,DECISIONS_INDEX}.md`. Sem migration.

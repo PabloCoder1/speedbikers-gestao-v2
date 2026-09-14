@@ -49,6 +49,30 @@ for api in "${REQUIRED_APIS[@]}"; do
   fi
 done
 
+step "Repositório de imagens (Artifact Registry)"
+# `deploy-cloud-run.sh` publica em
+# ${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}, e até 2026-09-14 NADA criava
+# esse repositório (D-349). No Dev ele foi feito à mão quando o ambiente nasceu,
+# e a falta só apareceu no primeiro projeto novo — com o agravante de aparecer
+# TARDE: o Cloud Build sobe o contexto, constrói a imagem inteira, e só então o
+# push falha com `name unknown: Repository "speedbikers-v3" not found`. Um build
+# pago para descobrir uma linha que faltava.
+#
+# O nome tem de ser o MESMO de `REPO` em `deploy-cloud-run.sh`. As duas pontas
+# moram em arquivos diferentes e nenhuma guarda automática as compara — o que as
+# mantém juntas é esta frase, como na tabela de segredos acima.
+REPO_IMAGENS="speedbikers-v3"
+
+if gc artifacts repositories describe "${REPO_IMAGENS}" --location "${REGION}" >/dev/null 2>&1; then
+  skip "${REPO_IMAGENS} (${REGION})"
+else
+  gc artifacts repositories create "${REPO_IMAGENS}" \
+    --location "${REGION}" \
+    --repository-format docker \
+    --description "Imagens da api e do worker (infra/deploy-cloud-run.sh)" >/dev/null
+  ok "${REPO_IMAGENS} (${REGION})"
+fi
+
 step "Service accounts"
 # Uma identidade por responsabilidade. Ver docs/DEPLOYMENT.md.
 create_sa() {

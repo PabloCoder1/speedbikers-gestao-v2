@@ -51,11 +51,16 @@ export const envSchema = z.object({
   ERP_IMPORTS_BUCKET: z.string().min(1),
 
   /**
-   * Bucket que recebe os XML de NF-e. Opcional de propósito: o bucket real
-   * ainda não existe no GCP (`docs/HANDOFF.md`) — declarar como obrigatório
-   * derrubaria a `api` no boot antes da infra existir. A rota de upload
-   * (`app.ts`) só é registrada quando esta variável está presente, mesmo
-   * raciocínio de `DOCUMENTS_BUCKET` em `apps/worker/src/env.ts`.
+   * Bucket que recebe os XML de NF-e. Continua OPCIONAL, para um ambiente sem
+   * o bucket ainda subir — mas o motivo original ("o bucket real ainda não
+   * existe no GCP") caducou: `infra/storage-buckets.sh` cria
+   * `<projeto>-documents` e concede `objectAdmin` a este serviço, e desde
+   * D-349 `infra/deploy-cloud-run.sh` passa a variável nos dois serviços.
+   *
+   * Ela é o INTERRUPTOR da NF-e: a rota de upload (`app.ts`) só é registrada
+   * quando ela está presente. Apagá-la não quebra o boot — desliga a
+   * funcionalidade, em silêncio. Mesmo raciocínio de `DOCUMENTS_BUCKET` em
+   * `apps/worker/src/env.ts`.
    */
   DOCUMENTS_BUCKET: z.string().min(1).optional(),
 
