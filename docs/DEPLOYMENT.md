@@ -273,39 +273,68 @@ O que existe, medido em 2026-09-13 no projeto Dev: **backup físico diário** (~
     ) as backup_at;
     ```
 
-    Por que não o horário da lista: a documentação não diz se `inserted_at` é o início ou o fim do backup, e o comparador exige contagem **igual** até `BACKUP_AT` — um instante depois do ponto consistente faz o Dev contar a mais e reprova um restore bom. Toda linha presente no restaurado foi gravada antes desse ponto, então o maior `created_at` dele é um limite seguro; os 15 minutos cobrem transação aberta por até 15 minutos (`now()` marca o início dela). A margem certa não é verificável — por isso a leitura do FAIL, no bloco E, não confia nela.
+    Por que não o horário da lista: a documentação não diz se `inserted_at` é o início ou o fim do backup, e o comparador exige contagem **igual** até `BACKUP_AT` — um instante depois do ponto consistente faz o Dev contar a mais e reprova um restore bom. Toda linha presente no restaurado foi gravada antes desse ponto, então o maior `created_at` dele é um limite seguro; os 15 minutos cobrem transação aberta por até 15 minutos (`now()` marca o início dela). A margem certa não é verificável — por isso a leitura do FAIL, na parte E, não confia nela.
 
     - **Resultado nulo:** as quatro tabelas estão vazias no restaurado. É restore reprovado: não rode o comparador; registre e pare.
     - **Mais de 1 h longe do horário da lista:** confira se escolheu o backup certo.
     - **Se o passo 9 achou algo ativo,** um job pode ter gravado no restaurado antes de ser desligado e empurrado o maior `created_at` para depois do backup: use o menor entre o resultado e o horário da lista menos 15 minutos.
 
-**D. Rodar o comparador** — só lê: as duas sessões abrem em `READ ONLY`, e as URLs nunca são impressas. No **Windows PowerShell**, um bloco por vez; o ref do restaurado está na URL do Dashboard (`.../project/<ref>`):
+**D. Rodar o comparador** — só lê: as duas sessões abrem em `READ ONLY`, e as URLs nunca são impressas. O ref do restaurado está na URL do Dashboard (`.../project/<ref>`).
+
+⚠️ **Cole um bloco por vez e espere cada um terminar.** Os blocos que pedem senha vão **sozinhos**: colados junto com outras linhas, dependendo de como o terminal cola, a linha seguinte pode ser lida como a senha — e falha repetida de autenticação bane o IP.
+
+No **Windows PowerShell**:
+
+**Bloco 0** — entrar na pasta:
 
 ```powershell
-# 0
 Set-Location 'C:\Users\usuario\Desktop\Projetos\speedbikers-gestao-v2'
+```
 
-# 1 — senha do Dev, sem eco e fora do histórico
+**Bloco 1** — senha do Dev, sem eco e fora do histórico:
+
+```powershell
 $env:DEV_DB_URL = 'postgresql://postgres:' + [uri]::EscapeDataString([Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR((Read-Host 'Senha do banco DEV' -AsSecureString)))) + '@db.nmgccyqquwxecqffsidr.supabase.co:5432/postgres?sslmode=no-verify'
+```
 
-# 2 — troque <REF_RESTAURADO>
+**Bloco 2** — senha do restaurado; antes de colar, troque `<REF_RESTAURADO>`:
+
+```powershell
 $env:RESTORED_DB_URL = 'postgresql://postgres:' + [uri]::EscapeDataString([Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR((Read-Host 'Senha do banco RESTAURADO' -AsSecureString)))) + '@db.<REF_RESTAURADO>.supabase.co:5432/postgres?sslmode=no-verify'
+```
 
-# 3 — o valor do passo 10
+**Bloco 3** — o valor do passo 10:
+
+```powershell
 $env:BACKUP_AT = '<AAAA-MM-DDTHH:MM:00Z>'
+```
 
-# 4 — recusa placeholder esquecido, URL igual ou do Dev, e roda
+**Bloco 4** — recusa placeholder esquecido, URL igual ou do Dev, e roda:
+
+```powershell
 if ($env:DEV_DB_URL -eq $env:RESTORED_DB_URL -or $env:RESTORED_DB_URL -like '*nmgccyqquwxecqffsidr*' -or $env:RESTORED_DB_URL -like '*<*' -or $env:BACKUP_AT -cnotmatch '^\d{4}-\d\d-\d\dT\d\d:\d\d:00Z$') { Write-Error 'RESTORED_DB_URL ou BACKUP_AT invalido: placeholder esquecido, ou URL do Dev' } else { pnpm.cmd --filter '@sb/db' run check:restore; "codigo de saida: $LASTEXITCODE" }
 ```
 
-No Git Bash, o equivalente — troque os dois valores das primeiras linhas:
+No **Git Bash**, o equivalente em três blocos:
+
+**Git Bash 1** — troque os dois valores e cole:
 
 ```bash
 cd /c/Users/usuario/Desktop/Projetos/speedbikers-gestao-v2
 REF_RESTAURADO='<REF_RESTAURADO>'
 BACKUP_AT_CALCULADO='<AAAA-MM-DDTHH:MM:00Z>'
-IFS= read -rsp 'Senha DEV: ' SD; echo; IFS= read -rsp 'Senha RESTAURADO: ' SR; echo
 enc() { printf '%s' "$1" | node -e 'let s="";process.stdin.setEncoding("utf8");process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(encodeURIComponent(s)))'; }
+```
+
+**Git Bash 2** — as duas senhas, sem eco:
+
+```bash
+IFS= read -rsp 'Senha DEV: ' SD; echo; IFS= read -rsp 'Senha RESTAURADO: ' SR; echo
+```
+
+**Git Bash 3** — recusa placeholder esquecido ou ref do Dev, roda e apaga as senhas:
+
+```bash
 if [[ "$REF_RESTAURADO" == *nmgccyqquwxecqffsidr* || "$REF_RESTAURADO" == *'<'* || ! "$BACKUP_AT_CALCULADO" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:00Z$ ]]; then
   echo 'REF_RESTAURADO ou BACKUP_AT invalido: placeholder esquecido, ou ref do Dev'
 else
@@ -359,7 +388,7 @@ unset SD SR
 
 **F. Encerrar**
 
-11. No PowerShell, limpar e **fechar a janela**: `Remove-Item Env:DEV_DB_URL, Env:RESTORED_DB_URL, Env:BACKUP_AT -ErrorAction SilentlyContinue`. No Git Bash não sobra variável além das senhas, que o `unset SD SR` do bloco apaga.
+11. No PowerShell, limpar e **fechar a janela**: `Remove-Item Env:DEV_DB_URL, Env:RESTORED_DB_URL, Env:BACKUP_AT -ErrorAction SilentlyContinue`. No Git Bash, o `unset SD SR` do bloco Git Bash 3 apaga as senhas; o que sobra na sessão (o ref, o `BACKUP_AT` e a função `enc`) não é segredo.
 12. **Registrar numa D-xxx antes de apagar:** commit do `restore-check.mjs`; horário da lista, o maior `created_at` antes dos −15 min e o `BACKUP_AT` usado; estado do PITR e do SSL; custo mostrado; horas do clique e do projeto pronto; saída completa com o código de saída; resultado do passo 9; ref do restaurado; e, depois de apagar, a hora da exclusão.
 13. **Apagar o projeto restaurado:** conferir no topo que o ref **não** é `nmgccyqquwxecqffsidr` → **Settings → General → Delete project** → digitar o nome. Irreversível; a cobrança para na hora.
 14. Em nenhum momento apontar `.env.local`, `api` ou `worker` para o restaurado: ele leva hashes de senha, os tokens do Mercado Livre cifrados e a chave raiz do Vault.
