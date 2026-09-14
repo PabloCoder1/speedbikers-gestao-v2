@@ -11267,3 +11267,53 @@ As 39 invocacoes acima de 30 s sao varreduras agendadas, casadas pelo instante d
 
 **Impacto:** `apps/api/src/{webhook.ts,webhook.test.ts}`, `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,MERCADO_LIVRE,API,ARCHITECTURE,ROADMAP,HANDOFF}.md`. Sem migration. **Nao esta no ar.**
 
+## D-340 - A correcao de D-339 foi publicada, piorou o topico que importa, e voltou -- a media melhorou e escondia isso
+
+**Contexto:** com o usuario autorizando, a `api` subiu em `3ef3ee1` (`api-00037-bqb`, 2026-09-14 00:44 UTC; so `apps/api` mudava desde `d828eac`, o worker ficou). Antes: CI verde nos cinco jobs, configuracao no ar igual a que o script reconstroi, e uma linha de base de uma hora na revisao anterior -- 3.363 webhooks, ACK p50 68 ms, p95 267 ms, p99 455 ms, 8 acima de 500 ms.
+
+---
+
+**1. O QUE A CORRECAO FEZ, E O QUE PARECIA**
+
+Em 20,7 minutos da revisao nova (1.224 webhooks, todos 200, zero ERROR): ACK **p50 2 ms**, p75 3 ms, p95 265 ms, p99 369 ms; 89% abaixo de 10 ms -- exatamente a fatia de topico sem consumidor (1.088). O log saiu com `user_id` e sem `ml_account_id`, e nenhum topico com trabalho foi classificado como sem consumidor. **Pelos agregados, deu certo.**
+
+---
+
+**2. O QUE OS AGREGADOS ESCONDIAM**
+
+Acima de 500 ms, a revisao nova teve 12 em 25 minutos -- contra 8 numa hora antes. Separando pelo caminho, no mesmo formato:
+
+| janela | codigo | webhooks | acima de 500 ms | enfileirados | lentas entre as com trabalho |
+|---|---|---|---|---|---|
+| vespera, 00:44-01:05 | antigo | 809 | 1 | 197 | ~0,5% |
+| hoje, 00:23-00:44 | antigo | 1.193 | 2 | 233 | ~0,9% |
+| **`api-00037-bqb`, 25 min** | **D-339** | 1.311 | **12** | 138 | **~8,7%** |
+
+As lentas, pelo intervalo desde a requisicao com trabalho anterior: **6 de 17** depois de pausa de 30 s ou mais; **5 de 90** em rajadas no mesmo segundo; **1 de 35** com pausa de 1 a 30 s. Tudo numa instancia so, fora do boot. E o desenho de conexao que esfria: antes, as ~56 notificacoes sem consumidor por minuto mantinham quentes as conexoes com o Supabase (o `fetch` padrao do Node, sem agente configurado) e com o Cloud Tasks (gRPC); sem elas, pausas de 30 s passaram a existir, e cada `orders_v2` depois de uma pagou a abertura.
+
+**Na conta de um dia**, o codigo antigo tem um pico lento por dia em topicos que ninguem consome; o novo punha ~9% dos ACKs de `orders_v2` e `post_purchase` fora dos 500 ms o dia inteiro -- o topico que alimenta os pedidos e o que o Mercado Livre pode desativar. **O quadro novo era pior.**
+
+Descartado antes de concluir: a queda de enfileirados (233 para 118 de `orders_v2`) nao era perda. As 1.224 requisicoes geraram exatamente 1.224 logs de webhook, nenhuma conta desconhecida, nenhum payload invalido; o `orders_v2` da vespera na mesma janela foi 191 -- e volume que chega. E o caminho da fila seguiu igual: 50 tasks novas e 47 concluidas antes, 32 e 28 depois.
+
+---
+
+**3. A VOLTA**
+
+Com autorizacao do usuario: `gcloud run services update-traffic api --to-revisions api-00036-5l4=100`. So trafego, sem build. `GET /health` respondeu `{"commit":"d828eac"}` numa instancia de 01:30:21 UTC. `api-00037-bqb` segue existindo sem trafego.
+
+**E o codigo voltou no repositorio**, porque o contrario era armadilha: com D-339 no `HEAD` e `d828eac` no ar, o proximo deploy de qualquer coisa republicaria a regressao sem ninguem notar. `apps/api/src/{webhook.ts,webhook.test.ts}` foram restaurados de `89da6fa^` pelo git -- identicos a `d828eac`, diff vazio -- e passam typecheck, lint e os **335** testes de antes. D-339 fica como registro da medicao e da tentativa; a correcao nao.
+
+**Verificacao da volta** (36 min de `api-00036-5l4`, das 01:30 as 02:06 UTC): 1.697 webhooks, todos 200, **zero ERROR**; ACK p50 63 ms, p95 259 ms, p99 298 ms, max 590 ms; **4 acima de 500 ms entre 373 enfileirados (~1,1%)** -- de volta a faixa do codigo antigo. Na vespera, mesma janela: 1.120 webhooks, 0 acima de 500 ms, 214 enfileirados.
+
+**E a armadilha que a volta deixou:** `update-traffic --to-revisions` fixa o trafego numa revisao -- `spec.traffic` passa a nomear `api-00036-5l4`, sem `latestRevision`. O `gcloud run deploy --help` descreve esse estado (no flag `--no-traffic`): enquanto o trafego nao estiver no LATEST, **a revisao publicada em seguida nao recebe trafego**. O proximo deploy sairia verde servindo 0%, com `/health` ainda no commit antigo.
+
+---
+
+**4. A LICAO, QUE VALE MAIS QUE A CORRECAO**
+
+**Compare o caminho que FICOU, nao so o que saiu.** O p50 geral caiu de 68 para 2 ms e o p95 ficou igual; se a conferencia tivesse parado nos agregados, a correcao teria ficado no ar degradando `orders_v2`. E a hipotese de D-339 ("tirar o I/O do sem consumidor resolve o pico") estava certa no que media e errada no que nao media: tirar trafego de uma conexao muda quem paga para abri-la.
+
+**O pico continua aberto.** A proxima tentativa comeca medindo, no caminho com trabalho, quanto do ACK e a conta no Postgres e quanto e a Cloud Task, com e sem pausa -- e so depois escolhe entre manter as conexoes quentes, tirar a consulta da conta do caminho (quatro contas cabem em memoria) ou mudar a borda.
+
+**Impacto:** Cloud Run (trafego da `api` de volta a `api-00036-5l4`), `apps/api/src/{webhook.ts,webhook.test.ts}` (restaurados), `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,MERCADO_LIVRE,API,ARCHITECTURE,ROADMAP,HANDOFF}.md`. Sem migration.
+

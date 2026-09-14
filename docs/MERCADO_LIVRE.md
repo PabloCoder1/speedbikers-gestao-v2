@@ -236,7 +236,7 @@ Tópicos "com subtópicos" (`messages`, `vis_leads`, `post_purchase`) trazem tam
 
 **Regra dura de tempo:** responder HTTP 200 em até **500 ms**, sem chamada de rede no handler. Um tópico que falhar repetidamente pode ser **desativado por fallback**, exigindo reinscrição manual.
 
-**O que a `api` cumpre dessa regra, medido em 2026-09-13 (D-339):** esta seção dizia "já é o desenho da `api`", e não era. Toda notificação consultava `ml_accounts` no Postgres antes do ACK, e as com trabalho ainda criam a Cloud Task. Fora de pico o p95 do ACK é ~260 ms; **nos picos passou de 7 s** (um lote de 776 notificações de `items_prices`/`public_offers`/`items` em 25 s, todas sem consumidor). Desde D-339 o tópico sem consumidor — 76% do volume — responde antes de qualquer I/O. Os tópicos com trabalho (`orders_v2`, `post_purchase`, `questions`, `messages`) continuam com duas idas de rede no caminho do ACK.
+**O que a `api` cumpre dessa regra, medido em 2026-09-13 (D-339):** esta seção dizia "já é o desenho da `api`", e não era. Toda notificação consultava `ml_accounts` no Postgres antes do ACK, e as com trabalho ainda criam a Cloud Task. Fora de pico o p95 do ACK é ~260 ms; **nos picos passou de 7 s** (um lote de 776 notificações de `items_prices`/`public_offers`/`items` em 25 s, todas sem consumidor). Responder o tópico sem consumidor — 76% do volume — antes de qualquer I/O foi publicado e **revertido** (D-339, D-340): fora de pico tirou o custo dele, mas com o Postgres quase ocioso as conexões esfriaram, e os ACKs acima de 500 ms de `orders_v2`/`post_purchase` foram de ~1% a ~9%. **O pico continua sem correção.**
 
 **Avisos de depreciação já publicados** (nenhum bloqueia a V3 hoje, registrados para não implementar campo que vai sumir):
 

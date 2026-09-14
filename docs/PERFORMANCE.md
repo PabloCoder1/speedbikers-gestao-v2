@@ -71,7 +71,7 @@ controlado:
 | Home, Vendas, Estoque | < 1,5 s |
 | Anúncios, SKU (por aba) | < 1,5–2 s |
 | Busca universal | percepção instantânea |
-| Webhook (ACK) | **< 500 ms, também no pico** — regra dura do Mercado Livre; tópico sem consumidor responde sem I/O (D-339) |
+| Webhook (ACK) | **< 500 ms, também no pico** — regra dura do Mercado Livre. Hoje estoura no pico diário (D-339); a primeira correção foi revertida (D-340) |
 
 ---
 
@@ -745,7 +745,9 @@ Medido em 2026-09-13 nos logs de requisição do Cloud Run, sem tocar em nada �
 
 **Onde vai o tempo.** Cerca de 630 requisições em 6 s na única instância quente (`min-instances=1`). O autoscaling subiu **nove instâncias a frio** entre 09:00:21 e 09:00:25, e as requisições roteadas para elas esperaram o boot (`api_started` ~4 s depois de `Starting new instance`): p50 de 5 a 11 s nessas instâncias. A quente também sofreu (p95 2,4 s). As 497 requisições acima de 2 s caíram todas nesses dez segundos.
 
-**Por que o tópico sem consumidor pesava.** `receiveWebhook` consultava `ml_accounts` no Postgres antes de decidir que a notificação não tinha trabalho. Desde D-339 a decisão vem antes da consulta, e o lote inteiro das 09:00 responderia sem I/O. **O efeito só se confirma no primeiro pico depois do deploy** — a conferência é a mesma medição: p95 do ACK nos minutos mais cheios e `Starting new instance` na janela.
+**Por que o tópico sem consumidor pesa.** `receiveWebhook` consulta `ml_accounts` no Postgres antes de decidir que a notificação não tem trabalho. D-339 inverteu a ordem — **e foi revertida (D-340)**. Fora de pico, o ACK do sem consumidor foi de p50 68 ms a 2 ms; mas com o Postgres quase ocioso as conexões esfriaram, e os ACKs acima de 500 ms entre as notificações com trabalho foram de **~1%** (8 de 843; 1 de 197 no mesmo horário da véspera) a **~9%** (12 de 138). As lentas se concentraram depois de pausas de 30 s ou mais (6 de 17) e em rajadas simultâneas (5 de 90); pausas de 1 a 30 s quase não geraram lenta (1 de 35).
+
+**Lição de medição:** compare o caminho que FICOU, não só o que saiu. O p50 geral caiu de 68 para 2 ms e o p95 ficou igual — os agregados diziam "melhorou", e escondiam a piora justamente no tópico que alimenta os pedidos. O pico continua aberto; a próxima tentativa começa medindo qual das duas chamadas esfria (a conta no Postgres ou a Cloud Task, que é gRPC).
 
 **Worker, no mesmo dia:** 5.724 invocações, p50 588 ms, p95 5,5 s. As 39 acima de 30 s são varreduras agendadas (casadas pelo instante de fim com o log `*_done` do mesmo segundo): `sync.fulfillment.snapshot` 266–323 s, a cada 6 h por conta; `sync.listing-visits.snapshot` 313–364 s, uma vez ao dia; `sync.order-financials` até 131 s; `sync.listings.snapshot` até 42 s. A maior usa 40% do timeout de 900 s.
 

@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **335** (D-001 a D-339).
+Decisões registradas: **336** (D-001 a D-340).
 
 ## Por domínio
 
-### atendimento (46)
+### atendimento (47)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -64,6 +64,7 @@ Decisões registradas: **335** (D-001 a D-339).
 - **D-300** — o convite que "ainda nao vai": `--env-file` NAO sobrescreve variavel ja exportada
 - **D-311** — A11: a Home contra o frame -- o controle que o painel devia ter, a idade do FATO, e as duas recusas que a revisao produziu
 - **D-330** — Revisao de seguranca, fatia 3: o logger redigia pelo NOME da chave e deixava passar o VALOR -- e a "uma lista, dois consumidores" de D-232 estava pela metade
+- **D-340** — A correcao de D-339 foi publicada, piorou o topico que importa, e voltou -- a media melhorou e escondia isso
 
 ### banco/rls (32)
 
