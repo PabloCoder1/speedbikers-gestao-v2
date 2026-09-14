@@ -3,6 +3,7 @@ import type { AdminClient } from "@sb/db";
 import type { Logger } from "@sb/observability";
 import { z } from "zod";
 
+import type { AccountDirectory } from "./account-directory.js";
 import type { Enqueuer } from "./enqueue.js";
 
 /**
@@ -71,6 +72,12 @@ export interface WebhookDeps {
    * exato; em produção é `performance.now`.
    */
   monotonicNow?: () => number;
+  /**
+   * De onde vem a conta dona do `seller_id` (D-346). Com ele, a memória; sem
+   * ele, a consulta por notificação de antes — que custou p95 de 2,8 s de ACK
+   * nas rajadas (D-345).
+   */
+  accounts?: AccountDirectory;
 }
 
 export type WebhookOutcome =
@@ -195,20 +202,37 @@ export async function receiveWebhook(deps: WebhookDeps, rawBody: unknown): Promi
   // validação de origem por IP (D-043) já garante que a chamada veio do
   // Mercado Livre; isto aqui só resolve QUAL conta.
   const antesDaConta = relogio();
-  const account = await deps.db
-    .from("ml_accounts")
-    .select("id, organization_id, slug")
-    .eq("seller_id", notification.user_id)
-    .maybeSingle();
+  let conta: { id: string; organization_id: string; slug: string } | null;
+  let lookupError: string | undefined;
+
+  if (deps.accounts !== undefined) {
+    // D-346 — da memória: nenhuma ida ao banco no ACK, nem na rajada.
+    try {
+      conta = await deps.accounts.resolve(notification.user_id);
+    } catch (error) {
+      conta = null;
+      lookupError = error instanceof Error ? error.message : String(error);
+    }
+  } else {
+    const consulta = await deps.db
+      .from("ml_accounts")
+      .select("id, organization_id, slug")
+      .eq("seller_id", notification.user_id)
+      .maybeSingle();
+
+    conta = consulta.error === null ? consulta.data : null;
+  }
+
   const lookupMs = duracao(antesDaConta, relogio());
 
-  if (account.error !== null || account.data === null) {
+  if (conta === null) {
     // Não é transitório: reprocessar não vai criar a conta. ACK mesmo assim
     // (ver receiveWebhook em webhook.ts e o handler da rota) — só logar.
     deps.logger.warn("ml_webhook_unknown_account", {
       seller_id: notification.user_id,
       topic: notification.topic,
       lookup_ms: lookupMs,
+      ...(lookupError !== undefined ? { lookup_error: lookupError } : {}),
     });
 
     return { status: "unknown_account" };
@@ -226,14 +250,14 @@ export async function receiveWebhook(deps: WebhookDeps, rawBody: unknown): Promi
   if (notification.topic === "messages" && isReadOnlyNotification(notification)) {
     deps.logger.info("ml_webhook_read_receipt_ignored", {
       topic: notification.topic,
-      ml_account_id: account.data.id,
+      ml_account_id: conta.id,
       lookup_ms: lookupMs,
     });
 
     return { status: "ignored_action" };
   }
 
-  const job = routeJob(notification, account.data.id);
+  const job = routeJob(notification, conta.id);
 
   if (job === "no_consumer") {
     // ACK + log estruturado, sem fila. A observabilidade continua: o que
@@ -242,7 +266,7 @@ export async function receiveWebhook(deps: WebhookDeps, rawBody: unknown): Promi
     deps.logger.info("ml_webhook_topic_without_consumer", {
       topic: notification.topic,
       resource: notification.resource,
-      ml_account_id: account.data.id,
+      ml_account_id: conta.id,
       lookup_ms: lookupMs,
     });
 
@@ -256,7 +280,7 @@ export async function receiveWebhook(deps: WebhookDeps, rawBody: unknown): Promi
     deps.logger.warn("ml_webhook_unroutable_resource", {
       resource: notification.resource,
       topic: notification.topic,
-      ml_account_id: account.data.id,
+      ml_account_id: conta.id,
       lookup_ms: lookupMs,
     });
 
@@ -266,14 +290,14 @@ export async function receiveWebhook(deps: WebhookDeps, rawBody: unknown): Promi
   const antesDaTask = relogio();
   const result = await deps.enqueuer.enqueue({
     jobType: job.jobType,
-    organizationId: account.data.organization_id,
+    organizationId: conta.organization_id,
     // Nome derivado do recurso (docs/ARCHITECTURE.md secao 10): notificações
     // repetidas do mesmo recurso colapsam numa só, seja qual for o tópico.
     // Uma regra de dedupe só, mesmo com mais de um `jobType` — dois tópicos
     // nunca disputam o mesmo `resource`, porque é justamente o formato do
     // `resource` que identifica o tópico.
     dedupeKey: `ml-webhook:${notification.resource}:${window}`,
-    queue: `ml-sync-${account.data.slug}`,
+    queue: `ml-sync-${conta.slug}`,
     payload: job.payload,
   });
   const enqueueMs = duracao(antesDaTask, relogio());
@@ -283,7 +307,7 @@ export async function receiveWebhook(deps: WebhookDeps, rawBody: unknown): Promi
     job_type: job.jobType,
     resource: notification.resource,
     topic: notification.topic,
-    ml_account_id: account.data.id,
+    ml_account_id: conta.id,
     deduplicated: result.deduplicated,
     lookup_ms: lookupMs,
     enqueue_ms: enqueueMs,

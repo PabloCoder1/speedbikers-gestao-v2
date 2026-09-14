@@ -11536,6 +11536,39 @@ Resolver as contas **em memoria para toda notificacao**: a tabela inteira (quatr
 
 **Impacto:** `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,ROADMAP,HANDOFF}.md`. Nenhuma linha de codigo.
 
+## D-346 - As contas do webhook passam a vir da memoria -- nenhum caminho do ACK depende de conexao quente com o Postgres
+
+**Contexto:** D-345 mediu, na primeira rajada com o log por etapa, a consulta de `ml_accounts` por notificacao custando p95 de 2,8 s e explicando o ACK sozinha. D-339 tinha tentado tirar essa consulta so do topico sem consumidor, e o caminho com trabalho esfriou (D-340). A correcao que o dado aponta: **nenhuma** notificacao consulta o banco para achar a conta.
+
+---
+
+**1. O DIRETORIO** (`apps/api/src/account-directory.ts`)
+
+- **A tabela inteira numa consulta** -- sao quatro contas, e o webhook so precisa de `id`, `organization_id` e `slug` por `seller_id`.
+- **Uma carga em voo por vez**: a primeira rajada nao dispara cem cargas.
+- **Prazo de 5 minutos**: depois dele, a proxima consulta recarrega.
+- **Seller desconhecido recarrega, no maximo a cada 30 s**: conta recem-conectada aparece sem esperar o prazo, e enxurrada de seller estranho nao vira enxurrada de consulta.
+- **Falha na recarga com contas em memoria serve as antigas** e tenta de novo em 30 s. Sem nada em memoria, rejeita, e o webhook responde "conta desconhecida" com o motivo em `lookup_error`.
+- **Seller repetido fica fora do mapa**, como a consulta antiga com `.maybeSingle()`, que falhava nesse caso; `seller_id` nulo (conta sem OAuth concluido) e ignorado.
+
+**2. O WEBHOOK**
+
+`WebhookDeps.accounts`: com ele, a memoria; sem ele, a consulta de antes -- o que mantem as suites antigas e qualquer montagem sem diretorio. `index.ts` monta o diretorio com `loadAccountsFromDb(db)`. O `lookup_ms` de D-343 continua medido: agora mede a memoria, e e ele que vai provar o efeito na proxima rajada.
+
+**Uma mudanca de comportamento, deliberada:** uma conta conectada **logo depois** de uma carga pode passar ate 30 s sem ser reconhecida -- as notificacoes dela nesse intervalo saem como "conta desconhecida", com 200, e o Mercado Livre nao as reenvia. A reconciliacao por janela e a rede, como ja era para qualquer conta desconhecida; e conectar conta e ato raro, anterior ao backfill.
+
+---
+
+**3. COMO FOI PROVADO**
+
+- `@sb/api`: typecheck, lint e **354 testes** (**+14**). Diretorio, 10: cem consultas simultaneas fazem uma carga; dentro do prazo, nenhuma; vencido o prazo, recarrega; seller desconhecido logo depois da carga nao recarrega, nem em 20 tentativas; conta recem-conectada aparece passado o intervalo; falha sem nada em memoria rejeita; falha com contas em memoria serve as antigas e so tenta de novo depois do intervalo; a carga ignora seller nulo, deixa seller repetido fora e rejeita com o motivo do banco. Webhook, 4: enfileirado e sem consumidor resolvem pelo diretorio **contra um banco que explode ao ser tocado**; seller que o diretorio nao conhece; diretorio que rejeita, com `lookup_error` no aviso.
+- **Mutacoes:** sem a carga unica em voo, **1 falha** (as cem consultas); sem o limite de recarga, **1 falha** (a enxurrada); webhook ignorando o diretorio, **4 falhas**.
+- **Um tropeco na prova, registrado:** a restauracao depois da terceira mutacao falhou com *Permission denied* -- trava momentanea do OneDrive: o arquivo nao estava somente-leitura e nenhum `node` rodava. A linha foi revertida pela ferramenta de edicao, conferida byte a byte contra o backup, e a bateria rodou de novo sem cache: 354 de 354.
+
+**Nao esta no ar.** Publicar e ato do usuario. A conferencia depois: `lookup_ms` perto de zero em toda notificacao, e, na proxima rajada, o ACK sem os segundos de D-345.
+
+**Impacto:** `apps/api/src/{account-directory.ts,account-directory.test.ts}` (novos), `apps/api/src/{webhook.ts,webhook.test.ts,index.ts}`, `docs/{DECISIONS,DECISIONS_INDEX,API,ARCHITECTURE,MERCADO_LIVRE,ROADMAP,HANDOFF}.md`. Sem migration.
+
 **Impacto:** `apps/api/src/{webhook.ts,webhook.test.ts}`, `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,ROADMAP,HANDOFF}.md`. Sem migration.
 
 ---

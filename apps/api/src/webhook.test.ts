@@ -497,3 +497,79 @@ describe("receiveWebhook — tempo do ACK por etapa (D-343)", () => {
     }
   });
 });
+
+/**
+ * D-346 — a conta vem da memória. D-345 mediu, na rajada de 14/09, a consulta
+ * por notificação custando p95 de 2,8 s e explicando o ACK sozinha. Com o
+ * diretório, nenhum caminho do ACK toca o banco — nem o com trabalho, que é o
+ * que D-340 esfriou ao tirar a consulta só do sem consumidor.
+ */
+describe("receiveWebhook — contas em memória (D-346)", () => {
+  function dbQueExplode(): WebhookDeps["db"] {
+    return {
+      from: () => {
+        throw new Error("consultou o banco");
+      },
+    } as unknown as WebhookDeps["db"];
+  }
+
+  function comDiretorio(conhecido: number | null): ReturnType<typeof deps> {
+    const ctx = deps();
+    ctx.deps.db = dbQueExplode();
+    ctx.deps.accounts = {
+      resolve: (sellerId) => Promise.resolve(sellerId === conhecido ? ACCOUNT : null),
+    };
+
+    return ctx;
+  }
+
+  it("enfileirado: resolve a conta pelo diretório e não consulta o banco", async () => {
+    const ctx = comDiretorio(NOTIFICATION.user_id);
+
+    const outcome = await receiveWebhook(ctx.deps, NOTIFICATION);
+
+    expect(outcome).toMatchObject({ status: "enqueued" });
+    expect(ctx.enqueued[0]).toMatchObject({
+      organizationId: ACCOUNT.organization_id,
+      queue: `ml-sync-${ACCOUNT.slug}`,
+      payload: { mlAccountId: ACCOUNT.id },
+    });
+  });
+
+  it("tópico sem consumidor também resolve pelo diretório, sem banco", async () => {
+    const ctx = comDiretorio(NOTIFICATION.user_id);
+
+    const outcome = await receiveWebhook(ctx.deps, { ...NOTIFICATION, topic: "stock-locations", resource: "/x" });
+
+    expect(outcome).toEqual({ status: "no_consumer", topic: "stock-locations" });
+  });
+
+  it("seller que o diretório não conhece: conta desconhecida, sem enfileirar", async () => {
+    const ctx = comDiretorio(null);
+
+    const outcome = await receiveWebhook(ctx.deps, NOTIFICATION);
+
+    expect(outcome).toEqual({ status: "unknown_account" });
+    expect(ctx.enqueued).toHaveLength(0);
+  });
+
+  it("diretório que rejeita (banco fora, nada em memória): ACK como conta desconhecida, com o motivo no log", async () => {
+    const ctx = deps();
+    const avisos: { event: string; fields: Record<string, unknown> }[] = [];
+    ctx.deps.db = dbQueExplode();
+    ctx.deps.accounts = { resolve: () => Promise.reject(new Error("falha ao carregar ml_accounts: timeout")) };
+    ctx.deps.logger = {
+      ...ctx.deps.logger,
+      warn: (event: string, fields: Record<string, unknown>) => {
+        avisos.push({ event, fields });
+      },
+    } as typeof ctx.deps.logger;
+
+    const outcome = await receiveWebhook(ctx.deps, NOTIFICATION);
+
+    expect(outcome).toEqual({ status: "unknown_account" });
+    expect(avisos.find((a) => a.event === "ml_webhook_unknown_account")?.fields).toMatchObject({
+      lookup_error: "falha ao carregar ml_accounts: timeout",
+    });
+  });
+});

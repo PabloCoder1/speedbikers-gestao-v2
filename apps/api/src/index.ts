@@ -3,6 +3,7 @@ import { createAdminClient, createUserClient } from "@sb/db";
 import { loadEncryptionKey } from "@sb/mercado-livre";
 import { createLogger } from "@sb/observability";
 
+import { createAccountDirectory, loadAccountsFromDb } from "./account-directory.js";
 import { createAnthropicClient } from "./anthropic-client.js";
 import { createApp } from "./app.js";
 import { createAuthenticator } from "./auth.js";
@@ -61,7 +62,9 @@ const app = createApp({
   // opcional é diferente de omitir a chave — só omitir satisfaz o tipo.
   ...(nfeImportDeps !== undefined ? { nfeImportDeps } : {}),
   ipAllowlist: createIpAllowlistVerifier(),
-  webhook: { db, enqueuer, logger },
+  // D-346 — a conta dona do `seller_id` vem da memória. A consulta por
+  // notificação era o ACK de 2,8 s nas rajadas (D-345).
+  webhook: { db, enqueuer, logger, accounts: createAccountDirectory({ load: () => loadAccountsFromDb(db) }) },
   mlAccounts: {
     db,
     logger,
