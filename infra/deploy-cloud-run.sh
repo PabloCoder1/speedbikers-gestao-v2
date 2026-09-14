@@ -100,6 +100,10 @@ build_and_deploy() {
     # O nome casa com `.env.*` do .gitignore, então não há risco de versionar.
     local env_file=".env.deploy.yaml"
     trap 'rm -f "${env_file}"' RETURN
+    # RETURN só dispara quando a função retorna. Se o script PARA no meio —
+    # `fail` sai com `exit`, como a guarda de tráfego logo abaixo —, o arquivo
+    # ficava para trás (D-341). O EXIT cobre esse caminho.
+    trap 'rm -f .env.deploy.yaml' EXIT
 
     cat > "${env_file}" <<YAML
 NODE_ENV: production
@@ -178,10 +182,17 @@ YAML
   # antigo respondendo. Conferir aqui custa uma chamada; descobrir pelo
   # /health, quando alguém lembrar de olhar, custa o deploy inteiro.
   #
+  # A revisão conferida é `latestCreatedRevisionName`, a que ESTE deploy criou.
+  # `latestReadyRevisionName` NÃO serve: com o tráfego fixo, o Cloud Run não o
+  # move para a revisão nova — medido em 2026-09-14, ele seguia apontando a
+  # revisão revertida de D-339. Pelo mesmo motivo a saída sugerida nomeia a
+  # revisão e nunca usa `--to-latest`: "latest" é esse campo velho, e teria
+  # mandado o tráfego para o código revertido.
+  #
   # `tr -d '\r'`: o gcloud no Windows pode terminar a linha com CR, e "100\r"
   # não é "100".
   local revisao percentual
-  revisao="$(gc run services describe "${app}" --region "${REGION}" --format='value(status.latestReadyRevisionName)' | tr -d '\r')"
+  revisao="$(gc run services describe "${app}" --region "${REGION}" --format='value(status.latestCreatedRevisionName)' | tr -d '\r')"
   percentual="$(gc run services describe "${app}" --region "${REGION}" \
     --flatten=status.traffic \
     --format='csv[no-heading](status.traffic.revisionName,status.traffic.percent)' |
@@ -189,7 +200,7 @@ YAML
     awk -F, -v r="${revisao}" '$1 == r { p = $2 } END { print (p == "" ? 0 : p) }')"
 
   [ "${percentual}" = "100" ] ||
-    fail "${app}: a revisão ${revisao} foi publicada mas serve ${percentual}% do tráfego — ele está fixo noutra revisão. Se a publicação é para valer: gcloud run services update-traffic ${app} --region ${REGION} --project ${PROJECT_ID} --to-latest"
+    fail "${app}: a revisão ${revisao} foi publicada mas serve ${percentual}% do tráfego — ele está fixo noutra revisão. Confira a revisão e, se a publicação é para valer: gcloud run services update-traffic ${app} --region ${REGION} --project ${PROJECT_ID} --to-revisions ${revisao}=100"
   ok "${app}: ${revisao} serve 100% do tráfego"
 
   local url

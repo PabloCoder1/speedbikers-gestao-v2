@@ -11344,3 +11344,57 @@ Mais `bash -n` e fim de linha LF. **A prova no deploy de verdade vem no primeiro
 
 **Impacto:** `infra/deploy-cloud-run.sh`, `docs/{DECISIONS,DECISIONS_INDEX,DEPLOYMENT,HANDOFF}.md`. Nenhuma linha de aplicacao.
 
+## D-342 - A guarda de D-341 parou o deploy certo, mas nomeou a revisao errada -- e o comando que ela sugeria publicaria o codigo revertido
+
+**Contexto:** o primeiro deploy depois de D-341, com o usuario autorizando: `api` em `45be035`, cujo runtime e identico ao `d828eac` no ar (`git diff d828eac 45be035` vazio fora de `infra/` e `docs/`). Publicar alinhava o commit e desfixava o trafego; o comportamento nao mudava. O trafego ainda estava fixo em `api-00036-5l4` desde a volta de D-340.
+
+---
+
+**1. O QUE O DEPLOY DISSE, E O QUE ERA**
+
+Das 02:16 as 02:18 UTC. O `gcloud run deploy` terminou com *"revision [api-00037-bqb] has been deployed and is serving 0 percent of traffic"*, e a guarda parou o script (`EXIT_DEPLOY=1`) -- **a deteccao funcionou**. Mas a mensagem dela repetia o nome e sugeria `update-traffic --to-latest`.
+
+`api-00037-bqb` e a revisao de D-339, a revertida. A lista de revisoes, lida antes de mexer em qualquer coisa:
+
+| revisao | criada (UTC) | `APP_COMMIT` | pronta | trafego |
+|---|---|---|---|---|
+| **`api-00038-2hg`** | 02:18:56 | **`45be035`** | sim | 0% |
+| `api-00037-bqb` | 00:44:01 | `3ef3ee1` (D-339, revertida) | sim | 0% |
+| `api-00036-5l4` | 23:09:36 (13/09) | `d828eac` | sim | 100% |
+
+E o servico: `latestCreatedRevisionName = api-00038-2hg`, **`latestReadyRevisionName = api-00037-bqb`**. Com o trafego fixo, o Cloud Run nao move o "latest pronto" para a revisao nova -- e e dele que o `gcloud` tira o nome da frase, e dele que a guarda tirava o nome. **E `--to-latest` resolve para esse campo**: seguir a instrucao da propria guarda teria mandado 100% do trafego para o codigo que D-340 acabara de tirar do ar.
+
+---
+
+**2. A CORRECAO, PROVADA ANTES DE MOVER O TRAFEGO**
+
+- A guarda le **`latestCreatedRevisionName`** -- a revisao que ESTE deploy criou.
+- A saida sugerida nomeia a revisao (`--to-revisions <revisao>=100`) e **nunca usa `--to-latest`**.
+
+Contra o estado real, com o trafego ainda fixo: `api` -> `api-00038-2hg` serve 0%, **recusa**, e sugere `--to-revisions api-00038-2hg=100`; `worker` -> `worker-00050-qnt` serve 100%, passa.
+
+---
+
+**3. O SEGUNDO DEFEITO: O ARQUIVO QUE FICOU**
+
+A parada deixou `.env.deploy.yaml` na raiz. O `trap ... RETURN` de `build_and_deploy` so dispara quando a funcao retorna, e `fail` sai com `exit`. O arquivo e ignorado pelo git (`.env.*`) e so tem identificadores de recurso -- conferido pelos nomes das chaves, sem imprimir valor --, e foi removido. Correcao: um `trap ... EXIT` ao lado do `RETURN`. Provado localmente, sem nuvem: so com `RETURN` e `exit`, **o arquivo fica** (reproduz); com `RETURN` e `EXIT`, e removido; no caminho normal, continua removido no retorno.
+
+---
+
+**4. A PUBLICACAO, POR NOME**
+
+1. Conferido que `api-00038-2hg` e `45be035` e esta pronta.
+2. `update-traffic --to-revisions api-00038-2hg=100` as 02:21:49 UTC. `GET /health` -> `{"commit":"45be035"}`, instancia de 02:22:10. Recebendo trafego, `latestReadyRevisionName` passou a `api-00038-2hg`.
+3. **So com "latest pronto" igual a revisao servindo** -- checado no mesmo comando, que abortaria se nao fosse --, `update-traffic --to-latest`: `spec.traffic` volta a `latestRevision: true`, e o proximo deploy volta a receber trafego sozinho.
+4. O pipeline da guarda depois: `api` e `worker` passam.
+
+**Medicao depois da publicacao:** a primeira leitura, dois minutos depois (02:22 a 02:24 UTC), deu 16 webhooks, todos 200, **zero ERROR** e nenhum acima de 500 ms -- amostra pequena demais para comparar com a linha de base de 30 min em `api-00036-5l4` (909 webhooks, p50 62 ms, p95 264 ms, 2 acima de 500 ms, 172 enfileirados). A leitura com 20 minutos fica no commit seguinte.
+
+---
+
+**5. A LICAO**
+
+**Quando uma ferramenta diz o NOME de algo, confira o nome na fonte, nao no campo de onde a frase saiu.** A guarda acertou o percentual e errou a revisao porque leu o mesmo campo velho que o `gcloud` usa para escrever a propria mensagem -- as duas concordavam entre si, e as duas estavam erradas. Foi a lista de revisoes, com `APP_COMMIT` por linha, que mostrou.
+
+**Impacto:** Cloud Run (`api` em `api-00038-2hg`, trafego no LATEST), `infra/deploy-cloud-run.sh`, `docs/{DECISIONS,DECISIONS_INDEX,DEPLOYMENT,HANDOFF}.md`. Nenhuma linha de aplicacao.
+
