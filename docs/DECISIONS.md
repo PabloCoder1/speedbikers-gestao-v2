@@ -11809,3 +11809,94 @@ Agora o deploy passa `DOCUMENTS_BUCKET=${PROJECT_ID}-documents` nos dois servico
 **Roteiro lido nao e roteiro rodado.** D-348 saiu de uma leitura atenta dos scripts e achou tres coisas reais; a primeira execucao de verdade, horas depois, achou outras tres que a leitura nao tinha como achar -- porque duas delas so existem em projeto NOVO, e a terceira so aparece como ausencia de comportamento. A pergunta que fica: **o que neste ambiente foi feito a mao uma vez e nunca virou script?** Ate agora a resposta foi o IAM dos segredos e o repositorio de imagens. Provavelmente nao acabou.
 
 **Impacto:** `infra/setup-dev.sh` (cria o repositorio do Artifact Registry), `infra/deploy-cloud-run.sh` (guardas antes do build; `DOCUMENTS_BUCKET` nos dois servicos), `apps/api/src/env.ts` e `apps/worker/src/env.ts` (so o comentario de `DOCUMENTS_BUCKET`), `docs/DEPLOYMENT.md` (8.2: o repositorio, a NF-e e as duas URLs do Cloud Run), `docs/{DECISIONS,DECISIONS_INDEX}.md`. Sem migration.
+
+## D-350 - Producao no ar com o mesmo app do Mercado Livre do Dev -- o Dev pausado, o passo 10 com ordem, e o estoque contando venda em dobro
+
+**Contexto:** em 2026-09-14 o dono criou producao (D-348, D-349): GCP `speedbikers-prod`, Supabase `speedbikers-prod` (`imvjfgnaprqsfjlnsyev`) e Vercel `speedbikers-prod`. Uma auditoria so de leitura -- quatro auditores independentes (GCP, Supabase, Vercel, GitHub) e um revisor que refez as medidas que mudavam o plano -- conferiu o que estava de pe contra o roteiro 8.2. Achou o ambiente montado e recebendo trafego real, e tres coisas que nenhum roteiro previa.
+
+---
+
+**1. O QUE ESTA NO AR** (medido entre 18:03 e 18:59 UTC)
+
+| | |
+|---|---|
+| GCP | `api-00003-kmz` e `worker-00003-5bz` em `36a23ad`, `/health` ok, api com `minScale` 1; 15 jobs do agendador apontando para a api de producao; 7 filas iguais as do Dev; 3 buckets com o IAM do script; 4 segredos com o `secretAccessor` da tabela de D-348 |
+| Supabase | 166 migrations, iguais ao repositorio por md5 de nome e de conteudo, aplicadas pela execucao 34857929771 de `migrations-producao.yml` (duas aprovacoes, `aplicar` das 17:11:56 as 17:13:30); RLS em 61 de 61 tabelas; 1 ADMIN; 4 contas `CONNECTED` entre 17:31 e 17:33 |
+| Pedidos | backfill completo: 212 pedacos `done`, o ultimo as 18:25:37, cerca de 328 mil pedidos, 0 dia sem pedido em qualquer conta |
+| Vercel | projeto `speedbikers-prod`, deploy `READY`; a CSP de `/login` cita o Supabase e a api de PRODUCAO, e a chave publicavel do bundle e a de producao |
+| Chave dos tokens | `ML_TOKEN_ENCRYPTION_KEY` de producao DIFERENTE da do Dev -- comparada por hash, sem ler o valor |
+| Codigo | `36a23ad` foi publicado sem nunca ter passado pela CI (a CI so dispara em push na `v3` ou PR para ela). O PR #2 rodou a CI completa, verde, e foi juntado em `da130c0`, com a arvore identica a de `36a23ad` |
+
+---
+
+**2. UM SO APP DO MERCADO LIVRE**
+
+Dev e producao usam o mesmo `client_id` (3270890376967436), e o app tem UMA url de notificacao. Ela passou para producao as 17:30 UTC: o Dev recebeu zero webhooks desde 17:30:38. Mas o Dev continuava agindo sobre as mesmas contas -- reconciliacoes de hora em hora, e a renovacao do token de `sbmotos` as 17:40, depois de producao autorizar a mesma conta as 17:32. Disputa de cota do mesmo app e, no pior caso, uma renovacao invalidando a outra.
+
+**Decisao do dono: pausar o Dev.** Os 15 jobs do Cloud Scheduler e as 7 filas do Cloud Tasks de `speedbikers-gestao-v3` estao `PAUSED` desde 18:33 UTC, com 0 tarefas pendentes. Voltar e `resume` em cada um -- e so faz sentido com um app proprio para o Dev.
+
+**Duas armadilhas de ferramenta, no mesmo gesto:** (1) no Windows, `gcloud ... --format='value(...)'` termina cada nome com `\r`, e o laco que pausava os jobs pausou so o ULTIMO de cada lista -- 14 de 15 falharam com `INVALID_ARGUMENT` e a saida escondida parecia permissao; `tr -d '\r'` resolveu. (2) O projeto padrao do `gcloud` na maquina virou `speedbikers-prod` no meio da sessao: todo comando manual passa a levar `--project`. Os scripts de `infra/` ja o passam pela funcao `gc`.
+
+---
+
+**3. O QUE A CONEXAO DAS CONTAS CUSTOU**
+
+- **305 `ml_webhook_unknown_account`** entre 17:28:41 e 17:32:51: a url ja apontava para producao antes das contas existirem. ACK 200, o Mercado Livre nao reenvia. Cobertos pelo ultimo pedaco do backfill e pela reconciliacao de 17:00 a 19:00.
+- **546 `PERMISSION_DENIED`** (544 viraram HTTP 500 no webhook) entre 17:32:18 e 17:44:32: as filas `ml-sync-<conta>` so foram criadas as 17:42, depois das conexoes. A 8.2 nao mandava criar essas filas antes -- agora manda.
+- **O agendador registrou 200 com o handler falhando por dentro** (`accounts_not_listed`, entre 16:40 e 17:10): os jobs foram criados as 16:36 e as migrations so chegaram as 17:12.
+
+---
+
+**4. O PASSO 10, E A ORDEM QUE ELE TEM**
+
+| job | resultado |
+|---|---|
+| `v3-listings-snapshot` | `done`, 4.435 anuncios nas 4 contas |
+| `v3-check-ai-budget` | `done` |
+| `v3-verify-ledger-integrity` | `done` com 0 divergencias -- sem nada a comparar ainda |
+| `v3-fulfillment-snapshot` | `done` com **0 processados**: rodou antes de haver vinculos. O redisparo das 18:34:57 foi DESCARTADO, porque a chave e por hora (`full:<conta>:<AAAA-MM-DDTHH>`). Com os vinculos criados, fica para a rodada automatica das 21:00 UTC, para nao somar carga no mesmo app |
+| `v3-order-financials-sweep` | disparado as 18:54: a janela e de 7 dias, e esperar ate a manha seguinte perderia cerca de 18 h de pedidos |
+| `v3-listing-visits-snapshot` | disparado as 18:54 |
+| `v3-reconcile-balances` | **PAUSADO** as 18:54 (secao 5) |
+| `v3-detect-sales-anomalies`, `v3-measure-decision-outcomes` | nao disparados: sem base (metricas por SKU, decisoes) |
+
+**O 200 do agendador e o `done` do job nao provam trabalho.** Confira `processed` em `job_runs` e a tabela que o job alimenta.
+
+---
+
+**5. O ESTOQUE CONTANDO VENDA EM DOBRO**
+
+O backfill terminou as 18:25 com zero SKUs e zero vinculos, e por isso nao gerou nenhum movimento. A planilha do UpSeller foi importada entre 18:42 e 18:44: 3.240 SKUs, 16.962 vinculos, 3.098 snapshots capturados as 18:44:13. A partir dai, cada atualizacao de um pedido ANTIGO com item vinculado gera o PRIMEIRO `VENDA_ML` dele: `computeSaleDeductions` so olha o status, e `occurred_at` e a data da atualizacao. As 18:55 UTC havia 43 `VENDA_ML`, 34 deles (-38 unidades) de pedidos criados antes da captura, mais 2 `CANCELAMENTO_ML` tambem de pedidos antigos; as 18:59, 56.
+
+**O dono confirmou que o UpSeller ja desconta a venda paga** -- o saldo da planilha ja trazia essas vendas. E dupla contagem. **Contencao:** `v3-reconcile-balances` de producao pausado, porque o alvo dele soma ao snapshot os movimentos posteriores a captura e gravaria ajustes em cima do erro. A guarda, a compensacao dos movimentos ja gravados e o corte das notificacoes do backfill vao numa decisao propria.
+
+**No Dev isso nao aconteceu** porque la o historico de pedidos entrou com os vinculos ja existindo: a primeira baixa de cada pedido nasceu antes de qualquer snapshot.
+
+---
+
+**6. NOTIFICACOES**
+
+O backfill gerou 32.281 `order.cancelled` (severidade `importante`), e cada um virou notificacao para o unico ADMIN: 32.294. **Decisao do dono: marcar como lidas** -- vai junto da decisao da secao 5, com o criterio que separa o historico do cancelamento real de hoje.
+
+---
+
+**7. O QUE FICA COM O DONO**
+
+- GitHub: apagar o AMBIENTE `SUPABASE_PROD_DB_PASSWORD` (criado sem trava nenhuma, `can_admins_bypass: true`) e confirmar que os `SUPABASE_PROD_*` estao dentro do ambiente `producao`, nao no repositorio.
+- Vercel `speedbikers-prod`: as `NEXT_PUBLIC_*` so em Production; remover as 5 variaveis de infra coladas em Production; decidir se o web de producao publica sozinho a cada push na `v3`.
+- Supabase de producao: Site URL e redirects do Auth, SMTP, Leaked Password Protection e PITR -- nenhuma ferramenta os le.
+- Painel do Mercado Livre: topicos assinados e lista de redirects; e um app proprio para o Dev.
+
+---
+
+**8. A LICAO**
+
+**Em ambiente novo, a ordem das cargas e parte do dado.** O mesmo codigo que deu estoque certo no Dev deu estoque errado em producao so porque o historico de pedidos entrou antes dos vinculos. E dois sinais verdes mentiram no mesmo dia: o 200 do agendador com o handler falhando, e o `done` do Full com zero processados. A pergunta que fica para todo passo de ambiente novo: **o que este job precisa que ja exista -- e existe?**
+
+---
+
+**9. O DEV, NO MESMO CODIGO**
+
+Depois do merge do PR #2 (`da130c0`, CI de push verde), o Dev foi publicado a partir de uma copia limpa da `v3`, num worktree fora da pasta compartilhada, com `AMBIENTE=dev` -- que so aceita `speedbikers-gestao-v3` e o Supabase do Dev, e passa `--project` em todo comando pela funcao `gc`, o que importa com o padrao do `gcloud` apontando para producao. Worker `worker-00052-jpk` e api `api-00041-lzn` em `da130c0`, 100% do trafego, `/health` em `da130c0`, e `DOCUMENTS_BUCKET` nos dois servicos: a NF-e do Dev, desligada desde sempre (D-349), passou a estar ligada. O agendador e as filas do Dev continuam pausados.
+
+**Impacto:** Cloud Scheduler e Cloud Tasks do Dev (pausados), `v3-reconcile-balances` de producao (pausado), disparos manuais em producao; `docs/{DECISIONS,DECISIONS_INDEX,DEPLOYMENT,HANDOFF,ROADMAP}.md` e `docs/archive/handoffs/2026-09-14_a_2026-09-14.md`. Sem migration e sem codigo.

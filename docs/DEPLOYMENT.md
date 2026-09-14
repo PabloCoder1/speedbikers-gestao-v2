@@ -2,7 +2,7 @@
 
 > Dono documental de: ambientes, provisionamento, secrets, CI/CD e rollout.
 > Arquitetura geral em `docs/ARCHITECTURE.md`.
-> Status: **estratégia aprovada e ambiente de desenvolvimento provisionado.** Produção permanece para a Fase 8.
+> Status: **Dev e produção provisionados** — produção criada em 2026-09-14 (D-348, D-349, D-350); o corte da operação está pendente.
 
 ---
 
@@ -26,12 +26,12 @@
 | Ambiente | Banco | Compute | Frontend |
 |---|---|---|---|
 | **local** | Supabase CLI em Docker | apps locais, Mercado Livre em fixture | `next dev` |
-| **development** | Supabase V3 Dev (`sa-east-1`) | Cloud Run dev | Vercel Preview |
-| **production** | Projeto novo, criado na Fase 8 | Cloud Run prod | Vercel Production |
+| **development** | Supabase `speedbikers-gestao-v3-dev` (`nmgccyqquwxecqffsidr`, `sa-east-1`) | Cloud Run em `speedbikers-gestao-v3` | Vercel `speedbikers-gestao-v2-m71j` |
+| **production** | Supabase `speedbikers-prod` (`imvjfgnaprqsfjlnsyev`, `sa-east-1`), criado em 2026-09-14 | Cloud Run em `speedbikers-prod` | Vercel `speedbikers-prod` |
 
 **Três ambientes, não quatro.** Staging separado só se justifica quando houver produção com usuário real dependendo de estabilidade.
 
-**Preview da Vercel aponta para o Supabase Dev.**
+**Preview da Vercel aponta para o Supabase Dev** — no projeto do Dev (`speedbikers-gestao-v2-m71j`). Nas prévias de `speedbikers-prod`, o escopo das `NEXT_PUBLIC_*` não foi verificado (D-350): se estiverem em *All Environments*, toda prévia de branch fala com o banco de produção.
 
 - *Vantagem:* zero infraestrutura de provisionamento por PR, dados realistas.
 - *Desvantagem:* migration destrutiva num PR afeta quem estiver testando.
@@ -132,6 +132,8 @@ infra/
 
 Projeto de desenvolvimento: **`speedbikers-gestao-v3`**, região `southamerica-east1`.
 
+Projeto de produção: **`speedbikers-prod`**, mesma região (D-350). ⚠️ O projeto **padrão do `gcloud`** na máquina do dono passou a ser `speedbikers-prod`: todo comando manual leva `--project`. Os scripts de `infra/` já o passam, pela função `gc` de `lib.sh`.
+
 ### Vercel: `ignoreCommand` fica no repositório, não no dashboard
 
 `apps/web/vercel.json` define `"ignoreCommand": "exit 1"` — na Vercel a lógica é invertida: **saída 1 constrói, saída 0 pula**.
@@ -163,7 +165,7 @@ Em `developers.mercadolivre.com.br` → **Suas integrações** → aplicação d
 
 | O quê | Valor | Por quê |
 |---|---|---|
-| URL de callback de notificações | `https://api-rrquw5upla-rj.a.run.app/webhooks/mercado-livre` | É o endpoint que a `api` expõe (`docs/API.md` secao 2) |
+| URL de callback de notificações | **produção:** `https://api-p6gzq3hzca-rj.a.run.app/webhooks/mercado-livre` (desde 2026-09-14 17:30 UTC). Antes, a do Dev: `https://api-rrquw5upla-rj.a.run.app/webhooks/mercado-livre` | É o endpoint que a `api` expõe (`docs/API.md` secao 2). ⚠️ **O app é um só para Dev e produção** (`client_id` 3270890376967436), e a URL de notificação é uma só: apontá-la para produção deixou o Dev sem webhooks (D-350) |
 | Tópicos assinados | `orders_v2`, `questions`, `post_purchase` | Os três com consumidor pronto hoje. `messages` entra quando a ingestão existir |
 | Permissões funcionais | incluir **Comunicação pré e pós-venda** | Requisito de `questions`/`messages`/`claims` (D-083). Contas autorizadas ANTES dessa permissão existir precisam ser **reautorizadas** — o token não ganha permissão nova sozinho |
 
@@ -190,7 +192,7 @@ real do Mercado Livre. Nenhuma requisição = o painel ainda não está enviando
 typecheck -> lint -> testes unitários -> testes de integração -> build -> aplicar migrations no Dev
 ```
 
-- Migrations aplicadas **por CI** (`supabase db push`, job `migrations`), nunca à mão, nunca pelo dashboard — só em push na `v3`, depois de `check`/`scripts`/`integration` verdes.
+- Migrations aplicadas **por CI** (`supabase db push`, job `migrations`), nunca à mão, nunca pelo dashboard — só em push na `v3`, depois de `check`/`scripts`/`integration` verdes. **Em produção**, só por `.github/workflows/migrations-producao.yml`, disparado à mão na `v3`, com duas aprovações no ambiente `producao` (D-334; primeira execução em 2026-09-14).
 - Deploy do `web` pela integração nativa da Vercel com a branch — esse sim é automático.
 - **Deploy de `api` e `worker` é MANUAL** — `bash infra/deploy-cloud-run.sh` (worker primeiro, depois api — secao 3). Não existe workflow do GitHub Actions que publique no Cloud Run. Quem roda o deploy é responsável por conferir CI verde antes ("nenhum deploy sem CI verde" é regra de operador, não trava automática).
 
@@ -200,13 +202,13 @@ typecheck -> lint -> testes unitários -> testes de integração -> build -> apl
 
 Antes de declarar qualquer mudança operacional como implantada, verificar contra a infraestrutura real, nunca contra o texto do HANDOFF/ROADMAP:
 
-- `gcloud run services describe api/worker --format='value(status.latestReadyRevisionName)'` e comparar a tag da imagem (`git rev-parse --short HEAD` no momento do deploy) contra o commit atual;
+- `gcloud run services describe api/worker --project <projeto> --region southamerica-east1 --format='value(status.latestReadyRevisionName)'` — **sempre com `--project`**, porque o padrão do `gcloud` na máquina do dono é produção (D-350) — e comparar a tag da imagem (`git rev-parse --short HEAD` no momento do deploy) contra o commit atual;
 - **a revisão nova servindo o tráfego** — desde D-341 o `deploy-cloud-run.sh` falha se ela não serve 100%. Com o tráfego fixo numa revisão (depois de um `update-traffic --to-revisions`, como a volta de D-340), a revisão publicada nasce com 0% e o deploy sairia verde com o commit antigo no ar. **E nunca `--to-latest` com o tráfego fixo** (D-342): nesse estado `latestReadyRevisionName` não anda para a revisão nova — o próprio `gcloud run deploy` imprime o nome errado —, e "latest" seria a revisão anterior. Publique por nome (`--to-revisions <revisão>=100`, conferindo `APP_COMMIT` em `gcloud run revisions list`), confira `/health`, e só desfixe com `--to-latest` quando `latestReadyRevisionName` já for a revisão servindo;
-- `gcloud scheduler jobs list --location southamerica-east1` contra os jobs esperados (`infra/cloud-scheduler.sh` é a lista canônica);
+- `gcloud scheduler jobs list --project <projeto> --location southamerica-east1` contra os jobs esperados (`infra/cloud-scheduler.sh` é a lista canônica);
 - `pnpm exec supabase migration list --linked` (local == remoto, sem drift);
 - CI do commit exato verde (`gh run list`/`gh run view`), não presumido;
 - logs de boot sem `ERROR` (`gcloud logging read ... severity>=ERROR`) depois de um deploy novo;
-- para um job que nunca rodou de verdade em produção, disparar manualmente uma vez (`gcloud scheduler jobs run <nome>`) e conferir o log de conclusão antes de confiar na cadência automática.
+- para um job que nunca rodou de verdade em produção, disparar manualmente uma vez (`gcloud scheduler jobs run <nome> --project <projeto> --location southamerica-east1`) e conferir **o que ele fez** antes de confiar na cadência automática. **O 200 do agendador e o `done` do job não provam trabalho** (D-350): o handler pode responder 200 falhando por dentro (`accounts_not_listed`), e o Full saiu `done` com 0 processados porque rodou antes dos vínculos. Confira `processed` em `job_runs` e a tabela que o job alimenta; respeite a dependência (anúncios e vínculos antes do Full); e lembre que a chave de vários jobs é por hora — redisparo na mesma hora é descartado.
 
 ---
 
@@ -401,7 +403,7 @@ unset SD SR
 
 Todo passo abaixo é **ato humano** — criar projeto, gerar chave e colar segredo não são coisas que um agente faz. O que o repositório garante é que os scripts **recusam misturar** produção com o Dev (`infra/README.md`, seção Ambientes).
 
-**Antes de começar, um buraco que este roteiro NÃO fecha sozinho:** o **projeto da Vercel serve o `web` com as variáveis do Dev** — inclusive o deploy com alvo *production* da branch `v3`. Produção de verdade pede um projeto próprio na Vercel, ou variáveis escopadas por ambiente, antes do corte. (O outro buraco escrito em D-333, migrations de produção sem caminho, fechou em D-334 — é o passo 2.)
+**O buraco da Vercel está fechado (2026-09-14, D-350):** produção tem projeto próprio, `speedbikers-prod`, com as `NEXT_PUBLIC_*` de produção (conferido na CSP de `/login`), e o `speedbikers-gestao-v2-m71j` segue sendo o Dev. Antes, o único projeto servia o `web` com as variáveis do Dev — inclusive no alvo *production* da `v3`. (O outro buraco de D-333, migrations de produção sem caminho, fechou em D-334 — é o passo 2.)
 
 **E a armadilha que ele esconde (D-348):** o projeto em questão é `speedbikers-gestao-v2-m71j`, e a URL dele é exatamente o `DEV_WEB_ORIGIN` de `infra/lib.sh`. **Apontar um domínio próprio para ele não cria produção** — cria um segundo nome para o Dev. O `NEXT_PUBLIC_SUPABASE_URL` é embutido no build, e o build é um só: a tela sob o domínio novo continuaria lendo o banco do Dev, e a guarda de ambiente nem veria, porque ela compara a string da origem e o domínio novo é uma string nova. Os dois caminhos coerentes são: **projeto novo na Vercel para produção** (o m71j segue sendo o Dev, e `DEV_WEB_ORIGIN` não muda), ou **transformar o m71j em produção** — trocando as três `NEXT_PUBLIC_*` para os valores de produção, criando um projeto novo para o Dev e **atualizando `DEV_WEB_ORIGIN` em `infra/lib.sh` e o caso correspondente de `infra/ambiente.test.sh`**, senão a guarda passa a defender um endereço que virou produção.
 
@@ -419,7 +421,7 @@ export AMBIENTE=prod PROJECT_ID=<projeto-gcp-prod> \
 2. **Projeto no Supabase**, em `sa-east-1`, com as migrations aplicadas por **`.github/workflows/migrations-producao.yml`** (D-334) — nunca `db push` do próprio computador, que não deixa registro nem sabe se o commit passou pela CI:
    - **Ambiente no GitHub**: Settings → Environments → `producao`, com *Required reviewers* (pelo menos um) e *Deployment branches* só na `v3`. Sem as duas travas o workflow recusa — e é a restrição de branch, não o arquivo do workflow, que impede um workflow alterado noutra branch de receber os segredos.
    - **No ambiente**: a variável `SUPABASE_PROD_PROJECT_REF` e os segredos `SUPABASE_PROD_ACCESS_TOKEN` e `SUPABASE_PROD_DB_PASSWORD`. Os nomes têm `PROD` de propósito: segredo do repositório também chega a um job com ambiente, e o `SUPABASE_DB_PASSWORD` do repositório é a senha do Dev.
-   - **Disparo**: Actions → *Migrations de produção* → *Run workflow* na `v3`, digitando o ref de produção. `origem` recusa se a CI do mesmo commit não passou ou não aplicou no Dev; `plano` pede a primeira aprovação e mostra `migration list` e `db push --dry-run`; `aplicar` pede a segunda e aplica. O workflow só aparece em Actions porque a `v3` é a **branch padrão** do repositório (D-335): o GitHub só oferece disparo manual para workflow que exista na branch padrão. **A conferir no primeiro disparo**: que o GitHub peça as duas aprovações em separado.
+   - **Disparo**: Actions → *Migrations de produção* → *Run workflow* na `v3`, digitando o ref de produção. `origem` recusa se a CI do mesmo commit não passou ou não aplicou no Dev; `plano` pede a primeira aprovação e mostra `migration list` e `db push --dry-run`; `aplicar` pede a segunda e aplica. O workflow só aparece em Actions porque a `v3` é a **branch padrão** do repositório (D-335): o GitHub só oferece disparo manual para workflow que exista na branch padrão. **Conferido no primeiro disparo** (2026-09-14, execução 34857929771): o GitHub pediu as duas aprovações em separado.
    - **Conferir**: `supabase migration list --linked` sem drift — o próprio `aplicar` deixa essa listagem no log.
 3. **Base do GCP**, na ordem: `bash infra/setup-dev.sh`, `bash infra/cloud-tasks-queues.sh`, `bash infra/storage-buckets.sh`. O nome `setup-dev.sh` é histórico; ele serve a qualquer `AMBIENTE`. Ele liga as APIs, **cria o repositório `speedbikers-v3` no Artifact Registry** (D-349 — até ali nada o criava, e a falta só aparecia no push, depois do build inteiro), cria as quatro service accounts e concede `secretAccessor` dos **quatro** segredos — os mesmos que `deploy-cloud-run.sh` monta em `--set-secrets` (D-348). **Na primeira passada os segredos ainda não existem**, e em `AMBIENTE=prod` o script PARA listando o que falta: crie-os (item 4) e rode de novo, que ele é idempotente. Essa parada existe porque a montagem do segredo acontece na partida do container, não no deploy — sem ela o deploy do item 5 sai verde e a revisão nova nunca parte.
 4. **Segredos no Secret Manager DO PROJETO DE PRODUÇÃO** (seção 5): `SUPABASE_SERVICE_ROLE_KEY` do Supabase de produção; `MERCADO_LIVRE_CLIENT_SECRET`; `ANTHROPIC_API_KEY`; e **`ML_TOKEN_ENCRYPTION_KEY` NOVA** — nunca a do Dev: é ela que cifra os tokens das contas, e compartilhar a chave entre ambientes compartilha a capacidade de ler os tokens um do outro. O formato é exato: **base64 que decodifica para 32 bytes** (AES-256). Gere com `node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"` ou, se preferir o openssl, com `openssl rand -base64 32`. **Nunca `openssl rand -hex 32`**: hex dá 64 caracteres, que lidos como base64 viram ~48 bytes, e a `api` e o `worker` recusam no boot com "precisa decodificar em base64 para 32 bytes (AES-256)" (`loadEncryptionKey`, `packages/mercado-livre/src/token-cipher.ts`). Prefira criar pelo **console** do Secret Manager, colando o valor no formulário: assim o segredo não passa pelo histórico do shell.
@@ -430,9 +432,9 @@ export AMBIENTE=prod PROJECT_ID=<projeto-gcp-prod> \
    **A NF-e depende de `DOCUMENTS_BUCKET`**, que o deploy passa aos dois serviços desde D-349. Ela é opcional no schema — um ambiente sem o bucket sobe igual —, mas sem ela a rota de upload e o handler de parse não são registrados, e o sistema fica verde com a funcionalidade desligada.
 6. **Agendador**: `bash infra/cloud-scheduler.sh`.
 7. **Vercel**: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` e `NEXT_PUBLIC_API_URL` de produção (ver o buraco acima). `NEXT_PUBLIC_*` é embutida no build: trocar a variável exige novo deploy.
-8. **Mercado Livre**: redirect do OAuth e URL do webhook apontando para a `api` de produção (seção 6.1).
+8. **Mercado Livre**: antes de tudo, **a fila de cada conta** — `bash infra/cloud-tasks-queues.sh <slug>` para cada uma. Sem ela o webhook devolve 500 (`PERMISSION_DENIED` em `cloudtasks.tasks.create`): foram 546 em 2026-09-14, entre a conexão das contas e a criação das filas (D-350). Depois, redirect do OAuth e URL do webhook apontando para a `api` de produção (seção 6.1). **Se o app do Mercado Livre é o mesmo do Dev**, a URL de notificação é uma só: apontá-la para produção deixa o Dev sem webhooks, e o Dev continua agindo sobre as mesmas contas até ser pausado ou ganhar app próprio.
 9. **Primeiro ADMIN** (seção 10) e **conexão das contas** (seção 10.1).
-10. **Conferir antes do corte**: `GET /health` da `api` devolvendo o commit publicado; `check:restore` depois do primeiro backup (8.1); a CSP com nonce e zero violações em `/login` (D-331); e um job de cada tipo disparado à mão uma vez (seção 7).
+10. **Conferir antes do corte**: `GET /health` da `api` devolvendo o commit publicado; `check:restore` depois do primeiro backup (8.1); a CSP com nonce e zero violações em `/login` (D-331); e um job de cada tipo disparado à mão uma vez (seção 7), **na ordem das dependências** — anúncios, depois vínculos (a planilha do UpSeller), depois Full —, conferindo `processed` e a tabela alimentada, não o 200 do agendador. **Antes de importar a planilha num banco que já tem o histórico de pedidos**, leia D-350 §5: pedido antigo atualizado depois da captura baixa estoque que o UpSeller já tinha descontado.
 
 ---
 
@@ -485,12 +487,13 @@ No ambiente atual, depois de criar a linha da conta no `web` e **antes** de cone
 bash infra/cloud-tasks-queues.sh <slug-da-conta>
 ```
 
-As quatro contas atuais já estão provisionadas. Automatizar essa criação exige uma identidade controlada com permissão de administrar filas e fica para o provisionamento da Fase 8; conceder `queueAdmin` ao runtime público da `api` violaria o menor privilégio. OAuth e backfill inicial usam a tela normalmente, mas a reconciliação/webhook da conta dependem da fila `ml-sync-<slug>` existir.
+As quatro contas estão provisionadas no Dev **e em produção** — em produção as filas só vieram às 17:42 de 2026-09-14, depois das conexões (ver 8.2, item 8). Automatizar essa criação exige uma identidade controlada com permissão de administrar filas e fica para o provisionamento da Fase 8; conceder `queueAdmin` ao runtime público da `api` violaria o menor privilégio. OAuth e backfill inicial usam a tela normalmente, mas a reconciliação/webhook da conta dependem da fila `ml-sync-<slug>` existir.
 
 ---
 
 ## 11. Pendências
 
-- Criar e validar o ambiente de produção na Fase 8.
+- Validar o ambiente de produção (passo 10 da 8.2) e fazer o corte — produção foi criada em 2026-09-14 (D-350).
+- Um app do Mercado Livre próprio para o Dev, antes de retomá-lo (D-350 §2).
 - Automatizar, na Fase 8, o provisionamento da fila `ml-sync-<slug>` para contas novas; até lá usar o script versionado.
 - Migrar os scripts `gcloud` para Terraform na Fase 8.
