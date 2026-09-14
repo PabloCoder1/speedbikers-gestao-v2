@@ -11420,7 +11420,26 @@ Milissegundos inteiros, nunca negativos. O relogio e `performance.now` em produc
 
 `deploy-cloud-run.sh api`, das 02:57 as 03:01 UTC: `api-00039-9vm`. **A guarda de D-341/D-342 passou num deploy normal pela primeira vez** -- *"api-00039-9vm serve 100% do trafego"* --, com o trafego no LATEST, `latestCreatedRevisionName` igual a `latestReadyRevisionName` e o `.env.deploy.yaml` removido. `/health` responde `59f49dd`. Linha de base, 30 min em `api-00038-2hg` logo antes: 715 webhooks, ACK p50 70 ms, p95 277 ms, nenhum acima de 500 ms, 187 enfileirados, zero ERROR.
 
-**Primeiro minuto:** os campos saem em **todos** os logs (170 sem consumidor com `lookup_ms`; os enfileirados com os dois), zero ERROR, e o ACK dentro da linha de base (177 webhooks, p50 58 ms, p95 140 ms, nenhum acima de 500 ms). Ja com um sinal, pequeno demais para concluir: `lookup_ms` p50 55 ms, e **`enqueue_ms` p50 410 ms em 4 amostras** -- as primeiras Cloud Tasks de uma instancia recem-criada, que pagam a abertura do canal gRPC. Se isso se repetir depois de pausa, e o candidato de D-340. A leitura com 20 minutos fica no commit seguinte; a do pico, depois das 09:00 UTC.
+**Primeiro minuto:** os campos saem em **todos** os logs (170 sem consumidor com `lookup_ms`; os enfileirados com os dois), zero ERROR, e o ACK dentro da linha de base (177 webhooks, p50 58 ms, p95 140 ms, nenhum acima de 500 ms). Ja com um sinal, pequeno demais para concluir: `lookup_ms` p50 55 ms, e **`enqueue_ms` p50 410 ms em 4 amostras** -- as primeiras Cloud Tasks de uma instancia recem-criada, que pagam a abertura do canal gRPC. Se isso se repetir depois de pausa, e o candidato de D-340. **Com 20 minutos** (03:01 a 03:22 UTC, uma instancia): 2.004 webhooks, todos 200; ACK p50 55 ms, p95 185 ms, p99 276 ms, max 490 ms, **nenhum acima de 500 ms**; 116 enfileirados; zero ERROR na `api` e no `worker`. Cada etapa separada pela pausa desde a anterior na mesma instancia (a de `lookup_ms` conta qualquer webhook; a de `enqueue_ms`, so Cloud Task):
+
+| etapa | pausa | n | p50 ms | p95 ms | max ms |
+|---|---|---|---|---|---|
+| `lookup_ms` | < 1 s | 1.751 | 51 | 110 | 473 |
+| `lookup_ms` | 1 a 10 s | 228 | 48 | 85 | 192 |
+| `lookup_ms` | 10 a 30 s | 22 | 73 | 110 | 440 |
+| `lookup_ms` | 30 s ou mais | 2 | 373 | 373 | 373 |
+| `enqueue_ms` | < 5 s | 89 | 183 | 209 | 247 |
+| `enqueue_ms` | 5 a 30 s | 14 | 147 | 410 | 410 |
+| `enqueue_ms` | 30 a 60 s | 7 | 187 | 212 | 212 |
+| `enqueue_ms` | 60 s ou mais | 5 | 189 | 207 | 207 |
+
+**O que ja da para dizer, fora de pico:**
+
+- **A Cloud Task custa ~185 ms, sempre** -- com ou sem pausa. E o maior custo fixo do caminho com trabalho, e **nao** e o que esfria: os 410 ms do primeiro minuto eram a abertura do canal. Nos 6 enfileirados com as duas etapas somando mais de 300 ms, a Task foi a maior em 5.
+- **A consulta da conta custa ~50 ms, e e ela que esfria**: depois de 30 s ou mais sem webhook, 373 ms -- so 2 amostras, porque fora de pico quase nao ha pausa. E o mecanismo que D-340 provocou ao tirar o trafego que a mantinha quente.
+- **Candidata a correcao, a confirmar no pico:** as contas sao quatro, e o webhook so precisa de `id`, `organization_id` e `slug` por `seller_id`. Resolve-las em memoria, com ida ao banco so para seller ainda desconhecido, tiraria os ~50 ms de TODA notificacao -- inclusive das 776 do pico de 13/09, todas sem consumidor e todas pagando a consulta -- sem deixar caminho nenhum dependente de conexao quente. **O que o pico precisa responder antes:** se ali `lookup_ms` sobe (contencao no Postgres, e o cache ataca a causa) ou fica em ~50 ms enquanto o ACK cresce (fila na instancia e boot a frio, e o cache ajuda pouco -- a borda e que pede mudanca).
+
+A leitura do pico, depois das 09:00 UTC, fica para a proxima sessao: a espera passa de qualquer comando que da para manter aberto.
 
 **Impacto:** `apps/api/src/{webhook.ts,webhook.test.ts}`, `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,ROADMAP,HANDOFF}.md`. Sem migration.
 

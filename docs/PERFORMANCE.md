@@ -768,6 +768,8 @@ gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.serv
 
 **Como ler:** compare `lookup_ms + enqueue_ms` com a latência da requisição no log do Cloud Run, no mesmo instante e instância. Se a soma explica a latência, o custo está numa das duas etapas, e o campo maior diz qual. Se a latência é muito maior que a soma, o tempo está fora do handler. E separe por pausa desde a requisição anterior **na mesma instância**: D-340 viu as lentas concentradas depois de 30 s ou mais sem tráfego.
 
+**Primeira leitura, fora de pico** (`api-00039-9vm`, 2026-09-14 03:01–03:22 UTC, uma instância, 2.004 webhooks, nenhum ACK acima de 500 ms): a **Cloud Task custa ~185 ms fixos** (p50 183–189 ms em qualquer pausa; os 410 ms do primeiro minuto eram a abertura do canal), e a **consulta da conta custa ~50 ms e esfria** — 373 ms depois de 30 s ou mais sem webhook, em só 2 amostras. Tabela completa em D-343. **Falta o pico:** se `lookup_ms` sobe junto com o ACK, o custo está no Postgres; se fica em ~50 ms enquanto o ACK cresce, está na fila da instância e no boot a frio.
+
 ## Relatório de saúde — `report:health` (D-205)
 
 O item do P1 pedia "relatório de performance sobre o que já existe
