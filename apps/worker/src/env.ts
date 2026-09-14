@@ -31,10 +31,15 @@ export const envSchema = z.object({
 
   /**
    * Bucket que guarda os documentos fiscais (NF-e/XML, PDF/DANFE mais
-   * adiante). Opcional de propósito: o bucket real ainda não existe no GCP
-   * (`docs/HANDOFF.md`) — declarar como obrigatório derrubaria o worker no
-   * boot antes da infra existir. O handler de parse (`index.ts`) só é
-   * registrado quando esta variável está presente.
+   * adiante). Continua OPCIONAL, para um ambiente sem o bucket ainda subir —
+   * mas o motivo original ("o bucket real ainda não existe no GCP") caducou:
+   * `infra/storage-buckets.sh` cria `<projeto>-documents` e concede
+   * `objectViewer` a este serviço, e desde D-349 `infra/deploy-cloud-run.sh`
+   * passa a variável nos dois serviços.
+   *
+   * Ela é o INTERRUPTOR da NF-e: o handler de parse (`index.ts`) só é
+   * registrado quando ela está presente. Apagá-la não quebra o boot —
+   * desliga a funcionalidade, em silêncio.
    */
   DOCUMENTS_BUCKET: z.string().min(1).optional(),
 

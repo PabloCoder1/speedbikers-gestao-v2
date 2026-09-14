@@ -11,15 +11,34 @@
  * "falharia" sempre e não provaria nada. Por isso, três camadas:
  *
  *   1. **Tabelas append-only** (têm gatilho que recusa UPDATE/DELETE): contar
- *      `<coluna de inserção> <= BACKUP_AT` nos DOIS lados tem de dar EXATAMENTE
- *      igual. É a prova forte — o que já existia no instante do backup não pode
- *      ter sumido nem sobrado.
+ *      `<coluna de inserção>` numa JANELA DATADA nos DOIS lados tem de dar
+ *      EXATAMENTE igual. É a prova forte — o que já existia no instante do
+ *      backup não pode ter sumido nem sobrado. O piso da janela é o EXPURGO,
+ *      logo abaixo.
  *   2. **Invariantes DENTRO do restaurado**, sem olhar o Dev: RLS ligada em toda
  *      tabela de `public`, e o ledger de estoque batendo com a projeção
  *      (`compute_inventory_balances_from_ledger` × `inventory_balances`, a mesma
  *      régua do job `verify-ledger-integrity`).
  *   3. **Tabelas que mudam pouco** (catálogo, membros, contas): a diferença sai
  *      como INFO — é o Dev andando, não defeito.
+ *
+ * ⚠️ EXPURGO (D-348). "Append-only" fala do gatilho, não da RETENÇÃO. Medido no
+ * Dev em 2026-09-14: `job_runs` tem `n_tup_del` em 278.371 — quase o dobro das
+ * inserções da janela — e a linha mais antiga é de 20 de agosto. Existe rotina
+ * apagando o passado. Comparar `<= BACKUP_AT` puro, dos dois lados, REPROVA UM
+ * RESTORE BOM: o clone guarda o que o Dev já apagou, o veredito sai "restaurado
+ * maior", e ele é indistinguível de defeito.
+ *
+ * A correção não é afrouxar a igualdade — é DATAR O PISO. Para cada tabela
+ * exata, o piso é `min(<coluna>)` NO DEV: a linha mais antiga que ele ainda
+ * retém. Dentro de `[piso, BACKUP_AT]` a igualdade continua EXATA, e o que o
+ * restaurado tem abaixo do piso é contado e reportado como INFO — é a prova do
+ * expurgo, não uma falha.
+ *
+ * O que isso NÃO prova, dito de propósito: linha anterior ao piso que o restore
+ * tenha perdido é invisível daqui, porque o Dev também não a tem mais para
+ * comparar. A prova forte vale para toda a janela que o Dev ainda retém, e essa
+ * é a janela que um restore de verdade precisaria devolver.
  *
  * Quatro tabelas append-only NÃO têm `created_at` e usam a coluna do fato
  * (`occurred_at`, `changed_at`, `requested_at`), que pode ser retroativa: uma
@@ -195,14 +214,64 @@ try {
       continue;
     }
 
-    if (exata) {
-      registrar(nDev === nRest ? "PASS" : "FAIL", `${tabela} (${coluna})`, `Dev ${String(nDev)}, restaurado ${String(nRest)}`);
-    } else {
+    if (!exata) {
       // Coluna do fato, que pode ser retroativa: Dev ≥ restaurado é aceito.
       registrar(
         nRest <= nDev ? "PASS" : "FAIL",
         `${tabela} (${coluna}, aproximada)`,
         `Dev ${String(nDev)}, restaurado ${String(nRest)}${nDev > nRest ? " — Dev a mais é linha retroativa, aceito" : ""}`,
+      );
+      continue;
+    }
+
+    // O piso da janela: a linha mais antiga que o Dev AINDA tem. Tudo que o
+    // restaurado guarda abaixo dela o Dev já expurgou, e comparar ali seria
+    // reprovar o backup por fazer o seu trabalho (ver EXPURGO, no cabeçalho).
+    let piso;
+
+    try {
+      const { rows } = await dev.query(`select min(${coluna}) as piso from public.${tabela}`);
+
+      piso = rows[0]?.piso ?? null;
+    } catch (erro) {
+      registrar("FAIL", `${tabela}`, `não foi possível ler a linha mais antiga do Dev: ${erro.message.split("\n")[0]}`);
+      continue;
+    }
+
+    if (piso === null) {
+      // Dev sem nenhuma linha: não há janela, e o restaurado ter linhas é
+      // informação. Tabela vazia NOS DOIS é o caso que o passo 7 do roteiro já
+      // pega antes de chegar aqui.
+      registrar("INFO", `${tabela} (${coluna})`, `Dev não tem nenhuma linha; restaurado ${String(nRest)} até o backup — sem janela para comparar`);
+      continue;
+    }
+
+    const pisoIso = piso instanceof Date ? piso.toISOString() : String(piso);
+    const sqlJanela = `select count(*) as n from public.${tabela} where ${coluna} <= $1 and ${coluna} >= $2`;
+    let janelaDev;
+    let janelaRest;
+
+    try {
+      janelaDev = await contar(dev, sqlJanela, [BACKUP_AT, piso]);
+      janelaRest = await contar(restaurado, sqlJanela, [BACKUP_AT, piso]);
+    } catch (erro) {
+      registrar("FAIL", `${tabela}`, `não foi possível contar a janela: ${erro.message.split("\n")[0]}`);
+      continue;
+    }
+
+    registrar(
+      janelaDev === janelaRest ? "PASS" : "FAIL",
+      `${tabela} (${coluna})`,
+      `de ${pisoIso} até o backup: Dev ${String(janelaDev)}, restaurado ${String(janelaRest)}`,
+    );
+
+    const expurgadas = nRest - janelaRest;
+
+    if (expurgadas > 0) {
+      registrar(
+        "INFO",
+        `${tabela}: expurgo`,
+        `${String(expurgadas)} linha(s) do restaurado são anteriores à mais antiga do Dev (${pisoIso}) — a retenção apagou no Dev e o backup ainda as tem. Fora da janela comparada, de propósito.`,
       );
     }
   }

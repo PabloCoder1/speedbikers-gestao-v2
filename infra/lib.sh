@@ -85,12 +85,78 @@ case "${AMBIENTE}" in
     ;;
 esac
 
+# ---------------------------------------------------------------------------
+# FORMATO do WEB_ORIGINS (D-348)
+#
+# A guarda acima decide QUAL ambiente; esta decide se o valor tem a forma que o
+# navegador vai comparar. São problemas diferentes, e o segundo não falhava em
+# lugar nenhum: `https://app.exemplo.com/` — uma barra a mais — passa por todas
+# as comparações de ambiente, sobe no Cloud Run, e só aparece em produção como
+# CORS negado. O navegador envia `Origin: https://app.exemplo.com`, sem barra e
+# sem caminho, e a comparação do CORS é igualdade exata de string.
+#
+# A primeira origem da lista é também para onde o link do convite leva. Uma
+# origem errada aqui manda TODO convite para o lugar errado — foi o que
+# aconteceu em 2026-09-10, com o Auth caindo no `localhost:3000` do projeto.
+#
+# `http://` é aceito apenas em `localhost`/`127.0.0.1`, e apenas em `dev`.
+# ---------------------------------------------------------------------------
+
+case "${WEB_ORIGINS}" in
+  "")    fail "WEB_ORIGINS vazia." ;;
+  ,*|*,) fail "WEB_ORIGINS começa ou termina em vírgula: '${WEB_ORIGINS}'. São origens separadas por vírgula, sem vírgula solta na ponta." ;;
+  *,,*)  fail "WEB_ORIGINS tem vírgula dupla: '${WEB_ORIGINS}'." ;;
+esac
+
+validar_origem() {
+  local origem="$1" resto
+
+  case "${origem}" in
+    *[[:space:]]*)
+      fail "WEB_ORIGINS: a origem '${origem}' tem espaço. Separe as origens por vírgula, sem espaço depois dela." ;;
+    */)
+      fail "WEB_ORIGINS: a origem '${origem}' termina em barra. O navegador envia 'Origin: esquema://host' sem barra, e a comparação do CORS é igualdade exata." ;;
+  esac
+
+  case "${origem}" in
+    https://*)
+      resto="${origem#https://}"
+      ;;
+    http://*)
+      resto="${origem#http://}"
+      case "${AMBIENTE}:${resto}" in
+        dev:localhost|dev:localhost:*|dev:127.0.0.1|dev:127.0.0.1:*) ;;
+        *) fail "WEB_ORIGINS: a origem '${origem}' usa http://. Só https:// é aceito — http:// apenas em localhost/127.0.0.1, e apenas em AMBIENTE=dev." ;;
+      esac
+      ;;
+    *)
+      fail "WEB_ORIGINS: a origem '${origem}' não começa com https://. É a ORIGEM completa, com esquema — não o host sozinho."
+      ;;
+  esac
+
+  case "${resto}" in
+    "")  fail "WEB_ORIGINS: a origem '${origem}' não tem host." ;;
+    */*) fail "WEB_ORIGINS: a origem '${origem}' tem caminho. Origem é esquema + host + porta, e para aí." ;;
+  esac
+}
+
+ORIGENS_WEB=()
+IFS=',' read -r -a ORIGENS_WEB <<< "${WEB_ORIGINS}" || true
+
+[ "${#ORIGENS_WEB[@]}" -gt 0 ] || fail "WEB_ORIGINS vazia."
+
+for origem_web in "${ORIGENS_WEB[@]}"; do
+  validar_origem "${origem_web}"
+done
+
+unset origem_web
+
 REGION="${REGION:-southamerica-east1}"
 
 # Origens do `web` liberadas no CORS de /v1 da api. Allowlist explicita: o
 # upload da planilha sai do navegador direto para o Cloud Run, e e o CORS que
 # decide de onde ele pode sair. Varias origens separadas por virgula.
-# (Resolvida acima, por ambiente.)
+# (Resolvida acima, por ambiente; o FORMATO é validado logo acima.)
 
 # Service accounts. Uma identidade por responsabilidade — menor privilégio
 # possível, conforme docs/PROMPT_MASTER.md secao 31.
