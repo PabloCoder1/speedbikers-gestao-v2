@@ -11489,7 +11489,21 @@ Em `processClaimReturn`, um `MercadoLivreApiError` com status **404** na busca d
 - `@sb/worker`: typecheck, lint e **533 testes** (`claim-return.test.ts` 18, **+6**): claim de 10 min em 404 processa zero e registra a propagacao; claim de 2 dias continua falhando com `claim_age_min: 2880`; sem `date_created` continua falhando com idade nula; limite 59 min passa, 60 falha; 503 em claim recente continua falhando; carimbo no futuro conta como recem-nascido.
 - **Mutacao A** (sem a janela): **3 falhas** -- os tres casos de claim recente. **Mutacao B** (qualquer erro vira propagacao): **1 falha** -- o do 503. Arquivo restaurado e conferido byte a byte.
 
-**Nao esta no ar.** O worker no ar e `d828eac` (`worker-00050-qnt`); publicar e ato que o usuario autoriza. A conferencia depois: `claim_return_not_yet_available` aparecendo no lugar dos `job_failed` de `/returns`, e `claim_return_missing` so em claim velho.
+---
+
+**5. PUBLICADO** (com autorizacao do usuario, depois da CI verde de `b1a547a`)
+
+`deploy-cloud-run.sh worker`, das 09:48 as 09:51 UTC: `worker-00051-thq`, 100% do trafego no LATEST, a guarda de D-342 passou. Linha de base, 24 h em `worker-00050-qnt` antes: **38 ERROR, 36 deles o 404 em `/returns`**.
+
+**30 minutos depois** (09:51 a 10:22 UTC): **9 `claim_return_not_yet_available`** (2 claims, idade de 0 a 4 min), **nenhum `job_failed` em `/returns`, nenhum ERROR** e nenhum `claim_return_missing`; 14 `webhook_fast_path_claim_done`.
+
+**Um alarme falso, conferido antes de registrar:** os `slow_operation` de `sync.webhook.received` foram 14 em 33 minutos, contra 5 na hora anterior e 0 na mesma janela da vespera. Nao e D-344:
+
+- `measure` so loga lento no caminho sem excecao, e o handler **devolve** o resultado `failed` em vez de lancar -- os 404 antigos ja entravam na conta;
+- os 14 sao **todos jobs de claim** (buscar claim, persistir o caso de atendimento, buscar devolucao), e job de claim passa de 1,5 s quase sempre: **33 de 35** entre 07:00 e 08:51, ainda na revisao antiga; 14 de 15 depois;
+- o que mudou foi o **volume**: 15 jobs de claim na janela, contra 9 na hora anterior e 0 na vespera. Jobs de pedido: 0 lentos em todas as janelas.
+
+Fica registrado, sem ser deste item, que **job de claim leva 1,5 a 2,6 s** -- tres idas ao Mercado Livre e ao banco no mesmo job.
 
 **Impacto:** `apps/worker/src/handlers/{claim-return.ts,claim-return.test.ts}`, `docs/{DECISIONS,DECISIONS_INDEX,MERCADO_LIVRE,HANDOFF}.md`. Sem migration.
 
@@ -11565,7 +11579,13 @@ Resolver as contas **em memoria para toda notificacao**: a tabela inteira (quatr
 - **Mutacoes:** sem a carga unica em voo, **1 falha** (as cem consultas); sem o limite de recarga, **1 falha** (a enxurrada); webhook ignorando o diretorio, **4 falhas**.
 - **Um tropeco na prova, registrado:** a restauracao depois da terceira mutacao falhou com *Permission denied* -- trava momentanea do OneDrive: o arquivo nao estava somente-leitura e nenhum `node` rodava. A linha foi revertida pela ferramenta de edicao, conferida byte a byte contra o backup, e a bateria rodou de novo sem cache: 354 de 354.
 
-**Nao esta no ar.** Publicar e ato do usuario. A conferencia depois: `lookup_ms` perto de zero em toda notificacao, e, na proxima rajada, o ACK sem os segundos de D-345.
+---
+
+**4. PUBLICADO** (com autorizacao do usuario, depois da CI verde de `a16948e`)
+
+`deploy-cloud-run.sh api`, das 10:04 as 10:08 UTC: `api-00040-qrk`, 100% do trafego no LATEST, a guarda de D-342 passou, `/health` responde `a16948e`. Linha de base, 30 min em `api-00039-9vm` logo antes: 573 webhooks, ACK p50 70 ms, p95 278 ms, nenhum acima de 500 ms; `lookup_ms` p50 59 ms, p95 116 ms; `enqueue_ms` p50 178 ms em 109 enfileirados; zero ERROR.
+
+**Primeiros cinco minutos:** as duas primeiras notificacoes pagaram a carga da tabela -- 211 e 145 ms, esperando a mesma carga em voo -- e **as 65 seguintes resolveram a conta em 0 ms**. Nenhuma "conta desconhecida", nenhum aviso; 16 `orders_v2` enfileirados, com `enqueue_ms` p50 203 ms -- o caminho com trabalho igual ao de antes. A leitura com 20 minutos fica no commit seguinte; a prova de verdade e a proxima rajada.
 
 **Impacto:** `apps/api/src/{account-directory.ts,account-directory.test.ts}` (novos), `apps/api/src/{webhook.ts,webhook.test.ts,index.ts}`, `docs/{DECISIONS,DECISIONS_INDEX,API,ARCHITECTURE,MERCADO_LIVRE,ROADMAP,HANDOFF}.md`. Sem migration.
 
