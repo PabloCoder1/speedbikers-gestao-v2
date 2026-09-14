@@ -11610,6 +11610,24 @@ No worker, na mesma janela, 10 claims e 19 pedidos concluidos pelo caminho do we
 
 **A prova de verdade continua sendo a proxima rajada:** `lookup_ms` em 0 durante ela, e o ACK sem os segundos de D-345.
 
+---
+
+**5. A PRIMEIRA RAJADA DEPOIS DA CORRECAO -- menor que a de D-345**
+
+Lida em 14/09 com a mesma consulta de `PERFORMANCE.md`: logs de requisicao e do webhook de 12:25 a 12:52 UTC, todos em `api-00040-qrk` (`/health` em `a16948e`, instancia de pe desde 10:08).
+
+| | D-345 (07:50, conta no Postgres) | depois de D-346 (12:37:59) |
+|---|---|---|
+| pico no mesmo segundo | 110 | **51** (68 webhooks em 2 s) |
+| `lookup_ms` na rajada | p50 366 · p95 2.811 ms | **0 · 0 ms** (max 0, em 89 notificacoes) |
+| ACK na rajada | p95 2.814 ms, 49 acima de 2 s | **p50 2 · p95 2 · max 140 ms**, nenhum acima de 500 ms |
+| `enqueue_ms` na rajada | p50 167 ms | p50 137 ms (n = 5) |
+| instancias | a quente e mais cinco, prontas tarde | uma so, sem escalar |
+
+Na janela inteira, 2.309 webhooks: ACK p50 2 · p95 175 · max 392 ms, **nenhum acima de 500 ms**, e nenhum WARNING ou ERROR na `api`. O unico `lookup_ms` acima de zero e a recarga do prazo de 5 minutos: 10 notificacoes em 27 min, de 8 a 95 ms -- as que chegam quando o prazo venceu.
+
+**O que isso prova e o que nao prova.** Com metade da concorrencia da rajada de D-345, a consulta que custava 2,8 s nao existe mais, e o ACK ficou dentro da regra do Mercado Livre sem a `api` escalar. **Nao prova o pico grande:** as rajadas de fim de semana chegam a 1.050 webhooks por minuto e deixaram 8.554 ACKs lentos em 8 minutos em 12/09. O item de carga so fecha com uma dessas lida do mesmo jeito.
+
 **Impacto:** `apps/api/src/{account-directory.ts,account-directory.test.ts}` (novos), `apps/api/src/{webhook.ts,webhook.test.ts,index.ts}`, `docs/{DECISIONS,DECISIONS_INDEX,API,ARCHITECTURE,MERCADO_LIVRE,ROADMAP,HANDOFF}.md`. Sem migration.
 
 ## D-347 - O roteiro de restore punha o dono na aba cujo botao sobrescreve o Dev -- e o comando dele nao rodava nesta maquina
