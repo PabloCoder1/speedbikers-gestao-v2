@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **343** (D-001 a D-347).
+Decisões registradas: **344** (D-001 a D-348).
 
 ## Por domínio
 
@@ -315,7 +315,7 @@ Decisões registradas: **343** (D-001 a D-347).
 - **D-325** — A leitura do grafico de vendas falava de "periodo anterior" onde nao ha comparacao
 - **D-327** — A18: a legenda do grafico de vendas no cabecalho do painel, e o seed que nunca teve periodo anterior
 
-### worker/infra (68)
+### worker/infra (69)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -385,4 +385,5 @@ Decisões registradas: **343** (D-001 a D-347).
 - **D-338** — O que estava no ar nao era o que o HANDOFF dizia -- duas correcoes de seguranca do dia fora do Cloud Run, e o deploy que as publicou
 - **D-341** — "Has been deployed" nao quer dizer "esta servindo" -- o script de deploy passa a recusar revisao publicada sem trafego
 - **D-342** — A guarda de D-341 parou o deploy certo, mas nomeou a revisao errada -- e o comando que ela sugeria publicaria o codigo revertido
+- **D-348** — Tres armadilhas entre o Dev e o primeiro corte de producao: dois segredos do deploy sem concessao, o `WEB_ORIGINS` que ninguem validava, e o expurgo que reprovaria um restore bom
 

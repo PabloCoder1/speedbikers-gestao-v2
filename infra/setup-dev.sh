@@ -94,50 +94,74 @@ grant_act_as() {
 grant_act_as "${SA_TASKS}" "${SA_API}"
 grant_act_as "${SA_TASKS}" "${SA_WORKER}"
 
-step "Acesso ao segredo do Supabase"
+step "Acesso aos segredos"
 # Concedido NO SEGREDO, não no projeto: cada identidade lê apenas o segredo de
 # que precisa. `secretAccessor` permite ler o valor, não alterá-lo nem apagá-lo.
+#
+# A TABELA ABAIXO É A MESMA LISTA que `infra/deploy-cloud-run.sh` monta em
+# `--set-secrets`, e existe por isso (D-348). Até 2026-09-14 este passo
+# concedia apenas `SUPABASE_SERVICE_ROLE_KEY` (api e worker) e
+# `ANTHROPIC_API_KEY` (só api). Os outros DOIS — `MERCADO_LIVRE_CLIENT_SECRET`
+# e `ML_TOKEN_ENCRYPTION_KEY` — iam para o `--set-secrets` dos dois serviços
+# sem concessão nenhuma. No Dev ninguém viu, porque essas concessões foram
+# feitas à mão quando o ambiente nasceu; num projeto NOVO o deploy termina
+# VERDE e a revisão não parte, porque o segredo é montado na PARTIDA do
+# container, não no deploy.
+#
+# Regra de manutenção: segredo que entra no `--set-secrets` entra aqui, com os
+# mesmos consumidores. As duas listas moram em arquivos diferentes e nenhuma
+# guarda automática as compara — o que as mantém juntas é esta frase.
+SEGREDOS_CONSUMIDORES=(
+  "${SECRET_SUPABASE_KEY}:${SA_API} ${SA_WORKER}"
+  "${SECRET_ML_CLIENT_SECRET}:${SA_API} ${SA_WORKER}"
+  "${SECRET_ML_TOKEN_KEY}:${SA_API} ${SA_WORKER}"
+  "${SECRET_ANTHROPIC_KEY}:${SA_API}"
+)
+
 grant_secret_access() {
-  local sa="$1" output
+  local secret="$1" sa="$2" output
 
-  if ! output="$(gc secrets add-iam-policy-binding "${SECRET_SUPABASE_KEY}" \
+  if ! output="$(gc secrets add-iam-policy-binding "${secret}" \
       --member "serviceAccount:$(sa_email "${sa}")" \
       --role roles/secretmanager.secretAccessor 2>&1)"; then
     printf '%s\n' "${output}" >&2
-    fail "Falha ao conceder acesso ao segredo para ${sa}. Mensagem do gcloud acima."
+    fail "Falha ao conceder acesso a ${secret} para ${sa}. Mensagem do gcloud acima."
   fi
 
-  info "${sa} pode ler ${SECRET_SUPABASE_KEY}"
+  info "${sa} pode ler ${secret}"
 }
 
-if gc secrets describe "${SECRET_SUPABASE_KEY}" >/dev/null 2>&1; then
-  grant_secret_access "${SA_API}"
-  grant_secret_access "${SA_WORKER}"
-else
-  info "AVISO: segredo ${SECRET_SUPABASE_KEY} ainda não existe; pulando"
-fi
+SEGREDOS_FALTANDO=()
 
-step "Acesso ao segredo do Copiloto (D-082)"
-# Só a api — o worker nunca chama a Anthropic.
-grant_secret_access_anthropic() {
-  local sa="$1" output
+for entrada in "${SEGREDOS_CONSUMIDORES[@]}"; do
+  secret="${entrada%%:*}"
+  consumidores="${entrada#*:}"
 
-  if ! output="$(gc secrets add-iam-policy-binding "${SECRET_ANTHROPIC_KEY}" \
-      --member "serviceAccount:$(sa_email "${sa}")" \
-      --role roles/secretmanager.secretAccessor 2>&1)"; then
-    printf '%s\n' "${output}" >&2
-    fail "Falha ao conceder acesso ao segredo para ${sa}. Mensagem do gcloud acima."
+  if gc secrets describe "${secret}" >/dev/null 2>&1; then
+    # Word splitting proposital: `consumidores` é lista separada por espaço.
+    for sa in ${consumidores}; do
+      grant_secret_access "${secret}" "${sa}"
+    done
+  else
+    SEGREDOS_FALTANDO+=("${secret}")
+    info "AVISO: ${secret} ainda não existe no Secret Manager de ${PROJECT_ID}"
   fi
+done
 
-  info "${sa} pode ler ${SECRET_ANTHROPIC_KEY}"
-}
+unset entrada secret consumidores sa
 
-if gc secrets describe "${SECRET_ANTHROPIC_KEY}" >/dev/null 2>&1; then
-  grant_secret_access_anthropic "${SA_API}"
-else
-  info "AVISO: segredo ${SECRET_ANTHROPIC_KEY} ainda não existe; pulando"
+# No Dev o aviso basta: este script roda enquanto o ambiente ainda está sendo
+# montado, e rodá-lo de novo depois de criar o segredo concede o acesso. Em
+# PRODUÇÃO, seguir com segredo faltando é publicar um container que não parte
+# — e o deploy que o publica sai verde. Parar aqui custa uma rodada; descobrir
+# pelo Cloud Logging custa o corte.
+if [ "${#SEGREDOS_FALTANDO[@]}" -gt 0 ] && [ "${AMBIENTE}" = "prod" ]; then
+  fail "AMBIENTE=prod com segredo(s) ausente(s) em ${PROJECT_ID}: ${SEGREDOS_FALTANDO[*]}. Crie-os no Secret Manager (docs/DEPLOYMENT.md secao 5) e rode este script DE NOVO — ele é idempotente. Sem eles o deploy termina verde e a revisão nova nunca parte."
 fi
 
 step "Concluído"
+if [ "${#SEGREDOS_FALTANDO[@]}" -gt 0 ]; then
+  info "Pendente: criar ${SEGREDOS_FALTANDO[*]} e rodar este script de novo"
+fi
 info "Próximo: bash infra/cloud-tasks-queues.sh"
 info "Depois:  bash infra/storage-buckets.sh"

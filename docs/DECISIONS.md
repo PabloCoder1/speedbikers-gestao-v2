@@ -10786,7 +10786,7 @@ D-232 fechou metade de "uma lista, dois consumidores": os NOMES de chave passara
 **3. O QUE ESTA FATIA NAO FAZ**
 
 - **nao muda nenhuma chamada de log.** A tentacao era trocar `reason: error.message` por um campo "seguro" em cada um dos pontos; a redacao por valor no logger cobre todos de uma vez, e cobre o proximo que for escrito;
-- **nao e criptografia nem garantia.** Um segredo sem rotulo e sem prefixo conhecido (a `ML_TOKEN_ENCRYPTION_KEY` em hex, se um dia vazasse numa mensagem) nao tem forma reconhecivel. O que protege essa chave e ela nunca entrar em mensagem -- e a varredura de D-328 mostra que nao entra.
+- **nao e criptografia nem garantia.** Um segredo sem rotulo e sem prefixo conhecido (a `ML_TOKEN_ENCRYPTION_KEY`, se um dia vazasse numa mensagem) nao tem forma reconhecivel. O que protege essa chave e ela nunca entrar em mensagem -- e a varredura de D-328 mostra que nao entra. **[Retificado em D-348:** esta linha dizia "em hex". A chave e **base64 que decodifica para 32 bytes** -- `loadEncryptionKey`, em `packages/mercado-livre/src/token-cipher.ts`, recusa qualquer outra forma, e o `envSchema` da `api` derruba o boot com "precisa decodificar em base64 para 32 bytes (AES-256)". O argumento da linha nao muda: base64 sem rotulo tambem nao tem forma reconhecivel. Mas o "hex" ficou escrito e era a unica mencao ao FORMATO da chave em `DECISIONS.md`.**]**
 
 ---
 
@@ -11628,26 +11628,6 @@ Na janela inteira, 2.309 webhooks: ACK p50 2 · p95 175 · max 392 ms, **nenhum 
 
 **O que isso prova e o que nao prova.** Com metade da concorrencia da rajada de D-345, a consulta que custava 2,8 s nao existe mais, e o ACK ficou dentro da regra do Mercado Livre sem a `api` escalar. **Nao prova o pico grande:** as rajadas de fim de semana chegam a 1.050 webhooks por minuto e deixaram 8.554 ACKs lentos em 8 minutos em 12/09. O item de carga so fecha com uma dessas lida do mesmo jeito.
 
----
-
-**6. A RAJADA GRANDE -- o pico do ACK fechou**
-
-Lida em 14/09 do mesmo jeito: 13:35 a 14:00 UTC, todos em `api-00040-qrk` (`/health` em `a16948e`).
-
-| | D-345 (07:50, conta no Postgres) | 12:37 (secao 5) | **13:49** |
-|---|---|---|---|
-| pico no mesmo segundo | 110 | 51 | **319** |
-| rajada | 280 em 90 s | 68 em 2 s | **1.737 em 32 s** (1.158 em 10 s) |
-| maior minuto | -- | -- | **1.283** (o maior de D-339 foi 1.050) |
-| `lookup_ms` na rajada | p95 2.811 ms | 0 | **0 em 1.762 notificacoes** (max 0) |
-| ACK na rajada | p95 2.814 ms, 49 acima de 2 s | max 140 ms | **p50 2 · p95 3 · max 190 ms**, nenhum acima de 500 ms |
-| `enqueue_ms` na rajada | p50 167 ms | p50 137 ms | p50 124 ms (38 enfileirados) |
-| instancias | a quente e mais cinco | uma | **uma, sem escalar** |
-
-Na janela inteira, 4.878 webhooks: ACK max 454 ms, nenhum acima de 500 ms, e nenhum WARNING ou ERROR na `api`. No `worker`, nenhum ERROR; os `slow_operation` de `sync.webhook.received` (acima de 1,5 s) ficaram em 9 a 13 por 5 minutos durante a rajada, na faixa dos 3 a 12 das 12:35 as 13:15. A recarga do prazo de 5 minutos das 13:56 custou 266 e 268 ms as duas notificacoes que a esperaram -- o maior `lookup_ms` da janela, ainda abaixo da regra.
-
-**O que fecha:** o ACK lento nas rajadas, aberto desde D-339. A causa medida em D-345 -- a consulta da conta sob concorrencia -- nao existe mais: com quase o triplo do pico daquela rajada, e um minuto acima do maior de D-339, o ACK ficou em 190 ms no pior caso, numa instancia so. **O que nao foi visto:** a duracao de oito minutos das rajadas de fim de semana (12/09 09:00). **O que segue aberto no item de carga** ja nao e o webhook: a revisao de `pg_stat_statements` do Dev (ato humano) e a decisao sobre teste sintetico das telas.
-
 **Impacto:** `apps/api/src/{account-directory.ts,account-directory.test.ts}` (novos), `apps/api/src/{webhook.ts,webhook.test.ts,index.ts}`, `docs/{DECISIONS,DECISIONS_INDEX,API,ARCHITECTURE,MERCADO_LIVRE,ROADMAP,HANDOFF}.md`. Sem migration.
 
 ## D-347 - O roteiro de restore punha o dono na aba cujo botao sobrescreve o Dev -- e o comando dele nao rodava nesta maquina
@@ -11710,3 +11690,65 @@ O cabecalho de `restore-check.mjs` repetia o comando antigo e passou a apontar p
 **Roteiro que nunca foi percorrido e hipotese, como backup que nunca foi restaurado.** D-332 provou o comparador contra dano simulado e escreveu o caminho ate ele sem percorre-lo; a primeira correcao, escrita com evidencia, ainda tinha tres defeitos que so apareceram quando os blocos rodaram como estao no texto. A pergunta que fica para todo roteiro de ato humano: **cada botao que ele nomeia foi conferido na interface de hoje, e cada comando rodou, literal, no shell de quem vai colar?**
 
 **Impacto:** `docs/DEPLOYMENT.md` (8.1 reescrita; item 4 da secao 8), `packages/db/scripts/restore-check.mjs` (so o comentario de cabecalho), `docs/{DECISIONS,DECISIONS_INDEX,HANDOFF}.md`. De passagem, em `DECISIONS.md`: a licao e o Impacto de D-342 e o Impacto de D-343, que estavam soltos depois de D-346, voltaram para as secoes delas. Sem migration e sem codigo.
+
+---
+
+## D-348 - Tres armadilhas entre o Dev e o primeiro corte de producao: dois segredos do deploy sem concessao, o `WEB_ORIGINS` que ninguem validava, e o expurgo que reprovaria um restore bom
+
+**Contexto:** o corte da V3 foi entregue ao dono como passo a passo (blocos 1 a 3, 2026-09-14). Ao conferir cada comando contra o codigo antes de ele colar, tres coisas apareceram que nao eram erro do roteiro -- eram buracos no repositorio, e o roteiro estava compensando os tres a mao. Um roteiro que compensa um defeito o preserva: quem rodar os scripts sem ele cai no defeito inteiro. **As tres viraram codigo, e cada uma tem contraprova.**
+
+---
+
+**1. DOIS SEGREDOS IAM PARA O `--set-secrets` SEM CONCESSAO NENHUMA**
+
+`deploy-cloud-run.sh` monta quatro segredos na `api` (`SUPABASE_SERVICE_ROLE_KEY`, `MERCADO_LIVRE_CLIENT_SECRET`, `ML_TOKEN_ENCRYPTION_KEY`, `ANTHROPIC_API_KEY`) e tres no `worker` (os mesmos, sem a Anthropic). `setup-dev.sh` concedia `secretmanager.secretAccessor` de **dois**: o do Supabase (api e worker) e o da Anthropic (so api). `MERCADO_LIVRE_CLIENT_SECRET` e `ML_TOKEN_ENCRYPTION_KEY` nao tinham concessao scriptada para ninguem.
+
+**Por que o Dev nunca viu:** as concessoes foram feitas a mao quando o ambiente nasceu, e `add-iam-policy-binding` e idempotente -- rodar o script de novo nunca reclamou do que ja estava concedido. O defeito so existe em **projeto novo**, que e exatamente o caso de producao.
+
+**Por que doi:** o segredo e montado na PARTIDA do container, nao no deploy. O `gcloud run deploy` termina verde, a guarda de trafego de D-341 confere a revisao e passa, e a revisao nova nao parte. A causa aparece no Cloud Logging, quando alguem for olhar.
+
+**O que mudou:** a concessao virou tabela -- `SEGREDOS_CONSUMIDORES`, segredo e seus consumidores --, deliberadamente na mesma forma da lista do `--set-secrets`. E, em `AMBIENTE=prod`, segredo ausente **para o script**, listando o que falta; no Dev continua sendo aviso, porque la o script roda enquanto o ambiente ainda esta sendo montado.
+
+---
+
+**2. O `WEB_ORIGINS` NAO ERA VALIDADO EM LUGAR NENHUM**
+
+A guarda de D-333 decide QUAL ambiente: recusa o projeto, o ref, a chave publicavel e a origem do Dev em `AMBIENTE=prod`. Nenhuma linha olhava a FORMA do valor -- e as duas coisas sao diferentes. `https://app.exemplo.com/`, com uma barra a mais, passa por toda a guarda de ambiente, sobe no Cloud Run e **so aparece em producao, como CORS negado**: o navegador envia `Origin: https://app.exemplo.com` sem barra nem caminho, e a comparacao e igualdade exata de string. Nao ha log dizendo "barra a mais"; ha um upload de planilha que para de funcionar.
+
+A mesma variavel decide para onde o link do convite leva -- a primeira origem da lista. Errar ali manda TODO convite para o lugar errado, que foi o incidente de 2026-09-10, com o Auth caindo no `localhost:3000` do projeto.
+
+**O que mudou:** `lib.sh` passou a recusar, na origem: barra no fim, caminho, falta de esquema, `http://` fora de `localhost` (e mesmo em `localhost`, so no dev), espaco, virgula na ponta e virgula dupla. Onze casos novos em `ambiente.test.sh`, que ja roda na CI -- os 13 antigos continuam passando.
+
+---
+
+**3. O EXPURGO DE `job_runs` REPROVARIA UM RESTORE BOM**
+
+O relatorio de saude do Dev, rodado no mesmo dia pelo SQL Editor, mostrou `n_tup_del` de `job_runs` em **278.371** -- quase o dobro das 154.390 insercoes da janela -- e a linha mais antiga da tabela em 20 de agosto. Existe retencao apagando o passado.
+
+`check:restore` trata as 8 tabelas com `created_at` como append-only e exige contagem IGUAL ate `BACKUP_AT` nos dois lados. **"Append-only" fala do gatilho que recusa UPDATE/DELETE, nao da retencao.** Com expurgo rodando, o Dev apaga linhas que o clone ainda tem, a contagem do restaurado fica maior, e o veredito sai `RESTORE_REPROVADO` com a linha "restaurado maior" -- indistinguivel de defeito. O ensaio de restore, que existe para transformar hipotese em fato, entregaria um fato errado logo na primeira vez.
+
+**O que mudou, e o que NAO mudou:** a igualdade continua exata. O que ganhou piso foi a JANELA: para cada tabela exata, o piso e `min(<coluna>)` **no Dev** -- a linha mais antiga que ele ainda retem. Dentro de `[piso, BACKUP_AT]` os dois lados tem de bater exatamente; o que o restaurado guarda abaixo do piso e contado e sai como INFO `<tabela>: expurgo`. Afrouxar a igualdade teria sido a correcao errada: ela e a prova forte.
+
+**O que isso nao prova, escrito no cabecalho do script e na 8.1:** linha anterior ao piso que o restore tenha perdido e invisivel daqui, porque o Dev tambem nao a tem para comparar. A prova forte vale para toda a janela que o Dev ainda retem -- que e a janela que um restore de verdade precisaria devolver.
+
+---
+
+**4. DE PASSAGEM: A CHAVE "EM HEX" QUE NAO E HEX**
+
+`ML_TOKEN_ENCRYPTION_KEY` e base64 que decodifica para 32 bytes; `loadEncryptionKey` recusa qualquer outra forma e o `envSchema` da `api` derruba o boot. A unica mencao ao formato dentro de `DECISIONS.md` dizia "em hex" (D-328, secao 3), e `DEPLOYMENT.md` item 4 da secao 8 mandava gerar com `openssl rand`, **sem argumento** -- e o `openssl rand` que a memoria completa e `-hex 32`, que da 64 caracteres, ~48 bytes lidos como base64, e o container nao parte. `.env.example` e a secao 10.1 sempre estiveram certos, com o comando do `node`. A linha de D-328 foi **retificada no lugar**, marcada como retificacao em vez de reescrita, e o item 4 passou a trazer o comando certo, o `openssl rand -base64 32` como equivalente e o `-hex` nomeado como o erro que ele e.
+
+---
+
+**5. COMO FOI PROVADO**
+
+- **`bash -n` nos 8 scripts de `infra/`** e `ambiente.test.sh` completo: **24/24**, sendo 13 os casos antigos, intactos, e 11 novos de formato (barra no fim, caminho, sem esquema, `http://` em prod, virgula na ponta, virgula dupla, espaco depois da virgula, a SEGUNDA origem malformada numa lista de duas, duas origens validas, `localhost` aceito no dev e recusado em prod).
+- **O expurgo foi simulado contra Postgres 16 de verdade**, com dois bancos -- um "Dev" retido desde 20 de agosto, um "restaurado" com o historico inteiro desde 1 de agosto e congelado no `BACKUP_AT`. O script **antes**: `FAIL job_runs -- Dev 577, restaurado 1033`, `RESTORE_REPROVADO`, codigo 1. **Depois**: `PASS job_runs -- de 2026-08-20 ate o backup: Dev 577, restaurado 577`, mais `INFO job_runs: expurgo -- 456 linha(s)`, `RESTORE_OK`.
+- **Tres contraprovas, para a janela nao virar um jeito de passar:** restaurado com 40 linhas a MENOS dentro da janela -> `FAIL` (Dev 577, restaurado 537); restaurado com 3 a MAIS -> `FAIL` (Dev 577, restaurado 580); Dev **sem** expurgo nenhum -> piso volta a ser o inicio do historico, `PASS` com 1033 dos dois lados e nenhuma INFO de expurgo, que e o comportamento antigo intacto.
+
+---
+
+**6. A LICAO**
+
+**Roteiro que compensa um defeito preserva o defeito.** Os tres achados estavam sendo contornados a mao no passo a passo do corte: um bloco de quatro `add-iam-policy-binding` colado depois do `setup-dev.sh`, um paragrafo explicando o formato do `WEB_ORIGINS` que nada validava, e um aviso para ler "restaurado maior" como expurgo. Cada um desses paragrafos e a confissao de um buraco -- e o proximo a rodar os scripts nao tera o paragrafo. A pergunta que fica: **quando o roteiro precisa avisar, da para o codigo recusar?**
+
+**Impacto:** `infra/setup-dev.sh` (concessao por tabela, e parada em prod com segredo ausente), `infra/lib.sh` (validacao de formato do `WEB_ORIGINS`), `infra/ambiente.test.sh` (11 casos novos), `packages/db/scripts/restore-check.mjs` (janela datada nas 8 tabelas exatas, INFO de expurgo, cabecalho), `docs/DEPLOYMENT.md` (8.1: a janela datada e a leitura de "restaurado maior"; 8.2: itens 3 e 4, a armadilha do dominio proprio no `m71j` e o formato do `WEB_ORIGINS`), `docs/{DECISIONS,DECISIONS_INDEX}.md`. Sem migration.

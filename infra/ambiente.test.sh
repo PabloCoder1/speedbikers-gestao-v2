@@ -87,6 +87,28 @@ passa "prod completo resolve o Supabase de produção" "SUPABASE_URL=https://ref
 # --- valor que não existe
 recusa "ambiente desconhecido" "AMBIENTE=staging não existe" "AMBIENTE=staging"
 
+# --- FORMATO do WEB_ORIGINS (D-348)
+#
+# A guarda de ambiente sempre olhou QUAL ambiente, nunca a FORMA do valor. Uma
+# barra no fim passa por tudo e só aparece em produção, como CORS negado — o
+# navegador manda `Origin:` sem barra e a comparação é igualdade exata. Cada
+# caso abaixo é uma forma que passava e agora é recusada na origem.
+recusa "origem com barra no fim"   "termina em barra"        "${PROD_OK[@]}" "WEB_ORIGINS=https://producao.exemplo.test/"
+recusa "origem com caminho"        "tem caminho"             "${PROD_OK[@]}" "WEB_ORIGINS=https://producao.exemplo.test/app"
+recusa "origem sem esquema"        "não começa com https://" "${PROD_OK[@]}" "WEB_ORIGINS=producao.exemplo.test"
+recusa "origem em http"            "usa http://"             "${PROD_OK[@]}" "WEB_ORIGINS=http://producao.exemplo.test"
+recusa "vírgula sobrando na ponta" "termina em vírgula"      "${PROD_OK[@]}" "WEB_ORIGINS=https://producao.exemplo.test,"
+recusa "vírgula dupla"             "vírgula dupla"           "${PROD_OK[@]}" "WEB_ORIGINS=https://a.exemplo.test,,https://b.exemplo.test"
+recusa "espaço depois da vírgula"  "tem espaço"              "${PROD_OK[@]}" "WEB_ORIGINS=https://a.exemplo.test, https://b.exemplo.test"
+recusa "a segunda origem é que está errada" "termina em barra" "${PROD_OK[@]}" "WEB_ORIGINS=https://a.exemplo.test,https://b.exemplo.test/"
+
+passa "duas origens bem formadas" "WEB_ORIGINS=https://a.exemplo.test,https://b.exemplo.test" \
+  "${PROD_OK[@]}" "WEB_ORIGINS=https://a.exemplo.test,https://b.exemplo.test"
+
+# `http://localhost` é o caso de trabalho local, e existe só no dev.
+passa  "dev aceita localhost em http"  "WEB_ORIGINS=http://localhost:3000" "WEB_ORIGINS=http://localhost:3000"
+recusa "prod recusa localhost em http" "usa http://" "${PROD_OK[@]}" "WEB_ORIGINS=http://localhost:3000"
+
 if [ "${falhas}" -eq 0 ]; then
   printf '\nambiente.test.sh: todos os casos passaram\n'
 else
