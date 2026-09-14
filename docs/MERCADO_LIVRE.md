@@ -358,6 +358,8 @@ Notificação chega pelo tópico `post_purchase` (modelo com subtópicos, secao 
 
 **Detalhe da devolução** — `GET /post-purchase/v2/claims/{claim_id}/returns`. Campos usados: `status` (**`"delivered"` é o gatilho de reversão de estoque** — produto fisicamente de volta; `status_money` é um campo SEPARADO para o dinheiro, não usado aqui — reversão de estoque segue a física, não o financeiro), `orders[]` (`order_id`, `item_id`, `variation_id`, `context_type` — `total`/`partial`/`incomplete`, `total_quantity`, `return_quantity` — ambas chegam como STRING, convertidas com `z.coerce.number()`).
 
+**404 logo depois de o claim nascer — medido em 2026-09-14 (D-344):** o claim já traz `related_entities: ["return"]` e este endpoint ainda responde 404. Em 7 dias foram 381 falhas em 147 claims; 143 falharam já na primeira notificação do claim, e 145 destravaram sozinhos numa notificação seguinte, em até 4,1 minutos. É propagação do lado do Mercado Livre, não recurso inexistente. O worker trata 404 em claim com menos de 60 minutos (`date_created`) como "ainda não disponível", processando zero; só o 404 em claim mais velho, ou sem `date_created`, continua falha.
+
 **Mapeamento para `order_items` da V3**: `orders[].item_id`/`variation_id` batem direto com `order_items.item_id`/`variation_id` (mesmo formato — MLB + variation numérica) — dá pra localizar a POSIÇÃO do item sem depender de `sku_listing_links`.
 
 **RE-LEITURA AO VIVO EM 2026-08-27 (D-104), antes da ingestão de SAC** — o registro acima listava só "os campos que a V3 usa hoje", o que bastava para estoque mas não para projetar o claim na Caixa de Entrada. Campos adicionais confirmados no exemplo oficial de `GET /post-purchase/v1/claims/{claim_id}`:

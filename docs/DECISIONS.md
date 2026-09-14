@@ -11441,6 +11441,58 @@ Milissegundos inteiros, nunca negativos. O relogio e `performance.now` em produc
 
 A leitura do pico, depois das 09:00 UTC, fica para a proxima sessao: a espera passa de qualquer comando que da para manter aberto.
 
+## D-344 - Os ~54 `job_failed` diarios em `claims/{id}/returns` eram propagacao do Mercado Livre, nao perda -- 404 em claim recem-nascido deixa de ser falha
+
+**Contexto:** D-338 achou, na linha de base de erro antes de um deploy, 30 `job_failed` em 24 h no worker: `sync.webhook.received` com 404 em `GET /post-purchase/v2/claims/{id}/returns`, `not_retryable`, sem reentrega. O handler so chama esse endpoint quando o claim diz ter devolucao, entao a pergunta ficou escrita como risco: **se for consistencia eventual, uma devolucao entregue pode ficar sem estorno.** Sem acesso ao banco, a pergunta foi respondida pelos logs, que guardam `claim_id` na falha e no sucesso.
+
+---
+
+**1. O QUE OS LOGS DIZEM** (7 dias, 07/09 a 14/09)
+
+| medida | valor |
+|---|---|
+| falhas 404 em `/returns` | **381** (36 a 79 por dia), em **147** claims |
+| no job que falhou, o caso persistido dizia | `has_return: true` em **381 de 381** |
+| claims com `webhook_fast_path_claim_done` depois da ultima falha | **145 de 147** |
+| minutos da ultima falha ate esse sucesso | p50 0,9 · p90 4,0 · **max 4,1** |
+| falhas por claim antes de destravar | p50 3 · max 5 |
+| claims cuja primeira noticia ja foi o 404 | **143** (os outros 4 tinham sido vistos 1,6 a 2,7 dias antes) |
+
+O Mercado Livre anuncia a devolucao no claim antes de a devolucao existir no endpoint, e manda varias notificacoes do mesmo claim nos primeiros minutos; uma delas ja a encontra.
+
+**Os 2 que "nao destravaram":** `...8550` destravou (tres sucessos as 21:09 de 10/09) -- a juncao so o contou como preso porque uma notificacao duplicada falhou quatro segundos depois de um sucesso, um dia depois. `...2352` e o unico preso de verdade: falhou duas vezes em 09/09, e a varredura ja o persistia desde 04/09 -- **um 404 cinco dias depois de o claim nascer**, outra categoria.
+
+---
+
+**2. POR QUE ISSO NAO CUSTA ESTOQUE**
+
+A reversao so acontece com a devolucao `delivered` -- produto fisicamente de volta --, e isso e dias depois do claim. Um 404 nos primeiros minutos acontece quando nao haveria nada a reverter; quando a devolucao for entregue, chega notificacao nova e o endpoint ja responde. O dano era o **ruido**: ~54 ERROR por dia, e `job_runs` com falha, num lugar que D-229 ja ensinou a nao deixar vermelho sem motivo.
+
+A varredura de claims (`sync.support.claims.reconcile`) **nao** reverte estoque -- so persiste o caso. A reversao depende do webhook, o que torna importante nao esconder o caso raro de verdade.
+
+---
+
+**3. A DECISAO**
+
+Em `processClaimReturn`, um `MercadoLivreApiError` com status **404** na busca da devolucao:
+
+- **claim com menos de 60 minutos** (`date_created`, relogio do Mercado Livre; carimbo no futuro conta como zero) -> `claim_return_not_yet_available` em **info**, com `claim_age_min`, e o job termina `done` com 0 processado;
+- **claim mais velho, ou sem `date_created` legivel** -> `claim_return_missing` em **warn**, com a idade, e o erro segue como antes: falha, `not_retryable`, ERROR. E o caso do `...2352`.
+- **qualquer outro erro** (503, 429, contrato) -> exatamente como antes.
+
+**Por que nao retry:** as filas `ml-sync-*` repetiriam ate 8 vezes (10 s a 600 s) e cada tentativa tambem loga `job_failed` em ERROR -- o ruido nao cairia, e o Mercado Livre ja reenvia a notificacao sozinho. **Por que 60 minutos:** o maximo medido foi 4,1; uma ordem de grandeza de folga, sem engolir o caso de dias.
+
+---
+
+**4. COMO FOI PROVADO**
+
+- `@sb/worker`: typecheck, lint e **533 testes** (`claim-return.test.ts` 18, **+6**): claim de 10 min em 404 processa zero e registra a propagacao; claim de 2 dias continua falhando com `claim_age_min: 2880`; sem `date_created` continua falhando com idade nula; limite 59 min passa, 60 falha; 503 em claim recente continua falhando; carimbo no futuro conta como recem-nascido.
+- **Mutacao A** (sem a janela): **3 falhas** -- os tres casos de claim recente. **Mutacao B** (qualquer erro vira propagacao): **1 falha** -- o do 503. Arquivo restaurado e conferido byte a byte.
+
+**Nao esta no ar.** O worker no ar e `d828eac` (`worker-00050-qnt`); publicar e ato que o usuario autoriza. A conferencia depois: `claim_return_not_yet_available` aparecendo no lugar dos `job_failed` de `/returns`, e `claim_return_missing` so em claim velho.
+
+**Impacto:** `apps/worker/src/handlers/{claim-return.ts,claim-return.test.ts}`, `docs/{DECISIONS,DECISIONS_INDEX,MERCADO_LIVRE,HANDOFF}.md`. Sem migration.
+
 **Impacto:** `apps/api/src/{webhook.ts,webhook.test.ts}`, `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,ROADMAP,HANDOFF}.md`. Sem migration.
 
 ---

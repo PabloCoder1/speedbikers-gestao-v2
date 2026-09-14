@@ -1,3 +1,4 @@
+import { MercadoLivreApiError } from "@sb/mercado-livre";
 import type { MercadoLivreClient, RequestOptions } from "@sb/mercado-livre";
 import { createLogger } from "@sb/observability";
 import { describe, expect, it } from "vitest";
@@ -192,6 +193,138 @@ function fakeMercadoLivre(responses: {
 }
 
 const logger = createLogger({}, { sink: () => undefined });
+
+/**
+ * D-344 — 381 falhas em 7 dias, 147 claims: o claim já anuncia a devolução e
+ * `GET /v2/claims/{id}/returns` responde 404; 145 destravam sozinhos em até
+ * 4,1 minutos. Recém-nascido é propagação, não falha. Velho continua falha.
+ */
+describe("processClaimReturn — devolução ainda não propagada (D-344)", () => {
+  const minutosAntesDeAgora = (minutos: number): string => new Date(NOW.getTime() - minutos * 60_000).toISOString();
+
+  function erroDoMercadoLivre(status: number): MercadoLivreApiError {
+    const url = `https://api.mercadolibre.com/post-purchase/v2/claims/${CLAIM_ID}/returns`;
+
+    return new MercadoLivreApiError(`Mercado Livre respondeu ${String(status)} para GET ${url}.`, {
+      status,
+      errorClass: status === 404 ? "not_retryable" : "retryable",
+      url,
+    });
+  }
+
+  interface Registro {
+    nivel: "info" | "warn";
+    evento: string;
+    campos: Record<string, unknown>;
+  }
+
+  async function processar(
+    claim: Record<string, unknown>,
+    erroNaDevolucao: Error,
+  ): Promise<{ resultado: Promise<number>; captured: Captured; registros: Registro[] }> {
+    const captured: Captured = { movements: [], events: [], supportCases: [] };
+    const registros: Registro[] = [];
+    const registrar =
+      (nivel: Registro["nivel"]) =>
+      (evento: string, campos: Record<string, unknown> = {}) => {
+        registros.push({ nivel, evento, campos });
+      };
+
+    const client = {
+      request: (options: RequestOptions<unknown>) =>
+        options.path.includes("/returns") ? Promise.reject(erroNaDevolucao) : Promise.resolve(claim),
+    } as unknown as MercadoLivreClient;
+
+    const resultado = processClaimReturn(
+      { db: fakeDb({}, captured), mercadoLivre: client },
+      { organizationId: ORGANIZATION_ID, mlAccountId: ML_ACCOUNT_ID },
+      "token",
+      CLAIM_ID,
+      NOW,
+      { ...logger, info: registrar("info"), warn: registrar("warn") },
+    );
+
+    // Deixa a promessa assentar antes de o teste ler os registros.
+    await resultado.catch(() => undefined);
+
+    return { resultado, captured, registros };
+  }
+
+  it("claim de 10 minutos com devolução ainda em 404: processa zero, sem falhar, e registra a propagação", async () => {
+    const erro = erroDoMercadoLivre(404);
+    const { resultado, captured, registros } = await processar(
+      { ...CLAIM_WITH_RETURN, date_created: minutosAntesDeAgora(10) },
+      erro,
+    );
+
+    await expect(resultado).resolves.toBe(0);
+    expect(captured.movements).toHaveLength(0);
+    expect(registros).toContainEqual({
+      nivel: "info",
+      evento: "claim_return_not_yet_available",
+      campos: { claim_id: CLAIM_ID, claim_age_min: 10 },
+    });
+    expect(registros.some((r) => r.evento === "claim_return_missing")).toBe(false);
+  });
+
+  it("claim de 2 dias com devolução em 404: continua falhando, e o aviso leva a idade", async () => {
+    const erro = erroDoMercadoLivre(404);
+    const { resultado, registros } = await processar(
+      { ...CLAIM_WITH_RETURN, date_created: minutosAntesDeAgora(2 * 24 * 60) },
+      erro,
+    );
+
+    await expect(resultado).rejects.toBe(erro);
+    expect(registros).toContainEqual({
+      nivel: "warn",
+      evento: "claim_return_missing",
+      campos: { claim_id: CLAIM_ID, claim_age_min: 2880 },
+    });
+  });
+
+  it("claim sem date_created com devolução em 404: sem idade não há como saber, continua falhando", async () => {
+    const erro = erroDoMercadoLivre(404);
+    const { resultado, registros } = await processar(CLAIM_WITH_RETURN, erro);
+
+    await expect(resultado).rejects.toBe(erro);
+    expect(registros).toContainEqual({
+      nivel: "warn",
+      evento: "claim_return_missing",
+      campos: { claim_id: CLAIM_ID, claim_age_min: null },
+    });
+  });
+
+  it("limite da janela: 59 minutos ainda é propagação, 60 já é anomalia", async () => {
+    const aos59 = await processar({ ...CLAIM_WITH_RETURN, date_created: minutosAntesDeAgora(59) }, erroDoMercadoLivre(404));
+    const aos60 = await processar({ ...CLAIM_WITH_RETURN, date_created: minutosAntesDeAgora(60) }, erroDoMercadoLivre(404));
+
+    await expect(aos59.resultado).resolves.toBe(0);
+    await expect(aos60.resultado).rejects.toBeInstanceOf(MercadoLivreApiError);
+  });
+
+  it("claim recente com erro que NÃO é 404 continua falhando: só o 404 é propagação", async () => {
+    const erro = erroDoMercadoLivre(503);
+    const { resultado, registros } = await processar(
+      { ...CLAIM_WITH_RETURN, date_created: minutosAntesDeAgora(5) },
+      erro,
+    );
+
+    await expect(resultado).rejects.toBe(erro);
+    expect(registros.some((r) => r.evento === "claim_return_not_yet_available")).toBe(false);
+  });
+
+  it("carimbo no futuro (relógios diferentes) conta como recém-nascido, não como antigo", async () => {
+    const futuro = new Date(NOW.getTime() + 2 * 60_000).toISOString();
+    const { resultado, registros } = await processar({ ...CLAIM_WITH_RETURN, date_created: futuro }, erroDoMercadoLivre(404));
+
+    await expect(resultado).resolves.toBe(0);
+    expect(registros).toContainEqual({
+      nivel: "info",
+      evento: "claim_return_not_yet_available",
+      campos: { claim_id: CLAIM_ID, claim_age_min: 0 },
+    });
+  });
+});
 
 describe("processClaimReturn (D-057)", () => {
   it("claim sem devolução associada (related_entities vazio): não busca returns, processa zero", async () => {

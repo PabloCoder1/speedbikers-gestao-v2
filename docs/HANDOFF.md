@@ -97,11 +97,12 @@ Números completos e método: `docs/PERFORMANCE.md`.
   Scheduler mostra verde, o endpoint responde 200, e `job_runs` simplesmente
   para de crescer. Não há linha `failed` para achar. Foi assim que 13 horas
   passaram despercebidas em D-217.
-- **Cerca de 30 `job_failed` por dia no worker são um 404 ainda não
-  explicado** (medido em 13/09): `GET /post-purchase/v2/claims/{id}/returns`
-  para reclamação que diz ter devolução, `not_retryable`, sem reentrega. Se
-  for consistência eventual, uma devolução entregue pode ficar sem estorno.
-  **Não investigado** — conferir no banco antes de concluir.
+- **Os ~54 `job_failed` por dia do worker em `claims/{id}/returns` são
+  propagação, não perda** (D-344): 145 de 147 claims destravam sozinhos em
+  até 4,1 min, e a reversão de estoque só acontece com a devolução
+  `delivered`, dias depois. O worker passa a tratar 404 em claim com menos de
+  60 min como `claim_return_not_yet_available` (info); fora da janela segue
+  falha, com `claim_return_missing` (warn) e a idade. **Ainda não publicado.**
 - **Relist nunca foi exercitado contra o ML real.** A primeira execução
   precisa ser ensaio humano deliberado, com anúncio sacrificável.
 - **As duas suítes locais não convivem no mesmo banco, e a ordem é a cura.**

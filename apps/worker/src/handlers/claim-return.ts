@@ -1,13 +1,48 @@
 import type { AdminClient } from "@sb/db";
 import { computeReturnReversal, computeUnreversedReturn } from "@sb/domain";
 import type { RecordedSaleMovement } from "@sb/domain";
+import { MercadoLivreApiError } from "@sb/mercado-livre";
 import type { MercadoLivreClient } from "@sb/mercado-livre";
 import type { Logger } from "@sb/observability";
 
 import { claimReturnSchema, claimSchema } from "./claim-schema.js";
+import type { ParsedClaimReturn } from "./claim-schema.js";
 import { recordDomainEvents } from "./domain-events.js";
 import { ingestSupportClaim } from "./ingest-support-claim.js";
 import { recordStockMovements } from "./stock-movements.js";
+
+/**
+ * D-344 — quanto tempo depois de o claim nascer a devolução pode ainda não
+ * existir em `GET /v2/claims/{id}/returns`.
+ *
+ * Medido em 7 dias de log (381 falhas, 147 claims): o claim já diz
+ * `related_entities: ["return"]`, o endpoint de devolução responde 404, e
+ * 145 dos 147 destravam sozinhos na notificação seguinte — no máximo 4,1
+ * minutos depois da última falha. 143 deles falharam na PRIMEIRA notificação
+ * do claim. E um 404 nesse momento não custa estoque: a reversão só acontece
+ * com a devolução `delivered`, dias depois, quando o endpoint já responde.
+ *
+ * Sessenta minutos dão folga de uma ordem de grandeza sobre o medido. Fora
+ * da janela, o 404 continua sendo falha: um claim antigo sem devolução
+ * legível é anomalia de verdade, e é esse o caso que precisa ficar visível.
+ */
+const JANELA_DE_PROPAGACAO_DA_DEVOLUCAO_MIN = 60;
+
+/** Idade do claim em minutos inteiros, pelo relógio do Mercado Livre; `null` sem carimbo legível. */
+function idadeDoClaimEmMinutos(dateCreated: string | null | undefined, now: Date): number | null {
+  if (dateCreated === null || dateCreated === undefined) {
+    return null;
+  }
+
+  const criadoEm = Date.parse(dateCreated);
+
+  if (Number.isNaN(criadoEm)) {
+    return null;
+  }
+
+  // Relógios diferentes: um claim "do futuro" acabou de nascer, não é antigo.
+  return Math.max(0, Math.floor((now.getTime() - criadoEm) / 60_000));
+}
 
 /**
  * Pós-venda (Claims/Returns, D-057) — chamado pelo Fast Path do webhook
@@ -131,12 +166,37 @@ export async function processClaimReturn(
     return 0;
   }
 
-  const claimReturn = await deps.mercadoLivre.request({
-    method: "GET",
-    path: `/post-purchase/v2/claims/${claimId}/returns`,
-    accessToken,
-    schema: claimReturnSchema,
-  });
+  let claimReturn: ParsedClaimReturn;
+
+  try {
+    claimReturn = await deps.mercadoLivre.request({
+      method: "GET",
+      path: `/post-purchase/v2/claims/${claimId}/returns`,
+      accessToken,
+      schema: claimReturnSchema,
+    });
+  } catch (error) {
+    if (!(error instanceof MercadoLivreApiError) || error.status !== 404) {
+      throw error;
+    }
+
+    // D-344 — claim recém-nascido: o Mercado Livre anuncia a devolução antes de
+    // ela existir no endpoint. Não há o que reverter ainda (a reversão exige
+    // `delivered`), e a notificação seguinte do mesmo claim a encontra.
+    const idadeMin = idadeDoClaimEmMinutos(claim.date_created, now);
+
+    if (idadeMin !== null && idadeMin < JANELA_DE_PROPAGACAO_DA_DEVOLUCAO_MIN) {
+      logger.info("claim_return_not_yet_available", { claim_id: claimId, claim_age_min: idadeMin });
+
+      return 0;
+    }
+
+    // Fora da janela, ou sem carimbo: a anomalia segue como falha, agora com a
+    // idade no log para a próxima investigação não precisar reconstruí-la.
+    logger.warn("claim_return_missing", { claim_id: claimId, claim_age_min: idadeMin });
+
+    throw error;
+  }
 
   if (claimReturn.status !== "delivered") {
     // Devolução em andamento (pending/shipped/etc.) — reverter agora
