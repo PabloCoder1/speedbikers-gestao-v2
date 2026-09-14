@@ -201,6 +201,7 @@ typecheck -> lint -> testes unitários -> testes de integração -> build -> apl
 Antes de declarar qualquer mudança operacional como implantada, verificar contra a infraestrutura real, nunca contra o texto do HANDOFF/ROADMAP:
 
 - `gcloud run services describe api/worker --format='value(status.latestReadyRevisionName)'` e comparar a tag da imagem (`git rev-parse --short HEAD` no momento do deploy) contra o commit atual;
+- **a revisão nova servindo o tráfego** — desde D-341 o `deploy-cloud-run.sh` falha se ela não serve 100%. Com o tráfego fixo numa revisão (depois de um `update-traffic --to-revisions`, como a volta de D-340), a revisão publicada nasce com 0% e o deploy sairia verde com o commit antigo no ar;
 - `gcloud scheduler jobs list --location southamerica-east1` contra os jobs esperados (`infra/cloud-scheduler.sh` é a lista canônica);
 - `pnpm exec supabase migration list --linked` (local == remoto, sem drift);
 - CI do commit exato verde (`gh run list`/`gh run view`), não presumido;

@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **336** (D-001 a D-340).
+Decisões registradas: **337** (D-001 a D-341).
 
 ## Por domínio
 
@@ -310,7 +310,7 @@ Decisões registradas: **336** (D-001 a D-340).
 - **D-325** — A leitura do grafico de vendas falava de "periodo anterior" onde nao ha comparacao
 - **D-327** — A18: a legenda do grafico de vendas no cabecalho do painel, e o seed que nunca teve periodo anterior
 
-### worker/infra (66)
+### worker/infra (67)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -378,4 +378,5 @@ Decisões registradas: **336** (D-001 a D-340).
 - **D-333** — Os scripts de infra subiriam PRODUCAO apontando para o banco do DEV -- e agora o ambiente e explicito, com guarda testada
 - **D-336** — A guarda de `pnpm audit` que D-328 deixou sem dono entrou na CI -- dependencias de producao, corte em alta
 - **D-338** — O que estava no ar nao era o que o HANDOFF dizia -- duas correcoes de seguranca do dia fora do Cloud Run, e o deploy que as publicou
+- **D-341** — "Has been deployed" nao quer dizer "esta servindo" -- o script de deploy passa a recusar revisao publicada sem trafego
 

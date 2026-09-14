@@ -11317,3 +11317,30 @@ Com autorizacao do usuario: `gcloud run services update-traffic api --to-revisio
 
 **Impacto:** Cloud Run (trafego da `api` de volta a `api-00036-5l4`), `apps/api/src/{webhook.ts,webhook.test.ts}` (restaurados), `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,MERCADO_LIVRE,API,ARCHITECTURE,ROADMAP,HANDOFF}.md`. Sem migration.
 
+## D-341 - "Has been deployed" nao quer dizer "esta servindo" -- o script de deploy passa a recusar revisao publicada sem trafego
+
+**Contexto:** a volta de D-340 fixou o trafego da `api` em `api-00036-5l4` (`spec.traffic` nomeando a revisao, sem `latestRevision`). O `gcloud run deploy --help` descreve esse estado no flag `--no-traffic`: enquanto o trafego nao estiver no LATEST, a revisao publicada em seguida nao recebe trafego. E `infra/deploy-cloud-run.sh` terminava com `ok "${app}: ${url}"` sem perguntar quem esta servindo -- o proximo deploy sairia verde com o commit antigo respondendo, e so um `/health` lembrado por alguem denunciaria.
+
+---
+
+**1. A GUARDA**
+
+Ao fim de `build_and_deploy`, para os dois servicos: le `status.latestReadyRevisionName`, le o percentual de trafego de cada revisao (`--flatten=status.traffic`, `csv[no-heading]`), e **falha se a revisao recem-publicada nao serve 100%** -- dizendo quanto ela serve e o comando que a poe no ar (`update-traffic --to-latest`), para quem de fato quer publicar. `tr -d '\r'` antes de comparar, porque o `gcloud` no Windows pode terminar a linha com CR.
+
+A guarda **nao** poe o trafego no LATEST por conta propria. Um trafego fixo pode ser deliberado -- a volta de D-340 e exatamente um -- e decidir desfaze-lo e do operador, nao do script.
+
+---
+
+**2. PROVADA CONTRA O ESTADO REAL, NOS DOIS SENTIDOS, ANTES DE PUBLICAR**
+
+O mesmo pipeline, pelo `gc` de `lib.sh` (o wrapper que o script usa), contra os dois servicos no ar:
+
+| servico | ultima revisao pronta | serve | guarda |
+|---|---|---|---|
+| `api` | `api-00037-bqb` (a de D-339, sem trafego) | **0%** | **recusa** |
+| `worker` | `worker-00050-qnt` | 100% | passa |
+
+Mais `bash -n` e fim de linha LF. **A prova no deploy de verdade vem no primeiro publicado depois deste commit**: com o trafego da `api` ainda fixo, a guarda tem de parar o script -- e o resultado fica registrado no commit seguinte.
+
+**Impacto:** `infra/deploy-cloud-run.sh`, `docs/{DECISIONS,DECISIONS_INDEX,DEPLOYMENT,HANDOFF}.md`. Nenhuma linha de aplicacao.
+

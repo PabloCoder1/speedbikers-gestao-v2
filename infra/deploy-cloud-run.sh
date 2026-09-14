@@ -172,6 +172,26 @@ YAML
     fi
   fi
 
+  # D-341 — "has been deployed" não quer dizer "está servindo". Com o tráfego
+  # FIXO numa revisão (um `update-traffic --to-revisions`, como a volta de
+  # D-340), a revisão nova nasce com 0% e o deploy termina verde com o commit
+  # antigo respondendo. Conferir aqui custa uma chamada; descobrir pelo
+  # /health, quando alguém lembrar de olhar, custa o deploy inteiro.
+  #
+  # `tr -d '\r'`: o gcloud no Windows pode terminar a linha com CR, e "100\r"
+  # não é "100".
+  local revisao percentual
+  revisao="$(gc run services describe "${app}" --region "${REGION}" --format='value(status.latestReadyRevisionName)' | tr -d '\r')"
+  percentual="$(gc run services describe "${app}" --region "${REGION}" \
+    --flatten=status.traffic \
+    --format='csv[no-heading](status.traffic.revisionName,status.traffic.percent)' |
+    tr -d '\r' |
+    awk -F, -v r="${revisao}" '$1 == r { p = $2 } END { print (p == "" ? 0 : p) }')"
+
+  [ "${percentual}" = "100" ] ||
+    fail "${app}: a revisão ${revisao} foi publicada mas serve ${percentual}% do tráfego — ele está fixo noutra revisão. Se a publicação é para valer: gcloud run services update-traffic ${app} --region ${REGION} --project ${PROJECT_ID} --to-latest"
+  ok "${app}: ${revisao} serve 100% do tráfego"
+
   local url
   url="$(gc run services describe "${app}" --region "${REGION}" --format='value(status.url)')"
   ok "${app}: ${url}"
