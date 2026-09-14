@@ -11388,7 +11388,7 @@ A parada deixou `.env.deploy.yaml` na raiz. O `trap ... RETURN` de `build_and_de
 3. **So com "latest pronto" igual a revisao servindo** -- checado no mesmo comando, que abortaria se nao fosse --, `update-traffic --to-latest`: `spec.traffic` volta a `latestRevision: true`, e o proximo deploy volta a receber trafego sozinho.
 4. O pipeline da guarda depois: `api` e `worker` passam.
 
-**Medicao depois da publicacao:** a primeira leitura, dois minutos depois (02:22 a 02:24 UTC), deu 16 webhooks, todos 200, **zero ERROR** e nenhum acima de 500 ms -- amostra pequena demais para comparar com a linha de base de 30 min em `api-00036-5l4` (909 webhooks, p50 62 ms, p95 264 ms, 2 acima de 500 ms, 172 enfileirados). A leitura com 20 minutos fica no commit seguinte.
+**Medicao depois da publicacao:** a primeira leitura, dois minutos depois (02:22 a 02:24 UTC), deu 16 webhooks, todos 200, **zero ERROR** e nenhum acima de 500 ms -- amostra pequena demais para comparar com a linha de base de 30 min em `api-00036-5l4` (909 webhooks, p50 62 ms, p95 264 ms, 2 acima de 500 ms, 172 enfileirados). **Com 20 minutos** (02:22 a 02:42 UTC): 424 webhooks, todos 200; ACK p50 69 ms, p95 270 ms, p99 298 ms, max 540 ms; **1 acima de 500 ms entre 101 enfileirados (~1%)**; **zero ERROR** na `api` e no `worker`; `/health` em `45be035` e `latestReadyRevisionName` em `api-00038-2hg`. Dentro da linha de base -- como devia, porque o runtime e o mesmo.
 
 ---
 
