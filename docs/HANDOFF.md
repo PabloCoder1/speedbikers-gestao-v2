@@ -175,7 +175,10 @@ Nada disto pode ser feito por um agente.
    só confirmar o PITR** (aba *Point in time*, que não renderizou para as
    ferramentas). **3a. O ensaio de restore** é o próximo ato: restaurar um
    backup num projeto NOVO e rodar `pnpm --filter @sb/db run check:restore` —
-   roteiro em `docs/DEPLOYMENT.md` 8.1. Nunca restaurar sobre o próprio Dev.
+   roteiro em `docs/DEPLOYMENT.md` 8.1, **corrigido em D-347**: a aba é
+   *Restore to new project* — o "Restore" de *Scheduled backups* sobrescreve o
+   Dev —, o comando é PowerShell com `pnpm.cmd` e `sslmode=no-verify`, e o
+   `BACKUP_AT` se calcula no restaurado, não se lê da lista.
 3b. **Conferir o saldo do estoque contra o UpSeller** — o usuário vai subir a
    planilha do UpSeller quando as etapas atuais fecharem (2026-09-03). É a segunda metade da
    condição que o item da reconciliação impõe a si mesmo, e a única que falta
@@ -222,7 +225,7 @@ Nada disto pode ser feito por um agente.
 
 | | |
 |---|---|
-| backup e restore **verificados** | a metade do SCHEMA é provada todo dia (CI recria as migrations). A do DADO: **backup medido** (diário, ~7 dias) e **ensaio pronto** (D-332) — o comparador `check:restore` foi provado contra dano simulado. Falta o restore real num projeto novo, que é ato humano |
+| backup e restore **verificados** | a metade do SCHEMA é provada todo dia (CI recria as migrations). A do DADO: **backup medido** (diário, ~7 dias) e **ensaio pronto** (D-332) — o comparador `check:restore` foi provado contra dano simulado, e o roteiro foi conferido e corrigido (D-347). Falta o restore real num projeto novo, que é ato humano |
 | ~~revisão de segurança e de secrets~~ | ✅ **FEITA em quatro fatias**: segredos e dependências (D-328); superfície de entrada conferida ao vivo, D-045 fechada e cabeçalhos da `web` confirmados na Vercel (D-329); redação de log por VALOR (D-330); CSP completa com nonce, com e2e que exige zero violações (D-331). **Sem lacuna técnica aberta.** A guarda de `pnpm audit` que ficou sem dono entrou na CI em D-336 (`--prod`, corte em alta) |
 | load tests e revisão de `pg_stat_statements` | **carga real medida (D-339)**: 65,8 mil webhooks/dia, pico de 1.050/min, e o ACK passa de 7 s nos picos. **A correção de D-339 foi publicada e voltada** (D-340): esfriou as conexões e piorou `orders_v2`. O pico continua aberto. O log do webhook passou a medir cada etapa (`lookup_ms`, `enqueue_ms`; D-343) — publicado em `api-00039-9vm`. Fora de pico, a Cloud Task custa ~185 ms fixos e a consulta da conta ~50 ms, que esfria depois de pausa. **A primeira rajada medida respondeu: é a consulta da conta** — p95 de 2,8 s na rajada, contra 103 ms fora dela, com a Cloud Task igual (D-345). Em 10 dias foram 26.748 ACKs acima de 2 s, em 78 rajadas sem horário fixo. **A correção foi publicada em D-346** (contas em memória, com carga única em voo e recarga limitada; `api-00040-qrk`): depois da primeira carga, `lookup_ms` caiu para 0 ms. **Falta a próxima rajada para provar o efeito no ACK.** Falta também a revisão de `pg_stat_statements` (`report:health` pede a senha do Dev — ato humano) |
 | Supabase e Cloud Run de **produção** | depende de ato humano para criar. **Os scripts estão prontos e guardados** (D-333): `AMBIENTE=prod` sem padrão, com `CONFIRMO_PRODUCAO=sim`, e recusa de mistura com o Dev testada na CI; roteiro em `DEPLOYMENT.md` 8.2. Migrations de produção têm caminho desde D-334 (`migrations-producao.yml`, guarda testada na CI; criar o ambiente `producao` com revisor é ato humano). Resta a Vercel servindo produção com as variáveis do Dev |

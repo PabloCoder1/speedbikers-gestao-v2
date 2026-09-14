@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **342** (D-001 a D-346).
+Decisões registradas: **343** (D-001 a D-347).
 
 ## Por domínio
 
@@ -131,7 +131,7 @@ Decisões registradas: **342** (D-001 a D-346).
 - **D-314** — "Cobertura" de um SKU passa a ter UMA conta: a que D-288 aposentou saiu das duas telas que faltavam
 - **D-328** — Revisao de seguranca, fatia 1: nenhum segredo real em 740 commits, e duas CRITICAS no `next` que o repositorio publico carregava
 
-### interface (38)
+### interface (39)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -171,6 +171,7 @@ Decisões registradas: **342** (D-001 a D-346).
 - **D-319** — `/produtos` nao estava lenta pela pagina: `get_sku_curation` salta de ~20 ms para 360-4.000 ms A PARTIR DA SEXTA EXECUCAO da conexao
 - **D-331** — Revisao de seguranca, fatia 4: a CSP completa com nonce -- e o login, a unica pagina estatica, teria ficado trancado
 - **D-337** — O fechamento da V3 contava 186 com 188 no arquivo, e um checkbox seguia aberto para uma UX ja entregue
+- **D-347** — O roteiro de restore punha o dono na aba cujo botao sobrescreve o Dev -- e o comando dele nao rodava nesta maquina
 
 ### mercado-livre (49)
 

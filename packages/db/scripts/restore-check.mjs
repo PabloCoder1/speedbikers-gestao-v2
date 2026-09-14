@@ -7,7 +7,7 @@
  * Dev, e diz com PASS/FAIL o que prova e o que não prova.
  *
  * ⚠️ POR QUE NÃO É UMA COMPARAÇÃO INGÊNUA. O backup é um instante congelado; o Dev
- * continua andando (~221 webhooks por hora). Contar linhas nos dois lados
+ * continua andando (~2.742 webhooks por hora, medido em D-339). Contar linhas nos dois lados
  * "falharia" sempre e não provaria nada. Por isso, três camadas:
  *
  *   1. **Tabelas append-only** (têm gatilho que recusa UPDATE/DELETE): contar
@@ -27,16 +27,22 @@
  * nada estar errado. Elas saem como comparação APROXIMADA — Dev ≥ restaurado é
  * aceito; o restaurado com MAIS linhas que o Dev é que seria defeito.
  *
- * Como rodar (as URLs são SUAS, com a senha de cada banco; o script nunca as
- * imprime):
+ * Como rodar: o roteiro completo, com o comando para o Windows PowerShell, está
+ * em `docs/DEPLOYMENT.md` 8.1 (D-347). As URLs são SUAS, com a senha de cada
+ * banco em percent-encoding; o script nunca as imprime. Em bash:
  *
- *   DEV_DB_URL="postgresql://postgres:SENHA@db.<ref-dev>.supabase.co:5432/postgres" \
- *   RESTORED_DB_URL="postgresql://postgres:SENHA@db.<ref-restaurado>.supabase.co:5432/postgres" \
- *   BACKUP_AT="2026-09-13T05:59:13Z" \
+ *   DEV_DB_URL="postgresql://postgres:SENHA@db.<ref-dev>.supabase.co:5432/postgres?sslmode=no-verify" \
+ *   RESTORED_DB_URL="postgresql://postgres:SENHA@db.<ref-restaurado>.supabase.co:5432/postgres?sslmode=no-verify" \
+ *   BACKUP_AT="2026-09-13T05:44:00Z" \
  *     pnpm --filter @sb/db run check:restore
  *
- * `BACKUP_AT` é o instante do backup escolhido, como o Dashboard mostra na aba
- * "Scheduled backups" (em UTC).
+ * `sslmode=no-verify` porque, sem `sslmode`, o `pg` conecta em texto claro, e
+ * `sslmode=require` vira `verify-full` e falha na CA própria do Supabase.
+ *
+ * `BACKUP_AT` NÃO é o horário da lista de backups: a documentação não diz se ele
+ * é o início ou o fim do backup, e um instante depois do ponto consistente faz o
+ * Dev contar a mais e reprova um restore bom. É o maior `created_at` do
+ * restaurado menos 15 minutos, em UTC — a consulta está no roteiro.
  *
  * Só lê. As duas sessões abrem em `READ ONLY`: um UPDATE por engano aqui dentro
  * seria recusado pelo próprio Postgres, não por disciplina.

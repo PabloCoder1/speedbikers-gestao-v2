@@ -11390,6 +11390,14 @@ A parada deixou `.env.deploy.yaml` na raiz. O `trap ... RETURN` de `build_and_de
 
 **Medicao depois da publicacao:** a primeira leitura, dois minutos depois (02:22 a 02:24 UTC), deu 16 webhooks, todos 200, **zero ERROR** e nenhum acima de 500 ms -- amostra pequena demais para comparar com a linha de base de 30 min em `api-00036-5l4` (909 webhooks, p50 62 ms, p95 264 ms, 2 acima de 500 ms, 172 enfileirados). **Com 20 minutos** (02:22 a 02:42 UTC): 424 webhooks, todos 200; ACK p50 69 ms, p95 270 ms, p99 298 ms, max 540 ms; **1 acima de 500 ms entre 101 enfileirados (~1%)**; **zero ERROR** na `api` e no `worker`; `/health` em `45be035` e `latestReadyRevisionName` em `api-00038-2hg`. Dentro da linha de base -- como devia, porque o runtime e o mesmo.
 
+---
+
+**5. A LICAO**
+
+**Quando uma ferramenta diz o NOME de algo, confira o nome na fonte, nao no campo de onde a frase saiu.** A guarda acertou o percentual e errou a revisao porque leu o mesmo campo velho que o `gcloud` usa para escrever a propria mensagem -- as duas concordavam entre si, e as duas estavam erradas. Foi a lista de revisoes, com `APP_COMMIT` por linha, que mostrou.
+
+**Impacto:** Cloud Run (`api` em `api-00038-2hg`, trafego no LATEST), `infra/deploy-cloud-run.sh`, `docs/{DECISIONS,DECISIONS_INDEX,DEPLOYMENT,HANDOFF}.md`. Nenhuma linha de aplicacao.
+
 ## D-343 - Antes da proxima correcao do pico, o log do webhook passa a dizer quanto do ACK e a conta e quanto e a Cloud Task
 
 **Contexto:** D-339 mediu o ACK do webhook passando de 7 s no pico diario; a correcao dela esfriou as conexoes e piorou `orders_v2`, e D-340 a desfez. D-340 terminou com a pergunta que faltou antes: **nos ACKs lentos, quem paga?** O caminho com trabalho faz duas idas de rede antes de responder -- a consulta de `ml_accounts` no Postgres e a criacao da Cloud Task (gRPC) -- e o log de requisicao do Cloud Run so mostra a soma, mais o que vem antes do handler (fila da instancia, boot a frio). Escolher entre manter conexao quente, tirar a consulta da conta do caminho ou mudar a borda sem essa resposta seria o erro de D-339 de novo.
@@ -11440,6 +11448,8 @@ Milissegundos inteiros, nunca negativos. O relogio e `performance.now` em produc
 - **Candidata a correcao, a confirmar no pico:** as contas sao quatro, e o webhook so precisa de `id`, `organization_id` e `slug` por `seller_id`. Resolve-las em memoria, com ida ao banco so para seller ainda desconhecido, tiraria os ~50 ms de TODA notificacao -- inclusive das 776 do pico de 13/09, todas sem consumidor e todas pagando a consulta -- sem deixar caminho nenhum dependente de conexao quente. **O que o pico precisa responder antes:** se ali `lookup_ms` sobe (contencao no Postgres, e o cache ataca a causa) ou fica em ~50 ms enquanto o ACK cresce (fila na instancia e boot a frio, e o cache ajuda pouco -- a borda e que pede mudanca).
 
 A leitura do pico, depois das 09:00 UTC, fica para a proxima sessao: a espera passa de qualquer comando que da para manter aberto.
+
+**Impacto:** `apps/api/src/{webhook.ts,webhook.test.ts}`, `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,ROADMAP,HANDOFF}.md`. Sem migration.
 
 ## D-344 - Os ~54 `job_failed` diarios em `claims/{id}/returns` eram propagacao do Mercado Livre, nao perda -- 404 em claim recem-nascido deixa de ser falha
 
@@ -11602,13 +11612,63 @@ No worker, na mesma janela, 10 claims e 19 pedidos concluidos pelo caminho do we
 
 **Impacto:** `apps/api/src/{account-directory.ts,account-directory.test.ts}` (novos), `apps/api/src/{webhook.ts,webhook.test.ts,index.ts}`, `docs/{DECISIONS,DECISIONS_INDEX,API,ARCHITECTURE,MERCADO_LIVRE,ROADMAP,HANDOFF}.md`. Sem migration.
 
-**Impacto:** `apps/api/src/{webhook.ts,webhook.test.ts}`, `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,ROADMAP,HANDOFF}.md`. Sem migration.
+## D-347 - O roteiro de restore punha o dono na aba cujo botao sobrescreve o Dev -- e o comando dele nao rodava nesta maquina
+
+**Contexto:** D-332 deixou o ensaio de restore pronto: roteiro em `DEPLOYMENT.md` 8.1 e o comparador `check:restore`, provado nos dois sentidos contra dano simulado. O restore real e ato do dono, e ele pediu o passo a passo antes de clicar. Antes de entrega-lo, o roteiro foi conferido em tres frentes independentes -- documentacao oficial do Supabase e codigo do Studio, efeitos colaterais de um banco restaurado, execucao do passo 4 nesta maquina --, e uma revisao adversarial cruzou as tres. **O comparador estava certo; o caminho ate ele, nao.**
+
+---
+
+**1. O QUE ESTAVA ERRADO**
+
+| passo | dizia | o que e | evidencia |
+|---|---|---|---|
+| 1 | escolher o backup em *Scheduled backups* | o botao "Restore" dessa aba restaura **sobre o proprio projeto** ("Any new data since this backup will be lost"). O restore em projeto novo tem aba propria, "Restore to new project", com a lista e o dialogo dela. O passo 2 dizia "nunca sobre o proprio Dev", mas o passo 1 ja tinha posto o dono a um clique disso | codigo do Studio: `Database/Backups/BackupsList.tsx`, `DatabaseBackupsNav.tsx`, `RestoreToNewProject/CreateNewProjectDialog.tsx` |
+| 1 | `BACKUP_AT` = o instante mostrado | a lista mostra `inserted_at`, em UTC, e nenhum documento diz se e o inicio ou o fim do backup. O comparador exige contagem IGUAL ate `BACKUP_AT`: um instante depois do ponto consistente faz o Dev contar a mais e **reprova um restore bom** | `supabase.com/docs/guides/platform/backups`; `restore-check.mjs` |
+| 3 | Settings -> Database -> Connection string | hoje e o botao **Connect** no topo do projeto | `supabase.com/docs/guides/database/connecting-to-postgres` |
+| 4 | comando em bash, com `pnpm` | o shell do dono e o Windows PowerShell 5.1, com politica `Restricted`: `pnpm` resolve para `pnpm.ps1` e e recusado. `pnpm.cmd` roda (codigo 2 sem variaveis) | `Get-ExecutionPolicy`, `Get-Command pnpm` |
+| 4 | URL sem `sslmode` | o `pg` 8.23 conecta em **texto claro** (`defaults.js`: `ssl: false`). `sslmode=require` no `pg-connection-string` 2.14 vira `verify-full` e falha com `SELF_SIGNED_CERT_IN_CHAIN` (cadeia ate a Supabase Root 2021 CA). `sslmode=no-verify` fechou o handshake TLS 1.3 | sonda TLS sem credencial |
+| texto | "meia-noite da regiao, ~06:00 UTC" | 06:00 UTC e 03:00 em Brasilia | -- |
+
+---
+
+**2. O QUE FOI CONFERIDO E ESTA LIMPO**
+
+- **O restaurado nao age sozinho, pelo que esta versionado.** Nenhuma das 166 migrations usa `pg_cron`, `pg_net`, `http`, `supabase_functions`, `dblink`, FDW ou Vault; no banco local, `pg_cron` nem esta instalado e nenhum gatilho chama `supabase_functions` ou `net`; os agendamentos moram no Cloud Scheduler (`infra/cloud-scheduler.sh`), apontando para a `api`, e o clone recebe chaves de API novas. O que o Dashboard possa ter ligado no Dev nao se ve daqui -- por isso o roteiro manda conferir no restaurado: a documentacao diz que essas extensoes vem ATIVAS no clone.
+- **Rede.** `db.nmgccyqquwxecqffsidr.supabase.co` so tem registro AAAA; esta maquina tem IPv6 global e o TCP 5432 abriu. O pooler de sessao fica como plano B, na 5432 -- na 6543, modo transaction, o `READ ONLY` da sessao se perde entre transacoes.
+- **A regua do comparador vale.** Nenhum `created_at` retroativo nas oito tabelas de contagem exata (default `now()`, nenhum INSERT o informa), e o gatilho que aplica o movimento ao saldo e atomico.
+- **A senha do Dev nao se redefine de passagem:** o job de migrations de `ci.yml` usa `SUPABASE_DB_PASSWORD`.
+
+---
+
+**3. O ROTEIRO NOVO**
+
+`DEPLOYMENT.md` 8.1 em seis blocos:
+
+- **Antes:** plano, PITR, SSL, e fora da janela do backup.
+- **Restaurar pela aba certa,** anotando o custo mostrado e o tempo de restore, que nunca foi medido.
+- **No restaurado:** conferir as extensoes numa consulta so (o SQL Editor mostra apenas o ultimo resultado), com o que fazer se vier algo, e **calcular** `BACKUP_AT` = maior `created_at` do restaurado menos 15 minutos. Toda linha presente no restaurado foi gravada antes do ponto consistente, e os 15 minutos cobrem transacao aberta (`now()` marca o inicio dela). Resultado nulo e restore reprovado.
+- **O comando em PowerShell e em Git Bash,** com a senha lida sem eco e em percent-encoding, e **travas** que recusam placeholder esquecido, ref do Dev e URL igual nos dois lados.
+- **A leitura de cada saida:** o PASS que so vale com contagens longe de zero e alguma INFO diferente de zero, o codigo 1 sem veredito, uma linha para cada FAIL possivel, e -- para tabela exata com o Dev maior -- a comparacao **minuto a minuto nos dois projetos**, porque rodar de novo com um `BACKUP_AT` mais cedo so tira a janela da comparacao.
+- **O fim:** registrar numa D-xxx, apagar o restaurado, nunca apontar `api` ou `worker` para ele, e a lista do que o ensaio nao prova -- das 61 tabelas de `public`, o comparador conta 21.
+
+O cabecalho de `restore-check.mjs` repetia o comando antigo e passou a apontar para o roteiro, com o `sslmode`, a regra do `BACKUP_AT` e o volume corrigido (~2.742 webhooks por hora, D-339, e nao ~221).
+
+---
+
+**4. COMO FOI PROVADO**
+
+- **Duas revisoes independentes da primeira reescrita** -- uma de fidelidade (cada afirmacao contra a documentacao, o codigo do Studio e `restore-check.mjs`), outra de execucao literal -- acharam tres defeitos que ela ainda tinha, e os tres estao corrigidos:
+  1. **A regra "refaca com `BACKUP_AT` 2 h mais cedo" podia absolver uma perda.** Com o `BACKUP_AT` calculado, a borda ja foi descontada; o que sobra e transacao longa ou perda, e rodar mais cedo so esconde a janela. Virou a comparacao minuto a minuto.
+  2. **O Node aceita o placeholder como data valida** (`Date.parse("<AAAA-MM-DDTHH:MM:00Z>")` da 2000-01-01): o script passa da validacao, conecta nos dois bancos e reprova tudo com "invalid input syntax". A tabela dizia que isso dava codigo 2. As travas passaram a recusar placeholder e formato.
+  3. **No Git Bash, a senha passada ao `node` por variavel e reescrita quando parece caminho** (`/abc` vira `C:/Program Files/Git/abc`, `a=/b` vira `a=B:/`), e `read` sem `IFS=` corta espacos. A senha passou a ir pela entrada padrao.
+- **Os blocos rodaram literais**, gerados a partir do texto final e trocando so senha ficticia, placeholders e a chamada do comparador por um decodificador que nao conecta. PowerShell: 0 erros no parser; o caso valido decodifica as duas senhas iguais (`/aB3#kL9 ç%41 ` e `  sp a=/b €?& `) com `ssl={"rejectUnauthorized":false}`; a trava recusa os cinco invalidos (ref placeholder, ref do Dev, `BACKUP_AT` placeholder, ref com `< >`, `BACKUP_AT` ausente). Git Bash: `bash -n` limpo, o mesmo caso valido e os quatro invalidos recusados.
+- **As consultas rodaram no Postgres local**, com `default_transaction_read_only`: o passo 9 (nulos e zeros, `vault.secrets` legivel pelo `postgres`), o passo 10 (`2026-09-11T19:50:00Z`, aceito por `Date.parse` e como `$1`), as duas consultas minuto a minuto, e a contagem de 61 tabelas em `public`. Os comandos de desligar `pg_cron` e gatilho nao rodaram -- nao ha nada disso no banco local --, e o roteiro diz isso.
+- **Um incidente durante a prova, registrado.** O revisor de execucao rodou o `pnpm.cmd` de verdade contando com o codigo 2 do placeholder -- que nao vem (defeito 2) -- e o script fez **uma tentativa de login com senha ficticia contra o Dev**, recusada com `28P01`. Nenhuma credencial real saiu, e o restaurado nem foi tentado. Uma sonda depois, sem usuario (so `SSLRequest` e handshake), abriu TCP e TLS 1.3 no Dev: a conexao deste IP segue aberta. E exatamente a armadilha que as travas agora fecham.
 
 ---
 
 **5. A LICAO**
 
-**Quando uma ferramenta diz o NOME de algo, confira o nome na fonte, nao no campo de onde a frase saiu.** A guarda acertou o percentual e errou a revisao porque leu o mesmo campo velho que o `gcloud` usa para escrever a propria mensagem -- as duas concordavam entre si, e as duas estavam erradas. Foi a lista de revisoes, com `APP_COMMIT` por linha, que mostrou.
+**Roteiro que nunca foi percorrido e hipotese, como backup que nunca foi restaurado.** D-332 provou o comparador contra dano simulado e escreveu o caminho ate ele sem percorre-lo; a primeira correcao, escrita com evidencia, ainda tinha tres defeitos que so apareceram quando os blocos rodaram como estao no texto. A pergunta que fica para todo roteiro de ato humano: **cada botao que ele nomeia foi conferido na interface de hoje, e cada comando rodou, literal, no shell de quem vai colar?**
 
-**Impacto:** Cloud Run (`api` em `api-00038-2hg`, trafego no LATEST), `infra/deploy-cloud-run.sh`, `docs/{DECISIONS,DECISIONS_INDEX,DEPLOYMENT,HANDOFF}.md`. Nenhuma linha de aplicacao.
-
+**Impacto:** `docs/DEPLOYMENT.md` (8.1 reescrita; item 4 da secao 8), `packages/db/scripts/restore-check.mjs` (so o comentario de cabecalho), `docs/{DECISIONS,DECISIONS_INDEX,HANDOFF}.md`. De passagem, em `DECISIONS.md`: a licao e o Impacto de D-342 e o Impacto de D-343, que estavam soltos depois de D-346, voltaram para as secoes delas. Sem migration e sem codigo.

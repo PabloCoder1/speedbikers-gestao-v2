@@ -215,29 +215,156 @@ Antes de declarar qualquer mudança operacional como implantada, verificar contr
 1. Migrar `infra/` para Terraform.
 2. Criar projeto Supabase de produção e serviços Cloud Run de produção.
 3. Executar a carga inicial: backfill do Mercado Livre para pedidos e anúncios. ETL da V2 para vínculos/estoque/NF-e foi descartado por evidência medida (D-040); só resta, se ainda fizer sentido no momento, migrar o(s) pedido(s) de compra reais da V2.
-4. Verificar backup e restore — restore testado, não apenas backup configurado. **O ensaio está pronto (D-332)**: roteiro em 8.1.
+4. Verificar backup e restore — restore testado, não apenas backup configurado. **O ensaio está pronto (D-332)**: roteiro em 8.1, corrigido em D-347.
 5. Testes de carga e revisão de `pg_stat_statements`.
 6. Revisão de segurança e de secrets — **fechada** (D-328 a D-331).
 7. Corte da operação. Antes dele, criar o ambiente de produção: roteiro em 8.2.
 
 ### 8.1 Ensaio de restore
 
-O que existe, medido em 2026-09-13 no projeto Dev: **backup físico diário** (perto da meia-noite da região, ~06:00 UTC), **oito listados, ~7 dias de retenção**. PITR não confirmado. Os arquivos não moram no Supabase: estão no GCS (`erp-imports`, `documents`, `raw-ml`), com **soft delete de 7 dias** e **sem versionamento** — o backup do banco não os inclui, e o ensaio abaixo não os cobre.
+O que existe, medido em 2026-09-13 no projeto Dev: **backup físico diário** (~06:00 UTC, 03:00 em Brasília), **oito listados, ~7 dias de retenção**. PITR não confirmado. Os arquivos não moram no Supabase: estão no GCS (`erp-imports`, `documents`, `raw-ml`), com **soft delete de 7 dias** e **sem versionamento** — o backup do banco não os inclui, e o ensaio abaixo não os cobre.
 
-1. **Escolher o backup** em Database → Backups → *Scheduled backups* e anotar o instante **em UTC** — é o `BACKUP_AT`.
-2. **Restaurar num projeto NOVO** (*Restore to new project*). **Nunca** use o restore sobre o próprio Dev: ele sobrescreve o banco que está em uso. O projeto novo é cobrado enquanto existir.
-3. **Pegar as duas URLs de conexão** (Dev e restaurado), em Settings → Database → Connection string, com a senha de cada um.
-4. **Rodar a comparação** — só lê, as duas sessões abrem em `READ ONLY`, e as URLs nunca são impressas:
+> ⚠️ **Roteiro corrigido em D-347.** A primeira versão mandava escolher o backup na aba *Scheduled backups* — onde o botão "Restore" **sobrescreve o próprio Dev** —, trazia o comando em sintaxe bash (no Windows PowerShell desta máquina `pnpm` não roda: política `Restricted`), conectava sem SSL e usava o horário da lista como `BACKUP_AT`, o que pode reprovar um restore bom.
 
-   ```bash
-   DEV_DB_URL="postgresql://postgres:SENHA@db.<ref-dev>.supabase.co:5432/postgres" \
-   RESTORED_DB_URL="postgresql://postgres:SENHA@db.<ref-restaurado>.supabase.co:5432/postgres" \
-   BACKUP_AT="2026-09-13T05:59:13Z" \
-     pnpm --filter @sb/db run check:restore
+**A. Antes — só leitura no Dev**
+
+1. Plano **Pro ou superior**: o restore em projeto novo só existe em plano pago, com backup físico ligado.
+2. **Project Settings → Add-ons**: o PITR está ativo? Com PITR ligado não há backup diário, e o passo 6 vira escolher data e hora.
+3. **Database Settings → SSL Configuration**: "Enforce SSL" está ligado? Só anotar — mudar reinicia o banco, e o clone herda a configuração.
+4. Fazer fora da janela 05:30–07:00 UTC (02:30–04:00 em Brasília), onde já estão o backup e os jobs horários.
+
+**B. Restaurar**
+
+5. **Database → Backups → aba "Restore to new project"** (Beta). ⚠️ **Nunca** o "Restore" da aba *Scheduled backups*: ele restaura sobre o Dev ("Any new data since this backup will be lost"). Se a aba não aparecer ou recusar — plano, feature flag, permissão, projeto com High Availability, OrioleDB, Postgres abaixo de 15, projeto offline ou que já é clone —, pare: não improvise pela outra aba.
+6. **Escolher o backup** na lista e anotar o horário mostrado — UTC, `DD MMM YYYY HH:mm:ss (+0000)`, campo `inserted_at`. Ele **não** é o `BACKUP_AT` (passo 10).
+7. **Restore** → diálogo "Create new project": nome (ex.: `sb-restore-ensaio-AAAAMMDD`) e uma **Database password** nova, guardada no gerenciador de senhas. A tela mostra o custo **mensal** adicional (mesmo compute do Dev, disco 1,5×); o cobrado é por hora, e hora começada conta inteira. **"Restore to new project"**, anotando a hora do clique.
+8. Anotar a hora em que o projeto ficou pronto — é o tempo de restore, que nunca foi medido.
+
+**C. No restaurado, pelo SQL Editor — antes do comparador**
+
+9. **Extensões que agem para fora vêm ATIVAS no clone** (documentação do Supabase). Nenhuma migration as cria (conferido em D-347), mas o Dashboard poderia ter criado. Uma consulta só, de propósito — o SQL Editor mostra apenas o resultado da última instrução:
+
+   ```sql
+   select
+     (select string_agg(extname, ', ') from pg_extension where extname in ('pg_cron','pg_net','http','wrappers','dblink','postgres_fdw','pgmq')) as extensoes,
+     to_regclass('cron.job') as cron,
+     (select count(*) from pg_trigger t join pg_proc p on p.oid = t.tgfoid join pg_namespace n on n.oid = p.pronamespace where n.nspname in ('supabase_functions','net')) as gatilhos_http,
+     (select count(*) from pg_foreign_server) as foreign_servers,
+     (select count(*) from vault.secrets) as segredos_vault;
    ```
 
-5. **Ler o veredito.** `RESTORE_OK` exige: toda migration do restaurado existe no Dev; RLS ligada em toda tabela de `public`; as tabelas append-only com a MESMA contagem até `BACKUP_AT` nos dois lados; e o ledger de estoque batendo com a projeção dentro do restaurado. As tabelas de catálogo saem como INFO — a diferença é o Dev andando, não defeito.
-6. **Apagar o projeto restaurado** assim que o veredito estiver registrado.
+   Esperado: `extensoes` e `cron` nulos, `gatilhos_http` e `foreign_servers` 0. `segredos_vault` acima de 0 não age sozinho, mas vai para o registro: a chave raiz do Vault vem junto no clone, e os segredos ficam legíveis nele. A tabela `supabase_functions.hooks` existir, sem gatilho, também não age. Se vier outra coisa, desligar **no restaurado** (confira o ref no topo) antes de seguir:
+
+   - `cron` não nulo: `select jobid, jobname, schedule, active from cron.job;` e `select cron.alter_job(jobid, active := false) from cron.job;`
+   - `gatilhos_http` acima de 0: `select t.tgrelid::regclass, t.tgname from pg_trigger t join pg_proc p on p.oid = t.tgfoid join pg_namespace n on n.oid = p.pronamespace where n.nspname in ('supabase_functions','net');` e `drop trigger <tgname> on <tabela>;` para cada linha.
+   - Os dois comandos de desligar **não foram executados**: o banco local não tem `pg_cron` nem gatilho desses para testar.
+
+10. **Calcular o `BACKUP_AT`:**
+
+    ```sql
+    select to_char(
+      date_trunc('minute', greatest(
+        (select max(created_at) from public.job_runs),
+        (select max(created_at) from public.domain_events),
+        (select max(created_at) from public.stock_movements),
+        (select max(created_at) from public.sync_runs)
+      ) - interval '15 minutes') at time zone 'UTC',
+      'YYYY-MM-DD"T"HH24:MI:SS"Z"'
+    ) as backup_at;
+    ```
+
+    Por que não o horário da lista: a documentação não diz se `inserted_at` é o início ou o fim do backup, e o comparador exige contagem **igual** até `BACKUP_AT` — um instante depois do ponto consistente faz o Dev contar a mais e reprova um restore bom. Toda linha presente no restaurado foi gravada antes desse ponto, então o maior `created_at` dele é um limite seguro; os 15 minutos cobrem transação aberta por até 15 minutos (`now()` marca o início dela). A margem certa não é verificável — por isso a leitura do FAIL, no bloco E, não confia nela.
+
+    - **Resultado nulo:** as quatro tabelas estão vazias no restaurado. É restore reprovado: não rode o comparador; registre e pare.
+    - **Mais de 1 h longe do horário da lista:** confira se escolheu o backup certo.
+    - **Se o passo 9 achou algo ativo,** um job pode ter gravado no restaurado antes de ser desligado e empurrado o maior `created_at` para depois do backup: use o menor entre o resultado e o horário da lista menos 15 minutos.
+
+**D. Rodar o comparador** — só lê: as duas sessões abrem em `READ ONLY`, e as URLs nunca são impressas. No **Windows PowerShell**, um bloco por vez; o ref do restaurado está na URL do Dashboard (`.../project/<ref>`):
+
+```powershell
+# 0
+Set-Location 'C:\Users\usuario\Desktop\Projetos\speedbikers-gestao-v2'
+
+# 1 — senha do Dev, sem eco e fora do histórico
+$env:DEV_DB_URL = 'postgresql://postgres:' + [uri]::EscapeDataString([Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR((Read-Host 'Senha do banco DEV' -AsSecureString)))) + '@db.nmgccyqquwxecqffsidr.supabase.co:5432/postgres?sslmode=no-verify'
+
+# 2 — troque <REF_RESTAURADO>
+$env:RESTORED_DB_URL = 'postgresql://postgres:' + [uri]::EscapeDataString([Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR((Read-Host 'Senha do banco RESTAURADO' -AsSecureString)))) + '@db.<REF_RESTAURADO>.supabase.co:5432/postgres?sslmode=no-verify'
+
+# 3 — o valor do passo 10
+$env:BACKUP_AT = '<AAAA-MM-DDTHH:MM:00Z>'
+
+# 4 — recusa placeholder esquecido, URL igual ou do Dev, e roda
+if ($env:DEV_DB_URL -eq $env:RESTORED_DB_URL -or $env:RESTORED_DB_URL -like '*nmgccyqquwxecqffsidr*' -or $env:RESTORED_DB_URL -like '*<*' -or $env:BACKUP_AT -cnotmatch '^\d{4}-\d\d-\d\dT\d\d:\d\d:00Z$') { Write-Error 'RESTORED_DB_URL ou BACKUP_AT invalido: placeholder esquecido, ou URL do Dev' } else { pnpm.cmd --filter '@sb/db' run check:restore; "codigo de saida: $LASTEXITCODE" }
+```
+
+No Git Bash, o equivalente — troque os dois valores das primeiras linhas:
+
+```bash
+cd /c/Users/usuario/Desktop/Projetos/speedbikers-gestao-v2
+REF_RESTAURADO='<REF_RESTAURADO>'
+BACKUP_AT_CALCULADO='<AAAA-MM-DDTHH:MM:00Z>'
+IFS= read -rsp 'Senha DEV: ' SD; echo; IFS= read -rsp 'Senha RESTAURADO: ' SR; echo
+enc() { printf '%s' "$1" | node -e 'let s="";process.stdin.setEncoding("utf8");process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(encodeURIComponent(s)))'; }
+if [[ "$REF_RESTAURADO" == *nmgccyqquwxecqffsidr* || "$REF_RESTAURADO" == *'<'* || ! "$BACKUP_AT_CALCULADO" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:00Z$ ]]; then
+  echo 'REF_RESTAURADO ou BACKUP_AT invalido: placeholder esquecido, ou ref do Dev'
+else
+  DEV_DB_URL="postgresql://postgres:$(enc "$SD")@db.nmgccyqquwxecqffsidr.supabase.co:5432/postgres?sslmode=no-verify" \
+  RESTORED_DB_URL="postgresql://postgres:$(enc "$SR")@db.$REF_RESTAURADO.supabase.co:5432/postgres?sslmode=no-verify" \
+  BACKUP_AT="$BACKUP_AT_CALCULADO" \
+    pnpm --filter @sb/db run check:restore; echo "EXIT=$?"
+fi
+unset SD SR
+```
+
+- **As travas existem porque o placeholder engana:** o Node aceita `<AAAA-MM-DDTHH:MM:00Z>` como data válida, e o script então **conecta nos dois bancos** — gastando tentativa de senha — e reprova tudo com "invalid input syntax".
+- **`pnpm.cmd`, não `pnpm`**, no PowerShell: `pnpm` resolve para `pnpm.ps1`, que a política `Restricted` recusa.
+- **`sslmode=no-verify`** criptografa sem verificar o servidor. Sem `sslmode` a conexão sai em texto claro; `sslmode=require` no `pg-connection-string` 2.14 vira `verify-full` e falha com `SELF_SIGNED_CERT_IN_CHAIN` (a cadeia termina na Supabase Root 2021 CA). A verificação completa (`sslmode=verify-full&sslrootcert=<prod-ca-2021.crt>`) não foi testada.
+- **A senha passa por percent-encoding**: `#`, `/` ou `?` crus dão `ERR_INVALID_URL`, e um `%41` cru vira outra senha sem aviso. No Git Bash ela chega ao `node` pela entrada padrão, não por variável: o Git Bash reescreve variável que parece caminho (`/abc` vira `C:/Program Files/Git/abc`), e o `IFS=` preserva espaço no começo e no fim.
+- **A conexão direta `db.<ref>.supabase.co` é só IPv6** — esta máquina alcança (D-347). Sem IPv6 (`ENETUNREACH`/`EHOSTUNREACH`): botão **Connect** → *Session pooler*, e nas duas URLs troque `postgres:` por `postgres.<ref>:` e `db.<ref>.supabase.co` pelo host do pooler, mantendo a porta **5432** e `/postgres?sslmode=no-verify`. **Nunca a 6543**: em modo transaction o `READ ONLY` da sessão se perde.
+- **Duas senhas erradas: pare.** Falha repetida de autenticação bane o IP. Se só a do restaurado falhar, redefina **no restaurado**. **Não redefina a do Dev**: o job de migrations da CI usa `SUPABASE_DB_PASSWORD` (`ci.yml`).
+
+**E. Ler o veredito**
+
+`RESTORE_OK` exige que nenhuma linha saia FAIL: toda migration do restaurado existe no Dev; RLS ligada em toda tabela de `public`; as 8 tabelas append-only com `created_at` com a MESMA contagem até `BACKUP_AT` nos dois lados, e as 4 com a data do fato (`occurred_at`, `changed_at`, `requested_at`) com o restaurado ≤ Dev; `auth.users` criados até `BACKUP_AT` com o restaurado ≥ Dev; e o ledger de estoque batendo com a projeção dentro do restaurado, com ao menos uma organização. As tabelas de catálogo saem como INFO — a diferença é o Dev andando, não defeito —, mas uma contagem que quebra nelas também vira FAIL.
+
+| saída | leitura |
+|---|---|
+| código 0, `RESTORE_OK` | passou — **só aceite** com `job_runs`, `domain_events` e `stock_movements` longe de zero e alguma INFO com diferença ≠ 0. Contagens zeradas = papel sem `BYPASSRLS`; toda INFO com diferença 0 = a mesma base nos dois lados |
+| código 1 **sem** a linha `RESTORE_...` | não é veredito: quebrou fora das seções — ao conectar, ao abrir o `READ ONLY` ou ao fechar no fim. Leia a exceção |
+| código 2 | variável faltando, ou `BACKUP_AT` que o Node não entende. Um placeholder esquecido **não** dá 2 (ver as travas acima) |
+| exata com o Dev maior | o `BACKUP_AT` já está 15 min abaixo da linha mais nova do restaurado, então sobram duas explicações: transação aberta por mais de 15 min, ou **perda**. Rode nos DOIS projetos, no SQL Editor, `select date_trunc('minute', created_at) as minuto, count(*) from public.<tabela> where created_at > timestamptz '<BACKUP_AT>' - interval '2 hours' and created_at <= '<BACKUP_AT>' group by 1 order by 1;` e compare minuto a minuto: poucas linhas num minuto só é transação longa; diferença espalhada é perda. **Rodar de novo com um `BACKUP_AT` mais cedo não absolve** — só tira a janela da comparação |
+| exata com o restaurado maior | migration de expurgo aplicada no Dev depois do backup (ver a INFO de migrations) ou defeito |
+| aproximada com o restaurado maior | defeito |
+| `auth.users` com o restaurado menor | usuário perdido, ou transação longa: a mesma consulta da linha das exatas, com `auth.users` no lugar da tabela |
+| migrations em FAIL, "só no restaurado" ou restaurado 0 | uma das URLs aponta para o projeto errado |
+| RLS em FAIL | rode a mesma consulta no Dev: se lá também falta, a tabela nasceu sem RLS; se não, é defeito do restore |
+| ledger em FAIL com "0 organização(ões)" | o restaurado não tem organização: restore reprovado |
+| ledger × projeção em FAIL | rode a régua no SQL Editor do Dev (a consulta da seção 4 do script, só leitura). Bater hoje não prova que batia no backup — `v3-reconcile-balances` roda todo dia e pode ter corrigido; a referência é a execução da verificação do ledger mais próxima do backup, em `job_runs` |
+| "a seção quebrou: …" | não é contagem: leia a mensagem na tabela abaixo |
+
+| mensagem | causa |
+|---|---|
+| `pnpm.ps1 não pode ser carregado` | digitou `pnpm`; use `pnpm.cmd` |
+| `SELF_SIGNED_CERT_IN_CHAIN` | URL com `sslmode=require` ou `verify-full` sem CA; use `no-verify` |
+| `ERR_INVALID_URL` | senha colada sem codificar, ou `<` `>` sobrando no ref |
+| `invalid input syntax for type timestamp with time zone` | `BACKUP_AT` com placeholder ou formato errado |
+| `ENOTFOUND` | ref errado, ou o DNS do projeto novo ainda não publicou |
+| `ENETUNREACH` / `EHOSTUNREACH` | rede sem IPv6; use o *Session pooler* |
+| `connect ETIMEDOUT`, ou nenhuma resposta | firewall ou VPN, ou IP banido depois de falhas de senha — não insista |
+| `password authentication failed` | senha errada |
+| `Tenant or user not found` | pooler com host ou usuário errado |
+| `canceling statement due to statement timeout` | uma contagem passou de 120 s; rode de novo |
+| `permission denied for function compute_inventory_balances_from_ledger` | o usuário não é `postgres` |
+
+**F. Encerrar**
+
+11. No PowerShell, limpar e **fechar a janela**: `Remove-Item Env:DEV_DB_URL, Env:RESTORED_DB_URL, Env:BACKUP_AT -ErrorAction SilentlyContinue`. No Git Bash não sobra variável além das senhas, que o `unset SD SR` do bloco apaga.
+12. **Registrar numa D-xxx antes de apagar:** commit do `restore-check.mjs`; horário da lista, o maior `created_at` antes dos −15 min e o `BACKUP_AT` usado; estado do PITR e do SSL; custo mostrado; horas do clique e do projeto pronto; saída completa com o código de saída; resultado do passo 9; ref do restaurado; e, depois de apagar, a hora da exclusão.
+13. **Apagar o projeto restaurado:** conferir no topo que o ref **não** é `nmgccyqquwxecqffsidr` → **Settings → General → Delete project** → digitar o nome. Irreversível; a cobrança para na hora.
+14. Em nenhum momento apontar `.env.local`, `api` ou `worker` para o restaurado: ele leva hashes de senha, os tokens do Mercado Livre cifrados e a chave raiz do Vault.
+
+**O que o ensaio não prova:** os arquivos do GCS; configuração de Auth e chaves de API (o clone não as copia); conteúdo de linha (só contagens); as tabelas de catálogo (a diferença é INFO); as demais tabelas de `public` — são 61 no banco local, e o comparador conta 21 —, como `support_cases`, `order_items` e `ml_credentials`, das quais só se sabe que têm RLS; as políticas de RLS (só que ela está ligada); `api` e `worker` rodando contra o restaurado; o RPO (até ~24 h de perda com backup diário); o PITR; o restore sobre o próprio projeto; e produção.
 
 ### 8.2 Criar o ambiente de produção (D-333)
 
