@@ -11628,6 +11628,26 @@ Na janela inteira, 2.309 webhooks: ACK p50 2 · p95 175 · max 392 ms, **nenhum 
 
 **O que isso prova e o que nao prova.** Com metade da concorrencia da rajada de D-345, a consulta que custava 2,8 s nao existe mais, e o ACK ficou dentro da regra do Mercado Livre sem a `api` escalar. **Nao prova o pico grande:** as rajadas de fim de semana chegam a 1.050 webhooks por minuto e deixaram 8.554 ACKs lentos em 8 minutos em 12/09. O item de carga so fecha com uma dessas lida do mesmo jeito.
 
+---
+
+**6. A RAJADA GRANDE -- o pico do ACK fechou**
+
+Lida em 14/09 do mesmo jeito: 13:35 a 14:00 UTC, todos em `api-00040-qrk` (`/health` em `a16948e`).
+
+| | D-345 (07:50, conta no Postgres) | 12:37 (secao 5) | **13:49** |
+|---|---|---|---|
+| pico no mesmo segundo | 110 | 51 | **319** |
+| rajada | 280 em 90 s | 68 em 2 s | **1.737 em 32 s** (1.158 em 10 s) |
+| maior minuto | -- | -- | **1.283** (o maior de D-339 foi 1.050) |
+| `lookup_ms` na rajada | p95 2.811 ms | 0 | **0 em 1.762 notificacoes** (max 0) |
+| ACK na rajada | p95 2.814 ms, 49 acima de 2 s | max 140 ms | **p50 2 · p95 3 · max 190 ms**, nenhum acima de 500 ms |
+| `enqueue_ms` na rajada | p50 167 ms | p50 137 ms | p50 124 ms (38 enfileirados) |
+| instancias | a quente e mais cinco | uma | **uma, sem escalar** |
+
+Na janela inteira, 4.878 webhooks: ACK max 454 ms, nenhum acima de 500 ms, e nenhum WARNING ou ERROR na `api`. No `worker`, nenhum ERROR; os `slow_operation` de `sync.webhook.received` (acima de 1,5 s) ficaram em 9 a 13 por 5 minutos durante a rajada, na faixa dos 3 a 12 das 12:35 as 13:15. A recarga do prazo de 5 minutos das 13:56 custou 266 e 268 ms as duas notificacoes que a esperaram -- o maior `lookup_ms` da janela, ainda abaixo da regra.
+
+**O que fecha:** o ACK lento nas rajadas, aberto desde D-339. A causa medida em D-345 -- a consulta da conta sob concorrencia -- nao existe mais: com quase o triplo do pico daquela rajada, e um minuto acima do maior de D-339, o ACK ficou em 190 ms no pior caso, numa instancia so. **O que nao foi visto:** a duracao de oito minutos das rajadas de fim de semana (12/09 09:00). **O que segue aberto no item de carga** ja nao e o webhook: a revisao de `pg_stat_statements` do Dev (ato humano) e a decisao sobre teste sintetico das telas.
+
 **Impacto:** `apps/api/src/{account-directory.ts,account-directory.test.ts}` (novos), `apps/api/src/{webhook.ts,webhook.test.ts,index.ts}`, `docs/{DECISIONS,DECISIONS_INDEX,API,ARCHITECTURE,MERCADO_LIVRE,ROADMAP,HANDOFF}.md`. Sem migration.
 
 ## D-347 - O roteiro de restore punha o dono na aba cujo botao sobrescreve o Dev -- e o comando dele nao rodava nesta maquina

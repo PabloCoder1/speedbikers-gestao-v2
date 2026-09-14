@@ -776,6 +776,8 @@ gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.serv
 
 **Primeira rajada depois de D-346 — menor que a de referência** (14/09, 12:37:59 UTC, `api-00040-qrk`): 68 webhooks em 2 s, **51 no mesmo segundo** (a de D-345 teve 110). `lookup_ms` **0 ms** em todas as 89 notificações da rajada; ACK **p50 2 · p95 2 · max 140 ms**, nenhum acima de 500 ms; uma instância só, sem escalar. Na janela de 12:25 a 12:52 UTC (2.309 webhooks), nenhum ACK acima de 500 ms (p95 175, max 392 ms — o que sobra é a Cloud Task). O único `lookup_ms` acima de zero é a recarga do prazo de 5 minutos: 10 notificações em 27 min, de 8 a 95 ms. **Ainda falta** uma rajada do porte das de fim de semana (1.050/min), lida do mesmo jeito. Tabela em D-346, seção 5.
 
+**A rajada grande — o pico fechou** (14/09, 13:49:49–13:50:20 UTC, `api-00040-qrk`): 1.737 webhooks em 32 s, **319 no mesmo segundo** (quase o triplo da de D-345) e **1.283 no minuto** (acima do maior minuto de D-339, 1.050). `lookup_ms` **0 ms** nas 1.762 notificações da rajada; ACK **p50 2 · p95 3 · max 190 ms**, nenhum acima de 500 ms; uma instância só, sem escalar. Na janela de 13:35 a 14:00 UTC (4.878 webhooks), max 454 ms e nenhum acima de 500 ms; no `worker`, nenhum ERROR e `slow_operation` na faixa de antes da rajada. O maior `lookup_ms` foi a recarga de 5 minutos das 13:56 (268 ms). **Ainda não visto:** a duração de oito minutos das rajadas de fim de semana. Tabela em D-346, seção 6.
+
 ## Relatório de saúde — `report:health` (D-205)
 
 O item do P1 pedia "relatório de performance sobre o que já existe
