@@ -11414,7 +11414,13 @@ Milissegundos inteiros, nunca negativos. O relogio e `performance.now` em produc
 - `@sb/api`: typecheck, lint e **340 testes** (`webhook.test.ts` 39, **+5**): o enfileirado separa as duas etapas com valores exatos (42 e 164 ms, incluindo o arredondamento); o sem consumidor mede so a conta e nao tem `enqueue_ms`; conta desconhecida tambem mede a consulta; payload invalido nao consulta o relogio (nao ha etapa); e, sem relogio injetado, os campos saem inteiros e nao negativos.
 - **Mutacao:** removidas as 6 linhas que poem os campos nos logs, **4 falhas** -- os quatro testes que afirmam os campos. O de payload invalido segue verde, como deve. Arquivo restaurado e conferido byte a byte.
 
-**Nao esta no ar.** A leitura que responde a pergunta so existe depois de publicar e passar por um pico (o de 13/09 foi as 09:00 UTC). Publicar e ato que o usuario autoriza; e com a guarda de D-341/D-342 no script.
+---
+
+**3. PUBLICADO** (com autorizacao do usuario, depois da CI verde de `59f49dd`)
+
+`deploy-cloud-run.sh api`, das 02:57 as 03:01 UTC: `api-00039-9vm`. **A guarda de D-341/D-342 passou num deploy normal pela primeira vez** -- *"api-00039-9vm serve 100% do trafego"* --, com o trafego no LATEST, `latestCreatedRevisionName` igual a `latestReadyRevisionName` e o `.env.deploy.yaml` removido. `/health` responde `59f49dd`. Linha de base, 30 min em `api-00038-2hg` logo antes: 715 webhooks, ACK p50 70 ms, p95 277 ms, nenhum acima de 500 ms, 187 enfileirados, zero ERROR.
+
+**Primeiro minuto:** os campos saem em **todos** os logs (170 sem consumidor com `lookup_ms`; os enfileirados com os dois), zero ERROR, e o ACK dentro da linha de base (177 webhooks, p50 58 ms, p95 140 ms, nenhum acima de 500 ms). Ja com um sinal, pequeno demais para concluir: `lookup_ms` p50 55 ms, e **`enqueue_ms` p50 410 ms em 4 amostras** -- as primeiras Cloud Tasks de uma instancia recem-criada, que pagam a abertura do canal gRPC. Se isso se repetir depois de pausa, e o candidato de D-340. A leitura com 20 minutos fica no commit seguinte; a do pico, depois das 09:00 UTC.
 
 **Impacto:** `apps/api/src/{webhook.ts,webhook.test.ts}`, `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,ROADMAP,HANDOFF}.md`. Sem migration.
 
