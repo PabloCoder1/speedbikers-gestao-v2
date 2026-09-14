@@ -772,6 +772,8 @@ gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.serv
 
 **Primeira rajada medida — é o Postgres** (14/09, 07:50 UTC, D-345): 280 webhooks em 90 s, 110 no mesmo segundo. `lookup_ms` p50 **366** · p95 **2.811** ms na rajada, contra 55 · 103 fora dela; `enqueue_ms` igual (p50 167 ms). 250 das 280 requisições caíram na instância quente, com ACK p95 2.814 ms — a consulta explica o ACK. As cinco instâncias novas ficaram prontas em 3–4 s e pegaram só 30. **E o pico não é diário:** 78 rajadas com ACK acima de 2 s em 10 dias, 26.748 ACKs lentos no total; a das 09:00 UTC só apareceu no fim de semana.
 
+**Depois de D-346, fora de pico** (`api-00040-qrk`, 14/09 10:08–10:29 UTC, 399 webhooks): com as contas em memória, `lookup_ms` foi a **p50 0 · p95 0 ms** (antes 59 · 116) e o ACK a **p50 3 · p95 206 ms** (antes 70 · 278). `enqueue_ms` ficou igual (p50 185 ms), e só 1 ACK passou de 500 ms. **O que ainda falta medir:** a próxima rajada, com a mesma consulta desta seção — `lookup_ms` durante ela e o ACK nos minutos mais cheios.
+
 ## Relatório de saúde — `report:health` (D-205)
 
 O item do P1 pedia "relatório de performance sobre o que já existe

@@ -11585,7 +11585,20 @@ Resolver as contas **em memoria para toda notificacao**: a tabela inteira (quatr
 
 `deploy-cloud-run.sh api`, das 10:04 as 10:08 UTC: `api-00040-qrk`, 100% do trafego no LATEST, a guarda de D-342 passou, `/health` responde `a16948e`. Linha de base, 30 min em `api-00039-9vm` logo antes: 573 webhooks, ACK p50 70 ms, p95 278 ms, nenhum acima de 500 ms; `lookup_ms` p50 59 ms, p95 116 ms; `enqueue_ms` p50 178 ms em 109 enfileirados; zero ERROR.
 
-**Primeiros cinco minutos:** as duas primeiras notificacoes pagaram a carga da tabela -- 211 e 145 ms, esperando a mesma carga em voo -- e **as 65 seguintes resolveram a conta em 0 ms**. Nenhuma "conta desconhecida", nenhum aviso; 16 `orders_v2` enfileirados, com `enqueue_ms` p50 203 ms -- o caminho com trabalho igual ao de antes. A leitura com 20 minutos fica no commit seguinte; a prova de verdade e a proxima rajada.
+**Primeiros cinco minutos:** as duas primeiras notificacoes pagaram a carga da tabela -- 211 e 145 ms, esperando a mesma carga em voo -- e **as 65 seguintes resolveram a conta em 0 ms**. Nenhuma "conta desconhecida", nenhum aviso; 16 `orders_v2` enfileirados, com `enqueue_ms` p50 203 ms -- o caminho com trabalho igual ao de antes. **Com 20 minutos** (10:08 a 10:29 UTC):
+
+| | antes (`api-00039-9vm`, 30 min) | depois (`api-00040-qrk`, 20 min) |
+|---|---|---|
+| webhooks | 573 | 399 |
+| ACK p50 · p95 · p99 | 70 · 278 · 324 ms | **3 · 206 · 252 ms** |
+| acima de 500 ms | 0 | 1 (567 ms) |
+| `lookup_ms` p50 · p95 | 59 · 116 ms | **0 · 0 ms** (max 71; 3 acima de 5 ms) |
+| `enqueue_ms` p50 · p95 | 178 · 213 ms (109) | 185 · 225 ms (122) |
+| ERROR | 0 | 0 |
+
+No worker, na mesma janela, 10 claims e 19 pedidos concluidos pelo caminho do webhook. **O caminho com trabalho nao esfriou:** D-340 tinha levado ~9% dos enfileirados acima de 500 ms; aqui, no maximo 1 de 122. O ACK que sobra e a Cloud Task (~185 ms) nas notificacoes com trabalho.
+
+**A prova de verdade continua sendo a proxima rajada:** `lookup_ms` em 0 durante ela, e o ACK sem os segundos de D-345.
 
 **Impacto:** `apps/api/src/{account-directory.ts,account-directory.test.ts}` (novos), `apps/api/src/{webhook.ts,webhook.test.ts,index.ts}`, `docs/{DECISIONS,DECISIONS_INDEX,API,ARCHITECTURE,MERCADO_LIVRE,ROADMAP,HANDOFF}.md`. Sem migration.
 
