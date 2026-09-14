@@ -11493,6 +11493,49 @@ Em `processClaimReturn`, um `MercadoLivreApiError` com status **404** na busca d
 
 **Impacto:** `apps/worker/src/handlers/{claim-return.ts,claim-return.test.ts}`, `docs/{DECISIONS,DECISIONS_INDEX,MERCADO_LIVRE,HANDOFF}.md`. Sem migration.
 
+## D-345 - O ACK lento nas rajadas e a consulta da conta no Postgres sob concorrencia -- medido na primeira rajada com o log por etapa
+
+**Contexto:** D-343 pos no log do webhook o tempo da consulta da conta (`lookup_ms`) e da Cloud Task (`enqueue_ms`), e deixou a pergunta que escolhe a correcao: nas rajadas, quem paga? A leitura estava marcada para o pico das 09:00 UTC. **Em 14/09 esse pico nao veio** -- 508 webhooks de 08:45 a 09:20, no maximo 42 por minuto. A medicao seguinte mostrou por que, e achou uma rajada que ja tinha acontecido com o log novo.
+
+---
+
+**1. AS RAJADAS NAO SAO DIARIAS, SAO FREQUENTES** (10 dias, 04/09 a 14/09)
+
+Lidos so os ACKs acima de 2 s -- o sintoma --, agrupados por minuto com folga de 3 minutos: **26.748 ACKs acima de 2 s em 78 rajadas**, contra a regra de 500 ms do Mercado Livre. As maiores (mais de 500 lentos cada): 06/09 09:00, 07/09 03:48 e 17:52 (max **48,8 s**), 08/09 07:57, 10:41 e 17:40, 10/09 21:55 e 22:47, 11/09 02:05 e 03:00, **12/09 09:00 (8 minutos, 8.554 lentos, max 48,8 s)**, 12/09 15:38 e 13/09 09:00. O das 09:00 UTC (06:00 em Sao Paulo) aparece em 06, 12 e 13/09 -- sabado e domingo; em 14/09, segunda, nao. As outras caem a qualquer hora.
+
+---
+
+**2. A PRIMEIRA RAJADA COM O LOG POR ETAPA** (14/09, 07:50 UTC, `api-00039-9vm`)
+
+280 webhooks em 90 s, **110 no mesmo segundo** (07:50:14); 136 ACKs acima de 500 ms e 49 acima de 2 s (max 3.293 ms). 273 de topico sem consumidor (190 `stock-locations`, 74 `items`) e 7 `orders_v2`, das **quatro** contas -- nao e um vendedor so.
+
+| etapa | na rajada | fora dela (mesma janela de 14 min) |
+|---|---|---|
+| `lookup_ms` | p50 **366** · p95 **2.811** · max 2.877 | p50 55 · p95 103 · max 272 |
+| `enqueue_ms` | p50 167 · p95 226 (n = 7) | p50 204 · p95 329 (n = 13) |
+
+E as instancias: **250 das 280 requisicoes na instancia que ja estava quente**, com ACK p95 de 2.814 ms. O autoscaling pediu cinco instancias as 07:50:14; elas ficaram prontas entre 07:50:17 e 07:50:18 e receberam **30** requisicoes (p50 624 ms).
+
+---
+
+**3. O QUE ISSO RESPONDE**
+
+- **A consulta da conta cresce ~50 vezes na rajada e explica o ACK sozinha**: p95 de 2.811 ms na consulta contra 2.814 ms de ACK, na mesma instancia. E o Postgres (via PostgREST) sob ~100 consultas simultaneas.
+- **A Cloud Task nao muda** -- 167 ms na rajada, ~200 fora.
+- **O boot a frio e parcela menor**: as instancias novas chegaram a tempo de receber so 30 requisicoes.
+
+**Limite desta leitura, escrito:** tentei casar cada ACK acima de 2 s com o log do seu handler, pela instancia e pelo instante de fim, e casei **0 de 49** -- o instante do log de requisicao e o do log de aplicacao nao se alinham ao milissegundo. A conclusao se apoia nas duas distribuicoes da mesma instancia, no mesmo intervalo, e nao em pares.
+
+**D-339 tinha a causa certa e a correcao errada.** A consulta era mesmo o custo. Tira-la so do topico sem consumidor deixou o caminho com trabalho consultando por uma conexao mais fria (D-340).
+
+---
+
+**4. A PROXIMA CORRECAO, ESCOLHIDA PELO DADO (nao feita aqui)**
+
+Resolver as contas **em memoria para toda notificacao**: a tabela inteira (quatro linhas, e o webhook so precisa de `id`, `organization_id` e `slug` por `seller_id`), carregada **uma vez so em voo** -- para a primeira rajada nao disparar cem cargas simultaneas --, renovada por prazo, e recarregada, com limite de frequencia, quando chega um seller desconhecido (conta recem-conectada). Assim nenhum caminho do ACK depende de conexao quente com o Postgres, que e exatamente o que D-340 quebrou. Continua a Cloud Task (~185 ms fixos) no caminho com trabalho.
+
+**Impacto:** `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,ROADMAP,HANDOFF}.md`. Nenhuma linha de codigo.
+
 **Impacto:** `apps/api/src/{webhook.ts,webhook.test.ts}`, `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,ROADMAP,HANDOFF}.md`. Sem migration.
 
 ---

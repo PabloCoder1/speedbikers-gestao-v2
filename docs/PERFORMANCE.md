@@ -770,6 +770,8 @@ gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.serv
 
 **Primeira leitura, fora de pico** (`api-00039-9vm`, 2026-09-14 03:01–03:22 UTC, uma instância, 2.004 webhooks, nenhum ACK acima de 500 ms): a **Cloud Task custa ~185 ms fixos** (p50 183–189 ms em qualquer pausa; os 410 ms do primeiro minuto eram a abertura do canal), e a **consulta da conta custa ~50 ms e esfria** — 373 ms depois de 30 s ou mais sem webhook, em só 2 amostras. Tabela completa em D-343. **Falta o pico:** se `lookup_ms` sobe junto com o ACK, o custo está no Postgres; se fica em ~50 ms enquanto o ACK cresce, está na fila da instância e no boot a frio.
 
+**Primeira rajada medida — é o Postgres** (14/09, 07:50 UTC, D-345): 280 webhooks em 90 s, 110 no mesmo segundo. `lookup_ms` p50 **366** · p95 **2.811** ms na rajada, contra 55 · 103 fora dela; `enqueue_ms` igual (p50 167 ms). 250 das 280 requisições caíram na instância quente, com ACK p95 2.814 ms — a consulta explica o ACK. As cinco instâncias novas ficaram prontas em 3–4 s e pegaram só 30. **E o pico não é diário:** 78 rajadas com ACK acima de 2 s em 10 dias, 26.748 ACKs lentos no total; a das 09:00 UTC só apareceu no fim de semana.
+
 ## Relatório de saúde — `report:health` (D-205)
 
 O item do P1 pedia "relatório de performance sobre o que já existe
