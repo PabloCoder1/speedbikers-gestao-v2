@@ -11390,6 +11390,34 @@ A parada deixou `.env.deploy.yaml` na raiz. O `trap ... RETURN` de `build_and_de
 
 **Medicao depois da publicacao:** a primeira leitura, dois minutos depois (02:22 a 02:24 UTC), deu 16 webhooks, todos 200, **zero ERROR** e nenhum acima de 500 ms -- amostra pequena demais para comparar com a linha de base de 30 min em `api-00036-5l4` (909 webhooks, p50 62 ms, p95 264 ms, 2 acima de 500 ms, 172 enfileirados). **Com 20 minutos** (02:22 a 02:42 UTC): 424 webhooks, todos 200; ACK p50 69 ms, p95 270 ms, p99 298 ms, max 540 ms; **1 acima de 500 ms entre 101 enfileirados (~1%)**; **zero ERROR** na `api` e no `worker`; `/health` em `45be035` e `latestReadyRevisionName` em `api-00038-2hg`. Dentro da linha de base -- como devia, porque o runtime e o mesmo.
 
+## D-343 - Antes da proxima correcao do pico, o log do webhook passa a dizer quanto do ACK e a conta e quanto e a Cloud Task
+
+**Contexto:** D-339 mediu o ACK do webhook passando de 7 s no pico diario; a correcao dela esfriou as conexoes e piorou `orders_v2`, e D-340 a desfez. D-340 terminou com a pergunta que faltou antes: **nos ACKs lentos, quem paga?** O caminho com trabalho faz duas idas de rede antes de responder -- a consulta de `ml_accounts` no Postgres e a criacao da Cloud Task (gRPC) -- e o log de requisicao do Cloud Run so mostra a soma, mais o que vem antes do handler (fila da instancia, boot a frio). Escolher entre manter conexao quente, tirar a consulta da conta do caminho ou mudar a borda sem essa resposta seria o erro de D-339 de novo.
+
+---
+
+**1. O QUE ENTROU**
+
+`receiveWebhook` mede, com relogio monotonico, as duas etapas e as poe nos logs que ja existiam:
+
+| log | campos novos |
+|---|---|
+| `ml_webhook_enqueued` | `lookup_ms` e `enqueue_ms` |
+| `ml_webhook_topic_without_consumer`, `ml_webhook_unknown_account`, `ml_webhook_read_receipt_ignored`, `ml_webhook_unroutable_resource` | `lookup_ms` |
+
+Milissegundos inteiros, nunca negativos. O relogio e `performance.now` em producao e injetavel (`WebhookDeps.monotonicNow`) para o teste afirmar o valor exato. **Nenhum I/O mudou** -- nem ordem, nem quantidade --, o que importa depois de D-340: a medicao nao pode alterar o padrao de conexao que ela quer medir. O jeito de ler esta em `PERFORMANCE.md`.
+
+---
+
+**2. COMO FOI PROVADO**
+
+- `@sb/api`: typecheck, lint e **340 testes** (`webhook.test.ts` 39, **+5**): o enfileirado separa as duas etapas com valores exatos (42 e 164 ms, incluindo o arredondamento); o sem consumidor mede so a conta e nao tem `enqueue_ms`; conta desconhecida tambem mede a consulta; payload invalido nao consulta o relogio (nao ha etapa); e, sem relogio injetado, os campos saem inteiros e nao negativos.
+- **Mutacao:** removidas as 6 linhas que poem os campos nos logs, **4 falhas** -- os quatro testes que afirmam os campos. O de payload invalido segue verde, como deve. Arquivo restaurado e conferido byte a byte.
+
+**Nao esta no ar.** A leitura que responde a pergunta so existe depois de publicar e passar por um pico (o de 13/09 foi as 09:00 UTC). Publicar e ato que o usuario autoriza; e com a guarda de D-341/D-342 no script.
+
+**Impacto:** `apps/api/src/{webhook.ts,webhook.test.ts}`, `docs/{DECISIONS,DECISIONS_INDEX,PERFORMANCE,ROADMAP,HANDOFF}.md`. Sem migration.
+
 ---
 
 **5. A LICAO**

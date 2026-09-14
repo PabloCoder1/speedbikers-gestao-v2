@@ -65,6 +65,12 @@ export interface WebhookDeps {
   enqueuer: Enqueuer;
   logger: Logger;
   now?: () => Date;
+  /**
+   * Relógio monotônico em ms, só para medir quanto do ACK é a consulta da conta
+   * e quanto é a Cloud Task (D-343). Injetável para o teste afirmar o valor
+   * exato; em produção é `performance.now`.
+   */
+  monotonicNow?: () => number;
 }
 
 export type WebhookOutcome =
@@ -178,15 +184,23 @@ export async function receiveWebhook(deps: WebhookDeps, rawBody: unknown): Promi
 
   const notification = parsed.data;
 
+  // D-343 — o ACK passa de 7 s no pico (D-339) e a primeira correção esfriou
+  // as conexões (D-340). Antes de escolher a próxima, cada log diz quanto foi a
+  // consulta da conta (`lookup_ms`) e, quando há, a Cloud Task (`enqueue_ms`).
+  const relogio = deps.monotonicNow ?? (() => performance.now());
+  const duracao = (inicio: number, fim: number) => Math.max(0, Math.round(fim - inicio));
+
   // Papel confiável NÃO vem da notificação (qualquer um pode alegar um
   // seller_id) — vem de existir uma conta nossa com esse seller_id. A
   // validação de origem por IP (D-043) já garante que a chamada veio do
   // Mercado Livre; isto aqui só resolve QUAL conta.
+  const antesDaConta = relogio();
   const account = await deps.db
     .from("ml_accounts")
     .select("id, organization_id, slug")
     .eq("seller_id", notification.user_id)
     .maybeSingle();
+  const lookupMs = duracao(antesDaConta, relogio());
 
   if (account.error !== null || account.data === null) {
     // Não é transitório: reprocessar não vai criar a conta. ACK mesmo assim
@@ -194,6 +208,7 @@ export async function receiveWebhook(deps: WebhookDeps, rawBody: unknown): Promi
     deps.logger.warn("ml_webhook_unknown_account", {
       seller_id: notification.user_id,
       topic: notification.topic,
+      lookup_ms: lookupMs,
     });
 
     return { status: "unknown_account" };
@@ -212,6 +227,7 @@ export async function receiveWebhook(deps: WebhookDeps, rawBody: unknown): Promi
     deps.logger.info("ml_webhook_read_receipt_ignored", {
       topic: notification.topic,
       ml_account_id: account.data.id,
+      lookup_ms: lookupMs,
     });
 
     return { status: "ignored_action" };
@@ -227,6 +243,7 @@ export async function receiveWebhook(deps: WebhookDeps, rawBody: unknown): Promi
       topic: notification.topic,
       resource: notification.resource,
       ml_account_id: account.data.id,
+      lookup_ms: lookupMs,
     });
 
     return { status: "no_consumer", topic: notification.topic };
@@ -240,11 +257,13 @@ export async function receiveWebhook(deps: WebhookDeps, rawBody: unknown): Promi
       resource: notification.resource,
       topic: notification.topic,
       ml_account_id: account.data.id,
+      lookup_ms: lookupMs,
     });
 
     return { status: "unroutable_resource" };
   }
 
+  const antesDaTask = relogio();
   const result = await deps.enqueuer.enqueue({
     jobType: job.jobType,
     organizationId: account.data.organization_id,
@@ -257,6 +276,7 @@ export async function receiveWebhook(deps: WebhookDeps, rawBody: unknown): Promi
     queue: `ml-sync-${account.data.slug}`,
     payload: job.payload,
   });
+  const enqueueMs = duracao(antesDaTask, relogio());
 
   deps.logger.info("ml_webhook_enqueued", {
     job_id: result.envelope.jobId,
@@ -265,6 +285,8 @@ export async function receiveWebhook(deps: WebhookDeps, rawBody: unknown): Promi
     topic: notification.topic,
     ml_account_id: account.data.id,
     deduplicated: result.deduplicated,
+    lookup_ms: lookupMs,
+    enqueue_ms: enqueueMs,
   });
 
   return {

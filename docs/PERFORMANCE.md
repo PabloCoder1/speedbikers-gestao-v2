@@ -753,6 +753,21 @@ Medido em 2026-09-13 nos logs de requisição do Cloud Run, sem tocar em nada �
 
 **Tráfego de usuário na `api`:** 89 chamadas de `/v1` em 7 dias. As telas leem o Supabase direto, e esse lado não aparece nestes logs — é a revisão de `pg_stat_statements` que o mede.
 
+### Quanto do ACK é a conta e quanto é a Cloud Task (D-343)
+
+Desde D-343 os logs do webhook carregam o tempo de cada etapa, em ms inteiros: `lookup_ms` (a consulta de `ml_accounts`) em `ml_webhook_topic_without_consumer`, `ml_webhook_unknown_account`, `ml_webhook_read_receipt_ignored` e `ml_webhook_unroutable_resource`; e `lookup_ms` **mais** `enqueue_ms` (a criação da Cloud Task) em `ml_webhook_enqueued`. Nenhum I/O mudou — só campos a mais no log.
+
+**A pergunta que eles respondem**, deixada em aberto por D-340: nos ACKs lentos de `orders_v2`, e nos minutos de pico, **quem paga** — o Postgres, o Cloud Tasks (gRPC) ou nenhum dos dois (e o tempo está antes do handler: fila da instância, boot a frio). Sem essa resposta, qualquer correção é outro chute como o de D-339.
+
+```bash
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="api"
+  AND jsonPayload.message="ml_webhook_enqueued"' \
+  --project speedbikers-gestao-v3 --freshness=1d --limit 50000 \
+  --format='value(timestamp,labels.instanceId,jsonPayload.lookup_ms,jsonPayload.enqueue_ms)'
+```
+
+**Como ler:** compare `lookup_ms + enqueue_ms` com a latência da requisição no log do Cloud Run, no mesmo instante e instância. Se a soma explica a latência, o custo está numa das duas etapas, e o campo maior diz qual. Se a latência é muito maior que a soma, o tempo está fora do handler. E separe por pausa desde a requisição anterior **na mesma instância**: D-340 viu as lentas concentradas depois de 30 s ou mais sem tráfego.
+
 ## Relatório de saúde — `report:health` (D-205)
 
 O item do P1 pedia "relatório de performance sobre o que já existe

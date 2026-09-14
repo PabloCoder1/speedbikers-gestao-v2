@@ -406,3 +406,94 @@ describe("receiveWebhook — tópico questions", () => {
     expect(ctx.enqueued).toHaveLength(0);
   });
 });
+
+/**
+ * D-343 — de onde vem o ACK lento. D-339 mediu o ACK passando de 7 s no pico e
+ * D-340 desfez a correção que esfriou as conexões; a próxima só se escolhe
+ * sabendo quanto de cada requisição é a consulta da conta no Postgres e quanto
+ * é a criação da Cloud Task. Os campos só ACRESCENTAM ao log: nenhum I/O muda.
+ */
+describe("receiveWebhook — tempo do ACK por etapa (D-343)", () => {
+  /** Relógio que devolve os instantes na ordem em que forem pedidos. */
+  function relogio(instantes: number[]): () => number {
+    const fila = [...instantes];
+
+    return () => {
+      const proximo = fila.shift();
+
+      if (proximo === undefined) {
+        throw new Error("o relógio foi consultado mais vezes do que o teste previa");
+      }
+
+      return proximo;
+    };
+  }
+
+  function registrosDe(ctx: ReturnType<typeof deps>): { event: string; fields: Record<string, unknown> }[] {
+    const registros: { event: string; fields: Record<string, unknown> }[] = [];
+    const registrar = (event: string, fields: Record<string, unknown>) => {
+      registros.push({ event, fields });
+    };
+
+    ctx.deps.logger = { ...ctx.deps.logger, info: registrar, warn: registrar } as typeof ctx.deps.logger;
+
+    return registros;
+  }
+
+  it("enfileirado: o log separa a consulta da conta e a Cloud Task", async () => {
+    const ctx = deps();
+    const registros = registrosDe(ctx);
+    // antes da conta, depois da conta, antes da task, depois da task
+    ctx.deps.monotonicNow = relogio([1000, 1042.4, 1043, 1206.6]);
+
+    await receiveWebhook(ctx.deps, NOTIFICATION);
+
+    const registro = registros.find((r) => r.event === "ml_webhook_enqueued");
+
+    expect(registro?.fields).toMatchObject({ lookup_ms: 42, enqueue_ms: 164 });
+  });
+
+  it("tópico sem consumidor: só há consulta da conta, e o log a mede", async () => {
+    const ctx = deps();
+    const registros = registrosDe(ctx);
+    ctx.deps.monotonicNow = relogio([500, 537]);
+
+    await receiveWebhook(ctx.deps, { ...NOTIFICATION, topic: "shipments", resource: "/shipments/44556677" });
+
+    const registro = registros.find((r) => r.event === "ml_webhook_topic_without_consumer");
+
+    expect(registro?.fields).toMatchObject({ lookup_ms: 37 });
+    expect(registro?.fields).not.toHaveProperty("enqueue_ms");
+  });
+
+  it("conta desconhecida também leva o tempo da consulta — foi ela que custou", async () => {
+    const ctx = deps({ accountExists: false });
+    const registros = registrosDe(ctx);
+    ctx.deps.monotonicNow = relogio([0, 12]);
+
+    await receiveWebhook(ctx.deps, NOTIFICATION);
+
+    expect(registros.find((r) => r.event === "ml_webhook_unknown_account")?.fields).toMatchObject({ lookup_ms: 12 });
+  });
+
+  it("payload inválido não consulta o relógio: não há etapa a medir", async () => {
+    const ctx = deps();
+    ctx.deps.monotonicNow = relogio([]);
+
+    await expect(receiveWebhook(ctx.deps, { topic: "orders_v2" })).resolves.toMatchObject({ status: "invalid_payload" });
+  });
+
+  it("sem relógio injetado, os campos saem como milissegundos inteiros não negativos", async () => {
+    const ctx = deps();
+    const registros = registrosDe(ctx);
+
+    await receiveWebhook(ctx.deps, NOTIFICATION);
+
+    const campos = registros.find((r) => r.event === "ml_webhook_enqueued")?.fields ?? {};
+
+    for (const campo of ["lookup_ms", "enqueue_ms"]) {
+      expect(Number.isInteger(campos[campo])).toBe(true);
+      expect(campos[campo] as number).toBeGreaterThanOrEqual(0);
+    }
+  });
+});
