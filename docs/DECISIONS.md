@@ -12001,3 +12001,63 @@ A tabela continua sem controle (D-297): entraram o avatar na celula (foto ou ini
 **Verificacao:** `tsc` limpo em web e api; `eslint` limpo nos arquivos tocados; web **566** testes (60 arquivos) e api **365** (29 arquivos), com 8 casos novos da suspensao (fronteira de organizacao, outra organizacao, a si mesmo, idempotencia, ban vencido, evento que falha) e 1 do nome no convite; os quatro guardas verdes (`check:control-styles` 247 controles); `next build` verde. **Nao verificado:** a migration nao rodou em banco nenhum (o Supabase local estava com a sessao da D-351) e a tela nao foi renderizada com dados. ⚠️ **Pendente, e bloqueia promover:** (1) a migration `20260915160000` precisa estar no Dev e em producao ANTES de a web ser promovida -- a tela le `profiles.avatar_path` e `get_organization_members.suspended`; (2) a `api` precisa de deploy para "Suspender" funcionar (sem ele, o botao cai no `explicar404`, D-301); (3) e2e nao rodado: o Supabase local estava em uso por outra sessao (D-351).
 
 **Impacto:** `supabase/migrations/20260915160000_member_profile_photo_and_suspension.sql`; `supabase/config.toml`; `packages/db/src/types.ts`; `apps/api/src/{member-suspension,member-suspension.test,invites,invites.test,app}.ts`; `apps/web/app/usuarios/{page,detalhe-usuario,convidar,actions,acesso-membro}.tsx|ts`; `apps/web/components/{avatar,campo-foto,editar-nome,meu-perfil,perfil-actions,shell}.tsx|ts`; `apps/web/lib/{avatar,foto-perfil,chamar-api,member-filters,member-filters.test,csp,csp.test}.ts`; `apps/web/app/globals.css`; `apps/web/e2e/usuarios.spec.ts`; `docs/{DECISIONS,DECISIONS_INDEX,DESIGN_IMPLEMENTATION}.md`.
+
+---
+
+## D-355 - A sidebar ganhou a marca e grupos por assunto, e /usuarios passou a se ler de uma passada
+
+**Contexto:** pedido do usuario depois da D-354: deixar a tela de Usuarios "mais bonita", trabalhar a sidebar ("nao esta tao legal"), "ordenando melhor as categorias", com liberdade para usar a logo da Speed Bikers, "focando na beleza, qualidade e otimizacao", tendo o export do Figma como referencia.
+
+---
+
+**1. A MARCA ENTROU, E COMO ARQUIVO PEQUENO**
+
+A logo veio da pasta do dono (PNG de 1254x1254 com quase tudo transparente). Recortada pelos pixels VISIVEIS (alfa > 200, nao o `trim()` automatico: o PNG do emblema tem pontinhos quase transparentes espalhados que o trim contaria como imagem) e reduzida com `sharp` para o tamanho de exibicao, 1x e 2x: `public/brand/logo-48.webp` (216x48, 8,4 KB), `logo-96.webp` (20,9 KB), `emblema-40/80/160.webp` (2,3 a 12,5 KB) e `app/icon.png` (64x64, 2,7 KB, o icone da aba pela convencao do App Router). `<img>` com `srcSet` e dimensoes declaradas, nao `next/image`: sao arquivos ja no tamanho certo, e o otimizador seria uma funcao no caminho de um recurso estatico.
+
+A logo horizontal fica no bloco da marca (o frame sempre desenhou uma IMAGEM ali); o emblema entra no trilho de 850px, onde a horizontal viraria borrao. Um componente so (`components/marca.tsx`) para o Shell e para a tela de carregamento, que tinham duas copias do bloco. As iniciais da organizacao sairam do topo e ficaram no rodape, no bloco da conta, onde o nome e dado e nao marca.
+
+**2. O PROXY BLOQUEAVA A PROPRIA LOGO**
+
+O matcher do `proxy.ts` so excluia `_next/static`, `_next/image` e `favicon.ico`. Medido com `curl`: `/brand/logo-48.webp` e `/icon.png` respondiam **307 para /login** sem sessao — a tela de login ficaria sem icone da aba, e, com sessao, cada imagem pagaria uma ida ao Auth. `icon.png` e `brand/` entraram na exclusao.
+
+**3. GRUPOS POR ASSUNTO**
+
+O frame agrupava em Visao geral / Operacao / Inteligencia / Atendimento / Administracao, e "Operacao" tinha oito telas de tres assuntos — quem procurava Compras passava por Vendas, Anuncios, Estoque e Central Full. A regua nova e a pergunta que a pessoa traz:
+
+| grupo | telas |
+|---|---|
+| Visao geral | Home, Central de Acoes, Diagnostico, Copiloto |
+| Vendas | Vendas, Anuncios, Precos, Curva ABC |
+| Estoque | Estoque, Central Full, Movimentacoes, Cobertura e reposicao |
+| Compras | Compras, Fornecedores, NF-e / Entradas |
+| Catalogo | Produtos, Vinculacoes |
+| Atendimento | Caixa de Entrada, Base de Conhecimento |
+| Administracao | Usuarios, Contas Mercado Livre, Integracoes, Sincronizacao, Importacoes (ADMIN), Saude do Sistema, Configuracoes |
+
+Sugestoes saiu do menu para o rodape, onde o frame tinha a "Central de ajuda": e canal com quem constroi o sistema, nao tela de operacao. Nenhuma tela foi escondida nem inventada; Importacoes continua em Administracao (D-312), que e o que `importacoes.spec.ts` guarda.
+
+**4. ICONES SVG, DEGRADE DO FRAME E O RECOLHIMENTO LEMBRADO**
+
+- Os glifos Unicode (`□` em quase tudo, seis distintos para 26 itens, desenhados diferente em cada sistema) viraram SVG de traco fino em `components/icons.tsx`, desenho do Lucide (ISC), escritos a mao so com os ~30 usados — sem dependencia nova e sem JavaScript.
+- O export declara uma pele escura que nunca renderizou la (uma regra clara posterior vence na cascata): degrade `#0F1640 -> #0E1259 -> #161b68` e item ativo amarelo com sombra. E ela que entra. D3 tinha preferido navy chapado porque o degrade "nao muda o veredito" de contraste — e continua nao mudando: `#161b68` foi o pior caso que D3 mediu (texto 12,16x, rotulo 8,18x).
+- Recolher um grupo e lembrado neste navegador (`localStorage`): o Shell remonta a cada navegacao, e a escolha se perdia a cada clique. Todos nascem abertos, como antes, e o grupo da tela atual nunca nasce recolhido.
+- Foco visivel em amarelo em marca, grupo, item, rodape e conta.
+
+**5. /USUARIOS**
+
+A composicao de D-297 fica (cinco colunas, nenhum controle na tabela, edicao na gaveta); mudou a leitura:
+
+- **a linha inteira abre a gaveta**: o gatilho continua sendo o botao do nome (foco e Enter), e a linha (`linha-clicavel.tsx`) repassa a ele o clique que cai em area neutra. O truque usual — um `::after` esticado sobre a linha — foi tentado e **medido falhando** na previa: depende de o `<tr>` servir de referencia para `position: absolute`, o que tabela nao garante, e no pior caso a camada sobe ate a pagina inteira;
+- **contas em etiquetas**, ate duas e "+N", com a lista completa no `title`;
+- **estado com ponto de cor**, e a palavra continua (cor nao e o unico sinal);
+- **ultimo acesso relativo** ("ha 3 dias", `lib/tempo-relativo.ts`, testado), com a data exata no `title`; o historico usa o mesmo;
+- **o filtro de status virou pilulas com contagem** (Todos, Ativos, Convites pendentes, Suspensos) no lugar do menu "Status ⌄": tres opcoes cabem a vista, e a contagem responde "tem alguem suspenso?" sem filtrar. Continuam links com o recorte na URL. Por isso a celula "Suspensos" da faixa (D-354) saiu: o numero mora na pilula, sempre, e filtra com um clique;
+- busca com lupa, botao "Convidar usuario" com icone, vazio com icone.
+
+A pagina continua lendo e decidindo cada valor; `app/usuarios/tabela-usuarios.tsx` so desenha — separado para a prevista sem login usar os mesmos componentes, e para tabela e gaveta receberem o mesmo objeto.
+
+---
+
+**Verificacao:** `tsc` e `eslint` limpos; web **569** testes (61 arquivos, 3 novos de tempo relativo); os quatro guardas verdes; `next build` verde. Renderizado a 1568px numa rota temporaria sem login, com dados de exemplo e os componentes reais (removida antes do commit): marca carregando, grupos, item ativo, contador, pilulas, etiquetas, estado suspenso e a gaveta abrindo pelo clique no meio da linha. **Nao verificado:** o trilho de 850px renderizado, e as telas com dados reais logado.
+
+**Impacto:** `apps/web/public/brand/*.webp`, `apps/web/app/icon.png`; `apps/web/components/{icons,marca,nav,shell,carregando}.tsx`; `apps/web/app/usuarios/{page,tabela-usuarios,convidar}.tsx`; `apps/web/lib/tempo-relativo{,.test}.ts`; `apps/web/proxy.ts`; `apps/web/app/globals.css`; `docs/{DECISIONS,DECISIONS_INDEX,DESIGN_IMPLEMENTATION}.md`. Sem migration.

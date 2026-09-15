@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { Marca } from "./marca";
 import type { ReactNode } from "react";
 
 import { SidebarNav } from "./nav";
@@ -94,13 +94,8 @@ export function CarregandoTela(): ReactNode {
   return (
     <div className="sb-shell">
       <aside className="sb-sidebar">
-        <Link href="/" className="sb-brand">
-          <span aria-hidden="true" className="sb-brand-symbol" />
-          <span style={{ flex: 1, minWidth: 0 }}>
-            <Barra largura="7rem" altura="0.6875rem" />
-            <small style={{ marginTop: "0.3125rem" }}>GESTÃO V3</small>
-          </span>
-        </Link>
+        {/* A marca é estática: sai inteira na hora, sem placeholder (D-355). */}
+        <Marca />
 
         <SidebarNav />
 

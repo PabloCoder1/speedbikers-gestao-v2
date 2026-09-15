@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **348** (D-001 a D-354).
+Decisões registradas: **349** (D-001 a D-355).
 
 ## Por domínio
 
@@ -228,7 +228,7 @@ Decisões registradas: **348** (D-001 a D-354).
 - **D-344** — Os ~54 `job_failed` diarios em `claims/{id}/returns` eram propagacao do Mercado Livre, nao perda -- 404 em claim recem-nascido deixa de ser falha
 - **D-350** — Producao no ar com o mesmo app do Mercado Livre do Dev -- o Dev pausado, o passo 10 com ordem, e o estoque contando venda em dobro
 
-### outros (58)
+### outros (59)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -288,6 +288,7 @@ Decisões registradas: **348** (D-001 a D-354).
 - **D-318** — O teto de dispersao de preco: 10% sobre o MENOR, por organizacao -- a regua que faltava para o selo existir
 - **D-326** — O gatilho da busca fica na barra com a caixa aberta
 - **D-332** — Backup e restore: o que existe foi MEDIDO, e o ensaio de restore esta pronto -- com um comparador que prova o que diz
+- **D-355** — A sidebar ganhou a marca e grupos por assunto, e /usuarios passou a se ler de uma passada
 
 ### processo/docs (1)
 

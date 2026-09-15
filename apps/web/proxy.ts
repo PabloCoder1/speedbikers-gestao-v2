@@ -119,7 +119,9 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
 }
 
 export const config = {
-  // Estaticos do Next nao passam pelo proxy: rodar a verificacao neles
-  // gastaria uma chamada de Auth por arquivo.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // Estaticos nao passam pelo proxy: rodar a verificacao neles gastaria uma
+  // chamada de Auth por arquivo. `brand/` e `icon.png` sao a logo e o icone da
+  // aba (D-355): sem esta exclusao a tela de LOGIN, que e publica, recebia um
+  // 307 para /login no lugar da imagem.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.png|brand/).*)"],
 };
