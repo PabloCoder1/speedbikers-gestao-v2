@@ -17,7 +17,43 @@
 - O Full agora busca itens e estoques com concorrencia limitada a tres por conta e le os snapshots anteriores em lote paginado. A persistencia continua por inventario para preservar a ordem e a atomicidade existente; a validacao de equivalencia e duracao ainda depende de uma execucao do mesmo catalogo.
 - Vendas inicia a margem em paralelo e a entrega por `Suspense`; TTFB/LCP/CLS/INP passaram a ser coletados por rota em `/api/vitals`, sem identificadores de usuario.
 
-Validação pendente: comparar chamadas, duração p50/p95, 429/retries e métricas de navegador no mesmo catálogo e ambiente. A migration de políticas foi aplicada no Dev pela CI (run 35000936186); nenhum ganho de latência é declarado antes dessa medição.
+### Produção verificada — 2026-09-15, 17:35–17:45 UTC
+
+Código `f88e0b2`: worker `worker-00005-pcz`, API `api-00004-n7c`, ambos com 100% do tráfego; `/health` respondeu esse commit. Vercel `dpl_4D8FTefUk3PueEJgsdyZVDBmqbmi`, `READY`, Production, alias `speedbikers-prod.vercel.app`. CI `35000936186` verde, incluindo E2E e integração/RLS. Migration `20260915133738` conferida no catálogo de Dev e produção; produção pelo workflow `35002134628`, concluído com sucesso. Advisor: duas sobreposições remanescentes em ambos, em `organization_members` e `user_account_permissions`; a migration remove somente a duplicação de preferências.
+
+**Full: duas rodadas reais das mesmas quatro contas.** Antes: 15:00 UTC, `worker-00004-bd9`; depois: Scheduler disparado às 17:39 UTC, `worker-00005-pcz`. Agregação de `job_runs` em SQL, quatro observações por lado:
+
+| Medida | Antes | Depois |
+|---|---:|---:|
+| p50 da duração | 264,5 s | 104,1 s |
+| p95 amostral | 290,9 s | 115,1 s |
+| Faixa por conta | 243,2–292,9 s | 91,0–115,7 s |
+| Inventários capturados | 1.967 | 1.967 |
+| Reentregas de jobs | 0 | 0 |
+| Falhas não retryable por item | 356 | 356 |
+
+Redução observada de aproximadamente 61% no p50 e 60% no p95; quatro observações não estimam o p95 de longo prazo. O catálogo não foi congelado: uma conta ganhou dois itens sem estoque Full. Logs: 61 inventários compartilhados nos dois lados; itens ignorados passaram de 834 para 836. `job_runs=done` convive com `sync_runs=partial` pelas falhas por item, sem promessa de cobertura integral do catálogo remoto.
+
+Equivalência SQL: 1.967 chaves presentes nos dois snapshots, zero chaves ausentes/novas, zero mudanças de `sku_id`/`item_id`. Houve 72 alterações de quantidade entre horários distintos: não se afirma igualdade dos saldos. O diff esperava cinco eventos de zerou/reabasteceu; os cinco existem com quantidades antes/depois e SKU corretos. Isto prova consistência do diff com os snapshots, não reprodução dos mesmos payloads externos nas duas versões.
+
+**Limite de telemetria:** `http-client.ts` faz retries internos sem registrar cada tentativa HTTP. Zero reentregas não prova zero 429; contadores de itens não são volume HTTP observado. Chamadas exatas, 429 recuperados e retries internos antes/depois permanecem indisponíveis retrospectivamente. A escrita continua sequencial por inventário; a rodada não separa duração de rede e persistência.
+
+**Navegador autenticado, Chrome desktop, `/vendas`, 30 dias:** amostra controlada no deploy novo, `/api/vitals` respondeu 202 às 17:40–17:41 UTC: TTFB 19,9 ms, LCP 1.408 ms, CLS 0,01, INP reportado 376 ms. Filtro de conta aberto/fechado, aba encerrada para envio. Outra navegação registrou TTFB 97,2 ms. Não há baseline anterior no mesmo navegador nem amostra suficiente para percentis de usuários.
+
+O coletor atual é aproximado: CLS soma deslocamentos sem janela de sessão; INP usa o maior evento observado sem agrupamento por interação/percentil; `visibilitychange` encerra observadores na primeira mudança e a rota é lida no envio. São evidências de coleta, **não validação dos algoritmos oficiais de Web Vitals**. Para baseline de campo comparável, usar a implementação oficial, preservar a rota da navegação e ampliar a amostra.
+
+**Vendas por bloco:** seis execuções por RPC em produção, `EXPLAIN (ANALYZE, BUFFERS)`, papel `authenticated` com claims de ADMIN, transação revertida, período 17/08–15/09, todas as contas/marcas; ranking por receita, limite 10. Inclui RLS, exclui HTTP/PostgREST, renderização e período anterior. Rodadas iniciais concorreram com Full; sem limpeza de cache.
+
+| RPC | p50 | p95 amostral |
+|---|---:|---:|
+| `get_sales_summary` | 9,9 ms | 14,2 ms |
+| `get_sales_daily_series` | 5,7 ms | 17,4 ms |
+| `get_sales_expanded_summary` | 195,4 ms | 271,2 ms |
+| `get_sales_margin_summary` | 97,1 ms | 164,7 ms |
+| `get_sales_today_summary` | 32,1 ms | 86,6 ms |
+| `get_sales_top_skus` | 62,4 ms | 180,2 ms |
+
+Decisão desta fatia: manter paralelismo/Suspense. Resumo expandido é o maior custo SQL observado; não há justificativa para consolidar indiscriminadamente todas as consultas. Antes de escolher uma RPC unificada, medir período comparativo, recortes por conta/marca e tempo HTTP por bloco. A tela autenticada carregou KPIs, gráfico, ranking e margem.
 
 **Meça como usuário autenticado real.** A RLS faz parte do custo que a
 interface paga, e medir como `postgres`/`service_role` esconde justamente o
