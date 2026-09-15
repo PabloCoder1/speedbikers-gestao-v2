@@ -174,10 +174,17 @@ export function TabelaDeUsuarios({
   );
 }
 
-/** O plural que a pílula usa; a coluna usa o singular de `memberStatusLabel`. */
+/**
+ * O plural que a pílula usa; a coluna usa o singular de `memberStatusLabel`.
+ *
+ * "Pendentes", e não "Convites pendentes": o cartão da faixa, logo acima, já
+ * diz "Convites pendentes", e o mesmo rótulo duas vezes na tela foi o que o e2e
+ * acusou (`getByText` ambíguo) — e o que o olho também lê como repetição. Ao lado
+ * de "Ativos", "Pendentes" não precisa do substantivo.
+ */
 const PILULA: Record<MemberStatus, string> = {
   ativo: "Ativos",
-  pendente: "Convites pendentes",
+  pendente: "Pendentes",
   suspenso: "Suspensos",
 };
 

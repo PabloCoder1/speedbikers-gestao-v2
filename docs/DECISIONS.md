@@ -12051,7 +12051,7 @@ A composicao de D-297 fica (cinco colunas, nenhum controle na tabela, edicao na 
 - **contas em etiquetas**, ate duas e "+N", com a lista completa no `title`;
 - **estado com ponto de cor**, e a palavra continua (cor nao e o unico sinal);
 - **ultimo acesso relativo** ("ha 3 dias", `lib/tempo-relativo.ts`, testado), com a data exata no `title`; o historico usa o mesmo;
-- **o filtro de status virou pilulas com contagem** (Todos, Ativos, Convites pendentes, Suspensos) no lugar do menu "Status ⌄": tres opcoes cabem a vista, e a contagem responde "tem alguem suspenso?" sem filtrar. Continuam links com o recorte na URL. Por isso a celula "Suspensos" da faixa (D-354) saiu: o numero mora na pilula, sempre, e filtra com um clique;
+- **o filtro de status virou pilulas com contagem** (Todos, Ativos, Pendentes, Suspensos — "Pendentes" e nao "Convites pendentes", porque o cartao da faixa ja usa esse rotulo e o e2e acusou o texto duplicado) no lugar do menu "Status ⌄": tres opcoes cabem a vista, e a contagem responde "tem alguem suspenso?" sem filtrar. Continuam links com o recorte na URL. Por isso a celula "Suspensos" da faixa (D-354) saiu: o numero mora na pilula, sempre, e filtra com um clique;
 - busca com lupa, botao "Convidar usuario" com icone, vazio com icone.
 
 A pagina continua lendo e decidindo cada valor; `app/usuarios/tabela-usuarios.tsx` so desenha — separado para a prevista sem login usar os mesmos componentes, e para tabela e gaveta receberem o mesmo objeto.
