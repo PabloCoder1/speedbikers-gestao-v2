@@ -14,7 +14,7 @@
 --
 -- O QUE A PLANILHA RETRATA (`exported_at`, reverificacao de c48fb70, MEDIA-1). O saldo da
 -- planilha e o Disponivel no instante da EXPORTACAO. Em quase todo snapshot isso e o proprio
--- `captured_at`: o worker grava a exportacao desde D-351, e a migration 20260914200000
+-- `captured_at`: o worker grava a exportacao desde D-351, e a migration 20260915140000
 -- corrigiu os antigos. A excecao e o snapshot que AINDA carrega o parse de uma planilha com o
 -- nome carimbado (`captured_at = parsed_at`, e o nome aponta outro instante): a organizacao
 -- reconciliada, que aquela migration deixa no parse de proposito (o Dev: exportado em 08-20
@@ -31,7 +31,7 @@
 --
 -- QUANDO O CORTE CHEGOU (`imported_at`). O snapshot VENCEDOR do corte e o primeiro por
 -- `captured_at desc, created_at desc, id desc` -- o mesmo desempate que
--- `compute_erp_target_balances` passa a usar em 20260914200400 --, e `imported_at` e o maior
+-- `compute_erp_target_balances` passa a usar em 20260915140400 --, e `imported_at` e o maior
 -- entre o `applied_at` do lote dele e o `created_at` dele. O `created_at` e o `now()` do
 -- INICIO da transacao do lote; `applied_at` e gravado pelo worker DEPOIS de todos os upserts
 -- e da marcacao das linhas. Com o MENOR `created_at`, como era, uma venda decidida com o
@@ -152,7 +152,7 @@ revoke all on function public.get_erp_stock_cutoffs(uuid, uuid[]) from public, a
 grant execute on function public.get_erp_stock_cutoffs(uuid, uuid[]) to service_role;
 
 -- A funcao acima e `security invoker` e le a exportacao do nome do arquivo: quem a chama
--- (`service_role`) precisa de EXECUTE na funcao privada, que 20260914200000 revogou de
+-- (`service_role`) precisa de EXECUTE na funcao privada, que 20260915140000 revogou de
 -- public, anon e authenticated. `usage` no schema `private` o `service_role` ja tem
 -- (20260820150000).
 grant execute on function private.erp_stock_export_instant(text, timestamptz) to service_role;

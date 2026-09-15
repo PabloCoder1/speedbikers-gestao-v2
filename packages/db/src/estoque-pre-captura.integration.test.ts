@@ -228,7 +228,7 @@ describe("corte da exportacao: private.erp_stock_export_instant e gemea de resol
   });
 
   it("a migration corrige so o snapshot que ainda carrega o parse, e a segunda execucao nao muda nada", async () => {
-    const migration = await arquivo("supabase/migrations/20260914200000_erp_corte_da_exportacao.sql");
+    const migration = await arquivo("supabase/migrations/20260915140000_erp_corte_da_exportacao.sql");
     const update = /update public\.erp_stock_snapshots s[\s\S]*?;/.exec(migration)?.[0];
 
     expect(update).toBeDefined();
@@ -700,7 +700,7 @@ describe("notificacoes: o fan-out pula backfill", () => {
   });
 
   it("a migration de dados marca como lidas SO as notificacoes do backfill (evento anterior a conexao, order.cancelled, criada antes de 09-14 18:30), e e idempotente", async () => {
-    const migration = await arquivo("supabase/migrations/20260914200300_notificacoes_do_backfill_lidas.sql");
+    const migration = await arquivo("supabase/migrations/20260915140300_notificacoes_do_backfill_lidas.sql");
     const conta = await umId(
       `insert into public.ml_accounts (organization_id, label, slug, seller_id, status, connected_at)
        values ($1, 'Conta D-351', $2, 351351, 'CONNECTED', now() - interval '1 hour') returning id`,
@@ -989,7 +989,7 @@ describe("compensacao F3 (packages/db/scripts, fora das migrations)", () => {
 
     try {
       const avisos: string[] = [];
-      // O Dev: planilha carimbada com o corte do PARSE, que o UPDATE de 20260914200000 nao
+      // O Dev: planilha carimbada com o corte do PARSE, que o UPDATE de 20260915140000 nao
       // toca numa organizacao reconciliada (verificacao de e6fda07, MEDIA-1).
       const loteDoParse = await novoLote(ORG_RECONCILIADA, "Lista_de_Estoque_0820160923.xlsx", "2026-08-21T15:42:02.459Z");
 
@@ -1438,7 +1438,7 @@ describe("desempate da planilha reimportada com o mesmo nome (verificacao de e6f
   });
 });
 
-describe("migration 20260914200000: o UPDATE nao recua o corte de organizacao ja reconciliada (verificacao de e6fda07, MEDIA-1)", () => {
+describe("migration 20260915140000: o UPDATE nao recua o corte de organizacao ja reconciliada (verificacao de e6fda07, MEDIA-1)", () => {
   const ORG_NUNCA = randomUUID();
   const ORG_RECONCILIADA_MIGRACAO = randomUUID();
 
@@ -1448,7 +1448,7 @@ describe("migration 20260914200000: o UPDATE nao recua o corte de organizacao ja
   });
 
   it("a organizacao que nunca reconciliou ganha o corte da exportacao; a reconciliada fica com o do parse, e o alvo dela nao muda", async () => {
-    const migration = await arquivo("supabase/migrations/20260914200000_erp_corte_da_exportacao.sql");
+    const migration = await arquivo("supabase/migrations/20260915140000_erp_corte_da_exportacao.sql");
     const update = /update public\.erp_stock_snapshots s[\s\S]*?;/.exec(migration)?.[0];
     const PARSE = "2026-08-21T15:42:02.459Z";
 
@@ -1856,7 +1856,7 @@ describe("o snapshot que ainda carrega o parse retrata a exportacao do nome do a
     const lote = await novoLote(ORG_DEV, "Lista_de_Estoque_0820160923.xlsx", PARSE);
 
     await client.query(`update public.erp_import_batches set applied_at = '2026-08-21T17:12:44.481Z' where id = $1`, [lote]);
-    // O corte que a migration 20260914200000 deixa na organizacao reconciliada: o parse.
+    // O corte que a migration 20260915140000 deixa na organizacao reconciliada: o parse.
     await snapshot(ORG_DEV, lote, "PARSE-RECONCILIADA", sku, "ESTOQUE LOJA", 10, PARSE, "2026-08-21T17:12:43.810Z");
 
     // O worker antigo gravou as duas vendas com a data da atualizacao, depois do corte.
@@ -1951,7 +1951,7 @@ describe("o snapshot que ainda carrega o parse retrata a exportacao do nome do a
   });
 
   it("planilha importada pelo worker antigo entre a migration e o deploy (organizacao nunca reconciliada, corte do parse): o worker novo nao estorna a venda da janela, e o UPDATE refeito depois fecha o alvo com o real", async () => {
-    const migration = await arquivo("supabase/migrations/20260914200000_erp_corte_da_exportacao.sql");
+    const migration = await arquivo("supabase/migrations/20260915140000_erp_corte_da_exportacao.sql");
     const update = /update public\.erp_stock_snapshots s[\s\S]*?;/.exec(migration)?.[0];
     const base = 935_800_000_000 + Math.floor(Math.random() * 1_000_000) * 10;
     // A forma de 2000018457209778, fechado as 18:43:57 -- entre a exportacao e o parse.

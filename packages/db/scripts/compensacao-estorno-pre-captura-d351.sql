@@ -15,7 +15,7 @@
 --      producao) a F3 estornaria venda legitima da janela entre exportacao e parse
 --      (2000018457209778, fechada as 18:43:57). Isso tambem pega uma planilha importada
 --      pelo worker ANTIGO entre a migration e o deploy: rode de novo o UPDATE de
---      20260914200000 antes da F3. O worker NOVO nao estorna essa venda nem com o corte do
+--      20260915140000 antes da F3. O worker NOVO nao estorna essa venda nem com o corte do
 --      parse -- `get_erp_stock_cutoffs` devolve a exportacao lida do nome (`exported_at`,
 --      D-351 §10) --, e o UPDATE refeito depois do deploy fecha o alvo com o real. Ate a
 --      reverificacao de c48fb70 o worker gravava venda + estorno para essa venda, pares que
@@ -139,7 +139,7 @@ join public.orders o
  and o.id = case when m.source_id ~ '^[0-9]{1,18}$' then m.source_id::bigint end
 -- O que ja foi revertido desta venda, pelas duas causas: o cancelamento (origem do pedido,
 -- chave `cancelamento:<venda>`) e as devolucoes (origem do claim, pedido DENTRO da chave
--- `devolucao:<claim>:<venda>` -- o indice de `20260914200400` atende o `split_part`).
+-- `devolucao:<claim>:<venda>` -- o indice de `20260915140400` atende o `split_part`).
 cross join lateral (
   select coalesce((select sum(c.qty_delta)
                      from public.stock_movements c
@@ -236,7 +236,7 @@ declare
 begin
   -- PRE-REQUISITO 1, conferido: o corte ja e a exportacao nas organizacoes elegiveis. So
   -- nelas: a organizacao reconciliada fica com o corte do parse DE PROPOSITO (o UPDATE de
-  -- 20260914200000 nao a toca, verificacao de e6fda07) e nao e compensada aqui.
+  -- 20260915140000 nao a toca, verificacao de e6fda07) e nao e compensada aqui.
   select count(*) into v_corte_do_parse
   from public.erp_stock_snapshots s
   join public.erp_import_batches b on b.id = s.batch_id
@@ -247,7 +247,7 @@ begin
     and private.erp_stock_export_instant(b.file_name, b.parsed_at) <> b.parsed_at;
 
   if v_corte_do_parse > 0 then
-    raise exception 'compensacao_d351: % snapshots ainda com o corte do PARSE, e nao o da exportacao -- rode de novo o UPDATE de 20260914200000_erp_corte_da_exportacao antes da F3 (cabecalho, PRE-REQUISITO 1)',
+    raise exception 'compensacao_d351: % snapshots ainda com o corte do PARSE, e nao o da exportacao -- rode de novo o UPDATE de 20260915140000_erp_corte_da_exportacao antes da F3 (cabecalho, PRE-REQUISITO 1)',
       v_corte_do_parse;
   end if;
 

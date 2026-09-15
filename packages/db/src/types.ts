@@ -4113,7 +4113,7 @@ export type Database = {
         }[]
       }
       // CORRECAO MANUAL (D-351, classe D-213): bloco escrito a mao no formato
-      // do gerador -- a migration `20260914200100_get_erp_stock_cutoffs` so
+      // do gerador -- a migration `20260915140100_get_erp_stock_cutoffs` so
       // existe no repositorio ate ser aplicada no Dev, e a CLI nao regenera este
       // arquivo. `captured_at` e NULO de verdade (organizacao sem snapshot) e o
       // gerador nunca marca coluna de retorno de `returns table` como nula
@@ -4129,7 +4129,7 @@ export type Database = {
         }[]
       }
       // CORRECAO MANUAL (D-351, verificacao de e6fda07): mesma razao do bloco acima --
-      // `20260914200400_reversao_limitada_e_desempate_do_alvo` so existe no repositorio ate
+      // `20260915140400_reversao_limitada_e_desempate_do_alvo` so existe no repositorio ate
       // ser aplicada, e a CLI nao regenera este arquivo.
       get_order_return_movements: {
         Args: { p_order_ids: string[]; p_organization_id: string }

@@ -117,7 +117,7 @@ revoke all on function private.erp_stock_export_instant(text, timestamptz) from 
 -- planilha do Dev TEM continua sendo a exportacao: `get_erp_stock_cutoffs` a devolve em
 -- `exported_at`, lida do nome, para o snapshot que ainda carrega o parse, e o worker nao
 -- estorna a venda entre a exportacao e o parse (reverificacao de c48fb70, MEDIA-1). Por isso
--- esta funcao ganha EXECUTE para `service_role` em 20260914200100.
+-- esta funcao ganha EXECUTE para `service_role` em 20260915140100.
 --
 -- Efeito medido antes de aplicar: producao (zero ajustes), 3.098 linhas de 18:44:13.254
 -- para 18:42:00; Dev (6.203 ajustes, o ultimo em 09-05), nenhuma linha.

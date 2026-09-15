@@ -112,7 +112,7 @@ export interface ErpCutoff {
    * cancelamento) com instante até aqui já está no saldo do ERP. É o próprio
    * `capturedAt`, exceto quando o snapshot vencedor ainda carrega o parse de
    * uma planilha com o nome carimbado — a organização reconciliada que a
-   * migration `20260914200000` deixa no parse (o Dev: exportada em 08-20
+   * migration `20260915140000` deixa no parse (o Dev: exportada em 08-20
    * 16:09:23, corte em 08-21 15:42:02.459). Ali a venda entre a exportação e o
    * parse NÃO está na planilha, e estorná-la subiria alvo e saldo juntos
    * (reverificação de c48fb70, MÉDIA-1). Sempre `<= capturedAt`.
