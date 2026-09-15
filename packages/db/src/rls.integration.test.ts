@@ -1733,8 +1733,9 @@ describe("métricas diárias de venda", () => {
       }>(ADMIN_SB, `select ${COLS} from public.get_sales_expanded_summary('2026-08-20','2026-08-20')`);
 
       expect(rows[0]).toEqual({
-        // 10.50 + 5.25 + 3.25 + 4.00 — o fee 99 do pedido CANCELADO fica fora.
-        taxas_ml: "23.00",
+        // sale_fee é POR UNIDADE (D-356, medido em produção): 10.50×2 + 5.25 +
+        // 3.25 + 4.00. O fee 99 do pedido CANCELADO fica fora.
+        taxas_ml: "33.50",
         // cancelled (999) + pending_cancel (60).
         pedidos_cancelados: "2",
         // 2 cancelados ÷ 6 elegíveis (4 válidos + 2 cancelados).
@@ -1751,8 +1752,8 @@ describe("métricas diárias de venda", () => {
         `select ${COLS} from public.get_sales_expanded_summary('2026-08-20','2026-08-20','${CONTA_A}')`,
       );
 
-      // CONTA_A: fees 10.50+5.25+3.25; 2 cancelados ÷ 5 elegíveis (3 válidos + 2).
-      expect(rows[0]).toMatchObject({ taxas_ml: "19.00", taxa_cancelamento: "0.4000" });
+      // CONTA_A: fees 10.50×2 + 5.25 + 3.25; 2 cancelados ÷ 5 elegíveis (3 válidos + 2).
+      expect(rows[0]).toMatchObject({ taxas_ml: "29.50", taxa_cancelamento: "0.4000" });
     });
 
     it("usuário de outra organização só alcança a própria — e taxa 0 é 0 de verdade, não null", async () => {
@@ -1874,13 +1875,15 @@ describe("métricas diárias de venda", () => {
         // 4 válidos na organização; só 1001 e 1002 têm os DOIS custos.
         orders_total: "4",
         orders_covered: "2",
-        // Receita e taxas do MESMO subconjunto coberto (100+50; 10.50+5.25).
+        // Receita e taxas do MESMO subconjunto coberto (100+50; 10.50×2 + 5.25 —
+        // a comissão é por unidade, D-356).
         gross_revenue_covered: "150.00",
-        taxas_ml_covered: "15.75",
+        taxas_ml_covered: "26.25",
         frete_vendedor: "40.00",
         desconto_vendedor: "5.00",
-        // 150 − 15.75 − 40 − 5.
-        margem_operacional: "89.25",
+        // 150 − 26.25 − 40. O desconto (5.00) volta como informação e NÃO é
+        // subtraído: já está dentro do unit_price (D-356).
+        margem_operacional: "83.75",
       });
     });
 
@@ -1890,7 +1893,7 @@ describe("métricas diárias de venda", () => {
         `select ${COLS} from public.get_sales_margin_summary('2026-08-20','2026-08-20','${CONTA_A}')`,
       );
 
-      expect(rows[0]).toMatchObject({ orders_total: "3", margem_operacional: "89.25" });
+      expect(rows[0]).toMatchObject({ orders_total: "3", margem_operacional: "83.75" });
     });
 
     it("zero cobertura: TUDO nulo — recusa como contrato, nunca R$ 0,00 fingido", async () => {
@@ -1911,6 +1914,232 @@ describe("métricas diárias de venda", () => {
         asAnon(`select * from public.get_sales_margin_summary('2026-08-20','2026-08-20')`),
       ).rejects.toThrow(/permission denied/i);
     });
+  });
+});
+
+/**
+ * get_faturamento (D-356) — o dinheiro de um período numa passada só.
+ *
+ * O fixture é PRÓPRIO, com SKUs que não são apagados: `sku_cost_history` é
+ * append-only (a trigger de DELETE recusa até a cascata), então um SKU que ganhou
+ * custo não sai no afterAll — a limpeza global já pula esses, como faz com o SKU
+ * de D-149. Os pedidos saem.
+ *
+ * Os cinco pedidos de 10/07/2026 na CONTA_A, cada um provando uma regra:
+ *
+ * | pedido | SKU                         | receita | comissão   | frete | desconto | custo              | papel                          |
+ * |--------|-----------------------------|---------|------------|-------|----------|--------------------|--------------------------------|
+ * | 3001   | FAT-A (histórico 25)        | 2×50    | 5×2 = 10   | 15    | 8        | 50 (na data)       | coberto; desconto NÃO subtrai  |
+ * | 3002   | FAT-B (sem custo)           | 60      | 6          | 10    | 0        | —                  | com frete, sem custo           |
+ * | 3003   | FAT-KIT (2×A + 1×C)         | 80      | 8          | 12    | NULL     | 25×2 + 5 = 55      | kit; custo atual (C sem hist.) |
+ * | 3004   | sem vínculo                 | 40      | 4          | —     | —        | —                  | sem SKU e sem frete            |
+ * | 3005   | FAT-A, CANCELADO            | 999     | 99         | —     | —        | —                  | nunca entra                    |
+ */
+describe("get_faturamento (D-356)", () => {
+  const CONTA_A = "aaaa1111-0000-4000-8000-00000000aaaa";
+  const PEDIDOS = [9900003001, 9900003002, 9900003003, 9900003004, 9900003005];
+  const DIA = "2026-07-10";
+
+  let skuA = "";
+  let skuB = "";
+  let skuC = "";
+  let kit = "";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, seller_id, status, connected_at)
+       values ($1,$2,'Conta A','rlstest-conta-a',111,'CONNECTED',now())
+       on conflict do nothing`,
+      [CONTA_A, ORG_SB],
+    );
+
+    const skus = await client.query<{ id: string; sku_key: string }>(
+      `insert into public.skus (organization_id, sku, kind, purchase_cost)
+       values ($1,'RLSTEST-FAT-A','PRODUTO',20),
+              ($1,'RLSTEST-FAT-B','PRODUTO',null),
+              ($1,'RLSTEST-FAT-C','PRODUTO',5),
+              ($1,'RLSTEST-FAT-KIT','KIT',null)
+       on conflict on constraint skus_org_key_unique do update set sku = excluded.sku
+       returning id, sku_key`,
+      [ORG_SB],
+    );
+
+    skuA = skus.rows.find((row) => row.sku_key === "RLSTEST-FAT-A")?.id ?? "";
+    skuB = skus.rows.find((row) => row.sku_key === "RLSTEST-FAT-B")?.id ?? "";
+    skuC = skus.rows.find((row) => row.sku_key === "RLSTEST-FAT-C")?.id ?? "";
+    kit = skus.rows.find((row) => row.sku_key === "RLSTEST-FAT-KIT")?.id ?? "";
+
+    /*
+      CUSTO NA DATA DA VENDA. O INSERT acima gravou história com `changed_at =
+      now()`, depois da venda — essa não vale para 10/07. A linha de 01/07 vale:
+      o custo de FAT-A naquele dia era 25, e hoje é 20. FAT-C não tem história
+      anterior, e o custo usado é o ATUAL (5), contado à parte.
+    */
+    await client.query(
+      `insert into public.sku_cost_history (organization_id, sku_id, previous_cost, new_cost, changed_by_role, changed_at)
+       values ($1,$2,null,25,'postgres','2026-07-01 12:00:00+00')`,
+      [ORG_SB, skuA],
+    );
+
+    await client.query(
+      `insert into public.sku_components (kit_sku_id, component_sku_id, quantity)
+       values ($1,$2,2), ($1,$3,1)
+       on conflict do nothing`,
+      [kit, skuA, skuC],
+    );
+
+    await client.query(
+      `insert into public.orders
+         (id, organization_id, ml_account_id, pack_id, status, date_created,
+          date_last_updated, total_amount, currency_id)
+       values
+         ($1,$6,$7,null,'paid','2026-07-10 15:00:00+00','2026-07-10 15:05:00+00',100,'BRL'),
+         ($2,$6,$7,null,'paid','2026-07-10 15:10:00+00','2026-07-10 15:15:00+00',60,'BRL'),
+         ($3,$6,$7,null,'paid','2026-07-10 15:20:00+00','2026-07-10 15:25:00+00',80,'BRL'),
+         ($4,$6,$7,null,'paid','2026-07-10 15:30:00+00','2026-07-10 15:35:00+00',40,'BRL'),
+         ($5,$6,$7,null,'cancelled','2026-07-10 15:40:00+00','2026-07-10 15:45:00+00',999,'BRL')
+       on conflict (id) do nothing`,
+      [...PEDIDOS, ORG_SB, CONTA_A],
+    );
+
+    await client.query(
+      `insert into public.order_items
+         (order_id, organization_id, ml_account_id, position, item_id, variation_id,
+          title, quantity, unit_price, currency_id, sku_id, sale_fee)
+       values
+         ($1,$6,$7,0,'MLB930001',null,'Fat A',2,50,'BRL',$8,5),
+         ($2,$6,$7,0,'MLB930002',null,'Fat B',1,60,'BRL',$9,6),
+         ($3,$6,$7,0,'MLB930003',null,'Fat Kit',1,80,'BRL',$10,8),
+         ($4,$6,$7,0,'MLB930004',null,'Sem vínculo',1,40,'BRL',null,4),
+         ($5,$6,$7,0,'MLB930001',null,'Cancelado',1,999,'BRL',$8,99)
+       on conflict do nothing`,
+      [...PEDIDOS, ORG_SB, CONTA_A, skuA, skuB, kit],
+    );
+
+    await client.query(
+      `insert into public.order_financials (order_id, organization_id, ml_account_id, seller_shipping_cost, seller_discount)
+       values ($1,$4,$5,15,8), ($2,$4,$5,10,0), ($3,$4,$5,12,null)
+       on conflict (order_id) do nothing`,
+      [PEDIDOS[0], PEDIDOS[1], PEDIDOS[2], ORG_SB, CONTA_A],
+    );
+  });
+
+  afterAll(async () => {
+    await client.query("delete from public.order_financials where order_id = any($1)", [PEDIDOS]);
+    await client.query("delete from public.orders where id = any($1)", [PEDIDOS]);
+  });
+
+  type Resumo = Record<string, number | null>;
+
+  interface Faturamento {
+    resumo: Resumo;
+    diario: { dia: string; pedidos: number; receita_bruta: number; resultado_venda: number | null }[] | null;
+    por_conta: { ml_account_id: string; pedidos: number; margem_venda: number | null }[] | null;
+    por_sku: {
+      maior_receita: { sku_id: string; receita_bruta: number; margem_venda: number | null; custo_atual: boolean }[];
+      menor_margem: { sku_id: string; margem_venda: number }[];
+      skus_com_venda: number;
+      skus_margem_abaixo_10: number;
+      skus_margem_negativa: number;
+    } | null;
+  }
+
+  async function faturamento(usuario: string, detalhe = true): Promise<Faturamento> {
+    const rows = await asUser<{ get_faturamento: Faturamento }>(
+      usuario,
+      `select public.get_faturamento('${DIA}','${DIA}','${CONTA_A}',${String(detalhe)})`,
+    );
+
+    const linha = rows[0];
+
+    if (linha === undefined) {
+      throw new Error("get_faturamento não devolveu linha");
+    }
+
+    return linha.get_faturamento;
+  }
+
+  it("resumo: comissão por unidade, cancelado fora, desconto NÃO subtraído e cobertura declarada", async () => {
+    const { resumo } = await faturamento(ADMIN_SB);
+
+    expect(resumo).toMatchObject({
+      pedidos: 4,
+      compras: 4,
+      unidades: 5,
+      receita_bruta: 280,
+      // 5×2 + 6 + 8 + 4: o fee 99 do cancelado fica fora.
+      taxas_ml: 28,
+      ticket_medio: 70,
+      preco_medio: 56,
+      comissao_percentual: 0.1,
+      // Frete observado em 3001, 3002 e 3003 — o desconto NULO de 3003 não tira
+      // o pedido: o desconto já está no preço e não entra na conta.
+      pedidos_com_custos: 3,
+      receita_com_custos: 240,
+      frete_vendedor: 37,
+      desconto_vendedor: 8,
+      // 240 − 24 − 37.
+      margem_operacional: 179,
+      frete_medio_pedido: 12.33,
+      // 3001 e 3003: frete, custo e uma linha. 3002 não tem custo.
+      pedidos_cobertos: 2,
+      receita_coberta: 180,
+      taxas_ml_cobertas: 18,
+      frete_vendedor_coberto: 27,
+      margem_operacional_coberta: 135,
+      // 2 × 25 (custo NA DATA, não o 20 de hoje) + kit 2×25 + 1×5.
+      custo_produtos: 105,
+      // 180 − 18 − 27 − 105.
+      resultado_venda: 30,
+      margem_venda: 0.1667,
+      // O kit usa FAT-C, que não tem história anterior à venda.
+      pedidos_custo_atual: 1,
+      pedidos_sem_sku: 1,
+      pedidos_sem_custo: 1,
+      pedidos_sem_frete: 1,
+      pedidos_multi_item: 0,
+    });
+  });
+
+  it("série, conta e produto saem do mesmo subconjunto; menor margem lista o que está abaixo de 10%", async () => {
+    const dados = await faturamento(ADMIN_SB);
+
+    expect(dados.diario).toEqual([
+      expect.objectContaining({ dia: DIA, pedidos: 4, receita_bruta: 280, resultado_venda: 30, margem_venda: 0.1667 }),
+    ]);
+
+    expect(dados.por_conta).toEqual([
+      expect.objectContaining({ ml_account_id: CONTA_A, pedidos: 4, margem_venda: 0.1667 }),
+    ]);
+
+    expect(dados.por_sku?.maior_receita.map((linha) => linha.sku_id)).toEqual([skuA, kit, skuB]);
+    expect(dados.por_sku?.maior_receita[0]).toMatchObject({ receita_bruta: 100, margem_venda: 0.25, custo_atual: false });
+    expect(dados.por_sku?.maior_receita[2]).toMatchObject({ receita_bruta: 60, margem_venda: null });
+
+    // O kit: 5 ÷ 80 = 6,25%, abaixo de 10%. FAT-A (25%) fica fora da lista.
+    expect(dados.por_sku?.menor_margem).toEqual([expect.objectContaining({ sku_id: kit, margem_venda: 0.0625 })]);
+    expect(dados.por_sku).toMatchObject({ skus_com_venda: 3, skus_margem_abaixo_10: 1, skus_margem_negativa: 0 });
+  });
+
+  it("p_detalhe = false devolve só o resumo", async () => {
+    const dados = await faturamento(ADMIN_SB, false);
+
+    expect(dados.resumo.receita_bruta).toBe(280);
+    expect(dados.diario).toBeNull();
+    expect(dados.por_conta).toBeNull();
+    expect(dados.por_sku).toBeNull();
+  });
+
+  it("outra organização não enxerga nada — e margem sem cobertura é NULL, nunca 0%", async () => {
+    const { resumo } = await faturamento(DE_OUTRA_ORG);
+
+    expect(resumo).toMatchObject({ pedidos: 0, receita_bruta: 0, margem_venda: null, resultado_venda: null });
+  });
+
+  it("anon é recusado", async () => {
+    await expect(
+      asAnon(`select public.get_faturamento('${DIA}','${DIA}')`),
+    ).rejects.toThrow(/permission denied/i);
   });
 });
 

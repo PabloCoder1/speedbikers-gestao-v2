@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **349** (D-001 a D-355).
+Decisões registradas: **350** (D-001 a D-356).
 
 ## Por domínio
 
@@ -294,7 +294,7 @@ Decisões registradas: **349** (D-001 a D-355).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (22)
+### vendas/métricas (23)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -318,6 +318,7 @@ Decisões registradas: **349** (D-001 a D-355).
 - **D-322** — A14: o grafico de vendas com a altura do frame, e o texto que saiu do SVG porque encolhia com a largura
 - **D-325** — A leitura do grafico de vendas falava de "periodo anterior" onde nao ha comparacao
 - **D-327** — A18: a legenda do grafico de vendas no cabecalho do painel, e o seed que nunca teve periodo anterior
+- **D-356** — /faturamento: quanto sobra de cada venda -- e tres contas que estavam erradas antes de a tela existir
 
 ### worker/infra (70)
 

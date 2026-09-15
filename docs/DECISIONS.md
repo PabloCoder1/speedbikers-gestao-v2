@@ -12061,3 +12061,81 @@ A pagina continua lendo e decidindo cada valor; `app/usuarios/tabela-usuarios.ts
 **Verificacao:** `tsc` e `eslint` limpos; web **569** testes (61 arquivos, 3 novos de tempo relativo); os quatro guardas verdes; `next build` verde. Renderizado a 1568px numa rota temporaria sem login, com dados de exemplo e os componentes reais (removida antes do commit): marca carregando, grupos, item ativo, contador, pilulas, etiquetas, estado suspenso e a gaveta abrindo pelo clique no meio da linha. **Nao verificado:** o trilho de 850px renderizado, e as telas com dados reais logado.
 
 **Impacto:** `apps/web/public/brand/*.webp`, `apps/web/app/icon.png`; `apps/web/components/{icons,marca,nav,shell,carregando}.tsx`; `apps/web/app/usuarios/{page,tabela-usuarios,convidar}.tsx`; `apps/web/lib/tempo-relativo{,.test}.ts`; `apps/web/proxy.ts`; `apps/web/app/globals.css`; `docs/{DECISIONS,DECISIONS_INDEX,DESIGN_IMPLEMENTATION}.md`. Sem migration.
+
+## D-356 - /faturamento: quanto sobra de cada venda -- e tres contas que estavam erradas antes de a tela existir
+
+**Contexto:** pedido do usuario: "/vendas aparece muita informacao". Ele quer manter la so o que importa e ter uma tela de faturamento "bem detalhada", com a margem pela conta dele -- (quanto recebe pos taxa - custo) x 100 / preco de venda antes da taxa --, gasto com frete e valor medio de venda. Nas perguntas ele escolheu:
+
+- corrigir o produto dos pedidos antigos e a comissao x quantidade;
+- margem com "comissao, frete e desconto";
+- impostos fora por enquanto;
+- nenhum backfill de frete nem uso de `marketplace_fee`.
+
+Medir antes de desenhar achou tres problemas na base, e os tres foram corrigidos antes da tela.
+
+---
+
+**1. A COMISSAO E POR UNIDADE**
+
+`order_items.sale_fee` e a tarifa de UMA unidade. `get_sales_expanded_summary` e `get_sales_margin_summary` somavam `sale_fee` sem multiplicar pela quantidade. Medido em producao (15/09/2026, 30 dias): sobre o preco unitario, a proporcao e a mesma com quantidade 1 (10,39%) e com quantidade > 1 (10,34%); sobre o total do item, cai para 4,71% quando ha mais de uma unidade. `taxas_ml` somava R$ 305.257,66 contra R$ 308.221,43 multiplicado. As duas funcoes passam a usar `sale_fee * quantity`. O ID da metrica nao muda (METRICS secao 6): o significado era o certo, a conta e que estava errada. Migration `20260915210000`.
+
+**2. O DESCONTO JA ESTA NO PRECO -- a margem de D-166 o tirava duas vezes**
+
+`margem_operacional_pedido` era receita - comissao - frete - `seller_discount`. Medido em producao (pedidos de 10 dias com frete observado):
+
+- 6.470 de 6.578 pedidos tem desconto, em media 42,4% da receita, e ha desconto MAIOR que o proprio preco (57,13 de preco, 93,58 de desconto). E desconto contra o preco de tabela;
+- `unit_price` + desconto fica a 5% do preco do anuncio em 71,3% dos pedidos; `unit_price` sozinho, em 34,9%;
+- a comissao da 10,63% de `unit_price` e 8,16% de `unit_price` + desconto: o Mercado Livre cobra sobre o preco efetivamente vendido, que ja e o `unit_price`.
+
+A formula oficial (`docs/MERCADO_LIVRE.md` 2.15) nao tem desconto. **A opcao "comissao, frete e desconto" que o usuario escolheu partiu da minha pergunta, que tratava o desconto como um custo a parte.** O que ele pediu e o que o Mercado Livre desconta de verdade, e subtrair o desconto de novo contaria o mesmo dinheiro duas vezes. A margem passa a ser receita - comissao - frete, a cobertura so exige o frete observado, e o desconto continua na tela como informacao.
+
+**3. O PRODUTO DOS PEDIDOS ANTIGOS**
+
+99% dos itens de pedido desde 14/09/2025 estavam sem `sku_id` (326.029 de 329.240). O worker resolve o vinculo ao gravar o pedido (D-020), e o historico entrou antes de os 16.962 vinculos do UpSeller serem importados; nada preenchia depois. Sem produto nao ha custo, e a margem cobriria um decimo das vendas. A receita com produto em 30 dias sobe de 10,5% para ~76%.
+
+A migration `20260915210200` usa a regra EXATA do worker: vinculo ITEM, mesma conta, mesmo `item_id` e a mesma variacao. Qualquer regra mais larga seria desfeita no primeiro reprocessamento do pedido. Ela so toca `sku_id IS NULL` (248.453 itens) e recalcula `daily_sku_metrics` por conta, do primeiro ao ultimo dia tocado (medido: um ano da maior conta em 2,4 s). O que foi conferido antes:
+
+- nao ha movimento de estoque: a unica trigger de `order_items` e a de `updated_at`;
+- a sessao da D-351 mediu que o script de compensacao dela continua pegando os mesmos pedidos.
+
+**Efeito esperado, dito antes:** a deteccao de venda anomala e as sugestoes de compra passam a ver por SKU as vendas que estavam no balde "sem produto". Pode sair uma leva de notificacoes no dia seguinte.
+
+---
+
+**4. `get_faturamento`: UMA LEITURA, QUATRO RECORTES**
+
+Resumo, serie diaria, recorte por conta e por produto saem da mesma passada sobre pedidos, itens, frete e custo, e voltam como `jsonb`. Quatro RPCs varreriam os mesmos pedidos quatro vezes. A leitura tambem nao pode morar em `private`, porque `authenticated` nao tem USAGE nesse schema. `p_detalhe = false` devolve so o resumo, e e o que a tela pede para o periodo anterior. As regras:
+
+- **custo na data da venda:** o ultimo `new_cost` de `sku_cost_history` ate `date_created`. Sem historico anterior, vale o custo atual, e o pedido e contado em `pedidos_custo_atual`. Custo nulo ou 0 e desconhecido, nunca zero;
+- **kit:** soma dos componentes x quantidade, cada um com o custo na data;
+- **resultado e margem so sobre pedidos COBERTOS:** frete observado, custo conhecido e uma linha de item (5E), com a cobertura devolvida junto;
+- **degraus da cascata:** saem do SQL (`*_coberta`), para a tela nao somar dinheiro.
+
+Cinco metricas novas no catalogo, na mesma migration: `custo_produtos_vendidos`, `resultado_venda`, `margem_venda`, `frete_medio_pedido` e `comissao_percentual` (METRICS 5F).
+
+**Medido em producao como usuario logado** (a regra da memoria de D-305): 30 dias com detalhe em ~510 ms e o resumo do periodo anterior em ~375 ms, estaveis ate a 8a execucao, sem a degradacao do plano generico. A funcao foi criada numa transacao desfeita com `rollback`, e a ausencia dela foi conferida depois.
+
+**5. A TELA**
+
+`/faturamento`, no grupo Vendas da sidebar, com o icone de cifrao:
+
+- **faixa:** receita bruta, resultado da venda, margem sobre a venda (pinta atencao abaixo de 10% e perigo quando negativa), comissao e ticket medio, cada um com o periodo anterior;
+- **"Para onde vai o dinheiro":** uma cascata de verdade, toda sobre os pedidos cobertos. Cada deducao comeca onde a anterior terminou: receita, comissao, frete, recebido, custo, resultado. A margem fica embaixo;
+- **"Custos da venda":** comissao %, frete medio, recebido apos o Mercado Livre, custo, preco medio e desconto (informativo), cada um com a base na nota;
+- **receita e margem por dia:** duas faixas no mesmo eixo de dias, nunca dois eixos Y. A margem tem escala unica dos dois lados do zero e linha tracejada em 10%;
+- **por conta**, **produtos que mais faturaram** e **margem abaixo de 10%**;
+- **"O que estes numeros cobrem":** pedidos cobertos, sem frete, sem produto (atalho para Vinculacoes) e sem custo (atalho para Produtos), e a nota de que resultado nao e lucro liquido.
+
+Sem recorte de marca, porque o frete e do pedido (5E). O cabecalho e os filtros saem antes, e os numeros chegam por streaming. A resposta `jsonb` e conferida campo a campo em `lib/faturamento.ts`: fora do contrato, a tela recusa inteira em vez de mostrar "—" onde o SQL mudou.
+
+**6. /VENDAS ENXUGOU**
+
+- **faixa:** receita, pedidos, unidades, ticket medio e taxa de cancelamento, as perguntas de volume. "Taxas" saiu;
+- **sairam:** o painel "Mais sobre o periodo" e a margem operacional, que agora vivem inteiros em `/faturamento`;
+- **"Hoje":** virou uma linha com receita, pedidos, unidades e ultima venda, marcada como parcial, com o atalho para o Faturamento levando conta e periodo;
+- **periodo:** `resolveRange` mudou para `lib/period.ts` (`resolvePeriodRange`), porque a segunda tela precisa da mesma conta.
+
+**7. O QUE FICOU DE FORA, E UM ACHADO**
+
+- **fora:** impostos, taxa fixa, parcelamento, custo do Mercado Pago, reembolsos e Ads (a tela diz). O frete de pedidos antes de 14/09/2026 nao existe, e sem backfill, por decisao do usuario: periodo antigo mostra receita e comissao inteiras e recusa a margem.
+- **achado, nao corrigido aqui:** o anti-join do recalculo diario (`private.refresh_daily_sales_metrics`) compara o balde de SKU nulo com `=`. Se isso apagar linhas orfas do balde nulo errado, o efeito e no recalculo, nao nesta tela. Fica registrado para uma fatia propria.
