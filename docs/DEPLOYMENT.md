@@ -436,6 +436,8 @@ export AMBIENTE=prod PROJECT_ID=<projeto-gcp-prod> \
 9. **Primeiro ADMIN** (seção 10) e **conexão das contas** (seção 10.1).
 10. **Conferir antes do corte**: `GET /health` da `api` devolvendo o commit publicado; `check:restore` depois do primeiro backup (8.1); a CSP com nonce e zero violações em `/login` (D-331); e um job de cada tipo disparado à mão uma vez (seção 7), **na ordem das dependências** — anúncios, depois vínculos (a planilha do UpSeller), depois Full —, conferindo `processed` e a tabela alimentada, não o 200 do agendador. **Antes de importar a planilha num banco que já tem o histórico de pedidos**, leia D-350 §5: pedido antigo atualizado depois da captura baixa estoque que o UpSeller já tinha descontado.
 
+    **A guarda de D-351 tem ordem, e cada passo depende do anterior:** (1) as quatro migrations `20260914200000`–`20260914200300` pelo caminho de sempre (Dev pela CI, produção por `migrations-producao.yml`) — **antes** do worker, porque o worker novo grava `source = 'backfill'` e `ESTORNO_PRE_CAPTURA`, que o CHECK antigo recusa e o flush da página aborta; (2) `worker` e `api` por `deploy-cloud-run.sh`; (3) **só então** a compensação `packages/db/scripts/compensacao-estorno-pre-captura-d351.sql`, com `v3-reconcile-balances` ainda pausado — ela não é migration de propósito, porque o worker antigo continuaria gravando venda sem par depois dela; (4) a prova do próprio arquivo repetida depois de 1 h e de 24 h; (5) despausar a reconciliação é decisão do dono (D-350 §5).
+
 ---
 
 ## 9. Buckets e lifecycle

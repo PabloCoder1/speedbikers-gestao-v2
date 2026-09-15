@@ -2,12 +2,14 @@ import { createLogger } from "@sb/observability";
 import { describe, expect, it } from "vitest";
 
 import type { ParsedOrder } from "./order-schema.js";
-import type { OrderPrefetch, PersistOrderContext, ResolvedLink } from "./persist-order.js";
+import { novaPagina } from "./page-writes.js";
+import type { OrderPrefetch, PersistOrderContext, RecordedOrderMovements, ResolvedLink } from "./persist-order.js";
 import { persistOrder, prefetchOrders } from "./persist-order.js";
 
 const CONTEXT: PersistOrderContext = {
   organizationId: "11111111-0000-4000-8000-000000000001",
   mlAccountId: "aaaaaaaa-0000-4000-8000-000000000001",
+  eventSource: "sync",
 };
 
 const BASE_ORDER: ParsedOrder = {
@@ -36,6 +38,12 @@ const BASE_ORDER: ParsedOrder = {
   ],
 };
 
+/** `BASE_ORDER.date_closed` em UTC — a "venda em" de D-351. */
+const VENDA_EM = "2019-05-22T07:51:07.000Z";
+
+/** O corte da planilha de produção: `Lista_de_Estoque_0914184200.xlsx`. */
+const CORTE = "2026-09-14T18:42:00.000Z";
+
 /**
  * Chain genérica que acumula filtros por nome de coluna — o terminal decide
  * a resposta a partir deles. Também é "thenable": `loadSkuKindAndComponents`
@@ -48,6 +56,7 @@ function filterChain(
   resolve: (filters: Record<string, unknown>) => { data: unknown; error: unknown },
 ): {
   eq: (col: string, val: unknown) => ReturnType<typeof filterChain>;
+  in: (col: string, val: unknown) => ReturnType<typeof filterChain>;
   is: (col: string, val: unknown) => ReturnType<typeof filterChain>;
   select: () => ReturnType<typeof filterChain>;
   maybeSingle: () => Promise<{ data: unknown; error: unknown }>;
@@ -57,6 +66,7 @@ function filterChain(
 } {
   const self = {
     eq: (col: string, val: unknown) => filterChain({ ...filters, [col]: val }, resolve),
+    in: (col: string, val: unknown) => filterChain({ ...filters, [col]: val }, resolve),
     is: (col: string) => filterChain({ ...filters, [col]: null }, resolve),
     select: () => self,
     maybeSingle: () => Promise.resolve(resolve(filters)),
@@ -83,11 +93,21 @@ interface FakeDbOptions {
   stockMovementConflict?: boolean;
   /** Simula uma falha REAL (não-dedup) no insert de `stock_movements`. */
   stockMovementError?: boolean;
-  /** Movimentos `VENDA_ML` já gravados para a order — o que `loadSaleMovements` devolve. */
-  existingSaleMovements?: { sku_id: string; qty_delta: number; idempotency_key: string }[];
+  /**
+   * Movimentos já gravados para a order. `movement_type` padrão `VENDA_ML` e
+   * `occurred_at` padrão a venda em; `ESTORNO_PRE_CAPTURA` marca a venda como
+   * estornada (D-351).
+   */
+  existingSaleMovements?: {
+    sku_id: string;
+    qty_delta: number;
+    idempotency_key: string;
+    movement_type?: string;
+    occurred_at?: string;
+  }[];
   /** Simula falha (não conflito) ao ler o status anterior da order. */
   previousStatusError?: boolean;
-  /** Simula falha ao ler stock_movements existentes (loadSaleMovements). */
+  /** Simula falha ao ler stock_movements existentes. */
   saleMovementsError?: boolean;
   /** Simula falha ao resolver sku_listing_links (resolveSku). */
   linkLookupError?: boolean;
@@ -103,6 +123,16 @@ interface FakeDbOptions {
   itemsDeleteError?: boolean;
   /** Simula falha no `insert` de `order_items` (D-178). */
   itemsInsertError?: boolean;
+  /**
+   * `sku_id` -> `captured_at` que `get_erp_stock_cutoffs` devolve (D-351). SKU
+   * ausente sai com corte nulo — a organização sem snapshot, comportamento de
+   * antes da guarda.
+   */
+  cutoffs?: Record<string, string | null>;
+  /** Linhas cruas da RPC, no lugar da resposta montada por `cutoffs`. */
+  cutoffRows?: unknown[];
+  /** Simula falha da RPC do corte. */
+  cutoffError?: boolean;
 }
 
 function fakeDb(options: FakeDbOptions = {}): {
@@ -110,10 +140,12 @@ function fakeDb(options: FakeDbOptions = {}): {
   upserted: { table: string; row: unknown }[];
   deleted: { table: string; filters: Record<string, unknown> }[];
   inserted: { table: string; rows: unknown[] }[];
+  rpcCalls: { fn: string; args: { p_organization_id: string; p_sku_ids: string[] } }[];
 } {
   const upserted: { table: string; row: unknown }[] = [];
   const deleted: { table: string; filters: Record<string, unknown> }[] = [];
   const inserted: { table: string; rows: unknown[] }[] = [];
+  const rpcCalls: { fn: string; args: { p_organization_id: string; p_sku_ids: string[] } }[] = [];
 
   function writeAppendOnly(table: string, row: unknown): Promise<{ data: null; error: unknown }> {
     inserted.push({ table, rows: Array.isArray(row) ? row : [row] });
@@ -138,6 +170,23 @@ function fakeDb(options: FakeDbOptions = {}): {
   }
 
   const db = {
+    // D-351: `get_erp_stock_cutoffs`, a única RPC do handler.
+    rpc: (fn: string, args: { p_organization_id: string; p_sku_ids: string[] }) => {
+      rpcCalls.push({ fn, args });
+
+      if (options.cutoffError === true) {
+        return Promise.resolve({ data: null, error: { code: "42P01", message: "boom" } });
+      }
+
+      if (options.cutoffRows !== undefined) {
+        return Promise.resolve({ data: options.cutoffRows, error: null });
+      }
+
+      return Promise.resolve({
+        data: args.p_sku_ids.map((skuId) => ({ sku_id: skuId, captured_at: options.cutoffs?.[skuId] ?? null })),
+        error: null,
+      });
+    },
     from: (table: string) => ({
       upsert: (row: unknown) => {
         // `domain_events` e `stock_movements` passaram a gravar por upsert
@@ -231,12 +280,24 @@ function fakeDb(options: FakeDbOptions = {}): {
         // ramo do vínculo, abaixo, que as monta na forma do embed.
 
         if (table === "stock_movements") {
-          return filterChain({}, () => {
+          return filterChain({}, (filters) => {
             if (options.saleMovementsError === true) {
               return { data: null, error: { code: "42P01", message: "boom" } };
             }
 
-            return { data: options.existingSaleMovements ?? [], error: null };
+            // D-351: a leitura é por lote de pedidos (`.in("source_id", [...])`)
+            // e traz venda e estorno juntos.
+            const pedido = Array.isArray(filters.source_id) ? String(filters.source_id[0]) : String(BASE_ORDER.id);
+
+            return {
+              data: (options.existingSaleMovements ?? []).map((row) => ({
+                source_id: pedido,
+                movement_type: "VENDA_ML",
+                occurred_at: VENDA_EM,
+                ...row,
+              })),
+              error: null,
+            };
           });
         }
 
@@ -284,11 +345,25 @@ function fakeDb(options: FakeDbOptions = {}): {
     }),
   } as unknown as Parameters<typeof persistOrder>[0];
 
-  return { db, upserted, deleted, inserted };
+  return { db, upserted, deleted, inserted, rpcCalls };
 }
 
 function run(db: Parameters<typeof persistOrder>[0], order: ParsedOrder, lines: string[] = []) {
   return persistOrder(db, CONTEXT, order, createLogger({}, { sink: (line) => lines.push(line) }));
+}
+
+interface MovimentoGravado {
+  sku_id: string;
+  qty_delta: number;
+  movement_type: string;
+  source_type: string;
+  source_id: string;
+  idempotency_key: string;
+  occurred_at: string;
+}
+
+function movimentos(inserted: { table: string; rows: unknown[] }[]): MovimentoGravado[] {
+  return inserted.filter((entry) => entry.table === "stock_movements").flatMap((entry) => entry.rows) as MovimentoGravado[];
 }
 
 describe("persistOrder", () => {
@@ -476,6 +551,7 @@ describe("persistOrder", () => {
         before: unknown;
         after: unknown;
         dedup_key: string;
+        source: string;
       };
       expect(event).toMatchObject({
         event_type: "order.cancelled",
@@ -483,7 +559,20 @@ describe("persistOrder", () => {
         before: { status: "paid" },
         after: { status: "cancelled" },
         dedup_key: `order.cancelled:${String(BASE_ORDER.id)}:cancelled`,
+        source: "sync",
       });
+    });
+
+    // D-351: a carga da história grava o evento com fonte `backfill`, que o
+    // `fan_out_notification` não transforma em notificação.
+    it("a fonte do evento vem do contexto: backfill sai backfill", async () => {
+      const { db, inserted } = fakeDb({ previousStatus: null });
+      const order: ParsedOrder = { ...BASE_ORDER, status: "cancelled" };
+
+      await persistOrder(db, { ...CONTEXT, eventSource: "backfill" }, order, createLogger({}, { sink: () => undefined }));
+
+      const event = inserted.find((entry) => entry.table === "domain_events")?.rows[0] as { source: string };
+      expect(event.source).toBe("backfill");
     });
 
     it("não emite evento quando o status não muda para cancelamento", async () => {
@@ -891,6 +980,211 @@ describe("persistOrder", () => {
 });
 
 /**
+ * D-351 — venda anterior ao snapshot do UpSeller.
+ *
+ * Em produção, pedidos antigos atualizados depois da planilha geravam o
+ * primeiro `VENDA_ML` deles, com `occurred_at` = a data da atualização: o saldo
+ * contava a venda duas vezes e ela entrava no alvo da reconciliação. Estes
+ * testes são o caminho do webhook (sem prefetch); o do lote está no fim do
+ * arquivo.
+ */
+describe("persistOrder — venda anterior ao snapshot do ERP (D-351)", () => {
+  const COM_VINCULO = { linkForItem: () => ({ id: "link-1", sku_id: "sku-1" }) };
+
+  it("pedido antigo pago: grava o VENDA_ML com occurred_at = date_closed E o ESTORNO_PRE_CAPTURA com a MESMA data", async () => {
+    const { db, inserted } = fakeDb({ ...COM_VINCULO, cutoffs: { "sku-1": CORTE } });
+
+    await run(db, BASE_ORDER);
+
+    expect(movimentos(inserted)).toEqual([
+      {
+        organization_id: CONTEXT.organizationId,
+        sku_id: "sku-1",
+        location_kind: "LOCAL",
+        qty_delta: -1,
+        movement_type: "VENDA_ML",
+        source_type: "ORDER",
+        source_id: String(BASE_ORDER.id),
+        idempotency_key: `venda:${String(BASE_ORDER.id)}:0`,
+        occurred_at: VENDA_EM,
+      },
+      {
+        // Linha de sistema: sem `created_by` (nulo no banco).
+        organization_id: CONTEXT.organizationId,
+        sku_id: "sku-1",
+        location_kind: "LOCAL",
+        qty_delta: 1,
+        movement_type: "ESTORNO_PRE_CAPTURA",
+        source_type: "ORDER",
+        source_id: String(BASE_ORDER.id),
+        idempotency_key: `estorno-pre-captura:venda:${String(BASE_ORDER.id)}:0`,
+        occurred_at: VENDA_EM,
+      },
+    ]);
+  });
+
+  it("venda em IGUAL ao corte estorna; corte 1 ms antes da venda não estorna", async () => {
+    const igual = fakeDb({ ...COM_VINCULO, cutoffs: { "sku-1": VENDA_EM } });
+    await run(igual.db, BASE_ORDER);
+    expect(movimentos(igual.inserted).map((m) => m.movement_type)).toEqual(["VENDA_ML", "ESTORNO_PRE_CAPTURA"]);
+
+    const antes = fakeDb({ ...COM_VINCULO, cutoffs: { "sku-1": "2019-05-22T07:51:06.999Z" } });
+    await run(antes.db, BASE_ORDER);
+    expect(movimentos(antes.inserted).map((m) => m.movement_type)).toEqual(["VENDA_ML"]);
+  });
+
+  it("occurred_at da venda é date_closed, nunca date_last_updated — e sem date_closed, date_created", async () => {
+    const fechado = fakeDb(COM_VINCULO);
+    await run(fechado.db, BASE_ORDER);
+    expect(movimentos(fechado.inserted)[0]?.occurred_at).toBe(VENDA_EM);
+
+    const semFechamento = fakeDb(COM_VINCULO);
+    await run(semFechamento.db, { ...BASE_ORDER, date_closed: null });
+    expect(movimentos(semFechamento.inserted)[0]?.occurred_at).toBe("2019-05-22T07:51:05.000Z");
+  });
+
+  it("KIT com um componente de cada lado do corte: estorna só o componente cujo corte é posterior à venda", async () => {
+    const { db, inserted } = fakeDb({
+      linkForItem: () => ({ id: "link-kit", sku_id: "sku-kit" }),
+      skuKindById: () => "KIT",
+      componentsByKitId: () => [
+        { component_sku_id: "sku-lampada", quantity: 2 },
+        { component_sku_id: "sku-suporte", quantity: 1 },
+      ],
+      cutoffs: { "sku-lampada": CORTE, "sku-suporte": "2019-01-01T00:00:00.000Z" },
+    });
+
+    await run(db, BASE_ORDER);
+
+    expect(movimentos(inserted).map((m) => [m.movement_type, m.sku_id])).toEqual([
+      ["VENDA_ML", "sku-lampada"],
+      ["VENDA_ML", "sku-suporte"],
+      ["ESTORNO_PRE_CAPTURA", "sku-lampada"],
+    ]);
+  });
+
+  it("organização sem snapshot (corte nulo): grava a venda e não estorna — o comportamento de antes", async () => {
+    const { db, inserted, rpcCalls } = fakeDb(COM_VINCULO);
+
+    await run(db, BASE_ORDER);
+
+    expect(rpcCalls).toHaveLength(1);
+    expect(movimentos(inserted).map((m) => m.movement_type)).toEqual(["VENDA_ML"]);
+  });
+
+  it("o webhook lê o corte UMA vez, com todos os SKUs que vai movimentar — os componentes, não o kit", async () => {
+    // O corte de cada SKU, e o da organização para quem não tem snapshot
+    // próprio, é resolvido NA RPC (provado na integração). O worker manda
+    // todos os ids e usa a linha de cada um.
+    const { db, rpcCalls } = fakeDb({
+      linkForItem: () => ({ id: "link-kit", sku_id: "sku-kit" }),
+      skuKindById: () => "KIT",
+      componentsByKitId: () => [
+        { component_sku_id: "sku-suporte", quantity: 1 },
+        { component_sku_id: "sku-lampada", quantity: 2 },
+      ],
+    });
+
+    await run(db, BASE_ORDER);
+
+    expect(rpcCalls).toEqual([
+      {
+        fn: "get_erp_stock_cutoffs",
+        args: { p_organization_id: CONTEXT.organizationId, p_sku_ids: ["sku-lampada", "sku-suporte"] },
+      },
+    ]);
+  });
+
+  it("falha da leitura do corte LANÇA antes de qualquer escrita — nunca vira 'sem corte'", async () => {
+    const { db, inserted, upserted } = fakeDb({ ...COM_VINCULO, cutoffError: true });
+
+    await expect(run(db, BASE_ORDER)).rejects.toThrow(/get_erp_stock_cutoffs.*boom/);
+
+    expect(upserted).toEqual([]);
+    expect(inserted).toEqual([]);
+  });
+
+  it("resposta sem a linha de um SKU pedido LANÇA — leitura incompleta não vira 'sem corte'", async () => {
+    const { db, inserted } = fakeDb({ ...COM_VINCULO, cutoffRows: [] });
+
+    await expect(run(db, BASE_ORDER)).rejects.toThrow(/nao devolveu o corte do SKU sku-1/);
+    expect(inserted).toEqual([]);
+  });
+
+  it("resposta com 1.000 linhas LANÇA — pode ter sido cortada pelo teto do PostgREST", async () => {
+    const muitas = Array.from({ length: 1000 }, (_, i) => ({ sku_id: `sku-${String(i)}`, captured_at: CORTE }));
+    const { db } = fakeDb({ ...COM_VINCULO, cutoffRows: muitas });
+
+    await expect(run(db, BASE_ORDER)).rejects.toThrow(/teto do PostgREST/);
+  });
+
+  it("VENDA_ML já gravado pelo worker antigo: o estorno espelha a linha gravada — SKU, quantidade e data", async () => {
+    const { db, inserted } = fakeDb({
+      ...COM_VINCULO,
+      existingSaleMovements: [
+        {
+          sku_id: "sku-antigo",
+          qty_delta: -1,
+          idempotency_key: `venda:${String(BASE_ORDER.id)}:0`,
+          occurred_at: "2026-09-14T19:03:00.000Z",
+        },
+      ],
+      cutoffs: { "sku-1": CORTE, "sku-antigo": CORTE },
+    });
+
+    await run(db, BASE_ORDER);
+
+    expect(movimentos(inserted).find((m) => m.movement_type === "ESTORNO_PRE_CAPTURA")).toMatchObject({
+      sku_id: "sku-antigo",
+      qty_delta: 1,
+      occurred_at: "2026-09-14T19:03:00.000Z",
+    });
+  });
+
+  describe("cancelamento de venda estornada", () => {
+    const VENDA_ESTORNADA = [
+      { sku_id: "sku-1", qty_delta: -1, idempotency_key: `venda:${String(BASE_ORDER.id)}:0` },
+      {
+        sku_id: "sku-1",
+        qty_delta: 1,
+        idempotency_key: `estorno-pre-captura:venda:${String(BASE_ORDER.id)}:0`,
+        movement_type: "ESTORNO_PRE_CAPTURA",
+      },
+    ];
+
+    it("cancelada DEPOIS do corte: reverte — o UpSeller devolveu a unidade depois da planilha", async () => {
+      const { db, inserted } = fakeDb({ existingSaleMovements: VENDA_ESTORNADA, cutoffs: { "sku-1": CORTE } });
+
+      await run(db, { ...BASE_ORDER, status: "cancelled", date_last_updated: "2026-09-14T19:07:45.000Z" });
+
+      expect(movimentos(inserted)).toEqual([
+        expect.objectContaining({ movement_type: "CANCELAMENTO_ML", qty_delta: 1, occurred_at: "2026-09-14T19:07:45.000Z" }),
+      ]);
+    });
+
+    it("cancelada ATÉ o corte: não reverte — a planilha já tinha a unidade de volta", async () => {
+      const { db, inserted } = fakeDb({ existingSaleMovements: VENDA_ESTORNADA, cutoffs: { "sku-1": CORTE } });
+      const lines: string[] = [];
+
+      await run(db, { ...BASE_ORDER, status: "cancelled", date_last_updated: CORTE }, lines);
+
+      expect(movimentos(inserted)).toEqual([]);
+      expect(lines.join()).toContain("cancellation_reversal_pulada_pre_captura");
+    });
+
+    it("sem date_last_updated nem last_updated (instante desconhecido): reverte e avisa", async () => {
+      const { db, inserted } = fakeDb({ existingSaleMovements: VENDA_ESTORNADA, cutoffs: { "sku-1": CORTE } });
+      const lines: string[] = [];
+
+      await run(db, { ...BASE_ORDER, status: "cancelled", date_last_updated: undefined, last_updated: undefined }, lines);
+
+      expect(movimentos(inserted).map((m) => m.movement_type)).toEqual(["CANCELAMENTO_ML"]);
+      expect(lines.join()).toContain("cancellation_reversal_sem_instante_do_cancelamento");
+    });
+  });
+});
+
+/**
  * D-178 — escrita critica que falha nao pode deixar o handler seguir.
  *
  * O `AdminClient` nao lanca sozinho: sem checar `.error`, `persistOrder`
@@ -952,7 +1246,14 @@ describe("prefetchOrders (D-186)", () => {
     error: { message: string } | null;
   }
 
-  function dbFalso(porTabela: Record<string, RespostaFalsa>) {
+  function dbFalso(
+    porTabela: Record<string, RespostaFalsa>,
+    // D-351: por padrão, organização sem snapshot — uma linha nula por id.
+    corte: (ids: string[]) => RespostaFalsa = (ids) => ({
+      data: ids.map((id) => ({ sku_id: id, captured_at: null })),
+      error: null,
+    }),
+  ) {
     const consultadas: string[] = [];
 
     const cadeia = (resposta: RespostaFalsa) => {
@@ -972,12 +1273,25 @@ describe("prefetchOrders (D-186)", () => {
 
         return cadeia(porTabela[table] ?? { data: [], error: null });
       },
+      rpc: (fn: string, args: { p_sku_ids: string[] }) => {
+        consultadas.push(`rpc:${fn}`);
+
+        return Promise.resolve(corte(args.p_sku_ids));
+      },
     } as unknown as Parameters<typeof prefetchOrders>[0];
 
     return { db, consultadas };
   }
 
   const PEDIDO_A: ParsedOrder = { ...BASE_ORDER, id: 2_000_017_347_483_988 };
+
+  const LINK_PRODUTO = {
+    id: "link-1",
+    sku_id: "sku-1",
+    item_id: "MLB1054990648",
+    variation_id: null,
+    skus: { kind: "PRODUTO", sku_components: [] },
+  };
 
   it("resolve vínculo, kind e componentes numa leitura só (D-188)", async () => {
     const { db, consultadas } = dbFalso({
@@ -1011,7 +1325,11 @@ describe("prefetchOrders (D-186)", () => {
     // contra o PostgREST real em `packages/db/src/projections.integration.test.ts`;
     // este fake não valida a string de projeção, e é justamente por isso que
     // aquele portão existe.
-    expect(consultadas).toEqual(["orders", "sku_listing_links"]);
+    //
+    // D-351: mais duas, sem crescer com a página — os movimentos gravados e o
+    // corte do ERP (do componente, que é quem tem saldo).
+    expect(consultadas).toEqual(["orders", "sku_listing_links", "stock_movements", "rpc:get_erp_stock_cutoffs"]);
+    expect(prefetch.cutoffBySku).toEqual(new Map([["sku-peca", null]]));
   });
 
   it("vínculo sem o SKU embutido LANÇA — não cai em PRODUTO (D-188)", async () => {
@@ -1083,24 +1401,11 @@ describe("prefetchOrders (D-186)", () => {
       { ...BASE_ORDER, id: 5 },
     ];
 
-    const { db, consultadas } = dbFalso({
-      sku_listing_links: {
-        data: [
-          {
-            id: "link-1",
-            sku_id: "sku-1",
-            item_id: "MLB1054990648",
-            variation_id: null,
-            skus: { kind: "PRODUTO", sku_components: [] },
-          },
-        ],
-        error: null,
-      },
-    });
+    const { db, consultadas } = dbFalso({ sku_listing_links: { data: [LINK_PRODUTO], error: null } });
 
     await prefetchOrders(db, CONTEXT, pagina);
 
-    expect(consultadas).toEqual(["orders", "sku_listing_links"]);
+    expect(consultadas).toEqual(["orders", "sku_listing_links", "stock_movements", "rpc:get_erp_stock_cutoffs"]);
   });
 
   it("página vazia não vai ao banco", async () => {
@@ -1111,6 +1416,86 @@ describe("prefetchOrders (D-186)", () => {
     expect(consultadas).toEqual([]);
     expect(prefetch.linkByItemKey.size).toBe(0);
   });
+
+  // D-351 — o corte e os movimentos gravados na página.
+
+  it("D-351: página sem vínculo nem venda gravada não lê o corte — não há SKU para perguntar", async () => {
+    const { db, consultadas } = dbFalso({});
+
+    await prefetchOrders(db, CONTEXT, [PEDIDO_A]);
+
+    expect(consultadas).not.toContain("rpc:get_erp_stock_cutoffs");
+  });
+
+  it("D-351: falha da leitura do corte na página LANÇA", async () => {
+    const { db } = dbFalso({ sku_listing_links: { data: [LINK_PRODUTO], error: null } }, () => ({
+      data: null,
+      error: { message: "boom" },
+    }));
+
+    await expect(prefetchOrders(db, CONTEXT, [PEDIDO_A])).rejects.toThrow(/get_erp_stock_cutoffs.*boom/);
+  });
+
+  it("D-351: os movimentos gravados separam a venda do estorno, por pedido", async () => {
+    const { db } = dbFalso({
+      stock_movements: {
+        data: [
+          {
+            source_id: String(PEDIDO_A.id),
+            sku_id: "sku-1",
+            qty_delta: -1,
+            idempotency_key: "venda:2000017347483988:0",
+            occurred_at: VENDA_EM,
+            movement_type: "VENDA_ML",
+          },
+          {
+            source_id: String(PEDIDO_A.id),
+            sku_id: "sku-1",
+            qty_delta: 1,
+            idempotency_key: "estorno-pre-captura:venda:2000017347483988:0",
+            occurred_at: VENDA_EM,
+            movement_type: "ESTORNO_PRE_CAPTURA",
+          },
+        ],
+        error: null,
+      },
+    });
+
+    const prefetch = await prefetchOrders(db, CONTEXT, [PEDIDO_A]);
+    const gravados = prefetch.recordedByOrderId.get(String(PEDIDO_A.id));
+
+    expect(gravados?.sales).toEqual([
+      { skuId: "sku-1", qtyDelta: -1, idempotencyKey: "venda:2000017347483988:0", occurredAt: new Date(VENDA_EM) },
+    ]);
+    expect([...(gravados?.estornadas ?? [])]).toEqual(["venda:2000017347483988:0"]);
+    // A venda gravada tem SKU: o corte dele é lido mesmo sem vínculo hoje.
+    expect(prefetch.cutoffBySku.has("sku-1")).toBe(true);
+  });
+
+  it("D-351: em lote, UMA leitura do corte para a página inteira, o par sai no mesmo lote e a página conta os estornos", async () => {
+    const pagina = [1, 2, 3, 4, 5].map((id) => ({ ...BASE_ORDER, id }));
+    const { db, consultadas } = dbFalso({ sku_listing_links: { data: [LINK_PRODUTO], error: null } }, (ids) => ({
+      data: ids.map((id) => ({ sku_id: id, captured_at: CORTE })),
+      error: null,
+    }));
+
+    const prefetch = await prefetchOrders(db, CONTEXT, pagina);
+    const writes = novaPagina(CONTEXT.organizationId);
+
+    for (const order of pagina) {
+      await persistOrder(db, CONTEXT, order, createLogger({}, { sink: () => undefined }), prefetch, writes);
+    }
+
+    expect(consultadas.filter((consulta) => consulta.startsWith("rpc:"))).toEqual(["rpc:get_erp_stock_cutoffs"]);
+
+    const vendas = writes.movements.filter((m) => m.movementType === "VENDA_ML");
+    const estornos = writes.movements.filter((m) => m.movementType === "ESTORNO_PRE_CAPTURA");
+
+    expect(vendas).toHaveLength(5);
+    expect(estornos).toHaveLength(5);
+    expect(estornos.every((e) => e.draft.occurredAt.toISOString() === VENDA_EM)).toBe(true);
+    expect(writes.estornosPreCaptura).toEqual({ pedidos: 5, movimentos: 5 });
+  });
 });
 
 describe("persistOrder com prefetch (D-186)", () => {
@@ -1118,6 +1503,8 @@ describe("persistOrder com prefetch (D-186)", () => {
     return {
       previousStatusById: parcial.previousStatusById ?? new Map<string, string>(),
       linkByItemKey: parcial.linkByItemKey ?? new Map<string, ResolvedLink>(),
+      recordedByOrderId: parcial.recordedByOrderId ?? new Map<string, RecordedOrderMovements>(),
+      cutoffBySku: parcial.cutoffBySku ?? new Map<string, Date | null>(),
     };
   }
 
@@ -1138,6 +1525,7 @@ describe("persistOrder com prefetch (D-186)", () => {
         linkByItemKey: new Map([
           ["MLB1054990648\u0000", { id: "link-9", sku_id: "sku-9", kind: "PRODUTO" as const, components: [] }],
         ]),
+        cutoffBySku: new Map([["sku-9", null]]),
       }),
     );
 
@@ -1167,6 +1555,7 @@ describe("persistOrder com prefetch (D-186)", () => {
             },
           ],
         ]),
+        cutoffBySku: new Map([["sku-peca", null]]),
       }),
     );
 
@@ -1175,5 +1564,27 @@ describe("persistOrder com prefetch (D-186)", () => {
     // Kit não tem saldo próprio: a dedução vai para o componente.
     expect(movimentos).toHaveLength(1);
     expect((movimentos[0] as { sku_id: string }).sku_id).toBe("sku-peca");
+  });
+
+  // D-351: o prefetch sempre traz o corte de todo SKU vinculado da página. Se
+  // um faltar, é defeito — e defeito aqui não pode virar "sem corte".
+  it("D-351: prefetch sem o corte de um SKU que vai vender LANÇA, sem ir ao banco por conta própria", async () => {
+    const { db, rpcCalls } = fakeDb({});
+
+    await expect(
+      persistOrder(
+        db,
+        CONTEXT,
+        BASE_ORDER,
+        createLogger({ service: "test" }),
+        prefetchDe({
+          linkByItemKey: new Map([
+            ["MLB1054990648\u0000", { id: "link-9", sku_id: "sku-9", kind: "PRODUTO" as const, components: [] }],
+          ]),
+        }),
+      ),
+    ).rejects.toThrow(/corte do snapshot do ERP nao lido para o SKU sku-9/);
+
+    expect(rpcCalls).toEqual([]);
   });
 });

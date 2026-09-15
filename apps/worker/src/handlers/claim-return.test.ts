@@ -404,6 +404,37 @@ describe("processClaimReturn (D-057)", () => {
     expect(captured.events[0]).toMatchObject({ event_type: "order.returned", ml_account_id: ML_ACCOUNT_ID });
   });
 
+  // D-351: a venda anterior à planilha do UpSeller é gravada E estornada. A
+  // devolução entregue continua revertendo — a base é o `VENDA_ML`, que segue
+  // gravado; sem ele, sairia "revisão manual" e uma notificação por devolução.
+  it("devolução entregue de venda estornada (anterior à planilha) reverte normalmente (D-351)", async () => {
+    const captured: Captured = { movements: [], events: [], supportCases: [] };
+    const { client } = fakeMercadoLivre({});
+
+    await processClaimReturn(
+      {
+        db: fakeDb(
+          { saleMovements: [{ sku_id: "sku-a", qty_delta: -1, idempotency_key: `venda:${String(ORDER_ID)}:0` }] },
+          captured,
+        ),
+        mercadoLivre: client,
+      },
+      { organizationId: ORGANIZATION_ID, mlAccountId: ML_ACCOUNT_ID },
+      "token",
+      CLAIM_ID,
+      NOW,
+      logger,
+    );
+
+    expect(captured.movements).toEqual([
+      expect.objectContaining({ movement_type: "DEVOLUCAO_ML", qty_delta: 1, sku_id: "sku-a" }),
+    ]);
+    expect((captured.events[0] as { after: Record<string, unknown> }).after).toMatchObject({
+      fullReversal: true,
+      needsManualReview: false,
+    });
+  });
+
   it("devolução parcial entregue: não reverte, mas grava o evento para investigação", async () => {
     const captured: Captured = { movements: [], events: [], supportCases: [] };
     const { client } = fakeMercadoLivre({

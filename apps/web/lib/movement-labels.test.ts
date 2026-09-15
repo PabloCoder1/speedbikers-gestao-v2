@@ -9,10 +9,16 @@ import {
 import { MOVEMENT_TYPES } from "./movement-filters.js";
 
 describe("vocabulário das movimentações (D-167)", () => {
-  it("os 12 tipos aprovados têm rótulo próprio — nenhum aparece cru", () => {
+  it("os 13 tipos aprovados têm rótulo próprio — nenhum aparece cru", () => {
+    expect(MOVEMENT_TYPES).toHaveLength(13);
+
     for (const type of MOVEMENT_TYPES) {
       expect(movementTypeLabel(type)).not.toBe(type);
     }
+  });
+
+  it("o estorno de venda anterior à planilha tem rótulo que diz de onde vem (D-351)", () => {
+    expect(movementTypeLabel("ESTORNO_PRE_CAPTURA")).toBe("Estorno de venda anterior à planilha (UpSeller)");
   });
 
   it("tipo/local desconhecidos degradam para o valor cru — função total, nunca tela quebrada", () => {

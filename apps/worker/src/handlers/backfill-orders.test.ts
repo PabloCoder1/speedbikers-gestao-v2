@@ -95,11 +95,13 @@ function validCredentials(now: Date): NonNullable<FakeDbOptions["credentials"]> 
 function fakeDb(options: FakeDbOptions = {}): {
   db: BackfillOrdersDeps["db"];
   updated: { table: string; row: unknown }[];
+  upserted: { table: string; rows: unknown[] }[];
 } {
   const account = "account" in options ? options.account : DEFAULT_ACCOUNT;
   const credentials = "credentials" in options ? options.credentials : validCredentials(NOW);
 
   const updated: { table: string; row: unknown }[] = [];
+  const upserted: { table: string; rows: unknown[] }[] = [];
 
   const db = {
     from: (table: string) => ({
@@ -110,8 +112,15 @@ function fakeDb(options: FakeDbOptions = {}): {
 
         // D-186: leitura em LOTE devolve lista. O cliente real devolve `[]`,
         // nunca `null`, quando não há linha — e `prefetchOrders` recusa `data`
-        // nulo sem erro de propósito.
-        if (table === "sku_listing_links" || table === "skus" || table === "sku_components" || table === "orders") {
+        // nulo sem erro de propósito. D-351: `stock_movements` entra na lista
+        // (a venda gravada da página).
+        if (
+          table === "sku_listing_links" ||
+          table === "skus" ||
+          table === "sku_components" ||
+          table === "orders" ||
+          table === "stock_movements"
+        ) {
           // Sem vínculo cadastrado no fake — persistOrder grava sku_id nulo.
           return chain({ data: [], error: null });
         }
@@ -125,7 +134,12 @@ function fakeDb(options: FakeDbOptions = {}): {
         return chain({ data: null, error: null });
       },
       // persistOrder: upsert de `orders`, delete + insert de `order_items`.
-      upsert: () => Promise.resolve({ data: null, error: null }),
+      // D-351: captura as linhas — é assim que o teste vê a fonte do evento.
+      upsert: (rows: unknown) => {
+        upserted.push({ table, rows: Array.isArray(rows) ? rows : [rows] });
+
+        return Promise.resolve({ data: null, error: null });
+      },
       // D-189/D-190: a exclusão da cauda encadeia `.eq().gte()` por pedido e
       // `.in().gte()` em lote. A cadeia precisa ser thenable em qualquer
       // ponto — outros caminhos ainda usam só `.eq()`.
@@ -150,7 +164,7 @@ function fakeDb(options: FakeDbOptions = {}): {
     }),
   } as unknown as BackfillOrdersDeps["db"];
 
-  return { db, updated };
+  return { db, updated, upserted };
 }
 
 interface FakePage {
@@ -390,6 +404,23 @@ describe("backfill.orders", () => {
     const outcome = await run(d, lines);
 
     expect(outcome).toEqual({ status: "done", processed: 2 });
+  });
+
+  // D-351: o primeiro backfill de produção gerou 32.258 `order.cancelled` de
+  // pedidos antigos, todos notificados ao único ADMIN. O evento continua sendo
+  // gravado — com a fonte `backfill`, que o fan-out não notifica.
+  it("pedido cancelado na carga da história grava o evento com fonte backfill", async () => {
+    const cancelado = { ...(fakeOrder(9, "2026-01-05T10:00:00.000-03:00") as Record<string, unknown>), status: "cancelled" };
+    const { deps: d, db, lines } = deps({}, [{ paging: { total: 1, offset: 0, limit: 50 }, results: [cancelado] }]);
+
+    await run(d, lines);
+
+    const eventos = db.upserted.filter((e) => e.table === "domain_events").flatMap((e) => e.rows) as {
+      event_type: string;
+      source: string;
+    }[];
+
+    expect(eventos).toEqual([expect.objectContaining({ event_type: "order.cancelled", source: "backfill" })]);
   });
 
   it("conta CONNECTED sem credenciais: falha não retryable, não enfileira o próximo pedaço", async () => {

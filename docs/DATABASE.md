@@ -243,7 +243,9 @@ idempotency_key UNIQUE,
 occurred_at, created_by
 ```
 
-Tipos: `ENTRADA_NFE` · `SAIDA_NFE` · `VENDA_ML` · `CANCELAMENTO_ML` · `DEVOLUCAO_ML` · `AJUSTE_MANUAL` · `AJUSTE_RECONCILIACAO` · `TRANSFERENCIA` · `RESERVA` · `LIBERACAO_RESERVA` · `ENTRADA_TRANSITO` · `RECEBIMENTO_TRANSITO`.
+Tipos: `ENTRADA_NFE` · `SAIDA_NFE` · `VENDA_ML` · `CANCELAMENTO_ML` · `DEVOLUCAO_ML` · `AJUSTE_MANUAL` · `AJUSTE_RECONCILIACAO` · `TRANSFERENCIA` · `RESERVA` · `LIBERACAO_RESERVA` · `ENTRADA_TRANSITO` · `RECEBIMENTO_TRANSITO` · `ESTORNO_PRE_CAPTURA`.
+
+`ESTORNO_PRE_CAPTURA` (D-351) é o par de um `VENDA_ML` cuja "venda em" (`date_closed ?? date_created`) é anterior ou igual ao corte do snapshot do UpSeller: a planilha já tinha descontado a venda. O worker grava os dois juntos, com a mesma `occurred_at` e a chave `estorno-pre-captura:<chave da venda>`, e `created_by` nulo. O par soma zero no saldo e no alvo de `compute_erp_target_balances`. O corte vem de `get_erp_stock_cutoffs` (só `service_role`).
 
 `AJUSTE_RECONCILIACAO` é gerado automaticamente pela conciliação contra o ERP (D-029) e nunca por ação direta de usuário.
 
@@ -313,6 +315,8 @@ planilha do UpSeller -> erp_import_batches / erp_import_rows
 ```
 
 **O UpSeller vence, mas o ajuste é uma linha de ledger, nunca um `UPDATE` silencioso** (D-029). O saldo passa a bater e a diferença fica auditável, com origem, data e responsável.
+
+**`captured_at` é o instante da EXPORTAÇÃO da planilha, não o do parse** (D-351): lido do nome `Lista_de_Estoque_MMDDHHMMSS` (UTC), limitado a `[parsed_at − 24 h, parsed_at]`, e `parsed_at` quando o nome não traz o padrão (`resolveStockExportInstant` no worker, `private.erp_stock_export_instant` na migration que corrigiu os snapshots antigos). É o corte de três leitores que precisam concordar: `compute_erp_target_balances` (soma `occurred_at > captured_at`), `get_erp_stock_cutoffs` (o gate do worker, `venda em <= corte`) e a compensação F3.
 
 **RESERVADO nasce inteiramente desta reconciliação** — nenhum outro código grava `location_kind = 'RESERVADO'` (venda/cancelamento/NF-e são sempre `LOCAL`). "Disponível" do UpSeller mapeia para LOCAL, "Ocupado" mapeia para RESERVADO (`docs/UPSELLER.md` secao 6). **TRANSITO fica de fora de propósito** — as colunas de trânsito do export real vêm zeradas em 100% das linhas (o recurso existe no ERP e não é usado); depende de Pedidos de Compra existir como fonte própria. Por isso "Reservado e em trânsito" e esta reconciliação são o MESMO item do checklist (`docs/ROADMAP.md`), não dois.
 
@@ -395,7 +399,7 @@ organization_id, ml_account_id (nullable, D-054), occurred_at,
 event_type, entity_type, entity_id,
 before jsonb, after jsonb,
 severity (informativo | importante | critico),
-source (webhook | sync | user | system),
+source (webhook | sync | user | system | backfill),
 dedup_key UNIQUE
 ```
 

@@ -51,6 +51,10 @@ describe("filtros de /estoque/movimentacoes (D-167)", () => {
     });
   });
 
+  it("o tipo ESTORNO_PRE_CAPTURA é filtrável — o 13º do CHECK (D-351)", () => {
+    expect(resolveMovementFilters({ tipo: "ESTORNO_PRE_CAPTURA" }).movementType).toBe("ESTORNO_PRE_CAPTURA");
+  });
+
   it("trocar uma dimensão preserva as outras e volta à página 1; trocar só a página a mantém", () => {
     const current = resolveMovementFilters({ tipo: "VENDA_ML", busca: "5821", pagina: "3" });
 

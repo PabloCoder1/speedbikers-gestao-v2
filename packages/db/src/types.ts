@@ -4112,6 +4112,19 @@ export type Database = {
           sku_id: string
         }[]
       }
+      // CORRECAO MANUAL (D-351, classe D-213): bloco escrito a mao no formato
+      // do gerador -- a migration `20260914200100_get_erp_stock_cutoffs` so
+      // existe no repositorio ate ser aplicada no Dev, e a CLI nao regenera este
+      // arquivo. `captured_at` e NULO de verdade (organizacao sem snapshot) e o
+      // gerador nunca marca coluna de retorno de `returns table` como nula
+      // (classe D-133).
+      get_erp_stock_cutoffs: {
+        Args: { p_organization_id: string; p_sku_ids: string[] }
+        Returns: {
+          captured_at: string | null
+          sku_id: string
+        }[]
+      }
       compute_inventory_balances_from_ledger: {
         Args: { p_organization_id: string; p_sku_id?: string }
         Returns: {

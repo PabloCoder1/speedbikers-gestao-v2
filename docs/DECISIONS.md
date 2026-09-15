@@ -11901,6 +11901,116 @@ Depois do merge do PR #2 (`da130c0`, CI de push verde), o Dev foi publicado a pa
 
 **Impacto:** Cloud Scheduler e Cloud Tasks do Dev (pausados), `v3-reconcile-balances` de producao (pausado), disparos manuais em producao; `docs/{DECISIONS,DECISIONS_INDEX,DEPLOYMENT,HANDOFF,ROADMAP}.md` e `docs/archive/handoffs/2026-09-14_a_2026-09-14.md`. Sem migration e sem codigo.
 
+## D-351 - A venda anterior a planilha do UpSeller passa a ser gravada e estornada -- o corte vira o instante da exportacao, e o backfill deixa de notificar
+
+**Contexto:** D-350 §5 mediu em producao, em 2026-09-14: o backfill de 1 ano de pedidos terminou as 18:25 UTC com zero SKUs e zero vinculos, e a planilha do UpSeller foi importada entre 18:42 e 18:44 -- 3.240 SKUs, 16.962 vinculos e 3.098 snapshots com `captured_at` = 18:44:13.254, o instante do PARSE. O arquivo e `Lista_de_Estoque_0914184200.xlsx`, exportado as 18:42:00 UTC. Dali em diante, cada atualizacao de pedido ANTIGO com item vinculado gerava o primeiro `VENDA_ML` dele: `computeSaleDeductions` so olhava o status, e `occurred_at` era a data da atualizacao. As 19:25 havia 500 `VENDA_ML`, a maioria de pedidos anteriores a planilha, e por volta das 19:50, 540. `v3-reconcile-balances` de producao ficou pausado. Um desenho (opcao C) e uma revisao adversarial -- que derrubou a C com dois pedidos reais e propos a C' "grava e estorna" -- vieram antes desta implementacao, e o dono respondeu as perguntas que decidiam o comportamento. Uma segunda revisao adversarial, sobre o primeiro commit (b170509), achou dois defeitos ALTA, um MEDIA e dois BAIXA, corrigidos no commit seguinte (secao 8).
+
+---
+
+**1. AS RESPOSTAS DO DONO QUE DEFINEM A REGRA**
+
+| | |
+|---|---|
+| Corte | o UpSeller puxa o pedido do Mercado Livre na hora (ate ~5 min) e o saldo da planilha e o Disponivel no instante da EXPORTACAO: o corte e a exportacao, nao o parse |
+| Cancelamento | o UpSeller devolve a unidade ao Disponivel sozinho. Venda anterior ao corte cancelada DEPOIS dele repoe; cancelada ANTES, nao mexe. Devolucao entregue sempre reverte |
+| Contas | as 4 contas estao integradas ao UpSeller: o estorno vale para todas |
+| Full | "o que vende no Full nao desconta do estoque de nenhum lugar" -- fora desta fatia, com investigacao separada |
+| Tipo | movimento novo `ESTORNO_PRE_CAPTURA`, com `created_by` nulo, rotulo e filtro na web |
+| Notificacoes | o backfill deixa de notificar (o evento fica); as antigas viram lidas pelo recorte `domain_events.occurred_at < ml_accounts.connected_at` |
+| Compensacao | fora deste PR: roda depois do deploy do worker |
+
+---
+
+**2. O QUE MUDA**
+
+- **O corte e o instante da exportacao, corrigido no proprio `captured_at`, e nao numa coluna nova.** O corte tem tres leitores que precisam concordar: o gate do worker, `compute_erp_target_balances` e a compensacao. Com um `exported_at` ao lado, os tres mudariam e `captured_at` ficaria com o valor errado e o nome certo, esperando o proximo leitor. Corrigindo o valor, os tres leem a mesma coluna por construcao, e `compute_erp_target_balances` fica intacta. A regra: `Lista_de_Estoque_MMDDHHMMSS` no nome, em UTC (o lote de producao foi enviado as 18:44:11 UTC, e em BRT a exportacao seria 21:42, depois do envio); o ano e o vizinho do parse mais proximo dele; o resultado fica em `[parsed_at - 24 h, parsed_at]`; sem o padrao, `parsed_at`. Sao duas implementacoes gemeas -- `resolveStockExportInstant` (`@sb/domain`, no `erp-import-apply`) e `private.erp_stock_export_instant` (na migration dos snapshots existentes) --, comparadas caso a caso na integracao.
+- **`public.get_erp_stock_cutoffs(p_organization_id, p_sku_ids)`**, `security invoker`, so `service_role`. Devolve uma linha por id pedido, SEMPRE: `captured_at`, o `max(captured_at)` do SKU (o mesmo corte de `compute_erp_target_balances`), o da organizacao para SKU sem snapshot proprio, e nulo para organizacao sem snapshot; e `imported_at`, o MENOR `created_at` dos snapshots que carregam esse corte -- quando a V3 recebeu o corte. O menor, porque o import grava os snapshots em lotes com `created_at` proprio (quatro, entre 18:44:18.714 e 18:44:19.198, em producao) e o corte existe a partir do primeiro.
+- **Grava e estorna** (`computeSaleDeductions`). A venda continua sendo gravada, agora com `occurred_at` = "venda em" (`date_closed ?? date_created`). Cada rascunho com venda em <= corte do SKU (do componente, no KIT) sai com o par `ESTORNO_PRE_CAPTURA`: quantidade oposta e MESMA `occurred_at`. O par soma zero no saldo e fica do mesmo lado do corte no alvo -- a fronteira e `<=` no gate e `>` no alvo. Organizacao sem snapshot: sem estorno, como antes.
+- **A chave do estorno e NEUTRA: `estorno:<chave do movimento estornado>`**, e nao `estorno-pre-captura:<chave>`. O TIPO diz a causa; a CHAVE diz o movimento. A fatia do Full vai criar `ESTORNO_FULL`: com prefixos por causa, dois estornos do mesmo movimento teriam chaves diferentes e entrariam os dois, e impedir isso pediria um indice unico a mais -- que o lote da pagina (`page-writes.ts`, que trata QUALQUER 23505 como idempotencia) transformaria em perda silenciosa dos movimentos da pagina inteira. Com a chave neutra, o `UNIQUE` de `idempotency_key` que ja existe absorve o segundo estorno. Quem le separa estorno de venda pelo tipo da linha, e chave de estorno fora do formato LANCA (`estornadoKeyOf`).
+- **So e estornada a venda que entra no saldo DEPOIS de o corte chegar.** O rascunho novo sempre (vai ser gravado agora); o `VENDA_ML` ja gravado, so com `created_at > imported_at`. A venda gravada antes do import ja estava no saldo quando a planilha chegou: o salto do alvo a absorveu e a reconciliacao alinhou o saldo. Sem essa guarda, a cada planilha nova o worker estornaria venda legitima dos dias anteriores a cada atualizacao do pedido -- 87% dos pedidos pagos de 8 a 30 dias sao atualizados mais de 1 dia depois do fechamento -- e a reconciliacao do dia desfaria com `AJUSTE_RECONCILIACAO` e notificacao (ALTA-1 da secao 8).
+- **O estorno espelha o `VENDA_ML` ja gravado** -- ajuste que nem o desenho nem a revisao tinham. O worker antigo gravou venda com `occurred_at` = data da atualizacao. Um estorno com a "venda em" nova para essa linha somaria zero no saldo e NAO no alvo (as duas linhas em lados opostos do corte), e a primeira reconciliacao traria a dupla contagem de volta. Entre o deploy e a compensacao isso aconteceria a cada atualizacao dos ~21 mil pedidos pagos e vinculados dos ultimos 30 dias. O estorno copia SKU, quantidade e data da linha gravada.
+- **Cancelamento** (`computeCancellationMovements`), na ordem de gravacao venda, estorno, cancelamento:
+  - venda estornada nao e revertida quando o `lastUpdatedAt` do cancelamento e <= corte; depois do corte, reverte. Sem `date_last_updated` nem `last_updated` (instante desconhecido), reverte e registra `cancellation_reversal_sem_instante_do_cancelamento`;
+  - **a venda anterior ao corte que a V3 NUNCA gravou e que cancelou depois dele repoe** (ALTA-2): para cada rascunho de venda (vinculos de hoje) sem linha gravada, grava `VENDA_ML` + `ESTORNO_PRE_CAPTURA` + `CANCELAMENTO_ML` quando a V3 viu a transicao de venda valida para cancelado, `date_closed` existe, a venda e <= corte e o cancelamento tem instante conhecido e posterior ao corte. A transicao vem do status anterior no banco OU de um `order.cancelled` ja gravado com `before.status` de venda: a pagina e o webhook gravam `orders` antes dos movimentos, e o retry de uma falha na gravacao dos movimentos ja acharia o pedido cancelado -- o evento, gravado antes dos movimentos, e o que sobrevive. Sem a transicao (o backfill trouxe o pedido ja cancelado), nao mexe;
+  - o estorno que falta de venda ja gravada (retry depois de a venda gravar e o estorno falhar) sai no cancelamento tambem, pela mesma regra da venda.
+- **Devolucao**: inalterada -- o `VENDA_ML` segue gravado e continua sendo a base dela.
+- **Leituras**: os movimentos gravados (`VENDA_ML` com `created_at`, e `ESTORNO_PRE_CAPTURA`), o corte e os `order.cancelled` dos pedidos cancelados sao lidos UMA vez por pagina no prefetch -- o cancelamento deixou de ler por pedido -- e uma vez no webhook, antes de qualquer escrita. Leitura que falha, que volta sem a linha de um id pedido, que chega a 1.000 linhas, ou corte sem `imported_at` LANCA, e SKU ausente do mapa do prefetch tambem: "nao sei" nunca vira "sem corte" nem "nao houve transicao".
+- **Fonte `backfill`**: `EventSource` ganha o valor, `backfill-orders` o passa, a janela horaria e o webhook seguem `sync`, e `private.fan_out_notification` pula `backfill`. O evento continua gravado para `get_sku_correlated_events` e o diagnostico.
+- **Web**: rotulo "Estorno de venda anterior a planilha (UpSeller)" e filtro em `/estoque/movimentacoes`.
+- **Logs**: `sale_deduction_estornada_pre_captura` (uma vez por pagina, com pedidos e estornos; por pedido no webhook), `cancellation_reversal_pulada_pre_captura`, `cancellation_repoe_venda_anterior_ao_corte` e `erp_stock_corte_resolvido`.
+
+---
+
+**3. MIGRATIONS**
+
+| arquivo | o que faz |
+|---|---|
+| `20260914200000_erp_corte_da_exportacao` | `private.erp_stock_export_instant` (sem EXECUTE para public/anon/authenticated) e o UPDATE dos snapshots que ainda carregam o parse (`captured_at = parsed_at`), idempotente. Medido antes: em producao, 3.098 linhas de 18:44:13.254 para 18:42:00; no Dev, 3.372 de 08-21 15:42:02 para 08-20 16:09:23. No Dev a proxima reconciliacao, quando ele voltar, passa a contar no alvo as vendas dessas 23 h 33 min |
+| `20260914200100_get_erp_stock_cutoffs` | a RPC (`captured_at` e `imported_at`), `revoke` de public/anon/authenticated e `grant` a `service_role`, e dois indices: `(organization_id, sku_id, captured_at desc) include (created_at) where sku_id is not null` e `(organization_id, captured_at desc) include (created_at)` |
+| `20260914200200_estorno_pre_captura_e_fonte_backfill` | CHECK de `movement_type` com `ESTORNO_PRE_CAPTURA`, CHECK de `domain_events.source` com `backfill`, e `fan_out_notification` pulando `backfill` -- corpo identico ao de producao mais o desvio, e o `proacl` nulo (EXECUTE implicito de PUBLIC) revogado |
+| `20260914200300_notificacoes_do_backfill_lidas` | `read_at = now()` nos destinatarios nao lidos de `order.cancelled` com `occurred_at < connected_at` e notificacao criada antes de 2026-09-14 18:30 UTC. As duas ancoras (tipo e criacao) nao mudam o recorte medido -- 32.258 com e sem elas, em 2026-09-15 -- e impedem que uma reconexao antes da aplicacao (`connected_at` e reescrito) leve noticias reais junto. Posteriores a conexao nao lidas em 2026-09-15: 5.049, ficam. No Dev, 0. Nada e apagado |
+
+**Ordem de publicacao** (`DEPLOYMENT.md` 8.2, passo 10): as migrations antes do worker -- o worker novo grava `backfill` e `ESTORNO_PRE_CAPTURA`, que o CHECK antigo recusa, e o flush da pagina aborta --; depois worker e api; so entao a compensacao.
+
+---
+
+**4. A COMPENSACAO (F3), FORA DESTE PR**
+
+`packages/db/scripts/compensacao-estorno-pre-captura-d351.sql` e um bloco atomico, com a chave neutra `estorno:<chave>`, em duas partes:
+
+- **Parte 1**: grava `ESTORNO_PRE_CAPTURA` com `occurred_at` ESPELHADO para cada `VENDA_ML` com venda em <= corte e sem par, exceto a venda cujo `CANCELAMENTO_ML` aconteceu ate o corte (o par ja soma zero). Nao compensa cancelamento nem devolucao.
+- **Parte 2** (ALTA-2): repoe a venda que o worker antigo nunca gravou -- pedido hoje cancelado, item vinculado, `date_closed` <= corte, sem `VENDA_ML`, e com `order.cancelled` de `before.status` venda valida posterior ao corte. Grava o mesmo trio do worker, KIT por componente; o cancelamento leva o `occurred_at` do evento. Medido em producao em 2026-09-15 (so SELECT, a propria selecao com o corte 18:42:00): 20 pedidos, 20 movimentos (um componente de KIT), 21 unidades, eventos de 09-14 18:47:13 a 09-15 05:46:27.
+
+So entra a organizacao "nascida no import": tem snapshot, zero `AJUSTE_RECONCILIACAO`, e o primeiro movimento e posterior a corte - 1 h. Organizacao fora do criterio que tenha pendencias sai em NOTICE, nunca em silencio. **Aborta no inicio** se algum snapshot de planilha com o nome carimbado ainda tiver o corte do parse (BAIXA-2): com ele, a F3 estornaria a venda legitima 2000018457209778, fechada as 18:43:57 -- e o mesmo pega uma planilha importada pelo worker antigo entre a migration e o deploy. Termina com assercoes que abortam o bloco: trio incompleto, pendencias = 0, e ledger = `inventory_balances` por SKU e local. `set local sb.compensacao_organizacao` restringe a uma organizacao. Nao e migration porque o worker antigo continuaria gravando venda sem par depois dela.
+
+---
+
+**5. COMO FOI PROVADO**
+
+- **Producao e Dev, so SELECT** (MCP): em 2026-09-14, nomes, parse e envio dos quatro lotes nos dois bancos; o recorte das notificacoes (32.258 e 54 em producao, 0 no Dev); os nomes dos CHECKs; o `proacl` nulo de `fan_out_notification` e o de `compute_erp_target_balances` (postgres e service_role). Em 2026-09-15: o recorte das notificacoes com as duas ancoras (32.258, criadas entre 17:31:22 e 18:25:36); os `created_at` dos snapshots (quatro lotes, 18:44:18.714 a 18:44:19.198) e os 6 `VENDA_ML` gravados antes do primeiro; e a selecao da parte 2 da F3 (20 pedidos).
+- **Integracao em Postgres real**: `estoque-pre-captura.integration.test.ts`, 34 casos. Cobre as gemeas SQL x dominio (15 nomes); a migration dos snapshots; grants e `security invoker`; o corte e o `imported_at` com dois imports, dois armazens e dois lotes do mesmo import; o fallback da organizacao; a organizacao sem snapshot; o alvo com pares antes, no e depois do corte; **duas planilhas com uma reconciliacao entre elas**, com o corte lido da RPC e a regra do dominio: a venda absorvida nao e estornada (e, na contraprova, o estorno deixaria a reconciliacao seguinte em -1), e a venda antiga vista depois do import e gravada e estornada com saldo = alvo; **a chave neutra pelo PostgREST**: com um estorno ja gravado por outro produtor, o upsert da pagina com o estorno do mesmo movimento e um movimento novo de outro pedido volta sem erro, grava o movimento novo e deixa UM estorno; o tipo novo; o fan-out com `backfill` = 0 e `sync` = 1; a migration das notificacoes (so o recorte; outro tipo e notificacao criada as 18:30 ficam nao lidas; lida preservada; segunda execucao 0); e a F3 (parte 1, parte 2 com PRODUTO, KIT e os tres casos que nao mexem, datas espelhadas, alvo 23 e saldo 3, reexecucao 0, organizacao reconciliada avisada, e corte do parse abortando).
+- **Mutacao**, cada uma reprovando teste nomeado, restauracao conferida por sha256 do arquivo ou md5 de `pg_get_functiondef`:
+  - b170509: 24 em TypeScript e 14 no banco. A primeira rodada do banco pegou 13 de 14 (a fixture da migration dos snapshots tinha exatamente o valor que o nome daria; corrigida).
+  - correcao: 19 em TypeScript e 14 no banco -- chave por causa no dominio (dominio, worker e a integracao da chave neutra) e na F3; guarda do `imported_at` removida (dominio, worker e a integracao das duas planilhas) e com fronteira `<`; `recordedAt` lido de `occurred_at`; corte sem `imported_at` aceito; `imported_at` com o maior `created_at`, de qualquer snapshot do SKU, ou sem o da organizacao; reposicao sem transicao observada, com cancelamento ate o corte, com venda depois do corte, sem `date_closed`; transicao vista agora ignorada; transicao gravada ignorada no lote e no webhook; falha da leitura de eventos engolida; estorno que falta nao completado no cancelamento; prefetch sem os pedidos cancelados (a G1 da revisao, que sobrevivia); estorno separado por prefixo sem conferir o formato; as duas ancoras da migration das notificacoes; F3 sem a guarda do parse, sem a transicao de venda, com cancelamento ate o corte, com venda depois do corte e com a quantidade do KIT errada; e M1, M7, M8, S10, S11 e S12 de b170509 reconferidas, porque o texto delas mudou.
+- **Bateria**, na arvore final e na ordem de `docs/HANDOFF.md`: `db reset` e integracao com 697 casos em 7 arquivos (34 neste); `check:embeds` com 36 projecoes; `pnpm run check --force` com 29/29 tarefas e 0 do cache (dominio 452, worker 574, web 562, api 354, db 21, mercado-livre 117, observability 35, contracts 10); `pnpm run build` 8/8; os quatro guardas da web e `docs:check` verdes; novo `db reset`, seed e e2e com 141/141.
+- **Indices**: 3.300 SKUs x 50 imports (165 mil snapshots), 60 SKUs por chamada, como `service_role`: de 0,5 a 0,9 ms com os indices contra 900 a 1.000 ms sem eles (medido em b170509, antes do `include (created_at)`).
+
+---
+
+**6. O QUE FICA FORA**
+
+- Aplicar as migrations no Dev e em producao, publicar worker e api, e rodar a F3: nada disso foi feito aqui.
+- Despausar `v3-reconcile-balances`: decisao do dono, depois da F3. A primeira rodada semeia o saldo inteiro -- ~3 mil ajustes e notificacoes `stock.balance.adjusted` (D-350).
+- Full (resposta 4 do dono) e `partially_paid`, que nenhum caminho reverte.
+- `VENDA_ML` antigo de pedido que nao volta a ser atualizado, ou cujo vinculo sumiu: o worker nao o estorna, e a F3 cobre.
+- Arquivo renomeado pelo usuario perde o carimbo e cai no parse; exportacao a mais de 24 h do parse fica no piso. O lote do Dev esta a 27 min desse limite.
+- A data real do cancelamento (`cancel_detail`) continua nao lida: o cancelamento usa o `lastUpdatedAt` da leitura, como antes.
+- Venda NAO estornada cujo cancelamento aconteceu ate o corte, mas so e visto depois do import: reverte (+1), e a reconciliacao do dia absorve com um ajuste. Existia antes de D-351; a janela e a do cancelamento ate o import.
+- No webhook o evento e gravado best-effort: se a gravacao do `order.cancelled` E a da venda falharem na mesma entrega, o retry nao ve a transicao e a reposicao so vem por uma nova F3.
+- Venda fechada minutos antes da exportacao pode ainda nao estar na planilha (o UpSeller leva ate ~5 min): o corte a trata como descontada.
+
+---
+
+**7. A LICAO**
+
+**O instante em que o dado nasceu nao e o instante em que o sistema o viu.** O erro aparecia tres vezes nesta fatia: o corte era o parse, e nao a exportacao; a venda era a atualizacao do pedido, e nao o fechamento; e "anterior ao corte" ignorava QUANDO a venda entrou no saldo -- a venda de ontem, gravada antes da planilha de hoje, ja tinha sido absorvida. E a correcao so vale se todo leitor desse instante mudar junto -- por isso o valor foi corrigido na coluna, e nao ao lado dela, e por isso o estorno copia a data da linha que anula em vez de recalcula-la.
+
+---
+
+**8. A REVISAO DE b170509 E A CORRECAO**
+
+| achado | correcao |
+|---|---|
+| ALTA-1: a segunda planilha fazia o worker estornar venda legitima ja absorvida pela reconciliacao | `imported_at` na RPC, `recordedAt` na venda gravada, e estorno so para o que entra no saldo depois de o corte chegar (secao 2) |
+| ALTA-2: venda anterior ao corte, nunca gravada e cancelada depois dele, nao repunha (12 pedidos as 20:42, 20 em 09-15) | `computeCancellationMovements` grava venda + estorno + cancelamento com a transicao vista (status anterior ou `order.cancelled` gravado); a parte 2 da F3 repoe os que ja passaram |
+| MEDIA-1: o prefetch em lote podia parar de ler os pedidos cancelados sem teste reprovar | teste da pagina com pedido cancelado e venda gravada, esperando o `CANCELAMENTO_ML`; a mutacao G1 da revisao passou a reprovar |
+| BAIXA-1: o recorte das notificacoes dependia so de `connected_at`, reescrito a cada reconexao | ancoras `event_type = 'order.cancelled'` e criacao antes de 2026-09-14 18:30 UTC; o recorte medido segue 32.258 |
+| BAIXA-2: a F3 nao conferia que o corte da exportacao ja estava aplicado | aborta se houver snapshot carimbado com o corte do parse |
+| chave do estorno (da revisao do desenho do Full) | chave neutra `estorno:<chave do movimento>`, separacao por tipo, e a integracao pelo PostgREST |
+| achado do corretor: a correcao do escape `\u0000` em b170509 deixou um byte NUL real nesta decisao, e o git passou a tratar `DECISIONS.md` como binario | o byte voltou a ser o texto `\u0000` |
+
+**Impacto:** `supabase/migrations/20260914200000` a `20260914200300`; `packages/domain` (`upseller/export-instant`, `inventory/{sale-deduction,cancellation-reversal,index}`, `events/{catalog,order-events}`); `apps/worker` (`persist-order`, `page-writes`, `ml-orders-fetch`, `backfill-orders`, `sync-orders-window`, `webhook-received`, `erp-import-apply`, e os testes de `persist-order`, `backfill-orders` e `sync-orders-window`); `apps/web/lib/movement-{filters,labels}`; `packages/db/src/types.ts` (bloco a mao, com `imported_at`); `packages/db/src/estoque-pre-captura.integration.test.ts`; `packages/db/scripts/compensacao-estorno-pre-captura-d351.sql`; `docs/{DECISIONS,DECISIONS_INDEX,DATABASE,DEPLOYMENT,HANDOFF}.md`. Nenhum banco remoto alterado, nenhum deploy.
+
 ## D-353 - O Postgres de producao com 4.091 erros em 24h -- 98% era o worker contando com o 23505, e o resto o Realtime assinando antes do token
 
 **Contexto:** em 2026-09-15 o dono mostrou o painel de logs do Postgres de producao (`imvjfgnaprqsfjlnsyev`): 5.982 linhas em 24h, 4.091 `ERROR`, e perguntou se era normal e de quem era. Nao era falha de dado. Mas era ruido que esconderia qualquer erro real, e dois defeitos pequenos de codigo por tras.

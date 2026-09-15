@@ -92,6 +92,7 @@ function fakeDb(options: FakeDbOptions = {}): {
   db: SyncOrdersWindowDeps["db"];
   inserted: { table: string; row: unknown }[];
   updated: { table: string; row: unknown }[];
+  upserted: { table: string; rows: unknown[] }[];
 } {
   const account = "account" in options ? options.account : DEFAULT_ACCOUNT;
   const credentials = "credentials" in options ? options.credentials : validCredentials(NOW);
@@ -99,6 +100,7 @@ function fakeDb(options: FakeDbOptions = {}): {
 
   const inserted: { table: string; row: unknown }[] = [];
   const updated: { table: string; row: unknown }[] = [];
+  const upserted: { table: string; rows: unknown[] }[] = [];
 
   const db = {
     from: (table: string) => ({
@@ -116,7 +118,13 @@ function fakeDb(options: FakeDbOptions = {}): {
         // precisa modelar isso: `prefetchOrders` recusa `data` nulo sem erro
         // de propósito, porque "sem vínculo" é resposta legítima e um estado
         // impossível não pode virar essa resposta por omissão.
-        if (table === "sku_listing_links" || table === "skus" || table === "sku_components") {
+        // D-351: `stock_movements` entra na lista (a venda gravada da página).
+        if (
+          table === "sku_listing_links" ||
+          table === "skus" ||
+          table === "sku_components" ||
+          table === "stock_movements"
+        ) {
           // Sem vínculo cadastrado no fake — persistOrder grava sku_id nulo.
           return chain({ data: [], error: null });
         }
@@ -154,7 +162,12 @@ function fakeDb(options: FakeDbOptions = {}): {
         return chain({ data: null, error: null });
       },
       // persistOrder: upsert de `orders`, delete + insert de `order_items`.
-      upsert: () => Promise.resolve({ data: null, error: null }),
+      // D-351: captura as linhas — é assim que o teste vê a fonte do evento.
+      upsert: (rows: unknown) => {
+        upserted.push({ table, rows: Array.isArray(rows) ? rows : [rows] });
+
+        return Promise.resolve({ data: null, error: null });
+      },
       // D-189/D-190: a exclusão da cauda encadeia `.eq().gte()` por pedido e
       // `.in().gte()` em lote. A cadeia precisa ser thenable em qualquer
       // ponto — outros caminhos ainda usam só `.eq()`.
@@ -179,7 +192,7 @@ function fakeDb(options: FakeDbOptions = {}): {
     }),
   } as unknown as SyncOrdersWindowDeps["db"];
 
-  return { db, inserted, updated };
+  return { db, inserted, updated, upserted };
 }
 
 interface FakePage {
@@ -498,6 +511,22 @@ describe("sync.orders.window", () => {
     // teste de mapeamento de campo vive em `persist-order.test.ts`. Este
     // teste prova só que o handler CHAMA a persistência, sem crashar.
     expect(db.inserted.find((e) => e.table === "sync_runs")?.row).toMatchObject({ status: "done" });
+  });
+
+  // D-351: a janela horária é notícia de agora — `sync`, que o fan-out notifica.
+  // O backfill é o único que grava `backfill` (`backfill-orders.test.ts`).
+  it("pedido cancelado na janela horária grava o evento com fonte sync", async () => {
+    const cancelado = { ...(fakeOrder(9, "2026-08-21T15:10:00.000-03:00") as Record<string, unknown>), status: "cancelled" };
+    const { deps: d, db, lines } = deps({}, [{ paging: { total: 1, offset: 0, limit: 50 }, results: [cancelado] }]);
+
+    await run(d, lines);
+
+    const eventos = db.upserted.filter((e) => e.table === "domain_events").flatMap((e) => e.rows) as {
+      event_type: string;
+      source: string;
+    }[];
+
+    expect(eventos).toEqual([expect.objectContaining({ event_type: "order.cancelled", source: "sync" })]);
   });
 
   it("order com formato inesperado no meio da página vira partial, sem derrubar o resto", async () => {
