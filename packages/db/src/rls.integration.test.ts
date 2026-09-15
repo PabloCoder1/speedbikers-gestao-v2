@@ -292,14 +292,20 @@ describe("catálogo de métricas", () => {
     const rows = await asUser<{ id: string }>(ADMIN_SB, "select id from public.metric_definitions order by id");
 
     expect(rows.map((row) => row.id)).toEqual([
+      // As cinco de D-356 (METRICS 5F) entram na lista em ordem alfabética.
+      "comissao_percentual",
+      "custo_produtos_vendidos",
       "desconto_vendedor",
+      "frete_medio_pedido",
       "frete_vendedor",
       "margem_operacional_pedido",
+      "margem_venda",
       "pedidos",
       "pedidos_cancelados",
       "pedidos_por_pack",
       "preco_medio_praticado",
       "receita_bruta",
+      "resultado_venda",
       "skus_distintos_vendidos",
       "taxa_cancelamento",
       "taxa_conversao",
