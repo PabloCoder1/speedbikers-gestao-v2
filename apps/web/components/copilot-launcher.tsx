@@ -4,12 +4,13 @@ import Link from "next/link";
 import { useState, type ReactNode } from "react";
 
 import dynamic from "next/dynamic";
+import { CarregandoBloco } from "./carregando";
 import { useCopilotScreenContext, type CopilotScreenContext } from "./copilot-context";
 import { Drawer } from "./drawer";
 
 const CopilotChat = dynamic(() => import("../app/copiloto/chat").then((module) => module.CopilotChat), {
   ssr: false,
-  loading: () => <p role="status" className="sb-empty">Carregando Copiloto…</p>,
+  loading: () => <CarregandoBloco rotulo="Copiloto" />,
 });
 
 /**

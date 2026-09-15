@@ -73,7 +73,9 @@ export function montarCsp({
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${dev ? " 'unsafe-eval'" : ""}`,
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob:",
+    // A foto de perfil vem do Storage do Supabase (D-354): a mesma origem que
+    // `connect-src` já abre, e nenhuma outra.
+    `img-src 'self' data: blob:${supabase === null ? "" : ` ${supabase.http}`}`,
     "font-src 'self'",
     `connect-src ${[...new Set(conectar)].join(" ")}`,
     "object-src 'none'",

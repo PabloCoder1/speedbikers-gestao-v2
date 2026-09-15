@@ -132,6 +132,8 @@ test("convite: link já usado é DITO, e não vira formulário de entrada mudo",
 
   await page.goto(link);
 
-  await expect(page.getByText("Este convite não vale mais")).toBeVisible();
+  // "link", e não "convite": o novo link de acesso de `/usuarios` (recovery)
+  // cai no mesmo aviso, e o fragmento de erro não diz de qual dos dois veio.
+  await expect(page.getByText("Este link não vale mais")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Entrar" })).toBeVisible();
 });

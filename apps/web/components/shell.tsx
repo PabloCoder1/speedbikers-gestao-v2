@@ -8,6 +8,7 @@ import { CommandPalette } from "./command-palette";
 import type { NotificationPreferenceRule } from "../lib/notification-preferences";
 import { CopilotContextProvider } from "./copilot-context";
 import { CopilotLauncher } from "./copilot-launcher";
+import { MeuPerfil } from "./meu-perfil";
 import { NotificationToasts } from "./notification-toasts";
 import { SidebarNav } from "./nav";
 import { currentMembership } from "../lib/request-membership";
@@ -96,7 +97,7 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
     // identifica.
     userId === null
       ? Promise.resolve({ data: null, error: null })
-      : supabase.from("profiles").select("full_name").eq("id", userId).maybeSingle(),
+      : supabase.from("profiles").select("full_name, avatar_path").eq("id", userId).maybeSingle(),
   ]);
 
   // Falha aqui degrada para "sem regra", que é o mesmo que o componente fazia
@@ -129,6 +130,8 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
   const email = auth.user?.email ?? "—";
   const nome = perfil.error === null ? (perfil.data?.full_name ?? null) : null;
   const quem = nome !== null && nome.trim() !== "" ? nome.trim() : email;
+  // A foto do topo (D-354). Falha de leitura degrada para as iniciais, como o nome.
+  const fotoPath = perfil.error === null ? (perfil.data?.avatar_path ?? null) : null;
 
   return (
     /*
@@ -201,26 +204,28 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
 
             <span aria-hidden="true" className="sb-top-rule" />
 
-            <div className="sb-profile">
-              <span aria-hidden="true" className="sb-avatar">
-                {iniciais(quem)}
+            {/*
+              O BLOCO DE PERFIL abre o "Meu perfil" (D-354): foto e nome da
+              própria pessoa, editáveis sob `profiles_update_self_or_org_admin`.
+              Mesma aparência de antes — só passou a ser clicável.
+            */}
+            <MeuPerfil
+              userId={userId}
+              nomeExibido={quem}
+              nomeNoPerfil={nome !== null && nome.trim() !== "" ? nome.trim() : null}
+              email={email}
+              papel={role === null ? "sem papel" : roleLabel(role)}
+              fotoPath={fotoPath}
+            />
+            {membershipError && (
+              <span
+                role="alert"
+                title="Não foi possível confirmar sua organização — busca e alguns dados podem estar incompletos nesta página."
+                style={{ color: "var(--sb-danger)", cursor: "help" }}
+              >
+                ⚠
               </span>
-              <span style={{ minWidth: 0 }} title={email}>
-                <b>{quem}</b>
-                <small>
-                  {role === null ? "sem papel" : roleLabel(role)}
-                  {membershipError && (
-                    <span
-                      role="alert"
-                      title="Não foi possível confirmar sua organização — busca e alguns dados podem estar incompletos nesta página."
-                      style={{ color: "var(--sb-danger)", marginLeft: "0.375rem", cursor: "help" }}
-                    >
-                      ⚠
-                    </span>
-                  )}
-                </small>
-              </span>
-            </div>
+            )}
 
             <form action="/auth/sign-out" method="post">
               <button type="submit" className="sb-button">

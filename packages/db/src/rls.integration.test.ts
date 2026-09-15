@@ -7743,10 +7743,13 @@ describe("get_organization_members (D-296)", () => {
   /**
    * A assinatura e contrato: `apps/web/app/usuarios/page.tsx` le estas colunas
    * e `packages/db/src/types.ts` as declara. E o que NAO pode aparecer aqui e
-   * campo de autenticacao alem dos tres acordados -- token, senha, provedor,
+   * campo de autenticacao alem dos acordados -- token, senha, provedor,
    * metadata.
+   *
+   * D-354 acrescentou `suspended`: um BOOLEANO derivado de `banned_until`. O
+   * carimbo cru nao sai, e a lista de proibidos passou a dize-lo.
    */
-  it("mantem as 7 colunas do contrato, e nada mais de auth", async () => {
+  it("mantem as 8 colunas do contrato, e nada mais de auth", async () => {
     const assinatura = await client.query<{ result: string }>(
       `select pg_get_function_result(p.oid) as result
          from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -7758,10 +7761,10 @@ describe("get_organization_members (D-296)", () => {
     expect(result).toBe(
       "TABLE(user_id uuid, full_name text, email text, role text, " +
         "member_since timestamp with time zone, last_sign_in_at timestamp with time zone, " +
-        "invite_accepted boolean)",
+        "invite_accepted boolean, suspended boolean)",
     );
 
-    for (const proibido of ["token", "password", "encrypted", "provider", "metadata", "confirmation"]) {
+    for (const proibido of ["token", "password", "encrypted", "provider", "metadata", "confirmation", "banned_until"]) {
       expect(result).not.toContain(proibido);
     }
   });

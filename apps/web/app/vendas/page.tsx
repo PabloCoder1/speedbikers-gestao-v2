@@ -8,6 +8,7 @@ import {
 } from "@sb/domain";
 import { Suspense, type ReactNode } from "react";
 
+import { CarregandoBloco, CarregandoConteudo } from "../../components/carregando";
 import type { SavedFilter } from "../../components/saved-filters";
 import Link from "next/link";
 import { SavedFilters } from "../../components/saved-filters";
@@ -554,7 +555,7 @@ function buildHref(
 export default function VendasPage(props: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }): ReactNode {
-  return <Shell><Suspense fallback={<p role="status" className="sb-empty">Carregando vendas?</p>}><VendasContent {...props} /></Suspense></Shell>;
+  return <Shell><Suspense fallback={<CarregandoConteudo rotulo="Carregando vendas" />}><VendasContent {...props} /></Suspense></Shell>;
 }
 
 async function VendasContent({
@@ -1006,7 +1007,7 @@ async function VendasContent({
         produto a nomear —, e o total deles continua na faixa acima.
       */}
       {error === null && summary !== null && (
-        <Suspense fallback={<p role="status" className="sb-empty">Carregando ranking...</p>}>
+        <Suspense fallback={<CarregandoBloco rotulo="ranking" />}>
           <SalesRanking result={topPromise} metricLabel={metric.label} contaLabel={contaLabel} marcaLabel={marcaLabel} />
         </Suspense>
       )}
@@ -1072,7 +1073,7 @@ async function VendasContent({
         cobertura declarada, e o veto — não é receita líquida. Com zero
         cobertura, a seção RECUSA em vez de fingir número.
       */}
-      <Suspense fallback={<p role="status" className="sb-empty">Carregando margem...</p>}>
+      <Suspense fallback={<CarregandoBloco rotulo="margem" />}>
         <SalesMargin result={marginPromise} />
       </Suspense>
     </>

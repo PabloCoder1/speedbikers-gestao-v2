@@ -61,6 +61,12 @@ export const ORGANIZATION_ROLES = ["ADMIN", "GESTOR", "ANALISTA", "OPERADOR", "V
 export const inviteRequestSchema = z.object({
   email: z.email("e-mail inválido").max(254),
   role: z.enum(ORGANIZATION_ROLES),
+  /**
+   * O nome da pessoa (D-354). OPCIONAL na rota, e obrigatório na tela: a `api`
+   * e a web são publicadas separadamente, e uma tela antiga que não manda nome
+   * não pode passar a ter o convite recusado no dia em que a `api` subir.
+   */
+  fullName: z.string().trim().min(1, "nome vazio").max(200).optional(),
   /** Contas que a pessoa poderá alcançar. ADMIN alcança todas por papel — a lista fica vazia. */
   mlAccountIds: z.array(z.uuid()).max(50).optional(),
 });
@@ -124,7 +130,12 @@ export async function inviteOrganizationMember(
     const gerado = await deps.db.auth.admin.generateLink({
       type: "invite",
       email,
-      ...(deps.webUrl === undefined ? {} : { options: { redirectTo: deps.webUrl } }),
+      options: {
+        // O nome vai nos metadados, e `handle_new_auth_user` o grava em
+        // `profiles.full_name` no mesmo instante em que o perfil nasce (D-354).
+        ...(request.fullName === undefined ? {} : { data: { full_name: request.fullName } }),
+        ...(deps.webUrl === undefined ? {} : { redirectTo: deps.webUrl }),
+      },
     });
 
     // `user` nao e anulavel no tipo quando `error` e nulo; a condicao morta
@@ -166,6 +177,15 @@ export async function inviteOrganizationMember(
 
   if (vinculo.error !== null) {
     return { status: "error", reason: vinculo.error.message };
+  }
+
+  /*
+    QUEM JÁ TINHA CONTA pode estar sem nome (convidado antes de D-354). Só
+    preenche o vazio: um nome que a pessoa já escolheu não é reescrito por
+    quem a vincula a outra organização.
+  */
+  if (inviteLink === null && request.fullName !== undefined) {
+    await deps.db.from("profiles").update({ full_name: request.fullName }).eq("id", userId).is("full_name", null);
   }
 
   if (contasPedidas.length > 0) {

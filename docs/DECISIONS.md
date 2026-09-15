@@ -11948,3 +11948,56 @@ As tres ingestoes de atendimento (Pergunta, Conversa, Claim) re-persistem o case
 - **Depois do deploy** de worker e web, a mesma consulta em `postgres_logs` precisa mostrar o 23505 de `support_case_links` perto de zero por hora e nenhum `invalid column for filter`.
 
 **Impacto:** `apps/worker/src/handlers/{support-case-links,persist-support-claim,persist-support-conversation,persist-support-question}.ts` e testes; `apps/web/components/notification-toasts.tsx`; `docs/{DECISIONS,DECISIONS_INDEX}.md`. Sem migration.
+
+---
+
+## D-354 - /usuarios: nome, foto, suspender e remover -- o "so conseguimos criar" virou gestao de pessoa
+
+**Contexto:** pedido do usuario na tela de Usuarios: *"ate o momento nos so conseguimos criar ele, porem caso queiramos apagar, ou tirar acesso de alguem ainda nao podemos fazer isso, tambem quando estamos criando ele ainda nao podemos colocar nome"*, mais um campo de foto e uma tela "mais agradavel", seguindo o frame. O frame (`AdminScreen`, `UserDetailDrawer` em `src/App.tsx` do export) e so prototipo: nenhum formulario, nenhuma foto, nenhuma acao. Tudo o que entrou e novo; a composicao continua a de D-297.
+
+Decisoes do usuario, perguntadas antes de construir: **suspender e remover** (nao excluir conta); **foto opcional**, no convite ou depois, e a propria pessoa troca a dela quando quiser; **nome obrigatorio no convite e editavel na gaveta**; trabalho na `fix/guardas-prod-d348`.
+
+---
+
+**1. REMOVER JA EXISTIA NO BANCO -- FALTAVA A TELA**
+
+`organization_members_admin_writes` e `for all`, `guard_last_admin` cobre DELETE e `log_member_access_change` grava `MEMBER_REMOVED` desde D-175. `removeMember` (Server Action, sob RLS) apaga o vinculo e, depois, as permissoes por conta da organizacao: sem vinculo `has_account_access` ja nega, e apagar as linhas impede um convite futuro de ressuscitar alcance antigo. A propria conta nao sai por ali -- o banco deixaria, e a pessoa perderia a tela no meio do clique.
+
+**2. SUSPENDER MORA NO AUTH, NAO NUMA COLUNA**
+
+Uma `suspended_at` em `organization_members` exigiria que cada funcao de autorizacao (`has_org_role`, `has_account_access`, `is_member_of`...) ignorasse o suspenso -- dezenas de policies, e bastaria esquecer uma para a suspensao ser so visual. O `banned_until` do Auth recusa login e renovacao de token num lugar so. Por isso a rota e da `api` (`POST /v1/organization/members/:userId/suspension`, service role, D-012), e o evento `MEMBER_SUSPENDED`/`MEMBER_REACTIVATED` e gravado por ela com o ator do token -- `service_role` nao tem `auth.uid()`.
+
+Recusas: a si mesmo; quem nao e membro DESTA organizacao (mesma resposta que "nao existe"); quem tambem e membro de OUTRA -- o ban e da conta inteira. Idempotente: pedir o estado que ja vale nao escreve evento. **Limite dito na tela:** o token ja emitido vale ate expirar (1 hora).
+
+**3. EXCLUIR A CONTA FICOU FORA, COM MOTIVO MEDIDO**
+
+`organization_access_events.actor_user_id` e `on delete restrict`: quem ja mudou o acesso de alguem nao pode ter a conta apagada sem reescrever o historico. E apagar o `auth.users` do unico ADMIN passaria pelo `guard_last_admin`, que deixa passar quando o perfil some. Suspender cobre o caso real sem nenhum dos dois riscos.
+
+**4. NOME E FOTO: UMA POLICY, NAO UMA ROTA**
+
+`profiles_update_self` virou `profiles_update_self_or_org_admin` (uma so, porque 20260915133738 acabou de consolidar as permissivas duplicadas), via `private.can_edit_profile(text)` -- a propria pessoa, ou ADMIN de uma organizacao da qual ela e membro. Texto e nao uuid: a policy do Storage passa o nome da pasta, e uuid invalido viraria erro em vez de recusa. A autorizacao continua no banco, e nome/foto nao dependem do deploy manual da `api`.
+
+No convite o nome vai nos metadados (`options.data.full_name`) e `handle_new_auth_user` o grava no perfil no mesmo instante. Na rota ele e OPCIONAL: web e `api` sobem separadas, e uma tela antiga sem nome nao pode ter o convite recusado.
+
+**5. A FOTO: CAMINHO NO BANCO, BUCKET PUBLICO, REDUZIDA NO NAVEGADOR**
+
+- `profiles.avatar_path` guarda `<user_id>/<uuid>.<ext>`, nunca a URL (ela muda entre Dev e producao). A forma e travada por `check`, a mesma que as policies do bucket exigem.
+- Bucket `avatars` **publico**: a foto esta no topo de toda pagina, e bucket privado exigiria URL assinada por render -- uma ida a mais no Shell (D-195). O caminho carrega um uuid aleatorio por envio.
+- A tela recorta no centro e reduz para 512x512 WebP antes de enviar (~60 KB); o bucket limita a 1 MiB e a JPG/PNG/WebP como guarda de quem chama o Storage direto.
+- Ordem da troca: sobe o arquivo novo -> troca o caminho no perfil (recusado, apaga o que subiu) -> apaga o anterior. O pior caso e um arquivo orfao.
+- A CSP abre `img-src` para a origem do Supabase, a mesma que `connect-src` ja abria, e nenhuma outra.
+- `[storage] enabled = true` no `supabase/config.toml`: o bucket nasce na migration.
+
+**6. A PROPRIA PESSOA: "MEU PERFIL" NO BLOCO DO TOPO**
+
+O bloco de perfil do topo (antes so texto) virou botao com a mesma aparencia e abre a gaveta "Meu perfil": foto e nome, sob a mesma policy. Uma rota "Minha conta" seria mais uma tela a achar; o canto do topo e onde todo mundo ja se ve.
+
+**7. A TELA**
+
+A tabela continua sem controle (D-297): entraram o avatar na celula (foto ou iniciais, `aria-hidden`, entao o nome acessivel das celulas nao mudou) e o estado **Suspenso** (tom de atencao: e ato deliberado, nao defeito). A gaveta ganhou ordem de perguntas -- quem e (foto grande editavel, nome editavel, estado), o que pode (papel e contas), desde quando, como entra (link de acesso, suspender, remover), o que mudou. O destrutivo fica embaixo, em contorno, e so o botao que confirma e vermelho cheio; toda confirmacao diz o efeito com o nome da pessoa. O convite virou duas secoes ("Quem": foto, nome, e-mail; "O que pode fazer": papel e contas em cartoes marcaveis). A celula **Suspensos** da faixa so aparece quando ha alguem suspenso: sete celulas ja ocupam a faixa, e o estado tambem esta na coluna e no filtro.
+
+---
+
+**Verificacao:** `tsc` limpo em web e api; `eslint` limpo nos arquivos tocados; web **566** testes (60 arquivos) e api **365** (29 arquivos), com 8 casos novos da suspensao (fronteira de organizacao, outra organizacao, a si mesmo, idempotencia, ban vencido, evento que falha) e 1 do nome no convite; os quatro guardas verdes (`check:control-styles` 247 controles); `next build` verde. **Nao verificado:** a migration nao rodou em banco nenhum (o Supabase local estava com a sessao da D-351) e a tela nao foi renderizada com dados. ⚠️ **Pendente, e bloqueia promover:** (1) a migration `20260915160000` precisa estar no Dev e em producao ANTES de a web ser promovida -- a tela le `profiles.avatar_path` e `get_organization_members.suspended`; (2) a `api` precisa de deploy para "Suspender" funcionar (sem ele, o botao cai no `explicar404`, D-301); (3) e2e nao rodado: o Supabase local estava em uso por outra sessao (D-351).
+
+**Impacto:** `supabase/migrations/20260915160000_member_profile_photo_and_suspension.sql`; `supabase/config.toml`; `packages/db/src/types.ts`; `apps/api/src/{member-suspension,member-suspension.test,invites,invites.test,app}.ts`; `apps/web/app/usuarios/{page,detalhe-usuario,convidar,actions,acesso-membro}.tsx|ts`; `apps/web/components/{avatar,campo-foto,editar-nome,meu-perfil,perfil-actions,shell}.tsx|ts`; `apps/web/lib/{avatar,foto-perfil,chamar-api,member-filters,member-filters.test,csp,csp.test}.ts`; `apps/web/app/globals.css`; `apps/web/e2e/usuarios.spec.ts`; `docs/{DECISIONS,DECISIONS_INDEX,DESIGN_IMPLEMENTATION}.md`.

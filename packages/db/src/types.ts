@@ -2191,18 +2191,21 @@ export type Database = {
       }
       profiles: {
         Row: {
+          avatar_path: string | null
           created_at: string
           full_name: string | null
           id: string
           updated_at: string
         }
         Insert: {
+          avatar_path?: string | null
           created_at?: string
           full_name?: string | null
           id: string
           updated_at?: string
         }
         Update: {
+          avatar_path?: string | null
           created_at?: string
           full_name?: string | null
           id?: string
@@ -4411,6 +4414,8 @@ export type Database = {
           member_since: string
           last_sign_in_at: string | null
           invite_accepted: boolean
+          // D-354: `auth.users.banned_until` no futuro.
+          suspended: boolean
         }[]
       }
       get_processing_health: {

@@ -3,41 +3,38 @@
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
+import { CampoFoto } from "../../components/campo-foto";
 import { explicar404 } from "../../lib/api-desatualizada";
+import { salvarFoto } from "../../lib/foto-perfil";
 import { createClient } from "../../lib/supabase/browser";
 import { LinkDeAcesso } from "./link-de-acesso";
 import type { AccountOption } from "./member-controls";
 
 /**
- * "Convidar usuário" (D-296) — o botão que o frame desenha no cabeçalho desta
- * tela desde sempre, e que D-271 recusou por ser **feature, não composição**.
+ * "Convidar usuário" (D-296) — e, desde D-354, com NOME e FOTO.
  *
- * A recusa continua valendo como regra de fatia visual; o que mudou foi o
- * pedido. E o caminho é o da casa para toda escrita privilegiada: a `api`,
- * porque criar usuário exige a chave de service role, que nunca alcança o
- * navegador (D-012).
+ * O caminho é o da casa para toda escrita privilegiada: a `api`, porque criar
+ * usuário exige a chave de service role, que nunca alcança o navegador (D-012).
  *
- * ## O LINK, e por que ele aparece aqui
+ * ## Nome obrigatório, foto opcional
+ *
+ * Sem nome, a pessoa aparecia como "sem nome no perfil" até ela mesma entrar e
+ * se nomear — e quem convida é justamente quem sabe o nome. Ele vai nos
+ * metadados do usuário criado, e o trigger `handle_new_auth_user` o grava no
+ * perfil no mesmo instante.
+ *
+ * A foto é opcional aqui e em todo lugar: a própria pessoa pode colocar a dela
+ * depois, pelo "Meu perfil". Ela sobe DEPOIS do convite, porque antes a pessoa
+ * não existe — não há pasta `<user_id>/` para onde mandar.
+ *
+ * ## O LINK
  *
  * O convite não é enviado por e-mail: o projeto não tem SMTP próprio, e dizer
  * "convite enviado" sobre uma entrega que ninguém provou seria a promessa que
- * esta casa recusa em toda fatia. A `api` devolve o **link de convite**, e
- * quem convidou o envia pelo canal que já usa.
- *
- * **O link é credencial**: quem o abrir define a senha daquela conta. Por isso
- * ele aparece uma vez, com o aviso ao lado — e não é gravado em lugar nenhum
- * desta tela.
+ * esta casa recusa. A `api` devolve o link, e quem convidou o envia. **O link é
+ * credencial**: aparece uma vez, com o aviso ao lado.
  */
 
-/**
- * O endereço da `api`. Ele é embutido NO BUILD (`NEXT_PUBLIC_*`), então uma
- * instalação que não o declara chega aqui como string vazia — e a chamada sai
- * relativa, batendo no próprio Next, que responde 404 em HTML.
- *
- * Isso não é hipótese: foi o que aconteceu na primeira vez que o botão foi
- * usado nesta máquina, e a tela dizia só "A API recusou o convite (HTTP 404)"
- * — mensagem que manda procurar defeito na API que sequer foi chamada.
- */
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 /** Os cinco papéis do `check`, na ordem de alcance — a mesma de `member-controls`. */
@@ -53,27 +50,41 @@ type Estado =
   | { kind: "fechado" }
   | { kind: "aberto" }
   | { kind: "enviando" }
-  | { kind: "convidado"; link: string }
-  | { kind: "vinculado" }
+  | { kind: "convidado"; link: string; fotoErro: string | null }
+  | { kind: "vinculado"; fotoErro: string | null }
   | { kind: "ja_membro" }
   | { kind: "erro"; mensagem: string };
 
 export function ConvidarUsuario({ accounts }: { accounts: AccountOption[] }): ReactNode {
   const router = useRouter();
   const [estado, setEstado] = useState<Estado>({ kind: "fechado" });
+  const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
   const [papel, setPapel] = useState<string>("OPERADOR");
   const [contas, setContas] = useState<string[]>([]);
+  const [foto, setFoto] = useState<Blob | null>(null);
 
   /** ADMIN alcança todas as contas por PAPEL: pedir contas para ele seria ruído. */
   const pedeContas = papel !== "ADMIN";
 
+  /**
+   * A foto sobe com a sessão de quem convida: a policy do bucket aceita o ADMIN
+   * de uma organização da qual a pessoa JÁ é membro — e a `api` acabou de criar
+   * esse vínculo. Falhar aqui não desfaz o convite: ele valeu, e a frase diz.
+   */
+  async function enviarFoto(userId: string | undefined): Promise<string | null> {
+    if (foto === null || userId === undefined) return null;
+
+    try {
+      await salvarFoto(userId, foto, null);
+
+      return null;
+    } catch (falha) {
+      return falha instanceof Error ? falha.message : "A foto não foi salva.";
+    }
+  }
+
   async function convidar(): Promise<void> {
-    /*
-      SEM ENDEREÇO NÃO HÁ CHAMADA. Criar usuário exige a chave de service role,
-      que vive só na `api` (D-012): sem o endereço dela, não existe caminho —
-      e dizer isso é melhor que gastar uma ida contra o próprio Next.
-    */
     if (API_URL === "") {
       setEstado({
         kind: "erro",
@@ -102,26 +113,18 @@ export function ConvidarUsuario({ accounts }: { accounts: AccountOption[] }): Re
         headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
         body: JSON.stringify({
           email: email.trim(),
+          fullName: nome.trim().replace(/\s+/g, " "),
           role: papel,
           ...(pedeContas && contas.length > 0 ? { mlAccountIds: contas } : {}),
         }),
       });
 
       const corpo = (await response.json().catch(() => null)) as
-        | { status?: string; inviteLink?: string; error?: { message?: string } }
+        | { status?: string; userId?: string; inviteLink?: string; error?: { message?: string } }
         | null;
 
       if (!response.ok) {
-        /*
-          404 NUMA ROTA QUE ESTÁ NO CÓDIGO quase nunca é "recurso não
-          encontrado": é a `api` no ar sendo mais velha que a tela, porque o
-          deploy do Cloud Run é manual (D-070). Foi o que aconteceu com este
-          botão em 2026-09-10 — a rota entrou em `4ef8d18`, e a produção rodava
-          `6baa641`, de três dias antes (D-301).
-
-          `explicar404` pergunta ao `/health` qual commit está rodando e monta a
-          frase. Só no caminho de erro: o caminho feliz não ganha ida nenhuma.
-        */
+        // 404 de rota que está no código é a `api` no ar mais velha que a tela (D-301).
         if (response.status === 404) {
           setEstado({ kind: "erro", mensagem: await explicar404(API_URL) });
 
@@ -129,20 +132,8 @@ export function ConvidarUsuario({ accounts }: { accounts: AccountOption[] }): Re
         }
 
         /*
-          O texto do servidor chega inteiro: 403 de papel, 400 de conta de
-          outra organização. Traduzir tudo em "não foi possível" apagaria o
-          que faz a pessoa entender o próximo passo.
-
-          401 tem texto PRÓPRIO, e ele nasceu de um diagnóstico que custou uma
-          tarde (D-300): a API recusa o token quando ele foi emitido por OUTRO
-          projeto Supabase — e isso acontece sozinho, porque `SUPABASE_URL`
-          exportada no ambiente vence o `.env.local` (o `--env-file` do Node não
-          sobrescreve variável que já existe). "Não autorizado" mandaria
-          conferir papel, que está certo.
-
-          E quando NÃO vem corpo de erro nenhum, quem respondeu quase nunca é a
-          `api`: é o Next servindo a resposta porque o endereço aponta para ele,
-          ou um proxy no meio.
+          O texto do servidor chega inteiro. 401 tem frase própria (D-300):
+          web e API apontando para projetos Supabase diferentes.
         */
         setEstado({
           kind: "erro",
@@ -156,29 +147,37 @@ export function ConvidarUsuario({ accounts }: { accounts: AccountOption[] }): Re
         return;
       }
 
+      if (corpo?.status === "already_member") {
+        router.refresh();
+        setEstado({ kind: "ja_membro" });
+
+        return;
+      }
+
+      const fotoErro = await enviarFoto(corpo?.userId);
+
       router.refresh();
 
       if (corpo?.status === "invited" && corpo.inviteLink !== undefined) {
-        setEstado({ kind: "convidado", link: corpo.inviteLink });
-      } else if (corpo?.status === "already_member") {
-        setEstado({ kind: "ja_membro" });
+        setEstado({ kind: "convidado", link: corpo.inviteLink, fotoErro });
       } else {
-        setEstado({ kind: "vinculado" });
+        setEstado({ kind: "vinculado", fotoErro });
       }
     } catch {
-      // O endereço entra na frase: "falha de conexão" sozinho não diz COM O
-      // QUE, e é o endereço que a pessoa vai conferir a seguir.
       setEstado({ kind: "erro", mensagem: `Falha de conexão com a API em ${API_URL}.` });
     }
   }
 
   function fechar(): void {
     setEstado({ kind: "fechado" });
+    setNome("");
     setEmail("");
     setContas([]);
+    setFoto(null);
   }
 
   const emailValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const nomeValido = nome.trim().length > 0 && nome.trim().length <= 200;
   const enviando = estado.kind === "enviando";
 
   return (
@@ -199,125 +198,157 @@ export function ConvidarUsuario({ accounts }: { accounts: AccountOption[] }): Re
             role="dialog"
             aria-modal="true"
             aria-label="Convidar usuário"
-            className="sb-modal"
+            className="sb-modal sb-modal-convite"
             onClick={(event) => {
               event.stopPropagation();
             }}
           >
             <span className="sb-modal-eyebrow">Convidar usuário</span>
-            <h2 style={{ margin: "0 0 var(--sb-space-3)", fontSize: "1rem" }}>Dar acesso a esta organização</h2>
+            <h2 className="sb-modal-convite-titulo">Dar acesso a esta organização</h2>
 
             {(estado.kind === "aberto" || estado.kind === "enviando" || estado.kind === "erro") && (
-              <div style={{ display: "grid", gap: "var(--sb-space-3)" }}>
-                <label style={{ display: "grid", gap: "0.25rem", fontSize: "0.75rem" }}>
-                  <span>E-mail</span>
-                  <input
-                    className="sb-input sb-input-full"
-                    type="email"
-                    autoComplete="off"
-                    value={email}
-                    placeholder="pessoa@empresa.com"
-                    disabled={enviando}
-                    onChange={(event) => {
-                      setEmail(event.target.value);
-                    }}
+              <form
+                className="sb-convite-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (emailValido && nomeValido && !enviando) void convidar();
+                }}
+              >
+                <section className="sb-form-secao">
+                  <span className="sb-form-secao-titulo">Quem</span>
+
+                  <CampoFoto
+                    nome={nome.trim() === "" ? email : nome}
+                    fotoAtual={null}
+                    modo={{ tipo: "pendente", onEscolher: setFoto }}
                   />
-                </label>
 
-                <label style={{ display: "grid", gap: "0.25rem", fontSize: "0.75rem" }}>
-                  <span>Papel</span>
-                  <select
-                    className="sb-input sb-input-full"
-                    value={papel}
-                    disabled={enviando}
-                    onChange={(event) => {
-                      setPapel(event.target.value);
-                    }}
-                  >
-                    {PAPEIS.map((p) => (
-                      <option key={p.valor} value={p.valor}>
-                        {p.valor}
-                      </option>
-                    ))}
-                  </select>
-                  <small style={{ color: "var(--sb-text-soft)" }}>
-                    {PAPEIS.find((p) => p.valor === papel)?.descricao}
-                  </small>
-                </label>
+                  <label className="sb-form-campo">
+                    <span>Nome completo</span>
+                    <input
+                      className="sb-input sb-input-full"
+                      type="text"
+                      autoComplete="off"
+                      maxLength={200}
+                      value={nome}
+                      placeholder="Ex.: Carla Nogueira"
+                      disabled={enviando}
+                      onChange={(event) => {
+                        setNome(event.target.value);
+                      }}
+                    />
+                  </label>
 
-                {/*
-                  O ALCANCE, e ele é o que o papel NÃO decide: papel diz o que a
-                  pessoa pode fazer; conta diz sobre o que ela faz (D-117). ADMIN
-                  alcança todas por papel, então a lista some para ele em vez de
-                  ficar ali sem efeito.
-                */}
-                {pedeContas && (
-                  <div style={{ display: "grid", gap: "0.25rem", fontSize: "0.75rem" }}>
-                    <span>Contas que essa pessoa vai alcançar</span>
-                    {accounts.length === 0 ? (
-                      <small style={{ color: "var(--sb-text-soft)" }}>
-                        Nenhuma conta cadastrada ainda — a pessoa entra sem alcance, e você pode dar depois.
-                      </small>
-                    ) : (
-                      accounts.map((conta) => (
-                        <label key={conta.id} style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                          <input
-                            type="checkbox"
-                            checked={contas.includes(conta.id)}
-                            disabled={enviando}
-                            onChange={(event) => {
-                              setContas((atual) =>
-                                event.target.checked
-                                  ? [...atual, conta.id]
-                                  : atual.filter((id) => id !== conta.id),
-                              );
-                            }}
-                          />
-                          <span>{conta.label}</span>
-                        </label>
-                      ))
-                    )}
-                  </div>
-                )}
+                  <label className="sb-form-campo">
+                    <span>E-mail</span>
+                    <input
+                      className="sb-input sb-input-full"
+                      type="email"
+                      autoComplete="off"
+                      value={email}
+                      placeholder="pessoa@empresa.com"
+                      disabled={enviando}
+                      onChange={(event) => {
+                        setEmail(event.target.value);
+                      }}
+                    />
+                    <small>É o login da pessoa. Não dá para trocar depois pela tela.</small>
+                  </label>
+                </section>
+
+                <section className="sb-form-secao">
+                  <span className="sb-form-secao-titulo">O que pode fazer</span>
+
+                  <label className="sb-form-campo">
+                    <span>Papel</span>
+                    <select
+                      className="sb-input sb-input-full"
+                      value={papel}
+                      disabled={enviando}
+                      onChange={(event) => {
+                        setPapel(event.target.value);
+                      }}
+                    >
+                      {PAPEIS.map((p) => (
+                        <option key={p.valor} value={p.valor}>
+                          {p.valor}
+                        </option>
+                      ))}
+                    </select>
+                    <small>{PAPEIS.find((p) => p.valor === papel)?.descricao}</small>
+                  </label>
+
+                  {/*
+                    O ALCANCE é o que o papel NÃO decide (D-117). ADMIN alcança
+                    todas por papel, então a lista some para ele.
+                  */}
+                  {pedeContas && (
+                    <div className="sb-form-campo">
+                      <span>Contas que essa pessoa vai alcançar</span>
+                      {accounts.length === 0 ? (
+                        <small>Nenhuma conta cadastrada ainda — a pessoa entra sem alcance, e você pode dar depois.</small>
+                      ) : (
+                        <div className="sb-contas-grade">
+                          {accounts.map((conta) => (
+                            <label key={conta.id} className="sb-conta-opcao">
+                              <input
+                                type="checkbox"
+                                checked={contas.includes(conta.id)}
+                                disabled={enviando}
+                                onChange={(event) => {
+                                  setContas((atual) =>
+                                    event.target.checked
+                                      ? [...atual, conta.id]
+                                      : atual.filter((id) => id !== conta.id),
+                                  );
+                                }}
+                              />
+                              <span>{conta.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </section>
 
                 {estado.kind === "erro" && (
-                  <p role="alert" style={{ margin: 0, color: "var(--sb-danger)", fontSize: "0.75rem" }}>
+                  <p role="alert" className="sb-campo-erro">
                     {estado.mensagem}
                   </p>
                 )}
 
-                <div style={{ display: "flex", gap: "var(--sb-space-2)", justifyContent: "flex-end" }}>
+                <div className="sb-modal-acoes">
                   <button type="button" className="sb-button" onClick={fechar} disabled={enviando}>
                     Cancelar
                   </button>
                   <button
-                    type="button"
+                    type="submit"
                     className="sb-button sb-button-primary"
-                    disabled={!emailValido || enviando}
-                    onClick={() => {
-                      void convidar();
-                    }}
+                    disabled={!emailValido || !nomeValido || enviando}
                   >
                     {enviando ? "Convidando…" : "Convidar"}
                   </button>
                 </div>
-              </div>
+              </form>
             )}
 
             {estado.kind === "convidado" && (
-              <div style={{ display: "grid", gap: "var(--sb-space-2)", fontSize: "0.8125rem" }}>
+              <div className="sb-convite-resultado">
                 <p style={{ margin: 0 }}>
                   Conta criada. <b>Envie o link abaixo para a pessoa</b> — é por ele que ela define a senha.
                 </p>
 
-                {/*
-                  O aviso, a caixa e o "copiar" moram em `LinkDeAcesso` desde
-                  D-303: a reemissão na gaveta é o segundo consumidor, e a
-                  segunda cópia é onde esta casa extrai.
-                */}
                 <LinkDeAcesso link={estado.link} />
 
-                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                {estado.fotoErro !== null && (
+                  <p role="alert" className="sb-campo-erro">
+                    O convite valeu, mas a foto não foi salva: {estado.fotoErro} Dá para colocar depois, na gaveta
+                    da pessoa.
+                  </p>
+                )}
+
+                <div className="sb-modal-acoes">
                   <button type="button" className="sb-button sb-button-primary" onClick={fechar}>
                     Concluir
                   </button>
@@ -326,13 +357,20 @@ export function ConvidarUsuario({ accounts }: { accounts: AccountOption[] }): Re
             )}
 
             {(estado.kind === "vinculado" || estado.kind === "ja_membro") && (
-              <div style={{ display: "grid", gap: "var(--sb-space-2)", fontSize: "0.8125rem" }}>
+              <div className="sb-convite-resultado">
                 <p style={{ margin: 0 }}>
                   {estado.kind === "vinculado"
                     ? "Essa pessoa já tinha conta no sistema — o acesso a esta organização foi concedido, e não há link a enviar."
-                    : "Essa pessoa já é membro desta organização. Papel e alcance não foram alterados: para mudá-los, use os controles da linha dela."}
+                    : "Essa pessoa já é membro desta organização. Papel e alcance não foram alterados: para mudá-los, abra a gaveta dela."}
                 </p>
-                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+
+                {estado.kind === "vinculado" && estado.fotoErro !== null && (
+                  <p role="alert" className="sb-campo-erro">
+                    A foto não foi salva: {estado.fotoErro}
+                  </p>
+                )}
+
+                <div className="sb-modal-acoes">
                   <button type="button" className="sb-button sb-button-primary" onClick={fechar}>
                     Fechar
                   </button>
