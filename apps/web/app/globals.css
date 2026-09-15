@@ -3776,3 +3776,580 @@ table {
   margin-top: auto;
   padding-top: var(--sb-space-3);
 }
+
+/*
+ * CARREGAMENTO — o que aparece enquanto o servidor monta a próxima tela
+ * (`app/loading.tsx`, `components/carregando.tsx`).
+ *
+ * Era um "Carregando vendas…" solto no branco, só em `/vendas`, com a sidebar
+ * sumindo junto. Duas regras guiam o que está aqui:
+ *
+ * 1. **Só aparece se DEMORAR.** A moldura (sidebar e topbar) pinta na hora,
+ *    porque ela é quase idêntica à real e a troca não pisca. O ESQUELETO do
+ *    conteúdo e a barra de progresso nascem transparentes e só se revelam
+ *    depois de 350ms: numa troca rápida a tela nova chega antes, e ninguém vê
+ *    carregamento nenhum.
+ * 2. **Não custa tempo.** É CSS puro, sem JavaScript e sem temporizador — a
+ *    tela nova substitui o fallback no instante em que chega, com ou sem a
+ *    animação no meio.
+ *
+ * As formas são as das próprias telas (`.sb-page-title`, `.sb-kpi-strip`,
+ * `.sb-panel`), então o esqueleto ocupa o lugar do que vai chegar. O tom é o
+ * lavanda do estado selecionado (`--sb-secondary-soft`), não um cinza neutro:
+ * é da paleta, e some no cartão branco sem sumir de vez.
+ */
+@keyframes sb-revela {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes sb-brilho {
+  from {
+    background-position: 100% 0;
+  }
+
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@keyframes sb-progresso {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(340%);
+  }
+}
+
+/* Texto só para leitor de tela — o "Carregando…" que quem enxerga lê no
+   esqueleto. */
+.sb-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.sb-carregando-revela {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sb-space-3);
+  opacity: 0;
+  animation: sb-revela 240ms ease-out 350ms forwards;
+}
+
+/*
+ * Parado por padrão: é o tom da moldura, que aparece na hora.
+ *
+ * Derivado do `--sb-secondary`, e não o `--sb-secondary-soft` direto: a
+ * primeira captura mostrou o soft (#eeedfa) sumindo sobre o chão cinza — o
+ * título da tela era invisível. 9% do secondary lê sobre o chão E sobre o
+ * cartão branco.
+ */
+.sb-esqueleto {
+  display: block;
+  max-width: 100%;
+  border-radius: var(--sb-radius-sm);
+  background: color-mix(in srgb, var(--sb-secondary) 9%, transparent);
+}
+
+/* O brilho só existe no que se revela — na moldura ele piscaria em toda troca. */
+.sb-carregando-revela .sb-esqueleto {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--sb-secondary) 9%, transparent) 25%,
+    color-mix(in srgb, var(--sb-secondary) 3%, transparent) 50%,
+    color-mix(in srgb, var(--sb-secondary) 9%, transparent) 75%
+  );
+  background-size: 200% 100%;
+  animation: sb-brilho 1.6s ease-in-out infinite;
+}
+
+/* Sobre o navy da sidebar o lavanda gritaria; o fio da própria sidebar não. */
+.sb-sidebar .sb-esqueleto {
+  background: var(--sb-primary-border);
+}
+
+.sb-carregando .sb-page-title {
+  margin-bottom: var(--sb-space-1);
+}
+
+.sb-carregando .sb-page-title > div,
+.sb-carregando .sb-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.sb-carregando-painel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  padding: var(--sb-space-3);
+}
+
+.sb-carregando-painel-cabeca {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-bottom: var(--sb-space-3);
+  border-bottom: 1px solid var(--sb-table-rule);
+}
+
+.sb-carregando-linha {
+  display: grid;
+  grid-template-columns: 2.2fr 1fr 1fr 0.8fr;
+  align-items: center;
+  gap: var(--sb-space-3);
+}
+
+/* Bloco dentro de uma tela já montada (ranking, margem, gaveta do Copiloto). */
+.sb-carregando-bloco {
+  padding: var(--sb-space-3);
+}
+
+.sb-carregando-bloco .sb-carregando-revela {
+  gap: 0.875rem;
+}
+
+/*
+ * A barra de progresso, na base do topbar. Indeterminada de propósito: o
+ * navegador não sabe quanto falta, e uma barra que "enche" mentiria. A ponta
+ * amarela é o accent em dose de D-007 — dois pixels, e só quando demora.
+ */
+.sb-carregando-topbar {
+  position: relative;
+}
+
+.sb-carregando-progresso {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.sb-carregando-progresso::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 30%;
+  background: linear-gradient(90deg, transparent, var(--sb-secondary) 70%, var(--sb-accent));
+  animation: sb-progresso 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sb-carregando-revela .sb-esqueleto {
+    animation: none;
+  }
+
+  .sb-carregando-progresso {
+    display: none;
+  }
+}
+
+/*
+ * ENTRADA — `/login`, a única tela fora do Shell (`app/login/page.tsx`).
+ *
+ * Era um formulário solto no branco, com a fonte e os campos das telas de
+ * dentro — `.sb-input` de 32px e 11px, feito para barra de filtro, não para a
+ * primeira coisa que alguém digita no dia. O Figma não desenha login; a
+ * identidade vem da própria moldura: o painel da marca é o navy da sidebar, e o
+ * formulário é um cartão branco sobre o chão cinza, como os painéis.
+ *
+ * Nenhuma cor nova. Os translúcidos são `color-mix` sobre tokens, não literais.
+ */
+@keyframes sb-login-entra {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes sb-girar {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.sb-login {
+  display: grid;
+  grid-template-columns: minmax(22rem, 5fr) 7fr;
+  min-height: 100dvh;
+  background: var(--sb-ground);
+}
+
+/* --- painel da marca --- */
+.sb-login-marca {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--sb-space-5);
+  padding: 2.25rem 2.5rem;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--sb-primary);
+  color: var(--sb-on-primary);
+}
+
+/* A grade fina, que some em direção ao topo — textura, não desenho. */
+.sb-login-marca::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(var(--sb-primary-hover) 1px, transparent 1px),
+    linear-gradient(90deg, var(--sb-primary-hover) 1px, transparent 1px);
+  background-size: 2.5rem 2.5rem;
+  -webkit-mask-image: radial-gradient(circle at 15% 100%, #000 0%, transparent 75%);
+  mask-image: radial-gradient(circle at 15% 100%, #000 0%, transparent 75%);
+}
+
+/* O brilho do secondary no canto — o gradiente que o Figma declara na
+   sidebar, aqui onde ele tem espaço para existir. */
+.sb-login-marca::after {
+  content: "";
+  position: absolute;
+  right: -18rem;
+  bottom: -20rem;
+  z-index: -1;
+  width: 40rem;
+  height: 40rem;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--sb-secondary) 60%, transparent) 0%, transparent 65%);
+}
+
+.sb-login-marca-topo {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--sb-white);
+}
+
+.sb-login-marca-topo b {
+  display: block;
+  font-size: 0.8125rem;
+  letter-spacing: 0.055em;
+}
+
+.sb-login-marca-topo small {
+  display: block;
+  font-family: var(--sb-mono);
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  color: var(--sb-accent);
+}
+
+.sb-brand-symbol.sb-login-simbolo {
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  font-size: 0.9375rem;
+}
+
+.sb-login-manchete-bloco {
+  max-width: 27rem;
+}
+
+.sb-login-marca .sb-eyebrow {
+  margin-bottom: 0.875rem;
+  color: var(--sb-accent);
+}
+
+.sb-login-manchete {
+  margin: 0 0 1.75rem;
+  font-size: clamp(1.5rem, 2.3vw, 2.125rem);
+  font-weight: 700;
+  line-height: 1.18;
+  letter-spacing: -0.03em;
+  color: var(--sb-white);
+}
+
+/* O traço amarelo sob a frase — o accent em dose de D-007. */
+.sb-login-manchete::after {
+  content: "";
+  display: block;
+  width: 2.5rem;
+  height: 3px;
+  margin-top: 1.25rem;
+  border-radius: 2px;
+  background: var(--sb-accent);
+}
+
+.sb-login-modulos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sb-login-modulos li {
+  padding: 0.375rem 0.6875rem;
+  border: 1px solid var(--sb-primary-border);
+  border-radius: 999px;
+  background: var(--sb-primary-hover);
+  font-family: var(--sb-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.04em;
+  color: var(--sb-on-primary);
+}
+
+.sb-login-rodape {
+  font-family: var(--sb-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.06em;
+  color: var(--sb-on-primary-soft);
+}
+
+/* --- o formulário --- */
+.sb-login-painel {
+  display: grid;
+  place-items: center;
+  padding: var(--sb-space-5) var(--sb-space-4);
+}
+
+.sb-login-cartao {
+  width: 100%;
+  max-width: 25rem;
+  padding: 2.25rem 2rem 1.75rem;
+  border: 1px solid var(--sb-border);
+  border-radius: 0.75rem;
+  background: var(--sb-surface);
+  box-shadow: var(--sb-shadow-pop);
+  animation: sb-login-entra 320ms ease-out both;
+}
+
+.sb-login-cabeca {
+  margin-bottom: var(--sb-space-4);
+}
+
+.sb-login-titulo {
+  margin: 0 0 0.375rem;
+  font-size: 1.625rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  color: var(--sb-primary);
+}
+
+.sb-login-texto {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-login-form {
+  display: grid;
+  gap: 1.125rem;
+}
+
+.sb-login-campo {
+  display: grid;
+  gap: 0.375rem;
+}
+
+.sb-login-rotulo {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--sb-primary);
+}
+
+/* O campo da porta de entrada: 44px e 14px, alvo de toque de verdade. */
+.sb-input.sb-login-input {
+  width: 100%;
+  height: 2.75rem;
+  padding: 0 0.875rem;
+  border-radius: var(--sb-radius);
+  font-size: 0.875rem;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.sb-input.sb-login-input:hover {
+  border-color: var(--sb-supporting);
+}
+
+/* O anel é sombra, e o `outline` transparente é o que sobra no modo de alto
+   contraste do Windows, que apaga sombras. */
+.sb-input.sb-login-input:focus {
+  outline: 2px solid transparent;
+  border-color: var(--sb-secondary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--sb-secondary) 20%, transparent);
+}
+
+.sb-login-senha {
+  position: relative;
+}
+
+.sb-login-senha .sb-input.sb-login-input {
+  padding-right: 5rem;
+}
+
+.sb-text-button.sb-login-mostrar {
+  position: absolute;
+  top: 50%;
+  right: 0.375rem;
+  height: 2rem;
+  padding: 0 0.625rem;
+  border: 0;
+  border-radius: var(--sb-radius-md);
+  background: none;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--sb-secondary);
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.sb-text-button.sb-login-mostrar:hover {
+  background: var(--sb-secondary-soft);
+}
+
+.sb-button.sb-login-botao {
+  justify-content: center;
+  width: 100%;
+  height: 2.75rem;
+  margin-top: 0.25rem;
+  border-radius: var(--sb-radius);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.sb-button.sb-login-botao:disabled {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.sb-login-regras {
+  display: grid;
+  gap: 0.25rem;
+  margin: -0.25rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.6875rem;
+  color: var(--sb-muted-ink);
+}
+
+.sb-login-regras li {
+  display: flex;
+  align-items: center;
+  gap: 0.4375rem;
+}
+
+.sb-login-regras li[data-ok="true"] {
+  color: var(--sb-success);
+}
+
+.sb-login-regra-marca {
+  width: 0.75rem;
+  text-align: center;
+}
+
+.sb-login-erro {
+  margin: 0;
+  padding: 0.625rem 0.75rem;
+  border-radius: var(--sb-radius);
+  background: var(--sb-danger-soft);
+  font-size: 0.75rem;
+  color: var(--sb-danger-ink);
+}
+
+.sb-login-aviso {
+  margin-bottom: var(--sb-space-3);
+}
+
+.sb-login-nota {
+  margin: var(--sb-space-4) 0 0;
+  padding-top: var(--sb-space-3);
+  border-top: 1px solid var(--sb-table-rule);
+  font-size: 0.75rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-login-verificando {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  margin: 0;
+  padding: var(--sb-space-4) 0;
+  font-size: 0.8125rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-login-verificando::before {
+  content: "";
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+  border: 2px solid var(--sb-secondary-soft);
+  border-top-color: var(--sb-secondary);
+  border-radius: 50%;
+  animation: sb-girar 800ms linear infinite;
+}
+
+/* No celular a marca vira faixa: o formulário é o que a tela existe para
+   mostrar, e a frase empurraria os campos para fora da primeira dobra. */
+@media (max-width: 850px) {
+  .sb-login {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  .sb-login-marca {
+    padding: 1.125rem 1.25rem;
+  }
+
+  .sb-login-manchete-bloco,
+  .sb-login-rodape {
+    display: none;
+  }
+
+  .sb-login-painel {
+    place-items: start center;
+    padding: var(--sb-space-4) var(--sb-space-3);
+  }
+
+  .sb-login-cartao {
+    padding: 1.75rem 1.25rem 1.5rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sb-login-cartao {
+    animation: none;
+  }
+
+  .sb-login-verificando::before {
+    animation-duration: 2400ms;
+  }
+
+  .sb-input.sb-login-input {
+    transition: none;
+  }
+}

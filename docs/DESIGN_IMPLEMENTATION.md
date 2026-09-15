@@ -1493,6 +1493,62 @@ alguma"). O fluxo do convite é `generateLink` — **link, não e-mail enviado**
 projeto não tem SMTP, e dizer "convite enviado" sobre entrega que ninguém provou
 seria a promessa que esta casa recusa.
 
+### O carregamento ganhou a cara do app (2026-09-15)
+
+Pedido do usuário: a tela de carregamento "muito feia" deveria condizer com o
+resto do projeto, entrar só quando a troca demora e **não aumentar o tempo de
+troca**. O que havia: um `loading.tsx` só em `/vendas` (texto solto no branco,
+com a sidebar sumindo junto) e quatro fallbacks `<p className="sb-empty">` —
+um deles escrito "Carregando vendas?".
+
+- `app/loading.tsx` passa a cobrir **todas** as telas autenticadas com
+  `CarregandoTela` (`components/carregando.tsx`). Como o `Shell` mora dentro de
+  cada página, o fallback redesenha a moldura: a `SidebarNav` real (o item de
+  destino já acende), topbar, e o esqueleto de título + faixa de KPIs + painel.
+  Nome da organização, perfil e contas são placeholders — não dado chutado.
+- **Só aparece se demorar:** a moldura pinta na hora; esqueleto e barra de
+  progresso nascem transparentes e revelam após 350ms, em CSS puro.
+- **Custo zero de troca:** Server Component sem leitura, sem JS novo. A doc do
+  Next 16.3 (`loading.md`) confirma que o fallback é pré-buscado e a navegação
+  fica imediata — antes, sem `loading.tsx`, a tela antiga ficava parada sem
+  sinal nenhum até o servidor terminar.
+- `app/login/loading.tsx` devolve `null`: `/login` é dinâmica (D-331) e
+  herdaria uma sidebar de um sistema em que a pessoa ainda não entrou.
+- `CarregandoConteudo` e `CarregandoBloco` substituem os fallbacks de `/vendas`
+  (tela, ranking, margem) e da gaveta do Copiloto.
+- `prefers-reduced-motion` desliga brilho e barra.
+
+Renderizado a 1568px com resposta atrasada de propósito (rota temporária,
+removida). A primeira captura mostrou o esqueleto em `--sb-secondary-soft`
+invisível sobre o chão; ficou em 9% de `--sb-secondary`.
+
+### A porta de entrada ganhou identidade (2026-09-15)
+
+Pedido do usuário: login e tela de nova senha "muito simples". O Figma não
+desenha login, então a identidade veio da própria moldura:
+
+- **Tela dividida.** Painel da marca no navy da sidebar (símbolo amarelo,
+  "GESTÃO V3" em DM Mono, grade fina e o brilho do secondary) e o formulário num
+  cartão branco sobre o chão cinza. O painel lista **módulos que existem**, sem
+  número nenhum. Abaixo de 850px a marca vira faixa e o cartão sobe.
+- **Campo da porta de entrada:** 44px e 14px (`.sb-login-input` sobre
+  `.sb-input`), anel de foco com `outline` transparente para o alto contraste.
+- **Três modos, três textos.** "Entrar", "Defina sua senha" (convite) e "Crie
+  uma nova senha" (`type=recovery`, o "Gerar novo link de acesso" de
+  `/usuarios`). Antes, a recuperação dizia "seu acesso já foi criado" a quem
+  já tinha conta. O aviso de link vencido virou "Este link não vale mais",
+  porque o fragmento de erro não diz de qual dos dois veio — e o e2e acompanhou.
+- **"Confirmando seu link…"** enquanto o `setSession` responde: antes o
+  formulário de ENTRADA aparecia nesse intervalo e trocava na frente da pessoa.
+- **Mostrar/ocultar senha** com nome vindo do TEXTO: um `aria-label` com
+  "senha" casaria com `getByLabel("Senha")` do `e2e/helpers.ts` e derrubaria o
+  login da suíte inteira.
+- **Regras conferidas enquanto se digita** — as mesmas duas que
+  `definirSenha` recusa, não uma política nova.
+
+Renderizado a 1568px no Supabase local: `/login` e o modo recuperação com um
+link `recovery` gerado pela Admin API local. e2e **não** rodado nesta fatia.
+
 ## Próxima fatia segura
 
 **A COMPOSIÇÃO DO FIGMA FECHOU.** D0→D25, D27→D36, o passe D37a/b/c e **as

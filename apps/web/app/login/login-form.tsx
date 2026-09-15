@@ -1,14 +1,15 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 
 import { lerConviteDaUrl, type ConviteNaUrl } from "../../lib/invite-hash";
 import { safeNext } from "../../lib/safe-next";
 import { createClient, missingBrowserEnv } from "../../lib/supabase/browser";
 
 /**
- * Entrada — e, desde D-302, também a ACEITAÇÃO DO CONVITE.
+ * Entrada — e, desde D-302, também a ACEITAÇÃO DO CONVITE e o NOVO LINK DE
+ * ACESSO.
  *
  * Sistema interno: acesso é concedido pelo ADMIN, não por autocadastro. Por
  * isso não há "criar conta" — quem não tem acesso pede a quem administra.
@@ -27,6 +28,11 @@ import { createClient, missingBrowserEnv } from "../../lib/supabase/browser";
  * configuração que vive no painel, fora do repositório, e que ninguém lembraria
  * de mexer no dia em que o endereço do site mudasse.
  *
+ * O "Gerar novo link de acesso" de `/usuarios` chega pelo MESMO caminho, com
+ * `type=recovery` (`apps/api/src/invites.ts`). Os dois terminam em definir
+ * senha, mas a tela não diz a mesma coisa aos dois: para quem já tinha conta,
+ * "seu acesso já foi criado" é falso.
+ *
  * ## O que faltava, e é a pergunta que o usuário fez
  *
  * *"Como vou saber qual a senha dela para eu passar?"* — não há senha a passar.
@@ -34,14 +40,108 @@ import { createClient, missingBrowserEnv } from "../../lib/supabase/browser";
  * O que faltava era o lugar de ELA definir a dela. Sem ele o link terminava no
  * formulário de entrada, com um token válido na URL e nenhum campo que o
  * usasse.
+ *
+ * ## Os textos que os testes seguram
+ *
+ * `e2e/helpers.ts` entra por `getByLabel("E-mail")`, `getByLabel("Senha")` e o
+ * botão "Entrar"; `e2e/convite-aceite.spec.ts` por "Defina sua senha", "Nova
+ * senha", "Repita a senha" e "Salvar senha e entrar". Por isso o botão de
+ * mostrar a senha tira o nome do TEXTO ("Mostrar"), nunca de um `aria-label`
+ * com "senha": casaria com `getByLabel("Senha")` e derrubaria o login de toda a
+ * suíte.
  */
 
 /** O mesmo de `minimum_password_length` em `supabase/config.toml`. */
 const MINIMO_SENHA = 6;
 
+type Modo = "entrar" | "invite" | "recovery";
+
+const CABECALHO: Record<Modo, { eyebrow: string; titulo: string; texto: string }> = {
+  entrar: {
+    eyebrow: "ACESSO INTERNO",
+    titulo: "Entrar",
+    texto: "Use o e-mail e a senha da sua conta.",
+  },
+  invite: {
+    eyebrow: "PRIMEIRO ACESSO",
+    titulo: "Defina sua senha",
+    texto: "Seu acesso já foi criado. Escolha uma senha para entrar daqui em diante.",
+  },
+  recovery: {
+    eyebrow: "NOVO LINK DE ACESSO",
+    titulo: "Crie uma nova senha",
+    // `invites.ts`: a senha antiga continua valendo até a nova ser salva.
+    texto: "Link confirmado. A senha anterior continua valendo até você salvar a nova.",
+  },
+};
+
+function CampoSenha({
+  rotulo,
+  valor,
+  onChange,
+  autoComplete,
+  autoFocus = false,
+}: {
+  rotulo: string;
+  valor: string;
+  onChange: (valor: string) => void;
+  autoComplete: "current-password" | "new-password";
+  autoFocus?: boolean;
+}): ReactNode {
+  const id = useId();
+  const [visivel, setVisivel] = useState(false);
+
+  return (
+    <div className="sb-login-campo">
+      <label htmlFor={id} className="sb-login-rotulo">
+        {rotulo}
+      </label>
+      <div className="sb-login-senha">
+        <input
+          id={id}
+          className="sb-input sb-login-input"
+          type={visivel ? "text" : "password"}
+          value={valor}
+          onChange={(event) => {
+            onChange(event.target.value);
+          }}
+          required
+          autoComplete={autoComplete}
+          autoFocus={autoFocus}
+        />
+        <button
+          type="button"
+          className="sb-text-button sb-login-mostrar"
+          aria-controls={id}
+          aria-pressed={visivel}
+          onClick={() => {
+            setVisivel((atual) => !atual);
+          }}
+        >
+          {visivel ? "Ocultar" : "Mostrar"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Regra de senha conferida enquanto se digita — as MESMAS que `definirSenha` recusa. */
+function Regra({ ok, children }: { ok: boolean; children: ReactNode }): ReactNode {
+  return (
+    <li data-ok={ok}>
+      <span aria-hidden="true" className="sb-login-regra-marca">
+        {ok ? "✓" : "○"}
+      </span>
+      {children}
+      <span className="sb-sr-only">{ok ? " — atendida" : " — pendente"}</span>
+    </li>
+  );
+}
+
 export function LoginForm(): ReactNode {
   const router = useRouter();
   const params = useSearchParams();
+  const emailId = useId();
 
   const missing = missingBrowserEnv();
 
@@ -50,6 +150,7 @@ export function LoginForm(): ReactNode {
   const [novaSenha, setNovaSenha] = useState("");
   const [repetida, setRepetida] = useState("");
   const [convite, setConvite] = useState<ConviteNaUrl>(null);
+  const [verificando, setVerificando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -72,12 +173,20 @@ export function LoginForm(): ReactNode {
       return;
     }
 
+    /*
+      Enquanto o Auth confere o token, a tela diz isso — antes, o formulário de
+      ENTRADA aparecia nesse intervalo e trocava de identidade na frente da
+      pessoa, que às vezes já tinha começado a digitar o e-mail.
+    */
+    setVerificando(true);
+
     void createClient()
       .auth.setSession({ access_token: achado.accessToken, refresh_token: achado.refreshToken })
       .then(({ error: falha }) => {
         // Token recusado é link vencido ou já usado — o mesmo desfecho, e a
-        // pessoa precisa saber que o caminho é pedir outro convite.
+        // pessoa precisa saber que o caminho é pedir outro link.
         setConvite(falha === null ? achado : { kind: "expirado", descricao: falha.message });
+        setVerificando(false);
       });
   }, []);
 
@@ -104,9 +213,9 @@ export function LoginForm(): ReactNode {
   async function definirSenha(): Promise<void> {
     /*
       As duas recusas acontecem ANTES da ida ao servidor. A segunda existe
-      porque não há como corrigir depois: sem SMTP não há "esqueci minha senha"
-      (D-296), então uma senha digitada errada duas vezes iguais é uma conta
-      perdida até alguém convidar de novo.
+      porque corrigir depois custa caro: sem SMTP não há "esqueci minha senha"
+      por conta própria (D-296) — uma senha digitada errada duas vezes iguais
+      só volta com alguém de ADMIN gerando um novo link de acesso.
     */
     if (novaSenha.length < MINIMO_SENHA) {
       setError(`A senha precisa de pelo menos ${String(MINIMO_SENHA)} caracteres.`);
@@ -143,141 +252,118 @@ export function LoginForm(): ReactNode {
 
   if (missing.length > 0) {
     return (
-      <p role="alert" style={{ color: "var(--sb-danger)", fontSize: "0.875rem" }}>
+      <p role="alert" className="sb-login-erro">
         Ambiente incompleto. Falta definir na Vercel: {missing.join(", ")}.
       </p>
     );
   }
 
-  const aceitandoConvite = convite?.kind === "sessao";
+  if (verificando) {
+    return (
+      <p role="status" className="sb-login-verificando">
+        Confirmando seu link…
+      </p>
+    );
+  }
+
+  const modo: Modo = convite?.kind === "sessao" ? convite.tipo : "entrar";
+  const cabecalho = CABECALHO[modo];
 
   return (
     <>
-      <h1 style={{ margin: "var(--sb-space-2) 0 var(--sb-space-4)", fontSize: "1.5rem" }}>
-        {aceitandoConvite ? "Defina sua senha" : "Entrar"}
-      </h1>
+      <div className="sb-login-cabeca">
+        <span className="sb-eyebrow">{cabecalho.eyebrow}</span>
+        <h1 className="sb-login-titulo">{cabecalho.titulo}</h1>
+        <p className="sb-login-texto">{cabecalho.texto}</p>
+      </div>
 
       {convite?.kind === "expirado" && (
-        <p role="alert" className="sb-note sb-note-atencao" style={{ marginBottom: "var(--sb-space-3)" }}>
-          <span>Este convite não vale mais</span>
-          <span
-            style={{
-              display: "block",
-              fontFamily: "var(--sb-sans)",
-              fontSize: "0.6875rem",
-              marginTop: "0.375rem",
-            }}
-          >
-            O link expira e só pode ser usado uma vez. Peça a quem administra para convidar você de
-            novo.
+        <div role="alert" className="sb-note sb-note-atencao sb-login-aviso">
+          <span>Este link não vale mais</span>
+          <p>
+            Links de convite e de nova senha expiram e só podem ser usados uma vez. Peça a quem
+            administra um novo link de acesso.
             {convite.descricao === "" ? "" : ` (${convite.descricao})`}
-          </span>
-        </p>
+          </p>
+        </div>
       )}
 
-      {aceitandoConvite ? (
+      {modo !== "entrar" ? (
         <form
+          className="sb-login-form"
           onSubmit={(event) => {
             event.preventDefault();
             void definirSenha();
           }}
-          style={{ display: "grid", gap: "var(--sb-space-3)" }}
         >
-          <p style={{ color: "var(--sb-text-soft)", fontSize: "0.8125rem", margin: 0 }}>
-            Seu acesso já foi criado. Escolha uma senha para entrar daqui em diante.
-          </p>
+          <CampoSenha
+            rotulo="Nova senha"
+            valor={novaSenha}
+            onChange={setNovaSenha}
+            autoComplete="new-password"
+            autoFocus
+          />
 
-          <label style={{ fontSize: "0.875rem", fontWeight: 600 }}>
-            Nova senha
-            <input
-              className="sb-input"
-              type="password"
-              value={novaSenha}
-              onChange={(event) => {
-                setNovaSenha(event.target.value);
-              }}
-              required
-              minLength={MINIMO_SENHA}
-              autoComplete="new-password"
-              autoFocus
-            />
-          </label>
+          <CampoSenha rotulo="Repita a senha" valor={repetida} onChange={setRepetida} autoComplete="new-password" />
 
-          <label style={{ fontSize: "0.875rem", fontWeight: 600 }}>
-            Repita a senha
-            <input
-              className="sb-input"
-              type="password"
-              value={repetida}
-              onChange={(event) => {
-                setRepetida(event.target.value);
-              }}
-              required
-              autoComplete="new-password"
-            />
-          </label>
+          <ul className="sb-login-regras">
+            <Regra ok={novaSenha.length >= MINIMO_SENHA}>Pelo menos {MINIMO_SENHA} caracteres</Regra>
+            <Regra ok={repetida !== "" && novaSenha === repetida}>Confirmação igual à nova senha</Regra>
+          </ul>
 
           {error !== null && (
-            <p role="alert" style={{ color: "var(--sb-danger)", fontSize: "0.875rem", margin: 0 }}>
+            <p role="alert" className="sb-login-erro">
               {error}
             </p>
           )}
 
-          <button className="sb-button sb-button-primary" type="submit" disabled={busy}>
+          <button className="sb-button sb-button-primary sb-login-botao" type="submit" disabled={busy}>
             {busy ? "Salvando…" : "Salvar senha e entrar"}
           </button>
         </form>
       ) : (
         <form
+          className="sb-login-form"
           onSubmit={(event) => {
             event.preventDefault();
             void submit();
           }}
-          style={{ display: "grid", gap: "var(--sb-space-3)" }}
         >
-          <label style={{ fontSize: "0.875rem", fontWeight: 600 }}>
-            E-mail
+          <div className="sb-login-campo">
+            <label htmlFor={emailId} className="sb-login-rotulo">
+              E-mail
+            </label>
             <input
-              className="sb-input"
+              id={emailId}
+              className="sb-input sb-login-input"
               type="email"
               value={email}
               onChange={(event) => {
                 setEmail(event.target.value);
               }}
+              placeholder="voce@empresa.com.br"
               required
               autoComplete="email"
             />
-          </label>
+          </div>
 
-          <label style={{ fontSize: "0.875rem", fontWeight: 600 }}>
-            Senha
-            <input
-              className="sb-input"
-              type="password"
-              value={password}
-              onChange={(event) => {
-                setPassword(event.target.value);
-              }}
-              required
-              autoComplete="current-password"
-            />
-          </label>
+          <CampoSenha rotulo="Senha" valor={password} onChange={setPassword} autoComplete="current-password" />
 
           {error !== null && (
-            <p role="alert" style={{ color: "var(--sb-danger)", fontSize: "0.875rem", margin: 0 }}>
+            <p role="alert" className="sb-login-erro">
               {error}
             </p>
           )}
 
-          <button className="sb-button sb-button-primary" type="submit" disabled={busy}>
+          <button className="sb-button sb-button-primary sb-login-botao" type="submit" disabled={busy}>
             {busy ? "Entrando…" : "Entrar"}
           </button>
-
-          <p style={{ color: "var(--sb-text-soft)", fontSize: "0.8125rem", margin: 0 }}>
-            Acesso é concedido pelo administrador. Não há autocadastro.
-          </p>
         </form>
       )}
+
+      <p className="sb-login-nota">
+        Esqueceu a senha ou ainda não tem acesso? Quem administra o sistema gera um link de acesso para você.
+      </p>
     </>
   );
 }
