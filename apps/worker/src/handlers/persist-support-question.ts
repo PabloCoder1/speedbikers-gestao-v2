@@ -3,6 +3,8 @@ import { evaluateQuestionRemoteTransition } from "@sb/domain";
 import type { SupportRemoteTransition } from "@sb/domain";
 import type { SupportQuestionProjection } from "@sb/mercado-livre";
 
+import { ensureSupportLink } from "./support-case-links.js";
+
 export interface PersistSupportQuestionContext {
   organizationId: string;
   mlAccountId: string;
@@ -53,17 +55,6 @@ export async function applyRemoteTransition(
 
 function persistenceError(operation: string, error: { message: string }): Error {
   return new Error(`falha ao ${operation}: ${error.message}`);
-}
-
-async function insertSupportLink(
-  db: AdminClient,
-  row: TablesInsert<"support_case_links">,
-): Promise<void> {
-  const result = await db.from("support_case_links").insert(row);
-
-  if (result.error !== null && result.error.code !== "23505") {
-    throw persistenceError("gravar vínculo do atendimento", result.error);
-  }
 }
 
 /**
@@ -202,7 +193,7 @@ export async function persistSupportQuestion(
   }
 
   if (listing.data === null) {
-    await insertSupportLink(db, {
+    await ensureSupportLink(db, {
       organization_id: context.organizationId,
       ml_account_id: context.mlAccountId,
       support_case_id: supportCaseId,
@@ -214,7 +205,7 @@ export async function persistSupportQuestion(
     return { supportCaseId, messagesUpserted: messageRows.length, linkMode: "EXTERNAL", transitionApplied };
   }
 
-  await insertSupportLink(db, {
+  await ensureSupportLink(db, {
     organization_id: context.organizationId,
     ml_account_id: context.mlAccountId,
     support_case_id: supportCaseId,
@@ -238,7 +229,7 @@ export async function persistSupportQuestion(
   }
 
   if (listing.data.sku_id !== null) {
-    await insertSupportLink(db, {
+    await ensureSupportLink(db, {
       organization_id: context.organizationId,
       ml_account_id: context.mlAccountId,
       support_case_id: supportCaseId,
