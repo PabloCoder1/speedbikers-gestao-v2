@@ -1,4 +1,4 @@
-# Performance — baseline e histórico de otimização
+﻿# Performance — baseline e histórico de otimização
 
 > Dono documental de: medições de performance, antes/depois, planos e
 > decisões de índice. O `HANDOFF` só aponta para cá — números não moram lá
@@ -17,7 +17,7 @@
 - O Full agora busca itens e estoques com concorrencia limitada a tres por conta e le os snapshots anteriores em lote paginado. A persistencia continua por inventario para preservar a ordem e a atomicidade existente; a validacao de equivalencia e duracao ainda depende de uma execucao do mesmo catalogo.
 - Vendas inicia a margem em paralelo e a entrega por `Suspense`; TTFB/LCP/CLS/INP passaram a ser coletados por rota em `/api/vitals`, sem identificadores de usuario.
 
-Validação pendente: comparar chamadas, duração p50/p95, 429/retries e métricas de navegador no mesmo catálogo e ambiente. Nenhum ganho de latência é declarado antes dessa medição.
+Validação pendente: comparar chamadas, duração p50/p95, 429/retries e métricas de navegador no mesmo catálogo e ambiente. A migration de políticas foi aplicada no Dev pela CI (run 35000936186); nenhum ganho de latência é declarado antes dessa medição.
 
 **Meça como usuário autenticado real.** A RLS faz parte do custo que a
 interface paga, e medir como `postgres`/`service_role` esconde justamente o
