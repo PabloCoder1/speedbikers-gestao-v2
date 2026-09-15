@@ -335,9 +335,10 @@ describe("get_erp_stock_cutoffs", () => {
       captured_at: Date | null;
       imported_at: Date | null;
       reconciled_at: Date | null;
+      exported_at: Date | null;
     }>(
       "service_role",
-      `select sku_id, captured_at, imported_at, reconciled_at from public.get_erp_stock_cutoffs(
+      `select sku_id, captured_at, imported_at, reconciled_at, exported_at from public.get_erp_stock_cutoffs(
          '${ORG_CORTE}',
          array['${doisImports}', '${soNoVelho}', '${semSnapshot}', '${doisImports}', null]::uuid[])`,
     );
@@ -345,7 +346,7 @@ describe("get_erp_stock_cutoffs", () => {
     const porSku = new Map(
       rows.map((r) => [
         r.sku_id,
-        [r.captured_at?.toISOString() ?? null, r.imported_at?.toISOString() ?? null, r.reconciled_at],
+        [r.captured_at?.toISOString() ?? null, r.imported_at?.toISOString() ?? null, r.reconciled_at, r.exported_at?.toISOString() ?? null],
       ]),
     );
 
@@ -353,9 +354,11 @@ describe("get_erp_stock_cutoffs", () => {
     // primeiro lote (verificacao de e6fda07, BAIXA-1): a venda decidida com o corte antigo
     // e gravada entre o primeiro lote e o fim nao parece "gravada depois de o corte chegar".
     expect(rows).toHaveLength(3);
-    expect(porSku.get(doisImports)).toEqual([T_NOVO, APLICADO_NOVO, null]);
-    expect(porSku.get(soNoVelho)).toEqual([T_VELHO, I_VELHO, null]);
-    expect(porSku.get(semSnapshot)).toEqual([T_NOVO, APLICADO_NOVO, null]);
+    // `exported_at` = `captured_at`: nenhum destes snapshots carrega o parse de uma planilha com o
+    // nome carimbado (reverificacao de c48fb70, MEDIA-1).
+    expect(porSku.get(doisImports)).toEqual([T_NOVO, APLICADO_NOVO, null, T_NOVO]);
+    expect(porSku.get(soNoVelho)).toEqual([T_VELHO, I_VELHO, null, T_VELHO]);
+    expect(porSku.get(semSnapshot)).toEqual([T_NOVO, APLICADO_NOVO, null, T_NOVO]);
   });
 
   it("organizacao sem snapshot: uma linha por id, com corte e imported_at nulos", async () => {
@@ -436,9 +439,9 @@ describe("segunda planilha: venda gravada antes de o corte chegar nao e estornad
     expect(await ajusteDaReconciliacao(ORG_DUAS_PLANILHAS, sku)).toBe(0);
 
     // O corte que o worker le.
-    const [corte] = await comoPapel<{ captured_at: Date; imported_at: Date; reconciled_at: Date | null }>(
+    const [corte] = await comoPapel<{ captured_at: Date; imported_at: Date; reconciled_at: Date | null; exported_at: Date }>(
       "service_role",
-      `select captured_at, imported_at, reconciled_at from public.get_erp_stock_cutoffs('${ORG_DUAS_PLANILHAS}', array['${sku}']::uuid[])`,
+      `select captured_at, imported_at, reconciled_at, exported_at from public.get_erp_stock_cutoffs('${ORG_DUAS_PLANILHAS}', array['${sku}']::uuid[])`,
     );
 
     if (corte === undefined) {
@@ -451,6 +454,7 @@ describe("segunda planilha: venda gravada antes de o corte chegar nao e estornad
       capturedAt: corte.captured_at,
       importedAt: corte.imported_at,
       reconciledAt: corte.reconciled_at,
+      exportedAt: corte.exported_at,
     });
     const gravada = await client.query<{ sku_id: string; qty_delta: string; occurred_at: Date; created_at: Date }>(
       `select sku_id, qty_delta, occurred_at, created_at from public.stock_movements where idempotency_key = $1`,
@@ -562,6 +566,7 @@ describe("chave neutra do estorno: o segundo estorno do MESMO movimento nao entr
           capturedAt: new Date("2026-09-14T18:42:00.000Z"),
           importedAt: new Date("2026-09-14T18:44:18.714Z"),
           reconciledAt: null,
+          exportedAt: new Date("2026-09-14T18:42:00.000Z"),
         }),
         recordedSale: (key) =>
           key === venda
@@ -1070,12 +1075,13 @@ interface CorteLido {
   captured_at: Date;
   imported_at: Date;
   reconciled_at: Date | null;
+  exported_at: Date;
 }
 
 /** O corte como o worker o le, pela RPC -- como postgres, para caber numa transacao aberta. */
 async function corteDaRpc(organizationId: string, skuId: string): Promise<CorteLido> {
   const result = await client.query<CorteLido>(
-    `select captured_at, imported_at, reconciled_at from public.get_erp_stock_cutoffs($1, array[$2]::uuid[])`,
+    `select captured_at, imported_at, reconciled_at, exported_at from public.get_erp_stock_cutoffs($1, array[$2]::uuid[])`,
     [organizationId, skuId],
   );
   const linha = result.rows[0];
@@ -1132,9 +1138,14 @@ describe("get_erp_stock_cutoffs: a ultima reconciliacao (verificacao de e6fda07,
     await client.query(
       `insert into public.stock_movements
          (organization_id, sku_id, location_kind, qty_delta, movement_type, idempotency_key, occurred_at, created_at)
-       values ($1, $2, 'LOCAL', 5, 'AJUSTE_RECONCILIACAO', $3, $4, $4), ($5, $6, 'LOCAL', 5, 'AJUSTE_RECONCILIACAO', $7, $4, $4)`,
-      [ORG_JOB, proprio, `${PREFIXO}:rec-job`, AJUSTE_EM, ORG_SO_AJUSTE, soAjuste, `${PREFIXO}:rec-ajuste`],
+       values ($1, $2, 'LOCAL', 5, 'AJUSTE_RECONCILIACAO', $3, $4, $4), ($5, $6, 'LOCAL', 5, 'AJUSTE_RECONCILIACAO', $7, $4, $4),
+              -- Um ajuste mais ANTIGO em ORG_SO_AJUSTE: vale o ultimo (reverificacao de c48fb70, MUT-X4).
+              ($5, $6, 'LOCAL', 1, 'AJUSTE_RECONCILIACAO', $8, $9, $9)`,
+      [ORG_JOB, proprio, `${PREFIXO}:rec-job`, AJUSTE_EM, ORG_SO_AJUSTE, soAjuste, `${PREFIXO}:rec-ajuste`, `${PREFIXO}:rec-ajuste-antigo`, "2026-09-14T09:00:00.000Z"],
     );
+    // Uma rodada concluida mais ANTIGA, depois do ajuste: vale a mais recente (reverificacao de
+    // c48fb70, MUT-X3).
+    await rodadaDaReconciliacao(ORG_JOB, "2026-09-15T20:00:05.000Z");
     await rodadaDaReconciliacao(ORG_JOB, RODADA_EM);
     await rodadaDaReconciliacao(ORG_JOB, "2026-09-17T09:00:05.000Z", "failed");
     await rodadaDaReconciliacao(ORG_JOB, "2026-09-18T09:00:05.000Z", "done", "sync.orders.window");
@@ -1202,7 +1213,12 @@ describe("o ultimo alinhamento do saldo decide a venda ja gravada (verificacao d
 
     expect(corte.reconciled_at?.toISOString()).toBe("2026-09-15T09:00:05.000Z");
 
-    const cutoffFor = () => ({ capturedAt: corte.captured_at, importedAt: corte.imported_at, reconciledAt: corte.reconciled_at });
+    const cutoffFor = () => ({
+      capturedAt: corte.captured_at,
+      importedAt: corte.imported_at,
+      reconciledAt: corte.reconciled_at,
+      exportedAt: corte.exported_at,
+    });
     const gravadaAbsorvida = await vendaGravada(`venda:${String(absorvida)}:0`);
 
     // 1. O pedido e atualizado (envio): a reconciliacao ja absorveu a venda -- nenhum estorno.
@@ -1303,7 +1319,12 @@ describe("o ultimo alinhamento do saldo decide a venda ja gravada (verificacao d
         const resultado = computeSaleDeductions(
           { id, status: "paid", dateCreated: new Date(fechado), dateClosed: new Date(fechado), items: itens },
           {
-            cutoffFor: () => ({ capturedAt: corte.captured_at, importedAt: corte.imported_at, reconciledAt: corte.reconciled_at }),
+            cutoffFor: () => ({
+              capturedAt: corte.captured_at,
+              importedAt: corte.imported_at,
+              reconciledAt: corte.reconciled_at,
+              exportedAt: corte.exported_at,
+            }),
             recordedSale: () => gravada,
             recordedReversals: [],
           },
@@ -1544,8 +1565,12 @@ describe("compensacao F3 e o limite das reversoes (verificacao de e6fda07, ALTA-
   const P2 = PEDIDO + 2;
   const P3 = PEDIDO + 3;
   const P4 = PEDIDO + 4;
+  // P5 = KIT A1+A2 com a devolucao entregue dos DOIS componentes (reverificacao de c48fb70, MUT-X1).
+  const P5 = PEDIDO + 5;
   let sku = "";
   let conta = "";
+  let a1 = "";
+  let a2 = "";
 
   async function pedido(id: number, status: string, dateClosed: string): Promise<void> {
     await client.query(
@@ -1631,6 +1656,24 @@ describe("compensacao F3 e o limite das reversoes (verificacao de e6fda07, ALTA-
     await itemVinculado(P4, "MLB351353");
     await movimento(ORG_F3_REVERSAO, sku, "VENDA_ML", -1, `venda:${String(P4)}:0:${sku}`, em(9), String(P4));
     await evento(P4, "order.cancelled", "paid", em(26), { status: "cancelled" });
+
+    // P5: KIT A1+A2 vendido antes do corte, VENDA do worker antigo em cada componente e a devolucao
+    // entregue dos DOIS (uma DEVOLUCAO_ML por componente, o mesmo claim), sem cancelamento. Cada venda
+    // casa so com a devolucao da propria chave: somar as duas do pedido daria excesso 1 e nenhum estorno.
+    a1 = await novoSku(ORG_F3_REVERSAO, "f3-reversao-a1");
+    a2 = await novoSku(ORG_F3_REVERSAO, "f3-reversao-a2");
+    const loteKit = await novoLote(ORG_F3_REVERSAO, `${PREFIXO}-f3-reversao-kit.xlsx`);
+
+    await pedido(P5, "paid", em(-9 * 24 * 60));
+
+    for (const [componente, chaveDoSnapshot] of [
+      [a1, "F3-REVERSAO-A1"],
+      [a2, "F3-REVERSAO-A2"],
+    ] as const) {
+      await snapshot(ORG_F3_REVERSAO, loteKit, chaveDoSnapshot, componente, "ESTOQUE LOJA", 20, CORTE.toISOString());
+      await movimento(ORG_F3_REVERSAO, componente, "VENDA_ML", -1, `venda:${String(P5)}:0:${componente}`, em(9), String(P5));
+      await devolucao(ORG_F3_REVERSAO, componente, "5570995775", `venda:${String(P5)}:0:${componente}`, em(20));
+    }
   });
 
   async function rodarF3(avisos: string[]): Promise<void> {
@@ -1648,7 +1691,7 @@ describe("compensacao F3 e o limite das reversoes (verificacao de e6fda07, ALTA-
     }
   }
 
-  it("VENDA + DEVOLUCAO + CANCELAMENTO fica em +1 sem estorno; so a devolucao estorna inteiro; o trio nao volta a devolver; e pedido com VENDA_ML de outra chave nao e reposto", async () => {
+  it("VENDA + DEVOLUCAO + CANCELAMENTO fica em +1 sem estorno; so a devolucao estorna inteiro; o KIT com a devolucao dos dois componentes estorna cada um; o trio nao volta a devolver; e pedido com VENDA_ML de outra chave nao e reposto", async () => {
     await client.query("begin");
 
     try {
@@ -1656,7 +1699,7 @@ describe("compensacao F3 e o limite das reversoes (verificacao de e6fda07, ALTA-
 
       await rodarF3(avisos);
 
-      expect(avisos).toContain("compensacao_d351: 2 estornos gravados");
+      expect(avisos).toContain("compensacao_d351: 4 estornos gravados");
       expect(avisos).toContain("compensacao_d351: 1 vendas repostas (venda + estorno + cancelamento)");
 
       const estornos = await client.query<{ idempotency_key: string; qty_delta: string }>(
@@ -1670,8 +1713,21 @@ describe("compensacao F3 e o limite das reversoes (verificacao de e6fda07, ALTA-
           [`estorno:venda:${String(P2)}:0`, 1],
           [`estorno:venda:${String(P3)}:0`, 1],
           [`estorno:venda:${String(P4)}:0:${sku}`, 1],
+          [`estorno:venda:${String(P5)}:0:${a1}`, 1],
+          [`estorno:venda:${String(P5)}:0:${a2}`, 1],
         ].sort(),
       );
+
+      // P5: cada componente fica em +1 no saldo e no alvo -- snapshot 20 e a unidade que voltou uma vez.
+      for (const componente of [a1, a2]) {
+        const doComponente = await client.query<{ alvo: string | null; saldo: string | null }>(
+          `select (select quantity from public.compute_erp_target_balances($1) where sku_id = $2 and location_kind = 'LOCAL') as alvo,
+                  (select quantity from public.inventory_balances where sku_id = $2 and location_kind = 'LOCAL') as saldo`,
+          [ORG_F3_REVERSAO, componente],
+        );
+
+        expect([Number(doComponente.rows[0]?.alvo), Number(doComponente.rows[0]?.saldo)]).toEqual([21, 1]);
+      }
 
       // P4: nenhuma venda com a chave de hoje.
       const repostaP4 = await client.query(`select 1 from public.stock_movements where idempotency_key = $1`, [
@@ -1731,6 +1787,224 @@ describe("compensacao F3 e o limite das reversoes (verificacao de e6fda07, ALTA-
 
       expect(segunda).toContain("compensacao_d351: 0 estornos gravados");
       expect(segunda).toContain("compensacao_d351: 0 vendas repostas (venda + estorno + cancelamento)");
+    } finally {
+      await client.query("rollback");
+    }
+  });
+});
+
+// ============================================================================================
+// Reverificacao de c48fb70 (D-351 §10). Organizacoes proprias.
+// ============================================================================================
+
+describe("o snapshot que ainda carrega o parse retrata a exportacao do nome do arquivo (reverificacao de c48fb70, MEDIA-1)", () => {
+  const ORG_DEV = randomUUID();
+  const ORG_ENTRE_MIGRATION_E_DEPLOY = randomUUID();
+
+  beforeAll(async () => {
+    await novaOrganizacao(ORG_DEV, "parse-reconciliada");
+    await novaOrganizacao(ORG_ENTRE_MIGRATION_E_DEPLOY, "parse-nunca-reconciliou");
+  });
+
+  /** O que o dominio decidiu para um pedido pago, gravado como o flush da pagina (DO NOTHING). */
+  async function gravaDecisao(organizationId: string, pedido: number, resultado: ReturnType<typeof computeSaleDeductions>): Promise<void> {
+    for (const [tipo, draft] of [
+      ...resultado.deductions.map((d) => ["VENDA_ML", d] as const),
+      ...resultado.preCaptureReversals.map((d) => ["ESTORNO_PRE_CAPTURA", d] as const),
+    ]) {
+      await client.query(
+        `insert into public.stock_movements
+           (organization_id, sku_id, location_kind, qty_delta, movement_type, source_type, source_id, idempotency_key, occurred_at)
+         values ($1, $2, 'LOCAL', $3, $4, 'ORDER', $5, $6, $7)
+         on conflict (idempotency_key) do nothing`,
+        [organizationId, draft.skuId, draft.qtyDelta, tipo, String(pedido), draft.idempotencyKey, draft.occurredAt.toISOString()],
+      );
+    }
+  }
+
+  async function alvo(organizationId: string, skuId: string): Promise<number> {
+    const result = await client.query<{ quantity: string }>(
+      `select quantity from public.compute_erp_target_balances($1) where sku_id = $2 and location_kind = 'LOCAL'`,
+      [organizationId, skuId],
+    );
+
+    return Number(result.rows[0]?.quantity);
+  }
+
+  function doCorte(corte: CorteLido) {
+    return () => ({
+      capturedAt: corte.captured_at,
+      importedAt: corte.imported_at,
+      reconciledAt: corte.reconciled_at,
+      exportedAt: corte.exported_at,
+    });
+  }
+
+  it("Dev: organizacao reconciliada com o corte do parse -- a venda entre a exportacao e o parse nao e estornada e o alvo nao muda; a anterior a exportacao e; e service_role le a exportacao, tambem para o SKU sem snapshot proprio", async () => {
+    const sku = await novoSku(ORG_DEV, "parse-reconciliada");
+    const semSnapshot = await novoSku(ORG_DEV, "parse-reconciliada-sem-snapshot");
+    const base = 935_700_000_000 + Math.floor(Math.random() * 1_000_000) * 10;
+    // A forma de 2000018048056108 (fechado em 08-21 12:37:59, VENDA_ML do worker antigo em 09-06).
+    const naJanela = base + 1;
+    const antesDaExportacao = base + 2;
+    // Um dos 4 pedidos pagos da janela, no Dev, sem VENDA_ML.
+    const novaNaJanela = base + 3;
+    const PARSE = "2026-08-21T15:42:02.459Z";
+    const EXPORTACAO = "2026-08-20T16:09:23.000Z";
+    const itens = [{ position: 0, quantity: 1, skuId: sku, skuKind: "PRODUTO" as const, components: [] }];
+
+    const lote = await novoLote(ORG_DEV, "Lista_de_Estoque_0820160923.xlsx", PARSE);
+
+    await client.query(`update public.erp_import_batches set applied_at = '2026-08-21T17:12:44.481Z' where id = $1`, [lote]);
+    // O corte que a migration 20260914200000 deixa na organizacao reconciliada: o parse.
+    await snapshot(ORG_DEV, lote, "PARSE-RECONCILIADA", sku, "ESTOQUE LOJA", 10, PARSE, "2026-08-21T17:12:43.810Z");
+
+    // O worker antigo gravou as duas vendas com a data da atualizacao, depois do corte.
+    await movimento(ORG_DEV, sku, "VENDA_ML", -1, `venda:${String(naJanela)}:0`, "2026-09-06T12:33:31.000Z", String(naJanela), "2026-09-06T12:33:33.116Z");
+    await movimento(ORG_DEV, sku, "VENDA_ML", -1, `venda:${String(antesDaExportacao)}:0`, "2026-09-06T12:40:00.000Z", String(antesDaExportacao), "2026-09-06T12:40:02.000Z");
+
+    // A reconciliacao alinhou o saldo ao alvo e continua rodando.
+    await client.query(
+      `insert into public.stock_movements
+         (organization_id, sku_id, location_kind, qty_delta, movement_type, idempotency_key, occurred_at, created_at)
+       values ($1, $2, 'LOCAL', $3, 'AJUSTE_RECONCILIACAO', $4, '2026-09-07T09:00:05Z', '2026-09-07T09:00:05Z')`,
+      [ORG_DEV, sku, await ajusteDaReconciliacao(ORG_DEV, sku), `${PREFIXO}:parse-reconciliada:r1`],
+    );
+    await rodadaDaReconciliacao(ORG_DEV, "2026-09-14T09:00:09.295Z");
+
+    expect(await ajusteDaReconciliacao(ORG_DEV, sku)).toBe(0);
+    // 10 - a venda da janela (certo) - a anterior a exportacao (que a planilha ja tinha: contada de novo).
+    expect(await alvo(ORG_DEV, sku)).toBe(8);
+
+    // O corte como o worker o le, como service_role: a RPC e security invoker e le a exportacao do
+    // nome pela funcao privada.
+    const lidos = await comoPapel<{ sku_id: string; captured_at: Date; exported_at: Date }>(
+      "service_role",
+      `select sku_id, captured_at, exported_at from public.get_erp_stock_cutoffs('${ORG_DEV}', array['${sku}', '${semSnapshot}']::uuid[])`,
+    );
+    const porSku = new Map(lidos.map((r) => [r.sku_id, [r.captured_at.toISOString(), r.exported_at.toISOString()]]));
+
+    expect(porSku.get(sku)).toEqual([PARSE, EXPORTACAO]);
+    expect(porSku.get(semSnapshot)).toEqual([PARSE, EXPORTACAO]);
+
+    const corte = await corteDaRpc(ORG_DEV, sku);
+    const cutoffFor = doCorte(corte);
+    const decide = async (id: number, fechado: string, corteUsado = cutoffFor) => {
+      const gravada = await vendaGravada(`venda:${String(id)}:0`);
+
+      return computeSaleDeductions(
+        { id, status: "paid", dateCreated: new Date(fechado), dateClosed: new Date(fechado), items: itens },
+        { cutoffFor: corteUsado, recordedSale: () => gravada, recordedReversals: [] },
+      );
+    };
+
+    await client.query("begin");
+
+    try {
+      // 1. A venda da janela e atualizada: a planilha nao a tem, e o -1 que o alvo conta e o certo.
+      const janela = await decide(naJanela, "2026-08-21T12:37:59.000Z");
+
+      expect(janela.preCaptureReversals).toEqual([]);
+
+      await gravaDecisao(ORG_DEV, naJanela, janela);
+
+      expect(await alvo(ORG_DEV, sku)).toBe(8);
+      expect(await ajusteDaReconciliacao(ORG_DEV, sku)).toBe(0);
+
+      // Contraprova: com a regra de c48fb70 (a planilha decidida pelo corte do alvo), o mesmo pedido
+      // ganha um estorno, e alvo e saldo sobem juntos -- a reconciliacao nao ve diferenca nenhuma.
+      const deC48 = await decide(naJanela, "2026-08-21T12:37:59.000Z", () => ({ ...cutoffFor(), exportedAt: corte.captured_at }));
+
+      expect(deC48.preCaptureReversals).toHaveLength(1);
+
+      await client.query("savepoint contraprova");
+      await gravaDecisao(ORG_DEV, naJanela, deC48);
+
+      expect(await alvo(ORG_DEV, sku)).toBe(9);
+      expect(await ajusteDaReconciliacao(ORG_DEV, sku)).toBe(0);
+
+      await client.query("rollback to savepoint contraprova");
+
+      // 2. A venda anterior a exportacao: a planilha a tem, e o estorno espelhado tira a segunda contagem.
+      const anterior = await decide(antesDaExportacao, "2026-08-20T10:00:00.000Z");
+
+      expect(anterior.preCaptureReversals).toHaveLength(1);
+
+      await gravaDecisao(ORG_DEV, antesDaExportacao, anterior);
+
+      expect(await alvo(ORG_DEV, sku)).toBe(9);
+      expect(await ajusteDaReconciliacao(ORG_DEV, sku)).toBe(0);
+
+      // 3. Pedido pago da janela, nunca gravado: a venda, sem estorno. RESIDUO (D-351 §6): a linha tem
+      // `occurred_at` ate o corte do parse e fica fora do alvo; a reconciliacao seguinte grava +1.
+      const nova = await decide(novaNaJanela, "2026-08-21T13:00:00.000Z");
+
+      expect(nova.deductions).toHaveLength(1);
+      expect(nova.preCaptureReversals).toEqual([]);
+
+      await gravaDecisao(ORG_DEV, novaNaJanela, nova);
+
+      expect(await ajusteDaReconciliacao(ORG_DEV, sku)).toBe(1);
+    } finally {
+      await client.query("rollback");
+    }
+  });
+
+  it("planilha importada pelo worker antigo entre a migration e o deploy (organizacao nunca reconciliada, corte do parse): o worker novo nao estorna a venda da janela, e o UPDATE refeito depois fecha o alvo com o real", async () => {
+    const migration = await arquivo("supabase/migrations/20260914200000_erp_corte_da_exportacao.sql");
+    const update = /update public\.erp_stock_snapshots s[\s\S]*?;/.exec(migration)?.[0];
+    const base = 935_800_000_000 + Math.floor(Math.random() * 1_000_000) * 10;
+    // A forma de 2000018457209778, fechado as 18:43:57 -- entre a exportacao e o parse.
+    const naJanela = base + 1;
+    const antesDaExportacao = base + 2;
+    const PARSE = "2026-09-14T18:44:13.254Z";
+    const EXPORTACAO = "2026-09-14T18:42:00.000Z";
+
+    expect(update).toBeDefined();
+
+    // Tudo numa transacao: um snapshot com o corte do parse numa organizacao elegivel nao pode
+    // sobrar no banco para os outros blocos.
+    await client.query("begin");
+
+    try {
+      const sku = await novoSku(ORG_ENTRE_MIGRATION_E_DEPLOY, "parse-nunca-reconciliou");
+      const itens = [{ position: 0, quantity: 1, skuId: sku, skuKind: "PRODUTO" as const, components: [] }];
+      const lote = await novoLote(ORG_ENTRE_MIGRATION_E_DEPLOY, "Lista_de_Estoque_0914184200.xlsx", PARSE);
+
+      await client.query(`update public.erp_import_batches set applied_at = '2026-09-14T18:44:19.581Z' where id = $1`, [lote]);
+      await snapshot(ORG_ENTRE_MIGRATION_E_DEPLOY, lote, "PARSE-NUNCA", sku, "ESTOQUE LOJA", 10, PARSE, "2026-09-14T18:44:18.714Z");
+
+      // O worker antigo gravou as duas vendas com a data da atualizacao, depois do parse.
+      await movimento(ORG_ENTRE_MIGRATION_E_DEPLOY, sku, "VENDA_ML", -1, `venda:${String(naJanela)}:0`, "2026-09-14T19:03:00.000Z", String(naJanela), "2026-09-14T19:03:05.000Z");
+      await movimento(ORG_ENTRE_MIGRATION_E_DEPLOY, sku, "VENDA_ML", -1, `venda:${String(antesDaExportacao)}:0`, "2026-09-14T19:04:00.000Z", String(antesDaExportacao), "2026-09-14T19:04:05.000Z");
+
+      const corte = await corteDaRpc(ORG_ENTRE_MIGRATION_E_DEPLOY, sku);
+
+      expect([corte.captured_at.toISOString(), corte.exported_at.toISOString()]).toEqual([PARSE, EXPORTACAO]);
+
+      // O worker novo, com o corte do parse, estorna so a venda anterior a exportacao. Com a regra de
+      // c48fb70 a da janela tambem ganharia estorno, e o alvo ficaria em 10 depois do UPDATE.
+      for (const [id, fechado, estornos] of [
+        [naJanela, "2026-09-14T18:43:57.000Z", 0],
+        [antesDaExportacao, "2026-09-14T10:00:00.000Z", 1],
+      ] as const) {
+        const gravada = await vendaGravada(`venda:${String(id)}:0`);
+        const resultado = computeSaleDeductions(
+          { id, status: "paid", dateCreated: new Date(fechado), dateClosed: new Date(fechado), items: itens },
+          { cutoffFor: doCorte(corte), recordedSale: () => gravada, recordedReversals: [] },
+        );
+
+        expect(resultado.preCaptureReversals).toHaveLength(estornos);
+
+        await gravaDecisao(ORG_ENTRE_MIGRATION_E_DEPLOY, id, resultado);
+      }
+
+      // O UPDATE refeito depois do deploy: o corte vira a exportacao, e o alvo fecha com o real -- a
+      // planilha tem a venda anterior e nao tem a da janela.
+      await client.query(update ?? "");
+
+      expect((await corteDaRpc(ORG_ENTRE_MIGRATION_E_DEPLOY, sku)).captured_at.toISOString()).toBe(EXPORTACAO);
+      expect(await alvo(ORG_ENTRE_MIGRATION_E_DEPLOY, sku)).toBe(9);
     } finally {
       await client.query("rollback");
     }

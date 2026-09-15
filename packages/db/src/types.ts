@@ -4117,11 +4117,12 @@ export type Database = {
       // existe no repositorio ate ser aplicada no Dev, e a CLI nao regenera este
       // arquivo. `captured_at` e NULO de verdade (organizacao sem snapshot) e o
       // gerador nunca marca coluna de retorno de `returns table` como nula
-      // (classe D-133).
+      // (classe D-133). `exported_at` entrou na reverificacao de c48fb70.
       get_erp_stock_cutoffs: {
         Args: { p_organization_id: string; p_sku_ids: string[] }
         Returns: {
           captured_at: string | null
+          exported_at: string | null
           imported_at: string | null
           reconciled_at: string | null
           sku_id: string

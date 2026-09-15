@@ -147,6 +147,11 @@ interface FakeDbOptions {
   /** `reconciled_at` que a RPC devolve para todo corte não nulo — padrão, nunca reconciliou. */
   cutoffReconciledAt?: string | null;
   /**
+   * `exported_at` que a RPC devolve para todo corte não nulo — padrão, o próprio
+   * `captured_at` (o snapshot já corrigido para a exportação).
+   */
+  cutoffExportedAt?: string;
+  /**
    * `DEVOLUCAO_ML` gravadas que `get_order_return_movements` devolve
    * (verificação de e6fda07, ALTA-1). `order_id` padrão, o pedido perguntado.
    */
@@ -230,6 +235,7 @@ function fakeDb(options: FakeDbOptions = {}): {
             captured_at: capturedAt,
             imported_at: capturedAt === null ? null : (options.cutoffImportedAt ?? IMPORTADO_EM),
             reconciled_at: capturedAt === null ? null : (options.cutoffReconciledAt ?? null),
+            exported_at: capturedAt === null ? null : (options.cutoffExportedAt ?? capturedAt),
           };
         }),
         error: null,
@@ -1558,7 +1564,7 @@ describe("prefetchOrders (D-186)", () => {
   it("D-351: em lote, UMA leitura do corte para a página inteira, o par sai no mesmo lote e a página conta os estornos", async () => {
     const pagina = [1, 2, 3, 4, 5].map((id) => ({ ...BASE_ORDER, id }));
     const { db, consultadas } = dbFalso({ sku_listing_links: { data: [LINK_PRODUTO], error: null } }, (ids) => ({
-      data: ids.map((id) => ({ sku_id: id, captured_at: CORTE, imported_at: IMPORTADO_EM, reconciled_at: null })),
+      data: ids.map((id) => ({ sku_id: id, captured_at: CORTE, imported_at: IMPORTADO_EM, reconciled_at: null, exported_at: CORTE })),
       error: null,
     }));
 
@@ -1909,6 +1915,7 @@ describe("persistOrder — revisão de D-351", () => {
               captured_at: CORTE,
               imported_at: IMPORTADO_EM,
               reconciled_at: null,
+              exported_at: CORTE,
             })),
             error: null,
           });
@@ -2325,6 +2332,83 @@ describe("persistOrder — verificação de e6fda07", () => {
       );
 
       expect(escritasDeVenda.map((entry) => entry.rows.length)).toEqual([2]);
+    });
+  });
+});
+
+/**
+ * Reverificação de c48fb70 (D-351 §10). Cada bloco nomeia o achado; as mutações
+ * da §10 reprovam estes testes.
+ */
+describe("persistOrder — reverificação de c48fb70", () => {
+  const PEDIDO = String(BASE_ORDER.id);
+  const VENDA = `venda:${PEDIDO}:0`;
+  const COM_VINCULO = { linkForItem: () => ({ id: "link-1", sku_id: "sku-1" }) };
+
+  function tiposGravados(inserted: { table: string; rows: unknown[] }[]): string[] {
+    return movimentos(inserted).map((m) => m.movement_type);
+  }
+
+  describe("MÉDIA-1: o snapshot que ainda carrega o parse retrata a exportação do nome do arquivo", () => {
+    // Dev: Lista_de_Estoque_0820160923.xlsx, parse em 08-21 15:42:02.459 (o corte que a migration
+    // deixa na organização reconciliada), exportada em 08-20 16:09:23.
+    const DEV = {
+      cutoffs: { "sku-1": "2026-08-21T15:42:02.459Z" },
+      cutoffImportedAt: "2026-08-21T17:12:44.481Z",
+      cutoffReconciledAt: "2026-09-14T09:00:09.295Z",
+      cutoffExportedAt: "2026-08-20T16:09:23.000Z",
+    };
+    // 2000018048056108: VENDA_ML do worker antigo, com a data da atualização (09-06).
+    const LINHA_DO_WORKER_ANTIGO = [
+      {
+        sku_id: "sku-1",
+        qty_delta: -1,
+        idempotency_key: VENDA,
+        occurred_at: "2026-09-06T12:33:31.000Z",
+        created_at: "2026-09-06T12:33:33.116Z",
+      },
+    ];
+
+    it("linha do worker antigo depois do corte, de venda ENTRE a exportação e o parse: atualizar o pedido não estorna", async () => {
+      const { db, inserted } = fakeDb({ ...COM_VINCULO, ...DEV, existingSaleMovements: LINHA_DO_WORKER_ANTIGO });
+
+      await run(db, { ...BASE_ORDER, date_closed: "2026-08-21T12:37:59.000Z" });
+
+      expect(tiposGravados(inserted)).toEqual(["VENDA_ML"]);
+    });
+
+    it("a mesma linha, de venda ANTES da exportação: estorna — a planilha tem a venda", async () => {
+      const { db, inserted } = fakeDb({ ...COM_VINCULO, ...DEV, existingSaleMovements: LINHA_DO_WORKER_ANTIGO });
+
+      await run(db, { ...BASE_ORDER, date_closed: "2026-08-20T10:00:00.000Z" });
+
+      expect(tiposGravados(inserted)).toEqual(["VENDA_ML", "ESTORNO_PRE_CAPTURA"]);
+    });
+
+    it("sem a chave exported_at (a RPC na forma de c48fb70): LANÇA, em vez de decidir a planilha pelo corte do alvo", async () => {
+      const { db, inserted } = fakeDb({
+        ...COM_VINCULO,
+        cutoffRows: [{ sku_id: "sku-1", captured_at: CORTE, imported_at: IMPORTADO_EM, reconciled_at: null }],
+      });
+
+      await expect(run(db, BASE_ORDER)).rejects.toThrow(/sem exported_at/);
+      expect(inserted).toEqual([]);
+    });
+  });
+
+  describe("MUT-X2: a linha gravada NO corte fica fora do alvo, como no SQL", () => {
+    it("venda fechada no segundo da exportação, gravada antes do import e sem reconciliação: atualizar o pedido não estorna", async () => {
+      const { db, inserted } = fakeDb({
+        ...COM_VINCULO,
+        existingSaleMovements: [
+          { sku_id: "sku-1", qty_delta: -1, idempotency_key: VENDA, occurred_at: CORTE, created_at: "2026-09-14T18:42:03.000Z" },
+        ],
+        cutoffs: { "sku-1": CORTE },
+      });
+
+      await run(db, { ...BASE_ORDER, date_closed: CORTE });
+
+      expect(tiposGravados(inserted)).toEqual(["VENDA_ML"]);
     });
   });
 });

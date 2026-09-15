@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import type { RecordedReversal } from "./reversal-limit.js";
-import { alignedAt, computeSaleDeductions, estornadoKeyOf, estornoKeyOf, saleInstant } from "./sale-deduction.js";
+import {
+  alignedAt,
+  computeSaleDeductions,
+  estornadoKeyOf,
+  estornaVendaGravada,
+  estornoKeyOf,
+  saleInstant,
+} from "./sale-deduction.js";
 import type { PreCaptureCutoffs, RecordedSale, SaleDeductionOrder } from "./sale-deduction.js";
 
 const CREATED_AT = new Date("2026-08-21T12:59:00.000Z");
@@ -29,6 +36,8 @@ function cortes(
   importedAt: Date = IMPORTADO_EM,
   reconciledAt: Date | null = null,
   recordedReversals: RecordedReversal[] = [],
+  /** A exportação que a planilha retrata; `null` = o próprio corte (o caso de todo snapshot corrigido). */
+  exportedAt: Date | null = null,
 ): PreCaptureCutoffs {
   return {
     cutoffFor: (skuId) => {
@@ -38,7 +47,7 @@ function cortes(
 
       const capturedAt = porSku[skuId] ?? null;
 
-      return capturedAt === null ? null : { capturedAt, importedAt, reconciledAt };
+      return capturedAt === null ? null : { capturedAt, importedAt, reconciledAt, exportedAt: exportedAt ?? capturedAt };
     },
     recordedSale: (key) => gravadas[key],
     recordedReversals,
@@ -364,7 +373,7 @@ describe("computeSaleDeductions — a venda gravada e o último alinhamento do s
   it("(b) reconciliação ANTERIOR ao import não conta: vale o import", () => {
     const antes = new Date(IMPORT.getTime() - 60_000);
 
-    expect(alignedAt({ capturedAt: CORTE, importedAt: IMPORT, reconciledAt: antes })).toEqual(IMPORT);
+    expect(alignedAt({ capturedAt: CORTE, importedAt: IMPORT, reconciledAt: antes, exportedAt: CORTE })).toEqual(IMPORT);
     expect(
       computeSaleDeductions(pedido, cortes({ "sku-a": CORTE }, gravada(new Date("2026-08-15T10:00:00.000Z"), new Date(IMPORT.getTime() + 1)), IMPORT, antes))
         .preCaptureReversals,
@@ -444,4 +453,104 @@ describe("chave neutra do estorno (D-351)", () => {
       expect(() => estornadoKeyOf(chave)).toThrow(/fora do formato/);
     },
   );
+});
+
+/**
+ * Reverificação de c48fb70, MÉDIA-1: no snapshot que ainda carrega o parse de uma
+ * planilha com o nome carimbado (a organização reconciliada do Dev), a planilha
+ * retrata a EXPORTAÇÃO (`exportedAt`) e o alvo começa no parse (`capturedAt`).
+ * Os instantes são os do Dev.
+ */
+describe("computeSaleDeductions — a planilha retrata a exportação, e não o corte do parse (reverificação de c48fb70, MÉDIA-1)", () => {
+  const PRODUTO: SaleDeductionOrder["items"] = [
+    { position: 0, quantity: 1, skuId: "sku-a", skuKind: "PRODUTO", components: [] },
+  ];
+  // Lista_de_Estoque_0820160923.xlsx: exportada em 08-20 16:09:23, parse (o corte que a
+  // migration deixa na organização reconciliada) em 08-21 15:42:02.459, import em
+  // 08-21 17:12:43.810, última rodada da reconciliação em 09-14 09:00:02.157.
+  const EXPORTACAO = new Date("2026-08-20T16:09:23.000Z");
+  const PARSE = new Date("2026-08-21T15:42:02.459Z");
+  const IMPORT = new Date("2026-08-21T17:12:43.810Z");
+  const RODADA = new Date("2026-09-14T09:00:02.157Z");
+  // 2000018048056108: fechado em 08-21 12:37:59 -- depois da exportação, antes do parse.
+  const NA_JANELA = baseOrder({ dateClosed: new Date("2026-08-21T12:37:59.000Z"), items: PRODUTO });
+  const ANTES_DA_EXPORTACAO = baseOrder({ dateClosed: new Date("2026-08-20T10:00:00.000Z"), items: PRODUTO });
+
+  function doDev(gravadas: Record<string, RecordedSale> = {}): PreCaptureCutoffs {
+    return cortes({ "sku-a": PARSE }, gravadas, IMPORT, RODADA, [], EXPORTACAO);
+  }
+
+  function gravada(occurredAt: Date, recordedAt: Date): Record<string, RecordedSale> {
+    return { "venda:9900001001:0": { skuId: "sku-a", qtyDelta: -1, occurredAt, recordedAt } };
+  }
+
+  it("(a) linha do worker antigo DEPOIS do corte, de venda entre a exportação e o parse: sem estorno — a planilha não tem a venda, e o -1 que o alvo conta é o certo (708 linhas no Dev)", () => {
+    const result = computeSaleDeductions(
+      NA_JANELA,
+      doDev(gravada(new Date("2026-09-06T12:33:31.000Z"), new Date("2026-09-06T12:33:33.116Z"))),
+    );
+
+    expect(result.preCaptureReversals).toEqual([]);
+  });
+
+  it("rascunho novo de venda entre a exportação e o parse (os 4 pedidos pagos do Dev sem VENDA_ML): grava a venda e não estorna", () => {
+    const result = computeSaleDeductions(NA_JANELA, doDev());
+
+    expect(result.deductions).toHaveLength(1);
+    expect(result.preCaptureReversals).toEqual([]);
+  });
+
+  it("venda EXATAMENTE na exportação: estorna — a planilha tem a venda (a fronteira `<=` do gate)", () => {
+    const result = computeSaleDeductions(baseOrder({ dateClosed: EXPORTACAO, items: PRODUTO }), doDev());
+
+    expect(result.preCaptureReversals).toEqual([
+      { skuId: "sku-a", qtyDelta: 1, idempotencyKey: "estorno:venda:9900001001:0", occurredAt: EXPORTACAO },
+    ]);
+  });
+
+  it("(a) venda ANTES da exportação, linha do worker antigo depois do corte: estorna, espelhada — a planilha tem a venda e o alvo a conta de novo (1.566 linhas no Dev)", () => {
+    const occurredAt = new Date("2026-09-06T12:40:00.000Z");
+    const result = computeSaleDeductions(ANTES_DA_EXPORTACAO, doDev(gravada(occurredAt, new Date("2026-09-06T12:40:02.000Z"))));
+
+    expect(result.preCaptureReversals).toEqual([
+      { skuId: "sku-a", qtyDelta: 1, idempotencyKey: "estorno:venda:9900001001:0", occurredAt },
+    ]);
+  });
+
+  it("(b) venda antes da exportação, linha ENTRE a exportação e o parse, gravada antes do import: sem estorno — o lado do alvo é o do corte (captured_at), e não o da exportação", () => {
+    const result = computeSaleDeductions(
+      ANTES_DA_EXPORTACAO,
+      doDev(gravada(new Date("2026-08-21T10:00:00.000Z"), new Date("2026-08-21T10:00:05.000Z"))),
+    );
+
+    expect(result.preCaptureReversals).toEqual([]);
+  });
+});
+
+/**
+ * Reverificação de c48fb70, MUT-X2: a fronteira do ramo (a) é estrita, como a do alvo
+ * (`occurred_at > captured_at`). A linha gravada NO corte está fora do alvo.
+ */
+describe("estornaVendaGravada — a linha gravada NO corte (reverificação de c48fb70, MUT-X2)", () => {
+  // Produção: o corte vem do nome do arquivo, em segundo cheio, e todo date_closed também. A
+  // venda fechou no segundo da exportação e o worker novo a gravou antes do import.
+  const CORTE = new Date("2026-09-14T18:42:00.000Z");
+  const IMPORT = new Date("2026-09-14T18:44:19.581Z");
+  const NO_CORTE: RecordedSale = {
+    skuId: "sku-a",
+    qtyDelta: -1,
+    occurredAt: CORTE,
+    recordedAt: new Date("2026-09-14T18:42:03.000Z"),
+  };
+
+  it("occurred_at IGUAL ao corte, gravada antes do import e sem reconciliação: não estorna — a planilha tem a venda e o alvo não conta a linha", () => {
+    expect(estornaVendaGravada(NO_CORTE, { capturedAt: CORTE, importedAt: IMPORT, reconciledAt: null, exportedAt: CORTE })).toBe(false);
+
+    const result = computeSaleDeductions(
+      baseOrder({ dateClosed: CORTE, items: [{ position: 0, quantity: 1, skuId: "sku-a", skuKind: "PRODUTO", components: [] }] }),
+      cortes({ "sku-a": CORTE }, { "venda:9900001001:0": NO_CORTE }, IMPORT),
+    );
+
+    expect(result.preCaptureReversals).toEqual([]);
+  });
 });

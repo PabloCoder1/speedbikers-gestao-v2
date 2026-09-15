@@ -41,6 +41,9 @@ import type {
  *  - cancelada ATÉ o corte: a planilha já tem a unidade de volta — não reverte.
  *    Reverter somaria a unidade duas vezes.
  *
+ * "Corte", aqui, é a EXPORTAÇÃO da planilha (`ErpCutoff.exportedAt`): é ela que
+ * diz o que a planilha tem (reverificação de c48fb70, MÉDIA-1).
+ *
  * Venda sem estorno reverte sempre: se ela não foi estornada, é porque a
  * planilha não a descontou. E quando o instante do cancelamento é desconhecido
  * (sem `date_last_updated` nem `last_updated`, só `date_created`), reverte
@@ -97,8 +100,8 @@ function planCancellationReversals(
     if (preCapture.estornadas.has(movement.idempotencyKey) && order.occurredAtKnown) {
       const cutoff = preCapture.cutoffFor(movement.skuId);
 
-      // Estornada e cancelada até o corte: a planilha já tem a venda E a devolução.
-      if (cutoff !== null && order.occurredAt.getTime() <= cutoff.capturedAt.getTime()) continue;
+      // Estornada e cancelada até a exportação: a planilha já tem a venda E a devolução.
+      if (cutoff !== null && order.occurredAt.getTime() <= cutoff.exportedAt.getTime()) continue;
     }
 
     const idempotencyKey = cancellationKeyOf(movement.idempotencyKey);
@@ -224,10 +227,13 @@ export function computeCancellationMovements(input: CancellationMovementsInput):
     for (const deduction of deductions) {
       const cutoff = input.cutoffFor(deduction.skuId);
 
-      // Sem corte, ou venda depois dele: nunca gravada e cancelada soma zero.
-      if (cutoff === null || saleAt.getTime() > cutoff.capturedAt.getTime()) continue;
-      // Cancelada até o corte: a planilha já tem a venda E a devolução.
-      if (cancelledAt.getTime() <= cutoff.capturedAt.getTime()) continue;
+      // O que a planilha tem é decidido pela EXPORTAÇÃO (`exportedAt`), e não pelo corte
+      // do alvo: no snapshot que ainda carrega o parse, a venda entre a exportação e o
+      // parse não está nela (reverificação de c48fb70, MÉDIA-1).
+      // Sem corte, ou venda depois da exportação: nunca gravada e cancelada soma zero.
+      if (cutoff === null || saleAt.getTime() > cutoff.exportedAt.getTime()) continue;
+      // Cancelada até a exportação: a planilha já tem a venda E a devolução.
+      if (cancelledAt.getTime() <= cutoff.exportedAt.getTime()) continue;
 
       sales.push(deduction);
     }

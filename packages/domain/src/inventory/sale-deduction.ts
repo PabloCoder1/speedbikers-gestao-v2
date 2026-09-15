@@ -34,6 +34,14 @@
  * a planilha já não tem — a cada planilha nova, quase toda venda dos dias
  * anteriores ganharia um +1 falso (revisão de D-351, ALTA-1). Por isso o corte
  * traz `importedAt`, e a venda gravada traz `recordedAt`.
+ *
+ * **O que a planilha tem e de que lado do alvo a linha está são duas perguntas**
+ * (reverificação de c48fb70, MÉDIA-1). "A venda está na planilha?" é respondida
+ * pela exportação (`exportedAt`); "a linha gravada está dentro do alvo?", pelo
+ * corte do alvo (`capturedAt`). Quase sempre são o mesmo instante. Diferem no
+ * snapshot que ainda carrega o parse de uma planilha com o nome carimbado — a
+ * organização reconciliada que a migration deixou no parse, o Dev —, e ali a
+ * venda entre a exportação e o parse não é estornada.
  */
 
 import { excessReversed } from "./reversal-limit.js";
@@ -93,10 +101,23 @@ export interface RecordedSale {
 /** O corte do snapshot do ERP para um SKU (D-351), como `get_erp_stock_cutoffs` o devolve. */
 export interface ErpCutoff {
   /**
-   * `erp_stock_snapshots.captured_at` — o instante da EXPORTAÇÃO da planilha.
-   * Venda com "venda em" até aqui já está no saldo do ERP.
+   * `erp_stock_snapshots.captured_at` — o corte do ALVO: `compute_erp_target_balances`
+   * soma os movimentos com `occurred_at` depois dele. Diz de que lado do alvo
+   * está uma linha já gravada (`estornaVendaGravada`, ramo (a)). É o instante
+   * da exportação, exceto no snapshot que ainda carrega o parse (`exportedAt`).
    */
   readonly capturedAt: Date;
+  /**
+   * O instante que o saldo da planilha RETRATA: a exportação. Venda (e
+   * cancelamento) com instante até aqui já está no saldo do ERP. É o próprio
+   * `capturedAt`, exceto quando o snapshot vencedor ainda carrega o parse de
+   * uma planilha com o nome carimbado — a organização reconciliada que a
+   * migration `20260914200000` deixa no parse (o Dev: exportada em 08-20
+   * 16:09:23, corte em 08-21 15:42:02.459). Ali a venda entre a exportação e o
+   * parse NÃO está na planilha, e estorná-la subiria alvo e saldo juntos
+   * (reverificação de c48fb70, MÉDIA-1). Sempre `<= capturedAt`.
+   */
+  readonly exportedAt: Date;
   /**
    * Quando a V3 terminou de receber esse corte: `erp_import_batches.applied_at`
    * do lote do snapshot mais recente (gravado depois de todos os upserts), ou o
@@ -219,11 +240,13 @@ export function alignedAt(cutoff: ErpCutoff): Date {
  * é o alinhamento do saldo ao alvo. Por isso a regra olha de que lado do corte a
  * LINHA está:
  *
- *  - (a) `occurred_at` da linha DEPOIS do corte: a linha está dentro do alvo de
- *    `compute_erp_target_balances` (é o worker de antes de D-351, que gravava a
- *    data da atualização) e conta a venda duas vezes nos dois lados. O estorno
- *    espelhado a anula no saldo E no alvo: estorna sempre, com ou sem
- *    reconciliação no meio.
+ *  - (a) `occurred_at` da linha DEPOIS do corte do alvo (`capturedAt`, e não
+ *    `exportedAt`: o lado do alvo é o de `compute_erp_target_balances`): a linha
+ *    está dentro do alvo (é o worker de antes de D-351, que gravava a data da
+ *    atualização) e conta a venda duas vezes nos dois lados. O estorno espelhado
+ *    a anula no saldo E no alvo: estorna sempre, com ou sem reconciliação no
+ *    meio. A fronteira é estrita, como lá: a linha com `occurred_at` IGUAL ao
+ *    corte está fora do alvo e cai em (b) (reverificação de c48fb70, MUT-X2).
  *  - (b) `occurred_at` até o corte: a linha está fora do alvo. Se ela já estava
  *    no saldo no último alinhamento a este corte (`alignedAt`: o import, ou uma
  *    reconciliação depois dele), o saldo já foi posto igual ao alvo sem ela — a
@@ -242,11 +265,17 @@ export function estornaVendaGravada(recorded: RecordedSale, cutoff: ErpCutoff): 
  * O `ESTORNO_PRE_CAPTURA` de uma venda — o rascunho novo ou a linha já gravada
  * com a mesma chave —, ou `null` quando ela não é estornada.
  *
- * Estorna quando a "venda em" é até o corte do SKU E a venda ainda não foi
- * absorvida: o rascunho novo sempre (vai ser gravado agora); a linha gravada,
- * pela regra de `estornaVendaGravada`. A quantidade é a da venda menos o excesso
- * de reversão do legado (`excessReversed`). Compartilhada com o cancelamento
+ * Estorna quando a "venda em" é até a EXPORTAÇÃO da planilha do SKU
+ * (`exportedAt`: a planilha tem a venda) E a venda ainda não foi absorvida: o
+ * rascunho novo sempre (vai ser gravado agora); a linha gravada, pela regra de
+ * `estornaVendaGravada`. A quantidade é a da venda menos o excesso de reversão
+ * do legado (`excessReversed`). Compartilhada com o cancelamento
  * (`computeCancellationMovements`), que precisa do mesmo par.
+ *
+ * O gate é `exportedAt`, e não `capturedAt` (reverificação de c48fb70,
+ * MÉDIA-1): no snapshot que ainda carrega o parse, a venda entre a exportação e
+ * o parse não está na planilha. Nada dela é estornado — nem o rascunho novo,
+ * nem a linha do worker antigo que o alvo já conta.
  */
 export function preCaptureEstornoOf(
   sale: StockMovementDraft,
@@ -259,7 +288,7 @@ export function preCaptureEstornoOf(
   const base = recorded ?? sale;
   const cutoff = preCapture.cutoffFor(base.skuId);
 
-  if (cutoff === null || saleAt.getTime() > cutoff.capturedAt.getTime()) {
+  if (cutoff === null || saleAt.getTime() > cutoff.exportedAt.getTime()) {
     return null;
   }
 

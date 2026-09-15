@@ -14,13 +14,13 @@
 --      carrega o PARSE como corte aborta tudo -- com o corte do parse (18:44:13 em
 --      producao) a F3 estornaria venda legitima da janela entre exportacao e parse
 --      (2000018457209778, fechada as 18:43:57). Isso tambem pega uma planilha importada
---      pelo worker ANTIGO entre a migration e o deploy, e por isso a conferencia vem ANTES
---      do deploy (DEPLOYMENT.md 8.2, passo 10): o worker NOVO le o mesmo corte, e com o do
---      parse grava VENDA_ML + ESTORNO_PRE_CAPTURA para venda da janela entre exportacao e
---      parse que a planilha nao tem. Refazer o UPDATE depois nao desfaz esses pares: com
---      occurred_at depois do corte corrigido, eles somam zero no alvo, que fica 1 acima por
---      unidade, ate a planilha seguinte -- a menos que o dono aceite, cada par precisa de
---      contrapartida manual. Nao importe planilha entre a migration e o deploy;
+--      pelo worker ANTIGO entre a migration e o deploy: rode de novo o UPDATE de
+--      20260914200000 antes da F3. O worker NOVO nao estorna essa venda nem com o corte do
+--      parse -- `get_erp_stock_cutoffs` devolve a exportacao lida do nome (`exported_at`,
+--      D-351 §10) --, e o UPDATE refeito depois do deploy fecha o alvo com o real. Ate a
+--      reverificacao de c48fb70 o worker gravava venda + estorno para essa venda, pares que
+--      o UPDATE nao desfazia. A conferencia continua ANTES do deploy (DEPLOYMENT.md 8.2,
+--      passo 10), e nao importe planilha entre a migration e o deploy;
 --   2. worker de D-351 servindo trafego;
 --   3. `v3-reconcile-balances` AINDA pausado -- a organizacao com AJUSTE_RECONCILIACAO
 --      nao e compensada (abaixo).
@@ -247,7 +247,7 @@ begin
     and private.erp_stock_export_instant(b.file_name, b.parsed_at) <> b.parsed_at;
 
   if v_corte_do_parse > 0 then
-    raise exception 'compensacao_d351: % snapshots ainda com o corte do PARSE, e nao o da exportacao -- rode de novo o UPDATE de 20260914200000_erp_corte_da_exportacao antes da F3. Se o worker novo ja rodou com esse corte, os ESTORNO_PRE_CAPTURA com occurred_at entre a exportacao e o parse ficam sem contrapartida (cabecalho, PRE-REQUISITO 1)',
+    raise exception 'compensacao_d351: % snapshots ainda com o corte do PARSE, e nao o da exportacao -- rode de novo o UPDATE de 20260914200000_erp_corte_da_exportacao antes da F3 (cabecalho, PRE-REQUISITO 1)',
       v_corte_do_parse;
   end if;
 

@@ -54,8 +54,9 @@ import { recordStockMovements } from "./stock-movements.js";
  * está cancelado: essa informação já está decomposta no ledger.
  *
  * **D-351 — venda anterior ao snapshot do UpSeller.** Toda venda gravada sai
- * com o par `ESTORNO_PRE_CAPTURA` quando a "venda em" é anterior ou igual ao
- * corte do SKU (`@sb/domain/inventory`, `computeSaleDeductions`). O corte vem de
+ * com o par `ESTORNO_PRE_CAPTURA` quando a "venda em" é anterior ou igual à
+ * exportação da planilha do SKU (`exported_at`; o corte do alvo é `captured_at`,
+ * reverificação de c48fb70) (`@sb/domain/inventory`, `computeSaleDeductions`). O corte vem de
  * `get_erp_stock_cutoffs`, lido UMA vez por página e uma vez no webhook, e a
  * leitura que falha ou volta incompleta LANÇA: tratar "não sei o corte" como
  * "sem corte" é exatamente a dupla contagem que a guarda existe para impedir.
@@ -495,7 +496,9 @@ function instanteDoCorte(valor: unknown, coluna: string, skuId: string): Date {
  * corte sem `imported_at` ou sem `reconciled_at` (a coluna; o valor pode ser
  * nulo, "nunca reconciliou"), ou com data ilegivel, tambem: sem eles nao ha
  * como saber se uma venda gravada ja estava no saldo quando o saldo foi
- * alinhado ao corte.
+ * alinhado ao corte. E sem `exported_at` (a RPC na forma de c48fb70) tambem:
+ * sem ele, a venda entre a exportacao e o parse de um snapshot que ainda carrega
+ * o parse pareceria estar na planilha.
  */
 export async function readErpCutoffs(
   db: AdminClient,
@@ -528,6 +531,10 @@ export async function readErpCutoffs(
         importedAt: instanteDoCorte(row.imported_at, "imported_at", row.sku_id),
         reconciledAt:
           row.reconciled_at === null ? null : instanteDoCorte(row.reconciled_at, "reconciled_at", row.sku_id),
+        // Sem cair em `captured_at`: no snapshot que ainda carrega o parse, "a planilha
+        // tem a venda" seria decidido pelo corte do alvo, e a venda entre a exportacao e
+        // o parse seria estornada (reverificacao de c48fb70, MEDIA-1).
+        exportedAt: instanteDoCorte(row.exported_at, "exported_at", row.sku_id),
       });
     }
 

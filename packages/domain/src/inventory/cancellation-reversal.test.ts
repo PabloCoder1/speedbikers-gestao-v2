@@ -24,8 +24,8 @@ function baseOrder(overrides: Partial<CancellationReversalOrder> = {}): Cancella
   };
 }
 
-function corte(capturedAt: Date, importedAt: Date = IMPORTADO_EM): ErpCutoff {
-  return { capturedAt, importedAt, reconciledAt: null };
+function corte(capturedAt: Date, importedAt: Date = IMPORTADO_EM, exportedAt: Date = capturedAt): ErpCutoff {
+  return { capturedAt, importedAt, reconciledAt: null, exportedAt };
 }
 
 const SALE_MOVEMENTS: RecordedSaleMovement[] = [
@@ -365,7 +365,7 @@ describe("computeCancellationMovements — verificação de e6fda07", () => {
       recordedSales: [],
       estornadas: new Set(),
       reversals: [],
-      cutoffFor: () => ({ capturedAt: CORTE, importedAt: IMPORT, reconciledAt: null }),
+      cutoffFor: () => ({ capturedAt: CORTE, importedAt: IMPORT, reconciledAt: null, exportedAt: CORTE }),
       ...overrides,
     };
   }
@@ -608,5 +608,65 @@ describe("computeCancellationMovements — verificação de e6fda07", () => {
 
       expect(resultado.reversals.map((r) => [r.idempotencyKey, r.occurredAt])).toEqual([[`cancelamento:${VENDA}`, cancelado]]);
     });
+  });
+});
+
+/**
+ * Reverificação de c48fb70, MÉDIA-1: o que a planilha tem é decidido pela exportação
+ * (`exportedAt`), e não pelo corte do alvo. Instantes do Dev: exportada em 08-20 16:09:23,
+ * corte que a migration deixa no parse, 08-21 15:42:02.459.
+ */
+describe("cancelamento — a planilha retrata a exportação, e não o corte do parse (reverificação de c48fb70, MÉDIA-1)", () => {
+  const EXPORTACAO = new Date("2026-08-20T16:09:23.000Z");
+  const PARSE = new Date("2026-08-21T15:42:02.459Z");
+  const IMPORT = new Date("2026-08-21T17:12:43.810Z");
+  const NA_JANELA = new Date("2026-08-21T12:37:59.000Z");
+  const PEDIDO = 2000018048056108;
+  const VENDA = `venda:${String(PEDIDO)}:0`;
+  const DO_DEV = corte(PARSE, IMPORT, EXPORTACAO);
+
+  function entrada(dateClosed: Date, cancelledAt: Date): CancellationMovementsInput {
+    return {
+      order: {
+        id: PEDIDO,
+        status: "cancelled",
+        dateCreated: new Date(dateClosed.getTime() - 60_000),
+        dateClosed,
+        items: [{ position: 0, quantity: 1, skuId: "sku-a", skuKind: "PRODUTO", components: [] }],
+      },
+      occurredAt: new Date("2026-09-15T10:00:00.000Z"),
+      occurredAtKnown: true,
+      transition: { saleStatus: "paid", cancelledAt },
+      recordedSales: [],
+      estornadas: new Set(),
+      reversals: [],
+      cutoffFor: () => DO_DEV,
+    };
+  }
+
+  it("venda nunca gravada ENTRE a exportação e o parse, cancelada depois do corte: nada — a planilha não tem a venda, e o trio daria +1", () => {
+    const resultado = computeCancellationMovements(entrada(NA_JANELA, new Date("2026-09-10T10:00:00.000Z")));
+
+    expect(resultado).toEqual({ sales: [], estornos: [], reversals: [], alreadyReversed: [] });
+  });
+
+  it("venda antes da exportação, nunca gravada, cancelada ENTRE a exportação e o parse: o trio — a planilha tem a venda e não tem a devolução", () => {
+    const resultado = computeCancellationMovements(entrada(new Date("2026-08-20T10:00:00.000Z"), NA_JANELA));
+
+    expect(resultado.sales.map((m) => m.idempotencyKey)).toEqual([VENDA]);
+    expect(resultado.estornos.map((m) => m.idempotencyKey)).toEqual([`estorno:${VENDA}`]);
+    expect(resultado.reversals.map((m) => [m.idempotencyKey, m.qtyDelta])).toEqual([[`cancelamento:${VENDA}`, 1]]);
+  });
+
+  it("venda estornada cancelada ENTRE a exportação e o parse: reverte — a planilha não tem a devolução", () => {
+    const estornada: CancellationPreCapture = { estornadas: new Set([VENDA]), cutoffFor: () => DO_DEV, reversals: [] };
+
+    expect(
+      computeCancellationReversals(
+        baseOrder({ id: PEDIDO, occurredAt: NA_JANELA }),
+        [{ skuId: "sku-a", qtyDelta: -1, idempotencyKey: VENDA }],
+        estornada,
+      ),
+    ).toEqual([{ skuId: "sku-a", qtyDelta: 1, idempotencyKey: `cancelamento:${VENDA}`, occurredAt: NA_JANELA }]);
   });
 });
