@@ -26,6 +26,14 @@
  * em `compute_erp_target_balances` (que soma só `occurred_at > captured_at`):
  * soma zero no alvo também. A fronteira é a mesma nos dois lugares — `<=` aqui,
  * `>` lá.
+ *
+ * **Só estorna movimento que entrou no saldo DEPOIS de o corte chegar.** Uma
+ * venda gravada antes do import da planilha já estava no saldo quando o corte
+ * mudou: o salto do alvo (`snapshot novo − movimentos até o corte`) a absorveu,
+ * e a reconciliação alinhou o saldo. Estorná-la depois devolveria a unidade que
+ * a planilha já não tem — a cada planilha nova, quase toda venda dos dias
+ * anteriores ganharia um +1 falso (revisão de D-351, ALTA-1). Por isso o corte
+ * traz `importedAt`, e a venda gravada traz `recordedAt`.
  */
 
 export interface SaleDeductionItem {
@@ -75,18 +83,35 @@ export interface RecordedSale {
   readonly skuId: string;
   readonly qtyDelta: number;
   readonly occurredAt: Date;
+  /** `stock_movements.created_at`: quando a venda entrou no saldo. */
+  readonly recordedAt: Date;
+}
+
+/** O corte do snapshot do ERP para um SKU (D-351), como `get_erp_stock_cutoffs` o devolve. */
+export interface ErpCutoff {
+  /**
+   * `erp_stock_snapshots.captured_at` — o instante da EXPORTAÇÃO da planilha.
+   * Venda com "venda em" até aqui já está no saldo do ERP.
+   */
+  readonly capturedAt: Date;
+  /**
+   * Quando a V3 recebeu esse corte: o menor `created_at` dos snapshots que o
+   * definem. Venda gravada até aqui já estava no saldo quando o corte chegou, e
+   * não é estornada.
+   */
+  readonly importedAt: Date;
 }
 
 export interface PreCaptureCutoffs {
   /**
-   * O corte do SKU: o instante da exportação do snapshot mais recente dele, ou
-   * o da organização quando o SKU não tem snapshot próprio. `null` = a
-   * organização não tem snapshot nenhum, e aí não há o que estornar.
+   * O corte do SKU: o snapshot mais recente dele, ou o da organização quando o
+   * SKU não tem snapshot próprio. `null` = a organização não tem snapshot
+   * nenhum, e aí não há o que estornar.
    *
    * O chamador LANÇA para SKU cujo corte não foi lido — "não sei" nunca pode
    * virar "sem corte", porque "sem corte" é exatamente a dupla contagem.
    */
-  readonly cutoffFor: (skuId: string) => Date | null;
+  readonly cutoffFor: (skuId: string) => ErpCutoff | null;
   /**
    * O `VENDA_ML` já gravado com esta chave, se existir.
    *
@@ -106,8 +131,38 @@ export interface SaleDeductionResult {
   readonly preCaptureReversals: StockMovementDraft[];
 }
 
-/** Prefixo da chave do estorno; o resto é a chave da venda estornada. */
-export const PRE_CAPTURE_REVERSAL_KEY_PREFIX = "estorno-pre-captura:";
+/**
+ * Prefixo NEUTRO da chave de estorno: `estorno:<chave do movimento estornado>`,
+ * qualquer que seja a causa.
+ *
+ * O TIPO do movimento diz a causa (`ESTORNO_PRE_CAPTURA`; na fatia do Full,
+ * `ESTORNO_FULL`); a CHAVE diz o movimento. Com um prefixo por causa, dois
+ * estornos do mesmo movimento teriam chaves diferentes e o `UNIQUE` de
+ * `idempotency_key` deixaria os dois entrarem. Impedir isso pediria um índice
+ * único a mais — e o lote da página trata QUALQUER 23505 como idempotência
+ * (`page-writes.ts`), então a violação desse índice apagaria os movimentos da
+ * página inteira em silêncio. Com a chave neutra, o `UNIQUE` que já existe
+ * absorve o segundo estorno.
+ */
+export const ESTORNO_KEY_PREFIX = "estorno:";
+
+/** A chave do estorno de um movimento. */
+export function estornoKeyOf(movementKey: string): string {
+  return `${ESTORNO_KEY_PREFIX}${movementKey}`;
+}
+
+/**
+ * A chave do movimento estornado, lida da chave de um estorno. LANÇA para chave
+ * fora do formato: uma linha de estorno que não diz o que estorna faria a venda
+ * dela parecer não estornada — e a reversão decidiria com o dado errado.
+ */
+export function estornadoKeyOf(estornoKey: string): string {
+  if (!estornoKey.startsWith(ESTORNO_KEY_PREFIX) || estornoKey.length === ESTORNO_KEY_PREFIX.length) {
+    throw new Error(`chave de estorno fora do formato "${ESTORNO_KEY_PREFIX}<chave do movimento>": ${estornoKey}`);
+  }
+
+  return estornoKey.slice(ESTORNO_KEY_PREFIX.length);
+}
 
 /**
  * Mesma semântica de "venda válida" já aprovada para métricas (D-050):
@@ -127,6 +182,43 @@ export function isValidSaleStatus(status: string): boolean {
 /** "Venda em": a confirmação, e na falta dela a criação (D-351). */
 export function saleInstant(order: Pick<SaleDeductionOrder, "dateClosed" | "dateCreated">): Date {
   return order.dateClosed ?? order.dateCreated;
+}
+
+/**
+ * O `ESTORNO_PRE_CAPTURA` de uma venda — o rascunho novo ou a linha já gravada
+ * com a mesma chave —, ou `null` quando ela não é estornada.
+ *
+ * Estorna quando a "venda em" é até o corte do SKU E a venda entra no saldo
+ * depois de o corte chegar: o rascunho novo sempre (vai ser gravado agora); a
+ * linha gravada, só se `recordedAt > importedAt`. Compartilhada com o
+ * cancelamento (`computeCancellationMovements`), que precisa do mesmo par.
+ */
+export function preCaptureEstornoOf(
+  sale: StockMovementDraft,
+  saleAt: Date,
+  preCapture: PreCaptureCutoffs,
+): StockMovementDraft | null {
+  // A linha que de fato move (ou moverá) o saldo: a já gravada, se houver —
+  // o `UNIQUE` descarta o rascunho novo com a mesma chave.
+  const recorded = preCapture.recordedSale(sale.idempotencyKey);
+  const base = recorded ?? sale;
+  const cutoff = preCapture.cutoffFor(base.skuId);
+
+  if (cutoff === null || saleAt.getTime() > cutoff.capturedAt.getTime()) {
+    return null;
+  }
+
+  if (recorded !== undefined && recorded.recordedAt.getTime() <= cutoff.importedAt.getTime()) {
+    // Gravada antes de a planilha chegar: o alvo já a absorveu (ALTA-1).
+    return null;
+  }
+
+  return {
+    skuId: base.skuId,
+    qtyDelta: -base.qtyDelta,
+    idempotencyKey: estornoKeyOf(sale.idempotencyKey),
+    occurredAt: base.occurredAt,
+  };
 }
 
 export function computeSaleDeductions(order: SaleDeductionOrder, preCapture: PreCaptureCutoffs): SaleDeductionResult {
@@ -169,21 +261,11 @@ export function computeSaleDeductions(order: SaleDeductionOrder, preCapture: Pre
   const preCaptureReversals: StockMovementDraft[] = [];
 
   for (const deduction of deductions) {
-    // A linha que de fato move (ou moverá) o saldo: a já gravada, se houver —
-    // o `UNIQUE` descarta o rascunho novo com a mesma chave.
-    const base = preCapture.recordedSale(deduction.idempotencyKey) ?? deduction;
-    const cutoff = preCapture.cutoffFor(base.skuId);
+    const estorno = preCaptureEstornoOf(deduction, saleAt, preCapture);
 
-    if (cutoff === null || saleAt.getTime() > cutoff.getTime()) {
-      continue;
+    if (estorno !== null) {
+      preCaptureReversals.push(estorno);
     }
-
-    preCaptureReversals.push({
-      skuId: base.skuId,
-      qtyDelta: -base.qtyDelta,
-      idempotencyKey: `${PRE_CAPTURE_REVERSAL_KEY_PREFIX}${deduction.idempotencyKey}`,
-      occurredAt: base.occurredAt,
-    });
   }
 
   return { deductions, preCaptureReversals };

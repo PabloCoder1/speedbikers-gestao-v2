@@ -1,10 +1,14 @@
 export {
   computeSaleDeductions,
+  ESTORNO_KEY_PREFIX,
+  estornadoKeyOf,
+  estornoKeyOf,
   isValidSaleStatus,
-  PRE_CAPTURE_REVERSAL_KEY_PREFIX,
+  preCaptureEstornoOf,
   saleInstant,
 } from "./sale-deduction.js";
 export type {
+  ErpCutoff,
   PreCaptureCutoffs,
   RecordedSale,
   SaleDeductionItem,
@@ -13,10 +17,13 @@ export type {
   StockMovementDraft,
 } from "./sale-deduction.js";
 
-export { computeCancellationReversals } from "./cancellation-reversal.js";
+export { computeCancellationMovements, computeCancellationReversals } from "./cancellation-reversal.js";
 export type {
+  CancellationMovements,
+  CancellationMovementsInput,
   CancellationPreCapture,
   CancellationReversalOrder,
+  ObservedSaleTransition,
   RecordedSaleMovement,
 } from "./cancellation-reversal.js";
 

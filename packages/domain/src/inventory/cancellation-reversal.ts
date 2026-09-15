@@ -1,5 +1,12 @@
 import { isCancelledOrderStatus } from "../events/order-events.js";
-import type { StockMovementDraft } from "./sale-deduction.js";
+import { computeSaleDeductions, estornadoKeyOf, preCaptureEstornoOf, saleInstant } from "./sale-deduction.js";
+import type {
+  ErpCutoff,
+  PreCaptureCutoffs,
+  RecordedSale,
+  SaleDeductionOrder,
+  StockMovementDraft,
+} from "./sale-deduction.js";
 
 /**
  * Reversão de estoque por cancelamento — a peça pura de
@@ -60,7 +67,7 @@ export interface CancellationPreCapture {
   /** Chaves de `VENDA_ML` que já têm `ESTORNO_PRE_CAPTURA` gravado. */
   readonly estornadas: ReadonlySet<string>;
   /** Mesmo contrato de `PreCaptureCutoffs.cutoffFor`: lança para SKU não lido. */
-  readonly cutoffFor: (skuId: string) => Date | null;
+  readonly cutoffFor: (skuId: string) => ErpCutoff | null;
 }
 
 export function computeCancellationReversals(
@@ -80,7 +87,7 @@ export function computeCancellationReversals(
 
       const cutoff = preCapture.cutoffFor(movement.skuId);
 
-      return cutoff === null || order.occurredAt.getTime() > cutoff.getTime();
+      return cutoff === null || order.occurredAt.getTime() > cutoff.capturedAt.getTime();
     })
     .map((movement) => ({
       skuId: movement.skuId,
@@ -88,4 +95,117 @@ export function computeCancellationReversals(
       idempotencyKey: `cancelamento:${movement.idempotencyKey}`,
       occurredAt: order.occurredAt,
     }));
+}
+
+/**
+ * A V3 viu o pedido em status de venda válida e depois cancelado (D-351). Vem
+ * da leitura desta vez (status anterior no banco) ou de um `order.cancelled`
+ * já gravado com `before.status` de venda — que sobrevive a um retry depois de
+ * o pedido já ter sido regravado como cancelado.
+ */
+export interface ObservedSaleTransition {
+  /** O status de venda em que o pedido estava antes de cancelar. */
+  readonly saleStatus: string;
+  /** Quando a V3 viu o cancelamento. `null` = instante desconhecido (D-101). */
+  readonly cancelledAt: Date | null;
+}
+
+export interface CancellationMovementsInput {
+  /** O pedido cancelado, com os itens e vínculos de hoje (`status` = o cancelado). */
+  readonly order: SaleDeductionOrder;
+  /** O instante do cancelamento desta leitura (`date_last_updated`), e se ele é conhecido. */
+  readonly occurredAt: Date;
+  readonly occurredAtKnown: boolean;
+  readonly transition: ObservedSaleTransition | null;
+  readonly recordedSales: readonly (RecordedSaleMovement & RecordedSale)[];
+  /** Chaves de `VENDA_ML` que já têm estorno gravado. */
+  readonly estornadas: ReadonlySet<string>;
+  readonly cutoffFor: (skuId: string) => ErpCutoff | null;
+}
+
+export interface CancellationMovements {
+  /** `VENDA_ML` que a V3 nunca gravou, de venda anterior ao corte e cancelada depois dele. */
+  readonly sales: StockMovementDraft[];
+  /** `ESTORNO_PRE_CAPTURA`: o par dessas vendas, e o que falta de venda já gravada. */
+  readonly estornos: StockMovementDraft[];
+  /** `CANCELAMENTO_ML`. */
+  readonly reversals: StockMovementDraft[];
+}
+
+/**
+ * Tudo o que um pedido cancelado grava no ledger (D-351), na ordem de gravação:
+ * venda, estorno, cancelamento.
+ *
+ * **A venda nunca gravada** (revisão de D-351, ALTA-2). Pedido pago antes da
+ * planilha, sem vínculo na época, e cancelado depois dela: a planilha tem a
+ * venda descontada e o UpSeller devolve a unidade depois — o estoque real é o
+ * snapshot +1. Sem `VENDA_ML` gravado, `computeCancellationReversals` não teria
+ * o que reverter, e a V3 ficaria 1 abaixo até a próxima planilha. Então, para
+ * cada rascunho de venda (vínculos de hoje) sem linha gravada, grava venda +
+ * estorno + cancelamento quando TODAS valem: a V3 viu a transição de venda
+ * para cancelado, `date_closed` existe, a venda é até o corte do SKU, e o
+ * cancelamento tem instante conhecido e POSTERIOR ao corte. Sem a transição
+ * observada, "cancelado" pode ser da carga da história — os 9 pedidos que o
+ * backfill já trouxe cancelados, antes da planilha, e que não mexem.
+ *
+ * **O estorno que falta de venda já gravada** sai pela mesma regra da venda
+ * (`preCaptureEstornoOf`). Sem ele, um retry que achasse a venda gravada e o
+ * estorno não reverteria para zero em vez de +1.
+ */
+export function computeCancellationMovements(input: CancellationMovementsInput): CancellationMovements {
+  if (!isCancelledOrderStatus(input.order.status)) {
+    return { sales: [], estornos: [], reversals: [] };
+  }
+
+  const saleAt = saleInstant(input.order);
+  const gravadas = new Map(input.recordedSales.map((sale) => [sale.idempotencyKey, sale]));
+  const preCapture: PreCaptureCutoffs = { cutoffFor: input.cutoffFor, recordedSale: (key) => gravadas.get(key) };
+
+  const sales: StockMovementDraft[] = [];
+  const { transition } = input;
+  const cancelledAt = transition?.cancelledAt ?? null;
+
+  if (transition !== null && cancelledAt !== null && input.order.dateClosed !== null) {
+    // O status da transicao passa pelo filtro de venda valida de
+    // `computeSaleDeductions`: `confirmed -> cancelled` nao gera rascunho nenhum.
+    const { deductions } = computeSaleDeductions({ ...input.order, status: transition.saleStatus }, preCapture);
+
+    for (const deduction of deductions) {
+      if (gravadas.has(deduction.idempotencyKey)) continue;
+
+      const cutoff = input.cutoffFor(deduction.skuId);
+
+      // Sem corte, ou venda depois dele: nunca gravada e cancelada soma zero.
+      if (cutoff === null || saleAt.getTime() > cutoff.capturedAt.getTime()) continue;
+      // Cancelada até o corte: a planilha já tem a venda E a devolução.
+      if (cancelledAt.getTime() <= cutoff.capturedAt.getTime()) continue;
+
+      sales.push(deduction);
+    }
+  }
+
+  const estornos: StockMovementDraft[] = [];
+
+  for (const sale of [...input.recordedSales.map(comoRascunho), ...sales]) {
+    if (input.estornadas.has(sale.idempotencyKey)) continue;
+
+    const estorno = preCaptureEstornoOf(sale, saleAt, preCapture);
+
+    if (estorno !== null) estornos.push(estorno);
+  }
+
+  const reversals = computeCancellationReversals(
+    { id: input.order.id, status: input.order.status, occurredAt: input.occurredAt, occurredAtKnown: input.occurredAtKnown },
+    [...input.recordedSales, ...sales],
+    {
+      estornadas: new Set([...input.estornadas, ...estornos.map((estorno) => estornadoKeyOf(estorno.idempotencyKey))]),
+      cutoffFor: input.cutoffFor,
+    },
+  );
+
+  return { sales, estornos, reversals };
+}
+
+function comoRascunho(sale: RecordedSaleMovement & RecordedSale): StockMovementDraft {
+  return { skuId: sale.skuId, qtyDelta: sale.qtyDelta, idempotencyKey: sale.idempotencyKey, occurredAt: sale.occurredAt };
 }

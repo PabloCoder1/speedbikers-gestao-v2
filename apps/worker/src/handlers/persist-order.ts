@@ -1,14 +1,21 @@
 import { SKU_LINK_WITH_KIND_SELECT } from "@sb/db";
-import type { AdminClient, SkuLinkWithKindRow } from "@sb/db";
+import type { AdminClient, Json, SkuLinkWithKindRow } from "@sb/db";
 import {
-  computeCancellationReversals,
+  computeCancellationMovements,
   computeSaleDeductions,
   detectOrderStatusEvents,
+  estornadoKeyOf,
   isCancelledOrderStatus,
   isValidSaleStatus,
-  PRE_CAPTURE_REVERSAL_KEY_PREFIX,
 } from "@sb/domain";
-import type { RecordedSale, RecordedSaleMovement, SaleDeductionItem, StockMovementDraft } from "@sb/domain";
+import type {
+  ErpCutoff,
+  ObservedSaleTransition,
+  RecordedSale,
+  RecordedSaleMovement,
+  SaleDeductionItem,
+  StockMovementDraft,
+} from "@sb/domain";
 import type { Logger } from "@sb/observability";
 
 import { assertWritten } from "./assert-written.js";
@@ -50,6 +57,12 @@ import { recordStockMovements } from "./stock-movements.js";
  * `get_erp_stock_cutoffs`, lido UMA vez por página e uma vez no webhook, e a
  * leitura que falha ou volta incompleta LANÇA: tratar "não sei o corte" como
  * "sem corte" é exatamente a dupla contagem que a guarda existe para impedir.
+ * Venda já gravada só é estornada se entrou no saldo depois de o corte chegar
+ * (`imported_at`). No cancelamento, a venda anterior ao corte que a V3 nunca
+ * gravou e que cancelou depois dele ganha venda + estorno + cancelamento, com a
+ * transição lida do status anterior ou de um `order.cancelled` já gravado
+ * (`@sb/domain/inventory`, `computeCancellationMovements`). A chave do estorno é
+ * neutra, `estorno:<chave do movimento>`: o tipo diz a causa.
  *
  * **Deliberadamente não feito aqui**: reversão por DEVOLUÇÃO — o Mercado
  * Livre modela devolução pela API de Reclamações e Devoluções, não
@@ -89,9 +102,13 @@ export interface ResolvedLink {
 
 /** O que um pedido ja tem gravado no ledger e importa para vender ou reverter (D-351). */
 export interface RecordedOrderMovements {
-  /** `VENDA_ML` gravados — base da reversao e o que o estorno espelha. */
+  /** `VENDA_ML` gravados — base da reversao e o que o estorno espelha, com o `created_at` de cada um. */
   sales: (RecordedSaleMovement & RecordedSale)[];
-  /** Chaves de venda que ja tem `ESTORNO_PRE_CAPTURA`. */
+  /**
+   * Chaves de venda que ja tem estorno gravado. Separadas pelo TIPO da linha
+   * (`ESTORNO_PRE_CAPTURA`), nunca pelo prefixo da chave: a chave e neutra
+   * (`estorno:<chave do movimento>`) e so diz QUAL movimento foi estornado.
+   */
   estornadas: Set<string>;
 }
 
@@ -109,7 +126,14 @@ export interface OrderPrefetch {
    * `sku_id` -> corte do snapshot do ERP (D-351). `null` = organizacao sem
    * snapshot. AUSENTE = nao lido, e consultar um SKU ausente LANCA.
    */
-  cutoffBySku: Map<string, Date | null>;
+  cutoffBySku: Map<string, ErpCutoff | null>;
+  /**
+   * `String(order.id)` -> a transicao de venda para cancelado ja GRAVADA em
+   * `domain_events` (D-351). Lida so para pedido cancelado; ausente = nenhuma.
+   * E o que deixa o retry repor a venda anterior ao corte depois de o pedido
+   * ja ter sido regravado como cancelado.
+   */
+  saleTransitionByOrderId: Map<string, ObservedSaleTransition>;
 }
 
 /**
@@ -246,7 +270,7 @@ async function lerMovimentosGravados(
     emLotes([...new Set(orderIds.map(String))], PEDIDOS_POR_CONSULTA).map((lote) =>
       db
         .from("stock_movements")
-        .select("source_id, sku_id, qty_delta, idempotency_key, occurred_at, movement_type")
+        .select("source_id, sku_id, qty_delta, idempotency_key, occurred_at, created_at, movement_type")
         .eq("organization_id", organizationId)
         .eq("source_type", "ORDER")
         .in("source_id", lote)
@@ -263,13 +287,18 @@ async function lerMovimentosGravados(
       const gravados = porPedido.get(pedido) ?? { sales: [], estornadas: new Set<string>() };
 
       if (row.movement_type === "ESTORNO_PRE_CAPTURA") {
-        gravados.estornadas.add(row.idempotency_key.slice(PRE_CAPTURE_REVERSAL_KEY_PREFIX.length));
+        // O TIPO diz que a linha e estorno; a chave neutra diz de qual
+        // movimento. Chave fora do formato LANCA (`estornadoKeyOf`).
+        gravados.estornadas.add(estornadoKeyOf(row.idempotency_key));
       } else {
         gravados.sales.push({
           skuId: row.sku_id,
           qtyDelta: row.qty_delta,
           idempotencyKey: row.idempotency_key,
           occurredAt: new Date(row.occurred_at),
+          // Quando a venda entrou no saldo: a venda gravada antes de o corte
+          // chegar nao e estornada (ALTA-1 da revisao de D-351).
+          recordedAt: new Date(row.created_at),
         });
       }
 
@@ -281,17 +310,87 @@ async function lerMovimentosGravados(
 }
 
 /**
+ * A transicao de venda para cancelado ja GRAVADA de cada pedido (D-351): o
+ * `order.cancelled` mais recente com `before.status` de venda valida.
+ *
+ * **Por que ler o evento, e nao so o status anterior.** A venda anterior ao
+ * corte, nunca gravada e cancelada depois dele, so e reposta quando a V3 viu a
+ * transicao (`computeCancellationMovements`). O status anterior mostra a
+ * transicao UMA vez: a pagina grava `orders` antes dos movimentos
+ * (`page-writes.ts`), e o webhook tambem, entao um retry depois de uma falha na
+ * gravacao dos movimentos ja acharia o pedido cancelado no banco -- e a
+ * reposicao sumiria. O evento e gravado ANTES dos movimentos nos dois caminhos
+ * (no lote, a falha dele aborta a pagina), e sobrevive ao retry.
+ */
+async function lerTransicoesDeVenda(
+  db: AdminClient,
+  organizationId: string,
+  orderIds: readonly number[],
+): Promise<Map<string, ObservedSaleTransition>> {
+  const porPedido = new Map<string, ObservedSaleTransition>();
+
+  if (orderIds.length === 0) {
+    return porPedido;
+  }
+
+  const resultados = await Promise.all(
+    emLotes([...new Set(orderIds.map(String))], PEDIDOS_POR_CONSULTA).map((lote) =>
+      db
+        .from("domain_events")
+        .select("entity_id, before, occurred_at")
+        .eq("organization_id", organizationId)
+        .eq("entity_type", "order")
+        .eq("event_type", "order.cancelled")
+        .in("entity_id", lote),
+    ),
+  );
+
+  for (const resultado of resultados) {
+    // Mesma regra das outras leituras: "nao li" nunca vira "nao houve transicao".
+    for (const row of linhasDe(resultado, "domain_events")) {
+      const antes = statusAnterior(row.before);
+
+      if (antes === null || !isValidSaleStatus(antes)) {
+        continue;
+      }
+
+      const cancelledAt = new Date(row.occurred_at);
+      const atual = porPedido.get(row.entity_id);
+
+      if (atual?.cancelledAt == null || atual.cancelledAt.getTime() < cancelledAt.getTime()) {
+        porPedido.set(row.entity_id, { saleStatus: antes, cancelledAt });
+      }
+    }
+  }
+
+  return porPedido;
+}
+
+/** `before.status` de um `order.cancelled` (`detectOrderStatusEvents` grava `{ status }`). */
+function statusAnterior(before: Json | null): string | null {
+  if (before === null || typeof before !== "object" || Array.isArray(before)) {
+    return null;
+  }
+
+  const status = before.status;
+
+  return typeof status === "string" ? status : null;
+}
+
+/**
  * O corte do snapshot do ERP por SKU (D-351), por `get_erp_stock_cutoffs`.
  *
  * A RPC devolve UMA linha por id pedido, sempre — `captured_at` nulo quando a
- * organizacao nao tem snapshot. Linha ausente e leitura incompleta e LANCA.
+ * organizacao nao tem snapshot. Linha ausente e leitura incompleta e LANCA, e
+ * corte sem `imported_at` tambem: sem ele nao ha como saber se uma venda
+ * gravada ja estava no saldo quando a planilha chegou.
  */
 export async function readErpCutoffs(
   db: AdminClient,
   organizationId: string,
   skuIds: readonly string[],
-): Promise<Map<string, Date | null>> {
-  const cortes = new Map<string, Date | null>();
+): Promise<Map<string, ErpCutoff | null>> {
+  const cortes = new Map<string, ErpCutoff | null>();
   const pedidos = [...new Set(skuIds)].sort();
 
   if (pedidos.length === 0) {
@@ -307,7 +406,18 @@ export async function readErpCutoffs(
 
   for (const [indice, resultado] of resultados.entries()) {
     for (const row of linhasDe(resultado, "get_erp_stock_cutoffs")) {
-      cortes.set(row.sku_id, row.captured_at === null ? null : new Date(row.captured_at));
+      if (row.captured_at === null) {
+        cortes.set(row.sku_id, null);
+        continue;
+      }
+
+      if (row.imported_at === null) {
+        throw new Error(
+          `get_erp_stock_cutoffs devolveu o corte do SKU ${row.sku_id} sem imported_at — sem ele nao da para saber se a venda gravada ja estava no saldo (D-351)`,
+        );
+      }
+
+      cortes.set(row.sku_id, { capturedAt: new Date(row.captured_at), importedAt: new Date(row.imported_at) });
     }
 
     for (const skuId of lotes[indice] ?? []) {
@@ -343,7 +453,7 @@ function skusComCorte(links: Iterable<ResolvedLink | null>, gravados: Iterable<R
   return [...skus];
 }
 
-function corteDe(cortes: Map<string, Date | null>, orderId: number): (skuId: string) => Date | null {
+function corteDe(cortes: Map<string, ErpCutoff | null>, orderId: number): (skuId: string) => ErpCutoff | null {
   return (skuId) => {
     const corte = cortes.get(skuId);
 
@@ -382,15 +492,21 @@ export async function prefetchOrders(
   const linkByItemKey = new Map<string, ResolvedLink>();
 
   if (orders.length === 0) {
-    return { previousStatusById, linkByItemKey, recordedByOrderId: new Map(), cutoffBySku: new Map() };
+    return {
+      previousStatusById,
+      linkByItemKey,
+      recordedByOrderId: new Map(),
+      cutoffBySku: new Map(),
+      saleTransitionByOrderId: new Map(),
+    };
   }
 
   const orderIds = orders.map((order) => order.id);
   const itemIds = [...new Set(orders.flatMap((order) => order.order_items.map((item) => item.item.id)))];
 
-  // 1 + N idas, com N = lotes de item. As tres primeiras nao dependem umas das
-  // outras.
-  const [statusResult, linkResults, recordedByOrderId] = await Promise.all([
+  // 1 + N idas, com N = lotes de item. As quatro primeiras nao dependem umas
+  // das outras.
+  const [statusResult, linkResults, recordedByOrderId, saleTransitionByOrderId] = await Promise.all([
     db.from("orders").select("id, status").in("id", orderIds),
     Promise.all(
       emLotes(itemIds, ITENS_POR_CONSULTA).map((lote) =>
@@ -406,6 +522,11 @@ export async function prefetchOrders(
       db,
       context.organizationId,
       orders.filter((order) => mexeNoEstoque(order.status)).map((order) => order.id),
+    ),
+    lerTransicoesDeVenda(
+      db,
+      context.organizationId,
+      orders.filter((order) => isCancelledOrderStatus(order.status)).map((order) => order.id),
     ),
   ]);
 
@@ -443,7 +564,7 @@ export async function prefetchOrders(
     skusComCorte(linkByItemKey.values(), recordedByOrderId.values()),
   );
 
-  return { previousStatusById, linkByItemKey, recordedByOrderId, cutoffBySku };
+  return { previousStatusById, linkByItemKey, recordedByOrderId, cutoffBySku, saleTransitionByOrderId };
 }
 
 /**
@@ -536,7 +657,8 @@ export async function persistOrder(
   let previousStatus: string | null;
   let resolvedLinks: (ResolvedLink | null)[];
   let gravados: RecordedOrderMovements;
-  let cortes: Map<string, Date | null>;
+  let cortes: Map<string, ErpCutoff | null>;
+  let transicaoGravada: ObservedSaleTransition | null;
 
   if (prefetch !== undefined) {
     // Chave STRING para um `id` que e `bigint` no banco: ver o comentario de
@@ -548,8 +670,9 @@ export async function persistOrder(
     );
     gravados = prefetch.recordedByOrderId.get(String(order.id)) ?? NADA_GRAVADO;
     cortes = prefetch.cutoffBySku;
+    transicaoGravada = prefetch.saleTransitionByOrderId.get(String(order.id)) ?? null;
   } else {
-    const [existing, links, recorded] = await Promise.all([
+    const [existing, links, recorded, transicoes] = await Promise.all([
       db.from("orders").select("status").eq("id", order.id).maybeSingle(),
       Promise.all(
         order.order_items.map((item, index) =>
@@ -559,6 +682,9 @@ export async function persistOrder(
       mexeNoEstoque(order.status)
         ? lerMovimentosGravados(db, context.organizationId, [order.id])
         : Promise.resolve(new Map<string, RecordedOrderMovements>()),
+      isCancelledOrderStatus(order.status)
+        ? lerTransicoesDeVenda(db, context.organizationId, [order.id])
+        : Promise.resolve(new Map<string, ObservedSaleTransition>()),
     ]);
 
     if (existing.error !== null) {
@@ -568,9 +694,10 @@ export async function persistOrder(
     previousStatus = existing.data?.status ?? null;
     resolvedLinks = links;
     gravados = recorded.get(String(order.id)) ?? NADA_GRAVADO;
+    transicaoGravada = transicoes.get(String(order.id)) ?? null;
     cortes = mexeNoEstoque(order.status)
       ? await readErpCutoffs(db, context.organizationId, skusComCorte(links, [gravados]))
-      : new Map<string, Date | null>();
+      : new Map<string, ErpCutoff | null>();
   }
 
   // Aborta se o pedido nao gravou (D-178): tudo abaixo -- eventos de status e
@@ -707,39 +834,10 @@ export async function persistOrder(
     );
   }
 
-  if (isCancelledOrderStatus(order.status)) {
-    // Sem `date_last_updated` nem `last_updated`, `lastUpdatedAt` e a CRIACAO
-    // do pedido, nao o cancelamento: a regra do corte nao se aplica (D-351).
-    const occurredAtKnown = order.date_last_updated != null || order.last_updated != null;
-    const reversals = computeCancellationReversals(
-      { id: order.id, status: order.status, occurredAt: new Date(lastUpdatedAt), occurredAtKnown },
-      gravados.sales,
-      { estornadas: gravados.estornadas, cutoffFor: corteDe(cortes, order.id) },
-    );
-
-    const puladas = gravados.sales.length - reversals.length;
-
-    if (puladas > 0) {
-      logger.info("cancellation_reversal_pulada_pre_captura", { order_id: order.id, vendas_puladas: puladas });
-    }
-
-    if (!occurredAtKnown && gravados.estornadas.size > 0) {
-      logger.warn("cancellation_reversal_sem_instante_do_cancelamento", {
-        order_id: order.id,
-        vendas_estornadas: gravados.estornadas.size,
-      });
-    }
-
-    if (reversals.length > 0) {
-      await gravaMovimentos(db, context, writes, reversals, "CANCELAMENTO_ML", {
-        type: "ORDER",
-        id: String(order.id),
-      });
-    }
-
-    return;
-  }
-
+  // D-351: os itens de deducao saem ANTES da bifurcacao venda/cancelamento. O
+  // cancelamento tambem precisa deles: a venda anterior ao corte que a V3 nunca
+  // gravou e reposta a partir dos vinculos de hoje (`computeCancellationMovements`).
+  //
   // Sem `await` aqui: desde D-188 nao ha leitura dentro deste laco. `kind` e
   // componentes chegam junto com o vinculo, nos dois caminhos.
   const deductionItems: SaleDeductionItem[] = items.map((item) => {
@@ -769,6 +867,73 @@ export async function persistOrder(
       components: resolved.components,
     };
   });
+
+  if (isCancelledOrderStatus(order.status)) {
+    // Sem `date_last_updated` nem `last_updated`, `lastUpdatedAt` e a CRIACAO
+    // do pedido, nao o cancelamento: a regra do corte nao se aplica (D-351).
+    const occurredAtKnown = order.date_last_updated != null || order.last_updated != null;
+
+    // D-351: a transicao de venda para cancelado. Vista agora (o status
+    // anterior no banco era de venda) ou gravada antes em `domain_events` -- o
+    // retry de uma pagina que gravou o pedido e falhou nos movimentos so a acha
+    // ali (`lerTransicoesDeVenda`).
+    const transicao: ObservedSaleTransition | null =
+      previousStatus !== null && isValidSaleStatus(previousStatus)
+        ? { saleStatus: previousStatus, cancelledAt: occurredAtKnown ? new Date(lastUpdatedAt) : null }
+        : transicaoGravada;
+
+    const { sales, estornos, reversals } = computeCancellationMovements({
+      order: {
+        id: order.id,
+        status: order.status,
+        dateCreated: new Date(order.date_created),
+        dateClosed: order.date_closed != null ? new Date(order.date_closed) : null,
+        items: deductionItems,
+      },
+      occurredAt: new Date(lastUpdatedAt),
+      occurredAtKnown,
+      transition: transicao,
+      recordedSales: gravados.sales,
+      estornadas: gravados.estornadas,
+      cutoffFor: corteDe(cortes, order.id),
+    });
+
+    const puladas = gravados.sales.length + sales.length - reversals.length;
+
+    if (puladas > 0) {
+      logger.info("cancellation_reversal_pulada_pre_captura", { order_id: order.id, vendas_puladas: puladas });
+    }
+
+    if (!occurredAtKnown && gravados.estornadas.size > 0) {
+      logger.warn("cancellation_reversal_sem_instante_do_cancelamento", {
+        order_id: order.id,
+        vendas_estornadas: gravados.estornadas.size,
+      });
+    }
+
+    const origem = { type: "ORDER", id: String(order.id) };
+
+    // A ORDEM importa no webhook, que grava linha a linha: venda, estorno,
+    // cancelamento. Se o estorno ou o cancelamento falhar, o retry acha a venda
+    // gravada e completa o resto pela mesma regra, sem depender da transicao.
+    if (sales.length > 0) {
+      // Revisao de D-351, ALTA-2: venda anterior ao corte que a V3 nunca gravou
+      // e que cancelou depois dele -- a unidade volta ao estoque.
+      logger.info("cancellation_repoe_venda_anterior_ao_corte", { order_id: order.id, vendas: sales.length });
+      await gravaMovimentos(db, context, writes, sales, "VENDA_ML", origem);
+    }
+
+    if (estornos.length > 0) {
+      await gravaMovimentos(db, context, writes, estornos, "ESTORNO_PRE_CAPTURA", origem);
+      contaEstornos(writes, logger, order.id, estornos.length);
+    }
+
+    if (reversals.length > 0) {
+      await gravaMovimentos(db, context, writes, reversals, "CANCELAMENTO_ML", origem);
+    }
+
+    return;
+  }
 
   const vendasGravadas = new Map(gravados.sales.map((venda) => [venda.idempotencyKey, venda]));
 
@@ -802,16 +967,24 @@ export async function persistOrder(
       id: String(order.id),
     });
 
-    if (writes !== undefined) {
-      writes.estornosPreCaptura.pedidos += 1;
-      writes.estornosPreCaptura.movimentos += preCaptureReversals.length;
-    } else {
-      logger.info("sale_deduction_estornada_pre_captura", {
-        order_id: order.id,
-        estornos: preCaptureReversals.length,
-      });
-    }
+    contaEstornos(writes, logger, order.id, preCaptureReversals.length);
   }
+}
+
+/**
+ * Em lote, conta os estornos na pagina para o log sair UMA vez por pagina
+ * (`fetchOrdersWindow`); no webhook, registra na hora. Venda e cancelamento
+ * contam no mesmo lugar.
+ */
+function contaEstornos(writes: PageWrites | undefined, logger: Logger, orderId: number, estornos: number): void {
+  if (writes !== undefined) {
+    writes.estornosPreCaptura.pedidos += 1;
+    writes.estornosPreCaptura.movimentos += estornos;
+
+    return;
+  }
+
+  logger.info("sale_deduction_estornada_pre_captura", { order_id: orderId, estornos });
 }
 
 /**

@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { computeSaleDeductions, saleInstant } from "./sale-deduction.js";
+import { computeSaleDeductions, estornadoKeyOf, estornoKeyOf, saleInstant } from "./sale-deduction.js";
 import type { PreCaptureCutoffs, RecordedSale, SaleDeductionOrder } from "./sale-deduction.js";
 
 const CREATED_AT = new Date("2026-08-21T12:59:00.000Z");
 const CLOSED_AT = new Date("2026-08-21T13:00:00.000Z");
+/** Quando a planilha chegou à V3 nos testes: depois de todas as vendas deles. */
+const IMPORTADO_EM = new Date("2026-09-14T18:44:19.000Z");
 
 function baseOrder(overrides: Partial<SaleDeductionOrder> = {}): SaleDeductionOrder {
   return {
@@ -20,14 +22,20 @@ function baseOrder(overrides: Partial<SaleDeductionOrder> = {}): SaleDeductionOr
 /** Organização sem snapshot: nenhum corte, nenhum VENDA_ML gravado — o comportamento de antes de D-351. */
 const SEM_CORTE: PreCaptureCutoffs = { cutoffFor: () => null, recordedSale: () => undefined };
 
-function cortes(porSku: Record<string, Date | null>, gravadas: Record<string, RecordedSale> = {}): PreCaptureCutoffs {
+function cortes(
+  porSku: Record<string, Date | null>,
+  gravadas: Record<string, RecordedSale> = {},
+  importedAt: Date = IMPORTADO_EM,
+): PreCaptureCutoffs {
   return {
     cutoffFor: (skuId) => {
       if (!(skuId in porSku)) {
         throw new Error(`corte não lido para ${skuId}`);
       }
 
-      return porSku[skuId] ?? null;
+      const capturedAt = porSku[skuId] ?? null;
+
+      return capturedAt === null ? null : { capturedAt, importedAt };
     },
     recordedSale: (key) => gravadas[key],
   };
@@ -158,7 +166,7 @@ describe("computeSaleDeductions — estorno da venda anterior ao snapshot (D-351
     expect(result.preCaptureReversals).toEqual([]);
   });
 
-  it("venda em IGUAL ao corte: grava e estorna, com a MESMA occurred_at e a chave da venda", () => {
+  it("venda em IGUAL ao corte: grava e estorna, com a MESMA occurred_at e a chave NEUTRA estorno:<chave da venda>", () => {
     const result = computeSaleDeductions(baseOrder({ items: PRODUTO }), cortes({ "sku-a": CLOSED_AT }));
 
     expect(result.deductions).toEqual([
@@ -168,7 +176,7 @@ describe("computeSaleDeductions — estorno da venda anterior ao snapshot (D-351
       {
         skuId: "sku-a",
         qtyDelta: 2,
-        idempotencyKey: "estorno-pre-captura:venda:9900001001:0",
+        idempotencyKey: "estorno:venda:9900001001:0",
         occurredAt: CLOSED_AT,
       },
     ]);
@@ -220,19 +228,20 @@ describe("computeSaleDeductions — estorno da venda anterior ao snapshot (D-351
       {
         skuId: "sku-antes",
         qtyDelta: 2,
-        idempotencyKey: "estorno-pre-captura:venda:9900001001:0:sku-antes",
+        idempotencyKey: "estorno:venda:9900001001:0:sku-antes",
         occurredAt: CLOSED_AT,
       },
     ]);
   });
 
-  it("VENDA_ML já gravado pelo worker antigo: o estorno espelha a linha gravada (SKU, quantidade e data)", () => {
+  it("VENDA_ML gravado DEPOIS de a planilha chegar (worker antigo): o estorno espelha a linha gravada (SKU, quantidade e data)", () => {
     // Gravado antes de D-351 com occurred_at = date_last_updated, e o vínculo
     // mudou de SKU depois (D-020). O estorno precisa anular AQUELA linha.
     const gravada: RecordedSale = {
       skuId: "sku-antigo",
       qtyDelta: -2,
       occurredAt: new Date("2026-09-14T19:03:00.000Z"),
+      recordedAt: new Date("2026-09-14T19:03:05.000Z"),
     };
 
     const result = computeSaleDeductions(
@@ -244,10 +253,52 @@ describe("computeSaleDeductions — estorno da venda anterior ao snapshot (D-351
       {
         skuId: "sku-antigo",
         qtyDelta: 2,
-        idempotencyKey: "estorno-pre-captura:venda:9900001001:0",
+        idempotencyKey: "estorno:venda:9900001001:0",
         occurredAt: gravada.occurredAt,
       },
     ]);
+  });
+
+  describe("segunda planilha: venda gravada ANTES de o corte chegar não é estornada (ALTA-1)", () => {
+    // Venda legítima de 09-15 12:00, gravada na hora; a planilha 2, exportada
+    // em 09-16 18:00 (já com a venda descontada), chega às 18:02. O pedido é
+    // atualizado (envio) em 09-17.
+    const VENDA = new Date("2026-09-15T12:00:00.000Z");
+    const CORTE_2 = new Date("2026-09-16T18:00:00.000Z");
+    const IMPORT_2 = new Date("2026-09-16T18:02:00.000Z");
+    const pedido = baseOrder({ dateClosed: VENDA, items: PRODUTO });
+
+    function gravadaEm(recordedAt: Date): Record<string, RecordedSale> {
+      return { "venda:9900001001:0": { skuId: "sku-a", qtyDelta: -2, occurredAt: VENDA, recordedAt } };
+    }
+
+    it("gravada antes do import: sem estorno — a reconciliação já a absorveu", () => {
+      const result = computeSaleDeductions(
+        pedido,
+        cortes({ "sku-a": CORTE_2 }, gravadaEm(new Date("2026-09-15T12:00:03.000Z")), IMPORT_2),
+      );
+
+      expect(result.preCaptureReversals).toEqual([]);
+    });
+
+    it("gravada NO instante do import: sem estorno — só o que entrou depois é estornado", () => {
+      expect(computeSaleDeductions(pedido, cortes({ "sku-a": CORTE_2 }, gravadaEm(IMPORT_2), IMPORT_2)).preCaptureReversals).toEqual(
+        [],
+      );
+    });
+
+    it("gravada depois do import (retry do estorno que falhou): estorna", () => {
+      const result = computeSaleDeductions(
+        pedido,
+        cortes({ "sku-a": CORTE_2 }, gravadaEm(new Date(IMPORT_2.getTime() + 1)), IMPORT_2),
+      );
+
+      expect(result.preCaptureReversals.map((e) => e.idempotencyKey)).toEqual(["estorno:venda:9900001001:0"]);
+    });
+
+    it("rascunho novo (nunca gravado) de venda até o corte: estorna, qualquer que seja o import", () => {
+      expect(computeSaleDeductions(pedido, cortes({ "sku-a": CORTE_2 }, {}, IMPORT_2)).preCaptureReversals).toHaveLength(1);
+    });
   });
 
   it("corte não lido LANÇA — nunca vira 'sem corte'", () => {
@@ -261,4 +312,18 @@ describe("computeSaleDeductions — estorno da venda anterior ao snapshot (D-351
 
     expect(segunda).toEqual(primeira);
   });
+});
+
+describe("chave neutra do estorno (D-351)", () => {
+  it("estorno:<chave do movimento>, sem a causa — o tipo diz a causa", () => {
+    expect(estornoKeyOf("venda:1:0")).toBe("estorno:venda:1:0");
+    expect(estornadoKeyOf("estorno:venda:1:0:sku-b")).toBe("venda:1:0:sku-b");
+  });
+
+  it.each(["estorno-pre-captura:venda:1:0", "venda:1:0", "estorno:"])(
+    "chave de estorno fora do formato LANÇA (%s)",
+    (chave) => {
+      expect(() => estornadoKeyOf(chave)).toThrow(/fora do formato/);
+    },
+  );
 });

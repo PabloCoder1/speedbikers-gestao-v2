@@ -118,12 +118,14 @@ function fakeDb(options: FakeDbOptions = {}): {
         // precisa modelar isso: `prefetchOrders` recusa `data` nulo sem erro
         // de propósito, porque "sem vínculo" é resposta legítima e um estado
         // impossível não pode virar essa resposta por omissão.
-        // D-351: `stock_movements` entra na lista (a venda gravada da página).
+        // D-351: `stock_movements` (a venda gravada da página) e `domain_events`
+        // (a transição de venda para cancelado já gravada) entram na lista.
         if (
           table === "sku_listing_links" ||
           table === "skus" ||
           table === "sku_components" ||
-          table === "stock_movements"
+          table === "stock_movements" ||
+          table === "domain_events"
         ) {
           // Sem vínculo cadastrado no fake — persistOrder grava sku_id nulo.
           return chain({ data: [], error: null });

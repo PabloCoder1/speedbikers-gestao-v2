@@ -4122,6 +4122,7 @@ export type Database = {
         Args: { p_organization_id: string; p_sku_ids: string[] }
         Returns: {
           captured_at: string | null
+          imported_at: string | null
           sku_id: string
         }[]
       }

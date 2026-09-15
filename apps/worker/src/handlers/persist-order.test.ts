@@ -1,3 +1,4 @@
+import type { ErpCutoff, ObservedSaleTransition } from "@sb/domain";
 import { createLogger } from "@sb/observability";
 import { describe, expect, it } from "vitest";
 
@@ -43,6 +44,12 @@ const VENDA_EM = "2019-05-22T07:51:07.000Z";
 
 /** O corte da planilha de produção: `Lista_de_Estoque_0914184200.xlsx`. */
 const CORTE = "2026-09-14T18:42:00.000Z";
+
+/** Quando essa planilha chegou à V3: o primeiro `created_at` dos snapshots de produção. */
+const IMPORTADO_EM = "2026-09-14T18:44:18.714Z";
+
+/** `created_at` padrão de um movimento já gravado nos testes: depois do import. */
+const GRAVADO_EM = "2026-09-14T19:00:00.000Z";
 
 /**
  * Chain genérica que acumula filtros por nome de coluna — o terminal decide
@@ -104,6 +111,8 @@ interface FakeDbOptions {
     idempotency_key: string;
     movement_type?: string;
     occurred_at?: string;
+    /** `stock_movements.created_at` — padrão, depois do import (a venda seria estornada). */
+    created_at?: string;
   }[];
   /** Simula falha (não conflito) ao ler o status anterior da order. */
   previousStatusError?: boolean;
@@ -133,6 +142,15 @@ interface FakeDbOptions {
   cutoffRows?: unknown[];
   /** Simula falha da RPC do corte. */
   cutoffError?: boolean;
+  /** `imported_at` que a RPC devolve para todo corte não nulo — padrão, o import de produção. */
+  cutoffImportedAt?: string;
+  /**
+   * `order.cancelled` já gravados para o pedido (D-351): a transição de venda
+   * para cancelado que sobrevive ao retry.
+   */
+  cancelledEvents?: { before: unknown; occurred_at: string }[];
+  /** Simula falha na leitura de `domain_events`. */
+  eventsReadError?: boolean;
 }
 
 function fakeDb(options: FakeDbOptions = {}): {
@@ -183,7 +201,15 @@ function fakeDb(options: FakeDbOptions = {}): {
       }
 
       return Promise.resolve({
-        data: args.p_sku_ids.map((skuId) => ({ sku_id: skuId, captured_at: options.cutoffs?.[skuId] ?? null })),
+        data: args.p_sku_ids.map((skuId) => {
+          const capturedAt = options.cutoffs?.[skuId] ?? null;
+
+          return {
+            sku_id: skuId,
+            captured_at: capturedAt,
+            imported_at: capturedAt === null ? null : (options.cutoffImportedAt ?? IMPORTADO_EM),
+          };
+        }),
         error: null,
       });
     },
@@ -279,6 +305,22 @@ function fakeDb(options: FakeDbOptions = {}): {
         // `componentsByKitId` continuam existindo e significando o mesmo; é o
         // ramo do vínculo, abaixo, que as monta na forma do embed.
 
+        // D-351: a transição de venda para cancelado já gravada.
+        if (table === "domain_events") {
+          return filterChain({}, (filters) => {
+            if (options.eventsReadError === true) {
+              return { data: null, error: { code: "42P01", message: "boom" } };
+            }
+
+            const pedido = Array.isArray(filters.entity_id) ? String(filters.entity_id[0]) : String(BASE_ORDER.id);
+
+            return {
+              data: (options.cancelledEvents ?? []).map((row) => ({ entity_id: pedido, ...row })),
+              error: null,
+            };
+          });
+        }
+
         if (table === "stock_movements") {
           return filterChain({}, (filters) => {
             if (options.saleMovementsError === true) {
@@ -294,6 +336,7 @@ function fakeDb(options: FakeDbOptions = {}): {
                 source_id: pedido,
                 movement_type: "VENDA_ML",
                 occurred_at: VENDA_EM,
+                created_at: GRAVADO_EM,
                 ...row,
               })),
               error: null,
@@ -1017,7 +1060,7 @@ describe("persistOrder — venda anterior ao snapshot do ERP (D-351)", () => {
         movement_type: "ESTORNO_PRE_CAPTURA",
         source_type: "ORDER",
         source_id: String(BASE_ORDER.id),
-        idempotency_key: `estorno-pre-captura:venda:${String(BASE_ORDER.id)}:0`,
+        idempotency_key: `estorno:venda:${String(BASE_ORDER.id)}:0`,
         occurred_at: VENDA_EM,
       },
     ]);
@@ -1147,7 +1190,7 @@ describe("persistOrder — venda anterior ao snapshot do ERP (D-351)", () => {
       {
         sku_id: "sku-1",
         qty_delta: 1,
-        idempotency_key: `estorno-pre-captura:venda:${String(BASE_ORDER.id)}:0`,
+        idempotency_key: `estorno:venda:${String(BASE_ORDER.id)}:0`,
         movement_type: "ESTORNO_PRE_CAPTURA",
       },
     ];
@@ -1446,14 +1489,16 @@ describe("prefetchOrders (D-186)", () => {
             qty_delta: -1,
             idempotency_key: "venda:2000017347483988:0",
             occurred_at: VENDA_EM,
+            created_at: GRAVADO_EM,
             movement_type: "VENDA_ML",
           },
           {
             source_id: String(PEDIDO_A.id),
             sku_id: "sku-1",
             qty_delta: 1,
-            idempotency_key: "estorno-pre-captura:venda:2000017347483988:0",
+            idempotency_key: "estorno:venda:2000017347483988:0",
             occurred_at: VENDA_EM,
+            created_at: GRAVADO_EM,
             movement_type: "ESTORNO_PRE_CAPTURA",
           },
         ],
@@ -1465,7 +1510,13 @@ describe("prefetchOrders (D-186)", () => {
     const gravados = prefetch.recordedByOrderId.get(String(PEDIDO_A.id));
 
     expect(gravados?.sales).toEqual([
-      { skuId: "sku-1", qtyDelta: -1, idempotencyKey: "venda:2000017347483988:0", occurredAt: new Date(VENDA_EM) },
+      {
+        skuId: "sku-1",
+        qtyDelta: -1,
+        idempotencyKey: "venda:2000017347483988:0",
+        occurredAt: new Date(VENDA_EM),
+        recordedAt: new Date(GRAVADO_EM),
+      },
     ]);
     expect([...(gravados?.estornadas ?? [])]).toEqual(["venda:2000017347483988:0"]);
     // A venda gravada tem SKU: o corte dele é lido mesmo sem vínculo hoje.
@@ -1475,7 +1526,7 @@ describe("prefetchOrders (D-186)", () => {
   it("D-351: em lote, UMA leitura do corte para a página inteira, o par sai no mesmo lote e a página conta os estornos", async () => {
     const pagina = [1, 2, 3, 4, 5].map((id) => ({ ...BASE_ORDER, id }));
     const { db, consultadas } = dbFalso({ sku_listing_links: { data: [LINK_PRODUTO], error: null } }, (ids) => ({
-      data: ids.map((id) => ({ sku_id: id, captured_at: CORTE })),
+      data: ids.map((id) => ({ sku_id: id, captured_at: CORTE, imported_at: IMPORTADO_EM })),
       error: null,
     }));
 
@@ -1504,7 +1555,8 @@ describe("persistOrder com prefetch (D-186)", () => {
       previousStatusById: parcial.previousStatusById ?? new Map<string, string>(),
       linkByItemKey: parcial.linkByItemKey ?? new Map<string, ResolvedLink>(),
       recordedByOrderId: parcial.recordedByOrderId ?? new Map<string, RecordedOrderMovements>(),
-      cutoffBySku: parcial.cutoffBySku ?? new Map<string, Date | null>(),
+      cutoffBySku: parcial.cutoffBySku ?? new Map<string, ErpCutoff | null>(),
+      saleTransitionByOrderId: parcial.saleTransitionByOrderId ?? new Map<string, ObservedSaleTransition>(),
     };
   }
 
@@ -1586,5 +1638,298 @@ describe("persistOrder com prefetch (D-186)", () => {
     ).rejects.toThrow(/corte do snapshot do ERP nao lido para o SKU sku-9/);
 
     expect(rpcCalls).toEqual([]);
+  });
+});
+
+/**
+ * Revisão de D-351 — os achados que o primeiro commit deixou passar.
+ *
+ *  - ALTA-1: a segunda planilha fazia o worker estornar venda legítima que a
+ *    reconciliação já tinha absorvido. Agora só estorna venda gravada DEPOIS de
+ *    o corte chegar (`imported_at`).
+ *  - ALTA-2: venda anterior ao corte, nunca gravada e cancelada depois dele, não
+ *    repunha estoque. Agora grava venda + estorno + cancelamento quando a V3 viu
+ *    a transição — agora ou num `order.cancelled` já gravado.
+ *  - MÉDIA-1: o prefetch em lote podia parar de ler os pedidos cancelados sem
+ *    nenhum teste reprovar.
+ */
+describe("persistOrder — revisão de D-351", () => {
+  const COM_VINCULO = { linkForItem: () => ({ id: "link-1", sku_id: "sku-1" }) };
+  const PEDIDO = String(BASE_ORDER.id);
+  const CANCELADO_EM = "2026-09-14T18:47:13.000Z";
+  const CANCELADO: ParsedOrder = { ...BASE_ORDER, status: "cancelled", date_last_updated: CANCELADO_EM };
+
+  function trio(inserted: { table: string; rows: unknown[] }[]): [string, string, number, string][] {
+    return movimentos(inserted).map((m) => [m.movement_type, m.idempotency_key, m.qty_delta, m.occurred_at]);
+  }
+
+  describe("ALTA-1: venda gravada antes de a planilha chegar não é estornada", () => {
+    it("segunda planilha: venda legítima gravada ANTES do import não ganha estorno quando o pedido é atualizado", async () => {
+      // Venda de 09-15 12:00 gravada na hora; planilha exportada 09-16 18:00 e
+      // importada 18:02; envio atualiza o pedido em 09-17.
+      const { db, inserted } = fakeDb({
+        ...COM_VINCULO,
+        existingSaleMovements: [
+          {
+            sku_id: "sku-1",
+            qty_delta: -1,
+            idempotency_key: `venda:${PEDIDO}:0`,
+            occurred_at: "2026-09-15T12:00:00.000Z",
+            created_at: "2026-09-15T12:00:05.000Z",
+          },
+        ],
+        cutoffs: { "sku-1": "2026-09-16T18:00:00.000Z" },
+        cutoffImportedAt: "2026-09-16T18:02:00.000Z",
+      });
+
+      await run(db, {
+        ...BASE_ORDER,
+        date_closed: "2026-09-15T12:00:00.000Z",
+        date_last_updated: "2026-09-17T10:00:00.000Z",
+      });
+
+      expect(movimentos(inserted).map((m) => m.movement_type)).toEqual(["VENDA_ML"]);
+    });
+
+    it("a mesma venda gravada DEPOIS do import (o estorno falhou antes do retry): estorna", async () => {
+      const { db, inserted } = fakeDb({
+        ...COM_VINCULO,
+        existingSaleMovements: [
+          { sku_id: "sku-1", qty_delta: -1, idempotency_key: `venda:${PEDIDO}:0`, created_at: "2026-09-14T18:44:18.715Z" },
+        ],
+        cutoffs: { "sku-1": CORTE },
+      });
+
+      await run(db, BASE_ORDER);
+
+      expect(movimentos(inserted).map((m) => m.movement_type)).toEqual(["VENDA_ML", "ESTORNO_PRE_CAPTURA"]);
+    });
+
+    it("corte sem imported_at LANÇA — sem ele não há como saber se a venda gravada já estava no saldo", async () => {
+      const { db, inserted } = fakeDb({
+        ...COM_VINCULO,
+        cutoffRows: [{ sku_id: "sku-1", captured_at: CORTE, imported_at: null }],
+      });
+
+      await expect(run(db, BASE_ORDER)).rejects.toThrow(/sem imported_at/);
+      expect(inserted).toEqual([]);
+    });
+  });
+
+  describe("ALTA-2: venda anterior ao corte, nunca gravada, cancelada depois dele", () => {
+    it("transição vista agora (status anterior paid): grava venda e estorno com a venda em, e o cancelamento com o instante dele", async () => {
+      const { db, inserted } = fakeDb({ ...COM_VINCULO, previousStatus: "paid", cutoffs: { "sku-1": CORTE } });
+      const lines: string[] = [];
+
+      await run(db, CANCELADO, lines);
+
+      expect(trio(inserted)).toEqual([
+        ["VENDA_ML", `venda:${PEDIDO}:0`, -1, VENDA_EM],
+        ["ESTORNO_PRE_CAPTURA", `estorno:venda:${PEDIDO}:0`, 1, VENDA_EM],
+        ["CANCELAMENTO_ML", `cancelamento:venda:${PEDIDO}:0`, 1, CANCELADO_EM],
+      ]);
+      expect(lines.join()).toContain("cancellation_repoe_venda_anterior_ao_corte");
+    });
+
+    it("sem transição (o banco já tinha o pedido cancelado e não há evento de venda): não grava nada", async () => {
+      const { db, inserted } = fakeDb({ ...COM_VINCULO, previousStatus: "cancelled", cutoffs: { "sku-1": CORTE } });
+
+      await run(db, CANCELADO);
+
+      expect(movimentos(inserted)).toEqual([]);
+    });
+
+    it("pedido novo para a V3 já cancelado (backfill): não grava nada", async () => {
+      const { db, inserted } = fakeDb({ ...COM_VINCULO, cutoffs: { "sku-1": CORTE } });
+
+      await run(db, CANCELADO);
+
+      expect(movimentos(inserted)).toEqual([]);
+    });
+
+    it("retry: o pedido já foi regravado cancelado, mas o order.cancelled de paid gravado repõe", async () => {
+      const { db, inserted } = fakeDb({
+        ...COM_VINCULO,
+        previousStatus: "cancelled",
+        cancelledEvents: [{ before: { status: "paid" }, occurred_at: CANCELADO_EM }],
+        cutoffs: { "sku-1": CORTE },
+      });
+
+      await run(db, { ...CANCELADO, date_last_updated: "2026-09-14T18:51:14.000Z" });
+
+      expect(trio(inserted).map(([tipo]) => tipo)).toEqual(["VENDA_ML", "ESTORNO_PRE_CAPTURA", "CANCELAMENTO_ML"]);
+    });
+
+    it("evento gravado de transição que não é venda (confirmed -> cancelled): não grava nada", async () => {
+      const { db, inserted } = fakeDb({
+        ...COM_VINCULO,
+        previousStatus: "cancelled",
+        cancelledEvents: [{ before: { status: "confirmed" }, occurred_at: CANCELADO_EM }],
+        cutoffs: { "sku-1": CORTE },
+      });
+
+      await run(db, CANCELADO);
+
+      expect(movimentos(inserted)).toEqual([]);
+    });
+
+    it("cancelada ATÉ o corte: não grava nada — a planilha tem a venda e a devolução", async () => {
+      const { db, inserted } = fakeDb({ ...COM_VINCULO, previousStatus: "paid", cutoffs: { "sku-1": CORTE } });
+
+      await run(db, { ...CANCELADO, date_last_updated: CORTE });
+
+      expect(movimentos(inserted)).toEqual([]);
+    });
+
+    it("retry depois de a venda gravar e o estorno falhar: grava o estorno e o cancelamento, sem depender da transição", async () => {
+      const { db, inserted } = fakeDb({
+        ...COM_VINCULO,
+        previousStatus: "cancelled",
+        existingSaleMovements: [{ sku_id: "sku-1", qty_delta: -1, idempotency_key: `venda:${PEDIDO}:0` }],
+        cutoffs: { "sku-1": CORTE },
+      });
+
+      await run(db, CANCELADO);
+
+      expect(trio(inserted).map(([tipo]) => tipo)).toEqual(["ESTORNO_PRE_CAPTURA", "CANCELAMENTO_ML"]);
+    });
+
+    it("falha na leitura dos eventos LANÇA antes de qualquer escrita — nunca vira 'não houve transição'", async () => {
+      const { db, inserted, upserted } = fakeDb({
+        ...COM_VINCULO,
+        previousStatus: "cancelled",
+        eventsReadError: true,
+        cutoffs: { "sku-1": CORTE },
+      });
+
+      await expect(run(db, CANCELADO)).rejects.toThrow(/domain_events.*boom/);
+      expect(upserted).toEqual([]);
+      expect(inserted).toEqual([]);
+    });
+  });
+
+  it("chave neutra: estorno gravado com a chave de uma causa (fora do formato) LANÇA em vez de parecer não estornado", async () => {
+    const { db, inserted } = fakeDb({
+      ...COM_VINCULO,
+      existingSaleMovements: [
+        { sku_id: "sku-1", qty_delta: -1, idempotency_key: `venda:${PEDIDO}:0` },
+        {
+          sku_id: "sku-1",
+          qty_delta: 1,
+          idempotency_key: `estorno-pre-captura:venda:${PEDIDO}:0`,
+          movement_type: "ESTORNO_PRE_CAPTURA",
+        },
+      ],
+      cutoffs: { "sku-1": CORTE },
+    });
+
+    await expect(run(db, BASE_ORDER)).rejects.toThrow(/fora do formato/);
+    expect(inserted).toEqual([]);
+  });
+
+  describe("em lote (janela horária e backfill)", () => {
+    const LINK = {
+      id: "link-1",
+      sku_id: "sku-1",
+      item_id: "MLB1054990648",
+      variation_id: null,
+      skus: { kind: "PRODUTO", sku_components: [] },
+    };
+
+    function paginaFalsa(porTabela: Record<string, unknown[]>) {
+      const consultadas: string[] = [];
+
+      const cadeia = (data: unknown[]) => {
+        const self = {
+          select: () => self,
+          eq: () => self,
+          in: () => self,
+          then: <R>(onFulfilled: (value: { data: unknown[]; error: null }) => R) =>
+            Promise.resolve({ data, error: null }).then(onFulfilled),
+        };
+
+        return self;
+      };
+
+      const db = {
+        from: (table: string) => {
+          consultadas.push(table);
+
+          return cadeia(porTabela[table] ?? []);
+        },
+        rpc: (fn: string, args: { p_sku_ids: string[] }) => {
+          consultadas.push(`rpc:${fn}`);
+
+          return Promise.resolve({
+            data: args.p_sku_ids.map((id) => ({ sku_id: id, captured_at: CORTE, imported_at: IMPORTADO_EM })),
+            error: null,
+          });
+        },
+      } as unknown as Parameters<typeof prefetchOrders>[0];
+
+      return { db, consultadas };
+    }
+
+    async function persistePagina(db: Parameters<typeof prefetchOrders>[0], pagina: ParsedOrder[]) {
+      const prefetch = await prefetchOrders(db, CONTEXT, pagina);
+      const writes = novaPagina(CONTEXT.organizationId);
+
+      for (const order of pagina) {
+        await persistOrder(db, CONTEXT, order, createLogger({}, { sink: () => undefined }), prefetch, writes);
+      }
+
+      return writes.movements.map((m) => [m.movementType, m.draft.idempotencyKey]);
+    }
+
+    it("MÉDIA-1: a página lê os movimentos gravados do pedido CANCELADO e grava o CANCELAMENTO_ML", async () => {
+      // Venda legítima (depois do corte): o cancelamento só reverte, sem estorno.
+      const pedido: ParsedOrder = {
+        ...BASE_ORDER,
+        id: 7,
+        status: "cancelled",
+        date_closed: "2026-09-20T10:00:00.000Z",
+        date_last_updated: "2026-09-20T11:00:00.000Z",
+      };
+      const { db } = paginaFalsa({
+        orders: [{ id: 7, status: "cancelled" }],
+        stock_movements: [
+          {
+            source_id: "7",
+            sku_id: "sku-1",
+            qty_delta: -1,
+            idempotency_key: "venda:7:0",
+            occurred_at: "2026-09-20T10:00:00.000Z",
+            created_at: "2026-09-20T10:00:01.000Z",
+            movement_type: "VENDA_ML",
+          },
+        ],
+      });
+
+      expect(await persistePagina(db, [pedido])).toEqual([["CANCELAMENTO_ML", "cancelamento:venda:7:0"]]);
+    });
+
+    it("ALTA-2 na página: a transição gravada em domain_events repõe a venda nunca gravada, com UMA leitura de eventos", async () => {
+      const pedido: ParsedOrder = { ...CANCELADO, id: 8 };
+      const { db, consultadas } = paginaFalsa({
+        orders: [{ id: 8, status: "cancelled" }],
+        sku_listing_links: [LINK],
+        domain_events: [{ entity_id: "8", before: { status: "paid" }, occurred_at: CANCELADO_EM }],
+      });
+
+      expect(await persistePagina(db, [pedido])).toEqual([
+        ["VENDA_ML", "venda:8:0"],
+        ["ESTORNO_PRE_CAPTURA", "estorno:venda:8:0"],
+        ["CANCELAMENTO_ML", "cancelamento:venda:8:0"],
+      ]);
+      expect(consultadas.filter((tabela) => tabela === "domain_events")).toHaveLength(1);
+    });
+
+    it("página só de pedidos pagos não lê domain_events", async () => {
+      const { db, consultadas } = paginaFalsa({ sku_listing_links: [LINK] });
+
+      await persistePagina(db, [{ ...BASE_ORDER, id: 9 }]);
+
+      expect(consultadas).not.toContain("domain_events");
+    });
   });
 });
