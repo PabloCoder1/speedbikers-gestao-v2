@@ -1,3 +1,5 @@
+import { shiftBusinessDate } from "@sb/domain";
+
 /**
  * O VOCABULÁRIO DE PERÍODO DO APP, num lugar só (D-311).
  *
@@ -54,4 +56,46 @@ export function resolvePeriodDays(raw: unknown, fallback: PeriodPreset = DEFAULT
   const dias = typeof raw === "string" ? Number.parseInt(raw, 10) : Number.NaN;
 
   return PERIOD_VALUES.has(dias) ? dias : fallback;
+}
+
+export interface PeriodRange {
+  readonly from: string;
+  readonly to: string;
+}
+
+const DATA_ISO = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * A JANELA PEDIDA PELA URL, a mesma em `/vendas` e `/faturamento` (D-356).
+ *
+ * Morava dentro de `/vendas`; a segunda tela que a quis foi o Faturamento, e as
+ * duas trocam de uma para a outra levando o período junto — então "últimos 30
+ * dias" e o período personalizado precisam ser a MESMA conta nas duas.
+ *
+ * `from`/`to` explícitos vencem um `days` concorrente; formato ruim ou intervalo
+ * invertido caem no padrão com `invalidCustom`, para a tela avisar em vez de
+ * derrubar a página com 500.
+ */
+export function resolvePeriodRange(
+  query: Readonly<Record<string, string | string[] | undefined>>,
+  today: string,
+): { range: PeriodRange; days: number | null; invalidCustom: boolean } {
+  const rawFrom = typeof query.from === "string" ? query.from : null;
+  const rawTo = typeof query.to === "string" ? query.to : null;
+
+  if (rawFrom !== null && rawTo !== null) {
+    if (DATA_ISO.test(rawFrom) && DATA_ISO.test(rawTo) && rawFrom <= rawTo) {
+      return { range: { from: rawFrom, to: rawTo }, days: null, invalidCustom: false };
+    }
+
+    return {
+      range: { from: shiftBusinessDate(today, -(DEFAULT_PERIOD_DAYS - 1)), to: today },
+      days: DEFAULT_PERIOD_DAYS,
+      invalidCustom: true,
+    };
+  }
+
+  const days = resolvePeriodDays(query.days);
+
+  return { range: { from: shiftBusinessDate(today, -(days - 1)), to: today }, days, invalidCustom: false };
 }

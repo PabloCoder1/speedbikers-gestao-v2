@@ -74,6 +74,8 @@ const NAV_GROUPS: readonly NavGroup[] = [
     title: "Vendas",
     items: [
       { label: "Vendas", href: "/vendas", icone: "tendencia" },
+      // D-356: o dinheiro de cada venda, ao lado do volume.
+      { label: "Faturamento", href: "/faturamento", icone: "cifrao" },
       { label: "Anúncios", href: "/anuncios", icone: "megafone" },
       { label: "Preços", href: "/precos", icone: "etiqueta" },
       { label: "Curva ABC", href: "/curva-abc", icone: "barras" },

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_PERIOD_DAYS, HOME_SERIE_DEFAULT_DAYS, PERIOD_PRESETS, resolvePeriodDays } from "./period";
+import {
+  DEFAULT_PERIOD_DAYS,
+  HOME_SERIE_DEFAULT_DAYS,
+  PERIOD_PRESETS,
+  resolvePeriodDays,
+  resolvePeriodRange,
+} from "./period";
 
 /**
  * O vocabulário de período (D-308, mudado de casa em D-311).
@@ -54,5 +60,35 @@ describe("vocabulário de período", () => {
 
   it("`7` como NÚMERO não passa — a URL entrega string, e aceitar os dois esconderia um chamador errado", () => {
     expect(resolvePeriodDays(7)).toBe(30);
+  });
+});
+
+describe("janela pedida pela URL (D-356)", () => {
+  const HOJE = "2026-09-15";
+
+  it("sem nada, os últimos 30 dias terminando hoje", () => {
+    expect(resolvePeriodRange({}, HOJE)).toEqual({
+      range: { from: "2026-08-17", to: HOJE },
+      days: 30,
+      invalidCustom: false,
+    });
+  });
+
+  it("preset da lista vale; fora da lista cai no padrão sem avisar, como sempre foi", () => {
+    expect(resolvePeriodRange({ days: "7" }, HOJE).range).toEqual({ from: "2026-09-09", to: HOJE });
+    expect(resolvePeriodRange({ days: "14" }, HOJE).days).toBe(30);
+  });
+
+  it("período personalizado vence o preset", () => {
+    expect(resolvePeriodRange({ days: "7", from: "2026-09-01", to: "2026-09-10" }, HOJE)).toEqual({
+      range: { from: "2026-09-01", to: "2026-09-10" },
+      days: null,
+      invalidCustom: false,
+    });
+  });
+
+  it("personalizado invertido ou malformado vira o padrão COM aviso", () => {
+    expect(resolvePeriodRange({ from: "2026-09-10", to: "2026-09-01" }, HOJE)).toMatchObject({ days: 30, invalidCustom: true });
+    expect(resolvePeriodRange({ from: "10/09/2026", to: "2026-09-11" }, HOJE)).toMatchObject({ days: 30, invalidCustom: true });
   });
 });
