@@ -4353,3 +4353,364 @@ table {
     transition: none;
   }
 }
+
+/*
+ * USUÁRIOS, AVATAR E PERFIL (D-354) — foto, nome, suspender e remover.
+ *
+ * O frame desenha `/usuarios` sem avatar na linha e sem nenhuma ação; o que
+ * está aqui é o que o pedido acrescentou, na linguagem que a casa já tem:
+ * avatar redondo com o lavanda do `.sb-avatar`, cartões de gaveta com a borda
+ * do painel, e o destrutivo em contorno — cheio só no botão que confirma.
+ */
+
+/* --- avatar: foto ou iniciais, em quatro tamanhos --- */
+.sb-avatar {
+  overflow: hidden;
+}
+
+.sb-avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.sb-avatar-sm {
+  width: 28px;
+  height: 28px;
+  font-size: 0.5625rem;
+}
+
+.sb-avatar-lg {
+  width: 56px;
+  height: 56px;
+  font-size: 1.25rem;
+}
+
+/* O anel branco separa a foto do fundo lavanda do cabeçalho da gaveta. */
+.sb-avatar-xl {
+  width: 88px;
+  height: 88px;
+  font-size: 1.75rem;
+  box-shadow:
+    0 0 0 4px var(--sb-surface),
+    0 0 0 5px var(--sb-border);
+}
+
+/* --- o bloco de perfil do topo virou botão ("Meu perfil") --- */
+button.sb-profile {
+  border: 0;
+  border-radius: var(--sb-radius);
+  padding: 2px 8px 2px 2px;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+button.sb-profile:hover {
+  background: var(--sb-bg-soft);
+}
+
+button.sb-profile:focus-visible {
+  outline: 2px solid var(--sb-secondary);
+  outline-offset: 2px;
+}
+
+/* --- a célula "Usuário / E-mail" --- */
+.sb-usuario-celula {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-width: 0;
+}
+
+.sb-usuario-celula-texto {
+  min-width: 0;
+}
+
+.sb-usuario-celula-email {
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+}
+
+/* Suspenso: a linha continua legível, só recua — quem procura acha. */
+.sb-linha-suspensa .sb-usuario-celula .sb-avatar {
+  filter: grayscale(1);
+  opacity: 0.7;
+}
+
+/* --- a gaveta: cabeçalho de identidade --- */
+.sb-usuario-cabeca {
+  display: flex;
+  align-items: center;
+  gap: var(--sb-space-3);
+  padding: var(--sb-space-3);
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius);
+  background: linear-gradient(135deg, var(--sb-secondary-soft), var(--sb-surface) 72%);
+}
+
+.sb-usuario-identidade {
+  margin-top: var(--sb-space-3);
+}
+
+.sb-usuario-identidade-topo {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sb-space-2);
+}
+
+.sb-usuario-nome {
+  margin: 0.25rem 0 0.125rem;
+  font-size: 1.125rem;
+  letter-spacing: -0.015em;
+  color: var(--sb-primary);
+  overflow-wrap: anywhere;
+}
+
+.sb-usuario-email {
+  display: block;
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+  overflow-wrap: anywhere;
+}
+
+.sb-editar-nome {
+  margin-top: 0.375rem;
+}
+
+.sb-editar-nome-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.5rem;
+}
+
+.sb-editar-nome-form .sb-input {
+  flex: 1 1 12rem;
+}
+
+.sb-editar-nome-form .sb-campo-erro {
+  flex-basis: 100%;
+}
+
+/* --- o campo de foto --- */
+.sb-campo-foto {
+  display: flex;
+  align-items: center;
+  gap: var(--sb-space-3);
+  min-width: 0;
+}
+
+.sb-campo-foto-acoes {
+  display: grid;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.sb-campo-foto-botoes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sb-campo-foto-acoes small {
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-campo-foto-escolher {
+  cursor: pointer;
+}
+
+/* O input real está escondido dentro do rótulo: o foco aparece no rótulo. */
+.sb-campo-foto-escolher:focus-within {
+  outline: 2px solid var(--sb-secondary);
+  outline-offset: 1px;
+}
+
+.sb-campo-foto-ocupado {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.sb-campo-erro {
+  margin: 0;
+  font-size: 0.6875rem;
+  color: var(--sb-danger-ink);
+}
+
+/* --- a zona de acesso: suspender e remover --- */
+.sb-zona-acesso {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.sb-zona-acesso-linha {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sb-space-3);
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--sb-table-rule);
+}
+
+.sb-zona-acesso h4 + .sb-zona-acesso-linha {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.sb-zona-acesso-linha b {
+  font-size: 0.75rem;
+  color: var(--sb-primary);
+}
+
+.sb-zona-acesso-texto {
+  margin: 0.125rem 0 0;
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-zona-acesso-linha .sb-button {
+  flex: none;
+}
+
+/* O destrutivo em CONTORNO: vermelho cheio fica para o botão que confirma. */
+.sb-button.sb-button-perigo-contorno {
+  border-color: color-mix(in srgb, var(--sb-danger) 40%, var(--sb-border));
+  color: var(--sb-danger-ink);
+}
+
+.sb-button.sb-button-perigo-contorno:hover {
+  background: var(--sb-danger-soft);
+  color: var(--sb-danger-ink);
+}
+
+.sb-button.sb-button-perigo-contorno:disabled {
+  border-color: var(--sb-border);
+  color: var(--sb-muted-ink);
+  cursor: not-allowed;
+}
+
+.sb-confirmacao {
+  padding: 0.75rem;
+  border-left: 3px solid var(--sb-secondary);
+  border-radius: var(--sb-radius);
+  background: var(--sb-secondary-soft);
+}
+
+.sb-confirmacao-perigo {
+  border-left-color: var(--sb-danger);
+  background: var(--sb-danger-soft);
+}
+
+.sb-confirmacao p {
+  margin: 0 0 0.625rem;
+  font-size: 0.75rem;
+  color: var(--sb-text);
+}
+
+.sb-confirmacao-botoes {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+/* --- o convite --- */
+.sb-modal.sb-modal-convite {
+  width: min(36rem, calc(100vw - 2rem));
+  max-width: none;
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+}
+
+.sb-modal-convite-titulo {
+  margin: 0 0 var(--sb-space-3);
+  font-size: 1.0625rem;
+  color: var(--sb-primary);
+}
+
+.sb-convite-form,
+.sb-convite-resultado {
+  display: grid;
+  gap: var(--sb-space-3);
+  font-size: 0.8125rem;
+}
+
+.sb-form-secao {
+  display: grid;
+  gap: 0.75rem;
+  padding: var(--sb-space-3);
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius);
+  background: var(--sb-surface);
+}
+
+.sb-form-secao-titulo {
+  font-family: var(--sb-mono);
+  font-size: 0.5625rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sb-secondary);
+}
+
+.sb-form-campo {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--sb-primary);
+}
+
+.sb-form-campo small {
+  font-weight: 400;
+  color: var(--sb-text-soft);
+}
+
+.sb-contas-grade {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  gap: 0.375rem;
+}
+
+.sb-conta-opcao {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4375rem 0.625rem;
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius-md);
+  font-size: 0.6875rem;
+  font-weight: 400;
+  color: var(--sb-text);
+  cursor: pointer;
+}
+
+.sb-conta-opcao:has(input:checked) {
+  border-color: var(--sb-secondary);
+  background: var(--sb-secondary-soft);
+}
+
+.sb-modal-acoes {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sb-space-2);
+}
+
+@media (max-width: 520px) {
+  .sb-zona-acesso-linha {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sb-campo-foto {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

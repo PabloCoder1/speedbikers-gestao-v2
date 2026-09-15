@@ -228,6 +228,10 @@ test("/usuarios: o convite pede e-mail, papel e alcance — e o alcance some par
   await expect(convidar).toBeDisabled();
 
   await caixa.getByLabel("E-mail").fill("nova.pessoa@empresa.com");
+
+  // O nome é obrigatório desde D-354: só com o e-mail o convite segue travado.
+  await expect(convidar).toBeDisabled();
+  await caixa.getByLabel("Nome completo").fill("Nova Pessoa");
   await expect(convidar).toBeEnabled();
 
   /*

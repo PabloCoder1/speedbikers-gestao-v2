@@ -2,55 +2,42 @@
 
 import { useState, type ReactNode } from "react";
 
+import { Avatar } from "../../components/avatar";
+import { CampoFoto } from "../../components/campo-foto";
 import { DetailRow, Drawer } from "../../components/drawer";
+import { EditarNome } from "../../components/editar-nome";
 import { TOM } from "../../components/tone";
-import { iniciais } from "../../lib/initials";
-import { memberStatusLabel, type MemberStatus } from "../../lib/member-filters";
+import { memberStatusLabel, memberStatusTone, type MemberStatus } from "../../lib/member-filters";
 import { tomDePapel } from "../../lib/role-tone";
+import { AcessoDoMembro } from "./acesso-membro";
 import { AccountAccessControls, RoleSelect, type AccountOption } from "./member-controls";
 import { ReemitirLink } from "./reemitir-link";
 
 /**
- * A gaveta "Detalhe do Usuário" do frame (D39 — a quarta das cinco; refeita
- * contra o desenho em D-297).
+ * A gaveta "Detalhe do Usuário" do frame (D39; refeita em D-297; nome, foto,
+ * suspender e remover em D-354).
  *
- * **É a única das cinco que não tem tela cheia atrás dela**, e por isso a
- * única em que a gaveta é o destino, não o resumo: `/usuarios` é lista, e
- * nunca houve página de pessoa. Ela também não tem rodapé — não existe "abrir
- * página completa" para apontar, e um botão que não leva a lugar nenhum seria
- * pior que nenhum.
+ * **É a única das cinco gavetas que não tem tela cheia atrás dela**: `/usuarios`
+ * é lista, e nunca houve página de pessoa. Por isso ela é o DESTINO — o lugar
+ * de editar tudo o que é de uma pessoa.
  *
- * ## Ela virou o lugar de EDITAR, e isso é fidelidade, não conveniência
+ * ## A ordem dos cartões é a ordem das perguntas
  *
- * Até D-297 o papel era um `<select>` e o alcance eram quatro caixas **dentro
- * da tabela**, uma vez por linha. Na tela inteira isso é o que o usuário viu e
- * chamou de inferior ao desenho: o frame põe SELO em Papel e TEXTO em contas, e
- * a tabela dele se lê de uma passada. Os controles não desapareceram — eles
- * moram aqui, no cartão "Papel e Permissões" que o frame desenha, que é onde
- * uma pessoa é olhada uma por vez.
+ * 1. **quem é** — foto, nome (editável), e-mail e estado;
+ * 2. **o que pode** — papel e contas (D-297);
+ * 3. **desde quando** — último acesso, membro desde, identificador;
+ * 4. **como entra** — link de acesso (D-303), suspender e remover (D-354);
+ * 5. **o que mudou** — o histórico desta pessoa.
  *
- * A autorização não mudou de lugar nenhum: continua nas policies
- * `*_admin_writes` e no trigger `guard_last_admin`. Se esta gaveta sumisse,
- * ninguém ganharia nem perderia poder.
+ * O destrutivo fica embaixo de propósito: quem abre a gaveta para trocar um
+ * papel não passa por "Remover" no caminho.
  *
- * ## Não faz uma ida sequer
+ * A autorização não mora aqui: policies `*_admin_writes`,
+ * `profiles_update_self_or_org_admin`, `guard_last_admin` e a `api` para a
+ * suspensão. Se esta gaveta sumisse, ninguém ganharia nem perderia poder.
  *
- * Tudo o que ela mostra a página JÁ CARREGOU para desenhar a tabela: membros,
- * contas, permissões, a janela de `auth.users` (D-296) e as 50 mudanças de
- * acesso. Os eventos chegam aqui **já traduzidos** pelo servidor — o
- * vocabulário de `eventoLabel` mora lá, e duplicá-lo no cliente criaria duas
- * versões da mesma frase.
- *
- * ## O que o frame mostra e continua sem existir
- *
- * A frase que descreve o que cada papel pode fazer ("pode gerenciar usuários,
- * visualizar faturamento global…"). A autorização real são as policies e o
- * `check` da tabela, não uma prosa; escrevê-la aqui seria arriscar DESCREVER
- * ERRADO o que o banco permite, que é pior que não descrever.
- *
- * E a "Proteção Ativa" do frame é a mais real de todas: `guard_last_admin` é um
- * trigger, e ele recusa a mudança venha ela desta gaveta, da Server Action ou
- * do SQL.
+ * **Não faz ida nenhuma para abrir**: tudo o que ela mostra a página já
+ * carregou para desenhar a tabela.
  */
 export interface EventoDeAcesso {
   id: string;
@@ -63,6 +50,7 @@ export interface EventoDeAcesso {
 export function DetalheUsuario({
   nome,
   email,
+  fotoPath,
   userId,
   organizationId,
   role,
@@ -73,6 +61,7 @@ export function DetalheUsuario({
   desde,
   ultimoAcesso,
   ehUltimoAdmin,
+  ehVoceMesmo,
   editavel,
   accounts,
   granted,
@@ -82,6 +71,7 @@ export function DetalheUsuario({
   nome: string | null;
   /** Só existe para ADMIN: é a janela de D-296 que o traz. */
   email: string | null;
+  fotoPath: string | null;
   userId: string;
   organizationId: string;
   role: string;
@@ -95,6 +85,8 @@ export function DetalheUsuario({
   ultimoAcesso: string;
   /** ADMIN e único ADMIN da organização — o caso que o trigger protege. */
   ehUltimoAdmin: boolean;
+  /** A própria conta de quem olha: sem suspender nem remover. */
+  ehVoceMesmo: boolean;
   /** Quem vê os controles. Esconder é cortesia; a policy recusa igual. */
   editavel: boolean;
   accounts: AccountOption[];
@@ -106,19 +98,12 @@ export function DetalheUsuario({
   const [aberta, setAberta] = useState(false);
 
   const rotulo = nome ?? email ?? userId;
-  // A MESMA regra do avatar do topo e do autor de decisão (D-320) — era
-  // `charAt(0)`, uma letra, e a mesma pessoa tinha dois monogramas no app.
-  const monograma = iniciais(rotulo);
 
   return (
     <>
       {/*
-        O GATILHO É O NOME, como no frame — onde a linha toda é clicável.
-
-        Nasceu "Inspecionar" numa coluna própria, e a coluna saiu em D-297: o
-        frame tem cinco colunas, e uma sexta só para o verbo era a tabela
-        anunciando o mecanismo em vez do dado. O nome acessível da célula
-        continua sendo o nome da pessoa (é o texto do botão), que é o que
+        O GATILHO É O NOME, como no frame. O nome acessível da célula continua
+        sendo o nome da pessoa (é o texto do botão), que é o que
         `usuarios.spec.ts` afirma desde D-234.
       */}
       <button
@@ -139,42 +124,47 @@ export function DetalheUsuario({
             setAberta(false);
           }}
         >
-          <div style={{ display: "flex", gap: "var(--sb-space-3)", alignItems: "flex-start" }}>
-            <span className="sb-avatar sb-avatar-grande" aria-hidden="true">
-              {monograma}
-            </span>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: "var(--sb-space-2)" }}>
-                <span className="sb-object-id">Identidade</span>
-                {/*
-                  O selo que o frame põe aqui, agora com fonte (D-296): "Ativo"
-                  é quem já entrou alguma vez; "Convite pendente", quem tem
-                  vínculo e nunca entrou.
-                */}
-                <span className="sb-status" style={status === "ativo" ? TOM.ok : TOM.neutro}>
-                  {memberStatusLabel(status)}
-                </span>
-              </div>
-              <h3 style={{ margin: "0.25rem 0 0.25rem", fontSize: "1rem", color: "var(--sb-primary)" }}>
-                {nome ?? "sem nome no perfil"}
-              </h3>
-              {/* O e-mail sob o nome, como o frame. Sem janela (não-ADMIN), a
-                  linha não aparece — traço ali prometeria um dado escondido. */}
-              {email !== null && (
-                <span style={{ fontSize: "0.6875rem", color: "var(--sb-text-soft)" }}>{email}</span>
-              )}
-            </div>
+          {/* 1. QUEM É */}
+          <div className="sb-usuario-cabeca">
+            {/*
+              Quem edita troca a foto no próprio avatar grande; quem lê só a vê.
+              Um cartão "Foto" separado repetiria o mesmo rosto duas vezes na
+              mesma gaveta — a lição de "um dono por dado" de D-297.
+            */}
+            {editavel ? (
+              <CampoFoto nome={rotulo} fotoAtual={fotoPath} modo={{ tipo: "imediato", userId }} />
+            ) : (
+              <Avatar nome={rotulo} fotoPath={fotoPath} tamanho="xl" />
+            )}
           </div>
 
+          <div className="sb-usuario-identidade">
+            <div className="sb-usuario-identidade-topo">
+              <span className="sb-object-id">{ehVoceMesmo ? "Identidade · você" : "Identidade"}</span>
+              {/*
+                O selo do frame: "Ativo" é quem já entrou, "Convite pendente" quem
+                nunca entrou, "Suspenso" quem não consegue entrar (D-354). Só
+                para ADMIN — sem a janela, o estado não tem fonte.
+              */}
+              {email !== null && (
+                <span className="sb-status" style={TOM[memberStatusTone(status)]}>
+                  {memberStatusLabel(status)}
+                </span>
+              )}
+            </div>
+            <h3 className="sb-usuario-nome">{nome ?? "sem nome no perfil"}</h3>
+            {/* Sem janela (não-ADMIN), a linha não aparece — traço prometeria um dado escondido. */}
+            {email !== null && <span className="sb-usuario-email">{email}</span>}
+            {editavel && <EditarNome userId={userId} nome={nome} />}
+          </div>
+
+          {/* 2. O QUE PODE */}
           <div className="sb-drawer-card">
             <h4>Papel e permissões</h4>
 
             {/*
-              UM DONO POR DADO, também aqui: quem edita vê o CONTROLE, quem lê vê
-              o SELO. Os dois juntos diziam a mesma coisa duas vezes na mesma
-              linha — o selo "GESTOR" em cima do menu já em GESTOR —, e foi assim
-              que a captura mostrou. Quem edita continua vendo o selo do papel na
-              tabela, a dois centímetros dali.
+              UM DONO POR DADO: quem edita vê o CONTROLE, quem lê vê o SELO
+              (D-297). Quem edita continua vendo o selo na tabela.
             */}
             <div className="sb-drawer-card-parte">
               <span>Papel na organização</span>
@@ -192,9 +182,6 @@ export function DetalheUsuario({
               <span>Contas Mercado Livre permitidas</span>
 
               {todasPorAdmin ? (
-                /* ADMIN alcança tudo por `private.has_account_access`, sem linha
-                   em `user_account_permissions`: não há controle a oferecer, e
-                   oferecê-lo sugeriria que ele muda alguma coisa. */
                 <span className="sb-status" style={TOM.info}>
                   todas as contas (por ser ADMIN)
                 </span>
@@ -216,10 +203,8 @@ export function DetalheUsuario({
 
           {ehUltimoAdmin && (
             /*
-              Tom de ATENÇÃO, e o frame usa perigo. A diferença é semântica, não
-              estética: nesta casa `perigo` é coisa errada acontecendo, e aqui
-              nada está errado — uma proteção está de pé. Pintar de vermelho
-              faria o operador procurar um defeito que não existe.
+              Tom de ATENÇÃO, e o frame usa perigo: nesta casa `perigo` é coisa
+              errada acontecendo, e aqui uma proteção está de pé.
             */
             <p className="sb-note sb-note-atencao" style={{ marginTop: "var(--sb-space-3)" }}>
               <span>Proteção ativa</span>
@@ -237,6 +222,7 @@ export function DetalheUsuario({
             </p>
           )}
 
+          {/* 3. DESDE QUANDO */}
           <div style={{ marginTop: "var(--sb-space-3)" }}>
             <DetailRow
               label="Último acesso"
@@ -247,12 +233,21 @@ export function DetalheUsuario({
             <DetailRow label="Identificador" value={<span className="sb-mono">{userId}</span>} />
           </div>
 
-          {/*
-            A SAÍDA PARA QUEM NÃO CONSEGUE ENTRAR (D-303). Só para quem edita, e
-            só depois de confirmar: o link vale como senha da conta de destino.
-          */}
+          {/* 4. COMO ENTRA */}
           {editavel && <ReemitirLink userId={userId} nome={nome ?? email ?? "esta pessoa"} />}
 
+          {editavel && (
+            <AcessoDoMembro
+              organizationId={organizationId}
+              userId={userId}
+              nome={nome ?? email ?? "esta pessoa"}
+              suspenso={status === "suspenso"}
+              ehVoceMesmo={ehVoceMesmo}
+              ehUltimoAdmin={ehUltimoAdmin}
+            />
+          )}
+
+          {/* 5. O QUE MUDOU */}
           <h4 className="sb-section-label" style={{ marginTop: "var(--sb-space-3)" }}>
             Mudanças de acesso desta pessoa
           </h4>

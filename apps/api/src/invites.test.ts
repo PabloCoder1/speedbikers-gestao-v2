@@ -74,14 +74,17 @@ function fakeDeps(options: FakeOptions = {}): { deps: InviteDeps; escritas: { ta
             data: { user: { id, email: options.emailDoAlvo === undefined ? "alvo@empresa.com" : options.emailDoAlvo } },
             error: null,
           }),
-        generateLink: ({ email }: { email: string }) =>
-          Promise.resolve({
+        generateLink: ({ email, options: opcoes }: { email: string; options?: unknown }) => {
+          escritas.push({ tabela: "auth.generateLink", linha: opcoes });
+
+          return Promise.resolve({
             data: {
               user: { id: `novo-${email}` },
               properties: { action_link: `https://auth.local/invite?token=abc&email=${email}` },
             },
             error: null,
-          }),
+          });
+        },
       },
     },
   } as unknown as InviteDeps["db"];
@@ -173,6 +176,21 @@ describe("inviteOrganizationMember (D-296)", () => {
 
     expect(outcome.status).toBe("error");
     expect(outcome).toHaveProperty("reason", expect.stringContaining("membro criado"));
+  });
+
+  /** O nome vai nos metadados do usuário criado, e o trigger o grava no perfil (D-354). */
+  it("o nome pedido vai nos metadados do usuário criado", async () => {
+    const { deps, escritas } = fakeDeps();
+
+    await inviteOrganizationMember(deps, ADMIN, {
+      email: "nova@empresa.com",
+      role: "OPERADOR",
+      fullName: "Nova Pessoa",
+    });
+
+    expect(escritas.find((e) => e.tabela === "auth.generateLink")?.linha).toEqual({
+      data: { full_name: "Nova Pessoa" },
+    });
   });
 
   /** O e-mail NUNCA vai para o log — nem o domínio sozinho identifica alguém. */

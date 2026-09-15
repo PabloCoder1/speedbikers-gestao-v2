@@ -39,6 +39,7 @@ import type { SupportClaimsScheduleDeps } from "./support-claims-schedule.js";
 import { triggerSupportClaimsReconcile } from "./support-claims-schedule.js";
 import { triggerSupportQuestionsReconcile } from "./support-questions-schedule.js";
 import type { InviteDeps } from "./invites.js";
+import { setMemberSuspension, suspensionRequestSchema } from "./member-suspension.js";
 import { inviteOrganizationMember, inviteRequestSchema, reissueAccessLink } from "./invites.js";
 import type { RelistDeps } from "./relist.js";
 import { relistRequestSchema, requestListingRelist, requestListingRelistExecution } from "./relist.js";
@@ -684,6 +685,72 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
         { error: { code: "not_found", message: "esta pessoa não é membro desta organização" } },
         404,
       );
+    }
+
+    if (outcome.status === "error") {
+      return context.json({ error: { code: "internal", message: outcome.reason } }, 500);
+    }
+
+    return context.json(outcome);
+  });
+
+  // --------------------------------------------------------------------
+  // SUSPENDER / REATIVAR um membro (D-354). A suspensao mora no Auth
+  // (`banned_until`), e mexer no Auth de outra pessoa exige service role.
+  // Remover da organizacao NAO passa por aqui: e Server Action sob RLS.
+  // --------------------------------------------------------------------
+  app.post("/v1/organization/members/:userId/suspension", async (context) => {
+    const auth = dependencies.auth;
+    const invites = dependencies.invites;
+
+    if (auth === undefined || invites === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    // ADMIN e so: suspender tranca a porta de outra pessoa.
+    const authorized = await auth.authenticate(context.req.header("authorization"), ["ADMIN"]);
+
+    if (!authorized.ok) {
+      dependencies.logger.warn("member_suspension_unauthorized", {
+        request_id: context.get("requestId"),
+        reason: authorized.reason,
+      });
+
+      return context.json({ error: { code: "unauthorized" } }, authorized.status);
+    }
+
+    const userId = context.req.param("userId");
+
+    // Caminho e entrada do mundo: uuid invalido e 400, nao 500 do Postgres.
+    if (!z.uuid().safeParse(userId).success) {
+      return context.json({ error: { code: "invalid_payload", message: "identificador inválido" } }, 400);
+    }
+
+    let rawBody: unknown;
+
+    try {
+      rawBody = await context.req.json();
+    } catch {
+      return context.json({ error: { code: "invalid_payload", message: "corpo não é JSON" } }, 400);
+    }
+
+    const parsed = suspensionRequestSchema.safeParse(rawBody);
+
+    if (!parsed.success) {
+      return context.json({ error: { code: "invalid_payload", message: "informe suspended: true ou false" } }, 400);
+    }
+
+    const outcome = await setMemberSuspension(invites, authorized.caller, userId, parsed.data.suspended);
+
+    if (outcome.status === "not_member") {
+      return context.json(
+        { error: { code: "not_found", message: "esta pessoa não é membro desta organização" } },
+        404,
+      );
+    }
+
+    if (outcome.status === "invalid") {
+      return context.json({ error: { code: "invalid_payload", message: outcome.reason } }, 400);
     }
 
     if (outcome.status === "error") {

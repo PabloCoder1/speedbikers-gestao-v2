@@ -7,26 +7,30 @@
  * aqui fica o vocabulário próprio.
  *
  * **Filtra em memória, e isso é medido, não preguiça.** A lista de membros não
- * pagina — a RLS já a restringe à organização, e `members.length` É o total
- * (não o tamanho de uma página). Mandar busca ao PostgREST exigiria `.or()`
- * sobre `profiles.full_name` embutido mais o e-mail, que vem de OUTRA fonte
- * (`get_organization_members`, a janela de `auth.users` de D-296): dois
- * recortes em dois lugares para a mesma frase. Com a lista inteira já na mão,
- * o recorte é uma comparação.
+ * pagina — a RLS já a restringe à organização, e `members.length` É o total.
+ * O e-mail e o estado vêm de OUTRA fonte (`get_organization_members`, a janela
+ * de `auth.users` de D-296): mandar a busca ao PostgREST seria recortar em dois
+ * lugares a mesma frase.
  *
- * **O status não é coluna de banco**: é `last_sign_in_at is not null`,
- * traduzido pela janela em `invite_accepted`. Quem não é ADMIN não recebe a
- * janela, então para ele o menu não existe — e o filtro cai em "todos".
+ * **O status não é coluna de banco**: sai da janela — `suspended` (D-354) e
+ * `invite_accepted`. Quem não é ADMIN não recebe a janela, então para ele o
+ * menu não existe — e o filtro cai em "todos".
  */
 
 import { buildFilterHref } from "./filters";
 
 /**
- * Os dois estados que o frame desenha na coluna Status — e são dois porque o
- * dado é booleano: entrou alguma vez, ou nunca entrou. Um terceiro
- * ("suspenso", "inativo") não tem fonte: não há coluna que o sustente.
+ * Os três estados que o dado sustenta:
+ *
+ * - **ativo** — já entrou alguma vez e não está suspenso;
+ * - **pendente** — tem vínculo e nunca entrou (convite aberto);
+ * - **suspenso** — `auth.users.banned_until` no futuro (D-354). Até D-354 este
+ *   estado era recusado por falta de fonte; a suspensão pela `api` é a fonte.
+ *
+ * "Inativo" continua fora: não há coluna que diga isso, e inventar um corte por
+ * tempo sem acesso seria uma regra de negócio que ninguém pediu.
  */
-export const MEMBER_STATUSES = ["ativo", "pendente"] as const;
+export const MEMBER_STATUSES = ["ativo", "pendente", "suspenso"] as const;
 
 export type MemberStatus = (typeof MEMBER_STATUSES)[number];
 
@@ -64,9 +68,24 @@ export function buildMemberHref(current: MemberFilters, override: Partial<Member
   return buildFilterHref("/usuarios", { estado: next.status, busca: next.search }, 1);
 }
 
-/** O rótulo do frame, nas duas pontas: coluna Status e menu do painel. */
+/** O rótulo nas duas pontas: coluna Status e menu do painel. */
 export function memberStatusLabel(status: MemberStatus): string {
-  return status === "ativo" ? "Ativo" : "Convite pendente";
+  if (status === "ativo") return "Ativo";
+  if (status === "pendente") return "Convite pendente";
+
+  return "Suspenso";
+}
+
+/**
+ * O tom do selo. Suspenso é ATENÇÃO, não perigo: nesta casa `perigo` é coisa
+ * errada acontecendo, e suspender é um ato deliberado de um ADMIN — o selo diz
+ * "esta pessoa não entra", não "algo quebrou".
+ */
+export function memberStatusTone(status: MemberStatus): "ok" | "neutro" | "atencao" {
+  if (status === "ativo") return "ok";
+  if (status === "pendente") return "neutro";
+
+  return "atencao";
 }
 
 export interface MemberMatchInput {
@@ -79,10 +98,9 @@ export interface MemberMatchInput {
 /**
  * A busca casa NOME ou E-MAIL, sem caixa.
  *
- * Sem dobra de acento de propósito: o que o campo busca é nome de pessoa e
- * endereço, e normalizar acento aqui criaria uma segunda regra de comparação —
- * a do PostgREST, que atende as outras telas, não dobra tampouco. Uma regra
- * por repositório vale mais que duas parecidas.
+ * Sem dobra de acento de propósito: normalizar acento aqui criaria uma segunda
+ * regra de comparação — a do PostgREST, que atende as outras telas, não dobra
+ * tampouco. Uma regra por repositório vale mais que duas parecidas.
  */
 export function matchesMemberFilters(row: MemberMatchInput, filters: MemberFilters): boolean {
   if (filters.status !== null && row.status !== filters.status) return false;

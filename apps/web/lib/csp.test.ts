@@ -39,6 +39,11 @@ describe("montarCsp", () => {
     );
   });
 
+  it("img-src abre só o Supabase, para as fotos de perfil (D-354)", () => {
+    expect(diretiva(montarCsp(base), "img-src")).toBe("img-src 'self' data: blob: https://projeto.supabase.co");
+    expect(diretiva(montarCsp({ ...base, supabaseUrl: "" }), "img-src")).toBe("img-src 'self' data: blob:");
+  });
+
   it("no ambiente local, http vira ws — é o Realtime do Supabase da suíte", () => {
     const conectar = diretiva(montarCsp({ ...base, supabaseUrl: "http://127.0.0.1:54321" }), "connect-src");
 

@@ -1549,6 +1549,31 @@ desenha login, então a identidade veio da própria moldura:
 Renderizado a 1568px no Supabase local: `/login` e o modo recuperação com um
 link `recovery` gerado pela Admin API local. e2e **não** rodado nesta fatia.
 
+### /usuarios ganhou gestão de pessoa (2026-09-15, D-354)
+
+Pedido do usuário: nome no convite, foto, suspender/remover e uma tela "mais
+agradável", seguindo o frame. O frame de Usuários é protótipo (sem formulário,
+sem foto, sem ação), então a composição de D-297 fica e o novo entra na
+linguagem da casa:
+
+- **Tabela:** avatar (foto ou iniciais) na célula "Usuário / E-mail" e o estado
+  **Suspenso** em tom de atenção; linha suspensa com o avatar em cinza. Nenhum
+  controle entrou na tabela.
+- **Gaveta, na ordem das perguntas:** cabeçalho lavanda com a foto grande
+  (clicável para quem edita), nome com "Editar nome", estado → Papel e
+  permissões → datas → "Acesso" (link, **Suspender**, **Remover** em contorno
+  vermelho; só o botão que confirma é vermelho cheio) → histórico.
+- **Convite:** duas seções em cartão — "Quem" (foto opcional, nome obrigatório,
+  e-mail) e "O que pode fazer" (papel e contas como cartões marcáveis).
+- **"Meu perfil":** o bloco de perfil do topo virou botão com a mesma
+  aparência; abre a gaveta com foto e nome da própria pessoa.
+- **Avatar** virou componente (`components/avatar.tsx`) com quatro tamanhos
+  (28/30/56/88px); a foto usa `object-fit: cover`.
+
+Não renderizado com dados nesta fatia: o Supabase local estava em uso pela
+sessão da D-351, e a tela exige login. Typecheck, lint, guardas e testes
+unitários conferidos.
+
 ## Próxima fatia segura
 
 **A COMPOSIÇÃO DO FIGMA FECHOU.** D0→D25, D27→D36, o passe D37a/b/c e **as

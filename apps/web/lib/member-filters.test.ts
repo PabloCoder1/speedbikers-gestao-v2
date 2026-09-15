@@ -5,6 +5,7 @@ import {
   buildMemberHref,
   matchesMemberFilters,
   memberStatusLabel,
+  memberStatusTone,
   resolveMemberFilters,
   resolveMemberStatus,
   summarizeMemberWindow,
@@ -14,28 +15,38 @@ import {
 const base: MemberFilters = { status: null, search: null };
 
 describe("status do membro", () => {
-  it("resolve os dois estados que o dado sustenta", () => {
+  it("resolve os três estados que o dado sustenta", () => {
     for (const estado of MEMBER_STATUSES) {
       expect(resolveMemberStatus(estado)).toBe(estado);
     }
+
+    expect(MEMBER_STATUSES).toEqual(["ativo", "pendente", "suspenso"]);
   });
 
   /**
-   * O status não é coluna: é `last_sign_in_at is not null`. "Suspenso" e
-   * "inativo" aparecem em sistema de usuário por hábito, e aqui nada os
-   * sustenta — ir ao recorte com eles devolveria zero linhas, que se lê como
-   * "não há ninguém assim" em vez de "esse estado não existe" (D-242).
+   * "Suspenso" entrou em D-354, quando a suspensão pela `api` virou fonte.
+   * "Inativo" continua sem fonte — ir ao recorte com ele devolveria zero
+   * linhas, que se lê como "não há ninguém assim" em vez de "esse estado não
+   * existe" (D-242).
    */
   it("estado sem fonte vira nulo, e não recorte vazio", () => {
-    expect(resolveMemberStatus("suspenso")).toBeNull();
     expect(resolveMemberStatus("inativo")).toBeNull();
+    expect(resolveMemberStatus("bloqueado")).toBeNull();
     expect(resolveMemberStatus("ATIVO")).toBeNull();
     expect(resolveMemberStatus(undefined)).toBeNull();
   });
 
-  it("os dois rótulos são os do frame", () => {
+  it("os rótulos", () => {
     expect(memberStatusLabel("ativo")).toBe("Ativo");
     expect(memberStatusLabel("pendente")).toBe("Convite pendente");
+    expect(memberStatusLabel("suspenso")).toBe("Suspenso");
+  });
+
+  /** Suspenso é ato deliberado de um ADMIN: atenção, não perigo. */
+  it("o tom de cada selo", () => {
+    expect(memberStatusTone("ativo")).toBe("ok");
+    expect(memberStatusTone("pendente")).toBe("neutro");
+    expect(memberStatusTone("suspenso")).toBe("atencao");
   });
 });
 
@@ -46,6 +57,7 @@ describe("leitura da URL", () => {
       search: "carla",
     });
 
+    expect(resolveMemberFilters({ estado: "suspenso" })).toEqual({ status: "suspenso", search: null });
     expect(resolveMemberFilters({ busca: "   " })).toEqual({ status: null, search: null });
   });
 });
@@ -66,10 +78,12 @@ describe("href", () => {
 describe("o recorte", () => {
   const carla = { nome: "Carla Nogueira", email: "carla@speedbikers.com.br", status: "ativo" } as const;
   const thiago = { nome: null, email: "thiago@speedbikers.com.br", status: "pendente" } as const;
+  const bianca = { nome: "Bianca Sato", email: "bianca@speedbikers.com.br", status: "suspenso" } as const;
 
   it("sem filtro, todo mundo casa", () => {
     expect(matchesMemberFilters(carla, base)).toBe(true);
     expect(matchesMemberFilters(thiago, base)).toBe(true);
+    expect(matchesMemberFilters(bianca, base)).toBe(true);
   });
 
   it("a busca casa pelo nome e pelo e-mail, sem caixa", () => {
@@ -79,9 +93,8 @@ describe("o recorte", () => {
   });
 
   /**
-   * Convidado NÃO TEM perfil — `profiles` nasce no primeiro acesso (D-296) —,
-   * então o nome dele é nulo e o e-mail é a única coisa pela qual ele pode ser
-   * achado. Quem acabou de ser convidado é exatamente quem mais se procura.
+   * Quem foi convidado antes de D-354 pode estar sem nome, e o e-mail é a única
+   * coisa pela qual ele pode ser achado.
    */
   it("quem não tem nome ainda é achado pelo e-mail", () => {
     expect(matchesMemberFilters(thiago, { ...base, search: "thiago" })).toBe(true);
@@ -90,6 +103,8 @@ describe("o recorte", () => {
   it("o status recorta, e soma com a busca", () => {
     expect(matchesMemberFilters(thiago, { ...base, status: "pendente" })).toBe(true);
     expect(matchesMemberFilters(carla, { ...base, status: "pendente" })).toBe(false);
+    expect(matchesMemberFilters(bianca, { ...base, status: "suspenso" })).toBe(true);
+    expect(matchesMemberFilters(bianca, { ...base, status: "ativo" })).toBe(false);
     expect(matchesMemberFilters(thiago, { status: "pendente", search: "carla" })).toBe(false);
   });
 });
@@ -111,6 +126,10 @@ describe("a janela dita em palavras", () => {
 
     expect(summarizeMemberWindow(18, 1, { status: "ativo", search: "carla" })).toBe(
       "1 de 18 pessoas, por status ativo e busca “carla”.",
+    );
+
+    expect(summarizeMemberWindow(18, 2, { status: "suspenso", search: null })).toBe(
+      "2 de 18 pessoas, por status suspenso.",
     );
   });
 
