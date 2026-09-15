@@ -53,6 +53,12 @@ export interface ReturnReversal {
  * devolução) ainda não devolveu, e nada quando já devolveram tudo. É o que
  * impede o +2 dos pedidos que cancelam e depois têm a devolução entregue — no
  * Dev, 358 das 563 vendas com as duas reversões tiveram o cancelamento primeiro.
+ *
+ * **O cancelamento que a planilha já contém também conta** (reverificação de
+ * 60c7a6a, BAIXA-1). A venda estornada cancelada até a exportação não grava
+ * `CANCELAMENTO_ML` -- a planilha já tem a unidade de volta --, e sem nada
+ * gravado a devolução entregue depois a devolveria uma segunda vez. As chaves
+ * dessas vendas (`cancelledInSheetKeys`) saem com restante zero.
  */
 export function computeReturnReversal(
   order: { id: number },
@@ -62,6 +68,8 @@ export function computeReturnReversal(
   reversals: readonly RecordedReversal[],
   claimId: string,
   occurredAt: Date,
+  /** Chaves de venda cujo cancelamento a planilha já contém (`cancelledInSheetKeys`). */
+  cancelledInSheet: ReadonlySet<string> = new Set(),
 ): ReturnReversal {
   const prefix = `venda:${String(order.id)}:${String(item.position)}`;
   const matched = saleMovements.filter(
@@ -76,7 +84,8 @@ export function computeReturnReversal(
   if (fullReversal) {
     for (const m of matched) {
       const idempotencyKey = returnKeyOf(claimId, m.idempotencyKey);
-      const restante = remainingToReverse(m, reversals, idempotencyKey);
+      // A planilha já contém o cancelamento desta venda: a unidade já voltou, sem linha no ledger.
+      const restante = cancelledInSheet.has(m.idempotencyKey) ? 0 : remainingToReverse(m, reversals, idempotencyKey);
 
       if (restante <= 0) {
         alreadyReversed.push(m.idempotencyKey);

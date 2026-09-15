@@ -85,6 +85,50 @@ interface CancellationReversalPlan {
   readonly alreadyReversed: string[];
 }
 
+/**
+ * A planilha já contém o cancelamento desta venda: ela está estornada (a
+ * planilha tem a venda) e o pedido cancelou, com instante conhecido, até a
+ * EXPORTAÇÃO do corte do SKU (a planilha tem a unidade de volta). O cancelamento
+ * não reverte, e a unidade já voltou ao estoque -- pela planilha.
+ *
+ * É a mesma pergunta nos dois lados da venda (reverificação de 60c7a6a,
+ * BAIXA-1): o cancelamento pula por ela, e a devolução entregue depois trata a
+ * venda como já revertida (`cancelledInSheetKeys`). Sem o segundo lado, o
+ * cancelamento pulado não deixava rastro no ledger, e a devolução devolvia a
+ * unidade uma segunda vez.
+ */
+export function sheetContainsCancellation(
+  order: CancellationReversalOrder,
+  sale: RecordedSaleMovement,
+  estornadas: ReadonlySet<string>,
+  cutoffFor: (skuId: string) => ErpCutoff | null,
+): boolean {
+  if (!isCancelledOrderStatus(order.status) || !order.occurredAtKnown || !estornadas.has(sale.idempotencyKey)) {
+    return false;
+  }
+
+  const cutoff = cutoffFor(sale.skuId);
+
+  return cutoff !== null && order.occurredAt.getTime() <= cutoff.exportedAt.getTime();
+}
+
+/**
+ * As chaves das vendas do pedido cujo cancelamento a planilha já contém
+ * (`sheetContainsCancellation`): a devolução entregue não as reverte de novo.
+ * "Instante desconhecido" não entra -- o cancelamento dessas reverte, e o limite
+ * das reversões gravadas cuida da devolução.
+ */
+export function cancelledInSheetKeys(
+  order: CancellationReversalOrder,
+  saleMovements: readonly RecordedSaleMovement[],
+  estornadas: ReadonlySet<string>,
+  cutoffFor: (skuId: string) => ErpCutoff | null,
+): string[] {
+  return saleMovements
+    .filter((sale) => sheetContainsCancellation(order, sale, estornadas, cutoffFor))
+    .map((sale) => sale.idempotencyKey);
+}
+
 function planCancellationReversals(
   order: CancellationReversalOrder,
   saleMovements: readonly RecordedSaleMovement[],
@@ -97,12 +141,8 @@ function planCancellationReversals(
   }
 
   for (const movement of saleMovements) {
-    if (preCapture.estornadas.has(movement.idempotencyKey) && order.occurredAtKnown) {
-      const cutoff = preCapture.cutoffFor(movement.skuId);
-
-      // Estornada e cancelada até a exportação: a planilha já tem a venda E a devolução.
-      if (cutoff !== null && order.occurredAt.getTime() <= cutoff.exportedAt.getTime()) continue;
-    }
+    // Estornada e cancelada até a exportação: a planilha já tem a venda E a devolução.
+    if (sheetContainsCancellation(order, movement, preCapture.estornadas, preCapture.cutoffFor)) continue;
 
     const idempotencyKey = cancellationKeyOf(movement.idempotencyKey);
     const restante = remainingToReverse(movement, preCapture.reversals, idempotencyKey);

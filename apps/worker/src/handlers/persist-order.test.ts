@@ -2412,3 +2412,24 @@ describe("persistOrder — reverificação de c48fb70", () => {
     });
   });
 });
+
+describe("persistOrder — reverificação de 60c7a6a", () => {
+  const PEDIDO = String(BASE_ORDER.id);
+  const COM_VINCULO = { linkForItem: () => ({ id: "link-1", sku_id: "sku-1" }) };
+  const CANCELADO_EM = "2026-09-14T19:07:45.000Z";
+
+  describe("MÉDIA-1: a fronteira da venda no trio é a mesma do gate da venda", () => {
+    it("pedido fechado NO instante da exportação, sem VENDA_ML, cancelado depois dela com a transição vista: grava venda, estorno e cancelamento", async () => {
+      const { db, inserted } = fakeDb({ ...COM_VINCULO, previousStatus: "paid", cutoffs: { "sku-1": CORTE } });
+
+      await run(db, { ...BASE_ORDER, status: "cancelled", date_closed: CORTE, date_last_updated: CANCELADO_EM });
+
+      // A planilha tem a venda (o gate a estorna, `<=`) e o UpSeller devolveu a unidade depois dela.
+      expect(movimentos(inserted).map((m) => [m.movement_type, m.idempotency_key, m.qty_delta, m.occurred_at])).toEqual([
+        ["VENDA_ML", `venda:${PEDIDO}:0`, -1, CORTE],
+        ["ESTORNO_PRE_CAPTURA", `estorno:venda:${PEDIDO}:0`, 1, CORTE],
+        ["CANCELAMENTO_ML", `cancelamento:venda:${PEDIDO}:0`, 1, CANCELADO_EM],
+      ]);
+    });
+  });
+});

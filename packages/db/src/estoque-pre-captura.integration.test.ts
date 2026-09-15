@@ -1023,6 +1023,77 @@ describe("compensacao F3 (packages/db/scripts, fora das migrations)", () => {
       await client.query("rollback");
     }
   });
+
+  it("planilha importada pelo worker antigo antes da F3: a organizacao fica inelegivel, e a F3 ABORTA com o corte do parse em vez de pular em silencio; com o UPDATE refeito, vira no-op com NOTICE (reverificacao de 60c7a6a, BAIXA-1)", async () => {
+    const migration = await arquivo("supabase/migrations/20260915140000_erp_corte_da_exportacao.sql");
+    const update = /update public\.erp_stock_snapshots s[\s\S]*?;/.exec(migration)?.[0];
+    const organizacao = randomUUID();
+    const id = PEDIDO + 90;
+    // P2, pelo worker antigo: exportada ha 12 min e parseada 2 min depois, com o corte do parse.
+    const exportacao = new Date(Math.floor((Date.now() - 12 * 60_000) / 1000) * 1000);
+    const parse = new Date(exportacao.getTime() + 2 * 60_000);
+    const dd = (n: number): string => String(n).padStart(2, "0");
+    const nome = `Lista_de_Estoque_${dd(exportacao.getUTCMonth() + 1)}${dd(exportacao.getUTCDate())}${dd(exportacao.getUTCHours())}${dd(exportacao.getUTCMinutes())}${dd(exportacao.getUTCSeconds())}.xlsx`;
+
+    expect(update).toBeDefined();
+
+    await client.query("begin");
+
+    try {
+      await novaOrganizacao(organizacao, "f3-planilha-antes-da-f3");
+
+      const sku = await novoSku(organizacao, "f3-planilha-antes-da-f3");
+      const conta = await umId(
+        `insert into public.ml_accounts (organization_id, label, slug, seller_id, status, connected_at)
+         values ($1, 'F3 antes', $2, $3, 'CONNECTED', now()) returning id`,
+        [organizacao, `${PREFIXO}-f3-antes`, 3_800_000 + Math.floor(Math.random() * 100_000)],
+      );
+
+      // A forma de producao: P1 ja com o corte da exportacao, e o ledger nascido depois dela.
+      await snapshot(
+        organizacao,
+        await novoLote(organizacao, "Lista_de_Estoque_0914184200.xlsx", "2026-09-14T18:44:13.254Z"),
+        "F3-ANTES",
+        sku,
+        "ESTOQUE LOJA",
+        20,
+        "2026-09-14T18:42:00.000Z",
+      );
+      await pedido(organizacao, conta, id, "paid", "2026-09-13T10:00:00.000Z");
+      await movimento(organizacao, sku, "VENDA_ML", -1, `venda:${String(id)}:0`, "2026-09-14T18:43:59.000Z", String(id), "2026-09-14T18:43:59.000Z");
+      // P2 entra pelo worker antigo, com o corte do parse.
+      await snapshot(organizacao, await novoLote(organizacao, nome, parse.toISOString()), "F3-ANTES", sku, "ESTOQUE LOJA", 19, parse.toISOString());
+
+      await client.query("savepoint antes_da_f3");
+      await expect(rodarF3(organizacao, [])).rejects.toThrow(/corte do PARSE/);
+      await client.query("rollback to savepoint antes_da_f3");
+
+      // O UPDATE refeito tira o aborto, mas nao devolve a elegibilidade: a F3 vira no-op.
+      await client.query(update ?? "");
+
+      const corte = await client.query<{ captured_at: Date }>(
+        `select max(captured_at) as captured_at from public.erp_stock_snapshots where organization_id = $1`,
+        [organizacao],
+      );
+
+      expect(corte.rows[0]?.captured_at.toISOString()).toBe(exportacao.toISOString());
+
+      const avisos: string[] = [];
+
+      await rodarF3(organizacao, avisos);
+
+      const estornos = await client.query(
+        `select 1 from public.stock_movements where organization_id = $1 and movement_type = 'ESTORNO_PRE_CAPTURA'`,
+        [organizacao],
+      );
+
+      expect(estornos.rowCount).toBe(0);
+      expect(avisos).toContain("compensacao_d351: 0 estornos gravados");
+      expect(avisos.join("\n")).toContain(`organizacao ${organizacao} fora do criterio (tem AJUSTE_RECONCILIACAO ou ledger anterior ao corte) com 1 VENDA_ML afetados`);
+    } finally {
+      await client.query("rollback");
+    }
+  });
 });
 
 // ============================================================================================
@@ -1396,9 +1467,53 @@ describe("o ultimo alinhamento do saldo decide a venda ja gravada (verificacao d
 
 describe("desempate da planilha reimportada com o mesmo nome (verificacao de e6fda07, BAIXA-2)", () => {
   const ORG_REIMPORT = randomUUID();
+  const ORG_REIMPORT_ORGANIZACAO = randomUUID();
 
   beforeAll(async () => {
     await novaOrganizacao(ORG_REIMPORT, "reimport");
+    await novaOrganizacao(ORG_REIMPORT_ORGANIZACAO, "reimport-organizacao");
+  });
+
+  /**
+   * O corte pela RPC SEM indice (reverificacao de 60c7a6a, MEDIA-1). Em banco pequeno o plano
+   * desce `erp_stock_snapshots_sku_cutoff_idx` e `erp_stock_snapshots_org_cutoff_idx`, que ja
+   * estao na ordem do desempate: a RPC sem o `created_at desc, id desc` passava no teste. Com a
+   * varredura sequencial e o sort, so o desempate escrito na consulta escolhe o lote novo.
+   */
+  async function corteDaRpcSemIndice(organizationId: string, skuId: string): Promise<CorteLido> {
+    await client.query("begin");
+
+    try {
+      await client.query("set local enable_indexscan = off");
+      await client.query("set local enable_indexonlyscan = off");
+      await client.query("set local enable_bitmapscan = off");
+
+      return await corteDaRpc(organizationId, skuId);
+    } finally {
+      await client.query("rollback");
+    }
+  }
+
+  it("o mesmo empate no corte da ORGANIZACAO (SKU sem snapshot proprio): o corte fica com o lote gravado por ultimo, com e sem indice (reverificacao de 60c7a6a, MEDIA-1)", async () => {
+    const comSnapshot = await novoSku(ORG_REIMPORT_ORGANIZACAO, "reimport-org");
+    const semSnapshot = await novoSku(ORG_REIMPORT_ORGANIZACAO, "reimport-org-sem-snapshot");
+    const C = "2026-09-16T18:00:00.000Z";
+    const primeiro = await novoLote(ORG_REIMPORT_ORGANIZACAO, `${PREFIXO}-reimport-org-1.xlsx`);
+    const segundo = await novoLote(ORG_REIMPORT_ORGANIZACAO, `${PREFIXO}-reimport-org-2.xlsx`);
+
+    // O lote VELHO entra fisicamente primeiro: na varredura sequencial, e ele que vem antes no sort.
+    await snapshot(ORG_REIMPORT_ORGANIZACAO, primeiro, "REIMPORT-ORG", comSnapshot, "ESTOQUE LOJA", 7, C, "2026-09-16T18:02:00.000Z");
+    await snapshot(ORG_REIMPORT_ORGANIZACAO, segundo, "REIMPORT-ORG", comSnapshot, "ESTOQUE LOJA", 6, C, "2026-09-16T19:02:00.000Z");
+    await client.query(`update public.erp_import_batches set applied_at = '2026-09-16T18:02:01Z' where id = $1`, [primeiro]);
+    await client.query(`update public.erp_import_batches set applied_at = '2026-09-16T19:02:01Z' where id = $1`, [segundo]);
+
+    for (const corte of [await corteDaRpc(ORG_REIMPORT_ORGANIZACAO, semSnapshot), await corteDaRpcSemIndice(ORG_REIMPORT_ORGANIZACAO, semSnapshot)]) {
+      expect([corte.captured_at.toISOString(), corte.imported_at.toISOString(), corte.reconciled_at]).toEqual([
+        C,
+        "2026-09-16T19:02:01.000Z",
+        null,
+      ]);
+    }
   });
 
   it("dois lotes com o MESMO captured_at: o alvo e o corte ficam com o lote gravado por ultimo", async () => {
@@ -1418,9 +1533,12 @@ describe("desempate da planilha reimportada com o mesmo nome (verificacao de e6f
       [ORG_REIMPORT, sku],
     );
     const corte = await corteDaRpc(ORG_REIMPORT, sku);
+    // Sem indice (reverificacao de 60c7a6a, MEDIA-1): so o desempate da consulta escolhe o lote novo.
+    const semIndice = await corteDaRpcSemIndice(ORG_REIMPORT, sku);
 
     expect(Number(alvo.rows[0]?.quantity)).toBe(6);
     expect([corte.captured_at.toISOString(), corte.imported_at.toISOString()]).toEqual([C, "2026-09-16T19:02:01.000Z"]);
+    expect([semIndice.captured_at.toISOString(), semIndice.imported_at.toISOString()]).toEqual([C, "2026-09-16T19:02:01.000Z"]);
   });
 
   it("compute_erp_target_balances continua SECURITY INVOKER, com search_path travado, e so service_role executa", async () => {
@@ -1549,6 +1667,22 @@ describe("get_order_return_movements (verificacao de e6fda07, ALTA-1)", () => {
         [P1, 1, `devolucao:5570000002:venda:${P1}:0:${sku}`],
       ].sort(),
     );
+  });
+
+  it("service_role: movimento de OUTRO tipo com a chave no formato da devolucao nao entra -- e o tipo, e nao a chave, que separa a devolucao (reverificacao de 60c7a6a)", async () => {
+    const P3 = String(Number(P1) + 2);
+
+    // Um estorno (ou qualquer outro tipo) cuja chave tenha o pedido no quarto campo: somado como
+    // devolucao, faria a venda parecer ja devolvida, e o cancelamento seguinte nao reporia a unidade.
+    await movimento(ORG_DEVOLUCOES, sku, "ESTORNO_PRE_CAPTURA", 1, `devolucao:5570000005:venda:${P3}:0`, "2026-09-15T12:00:00.000Z", P3);
+    await devolucao(ORG_DEVOLUCOES, sku, "5570000006", `venda:${P3}:1`, "2026-09-15T12:00:00.000Z");
+
+    const rows = await comoPapel<{ order_id: string; qty_delta: string; idempotency_key: string }>(
+      "service_role",
+      `select order_id, qty_delta, idempotency_key from public.get_order_return_movements('${ORG_DEVOLUCOES}', array['${P3}'])`,
+    );
+
+    expect(rows.map((r) => [r.order_id, Number(r.qty_delta), r.idempotency_key])).toEqual([[P3, 1, `devolucao:5570000006:venda:${P3}:1`]]);
   });
 });
 

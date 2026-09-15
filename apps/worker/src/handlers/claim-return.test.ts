@@ -60,6 +60,15 @@ interface FakeDbOptions {
   saleMovementsError?: boolean;
   /** D-104: força a projeção de atendimento a falhar, sem tocar no estoque. */
   supportError?: boolean;
+  /**
+   * A linha de `orders` que `claim-return` lê quando o pedido tem venda estornada
+   * (reverificação de 60c7a6a, BAIXA-1). Padrão, nenhuma.
+   */
+  order?: { status: string; date_created: string; date_last_updated: string; last_updated: string | null } | null;
+  /** Simula falha da leitura do pedido. */
+  orderReadError?: boolean;
+  /** Linhas de `get_erp_stock_cutoffs`. Padrão, nenhuma. */
+  cutoffRows?: unknown[];
 }
 
 interface Captured {
@@ -162,11 +171,23 @@ function fakeDb(options: FakeDbOptions, captured: Captured, rpcCalls: string[] =
 
       if (table === "orders") {
         return {
-          select: () => ({
+          select: (colunas: string) => ({
             eq: function eq() {
               return this;
             },
-            maybeSingle: () => Promise.resolve({ data: null, error: null }),
+            // A projeção de atendimento resolve o pedido por `id` (sem linha, o vínculo externo);
+            // a devolução lê o status e os instantes da venda estornada (reverificação de 60c7a6a).
+            maybeSingle: () => {
+              if (!colunas.includes("date_last_updated")) {
+                return Promise.resolve({ data: null, error: null });
+              }
+
+              return Promise.resolve(
+                options.orderReadError === true
+                  ? { data: null, error: { code: "42P01", message: "boom" } }
+                  : { data: options.order ?? null, error: null },
+              );
+            },
           }),
         };
       }
@@ -179,6 +200,10 @@ function fakeDb(options: FakeDbOptions, captured: Captured, rpcCalls: string[] =
     },
     rpc: (fn: string) => {
       rpcCalls.push(fn);
+
+      if (fn === "get_erp_stock_cutoffs") {
+        return Promise.resolve({ data: options.cutoffRows ?? [], error: null });
+      }
 
       if (fn === "get_order_return_movements") {
         if (options.returnsDataNull === true) {
@@ -725,5 +750,131 @@ describe("processClaimReturn — a unidade volta ao estoque no máximo uma vez (
         recordedReturns: [{ sku_id: "sku-a", qty_delta: 1, idempotency_key: `devolucao:${VENDA}` }],
       }),
     ).rejects.toThrow(/chave de reversao fora do formato/);
+  });
+});
+
+/**
+ * Reverificação de 60c7a6a (D-351), BAIXA-1: a venda estornada cancelada até a
+ * exportação não grava `CANCELAMENTO_ML` -- a planilha já tem a unidade de volta --,
+ * e a devolução entregue depois devolvia a unidade uma segunda vez.
+ */
+describe("processClaimReturn — o cancelamento que a planilha já contém (reverificação de 60c7a6a, BAIXA-1)", () => {
+  const VENDA = `venda:${String(ORDER_ID)}:0`;
+  const ESTORNADA = [
+    { sku_id: "sku-a", qty_delta: -1, idempotency_key: VENDA },
+    { sku_id: "sku-a", qty_delta: 1, idempotency_key: `estorno:${VENDA}`, movement_type: "ESTORNO_PRE_CAPTURA" },
+  ];
+  // A planilha 2, exportada em 09-16 12:00 e reconciliada às 13:00.
+  const PLANILHA_2 = [
+    {
+      sku_id: "sku-a",
+      captured_at: "2026-09-16T12:00:00+00:00",
+      imported_at: "2026-09-16T12:02:00+00:00",
+      reconciled_at: "2026-09-16T13:00:00+00:00",
+      exported_at: "2026-09-16T12:00:00+00:00",
+    },
+  ];
+  // O cancelamento de 09-16 10:00, visto pela janela horária só depois do import da planilha 2.
+  const CANCELADO_ANTES = {
+    status: "cancelled",
+    date_created: "2026-09-10T14:55:00+00:00",
+    date_last_updated: "2026-09-16T10:00:00+00:00",
+    last_updated: "2026-09-16T10:00:00+00:00",
+  };
+
+  async function processa(options: FakeDbOptions): Promise<{ captured: Captured; rpcCalls: string[] }> {
+    const captured: Captured = { movements: [], events: [], supportCases: [] };
+    const rpcCalls: string[] = [];
+    const { client } = fakeMercadoLivre({});
+
+    await processClaimReturn(
+      { db: fakeDb(options, captured, rpcCalls), mercadoLivre: client },
+      { organizationId: ORGANIZATION_ID, mlAccountId: ML_ACCOUNT_ID },
+      "token",
+      CLAIM_ID,
+      NOW,
+      logger,
+    );
+
+    return { captured, rpcCalls };
+  }
+
+  const after = (captured: Captured): Record<string, unknown> => (captured.events[0] as { after: Record<string, unknown> }).after;
+
+  it("venda estornada e pedido cancelado até a exportação (o cancelamento foi pulado): nenhum DEVOLUCAO_ML, e o evento registra a venda já revertida", async () => {
+    const { captured, rpcCalls } = await processa({ saleMovements: ESTORNADA, order: CANCELADO_ANTES, cutoffRows: PLANILHA_2 });
+
+    expect(captured.movements).toEqual([]);
+    expect(after(captured)).toMatchObject({ fullReversal: true, movementsReversed: 0, movementsAlreadyReversed: 1 });
+    expect(rpcCalls).toContain("get_erp_stock_cutoffs");
+  });
+
+  it("contraprova: venda NÃO estornada, com o cancelamento gravado -- a devolução sai 0 pelo limite, sem ler o corte", async () => {
+    const { captured, rpcCalls } = await processa({
+      saleMovements: [
+        { sku_id: "sku-a", qty_delta: -1, idempotency_key: VENDA },
+        { sku_id: "sku-a", qty_delta: 1, idempotency_key: `cancelamento:${VENDA}`, movement_type: "CANCELAMENTO_ML" },
+      ],
+      order: CANCELADO_ANTES,
+      cutoffRows: PLANILHA_2,
+    });
+
+    expect(captured.movements).toEqual([]);
+    expect(after(captured)).toMatchObject({ movementsAlreadyReversed: 1 });
+    expect(rpcCalls).not.toContain("get_erp_stock_cutoffs");
+  });
+
+  it("venda estornada e pedido cancelado DEPOIS da exportação, com o cancelamento ainda não gravado: a devolução devolve", async () => {
+    const { captured } = await processa({
+      saleMovements: ESTORNADA,
+      order: { ...CANCELADO_ANTES, date_last_updated: "2026-09-16T12:00:01+00:00", last_updated: "2026-09-16T12:00:01+00:00" },
+      cutoffRows: PLANILHA_2,
+    });
+
+    expect(captured.movements).toEqual([expect.objectContaining({ movement_type: "DEVOLUCAO_ML", qty_delta: 1 })]);
+  });
+
+  it("venda estornada e cancelamento sem instante conhecido (date_last_updated = date_created, sem last_updated): a devolução devolve", async () => {
+    const { captured } = await processa({
+      saleMovements: ESTORNADA,
+      order: { ...CANCELADO_ANTES, date_last_updated: CANCELADO_ANTES.date_created, last_updated: null },
+      cutoffRows: PLANILHA_2,
+    });
+
+    expect(captured.movements).toEqual([expect.objectContaining({ movement_type: "DEVOLUCAO_ML", qty_delta: 1 })]);
+  });
+
+  it("venda estornada e pedido ainda pago: a devolução devolve, sem ler o corte", async () => {
+    const { captured, rpcCalls } = await processa({
+      saleMovements: ESTORNADA,
+      order: { ...CANCELADO_ANTES, status: "paid" },
+      cutoffRows: PLANILHA_2,
+    });
+
+    expect(captured.movements).toEqual([expect.objectContaining({ movement_type: "DEVOLUCAO_ML", qty_delta: 1 })]);
+    expect(rpcCalls).not.toContain("get_erp_stock_cutoffs");
+  });
+
+  it("falha na leitura do pedido LANÇA, o pedido ausente LANÇA, e o corte sem a linha do SKU também", async () => {
+    await expect(processa({ saleMovements: ESTORNADA, orderReadError: true, cutoffRows: PLANILHA_2 })).rejects.toThrow(
+      /status da order.*boom/,
+    );
+    await expect(processa({ saleMovements: ESTORNADA, order: null, cutoffRows: PLANILHA_2 })).rejects.toThrow(/sem linha em orders/);
+    await expect(processa({ saleMovements: ESTORNADA, order: CANCELADO_ANTES, cutoffRows: [] })).rejects.toThrow(
+      /nao devolveu o corte do SKU sku-a/,
+    );
+  });
+
+  it("estorno gravado com chave fora do formato LANÇA na leitura", async () => {
+    await expect(
+      processa({
+        saleMovements: [
+          { sku_id: "sku-a", qty_delta: -1, idempotency_key: VENDA },
+          { sku_id: "sku-a", qty_delta: 1, idempotency_key: `estorno-pre-captura:${VENDA}`, movement_type: "ESTORNO_PRE_CAPTURA" },
+        ],
+        order: CANCELADO_ANTES,
+        cutoffRows: PLANILHA_2,
+      }),
+    ).rejects.toThrow();
   });
 });

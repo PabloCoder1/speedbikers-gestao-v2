@@ -31,7 +31,12 @@ export {
 } from "./reversal-limit.js";
 export type { RecordedReversal } from "./reversal-limit.js";
 
-export { computeCancellationMovements, computeCancellationReversals } from "./cancellation-reversal.js";
+export {
+  cancelledInSheetKeys,
+  computeCancellationMovements,
+  computeCancellationReversals,
+  sheetContainsCancellation,
+} from "./cancellation-reversal.js";
 export type {
   CancellationMovements,
   CancellationMovementsInput,

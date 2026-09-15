@@ -9,18 +9,20 @@
 --
 -- PRE-REQUISITOS
 --   1. migrations de D-351 aplicadas (o tipo ESTORNO_PRE_CAPTURA, o corte da exportacao
---      em `erp_stock_snapshots.captured_at` e a RPC das devolucoes). CONFERIDO no bloco,
---      nas organizacoes elegiveis: snapshot de planilha com o nome carimbado que ainda
---      carrega o PARSE como corte aborta tudo -- com o corte do parse (18:44:13 em
---      producao) a F3 estornaria venda legitima da janela entre exportacao e parse
---      (2000018457209778, fechada as 18:43:57). Isso tambem pega uma planilha importada
---      pelo worker ANTIGO entre a migration e o deploy: rode de novo o UPDATE de
---      20260915140000 antes da F3. O worker NOVO nao estorna essa venda nem com o corte do
---      parse -- `get_erp_stock_cutoffs` devolve a exportacao lida do nome (`exported_at`,
---      D-351 §10) --, e o UPDATE refeito depois do deploy fecha o alvo com o real. Ate a
---      reverificacao de c48fb70 o worker gravava venda + estorno para essa venda, pares que
---      o UPDATE nao desfazia. A conferencia continua ANTES do deploy (DEPLOYMENT.md 8.2,
---      passo 10), e nao importe planilha entre a migration e o deploy;
+--      em `erp_stock_snapshots.captured_at` e a RPC das devolucoes). CONFERIDO no bloco, em
+--      TODA organizacao sem AJUSTE_RECONCILIACAO (as que o UPDATE de 20260915140000 corrige):
+--      snapshot de planilha com o nome carimbado que ainda carrega o PARSE como corte aborta
+--      tudo -- com o corte do parse (18:44:13 em producao) a F3 estornaria venda legitima da
+--      janela entre exportacao e parse (2000018457209778, fechada as 18:43:57). Isso tambem
+--      pega uma planilha importada pelo worker ANTIGO entre a migration e o deploy. Essa
+--      planilha leva o corte da organizacao para o parse dela, e a de producao deixa de ser
+--      elegivel: ate a reverificacao de 60c7a6a a conferencia olhava so as elegiveis, e a F3
+--      pulava a organizacao em silencio em vez de parar (BAIXA-1). O UPDATE refeito tira o
+--      aborto, mas nao devolve a elegibilidade: QUALQUER planilha importada antes da F3 torna
+--      a organizacao de producao inelegivel, e a F3 vira no-op -- NOTICE "fora do criterio",
+--      0 estornos e 0 reposicoes --, o que pede decisao do dono. Por isso a conferencia e o
+--      UPDATE refeito vem ANTES do deploy do worker (DEPLOYMENT.md 8.2, passo 10), e nenhuma
+--      planilha entra ate a F3;
 --   2. worker de D-351 servindo trafego;
 --   3. `v3-reconcile-balances` AINDA pausado -- a organizacao com AJUSTE_RECONCILIACAO
 --      nao e compensada (abaixo).
@@ -85,26 +87,33 @@
 -- "compensacao F3", contra Postgres real -- compensa so o que deve, espelha a data, repoe
 -- a venda nunca gravada (PRODUTO e KIT) so com a transicao observada depois do corte, o
 -- alvo fecha em snapshot + legitimos + reposicoes, a segunda execucao grava 0, a
--- organizacao reconciliada nao e tocada, e o corte do parse aborta.
+-- organizacao reconciliada nao e tocada, e o corte do parse aborta -- tambem na organizacao
+-- que a planilha nova tornou inelegivel, que com o UPDATE refeito vira no-op com NOTICE.
 
 create or replace temp view d351_organizacoes as
 select g.organization_id,
        g.captured_at as corte_da_organizacao,
-       not exists (
-         select 1
-         from public.stock_movements a
-         where a.organization_id = g.organization_id
-           and a.movement_type = 'AJUSTE_RECONCILIACAO'
-       )
+       a.sem_ajuste
        and coalesce(
          (select min(m.created_at) from public.stock_movements m where m.organization_id = g.organization_id),
          'infinity'::timestamptz
-       ) > g.captured_at - interval '1 hour' as elegivel
+       ) > g.captured_at - interval '1 hour' as elegivel,
+       -- Sem AJUSTE_RECONCILIACAO, elegivel ou nao: e onde o UPDATE de 20260915140000 corrige o
+       -- corte, e onde a conferencia do corte do parse olha (reverificacao de 60c7a6a, BAIXA-1).
+       a.sem_ajuste
 from (
   select s.organization_id, max(s.captured_at) as captured_at
   from public.erp_stock_snapshots s
   group by s.organization_id
 ) g
+cross join lateral (
+  select not exists (
+    select 1
+    from public.stock_movements r
+    where r.organization_id = g.organization_id
+      and r.movement_type = 'AJUSTE_RECONCILIACAO'
+  ) as sem_ajuste
+) a
 where nullif(current_setting('sb.compensacao_organizacao', true), '') is null
    or g.organization_id::text = current_setting('sb.compensacao_organizacao', true);
 
@@ -234,13 +243,17 @@ declare
   v_divergencias integer;
   r record;
 begin
-  -- PRE-REQUISITO 1, conferido: o corte ja e a exportacao nas organizacoes elegiveis. So
-  -- nelas: a organizacao reconciliada fica com o corte do parse DE PROPOSITO (o UPDATE de
-  -- 20260915140000 nao a toca, verificacao de e6fda07) e nao e compensada aqui.
+  -- PRE-REQUISITO 1, conferido: o corte ja e a exportacao em TODA organizacao sem
+  -- AJUSTE_RECONCILIACAO -- as mesmas que o UPDATE de 20260915140000 corrige. A reconciliada
+  -- fica com o corte do parse DE PROPOSITO (verificacao de e6fda07) e nao e compensada aqui.
+  -- Nao so nas elegiveis (reverificacao de 60c7a6a, BAIXA-1): a planilha importada pelo worker
+  -- antigo entre a migration e o deploy leva o corte da organizacao para o parse dela, e a de
+  -- producao deixa de ser elegivel -- olhando so as elegiveis, a F3 pularia em silencio, em vez
+  -- de parar.
   select count(*) into v_corte_do_parse
   from public.erp_stock_snapshots s
   join public.erp_import_batches b on b.id = s.batch_id
-  join d351_organizacoes g on g.organization_id = s.organization_id and g.elegivel
+  join d351_organizacoes g on g.organization_id = s.organization_id and g.sem_ajuste
   where b.kind = 'STOCK'
     and b.parsed_at is not null
     and s.captured_at = b.parsed_at
