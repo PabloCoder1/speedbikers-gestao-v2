@@ -48,7 +48,7 @@ export function AcessoDoMembro({
   if (ehVoceMesmo) {
     return (
       <div className="sb-drawer-card sb-zona-acesso">
-        <h4>Acesso</h4>
+        <h4>Suspender ou remover</h4>
         <p className="sb-zona-acesso-texto">
           Esta é a sua conta. Suspender ou remover o próprio acesso não é possível por aqui — peça a outro
           ADMIN.
@@ -97,7 +97,7 @@ export function AcessoDoMembro({
 
   return (
     <div className="sb-drawer-card sb-zona-acesso">
-      <h4>Acesso</h4>
+      <h4>Suspender ou remover</h4>
 
       {confirmando === null && (
         <>

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
 import { CampoFoto } from "../../components/campo-foto";
+import { Icone } from "../../components/icons";
 import { explicar404 } from "../../lib/api-desatualizada";
 import { salvarFoto } from "../../lib/foto-perfil";
 import { createClient } from "../../lib/supabase/browser";
@@ -189,6 +190,7 @@ export function ConvidarUsuario({ accounts }: { accounts: AccountOption[] }): Re
           setEstado({ kind: "aberto" });
         }}
       >
+        <Icone nome="mais" tamanho={14} />
         Convidar usuário
       </button>
 

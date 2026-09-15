@@ -10,7 +10,8 @@ import { CopilotContextProvider } from "./copilot-context";
 import { CopilotLauncher } from "./copilot-launcher";
 import { MeuPerfil } from "./meu-perfil";
 import { NotificationToasts } from "./notification-toasts";
-import { SidebarNav } from "./nav";
+import { Marca } from "./marca";
+import { SidebarNav, SidebarRodapeLink } from "./nav";
 import { currentMembership } from "../lib/request-membership";
 
 /**
@@ -143,19 +144,17 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
     <CopilotContextProvider>
     <div className="sb-shell">
       <aside className="sb-sidebar">
-        <Link href="/" className="sb-brand">
-          <span aria-hidden="true" className="sb-brand-symbol">
-            {iniciais(orgName)}
-          </span>
-          <span style={{ minWidth: 0 }}>
-            <b>{orgName}</b>
-            <small>GESTÃO V3</small>
-          </span>
-        </Link>
+        {/*
+          A LOGO DA SPEED BIKERS (D-355) no lugar das iniciais da organização.
+          O nome da organização continua dito — no rodapé, no bloco da conta,
+          que é onde ele é dado e não marca.
+        */}
+        <Marca />
 
         <SidebarNav contagens={{ "/atendimento": atendimentosAbertos }} papel={role} />
 
         <div className="sb-sidebar-bottom">
+          <SidebarRodapeLink href="/sugestoes" label="Sugestões de melhoria" icone="lampada" />
           <Link href="/contas" className="sb-account">
             <span aria-hidden="true" className="sb-account-mark">
               {iniciais(orgName)}

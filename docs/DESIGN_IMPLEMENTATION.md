@@ -1574,6 +1574,29 @@ Não renderizado com dados nesta fatia: o Supabase local estava em uso pela
 sessão da D-351, e a tela exige login. Typecheck, lint, guardas e testes
 unitários conferidos.
 
+### Sidebar com a marca e /usuarios de uma passada (2026-09-15, D-355)
+
+Pedido do usuário: /usuarios "mais bonita", a sidebar "não está tão legal",
+categorias ordenadas melhor, liberdade para usar a logo.
+
+- **Marca:** a logo da Speed Bikers (recortada e reduzida com `sharp`,
+  `public/brand/`, 2 a 21 KB) no bloco do topo, com o selo "GESTÃO" em mono; o
+  emblema no trilho de 850px; `app/icon.png` na aba. O `proxy.ts` passou a
+  deixar `brand/` e `icon.png` de fora — sem isso a imagem voltava 307 para
+  `/login`.
+- **Sidebar:** a pele escura que o export declara e nunca renderizou (degradê
+  `#0F1640 → #0E1259 → #161b68`, ativo amarelo com sombra), ícones SVG de
+  traço fino no lugar dos glifos Unicode, grupos por assunto (Visão geral,
+  Vendas, Estoque, Compras, Catálogo, Atendimento, Administração), Sugestões no
+  rodapé, recolhimento lembrado no navegador e foco visível em amarelo.
+- **/usuarios:** linha inteira clicável, avatar de 34px, contas em etiquetas
+  (duas e "+N"), estado com ponto, último acesso relativo com a data no
+  `title`, filtro de status em pílulas com contagem (substitui o menu "Status"
+  e a célula "Suspensos" da faixa), busca com lupa e botão com ícone.
+
+Renderizado a 1568px numa rota temporária sem login, com os componentes reais e
+dados de exemplo (removida). O trilho de 850px não foi renderizado.
+
 ## Próxima fatia segura
 
 **A COMPOSIÇÃO DO FIGMA FECHOU.** D0→D25, D27→D36, o passe D37a/b/c e **as

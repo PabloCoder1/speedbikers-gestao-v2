@@ -1,29 +1,23 @@
 import type { ReactNode } from "react";
 
-import { Avatar } from "../../components/avatar";
-import { FilterMenu } from "../../components/filter-menu";
+import { Icone } from "../../components/icons";
 import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
 import { PageTitle } from "../../components/page-title";
-import { TOM } from "../../components/tone";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
 import { formatCount, formatDateTime } from "../../lib/format";
 import { roleLabel } from "../../lib/labels";
 import {
-  MEMBER_STATUSES,
-  buildMemberHref,
   matchesMemberFilters,
-  memberStatusLabel,
-  memberStatusTone,
   resolveMemberFilters,
   summarizeMemberWindow,
   type MemberStatus,
 } from "../../lib/member-filters";
-import { tomDePapel } from "../../lib/role-tone";
 import { createClient } from "../../lib/supabase/server";
 import { currentMembership } from "../../lib/request-membership";
-import { DetalheUsuario } from "./detalhe-usuario";
+import { tempoRelativo } from "../../lib/tempo-relativo";
 import { ConvidarUsuario } from "./convidar";
+import { FiltroDeStatus, TabelaDeUsuarios, type LinhaDeUsuario } from "./tabela-usuarios";
 
 export const metadata = { title: "Usuários — Speed Bikers Gestão" };
 
@@ -31,27 +25,23 @@ export const dynamic = "force-dynamic";
 
 /**
  * Administração de Usuários e Permissões (D-175, trilha 8A; refeita contra o
- * frame em D-297; nome, foto, suspender e remover em D-354).
+ * frame em D-297; nome, foto, suspender e remover em D-354; composição em D-355).
  *
  * A autorização vive inteira no banco, e isso é de propósito — o item da
  * trilha nomeia "segurança apenas visual" como risco:
  *
  * - quem pode escrever: as policies `*_admin_writes` e, para nome e foto,
  *   `profiles_update_self_or_org_admin` (D-354);
- * - o que não pode acontecer nunca: o trigger `guard_last_admin`, que impede
- *   a organização de ficar sem ADMIN por qualquer caminho de escrita;
+ * - o que não pode acontecer nunca: o trigger `guard_last_admin`;
  * - o que aconteceu: `organization_access_events`, append-only.
  *
  * Esconder os controles de quem não é ADMIN é conveniência. Se alguém chamar
  * a Server Action direto, a policy recusa igual.
  *
- * ## A TABELA CONTINUA SENDO TABELA (D-297)
- *
- * Cinco colunas, as do frame: Usuário / E-mail, Papel, Contas ML permitidas,
- * Status, Último acesso. Nenhum controle dentro de célula — papel, alcance,
- * nome, foto, suspender e remover moram na GAVETA, que é onde se olha uma
- * pessoa por vez. D-354 acrescentou à linha só o que é LEITURA: o avatar e o
- * estado "Suspenso".
+ * **Esta página LÊ e DECIDE; `tabela-usuarios.tsx` DESENHA.** Cada valor que
+ * aparece — estado, alcance, tempo relativo, quem é o último ADMIN — é
+ * resolvido aqui, uma vez, e a tabela e a gaveta recebem o mesmo objeto: as
+ * duas não podem discordar sobre uma pessoa.
  */
 
 interface MemberRow {
@@ -134,8 +124,7 @@ export default async function UsuariosPage({
     /*
       OS CAMPOS QUE VIVEM EM `auth.users` (D-296, D-354): e-mail, último acesso,
       se o convite já foi aceito e se o acesso está suspenso. A janela é
-      `get_organization_members`, `security definer` com autorização ADMIN
-      DAQUELA organização refeita dentro; para os demais, zero linhas.
+      `get_organization_members`, com autorização ADMIN refeita dentro.
     */
     isAdmin
       ? supabase.rpc("get_organization_members", { p_organization_id: organizationId })
@@ -153,6 +142,7 @@ export default async function UsuariosPage({
   const permissions = permissionsResult.data ?? [];
   const events = eventsResult.data ?? [];
   const meuId = sessao.data.session?.user.id ?? null;
+  const agora = new Date();
 
   const detalhePorUsuario = new Map(
     (detalheResult.data ?? []).map((linha) => [
@@ -165,14 +155,6 @@ export default async function UsuariosPage({
       },
     ]),
   );
-
-  /*
-    Convidados que ainda não entraram — o cartão que o frame desenha. Suspenso
-    não conta como pendente mesmo sem nunca ter entrado: o que falta para ele
-    não é aceitar o convite, é ser reativado.
-  */
-  const pendentes = (detalheResult.data ?? []).filter((linha) => !linha.invite_accepted && !linha.suspended).length;
-  const suspensos = (detalheResult.data ?? []).filter((linha) => linha.suspended).length;
 
   /*
     O nome que o histórico usa. Sem nome no perfil, o e-mail; sem e-mail (quem
@@ -190,21 +172,16 @@ export default async function UsuariosPage({
 
   /*
     Os CINCO papéis do `check` de `organization_members`, na ordem de alcance.
-    Contados sobre a lista inteira — ela não pagina, e a RLS já a restringe à
-    organização, então `members.length` É o total.
+    A lista não pagina, e a RLS a restringe à organização: `members.length` É o total.
   */
   const PAPEIS = ["ADMIN", "GESTOR", "ANALISTA", "OPERADOR", "VISUALIZADOR"] as const;
 
-  /*
-    Quantos ADMIN existem — o MESMO número que o trigger `guard_last_admin`
-    consulta. A tela não protege nada; ela conta o que o banco conta, e diz.
-  */
+  /* Quantos ADMIN existem — o MESMO número que o trigger `guard_last_admin` consulta. */
   const admins = members.filter((m) => m.role === "ADMIN").length;
 
-  const linhas = members.map((member) => {
+  const linhas: LinhaDeUsuario[] = members.map((member) => {
     const detalhe = detalhePorUsuario.get(member.user_id);
     const granted = permissions.filter((p) => p.user_id === member.user_id).map((p) => p.ml_account_id);
-    const todasPorAdmin = member.role === "ADMIN";
 
     /*
       Sem a janela (quem não é ADMIN), `detalhe` é `undefined` e o estado cai em
@@ -214,16 +191,37 @@ export default async function UsuariosPage({
     const status: MemberStatus =
       detalhe === undefined ? "ativo" : detalhe.suspenso ? "suspenso" : detalhe.aceitou ? "ativo" : "pendente";
 
+    const ultimoAcesso = detalhe?.ultimoAcesso ?? null;
+
     return {
-      member,
-      granted,
-      todasPorAdmin,
-      contas: granted.map((id) => contaPorId.get(id) ?? id),
+      userId: member.user_id,
+      organizationId: member.organization_id,
+      role: member.role,
+      roleLabel: roleLabel(member.role),
       nome: member.profiles?.full_name ?? null,
       foto: member.profiles?.avatar_path ?? null,
       email: detalhe?.email ?? null,
-      ultimoAcesso: detalhe?.ultimoAcesso ?? null,
       status,
+      contas: granted.map((id) => contaPorId.get(id) ?? id),
+      granted,
+      todasPorAdmin: member.role === "ADMIN",
+      desde: formatDateTime(member.created_at),
+      ultimoAcesso: formatDateTime(ultimoAcesso),
+      ultimoAcessoRelativo: tempoRelativo(ultimoAcesso, agora),
+      ehUltimoAdmin: member.role === "ADMIN" && admins === 1,
+      ehVoceMesmo: member.user_id === meuId,
+      historico: events
+        .filter((evento) => evento.target_user_id === member.user_id)
+        .map((evento) => ({
+          id: evento.id,
+          quando: formatDateTime(evento.occurred_at),
+          oQue: eventoLabel(evento),
+          quemMudou:
+            evento.actor_user_id === null
+              ? "sistema"
+              : (nomePorUsuario.get(evento.actor_user_id) ?? evento.actor_user_id),
+          conta: evento.ml_account_id === null ? null : (contaPorId.get(evento.ml_account_id) ?? evento.ml_account_id),
+        })),
     };
   });
 
@@ -232,6 +230,11 @@ export default async function UsuariosPage({
   );
 
   const janela = summarizeMemberWindow(linhas.length, visiveis.length, filters);
+
+  /* Contagem por estado sobre a organização inteira — é o que as pílulas dizem. */
+  const porStatus: Record<MemberStatus, number> = { ativo: 0, pendente: 0, suspenso: 0 };
+
+  for (const linha of linhas) porStatus[linha.status] += 1;
 
   const celulas: KpiCellData[] = [
     {
@@ -242,9 +245,8 @@ export default async function UsuariosPage({
       tom: "neutro",
     },
     /*
-      "CONVITES PENDENTES" DO FRAME (D-296), só para ADMIN — o número vem da
-      janela, que não responde a mais ninguém. Com convite aberto o cartão pede
-      atenção; sem nenhum, volta ao neutro.
+      "CONVITES PENDENTES" DO FRAME (D-296), só para ADMIN. Com convite aberto o
+      cartão pede atenção; sem nenhum, volta ao neutro.
     */
     ...(isAdmin
       ? [
@@ -252,29 +254,10 @@ export default async function UsuariosPage({
             label: "Convites pendentes",
             formula:
               "Pessoas com vínculo criado que ainda não entraram nenhuma vez (`auth.users.last_sign_in_at` nulo) e não estão suspensas.",
-            value: formatCount(pendentes),
+            value: formatCount(porStatus.pendente),
             previous: null,
-            tom: pendentes > 0 ? ("atencao" as const) : ("neutro" as const),
-            ...(pendentes > 0 ? { destaque: "atencao" as const } : {}),
-          } satisfies KpiCellData,
-        ]
-      : []),
-    /*
-      SUSPENSOS (D-354) só aparece quando HÁ alguém suspenso. Não é zero
-      escondido: a faixa já tem sete células, e uma oitava sempre em zero
-      apertaria as outras para responder uma pergunta que a coluna Status e o
-      filtro já respondem. Quando existe, ela pede atenção — há gente que não
-      consegue entrar.
-    */
-    ...(isAdmin && suspensos > 0
-      ? [
-          {
-            label: "Suspensos",
-            formula: "Pessoas com acesso suspenso no Auth (`auth.users.banned_until` no futuro).",
-            value: formatCount(suspensos),
-            previous: null,
-            tom: "atencao" as const,
-            destaque: "atencao" as const,
+            tom: porStatus.pendente > 0 ? ("atencao" as const) : ("neutro" as const),
+            ...(porStatus.pendente > 0 ? { destaque: "atencao" as const } : {}),
           } satisfies KpiCellData,
         ]
       : []),
@@ -284,8 +267,7 @@ export default async function UsuariosPage({
         formula: `Membros com papel ${papel}.`,
         value: formatCount(members.filter((m) => m.role === papel).length),
         previous: null,
-        // ADMIN é o papel que muda permissão dos outros; os demais são
-        // neutros. Nenhum é "bom" ou "ruim" — só um tem alcance diferente.
+        // ADMIN é o papel que muda permissão dos outros; os demais são neutros.
         tom: papel === "ADMIN" ? "atencao" : "neutro",
       }),
     ),
@@ -298,19 +280,16 @@ export default async function UsuariosPage({
         eyebrow="ADMINISTRAÇÃO / USUÁRIOS E ACESSOS"
         title="Usuários"
         subtitle={
-          <>
-            Pessoas, papéis e alcance de cada permissão.{" "}
-            {isAdmin
-              ? "Como ADMIN, você edita nome, foto, papel e acesso na gaveta de cada pessoa — e pode suspender ou remover. O banco impede que a organização fique sem nenhum ADMIN."
-              : "Só um ADMIN altera papéis e acessos; esta tela é somente leitura para você."}
-          </>
+          isAdmin
+            ? "Pessoas, papéis e alcance de cada permissão. Clique numa pessoa para editar nome, foto, papel e acesso."
+            : "Pessoas, papéis e alcance de cada permissão. Só um ADMIN altera papéis e acessos; esta tela é somente leitura para você."
         }
       />
 
       {/*
-        As células: Membros, Convites pendentes (ADMIN), Suspensos (ADMIN, só
-        quando há) e os CINCO papéis do `check` — o frame dá cartão a três, e
-        com três os cartões deixariam de fechar com o total (D-265).
+        A faixa: Membros, Convites pendentes (ADMIN) e os CINCO papéis do
+        `check`. "Suspensos" saiu daqui para a pílula do filtro (D-355): lá ela
+        está sempre, com o número, e filtra com um clique.
       */}
       <KpiStrip cells={celulas} />
 
@@ -323,160 +302,41 @@ export default async function UsuariosPage({
       <div style={{ marginTop: "var(--sb-space-3)" }}>
         <Panel
           title="Gerenciar acessos"
-          /*
-            A janela só entra no subtítulo quando HÁ linhas: na tela vazia ela
-            já aparece no lugar da tabela, e a mesma frase repetida lê-se como
-            defeito.
-          */
-          subtitle={
-            visiveis.length === 0
-              ? "O papel decide o que a pessoa PODE fazer; as contas decidem sobre o que ela faz."
-              : `O papel decide o que a pessoa PODE fazer; as contas decidem sobre o que ela faz. ${janela}`
-          }
+          subtitle={`O papel decide o que a pessoa PODE fazer; as contas decidem sobre o que ela faz. ${janela}`}
           aside={
-            <>
-              {/*
-                A busca do frame, como GET nativo: o recorte fica na URL. O
-                `hidden` do estado é obrigatório — um form GET só envia os
-                campos que tem, e buscar limparia o filtro de Status.
-              */}
-              <form method="get" style={{ display: "flex", gap: "0.375rem", alignItems: "center" }}>
-                {filters.status !== null && <input type="hidden" name="estado" value={filters.status} />}
-                <input
-                  className="sb-input"
-                  type="search"
-                  name="busca"
-                  defaultValue={filters.search ?? ""}
-                  placeholder={isAdmin ? "Buscar usuário ou e-mail…" : "Buscar usuário…"}
-                  aria-label={isAdmin ? "Buscar por nome ou e-mail" : "Buscar por nome"}
-                  style={{ minWidth: "12rem" }}
-                />
-              </form>
-
-              {/* O "Status ⌄" do frame — só para ADMIN, porque o estado vem da janela. */}
-              {isAdmin && (
-                <FilterMenu
-                  rotulo={filters.status === null ? "Status" : memberStatusLabel(filters.status)}
-                  opcoes={[
-                    {
-                      href: buildMemberHref(filters, { status: null }),
-                      label: "Todos os status",
-                      ativo: filters.status === null,
-                    },
-                    ...MEMBER_STATUSES.map((estado) => ({
-                      href: buildMemberHref(filters, { status: estado }),
-                      label: memberStatusLabel(estado),
-                      ativo: filters.status === estado,
-                    })),
-                  ]}
-                />
-              )}
-            </>
+            /*
+              A busca, como GET nativo: o recorte fica na URL. O `hidden` do
+              estado é obrigatório — um form GET só envia os campos que tem, e
+              buscar limparia o filtro de status.
+            */
+            <form method="get" className="sb-busca-usuarios">
+              {filters.status !== null && <input type="hidden" name="estado" value={filters.status} />}
+              <Icone nome="lupa" tamanho={14} />
+              <input
+                className="sb-input"
+                type="search"
+                name="busca"
+                defaultValue={filters.search ?? ""}
+                placeholder={isAdmin ? "Buscar usuário ou e-mail…" : "Buscar usuário…"}
+                aria-label={isAdmin ? "Buscar por nome ou e-mail" : "Buscar por nome"}
+              />
+            </form>
           }
         >
-          {visiveis.length === 0 ? (
-            <p className="sb-empty">{janela}</p>
-          ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table className="sb-table">
-                <thead>
-                  <tr>
-                    <th>Usuário / E-mail</th>
-                    <th>Papel</th>
-                    <th>Contas ML permitidas</th>
-                    {/* Só para ADMIN: coluna vazia prometeria um dado que o usuário não vê. */}
-                    {isAdmin && <th>Status</th>}
-                    {isAdmin && <th className="sb-num">Último acesso</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {visiveis.map((linha) => (
-                    <tr
-                      key={linha.member.user_id}
-                      className={linha.status === "suspenso" ? "sb-linha-suspensa" : undefined}
-                    >
-                      <td>
-                        <div className="sb-usuario-celula">
-                          {/*
-                            O AVATAR (D-354): foto quando há, iniciais quando
-                            não. `aria-hidden` — o nome acessível da célula
-                            continua sendo nome + e-mail, que é o que
-                            `usuarios.spec.ts` afirma desde D-234.
-                          */}
-                          <Avatar nome={linha.nome ?? linha.email ?? "?"} fotoPath={linha.foto} tamanho="sm" />
-                          <div className="sb-usuario-celula-texto">
-                            {/* O NOME É O GATILHO da gaveta, como a linha clicável do frame. */}
-                            <DetalheUsuario
-                              accounts={accounts}
-                              contas={linha.contas}
-                              desde={formatDateTime(linha.member.created_at)}
-                              editavel={isAdmin}
-                              ehUltimoAdmin={linha.member.role === "ADMIN" && admins === 1}
-                              ehVoceMesmo={linha.member.user_id === meuId}
-                              email={linha.email}
-                              fotoPath={linha.foto}
-                              granted={linha.granted}
-                              historicoVisivel={isAdmin}
-                              nome={linha.nome}
-                              organizationId={linha.member.organization_id}
-                              role={linha.member.role}
-                              roleLabel={roleLabel(linha.member.role)}
-                              status={linha.status}
-                              todasPorAdmin={linha.todasPorAdmin}
-                              ultimoAcesso={formatDateTime(linha.ultimoAcesso)}
-                              userId={linha.member.user_id}
-                              historico={events
-                                .filter((evento) => evento.target_user_id === linha.member.user_id)
-                                .map((evento) => ({
-                                  id: evento.id,
-                                  quando: formatDateTime(evento.occurred_at),
-                                  oQue: eventoLabel(evento),
-                                  quemMudou:
-                                    evento.actor_user_id === null
-                                      ? "sistema"
-                                      : (nomePorUsuario.get(evento.actor_user_id) ?? evento.actor_user_id),
-                                  conta:
-                                    evento.ml_account_id === null
-                                      ? null
-                                      : (contaPorId.get(evento.ml_account_id) ?? evento.ml_account_id),
-                                }))}
-                            />
-
-                            {linha.email !== null && <div className="sb-usuario-celula-email">{linha.email}</div>}
-                          </div>
-                        </div>
-                      </td>
-                      <td>
-                        {/* SELO, não `<select>` (D-297). O menu de papel mora na gaveta. */}
-                        <span className="sb-status" style={TOM[tomDePapel(linha.member.role)]}>
-                          {roleLabel(linha.member.role)}
-                        </span>
-                      </td>
-                      <td style={{ color: "var(--sb-text-soft)" }}>
-                        {linha.todasPorAdmin
-                          ? "Todas as contas"
-                          : linha.contas.length === 0
-                            ? "Nenhuma conta associada"
-                            : linha.contas.join(" · ")}
-                      </td>
-                      {isAdmin && (
-                        <td>
-                          <span className="sb-status" style={TOM[memberStatusTone(linha.status)]}>
-                            {memberStatusLabel(linha.status)}
-                          </span>
-                        </td>
-                      )}
-                      {isAdmin && (
-                        /* Nunca entrou é "—", não uma data inventada. */
-                        <td className="sb-num" style={{ whiteSpace: "nowrap" }}>
-                          {formatDateTime(linha.ultimoAcesso)}
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {/* O estado vem da janela: sem ela (quem não é ADMIN), não há o que filtrar. */}
+          {isAdmin && (
+            <div className="sb-usuarios-barra">
+              <FiltroDeStatus filters={filters} contagens={porStatus} total={linhas.length} />
             </div>
+          )}
+
+          {visiveis.length === 0 ? (
+            <div className="sb-usuarios-vazio">
+              <Icone nome="pessoas" tamanho={28} />
+              <p>{janela}</p>
+            </div>
+          ) : (
+            <TabelaDeUsuarios linhas={visiveis} isAdmin={isAdmin} accounts={accounts} />
           )}
         </Panel>
       </div>
@@ -487,13 +347,9 @@ export default async function UsuariosPage({
             title="Histórico de acesso"
             subtitle="Gravado pelo próprio banco, append-only: nem esta tela nem a API conseguem editar ou apagar uma linha. O registro começa em 01/09/2026 — mudanças anteriores não existem aqui, e evento sintético seria dado inventado. Mostra as 50 mudanças mais recentes."
           >
-            {events.length === 0 && (
-              <p style={{ color: "var(--sb-text-soft)", fontSize: "0.8125rem" }}>
-                Nenhuma mudança de acesso registrada ainda.
-              </p>
-            )}
-
-            {events.length > 0 && (
+            {events.length === 0 ? (
+              <p className="sb-empty">Nenhuma mudança de acesso registrada ainda.</p>
+            ) : (
               <div style={{ overflowX: "auto" }}>
                 <table className="sb-table">
                   <thead>
@@ -508,18 +364,20 @@ export default async function UsuariosPage({
                   <tbody>
                     {events.map((event) => (
                       <tr key={event.id}>
-                        <td style={{ whiteSpace: "nowrap" }}>{formatDateTime(event.occurred_at)}</td>
+                        <td style={{ whiteSpace: "nowrap" }} title={formatDateTime(event.occurred_at)}>
+                          {tempoRelativo(event.occurred_at, agora) ?? formatDateTime(event.occurred_at)}
+                        </td>
                         <td>
                           {event.actor_user_id === null ? (
                             // Sem humano identificado: seed, importação ou migration.
-                            <span style={{ color: "var(--sb-text-soft)" }}>sistema</span>
+                            <span className="sb-texto-suave">sistema</span>
                           ) : (
                             (nomePorUsuario.get(event.actor_user_id) ?? event.actor_user_id)
                           )}
                         </td>
                         <td>{nomePorUsuario.get(event.target_user_id) ?? event.target_user_id}</td>
                         <td>{eventoLabel(event)}</td>
-                        <td style={{ color: "var(--sb-text-soft)" }}>
+                        <td className="sb-texto-suave">
                           {event.ml_account_id === null
                             ? "—"
                             : (contaPorId.get(event.ml_account_id) ?? event.ml_account_id)}
