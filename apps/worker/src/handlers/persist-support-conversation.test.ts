@@ -151,6 +151,20 @@ function fakeDb(options: { orders?: Row[]; ordersError?: { message: string } } =
             return listChain(orders, options.ordersError ?? null);
           }
 
+          if (table === "support_case_links") {
+            const filters: Row = {};
+            const chain = {
+              eq(column: string, value: unknown) {
+                filters[column] = value;
+                return chain;
+              },
+              maybeSingle: () =>
+                Promise.resolve({ data: links.find((row) => matches(row, filters)) ?? null, error: null }),
+            };
+
+            return chain;
+          }
+
           throw new Error(`select inesperado em ${table}`);
         },
         upsert: (input: Row | Row[], upsertOptions?: { ignoreDuplicates?: boolean }) => {
@@ -309,6 +323,21 @@ describe("persistSupportConversation", () => {
 
     expect(fake.cases.size).toBe(1);
     expect(fake.messages.size).toBe(1);
+  });
+
+  it("reprocessar a conversa não regrava os vínculos dos pedidos (D-353)", async () => {
+    const fake = fakeDb({
+      orders: [
+        { id: 1, organization_id: CONTEXT.organizationId, ml_account_id: CONTEXT.mlAccountId, pack_id: 2000000089077943 },
+        { id: 2, organization_id: CONTEXT.organizationId, ml_account_id: CONTEXT.mlAccountId, pack_id: 2000000089077943 },
+      ],
+    });
+
+    await persistSupportConversation(fake.db, CONTEXT, projection(PACK_REFERENCE));
+    await persistSupportConversation(fake.db, CONTEXT, projection(PACK_REFERENCE));
+
+    // Sem índice único no fake, um INSERT cego a mais viraria linha duplicada.
+    expect(fake.links).toHaveLength(2);
   });
 
   it("liga a conversa a TODOS os pedidos do pack, não só ao primeiro", async () => {

@@ -4,6 +4,7 @@ import type { SupportConversationProjection } from "@sb/mercado-livre";
 
 import { applyRemoteTransition } from "./persist-support-question.js";
 import type { PersistSupportQuestionContext } from "./persist-support-question.js";
+import { ensureSupportLink } from "./support-case-links.js";
 
 export interface PersistSupportConversationContext {
   organizationId: string;
@@ -23,17 +24,6 @@ export interface PersistSupportConversationResult {
 
 function persistenceError(operation: string, error: { message: string }): Error {
   return new Error(`falha ao ${operation}: ${error.message}`);
-}
-
-async function insertSupportLink(
-  db: AdminClient,
-  row: TablesInsert<"support_case_links">,
-): Promise<void> {
-  const result = await db.from("support_case_links").insert(row);
-
-  if (result.error !== null && result.error.code !== "23505") {
-    throw persistenceError("gravar vínculo do atendimento", result.error);
-  }
 }
 
 /**
@@ -182,7 +172,7 @@ export async function persistSupportConversation(
   if (orders.data.length === 0) {
     // A conversa pode chegar antes de o pedido ter sido sincronizado. O
     // fallback externo mantém o case rastreável até o pedido existir.
-    await insertSupportLink(db, {
+    await ensureSupportLink(db, {
       organization_id: context.organizationId,
       ml_account_id: context.mlAccountId,
       support_case_id: supportCaseId,
@@ -195,7 +185,7 @@ export async function persistSupportConversation(
   }
 
   for (const order of orders.data) {
-    await insertSupportLink(db, {
+    await ensureSupportLink(db, {
       organization_id: context.organizationId,
       ml_account_id: context.mlAccountId,
       support_case_id: supportCaseId,

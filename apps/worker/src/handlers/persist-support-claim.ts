@@ -7,6 +7,7 @@ import type {
   SupportClaimProjection,
 } from "./claim-support-projection.js";
 import { applyRemoteTransition } from "./persist-support-question.js";
+import { ensureSupportLink } from "./support-case-links.js";
 
 /**
  * Persiste a projeção de um claim como `support_cases` canal `CLAIM` (D-104).
@@ -40,15 +41,6 @@ function persistenceError(operation: string, error: { message: string }): Error 
   return new Error(`falha ao ${operation}: ${error.message}`);
 }
 
-async function insertSupportLink(db: AdminClient, row: TablesInsert<"support_case_links">): Promise<void> {
-  const result = await db.from("support_case_links").insert(row);
-
-  // 23505 = a mesma ligação já existe. Reprocessar a notificação é normal.
-  if (result.error !== null && result.error.code !== "23505") {
-    throw persistenceError("gravar vínculo do atendimento", result.error);
-  }
-}
-
 /**
  * `support_case_links.order_id` tem FK real para `orders`. Um claim pode
  * chegar antes do pedido estar sincronizado (ou de um pedido fora da janela
@@ -74,7 +66,7 @@ async function linkOrder(
   }
 
   if (order.data === null) {
-    await insertSupportLink(db, {
+    await ensureSupportLink(db, {
       organization_id: context.organizationId,
       ml_account_id: context.mlAccountId,
       support_case_id: supportCaseId,
@@ -86,7 +78,7 @@ async function linkOrder(
     return "EXTERNAL";
   }
 
-  await insertSupportLink(db, {
+  await ensureSupportLink(db, {
     organization_id: context.organizationId,
     ml_account_id: context.mlAccountId,
     support_case_id: supportCaseId,
@@ -114,7 +106,7 @@ async function linkOrder(
     const skuIds = [...new Set(items.data.map((item) => item.sku_id))];
 
     for (const skuId of skuIds) {
-      await insertSupportLink(db, {
+      await ensureSupportLink(db, {
         organization_id: context.organizationId,
         ml_account_id: context.mlAccountId,
         support_case_id: supportCaseId,

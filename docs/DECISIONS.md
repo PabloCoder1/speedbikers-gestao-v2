@@ -11900,3 +11900,51 @@ O backfill gerou 32.281 `order.cancelled` (severidade `importante`), e cada um v
 Depois do merge do PR #2 (`da130c0`, CI de push verde), o Dev foi publicado a partir de uma copia limpa da `v3`, num worktree fora da pasta compartilhada, com `AMBIENTE=dev` -- que so aceita `speedbikers-gestao-v3` e o Supabase do Dev, e passa `--project` em todo comando pela funcao `gc`, o que importa com o padrao do `gcloud` apontando para producao. Worker `worker-00052-jpk` e api `api-00041-lzn` em `da130c0`, 100% do trafego, `/health` em `da130c0`, e `DOCUMENTS_BUCKET` nos dois servicos: a NF-e do Dev, desligada desde sempre (D-349), passou a estar ligada. O agendador e as filas do Dev continuam pausados.
 
 **Impacto:** Cloud Scheduler e Cloud Tasks do Dev (pausados), `v3-reconcile-balances` de producao (pausado), disparos manuais em producao; `docs/{DECISIONS,DECISIONS_INDEX,DEPLOYMENT,HANDOFF,ROADMAP}.md` e `docs/archive/handoffs/2026-09-14_a_2026-09-14.md`. Sem migration e sem codigo.
+
+## D-353 - O Postgres de producao com 4.091 erros em 24h -- 98% era o worker contando com o 23505, e o resto o Realtime assinando antes do token
+
+**Contexto:** em 2026-09-15 o dono mostrou o painel de logs do Postgres de producao (`imvjfgnaprqsfjlnsyev`): 5.982 linhas em 24h, 4.091 `ERROR`, e perguntou se era normal e de quem era. Nao era falha de dado. Mas era ruido que esconderia qualquer erro real, e dois defeitos pequenos de codigo por tras.
+
+---
+
+**1. O QUE ERA** (janela 2026-09-14 11:40 a 2026-09-15 11:40 UTC, `postgres_logs`)
+
+| Erro | Quantos | Origem |
+|---|---|---|
+| 23505 `support_case_links_order_unique` | 1.631 | worker, pelo PostgREST (`authenticator`) |
+| 23505 `support_case_links_external_unique` | 1.533 | idem |
+| 23505 `support_case_links_listing_unique` | 543 | idem |
+| 23505 `support_case_links_sku_unique` | 294 | idem |
+| P0001 `invalid column for filter user_id` | 69 | Realtime (`realtime_subscription_manager_pub`) |
+| avulsos: subida da instancia, antes das migrations, SQL manual da auditoria | ~16 | -- |
+
+Nenhum vinculo errado ou faltando: 596 vivos. O Dev tinha o mesmo padrao, herdado.
+
+---
+
+**2. O 23505 REPETIDO**
+
+As tres ingestoes de atendimento (Pergunta, Conversa, Claim) re-persistem o case inteiro a cada varredura -- Perguntas e Mensagens de 10 em 10 minutos (D-092), Claims de hora em hora (D-108) -- e gravavam cada vinculo com um INSERT cego, tratando o 23505 como "ja existe". O dado ficava certo; o custo era um `ERROR` no log e uma tupla morta por repeticao (`support_case_links`: 4.979 INSERTs para 596 linhas). O ritmo segue as conversas nao lidas: o externo parou em 126/h a partir de 01:00 UTC (21 vinculos x 6 passadas), e o total foi de ~150/h para ~270/h.
+
+`upsert(..., { ignoreDuplicates })` nao serve: os quatro indices unicos sao PARCIAIS e o `on_conflict` do PostgREST nao expressa o predicado.
+
+**Correcao:** `ensureSupportLink` (`apps/worker/src/handlers/support-case-links.ts`) substitui as tres copias do INSERT. Consulta pela chave do indice do alvo -- o CHECK `support_case_links_exactly_one_target` garante um alvo so por linha -- e insere apenas o que falta. O 23505 continua tolerado para a corrida real (webhook e varredura no mesmo instante). A conta de idas ao banco nao muda: uma consulta no lugar de um INSERT recusado. O vinculo de SKU derivado da Pergunta continua apagado e regravado a cada passada, de proposito (acompanha anuncio revinculado), e isso nao gera erro.
+
+---
+
+**3. O REALTIME RECUSANDO**
+
+`realtime.subscription_check_filters()` so aceita filtro em coluna que o papel do JWT pode ler (`has_column_privilege(claims->>'role', ...)`), e `anon` nao tem SELECT em `notification_recipients.user_id` -- conferido em producao. O supabase-js 2.112.3 entrega o token do usuario ao socket de forma assincrona (o construtor faz `Promise.resolve(accessToken()).then(setAuth)`), e o `subscribe()` le `accessTokenValue` na hora. Os toasts assinavam logo depois do `createClient()`: a primeira entrada ia com a chave anonima e era recusada, e so a nova tentativa, ja com o token, entrava. Um erro por carregamento de pagina, e uma janela em que um toast podia se perder.
+
+**Correcao:** `await supabase.realtime.setAuth()` antes do `subscribe()` em `notification-toasts.tsx`. Sem argumento ele usa o callback do cliente, entao a renovacao do token continua automatica.
+
+---
+
+**4. PROVA**
+
+- Worker: `tsc` e `eslint` limpos, 546 testes. Sete testes novos no helper e um de reprocessamento em cada ingestao.
+- Mutacao: com a consulta desligada no helper, 9 dos 40 testes das quatro suites falham. Restaurado, 40 de 40.
+- Web: `tsc` e `eslint` limpos.
+- **Depois do deploy** de worker e web, a mesma consulta em `postgres_logs` precisa mostrar o 23505 de `support_case_links` perto de zero por hora e nenhum `invalid column for filter`.
+
+**Impacto:** `apps/worker/src/handlers/{support-case-links,persist-support-claim,persist-support-conversation,persist-support-question}.ts` e testes; `apps/web/components/notification-toasts.tsx`; `docs/{DECISIONS,DECISIONS_INDEX}.md`. Sem migration.

@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **346** (D-001 a D-350).
+Decisões registradas: **347** (D-001 a D-353).
 
 ## Por domínio
 
@@ -66,7 +66,7 @@ Decisões registradas: **346** (D-001 a D-350).
 - **D-330** — Revisao de seguranca, fatia 3: o logger redigia pelo NOME da chave e deixava passar o VALOR -- e a "uma lista, dois consumidores" de D-232 estava pela metade
 - **D-340** — A correcao de D-339 foi publicada, piorou o topico que importa, e voltou -- a media melhorou e escondia isso
 
-### banco/rls (34)
+### banco/rls (35)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -102,6 +102,7 @@ Decisões registradas: **346** (D-001 a D-350).
 - **D-339** — A carga real, medida nos logs: 65 mil webhooks por dia, e o ACK passando de 7 s no pico porque o topico sem consumidor ia ao Postgres antes de responder
 - **D-345** — O ACK lento nas rajadas e a consulta da conta no Postgres sob concorrencia -- medido na primeira rajada com o log por etapa
 - **D-346** — As contas do webhook passam a vir da memoria -- nenhum caminho do ACK depende de conexao quente com o Postgres
+- **D-353** — O Postgres de producao com 4.091 erros em 24h -- 98% era o worker contando com o 23505, e o resto o Realtime assinando antes do token
 
 ### estoque (25)
 
