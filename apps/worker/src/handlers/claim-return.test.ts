@@ -54,6 +54,8 @@ interface FakeDbOptions {
   recordedReturns?: { sku_id: string; qty_delta: number; idempotency_key: string }[];
   /** Simula falha da leitura das devoluções gravadas. */
   returnsReadError?: boolean;
+  /** Simula a leitura das devoluções voltando com `data` nulo e SEM erro. */
+  returnsDataNull?: boolean;
   orderItemsError?: boolean;
   saleMovementsError?: boolean;
   /** D-104: força a projeção de atendimento a falhar, sem tocar no estoque. */
@@ -179,6 +181,10 @@ function fakeDb(options: FakeDbOptions, captured: Captured, rpcCalls: string[] =
       rpcCalls.push(fn);
 
       if (fn === "get_order_return_movements") {
+        if (options.returnsDataNull === true) {
+          return Promise.resolve({ data: null, error: null });
+        }
+
         return Promise.resolve(
           options.returnsReadError === true
             ? { data: null, error: { code: "42P01", message: "boom" } }
@@ -677,6 +683,47 @@ describe("processClaimReturn — a unidade volta ao estoque no máximo uma vez (
   });
 
   it("falha na leitura das devoluções gravadas rejeita, em vez de devolver a unidade de novo", async () => {
-    await expect(processa({ returnsReadError: true })).rejects.toThrow(/devolucoes gravadas/);
+    await expect(processa({ returnsReadError: true })).rejects.toThrow(/devolucoes gravadas.*boom/);
+  });
+
+  it("leitura das devoluções com data nulo e sem erro também rejeita — nunca vira 'nenhuma devolução'", async () => {
+    await expect(processa({ returnsDataNull: true })).rejects.toThrow(/devolucoes gravadas.*data nulo sem erro/);
+  });
+
+  // Devolução PARCIAL: o domínio não soma as reversões (nada é revertido), e só a
+  // conferência da leitura grita com a chave corrompida.
+  const PARCIAL = returnPayload({ total_quantity: "2.0", return_quantity: "1.0" });
+
+  async function processaParcial(options: FakeDbOptions): Promise<void> {
+    const captured: Captured = { movements: [], events: [], supportCases: [] };
+    const { client } = fakeMercadoLivre({ claimReturn: PARCIAL });
+
+    await processClaimReturn(
+      { db: fakeDb(options, captured), mercadoLivre: client },
+      { organizationId: ORGANIZATION_ID, mlAccountId: ML_ACCOUNT_ID },
+      "token",
+      CLAIM_ID,
+      NOW,
+      logger,
+    );
+  }
+
+  it("cancelamento gravado com chave fora do formato LANÇA na leitura, mesmo numa devolução parcial que não o usaria", async () => {
+    await expect(
+      processaParcial({
+        saleMovements: [
+          { sku_id: "sku-a", qty_delta: -1, idempotency_key: VENDA },
+          { sku_id: "sku-a", qty_delta: 1, idempotency_key: `cancelamento:${String(ORDER_ID)}:0`, movement_type: "CANCELAMENTO_ML" },
+        ],
+      }),
+    ).rejects.toThrow(/chave de reversao fora do formato/);
+  });
+
+  it("devolução gravada com chave fora do formato LANÇA na leitura, mesmo numa devolução parcial que não a usaria", async () => {
+    await expect(
+      processaParcial({
+        recordedReturns: [{ sku_id: "sku-a", qty_delta: 1, idempotency_key: `devolucao:${VENDA}` }],
+      }),
+    ).rejects.toThrow(/chave de reversao fora do formato/);
   });
 });

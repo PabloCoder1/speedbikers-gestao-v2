@@ -2118,18 +2118,19 @@ describe("persistOrder — verificação de e6fda07", () => {
       expect(inserted).toEqual([]);
     });
 
-    it("reversão gravada com chave fora do formato LANÇA — não diz qual venda reverteu, e a próxima devolveria a unidade de novo", async () => {
+    it("reversão gravada com chave fora do formato LANÇA na leitura — mesmo num pedido pago, sem corte, em que o domínio não chegaria a usá-la", async () => {
+      // Sem corte (organização sem snapshot) e pedido pago: nenhuma conta do domínio passa
+      // pela reversão. Só a conferência da leitura grita -- dado corrompido não fica quieto
+      // até o dia em que o pedido cancelar.
       const { db, inserted } = fakeDb({
         ...COM_VINCULO,
-        previousStatus: "cancelled",
         existingSaleMovements: [
           { sku_id: "sku-1", qty_delta: -1, idempotency_key: VENDA },
           { sku_id: "sku-1", qty_delta: 1, idempotency_key: `cancelamento:${PEDIDO}:0`, movement_type: "CANCELAMENTO_ML" },
         ],
-        cutoffs: { "sku-1": CORTE },
       });
 
-      await expect(run(db, { ...BASE_ORDER, status: "cancelled" })).rejects.toThrow(/chave de reversao fora do formato/);
+      await expect(run(db, BASE_ORDER)).rejects.toThrow(/chave de reversao fora do formato/);
       expect(inserted).toEqual([]);
     });
   });

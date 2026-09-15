@@ -979,11 +979,16 @@ describe("compensacao F3 (packages/db/scripts, fora das migrations)", () => {
     }
   });
 
-  it("organizacao com AJUSTE_RECONCILIACAO nao e compensada — e avisa, em vez de sumir em silencio", async () => {
+  it("organizacao com AJUSTE_RECONCILIACAO nao e compensada — e avisa, em vez de sumir em silencio; e o corte do parse dela, que a migration deixa de proposito, nao aborta a F3", async () => {
     await client.query("begin");
 
     try {
       const avisos: string[] = [];
+      // O Dev: planilha carimbada com o corte do PARSE, que o UPDATE de 20260914200000 nao
+      // toca numa organizacao reconciliada (verificacao de e6fda07, MEDIA-1).
+      const loteDoParse = await novoLote(ORG_RECONCILIADA, "Lista_de_Estoque_0820160923.xlsx", "2026-08-21T15:42:02.459Z");
+
+      await snapshot(ORG_RECONCILIADA, loteDoParse, "F3-DEV-PARSE", skuReconciliada, "DEPOSITO", 1, "2026-08-21T15:42:02.459Z");
 
       await rodarF3(ORG_RECONCILIADA, avisos);
 
