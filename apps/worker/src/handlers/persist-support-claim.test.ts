@@ -68,6 +68,9 @@ function fakeDb(options: { orders?: number[]; orderItems?: { sku_id: string | nu
           if (table === "orders") {
             return selectChain(() => orders);
           }
+          if (table === "support_case_links") {
+            return selectChain(() => links);
+          }
           if (table === "order_items") {
             const chain = {
               eq: () => chain,
@@ -304,5 +307,19 @@ describe("derivação de SKU do pedido vinculado (D-116)", () => {
     await persistSupportClaim(fake.db as never, CONTEXT, project());
 
     expect(fake.links.filter((link) => link.link_source === "ORDER_DERIVED")).toHaveLength(0);
+  });
+
+  it("reprocessar o claim não regrava vínculo que já existe — nem o do pedido, nem os de SKU (D-353)", async () => {
+    const fake = fakeDb({
+      orders: [2000007819609432],
+      orderItems: [{ sku_id: "sku-1" }, { sku_id: "sku-2" }],
+    });
+
+    await persistSupportClaim(fake.db as never, CONTEXT, project());
+    await persistSupportClaim(fake.db as never, CONTEXT, project());
+
+    // O fake não tem índice único: um INSERT cego a mais apareceria aqui
+    // como linha duplicada, que é o 23505 que enchia o log de produção.
+    expect(fake.links).toHaveLength(3);
   });
 });

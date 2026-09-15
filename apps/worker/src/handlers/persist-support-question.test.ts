@@ -155,6 +155,10 @@ function statefulFakeDb() {
             return selectChain(() => listings);
           }
 
+          if (table === "support_case_links") {
+            return selectChain(() => links);
+          }
+
           throw new Error(`select inesperado em ${table}`);
         },
         upsert: (input: Row | Row[], options?: { ignoreDuplicates?: boolean }) => {
@@ -202,6 +206,7 @@ function statefulFakeDb() {
             throw new Error(`insert inesperado em ${table}`);
           }
 
+          insertAttempts.push({ ...input });
           const key = linkIdentity(input);
           if (links.some((row) => linkIdentity(row) === key)) {
             return Promise.resolve({ data: null, error: { code: "23505", message: "duplicate key" } });
@@ -221,12 +226,16 @@ function statefulFakeDb() {
     },
   } as unknown as Parameters<typeof persistSupportQuestion>[0];
 
+  /** Toda tentativa de INSERT, inclusive as que o índice recusa com 23505 (D-353). */
+  const insertAttempts: Row[] = [];
+
   return {
     db,
     rpcCalls,
     cases,
     messages,
     links,
+    insertAttempts,
     addListing(row: { id: string; sku_id: string | null; item_id: string }) {
       listings.push({
         ...row,
@@ -268,6 +277,24 @@ describe("persistSupportQuestion", () => {
     expect(state.cases.size).toBe(1);
     expect(state.messages.size).toBe(1);
     expect(state.links).toHaveLength(1);
+  });
+
+  it("a segunda passada não TENTA regravar os vínculos — nenhum 23505 no log (D-353)", async () => {
+    const state = statefulFakeDb();
+    state.addListing({ id: "listing-1", sku_id: "sku-1", item_id: "MLB1623490410" });
+    const projection = project();
+
+    await persistSupportQuestion(state.db, CONTEXT, projection);
+    const firstPass = state.insertAttempts.length;
+    await persistSupportQuestion(state.db, CONTEXT, projection);
+
+    expect(firstPass).toBe(2);
+    // O de SKU derivado é apagado e regravado a cada passada, de propósito:
+    // é a limpeza que acompanha um anúncio revinculado a outro SKU.
+    expect(state.insertAttempts.slice(firstPass)).toEqual([
+      expect.objectContaining({ sku_id: "sku-1", link_source: "LISTING_DERIVED" }),
+    ]);
+    expect(state.links).toHaveLength(2);
   });
 
   it("atualiza estado remoto e acrescenta resposta sem sobrescrever triagem humana", async () => {

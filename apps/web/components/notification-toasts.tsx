@@ -187,7 +187,15 @@ export function NotificationToasts({
       scheduleDismiss(key);
     }
 
-    function setup(): void {
+    async function setup(): Promise<void> {
+      // O cliente entrega o JWT ao socket do Realtime de forma ASSÍNCRONA.
+      // Assinar antes disso entra com a chave anônima, e `anon` não tem SELECT
+      // em `notification_recipients.user_id`: o servidor recusa com "invalid
+      // column for filter user_id" e só a nova tentativa, já com o token,
+      // entra — 69 erros em 24h no Postgres de produção e uma janela em que
+      // um toast se perdia (D-353). Esperar o token faz a primeira valer.
+      await supabase.realtime.setAuth();
+
       if (cancelled) return;
 
       channel = supabase
@@ -207,7 +215,7 @@ export function NotificationToasts({
         .subscribe();
     }
 
-    setup();
+    void setup();
 
     return () => {
       cancelled = true;
