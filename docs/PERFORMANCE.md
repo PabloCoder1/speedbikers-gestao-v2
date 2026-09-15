@@ -12,7 +12,7 @@
 - A Command Palette espera 250 ms, aborta a consulta anterior e ignora respostas fora de ordem.
 - O Copiloto é carregado dinamicamente apenas quando a gaveta é aberta; a leitura de membership usa cache por requisição React; o ranking de Vendas fica atrás de `Suspense`.
 - O diretório do webhook faz refresh antecipado para contas conhecidas e limita a idade do fallback quando o banco está indisponível; falha sem cache responde 503 para permitir reentrega.
-- `turbo.json` inclui `.env*` nos inputs do build e `NEXT_PUBLIC_*` no ambiente que invalida o cache.
+- `turbo.json` inclui `.env*` nos inputs do build e `NEXT_PUBLIC_*` no ambiente que invalida o cache. A rota `/api/vitals` tem testes de aceitação e rejeição de payload.
 - A consulta de ultimo snapshot por inventario continua usando `fulfillment_stock_snapshots_timeline_idx`: no Dev, `EXPLAIN (ANALYZE, BUFFERS)` retornou 1 linha em 2,6 ms (2 blocos lidos). Uma consulta `DISTINCT ON` para 50 inventarios tambem escolheu esse indice e leu 4.857 linhas; o plano levou 2,7 s. O indice de timeline deve ser preservado; nao ha base para remove-lo.
 - O Full agora busca itens e estoques com concorrencia limitada a tres por conta e le os snapshots anteriores em lote paginado. A persistencia continua por inventario para preservar a ordem e a atomicidade existente; a validacao de equivalencia e duracao ainda depende de uma execucao do mesmo catalogo.
 - Vendas inicia a margem em paralelo e a entrega por `Suspense`; TTFB/LCP/CLS/INP passaram a ser coletados por rota em `/api/vitals`, sem identificadores de usuario.
