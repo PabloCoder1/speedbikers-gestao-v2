@@ -79,6 +79,28 @@ const fulfillmentStockResponseSchema = z.object({
   available_quantity: z.number(),
 });
 
+const MAX_CONCURRENT_ML_REQUESTS = 3;
+
+async function mapWithConcurrency<T, R>(
+  values: readonly T[],
+  concurrency: number,
+  fn: (value: T) => Promise<R>,
+): Promise<R[]> {
+  const result = new Array<R>(values.length);
+  let next = 0;
+
+  async function worker(): Promise<void> {
+    for (;;) {
+      const index = next++;
+      if (index >= values.length) return;
+      result[index] = await fn(values[index] as T);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, values.length) }, () => worker()));
+  return result;
+}
+
 export interface FetchFulfillmentSnapshotsParams {
   db: AdminClient;
   organizationId: string;
@@ -139,11 +161,14 @@ export async function fetchFulfillmentSnapshots(
   // Inventário -> primeiro anúncio que o capturou nesta execução (D-230).
   const inventoriesSeen = new Map<string, { itemId: string; skuId: string }>();
 
-  for (const link of links) {
+  // A fase de rede é limitada a três chamadas simultâneas por conta. A fila
+  // continua sendo o orçamento maior; isto apenas remove a espera serial do
+  // catálogo sem transformar uma conta em rajada ilimitada.
+  const itemResults = await mapWithConcurrency(links, MAX_CONCURRENT_ML_REQUESTS, async (link) => {
     if (link.item_id === null) {
       // Não deveria acontecer (ref_kind='ITEM' garante item_id no banco,
       // constraint sku_listing_links_ref_shape) — defesa, não caminho normal.
-      continue;
+      return { link, item: null, failed: false };
     }
 
     let item: z.infer<typeof itemResponseSchema>;
@@ -162,25 +187,61 @@ export async function fetchFulfillmentSnapshots(
       // handler decidir sobre reentrega do job inteiro, mesmo raciocínio já
       // usado para erro de rede em `fetchOrdersWindow`.
       if (error instanceof MercadoLivreApiError && error.errorClass === "not_retryable") {
-        itemsFailed += 1;
         params.logger.warn("fulfillment_item_fetch_failed", {
           ml_account_id: params.mlAccountId,
           item_id: link.item_id,
           reason: error.message,
         });
 
-        continue;
+        return { link, item: null, failed: true };
       }
 
       throw error;
     }
 
-    if (item.inventory_id === null) {
-      itemsSkipped += 1;
-      continue;
-    }
+    return { link, item, failed: false };
+  });
 
-    const firstItem = inventoriesSeen.get(item.inventory_id);
+  const uniqueItems = itemResults.filter((entry) => entry.item !== null && entry.item.inventory_id !== null);
+  itemsFailed += itemResults.filter((entry) => entry.failed).length;
+  itemsSkipped += itemResults.filter((entry) => entry.item?.inventory_id === null).length;
+
+  const inventories = [...new Set(uniqueItems.map((entry) => entry.item?.inventory_id).filter((id): id is string => id !== null && id !== undefined))];
+  const stockResults = await mapWithConcurrency(inventories, MAX_CONCURRENT_ML_REQUESTS, async (inventoryId) => {
+    try {
+      return { inventoryId, stock: await params.mercadoLivre.request({ method: "GET", path: `/inventories/${inventoryId}/stock/fulfillment`, accessToken: params.accessToken, schema: fulfillmentStockResponseSchema }), failed: false };
+    } catch (error) {
+      if (error instanceof MercadoLivreApiError && error.errorClass === "not_retryable") {
+        params.logger.warn("fulfillment_stock_fetch_failed", { ml_account_id: params.mlAccountId, inventory_id: inventoryId, reason: error.message });
+        return { inventoryId, stock: null, failed: true };
+      }
+      throw error;
+    }
+  });
+  const stocks = new Map(
+    stockResults.flatMap((entry) => (entry.stock === null ? [] : [[entry.inventoryId, entry.stock] as const])),
+  );
+  itemsFailed += stockResults.filter((entry) => entry.failed).length;
+
+  const previousRows = new Map<string, { quantity: number; captured_at: string }>();
+  if (inventories.length > 0) {
+    const previous = await readAllPages<{ inventory_id: string; quantity: number; captured_at: string }>((from, to) =>
+      params.db.from("fulfillment_stock_snapshots").select("inventory_id, quantity, captured_at").eq("ml_account_id", params.mlAccountId).in("inventory_id", inventories).order("captured_at", { ascending: false }).range(from, to),
+      { label: "falha ao ler snapshots anteriores do Full" },
+    );
+    for (const row of previous) if (!previousRows.has(row.inventory_id)) previousRows.set(row.inventory_id, row);
+  }
+
+  for (const entry of uniqueItems) {
+    const link = entry.link;
+    const item = entry.item;
+    if (link.item_id === null || item === null) continue;
+    if (item.inventory_id === null) continue;
+    const inventoryId = item.inventory_id;
+    const stock = stocks.get(inventoryId);
+    if (stock === undefined) continue;
+
+    const firstItem = inventoriesSeen.get(inventoryId);
 
     if (firstItem !== undefined) {
       // Mesmo estoque físico já capturado por outro anúncio desta conta
@@ -191,7 +252,7 @@ export async function fetchFulfillmentSnapshots(
       inventoriesShared += 1;
       params.logger.info("fulfillment_inventory_shared", {
         ml_account_id: params.mlAccountId,
-        inventory_id: item.inventory_id,
+        inventory_id: inventoryId,
         item_id: link.item_id,
         first_item_id: firstItem.itemId,
         same_sku: firstItem.skuId === link.sku_id,
@@ -200,50 +261,16 @@ export async function fetchFulfillmentSnapshots(
       continue;
     }
 
-    inventoriesSeen.set(item.inventory_id, { itemId: link.item_id, skuId: link.sku_id });
-
-    let stock: z.infer<typeof fulfillmentStockResponseSchema>;
-
-    try {
-      stock = await params.mercadoLivre.request({
-        method: "GET",
-        path: `/inventories/${item.inventory_id}/stock/fulfillment`,
-        accessToken: params.accessToken,
-        schema: fulfillmentStockResponseSchema,
-      });
-    } catch (error) {
-      if (error instanceof MercadoLivreApiError && error.errorClass === "not_retryable") {
-        itemsFailed += 1;
-        params.logger.warn("fulfillment_stock_fetch_failed", {
-          ml_account_id: params.mlAccountId,
-          item_id: link.item_id,
-          inventory_id: item.inventory_id,
-          reason: error.message,
-        });
-
-        continue;
-      }
-
-      throw error;
-    }
-
-    const previousRow = await params.db
-      .from("fulfillment_stock_snapshots")
-      .select("quantity, captured_at")
-      .eq("ml_account_id", params.mlAccountId)
-      .eq("inventory_id", stock.inventory_id)
-      .order("captured_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    inventoriesSeen.set(inventoryId, { itemId: link.item_id, skuId: link.sku_id });
 
     const previous =
-      previousRow.data === null
+      !previousRows.has(stock.inventory_id)
         ? null
         : {
             inventoryId: stock.inventory_id,
             skuId: link.sku_id,
-            quantity: previousRow.data.quantity,
-            capturedAt: new Date(previousRow.data.captured_at),
+            quantity: previousRows.get(stock.inventory_id)?.quantity ?? 0,
+            capturedAt: new Date(previousRows.get(stock.inventory_id)?.captured_at ?? capturedAt.toISOString()),
           };
 
     const current = {

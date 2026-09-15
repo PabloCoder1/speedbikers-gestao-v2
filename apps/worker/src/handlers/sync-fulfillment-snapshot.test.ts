@@ -28,6 +28,7 @@ const ENVELOPE = {
 /** Fake mínimo, encadeável e thenable — mesmo espírito de sync-orders-window.test.ts. */
 function chain<T>(result: T): {
   eq: () => ReturnType<typeof chain<T>>;
+  in: () => ReturnType<typeof chain<T>>;
   is: () => ReturnType<typeof chain<T>>;
   or: () => ReturnType<typeof chain<T>>;
   order: () => ReturnType<typeof chain<T>>;
@@ -39,6 +40,7 @@ function chain<T>(result: T): {
 } {
   const self = {
     eq: () => self,
+    in: () => self,
     is: () => self,
     or: () => self,
     order: () => self,
@@ -109,7 +111,7 @@ function fakeDb(options: FakeDbOptions = {}): {
         }
 
         // fulfillment_stock_snapshots (previous lookup) — sempre "nunca visto".
-        return chain({ data: null, error: null });
+        return chain({ data: [], error: null });
       },
       insert: (row: unknown) => {
         inserted.push({ table, row });

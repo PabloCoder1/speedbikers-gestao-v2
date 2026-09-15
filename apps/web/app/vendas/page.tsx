@@ -624,6 +624,10 @@ async function VendasContent({
       p_order_by: ORDEM_POR_METRICA[metric.key] ?? "receita",
       p_limit: 10,
     }));
+  const marginPromise = Promise.all([
+    supabase.rpc("get_sales_margin_summary", { p_date_from: range.from, p_date_to: range.to, ...accountFilter, ...brandFilter }).single(),
+    supabase.rpc("get_sales_margin_summary", { p_date_from: previousRange.from, p_date_to: previousRange.to, ...accountFilter, ...brandFilter }).single(),
+  ]);
 
   const [
     currentResult,
@@ -634,8 +638,6 @@ async function VendasContent({
     previousExpandedResult,
     todayResult,
     brandsResult,
-    marginResult,
-    previousMarginResult,
   ] = await Promise.all([
     supabase
       .rpc("get_sales_summary", { p_date_from: range.from, p_date_to: range.to, ...accountFilter, ...brandFilter })
@@ -683,18 +685,6 @@ async function VendasContent({
     organizationId === null
       ? Promise.resolve({ data: null, error: null })
       : supabase.rpc("get_supplier_brands", { p_organization_id: organizationId }),
-    // Oitava e nona (D-166): margem operacional sobre janela COBERTA,
-    // período atual e anterior, no mesmo paralelo.
-    supabase
-      .rpc("get_sales_margin_summary", { p_date_from: range.from, p_date_to: range.to, ...accountFilter, ...brandFilter })
-      .single(),
-    supabase
-      .rpc("get_sales_margin_summary", {
-        p_date_from: previousRange.from,
-        p_date_to: previousRange.to,
-        ...accountFilter, ...brandFilter,
-      })
-      .single(),
     // Décima primeira (D-244): os produtos que mais contribuíram — a tabela
     // que fecha o frame `Sales`. Mesmo recorte de conta e marca; a coluna do
     // ranking é a métrica do segmentado.
@@ -728,14 +718,11 @@ async function VendasContent({
     expandedResult.error ??
     previousExpandedResult.error ??
     todayResult.error ??
-    marginResult.error ??
-    previousMarginResult.error;
+    null;
 
   const expanded: ExpandedSummary | null = expandedResult.data ?? null;
   const previousExpanded: ExpandedSummary | null = previousExpandedResult.data ?? null;
   const todaySummary: TodaySummary | null = todayResult.data ?? null;
-  const margin: MarginSummary | null = marginResult.data ?? null;
-  const previousMargin: MarginSummary | null = previousMarginResult.data ?? null;
   // Falha aqui NÃO derruba a tela: a tabela recusa sozinha, com o aviso, e o
   // resto continua — o ranking é leitura própria, não parte do resumo.
 
@@ -1085,40 +1072,9 @@ async function VendasContent({
         cobertura declarada, e o veto — não é receita líquida. Com zero
         cobertura, a seção RECUSA em vez de fingir número.
       */}
-      {error === null && margin !== null && (
-        <div style={{ marginTop: "var(--sb-space-3)" }}>
-          <Panel
-            title="Margem operacional — estimativa por pedido"
-            subtitle={
-              margin.orders_covered === null || margin.orders_covered === 0
-                ? undefined
-                : `Calculada sobre ${formatCount(margin.orders_covered)} de ${formatCount(margin.orders_total ?? 0)} pedidos válidos do período (${formatPercent(margin.orders_covered / Math.max(margin.orders_total ?? 1, 1))}) — os que têm frete e desconto observados. Não é receita líquida: taxa fixa por pedido, parcelamento, custo de cobrança do Mercado Pago, impostos retidos e reembolsos posteriores não são observados.`
-            }
-          >
-            {margin.orders_covered === null ? (
-              <p style={MARGIN_NOTE_STYLE}>
-                <strong>Não há margem por marca.</strong> Frete e desconto do vendedor são do PEDIDO — um pedido
-                tem um frete, não um frete por item —, então não existe cota de marca para descontar. Mostrar a
-                receita da marca menos o custo da operação inteira seria número errado com cara de preciso. Tire
-                o recorte de marca para ver a margem.
-              </p>
-            ) : margin.orders_covered === 0 ? (
-              <p style={MARGIN_NOTE_STYLE}>
-                Nenhum dos {formatCount(margin.orders_total ?? 0)} pedidos válidos do período tem frete e
-                desconto capturados ainda — a captura diária de custos começou em 31/08/2026 e a margem só é
-                exibida sobre pedidos cobertos, nunca estimada por cima.
-              </p>
-            ) : (
-              <KpiStrip
-                cells={toCells(
-                  buildMarginCards(margin, previousMargin),
-                  previousMargin !== null && (previousMargin.orders_covered ?? 0) > 0,
-                )}
-              />
-            )}
-          </Panel>
-        </div>
-      )}
+      <Suspense fallback={<p role="status" className="sb-empty">Carregando margem...</p>}>
+        <SalesMargin result={marginPromise} />
+      </Suspense>
     </>
   );
 }
@@ -1190,5 +1146,19 @@ async function SalesRanking({ result, metricLabel, contaLabel, marcaLabel }: {
             )}
           </Panel>
         </div>
+  );
+}
+
+async function SalesMargin({ result }: { result: Promise<[{ data: MarginSummary | null; error: { message: string } | null }, { data: MarginSummary | null; error: { message: string } | null }]> }): Promise<ReactNode> {
+  const [current, previous] = await result;
+  if (current.error !== null || current.data === null) return null;
+  const margin = current.data;
+  const previousMargin = previous.error === null ? previous.data : null;
+  return (
+    <div style={{ marginTop: "var(--sb-space-3)" }}>
+      <Panel title="Margem operacional — estimativa por pedido" subtitle={margin.orders_covered === null || margin.orders_covered === 0 ? undefined : `Calculada sobre ${formatCount(margin.orders_covered)} de ${formatCount(margin.orders_total ?? 0)} pedidos válidos do período (${formatPercent(margin.orders_covered / Math.max(margin.orders_total ?? 1, 1))}) — os que têm frete e desconto observados. Não é receita líquida.`}>
+        {margin.orders_covered === null ? <p style={MARGIN_NOTE_STYLE}><strong>Não há margem por marca.</strong> Tire o recorte de marca para ver a margem.</p> : margin.orders_covered === 0 ? <p style={MARGIN_NOTE_STYLE}>Nenhum pedido válido do período tem custos capturados ainda.</p> : <KpiStrip cells={toCells(buildMarginCards(margin, previousMargin), previousMargin !== null && (previousMargin.orders_covered ?? 0) > 0)} />}
+      </Panel>
+    </div>
   );
 }

@@ -3,6 +3,7 @@ import { DM_Mono, Inter } from "next/font/google";
 import type { ReactNode } from "react";
 
 import "./globals.css";
+import { WebVitals } from "./web-vitals";
 
 /**
  * As duas famílias do Figma (`src/theme.css`: `--font-sans: 'Inter'`,
@@ -49,7 +50,7 @@ export default function RootLayout({
 }: Readonly<{ children: ReactNode }>): ReactNode {
   return (
     <html lang="pt-BR" className={`${inter.variable} ${dmMono.variable}`}>
-      <body>{children}</body>
+      <body>{children}<WebVitals /></body>
     </html>
   );
 }

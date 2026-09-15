@@ -23,6 +23,7 @@ interface PreviousSnapshot {
 /** Fake mínimo, encadeável e thenable — mesmo espírito de sync-orders-window.test.ts. */
 function chain<T>(result: T): {
   eq: () => ReturnType<typeof chain<T>>;
+  in: () => ReturnType<typeof chain<T>>;
   is: () => ReturnType<typeof chain<T>>;
   order: () => ReturnType<typeof chain<T>>;
   limit: () => ReturnType<typeof chain<T>>;
@@ -32,6 +33,7 @@ function chain<T>(result: T): {
 } {
   const self = {
     eq: () => self,
+    in: () => self,
     is: () => self,
     order: () => self,
     limit: () => self,
@@ -117,14 +119,25 @@ function fakeDbWithPrevious(
 
   function snapshotFilterChain(filters: Record<string, unknown>): {
     eq: (col: string, val: unknown) => ReturnType<typeof snapshotFilterChain>;
+    in: (col: string, vals: readonly unknown[]) => ReturnType<typeof snapshotFilterChain>;
     order: () => ReturnType<typeof snapshotFilterChain>;
     limit: () => ReturnType<typeof snapshotFilterChain>;
+    range: (from: number, to: number) => Promise<{ data: PreviousSnapshot[]; error: null }>;
     maybeSingle: () => Promise<{ data: unknown; error: null }>;
   } {
     const self = {
       eq: (col: string, val: unknown) => snapshotFilterChain({ ...filters, [col]: val }),
+      in: (col: string, vals: readonly unknown[]) => snapshotFilterChain({ ...filters, [col]: vals }),
       order: () => self,
       limit: () => self,
+      range: (from: number, to: number) => {
+        const ids = (filters.inventory_id as readonly string[] | undefined) ?? [];
+        const rows = ids.flatMap((id) => {
+          const row = previousByInventoryId[id];
+          return row === undefined ? [] : [{ ...row, inventory_id: id }];
+        });
+        return Promise.resolve({ data: rows.slice(from, to + 1), error: null });
+      },
       maybeSingle: () => {
         const inventoryId = filters.inventory_id as string | undefined;
         const previous = inventoryId !== undefined ? (previousByInventoryId[inventoryId] ?? null) : null;
