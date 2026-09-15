@@ -12,7 +12,7 @@ import { sanitizeErrorText } from "../../lib/sanitize";
 import { createClient } from "../../lib/supabase/server";
 import { classifyResourceFreshness, failureRateLabel, resourceLabel } from "../../lib/sync-health";
 import type { SyncVerdict } from "../../lib/sync-health";
-import { currentMembership } from "../../lib/membership";
+import { currentMembership } from "../../lib/request-membership";
 
 // O título da aba segue o <h1> e o item da navegação, que dizem
 // "Sincronização" (o nome do frame). Três nomes para a mesma tela é o
@@ -120,7 +120,7 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
   const supabase = await createClient();
   const now = new Date();
 
-  const membership = await currentMembership(supabase);
+  const membership = await currentMembership();
   const organizationId = membership.organizationId;
 
   if (organizationId === null) {

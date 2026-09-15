@@ -6,6 +6,16 @@
 
 ## Como medir (e por que do jeito difícil)
 
+## Implementações da auditoria de 2026-09-15
+
+- `fetchListingVisits` envia todas as datas de um anúncio em um único `upsert`, evitando uma escrita por dia e mantendo o checkpoint sem sucesso parcial.
+- A Command Palette espera 250 ms, aborta a consulta anterior e ignora respostas fora de ordem.
+- O Copiloto é carregado dinamicamente apenas quando a gaveta é aberta; a leitura de membership usa cache por requisição React; o ranking de Vendas fica atrás de `Suspense`.
+- O diretório do webhook faz refresh antecipado para contas conhecidas e limita a idade do fallback quando o banco está indisponível; falha sem cache responde 503 para permitir reentrega.
+- `turbo.json` inclui `.env*` nos inputs do build e `NEXT_PUBLIC_*` no ambiente que invalida o cache.
+
+Validação pendente: comparar chamadas, duração p50/p95, 429/retries e métricas de navegador no mesmo catálogo e ambiente. Nenhum ganho de latência é declarado antes dessa medição.
+
 **Meça como usuário autenticado real.** A RLS faz parte do custo que a
 interface paga, e medir como `postgres`/`service_role` esconde justamente o
 nó mais caro. No Dev, dentro de uma transação revertida:

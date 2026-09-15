@@ -8,7 +8,7 @@ import { StatePill } from "../../components/state-pill";
 import { TOM, tomDeStatus } from "../../components/tone";
 import { formatCount, formatDateTime } from "../../lib/format";
 import { mlAccountStatusLabel, statusTone } from "../../lib/labels";
-import { currentMembership } from "../../lib/membership";
+import { currentMembership } from "../../lib/request-membership";
 import { formatAge } from "../../lib/relative-time";
 import { sanitizeErrorText } from "../../lib/sanitize";
 import { createClient } from "../../lib/supabase/server";
@@ -51,7 +51,7 @@ export const dynamic = "force-dynamic";
 export default async function ContasPage(): Promise<ReactNode> {
   const supabase = await createClient();
 
-  const membership = await currentMembership(supabase);
+  const membership = await currentMembership();
   const organizationId = membership.organizationId;
 
   if (organizationId === null) {

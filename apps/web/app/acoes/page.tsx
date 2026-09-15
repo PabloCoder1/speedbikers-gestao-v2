@@ -16,7 +16,7 @@ import {
 import { actionShortcuts } from "../../lib/action-shortcuts";
 import { summarizePagedWindow } from "../../lib/filters";
 import { formatBusinessDate, formatCount } from "../../lib/format";
-import { currentMembership } from "../../lib/membership";
+import { currentMembership } from "../../lib/request-membership";
 import { formatAge } from "../../lib/relative-time";
 import { createClient } from "../../lib/supabase/server";
 import type { ActionCardData, DecisionData, OutcomeData } from "./action-card";
@@ -86,7 +86,7 @@ export default async function AcoesPage({
   // então depende do resultado desta leitura — mesma forma de `/compras`.
   const [{ data: auth }, membership] = await Promise.all([
     supabase.auth.getUser(),
-    currentMembership(supabase),
+    currentMembership(),
   ]);
 
   const userId = auth.user?.id ?? null;

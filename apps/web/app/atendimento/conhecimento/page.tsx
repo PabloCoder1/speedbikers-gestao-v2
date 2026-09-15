@@ -8,7 +8,7 @@ import { formatCount, formatPercent } from "../../../lib/format";
 import { createClient } from "../../../lib/supabase/server";
 import { KnowledgeRow, type KnowledgeRowData } from "./knowledge-row";
 import { NewKnowledgeForm } from "./new-knowledge-form";
-import { currentMembership } from "../../../lib/membership";
+import { currentMembership } from "../../../lib/request-membership";
 
 export const metadata = { title: "Base de Conhecimento — Speed Bikers Gestão" };
 
@@ -56,7 +56,7 @@ export default async function ConhecimentoPage(): Promise<ReactNode> {
       })
       .order("updated_at", { ascending: false })
       .limit(ROW_LIMIT),
-    currentMembership(supabase),
+    currentMembership(),
     supabase.from("profiles").select("id, full_name"),
   ]);
 

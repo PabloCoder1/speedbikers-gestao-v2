@@ -39,9 +39,8 @@ import { listingVisitsTimeWindowSchema } from "./listing-visits-schema.js";
  * 1. **Checkpoint pela própria tabela**: item com linha gravada nas últimas
  *    12h é pulado. Cada tentativa passa a SOMAR progresso em vez de repetir
  *    o já feito — o esgotamento das 8 tentativas deixa de perder a cauda.
- *    Item com escrita parcial (uma das 3 datas falhou) pode ser pulado até a
- *    janela expirar; o `last=3` da rodada seguinte recobre essas datas, que é
- *    exatamente a folga para a qual ele existe.
+ *    Os dias do anúncio são gravados em um único upsert atômico: uma falha
+ *    não deixa um checkpoint parcial que esconderia os dias ausentes.
  * 2. **Espaçamento entre chamadas**: a rajada é o gatilho do 429 sustentado
  *    (a execução que completa faz ~280 ms/item; as que morrem, full speed).
  *    Sem número oficial de rate limit (D-042), o valor é conservador e
@@ -178,9 +177,9 @@ export async function fetchListingVisits(
 
     let recorded = true;
 
-    for (const entry of timeWindow.results) {
+    if (timeWindow.results.length > 0) {
       const result = await params.db.from("daily_listing_visits").upsert(
-        {
+        timeWindow.results.map((entry) => ({
           organization_id: params.organizationId,
           ml_account_id: params.mlAccountId,
           item_id: listing.item_id,
@@ -190,7 +189,7 @@ export async function fetchListingVisits(
           metric_date: entry.date.slice(0, 10),
           visits: entry.total,
           synced_at: syncedAt.toISOString(),
-        },
+        })),
         { onConflict: "ml_account_id,item_id,metric_date" },
       );
 
@@ -198,7 +197,7 @@ export async function fetchListingVisits(
         params.logger.error("listing_visits_not_recorded", {
           ml_account_id: params.mlAccountId,
           item_id: listing.item_id,
-          metric_date: entry.date.slice(0, 10),
+          days: timeWindow.results.length,
           reason: result.error.message,
         });
 

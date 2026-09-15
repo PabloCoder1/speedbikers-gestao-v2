@@ -20,7 +20,7 @@ import {
   summarizeBatchWindow,
 } from "../../lib/import-filters";
 import { createClient } from "../../lib/supabase/server";
-import { currentMembership } from "../../lib/membership";
+import { currentMembership } from "../../lib/request-membership";
 
 export const metadata = { title: "Importações — Speed Bikers Gestão" };
 
@@ -65,7 +65,7 @@ export default async function ImportacoesPage({
     latências onde uma resolve, e o guarda `check:waterfalls` reprova a fila.
   */
   const [membership, { data, error, count }] = await Promise.all([
-    currentMembership(supabase),
+    currentMembership(),
     consulta.order("created_at", { ascending: false }).range(from, from + BATCH_PAGE_SIZE - 1),
   ]);
 

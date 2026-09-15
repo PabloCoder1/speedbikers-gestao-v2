@@ -235,7 +235,7 @@ describe("sync.listing-visits.snapshot (D-032)", () => {
     const syncRun = db.inserted.find((e) => e.table === "sync_runs")?.row;
     expect(syncRun).toMatchObject({ status: "done", items_processed: 1, resource: "visits" });
     const visit = db.inserted.find((e) => e.table === "daily_listing_visits")?.row;
-    expect(visit).toMatchObject({ item_id: "MLB1", metric_date: "2026-08-23", visits: 16 });
+    expect(visit).toMatchObject([{ item_id: "MLB1", metric_date: "2026-08-23", visits: 16 }]);
   });
 
   it("erro retryable do Mercado Livre: falha retryable e registra sync_errors com a classe certa", async () => {

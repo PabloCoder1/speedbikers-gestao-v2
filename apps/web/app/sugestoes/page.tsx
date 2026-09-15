@@ -8,7 +8,7 @@ import { StatusPill } from "../../components/status-pill";
 import { summarizePagedWindow } from "../../lib/filters";
 import { formatDateTime } from "../../lib/format";
 import { featureSuggestionStatusLabel } from "../../lib/labels";
-import { currentMembership } from "../../lib/membership";
+import { currentMembership } from "../../lib/request-membership";
 import {
   SUGGESTIONS_PAGE_SIZE,
   buildSuggestionHref,
@@ -74,7 +74,7 @@ export default async function SugestoesPage({
   // fazer, e a listagem é restringida pela RLS, não pelo papel. Em fila
   // custavam duas idas ao banco somadas; em paralelo, uma (D-195).
   const [membership, suggestions] = await Promise.all([
-    currentMembership(supabase),
+    currentMembership(),
     supabase
       .from("feature_suggestions")
       .select(

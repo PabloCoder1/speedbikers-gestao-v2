@@ -15,7 +15,7 @@ import { formatBusinessDate, formatCount, formatCurrency, formatDateTime, format
 import { actionStatusLabel, eventTypeLabel, listingStatusLabel, relistStatusLabel, statusTone } from "../../../lib/labels";
 import { fullSituationCriterion, fullSituationLabel, fullSituationTom, isFullRow } from "../../../lib/full-filters";
 import { formatDecisionSnapshot } from "../../../lib/decision-format";
-import { currentMembership } from "../../../lib/membership";
+import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
 import { RelistPanel } from "./relist-panel";
 
@@ -333,7 +333,7 @@ export default async function AnuncioPage({
           .order("created_at", { ascending: false })
           .limit(20)
       : Promise.resolve({ data: null, error: null }),
-    needsRelists ? currentMembership(supabase) : Promise.resolve(null),
+    needsRelists ? currentMembership() : Promise.resolve(null),
   ]);
 
   const summary = summaryResult.data;

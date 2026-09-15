@@ -553,23 +553,11 @@ describe("receiveWebhook — contas em memória (D-346)", () => {
     expect(ctx.enqueued).toHaveLength(0);
   });
 
-  it("diretório que rejeita (banco fora, nada em memória): ACK como conta desconhecida, com o motivo no log", async () => {
+  it("diretorio indisponivel pede reentrega, sem ACK de conta desconhecida", async () => {
     const ctx = deps();
-    const avisos: { event: string; fields: Record<string, unknown> }[] = [];
     ctx.deps.db = dbQueExplode();
-    ctx.deps.accounts = { resolve: () => Promise.reject(new Error("falha ao carregar ml_accounts: timeout")) };
-    ctx.deps.logger = {
-      ...ctx.deps.logger,
-      warn: (event: string, fields: Record<string, unknown>) => {
-        avisos.push({ event, fields });
-      },
-    } as typeof ctx.deps.logger;
-
-    const outcome = await receiveWebhook(ctx.deps, NOTIFICATION);
-
-    expect(outcome).toEqual({ status: "unknown_account" });
-    expect(avisos.find((a) => a.event === "ml_webhook_unknown_account")?.fields).toMatchObject({
-      lookup_error: "falha ao carregar ml_accounts: timeout",
-    });
+    ctx.deps.accounts = { resolve: () => Promise.reject(new Error("timeout")) };
+    expect(await receiveWebhook(ctx.deps, NOTIFICATION)).toEqual({ status: "lookup_unavailable" });
+    expect(ctx.enqueued).toHaveLength(0);
   });
 });

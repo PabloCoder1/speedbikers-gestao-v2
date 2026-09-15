@@ -19,7 +19,7 @@ import {
   type OrdemChave,
   type SinalChave,
 } from "../../lib/curation-filters";
-import { currentMembership } from "../../lib/membership";
+import { currentMembership } from "../../lib/request-membership";
 
 export const metadata = { title: "Produtos — Speed Bikers Gestão" };
 
@@ -108,7 +108,7 @@ export default async function ProdutosPage({
   // `.limit(1)` e não `.maybeSingle()` sem filtro: numa organização com dois
   // membros o `maybeSingle` estoura PGRST116 e a tela inteira morre — o
   // defeito que D-119 mediu e corrigiu.
-  const membership = await currentMembership(supabase);
+  const membership = await currentMembership();
   const organizationId = membership.organizationId;
 
   if (membership.error !== null) {

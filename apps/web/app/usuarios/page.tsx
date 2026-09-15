@@ -19,7 +19,7 @@ import {
 } from "../../lib/member-filters";
 import { tomDePapel } from "../../lib/role-tone";
 import { createClient } from "../../lib/supabase/server";
-import { currentMembership } from "../../lib/membership";
+import { currentMembership } from "../../lib/request-membership";
 import { DetalheUsuario } from "./detalhe-usuario";
 import { ConvidarUsuario } from "./convidar";
 
@@ -118,7 +118,7 @@ export default async function UsuariosPage({
     `currentMembership` lê pela RPC `get_current_membership`, que filtra por
     `auth.uid()`, e é o que todas as outras telas já usavam.
   */
-  const membership = await currentMembership(supabase);
+  const membership = await currentMembership();
 
   const organizationId = membership.organizationId;
   const myRole = membership.role;

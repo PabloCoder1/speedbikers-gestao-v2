@@ -45,6 +45,38 @@ function cargas(...versoes: Map<number, AccountRef>[]): { load: () => Promise<Ma
 }
 
 describe("createAccountDirectory (D-346)", () => {
+  it("antecipa a recarga sem bloquear a conta conhecida e remove contas excluídas", async () => {
+    const { now, avancar } = relogio();
+    let release: (value: Map<number, AccountRef>) => void = () => undefined;
+    const pending = new Promise<Map<number, AccountRef>>((resolve) => { release = resolve; });
+    let calls = 0;
+    const directory = createAccountDirectory({ now, load: () => {
+      calls += 1;
+      return calls === 1 ? Promise.resolve(new Map([[SELLER_1, LOJA_1]])) : pending;
+    } });
+    await directory.resolve(SELLER_1);
+    avancar(240_000);
+    const burst = await Promise.all(Array.from({ length: 100 }, () => directory.resolve(SELLER_1)));
+    expect(burst.every((account) => account === LOJA_1)).toBe(true);
+    expect(calls).toBe(2);
+    release(new Map());
+    await pending;
+    await expect(directory.resolve(SELLER_1)).resolves.toBeNull();
+  });
+
+  it("não renova artificialmente a idade após falhas: ao atingir o limite rejeita", async () => {
+    const { now, avancar } = relogio();
+    let calls = 0;
+    const directory = createAccountDirectory({ now, load: () => {
+      calls += 1;
+      return calls === 1 ? Promise.resolve(new Map([[SELLER_1, LOJA_1]])) : Promise.reject(new Error("offline"));
+    } });
+    await directory.resolve(SELLER_1);
+    avancar(300_000);
+    await expect(directory.resolve(SELLER_1)).resolves.toBe(LOJA_1);
+    avancar(30_000);
+    await expect(directory.resolve(SELLER_1)).rejects.toThrow("offline");
+  });
   it("cem consultas simultâneas com o diretório vazio fazem UMA carga — a rajada não vira cem consultas", async () => {
     let chamadas = 0;
     let liberar: (contas: Map<number, AccountRef>) => void = () => undefined;
@@ -73,7 +105,7 @@ describe("createAccountDirectory (D-346)", () => {
     const diretorio = createAccountDirectory({ load: carga.load, now, ttlMs: 300_000 });
 
     await diretorio.resolve(SELLER_1);
-    avancar(299_000);
+    avancar(239_000);
     await diretorio.resolve(SELLER_1);
 
     expect(carga.chamadas()).toBe(1);
@@ -153,8 +185,8 @@ describe("createAccountDirectory (D-346)", () => {
     await diretorio.resolve(SELLER_1);
     expect(chamadas).toBe(2);
 
-    avancar(21_000);
-    await diretorio.resolve(SELLER_1);
+    avancar(20_000);
+    await expect(diretorio.resolve(SELLER_1)).rejects.toThrow("banco fora do ar");
     expect(chamadas).toBe(3);
   });
 });

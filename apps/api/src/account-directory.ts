@@ -37,6 +37,10 @@ export interface AccountDirectoryOptions {
   load: () => Promise<Map<number, AccountRef>>;
   ttlMs?: number;
   unknownSellerReloadMinMs?: number;
+  /** Antecipar a recarga em tráfego conhecido, sem ampliar o TTL. */
+  refreshAheadMs?: number;
+  /** Idade máxima para usar um diretório durante indisponibilidade do banco. */
+  maxAgeMs?: number;
   /** Relógio em ms; injetável para o teste controlar prazo e intervalo. */
   now?: () => number;
 }
@@ -48,9 +52,12 @@ export function createAccountDirectory(options: AccountDirectoryOptions): Accoun
   const ttlMs = options.ttlMs ?? ACCOUNT_DIRECTORY_TTL_MS;
   const recargaMinMs = options.unknownSellerReloadMinMs ?? UNKNOWN_SELLER_RELOAD_MIN_MS;
   const agora = options.now ?? (() => Date.now());
+  const refreshAheadMs = options.refreshAheadMs ?? Math.min(60_000, ttlMs / 5);
+  const maxAgeMs = options.maxAgeMs ?? ttlMs + recargaMinMs;
 
   let contas: Map<number, AccountRef> | null = null;
   let carregadoEm = Number.NEGATIVE_INFINITY;
+  let tentadoEm = Number.NEGATIVE_INFINITY;
   let emVoo: Promise<Map<number, AccountRef>> | null = null;
 
   function recarregar(): Promise<Map<number, AccountRef>> {
@@ -58,6 +65,7 @@ export function createAccountDirectory(options: AccountDirectoryOptions): Accoun
       return emVoo;
     }
 
+    tentadoEm = agora();
     const carga = options.load().then(
       (novas) => {
         contas = novas;
@@ -66,14 +74,12 @@ export function createAccountDirectory(options: AccountDirectoryOptions): Accoun
         return novas;
       },
       (erro: unknown) => {
-        if (contas === null) {
+        if (contas === null || agora() - carregadoEm >= maxAgeMs) {
           throw erro;
         }
 
         // Serve as antigas e tenta de novo depois do intervalo mínimo, não do
         // prazo inteiro: um banco que voltou precisa ser visto logo.
-        carregadoEm = agora() - ttlMs + recargaMinMs;
-
         return contas;
       },
     );
@@ -88,9 +94,14 @@ export function createAccountDirectory(options: AccountDirectoryOptions): Accoun
   return {
     resolve: async (sellerId) => {
       let mapa = contas;
+      const idade = agora() - carregadoEm;
+      const podeRecarregar = agora() - tentadoEm >= recargaMinMs;
 
-      if (mapa === null || agora() - carregadoEm >= ttlMs) {
+      if (mapa === null || idade >= maxAgeMs || (idade >= ttlMs && podeRecarregar)) {
         mapa = await recarregar();
+      } else if (idade >= ttlMs - refreshAheadMs && podeRecarregar && mapa.has(sellerId)) {
+        // A falha é observada na próxima leitura; nunca rejeição sem consumidor.
+        void recarregar().catch(() => undefined);
       }
 
       const conta = mapa.get(sellerId);
@@ -99,7 +110,7 @@ export function createAccountDirectory(options: AccountDirectoryOptions): Accoun
         return conta;
       }
 
-      if (agora() - carregadoEm < recargaMinMs) {
+      if (agora() - tentadoEm < recargaMinMs) {
         return null;
       }
 

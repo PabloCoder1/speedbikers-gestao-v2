@@ -21,7 +21,7 @@ import {
   summarizeReplenishmentWindow,
 } from "../../lib/replenishment-filters";
 import { createClient } from "../../lib/supabase/server";
-import { currentMembership } from "../../lib/membership";
+import { currentMembership } from "../../lib/request-membership";
 
 export const metadata = { title: "Reposição — Speed Bikers Gestão" };
 
@@ -118,7 +118,7 @@ export default async function ReposicaoPage({
   const query = await searchParams;
   const supabase = await createClient();
 
-  const membership = await currentMembership(supabase);
+  const membership = await currentMembership();
   const organizationId = membership.organizationId;
 
   if (organizationId === null) {

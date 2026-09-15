@@ -6,7 +6,7 @@ import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
 import { formatCount, formatCurrency, formatDateTime } from "../../lib/format";
-import { currentMembership } from "../../lib/membership";
+import { currentMembership } from "../../lib/request-membership";
 import { createClient } from "../../lib/supabase/server";
 import {
   PAGE_SIZE,
@@ -75,7 +75,7 @@ export default async function FornecedoresPage({
   const filters = resolveSupplierFilters(query);
   const supabase = await createClient();
 
-  const membership = await currentMembership(supabase);
+  const membership = await currentMembership();
   const organizationId = membership.organizationId;
 
   if (organizationId === null) {

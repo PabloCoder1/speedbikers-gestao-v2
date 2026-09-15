@@ -3,9 +3,14 @@
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 
-import { CopilotChat } from "../app/copiloto/chat";
+import dynamic from "next/dynamic";
 import { useCopilotScreenContext, type CopilotScreenContext } from "./copilot-context";
 import { Drawer } from "./drawer";
+
+const CopilotChat = dynamic(() => import("../app/copiloto/chat").then((module) => module.CopilotChat), {
+  ssr: false,
+  loading: () => <p role="status" className="sb-empty">Carregando Copiloto…</p>,
+});
 
 /**
  * A GAVETA DO COPILOTO (D-294) — o último item aberto da frente visual.

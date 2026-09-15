@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { searchEntityLabel, textoDasEntidadesBuscaveis } from "../lib/labels";
 import { createClient } from "../lib/supabase/browser";
@@ -9,10 +9,8 @@ import { createClient } from "../lib/supabase/browser";
 /**
  * Busca universal / Command Palette (Fase 5B, `docs/PRODUCT_REQUIREMENTS.md`
  * secao "Busca universal") — `Ctrl+K`/`Cmd+K` abre, digita, `Enter` ou clique
- * navega. Mesmo padrão de busca-enquanto-digita já usado em
- * `apps/web/app/compras/novo/item-row.tsx` (sem debounce, mínimo de 2
- * caracteres antes de consultar) — `search_entities` já limita 5 por tipo,
- * então o resultado nunca é grande o bastante para justificar debounce.
+ * navega. Espera 250 ms de digitação e cancela a busca anterior. A sequência
+ * também protege contra respostas antigas quando o transporte não aborta.
  *
  * ## A caixa aberta, pelo frame (A2)
  *
@@ -64,6 +62,27 @@ export function CommandPalette({ organizationId }: { organizationId: string | nu
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [searching, setSearching] = useState(false);
+  const sequence = useRef(0);
+  const controller = useRef<AbortController | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const invalidate = useCallback(() => {
+    sequence.current += 1;
+    controller.current?.abort();
+    if (timer.current !== null) clearTimeout(timer.current);
+  }, []);
+
+  const fechar = useCallback(() => {
+    invalidate();
+    setOpen(false);
+    setSearching(false);
+    setQuery("");
+    setResults([]);
+    setSearchError(null);
+  }, [invalidate]);
+
+  useEffect(() => invalidate, [invalidate, organizationId]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
@@ -75,7 +94,7 @@ export function CommandPalette({ organizationId }: { organizationId: string | nu
       }
 
       if (event.key === "Escape") {
-        setOpen(false);
+        fechar();
       }
     }
 
@@ -84,11 +103,14 @@ export function CommandPalette({ organizationId }: { organizationId: string | nu
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, []);
+  }, [fechar]);
 
-  async function search(value: string): Promise<void> {
+  function search(value: string): void {
+    invalidate();
     setQuery(value);
     setSearchError(null);
+    setResults([]);
+    setSearching(false);
 
     if (organizationId === null || value.trim().length < 2) {
       setResults([]);
@@ -96,33 +118,34 @@ export function CommandPalette({ organizationId }: { organizationId: string | nu
       return;
     }
 
-    const supabase = createClient();
-
-    const { data, error } = await supabase.rpc("search_entities", {
-      p_organization_id: organizationId,
-      p_query: value.trim(),
-    });
-
-    if (error !== null) {
-      // Sem isto, falha de rede/RLS virava "Nada encontrado" — igual a uma
-      // busca genuinamente vazia (D-067, Nível 3).
-      setResults([]);
-      setSearchError("Não foi possível buscar — tente de novo.");
-
-      return;
-    }
-
-    setResults(data);
-  }
-
-  function fechar(): void {
-    setOpen(false);
+    setSearching(true);
+    const requestId = sequence.current;
+    const abort = new AbortController();
+    controller.current = abort;
+    timer.current = setTimeout(() => {
+      void (async () => {
+        try {
+          const { data, error } = await createClient().rpc("search_entities", {
+            p_organization_id: organizationId,
+            p_query: value.trim(),
+          }).abortSignal(abort.signal);
+          if (requestId !== sequence.current) return;
+          if (error !== null) {
+            setSearchError("Não foi possível buscar — tente de novo.");
+          } else {
+            setResults(data);
+          }
+        } catch {
+          if (requestId === sequence.current) setSearchError("Não foi possível buscar — tente de novo.");
+        } finally {
+          if (requestId === sequence.current) setSearching(false);
+        }
+      })();
+    }, 250);
   }
 
   function go(href: string): void {
-    setOpen(false);
-    setQuery("");
-    setResults([]);
+    fechar();
     router.push(href);
   }
 
@@ -208,7 +231,7 @@ export function CommandPalette({ organizationId }: { organizationId: string | nu
             autoFocus
             value={query}
             onChange={(event) => {
-              void search(event.target.value);
+              search(event.target.value);
             }}
             // O que se DIGITA, e não uma segunda lista de entidades — a lista mora
             // na frase abaixo. "pedido" sozinho prometia pedido de venda.
@@ -224,7 +247,9 @@ export function CommandPalette({ organizationId }: { organizationId: string | nu
           </p>
         )}
 
-        {searchError === null && query.trim().length >= 2 && results.length === 0 && (
+        {searching && <p role="status" className="sb-empty">Buscando…</p>}
+
+        {!searching && searchError === null && query.trim().length >= 2 && results.length === 0 && (
           <p className="sb-empty">Nada encontrado para “{query.trim()}”.</p>
         )}
 

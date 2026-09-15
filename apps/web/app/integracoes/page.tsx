@@ -10,7 +10,7 @@ import { apiBaseUrl, fetchApiHealth } from "../../lib/api-health";
 import { formatDateTime } from "../../lib/format";
 import { describeIntegrations } from "../../lib/integrations";
 import type { Dimension, IntegrationState } from "../../lib/integrations";
-import { currentMembership } from "../../lib/membership";
+import { currentMembership } from "../../lib/request-membership";
 import { sanitizeErrorText } from "../../lib/sanitize";
 import { createClient } from "../../lib/supabase/server";
 
@@ -103,7 +103,7 @@ export default async function IntegracoesPage(): Promise<ReactNode> {
 
   // A linha de quem está logado (filtrada por usuário — D-232), porque
   // `organization_id` é parâmetro de `get_sync_health`: dependência real.
-  const membership = await currentMembership(supabase);
+  const membership = await currentMembership();
 
   if (membership.error !== null) {
     // "Não consegui ler" e "não é membro" são respostas diferentes (D-067).

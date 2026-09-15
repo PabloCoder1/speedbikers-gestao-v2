@@ -7,7 +7,7 @@ import { Shell } from "../../../components/shell";
 import { formatDateTime } from "../../../lib/format";
 import { createClient } from "../../../lib/supabase/server";
 import { createSetting, deleteSetting, updateSetting } from "./actions";
-import { currentMembership } from "../../../lib/membership";
+import { currentMembership } from "../../../lib/request-membership";
 
 export const metadata = { title: "Configuração de Reposição — Speed Bikers Gestão" };
 
@@ -61,7 +61,7 @@ export default async function ReposicaoConfigPage({
   const actionError = typeof query.erro === "string" ? query.erro : null;
   const supabase = await createClient();
 
-  const membership = await currentMembership(supabase);
+  const membership = await currentMembership();
   const organizationId = membership.organizationId;
   const role = membership.role;
 

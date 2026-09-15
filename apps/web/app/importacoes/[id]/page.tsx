@@ -29,7 +29,7 @@ import {
   statusTone,
 } from "../../../lib/labels";
 import { createClient } from "../../../lib/supabase/server";
-import { currentMembership } from "../../../lib/membership";
+import { currentMembership } from "../../../lib/request-membership";
 import { ConfirmApplyForm } from "./confirm-apply-form";
 import { summarize } from "./summarize";
 
@@ -85,7 +85,7 @@ export default async function ConferenciaPage({
   }
 
   const [membership, batch, rows] = await Promise.all([
-    currentMembership(supabase),
+    currentMembership(),
     supabase
       .from("erp_import_batches")
       .select(

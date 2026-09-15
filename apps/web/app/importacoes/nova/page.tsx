@@ -6,16 +6,14 @@ import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
 import { Shell } from "../../../components/shell";
 import { UploadForm } from "./upload-form";
-import { createClient } from "../../../lib/supabase/server";
-import { currentMembership } from "../../../lib/membership";
+import { currentMembership } from "../../../lib/request-membership";
 
 export const metadata = { title: "Nova importação — Speed Bikers Gestão" };
 
 export const dynamic = "force-dynamic";
 
 export default async function NovaImportacaoPage(): Promise<ReactNode> {
-  const supabase = await createClient();
-  const membership = await currentMembership(supabase);
+  const membership = await currentMembership();
 
 /*
   RESTRITA A ADMIN (D-312). Importar uma planilha do UpSeller reescreve o

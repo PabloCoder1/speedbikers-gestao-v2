@@ -28,11 +28,13 @@ function fakeDb(options: {
 }): {
   db: FetchListingVisitsParams["db"];
   upserted: Record<string, unknown>[];
+  batches: Record<string, unknown>[][];
   listingsRanges: [number, number][];
 } {
   const links = options.links ?? [];
   const recentRows = (options.recentItemIds ?? []).map((item_id) => ({ item_id }));
   const upserted: Record<string, unknown>[] = [];
+  const batches: Record<string, unknown>[][] = [];
   const listingsRanges: [number, number][] = [];
 
   function tableChain(rows: Link[], error: { message: string } | null, ranges?: [number, number][]): unknown {
@@ -68,17 +70,17 @@ function fakeDb(options: {
 
         return tableChain([], null);
       },
-      upsert: (row: Record<string, unknown>) => {
-        upserted.push(row);
-
-        const fails = options.upsertFailsFor?.includes(row.metric_date as string) ?? false;
+      upsert: (rows: Record<string, unknown>[]) => {
+        batches.push(rows);
+        const fails = rows.some((row) => options.upsertFailsFor?.includes(row.metric_date as string) ?? false);
+        if (!fails) upserted.push(...rows);
 
         return Promise.resolve(fails ? { data: null, error: { message: "boom" } } : { data: null, error: null });
       },
     }),
   } as unknown as FetchListingVisitsParams["db"];
 
-  return { db, upserted, listingsRanges };
+  return { db, upserted, batches, listingsRanges };
 }
 
 function fakeMercadoLivreClient(
@@ -142,12 +144,13 @@ describe("fetchListingVisits (D-032)", () => {
   });
 
   it("grava uma linha por dia de results[], data em YYYY-MM-DD (sem passar por Date)", async () => {
-    const { db, upserted } = fakeDb({ links: [{ item_id: "MLB1" }] });
+    const { db, upserted, batches } = fakeDb({ links: [{ item_id: "MLB1" }] });
     const { client, requests } = fakeMercadoLivreClient({ MLB1: TIME_WINDOW_MLB1 });
 
     const result = await fetchListingVisits(baseParams(db, client));
 
     expect(result).toEqual({ itemsProcessed: 1, itemsFailed: 0, itemsSkipped: 0 });
+    expect(batches).toHaveLength(1);
     expect(upserted).toEqual([
       {
         organization_id: ORGANIZATION_ID,
@@ -307,7 +310,7 @@ describe("fetchListingVisits (D-032)", () => {
     expect(upserted.filter((row) => row.item_id === "MLB1")).toHaveLength(2);
   });
 
-  it("falha ao gravar um dos dias (erro de banco): item não conta como processado", async () => {
+  it("falha em um dia rejeita o lote inteiro, sem checkpoint parcial", async () => {
     const { db, upserted } = fakeDb({
       links: [{ item_id: "MLB1" }],
       upsertFailsFor: ["2026-08-22"],
@@ -317,7 +320,7 @@ describe("fetchListingVisits (D-032)", () => {
     const result = await fetchListingVisits(baseParams(db, client));
 
     expect(result).toEqual({ itemsProcessed: 0, itemsFailed: 0, itemsSkipped: 0 });
-    expect(upserted).toHaveLength(2);
+    expect(upserted).toHaveLength(0);
   });
 
   it("falha ao ler listings rejeita — sem isto viraria 'done, 0 processados', igual a uma conta sem anúncio", async () => {

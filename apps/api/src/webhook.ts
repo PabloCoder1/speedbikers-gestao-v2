@@ -83,6 +83,7 @@ export interface WebhookDeps {
 export type WebhookOutcome =
   | { status: "enqueued"; jobId: string; jobType: string; deduplicated: boolean }
   | { status: "unknown_account" }
+  | { status: "lookup_unavailable" }
   | { status: "unroutable_resource" }
   | { status: "ignored_action" }
   | { status: "no_consumer"; topic: string }
@@ -221,9 +222,15 @@ export async function receiveWebhook(deps: WebhookDeps, rawBody: unknown): Promi
       .maybeSingle();
 
     conta = consulta.error === null ? consulta.data : null;
+    lookupError = consulta.error?.message;
   }
 
   const lookupMs = duracao(antesDaConta, relogio());
+
+  if (lookupError !== undefined) {
+    deps.logger.warn("ml_webhook_lookup_unavailable", { lookup_ms: lookupMs });
+    return { status: "lookup_unavailable" };
+  }
 
   if (conta === null) {
     // Não é transitório: reprocessar não vai criar a conta. ACK mesmo assim
@@ -232,7 +239,6 @@ export async function receiveWebhook(deps: WebhookDeps, rawBody: unknown): Promi
       seller_id: notification.user_id,
       topic: notification.topic,
       lookup_ms: lookupMs,
-      ...(lookupError !== undefined ? { lookup_error: lookupError } : {}),
     });
 
     return { status: "unknown_account" };

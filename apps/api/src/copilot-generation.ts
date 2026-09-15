@@ -8,7 +8,7 @@ import type {
 import { structuredSuggestionFieldsSchema } from "@sb/contracts";
 
 import type { AnthropicClient } from "./anthropic-client.js";
-import { CopilotToolError } from "./copilot.js";
+import { CopilotToolError } from "./copilot-error.js";
 
 /**
  * As duas ferramentas de GERAÇÃO DE TEXTO do Copiloto (D-112) — mesma

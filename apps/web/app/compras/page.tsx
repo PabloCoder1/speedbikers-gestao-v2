@@ -8,7 +8,7 @@ import { Shell } from "../../components/shell";
 import { StatusPill } from "../../components/status-pill";
 import { formatCount, formatCurrency, formatDateTime } from "../../lib/format";
 import { purchaseOrderStatusLabel } from "../../lib/labels";
-import { currentMembership } from "../../lib/membership";
+import { currentMembership } from "../../lib/request-membership";
 import {
   PAGE_SIZE,
   PURCHASE_ORDER_STATUSES,
@@ -65,7 +65,7 @@ export default async function ComprasPage({
   const filters = resolvePurchaseOrderFilters(query);
   const supabase = await createClient();
 
-  const membership = await currentMembership(supabase);
+  const membership = await currentMembership();
   const organizationId = membership.organizationId;
 
   if (organizationId === null) {

@@ -22,7 +22,7 @@ import {
   summarizePagedWindow,
 } from "../../lib/full-filters";
 import { createClient } from "../../lib/supabase/server";
-import { currentMembership } from "../../lib/membership";
+import { currentMembership } from "../../lib/request-membership";
 
 export const metadata = { title: "Central Full — Speed Bikers Gestão" };
 
@@ -94,7 +94,7 @@ export default async function FullPage({
   // (`accessible_accounts`), então esta leitura não depende da anterior — as
   // duas saem juntas. A RPC abaixo SIM depende da conta escolhida.
   const [membership, accounts] = await Promise.all([
-    currentMembership(supabase),
+    currentMembership(),
     supabase.from("ml_accounts").select("id, label").order("label"),
   ]);
 

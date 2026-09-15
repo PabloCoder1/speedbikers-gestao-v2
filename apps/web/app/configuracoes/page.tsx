@@ -8,7 +8,7 @@ import { Shell } from "../../components/shell";
 import { StatePill } from "../../components/state-pill";
 import type { PillTone } from "../../components/state-pill";
 import { formatCount } from "../../lib/format";
-import { currentMembership } from "../../lib/membership";
+import { currentMembership } from "../../lib/request-membership";
 import { sanitizeErrorText } from "../../lib/sanitize";
 import { describeSettings } from "../../lib/settings-hub";
 import type { SettingState } from "../../lib/settings-hub";
@@ -52,7 +52,7 @@ export default async function ConfiguracoesPage(): Promise<ReactNode> {
 
   // A linha de quem está logado (filtrada por usuário — D-232): `organization_id`
   // é parâmetro da RPC, dependência real, não fila.
-  const membership = await currentMembership(supabase);
+  const membership = await currentMembership();
 
   if (membership.error !== null) {
     return (

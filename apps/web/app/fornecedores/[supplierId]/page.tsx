@@ -10,7 +10,7 @@ import { StatusPill } from "../../../components/status-pill";
 import { formatCount, formatCurrency, formatDateTime } from "../../../lib/format";
 import { purchaseOrderStatusLabel } from "../../../lib/labels";
 import { createClient } from "../../../lib/supabase/server";
-import { currentMembership } from "../../../lib/membership";
+import { currentMembership } from "../../../lib/request-membership";
 
 export const metadata = { title: "Fornecedor — Speed Bikers Gestão" };
 
@@ -71,7 +71,7 @@ export default async function FornecedorPage({
   const { supplierId } = await params;
   const supabase = await createClient();
 
-  const membership = await currentMembership(supabase);
+  const membership = await currentMembership();
   const organizationId = membership.organizationId;
 
   if (organizationId === null) {

@@ -15,7 +15,7 @@ import {
   summarizeLinkIntegrityWindow,
   toRpcArgs,
 } from "../../lib/link-integrity-filters";
-import { currentMembership } from "../../lib/membership";
+import { currentMembership } from "../../lib/request-membership";
 import { createClient } from "../../lib/supabase/server";
 import { CandidateRow } from "./candidate-row";
 import { ManualLinkForm } from "./manual-link-form";
@@ -119,7 +119,7 @@ export default async function VinculacoesPage({
     `/anuncios` (D-242) — duas idas em série, não seis.
   */
   const [membership, contas] = await Promise.all([
-    currentMembership(supabase),
+    currentMembership(),
     // Só as contas que o usuário alcança — a RLS de `ml_accounts` decide.
     supabase.from("ml_accounts").select("id, slug, label").order("label"),
   ]);

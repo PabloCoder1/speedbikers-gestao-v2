@@ -15,7 +15,7 @@ import {
 } from "../../lib/diagnostic-filters";
 import { formatBusinessDate, formatCount, formatCurrency } from "../../lib/format";
 import { createClient } from "../../lib/supabase/server";
-import { currentMembership } from "../../lib/membership";
+import { currentMembership } from "../../lib/request-membership";
 import { DiagnosisPanel } from "../skus/[skuId]/diagnosis-panel";
 
 export const metadata = { title: "Diagnóstico — Speed Bikers Gestão" };
@@ -70,7 +70,7 @@ export default async function DiagnosticoPage({
   const supabase = await createClient();
   const filters = resolveDiagnosticFilters(await searchParams);
 
-  const membership = await currentMembership(supabase);
+  const membership = await currentMembership();
   const organizationId = membership.organizationId;
 
   if (membership.error !== null) {

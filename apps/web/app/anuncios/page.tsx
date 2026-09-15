@@ -28,7 +28,7 @@ import {
 import { buildFilterHref } from "../../lib/filters";
 import { DEFAULT_PERIOD_DAYS, PERIOD_PRESETS, resolvePeriodDays } from "../../lib/period";
 import { createClient } from "../../lib/supabase/server";
-import { currentMembership } from "../../lib/membership";
+import { currentMembership } from "../../lib/request-membership";
 
 import { InspecaoAnuncio } from "./inspecao-anuncio";
 
@@ -175,7 +175,7 @@ export default async function AnunciosPage({
   // para filtrar. As duas leituras saem juntas desde D-195; as RPCs abaixo
   // continuam depois, porque elas SIM precisam da conta escolhida.
   const [membership, accountsResult] = await Promise.all([
-    currentMembership(supabase),
+    currentMembership(),
     supabase.from("ml_accounts").select("id, slug, label").order("label"),
   ]);
 

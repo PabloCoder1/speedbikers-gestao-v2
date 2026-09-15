@@ -6,7 +6,7 @@ import {
   shiftBusinessDate,
   toSalesMetricDate,
 } from "@sb/domain";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 
 import type { SavedFilter } from "../../components/saved-filters";
 import Link from "next/link";
@@ -21,7 +21,7 @@ import { createClient } from "../../lib/supabase/server";
 import { DEFAULT_SALES_METRIC, SALES_METRICS, resolveSalesMetric } from "../../lib/sales-metric";
 import { LegendaDoGrafico, mostraComparacao, SalesChart } from "./sales-chart";
 import { FilterMenu } from "../../components/filter-menu";
-import { currentMembership } from "../../lib/membership";
+import { currentMembership } from "../../lib/request-membership";
 
 export const metadata = { title: "Dashboard de Vendas — Speed Bikers Gestão" };
 
@@ -551,7 +551,13 @@ function buildHref(
   return qs === "" ? "/vendas" : `/vendas?${qs}`;
 }
 
-export default async function VendasPage({
+export default function VendasPage(props: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}): ReactNode {
+  return <Shell><Suspense fallback={<p role="status" className="sb-empty">Carregando vendas?</p>}><VendasContent {...props} /></Suspense></Shell>;
+}
+
+async function VendasContent({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -568,7 +574,7 @@ export default async function VendasPage({
 
   const [accountsResult, membershipResult, savedFiltersResult] = await Promise.all([
     supabase.from("ml_accounts").select("id, slug, label").order("label", { ascending: true }),
-    currentMembership(supabase),
+    currentMembership(),
     supabase.from("saved_filters").select("id, name, params").eq("screen", "/vendas").order("name"),
   ]);
 
@@ -610,6 +616,15 @@ export default async function VendasPage({
         ? { p_sem_marca: true }
         : {};
 
+  const topPromise = Promise.resolve(supabase.rpc("get_sales_top_skus", {
+      p_date_from: range.from,
+      p_date_to: range.to,
+      ...accountFilter,
+      ...brandFilter,
+      p_order_by: ORDEM_POR_METRICA[metric.key] ?? "receita",
+      p_limit: 10,
+    }));
+
   const [
     currentResult,
     previousResult,
@@ -621,7 +636,6 @@ export default async function VendasPage({
     brandsResult,
     marginResult,
     previousMarginResult,
-    topResult,
   ] = await Promise.all([
     supabase
       .rpc("get_sales_summary", { p_date_from: range.from, p_date_to: range.to, ...accountFilter, ...brandFilter })
@@ -684,14 +698,7 @@ export default async function VendasPage({
     // Décima primeira (D-244): os produtos que mais contribuíram — a tabela
     // que fecha o frame `Sales`. Mesmo recorte de conta e marca; a coluna do
     // ranking é a métrica do segmentado.
-    supabase.rpc("get_sales_top_skus", {
-      p_date_from: range.from,
-      p_date_to: range.to,
-      ...accountFilter,
-      ...brandFilter,
-      p_order_by: ORDEM_POR_METRICA[metric.key] ?? "receita",
-      p_limit: 10,
-    }),
+
   ]);
 
   const brands = (brandsResult.data ?? []).map((r) => r.supplier_brand);
@@ -731,7 +738,7 @@ export default async function VendasPage({
   const previousMargin: MarginSummary | null = previousMarginResult.data ?? null;
   // Falha aqui NÃO derruba a tela: a tabela recusa sozinha, com o aviso, e o
   // resto continua — o ranking é leitura própria, não parte do resumo.
-  const topSkus: TopSkuRow[] = topResult.error === null && Array.isArray(topResult.data) ? topResult.data : [];
+
 
   const lastComputedAt = summary?.last_computed_at ?? null;
   /*
@@ -755,7 +762,7 @@ export default async function VendasPage({
     brand.kind === "todas" ? "Todas as marcas" : brand.kind === "sem_marca" ? "Sem marca" : brand.value;
 
   return (
-    <Shell>
+    <>
       <PageTitle
         eyebrow="COMERCIAL / RESULTADOS"
         title="Dashboard de vendas"
@@ -1012,63 +1019,9 @@ export default async function VendasPage({
         produto a nomear —, e o total deles continua na faixa acima.
       */}
       {error === null && summary !== null && (
-        <div style={{ marginTop: "var(--sb-space-3)" }}>
-          <Panel
-            title="Produtos que mais contribuíram"
-            subtitle={`top ${String(topSkus.length === 0 ? 10 : topSkus.length)} por ${metric.label.toLowerCase()} · ${contaLabel.toLowerCase()}, ${marcaLabel.toLowerCase()} · itens vendidos sem vínculo de SKU ficam de fora`}
-            aside={
-              <Link href="/curva-abc" style={{ color: "var(--sb-secondary)", textDecoration: "none", fontSize: "0.6875rem" }}>
-                Curva ABC →
-              </Link>
-            }
-          >
-            {topResult.error !== null ? (
-              <p role="alert" className="sb-empty" style={{ color: "var(--sb-danger)" }}>
-                Não foi possível carregar o ranking: {topResult.error.message}
-              </p>
-            ) : topSkus.length === 0 ? (
-              <p className="sb-empty">Nenhum SKU com venda calculada neste recorte.</p>
-            ) : (
-              <div style={{ overflowX: "auto" }}>
-                <table className="sb-table">
-                  <thead>
-                    <tr>
-                      <th>Produto</th>
-                      <th>Marca</th>
-                      <th className="sb-num">Unidades</th>
-                      <th className="sb-num">Faturamento</th>
-                      <th className="sb-num">Pedidos</th>
-                      <th className="sb-num">Compras</th>
-                      <th className="sb-num">Preço médio</th>
-                      <th className="sb-num">Participação</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {topSkus.map((linha) => (
-                      <tr key={linha.sku_id}>
-                        <td>
-                          <Link className="sb-entity" href={`/skus/${linha.sku_id}`}>
-                            {linha.title ?? linha.sku}
-                          </Link>
-                          <span style={{ display: "block", fontFamily: "var(--sb-mono)", fontSize: "0.625rem", color: "var(--sb-text-soft)" }}>
-                            SKU {linha.sku}
-                          </span>
-                        </td>
-                        <td style={{ color: "var(--sb-text-soft)" }}>{linha.supplier_brand ?? "—"}</td>
-                        <td className="sb-num">{formatCount(linha.units_sold)}</td>
-                        <td className="sb-num">{formatCurrency(linha.gross_revenue)}</td>
-                        <td className="sb-num">{formatCount(linha.orders_count)}</td>
-                        <td className="sb-num">{formatCount(linha.purchases_count)}</td>
-                        <td className="sb-num">{formatCurrency(linha.average_selling_price)}</td>
-                        <td className="sb-num">{formatPercent(linha.share)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Panel>
-        </div>
+        <Suspense fallback={<p role="status" className="sb-empty">Carregando ranking...</p>}>
+          <SalesRanking result={topPromise} metricLabel={metric.label} contaLabel={contaLabel} marcaLabel={marcaLabel} />
+        </Suspense>
       )}
 
       {/*
@@ -1166,6 +1119,76 @@ export default async function VendasPage({
           </Panel>
         </div>
       )}
-    </Shell>
+    </>
+  );
+}
+
+
+async function SalesRanking({ result, metricLabel, contaLabel, marcaLabel }: {
+  result: Promise<{ data: TopSkuRow[] | null; error: { message: string } | null }>;
+  metricLabel: string;
+  contaLabel: string;
+  marcaLabel: string;
+}): Promise<ReactNode> {
+  const topResult = await result;
+  const topSkus = topResult.error === null ? topResult.data ?? [] : [];
+  return (
+        <div style={{ marginTop: "var(--sb-space-3)" }}>
+          <Panel
+            title="Produtos que mais contribuíram"
+            subtitle={`top ${String(topSkus.length === 0 ? 10 : topSkus.length)} por ${metricLabel.toLowerCase()} · ${contaLabel.toLowerCase()}, ${marcaLabel.toLowerCase()} · itens vendidos sem vínculo de SKU ficam de fora`}
+            aside={
+              <Link href="/curva-abc" style={{ color: "var(--sb-secondary)", textDecoration: "none", fontSize: "0.6875rem" }}>
+                Curva ABC →
+              </Link>
+            }
+          >
+            {topResult.error !== null ? (
+              <p role="alert" className="sb-empty" style={{ color: "var(--sb-danger)" }}>
+                Não foi possível carregar o ranking: {topResult.error.message}
+              </p>
+            ) : topSkus.length === 0 ? (
+              <p className="sb-empty">Nenhum SKU com venda calculada neste recorte.</p>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table className="sb-table">
+                  <thead>
+                    <tr>
+                      <th>Produto</th>
+                      <th>Marca</th>
+                      <th className="sb-num">Unidades</th>
+                      <th className="sb-num">Faturamento</th>
+                      <th className="sb-num">Pedidos</th>
+                      <th className="sb-num">Compras</th>
+                      <th className="sb-num">Preço médio</th>
+                      <th className="sb-num">Participação</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {topSkus.map((linha) => (
+                      <tr key={linha.sku_id}>
+                        <td>
+                          <Link className="sb-entity" href={`/skus/${linha.sku_id}`}>
+                            {linha.title ?? linha.sku}
+                          </Link>
+                          <span style={{ display: "block", fontFamily: "var(--sb-mono)", fontSize: "0.625rem", color: "var(--sb-text-soft)" }}>
+                            SKU {linha.sku}
+                          </span>
+                        </td>
+                        <td style={{ color: "var(--sb-text-soft)" }}>{linha.supplier_brand ?? "—"}</td>
+                        <td className="sb-num">{formatCount(linha.units_sold)}</td>
+                        <td className="sb-num">{formatCurrency(linha.gross_revenue)}</td>
+                        <td className="sb-num">{formatCount(linha.orders_count)}</td>
+                        <td className="sb-num">{formatCount(linha.purchases_count)}</td>
+                        <td className="sb-num">{formatCurrency(linha.average_selling_price)}</td>
+                        <td className="sb-num">{formatPercent(linha.share)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Panel>
+        </div>
   );
 }

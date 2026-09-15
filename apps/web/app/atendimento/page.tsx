@@ -27,7 +27,7 @@ import {
 } from "../../lib/support-filters";
 import { createClient } from "../../lib/supabase/server";
 import { TriageCell } from "./triage-cell";
-import { currentMembership } from "../../lib/membership";
+import { currentMembership } from "../../lib/request-membership";
 
 export const metadata = { title: "Caixa de Entrada — Speed Bikers Gestão" };
 
@@ -134,7 +134,7 @@ export default async function AtendimentoPage({
   // - as contas alimentam o seletor e não dependem de nenhuma das outras.
   const [{ data: auth }, membership, accountsResult] = await Promise.all([
     supabase.auth.getUser(),
-    currentMembership(supabase),
+    currentMembership(),
     supabase.from("ml_accounts").select("id, slug, label").order("label", { ascending: true }),
   ]);
 

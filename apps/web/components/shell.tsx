@@ -10,7 +10,7 @@ import { CopilotContextProvider } from "./copilot-context";
 import { CopilotLauncher } from "./copilot-launcher";
 import { NotificationToasts } from "./notification-toasts";
 import { SidebarNav } from "./nav";
-import { currentMembership } from "../lib/membership";
+import { currentMembership } from "../lib/request-membership";
 
 /**
  * Moldura das telas autenticadas — sidebar escura, topbar e área central,
@@ -78,7 +78,7 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
 
   const [{ data: auth }, membership, unread, preferences, contas, atendimentos, perfil] = await Promise.all([
     supabase.auth.getUser(),
-    currentMembership(supabase),
+    currentMembership(),
     // Badge de não lidas (Fase 7, item 4) — `notification_recipients_select_own`
     // já restringe a própria linha, sem precisar filtrar por user_id aqui.
     // `notification_id`, e não `id`: a chave é composta e não existe coluna

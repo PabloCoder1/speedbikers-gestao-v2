@@ -232,6 +232,10 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
 
     const outcome = await receiveWebhook(webhook, rawBody);
 
+    if (outcome.status === "lookup_unavailable") {
+      return context.json({ error: { code: "temporarily_unavailable" } }, 503);
+    }
+
     if (outcome.status === "invalid_payload") {
       return context.json({ error: { code: "invalid_payload", message: outcome.reason } }, 400);
     }

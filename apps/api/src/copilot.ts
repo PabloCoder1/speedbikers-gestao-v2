@@ -62,12 +62,8 @@ import { runStructureFeatureSuggestion, runSuggestSupportReply } from "./copilot
  * aqui, sem segunda implementação (`docs/COPILOT.md` secao 3, regra 2).
  */
 
-export class CopilotToolError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "CopilotToolError";
-  }
-}
+import { CopilotToolError } from "./copilot-error.js";
+export { CopilotToolError } from "./copilot-error.js";
 
 export interface CopilotDeps {
   db: AdminClient;

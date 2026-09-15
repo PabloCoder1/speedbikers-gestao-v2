@@ -13,7 +13,7 @@ import { DEFAULT_SALES_METRIC } from "../lib/sales-metric";
 import { eventTypeLabel, severityLabel } from "../lib/labels";
 import { formatBusinessDate, formatCount, formatCurrency, formatDateTime } from "../lib/format";
 import { createClient } from "../lib/supabase/server";
-import { currentMembership } from "../lib/membership";
+import { currentMembership } from "../lib/request-membership";
 import { buildFilterHref } from "../lib/filters";
 import { formatAge } from "../lib/relative-time";
 import { HOME_SERIE_DEFAULT_DAYS, PERIOD_PRESETS, resolvePeriodDays } from "../lib/period";
@@ -286,7 +286,7 @@ export default async function HomePage({
 
   const [membership, acoesAltas, acoesOutras, openCases, mediations, unread, vendas, vendasAntes, serieDiaria, atividade, perfil] =
     await Promise.all([
-      currentMembership(supabase),
+      currentMembership(),
       supabase
         .from("actions")
         .select("id", { count: "exact", head: true })

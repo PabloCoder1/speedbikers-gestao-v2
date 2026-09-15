@@ -6,7 +6,7 @@ import { Shell } from "../../../components/shell";
 import { createClient } from "../../../lib/supabase/server";
 import { NewTemplateForm } from "./new-template-form";
 import { TemplateRow } from "./template-row";
-import { currentMembership } from "../../../lib/membership";
+import { currentMembership } from "../../../lib/request-membership";
 
 export const metadata = { title: "Templates de resposta — Speed Bikers Gestão" };
 
@@ -26,7 +26,7 @@ export default async function TemplatesPage(): Promise<ReactNode> {
 
   const [templatesResult, membershipResult] = await Promise.all([
     supabase.from("reply_templates").select("id, name, body").order("name"),
-    currentMembership(supabase),
+    currentMembership(),
   ]);
 
   const role = membershipResult.role;

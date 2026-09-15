@@ -27,7 +27,7 @@ import {
   summarizePagedWindow,
 } from "../../lib/price-filters";
 import { createClient } from "../../lib/supabase/server";
-import { currentMembership } from "../../lib/membership";
+import { currentMembership } from "../../lib/request-membership";
 
 export const metadata = { title: "Histórico de Preços — Speed Bikers Gestão" };
 
@@ -69,7 +69,7 @@ export default async function PrecosPage({
   const supabase = await createClient();
 
   const [membership, accounts] = await Promise.all([
-    currentMembership(supabase),
+    currentMembership(),
     supabase.from("ml_accounts").select("id, label").order("label"),
   ]);
 
