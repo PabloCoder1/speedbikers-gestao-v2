@@ -48,7 +48,12 @@ function returnPayload(overrides: {
 
 interface FakeDbOptions {
   orderItemPosition?: number | null;
-  saleMovements?: { sku_id: string; qty_delta: number; idempotency_key: string }[];
+  /** Movimentos do pedido (`VENDA_ML` por padrão; `CANCELAMENTO_ML` com `movement_type`). */
+  saleMovements?: { sku_id: string; qty_delta: number; idempotency_key: string; movement_type?: string }[];
+  /** `DEVOLUCAO_ML` gravadas, por `get_order_return_movements` (verificação de e6fda07, ALTA-1). */
+  recordedReturns?: { sku_id: string; qty_delta: number; idempotency_key: string }[];
+  /** Simula falha da leitura das devoluções gravadas. */
+  returnsReadError?: boolean;
   orderItemsError?: boolean;
   saleMovementsError?: boolean;
   /** D-104: força a projeção de atendimento a falhar, sem tocar no estoque. */
@@ -61,10 +66,11 @@ interface Captured {
   supportCases: Record<string, unknown>[];
 }
 
-function fakeDb(options: FakeDbOptions, captured: Captured): ProcessClaimReturnDeps["db"] {
+function fakeDb(options: FakeDbOptions, captured: Captured, rpcCalls: string[] = []): ProcessClaimReturnDeps["db"] {
   const position = "orderItemPosition" in options ? options.orderItemPosition : 0;
-  const movements =
-    options.saleMovements ?? [{ sku_id: "sku-a", qty_delta: -1, idempotency_key: `venda:${String(ORDER_ID)}:0` }];
+  const movements = (
+    options.saleMovements ?? [{ sku_id: "sku-a", qty_delta: -1, idempotency_key: `venda:${String(ORDER_ID)}:0` }]
+  ).map((row) => ({ movement_type: "VENDA_ML", ...row }));
 
   return {
     from: (table: string) => {
@@ -96,11 +102,13 @@ function fakeDb(options: FakeDbOptions, captured: Captured): ProcessClaimReturnD
             eq: () => ({
               eq: () => ({
                 eq: () => ({
-                  eq: () =>
+                  // `.in("movement_type", ["VENDA_ML", "CANCELAMENTO_ML"])` desde a verificação de e6fda07.
+                  // O filtro de tipo é respeitado: deixar de pedir `CANCELAMENTO_ML` não passa pelo fake.
+                  in: (_coluna: string, tipos: string[]) =>
                     Promise.resolve(
                       options.saleMovementsError === true
                         ? { data: null, error: { code: "42P01", message: "boom" } }
-                        : { data: movements, error: null },
+                        : { data: movements.filter((row) => tipos.includes(row.movement_type)), error: null },
                     ),
                 }),
               }),
@@ -167,7 +175,22 @@ function fakeDb(options: FakeDbOptions, captured: Captured): ProcessClaimReturnD
 
       throw new Error(`tabela inesperada no fake: ${table}`);
     },
-    rpc: () => Promise.resolve({ data: true, error: null }),
+    rpc: (fn: string) => {
+      rpcCalls.push(fn);
+
+      if (fn === "get_order_return_movements") {
+        return Promise.resolve(
+          options.returnsReadError === true
+            ? { data: null, error: { code: "42P01", message: "boom" } }
+            : {
+                data: (options.recordedReturns ?? []).map((row) => ({ order_id: String(ORDER_ID), ...row })),
+                error: null,
+              },
+        );
+      }
+
+      return Promise.resolve({ data: true, error: null });
+    },
   } as unknown as ProcessClaimReturnDeps["db"];
 }
 
@@ -591,5 +614,69 @@ describe("processClaimReturn — projeção de atendimento (D-104)", () => {
     expect(processed).toBe(1);
     expect(captured.movements).toHaveLength(1);
     expect(captured.supportCases).toHaveLength(0);
+  });
+});
+
+/**
+ * Verificação de e6fda07 (D-351), ALTA-1: cancelamento e devolução entregue
+ * revertem a MESMA venda, e a unidade volta ao estoque no máximo uma vez.
+ */
+describe("processClaimReturn — a unidade volta ao estoque no máximo uma vez (verificação de e6fda07, ALTA-1)", () => {
+  const VENDA = `venda:${String(ORDER_ID)}:0`;
+
+  async function processa(options: FakeDbOptions): Promise<{ captured: Captured; rpcCalls: string[] }> {
+    const captured: Captured = { movements: [], events: [], supportCases: [] };
+    const rpcCalls: string[] = [];
+    const { client } = fakeMercadoLivre({});
+
+    await processClaimReturn(
+      { db: fakeDb(options, captured, rpcCalls), mercadoLivre: client },
+      { organizationId: ORGANIZATION_ID, mlAccountId: ML_ACCOUNT_ID },
+      "token",
+      CLAIM_ID,
+      NOW,
+      logger,
+    );
+
+    return { captured, rpcCalls };
+  }
+
+  it("trio gravado (venda anterior à planilha, cancelada depois dela) e a devolução entregue em seguida: nenhum DEVOLUCAO_ML, e o evento registra a venda já revertida", async () => {
+    const { captured } = await processa({
+      saleMovements: [
+        { sku_id: "sku-a", qty_delta: -1, idempotency_key: VENDA },
+        { sku_id: "sku-a", qty_delta: 1, idempotency_key: `cancelamento:${VENDA}`, movement_type: "CANCELAMENTO_ML" },
+      ],
+    });
+
+    expect(captured.movements).toEqual([]);
+    expect((captured.events[0] as { after: Record<string, unknown> }).after).toMatchObject({
+      fullReversal: true,
+      movementsReversed: 0,
+      movementsAlreadyReversed: 1,
+    });
+  });
+
+  it("outra devolução (outro claim) já devolveu a venda: nada, e a leitura foi pela RPC das devoluções", async () => {
+    const { captured, rpcCalls } = await processa({
+      recordedReturns: [{ sku_id: "sku-a", qty_delta: 1, idempotency_key: `devolucao:5299999999:${VENDA}` }],
+    });
+
+    expect(captured.movements).toEqual([]);
+    expect(rpcCalls).toContain("get_order_return_movements");
+  });
+
+  it("reprocessar a MESMA devolução já gravada: o movimento sai igual ao da primeira vez (o UNIQUE o absorve)", async () => {
+    const { captured } = await processa({
+      recordedReturns: [{ sku_id: "sku-a", qty_delta: 1, idempotency_key: `devolucao:${CLAIM_ID}:${VENDA}` }],
+    });
+
+    expect(captured.movements).toEqual([
+      expect.objectContaining({ movement_type: "DEVOLUCAO_ML", qty_delta: 1, idempotency_key: `devolucao:${CLAIM_ID}:${VENDA}` }),
+    ]);
+  });
+
+  it("falha na leitura das devoluções gravadas rejeita, em vez de devolver a unidade de novo", async () => {
+    await expect(processa({ returnsReadError: true })).rejects.toThrow(/devolucoes gravadas/);
   });
 });

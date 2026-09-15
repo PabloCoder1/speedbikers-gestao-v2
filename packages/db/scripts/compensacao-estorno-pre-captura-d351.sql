@@ -8,13 +8,19 @@
 -- Se virar migration, copie este corpo para um arquivo com instante valido.
 --
 -- PRE-REQUISITOS
---   1. migrations de D-351 aplicadas (o tipo ESTORNO_PRE_CAPTURA e o corte da exportacao
---      em `erp_stock_snapshots.captured_at`). CONFERIDO no bloco: snapshot de planilha
---      com o nome carimbado que ainda carrega o PARSE como corte aborta tudo -- com o
---      corte do parse (18:44:13 em producao) a F3 estornaria venda legitima da janela
---      entre exportacao e parse (2000018457209778, fechada as 18:43:57). Isso tambem pega
---      uma planilha importada pelo worker ANTIGO entre a migration e o deploy: nesse
---      caso, rode de novo o UPDATE de `20260914200000_erp_corte_da_exportacao.sql`;
+--   1. migrations de D-351 aplicadas (o tipo ESTORNO_PRE_CAPTURA, o corte da exportacao
+--      em `erp_stock_snapshots.captured_at` e a RPC das devolucoes). CONFERIDO no bloco,
+--      nas organizacoes elegiveis: snapshot de planilha com o nome carimbado que ainda
+--      carrega o PARSE como corte aborta tudo -- com o corte do parse (18:44:13 em
+--      producao) a F3 estornaria venda legitima da janela entre exportacao e parse
+--      (2000018457209778, fechada as 18:43:57). Isso tambem pega uma planilha importada
+--      pelo worker ANTIGO entre a migration e o deploy, e por isso a conferencia vem ANTES
+--      do deploy (DEPLOYMENT.md 8.2, passo 10): o worker NOVO le o mesmo corte, e com o do
+--      parse grava VENDA_ML + ESTORNO_PRE_CAPTURA para venda da janela entre exportacao e
+--      parse que a planilha nao tem. Refazer o UPDATE depois nao desfaz esses pares: com
+--      occurred_at depois do corte corrigido, eles somam zero no alvo, que fica 1 acima por
+--      unidade, ate a planilha seguinte -- a menos que o dono aceite, cada par precisa de
+--      contrapartida manual. Nao importe planilha entre a migration e o deploy;
 --   2. worker de D-351 servindo trafego;
 --   3. `v3-reconcile-balances` AINDA pausado -- a organizacao com AJUSTE_RECONCILIACAO
 --      nao e compensada (abaixo).
@@ -35,12 +41,19 @@
 --             `created_by` nulo: linha de sistema.
 --   CANCELAMENTO_ML e DEVOLUCAO_ML nao sao compensados: aconteceram depois da planilha e
 --             sao verdade nossa (resposta do dono: o UpSeller devolve a unidade sozinho).
+--   LIMITADO pelo excesso do legado (verificacao de e6fda07, ALTA-1): uma unidade vendida
+--             volta ao estoque no maximo uma vez, mas antes do limite das reversoes o worker
+--             gravava cancelamento E devolucao da mesma venda. O que passou da quantidade
+--             vendida ja anulou a venda, e o estorno e a venda menos esse excesso -- zero, e
+--             nenhuma linha, nos 2 pedidos de producao com VENDA + DEVOLUCAO + CANCELAMENTO
+--             (2000018212899604 e 2000018206306064), que ficam em +1 no saldo e no alvo.
 --   Aqui NAO entra o "gravada antes de o corte chegar" do worker: so a organizacao que
 --   nunca reconciliou e elegivel, e nela o saldo ainda nao foi alinhado a planilha nenhuma.
 --
 -- PARTE 2 -- a venda que o worker antigo NUNCA gravou (revisao de D-351, ALTA-2):
 --   pedido hoje cancelado, com item vinculado (`order_items.sku_id`), `date_closed` <= o
---   corte, sem VENDA_ML, e com um `order.cancelled` de `before.status` venda valida
+--   corte, sem NENHUM VENDA_ML do pedido (por origem, nao pela chave de hoje: verificacao
+--   de e6fda07, MEDIA-1), e com um `order.cancelled` de `before.status` venda valida
 --   (`paid`/`partially_refunded`) cujo `occurred_at` e POSTERIOR ao corte. A planilha tem
 --   a venda descontada e o UpSeller devolveu a unidade depois dela: o real e snapshot +1.
 --   Grava o trio que o worker novo grava (`computeCancellationMovements`): VENDA_ML e
@@ -58,9 +71,11 @@
 -- com afetados que fica de fora sai em NOTICE -- nunca some em silencio. Se alguem
 -- despausar a reconciliacao antes, a organizacao deixa de ser elegivel: rode a PROVA 1.
 --
--- COMO RODAR (SQL Editor ou psql, como postgres). O bloco e atomico e termina com
--- asserções que abortam tudo se falharem. Para restringir a UMA organizacao (e o que o
--- teste de integracao faz):
+-- COMO RODAR: por psql, como postgres -- o SQL Editor do Supabase nao mostra os NOTICE, e
+-- sao eles que dizem quantos estornos e reposicoes entraram e que organizacao ficou de fora
+-- (`psql "$URL" -v ON_ERROR_STOP=1 -f compensacao-estorno-pre-captura-d351.sql`). O bloco e
+-- atomico e termina com asserções que abortam tudo se falharem. Para restringir a UMA
+-- organizacao (e o que o teste de integracao faz):
 --     begin;
 --     set local sb.compensacao_organizacao = '<uuid>';
 --     <este arquivo>
@@ -111,7 +126,10 @@ select m.organization_id,
        m.occurred_at,
        coalesce(k.captured_at, g.corte_da_organizacao) as corte,
        coalesce(o.date_closed, o.date_created) as venda_em,
-       g.elegivel
+       g.elegivel,
+       -- A quantidade do estorno: a venda menos o que o legado reverteu ALEM dela
+       -- (`excessReversed` em `@sb/domain`, verificacao de e6fda07, ALTA-1).
+       abs(m.qty_delta) - greatest(0, rv.revertido - abs(m.qty_delta)) as quantidade
 from public.stock_movements m
 join d351_organizacoes g on g.organization_id = m.organization_id
 left join d351_cortes k on k.organization_id = m.organization_id and k.sku_id = m.sku_id
@@ -119,9 +137,28 @@ join public.orders o
   on o.organization_id = m.organization_id
  -- `source_id` e texto; o CASE impede o cast de uma origem que nao seja numero.
  and o.id = case when m.source_id ~ '^[0-9]{1,18}$' then m.source_id::bigint end
+-- O que ja foi revertido desta venda, pelas duas causas: o cancelamento (origem do pedido,
+-- chave `cancelamento:<venda>`) e as devolucoes (origem do claim, pedido DENTRO da chave
+-- `devolucao:<claim>:<venda>` -- o indice de `20260914200400` atende o `split_part`).
+cross join lateral (
+  select coalesce((select sum(c.qty_delta)
+                     from public.stock_movements c
+                    where c.idempotency_key = 'cancelamento:' || m.idempotency_key
+                      and c.movement_type = 'CANCELAMENTO_ML'), 0)
+       + coalesce((select sum(d.qty_delta)
+                     from public.stock_movements d
+                    where d.organization_id = m.organization_id
+                      and d.movement_type = 'DEVOLUCAO_ML'
+                      and split_part(d.idempotency_key, ':', 4) = m.source_id
+                      and regexp_replace(d.idempotency_key, '^devolucao:[^:]+:', '') = m.idempotency_key), 0)
+         as revertido
+) rv
 where m.movement_type = 'VENDA_ML'
   and m.source_type = 'ORDER'
   and coalesce(o.date_closed, o.date_created) <= coalesce(k.captured_at, g.corte_da_organizacao)
+  -- Cancelamento E devolucao da mesma venda (o legado de D-052/D-057): o excesso ja anulou a
+  -- venda, e o estorno inteiro levaria o pedido a +2 (2000018212899604 e 2000018206306064).
+  and abs(m.qty_delta) - greatest(0, rv.revertido - abs(m.qty_delta)) > 0
   and not exists (
     select 1 from public.stock_movements e
     where e.idempotency_key = 'estorno:' || m.idempotency_key
@@ -174,7 +211,17 @@ from (
 ) r
 where r.venda_em <= r.corte
   and r.cancelado_em > r.corte
-  and not exists (select 1 from public.stock_movements v where v.idempotency_key = r.chave_venda);
+  -- NENHUM VENDA_ML do pedido, e nao "a chave de hoje nao foi gravada" (verificacao de
+  -- e6fda07, MEDIA-1): a chave vem dos vinculos de HOJE, e com a composicao do KIT alterada,
+  -- ou o PRODUTO virado KIT, a reposicao devolveria um SKU que nunca foi baixado.
+  and not exists (
+    select 1
+    from public.stock_movements v
+    where v.organization_id = r.organization_id
+      and v.movement_type = 'VENDA_ML'
+      and v.source_type = 'ORDER'
+      and v.source_id = r.source_id
+  );
 
 do $$
 declare
@@ -187,18 +234,20 @@ declare
   v_divergencias integer;
   r record;
 begin
-  -- PRE-REQUISITO 1, conferido: o corte ja e a exportacao nas organizacoes em escopo.
+  -- PRE-REQUISITO 1, conferido: o corte ja e a exportacao nas organizacoes elegiveis. So
+  -- nelas: a organizacao reconciliada fica com o corte do parse DE PROPOSITO (o UPDATE de
+  -- 20260914200000 nao a toca, verificacao de e6fda07) e nao e compensada aqui.
   select count(*) into v_corte_do_parse
   from public.erp_stock_snapshots s
   join public.erp_import_batches b on b.id = s.batch_id
-  join d351_organizacoes g on g.organization_id = s.organization_id
+  join d351_organizacoes g on g.organization_id = s.organization_id and g.elegivel
   where b.kind = 'STOCK'
     and b.parsed_at is not null
     and s.captured_at = b.parsed_at
     and private.erp_stock_export_instant(b.file_name, b.parsed_at) <> b.parsed_at;
 
   if v_corte_do_parse > 0 then
-    raise exception 'compensacao_d351: % snapshots ainda com o corte do PARSE, e nao o da exportacao -- aplique (ou rode de novo) o UPDATE de 20260914200000_erp_corte_da_exportacao antes da F3',
+    raise exception 'compensacao_d351: % snapshots ainda com o corte do PARSE, e nao o da exportacao -- rode de novo o UPDATE de 20260914200000_erp_corte_da_exportacao antes da F3. Se o worker novo ja rodou com esse corte, os ESTORNO_PRE_CAPTURA com occurred_at entre a exportacao e o parse ficam sem contrapartida (cabecalho, PRE-REQUISITO 1)',
       v_corte_do_parse;
   end if;
 

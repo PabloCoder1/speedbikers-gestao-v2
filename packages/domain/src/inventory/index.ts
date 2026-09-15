@@ -1,8 +1,10 @@
 export {
+  alignedAt,
   computeSaleDeductions,
   ESTORNO_KEY_PREFIX,
   estornadoKeyOf,
   estornoKeyOf,
+  estornaVendaGravada,
   isValidSaleStatus,
   preCaptureEstornoOf,
   saleInstant,
@@ -16,6 +18,18 @@ export type {
   SaleDeductionResult,
   StockMovementDraft,
 } from "./sale-deduction.js";
+
+export {
+  CANCELAMENTO_KEY_PREFIX,
+  cancellationKeyOf,
+  DEVOLUCAO_KEY_PREFIX,
+  excessReversed,
+  remainingToReverse,
+  returnKeyOf,
+  revertedSaleKeyOf,
+  reversedQuantity,
+} from "./reversal-limit.js";
+export type { RecordedReversal } from "./reversal-limit.js";
 
 export { computeCancellationMovements, computeCancellationReversals } from "./cancellation-reversal.js";
 export type {

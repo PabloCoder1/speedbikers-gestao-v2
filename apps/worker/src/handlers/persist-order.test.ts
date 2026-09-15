@@ -144,6 +144,15 @@ interface FakeDbOptions {
   cutoffError?: boolean;
   /** `imported_at` que a RPC devolve para todo corte não nulo — padrão, o import de produção. */
   cutoffImportedAt?: string;
+  /** `reconciled_at` que a RPC devolve para todo corte não nulo — padrão, nunca reconciliou. */
+  cutoffReconciledAt?: string | null;
+  /**
+   * `DEVOLUCAO_ML` gravadas que `get_order_return_movements` devolve
+   * (verificação de e6fda07, ALTA-1). `order_id` padrão, o pedido perguntado.
+   */
+  recordedReturns?: { order_id?: string; sku_id: string; qty_delta: number; idempotency_key: string }[];
+  /** Simula falha da leitura das devoluções gravadas. */
+  returnsReadError?: boolean;
   /**
    * `order.cancelled` já gravados para o pedido (D-351): a transição de venda
    * para cancelado que sobrevive ao retry.
@@ -158,12 +167,12 @@ function fakeDb(options: FakeDbOptions = {}): {
   upserted: { table: string; row: unknown }[];
   deleted: { table: string; filters: Record<string, unknown> }[];
   inserted: { table: string; rows: unknown[] }[];
-  rpcCalls: { fn: string; args: { p_organization_id: string; p_sku_ids: string[] } }[];
+  rpcCalls: { fn: string; args: Record<string, unknown> }[];
 } {
   const upserted: { table: string; row: unknown }[] = [];
   const deleted: { table: string; filters: Record<string, unknown> }[] = [];
   const inserted: { table: string; rows: unknown[] }[] = [];
-  const rpcCalls: { fn: string; args: { p_organization_id: string; p_sku_ids: string[] } }[] = [];
+  const rpcCalls: { fn: string; args: Record<string, unknown> }[] = [];
 
   function writeAppendOnly(table: string, row: unknown): Promise<{ data: null; error: unknown }> {
     inserted.push({ table, rows: Array.isArray(row) ? row : [row] });
@@ -188,9 +197,21 @@ function fakeDb(options: FakeDbOptions = {}): {
   }
 
   const db = {
-    // D-351: `get_erp_stock_cutoffs`, a única RPC do handler.
-    rpc: (fn: string, args: { p_organization_id: string; p_sku_ids: string[] }) => {
+    // D-351: `get_erp_stock_cutoffs`; e, desde a verificação de e6fda07,
+    // `get_order_return_movements` (as devoluções gravadas dos pedidos).
+    rpc: (fn: string, args: { p_organization_id: string; p_sku_ids: string[]; p_order_ids: string[] }) => {
       rpcCalls.push({ fn, args });
+
+      if (fn === "get_order_return_movements") {
+        if (options.returnsReadError === true) {
+          return Promise.resolve({ data: null, error: { code: "42P01", message: "boom" } });
+        }
+
+        return Promise.resolve({
+          data: (options.recordedReturns ?? []).map((row) => ({ order_id: args.p_order_ids[0], ...row })),
+          error: null,
+        });
+      }
 
       if (options.cutoffError === true) {
         return Promise.resolve({ data: null, error: { code: "42P01", message: "boom" } });
@@ -208,6 +229,7 @@ function fakeDb(options: FakeDbOptions = {}): {
             sku_id: skuId,
             captured_at: capturedAt,
             imported_at: capturedAt === null ? null : (options.cutoffImportedAt ?? IMPORTADO_EM),
+            reconciled_at: capturedAt === null ? null : (options.cutoffReconciledAt ?? null),
           };
         }),
         error: null,
@@ -331,14 +353,20 @@ function fakeDb(options: FakeDbOptions = {}): {
             // e traz venda e estorno juntos.
             const pedido = Array.isArray(filters.source_id) ? String(filters.source_id[0]) : String(BASE_ORDER.id);
 
+            // O filtro de tipo é respeitado: uma leitura que deixasse de pedir
+            // `CANCELAMENTO_ML` (verificação de e6fda07) não pode passar pelo fake.
+            const tipos = Array.isArray(filters.movement_type) ? (filters.movement_type as string[]) : null;
+
             return {
-              data: (options.existingSaleMovements ?? []).map((row) => ({
-                source_id: pedido,
-                movement_type: "VENDA_ML",
-                occurred_at: VENDA_EM,
-                created_at: GRAVADO_EM,
-                ...row,
-              })),
+              data: (options.existingSaleMovements ?? [])
+                .map((row) => ({
+                  source_id: pedido,
+                  movement_type: "VENDA_ML",
+                  occurred_at: VENDA_EM,
+                  created_at: GRAVADO_EM,
+                  ...row,
+                }))
+                .filter((row) => tipos === null || tipos.includes(row.movement_type)),
               error: null,
             };
           });
@@ -1319,6 +1347,10 @@ describe("prefetchOrders (D-186)", () => {
       rpc: (fn: string, args: { p_sku_ids: string[] }) => {
         consultadas.push(`rpc:${fn}`);
 
+        if (fn === "get_order_return_movements") {
+          return Promise.resolve(porTabela["rpc:get_order_return_movements"] ?? { data: [], error: null });
+        }
+
         return Promise.resolve(corte(args.p_sku_ids));
       },
     } as unknown as Parameters<typeof prefetchOrders>[0];
@@ -1526,7 +1558,7 @@ describe("prefetchOrders (D-186)", () => {
   it("D-351: em lote, UMA leitura do corte para a página inteira, o par sai no mesmo lote e a página conta os estornos", async () => {
     const pagina = [1, 2, 3, 4, 5].map((id) => ({ ...BASE_ORDER, id }));
     const { db, consultadas } = dbFalso({ sku_listing_links: { data: [LINK_PRODUTO], error: null } }, (ids) => ({
-      data: ids.map((id) => ({ sku_id: id, captured_at: CORTE, imported_at: IMPORTADO_EM })),
+      data: ids.map((id) => ({ sku_id: id, captured_at: CORTE, imported_at: IMPORTADO_EM, reconciled_at: null })),
       error: null,
     }));
 
@@ -1857,11 +1889,27 @@ describe("persistOrder — revisão de D-351", () => {
 
           return cadeia(porTabela[table] ?? []);
         },
-        rpc: (fn: string, args: { p_sku_ids: string[] }) => {
+        rpc: (fn: string, args: { p_sku_ids: string[]; p_order_ids: string[] }) => {
           consultadas.push(`rpc:${fn}`);
 
+          if (fn === "get_order_return_movements") {
+            const pedidos = new Set(args.p_order_ids);
+
+            return Promise.resolve({
+              data: (porTabela["rpc:get_order_return_movements"] ?? []).filter((row) =>
+                pedidos.has((row as { order_id: string }).order_id),
+              ),
+              error: null,
+            });
+          }
+
           return Promise.resolve({
-            data: args.p_sku_ids.map((id) => ({ sku_id: id, captured_at: CORTE, imported_at: IMPORTADO_EM })),
+            data: args.p_sku_ids.map((id) => ({
+              sku_id: id,
+              captured_at: CORTE,
+              imported_at: IMPORTADO_EM,
+              reconciled_at: null,
+            })),
             error: null,
           });
         },
@@ -1930,6 +1978,352 @@ describe("persistOrder — revisão de D-351", () => {
       await persistePagina(db, [{ ...BASE_ORDER, id: 9 }]);
 
       expect(consultadas).not.toContain("domain_events");
+    });
+
+    it("verificação de e6fda07, ALTA-1: a página lê as devoluções gravadas dos pedidos com venda, e o cancelamento não devolve de novo", async () => {
+      const pedido: ParsedOrder = {
+        ...BASE_ORDER,
+        id: 7,
+        status: "cancelled",
+        date_closed: "2026-09-20T10:00:00.000Z",
+        date_last_updated: "2026-09-22T11:00:00.000Z",
+      };
+      const venda = {
+        source_id: "7",
+        sku_id: "sku-1",
+        qty_delta: -1,
+        idempotency_key: "venda:7:0",
+        occurred_at: "2026-09-20T10:00:00.000Z",
+        created_at: "2026-09-20T10:00:01.000Z",
+        movement_type: "VENDA_ML",
+      };
+      const { db, consultadas } = paginaFalsa({
+        orders: [{ id: 7, status: "cancelled" }],
+        stock_movements: [venda],
+        "rpc:get_order_return_movements": [
+          { order_id: "7", sku_id: "sku-1", qty_delta: 1, idempotency_key: "devolucao:5570995770:venda:7:0" },
+        ],
+      });
+
+      expect(await persistePagina(db, [pedido])).toEqual([]);
+      expect(consultadas.filter((consulta) => consulta === "rpc:get_order_return_movements")).toHaveLength(1);
+    });
+  });
+});
+
+/**
+ * Verificação independente de e6fda07 (D-351). Cada bloco nomeia o achado que
+ * o sustenta; as mutações de D-351 §9 reprovam estes testes.
+ */
+describe("persistOrder — verificação de e6fda07", () => {
+  const PEDIDO = String(BASE_ORDER.id);
+  const VENDA = `venda:${PEDIDO}:0`;
+  const COM_VINCULO = { linkForItem: () => ({ id: "link-1", sku_id: "sku-1" }) };
+
+  function linhas(inserted: { table: string; rows: unknown[] }[]): [string, string, number, string][] {
+    return movimentos(inserted).map((m) => [m.movement_type, m.idempotency_key, m.qty_delta, m.occurred_at]);
+  }
+
+  describe("ALTA-1: cancelamento e devolução revertem a MESMA venda — a unidade volta ao estoque no máximo uma vez", () => {
+    it("2000018212899604 de produção (VENDA do worker antigo + DEVOLUCAO + CANCELAMENTO): nenhum estorno e nenhuma reversão nova — o líquido fica +1", async () => {
+      const CANCELADO_EM = "2026-09-15T08:40:07.000Z";
+      const { db, inserted, rpcCalls } = fakeDb({
+        ...COM_VINCULO,
+        previousStatus: "cancelled",
+        existingSaleMovements: [
+          {
+            sku_id: "sku-1",
+            qty_delta: -1,
+            idempotency_key: VENDA,
+            occurred_at: "2026-09-15T01:50:58.000Z",
+            created_at: "2026-09-15T02:00:05.948Z",
+          },
+          {
+            sku_id: "sku-1",
+            qty_delta: 1,
+            idempotency_key: `cancelamento:${VENDA}`,
+            movement_type: "CANCELAMENTO_ML",
+            occurred_at: CANCELADO_EM,
+          },
+        ],
+        recordedReturns: [{ sku_id: "sku-1", qty_delta: 1, idempotency_key: `devolucao:5570995770:${VENDA}` }],
+        cutoffs: { "sku-1": CORTE },
+      });
+      const lines: string[] = [];
+
+      await run(
+        db,
+        {
+          ...BASE_ORDER,
+          status: "cancelled",
+          date_created: "2026-08-31T21:05:28.000Z",
+          date_closed: "2026-08-31T21:05:29.000Z",
+          date_last_updated: CANCELADO_EM,
+        },
+        lines,
+      );
+
+      expect(movimentos(inserted)).toEqual([]);
+      expect(lines.join()).toContain("cancellation_reversal_ja_revertida");
+      expect(rpcCalls).toContainEqual({
+        fn: "get_order_return_movements",
+        args: { p_organization_id: CONTEXT.organizationId, p_order_ids: [PEDIDO] },
+      });
+    });
+
+    it("devolução entregue primeiro, cancelamento depois: o cancelamento não devolve a unidade de novo, e registra", async () => {
+      const { db, inserted } = fakeDb({
+        ...COM_VINCULO,
+        previousStatus: "paid",
+        existingSaleMovements: [
+          {
+            sku_id: "sku-1",
+            qty_delta: -1,
+            idempotency_key: VENDA,
+            occurred_at: "2026-09-20T10:00:00.000Z",
+            created_at: "2026-09-20T10:00:01.000Z",
+          },
+        ],
+        recordedReturns: [{ sku_id: "sku-1", qty_delta: 1, idempotency_key: `devolucao:5570995770:${VENDA}` }],
+        cutoffs: { "sku-1": CORTE },
+      });
+      const lines: string[] = [];
+
+      await run(
+        db,
+        {
+          ...BASE_ORDER,
+          status: "cancelled",
+          date_created: "2026-09-20T09:59:00.000Z",
+          date_closed: "2026-09-20T10:00:00.000Z",
+          date_last_updated: "2026-09-22T11:00:00.000Z",
+        },
+        lines,
+      );
+
+      expect(movimentos(inserted)).toEqual([]);
+      expect(lines.join()).toContain("cancellation_reversal_ja_revertida");
+    });
+
+    it("falha na leitura das devoluções gravadas LANÇA antes de qualquer escrita — nunca vira 'nenhuma devolução'", async () => {
+      const { db, inserted, upserted } = fakeDb({
+        ...COM_VINCULO,
+        existingSaleMovements: [{ sku_id: "sku-1", qty_delta: -1, idempotency_key: VENDA }],
+        returnsReadError: true,
+        cutoffs: { "sku-1": CORTE },
+      });
+
+      await expect(run(db, BASE_ORDER)).rejects.toThrow(/get_order_return_movements.*boom/);
+      expect(upserted).toEqual([]);
+      expect(inserted).toEqual([]);
+    });
+
+    it("reversão gravada com chave fora do formato LANÇA — não diz qual venda reverteu, e a próxima devolveria a unidade de novo", async () => {
+      const { db, inserted } = fakeDb({
+        ...COM_VINCULO,
+        previousStatus: "cancelled",
+        existingSaleMovements: [
+          { sku_id: "sku-1", qty_delta: -1, idempotency_key: VENDA },
+          { sku_id: "sku-1", qty_delta: 1, idempotency_key: `cancelamento:${PEDIDO}:0`, movement_type: "CANCELAMENTO_ML" },
+        ],
+        cutoffs: { "sku-1": CORTE },
+      });
+
+      await expect(run(db, { ...BASE_ORDER, status: "cancelled" })).rejects.toThrow(/chave de reversao fora do formato/);
+      expect(inserted).toEqual([]);
+    });
+  });
+
+  describe("MÉDIA-1 (corte): o último alinhamento do saldo decide a venda já gravada", () => {
+    it("(b) linha até o corte gravada depois do import e ANTES da reconciliação: atualizar o pedido não estorna — a reconciliação a absorveu", async () => {
+      const { db, inserted } = fakeDb({
+        ...COM_VINCULO,
+        existingSaleMovements: [{ sku_id: "sku-1", qty_delta: -1, idempotency_key: VENDA, created_at: GRAVADO_EM }],
+        cutoffs: { "sku-1": CORTE },
+        cutoffReconciledAt: "2026-09-15T09:00:00.000Z",
+      });
+
+      await run(db, BASE_ORDER);
+
+      expect(movimentos(inserted).map((m) => m.movement_type)).toEqual(["VENDA_ML"]);
+    });
+
+    it("(b) a mesma linha gravada DEPOIS da reconciliação: estorna", async () => {
+      const { db, inserted } = fakeDb({
+        ...COM_VINCULO,
+        existingSaleMovements: [{ sku_id: "sku-1", qty_delta: -1, idempotency_key: VENDA, created_at: GRAVADO_EM }],
+        cutoffs: { "sku-1": CORTE },
+        cutoffReconciledAt: "2026-09-14T18:50:00.000Z",
+      });
+
+      await run(db, BASE_ORDER);
+
+      expect(movimentos(inserted).map((m) => m.movement_type)).toEqual(["VENDA_ML", "ESTORNO_PRE_CAPTURA"]);
+    });
+
+    it("(a) linha do worker antigo com occurred_at DEPOIS do corte, gravada antes do import e da reconciliação: estorna, espelhada", async () => {
+      const { db, inserted } = fakeDb({
+        ...COM_VINCULO,
+        existingSaleMovements: [
+          {
+            sku_id: "sku-1",
+            qty_delta: -1,
+            idempotency_key: VENDA,
+            occurred_at: "2026-09-14T19:03:00.000Z",
+            created_at: "2026-09-14T18:00:00.000Z",
+          },
+        ],
+        cutoffs: { "sku-1": CORTE },
+        cutoffReconciledAt: "2026-09-15T09:00:00.000Z",
+      });
+
+      await run(db, BASE_ORDER);
+
+      expect(linhas(inserted).filter(([tipo]) => tipo === "ESTORNO_PRE_CAPTURA")).toEqual([
+        ["ESTORNO_PRE_CAPTURA", `estorno:${VENDA}`, 1, "2026-09-14T19:03:00.000Z"],
+      ]);
+    });
+  });
+
+  describe("MÉDIA-1 (bateria): o trio só repõe pedido SEM nenhum VENDA_ML gravado", () => {
+    const CANCELADO_DEPOIS: ParsedOrder = { ...BASE_ORDER, status: "cancelled", date_last_updated: "2026-09-15T10:00:00.000Z" };
+
+    it("KIT com composição alterada (A1+A2 -> A1+B2) entre a venda e o cancelamento: só reverte o gravado, e B2 não ganha nada", async () => {
+      const { db, inserted } = fakeDb({
+        linkForItem: () => ({ id: "link-kit", sku_id: "sku-kit" }),
+        skuKindById: () => "KIT",
+        componentsByKitId: () => [
+          { component_sku_id: "sku-a1", quantity: 1 },
+          { component_sku_id: "sku-b2", quantity: 1 },
+        ],
+        previousStatus: "paid",
+        existingSaleMovements: [
+          { sku_id: "sku-a1", qty_delta: -1, idempotency_key: `${VENDA}:sku-a1` },
+          { sku_id: "sku-a2", qty_delta: -1, idempotency_key: `${VENDA}:sku-a2` },
+          { sku_id: "sku-a1", qty_delta: 1, idempotency_key: `estorno:${VENDA}:sku-a1`, movement_type: "ESTORNO_PRE_CAPTURA" },
+          { sku_id: "sku-a2", qty_delta: 1, idempotency_key: `estorno:${VENDA}:sku-a2`, movement_type: "ESTORNO_PRE_CAPTURA" },
+        ],
+        cutoffs: { "sku-a1": CORTE, "sku-a2": CORTE, "sku-b2": CORTE },
+      });
+
+      await run(db, CANCELADO_DEPOIS);
+
+      expect(movimentos(inserted).map((m) => [m.movement_type, m.sku_id, m.qty_delta])).toEqual([
+        ["CANCELAMENTO_ML", "sku-a1", 1],
+        ["CANCELAMENTO_ML", "sku-a2", 1],
+      ]);
+    });
+
+    it("PRODUTO P que virou KIT C1+C2: só reverte a venda de P, nada para C1 e C2", async () => {
+      const { db, inserted } = fakeDb({
+        linkForItem: () => ({ id: "link-kit", sku_id: "sku-kit" }),
+        skuKindById: () => "KIT",
+        componentsByKitId: () => [
+          { component_sku_id: "sku-c1", quantity: 1 },
+          { component_sku_id: "sku-c2", quantity: 2 },
+        ],
+        previousStatus: "paid",
+        existingSaleMovements: [
+          { sku_id: "sku-p", qty_delta: -1, idempotency_key: VENDA },
+          { sku_id: "sku-p", qty_delta: 1, idempotency_key: `estorno:${VENDA}`, movement_type: "ESTORNO_PRE_CAPTURA" },
+        ],
+        cutoffs: { "sku-p": CORTE, "sku-c1": CORTE, "sku-c2": CORTE },
+      });
+
+      await run(db, CANCELADO_DEPOIS);
+
+      expect(movimentos(inserted).map((m) => [m.movement_type, m.sku_id, m.qty_delta])).toEqual([
+        ["CANCELAMENTO_ML", "sku-p", 1],
+      ]);
+    });
+  });
+
+  describe("MÉDIA-2 (bateria): o estorno gerado no próprio cancelamento conta como estornado", () => {
+    it("venda gravada depois do import, sem estorno, e cancelada com instante conhecido ATÉ o corte: só o ESTORNO, nenhum CANCELAMENTO_ML", async () => {
+      const { db, inserted } = fakeDb({
+        ...COM_VINCULO,
+        previousStatus: "cancelled",
+        existingSaleMovements: [{ sku_id: "sku-1", qty_delta: -1, idempotency_key: VENDA, created_at: GRAVADO_EM }],
+        cutoffs: { "sku-1": CORTE },
+      });
+
+      await run(db, { ...BASE_ORDER, status: "cancelled", date_last_updated: "2026-09-14T18:30:00.000Z" });
+
+      expect(linhas(inserted)).toEqual([["ESTORNO_PRE_CAPTURA", `estorno:${VENDA}`, 1, VENDA_EM]]);
+    });
+  });
+
+  describe("BAIXA-1 (cancelamento): o trio com o instante desta leitura desconhecido", () => {
+    it("o CANCELAMENTO_ML leva o instante do order.cancelled gravado (posterior ao corte), e não date_created", async () => {
+      const CANCELADO_EM = "2026-09-14T18:47:13.000Z";
+      const { db, inserted } = fakeDb({
+        ...COM_VINCULO,
+        previousStatus: "cancelled",
+        cancelledEvents: [{ before: { status: "paid" }, occurred_at: CANCELADO_EM }],
+        cutoffs: { "sku-1": CORTE },
+      });
+
+      await run(db, { ...BASE_ORDER, status: "cancelled", date_last_updated: undefined, last_updated: undefined });
+
+      expect(linhas(inserted)).toEqual([
+        ["VENDA_ML", VENDA, -1, VENDA_EM],
+        ["ESTORNO_PRE_CAPTURA", `estorno:${VENDA}`, 1, VENDA_EM],
+        ["CANCELAMENTO_ML", `cancelamento:${VENDA}`, 1, CANCELADO_EM],
+      ]);
+    });
+  });
+
+  describe("BAIXA-3 (corte): linha da RPC sem a coluna, ou com data ilegível, LANÇA", () => {
+    it("sem a chave imported_at (a RPC na forma de 1e7e6f6): LANÇA, em vez de virar Invalid Date e estornar toda venda gravada", async () => {
+      const { db, inserted } = fakeDb({ ...COM_VINCULO, cutoffRows: [{ sku_id: "sku-1", captured_at: CORTE }] });
+
+      await expect(run(db, BASE_ORDER)).rejects.toThrow(/sem imported_at/);
+      expect(inserted).toEqual([]);
+    });
+
+    it("sem a chave reconciled_at (a RPC na forma de e6fda07): LANÇA", async () => {
+      const { db, inserted } = fakeDb({
+        ...COM_VINCULO,
+        cutoffRows: [{ sku_id: "sku-1", captured_at: CORTE, imported_at: IMPORTADO_EM }],
+      });
+
+      await expect(run(db, BASE_ORDER)).rejects.toThrow(/sem reconciled_at/);
+      expect(inserted).toEqual([]);
+    });
+
+    it("data ilegível: LANÇA", async () => {
+      const { db, inserted } = fakeDb({
+        ...COM_VINCULO,
+        cutoffRows: [{ sku_id: "sku-1", captured_at: CORTE, imported_at: "ontem", reconciled_at: null }],
+      });
+
+      await expect(run(db, BASE_ORDER)).rejects.toThrow(/imported_at ilegivel/);
+      expect(inserted).toEqual([]);
+    });
+  });
+
+  describe("webhook: as vendas do trio num comando só", () => {
+    it("KIT: as vendas dos dois componentes vão num único upsert — uma falha entre eles não deixa metade gravada, que o retry não completaria", async () => {
+      const { db, inserted } = fakeDb({
+        linkForItem: () => ({ id: "link-kit", sku_id: "sku-kit" }),
+        skuKindById: () => "KIT",
+        componentsByKitId: () => [
+          { component_sku_id: "sku-c1", quantity: 1 },
+          { component_sku_id: "sku-c2", quantity: 2 },
+        ],
+        previousStatus: "paid",
+        cutoffs: { "sku-c1": CORTE, "sku-c2": CORTE },
+      });
+
+      await run(db, { ...BASE_ORDER, status: "cancelled", date_last_updated: "2026-09-15T10:00:00.000Z" });
+
+      const escritasDeVenda = inserted.filter(
+        (entry) =>
+          entry.table === "stock_movements" &&
+          (entry.rows as MovimentoGravado[]).some((row) => row.movement_type === "VENDA_ML"),
+      );
+
+      expect(escritasDeVenda.map((entry) => entry.rows.length)).toEqual([2]);
     });
   });
 });

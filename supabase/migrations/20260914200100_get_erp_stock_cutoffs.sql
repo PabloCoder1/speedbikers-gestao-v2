@@ -3,33 +3,54 @@
 --
 -- CONTRATO. Uma linha por id pedido (distinto, nao nulo), SEMPRE -- inclusive quando nao
 -- ha corte, com `captured_at` e `imported_at` nulos. O worker confere que cada id pedido
--- voltou: linha ausente e leitura incompleta e LANCA, nunca vira "sem corte" (que e
--- exatamente a dupla contagem de D-350 §5).
+-- voltou e que cada instante e legivel: linha ausente, coluna ausente ou data invalida
+-- LANCA, nunca vira "sem corte" (que e exatamente a dupla contagem de D-350 §5).
 --
--- O CORTE DE UM SKU (`captured_at`) e o MESMO de `compute_erp_target_balances`
--- (20260828203624): o `captured_at` do snapshot mais recente por (sku, armazem), com o
--- maximo entre armazens -- que e o `max(captured_at)` do SKU. Os dois precisam
--- concordar: o gate estorna venda com "venda em" <= corte, e o alvo soma movimento com
--- `occurred_at` > corte. Se discordassem, a primeira reconciliacao desfaria a guarda.
+-- O CORTE DE UM SKU (`captured_at`) e o MESMO de `compute_erp_target_balances`: o
+-- `captured_at` do snapshot mais recente por (sku, armazem), com o maximo entre armazens --
+-- que e o `max(captured_at)` do SKU. Os dois precisam concordar: o gate estorna venda com
+-- "venda em" <= corte, e o alvo soma movimento com `occurred_at` > corte. Se discordassem,
+-- a primeira reconciliacao desfaria a guarda.
 --
--- QUANDO O CORTE CHEGOU (`imported_at`): o menor `created_at` dos snapshots que carregam
--- esse corte. Uma venda gravada ATE aqui ja estava no saldo quando a planilha entrou, o
--- salto do alvo a absorveu, e o worker nao a estorna; so estorna o que entra no saldo
--- depois. Sem isso, cada planilha nova faria o worker estornar venda legitima dos dias
--- anteriores a cada atualizacao do pedido (revisao de D-351, ALTA-1). O menor, e nao o
--- maior: o import grava os snapshots em lotes com `created_at` proprio (quatro, entre
--- 18:44:18.7 e 18:44:19.2, em producao), e o corte existe a partir do primeiro.
+-- QUANDO O CORTE CHEGOU (`imported_at`). O snapshot VENCEDOR do corte e o primeiro por
+-- `captured_at desc, created_at desc, id desc` -- o mesmo desempate que
+-- `compute_erp_target_balances` passa a usar em 20260914200400 --, e `imported_at` e o maior
+-- entre o `applied_at` do lote dele e o `created_at` dele. O `created_at` e o `now()` do
+-- INICIO da transacao do lote; `applied_at` e gravado pelo worker DEPOIS de todos os upserts
+-- e da marcacao das linhas. Com o MENOR `created_at`, como era, uma venda decidida com o
+-- corte ANTIGO (lido antes do commit) e gravada numa transacao iniciada depois do primeiro
+-- lote parecia ter entrado no saldo depois de o corte chegar, e seria estornada na
+-- atualizacao seguinte do pedido (verificacao de e6fda07, BAIXA-1). Em producao: primeiro
+-- lote 18:44:18.714, ultimo 18:44:19.198, applied_at 18:44:19.581 -- 867 ms que deixam de
+-- ser janela. Lote que ainda nao fechou (applied_at nulo) fica com o `created_at`.
 --
--- SKU SEM SNAPSHOT PROPRIO usa o corte da organizacao (o snapshot mais recente dela). A
+-- A ULTIMA RECONCILIACAO (`reconciled_at`, da organizacao): o maior entre o `finished_at`
+-- do ultimo `maintenance.reconcile-balances` concluido (`job_runs`) e o `created_at` do
+-- ultimo AJUSTE_RECONCILIACAO; nulo se nunca houve. Quem absorve a venda gravada e o
+-- ALINHAMENTO do saldo ao alvo, nao o import (verificacao de e6fda07, MEDIA-1): a venda com
+-- `occurred_at` ate o corte, gravada depois do import e antes de uma reconciliacao, ja foi
+-- posta de lado por ela, e estorna-la depois deixa o saldo 1 acima do real ate a rodada
+-- seguinte gravar -1 com notificacao. As duas fontes, e nao uma:
+--   - `job_runs`, porque a rodada que nao grava ajuste nenhum TAMBEM alinhou o saldo -- todo
+--     SKU comparado ficou igual ao alvo. So com o ajuste, uma organizacao com nove dias de
+--     rodadas sem ajuste (o Dev, de 09-06 a 09-14) ficaria ancorada no ultimo ajuste;
+--   - o ajuste, porque uma rodada que gravou ajustes e falhou antes de registrar o
+--     `job_runs` (a gravacao de job_runs e do roteador, depois do handler) alinhou os SKUs
+--     que ajustou.
+-- `finished_at`, e nao `started_at`: o alvo e lido DENTRO da rodada, e o fim e o unico
+-- instante em que se sabe que ela ja leu. A venda gravada no meio da rodada fica tratada
+-- como absorvida; no caso raro em que nao foi, a rodada seguinte a absorve com um ajuste.
+--
+-- SKU SEM SNAPSHOT PROPRIO usa o corte da organizacao (o snapshot vencedor dela). A
 -- reconciliacao nunca visita esse SKU (nao ha alvo para ele), entao uma baixa anterior a
--- planilha o deixaria negativo para sempre. ORGANIZACAO SEM SNAPSHOT: nulo -- antes do
--- primeiro retrato nao ha o que estornar, e o comportamento e o de antes.
+-- planilha o deixaria negativo para sempre. ORGANIZACAO SEM SNAPSHOT: corte e imported_at
+-- nulos -- antes do primeiro retrato nao ha o que estornar, e o comportamento e o de antes.
 --
 -- TETO DE 1.000 DO POSTGREST: a saida tem uma linha por id, e o worker manda lotes de no
 -- maximo 500.
 
 create function public.get_erp_stock_cutoffs(p_organization_id uuid, p_sku_ids uuid[])
-returns table (sku_id uuid, captured_at timestamptz, imported_at timestamptz)
+returns table (sku_id uuid, captured_at timestamptz, imported_at timestamptz, reconciled_at timestamptz)
 language sql
 stable
 security invoker
@@ -41,56 +62,88 @@ as $$
     where i.sku_id is not null
   ),
   organizacao as (
-    select c.captured_at,
-           (select min(s.created_at)
-              from public.erp_stock_snapshots s
-             where s.organization_id = p_organization_id
-               and s.captured_at = c.captured_at) as imported_at
+    select w.captured_at, greatest(b.applied_at, w.created_at) as imported_at
     from (
-      select max(s.captured_at) as captured_at
+      select s.captured_at, s.created_at, s.batch_id
       from public.erp_stock_snapshots s
       where s.organization_id = p_organization_id
-    ) c
+      order by s.captured_at desc, s.created_at desc, s.id desc
+      limit 1
+    ) w
+    left join public.erp_import_batches b on b.id = w.batch_id
+  ),
+  reconciliacao as (
+    select greatest(
+      (select j.finished_at
+         from public.job_runs j
+        where j.organization_id = p_organization_id
+          and j.job_type = 'maintenance.reconcile-balances'
+          and j.status = 'done'
+        order by j.finished_at desc
+        limit 1),
+      (select m.created_at
+         from public.stock_movements m
+        where m.organization_id = p_organization_id
+          and m.movement_type = 'AJUSTE_RECONCILIACAO'
+        order by m.created_at desc
+        limit 1)
+    ) as reconciled_at
   )
   select p.sku_id,
          coalesce(proprio.captured_at, o.captured_at) as captured_at,
-         case when proprio.captured_at is not null then proprio.imported_at else o.imported_at end as imported_at
+         case when proprio.captured_at is not null then proprio.imported_at else o.imported_at end as imported_at,
+         -- So o SKU com snapshot PROPRIO tem alvo, e so ele e visitado pela reconciliacao:
+         -- para o que usa o corte da organizacao, nenhuma rodada alinha o saldo, e a venda
+         -- gravada depois do import continua precisando do estorno.
+         case when proprio.captured_at is not null then r.reconciled_at end as reconciled_at
   from pedidos p
-  cross join organizacao o
+  -- `left join ... on true`: a organizacao sem snapshot nao tem linha vencedora, e o
+  -- contrato continua sendo uma linha por id.
+  left join organizacao o on true
+  cross join reconciliacao r
   left join lateral (
-    select c.captured_at,
-           (select min(s.created_at)
-              from public.erp_stock_snapshots s
-             where s.organization_id = p_organization_id
-               and s.sku_id = p.sku_id
-               and s.captured_at = c.captured_at) as imported_at
+    select w.captured_at, greatest(b.applied_at, w.created_at) as imported_at
     from (
-      select max(s.captured_at) as captured_at
+      select s.captured_at, s.created_at, s.batch_id
       from public.erp_stock_snapshots s
       where s.organization_id = p_organization_id
         and s.sku_id = p.sku_id
-    ) c
+      order by s.captured_at desc, s.created_at desc, s.id desc
+      limit 1
+    ) w
+    left join public.erp_import_batches b on b.id = w.batch_id
   ) proprio on true
 $$;
 
 comment on function public.get_erp_stock_cutoffs(uuid, uuid[]) is
-  'Corte do snapshot do UpSeller por SKU: captured_at (instante da exportacao da planilha mais recente do SKU; sem snapshot proprio, o da organizacao; sem snapshot na organizacao, nulo) e imported_at (o menor created_at dos snapshots desse corte: venda gravada ate ali nao e estornada). Uma linha por id pedido, sempre. O mesmo corte de compute_erp_target_balances (D-351).';
+  'Corte do snapshot do UpSeller por SKU: captured_at (instante da exportacao da planilha mais recente do SKU; sem snapshot proprio, o da organizacao; sem snapshot na organizacao, nulo), imported_at (o maior entre applied_at do lote e created_at do snapshot vencedor do corte: venda gravada ate ali ja estava no saldo) e reconciled_at (a ultima reconciliacao da organizacao, por job_runs concluido ou AJUSTE_RECONCILIACAO). Uma linha por id pedido, sempre. O mesmo corte e o mesmo desempate de compute_erp_target_balances (D-351).';
 
 revoke all on function public.get_erp_stock_cutoffs(uuid, uuid[]) from public, anon, authenticated;
 grant execute on function public.get_erp_stock_cutoffs(uuid, uuid[]) to service_role;
 
 -- O indice que existia (`organization_id, sku_key, captured_at desc`) e por chave de
 -- texto; o worker pergunta por `sku_id`. Os dois abaixo servem as duas metades da
--- consulta: o maximo por SKU e o maximo da organizacao, cada um por uma descida de
--- indice em vez de uma varredura dos snapshots da organizacao -- que crescem a cada
--- planilha importada (3.098 linhas por import em producao) e sao lidos a cada pagina
--- de pedidos. O `include (created_at)` deixa o `imported_at` na mesma varredura so de
--- indice. Medidos em D-351.
+-- consulta: o snapshot vencedor por SKU e o da organizacao, cada um por UMA descida de
+-- indice na ordem do desempate, em vez de uma varredura dos snapshots da organizacao --
+-- que crescem a cada planilha importada (3.098 linhas por import em producao) e sao lidos
+-- a cada pagina de pedidos. O `include (batch_id)` leva ao lote sem ler a linha.
 create index erp_stock_snapshots_sku_cutoff_idx
-  on public.erp_stock_snapshots (organization_id, sku_id, captured_at desc)
-  include (created_at)
+  on public.erp_stock_snapshots (organization_id, sku_id, captured_at desc, created_at desc, id desc)
+  include (batch_id)
   where sku_id is not null;
 
 create index erp_stock_snapshots_org_cutoff_idx
-  on public.erp_stock_snapshots (organization_id, captured_at desc)
-  include (created_at);
+  on public.erp_stock_snapshots (organization_id, captured_at desc, created_at desc, id desc)
+  include (batch_id);
+
+-- A ultima reconciliacao, por uma descida de indice. `job_runs` tem 143 mil linhas no Dev
+-- (os jobs de atendimento rodam de 10 em 10 minutos, 6.869 em producao no primeiro dia):
+-- sem o indice parcial, a organizacao que nunca reconciliou -- producao hoje -- percorreria
+-- o historico inteiro de jobs a cada pagina de pedidos.
+create index job_runs_reconcile_balances_done_idx
+  on public.job_runs (organization_id, finished_at desc)
+  where job_type = 'maintenance.reconcile-balances' and status = 'done';
+
+create index stock_movements_ajuste_reconciliacao_idx
+  on public.stock_movements (organization_id, created_at desc)
+  where movement_type = 'AJUSTE_RECONCILIACAO';

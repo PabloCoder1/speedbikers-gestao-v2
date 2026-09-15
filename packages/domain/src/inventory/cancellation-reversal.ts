@@ -1,4 +1,6 @@
 import { isCancelledOrderStatus } from "../events/order-events.js";
+import { cancellationKeyOf, remainingToReverse } from "./reversal-limit.js";
+import type { RecordedReversal } from "./reversal-limit.js";
 import { computeSaleDeductions, estornadoKeyOf, preCaptureEstornoOf, saleInstant } from "./sale-deduction.js";
 import type {
   ErpCutoff,
@@ -23,9 +25,11 @@ import type {
  * order, e dispensa qualquer conhecimento de KIT/componentes aqui: o
  * ledger já tem a decomposição certa gravada.
  *
- * Devolução (`order.returned`) fica de fora de propósito, mesmo motivo já
- * registrado em `@sb/domain/events` (`order-events.ts`): o Mercado Livre
- * modela devolução pela API de Reclamações e Devoluções, não integrada.
+ * **A reversão é limitada pelo que a devolução já devolveu** (verificação de
+ * e6fda07, ALTA-1; `reversal-limit.ts`): cancelamento e devolução entregue
+ * revertem a MESMA venda, e a unidade volta ao estoque no máximo uma vez. O
+ * cancelamento grava só o que falta, e não grava nada quando a devolução já
+ * devolveu a venda inteira.
  *
  * **D-351 — venda estornada por ser anterior ao snapshot.** O UpSeller devolve
  * a unidade ao Disponível sozinho quando o pedido cancela (resposta do dono).
@@ -68,6 +72,52 @@ export interface CancellationPreCapture {
   readonly estornadas: ReadonlySet<string>;
   /** Mesmo contrato de `PreCaptureCutoffs.cutoffFor`: lança para SKU não lido. */
   readonly cutoffFor: (skuId: string) => ErpCutoff | null;
+  /** `CANCELAMENTO_ML` e `DEVOLUCAO_ML` já gravados do pedido: o limite de cada reversão. */
+  readonly reversals: readonly RecordedReversal[];
+}
+
+interface CancellationReversalPlan {
+  readonly reversals: StockMovementDraft[];
+  /** Chaves de venda sem nada a reverter: a devolução (ou o legado) já devolveu tudo. */
+  readonly alreadyReversed: string[];
+}
+
+function planCancellationReversals(
+  order: CancellationReversalOrder,
+  saleMovements: readonly RecordedSaleMovement[],
+  preCapture: CancellationPreCapture,
+): CancellationReversalPlan {
+  const plan: CancellationReversalPlan = { reversals: [], alreadyReversed: [] };
+
+  if (!isCancelledOrderStatus(order.status)) {
+    return plan;
+  }
+
+  for (const movement of saleMovements) {
+    if (preCapture.estornadas.has(movement.idempotencyKey) && order.occurredAtKnown) {
+      const cutoff = preCapture.cutoffFor(movement.skuId);
+
+      // Estornada e cancelada até o corte: a planilha já tem a venda E a devolução.
+      if (cutoff !== null && order.occurredAt.getTime() <= cutoff.capturedAt.getTime()) continue;
+    }
+
+    const idempotencyKey = cancellationKeyOf(movement.idempotencyKey);
+    const restante = remainingToReverse(movement, preCapture.reversals, idempotencyKey);
+
+    if (restante <= 0) {
+      plan.alreadyReversed.push(movement.idempotencyKey);
+      continue;
+    }
+
+    plan.reversals.push({
+      skuId: movement.skuId,
+      qtyDelta: movement.qtyDelta < 0 ? restante : -restante,
+      idempotencyKey,
+      occurredAt: order.occurredAt,
+    });
+  }
+
+  return plan;
 }
 
 export function computeCancellationReversals(
@@ -75,26 +125,7 @@ export function computeCancellationReversals(
   saleMovements: readonly RecordedSaleMovement[],
   preCapture: CancellationPreCapture,
 ): StockMovementDraft[] {
-  if (!isCancelledOrderStatus(order.status)) {
-    return [];
-  }
-
-  return saleMovements
-    .filter((movement) => {
-      if (!preCapture.estornadas.has(movement.idempotencyKey) || !order.occurredAtKnown) {
-        return true;
-      }
-
-      const cutoff = preCapture.cutoffFor(movement.skuId);
-
-      return cutoff === null || order.occurredAt.getTime() > cutoff.capturedAt.getTime();
-    })
-    .map((movement) => ({
-      skuId: movement.skuId,
-      qtyDelta: -movement.qtyDelta,
-      idempotencyKey: `cancelamento:${movement.idempotencyKey}`,
-      occurredAt: order.occurredAt,
-    }));
+  return planCancellationReversals(order, saleMovements, preCapture).reversals;
 }
 
 /**
@@ -120,6 +151,8 @@ export interface CancellationMovementsInput {
   readonly recordedSales: readonly (RecordedSaleMovement & RecordedSale)[];
   /** Chaves de `VENDA_ML` que já têm estorno gravado. */
   readonly estornadas: ReadonlySet<string>;
+  /** `CANCELAMENTO_ML` e `DEVOLUCAO_ML` já gravados do pedido. */
+  readonly reversals: readonly RecordedReversal[];
   readonly cutoffFor: (skuId: string) => ErpCutoff | null;
 }
 
@@ -130,6 +163,8 @@ export interface CancellationMovements {
   readonly estornos: StockMovementDraft[];
   /** `CANCELAMENTO_ML`. */
   readonly reversals: StockMovementDraft[];
+  /** Chaves de venda que o cancelamento não reverteu porque a devolução já tinha devolvido tudo. */
+  readonly alreadyReversed: string[];
 }
 
 /**
@@ -140,13 +175,25 @@ export interface CancellationMovements {
  * planilha, sem vínculo na época, e cancelado depois dela: a planilha tem a
  * venda descontada e o UpSeller devolve a unidade depois — o estoque real é o
  * snapshot +1. Sem `VENDA_ML` gravado, `computeCancellationReversals` não teria
- * o que reverter, e a V3 ficaria 1 abaixo até a próxima planilha. Então, para
- * cada rascunho de venda (vínculos de hoje) sem linha gravada, grava venda +
- * estorno + cancelamento quando TODAS valem: a V3 viu a transição de venda
- * para cancelado, `date_closed` existe, a venda é até o corte do SKU, e o
- * cancelamento tem instante conhecido e POSTERIOR ao corte. Sem a transição
- * observada, "cancelado" pode ser da carga da história — os 9 pedidos que o
- * backfill já trouxe cancelados, antes da planilha, e que não mexem.
+ * o que reverter, e a V3 ficaria 1 abaixo até a próxima planilha. Então grava
+ * venda + estorno + cancelamento quando TODAS valem: o pedido não tem NENHUM
+ * `VENDA_ML` gravado, a V3 viu a transição de venda para cancelado,
+ * `date_closed` existe, a venda é até o corte do SKU, e o cancelamento tem
+ * instante conhecido e POSTERIOR ao corte. Sem a transição observada,
+ * "cancelado" pode ser da carga da história — os 9 pedidos que o backfill já
+ * trouxe cancelados, antes da planilha, e que não mexem.
+ *
+ * **Nenhum `VENDA_ML` gravado, e não "a chave de hoje não foi gravada"**
+ * (verificação de e6fda07, MÉDIA-1). A chave vem dos vínculos de HOJE: se a
+ * composição do KIT mudou, ou o PRODUTO virou KIT, entre a venda e o
+ * cancelamento, a chave de hoje não bate com a gravada e o trio reporia um SKU
+ * que nunca foi baixado. Pedido com qualquer venda gravada só reverte o que foi
+ * gravado (D-020).
+ *
+ * **O cancelamento do trio leva o instante que passou pela regra do corte**
+ * (verificação de e6fda07, BAIXA-1): com o instante desta leitura desconhecido,
+ * `date_created` cairia antes do corte, e o alvo não contaria a reposição que o
+ * saldo contou.
  *
  * **O estorno que falta de venda já gravada** sai pela mesma regra da venda
  * (`preCaptureEstornoOf`). Sem ele, um retry que achasse a venda gravada e o
@@ -154,25 +201,27 @@ export interface CancellationMovements {
  */
 export function computeCancellationMovements(input: CancellationMovementsInput): CancellationMovements {
   if (!isCancelledOrderStatus(input.order.status)) {
-    return { sales: [], estornos: [], reversals: [] };
+    return { sales: [], estornos: [], reversals: [], alreadyReversed: [] };
   }
 
   const saleAt = saleInstant(input.order);
   const gravadas = new Map(input.recordedSales.map((sale) => [sale.idempotencyKey, sale]));
-  const preCapture: PreCaptureCutoffs = { cutoffFor: input.cutoffFor, recordedSale: (key) => gravadas.get(key) };
+  const preCapture: PreCaptureCutoffs = {
+    cutoffFor: input.cutoffFor,
+    recordedSale: (key) => gravadas.get(key),
+    recordedReversals: input.reversals,
+  };
 
   const sales: StockMovementDraft[] = [];
   const { transition } = input;
   const cancelledAt = transition?.cancelledAt ?? null;
 
-  if (transition !== null && cancelledAt !== null && input.order.dateClosed !== null) {
+  if (transition !== null && cancelledAt !== null && input.order.dateClosed !== null && input.recordedSales.length === 0) {
     // O status da transicao passa pelo filtro de venda valida de
     // `computeSaleDeductions`: `confirmed -> cancelled` nao gera rascunho nenhum.
     const { deductions } = computeSaleDeductions({ ...input.order, status: transition.saleStatus }, preCapture);
 
     for (const deduction of deductions) {
-      if (gravadas.has(deduction.idempotencyKey)) continue;
-
       const cutoff = input.cutoffFor(deduction.skuId);
 
       // Sem corte, ou venda depois dele: nunca gravada e cancelada soma zero.
@@ -194,16 +243,34 @@ export function computeCancellationMovements(input: CancellationMovementsInput):
     if (estorno !== null) estornos.push(estorno);
   }
 
-  const reversals = computeCancellationReversals(
+  const reversaoPreCaptura: CancellationPreCapture = {
+    // O estorno gerado AGORA conta como estornado: sem isso, a venda gravada sem
+    // par e cancelada até o corte sairia com estorno E cancelamento (+1).
+    estornadas: new Set([...input.estornadas, ...estornos.map((estorno) => estornadoKeyOf(estorno.idempotencyKey))]),
+    cutoffFor: input.cutoffFor,
+    reversals: input.reversals,
+  };
+
+  const deGravadas = planCancellationReversals(
     { id: input.order.id, status: input.order.status, occurredAt: input.occurredAt, occurredAtKnown: input.occurredAtKnown },
-    [...input.recordedSales, ...sales],
-    {
-      estornadas: new Set([...input.estornadas, ...estornos.map((estorno) => estornadoKeyOf(estorno.idempotencyKey))]),
-      cutoffFor: input.cutoffFor,
-    },
+    input.recordedSales,
+    reversaoPreCaptura,
   );
 
-  return { sales, estornos, reversals };
+  // O trio só existe com `cancelledAt` conhecido e posterior ao corte (acima).
+  const instanteDoTrio = input.occurredAtKnown || cancelledAt === null ? input.occurredAt : cancelledAt;
+  const doTrio = planCancellationReversals(
+    { id: input.order.id, status: input.order.status, occurredAt: instanteDoTrio, occurredAtKnown: true },
+    sales,
+    reversaoPreCaptura,
+  );
+
+  return {
+    sales,
+    estornos,
+    reversals: [...deGravadas.reversals, ...doTrio.reversals],
+    alreadyReversed: [...deGravadas.alreadyReversed, ...doTrio.alreadyReversed],
+  };
 }
 
 function comoRascunho(sale: RecordedSaleMovement & RecordedSale): StockMovementDraft {

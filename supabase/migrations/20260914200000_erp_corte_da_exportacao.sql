@@ -103,10 +103,21 @@ revoke all on function private.erp_stock_export_instant(text, timestamptz) from 
 -- (`captured_at = parsed_at`), o que torna a correcao idempotente: depois dela o valor
 -- difere do parse, e o worker novo ja grava a exportacao.
 --
--- Efeito medido antes de aplicar: producao, 3.098 linhas de 18:44:13.254 para 18:42:00;
--- Dev, 3.372 linhas de 08-21 15:42:02.459 para 08-20 16:09:23 (23 h 33 min antes -- no Dev
--- a reconciliacao ja rodou com o corte velho, e a proxima rodada, quando o Dev voltar,
--- passa a contar as vendas dessa janela no alvo; e o certo pela resposta do dono).
+-- SO NA ORGANIZACAO QUE NUNCA RECONCILIOU (nenhum AJUSTE_RECONCILIACAO) -- o mesmo criterio
+-- de "nascida no import" da compensacao F3. Recuar o corte de uma organizacao cujo saldo a
+-- reconciliacao ja alinhou ao corte do parse faz o alvo passar a contar as vendas gravadas
+-- com `occurred_at` entre a exportacao e o parse, e isso NAO e o certo (verificacao de
+-- e6fda07): no Dev, das 1.234 VENDA_ML dessa janela, 1.081 (-1.098 un., 379 SKUs) sao de
+-- pedidos fechados ANTES da exportacao, gravados pelo worker antigo com a data da
+-- atualizacao. A planilha ja as descontava e a reconciliacao ja as absorveu; o alvo as
+-- contaria de novo, e a proxima reconciliacao do Dev gravaria -1.098 un. (SKUs com alvo
+-- negativo de 243 para 259), com uma notificacao por ajuste. Nenhuma guarda cobria: a F3
+-- nao entra em organizacao reconciliada. Com o recorte, o Dev fica com o corte do parse,
+-- gate e alvo continuam lendo a mesma coluna, e a planilha seguinte ja chega com o corte
+-- da exportacao pelo worker.
+--
+-- Efeito medido antes de aplicar: producao (zero ajustes), 3.098 linhas de 18:44:13.254
+-- para 18:42:00; Dev (6.203 ajustes, o ultimo em 09-05), nenhuma linha.
 update public.erp_stock_snapshots s
    set captured_at = private.erp_stock_export_instant(b.file_name, b.parsed_at)
   from public.erp_import_batches b
@@ -114,7 +125,13 @@ update public.erp_stock_snapshots s
    and b.kind = 'STOCK'
    and b.parsed_at is not null
    and s.captured_at = b.parsed_at
-   and private.erp_stock_export_instant(b.file_name, b.parsed_at) <> s.captured_at;
+   and private.erp_stock_export_instant(b.file_name, b.parsed_at) <> s.captured_at
+   and not exists (
+     select 1
+     from public.stock_movements a
+     where a.organization_id = s.organization_id
+       and a.movement_type = 'AJUSTE_RECONCILIACAO'
+   );
 
 comment on column public.erp_stock_snapshots.captured_at is
   'Instante da EXPORTACAO da planilha do UpSeller -- o corte do snapshot: venda com "venda em" ate aqui ja esta no saldo do ERP (D-351). Ate D-351 era o instante do parse.';

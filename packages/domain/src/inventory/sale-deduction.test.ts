@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { computeSaleDeductions, estornadoKeyOf, estornoKeyOf, saleInstant } from "./sale-deduction.js";
+import type { RecordedReversal } from "./reversal-limit.js";
+import { alignedAt, computeSaleDeductions, estornadoKeyOf, estornoKeyOf, saleInstant } from "./sale-deduction.js";
 import type { PreCaptureCutoffs, RecordedSale, SaleDeductionOrder } from "./sale-deduction.js";
 
 const CREATED_AT = new Date("2026-08-21T12:59:00.000Z");
@@ -20,12 +21,14 @@ function baseOrder(overrides: Partial<SaleDeductionOrder> = {}): SaleDeductionOr
 }
 
 /** Organização sem snapshot: nenhum corte, nenhum VENDA_ML gravado — o comportamento de antes de D-351. */
-const SEM_CORTE: PreCaptureCutoffs = { cutoffFor: () => null, recordedSale: () => undefined };
+const SEM_CORTE: PreCaptureCutoffs = { cutoffFor: () => null, recordedSale: () => undefined, recordedReversals: [] };
 
 function cortes(
   porSku: Record<string, Date | null>,
   gravadas: Record<string, RecordedSale> = {},
   importedAt: Date = IMPORTADO_EM,
+  reconciledAt: Date | null = null,
+  recordedReversals: RecordedReversal[] = [],
 ): PreCaptureCutoffs {
   return {
     cutoffFor: (skuId) => {
@@ -35,9 +38,10 @@ function cortes(
 
       const capturedAt = porSku[skuId] ?? null;
 
-      return capturedAt === null ? null : { capturedAt, importedAt };
+      return capturedAt === null ? null : { capturedAt, importedAt, reconciledAt };
     },
     recordedSale: (key) => gravadas[key],
+    recordedReversals,
   };
 }
 
@@ -311,6 +315,120 @@ describe("computeSaleDeductions — estorno da venda anterior ao snapshot (D-351
     const segunda = computeSaleDeductions(baseOrder({ items: PRODUTO }), pre);
 
     expect(segunda).toEqual(primeira);
+  });
+});
+
+/**
+ * Verificação de e6fda07, MÉDIA-1: quem absorve a venda gravada não é o import,
+ * é o alinhamento do saldo ao alvo — o import, ou uma reconciliação depois dele.
+ */
+describe("computeSaleDeductions — a venda gravada e o último alinhamento do saldo", () => {
+  const PRODUTO: SaleDeductionOrder["items"] = [
+    { position: 0, quantity: 1, skuId: "sku-a", skuKind: "PRODUTO", components: [] },
+  ];
+  // Dev: planilha exportada em 08-20 16:09:23, importada em 08-21 17:12:43; reconciliação em 09-05 09:00:08.
+  const CORTE = new Date("2026-08-20T16:09:23.000Z");
+  const IMPORT = new Date("2026-08-21T17:12:43.810Z");
+  const RECONCILIACAO = new Date("2026-09-05T09:00:08.000Z");
+  const pedido = baseOrder({ dateClosed: new Date("2026-08-15T10:00:00.000Z"), items: PRODUTO });
+
+  function gravada(occurredAt: Date, recordedAt: Date): Record<string, RecordedSale> {
+    return { "venda:9900001001:0": { skuId: "sku-a", qtyDelta: -1, occurredAt, recordedAt } };
+  }
+
+  it("(b) linha até o corte, gravada depois do import e ANTES da reconciliação: sem estorno — a reconciliação a absorveu", () => {
+    const result = computeSaleDeductions(
+      pedido,
+      cortes({ "sku-a": CORTE }, gravada(new Date("2026-08-15T10:00:00.000Z"), new Date("2026-08-22T03:00:00.000Z")), IMPORT, RECONCILIACAO),
+    );
+
+    expect(result.preCaptureReversals).toEqual([]);
+  });
+
+  it("(b) a mesma linha gravada DEPOIS da reconciliação: estorna", () => {
+    const result = computeSaleDeductions(
+      pedido,
+      cortes({ "sku-a": CORTE }, gravada(new Date("2026-08-15T10:00:00.000Z"), new Date(RECONCILIACAO.getTime() + 1)), IMPORT, RECONCILIACAO),
+    );
+
+    expect(result.preCaptureReversals.map((e) => e.idempotencyKey)).toEqual(["estorno:venda:9900001001:0"]);
+  });
+
+  it("(b) gravada NO instante da reconciliação: sem estorno — a fronteira é a mesma do import", () => {
+    expect(
+      computeSaleDeductions(pedido, cortes({ "sku-a": CORTE }, gravada(new Date("2026-08-15T10:00:00.000Z"), RECONCILIACAO), IMPORT, RECONCILIACAO))
+        .preCaptureReversals,
+    ).toEqual([]);
+  });
+
+  it("(b) reconciliação ANTERIOR ao import não conta: vale o import", () => {
+    const antes = new Date(IMPORT.getTime() - 60_000);
+
+    expect(alignedAt({ capturedAt: CORTE, importedAt: IMPORT, reconciledAt: antes })).toEqual(IMPORT);
+    expect(
+      computeSaleDeductions(pedido, cortes({ "sku-a": CORTE }, gravada(new Date("2026-08-15T10:00:00.000Z"), new Date(IMPORT.getTime() + 1)), IMPORT, antes))
+        .preCaptureReversals,
+    ).toHaveLength(1);
+  });
+
+  it("(a) linha do worker antigo com occurred_at DEPOIS do corte: estorna sempre, espelhada — mesmo gravada antes do import e da reconciliação", () => {
+    const occurredAt = new Date("2026-08-20T18:00:00.000Z");
+    const result = computeSaleDeductions(
+      pedido,
+      cortes({ "sku-a": CORTE }, gravada(occurredAt, new Date("2026-08-20T18:00:05.000Z")), IMPORT, RECONCILIACAO),
+    );
+
+    expect(result.preCaptureReversals).toEqual([
+      { skuId: "sku-a", qtyDelta: 1, idempotencyKey: "estorno:venda:9900001001:0", occurredAt },
+    ]);
+  });
+});
+
+/**
+ * Verificação de e6fda07, ALTA-1: o legado gravou cancelamento E devolução da
+ * mesma venda. O excesso já anulou a venda; o estorno é só o que sobra.
+ */
+describe("computeSaleDeductions — estorno de venda com reversão em excesso do legado", () => {
+  const PRODUTO: SaleDeductionOrder["items"] = [
+    { position: 0, quantity: 1, skuId: "sku-a", skuKind: "PRODUTO", components: [] },
+  ];
+  const CORTE = new Date("2026-09-14T18:42:00.000Z");
+  const pedido = baseOrder({ dateClosed: new Date("2026-08-31T21:05:29.000Z"), items: PRODUTO });
+  // 2000018212899604 de produção: gravada pelo worker antigo às 02:00 de 09-15 com a data da atualização.
+  const GRAVADA: Record<string, RecordedSale> = {
+    "venda:9900001001:0": {
+      skuId: "sku-a",
+      qtyDelta: -1,
+      occurredAt: new Date("2026-09-15T01:50:58.000Z"),
+      recordedAt: new Date("2026-09-15T02:00:05.948Z"),
+    },
+  };
+  const DEVOLUCAO: RecordedReversal = { idempotencyKey: "devolucao:5570995770:venda:9900001001:0", quantity: 1 };
+  const CANCELAMENTO: RecordedReversal = { idempotencyKey: "cancelamento:venda:9900001001:0", quantity: 1 };
+
+  it("devolução E cancelamento gravados: nenhum estorno — o líquido do pedido já é +1, e o estorno o levaria a +2", () => {
+    const result = computeSaleDeductions(pedido, cortes({ "sku-a": CORTE }, GRAVADA, IMPORTADO_EM, null, [DEVOLUCAO, CANCELAMENTO]));
+
+    expect(result.preCaptureReversals).toEqual([]);
+  });
+
+  it("só a devolução gravada: o estorno inteiro", () => {
+    const result = computeSaleDeductions(pedido, cortes({ "sku-a": CORTE }, GRAVADA, IMPORTADO_EM, null, [DEVOLUCAO]));
+
+    expect(result.preCaptureReversals.map((e) => e.qtyDelta)).toEqual([1]);
+  });
+
+  it("excesso parcial: o estorno é a venda menos o excesso", () => {
+    const tres: Record<string, RecordedSale> = { "venda:9900001001:0": { ...GRAVADA["venda:9900001001:0"], qtyDelta: -3 } as RecordedSale };
+    const result = computeSaleDeductions(
+      pedido,
+      cortes({ "sku-a": CORTE }, tres, IMPORTADO_EM, null, [
+        { idempotencyKey: "cancelamento:venda:9900001001:0", quantity: 3 },
+        { idempotencyKey: "devolucao:1:venda:9900001001:0", quantity: 1 },
+      ]),
+    );
+
+    expect(result.preCaptureReversals.map((e) => e.qtyDelta)).toEqual([2]);
   });
 });
 

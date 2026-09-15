@@ -1,6 +1,8 @@
 import { EVENT_SEVERITY } from "../events/catalog.js";
 import type { DomainEventDraft } from "../events/order-events.js";
 import type { RecordedSaleMovement } from "./cancellation-reversal.js";
+import { remainingToReverse, returnKeyOf } from "./reversal-limit.js";
+import type { RecordedReversal } from "./reversal-limit.js";
 import type { StockMovementDraft } from "./sale-deduction.js";
 
 /**
@@ -36,13 +38,28 @@ export interface ReturnReversal {
   readonly movements: readonly StockMovementDraft[];
   /** `false` = devolução parcial, nenhum movimento gerado — ver nota acima. */
   readonly fullReversal: boolean;
+  /**
+   * Chaves de venda que a devolução NÃO reverteu porque o cancelamento (ou
+   * outra devolução) já tinha devolvido a venda inteira (`reversal-limit.ts`).
+   */
+  readonly alreadyReversed: readonly string[];
   readonly event: DomainEventDraft;
 }
 
+/**
+ * **Limitada pelo que já foi revertido** (verificação de e6fda07, ALTA-1).
+ * Cancelamento e devolução revertem a MESMA venda, e a unidade volta ao estoque
+ * no máximo uma vez: a devolução grava só o que o cancelamento (ou outra
+ * devolução) ainda não devolveu, e nada quando já devolveram tudo. É o que
+ * impede o +2 dos pedidos que cancelam e depois têm a devolução entregue — no
+ * Dev, 358 das 563 vendas com as duas reversões tiveram o cancelamento primeiro.
+ */
 export function computeReturnReversal(
   order: { id: number },
   item: ReturnedOrderItem,
   saleMovements: readonly RecordedSaleMovement[],
+  /** `CANCELAMENTO_ML` e `DEVOLUCAO_ML` já gravados do pedido. */
+  reversals: readonly RecordedReversal[],
   claimId: string,
   occurredAt: Date,
 ): ReturnReversal {
@@ -53,20 +70,29 @@ export function computeReturnReversal(
 
   const fullReversal = item.returnQuantity >= item.totalQuantity && matched.length > 0;
 
-  const movements: StockMovementDraft[] = fullReversal
-    ? matched.map((m) => ({
-        skuId: m.skuId,
-        qtyDelta: -m.qtyDelta,
-        idempotencyKey: `devolucao:${claimId}:${m.idempotencyKey}`,
-        occurredAt,
-      }))
-    : [];
+  const movements: StockMovementDraft[] = [];
+  const alreadyReversed: string[] = [];
+
+  if (fullReversal) {
+    for (const m of matched) {
+      const idempotencyKey = returnKeyOf(claimId, m.idempotencyKey);
+      const restante = remainingToReverse(m, reversals, idempotencyKey);
+
+      if (restante <= 0) {
+        alreadyReversed.push(m.idempotencyKey);
+        continue;
+      }
+
+      movements.push({ skuId: m.skuId, qtyDelta: m.qtyDelta < 0 ? restante : -restante, idempotencyKey, occurredAt });
+    }
+  }
 
   const eventType = "order.returned";
 
   return {
     movements,
     fullReversal,
+    alreadyReversed,
     event: {
       eventType,
       entityType: "order",
@@ -77,6 +103,9 @@ export function computeReturnReversal(
         returnQuantity: item.returnQuantity,
         fullReversal,
         movementsReversed: movements.length,
+        // A devolução inteira que não moveu o saldo porque o cancelamento já
+        // tinha devolvido a unidade: registrado, não silencioso.
+        movementsAlreadyReversed: alreadyReversed.length,
         needsManualReview: !fullReversal,
       },
       severity: EVENT_SEVERITY[eventType] ?? "importante",

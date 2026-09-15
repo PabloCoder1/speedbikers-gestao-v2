@@ -1,6 +1,6 @@
 import type { AdminClient } from "@sb/db";
-import { computeReturnReversal, computeUnreversedReturn } from "@sb/domain";
-import type { RecordedSaleMovement } from "@sb/domain";
+import { computeReturnReversal, computeUnreversedReturn, revertedSaleKeyOf } from "@sb/domain";
+import type { RecordedReversal, RecordedSaleMovement } from "@sb/domain";
 import { MercadoLivreApiError } from "@sb/mercado-livre";
 import type { MercadoLivreClient } from "@sb/mercado-livre";
 import type { Logger } from "@sb/observability";
@@ -70,18 +70,30 @@ export interface ProcessClaimReturnContext {
   mlAccountId: string;
 }
 
-async function loadSaleMovements(
-  db: AdminClient,
-  organizationId: string,
-  orderId: number,
-): Promise<RecordedSaleMovement[]> {
+interface OrderMovements {
+  sales: RecordedSaleMovement[];
+  /** `CANCELAMENTO_ML` e `DEVOLUCAO_ML` já gravados: o limite da devolução. */
+  reversals: RecordedReversal[];
+}
+
+/**
+ * As vendas do pedido e as reversões já gravadas delas.
+ *
+ * Verificação de e6fda07, ALTA-1: cancelamento e devolução revertem a MESMA
+ * venda, e a unidade volta ao estoque no máximo uma vez. Sem ler o
+ * cancelamento (origem do pedido) e as outras devoluções (origem do claim,
+ * pedido dentro da chave — `get_order_return_movements`), a devolução entregue
+ * de um pedido já cancelado devolveria a unidade de novo. Chave de reversão fora
+ * do formato LANÇA (`revertedSaleKeyOf`).
+ */
+async function loadOrderMovements(db: AdminClient, organizationId: string, orderId: number): Promise<OrderMovements> {
   const result = await db
     .from("stock_movements")
-    .select("sku_id, qty_delta, idempotency_key")
+    .select("sku_id, qty_delta, idempotency_key, movement_type")
     .eq("organization_id", organizationId)
     .eq("source_type", "ORDER")
     .eq("source_id", String(orderId))
-    .eq("movement_type", "VENDA_ML");
+    .in("movement_type", ["VENDA_ML", "CANCELAMENTO_ML"]);
 
   if (result.error !== null) {
     // Não tratar como "nenhum movimento": a devolução física reverteria
@@ -89,11 +101,48 @@ async function loadSaleMovements(
     throw new Error(`falha ao ler stock_movements da order ${String(orderId)}: ${result.error.message}`);
   }
 
-  return result.data.map((row) => ({
-    skuId: row.sku_id,
-    qtyDelta: row.qty_delta,
-    idempotencyKey: row.idempotency_key,
-  }));
+  const sales: RecordedSaleMovement[] = [];
+  const reversals: RecordedReversal[] = [];
+
+  for (const row of result.data) {
+    if (row.movement_type === "CANCELAMENTO_ML") {
+      revertedSaleKeyOf(row.idempotency_key);
+      reversals.push({ idempotencyKey: row.idempotency_key, quantity: row.qty_delta });
+    } else {
+      sales.push({ skuId: row.sku_id, qtyDelta: row.qty_delta, idempotencyKey: row.idempotency_key });
+    }
+  }
+
+  if (sales.length === 0) {
+    // Sem venda gravada não há o que reverter, nem devolução gravada dela.
+    return { sales, reversals };
+  }
+
+  const devolucoes = await db.rpc("get_order_return_movements", {
+    p_organization_id: organizationId,
+    p_order_ids: [String(orderId)],
+  });
+
+  if (devolucoes.error !== null) {
+    // Não tratar como "nenhuma devolução": a segunda devolução (outro claim)
+    // devolveria a unidade de novo.
+    throw new Error(`falha ao ler as devolucoes gravadas da order ${String(orderId)}: ${devolucoes.error.message}`);
+  }
+
+  // O tipo gerado diz que `data` nunca é nulo sem erro; o PostgREST não promete isso, e
+  // "data nulo" tratado como "nenhuma devolução" devolveria a unidade de novo.
+  const linhas: unknown = devolucoes.data;
+
+  if (!Array.isArray(linhas)) {
+    throw new Error(`falha ao ler as devolucoes gravadas da order ${String(orderId)}: data nulo sem erro`);
+  }
+
+  for (const row of devolucoes.data) {
+    revertedSaleKeyOf(row.idempotency_key);
+    reversals.push({ idempotencyKey: row.idempotency_key, quantity: row.qty_delta });
+  }
+
+  return { sales, reversals };
 }
 
 /** Mesma forma de `resolveSku` em `persist-order.ts`: `variation_id` nulo precisa de `.is()`, não `.eq()`. */
@@ -249,12 +298,17 @@ export async function processClaimReturn(
       continue;
     }
 
-    const saleMovements = await loadSaleMovements(deps.db, context.organizationId, returnedOrder.order_id);
+    const { sales: saleMovements, reversals } = await loadOrderMovements(
+      deps.db,
+      context.organizationId,
+      returnedOrder.order_id,
+    );
 
     const reversal = computeReturnReversal(
       { id: returnedOrder.order_id },
       { position, totalQuantity: returnedOrder.total_quantity, returnQuantity: returnedOrder.return_quantity },
       saleMovements,
+      reversals,
       claimId,
       now,
     );
@@ -270,6 +324,18 @@ export async function processClaimReturn(
     }
 
     await recordDomainEvents(deps.db, context, [reversal.event], logger);
+
+    if (reversal.alreadyReversed.length > 0) {
+      // Verificação de e6fda07, ALTA-1: o cancelamento (ou outra devolução) já
+      // devolveu a unidade. Nada gravado no saldo, e o evento leva
+      // `movementsAlreadyReversed`.
+      logger.info("claim_return_ja_revertida", {
+        claim_id: claimId,
+        order_id: returnedOrder.order_id,
+        position,
+        vendas: reversal.alreadyReversed.length,
+      });
+    }
 
     if (!reversal.fullReversal) {
       logger.warn("claim_return_needs_manual_review", {

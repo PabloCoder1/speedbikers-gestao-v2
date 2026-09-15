@@ -36,6 +36,9 @@
  * traz `importedAt`, e a venda gravada traz `recordedAt`.
  */
 
+import { excessReversed } from "./reversal-limit.js";
+import type { RecordedReversal } from "./reversal-limit.js";
+
 export interface SaleDeductionItem {
   readonly position: number;
   readonly quantity: number;
@@ -95,11 +98,21 @@ export interface ErpCutoff {
    */
   readonly capturedAt: Date;
   /**
-   * Quando a V3 recebeu esse corte: o menor `created_at` dos snapshots que o
-   * definem. Venda gravada até aqui já estava no saldo quando o corte chegou, e
-   * não é estornada.
+   * Quando a V3 terminou de receber esse corte: `erp_import_batches.applied_at`
+   * do lote do snapshot mais recente (gravado depois de todos os upserts), ou o
+   * `created_at` dele quando o lote ainda não fechou — o maior dos dois. Venda
+   * gravada até aqui já estava no saldo quando o corte chegou.
    */
   readonly importedAt: Date;
+  /**
+   * A última reconciliação da organização (`maintenance.reconcile-balances`
+   * concluída, ou o último `AJUSTE_RECONCILIACAO`), ou `null` se nunca houve.
+   * Uma reconciliação depois do import alinha o saldo ao alvo e absorve a venda
+   * gravada antes dela (verificação de e6fda07, MÉDIA-1). Também `null` para o
+   * SKU sem snapshot próprio (que usa o corte da organização): ele não tem alvo,
+   * a reconciliação nunca o visita, e nenhuma rodada alinha o saldo dele.
+   */
+  readonly reconciledAt: Date | null;
 }
 
 export interface PreCaptureCutoffs {
@@ -123,6 +136,12 @@ export interface PreCaptureCutoffs {
    * compensação dos movimentos já gravados.
    */
   readonly recordedSale: (idempotencyKey: string) => RecordedSale | undefined;
+  /**
+   * `CANCELAMENTO_ML` e `DEVOLUCAO_ML` já gravados do pedido. O legado de antes do
+   * limite das reversões (`reversal-limit.ts`) pode ter revertido a mesma venda
+   * duas vezes, e esse excesso já anulou parte dela: o estorno é só o que sobra.
+   */
+  readonly recordedReversals: readonly RecordedReversal[];
 }
 
 export interface SaleDeductionResult {
@@ -185,13 +204,49 @@ export function saleInstant(order: Pick<SaleDeductionOrder, "dateClosed" | "date
 }
 
 /**
+ * O último instante em que o saldo foi alinhado a este corte: o import dele, ou
+ * uma reconciliação posterior ao import.
+ */
+export function alignedAt(cutoff: ErpCutoff): Date {
+  return cutoff.reconciledAt !== null && cutoff.reconciledAt.getTime() > cutoff.importedAt.getTime()
+    ? cutoff.reconciledAt
+    : cutoff.importedAt;
+}
+
+/**
+ * Se um `VENDA_ML` JÁ GRAVADO, de venda até o corte, ainda precisa de estorno
+ * (verificação de e6fda07, MÉDIA-1). Quem absorve a venda gravada não é o import:
+ * é o alinhamento do saldo ao alvo. Por isso a regra olha de que lado do corte a
+ * LINHA está:
+ *
+ *  - (a) `occurred_at` da linha DEPOIS do corte: a linha está dentro do alvo de
+ *    `compute_erp_target_balances` (é o worker de antes de D-351, que gravava a
+ *    data da atualização) e conta a venda duas vezes nos dois lados. O estorno
+ *    espelhado a anula no saldo E no alvo: estorna sempre, com ou sem
+ *    reconciliação no meio.
+ *  - (b) `occurred_at` até o corte: a linha está fora do alvo. Se ela já estava
+ *    no saldo no último alinhamento a este corte (`alignedAt`: o import, ou uma
+ *    reconciliação depois dele), o saldo já foi posto igual ao alvo sem ela — a
+ *    venda foi absorvida, e estorná-la devolveria uma unidade que a planilha não
+ *    tem. Só estorna o que entrou no saldo DEPOIS desse alinhamento.
+ */
+export function estornaVendaGravada(recorded: RecordedSale, cutoff: ErpCutoff): boolean {
+  if (recorded.occurredAt.getTime() > cutoff.capturedAt.getTime()) {
+    return true;
+  }
+
+  return recorded.recordedAt.getTime() > alignedAt(cutoff).getTime();
+}
+
+/**
  * O `ESTORNO_PRE_CAPTURA` de uma venda — o rascunho novo ou a linha já gravada
  * com a mesma chave —, ou `null` quando ela não é estornada.
  *
- * Estorna quando a "venda em" é até o corte do SKU E a venda entra no saldo
- * depois de o corte chegar: o rascunho novo sempre (vai ser gravado agora); a
- * linha gravada, só se `recordedAt > importedAt`. Compartilhada com o
- * cancelamento (`computeCancellationMovements`), que precisa do mesmo par.
+ * Estorna quando a "venda em" é até o corte do SKU E a venda ainda não foi
+ * absorvida: o rascunho novo sempre (vai ser gravado agora); a linha gravada,
+ * pela regra de `estornaVendaGravada`. A quantidade é a da venda menos o excesso
+ * de reversão do legado (`excessReversed`). Compartilhada com o cancelamento
+ * (`computeCancellationMovements`), que precisa do mesmo par.
  */
 export function preCaptureEstornoOf(
   sale: StockMovementDraft,
@@ -208,14 +263,23 @@ export function preCaptureEstornoOf(
     return null;
   }
 
-  if (recorded !== undefined && recorded.recordedAt.getTime() <= cutoff.importedAt.getTime()) {
-    // Gravada antes de a planilha chegar: o alvo já a absorveu (ALTA-1).
+  if (recorded !== undefined && !estornaVendaGravada(recorded, cutoff)) {
+    return null;
+  }
+
+  // O legado (antes do limite das reversões) pode ter gravado cancelamento E
+  // devolução da mesma venda: o que passou da quantidade vendida já anulou a
+  // venda. Estornar a venda inteira somaria a unidade de novo -- os pedidos
+  // 2000018212899604 e 2000018206306064 de produção iriam de +1 a +2.
+  const quantidade = Math.abs(base.qtyDelta) - excessReversed({ idempotencyKey: sale.idempotencyKey, qtyDelta: base.qtyDelta }, preCapture.recordedReversals);
+
+  if (quantidade <= 0) {
     return null;
   }
 
   return {
     skuId: base.skuId,
-    qtyDelta: -base.qtyDelta,
+    qtyDelta: base.qtyDelta < 0 ? quantidade : -quantidade,
     idempotencyKey: estornoKeyOf(sale.idempotencyKey),
     occurredAt: base.occurredAt,
   };

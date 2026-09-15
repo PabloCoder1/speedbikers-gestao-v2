@@ -4123,6 +4123,19 @@ export type Database = {
         Returns: {
           captured_at: string | null
           imported_at: string | null
+          reconciled_at: string | null
+          sku_id: string
+        }[]
+      }
+      // CORRECAO MANUAL (D-351, verificacao de e6fda07): mesma razao do bloco acima --
+      // `20260914200400_reversao_limitada_e_desempate_do_alvo` so existe no repositorio ate
+      // ser aplicada, e a CLI nao regenera este arquivo.
+      get_order_return_movements: {
+        Args: { p_order_ids: string[]; p_organization_id: string }
+        Returns: {
+          idempotency_key: string
+          order_id: string
+          qty_delta: number
           sku_id: string
         }[]
       }
