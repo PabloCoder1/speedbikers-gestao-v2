@@ -1,5 +1,5 @@
 import type { AdminClient } from "@sb/db";
-import { canTransitionRelist, evaluateRelistPreflight } from "@sb/domain";
+import { canTransitionRelist, collectRelistInventoryIds, evaluateRelistPreflight } from "@sb/domain";
 import type { MercadoLivreClient, MercadoLivreOAuthConfig } from "@sb/mercado-livre";
 import { MercadoLivreApiError } from "@sb/mercado-livre";
 import type { Logger } from "@sb/observability";
@@ -8,6 +8,7 @@ import { z } from "zod";
 import type { JobOutcome } from "../job-outcome.js";
 import type { HandlerContext, JobHandler } from "../router.js";
 import { ensureAccessToken } from "./ml-token.js";
+import { describeFullStock, readRelistFullStock } from "./relist-full-stock.js";
 import { ensureRelistMeasurement } from "./relist-measurement.js";
 
 /**
@@ -376,7 +377,25 @@ export function createRelistExecuteHandler(deps: RelistExecuteDeps): JobHandler 
     // Depois de CLOSING, reprovar não desfaz o fechamento; o fluxo segue e
     // as falhas reais aparecem nos próprios passos.
     if (operation.status === "REQUESTED") {
-      const preflight = evaluateRelistPreflight(parentRaw);
+      // D-360: o estoque do Full também é relido na hora — ele pode ter
+      // recebido unidades desde o pedido. Falha passageira relança antes de
+      // qualquer transição; o PUT não sai sem a conferência.
+      const fullStock = await readRelistFullStock({
+        mercadoLivre: deps.mercadoLivre,
+        accessToken,
+        inventoryIds: collectRelistInventoryIds(parentRaw),
+        logger: context.logger,
+        logFields: { relist_id: operation.id, item_id: operation.parent_item_id },
+      });
+      const preflight = evaluateRelistPreflight(parentRaw, fullStock);
+
+      context.logger.info("relist_execute_preflight", {
+        relist_id: operation.id,
+        approved: preflight.approved,
+        blocks: preflight.blocks.map((block) => block.code),
+        warnings: preflight.warnings.map((warning) => warning.code),
+        full_stock: describeFullStock(fullStock),
+      });
 
       if (!preflight.approved) {
         const marked = await transition(

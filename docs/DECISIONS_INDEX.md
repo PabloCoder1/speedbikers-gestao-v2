@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **354** (D-001 a D-363).
+Decisões registradas: **355** (D-001 a D-363).
 
 ## Por domínio
 
@@ -176,7 +176,7 @@ Decisões registradas: **354** (D-001 a D-363).
 - **D-347** — O roteiro de restore punha o dono na aba cujo botao sobrescreve o Dev -- e o comando dele nao rodava nesta maquina
 - **D-354** — /usuarios: nome, foto, suspender e remover -- o "so conseguimos criar" virou gestao de pessoa
 
-### mercado-livre (52)
+### mercado-livre (53)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -230,6 +230,7 @@ Decisões registradas: **354** (D-001 a D-363).
 - **D-350** — Producao no ar com o mesmo app do Mercado Livre do Dev -- o Dev pausado, o passo 10 com ordem, e o estoque contando venda em dobro
 - **D-357** — Dashboard do Anuncio: barras por dia, checagem de fatos, atalhos e o ticket medio que o anuncio nao tinha
 - **D-359** — Calculadora de preco no /faturamento: a margem de uma venda antes de anunciar, com o frete oficial do Mercado Livre e a tabela da Shopee
+- **D-360** — A trava da republicacao olha o estoque do Full, e nao o cadastro -- anuncio com Full zerado e envio por coleta deixa de ser recusado
 
 ### outros (59)
 

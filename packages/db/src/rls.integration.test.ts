@@ -8251,6 +8251,52 @@ describe("search_entities (Busca Universal)", () => {
     }
   }
 
+  /**
+   * D-360: o anúncio SUBSTITUÍDO por uma republicação sai da busca, e o MLB
+   * antigo leva ao filho. O antigo continua no banco — só deixa de ser
+   * destino. Operação sem filho não esconde nada.
+   */
+  it("anúncio republicado: a busca mostra só o filho, e o MLB antigo leva a ele (D-360)", async () => {
+    await client.query("begin");
+
+    try {
+      await client.query(
+        `insert into public.ml_accounts (id, organization_id, label, slug, seller_id, status, connected_at)
+         values ('${CONTA_BUSCA}','${ORG_SB}','Busca','rlstest-conta-busca',9001,'CONNECTED',now())`,
+      );
+      await client.query(
+        `insert into public.listings
+           (organization_id, ml_account_id, item_id, title, status, price, currency_id, available_quantity)
+         values ('${ORG_SB}','${CONTA_BUSCA}','MLB9360000001','Cabo Busca Republicado','closed',10,'BRL',0),
+                ('${ORG_SB}','${CONTA_BUSCA}','MLB9360000002','Cabo Busca Republicado','active',10,'BRL',5),
+                ('${ORG_SB}','${CONTA_BUSCA}','MLB9360000003','Cabo Busca Reprovado','active',10,'BRL',5)`,
+      );
+      await client.query(
+        `insert into public.listing_relists
+           (organization_id, ml_account_id, parent_item_id, child_item_id, status, parent_snapshot, requested_by)
+         values ('${ORG_SB}','${CONTA_BUSCA}','MLB9360000001','MLB9360000002','REMAPPED','{}'::jsonb,'${ADMIN_SB}'),
+                ('${ORG_SB}','${CONTA_BUSCA}','MLB9360000003',null,'PREFLIGHT_FAILED','{}'::jsonb,'${ADMIN_SB}')`,
+      );
+
+      await client.query("set local role authenticated");
+      await client.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ sub: ADMIN_SB })]);
+
+      const anuncios = async (termo: string): Promise<string[]> => {
+        const r = await client.query<{ href: string }>(
+          `select href from public.search_entities('${ORG_SB}', '${termo}') where entity_type = 'anuncio' order by href`,
+        );
+
+        return r.rows.map((row) => row.href);
+      };
+
+      expect(await anuncios("Cabo Busca Republicado")).toEqual(["/anuncios/MLB9360000002"]);
+      expect(await anuncios("MLB9360000001")).toEqual(["/anuncios/MLB9360000002"]);
+      expect(await anuncios("Cabo Busca Reprovado")).toEqual(["/anuncios/MLB9360000003"]);
+    } finally {
+      await client.query("rollback");
+    }
+  });
+
   it("acha atendimento e NF-e, e cada um leva ao destino INDIVIDUAL", async () => {
     const rows = await comEntidadesNovas<{ entity_type: string; label: string; href: string }>(
       ADMIN_SB,

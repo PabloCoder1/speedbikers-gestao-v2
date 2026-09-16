@@ -10,8 +10,15 @@
  * - `JA_REPUBLICADO` — a tag `relist` marca "não pode mais" (uma
  *   republicação por pai é regra do próprio ML, secao 2.16).
  * - `FULL_BLOQUEADO` — a doc de relist é SILENCIOSA sobre Full, e o risco é
- *   prender estoque físico no CD. Full é identificado por `inventory_id`
- *   no campo raiz do item, ou por variação (secao 2.7, exemplo oficial).
+ *   prender estoque físico no CD. Desde D-360 o bloqueio é pelo que pode
+ *   ficar preso: unidades no Full (disponíveis + indisponíveis, lidas ao
+ *   vivo em `GET /inventories/{id}/stock/fulfillment`, secao 2.7) ou envio
+ *   ativo pelo Full (`shipping.logistic_type = fulfillment`). O
+ *   `inventory_id` sozinho não basta: ele continua no item depois que o
+ *   Full zera.
+ * - `FULL_NAO_VERIFICADO` — **fail-safe** de D-360: o item tem
+ *   `inventory_id` (na raiz ou numa variação) e o estoque de algum deles não
+ *   foi lido. Sem conferir, não se presume zero.
  * - `CATALOGO_BLOQUEADO` — silêncio documental idêntico; `catalog_listing`
  *   é o campo confirmado (secao 2.5/2.16).
  * - `ENCADEAMENTO_NAO_DOCUMENTADO` — o pai que JÁ É FILHO de um relist
@@ -23,11 +30,13 @@
  *   Ausência só é aceitável onde ausência é o caso normal (`inventory_id`
  *   ausente = item fora do Full; `parent_item_id` ausente = não é filho).
  *
- * Aviso (nunca bloqueio):
+ * Avisos (nunca bloqueio):
  *
  * - `HERANCA_NAO_OCORRE_EM_FREE` — visitas/vendas não são transferidas em
  *   `listing_type_id: "free"` (secao 2.16, tabela). Republicar continua
  *   permitido; quem decide sabendo é o humano.
+ * - `FULL_CADASTRO_SEM_ESTOQUE` — cadastro no Full com zero unidades (D-360):
+ *   nada fica preso no CD, mas a doc não diz se o filho herda o cadastro.
  */
 
 export interface RelistPreflightIssue {
@@ -42,6 +51,19 @@ export interface RelistPreflightResult {
   readonly warnings: readonly RelistPreflightIssue[];
 }
 
+/**
+ * Estoque do Full de UM `inventory_id`, lido ao vivo pelo worker (D-360).
+ * Os dois números contam: indisponível é unidade avariada, perdida ou em
+ * transferência, e continua fisicamente no CD (secao 2.7).
+ */
+export interface RelistFullStockReading {
+  readonly availableQuantity: number;
+  readonly notAvailableQuantity: number;
+}
+
+/** Leituras por `inventory_id`; `null` (ou ausente) = não foi possível ler. */
+export type RelistFullStockReadings = ReadonlyMap<string, RelistFullStockReading | null>;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -52,11 +74,55 @@ function readOptionalString(source: Record<string, unknown>, key: string): strin
   return typeof value === "string" && value !== "" ? value : null;
 }
 
+function isValidReading(reading: RelistFullStockReading | null | undefined): reading is RelistFullStockReading {
+  return (
+    reading !== null &&
+    reading !== undefined &&
+    Number.isFinite(reading.availableQuantity) &&
+    reading.availableQuantity >= 0 &&
+    Number.isFinite(reading.notAvailableQuantity) &&
+    reading.notAvailableQuantity >= 0
+  );
+}
+
+/**
+ * Os `inventory_id` do item — o da raiz e o de cada variação (secao 2.7),
+ * sem repetir. É a lista que o worker precisa ler antes do preflight.
+ */
+export function collectRelistInventoryIds(rawItem: unknown): string[] {
+  if (!isRecord(rawItem)) {
+    return [];
+  }
+
+  const ids = new Set<string>();
+  const rootInventoryId = readOptionalString(rawItem, "inventory_id");
+
+  if (rootInventoryId !== null) {
+    ids.add(rootInventoryId);
+  }
+
+  const variations: unknown[] = Array.isArray(rawItem.variations) ? rawItem.variations : [];
+
+  for (const variation of variations) {
+    const variationInventoryId = isRecord(variation) ? readOptionalString(variation, "inventory_id") : null;
+
+    if (variationInventoryId !== null) {
+      ids.add(variationInventoryId);
+    }
+  }
+
+  return [...ids];
+}
+
 /**
  * Avalia o snapshot CRU do pai (o `parent_snapshot` capturado na criação da
- * operação, D-159) — o payload de `GET /items/{id}` sem projeção.
+ * operação, D-159) — o payload de `GET /items/{id}` sem projeção — junto com
+ * as leituras do Full de cada `inventory_id` dele (D-360).
  */
-export function evaluateRelistPreflight(rawParentSnapshot: unknown): RelistPreflightResult {
+export function evaluateRelistPreflight(
+  rawParentSnapshot: unknown,
+  fullStock: RelistFullStockReadings = new Map(),
+): RelistPreflightResult {
   const blocks: RelistPreflightIssue[] = [];
   const warnings: RelistPreflightIssue[] = [];
 
@@ -91,20 +157,45 @@ export function evaluateRelistPreflight(rawParentSnapshot: unknown): RelistPrefl
     });
   }
 
-  // Full: `inventory_id` na raiz OU em qualquer variação (secao 2.7).
-  // Ausência aqui é o caso normal (item fora do Full) — não é lacuna.
-  const rootInventoryId = readOptionalString(item, "inventory_id");
-  const variations = Array.isArray(item.variations) ? item.variations : [];
-  const variationHasInventory = variations.some(
-    (variation) => isRecord(variation) && readOptionalString(variation, "inventory_id") !== null,
-  );
+  // Full (D-360). O risco que o bloqueio de D-160 existe para evitar é
+  // prender unidade física no CD, e `inventory_id` sozinho não diz isso: ele
+  // fica no item depois que o Full zera. Medido em 2026-09-16 no
+  // MLB5805901782 — TBWT07652 com zero em oito capturas seguidas, envio por
+  // coleta — que a trava antiga recusou. Ausência de `inventory_id` continua
+  // sendo o caso normal (item fora do Full).
+  const inventoryIds = collectRelistInventoryIds(item);
+  const shipping = isRecord(item.shipping) ? item.shipping : null;
+  const shipsFromFull = shipping !== null && readOptionalString(shipping, "logistic_type") === "fulfillment";
 
-  if (rootInventoryId !== null || variationHasInventory) {
+  if (shipsFromFull) {
     blocks.push({
       code: "FULL_BLOQUEADO",
       descricao:
-        "O anúncio (ou uma variação) tem estoque no Full e a documentação de relist é silenciosa sobre o que acontece com ele — bloqueado até validação empírica.",
+        "O anúncio envia pelo Full (logistic_type fulfillment) e a documentação de relist é silenciosa sobre o que acontece com ele — bloqueado até validação empírica.",
     });
+  } else if (inventoryIds.length > 0) {
+    const readings = inventoryIds.map((inventoryId) => fullStock.get(inventoryId)).filter(isValidReading);
+
+    if (readings.length !== inventoryIds.length) {
+      blocks.push({
+        code: "FULL_NAO_VERIFICADO",
+        descricao: `O anúncio tem cadastro no Full (${inventoryIds.join(", ")}) e o estoque de lá não pôde ser lido agora — sem conferir, a republicação não fecha o anúncio.`,
+      });
+    } else {
+      const units = readings.reduce((sum, reading) => sum + reading.availableQuantity + reading.notAvailableQuantity, 0);
+
+      if (units > 0) {
+        blocks.push({
+          code: "FULL_BLOQUEADO",
+          descricao: `O anúncio (ou uma variação) tem ${String(units)} unidade(s) no Full, entre disponíveis e indisponíveis, e a documentação de relist é silenciosa sobre o que acontece com elas — bloqueado até validação empírica.`,
+        });
+      } else {
+        warnings.push({
+          code: "FULL_CADASTRO_SEM_ESTOQUE",
+          descricao: `Cadastro no Full (${inventoryIds.join(", ")}) com zero unidades: nada fica preso no centro de distribuição, mas a documentação não diz se o anúncio novo herda o cadastro — para voltar a enviar ao Full, pode ser preciso cadastrá-lo de novo.`,
+        });
+      }
+    }
   }
 
   // Catálogo: `catalog_listing` booleano. Ausente/ilegível = não dá para
