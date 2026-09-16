@@ -12287,4 +12287,25 @@ O risco que D-160 existe para evitar e prender unidade fisica no CD, ja que a do
   - resposta de outro inventario aceita (sobreviveu na primeira rodada; ganhou teste);
   - 404 relancado em vez de nao verificado.
 
-**Impacto:** `packages/domain/src/listings/{relist-preflight,index}.ts` e teste; `apps/worker/src/handlers/{relist-full-stock,relist-prepare,relist-execute}.ts` e testes; `docs/{DECISIONS,DECISIONS_INDEX,MERCADO_LIVRE,ROADMAP}.md`. Sem migration e sem mudanca na web (o painel ja mostra o motivo da recusa). Publicacao: so o worker.
+---
+
+**O PAINEL, NO MESMO DIA**
+
+As 16:37:31 UTC o dono executou a republicacao do MLB6512915288, que virou MLB5244566133 em 3 s (CLOSING a REMAPPED). As 16:37:42 chegou um segundo POST de execucao, e a tela mostrou "A API recusou o pedido (HTTP 409)" -- logs da api: 200 e depois 409. O `router.refresh()` logo depois do envio ainda lia a operacao em REQUESTED, entao "Executar republicacao" continuava na tela.
+
+Correcao em `apps/web/app/anuncios/[itemId]/relist-panel.tsx`:
+- depois do envio, nenhum botao de ato aparece enquanto a operacao for a mesma do momento do envio;
+- a tela rele a cada 3 s, por ate 30 s;
+- 409 vira aviso neutro ("a operacao ja mudou de estado"), com a tela atualizada, e nao erro.
+
+---
+
+**A BUSCA, E POR QUE NAO APAGAR O ANUNCIO ANTIGO**
+
+O dono pediu para apagar o anuncio antigo no Mercado Livre e ao menos o MLB no banco, "se fizer sentido", para nao acha-lo mais na busca. Nao faz:
+- no Mercado Livre, apagar e irreversivel, e a doc nao diz o que acontece com o filho, que aponta para o pai (`parent_item_id`) e herda as visitas dele;
+- no banco, o antigo sustenta as vendas (`order_items.item_id`), o historico da republicacao e a medicao 7/15/30 (D-164).
+
+O objetivo do pedido e outro: nao cair no anuncio velho ao buscar. A migration `20260916165000_busca_sem_anuncio_republicado.sql` refaz `search_entities` (mesma assinatura): o pai de uma republicacao concluida sai do resultado, e quem digita o MLB antigo chega ao filho. Operacao sem filho nao esconde nada. Teste de integracao em `rls.integration.test.ts`.
+
+**Impacto:** `packages/domain/src/listings/{relist-preflight,index}.ts` e teste; `apps/worker/src/handlers/{relist-full-stock,relist-prepare,relist-execute}.ts` e testes; `apps/web/app/anuncios/[itemId]/relist-panel.tsx`; `supabase/migrations/20260916165000_busca_sem_anuncio_republicado.sql` e `packages/db/src/rls.integration.test.ts`; `docs/{DECISIONS,DECISIONS_INDEX,MERCADO_LIVRE,ROADMAP}.md`. Publicacao: o worker (preflight); a web pela Vercel (painel); e a migration pelo caminho de sempre (CI no Dev, workflow de producao com duas aprovacoes). Nenhuma das tres depende das outras.
