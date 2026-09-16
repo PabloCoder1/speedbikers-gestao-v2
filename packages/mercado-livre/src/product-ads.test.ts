@@ -121,6 +121,35 @@ describe("fetchProductAdsCampaignDailyMetrics", () => {
     expect(chamadas[0]?.url.searchParams.get("metrics")).toContain("cost");
   });
 
+  it("aceita a lista embrulhada em results ou metrics (a resposta real de produção era objeto)", async () => {
+    const dia = {
+      date: "2026-09-15",
+      clicks: 1,
+      prints: 10,
+      cost: 2,
+      direct_amount: 5,
+      indirect_amount: 0,
+      total_amount: 5,
+      direct_units_quantity: 1,
+      indirect_units_quantity: 0,
+      units_quantity: 1,
+    };
+
+    for (const corpo of [{ paging: { total: 1 }, results: [dia] }, { metrics: [dia] }]) {
+      const c = cliente([{ status: 200, corpo }]);
+
+      await expect(fetchProductAdsCampaignDailyMetrics(c, "tok", "MLB", 1, "2026-09-15", "2026-09-15")).resolves.toHaveLength(1);
+    }
+  });
+
+  it("formato desconhecido falha dizendo as chaves que vieram", async () => {
+    const c = cliente([{ status: 200, corpo: { id: 1, name: "x", daily: {} } }]);
+
+    await expect(fetchProductAdsCampaignDailyMetrics(c, "tok", "MLB", 1, "2026-09-15", "2026-09-15")).rejects.toThrow(
+      "chaves [daily, id, name]",
+    );
+  });
+
   it("recusa dia sem custo em vez de gravar zero", async () => {
     const c = cliente([{ status: 200, corpo: [{ date: "2026-09-15", clicks: 1 }] }]);
 
