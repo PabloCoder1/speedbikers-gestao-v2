@@ -599,6 +599,66 @@ describe("POST /internal/schedule/listing-visits", () => {
   });
 });
 
+describe("POST /internal/schedule/ads", () => {
+  const aceitaTudo: OidcVerifier = {
+    verify: () => Promise.resolve({ ok: true, email: "scheduler@exemplo.com" }),
+  };
+
+  it("exige OIDC e responde 503 sem as dependências", async () => {
+    const recusa = createApp({
+      logger: createLogger({}, { sink: () => undefined }),
+      oidc: { verify: () => Promise.resolve({ ok: false, reason: "token inválido" }) },
+    });
+    const semDeps = createApp({ logger: createLogger({}, { sink: () => undefined }), oidc: aceitaTudo });
+
+    expect((await recusa.request("/internal/schedule/ads", { method: "POST" })).status).toBe(401);
+    expect((await semDeps.request("/internal/schedule/ads", { method: "POST" })).status).toBe(503);
+  });
+
+  it("enfileira sync.ads.campaigns por conta e devolve o resumo", async () => {
+    const enqueued: EnqueueRequest[] = [];
+    const app = createApp({
+      logger: createLogger({}, { sink: () => undefined }),
+      oidc: aceitaTudo,
+      adsSchedule: {
+        db: {
+          from: () => ({
+            select: () => ({
+              eq: () => Promise.resolve({ data: [{ id: "acc-1", organization_id: "org-1", slug: "speedbikers-loja-1" }], error: null }),
+            }),
+          }),
+        } as unknown as ListingVisitsScheduleDeps["db"],
+        logger: createLogger({}, { sink: () => undefined }),
+        enqueuer: {
+          enqueue: (request) => {
+            enqueued.push(request);
+
+            return Promise.resolve({
+              taskName: "t",
+              deduplicated: false,
+              envelope: {
+                jobType: request.jobType,
+                jobId: "6f1d5f9c-6d0b-4a5f-9f4a-2c9a7a1f0b22",
+                organizationId: request.organizationId,
+                dedupeKey: request.dedupeKey,
+                attempt: 1,
+                enqueuedAt: "2026-09-16T14:00:00.000Z",
+              },
+            });
+          },
+        },
+      },
+    });
+
+    const response = await app.request("/internal/schedule/ads", { method: "POST" });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ accountsScanned: 1, enqueued: 1, deduplicated: 0 });
+    expect(enqueued[0]?.jobType).toBe("sync.ads.campaigns");
+    expect(enqueued[0]?.queue).toBe("ml-sync-speedbikers-loja-1");
+  });
+});
+
 describe("POST /internal/schedule/support-questions", () => {
   const aceitaTudo: OidcVerifier = {
     verify: () => Promise.resolve({ ok: true, email: "scheduler@exemplo.com" }),

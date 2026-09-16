@@ -107,3 +107,17 @@ export type {
   ScanSellerItemsOptions,
   SellerItemsScanPage,
 } from "./items.js";
+
+export { LOGISTICAS_ML, quoteFreeShippingCost, shippingQuoteSchema } from "./shipping-quote.js";
+export type { LogisticaMl, ShippingQuote, ShippingQuoteInput, ShippingQuoteResponse } from "./shipping-quote.js";
+
+export {
+  PRODUCT_ADS_MAX_DAYS_BACK,
+  PRODUCT_ADS_METRICS,
+  fetchProductAdsAdvertiser,
+  fetchProductAdsCampaignDailyMetrics,
+  fetchProductAdsCampaigns,
+  productAdsCampaignSchema,
+  productAdsDailyMetricSchema,
+} from "./product-ads.js";
+export type { ProductAdsAdvertiser, ProductAdsCampaign, ProductAdsDailyMetric } from "./product-ads.js";

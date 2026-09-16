@@ -237,7 +237,7 @@ export async function Numeros({
             {atual.produtos.maiorReceita.length === 0 ? (
               <p className="sb-empty">Nenhum produto vinculado vendeu neste período.</p>
             ) : (
-              <TabelaProdutos linhas={atual.produtos.maiorReceita} modo="receita" />
+              <ListaProdutos linhas={atual.produtos.maiorReceita} modo="receita" />
             )}
           </Panel>
 
@@ -252,7 +252,7 @@ export async function Numeros({
             {atual.produtos.menorMargem.length === 0 ? (
               <p className="sb-empty">Nenhum produto coberto com margem abaixo de 10% neste período.</p>
             ) : (
-              <TabelaProdutos linhas={atual.produtos.menorMargem} modo="margem" />
+              <ListaProdutos linhas={atual.produtos.menorMargem} modo="margem" />
             )}
           </Panel>
         </div>
@@ -336,63 +336,55 @@ function PilulaDaMargem({ margem, custoAtual }: { margem: number | null; custoAt
   );
 }
 
-function CelulaProduto({ linha }: { linha: SkuFaturamento }): ReactNode {
+/**
+ * A LISTA DE PRODUTOS dos dois painéis lado a lado (refeita em 16/09, pedido do dono).
+ *
+ * Era uma tabela de cinco colunas dentro de meia largura: rolava para o LADO
+ * para ler resultado e margem, e os 30 + 20 produtos esticavam a página inteira.
+ * Agora cada produto é uma linha de duas camadas — nome e SKU à esquerda, o
+ * número que dá nome ao painel e a margem à direita, o resto em texto pequeno
+ * embaixo — e a lista rola por DENTRO, com altura fixa, sem levar a página junto.
+ *
+ * A posição (1º, 2º…) é a ordem que a RPC já devolve: receita no primeiro
+ * painel, da pior margem para a melhor no segundo. Nada é reordenado aqui.
+ */
+function ListaProdutos({ linhas, modo }: { linhas: readonly SkuFaturamento[]; modo: "receita" | "margem" }): ReactNode {
   return (
-    <td>
-      <Link className="sb-entity" href={`/skus/${linha.sku_id}`}>
-        {linha.title ?? linha.sku}
-      </Link>
-      <span className="sb-mono sb-faturamento-sku">SKU {linha.sku}</span>
-    </td>
-  );
-}
+    <ol className="sb-fat-lista" aria-label={modo === "receita" ? "Produtos por receita" : "Produtos pela menor margem"}>
+      {linhas.map((linha, indice) => (
+        <li key={linha.sku_id} className="sb-fat-item">
+          <span className="sb-fat-posicao" aria-hidden="true">
+            {indice + 1}
+          </span>
 
-function TabelaProdutos({ linhas, modo }: { linhas: readonly SkuFaturamento[]; modo: "receita" | "margem" }): ReactNode {
-  return (
-    <div className="sb-faturamento-tabela">
-      <table className="sb-table">
-        <thead>
-          <tr>
-            <th>Produto</th>
+          <span className="sb-fat-produto">
+            <Link className="sb-entity" href={`/skus/${linha.sku_id}`} title={linha.title ?? linha.sku}>
+              {linha.title ?? linha.sku}
+            </Link>
+            <span className="sb-mono sb-faturamento-sku">SKU {linha.sku}</span>
+          </span>
+
+          <span className="sb-fat-numeros">
+            <strong title={modo === "receita" ? "receita bruta" : "resultado da venda"}>
+              {formatCurrency(modo === "receita" ? linha.receita_bruta : linha.resultado_venda)}
+            </strong>
+            <PilulaDaMargem margem={linha.margem_venda} custoAtual={linha.custo_atual} />
+          </span>
+
+          <span className="sb-fat-detalhe">
             {modo === "receita" ? (
               <>
-                <th className="sb-num">Unidades</th>
-                <th className="sb-num">Receita</th>
+                {formatCount(linha.unidades)} un · resultado {formatCurrency(linha.resultado_venda)}
               </>
             ) : (
               <>
-                <th className="sb-num">Receita coberta</th>
-                <th className="sb-num">Custo</th>
+                receita coberta {formatCurrency(linha.receita_coberta)} · custo {formatCurrency(linha.custo_produtos)}
               </>
             )}
-            <th className="sb-num">Resultado</th>
-            <th className="sb-num">Margem</th>
-          </tr>
-        </thead>
-        <tbody>
-          {linhas.map((linha) => (
-            <tr key={linha.sku_id}>
-              <CelulaProduto linha={linha} />
-              {modo === "receita" ? (
-                <>
-                  <td className="sb-num">{formatCount(linha.unidades)}</td>
-                  <td className="sb-num">{formatCurrency(linha.receita_bruta)}</td>
-                </>
-              ) : (
-                <>
-                  <td className="sb-num">{formatCurrency(linha.receita_coberta)}</td>
-                  <td className="sb-num">{formatCurrency(linha.custo_produtos)}</td>
-                </>
-              )}
-              <td className="sb-num">{formatCurrency(linha.resultado_venda)}</td>
-              <td className="sb-num">
-                <PilulaDaMargem margem={linha.margem_venda} custoAtual={linha.custo_atual} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </span>
+        </li>
+      ))}
+    </ol>
   );
 }
 

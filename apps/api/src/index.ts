@@ -1,6 +1,6 @@
 import { serve } from "@hono/node-server";
 import { createAdminClient, createUserClient } from "@sb/db";
-import { loadEncryptionKey } from "@sb/mercado-livre";
+import { createMercadoLivreClient, loadEncryptionKey } from "@sb/mercado-livre";
 import { createLogger } from "@sb/observability";
 
 import { createAccountDirectory, loadAccountsFromDb } from "./account-directory.js";
@@ -82,12 +82,21 @@ const app = createApp({
   ledgerIntegritySchedule: { db, enqueuer, logger },
   listingsSchedule: { db, enqueuer, logger },
   listingVisitsSchedule: { db, enqueuer, logger },
+  adsSchedule: { db, enqueuer, logger },
   orderFinancialsSchedule: { db, enqueuer, logger },
   supportQuestionsSchedule: { db, enqueuer, logger },
   supportClaimsSchedule: { db, enqueuer, logger },
   supportMessagesSchedule: { db, enqueuer, logger },
   supportReply: { db, enqueuer, logger },
   relist: { db, enqueuer, logger },
+  // D-359: cliente próprio com poucas tentativas — a pessoa está esperando na
+  // tela, e o retry padrão do worker (4 tentativas com backoff) passaria do corte.
+  pricingQuote: {
+    db,
+    logger,
+    encryptionKey: loadEncryptionKey(env.ML_TOKEN_ENCRYPTION_KEY),
+    client: createMercadoLivreClient({ maxAttempts: 2, eventualMaxAttempts: 1 }),
+  },
   invites: { db, logger, ...(webOrigins[0] === undefined ? {} : { webUrl: webOrigins[0] }) },
   metricsRefreshSchedule: { db, enqueuer, logger },
   salesAnomalyActionsSchedule: { db, enqueuer, logger },

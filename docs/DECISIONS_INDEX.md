@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **353** (D-001 a D-360).
+Decisões registradas: **355** (D-001 a D-363).
 
 ## Por domínio
 
@@ -176,7 +176,7 @@ Decisões registradas: **353** (D-001 a D-360).
 - **D-347** — O roteiro de restore punha o dono na aba cujo botao sobrescreve o Dev -- e o comando dele nao rodava nesta maquina
 - **D-354** — /usuarios: nome, foto, suspender e remover -- o "so conseguimos criar" virou gestao de pessoa
 
-### mercado-livre (52)
+### mercado-livre (53)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -229,6 +229,7 @@ Decisões registradas: **353** (D-001 a D-360).
 - **D-344** — Os ~54 `job_failed` diarios em `claims/{id}/returns` eram propagacao do Mercado Livre, nao perda -- 404 em claim recem-nascido deixa de ser falha
 - **D-350** — Producao no ar com o mesmo app do Mercado Livre do Dev -- o Dev pausado, o passo 10 com ordem, e o estoque contando venda em dobro
 - **D-357** — Dashboard do Anuncio: barras por dia, checagem de fatos, atalhos e o ticket medio que o anuncio nao tinha
+- **D-359** — Calculadora de preco no /faturamento: a margem de uma venda antes de anunciar, com o frete oficial do Mercado Livre e a tabela da Shopee
 - **D-360** — A trava da republicacao olha o estoque do Full, e nao o cadastro -- anuncio com Full zerado e envio por coleta deixa de ser recusado
 
 ### outros (59)
@@ -323,7 +324,7 @@ Decisões registradas: **353** (D-001 a D-360).
 - **D-327** — A18: a legenda do grafico de vendas no cabecalho do painel, e o seed que nunca teve periodo anterior
 - **D-356** — /faturamento: quanto sobra de cada venda -- e tres contas que estavam erradas antes de a tela existir
 
-### worker/infra (70)
+### worker/infra (71)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -395,4 +396,5 @@ Decisões registradas: **353** (D-001 a D-360).
 - **D-342** — A guarda de D-341 parou o deploy certo, mas nomeou a revisao errada -- e o comando que ela sugeria publicaria o codigo revertido
 - **D-348** — Tres armadilhas entre o Dev e o primeiro corte de producao: dois segredos do deploy sem concessao, o `WEB_ORIGINS` que ninguem validava, e o expurgo que reprovaria um restore bom
 - **D-349** — O primeiro deploy de producao pagou dois builds para descobrir uma linha que faltava -- e subiu com a NF-e desligada em silencio
+- **D-363** — Mercado Ads no /faturamento: a analise de campanhas pela API oficial de Product Ads
 

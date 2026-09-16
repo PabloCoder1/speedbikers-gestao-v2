@@ -162,6 +162,12 @@ upsert_job \
   "${API_URL}/internal/schedule/order-financials" \
   "Captura de frete do vendedor e desconto por pedido, por conta CONNECTED"
 
+# Mercado Ads -- Product Ads (D-363): anunciante, campanhas e metricas diarias
+# dos ultimos 90 dias, por CONTA. DIARIA as 11h: a doc de Product Ads diz que
+# as metricas sao atualizadas as 10h (GMT-3), e as 11h tambem fica depois da
+# varredura de custos (9h30) no mesmo rate limit por conta.
+upsert_job   "v3-ads-campaigns-sync"   "0 11 * * *"   "${API_URL}/internal/schedule/ads"   "Mercado Ads: campanhas e metricas diarias, por conta Mercado Livre CONNECTED"
+
 # Reconciliacao de Perguntas do Mercado Livre (Fase 7B, D-089).
 #
 # Cadencia de 10 em 10 minutos desde 2026-08-26 (D-092). Era 6h, sob a
