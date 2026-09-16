@@ -1,5 +1,5 @@
 import type { AdminClient, Json } from "@sb/db";
-import { canTransitionRelist, evaluateRelistPreflight } from "@sb/domain";
+import { canTransitionRelist, collectRelistInventoryIds, evaluateRelistPreflight } from "@sb/domain";
 import type { MercadoLivreClient, MercadoLivreOAuthConfig } from "@sb/mercado-livre";
 import { getItemsBatch } from "@sb/mercado-livre";
 import { z } from "zod";
@@ -7,17 +7,19 @@ import { z } from "zod";
 import type { JobOutcome } from "../job-outcome.js";
 import type { HandlerContext, JobHandler } from "../router.js";
 import { ensureAccessToken } from "./ml-token.js";
+import { describeFullStock, readRelistFullStock } from "./relist-full-stock.js";
 
 /**
  * `relist.prepare` (Fase 9, D-161) — o segundo elo do fio: captura o
  * snapshot do pai e roda o preflight. A operação nasce REQUESTED com o
  * `parent_snapshot` da hora (D-159: capturado na criação, nunca
  * sobrescrito) e, se o preflight reprovar, morre PREFLIGHT_FAILED com os
- * motivos — SEM ter tocado o Mercado Livre além de um GET.
+ * motivos — SEM ter tocado o Mercado Livre além de leituras.
  *
  * **Nada destrutivo acontece aqui.** O fechamento do pai e o POST /relist
  * são a fatia seguinte, atrás de confirmação própria. Este handler é
- * deliberadamente só-leitura no remoto.
+ * deliberadamente só-leitura no remoto: o item e, desde D-360, o estoque do
+ * Full de cada `inventory_id` dele.
  *
  * Idempotência: o índice único parcial `listing_relists_one_live_per_parent`
  * (D-159) é a garantia — um retry do Cloud Tasks que chegue depois do
@@ -101,6 +103,18 @@ export function createRelistPrepareHandler(deps: RelistPrepareDeps): JobHandler 
       return { status: "failed", retryable: false, reason: "o corpo devolvido não corresponde ao item pedido" };
     }
 
+    // D-360: o estoque do Full é lido ANTES de criar a operação. Uma falha
+    // passageira aqui relança, e o Cloud Tasks repete sem nada gravado. Lida
+    // depois do insert, a repetição cairia no 23505 e deixaria uma operação
+    // REQUESTED que nenhum preflight avaliou.
+    const fullStock = await readRelistFullStock({
+      mercadoLivre: deps.mercadoLivre,
+      accessToken: tokenResult.accessToken,
+      inventoryIds: collectRelistInventoryIds(snapshot),
+      logger: context.logger,
+      logFields: { ml_account_id: mlAccountId, item_id: itemId },
+    });
+
     const inserted = await deps.db
       .from("listing_relists")
       .insert({
@@ -151,7 +165,7 @@ export function createRelistPrepareHandler(deps: RelistPrepareDeps): JobHandler 
       });
     }
 
-    const preflight = evaluateRelistPreflight(snapshot);
+    const preflight = evaluateRelistPreflight(snapshot, fullStock);
 
     if (!preflight.approved && canTransitionRelist("REQUESTED", "PREFLIGHT_FAILED")) {
       const failureReason = preflight.blocks.map((block) => block.descricao).join(" ");
@@ -198,6 +212,7 @@ export function createRelistPrepareHandler(deps: RelistPrepareDeps): JobHandler 
       approved: preflight.approved,
       blocks: preflight.blocks.map((block) => block.code),
       warnings: preflight.warnings.map((warning) => warning.code),
+      full_stock: describeFullStock(fullStock),
     });
 
     return { status: "done", processed: 1 };

@@ -12280,3 +12280,73 @@ Secao "Calculadora de preco" no fim do `/faturamento`, com atalho no cabecalho (
 
 - **a cotacao real do Mercado Livre nao foi chamada**: nao ha conta conectada nem API de pe localmente, e o deploy de Dev esta pausado (D-350). A primeira prova com o ML de verdade e em producao;
 - **nao entram:** impostos, Ads, parcelamento e o custo fixo por unidade do ML abaixo de R$ 79 -- a tela diz o que nao inclui.
+
+## D-360 - A trava da republicacao olha o estoque do Full, e nao o cadastro -- anuncio com Full zerado e envio por coleta deixa de ser recusado
+
+**Contexto:** em 2026-09-16, as 14:58 UTC, o dono pediu a republicacao do MLB5805901782 (Lanterna Traseira Suzuki DR 150, conta SPEEDBIKERS LOJA 1). A conferencia (`relist.prepare`) recusou com `FULL_BLOQUEADO`: "O anuncio (ou uma variacao) tem estoque no Full". O painel do Mercado Livre mostra 7 unidades no deposito e envio por coleta com Flex.
+
+**O que era:** D-160 bloqueava qualquer anuncio com `inventory_id` na raiz ou numa variacao, lendo o cadastro no Full como estoque. Mas o `inventory_id` continua no item depois que o Full zera. Medido em producao, so SELECT:
+- snapshot do pai: `inventory_id` TBWT07652, `shipping.logistic_type` `cross_docking`, tag de envio `self_service_in`, `available_quantity` 7, `sold_quantity` 0;
+- `fulfillment_stock_snapshots` de TBWT07652: zero unidades nas 8 capturas de 14/09 21:00 a 16/09 09:00 UTC.
+
+O risco que D-160 existe para evitar e prender unidade fisica no CD, ja que a doc de relist e silenciosa sobre Full (MERCADO_LIVRE.md 2.16). Com o Full zerado, esse risco nao existe.
+
+**Decisao do dono (2026-09-16):** ajustar a trava.
+
+---
+
+**A REGRA NOVA** (`evaluateRelistPreflight(snapshot, leiturasDoFull)`, `packages/domain/src/listings/relist-preflight.ts`)
+
+| Situacao | Resultado |
+|---|---|
+| `shipping.logistic_type = fulfillment` | `FULL_BLOQUEADO`, com ou sem estoque |
+| `inventory_id` com unidades no Full, disponiveis + indisponiveis | `FULL_BLOQUEADO`, com a quantidade no motivo |
+| `inventory_id` sem leitura valida: 404, resposta de outro inventario, forma inesperada, numero negativo ou nao finito | `FULL_NAO_VERIFICADO` (fail-safe: nunca presume zero) |
+| `inventory_id` com zero unidades e envio fora do Full | aprovado, com o aviso `FULL_CADASTRO_SEM_ESTOQUE` |
+| sem `inventory_id` | como antes: fora do Full |
+
+- O indisponivel conta: avariado, perdido ou em transferencia continua fisicamente no CD (2.7).
+- A leitura e AO VIVO, `GET /inventories/{id}/stock/fulfillment`, uma por inventario (`apps/worker/src/handlers/relist-full-stock.ts`), e nao o snapshot de 6 em 6 horas: o Full pode receber unidades entre a captura e a execucao.
+- `relist.prepare` le o Full ANTES de criar a operacao. Uma falha passageira relanca sem nada gravado; lida depois do insert, a repeticao cairia no 23505 do indice de D-159 e deixaria uma operacao REQUESTED que nenhum preflight avaliou.
+- `relist.execute` le de novo no re-preflight de REQUESTED (D-162). Falha passageira relanca antes de qualquer transicao, e o PUT nao sai sem a conferencia.
+- As leituras vao para o log (`relist_prepare_done` e `relist_execute_preflight`, campo `full_stock`, "disponivel+indisponivel" por inventario).
+
+**O que continua sem resposta:** a doc nao diz se o anuncio novo herda o cadastro no Full. O aviso diz isso ao operador: para voltar a enviar ao Full, pode ser preciso cadastrar de novo. A primeira republicacao real de anuncio com cadastro zerado e a validacao empirica: conferir no filho se o `inventory_id` veio.
+
+---
+
+**PROVA**
+
+- Dominio: 26 testes em `src/listings`, tsc e eslint limpos.
+- Worker: 554 testes (9 novos entre `relist-prepare` e `relist-execute`), tsc e eslint limpos.
+- Mutacao: 7 guardas, 7 reprovando teste nomeado, cada arquivo restaurado e conferido por sha256:
+  - inventario sem leitura tratado como zero;
+  - indisponivel ignorado;
+  - envio pelo Full ignorado;
+  - leitura negativa aceita;
+  - falha passageira tratada como nao verificada;
+  - resposta de outro inventario aceita (sobreviveu na primeira rodada; ganhou teste);
+  - 404 relancado em vez de nao verificado.
+
+---
+
+**O PAINEL, NO MESMO DIA**
+
+As 16:37:31 UTC o dono executou a republicacao do MLB6512915288, que virou MLB5244566133 em 3 s (CLOSING a REMAPPED). As 16:37:42 chegou um segundo POST de execucao, e a tela mostrou "A API recusou o pedido (HTTP 409)" -- logs da api: 200 e depois 409. O `router.refresh()` logo depois do envio ainda lia a operacao em REQUESTED, entao "Executar republicacao" continuava na tela.
+
+Correcao em `apps/web/app/anuncios/[itemId]/relist-panel.tsx`:
+- depois do envio, nenhum botao de ato aparece enquanto a operacao for a mesma do momento do envio;
+- a tela rele a cada 3 s, por ate 30 s;
+- 409 vira aviso neutro ("a operacao ja mudou de estado"), com a tela atualizada, e nao erro.
+
+---
+
+**A BUSCA, E POR QUE NAO APAGAR O ANUNCIO ANTIGO**
+
+O dono pediu para apagar o anuncio antigo no Mercado Livre e ao menos o MLB no banco, "se fizer sentido", para nao acha-lo mais na busca. Nao faz:
+- no Mercado Livre, apagar e irreversivel, e a doc nao diz o que acontece com o filho, que aponta para o pai (`parent_item_id`) e herda as visitas dele;
+- no banco, o antigo sustenta as vendas (`order_items.item_id`), o historico da republicacao e a medicao 7/15/30 (D-164).
+
+O objetivo do pedido e outro: nao cair no anuncio velho ao buscar. A migration `20260916165000_busca_sem_anuncio_republicado.sql` refaz `search_entities` (mesma assinatura): o pai de uma republicacao concluida sai do resultado, e quem digita o MLB antigo chega ao filho. Operacao sem filho nao esconde nada. Teste de integracao em `rls.integration.test.ts`.
+
+**Impacto:** `packages/domain/src/listings/{relist-preflight,index}.ts` e teste; `apps/worker/src/handlers/{relist-full-stock,relist-prepare,relist-execute}.ts` e testes; `apps/web/app/anuncios/[itemId]/relist-panel.tsx`; `supabase/migrations/20260916165000_busca_sem_anuncio_republicado.sql` e `packages/db/src/rls.integration.test.ts`; `docs/{DECISIONS,DECISIONS_INDEX,MERCADO_LIVRE,ROADMAP}.md`. Publicacao: o worker (preflight); a web pela Vercel (painel); e a migration pelo caminho de sempre (CI no Dev, workflow de producao com duas aprovacoes). Nenhuma das tres depende das outras.
