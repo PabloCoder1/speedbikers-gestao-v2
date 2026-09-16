@@ -8,7 +8,7 @@ import type {
   RecordedSaleMovement,
 } from "./cancellation-reversal.js";
 import { computeReturnReversal } from "./return-reversal.js";
-import type { RecordedReversal } from "./reversal-limit.js";
+import type { TimedRecordedReversal } from "./reversal-limit.js";
 import { computeSaleDeductions } from "./sale-deduction.js";
 import type { ErpCutoff, RecordedSale, StockMovementDraft } from "./sale-deduction.js";
 
@@ -206,6 +206,7 @@ describe("computeCancellationMovements — o que o pedido cancelado grava (D-351
     expect(resultado).toEqual({
       sales: [{ skuId: "sku-a", qtyDelta: -1, idempotencyKey: VENDA, occurredAt: FECHADO }],
       estornos: [{ skuId: "sku-a", qtyDelta: 1, idempotencyKey: `estorno:${VENDA}`, occurredAt: FECHADO }],
+      excessReversalEstornos: [],
       reversals: [{ skuId: "sku-a", qtyDelta: 1, idempotencyKey: `cancelamento:${VENDA}`, occurredAt: CANCELADO }],
       alreadyReversed: [],
     });
@@ -249,6 +250,7 @@ describe("computeCancellationMovements — o que o pedido cancelado grava (D-351
     expect(computeCancellationMovements({ ...noCorte, order })).toEqual({
       sales: [{ skuId: "sku-a", qtyDelta: -1, idempotencyKey: VENDA, occurredAt: CORTE }],
       estornos: [{ skuId: "sku-a", qtyDelta: 1, idempotencyKey: `estorno:${VENDA}`, occurredAt: CORTE }],
+      excessReversalEstornos: [],
       reversals: [{ skuId: "sku-a", qtyDelta: 1, idempotencyKey: `cancelamento:${VENDA}`, occurredAt: CANCELADO }],
       alreadyReversed: [],
     });
@@ -400,9 +402,11 @@ describe("computeCancellationMovements — verificação de e6fda07", () => {
     return listas.flat().reduce((soma, m) => soma + m.qtyDelta, 0);
   }
 
-  function comoReversao(drafts: readonly StockMovementDraft[]): RecordedReversal[] {
-    return drafts.map((d) => ({ idempotencyKey: d.idempotencyKey, quantity: d.qtyDelta }));
+  function comoReversao(drafts: readonly StockMovementDraft[]): TimedRecordedReversal[] {
+    return drafts.map((d) => ({ idempotencyKey: d.idempotencyKey, quantity: d.qtyDelta, occurredAt: d.occurredAt }));
   }
+
+  const DEVOLVIDA_EM = new Date("2026-09-15T08:39:04.000Z");
 
   describe("ALTA-1: o limite das reversões", () => {
     // Venda legítima (fechada depois do corte), para isolar o limite do estorno.
@@ -419,7 +423,11 @@ describe("computeCancellationMovements — verificação de e6fda07", () => {
 
     it("a devolução entregue já devolveu a venda inteira: o cancelamento não grava nada e registra a venda como já revertida", () => {
       const resultado = computeCancellationMovements(
-        entrada({ order: DEPOIS_DO_CORTE, recordedSales: LEGITIMA, reversals: [{ idempotencyKey: `devolucao:${CLAIM}:${VENDA}`, quantity: 1 }] }),
+        entrada({
+          order: DEPOIS_DO_CORTE,
+          recordedSales: LEGITIMA,
+          reversals: [{ idempotencyKey: `devolucao:${CLAIM}:${VENDA}`, quantity: 1, occurredAt: DEVOLVIDA_EM }],
+        }),
       );
 
       expect(resultado.reversals).toEqual([]);
@@ -429,7 +437,11 @@ describe("computeCancellationMovements — verificação de e6fda07", () => {
     it("devolução parcial antes: o cancelamento reverte só o restante", () => {
       const tres = [{ ...LEGITIMA[0], qtyDelta: -3 } as RecordedSaleMovement & RecordedSale];
       const resultado = computeCancellationMovements(
-        entrada({ order: DEPOIS_DO_CORTE, recordedSales: tres, reversals: [{ idempotencyKey: `devolucao:${CLAIM}:${VENDA}`, quantity: 1 }] }),
+        entrada({
+          order: DEPOIS_DO_CORTE,
+          recordedSales: tres,
+          reversals: [{ idempotencyKey: `devolucao:${CLAIM}:${VENDA}`, quantity: 1, occurredAt: DEVOLVIDA_EM }],
+        }),
       );
 
       expect(resultado.reversals.map((r) => [r.idempotencyKey, r.qtyDelta])).toEqual([[`cancelamento:${VENDA}`, 2]]);
@@ -437,14 +449,18 @@ describe("computeCancellationMovements — verificação de e6fda07", () => {
 
     it("reprocessar o cancelamento já gravado: a própria linha fica fora da soma e o movimento sai igual (o UNIQUE absorve)", () => {
       const resultado = computeCancellationMovements(
-        entrada({ order: DEPOIS_DO_CORTE, recordedSales: LEGITIMA, reversals: [{ idempotencyKey: `cancelamento:${VENDA}`, quantity: 1 }] }),
+        entrada({
+          order: DEPOIS_DO_CORTE,
+          recordedSales: LEGITIMA,
+          reversals: [{ idempotencyKey: `cancelamento:${VENDA}`, quantity: 1, occurredAt: new Date("2026-09-15T08:40:07.000Z") }],
+        }),
       );
 
       expect(resultado.reversals.map((r) => [r.idempotencyKey, r.qtyDelta])).toEqual([[`cancelamento:${VENDA}`, 1]]);
       expect(resultado.alreadyReversed).toEqual([]);
     });
 
-    it("2000018212899604 de produção (VENDA do worker antigo + DEVOLUCAO + CANCELAMENTO): nenhum estorno e nenhum cancelamento novo — o líquido fica +1", () => {
+    it("2000018212899604 de produção (VENDA do worker antigo + DEVOLUCAO + CANCELAMENTO): o estorno da venda inteira e a anulação do cancelamento, a reversão a mais — o líquido fica +1 (D-351 §12)", () => {
       const gravada: (RecordedSaleMovement & RecordedSale)[] = [
         {
           skuId: "sku-a",
@@ -454,19 +470,24 @@ describe("computeCancellationMovements — verificação de e6fda07", () => {
           recordedAt: new Date("2026-09-15T02:00:05.948Z"),
         },
       ];
-      const reversals: RecordedReversal[] = [
-        { idempotencyKey: `devolucao:${CLAIM}:${VENDA}`, quantity: 1 },
-        { idempotencyKey: `cancelamento:${VENDA}`, quantity: 1 },
+      const reversals: TimedRecordedReversal[] = [
+        { idempotencyKey: `devolucao:${CLAIM}:${VENDA}`, quantity: 1, occurredAt: DEVOLVIDA_EM },
+        { idempotencyKey: `cancelamento:${VENDA}`, quantity: 1, occurredAt: new Date("2026-09-15T08:40:07.000Z") },
       ];
 
       const resultado = computeCancellationMovements(entrada({ recordedSales: gravada, reversals }));
 
-      expect(resultado.estornos).toEqual([]);
+      expect(resultado.estornos).toEqual([
+        { skuId: "sku-a", qtyDelta: 1, idempotencyKey: `estorno:${VENDA}`, occurredAt: new Date("2026-09-15T01:50:58.000Z") },
+      ]);
+      expect(resultado.excessReversalEstornos).toEqual([
+        { skuId: "sku-a", qtyDelta: -1, idempotencyKey: `estorno:cancelamento:${VENDA}`, occurredAt: new Date("2026-09-15T08:40:07.000Z") },
+      ]);
       // O cancelamento já gravado sai de novo (o UNIQUE absorve)? Não: a devolução já devolveu a unidade.
       expect(resultado.reversals).toEqual([]);
       expect(resultado.alreadyReversed).toEqual([VENDA]);
-      // Ledger do pedido: -1 (venda) +1 (devolução) +1 (cancelamento) = +1, igual ao real.
-      expect(-1 + 1 + 1 + liquido(resultado.sales, resultado.estornos, resultado.reversals)).toBe(1);
+      // Ledger do pedido: -1 (venda) +1 (devolução) +1 (cancelamento) +1 (estorno) -1 (anulação) = +1, igual ao real.
+      expect(-1 + 1 + 1 + liquido(resultado.sales, resultado.estornos, resultado.excessReversalEstornos, resultado.reversals)).toBe(1);
     });
 
     it("trio seguido da devolução entregue: a devolução não devolve a unidade de novo — líquido +1", () => {
@@ -672,7 +693,7 @@ describe("cancelamento — a planilha retrata a exportação, e não o corte do 
   it("venda nunca gravada ENTRE a exportação e o parse, cancelada depois do corte: nada — a planilha não tem a venda, e o trio daria +1", () => {
     const resultado = computeCancellationMovements(entrada(NA_JANELA, new Date("2026-09-10T10:00:00.000Z")));
 
-    expect(resultado).toEqual({ sales: [], estornos: [], reversals: [], alreadyReversed: [] });
+    expect(resultado).toEqual({ sales: [], estornos: [], excessReversalEstornos: [], reversals: [], alreadyReversed: [] });
   });
 
   it("venda antes da exportação, nunca gravada, cancelada ENTRE a exportação e o parse: o trio — a planilha tem a venda e não tem a devolução", () => {
@@ -799,5 +820,260 @@ describe("a devolução depois do cancelamento que a planilha já contém (rever
     expect(cancelledInSheetKeys(pedido({ occurredAtKnown: false }), GRAVADA, ESTORNADA, () => PLANILHA_2)).toEqual([]);
     expect(cancelledInSheetKeys(pedido({ status: "paid" }), GRAVADA, ESTORNADA, () => PLANILHA_2)).toEqual([]);
     expect(cancelledInSheetKeys(pedido(), GRAVADA, ESTORNADA, () => null)).toEqual([]);
+  });
+});
+
+/**
+ * D-351 §12 (reverificação de cc90baa, F3-EXCESSO-FORA-DO-ALVO): o estorno descontava o
+ * excesso de reversão do legado, e a conta só fechava com a venda e a reversão a mais do
+ * mesmo lado do corte do alvo. Agora o estorno é a venda inteira, com o instante dela, e a
+ * reversão a mais ganha a própria anulação, com o instante da reversão.
+ */
+describe("computeCancellationMovements — a reversão a mais do legado anulada com o instante dela (D-351 §12)", () => {
+  const CORTE = new Date("2026-09-14T18:42:00.000Z");
+  const IMPORT = new Date("2026-09-14T18:44:19.581Z");
+  const CORTE_DE_PRODUCAO: ErpCutoff = { capturedAt: CORTE, importedAt: IMPORT, reconciledAt: null, exportedAt: CORTE };
+
+  interface Linha {
+    readonly qtyDelta: number;
+    readonly occurredAt: Date;
+  }
+
+  /** Saldo e parte no alvo de `compute_erp_target_balances` (só `occurred_at > captured_at`). */
+  function saldoEAlvo(linhas: readonly Linha[]): { saldo: number; alvo: number } {
+    return {
+      saldo: linhas.reduce((soma, l) => soma + l.qtyDelta, 0),
+      alvo: linhas.filter((l) => l.occurredAt.getTime() > CORTE.getTime()).reduce((soma, l) => soma + l.qtyDelta, 0),
+    };
+  }
+
+  describe("2000017792822486 de produção: KIT de 3 componentes, VENDA do worker antigo ATÉ o corte, devolução e cancelamento depois", () => {
+    const PEDIDO = 2000017792822486;
+    const COMPONENTES = ["comp-8e9f38e7", "comp-b9fdfa64", "comp-c5af7f1f"];
+    const CLAIM = "5571421181";
+    const VENDIDA_EM = new Date("2026-09-14T18:11:20.000Z");
+    const DEVOLVIDA_EM = new Date("2026-09-16T00:12:31.170Z");
+    const CANCELADA_EM = new Date("2026-09-16T12:58:04.000Z");
+    const chave = (componente: string) => `venda:${String(PEDIDO)}:0:${componente}`;
+    const GRAVADAS: (RecordedSaleMovement & RecordedSale)[] = COMPONENTES.map((componente) => ({
+      skuId: componente,
+      qtyDelta: -1,
+      idempotencyKey: chave(componente),
+      occurredAt: VENDIDA_EM,
+      recordedAt: new Date("2026-09-14T19:00:06.564Z"),
+    }));
+    const REVERSOES: TimedRecordedReversal[] = COMPONENTES.flatMap((componente) => [
+      { idempotencyKey: `devolucao:${CLAIM}:${chave(componente)}`, quantity: 1, occurredAt: DEVOLVIDA_EM },
+      { idempotencyKey: `cancelamento:${chave(componente)}`, quantity: 1, occurredAt: CANCELADA_EM },
+    ]);
+
+    function entrada(estornadas: ReadonlySet<string> = new Set()): CancellationMovementsInput {
+      return {
+        order: {
+          id: PEDIDO,
+          status: "cancelled",
+          dateCreated: new Date("2026-08-06T18:20:00.000Z"),
+          dateClosed: new Date("2026-08-06T18:25:09.000Z"),
+          items: [
+            {
+              position: 0,
+              quantity: 1,
+              skuId: "kit",
+              skuKind: "KIT",
+              components: COMPONENTES.map((componentSkuId) => ({ componentSkuId, quantity: 1 })),
+            },
+          ],
+        },
+        occurredAt: CANCELADA_EM,
+        occurredAtKnown: true,
+        transition: { saleStatus: "paid", cancelledAt: CANCELADA_EM },
+        recordedSales: GRAVADAS,
+        estornadas,
+        reversals: REVERSOES,
+        cutoffFor: () => CORTE_DE_PRODUCAO,
+      };
+    }
+
+    it("cada componente: o estorno da venda inteira com o instante da venda, e a anulação do cancelamento (a reversão mais recente) com o instante dele", () => {
+      const resultado = computeCancellationMovements(entrada());
+
+      expect(resultado.sales).toEqual([]);
+      expect(resultado.reversals).toEqual([]);
+      expect(resultado.alreadyReversed).toEqual(COMPONENTES.map(chave));
+      expect(resultado.estornos).toEqual(
+        COMPONENTES.map((componente) => ({ skuId: componente, qtyDelta: 1, idempotencyKey: `estorno:${chave(componente)}`, occurredAt: VENDIDA_EM })),
+      );
+      expect(resultado.excessReversalEstornos).toEqual(
+        COMPONENTES.map((componente) => ({
+          skuId: componente,
+          qtyDelta: -1,
+          idempotencyKey: `estorno:cancelamento:${chave(componente)}`,
+          occurredAt: CANCELADA_EM,
+        })),
+      );
+    });
+
+    it("saldo e alvo em +1 por componente -- o real (a planilha tem a venda, e a unidade voltou uma vez); o estorno descontado dava alvo +2", () => {
+      const resultado = computeCancellationMovements(entrada());
+
+      for (const componente of COMPONENTES) {
+        const gravado: Linha[] = [
+          { qtyDelta: -1, occurredAt: VENDIDA_EM },
+          { qtyDelta: 1, occurredAt: DEVOLVIDA_EM },
+          { qtyDelta: 1, occurredAt: CANCELADA_EM },
+        ];
+        const novas = [...resultado.estornos, ...resultado.excessReversalEstornos, ...resultado.reversals].filter(
+          (m) => m.skuId === componente,
+        );
+
+        expect(saldoEAlvo([...gravado, ...novas])).toEqual({ saldo: 1, alvo: 1 });
+        // A regra de cc90baa: estorno de V - E = 0, nenhuma linha -- alvo +2.
+        expect(saldoEAlvo(gravado)).toEqual({ saldo: 1, alvo: 2 });
+      }
+    });
+
+    it("reprocessar com os estornos já gravados: nenhum estorno novo, e a anulação sai de novo com a MESMA chave (o UNIQUE absorve; completa o webhook que falhou entre as duas)", () => {
+      const resultado = computeCancellationMovements(entrada(new Set(COMPONENTES.map(chave))));
+
+      expect(resultado.estornos).toEqual([]);
+      expect(resultado.excessReversalEstornos.map((m) => [m.idempotencyKey, m.qtyDelta, m.occurredAt])).toEqual(
+        COMPONENTES.map((componente) => [`estorno:cancelamento:${chave(componente)}`, -1, CANCELADA_EM]),
+      );
+    });
+  });
+
+  describe("contraprova, 2000018206306064 de produção: VENDA do worker antigo DENTRO do alvo", () => {
+    const PEDIDO = 2000018206306064;
+    const VENDA = `venda:${String(PEDIDO)}:0`;
+    const VENDIDA_EM = new Date("2026-09-15T01:32:27.000Z");
+    const DEVOLVIDA_EM = new Date("2026-09-15T10:58:11.000Z");
+    const CANCELADA_EM = new Date("2026-09-15T10:58:16.000Z");
+    const GRAVADA: (RecordedSaleMovement & RecordedSale)[] = [
+      { skuId: "sku-31f2cb17", qtyDelta: -1, idempotencyKey: VENDA, occurredAt: VENDIDA_EM, recordedAt: new Date("2026-09-15T02:00:05.174Z") },
+    ];
+
+    function cancelamento(reversals: TimedRecordedReversal[]) {
+      return computeCancellationMovements({
+        order: {
+          id: PEDIDO,
+          status: "cancelled",
+          dateCreated: new Date("2026-08-31T15:10:00.000Z"),
+          dateClosed: new Date("2026-08-31T15:15:22.000Z"),
+          items: [{ position: 0, quantity: 1, skuId: "sku-31f2cb17", skuKind: "PRODUTO", components: [] }],
+        },
+        occurredAt: CANCELADA_EM,
+        occurredAtKnown: true,
+        transition: null,
+        recordedSales: GRAVADA,
+        estornadas: new Set(),
+        reversals,
+        cutoffFor: () => CORTE_DE_PRODUCAO,
+      });
+    }
+
+    it("o estorno inteiro e a anulação do cancelamento: saldo e alvo em +1, os mesmos números da regra de cc90baa", () => {
+      const resultado = cancelamento([
+        { idempotencyKey: `devolucao:5570000000:${VENDA}`, quantity: 1, occurredAt: DEVOLVIDA_EM },
+        { idempotencyKey: `cancelamento:${VENDA}`, quantity: 1, occurredAt: CANCELADA_EM },
+      ]);
+
+      expect(resultado.estornos.map((m) => [m.idempotencyKey, m.qtyDelta, m.occurredAt])).toEqual([[`estorno:${VENDA}`, 1, VENDIDA_EM]]);
+      expect(resultado.excessReversalEstornos.map((m) => [m.idempotencyKey, m.qtyDelta, m.occurredAt])).toEqual([
+        [`estorno:cancelamento:${VENDA}`, -1, CANCELADA_EM],
+      ]);
+      expect(
+        saldoEAlvo([
+          { qtyDelta: -1, occurredAt: VENDIDA_EM },
+          { qtyDelta: 1, occurredAt: DEVOLVIDA_EM },
+          { qtyDelta: 1, occurredAt: CANCELADA_EM },
+          ...resultado.estornos,
+          ...resultado.excessReversalEstornos,
+        ]),
+      ).toEqual({ saldo: 1, alvo: 1 });
+    });
+
+    it("R < V (só a devolução): nenhuma anulação, e o estorno é a venda inteira -- nada muda", () => {
+      const resultado = cancelamento([{ idempotencyKey: `devolucao:5570000000:${VENDA}`, quantity: 1, occurredAt: DEVOLVIDA_EM }]);
+
+      expect(resultado.estornos.map((m) => m.qtyDelta)).toEqual([1]);
+      expect(resultado.excessReversalEstornos).toEqual([]);
+    });
+  });
+
+  it("venda dentro do alvo com as duas reversões ANTES do corte (o worker antigo gravou a venda com a data da atualização): a anulação cai fora do alvo com a reversão, e o alvo fica em 0 -- o estorno de V - E o deixava em -1", () => {
+    const VENDA = "venda:2000018000000001:0";
+    const VENDIDA_EM = new Date("2026-09-14T19:00:00.000Z");
+    const DEVOLVIDA_EM = new Date("2026-09-14T18:00:00.000Z");
+    const CANCELADA_EM = new Date("2026-09-14T18:30:00.000Z");
+    const resultado = computeCancellationMovements({
+      order: {
+        id: 2000018000000001,
+        status: "cancelled",
+        dateCreated: new Date("2026-09-10T11:55:00.000Z"),
+        dateClosed: new Date("2026-09-10T12:00:00.000Z"),
+        items: [{ position: 0, quantity: 1, skuId: "sku-a", skuKind: "PRODUTO", components: [] }],
+      },
+      occurredAt: CANCELADA_EM,
+      occurredAtKnown: true,
+      transition: null,
+      recordedSales: [{ skuId: "sku-a", qtyDelta: -1, idempotencyKey: VENDA, occurredAt: VENDIDA_EM, recordedAt: new Date("2026-09-14T19:00:05.000Z") }],
+      estornadas: new Set(),
+      reversals: [
+        { idempotencyKey: `devolucao:5570000009:${VENDA}`, quantity: 1, occurredAt: DEVOLVIDA_EM },
+        { idempotencyKey: `cancelamento:${VENDA}`, quantity: 1, occurredAt: CANCELADA_EM },
+      ],
+      cutoffFor: () => CORTE_DE_PRODUCAO,
+    });
+
+    const gravado: Linha[] = [
+      { qtyDelta: -1, occurredAt: VENDIDA_EM },
+      { qtyDelta: 1, occurredAt: DEVOLVIDA_EM },
+      { qtyDelta: 1, occurredAt: CANCELADA_EM },
+    ];
+
+    expect(resultado.excessReversalEstornos.map((m) => [m.idempotencyKey, m.qtyDelta])).toEqual([[`estorno:cancelamento:${VENDA}`, -1]]);
+    // Tudo aconteceu antes da planilha: nada a somar no alvo. O saldo fica com a unidade que as
+    // reversões anteriores à planilha devolveram, e a reconciliação a ajusta -- o resíduo das
+    // reversões gravadas até o corte, 0 em produção.
+    expect(saldoEAlvo([...gravado, ...resultado.estornos, ...resultado.excessReversalEstornos, ...resultado.reversals])).toEqual({
+      saldo: 1,
+      alvo: 0,
+    });
+    // A regra de cc90baa: estorno de V - E = 0 com o instante da venda, dentro do alvo -- alvo -1.
+    expect(saldoEAlvo(gravado)).toEqual({ saldo: 1, alvo: -1 });
+  });
+
+  it("venda NÃO estornada (fechada depois do corte) com o mesmo excesso: nenhuma anulação -- o legado fora da D-351 fica como estava", () => {
+    const VENDA = "venda:2000018000000002:0";
+    const resultado = computeCancellationMovements({
+      order: {
+        id: 2000018000000002,
+        status: "cancelled",
+        dateCreated: new Date("2026-09-15T00:55:00.000Z"),
+        dateClosed: new Date("2026-09-15T01:00:00.000Z"),
+        items: [{ position: 0, quantity: 1, skuId: "sku-a", skuKind: "PRODUTO", components: [] }],
+      },
+      occurredAt: new Date("2026-09-15T08:40:07.000Z"),
+      occurredAtKnown: true,
+      transition: null,
+      recordedSales: [
+        {
+          skuId: "sku-a",
+          qtyDelta: -1,
+          idempotencyKey: VENDA,
+          occurredAt: new Date("2026-09-15T01:00:00.000Z"),
+          recordedAt: new Date("2026-09-15T01:00:03.000Z"),
+        },
+      ],
+      estornadas: new Set(),
+      reversals: [
+        { idempotencyKey: `devolucao:5570000010:${VENDA}`, quantity: 1, occurredAt: new Date("2026-09-15T08:39:04.000Z") },
+        { idempotencyKey: `cancelamento:${VENDA}`, quantity: 1, occurredAt: new Date("2026-09-15T08:40:07.000Z") },
+      ],
+      cutoffFor: () => CORTE_DE_PRODUCAO,
+    });
+
+    expect(resultado.estornos).toEqual([]);
+    expect(resultado.excessReversalEstornos).toEqual([]);
   });
 });

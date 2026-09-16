@@ -12,11 +12,11 @@ import {
 import type {
   ErpCutoff,
   ObservedSaleTransition,
-  RecordedReversal,
   RecordedSale,
   RecordedSaleMovement,
   SaleDeductionItem,
   StockMovementDraft,
+  TimedRecordedReversal,
 } from "@sb/domain";
 import type { Logger } from "@sb/observability";
 
@@ -74,6 +74,11 @@ import { recordStockMovements } from "./stock-movements.js";
  * alinhamento (o import ou uma reconciliação posterior), e o trio só repõe
  * pedido sem nenhum `VENDA_ML` gravado.
  *
+ * **Reverificação de cc90baa (D-351 §12).** O estorno é a venda inteira, e a
+ * reversão a mais do legado (cancelamento E devolução da mesma venda) sai como
+ * `ESTORNO_REVERSAO_EXCEDENTE`, com o `occurred_at` da reversão: por isso as
+ * reversões gravadas são lidas com o instante delas, e a leitura sem ele LANÇA.
+ *
  * **Deliberadamente não feito aqui**: reversão por DEVOLUÇÃO — o Mercado
  * Livre modela devolução pela API de Reclamações e Devoluções, não
  * integrada (mesmo motivo já registrado para `order.returned` em
@@ -123,9 +128,10 @@ export interface RecordedOrderMovements {
   /**
    * `CANCELAMENTO_ML` e `DEVOLUCAO_ML` gravados das vendas do pedido: o limite de
    * cada reversão — a unidade volta ao estoque no máximo uma vez (verificação de
-   * e6fda07, ALTA-1).
+   * e6fda07, ALTA-1) —, com o instante de cada uma, que a anulação da reversão a
+   * mais espelha (D-351 §12).
    */
-  reversals: RecordedReversal[];
+  reversals: TimedRecordedReversal[];
 }
 
 export interface OrderPrefetch {
@@ -310,7 +316,7 @@ async function lerMovimentosGravados(
         // movimento. Chave fora do formato LANCA (`estornadoKeyOf`).
         gravados.estornadas.add(estornadoKeyOf(row.idempotency_key));
       } else if (row.movement_type === "CANCELAMENTO_ML") {
-        gravados.reversals.push(reversaoGravada(row.idempotency_key, row.qty_delta));
+        gravados.reversals.push(reversaoGravada(row.idempotency_key, row.qty_delta, row.occurred_at));
       } else {
         gravados.sales.push({
           skuId: row.sku_id,
@@ -335,11 +341,22 @@ async function lerMovimentosGravados(
  * `devolucao:<claim>:<venda>`. Fora do formato LANCA (`revertedSaleKeyOf`) —
  * uma reversao que nao diz qual venda reverteu faria a venda parecer nao
  * revertida, e a proxima reversao devolveria a unidade de novo.
+ *
+ * O instante tambem e conferido (D-351 §12): sem `occurred_at` (a RPC das
+ * devolucoes na forma de cc90baa) ou com data ilegivel, LANCA. `new Date(undefined)`
+ * e Invalid Date, e a reversao a mais seria escolhida por uma comparacao com NaN --
+ * a anulacao sairia com a chave ou o lado do corte errados, em silencio.
  */
-function reversaoGravada(idempotencyKey: string, quantity: number): RecordedReversal {
+function reversaoGravada(idempotencyKey: string, quantity: number, occurredAt: unknown): TimedRecordedReversal {
   revertedSaleKeyOf(idempotencyKey);
 
-  return { idempotencyKey, quantity };
+  if (typeof occurredAt !== "string" || Number.isNaN(new Date(occurredAt).getTime())) {
+    throw new Error(
+      `reversao gravada ${idempotencyKey} sem occurred_at legivel ("${String(occurredAt)}") — sem ele a anulacao da reversao a mais nao sabe de que lado do corte cair (D-351)`,
+    );
+  }
+
+  return { idempotencyKey, quantity, occurredAt: new Date(occurredAt) };
 }
 
 /** Os pedidos com `VENDA_ML` gravado — os unicos que podem ter devolucao gravada. */
@@ -362,8 +379,8 @@ async function lerDevolucoes(
   db: AdminClient,
   organizationId: string,
   orderIds: readonly string[],
-): Promise<Map<string, RecordedReversal[]>> {
-  const porPedido = new Map<string, RecordedReversal[]>();
+): Promise<Map<string, TimedRecordedReversal[]>> {
+  const porPedido = new Map<string, TimedRecordedReversal[]>();
 
   if (orderIds.length === 0) {
     return porPedido;
@@ -379,7 +396,7 @@ async function lerDevolucoes(
     for (const row of linhasDe(resultado, "get_order_return_movements")) {
       porPedido.set(row.order_id, [
         ...(porPedido.get(row.order_id) ?? []),
-        reversaoGravada(row.idempotency_key, row.qty_delta),
+        reversaoGravada(row.idempotency_key, row.qty_delta, row.occurred_at),
       ]);
     }
   }
@@ -390,7 +407,7 @@ async function lerDevolucoes(
 /** Junta as devolucoes aos movimentos gravados de cada pedido. */
 function juntaDevolucoes(
   gravados: Map<string, RecordedOrderMovements>,
-  devolucoes: Map<string, RecordedReversal[]>,
+  devolucoes: Map<string, TimedRecordedReversal[]>,
 ): void {
   for (const [pedido, lista] of devolucoes) {
     gravados.get(pedido)?.reversals.push(...lista);
@@ -1063,7 +1080,7 @@ export async function persistOrder(
         ? { saleStatus: previousStatus, cancelledAt: occurredAtKnown ? new Date(lastUpdatedAt) : null }
         : transicaoGravada;
 
-    const { sales, estornos, reversals, alreadyReversed } = computeCancellationMovements({
+    const { sales, estornos, excessReversalEstornos, reversals, alreadyReversed } = computeCancellationMovements({
       order: {
         id: order.id,
         status: order.status,
@@ -1101,9 +1118,11 @@ export async function persistOrder(
 
     const origem = { type: "ORDER", id: String(order.id) };
 
-    // A ORDEM importa no webhook, que grava linha a linha: venda, estorno,
-    // cancelamento. Se o estorno ou o cancelamento falhar, o retry acha a venda
-    // gravada e completa o resto pela mesma regra, sem depender da transicao.
+    // A ORDEM importa no webhook, que grava linha a linha: venda, estorno, anulacao
+    // da reversao a mais, cancelamento. Se o estorno ou o cancelamento falhar, o
+    // retry acha a venda gravada e completa o resto pela mesma regra, sem depender
+    // da transicao; se a anulacao falhar, o retry acha a venda estornada e a grava
+    // de novo (`computeCancellationMovements`).
     if (sales.length > 0) {
       // Revisao de D-351, ALTA-2: venda anterior ao corte que a V3 nunca gravou
       // e que cancelou depois dele -- a unidade volta ao estoque.
@@ -1121,6 +1140,8 @@ export async function persistOrder(
       contaEstornos(writes, logger, order.id, estornos.length);
     }
 
+    await gravaAnulacoes(db, context, writes, logger, order.id, excessReversalEstornos);
+
     if (reversals.length > 0) {
       await gravaMovimentos(db, context, writes, reversals, "CANCELAMENTO_ML", origem);
     }
@@ -1133,7 +1154,7 @@ export async function persistOrder(
   // D-351: `occurred_at` da venda e a "venda em" (`date_closed ?? date_created`),
   // nao `lastUpdatedAt`. Com a data da atualizacao, um pedido antigo atualizado
   // depois da planilha caia DEPOIS do corte e entrava no alvo da reconciliacao.
-  const { deductions, preCaptureReversals } = computeSaleDeductions(
+  const { deductions, preCaptureReversals, excessReversalEstornos } = computeSaleDeductions(
     {
       id: order.id,
       status: order.status,
@@ -1166,6 +1187,36 @@ export async function persistOrder(
 
     contaEstornos(writes, logger, order.id, preCaptureReversals.length);
   }
+
+  // Depois do estorno: no webhook, a anulacao que falhar sai de novo no retry, que
+  // recalcula o estorno da mesma venda.
+  await gravaAnulacoes(db, context, writes, logger, order.id, excessReversalEstornos);
+}
+
+/**
+ * A anulacao da reversao a mais do legado (D-351 §12): `ESTORNO_REVERSAO_EXCEDENTE`,
+ * com a origem do pedido -- a da venda estornada, como o estorno -- e a chave
+ * `estorno:<chave da reversao>`. Rara (20 vendas em producao em 2026-09-16), entao
+ * o log sai por pedido tambem no lote.
+ */
+async function gravaAnulacoes(
+  db: AdminClient,
+  context: PersistOrderContext,
+  writes: PageWrites | undefined,
+  logger: Logger,
+  orderId: number,
+  anulacoes: readonly StockMovementDraft[],
+): Promise<void> {
+  if (anulacoes.length === 0) {
+    return;
+  }
+
+  await gravaMovimentos(db, context, writes, anulacoes, "ESTORNO_REVERSAO_EXCEDENTE", {
+    type: "ORDER",
+    id: String(orderId),
+  });
+
+  logger.info("sale_deduction_reversao_excedente_anulada", { order_id: orderId, anulacoes: anulacoes.length });
 }
 
 /**

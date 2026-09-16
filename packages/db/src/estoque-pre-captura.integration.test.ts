@@ -1,7 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
-import { computeReturnReversal, computeSaleDeductions, estornoKeyOf, resolveStockExportInstant } from "@sb/domain";
+import {
+  computeCancellationMovements,
+  computeReturnReversal,
+  computeSaleDeductions,
+  estornadoKeyOf,
+  estornoKeyOf,
+  resolveStockExportInstant,
+} from "@sb/domain";
 import { createClient } from "@supabase/supabase-js";
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -633,7 +640,7 @@ describe("chave neutra do estorno: o segundo estorno do MESMO movimento nao entr
   });
 });
 
-describe("stock_movements aceita ESTORNO_PRE_CAPTURA, e so ele", () => {
+describe("stock_movements aceita ESTORNO_PRE_CAPTURA e ESTORNO_REVERSAO_EXCEDENTE, e so eles", () => {
   it("linha de sistema: sem created_by e sem reason", async () => {
     const sku = await novoSku(ORG_SEM_SNAPSHOT, "tipo-novo");
 
@@ -643,6 +650,19 @@ describe("stock_movements aceita ESTORNO_PRE_CAPTURA, e so ele", () => {
     const result = await client.query<{ created_by: string | null; reason: string | null }>(
       `select created_by, reason from public.stock_movements where idempotency_key = $1`,
       [`${PREFIXO}:tipo:estorno`],
+    );
+
+    expect(result.rows).toEqual([{ created_by: null, reason: null }]);
+  });
+
+  it("a anulacao da reversao a mais (D-351 §12): linha de sistema, sem created_by e sem reason", async () => {
+    const sku = await novoSku(ORG_SEM_SNAPSHOT, "tipo-anulacao");
+
+    await movimento(ORG_SEM_SNAPSHOT, sku, "ESTORNO_REVERSAO_EXCEDENTE", -1, `${PREFIXO}:tipo:anulacao`, "2026-09-14T10:00:00Z");
+
+    const result = await client.query<{ created_by: string | null; reason: string | null }>(
+      `select created_by, reason from public.stock_movements where idempotency_key = $1`,
+      [`${PREFIXO}:tipo:anulacao`],
     );
 
     expect(result.rows).toEqual([{ created_by: null, reason: null }]);
@@ -1655,16 +1675,16 @@ describe("get_order_return_movements (verificacao de e6fda07, ALTA-1)", () => {
     expect(result.rows).toEqual([{ definer: false, config: 'search_path=""' }]);
   });
 
-  it("service_role: so as DEVOLUCAO_ML dos pedidos pedidos, pelo pedido de dentro da chave, e so da organizacao", async () => {
-    const rows = await comoPapel<{ order_id: string; sku_id: string; qty_delta: string; idempotency_key: string }>(
+  it("service_role: so as DEVOLUCAO_ML dos pedidos pedidos, pelo pedido de dentro da chave, e so da organizacao -- com o occurred_at (D-351 §12)", async () => {
+    const rows = await comoPapel<{ order_id: string; sku_id: string; qty_delta: string; idempotency_key: string; occurred_at: Date }>(
       "service_role",
-      `select order_id, sku_id, qty_delta, idempotency_key from public.get_order_return_movements('${ORG_DEVOLUCOES}', array['${P1}', '999'])`,
+      `select order_id, sku_id, qty_delta, idempotency_key, occurred_at from public.get_order_return_movements('${ORG_DEVOLUCOES}', array['${P1}', '999'])`,
     );
 
-    expect(rows.map((r) => [r.order_id, Number(r.qty_delta), r.idempotency_key]).sort()).toEqual(
+    expect(rows.map((r) => [r.order_id, Number(r.qty_delta), r.idempotency_key, r.occurred_at.toISOString()]).sort()).toEqual(
       [
-        [P1, 1, `devolucao:5570000001:venda:${P1}:0`],
-        [P1, 1, `devolucao:5570000002:venda:${P1}:0:${sku}`],
+        [P1, 1, `devolucao:5570000001:venda:${P1}:0`, "2026-09-15T12:00:00.000Z"],
+        [P1, 1, `devolucao:5570000002:venda:${P1}:0:${sku}`, "2026-09-15T12:00:00.000Z"],
       ].sort(),
     );
   });
@@ -1825,7 +1845,7 @@ describe("compensacao F3 e o limite das reversoes (verificacao de e6fda07, ALTA-
     }
   }
 
-  it("VENDA + DEVOLUCAO + CANCELAMENTO fica em +1 sem estorno; so a devolucao estorna inteiro; o KIT com a devolucao dos dois componentes estorna cada um; o trio nao volta a devolver; e pedido com VENDA_ML de outra chave nao e reposto", async () => {
+  it("VENDA + DEVOLUCAO + CANCELAMENTO fica em +1 com o estorno inteiro e a anulacao do cancelamento (D-351 §12); so a devolucao estorna inteiro; o KIT com a devolucao dos dois componentes estorna cada um; o trio nao volta a devolver; e pedido com VENDA_ML de outra chave nao e reposto", async () => {
     await client.query("begin");
 
     try {
@@ -1833,7 +1853,8 @@ describe("compensacao F3 e o limite das reversoes (verificacao de e6fda07, ALTA-
 
       await rodarF3(avisos);
 
-      expect(avisos).toContain("compensacao_d351: 4 estornos gravados");
+      expect(avisos).toContain("compensacao_d351: 5 estornos gravados");
+      expect(avisos).toContain("compensacao_d351: 1 anulacoes de reversao a mais gravadas");
       expect(avisos).toContain("compensacao_d351: 1 vendas repostas (venda + estorno + cancelamento)");
 
       const estornos = await client.query<{ idempotency_key: string; qty_delta: string }>(
@@ -1844,6 +1865,8 @@ describe("compensacao F3 e o limite das reversoes (verificacao de e6fda07, ALTA-
 
       expect(estornos.rows.map((r) => [r.idempotency_key, Number(r.qty_delta)]).sort()).toEqual(
         [
+          // P1: a venda inteira -- ate cc90baa, 1 - excesso = 0 e nenhuma linha.
+          [`estorno:venda:${String(P1)}:0`, 1],
           [`estorno:venda:${String(P2)}:0`, 1],
           [`estorno:venda:${String(P3)}:0`, 1],
           [`estorno:venda:${String(P4)}:0:${sku}`, 1],
@@ -1851,6 +1874,17 @@ describe("compensacao F3 e o limite das reversoes (verificacao de e6fda07, ALTA-
           [`estorno:venda:${String(P5)}:0:${a2}`, 1],
         ].sort(),
       );
+
+      // P1: a reversao a mais e o cancelamento (em(21), depois da devolucao em(20)), anulado com o instante dele.
+      const anulacoes = await client.query<{ idempotency_key: string; qty_delta: string; occurred_at: Date; source_id: string }>(
+        `select idempotency_key, qty_delta, occurred_at, source_id from public.stock_movements
+         where organization_id = $1 and movement_type = 'ESTORNO_REVERSAO_EXCEDENTE'`,
+        [ORG_F3_REVERSAO],
+      );
+
+      expect(anulacoes.rows.map((r) => [r.idempotency_key, Number(r.qty_delta), r.occurred_at.toISOString(), r.source_id])).toEqual([
+        [`estorno:cancelamento:venda:${String(P1)}:0`, -1, em(21), String(P1)],
+      ]);
 
       // P5: cada componente fica em +1 no saldo e no alvo -- snapshot 20 e a unidade que voltou uma vez.
       for (const componente of [a1, a2]) {
@@ -1920,6 +1954,256 @@ describe("compensacao F3 e o limite das reversoes (verificacao de e6fda07, ALTA-
       await rodarF3(segunda);
 
       expect(segunda).toContain("compensacao_d351: 0 estornos gravados");
+      expect(segunda).toContain("compensacao_d351: 0 anulacoes de reversao a mais gravadas");
+      expect(segunda).toContain("compensacao_d351: 0 vendas repostas (venda + estorno + cancelamento)");
+    } finally {
+      await client.query("rollback");
+    }
+  });
+});
+
+describe("compensacao F3: a reversao a mais do legado anulada com o instante dela (reverificacao de cc90baa, D-351 §12)", () => {
+  const ORG_EXCESSO = randomUUID();
+  const PEDIDO = 935_700_000_000 + Math.floor(Math.random() * 1_000_000) * 100;
+  const CORTE = new Date(Date.now() - 10 * 60_000);
+  const em = (minutos: number) => new Date(CORTE.getTime() + minutos * 60_000).toISOString();
+
+  // K = a forma de 2000017792822486: KIT de 3 componentes, VENDA do worker antigo com occurred_at
+  // ATE o corte (18:11:20 para o corte de 18:42:00) e gravada depois dele; DEVOLUCAO e depois
+  // CANCELAMENTO, os dois depois do corte.
+  const K = PEDIDO + 1;
+  // C = a contraprova, 2000018206306064: VENDA do worker antigo DENTRO do alvo.
+  const C = PEDIDO + 2;
+  // E = devolucao e cancelamento no MESMO instante: a F3 e o dominio escolhem a mesma reversao.
+  const E = PEDIDO + 3;
+  // W = o worker novo gravou o estorno e falhou antes da anulacao: a F3 grava so a anulacao.
+  const W = PEDIDO + 4;
+  let componentes: string[] = [];
+  let skuC = "";
+  let skuE = "";
+  let skuW = "";
+
+  const chaveK = (componente: string) => `venda:${String(K)}:0:${componente}`;
+  const porChave = (a: unknown[], b: unknown[]) => (String(a[0]) < String(b[0]) ? -1 : String(a[0]) > String(b[0]) ? 1 : 0);
+
+  beforeAll(async () => {
+    await novaOrganizacao(ORG_EXCESSO, "f3-excesso");
+
+    componentes = [await novoSku(ORG_EXCESSO, "f3-excesso-a"), await novoSku(ORG_EXCESSO, "f3-excesso-b"), await novoSku(ORG_EXCESSO, "f3-excesso-c")];
+    skuC = await novoSku(ORG_EXCESSO, "f3-excesso-contraprova");
+    skuE = await novoSku(ORG_EXCESSO, "f3-excesso-empate");
+    skuW = await novoSku(ORG_EXCESSO, "f3-excesso-worker");
+
+    const conta = await umId(
+      `insert into public.ml_accounts (organization_id, label, slug, seller_id, status, connected_at)
+       values ($1, 'F3 excesso', $2, $3, 'CONNECTED', now()) returning id`,
+      [ORG_EXCESSO, `${PREFIXO}-f3-excesso`, 3_800_000 + Math.floor(Math.random() * 100_000)],
+    );
+    // O snapshot ANTES dos movimentos: a venda do worker antigo entrou no saldo depois do import.
+    const lote = await novoLote(ORG_EXCESSO, `${PREFIXO}-f3-excesso.xlsx`);
+
+    for (const [indice, sku] of [...componentes, skuC, skuE, skuW].entries()) {
+      await snapshot(ORG_EXCESSO, lote, `F3-EXCESSO-${String(indice)}`, sku, "ESTOQUE LOJA", 20, CORTE.toISOString());
+    }
+
+    for (const [id, fechado] of [
+      [K, em(-41 * 24 * 60)],
+      [C, em(-15 * 24 * 60)],
+      [E, em(-12 * 24 * 60)],
+      [W, em(-11 * 24 * 60)],
+    ] as const) {
+      await client.query(
+        `insert into public.orders (id, organization_id, ml_account_id, status, date_created, date_closed, date_last_updated, total_amount, currency_id)
+         values ($1, $2, $3, 'cancelled', $4::timestamptz - interval '5 minutes', $4, now(), 10, 'BRL')`,
+        [id, ORG_EXCESSO, conta, fechado],
+      );
+    }
+
+    for (const componente of componentes) {
+      await movimento(ORG_EXCESSO, componente, "VENDA_ML", -1, chaveK(componente), em(-31), String(K));
+      await devolucao(ORG_EXCESSO, componente, "5571421181", chaveK(componente), em(3));
+      await movimento(ORG_EXCESSO, componente, "CANCELAMENTO_ML", 1, `cancelamento:${chaveK(componente)}`, em(8), String(K));
+    }
+
+    await movimento(ORG_EXCESSO, skuC, "VENDA_ML", -1, `venda:${String(C)}:0`, em(5), String(C));
+    await devolucao(ORG_EXCESSO, skuC, "5570000002", `venda:${String(C)}:0`, em(6));
+    await movimento(ORG_EXCESSO, skuC, "CANCELAMENTO_ML", 1, `cancelamento:venda:${String(C)}:0`, em(7), String(C));
+
+    await movimento(ORG_EXCESSO, skuE, "VENDA_ML", -1, `venda:${String(E)}:0`, em(-20), String(E));
+    await devolucao(ORG_EXCESSO, skuE, "5570000003", `venda:${String(E)}:0`, em(4));
+    await movimento(ORG_EXCESSO, skuE, "CANCELAMENTO_ML", 1, `cancelamento:venda:${String(E)}:0`, em(4), String(E));
+
+    await movimento(ORG_EXCESSO, skuW, "VENDA_ML", -1, `venda:${String(W)}:0`, em(-25), String(W));
+    await movimento(ORG_EXCESSO, skuW, "ESTORNO_PRE_CAPTURA", 1, `estorno:venda:${String(W)}:0`, em(-25), String(W));
+    await devolucao(ORG_EXCESSO, skuW, "5570000004", `venda:${String(W)}:0`, em(2));
+    await movimento(ORG_EXCESSO, skuW, "CANCELAMENTO_ML", 1, `cancelamento:venda:${String(W)}:0`, em(9), String(W));
+  });
+
+  async function rodarF3(avisos: string[]): Promise<void> {
+    const escuta = (aviso: { message?: string | undefined }): void => {
+      avisos.push(aviso.message ?? "");
+    };
+
+    client.on("notice", escuta);
+
+    try {
+      await client.query(`set local sb.compensacao_organizacao = '${ORG_EXCESSO}'`);
+      await client.query(await arquivo("packages/db/scripts/compensacao-estorno-pre-captura-d351.sql"));
+    } finally {
+      client.off("notice", escuta);
+    }
+  }
+
+  async function alvoESaldo(sku: string): Promise<[number, number]> {
+    const result = await client.query<{ alvo: string | null; saldo: string | null }>(
+      `select (select quantity from public.compute_erp_target_balances($1) where sku_id = $2 and location_kind = 'LOCAL') as alvo,
+              (select quantity from public.inventory_balances where sku_id = $2 and location_kind = 'LOCAL') as saldo`,
+      [ORG_EXCESSO, sku],
+    );
+
+    return [Number(result.rows[0]?.alvo), Number(result.rows[0]?.saldo)];
+  }
+
+  /** O que o worker novo calcula para o pedido cancelado, lendo o ledger como ele le. */
+  async function doWorker(id: number) {
+    const doPedido = await client.query<{
+      sku_id: string;
+      qty_delta: string;
+      idempotency_key: string;
+      movement_type: string;
+      occurred_at: Date;
+      created_at: Date;
+    }>(
+      `select sku_id, qty_delta, idempotency_key, movement_type, occurred_at, created_at from public.stock_movements
+       where organization_id = $1 and source_type = 'ORDER' and source_id = $2
+         and movement_type in ('VENDA_ML', 'ESTORNO_PRE_CAPTURA', 'CANCELAMENTO_ML')`,
+      [ORG_EXCESSO, String(id)],
+    );
+    const devolucoes = await client.query<{ qty_delta: string; idempotency_key: string; occurred_at: Date }>(
+      `select qty_delta, idempotency_key, occurred_at from public.get_order_return_movements($1, array[$2])`,
+      [ORG_EXCESSO, String(id)],
+    );
+    const vendas = doPedido.rows.filter((r) => r.movement_type === "VENDA_ML");
+    const cortes = new Map<string, CorteLido>();
+
+    for (const venda of vendas) {
+      cortes.set(venda.sku_id, await corteDaRpc(ORG_EXCESSO, venda.sku_id));
+    }
+
+    return computeCancellationMovements({
+      order: { id, status: "cancelled", dateCreated: new Date(em(-60 * 24 * 60)), dateClosed: new Date(em(-60 * 24 * 60)), items: [] },
+      occurredAt: new Date(),
+      occurredAtKnown: true,
+      transition: null,
+      recordedSales: vendas.map((r) => ({
+        skuId: r.sku_id,
+        qtyDelta: Number(r.qty_delta),
+        idempotencyKey: r.idempotency_key,
+        occurredAt: r.occurred_at,
+        recordedAt: r.created_at,
+      })),
+      estornadas: new Set(
+        doPedido.rows.filter((r) => r.movement_type === "ESTORNO_PRE_CAPTURA").map((r) => estornadoKeyOf(r.idempotency_key)),
+      ),
+      reversals: [
+        ...doPedido.rows
+          .filter((r) => r.movement_type === "CANCELAMENTO_ML")
+          .map((r) => ({ idempotencyKey: r.idempotency_key, quantity: Number(r.qty_delta), occurredAt: r.occurred_at })),
+        ...devolucoes.rows.map((r) => ({ idempotencyKey: r.idempotency_key, quantity: Number(r.qty_delta), occurredAt: r.occurred_at })),
+      ],
+      cutoffFor: (skuId) => {
+        const corte = cortes.get(skuId);
+
+        if (corte === undefined) {
+          throw new Error(`corte nao lido para ${skuId}`);
+        }
+
+        return { capturedAt: corte.captured_at, importedAt: corte.imported_at, reconciledAt: corte.reconciled_at, exportedAt: corte.exported_at };
+      },
+    });
+  }
+
+  it("KIT com a venda ATE o corte: estorno inteiro e anulacao do cancelamento em cada componente, alvo 21 e saldo 1 (a regra de cc90baa deixava o alvo em 22); a contraprova dentro do alvo e o empate fecham igual; o estorno do worker ganha so a anulacao; o worker novo calcula as mesmas linhas; a segunda execucao grava 0", async () => {
+    // Antes da F3: a devolucao e o cancelamento do KIT estao dentro do alvo, e a venda nao.
+    for (const componente of componentes) {
+      expect(await alvoESaldo(componente)).toEqual([22, 1]);
+    }
+
+    await client.query("begin");
+
+    try {
+      const avisos: string[] = [];
+
+      await rodarF3(avisos);
+
+      expect(avisos).toContain("compensacao_d351: 5 estornos gravados");
+      expect(avisos).toContain("compensacao_d351: 6 anulacoes de reversao a mais gravadas");
+      expect(avisos).toContain("compensacao_d351: 0 vendas repostas (venda + estorno + cancelamento)");
+
+      const gravados = await client.query<{
+        movement_type: string;
+        idempotency_key: string;
+        qty_delta: string;
+        occurred_at: Date;
+        source_type: string | null;
+        source_id: string | null;
+        created_by: string | null;
+      }>(
+        `select movement_type, idempotency_key, qty_delta, occurred_at, source_type, source_id, created_by from public.stock_movements
+         where organization_id = $1 and movement_type in ('ESTORNO_PRE_CAPTURA', 'ESTORNO_REVERSAO_EXCEDENTE')`,
+        [ORG_EXCESSO],
+      );
+      const linhas = (tipo: string) =>
+        gravados.rows
+          .filter((r) => r.movement_type === tipo)
+          .map((r) => [r.idempotency_key, Number(r.qty_delta), r.occurred_at.toISOString(), r.source_type, r.source_id, r.created_by])
+          .sort(porChave);
+
+      expect(linhas("ESTORNO_PRE_CAPTURA")).toEqual(
+        [
+          ...componentes.map((componente) => [`estorno:${chaveK(componente)}`, 1, em(-31), "ORDER", String(K), null]),
+          [`estorno:venda:${String(C)}:0`, 1, em(5), "ORDER", String(C), null],
+          [`estorno:venda:${String(E)}:0`, 1, em(-20), "ORDER", String(E), null],
+          // O do worker, gravado antes da F3.
+          [`estorno:venda:${String(W)}:0`, 1, em(-25), "ORDER", String(W), null],
+        ].sort(porChave),
+      );
+      expect(linhas("ESTORNO_REVERSAO_EXCEDENTE")).toEqual(
+        [
+          // A reversao mais recente de cada venda, com o instante dela e a origem da venda.
+          ...componentes.map((componente) => [`estorno:cancelamento:${chaveK(componente)}`, -1, em(8), "ORDER", String(K), null]),
+          [`estorno:cancelamento:venda:${String(C)}:0`, -1, em(7), "ORDER", String(C), null],
+          // Empate: a chave maior em ordem de codigo ("devolucao" > "cancelamento").
+          [`estorno:devolucao:5570000003:venda:${String(E)}:0`, -1, em(4), "ORDER", String(E), null],
+          [`estorno:cancelamento:venda:${String(W)}:0`, -1, em(9), "ORDER", String(W), null],
+        ].sort(porChave),
+      );
+
+      // Real de cada SKU: 20 da planilha, que tem a venda, e a unidade que voltou UMA vez.
+      for (const sku of [...componentes, skuC, skuE, skuW]) {
+        expect(await alvoESaldo(sku)).toEqual([21, 1]);
+      }
+
+      // O worker novo reprocessando os pedidos calcula exatamente as linhas que a F3 gravou: o
+      // UNIQUE as absorve, e nada entra em dobro.
+      for (const id of [K, C, E, W]) {
+        const resultado = await doWorker(id);
+        const daF3 = gravados.rows
+          .filter((r) => r.movement_type === "ESTORNO_REVERSAO_EXCEDENTE" && r.source_id === String(id))
+          .map((r) => [r.idempotency_key, Number(r.qty_delta), r.occurred_at.toISOString()])
+          .sort(porChave);
+
+        expect(resultado.estornos).toEqual([]);
+        expect(resultado.reversals).toEqual([]);
+        expect(resultado.excessReversalEstornos.map((m) => [m.idempotencyKey, m.qtyDelta, m.occurredAt.toISOString()]).sort(porChave)).toEqual(daF3);
+      }
+
+      const segunda: string[] = [];
+
+      await rodarF3(segunda);
+
+      expect(segunda).toContain("compensacao_d351: 0 estornos gravados");
+      expect(segunda).toContain("compensacao_d351: 0 anulacoes de reversao a mais gravadas");
       expect(segunda).toContain("compensacao_d351: 0 vendas repostas (venda + estorno + cancelamento)");
     } finally {
       await client.query("rollback");

@@ -5,6 +5,7 @@ export {
   estornadoKeyOf,
   estornoKeyOf,
   estornaVendaGravada,
+  excessReversalEstornosOf,
   isValidSaleStatus,
   preCaptureEstornoOf,
   saleInstant,
@@ -23,13 +24,14 @@ export {
   CANCELAMENTO_KEY_PREFIX,
   cancellationKeyOf,
   DEVOLUCAO_KEY_PREFIX,
+  excessReversalShares,
   excessReversed,
   remainingToReverse,
   returnKeyOf,
   revertedSaleKeyOf,
   reversedQuantity,
 } from "./reversal-limit.js";
-export type { RecordedReversal } from "./reversal-limit.js";
+export type { ExcessReversalShare, RecordedReversal, TimedRecordedReversal } from "./reversal-limit.js";
 
 export {
   cancelledInSheetKeys,

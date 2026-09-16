@@ -4135,6 +4135,7 @@ export type Database = {
         Args: { p_order_ids: string[]; p_organization_id: string }
         Returns: {
           idempotency_key: string
+          occurred_at: string
           order_id: string
           qty_delta: number
           sku_id: string

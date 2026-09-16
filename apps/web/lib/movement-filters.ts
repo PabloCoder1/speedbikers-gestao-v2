@@ -28,6 +28,8 @@ export const MOVEMENT_TYPES = [
   "RECEBIMENTO_TRANSITO",
   // D-351: o par da venda que a planilha do UpSeller já tinha descontado.
   "ESTORNO_PRE_CAPTURA",
+  // D-351 §12: a anulação da reversão a mais de uma venda estornada.
+  "ESTORNO_REVERSAO_EXCEDENTE",
 ] as const;
 
 export const LOCATION_KINDS = ["LOCAL", "RESERVADO", "TRANSITO"] as const;

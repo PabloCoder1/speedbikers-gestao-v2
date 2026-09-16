@@ -25,6 +25,10 @@
  * TEMPO, cada uma antes de a outra gravar (o webhook do pedido e o do claim na
  * mesma janela de leitura). As duas leem "nada revertido" e as duas gravam. É
  * uma corrida de leitura, sem trava no banco; registrada como resíduo em D-351.
+ *
+ * **O excesso que já existe** (D-351 §12) não é descontado de estorno nenhum: cada
+ * reversão a mais ganha a própria anulação, com o instante dela
+ * (`excessReversalShares`).
  */
 
 /** Uma reversão já gravada de um `VENDA_ML`: `CANCELAMENTO_ML` ou `DEVOLUCAO_ML`. */
@@ -119,11 +123,75 @@ export function remainingToReverse(
 /**
  * O que já foi revertido ALÉM da quantidade vendida. Com o limite acima, nenhuma
  * reversão nova cria excesso: ele só existe no legado gravado antes deste limite
- * (os 2 pedidos de produção com devolução E cancelamento).
+ * (em produção, em 2026-09-16, 20 vendas de 18 pedidos com devolução E
+ * cancelamento) e na corrida de duas reversões calculadas ao mesmo tempo.
  */
 export function excessReversed(
   sale: { readonly idempotencyKey: string; readonly qtyDelta: number },
   reversals: readonly RecordedReversal[],
 ): number {
   return Math.max(0, arredonda(reversedQuantity(sale.idempotencyKey, reversals) - Math.abs(sale.qtyDelta)));
+}
+
+/** Uma reversão gravada com o instante dela: é o `occurred_at` que a anulação do excesso espelha. */
+export interface TimedRecordedReversal extends RecordedReversal {
+  /** `stock_movements.occurred_at` da reversão. */
+  readonly occurredAt: Date;
+}
+
+/** A parte de uma reversão gravada que passou da quantidade vendida. */
+export interface ExcessReversalShare {
+  readonly reversal: TimedRecordedReversal;
+  readonly quantity: number;
+}
+
+/**
+ * Mais recente primeiro; no empate do instante, a chave maior primeiro (ordem de
+ * código, a mesma do `collate "C"` da F3). O desempate existe para o worker e a F3
+ * escolherem a MESMA reversão: com escolhas diferentes, as duas anulações entrariam.
+ */
+function maisRecentePrimeiro(a: TimedRecordedReversal, b: TimedRecordedReversal): number {
+  const instante = b.occurredAt.getTime() - a.occurredAt.getTime();
+
+  if (instante !== 0) return instante;
+
+  return a.idempotencyKey < b.idempotencyKey ? 1 : a.idempotencyKey > b.idempotencyKey ? -1 : 0;
+}
+
+/**
+ * O excesso de reversão de uma venda (`excessReversed`), atribuído às reversões
+ * MAIS RECENTES (D-351 §12).
+ *
+ * A unidade volta ao estoque na primeira reversão; a que veio depois é a
+ * duplicada. Por isso o excesso é das últimas, pelo `occurred_at`: cada uma
+ * cede no máximo a própria quantidade, da mais recente para a mais antiga, até
+ * o excesso acabar. O que cada reversão cede é anulado por um movimento com o
+ * instante DELA (`excessReversalEstornosOf`), e não com o da venda: é esse
+ * instante que diz de que lado do corte de `compute_erp_target_balances` a
+ * reversão a mais foi contada.
+ *
+ * A atribuição é estável para a idempotência: uma reversão nova só aumenta o
+ * excesso na própria quantidade (a venda já estava revertida por inteiro), então
+ * as partes das reversões mais antigas não mudam.
+ */
+export function excessReversalShares(
+  sale: { readonly idempotencyKey: string; readonly qtyDelta: number },
+  reversals: readonly TimedRecordedReversal[],
+): ExcessReversalShare[] {
+  const daVenda = reversals.filter((reversal) => revertedSaleKeyOf(reversal.idempotencyKey) === sale.idempotencyKey);
+  let restante = excessReversed(sale, daVenda);
+  const partes: ExcessReversalShare[] = [];
+
+  for (const reversal of [...daVenda].sort(maisRecentePrimeiro)) {
+    if (restante <= 0) break;
+
+    const parte = arredonda(Math.min(reversal.quantity, restante));
+
+    if (parte <= 0) continue;
+
+    partes.push({ reversal, quantity: parte });
+    restante = arredonda(restante - parte);
+  }
+
+  return partes;
 }

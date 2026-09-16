@@ -44,8 +44,8 @@
  * venda entre a exportação e o parse não é estornada.
  */
 
-import { excessReversed } from "./reversal-limit.js";
-import type { RecordedReversal } from "./reversal-limit.js";
+import { excessReversalShares } from "./reversal-limit.js";
+import type { TimedRecordedReversal } from "./reversal-limit.js";
 
 export interface SaleDeductionItem {
   readonly position: number;
@@ -158,17 +158,23 @@ export interface PreCaptureCutoffs {
    */
   readonly recordedSale: (idempotencyKey: string) => RecordedSale | undefined;
   /**
-   * `CANCELAMENTO_ML` e `DEVOLUCAO_ML` já gravados do pedido. O legado de antes do
-   * limite das reversões (`reversal-limit.ts`) pode ter revertido a mesma venda
-   * duas vezes, e esse excesso já anulou parte dela: o estorno é só o que sobra.
+   * `CANCELAMENTO_ML` e `DEVOLUCAO_ML` já gravados do pedido, com o instante de cada
+   * um. O legado de antes do limite das reversões (`reversal-limit.ts`) pode ter
+   * revertido a mesma venda duas vezes: a reversão a mais ganha a própria anulação
+   * junto com o estorno (`excessReversalEstornosOf`, D-351 §12).
    */
-  readonly recordedReversals: readonly RecordedReversal[];
+  readonly recordedReversals: readonly TimedRecordedReversal[];
 }
 
 export interface SaleDeductionResult {
   readonly deductions: StockMovementDraft[];
   /** Movimentos `ESTORNO_PRE_CAPTURA`, um por dedução anterior ou igual ao corte. */
   readonly preCaptureReversals: StockMovementDraft[];
+  /**
+   * Movimentos `ESTORNO_REVERSAO_EXCEDENTE`: a anulação da reversão a mais do legado
+   * das vendas estornadas agora, uma por reversão que passou da venda (D-351 §12).
+   */
+  readonly excessReversalEstornos: StockMovementDraft[];
 }
 
 /**
@@ -268,8 +274,9 @@ export function estornaVendaGravada(recorded: RecordedSale, cutoff: ErpCutoff): 
  * Estorna quando a "venda em" é até a EXPORTAÇÃO da planilha do SKU
  * (`exportedAt`: a planilha tem a venda) E a venda ainda não foi absorvida: o
  * rascunho novo sempre (vai ser gravado agora); a linha gravada, pela regra de
- * `estornaVendaGravada`. A quantidade é a da venda menos o excesso de reversão
- * do legado (`excessReversed`). Compartilhada com o cancelamento
+ * `estornaVendaGravada`. A quantidade é a da VENDA inteira, sempre: o excesso de
+ * reversão do legado não é descontado daqui, e sim anulado por movimento próprio
+ * (`excessReversalEstornosOf`, D-351 §12). Compartilhada com o cancelamento
  * (`computeCancellationMovements`), que precisa do mesmo par.
  *
  * O gate é `exportedAt`, e não `capturedAt` (reverificação de c48fb70,
@@ -296,27 +303,58 @@ export function preCaptureEstornoOf(
     return null;
   }
 
-  // O legado (antes do limite das reversões) pode ter gravado cancelamento E
-  // devolução da mesma venda: o que passou da quantidade vendida já anulou a
-  // venda. Estornar a venda inteira somaria a unidade de novo -- os pedidos
-  // 2000018212899604 e 2000018206306064 de produção iriam de +1 a +2.
-  const quantidade = Math.abs(base.qtyDelta) - excessReversed({ idempotencyKey: sale.idempotencyKey, qtyDelta: base.qtyDelta }, preCapture.recordedReversals);
-
-  if (quantidade <= 0) {
-    return null;
-  }
-
+  // A venda INTEIRA, com o instante dela. Até a reverificação de cc90baa o estorno
+  // descontava o excesso de reversão do legado (cancelamento E devolução da mesma
+  // venda) -- a conta só fechava com a venda e a reversão a mais do mesmo lado do
+  // corte do alvo. Com a venda gravada ATÉ o corte e as reversões depois dele
+  // (2000017792822486 de produção, KIT de 3 componentes), o estorno descontado
+  // caía fora do alvo e a reversão a mais ficava dentro: alvo +2 para real +1. O
+  // excesso agora é anulado com o instante da reversão (`excessReversalEstornosOf`).
   return {
     skuId: base.skuId,
-    qtyDelta: base.qtyDelta < 0 ? quantidade : -quantidade,
+    qtyDelta: -base.qtyDelta,
     idempotencyKey: estornoKeyOf(sale.idempotencyKey),
     occurredAt: base.occurredAt,
   };
 }
 
+/**
+ * A anulação da reversão a mais do legado de uma venda estornada (D-351 §12):
+ * `ESTORNO_REVERSAO_EXCEDENTE`, um por reversão que passou da quantidade vendida
+ * (`excessReversalShares`), com a quantidade que passou, o SKU da venda e o
+ * `occurred_at` ESPELHADO da reversão. Vazio quando nada passou (`R <= V`).
+ *
+ * **Por que um movimento próprio, e não o estorno menor.** A conta de cada pedido
+ * estornado, com V = unidades vendidas, R = revertidas e E = max(0, R - V), tem de
+ * dar +min(R, V) no saldo E no alvo de `compute_erp_target_balances` (que só soma
+ * `occurred_at > captured_at`). Estorno de V com o instante da venda e anulação de E
+ * com o instante da reversão a mais dão: saldo = -V + V + R - E = min(R, V); alvo =
+ * as linhas do lado de dentro, e cada par (venda, estorno) e (reversão, anulação)
+ * fica do mesmo lado do corte -- qualquer que seja o lado da venda. O estorno de
+ * V - E com o instante da venda só acertava o alvo quando venda e reversão a mais
+ * estavam do mesmo lado.
+ *
+ * **Tipo e chave.** O tipo diz a causa (não é estorno de venda, e quem lê
+ * `ESTORNO_PRE_CAPTURA` para achar venda estornada não o vê); a chave é a neutra,
+ * `estorno:<chave da reversão anulada>`, e o `UNIQUE` absorve a mesma anulação
+ * vinda do worker ou da F3.
+ */
+export function excessReversalEstornosOf(
+  sale: { readonly skuId: string; readonly qtyDelta: number; readonly idempotencyKey: string },
+  reversals: readonly TimedRecordedReversal[],
+): StockMovementDraft[] {
+  return excessReversalShares(sale, reversals).map((share) => ({
+    skuId: sale.skuId,
+    // O sinal da venda: a reversão devolveu unidade, a anulação a tira de novo.
+    qtyDelta: sale.qtyDelta < 0 ? -share.quantity : share.quantity,
+    idempotencyKey: estornoKeyOf(share.reversal.idempotencyKey),
+    occurredAt: share.reversal.occurredAt,
+  }));
+}
+
 export function computeSaleDeductions(order: SaleDeductionOrder, preCapture: PreCaptureCutoffs): SaleDeductionResult {
   if (!isValidSaleStatus(order.status)) {
-    return { deductions: [], preCaptureReversals: [] };
+    return { deductions: [], preCaptureReversals: [], excessReversalEstornos: [] };
   }
 
   const saleAt = saleInstant(order);
@@ -352,14 +390,23 @@ export function computeSaleDeductions(order: SaleDeductionOrder, preCapture: Pre
   }
 
   const preCaptureReversals: StockMovementDraft[] = [];
+  const excessReversalEstornos: StockMovementDraft[] = [];
 
   for (const deduction of deductions) {
     const estorno = preCaptureEstornoOf(deduction, saleAt, preCapture);
 
     if (estorno !== null) {
       preCaptureReversals.push(estorno);
+      // A reversão a mais sai com o estorno: sem ele, a venda não é estornada e o
+      // excesso fica como estava (o legado que a D-351 não compensa).
+      excessReversalEstornos.push(
+        ...excessReversalEstornosOf(
+          { skuId: estorno.skuId, qtyDelta: -estorno.qtyDelta, idempotencyKey: deduction.idempotencyKey },
+          preCapture.recordedReversals,
+        ),
+      );
     }
   }
 
-  return { deductions, preCaptureReversals };
+  return { deductions, preCaptureReversals, excessReversalEstornos };
 }

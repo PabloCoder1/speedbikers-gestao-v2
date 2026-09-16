@@ -1,7 +1,7 @@
--- D-351 -- dois vocabularios fechados ganham um valor cada, e o fan-out de notificacao
+-- D-351 -- dois vocabularios fechados ganham valores (dois tipos de movimento e uma fonte), e o fan-out de notificacao
 -- aprende a ignorar a carga da historia.
 --
--- 1. `stock_movements.movement_type` ganha `ESTORNO_PRE_CAPTURA`.
+-- 1. `stock_movements.movement_type` ganha `ESTORNO_PRE_CAPTURA` e `ESTORNO_REVERSAO_EXCEDENTE`.
 --
 --    O par de uma venda cuja "venda em" (`date_closed ?? date_created`) e anterior ou
 --    igual ao corte do snapshot do UpSeller: a planilha ja descontou essa venda. O worker
@@ -14,15 +14,23 @@
 --    sistema (`20260821200000`). E nao `AJUSTE_RECONCILIACAO`: esse fica FORA do alvo, e
 --    a venda ficaria dentro.
 --
+--    E `ESTORNO_REVERSAO_EXCEDENTE` (reverificacao de cc90baa, D-351 §12): a anulacao da
+--    reversao a mais de uma venda estornada -- o legado de D-052/D-057 gravou cancelamento E
+--    devolucao da mesma venda. Tipo proprio, e nao `ESTORNO_PRE_CAPTURA` negativo: quem le
+--    `ESTORNO_PRE_CAPTURA` (o worker e a F3) o trata como "esta venda ja foi estornada", e a
+--    anulacao nao e estorno de venda nenhuma. Chave neutra `estorno:<chave da reversao>`,
+--    `occurred_at` espelhado da reversao, `created_by` nulo.
+--
 --    Nada mais le a lista: `get_stock_movements` e `get_stock_movements_summary` nao
---    validam o tipo, e a web ganha o rotulo e o filtro no mesmo commit.
+--    validam o tipo (o resumo conta entrada e saida pelo sinal), e a web ganha o rotulo e o
+--    filtro no mesmo commit.
 alter table public.stock_movements drop constraint stock_movements_movement_type_check;
 
 alter table public.stock_movements add constraint stock_movements_movement_type_check check (movement_type in (
   'ENTRADA_NFE', 'SAIDA_NFE', 'VENDA_ML', 'CANCELAMENTO_ML', 'DEVOLUCAO_ML',
   'AJUSTE_MANUAL', 'AJUSTE_RECONCILIACAO', 'TRANSFERENCIA',
   'RESERVA', 'LIBERACAO_RESERVA', 'ENTRADA_TRANSITO', 'RECEBIMENTO_TRANSITO',
-  'ESTORNO_PRE_CAPTURA'
+  'ESTORNO_PRE_CAPTURA', 'ESTORNO_REVERSAO_EXCEDENTE'
 ));
 
 -- 2. `domain_events.source` ganha `backfill`.

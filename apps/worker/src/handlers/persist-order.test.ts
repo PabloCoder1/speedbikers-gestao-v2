@@ -155,7 +155,14 @@ interface FakeDbOptions {
    * `DEVOLUCAO_ML` gravadas que `get_order_return_movements` devolve
    * (verificação de e6fda07, ALTA-1). `order_id` padrão, o pedido perguntado.
    */
-  recordedReturns?: { order_id?: string; sku_id: string; qty_delta: number; idempotency_key: string }[];
+  recordedReturns?: {
+    order_id?: string;
+    sku_id: string;
+    qty_delta: number;
+    idempotency_key: string;
+    /** Obrigatório: a RPC o devolve desde D-351 §12. `null` simula a linha sem o instante. */
+    occurred_at: string | null;
+  }[];
   /** Simula falha da leitura das devoluções gravadas. */
   returnsReadError?: boolean;
   /**
@@ -2008,7 +2015,13 @@ describe("persistOrder — revisão de D-351", () => {
         orders: [{ id: 7, status: "cancelled" }],
         stock_movements: [venda],
         "rpc:get_order_return_movements": [
-          { order_id: "7", sku_id: "sku-1", qty_delta: 1, idempotency_key: "devolucao:5570995770:venda:7:0" },
+          {
+            order_id: "7",
+            sku_id: "sku-1",
+            qty_delta: 1,
+            idempotency_key: "devolucao:5570995770:venda:7:0",
+            occurred_at: "2026-09-21T09:00:00.000Z",
+          },
         ],
       });
 
@@ -2032,7 +2045,7 @@ describe("persistOrder — verificação de e6fda07", () => {
   }
 
   describe("ALTA-1: cancelamento e devolução revertem a MESMA venda — a unidade volta ao estoque no máximo uma vez", () => {
-    it("2000018212899604 de produção (VENDA do worker antigo + DEVOLUCAO + CANCELAMENTO): nenhum estorno e nenhuma reversão nova — o líquido fica +1", async () => {
+    it("2000018212899604 de produção (VENDA do worker antigo + DEVOLUCAO + CANCELAMENTO): o estorno da venda inteira e a anulação do cancelamento, nenhuma reversão nova — o líquido fica +1 (D-351 §12)", async () => {
       const CANCELADO_EM = "2026-09-15T08:40:07.000Z";
       const { db, inserted, rpcCalls } = fakeDb({
         ...COM_VINCULO,
@@ -2053,7 +2066,9 @@ describe("persistOrder — verificação de e6fda07", () => {
             occurred_at: CANCELADO_EM,
           },
         ],
-        recordedReturns: [{ sku_id: "sku-1", qty_delta: 1, idempotency_key: `devolucao:5570995770:${VENDA}` }],
+        recordedReturns: [
+          { sku_id: "sku-1", qty_delta: 1, idempotency_key: `devolucao:5570995770:${VENDA}`, occurred_at: "2026-09-15T08:39:04.000Z" },
+        ],
         cutoffs: { "sku-1": CORTE },
       });
       const lines: string[] = [];
@@ -2070,8 +2085,12 @@ describe("persistOrder — verificação de e6fda07", () => {
         lines,
       );
 
-      expect(movimentos(inserted)).toEqual([]);
+      expect(linhas(inserted)).toEqual([
+        ["ESTORNO_PRE_CAPTURA", `estorno:${VENDA}`, 1, "2026-09-15T01:50:58.000Z"],
+        ["ESTORNO_REVERSAO_EXCEDENTE", `estorno:cancelamento:${VENDA}`, -1, CANCELADO_EM],
+      ]);
       expect(lines.join()).toContain("cancellation_reversal_ja_revertida");
+      expect(lines.join()).toContain("sale_deduction_reversao_excedente_anulada");
       expect(rpcCalls).toContainEqual({
         fn: "get_order_return_movements",
         args: { p_organization_id: CONTEXT.organizationId, p_order_ids: [PEDIDO] },
@@ -2091,7 +2110,9 @@ describe("persistOrder — verificação de e6fda07", () => {
             created_at: "2026-09-20T10:00:01.000Z",
           },
         ],
-        recordedReturns: [{ sku_id: "sku-1", qty_delta: 1, idempotency_key: `devolucao:5570995770:${VENDA}` }],
+        recordedReturns: [
+          { sku_id: "sku-1", qty_delta: 1, idempotency_key: `devolucao:5570995770:${VENDA}`, occurred_at: "2026-09-15T08:39:04.000Z" },
+        ],
         cutoffs: { "sku-1": CORTE },
       });
       const lines: string[] = [];
@@ -2433,3 +2454,339 @@ describe("persistOrder — reverificação de 60c7a6a", () => {
     });
   });
 });
+
+/**
+ * Reverificação de cc90baa (D-351 §12, F3-EXCESSO-FORA-DO-ALVO). O estorno descontava o
+ * excesso de reversão do legado (cancelamento E devolução da mesma venda); com a venda
+ * gravada ATÉ o corte e as reversões depois dele, o alvo ficava +1. Agora o estorno é a
+ * venda inteira e a reversão a mais sai como `ESTORNO_REVERSAO_EXCEDENTE`, com o instante
+ * dela. Os instantes são os de produção.
+ */
+describe("persistOrder — a reversão a mais do legado anulada com o instante dela (D-351 §12)", () => {
+  const CORTE_ALVO = Date.parse(CORTE);
+
+  interface Linha {
+    readonly sku_id: string;
+    readonly qty_delta: number;
+    readonly occurred_at: string;
+  }
+
+  /** Saldo e parte no alvo de `compute_erp_target_balances` de um SKU. */
+  function saldoEAlvo(linhas: readonly Linha[], skuId: string): { saldo: number; alvo: number } {
+    const doSku = linhas.filter((l) => l.sku_id === skuId);
+
+    return {
+      saldo: doSku.reduce((soma, l) => soma + l.qty_delta, 0),
+      alvo: doSku.filter((l) => Date.parse(l.occurred_at) > CORTE_ALVO).reduce((soma, l) => soma + l.qty_delta, 0),
+    };
+  }
+
+  const gravadas = (inserted: { table: string; rows: unknown[] }[]) =>
+    movimentos(inserted).map((m) => [m.movement_type, m.idempotency_key, m.qty_delta, m.occurred_at, m.source_type, m.source_id]);
+
+  describe("2000017792822486: KIT de 3 componentes, VENDA do worker antigo ATÉ o corte, devolução e cancelamento depois", () => {
+    const PEDIDO = 2000017792822486;
+    const COMPONENTES = ["comp-8e9f38e7", "comp-b9fdfa64", "comp-c5af7f1f"];
+    const CLAIM = "5571421181";
+    const VENDIDA_EM = "2026-09-14T18:11:20.000Z";
+    const DEVOLVIDA_EM = "2026-09-16T00:12:31.170Z";
+    const CANCELADA_EM = "2026-09-16T12:58:04.000Z";
+    const chave = (componente: string) => `venda:${String(PEDIDO)}:0:${componente}`;
+    const PEDIDO_CANCELADO: ParsedOrder = {
+      ...BASE_ORDER,
+      id: PEDIDO,
+      status: "cancelled",
+      date_created: "2026-08-06T18:20:00.000Z",
+      date_closed: "2026-08-06T18:25:09.000Z",
+      date_last_updated: CANCELADA_EM,
+      last_updated: CANCELADA_EM,
+    };
+    const VENDAS = COMPONENTES.map((componente) => ({
+      sku_id: componente,
+      qty_delta: -1,
+      idempotency_key: chave(componente),
+      occurred_at: VENDIDA_EM,
+      created_at: "2026-09-14T19:00:06.564Z",
+    }));
+    const CANCELAMENTOS = COMPONENTES.map((componente) => ({
+      sku_id: componente,
+      qty_delta: 1,
+      idempotency_key: `cancelamento:${chave(componente)}`,
+      movement_type: "CANCELAMENTO_ML",
+      occurred_at: CANCELADA_EM,
+      created_at: "2026-09-16T12:58:06.000Z",
+    }));
+    const DEVOLUCOES = COMPONENTES.map((componente) => ({
+      sku_id: componente,
+      qty_delta: 1,
+      idempotency_key: `devolucao:${CLAIM}:${chave(componente)}`,
+      occurred_at: DEVOLVIDA_EM,
+    }));
+    const KIT = {
+      linkForItem: () => ({ id: "link-kit", sku_id: "kit-1" }),
+      skuKindById: (skuId: string) => (skuId === "kit-1" ? ("KIT" as const) : ("PRODUTO" as const)),
+      componentsByKitId: () => COMPONENTES.map((component_sku_id) => ({ component_sku_id, quantity: 1 })),
+      cutoffs: Object.fromEntries(COMPONENTES.map((componente) => [componente, CORTE])),
+    };
+
+    it("webhook: um estorno inteiro por componente com o instante da venda, e a anulação do cancelamento com o instante dele -- nenhum CANCELAMENTO_ML novo", async () => {
+      const { db, inserted } = fakeDb({
+        ...KIT,
+        previousStatus: "cancelled",
+        existingSaleMovements: [...VENDAS, ...CANCELAMENTOS],
+        recordedReturns: DEVOLUCOES,
+      });
+      const lines: string[] = [];
+
+      await run(db, PEDIDO_CANCELADO, lines);
+
+      expect(gravadas(inserted)).toEqual([
+        ...COMPONENTES.map((componente) => ["ESTORNO_PRE_CAPTURA", `estorno:${chave(componente)}`, 1, VENDIDA_EM, "ORDER", String(PEDIDO)]),
+        ...COMPONENTES.map((componente) => [
+          "ESTORNO_REVERSAO_EXCEDENTE",
+          `estorno:cancelamento:${chave(componente)}`,
+          -1,
+          CANCELADA_EM,
+          "ORDER",
+          String(PEDIDO),
+        ]),
+      ]);
+      expect(lines.join()).toContain("sale_deduction_reversao_excedente_anulada");
+    });
+
+    it("saldo e alvo em +1 por componente depois das escritas -- o real; sem a anulação o alvo ficava +2", async () => {
+      const { db, inserted } = fakeDb({
+        ...KIT,
+        previousStatus: "cancelled",
+        existingSaleMovements: [...VENDAS, ...CANCELAMENTOS],
+        recordedReturns: DEVOLUCOES,
+      });
+
+      await run(db, PEDIDO_CANCELADO);
+
+      const antes: Linha[] = [...VENDAS, ...CANCELAMENTOS, ...DEVOLUCOES];
+      const depois: Linha[] = [...antes, ...movimentos(inserted)];
+
+      for (const componente of COMPONENTES) {
+        expect(saldoEAlvo(depois, componente)).toEqual({ saldo: 1, alvo: 1 });
+        expect(saldoEAlvo(antes, componente)).toEqual({ saldo: 1, alvo: 2 });
+      }
+    });
+
+    it("retry com os estornos já gravados (a anulação falhou no webhook): só a anulação sai", async () => {
+      const { db, inserted } = fakeDb({
+        ...KIT,
+        previousStatus: "cancelled",
+        existingSaleMovements: [
+          ...VENDAS,
+          ...CANCELAMENTOS,
+          ...COMPONENTES.map((componente) => ({
+            sku_id: componente,
+            qty_delta: 1,
+            idempotency_key: `estorno:${chave(componente)}`,
+            movement_type: "ESTORNO_PRE_CAPTURA",
+            occurred_at: VENDIDA_EM,
+          })),
+        ],
+        recordedReturns: DEVOLUCOES,
+      });
+
+      await run(db, PEDIDO_CANCELADO);
+
+      expect(gravadas(inserted).map((linha) => [linha[0], linha[1]])).toEqual(
+        COMPONENTES.map((componente) => ["ESTORNO_REVERSAO_EXCEDENTE", `estorno:cancelamento:${chave(componente)}`]),
+      );
+    });
+
+    it("em lote: a página lê o instante das devoluções pela RPC e grava estorno e anulação no mesmo descarregamento", async () => {
+      const porTabela: Record<string, unknown[]> = {
+        orders: [{ id: PEDIDO, status: "cancelled" }],
+        sku_listing_links: [
+          {
+            id: "link-kit",
+            sku_id: "kit-1",
+            item_id: BASE_ORDER.order_items[0]?.item.id,
+            variation_id: null,
+            skus: { kind: "KIT", sku_components: COMPONENTES.map((component_sku_id) => ({ component_sku_id, quantity: 1 })) },
+          },
+        ],
+        stock_movements: [...VENDAS, ...CANCELAMENTOS].map((row) => ({
+          source_id: String(PEDIDO),
+          movement_type: "VENDA_ML",
+          ...row,
+        })),
+        "rpc:get_order_return_movements": DEVOLUCOES.map((row) => ({ order_id: String(PEDIDO), ...row })),
+      };
+      const writes = await paginaDoLote(porTabela, [PEDIDO_CANCELADO]);
+
+      expect(writes.map((m) => [m.movementType, m.draft.idempotencyKey, m.draft.qtyDelta, m.draft.occurredAt.toISOString()])).toEqual([
+        ...COMPONENTES.map((componente) => ["ESTORNO_PRE_CAPTURA", `estorno:${chave(componente)}`, 1, VENDIDA_EM]),
+        ...COMPONENTES.map((componente) => ["ESTORNO_REVERSAO_EXCEDENTE", `estorno:cancelamento:${chave(componente)}`, -1, CANCELADA_EM]),
+      ]);
+    });
+
+    it("em lote: devolução gravada sem occurred_at (a RPC na forma de cc90baa) LANÇA no prefetch, antes de qualquer escrita", async () => {
+      const porTabela: Record<string, unknown[]> = {
+        orders: [{ id: PEDIDO, status: "cancelled" }],
+        stock_movements: VENDAS.map((row) => ({ source_id: String(PEDIDO), movement_type: "VENDA_ML", ...row })),
+        "rpc:get_order_return_movements": DEVOLUCOES.map((row) => ({
+          order_id: String(PEDIDO),
+          sku_id: row.sku_id,
+          qty_delta: row.qty_delta,
+          idempotency_key: row.idempotency_key,
+        })),
+      };
+
+      await expect(paginaDoLote(porTabela, [PEDIDO_CANCELADO])).rejects.toThrow(/sem occurred_at legivel/);
+    });
+  });
+
+  describe("contraprova, 2000018206306064: VENDA do worker antigo DENTRO do alvo", () => {
+    const PEDIDO = 2000018206306064;
+    const VENDA = `venda:${String(PEDIDO)}:0`;
+    const VENDIDA_EM = "2026-09-15T01:32:27.000Z";
+    const DEVOLVIDA_EM = "2026-09-15T10:58:11.000Z";
+    const CANCELADA_EM = "2026-09-15T10:58:16.000Z";
+
+    function banco(recordedReturns: NonNullable<FakeDbOptions["recordedReturns"]>, cancelamentoEm: string | null = CANCELADA_EM) {
+      return fakeDb({
+        linkForItem: () => ({ id: "link-1", sku_id: "sku-1" }),
+        previousStatus: "cancelled",
+        existingSaleMovements: [
+          { sku_id: "sku-1", qty_delta: -1, idempotency_key: VENDA, occurred_at: VENDIDA_EM, created_at: "2026-09-15T02:00:05.174Z" },
+          {
+            sku_id: "sku-1",
+            qty_delta: 1,
+            idempotency_key: `cancelamento:${VENDA}`,
+            movement_type: "CANCELAMENTO_ML",
+            ...(cancelamentoEm === null ? {} : { occurred_at: cancelamentoEm }),
+          },
+        ],
+        recordedReturns,
+        cutoffs: { "sku-1": CORTE },
+      });
+    }
+
+    const PEDIDO_CANCELADO: ParsedOrder = {
+      ...BASE_ORDER,
+      id: PEDIDO,
+      status: "cancelled",
+      date_created: "2026-08-31T15:10:00.000Z",
+      date_closed: "2026-08-31T15:15:22.000Z",
+      date_last_updated: CANCELADA_EM,
+    };
+
+    it("o estorno inteiro e a anulação do cancelamento: saldo e alvo em +1, os mesmos números da regra de cc90baa", async () => {
+      const devolucoes = [{ sku_id: "sku-1", qty_delta: 1, idempotency_key: `devolucao:5570000000:${VENDA}`, occurred_at: DEVOLVIDA_EM }];
+      const { db, inserted } = banco(devolucoes);
+
+      await run(db, PEDIDO_CANCELADO);
+
+      expect(gravadas(inserted)).toEqual([
+        ["ESTORNO_PRE_CAPTURA", `estorno:${VENDA}`, 1, VENDIDA_EM, "ORDER", String(PEDIDO)],
+        ["ESTORNO_REVERSAO_EXCEDENTE", `estorno:cancelamento:${VENDA}`, -1, CANCELADA_EM, "ORDER", String(PEDIDO)],
+      ]);
+
+      const linhas: Linha[] = [
+        { sku_id: "sku-1", qty_delta: -1, occurred_at: VENDIDA_EM },
+        { sku_id: "sku-1", qty_delta: 1, occurred_at: CANCELADA_EM },
+        { sku_id: "sku-1", qty_delta: 1, occurred_at: DEVOLVIDA_EM },
+        ...movimentos(inserted),
+      ];
+
+      expect(saldoEAlvo(linhas, "sku-1")).toEqual({ saldo: 1, alvo: 1 });
+    });
+
+    it("devolução da RPC com occurred_at nulo LANÇA antes de qualquer escrita", async () => {
+      const { db, inserted, upserted } = banco([
+        { sku_id: "sku-1", qty_delta: 1, idempotency_key: `devolucao:5570000000:${VENDA}`, occurred_at: null },
+      ]);
+
+      await expect(run(db, PEDIDO_CANCELADO)).rejects.toThrow(/devolucao:5570000000:venda:2000018206306064:0 sem occurred_at legivel/);
+      expect(upserted).toEqual([]);
+      expect(inserted).toEqual([]);
+    });
+
+    it("cancelamento gravado com occurred_at ilegível LANÇA na leitura", async () => {
+      const devolucoes = [{ sku_id: "sku-1", qty_delta: 1, idempotency_key: `devolucao:5570000000:${VENDA}`, occurred_at: DEVOLVIDA_EM }];
+      const { db, inserted } = banco(devolucoes, "ontem");
+
+      await expect(run(db, PEDIDO_CANCELADO)).rejects.toThrow(/cancelamento:venda:2000018206306064:0 sem occurred_at legivel/);
+      expect(inserted).toEqual([]);
+    });
+  });
+
+  it("pedido PAGO com duas devoluções da mesma venda (dois claims), VENDA até o corte: estorno inteiro e anulação da devolução mais recente", async () => {
+    const PEDIDO = 2000018000000003;
+    const VENDA = `venda:${String(PEDIDO)}:0`;
+    const { db, inserted } = fakeDb({
+      linkForItem: () => ({ id: "link-1", sku_id: "sku-1" }),
+      previousStatus: "paid",
+      existingSaleMovements: [
+        { sku_id: "sku-1", qty_delta: -1, idempotency_key: VENDA, occurred_at: "2026-09-10T12:00:00.000Z", created_at: "2026-09-15T10:00:00.000Z" },
+      ],
+      recordedReturns: [
+        { sku_id: "sku-1", qty_delta: 1, idempotency_key: `devolucao:5570000011:${VENDA}`, occurred_at: "2026-09-15T12:00:00.000Z" },
+        { sku_id: "sku-1", qty_delta: 1, idempotency_key: `devolucao:5570000012:${VENDA}`, occurred_at: "2026-09-16T12:00:00.000Z" },
+      ],
+      cutoffs: { "sku-1": CORTE },
+    });
+
+    await run(db, {
+      ...BASE_ORDER,
+      id: PEDIDO,
+      status: "paid",
+      date_created: "2026-09-10T11:59:00.000Z",
+      date_closed: "2026-09-10T12:00:00.000Z",
+      date_last_updated: "2026-09-16T12:00:05.000Z",
+    });
+
+    expect(gravadas(inserted)).toEqual([
+      ["VENDA_ML", VENDA, -1, "2026-09-10T12:00:00.000Z", "ORDER", String(PEDIDO)],
+      ["ESTORNO_PRE_CAPTURA", `estorno:${VENDA}`, 1, "2026-09-10T12:00:00.000Z", "ORDER", String(PEDIDO)],
+      ["ESTORNO_REVERSAO_EXCEDENTE", `estorno:devolucao:5570000012:${VENDA}`, -1, "2026-09-16T12:00:00.000Z", "ORDER", String(PEDIDO)],
+    ]);
+  });
+});
+
+/** A página inteira pelo caminho do lote (prefetch + acumulador), com as leituras montadas por tabela. */
+async function paginaDoLote(porTabela: Record<string, unknown[]>, pagina: ParsedOrder[]) {
+  const cadeia = (data: unknown[]) => {
+    const self = {
+      select: () => self,
+      eq: () => self,
+      in: () => self,
+      then: <R>(onFulfilled: (value: { data: unknown[]; error: null }) => R) => Promise.resolve({ data, error: null }).then(onFulfilled),
+    };
+
+    return self;
+  };
+
+  const db = {
+    from: (table: string) => cadeia(porTabela[table] ?? []),
+    rpc: (fn: string, args: { p_sku_ids: string[]; p_order_ids: string[] }) => {
+      if (fn === "get_order_return_movements") {
+        const pedidos = new Set(args.p_order_ids);
+
+        return Promise.resolve({
+          data: (porTabela["rpc:get_order_return_movements"] ?? []).filter((row) => pedidos.has((row as { order_id: string }).order_id)),
+          error: null,
+        });
+      }
+
+      return Promise.resolve({
+        data: args.p_sku_ids.map((id) => ({ sku_id: id, captured_at: CORTE, imported_at: IMPORTADO_EM, reconciled_at: null, exported_at: CORTE })),
+        error: null,
+      });
+    },
+  } as unknown as Parameters<typeof prefetchOrders>[0];
+
+  const prefetch = await prefetchOrders(db, CONTEXT, pagina);
+  const writes = novaPagina(CONTEXT.organizationId);
+
+  for (const order of pagina) {
+    await persistOrder(db, CONTEXT, order, createLogger({}, { sink: () => undefined }), prefetch, writes);
+  }
+
+  return writes.movements;
+}

@@ -20,6 +20,11 @@
 --    `like 'devolucao:%:venda:<pedido>:%'`, que nenhum indice atende; aqui o pedido e o
 --    quarto campo da chave, com indice de expressao parcial. Formato conferido em
 --    2026-09-15: nenhuma devolucao fora dele em producao (2) nem no Dev (580).
+--
+--    Devolve tambem o `occurred_at` (reverificacao de cc90baa, D-351 §12): a reversao a mais
+--    do legado (cancelamento E devolucao da mesma venda) e anulada com o instante DELA, e e
+--    esse instante que diz de que lado do corte de `compute_erp_target_balances` a anulacao
+--    cai.
 
 create or replace function public.compute_erp_target_balances(p_organization_id uuid)
 returns table (
@@ -91,7 +96,7 @@ revoke all on function public.compute_erp_target_balances(uuid) from public, ano
 grant execute on function public.compute_erp_target_balances(uuid) to service_role;
 
 create function public.get_order_return_movements(p_organization_id uuid, p_order_ids text[])
-returns table (order_id text, sku_id uuid, qty_delta numeric, idempotency_key text)
+returns table (order_id text, sku_id uuid, qty_delta numeric, idempotency_key text, occurred_at timestamptz)
 language sql
 stable
 security invoker
@@ -100,7 +105,8 @@ as $$
   select split_part(m.idempotency_key, ':', 4) as order_id,
          m.sku_id,
          m.qty_delta,
-         m.idempotency_key
+         m.idempotency_key,
+         m.occurred_at
   from public.stock_movements m
   where m.organization_id = p_organization_id
     and m.movement_type = 'DEVOLUCAO_ML'
@@ -108,7 +114,7 @@ as $$
 $$;
 
 comment on function public.get_order_return_movements(uuid, text[]) is
-  'DEVOLUCAO_ML gravadas dos pedidos pedidos, pelo pedido de dentro da chave (devolucao:<claim>:venda:<pedido>:...). O worker as le antes de gravar um cancelamento ou uma devolucao: a unidade vendida volta ao estoque no maximo uma vez (D-351).';
+  'DEVOLUCAO_ML gravadas dos pedidos pedidos, pelo pedido de dentro da chave (devolucao:<claim>:venda:<pedido>:...). O worker as le antes de gravar um cancelamento ou uma devolucao: a unidade vendida volta ao estoque no maximo uma vez; o occurred_at e o instante que a anulacao da reversao a mais espelha (D-351).';
 
 revoke all on function public.get_order_return_movements(uuid, text[]) from public, anon, authenticated;
 grant execute on function public.get_order_return_movements(uuid, text[]) to service_role;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { RecordedReversal } from "./reversal-limit.js";
+import type { TimedRecordedReversal } from "./reversal-limit.js";
 import {
   alignedAt,
   computeSaleDeductions,
@@ -35,7 +35,7 @@ function cortes(
   gravadas: Record<string, RecordedSale> = {},
   importedAt: Date = IMPORTADO_EM,
   reconciledAt: Date | null = null,
-  recordedReversals: RecordedReversal[] = [],
+  recordedReversals: TimedRecordedReversal[] = [],
   /** A exportação que a planilha retrata; `null` = o próprio corte (o caso de todo snapshot corrigido). */
   exportedAt: Date | null = null,
 ): PreCaptureCutoffs {
@@ -63,7 +63,7 @@ describe("computeSaleDeductions", () => {
         items: [{ position: 0, quantity: 1, skuId: "sku-1", skuKind: "PRODUTO", components: [] }],
       });
 
-      expect(computeSaleDeductions(order, SEM_CORTE)).toEqual({ deductions: [], preCaptureReversals: [] });
+      expect(computeSaleDeductions(order, SEM_CORTE)).toEqual({ deductions: [], preCaptureReversals: [], excessReversalEstornos: [] });
     },
   );
 
@@ -397,47 +397,129 @@ describe("computeSaleDeductions — a venda gravada e o último alinhamento do s
  * Verificação de e6fda07, ALTA-1: o legado gravou cancelamento E devolução da
  * mesma venda. O excesso já anulou a venda; o estorno é só o que sobra.
  */
-describe("computeSaleDeductions — estorno de venda com reversão em excesso do legado", () => {
+describe("computeSaleDeductions — estorno de venda com reversão em excesso do legado (D-351 §12)", () => {
   const PRODUTO: SaleDeductionOrder["items"] = [
     { position: 0, quantity: 1, skuId: "sku-a", skuKind: "PRODUTO", components: [] },
   ];
   const CORTE = new Date("2026-09-14T18:42:00.000Z");
   const pedido = baseOrder({ dateClosed: new Date("2026-08-31T21:05:29.000Z"), items: PRODUTO });
+  const VENDIDA_EM = new Date("2026-09-15T01:50:58.000Z");
   // 2000018212899604 de produção: gravada pelo worker antigo às 02:00 de 09-15 com a data da atualização.
   const GRAVADA: Record<string, RecordedSale> = {
     "venda:9900001001:0": {
       skuId: "sku-a",
       qtyDelta: -1,
-      occurredAt: new Date("2026-09-15T01:50:58.000Z"),
+      occurredAt: VENDIDA_EM,
       recordedAt: new Date("2026-09-15T02:00:05.948Z"),
     },
   };
-  const DEVOLUCAO: RecordedReversal = { idempotencyKey: "devolucao:5570995770:venda:9900001001:0", quantity: 1 };
-  const CANCELAMENTO: RecordedReversal = { idempotencyKey: "cancelamento:venda:9900001001:0", quantity: 1 };
+  const DEVOLVIDA_EM = new Date("2026-09-15T08:39:04.000Z");
+  const CANCELADA_EM = new Date("2026-09-15T08:40:07.000Z");
+  const DEVOLUCAO: TimedRecordedReversal = {
+    idempotencyKey: "devolucao:5570995770:venda:9900001001:0",
+    quantity: 1,
+    occurredAt: DEVOLVIDA_EM,
+  };
+  const CANCELAMENTO: TimedRecordedReversal = { idempotencyKey: "cancelamento:venda:9900001001:0", quantity: 1, occurredAt: CANCELADA_EM };
 
-  it("devolução E cancelamento gravados: nenhum estorno — o líquido do pedido já é +1, e o estorno o levaria a +2", () => {
+  it("devolução E cancelamento gravados: o estorno da venda inteira, e a anulação da reversão mais recente (o cancelamento) com o instante dela -- o líquido fica +1", () => {
     const result = computeSaleDeductions(pedido, cortes({ "sku-a": CORTE }, GRAVADA, IMPORTADO_EM, null, [DEVOLUCAO, CANCELAMENTO]));
 
-    expect(result.preCaptureReversals).toEqual([]);
+    expect(result.preCaptureReversals).toEqual([
+      { skuId: "sku-a", qtyDelta: 1, idempotencyKey: "estorno:venda:9900001001:0", occurredAt: VENDIDA_EM },
+    ]);
+    expect(result.excessReversalEstornos).toEqual([
+      { skuId: "sku-a", qtyDelta: -1, idempotencyKey: "estorno:cancelamento:venda:9900001001:0", occurredAt: CANCELADA_EM },
+    ]);
+    // -1 (venda) +1 (devolução) +1 (cancelamento) +1 (estorno) -1 (anulação).
+    expect(-1 + 1 + 1 + [...result.preCaptureReversals, ...result.excessReversalEstornos].reduce((soma, m) => soma + m.qtyDelta, 0)).toBe(1);
   });
 
-  it("só a devolução gravada: o estorno inteiro", () => {
+  it("só a devolução gravada (R = V): o estorno inteiro, sem anulação", () => {
     const result = computeSaleDeductions(pedido, cortes({ "sku-a": CORTE }, GRAVADA, IMPORTADO_EM, null, [DEVOLUCAO]));
 
     expect(result.preCaptureReversals.map((e) => e.qtyDelta)).toEqual([1]);
+    expect(result.excessReversalEstornos).toEqual([]);
   });
 
-  it("excesso parcial: o estorno é a venda menos o excesso", () => {
+  it("R < V (3 vendidas, 1 devolvida): o estorno inteiro, sem anulação -- nada muda", () => {
+    const tres: Record<string, RecordedSale> = { "venda:9900001001:0": { ...GRAVADA["venda:9900001001:0"], qtyDelta: -3 } as RecordedSale };
+    const result = computeSaleDeductions(pedido, cortes({ "sku-a": CORTE }, tres, IMPORTADO_EM, null, [DEVOLUCAO]));
+
+    expect(result.preCaptureReversals.map((e) => e.qtyDelta)).toEqual([3]);
+    expect(result.excessReversalEstornos).toEqual([]);
+  });
+
+  it("excesso parcial (3 vendidas, cancelamento de 3 e devolução de 1): o estorno é a venda INTEIRA, e a anulação é o que passou, na reversão mais recente", () => {
     const tres: Record<string, RecordedSale> = { "venda:9900001001:0": { ...GRAVADA["venda:9900001001:0"], qtyDelta: -3 } as RecordedSale };
     const result = computeSaleDeductions(
       pedido,
       cortes({ "sku-a": CORTE }, tres, IMPORTADO_EM, null, [
-        { idempotencyKey: "cancelamento:venda:9900001001:0", quantity: 3 },
-        { idempotencyKey: "devolucao:1:venda:9900001001:0", quantity: 1 },
+        { idempotencyKey: "cancelamento:venda:9900001001:0", quantity: 3, occurredAt: DEVOLVIDA_EM },
+        { idempotencyKey: "devolucao:1:venda:9900001001:0", quantity: 1, occurredAt: CANCELADA_EM },
       ]),
     );
 
-    expect(result.preCaptureReversals.map((e) => e.qtyDelta)).toEqual([2]);
+    expect(result.preCaptureReversals.map((e) => e.qtyDelta)).toEqual([3]);
+    expect(result.excessReversalEstornos.map((e) => [e.idempotencyKey, e.qtyDelta, e.occurredAt])).toEqual([
+      ["estorno:devolucao:1:venda:9900001001:0", -1, CANCELADA_EM],
+    ]);
+  });
+
+  it("KIT de 3 componentes com a VENDA do worker antigo ATÉ o corte (2000017792822486): uma anulação por componente, com o instante do cancelamento", () => {
+    const componentes = ["comp-a", "comp-b", "comp-c"];
+    const chave = (componente: string) => `venda:9900001001:0:${componente}`;
+    const vendidaAntes = new Date("2026-09-14T18:11:20.000Z");
+    const canceladaEm = new Date("2026-09-16T12:58:04.000Z");
+    const kit = baseOrder({
+      dateClosed: new Date("2026-08-06T18:25:09.000Z"),
+      items: [
+        {
+          position: 0,
+          quantity: 1,
+          skuId: "kit",
+          skuKind: "KIT",
+          components: componentes.map((componentSkuId) => ({ componentSkuId, quantity: 1 })),
+        },
+      ],
+    });
+    const gravadas = Object.fromEntries(
+      componentes.map((componente) => [
+        chave(componente),
+        { skuId: componente, qtyDelta: -1, occurredAt: vendidaAntes, recordedAt: new Date("2026-09-14T19:00:06.564Z") },
+      ]),
+    );
+    const reversoes = componentes.flatMap((componente) => [
+      { idempotencyKey: `devolucao:5571421181:${chave(componente)}`, quantity: 1, occurredAt: new Date("2026-09-16T00:12:31.170Z") },
+      { idempotencyKey: `cancelamento:${chave(componente)}`, quantity: 1, occurredAt: canceladaEm },
+    ]);
+
+    const result = computeSaleDeductions(
+      kit,
+      cortes(Object.fromEntries(componentes.map((c) => [c, CORTE])), gravadas, new Date("2026-09-14T18:44:19.581Z"), null, reversoes),
+    );
+
+    expect(result.preCaptureReversals.map((e) => [e.idempotencyKey, e.qtyDelta, e.occurredAt])).toEqual(
+      componentes.map((componente) => [`estorno:${chave(componente)}`, 1, vendidaAntes]),
+    );
+    expect(result.excessReversalEstornos.map((e) => [e.skuId, e.idempotencyKey, e.qtyDelta, e.occurredAt])).toEqual(
+      componentes.map((componente) => [componente, `estorno:cancelamento:${chave(componente)}`, -1, canceladaEm]),
+    );
+  });
+
+  it("venda absorvida (gravada antes do import): sem estorno, e sem anulação", () => {
+    const absorvida: Record<string, RecordedSale> = {
+      "venda:9900001001:0": {
+        skuId: "sku-a",
+        qtyDelta: -1,
+        occurredAt: new Date("2026-09-14T18:00:00.000Z"),
+        recordedAt: new Date("2026-09-14T18:00:03.000Z"),
+      },
+    };
+    const result = computeSaleDeductions(pedido, cortes({ "sku-a": CORTE }, absorvida, IMPORTADO_EM, null, [DEVOLUCAO, CANCELAMENTO]));
+
+    expect(result.preCaptureReversals).toEqual([]);
+    expect(result.excessReversalEstornos).toEqual([]);
   });
 });
 

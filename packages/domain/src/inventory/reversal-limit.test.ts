@@ -2,13 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   cancellationKeyOf,
+  excessReversalShares,
   excessReversed,
   remainingToReverse,
   returnKeyOf,
   revertedSaleKeyOf,
   reversedQuantity,
 } from "./reversal-limit.js";
-import type { RecordedReversal } from "./reversal-limit.js";
+import type { RecordedReversal, TimedRecordedReversal } from "./reversal-limit.js";
 
 const VENDA = "venda:2000018212899604:0";
 
@@ -75,5 +76,95 @@ describe("o limite das reversões de uma venda", () => {
     ];
 
     expect(remainingToReverse({ idempotencyKey: VENDA, qtyDelta: -0.3 }, fracoes, cancellationKeyOf(VENDA))).toBe(0);
+  });
+});
+
+describe("excessReversalShares — o excesso é das reversões mais recentes (D-351 §12)", () => {
+  const CANCELAMENTO = cancellationKeyOf(VENDA);
+  const DEVOLUCAO_1 = returnKeyOf("5570000001", VENDA);
+  const DEVOLUCAO_2 = returnKeyOf("5570000002", VENDA);
+  const em = (hora: string) => new Date(`2026-09-15T${hora}:00.000Z`);
+  const partes = (shares: ReturnType<typeof excessReversalShares>) =>
+    shares.map((share) => [share.reversal.idempotencyKey, share.quantity]);
+
+  it("R <= V: nada passou", () => {
+    const reversoes: TimedRecordedReversal[] = [{ idempotencyKey: CANCELAMENTO, quantity: 1, occurredAt: em("10:00") }];
+
+    expect(excessReversalShares({ idempotencyKey: VENDA, qtyDelta: -1 }, reversoes)).toEqual([]);
+    expect(excessReversalShares({ idempotencyKey: VENDA, qtyDelta: -2 }, [...reversoes, { idempotencyKey: DEVOLUCAO_1, quantity: 1, occurredAt: em("11:00") }])).toEqual([]);
+  });
+
+  it("devolução e depois cancelamento: o excesso é do cancelamento -- a unidade já tinha voltado na devolução", () => {
+    const reversoes: TimedRecordedReversal[] = [
+      { idempotencyKey: CANCELAMENTO, quantity: 1, occurredAt: em("12:58") },
+      { idempotencyKey: DEVOLUCAO_1, quantity: 1, occurredAt: em("00:12") },
+    ];
+
+    expect(partes(excessReversalShares({ idempotencyKey: VENDA, qtyDelta: -1 }, reversoes))).toEqual([[CANCELAMENTO, 1]]);
+  });
+
+  it("cancelamento e depois devolução (2000017914279632): o excesso é da devolução", () => {
+    const reversoes: TimedRecordedReversal[] = [
+      { idempotencyKey: CANCELAMENTO, quantity: 1, occurredAt: em("20:39") },
+      { idempotencyKey: DEVOLUCAO_1, quantity: 1, occurredAt: em("20:40") },
+    ];
+
+    expect(partes(excessReversalShares({ idempotencyKey: VENDA, qtyDelta: -1 }, reversoes))).toEqual([[DEVOLUCAO_1, 1]]);
+  });
+
+  it("excesso maior que a reversão mais recente: continua na anterior, da mais recente para a mais antiga", () => {
+    const reversoes: TimedRecordedReversal[] = [
+      { idempotencyKey: CANCELAMENTO, quantity: 2, occurredAt: em("08:00") },
+      { idempotencyKey: DEVOLUCAO_1, quantity: 1, occurredAt: em("09:00") },
+      { idempotencyKey: DEVOLUCAO_2, quantity: 1, occurredAt: em("10:00") },
+    ];
+
+    expect(partes(excessReversalShares({ idempotencyKey: VENDA, qtyDelta: -2 }, reversoes))).toEqual([
+      [DEVOLUCAO_2, 1],
+      [DEVOLUCAO_1, 1],
+    ]);
+    // Parte de uma reversão: 3 vendidas, cancelamento de 2 e devolução de 2 -> passou 1, da devolução.
+    expect(
+      partes(
+        excessReversalShares({ idempotencyKey: VENDA, qtyDelta: -3 }, [
+          { idempotencyKey: CANCELAMENTO, quantity: 2, occurredAt: em("08:00") },
+          { idempotencyKey: DEVOLUCAO_1, quantity: 2, occurredAt: em("09:00") },
+        ]),
+      ),
+    ).toEqual([[DEVOLUCAO_1, 1]]);
+  });
+
+  it("empate no instante: a chave maior na ordem de código fica com o excesso -- o worker e a F3 (collate \"C\") escolhem a mesma", () => {
+    const reversoes: TimedRecordedReversal[] = [
+      { idempotencyKey: CANCELAMENTO, quantity: 1, occurredAt: em("10:00") },
+      { idempotencyKey: DEVOLUCAO_1, quantity: 1, occurredAt: em("10:00") },
+    ];
+
+    expect(partes(excessReversalShares({ idempotencyKey: VENDA, qtyDelta: -1 }, reversoes))).toEqual([[DEVOLUCAO_1, 1]]);
+    expect(partes(excessReversalShares({ idempotencyKey: VENDA, qtyDelta: -1 }, [...reversoes].reverse()))).toEqual([[DEVOLUCAO_1, 1]]);
+  });
+
+  it("reversões de OUTRA venda do pedido (outro componente) não entram na conta nem ganham parte", () => {
+    const reversoes: TimedRecordedReversal[] = [
+      { idempotencyKey: CANCELAMENTO, quantity: 1, occurredAt: em("08:00") },
+      { idempotencyKey: `cancelamento:${VENDA}:sku-b`, quantity: 1, occurredAt: em("09:00") },
+      { idempotencyKey: returnKeyOf("1", `${VENDA}:sku-b`), quantity: 1, occurredAt: em("10:00") },
+    ];
+
+    expect(excessReversalShares({ idempotencyKey: VENDA, qtyDelta: -1 }, reversoes)).toEqual([]);
+  });
+
+  it("estável para a idempotência: uma reversão nova não muda a parte das anteriores", () => {
+    const antes: TimedRecordedReversal[] = [
+      { idempotencyKey: DEVOLUCAO_1, quantity: 1, occurredAt: em("08:00") },
+      { idempotencyKey: CANCELAMENTO, quantity: 1, occurredAt: em("09:00") },
+    ];
+    const depois: TimedRecordedReversal[] = [...antes, { idempotencyKey: DEVOLUCAO_2, quantity: 1, occurredAt: em("07:00") }];
+
+    expect(partes(excessReversalShares({ idempotencyKey: VENDA, qtyDelta: -1 }, antes))).toEqual([[CANCELAMENTO, 1]]);
+    expect(partes(excessReversalShares({ idempotencyKey: VENDA, qtyDelta: -1 }, depois))).toEqual([
+      [CANCELAMENTO, 1],
+      [DEVOLUCAO_1, 1],
+    ]);
   });
 });

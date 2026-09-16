@@ -42,15 +42,32 @@
 --             `compute_erp_target_balances` (as duas linhas ficam do mesmo lado do corte).
 --             `created_by` nulo: linha de sistema.
 --   CANCELAMENTO_ML e DEVOLUCAO_ML nao sao compensados: aconteceram depois da planilha e
---             sao verdade nossa (resposta do dono: o UpSeller devolve a unidade sozinho).
---   LIMITADO pelo excesso do legado (verificacao de e6fda07, ALTA-1): uma unidade vendida
---             volta ao estoque no maximo uma vez, mas antes do limite das reversoes o worker
---             gravava cancelamento E devolucao da mesma venda. O que passou da quantidade
---             vendida ja anulou a venda, e o estorno e a venda menos esse excesso -- zero, e
---             nenhuma linha, nos 2 pedidos de producao com VENDA + DEVOLUCAO + CANCELAMENTO
---             (2000018212899604 e 2000018206306064), que ficam em +1 no saldo e no alvo.
+--             sao verdade nossa (resposta do dono: o UpSeller devolve a unidade sozinho) --
+--             exceto a reversao a mais da mesma venda, anulada na parte 1B.
+--   A QUANTIDADE e a venda INTEIRA. Ate a reverificacao de cc90baa o estorno era a venda
+--             menos o excesso de reversao do legado, e isso so fechava com a venda e a
+--             reversao a mais do mesmo lado do corte (D-351 §12, abaixo).
 --   Aqui NAO entra o "gravada antes de o corte chegar" do worker: so a organizacao que
 --   nunca reconciliou e elegivel, e nela o saldo ainda nao foi alinhado a planilha nenhuma.
+--
+-- PARTE 1B -- a reversao a mais do legado (reverificacao de cc90baa, D-351 §12):
+--   uma unidade vendida volta ao estoque no maximo uma vez, mas antes do limite das
+--   reversoes (verificacao de e6fda07, ALTA-1) o worker gravava cancelamento E devolucao da
+--   mesma venda. Para cada VENDA_ML com ESTORNO_PRE_CAPTURA (o da parte 1 ou o do worker novo)
+--   e revertido R > V (V = unidades vendidas), o excesso E = R - V e atribuido as reversoes
+--   MAIS RECENTES pelo `occurred_at` (no empate, a chave maior em `collate "C"`), cada uma
+--   cedendo no maximo a propria quantidade -- `excessReversalShares` em `@sb/domain`. Cada
+--   parte vira ESTORNO_REVERSAO_EXCEDENTE com o sinal da venda, o SKU, o local e a origem da
+--   venda, a chave neutra `estorno:<chave da reversao>` e o `occurred_at` ESPELHADO da
+--   reversao. Conta de cada venda: saldo = -V + V + R - E = min(R, V); no alvo, cada par
+--   (venda, estorno) e (reversao, anulacao) fica do mesmo lado do corte, qualquer que seja o
+--   lado da venda. O estorno de V - E com a data da venda deixava o alvo +E quando a venda
+--   estava ATE o corte e a reversao a mais depois: 2000017792822486, KIT de 3 componentes,
+--   VENDA_ML com `occurred_at` 09-14 18:11:20, DEVOLUCAO_ML 09-16 00:12:31 e CANCELAMENTO_ML
+--   09-16 12:58:04 -- alvo +2 para real +1 em cada componente. Medido em producao em
+--   2026-09-16 17:40 UTC (so SELECT, corte 18:42:00): 20 VENDA_ML de 18 pedidos com excesso,
+--   todas com V = 1, R = 2 e duas reversoes, 3 com a venda fora do alvo (o KIT), 0 reversoes
+--   ate o corte, e a mesma reversao a mais pelo `occurred_at` e pelo `created_at` nas 20.
 --
 -- PARTE 2 -- a venda que o worker antigo NUNCA gravou (revisao de D-351, ALTA-2):
 --   pedido hoje cancelado, com item vinculado (`order_items.sku_id`), `date_closed` <= o
@@ -89,6 +106,9 @@
 -- alvo fecha em snapshot + legitimos + reposicoes, a segunda execucao grava 0, a
 -- organizacao reconciliada nao e tocada, e o corte do parse aborta -- tambem na organizacao
 -- que a planilha nova tornou inelegivel, que com o UPDATE refeito vira no-op com NOTICE.
+-- A parte 1B tem o bloco "a reversao a mais do legado" (a forma de 2000017792822486 e a
+-- contraprova de 2000018206306064). Esses testes foram ESCRITOS na rodada de cc90baa sem
+-- rodar -- o Supabase local estava com outras sessoes (D-351 §12, pendencia).
 
 create or replace temp view d351_organizacoes as
 select g.organization_id,
@@ -135,10 +155,7 @@ select m.organization_id,
        m.occurred_at,
        coalesce(k.captured_at, g.corte_da_organizacao) as corte,
        coalesce(o.date_closed, o.date_created) as venda_em,
-       g.elegivel,
-       -- A quantidade do estorno: a venda menos o que o legado reverteu ALEM dela
-       -- (`excessReversed` em `@sb/domain`, verificacao de e6fda07, ALTA-1).
-       abs(m.qty_delta) - greatest(0, rv.revertido - abs(m.qty_delta)) as quantidade
+       g.elegivel
 from public.stock_movements m
 join d351_organizacoes g on g.organization_id = m.organization_id
 left join d351_cortes k on k.organization_id = m.organization_id and k.sku_id = m.sku_id
@@ -146,28 +163,11 @@ join public.orders o
   on o.organization_id = m.organization_id
  -- `source_id` e texto; o CASE impede o cast de uma origem que nao seja numero.
  and o.id = case when m.source_id ~ '^[0-9]{1,18}$' then m.source_id::bigint end
--- O que ja foi revertido desta venda, pelas duas causas: o cancelamento (origem do pedido,
--- chave `cancelamento:<venda>`) e as devolucoes (origem do claim, pedido DENTRO da chave
--- `devolucao:<claim>:<venda>` -- o indice de `20260916180400` atende o `split_part`).
-cross join lateral (
-  select coalesce((select sum(c.qty_delta)
-                     from public.stock_movements c
-                    where c.idempotency_key = 'cancelamento:' || m.idempotency_key
-                      and c.movement_type = 'CANCELAMENTO_ML'), 0)
-       + coalesce((select sum(d.qty_delta)
-                     from public.stock_movements d
-                    where d.organization_id = m.organization_id
-                      and d.movement_type = 'DEVOLUCAO_ML'
-                      and split_part(d.idempotency_key, ':', 4) = m.source_id
-                      and regexp_replace(d.idempotency_key, '^devolucao:[^:]+:', '') = m.idempotency_key), 0)
-         as revertido
-) rv
 where m.movement_type = 'VENDA_ML'
   and m.source_type = 'ORDER'
   and coalesce(o.date_closed, o.date_created) <= coalesce(k.captured_at, g.corte_da_organizacao)
-  -- Cancelamento E devolucao da mesma venda (o legado de D-052/D-057): o excesso ja anulou a
-  -- venda, e o estorno inteiro levaria o pedido a +2 (2000018212899604 e 2000018206306064).
-  and abs(m.qty_delta) - greatest(0, rv.revertido - abs(m.qty_delta)) > 0
+  -- A venda INTEIRA, mesmo com cancelamento E devolucao gravados (o legado de D-052/D-057): o
+  -- excesso e anulado com a data da reversao, na parte 1B (D-351 §12).
   and not exists (
     select 1 from public.stock_movements e
     where e.idempotency_key = 'estorno:' || m.idempotency_key
@@ -176,6 +176,74 @@ where m.movement_type = 'VENDA_ML'
     select 1 from public.stock_movements c
     where c.idempotency_key = 'cancelamento:' || m.idempotency_key
       and c.occurred_at <= coalesce(k.captured_at, g.corte_da_organizacao)
+  );
+
+-- PARTE 1B: as partes da reversao a mais de cada venda estornada que ainda nao tem anulacao.
+create or replace temp view d351_excedentes as
+select x.organization_id,
+       x.sku_id,
+       x.location_kind,
+       x.qty_delta_venda,
+       x.source_type,
+       x.source_id,
+       x.chave_venda,
+       x.chave_reversao,
+       x.occurred_at,
+       x.elegivel,
+       least(x.quantidade_reversao, greatest(0, x.excesso - x.posteriores)) as quantidade
+from (
+  select m.organization_id,
+         m.sku_id,
+         m.location_kind,
+         m.qty_delta as qty_delta_venda,
+         m.source_type,
+         m.source_id,
+         m.idempotency_key as chave_venda,
+         r.idempotency_key as chave_reversao,
+         r.occurred_at,
+         r.qty_delta as quantidade_reversao,
+         g.elegivel,
+         sum(r.qty_delta) over (partition by m.id) - abs(m.qty_delta) as excesso,
+         -- O que as reversoes MAIS RECENTES desta ja cederam: o excesso e delas primeiro. O
+         -- desempate e o do dominio (ordem de codigo da chave), e o instante vai ao
+         -- milissegundo, a precisao que o worker grava e compara.
+         coalesce(sum(r.qty_delta) over (
+           partition by m.id
+           order by date_trunc('milliseconds', r.occurred_at) desc, r.idempotency_key collate "C" desc
+           rows between unbounded preceding and 1 preceding
+         ), 0) as posteriores
+  from public.stock_movements m
+  join d351_organizacoes g on g.organization_id = m.organization_id
+  -- As reversoes desta venda, pelas duas causas: o cancelamento (origem do pedido, chave
+  -- `cancelamento:<venda>`) e as devolucoes (origem do claim, pedido DENTRO da chave
+  -- `devolucao:<claim>:<venda>` -- o indice de `20260916180400` atende o `split_part`).
+  cross join lateral (
+    select c.idempotency_key, c.qty_delta, c.occurred_at
+      from public.stock_movements c
+     where c.idempotency_key = 'cancelamento:' || m.idempotency_key
+       and c.movement_type = 'CANCELAMENTO_ML'
+    union all
+    select d.idempotency_key, d.qty_delta, d.occurred_at
+      from public.stock_movements d
+     where d.organization_id = m.organization_id
+       and d.movement_type = 'DEVOLUCAO_ML'
+       and split_part(d.idempotency_key, ':', 4) = m.source_id
+       and regexp_replace(d.idempotency_key, '^devolucao:[^:]+:', '') = m.idempotency_key
+  ) r
+  where m.movement_type = 'VENDA_ML'
+    and m.source_type = 'ORDER'
+    -- So venda estornada: sem o estorno, a venda nao e compensada, e o excesso fica como o
+    -- legado o deixou (o mesmo que o worker faz).
+    and exists (
+      select 1 from public.stock_movements e
+      where e.idempotency_key = 'estorno:' || m.idempotency_key
+        and e.movement_type = 'ESTORNO_PRE_CAPTURA'
+    )
+) x
+where least(x.quantidade_reversao, greatest(0, x.excesso - x.posteriores)) > 0
+  and not exists (
+    select 1 from public.stock_movements n
+    where n.idempotency_key = 'estorno:' || x.chave_reversao
   );
 
 create or replace temp view d351_reposicoes as
@@ -236,6 +304,7 @@ do $$
 declare
   v_corte_do_parse integer;
   v_gravados integer;
+  v_anulacoes integer;
   v_vendas integer;
   v_estornos integer;
   v_cancelamentos integer;
@@ -265,16 +334,18 @@ begin
   end if;
 
   for r in
-    select x.organization_id, sum(x.afetados) as afetados, sum(x.reposicoes) as reposicoes
+    select x.organization_id, sum(x.afetados) as afetados, sum(x.reposicoes) as reposicoes, sum(x.excedentes) as excedentes
     from (
-      select a.organization_id, count(*) as afetados, 0 as reposicoes from d351_afetados a where not a.elegivel group by 1
+      select a.organization_id, count(*) as afetados, 0 as reposicoes, 0 as excedentes from d351_afetados a where not a.elegivel group by 1
       union all
-      select p.organization_id, 0, count(*) from d351_reposicoes p where not p.elegivel group by 1
+      select p.organization_id, 0, count(*), 0 from d351_reposicoes p where not p.elegivel group by 1
+      union all
+      select e.organization_id, 0, 0, count(*) from d351_excedentes e where not e.elegivel group by 1
     ) x
     group by x.organization_id
   loop
-    raise notice 'compensacao_d351: organizacao % fora do criterio (tem AJUSTE_RECONCILIACAO ou ledger anterior ao corte) com % VENDA_ML afetados e % vendas a repor -- NAO compensada',
-      r.organization_id, r.afetados, r.reposicoes;
+    raise notice 'compensacao_d351: organizacao % fora do criterio (tem AJUSTE_RECONCILIACAO ou ledger anterior ao corte) com % VENDA_ML afetados, % vendas a repor e % reversoes a mais sem anulacao -- NAO compensada',
+      r.organization_id, r.afetados, r.reposicoes, r.excedentes;
   end loop;
 
   -- PARTE 1.
@@ -296,6 +367,26 @@ begin
   get diagnostics v_gravados = row_count;
 
   raise notice 'compensacao_d351: % estornos gravados', v_gravados;
+
+  -- PARTE 1B, depois da parte 1: a view le os estornos que ela acabou de gravar.
+  insert into public.stock_movements
+    (organization_id, sku_id, location_kind, qty_delta, movement_type, source_type, source_id, idempotency_key, occurred_at)
+  select e.organization_id,
+         e.sku_id,
+         e.location_kind,
+         sign(e.qty_delta_venda) * e.quantidade,
+         'ESTORNO_REVERSAO_EXCEDENTE',
+         e.source_type,
+         e.source_id,
+         'estorno:' || e.chave_reversao,
+         e.occurred_at
+  from d351_excedentes e
+  where e.elegivel
+  on conflict (idempotency_key) do nothing;
+
+  get diagnostics v_anulacoes = row_count;
+
+  raise notice 'compensacao_d351: % anulacoes de reversao a mais gravadas', v_anulacoes;
 
   -- PARTE 2: o trio num comando so -- as tres insercoes leem a MESMA selecao.
   with a_repor as (
@@ -339,13 +430,15 @@ begin
 
   raise notice 'compensacao_d351: % vendas repostas (venda + estorno + cancelamento)', v_vendas;
 
-  -- PROVA 1, dentro do bloco: nada afetado sem par e nada a repor nas organizacoes elegiveis.
+  -- PROVA 1, dentro do bloco: nada afetado sem par, nada a repor e nenhuma reversao a mais sem
+  -- anulacao nas organizacoes elegiveis.
   select (select count(*) from d351_afetados a where a.elegivel)
        + (select count(*) from d351_reposicoes p where p.elegivel)
+       + (select count(*) from d351_excedentes e where e.elegivel)
     into v_restantes;
 
   if v_restantes > 0 then
-    raise exception 'compensacao_d351: % VENDA_ML afetados ou vendas a repor continuam pendentes', v_restantes;
+    raise exception 'compensacao_d351: % VENDA_ML afetados, vendas a repor ou reversoes a mais continuam pendentes', v_restantes;
   end if;
 
   -- PROVA 2: o ledger bate com a projecao, por SKU e local, nas organizacoes elegiveis.
@@ -377,7 +470,9 @@ $$;
 -- 1. pendentes, TODAS as organizacoes (esperado 0 na de producao):
 --      select organization_id, elegivel, count(*) from d351_afetados group by 1, 2;
 --      select organization_id, elegivel, count(*) from d351_reposicoes group by 1, 2;
+--      select organization_id, elegivel, count(*) from d351_excedentes group by 1, 2;
 --    (as views sao temporarias: rode este arquivo e as consultas na mesma sessao, ou recrie
 --    as views antes.)
--- 2. reexecutar este arquivo: NOTICE "0 estornos gravados" e "0 vendas repostas".
+-- 2. reexecutar este arquivo: NOTICE "0 estornos gravados", "0 anulacoes de reversao a mais
+--    gravadas" e "0 vendas repostas".
 -- 3. repetir a prova 1 depois de 1 h e de 24 h.

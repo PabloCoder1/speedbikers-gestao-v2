@@ -1,7 +1,13 @@
 import { isCancelledOrderStatus } from "../events/order-events.js";
 import { cancellationKeyOf, remainingToReverse } from "./reversal-limit.js";
-import type { RecordedReversal } from "./reversal-limit.js";
-import { computeSaleDeductions, estornadoKeyOf, preCaptureEstornoOf, saleInstant } from "./sale-deduction.js";
+import type { RecordedReversal, TimedRecordedReversal } from "./reversal-limit.js";
+import {
+  computeSaleDeductions,
+  estornadoKeyOf,
+  excessReversalEstornosOf,
+  preCaptureEstornoOf,
+  saleInstant,
+} from "./sale-deduction.js";
 import type {
   ErpCutoff,
   PreCaptureCutoffs,
@@ -194,8 +200,8 @@ export interface CancellationMovementsInput {
   readonly recordedSales: readonly (RecordedSaleMovement & RecordedSale)[];
   /** Chaves de `VENDA_ML` que já têm estorno gravado. */
   readonly estornadas: ReadonlySet<string>;
-  /** `CANCELAMENTO_ML` e `DEVOLUCAO_ML` já gravados do pedido. */
-  readonly reversals: readonly RecordedReversal[];
+  /** `CANCELAMENTO_ML` e `DEVOLUCAO_ML` já gravados do pedido, com o instante de cada um. */
+  readonly reversals: readonly TimedRecordedReversal[];
   readonly cutoffFor: (skuId: string) => ErpCutoff | null;
 }
 
@@ -204,6 +210,11 @@ export interface CancellationMovements {
   readonly sales: StockMovementDraft[];
   /** `ESTORNO_PRE_CAPTURA`: o par dessas vendas, e o que falta de venda já gravada. */
   readonly estornos: StockMovementDraft[];
+  /**
+   * `ESTORNO_REVERSAO_EXCEDENTE` (D-351 §12): a anulação da reversão a mais do legado
+   * das vendas estornadas -- agora ou antes. Vem antes do cancelamento na gravação.
+   */
+  readonly excessReversalEstornos: StockMovementDraft[];
   /** `CANCELAMENTO_ML`. */
   readonly reversals: StockMovementDraft[];
   /** Chaves de venda que o cancelamento não reverteu porque a devolução já tinha devolvido tudo. */
@@ -241,10 +252,14 @@ export interface CancellationMovements {
  * **O estorno que falta de venda já gravada** sai pela mesma regra da venda
  * (`preCaptureEstornoOf`). Sem ele, um retry que achasse a venda gravada e o
  * estorno não reverteria para zero em vez de +1.
+ *
+ * **A reversão a mais do legado** (D-351 §12): toda venda estornada -- agora ou
+ * antes -- sai com a anulação do que o cancelamento E a devolução gravados
+ * devolveram além dela (`excessReversalEstornosOf`), com o instante da reversão.
  */
 export function computeCancellationMovements(input: CancellationMovementsInput): CancellationMovements {
   if (!isCancelledOrderStatus(input.order.status)) {
-    return { sales: [], estornos: [], reversals: [], alreadyReversed: [] };
+    return { sales: [], estornos: [], excessReversalEstornos: [], reversals: [], alreadyReversed: [] };
   }
 
   const saleAt = saleInstant(input.order);
@@ -280,13 +295,28 @@ export function computeCancellationMovements(input: CancellationMovementsInput):
   }
 
   const estornos: StockMovementDraft[] = [];
+  const excessReversalEstornos: StockMovementDraft[] = [];
 
   for (const sale of [...input.recordedSales.map(comoRascunho), ...sales]) {
-    if (input.estornadas.has(sale.idempotencyKey)) continue;
+    if (input.estornadas.has(sale.idempotencyKey)) {
+      // Já estornada: a anulação da reversão a mais sai de novo (o UNIQUE a absorve). É o
+      // que completa o webhook que gravou o estorno e falhou antes da anulação, e o excesso
+      // que a corrida de duas reversões criou depois do estorno (D-351 §12).
+      excessReversalEstornos.push(...excessReversalEstornosOf(sale, input.reversals));
+      continue;
+    }
 
     const estorno = preCaptureEstornoOf(sale, saleAt, preCapture);
 
-    if (estorno !== null) estornos.push(estorno);
+    if (estorno !== null) {
+      estornos.push(estorno);
+      excessReversalEstornos.push(
+        ...excessReversalEstornosOf(
+          { skuId: estorno.skuId, qtyDelta: -estorno.qtyDelta, idempotencyKey: sale.idempotencyKey },
+          input.reversals,
+        ),
+      );
+    }
   }
 
   const reversaoPreCaptura: CancellationPreCapture = {
@@ -314,6 +344,7 @@ export function computeCancellationMovements(input: CancellationMovementsInput):
   return {
     sales,
     estornos,
+    excessReversalEstornos,
     reversals: [...deGravadas.reversals, ...doTrio.reversals],
     alreadyReversed: [...deGravadas.alreadyReversed, ...doTrio.alreadyReversed],
   };
