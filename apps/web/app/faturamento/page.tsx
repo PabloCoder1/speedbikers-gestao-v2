@@ -9,6 +9,7 @@ import { Shell } from "../../components/shell";
 import { formatBusinessDate } from "../../lib/format";
 import { DEFAULT_PERIOD_DAYS, PERIOD_PRESETS, resolvePeriodRange, type PeriodRange } from "../../lib/period";
 import { createClient } from "../../lib/supabase/server";
+import { CalculadoraPreco } from "./calculadora-preco";
 import { AVISO, Numeros } from "./numeros";
 
 export const metadata = { title: "Faturamento — Speed Bikers Gestão" };
@@ -162,6 +163,10 @@ async function FaturamentoContent({ searchParams }: { searchParams: Promise<Cons
               </form>
             </FilterMenu>
 
+            <a className="sb-button sb-button-primary" href="#calculadora">
+              Calculadora de preço
+            </a>
+
             <Link className="sb-button" href={montarHref("/vendas", periodo, contaSlug)}>
               Dashboard de vendas
             </Link>
@@ -184,6 +189,13 @@ async function FaturamentoContent({ searchParams }: { searchParams: Promise<Cons
       <Suspense fallback={<CarregandoBloco rotulo="faturamento" />}>
         <Numeros leituras={leituras} range={range} todasAsContas={selectedAccount === null} />
       </Suspense>
+
+      {/*
+        A CALCULADORA DE PREÇO (D-359). Fora do Suspense dos números: ela não
+        depende do período, e quem abre a tela só para simular não espera a
+        leitura do faturamento.
+      */}
+      <CalculadoraPreco contas={accounts.map((account) => ({ id: account.id, label: account.label }))} />
     </>
   );
 }

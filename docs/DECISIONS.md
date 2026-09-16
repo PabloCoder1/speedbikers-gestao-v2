@@ -12239,3 +12239,44 @@ A tela passa de duas leituras de ~490 ms para uma de ~255 ms, estavel depois da 
 - **a tela so foi vista com o seed local** (2 SKUs, todos sem estado): selos de estado, barras e barra de selecao preenchidas nao foram fotografados com dados reais;
 - **a migration nao foi aplicada no Dev**: sobe pela CI no merge, como a de D-357;
 - achado, nao corrigido: um SKU pode ficar SEM_ESTADO com sugestao positiva (aproveitavel negativo e venda zero em 30 dias; no Dev, 1 unidade). O estado exige taxa > 0 e a sugestao nao -- as duas regras sao de D-147/D-150 e mudar uma delas e decisao de produto.
+
+## D-359 - Calculadora de preco no /faturamento: a margem de uma venda antes de anunciar, com o frete oficial do Mercado Livre e a tabela da Shopee
+
+**Contexto:** pedido do usuario: um lugar no `/faturamento` para informar custo, preco de venda e (no Mercado Livre) medidas, escolher a plataforma, e receber so o resultado: quanto vai ser a margem. Nas perguntas ele decidiu:
+
+- **frete do Mercado Livre:** a cotacao oficial do ML pelas medidas, nao tabela nem valor digitado;
+- **Mercado Livre:** 12% no Classico, 17% no Premium; o frete gratis (pago pelo vendedor) vale **a partir de R$ 19**;
+- **Shopee:** percentual + valor fixo por faixa (imagem enviada), e **o valor fixo e o frete**; o "subsidio Pix" da tabela **nao entra**.
+
+**1. A CONTA -- `@sb/domain`, pura e testada (`pricing/calculadora-preco.ts`)**
+
+A mesma de 5F: recebido = preco - comissao - frete; resultado = recebido - custo; margem = resultado / preco. As tarifas sao constantes nomeadas (`COMISSAO_ML`, `FRETE_GRATIS_ML_MINIMO`, `FAIXAS_SHOPEE`): trocar e uma linha e um teste.
+
+| Shopee | comissao |
+|---|---|
+| ate R$ 79,99 | 20% + R$ 4 |
+| R$ 80 a 99,99 | 14% + R$ 16 |
+| R$ 100 a 199,99 | 14% + R$ 20 |
+| R$ 200 a 499,99 | 14% + R$ 26 |
+| a partir de R$ 500 | 14% + R$ 26 |
+
+A fronteira entre "ate 79,99" e "acima de 80" fica em R$ 80. **Mercado Livre sem cotacao a partir de R$ 19 NAO tem margem**: a funcao recusa com o motivo, porque frete zero fingido daria uma margem bonita e falsa.
+
+**2. O FRETE -- a primeira chamada SINCRONA da `api` ao Mercado Livre**
+
+Contrato lido na doc oficial em 16/09/2026 ("Custos de envio", atualizada em 20/04/2026 -- o portal bloqueia leitura automatica, foi lido num navegador): `GET /users/{USER_ID}/shipping_options/free?dimensions=AxLxC,peso&verbose&item_price&listing_type_id&mode=me2&condition=new&logistic_type&free_shipping=true`; `coverage.all_country.list_cost` e o "custo de envio oferecido ao vendedor"; a doc chama de "estimativa aproximada" para uma unidade. Unidades adotadas: cm e g (o formato de dimensoes dos itens do ML; esta rota da doc nao as repete).
+
+- `@sb/mercado-livre` `quoteFreeShippingCost`, com schema: resposta sem `list_cost` e recusada, nunca frete zero;
+- `api` `POST /v1/pricing/ml-shipping-quote`: qualquer papel com acesso a CONTA (e leitura), fronteira de organizacao e permissao por conta refeitas no servidor, cliente HTTP proprio com 2 tentativas e corte em 8 s. **Nao enfileira**: e um GET curto que a pessoa espera na tela, dentro do que `docs/ARCHITECTURE.md` §5 permite ("se pode passar de ~5 s, enfileira");
+- **o token e so LIDO, nunca renovado pela `api`.** O `refresh_token` do ML e de uso unico, e quem renova e o worker, com trava. Token a menos de 5 min de vencer -> 503 "tente de novo em alguns minutos". Uma renovacao concorrente vinda da `api` seria o caminho para desconectar a conta, e a calculadora nao vale isso.
+
+**3. A TELA**
+
+Secao "Calculadora de preco" no fim do `/faturamento`, com atalho no cabecalho (`#calculadora`) e fora do Suspense dos numeros -- nao depende do periodo. Plataforma e tipo de anuncio em seletor segmentado; custo e preco em R$; logistica (Coleta, Agencia/Places, Correios, Full, Flex); conta, quando ha mais de uma; medidas A x L x C em cm e peso em g. A cotacao sai sozinha 700 ms depois da ultima digitacao, e qualquer mudanca de medida, preco, tipo, logistica ou conta invalida a anterior. O resultado e um painel com a margem grande no tom (de `tomDaMargem`), "sobram/faltam R$ X por venda" e a conta linha a linha. Plataforma, tipo, conta e logistica ficam lembrados no navegador.
+
+**4. VERIFICACAO E LIMITES**
+
+`lint`/`typecheck`/testes de domain (414, 9 novos), mercado-livre (120, 3 novos), api (371, 6 novos), worker (546) e web (604, 2 novos); build e os quatro guardas. E2E novo em `faturamento.spec.ts`: Shopee de ponta a ponta (R$ 149,90, custo R$ 62,50 -> 31,0%) e Mercado Livre com a resposta da `api` INTERCEPTADA (Premium, frete R$ 21,90 -> 26,7%; sem medidas nao ha margem; abaixo de R$ 19 o frete sai da conta), conferindo o corpo da chamada.
+
+- **a cotacao real do Mercado Livre nao foi chamada**: nao ha conta conectada nem API de pe localmente, e o deploy de Dev esta pausado (D-350). A primeira prova com o ML de verdade e em producao;
+- **nao entram:** impostos, Ads, parcelamento e o custo fixo por unidade do ML abaixo de R$ 79 -- a tela diz o que nao inclui.

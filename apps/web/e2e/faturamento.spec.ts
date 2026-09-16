@@ -80,3 +80,62 @@ test("/vendas: a faixa é de volume, e comissão e margem moram no Faturamento",
   await expect(page.getByRole("region", { name: /Margem operacional/ })).toHaveCount(0);
   await expect(page.getByRole("link", { name: /margem em Faturamento/ })).toBeVisible();
 });
+
+/**
+ * A CALCULADORA DE PREÇO (D-359).
+ *
+ * Shopee inteira de verdade: faixa R$ 100–199,99 = 14% + R$ 20. Mercado Livre
+ * com a cotação da `api` INTERCEPTADA — a suíte não tem conta conectada nem
+ * API de pé, e o que se prova aqui é a conta da tela sobre um frete conhecido:
+ * a chamada certa sai (tipo, medidas) e a margem usa o frete que voltou.
+ */
+test("/faturamento: a calculadora dá a margem na Shopee e no Mercado Livre", async ({ page }) => {
+  let pedidoDeFrete: Record<string, unknown> | null = null;
+
+  await page.route("**/v1/pricing/ml-shipping-quote", async (route) => {
+    pedidoDeFrete = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        status: "ok",
+        cotacao: { custoVendedor: 21.9, moeda: "BRL", pesoFaturavelG: 600, custoSemDesconto: null, descontoPercentual: null },
+      }),
+    });
+  });
+
+  await login(page, "/faturamento");
+
+  const calc = page.getByRole("region", { name: "Calculadora de preço" });
+
+  await calc.getByRole("radio", { name: "Shopee" }).click();
+  await calc.getByLabel("Custo do produto").fill("62,50");
+  await calc.getByLabel("Preço de venda").fill("149,90");
+
+  // 149,90 − (14% = 20,99) − 20 − 62,50 = 46,41 → 30,96%
+  await expect(calc.locator(".sb-calc-margem")).toHaveText("31,0%");
+  await expect(calc.locator(".sb-calc-total")).toContainText("46,41");
+
+  await calc.getByRole("radio", { name: "Mercado Livre" }).click();
+
+  // Sem medidas, NÃO há margem: frete zero fingido daria um número falso.
+  await expect(calc.locator(".sb-calc-margem")).toHaveCount(0);
+  await expect(calc.getByText(/cote o frete pelas medidas/i)).toBeVisible();
+
+  await calc.getByRole("radio", { name: /Premium/ }).click();
+  await calc.getByLabel("Altura").fill("12");
+  await calc.getByLabel("Largura").fill("18");
+  await calc.getByLabel("Comprimento").fill("25");
+  await calc.getByLabel("Peso").fill("800");
+
+  // 149,90 − (17% = 25,48) − 21,90 − 62,50 = 40,02 → 26,70%
+  await expect(calc.locator(".sb-calc-margem")).toHaveText("26,7%");
+  await expect(calc.locator(".sb-calc-total")).toContainText("40,02");
+  expect(pedidoDeFrete).toMatchObject({ tipoAnuncio: "premium", alturaCm: 12, larguraCm: 18, comprimentoCm: 25, pesoG: 800, preco: 149.9 });
+
+  // Abaixo de R$ 19 o frete é do comprador: a margem sai sem cotação.
+  await calc.getByLabel("Preço de venda").fill("18,90");
+  await calc.getByLabel("Custo do produto").fill("5");
+  await expect(calc.locator(".sb-calc-frete")).toContainText("o frete é do comprador");
+  await expect(calc.locator(".sb-calc-margem")).toBeVisible();
+});

@@ -107,3 +107,6 @@ export type {
   ScanSellerItemsOptions,
   SellerItemsScanPage,
 } from "./items.js";
+
+export { LOGISTICAS_ML, quoteFreeShippingCost, shippingQuoteSchema } from "./shipping-quote.js";
+export type { LogisticaMl, ShippingQuote, ShippingQuoteInput, ShippingQuoteResponse } from "./shipping-quote.js";
