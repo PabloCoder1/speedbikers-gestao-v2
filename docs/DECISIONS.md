@@ -12174,3 +12174,13 @@ A tela le as tres colunas com guarda (`in`): o Preview do PR roda sem a migratio
 **5. VERIFICACAO**
 
 `typecheck`, `lint`, 595 testes de unidade da web (9 novos, da checagem) e build. E2E da tela, da republicacao e das gavetas: 18 verdes contra o build de producao e o seed local, um novo (checagem e link). A migration foi aplicada no banco LOCAL por cima (dump antes, registro em `schema_migrations`) e conferida no seed: `MLB800000001` da 1 compra, ticket R$ 1.519,20 e preco medio R$ 189,90. O caso de integracao novo (compras da fonte, ticket NULL sem pedido) foi escrito e **nao rodou**: a suite pede `db reset`, e o banco local e compartilhado com a outra sessao (combinado, nunca unilateral). Dev e producao recebem a migration pelo caminho de sempre (merge na `v3`; producao por `migrations-producao.yml`).
+
+**6. MEDIDO NO DEV COMO USUARIO LOGADO** (16/09/2026, `set local role authenticated` com o `sub` de um ADMIN, oito execucoes por anuncio, janela de 30 dias). A migration NAO foi aplicada no Dev nesta fatia: aplicar pelo MCP foi negado pela politica de permissao da maquina, e ela sobe pela CI no merge na `v3`. Para medir sem DDL, o corpo novo rodou num bloco PL/pgSQL com as mesmas variaveis da funcao -- o plpgsql troca para o plano generico depois da 5a execucao, a armadilha de D-305.
+
+| anuncio | 1a (frio) | 2a-8a (quente) | funcao atual, quente |
+|---|---|---|---|
+| MLB1322391199 (mais vendido) | 838 ms | ~27 ms | ~2,5 ms |
+| MLB1323247739 | 651 ms | ~22 ms | -- |
+| MLB5518943466 (10 variacoes) | 108 ms | ~6 ms | ~2,4 ms |
+
+Estavel depois da 6a execucao, sem degradacao. O custo novo e a leitura de `orders` por item: o indice entra por (conta, item) e o filtro de data e aplicado depois, sobre todo o historico do anuncio -- dai o frio de 838 ms no mais vendido. Aceitavel para uma tela de detalhe; se crescer, o caminho e indice em `orders` por data com o item, fatia propria. E o anuncio de 10 variacoes deu **385 pedidos e 383 compras**, que e exatamente a diferenca que somar as linhas por variacao esconderia.
