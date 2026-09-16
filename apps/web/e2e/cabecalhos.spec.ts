@@ -90,7 +90,12 @@ test("CSP: login, tela autenticada, Realtime e busca rodam sem uma violação se
   // Tempo para o Realtime dos toasts abrir o WebSocket.
   await page.waitForTimeout(2000);
 
-  await page.locator(".sb-search").click();
+  // Pelo PAPEL, não pela classe: o esqueleto de `carregando.tsx` repete
+  // `.sb-search` num `<div aria-hidden>` sem handler, e o clique na classe cai
+  // nele quando o shell ainda não trocou (D-356, ver `busca.spec.ts`). Aqui a
+  // espera do cabeçalho acima já cobria na prática — o papel torna isso uma
+  // garantia em vez de sorte.
+  await page.getByRole("button", { name: /Buscar SKU, anúncio, NF-e/ }).click();
 
   const caixa = page.getByRole("dialog", { name: "Buscar na Speed Bikers" });
 

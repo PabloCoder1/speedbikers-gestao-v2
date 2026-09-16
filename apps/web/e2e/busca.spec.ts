@@ -21,8 +21,23 @@ import { login } from "./helpers.js";
 test("busca do shell: o gatilho cabe sem cortar a promessa, e a caixa diz tudo o que se busca", async ({ page }) => {
   await login(page, "/");
 
-  const gatilho = page.locator(".sb-search");
-  const rotulo = page.locator(".sb-search-label");
+  /*
+    O GATILHO É PEGO PELO PAPEL, NÃO PELA CLASSE. `components/carregando.tsx`
+    desenha o esqueleto do shell com as MESMAS classes — um
+    `<div class="sb-search" aria-hidden="true">` sem `onClick` —, e `login()`
+    devolve logo depois de clicar em "Entrar", sem esperar a navegação. Enquanto
+    o esqueleto está na tela, `.sb-search` casa com ele: o clique cai num `div`
+    morto, a caixa nunca abre, e como os dois nunca coexistem não há violação de
+    strict mode que denuncie a troca. O sintoma era esta falha só quando o caso
+    NÃO era o primeiro do worker (medido em D-356: passa sozinho, reprova depois
+    de qualquer outro spec).
+
+    `getByRole` não enxerga o `aria-hidden`, então ele só casa com o `<button>`
+    de verdade — e a espera automática do Playwright passa a ser a espera pelo
+    shell carregado.
+  */
+  const gatilho = page.getByRole("button", { name: /Buscar SKU, anúncio, NF-e/ });
+  const rotulo = gatilho.locator(".sb-search-label");
 
   await expect(gatilho).toBeVisible();
   await expect(rotulo).not.toContainText("ação");
