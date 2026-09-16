@@ -7,5 +7,10 @@ export {
 } from "./relist.js";
 export type { RelistState } from "./relist.js";
 
-export { evaluateRelistPreflight } from "./relist-preflight.js";
-export type { RelistPreflightIssue, RelistPreflightResult } from "./relist-preflight.js";
+export { collectRelistInventoryIds, evaluateRelistPreflight } from "./relist-preflight.js";
+export type {
+  RelistFullStockReading,
+  RelistFullStockReadings,
+  RelistPreflightIssue,
+  RelistPreflightResult,
+} from "./relist-preflight.js";

@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 
-import { encryptToken } from "@sb/mercado-livre";
+import { MercadoLivreApiError, encryptToken } from "@sb/mercado-livre";
 import type { MercadoLivreClient, RequestOptions } from "@sb/mercado-livre";
 import { createLogger } from "@sb/observability";
 import { describe, expect, it } from "vitest";
@@ -126,15 +126,38 @@ function fakeDb(options: FakeDbOptions = {}): {
   return { db, relistInserts, relistUpdates, eventInserts };
 }
 
-function fakeClient(entries: { code: number; body: unknown }[]): {
+interface FakeClientOptions {
+  /** Estoque do Full por inventory_id: corpo da resposta ou erro lançado (D-360). Ausente = 404. */
+  fullStock?: Record<string, Record<string, unknown> | Error>;
+}
+
+function fakeClient(
+  entries: { code: number; body: unknown }[],
+  options: FakeClientOptions = {},
+): {
   client: MercadoLivreClient;
   requests: RequestOptions<unknown>[];
 } {
   const requests: RequestOptions<unknown>[] = [];
 
   const client = {
-    request: (options: RequestOptions<unknown>) => {
-      requests.push(options);
+    request: (request: RequestOptions<unknown>) => {
+      requests.push(request);
+
+      const inventory = /^\/inventories\/([^/]+)\/stock\/fulfillment$/.exec(request.path);
+
+      if (inventory !== null) {
+        const answer = options.fullStock?.[inventory[1] ?? ""];
+
+        if (answer === undefined) {
+          return Promise.reject(
+            new MercadoLivreApiError("inventário não encontrado", { status: 404, errorClass: "not_retryable", url: request.path }),
+          );
+        }
+
+        // Como o cliente real: a resposta atravessa o schema do chamador.
+        return answer instanceof Error ? Promise.reject(answer) : Promise.resolve(request.schema.parse(answer));
+      }
 
       return Promise.resolve(entries);
     },
@@ -172,7 +195,7 @@ describe("relist.prepare (D-161)", () => {
 
   it("caminho feliz: snapshot capturado, operação REQUESTED, evento de criação com o ATOR humano", async () => {
     const { db, relistInserts, relistUpdates, eventInserts } = fakeDb();
-    const { client } = fakeClient([{ code: 200, body: healthyItemBody() }]);
+    const { client, requests } = fakeClient([{ code: 200, body: healthyItemBody() }]);
 
     const outcome = await run(db, client);
 
@@ -189,6 +212,9 @@ describe("relist.prepare (D-161)", () => {
     expect(relistUpdates).toHaveLength(0);
     expect(eventInserts).toHaveLength(1);
     expect(eventInserts[0]).toMatchObject({ from_status: null, to_status: "REQUESTED", actor_user_id: REQUESTED_BY });
+
+    // Item fora do Full: nenhuma leitura de estoque do Full.
+    expect(requests).toHaveLength(1);
   });
 
   it("preflight reprovado: operação vai a PREFLIGHT_FAILED com os motivos, evento SEM ator (transição do sistema)", async () => {
@@ -259,5 +285,81 @@ describe("relist.prepare (D-161)", () => {
     expect(outcome).toEqual({ status: "done", processed: 0 });
     expect(relistInserts).toHaveLength(0);
     expect(requests).toHaveLength(0);
+  });
+});
+
+describe("relist.prepare com cadastro no Full (D-360)", () => {
+  it("o caso de produção: cadastro no Full ZERADO e envio por coleta — a operação fica REQUESTED, aprovável", async () => {
+    const { db, relistUpdates, eventInserts } = fakeDb();
+    const { client, requests } = fakeClient(
+      [
+        {
+          code: 200,
+          body: { ...healthyItemBody(), inventory_id: "TBWT07652", shipping: { mode: "me2", logistic_type: "cross_docking" } },
+        },
+      ],
+      { fullStock: { TBWT07652: { inventory_id: "TBWT07652", available_quantity: 0, not_available_quantity: 0 } } },
+    );
+
+    const outcome = await run(db, client);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(relistUpdates).toHaveLength(0);
+    expect(eventInserts).toHaveLength(1);
+    expect(requests.map((request) => request.path)).toContain("/inventories/TBWT07652/stock/fulfillment");
+  });
+
+  it("unidades no Full reprovam com a quantidade no motivo", async () => {
+    const { db, relistUpdates, eventInserts } = fakeDb();
+    const { client } = fakeClient([{ code: 200, body: { ...healthyItemBody(), inventory_id: "LCQI05831" } }], {
+      fullStock: { LCQI05831: { inventory_id: "LCQI05831", available_quantity: 2, not_available_quantity: 1 } },
+    });
+
+    const outcome = await run(db, client);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(relistUpdates[0]).toMatchObject({ status: "PREFLIGHT_FAILED" });
+    expect(String(relistUpdates[0]?.failure_reason)).toContain("3 unidade(s)");
+    expect(eventInserts[1]).toMatchObject({ reason: "FULL_BLOQUEADO" });
+  });
+
+  it("estoque do Full ilegível (404 ou resposta sem os campos) reprova com FULL_NAO_VERIFICADO — nunca presume zero", async () => {
+    for (const fullStock of [{}, { TBWT07652: { inventory_id: "TBWT07652", available_quantity: 0 } }]) {
+      const { db, relistUpdates, eventInserts } = fakeDb();
+      const { client } = fakeClient([{ code: 200, body: { ...healthyItemBody(), inventory_id: "TBWT07652" } }], {
+        fullStock,
+      });
+
+      const outcome = await run(db, client);
+
+      expect(outcome).toEqual({ status: "done", processed: 1 });
+      expect(relistUpdates[0]).toMatchObject({ status: "PREFLIGHT_FAILED" });
+      expect(eventInserts[1]).toMatchObject({ reason: "FULL_NAO_VERIFICADO" });
+    }
+  });
+
+  it("resposta de OUTRO inventário não confere nada: FULL_NAO_VERIFICADO, mesmo com zero unidades", async () => {
+    const { db, relistUpdates, eventInserts } = fakeDb();
+    const { client } = fakeClient([{ code: 200, body: { ...healthyItemBody(), inventory_id: "TBWT07652" } }], {
+      fullStock: { TBWT07652: { inventory_id: "LCQI05831", available_quantity: 0, not_available_quantity: 0 } },
+    });
+
+    const outcome = await run(db, client);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(relistUpdates[0]).toMatchObject({ status: "PREFLIGHT_FAILED" });
+    expect(eventInserts[1]).toMatchObject({ reason: "FULL_NAO_VERIFICADO" });
+  });
+
+  it("falha passageira ao ler o Full relança ANTES de criar a operação — o retry não cai num 23505 sem preflight", async () => {
+    const { db, relistInserts } = fakeDb();
+    const { client } = fakeClient([{ code: 200, body: { ...healthyItemBody(), inventory_id: "TBWT07652" } }], {
+      fullStock: {
+        TBWT07652: new MercadoLivreApiError("serviço indisponível", { status: 503, errorClass: "retryable", url: "/inventories" }),
+      },
+    });
+
+    await expect(run(db, client)).rejects.toThrow("serviço indisponível");
+    expect(relistInserts).toHaveLength(0);
   });
 });

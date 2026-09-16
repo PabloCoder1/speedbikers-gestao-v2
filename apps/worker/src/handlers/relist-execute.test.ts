@@ -198,6 +198,8 @@ interface FakeClientOptions {
   childBody?: Record<string, unknown>;
   putStatus?: string;
   relistOutcome?: { id: string } | Error;
+  /** Estoque do Full por inventory_id: corpo da resposta ou erro lançado (D-360). Ausente = 404. */
+  fullStock?: Record<string, Record<string, unknown> | Error>;
 }
 
 function fakeClient(options: FakeClientOptions = {}): {
@@ -214,6 +216,20 @@ function fakeClient(options: FakeClientOptions = {}): {
       // é ele que aplica o transform de id de variação para string, e um
       // fake que devolvesse o corpo cru validaria de menos.
       const respond = (body: unknown) => Promise.resolve(request.schema.parse(body));
+
+      const inventory = /^\/inventories\/([^/]+)\/stock\/fulfillment$/.exec(request.path);
+
+      if (request.method === "GET" && inventory !== null) {
+        const answer = options.fullStock?.[inventory[1] ?? ""];
+
+        if (answer === undefined) {
+          return Promise.reject(
+            new MercadoLivreApiError("inventário não encontrado", { status: 404, errorClass: "not_retryable", url: request.path }),
+          );
+        }
+
+        return answer instanceof Error ? Promise.reject(answer) : respond(answer);
+      }
 
       if (request.method === "GET") {
         if (request.path === `/items/${CHILD}?include_attributes=all`) {
@@ -292,13 +308,61 @@ describe("relist.execute (D-162/D-163)", () => {
 
   it("re-preflight reprova NA HORA (o pai entrou no Full desde o pedido): PREFLIGHT_FAILED, e o PUT nunca sai", async () => {
     const { db, updates } = fakeDb();
-    const { client, calls } = fakeClient({ parentBody: healthyParent({ inventory_id: "LCQI05831" }) });
+    const { client, calls } = fakeClient({
+      parentBody: healthyParent({ inventory_id: "LCQI05831" }),
+      fullStock: { LCQI05831: { inventory_id: "LCQI05831", available_quantity: 4, not_available_quantity: 0 } },
+    });
 
     const outcome = await run(db, client);
 
     expect(outcome).toEqual({ status: "done", processed: 1 });
     expect(updates.map((update) => update.patch.status)).toEqual(["PREFLIGHT_FAILED"]);
-    expect(calls).toEqual([`GET /items/${PARENT}`]);
+    expect(updates[0]?.patch.failure_reason).toContain("4 unidade(s)");
+    expect(calls).toEqual([`GET /items/${PARENT}`, "GET /inventories/LCQI05831/stock/fulfillment"]);
+  });
+
+  it("D-360: cadastro no Full ZERADO e envio por coleta — o re-preflight aprova e o pai é fechado", async () => {
+    const { db, updates } = fakeDb();
+    const { client, calls } = fakeClient({
+      parentBody: healthyParent({ inventory_id: "TBWT07652", shipping: { logistic_type: "cross_docking" } }),
+      fullStock: { TBWT07652: { inventory_id: "TBWT07652", available_quantity: 0, not_available_quantity: 0 } },
+    });
+
+    const outcome = await run(db, client);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(updates.map((update) => update.patch.status)).toEqual(["CLOSING", "CLOSED", "RELISTING", "RELISTED"]);
+    expect(calls.slice(0, 3)).toEqual([
+      `GET /items/${PARENT}`,
+      "GET /inventories/TBWT07652/stock/fulfillment",
+      `PUT /items/${PARENT}`,
+    ]);
+  });
+
+  it("D-360: estoque do Full ilegível (404) reprova com FULL_NAO_VERIFICADO — o PUT nunca sai", async () => {
+    const { db, updates, events } = fakeDb();
+    const { client, calls } = fakeClient({ parentBody: healthyParent({ inventory_id: "TBWT07652" }) });
+
+    const outcome = await run(db, client);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(updates.map((update) => update.patch.status)).toEqual(["PREFLIGHT_FAILED"]);
+    expect(events.map((event) => event.reason)).toEqual(["FULL_NAO_VERIFICADO"]);
+    expect(calls.some((call) => call.startsWith("PUT"))).toBe(false);
+  });
+
+  it("D-360: falha passageira ao ler o Full relança ANTES de qualquer transição — o PUT nunca sai", async () => {
+    const { db, updates } = fakeDb();
+    const { client, calls } = fakeClient({
+      parentBody: healthyParent({ inventory_id: "TBWT07652" }),
+      fullStock: {
+        TBWT07652: new MercadoLivreApiError("serviço indisponível", { status: 503, errorClass: "retryable", url: "/inventories" }),
+      },
+    });
+
+    await expect(run(db, client)).rejects.toThrow("serviço indisponível");
+    expect(updates).toHaveLength(0);
+    expect(calls.some((call) => call.startsWith("PUT"))).toBe(false);
   });
 
   it("retomada em RELISTING vira RELIST_FAILED sem NENHUMA chamada remota — repetir o POST poderia criar dois filhos", async () => {

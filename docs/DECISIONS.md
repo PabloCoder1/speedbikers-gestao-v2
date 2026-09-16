@@ -12239,3 +12239,52 @@ A tela passa de duas leituras de ~490 ms para uma de ~255 ms, estavel depois da 
 - **a tela so foi vista com o seed local** (2 SKUs, todos sem estado): selos de estado, barras e barra de selecao preenchidas nao foram fotografados com dados reais;
 - **a migration nao foi aplicada no Dev**: sobe pela CI no merge, como a de D-357;
 - achado, nao corrigido: um SKU pode ficar SEM_ESTADO com sugestao positiva (aproveitavel negativo e venda zero em 30 dias; no Dev, 1 unidade). O estado exige taxa > 0 e a sugestao nao -- as duas regras sao de D-147/D-150 e mudar uma delas e decisao de produto.
+
+## D-360 - A trava da republicacao olha o estoque do Full, e nao o cadastro -- anuncio com Full zerado e envio por coleta deixa de ser recusado
+
+**Contexto:** em 2026-09-16, as 14:58 UTC, o dono pediu a republicacao do MLB5805901782 (Lanterna Traseira Suzuki DR 150, conta SPEEDBIKERS LOJA 1). A conferencia (`relist.prepare`) recusou com `FULL_BLOQUEADO`: "O anuncio (ou uma variacao) tem estoque no Full". O painel do Mercado Livre mostra 7 unidades no deposito e envio por coleta com Flex.
+
+**O que era:** D-160 bloqueava qualquer anuncio com `inventory_id` na raiz ou numa variacao, lendo o cadastro no Full como estoque. Mas o `inventory_id` continua no item depois que o Full zera. Medido em producao, so SELECT:
+- snapshot do pai: `inventory_id` TBWT07652, `shipping.logistic_type` `cross_docking`, tag de envio `self_service_in`, `available_quantity` 7, `sold_quantity` 0;
+- `fulfillment_stock_snapshots` de TBWT07652: zero unidades nas 8 capturas de 14/09 21:00 a 16/09 09:00 UTC.
+
+O risco que D-160 existe para evitar e prender unidade fisica no CD, ja que a doc de relist e silenciosa sobre Full (MERCADO_LIVRE.md 2.16). Com o Full zerado, esse risco nao existe.
+
+**Decisao do dono (2026-09-16):** ajustar a trava.
+
+---
+
+**A REGRA NOVA** (`evaluateRelistPreflight(snapshot, leiturasDoFull)`, `packages/domain/src/listings/relist-preflight.ts`)
+
+| Situacao | Resultado |
+|---|---|
+| `shipping.logistic_type = fulfillment` | `FULL_BLOQUEADO`, com ou sem estoque |
+| `inventory_id` com unidades no Full, disponiveis + indisponiveis | `FULL_BLOQUEADO`, com a quantidade no motivo |
+| `inventory_id` sem leitura valida: 404, resposta de outro inventario, forma inesperada, numero negativo ou nao finito | `FULL_NAO_VERIFICADO` (fail-safe: nunca presume zero) |
+| `inventory_id` com zero unidades e envio fora do Full | aprovado, com o aviso `FULL_CADASTRO_SEM_ESTOQUE` |
+| sem `inventory_id` | como antes: fora do Full |
+
+- O indisponivel conta: avariado, perdido ou em transferencia continua fisicamente no CD (2.7).
+- A leitura e AO VIVO, `GET /inventories/{id}/stock/fulfillment`, uma por inventario (`apps/worker/src/handlers/relist-full-stock.ts`), e nao o snapshot de 6 em 6 horas: o Full pode receber unidades entre a captura e a execucao.
+- `relist.prepare` le o Full ANTES de criar a operacao. Uma falha passageira relanca sem nada gravado; lida depois do insert, a repeticao cairia no 23505 do indice de D-159 e deixaria uma operacao REQUESTED que nenhum preflight avaliou.
+- `relist.execute` le de novo no re-preflight de REQUESTED (D-162). Falha passageira relanca antes de qualquer transicao, e o PUT nao sai sem a conferencia.
+- As leituras vao para o log (`relist_prepare_done` e `relist_execute_preflight`, campo `full_stock`, "disponivel+indisponivel" por inventario).
+
+**O que continua sem resposta:** a doc nao diz se o anuncio novo herda o cadastro no Full. O aviso diz isso ao operador: para voltar a enviar ao Full, pode ser preciso cadastrar de novo. A primeira republicacao real de anuncio com cadastro zerado e a validacao empirica: conferir no filho se o `inventory_id` veio.
+
+---
+
+**PROVA**
+
+- Dominio: 26 testes em `src/listings`, tsc e eslint limpos.
+- Worker: 554 testes (9 novos entre `relist-prepare` e `relist-execute`), tsc e eslint limpos.
+- Mutacao: 7 guardas, 7 reprovando teste nomeado, cada arquivo restaurado e conferido por sha256:
+  - inventario sem leitura tratado como zero;
+  - indisponivel ignorado;
+  - envio pelo Full ignorado;
+  - leitura negativa aceita;
+  - falha passageira tratada como nao verificada;
+  - resposta de outro inventario aceita (sobreviveu na primeira rodada; ganhou teste);
+  - 404 relancado em vez de nao verificado.
+
+**Impacto:** `packages/domain/src/listings/{relist-preflight,index}.ts` e teste; `apps/worker/src/handlers/{relist-full-stock,relist-prepare,relist-execute}.ts` e testes; `docs/{DECISIONS,DECISIONS_INDEX,MERCADO_LIVRE,ROADMAP}.md`. Sem migration e sem mudanca na web (o painel ja mostra o motivo da recusa). Publicacao: so o worker.
