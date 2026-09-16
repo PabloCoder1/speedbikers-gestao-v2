@@ -231,3 +231,29 @@ test("Dashboard do Anúncio: Decisões mostra a decisão DESTE anúncio, e só e
   await page.goto(`/anuncios/${SEM_DADO}?aba=decisoes`);
   await expect(page.getByText(/Nenhuma decisão registrada para este anúncio/)).toBeVisible();
 });
+
+/**
+ * A CHECAGEM, AS BARRAS E OS ATALHOS da Visão geral.
+ *
+ * A checagem só enumera fatos medidos, e o que pede trabalho vem primeiro: o
+ * anúncio sem estoque e sem vínculo abre a lista pelos dois problemas, cada um
+ * com o caminho para resolver. As barras dizem ausência em vez de desenhar zero.
+ */
+test("Dashboard do Anúncio: checagem põe o problema no topo, e as barras dizem ausência", async ({ page }) => {
+  const semEstoque = E2E_LISTINGS.find((a) => a.available === 0);
+
+  await login(page, `/anuncios/${semEstoque?.itemId ?? ""}`);
+
+  const checagem = page.locator(".sb-checagem-item");
+
+  await expect(checagem.first()).toContainText("Sem estoque no anúncio");
+  await expect(checagem.nth(1)).toContainText("Sem vínculo de SKU");
+  await expect(checagem.nth(1).getByRole("link", { name: "Vincular" })).toHaveAttribute("href", "/vinculacoes");
+
+  await expect(page.getByText(/Nenhum dia com registro no período — sem venda registrada/)).toBeVisible();
+
+  const noMercadoLivre = page.getByRole("link", { name: /Ver no Mercado Livre/ });
+
+  await expect(noMercadoLivre).toHaveAttribute("href", /produto\.mercadolivre\.com\.br\/MLB-\d+$/);
+  await expect(noMercadoLivre).toHaveAttribute("target", "_blank");
+});

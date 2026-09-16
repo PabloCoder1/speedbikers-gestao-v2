@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
+import { TOM, tomDeRelist } from "../../../components/tone";
 import { relistStatusLabel } from "../../../lib/labels";
 import { createClient } from "../../../lib/supabase/browser";
 
@@ -138,8 +139,11 @@ export function RelistPanel({
         dele que dependem os botões.
       */}
       {operacao !== null && (
-        <p style={{ margin: 0, fontSize: "0.8125rem" }}>
-          Operação atual: <b>{relistStatusLabel(operacao.status)}</b>
+        <p style={{ margin: 0, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "0.5rem", fontSize: "0.6875rem", color: "var(--sb-text-soft)" }}>
+          Operação atual
+          <span className="sb-status" style={TOM[tomDeRelist(operacao.status)]}>
+            {relistStatusLabel(operacao.status)}
+          </span>
         </p>
       )}
 
@@ -150,7 +154,7 @@ export function RelistPanel({
       )}
 
       {podeRepublicar && !viva && (
-        <div>
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <button
             type="button"
             className="sb-button"
@@ -165,7 +169,7 @@ export function RelistPanel({
       )}
 
       {podeRepublicar && executavel && (
-        <div>
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <button
             type="button"
             className="sb-button sb-button-danger"
