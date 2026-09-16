@@ -12184,3 +12184,58 @@ A tela le as tres colunas com guarda (`in`): o Preview do PR roda sem a migratio
 | MLB5518943466 (10 variacoes) | 108 ms | ~6 ms | ~2,4 ms |
 
 Estavel depois da 6a execucao, sem degradacao. O custo novo e a leitura de `orders` por item: o indice entra por (conta, item) e o filtro de data e aplicado depois, sobre todo o historico do anuncio -- dai o frio de 838 ms no mais vendido. Aceitavel para uma tela de detalhe; se crescer, o caminho e indice em `orders` por data com o item, fatia propria. E o anuncio de 10 variacoes deu **385 pedidos e 383 compras**, que e exatamente a diferenca que somar as linhas por variacao esconderia.
+
+## D-358 - Cobertura e reposicao: uma leitura em vez de duas, o plano custom que faltava, e a tela que responde "o que comprar agora"
+
+**Contexto:** pedido do usuario: melhorar `/reposicao` ("Cobertura e reposicao") no visual, na qualidade, na velocidade e na assertividade, "bonita e funcional".
+
+**1. A VELOCIDADE -- medida antes de mexer (Dev, `authenticated` real, 16/09/2026)**
+
+| leitura | frio | quente |
+|---|---|---|
+| `get_purchase_suggestions` (pagina de 100) | 2.420 ms | ~490 ms |
+| `get_purchase_state_counts` | -- | ~495 ms |
+| o MESMO corpo com literais | -- | 218 ms |
+| pecas: curva ABC / Full / tendencia / historico | -- | 82 / 34 / 17 / 10 ms |
+
+Corpo rapido e funcao lenta: e o plano, a doenca de D-305/D-307. D-307 tinha anotado as duas como "custo, nao defeito" contra o teto de 8 s, e continuava certo; o que mudou foi o pedido. E a tela pagava duas vezes: as contagens delegam na sugestao com limite de um milhao, entao cada carregamento classificava os 3.284 SKUs duas vezes.
+
+Migration `20260916130908`:
+
+- `get_purchase_suggestions` vira `plpgsql` com `plan_cache_mode = 'force_custom_plan'`, corpo EXTRAIDO por script do arquivo em vigor (D-253), sem alteracao textual. Assinatura e retorno iguais: Copiloto, `get_purchase_state_counts` e testes seguem valendo;
+- `get_replenishment_overview` (nova) chama a sugestao UMA vez e devolve em `jsonb` a pagina, o total filtrado, contagem/unidades/investimento por estado, os agregados "comprar agora" e total, e o frescor das vendas e do Full. Nao reclassifica: a ordem da pagina e a da propria funcao, por `with ordinality`.
+
+**Conferido no Dev, sem deixar nada no banco:** as funcoes novas criadas em `pg_temp` numa transacao desfeita.
+
+| | resultado |
+|---|---|
+| md5 das 3.284 linhas, funcao atual x nova | identico (`9801fff3...`) |
+| sugestao nova, 8 execucoes | 198-202 ms |
+| leitura da tela, 8 execucoes (sem filtro e com RUPTURA) | 251-260 ms |
+| pagina 2, filtro RUPTURA e contagens: `with ordinality` x funcoes atuais | iguais |
+
+A tela passa de duas leituras de ~490 ms para uma de ~255 ms, estavel depois da 6a execucao.
+
+**2. ASSERTIVIDADE**
+
+- **investimento sugerido** por estado, "comprar agora" (ruptura + compra urgente) e total -- somados no SQL. Custo nulo ou 0 e desconhecido (regra de D-356): fica fora da soma e e contado a parte em `sem_custo`. No Dev: comprar agora = 222 SKUs, ~R$ 2,11 mi;
+- **frescor das entradas**: quando as vendas foram recalculadas e quando o Full foi capturado, com selo ambar acima de 26 h. A sugestao depende das duas, e dado velho mudava a resposta sem sinal nenhum;
+- **leitura conferida campo a campo** (`lib/replenishment-overview.ts`, mesmo desenho de `lib/faturamento.ts`): resposta fora do contrato e recusada inteira, em vez de virar "--" que parece "nao observado";
+- o custo por linha passou a tratar custo 0 como desconhecido ("sem custo"), e nao como R$ 0,00.
+
+**3. A TELA**
+
+- cabecalho com marca (menu), busca e Configuracoes na mesma linha; aviso de "nenhuma configuracao" como faixa com botao;
+- **resumo de decisao**: comprar agora, investimento para comprar agora, investimento total e "dados usados";
+- **sete cartoes de estado** com a faixa de cor do tom e, onde ha sugestao, o investimento e as unidades do estado. Excesso sem teto mostra "--" e o motivo, nunca zero mudo (D-250). Classes proprias (`sb-rep-*`): `.sb-state-card` e compartilhado com `/fornecedores/[supplierId]`;
+- o paragrafo de metodo virou **"Como a conta e feita"**, recolhido;
+- tabela: SKU com link para o dashboard, classe ABC como selo, aproveitavel com as partes (L, F, T), **barra de cobertura** de 0 ao dobro da janela (a janela e o fio do meio), estado como selo, recusas como etiquetas uma por linha, sugestao em destaque. A recusa aparece uma vez (na coluna Estado): repeti-la em Sugestao empurrava o custo para fora da tela a 1440px;
+- **barra de selecao** do pedido: conta SKUs, unidades e custo estimado do que foi marcado (com "sem custo" a parte), "Marcar compra agora" e "Limpar". O formulario continua o GET nativo para `/compras/novo` (D-151): pedido nasce rascunho, com aprovacao humana.
+
+**4. VERIFICACAO E O QUE FICOU DE FORA**
+
+`typecheck` (web, db, api), `lint`, build, os quatro guardas estaticos e 602 testes de unidade (7 novos do leitor). E2E contra o build de producao e o seed local: `reposicao`, `full`, `home`, `configuracoes` e `anuncio-detalhe`, 24 verdes. Tres casos de integracao novos (equivalencia com as RPCs antigas, filtro de estado que nao mexe nos cartoes, anon negado) foram escritos e **nao rodaram**: a suite pede `db reset` no banco local compartilhado.
+
+- **a tela so foi vista com o seed local** (2 SKUs, todos sem estado): selos de estado, barras e barra de selecao preenchidas nao foram fotografados com dados reais;
+- **a migration nao foi aplicada no Dev**: sobe pela CI no merge, como a de D-357;
+- achado, nao corrigido: um SKU pode ficar SEM_ESTADO com sugestao positiva (aproveitavel negativo e venda zero em 30 dias; no Dev, 1 unidade). O estado exige taxa > 0 e a sugestao nao -- as duas regras sao de D-147/D-150 e mudar uma delas e decisao de produto.
