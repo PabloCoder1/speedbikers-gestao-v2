@@ -959,3 +959,7 @@ o índice inteiro) — e **nenhum código de produção apaga `skus`, `profiles`
 aparece com 67 varreduras lendo 13,4 milhões de linhas. Não é a aplicação: são
 as consultas de investigação desta sessão e das anteriores. A estatística
 inclui quem investiga.
+
+### `/reposicao`: duas leituras de ~490 ms viram uma de ~255 ms (D-358)
+
+Dev, `authenticated` real, 16/09/2026, 8 execuções. `get_purchase_suggestions` e `get_purchase_state_counts` custavam ~490 ms cada (2.420 ms a frio), e o corpo com literais, 218 ms — plano genérico de `language sql` com `SET` (D-305/D-307). A tela chamava as duas, e as contagens classificavam o catálogo inteiro de novo. Depois (funções em `pg_temp`, transação desfeita): sugestão em plpgsql com plano custom 198–202 ms, com md5 idêntico nas 3.284 linhas; `get_replenishment_overview`, uma leitura para página + contagens + investimento, 251–260 ms. Peças do corpo: curva ABC 82 ms, Full 34 ms, tendência 17 ms, histórico 10 ms — a curva é o próximo alvo, se precisar.

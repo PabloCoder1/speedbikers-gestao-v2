@@ -4499,6 +4499,19 @@ export type Database = {
           total_count: number
         }[]
       }
+      get_replenishment_overview: {
+        Args: {
+          p_date_to: string
+          p_limit?: number
+          p_offset?: number
+          p_organization_id: string
+          p_search?: string | null
+          p_state?: string | null
+          p_supplier_brand?: string | null
+        }
+        // jsonb (D-358): conferido campo a campo em apps/web/lib/replenishment-overview.ts.
+        Returns: Json
+      }
       get_purchase_state_counts: {
         Args: {
           p_date_to: string

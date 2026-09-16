@@ -5103,6 +5103,62 @@ describe("get_purchase_suggestions (D-147, Fase 5D)", () => {
     expect(somaTudo).toBeGreaterThan(somaMarca);
   });
 
+  it("get_replenishment_overview e a MESMA classificacao das duas RPCs antigas, numa leitura so (D-358)", async () => {
+    const [visao] = await asUser<{ v: {
+      total: number;
+      contagens: { state: string; skus: number }[];
+      totais: { skus: number };
+      linhas: { sku_id: string; state: string | null; suggested_quantity: number | null }[];
+    } }>(ADMIN_SB, `select public.get_replenishment_overview('${ORG_SB}','${TODAY}',null,null,null,1000,0) as v`);
+    const contagens = await asUser<{ state: string; skus: string }>(
+      ADMIN_SB,
+      `select * from public.get_purchase_state_counts('${ORG_SB}','${TODAY}')`,
+    );
+    const pagina = await asUser<{ sku_id: string; state: string | null; suggested_quantity: number | null; total_count: string }>(
+      ADMIN_SB,
+      `select sku_id, state, suggested_quantity, total_count from public.get_purchase_suggestions('${ORG_SB}','${TODAY}',null,null,1000,0)`,
+    );
+
+    // Os cartoes: mesmos estados, mesmas contagens.
+    const porEstado = (lista: { state: string; skus: string | number }[]) =>
+      Object.fromEntries(lista.map((c) => [c.state, Number(c.skus)]));
+
+    expect(porEstado(visao?.v.contagens ?? [])).toEqual(porEstado(contagens));
+    expect(visao?.v.totais.skus).toBe(Number(pagina[0]?.total_count));
+    expect(visao?.v.total).toBe(Number(pagina[0]?.total_count));
+
+    // A pagina: mesmas linhas, na MESMA ordem de prioridade (with ordinality).
+    expect(visao?.v.linhas.map((l) => [l.sku_id, l.state, l.suggested_quantity])).toEqual(
+      pagina.map((l) => [l.sku_id, l.state, l.suggested_quantity]),
+    );
+  });
+
+  it("get_replenishment_overview filtra a tabela pelo estado e NAO os cartoes (D-250/D-358)", async () => {
+    const [visao] = await asUser<{ v: { total: number; contagens: { state: string; skus: number }[]; linhas: { state: string | null }[] } }>(
+      ADMIN_SB,
+      `select public.get_replenishment_overview('${ORG_SB}','${TODAY}',null,null,'SEM_ESTADO',1000,0) as v`,
+    );
+    const semEstado = visao?.v.contagens.find((c) => c.state === "SEM_ESTADO");
+
+    expect(visao?.v.total).toBe(semEstado?.skus ?? 0);
+    for (const linha of visao?.v.linhas ?? []) {
+      expect(linha.state).toBeNull();
+    }
+    // Os cartoes continuam com todos os estados, nao so o filtrado.
+    const todas = await asUser<{ state: string }>(
+      ADMIN_SB,
+      `select * from public.get_purchase_state_counts('${ORG_SB}','${TODAY}')`,
+    );
+
+    expect(visao?.v.contagens).toHaveLength(todas.length);
+  });
+
+  it("anon nao executa get_replenishment_overview", async () => {
+    await expect(
+      asAnon(`select public.get_replenishment_overview('${ORG_SB}','${TODAY}')`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
   it("anon nao executa get_purchase_state_counts", async () => {
     await expect(
       asAnon(`select * from public.get_purchase_state_counts('${ORG_SB}','${TODAY}')`),

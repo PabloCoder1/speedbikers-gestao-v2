@@ -6,73 +6,50 @@ import type {
   StockStateRefusal,
 } from "@sb/domain";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
-import { FilterGroup, FilterPill, FilterSubmit } from "../../components/filter-pill";
+import { FilterMenu } from "../../components/filter-menu";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
+import { TOM, type Tom } from "../../components/tone";
 import { TrendBadge } from "../../components/trend-badge";
-import { formatCount, formatCurrency } from "../../lib/format";
+import { formatCount, formatCurrency, formatDateTime } from "../../lib/format";
 import {
   PAGE_SIZE,
   buildReplenishmentHref,
   resolveReplenishmentFilters,
   summarizeReplenishmentWindow,
 } from "../../lib/replenishment-filters";
-import { createClient } from "../../lib/supabase/server";
+import { idadeDaLeitura, lerVisaoReposicao, posicaoCobertura } from "../../lib/replenishment-overview";
 import { currentMembership } from "../../lib/request-membership";
+import { createClient } from "../../lib/supabase/server";
 
-export const metadata = { title: "Reposição — Speed Bikers Gestão" };
+import { SelecaoPedido } from "./selecao-pedido";
+
+export const metadata = { title: "Cobertura e reposição — Speed Bikers Gestão" };
 
 // A sessão vem de cookie: pré-renderizar no build mostraria dado de outra
 // pessoa. Mesmo raciocínio das demais telas.
 export const dynamic = "force-dynamic";
 
 /**
- * Sugestão de compra auditável (D-147) — o coração da Fase 5D, e a resposta
- * do PRD a "quanto eu deveria comprar?", nunca só "quantos dias eu tenho".
+ * Cobertura e reposição — sugestão de compra auditável (D-147), fundida com a
+ * cobertura em D-288 e refeita em D-358.
  *
- * A conta inteira mora em `@sb/domain` (`computePurchaseSuggestion`) e é a
- * composição das três fatias anteriores: política (D-144) dá a janela de
- * demanda; tendência (D-145) dá a taxa dos últimos 30 dias; aproveitável
- * (D-146) dá o que já existe. A RPC entrega INGREDIENTES; a tela monta cada
- * linha pela fórmula única e mostra a decomposição — "por que comprar 48?".
+ * A conta inteira continua em `@sb/domain` (`composeSkuReplenishment`): a RPC
+ * entrega INGREDIENTES e a tela monta cada linha pela fórmula única, mostrando a
+ * decomposição — "por que comprar 48?". As recusas são resposta, não erro.
  *
- * **As recusas são resposta, não erro**, e todas aparecem: sem configuração
- * aplicável, estoque virtual, histórico incompleto, amostra insuficiente.
- * Número só quando defensável.
+ * ## D-358: uma leitura, e a tela que pergunta "o que comprar agora?"
+ *
+ * Eram duas RPCs (`get_purchase_suggestions` e `get_purchase_state_counts`), e a
+ * segunda delegava na primeira com limite de um milhão: cada carregamento
+ * classificava o catálogo inteiro DUAS vezes, ~490 ms cada no Dev. Agora
+ * `get_replenishment_overview` classifica uma vez (plano custom, ~255 ms) e
+ * devolve a página, a contagem por estado, o investimento sugerido e o frescor
+ * das entradas. Nada é somado aqui: os agregados vêm do SQL.
  */
-
-
-/** Nulidade real conferida contra o corpo da RPC — o gerador não a marca. */
-interface SuggestionRow {
-  sku_id: string;
-  sku: string;
-  title: string | null;
-  supplier_brand: string | null;
-  purchase_cost: number | null;
-  stock_is_virtual: boolean;
-  local_quantity: number;
-  reservado: number;
-  transito: number;
-  full_quantity: number;
-  units_15d: number;
-  units_30d: number;
-  units_60d: number;
-  units_90d: number;
-  history_days_90: number;
-  /**
-   * Derivados em SQL (D-150) para a ORDENAÇÃO por prioridade e para o teste
-   * de equivalência; as células continuam renderizando pelo domínio. Só
-   * `abc_class` é exibido daqui — a curva é canônica em SQL (D-140).
-   */
-  abc_class: string | null;
-  coverage_days: number | null;
-  state: string | null;
-  suggested_quantity: number | null;
-  total_count: number;
-}
 
 const REFUSAL_LABEL: Record<PurchaseSuggestionRefusal, string> = {
   SEM_CONFIGURACAO: "sem configuração",
@@ -88,26 +65,49 @@ const STATE_REFUSAL_LABEL: Record<StockStateRefusal, string> = {
 };
 
 /**
- * Tons por severidade (D-007: nunca todas as cores com o mesmo peso):
- * ruptura/urgente em vermelho, os avisos no amarelo-tinta legível, adequada
- * no tom positivo já usado pela tendência.
+ * Tom por severidade (D-007: nunca todas as cores com o mesmo peso). Ruptura e
+ * urgente em perigo; os dois avisos em atenção; adequada em ok; excesso em
+ * informação — capital parado pede decisão, mas não é falta.
  */
-const STATE_TONE: Record<StockOperationalState, { label: string; color: string; bold?: boolean }> = {
-  RUPTURA: { label: "Ruptura", color: "var(--sb-danger)", bold: true },
-  COMPRA_URGENTE: { label: "Compra urgente", color: "var(--sb-danger)" },
-  COMPRAR_EM_BREVE: { label: "Comprar em breve", color: "var(--sb-accent-ink)" },
-  COBERTURA_BAIXA: { label: "Cobertura baixa", color: "var(--sb-text-soft)" },
-  ADEQUADA: { label: "Adequada", color: "var(--sb-secondary)" },
-  EXCESSO: { label: "Excesso", color: "var(--sb-accent-ink)", bold: true },
+const ESTADOS: Record<StockOperationalState, { rotulo: string; tom: Tom; descricao: string }> = {
+  RUPTURA: { rotulo: "Em ruptura", tom: "perigo", descricao: "aproveitável zerado ou negativo" },
+  COMPRA_URGENTE: { rotulo: "Compra urgente", tom: "perigo", descricao: "cobertura dentro do prazo do fornecedor" },
+  COMPRAR_EM_BREVE: { rotulo: "Comprar em breve", tom: "atencao", descricao: "abaixo do ponto de pedido" },
+  COBERTURA_BAIXA: { rotulo: "Cobertura baixa", tom: "atencao", descricao: "abaixo da janela de demanda" },
+  ADEQUADA: { rotulo: "Adequada", tom: "ok", descricao: "cobre a janela de demanda" },
+  EXCESSO: { rotulo: "Excesso", tom: "info", descricao: "acima do teto de cobertura" },
 };
 
+const ORDEM_ESTADOS: readonly StockOperationalState[] = [
+  "RUPTURA",
+  "COMPRA_URGENTE",
+  "COMPRAR_EM_BREVE",
+  "COBERTURA_BAIXA",
+  "ADEQUADA",
+  "EXCESSO",
+];
+
+const URGENTES = new Set<string>(["RUPTURA", "COMPRA_URGENTE"]);
+
 const RATE = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** "R$ 1,35 mi", "R$ 758 mil" — o cartão pede ordem de grandeza; o valor exato fica no `title`. */
+const COMPACTO = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
 
 function scopeLabel(scope: "SKU" | "MARCA" | "PADRAO", brand: string | null): string {
   if (scope === "SKU") return "regra do SKU";
   if (scope === "MARCA") return `regra da marca ${brand ?? ""}`;
 
   return "padrão da organização";
+}
+
+function ehEstado(valor: string | null): valor is StockOperationalState {
+  return valor !== null && valor in ESTADOS;
 }
 
 export default async function ReposicaoPage({
@@ -124,7 +124,7 @@ export default async function ReposicaoPage({
   if (organizationId === null) {
     return (
       <Shell>
-        <h1 style={{ margin: "0 0 var(--sb-space-3)", fontSize: "1.375rem" }}>Reposição</h1>
+        <PageTitle eyebrow="ESTOQUE / PLANEJAMENTO" title="Cobertura e reposição" />
         <p style={{ color: "var(--sb-text-soft)" }}>Sua conta não está associada a nenhuma organização.</p>
       </Shell>
     );
@@ -133,10 +133,9 @@ export default async function ReposicaoPage({
   const filters = resolveReplenishmentFilters(query);
   const dateTo = toSalesMetricDate(new Date());
 
-  // Ingredientes, filtros, ordenação e contagem vêm do Postgres (D-131);
-  // a FÓRMULA roda aqui pela implementação canônica — nunca nas duas pontas.
-  const [suggestionsResult, settingsResult, brandsResult, countsResult] = await Promise.all([
-    supabase.rpc("get_purchase_suggestions", {
+  // Três leituras numa ida (D-185). A pesada é UMA agora (D-358).
+  const [overviewResult, settingsResult, brandsResult] = await Promise.all([
+    supabase.rpc("get_replenishment_overview", {
       p_organization_id: organizationId,
       p_date_to: dateTo,
       p_supplier_brand: filters.brand,
@@ -150,24 +149,16 @@ export default async function ReposicaoPage({
       .select(
         "supplier_brand, sku_id, lead_time_days, target_coverage_days, safety_stock_days, max_coverage_days, policy_note",
       ),
-    // D-194: a agregação é do BANCO. A forma anterior lia 3.550 linhas para
-    // produzir 19 valores, e o teto de 1.000 do PostgREST (D-131) fazia 10
-    // das 19 marcas nunca aparecerem no filtro.
+    // D-194: a agregação das marcas é do BANCO.
     supabase.rpc("get_supplier_brands", { p_organization_id: organizationId }),
-    // Os cartões recebem marca e busca, mas NÃO o estado: eles precisam
-    // continuar mostrando os outros estados quando um deles está ativo.
-    supabase.rpc("get_purchase_state_counts", {
-      p_organization_id: organizationId,
-      p_date_to: dateTo,
-      p_supplier_brand: filters.brand,
-      p_search: filters.search,
-    }),
   ]);
 
-  const rows = (suggestionsResult.data ?? []) as SuggestionRow[];
-  const totalCount = rows[0]?.total_count ?? 0;
-  const windowInfo = summarizeReplenishmentWindow(filters.page, totalCount, rows.length);
-  const error = suggestionsResult.error ?? settingsResult.error ?? brandsResult.error;
+  const visao = overviewResult.error === null ? lerVisaoReposicao(overviewResult.data) : null;
+  const erro =
+    overviewResult.error?.message ??
+    settingsResult.error?.message ??
+    brandsResult.error?.message ??
+    (visao === null ? "a leitura da reposição voltou fora do contrato esperado" : null);
 
   const settings: ReplenishmentSetting[] = (settingsResult.data ?? []).map((s) => ({
     supplierBrand: s.supplier_brand,
@@ -179,46 +170,18 @@ export default async function ReposicaoPage({
     policyNote: s.policy_note,
   }));
 
-  // Sem `Set` e sem filtro de nulo: a RPC já devolve distintas e não-nulas.
   const brands = (brandsResult.data ?? []).map((r) => r.supplier_brand);
+  const temTeto = settings.some((s) => s.maxCoverageDays !== null);
 
-  /*
-    Os SETE cartões de estado (D-250). O frame `Coverage` desenha CINCO, e a
-    conferência contra o vocabulário canônico (D-150) achou três diferenças:
+  const agora = new Date();
+  const frescorVendas = idadeDaLeitura(visao?.vendasCalculadasEm ?? null, agora);
+  const frescorFull = idadeDaLeitura(visao?.fullCapturadoEm ?? null, agora);
 
-    * o frame OMITE `COBERTURA_BAIXA`, que existe e tem 37 SKUs no Dev;
-    * o frame desenha "Excesso" com número, mas EXCESSO só é afirmado com
-      TETO configurado — sem teto ele volta vazio POR DESENHO, e "0" cru
-      leria como "não há excesso", que é afirmação diferente;
-    * falta o bucket de RECUSA, que é 86% do catálogo. Sem ele os cartões
-      somariam 463 embaixo de uma tabela que anuncia 3.280 — dois números
-      que o olho compara sozinho.
-  */
-  const contagens = new Map((countsResult.data ?? []).map((c) => [c.state, c.skus]));
-  const temTeto = (settingsResult.data ?? []).some((s) => s.max_coverage_days !== null);
+  const contagem = new Map((visao?.contagens ?? []).map((c) => [c.state, c]));
+  const windowInfo = summarizeReplenishmentWindow(filters.page, visao?.total ?? 0, visao?.linhas.length ?? 0);
 
-  const CARTOES: readonly { estado: string; rotulo: string; cor: string; nota?: string }[] = [
-    { estado: "RUPTURA", rotulo: "Em ruptura", cor: "var(--sb-danger)" },
-    { estado: "COMPRA_URGENTE", rotulo: "Compra urgente", cor: "var(--sb-danger)" },
-    { estado: "COMPRAR_EM_BREVE", rotulo: "Comprar em breve", cor: "var(--sb-accent-ink)" },
-    { estado: "COBERTURA_BAIXA", rotulo: "Cobertura baixa", cor: "var(--sb-accent-ink)" },
-    { estado: "ADEQUADA", rotulo: "Cobertura adequada", cor: "var(--sb-secondary)" },
-    {
-      estado: "EXCESSO",
-      rotulo: "Excesso",
-      cor: "var(--sb-text-soft)",
-      // O único estado que depende de configuração: sem teto, ele nunca é
-      // afirmado — "quanto é demais é decisão do ADMIN, não constante do
-      // código" (D-148). O cartão diz isso em vez de mostrar um zero mudo.
-      ...(temTeto ? {} : { nota: "exige teto de cobertura configurado" }),
-    },
-    {
-      estado: "SEM_ESTADO",
-      rotulo: "Sem estado",
-      cor: "var(--sb-muted-ink)",
-      nota: "sem configuração, estoque virtual, histórico furado ou amostra insuficiente",
-    },
-  ];
+  const filtroAtivo = filters.brand !== null || filters.search !== null || filters.state !== null;
+  const estadoAtivo = ehEstado(filters.state) ? ESTADOS[filters.state].rotulo : filters.state === "SEM_ESTADO" ? "Sem estado" : null;
 
   return (
     <Shell>
@@ -226,332 +189,444 @@ export default async function ReposicaoPage({
       <PageTitle
         eyebrow="ESTOQUE / PLANEJAMENTO"
         title="Cobertura e reposição"
-        subtitle="Quantos dias faltam para esgotar, e o que comprar por causa disso — uma tela só, com UMA definição de ruptura: aproveitável (local + Full + trânsito) contra a venda média, lead time e cobertura alvo."
-        aside={<Link href="/reposicao/configuracoes">Configurações de reposição →</Link>}
+        subtitle="Quantos dias o estoque aguenta e quanto comprar — o aproveitável (local + Full + trânsito) contra a venda dos últimos 30 dias, o prazo do fornecedor e a cobertura desejada."
+        aside={
+          <>
+            <FilterMenu
+              rotulo={filters.brand ?? "Todas as marcas"}
+              opcoes={[
+                { href: buildReplenishmentHref(filters, { brand: null }), ativo: filters.brand === null, label: "Todas as marcas" },
+                ...brands.map((brand) => ({
+                  href: buildReplenishmentHref(filters, { brand }),
+                  ativo: filters.brand === brand,
+                  label: brand,
+                })),
+              ]}
+            />
+            <form method="get" action="/reposicao" className="sb-rep-busca">
+              {/* Hidden por dimensão ativa: GET nativo só envia campos do form (D-136). */}
+              {filters.brand !== null && <input type="hidden" name="marca" value={filters.brand} />}
+              {filters.state !== null && <input type="hidden" name="estado" value={filters.state} />}
+              <input
+                className="sb-input"
+                type="search"
+                name="busca"
+                defaultValue={filters.search ?? ""}
+                placeholder="SKU ou título"
+                aria-label="Buscar por SKU ou título"
+              />
+              <button type="submit" className="sb-button">
+                Buscar
+              </button>
+            </form>
+            <Link className="sb-button" href="/reposicao/configuracoes">
+              Configurações
+            </Link>
+          </>
+        }
       />
 
-      <div className="sb-state-cards">
-        {CARTOES.map((c) => {
-          const ativo = filters.state === c.estado;
-          const quantos = contagens.get(c.estado) ?? 0;
+      {erro !== null && (
+        <p role="alert" className="sb-note sb-note-perigo" style={{ margin: "0 0 var(--sb-space-3)" }}>
+          Não foi possível carregar a reposição: {erro}
+        </p>
+      )}
 
-          return (
+      {erro === null && settings.length === 0 && (
+        <div role="alert" className="sb-rep-aviso">
+          <div>
+            <b>Nenhuma configuração de reposição cadastrada</b>
+            <span>
+              Sem prazo do fornecedor e cobertura desejada, a sugestão recusa número para todos os SKUs — de
+              propósito, em vez de inventar uma política.
+            </span>
+          </div>
+          <Link className="sb-button sb-button-primary" href="/reposicao/configuracoes">
+            Cadastrar a primeira regra
+          </Link>
+        </div>
+      )}
+
+      {visao !== null && (
+        <>
+          {/*
+            O RESUMO DE DECISÃO: o que comprar agora e quanto custa tudo. Os dois
+            agregados vêm prontos do SQL, no mesmo conjunto dos cartões (marca e
+            busca, sem o filtro de estado).
+          */}
+          <section className="sb-rep-resumo" aria-label="Resumo da reposição">
+            <div className="sb-rep-destaque sb-rep-destaque-perigo">
+              <span className="sb-rep-destaque-rotulo">Comprar agora</span>
+              <strong>{formatCount(visao.comprarAgora.skus)} SKUs</strong>
+              <span className="sb-rep-destaque-nota">
+                em ruptura ou compra urgente · {formatCount(visao.comprarAgora.unidades)} un sugeridas
+              </span>
+            </div>
+
+            <div className="sb-rep-destaque" title={formatCurrency(visao.comprarAgora.investimento)}>
+              <span className="sb-rep-destaque-rotulo">Investimento para comprar agora</span>
+              <strong>{COMPACTO.format(visao.comprarAgora.investimento)}</strong>
+              <span className="sb-rep-destaque-nota">
+                custo cadastrado × sugestão
+                {visao.comprarAgora.sem_custo > 0 && ` · ${formatCount(visao.comprarAgora.sem_custo)} SKU(s) sem custo fora da conta`}
+              </span>
+            </div>
+
+            <div className="sb-rep-destaque" title={formatCurrency(visao.totais.investimento)}>
+              <span className="sb-rep-destaque-rotulo">Investimento sugerido total</span>
+              <strong>{COMPACTO.format(visao.totais.investimento)}</strong>
+              <span className="sb-rep-destaque-nota">
+                {formatCount(visao.totais.unidades)} un em todos os estados
+                {visao.totais.sem_custo > 0 && ` · ${formatCount(visao.totais.sem_custo)} sem custo`}
+              </span>
+            </div>
+
+            <div className="sb-rep-destaque sb-rep-frescor">
+              <span className="sb-rep-destaque-rotulo">Dados usados</span>
+              <span className={frescorVendas?.velha === true ? "sb-rep-selo sb-rep-selo-velho" : "sb-rep-selo"}>
+                <i aria-hidden="true" />
+                Vendas {frescorVendas === null ? "sem recálculo" : `recalculadas ${frescorVendas.texto}`}
+              </span>
+              <span className={frescorFull?.velha === true ? "sb-rep-selo sb-rep-selo-velho" : "sb-rep-selo"}>
+                <i aria-hidden="true" />
+                Full {frescorFull === null ? "sem captura nos últimos 3 dias" : `capturado ${frescorFull.texto}`}
+              </span>
+            </div>
+          </section>
+
+          {/*
+            OS SETE ESTADOS (D-250): os seis do vocabulário canônico mais o
+            bucket de recusa. Excesso sem teto configurado não mostra zero mudo.
+          */}
+          <nav className="sb-rep-estados" aria-label="Filtrar por estado">
+            {ORDEM_ESTADOS.map((estado) => {
+              const dado = contagem.get(estado);
+              const ativo = filters.state === estado;
+              const semTeto = estado === "EXCESSO" && !temTeto;
+
+              return (
+                <Link
+                  key={estado}
+                  href={buildReplenishmentHref(filters, { state: ativo ? null : estado })}
+                  className={ativo ? "sb-rep-estado sb-rep-estado-ativo" : "sb-rep-estado"}
+                  style={{ "--sb-rep-tom": TOM[ESTADOS[estado].tom].color } as CSSProperties}
+                  aria-current={ativo ? "true" : undefined}
+                >
+                  <span className="sb-rep-estado-rotulo">{ESTADOS[estado].rotulo}</span>
+                  <strong>{semTeto ? "—" : formatCount(dado?.skus ?? 0)}</strong>
+                  <small>
+                    {semTeto
+                      ? "exige teto de cobertura configurado"
+                      : dado !== undefined && dado.investimento > 0
+                        ? `${COMPACTO.format(dado.investimento)} · ${formatCount(dado.unidades)} un`
+                        : ESTADOS[estado].descricao}
+                  </small>
+                </Link>
+              );
+            })}
+
             <Link
-              key={c.estado}
-              href={buildReplenishmentHref(filters, { state: ativo ? null : c.estado })}
-              className={ativo ? "sb-state-card sb-state-card-ativo" : "sb-state-card"}
-              aria-current={ativo ? "true" : undefined}
+              href={buildReplenishmentHref(filters, { state: filters.state === "SEM_ESTADO" ? null : "SEM_ESTADO" })}
+              className={filters.state === "SEM_ESTADO" ? "sb-rep-estado sb-rep-estado-ativo" : "sb-rep-estado"}
+              style={{ "--sb-rep-tom": "var(--sb-muted-ink)" } as CSSProperties}
+              aria-current={filters.state === "SEM_ESTADO" ? "true" : undefined}
             >
-              <span style={{ color: c.cor }}>{c.rotulo}</span>
-              <strong>{formatCount(quantos)}</strong>
-              <small>{c.nota ?? "SKUs"}</small>
+              <span className="sb-rep-estado-rotulo">Sem estado</span>
+              <strong>{formatCount(contagem.get("SEM_ESTADO")?.skus ?? 0)}</strong>
+              <small>sem configuração, estoque virtual, histórico ou amostra</small>
             </Link>
-          );
-        })}
-      </div>
+          </nav>
 
-      <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
-        Quanto comprar de cada SKU, com a conta inteira visível:{" "}
-        <strong>venda/dia (30d) × janela de demanda − estoque aproveitável</strong>. A janela vem da{" "}
-        <Link href="/reposicao/configuracoes">configuração de reposição</Link> (prazo + cobertura + segurança); o
-        aproveitável soma local, Full e trânsito, reservado fora. A quantidade é cálculo determinístico, nunca IA —
-        e quando falta base (configuração, estoque real, histórico ou amostra), a linha diz o motivo em vez de
-        inventar número. O <strong>estado</strong> compara a cobertura em dias com os limiares da própria política
-        (prazo, ponto de pedido, janela, teto) — excesso só é afirmado com o teto configurado. A{" "}
-        <strong>ordem é a prioridade de compra</strong>, por chaves explicáveis e sem pesos: estado (ruptura
-        primeiro), classe ABC, menor cobertura, maior venda recente. Priorizar é ordenar — a compra continua
-        decisão sua. SKU com estoque virtual destrava no{" "}
-        <Link href="/produtos?estado=pendente&sinal=sentinela">ensaio de classificação</Link>.
-      </p>
+          <details className="sb-rep-metodo">
+            <summary>Como a conta é feita</summary>
+            <div>
+              <p>
+                <b>Sugestão = venda/dia (30d) × janela de demanda − estoque aproveitável.</b> A janela vem da{" "}
+                <Link href="/reposicao/configuracoes">configuração de reposição</Link> (prazo + cobertura +
+                segurança); o aproveitável soma local, Full e trânsito, com o reservado fora. É cálculo
+                determinístico, nunca IA — e quando falta base (configuração, estoque real, histórico ou amostra), a
+                linha diz o motivo em vez de inventar número.
+              </p>
+              <p>
+                O <b>estado</b> compara a cobertura em dias com os limiares da própria política: prazo, ponto de
+                pedido, janela e teto. Excesso só é afirmado com teto configurado. A <b>ordem é a prioridade de
+                compra</b>, por chaves explicáveis e sem pesos: estado (ruptura primeiro), classe ABC, menor
+                cobertura, maior venda recente. Priorizar é ordenar — a compra continua decisão sua.
+              </p>
+              <p>
+                O <b>investimento</b> multiplica a sugestão pelo custo cadastrado; SKU sem custo fica fora da soma e
+                é contado à parte. SKU com estoque virtual destrava no{" "}
+                <Link href="/produtos?estado=pendente&sinal=sentinela">ensaio de classificação</Link>.
+              </p>
+            </div>
+          </details>
 
-      {error === null && settings.length === 0 && (
-        <p role="alert" style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.8125rem", color: "var(--sb-danger)" }}>
-          <strong>Nenhuma configuração de reposição cadastrada</strong> — sem prazo e cobertura desejada, a sugestão
-          recusa número para todos os SKUs, de propósito.{" "}
-          <Link href="/reposicao/configuracoes">Cadastrar a primeira regra</Link>.
-        </p>
-      )}
+          <Panel
+            title={estadoAtivo === null ? "Recomendação de compra" : `Recomendação de compra · ${estadoAtivo}`}
+            subtitle={`Em ordem de prioridade. ${windowInfo.label}`}
+            aside={
+              <>
+                {filtroAtivo && (
+                  <Link className="sb-button" href="/reposicao">
+                    Limpar filtros
+                  </Link>
+                )}
+                {windowInfo.totalPages > 1 && (
+                  <span className="sb-rep-paginas">
+                    {filters.page > 1 && (
+                      <Link className="sb-button" href={buildReplenishmentHref(filters, { page: filters.page - 1 })}>
+                        ‹ Anterior
+                      </Link>
+                    )}
+                    <span>
+                      {filters.page} de {windowInfo.totalPages}
+                    </span>
+                    {filters.page < windowInfo.totalPages && (
+                      <Link className="sb-button" href={buildReplenishmentHref(filters, { page: filters.page + 1 })}>
+                        Próxima ›
+                      </Link>
+                    )}
+                  </span>
+                )}
+              </>
+            }
+          >
+            {visao.linhas.length === 0 && (
+              <p className="sb-empty">
+                Nenhum SKU corresponde a estes filtros.{" "}
+                {filtroAtivo && <Link href="/reposicao">Ver todos</Link>}
+              </p>
+            )}
 
-      <div
-        style={{ display: "flex", flexDirection: "column", gap: "var(--sb-space-2)", marginBottom: "var(--sb-space-3)" }}
-      >
-        <FilterGroup label="Marca">
-          <FilterPill href={buildReplenishmentHref(filters, { brand: null })} active={filters.brand === null}>
-            Todas
-          </FilterPill>
-          {brands.map((brand) => (
-            <FilterPill
-              key={brand}
-              href={buildReplenishmentHref(filters, { brand })}
-              active={filters.brand === brand}
-            >
-              {brand}
-            </FilterPill>
-          ))}
-        </FilterGroup>
-
-        <form method="get" style={{ display: "flex", gap: "0.375rem", alignItems: "center" }}>
-          {/* Hidden por dimensão ativa: GET nativo só envia campos do form (D-136). */}
-          {filters.brand !== null && <input type="hidden" name="marca" value={filters.brand} />}
-          <input
-            className="sb-input"
-            type="search"
-            name="busca"
-            defaultValue={filters.search ?? ""}
-            placeholder="SKU ou título"
-            aria-label="Buscar por SKU ou título"
-            style={{ minWidth: "14rem" }}
-          />
-          <FilterSubmit>Buscar</FilterSubmit>
-        </form>
-      </div>
-
-      {error !== null && (
-        <p role="alert" style={{ color: "var(--sb-danger)" }}>
-          Não foi possível carregar: {error.message}
-        </p>
-      )}
-
-      {error === null && (
-        <Panel
-          title="Recomendação de compra"
-          subtitle={`Baseada em venda média, tendência, cobertura e lead time. ${windowInfo.label}`}
-        >
-          {rows.length === 0 && <p className="sb-empty">Nenhum SKU corresponde a estes filtros.</p>}
-
-          {rows.length > 0 && (
-        // A ponte cobertura→pedido (D-151): GET nativo para /compras/novo com
-        // pares `sku=<uuid>:<qtd sugerida>` — o pedido nasce pré-carregado,
-        // como RASCUNHO, e segue o ciclo de aprovação humana de D-055.
-        <form action="/compras/novo" method="get">
-        <div style={{ overflowX: "auto" }}>
-          <table className="sb-table">
-            <thead>
-              <tr>
-                <th title="Marque para levar ao pedido de compra — só linhas com sugestão defensável">
-                  Pedido
-                </th>
-                <th>SKU</th>
-                <th>Marca</th>
-                <th title="Curva ABC por faturamento, 90 dias (D-140) — segunda chave da prioridade">
-                  Classe
-                </th>
-                <th>Venda/dia (30d)</th>
-                <th>Tendência</th>
-                <th>Aproveitável</th>
+            {visao.linhas.length > 0 && (
+              <>
                 {/*
-                  A COLUNA QUE VEIO DE `/cobertura` NA FUSÃO (D-288).
-
-                  Era o número que dava nome àquela tela — e aqui ele já
-                  existia, escondido no `title` do estado. A diferença é a
-                  conta: lá era estoque LOCAL sobre a venda de 30 dias; aqui é
-                  o APROVEITÁVEL (local + Full + trânsito, reservado fora)
-                  sobre a mesma venda. Uma definição, e é esta.
+                  A ponte cobertura→pedido (D-151): GET nativo para /compras/novo
+                  com pares `sku=<uuid>:<qtd sugerida>` — o pedido nasce como
+                  RASCUNHO e segue a aprovação humana de D-055.
                 */}
-                <th title="Aproveitável ÷ venda média diária dos últimos 30 dias — quantos dias faltam para esgotar no ritmo atual">
-                  Cobertura (dias)
-                </th>
-                <th>Janela (dias)</th>
-                <th>Estado</th>
-                <th>Sugestão</th>
-                <th>Custo estimado</th>
-              </tr>
-            </thead>
+                <form id="rep-pedido" action="/compras/novo" method="get">
+                  <div style={{ overflowX: "auto" }}>
+                    <table className="sb-table sb-rep-tabela">
+                      <thead>
+                        <tr>
+                          <th title="Marque para levar ao pedido de compra — só linhas com sugestão defensável">
+                            <span className="sb-sr-only">Pedido</span>
+                          </th>
+                          <th>SKU</th>
+                          <th title="Curva ABC por faturamento, 90 dias (D-140) — segunda chave da prioridade">Classe</th>
+                          <th className="sb-num" title="Venda média diária dos últimos 30 dias">Venda/dia</th>
+                          <th>Tendência</th>
+                          <th className="sb-num" title="Local + Full + trânsito, com o reservado fora">
+                            Aproveitável
+                          </th>
+                          {/*
+                            A coluna que veio de `/cobertura` na fusão (D-288):
+                            aproveitável ÷ venda média diária dos últimos 30 dias.
+                          */}
+                          <th title="Aproveitável ÷ venda média diária dos últimos 30 dias — quantos dias faltam para esgotar no ritmo atual">
+                            Cobertura (dias)
+                          </th>
+                          <th>Estado</th>
+                          <th className="sb-num">Sugestão</th>
+                          <th className="sb-num" title="Custo cadastrado × sugestão">Custo</th>
+                        </tr>
+                      </thead>
 
-            <tbody>
-              {rows.map((row) => {
-                /*
-                  A composição inteira vem das peças canônicas — a tela nunca
-                  refaz uma conta por dentro (regra da fórmula única). O
-                  ARRANJO delas saiu daqui em D-293, quando ganhou um segundo
-                  consumidor: as ferramentas do Copiloto. Duas composições
-                  paralelas divergiriam no primeiro ajuste de qualquer peça, e
-                  a divergência apareceria como o assistente contradizendo esta
-                  tabela.
-                */
-                const { usable, policy, suggestion, stockState } = composeSkuReplenishment(row, settings);
-                const { breakdown } = suggestion;
+                      <tbody>
+                        {visao.linhas.map((row) => {
+                          /*
+                            A composição vem das peças canônicas — a tela nunca
+                            refaz uma conta por dentro (regra da fórmula única,
+                            composição compartilhada com o Copiloto desde D-293).
+                          */
+                          const { usable, policy, suggestion, stockState } = composeSkuReplenishment(row, settings);
+                          const { breakdown } = suggestion;
+                          const sugestao = suggestion.suggestedQuantity;
+                          // Custo nulo ou 0 é desconhecido, nunca zero (D-356).
+                          const custo = row.purchase_cost !== null && row.purchase_cost > 0 ? row.purchase_cost : null;
+                          const custoLinha = sugestao !== null && sugestao > 0 && custo !== null ? sugestao * custo : null;
+                          const estado = stockState.state;
+                          const barra = posicaoCobertura(stockState.coverageDays, breakdown.demandWindowDays);
 
-                return (
-                  <tr key={row.sku_id}>
-                    <td style={{ textAlign: "center" }}>
-                      {/*
-                        Checkbox só onde há SUGESTÃO defensável e positiva —
-                        linha recusada ou coberta não tem o que pedir; itens
-                        avulsos entram à mão no próprio pedido.
-                      */}
-                      {suggestion.suggestedQuantity !== null && suggestion.suggestedQuantity > 0 && (
-                        <input
-                          type="checkbox"
-                          name="sku"
-                          value={`${row.sku_id}:${String(suggestion.suggestedQuantity)}`}
-                          aria-label={`Levar ${row.sku} ao pedido de compra com ${String(suggestion.suggestedQuantity)} unidade(s)`}
-                        />
-                      )}
-                    </td>
-                    <td className="sb-mono">
-                      {row.sku}
-                      {row.title !== null && (
-                        <div style={{ fontFamily: "inherit", color: "var(--sb-text-soft)", fontSize: "0.75rem" }}>
-                          {row.title}
-                        </div>
-                      )}
-                    </td>
-                    {/* Marca vazia é estado legítimo (36% preenchidos, D-129). */}
-                    <td>{row.supplier_brand ?? "—"}</td>
-                    {/* "—" = sem venda no período da curva, não classe faltando. */}
-                    <td style={{ fontWeight: row.abc_class === "A" ? 600 : undefined }}>
-                      {row.abc_class ?? "—"}
-                    </td>
-                    <td className="sb-num">{RATE.format(breakdown.dailyRate)}</td>
-                    <td>
-                      <TrendBadge
-                        units15={row.units_15d}
-                        units30={row.units_30d}
-                        units60={row.units_60d}
-                        units90={row.units_90d}
-                        historyDays90={row.history_days_90}
-                      />
-                    </td>
-                    <td className="sb-num">
-                      {usable.total === null ? (
-                        <span style={{ color: "var(--sb-text-soft)", fontSize: "0.75rem" }}>estoque virtual</span>
-                      ) : (
-                        <span
-                          title={`local ${String(usable.components.local)} + full ${String(usable.components.full)} + trânsito ${String(usable.components.transit)} (reservado ${String(usable.components.reservedExcluded)} fica fora)`}
-                          style={usable.total < 0 ? { color: "var(--sb-danger)" } : undefined}
-                        >
-                          {formatCount(usable.total)}
-                        </span>
-                      )}
-                    </td>
-                    <td className="sb-num">
-                      {stockState.coverageDays === null ? (
-                        <span
-                          style={{ color: "var(--sb-text-soft)" }}
-                          title={
-                            usable.total === null
-                              ? "saldo sentinela: a cobertura fica em branco de propósito (D-127)"
-                              : "sem venda na janela — não há taxa para dividir"
-                          }
-                        >
-                          —
-                        </span>
-                      ) : (
-                        RATE.format(stockState.coverageDays)
-                      )}
-                    </td>
-                    <td className="sb-num">
-                      {policy === null || breakdown.demandWindowDays === null ? (
-                        "—"
-                      ) : (
-                        <span
-                          title={`prazo ${String(policy.leadTimeDays)} + cobertura ${String(policy.targetCoverageDays)} + segurança ${String(policy.safetyStockDays)} · ${scopeLabel(policy.scope, policy.supplierBrand)}`}
-                        >
-                          {formatCount(breakdown.demandWindowDays)}
-                        </span>
-                      )}
-                    </td>
-                    <td>
-                      {stockState.state === null ? (
-                        <span
-                          style={{ color: "var(--sb-muted-ink)", fontSize: "0.75rem", whiteSpace: "nowrap" }}
-                          title={
-                            stockState.coverageDays === null
-                              ? undefined
-                              : `cobertura ${RATE.format(stockState.coverageDays)}d — sem régua completa para um selo`
-                          }
-                        >
-                          {stockState.refusals.map((r) => STATE_REFUSAL_LABEL[r]).join(" · ")}
-                        </span>
-                      ) : (
-                        <span
-                          style={{
-                            color: STATE_TONE[stockState.state].color,
-                            fontWeight: STATE_TONE[stockState.state].bold === true ? 600 : undefined,
-                            fontSize: "0.8125rem",
-                            whiteSpace: "nowrap",
-                          }}
-                          title={`cobertura ${stockState.coverageDays === null ? "0" : RATE.format(stockState.coverageDays)}d · prazo ${String(stockState.thresholds.leadTimeDays)} · ponto de pedido ${String(stockState.thresholds.reorderPointDays)} · janela ${String(stockState.thresholds.demandWindowDays)}${stockState.thresholds.maxCoverageDays === null ? " · teto de excesso não configurado" : ` · teto ${String(stockState.thresholds.maxCoverageDays)}`}`}
-                        >
-                          {STATE_TONE[stockState.state].label}
-                        </span>
-                      )}
-                    </td>
-                    <td className="sb-num">
-                      {suggestion.suggestedQuantity === null ? (
-                        <span style={{ color: "var(--sb-muted-ink)", fontSize: "0.75rem", whiteSpace: "nowrap" }}>
-                          {suggestion.refusals.map((r) => REFUSAL_LABEL[r]).join(" · ")}
-                        </span>
-                      ) : suggestion.suggestedQuantity === 0 ? (
-                        <span
-                          style={{ color: "var(--sb-text-soft)" }}
-                          title={`${RATE.format(breakdown.dailyRate)}/dia × ${String(breakdown.demandWindowDays)}d = ${String(breakdown.projectedDemand)} projetado − ${String(breakdown.usableStock)} aproveitável — a janela já está coberta`}
-                        >
-                          0
-                        </span>
-                      ) : (
-                        <span
-                          style={{ fontWeight: 600 }}
-                          title={`${RATE.format(breakdown.dailyRate)}/dia × ${String(breakdown.demandWindowDays)}d = ${String(breakdown.projectedDemand)} projetado − ${String(breakdown.usableStock)} aproveitável = comprar ${String(suggestion.suggestedQuantity)}`}
-                        >
-                          {formatCount(suggestion.suggestedQuantity)}
-                        </span>
-                      )}
-                    </td>
-                    <td className="sb-num">
-                      {suggestion.suggestedQuantity !== null &&
-                      suggestion.suggestedQuantity > 0 &&
-                      row.purchase_cost !== null ? (
-                        <span title="custo CADASTRADO × sugestão — sobrescrito a cada importação, com histórico no Dashboard do SKU (D-149); o custo do PEDIDO é editável na criação e nunca escreve de volta no cadastro">
-                          {formatCurrency(suggestion.suggestedQuantity * row.purchase_cost)}
-                        </span>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                          return (
+                            <tr key={row.sku_id} className={estado !== null && URGENTES.has(estado) ? "sb-rep-linha-urgente" : undefined}>
+                              <td className="sb-rep-marcar">
+                                {/*
+                                  Só onde há SUGESTÃO defensável e positiva — linha
+                                  recusada ou coberta não tem o que pedir.
+                                */}
+                                {sugestao !== null && sugestao > 0 && (
+                                  <input
+                                    type="checkbox"
+                                    name="sku"
+                                    value={`${row.sku_id}:${String(sugestao)}`}
+                                    data-unidades={String(sugestao)}
+                                    {...(custoLinha === null ? {} : { "data-custo": String(custoLinha) })}
+                                    {...(estado !== null && URGENTES.has(estado) ? { "data-urgente": "1" } : {})}
+                                    aria-label={`Levar ${row.sku} ao pedido de compra com ${String(sugestao)} unidade(s)`}
+                                  />
+                                )}
+                              </td>
+                              <td>
+                                <Link className="sb-rep-sku" href={`/skus/${row.sku_id}`}>
+                                  {row.sku}
+                                </Link>
+                                <span className="sb-rep-titulo">
+                                  {row.title ?? "sem título"}
+                                  {/* Marca vazia é estado legítimo (D-129). */}
+                                  {row.supplier_brand !== null && <em> · {row.supplier_brand}</em>}
+                                </span>
+                              </td>
+                              <td>
+                                {/* "—" = sem venda no período da curva, não classe faltando. */}
+                                {row.abc_class === null ? (
+                                  <span className="sb-rep-mudo">—</span>
+                                ) : (
+                                  <span className={`sb-rep-abc sb-rep-abc-${row.abc_class.toLowerCase()}`}>{row.abc_class}</span>
+                                )}
+                              </td>
+                              <td className="sb-num">{RATE.format(breakdown.dailyRate)}</td>
+                              <td>
+                                <TrendBadge
+                                  units15={row.units_15d}
+                                  units30={row.units_30d}
+                                  units60={row.units_60d}
+                                  units90={row.units_90d}
+                                  historyDays90={row.history_days_90}
+                                />
+                              </td>
+                              <td className="sb-num">
+                                {usable.total === null ? (
+                                  <span className="sb-rep-mudo">estoque virtual</span>
+                                ) : (
+                                  <>
+                                    <span style={usable.total < 0 ? { color: "var(--sb-danger)", fontWeight: 600 } : undefined}>
+                                      {formatCount(usable.total)}
+                                    </span>
+                                    <span
+                                      className="sb-rep-partes"
+                                      title={`reservado ${String(usable.components.reservedExcluded)} fica fora`}
+                                    >
+                                      L {formatCount(usable.components.local)} · F {formatCount(usable.components.full)} · T{" "}
+                                      {formatCount(usable.components.transit)}
+                                    </span>
+                                  </>
+                                )}
+                              </td>
+                              <td>
+                                {stockState.coverageDays === null ? (
+                                  <span
+                                    className="sb-rep-mudo"
+                                    title={
+                                      usable.total === null
+                                        ? "saldo sentinela: a cobertura fica em branco de propósito (D-127)"
+                                        : "sem venda na janela — não há taxa para dividir"
+                                    }
+                                  >
+                                    —
+                                  </span>
+                                ) : (
+                                  <span
+                                    className="sb-rep-cobertura"
+                                    title={
+                                      policy === null || breakdown.demandWindowDays === null
+                                        ? "sem janela de demanda: falta configuração de reposição"
+                                        : `janela ${String(breakdown.demandWindowDays)}d = prazo ${String(policy.leadTimeDays)} + cobertura ${String(policy.targetCoverageDays)} + segurança ${String(policy.safetyStockDays)} · ${scopeLabel(policy.scope, policy.supplierBrand)}`
+                                    }
+                                  >
+                                    <b>{RATE.format(stockState.coverageDays)}</b>
+                                    {barra !== null && (
+                                      <span
+                                        className="sb-rep-barra"
+                                        style={{ "--sb-rep-tom": estado === null ? "var(--sb-muted-ink)" : TOM[ESTADOS[estado].tom].color } as CSSProperties}
+                                        aria-hidden="true"
+                                      >
+                                        <i style={{ width: `${barra.toFixed(1)}%` }} />
+                                      </span>
+                                    )}
+                                    {breakdown.demandWindowDays !== null && (
+                                      <small>janela {formatCount(breakdown.demandWindowDays)}d</small>
+                                    )}
+                                  </span>
+                                )}
+                              </td>
+                              <td>
+                                {estado === null ? (
+                                  <span className="sb-rep-recusa">
+                                    {stockState.refusals.map((r) => (
+                                      <span key={r}>{STATE_REFUSAL_LABEL[r]}</span>
+                                    ))}
+                                  </span>
+                                ) : (
+                                  <span
+                                    className="sb-status"
+                                    style={TOM[ESTADOS[estado].tom]}
+                                    title={`cobertura ${stockState.coverageDays === null ? "0" : RATE.format(stockState.coverageDays)}d · prazo ${String(stockState.thresholds.leadTimeDays)} · ponto de pedido ${String(stockState.thresholds.reorderPointDays)} · janela ${String(stockState.thresholds.demandWindowDays)}${stockState.thresholds.maxCoverageDays === null ? " · teto de excesso não configurado" : ` · teto ${String(stockState.thresholds.maxCoverageDays)}`}`}
+                                  >
+                                    {ESTADOS[estado].rotulo}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="sb-num">
+                                {sugestao === null ? (
+                                  /*
+                                    O motivo já está na coluna Estado, ao lado:
+                                    repeti-lo aqui dobrava a largura da tabela e
+                                    empurrava custo para fora da tela. Fica no
+                                    `title`, para quem pergunta "por que não?".
+                                  */
+                                  <span className="sb-rep-mudo" title={`sem sugestão: ${suggestion.refusals.map((r) => REFUSAL_LABEL[r]).join(" · ")}`}>
+                                    —
+                                  </span>
+                                ) : sugestao === 0 ? (
+                                  <span
+                                    className="sb-rep-mudo"
+                                    title={`${RATE.format(breakdown.dailyRate)}/dia × ${String(breakdown.demandWindowDays)}d = ${String(breakdown.projectedDemand)} projetado − ${String(breakdown.usableStock)} aproveitável — a janela já está coberta`}
+                                  >
+                                    0
+                                  </span>
+                                ) : (
+                                  <span
+                                    className="sb-rep-sugestao"
+                                    title={`${RATE.format(breakdown.dailyRate)}/dia × ${String(breakdown.demandWindowDays)}d = ${String(breakdown.projectedDemand)} projetado − ${String(breakdown.usableStock)} aproveitável = comprar ${String(sugestao)}`}
+                                  >
+                                    {formatCount(sugestao)} <small>un</small>
+                                  </span>
+                                )}
+                              </td>
+                              <td className="sb-num">
+                                {custoLinha !== null ? (
+                                  <span title="custo CADASTRADO × sugestão — o custo do PEDIDO é editável na criação e nunca escreve de volta no cadastro (D-149)">
+                                    {formatCurrency(custoLinha)}
+                                  </span>
+                                ) : sugestao !== null && sugestao > 0 ? (
+                                  <span className="sb-rep-mudo">sem custo</span>
+                                ) : (
+                                  <span className="sb-rep-mudo">—</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </form>
 
-        <button type="submit" className="sb-button" style={{ marginTop: "var(--sb-space-2)" }}>
-          Criar pedido com os selecionados →
-        </button>
-        <span style={{ marginLeft: "var(--sb-space-2)", fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
-          quantidade e custo revisáveis no pedido; nasce como rascunho, com aprovação humana
-        </span>
-        </form>
+                <SelecaoPedido formId="rep-pedido" />
+              </>
+            )}
+          </Panel>
+
+          {(visao.vendasCalculadasEm !== null || visao.fullCapturadoEm !== null) && (
+            <p className="sb-rep-rodape">
+              Vendas recalculadas em {visao.vendasCalculadasEm === null ? "—" : formatDateTime(visao.vendasCalculadasEm)} ·
+              Full capturado em {visao.fullCapturadoEm === null ? "—" : formatDateTime(visao.fullCapturadoEm)} · o pedido
+              nasce como rascunho, com quantidade e custo revisáveis e aprovação humana.
+            </p>
           )}
-        </Panel>
-      )}
-
-      {error === null && windowInfo.totalPages > 1 && (
-        <div
-          style={{
-            display: "flex",
-            gap: "var(--sb-space-2)",
-            alignItems: "center",
-            marginTop: "var(--sb-space-3)",
-            fontSize: "0.8125rem",
-          }}
-        >
-          {filters.page > 1 && (
-            <FilterPill href={buildReplenishmentHref(filters, { page: filters.page - 1 })} active={false}>
-              ← Anterior
-            </FilterPill>
-          )}
-          <span style={{ color: "var(--sb-text-soft)" }}>
-            Página {filters.page} de {windowInfo.totalPages}
-          </span>
-          {filters.page < windowInfo.totalPages && (
-            <FilterPill href={buildReplenishmentHref(filters, { page: filters.page + 1 })} active={false}>
-              Próxima →
-            </FilterPill>
-          )}
-        </div>
+        </>
       )}
     </Shell>
   );
