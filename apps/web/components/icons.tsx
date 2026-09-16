@@ -36,6 +36,14 @@ const TRACOS = {
       <path d="M15 7h6v6" />
     </>
   ),
+  // Faturamento (D-356): o cifrão num círculo, do Lucide.
+  cifrao: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M15.5 8.5h-5a2 2 0 1 0 0 4h3a2 2 0 1 1 0 4h-5" />
+      <path d="M12 18.5v-13" />
+    </>
+  ),
   megafone: (
     <>
       <path d="M3 11v2a1 1 0 0 0 1 1h3l6 4V6L7 10H4a1 1 0 0 0-1 1z" />

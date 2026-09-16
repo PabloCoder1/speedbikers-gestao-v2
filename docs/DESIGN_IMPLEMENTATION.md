@@ -1044,6 +1044,47 @@ está na "Próxima fatia segura".
 
 ## Última fatia concluída
 
+**D-356 — /FATURAMENTO E /VENDAS ENXUTO** — o pedido do usuário: `/vendas` mostrava
+informação demais, e o dinheiro de cada venda não tinha tela.
+
+### /faturamento
+
+Composição, de cima para baixo:
+
+- **faixa âncora**: receita bruta, resultado da venda, margem sobre a venda (a
+  célula pinta atenção abaixo de 10% e perigo quando negativa), comissão e ticket
+  médio, cada uma com o período anterior;
+- **"Para onde vai o dinheiro"** e **"Custos da venda"** lado a lado
+  (`sb-lower-grid`). A cascata é horizontal e de verdade: cada dedução começa
+  onde a anterior terminou, o subtotal recomeça do zero, e a margem fecha o
+  bloco numa faixa própria. Tudo sobre os pedidos cobertos;
+- **receita e margem por dia**: duas faixas sobre o mesmo eixo de dias, nunca
+  dois eixos Y. A margem usa uma escala só dos dois lados do zero, com linha
+  tracejada em 10% e o rótulo na calha à direita (sobre as barras ele cobria o
+  último dia — visto na prévia);
+- **por conta**; **produtos que mais faturaram** e **margem abaixo de 10%**, lado
+  a lado (`sb-pair-grid`), com a margem em pílula de tom;
+- **"O que estes números cobrem"**: quatro contagens com atalho para Vinculações
+  e Produtos, e a nota "como ler".
+
+Server Components e CSS, sem dependência nova. O cabeçalho e os filtros saem
+antes, e os números chegam por streaming.
+
+### /vendas
+
+- **faixa**: as cinco perguntas de volume — receita, pedidos, unidades, ticket e
+  cancelamento;
+- **saíram** "Mais sobre o período" e a margem operacional;
+- **"Hoje"** virou uma linha, com o atalho para o Faturamento levando conta e
+  período.
+
+**Verificação:** build com `/faturamento`, 586 testes unitários, os quatro guardas
+da web e `docs:check`. Prévia local com dados sintéticos a 1440px: sem rolagem
+horizontal, as 30 colunas das duas faixas alinhadas e o rótulo de 10% fora das
+barras. As integrações e o e2e rodam na CI.
+
+## Fatias anteriores
+
 **A18 — A LEGENDA DO GRÁFICO NO CABEÇALHO DO PAINEL (D-327)** — o último item de
 desenho em aberto, registrado desde A2. O frame põe a legenda à direita do título
 do painel; a V3 a desenhava num rodapé embaixo do gráfico.
@@ -1065,8 +1106,6 @@ o frame não a tem.
 quebrou com o período anterior no seed), `check` 29/29 (`--force`). Medido a
 1440px e 1100px: legenda no `aside`, na linha do título, alinhada à direita, com
 a janela real; nenhum rodapé na figura; e com 7 dias, sem legenda.
-
-## Fatias anteriores
 
 **A17 — O GATILHO DA BUSCA FICA NA BARRA (D-326)** — o item em aberto que a
 captura de A15 achou. `CommandPalette` devolvia a caixa no lugar do gatilho:

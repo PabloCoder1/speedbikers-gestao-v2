@@ -118,7 +118,7 @@ atualizado_em      data da última revisão desta definição
 
 `investimento_ads` · `receita_ads` · `acos` · `margem_contribuicao`
 
-**Escopo definido:** Ads entra depois; `margem_contribuicao` depende de custo cadastrado por SKU. Enquanto a fonte não existir, o diagnóstico **não distingue queda de tráfego de queda de conversão sem dizer que não distingue** — declara, em vez de inferir.
+**Escopo definido:** Ads entra depois; `margem_contribuicao` depende de custo cadastrado por SKU. A margem **sobre custo** entrou em D-356 como `margem_venda` (5F) — antes de impostos e de Ads; `margem_contribuicao` continua aqui até impostos e Ads terem fonte. Enquanto a fonte não existir, o diagnóstico **não distingue queda de tráfego de queda de conversão sem dizer que não distingue** — declara, em vez de inferir.
 
 Nenhuma dessas será exibida enquanto a fonte não estiver confirmada e a definição preenchida. **Métrica sem fonte confirmada não vai para a tela.**
 
@@ -181,7 +181,7 @@ Nenhuma dessas será exibida enquanto a fonte não estiver confirmada e a defini
 
 ### 5C.1 O veto: "receita líquida" não é um nome permitido
 
-A pesquisa oficial (`docs/MERCADO_LIVRE.md` secao 2.15) confirmou que dá para compor **bruto − comissão − frete do vendedor − desconto bancado pelo vendedor**, mas que ficam de fora, por lacuna da própria documentação: a composição de `sale_fee` (a doc nunca diz se a taxa fixa está dentro), a taxa fixa por pedido, a taxa de parcelamento, o custo de cobrança do Mercado Pago, os impostos retidos no MLB e os reembolsos posteriores.
+A pesquisa oficial (`docs/MERCADO_LIVRE.md` secao 2.15) confirmou que dá para compor **bruto − comissão − frete do vendedor** (até D-356 a composição também subtraía o **desconto bancado pelo vendedor** — medido: ele já está dentro de `unit_price`, e subtraí-lo contava duas vezes), mas que ficam de fora, por lacuna da própria documentação: a composição de `sale_fee` (a doc nunca diz se a taxa fixa está dentro), a taxa fixa por pedido, a taxa de parcelamento, o custo de cobrança do Mercado Pago, os impostos retidos no MLB e os reembolsos posteriores.
 
 Chamar isso de "receita líquida" afirmaria que o número fecha com o extrato — e ele não fecha. O nome canônico é **`margem_operacional_pedido`**, e a interface exibe a lista do que NÃO entra junto do valor.
 
@@ -191,8 +191,8 @@ A conciliação real só existe no ciclo mensal de `/billing/integration/...`, q
 
 | ID | Nome | Fórmula | Fonte | Ressalva obrigatória na tela |
 |---|---|---|---|---|
-| `taxas_ml` | Taxas do Mercado Livre | `SUM(order_items.sale_fee)` sobre vendas válidas | `order_items.sale_fee` (100% preenchido, medido) | É a **comissão de venda**. Não inclui frete, taxa fixa, parcelamento nem impostos |
-| `margem_operacional_pedido` | Margem operacional | `receita_bruta − taxas_ml − frete_vendedor − desconto_vendedor`, **sobre pedidos COBERTOS** | `orders` + `order_items.sale_fee` + `order_financials` (D-165) | **IMPLEMENTADA em D-166** (`get_sales_margin_summary` + seção em `/vendas`): computada SÓ sobre pedidos com frete E desconto observados, receita/taxas do MESMO subconjunto, cobertura declarada ao lado (cobertos ÷ válidos), zero cobertura = NULL. **Não é receita líquida** (5C.1) — a tela lista o que não entra. Componentes `frete_vendedor`/`desconto_vendedor` catalogados junto |
+| `taxas_ml` | Taxas do Mercado Livre | `SUM(order_items.sale_fee × quantity)` sobre vendas válidas | `order_items.sale_fee`, a tarifa de **uma unidade** (100% preenchido, medido; por unidade desde D-356 — antes a soma ignorava a quantidade) | É a **comissão de venda**. Não inclui frete, taxa fixa, parcelamento nem impostos |
+| `margem_operacional_pedido` | Margem operacional | `receita_bruta − taxas_ml − frete_vendedor − desconto_vendedor`, **sobre pedidos COBERTOS** | `orders` + `order_items.sale_fee` + `order_financials` (D-165) | **IMPLEMENTADA em D-166** (`get_sales_margin_summary` + seção em `/vendas`): computada SÓ sobre pedidos com frete observado (D-356: o desconto do vendedor já está no preço e deixou de ser subtraído), receita/taxas do MESMO subconjunto, cobertura declarada ao lado (cobertos ÷ válidos), zero cobertura = NULL. **Não é receita líquida** (5C.1) — a tela lista o que não entra. Componentes `frete_vendedor`/`desconto_vendedor` catalogados junto |
 | `pedidos_cancelados` | Pedidos cancelados | `COUNT(DISTINCT orders.id) where status in ('cancelled','pending_cancel')` | `orders.status` | `pending_cancel` conta como cancelado (mesma semântica de `order.cancelled`, `@sb/domain`) |
 | `taxa_cancelamento` | Taxa de cancelamento | `pedidos_cancelados / NULLIF(pedidos_cancelados + pedidos, 0)` | idem | Denominador = **elegíveis** (válidos + cancelados), não só válidos. **Cancelamento ≠ devolução ≠ reembolso ≠ mediação** — ver 5C.3 |
 | `valor_cancelado` | Valor cancelado | `SUM(orders.total_amount)` dos cancelados | `orders.total_amount` | Valor **pedido**, não valor estornado — a V3 não observa o estorno financeiro |
@@ -325,6 +325,24 @@ motivo, em vez de plotar zero.
 **"Sem marca" é um valor do filtro**, não ausência dele: **23,2% da receita**
 está em itens sem `sku_id`. Sem esse estado, somar as 19 marcas não chega ao
 total e um quarto do faturamento some sem explicação.
+
+---
+
+## 5F. Faturamento e margem sobre custo (D-356) — DEFINIDAS E IMPLEMENTADAS
+
+> A tela `/faturamento` (D-356) responde "quanto sobra de cada venda". A conta é a do pedido do usuário: **recebido = preço − comissão − frete do vendedor**; **resultado = recebido − custo**; **margem = resultado ÷ preço**. O "recebido" é a `margem_operacional_pedido` de 5C.2 — o nome "receita líquida" continua vetado (5C.1). Tudo sai de `get_faturamento`, numa passada.
+
+| ID | Nome | Fórmula | Fonte | Ressalva obrigatória na tela |
+|---|---|---|---|---|
+| `custo_produtos_vendidos` | Custo dos produtos vendidos | `SUM(quantity × custo unitário na data do pedido)`; KIT = Σ componentes × quantidade | `sku_cost_history` (último `new_cost` até `orders.date_created`), senão `skus.purchase_cost` atual; `sku_components` | Custo nulo ou 0 é **desconhecido**, nunca zero (D-249). Quando não há histórico anterior à venda o custo é o **atual** — a tela conta esses pedidos à parte |
+| `resultado_venda` | Resultado da venda | `margem_operacional_pedido − custo_produtos_vendidos`, sobre pedidos **cobertos** | `orders` + `order_items` + `order_financials` + custo | **Não é lucro líquido**: impostos, taxa fixa, parcelamento, custo do Mercado Pago, reembolsos e Ads ficam fora |
+| `margem_venda` | Margem sobre a venda | `resultado_venda / receita_bruta` do **mesmo** subconjunto coberto | componentes acima | Fração, formatada em %. Cobertura ao lado; zero cobertura = NULL, nunca 0% |
+| `frete_medio_pedido` | Frete médio por pedido | `frete_vendedor / pedidos com frete observado` | `order_financials` (D-165) | Pedido sem observação sai do numerador **e** do denominador. A captura só existe para pedidos a partir de 14/09/2026 em produção |
+| `comissao_percentual` | Comissão sobre a receita | `taxas_ml / receita_bruta` | `order_items.sale_fee × quantity` e `orders.total_amount` | Não contém taxa fixa, parcelamento nem impostos (5C.2) |
+
+**Pedido coberto** tem três coisas: frete observado, custo conhecido e **uma** linha de item. O **desconto do vendedor não entra na conta**: é contra o preço de tabela e já está dentro do preço vendido — medido em D-356, a comissão é cobrada sobre `unit_price` (10,63%, contra 8,16% sobre preço + desconto), e há desconto maior que o próprio preço. A tela o mostra como informação. A última é a regra de 5E — um pedido tem um frete, e só dá para atribuí-lo ao produto quando o pedido tem um produto. Medido: zero pedidos com mais de uma linha em 340 mil; os que aparecerem saem da margem e são contados.
+
+**Grão de SKU existe** para as cinco, pela mesma razão: com uma linha por pedido, frete, desconto e custo do pedido são os do produto. **Não há recorte de marca** na tela de faturamento: a marca é do item, e o frete não decompõe (5E).
 
 ---
 

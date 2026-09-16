@@ -4201,6 +4201,17 @@ export type Database = {
         Args: { p_from: string; p_organization_id: string; p_to: string }
         Returns: number
       }
+      get_faturamento: {
+        Args: {
+          p_date_from: string
+          p_date_to: string
+          p_detalhe?: boolean
+          p_ml_account_id?: string
+        }
+        // D-356: jsonb com resumo, diario, por_conta e por_sku. A forma
+        // tipada mora em apps/web/lib/faturamento.ts.
+        Returns: Json
+      }
       get_job_failures: {
         Args: { p_days?: number; p_limit?: number }
         Returns: {
