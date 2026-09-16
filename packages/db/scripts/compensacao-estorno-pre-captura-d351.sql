@@ -10,7 +10,7 @@
 -- PRE-REQUISITOS
 --   1. migrations de D-351 aplicadas (o tipo ESTORNO_PRE_CAPTURA, o corte da exportacao
 --      em `erp_stock_snapshots.captured_at` e a RPC das devolucoes). CONFERIDO no bloco, em
---      TODA organizacao sem AJUSTE_RECONCILIACAO (as que o UPDATE de 20260915140000 corrige):
+--      TODA organizacao sem AJUSTE_RECONCILIACAO (as que o UPDATE de 20260916180000 corrige):
 --      snapshot de planilha com o nome carimbado que ainda carrega o PARSE como corte aborta
 --      tudo -- com o corte do parse (18:44:13 em producao) a F3 estornaria venda legitima da
 --      janela entre exportacao e parse (2000018457209778, fechada as 18:43:57). Isso tambem
@@ -98,7 +98,7 @@ select g.organization_id,
          (select min(m.created_at) from public.stock_movements m where m.organization_id = g.organization_id),
          'infinity'::timestamptz
        ) > g.captured_at - interval '1 hour' as elegivel,
-       -- Sem AJUSTE_RECONCILIACAO, elegivel ou nao: e onde o UPDATE de 20260915140000 corrige o
+       -- Sem AJUSTE_RECONCILIACAO, elegivel ou nao: e onde o UPDATE de 20260916180000 corrige o
        -- corte, e onde a conferencia do corte do parse olha (reverificacao de 60c7a6a, BAIXA-1).
        a.sem_ajuste
 from (
@@ -148,7 +148,7 @@ join public.orders o
  and o.id = case when m.source_id ~ '^[0-9]{1,18}$' then m.source_id::bigint end
 -- O que ja foi revertido desta venda, pelas duas causas: o cancelamento (origem do pedido,
 -- chave `cancelamento:<venda>`) e as devolucoes (origem do claim, pedido DENTRO da chave
--- `devolucao:<claim>:<venda>` -- o indice de `20260915140400` atende o `split_part`).
+-- `devolucao:<claim>:<venda>` -- o indice de `20260916180400` atende o `split_part`).
 cross join lateral (
   select coalesce((select sum(c.qty_delta)
                      from public.stock_movements c
@@ -244,7 +244,7 @@ declare
   r record;
 begin
   -- PRE-REQUISITO 1, conferido: o corte ja e a exportacao em TODA organizacao sem
-  -- AJUSTE_RECONCILIACAO -- as mesmas que o UPDATE de 20260915140000 corrige. A reconciliada
+  -- AJUSTE_RECONCILIACAO -- as mesmas que o UPDATE de 20260916180000 corrige. A reconciliada
   -- fica com o corte do parse DE PROPOSITO (verificacao de e6fda07) e nao e compensada aqui.
   -- Nao so nas elegiveis (reverificacao de 60c7a6a, BAIXA-1): a planilha importada pelo worker
   -- antigo entre a migration e o deploy leva o corte da organizacao para o parse dela, e a de
@@ -260,7 +260,7 @@ begin
     and private.erp_stock_export_instant(b.file_name, b.parsed_at) <> b.parsed_at;
 
   if v_corte_do_parse > 0 then
-    raise exception 'compensacao_d351: % snapshots ainda com o corte do PARSE, e nao o da exportacao -- rode de novo o UPDATE de 20260915140000_erp_corte_da_exportacao antes da F3 (cabecalho, PRE-REQUISITO 1)',
+    raise exception 'compensacao_d351: % snapshots ainda com o corte do PARSE, e nao o da exportacao -- rode de novo o UPDATE de 20260916180000_erp_corte_da_exportacao antes da F3 (cabecalho, PRE-REQUISITO 1)',
       v_corte_do_parse;
   end if;
 
