@@ -157,7 +157,7 @@ Uma tela desenhada no Figma nunca recebe `[x]` por existir no design. A implemen
 - [ ] Cobertura, ruptura, vendas perdidas estimadas — **cobertura e ruptura concluídas em 2026-08-23**: `/cobertura` lista todo SKU com estoque local ou venda nos últimos 30 dias (janela fixa, sem seletor nesta fatia), com dias de cobertura (`estoque local ÷ venda média diária`) e sinalização de ruptura (sem estoque local, mas com venda no período). Tudo somado em SQL (`get_stock_coverage`, RPC `security invoker`), nunca em JS, por `docs/ARCHITECTURE.md` seção 21. **"Vendas perdidas estimadas" ADIADO (D-061, achado em 2026-08-23)** — testado contra o banco real antes de implementar: as 2.194 SKUs com movimento local na organização de demonstração estão TODAS em ruptura e NENHUMA jamais teve saldo positivo no ledger (só `VENDA_ML`/`CANCELAMENTO_ML` existem, nunca `ENTRADA_NFE` — o backfill trouxe histórico de venda, nunca saldo inicial). Sem um ponto positivo no ledger, "quando a ruptura começou" é indefinido — não é lacuna de código, é lacuna de completude do backfill; fica para quando houver saldo inicial importado ou histórico orgânico suficiente em produção. **REAVALIADO em 2026-08-27 (varredura de alinhamento): a condição está substancialmente satisfeita desde 2026-08-25** — a reconciliação diária contra o UpSeller (D-029, 896 AJUSTE_RECONCILIACAO sobre 1000 SKUs) é funcionalmente o "saldo inicial importado por SKU" que D-061 pedia, de fonte confiável; rupturas iniciadas DEPOIS do primeiro ajuste têm início detectável no ledger. Limitações que restam: profundidade de histórico (~dias, crescendo), cobertura parcial (SKU fora do snapshot do UpSeller segue sem ponto de partida) e a cadência de importação de planilhas (snapshot velho pode mascarar o cruzamento). Implementável agora — a mecânica melhora sozinha com o tempo; aguarda priorização, não mais dado 🔵 **NÃO BLOQUEIA A V3** (D-223). **Cobertura ✅ e ruptura ✅ estão entregues**; só "vendas perdidas" segue aberta, e é **DEPENDENTE DE DADO** (D-061: o ledger não tem saldo inicial, então não há como saber quando a ruptura começou).
 - [x] **Curva ABC e filtros de Full** — ✔ 2026-08-23
 - [x] **Dashboards de SKU e de Anúncio** — ✔ 2026-08-23
-- [ ] Visitas, conversão e Ads (D-032) — **visitas e conversão concluídas em 2026-08-23** (D-059): `/anuncios` ganhou colunas "Visitas" e "Conversão" via `get_listing_traffic` (full outer join entre `daily_listing_visits`, novo, sincronizado diariamente de `GET /items/{id}/visits/time_window`, e `daily_listing_metrics`). Conversão = pedidos ÷ visitas, calculada em SQL, `NULL` (não `Infinity`) sem visita no período. **Ads ADIADO** — exige `advertiser_id` próprio por conta com elegibilidade condicionada (reputação, tempo de conta, mínimo de vendas), sem evidência de que a conta Mercado Livre da Speed Bikers tenha o produto habilitado; integração do tamanho de Claims/Returns ou listings, escopo próprio quando houver evidência real de necessidade. **Marco desta fase ATINGIDO em 2026-08-25** — a validação com dado real de produção que faltava foi feita no Checkpoint pré-Fase 7: `v3-listing-visits-snapshot` rodou na cadência esperada (7h/SP) e as 3 contas ML completaram com `items_failed: 0` (945+984+808 itens), 429 intermitente do Mercado Livre absorvido pelo retry existente. O texto anterior ("Marco ainda não atingido") ficou desatualizado entre 2026-08-25 e a correção, apesar de o próprio Checkpoint mais abaixo neste arquivo já registrar a confirmação 🔵 **NÃO BLOQUEIA A V3** (D-223). **Visitas ✅ e conversão ✅ estão entregues** (D-059/D-170) — o checkbox aberto é só por causa de **Ads**, que é **FUTURO**: depende de `advertiser_id`, de elegibilidade real e de necessidade real (D-059). Um checkbox só para as três não deve dar a impressão de que as três faltam.
+- [x] **Visitas, conversão e Ads** — ✔ visitas/conversão 2026-08-23 · D-059/D-170; **Ads 2026-09-16 · D-363**: o dono confirmou que anuncia no Mercado Ads, e a análise de campanhas entrou no `/faturamento` pela API oficial de Product Ads (ver Trilha 5F). O texto anterior ("Ads ADIADO") está em D-059.
 - [x] **Busca Universal / Command Palette** e **Filtros salvos** — ✔ 2026-08-22 · D-060/D-062
 - [x] **Playwright nos fluxos críticos** — ✔ 2026-08-24 · D-069
 
@@ -228,7 +228,7 @@ Nenhuma funcionalidade concluída das Fases 0 a 6 deve ser removida ou reimpleme
 - [ ] Implementar DANFE/PDF como fallback de NF-e quando houver necessidade real e fonte confiável. 🔵 **NÃO BLOQUEIA A V3** (D-223). V3.1+: o fluxo oficial por XML já é operacional.
 - [ ] Reavaliar recebimento parcial de pedido de compra quando o uso real justificar. 🔵 **NÃO BLOQUEIA A V3** (D-223). Mesmo item acima, na lista de backlog.
 - [ ] Reavaliar vendas perdidas estimadas quando o ledger tiver saldo inicial/histórico positivo confiável. 🔵 **NÃO BLOQUEIA A V3** (D-223). **DEPENDENTE DE DADO**, mesmo motivo de D-061.
-- [ ] Reavaliar Ads somente quando uma conta real comprovar elegibilidade e necessidade. 🔵 **NÃO BLOQUEIA A V3** (D-223). **FUTURO** — sem evidência de elegibilidade, não se integra.
+- [x] Reavaliar Ads somente quando uma conta real comprovar elegibilidade e necessidade — **reavaliado em 2026-09-16 (D-363)**: necessidade confirmada pelo dono; a elegibilidade de cada conta é gravada pelo próprio sync (`ads_advertisers`: habilitado / não habilitado) e dita na tela.
 
 ### Evolução contínua do diagnóstico
 
@@ -243,7 +243,7 @@ Depois que novas fontes estiverem disponíveis, expandir gradualmente a correla�
 - Full;
 - promoções;
 - catálogo;
-- Ads quando disponível.
+- Ads — **fonte disponível desde D-363** (`daily_ads_campaign_metrics`); a correlação com o diagnóstico ainda não foi feita.
 
 Manter sempre:
 
@@ -628,6 +628,28 @@ Comportamento anterior preservado; bug com teste de regressão; migration versio
 4. **Administração/hardening:** Usuários; Saúde do Sistema; Integrações; Configurações — Saúde sobe se o risco de drift voltar a crescer.
 5. **IA no fim:** aprendizado supervisionado depois de a Base de Conhecimento ser exercitada com uso real.
 6. **Dependências:** margem, Ads e recebimento parcial só após dado, elegibilidade ou decisão próprios.
+
+---
+
+### Trilha 5F — Faturamento, precificação, Ads e afiliados — escopo acrescentado em 2026-09-16
+
+Pedidos do dono em 16/09/2026, depois de `/faturamento` (D-356). Não reabre marcos concluídos; cada item tem a sua decisão.
+
+- [x] **Dashboard do Anúncio refeito** — barras por dia de vendas e visitas, checagem de fatos, atalhos (copiar MLB, ver no ML), ticket médio, compras por pack e preço médio praticado — ✔ 2026-09-16 · D-357
+- [x] **Cobertura e reposição refeita e mais rápida** — sugestão com plano custom (~490 → ~200 ms), uma leitura para a tela (~255 ms), investimento sugerido e frescor das entradas — ✔ 2026-09-16 · D-358
+- [x] **Calculadora de preço** no `/faturamento` — Mercado Livre (12% clássico / 17% premium, frete oficial pela cotação do ML a partir de R$ 19) e Shopee (tabela por faixa) — ✔ 2026-09-16 · D-359. API de produção `api-00006-gxz`
+- [x] **Listas de produtos do Faturamento** com rolagem própria e sem rolagem lateral — ✔ 2026-09-16 (`edf2d5b`)
+- [x] **Mercado Ads — análise de campanhas** (Product Ads, API oficial): sync diário por conta, faixa (investimento, vendas, ROAS, ACOS, TACoS), barras por dia, campanhas com ROAS contra o alvo — ✔ código 2026-09-16 · D-363
+  - [ ] Migration `20260916165243` em produção (workflow "Migrations de produção", duas aprovações)
+  - [ ] Deploy worker → api em produção com `sync.ads.campaigns` e `/internal/schedule/ads`
+  - [ ] `infra/cloud-scheduler.sh` em produção (job `v3-ads-campaigns-sync`, 11h) — só depois da migration
+  - [ ] Primeira rodada real conferida: conta habilitada ou não, campanhas e métricas gravadas, tela com número
+- [ ] **Afiliados no Faturamento** — **FUTURO, escopo registrado em 2026-09-16.** O dono usa os três modelos, e cada um tem uma fonte diferente:
+  - [ ] **Afiliados do Mercado Livre** (programa de afiliados/criadores): a lista de APIs do ML não tem endpoint de afiliados. Primeiro passo: descobrir onde a comissão aparece — desconto no pedido (`order_items`/`payments`), relatório de faturamento do ML (`Relatórios de Faturamento`) ou só no painel. Sem fonte confirmada, não entra número (D-023)
+  - [ ] **Afiliados da Shopee**: comissão definida pelo vendedor e descontada da venda. O sistema não tem integração com a Shopee; caminho provável é importação do relatório exportado da Shopee (mesmo desenho do importador da planilha do UpSeller, D-028/D-278), ou lançamento manual por período
+  - [ ] **Afiliados próprios** (pessoas/cupons com % de comissão): cadastro de afiliado com percentual e vigência, atribuição de vendas (por cupom, link ou lançamento) e comissão calculada em SQL sobre a receita das vendas atribuídas
+  - [ ] **Na tela:** custo de afiliados por período e por afiliado, e a margem depois de Ads e afiliados (`margem_contribuicao`, METRICS 5.5, que ainda depende de impostos para fechar)
+  - **Critério para começar:** fonte confirmada de pelo menos um dos três modelos, com amostra real conferida contra o painel da plataforma.
 
 ---
 

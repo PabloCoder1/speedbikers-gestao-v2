@@ -17,7 +17,9 @@
 --   3. as metricas por dia vem POR CAMPANHA (detalhe da campanha com
 --      aggregation_type=DAILY) -- o grao gravado e (conta, campanha, dia).
 --
--- Tres tabelas, todas com RLS por CONTA (has_account_access) e grants no
+-- Tres tabelas, todas com RLS por CONTA na forma de CONJUNTO (D-181:
+-- `ml_account_id in (select private.accessible_accounts())`, nunca a funcao
+-- escalar por linha) e grants no
 -- padrao apertado de 20260831160501 (order_financials): authenticated so le,
 -- service_role (worker) le e escreve.
 -- ============================================================
@@ -102,15 +104,15 @@ alter table public.daily_ads_campaign_metrics enable row level security;
 
 create policy ads_advertisers_select_permitted
   on public.ads_advertisers for select to authenticated
-  using (private.has_account_access(ml_account_id));
+  using (ml_account_id in (select private.accessible_accounts()));
 
 create policy ads_campaigns_select_permitted
   on public.ads_campaigns for select to authenticated
-  using (private.has_account_access(ml_account_id));
+  using (ml_account_id in (select private.accessible_accounts()));
 
 create policy daily_ads_campaign_metrics_select_permitted
   on public.daily_ads_campaign_metrics for select to authenticated
-  using (private.has_account_access(ml_account_id));
+  using (ml_account_id in (select private.accessible_accounts()));
 
 revoke all on public.ads_advertisers from anon, authenticated, service_role;
 revoke all on public.ads_campaigns from anon, authenticated, service_role;
