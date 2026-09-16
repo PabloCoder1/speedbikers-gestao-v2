@@ -12309,3 +12309,64 @@ O dono pediu para apagar o anuncio antigo no Mercado Livre e ao menos o MLB no b
 O objetivo do pedido e outro: nao cair no anuncio velho ao buscar. A migration `20260916165000_busca_sem_anuncio_republicado.sql` refaz `search_entities` (mesma assinatura): o pai de uma republicacao concluida sai do resultado, e quem digita o MLB antigo chega ao filho. Operacao sem filho nao esconde nada. Teste de integracao em `rls.integration.test.ts`.
 
 **Impacto:** `packages/domain/src/listings/{relist-preflight,index}.ts` e teste; `apps/worker/src/handlers/{relist-full-stock,relist-prepare,relist-execute}.ts` e testes; `apps/web/app/anuncios/[itemId]/relist-panel.tsx`; `supabase/migrations/20260916165000_busca_sem_anuncio_republicado.sql` e `packages/db/src/rls.integration.test.ts`; `docs/{DECISIONS,DECISIONS_INDEX,MERCADO_LIVRE,ROADMAP}.md`. Publicacao: o worker (preflight); a web pela Vercel (painel); e a migration pelo caminho de sempre (CI no Dev, workflow de producao com duas aprovacoes). Nenhuma das tres depende das outras.
+
+## D-361 - Configuracao de reposicao: a tela que diz quanto do catalogo cada regra destrava, com a regua da politica e a remocao que avisa
+
+**Contexto:** pedido do dono (2026-09-16): `/reposicao/configuracoes` estava "muito simples em comparacao" com `/reposicao` refeita em D-358 -- deixa-la bonita, pratica, rapida e com qualidade, pensando no usuario. A tela de D-144 era uma tabela de regras com quatro campos soltos por linha, um formulario horizontal para criar, erro pela URL (`?erro=`) e remocao no primeiro clique.
+
+Medido em producao no dia, so SELECT como o ADMIN: **zero regras** para 3.240 SKUs de 17 marcas, 1.650 deles no universo da reposicao. A sugestao de compra recusava o catalogo inteiro, e a tela que conserta isso mostrava uma frase e nada sobre por onde comecar. Uma marca (OFFRACER) concentra 1.049 dos 1.650.
+
+---
+
+**1. A LEITURA NOVA: `get_replenishment_reach(p_organization_id, p_date_to)`** (migration `20260916170000`)
+
+Por marca (nula inclusive), so CONTA: SKUs no cadastro, no universo da reposicao, com venda nos ultimos 30 dias, e -- dentro do universo -- com regra propria por SKU (e quantos destes venderam). `language sql`, `security invoker`, `revoke` de public/anon e `grant` a authenticated/service_role (a superficie de D-182 continua fechada).
+
+- **O universo e o de `get_purchase_suggestions`**: saldo em `inventory_balances` OU linha em `daily_sku_metrics` nos ultimos 90 dias. Contar o cadastro inteiro prometeria SKUs que a reposicao nunca exibe. Conferido em producao antes do merge: 1.650 = `total` da `get_replenishment_overview`; OFFRACER 1.049 = o total dela filtrada pela marca. O teste de integracao amarra a igualdade.
+- **A precedencia nao ganhou terceira copia.** A funcao nao cruza regra com SKU; quem cruza e `lib/replenishment-reach.ts` (`calcularAlcance`), por grupo, com a mesma regra de `resolveReplenishmentPolicy`: SKU > marca > padrao, e SKU sem marca so alcanca o padrao (D-129).
+- **Achado ao escrever o teste:** como ANALISTA, a marca do fixture tinha 1 SKU na reposicao, nao 3. A conta do fixture nao estava entre as dele, e a RLS de `daily_sku_metrics` esconde as vendas. Nao e defeito -- a funcao e invoker e `/reposicao` mostra a ele o mesmo recorte --, e virou teste: para quem alcanca so algumas contas, as duas telas concordam.
+
+---
+
+**2. A TELA**, de cima para baixo, na ordem das perguntas
+
+- **Resumo** com os cartoes de `/reposicao` (`sb-rep-destaque`): % de SKUs com politica (com barra), SKUs com venda e sem politica (com link para `/reposicao?estado=SEM_ESTADO`), padrao definido ou nao, marcas com regra propria.
+- **Primeiros passos**, so com zero regras: comecar pelo padrao, que cobre o catalogo de uma vez; depois as marcas que fogem dele. A ordem inversa (marca por marca) deixaria 16 marcas descobertas ate a ultima regra.
+- **Padrao da organizacao:** os quatro numeros grandes, a **regua da politica** e a frase de operacao ("O pedido sai quando a cobertura chega a 20 dias... Cada compra repoe ate 50 dias de venda. Acima de 90 dias, e excesso."), e quantos SKUs ele governa.
+- **Regras por marca:** uma linha POR MARCA DO CATALOGO, nao por regra -- sem isso "quais marcas faltam?" nao tinha resposta. Fatia da reposicao em barra, situacao (regra propria / usa o padrao / sem regra / fora do catalogo), a politica aplicada com regua compacta (a herdada do padrao aparece esmaecida), ordem de quem mais destrava (venda recente). Filtro e busca no cliente: sao 17 marcas.
+- **Excecoes por SKU**, so quando existem (a tela nao cria regra por SKU; mostra e edita as que houver).
+- **Metodo recolhido** (`sb-rep-metodo`): janela, sugestao, estado, precedencia.
+- **Regra orfa** (marca que saiu do catalogo) aparece como "Fora do catalogo": esconde-la faria a regra parecer ativa.
+
+**A REGUA** (`regua-politica.tsx`, `reguaDaPolitica` em `lib/replenishment-rule.ts`) desenha os limiares de `classifyStockState` (D-148) nas cores dos estados de `/reposicao`: compra urgente ate o prazo, comprar em breve ate o ponto de pedido, cobertura baixa ate a janela, adequada, excesso acima do teto. Sem teto nao ha faixa de excesso (a regua nao inventa o "demais"). Segurança 0 some em vez de virar risco de largura zero. Quem configura ve as cores que vai encontrar na reposicao.
+
+---
+
+**3. A GAVETA** (`gaveta-regra.tsx`, sobre o `Drawer` da casa)
+
+- Ordem: para quem (escopo, com quantos SKUs alcanca) -> os numeros na ordem da regua -> a regua e a frase AO VIVO -> quanto muda antes de salvar ("Passam a ter politica 77 SKUs -- 53 com venda"; ou, com padrao existente, "a regra propria troca os numeros para 18 SKUs, sem mudar quem tem sugestao").
+- **Validacao** (`validarRegra`) espelha os CHECK de `replenishment_settings`, inclusive `max_covers_window` com a janela na frase. Roda no cliente (o erro aparece no campo, antes de enviar) e de novo na Server Action; o banco continua sendo a trava. Numero quebrado ou com letra e recusado, nunca arredondado.
+- **Server Actions devolvem resultado** (`useActionState`), nao redirecionam: erro no campo certo, gaveta so fecha quando salvou, e o `revalidatePath` devolve a pagina atualizada na mesma resposta (Next 16). `/reposicao` e revalidada junto. UPDATE/DELETE com `.select("id")`: sem isso, zero linhas por RLS voltaria como "salvo".
+- **A nota passa a ser editavel.** Em D-144 so era gravada na criacao.
+- **Remover pede confirmacao dizendo para onde os SKUs vao**: "18 SKUs passam a usar o padrao" ou "ficam sem sugestao de compra (12 com venda recente)".
+- **D-144 continua de pe:** nada vem pre-preenchido. As referencias do PRD (~15 dias de prazo nacional, ~90 de cobertura para importacao) viraram atalhos que so preenchem no clique -- e o ADMIN quem escolhe.
+- O aviso de "salvo" mora no topo da pagina, escutando um evento, e nao no botao: o botao "Definir o padrao" vive na secao de primeiros passos, que SOME quando o padrao e criado.
+
+---
+
+**4. O QUE A CAPTURA PEGOU** (Playwright a 1440 e 390 px, com marcas de demonstracao no banco local)
+
+- o aviso de salvo, fixo no canto, cobria "Manter a regra / Sim, remover" da gaveta seguinte -> desceu para baixo da camada flutuante (z-index 15 < backdrop 20);
+- "Remover marca navetec?": o titulo ia em `toLowerCase()` com a marca junto -> a pergunta e montada por escopo;
+- "sem politica -- a reposicao recusa sugestao" repetido em cada linha sem regra -> vira "—", a pilula ao lado ja diz;
+- a 390 px os rotulos dos marcos da regua colidiam -> ficam os numeros, a legenda diz as faixas.
+
+O primeiro e2e de navegacao clicou no "Configuracoes" do MENU LATERAL (hub `/configuracoes`) -- a mesma classe de localizador ambiguo de `busca.spec.ts` -> ancorado pelo destino (`main a[href=...]`).
+
+---
+
+**PROVA**
+
+- Web: typecheck, lint, 631 testes de unidade (27 novos: `replenishment-reach` e `replenishment-rule`), build, `check:waterfalls`, `check:server-actions`, `check:table-styles`, `check:control-styles`.
+- Integracao: 679 verdes, 6 novos em `get_replenishment_reach (D-361)` -- fronteiras do universo, igualdade com `get_purchase_suggestions` (ADMIN e ANALISTA), data nula = hoje, outra organizacao nao ve, anon nao executa.
+- E2E (reset + seed + uma passada): 146 verdes, 2 novos em `reposicao-configuracoes.spec.ts` -- do zero ao padrao, validacao, regua, criar, editar e remover com a consequencia. O caso DESFAZ o que cria: `reposicao.spec.ts` roda depois e afirma "sem configuracao" numa linha do seed.

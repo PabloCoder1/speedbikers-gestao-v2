@@ -6692,3 +6692,658 @@ tr.sb-linha-usuario:hover .sb-acesso-celula .sb-icone {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/*
+ * CONFIGURAÇÃO DE REPOSIÇÃO (D-361) — /reposicao/configuracoes.
+ *
+ * Reusa o resumo (sb-rep-resumo / sb-rep-destaque) e o método recolhido
+ * (sb-rep-metodo) de /reposicao: a configuração é a porta da reposição, e as
+ * duas telas precisam ler como uma só. O resto é sb-cfg-*, só tokens da casa.
+ */
+.sb-cfg-bloco {
+  margin-top: var(--sb-space-3);
+}
+
+.sb-cfg-mensagem {
+  margin: 0 0 var(--sb-space-3);
+  font-size: 0.75rem;
+}
+
+.sb-cfg-destaque-ok {
+  border-color: color-mix(in srgb, var(--sb-success) 30%, var(--sb-border));
+}
+
+.sb-cfg-destaque-ok .sb-rep-destaque-rotulo {
+  color: var(--sb-success);
+}
+
+.sb-rep-destaque strong small {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--sb-text-soft);
+}
+
+.sb-cfg-progresso {
+  display: block;
+  height: 6px;
+  margin: 0.125rem 0 0.25rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--sb-neutral-soft);
+}
+
+.sb-cfg-progresso > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--sb-success);
+}
+
+.sb-rep-destaque-perigo .sb-cfg-progresso > i {
+  background: var(--sb-danger);
+}
+
+/* PRIMEIROS PASSOS — só com zero regras. */
+.sb-cfg-comeco {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sb-space-3) calc(var(--sb-space-3) * 2);
+  margin-bottom: var(--sb-space-3);
+  padding: calc(var(--sb-space-3) * 1.5);
+  border: 1px solid color-mix(in srgb, var(--sb-secondary) 25%, var(--sb-border));
+  border-radius: var(--sb-radius);
+  background: linear-gradient(120deg, var(--sb-secondary-soft), var(--sb-surface) 65%);
+  box-shadow: var(--sb-shadow-panel);
+}
+
+.sb-cfg-comeco h2 {
+  margin: 0.375rem 0 0.5rem;
+  font-size: 1.125rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--sb-primary);
+}
+
+.sb-cfg-comeco p {
+  max-width: 44rem;
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: var(--sb-text-soft);
+}
+
+.sb-cfg-comeco p b {
+  color: var(--sb-primary);
+}
+
+.sb-cfg-passos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  margin: var(--sb-space-3) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.75rem;
+  color: var(--sb-text);
+}
+
+.sb-cfg-passos li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sb-cfg-passos b {
+  display: inline-grid;
+  place-items: center;
+  width: 1.375rem;
+  height: 1.375rem;
+  border-radius: 50%;
+  background: var(--sb-primary);
+  color: var(--sb-white);
+  font-size: 0.6875rem;
+}
+
+.sb-cfg-comeco-acoes {
+  display: grid;
+  justify-items: center;
+  gap: 0.625rem;
+}
+
+.sb-cfg-comeco-acoes .sb-button {
+  height: 2.5rem;
+  padding: 0 1.125rem;
+  font-size: 0.75rem;
+}
+
+.sb-cfg-leitura {
+  margin: var(--sb-space-3) 0 0;
+  font-size: 0.75rem;
+  color: var(--sb-text-soft);
+}
+
+/* O PADRÃO — números grandes, a régua e a frase. */
+.sb-cfg-padrao {
+  display: grid;
+  gap: var(--sb-space-3);
+  padding: 0 1.25rem 1.25rem;
+}
+
+.sb-cfg-numeros {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--sb-space-2);
+}
+
+.sb-cfg-numero {
+  display: grid;
+  gap: 0.125rem;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius-md);
+  background: var(--sb-bg-soft);
+}
+
+.sb-cfg-numero span {
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--sb-text-soft);
+}
+
+.sb-cfg-numero strong {
+  font-size: 1.375rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--sb-primary);
+}
+
+.sb-cfg-numero small {
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-cfg-frase {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.55;
+  color: var(--sb-text);
+}
+
+.sb-cfg-rodape-regra,
+.sb-cfg-sem-padrao,
+.sb-cfg-sem-marca {
+  margin: 0;
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-cfg-rodape-regra b,
+.sb-cfg-sem-padrao b,
+.sb-cfg-sem-marca b {
+  color: var(--sb-primary);
+}
+
+.sb-cfg-sem-padrao {
+  padding: 0 1.25rem 1.25rem;
+  font-size: 0.75rem;
+}
+
+.sb-cfg-sem-marca {
+  padding: 0.75rem 1.25rem 1rem;
+  border-top: 1px solid var(--sb-table-rule);
+}
+
+/* A RÉGUA — faixas absolutas numa barra; marcos embaixo. */
+.sb-cfg-regua {
+  margin: 0;
+}
+
+.sb-cfg-regua-barra {
+  position: relative;
+  height: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--sb-neutral-soft);
+}
+
+.sb-cfg-regua-faixa {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--sb-cfg-tom);
+  transition:
+    left 0.2s ease,
+    width 0.2s ease;
+}
+
+/* A segunda faixa de atenção: aviso, não pedido. */
+.sb-cfg-regua-faixa-clara {
+  background: color-mix(in srgb, var(--sb-cfg-tom) 38%, var(--sb-surface));
+}
+
+.sb-cfg-regua-faixa + .sb-cfg-regua-faixa {
+  box-shadow: inset 2px 0 0 var(--sb-surface);
+}
+
+.sb-cfg-regua-compacta {
+  width: 10rem;
+  max-width: 100%;
+}
+
+.sb-cfg-regua-compacta .sb-cfg-regua-barra {
+  height: 6px;
+}
+
+.sb-cfg-regua-marcos {
+  position: relative;
+  height: 2.125rem;
+  margin: 0.25rem 1.5rem 0 0;
+}
+
+.sb-cfg-regua-marco {
+  position: absolute;
+  top: 0;
+  display: grid;
+  justify-items: center;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  transition: left 0.2s ease;
+}
+
+.sb-cfg-regua-marco:first-child {
+  justify-items: start;
+  transform: none;
+}
+
+.sb-cfg-regua-marco b {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--sb-primary);
+}
+
+.sb-cfg-regua-marco small {
+  font-size: 0.5625rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-cfg-regua-legenda {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.875rem;
+  margin-top: 0.25rem;
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-cfg-regua-legenda span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+}
+
+.sb-cfg-regua-legenda i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--sb-cfg-tom);
+}
+
+.sb-cfg-regua-legenda i.sb-cfg-legenda-clara {
+  background: color-mix(in srgb, var(--sb-cfg-tom) 38%, var(--sb-surface));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sb-cfg-regua-faixa,
+  .sb-cfg-regua-marco {
+    transition: none;
+  }
+}
+
+/* AS MARCAS — filtro, busca e a tabela. */
+.sb-cfg-filtros {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sb-space-2);
+  padding: 0 1.25rem 0.75rem;
+}
+
+.sb-cfg-abas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.sb-cfg-aba-ativa,
+.sb-cfg-aba-ativa:hover {
+  border-color: var(--sb-primary);
+  background: var(--sb-primary);
+  color: var(--sb-white);
+}
+
+.sb-cfg-aba-n {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.125rem;
+  height: 1.125rem;
+  padding: 0 0.3125rem;
+  border-radius: 999px;
+  background: var(--sb-neutral-soft);
+  color: var(--sb-neutral-ink);
+  font-size: 0.5625rem;
+  font-weight: 700;
+}
+
+.sb-cfg-aba-ativa .sb-cfg-aba-n {
+  background: color-mix(in srgb, var(--sb-white) 22%, transparent);
+  color: var(--sb-white);
+}
+
+.sb-cfg-busca {
+  width: 13rem;
+}
+
+.sb-cfg-tabela td {
+  vertical-align: middle;
+}
+
+.sb-cfg-marca {
+  display: block;
+  font-weight: 700;
+  color: var(--sb-primary);
+}
+
+.sb-cfg-sub,
+.sb-cfg-fatia small {
+  display: block;
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-cfg-fatia {
+  display: grid;
+  gap: 0.1875rem;
+  min-width: 8rem;
+}
+
+.sb-cfg-fatia b {
+  font-variant-numeric: tabular-nums;
+  color: var(--sb-primary);
+}
+
+.sb-cfg-fatia-barra {
+  display: block;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--sb-neutral-soft);
+}
+
+.sb-cfg-fatia-barra > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--sb-secondary);
+}
+
+.sb-cfg-linha-falta > td:first-child {
+  box-shadow: inset 3px 0 0 var(--sb-danger);
+}
+
+.sb-cfg-politica {
+  display: grid;
+  gap: 0.3125rem;
+}
+
+.sb-cfg-politica-numeros {
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--sb-text);
+}
+
+.sb-cfg-politica-numeros em {
+  font-style: normal;
+  color: var(--sb-text-soft);
+}
+
+.sb-cfg-politica-herdada {
+  opacity: 0.6;
+}
+
+.sb-cfg-acoes {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.sb-cfg-acoes > * + * {
+  margin-left: 0.875rem;
+}
+
+/* O aviso de salvo: fixo no canto, fora de tudo que o salvamento redesenha.
+   ABAIXO da camada flutuante (`.sb-backdrop`, z-index 20): a primeira captura
+   pôs o aviso por cima dos botões "Manter a regra / Sim, remover" da gaveta
+   seguinte, aberta antes de ele sumir. Gaveta aberta cobre o aviso. */
+.sb-cfg-aviso {
+  position: fixed;
+  right: var(--sb-space-3);
+  bottom: var(--sb-space-3);
+  z-index: 15;
+  max-width: 22rem;
+  padding: 0;
+  border-radius: var(--sb-radius-md);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--sb-success);
+  pointer-events: none;
+}
+
+.sb-cfg-aviso-visivel {
+  padding: 0.625rem 0.875rem;
+  border: 1px solid color-mix(in srgb, var(--sb-success) 35%, var(--sb-border));
+  background: var(--sb-success-soft);
+  box-shadow: var(--sb-shadow-pop);
+}
+
+/* A GAVETA DA REGRA. */
+.sb-cfg-form {
+  display: grid;
+  gap: var(--sb-space-3);
+}
+
+.sb-cfg-gaveta-titulo {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--sb-primary);
+}
+
+.sb-cfg-form .sb-form-campo em {
+  font-style: normal;
+  font-weight: 400;
+  color: var(--sb-text-soft);
+}
+
+.sb-cfg-escopo-fixo {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--sb-primary);
+}
+
+.sb-cfg-escopo-fixo small {
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-cfg-impacto {
+  margin: 0;
+  padding: 0.625rem 0.75rem;
+  border-radius: var(--sb-radius-md);
+  background: var(--sb-bg-soft);
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  color: var(--sb-text);
+}
+
+.sb-cfg-impacto b {
+  color: var(--sb-primary);
+}
+
+.sb-cfg-impacto-ganho {
+  background: var(--sb-success-soft);
+}
+
+.sb-cfg-impacto-ganho b {
+  color: var(--sb-success);
+}
+
+.sb-cfg-referencias {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-cfg-campos {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.875rem 0.75rem;
+}
+
+.sb-cfg-campo-dias {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.sb-cfg-campo-dias .sb-input {
+  flex: 1;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.sb-cfg-campo-dias > span {
+  font-size: 0.6875rem;
+  font-weight: 400;
+  color: var(--sb-text-soft);
+}
+
+.sb-cfg-campo .sb-input[aria-invalid="true"] {
+  border-color: var(--sb-danger);
+}
+
+.sb-cfg-previa {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px dashed var(--sb-border);
+  border-radius: var(--sb-radius-md);
+}
+
+.sb-cfg-previa-vazia {
+  margin: 0;
+  padding: 0.75rem;
+  border: 1px dashed var(--sb-border);
+  border-radius: var(--sb-radius-md);
+  font-size: 0.6875rem;
+  text-align: center;
+  color: var(--sb-text-soft);
+}
+
+.sb-cfg-nota {
+  height: auto;
+  min-height: 3.5rem;
+  padding-top: 0.5rem;
+  resize: vertical;
+}
+
+.sb-cfg-rodape-nota {
+  margin: 0;
+  font-size: 0.6875rem;
+}
+
+.sb-cfg-rodape {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.sb-cfg-remover {
+  margin-right: auto;
+  color: var(--sb-danger-ink);
+}
+
+.sb-cfg-confirmar {
+  display: grid;
+  gap: 0.625rem;
+}
+
+.sb-cfg-confirmar p {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--sb-text);
+}
+
+.sb-cfg-confirmar b {
+  color: var(--sb-danger-ink);
+}
+
+.sb-cfg-confirmar-acoes {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+@media (max-width: 1150px) {
+  .sb-cfg-numeros {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 850px) {
+  .sb-cfg-comeco {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sb-cfg-comeco-acoes {
+    justify-items: start;
+  }
+
+  .sb-cfg-busca {
+    width: 100%;
+  }
+}
+
+@media (max-width: 600px) {
+  .sb-cfg-numeros {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  /* Três rótulos em 300px colidem (medido na captura a 390px): ficam os
+     números, e a legenda embaixo diz o que cada faixa é. */
+  .sb-cfg-padrao .sb-cfg-regua-marco small {
+    display: none;
+  }
+
+  .sb-cfg-padrao .sb-cfg-regua-marcos {
+    height: 1.25rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .sb-cfg-campos {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
