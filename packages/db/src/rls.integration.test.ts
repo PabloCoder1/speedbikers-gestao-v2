@@ -6409,6 +6409,23 @@ describe("get_listing_dashboard_summary (D-168, Dashboard 360º do Anúncio)", (
     expect(rows[0]?.conversion).toBe("0.1000");
   });
 
+  it("compras por pack vêm da fonte, e as razões são NULL com denominador zero (D-357)", async () => {
+    const rows = await asUser<{
+      purchases_count: string;
+      average_ticket: string | null;
+      average_selling_price: string | null;
+    }>(ADMIN_SB, CALL(ITEM_ID));
+
+    expect(rows).toHaveLength(1);
+    // A fixture só tem linhas DIÁRIAS, nenhum pedido em `orders`: a contagem
+    // sai da fonte, então é zero — somar os `purchases_count` diários daria 8,
+    // e é justamente a soma entre variações que a RPC recusa.
+    expect(Number(rows[0]?.purchases_count)).toBe(0);
+    expect(rows[0]?.average_ticket).toBeNull();
+    // 800 de receita ÷ 8 unidades, sobre as somas do período.
+    expect(rows[0]?.average_selling_price).toBe("100.00");
+  });
+
   it("item com pedido mas sem visita: conversão NULL, nunca Infinity nem zero fingido", async () => {
     const rows = await asUser<{ orders_count: string; visits: string; conversion: string | null }>(
       ADMIN_SB,

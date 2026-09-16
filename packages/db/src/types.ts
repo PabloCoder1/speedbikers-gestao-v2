@@ -4307,6 +4307,11 @@ export type Database = {
           days_observed: number
           gross_revenue: number
           orders_count: number
+          // CORRECAO MANUAL (D-357): as duas razoes sao NULL com denominador
+          // zero (nullif), e o gerador nao ve nulabilidade de coluna calculada.
+          average_ticket: number | null
+          average_selling_price: number | null
+          purchases_count: number
           units_sold: number
           visits: number
         }[]

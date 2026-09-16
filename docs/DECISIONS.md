@@ -12139,3 +12139,38 @@ Sem recorte de marca, porque o frete e do pedido (5E). O cabecalho e os filtros 
 
 - **fora:** impostos, taxa fixa, parcelamento, custo do Mercado Pago, reembolsos e Ads (a tela diz). O frete de pedidos antes de 14/09/2026 nao existe, e sem backfill, por decisao do usuario: periodo antigo mostra receita e comissao inteiras e recusa a margem.
 - **achado, nao corrigido aqui:** o anti-join do recalculo diario (`private.refresh_daily_sales_metrics`) compara o balde de SKU nulo com `=`. Se isso apagar linhas orfas do balde nulo errado, o efeito e no recalculo, nao nesta tela. Fica registrado para uma fatia propria.
+
+## D-357 - Dashboard do Anuncio: barras por dia, checagem de fatos, atalhos e o ticket medio que o anuncio nao tinha
+
+**Contexto:** pedido do usuario: melhorar a tela do anuncio e "o que tem nela", com mais opcoes onde fizer sentido, e deixa-la bonita. A tela e `/anuncios/[itemId]` (D-168, oito abas desde D13). Ela estava correta e seca: quatro cartoes, dois paineis de texto e tabelas.
+
+**1. VISAO GERAL**
+
+- **barras por dia** de vendas e de visitas, lado a lado (`barras-diarias.tsx`, Server Component e CSS puro). Barras, e nao a linha de `SalesChart`: `daily_listing_metrics` so tem dia com venda e `daily_listing_visits` so tem dia com coleta, e uma linha ligaria dois pontos por cima do buraco. Dia sem linha e pontilhado, nunca barra zero (D-067, D-123). O total da legenda vem da RPC de resumo, nao de soma na tela;
+- **"Checagem do anuncio"** (`checagem.ts`, pura e testada): estado, estoque do anuncio, vinculo, Full, coleta de visitas, venda no periodo e idade da sincronizacao (velha acima de 12 h, o dobro do ciclo). **Nao e a "Saude do Anuncio" do frame**, recusada em D-282: nao ha nota, peso nem veredito, cada linha e um fato ja lido com o criterio escrito, e "N de M em ordem" e contagem de linhas. O que pede trabalho sobe, com o atalho para resolver (Vincular, Ver reposicao, Ver preco). Full nao lido ou resumo ausente tiram a linha em vez de chutar;
+- cartoes com icone, Full com o numero em destaque.
+
+As leituras por dia entraram no `Promise.all` que a pagina ja fazia (D-185): custam a ida que ja existia.
+
+**2. CABECALHO**
+
+- **Copiar MLB** e **Ver no Mercado Livre**. `listings` nao guarda `permalink`; o endereco e `produto.mercadolivre.com.br/MLB-<numero>`, conferido abrindo `MLB-1309331410` do Dev num navegador (curl e a API publica caem na verificacao anti-robo e nao provam nada);
+- frescor com idade relativa e ponto verde/ambar;
+- a fileira de fatos (D-310) ganhou **SKU vinculado** e **categoria** (`category_id`, quando existe). Tipo e Catalogo continuam fora: nao existem no esquema;
+- o menu Acoes leva a Central de Precos e a lista de anuncios ja filtradas pelo MLB.
+
+**3. AS OUTRAS ABAS**
+
+Vendas com barras de unidades e de receita; Trafego com a curva de visitas; Preco com a coluna **Variacao** (a direcao do diff, sem juizo); Historico com a linha do tempo em trilho vertical, ponto no tom da severidade. A republicacao mostra o estado como selo. No celular a fileira de fatos vira grade de duas colunas (o fio vertical deixava a segunda linha recuada) -- ajuste do `ObjectHeader`, entao vale para as outras telas de detalhe.
+
+**4. TICKET MEDIO, COMPRAS POR PACK E PRECO MEDIO -- e por que a compra NAO vem da soma diaria**
+
+Os tres ja sao canonicos com `anuncio` entre as granularidades (METRICS 5.2), e o SKU os mostra desde D-227. `get_listing_dashboard_summary` ganha `purchases_count`, `average_ticket` e `average_selling_price` no FIM do retorno (migration `20260916123747`).
+
+D-227 provou que somar `purchases_count` entre DIAS e exato. Aqui nao basta: a linha de `daily_listing_metrics` e (anuncio, **variacao**, dia), e um pack com duas variacoes do mesmo MLB contaria duas vezes. A compra sai de `orders` + `order_items` no grao (anuncio, periodo), com o predicado e a data de negocio de `private.compute_daily_sales_metrics` -- a regra de 5.1, "diretamente no grao solicitado". As razoes usam a receita e as unidades que a tela ja imprime, sobre as somas; denominador zero devolve NULL. Entra por `order_items_listing_idx`, sem indice novo.
+
+A tela le as tres colunas com guarda (`in`): o Preview do PR roda sem a migration ate o merge na `v3`, e `formatCount(undefined)` imprimiria "NaN".
+
+**5. VERIFICACAO**
+
+`typecheck`, `lint`, 595 testes de unidade da web (9 novos, da checagem) e build. E2E da tela, da republicacao e das gavetas: 18 verdes contra o build de producao e o seed local, um novo (checagem e link). A migration foi aplicada no banco LOCAL por cima (dump antes, registro em `schema_migrations`) e conferida no seed: `MLB800000001` da 1 compra, ticket R$ 1.519,20 e preco medio R$ 189,90. O caso de integracao novo (compras da fonte, ticket NULL sem pedido) foi escrito e **nao rodou**: a suite pede `db reset`, e o banco local e compartilhado com a outra sessao (combinado, nunca unilateral). Dev e producao recebem a migration pelo caminho de sempre (merge na `v3`; producao por `migrations-producao.yml`).

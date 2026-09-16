@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { Icone } from "../../../components/icons";
 import { KpiStrip, type KpiCellData } from "../../../components/kpi-strip";
 import { CopilotContextBeacon } from "../../../components/copilot-context";
 import { ObjectHeader, type ObjectBadge } from "../../../components/object-header";
@@ -17,7 +18,44 @@ import { fullSituationCriterion, fullSituationLabel, fullSituationTom, isFullRow
 import { formatDecisionSnapshot } from "../../../lib/decision-format";
 import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
+import { BarrasDiarias } from "./barras-diarias";
+import { checarAnuncio, horasDesde, idadeRelativa, SYNC_VELHO_HORAS } from "./checagem";
+import { CopiarMlb } from "./copiar-mlb";
 import { RelistPanel } from "./relist-panel";
+
+/**
+ * O endereço público do anúncio. O Mercado Livre resolve `MLB-<número>` para a
+ * página do produto; `listings` não guarda `permalink`, e o formato é estável.
+ */
+function linkNoMercadoLivre(itemId: string): string {
+  return `https://produto.mercadolivre.com.br/${itemId.replace(/^MLB/, "MLB-")}`;
+}
+
+/** Variação entre duas etiquetas de preço, para a pílula da aba Preço. */
+function variacaoDePreco(
+  before: Record<string, unknown> | null,
+  after: Record<string, unknown> | null,
+): { texto: string; tom: "ok" | "perigo" | "neutro" } | null {
+  const de = typeof before?.price === "number" ? before.price : null;
+  const para = typeof after?.price === "number" ? after.price : null;
+
+  if (de === null || para === null || de === 0) {
+    return null;
+  }
+
+  const variacao = (para - de) / de;
+
+  if (variacao === 0) {
+    return { texto: "sem variação", tom: "neutro" };
+  }
+
+  // Baixar preço é pintado de verde por ser o gesto comercial de estímulo, não
+  // por ser "bom": a pílula diz a direção, a decisão continua de quem opera.
+  return {
+    texto: `${variacao > 0 ? "▲ +" : "▼ "}${formatPercent(variacao)}`,
+    tom: variacao > 0 ? "perigo" : "ok",
+  };
+}
 
 export const metadata = { title: "Dashboard do Anúncio — Speed Bikers Gestão" };
 
@@ -48,8 +86,8 @@ export const dynamic = "force-dynamic";
  * ## O que o frame mostra e a V3 não tem
  *
  * "Tipo" (Premium/Clássico) e "Catálogo" (Vencedor) não existem em `listings`
- * — por isso a fileira de fatos do cabeçalho (D-310) tem DUAS células onde o
- * frame tem três: preço e disponível, que existem e são NOT NULL.
+ * — a fileira de fatos do cabeçalho (D-310) usa o que existe: preço e
+ * disponível (NOT NULL), o SKU vinculado e, quando veio, a categoria.
  * O bloco "Exposição em Risco" com o botão "Repor Full" é veredito sintetizado
  * mais ação de escrita sem política logística — os dois já são desvios
  * registrados. E "Saúde do Anúncio" (competitividade de preço, qualidade das
@@ -161,7 +199,7 @@ export default async function AnuncioPage({
   const listing = await supabase
     .from("listings")
     .select(
-      "id, organization_id, ml_account_id, item_id, sku_id, title, status, price, currency_id, available_quantity, synced_at, ml_accounts(label), skus(sku, title)",
+      "id, organization_id, ml_account_id, item_id, sku_id, title, status, price, currency_id, available_quantity, category_id, synced_at, ml_accounts(label), skus(sku, title)",
     )
     .eq("item_id", itemId)
     .maybeSingle();
@@ -180,8 +218,10 @@ export default async function AnuncioPage({
   const needsFull = tab === "visao-geral" || tab === "full";
   const needsTimeline = tab === "historico";
   const needsActions = tab === "visao-geral";
-  const needsDaily = tab === "vendas";
-  const needsVisits = tab === "trafego";
+  // A Visão geral também desenha as barras por dia: as duas leituras entram no
+  // mesmo `Promise.all`, então custam a ida que a página já faz (D-185).
+  const needsDaily = tab === "vendas" || tab === "visao-geral";
+  const needsVisits = tab === "trafego" || tab === "visao-geral";
   const needsPrices = tab === "preco";
   const needsRelists = tab === "historico";
   const needsDecisions = tab === "decisoes";
@@ -394,6 +434,44 @@ export default async function AnuncioPage({
   const href = (key: TabKey): string =>
     key === "visao-geral" ? `/anuncios/${row.item_id}` : `/anuncios/${row.item_id}?aba=${key}`;
 
+  const syncVelho = horasDesde(row.synced_at, now) > SYNC_VELHO_HORAS;
+
+  /*
+    As três colunas de D-357 lidas por NOME e com guarda: um banco sem a
+    migration (o Preview de um PR, antes do merge na v3) devolve a linha sem
+    elas, e `formatCount(undefined)` imprimiria "NaN". Ausente vira "—".
+  */
+  const razoes = {
+    compras: summary !== null && "purchases_count" in summary ? summary.purchases_count : null,
+    ticket: summary !== null && "average_ticket" in summary ? summary.average_ticket : null,
+    precoMedio: summary !== null && "average_selling_price" in summary ? summary.average_selling_price : null,
+  };
+
+  const periodo = { inicio: dateFrom, fim: dateTo };
+  const vendasPorDia = daily.map((linha) => ({ data: linha.metric_date, valor: linha.units_sold }));
+  const receitaPorDia = daily.map((linha) => ({ data: linha.metric_date, valor: linha.gross_revenue }));
+  const visitasPorDia = visits.map((linha) => ({ data: linha.metric_date, valor: linha.visits }));
+
+  const checagem =
+    tab === "visao-geral"
+      ? checarAnuncio({
+          itemId: row.item_id,
+          status: row.status,
+          disponivel: row.available_quantity,
+          skuId: row.sku_id,
+          sku: row.skus?.sku ?? null,
+          syncedAt: row.synced_at,
+          agora: now,
+          full: fullDoAnuncioResult.error === null ? fullDoAnuncio : undefined,
+          resumo:
+            summary === null
+              ? null
+              : { unidades: summary.units_sold, visitas: summary.visits, diasObservados: summary.days_observed },
+          janelaDias: LOOKBACK_DAYS,
+        })
+      : [];
+  const emOrdem = checagem.filter((item) => item.tom === "ok").length;
+
   return (
     <Shell>
       <PageTitle
@@ -418,7 +496,15 @@ export default async function AnuncioPage({
         identificador={row.item_id}
         titulo={row.title}
         badges={badges}
-        meta={`sincronizado em ${formatDateTime(row.synced_at)}`}
+        meta={
+          <span
+            className={syncVelho ? "sb-anuncio-sync sb-anuncio-sync-velho" : "sb-anuncio-sync"}
+            title={`sincronizado em ${formatDateTime(row.synced_at)}`}
+          >
+            <i aria-hidden="true" />
+            sincronizado em {formatDateTime(row.synced_at)} · {idadeRelativa(row.synced_at, now)}
+          </span>
+        }
         /*
           OS DOIS FATOS QUE O CABEÇALHO DEVE, e devia desde D-168 (D-310).
           Aquela versão da tela abria com "conta, status, PREÇO, DISPONÍVEL,
@@ -428,9 +514,9 @@ export default async function AnuncioPage({
           `available_quantity` ficou pior: vinha no `select` e não era
           impresso em nenhuma das oito abas.
 
-          DUAS células, e o frame desenha três: "Tipo" (Premium/Clássico) e
-          "Catálogo" (Vencedor) não existem em `listings` — recusa registrada,
-          reconferida no esquema nesta fatia.
+          "Tipo" (Premium/Clássico) e "Catálogo" (Vencedor) do frame não
+          existem em `listings` — recusa registrada. No lugar entram o SKU
+          vinculado e a categoria, que existem na mesma linha já lida.
 
           Os rótulos carregam o que separa estes números dos vizinhos. "Preço
           atual" porque a fileira de abas tem uma aba chamada "Preço", que é a
@@ -449,6 +535,23 @@ export default async function AnuncioPage({
             valor: formatCount(row.available_quantity),
             nota: "estoque DESTE anúncio no Mercado Livre — não é o saldo do ERP nem o do Full",
           },
+          {
+            rotulo: "SKU vinculado",
+            valor: row.skus?.sku ?? "—",
+            nota:
+              row.sku_id === null
+                ? "sem vínculo — a venda deste anúncio não baixa estoque"
+                : "o SKU cujo estoque cada venda deste anúncio baixa",
+          },
+          ...(row.category_id === null
+            ? []
+            : [
+                {
+                  rotulo: "Categoria",
+                  valor: row.category_id,
+                  nota: "categoria do Mercado Livre, como veio na última sincronização",
+                },
+              ]),
         ]}
         acoes={
           <>
@@ -477,6 +580,18 @@ export default async function AnuncioPage({
               </Link>
             )}
 
+            <CopiarMlb itemId={row.item_id} />
+
+            <a
+              className="sb-button"
+              href={linkNoMercadoLivre(row.item_id)}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Ver no Mercado Livre
+              <span aria-hidden="true">↗</span>
+            </a>
+
             <details className="sb-menu">
             <summary className="sb-button sb-button-primary">
               Ações
@@ -494,6 +609,15 @@ export default async function AnuncioPage({
                   Abrir o SKU {row.skus?.sku ?? ""}
                 </Link>
               )}
+              <Link className="sb-menu-item" href={`/precos?busca=${encodeURIComponent(row.item_id)}`}>
+                Ver na Central de Preços
+              </Link>
+              <Link className="sb-menu-item" href={`/anuncios?busca=${encodeURIComponent(row.item_id)}`}>
+                Achar na lista de anúncios
+              </Link>
+              <Link className="sb-menu-item" href={href("historico")}>
+                Linha do tempo e republicações
+              </Link>
               <Link className="sb-menu-item" href="/acoes">
                 Ver ações abertas
               </Link>
@@ -524,7 +648,10 @@ export default async function AnuncioPage({
             */}
             {summary !== null && (
               <div className="sb-stat-grid">
-                <div className="sb-stat">
+                <div className="sb-stat sb-anuncio-stat">
+                  <span className="sb-anuncio-stat-icone" aria-hidden="true">
+                    <Icone nome="pessoas" tamanho={16} />
+                  </span>
                   <span className="sb-stat-label">Visitas ({LOOKBACK_DAYS}d)</span>
                   <b className="sb-stat-value">{formatCount(summary.visits)}</b>
                   <span className="sb-stat-note">
@@ -534,7 +661,10 @@ export default async function AnuncioPage({
                   </span>
                 </div>
 
-                <div className="sb-stat">
+                <div className="sb-stat sb-anuncio-stat">
+                  <span className="sb-anuncio-stat-icone" aria-hidden="true">
+                    <Icone nome="tendencia" tamanho={16} />
+                  </span>
                   <span className="sb-stat-label">Conversão</span>
                   <b className="sb-stat-value">
                     {summary.conversion === null ? "—" : formatPercent(summary.conversion)}
@@ -554,7 +684,10 @@ export default async function AnuncioPage({
                   a mesma doutrina de `/vendas` ("o recálculo não fabrica zero"),
                   que faltava nesta tela.
                 */}
-                <div className="sb-stat">
+                <div className="sb-stat sb-anuncio-stat">
+                  <span className="sb-anuncio-stat-icone" aria-hidden="true">
+                    <Icone nome="carrinho" tamanho={16} />
+                  </span>
                   <span className="sb-stat-label">Vendas ({LOOKBACK_DAYS}d)</span>
                   <b className="sb-stat-value">{formatCount(summary.units_sold)}</b>
                   <span className="sb-stat-note">
@@ -564,40 +697,137 @@ export default async function AnuncioPage({
                   </span>
                 </div>
 
-                <div className="sb-stat">
+                <div className="sb-stat sb-anuncio-stat">
+                  <span className="sb-anuncio-stat-icone" aria-hidden="true">
+                    <Icone nome="cifrao" tamanho={16} />
+                  </span>
                   <span className="sb-stat-label">Faturamento ({LOOKBACK_DAYS}d)</span>
                   <b className="sb-stat-value">{formatCurrency(summary.gross_revenue)}</b>
                   <span className="sb-stat-note">
                     {summary.units_sold === 0
                       ? "sem venda registrada"
-                      : "receita bruta"}
+                      : razoes.ticket === null
+                        ? "receita bruta"
+                        : `receita bruta · ticket médio ${formatCurrency(razoes.ticket)}`}
                   </span>
                 </div>
               </div>
             )}
 
+            {/*
+              AS DUAS SÉRIES POR DIA, lado a lado: venda e visita no mesmo
+              período. Olhar as duas juntas é a pergunta que a Visão geral
+              existe para responder — "tem gente olhando e não compra?" — e
+              os totais da legenda vêm da RPC de resumo, não de soma na tela.
+            */}
             <div className="sb-pair-grid">
+              <Panel
+                title="Vendas por dia"
+                subtitle={`unidades vendidas, últimos ${String(LOOKBACK_DAYS)} dias`}
+                aside={
+                  <Link className="sb-anuncio-link" href={href("vendas")}>
+                    Detalhar →
+                  </Link>
+                }
+              >
+                <div className="sb-panel-body">
+                  <BarrasDiarias
+                    dias={vendasPorDia}
+                    inicio={periodo.inicio}
+                    fim={periodo.fim}
+                    formatar={formatCount}
+                    rotulo="Unidades"
+                    semRegistro="sem venda registrada"
+                    total={summary === null ? null : formatCount(summary.units_sold)}
+                  />
+                </div>
+              </Panel>
+
+              <Panel
+                title="Visitas por dia"
+                subtitle={`coletadas por varredura, últimos ${String(LOOKBACK_DAYS)} dias`}
+                aside={
+                  <Link className="sb-anuncio-link" href={href("trafego")}>
+                    Detalhar →
+                  </Link>
+                }
+              >
+                <div className="sb-panel-body">
+                  <BarrasDiarias
+                    dias={visitasPorDia}
+                    inicio={periodo.inicio}
+                    fim={periodo.fim}
+                    formatar={formatCount}
+                    rotulo="Visitas"
+                    semRegistro="sem coleta"
+                    total={summary === null ? null : formatCount(summary.visits)}
+                    tom="secundaria"
+                  />
+                </div>
+              </Panel>
+            </div>
+
+            <div className="sb-anuncio-grade">
+              <Panel
+                title="Checagem do anúncio"
+                subtitle="fatos medidos, cada um com o critério escrito — não é nota nem veredito"
+                aside={
+                  <span
+                    className="sb-status"
+                    style={TOM[emOrdem === checagem.length ? "ok" : "atencao"]}
+                  >
+                    {String(emOrdem)} de {String(checagem.length)} em ordem
+                  </span>
+                }
+              >
+                <ul className="sb-checagem">
+                  {checagem.map((item) => (
+                    <li key={item.chave} className={`sb-checagem-item sb-checagem-${item.tom}`}>
+                      <span className="sb-checagem-marca" aria-hidden="true">
+                        {item.tom === "ok" ? "✓" : item.tom === "perigo" ? "!" : item.tom === "atencao" ? "!" : "–"}
+                      </span>
+                      <span className="sb-checagem-texto">
+                        <b>{item.titulo}</b>
+                        <small>{item.detalhe}</small>
+                      </span>
+                      {item.acao !== undefined && item.tom !== "ok" && (
+                        <Link className="sb-button sb-button-sm" href={item.acao.href}>
+                          {item.acao.rotulo}
+                        </Link>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </Panel>
+
+              <div className="sb-anuncio-coluna">
               <Panel
                 title="Full"
                 subtitle="o que o Mercado Livre guarda deste item"
                 aside={
-                  <Link href="/full" style={{ color: "var(--sb-secondary)", textDecoration: "none", fontSize: "0.6875rem" }}>
+                  <Link className="sb-anuncio-link" href="/full">
                     Central Full →
                   </Link>
                 }
               >
-                <p className="sb-panel-body" style={{ margin: 0, fontSize: "0.6875rem", color: "var(--sb-text-soft)" }}>
-                  {fullDoAnuncio === null
-                    ? "Sem snapshot de Full nos últimos 3 dias para este anúncio — ele não está no Full, ou a captura não o alcançou. Ausência de snapshot não é saldo zero."
-                    : `${formatCount(fullDoAnuncio)} unidade(s) no Full deste anúncio — o mesmo número que a lista de anúncios mostra.`}
-                </p>
+                <div className="sb-panel-body sb-anuncio-full">
+                  <b className={fullDoAnuncio === null ? "sb-anuncio-full-valor sb-anuncio-full-ausente" : "sb-anuncio-full-valor"}>
+                    {fullDoAnuncio === null ? "—" : formatCount(fullDoAnuncio)}
+                    {fullDoAnuncio !== null && <small> un no Full</small>}
+                  </b>
+                  <p>
+                    {fullDoAnuncio === null
+                      ? "Sem snapshot de Full nos últimos 3 dias para este anúncio — ele não está no Full, ou a captura não o alcançou. Ausência de snapshot não é saldo zero."
+                      : "Soma do último snapshot por bucket — o mesmo número que a lista de anúncios mostra."}
+                  </p>
+                </div>
               </Panel>
 
               <Panel
                 title="Ações relacionadas"
                 subtitle={`${formatCount(actions.length)} aberta(s) ou registrada(s) para este anúncio`}
                 aside={
-                  <Link href="/acoes" style={{ color: "var(--sb-secondary)", textDecoration: "none", fontSize: "0.6875rem" }}>
+                  <Link className="sb-anuncio-link" href="/acoes">
                     Central de Ações →
                   </Link>
                 }
@@ -618,6 +848,7 @@ export default async function AnuncioPage({
                   ))
                 )}
               </Panel>
+              </div>
             </div>
           </>
         )}
@@ -657,10 +888,62 @@ export default async function AnuncioPage({
                       value: formatCount(summary.orders_count),
                       previous: null,
                     },
+                    {
+                      metricId: "pedidos_por_pack",
+                      label: "Compras (por pack)",
+                      formula: "COUNT(DISTINCT pack_id, com order_id como fallback) — direto da fonte, no grão do anúncio",
+                      value: formatCount(razoes.compras),
+                      previous: null,
+                    },
+                    {
+                      metricId: "ticket_medio",
+                      label: "Ticket médio",
+                      formula: "receita_bruta / pedidos_por_pack — sobre as somas do período",
+                      value: formatCurrency(razoes.ticket),
+                      previous: null,
+                    },
+                    {
+                      metricId: "preco_medio_praticado",
+                      label: "Preço médio praticado",
+                      formula: "receita_bruta / unidades_vendidas — sobre as somas do período",
+                      value: formatCurrency(razoes.precoMedio),
+                      previous: null,
+                    },
                   ] satisfies KpiCellData[]
                 }
               />
             )}
+
+            <div className="sb-pair-grid">
+              <Panel title="Unidades por dia" subtitle="dias sem venda registrada ficam pontilhados, nunca zerados">
+                <div className="sb-panel-body">
+                  <BarrasDiarias
+                    dias={vendasPorDia}
+                    inicio={periodo.inicio}
+                    fim={periodo.fim}
+                    formatar={formatCount}
+                    rotulo="Unidades"
+                    semRegistro="sem venda registrada"
+                    total={summary === null ? null : formatCount(summary.units_sold)}
+                  />
+                </div>
+              </Panel>
+
+              <Panel title="Receita bruta por dia" subtitle="soma dos pedidos pagos de cada dia">
+                <div className="sb-panel-body">
+                  <BarrasDiarias
+                    dias={receitaPorDia}
+                    inicio={periodo.inicio}
+                    fim={periodo.fim}
+                    formatar={formatCurrency}
+                    rotulo="Receita"
+                    semRegistro="sem venda registrada"
+                    total={summary === null ? null : formatCurrency(summary.gross_revenue)}
+                    tom="secundaria"
+                  />
+                </div>
+              </Panel>
+            </div>
 
             <div style={{ marginTop: "var(--sb-space-3)" }}>
               <Panel
@@ -747,6 +1030,26 @@ export default async function AnuncioPage({
 
             <div style={{ marginTop: "var(--sb-space-3)" }}>
               <Panel
+                title="Curva de visitas"
+                subtitle="uma coluna por dia do período — o pontilhado é dia sem coleta, não dia sem visita"
+              >
+                <div className="sb-panel-body">
+                  <BarrasDiarias
+                    dias={visitasPorDia}
+                    inicio={periodo.inicio}
+                    fim={periodo.fim}
+                    formatar={formatCount}
+                    rotulo="Visitas"
+                    semRegistro="sem coleta"
+                    total={summary === null ? null : formatCount(summary.visits)}
+                    tom="secundaria"
+                  />
+                </div>
+              </Panel>
+            </div>
+
+            <div style={{ marginTop: "var(--sb-space-3)" }}>
+              <Panel
                 title="Visitas por dia"
                 subtitle="Só os dias em que a varredura coletou. Ausência de linha é ausência de coleta, não visita zero (D-123)."
               >
@@ -796,6 +1099,7 @@ export default async function AnuncioPage({
                     <tr>
                       <th>Quando</th>
                       <th>Mudança</th>
+                      <th>Variação</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -803,6 +1107,19 @@ export default async function AnuncioPage({
                       <tr key={evento.id}>
                         <td style={{ whiteSpace: "nowrap" }}>{formatDateTime(evento.occurred_at)}</td>
                         <td>{formatEventDiff(evento.event_type, evento.before, evento.after) ?? "—"}</td>
+                        <td>
+                          {(() => {
+                            const variacao = variacaoDePreco(evento.before, evento.after);
+
+                            return variacao === null ? (
+                              "—"
+                            ) : (
+                              <span className="sb-status" style={TOM[variacao.tom]}>
+                                {variacao.texto}
+                              </span>
+                            );
+                          })()}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -917,43 +1234,31 @@ export default async function AnuncioPage({
                   enxerga o que o sistema registrou.
                 </p>
               ) : (
-                <div style={{ overflowX: "auto" }}>
-                  <table className="sb-table">
-                    <thead>
-                      {/*
-                        Sem coluna "Onde": a consulta fixa `entity_type =
-                        'listing'`, então ela imprimia "Anúncio" em toda linha —
-                        uma coluna inteira para repetir o título da seção.
-                      */}
-                      <tr>
-                        <th>Quando</th>
-                        <th>Evento</th>
-                        <th>Mudança</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {timeline.map((entry) => (
-                        <tr key={entry.id}>
-                          <td style={{ whiteSpace: "nowrap" }}>{formatDateTime(entry.occurred_at)}</td>
-                          <td>
-                            <span
-                              style={
-                                entry.severity === "critico"
-                                  ? { color: "var(--sb-danger)", fontWeight: 600 }
-                                  : entry.severity === "importante"
-                                    ? { color: "var(--sb-accent-ink)" }
-                                    : undefined
-                              }
-                            >
-                              {eventTypeLabel(entry.event_type)}
-                            </span>
-                          </td>
-                          <td>{formatEventDiff(entry.event_type, entry.before, entry.after) ?? "—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                /*
+                  LINHA DO TEMPO DE VERDADE, e não tabela: a pergunta desta aba
+                  é "o que aconteceu, em que ordem", e o trilho vertical com o
+                  ponto no tom da severidade responde isso num relance. Sem
+                  coluna "Onde" pelo mesmo motivo de antes: a consulta fixa
+                  `entity_type = 'listing'`.
+                */
+                <ol className="sb-linha-tempo">
+                  {timeline.map((entry) => {
+                    const mudanca = formatEventDiff(entry.event_type, entry.before, entry.after);
+                    const tom =
+                      entry.severity === "critico" ? "perigo" : entry.severity === "importante" ? "atencao" : "info";
+
+                    return (
+                      <li key={entry.id} className={`sb-linha-tempo-item sb-linha-tempo-${tom}`}>
+                        <span className="sb-linha-tempo-ponto" aria-hidden="true" />
+                        <div className="sb-linha-tempo-corpo">
+                          <b>{eventTypeLabel(entry.event_type)}</b>
+                          {mudanca !== null && <span className="sb-linha-tempo-mudanca">{mudanca}</span>}
+                        </div>
+                        <time dateTime={entry.occurred_at}>{formatDateTime(entry.occurred_at)}</time>
+                      </li>
+                    );
+                  })}
+                </ol>
               )}
             </Panel>
 

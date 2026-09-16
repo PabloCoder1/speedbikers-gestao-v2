@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **350** (D-001 a D-356).
+Decisões registradas: **351** (D-001 a D-357).
 
 ## Por domínio
 
@@ -175,7 +175,7 @@ Decisões registradas: **350** (D-001 a D-356).
 - **D-347** — O roteiro de restore punha o dono na aba cujo botao sobrescreve o Dev -- e o comando dele nao rodava nesta maquina
 - **D-354** — /usuarios: nome, foto, suspender e remover -- o "so conseguimos criar" virou gestao de pessoa
 
-### mercado-livre (50)
+### mercado-livre (51)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -227,6 +227,7 @@ Decisões registradas: **350** (D-001 a D-356).
 - **D-343** — Antes da proxima correcao do pico, o log do webhook passa a dizer quanto do ACK e a conta e quanto e a Cloud Task
 - **D-344** — Os ~54 `job_failed` diarios em `claims/{id}/returns` eram propagacao do Mercado Livre, nao perda -- 404 em claim recem-nascido deixa de ser falha
 - **D-350** — Producao no ar com o mesmo app do Mercado Livre do Dev -- o Dev pausado, o passo 10 com ordem, e o estoque contando venda em dobro
+- **D-357** — Dashboard do Anuncio: barras por dia, checagem de fatos, atalhos e o ticket medio que o anuncio nao tinha
 
 ### outros (59)
 
