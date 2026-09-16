@@ -107,8 +107,8 @@
 -- organizacao reconciliada nao e tocada, e o corte do parse aborta -- tambem na organizacao
 -- que a planilha nova tornou inelegivel, que com o UPDATE refeito vira no-op com NOTICE.
 -- A parte 1B tem o bloco "a reversao a mais do legado" (a forma de 2000017792822486 e a
--- contraprova de 2000018206306064). Esses testes foram ESCRITOS na rodada de cc90baa sem
--- rodar -- o Supabase local estava com outras sessoes (D-351 §12, pendencia).
+-- contraprova de 2000018206306064). Esses testes foram ESCRITOS na correcao da reverificacao
+-- de cc90baa sem rodar -- o Supabase local estava com outras sessoes (D-351 §12, pendencia).
 
 create or replace temp view d351_organizacoes as
 select g.organization_id,

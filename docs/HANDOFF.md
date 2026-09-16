@@ -19,8 +19,8 @@
 | **Fechamento da V3** | **190 de 213 itens do ROADMAP fechados (89%)** — 21 abertos e 2 parciais (recontados em D-337; o item de produção fechou em D-350). Dos 21, **3 são bloqueadores**, todos hardening/lançamento (D-223): backup e restore verificados, testes de carga e rollout. Saíram a revisão de segurança (D-331), a UX da republicação (D-295) e a criação de produção (D-350) |
 | **Deploy Dev** | ⏸️ **pausado** desde 2026-09-14 18:33 UTC (15 jobs e 7 filas, D-350). ✅ api `api-00041-lzn` e worker `worker-00052-jpk` em **`da130c0`** (19:22 UTC), com a NF-e ligada (`DOCUMENTS_BUCKET`, D-349); `/health` em `da130c0`, 100% do tráfego nas revisões novas. Para voltar: api `api-00040-qrk`, worker `worker-00051-thq`. ⚠️ Nunca `--to-latest` com tráfego fixo sem conferir `latestReadyRevisionName` (D-342); `api-00037-bqb` é o código revertido de D-339. **Esta linha envelhece sozinha** (D-070): o worker se confere por `gcloud run services describe worker --project speedbikers-gestao-v3`. |
 | **Supabase** | Dev `nmgccyqquwxecqffsidr` (`speedbikers-gestao-v3-dev`) · **produção `imvjfgnaprqsfjlnsyev`** (`speedbikers-prod`) |
-| **Produção** | API verificada em 16/09 (D-359): `api-00006-gxz` em `52ab53b`, health confirma o commit, rota da calculadora responde 401 sem token, sem ERROR no boot (volta: `api-00005-89w`, `cfb7291`). GCP `speedbikers-prod` e worker `worker-00005-pcz` em `f88e0b2` (sem mudança), 100% do tráfego; health confirma commit. Vercel Production `dpl_5332PCoAwb3mjHMestdLLXDHppQu`, promoção de `cfb7291` (volta: `dpl_BMC4tyD93fQEco1CQv6gpnT7axuF`). Supabase com 168 migrations. Webhooks só em produção; Dev pausado (D-350). `v3-reconcile-balances` continua pausado pela guarda de estoque pendente. |
-| **Migrations** | **168 locais e aplicadas em Dev/produção** — última `20260915160000` (D-354), conferida no banco dos dois em 15/09. `20260916123747` (D-357) e `20260916130908` (D-358) aplicadas no Dev pela CI e em produção pelo workflow `35106658244` em 16/09. D-359 (calculadora) não tem migration; sobe no Dev pela CI no merge — aplicar pelo MCP foi negado); produção via workflow `35013982423`. No Dev, o caminho é o push na `v3` (a CI tem o job *aplicar migrations no Supabase Dev*, verde em 2026-09-14; D-257 registrava a integração do Supabase); **em produção, só `migrations-producao.yml`**, com duas aprovações (D-334). **Nunca** pelo MCP (D-207). O nome do arquivo precisa ser um **instante válido**, não só um número crescente: `...240000` (hora 24) deixou seis casos de `get_system_health` vermelhos, e é esse teste que serve de guarda (D-307) |
+| **Produção** | API verificada em 16/09 (D-359): `api-00006-gxz` em `52ab53b`, health confirma o commit, rota da calculadora responde 401 sem token, sem ERROR no boot (volta: `api-00005-89w`, `cfb7291`). GCP `speedbikers-prod` e worker `worker-00007-cfc` em `1e6529f` (16/09 17:33 UTC, sem a D-351), 100% do tráfego. Vercel Production `dpl_5332PCoAwb3mjHMestdLLXDHppQu`, promoção de `cfb7291` (volta: `dpl_BMC4tyD93fQEco1CQv6gpnT7axuF`). Supabase com 176 migrations. Webhooks só em produção; Dev pausado (D-350). `v3-reconcile-balances` continua pausado pela guarda de estoque pendente. |
+| **Migrations** | **176 aplicadas no Dev e em produção**, a última `20260916170000` (D-361), com `20260916165243` (D-363): lista igual à local nos dois (md5 `3529e237…`, 16/09 18:05 UTC). **Pendentes, por último: as cinco da D-351** (`20260916180000`..`180400`), na ordem de `DEPLOYMENT.md` 8.2 passo 10. Migration com versão menor que a última aplicada é recusada pelo `db push` sem `--include-all`: renomeie antes do merge (D-351 §11). Dev pela CI no push da `v3`; **produção só por `migrations-producao.yml`**, duas aprovações (D-334). **Nunca** pelo MCP (D-207). O nome precisa ser um **instante válido**: `...240000` quebrou `get_system_health` (D-307) |
 | **Frente atual** | **Performance promovida para `v3`** (`aa847f5`, `54385ef`, `7ae7741`, `abc67dd`): Full com concorrência limitada e leitura paginada de snapshots, visitas em lote, busca com debounce/ordenação de respostas, Copiloto sob demanda, membership compartilhado por request, margem/ranking de Vendas sob `Suspense`, diretório de contas com refresh antecipado, vitals por rota e cache de build sensível a `.env*`. Check, build e `docs:check` passam. Produção verificada em `f88e0b2`: worker `worker-00005-pcz`, API `api-00004-n7c` (100% do tráfego, health confirmado), Vercel `dpl_4D8FTefUk3PueEJgsdyZVDBmqbmi`. Full medido, primeira amostra autenticada de navegador e seis RPCs de Vendas medidas com RLS: `docs/PERFORMANCE.md`. Restam telemetria de retries HTTP, coletor oficial de Web Vitals e amostra representativa. |
 
 ### O que está pronto
@@ -67,10 +67,12 @@ Números completos e método: `docs/PERFORMANCE.md`.
   uma só e está em produção desde 2026-09-14 17:30 UTC; o Dev ficou sem webhooks e
   está **pausado** (15 jobs e 7 filas). Retomá-lo sem app próprio volta a disputar a
   cota e a renovar os tokens das mesmas contas.
-- **Baixa de estoque em dobro em produção, contida e ainda não corrigida** (D-350 §5):
-  pedido antigo atualizado depois da planilha do UpSeller gera `VENDA_ML` de venda
-  que o UpSeller já tinha descontado. `v3-reconcile-balances` de produção está
-  **pausado** até a guarda e a compensação — não o retome antes.
+- **Baixa de estoque em dobro em produção, contida; a guarda é a D-351**
+  (`fix/estoque-pre-captura-d351`, sem PR). O worker de produção ainda grava `VENDA_ML`
+  de venda que a planilha já descontou, e cancelamento E devolução da mesma venda.
+  Publicar só na ordem de `DEPLOYMENT.md` 8.2 passo 10; **não importar planilha do
+  UpSeller em produção antes da F3** (a organização fica inelegível e a F3 vira no-op).
+  `v3-reconcile-balances` segue **pausado** até a F3 e a decisão do dono.
 - **O padrão do `gcloud` nesta máquina é `speedbikers-prod`.** Todo comando manual com
   `--project`; e no Windows `--format=value()` termina a linha com `\r` — em laço,
   `tr -d '\r'`, senão só o último item funciona.
@@ -189,8 +191,8 @@ Nada disto pode ser feito por um agente.
    *Restore to new project* — o "Restore" de *Scheduled backups* sobrescreve o
    Dev —, o comando é PowerShell com `pnpm.cmd` e `sslmode=no-verify`, e o
    `BACKUP_AT` se calcula no restaurado, não se lê da lista.
-3b. **Conferir o saldo do estoque contra o UpSeller** — o usuário vai subir a
-   planilha do UpSeller quando as etapas atuais fecharem (2026-09-03). É a segunda metade da
+3b. **Conferir o saldo do estoque contra o UpSeller** — planilha nova só
+   **depois da F3 da D-351** (antes, a F3 vira no-op). É a segunda metade da
    condição que o item da reconciliação impõe a si mesmo, e a única que falta
    (D-223). D-134 já leu a rodada e mediu **zero divergências em 3.472
    chaves** — mas isso é consistência interna, projeção contra ledger. Abrir o
@@ -245,7 +247,7 @@ Nada disto pode ser feito por um agente.
 | ~~revisão de segurança e de secrets~~ | ✅ **FEITA em quatro fatias**: segredos e dependências (D-328); superfície de entrada conferida ao vivo, D-045 fechada e cabeçalhos da `web` confirmados na Vercel (D-329); redação de log por VALOR (D-330); CSP completa com nonce, com e2e que exige zero violações (D-331). **Sem lacuna técnica aberta.** A guarda de `pnpm audit` que ficou sem dono entrou na CI em D-336 (`--prod`, corte em alta) |
 | load tests e revisão de `pg_stat_statements` | **carga real medida (D-339)**: 65,8 mil webhooks/dia, pico de 1.050/min, e o ACK passa de 7 s nos picos. **A correção de D-339 foi publicada e voltada** (D-340): esfriou as conexões e piorou `orders_v2`. O pico continua aberto. O log do webhook passou a medir cada etapa (`lookup_ms`, `enqueue_ms`; D-343) — publicado em `api-00039-9vm`. Fora de pico, a Cloud Task custa ~185 ms fixos e a consulta da conta ~50 ms, que esfria depois de pausa. **A primeira rajada medida respondeu: é a consulta da conta** — p95 de 2,8 s na rajada, contra 103 ms fora dela, com a Cloud Task igual (D-345). Em 10 dias foram 26.748 ACKs acima de 2 s, em 78 rajadas sem horário fixo. **A correção foi publicada em D-346** (contas em memória, com carga única em voo e recarga limitada; `api-00040-qrk`): depois da primeira carga, `lookup_ms` caiu para 0 ms, e na rajada de 319/s das 13:49 UTC ficou em 0, com ACK máx 190 ms numa instância (D-346 §6). **O pico do ACK fechou.** Falta também a revisão de `pg_stat_statements` (`report:health` pede a senha do Dev — ato humano) |
 | ~~Supabase e Cloud Run de **produção**~~ | ✅ **CRIADOS em 2026-09-14** (D-348, D-349, D-350): GCP, Supabase e Vercel `speedbikers-prod`; migrations por `migrations-producao.yml`, com duas aprovações; api e worker em `36a23ad`, juntado na `v3` pelo PR #2 (`da130c0`) com CI verde |
-| rollout da V3 | produção já recebe os webhooks e tem as 4 contas e a planilha do UpSeller. **Antes do corte:** a guarda contra baixa de venda anterior ao snapshot do ERP (em andamento), o passo 10 da 8.2 e os atos da seção própria |
+| rollout da V3 | produção já recebe os webhooks e tem as 4 contas e a planilha do UpSeller. **Antes do corte:** a guarda de estoque (D-351, sem PR), o passo 10 da 8.2 e os atos da seção própria |
 | ~~UX final da republicação~~ | ✅ **FEITA em D-295** — pedir e executar, dois atos, no Dashboard do Anúncio. Falta o **ensaio humano** (seção própria) |
 
 **Pendências saudáveis (B)** — agregam e cabem antes do lançamento:
@@ -278,10 +280,10 @@ expansão do "O que aconteceu?" · eventos adicionais de SAC · os 2 pedidos sem
 
 ### Próxima tarefa segura
 
-**A próxima tarefa é a guarda do estoque** (D-350 §5): não baixar venda anterior
-ao snapshot do ERP, compensar as baixas já gravadas e tirar do backfill as
-notificações — com testes, PR e deploy do worker, e só então retomar
-`v3-reconcile-balances` de produção. Antes de puxar item de backlog, confira a
+**A próxima tarefa é publicar a D-351** (guarda do estoque): a bateria pendente
+(D-351 §12), PR, CI no Dev, `migrations-producao.yml`, conferência do corte = 0,
+worker e api, a F3 por psql (16/09: 2.698 estornos, 20 anulações e os trios), provas
+com 1 h e 24 h, e só então a decisão de despausar `v3-reconcile-balances`. Antes de puxar item de backlog, confira a
 categoria dele em D-223 — quase todos dependem de dado. Duas lições que continuam valendo: **mudança de assinatura de RPC pede
 consulta ao catálogo E `grep` no monorepo**, e **linha de base contra o Dev só
 prova no mesmo instante** (histórico em `docs/archive/handoffs/`).
