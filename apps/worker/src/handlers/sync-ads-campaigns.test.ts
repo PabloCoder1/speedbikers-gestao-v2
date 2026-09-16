@@ -207,6 +207,23 @@ describe("sync.ads.campaigns", () => {
     expect(run.status).toBe("partial");
   });
 
+  it("métricas em formato desconhecido: a campanha fica de fora com as chaves, sem derrubar a conta", async () => {
+    const { db, gravacoes } = fakeDb();
+    const { client } = fakeMl((o) => {
+      if (o.path === "/advertising/advertisers") return { advertisers: [{ advertiser_id: 222, site_id: "MLB" }] };
+      if (o.path.endsWith("/campaigns/search")) {
+        return { paging: { total: 1, offset: 0, limit: 50 }, results: [{ id: 1, name: "A", status: "active" }] };
+      }
+
+      return { id: 1, daily: {} };
+    });
+
+    await expect(handler(db, client)(ENVELOPE, contexto())).resolves.toEqual({ status: "done", processed: 0 });
+    const run = gravacoes.find((g) => g.tabela === "sync_runs")?.valores as { status: string; reason: string };
+    expect(run.status).toBe("partial");
+    expect(run.reason).toContain("chaves [daily, id]");
+  });
+
   it("erro retryable devolve para a fila e registra a falha", async () => {
     const { db, gravacoes } = fakeDb();
     const { client } = fakeMl((o) => {

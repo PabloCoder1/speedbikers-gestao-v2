@@ -90,7 +90,41 @@ export const productAdsDailyMetricSchema = z.object({
   organic_units_amount: numero.nullish(),
 });
 
-const dailyMetricsSchema = z.array(productAdsDailyMetricSchema);
+/**
+ * A RESPOSTA REAL NÃO É A DO EXEMPLO (medido em produção, 16/09/2026). A doc
+ * mostra o detalhe diário da campanha como uma LISTA de dias; a primeira rodada
+ * em produção recebeu um OBJETO ("expected array, received object"). As rotas
+ * vizinhas da mesma doc embrulham a lista em `results` (search), então aceita a
+ * lista crua, `results` ou `metrics`, e recusa o resto dizendo as CHAVES que
+ * vieram, para a próxima rodada mostrar o formato em vez de adivinhar.
+ */
+export class ProductAdsFormatoInesperado extends Error {
+  readonly chaves: readonly string[];
+
+  constructor(chaves: readonly string[]) {
+    super(`formato inesperado nas métricas diárias de Product Ads: chaves [${chaves.join(", ")}]`);
+    this.name = "ProductAdsFormatoInesperado";
+    this.chaves = chaves;
+  }
+}
+
+function listaDeDias(resposta: unknown): unknown[] {
+  if (Array.isArray(resposta)) return resposta;
+
+  if (typeof resposta === "object" && resposta !== null) {
+    const objeto = resposta as Record<string, unknown>;
+
+    for (const chave of ["results", "metrics"]) {
+      const valor = objeto[chave];
+
+      if (Array.isArray(valor)) return valor;
+    }
+
+    throw new ProductAdsFormatoInesperado(Object.keys(objeto).sort());
+  }
+
+  throw new ProductAdsFormatoInesperado([typeof resposta]);
+}
 
 export type ProductAdsCampaign = z.infer<typeof productAdsCampaignSchema>;
 export type ProductAdsDailyMetric = z.infer<typeof productAdsDailyMetricSchema>;
@@ -170,7 +204,7 @@ export async function fetchProductAdsCampaignDailyMetrics(
   dateFrom: string,
   dateTo: string,
 ): Promise<ProductAdsDailyMetric[]> {
-  return client.request({
+  const resposta = await client.request({
     method: "GET",
     path: `/advertising/${siteId}/product_ads/campaigns/${String(campaignId)}`,
     accessToken,
@@ -181,6 +215,8 @@ export async function fetchProductAdsCampaignDailyMetrics(
       aggregation_type: "DAILY",
     },
     headers: { "api-version": "2" },
-    schema: dailyMetricsSchema,
+    schema: z.unknown(),
   });
+
+  return z.array(productAdsDailyMetricSchema).parse(listaDeDias(resposta));
 }
