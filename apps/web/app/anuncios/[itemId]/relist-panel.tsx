@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { TOM, tomDeRelist } from "../../../components/tone";
 import { relistStatusLabel } from "../../../lib/labels";
@@ -30,6 +30,15 @@ import { createClient } from "../../../lib/supabase/browser";
  *     marcar que se entende o que vai acontecer. Não é atrito decorativo —
  *     é a diferença entre um clique errado e um anúncio fechado.
  *
+ * ## Depois do envio, o botão não volta (D-360)
+ *
+ * O worker leva segundos para mudar o estado, e o `router.refresh()` logo
+ * depois do envio ainda lê a operação como estava. Em 2026-09-16 isso deixou
+ * "Executar republicação" na tela, e um segundo clique, 11 s depois de a
+ * republicação já ter terminado, voltou como "A API recusou o pedido (HTTP
+ * 409)". Agora o botão some até a operação mudar, a tela relê sozinha por
+ * alguns segundos, e um 409 é tratado como o que ele é: o estado andou.
+ *
  * ## O que a interface NÃO decide
  *
  * Nada. Papel (ADMIN/GESTOR) e escopo por conta são impostos no servidor
@@ -40,6 +49,10 @@ import { createClient } from "../../../lib/supabase/browser";
  */
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
+
+/** Quantas vezes, e de quanto em quanto, a tela relê depois de enfileirar. */
+const RELEITURAS = 10;
+const INTERVALO_MS = 3_000;
 
 export interface RelistOperation {
   id: string;
@@ -62,7 +75,8 @@ type Estado =
   | { kind: "confirmando-pedido" }
   | { kind: "confirmando-execucao" }
   | { kind: "enviando" }
-  | { kind: "enfileirado"; mensagem: string }
+  | { kind: "enfileirado"; mensagem: string; operacaoNoEnvio: string | null }
+  | { kind: "estado-mudou"; mensagem: string }
   | { kind: "erro"; mensagem: string };
 
 export function RelistPanel({
@@ -84,7 +98,34 @@ export function RelistPanel({
   const viva = operacao !== null && VIVOS.includes(operacao.status);
   const executavel = operacao !== null && operacao.status === "REQUESTED";
 
+  // A operação como a tela a vê AGORA. Enquanto ela for a mesma do momento do
+  // envio, o worker ainda não respondeu: nenhum botão de ato é oferecido.
+  const operacaoAtual = operacao === null ? null : `${operacao.id}:${operacao.status}`;
+  const aguardandoWorker =
+    estado.kind === "enviando" || (estado.kind === "enfileirado" && estado.operacaoNoEnvio === operacaoAtual);
+
+  useEffect(() => {
+    if (!aguardandoWorker || estado.kind !== "enfileirado") {
+      return;
+    }
+
+    let leituras = 0;
+    const timer = setInterval(() => {
+      leituras += 1;
+      router.refresh();
+
+      if (leituras >= RELEITURAS) {
+        clearInterval(timer);
+      }
+    }, INTERVALO_MS);
+
+    return () => {
+      clearInterval(timer);
+    };
+  }, [aguardandoWorker, estado.kind, router]);
+
   async function chamar(caminho: string, corpo: unknown, mensagem: string): Promise<void> {
+    const operacaoNoEnvio = operacaoAtual;
     setEstado({ kind: "enviando" });
 
     const supabase = createClient();
@@ -112,16 +153,24 @@ export function RelistPanel({
           a informação que faz a pessoa entender o que fazer em seguida.
         */
         const corpoErro = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
+        const motivo = corpoErro?.error?.message ?? `A API recusou o pedido (HTTP ${String(response.status)}).`;
 
-        setEstado({
-          kind: "erro",
-          mensagem: corpoErro?.error?.message ?? `A API recusou o pedido (HTTP ${String(response.status)}).`,
-        });
+        // 409 é o estado que andou desde que a tela foi desenhada — quase
+        // sempre por um envio anterior que já foi atendido. Não é falha:
+        // a tela relê e mostra onde a operação está.
+        if (response.status === 409) {
+          setEstado({ kind: "estado-mudou", mensagem: `A operação já mudou de estado (${motivo}). A tela foi atualizada.` });
+          router.refresh();
+
+          return;
+        }
+
+        setEstado({ kind: "erro", mensagem: motivo });
 
         return;
       }
 
-      setEstado({ kind: "enfileirado", mensagem });
+      setEstado({ kind: "enfileirado", mensagem, operacaoNoEnvio });
       // O estado real vive no banco e muda pelo worker: a tela relê em vez de
       // fingir que já sabe o desfecho.
       router.refresh();
@@ -153,12 +202,11 @@ export function RelistPanel({
         </p>
       )}
 
-      {podeRepublicar && !viva && (
+      {podeRepublicar && !viva && !aguardandoWorker && (
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <button
             type="button"
             className="sb-button"
-            disabled={estado.kind === "enviando"}
             onClick={() => {
               setEstado({ kind: "confirmando-pedido" });
             }}
@@ -168,12 +216,11 @@ export function RelistPanel({
         </div>
       )}
 
-      {podeRepublicar && executavel && (
+      {podeRepublicar && executavel && !aguardandoWorker && (
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <button
             type="button"
             className="sb-button sb-button-danger"
-            disabled={estado.kind === "enviando"}
             onClick={() => {
               setEstado({ kind: "confirmando-execucao" });
             }}
@@ -183,7 +230,13 @@ export function RelistPanel({
         </div>
       )}
 
-      {estado.kind === "enfileirado" && (
+      {estado.kind === "enfileirado" && aguardandoWorker && (
+        <p role="status" style={{ margin: 0, fontSize: "0.75rem", color: "var(--sb-secondary)" }}>
+          {estado.mensagem}
+        </p>
+      )}
+
+      {estado.kind === "estado-mudou" && (
         <p role="status" style={{ margin: 0, fontSize: "0.75rem", color: "var(--sb-secondary)" }}>
           {estado.mensagem}
         </p>
