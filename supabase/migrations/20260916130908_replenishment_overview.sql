@@ -417,10 +417,22 @@ begin
       select max(m.computed_at) from public.daily_sku_metrics m
       where m.organization_id = p_organization_id
         and m.metric_date > coalesce(p_date_to, current_date) - 90),
+    -- O frescor do Full sai da MESMA leitura canonica que o Full conta (D-173,
+    -- D-204): a captura mais recente de cada (conta, inventory_id) na janela
+    -- de 3 dias. Um `max(captured_at)` direto na tabela devolve o mesmo
+    -- numero -- o maximo dos maximos por bucket e' o maximo da janela --, mas
+    -- seria uma sexta forma de ler `fulfillment_stock_snapshots`, e e'
+    -- exatamente isso que o teste de D-204 recusa. Lido assim, o horario
+    -- mostrado e' o do Full que a tela de fato soma.
     'full_capturado_em', (
-      select max(f.captured_at) from public.fulfillment_stock_snapshots f
-      where f.organization_id = p_organization_id
-        and f.captured_at >= now() - interval '3 days')
+      select max(q.captured_at)
+      from (
+        select distinct on (f.ml_account_id, f.inventory_id) f.captured_at
+        from public.fulfillment_stock_snapshots f
+        where f.organization_id = p_organization_id
+          and f.captured_at >= now() - interval '3 days'
+        order by f.ml_account_id, f.inventory_id, f.captured_at desc
+      ) q)
   )
   into resultado;
 
