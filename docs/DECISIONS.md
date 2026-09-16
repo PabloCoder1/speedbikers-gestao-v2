@@ -12075,7 +12075,7 @@ So entra a organizacao "nascida no import": tem snapshot, zero `AJUSTE_RECONCILI
 | MUT (bateria-mutacoes): remover `movement_type = 'DEVOLUCAO_ML'` de `get_order_return_movements` passava | teste | integracao: um movimento de outro tipo com a chave no formato da devolucao nao entra |
 
 **Mutacao**: 11, cada uma reprovando os testes nomeados, com a restauracao conferida por sha256 do arquivo ou md5 de `pg_get_functiondef`, sobre a linha de base verde (dominio `src/inventory` 159, worker `claim-return` e `persist-order` 138, e 49 neste arquivo de integracao), repetida verde depois de todas:
-- 5 no dominio: o trio com `>=` (C3; 1 de dominio e 1 de worker), a devolucao ignorando o conjunto (1 e 1), a pergunta sem conferir o estorno (8 de dominio, entre eles os dois testes novos de venda nao estornada) e sem conferir o instante conhecido (2 e 2);
+- 4 no dominio: o trio com `>=` (C3; 1 de dominio e 1 de worker), a devolucao ignorando o conjunto (1 e 1), a pergunta sem conferir o estorno (8 de dominio, entre eles os dois testes novos de venda nao estornada) e sem conferir o instante conhecido (2 e 2);
 - 3 no worker: o `claim-return` sem ler o `ESTORNO_PRE_CAPTURA` (3), o instante sempre conhecido (1) e o corte lido com o pedido pago (1);
 - 3 em funcoes do banco: sem o desempate no ramo do SKU e no da organizacao (1 cada, o de cada ramo), e sem o filtro do tipo das devolucoes (1);
 - 1 em arquivo: a conferencia do corte do parse so nas elegiveis (1).
