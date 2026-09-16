@@ -82,6 +82,7 @@ const app = createApp({
   ledgerIntegritySchedule: { db, enqueuer, logger },
   listingsSchedule: { db, enqueuer, logger },
   listingVisitsSchedule: { db, enqueuer, logger },
+  adsSchedule: { db, enqueuer, logger },
   orderFinancialsSchedule: { db, enqueuer, logger },
   supportQuestionsSchedule: { db, enqueuer, logger },
   supportClaimsSchedule: { db, enqueuer, logger },

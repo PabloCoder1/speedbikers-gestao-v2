@@ -12280,3 +12280,46 @@ Secao "Calculadora de preco" no fim do `/faturamento`, com atalho no cabecalho (
 
 - **a cotacao real do Mercado Livre nao foi chamada**: nao ha conta conectada nem API de pe localmente, e o deploy de Dev esta pausado (D-350). A primeira prova com o ML de verdade e em producao;
 - **nao entram:** impostos, Ads, parcelamento e o custo fixo por unidade do ML abaixo de R$ 79 -- a tela diz o que nao inclui.
+
+## D-363 - Mercado Ads no /faturamento: a analise de campanhas pela API oficial de Product Ads
+
+**Contexto:** pedido do usuario: "afiliados e analise de campanhas/ads dentro da tela de faturamento". Ads estava ADIADO desde D-059, por falta de evidencia de que a conta tinha o produto habilitado. Nas perguntas o dono respondeu:
+
+- anuncia no **Mercado Ads (ML)**;
+- quer **analise de campanhas**;
+- escolheu **"Mercado Ads pela API primeiro"**.
+
+Sobre afiliados, ele usa o programa do ML, os afiliados da Shopee e afiliados proprios. Afiliados ficam para uma etapa seguinte: a lista de APIs do ML nao tem endpoint de afiliados, e a Shopee nao tem integracao no sistema.
+
+**1. A FONTE -- doc oficial lida em 16/09/2026** ("Product Ads para Catalogo e User Products", atualizada em 06/07/2026; o portal bloqueia leitura automatica e foi lido num navegador)
+
+- **anunciante:** `GET /advertising/advertisers?product_id=PADS` (`Api-Version: 1`). O 404 "No permissions found for user_id" quer dizer conta SEM Product Ads habilitado -- e gravado como estado, nao como falha;
+- **campanhas:** `GET /advertising/{site}/advertisers/{id}/product_ads/campaigns/search` (`api-version: 2`), paginado;
+- **metricas por dia:** `GET /advertising/{site}/product_ads/campaigns/{id}?aggregation_type=DAILY&metrics=...`. Custo, cliques, impressoes, vendas diretas e indiretas, unidades e organicas. **So 90 dias para tras**, atualizadas as 10h (GMT-3);
+- **o que ficou de fora:** os endpoints legados (`/advertising/product_ads/...`, `/ads/search`, metricas por anuncio) foram **desligados em 27-30/05/2026** e nao sao usados. O "search com aggregation_type=DAILY" tambem nao: o exemplo da doc devolve dias sem o id da campanha, e somar o que nao se sabe de quem e seria inventar a atribuicao.
+
+**2. O CAMINHO DO DADO**
+
+- `@sb/mercado-livre` `product-ads.ts`, com schema. O `http-client` passou a aceitar cabecalhos extras (`api-version`);
+- **worker `sync.ads.campaigns`, por conta:** grava o anunciante (inclusive "nao habilitado"), faz upsert das campanhas e regrava os **90 dias** de metricas por campanha. Regravar a janela inteira corrige o dia que o ML ajusta depois, sem duplicar. Campanha recusada (404/403) vira `partial`; erro retryable volta para a fila. `resource: 'ads'` (sexto alargamento do CHECK de `sync_runs`/`sync_errors`);
+- **api `POST /internal/schedule/ads`:** uma task por conta CONNECTED, escalonada em 300 s. Cloud Scheduler `v3-ads-campaigns-sync` as **11h**, depois da atualizacao das 10h;
+- **migration `20260916165243`:** `ads_advertisers`, `ads_campaigns` e `daily_ads_campaign_metrics`, todas com RLS por conta e grants no padrao de `order_financials` (authenticated so le). Cinco metricas no catalogo: `investimento_ads`, `receita_ads`, `acos`, `roas` e `tacos` (as tres primeiras eram as pendentes de METRICS 5.5);
+- **RPC `get_ads_overview` (jsonb, plano custom):** resumo, campanhas por investimento, serie diaria e o estado de Product Ads de cada conta conectada. As razoes sao sobre as somas e ficam NULL com denominador zero. O **TACoS** usa a receita bruta de `daily_account_metrics` nas mesmas contas e dias.
+
+**3. A TELA** -- secao "Mercado Ads -- campanhas" no `/faturamento`, com atalho no cabecalho (`#ads`) e Suspense proprio
+
+- faixa: investimento, vendas com Ads, ROAS, ACOS, TACoS;
+- barras de investimento x vendas por dia, no mesmo eixo;
+- lista de campanhas com rolagem propria (a mesma das caixas de produtos). Cada linha mostra conta, estrategia, ROAS alvo, investimento, **selo de ROAS** (vermelho abaixo de 1, amarelo abaixo do alvo, verde no alvo), status, vendas, ACOS e cliques;
+- selo "N campanha(s) abaixo do alvo" e a ressalva de que ROAS nao e lucro;
+- o vazio tem tres causas, todas ditas: conta sem Product Ads habilitado, conta ainda nao verificada, sem campanha com investimento no periodo;
+- a leitura em `lib/ads.ts` e conferida campo a campo e recusa a resposta fora do contrato;
+- **funcao ausente (PGRST202)** mostra "sendo ativada neste ambiente", e nao erro: a web da branch principal chega em producao antes da migration passar pelo workflow.
+
+**4. VERIFICACAO E LIMITES**
+
+- **testes:** mercado-livre 6 novos, worker 6 novos, api 3 novos (mais o da rota), web 6 novos (`lib/ads`) e sync-health atualizado. `typecheck` e `lint` passam;
+- **integracao:** casos novos para as tabelas e a RPC, e a lista do catalogo atualizada. A matematica foi conferida com a mesma fixture numa transacao desfeita no banco local (investimento 100, vendas 520, ROAS 5,2, ACOS 19,23%, dia de 2020 fora). A suite inteira pede `db reset` no banco compartilhado e fica com a CI;
+- **visual:** conferido com campanhas de exemplo inseridas e apagadas no banco local;
+- **nao verificado:** a chamada real ao Mercado Ads (sem conta conectada localmente, Dev pausado) e se a conta de producao tem Product Ads habilitado. Na primeira rodada o proprio sync grava a resposta, e a tela a mostra;
+- **para funcionar em producao:** migration pelo workflow, deploy do **worker antes da api** (`docs/DEPLOYMENT.md` §3) e `infra/cloud-scheduler.sh` para criar `v3-ads-campaigns-sync`.

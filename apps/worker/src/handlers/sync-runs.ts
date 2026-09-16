@@ -28,7 +28,9 @@ export type SyncResource =
   | "questions"
   | "messages"
   | "claims"
-  | "order_financials";
+  | "order_financials"
+  // Mercado Ads (D-363), migration 20260916165243.
+  | "ads";
 export type SyncErrorClass = "retryable" | "retryable_eventual" | "not_retryable";
 
 interface SyncRunBase {

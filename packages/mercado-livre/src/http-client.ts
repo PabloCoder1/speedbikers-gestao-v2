@@ -29,6 +29,12 @@ export interface RequestOptions<T> {
   /** Valida e tipa a resposta — nenhum campo chega ao chamador sem passar pelo schema. */
   schema: ZodType<T>;
   eventualConsistencyTolerant?: boolean;
+  /**
+   * Cabeçalhos extras da chamada — a API de Mercado Ads exige `api-version`
+   * (D-363). `authorization`, `accept` e `content-type` continuam sendo do
+   * cliente e não são sobrescritos por aqui.
+   */
+  headers?: Record<string, string>;
 }
 
 export interface MercadoLivreClient {
@@ -86,7 +92,7 @@ export function createMercadoLivreClient(
 
   async function request<T>(options: RequestOptions<T>): Promise<T> {
     const url = buildUrl(baseUrl, options.path, options.searchParams);
-    const headers: Record<string, string> = { accept: "application/json" };
+    const headers: Record<string, string> = { ...(options.headers ?? {}), accept: "application/json" };
 
     if (options.accessToken !== undefined) {
       headers.authorization = `Bearer ${options.accessToken}`;

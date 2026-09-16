@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **353** (D-001 a D-359).
+Decisões registradas: **354** (D-001 a D-363).
 
 ## Por domínio
 
@@ -323,7 +323,7 @@ Decisões registradas: **353** (D-001 a D-359).
 - **D-327** — A18: a legenda do grafico de vendas no cabecalho do painel, e o seed que nunca teve periodo anterior
 - **D-356** — /faturamento: quanto sobra de cada venda -- e tres contas que estavam erradas antes de a tela existir
 
-### worker/infra (70)
+### worker/infra (71)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -395,4 +395,5 @@ Decisões registradas: **353** (D-001 a D-359).
 - **D-342** — A guarda de D-341 parou o deploy certo, mas nomeou a revisao errada -- e o comando que ela sugeria publicaria o codigo revertido
 - **D-348** — Tres armadilhas entre o Dev e o primeiro corte de producao: dois segredos do deploy sem concessao, o `WEB_ORIGINS` que ninguem validava, e o expurgo que reprovaria um restore bom
 - **D-349** — O primeiro deploy de producao pagou dois builds para descobrir uma linha que faltava -- e subiu com a NF-e desligada em silencio
+- **D-363** — Mercado Ads no /faturamento: a analise de campanhas pela API oficial de Product Ads
 

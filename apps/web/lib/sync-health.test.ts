@@ -168,13 +168,15 @@ describe("classifyJobFreshness (Saúde do Sistema, D-219)", () => {
 });
 
 describe("RECONCILIATION_RESOURCE — um dono só para nome e cadência (D-273)", () => {
-  it("cobre os OITO recursos que get_sync_health devolve no canal de reconciliação", () => {
+  it("cobre os NOVE recursos que get_sync_health devolve no canal de reconciliação", () => {
     /*
       Medido no Dev: 32 linhas de reconciliação = 4 contas x 8 recursos. O
       mapa tinha SETE, e o oitavo (`order_financials`) aparecia na tela com o
       identificador cru do banco e sem veredito.
     */
+    // `ads` entrou em D-363 (Mercado Ads).
     expect(Object.keys(RECONCILIATION_RESOURCE).sort()).toEqual([
+      "ads",
       "claims",
       "fulfillment",
       "listings",

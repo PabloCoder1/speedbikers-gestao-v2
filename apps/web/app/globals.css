@@ -7173,3 +7173,146 @@ tr.sb-linha-usuario:hover .sb-acesso-celula .sb-icone {
   font-size: 0.625rem;
   color: var(--sb-muted-ink);
 }
+
+/*
+ * MERCADO ADS no /faturamento (D-363). Reaproveita a lista `.sb-fat-*` das
+ * caixas de produtos (rolagem própria, sem rolagem lateral).
+ */
+.sb-ads {
+  margin-top: var(--sb-space-4);
+  scroll-margin-top: var(--sb-space-4);
+}
+
+.sb-ads-aviso {
+  margin: var(--sb-space-3);
+}
+
+.sb-ads-contas {
+  display: grid;
+  gap: 0.375rem;
+  margin: var(--sb-space-3) var(--sb-space-3) 0;
+  padding: 0.75rem var(--sb-space-3);
+  border-left: 3px solid var(--sb-accent-ink);
+  border-radius: var(--sb-radius-md);
+  background: var(--sb-accent-soft);
+  list-style: none;
+  font-size: 0.75rem;
+  color: var(--sb-text);
+}
+
+.sb-ads-faixa {
+  margin-top: var(--sb-space-3);
+}
+
+.sb-ads-corpo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--sb-space-3);
+  padding: var(--sb-space-3);
+}
+
+.sb-ads-coluna {
+  min-width: 0;
+}
+
+.sb-ads-titulo {
+  margin: 0 0 var(--sb-space-2);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--sb-primary);
+}
+
+.sb-ads-titulo small {
+  font-weight: 500;
+  color: var(--sb-text-soft);
+}
+
+.sb-ads-barras {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 11rem;
+  padding: 0 0 1.5rem;
+  border-bottom: 1px solid var(--sb-border);
+  background-image: linear-gradient(to bottom, var(--sb-table-rule) 1px, transparent 1px);
+  background-size: 100% 25%;
+}
+
+.sb-ads-dia {
+  display: flex;
+  flex: 1;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 1px;
+  height: 100%;
+  min-width: 0;
+  border-radius: 2px;
+}
+
+.sb-ads-dia:hover {
+  background: var(--sb-bg-soft);
+}
+
+.sb-ads-dia i {
+  display: block;
+  width: 45%;
+  max-width: 0.625rem;
+  border-radius: 2px 2px 0 0;
+}
+
+.sb-ads-barra-venda {
+  background: var(--sb-secondary);
+}
+
+.sb-ads-barra-custo {
+  background: var(--sb-accent-ink);
+}
+
+.sb-ads-legenda {
+  position: absolute;
+  bottom: 0.125rem;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-ads-legenda i {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 2px;
+}
+
+.sb-ads-nota {
+  margin: var(--sb-space-2) 0 0;
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  color: var(--sb-text-soft);
+}
+
+.sb-ads-lista {
+  margin-top: 0;
+}
+
+.sb-ads-nome {
+  display: block;
+  overflow: hidden;
+  font-size: 0.75rem;
+  color: var(--sb-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sb-ads-lista .sb-fat-detalhe .sb-status {
+  margin-right: 0.25rem;
+}
+
+@media (max-width: 1150px) {
+  .sb-ads-corpo {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

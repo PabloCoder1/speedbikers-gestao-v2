@@ -28,6 +28,8 @@ import { triggerFulfillmentSnapshot } from "./fulfillment-schedule.js";
 import type { IpAllowlistVerifier } from "./ip-allowlist.js";
 import type { LedgerIntegrityScheduleDeps } from "./ledger-integrity-schedule.js";
 import { triggerLedgerIntegrityCheck } from "./ledger-integrity-schedule.js";
+import type { AdsScheduleDeps } from "./ads-schedule.js";
+import { triggerAdsCampaignsSync } from "./ads-schedule.js";
 import type { ListingVisitsScheduleDeps } from "./listing-visits-schedule.js";
 import type { OrderFinancialsScheduleDeps } from "./order-financials-schedule.js";
 import { triggerOrderFinancialsSweep } from "./order-financials-schedule.js";
@@ -102,6 +104,7 @@ export interface AppDependencies {
   ledgerIntegritySchedule?: LedgerIntegrityScheduleDeps;
   listingsSchedule?: ListingsScheduleDeps;
   listingVisitsSchedule?: ListingVisitsScheduleDeps;
+  adsSchedule?: AdsScheduleDeps;
   orderFinancialsSchedule?: OrderFinancialsScheduleDeps;
   supportQuestionsSchedule?: SupportQuestionsScheduleDeps;
   supportClaimsSchedule?: SupportClaimsScheduleDeps;
@@ -484,6 +487,20 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     const outcome = await triggerListingVisitsSnapshot(listingVisitsSchedule);
 
     return context.json(outcome);
+  });
+
+  // --------------------------------------------------------------------
+  // Mercado Ads (D-363) — anunciante, campanhas e métricas diárias, por
+  // CONTA. Cadência diária depois das 10h: `infra/cloud-scheduler.sh`.
+  // --------------------------------------------------------------------
+  app.post("/internal/schedule/ads", async (context) => {
+    const adsSchedule = dependencies.adsSchedule;
+
+    if (adsSchedule === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    return context.json(await triggerAdsCampaignsSync(adsSchedule));
   });
 
   // --------------------------------------------------------------------

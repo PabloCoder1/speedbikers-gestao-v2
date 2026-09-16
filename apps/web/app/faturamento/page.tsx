@@ -10,6 +10,7 @@ import { formatBusinessDate } from "../../lib/format";
 import { DEFAULT_PERIOD_DAYS, PERIOD_PRESETS, resolvePeriodRange, type PeriodRange } from "../../lib/period";
 import { createClient } from "../../lib/supabase/server";
 import { CalculadoraPreco } from "./calculadora-preco";
+import { CampanhasAds } from "./campanhas-ads";
 import { AVISO, Numeros } from "./numeros";
 
 export const metadata = { title: "Faturamento — Speed Bikers Gestão" };
@@ -103,6 +104,13 @@ async function FaturamentoContent({ searchParams }: { searchParams: Promise<Cons
     }),
   ]);
 
+  // Mercado Ads (D-363): leitura própria, em paralelo, com o mesmo recorte.
+  const leituraAds = supabase.rpc("get_ads_overview", {
+    p_date_from: range.from,
+    p_date_to: range.to,
+    ...(selectedAccount === null ? {} : { p_ml_account_id: selectedAccount.id }),
+  });
+
   const contaLabel = selectedAccount === null ? "Todas as contas" : selectedAccount.label;
   const periodoLabel = isCustom ? "Período personalizado" : `Últimos ${String(days)} dias`;
 
@@ -163,6 +171,10 @@ async function FaturamentoContent({ searchParams }: { searchParams: Promise<Cons
               </form>
             </FilterMenu>
 
+            <a className="sb-button" href="#ads">
+              Campanhas (Ads)
+            </a>
+
             <a className="sb-button sb-button-primary" href="#calculadora">
               Calculadora de preço
             </a>
@@ -188,6 +200,13 @@ async function FaturamentoContent({ searchParams }: { searchParams: Promise<Cons
 
       <Suspense fallback={<CarregandoBloco rotulo="faturamento" />}>
         <Numeros leituras={leituras} range={range} todasAsContas={selectedAccount === null} />
+      </Suspense>
+
+      <Suspense fallback={<CarregandoBloco rotulo="campanhas do Mercado Ads" />}>
+        <CampanhasAds
+          leitura={Promise.resolve(leituraAds)}
+          periodo={`${formatBusinessDate(range.from)} até ${formatBusinessDate(range.to)}`}
+        />
       </Suspense>
 
       {/*
