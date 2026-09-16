@@ -9,6 +9,8 @@ import { Shell } from "../../components/shell";
 import { formatBusinessDate } from "../../lib/format";
 import { DEFAULT_PERIOD_DAYS, PERIOD_PRESETS, resolvePeriodRange, type PeriodRange } from "../../lib/period";
 import { createClient } from "../../lib/supabase/server";
+import { CalculadoraPreco } from "./calculadora-preco";
+import { CampanhasAds } from "./campanhas-ads";
 import { AVISO, Numeros } from "./numeros";
 
 export const metadata = { title: "Faturamento — Speed Bikers Gestão" };
@@ -102,6 +104,13 @@ async function FaturamentoContent({ searchParams }: { searchParams: Promise<Cons
     }),
   ]);
 
+  // Mercado Ads (D-363): leitura própria, em paralelo, com o mesmo recorte.
+  const leituraAds = supabase.rpc("get_ads_overview", {
+    p_date_from: range.from,
+    p_date_to: range.to,
+    ...(selectedAccount === null ? {} : { p_ml_account_id: selectedAccount.id }),
+  });
+
   const contaLabel = selectedAccount === null ? "Todas as contas" : selectedAccount.label;
   const periodoLabel = isCustom ? "Período personalizado" : `Últimos ${String(days)} dias`;
 
@@ -162,6 +171,14 @@ async function FaturamentoContent({ searchParams }: { searchParams: Promise<Cons
               </form>
             </FilterMenu>
 
+            <a className="sb-button" href="#ads">
+              Campanhas (Ads)
+            </a>
+
+            <a className="sb-button sb-button-primary" href="#calculadora">
+              Calculadora de preço
+            </a>
+
             <Link className="sb-button" href={montarHref("/vendas", periodo, contaSlug)}>
               Dashboard de vendas
             </Link>
@@ -184,6 +201,20 @@ async function FaturamentoContent({ searchParams }: { searchParams: Promise<Cons
       <Suspense fallback={<CarregandoBloco rotulo="faturamento" />}>
         <Numeros leituras={leituras} range={range} todasAsContas={selectedAccount === null} />
       </Suspense>
+
+      <Suspense fallback={<CarregandoBloco rotulo="campanhas do Mercado Ads" />}>
+        <CampanhasAds
+          leitura={Promise.resolve(leituraAds)}
+          periodo={`${formatBusinessDate(range.from)} até ${formatBusinessDate(range.to)}`}
+        />
+      </Suspense>
+
+      {/*
+        A CALCULADORA DE PREÇO (D-359). Fora do Suspense dos números: ela não
+        depende do período, e quem abre a tela só para simular não espera a
+        leitura do faturamento.
+      */}
+      <CalculadoraPreco contas={accounts.map((account) => ({ id: account.id, label: account.label }))} />
     </>
   );
 }

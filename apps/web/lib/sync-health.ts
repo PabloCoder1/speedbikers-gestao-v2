@@ -54,6 +54,9 @@ export const RECONCILIATION_RESOURCE: Readonly<Record<string, ReconciliationReso
   // Frete e desconto do vendedor por pedido (D-165) — os dois custos que
   // bloqueavam a margem operacional. Faltava aqui desde que o job nasceu.
   order_financials: { label: "Custos do pedido", cadenceMin: 1440 }, // v3-order-financials-sweep: "30 9 * * *"
+  // Mercado Ads (D-363). Conta sem Product Ads habilitado também registra run
+  // (done, zero processados), então o frescor vale para todas as contas.
+  ads: { label: "Mercado Ads", cadenceMin: 1440 }, // v3-ads-campaigns-sync: "0 11 * * *"
 };
 
 /** O nome do recurso na tela; chave desconhecida devolve a própria chave. */
@@ -94,6 +97,7 @@ export const JOB_CADENCE_MIN: Readonly<Record<string, number>> = {
   "sync.fulfillment.snapshot": 360, // v3-fulfillment-snapshot: "0 */6 * * *"
   "sync.listing-visits.snapshot": 1440, // v3-listing-visits-snapshot: "0 7 * * *"
   "sync.order-financials": 1440, // v3-order-financials-sweep: "30 9 * * *"
+  "sync.ads.campaigns": 1440, // v3-ads-campaigns-sync: "0 11 * * *"
   "maintenance.reconcile-balances": 1440, // v3-reconcile-balances: "0 6 * * *"
   "maintenance.verify-ledger-integrity": 1440, // v3-verify-ledger-integrity: "30 6 * * *"
   "maintenance.check-ai-budget": 1440, // v3-check-ai-budget: "0 9 * * *"

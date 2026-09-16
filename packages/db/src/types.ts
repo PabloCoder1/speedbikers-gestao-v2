@@ -38,6 +38,105 @@ export type Database = {
   }
   public: {
     Tables: {
+      ads_advertisers: {
+        Row: {
+          advertiser_id: number | null
+          checked_at: string
+          ml_account_id: string
+          organization_id: string
+          site_id: string | null
+          status: string
+        }
+        Insert: {
+          advertiser_id?: number | null
+          checked_at?: string
+          ml_account_id: string
+          organization_id: string
+          site_id?: string | null
+          status: string
+        }
+        Update: {
+          advertiser_id?: number | null
+          checked_at?: string
+          ml_account_id?: string
+          organization_id?: string
+          site_id?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ads_advertisers_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: true
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ads_advertisers_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ads_campaigns: {
+        Row: {
+          acos_target: number | null
+          budget: number | null
+          campaign_id: number
+          id: string
+          ml_account_id: string
+          name: string
+          organization_id: string
+          roas_target: number | null
+          status: string
+          strategy: string | null
+          synced_at: string
+        }
+        Insert: {
+          acos_target?: number | null
+          budget?: number | null
+          campaign_id: number
+          id?: string
+          ml_account_id: string
+          name: string
+          organization_id: string
+          roas_target?: number | null
+          status: string
+          strategy?: string | null
+          synced_at?: string
+        }
+        Update: {
+          acos_target?: number | null
+          budget?: number | null
+          campaign_id?: number
+          id?: string
+          ml_account_id?: string
+          name?: string
+          organization_id?: string
+          roas_target?: number | null
+          status?: string
+          strategy?: string | null
+          synced_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ads_campaigns_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ads_campaigns_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       action_decisions: {
         Row: {
           action_id: string
@@ -254,6 +353,81 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      daily_ads_campaign_metrics: {
+        Row: {
+          campaign_id: number
+          clicks: number
+          cost: number
+          direct_amount: number
+          direct_units: number
+          id: string
+          indirect_amount: number
+          indirect_units: number
+          metric_date: string
+          ml_account_id: string
+          organic_amount: number | null
+          organic_units: number | null
+          organization_id: string
+          prints: number
+          synced_at: string
+          total_amount: number
+          units: number
+        }
+        Insert: {
+          campaign_id: number
+          clicks: number
+          cost: number
+          direct_amount: number
+          direct_units: number
+          id?: string
+          indirect_amount: number
+          indirect_units: number
+          metric_date: string
+          ml_account_id: string
+          organic_amount?: number | null
+          organic_units?: number | null
+          organization_id: string
+          prints: number
+          synced_at?: string
+          total_amount: number
+          units: number
+        }
+        Update: {
+          campaign_id?: number
+          clicks?: number
+          cost?: number
+          direct_amount?: number
+          direct_units?: number
+          id?: string
+          indirect_amount?: number
+          indirect_units?: number
+          metric_date?: string
+          ml_account_id?: string
+          organic_amount?: number | null
+          organic_units?: number | null
+          organization_id?: string
+          prints?: number
+          synced_at?: string
+          total_amount?: number
+          units?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_ads_campaign_metrics_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_ads_campaign_metrics_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
@@ -4511,6 +4685,15 @@ export type Database = {
           skus_na_reposicao: number
           supplier_brand: string | null
         }[]
+      }
+      get_ads_overview: {
+        Args: {
+          p_date_from: string
+          p_date_to: string
+          p_ml_account_id?: string | null
+        }
+        // jsonb (D-363): conferido campo a campo em apps/web/lib/ads.ts.
+        Returns: Json
       }
       get_replenishment_overview: {
         Args: {

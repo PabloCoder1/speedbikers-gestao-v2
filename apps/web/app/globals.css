@@ -6694,6 +6694,630 @@ tr.sb-linha-usuario:hover .sb-acesso-celula .sb-icone {
 }
 
 /*
+ * CALCULADORA DE PREÇO (D-359) — `/faturamento#calculadora`.
+ * Entradas à esquerda, a margem à direita e grudada no topo enquanto a pessoa
+ * rola pelas medidas. Só tokens da casa.
+ */
+.sb-calc {
+  margin-top: var(--sb-space-4);
+  scroll-margin-top: var(--sb-space-4);
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius);
+  background: var(--sb-surface);
+  box-shadow: var(--sb-shadow-panel);
+  overflow: hidden;
+}
+
+.sb-calc-cabecalho {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--sb-space-3);
+  padding: var(--sb-space-4) var(--sb-space-4) var(--sb-space-3);
+  border-bottom: 1px solid var(--sb-table-rule);
+  background: linear-gradient(135deg, var(--sb-bg-soft), var(--sb-surface) 60%);
+}
+
+.sb-calc-sobrancelha {
+  display: block;
+  font-family: var(--sb-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--sb-secondary);
+}
+
+.sb-calc-cabecalho h2 {
+  margin: 0.25rem 0 0;
+  font-size: 1.25rem;
+  letter-spacing: -0.02em;
+  color: var(--sb-primary);
+}
+
+.sb-calc-cabecalho p {
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-calc-plataformas,
+.sb-calc-segmento {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--sb-border);
+  border-radius: 999px;
+  background: var(--sb-bg-soft);
+}
+
+/* Opção de seletor segmentado em BOTÃO — a família `.sb-segmented`, cujas
+   regras originais vestem links. */
+.sb-segmented-opcao {
+  padding: 0.4375rem 1rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--sb-text-soft);
+  cursor: pointer;
+}
+
+.sb-segmented-opcao small {
+  font-family: var(--sb-mono);
+  font-size: 0.625rem;
+  font-weight: 500;
+  opacity: 0.8;
+}
+
+.sb-segmented-opcao-ativa {
+  background: var(--sb-primary);
+  color: var(--sb-on-primary);
+  box-shadow: var(--sb-shadow-pop);
+}
+
+.sb-calc-corpo {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(18rem, 1fr);
+  align-items: start;
+}
+
+.sb-calc-entradas {
+  display: grid;
+  gap: var(--sb-space-3);
+  padding: var(--sb-space-4);
+}
+
+.sb-calc-grupo {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sb-space-3);
+}
+
+.sb-calc-campo {
+  display: grid;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.sb-calc-campo > span {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--sb-text);
+}
+
+.sb-calc-campo .sb-input {
+  width: 100%;
+  min-width: 0;
+}
+
+.sb-calc-moeda,
+.sb-calc-unidade {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.sb-calc-moeda > i,
+.sb-calc-unidade > i {
+  position: absolute;
+  font-family: var(--sb-mono);
+  font-size: 0.6875rem;
+  font-style: normal;
+  color: var(--sb-muted-ink);
+  pointer-events: none;
+}
+
+.sb-calc-moeda > i {
+  left: 0.75rem;
+}
+
+.sb-calc-moeda .sb-input {
+  padding-left: 2.25rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.sb-calc-unidade > i {
+  right: 0.75rem;
+}
+
+.sb-calc-unidade .sb-input {
+  padding-right: 2.25rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.sb-calc-medidas {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--sb-space-2);
+  margin: 0;
+  padding: var(--sb-space-3);
+  border: 1px dashed var(--sb-border);
+  border-radius: var(--sb-radius);
+  background: var(--sb-bg-soft);
+}
+
+.sb-calc-medidas legend {
+  padding: 0 0.375rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--sb-secondary);
+}
+
+.sb-calc-frete {
+  margin: 0;
+  padding: 0.625rem 0.75rem;
+  border-radius: var(--sb-radius-md);
+  background: var(--sb-bg-soft);
+  font-size: 0.75rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-calc-frete-ok {
+  background: var(--sb-success-soft);
+  color: var(--sb-success);
+  font-weight: 600;
+}
+
+.sb-calc-frete-erro {
+  background: var(--sb-danger-soft);
+  color: var(--sb-danger-ink);
+}
+
+.sb-calc-frete-cotando {
+  color: var(--sb-secondary);
+}
+
+.sb-calc-faixas {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.sb-calc-faixas > span {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--sb-text);
+}
+
+.sb-calc-faixas ul {
+  display: grid;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sb-calc-faixas li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sb-space-2);
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--sb-table-rule);
+  border-radius: var(--sb-radius-md);
+  font-size: 0.75rem;
+}
+
+.sb-calc-faixas li span {
+  font-family: var(--sb-mono);
+  color: var(--sb-text-soft);
+}
+
+.sb-calc-faixas li.sb-calc-faixa-ativa {
+  border-color: var(--sb-secondary);
+  background: #eeeefa;
+  box-shadow: inset 3px 0 0 var(--sb-secondary);
+}
+
+/* O RESULTADO — o painel navy, com a margem no tom dela. */
+.sb-calc-resultado {
+  position: sticky;
+  top: var(--sb-space-3);
+  display: grid;
+  gap: 0.375rem;
+  align-self: stretch;
+  padding: var(--sb-space-4);
+  background: var(--sb-primary);
+  color: var(--sb-on-primary);
+  --sb-calc-tom: var(--sb-on-primary);
+}
+
+.sb-calc-resultado .sb-calc-sobrancelha {
+  color: var(--sb-on-primary-soft);
+}
+
+.sb-calc-tom-ok {
+  --sb-calc-tom: #7ee2a8;
+}
+
+.sb-calc-tom-atencao {
+  --sb-calc-tom: var(--sb-accent);
+}
+
+.sb-calc-tom-perigo {
+  --sb-calc-tom: #ff9a9a;
+}
+
+.sb-calc-margem {
+  font-size: 3rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+  color: var(--sb-calc-tom);
+}
+
+.sb-calc-lucro {
+  font-size: 0.8125rem;
+  color: var(--sb-on-primary-soft);
+}
+
+.sb-calc-lucro b {
+  color: var(--sb-on-primary);
+}
+
+.sb-calc-vazio {
+  margin: 0.5rem 0 0;
+  font-size: 0.875rem;
+  color: var(--sb-on-primary-soft);
+}
+
+.sb-calc-conta {
+  display: grid;
+  margin: var(--sb-space-3) 0 0;
+  border-top: 1px solid var(--sb-primary-border);
+}
+
+.sb-calc-conta > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sb-space-2);
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--sb-primary-border);
+  font-size: 0.75rem;
+}
+
+.sb-calc-conta dt small {
+  display: block;
+  margin-top: 1px;
+  font-size: 0.625rem;
+  color: var(--sb-on-primary-soft);
+}
+
+.sb-calc-conta dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sb-calc-subtotal {
+  font-weight: 700;
+}
+
+.sb-calc-total {
+  font-size: 0.875rem !important;
+  font-weight: 800;
+  border-bottom: 0 !important;
+}
+
+.sb-calc-total dd {
+  color: var(--sb-calc-tom);
+}
+
+.sb-calc-nota {
+  margin-top: var(--sb-space-2);
+  font-size: 0.625rem;
+  line-height: 1.5;
+  color: var(--sb-on-primary-soft);
+}
+
+@media (max-width: 1150px) {
+  .sb-calc-corpo {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sb-calc-resultado {
+    position: static;
+  }
+}
+
+@media (max-width: 600px) {
+  .sb-calc-grupo,
+  .sb-calc-medidas {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sb-calc-cabecalho,
+  .sb-calc-entradas,
+  .sb-calc-resultado {
+    padding: var(--sb-space-3);
+  }
+}
+
+/*
+ * LISTAS DE PRODUTOS do /faturamento (16/09): rolagem PRÓPRIA e vertical, sem
+ * rolagem lateral. A altura fixa mantém os dois painéis lado a lado do mesmo
+ * tamanho; `overscroll-behavior` impede que chegar ao fim da lista role a página.
+ */
+.sb-fat-lista {
+  max-height: 26rem;
+  margin: var(--sb-space-2) 0 0;
+  padding: 0 0 var(--sb-space-2);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  list-style: none;
+  border-top: 1px solid var(--sb-table-rule);
+}
+
+.sb-fat-item {
+  display: grid;
+  grid-template-columns: 1.5rem minmax(0, 1fr) auto;
+  grid-template-areas:
+    "posicao produto numeros"
+    "posicao detalhe detalhe";
+  column-gap: 0.625rem;
+  row-gap: 0.125rem;
+  align-items: center;
+  padding: 0.625rem var(--sb-space-3);
+  border-bottom: 1px solid var(--sb-table-rule);
+}
+
+.sb-fat-item:hover {
+  background: var(--sb-bg-soft);
+}
+
+.sb-fat-posicao {
+  grid-area: posicao;
+  align-self: start;
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-top: 0.125rem;
+  border-radius: 50%;
+  background: var(--sb-neutral-soft);
+  font-family: var(--sb-mono);
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: var(--sb-neutral-ink);
+}
+
+.sb-fat-item:nth-child(-n + 3) .sb-fat-posicao {
+  background: var(--sb-primary);
+  color: var(--sb-on-primary);
+}
+
+.sb-fat-produto {
+  grid-area: produto;
+  min-width: 0;
+}
+
+.sb-fat-produto .sb-entity {
+  display: block;
+  overflow: hidden;
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sb-fat-numeros {
+  grid-area: numeros;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+
+.sb-fat-numeros strong {
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--sb-primary);
+}
+
+.sb-fat-detalhe {
+  grid-area: detalhe;
+  overflow: hidden;
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .sb-fat-lista {
+    max-height: 22rem;
+  }
+
+  .sb-fat-item {
+    grid-template-areas:
+      "posicao produto produto"
+      "posicao numeros numeros"
+      "posicao detalhe detalhe";
+  }
+}
+
+.sb-fat-produto .sb-entity {
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.sb-fat-produto .sb-entity:hover {
+  text-decoration: underline;
+}
+
+.sb-fat-produto .sb-faturamento-sku {
+  margin-top: 1px;
+  font-size: 0.625rem;
+  color: var(--sb-muted-ink);
+}
+
+/*
+ * MERCADO ADS no /faturamento (D-363). Reaproveita a lista `.sb-fat-*` das
+ * caixas de produtos (rolagem própria, sem rolagem lateral).
+ */
+.sb-ads {
+  margin-top: var(--sb-space-4);
+  scroll-margin-top: var(--sb-space-4);
+}
+
+.sb-ads-aviso {
+  margin: var(--sb-space-3);
+}
+
+.sb-ads-contas {
+  display: grid;
+  gap: 0.375rem;
+  margin: var(--sb-space-3) var(--sb-space-3) 0;
+  padding: 0.75rem var(--sb-space-3);
+  border-left: 3px solid var(--sb-accent-ink);
+  border-radius: var(--sb-radius-md);
+  background: var(--sb-accent-soft);
+  list-style: none;
+  font-size: 0.75rem;
+  color: var(--sb-text);
+}
+
+.sb-ads-faixa {
+  margin-top: var(--sb-space-3);
+}
+
+.sb-ads-corpo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--sb-space-3);
+  padding: var(--sb-space-3);
+}
+
+.sb-ads-coluna {
+  min-width: 0;
+}
+
+.sb-ads-titulo {
+  margin: 0 0 var(--sb-space-2);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--sb-primary);
+}
+
+.sb-ads-titulo small {
+  font-weight: 500;
+  color: var(--sb-text-soft);
+}
+
+.sb-ads-barras {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 11rem;
+  padding: 0 0 1.5rem;
+  border-bottom: 1px solid var(--sb-border);
+  background-image: linear-gradient(to bottom, var(--sb-table-rule) 1px, transparent 1px);
+  background-size: 100% 25%;
+}
+
+.sb-ads-dia {
+  display: flex;
+  flex: 1;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 1px;
+  height: 100%;
+  min-width: 0;
+  border-radius: 2px;
+}
+
+.sb-ads-dia:hover {
+  background: var(--sb-bg-soft);
+}
+
+.sb-ads-dia i {
+  display: block;
+  width: 45%;
+  max-width: 0.625rem;
+  border-radius: 2px 2px 0 0;
+}
+
+.sb-ads-barra-venda {
+  background: var(--sb-secondary);
+}
+
+.sb-ads-barra-custo {
+  background: var(--sb-accent-ink);
+}
+
+.sb-ads-legenda {
+  position: absolute;
+  bottom: 0.125rem;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-ads-legenda i {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 2px;
+}
+
+.sb-ads-nota {
+  margin: var(--sb-space-2) 0 0;
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  color: var(--sb-text-soft);
+}
+
+.sb-ads-lista {
+  margin-top: 0;
+}
+
+.sb-ads-nome {
+  display: block;
+  overflow: hidden;
+  font-size: 0.75rem;
+  color: var(--sb-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sb-ads-lista .sb-fat-detalhe .sb-status {
+  margin-right: 0.25rem;
+}
+
+@media (max-width: 1150px) {
+  .sb-ads-corpo {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/*
  * CONFIGURAÇÃO DE REPOSIÇÃO (D-361) — /reposicao/configuracoes.
  *
  * Reusa o resumo (sb-rep-resumo / sb-rep-destaque) e o método recolhido

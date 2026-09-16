@@ -292,21 +292,27 @@ describe("catálogo de métricas", () => {
     const rows = await asUser<{ id: string }>(ADMIN_SB, "select id from public.metric_definitions order by id");
 
     expect(rows.map((row) => row.id)).toEqual([
-      // As cinco de D-356 (METRICS 5F) entram na lista em ordem alfabética.
+      // As cinco de D-356 (METRICS 5F) e as cinco de Ads de D-363 entram na
+      // lista em ordem alfabética.
+      "acos",
       "comissao_percentual",
       "custo_produtos_vendidos",
       "desconto_vendedor",
       "frete_medio_pedido",
       "frete_vendedor",
+      "investimento_ads",
       "margem_operacional_pedido",
       "margem_venda",
       "pedidos",
       "pedidos_cancelados",
       "pedidos_por_pack",
       "preco_medio_praticado",
+      "receita_ads",
       "receita_bruta",
       "resultado_venda",
+      "roas",
       "skus_distintos_vendidos",
+      "tacos",
       "taxa_cancelamento",
       "taxa_conversao",
       "taxas_ml",
@@ -6266,6 +6272,92 @@ describe("hub de configuracoes: quem altera bate com as policies (D-233)", () =>
         expect(texto, tabela).toContain("auth.uid()");
       }
     }
+  });
+});
+
+describe("Mercado Ads: tabelas e get_ads_overview (D-363)", () => {
+  // Nomes fora dos padrões de limpeza global, como o describe de tráfego abaixo.
+  const CONTA_ADS = "dddd8888-0000-4000-8000-0000000000a5";
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into public.ml_accounts (id, organization_id, label, slug, status)
+       values ($1,$2,'Conta de ads','adstest-conta','PENDING')
+       on conflict do nothing`,
+      [CONTA_ADS, ORG_SB],
+    );
+    await client.query(
+      `insert into public.ads_campaigns (organization_id, ml_account_id, campaign_id, name, status, strategy, budget, roas_target)
+       values ($1,$2,910001,'Campanha A','active','PROFITABILITY',30,8),
+              ($1,$2,910002,'Campanha B','paused',null,null,null)
+       on conflict do nothing`,
+      [ORG_SB, CONTA_ADS],
+    );
+    await client.query(
+      `insert into public.daily_ads_campaign_metrics
+         (organization_id, ml_account_id, campaign_id, metric_date, clicks, prints, cost, direct_amount, indirect_amount, total_amount, direct_units, indirect_units, units)
+       values
+         ($1,$2,910001,'2026-08-20',10,1000,20,150,50,200,1,1,2),
+         ($1,$2,910001,'2026-08-21',10,1000,30,250,50,300,2,0,2),
+         ($1,$2,910002,'2026-08-21',5,500,50,20,0,20,1,0,1),
+         -- fora da janela: não pode entrar em soma nenhuma
+         ($1,$2,910001,'2020-01-02',99,9999,999,9999,0,9999,9,0,9)
+       on conflict do nothing`,
+      [ORG_SB, CONTA_ADS],
+    );
+  });
+
+  it("RLS por conta nas três tabelas; anon não lê", async () => {
+    for (const tabela of ["ads_campaigns", "daily_ads_campaign_metrics"]) {
+      const own = await asUser(ADMIN_SB, `select * from public.${tabela} where ml_account_id='${CONTA_ADS}'`);
+      const outra = await asUser(DE_OUTRA_ORG, `select * from public.${tabela} where ml_account_id='${CONTA_ADS}'`);
+
+      expect(own.length).toBeGreaterThan(0);
+      expect(outra).toHaveLength(0);
+    }
+
+    for (const tabela of ["ads_advertisers", "ads_campaigns", "daily_ads_campaign_metrics"]) {
+      await expect(asAnon(`select * from public.${tabela}`)).rejects.toThrow(/permission denied/i);
+    }
+  });
+
+  it("authenticated não escreve nas tabelas de Ads (só o worker)", async () => {
+    await expect(
+      asUser(ADMIN_SB, `update public.ads_campaigns set name = 'x' where ml_account_id='${CONTA_ADS}'`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
+  it("get_ads_overview soma na janela, com razões sobre as somas e campanhas por investimento", async () => {
+    const [linha] = await asUser<{ v: {
+      resumo: { investimento: number; receita_ads: number; roas: number; acos: number; cliques: number };
+      campanhas: { campaign_id: number; nome: string; investimento: number; roas: number; roas_alvo: number | null }[];
+      diario: { dia: string; investimento: number }[];
+    } }>(ADMIN_SB, `select public.get_ads_overview('2026-08-20','2026-08-21','${CONTA_ADS}') as v`);
+
+    // 20 + 30 + 50, sem os 999 de 2020.
+    expect(linha?.v.resumo.investimento).toBe(100);
+    expect(linha?.v.resumo.receita_ads).toBe(520);
+    // ROAS = 520 / 100; ACOS = 100 / 520 — sobre as SOMAS, não média de campanhas.
+    expect(linha?.v.resumo.roas).toBe(5.2);
+    expect(linha?.v.resumo.acos).toBeCloseTo(0.1923, 4);
+    expect(linha?.v.resumo.cliques).toBe(25);
+
+    // Empate de investimento (A = 20 + 30, B = 50): desfaz pela receita, e A vendeu mais.
+    expect(linha?.v.campanhas.map((c) => c.campaign_id)).toEqual([910001, 910002]);
+    expect(linha?.v.campanhas[0]).toMatchObject({ nome: "Campanha A", roas: 10, roas_alvo: 8 });
+    expect(linha?.v.campanhas[1]).toMatchObject({ roas: 0.4, roas_alvo: null });
+    expect(linha?.v.diario).toHaveLength(2);
+  });
+
+  it("usuário de outra organização recebe zeros, nunca os números alheios; anon não executa", async () => {
+    const [linha] = await asUser<{ v: { resumo: { investimento: number }; campanhas: unknown[] } }>(
+      DE_OUTRA_ORG,
+      `select public.get_ads_overview('2026-08-20','2026-08-21','${CONTA_ADS}') as v`,
+    );
+
+    expect(linha?.v.resumo.investimento).toBe(0);
+    expect(linha?.v.campanhas).toHaveLength(0);
+    await expect(asAnon(`select public.get_ads_overview('2026-08-20','2026-08-21')`)).rejects.toThrow(/permission denied/i);
   });
 });
 

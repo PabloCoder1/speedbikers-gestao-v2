@@ -17,6 +17,7 @@ import { createMeasureDecisionOutcomesHandler } from "./handlers/measure-decisio
 import { createNfeImportApplyHandler } from "./handlers/nfe-import-apply.js";
 import { createNfeImportParseHandler } from "./handlers/nfe-import-parse.js";
 import { createReconcileBalancesHandler } from "./handlers/reconcile-balances.js";
+import { createSyncAdsCampaignsHandler } from "./handlers/sync-ads-campaigns.js";
 import { createSyncFulfillmentSnapshotHandler } from "./handlers/sync-fulfillment-snapshot.js";
 import { createSyncListingVisitsSnapshotHandler } from "./handlers/sync-listing-visits-snapshot.js";
 import { createSyncListingsSnapshotHandler } from "./handlers/sync-listings-snapshot.js";
@@ -94,6 +95,8 @@ const app = createWorkerApp({
       oauth,
       encryptionKey,
     }),
+    // Mercado Ads (D-363): anunciante, campanhas e métricas diárias de 90 dias.
+    "sync.ads.campaigns": createSyncAdsCampaignsHandler({ db, mercadoLivre, oauth, encryptionKey }),
     "sync.order-financials": createSyncOrderFinancialsHandler({
       db,
       mercadoLivre,

@@ -12240,6 +12240,47 @@ A tela passa de duas leituras de ~490 ms para uma de ~255 ms, estavel depois da 
 - **a migration nao foi aplicada no Dev**: sobe pela CI no merge, como a de D-357;
 - achado, nao corrigido: um SKU pode ficar SEM_ESTADO com sugestao positiva (aproveitavel negativo e venda zero em 30 dias; no Dev, 1 unidade). O estado exige taxa > 0 e a sugestao nao -- as duas regras sao de D-147/D-150 e mudar uma delas e decisao de produto.
 
+## D-359 - Calculadora de preco no /faturamento: a margem de uma venda antes de anunciar, com o frete oficial do Mercado Livre e a tabela da Shopee
+
+**Contexto:** pedido do usuario: um lugar no `/faturamento` para informar custo, preco de venda e (no Mercado Livre) medidas, escolher a plataforma, e receber so o resultado: quanto vai ser a margem. Nas perguntas ele decidiu:
+
+- **frete do Mercado Livre:** a cotacao oficial do ML pelas medidas, nao tabela nem valor digitado;
+- **Mercado Livre:** 12% no Classico, 17% no Premium; o frete gratis (pago pelo vendedor) vale **a partir de R$ 19**;
+- **Shopee:** percentual + valor fixo por faixa (imagem enviada), e **o valor fixo e o frete**; o "subsidio Pix" da tabela **nao entra**.
+
+**1. A CONTA -- `@sb/domain`, pura e testada (`pricing/calculadora-preco.ts`)**
+
+A mesma de 5F: recebido = preco - comissao - frete; resultado = recebido - custo; margem = resultado / preco. As tarifas sao constantes nomeadas (`COMISSAO_ML`, `FRETE_GRATIS_ML_MINIMO`, `FAIXAS_SHOPEE`): trocar e uma linha e um teste.
+
+| Shopee | comissao |
+|---|---|
+| ate R$ 79,99 | 20% + R$ 4 |
+| R$ 80 a 99,99 | 14% + R$ 16 |
+| R$ 100 a 199,99 | 14% + R$ 20 |
+| R$ 200 a 499,99 | 14% + R$ 26 |
+| a partir de R$ 500 | 14% + R$ 26 |
+
+A fronteira entre "ate 79,99" e "acima de 80" fica em R$ 80. **Mercado Livre sem cotacao a partir de R$ 19 NAO tem margem**: a funcao recusa com o motivo, porque frete zero fingido daria uma margem bonita e falsa.
+
+**2. O FRETE -- a primeira chamada SINCRONA da `api` ao Mercado Livre**
+
+Contrato lido na doc oficial em 16/09/2026 ("Custos de envio", atualizada em 20/04/2026 -- o portal bloqueia leitura automatica, foi lido num navegador): `GET /users/{USER_ID}/shipping_options/free?dimensions=AxLxC,peso&verbose&item_price&listing_type_id&mode=me2&condition=new&logistic_type&free_shipping=true`; `coverage.all_country.list_cost` e o "custo de envio oferecido ao vendedor"; a doc chama de "estimativa aproximada" para uma unidade. Unidades adotadas: cm e g (o formato de dimensoes dos itens do ML; esta rota da doc nao as repete).
+
+- `@sb/mercado-livre` `quoteFreeShippingCost`, com schema: resposta sem `list_cost` e recusada, nunca frete zero;
+- `api` `POST /v1/pricing/ml-shipping-quote`: qualquer papel com acesso a CONTA (e leitura), fronteira de organizacao e permissao por conta refeitas no servidor, cliente HTTP proprio com 2 tentativas e corte em 8 s. **Nao enfileira**: e um GET curto que a pessoa espera na tela, dentro do que `docs/ARCHITECTURE.md` §5 permite ("se pode passar de ~5 s, enfileira");
+- **o token e so LIDO, nunca renovado pela `api`.** O `refresh_token` do ML e de uso unico, e quem renova e o worker, com trava. Token a menos de 5 min de vencer -> 503 "tente de novo em alguns minutos". Uma renovacao concorrente vinda da `api` seria o caminho para desconectar a conta, e a calculadora nao vale isso.
+
+**3. A TELA**
+
+Secao "Calculadora de preco" no fim do `/faturamento`, com atalho no cabecalho (`#calculadora`) e fora do Suspense dos numeros -- nao depende do periodo. Plataforma e tipo de anuncio em seletor segmentado; custo e preco em R$; logistica (Coleta, Agencia/Places, Correios, Full, Flex); conta, quando ha mais de uma; medidas A x L x C em cm e peso em g. A cotacao sai sozinha 700 ms depois da ultima digitacao, e qualquer mudanca de medida, preco, tipo, logistica ou conta invalida a anterior. O resultado e um painel com a margem grande no tom (de `tomDaMargem`), "sobram/faltam R$ X por venda" e a conta linha a linha. Plataforma, tipo, conta e logistica ficam lembrados no navegador.
+
+**4. VERIFICACAO E LIMITES**
+
+`lint`/`typecheck`/testes de domain (414, 9 novos), mercado-livre (120, 3 novos), api (371, 6 novos), worker (546) e web (604, 2 novos); build e os quatro guardas. E2E novo em `faturamento.spec.ts`: Shopee de ponta a ponta (R$ 149,90, custo R$ 62,50 -> 31,0%) e Mercado Livre com a resposta da `api` INTERCEPTADA (Premium, frete R$ 21,90 -> 26,7%; sem medidas nao ha margem; abaixo de R$ 19 o frete sai da conta), conferindo o corpo da chamada.
+
+- **a cotacao real do Mercado Livre nao foi chamada**: nao ha conta conectada nem API de pe localmente, e o deploy de Dev esta pausado (D-350). A primeira prova com o ML de verdade e em producao;
+- **nao entram:** impostos, Ads, parcelamento e o custo fixo por unidade do ML abaixo de R$ 79 -- a tela diz o que nao inclui.
+
 ## D-360 - A trava da republicacao olha o estoque do Full, e nao o cadastro -- anuncio com Full zerado e envio por coleta deixa de ser recusado
 
 **Contexto:** em 2026-09-16, as 14:58 UTC, o dono pediu a republicacao do MLB5805901782 (Lanterna Traseira Suzuki DR 150, conta SPEEDBIKERS LOJA 1). A conferencia (`relist.prepare`) recusou com `FULL_BLOQUEADO`: "O anuncio (ou uma variacao) tem estoque no Full". O painel do Mercado Livre mostra 7 unidades no deposito e envio por coleta com Flex.
@@ -12370,3 +12411,46 @@ O primeiro e2e de navegacao clicou no "Configuracoes" do MENU LATERAL (hub `/con
 - Web: typecheck, lint, 631 testes de unidade (27 novos: `replenishment-reach` e `replenishment-rule`), build, `check:waterfalls`, `check:server-actions`, `check:table-styles`, `check:control-styles`.
 - Integracao: 679 verdes, 6 novos em `get_replenishment_reach (D-361)` -- fronteiras do universo, igualdade com `get_purchase_suggestions` (ADMIN e ANALISTA), data nula = hoje, outra organizacao nao ve, anon nao executa.
 - E2E (reset + seed + uma passada): 146 verdes, 2 novos em `reposicao-configuracoes.spec.ts` -- do zero ao padrao, validacao, regua, criar, editar e remover com a consequencia. O caso DESFAZ o que cria: `reposicao.spec.ts` roda depois e afirma "sem configuracao" numa linha do seed.
+
+## D-363 - Mercado Ads no /faturamento: a analise de campanhas pela API oficial de Product Ads
+
+**Contexto:** pedido do usuario: "afiliados e analise de campanhas/ads dentro da tela de faturamento". Ads estava ADIADO desde D-059, por falta de evidencia de que a conta tinha o produto habilitado. Nas perguntas o dono respondeu:
+
+- anuncia no **Mercado Ads (ML)**;
+- quer **analise de campanhas**;
+- escolheu **"Mercado Ads pela API primeiro"**.
+
+Sobre afiliados, ele usa o programa do ML, os afiliados da Shopee e afiliados proprios. Afiliados ficam para uma etapa seguinte: a lista de APIs do ML nao tem endpoint de afiliados, e a Shopee nao tem integracao no sistema.
+
+**1. A FONTE -- doc oficial lida em 16/09/2026** ("Product Ads para Catalogo e User Products", atualizada em 06/07/2026; o portal bloqueia leitura automatica e foi lido num navegador)
+
+- **anunciante:** `GET /advertising/advertisers?product_id=PADS` (`Api-Version: 1`). O 404 "No permissions found for user_id" quer dizer conta SEM Product Ads habilitado -- e gravado como estado, nao como falha;
+- **campanhas:** `GET /advertising/{site}/advertisers/{id}/product_ads/campaigns/search` (`api-version: 2`), paginado;
+- **metricas por dia:** `GET /advertising/{site}/product_ads/campaigns/{id}?aggregation_type=DAILY&metrics=...`. Custo, cliques, impressoes, vendas diretas e indiretas, unidades e organicas. **So 90 dias para tras**, atualizadas as 10h (GMT-3);
+- **o que ficou de fora:** os endpoints legados (`/advertising/product_ads/...`, `/ads/search`, metricas por anuncio) foram **desligados em 27-30/05/2026** e nao sao usados. O "search com aggregation_type=DAILY" tambem nao: o exemplo da doc devolve dias sem o id da campanha, e somar o que nao se sabe de quem e seria inventar a atribuicao.
+
+**2. O CAMINHO DO DADO**
+
+- `@sb/mercado-livre` `product-ads.ts`, com schema. O `http-client` passou a aceitar cabecalhos extras (`api-version`);
+- **worker `sync.ads.campaigns`, por conta:** grava o anunciante (inclusive "nao habilitado"), faz upsert das campanhas e regrava os **90 dias** de metricas por campanha. Regravar a janela inteira corrige o dia que o ML ajusta depois, sem duplicar. Campanha recusada (404/403) vira `partial`; erro retryable volta para a fila. `resource: 'ads'` (sexto alargamento do CHECK de `sync_runs`/`sync_errors`);
+- **api `POST /internal/schedule/ads`:** uma task por conta CONNECTED, escalonada em 300 s. Cloud Scheduler `v3-ads-campaigns-sync` as **11h**, depois da atualizacao das 10h;
+- **migration `20260916165243`:** `ads_advertisers`, `ads_campaigns` e `daily_ads_campaign_metrics`, todas com RLS por conta e grants no padrao de `order_financials` (authenticated so le). Cinco metricas no catalogo: `investimento_ads`, `receita_ads`, `acos`, `roas` e `tacos` (as tres primeiras eram as pendentes de METRICS 5.5);
+- **RPC `get_ads_overview` (jsonb, plano custom):** resumo, campanhas por investimento, serie diaria e o estado de Product Ads de cada conta conectada. As razoes sao sobre as somas e ficam NULL com denominador zero. O **TACoS** usa a receita bruta de `daily_account_metrics` nas mesmas contas e dias.
+
+**3. A TELA** -- secao "Mercado Ads -- campanhas" no `/faturamento`, com atalho no cabecalho (`#ads`) e Suspense proprio
+
+- faixa: investimento, vendas com Ads, ROAS, ACOS, TACoS;
+- barras de investimento x vendas por dia, no mesmo eixo;
+- lista de campanhas com rolagem propria (a mesma das caixas de produtos). Cada linha mostra conta, estrategia, ROAS alvo, investimento, **selo de ROAS** (vermelho abaixo de 1, amarelo abaixo do alvo, verde no alvo), status, vendas, ACOS e cliques;
+- selo "N campanha(s) abaixo do alvo" e a ressalva de que ROAS nao e lucro;
+- o vazio tem tres causas, todas ditas: conta sem Product Ads habilitado, conta ainda nao verificada, sem campanha com investimento no periodo;
+- a leitura em `lib/ads.ts` e conferida campo a campo e recusa a resposta fora do contrato;
+- **funcao ausente (PGRST202)** mostra "sendo ativada neste ambiente", e nao erro: a web da branch principal chega em producao antes da migration passar pelo workflow.
+
+**4. VERIFICACAO E LIMITES**
+
+- **testes:** mercado-livre 6 novos, worker 6 novos, api 3 novos (mais o da rota), web 6 novos (`lib/ads`) e sync-health atualizado. `typecheck` e `lint` passam;
+- **integracao:** casos novos para as tabelas e a RPC, e a lista do catalogo atualizada. A matematica foi conferida com a mesma fixture numa transacao desfeita no banco local (investimento 100, vendas 520, ROAS 5,2, ACOS 19,23%, dia de 2020 fora). A suite inteira pede `db reset` no banco compartilhado e fica com a CI;
+- **visual:** conferido com campanhas de exemplo inseridas e apagadas no banco local;
+- **nao verificado:** a chamada real ao Mercado Ads (sem conta conectada localmente, Dev pausado) e se a conta de producao tem Product Ads habilitado. Na primeira rodada o proprio sync grava a resposta, e a tela a mostra;
+- **para funcionar em producao:** migration pelo workflow, deploy do **worker antes da api** (`docs/DEPLOYMENT.md` §3) e `infra/cloud-scheduler.sh` para criar `v3-ads-campaigns-sync`.

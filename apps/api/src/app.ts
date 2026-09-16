@@ -28,6 +28,8 @@ import { triggerFulfillmentSnapshot } from "./fulfillment-schedule.js";
 import type { IpAllowlistVerifier } from "./ip-allowlist.js";
 import type { LedgerIntegrityScheduleDeps } from "./ledger-integrity-schedule.js";
 import { triggerLedgerIntegrityCheck } from "./ledger-integrity-schedule.js";
+import type { AdsScheduleDeps } from "./ads-schedule.js";
+import { triggerAdsCampaignsSync } from "./ads-schedule.js";
 import type { ListingVisitsScheduleDeps } from "./listing-visits-schedule.js";
 import type { OrderFinancialsScheduleDeps } from "./order-financials-schedule.js";
 import { triggerOrderFinancialsSweep } from "./order-financials-schedule.js";
@@ -41,6 +43,7 @@ import { triggerSupportQuestionsReconcile } from "./support-questions-schedule.j
 import type { InviteDeps } from "./invites.js";
 import { setMemberSuspension, suspensionRequestSchema } from "./member-suspension.js";
 import { inviteOrganizationMember, inviteRequestSchema, reissueAccessLink } from "./invites.js";
+import { pricingQuoteRequestSchema, quoteMlShipping, type PricingQuoteDeps } from "./pricing-quote.js";
 import type { RelistDeps } from "./relist.js";
 import { relistRequestSchema, requestListingRelist, requestListingRelistExecution } from "./relist.js";
 import type { SupportReplyDeps } from "./support-reply.js";
@@ -101,12 +104,14 @@ export interface AppDependencies {
   ledgerIntegritySchedule?: LedgerIntegrityScheduleDeps;
   listingsSchedule?: ListingsScheduleDeps;
   listingVisitsSchedule?: ListingVisitsScheduleDeps;
+  adsSchedule?: AdsScheduleDeps;
   orderFinancialsSchedule?: OrderFinancialsScheduleDeps;
   supportQuestionsSchedule?: SupportQuestionsScheduleDeps;
   supportClaimsSchedule?: SupportClaimsScheduleDeps;
   supportMessagesSchedule?: SupportMessagesScheduleDeps;
   supportReply?: SupportReplyDeps;
   relist?: RelistDeps;
+  pricingQuote?: PricingQuoteDeps;
   invites?: InviteDeps;
   metricsRefreshSchedule?: MetricsRefreshScheduleDeps;
   salesAnomalyActionsSchedule?: SalesAnomalyActionsScheduleDeps;
@@ -485,6 +490,20 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
   });
 
   // --------------------------------------------------------------------
+  // Mercado Ads (D-363) — anunciante, campanhas e métricas diárias, por
+  // CONTA. Cadência diária depois das 10h: `infra/cloud-scheduler.sh`.
+  // --------------------------------------------------------------------
+  app.post("/internal/schedule/ads", async (context) => {
+    const adsSchedule = dependencies.adsSchedule;
+
+    if (adsSchedule === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    return context.json(await triggerAdsCampaignsSync(adsSchedule));
+  });
+
+  // --------------------------------------------------------------------
   // Captura de custos por pedido (D-165) -- frete do vendedor e desconto
   // bancado, por CONTA, diaria. Mesmo formato da rota acima.
   // --------------------------------------------------------------------
@@ -751,6 +770,63 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
 
     if (outcome.status === "invalid") {
       return context.json({ error: { code: "invalid_payload", message: outcome.reason } }, 400);
+    }
+
+    if (outcome.status === "error") {
+      return context.json({ error: { code: "internal", message: outcome.reason } }, 500);
+    }
+
+    return context.json(outcome);
+  });
+
+  // Cotacao do frete do Mercado Livre para a calculadora de preco (D-359):
+  // leitura curta e sincrona, token so LIDO -- ver `pricing-quote.ts`.
+  // --------------------------------------------------------------------
+  app.post("/v1/pricing/ml-shipping-quote", async (context) => {
+    const auth = dependencies.auth;
+    const pricingQuote = dependencies.pricingQuote;
+
+    if (auth === undefined || pricingQuote === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const authorized = await auth.authenticate(context.req.header("authorization"), [
+      "ADMIN",
+      "GESTOR",
+      "ANALISTA",
+      "OPERADOR",
+      "VISUALIZADOR",
+    ]);
+
+    if (!authorized.ok) {
+      return context.json({ error: { code: "unauthorized" } }, authorized.status);
+    }
+
+    let rawBody: unknown;
+
+    try {
+      rawBody = await context.req.json();
+    } catch {
+      return context.json({ error: { code: "invalid_payload", message: "corpo não é JSON" } }, 400);
+    }
+
+    const parsed = pricingQuoteRequestSchema.safeParse(rawBody);
+
+    if (!parsed.success) {
+      return context.json(
+        { error: { code: "invalid_payload", message: parsed.error.issues[0]?.message ?? "payload inválido" } },
+        400,
+      );
+    }
+
+    const outcome = await quoteMlShipping(pricingQuote, authorized.caller, parsed.data);
+
+    if (outcome.status === "not_found") {
+      return context.json({ error: { code: "not_found", message: "conta não encontrada" } }, 404);
+    }
+
+    if (outcome.status === "unavailable") {
+      return context.json({ error: { code: "unavailable", message: outcome.reason } }, 503);
     }
 
     if (outcome.status === "error") {

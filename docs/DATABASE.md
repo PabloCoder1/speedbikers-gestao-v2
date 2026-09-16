@@ -807,7 +807,7 @@ Se a migração de compras acontecer na Fase 4, a regra permanece: cada linha mi
 
 | Pendência | Depende de | Efeito |
 |---|---|---|
-| Tabelas de visitas, conversão e Ads | Fase 5B (D-032) | Só a metade de Ads segue adiada (D-059) — visitas/conversão implementadas em 2026-08-23 (`daily_listing_visits`) |
+| Tabelas de visitas, conversão e Ads | Fase 5B (D-032) | Visitas/conversão em 2026-08-23 (`daily_listing_visits`); **Ads em 2026-09-16 (D-363)**: `ads_advertisers`, `ads_campaigns`, `daily_ads_campaign_metrics` (migration `20260916165243`), RLS por conta, só o worker escreve |
 | ~~Adaptador de detalhe e handler por `questionId`~~ | ~~Fase 7B (D-086)~~ | **Concluído** — D-087 (handler), e a cadeia inteira que a linha original dizia faltar também: webhook (D-088), reconciliação (D-089), UI (D-090/D-095) e resposta (D-096) |
 | Tabelas de reclamações/devoluções/mediações (canal CLAIM) | Fase 7B, pesquisa das APIs de Claims | O modelo D-084 já prevê o canal; a ingestão ainda não existe |
 

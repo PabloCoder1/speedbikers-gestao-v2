@@ -116,13 +116,27 @@ atualizado_em      data da última revisão desta definição
 
 ### 5.5 Dependentes de fonte ainda não confirmada
 
-`investimento_ads` · `receita_ads` · `acos` · `margem_contribuicao`
+`margem_contribuicao`
+
+> **`investimento_ads`, `receita_ads` e `acos` saíram desta seção em 2026-09-16 (D-363)**, com `roas` e `tacos`: a fonte (API oficial de Product Ads) foi confirmada e as definições estão em **5G**.
 
 **Escopo definido:** Ads entra depois; `margem_contribuicao` depende de custo cadastrado por SKU. A margem **sobre custo** entrou em D-356 como `margem_venda` (5F) — antes de impostos e de Ads; `margem_contribuicao` continua aqui até impostos e Ads terem fonte. Enquanto a fonte não existir, o diagnóstico **não distingue queda de tráfego de queda de conversão sem dizer que não distingue** — declara, em vez de inferir.
 
 Nenhuma dessas será exibida enquanto a fonte não estiver confirmada e a definição preenchida. **Métrica sem fonte confirmada não vai para a tela.**
 
 > **`visitas` e `taxa_conversao` saíram desta seção em 2026-08-31 (D-170).** O texto tinha envelhecido: a fonte foi confirmada em D-032, `daily_listing_visits` está em produção e a coleta foi corrigida em D-156 — mas as duas apareciam na tela **sem definição canônica**, exatamente o que a regra central proíbe. As definições estão em **5D**, abaixo.
+
+### 5G. Mercado Ads — Product Ads (D-363)
+
+| ID | Nome | Fórmula | Fonte | Ressalva obrigatória na tela |
+|---|---|---|---|---|
+| `investimento_ads` | Investimento em Ads | `SUM(daily_ads_campaign_metrics.cost)` | API de Product Ads, detalhe da campanha com `aggregation_type=DAILY`, gravado por `sync.ads.campaigns` | Só Product Ads (sem Brand/Display). Dia sem linha é **métrica não lida**, não investimento zero. A API só guarda 90 dias |
+| `receita_ads` | Vendas com Ads | `SUM(daily_ads_campaign_metrics.total_amount)` (diretas + indiretas) | idem | É a **atribuição do Mercado Livre** aos cliques; a doc não diz se venda cancelada sai depois |
+| `acos` | ACOS | `investimento_ads / NULLIF(receita_ads, 0)` | componentes acima | Fração; sobre as somas, nunca média de campanhas. NULL sem venda |
+| `roas` | ROAS | `receita_ads / NULLIF(investimento_ads, 0)` | componentes acima | **Venda sobre investimento, não lucro** — a tela diz isso ao lado. NULL sem investimento |
+| `tacos` | TACoS | `investimento_ads / NULLIF(receita_bruta, 0)` | `investimento_ads` + `receita_bruta` (5.2) das mesmas contas e dias | Todo o investimento contra toda a receita das vendas válidas |
+
+Granularidades: `account` e `organization`. O grão gravado é (conta, campanha, dia), mas `campaign` não está entre as granularidades do catálogo — a lista por campanha da tela usa as mesmas fórmulas por campanha.
 
 ### 5D. Métricas de tráfego (D-032 na fonte, catalogadas em D-170)
 
