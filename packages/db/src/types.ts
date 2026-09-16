@@ -4673,6 +4673,19 @@ export type Database = {
           total_count: number
         }[]
       }
+      get_replenishment_reach: {
+        Args: { p_date_to?: string | null; p_organization_id: string }
+        // D-361: por marca (nula inclusive). So conta; a precedencia das regras
+        // e aplicada na tela, em apps/web/lib/replenishment-reach.ts.
+        Returns: {
+          skus: number
+          skus_com_regra_sku: number
+          skus_com_regra_sku_venda_30d: number
+          skus_com_venda_30d: number
+          skus_na_reposicao: number
+          supplier_brand: string | null
+        }[]
+      }
       get_ads_overview: {
         Args: {
           p_date_from: string
