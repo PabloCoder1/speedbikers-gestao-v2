@@ -7055,3 +7055,121 @@ tr.sb-linha-usuario:hover .sb-acesso-celula .sb-icone {
     padding: var(--sb-space-3);
   }
 }
+
+/*
+ * LISTAS DE PRODUTOS do /faturamento (16/09): rolagem PRÓPRIA e vertical, sem
+ * rolagem lateral. A altura fixa mantém os dois painéis lado a lado do mesmo
+ * tamanho; `overscroll-behavior` impede que chegar ao fim da lista role a página.
+ */
+.sb-fat-lista {
+  max-height: 26rem;
+  margin: var(--sb-space-2) 0 0;
+  padding: 0 0 var(--sb-space-2);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  list-style: none;
+  border-top: 1px solid var(--sb-table-rule);
+}
+
+.sb-fat-item {
+  display: grid;
+  grid-template-columns: 1.5rem minmax(0, 1fr) auto;
+  grid-template-areas:
+    "posicao produto numeros"
+    "posicao detalhe detalhe";
+  column-gap: 0.625rem;
+  row-gap: 0.125rem;
+  align-items: center;
+  padding: 0.625rem var(--sb-space-3);
+  border-bottom: 1px solid var(--sb-table-rule);
+}
+
+.sb-fat-item:hover {
+  background: var(--sb-bg-soft);
+}
+
+.sb-fat-posicao {
+  grid-area: posicao;
+  align-self: start;
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-top: 0.125rem;
+  border-radius: 50%;
+  background: var(--sb-neutral-soft);
+  font-family: var(--sb-mono);
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: var(--sb-neutral-ink);
+}
+
+.sb-fat-item:nth-child(-n + 3) .sb-fat-posicao {
+  background: var(--sb-primary);
+  color: var(--sb-on-primary);
+}
+
+.sb-fat-produto {
+  grid-area: produto;
+  min-width: 0;
+}
+
+.sb-fat-produto .sb-entity {
+  display: block;
+  overflow: hidden;
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sb-fat-numeros {
+  grid-area: numeros;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+
+.sb-fat-numeros strong {
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--sb-primary);
+}
+
+.sb-fat-detalhe {
+  grid-area: detalhe;
+  overflow: hidden;
+  font-size: 0.625rem;
+  color: var(--sb-text-soft);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .sb-fat-lista {
+    max-height: 22rem;
+  }
+
+  .sb-fat-item {
+    grid-template-areas:
+      "posicao produto produto"
+      "posicao numeros numeros"
+      "posicao detalhe detalhe";
+  }
+}
+
+.sb-fat-produto .sb-entity {
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.sb-fat-produto .sb-entity:hover {
+  text-decoration: underline;
+}
+
+.sb-fat-produto .sb-faturamento-sku {
+  margin-top: 1px;
+  font-size: 0.625rem;
+  color: var(--sb-muted-ink);
+}
