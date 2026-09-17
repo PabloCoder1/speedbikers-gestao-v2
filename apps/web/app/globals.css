@@ -9516,6 +9516,106 @@ td.sb-pco-num-linha {
   }
 }
 
+/* ESTOQUE — camada visual de decisão rápida. */
+.sb-stock-insights {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sb-space-3);
+  margin-top: var(--sb-space-3);
+}
+
+.sb-stock-insight {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  min-height: 6.25rem;
+  padding: 1rem 1.125rem;
+  overflow: hidden;
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius-lg);
+  background: var(--sb-surface);
+  box-shadow: 0 0.5rem 1.25rem rgb(16 24 40 / 5%);
+}
+
+.sb-stock-insight::after {
+  position: absolute;
+  right: -1.25rem;
+  bottom: -2.5rem;
+  width: 6rem;
+  height: 6rem;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
+  opacity: 0.06;
+}
+
+.sb-stock-insight-primary { color: var(--sb-secondary); border-top: 3px solid var(--sb-secondary); }
+.sb-stock-insight-warning { color: var(--sb-accent-ink); border-top: 3px solid var(--sb-accent); }
+.sb-stock-insight-neutral { color: var(--sb-primary); border-top: 3px solid var(--sb-primary); }
+
+.sb-stock-insight-icon {
+  display: grid;
+  flex: 0 0 2rem;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border-radius: 0.625rem;
+  background: currentColor;
+  color: var(--sb-surface);
+}
+
+.sb-stock-insight-label {
+  display: block;
+  margin-bottom: 0.25rem;
+  color: var(--sb-text-soft);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sb-stock-insight strong {
+  display: block;
+  color: var(--sb-primary);
+  font-size: 0.9375rem;
+  line-height: 1.25;
+}
+
+.sb-stock-insight p {
+  margin: 0.3rem 0 0;
+  color: var(--sb-text-soft);
+  font-size: 0.6875rem;
+  line-height: 1.35;
+}
+
+.sb-stock-workspace > .sb-panel {
+  overflow: hidden;
+  border-radius: var(--sb-radius-lg);
+  box-shadow: 0 0.75rem 2rem rgb(16 24 40 / 7%);
+}
+
+.sb-stock-table tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--sb-bg-soft) 42%, transparent); }
+.sb-stock-table tbody tr:nth-child(even) td:first-child { background: var(--sb-bg-soft); }
+.sb-stock-table tbody tr:hover td { background: var(--sb-secondary-soft); }
+.sb-stock-table tbody tr:hover td:first-child { background: var(--sb-secondary-soft); }
+
+.sb-stock-table thead th {
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+  color: var(--sb-text-soft);
+  font-size: 0.625rem;
+  letter-spacing: 0.08em;
+}
+
+.sb-stock-table tbody td { padding-top: 0.8rem; padding-bottom: 0.8rem; }
+.sb-stock-table tbody td:nth-child(5) .sb-stock-value-danger { display: inline-flex; min-width: 2.25rem; justify-content: center; border-radius: 999px; background: var(--sb-danger-soft); padding: 0.2rem 0.35rem; }
+.sb-stock-product .sb-product-thumb { width: 2.25rem; height: 2.25rem; border-radius: 0.7rem; background: linear-gradient(145deg, var(--sb-primary), var(--sb-secondary)); color: var(--sb-surface); box-shadow: 0 0.25rem 0.5rem rgb(16 24 40 / 15%); }
+
+@media (max-width: 900px) {
+  .sb-stock-insights { grid-template-columns: 1fr; }
+}
+
 /* Posição fixa, medida do campo no componente: a caixa da tabela rola e cortaria. */
 .sb-pco-resultados {
   position: fixed;
