@@ -6,6 +6,7 @@ import {
   isRelistRejectionStatus,
   isRelistRetryEligible,
   isRelistUserProductVariationsRejection,
+  mentionsRelistUserProductVariationsCause,
   relistRejectionFailureReason,
 } from "./relist-retry.js";
 
@@ -140,9 +141,41 @@ describe("recusa por variações em conta de user products (D-369)", () => {
       relistRejectionFailureReason(403, "forbidden"),
       relistRejectionFailureReason(400, "causas: item.variations.relist.invalid_quantity: x"),
       relistRejectionFailureReason(400, "causas: xitem.variations.relist.invalid: x"),
+      relistRejectionFailureReason(400, "causas: item.variations.relist.invalid.quantity: x"),
+      relistRejectionFailureReason(400, "causas: item.variations.relist.invalid.2: x"),
     ]) {
       expect(isRelistUserProductVariationsRejection(failureReason)).toBe(false);
       expect(isRelistRetryEligible(candidate({ failureReason }))).toBe(true);
+    }
+  });
+
+  it("R2: o código seguido do ponto que fecha a frase continua reconhecido — o ponto final não é sufixo de outro código", () => {
+    for (const resumo of [
+      "Relist refused: item.variations.relist.invalid.",
+      "Relist refused (item.variations.relist.invalid.)",
+      "causas: item.variations.relist.invalid. Relist item with variations are not allowed",
+    ]) {
+      const failureReason = relistRejectionFailureReason(400, resumo);
+
+      expect(mentionsRelistUserProductVariationsCause(resumo)).toBe(true);
+      expect(isRelistUserProductVariationsRejection(failureReason)).toBe(true);
+      expect(isRelistRetryEligible(candidate({ failureReason }))).toBe(false);
+    }
+  });
+
+  it("R2: mentionsRelistUserProductVariationsCause é a mesma regra de código inteiro, em qualquer texto", () => {
+    expect(mentionsRelistUserProductVariationsCause(RELIST_USER_PRODUCT_VARIATIONS_CAUSE)).toBe(true);
+    expect(mentionsRelistUserProductVariationsCause(`{"code":"${RELIST_USER_PRODUCT_VARIATIONS_CAUSE}"}`)).toBe(true);
+
+    for (const texto of [
+      "item.variations.relist.invalid_quantity",
+      "item.variations.relist.invalid.quantity",
+      "xitem.variations.relist.invalid",
+      "a.item.variations.relist.invalid",
+      "item.variations.relist.invali",
+      "",
+    ]) {
+      expect(mentionsRelistUserProductVariationsCause(texto)).toBe(false);
     }
   });
 

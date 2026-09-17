@@ -47,6 +47,7 @@ export {
   isRelistRejectionStatus,
   isRelistRetryEligible,
   isRelistUserProductVariationsRejection,
+  mentionsRelistUserProductVariationsCause,
   relistRejectionFailureReason,
 } from "./relist-retry.js";
 export type { RelistRetryCandidate } from "./relist-retry.js";

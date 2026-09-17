@@ -56,8 +56,21 @@ const REJECTION_FAILURE = /^o Mercado Livre recusou a republicação \(HTTP (\d{
  */
 export const RELIST_USER_PRODUCT_VARIATIONS_CAUSE = "item.variations.relist.invalid";
 
-/** A causa como código inteiro: nem prefixo nem sufixo de outro código. */
-const USER_PRODUCT_VARIATIONS_CAUSE = /(?<![\w.])item\.variations\.relist\.invalid(?![\w.])/u;
+/**
+ * A causa como código inteiro: nem prefixo nem sufixo de outro código. O
+ * ponto que fecha a frase ("... invalid.") não é sufixo — só ponto seguido de
+ * letra, dígito ou `_` continuaria o código.
+ */
+const USER_PRODUCT_VARIATIONS_CAUSE = /(?<![\w.])item\.variations\.relist\.invalid(?!\w|\.\w)/u;
+
+/**
+ * `true` sse o texto menciona a causa de D-369 como código inteiro. É a mesma
+ * regra da leitura do `failure_reason`: o worker a usa para garantir que o
+ * resumo do corpo de erro não perca a causa (D-369).
+ */
+export function mentionsRelistUserProductVariationsCause(text: string): boolean {
+  return USER_PRODUCT_VARIATIONS_CAUSE.test(text);
+}
 
 /**
  * `true` sse o `failure_reason` é uma RECUSA gravada (`relistRejectionFailureReason`)
@@ -71,7 +84,7 @@ export function isRelistUserProductVariationsRejection(failureReason: string | n
 
   const rejection = REJECTION_FAILURE.exec(failureReason);
 
-  return rejection !== null && USER_PRODUCT_VARIATIONS_CAUSE.test(failureReason.slice(rejection[0].length));
+  return rejection !== null && mentionsRelistUserProductVariationsCause(failureReason.slice(rejection[0].length));
 }
 
 export interface RelistRetryCandidate {
