@@ -30,6 +30,13 @@ export interface RequestOptions<T> {
   schema: ZodType<T>;
   eventualConsistencyTolerant?: boolean;
   /**
+   * Teto de tentativas DESTA chamada, no lugar do teto do cliente. `1` é sem
+   * repetição, para o ato que não é idempotente: repetir depois de um 5xx ou
+   * 429 pode duplicar o efeito, e o chamador só veria a resposta da última
+   * tentativa (o POST /relist, D-364).
+   */
+  maxAttempts?: number;
+  /**
    * Cabeçalhos extras da chamada — a API de Mercado Ads exige `api-version`
    * (D-363). `authorization`, `accept` e `content-type` continuam sendo do
    * cliente e não são sobrescritos por aqui.
@@ -122,7 +129,8 @@ export function createMercadoLivreClient(
           : {}),
       });
 
-      const attemptsAllowed = errorClass === "retryable_eventual" ? eventualMaxAttempts : maxAttempts;
+      const attemptsAllowed =
+        options.maxAttempts ?? (errorClass === "retryable_eventual" ? eventualMaxAttempts : maxAttempts);
       const canRetry = errorClass !== "not_retryable" && attempt < attemptsAllowed;
 
       if (!canRetry) {

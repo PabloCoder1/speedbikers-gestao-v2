@@ -1,8 +1,23 @@
 import type { AdminClient } from "@sb/db";
-import { canTransitionRelist, collectRelistInventoryIds, evaluateRelistPreflight } from "@sb/domain";
+import { readLastRelistFailureReason } from "@sb/db";
+import type { RelistBody } from "@sb/domain";
+import {
+  RELIST_POST_FAILED_REASON,
+  RELIST_POST_REJECTED_REASON,
+  RELIST_RETRY_REASON,
+  buildRelistBody,
+  canTransitionRelist,
+  collectRelistInventoryIds,
+  evaluateRelistPreflight,
+  isRelistRejectionStatus,
+  isRelistRetryEligible,
+  relistRejectionFailureReason,
+  summarizeRelistVariations,
+} from "@sb/domain";
 import type { MercadoLivreClient, MercadoLivreOAuthConfig } from "@sb/mercado-livre";
 import { MercadoLivreApiError } from "@sb/mercado-livre";
 import type { Logger } from "@sb/observability";
+import { redactSecretText } from "@sb/observability";
 import { z } from "zod";
 
 import type { JobOutcome } from "../job-outcome.js";
@@ -31,12 +46,36 @@ import { ensureRelistMeasurement } from "./relist-measurement.js";
  *    nasceu" e repetir o POST poderia criar DOIS filhos. Gente decide.
  * 4. **Falha do POST não re-tenta**: mesma razão do envio de resposta
  *    (D-096) — um 5xx pode significar que o filho existe. RELIST_FAILED.
+ *    Nem o cliente HTTP repete: o POST sai com `maxAttempts: 1` (D-364),
+ *    senão um 5xx repetido pelo cliente e recusado na repetição chegaria
+ *    aqui como 4xx, com o filho talvez vivo. A RECUSA (4xx exceto 408/429)
+ *    também para em RELIST_FAILED, mas com motivo próprio (`POST_RECUSADO`)
+ *    e o corpo do erro do Mercado Livre gravado (D-364): o ML leu o pedido e
+ *    disse não, nenhum filho nasceu.
  * 5. **Filho só é confirmado pelo id DIFERENTE do pai**: o defeito
  *    registrado da própria doc (resposta com variações devolvendo o id do
  *    pai) não é tratado como contrato — resposta ambígua é RELIST_FAILED.
+ * 6. **Retomada HUMANA, só depois de recusa comprovada** (D-364): o job com
+ *    `retomada: true` e `autorizadoPor` — enfileirado pela `api` quando
+ *    uma pessoa pede, e essa pessoa vai para o evento — relê o último evento
+ *    de falha e reaplica a regra de elegibilidade (`isRelistRetryEligible`),
+ *    confere o pai AO VIVO (precisa estar `closed` e ter estoque), persiste
+ *    RELIST_FAILED → RELISTING e emite o POST pelo MESMO código da execução
+ *    normal. É a única aresta que VOLTA na máquina, então o CAS dela confere
+ *    também o `updated_at` lido: outra retomada que saiu de RELIST_FAILED e
+ *    voltou (5xx, resposta ambígua) no meio do caminho deixa o mesmo
+ *    `status`, mas não a mesma versão. Nada disso acontece sozinho:
+ *    RELIST_FAILED sem `retomada` continua noop.
+ *
+ * O corpo do POST sai de `buildRelistBody` (D-364): com variações, só as que
+ * têm estoque, cada uma com o próprio preço; sem estoque nenhum, o POST não
+ * sai.
  */
 
-const payloadSchema = z.object({ relistId: z.uuid() });
+/** A retomada leva quem a autorizou (D-364): é ato humano, e o evento guarda o ator. */
+const payloadSchema = z
+  .object({ relistId: z.uuid(), retomada: z.boolean().optional(), autorizadoPor: z.uuid().optional() })
+  .refine((payload) => payload.retomada !== true || payload.autorizadoPor !== undefined);
 
 /** PUT /items/{id} {status:"closed"} — contrato confirmado em 2.16. */
 const closeItemResponseSchema = z.object({ id: z.string(), status: z.string() });
@@ -44,13 +83,26 @@ const closeItemResponseSchema = z.object({ id: z.string(), status: z.string() })
 /** POST /items/{id}/relist — sem status de sucesso documentado; o id é o que importa. */
 const relistResponseSchema = z.object({ id: z.string() });
 
-/** Campos do pai usados para herdar o corpo do relist — lidos do item AO VIVO. */
+/**
+ * Campos do pai usados para montar o corpo do relist — lidos do item AO VIVO.
+ * O id de variação vai NUMÉRICO no corpo (doc oficial, D-364): só é aceito
+ * dentro do inteiro seguro, para `Number(id)` não trocar de variação.
+ */
 const parentForRelistSchema = z.object({
   id: z.string(),
   status: z.string(),
   price: z.number(),
   available_quantity: z.number().int(),
   listing_type_id: z.string(),
+  variations: z.array(
+    z.object({
+      id: z
+        .union([z.number().int(), z.string().regex(/^\d+$/)])
+        .refine((id) => Number.isSafeInteger(Number(id)), "id de variação fora do inteiro seguro"),
+      price: z.number(),
+      available_quantity: z.number().int(),
+    }),
+  ),
 });
 
 /**
@@ -75,6 +127,9 @@ const childForRemapSchema = z.object({
   ),
 });
 
+/** Teto do resumo do corpo de erro do ML — cabe no `failure_reason` e no log. */
+const ML_ERROR_SUMMARY_MAX = 800;
+
 export interface RelistExecuteDeps {
   db: AdminClient;
   mercadoLivre: MercadoLivreClient;
@@ -90,13 +145,30 @@ interface OperationRow {
   parent_item_id: string;
   child_item_id: string | null;
   status: string;
+  failure_reason: string | null;
   requested_by: string;
+  /** A versão da linha (trigger `listing_relists_set_updated_at`) — o CAS da retomada. */
+  updated_at: string;
 }
 
 interface TransitionContext {
   db: AdminClient;
   logger: Logger;
   operation: OperationRow;
+}
+
+interface TransitionOptions {
+  /** Só aplica se a linha ainda tem esta versão, além do status (D-364). */
+  expectedUpdatedAt?: string;
+  /** Ator humano do evento; nulo nas transições do sistema. */
+  actorUserId?: string | null;
+}
+
+interface TransitionResult {
+  ok: boolean;
+  message?: string;
+  /** O CAS não casou: o estado mudou sob os pés — outra execução assumiu. */
+  casLost?: boolean;
 }
 
 /**
@@ -111,7 +183,8 @@ async function transition(
   to: string,
   patch: Record<string, unknown>,
   reason: string | null,
-): Promise<{ ok: boolean; message?: string }> {
+  options: TransitionOptions = {},
+): Promise<TransitionResult> {
   if (!canTransitionRelist(from as never, to as never)) {
     return { ok: false, message: `transição inválida ${from} → ${to}` };
   }
@@ -120,19 +193,20 @@ async function transition(
   // execução fez a transição. Zero linhas = o estado mudou sob os pés
   // (outra execução, outra decisão) — falhar e reler é o único caminho que
   // não grava evento de uma transição que não aconteceu.
-  const updated = await ctx.db
-    .from("listing_relists")
-    .update({ status: to, ...patch })
-    .eq("id", ctx.operation.id)
-    .eq("status", from)
-    .select("id");
+  let update = ctx.db.from("listing_relists").update({ status: to, ...patch }).eq("id", ctx.operation.id).eq("status", from);
+
+  if (options.expectedUpdatedAt !== undefined) {
+    update = update.eq("updated_at", options.expectedUpdatedAt);
+  }
+
+  const updated = await update.select("id");
 
   if (updated.error !== null) {
     return { ok: false, message: updated.error.message };
   }
 
   if (updated.data.length === 0) {
-    return { ok: false, message: `a operação não estava mais em ${from} — transição não aplicada` };
+    return { ok: false, casLost: true, message: `a operação não estava mais em ${from} — transição não aplicada` };
   }
 
   const event = await ctx.db.from("listing_relist_events").insert({
@@ -141,7 +215,7 @@ async function transition(
     relist_id: ctx.operation.id,
     from_status: from,
     to_status: to,
-    actor_user_id: null,
+    actor_user_id: options.actorUserId ?? null,
     reason,
   });
 
@@ -156,6 +230,68 @@ async function transition(
   ctx.operation.status = to;
 
   return { ok: true };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readText(value: unknown): string | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
+}
+
+/**
+ * Resumo LEGÍVEL do corpo de erro do Mercado Livre (D-364): `message`,
+ * `error` e cada `cause[]` como `code: message`. Nada além desses campos
+ * entra — o corpo inteiro poderia trazer o que não se grava —, o texto passa
+ * pela redação de segredo da casa e é cortado em ~800 caracteres.
+ */
+function summarizeMercadoLivreError(body: unknown): string {
+  const parts: string[] = [];
+
+  if (isRecord(body)) {
+    const message = readText(body.message);
+    const error = readText(body.error);
+
+    if (message !== null) {
+      parts.push(message);
+    }
+
+    if (error !== null && error !== message) {
+      parts.push(`(${error})`);
+    }
+
+    const causes: unknown[] = Array.isArray(body.cause) ? body.cause : [];
+    const causeTexts = causes
+      .map((cause) => {
+        if (!isRecord(cause)) {
+          return readText(cause);
+        }
+
+        const text = [readText(cause.code), readText(cause.message)].filter((piece) => piece !== null).join(": ");
+
+        return text === "" ? null : text;
+      })
+      .filter((text) => text !== null);
+
+    if (causeTexts.length > 0) {
+      parts.push(`causas: ${causeTexts.join("; ")}`);
+    }
+  } else {
+    const text = readText(body);
+
+    if (text !== null) {
+      parts.push(text);
+    }
+  }
+
+  const summary = redactSecretText(parts.length === 0 ? "sem corpo de erro legível" : parts.join(" ")).replace(/\s+/gu, " ");
+
+  return summary.length > ML_ERROR_SUMMARY_MAX ? `${summary.slice(0, ML_ERROR_SUMMARY_MAX - 1)}…` : summary;
 }
 
 async function remapRelistedOperation(
@@ -239,6 +375,261 @@ async function remapRelistedOperation(
   return { status: "done", processed: 1 };
 }
 
+/**
+ * O POST /relist e tudo o que decide o desfecho dele — o MESMO código para a
+ * execução normal e para a retomada humana (D-364). Pré-condição: a operação
+ * JÁ está persistida em RELISTING (regra 1).
+ */
+async function postRelistAndSettle(
+  deps: RelistExecuteDeps,
+  context: HandlerContext,
+  ctx: TransitionContext,
+  accessToken: string,
+  body: RelistBody,
+): Promise<JobOutcome> {
+  const operation = ctx.operation;
+  let child: { id: string };
+
+  try {
+    child = await deps.mercadoLivre.request({
+      method: "POST",
+      path: `/items/${operation.parent_item_id}/relist`,
+      accessToken,
+      body,
+      schema: relistResponseSchema,
+      // UMA tentativa (regra 4): o erro que chega aqui é o do único POST.
+      maxAttempts: 1,
+    });
+  } catch (error) {
+    // RECUSA comprovada (D-364): 4xx fora 408/429 é o Mercado Livre dizendo
+    // não ao pedido — nenhum filho nasceu. O corpo do erro é gravado, porque
+    // é ele que diz o que corrigir; e a operação fica elegível para retomada
+    // HUMANA. Ainda assim nada repete sozinho.
+    if (error instanceof MercadoLivreApiError && isRelistRejectionStatus(error.status)) {
+      const summary = summarizeMercadoLivreError(error.body);
+
+      context.logger.error("relist_post_rejected", { relist_id: operation.id, status: error.status, summary });
+
+      const marked = await transition(
+        ctx,
+        "RELISTING",
+        "RELIST_FAILED",
+        { failure_reason: relistRejectionFailureReason(error.status, summary) },
+        RELIST_POST_REJECTED_REASON,
+      );
+
+      if (!marked.ok) {
+        return { status: "failed", retryable: true, reason: marked.message ?? "falha ao registrar RELIST_FAILED" };
+      }
+
+      return { status: "done", processed: 1 };
+    }
+
+    // Regra 4: NUNCA re-tentar o POST — um 5xx pode significar que o filho
+    // nasceu. Pai fechado sem filho confirmado = RELIST_FAILED, gente decide.
+    const message = error instanceof Error ? error.message : "falha desconhecida no POST /relist";
+
+    context.logger.error("relist_post_failed", {
+      relist_id: operation.id,
+      status: error instanceof MercadoLivreApiError ? error.status : null,
+      summary: error instanceof MercadoLivreApiError ? summarizeMercadoLivreError(error.body) : message,
+    });
+
+    const marked = await transition(
+      ctx,
+      "RELISTING",
+      "RELIST_FAILED",
+      { failure_reason: `o POST /relist falhou e não é seguro repetir: ${message}` },
+      RELIST_POST_FAILED_REASON,
+    );
+
+    if (!marked.ok) {
+      return { status: "failed", retryable: true, reason: marked.message ?? "falha ao registrar RELIST_FAILED" };
+    }
+
+    return { status: "done", processed: 1 };
+  }
+
+  if (child.id === operation.parent_item_id) {
+    // O defeito documentado da própria doc (resposta devolvendo o id do
+    // pai) — resposta ambígua NUNCA confirma filho (regra 5).
+    const marked = await transition(
+      ctx,
+      "RELISTING",
+      "RELIST_FAILED",
+      { failure_reason: "a resposta do relist devolveu o próprio id do pai — filho não confirmado" },
+      "RESPOSTA_AMBIGUA",
+    );
+
+    if (!marked.ok) {
+      return { status: "failed", retryable: true, reason: marked.message ?? "falha ao registrar RELIST_FAILED" };
+    }
+
+    return { status: "done", processed: 1 };
+  }
+
+  const done = await transition(ctx, "RELISTING", "RELISTED", { child_item_id: child.id }, null);
+
+  if (!done.ok) {
+    return { status: "failed", retryable: true, reason: done.message ?? "falha ao registrar RELISTED" };
+  }
+
+  context.logger.info("relist_execute_done", {
+    relist_id: operation.id,
+    parent_item_id: operation.parent_item_id,
+    child_item_id: child.id,
+  });
+
+  operation.child_item_id = child.id;
+
+  // O POST já terminou e o filho foi confirmado. Daqui em diante só há
+  // leitura remota + transação local: qualquer falha retorna retryable e a
+  // próxima entrega entra pelo ramo RELISTED acima, sem repetir o POST.
+  return remapRelistedOperation(deps, context, operation, accessToken);
+}
+
+/**
+ * Retomada humana de RELIST_FAILED (regra 6, D-364). A `api` já aplicou a
+ * regra; aqui ela é aplicada DE NOVO, contra o que está gravado agora — e
+ * tudo o que reprovar termina SEM transição e SEM POST.
+ */
+async function resumeAfterRejection(
+  deps: RelistExecuteDeps,
+  context: HandlerContext,
+  ctx: TransitionContext,
+  now: Date,
+  autorizadoPor: string,
+): Promise<JobOutcome> {
+  const operation = ctx.operation;
+
+  const lastFailure = await readLastRelistFailureReason(deps.db, operation.id);
+
+  if (!lastFailure.ok) {
+    return { status: "failed", retryable: true, reason: `falha ao ler o último evento de falha: ${lastFailure.message}` };
+  }
+
+  const lastFailedEventReason = lastFailure.reason;
+
+  const eligible = isRelistRetryEligible({
+    status: operation.status,
+    parentItemId: operation.parent_item_id,
+    failureReason: operation.failure_reason,
+    lastFailedEventReason,
+  });
+
+  if (!eligible) {
+    context.logger.warn("relist_retry_not_eligible", {
+      relist_id: operation.id,
+      status: operation.status,
+      last_failed_reason: lastFailedEventReason,
+    });
+
+    return { status: "done", processed: 0 };
+  }
+
+  const tokenResult = await ensureAccessToken(deps, operation.ml_account_id, now);
+
+  if (!tokenResult.ok) {
+    return { status: "failed", retryable: tokenResult.retryable, reason: tokenResult.reason };
+  }
+
+  const accessToken = tokenResult.accessToken;
+  let parentRaw: unknown;
+
+  try {
+    parentRaw = await deps.mercadoLivre.request({
+      method: "GET",
+      path: `/items/${operation.parent_item_id}`,
+      accessToken,
+      schema: z.unknown(),
+    });
+  } catch (error) {
+    if (error instanceof MercadoLivreApiError && error.errorClass === "not_retryable") {
+      context.logger.warn("relist_retry_parent_unavailable", { relist_id: operation.id, status: error.status });
+
+      return { status: "done", processed: 0 };
+    }
+
+    throw error;
+  }
+
+  const parentParsed = parentForRelistSchema.safeParse(parentRaw);
+
+  if (!parentParsed.success) {
+    return { status: "failed", retryable: false, reason: "o anúncio pai não tem os campos que o relist herda" };
+  }
+
+  const parent = parentParsed.data;
+
+  // O POST /relist exige o pai fechado (2.16). Pai ativo ou pausado aqui é o
+  // remoto contradizendo o que está gravado — não é caso para republicar.
+  if (parent.status !== "closed") {
+    context.logger.warn("relist_retry_parent_not_closed", { relist_id: operation.id, parent_status: parent.status });
+
+    return { status: "done", processed: 0 };
+  }
+
+  // A marca oficial de "já republicado" é a tag `relist` no pai (2.16; o
+  // JA_REPUBLICADO de D-160). Com ela, um filho existe — por exemplo, se o
+  // cliente HTTP repetiu um 5xx e a repetição é que foi recusada. Sem `tags`
+  // legíveis não dá para conferir: nada sai.
+  const tags = isRecord(parentRaw) ? parentRaw.tags : undefined;
+
+  if (!Array.isArray(tags) || tags.includes("relist")) {
+    context.logger.warn("relist_retry_parent_already_relisted", {
+      relist_id: operation.id,
+      tags_legible: Array.isArray(tags),
+    });
+
+    return { status: "done", processed: 0 };
+  }
+
+  const body = buildRelistBody(parent);
+
+  if (body === null) {
+    context.logger.warn("relist_retry_without_stock", { relist_id: operation.id, parent_item_id: operation.parent_item_id });
+
+    return { status: "done", processed: 0 };
+  }
+
+  // Estado persistido ANTES do POST (regra 1). O motivo antigo sai: se esta
+  // tentativa falhar, ela grava o dela. O CAS amarra a VERSÃO que a regra
+  // avaliou (regra 6): outra retomada que emitiu o POST e voltou a
+  // RELIST_FAILED entre a leitura e aqui mudou o `updated_at`, e este job
+  // perde o CAS em vez de emitir um segundo POST depois de um 5xx.
+  const relisting = await transition(
+    ctx,
+    "RELIST_FAILED",
+    "RELISTING",
+    { failure_reason: null },
+    RELIST_RETRY_REASON,
+    { expectedUpdatedAt: operation.updated_at, actorUserId: autorizadoPor },
+  );
+
+  if (!relisting.ok) {
+    // CAS perdido na retomada é outra execução que ASSUMIU a operação. Falhar
+    // com retry faria a próxima entrega achar RELISTING e marcar como
+    // interrompido um POST que pode estar em curso.
+    if (relisting.casLost === true) {
+      context.logger.warn("relist_retry_superseded", { relist_id: operation.id });
+
+      return { status: "done", processed: 0 };
+    }
+
+    return { status: "failed", retryable: true, reason: relisting.message ?? "falha ao registrar RELISTING" };
+  }
+
+  context.logger.info("relist_retry_started", {
+    relist_id: operation.id,
+    parent_item_id: operation.parent_item_id,
+    last_failed_reason: lastFailedEventReason,
+    authorized_by: autorizadoPor,
+    variations_left_out: summarizeRelistVariations(parentRaw).leftOut.map((variation) => variation.id),
+  });
+
+  return postRelistAndSettle(deps, context, ctx, accessToken, body);
+}
+
 export function createRelistExecuteHandler(deps: RelistExecuteDeps): JobHandler {
   return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
     const parsed = payloadSchema.safeParse(context.payload);
@@ -247,11 +638,12 @@ export function createRelistExecuteHandler(deps: RelistExecuteDeps): JobHandler 
       return { status: "failed", retryable: false, reason: "payload inválido para relist.execute" };
     }
 
+    const retomada = parsed.data.retomada === true;
     const now = deps.now?.() ?? new Date();
 
     const loaded = await deps.db
       .from("listing_relists")
-      .select("id, organization_id, ml_account_id, parent_item_id, child_item_id, status, requested_by")
+      .select("id, organization_id, ml_account_id, parent_item_id, child_item_id, status, failure_reason, requested_by, updated_at")
       .eq("id", parsed.data.relistId)
       .maybeSingle();
 
@@ -324,10 +716,17 @@ export function createRelistExecuteHandler(deps: RelistExecuteDeps): JobHandler 
       return { status: "done", processed: 0 };
     }
 
+    // Retomada humana (regra 6, D-364): a única saída de RELIST_FAILED.
+    if (operation.status === "RELIST_FAILED" && retomada && parsed.data.autorizadoPor !== undefined) {
+      return resumeAfterRejection(deps, context, ctx, now, parsed.data.autorizadoPor);
+    }
+
     // Idempotência de retomada: estado que este job não trata é trabalho já
-    // resolvido (terminais) — nunca refazer.
-    if (operation.status !== "REQUESTED" && operation.status !== "CLOSING" && operation.status !== "CLOSED") {
-      context.logger.info("relist_execute_noop", { relist_id: operation.id, status: operation.status });
+    // resolvido (terminais) — nunca refazer. RELIST_FAILED sem `retomada` cai
+    // aqui (gente decide), e `retomada` pedida para qualquer outro estado
+    // também: ela nunca fecha pai nem abre caminho novo.
+    if (retomada || (operation.status !== "REQUESTED" && operation.status !== "CLOSING" && operation.status !== "CLOSED")) {
+      context.logger.info("relist_execute_noop", { relist_id: operation.id, status: operation.status, retomada });
 
       return { status: "done", processed: 0 };
     }
@@ -377,9 +776,9 @@ export function createRelistExecuteHandler(deps: RelistExecuteDeps): JobHandler 
     // Depois de CLOSING, reprovar não desfaz o fechamento; o fluxo segue e
     // as falhas reais aparecem nos próprios passos.
     if (operation.status === "REQUESTED") {
-      // D-360: o estoque do Full também é relido na hora — ele pode ter
-      // recebido unidades desde o pedido. Falha passageira relança antes de
-      // qualquer transição; o PUT não sai sem a conferência.
+      // D-360: o estoque do Full é relido na hora — ele pode ter recebido
+      // unidades desde o pedido. Falha passageira relança antes de qualquer
+      // transição; o PUT não sai sem a conferência.
       const fullStock = await readRelistFullStock({
         mercadoLivre: deps.mercadoLivre,
         accessToken,
@@ -394,6 +793,7 @@ export function createRelistExecuteHandler(deps: RelistExecuteDeps): JobHandler 
         approved: preflight.approved,
         blocks: preflight.blocks.map((block) => block.code),
         warnings: preflight.warnings.map((warning) => warning.code),
+        variations_left_out: summarizeRelistVariations(parentRaw).leftOut.map((variation) => variation.id),
         full_stock: describeFullStock(fullStock),
       });
 
@@ -421,6 +821,21 @@ export function createRelistExecuteHandler(deps: RelistExecuteDeps): JobHandler 
     }
 
     const parent = parentParsed.data;
+
+    // O corpo é montado ANTES de fechar (D-364). Em REQUESTED o preflight já
+    // barrou o pai sem estoque, pelo mesmo predicado; chegar aqui sem corpo é
+    // retomada de CLOSING/CLOSED — e aí o PUT e o POST não saem.
+    const body = buildRelistBody(parent);
+
+    if (body === null) {
+      context.logger.error("relist_execute_without_stock", {
+        relist_id: operation.id,
+        status: operation.status,
+        parent_status: parent.status,
+      });
+
+      return { status: "failed", retryable: false, reason: "o anúncio pai não tem estoque para republicar — o POST não sai" };
+    }
 
     // ---- FECHAR O PAI ----------------------------------------------------
     if (operation.status === "REQUESTED" || operation.status === "CLOSING") {
@@ -489,75 +904,6 @@ export function createRelistExecuteHandler(deps: RelistExecuteDeps): JobHandler 
       return { status: "failed", retryable: true, reason: relisting.message ?? "falha ao registrar RELISTING" };
     }
 
-    let child: { id: string };
-
-    try {
-      child = await deps.mercadoLivre.request({
-        method: "POST",
-        path: `/items/${operation.parent_item_id}/relist`,
-        accessToken,
-        // Herda do pai AO VIVO — o contrato mínimo confirmado em 2.16.
-        body: {
-          price: parent.price,
-          quantity: parent.available_quantity,
-          listing_type_id: parent.listing_type_id,
-        },
-        schema: relistResponseSchema,
-      });
-    } catch (error) {
-      // Regra 4: NUNCA re-tentar o POST — um 5xx pode significar que o filho
-      // nasceu. Pai fechado sem filho confirmado = RELIST_FAILED, gente decide.
-      const message = error instanceof Error ? error.message : "falha desconhecida no POST /relist";
-      const marked = await transition(
-        ctx,
-        "RELISTING",
-        "RELIST_FAILED",
-        { failure_reason: `o POST /relist falhou e não é seguro repetir: ${message}` },
-        "POST_FALHOU",
-      );
-
-      if (!marked.ok) {
-        return { status: "failed", retryable: true, reason: marked.message ?? "falha ao registrar RELIST_FAILED" };
-      }
-
-      return { status: "done", processed: 1 };
-    }
-
-    if (child.id === operation.parent_item_id) {
-      // O defeito documentado da própria doc (resposta devolvendo o id do
-      // pai) — resposta ambígua NUNCA confirma filho (regra 5).
-      const marked = await transition(
-        ctx,
-        "RELISTING",
-        "RELIST_FAILED",
-        { failure_reason: "a resposta do relist devolveu o próprio id do pai — filho não confirmado" },
-        "RESPOSTA_AMBIGUA",
-      );
-
-      if (!marked.ok) {
-        return { status: "failed", retryable: true, reason: marked.message ?? "falha ao registrar RELIST_FAILED" };
-      }
-
-      return { status: "done", processed: 1 };
-    }
-
-    const done = await transition(ctx, "RELISTING", "RELISTED", { child_item_id: child.id }, null);
-
-    if (!done.ok) {
-      return { status: "failed", retryable: true, reason: done.message ?? "falha ao registrar RELISTED" };
-    }
-
-    context.logger.info("relist_execute_done", {
-      relist_id: operation.id,
-      parent_item_id: operation.parent_item_id,
-      child_item_id: child.id,
-    });
-
-    operation.child_item_id = child.id;
-
-    // O POST já terminou e o filho foi confirmado. Daqui em diante só há
-    // leitura remota + transação local: qualquer falha retorna retryable e a
-    // próxima entrega entra pelo ramo RELISTED acima, sem repetir o POST.
-    return remapRelistedOperation(deps, context, operation, accessToken);
+    return postRelistAndSettle(deps, context, ctx, accessToken, body);
   };
 }

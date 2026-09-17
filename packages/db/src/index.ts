@@ -7,6 +7,9 @@ export type { AiRunInsert } from "./ai-runs.js";
 export { SKU_LINK_WITH_KIND_SELECT } from "./projections.js";
 export type { SkuLinkWithKindRow } from "./projections.js";
 
+export { readLastRelistFailureReason } from "./listing-relists.js";
+export type { LastRelistFailure } from "./listing-relists.js";
+
 export { recordJobRun } from "./job-runs.js";
 export type { JobRunInsert, RecordResult } from "./job-runs.js";
 

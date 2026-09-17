@@ -1,11 +1,21 @@
 "use client";
 
+import type { RelistVariationsSummary } from "@sb/domain";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { TOM, tomDeRelist } from "../../../components/tone";
 import { relistStatusLabel } from "../../../lib/labels";
 import { createClient } from "../../../lib/supabase/browser";
+import {
+  INTERVALO_MS,
+  MENSAGEM_SEM_RESPOSTA,
+  atosDaRepublicacao,
+  cienciaDaExecucao,
+  cienciaDaRetomada,
+  descreverVariacaoFora,
+  passoDaReleitura,
+} from "./republicacao";
 
 /**
  * A SUPERFÍCIE DE CONFIRMAÇÃO HUMANA da republicação (D-295) — o item que
@@ -39,6 +49,22 @@ import { createClient } from "../../../lib/supabase/browser";
  * 409)". Agora o botão some até a operação mudar, a tela relê sozinha por
  * alguns segundos, e um 409 é tratado como o que ele é: o estado andou.
  *
+ * ## Falhou ao republicar: recusa ou "exige gente" (D-364)
+ *
+ * RELIST_FAILED é o anúncio antigo fechado sem anúncio novo confirmado. Quando
+ * a última falha foi RECUSA do Mercado Livre (o MLB1476804187, com variações,
+ * levou 400 em 2026-09-16), nenhum anúncio novo nasceu: a tela explica isso e
+ * oferece **Tentar republicar de novo**, que chama a retomada da `api` e entra
+ * no mesmo acompanhamento da execução. Qualquer outra falha pode ter criado o
+ * anúncio novo — a tela diz que alguém precisa conferir, e não oferece botão.
+ * A regra é a do domínio (`isRelistRetryEligible`), calculada pela página.
+ *
+ * As duas confirmações listam as variações que ficam FORA do anúncio novo
+ * (sem estoque no retrato do pedido, `summarizeRelistVariations`), e com
+ * variação de fora a caixa de ciência diz isso: o dono não confirma sem saber
+ * que o anúncio novo nasce menor. Se o worker terminar sem mudar a operação,
+ * a tela para de esperar depois das releituras e diz o que conferir.
+ *
  * ## O que a interface NÃO decide
  *
  * Nada. Papel (ADMIN/GESTOR) e escopo por conta são impostos no servidor
@@ -50,59 +76,56 @@ import { createClient } from "../../../lib/supabase/browser";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
-/** Quantas vezes, e de quanto em quanto, a tela relê depois de enfileirar. */
-const RELEITURAS = 10;
-const INTERVALO_MS = 3_000;
-
 export interface RelistOperation {
   id: string;
   status: string;
   failureReason: string | null;
   childItemId: string | null;
   createdAt: string;
+  /** Muda a cada transição — é o que prova que o worker respondeu. */
+  updatedAt: string;
+  /** RELIST_FAILED por recusa comprovada do Mercado Livre (D-364). */
+  retomavel: boolean;
 }
-
-/**
- * Os estados em que a operação está VIVA — espelham
- * `listing_relists_one_live_per_parent`, o índice parcial que impede uma
- * segunda operação para o mesmo pai. Enquanto um deles vale, pedir de novo
- * seria 409 no servidor: a tela mostra a operação em vez do botão.
- */
-const VIVOS = ["REQUESTED", "CLOSING", "CLOSED", "RELISTING", "RELISTED", "REMAPPED"];
 
 type Estado =
   | { kind: "idle" }
   | { kind: "confirmando-pedido" }
   | { kind: "confirmando-execucao" }
+  | { kind: "confirmando-retomada" }
   | { kind: "enviando" }
   | { kind: "enfileirado"; mensagem: string; operacaoNoEnvio: string | null }
   | { kind: "estado-mudou"; mensagem: string }
+  | { kind: "sem-resposta"; mensagem: string }
   | { kind: "erro"; mensagem: string };
 
 export function RelistPanel({
   itemId,
   mlAccountId,
   podeRepublicar,
+  variacoes,
   operacao,
 }: {
   itemId: string;
   mlAccountId: string;
   /** ADMIN ou GESTOR — o mesmo par que a rota exige (D-161). */
   podeRepublicar: boolean;
+  /** As variações do retrato do pedido e as que ficam fora do anúncio novo (D-364). */
+  variacoes: RelistVariationsSummary;
   /** A operação viva deste anúncio como PAI, se houver. */
   operacao: RelistOperation | null;
 }): ReactNode {
   const router = useRouter();
   const [estado, setEstado] = useState<Estado>({ kind: "idle" });
 
-  const viva = operacao !== null && VIVOS.includes(operacao.status);
-  const executavel = operacao !== null && operacao.status === "REQUESTED";
-
   // A operação como a tela a vê AGORA. Enquanto ela for a mesma do momento do
-  // envio, o worker ainda não respondeu: nenhum botão de ato é oferecido.
-  const operacaoAtual = operacao === null ? null : `${operacao.id}:${operacao.status}`;
+  // envio, o worker ainda não respondeu: nenhum botão de ato é oferecido. O
+  // `updatedAt` entra porque a retomada pode voltar ao MESMO estado
+  // (RELIST_FAILED recusado de novo) — só o status não veria a mudança.
+  const operacaoAtual = operacao === null ? null : `${operacao.id}:${operacao.status}:${operacao.updatedAt}`;
   const aguardandoWorker =
     estado.kind === "enviando" || (estado.kind === "enfileirado" && estado.operacaoNoEnvio === operacaoAtual);
+  const atos = atosDaRepublicacao({ podeRepublicar, operacao, aguardandoWorker });
 
   useEffect(() => {
     if (!aguardandoWorker || estado.kind !== "enfileirado") {
@@ -112,11 +135,18 @@ export function RelistPanel({
     let leituras = 0;
     const timer = setInterval(() => {
       leituras += 1;
-      router.refresh();
 
-      if (leituras >= RELEITURAS) {
+      // Passadas as releituras sem mudança, a tela SAI da espera (D-364): o
+      // worker pode ter terminado sem transição, e "enfileirado" para sempre
+      // não explicaria nada — nem devolveria os botões.
+      if (passoDaReleitura(leituras) === "desistir") {
         clearInterval(timer);
+        setEstado({ kind: "sem-resposta", mensagem: MENSAGEM_SEM_RESPOSTA });
+
+        return;
       }
+
+      router.refresh();
     }, INTERVALO_MS);
 
     return () => {
@@ -202,7 +232,35 @@ export function RelistPanel({
         </p>
       )}
 
-      {podeRepublicar && !viva && !aguardandoWorker && (
+      {atos.falha === "recusada" && (
+        <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
+          O Mercado Livre <b>recusou</b> a republicação: nenhum anúncio novo foi criado, e o anúncio antigo continua
+          fechado. O motivo está na tabela abaixo.
+        </p>
+      )}
+
+      {atos.falha === "exige-gente" && (
+        <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
+          O anúncio antigo está fechado e o novo não foi confirmado. Daqui não dá para saber se ele nasceu — tentar de
+          novo poderia criar dois anúncios. <b>Alguém precisa conferir no Mercado Livre.</b>
+        </p>
+      )}
+
+      {atos.retomar && (
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <button
+            type="button"
+            className="sb-button sb-button-primary"
+            onClick={() => {
+              setEstado({ kind: "confirmando-retomada" });
+            }}
+          >
+            Tentar republicar de novo
+          </button>
+        </div>
+      )}
+
+      {atos.pedir && (
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <button
             type="button"
@@ -216,7 +274,7 @@ export function RelistPanel({
         </div>
       )}
 
-      {podeRepublicar && executavel && !aguardandoWorker && (
+      {atos.executar && (
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <button
             type="button"
@@ -232,6 +290,12 @@ export function RelistPanel({
 
       {estado.kind === "enfileirado" && aguardandoWorker && (
         <p role="status" style={{ margin: 0, fontSize: "0.75rem", color: "var(--sb-secondary)" }}>
+          {estado.mensagem}
+        </p>
+      )}
+
+      {estado.kind === "sem-resposta" && (
+        <p role="status" style={{ margin: 0, fontSize: "0.75rem", color: "var(--sb-text-soft)" }}>
           {estado.mensagem}
         </p>
       )}
@@ -282,7 +346,7 @@ export function RelistPanel({
           titulo={`Fechar ${itemId} e republicar`}
           confirmar="Fechar e republicar"
           perigoso
-          exigirCiencia="Entendo que fechar este anúncio é irreversível."
+          exigirCiencia={cienciaDaExecucao(variacoes.leftOut.length)}
           onCancel={() => {
             setEstado({ kind: "idle" });
           }}
@@ -306,13 +370,78 @@ export function RelistPanel({
             No lugar dele nasce um anúncio <b>novo, com outro MLB</b>. Anúncio grátis não herda visitas nem vendas,
             e a exposição não é prometida por ninguém — nem pelo Mercado Livre, nem por esta tela.
           </p>
+          <VariacoesDoAnuncioNovo variacoes={variacoes} />
           <p style={{ margin: 0 }}>
             A conferência prévia roda <b>de novo agora</b>, com o estado atual do anúncio: se algo mudou desde o
             pedido, a operação para antes de fechar.
           </p>
         </Confirmacao>
       )}
+
+      {estado.kind === "confirmando-retomada" && operacao !== null && (
+        <Confirmacao
+          eyebrow="Tentar republicar de novo"
+          titulo={`Republicar ${itemId} de novo`}
+          confirmar="Tentar republicar de novo"
+          exigirCiencia={cienciaDaRetomada(variacoes.leftOut.length)}
+          onCancel={() => {
+            setEstado({ kind: "idle" });
+          }}
+          onConfirm={() => {
+            void chamar(
+              `/v1/listings/relist/${operacao.id}/retry`,
+              {},
+              "Nova tentativa enfileirada. O worker confere o anúncio fechado e envia a republicação de novo.",
+            );
+          }}
+        >
+          <p style={{ margin: 0 }}>
+            O Mercado Livre recusou a tentativa anterior, e <b>nenhum anúncio novo nasceu dela</b>. O anúncio{" "}
+            <span className="sb-mono">{itemId}</span> continua fechado.
+          </p>
+          <p style={{ margin: 0 }}>
+            O worker confere o anúncio <b>de novo agora</b> — ele precisa estar fechado e ter estoque — e envia a
+            republicação só com as variações que têm estoque, cada uma com o próprio preço.
+          </p>
+          <VariacoesDoAnuncioNovo variacoes={variacoes} />
+          <p style={{ margin: 0 }}>
+            Se o Mercado Livre recusar de novo, o motivo aparece na tabela abaixo. Nada é repetido sozinho.
+          </p>
+        </Confirmacao>
+      )}
     </div>
+  );
+}
+
+/**
+ * As variações que o anúncio novo NÃO leva (D-364), escritas na confirmação —
+ * a mesma régua de D-127: confirmar sem ver o que se perde não é confirmar. A
+ * lista é a do retrato do pedido; o worker refaz a conta com o estoque da hora.
+ */
+function VariacoesDoAnuncioNovo({ variacoes }: { variacoes: RelistVariationsSummary }): ReactNode {
+  if (variacoes.total === 0) {
+    return null;
+  }
+
+  return (
+    <>
+      <p style={{ margin: 0 }}>
+        O anúncio tem {variacoes.total} variações, e o anúncio novo leva <b>só as que tiverem estoque</b> na hora do
+        envio.{" "}
+        {variacoes.leftOut.length === 0
+          ? "No retrato do pedido, todas tinham."
+          : `No retrato do pedido, ${String(variacoes.leftOut.length)} estavam sem estoque e ficam fora — não voltam no anúncio novo:`}
+      </p>
+      {variacoes.leftOut.length > 0 && (
+        <ul style={{ margin: 0, paddingLeft: "1.25rem" }}>
+          {variacoes.leftOut.map((variacao) => (
+            <li key={variacao.id} className="sb-mono">
+              {descreverVariacaoFora(variacao)}
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
   );
 }
 
@@ -335,7 +464,7 @@ function Confirmacao({
   titulo: string;
   confirmar: string;
   perigoso?: boolean;
-  exigirCiencia?: string;
+  exigirCiencia?: string | undefined;
   onCancel: () => void;
   onConfirm: () => void;
   children: ReactNode;
