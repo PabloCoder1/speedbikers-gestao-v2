@@ -69,6 +69,7 @@ export function ObjectHeader({
   acoes,
   abas,
   rotuloAbas = "Abas",
+  avatar,
   children,
 }: {
   identificador: string;
@@ -86,13 +87,16 @@ export function ObjectHeader({
    * a sua.
    */
   rotuloAbas?: string;
+  /** Imagem de identidade à esquerda do título (a logo do fornecedor, D-370). */
+  avatar?: ReactNode;
   /** Conteúdo da aba, dentro do mesmo cartão — como no frame. */
   children?: ReactNode;
 }): ReactNode {
   return (
     <section className="sb-object" aria-label={titulo}>
       <div className="sb-object-head">
-        <div style={{ minWidth: 0 }}>
+        {avatar !== undefined && <div className="sb-object-avatar">{avatar}</div>}
+        <div style={{ minWidth: 0, flex: avatar === undefined ? undefined : 1 }}>
           <span className="sb-object-id">{identificador}</span>
           {/*
             `h2`, não `h1`: no frame o cartão de entidade vem DEPOIS de um

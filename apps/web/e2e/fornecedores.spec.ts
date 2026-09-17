@@ -192,3 +192,40 @@ test("novo fornecedor: a prévia acompanha o que se digita, e o duplicado é avi
   // Nome, documento válido, fone e condições: 4 de 7.
   await expect(previa.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "57");
 });
+
+/** Um PNG de 1×1 — o menor arquivo que o navegador decodifica de verdade. */
+const PNG_1X1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==";
+
+test("logo do fornecedor: sobe ao salvar, aparece no painel e sai ao remover (D-370)", async ({ page }) => {
+  await login(page, "/fornecedores");
+  await page.getByRole("link", { name: E2E_SUPPLIER.name, exact: true }).click();
+  await expect(page).toHaveURL(/\/fornecedores\/[0-9a-f-]{36}$/);
+
+  const painel = page.url();
+  const cabecalho = page.getByRole("region", { name: E2E_SUPPLIER.name });
+
+  await expect(cabecalho.locator("img")).toHaveCount(0);
+
+  await page.getByRole("link", { name: "Editar" }).click();
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "logo.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(PNG_1X1, "base64"),
+  });
+
+  // A logo fica pronta no formulário e só sobe quando o cadastro é salvo.
+  await expect(page.getByText("Pronta — sobe quando você salvar.")).toBeVisible();
+  await page.getByRole("button", { name: "Salvar alterações" }).click();
+
+  await expect(page).toHaveURL(painel);
+  await expect(cabecalho.locator("img")).toHaveAttribute("src", /\/storage\/v1\/object\/public\/supplier-logos\//);
+
+  // Desfaz: as outras specs leem este fornecedor com as iniciais.
+  await page.getByRole("link", { name: "Editar" }).click();
+  await page.getByRole("button", { name: "Remover", exact: true }).click();
+  await expect(page.getByText("Será removida quando você salvar.")).toBeVisible();
+  await page.getByRole("button", { name: "Salvar alterações" }).click();
+
+  await expect(page).toHaveURL(painel);
+  await expect(cabecalho.locator("img")).toHaveCount(0);
+});
