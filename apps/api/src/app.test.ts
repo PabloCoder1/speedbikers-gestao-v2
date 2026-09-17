@@ -15,6 +15,7 @@ import type { ListingsScheduleDeps } from "./listings-schedule.js";
 import type { MlAccountsDeps } from "./ml-accounts.js";
 import type { OidcVerifier } from "./oidc.js";
 import type { ReconcileDeps } from "./reconcile.js";
+import type { RelistDeps } from "./relist.js";
 import type { WebhookDeps } from "./webhook.js";
 
 function buildApp(): { app: ReturnType<typeof createApp>; lines: string[] } {
@@ -1639,6 +1640,167 @@ describe("POST /v1/support/cases/:caseId/reply (D-096)", () => {
     expect(enqueued[0]).toMatchObject({
       jobType: "support.reply.send",
       queue: "ml-sync-speedbikers-loja-1",
+    });
+  });
+});
+
+describe("POST /v1/listings/relist/:relistId/retry (D-364)", () => {
+  const RELIST_ID = "cccccccc-0000-4000-8000-000000000001";
+  const ORGANIZATION_ID = "11111111-0000-4000-8000-000000000001";
+
+  function authWithRole(role: Role) {
+    return {
+      authenticate: (_header: string | undefined, allowed: readonly Role[]): Promise<AuthResult> =>
+        Promise.resolve(
+          allowed.includes(role)
+            ? { ok: true, caller: { userId: "u-admin", organizationId: ORGANIZATION_ID, role } }
+            : { ok: false, status: 403, reason: "papel sem permissão" },
+        ),
+    };
+  }
+
+  /** Operação em RELIST_FAILED cuja última falha tem o `reason` dado. */
+  function relistDeps(
+    enqueued: EnqueueRequest[],
+    options: { lastFailedReason: string | null; organizationId?: string },
+  ): RelistDeps {
+    const terminal = (table: string) => {
+      const self = {
+        eq: () => self,
+        order: () => self,
+        limit: () => self,
+        maybeSingle: () =>
+          Promise.resolve({
+            data:
+              table === "listing_relists"
+                ? {
+                    id: RELIST_ID,
+                    organization_id: options.organizationId ?? ORGANIZATION_ID,
+                    ml_account_id: "aaaaaaaa-0000-4000-8000-000000000001",
+                    status: "RELIST_FAILED",
+                    parent_item_id: "MLB1476804187",
+                    failure_reason: "o Mercado Livre recusou a republicação (HTTP 400) — nenhum anúncio novo foi criado.",
+                    ml_accounts: { slug: "speedbikers-loja-1" },
+                  }
+                : table === "listing_relist_events" && options.lastFailedReason !== null
+                  ? { reason: options.lastFailedReason }
+                  : // Quem não é ADMIN TEM permissão na conta neste fake (D-117).
+                    table === "user_account_permissions"
+                    ? { user_id: "u-admin" }
+                    : null,
+            error: null,
+          }),
+      };
+
+      return self;
+    };
+
+    return {
+      logger: createLogger({}, { sink: () => undefined }),
+      now: () => new Date("2026-09-17T12:00:30.000Z"),
+      db: { from: (table: string) => ({ select: () => terminal(table) }) } as never,
+      enqueuer: {
+        enqueue: (request: EnqueueRequest) => {
+          enqueued.push(request);
+
+          return Promise.resolve({
+            taskName: "t",
+            deduplicated: false,
+            envelope: {
+              jobType: request.jobType,
+              jobId: "6f1d5f9c-6d0b-4a5f-9f4a-2c9a7a1f0b64",
+              organizationId: request.organizationId,
+              dedupeKey: request.dedupeKey,
+              attempt: 1,
+              enqueuedAt: "2026-09-17T12:00:30.000Z",
+            },
+          });
+        },
+      },
+    };
+  }
+
+  function post(app: ReturnType<typeof createApp>) {
+    return app.request(`/v1/listings/relist/${RELIST_ID}/retry`, { method: "POST" });
+  }
+
+  it("responde 503 sem as dependências de republicação", async () => {
+    const app = createApp({ logger: createLogger({}, { sink: () => undefined }), auth: authWithRole("ADMIN") });
+
+    expect((await post(app)).status).toBe(503);
+  });
+
+  it("exige autenticação", async () => {
+    const enqueued: EnqueueRequest[] = [];
+    const app = createApp({
+      logger: createLogger({}, { sink: () => undefined }),
+      auth: { authenticate: () => Promise.resolve({ ok: false, status: 401, reason: "sem token" }) },
+      relist: relistDeps(enqueued, { lastFailedReason: "POST_RECUSADO" }),
+    });
+
+    expect((await post(app)).status).toBe(401);
+    expect(enqueued).toHaveLength(0);
+  });
+
+  it("OPERADOR é barrado: republicar é decisão de gestão (D-161)", async () => {
+    const enqueued: EnqueueRequest[] = [];
+    const app = createApp({
+      logger: createLogger({}, { sink: () => undefined }),
+      auth: authWithRole("OPERADOR"),
+      relist: relistDeps(enqueued, { lastFailedReason: "POST_RECUSADO" }),
+    });
+
+    expect((await post(app)).status).toBe(403);
+    expect(enqueued).toHaveLength(0);
+  });
+
+  it("operação de outra organização responde 404", async () => {
+    const enqueued: EnqueueRequest[] = [];
+    const app = createApp({
+      logger: createLogger({}, { sink: () => undefined }),
+      auth: authWithRole("ADMIN"),
+      relist: relistDeps(enqueued, {
+        lastFailedReason: "POST_RECUSADO",
+        organizationId: "22222222-0000-4000-8000-000000000002",
+      }),
+    });
+
+    expect((await post(app)).status).toBe(404);
+    expect(enqueued).toHaveLength(0);
+  });
+
+  it("falha que não é recusa comprovada responde 409 com o motivo, e não enfileira", async () => {
+    const enqueued: EnqueueRequest[] = [];
+    const app = createApp({
+      logger: createLogger({}, { sink: () => undefined }),
+      auth: authWithRole("GESTOR"),
+      relist: relistDeps(enqueued, { lastFailedReason: "EXECUCAO_INTERROMPIDA" }),
+    });
+
+    const response = await post(app);
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: { code: "invalid_state" } });
+    expect(enqueued).toHaveLength(0);
+  });
+
+  it("recusa comprovada: enfileira a retomada na fila da conta", async () => {
+    const enqueued: EnqueueRequest[] = [];
+    const app = createApp({
+      logger: createLogger({}, { sink: () => undefined }),
+      auth: authWithRole("ADMIN"),
+      relist: relistDeps(enqueued, { lastFailedReason: "POST_RECUSADO" }),
+    });
+
+    const response = await post(app);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ status: "queued" });
+    expect(enqueued[0]).toMatchObject({
+      jobType: "relist.execute",
+      queue: "ml-sync-speedbikers-loja-1",
+      dedupeKey: `relist-retry:${RELIST_ID}:2026-09-17T12:00`,
+      payload: { relistId: RELIST_ID, retomada: true },
     });
   });
 });

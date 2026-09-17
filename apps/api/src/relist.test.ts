@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Caller } from "./auth.js";
 import type { EnqueueRequest, Enqueuer } from "./enqueue.js";
 import type { RelistDeps } from "./relist.js";
-import { requestListingRelist, requestListingRelistExecution } from "./relist.js";
+import { requestListingRelist, requestListingRelistExecution, requestListingRelistRetry } from "./relist.js";
 
 const ORGANIZATION_ID = "11111111-0000-4000-8000-000000000001";
 const ML_ACCOUNT_ID = "aaaaaaaa-0000-4000-8000-000000000001";
@@ -24,6 +24,9 @@ interface FakeDbOptions {
   listingExists?: boolean;
   operationStatus?: string;
   operationOrganizationId?: string;
+  failureReason?: string | null;
+  /** reason do último evento RELIST_FAILED; ausente = nenhum evento. */
+  lastFailedReason?: string | null;
 }
 
 function fakeDb(options: FakeDbOptions = {}): RelistDeps["db"] {
@@ -68,8 +71,16 @@ function fakeDb(options: FakeDbOptions = {}): RelistDeps["db"] {
                     ml_account_id: ML_ACCOUNT_ID,
                     status: options.operationStatus ?? "REQUESTED",
                     parent_item_id: ITEM_ID,
+                    failure_reason: options.failureReason ?? null,
                     ml_accounts: { slug: "loja-1" },
                   },
+                  error: null,
+                });
+              }
+
+              if (table === "listing_relist_events") {
+                return Promise.resolve({
+                  data: options.lastFailedReason === undefined ? null : { reason: options.lastFailedReason },
                   error: null,
                 });
               }
@@ -77,6 +88,8 @@ function fakeDb(options: FakeDbOptions = {}): RelistDeps["db"] {
               return Promise.resolve({ data: null, error: null });
             },
             eq: () => terminal,
+            order: () => terminal,
+            limit: () => terminal,
           };
 
           return terminal;
@@ -211,6 +224,114 @@ describe("requestListingRelistExecution (D-162)", () => {
 
     const semPermissao = await requestListingRelistExecution(
       deps(fakeDb({ hasAccountPermission: false }), enqueuer),
+      GESTOR,
+      RELIST_ID,
+    );
+    expect(semPermissao).toEqual({ status: "not_found" });
+    expect(requests).toHaveLength(0);
+  });
+});
+
+/** A mensagem REAL gravada na operação a7638dc5, com o MLB deste teste. */
+const MENSAGEM_LEGADA_400 = `o POST /relist falhou e não é seguro repetir: Mercado Livre respondeu 400 para POST /items/${ITEM_ID}/relist.`;
+
+describe("requestListingRelistRetry (D-364)", () => {
+  it("recusa comprovada (POST_RECUSADO): enfileira relist.execute com retomada e dedupeKey própria, na fila da conta", async () => {
+    const { enqueuer, requests } = fakeEnqueuer();
+
+    const outcome = await requestListingRelistRetry(
+      deps(fakeDb({ operationStatus: "RELIST_FAILED", lastFailedReason: "POST_RECUSADO", hasAccountPermission: true }), enqueuer),
+      GESTOR,
+      RELIST_ID,
+    );
+
+    expect(outcome).toEqual({ status: "queued", deduplicated: false });
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      jobType: "relist.execute",
+      queue: "ml-sync-loja-1",
+      payload: { relistId: RELIST_ID, retomada: true },
+    });
+    // Prefixo próprio: não colide com o nome retido de uma execução do mesmo minuto.
+    expect(requests[0]?.dedupeKey).toBe(`relist-retry:${RELIST_ID}:2026-08-31T12:00`);
+  });
+
+  it("legado: POST_FALHOU com a mensagem antiga do 400 também é elegível", async () => {
+    const { enqueuer, requests } = fakeEnqueuer();
+
+    const outcome = await requestListingRelistRetry(
+      deps(
+        fakeDb({ operationStatus: "RELIST_FAILED", lastFailedReason: "POST_FALHOU", failureReason: MENSAGEM_LEGADA_400 }),
+        enqueuer,
+      ),
+      ADMIN,
+      RELIST_ID,
+    );
+
+    expect(outcome).toMatchObject({ status: "queued" });
+    expect(requests).toHaveLength(1);
+  });
+
+  it("não elegível é invalid (409 na rota) e não enfileira: 5xx legado, interrupção, resposta ambígua, sem evento", async () => {
+    const { enqueuer, requests } = fakeEnqueuer();
+
+    for (const options of [
+      {
+        lastFailedReason: "POST_FALHOU",
+        failureReason: `o POST /relist falhou e não é seguro repetir: Mercado Livre respondeu 500 para POST /items/${ITEM_ID}/relist.`,
+      },
+      { lastFailedReason: "EXECUCAO_INTERROMPIDA", failureReason: MENSAGEM_LEGADA_400 },
+      { lastFailedReason: "RESPOSTA_AMBIGUA", failureReason: MENSAGEM_LEGADA_400 },
+      { failureReason: MENSAGEM_LEGADA_400 },
+    ]) {
+      const outcome = await requestListingRelistRetry(
+        deps(fakeDb({ operationStatus: "RELIST_FAILED", ...options }), enqueuer),
+        ADMIN,
+        RELIST_ID,
+      );
+
+      expect(outcome).toMatchObject({ status: "invalid" });
+      expect((outcome as { reason: string }).reason).toContain("recusa comprovada");
+    }
+
+    expect(requests).toHaveLength(0);
+  });
+
+  it("operação fora de RELIST_FAILED é invalid, mesmo com um POST_RECUSADO no histórico", async () => {
+    const { enqueuer, requests } = fakeEnqueuer();
+
+    for (const operationStatus of ["REQUESTED", "RELISTING", "RELISTED", "REMAPPED", "PREFLIGHT_FAILED"]) {
+      const outcome = await requestListingRelistRetry(
+        deps(fakeDb({ operationStatus, lastFailedReason: "POST_RECUSADO" }), enqueuer),
+        ADMIN,
+        RELIST_ID,
+      );
+
+      expect(outcome).toMatchObject({ status: "invalid" });
+    }
+
+    expect(requests).toHaveLength(0);
+  });
+
+  it("operação de outra organização é not_found; GESTOR sem permissão na conta idem (lição D-117)", async () => {
+    const { enqueuer, requests } = fakeEnqueuer();
+
+    const outraOrg = await requestListingRelistRetry(
+      deps(
+        fakeDb({
+          operationStatus: "RELIST_FAILED",
+          lastFailedReason: "POST_RECUSADO",
+          operationOrganizationId: "22222222-0000-4000-8000-000000000002",
+        }),
+        enqueuer,
+      ),
+      ADMIN,
+      RELIST_ID,
+    );
+    expect(outraOrg).toEqual({ status: "not_found" });
+
+    const semPermissao = await requestListingRelistRetry(
+      deps(fakeDb({ operationStatus: "RELIST_FAILED", lastFailedReason: "POST_RECUSADO", hasAccountPermission: false }), enqueuer),
       GESTOR,
       RELIST_ID,
     );
