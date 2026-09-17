@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **367** (D-001 a D-373).
+Decisões registradas: **368** (D-001 a D-374).
 
 ## Por domínio
 
@@ -309,7 +309,7 @@ Decisões registradas: **367** (D-001 a D-373).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (24)
+### vendas/métricas (25)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -335,6 +335,7 @@ Decisões registradas: **367** (D-001 a D-373).
 - **D-327** — A18: a legenda do grafico de vendas no cabecalho do painel, e o seed que nunca teve periodo anterior
 - **D-351** — A venda anterior a planilha do UpSeller passa a ser gravada e estornada -- o corte vira o instante da exportacao, e o backfill deixa de notificar
 - **D-356** — /faturamento: quanto sobra de cada venda -- e tres contas que estavam erradas antes de a tela existir
+- **D-374** — Vinculacoes: vincular num popup com o SKU sugerido pelos pedidos, sem a tela rolar, e a pagina que nao espera a leitura lenta
 
 ### worker/infra (71)
 

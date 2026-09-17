@@ -1,24 +1,24 @@
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 
 import { FilterMenu } from "../../components/filter-menu";
 import { KpiStrip, type KpiCellData } from "../../components/kpi-strip";
 import { PageTitle } from "../../components/page-title";
 import { Panel } from "../../components/panel";
 import { Shell } from "../../components/shell";
-import { formatCount, formatCurrency, formatDateTime } from "../../lib/format";
+import { formatCount, formatCurrency } from "../../lib/format";
 import {
   PAGE_SIZE,
   buildLinkIntegrityHref,
-  buildManualLinkHref,
   resolveLinkIntegrityFilters,
   summarizeLinkIntegrityWindow,
   toRpcArgs,
+  type LinkIntegrityFilters,
 } from "../../lib/link-integrity-filters";
 import { currentMembership } from "../../lib/request-membership";
 import { createClient } from "../../lib/supabase/server";
-import { CandidateRow } from "./candidate-row";
-import { ManualLinkForm } from "./manual-link-form";
+
+import { FilaCandidatos, TabelaVinculos, VincularPorMlb, type LinhaAnuncio } from "./vinculos-interativos";
 
 export const metadata = { title: "Integridade de Catálogo — Speed Bikers Gestão" };
 
@@ -28,32 +28,35 @@ export const dynamic = "force-dynamic";
 
 /**
  * Integridade de Catálogo (`/vinculacoes`), pelo frame `ProcessScreen
- * type="links"` — D21, D-259.
+ * type="links"` — D21, D-259; refeita em D-374.
  *
- * **O frame REENQUADRA a tela, e é a mudança de composição da fatia.** Ela era
- * "Central de Vinculações": uma fila de `link_candidates`. O frame faz dela uma
- * visão de INTEGRIDADE sobre ANÚNCIOS — cinco células e uma tabela de anúncios
- * por estado de vínculo, em que "candidato" é um estado entre outros, não o
- * assunto. Os dados concordam com o frame: no Dev são 5.089 anúncios, 863 sem
- * vínculo e **0 candidatos**.
+ * ## D-374: vincular num popup, e a página que não espera a leitura lenta
  *
- * **É a primeira tela de processo com faixa de KPIs desenhada** — `nfe`,
- * `suppliers` e `purchases` não têm cartão nenhum (D-253/D-255/D-256).
+ * O dono: "sempre que clicamos para vincular algo a tela leva-nos lá para
+ * baixo". O "Vincular" de cada linha era um link para esta mesma página com
+ * `#vincular-a-mao`: refazia as oito leituras e rolava até o formulário no fim.
+ * Agora o vínculo é um popup sobre a tabela (`vincular-dialog.tsx`) que:
+ * - abre com a SUGESTÃO do SKU tirada dos pedidos do anúncio (`seller_sku`
+ *   casado com o catálogo — 505 dos 867 sem vínculo no Dev);
+ * - grava sem refazer a página na mesma resposta, muda a linha na hora e
+ *   recarrega os números em segundo plano;
+ * - oferece "Vincular e próximo".
+ *
+ * **O que segurava a página.** `get_link_integrity` mede ~250 ms quente e
+ * **2,6 s a frio** (Dev, authenticated), e a página inteira esperava por ela —
+ * mas ela só alimenta a comparação entre contas e a ressalva de divergência.
+ * Foi para `ComparacaoContas`, dentro de `Suspense`: a tabela chega com as
+ * leituras de `get_listings_dashboard` (~120–150 ms cada, em paralelo) e a
+ * comparação chega depois.
  *
  * ## As duas fontes de "vendeu", e por que a tela mostra as duas
  *
  * `get_link_integrity` conta venda a partir de `order_items` — fonte
- * INDEPENDENTE do pipeline de métricas, e por isso a mais confiável. A tabela
- * desta tela sai de `get_listings_dashboard`, que conta a partir de
- * `daily_listing_metrics`. No Dev as duas divergem: **349 contra 337**.
- *
- * Os 12 de diferença são anúncios que geraram pedido e o pipeline de métricas
- * não conhece — exatamente o que esta tela existe para expor.
- *
- * A célula usa o número da TABELA, para que clicar nela mostre as linhas que
- * ela promete (D-242) e cabeçalho e corpo não discordem (D-236). O número
- * independente aparece **declarado ao lado**, nomeando a diferença: mostrar só
- * um dos dois seria omissão.
+ * INDEPENDENTE do pipeline de métricas. A tabela sai de
+ * `get_listings_dashboard`, que conta a partir de `daily_listing_metrics`. As
+ * células usam o número da TABELA, para que clicar nelas mostre as linhas que
+ * prometem (D-242); o número independente aparece declarado no painel de
+ * comparação, nomeando a diferença.
  */
 
 /** Uma linha de `get_link_integrity` — a fonte INDEPENDENTE, por conta. */
@@ -67,20 +70,6 @@ interface LinkIntegrityRow {
   candidatos_abertos: number;
   vendidos_sem_vinculo: number;
   receita_sem_vinculo: number;
-}
-
-interface ListingRow {
-  listing_id: string;
-  item_id: string;
-  title: string;
-  ml_account_id: string;
-  account_label: string;
-  sku: string | null;
-  sku_id: string | null;
-  link_state: string;
-  units_sold: number;
-  price: number;
-  total_count: number;
 }
 
 const ESTADOS = [
@@ -97,13 +86,6 @@ const VENDAS = [
 
 const JANELA_DIAS = 30;
 
-function estadoDoVinculo(estado: string): { rotulo: string; cor: string } {
-  if (estado === "linked") return { rotulo: "Vinculado", cor: "var(--sb-success)" };
-  if (estado === "linked_variation") return { rotulo: "Por variação", cor: "var(--sb-secondary)" };
-
-  return { rotulo: "Sem vínculo", cor: "var(--sb-danger-ink)" };
-}
-
 export default async function VinculacoesPage({
   searchParams,
 }: {
@@ -114,9 +96,9 @@ export default async function VinculacoesPage({
   const filters = resolveLinkIntegrityFilters(query);
 
   /*
-    As contas vêm ANTES do resto, e não junto: a lista e as cinco contagens
-    precisam do id da conta escolhida, e a URL traz o SLUG. Mesma ordem de
-    `/anuncios` (D-242) — duas idas em série, não seis.
+    As contas vêm ANTES do resto, e não junto: a lista e as contagens precisam
+    do id da conta escolhida, e a URL traz o SLUG. Mesma ordem de `/anuncios`
+    (D-242) — duas idas em série, não seis.
   */
   const [membership, contas] = await Promise.all([
     currentMembership(),
@@ -148,34 +130,19 @@ export default async function VinculacoesPage({
     p_organization_id: organizationId,
     p_date_from: desde.toISOString().slice(0, 10),
     p_date_to: hoje.toISOString().slice(0, 10),
-    /*
-      A conta entra na JANELA, não no recorte: ela vale para a lista E para as
-      cinco contagens. Fora daqui, a faixa falaria da organização inteira
-      enquanto a tabela mostra uma conta só — o desacordo entre cabeçalho e
-      corpo que D-236 proíbe.
-    */
+    // A conta entra na JANELA: vale para a lista E para as contagens (D-236).
     p_ml_account_id: contaEscolhida?.id ?? null,
   };
 
-  const recorte = toRpcArgs(filters);
-
   /*
     Cada célula lê o `total_count` da MESMA função que monta a lista, com
-    `p_limit => 1` e o predicado dela — o padrão de D-242. Uma contagem própria
-    seria um segundo dono do número (D-224), e é assim que faixa e tabela
-    começam a discordar.
-
-    São muitas idas, e juntas custam uma (D-185): o custo é POR CHAMADA e quase
-    independente do que ela faz.
+    `p_limit => 1` e o predicado dela — o padrão de D-242. Juntas custam uma ida
+    (D-185).
   */
   const contagem = (extra: Record<string, string>) =>
     supabase.rpc("get_listings_dashboard", { ...janela, p_limit: 1, p_offset: 0, ...extra });
 
-  /*
-    As duas leituras por tabela seguem o MESMO recorte de conta. A célula
-    "Candidatos pendentes" e a fila abaixo dela saem daqui: deixá-las fora do
-    filtro faria a tela dizer "3 candidatos" numa conta que não tem nenhum.
-  */
+  // As duas leituras por tabela seguem o MESMO recorte de conta.
   const candidatosBase = supabase
     .from("link_candidates")
     .select("id, sku_key, ref_kind, item_id, variation_id, user_product_id, created_at, ml_accounts(label)")
@@ -189,62 +156,54 @@ export default async function VinculacoesPage({
   const naConta = <T extends { eq: (coluna: "ml_account_id", valor: string) => T }>(consulta: T): T =>
     contaEscolhida === null ? consulta : consulta.eq("ml_account_id", contaEscolhida.id);
 
-  const [lista, cTotal, cVinculados, cSemVinculo, cVendidosSemVinculo, integridade, candidatos, manuais] =
-    await Promise.all([
-      supabase.rpc("get_listings_dashboard", {
-        ...janela,
-        ...recorte,
-        p_limit: PAGE_SIZE,
-        p_offset: (filters.page - 1) * PAGE_SIZE,
-        ...(filters.search !== null ? { p_search: filters.search } : {}),
-      }),
-      contagem({ p_link_state: "all" }),
-      contagem({ p_link_state: "linked" }),
-      contagem({ p_link_state: "unlinked" }),
-      contagem({ p_link_state: "unlinked", p_sold: "with" }),
-      // A fonte INDEPENDENTE (pedidos). Não alimenta as células — alimenta a
-      // ressalva que declara a divergência.
-      supabase.rpc("get_link_integrity", { p_organization_id: organizationId, p_days: JANELA_DIAS }),
-      naConta(candidatosBase).order("created_at", { ascending: true }).limit(200),
-      naConta(manuaisBase).order("confirmed_at", { ascending: false, nullsFirst: false }).limit(10),
-    ]);
+  const [lista, cTotal, cVinculados, cSemVinculo, cVendidosSemVinculo, candidatos, manuais] = await Promise.all([
+    supabase.rpc("get_listings_dashboard", {
+      ...janela,
+      ...toRpcArgs(filters),
+      p_limit: PAGE_SIZE,
+      p_offset: (filters.page - 1) * PAGE_SIZE,
+      ...(filters.search !== null ? { p_search: filters.search } : {}),
+    }),
+    contagem({ p_link_state: "all" }),
+    contagem({ p_link_state: "linked" }),
+    contagem({ p_link_state: "unlinked" }),
+    contagem({ p_link_state: "unlinked", p_sold: "with" }),
+    naConta(candidatosBase).order("created_at", { ascending: true }).limit(200),
+    naConta(manuaisBase).order("confirmed_at", { ascending: false, nullsFirst: false }).limit(8),
+  ]);
 
-  const rows = (lista.data ?? []) as unknown as ListingRow[];
+  const rows = lista.data ?? [];
   const totalDoRecorte = rows[0]?.total_count ?? 0;
   const window = summarizeLinkIntegrityWindow(filters.page, totalDoRecorte, rows.length);
 
   const conta = (r: { data: unknown }): number =>
     ((r.data ?? []) as { total_count?: number }[])[0]?.total_count ?? 0;
 
-  const totalAnuncios = conta(cTotal);
-  const vendidosSemVinculoTabela = conta(cVendidosSemVinculo);
-
-  /*
-    `get_link_integrity` devolve UMA LINHA POR CONTA, e é essa granularidade que
-    sustenta a comparação entre contas do painel lá embaixo. A faixa quer o
-    total; ela nunca soube que havia linhas.
-
-    O total tem que respeitar o filtro de conta, senão a ressalva compararia a
-    organização inteira (fonte independente) com uma conta só (tabela) e
-    inventaria uma divergência que não existe.
-  */
-  const porPedidos = (integridade.data ?? []) as LinkIntegrityRow[];
-  const doRecorte =
-    contaEscolhida === null ? porPedidos : porPedidos.filter((l) => l.ml_account_id === contaEscolhida.id);
-  const vendidosPorPedido = doRecorte.reduce((soma, l) => soma + l.vendidos_sem_vinculo, 0);
-  const receitaSemVinculo = doRecorte.reduce((soma, l) => soma + l.receita_sem_vinculo, 0);
-  const divergencia = vendidosPorPedido - vendidosSemVinculoTabela;
-
-  /** `ml_account_id` → slug, para a comparação linkar no filtro desta mesma tela. */
-  const slugDaConta = new Map(accounts.map((a) => [a.id, a.slug]));
-
   const abertos = candidatos.data ?? [];
+
+  const linhas: LinhaAnuncio[] = rows.map((r) => ({
+    listingId: r.listing_id,
+    itemId: r.item_id,
+    title: r.title,
+    mlAccountId: r.ml_account_id,
+    accountLabel: r.account_label,
+    // O tipo gerado diz `string`, mas vínculo por variação tem `sku_id` nulo e
+    // está ligado (D-122): a leitura assume o nulo que o banco devolve.
+    sku: (r as { sku: string | null }).sku,
+    skuId: (r as { sku_id: string | null }).sku_id,
+    linkState: r.link_state,
+    unitsSold: r.units_sold,
+    price: r.price,
+    fullQuantity: r.full_quantity,
+  }));
+
+  const contasOpcoes = accounts.map((a) => ({ id: a.id, label: a.label }));
 
   const celulas: readonly KpiCellData[] = [
     {
       label: "Anúncios sincronizados",
       formula: "Todos os anúncios do catálogo do Mercado Livre conhecidos pela sincronização.",
-      value: formatCount(totalAnuncios),
+      value: formatCount(conta(cTotal)),
       previous: null,
       href: buildLinkIntegrityHref(filters, { state: "todos", sold: "todos", page: 1 }),
       tom: "neutro",
@@ -259,10 +218,7 @@ export default async function VinculacoesPage({
     },
     {
       label: "Sem vínculo",
-      /*
-        A ressalva não é decoração: contar `sku_id is null` daria mais que o
-        dobro, porque o vínculo por VARIAÇÃO tem `sku_id` nulo e está ligado.
-      */
+      // Contar `sku_id is null` daria mais que o dobro: o vínculo por variação tem `sku_id` nulo.
       formula: "link_state = 'unlinked'. NÃO é sku_id nulo: o vínculo por variação também tem sku_id nulo (D-122).",
       value: formatCount(conta(cSemVinculo)),
       previous: null,
@@ -272,15 +228,9 @@ export default async function VinculacoesPage({
     },
     {
       label: "Vendidos sem vínculo",
-      formula: `Anúncios sem vínculo que venderam nos últimos ${String(JANELA_DIAS)} dias — receita entrando sem baixa de estoque.`,
-      value: formatCount(vendidosSemVinculoTabela),
+      formula: `Anúncios sem vínculo que venderam nos últimos ${String(JANELA_DIAS)} dias — receita entrando sem baixa de estoque. A fonte independente (pedidos) aparece na comparação entre contas.`,
+      value: formatCount(conta(cVendidosSemVinculo)),
       previous: null,
-      // A divergência entre as duas fontes é DECLARADA, não escondida.
-      ...(divergencia > 0
-        ? {
-            ressalva: `${formatCount(divergencia)} a mais pela fonte independente (pedidos): ${formatCount(vendidosPorPedido)}`,
-          }
-        : {}),
       href: buildLinkIntegrityHref(filters, { state: "sem-vinculo", sold: "vendeu", page: 1 }),
       tom: "perigo",
     },
@@ -289,8 +239,7 @@ export default async function VinculacoesPage({
       formula: "Linhas da importação do ERP que citaram um SKU inexistente no catálogo e esperam resolução humana.",
       value: formatCount(abertos.length),
       previous: null,
-      // Zero cru leria como "não há trabalho", que é afirmação diferente de
-      // "toda linha resolveu" (a lição dos cartões de D-250).
+      // Zero cru leria como "não há trabalho" (a lição dos cartões de D-250).
       ...(abertos.length === 0 ? { ressalva: "nenhuma linha do ERP ficou sem SKU" } : {}),
       tom: "neutro",
     },
@@ -299,28 +248,22 @@ export default async function VinculacoesPage({
   const rotuloEstado = ESTADOS.find((e) => e.chave === filters.state)?.label ?? "Estado";
   const rotuloVenda = VENDAS.find((v) => v.chave === filters.sold)?.label ?? "Venda";
   const rotuloConta = contaEscolhida?.label ?? "Todas as contas";
+  const filtroAtivo =
+    filters.state !== "todos" || filters.sold !== "todos" || filters.accountSlug !== null || filters.search !== null;
 
   return (
     <Shell>
-      {/* `OpsHeader` do frame: sobrancelha, título e a linha de apoio. */}
       <PageTitle
         eyebrow="ESTOQUE / VINCULAÇÕES"
         title="Integridade de Catálogo"
         subtitle="Garantia de que os anúncios estão corretamente ligados aos SKUs internos do sistema."
+        aside={<VincularPorMlb contas={contasOpcoes} />}
       />
 
       <KpiStrip cells={celulas} ancora />
 
-      {receitaSemVinculo > 0 && (
-        <p style={{ margin: "0 0 var(--sb-space-3)", fontSize: "0.75rem", color: "var(--sb-danger-ink)" }}>
-          <strong>{formatCurrency(receitaSemVinculo)}</strong> de receita em {String(JANELA_DIAS)} dias veio de
-          anúncios sem vínculo — venda registrada sem baixa de estoque no SKU correspondente. O valor vem dos
-          pedidos, não do pipeline de métricas.
-        </p>
-      )}
-
       {lista.error !== null && (
-        <p role="alert" style={{ color: "var(--sb-danger)" }}>
+        <p role="alert" className="sb-note sb-note-perigo">
           Não foi possível carregar os anúncios: {lista.error.message}
         </p>
       )}
@@ -328,14 +271,16 @@ export default async function VinculacoesPage({
       {lista.error === null && (
         <Panel
           title="Tabela de Vinculações"
+          subtitle={
+            <>
+              {window.label} Clique em <b>Vincular</b> para escolher o SKU sem sair da tabela — o popup já traz a
+              sugestão dos pedidos do anúncio.
+            </>
+          }
           aside={
             <>
-              <span style={{ fontSize: "0.6875rem", color: "var(--sb-text-soft)", whiteSpace: "nowrap" }}>
-                {window.label}
-              </span>
-
               {/* A busca do frame ("Buscar MLB ou SKU..."), como GET nativo. */}
-              <form method="get" style={{ display: "flex", gap: "0.375rem", alignItems: "center" }}>
+              <form method="get" className="sb-vnc-busca-form" role="search">
                 {filters.state !== "todos" && <input type="hidden" name="estado" value={filters.state} />}
                 {filters.sold !== "todos" && <input type="hidden" name="venda" value={filters.sold} />}
                 {/* Sem isto, buscar descartaria a conta escolhida — o GET manda só o que está no formulário. */}
@@ -345,26 +290,15 @@ export default async function VinculacoesPage({
                   type="search"
                   name="busca"
                   defaultValue={filters.search ?? ""}
-                  placeholder="Buscar MLB ou SKU…"
+                  placeholder="Buscar MLB, título ou SKU…"
                   aria-label="Buscar por MLB, título ou SKU"
-                  style={{ minWidth: "11rem" }}
                 />
               </form>
 
-              {/*
-                O recorte por conta, ao lado dos outros dois. A dimensão já
-                existia na URL e na RPC (`p_ml_account_id`) desde sempre; o que
-                faltava era o controle — e sem ele "ver só a Loja X" não tinha
-                caminho nenhum na tela.
-              */}
               <FilterMenu
                 rotulo={rotuloConta}
                 opcoes={[
-                  {
-                    href: buildLinkIntegrityHref(filters, { accountSlug: null }),
-                    label: "Todas as contas",
-                    ativo: contaEscolhida === null,
-                  },
+                  { href: buildLinkIntegrityHref(filters, { accountSlug: null }), label: "Todas as contas", ativo: contaEscolhida === null },
                   ...accounts.map((a) => ({
                     href: buildLinkIntegrityHref(filters, { accountSlug: a.slug }),
                     label: a.label,
@@ -390,313 +324,259 @@ export default async function VinculacoesPage({
                   ativo: filters.sold === v.chave,
                 }))}
               />
+
+              {filtroAtivo && (
+                <Link className="sb-button" href="/vinculacoes">
+                  Limpar
+                </Link>
+              )}
             </>
           }
         >
-          {rows.length === 0 && <p className="sb-empty">{window.label}</p>}
+          {rows.length === 0 ? (
+            <p className="sb-empty">{window.label}</p>
+          ) : (
+            <TabelaVinculos
+              linhas={linhas}
+              contas={contasOpcoes}
+              abrirItem={typeof query.item === "string" ? query.item : null}
+              janelaDias={JANELA_DIAS}
+            />
+          )}
 
-          {rows.length > 0 && (
-            <div style={{ overflowX: "auto" }}>
-              <table className="sb-table">
-                <thead>
-                  <tr>
-                    <th>Anúncio</th>
-                    <th>MLB</th>
-                    <th>Conta</th>
-                    <th>SKU no sistema</th>
-                    <th>Estado</th>
-                    <th className="sb-num">Vendas ({JANELA_DIAS}d)</th>
-                    <th className="sb-num">Preço</th>
-                    <th>Ação</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {rows.map((row) => {
-                    const estado = estadoDoVinculo(row.link_state);
-
-                    return (
-                      <tr key={row.listing_id}>
-                        <td>
-                          <Link className="sb-entity" href={`/anuncios/${row.item_id}`}>
-                            {row.title}
-                          </Link>
-                        </td>
-                        <td className="sb-mono">{row.item_id}</td>
-                        <td>{row.account_label}</td>
-                        {/*
-                          Vínculo por variação NÃO tem `sku_id`, e mesmo assim
-                          está ligado — mostrar "—" aqui sem o estado ao lado
-                          faria a coluna contradizer a seguinte.
-                        */}
-                        <td className="sb-mono">
-                          {row.sku_id === null ? "—" : <Link href={`/skus/${row.sku_id}`}>{row.sku}</Link>}
-                        </td>
-                        <td style={{ color: estado.cor, fontWeight: 600 }}>{estado.rotulo}</td>
-                        <td
-                          className="sb-num"
-                          style={{
-                            color:
-                              row.units_sold > 0 && row.link_state === "unlinked"
-                                ? "var(--sb-danger-ink)"
-                                : undefined,
-                            fontWeight: row.units_sold > 0 && row.link_state === "unlinked" ? 600 : undefined,
-                          }}
-                        >
-                          {formatCount(row.units_sold)}
-                        </td>
-                        <td className="sb-num">{formatCurrency(row.price)}</td>
-                        {/*
-                          O caminho da linha até a ação. A tabela mostra 863
-                          anúncios sem vínculo e, sem esta coluna, a única forma
-                          de vincular um deles era copiar o MLB à mão para o
-                          formulário lá embaixo — a tela dizia o problema e não
-                          oferecia a saída.
-                        */}
-                        <td>
-                          {row.link_state === "unlinked" ? (
-                            <Link
-                              className="sb-button"
-                              href={buildManualLinkHref(filters, {
-                                accountSlug: slugDaConta.get(row.ml_account_id) ?? filters.accountSlug,
-                                itemId: row.item_id,
-                              })}
-                            >
-                              Vincular
-                            </Link>
-                          ) : (
-                            <span style={{ color: "var(--sb-text-soft)" }}>—</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+          {window.totalPages > 1 && (
+            <nav className="sb-vnc-paginas" aria-label="Páginas">
+              {filters.page > 1 && (
+                <Link className="sb-button" href={buildLinkIntegrityHref(filters, { page: filters.page - 1 })}>
+                  ‹ Anterior
+                </Link>
+              )}
+              <span>
+                Página {filters.page} de {window.totalPages}
+              </span>
+              {filters.page < window.totalPages && (
+                <Link className="sb-button" href={buildLinkIntegrityHref(filters, { page: filters.page + 1 })}>
+                  Próxima ›
+                </Link>
+              )}
+            </nav>
           )}
         </Panel>
       )}
 
-      {lista.error === null && window.totalPages > 1 && (
-        <div style={{ display: "flex", gap: "var(--sb-space-2)", marginTop: "var(--sb-space-3)" }}>
-          {filters.page > 1 && (
-            <Link className="sb-button" href={buildLinkIntegrityHref(filters, { page: filters.page - 1 })}>
-              ← Anterior
-            </Link>
-          )}
-          {filters.page < window.totalPages && (
-            <Link className="sb-button" href={buildLinkIntegrityHref(filters, { page: filters.page + 1 })}>
-              Próxima →
-            </Link>
-          )}
-        </div>
-      )}
-
-      {/*
-        COMPARAÇÃO ENTRE CONTAS — a leitura que D-128 criou e o reenquadramento
-        de D-259 reduziu a um `reduce` (D-313).
-
-        Ela NÃO obedece ao filtro de conta de propósito: comparar é o serviço
-        que este painel presta, e um painel de comparação recortado numa conta
-        só não compara nada. A conta escolhida aparece destacada, e cada linha
-        leva ao filtro — é daqui que se entra em "ver só esta conta".
-
-        A fonte é a INDEPENDENTE (`get_link_integrity`, a partir de
-        `order_items`), a mesma da ressalva da faixa. Por isso o cabeçalho diz
-        de onde vêm os números: sem isso, um número daqui ao lado de um da
-        tabela leria como erro de uma das duas.
-      */}
-      {porPedidos.length > 0 && (
-        <div style={{ marginTop: "var(--sb-space-5)" }}>
-          <Panel
-            title="Comparação entre contas"
-            subtitle={`Uma linha por conta, sem o filtro acima — comparar é o serviço deste painel. As colunas de catálogo usam a MESMA definição de vínculo da faixa (D-122), e por isso somam com ela; a última vem dos pedidos dos últimos ${String(JANELA_DIAS)} dias, a fonte independente. Clique numa conta para recortar a tabela acima nela.`}
-          >
-            <div style={{ overflowX: "auto" }}>
-              <table className="sb-table">
-                <thead>
-                  <tr>
-                    <th>Conta</th>
-                    <th className="sb-num">Anúncios</th>
-                    <th className="sb-num">Vinculados</th>
-                    <th className="sb-num">Sem vínculo</th>
-                    <th className="sb-num">% vinculado</th>
-                    <th className="sb-num">Candidatos</th>
-                    <th className="sb-num">Vendidos sem vínculo</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {porPedidos.map((linha) => {
-                    const slug = slugDaConta.get(linha.ml_account_id) ?? null;
-                    const selecionada = contaEscolhida?.id === linha.ml_account_id;
-
-                    return (
-                      <tr
-                        key={linha.ml_account_id}
-                        style={selecionada ? { background: "var(--sb-surface-soft, transparent)" } : undefined}
-                      >
-                        <td>
-                          {slug === null ? (
-                            linha.account_label
-                          ) : (
-                            <Link
-                              className="sb-entity"
-                              aria-current={selecionada ? "true" : undefined}
-                              href={buildLinkIntegrityHref(filters, { accountSlug: selecionada ? null : slug, page: 1 })}
-                            >
-                              {linha.account_label}
-                            </Link>
-                          )}
-                          {selecionada && (
-                            <span style={{ color: "var(--sb-text-soft)", fontSize: "0.6875rem" }}> · em foco</span>
-                          )}
-                        </td>
-                        <td className="sb-num">{formatCount(linha.listings_total)}</td>
-                        <td className="sb-num">{formatCount(linha.com_vinculo)}</td>
-                        <td className="sb-num">{formatCount(linha.sem_vinculo)}</td>
-                        {/* Sem anúncio nenhum não há percentual — "0%" afirmaria que nenhum está vinculado. */}
-                        <td className="sb-num">
-                          {linha.listings_total === 0 ? "—" : `${String(linha.pct_vinculado)}%`}
-                        </td>
-                        <td className="sb-num">{formatCount(linha.candidatos_abertos)}</td>
-                        <td className="sb-num">
-                          {linha.vendidos_sem_vinculo > 0 ? (
-                            <strong style={{ color: "var(--sb-danger-ink)" }}>
-                              {formatCount(linha.vendidos_sem_vinculo)}
-                            </strong>
-                          ) : (
-                            formatCount(0)
-                          )}
-                          <div style={{ color: "var(--sb-text-soft)", fontSize: "0.75rem", fontWeight: 400 }}>
-                            {formatCurrency(linha.receita_sem_vinculo)}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/*
-              A divergência que D-117 mediu: a fila de candidatos só conhece a
-              planilha do UpSeller, então conta com venda sem vínculo E zero
-              candidato é conta que a fila nunca vai resolver sozinha.
-            */}
-            {porPedidos.some((l) => l.vendidos_sem_vinculo > 0 && l.candidatos_abertos === 0) && (
-              <p
-                style={{
-                  margin: "var(--sb-space-2) 0 0",
-                  padding: "0 var(--sb-space-3) var(--sb-space-3)",
-                  fontSize: "0.8125rem",
-                  color: "var(--sb-danger-ink)",
-                }}
-              >
-                <strong>Divergência:</strong> há conta com anúncio que vendeu sem vínculo e fila de candidatos
-                vazia. A fila nunca soube desses anúncios — o gerador de candidatos só conhece a planilha do
-                UpSeller. Esses saem pela vinculação manual, na tabela acima.
-              </p>
-            )}
-          </Panel>
-        </div>
-      )}
-
-      {/*
-        O que o frame NÃO mostra e a tela real tem: a fila de candidatos do ERP
-        e a vinculação manual. Não são incompatíveis com o desenho — são
-        funcionalidade que ele não desenhou. O Design Contract manda remover
-        conteúdo incompatível, não funcionalidade ausente do frame; e o dead
-        code pass é de frontend sem consumidor, o que não é o caso.
-      */}
-      <div style={{ marginTop: "var(--sb-space-5)" }}>
+      <div className="sb-vnc-duas">
         <Panel
           title="Candidatos da importação do ERP"
           subtitle="Linhas da planilha que citaram um SKU inexistente no catálogo. Match exato resolve sozinho numa importação futura; esta fila é a confirmação humana do resto."
         >
-          {candidatos.error !== null && (
-            <p role="alert" style={{ color: "var(--sb-danger)", padding: "var(--sb-space-3)" }}>
+          {candidatos.error !== null ? (
+            <p role="alert" className="sb-note sb-note-perigo">
               Não foi possível carregar os candidatos: {candidatos.error.message}
             </p>
+          ) : (
+            <FilaCandidatos
+              contas={contasOpcoes}
+              candidatos={abertos.map((c) => ({
+                id: c.id,
+                skuKey: c.sku_key,
+                accountLabel: c.ml_accounts.label,
+                referencia: `${c.item_id ?? c.user_product_id ?? "—"}${c.variation_id !== null ? ` · var ${c.variation_id}` : ""}`,
+                createdAt: c.created_at,
+              }))}
+            />
           )}
+        </Panel>
 
-          {candidatos.error === null && abertos.length === 0 && (
-            <p className="sb-empty">
-              Nenhum candidato pendente — toda linha do ERP encontrou o seu SKU. As linhas de outros canais de
-              venda não entram nesta fila por desenho.
-            </p>
-          )}
-
-          {candidatos.error === null && abertos.length > 0 && (
-            <div style={{ overflowX: "auto" }}>
-              <table className="sb-table">
-                <thead>
-                  <tr>
-                    <th>SKU informado</th>
-                    <th>Conta</th>
-                    <th>Referência</th>
-                    <th>Desde</th>
-                    <th>Ação</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {abertos.map((c) => (
-                    <tr key={c.id}>
-                      <td className="sb-mono">{c.sku_key}</td>
-                      <td>{c.ml_accounts.label}</td>
-                      <td className="sb-mono">
-                        {c.item_id ?? c.user_product_id ?? "—"}
-                        {c.variation_id !== null && ` · var ${c.variation_id}`}
-                      </td>
-                      <td>{formatDateTime(c.created_at)}</td>
-                      {/* `CandidateRow` é a CÉLULA de ação, não a linha. */}
-                      <td>
-                        <CandidateRow candidateId={c.id} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+        {/* Leitura de volta: o operador vê o que acabou de vincular à mão. */}
+        <Panel title="Últimos vínculos manuais" subtitle="Os mais recentes feitos por pessoas, nesta conta ou em todas.">
+          {(manuais.data ?? []).length === 0 ? (
+            <p className="sb-empty">Nenhum vínculo manual ainda.</p>
+          ) : (
+            <ul className="sb-vnc-recentes">
+              {(manuais.data ?? []).map((m) => (
+                <li key={m.id}>
+                  <b className="sb-mono">{m.skus.sku}</b>
+                  <span aria-hidden="true">←</span>
+                  <Link className="sb-mono" href={`/anuncios/${m.item_id ?? ""}`}>
+                    {m.item_id ?? "—"}
+                  </Link>
+                  {m.variation_id !== null && <small className="sb-mono">var {m.variation_id}</small>}
+                  <small>{m.ml_accounts.label}</small>
+                </li>
+              ))}
+            </ul>
           )}
         </Panel>
       </div>
 
-      <div style={{ marginTop: "var(--sb-space-4)" }}>
-        {/*
-          `conta` na URL é SLUG (o mesmo do filtro); o formulário precisa do id.
-          A tradução é aqui, e é ela que faz um link só recortar a tabela e
-          preencher o formulário ao mesmo tempo.
-        */}
-        <ManualLinkForm
-          /*
-            A `key` é o que faz o pré-preenchimento FUNCIONAR. `initialItemId`
-            vira `useState` na montagem, e a navegação do `Link` re-renderiza o
-            componente sem remontá-lo: sem isto o campo continua vazio depois de
-            clicar em "Vincular" numa linha — que foi exatamente o que o e2e
-            pegou. Trocando a identidade, o React remonta com o alvo novo.
-          */
-          key={`${contaEscolhida?.id ?? ""}:${typeof query.item === "string" ? query.item : ""}`}
-          accounts={accounts}
-          {...(contaEscolhida !== null ? { initialAccountId: contaEscolhida.id } : {})}
-          {...(typeof query.item === "string" ? { initialItemId: query.item } : {})}
+      {/*
+        A comparação chega DEPOIS da tabela: é a única parte que depende de
+        `get_link_integrity` (2,6 s a frio no Dev).
+      */}
+      <Suspense
+        fallback={
+          <div className="sb-vnc-espera" role="status">
+            <span className="sb-vnc-girando" aria-hidden="true" /> Carregando a comparação entre contas…
+          </div>
+        }
+      >
+        <ComparacaoContas
+          organizationId={organizationId}
+          contaEscolhidaId={contaEscolhida?.id ?? null}
+          slugs={accounts.map((a) => [a.id, a.slug] as const)}
+          filters={filters}
+          vendidosSemVinculoTabela={conta(cVendidosSemVinculo)}
         />
-
-        {/*
-          Leitura de volta: sem isto o operador vincula e não vê nada mudar em
-          lugar nenhum — o vínculo criado sai da fila de candidatos e não
-          aparece em parte alguma.
-        */}
-        {(manuais.data ?? []).length > 0 && (
-          <p style={{ margin: "var(--sb-space-2) 0 0", fontSize: "0.6875rem", color: "var(--sb-text-soft)" }}>
-            Últimos vínculos manuais:{" "}
-            {(manuais.data ?? [])
-              .map((m) => `${m.skus.sku} → ${m.item_id ?? "—"}`)
-              .join(" · ")}
-          </p>
-        )}
-      </div>
+      </Suspense>
     </Shell>
+  );
+}
+
+/**
+ * COMPARAÇÃO ENTRE CONTAS (D-128, restaurada em D-313), agora em streaming.
+ *
+ * NÃO obedece ao filtro de conta de propósito: comparar é o serviço deste
+ * painel. A fonte é a INDEPENDENTE (`get_link_integrity`, a partir de
+ * `order_items`), e por isso ele também declara a divergência com a tabela e a
+ * receita que entrou sem vínculo.
+ */
+async function ComparacaoContas({
+  organizationId,
+  contaEscolhidaId,
+  slugs,
+  filters,
+  vendidosSemVinculoTabela,
+}: {
+  organizationId: string;
+  contaEscolhidaId: string | null;
+  slugs: readonly (readonly [string, string])[];
+  filters: LinkIntegrityFilters;
+  vendidosSemVinculoTabela: number;
+}): Promise<ReactNode> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("get_link_integrity", {
+    p_organization_id: organizationId,
+    p_days: JANELA_DIAS,
+  });
+
+  if (error !== null) {
+    return (
+      <p role="alert" className="sb-note sb-note-perigo">
+        Não foi possível carregar a comparação entre contas: {error.message}
+      </p>
+    );
+  }
+
+  const porPedidos = data as LinkIntegrityRow[];
+
+  if (porPedidos.length === 0) return null;
+
+  const slugDaConta = new Map(slugs);
+  const doRecorte = contaEscolhidaId === null ? porPedidos : porPedidos.filter((l) => l.ml_account_id === contaEscolhidaId);
+  const vendidosPorPedido = doRecorte.reduce((soma, l) => soma + l.vendidos_sem_vinculo, 0);
+  const receitaSemVinculo = doRecorte.reduce((soma, l) => soma + l.receita_sem_vinculo, 0);
+  const divergencia = vendidosPorPedido - vendidosSemVinculoTabela;
+
+  return (
+    <Panel
+      title="Comparação entre contas"
+      subtitle={`Uma linha por conta, sem o filtro acima — comparar é o serviço deste painel. As colunas de catálogo usam a MESMA definição de vínculo da faixa (D-122); a última vem dos pedidos dos últimos ${String(JANELA_DIAS)} dias, a fonte independente. Clique numa conta para recortar a tabela.`}
+    >
+      {(receitaSemVinculo > 0 || divergencia > 0) && (
+        <p className="sb-vnc-receita">
+          {receitaSemVinculo > 0 && (
+            <>
+              <b>{formatCurrency(receitaSemVinculo)}</b> de receita em {String(JANELA_DIAS)} dias veio de anúncios sem
+              vínculo — venda sem baixa de estoque no SKU.
+            </>
+          )}
+          {divergencia > 0 && (
+            <>
+              {" "}
+              Pelos pedidos são <b>{formatCount(vendidosPorPedido)}</b> anúncios vendidos sem vínculo,{" "}
+              {formatCount(divergencia)} a mais que a tabela: o pipeline de métricas ainda não os conhece.
+            </>
+          )}
+        </p>
+      )}
+
+      <div className="sb-vnc-tabela-rolagem">
+        <table className="sb-table">
+          <thead>
+            <tr>
+              <th>Conta</th>
+              <th className="sb-num">Anúncios</th>
+              <th className="sb-num">Vinculados</th>
+              <th className="sb-num">Sem vínculo</th>
+              <th className="sb-num">% vinculado</th>
+              <th className="sb-num">Candidatos</th>
+              <th className="sb-num">Vendidos sem vínculo</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {porPedidos.map((linha) => {
+              const slug = slugDaConta.get(linha.ml_account_id) ?? null;
+              const selecionada = contaEscolhidaId === linha.ml_account_id;
+
+              return (
+                <tr key={linha.ml_account_id} className={selecionada ? "sb-vnc-conta-foco" : undefined}>
+                  <td>
+                    {slug === null ? (
+                      linha.account_label
+                    ) : (
+                      <Link
+                        className="sb-entity"
+                        aria-current={selecionada ? "true" : undefined}
+                        href={buildLinkIntegrityHref(filters, { accountSlug: selecionada ? null : slug, page: 1 })}
+                      >
+                        {linha.account_label}
+                      </Link>
+                    )}
+                    {selecionada && <small className="sb-vnc-mudo"> · em foco</small>}
+                  </td>
+                  <td className="sb-num">{formatCount(linha.listings_total)}</td>
+                  <td className="sb-num">{formatCount(linha.com_vinculo)}</td>
+                  <td className="sb-num">{formatCount(linha.sem_vinculo)}</td>
+                  <td className="sb-num">
+                    {/* Sem anúncio nenhum não há percentual — "0%" afirmaria que nenhum está vinculado. */}
+                    {linha.listings_total === 0 ? (
+                      "—"
+                    ) : (
+                      <span className="sb-vnc-pct">
+                        <span className="sb-vnc-pct-barra" aria-hidden="true">
+                          <i style={{ width: `${String(Math.min(100, Math.max(0, linha.pct_vinculado)))}%` }} />
+                        </span>
+                        {String(linha.pct_vinculado)}%
+                      </span>
+                    )}
+                  </td>
+                  <td className="sb-num">{formatCount(linha.candidatos_abertos)}</td>
+                  <td className="sb-num">
+                    {linha.vendidos_sem_vinculo > 0 ? (
+                      <b className="sb-vnc-vendas-alerta">{formatCount(linha.vendidos_sem_vinculo)}</b>
+                    ) : (
+                      formatCount(0)
+                    )}
+                    <small className="sb-vnc-bloco">{formatCurrency(linha.receita_sem_vinculo)}</small>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/*
+        A divergência que D-117 mediu: a fila de candidatos só conhece a
+        planilha do UpSeller.
+      */}
+      {porPedidos.some((l) => l.vendidos_sem_vinculo > 0 && l.candidatos_abertos === 0) && (
+        <p className="sb-vnc-receita">
+          <b>Divergência:</b> há conta com anúncio que vendeu sem vínculo e fila de candidatos vazia. O gerador de
+          candidatos só conhece a planilha do UpSeller — esses saem pelo <b>Vincular</b> da tabela.
+        </p>
+      )}
+    </Panel>
   );
 }

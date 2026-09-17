@@ -13277,3 +13277,51 @@ Continua igual: classificacao e marca em lote com a conferencia que diz a conseq
 - visual em 1440 px (catalogo e recorte filtrado) e 390 px, com 60 SKUs de demonstracao inseridos e apagados no banco local.
 
 **Impacto:** `supabase/migrations/20260917190000_products_overview.sql`; `packages/db/src/{types,rls.integration.test}.ts`; `apps/web/app/produtos/{page,curation-table}.tsx`; `apps/web/lib/{curation-filters,products-overview}.ts` e testes; `apps/web/app/globals.css` (`sb-prod-*`); `apps/web/e2e/produtos.spec.ts`.
+
+## D-374 - Vinculacoes: vincular num popup com o SKU sugerido pelos pedidos, sem a tela rolar, e a pagina que nao espera a leitura lenta
+
+**Contexto:** pedido do dono: "trabalhe na tela de vinculacao, para deixar ela mais bonita, rapida, bastante qualidade e mais facil vincular, pois sempre que clicamos para vincular algo a tela leva-nos la para baixo; o melhor jeito acho que seria um popup, priorizando qualidade e desempenho da pagina". Divisao combinada com a sessao da D-362 (vinculo por USER_PRODUCT e vinculacao em massa): esta fatia fica com `apps/web/app/vinculacoes/*`; RPCs de vinculo, worker e importacao sao dela. Leitura tolerante ao `vinculo_via` que a D-362 pode acrescentar.
+
+**1. O QUE ESTAVA RUIM -- medido**
+
+- o "Vincular" de cada linha era um link para a PROPRIA pagina com `#vincular-a-mao`: refazia as oito leituras e rolava ate o formulario no fim;
+- o formulario pedia o SKU sem nenhuma pista, e a busca ia ao banco a cada tecla, sem descartar resposta atrasada e so pelo codigo;
+- Dev como `authenticated`: `get_listings_dashboard` ~120-150 ms por chamada (cinco em paralelo); **`get_link_integrity` ~250 ms quente e 2,6 s a frio** -- e a pagina inteira esperava por ela, que so alimenta a comparacao entre contas e uma ressalva.
+
+**2. A SUGESTAO -- `get_listing_link_suggestions` (migration `20260917200000`)**
+
+Nao ha tabela de variacao nem SKU do vendedor em `listings` (o sync nao le `variations[]`). Mas cada item de pedido guarda o `seller_sku` digitado no ML e a `variation_id` vendida. **No Dev, dos 867 anuncios sem vinculo (90 dias), 587 tem `seller_sku` nos pedidos e 505 casam EXATAMENTE com um `sku_key` do catalogo.**
+
+A funcao agrega os itens de pedido do anuncio por (`variation_id`, `seller_sku` normalizado como a coluna gerada, `upper(btrim())`) -- pedidos, unidades, ultimo pedido, titulo mais recente -- cruza com `skus.sku_key` e devolve tambem os vinculos ja existentes do anuncio. So leitura, `security invoker`, nova (nao altera funcao de vinculo). A agregacao e do banco: o anuncio mais vendido do Dev tem 5.843 itens de pedido. Pelo indice `order_items_listing_idx`, **13-95 ms por anuncio** (funcao em `pg_temp`, `authenticated`, anuncios reais sem vinculo: FA160, 13014, 11005, 750.1211 sugeridos certos).
+
+**Sugestao so quando e inequivoca** (`lib/vinculo-sugestao.ts`, a mesma regra que a D-362 usa na vinculacao em massa): um SKU so no alvo e nenhum `seller_sku` sem cadastro disputando. Dois SKUs, ou um casado e outro inexistente, lista as opcoes do que mais vendeu ao que menos e NAO pre-seleciona.
+
+**3. O POPUP (`vincular-dialog.tsx`)**
+
+- abre sobre a tabela, sem navegar; Esc e clique fora fecham; a pagina por tras nao rola;
+- cabecalho com titulo, MLB (link para o dashboard do anuncio), conta, preco e vendas em 30 dias;
+- **aviso de anuncio Full** (estoque no Full): ate a D-352, o vinculo de anuncio Full baixa a LOJA por engano (alerta da sessao da D-362);
+- **alvos**: anuncio com variacao nos pedidos vira um alvo por variacao, da que mais vende a que menos; variacao ja vinculada aparece e nao e oferecida; o popup fica aberto ate a ultima; anuncio ja vinculado inteiro diz isso e manda trocar SKU pela pagina do SKU. A forma respeita "mistura de formas" (D-125) antes do clique;
+- **SKU**: as opcoes vistas nos pedidos (com "sugerido"), os codigos sem cadastro citados, e a busca nova (`busca-sku.tsx`: codigo OU titulo, espera de 220 ms, descarte de resposta atrasada, teclado, lista no fluxo do popup para nao ser cortada);
+- "Vincular" e **"Vincular e proximo"** (o proximo sem vinculo da pagina);
+- tres modos: anuncio da tabela, **candidato do ERP** (SKU informado ja buscado; resolve e fecha o candidato na mesma transacao, ou descarta) e **MLB digitado** (conferido no catalogo sincronizado antes -- D-316: MLB errado viraria vinculo morto).
+
+**4. DESEMPENHO**
+
+- as acoes `createManualLink`, `resolveLinkCandidate` e `dismissLinkCandidate` ganharam `{ revalidar: false }` (padrao continua revalidando, e a tela do SKU nao muda): com `revalidatePath` a resposta so voltava depois de a pagina inteira ser refeita. O popup muda a linha NA HORA ("Vinculado agora" com o SKU) e chama `router.refresh()` numa transicao, em segundo plano;
+- **comparacao entre contas em `Suspense`** (`ComparacaoContas`): a tabela e a faixa chegam sem esperar `get_link_integrity`; a ressalva de divergencia entre as fontes e a receita sem vinculo foram junto para o painel dela;
+- `?item=` (link de outra tela) abre o popup direto no anuncio, sem ancora.
+
+**5. A PAGINA**
+
+Cabecalho com "Vincular um MLB"; faixa de cinco celulas igual; tabela com titulo e MLB juntos (selo Full), estado como selo, vendas sem vinculo em vermelho com a faixa na linha, botao "Vincular" na linha; busca, conta, estado, venda e "Limpar"; paginacao no painel; candidatos do ERP e "ultimos vinculos manuais" lado a lado; comparacao com barra de % vinculado. `candidate-row.tsx`, `manual-link-form.tsx` e `components/use-sku-search.ts` (sem outro consumidor) sairam.
+
+**6. VERIFICACAO**
+
+`typecheck`, `lint`, `next build`, os quatro guardas e a suite de unidade da web (8 testes novos de `planejarVinculo`/leitor; os de `buildManualLinkHref` ajustados -- sem a ancora que rolava a pagina). Integracao: 3 casos novos (normalizacao `upper(btrim)` do `seller_sku`, uma linha por variacao com codigo sem cadastro, outra organizacao vazia e anon negado), verdes no banco local. E2E contra `next start` e o seed: `vinculacoes` (6, 2 novos -- o "Vincular" abre o popup sem mudar a URL, o botao so habilita com SKU, Esc fecha; `?item=` abre o popup) e `sku-dashboard` (9, inclui vincular e remover pela tela do SKU com a acao no modo padrao), 15 verdes. Local, tabela visivel em ~530-610 ms e comparacao logo depois.
+
+Capturas a 1440 px e 390 px (popup em tela cheia, sem rolagem lateral) com a resposta da funcao SIMULADA no navegador: o seed nao tem `seller_sku`. A conta real e a do Dev, na secao 2. Dois ajustes vieram delas: o corpo do popup esticava as linhas no celular, e a variacao ambigua nao dizia por que nao tinha sugestao.
+
+- **migration precisa chegar a producao antes da promocao da web**; antes disso o popup abre sem sugestao ("Sem sugestao agora") e a busca funciona -- nada quebra;
+- ordem das migrations combinada: `20260917190000` (D-373) antes desta `20260917200000`;
+- a D-362 deve acrescentar `vinculo_via` nas leituras de vinculo: a tela ja ignora coluna desconhecida.

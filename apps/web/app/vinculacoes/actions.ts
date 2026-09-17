@@ -21,6 +21,17 @@ export interface ActionResult {
   message: string | null;
 }
 
+/**
+ * `revalidar: false` é do popup de /vinculacoes (D-374). Com `revalidatePath`,
+ * a resposta da ação só volta DEPOIS de a página inteira ser refeita (oito
+ * leituras) — o operador clicava "Vincular" e esperava a página toda. O popup
+ * atualiza a linha na hora e pede o refresh em segundo plano. Quem não passa
+ * nada (a tela do SKU) continua revalidando como antes.
+ */
+export interface OpcoesDeGravacao {
+  revalidar?: boolean;
+}
+
 function describeRpcError(error: { message: string } | null): string | null {
   if (error === null) return null;
 
@@ -39,7 +50,11 @@ function describeRpcError(error: { message: string } | null): string | null {
   return "Não foi possível concluir a ação.";
 }
 
-export async function resolveLinkCandidate(candidateId: string, skuId: string): Promise<ActionResult> {
+export async function resolveLinkCandidate(
+  candidateId: string,
+  skuId: string,
+  opcoes: OpcoesDeGravacao = {},
+): Promise<ActionResult> {
   const supabase = await createClient();
 
   const { error } = await supabase.rpc("resolve_link_candidate", {
@@ -53,7 +68,7 @@ export async function resolveLinkCandidate(candidateId: string, skuId: string): 
     return { ok: false, message };
   }
 
-  revalidatePath("/vinculacoes");
+  if (opcoes.revalidar !== false) revalidatePath("/vinculacoes");
 
   return { ok: true, message: null };
 }
@@ -71,7 +86,10 @@ export async function resolveLinkCandidate(candidateId: string, skuId: string): 
  * `resolve_link_candidate` continua sendo RPC porque escreve em DUAS tabelas
  * na mesma transação. Aqui não há candidato para fechar.
  */
-export async function createManualLink(fields: ManualLinkFields): Promise<ActionResult> {
+export async function createManualLink(
+  fields: ManualLinkFields,
+  opcoes: OpcoesDeGravacao = {},
+): Promise<ActionResult> {
   const parsed = parseManualLink(fields);
 
   if (!parsed.ok) {
@@ -100,13 +118,15 @@ export async function createManualLink(fields: ManualLinkFields): Promise<Action
     return { ok: false, message };
   }
 
-  revalidatePath("/vinculacoes");
+  if (opcoes.revalidar !== false) revalidatePath("/vinculacoes");
 
   return { ok: true, message: null };
-
 }
 
-export async function dismissLinkCandidate(candidateId: string): Promise<ActionResult> {
+export async function dismissLinkCandidate(
+  candidateId: string,
+  opcoes: OpcoesDeGravacao = {},
+): Promise<ActionResult> {
   const supabase = await createClient();
 
   const { error } = await supabase.rpc("dismiss_link_candidate", { p_candidate_id: candidateId });
@@ -117,7 +137,7 @@ export async function dismissLinkCandidate(candidateId: string): Promise<ActionR
     return { ok: false, message };
   }
 
-  revalidatePath("/vinculacoes");
+  if (opcoes.revalidar !== false) revalidatePath("/vinculacoes");
 
   return { ok: true, message: null };
 }

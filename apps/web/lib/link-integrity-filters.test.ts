@@ -94,9 +94,9 @@ describe("href da vinculação manual", () => {
    * (slug, o mesmo vocabulário do filtro) e o MLB que o formulário pré-preenche.
    * Um id cru aqui abriria um segundo vocabulário para a dimensão "conta".
    */
-  it("leva conta e MLB, e termina no formulário", () => {
+  it("leva conta e MLB, sem âncora que role a página (D-374)", () => {
     expect(buildManualLinkHref(base, { accountSlug: "e2e-loja", itemId: "MLB123" })).toBe(
-      "/vinculacoes?conta=e2e-loja&item=MLB123#vincular-a-mao",
+      "/vinculacoes?conta=e2e-loja&item=MLB123",
     );
   });
 
@@ -104,13 +104,13 @@ describe("href da vinculação manual", () => {
     const atual: LinkIntegrityFilters = { ...base, state: "sem-vinculo", sold: "vendeu", search: "PNEU", page: 4 };
 
     expect(buildManualLinkHref(atual, { accountSlug: "e2e-loja", itemId: "MLB123" })).toBe(
-      "/vinculacoes?estado=sem-vinculo&venda=vendeu&conta=e2e-loja&busca=PNEU&item=MLB123#vincular-a-mao",
+      "/vinculacoes?estado=sem-vinculo&venda=vendeu&conta=e2e-loja&busca=PNEU&item=MLB123",
     );
   });
 
   it("sem conta conhecida, o MLB ainda viaja", () => {
     expect(buildManualLinkHref(base, { accountSlug: null, itemId: "MLB123" })).toBe(
-      "/vinculacoes?item=MLB123#vincular-a-mao",
+      "/vinculacoes?item=MLB123",
     );
   });
 });
