@@ -4,6 +4,7 @@ import type { MercadoLivreClient, MercadoLivreOAuthConfig } from "@sb/mercado-li
 import {
   MercadoLivreApiError,
   PRODUCT_ADS_MAX_DAYS_BACK,
+  ProductAdsFormatoInesperado,
   fetchProductAdsAdvertiser,
   fetchProductAdsCampaignDailyMetrics,
   fetchProductAdsCampaigns,
@@ -108,6 +109,7 @@ export function createSyncAdsCampaignsHandler(deps: SyncAdsCampaignsDeps): JobHa
     let campanhasLidas = 0;
     let diasGravados = 0;
     let campanhasComFalha = 0;
+    let ultimoFormato: string | null = null;
 
     try {
       const anunciante = await fetchProductAdsAdvertiser(deps.mercadoLivre, token.accessToken);
@@ -201,6 +203,20 @@ export function createSyncAdsCampaignsHandler(deps: SyncAdsCampaignsDeps): JobHa
             continue;
           }
 
+          // Formato que não se reconhece NÃO é retryable: repetir recebe a mesma
+          // coisa. A campanha fica de fora com as chaves no log e no motivo da
+          // rodada, e as outras seguem (medido em produção, 16/09/2026).
+          if (error instanceof ProductAdsFormatoInesperado || error instanceof z.ZodError) {
+            campanhasComFalha += 1;
+            ultimoFormato = error.message.slice(0, 300);
+            context.logger.warn("sync_ads_campaigns_campaign_format", {
+              ml_account_id: mlAccountId,
+              campaign_id: campanha.id,
+              reason: ultimoFormato,
+            });
+            continue;
+          }
+
           throw error;
         }
 
@@ -255,7 +271,14 @@ export function createSyncAdsCampaignsHandler(deps: SyncAdsCampaignsDeps): JobHa
         startedAt: now,
         finishedAt,
         status: partial ? "partial" : "done",
-        ...(partial ? { reason: `${String(campanhasComFalha)} campanha(s) recusadas pelo Mercado Livre (404/403)` } : {}),
+        ...(partial
+          ? {
+              reason:
+                ultimoFormato === null
+                  ? `${String(campanhasComFalha)} campanha(s) recusadas pelo Mercado Livre (404/403)`
+                  : `${String(campanhasComFalha)} campanha(s) sem métricas legíveis: ${ultimoFormato}`,
+            }
+          : {}),
       },
       context.logger,
     );

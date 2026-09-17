@@ -640,10 +640,10 @@ Pedidos do dono em 16/09/2026, depois de `/faturamento` (D-356). Não reabre mar
 - [x] **Calculadora de preço** no `/faturamento` — Mercado Livre (12% clássico / 17% premium, frete oficial pela cotação do ML a partir de R$ 19) e Shopee (tabela por faixa) — ✔ 2026-09-16 · D-359. API de produção `api-00006-gxz`
 - [x] **Listas de produtos do Faturamento** com rolagem própria e sem rolagem lateral — ✔ 2026-09-16 (`edf2d5b`)
 - [x] **Mercado Ads — análise de campanhas** (Product Ads, API oficial): sync diário por conta, faixa (investimento, vendas, ROAS, ACOS, TACoS), barras por dia, campanhas com ROAS contra o alvo — ✔ código 2026-09-16 · D-363
-  - [ ] Migration `20260916165243` em produção (workflow "Migrations de produção", duas aprovações)
-  - [ ] Deploy worker → api em produção com `sync.ads.campaigns` e `/internal/schedule/ads`
-  - [ ] `infra/cloud-scheduler.sh` em produção (job `v3-ads-campaigns-sync`, 11h) — só depois da migration
-  - [ ] Primeira rodada real conferida: conta habilitada ou não, campanhas e métricas gravadas, tela com número
+  - [x] Migration `20260916165243` em produção (workflow "Migrations de produção", duas aprovações)
+  - [x] Deploy worker → api em produção com `sync.ads.campaigns` e `/internal/schedule/ads`
+  - [x] `infra/cloud-scheduler.sh` em produção (job `v3-ads-campaigns-sync`, 11h) — só depois da migration
+  - [x] Primeira rodada real conferida: conta habilitada ou não, campanhas e métricas gravadas, tela com número — ✔ 2026-09-16: 3 contas com campanhas (13, 13 e 24) e 90 dias cada (1.170, 1.170 e 2.160 dias), worker `worker-00008-4jm` depois do formato real das métricas (`1c0749c`)
 - [ ] **Afiliados no Faturamento** — **FUTURO, escopo registrado em 2026-09-16.** O dono usa os três modelos, e cada um tem uma fonte diferente:
   - [ ] **Afiliados do Mercado Livre** (programa de afiliados/criadores): a lista de APIs do ML não tem endpoint de afiliados. Primeiro passo: descobrir onde a comissão aparece — desconto no pedido (`order_items`/`payments`), relatório de faturamento do ML (`Relatórios de Faturamento`) ou só no painel. Sem fonte confirmada, não entra número (D-023)
   - [ ] **Afiliados da Shopee**: comissão definida pelo vendedor e descontada da venda. O sistema não tem integração com a Shopee; caminho provável é importação do relatório exportado da Shopee (mesmo desenho do importador da planilha do UpSeller, D-028/D-278), ou lançamento manual por período

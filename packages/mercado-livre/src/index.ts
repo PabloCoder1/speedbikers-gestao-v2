@@ -114,6 +114,7 @@ export type { LogisticaMl, ShippingQuote, ShippingQuoteInput, ShippingQuoteRespo
 export {
   PRODUCT_ADS_MAX_DAYS_BACK,
   PRODUCT_ADS_METRICS,
+  ProductAdsFormatoInesperado,
   fetchProductAdsAdvertiser,
   fetchProductAdsCampaignDailyMetrics,
   fetchProductAdsCampaigns,
