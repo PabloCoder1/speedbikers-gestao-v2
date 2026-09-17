@@ -1,6 +1,13 @@
 import type { AdminClient } from "@sb/db";
-import { computeReturnReversal, computeUnreversedReturn } from "@sb/domain";
-import type { RecordedSaleMovement } from "@sb/domain";
+import {
+  cancelledInSheetKeys,
+  computeReturnReversal,
+  computeUnreversedReturn,
+  estornadoKeyOf,
+  isCancelledOrderStatus,
+  revertedSaleKeyOf,
+} from "@sb/domain";
+import type { RecordedReversal, RecordedSaleMovement } from "@sb/domain";
 import { MercadoLivreApiError } from "@sb/mercado-livre";
 import type { MercadoLivreClient } from "@sb/mercado-livre";
 import type { Logger } from "@sb/observability";
@@ -9,6 +16,7 @@ import { claimReturnSchema, claimSchema } from "./claim-schema.js";
 import type { ParsedClaimReturn } from "./claim-schema.js";
 import { recordDomainEvents } from "./domain-events.js";
 import { ingestSupportClaim } from "./ingest-support-claim.js";
+import { readErpCutoffs } from "./persist-order.js";
 import { recordStockMovements } from "./stock-movements.js";
 
 /**
@@ -70,18 +78,34 @@ export interface ProcessClaimReturnContext {
   mlAccountId: string;
 }
 
-async function loadSaleMovements(
-  db: AdminClient,
-  organizationId: string,
-  orderId: number,
-): Promise<RecordedSaleMovement[]> {
+interface OrderMovements {
+  sales: RecordedSaleMovement[];
+  /** `CANCELAMENTO_ML` e `DEVOLUCAO_ML` já gravados: o limite da devolução. */
+  reversals: RecordedReversal[];
+  /** Chaves de `VENDA_ML` com `ESTORNO_PRE_CAPTURA` gravado (D-351). */
+  estornadas: Set<string>;
+}
+
+/**
+ * As vendas do pedido e as reversões já gravadas delas.
+ *
+ * Verificação de e6fda07, ALTA-1: cancelamento e devolução revertem a MESMA
+ * venda, e a unidade volta ao estoque no máximo uma vez. Sem ler o
+ * cancelamento (origem do pedido) e as outras devoluções (origem do claim,
+ * pedido dentro da chave — `get_order_return_movements`), a devolução entregue
+ * de um pedido já cancelado devolveria a unidade de novo. Chave de reversão fora
+ * do formato LANÇA (`revertedSaleKeyOf`).
+ */
+async function loadOrderMovements(db: AdminClient, organizationId: string, orderId: number): Promise<OrderMovements> {
   const result = await db
     .from("stock_movements")
-    .select("sku_id, qty_delta, idempotency_key")
+    .select("sku_id, qty_delta, idempotency_key, movement_type")
     .eq("organization_id", organizationId)
     .eq("source_type", "ORDER")
     .eq("source_id", String(orderId))
-    .eq("movement_type", "VENDA_ML");
+    // `ESTORNO_PRE_CAPTURA` desde a reverificação de 60c7a6a (BAIXA-1): a venda estornada
+    // cujo cancelamento a planilha já contém (`loadCancelledInSheet`).
+    .in("movement_type", ["VENDA_ML", "CANCELAMENTO_ML", "ESTORNO_PRE_CAPTURA"]);
 
   if (result.error !== null) {
     // Não tratar como "nenhum movimento": a devolução física reverteria
@@ -89,11 +113,124 @@ async function loadSaleMovements(
     throw new Error(`falha ao ler stock_movements da order ${String(orderId)}: ${result.error.message}`);
   }
 
-  return result.data.map((row) => ({
-    skuId: row.sku_id,
-    qtyDelta: row.qty_delta,
-    idempotencyKey: row.idempotency_key,
-  }));
+  const sales: RecordedSaleMovement[] = [];
+  const reversals: RecordedReversal[] = [];
+  const estornadas = new Set<string>();
+
+  for (const row of result.data) {
+    if (row.movement_type === "CANCELAMENTO_ML") {
+      revertedSaleKeyOf(row.idempotency_key);
+      reversals.push({ idempotencyKey: row.idempotency_key, quantity: row.qty_delta });
+    } else if (row.movement_type === "ESTORNO_PRE_CAPTURA") {
+      // Chave fora do formato `estorno:<venda>` LANÇA: um estorno que não diz qual venda anulou.
+      estornadas.add(estornadoKeyOf(row.idempotency_key));
+    } else {
+      sales.push({ skuId: row.sku_id, qtyDelta: row.qty_delta, idempotencyKey: row.idempotency_key });
+    }
+  }
+
+  if (sales.length === 0) {
+    // Sem venda gravada não há o que reverter, nem devolução gravada dela.
+    return { sales, reversals, estornadas };
+  }
+
+  const devolucoes = await db.rpc("get_order_return_movements", {
+    p_organization_id: organizationId,
+    p_order_ids: [String(orderId)],
+  });
+
+  if (devolucoes.error !== null) {
+    // Não tratar como "nenhuma devolução": a segunda devolução (outro claim)
+    // devolveria a unidade de novo.
+    throw new Error(`falha ao ler as devolucoes gravadas da order ${String(orderId)}: ${devolucoes.error.message}`);
+  }
+
+  // O tipo gerado diz que `data` nunca é nulo sem erro; o PostgREST não promete isso, e
+  // "data nulo" tratado como "nenhuma devolução" devolveria a unidade de novo.
+  const linhas: unknown = devolucoes.data;
+
+  if (!Array.isArray(linhas)) {
+    throw new Error(`falha ao ler as devolucoes gravadas da order ${String(orderId)}: data nulo sem erro`);
+  }
+
+  for (const row of devolucoes.data) {
+    revertedSaleKeyOf(row.idempotency_key);
+    reversals.push({ idempotencyKey: row.idempotency_key, quantity: row.qty_delta });
+  }
+
+  return { sales, reversals, estornadas };
+}
+
+/**
+ * As vendas estornadas do pedido cujo cancelamento a planilha já contém
+ * (reverificação de 60c7a6a, BAIXA-1).
+ *
+ * A venda estornada cancelada até a exportação do corte não grava
+ * `CANCELAMENTO_ML` (`persist-order`): a planilha já tem a unidade de volta. Sem
+ * nada gravado, a devolução entregue depois a devolveria uma segunda vez. A
+ * pergunta é a mesma do cancelamento (`sheetContainsCancellation`), sobre o
+ * pedido como `persist-order` o gravou: `date_last_updated` é o instante da
+ * última leitura, e ele só é conhecido com `last_updated` ou com
+ * `date_last_updated` diferente de `date_created` -- `persist-order` grava
+ * `date_last_updated ?? last_updated ?? date_created`.
+ *
+ * Só lê o pedido e o corte quando há venda estornada, e o corte só com o pedido
+ * cancelado. Leitura que falha LANÇA: "não sei" não vira "a planilha não contém".
+ */
+async function loadCancelledInSheet(
+  db: AdminClient,
+  organizationId: string,
+  orderId: number,
+  movements: OrderMovements,
+): Promise<Set<string>> {
+  const estornadas = movements.sales.filter((sale) => movements.estornadas.has(sale.idempotencyKey));
+
+  if (estornadas.length === 0) {
+    return new Set();
+  }
+
+  const pedido = await db
+    .from("orders")
+    .select("status, date_created, date_last_updated, last_updated")
+    .eq("organization_id", organizationId)
+    .eq("id", orderId)
+    .maybeSingle();
+
+  if (pedido.error !== null) {
+    throw new Error(`falha ao ler o status da order ${String(orderId)}: ${pedido.error.message}`);
+  }
+
+  if (pedido.data === null) {
+    throw new Error(
+      `order ${String(orderId)} com venda estornada e sem linha em orders -- sem ela nao da para saber se a planilha ja contem o cancelamento (D-351)`,
+    );
+  }
+
+  const { status, date_created: criadoEm, date_last_updated: atualizadoEm, last_updated: lastUpdated } = pedido.data;
+
+  if (!isCancelledOrderStatus(status)) {
+    return new Set();
+  }
+
+  const occurredAt = new Date(atualizadoEm);
+  const occurredAtKnown = lastUpdated !== null || occurredAt.getTime() !== new Date(criadoEm).getTime();
+  const cortes = await readErpCutoffs(
+    db,
+    organizationId,
+    estornadas.map((sale) => sale.skuId),
+  );
+
+  return new Set(
+    cancelledInSheetKeys({ id: orderId, status, occurredAt, occurredAtKnown }, estornadas, movements.estornadas, (skuId) => {
+      const corte = cortes.get(skuId);
+
+      if (corte === undefined) {
+        throw new Error(`corte do snapshot do ERP nao lido para o SKU ${skuId} (order ${String(orderId)}) (D-351)`);
+      }
+
+      return corte;
+    }),
+  );
 }
 
 /** Mesma forma de `resolveSku` em `persist-order.ts`: `variation_id` nulo precisa de `.is()`, não `.eq()`. */
@@ -249,14 +386,17 @@ export async function processClaimReturn(
       continue;
     }
 
-    const saleMovements = await loadSaleMovements(deps.db, context.organizationId, returnedOrder.order_id);
+    const movimentos = await loadOrderMovements(deps.db, context.organizationId, returnedOrder.order_id);
+    const naPlanilha = await loadCancelledInSheet(deps.db, context.organizationId, returnedOrder.order_id, movimentos);
 
     const reversal = computeReturnReversal(
       { id: returnedOrder.order_id },
       { position, totalQuantity: returnedOrder.total_quantity, returnQuantity: returnedOrder.return_quantity },
-      saleMovements,
+      movimentos.sales,
+      movimentos.reversals,
       claimId,
       now,
+      naPlanilha,
     );
 
     if (reversal.movements.length > 0) {
@@ -270,6 +410,18 @@ export async function processClaimReturn(
     }
 
     await recordDomainEvents(deps.db, context, [reversal.event], logger);
+
+    if (reversal.alreadyReversed.length > 0) {
+      // Verificação de e6fda07, ALTA-1: o cancelamento (ou outra devolução) já
+      // devolveu a unidade. Nada gravado no saldo, e o evento leva
+      // `movementsAlreadyReversed`.
+      logger.info("claim_return_ja_revertida", {
+        claim_id: claimId,
+        order_id: returnedOrder.order_id,
+        position,
+        vendas: reversal.alreadyReversed.length,
+      });
+    }
 
     if (!reversal.fullReversal) {
       logger.warn("claim_return_needs_manual_review", {

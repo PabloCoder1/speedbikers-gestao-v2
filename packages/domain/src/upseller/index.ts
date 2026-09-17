@@ -39,3 +39,4 @@ export type {
   UpsellerStock,
 } from "./rows.js";
 export * from "./apply.js";
+export { resolveStockExportInstant } from "./export-instant.js";
