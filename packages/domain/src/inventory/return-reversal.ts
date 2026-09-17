@@ -2,8 +2,9 @@ import { EVENT_SEVERITY } from "../events/catalog.js";
 import type { DomainEventDraft } from "../events/order-events.js";
 import type { RecordedSaleMovement } from "./cancellation-reversal.js";
 import { remainingToReverse, returnKeyOf } from "./reversal-limit.js";
-import type { RecordedReversal } from "./reversal-limit.js";
-import type { StockMovementDraft } from "./sale-deduction.js";
+import type { TimedRecordedReversal } from "./reversal-limit.js";
+import { fullEstornoOf, fullReversalEstornosOf, isFullLogistic } from "./sale-deduction.js";
+import type { OrderLogisticType, StockMovementDraft } from "./sale-deduction.js";
 
 /**
  * Reversão de estoque por devolução (pós-venda, D-057) — a peça pura de
@@ -26,6 +27,14 @@ import type { StockMovementDraft } from "./sale-deduction.js";
  * em vez de inventar uma proporção, o evento sai com `needsManualReview:
  * true` e nenhum movimento é gravado; o ajuste manual (`/estoque`, já
  * implementado) é o caminho até essa regra ter dado real para se basear.
+ *
+ * **D-352 — pedido entregue pelo Full não repõe a loja.** O produto devolvido
+ * volta para o galpão do Mercado Livre, não para a prateleira daqui, e o saldo
+ * LOCAL nunca perdeu a unidade: repor seria somar uma unidade que a loja não
+ * tem. A devolução de pedido `fulfillment` sai sem `DEVOLUCAO_ML` — e, quando a
+ * venda gravada ainda não tem par, com o `ESTORNO_FULL` que falta (R3). É o
+ * mesmo desenho de `cancelamentoDoFull`, porque é a mesma pergunta: "esta
+ * unidade era da loja?".
  */
 
 export interface ReturnedOrderItem {
@@ -34,8 +43,36 @@ export interface ReturnedOrderItem {
   readonly returnQuantity: number;
 }
 
+/**
+ * Um `VENDA_ML` gravado, com o instante dele: é o `occurred_at` que o
+ * `ESTORNO_FULL` espelha (D-352). A devolução não precisava dele até aqui
+ * porque só revertia com o instante da DEVOLUÇÃO.
+ */
+export interface ReturnedSaleMovement extends RecordedSaleMovement {
+  /** `stock_movements.occurred_at` da venda. */
+  readonly occurredAt: Date;
+}
+
+/** O pedido devolvido, com o sinal de logística que decide se o estoque da loja se mexe (D-352). */
+export interface ReturnedOrder {
+  readonly id: number;
+  /** `orders.logistic_type` — só `fulfillment` é Full. */
+  readonly logisticType: OrderLogisticType;
+}
+
 export interface ReturnReversal {
   readonly movements: readonly StockMovementDraft[];
+  /**
+   * `ESTORNO_FULL` (D-352): o par que falta às vendas gravadas de um pedido
+   * entregue pelo Full. Vazio fora do Full.
+   */
+  readonly estornosFull: readonly StockMovementDraft[];
+  /**
+   * `ESTORNO_REVERSAO_EXCEDENTE`: num pedido do Full, a anulação de TODA
+   * reversão já gravada das vendas devolvidas (`fullReversalEstornosOf`). Vazio
+   * fora do Full — lá o excesso do legado é cuidado pelo caminho da venda.
+   */
+  readonly excessReversalEstornos: readonly StockMovementDraft[];
   /** `false` = devolução parcial, nenhum movimento gerado — ver nota acima. */
   readonly fullReversal: boolean;
   /**
@@ -61,27 +98,47 @@ export interface ReturnReversal {
  * dessas vendas (`cancelledInSheetKeys`) saem com restante zero.
  */
 export function computeReturnReversal(
-  order: { id: number },
+  order: ReturnedOrder,
   item: ReturnedOrderItem,
-  saleMovements: readonly RecordedSaleMovement[],
-  /** `CANCELAMENTO_ML` e `DEVOLUCAO_ML` já gravados do pedido. */
-  reversals: readonly RecordedReversal[],
+  saleMovements: readonly ReturnedSaleMovement[],
+  /** `CANCELAMENTO_ML` e `DEVOLUCAO_ML` já gravados do pedido, com o instante de cada um. */
+  reversals: readonly TimedRecordedReversal[],
   claimId: string,
   occurredAt: Date,
   /** Chaves de venda cujo cancelamento a planilha já contém (`cancelledInSheetKeys`). */
   cancelledInSheet: ReadonlySet<string> = new Set(),
+  /** Chaves de `VENDA_ML` que já têm estorno gravado (`ESTORNO_PRE_CAPTURA` ou `ESTORNO_FULL`). */
+  estornadas: ReadonlySet<string> = new Set(),
 ): ReturnReversal {
   const prefix = `venda:${String(order.id)}:${String(item.position)}`;
   const matched = saleMovements.filter(
     (m) => m.idempotencyKey === prefix || m.idempotencyKey.startsWith(`${prefix}:`),
   );
 
+  const doFull = isFullLogistic(order.logisticType);
   const fullReversal = item.returnQuantity >= item.totalQuantity && matched.length > 0;
 
   const movements: StockMovementDraft[] = [];
+  const estornosFull: StockMovementDraft[] = [];
+  const excessReversalEstornos: StockMovementDraft[] = [];
   const alreadyReversed: string[] = [];
 
-  if (fullReversal) {
+  if (doFull) {
+    // D-352, R3 — pedido entregue pelo Full: a devolução NÃO repõe a loja, em
+    // devolução inteira ou parcial. O produto volta para o galpão do Mercado
+    // Livre, não para a prateleira daqui, e o saldo LOCAL nunca perdeu a
+    // unidade. O que sai é o par que faltava à venda e a anulação do que o
+    // legado já devolveu — a mesma saída de `cancelamentoDoFull`, pela mesma
+    // razão, e com as mesmas chaves (o `UNIQUE` absorve a repetição entre os
+    // dois caminhos).
+    for (const m of matched) {
+      if (!estornadas.has(m.idempotencyKey)) {
+        estornosFull.push(fullEstornoOf(m));
+      }
+
+      excessReversalEstornos.push(...fullReversalEstornosOf(m, reversals));
+    }
+  } else if (fullReversal) {
     for (const m of matched) {
       const idempotencyKey = returnKeyOf(claimId, m.idempotencyKey);
       // A planilha já contém o cancelamento desta venda: a unidade já voltou, sem linha no ledger.
@@ -100,6 +157,8 @@ export function computeReturnReversal(
 
   return {
     movements,
+    estornosFull,
+    excessReversalEstornos,
     fullReversal,
     alreadyReversed,
     event: {
@@ -115,7 +174,16 @@ export function computeReturnReversal(
         // A devolução inteira que não moveu o saldo porque o cancelamento já
         // tinha devolvido a unidade: registrado, não silencioso.
         movementsAlreadyReversed: alreadyReversed.length,
-        needsManualReview: !fullReversal,
+        // D-352: a devolução de pedido do Full, e quantos pares faltavam à venda.
+        // Sem isso, o evento diria "0 movimentos revertidos" sem dizer por quê —
+        // indistinguível do caso em que o cancelamento já tinha devolvido tudo.
+        fullLogistic: doFull,
+        movementsEstornoFull: estornosFull.length,
+        // Devolução parcial de pedido do Full não pede gente: não há nada a
+        // ajustar no saldo da loja, que nunca perdeu a unidade. A revisão manual
+        // existe para a fração de KIT que a V3 não sabe arredondar, e essa
+        // pergunta só nasce quando a reposição é de verdade.
+        needsManualReview: !fullReversal && !doFull,
       },
       severity: EVENT_SEVERITY[eventType] ?? "importante",
       source: "sync",
