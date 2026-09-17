@@ -1662,7 +1662,7 @@ describe("POST /v1/listings/relist/:relistId/retry (D-364)", () => {
   /** Operação em RELIST_FAILED cuja última falha tem o `reason` dado. */
   function relistDeps(
     enqueued: EnqueueRequest[],
-    options: { lastFailedReason: string | null; organizationId?: string },
+    options: { lastFailedReason: string | null; organizationId?: string; semPermissaoNaConta?: boolean },
   ): RelistDeps {
     const terminal = (table: string) => {
       const self = {
@@ -1684,8 +1684,8 @@ describe("POST /v1/listings/relist/:relistId/retry (D-364)", () => {
                   }
                 : table === "listing_relist_events" && options.lastFailedReason !== null
                   ? { reason: options.lastFailedReason }
-                  : // Quem não é ADMIN TEM permissão na conta neste fake (D-117).
-                    table === "user_account_permissions"
+                  : // Quem não é ADMIN tem permissão na conta, salvo `semPermissaoNaConta` (D-117).
+                    table === "user_account_permissions" && options.semPermissaoNaConta !== true
                     ? { user_id: "u-admin" }
                     : null,
             error: null,
@@ -1769,6 +1769,18 @@ describe("POST /v1/listings/relist/:relistId/retry (D-364)", () => {
     expect(enqueued).toHaveLength(0);
   });
 
+  it("GESTOR sem permissão na CONTA responde 404 — a rota não fura o escopo por conta (D-117)", async () => {
+    const enqueued: EnqueueRequest[] = [];
+    const app = createApp({
+      logger: createLogger({}, { sink: () => undefined }),
+      auth: authWithRole("GESTOR"),
+      relist: relistDeps(enqueued, { lastFailedReason: "POST_RECUSADO", semPermissaoNaConta: true }),
+    });
+
+    expect((await post(app)).status).toBe(404);
+    expect(enqueued).toHaveLength(0);
+  });
+
   it("falha que não é recusa comprovada responde 409 com o motivo, e não enfileira", async () => {
     const enqueued: EnqueueRequest[] = [];
     const app = createApp({
@@ -1800,7 +1812,7 @@ describe("POST /v1/listings/relist/:relistId/retry (D-364)", () => {
       jobType: "relist.execute",
       queue: "ml-sync-speedbikers-loja-1",
       dedupeKey: `relist-retry:${RELIST_ID}:2026-09-17T12:00`,
-      payload: { relistId: RELIST_ID, retomada: true },
+      payload: { relistId: RELIST_ID, retomada: true, autorizadoPor: "u-admin" },
     });
   });
 });

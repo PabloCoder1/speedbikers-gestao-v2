@@ -1,4 +1,5 @@
 import type { AdminClient } from "@sb/db";
+import { readLastRelistFailureReason } from "@sb/db";
 import { isRelistRetryEligible } from "@sb/domain";
 import type { Logger } from "@sb/observability";
 import { z } from "zod";
@@ -201,25 +202,18 @@ export async function requestListingRelistRetry(
   }
 
   // A ÚLTIMA falha é a que conta: uma retomada que falhou de novo por outro
-  // motivo deixa de ser elegível.
-  const lastFailure = await deps.db
-    .from("listing_relist_events")
-    .select("reason")
-    .eq("relist_id", relistId)
-    .eq("to_status", "RELIST_FAILED")
-    .order("occurred_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  // motivo deixa de ser elegível. A consulta é a mesma da tela e do worker.
+  const lastFailure = await readLastRelistFailureReason(deps.db, relistId);
 
-  if (lastFailure.error !== null) {
-    return { status: "error", reason: lastFailure.error.message };
+  if (!lastFailure.ok) {
+    return { status: "error", reason: lastFailure.message };
   }
 
   const eligible = isRelistRetryEligible({
     status: row.status,
     parentItemId: row.parent_item_id,
     failureReason: row.failure_reason,
-    lastFailedEventReason: lastFailure.data?.reason ?? null,
+    lastFailedEventReason: lastFailure.reason,
   });
 
   if (!eligible) {
@@ -245,14 +239,17 @@ export async function requestListingRelistRetry(
     organizationId: caller.organizationId,
     dedupeKey: `relist-retry:${relistId}:${minuteWindow}`,
     queue: `ml-sync-${slug}`,
-    payload: { relistId, retomada: true },
+    // Quem autorizou vai no payload e o worker grava no evento da retomada:
+    // o histórico append-only guarda o ator humano (contrato de
+    // `listing_relist_events.actor_user_id`), não só o log.
+    payload: { relistId, retomada: true, autorizadoPor: caller.userId },
   });
 
   deps.logger.info("relist_retry_queued", {
     relist_id: relistId,
     parent_item_id: row.parent_item_id,
     confirmed_by: caller.userId,
-    last_failed_reason: lastFailure.data?.reason ?? null,
+    last_failed_reason: lastFailure.reason,
     deduplicated: enqueued.deduplicated,
   });
 
