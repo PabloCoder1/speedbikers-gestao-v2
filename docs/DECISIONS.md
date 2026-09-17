@@ -13207,3 +13207,34 @@ Capturas a 1440 px e 390 px (sem rolagem lateral) com a resposta da funcao SIMUL
 - **a migration precisa chegar a producao ANTES da promocao** da web; antes disso a coluna mostra "indisponivel" e o painel falha com aviso -- nada quebra;
 - a edicao do rascunho (`/compras/[id]/editar`) nao recebe `organizationId` nem marcas, entao nao tem a coluna nem o painel;
 - ordem de merge combinada: esta migration (`20260917170000`) antes da `20260917180000` da D-372.
+
+
+## D-372 - Excluir fornecedor so sem pedido de compra, e a faixa branca que o rotulo invisivel esticava
+
+**Contexto:** dois pedidos do dono sobre o cadastro de fornecedor ja no ar (D-367/D-370): uma captura de `/fornecedores/novo` com uma faixa branca embaixo do app ao rolar ate o fim, e "falta o botao de apagar fornecedor".
+
+**1. A FAIXA BRANCA -- medida, nao suposta**
+
+Reproduzida na janela do dono (1919 x 912): rolando o formulario ate o fim, o documento passava a ter **1053 px** e a janela inteira rolava 141 px, subindo o app e mostrando o fundo. O elemento que esticava a pagina era o rotulo "Observacoes" do textarea, com `sb-sr-only` -- `position: absolute` e nenhum ancestral posicionado. O bloco de contencao dele e a janela, entao o `overflow` do `<main>` nao o recorta, e a posicao dele (o fim do formulario) vira altura do DOCUMENTO. O input de arquivo da logo tinha a mesma forma. Correcao: `position: relative` nos campos do formulario (`.sb-fnv .sb-form-campo` e o rotulo do botao da logo). Medido depois: 912 px, sem rolagem da janela. `/compras/novo` tem um `span.sb-sr-only` da mesma forma que hoje termina dentro da janela -- avisado a quem mexe na tela.
+
+**2. EXCLUIR FORNECEDOR -- migration `20260917180000_delete_supplier.sql`**
+
+- **so sem NENHUM pedido de compra**, cancelado incluido. `purchase_orders.supplier_id` e `on delete restrict` desde a Fase 4 de proposito: o pedido guarda de quem se comprou. Com pedido, o caminho continua sendo inativar (D-366);
+- `delete_supplier(p_id)`, `security definer`: papel NA organizacao do fornecedor (`has_org_role`, D-180); com pedido, recusa com a contagem e a dica de inativar, em vez de deixar a FK estourar; devolve o caminho da logo para a web apagar o arquivo do bucket DEPOIS de o cadastro sumir;
+- timestamp depois de `20260917170000` (D-371, outra frente): o PR desta decisao entra na v3 depois do dela.
+
+Na web (`app/fornecedores/excluir-fornecedor.tsx`), no cabecalho do painel e na edicao:
+
+- confirmacao na propria linha, como "Inativar", e nao `confirm()`: "Excluir <nome> de vez, com a logo? Nao da para desfazer";
+- com pedido, o botao nao some: explica ("ha 4 pedidos de compra com este fornecedor") e aponta para inativar. A edicao le so a contagem de pedidos (`head: true`), em paralelo; o painel usa `orders_total` que ja tinha;
+- a confirmacao ocupa uma coluna estreita: a frase inteira numa linha espremia o nome do fornecedor no cabecalho (visto na captura).
+
+**Verificacao**
+
+- `typecheck`, `lint`, `test` de `@sb/web` e `@sb/db` e os quatro guardas `check:*`;
+- a funcao numa transacao desfeita como `authenticated`: recusa com "tem 4 pedido(s)", exclui o sem pedido e devolve a logo;
+- integracao local: `-t "D-372|D-370|D-182"` 20 de 20, com `delete_supplier` na superficie SECURITY DEFINER versionada. Os nomes das fixtures de D-370/D-372 ganharam sufixo por rodada, para rodar de novo sem reset;
+- e2e `fornecedores.spec.ts` e `pedido-compra.spec.ts`: 11 de 11 contra a web local, com um caso novo (com pedido explica; sem pedido, cadastra pela tela e exclui);
+- visual do cabecalho com a explicacao aberta.
+
+**Impacto:** `supabase/migrations/20260917180000_delete_supplier.sql`; `packages/db/src/{types,rls.integration.test}.ts`; `apps/web/app/fornecedores/{actions.ts,excluir-fornecedor.tsx,[supplierId]/page.tsx,[supplierId]/editar/page.tsx}`; `apps/web/app/globals.css`; `apps/web/e2e/fornecedores.spec.ts`.

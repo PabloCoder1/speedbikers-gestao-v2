@@ -12152,6 +12152,8 @@ describe("guarda de GRANTs (D-066/D-098/D-130)", () => {
     "create_sku_listing_link",
     "create_supplier",
     "delete_saved_filter",
+    // D-372: papel NA organizacao do fornecedor e recusa com pedido de compra.
+    "delete_supplier",
     "dismiss_link_candidate",
     // D-291: LEITURA de log de execucao, agregada. Entrou na lista com a
     // auditoria feita: autorizacao ADMIN refeita dentro, `search_path`
@@ -13320,7 +13322,7 @@ describe("get_replenishment_reach (D-361)", () => {
 // Logo do fornecedor (20260917160000, D-370) -- o caminho no cadastro, o bucket
 // e quem escreve nos dois. Tudo por `asUser`, que desfaz a transacao.
 describe("logo do fornecedor (D-370)", () => {
-  const MARCA = "LOGOTEST";
+  const MARCA = `LOGOTEST-${String(Date.now())}`;
   const ARQUIVO = "aaaaaaaa-2222-4333-8444-555555555555.webp";
   let fornecedor = "";
 
@@ -13406,5 +13408,68 @@ describe("logo do fornecedor (D-370)", () => {
     await expect(
       asAnon(`select public.set_supplier_logo('${fornecedor}', null)`),
     ).rejects.toThrow(/permission denied/i);
+  });
+});
+
+// Excluir fornecedor (20260917180000, D-372) -- so sem pedido de compra.
+describe("excluir fornecedor (D-372)", () => {
+  // Sufixo por rodada: o nome e unico na organizacao, e rodar de novo sem reset
+  // nao pode tropecar na fixture da rodada anterior.
+  const MARCA = `DELTEST-${String(Date.now())}`;
+  let semPedido = "";
+  let comPedido = "";
+
+  beforeAll(async () => {
+    const a = await client.query<{ id: string }>(
+      `insert into public.suppliers (organization_id, name) values ($1,$2) returning id`,
+      [ORG_SB, `${MARCA}-sem-pedido`],
+    );
+    semPedido = a.rows[0]?.id ?? "";
+
+    const b = await client.query<{ id: string }>(
+      `insert into public.suppliers (organization_id, name) values ($1,$2) returning id`,
+      [ORG_SB, `${MARCA}-com-pedido`],
+    );
+    comPedido = b.rows[0]?.id ?? "";
+
+    await client.query(
+      `insert into public.purchase_orders (organization_id, supplier_id, status, created_by, cancelled_at)
+       values ($1,$2::uuid,'CANCELLED',$3::uuid, now())`,
+      [ORG_SB, comPedido, ADMIN_SB],
+    );
+  });
+
+  it("ADMIN exclui fornecedor sem pedido, e a logo volta para a tela apagar o arquivo", async () => {
+    const rows = await asUser<{ logo: string | null }>(ADMIN_SB, `select public.delete_supplier('${semPedido}') as logo`);
+
+    expect(rows[0]).toEqual({ logo: null });
+
+    // Excluiu mesmo: a segunda chamada, no mesmo statement, ja nao o acha. (Um
+    // `count(*)` ao lado leria o snapshot de antes da exclusao.)
+    await expect(
+      asUser(
+        ADMIN_SB,
+        `select public.delete_supplier('${semPedido}') from (select public.delete_supplier('${semPedido}')) t`,
+      ),
+    ).rejects.toThrow(/nao encontrado/);
+  });
+
+  it("pedido CANCELADO tambem conta: o historico e de quem se comprou", async () => {
+    await expect(asUser(ADMIN_SB, `select public.delete_supplier('${comPedido}')`)).rejects.toThrow(
+      /tem 1 pedido/,
+    );
+  });
+
+  it("ANALISTA e ADMIN de OUTRA organizacao nao excluem (D-180)", async () => {
+    await expect(asUser(ANALISTA_SB, `select public.delete_supplier('${semPedido}')`)).rejects.toThrow(
+      /sem permissao|nao encontrado/,
+    );
+    await expect(asUser(DE_OUTRA_ORG, `select public.delete_supplier('${semPedido}')`)).rejects.toThrow(
+      /sem permissao|nao encontrado/,
+    );
+  });
+
+  it("anon nao executa delete_supplier", async () => {
+    await expect(asAnon(`select public.delete_supplier('${semPedido}')`)).rejects.toThrow(/permission denied/i);
   });
 });

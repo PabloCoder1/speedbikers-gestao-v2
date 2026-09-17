@@ -8624,7 +8624,17 @@ a.sb-forn-canal:hover {
   color: var(--sb-text-soft);
 }
 
-.sb-fnv .sb-form-campo {
+/*
+ * position: relative prende o rótulo e o input de arquivo "só para leitor de
+ * tela" (sb-sr-only, absolutos) dentro do campo. Sem ancestral posicionado o
+ * bloco de contenção deles era a janela: o overflow do <main> não os recortava,
+ * e o rótulo das observações, lá no fim do formulário, esticava a PÁGINA —
+ * rolando até o fim aparecia uma faixa branca embaixo do app (captura do dono,
+ * D-370). Medido: documento de 1053 px numa janela de 912.
+ */
+.sb-fnv .sb-form-campo,
+.sb-fnv-logo-botoes label {
+  position: relative;
   align-content: start;
 }
 
@@ -9935,4 +9945,27 @@ td.sb-pco-num-linha {
   .sb-pco-cartao-topo {
     flex-wrap: wrap;
   }
+}
+
+/* EXCLUIR FORNECEDOR (D-372): discreto até ser aberto; a confirmação usa o vermelho da casa. */
+.sb-forn-excluir {
+  gap: 0.25rem;
+  color: var(--sb-danger-ink);
+}
+
+.sb-forn-excluir:hover {
+  border-color: var(--sb-danger);
+}
+
+/* A confirmação ocupa no máximo uma coluna estreita: no cabeçalho do painel, a
+   frase inteira numa linha espremia o nome do fornecedor (visto na captura). */
+.sb-forn-excluir-confirma {
+  justify-content: flex-end;
+  max-width: 22rem;
+}
+
+.sb-forn-excluir-confirma > span:first-child {
+  flex-basis: 100%;
+  line-height: 1.45;
+  text-align: right;
 }
