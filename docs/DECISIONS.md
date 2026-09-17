@@ -13056,3 +13056,42 @@ Na web:
 - visual com uma logo real no formulario, no painel, na lista e em /compras/novo, a 1440 px, e o formulario rolado e numa tela de 700 px de altura.
 
 **Impacto:** `supabase/migrations/20260917160000_supplier_logo.sql`; `packages/db/src/{types,rls.integration.test}.ts`; `apps/web/app/fornecedores/{logo,voltar}.tsx`, `novo/{page,supplier-form}.tsx`, `[supplierId]/{page,editar/page}.tsx`, `page.tsx`; `apps/web/app/compras/novo/{page,purchase-order-form}.tsx`; `apps/web/components/object-header.tsx`; `apps/web/lib/{logo-fornecedor,logo-fornecedor-url,suppliers-overview}.ts`; `apps/web/app/globals.css`; `apps/web/e2e/fornecedores.spec.ts`. Publicacao: web funciona antes da migration (sem logo); a logo aparece depois da migration no Dev (CI) e em producao (workflow com duas aprovacoes).
+
+## D-371 - Sugestao da reposicao dentro do pedido de compra: coluna por item, trazer os itens de uma marca e o voltar como botao
+
+**Contexto:** pedidos do dono em /compras/novo: (1) "o botao de voltar tem que ser melhorado"; (2) "mais uma coluna escrito Sugestao: assim que colocarmos o SKU, a sugestao daquele produto que temos em cobertura e reposicao deve aparecer"; (3) "quando colocar o fornecedor, que e querendo ou nao a marca do produto, uma opcao de trazer todos os itens que precisamos comprar, a partir da cobertura e reposicao"; (4) confirmar se o pedido criado pode ser baixado para mandar ao fornecedor.
+
+**1. A LEITURA -- `get_purchase_order_suggestions` (migration `20260917170000`)**
+
+Recorte de `get_purchase_suggestions` (D-147/D-150), sem conta nova: a sugestao, o estado e a cobertura sao os da mesma funcao que /reposicao le, e a integracao ja confere que ela e identica a composicao de `@sb/domain`. `jsonb`, plano custom.
+
+- **por lista de SKUs** (`p_sku_ids`): a coluna Sugestao pede UMA vez para todos os SKUs do pedido. Pela `get_replenishment_overview` seriam N chamadas de ~250 ms, cada uma classificando o catalogo inteiro;
+- **por marca** (`p_supplier_brand`) com `p_scope` `comprar_agora` (ruptura + compra urgente com sugestao) ou `com_sugestao` (sugestao > 0), filtrada DENTRO da sugestao;
+- sem SKU e sem marca devolve vazio -- o catalogo inteiro nao e pergunta de pedido; limite de 500 linhas com o total antes do limite;
+- `aproveitavel` = local + Full + transito - reservado, NULO em estoque virtual (D-127); `is_imported` do cadastro, para o aviso de mistura (D-151);
+- `p_date_to` por ultimo (D-242), nulo = hoje: existe para a integracao, cujos dados vivem em 2025.
+
+**Medido no Dev como `authenticated`, com a funcao em `pg_temp` (nada gravado):** 30 SKUs com sugestao em **166 ms**; marca PLASMOTO em `comprar_agora` em **138 ms** (86 SKUs; 90 em `com_sugestao`); **zero divergencias** de sugestao e estado contra `get_purchase_suggestions`; nenhuma linha fora do recorte; ordem de prioridade preservada (rupturas primeiro).
+
+**2. A TELA**
+
+- **voltar:** o componente de D-367 subiu para `components/voltar.tsx` (classes `sb-voltar`/`sb-voltar-seta`) e passou a servir /compras/novo e os tres usos de /fornecedores; o subtitulo virou so texto;
+- **coluna Sugestao**, entre o SKU e a quantidade: lida em lote com espera de 300 ms (escolher tres SKUs seguidos vira uma chamada). Cada saida significa uma coisa: codigo livre "—" (sem reposicao), recusa "sem sugestao" (motivo no `title`), 0 "coberto", positiva como BOTAO "24 un" que um clique usa como quantidade (fica verde com check quando igual), com o selo do estado e, no `title`, vendas em 30 dias, aproveitavel e cobertura. Sem a funcao no banco (Preview antes da migration) ou com falha, "indisponivel" -- o pedido segue normal;
+- **"Trazer da reposicao"** (cartao Itens, e atalho na ficha do fornecedor): marca pre-selecionada quando o nome do fornecedor bate com ela (`marcaDoFornecedor`: igual sem acento/caixa, ou a marca como palavra inteira do nome; varias candidatas, a mais especifica); recorte "Comprar agora" ou "Tudo com sugestao"; previa com SKUs, unidades e valor pelo custo cadastrado (sem custo fora da soma e contado), a lista em ordem de prioridade e o link "Ver a conta na reposicao"; "Adicionar N ao pedido" traz quantidade sugerida e custo cadastrado como sugestao editavel, e SKU ja no pedido nao entra de novo;
+- `position: relative` nos cartoes: rotulo `sb-sr-only` sem ancestral posicionado escapava do overflow e esticava a pagina (achado da sessao de fornecedores).
+
+Fornecedor e marca continuam eixos diferentes (D-174): a tela so SUGERE a marca pelo nome e deixa trocar.
+
+**3. O "PEDIDO PARA O FORNECEDOR" JA EXISTIA**
+
+A pagina de cada pedido (`/compras/[id]`) tem **Exportar Excel** e **Exportar PDF** (`/compras/[id]/export/xlsx` e `/pdf`), com itens, quantidades, custos e total. O layout e o provisorio de D-034 ("modelo profissional a minha escolha, ajustado quando o modelo do usuario chegar").
+
+**4. VERIFICACAO**
+
+`typecheck`, `lint`, `next build`, os quatro guardas e a suite de unidade da web (7 testes novos do leitor e da marca do fornecedor). Integracao: 3 casos novos no describe de prioridade (D-150) -- mesma sugestao por lista de SKUs, `comprar_agora` so ruptura e urgente em ordem, `com_sugestao` sem recusa nem zero, vazio sem filtro, anon negado -- que passaram na primeira rodada local; as reexecucoes locais esbarram nas fixtures ja plantadas (`skus_org_key_unique`), classe conhecida da suite sem `db reset`. E2E contra `next start` e o seed: `fornecedores` (8, com o Voltar movido) e `pedido-compra` (3, 1 novo: voltar-botao e a coluna saindo do "lendo" para uma resposta da reposicao), 11 verdes.
+
+Capturas a 1440 px e 390 px (sem rolagem lateral) com a resposta da funcao SIMULADA no navegador e a marca de um SKU do seed trocada por um minuto e devolvida: o seed local nao tem configuracao de reposicao. A conta real e a do Dev, acima.
+
+- **a migration precisa chegar a producao ANTES da promocao** da web; antes disso a coluna mostra "indisponivel" e o painel falha com aviso -- nada quebra;
+- a edicao do rascunho (`/compras/[id]/editar`) nao recebe `organizationId` nem marcas, entao nao tem a coluna nem o painel;
+- ordem de merge combinada: esta migration (`20260917170000`) antes da `20260917180000` da D-372.

@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **363** (D-001 a D-370).
+Decisões registradas: **364** (D-001 a D-371).
 
 ## Por domínio
 
@@ -106,7 +106,7 @@ Decisões registradas: **363** (D-001 a D-370).
 - **D-346** — As contas do webhook passam a vir da memoria -- nenhum caminho do ACK depende de conexao quente com o Postgres
 - **D-353** — O Postgres de producao com 4.091 erros em 24h -- 98% era o worker contando com o 23505, e o resto o Realtime assinando antes do token
 
-### estoque (27)
+### estoque (28)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -135,6 +135,7 @@ Decisões registradas: **363** (D-001 a D-370).
 - **D-328** — Revisao de seguranca, fatia 1: nenhum segredo real em 740 commits, e duas CRITICAS no `next` que o repositorio publico carregava
 - **D-358** — Cobertura e reposicao: uma leitura em vez de duas, o plano custom que faltava, e a tela que responde "o que comprar agora"
 - **D-361** — Configuracao de reposicao: a tela que diz quanto do catalogo cada regra destrava, com a regua da politica e a remocao que avisa
+- **D-371** — Sugestao da reposicao dentro do pedido de compra: coluna por item, trazer os itens de uma marca e o voltar como botao
 
 ### interface (40)
 

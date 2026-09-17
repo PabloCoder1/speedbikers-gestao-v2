@@ -15,7 +15,7 @@ import { currentMembership } from "../../../lib/request-membership";
 import { formatarDocumento, idadeRelativa } from "../../../lib/suppliers-overview";
 import { Canais, temCanal } from "../canais";
 import { LogoFornecedor } from "../logo";
-import { Voltar } from "../voltar";
+import { Voltar } from "../../../components/voltar";
 
 export const metadata = { title: "Fornecedor — Speed Bikers Gestão" };
 
