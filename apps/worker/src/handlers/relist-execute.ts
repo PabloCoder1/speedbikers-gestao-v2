@@ -9,8 +9,10 @@ import {
   canTransitionRelist,
   collectRelistInventoryIds,
   evaluateRelistPreflight,
+  hasUserProductVariations,
   isRelistRejectionStatus,
   isRelistRetryEligible,
+  isRelistUserProductVariationsRejection,
   relistRejectionFailureReason,
   summarizeRelistVariations,
 } from "@sb/domain";
@@ -66,6 +68,11 @@ import { ensureRelistMeasurement } from "./relist-measurement.js";
  *    voltou (5xx, resposta ambígua) no meio do caminho deixa o mesmo
  *    `status`, mas não a mesma versão. Nada disso acontece sozinho:
  *    RELIST_FAILED sem `retomada` continua noop.
+ * 7. **Variações em conta de user products não republicam** (D-369): o ML
+ *    recusa com `item.variations.relist.invalid`. O re-preflight de REQUESTED
+ *    barra ANTES do PUT (`VARIACOES_USER_PRODUCT`), a recusa com essa causa
+ *    não é elegível, e a retomada que achar o pai ao vivo nessa forma termina
+ *    sem transição e sem POST.
  *
  * O corpo do POST sai de `buildRelistBody` (D-364): com variações, só as que
  * têm estoque, cada uma com o próprio preço; sem estoque nenhum, o POST não
@@ -522,6 +529,7 @@ async function resumeAfterRejection(
       relist_id: operation.id,
       status: operation.status,
       last_failed_reason: lastFailedEventReason,
+      user_product_variations_rejection: isRelistUserProductVariationsRejection(operation.failure_reason),
     });
 
     return { status: "done", processed: 0 };
@@ -579,6 +587,20 @@ async function resumeAfterRejection(
     context.logger.warn("relist_retry_parent_already_relisted", {
       relist_id: operation.id,
       tags_legible: Array.isArray(tags),
+    });
+
+    return { status: "done", processed: 0 };
+  }
+
+  // D-369: item com variações de vendedor no modelo de user products — o ML
+  // recusa o relist (`item.variations.relist.invalid`). A regra de
+  // elegibilidade já barra a recusa com essa causa; esta conferência pega o
+  // pai AO VIVO nessa forma depois de qualquer outra recusa. O GET simples
+  // traz `user_product_id` em cada variação (lido em 17/09 no MLB1476804187).
+  if (hasUserProductVariations(parentRaw)) {
+    context.logger.warn("relist_retry_user_product_variations", {
+      relist_id: operation.id,
+      parent_item_id: operation.parent_item_id,
     });
 
     return { status: "done", processed: 0 };
@@ -774,7 +796,9 @@ export function createRelistExecuteHandler(deps: RelistExecuteDeps): JobHandler 
 
     // Re-preflight NA HORA — só enquanto nada remoto foi feito (REQUESTED).
     // Depois de CLOSING, reprovar não desfaz o fechamento; o fluxo segue e
-    // as falhas reais aparecem nos próprios passos.
+    // as falhas reais aparecem nos próprios passos. O GET acima, sem
+    // `include_attributes`, já traz `variations[].user_product_id` — é com ele
+    // que o `VARIACOES_USER_PRODUCT` (D-369) barra antes do PUT.
     if (operation.status === "REQUESTED") {
       // D-360: o estoque do Full é relido na hora — ele pode ter recebido
       // unidades desde o pedido. Falha passageira relança antes de qualquer

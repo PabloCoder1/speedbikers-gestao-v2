@@ -1,6 +1,6 @@
 import type { AdminClient } from "@sb/db";
 import { readLastRelistFailureReason } from "@sb/db";
-import { isRelistRetryEligible } from "@sb/domain";
+import { isRelistRetryEligible, isRelistUserProductVariationsRejection } from "@sb/domain";
 import type { Logger } from "@sb/observability";
 import { z } from "zod";
 
@@ -217,6 +217,17 @@ export async function requestListingRelistRetry(
   });
 
   if (!eligible) {
+    // D-369: recusa por variações em conta de user products é definitiva, e
+    // não é caso de "o anúncio novo pode ter nascido". O `failure_reason` sai
+    // no mesmo update do status: é ele que diz qual foi a última falha.
+    if (isRelistUserProductVariationsRejection(row.failure_reason)) {
+      return {
+        status: "invalid",
+        reason:
+          "o Mercado Livre não permite republicar este anúncio (variações em conta de user products) — nenhum anúncio novo foi criado, e tentar de novo traria a mesma recusa",
+      };
+    }
+
     return {
       status: "invalid",
       reason:

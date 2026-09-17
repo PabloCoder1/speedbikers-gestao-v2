@@ -357,6 +357,30 @@ describe("requestListingRelistRetry (D-364)", () => {
     expect(requests).toHaveLength(0);
   });
 
+  it("D-369: recusa por variações em conta de user products é invalid com o motivo próprio, e não enfileira", async () => {
+    const { enqueuer, requests } = fakeEnqueuer();
+
+    const outcome = await requestListingRelistRetry(
+      deps(
+        fakeDb({
+          operationStatus: "RELIST_FAILED",
+          failureReason: relistRejectionFailureReason(
+            400,
+            "Validation error (validation_error) causas: item.variations.relist.invalid: Relist item with variations are not allowed for user product seller",
+          ),
+          lastFailedReason: "POST_RECUSADO",
+        }),
+        enqueuer,
+      ),
+      ADMIN,
+      RELIST_ID,
+    );
+
+    expect(outcome).toMatchObject({ status: "invalid" });
+    expect((outcome as { reason: string }).reason).toContain("não permite republicar este anúncio");
+    expect(requests).toHaveLength(0);
+  });
+
   it("recusa antiga seguida de 5xx na retomada (a última falha é POST_FALHOU): invalid, e não enfileira", async () => {
     const { enqueuer, requests } = fakeEnqueuer();
 

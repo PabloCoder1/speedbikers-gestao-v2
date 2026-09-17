@@ -623,6 +623,24 @@ function logs(lines: string[]): Record<string, unknown>[] {
 
 const RETOMADA = { relistId: RELIST_ID, retomada: true, autorizadoPor: AUTORIZADO_POR };
 
+/** O pai do incidente como o GET /items o devolve: `user_product_id` em cada variação, nulo na raiz (D-369). */
+function parentWithUserProductVariations(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return parentWithVariations({
+    user_product_id: null,
+    variations: [
+      { id: 52_844_432_013, price: 114.9, available_quantity: 698, user_product_id: "MLBU1406603522" },
+      { id: 52_844_432_017, price: 114.9, available_quantity: 9_981, user_product_id: "MLBU1402620069" },
+    ],
+    ...overrides,
+  });
+}
+
+/** O `failure_reason` REAL da a7638dc5 depois da retomada de 2026-09-17 13:36 UTC (D-369). */
+const RECUSA_USER_PRODUCT = relistRejectionFailureReason(
+  400,
+  "Validation error (validation_error) causas: item.variations.relist.invalid: Relist item with variations are not allowed for user product seller",
+);
+
 /** O `failure_reason` que a recusa grava (D-364) — a linha e o evento `POST_RECUSADO` concordam. */
 const RECUSA_GRAVADA = relistRejectionFailureReason(400, "Validation error causas: item.variations.missing");
 
@@ -667,6 +685,37 @@ describe("relist.execute com variações e recusa do ML (D-364)", () => {
     expect(updates.map((update) => update.patch.status)).toEqual(["PREFLIGHT_FAILED"]);
     expect(events.map((event) => event.reason)).toEqual(["VARIACOES_SEM_ESTOQUE"]);
     expect(calls.some((call) => call.startsWith("PUT") || call.startsWith("POST"))).toBe(false);
+  });
+
+  it("D-369: REQUESTED com variações de user products: PREFLIGHT_FAILED (VARIACOES_USER_PRODUCT) antes do PUT — nenhum PUT, nenhum POST", async () => {
+    const { db, updates, events } = fakeDb();
+    const { client, calls } = fakeClient({ parentBody: parentWithUserProductVariations() });
+    const lines: string[] = [];
+
+    const outcome = await run(db, client, { relistId: RELIST_ID }, lines);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(updates.map((update) => update.patch.status)).toEqual(["PREFLIGHT_FAILED"]);
+    expect(events.map((event) => event.reason)).toEqual(["VARIACOES_USER_PRODUCT"]);
+    expect(String(updates[0]?.patch.failure_reason)).toContain(
+      "O Mercado Livre não permite republicar anúncio com variações de conta no modelo de user products",
+    );
+    expect(calls).toEqual([`GET /items/${PARENT}`]);
+    expect(logs(lines).find((line) => line.message === "relist_execute_preflight")).toMatchObject({
+      approved: false,
+      blocks: ["VARIACOES_USER_PRODUCT"],
+    });
+  });
+
+  it("D-369: SEM variações e com user_product_id na raiz, o pai é fechado e republicado como sempre", async () => {
+    const { db, updates } = fakeDb();
+    const { client, calls } = fakeClient({ parentBody: healthyParent({ user_product_id: "MLBU3858499373" }) });
+
+    const outcome = await run(db, client);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(updates.map((update) => update.patch.status)).toEqual(["CLOSING", "CLOSED", "RELISTING", "RELISTED"]);
+    expect(calls).toContain(`POST /items/${PARENT}/relist`);
   });
 
   it("retomada de CLOSED com o pai sem estoque: nem transição nem POST — o job falha sem retry", async () => {
@@ -864,6 +913,48 @@ describe("relist.execute — retomada humana depois de recusa (D-364)", () => {
       expect(outcome).toEqual({ status: "done", processed: 0 });
       expect(updates).toHaveLength(0);
       expect(calls).toEqual([`GET /items/${PARENT}`]);
+    }
+  });
+
+  it("D-369: variações de user products — a recusa com a causa não é elegível, e outra recusa com o pai nessa forma também não emite o POST", async () => {
+    // (a) A recusa REAL da a7638dc5: a regra de elegibilidade barra antes de qualquer leitura remota.
+    {
+      const { db, updates, events } = fakeDb({
+        operationStatus: "RELIST_FAILED",
+        failureReason: RECUSA_USER_PRODUCT,
+        lastFailedReason: "POST_RECUSADO",
+      });
+      const { client, calls } = fakeClient({ parentBody: parentWithUserProductVariations({ status: "closed" }) });
+      const lines: string[] = [];
+
+      const outcome = await run(db, client, RETOMADA, lines);
+
+      expect(outcome).toEqual({ status: "done", processed: 0 });
+      expect(updates).toHaveLength(0);
+      expect(events).toHaveLength(0);
+      expect(calls).toEqual([]);
+      expect(logs(lines).find((line) => line.message === "relist_retry_not_eligible")).toMatchObject({
+        user_product_variations_rejection: true,
+      });
+    }
+
+    // (b) Recusa elegível por OUTRA causa, e o pai ao vivo com variações de user products: nada sai.
+    {
+      const { db, updates, events } = fakeDb({
+        operationStatus: "RELIST_FAILED",
+        failureReason: RECUSA_GRAVADA,
+        lastFailedReason: "POST_RECUSADO",
+      });
+      const { client, calls } = fakeClient({ parentBody: parentWithUserProductVariations({ status: "closed" }) });
+      const lines: string[] = [];
+
+      const outcome = await run(db, client, RETOMADA, lines);
+
+      expect(outcome).toEqual({ status: "done", processed: 0 });
+      expect(updates).toHaveLength(0);
+      expect(events).toHaveLength(0);
+      expect(calls).toEqual([`GET /items/${PARENT}`]);
+      expect(logs(lines).some((line) => line.message === "relist_retry_user_product_variations")).toBe(true);
     }
   });
 

@@ -238,6 +238,35 @@ describe("relist.prepare (D-161)", () => {
     });
   });
 
+  it("D-369: snapshot com variações de user products reprova no pedido com VARIACOES_USER_PRODUCT — a execução nunca é oferecida", async () => {
+    const { db, relistUpdates, eventInserts } = fakeDb();
+    const { client } = fakeClient([
+      {
+        code: 200,
+        body: {
+          ...healthyItemBody(),
+          user_product_id: null,
+          variations: [
+            { id: 52_844_432_013, price: 114.9, available_quantity: 698, user_product_id: "MLBU1406603522" },
+            { id: 52_844_432_017, price: 114.9, available_quantity: 9_981, user_product_id: "MLBU1402620069" },
+          ],
+        },
+      },
+    ]);
+
+    const outcome = await run(db, client);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(relistUpdates).toEqual([
+      expect.objectContaining({
+        status: "PREFLIGHT_FAILED",
+        failure_reason:
+          "O Mercado Livre não permite republicar anúncio com variações de conta no modelo de user products — fechar o anúncio o deixaria fora do ar sem filho.",
+      }),
+    ]);
+    expect(eventInserts[1]).toMatchObject({ to_status: "PREFLIGHT_FAILED", reason: "VARIACOES_USER_PRODUCT" });
+  });
+
   it("23505 no insert = operação já existe (índice de D-159): termina em paz, sem segunda operação", async () => {
     const { db, eventInserts } = fakeDb({ relistInsertError: { code: "23505", message: "duplicate" } });
     const { client } = fakeClient([{ code: 200, body: healthyItemBody() }]);
