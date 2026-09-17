@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useState, useTransition, type ReactNode } from "react";
 
 import { TOM } from "../../components/tone";
-import { formatCount, formatDateTime, formatDay } from "../../lib/format";
+import { formatCount, formatCurrency, formatDateTime, formatDay } from "../../lib/format";
+import type { LinhaProduto } from "../../lib/products-overview";
 import { describeOutcome, MAX_SELECAO, type CurationOutcome } from "../../lib/sku-curation";
 import { classifySkus, setSupplierBrand } from "./actions";
 import { InspecaoRapida } from "./inspecao-rapida";
@@ -38,41 +39,21 @@ import { InspecaoRapida } from "./inspecao-rapida";
  * do frame, "Anúncios", chegou com dado real (D-245).
  */
 
-export interface CurationRow {
-  sku_id: string;
-  sku: string;
-  title: string | null;
-  brand: string | null;
-  supplier_brand: string | null;
-  supplier_brand_source: string | null;
-  stock_is_virtual: boolean;
-  stock_is_virtual_set_at: string | null;
-  snapshot_available: number | null;
-  has_sentinel_signature: boolean | null;
-  units_sold_90d: number;
-  decision_diverges_from_signature: boolean;
-  total_count: number;
-  listing_count: number;
-  /** D-315: saem da RPC porque sao elas que ordenam a lista. */
-  created_at: string;
-  updated_at: string;
-}
+/** A linha da tabela é a da leitura de D-373 (`lib/products-overview.ts`). */
+export type CurationRow = LinhaProduto;
 
 /** Cor nunca é a única pista — o texto sempre acompanha (status-pill.tsx). */
 function Sugestao({ row }: { row: CurationRow }): ReactNode {
   if (row.has_sentinel_signature === null) {
-    return <span style={{ color: "var(--sb-text-soft)" }}>Sem retrato do ERP</span>;
+    return <span style={{ color: "var(--sb-text-soft)" }}>sem retrato do ERP</span>;
   }
 
+  // O saldo já está na linha de cima (D-373): a sugestão diz só o sinal.
   if (row.has_sentinel_signature) {
-    return (
-      <span style={{ color: "var(--sb-accent-ink)" }}>
-        Parece sentinela ({formatCount(row.snapshot_available ?? 0)})
-      </span>
-    );
+    return <span style={{ color: "var(--sb-accent-ink)" }}>parece sentinela</span>;
   }
 
-  return <span>Não parece ({formatCount(row.snapshot_available ?? 0)})</span>;
+  return <span>não parece sentinela</span>;
 }
 
 /**
@@ -116,7 +97,7 @@ export function CurationTable({
   cabecalho,
 }: {
   organizationId: string;
-  rows: CurationRow[];
+  rows: readonly CurationRow[];
   /** Alimenta o `<datalist>`: as marcas que já existem, vindas do summary. */
   marcasConhecidas: string[];
   /** A linha de contagens do cabeçalho do cartão ("retrato de … · N de M"). */
@@ -409,18 +390,29 @@ export function CurationTable({
         <p className="sb-empty">Nenhum SKU neste recorte. Tire um filtro ou busque outro termo.</p>
       ) : (
         <div style={{ overflowX: "auto" }}>
-          <table className="sb-table" style={{ minWidth: "62rem" }}>
+          <table className="sb-table sb-prod-tabela">
             <thead>
               <tr>
                 <th style={{ width: "2.5rem" }} />
                 <th>Produto / SKU</th>
-                {/* NUNCA "Marca": `brand` guarda a CATEGORIA do UpSeller (D-129). */}
-                <th>Categoria (ERP)</th>
-                <th>Marca do fornecedor</th>
-                <th className="sb-num">Saldo no ERP</th>
-                <th className="sb-num">Vendas 90d</th>
-                <th className="sb-num">Anúncios</th>
-                <th>Sugestão</th>
+                {/*
+                  Categoria e marca na MESMA coluna, em duas linhas (D-373): eram
+                  duas colunas e a tabela passava da largura útil (D-315). NUNCA
+                  "Marca" para `brand`: é a CATEGORIA do UpSeller (D-129).
+                */}
+                <th>Categoria / marca</th>
+                <th className="sb-num" title="Preço de venda e custo de compra cadastrados no ERP">
+                  Preço / custo
+                </th>
+                <th className="sb-num" title="Saldo do último retrato do ERP, com a sugestão da assinatura sentinela embaixo">
+                  Saldo no ERP
+                </th>
+                {/* Vendas e anúncios juntos: as duas medidas de giro, numa coluna (D-373). */}
+                <th className="sb-num" title="Unidades vendidas em 90 dias, e quantos anúncios vendem o SKU (D-122)">
+                  Vendas 90d
+                  <br />
+                  Anúncios
+                </th>
                 <th>Classificação</th>
                 {/*
                   A coluna "Criado/Atualizado" do UpSeller. Ela existe porque
@@ -444,7 +436,12 @@ export function CurationTable({
               {rows.map((row) => (
                 <tr
                   key={row.sku_id}
-                  style={row.decision_diverges_from_signature ? { background: "var(--sb-accent-soft)" } : undefined}
+                  className={[
+                    row.decision_diverges_from_signature ? "sb-prod-linha-revisar" : "",
+                    row.situacao === "INATIVO" ? "sb-prod-linha-inativa" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ") || undefined}
                 >
                   <td>
                     <input
@@ -460,20 +457,18 @@ export function CurationTable({
                     {/* Título em cima e SKU em monoespaçado embaixo — a célula
                         "Produto / SKU" do frame, clicável: leva ao dashboard do
                         SKU, o destino que o drawer do frame aponta. */}
-                    <Link className="sb-entity" href={`/skus/${row.sku_id}`}>
+                    <Link className="sb-entity sb-prod-titulo" href={`/skus/${row.sku_id}`} title={row.title ?? row.sku}>
                       {row.title ?? row.sku}
                     </Link>
-                    <span
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "var(--sb-space-2)",
-                        fontFamily: "var(--sb-mono)",
-                        fontSize: "0.625rem",
-                        color: "var(--sb-text-soft)",
-                      }}
-                    >
+                    <span className="sb-prod-sku">
                       SKU {row.sku}
+                      {row.kind === "KIT" && <span className="sb-prod-selo">kit</span>}
+                      {row.situacao === "ENCERRANDO" && (
+                        <span className="sb-prod-selo sb-prod-selo-atencao" title="&quot;ESTOQUE INATIVO&quot; na categoria do ERP">
+                          encerrando
+                        </span>
+                      )}
+                      {row.situacao === "INATIVO" && <span className="sb-prod-selo">inativo</span>}
                       {/*
                         O disparo da gaveta "Inspeção Rápida" do frame. No
                         desenho é a célula inteira que abre; aqui o título
@@ -496,27 +491,43 @@ export function CurationTable({
                       </div>
                     )}
                   </td>
-                  <td style={{ color: "var(--sb-text-soft)" }}>{row.brand ?? "—"}</td>
                   <td>
-                    {row.supplier_brand ?? (
-                      // "Requer revisão" no frame: marca ausente é chip de atenção.
-                      <span className="sb-status" style={TOM.atencao}>
-                        a preencher
-                      </span>
-                    )}
-                    {row.supplier_brand !== null && (
-                      <div style={{ color: "var(--sb-text-soft)", fontSize: "0.625rem" }}>
-                        {row.supplier_brand_source === "MANUAL" ? "manual" : "derivada"}
-                      </div>
-                    )}
+                    <span className="sb-prod-categoria">{row.brand ?? "sem categoria"}</span>
+                    <span className="sb-prod-marca">
+                      {row.supplier_brand === null ? (
+                        // "Requer revisão" no frame: marca ausente é chip de atenção.
+                        <span className="sb-status" style={TOM.atencao}>
+                          a preencher
+                        </span>
+                      ) : (
+                        <>
+                          {row.supplier_brand}
+                          <small>{row.supplier_brand_source === "MANUAL" ? "manual" : "derivada"}</small>
+                        </>
+                      )}
+                    </span>
                   </td>
                   <td className="sb-num">
-                    {row.snapshot_available === null ? "—" : formatCount(row.snapshot_available)}
+                    <span className="sb-prod-preco">{row.retail_price === null ? "—" : formatCurrency(row.retail_price)}</span>
+                    <span className="sb-prod-sub">
+                      {row.purchase_cost === null ? "sem custo" : `custo ${formatCurrency(row.purchase_cost)}`}
+                    </span>
                   </td>
-                  <td className="sb-num">{formatCount(row.units_sold_90d)}</td>
-                  <td className="sb-num">{formatCount(row.listing_count)}</td>
-                  <td>
-                    <Sugestao row={row} />
+                  <td className="sb-num">
+                    <span className="sb-prod-preco">
+                      {row.snapshot_available === null ? "—" : formatCount(row.snapshot_available)}
+                    </span>
+                    <span className="sb-prod-sub">
+                      <Sugestao row={row} />
+                    </span>
+                  </td>
+                  <td className="sb-num">
+                    <span className={row.units_sold_90d === 0 ? "sb-prod-preco sb-prod-zero" : "sb-prod-preco"}>
+                      {formatCount(row.units_sold_90d)} un
+                    </span>
+                    <span className={row.listing_count === 0 ? "sb-prod-sub sb-prod-zero" : "sb-prod-sub"}>
+                      {row.listing_count === 1 ? "1 anúncio" : `${formatCount(row.listing_count)} anúncios`}
+                    </span>
                   </td>
                   <td>
                     <Classificacao row={row} />

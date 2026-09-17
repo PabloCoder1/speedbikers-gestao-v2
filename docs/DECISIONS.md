@@ -13238,3 +13238,42 @@ Na web (`app/fornecedores/excluir-fornecedor.tsx`), no cabecalho do painel e na 
 - visual do cabecalho com a explicacao aberta.
 
 **Impacto:** `supabase/migrations/20260917180000_delete_supplier.sql`; `packages/db/src/{types,rls.integration.test}.ts`; `apps/web/app/fornecedores/{actions.ts,excluir-fornecedor.tsx,[supplierId]/page.tsx,[supplierId]/editar/page.tsx}`; `apps/web/app/globals.css`; `apps/web/e2e/fornecedores.spec.ts`.
+
+
+## D-373 - /produtos vira o catalogo: uma leitura com contagens facetadas, atalhos do que pede acao e filtros por categoria, marca, tipo, situacao, anuncios e vendas
+
+**Contexto:** pedido do dono: "a tela de produtos ainda esta feia ... deixe ela bonita, rapida e com bastante qualidade, tambem acho que cabe mais opcoes/categorias ali". A tela era so a fila de curadoria (D-133): cinco menus em fila, a marca so com "sem marca", uma tabela de dez colunas que passava da largura (D-315) e duas RPCs. O catalogo tem eixos que nenhuma tela mostrava, todos ja gravados pelo importador do UpSeller: categoria (`skus.brand`, D-129), tipo (`kind`), situacao (`is_active`/`is_discontinued`, o "ESTOQUE INATIVO" de D-039), preco e custo.
+
+**1. UMA LEITURA -- `get_products_overview` (migration `20260917190000`)**
+
+`jsonb` com a pagina, o total filtrado, as **contagens facetadas** e o **resumo do catalogo inteiro**:
+
+- a pagina traz os campos de `get_sku_curation` mais `kind`, `situacao` (ATIVO | ENCERRANDO | INATIVO), `retail_price` e `purchase_cost`;
+- **facetas:** cada eixo conta com todos os OUTROS filtros e sem o proprio -- com "Categoria = MANETE", o menu de categoria mostra todas (para trocar) e o de marca so as de MANETE. Cada linha carrega um booleano por eixo sobre uma CTE materializada;
+- **resumo:** total, nunca classificados, virtuais, sem marca, a revisar, ativos sem anuncio, ativos sem venda em 90 dias, encerrando e a data do retrato. "Sem anuncio" e "sem venda" contam so ativos: inativo sem anuncio nao e pendencia;
+- mesma assinatura sentinela, divergencia, retrato, vendas 90d e anuncios (D-122) de `get_sku_curation`, mesma ordem e desempate (D-315). **Medido** numa transacao desfeita com 2.500 SKUs sinteticos como `authenticated`: 0 divergencias de pagina e total contra `get_sku_curation`, ~17 ms aquecido;
+- `security definer`, ADMIN/GESTOR por `has_org_role` (D-180) -- nao pelo par de `check_sku_curation_writer`; `force_custom_plan` (D-319);
+- `get_sku_curation`/`get_sku_curation_summary` continuam: a web cai nelas com PGRST202 (web antes da migration), sem atalhos nem contagens. O summary ainda alimenta a lista de marcas conhecidas do "Aplicar marca", que precisa de TODAS as marcas.
+
+**2. A TELA**
+
+- titulo "Produtos" (eyebrow CATALOGO / PRODUTOS); a busca no cabecalho;
+- **abre no catalogo inteiro** (`estado` padrao passa de `pendente` para `todos`, fora da URL). A fila de curadoria e o cartao "Nao classificados"; os links que chegam com `estado=pendente` explicito continuam valendo;
+- **sete cartoes de atalho** (catalogo, nao classificados, sem marca, a revisar, ativos sem anuncio, ativos sem venda, encerrando), cada um leva a um recorte limpo;
+- **coluna de filtros com contagem**: estoque, categoria e marca (as 8 maiores e "Mais N", a ativa nunca some -- `opcoesDeLista`), situacao, anuncios, vendas, tipo e sinal do ERP; "limpar" por grupo e "limpar tudo";
+- **chips** dos filtros ativos, cada um tira so o que nomeia; ordem e tamanho ao lado;
+- **tabela** de oito colunas que cabe a 1440 px: produto (titulo, SKU, selos kit/encerrando/inativo, Inspecionar), categoria / marca, preco / custo, saldo no ERP com a sugestao embaixo, vendas 90d / anuncios, classificacao, criado / atualizado. Linha divergente em destaque; inativa esmaecida;
+- paginacao com "Pagina X de Y" entre os botoes;
+- abaixo de 960 px os filtros viram uma faixa horizontal antes da lista;
+- ANALISTA/OPERADOR veem "Esta tela e restrita a ADMIN ou GESTOR" em vez do erro cru da RPC.
+
+Continua igual: classificacao e marca em lote com a conferencia que diz a consequencia, Desfazer, Inspecao Rapida, e todo recorte na URL (D-133). Origem fiscal continua fora (D-129/D-139). **Nao entrou:** a miniatura do produto -- `skus.image_url` vem do UpSeller, de dominio externo, e o CSP so libera imagem do Supabase (D-354); abrir o CSP e decisao propria.
+
+**Verificacao**
+
+- `typecheck`, `lint`, `test` de `@sb/web` e `@sb/db` e os quatro guardas `check:*`; 21 testes em `curation-filters` e `products-overview`;
+- integracao local `-t "D-373|D-182"`: 16 de 16 (pagina e total iguais aos de `get_sku_curation`, situacao, facetas, "sem categoria", ANALISTA/outra organizacao recusados, anon);
+- e2e `produtos.spec.ts` 4 de 4 contra a web local (titulo novo, `estado` fora da URL, e um caso novo de atalho + filtro + chip); `copiloto-gaveta.spec.ts`: o caso de `/produtos` passou; o caso do SKU depende de `.seed-output.json` de um seed atual e fica com a CI;
+- visual em 1440 px (catalogo e recorte filtrado) e 390 px, com 60 SKUs de demonstracao inseridos e apagados no banco local.
+
+**Impacto:** `supabase/migrations/20260917190000_products_overview.sql`; `packages/db/src/{types,rls.integration.test}.ts`; `apps/web/app/produtos/{page,curation-table}.tsx`; `apps/web/lib/{curation-filters,products-overview}.ts` e testes; `apps/web/app/globals.css` (`sb-prod-*`); `apps/web/e2e/produtos.spec.ts`.

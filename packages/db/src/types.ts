@@ -5368,6 +5368,27 @@ export type Database = {
       // CORRECAO MANUAL sobre o arquivo gerado (classe D-133): o gerador
       // NUNCA marca argumento de RPC como nulo, e os filtros abaixo aceitam
       // NULL de verdade (e o valor que significa "sem filtro").
+      get_products_overview: {
+        Args: {
+          p_brand?: string
+          p_category?: string
+          p_classified?: string
+          p_kind?: string
+          p_limit?: number
+          p_listing?: string
+          p_missing_brand?: boolean
+          p_missing_category?: boolean
+          p_offset?: number
+          p_order?: string
+          p_organization_id: string
+          p_sales?: string
+          p_search?: string
+          p_signal?: string
+          p_status?: string
+        }
+        // jsonb (D-373): conferido campo a campo em apps/web/lib/products-overview.ts.
+        Returns: Json
+      }
       get_purchase_orders: {
         Args: {
           p_limit?: number
