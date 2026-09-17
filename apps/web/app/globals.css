@@ -10941,3 +10941,348 @@ td.sb-pco-num-linha {
     min-width: 0;
   }
 }
+
+/*
+ * VINCULAÇÕES, O ACABAMENTO (D-376) — /vinculacoes passa a falar a MESMA
+ * linguagem de /reposicao (D-358), /fornecedores (D-366), /compras (D-365) e
+ * /produtos (D-373): resumo, cartões de recorte e busca com botão. Por isso o
+ * bloco é curto: o resumo e os cartões REUSAM `sb-rep-resumo`, `sb-rep-destaque`
+ * e `sb-rep-estado`, e aqui fica só o que é de vinculação. Uma cópia com outro
+ * prefixo seria a que sai de sincronia.
+ *
+ * Só tokens da casa.
+ */
+
+.sb-vnc-resumo .sb-rep-destaque {
+  min-width: 0;
+}
+
+.sb-vnc-destaque-link {
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.sb-vnc-destaque-link:hover {
+  border-color: var(--sb-secondary);
+  box-shadow: var(--sb-shadow-pop);
+}
+
+.sb-vnc-destaque-link.sb-rep-destaque-perigo:hover {
+  border-color: var(--sb-danger);
+}
+
+/* "89,4%" grande e "3.976 de 4.447" miúdo na mesma linha de base. */
+.sb-vnc-de {
+  margin-left: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--sb-text-soft);
+}
+
+.sb-vnc-barra {
+  display: block;
+  height: 5px;
+  margin: 0.125rem 0 0.25rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--sb-neutral-soft);
+}
+
+.sb-vnc-barra > i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--sb-success);
+}
+
+.sb-vnc-ressalva {
+  font-style: normal;
+  color: var(--sb-accent-ink);
+}
+
+.sb-vnc-recortes {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+/*
+ * AS CONTAS COMO SELOS. São quatro contas: um menu suspenso escondia o
+ * recorte mais usado da tela atrás de dois cliques. O número no selo é quantos
+ * anúncios daquela conta estão sem vínculo.
+ */
+.sb-vnc-contas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-bottom: var(--sb-space-3);
+}
+
+.sb-vnc-conta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4375rem;
+  padding: 0.3125rem 0.625rem 0.3125rem 0.375rem;
+  border: 1px solid var(--sb-border);
+  border-radius: 999px;
+  background: var(--sb-surface);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--sb-text);
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.sb-vnc-conta-chip:first-child {
+  padding-left: 0.75rem;
+}
+
+.sb-vnc-conta-chip:hover {
+  border-color: var(--sb-secondary);
+  background: var(--sb-surface-hover);
+}
+
+.sb-vnc-conta-chip-ativo {
+  border-color: var(--sb-primary);
+  background: var(--sb-secondary-soft);
+  font-weight: 600;
+  color: var(--sb-primary);
+}
+
+.sb-vnc-conta-chip em {
+  padding: 0 0.3125rem;
+  border-radius: 999px;
+  background: var(--sb-accent-soft);
+  font-size: 0.5625rem;
+  font-style: normal;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--sb-accent-ink);
+}
+
+/*
+ * O SELO DA CONTA — duas letras, tinta da casa. O tom vem da POSIÇÃO da conta
+ * na lista (lib/vinculacoes-visao.ts): com hash do id, quatro contas em seis
+ * tons colidiam em mais de 60% das vezes, e duas contas com o mesmo selo é
+ * pior que selo nenhum. Nenhum dos seis é o vermelho de perigo, que nesta tela
+ * quer dizer "vendeu sem vínculo".
+ */
+.sb-vnc-selo {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: var(--sb-radius-sm);
+  background: var(--sb-vnc-selo-fundo, var(--sb-neutral-soft));
+  font-family: var(--sb-sans);
+  font-size: 0.5rem;
+  font-weight: 700;
+  font-style: normal;
+  letter-spacing: 0.02em;
+  color: var(--sb-vnc-selo-tinta, var(--sb-neutral-ink));
+}
+
+.sb-vnc-selo[data-tom="0"] {
+  --sb-vnc-selo-tinta: var(--sb-secondary);
+  --sb-vnc-selo-fundo: var(--sb-secondary-soft);
+}
+
+.sb-vnc-selo[data-tom="1"] {
+  --sb-vnc-selo-tinta: var(--sb-success);
+  --sb-vnc-selo-fundo: var(--sb-success-soft);
+}
+
+.sb-vnc-selo[data-tom="2"] {
+  --sb-vnc-selo-tinta: var(--sb-accent-ink);
+  --sb-vnc-selo-fundo: var(--sb-accent-soft);
+}
+
+.sb-vnc-selo[data-tom="3"] {
+  --sb-vnc-selo-tinta: var(--sb-supporting);
+  --sb-vnc-selo-fundo: color-mix(in srgb, var(--sb-supporting) 12%, var(--sb-white));
+}
+
+.sb-vnc-selo[data-tom="4"] {
+  --sb-vnc-selo-tinta: var(--sb-primary);
+  --sb-vnc-selo-fundo: color-mix(in srgb, var(--sb-primary) 10%, var(--sb-white));
+}
+
+.sb-vnc-selo[data-tom="5"] {
+  --sb-vnc-selo-tinta: var(--sb-neutral-ink);
+  --sb-vnc-selo-fundo: var(--sb-neutral-soft);
+}
+
+/* A LINHA DA TABELA: título em cima, conta + MLB + Full embaixo. */
+.sb-vnc-anuncio-pe {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.625rem;
+  color: var(--sb-muted-ink);
+}
+
+.sb-vnc-anuncio-pe .sb-mono {
+  font-size: 0.625rem;
+  color: var(--sb-muted-ink);
+}
+
+.sb-vnc-risco {
+  font-weight: 600;
+  color: var(--sb-danger-ink);
+}
+
+.sb-vnc-conta-celula {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4375rem;
+}
+
+.sb-vnc-conta-celula .sb-vnc-mudo {
+  font-size: 0.625rem;
+}
+
+/* O vazio que não parece erro: diz o que houve e oferece a saída. */
+.sb-vnc-vazio {
+  display: grid;
+  justify-items: center;
+  gap: 0.5rem;
+  padding: 2.5rem var(--sb-space-3);
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-vnc-vazio b {
+  font-size: 0.875rem;
+  color: var(--sb-primary);
+}
+
+/* A conferência com os pedidos, embaixo da comparação (chega por Suspense). */
+.sb-vnc-conferencia {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.75rem var(--sb-space-3);
+  border-top: 1px solid var(--sb-table-rule);
+  background: var(--sb-bg-soft);
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  color: var(--sb-text-soft);
+}
+
+.sb-vnc-conferencia p {
+  margin: 0;
+}
+
+.sb-vnc-conferencia b {
+  color: var(--sb-primary);
+}
+
+.sb-vnc-conferencia code {
+  padding: 0 0.25rem;
+  border-radius: var(--sb-radius-sm);
+  background: var(--sb-neutral-soft);
+  font-family: var(--sb-mono);
+  font-size: 0.625rem;
+}
+
+@media (max-width: 1150px) {
+  .sb-vnc-recortes {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .sb-vnc-resumo {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .sb-vnc-resumo,
+  .sb-vnc-recortes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sb-vnc-contas {
+    /* Rolagem própria: os selos não podem alargar a PÁGINA (a lição de D-366). */
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 0.25rem;
+  }
+
+  .sb-rep-busca .sb-input {
+    min-width: 0;
+  }
+}
+
+/*
+ * AS COLUNAS DA TABELA DE ANÚNCIOS (D-376). `table-layout: fixed` e uma
+ * proporção declarada: sem isso o título parava no `max-width` de 28rem e
+ * sobravam ~340px de branco antes da coluna de SKU — as colunas não pareciam
+ * alinhadas, e ainda por cima o título era cortado com espaço de sobra ao
+ * lado. Fixo, o título usa a largura que tem e as reticências caem no fim
+ * dela. Escopo só nesta tabela: `table-layout` muda a medida de TODAS as
+ * células, e as outras tabelas da casa dependem do automático.
+ */
+.sb-vnc-tabela {
+  table-layout: fixed;
+}
+
+.sb-vnc-tabela th:nth-child(1) {
+  width: 46%;
+}
+
+.sb-vnc-tabela th:nth-child(2) {
+  width: 13%;
+}
+
+.sb-vnc-tabela th:nth-child(3) {
+  width: 11%;
+}
+
+.sb-vnc-tabela th:nth-child(4) {
+  width: 11%;
+}
+
+.sb-vnc-tabela th:nth-child(5) {
+  width: 10%;
+}
+
+.sb-vnc-tabela th:nth-child(6) {
+  width: 9%;
+}
+
+/* Com a largura fixa, o título toma a coluna inteira e corta no fim dela. */
+.sb-vnc-tabela .sb-vnc-anuncio {
+  min-width: 0;
+  max-width: none;
+}
+
+.sb-vnc-tabela .sb-vnc-anuncio-pe .sb-mono {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A coluna de SKU também corta em vez de alargar a tabela. */
+.sb-vnc-tabela td:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1100px) {
+  /* Estreito demais para porcentagem: volta ao automático e rola na horizontal. */
+  .sb-vnc-tabela {
+    table-layout: auto;
+  }
+
+  .sb-vnc-tabela .sb-vnc-anuncio {
+    min-width: 15rem;
+    max-width: 24rem;
+  }
+}
