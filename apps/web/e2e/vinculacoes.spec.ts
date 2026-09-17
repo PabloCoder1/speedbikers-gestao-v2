@@ -88,44 +88,66 @@ test("/vinculacoes: o zero de candidatos diz por que é zero, e a vinculação m
 
   await expect(page.getByText(/toda linha do ERP encontrou o seu SKU/)).toBeVisible();
 
-  // Funcionalidade que o frame não desenha e a tela real tem: ela sobrevive.
-  await expect(page.getByRole("heading", { name: "Vincular um anúncio à mão" })).toBeVisible();
+  // Funcionalidade que o frame não desenha e a tela real tem: ela sobrevive —
+  // desde D-374 como botão no cabeçalho, que abre o popup.
+  await expect(page.getByRole("button", { name: "Vincular um MLB" })).toBeVisible();
 });
 
 /**
- * O DEFEITO QUE ESTE BLOCO IMPEDE DE VOLTAR (D-313).
+ * O CAMINHO INTEIRO DA VINCULAÇÃO, agora num popup (D-313 → D-374).
  *
- * D-284 trocou `style` inline por classe do design system no formulário e
- * apagou JUNTO dois campos — "Variação" e "SKU de destino". Sem o campo de SKU,
- * `skuSearch.query` nunca muda, `selected` fica null para sempre e o botão
- * "Vincular" nasce desabilitado: a tela cujo NOME é vinculação parou de
- * vincular, e nenhum teste viu, porque todos afirmavam sobre a faixa e a
- * tabela. Este afirma sobre o CAMINHO INTEIRO — da linha até o botão habilitado.
+ * D-313 protegia o formulário do fim da página, que D-284 tinha quebrado sem
+ * ninguém ver. D-374 trocou o formulário por um popup sobre a tabela — o dono
+ * reclamava que "Vincular" levava a tela lá para baixo. O que este caso afirma:
+ *
+ *  1. clicar em "Vincular" NÃO navega nem rola: abre o popup ali mesmo;
+ *  2. o popup é do anúncio da linha;
+ *  3. sem SKU escolhido, "Vincular" fica desabilitado; com SKU, habilita;
+ *  4. Esc fecha.
+ *
+ * NÃO grava: o anúncio do seed precisa continuar sem vínculo para as contagens
+ * dos outros casos — o mesmo cuidado do teste de D-313.
  */
-test("/vinculacoes: a linha sem vínculo leva ao formulário, e o formulário vincula", async ({ page }) => {
+test("/vinculacoes: 'Vincular' abre o popup sem sair do lugar, e o popup vincula", async ({ page }) => {
   await login(page, "/vinculacoes?estado=sem-vinculo");
 
   const tabela = page.getByRole("region", { name: "Tabela de Vinculações" });
   const linha = tabela.locator("tbody tr").filter({ hasText: E2E_LISTING_SOLD_UNLINKED.itemId });
 
-  // O caminho de volta: a linha que expõe o problema oferece a saída.
-  await linha.getByRole("link", { name: "Vincular" }).click();
+  // A URL só vale depois que o login redirecionou e a linha está na tela.
+  await expect(linha).toBeVisible();
+  const urlAntes = page.url();
 
-  // A conta viaja como slug e o MLB como `item` — um link, as duas coisas.
-  await expect(page).toHaveURL(new RegExp(`conta=${E2E_ML_ACCOUNT.slug}&item=${E2E_LISTING_SOLD_UNLINKED.itemId}`));
-  await expect(page.getByLabel("MLB do anúncio")).toHaveValue(E2E_LISTING_SOLD_UNLINKED.itemId);
+  await linha.getByRole("button", { name: "Vincular" }).click();
 
-  // Os dois campos que D-284 apagou.
-  await expect(page.getByLabel("Variação (opcional)")).toBeVisible();
+  const popup = page.getByRole("dialog");
 
-  const vincular = page.getByRole("button", { name: "Vincular" });
-  await expect(vincular).toBeDisabled();
+  await expect(popup).toBeVisible();
+  await expect(popup.getByRole("link", { name: new RegExp(E2E_LISTING_SOLD_UNLINKED.itemId) })).toBeVisible();
+  // Nada de navegação: a URL é a mesma de antes do clique.
+  expect(page.url()).toBe(urlAntes);
 
-  await page.getByLabel("SKU de destino").fill(E2E_SKU_CODE);
-  await page.getByRole("button", { name: new RegExp(E2E_SKU_CODE) }).click();
+  const vincular = popup.getByRole("button", { name: "Vincular", exact: true });
 
-  // Com conta, MLB e SKU escolhidos, a ação existe de verdade.
+  // A sugestão dos pedidos pode pré-escolher o SKU; sem ela, o botão espera a escolha.
+  await popup.getByLabel("SKU de destino").fill(E2E_SKU_CODE);
+  await popup.getByRole("option").filter({ hasText: E2E_SKU_CODE }).first().click();
+
+  await expect(popup.getByText(new RegExp(`vai para o SKU ${E2E_SKU_CODE}`))).toBeVisible();
   await expect(vincular).toBeEnabled();
+
+  await page.keyboard.press("Escape");
+  await expect(popup).toHaveCount(0);
+  await expect(linha.getByRole("button", { name: "Vincular" })).toBeVisible();
+});
+
+test("/vinculacoes: o link de outra tela (?item=) abre o popup direto no anúncio", async ({ page }) => {
+  await login(page, `/vinculacoes?estado=sem-vinculo&conta=${E2E_ML_ACCOUNT.slug}&item=${E2E_LISTING_SOLD_UNLINKED.itemId}`);
+
+  const popup = page.getByRole("dialog");
+
+  await expect(popup).toBeVisible();
+  await expect(popup.getByRole("link", { name: new RegExp(E2E_LISTING_SOLD_UNLINKED.itemId) })).toBeVisible();
 });
 
 /**

@@ -80,16 +80,17 @@ export function buildLinkIntegrityHref(
 }
 
 /**
- * Href que pré-preenche a vinculação manual a partir de uma linha da tabela
- * (D-122, restaurado em D-313).
+ * Href que abre o popup de vincular num anúncio (D-122, restaurado em D-313;
+ * popup desde D-374).
  *
  * A conta viaja como SLUG, e não como id: é o mesmo `conta` do filtro, então o
  * link faz as duas coisas de uma vez — recorta a tabela naquela conta e diz ao
  * formulário qual conta escolher. Um id cru na URL abriria um segundo
  * vocabulário para a mesma dimensão.
  *
- * O `#` é o que faz o clique TERMINAR em algum lugar: sem ele a página recarrega
- * no topo e o formulário preenchido fica fora da tela.
+ * Sem `#vincular-a-mao` desde D-374: a âncora rolava a página até o formulário
+ * no fim, que era exatamente a reclamação do dono. O `item` agora abre o popup
+ * sobre a tabela, quando o anúncio está na página.
  */
 export function buildManualLinkHref(
   current: LinkIntegrityFilters,
@@ -109,7 +110,7 @@ export function buildManualLinkHref(
     1,
   );
 
-  return `${href}#vincular-a-mao`;
+  return href;
 }
 
 /** Tradução para os argumentos da RPC — o único lugar que conhece os dois vocabulários. */
