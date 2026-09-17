@@ -25,6 +25,17 @@
 -- o ambiente a frente do repositorio, e quem paga e a proxima pessoa (D-025,
 -- D-207).
 --
+-- ------------------------------------------------------------
+-- ARQUIVO RECONSTRUIDO, E POR QUE ELE NAO E BYTE A BYTE O APLICADO
+-- ------------------------------------------------------------
+-- O corpo foi lido de `supabase_migrations.schema_migrations.statements` nos
+-- dois ambientes: md5 6d26df823e324d612f76ebe08bd76b07, 9.505 bytes, IGUAL nos
+-- dois (conferido em 17/09/2026). Este arquivo difere do aplicado em UM ponto,
+-- de proposito: o `drop function` virou `drop function if exists` das duas
+-- assinaturas. Sem isso, a versao que falta em cada ambiente tentaria derrubar
+-- uma funcao de 10 parametros que ja nao existe la, e abortaria o push.
+-- Quem auditar: compare a partir do `create function`, que e identico.
+--
 -- O frame desenha, por classe: valor, participacao e contagem de SKUs. A
 -- contagem ja existia (`class_a_count` e irmas); o VALOR nao. Somar por classe
 -- em JavaScript daria o valor da PAGINA, nao do recorte -- a classe de defeito
