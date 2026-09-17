@@ -168,11 +168,12 @@ describe("receiveNfeUpload", () => {
 
   it("recusa arquivo acima do limite antes de calcular hash ou gravar", async () => {
     const ctx = deps();
+    // XML de verdade, só grande: o limite é sobre o tamanho, não sobre o formato.
+    const grande = new Uint8Array(MAX_NFE_UPLOAD_BYTES + 1).fill(0x20);
 
-    const result = await receiveNfeUpload(ctx.deps, CALLER, {
-      ...FILE,
-      body: new Uint8Array(MAX_NFE_UPLOAD_BYTES + 1),
-    });
+    grande.set(new TextEncoder().encode("<nfeProc>"), 0);
+
+    const result = await receiveNfeUpload(ctx.deps, CALLER, { ...FILE, body: grande });
 
     expect(result).toMatchObject({ status: "rejected" });
     expect(ctx.uploads).toHaveLength(0);
@@ -211,6 +212,7 @@ function applyDb(options: {
   updateFails?: boolean;
   totalItems?: number | null;
   resolvedItems?: number | null;
+  documentType?: string;
 }): {
   db: NfeImportDeps["db"];
   updates: Record<string, unknown>[];
@@ -232,6 +234,7 @@ function applyDb(options: {
                         status: options.status ?? "PARSED",
                         total_items: "totalItems" in options ? options.totalItems : 19,
                         resolved_items: "resolvedItems" in options ? options.resolvedItems : 19,
+                        document_type: options.documentType ?? "NFE",
                       },
                 error: null,
               }),
@@ -263,6 +266,7 @@ function applyDeps(
     updateFails?: boolean;
     totalItems?: number | null;
     resolvedItems?: number | null;
+    documentType?: string;
   } = {},
 ): { deps: NfeImportDeps; enqueued: { dedupeKey: string; jobType: string }[]; updates: Record<string, unknown>[] } {
   const { db, updates } = applyDb(options);
@@ -361,5 +365,72 @@ describe("confirmNfeApply", () => {
 
     expect(outcome).toMatchObject({ status: "rejected" });
     expect(ctx.enqueued).toHaveLength(0);
+  });
+});
+
+const PDF_DANFE = new TextEncoder().encode("%PDF-1.7\n1 0 obj\nstream\nBT (DANFE) Tj ET\nendstream");
+
+describe("XML e PDF (D-375)", () => {
+  it("PDF é aceito e guardado com extensão .pdf — o formato sai dos bytes", async () => {
+    const ctx = deps();
+
+    const result = await receiveNfeUpload(ctx.deps, CALLER, {
+      fileName: "Imprimir - UpSeller.pdf",
+      contentType: "application/pdf",
+      body: PDF_DANFE,
+    });
+
+    expect(result.status).toBe("created");
+    expect(ctx.uploads[0]?.path.endsWith(".pdf")).toBe(true);
+    expect(ctx.inserted).toHaveBeenCalledWith(expect.objectContaining({ source_format: "PDF" }));
+  });
+
+  /**
+   * O nome não decide: um PDF renomeado para `.xml` continua sendo PDF, e o
+   * caminho no bucket tem de dizer a verdade — é a extensão que faz o worker
+   * escolher o leitor.
+   */
+  it("PDF renomeado para .xml continua sendo lido como PDF", async () => {
+    const ctx = deps();
+
+    await receiveNfeUpload(ctx.deps, CALLER, {
+      fileName: "nota.xml",
+      contentType: "text/xml",
+      body: PDF_DANFE,
+    });
+
+    expect(ctx.uploads[0]?.path.endsWith(".pdf")).toBe(true);
+  });
+
+  it("XML continua XML e mantém a extensão .xml", async () => {
+    const ctx = deps();
+
+    await receiveNfeUpload(ctx.deps, CALLER, FILE);
+
+    expect(ctx.uploads[0]?.path.endsWith(".xml")).toBe(true);
+    expect(ctx.inserted).toHaveBeenCalledWith(expect.objectContaining({ source_format: "XML" }));
+  });
+
+  it("arquivo que não é XML nem PDF é recusado ANTES de ocupar o bucket", async () => {
+    const ctx = deps();
+
+    const result = await receiveNfeUpload(ctx.deps, CALLER, {
+      fileName: "planilha.xlsx",
+      contentType: "application/vnd.ms-excel",
+      body: new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00]),
+    });
+
+    expect(result).toMatchObject({ status: "rejected" });
+    expect(ctx.uploads).toHaveLength(0);
+  });
+
+  it("envio ao Full não é confirmado: transferência não é saída (D-352)", async () => {
+    const ctx = applyDeps({ documentType: "ENVIO_FULL_ML_PDF" });
+
+    const result = await confirmNfeApply(ctx.deps, CALLER, "doc-1");
+
+    expect(result).toMatchObject({ status: "rejected" });
+    expect(ctx.enqueued).toHaveLength(0);
+    expect(ctx.updates).toHaveLength(0);
   });
 });

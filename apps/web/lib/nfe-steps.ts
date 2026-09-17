@@ -48,12 +48,24 @@ export function nfeEtapas(input: {
   parsedAt: string | null;
   totalItems: number | null;
   resolvedItems: number | null;
+  /** `ENTRADA` | `SAIDA` — nulo enquanto a leitura não terminou (D-375). */
+  direcao?: string | null;
+  /** O layout lido (D-375): o envio ao Full não tem quarta etapa. */
+  tipo?: string | null;
 }): readonly EtapaProcesso[] {
   const { status, parsedAt } = input;
   const total = input.totalItems ?? 0;
   const vinculados = input.resolvedItems ?? 0;
 
   const leu = parsedAt !== null;
+  /*
+    O nome da última etapa segue a DIREÇÃO do documento (D-375): a tela deixou
+    de ser só entrada, e chamar a baixa de "entrada no estoque" seria dizer o
+    contrário do que vai acontecer. Enquanto a leitura não terminou, a direção
+    ainda não existe — e o rótulo neutro é o honesto.
+  */
+  const rotuloFinal =
+    input.direcao === "ENTRADA" ? "Entrada no estoque" : input.direcao === "SAIDA" ? "Baixa no estoque" : "Movimento no estoque";
   const aplicou = status === "APPLIED";
   const aplicando = status === "APPLYING";
 
@@ -89,20 +101,26 @@ export function nfeEtapas(input: {
         : { label: "Conferência e vínculo", estado: "pendente" };
 
   const entrada: EtapaProcesso = falhouAplicando
-    ? { label: "Entrada no estoque", estado: "falhou" }
+    ? { label: rotuloFinal, estado: "falhou" }
     : aplicou
-      ? { label: "Entrada no estoque", estado: "concluida" }
+      ? { label: rotuloFinal, estado: "concluida" }
       : aplicando
-        ? { label: "Entrada no estoque", estado: "atual", nota: "gerando os movimentos" }
-        : { label: "Entrada no estoque", estado: "pendente" };
+        ? { label: rotuloFinal, estado: "atual", nota: "gerando os movimentos" }
+        : { label: rotuloFinal, estado: "pendente" };
 
   // O documento existe porque o arquivo chegou: a primeira etapa nunca está
   // pendente nesta tela.
   const etapas: readonly EtapaProcesso[] = [
-    { label: "Upload do XML", estado: "concluida" },
+    { label: "Envio do arquivo", estado: "concluida" },
     leitura,
     conferencia,
-    entrada,
+    /*
+      O envio ao Full é transferência, não saída: ele NÃO tem quarta etapa, e
+      desenhar uma pendente prometeria uma baixa que não vem (D-375/D-352).
+    */
+    ...(input.tipo === "ENVIO_FULL_ML_PDF"
+      ? [{ label: "Sem baixa: transferência (D-352)", estado: "pendente" as const }]
+      : [entrada]),
   ];
 
   if (status !== "CANCELLED") return etapas;
