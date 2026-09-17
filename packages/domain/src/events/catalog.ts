@@ -9,7 +9,14 @@
  */
 
 export type EventSeverity = "informativo" | "importante" | "critico";
-export type EventSource = "webhook" | "sync" | "user" | "system";
+/**
+ * `backfill` (D-351): o evento sobre a HISTÓRIA que a carga inicial de pedidos
+ * traz. O evento continua existindo — `get_sku_correlated_events` e o
+ * diagnóstico o leem —, mas `private.fan_out_notification` não o transforma em
+ * notificação: o primeiro backfill de produção gerou 32.258 `order.cancelled`
+ * de pedidos de até um ano antes, todos para o único ADMIN.
+ */
+export type EventSource = "webhook" | "sync" | "user" | "system" | "backfill";
 
 /**
  * `listing.price.changed` fica de fora de propósito: `docs/API.md` marca a

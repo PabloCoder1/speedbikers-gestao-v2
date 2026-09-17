@@ -17,6 +17,7 @@ describe("computeReturnReversal", () => {
       ORDER,
       { position: 0, totalQuantity: 3, returnQuantity: 3 },
       saleMovements,
+      [],
       CLAIM_ID,
       OCCURRED_AT,
     );
@@ -41,6 +42,7 @@ describe("computeReturnReversal", () => {
       ORDER,
       { position: 1, totalQuantity: 2, returnQuantity: 2 },
       saleMovements,
+      [],
       CLAIM_ID,
       OCCURRED_AT,
     );
@@ -60,6 +62,7 @@ describe("computeReturnReversal", () => {
       ORDER,
       { position: 0, totalQuantity: 5, returnQuantity: 2 },
       saleMovements,
+      [],
       CLAIM_ID,
       OCCURRED_AT,
     );
@@ -74,6 +77,7 @@ describe("computeReturnReversal", () => {
       ORDER,
       { position: 0, totalQuantity: 1, returnQuantity: 1 },
       [],
+      [],
       CLAIM_ID,
       OCCURRED_AT,
     );
@@ -87,6 +91,7 @@ describe("computeReturnReversal", () => {
       ORDER,
       { position: 0, totalQuantity: 4, returnQuantity: 1 },
       [{ skuId: "sku-a", qtyDelta: -4, idempotencyKey: `venda:${String(ORDER.id)}:0` }],
+      [],
       CLAIM_ID,
       OCCURRED_AT,
     );
@@ -105,6 +110,7 @@ describe("computeReturnReversal", () => {
       ORDER,
       { position: 0, totalQuantity: 3, returnQuantity: 3 },
       saleMovements,
+      [],
       CLAIM_ID,
       OCCURRED_AT,
     );
@@ -112,12 +118,77 @@ describe("computeReturnReversal", () => {
       ORDER,
       { position: 0, totalQuantity: 3, returnQuantity: 3 },
       saleMovements,
+      [],
       CLAIM_ID,
       OCCURRED_AT,
     );
 
     expect(first.movements[0]?.idempotencyKey).toBe(second.movements[0]?.idempotencyKey);
     expect(first.event.dedupKey).toBe(second.event.dedupKey);
+  });
+});
+
+/**
+ * Verificação de e6fda07, ALTA-1: cancelamento e devolução revertem a MESMA
+ * venda, e a unidade volta ao estoque no máximo uma vez.
+ */
+describe("computeReturnReversal — limitada pelo que já foi revertido", () => {
+  const VENDA = `venda:${String(ORDER.id)}:0`;
+  const SALE: RecordedSaleMovement[] = [{ skuId: "sku-a", qtyDelta: -1, idempotencyKey: VENDA }];
+  const TOTAL = { position: 0, totalQuantity: 1, returnQuantity: 1 };
+
+  it("o cancelamento já devolveu a venda inteira: nenhum movimento, e o evento registra a venda já revertida", () => {
+    const result = computeReturnReversal(ORDER, TOTAL, SALE, [{ idempotencyKey: `cancelamento:${VENDA}`, quantity: 1 }], CLAIM_ID, OCCURRED_AT);
+
+    expect(result.fullReversal).toBe(true);
+    expect(result.movements).toEqual([]);
+    expect(result.alreadyReversed).toEqual([VENDA]);
+    expect(result.event.after).toMatchObject({ movementsReversed: 0, movementsAlreadyReversed: 1, needsManualReview: false });
+  });
+
+  it("cancelamento parcial antes: a devolução reverte só o restante", () => {
+    const result = computeReturnReversal(
+      ORDER,
+      { position: 0, totalQuantity: 3, returnQuantity: 3 },
+      [{ skuId: "sku-a", qtyDelta: -3, idempotencyKey: VENDA }],
+      [{ idempotencyKey: `cancelamento:${VENDA}`, quantity: 1 }],
+      CLAIM_ID,
+      OCCURRED_AT,
+    );
+
+    expect(result.movements).toEqual([
+      { skuId: "sku-a", qtyDelta: 2, idempotencyKey: `devolucao:${CLAIM_ID}:${VENDA}`, occurredAt: OCCURRED_AT },
+    ]);
+  });
+
+  it("reprocessar a MESMA devolução já gravada: a própria linha fica fora da soma e o movimento sai igual", () => {
+    const result = computeReturnReversal(ORDER, TOTAL, SALE, [{ idempotencyKey: `devolucao:${CLAIM_ID}:${VENDA}`, quantity: 1 }], CLAIM_ID, OCCURRED_AT);
+
+    expect(result.movements.map((m) => [m.idempotencyKey, m.qtyDelta])).toEqual([[`devolucao:${CLAIM_ID}:${VENDA}`, 1]]);
+    expect(result.alreadyReversed).toEqual([]);
+  });
+
+  it("OUTRA devolução (outro claim) já devolveu a venda: nada", () => {
+    const result = computeReturnReversal(ORDER, TOTAL, SALE, [{ idempotencyKey: `devolucao:999:${VENDA}`, quantity: 1 }], CLAIM_ID, OCCURRED_AT);
+
+    expect(result.movements).toEqual([]);
+  });
+
+  it("KIT: o limite é por componente — o cancelado não volta, o outro volta", () => {
+    const result = computeReturnReversal(
+      ORDER,
+      { position: 1, totalQuantity: 1, returnQuantity: 1 },
+      [
+        { skuId: "comp-1", qtyDelta: -2, idempotencyKey: `venda:${String(ORDER.id)}:1:comp-1` },
+        { skuId: "comp-2", qtyDelta: -1, idempotencyKey: `venda:${String(ORDER.id)}:1:comp-2` },
+      ],
+      [{ idempotencyKey: `cancelamento:venda:${String(ORDER.id)}:1:comp-1`, quantity: 2 }],
+      CLAIM_ID,
+      OCCURRED_AT,
+    );
+
+    expect(result.movements.map((m) => [m.skuId, m.qtyDelta])).toEqual([["comp-2", 1]]);
+    expect(result.alreadyReversed).toEqual([`venda:${String(ORDER.id)}:1:comp-1`]);
   });
 });
 
