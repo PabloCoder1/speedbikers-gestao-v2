@@ -118,8 +118,9 @@ Números completos e método: `docs/PERFORMANCE.md`.
   60 min como `claim_return_not_yet_available` (info); fora da janela segue
   falha, com `claim_return_missing` (warn) e a idade. **No ar desde
   2026-09-14 09:51 UTC** (`worker-00051-thq`).
-- **MLB1476804187 fora do ar desde 16/09** (relist com variações recusado, D-364,
-  branch `fix/relist-variacoes`): após worker, api e web, republicar pelo painel.
+- **MLB1476804187 fora do ar, sem relist possível** (D-369): o ML recusou as
+  retomadas de 17/09 com `item.variations.relist.invalid` (variações em conta de
+  user products). O destino do anúncio é decisão do dono.
 - **As duas suítes locais não convivem no mesmo banco, e a ordem é a cura.**
   `test:integration` exige banco recriado; e rodá-la quebra o seed do
   Playwright depois (usuários criados por SQL deixam `confirmation_token`

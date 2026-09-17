@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **363** (D-001 a D-370).
+Decisões registradas: **365** (D-001 a D-371).
 
 ## Por domínio
 
@@ -106,7 +106,7 @@ Decisões registradas: **363** (D-001 a D-370).
 - **D-346** — As contas do webhook passam a vir da memoria -- nenhum caminho do ACK depende de conexao quente com o Postgres
 - **D-353** — O Postgres de producao com 4.091 erros em 24h -- 98% era o worker contando com o 23505, e o resto o Realtime assinando antes do token
 
-### estoque (27)
+### estoque (28)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -135,6 +135,7 @@ Decisões registradas: **363** (D-001 a D-370).
 - **D-328** — Revisao de seguranca, fatia 1: nenhum segredo real em 740 commits, e duas CRITICAS no `next` que o repositorio publico carregava
 - **D-358** — Cobertura e reposicao: uma leitura em vez de duas, o plano custom que faltava, e a tela que responde "o que comprar agora"
 - **D-361** — Configuracao de reposicao: a tela que diz quanto do catalogo cada regra destrava, com a regua da politica e a remocao que avisa
+- **D-371** — Sugestao da reposicao dentro do pedido de compra: coluna por item, trazer os itens de uma marca e o voltar como botao
 
 ### interface (40)
 
@@ -179,7 +180,7 @@ Decisões registradas: **363** (D-001 a D-370).
 - **D-347** — O roteiro de restore punha o dono na aba cujo botao sobrescreve o Dev -- e o comando dele nao rodava nesta maquina
 - **D-354** — /usuarios: nome, foto, suspender e remover -- o "so conseguimos criar" virou gestao de pessoa
 
-### mercado-livre (54)
+### mercado-livre (55)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -235,6 +236,7 @@ Decisões registradas: **363** (D-001 a D-370).
 - **D-359** — Calculadora de preco no /faturamento: a margem de uma venda antes de anunciar, com o frete oficial do Mercado Livre e a tabela da Shopee
 - **D-360** — A trava da republicacao olha o estoque do Full, e nao o cadastro -- anuncio com Full zerado e envio por coleta deixa de ser recusado
 - **D-364** — Republicacao de anuncio com variacoes: o corpo oficial, a trava sem estoque antes de fechar, a recusa do ML gravada e a retomada humana so depois de recusa comprovada
+- **D-369** — Republicacao: anuncio com variacoes em conta de user products nao republica -- o preflight trava antes de fechar e a recusa com essa causa deixa de oferecer retomada
 
 ### outros (62)
 

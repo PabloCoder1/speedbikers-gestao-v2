@@ -13016,6 +13016,118 @@ Revisando o envio: o `min` da data impediria salvar a edicao de um rascunho com 
 - o seed local tem poucos SKUs e fornecedor sem contato: as capturas mostram o desenho com pouco dado;
 - a edicao (`/compras/[id]/editar`) ganhou o visual, mas nao a ficha completa do fornecedor nem o ultimo custo -- a pagina e da D-365 e passa so id e nome.
 
+## D-369 - Republicacao: anuncio com variacoes em conta de user products nao republica -- o preflight trava antes de fechar e a recusa com essa causa deixa de oferecer retomada
+
+**Contexto:** em 2026-09-17, as 13:36:37 e as 13:37:03 UTC, as duas retomadas (D-364) da operacao `a7638dc5` mandaram o corpo oficial com variacoes para o MLB1476804187 (conta `a3781960`). O Mercado Livre respondeu **400** `validation_error` nas duas, com a causa `item.variations.relist.invalid` e a mensagem "Relist item with variations are not allowed for user product seller" (o `failure_reason` gravado e o da segunda).
+
+- o pai esta fechado desde 16/09 (D-364) e segue fora do ar, sem filho;
+- as 10 variacoes tem `user_product_id` proprio; a raiz tem `user_product_id` nulo;
+- nada no preflight de D-160/D-360/D-364 olhava user products: o pedido desse item seria aprovado de novo, e o PUT de fechamento sairia;
+- a regra de D-364 tratava a recusa como retomavel, e "Tentar republicar de novo" continuava na tela -- cada clique, outro 400;
+- medido no mesmo dia, so leitura: item SEM variacao e com `user_product_id` na raiz republica mantendo o MESMO user product (MLB4604611355 -> MLB5249227873), e a experiencia de compra, que mora no user product, vem junto (Media 65 nos dois).
+
+**A doc oficial de User Products fala do assunto; a resposta de 17/09 e a regra dela aplicada ao relist.** A pagina de relist nao fala de user products. A de User Products (`developers.mercadolivre.com.br/pt_br/user-products`, perguntas frequentes, atualizada em 17/06/2026; copia baixada em 17/09, `pt_user-products.txt` linhas 637, 661 e 724-726) nao cita o relist, mas:
+
+- identifica o vendedor que ja esta no modelo de "Preco por Variacao" pela tag `user_product_seller` na API `/users`;
+- responde que, depois da ativacao, o array `variations` nao pode mais ser enviado, porque cada variacao passa a ser uma condicao de venda (item diferente).
+
+Medido em 17/09, so GET em `/users/me`: **as quatro contas de producao** (gmr, sbmotos, speedbikers-loja-1 e speedbikers-loja-2) **tem a tag `user_product_seller`**. A primeira versao desta decisao dizia que as paginas de User Products nao mencionavam a regra, e bloqueava so por `variations[].user_product_id`; a revisao apontou os dois erros (achado A3, abaixo).
+
+---
+
+**DECISAO**
+
+1. **A regra e pela CONTA, e falha fechada** (`relistUserProductVariationsBlock`, `packages/domain/src/listings/relist-preflight.ts`). Item SEM variacoes segue as regras de antes. Item COM variacoes (array nao vazio):
+   - `VARIACOES_USER_PRODUCT` quando a conta tem a tag `user_product_seller` OU quando alguma variacao traz `user_product_id` preenchido (`hasUserProductVariations`; nulo, ausente ou texto vazio nao conta, valor nao textual conta). Descricao (com acentos no codigo): "O Mercado Livre nao permite republicar anuncio com variacoes de conta no modelo de user products -- fechar o anuncio o deixaria fora do ar sem filho.";
+   - `USER_PRODUCT_NAO_VERIFICADO` quando nenhuma variacao traz `user_product_id` e a tag nao pode ser lida. A descricao diz que nao foi possivel confirmar agora se a conta esta no modelo de user products, e que sem confirmar a republicacao nao fecha o anuncio;
+   - passa so com a conta lida SEM a tag e nenhuma variacao com `user_product_id`.
+
+   `evaluateRelistPreflight` continua pura: recebe a leitura da conta como terceiro parametro (`true`, `false` ou `null`), e o padrao e `null` -- nao lido bloqueia item com variacoes.
+2. **A leitura da tag:** `GET /users/me` com o token da conta (`fetchIsUserProductSeller`, `packages/mercado-livre/src/users.ts`). `/users/me` responde pelo dono do token, sem precisar de `ml_accounts.seller_id`. O worker (`readRelistSellerUserProducts`, `apps/worker/src/handlers/relist-seller-model.ts`) so chama quando a leitura decide: item com variacoes e nenhuma com `user_product_id`. Sem variacoes, ou com a variacao ja decidindo, nao ha chamada. Qualquer falha (HTTP, forma, rede) vira `null` e bloqueia. Diferente do Full (D-360), falha passageira nao relanca: o bloqueio nao fecha nada, e outro pedido passa quando a leitura voltar.
+3. **Onde a regra roda, sempre antes de um ato remoto:**
+   - `relist.prepare`, antes do insert, junto do estoque do Full;
+   - re-preflight do `relist.execute` em REQUESTED, antes do PUT: PREFLIGHT_FAILED;
+   - **retomada de CLOSING com o pai AINDA ATIVO** (achado A1: PUT que caiu em 5xx ou timeout, ou crash entre gravar CLOSING e emitir o PUT): CLOSING -> CLOSE_FAILED, com o codigo do bloqueio no `reason` do evento e a descricao no `failure_reason`, sem PUT e sem POST (log `relist_closing_user_product_variations`). A aresta ja existe na maquina de D-159 e o estado diz a verdade: o pai foi reconferido ativo, nada destrutivo aconteceu, e a operacao e reabrivel. A conferencia vale para a operacao CARREGADA em CLOSING; o CLOSING que a propria execucao grava depois do re-preflight nao le a conta de novo;
+   - retomada humana de RELIST_FAILED, antes do POST: termina sem transicao (`relist_retry_user_product_variations`, com o `block`).
+
+   CLOSING com o pai ja fechado e CLOSED seguem sem a conferencia: o pai ja esta fechado, e o POST so grava a recusa, nao elegivel.
+4. **A recusa com essa causa nao e elegivel.** `isRelistUserProductVariationsRejection` (`relist-retry.ts`) reconhece o `failure_reason` que comeca com a mensagem de recusa (`relistRejectionFailureReason`) e traz, na resposta, o codigo `item.variations.relist.invalid` inteiro (nem prefixo nem sufixo de outro codigo; o ponto que fecha a frase nao e sufixo, so ponto seguido de letra, digito ou `_`). A regra de codigo inteiro e `mentionsRelistUserProductVariationsCause`, a mesma que o worker usa no resumo. `isRelistRetryEligible` devolve `false` para `POST_RECUSADO` com essa causa; as outras recusas 4xx seguem elegiveis. Na retomada, a regra barra antes de qualquer leitura remota (`relist_retry_not_eligible`, com `user_product_variations_rejection`).
+5. **O resumo do erro nao perde a causa decisiva** (achados A2, B2 e R2). `summarizeMercadoLivreError` (worker):
+   - lista `item.variations.relist.invalid` antes das outras causas, na ordem do ML entre si, e corta `message` e `error` em 200 caracteres cada. A primeira causa comeca antes do caractere ~420 e sobrevive ao corte de 800 com qualquer numero de causas;
+   - trata `cause` fora de array (objeto unico ou texto) como UMA causa, e marca como decisiva a causa, objeto ou texto, que menciona o codigo;
+   - se o codigo esta em QUALQUER texto do corpo JSON e o resumo ficou sem ele (fim de `message` ou `error` longo, campo que o resumo nao le, causa decisiva com o codigo so no fim de mensagem longa), poe o codigo solto a frente das causas. So o codigo entra, nunca o texto em volta. No corpo que e so texto, as causas vao antes dele.
+
+   O formato nao muda, e o `failure_reason` legado segue lido pela mesma regra. O limite: corpo que nao e JSON (HTML, vazio) chega `undefined` do cliente HTTP e nao tem como ser lido -- ver "O que continua aberto".
+6. **api:** `POST /v1/listings/relist/:relistId/retry` da 409 com motivo proprio para essa causa ("o Mercado Livre nao permite republicar este anuncio..."), em vez de "o anuncio novo pode ter nascido".
+7. **web** (`atosDaRepublicacao` le o `failure_reason` e o total de variacoes do retrato):
+   - RELIST_FAILED com a causa: `falha: "nao-permitida"`, sem botao (mesmo com `retomavel` verdadeiro), e o painel diz "O Mercado Livre nao permite republicar este anuncio (variacoes em conta de user products). Nenhum anuncio novo foi criado; o anuncio antigo segue fechado.";
+   - PREFLIGHT_FAILED ou CLOSE_FAILED cujo motivo traz a descricao de `VARIACOES_USER_PRODUCT`, com variacoes no retrato: **sem "Pedir republicacao"**, porque outro pedido reprovaria igual. O painel mostra so o aviso "Sem pedido de republicacao: o Mercado Livre nao aceita republicar este anuncio enquanto ele tiver variacoes. Nada foi fechado -- o motivo esta na tabela abaixo." (achado A4: a descricao do bloqueio nao se repete no painel, porque ja e o motivo na tabela);
+   - `USER_PRODUCT_NAO_VERIFICADO` nao tira o botao: e leitura que falhou, nao regra;
+   - a pagina tambem le `parent_snapshot->variations` nesse caso, no mesmo `Promise.all`. A condicao da leitura e `precisaDasVariacoesDoRetrato` (`republicacao.ts`: REQUESTED, RELIST_FAILED e a reprovacao por `VARIACOES_USER_PRODUCT`), que recebe a linha como a pagina a le. Sem ela o painel veria 0 variacoes e voltaria a oferecer o pedido (achados B1/R1), e por isso ela e testada fora da pagina, com um guarda que confere que `page.tsx` condiciona a leitura a ela;
+   - a confirmacao do pedido cita "com variacoes em conta de user products" entre o que a conferencia recusa;
+   - PREFLIGHT_FAILED nunca oferece "Executar republicacao" (so REQUESTED), a api responde 409 para PREFLIGHT_FAILED e o worker faz noop.
+
+**Nenhuma migration.**
+
+---
+
+**ALTERNATIVAS DESCARTADAS**
+
+- **Bloquear so por `variations[].user_product_id`** (a primeira versao): falha aberta. Variacao sem o campo passava e o PUT saia, numa conta em que a doc diz que `variations` nao e enviavel. A amostra de 17/09 tem o campo em todas as variacoes (262 de 262 itens no multiget, 80 de 80 no GET simples), mas a regra nao pode depender disso.
+- **Bloquear qualquer item com variacoes, sem ler a conta:** coincide com os dados de hoje, mas tiraria o relist de variacoes de uma conta fora do modelo novo. Ler a tag custa uma chamada, so para item com variacoes e sem `user_product_id`.
+- **`reason` proprio no evento para a causa (A2), lido pela elegibilidade:** o evento pode se perder (o `transition` so loga a falha do insert), e o `failure_reason` sai no mesmo update do status. Ordenar as causas mantem uma fonte so.
+- **Mandar o corpo sem variacoes para esse item:** o 400 de 16/09 foi com esse corpo, e a doc manda o corpo com variacoes. Nao ha base para esperar outro resultado.
+- **Bloquear por `user_product_id` na raiz:** o par medido em 17/09 republicou assim e manteve a experiencia; bloquear tiraria o unico caminho que funcionou.
+- **Tirar toda recusa 4xx da retomada:** as recusas corrigiveis (como `item.variations.missing`, que D-364 corrigiu) perderiam o caminho humano.
+- **Recriar o anuncio (anuncio novo, como o "Recriar e vender" da Seconds):** nao e relist -- sem `parent_item_id` nem a heranca documentada. Fica fora desta decisao; o relato do dono (experiencia 30 -> 100) nao foi verificado aqui.
+
+---
+
+**CONSEQUENCIAS**
+
+- o MLB1476804187 fica fora do ar sem relist possivel; o destino dele e decisao do dono;
+- nas quatro contas, anuncio com variacoes nao e mais fechado pelo painel: o pedido nasce PREFLIGHT_FAILED, e o painel deixa de oferecer outro pedido;
+- pedido, execucao e retomada de item com variacoes sem `user_product_id` custam um `GET /users/me` a mais; item sem variacoes nao muda;
+- a tela da `a7638dc5` deixa de oferecer "Tentar republicar de novo" e diz que o ML nao permite;
+- **publicacao:** worker primeiro (e nele que o PUT e barrado), depois api e web. A web antiga com a api nova ainda mostra o botao e recebe 409 com o motivo.
+
+**O que continua aberto (fora desta decisao):**
+
+- CLOSED retomado (pai ja fechado) ainda emite o POST, que volta com a recusa gravada e nao elegivel -- nao ha mais nada a fechar;
+- recusa com corpo que nao e JSON (HTML, vazio): o resumo nao tem de onde tirar a causa, a recusa parece retomavel e a tela oferece o botao. A retomada ainda confere o anuncio ao vivo antes do POST e termina sem transicao; o dono le a mensagem de "sem resposta". Nada fecha e nenhum POST sai. O corpo real do ML e JSON com `cause` em array de objetos;
+- a tag e lida a cada pedido, sem cache: com `/users/me` fora do ar, item com variacoes reprova com `USER_PRODUCT_NAO_VERIFICADO` ate a leitura voltar;
+- a web decide o aviso pelo retrato da operacao, nao pelo anuncio ao vivo (ela nao le o ML);
+- o caminho sem variacao com `user_product_id` na raiz tem um par medido, nao garantia documental.
+
+---
+
+**PROVA**
+
+- leituras reais, so leitura, em 17/09: `GET /items/MLB1476804187` sem `include_attributes` (HTTP 200, `closed`, 10 variacoes com `user_product_id`, raiz nula); SELECT em producao da `a7638dc5` (`parent_snapshot` com os 10 `user_product_id`, `failure_reason` com a causa, eventos das duas retomadas `POST_RECUSADO`); `GET /users/me` das quatro contas, todas com `user_product_seller`;
+- doc oficial de User Products baixada em 17/09: `pt_user-products.txt:637,661,724-726`;
+- revisao da primeira versao, quatro achados BAIXA, todos corrigidos nesta branch:
+  - A1: retomada de CLOSING com o pai ativo emitia o PUT sem conferir (item 3);
+  - A2: o corte do resumo em 800 caracteres podia apagar a causa e devolver a elegibilidade (item 5);
+  - A3: o bloqueio era por variacao e falhava aberto, e a doc da casa dizia que User Products nao fala do assunto (itens 1 e 2);
+  - A4: o painel repetia o motivo da tabela e oferecia "Pedir republicacao" ao lado de "nao permite" (item 7).
+- segunda revisao, dois achados MEDIA e dois BAIXA, todos corrigidos nesta branch:
+  - B1/R1 (MEDIA, o mesmo defeito achado por dois revisores): a condicao da pagina que le o retrato para a reprovacao por `VARIACOES_USER_PRODUCT` nao tinha teste; tira-la (ou passar `failureReason: null`) devolvia o "Pedir republicacao" com a bateria verde (item 7);
+  - B2 (BAIXA): o teto de 200 caracteres em `error` nao tinha teste (item 5);
+  - R2 (BAIXA): a causa sumia do resumo com `cause` fora de array, causa em texto, codigo no fim de `error` longo, codigo seguido de ponto e corpo em texto longo (itens 4 e 5). A frase anterior, "com qualquer numero de causas", so valia para `cause` em array de objetos.
+- testes (estado final):
+  - dominio: bloqueio com a forma do pai do incidente; uma variacao basta; variacoes sem `user_product_id` passam so com a conta lida sem a tag; a tag bloqueia sem `user_product_id`; leitura que falhou (ou ausente) bloqueia com `USER_PRODUCT_NAO_VERIFICADO`, cuja descricao nao contem a do bloqueio definitivo; `user_product_id` decide com a conta `false` ou `null`; sem variacoes a conta nao importa; `relistUserProductVariationsBlock` e `hasRelistVariations` com forma ilegivel; raiz com `user_product_id` permitida; bloqueio junto de `VARIACOES_SEM_ESTOQUE`; elegibilidade `false` para o `failure_reason` real e para a causa entre outras, `true` para outras recusas 4xx e causas parecidas (inclusive `invalid.quantity`); codigo seguido de ponto final reconhecido; `mentionsRelistUserProductVariationsCause` com codigo inteiro. Os testes de variacao anteriores passam a conta lida sem a tag;
+  - mercado-livre 3: `/users/me` com o token e a tag; tags sem ela (inclusive parecidas) dao `false`; sem `tags` legiveis ou com erro HTTP, lanca;
+  - worker: REQUESTED com `user_product_id` (so o GET do item) e com a tag sem `user_product_id` (GET do item e `/users/me`), os dois PREFLIGHT_FAILED sem PUT; leitura da conta que falha (503, 403, forma) reprova com `USER_PRODUCT_NAO_VERIFICADO`; conta sem a tag fecha e republica depois de ler; sem variacoes nao le a conta; 12 causas longas antes da decisiva (com `message` curta, `message` de 2.000 caracteres e `error` de 2.000 caracteres) mantem a causa e a nao elegibilidade; a causa sobrevive, nao elegivel, em nove formas de corpo (`cause` objeto unico, `cause` texto, array de textos com a decisiva no fim, codigo no fim de `error` de 300 e de `message` de 3.000 caracteres, codigo seguido de ponto, corpo em texto longo, codigo em campo que o resumo nao le, causa decisiva com o codigo so no fim de mensagem longa); sem o codigo no corpo (so codigos parecidos) nada e acrescentado e a recusa segue elegivel; CLOSING com o pai ativo e `user_product_id` -> CLOSE_FAILED so com o GET; CLOSING com a tag ou sem leitura -> CLOSE_FAILED, sem a tag fecha; CLOSING sem variacoes fecha sem ler a conta; retomada com a causa (nenhuma chamada), com `user_product_id` (so o GET), com a tag ou sem leitura (GET e `/users/me`), todas sem transicao e sem POST; `relist.prepare`: `user_product_id` e tag reprovam, conta sem a tag fica REQUESTED, leitura que falha reprova, sem variacoes ou com `user_product_id` nenhuma chamada a `/users/me`;
+  - api 1: a causa da 409 com o motivo proprio e nao enfileira;
+  - web: RELIST_FAILED com a causa sem botao (com `retomavel` falso e verdadeiro) e o texto exato; outra recusa segue com o botao; PREFLIGHT_FAILED ou CLOSE_FAILED por `VARIACOES_USER_PRODUCT` com variacoes: sem pedir, so o aviso, tambem para quem nao pode republicar; o aviso nao contem a descricao do bloqueio; o pedido volta com a conta nao lida, outro bloqueio, retrato sem variacoes, e a descricao em REQUESTED ou RELIST_FAILED nao aciona o aviso; `precisaDasVariacoesDoRetrato` verdadeiro para REQUESTED, RELIST_FAILED e PREFLIGHT_FAILED/CLOSE_FAILED por `VARIACOES_USER_PRODUCT`, falso com `USER_PRODUCT_NAO_VERIFICADO`, outro motivo, sem motivo, outros estados e sem operacao; o caminho da pagina (predicado, retrato de 10 variacoes, `atosDaRepublicacao`) fica sem pedido; o guarda confere em `page.tsx` que a leitura de `parent_snapshot->variations` e condicionada a `precisaDasVariacoesDoRetrato(operacaoComoPai)`.
+- bateria sem banco, sobre a `origin/v3` em `c199916`: build dos pacotes (4 tarefas); `typecheck lint test --force` em domain (578), mercado-livre (133), worker (683), api (391) e web (719), 20 tarefas; `turbo run build --force` (8 tarefas, com `next build`); os quatro guardas da web; `docs-check`. Tudo verde. Depois da segunda revisao, `turbo run typecheck lint test --force` no repositorio inteiro (29 tarefas: domain 580, mercado-livre 133, worker 685, api 391, web 722, db 25, observability 35, contracts 10), `turbo run build --force` (8 tarefas, com `next build`), os quatro guardas e `docs-check`: tudo verde.
+- mutacao, cada arquivo restaurado e conferido por sha256 (pacote reconstruido quando o teste de outro pacote depende dele):
+  - primeira versao, 6 de 6 pegas: sem o bloqueio no preflight; bloqueio so pela raiz; elegibilidade ignorando a causa; worker sem a conferencia do pai ao vivo na retomada; web com o botao para a causa; api com o motivo generico;
+  - lacunas A1-A4, 13 de 13 pegas: a tag nao bloqueia; leitura que falhou deixa passar; o worker le a conta sem variacoes; falha de leitura vira `false`; o re-preflight ignora a leitura; qualquer tag `user_product*` conta; CLOSING ativo emite o PUT sem conferir; a conferencia de CLOSING usa o status atual em vez do carregado; causas na ordem do ML; `message` sem teto; painel oferece pedir reprovado; aviso sem olhar as variacoes; qualquer estado com a descricao aciona o aviso;
+  - segunda revisao, 13 de 13 pegas: a pagina volta a condicao antiga, sem o predicado (tsc e eslint limpos, so o guarda pega); o predicado passa `failureReason: null`; o predicado sem a clausula de D-369; o predicado so pelo status; `error` sem teto; `cause` fora de array ignorada; causa em texto nunca decisiva; sem o codigo solto; codigo solto sem olhar o corpo; busca sem descer no corpo; causas depois do texto no corpo em texto; regex antiga com ponto final (dominio e worker); regex sem a guarda de sufixo.
+- nao verificado: a tela no navegador e o e2e (exigem banco e sessao); nenhuma chamada de escrita ao ML.
+
+**Impacto:** `packages/domain/src/listings/{relist-preflight,relist-retry,index}.ts` e testes; `packages/mercado-livre/src/{users,index}.ts` e teste; `apps/worker/src/handlers/{relist-execute,relist-prepare,relist-seller-model}.ts` e testes; `apps/api/src/relist.ts` e teste; `apps/web/app/anuncios/[itemId]/{page.tsx,relist-panel.tsx,republicacao.ts}` e teste; `docs/{DECISIONS,DECISIONS_INDEX,MERCADO_LIVRE,HANDOFF}.md`.
 
 ## D-370 - Logo do fornecedor, e o cadastro de D-367 sem a barra que cobria os campos nem o "voltar" sublinhado
 
@@ -13056,3 +13168,42 @@ Na web:
 - visual com uma logo real no formulario, no painel, na lista e em /compras/novo, a 1440 px, e o formulario rolado e numa tela de 700 px de altura.
 
 **Impacto:** `supabase/migrations/20260917160000_supplier_logo.sql`; `packages/db/src/{types,rls.integration.test}.ts`; `apps/web/app/fornecedores/{logo,voltar}.tsx`, `novo/{page,supplier-form}.tsx`, `[supplierId]/{page,editar/page}.tsx`, `page.tsx`; `apps/web/app/compras/novo/{page,purchase-order-form}.tsx`; `apps/web/components/object-header.tsx`; `apps/web/lib/{logo-fornecedor,logo-fornecedor-url,suppliers-overview}.ts`; `apps/web/app/globals.css`; `apps/web/e2e/fornecedores.spec.ts`. Publicacao: web funciona antes da migration (sem logo); a logo aparece depois da migration no Dev (CI) e em producao (workflow com duas aprovacoes).
+
+## D-371 - Sugestao da reposicao dentro do pedido de compra: coluna por item, trazer os itens de uma marca e o voltar como botao
+
+**Contexto:** pedidos do dono em /compras/novo: (1) "o botao de voltar tem que ser melhorado"; (2) "mais uma coluna escrito Sugestao: assim que colocarmos o SKU, a sugestao daquele produto que temos em cobertura e reposicao deve aparecer"; (3) "quando colocar o fornecedor, que e querendo ou nao a marca do produto, uma opcao de trazer todos os itens que precisamos comprar, a partir da cobertura e reposicao"; (4) confirmar se o pedido criado pode ser baixado para mandar ao fornecedor.
+
+**1. A LEITURA -- `get_purchase_order_suggestions` (migration `20260917170000`)**
+
+Recorte de `get_purchase_suggestions` (D-147/D-150), sem conta nova: a sugestao, o estado e a cobertura sao os da mesma funcao que /reposicao le, e a integracao ja confere que ela e identica a composicao de `@sb/domain`. `jsonb`, plano custom.
+
+- **por lista de SKUs** (`p_sku_ids`): a coluna Sugestao pede UMA vez para todos os SKUs do pedido. Pela `get_replenishment_overview` seriam N chamadas de ~250 ms, cada uma classificando o catalogo inteiro;
+- **por marca** (`p_supplier_brand`) com `p_scope` `comprar_agora` (ruptura + compra urgente com sugestao) ou `com_sugestao` (sugestao > 0), filtrada DENTRO da sugestao;
+- sem SKU e sem marca devolve vazio -- o catalogo inteiro nao e pergunta de pedido; limite de 500 linhas com o total antes do limite;
+- `aproveitavel` = local + Full + transito - reservado, NULO em estoque virtual (D-127); `is_imported` do cadastro, para o aviso de mistura (D-151);
+- `p_date_to` por ultimo (D-242), nulo = hoje: existe para a integracao, cujos dados vivem em 2025.
+
+**Medido no Dev como `authenticated`, com a funcao em `pg_temp` (nada gravado):** 30 SKUs com sugestao em **166 ms**; marca PLASMOTO em `comprar_agora` em **138 ms** (86 SKUs; 90 em `com_sugestao`); **zero divergencias** de sugestao e estado contra `get_purchase_suggestions`; nenhuma linha fora do recorte; ordem de prioridade preservada (rupturas primeiro).
+
+**2. A TELA**
+
+- **voltar:** o componente de D-367 subiu para `components/voltar.tsx` (classes `sb-voltar`/`sb-voltar-seta`) e passou a servir /compras/novo e os tres usos de /fornecedores; o subtitulo virou so texto;
+- **coluna Sugestao**, entre o SKU e a quantidade: lida em lote com espera de 300 ms (escolher tres SKUs seguidos vira uma chamada). Cada saida significa uma coisa: codigo livre "—" (sem reposicao), recusa "sem sugestao" (motivo no `title`), 0 "coberto", positiva como BOTAO "24 un" que um clique usa como quantidade (fica verde com check quando igual), com o selo do estado e, no `title`, vendas em 30 dias, aproveitavel e cobertura. Sem a funcao no banco (Preview antes da migration) ou com falha, "indisponivel" -- o pedido segue normal;
+- **"Trazer da reposicao"** (cartao Itens, e atalho na ficha do fornecedor): marca pre-selecionada quando o nome do fornecedor bate com ela (`marcaDoFornecedor`: igual sem acento/caixa, ou a marca como palavra inteira do nome; varias candidatas, a mais especifica); recorte "Comprar agora" ou "Tudo com sugestao"; previa com SKUs, unidades e valor pelo custo cadastrado (sem custo fora da soma e contado), a lista em ordem de prioridade e o link "Ver a conta na reposicao"; "Adicionar N ao pedido" traz quantidade sugerida e custo cadastrado como sugestao editavel, e SKU ja no pedido nao entra de novo;
+- `position: relative` nos cartoes: rotulo `sb-sr-only` sem ancestral posicionado escapava do overflow e esticava a pagina (achado da sessao de fornecedores).
+
+Fornecedor e marca continuam eixos diferentes (D-174): a tela so SUGERE a marca pelo nome e deixa trocar.
+
+**3. O "PEDIDO PARA O FORNECEDOR" JA EXISTIA**
+
+A pagina de cada pedido (`/compras/[id]`) tem **Exportar Excel** e **Exportar PDF** (`/compras/[id]/export/xlsx` e `/pdf`), com itens, quantidades, custos e total. O layout e o provisorio de D-034 ("modelo profissional a minha escolha, ajustado quando o modelo do usuario chegar").
+
+**4. VERIFICACAO**
+
+`typecheck`, `lint`, `next build`, os quatro guardas e a suite de unidade da web (7 testes novos do leitor e da marca do fornecedor). Integracao: 3 casos novos no describe de prioridade (D-150) -- mesma sugestao por lista de SKUs, `comprar_agora` so ruptura e urgente em ordem, `com_sugestao` sem recusa nem zero, vazio sem filtro, anon negado -- que passaram na primeira rodada local; as reexecucoes locais esbarram nas fixtures ja plantadas (`skus_org_key_unique`), classe conhecida da suite sem `db reset`. E2E contra `next start` e o seed: `fornecedores` (8, com o Voltar movido) e `pedido-compra` (3, 1 novo: voltar-botao e a coluna saindo do "lendo" para uma resposta da reposicao), 11 verdes.
+
+Capturas a 1440 px e 390 px (sem rolagem lateral) com a resposta da funcao SIMULADA no navegador e a marca de um SKU do seed trocada por um minuto e devolvida: o seed local nao tem configuracao de reposicao. A conta real e a do Dev, acima.
+
+- **a migration precisa chegar a producao ANTES da promocao** da web; antes disso a coluna mostra "indisponivel" e o painel falha com aviso -- nada quebra;
+- a edicao do rascunho (`/compras/[id]/editar`) nao recebe `organizationId` nem marcas, entao nao tem a coluna nem o painel;
+- ordem de merge combinada: esta migration (`20260917170000`) antes da `20260917180000` da D-372.

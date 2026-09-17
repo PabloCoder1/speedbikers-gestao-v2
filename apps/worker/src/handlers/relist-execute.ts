@@ -5,13 +5,17 @@ import {
   RELIST_POST_FAILED_REASON,
   RELIST_POST_REJECTED_REASON,
   RELIST_RETRY_REASON,
+  RELIST_USER_PRODUCT_VARIATIONS_CAUSE,
   buildRelistBody,
   canTransitionRelist,
   collectRelistInventoryIds,
   evaluateRelistPreflight,
   isRelistRejectionStatus,
   isRelistRetryEligible,
+  isRelistUserProductVariationsRejection,
+  mentionsRelistUserProductVariationsCause,
   relistRejectionFailureReason,
+  relistUserProductVariationsBlock,
   summarizeRelistVariations,
 } from "@sb/domain";
 import type { MercadoLivreClient, MercadoLivreOAuthConfig } from "@sb/mercado-livre";
@@ -25,6 +29,7 @@ import type { HandlerContext, JobHandler } from "../router.js";
 import { ensureAccessToken } from "./ml-token.js";
 import { describeFullStock, readRelistFullStock } from "./relist-full-stock.js";
 import { ensureRelistMeasurement } from "./relist-measurement.js";
+import { describeSellerUserProducts, readRelistSellerUserProducts } from "./relist-seller-model.js";
 
 /**
  * `relist.execute` (Fase 9, D-162) — a PRIMEIRA ESCRITA DESTRUTIVA do
@@ -66,6 +71,16 @@ import { ensureRelistMeasurement } from "./relist-measurement.js";
  *    voltou (5xx, resposta ambígua) no meio do caminho deixa o mesmo
  *    `status`, mas não a mesma versão. Nada disso acontece sozinho:
  *    RELIST_FAILED sem `retomada` continua noop.
+ * 7. **Variações em conta de user products não republicam** (D-369): o ML
+ *    recusa com `item.variations.relist.invalid`. A regra é pela CONTA e
+ *    falha fechada (`relistUserProductVariationsBlock`): item com variações
+ *    para quando a conta tem a tag `user_product_seller`, quando alguma
+ *    variação traz `user_product_id` ou quando a tag não pôde ser lida. Ela
+ *    roda em TRÊS pontos antes de um ato remoto: o re-preflight de REQUESTED
+ *    (PREFLIGHT_FAILED antes do PUT), a retomada de CLOSING com o pai ainda
+ *    ativo (CLOSE_FAILED, sem PUT) e a retomada humana (sem transição e sem
+ *    POST). A recusa com essa causa não é elegível, e o resumo do erro põe as
+ *    causas decisivas primeiro, para o corte não apagá-las.
  *
  * O corpo do POST sai de `buildRelistBody` (D-364): com variações, só as que
  * têm estoque, cada uma com o próprio preço; sem estoque nenhum, o POST não
@@ -129,6 +144,27 @@ const childForRemapSchema = z.object({
 
 /** Teto do resumo do corpo de erro do ML — cabe no `failure_reason` e no log. */
 const ML_ERROR_SUMMARY_MAX = 800;
+
+/**
+ * Teto de `message` e de `error` DENTRO do resumo. Com os dois curtos, a
+ * primeira causa começa antes do caractere ~420 — e é lá que as decisivas
+ * ficam, longe do corte de 800.
+ */
+const ML_ERROR_HEAD_MAX = 200;
+
+/**
+ * Causas que DECIDEM o que a tela e a retomada fazem, lidas no `failure_reason`
+ * gravado (D-369). Vão primeiro na lista de causas: numa resposta com muitas
+ * causas, o corte do resumo apagaria a decisiva, e a recusa voltaria a parecer
+ * retomável. `mentionedIn` é a MESMA regra de código inteiro que lê o
+ * `failure_reason` — a do domínio, sem cópia aqui.
+ */
+const DECISIVE_ML_CAUSES: readonly { readonly code: string; readonly mentionedIn: (text: string) => boolean }[] = [
+  { code: RELIST_USER_PRODUCT_VARIATIONS_CAUSE, mentionedIn: mentionsRelistUserProductVariationsCause },
+];
+
+/** Até onde a busca por causa decisiva desce no corpo de erro — o do ML tem dois níveis (`cause[].code`). */
+const ML_ERROR_SEARCH_DEPTH = 8;
 
 export interface RelistExecuteDeps {
   db: AdminClient;
@@ -244,54 +280,123 @@ function readText(value: unknown): string | null {
   return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
 }
 
+/** Redige segredo, junta espaços e corta em `max` caracteres, nessa ordem — a redação não pode empurrar o texto além do teto. */
+function cleanErrorText(text: string, max: number): string {
+  const clean = redactSecretText(text).replace(/\s+/gu, " ");
+
+  return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
+}
+
+interface SummaryCause {
+  readonly decisive: boolean;
+  readonly text: string;
+}
+
 /**
- * Resumo LEGÍVEL do corpo de erro do Mercado Livre (D-364): `message`,
- * `error` e cada `cause[]` como `code: message`. Nada além desses campos
- * entra — o corpo inteiro poderia trazer o que não se grava —, o texto passa
- * pela redação de segredo da casa e é cortado em ~800 caracteres.
+ * As causas do corpo, como `code: message` (objeto) ou o próprio texto. D-369:
+ * `cause` fora de array — um objeto só, ou um texto — é UMA causa, não
+ * nenhuma; e a causa que menciona um código decisivo é decisiva, em objeto ou
+ * em texto.
  */
-function summarizeMercadoLivreError(body: unknown): string {
-  const parts: string[] = [];
+function readSummaryCauses(value: unknown): SummaryCause[] {
+  const causes: unknown[] = Array.isArray(value) ? value : value === undefined || value === null ? [] : [value];
+
+  return causes.flatMap((cause) => {
+    const text = isRecord(cause)
+      ? [readText(cause.code), readText(cause.message)].filter((piece) => piece !== null).join(": ")
+      : (readText(cause) ?? "");
+
+    return text === "" ? [] : [{ decisive: DECISIVE_ML_CAUSES.some((decisive) => decisive.mentionedIn(text)), text }];
+  });
+}
+
+/** Todos os textos do corpo, em qualquer campo — só para PROCURAR as causas decisivas; nada daqui é gravado. */
+function collectBodyTexts(value: unknown, depth: number, texts: string[]): void {
+  if (typeof value === "string") {
+    texts.push(value);
+    return;
+  }
+
+  if (depth >= ML_ERROR_SEARCH_DEPTH || typeof value !== "object" || value === null) {
+    return;
+  }
+
+  for (const child of Array.isArray(value) ? value : Object.values(value)) {
+    collectBodyTexts(child, depth + 1, texts);
+  }
+}
+
+/**
+ * O resumo com `markers` (códigos decisivos soltos) à frente das causas. No
+ * corpo que não é objeto, o texto não tem teto próprio — as causas vão antes
+ * dele.
+ */
+function assembleErrorSummary(body: unknown, markers: readonly string[]): string {
+  const head: string[] = [];
+  const causes: SummaryCause[] = markers.map((code) => ({ decisive: true, text: code }));
 
   if (isRecord(body)) {
     const message = readText(body.message);
     const error = readText(body.error);
 
     if (message !== null) {
-      parts.push(message);
+      head.push(cleanErrorText(message, ML_ERROR_HEAD_MAX));
     }
 
     if (error !== null && error !== message) {
-      parts.push(`(${error})`);
+      head.push(`(${cleanErrorText(error, ML_ERROR_HEAD_MAX)})`);
     }
 
-    const causes: unknown[] = Array.isArray(body.cause) ? body.cause : [];
-    const causeTexts = causes
-      .map((cause) => {
-        if (!isRecord(cause)) {
-          return readText(cause);
-        }
-
-        const text = [readText(cause.code), readText(cause.message)].filter((piece) => piece !== null).join(": ");
-
-        return text === "" ? null : text;
-      })
-      .filter((text) => text !== null);
-
-    if (causeTexts.length > 0) {
-      parts.push(`causas: ${causeTexts.join("; ")}`);
-    }
+    causes.push(...readSummaryCauses(body.cause));
   } else {
     const text = readText(body);
 
     if (text !== null) {
-      parts.push(text);
+      head.push(text);
     }
   }
 
-  const summary = redactSecretText(parts.length === 0 ? "sem corpo de erro legível" : parts.join(" ")).replace(/\s+/gu, " ");
+  const ordered = [...causes.filter((cause) => cause.decisive), ...causes.filter((cause) => !cause.decisive)];
+  const causesPart = ordered.length === 0 ? [] : [`causas: ${ordered.map((cause) => cause.text).join("; ")}`];
+  const parts = isRecord(body) ? [...head, ...causesPart] : [...causesPart, ...head];
 
-  return summary.length > ML_ERROR_SUMMARY_MAX ? `${summary.slice(0, ML_ERROR_SUMMARY_MAX - 1)}…` : summary;
+  return cleanErrorText(parts.length === 0 ? "sem corpo de erro legível" : parts.join(" "), ML_ERROR_SUMMARY_MAX);
+}
+
+/**
+ * Resumo LEGÍVEL do corpo de erro do Mercado Livre (D-364): `message`,
+ * `error` e cada `cause` como `code: message`. Nada além desses campos
+ * entra — o corpo inteiro poderia trazer o que não se grava —, o texto passa
+ * pela redação de segredo da casa e é cortado em ~800 caracteres.
+ *
+ * D-369: a causa decisiva (`DECISIVE_ML_CAUSES`) não pode sumir do resumo, ou
+ * a recusa volta a parecer retomável:
+ *
+ *  - as causas decisivas vão primeiro, na ordem do ML entre si, e
+ *    `message`/`error` têm teto próprio — a primeira causa começa antes do
+ *    caractere ~420;
+ *  - `cause` como objeto único ou texto conta como causa;
+ *  - e, se o código decisivo está em QUALQUER texto do corpo mas o resumo
+ *    ficou sem ele (no fim de um `message` ou `error` longo, num campo que o
+ *    resumo não lê), o código entra solto à frente das causas. Só o código
+ *    entra, nunca o texto em volta.
+ *
+ * Corpo que não é JSON (HTML, vazio) chega `undefined` do cliente HTTP e não
+ * tem como ser lido: a retomada ainda confere o anúncio ao vivo antes do POST.
+ * O formato é o mesmo — o `failure_reason` antigo segue legível pela mesma
+ * regra.
+ */
+function summarizeMercadoLivreError(body: unknown): string {
+  const summary = assembleErrorSummary(body, []);
+  const texts: string[] = [];
+
+  collectBodyTexts(body, 0, texts);
+
+  const missing = DECISIVE_ML_CAUSES.filter(
+    (decisive) => !decisive.mentionedIn(summary) && texts.some((text) => decisive.mentionedIn(text)),
+  ).map((decisive) => decisive.code);
+
+  return missing.length === 0 ? summary : assembleErrorSummary(body, missing);
 }
 
 async function remapRelistedOperation(
@@ -522,6 +627,7 @@ async function resumeAfterRejection(
       relist_id: operation.id,
       status: operation.status,
       last_failed_reason: lastFailedEventReason,
+      user_product_variations_rejection: isRelistUserProductVariationsRejection(operation.failure_reason),
     });
 
     return { status: "done", processed: 0 };
@@ -579,6 +685,33 @@ async function resumeAfterRejection(
     context.logger.warn("relist_retry_parent_already_relisted", {
       relist_id: operation.id,
       tags_legible: Array.isArray(tags),
+    });
+
+    return { status: "done", processed: 0 };
+  }
+
+  // D-369: item com variações de vendedor no modelo de user products — o ML
+  // recusa o relist (`item.variations.relist.invalid`). A regra de
+  // elegibilidade já barra a recusa com essa causa; esta conferência pega o
+  // pai AO VIVO nessa forma depois de qualquer outra recusa, pela mesma regra
+  // da CONTA do preflight. O GET simples traz `user_product_id` em cada
+  // variação (lido em 17/09 no MLB1476804187); a tag da conta só é lida quando
+  // decide.
+  const sellerUserProducts = await readRelistSellerUserProducts({
+    mercadoLivre: deps.mercadoLivre,
+    accessToken,
+    rawItem: parentRaw,
+    logger: context.logger,
+    logFields: { relist_id: operation.id, item_id: operation.parent_item_id },
+  });
+  const userProductBlock = relistUserProductVariationsBlock(parentRaw, sellerUserProducts ?? null);
+
+  if (userProductBlock !== null) {
+    context.logger.warn("relist_retry_user_product_variations", {
+      relist_id: operation.id,
+      parent_item_id: operation.parent_item_id,
+      block: userProductBlock.code,
+      seller_user_products: describeSellerUserProducts(sellerUserProducts),
     });
 
     return { status: "done", processed: 0 };
@@ -772,9 +905,18 @@ export function createRelistExecuteHandler(deps: RelistExecuteDeps): JobHandler 
       throw error;
     }
 
+    // A operação como foi CARREGADA: as transições abaixo mudam
+    // `operation.status`, e a conferência de D-369 antes do PUT vale para a
+    // retomada de CLOSING, não para o CLOSING que esta execução acabou de
+    // gravar depois do re-preflight.
+    const loadedStatus = operation.status;
+
     // Re-preflight NA HORA — só enquanto nada remoto foi feito (REQUESTED).
     // Depois de CLOSING, reprovar não desfaz o fechamento; o fluxo segue e
-    // as falhas reais aparecem nos próprios passos.
+    // as falhas reais aparecem nos próprios passos (menos a regra de D-369,
+    // conferida de novo antes do PUT quando o pai ainda está ativo). O GET
+    // acima, sem `include_attributes`, já traz `variations[].user_product_id`;
+    // a tag da conta vem de `GET /users/me`, só para item com variações.
     if (operation.status === "REQUESTED") {
       // D-360: o estoque do Full é relido na hora — ele pode ter recebido
       // unidades desde o pedido. Falha passageira relança antes de qualquer
@@ -786,7 +928,14 @@ export function createRelistExecuteHandler(deps: RelistExecuteDeps): JobHandler 
         logger: context.logger,
         logFields: { relist_id: operation.id, item_id: operation.parent_item_id },
       });
-      const preflight = evaluateRelistPreflight(parentRaw, fullStock);
+      const sellerUserProducts = await readRelistSellerUserProducts({
+        mercadoLivre: deps.mercadoLivre,
+        accessToken,
+        rawItem: parentRaw,
+        logger: context.logger,
+        logFields: { relist_id: operation.id, item_id: operation.parent_item_id },
+      });
+      const preflight = evaluateRelistPreflight(parentRaw, fullStock, sellerUserProducts);
 
       context.logger.info("relist_execute_preflight", {
         relist_id: operation.id,
@@ -795,6 +944,7 @@ export function createRelistExecuteHandler(deps: RelistExecuteDeps): JobHandler 
         warnings: preflight.warnings.map((warning) => warning.code),
         variations_left_out: summarizeRelistVariations(parentRaw).leftOut.map((variation) => variation.id),
         full_stock: describeFullStock(fullStock),
+        seller_user_products: describeSellerUserProducts(sellerUserProducts),
       });
 
       if (!preflight.approved) {
@@ -858,6 +1008,47 @@ export function createRelistExecuteHandler(deps: RelistExecuteDeps): JobHandler 
 
           if (!closing.ok) {
             return { status: "failed", retryable: true, reason: closing.message ?? "falha ao registrar CLOSING" };
+          }
+        }
+
+        // D-369, retomada de CLOSING com o pai AINDA ATIVO (um PUT que caiu
+        // em 5xx ou timeout, ou um crash entre gravar CLOSING e emitir o PUT):
+        // nada foi fechado, e o re-preflight de REQUESTED rodou em outra
+        // entrega. A regra da conta é conferida de novo contra o pai ao vivo.
+        // Reprovar termina em CLOSE_FAILED — a aresta existe (D-159) e o
+        // estado diz a verdade: o pai foi reconferido como ainda ativo e nada
+        // destrutivo aconteceu; é reabrível, como a falha do fechamento.
+        if (loadedStatus === "CLOSING") {
+          const sellerUserProducts = await readRelistSellerUserProducts({
+            mercadoLivre: deps.mercadoLivre,
+            accessToken,
+            rawItem: parentRaw,
+            logger: context.logger,
+            logFields: { relist_id: operation.id, item_id: operation.parent_item_id },
+          });
+          const userProductBlock = relistUserProductVariationsBlock(parentRaw, sellerUserProducts ?? null);
+
+          if (userProductBlock !== null) {
+            context.logger.warn("relist_closing_user_product_variations", {
+              relist_id: operation.id,
+              parent_item_id: operation.parent_item_id,
+              block: userProductBlock.code,
+              seller_user_products: describeSellerUserProducts(sellerUserProducts),
+            });
+
+            const marked = await transition(
+              ctx,
+              "CLOSING",
+              "CLOSE_FAILED",
+              { failure_reason: userProductBlock.descricao },
+              userProductBlock.code,
+            );
+
+            if (!marked.ok) {
+              return { status: "failed", retryable: true, reason: marked.message ?? "falha ao registrar CLOSE_FAILED" };
+            }
+
+            return { status: "done", processed: 1 };
           }
         }
 

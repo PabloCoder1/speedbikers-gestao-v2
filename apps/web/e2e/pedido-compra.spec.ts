@@ -78,3 +78,25 @@ test("novo pedido: lista colada, resumo ao vivo, atalho de prazo e ficha do forn
   await expect(page.getByRole("link", { name: /Ver fornecedor/ })).toBeVisible();
   await expect(page.getByText(/pedido\(s\) em aberto/)).toBeVisible();
 });
+
+/*
+  D-371 — o voltar vira botão, e a coluna SUGESTÃO responde para o SKU do
+  catálogo. O seed não tem configuração de reposição, então o que se afirma é
+  que a célula sai do "lendo…" para uma resposta da reposição — nunca fica
+  presa nem mostra "indisponível" (que seria a função ausente ou quebrada).
+*/
+test("novo pedido: voltar como botão e a coluna Sugestão responde pelo SKU escolhido", async ({ page }) => {
+  await login(page, "/compras/novo");
+
+  await expect(page.getByRole("link", { name: "Pedidos de compra" })).toHaveAttribute("href", "/compras");
+
+  const linha = page.locator("tbody tr").first();
+
+  await linha.getByPlaceholder("SKU ou nome…").fill("E2E-SKU");
+  await page.getByRole("option").filter({ hasText: "E2E-SKU-001" }).first().click();
+
+  const sugestao = linha.locator(".sb-pco-sugestao");
+
+  await expect(sugestao).toHaveText(/sem sugestão|coberto|\d+ un/, { timeout: 15_000 });
+  await expect(sugestao).not.toContainText("indisponível");
+});

@@ -130,6 +130,8 @@ function fakeDb(options: FakeDbOptions = {}): {
 interface FakeClientOptions {
   /** Estoque do Full por inventory_id: corpo da resposta ou erro lançado (D-360). Ausente = 404. */
   fullStock?: Record<string, Record<string, unknown> | Error>;
+  /** Tags da conta em GET /users/me (D-369): a lista, ou o erro lançado. Ausente = conta SEM `user_product_seller`. */
+  sellerTags?: string[] | Error;
 }
 
 function fakeClient(
@@ -144,6 +146,13 @@ function fakeClient(
   const client = {
     request: (request: RequestOptions<unknown>) => {
       requests.push(request);
+
+      // D-369: o modelo da conta, pelo schema do chamador, como o cliente real.
+      if (request.path === "/users/me") {
+        const tags = options.sellerTags ?? ["normal"];
+
+        return tags instanceof Error ? Promise.reject(tags) : Promise.resolve(request.schema.parse({ id: 244_878_077, tags }));
+      }
 
       const inventory = /^\/inventories\/([^/]+)\/stock\/fulfillment$/.exec(request.path);
 
@@ -165,6 +174,17 @@ function fakeClient(
   } as unknown as MercadoLivreClient;
 
   return { client, requests };
+}
+
+/** O item com variações SEM `user_product_id` — é a conta que decide (D-369, A3). */
+function itemWithVariations(): Record<string, unknown> {
+  return {
+    ...healthyItemBody(),
+    variations: [
+      { id: 180_214_523_001, price: 114.9, available_quantity: 1_200 },
+      { id: 180_214_523_002, price: 129.9, available_quantity: 35 },
+    ],
+  };
 }
 
 function run(db: RelistPrepareDeps["db"], client: MercadoLivreClient, payload: unknown = PAYLOAD) {
@@ -236,6 +256,103 @@ describe("relist.prepare (D-161)", () => {
       actor_user_id: null,
       reason: "JA_REPUBLICADO",
     });
+  });
+
+  it("D-369: snapshot com variações de user products reprova no pedido com VARIACOES_USER_PRODUCT — a execução nunca é oferecida", async () => {
+    const { db, relistUpdates, eventInserts } = fakeDb();
+    const { client } = fakeClient([
+      {
+        code: 200,
+        body: {
+          ...healthyItemBody(),
+          user_product_id: null,
+          variations: [
+            { id: 52_844_432_013, price: 114.9, available_quantity: 698, user_product_id: "MLBU1406603522" },
+            { id: 52_844_432_017, price: 114.9, available_quantity: 9_981, user_product_id: "MLBU1402620069" },
+          ],
+        },
+      },
+    ]);
+
+    const outcome = await run(db, client);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(relistUpdates).toEqual([
+      expect.objectContaining({
+        status: "PREFLIGHT_FAILED",
+        failure_reason:
+          "O Mercado Livre não permite republicar anúncio com variações de conta no modelo de user products — fechar o anúncio o deixaria fora do ar sem filho.",
+      }),
+    ]);
+    expect(eventInserts[1]).toMatchObject({ to_status: "PREFLIGHT_FAILED", reason: "VARIACOES_USER_PRODUCT" });
+  });
+
+  it("D-369 (A3): variações SEM user_product_id e a conta com a tag user_product_seller reprovam no pedido — a regra é pela conta", async () => {
+    const { db, relistUpdates, eventInserts } = fakeDb();
+    const { client, requests } = fakeClient([{ code: 200, body: itemWithVariations() }], {
+      sellerTags: ["normal", "user_product_seller"],
+    });
+
+    const outcome = await run(db, client);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(requests.map((request) => request.path)).toContain("/users/me");
+    expect(relistUpdates).toEqual([expect.objectContaining({ status: "PREFLIGHT_FAILED" })]);
+    expect(eventInserts[1]).toMatchObject({ to_status: "PREFLIGHT_FAILED", reason: "VARIACOES_USER_PRODUCT" });
+  });
+
+  it("D-369 (A3): variações SEM user_product_id e a conta lida SEM a tag: a operação fica REQUESTED", async () => {
+    const { db, relistUpdates, eventInserts } = fakeDb();
+    const { client, requests } = fakeClient([{ code: 200, body: itemWithVariations() }], { sellerTags: ["normal", "eshop"] });
+
+    const outcome = await run(db, client);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(requests.map((request) => request.path)).toContain("/users/me");
+    expect(relistUpdates).toHaveLength(0);
+    expect(eventInserts).toHaveLength(1);
+  });
+
+  it("D-369 (A3): leitura da conta que falha reprova com USER_PRODUCT_NAO_VERIFICADO — nunca presume que passa", async () => {
+    const { db, relistUpdates, eventInserts } = fakeDb();
+    const { client } = fakeClient([{ code: 200, body: itemWithVariations() }], {
+      sellerTags: new MercadoLivreApiError("Mercado Livre respondeu 503 para GET /users/me.", {
+        status: 503,
+        errorClass: "retryable",
+        url: "/users/me",
+      }),
+    });
+
+    const outcome = await run(db, client);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(relistUpdates).toEqual([expect.objectContaining({ status: "PREFLIGHT_FAILED" })]);
+    expect(String(relistUpdates[0]?.failure_reason)).toContain("não foi possível confirmar agora se a conta está no modelo de user products");
+    expect(eventInserts[1]).toMatchObject({ to_status: "PREFLIGHT_FAILED", reason: "USER_PRODUCT_NAO_VERIFICADO" });
+  });
+
+  it("D-369 (A3): SEM variações, nenhuma chamada à conta — e a variação com user_product_id também dispensa a leitura", async () => {
+    const semVariacoes = fakeClient([{ code: 200, body: { ...healthyItemBody(), user_product_id: "MLBU3858499373" } }], {
+      sellerTags: ["user_product_seller"],
+    });
+
+    await run(fakeDb().db, semVariacoes.client);
+
+    expect(semVariacoes.requests.map((request) => request.path)).not.toContain("/users/me");
+
+    const comUp = fakeClient([
+      {
+        code: 200,
+        body: {
+          ...healthyItemBody(),
+          variations: [{ id: 52_844_432_013, price: 114.9, available_quantity: 698, user_product_id: "MLBU1406603522" }],
+        },
+      },
+    ]);
+
+    await run(fakeDb().db, comUp.client);
+
+    expect(comUp.requests.map((request) => request.path)).not.toContain("/users/me");
   });
 
   it("23505 no insert = operação já existe (índice de D-159): termina em paz, sem segunda operação", async () => {

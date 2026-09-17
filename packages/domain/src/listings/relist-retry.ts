@@ -9,6 +9,11 @@
  * nenhum anúncio novo foi criado. Nesse caso, e SÓ nele, uma pessoa pode
  * mandar tentar de novo.
  *
+ * Menos quando a recusa é por regra da CONTA (D-369): o relist de item com
+ * variações de vendedor no modelo de user products volta sempre com
+ * `item.variations.relist.invalid`, e oferecer outra tentativa seria pedir
+ * outro 400.
+ *
  * Três camadas aplicam ESTA mesma regra: a tela (para oferecer o botão), a
  * `api` (para aceitar o pedido) e o worker (para emitir o POST). Nenhuma
  * confia na anterior.
@@ -43,6 +48,44 @@ export function relistRejectionFailureReason(status: number, summary: string): s
 }
 
 const REJECTION_FAILURE = /^o Mercado Livre recusou a republicação \(HTTP (\d{3})\) — nenhum anúncio novo foi criado\./u;
+
+/**
+ * A causa com que o Mercado Livre recusa relist de item COM variações de
+ * vendedor no modelo de user products (D-369) — resposta real de 17/09/2026
+ * 13:36 UTC ao MLB1476804187, operação a7638dc5.
+ */
+export const RELIST_USER_PRODUCT_VARIATIONS_CAUSE = "item.variations.relist.invalid";
+
+/**
+ * A causa como código inteiro: nem prefixo nem sufixo de outro código. O
+ * ponto que fecha a frase ("... invalid.") não é sufixo — só ponto seguido de
+ * letra, dígito ou `_` continuaria o código.
+ */
+const USER_PRODUCT_VARIATIONS_CAUSE = /(?<![\w.])item\.variations\.relist\.invalid(?!\w|\.\w)/u;
+
+/**
+ * `true` sse o texto menciona a causa de D-369 como código inteiro. É a mesma
+ * regra da leitura do `failure_reason`: o worker a usa para garantir que o
+ * resumo do corpo de erro não perca a causa (D-369).
+ */
+export function mentionsRelistUserProductVariationsCause(text: string): boolean {
+  return USER_PRODUCT_VARIATIONS_CAUSE.test(text);
+}
+
+/**
+ * `true` sse o `failure_reason` é uma RECUSA gravada (`relistRejectionFailureReason`)
+ * cuja resposta do Mercado Livre traz a causa de D-369. Essa recusa não muda
+ * com outra tentativa: a regra está na conta, não no pedido.
+ */
+export function isRelistUserProductVariationsRejection(failureReason: string | null): boolean {
+  if (failureReason === null) {
+    return false;
+  }
+
+  const rejection = REJECTION_FAILURE.exec(failureReason);
+
+  return rejection !== null && mentionsRelistUserProductVariationsCause(failureReason.slice(rejection[0].length));
+}
 
 export interface RelistRetryCandidate {
   readonly status: string;
@@ -81,7 +124,13 @@ export function isRelistRetryEligible(candidate: RelistRetryCandidate): boolean 
   if (candidate.lastFailedEventReason === RELIST_POST_REJECTED_REASON) {
     const rejection = candidate.failureReason === null ? null : REJECTION_FAILURE.exec(candidate.failureReason);
 
-    return rejection !== null && isRelistRejectionStatus(Number(rejection[1]));
+    // D-369: a recusa por variações de user products é definitiva — tentar
+    // de novo só traria outro 400.
+    return (
+      rejection !== null &&
+      isRelistRejectionStatus(Number(rejection[1])) &&
+      !isRelistUserProductVariationsRejection(candidate.failureReason)
+    );
   }
 
   if (candidate.lastFailedEventReason !== RELIST_POST_FAILED_REASON || candidate.failureReason === null) {
