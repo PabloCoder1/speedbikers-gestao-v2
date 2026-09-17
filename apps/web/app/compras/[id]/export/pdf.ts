@@ -1,6 +1,6 @@
 import { PDFDocument, rgb, StandardFonts, type PDFFont, type PDFPage } from "pdf-lib";
 
-import { formatCurrency, formatDateTime } from "../../../../lib/format";
+import { formatBusinessDate, formatCurrency, formatDateTime } from "../../../../lib/format";
 import { purchaseOrderStatusLabel } from "../../../../lib/labels";
 import type { PurchaseOrderExportData } from "./load";
 import { buildExportRows, computeExportTotal } from "./rows";
@@ -69,7 +69,7 @@ export async function buildPurchaseOrderPdf(data: PurchaseOrderExportData): Prom
     ["Destino", data.destinationWarehouseName ?? "—"],
     ["Moeda", data.currency],
     ["Criado em", formatDateTime(data.createdAt)],
-    ["Previsão de entrega", data.expectedAt === null ? "—" : formatDateTime(data.expectedAt)],
+    ["Previsão de entrega", data.expectedAt === null ? "—" : formatBusinessDate(data.expectedAt.slice(0, 10))],
   ];
 
   for (const [label, value] of infoLines) {

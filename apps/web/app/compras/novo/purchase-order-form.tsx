@@ -53,7 +53,10 @@ export function PurchaseOrderForm({
   );
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [expectedAt, setExpectedAt] = useState(initial?.expectedAt ?? "");
-  const [items, setItems] = useState<DraftItem[]>(initial?.items ?? [emptyItem()]);
+  const [items, setItems] = useState<DraftItem[]>(
+    // Pré-seleção só de fornecedor (D-365) chega sem item: a linha vazia continua lá.
+    initial !== undefined && initial.items.length > 0 ? initial.items : [emptyItem()],
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

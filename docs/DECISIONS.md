@@ -12393,3 +12393,47 @@ Sobre afiliados, ele usa o programa do ML, os afiliados da Shopee e afiliados pr
 - **visual:** conferido com campanhas de exemplo inseridas e apagadas no banco local;
 - **nao verificado:** a chamada real ao Mercado Ads (sem conta conectada localmente, Dev pausado) e se a conta de producao tem Product Ads habilitado. Na primeira rodada o proprio sync grava a resposta, e a tela a mostra;
 - **para funcionar em producao:** migration pelo workflow, deploy do **worker antes da api** (`docs/DEPLOYMENT.md` §3) e `infra/cloud-scheduler.sh` para criar `v3-ads-campaigns-sync`.
+
+## D-365 - /compras refeita: o resumo que responde sem abrir pedido, o proximo passo em cada linha e a previsao que mostrava a vespera
+
+**Contexto:** pedido do usuario: "melhore a minha tela de compras, seguindo o padrao que estavamos fazendo, bonita, rapida, util". A fila de D-255 era uma tabela de oito colunas sem nenhum numero de decisao: para saber quanto estava comprometido, o que estava atrasado ou o que faltava num rascunho, era preciso abrir pedido por pedido. D-255 tinha recusado cartoes porque o frame nao os desenha; os de agora nao sao decoracao, sao as perguntas de quem compra, no mesmo desenho de `/reposicao` (D-358).
+
+**1. UMA LEITURA -- `get_purchase_orders_overview` (migration `20260917140000`)**
+
+`jsonb` com o total filtrado, contagens por estado (pedidos, valor, pedidos com custo faltando), `em_aberto` (rascunho + aprovado + enviado), `atrasados` (com o maior atraso), `chegando` (previsao em ate 7 dias), `recebidos` (30 dias) e a pagina. Regras:
+
+- **valor segue D-254 nas tres saidas**, por pedido e nos agregados: sem item e zero sabido; nenhum custo e NULL; parcial vem com `sem_custo`. Grupo sem nenhum valor conhecido devolve NULL, nunca 0;
+- **os cartoes respeitam a busca e ignoram estado e "so atrasados"** (D-250): clicar num cartao nao zera os outros;
+- **nao e page-first** (ao contrario de D-255): o valor em aberto precisa de todos os pedidos abertos. Os itens sao lidos uma vez, agrupados, para o conjunto da busca; pedido de compra e tabela pequena. `plan_cache_mode = force_custom_plan`, pelos filtros anulaveis (D-358);
+- **atraso so vale para APPROVED/ORDERED**, comparando a data de negocio com o dia de Sao Paulo. Rascunho com data vencida ainda nao foi pedido;
+- `get_purchase_orders` continua, sem mudanca: a web da branch principal vai ao ar antes da migration, e a tela cai nela quando a funcao nova responde PGRST202 -- sem cartoes numerados e sem selo de atraso, nunca em erro (o mesmo cuidado de D-363).
+
+A leitura e conferida campo a campo em `apps/web/lib/purchase-orders-overview.ts`, que recusa a resposta inteira fora do contrato.
+
+**2. A TELA**
+
+- cabecalho com busca, atalho "Sugestao de compra" (`/reposicao`) e "Novo Pedido";
+- resumo: comprometido em aberto, atrasados (cartao vermelho quando ha, e clicavel: liga "so atrasados", `?atrasados=1`), chegando em 7 dias, recebido em 30 dias. Valor abaixo de R$ 10 mil sai cheio; acima, compacto com o exato no `title`;
+- os cinco estados mais "Todos" como cartoes-filtro, no lugar do `FilterMenu`, com contagem e valor;
+- tabela: numero com data e autor; fornecedor com link para `/fornecedores/[id]` e destino; itens e unidades; valor com a ressalva "N de M sem custo"; etiqueta de estado com a regua das quatro etapas (cancelado para onde os carimbos dizem, D-277); previsao com selo ("em 2 dias", "chega hoje", "atrasado 6 dias"); e o **proximo passo** como botao: "Completar fornecedor e custo", "Aprovar", "Enviar ao fornecedor", "Conferir recebimento". Linha atrasada ganha o fio vermelho da reposicao;
+- vazio sem nenhum pedido convida a comecar pela sugestao de compra.
+
+As pecas puras (`proximoPasso`, `leituraPrevisao`, `etapaDoPedido`) tem teste.
+
+**3. A PREVISAO QUE MOSTRAVA A VESPERA**
+
+O formulario grava `expected_at` como `new Date('AAAA-MM-DD').toISOString()` -- meia-noite UTC -- e a edicao le com `slice(0, 10)`. A lista, o detalhe, o PDF e o Excel mostravam `formatDateTime`, que converte para Sao Paulo: o dia 20 saia "19/09/2026, 21:00". Os quatro passam a cortar a data de negocio (`formatBusinessDate`).
+
+**4. `/compras/novo?fornecedor=<uuid>`**
+
+Pedido da sessao de `/fornecedores` (D-366): o botao "Novo pedido" do fornecedor chega com ele pre-selecionado. So vale se o id esta na lista de fornecedores ATIVOS que a pagina ja le; id inativo, alheio ou malformado e ignorado. Soma com o `?sku=` da reposicao.
+
+**Verificacao**
+
+- `typecheck`, `lint` e `test` de `@sb/web` e `@sb/db` passam; 25 testes nas pecas novas e nos filtros;
+- a funcao, numa transacao desfeita no banco local como `authenticated`: 0 divergencias de valor e itens contra `get_purchase_orders` em 9 pedidos, atraso/chegando corretos, ~7 ms, `anon` recusado;
+- visual conferido em 1440 px e 390 px, com a migration e sem ela (fallback), e com dois pedidos temporarios (atrasado e chegando) inseridos e apagados;
+- e2e `compras.spec.ts` (3 casos, um novo) passou contra a web local. O filtro de estado passou a ser afirmado pelos cartoes;
+- integracao: os cinco casos novos em `rls.integration.test.ts` e os seis de `get_purchase_orders` passaram (11 de 11, `-t`) no banco local recem-resetado, com a migration aplicada por cima. A suite inteira fica com a CI.
+
+**Impacto:** `supabase/migrations/20260917140000_purchase_orders_overview.sql`; `packages/db/src/{types,rls.integration.test}.ts`; `apps/web/app/compras/{page.tsx,novo/page.tsx,novo/purchase-order-form.tsx,[id]/page.tsx,[id]/export/pdf.ts,[id]/export/workbook.ts}`; `apps/web/lib/{purchase-orders-overview,purchase-order-filters}.ts` e testes; `apps/web/app/globals.css` (`sb-cmp-*`); `apps/web/e2e/compras.spec.ts`. Publicacao: a web funciona antes da migration (fallback); os numeros aparecem quando ela passa pela CI (Dev) e pelo workflow de producao.

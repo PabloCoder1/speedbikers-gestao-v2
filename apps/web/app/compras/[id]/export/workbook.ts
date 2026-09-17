@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs";
 
-import { formatDateTime } from "../../../../lib/format";
+import { formatBusinessDate, formatDateTime } from "../../../../lib/format";
 import { purchaseOrderStatusLabel } from "../../../../lib/labels";
 import type { PurchaseOrderExportData } from "./load";
 import { buildExportRows, computeExportTotal } from "./rows";
@@ -60,7 +60,8 @@ export async function buildPurchaseOrderWorkbook(data: PurchaseOrderExportData) 
   infoLine("Destino", data.destinationWarehouseName ?? "—");
   infoLine("Moeda", data.currency);
   infoLine("Criado em", formatDateTime(data.createdAt));
-  infoLine("Previsão de entrega", data.expectedAt === null ? "—" : formatDateTime(data.expectedAt));
+  // Previsão é data de negócio gravada como meia-noite UTC (D-365): cortar, nunca converter para São Paulo.
+  infoLine("Previsão de entrega", data.expectedAt === null ? "—" : formatBusinessDate(data.expectedAt.slice(0, 10)));
 
   if (data.notes !== null && data.notes.trim() !== "") {
     infoLine("Observações", data.notes);

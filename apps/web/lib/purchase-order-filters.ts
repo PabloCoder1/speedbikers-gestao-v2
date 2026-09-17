@@ -37,6 +37,8 @@ export type PurchaseOrderStatus = (typeof PURCHASE_ORDER_STATUSES)[number];
 export interface PurchaseOrderFilters {
   status: PurchaseOrderStatus | null;
   search: string | null;
+  /** Só aprovados/enviados com a previsão vencida (D-365). URL `atrasados=1`. */
+  overdue: boolean;
   page: number;
 }
 
@@ -63,6 +65,8 @@ export function resolvePurchaseOrderFilters(
   return {
     status: resolvePurchaseOrderStatus(query.estado),
     search: readParam(query.busca),
+    // Só "1" liga: qualquer outro valor é a ausência do filtro, nunca um recorte vazio.
+    overdue: query.atrasados === "1",
     page: resolvePageParam(query.pagina),
   };
 }
@@ -80,6 +84,7 @@ export function buildPurchaseOrderHref(
       // mesma página de sempre.
       estado: next.status,
       busca: next.search,
+      atrasados: next.overdue ? "1" : null,
     },
     override.page === undefined ? 1 : next.page,
   );

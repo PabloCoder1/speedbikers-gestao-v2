@@ -8,7 +8,7 @@ import { Panel } from "../../../components/panel";
 import { ProcessSteps } from "../../../components/process-steps";
 import { Shell } from "../../../components/shell";
 import { TOM, tomDeStatus } from "../../../components/tone";
-import { formatCurrency, formatDateTime } from "../../../lib/format";
+import { formatBusinessDate, formatCurrency, formatDateTime } from "../../../lib/format";
 import { purchaseOrderCostNote, summarizePurchaseOrderCost } from "../../../lib/purchase-order-cost";
 import { purchaseOrderEtapas } from "../../../lib/purchase-order-steps";
 import { purchaseOrderEventLabel, purchaseOrderStatusLabel, statusTone } from "../../../lib/labels";
@@ -107,7 +107,9 @@ export default async function PedidoDeCompraPage({
   // itens precisa dizer que é parcial na mesma linha em que se apresenta.
   const fatos: readonly (readonly [string, ReactNode])[] = [
     ["Destino", info.destination_warehouse_name ?? "—"],
-    ["Previsão", info.expected_at === null ? "—" : formatDateTime(info.expected_at)],
+    // A previsão é data de negócio gravada como meia-noite UTC: `formatDateTime`
+    // a mostrava como a véspera às 21h (D-365).
+    ["Previsão", info.expected_at === null ? "—" : formatBusinessDate(info.expected_at.slice(0, 10))],
     ["Itens", items.error !== null ? "—" : String(items.data.length)],
     [
       "Valor estimado",
