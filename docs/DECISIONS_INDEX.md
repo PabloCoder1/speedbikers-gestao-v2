@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **357** (D-001 a D-363).
+Decisões registradas: **358** (D-001 a D-365).
 
 ## Por domínio
 
@@ -233,7 +233,7 @@ Decisões registradas: **357** (D-001 a D-363).
 - **D-359** — Calculadora de preco no /faturamento: a margem de uma venda antes de anunciar, com o frete oficial do Mercado Livre e a tabela da Shopee
 - **D-360** — A trava da republicacao olha o estoque do Full, e nao o cadastro -- anuncio com Full zerado e envio por coleta deixa de ser recusado
 
-### outros (59)
+### outros (60)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -294,6 +294,7 @@ Decisões registradas: **357** (D-001 a D-363).
 - **D-326** — O gatilho da busca fica na barra com a caixa aberta
 - **D-332** — Backup e restore: o que existe foi MEDIDO, e o ensaio de restore esta pronto -- com um comparador que prova o que diz
 - **D-355** — A sidebar ganhou a marca e grupos por assunto, e /usuarios passou a se ler de uma passada
+- **D-365** — /compras refeita: o resumo que responde sem abrir pedido, o proximo passo em cada linha e a previsao que mostrava a vespera
 
 ### processo/docs (1)
 

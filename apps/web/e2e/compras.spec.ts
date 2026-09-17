@@ -75,22 +75,21 @@ test("/compras: o filtro de estado recorta, e são os cinco do banco", async ({ 
   await login(page, "/compras");
 
   /*
-    O `FilterMenu` é `<details>`/`<summary>` nativo, e o painel fica FECHADO —
-    as opções não são clicáveis antes de abrir o menu. É o padrão que
-    `produtos.spec` e `vendas.spec` já usam; clicar direto no link falha por
-    elemento invisível.
+    Desde D-365 o filtro de estado são os CARTÕES (o mesmo desenho de
+    `/reposicao`), e não mais o `FilterMenu`. Cada cartão é um link com o
+    rótulo do estado e a contagem; o ativo leva `aria-current`.
   */
-  const menuEstado = page.locator("details.sb-menu", { hasText: "Estado" });
-  await menuEstado.locator("summary").click();
+  const estados = page.getByRole("navigation", { name: "Filtrar por estado" });
 
   // "Recebido" tem exatamente um pedido no fixture, e é o único com previsão.
-  await menuEstado.getByRole("link", { name: "Recebido", exact: true }).click();
+  await estados.getByRole("link", { name: /^Recebido/ }).click();
 
   await expect(page).toHaveURL(/\/compras\?estado=RECEIVED/);
 
   const linhas = page.locator("tbody tr");
   await expect(linhas).toHaveCount(1);
   await expect(linhas.first()).toContainText("Recebido");
+  await expect(estados.locator('[aria-current="true"]')).toContainText("Recebido");
 
   /*
     Os estados que o brief §23 pede e o banco não tem NÃO podem virar recorte
@@ -100,10 +99,25 @@ test("/compras: o filtro de estado recorta, e são os cinco do banco", async ({ 
   */
   await page.goto("/compras?estado=RECEBIDO_PARCIALMENTE");
 
-  // O recorte cai em "todos": a tabela volta cheia e o menu volta a dizer
-  // "Estado" (o rótulo do não-filtrado), em vez de nomear um estado que não
-  // existe. Afirmado pelo texto do `<summary>`, e não por `role: button` --
-  // o mapeamento de <summary> para role é detalhe do navegador.
+  // O recorte cai em "todos": a tabela volta cheia e o cartão ativo é "Todos",
+  // em vez de nomear um estado que não existe.
   await expect(page.locator("tbody tr").first()).toBeVisible();
-  await expect(page.locator("details.sb-menu summary").filter({ hasText: "Estado" })).toBeVisible();
+  await expect(estados.locator('[aria-current="true"]')).toContainText("Todos");
+});
+
+test("/compras: o resumo responde sem abrir pedido, e cada linha diz o próximo passo (D-365)", async ({ page }) => {
+  await login(page, "/compras");
+
+  const resumo = page.getByRole("region", { name: "Resumo dos pedidos de compra" });
+  await expect(resumo.getByText("Comprometido em aberto")).toBeVisible();
+  await expect(resumo.getByText("Atrasados")).toBeVisible();
+  await expect(resumo.getByText("Recebido em 30 dias")).toBeVisible();
+
+  // O rascunho SEM fornecedor e sem custo diz o que falta antes de "Aprovar".
+  const linhaSemCusto = page.locator("tr", { hasText: "1 de 1 sem custo" });
+  await expect(linhaSemCusto).toContainText("Completar fornecedor e custo");
+
+  // O aprovado completo pede o envio ao fornecedor; o recebido não pede nada.
+  await expect(page.locator("tr", { hasText: "R$ 252,50" })).toContainText("Enviar ao fornecedor");
+  await expect(page.locator("tr", { hasText: "R$ 42,00" })).toContainText("Ver pedido");
 });

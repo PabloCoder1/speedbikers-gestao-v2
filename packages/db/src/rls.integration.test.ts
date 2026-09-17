@@ -3432,6 +3432,138 @@ describe("get_purchase_orders (D-255)", () => {
   });
 });
 
+// get_purchase_orders_overview (20260917140000, D-365) -- /compras numa leitura:
+// resumo, contagens por estado e a pagina, com atraso pela data de Sao Paulo.
+describe("get_purchase_orders_overview (D-365)", () => {
+  const MARCA = "POVIEWTEST";
+  const HOJE_SP = "(now() at time zone 'America/Sao_Paulo')::date";
+
+  beforeAll(async () => {
+    const fornecedor = await client.query<{ id: string }>(
+      `insert into public.suppliers (organization_id, name) values ($1,$2) returning id`,
+      [ORG_SB, `${MARCA}-fornecedor`],
+    );
+    const supplierId = fornecedor.rows[0]?.id ?? "";
+
+    // [chave, estado, dias ate a previsao (null = sem), itens]
+    const pedidos: readonly (readonly [string, string, number | null, readonly (readonly [number, number | null])[]])[] = [
+      ["atrasado", "ORDERED", -3, [[10, 5], [2, null]]],
+      ["chegando", "APPROVED", 2, [[4, 25]]],
+      ["longe", "APPROVED", 30, [[1, 10]]],
+      ["rascunho-vencido", "DRAFT", -10, [[7, null]]],
+      ["vazio", "DRAFT", null, []],
+    ];
+
+    for (const [chave, status, dias, itens] of pedidos) {
+      const pedido = await client.query<{ id: string }>(
+        `insert into public.purchase_orders
+           (organization_id, supplier_id, status, notes, created_by, approved_at, ordered_at, expected_at)
+         values ($1,$2::uuid,$3,$4,$5::uuid,
+                 case when $3 in ('APPROVED','ORDERED') then now() end,
+                 case when $3 = 'ORDERED' then now() end,
+                 case when $6::int is null then null else ((${HOJE_SP} + $6::int)::timestamp at time zone 'UTC') end)
+         returning id`,
+        [ORG_SB, supplierId, status, `${MARCA}:${chave}`, ADMIN_SB, dias],
+      );
+
+      const pedidoId = pedido.rows[0]?.id ?? "";
+
+      for (const [posicao, [quantidade, custo]] of itens.entries()) {
+        await client.query(
+          `insert into public.purchase_order_items
+             (organization_id, purchase_order_id, position, sku_snapshot, quantity_ordered, unit_cost)
+           values ($1,$2::uuid,$3::int,$4,$5::numeric,$6::numeric)`,
+          [ORG_SB, pedidoId, posicao, `${MARCA}-${chave}-${String(posicao)}`, quantidade, custo],
+        );
+      }
+    }
+  });
+
+  interface Agregado {
+    pedidos: number;
+    valor: number | null;
+    unidades: number;
+    sem_custo: number;
+  }
+
+  interface Visao {
+    total: number;
+    contagens: { status: string; pedidos: number; valor: number | null; sem_custo: number }[];
+    em_aberto: Agregado;
+    atrasados: Agregado & { maior_atraso_dias: number };
+    chegando: Agregado;
+    linhas: { status: string; atrasado: boolean; dias_para_previsao: number | null; valor: number | null; itens: number }[];
+  }
+
+  async function visao(args: string): Promise<Visao | undefined> {
+    const [linha] = await asUser<{ v: Visao }>(
+      ADMIN_SB,
+      `select public.get_purchase_orders_overview('${ORG_SB}',${args}) as v`,
+    );
+
+    return linha?.v;
+  }
+
+  it("a pagina e a MESMA de get_purchase_orders, com o mesmo valor por pedido (D-254)", async () => {
+    const v = await visao(`100,0,null,'${MARCA}-fornecedor'`);
+    const antiga = await asUser<{ estimated_value: string | null; items_count: string }>(
+      ADMIN_SB,
+      `select * from public.get_purchase_orders('${ORG_SB}',100,0,null,'${MARCA}-fornecedor')`,
+    );
+
+    expect(v?.total).toBe(5);
+    expect(v?.linhas.map((l) => [l.valor, l.itens])).toEqual(
+      antiga.map((l) => [l.estimated_value === null ? null : Number(l.estimated_value), Number(l.items_count)]),
+    );
+  });
+
+  it("atraso so vale para aprovado/enviado, pela data de Sao Paulo", async () => {
+    const v = await visao(`100,0,null,'${MARCA}-fornecedor'`);
+
+    // O rascunho com previsao vencida NAO e atraso: ainda nao foi pedido.
+    expect(v?.atrasados.pedidos).toBe(1);
+    expect(v?.atrasados.maior_atraso_dias).toBe(3);
+    // 10 x 5 = 50, com um item sem custo: parcial e dito.
+    expect(Number(v?.atrasados.valor)).toBe(50);
+    expect(v?.atrasados.sem_custo).toBe(1);
+    // Chegando = previsao entre hoje e hoje + 7; os 30 dias ficam fora.
+    expect(v?.chegando.pedidos).toBe(1);
+    expect(Number(v?.chegando.valor)).toBe(100);
+  });
+
+  it("em aberto soma rascunho, aprovado e enviado, e o valor desconhecido nao vira zero", async () => {
+    const v = await visao(`100,0,null,'${MARCA}-fornecedor'`);
+
+    expect(v?.em_aberto.pedidos).toBe(5);
+    // 50 + 100 + 10 + (rascunho sem custo: fora) + (vazio: zero sabido).
+    expect(Number(v?.em_aberto.valor)).toBe(160);
+    expect(v?.em_aberto.sem_custo).toBe(2);
+
+    const rascunhos = v?.contagens.find((c) => c.status === "DRAFT");
+    expect(rascunhos?.pedidos).toBe(2);
+  });
+
+  it("estado e 'so atrasados' recortam a pagina e NAO os cartoes (D-250)", async () => {
+    const atrasados = await visao(`100,0,null,'${MARCA}-fornecedor',true`);
+
+    expect(atrasados?.total).toBe(1);
+    expect(atrasados?.linhas.every((l) => l.atrasado && l.status === "ORDERED")).toBe(true);
+    expect(atrasados?.em_aberto.pedidos).toBe(5);
+
+    const aprovados = await visao(`1,0,'APPROVED','${MARCA}-fornecedor'`);
+
+    expect(aprovados?.total).toBe(2);
+    expect(aprovados?.linhas).toHaveLength(1);
+    expect(aprovados?.contagens.reduce((soma, c) => soma + c.pedidos, 0)).toBe(5);
+  });
+
+  it("anon nao executa get_purchase_orders_overview", async () => {
+    await expect(asAnon(`select public.get_purchase_orders_overview('${ORG_SB}')`)).rejects.toThrow(
+      /permission denied/i,
+    );
+  });
+});
+
 // get_suppliers + get_supplier_overview (20260907130000, D-258) -- "valor
 // comprado" na lista, e o custo AUSENTE que deixou de virar R$ 0,00.
 describe("valor comprado por fornecedor (D-258)", () => {

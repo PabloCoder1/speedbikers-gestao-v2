@@ -10,7 +10,7 @@ import {
   type PurchaseOrderFilters,
 } from "./purchase-order-filters";
 
-const base: PurchaseOrderFilters = { status: null, search: null, page: 1 };
+const base: PurchaseOrderFilters = { status: null, search: null, overdue: false, page: 1 };
 
 describe("estado do pedido", () => {
   it("resolve os cinco estados do ciclo", () => {
@@ -47,12 +47,18 @@ describe("estado do pedido", () => {
 describe("resolução da URL", () => {
   it("lê estado, busca e página", () => {
     expect(resolvePurchaseOrderFilters({ estado: "ORDERED", busca: "  plasmoto ", pagina: "2" })).toEqual(
-      { status: "ORDERED", search: "plasmoto", page: 2 },
+      { status: "ORDERED", search: "plasmoto", overdue: false, page: 2 },
     );
   });
 
   it("busca só de espaço não vira filtro", () => {
     expect(resolvePurchaseOrderFilters({ busca: "   " }).search).toBeNull();
+  });
+
+  it("só atrasados liga com 1 e com mais nada (D-365)", () => {
+    expect(resolvePurchaseOrderFilters({ atrasados: "1" }).overdue).toBe(true);
+    expect(resolvePurchaseOrderFilters({ atrasados: "sim" }).overdue).toBe(false);
+    expect(resolvePurchaseOrderFilters({}).overdue).toBe(false);
   });
 
   it("página inválida cai em 1", () => {
@@ -66,7 +72,7 @@ describe("href", () => {
   });
 
   it("trocar de filtro volta para a página 1; paginar preserva o recorte", () => {
-    const atual: PurchaseOrderFilters = { status: "DRAFT", search: "givi", page: 3 };
+    const atual: PurchaseOrderFilters = { status: "DRAFT", search: "givi", overdue: false, page: 3 };
 
     expect(buildPurchaseOrderHref(atual, { status: "RECEIVED" })).toBe(
       "/compras?estado=RECEIVED&busca=givi",
@@ -74,6 +80,11 @@ describe("href", () => {
     expect(buildPurchaseOrderHref(atual, { page: 4 })).toBe(
       "/compras?estado=DRAFT&busca=givi&pagina=4",
     );
+  });
+
+  it("só atrasados vai à URL ligado e some desligado", () => {
+    expect(buildPurchaseOrderHref(base, { overdue: true })).toBe("/compras?atrasados=1");
+    expect(buildPurchaseOrderHref({ ...base, overdue: true }, { overdue: false })).toBe("/compras");
   });
 });
 
