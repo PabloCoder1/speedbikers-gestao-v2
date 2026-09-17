@@ -89,6 +89,7 @@ export default async function NovoPedidoDeCompraPage({
     whatsapp: s.whatsapp,
     email: s.email,
     website: s.website,
+    logoPath: s.logo_path,
     ordersEmAberto: s.orders_em_aberto,
     ultimoPedidoEm: s.ultimo_pedido_em,
   }));

@@ -8548,10 +8548,14 @@ a.sb-forn-canal:hover {
   max-width: 72rem;
 }
 
-.sb-fnv-subtitulo {
-  display: block;
-  margin-top: 0.25rem;
-  color: var(--sb-text-soft);
+/* O voltar do cabeçalho: botão da casa com a seta "avançar" girada. */
+.sb-fnv-voltar {
+  gap: 0.375rem;
+}
+
+.sb-fnv-voltar-seta {
+  display: inline-flex;
+  transform: rotate(180deg);
 }
 
 .sb-fnv-layout {
@@ -8682,12 +8686,33 @@ a.sb-forn-canal:hover {
   gap: 0.375rem;
 }
 
-/* A COLUNA DA PRÉVIA */
+/* A COLUNA DA PRÉVIA — gruda só quando cabe inteira na tela, senão os botões
+   ficariam fora de alcance numa tela baixa. */
 .sb-fnv-lateral {
-  position: sticky;
-  top: var(--sb-space-3);
   display: grid;
   gap: var(--sb-space-3);
+}
+
+@media (min-width: 1101px) and (min-height: 880px) {
+  .sb-fnv-lateral {
+    position: sticky;
+    top: var(--sb-space-3);
+  }
+}
+
+.sb-fnv-acoes {
+  display: grid;
+  gap: 0.5rem;
+  padding: var(--sb-space-3);
+  border: 1px solid var(--sb-border);
+  border-radius: var(--sb-radius);
+  background: var(--sb-surface);
+  box-shadow: var(--sb-shadow-panel);
+}
+
+.sb-fnv-acoes .sb-button {
+  justify-content: center;
+  width: 100%;
 }
 
 .sb-fnv-rotulo {
@@ -8868,17 +8893,9 @@ a.sb-forn-canal:hover {
   margin-top: 0.0625rem;
 }
 
-.sb-fnv .sb-forn-form-acoes {
-  align-items: center;
-}
-
 .sb-fnv-acoes-resumo {
-  margin-right: auto;
-  overflow: hidden;
   font-size: 0.75rem;
   color: var(--sb-text-soft);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -8898,8 +8915,14 @@ a.sb-forn-canal:hover {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .sb-fnv-depois {
+  .sb-fnv-depois,
+  .sb-fnv-acoes {
     grid-column: 1 / -1;
+  }
+
+  /* Formulário comprido: os botões fecham a página, depois da prévia. */
+  .sb-fnv-acoes {
+    order: 1;
   }
 }
 
@@ -8913,9 +8936,6 @@ a.sb-forn-canal:hover {
     display: none;
   }
 
-  .sb-fnv-acoes-resumo {
-    display: none;
-  }
 }
 
 /*
@@ -9604,4 +9624,86 @@ td.sb-pco-num-linha {
   .sb-pco-ficha {
     flex-direction: column;
   }
+}
+
+/*
+ * LOGO DO FORNECEDOR (D-370).
+ *
+ * A logo mora no mesmo lugar das iniciais (sb-avatar + a classe de tamanho de
+ * cada tela). Com imagem, o fundo vira claro e a imagem é ajustada, nunca
+ * recortada: logo transparente sobre o lilás das iniciais sumiria, e o recorte
+ * do avatar de pessoa cortaria o nome da marca.
+ */
+.sb-avatar.sb-forn-logo {
+  border: 1px solid var(--sb-border);
+  background: var(--sb-surface);
+}
+
+.sb-avatar.sb-forn-logo img {
+  padding: 8%;
+  object-fit: contain;
+}
+
+/* Fornecedor inativo: a logo esmaece junto com a linha, como as iniciais. */
+.sb-forn-linha-inativa .sb-forn-logo img {
+  filter: grayscale(1);
+  opacity: 0.6;
+}
+
+/* O cabeçalho do painel do fornecedor. */
+.sb-object-avatar {
+  flex: none;
+}
+
+.sb-forn-painel-logo {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--sb-radius);
+  font-size: 1rem;
+}
+
+/* O campo da logo no formulário. */
+.sb-fnv-logo {
+  display: flex;
+  align-items: center;
+  gap: var(--sb-space-3);
+  padding: 0.75rem;
+  border: 1px dashed var(--sb-border);
+  border-radius: var(--sb-radius);
+  background: var(--sb-ground);
+}
+
+.sb-fnv-logo-imagem {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--sb-radius);
+  font-size: 1rem;
+}
+
+.sb-fnv-logo-acoes {
+  display: grid;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.sb-fnv-logo-acoes > b {
+  font-size: 0.75rem;
+  color: var(--sb-primary);
+}
+
+.sb-fnv-logo-botoes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.sb-fnv-logo-botoes .sb-button {
+  gap: 0.25rem;
+  cursor: pointer;
+}
+
+.sb-fnv-logo-acoes small {
+  font-size: 0.6875rem;
+  color: var(--sb-text-soft);
 }

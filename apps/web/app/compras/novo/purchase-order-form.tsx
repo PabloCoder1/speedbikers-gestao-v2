@@ -8,8 +8,9 @@ import { Icone } from "../../../components/icons";
 import { ProcessSteps } from "../../../components/process-steps";
 import { formatBusinessDate, formatCount, formatCurrency } from "../../../lib/format";
 import { createClient } from "../../../lib/supabase/browser";
-import { formatarDocumento, idadeRelativa, iniciais } from "../../../lib/suppliers-overview";
+import { formatarDocumento, idadeRelativa } from "../../../lib/suppliers-overview";
 import { Canais } from "../../fornecedores/canais";
+import { LogoFornecedor } from "../../fornecedores/logo";
 import { createPurchaseOrder, updatePurchaseOrderDraft } from "../actions";
 
 import { ItemRow, type DraftItem, type UltimaCompra } from "./item-row";
@@ -82,6 +83,8 @@ export interface FornecedorOpcao {
   whatsapp?: string | null;
   email?: string | null;
   website?: string | null;
+  /** D-370. */
+  logoPath?: string | null;
   ordersEmAberto?: number;
   ultimoPedidoEm?: string | null;
 }
@@ -406,9 +409,11 @@ export function PurchaseOrderForm({
 
             {fornecedor !== null ? (
               <div className="sb-pco-ficha sb-pco-largo">
-                <span className="sb-avatar sb-pco-ficha-avatar" aria-hidden="true">
-                  {iniciais(fornecedor.name)}
-                </span>
+                <LogoFornecedor
+                  nome={fornecedor.name}
+                  logoPath={fornecedor.logoPath ?? null}
+                  className="sb-pco-ficha-avatar"
+                />
                 <div className="sb-pco-ficha-corpo">
                   <div className="sb-pco-ficha-nome">
                     <b>{fornecedor.name}</b>
