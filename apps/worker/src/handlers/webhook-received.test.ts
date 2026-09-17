@@ -31,15 +31,19 @@ const PAYLOAD = { mlAccountId: ML_ACCOUNT_ID, resource: "/orders/200000350842639
 /** Fake mínimo, encadeável e thenable — mesmo espírito de `sync-orders-window.test.ts`. */
 function chain<T>(result: T): {
   eq: () => ReturnType<typeof chain<T>>;
+  in: () => ReturnType<typeof chain<T>>;
   or: () => ReturnType<typeof chain<T>>;
   is: () => ReturnType<typeof chain<T>>;
   maybeSingle: () => Promise<T>;
+  then: <R>(resolve: (value: T) => R) => Promise<R>;
 } {
   const self = {
     eq: () => self,
+    in: () => self,
     or: () => self,
     is: () => self,
     maybeSingle: () => Promise.resolve(result),
+    then: <R>(resolve: (value: T) => R) => Promise.resolve(result).then(resolve),
   };
 
   return self;
@@ -52,6 +56,12 @@ interface FakeDbOptions {
     refresh_token_ciphertext: string;
     access_token_expires_at: string;
   } | null;
+  /** D-351: vínculo do item do pedido (PRODUTO), para o caminho que lê o corte. */
+  linkedSkuId?: string;
+  /** D-351: falha da RPC do corte. */
+  cutoffError?: boolean;
+  /** D-351: onde o teste lê as chamadas de RPC. */
+  rpcCalls?: { fn: string; args: unknown }[];
 }
 
 const DEFAULT_ACCOUNT = { organization_id: ORGANIZATION_ID, status: "CONNECTED" };
@@ -69,6 +79,15 @@ function fakeDb(options: FakeDbOptions = {}): WebhookReceivedDeps["db"] {
   const credentials = "credentials" in options ? options.credentials : validCredentials();
 
   return {
+    rpc: (fn: string, args: { p_sku_ids: string[] }) => {
+      options.rpcCalls?.push({ fn, args });
+
+      return Promise.resolve(
+        options.cutoffError === true
+          ? { data: null, error: { message: "boom" } }
+          : { data: args.p_sku_ids.map((id) => ({ sku_id: id, captured_at: null })), error: null },
+      );
+    },
     from: (table: string) => ({
       select: () => {
         if (table === "ml_accounts") {
@@ -77,6 +96,24 @@ function fakeDb(options: FakeDbOptions = {}): WebhookReceivedDeps["db"] {
 
         if (table === "ml_credentials") {
           return chain({ data: credentials ?? null, error: null });
+        }
+
+        // D-351: a venda gravada do pedido — lista, nunca nulo.
+        if (table === "stock_movements") {
+          return chain({ data: [], error: null });
+        }
+
+        if (table === "sku_listing_links" && options.linkedSkuId !== undefined) {
+          return chain({
+            data: {
+              id: "link-1",
+              sku_id: options.linkedSkuId,
+              item_id: "MLB1",
+              variation_id: null,
+              skus: { kind: "PRODUTO", sku_components: [] },
+            },
+            error: null,
+          });
         }
 
         // sku_listing_links: sem vínculo cadastrado no fake — persistOrder grava sku_id nulo.
@@ -278,6 +315,26 @@ describe("sync.webhook.received — Fast Path", () => {
     const outcome = await run(d, lines);
 
     expect(outcome).toEqual({ status: "done", processed: 1 });
+  });
+
+  // D-351: o webhook não tem prefetch — lê o corte do ERP por conta própria,
+  // uma vez, e a falha dessa leitura faz o job falhar (e o Cloud Tasks retentar).
+  it("pedido pago com vínculo lê o corte do ERP uma vez, com o SKU vinculado (D-351)", async () => {
+    const rpcCalls: { fn: string; args: unknown }[] = [];
+    const { deps: d, lines } = deps({ linkedSkuId: "sku-1", rpcCalls });
+
+    const outcome = await run(d, lines);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(rpcCalls).toEqual([
+      { fn: "get_erp_stock_cutoffs", args: { p_organization_id: ORGANIZATION_ID, p_sku_ids: ["sku-1"] } },
+    ]);
+  });
+
+  it("falha da leitura do corte rejeita o job — nunca segue como 'sem corte' (D-351)", async () => {
+    const { deps: d, lines } = deps({ linkedSkuId: "sku-1", cutoffError: true });
+
+    await expect(run(d, lines)).rejects.toThrow(/get_erp_stock_cutoffs.*boom/);
   });
 
   describe("post_purchase (D-057) — só o roteamento; o processamento em si é testado em claim-return.test.ts", () => {

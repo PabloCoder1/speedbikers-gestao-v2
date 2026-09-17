@@ -141,6 +141,8 @@ export function createBackfillOrdersHandler(deps: BackfillOrdersDeps): JobHandle
         from: chunkFrom,
         to: chunkTo,
         logger: context.logger,
+        // D-351: a história entra como evento, não como notificação.
+        eventSource: "backfill",
       });
     } catch (error) {
       const finishedAt = deps.now?.() ?? new Date();

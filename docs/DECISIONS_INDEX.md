@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **357** (D-001 a D-366).
+Decisões registradas: **359** (D-001 a D-366).
 
 ## Por domínio
 
@@ -233,7 +233,7 @@ Decisões registradas: **357** (D-001 a D-366).
 - **D-359** — Calculadora de preco no /faturamento: a margem de uma venda antes de anunciar, com o frete oficial do Mercado Livre e a tabela da Shopee
 - **D-360** — A trava da republicacao olha o estoque do Full, e nao o cadastro -- anuncio com Full zerado e envio por coleta deixa de ser recusado
 
-### outros (60)
+### outros (61)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -294,13 +294,14 @@ Decisões registradas: **357** (D-001 a D-366).
 - **D-326** — O gatilho da busca fica na barra com a caixa aberta
 - **D-332** — Backup e restore: o que existe foi MEDIDO, e o ensaio de restore esta pronto -- com um comparador que prova o que diz
 - **D-355** — A sidebar ganhou a marca e grupos por assunto, e /usuarios passou a se ler de uma passada
+- **D-365** — /compras refeita: o resumo que responde sem abrir pedido, o proximo passo em cada linha e a previsao que mostrava a vespera
 - **D-366** — Fornecedores: uma leitura com busca e "pedido em aberto", edicao que finalmente existe, e contato que vira acao
 
 ### processo/docs (1)
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (23)
+### vendas/métricas (24)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -324,6 +325,7 @@ Decisões registradas: **357** (D-001 a D-366).
 - **D-322** — A14: o grafico de vendas com a altura do frame, e o texto que saiu do SVG porque encolhia com a largura
 - **D-325** — A leitura do grafico de vendas falava de "periodo anterior" onde nao ha comparacao
 - **D-327** — A18: a legenda do grafico de vendas no cabecalho do painel, e o seed que nunca teve periodo anterior
+- **D-351** — A venda anterior a planilha do UpSeller passa a ser gravada e estornada -- o corte vira o instante da exportacao, e o backfill deixa de notificar
 - **D-356** — /faturamento: quanto sobra de cada venda -- e tres contas que estavam erradas antes de a tela existir
 
 ### worker/infra (71)

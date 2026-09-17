@@ -4112,6 +4112,35 @@ export type Database = {
           sku_id: string
         }[]
       }
+      // CORRECAO MANUAL (D-351, classe D-213): bloco escrito a mao no formato
+      // do gerador -- a migration `20260916180100_get_erp_stock_cutoffs` so
+      // existe no repositorio ate ser aplicada no Dev, e a CLI nao regenera este
+      // arquivo. `captured_at` e NULO de verdade (organizacao sem snapshot) e o
+      // gerador nunca marca coluna de retorno de `returns table` como nula
+      // (classe D-133). `exported_at` entrou na reverificacao de c48fb70.
+      get_erp_stock_cutoffs: {
+        Args: { p_organization_id: string; p_sku_ids: string[] }
+        Returns: {
+          captured_at: string | null
+          exported_at: string | null
+          imported_at: string | null
+          reconciled_at: string | null
+          sku_id: string
+        }[]
+      }
+      // CORRECAO MANUAL (D-351, verificacao de e6fda07): mesma razao do bloco acima --
+      // `20260916180400_reversao_limitada_e_desempate_do_alvo` so existe no repositorio ate
+      // ser aplicada, e a CLI nao regenera este arquivo.
+      get_order_return_movements: {
+        Args: { p_order_ids: string[]; p_organization_id: string }
+        Returns: {
+          idempotency_key: string
+          occurred_at: string
+          order_id: string
+          qty_delta: number
+          sku_id: string
+        }[]
+      }
       compute_inventory_balances_from_ledger: {
         Args: { p_organization_id: string; p_sku_id?: string }
         Returns: {
@@ -5353,6 +5382,18 @@ export type Database = {
           supplier_name: string
           total_count: number
         }[]
+      }
+      get_purchase_orders_overview: {
+        Args: {
+          p_limit?: number
+          p_offset?: number
+          p_organization_id: string
+          p_overdue?: boolean
+          p_search?: string | null
+          p_status?: string | null
+        }
+        // jsonb (D-365): conferido campo a campo em apps/web/lib/purchase-orders-overview.ts.
+        Returns: Json
       }
       get_stock_movements_summary: {
         Args: {
