@@ -1,4 +1,3 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { AcessoRestrito } from "../../../components/acesso-restrito";
@@ -7,6 +6,7 @@ import { Shell } from "../../../components/shell";
 import { lerExistentes } from "../../../lib/supplier-existentes";
 import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
+import { Voltar } from "../../../components/voltar";
 import { SupplierForm } from "./supplier-form";
 
 export const metadata = { title: "Novo fornecedor — Speed Bikers Gestão" };
@@ -29,18 +29,12 @@ export default async function NovoFornecedorPage(): Promise<ReactNode> {
       <PageTitle
         eyebrow="ESTOQUE / OPERAÇÃO"
         title="Novo fornecedor"
-        subtitle={
-          <>
-            <Link href="/fornecedores">← Voltar aos fornecedores</Link>
-            <span className="sb-fnv-subtitulo">
-              Só o nome é obrigatório. A prévia mostra, enquanto você digita, como ele vai aparecer na lista e nos pedidos.
-            </span>
-          </>
-        }
+        subtitle="Só o nome é obrigatório. A prévia mostra, enquanto você digita, como ele vai aparecer na lista e nos pedidos."
+        aside={<Voltar href="/fornecedores" rotulo="Fornecedores" />}
         compacto
       />
 
-      <SupplierForm existentes={existentes} />
+      <SupplierForm existentes={existentes} organizationId={membership.organizationId} />
     </Shell>
   );
 }

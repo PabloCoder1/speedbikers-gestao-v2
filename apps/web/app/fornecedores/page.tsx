@@ -21,12 +21,12 @@ import {
 import {
   formatarDocumento,
   idadeRelativa,
-  iniciais,
   lerVisaoFornecedores,
   type ContagensFornecedores,
 } from "../../lib/suppliers-overview";
 
 import { Canais } from "./canais";
+import { LogoFornecedor } from "./logo";
 import { InspecaoFornecedor } from "./inspecao-fornecedor";
 
 export const metadata = { title: "Fornecedores — Speed Bikers Gestão" };
@@ -413,9 +413,7 @@ export default async function FornecedoresPage({
                         <tr key={s.id} className={s.is_active ? undefined : "sb-forn-linha-inativa"}>
                           <td>
                             <div className="sb-forn-identidade">
-                              <span className="sb-avatar sb-forn-avatar" aria-hidden="true">
-                                {iniciais(s.name)}
-                              </span>
+                              <LogoFornecedor nome={s.name} logoPath={s.logo_path} className="sb-forn-avatar" />
                               <div className="sb-forn-nome">
                                 {/* Dashboard do fornecedor (D-174) — o destino individual. */}
                                 <Link className="sb-entity" href={`/fornecedores/${s.id}`}>

@@ -3,10 +3,12 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 
 import { Icone } from "../../../components/icons";
+import { TOM } from "../../../components/tone";
 import { formatCount, formatCurrency, formatDay } from "../../../lib/format";
 import { createClient } from "../../../lib/supabase/browser";
 
 import { subtotal } from "./rascunho";
+import { ESTADO_SUGESTAO, type SugestaoItem } from "./sugestoes";
 
 /**
  * Uma linha de item do pedido — busca de SKU lida direto do navegador sob RLS
@@ -22,7 +24,13 @@ import { subtotal } from "./rascunho";
  * - marca, origem e custo cadastrado na lista e na linha escolhida;
  * - subtotal da linha e o ÚLTIMO CUSTO pago a este fornecedor por este SKU,
  *   quando existe — é a referência que faltava para negociar.
+ *
+ * D-371: a coluna SUGESTÃO — quanto a Cobertura e reposição manda comprar do
+ * SKU escolhido, com o estado dele, e um clique para usar como quantidade.
  */
+
+/** O que a coluna Sugestão sabe do SKU da linha. */
+export type SugestaoDaLinha = SugestaoItem | "carregando" | "indisponivel" | null;
 
 export interface DraftItem {
   key: string;
@@ -74,6 +82,7 @@ export function ItemRow({
   podeRemover,
   duplicada = false,
   ultimaCompra = null,
+  sugestao = null,
   onEnterNaQuantidade,
 }: {
   item: DraftItem;
@@ -84,6 +93,8 @@ export function ItemRow({
   podeRemover: boolean;
   duplicada?: boolean;
   ultimaCompra?: UltimaCompra | null;
+  /** A sugestão da reposição para o SKU catalogado da linha (D-371). */
+  sugestao?: SugestaoDaLinha;
   /** Enter na quantidade/custo: o formulário acrescenta uma linha e leva o foco a ela. */
   onEnterNaQuantidade?: () => void;
 }): ReactNode {
@@ -361,6 +372,16 @@ export function ItemRow({
         )}
       </td>
 
+      <td className="sb-pco-sugestao">
+        <CelulaSugestao
+          item={item}
+          sugestao={sugestao}
+          onUsar={(quantidade) => {
+            onChange({ ...item, quantityOrdered: String(quantidade) });
+          }}
+        />
+      </td>
+
       <td className="sb-pco-campo-num">
         <input
           className="sb-input sb-input-full"
@@ -435,5 +456,98 @@ export function ItemRow({
         </button>
       </td>
     </tr>
+  );
+}
+
+/**
+ * A célula SUGESTÃO. Cada saída quer dizer uma coisa diferente, e nenhuma
+ * vira zero calado:
+ * - código livre (fora do catálogo): não há reposição para ele;
+ * - recusa (sem configuração, estoque virtual, histórico ou amostra): "sem
+ *   sugestão", com o motivo no `title`;
+ * - 0: a janela de demanda já está coberta;
+ * - positiva: a quantidade como botão — um clique a usa no pedido.
+ */
+function CelulaSugestao({
+  item,
+  sugestao,
+  onUsar,
+}: {
+  item: DraftItem;
+  sugestao: SugestaoDaLinha;
+  onUsar: (quantidade: number) => void;
+}): ReactNode {
+  if (item.skuId === null) {
+    return (
+      <span className="sb-pco-mudo" title="Código fora do catálogo: a reposição não tem como sugerir">
+        —
+      </span>
+    );
+  }
+
+  if (sugestao === "carregando") return <span className="sb-pco-sugestao-lendo">lendo…</span>;
+
+  if (sugestao === "indisponivel" || sugestao === null) {
+    return (
+      <span className="sb-pco-mudo" title="Não foi possível ler a reposição agora">
+        indisponível
+      </span>
+    );
+  }
+
+  const estado = sugestao.state === null ? undefined : ESTADO_SUGESTAO[sugestao.state];
+  const contexto = [
+    `vendeu ${formatCount(sugestao.units30d)} em 30 dias`,
+    sugestao.aproveitavel === null ? "estoque virtual" : `aproveitável ${formatCount(sugestao.aproveitavel)}`,
+    sugestao.coverageDays === null ? null : `cobertura ${sugestao.coverageDays.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} dias`,
+  ]
+    .filter((parte): parte is string => parte !== null)
+    .join(" · ");
+
+  const selo =
+    estado === undefined ? null : (
+      <span className="sb-status sb-pco-sugestao-selo" style={TOM[estado.tom]}>
+        {estado.rotulo}
+      </span>
+    );
+
+  if (sugestao.suggestedQuantity === null) {
+    return (
+      <span
+        className="sb-pco-mudo"
+        title={`A reposição recusa sugerir: sem configuração, estoque virtual, histórico ou amostra suficiente · ${contexto}`}
+      >
+        sem sugestão
+      </span>
+    );
+  }
+
+  if (sugestao.suggestedQuantity === 0) {
+    return (
+      <span className="sb-pco-sugestao-coberta" title={`A janela de demanda já está coberta · ${contexto}`}>
+        <span className="sb-pco-mudo">coberto</span>
+        {selo}
+      </span>
+    );
+  }
+
+  const usando = Number(item.quantityOrdered) === sugestao.suggestedQuantity;
+
+  return (
+    <span className="sb-pco-sugestao-valor">
+      <button
+        type="button"
+        className={usando ? "sb-button sb-button-sm sb-pco-usar sb-pco-usar-ativo" : "sb-button sb-button-sm sb-pco-usar"}
+        title={`${usando ? "Quantidade igual à sugestão" : "Usar a sugestão como quantidade"} · ${contexto}`}
+        aria-label={`Usar a sugestão de ${String(sugestao.suggestedQuantity)} unidade(s)`}
+        onClick={() => {
+          onUsar(sugestao.suggestedQuantity ?? 0);
+        }}
+      >
+        {usando && <span aria-hidden="true">✓ </span>}
+        {formatCount(sugestao.suggestedQuantity)} un
+      </button>
+      {selo}
+    </span>
   );
 }

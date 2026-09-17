@@ -3234,6 +3234,7 @@ export type Database = {
           id: string
           is_active: boolean
           legal_name: string | null
+          logo_path: string | null
           name: string
           notes: string | null
           organization_id: string
@@ -3251,6 +3252,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           legal_name?: string | null
+          logo_path?: string | null
           name: string
           notes?: string | null
           organization_id: string
@@ -3268,6 +3270,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           legal_name?: string | null
+          logo_path?: string | null
           name?: string
           notes?: string | null
           organization_id?: string
@@ -5383,6 +5386,18 @@ export type Database = {
           total_count: number
         }[]
       }
+      get_purchase_order_suggestions: {
+        Args: {
+          p_date_to?: string | null
+          p_limit?: number
+          p_organization_id: string
+          p_scope?: string | null
+          p_sku_ids?: string[] | null
+          p_supplier_brand?: string | null
+        }
+        // jsonb (D-371): conferido campo a campo em apps/web/app/compras/novo/sugestoes.ts.
+        Returns: Json
+      }
       get_purchase_orders_overview: {
         Args: {
           p_limit?: number
@@ -5664,6 +5679,11 @@ export type Database = {
           label: string
           sublabel: string
         }[]
+      }
+      set_supplier_logo: {
+        Args: { p_id: string; p_logo_path?: string }
+        // D-370: devolve o caminho ANTERIOR, NULL quando nao havia logo (o gerador nao marcaria o nulo).
+        Returns: string | null
       }
       set_skus_stock_virtual: {
         Args: {

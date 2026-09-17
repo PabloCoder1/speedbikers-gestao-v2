@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
@@ -10,6 +9,7 @@ import { currentMembership } from "../../../../lib/request-membership";
 import { createClient } from "../../../../lib/supabase/server";
 import { AlternarAtivo } from "../../alternar-ativo";
 import { SupplierForm } from "../../novo/supplier-form";
+import { Voltar } from "../../../../components/voltar";
 
 export const metadata = { title: "Editar fornecedor — Speed Bikers Gestão" };
 
@@ -21,10 +21,13 @@ export const dynamic = "force-dynamic";
  */
 export default async function EditarFornecedorPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ supplierId: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }): Promise<ReactNode> {
   const { supplierId } = await params;
+  const { aviso } = await searchParams;
   const membership = await currentMembership();
 
   if (membership.role !== "ADMIN" && membership.role !== "GESTOR") {
@@ -33,13 +36,16 @@ export default async function EditarFornecedorPage({
 
   const supabase = await createClient();
   // As duas leituras partem do id da URL e da sessão, e vão juntas (D-195).
-  const [{ data, error }, existentes] = await Promise.all([
+  const [{ data, error }, existentes, logo] = await Promise.all([
     supabase
       .from("suppliers")
       .select("id, name, legal_name, document, contact_name, email, phone, whatsapp, website, notes, is_active")
       .eq("id", supplierId)
       .maybeSingle(),
     lerExistentes(supabase),
+    // A logo em leitura SEPARADA (D-370): onde a migration ainda não chegou, a
+    // coluna não existe, e pedi-la junto derrubaria a edição inteira em 404.
+    supabase.from("suppliers").select("logo_path").eq("id", supplierId).maybeSingle(),
   ]);
 
   // Inexistente, de outra organização ou id malformado: os três viram 404.
@@ -52,8 +58,13 @@ export default async function EditarFornecedorPage({
       <PageTitle
         eyebrow="ESTOQUE / OPERAÇÃO"
         title={`Editar ${data.name}`}
-        subtitle={<Link href={`/fornecedores/${data.id}`}>← Voltar ao fornecedor</Link>}
-        aside={<AlternarAtivo id={data.id} ativo={data.is_active} />}
+        subtitle="Só o nome é obrigatório. A prévia mostra como o cadastro aparece na lista e nos pedidos."
+        aside={
+          <>
+            <Voltar href={`/fornecedores/${data.id}`} rotulo="Voltar ao fornecedor" />
+            <AlternarAtivo id={data.id} ativo={data.is_active} />
+          </>
+        }
         compacto
       />
 
@@ -63,9 +74,17 @@ export default async function EditarFornecedorPage({
         </p>
       )}
 
+      {aviso === "logo" && (
+        <p role="alert" className="sb-note sb-note-atencao" style={{ margin: "0 0 var(--sb-space-3)" }}>
+          O fornecedor foi salvo, mas a <b>logo não subiu</b>. Escolha a imagem de novo e salve.
+        </p>
+      )}
+
       <SupplierForm
         id={data.id}
         existentes={existentes}
+        organizationId={membership.organizationId}
+        logoPath={logo.error === null ? (logo.data?.logo_path ?? null) : null}
         inicial={{
           name: data.name,
           legalName: data.legal_name,

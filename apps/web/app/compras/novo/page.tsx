@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import { PageTitle } from "../../../components/page-title";
 import { Shell } from "../../../components/shell";
+import { Voltar } from "../../../components/voltar";
 import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
 import { lerVisaoFornecedores } from "../../../lib/suppliers-overview";
@@ -52,7 +53,7 @@ export default async function NovoPedidoDeCompraPage({
   // organização: id alheio simplesmente não volta.
   const prefill = parseReplenishmentPrefill(query.sku);
 
-  const [fornecedoresResult, destinosResult, skusResult] = await Promise.all([
+  const [fornecedoresResult, destinosResult, skusResult, marcasResult] = await Promise.all([
     supabase.rpc("get_suppliers_overview", {
       p_organization_id: organizationId,
       p_state: "ativos",
@@ -74,7 +75,11 @@ export default async function NovoPedidoDeCompraPage({
             prefill.map((p) => p.skuId),
           )
       : Promise.resolve({ data: [] }),
+    // As marcas do catálogo (D-194, agregadas no banco), para "Trazer da reposição" (D-371).
+    supabase.rpc("get_supplier_brands", { p_organization_id: organizationId }),
   ]);
+
+  const marcas = (marcasResult.data ?? []).map((m) => m.supplier_brand).filter((m) => m.trim() !== "");
 
   const visao = fornecedoresResult.error === null ? lerVisaoFornecedores(fornecedoresResult.data) : null;
   const erroFornecedores =
@@ -89,6 +94,7 @@ export default async function NovoPedidoDeCompraPage({
     whatsapp: s.whatsapp,
     email: s.email,
     website: s.website,
+    logoPath: s.logo_path,
     ordersEmAberto: s.orders_em_aberto,
     ultimoPedidoEm: s.ultimo_pedido_em,
   }));
@@ -141,10 +147,10 @@ export default async function NovoPedidoDeCompraPage({
         title="Novo pedido de compra"
         subtitle={
           <>
-            <Link href="/compras">← Voltar aos pedidos de compra</Link> · o pedido nasce como <b>rascunho</b> e só vira
-            compra depois da aprovação.
+            O pedido nasce como <b>rascunho</b> e só vira compra depois da aprovação.
           </>
         }
+        aside={<Voltar href="/compras" rotulo="Pedidos de compra" />}
         compacto
       />
 
@@ -168,6 +174,7 @@ export default async function NovoPedidoDeCompraPage({
         suppliers={suppliers}
         organizationId={organizationId}
         destinosRecentes={destinosRecentes}
+        marcas={marcas}
         {...(prefillItems.length > 0 || fornecedorInicial !== null
           ? {
               initial: {

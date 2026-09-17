@@ -5662,6 +5662,74 @@ describe("prioridade da sugestão de compra (D-150) — equivalência SQL × dom
     expect(bySku.get("PURCHPRIO-virtual")?.suggested_quantity).toBeNull();
   });
 
+  // get_purchase_order_suggestions (20260917170000, D-371): a sugestão
+  // DENTRO do pedido de compra é um recorte desta mesma classificação — nunca
+  // uma segunda conta. Roda sobre os mesmos quatro SKUs plantados.
+  interface SugestaoPedido {
+    sku_id: string;
+    sku: string;
+    state: string | null;
+    suggested_quantity: number | null;
+    aproveitavel: number | null;
+    supplier_brand: string | null;
+  }
+
+  async function sugestaoDoPedido(args: string): Promise<{ total: number; linhas: SugestaoPedido[] }> {
+    const rows = await asUser<{ v: { total: number; linhas: SugestaoPedido[] } }>(
+      ADMIN_SB,
+      `select public.get_purchase_order_suggestions('${ORG_SB}', ${args}) as v`,
+    );
+    const v = rows[0]?.v;
+
+    if (v === undefined) throw new Error("get_purchase_order_suggestions nao devolveu linha");
+
+    return v;
+  }
+
+  it("D-371: por lista de SKUs, a sugestão do pedido é a MESMA da reposição", async () => {
+    const todas = (await fetchAll()).filter((r) => r.sku.startsWith("PURCHPRIO-"));
+    const ids = todas.map((r) => r.sku_id);
+
+    expect(ids).toHaveLength(4);
+
+    const pedido = await sugestaoDoPedido(`'{${ids.join(",")}}'::uuid[], null, null, 500, '${TODAY}'`);
+
+    expect(pedido.total).toBe(4);
+
+    for (const linha of todas) {
+      const nova = pedido.linhas.find((l) => l.sku_id === linha.sku_id);
+
+      expect({ sku: linha.sku, state: nova?.state, suggested: nova?.suggested_quantity }).toEqual({
+        sku: linha.sku,
+        state: linha.state,
+        suggested: linha.suggested_quantity,
+      });
+    }
+
+    // Estoque virtual: o aproveitável é AUSENTE, nunca zero (D-127).
+    expect(pedido.linhas.find((l) => l.sku === "PURCHPRIO-virtual")?.aproveitavel).toBeNull();
+  });
+
+  it("D-371: por marca, 'comprar agora' traz só ruptura e urgente, em ordem de prioridade", async () => {
+    const agora = await sugestaoDoPedido(`null, 'PURCHPRIO-MARCA', 'comprar_agora', 500, '${TODAY}'`);
+
+    expect(agora.linhas.map((l) => l.sku)).toEqual(["PURCHPRIO-ruptura", "PURCHPRIO-urgente"]);
+    expect(agora.linhas.every((l) => (l.suggested_quantity ?? 0) > 0)).toBe(true);
+
+    // "Tudo com sugestão" nunca traz recusa (virtual) nem sugestão zero.
+    const tudo = await sugestaoDoPedido(`null, 'PURCHPRIO-MARCA', 'com_sugestao', 500, '${TODAY}'`);
+
+    expect(tudo.linhas.some((l) => l.sku === "PURCHPRIO-virtual")).toBe(false);
+    expect(tudo.linhas.every((l) => (l.suggested_quantity ?? 0) > 0)).toBe(true);
+  });
+
+  it("D-371: sem SKU e sem marca devolve vazio, e anon não executa", async () => {
+    expect(await sugestaoDoPedido(`null, '  ', null, 500, '${TODAY}'`)).toEqual({ total: 0, linhas: [] });
+    await expect(asAnon(`select public.get_purchase_order_suggestions('${ORG_SB}', null, 'X')`)).rejects.toThrow(
+      /permission denied/i,
+    );
+  });
+
   it("a ordem é a prioridade: ruptura > urgente > recusas > excesso", async () => {
     const order = (await fetchAll()).map((r) => r.sku);
     const at = (sku: string) => order.indexOf(sku);
@@ -12119,6 +12187,9 @@ describe("guarda de GRANTs (D-066/D-098/D-130)", () => {
     "retarget_sku_listing_link",
     "set_skus_stock_virtual",
     "set_skus_supplier_brand",
+    // D-370: confere o papel NA organizacao do fornecedor (has_org_role) e que
+    // a pasta do caminho e dessa organizacao; a forma do caminho e uma check.
+    "set_supplier_logo",
     "triage_support_case",
     "update_action_status",
     "update_purchase_order_draft",
@@ -13243,5 +13314,97 @@ describe("get_replenishment_reach (D-361)", () => {
     await expect(asAnon(`select * from public.get_replenishment_reach('${ORG_SB}','${TODAY}')`)).rejects.toThrow(
       /permission denied/i,
     );
+  });
+});
+
+// Logo do fornecedor (20260917160000, D-370) -- o caminho no cadastro, o bucket
+// e quem escreve nos dois. Tudo por `asUser`, que desfaz a transacao.
+describe("logo do fornecedor (D-370)", () => {
+  const MARCA = "LOGOTEST";
+  const ARQUIVO = "aaaaaaaa-2222-4333-8444-555555555555.webp";
+  let fornecedor = "";
+
+  beforeAll(async () => {
+    const r = await client.query<{ id: string }>(
+      `insert into public.suppliers (organization_id, name) values ($1,$2) returning id`,
+      [ORG_SB, `${MARCA}-fornecedor`],
+    );
+    fornecedor = r.rows[0]?.id ?? "";
+  });
+
+  it("a troca grava o caminho e devolve o anterior, para a tela apagar o arquivo velho", async () => {
+    // Duas chamadas no MESMO statement: a de dentro grava, a de fora tira e
+    // devolve o que a de dentro gravou. Funcao plpgsql volatil enxerga o que a
+    // anterior escreveu na mesma transacao.
+    const rows = await asUser<{ primeiro: string | null; anterior: string | null }>(
+      ADMIN_SB,
+      `select t.primeiro, public.set_supplier_logo('${fornecedor}') as anterior
+       from (select public.set_supplier_logo('${fornecedor}', '${ORG_SB}/${ARQUIVO}') as primeiro) t`,
+    );
+
+    expect(rows[0]?.primeiro).toBeNull();
+    expect(rows[0]?.anterior).toBe(`${ORG_SB}/${ARQUIVO}`);
+  });
+
+  it("get_suppliers_overview devolve logo_path em cada linha", async () => {
+    const rows = await asUser<{ tem: boolean }>(
+      ADMIN_SB,
+      `select bool_and(l ? 'logo_path') as tem
+       from jsonb_array_elements(public.get_suppliers_overview('${ORG_SB}', '${MARCA}-fornecedor') -> 'linhas') l`,
+    );
+
+    expect(rows[0]?.tem).toBe(true);
+  });
+
+  it("caminho fora da pasta da organizacao e recusado, e o fora da forma tambem", async () => {
+    await expect(
+      asUser(ADMIN_SB, `select public.set_supplier_logo('${fornecedor}', '${ORG_OUTRA}/${ARQUIVO}')`),
+    ).rejects.toThrow(/fora da pasta da organizacao/);
+
+    await expect(
+      asUser(ADMIN_SB, `select public.set_supplier_logo('${fornecedor}', '${ORG_SB}/logo.webp')`),
+    ).rejects.toThrow(/suppliers_logo_path_shape/);
+  });
+
+  it("ANALISTA e ADMIN de OUTRA organizacao nao trocam a logo (D-180)", async () => {
+    await expect(
+      asUser(ANALISTA_SB, `select public.set_supplier_logo('${fornecedor}', '${ORG_SB}/${ARQUIVO}')`),
+    ).rejects.toThrow(/sem permissao|nao encontrado/);
+
+    await expect(
+      asUser(DE_OUTRA_ORG, `select public.set_supplier_logo('${fornecedor}', '${ORG_SB}/${ARQUIVO}')`),
+    ).rejects.toThrow(/sem permissao|nao encontrado/);
+  });
+
+  it("o bucket aceita a pasta da propria organizacao e recusa a de outra", async () => {
+    const aceito = await asUser<{ name: string }>(
+      ADMIN_SB,
+      `insert into storage.objects (bucket_id, name, owner_id)
+       values ('supplier-logos', '${ORG_SB}/${ARQUIVO}', '${ADMIN_SB}') returning name`,
+    );
+
+    expect(aceito[0]?.name).toBe(`${ORG_SB}/${ARQUIVO}`);
+
+    await expect(
+      asUser(
+        ADMIN_SB,
+        `insert into storage.objects (bucket_id, name, owner_id)
+         values ('supplier-logos', '${ORG_OUTRA}/${ARQUIVO}', '${ADMIN_SB}')`,
+      ),
+    ).rejects.toThrow(/row-level security/);
+
+    await expect(
+      asUser(
+        ANALISTA_SB,
+        `insert into storage.objects (bucket_id, name, owner_id)
+         values ('supplier-logos', '${ORG_SB}/${ARQUIVO}', '${ANALISTA_SB}')`,
+      ),
+    ).rejects.toThrow(/row-level security/);
+  });
+
+  it("anon nao executa set_supplier_logo", async () => {
+    await expect(
+      asAnon(`select public.set_supplier_logo('${fornecedor}', null)`),
+    ).rejects.toThrow(/permission denied/i);
   });
 });
