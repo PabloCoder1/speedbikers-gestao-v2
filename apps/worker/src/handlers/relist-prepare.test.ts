@@ -33,6 +33,7 @@ function healthyItemBody(): Record<string, unknown> {
     tags: ["good_quality_picture"],
     catalog_listing: false,
     listing_type_id: "gold_special",
+    available_quantity: 5,
     variations: [],
   };
 }

@@ -59,6 +59,8 @@ function chain(result: unknown): unknown {
     eq: () => self,
     is: () => self,
     select: () => self,
+    order: () => self,
+    limit: () => self,
     maybeSingle: () => Promise.resolve(result),
     then: (resolve: (value: unknown) => unknown) => Promise.resolve(result).then(resolve),
   };
@@ -72,6 +74,9 @@ interface FakeDbOptions {
   operationMissing?: boolean;
   updateReturnsEmpty?: boolean;
   remapError?: string;
+  failureReason?: string | null;
+  /** reason do último evento RELIST_FAILED; ausente = nenhum evento. */
+  lastFailedReason?: string | null;
 }
 
 interface RecordedUpdate {
@@ -114,8 +119,17 @@ function fakeDb(options: FakeDbOptions = {}): {
                       ? (options.operationStatus === "RELISTED" || options.operationStatus === "REMAPPED" ? CHILD : null)
                       : options.childItemId,
                   status: options.operationStatus ?? "REQUESTED",
+                  failure_reason: options.failureReason ?? null,
                   requested_by: REQUESTED_BY,
                 },
+            error: null,
+          });
+        }
+
+        // Retomada (D-364): o último evento RELIST_FAILED da operação.
+        if (table === "listing_relist_events") {
+          return chain({
+            data: options.lastFailedReason === undefined ? null : { reason: options.lastFailedReason },
             error: null,
           });
         }
@@ -205,12 +219,18 @@ interface FakeClientOptions {
 function fakeClient(options: FakeClientOptions = {}): {
   client: MercadoLivreClient;
   calls: string[];
+  bodies: Record<string, unknown>;
 } {
   const calls: string[] = [];
+  const bodies: Record<string, unknown> = {};
 
   const client = {
     request: (request: RequestOptions<unknown>) => {
       calls.push(`${request.method} ${request.path}`);
+
+      if (request.body !== undefined) {
+        bodies[`${request.method} ${request.path}`] = request.body;
+      }
 
       // Como o cliente REAL: toda resposta atravessa o schema do chamador —
       // é ele que aplica o transform de id de variação para string, e um
@@ -253,10 +273,15 @@ function fakeClient(options: FakeClientOptions = {}): {
     },
   } as unknown as MercadoLivreClient;
 
-  return { client, calls };
+  return { client, calls, bodies };
 }
 
-function run(db: RelistExecuteDeps["db"], client: MercadoLivreClient) {
+function run(
+  db: RelistExecuteDeps["db"],
+  client: MercadoLivreClient,
+  payload: Record<string, unknown> = { relistId: RELIST_ID },
+  lines: string[] = [],
+) {
   const handler = createRelistExecuteHandler({
     db,
     mercadoLivre: client,
@@ -265,11 +290,9 @@ function run(db: RelistExecuteDeps["db"], client: MercadoLivreClient) {
     now: () => NOW,
   });
 
-  const lines: string[] = [];
-
   return handler(ENVELOPE, {
     logger: createLogger({}, { sink: (line) => lines.push(line) }),
-    payload: { relistId: RELIST_ID },
+    payload,
   });
 }
 
@@ -495,5 +518,314 @@ describe("relist.execute (D-162/D-163)", () => {
 
     expect(outcome).toMatchObject({ status: "failed", retryable: true });
     expect(events).toHaveLength(0);
+  });
+});
+
+/** O pai com variações do incidente (MLB1476804187), reduzido a três: uma zerada. */
+function parentWithVariations(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return healthyParent({
+    price: 114.9,
+    available_quantity: 1_235,
+    shipping: { logistic_type: "cross_docking" },
+    variations: [
+      { id: 180_214_523_001, price: 114.9, available_quantity: 1_200 },
+      { id: "180214523002", price: 129.9, available_quantity: 35 },
+      { id: 180_214_523_003, price: 114.9, available_quantity: 0 },
+    ],
+    ...overrides,
+  });
+}
+
+const CORPO_COM_VARIACOES = {
+  listing_type_id: "gold_special",
+  variations: [
+    { id: 180_214_523_001, price: 114.9, quantity: 1_200 },
+    { id: 180_214_523_002, price: 129.9, quantity: 35 },
+  ],
+};
+
+/** O corpo de erro do ML na forma documentada (message, error, status, cause[]). */
+function recusa400(body: unknown = {
+  message: "Validation error",
+  error: "validation_error",
+  status: 400,
+  cause: [{ code: "item.variations.missing", message: "Item with variations must be relisted with variations" }],
+}): MercadoLivreApiError {
+  return new MercadoLivreApiError(`Mercado Livre respondeu 400 para POST /items/${PARENT}/relist.`, {
+    status: 400,
+    errorClass: "not_retryable",
+    url: `https://api.mercadolibre.com/items/${PARENT}/relist`,
+    body,
+  });
+}
+
+function logs(lines: string[]): Record<string, unknown>[] {
+  return lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+const RETOMADA = { relistId: RELIST_ID, retomada: true };
+
+/** A mensagem que o executor gravava antes de D-364 para o 400 (a operação a7638dc5, com o MLB deste teste). */
+const MENSAGEM_LEGADA_400 = `o POST /relist falhou e não é seguro repetir: Mercado Livre respondeu 400 para POST /items/${PARENT}/relist.`;
+
+describe("relist.execute com variações e recusa do ML (D-364)", () => {
+  it("o POST do pai COM variações leva listing_type_id + variations com preço próprio, sem a zerada e sem price/quantity na raiz", async () => {
+    const { db, updates } = fakeDb();
+    const { client, bodies } = fakeClient({ parentBody: parentWithVariations() });
+
+    const outcome = await run(db, client);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(updates.map((update) => update.patch.status)).toEqual(["CLOSING", "CLOSED", "RELISTING", "RELISTED"]);
+    expect(bodies[`POST /items/${PARENT}/relist`]).toEqual(CORPO_COM_VARIACOES);
+  });
+
+  it("o POST do pai SEM variações continua com o corpo de sempre", async () => {
+    const { db } = fakeDb();
+    const { client, bodies } = fakeClient();
+
+    await run(db, client);
+
+    expect(bodies[`POST /items/${PARENT}/relist`]).toEqual({ price: 199.9, quantity: 5, listing_type_id: "gold_special" });
+  });
+
+  it("REQUESTED com variações TODAS sem estoque: PREFLIGHT_FAILED (VARIACOES_SEM_ESTOQUE) e o pai nunca é fechado", async () => {
+    const { db, updates, events } = fakeDb();
+    const { client, calls } = fakeClient({
+      parentBody: parentWithVariations({
+        variations: [
+          { id: 1, price: 10, available_quantity: 0 },
+          { id: 2, price: 10, available_quantity: 0 },
+        ],
+      }),
+    });
+
+    const outcome = await run(db, client);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(updates.map((update) => update.patch.status)).toEqual(["PREFLIGHT_FAILED"]);
+    expect(events.map((event) => event.reason)).toEqual(["VARIACOES_SEM_ESTOQUE"]);
+    expect(calls.some((call) => call.startsWith("PUT") || call.startsWith("POST"))).toBe(false);
+  });
+
+  it("retomada de CLOSED com o pai sem estoque: nem transição nem POST — o job falha sem retry", async () => {
+    const { db, updates } = fakeDb({ operationStatus: "CLOSED" });
+    const { client, calls } = fakeClient({
+      parentBody: parentWithVariations({ status: "closed", variations: [{ id: 1, price: 10, available_quantity: 0 }] }),
+    });
+
+    const outcome = await run(db, client);
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(updates).toHaveLength(0);
+    expect(calls).toEqual([`GET /items/${PARENT}`]);
+  });
+
+  it("400 com corpo de erro do ML: RELIST_FAILED com POST_RECUSADO, o resumo do corpo gravado e o log relist_post_rejected", async () => {
+    const { db, updates, events } = fakeDb();
+    const { client } = fakeClient({ parentBody: parentWithVariations(), relistOutcome: recusa400() });
+    const lines: string[] = [];
+
+    const outcome = await run(db, client, { relistId: RELIST_ID }, lines);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(updates.map((update) => update.patch.status)).toEqual(["CLOSING", "CLOSED", "RELISTING", "RELIST_FAILED"]);
+    expect(events.at(-1)).toMatchObject({ to_status: "RELIST_FAILED", reason: "POST_RECUSADO" });
+
+    const failureReason = String(updates.at(-1)?.patch.failure_reason);
+    expect(failureReason.startsWith("o Mercado Livre recusou a republicação (HTTP 400) — nenhum anúncio novo foi criado")).toBe(
+      true,
+    );
+    expect(failureReason).toContain("Validation error");
+    expect(failureReason).toContain("item.variations.missing: Item with variations must be relisted with variations");
+
+    const rejected = logs(lines).find((line) => line.message === "relist_post_rejected");
+    expect(rejected).toMatchObject({ relist_id: RELIST_ID, status: 400 });
+    expect(String(rejected?.summary)).toContain("item.variations.missing");
+  });
+
+  it("o resumo do corpo de erro não carrega token e é cortado em ~800 caracteres", async () => {
+    const { db, updates } = fakeDb();
+    const { client } = fakeClient({
+      relistOutcome: recusa400({
+        message: `recusado APP_USR-1234567890abcdef-token ${"x".repeat(2_000)}`,
+        error: "bad_request",
+        cause: [],
+      }),
+    });
+
+    await run(db, client);
+
+    const failureReason = String(updates.at(-1)?.patch.failure_reason);
+    expect(failureReason).not.toContain("APP_USR-1234567890abcdef");
+    expect(failureReason.length).toBeLessThan(1_000);
+  });
+
+  it("500, 408 e 429 continuam POST_FALHOU — não é recusa comprovada", async () => {
+    for (const [status, errorClass] of [
+      [500, "retryable"],
+      [408, "not_retryable"],
+      [429, "retryable"],
+    ] as const) {
+      const { db, updates, events } = fakeDb();
+      const { client } = fakeClient({
+        relistOutcome: new MercadoLivreApiError(`Mercado Livre respondeu ${String(status)} para POST /items/${PARENT}/relist.`, {
+          status,
+          errorClass,
+          url: "x",
+        }),
+      });
+
+      const outcome = await run(db, client);
+
+      expect(outcome).toEqual({ status: "done", processed: 1 });
+      expect(updates.at(-1)?.patch.status).toBe("RELIST_FAILED");
+      expect(events.at(-1)).toMatchObject({ to_status: "RELIST_FAILED", reason: "POST_FALHOU" });
+      expect(String(updates.at(-1)?.patch.failure_reason)).toContain("não é seguro repetir");
+    }
+  });
+});
+
+describe("relist.execute — retomada humana depois de recusa (D-364)", () => {
+  it("elegível (POST_RECUSADO): RELIST_FAILED → RELISTING → POST com variações → RELISTED e remapeamento", async () => {
+    const { db, updates, events, rpcCalls } = fakeDb({
+      operationStatus: "RELIST_FAILED",
+      failureReason: "o Mercado Livre recusou a republicação (HTTP 400) — nenhum anúncio novo foi criado. Resposta: x",
+      lastFailedReason: "POST_RECUSADO",
+    });
+    const { client, calls, bodies } = fakeClient({ parentBody: parentWithVariations({ status: "closed" }) });
+
+    const outcome = await run(db, client, RETOMADA);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(updates.map((update) => [update.fromStatus, update.patch.status])).toEqual([
+      ["RELIST_FAILED", "RELISTING"],
+      ["RELISTING", "RELISTED"],
+    ]);
+    // O motivo antigo sai com a retomada; o filho é gravado no RELISTED.
+    expect(updates[0]?.patch.failure_reason).toBeNull();
+    expect(updates[1]?.patch.child_item_id).toBe(CHILD);
+    expect(events.map((event) => [event.to_status, event.reason])).toEqual([
+      ["RELISTING", "RETOMADA_APOS_RECUSA"],
+      ["RELISTED", null],
+    ]);
+    expect(calls).toEqual([
+      `GET /items/${PARENT}`,
+      `POST /items/${PARENT}/relist`,
+      `GET /items/${CHILD}?include_attributes=all`,
+    ]);
+    expect(bodies[`POST /items/${PARENT}/relist`]).toEqual(CORPO_COM_VARIACOES);
+    expect(rpcCalls).toHaveLength(1);
+  });
+
+  it("elegível pelo LEGADO (POST_FALHOU com a mensagem antiga do 400): retoma igual", async () => {
+    const { db, updates } = fakeDb({
+      operationStatus: "RELIST_FAILED",
+      failureReason: MENSAGEM_LEGADA_400,
+      lastFailedReason: "POST_FALHOU",
+    });
+    const { client, calls } = fakeClient({ parentBody: parentWithVariations({ status: "closed" }) });
+
+    const outcome = await run(db, client, RETOMADA);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(updates.map((update) => update.patch.status)).toEqual(["RELISTING", "RELISTED"]);
+    expect(calls).toContain(`POST /items/${PARENT}/relist`);
+  });
+
+  it("recusada DE NOVO na retomada: volta a RELIST_FAILED com POST_RECUSADO (e segue elegível para outra decisão humana)", async () => {
+    const { db, updates, events } = fakeDb({ operationStatus: "RELIST_FAILED", lastFailedReason: "POST_RECUSADO" });
+    const { client } = fakeClient({ parentBody: parentWithVariations({ status: "closed" }), relistOutcome: recusa400() });
+
+    const outcome = await run(db, client, RETOMADA);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(updates.map((update) => update.patch.status)).toEqual(["RELISTING", "RELIST_FAILED"]);
+    expect(events.at(-1)).toMatchObject({ reason: "POST_RECUSADO" });
+  });
+
+  it("NÃO elegível (o worker reaplica a regra): 5xx legado, EXECUCAO_INTERROMPIDA ou sem evento — nenhuma transição e nenhum POST", async () => {
+    for (const options of [
+      {
+        failureReason: `o POST /relist falhou e não é seguro repetir: Mercado Livre respondeu 500 para POST /items/${PARENT}/relist.`,
+        lastFailedReason: "POST_FALHOU",
+      },
+      { failureReason: MENSAGEM_LEGADA_400, lastFailedReason: "EXECUCAO_INTERROMPIDA" },
+      { failureReason: MENSAGEM_LEGADA_400, lastFailedReason: "RESPOSTA_AMBIGUA" },
+      { failureReason: MENSAGEM_LEGADA_400 },
+    ]) {
+      const { db, updates, events } = fakeDb({ operationStatus: "RELIST_FAILED", ...options });
+      const { client, calls } = fakeClient({ parentBody: parentWithVariations({ status: "closed" }) });
+
+      const outcome = await run(db, client, RETOMADA);
+
+      expect(outcome).toEqual({ status: "done", processed: 0 });
+      expect(updates).toHaveLength(0);
+      expect(events).toHaveLength(0);
+      expect(calls.some((call) => call.startsWith("POST"))).toBe(false);
+    }
+  });
+
+  it("pai que NÃO está closed no remoto: nenhuma transição e nenhum POST", async () => {
+    const { db, updates } = fakeDb({ operationStatus: "RELIST_FAILED", lastFailedReason: "POST_RECUSADO" });
+    const { client, calls } = fakeClient({ parentBody: parentWithVariations({ status: "active" }) });
+    const lines: string[] = [];
+
+    const outcome = await run(db, client, RETOMADA, lines);
+
+    expect(outcome).toEqual({ status: "done", processed: 0 });
+    expect(updates).toHaveLength(0);
+    expect(calls).toEqual([`GET /items/${PARENT}`]);
+    expect(logs(lines).some((line) => line.message === "relist_retry_parent_not_closed")).toBe(true);
+  });
+
+  it("pai fechado mas sem estoque em variação nenhuma: nenhuma transição e nenhum POST", async () => {
+    const { db, updates } = fakeDb({ operationStatus: "RELIST_FAILED", lastFailedReason: "POST_RECUSADO" });
+    const { client, calls } = fakeClient({
+      parentBody: parentWithVariations({ status: "closed", variations: [{ id: 1, price: 10, available_quantity: 0 }] }),
+    });
+
+    const outcome = await run(db, client, RETOMADA);
+
+    expect(outcome).toEqual({ status: "done", processed: 0 });
+    expect(updates).toHaveLength(0);
+    expect(calls).toEqual([`GET /items/${PARENT}`]);
+  });
+
+  it("CAS perdido na retomada é outra execução que assumiu: termina SEM retry e sem POST", async () => {
+    const { db, events } = fakeDb({
+      operationStatus: "RELIST_FAILED",
+      lastFailedReason: "POST_RECUSADO",
+      updateReturnsEmpty: true,
+    });
+    const { client, calls } = fakeClient({ parentBody: parentWithVariations({ status: "closed" }) });
+
+    const outcome = await run(db, client, RETOMADA);
+
+    expect(outcome).toEqual({ status: "done", processed: 0 });
+    expect(events).toHaveLength(0);
+    expect(calls.some((call) => call.startsWith("POST"))).toBe(false);
+  });
+
+  it("RELIST_FAILED SEM retomada continua noop — mesmo recusado, nada repete sozinho", async () => {
+    const { db, updates } = fakeDb({ operationStatus: "RELIST_FAILED", lastFailedReason: "POST_RECUSADO" });
+    const { client, calls } = fakeClient({ parentBody: parentWithVariations({ status: "closed" }) });
+
+    const outcome = await run(db, client);
+
+    expect(outcome).toEqual({ status: "done", processed: 0 });
+    expect(updates).toHaveLength(0);
+    expect(calls).toEqual([]);
+  });
+
+  it("retomada pedida para operação REQUESTED é noop — ela nunca fecha pai", async () => {
+    const { db, updates } = fakeDb({ operationStatus: "REQUESTED", lastFailedReason: "POST_RECUSADO" });
+    const { client, calls } = fakeClient();
+
+    const outcome = await run(db, client, RETOMADA);
+
+    expect(outcome).toEqual({ status: "done", processed: 0 });
+    expect(updates).toHaveLength(0);
+    expect(calls).toEqual([]);
   });
 });
