@@ -685,6 +685,21 @@ POST https://api.mercadolibre.com/items/{item_id}/relist
 { "price": 550000, "quantity": 1, "listing_type_id": "gold_special" }
 ```
 
+**Item COM variações — CONFIRMADO na doc oficial em 17/09/2026 (seção "Republicar item com variações", D-364).** O corpo é outro:
+
+```
+POST https://api.mercadolibre.com/items/{item_id}/relist
+{ "listing_type_id": "bronze",
+  "variations": [ { "id": 45339262332, "price": 15499, "quantity": 200 },
+                  { "id": 45339262335, "price": 16000, "quantity": 100 } ] }
+```
+
+- vão só as variações que se quer manter, cada uma com a **quantidade disponível e o preço dela**; **sem `price`/`quantity` na raiz**; o `id` é o número da variação do pai;
+- o item **e** as variações ganham ids novos no filho (o remapeamento continua obrigatório);
+- a resposta do exemplo é a do defeito registrado abaixo (id do pai) — não é contrato.
+
+**O incidente (16/09/2026 18:41 UTC) — a causa do 400 não foi registrada, e o corpo com variações ainda não rodou contra o ML real:** o MLB1476804187 (10 variações, todas com estoque) foi fechado e o POST saiu com o corpo de item sem variação. O ML respondeu **400**, a operação ficou em RELIST_FAILED e o anúncio fora do ar, sem filho. O corpo do erro não foi gravado, então o corpo errado é a causa provável, não a comprovada — o que está CONFIRMADO é só o contrato da doc acima. As variações desse item têm `user_product_id` e `inventory_id`, sobre os quais a seção de relist não diz nada. Desde D-364: o corpo sai de `buildRelistBody` (`@sb/domain`), variação sem estoque fica fora (listada na confirmação da tela) e o preflight bloqueia antes de fechar quando não há estoque (`VARIACOES_SEM_ESTOQUE`/`SEM_ESTOQUE`); o POST sai com **uma tentativa** no cliente HTTP (`maxAttempts: 1`), para o 4xx que o worker vê ser o do único POST; e a recusa 4xx (exceto 408/429) grava `POST_RECUSADO` com o resumo do corpo do erro (`message`, `error`, `cause[]`) e fica elegível para uma retomada **humana**.
+
 **Contrato confirmado:**
 
 | Regra | Situação |
@@ -708,7 +723,7 @@ POST https://api.mercadolibre.com/items/{item_id}/relist
 - **FULL: silêncio absoluto.** Zero ocorrências de "relist" nas páginas de Fulfillment, Convivência Full/Flex, User Products e Estoque Distribuído. A doc não diz o que acontece com o estoque físico no CD. **Bloquear é a única postura defensável.** *Refinado em D-360 (2026-09-16):* o que se bloqueia é o que pode ficar preso — unidades no Full (disponíveis + indisponíveis, lidas ao vivo em `GET /inventories/{id}/stock/fulfillment`, secao 2.7) ou envio ativo pelo Full (`shipping.logistic_type = fulfillment`). O `inventory_id` sozinho não basta: ele continua no item depois que o Full zera (MLB5805901782, TBWT07652 com zero em oito capturas). Cadastro com zero unidades passa, com aviso; estoque ilegível reprova. Continua sem resposta se o filho herda o cadastro no Full.
 - **Catálogo: silêncio absoluto.** Nem permitido, nem bloqueado. **Bloquear.**
 - **Idempotência NÃO EXISTE na API.** Busca por `idempot`, `X-Idempotency`, `Idempotency-Key` em todas as páginas: zero ocorrências. A proteção contra criar dois anúncios é 100% nossa.
-- **Nenhum código de erro documentado** para `/relist`, nem HTTP status de sucesso.
+- **Nenhum código de erro documentado** para `/relist`, nem HTTP status de sucesso. Por isso, desde D-364, o resumo do corpo do erro que o ML devolve vai para o log (`relist_post_rejected`/`relist_post_failed`) — é a única fonte do motivo. No `failure_reason` da operação ele só entra na **recusa** (`POST_RECUSADO`); nas demais falhas (`POST_FALHOU`) a linha guarda só a mensagem do cliente HTTP, e o corpo fica no log.
 - **Rate limit sem números** — só orientação qualitativa (backoff, jitter).
 - **Relist encadeado** (filho vira pai) não é descrito; a página de Visitas diz que visitas são herdadas *"não importando quantas vezes o anúncio seja publicado novamente"*, o que tensiona com "uma por pai". Incerto.
 

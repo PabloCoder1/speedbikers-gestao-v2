@@ -1,4 +1,6 @@
 import type { AdminClient } from "@sb/db";
+import { readLastRelistFailureReason } from "@sb/db";
+import { isRelistRetryEligible } from "@sb/domain";
 import type { Logger } from "@sb/observability";
 import { z } from "zod";
 
@@ -49,22 +51,30 @@ export type RelistExecuteOutcome =
   | { status: "not_found" }
   | { status: "error"; reason: string };
 
-/**
- * A CONFIRMAÇÃO humana da execução (D-162) — segundo ato, separado do pedido
- * de propósito: é aqui que o irreversível é autorizado. Só operação
- * REQUESTED (preflight aprovado na criação) é executável; o worker re-roda o
- * preflight NA HORA de qualquer forma (padrão D-096).
- */
-export async function requestListingRelistExecution(
-  deps: RelistDeps,
-  caller: Caller,
-  relistId: string,
-): Promise<RelistExecuteOutcome> {
-  const now = deps.now?.() ?? new Date();
+interface AuthorizedOperation {
+  id: string;
+  organization_id: string;
+  ml_account_id: string;
+  status: string;
+  parent_item_id: string;
+  failure_reason: string | null;
+  ml_accounts: { slug: string } | null;
+}
 
+type OperationLookup =
+  | { status: "found"; row: AuthorizedOperation }
+  | { status: "not_found" }
+  | { status: "error"; reason: string };
+
+/**
+ * A operação, se o chamador a alcança — organização E conta. Os dois atos
+ * sobre uma operação existente (execução, D-162; retomada, D-364) passam por
+ * aqui, com as mesmas respostas.
+ */
+async function loadOperationForCaller(deps: RelistDeps, caller: Caller, relistId: string): Promise<OperationLookup> {
   const operation = await deps.db
     .from("listing_relists")
-    .select("id, organization_id, ml_account_id, status, parent_item_id, ml_accounts(slug)")
+    .select("id, organization_id, ml_account_id, status, parent_item_id, failure_reason, ml_accounts(slug)")
     .eq("id", relistId)
     .maybeSingle();
 
@@ -72,14 +82,7 @@ export async function requestListingRelistExecution(
     return { status: "error", reason: operation.error.message };
   }
 
-  const row = operation.data as {
-    id: string;
-    organization_id: string;
-    ml_account_id: string;
-    status: string;
-    parent_item_id: string;
-    ml_accounts: { slug: string } | null;
-  } | null;
+  const row = operation.data as AuthorizedOperation | null;
 
   // Fronteira de organização em código (AdminClient bypassa RLS); "não
   // encontrado" nunca vira "sem permissão" — padrão D-096.
@@ -103,6 +106,30 @@ export async function requestListingRelistExecution(
       return { status: "not_found" };
     }
   }
+
+  return { status: "found", row };
+}
+
+/**
+ * A CONFIRMAÇÃO humana da execução (D-162) — segundo ato, separado do pedido
+ * de propósito: é aqui que o irreversível é autorizado. Só operação
+ * REQUESTED (preflight aprovado na criação) é executável; o worker re-roda o
+ * preflight NA HORA de qualquer forma (padrão D-096).
+ */
+export async function requestListingRelistExecution(
+  deps: RelistDeps,
+  caller: Caller,
+  relistId: string,
+): Promise<RelistExecuteOutcome> {
+  const now = deps.now?.() ?? new Date();
+
+  const lookup = await loadOperationForCaller(deps, caller, relistId);
+
+  if (lookup.status !== "found") {
+    return lookup;
+  }
+
+  const row = lookup.row;
 
   if (row.status !== "REQUESTED") {
     return {
@@ -134,6 +161,95 @@ export async function requestListingRelistExecution(
     relist_id: relistId,
     parent_item_id: row.parent_item_id,
     confirmed_by: caller.userId,
+    deduplicated: enqueued.deduplicated,
+  });
+
+  return { status: "queued", deduplicated: enqueued.deduplicated };
+}
+
+/**
+ * A RETOMADA humana de uma republicação RECUSADA (D-364) — terceiro ato, e o
+ * único que tira uma operação de RELIST_FAILED.
+ *
+ * RELIST_FAILED quer dizer pai fechado sem filho confirmado, e o executor
+ * nunca repete o POST sozinho (D-162). Quando a última falha é uma recusa
+ * comprovada do Mercado Livre (`isRelistRetryEligible`: 4xx exceto 408/429 —
+ * nenhum anúncio novo foi criado), uma pessoa pode mandar tentar de novo. O
+ * resto (5xx, interrupção, resposta ambígua) continua exigindo conferência
+ * humana no Mercado Livre, e esta rota responde 409.
+ *
+ * O worker reaplica a MESMA regra ao receber o job, confere o pai ao vivo
+ * (fechado e com estoque) e só então emite o POST — esta rota autoriza, não
+ * garante.
+ */
+export async function requestListingRelistRetry(
+  deps: RelistDeps,
+  caller: Caller,
+  relistId: string,
+): Promise<RelistExecuteOutcome> {
+  const now = deps.now?.() ?? new Date();
+
+  const lookup = await loadOperationForCaller(deps, caller, relistId);
+
+  if (lookup.status !== "found") {
+    return lookup;
+  }
+
+  const row = lookup.row;
+
+  if (row.status !== "RELIST_FAILED") {
+    return { status: "invalid", reason: `a operação está em ${row.status} e não aguarda retomada` };
+  }
+
+  // A ÚLTIMA falha é a que conta: uma retomada que falhou de novo por outro
+  // motivo deixa de ser elegível. A consulta é a mesma da tela e do worker.
+  const lastFailure = await readLastRelistFailureReason(deps.db, relistId);
+
+  if (!lastFailure.ok) {
+    return { status: "error", reason: lastFailure.message };
+  }
+
+  const eligible = isRelistRetryEligible({
+    status: row.status,
+    parentItemId: row.parent_item_id,
+    failureReason: row.failure_reason,
+    lastFailedEventReason: lastFailure.reason,
+  });
+
+  if (!eligible) {
+    return {
+      status: "invalid",
+      reason:
+        "a falha desta operação não é uma recusa comprovada do Mercado Livre — o anúncio novo pode ter nascido, e repetir daqui poderia criar dois; confira no Mercado Livre antes",
+    };
+  }
+
+  const slug = row.ml_accounts?.slug;
+
+  if (slug === undefined) {
+    return { status: "error", reason: "conta sem slug para resolver a fila" };
+  }
+
+  // Janela de minuto no nome, com prefixo PRÓPRIO: a retomada não pode
+  // colidir com o nome retido de uma execução do mesmo minuto (classe D-051).
+  const minuteWindow = now.toISOString().slice(0, 16);
+
+  const enqueued = await deps.enqueuer.enqueue({
+    jobType: "relist.execute",
+    organizationId: caller.organizationId,
+    dedupeKey: `relist-retry:${relistId}:${minuteWindow}`,
+    queue: `ml-sync-${slug}`,
+    // Quem autorizou vai no payload e o worker grava no evento da retomada:
+    // o histórico append-only guarda o ator humano (contrato de
+    // `listing_relist_events.actor_user_id`), não só o log.
+    payload: { relistId, retomada: true, autorizadoPor: caller.userId },
+  });
+
+  deps.logger.info("relist_retry_queued", {
+    relist_id: relistId,
+    parent_item_id: row.parent_item_id,
+    confirmed_by: caller.userId,
+    last_failed_reason: lastFailure.reason,
     deduplicated: enqueued.deduplicated,
   });
 

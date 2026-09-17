@@ -94,6 +94,37 @@ describe("createMercadoLivreClient - request", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
+  it("maxAttempts: 1 na CHAMADA não repete 5xx nem 429 — o erro é o da única tentativa (POST /relist, D-364)", async () => {
+    for (const status of [503, 429]) {
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse(status, { message: "instável" }))
+        .mockResolvedValueOnce(jsonResponse(400, { message: "item already relisted" }));
+
+      const client = createMercadoLivreClient({ fetchImpl, sleep: NOOP_SLEEP });
+
+      await expect(
+        client.request({ method: "POST", path: "/items/MLB1/relist", body: {}, schema: orderSchema, maxAttempts: 1 }),
+      ).rejects.toMatchObject({ status, errorClass: "retryable" });
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("sem maxAttempts na chamada, vale o teto do cliente — o mesmo cliente segue repetindo as outras", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(503, { message: "instável" }))
+      .mockResolvedValueOnce(jsonResponse(503, { message: "instável" }))
+      .mockResolvedValueOnce(jsonResponse(200, { id: 1, status: "paid" }));
+
+    const client = createMercadoLivreClient({ fetchImpl, sleep: NOOP_SLEEP, maxAttempts: 3 });
+
+    await expect(client.request({ method: "GET", path: "/orders/1", schema: orderSchema })).resolves.toMatchObject({
+      status: "paid",
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
   it("não repete erro not_retryable (ex.: 401) — falha na primeira tentativa", async () => {
     const fetchImpl = vi.fn(() => Promise.resolve(jsonResponse(401, { message: "invalid token" })));
 

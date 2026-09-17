@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { RelistFullStockReading } from "./relist-preflight.js";
-import { collectRelistInventoryIds, evaluateRelistPreflight } from "./relist-preflight.js";
+import { collectRelistInventoryIds, evaluateRelistPreflight, summarizeRelistVariations } from "./relist-preflight.js";
 
 /** Forma mínima de um item SAUDÁVEL para o preflight — cada teste quebra um pedaço. */
 function healthyItem(): Record<string, unknown> {
@@ -10,6 +10,7 @@ function healthyItem(): Record<string, unknown> {
     tags: ["good_quality_picture"],
     catalog_listing: false,
     listing_type_id: "gold_special",
+    available_quantity: 5,
     variations: [],
   };
 }
@@ -20,6 +21,11 @@ function full(entries: Record<string, RelistFullStockReading | null>): Map<strin
 }
 
 const ZERADO: RelistFullStockReading = { availableQuantity: 0, notAvailableQuantity: 0 };
+
+/** Variação legível como o GET /items devolve: id, preço e estoque (D-364). */
+function variacao(id: number, estoque: number, inventoryId?: string): Record<string, unknown> {
+  return { id, price: 114.9, available_quantity: estoque, ...(inventoryId === undefined ? {} : { inventory_id: inventoryId }) };
+}
 
 describe("evaluateRelistPreflight (D-160)", () => {
   it("item saudável: aprovado, zero bloqueios, zero avisos", () => {
@@ -59,7 +65,10 @@ describe("evaluateRelistPreflight (D-160)", () => {
     const result = evaluateRelistPreflight(
       {
         ...healthyItem(),
-        variations: [{ id: 123, inventory_id: "LCQI99999" }, { id: 456 }],
+        variations: [
+          { id: 123, price: 99.9, available_quantity: 2, inventory_id: "LCQI99999" },
+          { id: 456, price: 99.9, available_quantity: 3 },
+        ],
       },
       full({ LCQI99999: { availableQuantity: 1, notAvailableQuantity: 0 } }),
     );
@@ -158,7 +167,7 @@ describe("Full sem estoque (D-360)", () => {
 
   it("uma variação sem leitura reprova, mesmo com as outras zeradas", () => {
     const result = evaluateRelistPreflight(
-      { ...healthyItem(), variations: [{ id: 1, inventory_id: "INV-A" }, { id: 2, inventory_id: "INV-B" }] },
+      { ...healthyItem(), variations: [variacao(1, 2, "INV-A"), variacao(2, 2, "INV-B")] },
       full({ "INV-A": ZERADO }),
     );
 
@@ -192,12 +201,65 @@ describe("Full sem estoque (D-360)", () => {
 
   it("as unidades somam raiz e variações", () => {
     const result = evaluateRelistPreflight(
-      { ...healthyItem(), inventory_id: "INV-RAIZ", variations: [{ id: 1, inventory_id: "INV-VAR" }] },
+      { ...healthyItem(), inventory_id: "INV-RAIZ", variations: [variacao(1, 2, "INV-VAR")] },
       full({ "INV-RAIZ": ZERADO, "INV-VAR": { availableQuantity: 1, notAvailableQuantity: 1 } }),
     );
 
     expect(result.blocks.map((issue) => issue.code)).toEqual(["FULL_BLOQUEADO"]);
     expect(result.blocks[0]?.descricao).toContain("2 unidade(s)");
+  });
+});
+
+describe("estoque que a republicação leva (D-364)", () => {
+  it("o pai do incidente (MLB1476804187): dez variações com estoque aprovam, sem aviso", () => {
+    const result = evaluateRelistPreflight({
+      ...healthyItem(),
+      available_quantity: 17_135,
+      shipping: { logistic_type: "cross_docking" },
+      variations: Array.from({ length: 10 }, (_, indice) => variacao(180_214_523_000 + indice, 1_700 + indice)),
+    });
+
+    expect(result).toEqual({ approved: true, blocks: [], warnings: [] });
+  });
+
+  it("variações TODAS sem estoque bloqueiam com VARIACOES_SEM_ESTOQUE — o POST não teria corpo, e o pai seria fechado à toa", () => {
+    const result = evaluateRelistPreflight({ ...healthyItem(), variations: [variacao(1, 0), variacao(2, 0)] });
+
+    expect(result.approved).toBe(false);
+    expect(result.blocks.map((issue) => issue.code)).toEqual(["VARIACOES_SEM_ESTOQUE"]);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("parte das variações sem estoque: aprovado, com o aviso VARIACOES_SEM_ESTOQUE_FORA nomeando as que ficam de fora", () => {
+    const result = evaluateRelistPreflight({ ...healthyItem(), variations: [variacao(1, 0), variacao(2, 4), variacao(3, 0)] });
+
+    expect(result.approved).toBe(true);
+    expect(result.warnings.map((issue) => issue.code)).toEqual(["VARIACOES_SEM_ESTOQUE_FORA"]);
+    expect(result.warnings[0]?.descricao).toContain("2 de 3");
+    expect(result.warnings[0]?.descricao).toContain("1, 3");
+  });
+
+  it("sem variação e sem estoque bloqueia com SEM_ESTOQUE — a mesma regra, pela raiz", () => {
+    const result = evaluateRelistPreflight({ ...healthyItem(), available_quantity: 0 });
+
+    expect(result.approved).toBe(false);
+    expect(result.blocks.map((issue) => issue.code)).toEqual(["SEM_ESTOQUE"]);
+  });
+
+  it("fail-safe: variations, estoque da raiz ou id/preço/estoque de variação ilegíveis reprovam com SNAPSHOT_INCOMPLETO", () => {
+    for (const snapshot of [
+      { ...healthyItem(), variations: undefined },
+      { ...healthyItem(), available_quantity: "5" },
+      { ...healthyItem(), variations: [variacao(1, 3), { id: 2, available_quantity: 3 }] },
+      { ...healthyItem(), variations: [{ id: "abc", price: 10, available_quantity: 3 }] },
+      { ...healthyItem(), variations: [{ id: 2 ** 60, price: 10, available_quantity: 3 }] },
+      { ...healthyItem(), variations: [{ id: 1, price: 10, available_quantity: -1 }] },
+    ]) {
+      const result = evaluateRelistPreflight(snapshot);
+
+      expect(result.approved).toBe(false);
+      expect(result.blocks.map((issue) => issue.code)).toEqual(["SNAPSHOT_INCOMPLETO"]);
+    }
   });
 });
 
@@ -214,6 +276,71 @@ describe("collectRelistInventoryIds (D-360)", () => {
   it("o que não é item não tem inventário", () => {
     for (const garbage of [null, undefined, "texto", 42, ["array"]]) {
       expect(collectRelistInventoryIds(garbage)).toEqual([]);
+    }
+  });
+});
+
+describe("summarizeRelistVariations (D-364)", () => {
+  /** Variação como o GET /items devolve, com combinação e SKU. */
+  function variacaoCompleta(id: number, estoque: number, extra: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      ...variacao(id, estoque),
+      attribute_combinations: [{ id: null, name: "Color", value_id: null, value_name: "Preto" }],
+      seller_custom_field: null,
+      ...extra,
+    };
+  }
+
+  it("lista as variações sem estoque que ficam fora, com a combinação e o SKU — as mesmas do aviso", () => {
+    const item = {
+      ...healthyItem(),
+      variations: [
+        variacaoCompleta(52_844_432_013, 698),
+        variacaoCompleta(52_844_432_007, 0, { seller_custom_field: "SB-RETRO-PRETO" }),
+        variacaoCompleta(52_844_432_008, 0, {
+          attribute_combinations: [
+            { name: "Color", value_name: "Vermelho" },
+            { name: "Lado", value_name: "Esquerdo" },
+          ],
+          attributes: [{ id: "SELLER_SKU", value_name: "SB-RETRO-VERM-E" }],
+        }),
+        variacaoCompleta(52_844_432_009, 0, { attribute_combinations: [] }),
+      ],
+    };
+
+    const summary = summarizeRelistVariations(item);
+
+    expect(summary).toEqual({
+      total: 4,
+      leftOut: [
+        { id: "52844432007", label: "Color: Preto", sku: "SB-RETRO-PRETO" },
+        { id: "52844432008", label: "Color: Vermelho, Lado: Esquerdo", sku: "SB-RETRO-VERM-E" },
+        { id: "52844432009", label: null, sku: null },
+      ],
+    });
+
+    const warning = evaluateRelistPreflight(item).warnings.find((issue) => issue.code === "VARIACOES_SEM_ESTOQUE_FORA");
+    expect(warning?.descricao).toContain("3 de 4");
+    expect(warning?.descricao).toContain("52844432007, 52844432008, 52844432009");
+  });
+
+  it("todas com estoque, sem variação, forma ilegível ou nenhuma com estoque (o preflight bloqueia): nada fica de fora", () => {
+    expect(summarizeRelistVariations({ ...healthyItem(), variations: [variacao(1, 3), variacao(2, 1)] })).toEqual({
+      total: 2,
+      leftOut: [],
+    });
+    expect(summarizeRelistVariations(healthyItem())).toEqual({ total: 0, leftOut: [] });
+    expect(summarizeRelistVariations({ ...healthyItem(), variations: [variacao(1, 0), variacao(2, 0)] })).toEqual({
+      total: 2,
+      leftOut: [],
+    });
+    expect(summarizeRelistVariations({ ...healthyItem(), variations: [variacao(1, 3), { id: 2, available_quantity: 0 }] })).toEqual({
+      total: 2,
+      leftOut: [],
+    });
+
+    for (const garbage of [null, undefined, "texto", { variations: "x" }]) {
+      expect(summarizeRelistVariations(garbage)).toEqual({ total: 0, leftOut: [] });
     }
   });
 });
