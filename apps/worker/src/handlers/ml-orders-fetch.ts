@@ -68,6 +68,11 @@ export interface FetchOrdersWindowParams {
   from: Date;
   to: Date;
   logger: Logger;
+  /**
+   * `backfill` na carga da história, `sync` na janela horária (D-351). É o que
+   * separa o evento que notifica do que só registra — ver `PersistOrderContext`.
+   */
+  eventSource: "sync" | "backfill";
 }
 
 export interface FetchOrdersWindowResult {
@@ -111,7 +116,11 @@ export async function fetchOrdersWindow(params: FetchOrdersWindowParams): Promis
   let latestRecordAt: Date | null = null;
   const dirtyMetricDates = new Set<string>();
 
-  const context = { organizationId: params.organizationId, mlAccountId: params.mlAccountId };
+  const context = {
+    organizationId: params.organizationId,
+    mlAccountId: params.mlAccountId,
+    eventSource: params.eventSource,
+  };
 
   for await (const page of pages) {
     // D-186 — a pagina inteira e parseada antes de persistir, para que as
@@ -192,6 +201,15 @@ export async function fetchOrdersWindow(params: FetchOrdersWindowParams): Promis
     }
 
     await flushPageWrites(params.db, writes);
+
+    // D-351: um log por página, depois do flush — o par só existe gravado.
+    if (writes.estornosPreCaptura.movimentos > 0) {
+      params.logger.info("sale_deduction_estornada_pre_captura", {
+        ml_account_id: params.mlAccountId,
+        pedidos: writes.estornosPreCaptura.pedidos,
+        estornos: writes.estornosPreCaptura.movimentos,
+      });
+    }
   }
 
   return {

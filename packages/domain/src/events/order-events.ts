@@ -60,6 +60,12 @@ export function detectOrderStatusEvents(
   previousStatus: string | null,
   order: { id: number; status: string },
   occurredAt: Date,
+  /**
+   * Obrigatória de propósito (D-351): `backfill` é o que impede a carga da
+   * história de virar notificação, e um padrão `sync` esquecido num chamador
+   * novo reabriria as 32 mil notificações em silêncio.
+   */
+  source: EventSource,
 ): DomainEventDraft[] {
   const wasCancelled = previousStatus !== null && CANCELLED_STATUSES.has(previousStatus);
   const isCancelled = CANCELLED_STATUSES.has(order.status);
@@ -78,7 +84,7 @@ export function detectOrderStatusEvents(
       before: { status: previousStatus },
       after: { status: order.status },
       severity: EVENT_SEVERITY[eventType] ?? "importante",
-      source: "sync",
+      source,
       dedupKey: `${eventType}:${String(order.id)}:${order.status}`,
       occurredAt,
     },

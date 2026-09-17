@@ -315,6 +315,32 @@ describe("aplicação — estoque", () => {
 
     expect(tables.erp_stock_snapshots?.[0]).toMatchObject({ sku_id: "sku-fa100" });
   });
+
+  // D-351: o corte do snapshot é a EXPORTAÇÃO da planilha, não o parse — a
+  // venda entre as duas não está no saldo do ERP.
+  it("captured_at é o instante da exportação lido do nome do arquivo do UpSeller", async () => {
+    const { db, tables } = createFakeDb({
+      erp_import_batches: [
+        batch({ kind: "STOCK", file_name: "Lista_de_Estoque_0820104500.xlsx", parsed_at: "2026-08-20T11:00:00.000Z" }),
+      ],
+      erp_import_rows: [okRow(1, { skuKey: "FA100", warehouse: "ESTOQUE LOJA", onHand: 1, available: 1, reserved: 0, inTransit: 0 })],
+    });
+
+    await createErpImportApplyHandler({ db })(ENVELOPE, ctx({ batchId: BATCH }));
+
+    expect(tables.erp_stock_snapshots?.[0]).toMatchObject({ captured_at: "2026-08-20T10:45:00.000Z" });
+  });
+
+  it("nome sem o padrão do UpSeller: captured_at cai no parse, como antes", async () => {
+    const { db, tables } = createFakeDb({
+      erp_import_batches: [batch({ kind: "STOCK", file_name: "estoque.xlsx", parsed_at: "2026-08-20T11:00:00.000Z" })],
+      erp_import_rows: [okRow(1, { skuKey: "FA100", warehouse: "ESTOQUE LOJA", onHand: 1, available: 1, reserved: 0, inTransit: 0 })],
+    });
+
+    await createErpImportApplyHandler({ db })(ENVELOPE, ctx({ batchId: BATCH }));
+
+    expect(tables.erp_stock_snapshots?.[0]).toMatchObject({ captured_at: "2026-08-20T11:00:00.000Z" });
+  });
 });
 
 describe("aplicação — vínculos", () => {

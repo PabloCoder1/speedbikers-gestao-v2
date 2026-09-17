@@ -171,7 +171,8 @@ export function createWebhookReceivedHandler(deps: WebhookReceivedDeps): JobHand
 
     await persistOrder(
       deps.db,
-      { organizationId: account.data.organization_id, mlAccountId },
+      // D-351: pedido que chega pelo webhook e notícia de agora — `sync`, notifica.
+      { organizationId: account.data.organization_id, mlAccountId, eventSource: "sync" },
       order,
       context.logger,
     );

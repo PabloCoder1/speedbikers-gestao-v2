@@ -34,10 +34,24 @@ export interface PageWrites {
   events: TablesInsert<"domain_events">[];
   movements: { draft: StockMovementDraft; movementType: string; source: { type: string; id: string } }[];
   organizationId: string;
+  /**
+   * Quantos pedidos da página saíram com `ESTORNO_PRE_CAPTURA`, e quantos
+   * movimentos (D-351). Contado aqui para o log sair UMA vez por página: na
+   * transição, cada atualização de pedido antigo gera um par.
+   */
+  estornosPreCaptura: { pedidos: number; movimentos: number };
 }
 
 export function novaPagina(organizationId: string): PageWrites {
-  return { orders: [], items: [], tails: [], events: [], movements: [], organizationId };
+  return {
+    orders: [],
+    items: [],
+    tails: [],
+    events: [],
+    movements: [],
+    organizationId,
+    estornosPreCaptura: { pedidos: 0, movimentos: 0 },
+  };
 }
 
 /**
