@@ -144,6 +144,18 @@ describe("excessReversalShares — o excesso é das reversões mais recentes (D-
     expect(partes(excessReversalShares({ idempotencyKey: VENDA, qtyDelta: -1 }, [...reversoes].reverse()))).toEqual([[DEVOLUCAO_1, 1]]);
   });
 
+  it("mesmo segundo, milissegundos diferentes: o excesso é da de milissegundo maior, mesmo com a chave menor -- o instante vai ao milissegundo, como o worker grava e a F3 compara (date_trunc('milliseconds'))", () => {
+    // A ordem da chave ("devolucao" > "cancelamento") é a oposta à do instante: comparando ao
+    // segundo, o empate daria o excesso à devolução.
+    const reversoes: TimedRecordedReversal[] = [
+      { idempotencyKey: CANCELAMENTO, quantity: 1, occurredAt: new Date("2026-09-15T10:00:00.900Z") },
+      { idempotencyKey: DEVOLUCAO_1, quantity: 1, occurredAt: new Date("2026-09-15T10:00:00.100Z") },
+    ];
+
+    expect(partes(excessReversalShares({ idempotencyKey: VENDA, qtyDelta: -1 }, reversoes))).toEqual([[CANCELAMENTO, 1]]);
+    expect(partes(excessReversalShares({ idempotencyKey: VENDA, qtyDelta: -1 }, [...reversoes].reverse()))).toEqual([[CANCELAMENTO, 1]]);
+  });
+
   it("reversões de OUTRA venda do pedido (outro componente) não entram na conta nem ganham parte", () => {
     const reversoes: TimedRecordedReversal[] = [
       { idempotencyKey: CANCELAMENTO, quantity: 1, occurredAt: em("08:00") },

@@ -106,9 +106,13 @@
 -- alvo fecha em snapshot + legitimos + reposicoes, a segunda execucao grava 0, a
 -- organizacao reconciliada nao e tocada, e o corte do parse aborta -- tambem na organizacao
 -- que a planilha nova tornou inelegivel, que com o UPDATE refeito vira no-op com NOTICE.
--- A parte 1B tem o bloco "a reversao a mais do legado" (a forma de 2000017792822486 e a
--- contraprova de 2000018206306064). Esses testes foram ESCRITOS na correcao da reverificacao
--- de cc90baa sem rodar -- o Supabase local estava com outras sessoes (D-351 §12, pendencia).
+-- A parte 1B tem o bloco "a reversao a mais do legado": a forma de 2000017792822486, a
+-- contraprova de 2000018206306064, o empate de instante e o estorno do worker sem anulacao.
+-- Escritos na correcao da reverificacao de cc90baa, rodaram verdes em `8504cd9` (integracao
+-- 734/734, sessao principal, 2026-09-16 18:15 UTC). Depois dessa bateria entrou no mesmo bloco
+-- a forma E >= 2 (V = 1, cancelamento e DUAS devolucoes depois do corte, R = 3): a devolucao
+-- mais recente (1) e menor que o excesso (2), e e a unica forma que reprova sem o teto
+-- `least(quantidade_reversao, ...)` da parte 1B -- nas outras E = 1.
 
 create or replace temp view d351_organizacoes as
 select g.organization_id,

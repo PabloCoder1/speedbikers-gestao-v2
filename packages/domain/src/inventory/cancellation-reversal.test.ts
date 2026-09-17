@@ -940,6 +940,32 @@ describe("computeCancellationMovements — a reversão a mais do legado anulada 
         COMPONENTES.map((componente) => [`estorno:cancelamento:${chave(componente)}`, -1, CANCELADA_EM]),
       );
     });
+
+    it("venda JÁ estornada e organização reconciliada DEPOIS da gravação (o estorno de hoje não sairia mais): a anulação sai mesmo assim -- o ramo da venda estornada não depende do estorno recalculado", () => {
+      // A reconciliação depois da gravação da venda (19:00:06) a absorveria: `preCaptureEstornoOf`
+      // devolve null hoje. Mas o estorno JÁ está gravado, e a reversão a mais dele segue sem anulação.
+      const reconciliada: ErpCutoff = { ...CORTE_DE_PRODUCAO, reconciledAt: new Date("2026-09-17T10:30:00.000Z") };
+
+      // A premissa: sem o estorno gravado, a mesma entrada não estorna nem anula nada.
+      const semEstorno = computeCancellationMovements({ ...entrada(), cutoffFor: () => reconciliada });
+
+      expect(semEstorno.estornos).toEqual([]);
+      expect(semEstorno.excessReversalEstornos).toEqual([]);
+
+      const resultado = computeCancellationMovements({ ...entrada(new Set(COMPONENTES.map(chave))), cutoffFor: () => reconciliada });
+
+      expect(resultado.sales).toEqual([]);
+      expect(resultado.estornos).toEqual([]);
+      expect(resultado.reversals).toEqual([]);
+      expect(resultado.excessReversalEstornos).toEqual(
+        COMPONENTES.map((componente) => ({
+          skuId: componente,
+          qtyDelta: -1,
+          idempotencyKey: `estorno:cancelamento:${chave(componente)}`,
+          occurredAt: CANCELADA_EM,
+        })),
+      );
+    });
   });
 
   describe("contraprova, 2000018206306064 de produção: VENDA do worker antigo DENTRO do alvo", () => {

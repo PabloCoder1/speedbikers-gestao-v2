@@ -2598,6 +2598,52 @@ describe("persistOrder — a reversão a mais do legado anulada com o instante d
       );
     });
 
+    it("retry com os estornos já gravados e a organização reconciliada DEPOIS da gravação da venda (o estorno de hoje não sairia mais): só a anulação sai, mesmo assim", async () => {
+      const ESTORNOS = COMPONENTES.map((componente) => ({
+        sku_id: componente,
+        qty_delta: 1,
+        idempotency_key: `estorno:${chave(componente)}`,
+        movement_type: "ESTORNO_PRE_CAPTURA",
+        occurred_at: VENDIDA_EM,
+      }));
+      // `reconciled_at` depois do `created_at` das vendas (19:00:06): a reconciliação as absorveria.
+      const RECONCILIADA_EM = "2026-09-17T10:30:00.000Z";
+
+      // A premissa: sem o estorno gravado, o mesmo pedido não grava nada.
+      const semEstorno = fakeDb({
+        ...KIT,
+        previousStatus: "cancelled",
+        existingSaleMovements: [...VENDAS, ...CANCELAMENTOS],
+        recordedReturns: DEVOLUCOES,
+        cutoffReconciledAt: RECONCILIADA_EM,
+      });
+
+      await run(semEstorno.db, PEDIDO_CANCELADO);
+
+      expect(gravadas(semEstorno.inserted)).toEqual([]);
+
+      const { db, inserted } = fakeDb({
+        ...KIT,
+        previousStatus: "cancelled",
+        existingSaleMovements: [...VENDAS, ...CANCELAMENTOS, ...ESTORNOS],
+        recordedReturns: DEVOLUCOES,
+        cutoffReconciledAt: RECONCILIADA_EM,
+      });
+
+      await run(db, PEDIDO_CANCELADO);
+
+      expect(gravadas(inserted)).toEqual(
+        COMPONENTES.map((componente) => [
+          "ESTORNO_REVERSAO_EXCEDENTE",
+          `estorno:cancelamento:${chave(componente)}`,
+          -1,
+          CANCELADA_EM,
+          "ORDER",
+          String(PEDIDO),
+        ]),
+      );
+    });
+
     it("em lote: a página lê o instante das devoluções pela RPC e grava estorno e anulação no mesmo descarregamento", async () => {
       const porTabela: Record<string, unknown[]> = {
         orders: [{ id: PEDIDO, status: "cancelled" }],
