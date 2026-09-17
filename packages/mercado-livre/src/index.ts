@@ -108,6 +108,9 @@ export type {
   SellerItemsScanPage,
 } from "./items.js";
 
+export { USER_PRODUCT_SELLER_TAG, fetchIsUserProductSeller, userTagsSchema } from "./users.js";
+export type { FetchUserProductSellerOptions } from "./users.js";
+
 export { LOGISTICAS_ML, quoteFreeShippingCost, shippingQuoteSchema } from "./shipping-quote.js";
 export type { LogisticaMl, ShippingQuote, ShippingQuoteInput, ShippingQuoteResponse } from "./shipping-quote.js";
 
