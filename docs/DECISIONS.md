@@ -13344,7 +13344,7 @@ O que mudou, e por que cada peca:
 
 **2. A METADE RAPIDA -- `get_listings_link_overview` (migration `20260917220000`)**
 
-Medido no Dev como `authenticated`, org com 4.447 anuncios:
+Medido como `authenticated`, org com 4.447 anuncios. **A medicao e de PRODUCAO, e a primeira versao desta decisao dizia "Dev" -- erro meu, corrigido depois:** eu vinha consultando `imvjfgnaprqsfjlnsyev`, que e o `speedbikers-prod`, achando que era o Dev (`nmgccyqquwxecqffsidr`). Os numeros valem e ate valem mais por serem de producao; o que estava errado era a etiqueta, e etiqueta trocada em medicao e a semente de conclusao errada. Como se pegou: a CI acusou uma migration remota ausente no repositorio e eu diagnostiquei a versao errada, porque estava lendo o banco errado. Nada ficou em producao -- todo prototipo rodou dentro de `begin ... rollback`, e a ausencia foi conferida em `pg_proc` depois.
 
 | | |
 |---|---|
@@ -13368,7 +13368,7 @@ A funcao nova faz esse trabalho UMA vez e devolve pagina + contagens + uma linha
 
 **5. VERIFICACAO**
 
-`typecheck`, `lint`, `next build`, os quatro guardas e `docs:check`. Unidade da web: **777 verdes**, 15 novos (`vinculacoes-visao.test.ts` -- o leitor recusando resposta fora do contrato, o percentual nulo, os tons por posicao, as iniciais "S1"/"S2"). Integracao: 4 casos novos, verdes duas vezes seguidas sem `db reset` (o id da CONTA leva sufixo por execucao: com conta fixa, 4 anuncios viravam 12 na terceira rodada). E2E: `vinculacoes` (7, um novo) e `sku-dashboard` (9) e `anuncios` (5), **21 verdes** contra `next start` e o seed.
+`typecheck`, `lint` (nos OITO pacotes -- rodar so em `apps/web` deixou passar um `Number()` redundante em `packages/db` que a CI reprovou), `next build`, os quatro guardas e `docs:check`. Unidade da web: **777 verdes**, 15 novos (`vinculacoes-visao.test.ts` -- o leitor recusando resposta fora do contrato, o percentual nulo, os tons por posicao, as iniciais "S1"/"S2"). Integracao: 4 casos novos, verdes duas vezes seguidas sem `db reset` (o id da CONTA leva sufixo por execucao: com conta fixa, 4 anuncios viravam 12 na terceira rodada). E2E: `vinculacoes` (7, um novo) e `sku-dashboard` (9) e `anuncios` (5), **21 verdes** contra `next start` e o seed.
 
 Capturas a 1440 px e 390 px, pagina e popup, com o banco local enriquecido para 77 anuncios em 4 contas -- o seed tem 5, que nao mostra o desenho. `scrollWidth == clientWidth` nos quatro casos. Uma armadilha do caminho: a primeira medicao acusou rolagem lateral de 607px, e era o `next start` servindo o CSS de um build anterior (chunk com 500) -- **`next start` so depois do `next build`, sempre**.
 

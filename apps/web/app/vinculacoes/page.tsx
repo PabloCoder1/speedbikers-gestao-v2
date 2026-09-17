@@ -52,7 +52,7 @@ export const dynamic = "force-dynamic";
  * RESUMO que responde "quanto disto está me custando dinheiro" e CARTÕES de
  * recorte que são um clique só, com a contagem dentro.
  *
- * **A metade rápida.** Medido no Dev como `authenticated` (4.447 anúncios):
+ * **A metade rápida.** Medido em PRODUÇÃO como `authenticated` (4.447 anúncios):
  * a lista custava 180 ms e as quatro contagens da faixa mais 531 ms, porque
  * cada célula repetia `get_listings_dashboard` inteira com `p_limit => 1`.
  * `get_listings_link_overview` (D-376) faz tudo isso numa passagem só —
@@ -579,7 +579,7 @@ export default async function VinculacoesPage({
 
         {/*
           A conferência com a fonte INDEPENDENTE chega depois: é a única parte
-          que depende de `get_link_integrity` (1,3 s no Dev).
+          que depende de `get_link_integrity` (1,3 s em produção).
         */}
         <Suspense
           fallback={
@@ -693,7 +693,7 @@ function ComparacaoDeCatalogo({
 /**
  * A CONFERÊNCIA com a fonte independente (`get_link_integrity`, a partir de
  * `order_items`). Chega depois da página inteira, de propósito: mede 1,3 s a
- * frio no Dev e não é o que a pessoa veio fazer aqui.
+ * frio em produção e não é o que a pessoa veio fazer aqui.
  *
  * Ela não repete as colunas de catálogo — a comparação acima já as tem, da
  * mesma leitura. O que ela acrescenta é a DIFERENÇA entre as duas fontes, que

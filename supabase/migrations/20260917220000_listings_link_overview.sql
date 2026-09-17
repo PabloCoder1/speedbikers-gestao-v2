@@ -2,8 +2,10 @@
 -- D-376 — get_listings_link_overview: a pagina de /vinculacoes numa leitura so
 -- ============================================================
 --
--- O QUE ESTAVA CARO -- medido no Dev como `authenticated`, org com 4.447
--- anuncios:
+-- O QUE ESTAVA CARO -- medido em PRODUCAO como `authenticated`, org com 4.447
+-- anuncios. (A primeira versao deste comentario dizia "Dev": eu media no projeto
+-- errado. Os numeros sao os mesmos, a etiqueta e que estava trocada -- e etiqueta
+-- trocada em medicao e a semente de conclusao errada, entao fica registrado.)
 --
 --   a lista (50 sem vinculo)  get_listings_dashboard      180,5 ms
 --   as 4 contagens da faixa   get_listings_dashboard x4   531,5 ms
@@ -226,7 +228,7 @@ end;
 $fn$;
 
 comment on function public.get_listings_link_overview(uuid, date, date, uuid, text, text, text, integer, integer) is
-  'D-376: a pagina de /vinculacoes numa leitura so -- pagina + contagens dos cartoes + uma linha por conta. Substitui as CINCO chamadas a get_listings_dashboard que a tela fazia (uma lista + quatro contagens com p_limit => 1) e as colunas de CATALOGO de get_link_integrity. Dev, authenticated, 4.447 anuncios: 91,4 ms a frio e 78,3 ms quente, contra 712 ms das cinco chamadas; as contagens e as colunas por conta conferem com as de hoje sem diferenca. NAO traz visitas nem conversao (a tela nao mostra) e NAO traz a fonte independente de venda: essa continua em get_link_integrity, a partir de order_items, e a tela declara a divergencia (D-128). por_conta ignora o filtro de conta e a busca de proposito. link_state tem TRES valores (D-122). security invoker, force_custom_plan (D-305).';
+  'D-376: a pagina de /vinculacoes numa leitura so -- pagina + contagens dos cartoes + uma linha por conta. Substitui as CINCO chamadas a get_listings_dashboard que a tela fazia (uma lista + quatro contagens com p_limit => 1) e as colunas de CATALOGO de get_link_integrity. Producao, authenticated, 4.447 anuncios: 91,4 ms a frio e 78,3 ms quente, contra 712 ms das cinco chamadas; as contagens e as colunas por conta conferem com as de hoje sem diferenca. NAO traz visitas nem conversao (a tela nao mostra) e NAO traz a fonte independente de venda: essa continua em get_link_integrity, a partir de order_items, e a tela declara a divergencia (D-128). por_conta ignora o filtro de conta e a busca de proposito. link_state tem TRES valores (D-122). security invoker, force_custom_plan (D-305).';
 
 revoke all on function public.get_listings_link_overview(uuid, date, date, uuid, text, text, text, integer, integer) from public, anon;
 grant execute on function public.get_listings_link_overview(uuid, date, date, uuid, text, text, text, integer, integer) to authenticated, service_role;
