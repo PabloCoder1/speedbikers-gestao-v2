@@ -14,6 +14,7 @@ import { createClient } from "../../../lib/supabase/server";
 import { currentMembership } from "../../../lib/request-membership";
 import { formatarDocumento, idadeRelativa } from "../../../lib/suppliers-overview";
 import { Canais, temCanal } from "../canais";
+import { ExcluirFornecedor } from "../excluir-fornecedor";
 import { LogoFornecedor } from "../logo";
 import { Voltar } from "../voltar";
 
@@ -179,6 +180,7 @@ export default async function FornecedorPage({
                   Novo pedido
                 </Link>
               )}
+              <ExcluirFornecedor id={overview.supplier_id} nome={overview.name} pedidos={overview.orders_total} />
             </>
           ) : undefined
         }

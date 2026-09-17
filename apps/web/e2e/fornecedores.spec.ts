@@ -229,3 +229,27 @@ test("logo do fornecedor: sobe ao salvar, aparece no painel e sai ao remover (D-
   await expect(page).toHaveURL(painel);
   await expect(cabecalho.locator("img")).toHaveCount(0);
 });
+
+test("excluir fornecedor: some de vez quando não tem pedido, e com pedido explica e aponta para inativar (D-372)", async ({ page }) => {
+  // Com pedido: o seed dá pedidos ao "Fornecedor E2E".
+  await login(page, "/fornecedores");
+  await page.getByRole("link", { name: E2E_SUPPLIER.name, exact: true }).click();
+  await page.getByRole("button", { name: "Excluir" }).click();
+  await expect(page.getByText(/Não dá para excluir: há \d+ pedidos? de compra/)).toBeVisible();
+  await page.getByRole("button", { name: "Entendi" }).click();
+
+  // Sem pedido: cadastra um, e exclui pela edição.
+  const nome = `E2E Excluir ${String(Date.now())}`;
+
+  await page.goto("/fornecedores/novo");
+  await page.getByLabel("Nome").fill(nome);
+  await page.getByRole("button", { name: "Cadastrar fornecedor" }).click();
+  await expect(page.getByRole("heading", { name: nome, level: 2 })).toBeVisible();
+
+  await page.getByRole("link", { name: "Editar" }).click();
+  await page.getByRole("button", { name: "Excluir" }).click();
+  await page.getByRole("button", { name: "Excluir de vez" }).click();
+
+  await expect(page).toHaveURL(/\/fornecedores$/);
+  await expect(page.getByRole("link", { name: nome, exact: true })).toHaveCount(0);
+});

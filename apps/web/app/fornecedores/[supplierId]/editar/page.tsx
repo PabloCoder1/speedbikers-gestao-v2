@@ -8,6 +8,7 @@ import { lerExistentes } from "../../../../lib/supplier-existentes";
 import { currentMembership } from "../../../../lib/request-membership";
 import { createClient } from "../../../../lib/supabase/server";
 import { AlternarAtivo } from "../../alternar-ativo";
+import { ExcluirFornecedor } from "../../excluir-fornecedor";
 import { SupplierForm } from "../../novo/supplier-form";
 import { Voltar } from "../../voltar";
 
@@ -36,7 +37,7 @@ export default async function EditarFornecedorPage({
 
   const supabase = await createClient();
   // As duas leituras partem do id da URL e da sessão, e vão juntas (D-195).
-  const [{ data, error }, existentes, logo] = await Promise.all([
+  const [{ data, error }, existentes, logo, pedidos] = await Promise.all([
     supabase
       .from("suppliers")
       .select("id, name, legal_name, document, contact_name, email, phone, whatsapp, website, notes, is_active")
@@ -46,6 +47,8 @@ export default async function EditarFornecedorPage({
     // A logo em leitura SEPARADA (D-370): onde a migration ainda não chegou, a
     // coluna não existe, e pedi-la junto derrubaria a edição inteira em 404.
     supabase.from("suppliers").select("logo_path").eq("id", supplierId).maybeSingle(),
+    // Só a contagem, para o "Excluir" dizer antes de confirmar se dá (D-372).
+    supabase.from("purchase_orders").select("id", { count: "exact", head: true }).eq("supplier_id", supplierId),
   ]);
 
   // Inexistente, de outra organização ou id malformado: os três viram 404.
@@ -63,6 +66,7 @@ export default async function EditarFornecedorPage({
           <>
             <Voltar href={`/fornecedores/${data.id}`} rotulo="Voltar ao fornecedor" />
             <AlternarAtivo id={data.id} ativo={data.is_active} />
+            <ExcluirFornecedor id={data.id} nome={data.name} pedidos={pedidos.error === null ? pedidos.count : null} />
           </>
         }
         compacto

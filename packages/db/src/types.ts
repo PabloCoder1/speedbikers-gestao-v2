@@ -4121,6 +4121,11 @@ export type Database = {
       // arquivo. `captured_at` e NULO de verdade (organizacao sem snapshot) e o
       // gerador nunca marca coluna de retorno de `returns table` como nula
       // (classe D-133). `exported_at` entrou na reverificacao de c48fb70.
+      delete_supplier: {
+        Args: { p_id: string }
+        // D-372: devolve o caminho da logo, NULL quando nao havia (o gerador nao marcaria o nulo).
+        Returns: string | null
+      }
       get_erp_stock_cutoffs: {
         Args: { p_organization_id: string; p_sku_ids: string[] }
         Returns: {

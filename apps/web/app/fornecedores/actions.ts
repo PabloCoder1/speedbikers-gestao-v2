@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { LOGO_BUCKET } from "../../lib/logo-fornecedor-url";
 import { currentMembership } from "../../lib/membership";
 import { conferirCadastro, type CampoFornecedor } from "../../lib/supplier-form";
 import { createClient } from "../../lib/supabase/server";
@@ -176,6 +177,46 @@ export async function salvarFornecedor(id: string | null, formData: FormData): P
  * ação relê a linha e devolve cada campo como estava — só `is_active` muda.
  * Inativo sai da lista do pedido de compra; o histórico fica.
  */
+/**
+ * Exclui um fornecedor SEM pedido de compra (D-372). O banco decide
+ * (`delete_supplier`): papel na organização e nenhum pedido. A logo, se havia,
+ * sai do bucket DEPOIS de o cadastro sumir — se esse passo falhar, sobra um
+ * arquivo órfão, que é o defeito barato.
+ */
+export async function excluirFornecedor(id: string): Promise<{ ok: boolean; mensagem: string | null }> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("delete_supplier", { p_id: id });
+
+  if (error !== null) {
+    const pedidos = /tem (\d+) pedido/.exec(error.message)?.[1];
+
+    if (pedidos !== undefined) {
+      return {
+        ok: false,
+        mensagem: `Não dá para excluir: ${pedidos === "1" ? "há 1 pedido de compra" : `há ${pedidos} pedidos de compra`} com este fornecedor. Inative-o — ele sai de novos pedidos e o histórico fica.`,
+      };
+    }
+
+    if (error.message.includes("sem permissao")) {
+      return { ok: false, mensagem: "Só ADMIN e GESTOR podem excluir fornecedores." };
+    }
+
+    if (error.message.includes("nao encontrado")) {
+      return { ok: false, mensagem: "Fornecedor não encontrado — ele pode já ter sido excluído." };
+    }
+
+    return { ok: false, mensagem: "Não foi possível excluir o fornecedor. Tente de novo." };
+  }
+
+  if (data !== null) {
+    await supabase.storage.from(LOGO_BUCKET).remove([data]);
+  }
+
+  revalidar(null);
+
+  return { ok: true, mensagem: null };
+}
+
 export async function definirAtivo(id: string, ativo: boolean): Promise<{ ok: boolean; mensagem: string | null }> {
   const supabase = await createClient();
   const atual = await lerAtual(supabase, id);
