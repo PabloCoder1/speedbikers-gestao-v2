@@ -6,12 +6,15 @@ import {
   detectOrderStatusEvents,
   estornadoKeyOf,
   isCancelledOrderStatus,
+  isFullLogistic,
   isValidSaleStatus,
   revertedSaleKeyOf,
+  saleInstant,
 } from "@sb/domain";
 import type {
   ErpCutoff,
   ObservedSaleTransition,
+  OrderLogisticType,
   RecordedSale,
   RecordedSaleMovement,
   SaleDeductionItem,
@@ -24,6 +27,7 @@ import { assertWritten, CriticalWriteError } from "./assert-written.js";
 import { asJson, recordDomainEvents } from "./domain-events.js";
 import type { PageWrites } from "./page-writes.js";
 import type { ParsedOrder } from "./order-schema.js";
+import type { ShipmentLogistics } from "./shipment-logistics.js";
 import { recordStockMovements } from "./stock-movements.js";
 
 /**
@@ -79,6 +83,17 @@ import { recordStockMovements } from "./stock-movements.js";
  * `ESTORNO_REVERSAO_EXCEDENTE`, com o `occurred_at` da reversão: por isso as
  * reversões gravadas são lidas com o instante delas, e a leitura sem ele LANÇA.
  *
+ * **D-352 — a venda entregue pelo Full.** O pedido não diz de onde a venda
+ * sai: `GET /orders/{id}` traz `shipping: { id }` e nada mais, e nenhuma das 21
+ * `tags` do histórico diz Full. Quem responde é
+ * `GET /shipments/{id}.logistic_type`, lido aqui UMA vez por pedido e só para
+ * quem vai deduzir de fato (`precisaDoSinalDaLogistica`), gravado cru em
+ * `orders.logistic_type` com o instante em `logistic_captured_at`. Falha na
+ * leitura não derruba o job: o pedido baixa a loja e fica PENDENTE do sinal.
+ * `fulfillment` sai com o par `ESTORNO_FULL`; o cancelamento e a devolução de
+ * pedido do Full não revertem nada em LOCAL, só completam o par que faltar. A
+ * decisão é função do campo PERSISTIDO, e releitura divergente vira log.
+ *
  * **Deliberadamente não feito aqui**: reversão por DEVOLUÇÃO — o Mercado
  * Livre modela devolução pela API de Reclamações e Devoluções, não
  * integrada (mesmo motivo já registrado para `order.returned` em
@@ -121,8 +136,10 @@ export interface RecordedOrderMovements {
   sales: (RecordedSaleMovement & RecordedSale)[];
   /**
    * Chaves de venda que ja tem estorno gravado. Separadas pelo TIPO da linha
-   * (`ESTORNO_PRE_CAPTURA`), nunca pelo prefixo da chave: a chave e neutra
-   * (`estorno:<chave do movimento>`) e so diz QUAL movimento foi estornado.
+   * (`ESTORNO_PRE_CAPTURA` e, desde D-352, `ESTORNO_FULL`), nunca pelo prefixo
+   * da chave: a chave e neutra (`estorno:<chave do movimento>`) e so diz QUAL
+   * movimento foi estornado -- nao por que. Os dois tipos respondem a MESMA
+   * pergunta aqui: "esta venda ja foi anulada?".
    */
   estornadas: Set<string>;
   /**
@@ -134,9 +151,30 @@ export interface RecordedOrderMovements {
   reversals: TimedRecordedReversal[];
 }
 
+/**
+ * O que o pedido ja tem gravado de logistica (D-352).
+ *
+ * As duas colunas juntas distinguem os dois nulos: `capturedAt` NULO e "o envio
+ * nunca foi lido" (pendente); `capturedAt` preenchido com `logisticType` nulo e
+ * "foi lido e nao disse" -- resposta, nao pendencia.
+ */
+export interface PersistedLogistic {
+  readonly logisticType: OrderLogisticType;
+  /** `orders.logistic_captured_at`, como o banco o devolve. */
+  readonly capturedAt: string | null;
+}
+
+/** Pedido que a V3 ainda nao viu: nada gravado, nada lido. */
+const SEM_LOGISTICA: PersistedLogistic = { logisticType: null, capturedAt: null };
+
 export interface OrderPrefetch {
   /** `String(order.id)` -> status gravado. Ausente = pedido novo para a V3. */
   previousStatusById: Map<string, string>;
+  /**
+   * `String(order.id)` -> a logistica ja gravada (D-352). Ausente = pedido novo,
+   * e o sinal ainda nao foi lido.
+   */
+  logisticByOrderId: Map<string, PersistedLogistic>;
   /** `chaveDoItem(item_id, variation_id)` -> vinculo vigente. Ausente = sem vinculo. */
   linkByItemKey: Map<string, ResolvedLink>;
   /**
@@ -299,7 +337,11 @@ async function lerMovimentosGravados(
         .eq("organization_id", organizationId)
         .eq("source_type", "ORDER")
         .in("source_id", lote)
-        .in("movement_type", ["VENDA_ML", "ESTORNO_PRE_CAPTURA", "CANCELAMENTO_ML"]),
+        // D-352: `ESTORNO_FULL` entra na mesma lista. Uma venda do Full ja
+        // estornada que nao fosse lida aqui pareceria sem par, e o proximo
+        // processamento gravaria um segundo estorno -- absorvido pelo UNIQUE,
+        // mas contado como movimento novo nos logs e nas contagens.
+        .in("movement_type", ["VENDA_ML", "ESTORNO_PRE_CAPTURA", "ESTORNO_FULL", "CANCELAMENTO_ML"]),
     ),
   );
 
@@ -311,9 +353,10 @@ async function lerMovimentosGravados(
       const pedido = String(row.source_id);
       const gravados = porPedido.get(pedido) ?? nadaGravado();
 
-      if (row.movement_type === "ESTORNO_PRE_CAPTURA") {
+      if (row.movement_type === "ESTORNO_PRE_CAPTURA" || row.movement_type === "ESTORNO_FULL") {
         // O TIPO diz que a linha e estorno; a chave neutra diz de qual
-        // movimento. Chave fora do formato LANCA (`estornadoKeyOf`).
+        // movimento. Chave fora do formato LANCA (`estornadoKeyOf`). As duas
+        // causas contam igual: a venda ja esta anulada (D-352).
         gravados.estornadas.add(estornadoKeyOf(row.idempotency_key));
       } else if (row.movement_type === "CANCELAMENTO_ML") {
         gravados.reversals.push(reversaoGravada(row.idempotency_key, row.qty_delta, row.occurred_at));
@@ -569,6 +612,17 @@ export async function readErpCutoffs(
 
 /** Os SKUs cujo corte uma venda ou reversao pode consultar: os vinculados hoje e os ja gravados. */
 function skusComCorte(links: Iterable<ResolvedLink | null>, gravados: Iterable<RecordedOrderMovements>): string[] {
+  const skus = new Set(skusDaVenda([...links]));
+
+  for (const pedido of gravados) {
+    for (const venda of pedido.sales) skus.add(venda.skuId);
+  }
+
+  return [...skus];
+}
+
+/** Os SKUs que a venda deste pedido baixaria de fato, com o KIT ja decomposto (D-352). */
+function skusDaVenda(links: readonly (ResolvedLink | null)[]): string[] {
   const skus = new Set<string>();
 
   for (const link of links) {
@@ -581,11 +635,117 @@ function skusComCorte(links: Iterable<ResolvedLink | null>, gravados: Iterable<R
     }
   }
 
-  for (const pedido of gravados) {
-    for (const venda of pedido.sales) skus.add(venda.skuId);
+  return [...skus];
+}
+
+/**
+ * O pedido precisa que a V3 leia o ENVIO? (D-352.)
+ *
+ * A chamada e barata por pedido e cara na soma (~963 pedidos/dia), entao ela so
+ * acontece para o pedido cuja venda vai DE FATO baixar a loja. Cinco perguntas,
+ * todas baratas e locais:
+ *
+ *  1. a decisao ja foi tomada? `logistic_captured_at` preenchido congela (R5) —
+ *    e cobre tambem o "foi lido e o envio nao disse", que e resposta e nao
+ *    pendencia;
+ *  2. o status vende? cancelado, `payment_in_process` e `invalid` nao deduzem;
+ *  3. ha `shipping_id`? e a unica chave da leitura. Em producao, 100% dos
+ *     28.902 pedidos pagos de 30 dias tem;
+ *  4. algum item tem vinculo? sem SKU nao ha movimento;
+ *  5. a venda cai DEPOIS da exportacao da planilha de algum SKU deduzido? venda
+ *     ate o corte ja sai com `ESTORNO_PRE_CAPTURA` (D-351): o par soma zero, e
+ *     saber a logistica nao mudaria uma linha. E o filtro que derruba a maior
+ *     parte do volume na carga da historia.
+ *
+ * Corte NAO LIDO (`undefined`) conta como "precisa": uma chamada a mais nunca
+ * estraga o saldo, e `corteDe` ja LANCA onde a ausencia importaria.
+ */
+function precisaDoSinalDaLogistica(
+  order: ParsedOrder,
+  gravada: PersistedLogistic,
+  links: readonly (ResolvedLink | null)[],
+  cortes: Map<string, ErpCutoff | null>,
+): boolean {
+  if (gravada.capturedAt !== null) return false;
+  if (!isValidSaleStatus(order.status)) return false;
+  if (order.shipping?.id == null) return false;
+
+  const skus = skusDaVenda(links);
+
+  if (skus.length === 0) return false;
+
+  const vendaEm = saleInstant({
+    dateClosed: order.date_closed != null ? new Date(order.date_closed) : null,
+    dateCreated: new Date(order.date_created),
+  });
+
+  return skus.some((skuId) => {
+    const corte = cortes.get(skuId);
+
+    return corte === undefined || corte === null || vendaEm.getTime() > corte.exportedAt.getTime();
+  });
+}
+
+/**
+ * A logistica deste pedido (D-352): a que ja esta gravada, ou a capturada agora.
+ *
+ * **A decisao e funcao pura do campo PERSISTIDO** (R5). Com
+ * `logistic_captured_at` preenchido, nada aqui muda o valor: uma releitura que
+ * discorda vira LOG. O ledger e append-only — o par ja foi gravado com uma
+ * resposta, e trocar a resposta depois deixaria o saldo com a metade de dois
+ * desenhos diferentes.
+ *
+ * Quando o sinal ainda nao foi capturado, ele vem de duas fontes, nesta ordem:
+ * o PROPRIO pedido (`shipping.logistic_type`, que hoje nao vem — se um dia
+ * vier, e um `GET /shipments` a menos por venda) e a leitura do envio.
+ *
+ * Sem `logistics`, nada e capturado: o chamador que nao tem cliente do Mercado
+ * Livre na mao (um teste, um caminho futuro) deixa o pedido pendente em vez de
+ * carimbar uma captura que nao houve.
+ */
+async function resolveLogistica(
+  order: ParsedOrder,
+  gravada: PersistedLogistic,
+  links: readonly (ResolvedLink | null)[],
+  cortes: Map<string, ErpCutoff | null>,
+  logistics: ShipmentLogistics | undefined,
+  logger: Logger,
+): Promise<PersistedLogistic> {
+  const doPedido = order.shipping?.logistic_type ?? null;
+
+  if (gravada.capturedAt !== null) {
+    if (doPedido !== null && doPedido !== gravada.logisticType) {
+      // Nao regrava: o par ja foi decidido com o valor gravado.
+      logger.warn("order_logistic_divergente", {
+        order_id: order.id,
+        gravado: gravada.logisticType,
+        lido: doPedido,
+      });
+    }
+
+    return gravada;
   }
 
-  return [...skus];
+  if (logistics === undefined) {
+    return gravada;
+  }
+
+  if (doPedido !== null) {
+    return { logisticType: doPedido, capturedAt: logistics.now().toISOString() };
+  }
+
+  if (!precisaDoSinalDaLogistica(order, gravada, links, cortes)) {
+    return gravada;
+  }
+
+  // `order.shipping.id` e nao-nulo aqui: o gate exige.
+  const capturada = await logistics.read(order.shipping?.id ?? 0, order.id);
+
+  // Falha na leitura: o pedido fica PENDENTE (as duas colunas nulas) e baixa a
+  // loja agora. Nunca presumir Full (R2).
+  return capturada === null
+    ? gravada
+    : { logisticType: capturada.logisticType, capturedAt: capturada.capturedAt.toISOString() };
 }
 
 function corteDe(cortes: Map<string, ErpCutoff | null>, orderId: number): (skuId: string) => ErpCutoff | null {
@@ -624,11 +784,13 @@ export async function prefetchOrders(
   orders: readonly ParsedOrder[],
 ): Promise<OrderPrefetch> {
   const previousStatusById = new Map<string, string>();
+  const logisticByOrderId = new Map<string, PersistedLogistic>();
   const linkByItemKey = new Map<string, ResolvedLink>();
 
   if (orders.length === 0) {
     return {
       previousStatusById,
+      logisticByOrderId,
       linkByItemKey,
       recordedByOrderId: new Map(),
       cutoffBySku: new Map(),
@@ -642,7 +804,9 @@ export async function prefetchOrders(
   // 1 + N idas, com N = lotes de item. As quatro primeiras nao dependem umas
   // das outras.
   const [statusResult, linkResults, recordedByOrderId, saleTransitionByOrderId] = await Promise.all([
-    db.from("orders").select("id, status").in("id", orderIds),
+    // D-352: a logistica gravada vem na MESMA leitura do status — ela e a
+    // decisao ja tomada, e releitura nunca a reescreve (R5).
+    db.from("orders").select("id, status, logistic_type, logistic_captured_at").in("id", orderIds),
     Promise.all(
       emLotes(itemIds, ITENS_POR_CONSULTA).map((lote) =>
         db
@@ -667,6 +831,10 @@ export async function prefetchOrders(
 
   for (const row of linhasDe(statusResult, "orders.status")) {
     previousStatusById.set(String(row.id), row.status);
+    logisticByOrderId.set(String(row.id), {
+      logisticType: row.logistic_type,
+      capturedAt: row.logistic_captured_at,
+    });
   }
 
   for (const linkResult of linkResults) {
@@ -703,7 +871,14 @@ export async function prefetchOrders(
 
   juntaDevolucoes(recordedByOrderId, devolucoes);
 
-  return { previousStatusById, linkByItemKey, recordedByOrderId, cutoffBySku, saleTransitionByOrderId };
+  return {
+    previousStatusById,
+    logisticByOrderId,
+    linkByItemKey,
+    recordedByOrderId,
+    cutoffBySku,
+    saleTransitionByOrderId,
+  };
 }
 
 /**
@@ -802,6 +977,12 @@ export async function persistOrder(
    * "escreve e so entao segue" continua sendo a semantica certa.
    */
   writes?: PageWrites,
+  /**
+   * A captura da logistica do envio (D-352). Ausente, nada e capturado e o
+   * pedido decide pelo que ja esta gravado — o caminho conservador para um
+   * chamador sem cliente do Mercado Livre na mao.
+   */
+  logistics?: ShipmentLogistics,
 ): Promise<void> {
   // D-101: o `GET /orders/{id}` real (fast path do webhook) vem SEM
   // `date_last_updated` — só o `/orders/search` (reconciliação) o traz.
@@ -843,6 +1024,7 @@ export async function persistOrder(
   );
 
   let previousStatus: string | null;
+  let logisticaGravada: PersistedLogistic;
   let resolvedLinks: (ResolvedLink | null)[];
   let gravados: RecordedOrderMovements;
   let cortes: Map<string, ErpCutoff | null>;
@@ -853,6 +1035,7 @@ export async function persistOrder(
     // `OrderPrefetch`. Ausente do mapa = pedido novo para a V3, exatamente o
     // que o `maybeSingle()` sem linha significa.
     previousStatus = prefetch.previousStatusById.get(String(order.id)) ?? null;
+    logisticaGravada = prefetch.logisticByOrderId.get(String(order.id)) ?? SEM_LOGISTICA;
     resolvedLinks = order.order_items.map(
       (item, index) => prefetch.linkByItemKey.get(chaveDoItem(item.item.id, variationIds[index] ?? null)) ?? null,
     );
@@ -861,7 +1044,8 @@ export async function persistOrder(
     transicaoGravada = prefetch.saleTransitionByOrderId.get(String(order.id)) ?? null;
   } else {
     const [existing, links, recorded, transicoes] = await Promise.all([
-      db.from("orders").select("status").eq("id", order.id).maybeSingle(),
+      // D-352: a logistica gravada na mesma leitura do status.
+      db.from("orders").select("status, logistic_type, logistic_captured_at").eq("id", order.id).maybeSingle(),
       Promise.all(
         order.order_items.map((item, index) =>
           resolveSku(db, context.mlAccountId, item.item.id, variationIds[index] ?? null),
@@ -880,6 +1064,10 @@ export async function persistOrder(
     }
 
     previousStatus = existing.data?.status ?? null;
+    logisticaGravada =
+      existing.data === null
+        ? SEM_LOGISTICA
+        : { logisticType: existing.data.logistic_type, capturedAt: existing.data.logistic_captured_at };
     resolvedLinks = links;
     gravados = recorded.get(String(order.id)) ?? nadaGravado();
     transicaoGravada = transicoes.get(String(order.id)) ?? null;
@@ -897,6 +1085,12 @@ export async function persistOrder(
       cortes = new Map<string, ErpCutoff | null>();
     }
   }
+
+  // D-352 — o sinal da logistica, ANTES da gravacao do pedido: ele e coluna de
+  // `orders`, e e ele que decide se a venda abaixo sai com o par `ESTORNO_FULL`.
+  // Roda depois das leituras (precisa dos vinculos e do corte para decidir se
+  // vale a chamada) e antes de qualquer escrita, como tudo neste handler.
+  const logistica = await resolveLogistica(order, logisticaGravada, resolvedLinks, cortes, logistics, logger);
 
   // Aborta se o pedido nao gravou (D-178): tudo abaixo -- eventos de status e
   // deducao de estoque -- presume que ele existe.
@@ -918,6 +1112,11 @@ export async function persistOrder(
         shipping_id: order.shipping?.id ?? null,
         tags: order.tags ?? [],
     cancel_reason: order.cancel_detail?.description ?? null,
+    // D-352: o valor JA RESOLVIDO, que inclui o gravado. O upsert e
+    // `DO UPDATE`: mandar o valor do pedido cru apagaria com NULL a captura de
+    // uma execucao anterior a cada reprocessamento (R5).
+    logistic_type: logistica.logisticType,
+    logistic_captured_at: logistica.capturedAt,
   };
 
   if (writes !== undefined) {
@@ -1080,12 +1279,16 @@ export async function persistOrder(
         ? { saleStatus: previousStatus, cancelledAt: occurredAtKnown ? new Date(lastUpdatedAt) : null }
         : transicaoGravada;
 
-    const { sales, estornos, excessReversalEstornos, reversals, alreadyReversed } = computeCancellationMovements({
+    const { sales, estornos, estornosFull, excessReversalEstornos, reversals, alreadyReversed } =
+      computeCancellationMovements({
       order: {
         id: order.id,
         status: order.status,
         dateCreated: new Date(order.date_created),
         dateClosed: order.date_closed != null ? new Date(order.date_closed) : null,
+        // D-352: pedido do Full nao reverte nada em LOCAL -- so completa o par
+        // da venda gravada.
+        logisticType: logistica.logisticType,
         items: deductionItems,
       },
       occurredAt: new Date(lastUpdatedAt),
@@ -1095,12 +1298,19 @@ export async function persistOrder(
       estornadas: gravados.estornadas,
       reversals: gravados.reversals,
       cutoffFor: corteDe(cortes, order.id),
-    });
+      });
 
+    const doFull = isFullLogistic(logistica.logisticType);
     const puladas = gravados.sales.length + sales.length - reversals.length - alreadyReversed.length;
 
     if (puladas > 0) {
-      logger.info("cancellation_reversal_pulada_pre_captura", { order_id: order.id, vendas_puladas: puladas });
+      // D-352: no Full a razao de pular e OUTRA -- a unidade nunca saiu da loja
+      // --, e dar a ela o nome da pre-captura mentiria no log exatamente onde
+      // alguem vai investigar por que o saldo nao subiu.
+      logger.info(
+        doFull ? "cancellation_reversal_pulada_full" : "cancellation_reversal_pulada_pre_captura",
+        { order_id: order.id, vendas_puladas: puladas },
+      );
     }
 
     if (alreadyReversed.length > 0) {
@@ -1140,6 +1350,14 @@ export async function persistOrder(
       contaEstornos(writes, logger, order.id, estornos.length);
     }
 
+    if (estornosFull.length > 0) {
+      // D-352: o par que faltava a venda gravada de um pedido do Full. Vem antes
+      // da anulacao pelo mesmo motivo do estorno da pre-captura: se a anulacao
+      // falhar, o retry acha a venda estornada e a grava de novo.
+      await gravaMovimentos(db, context, writes, estornosFull, "ESTORNO_FULL", origem);
+      contaEstornosFull(writes, logger, order.id, estornosFull.length);
+    }
+
     await gravaAnulacoes(db, context, writes, logger, order.id, excessReversalEstornos);
 
     if (reversals.length > 0) {
@@ -1154,12 +1372,15 @@ export async function persistOrder(
   // D-351: `occurred_at` da venda e a "venda em" (`date_closed ?? date_created`),
   // nao `lastUpdatedAt`. Com a data da atualizacao, um pedido antigo atualizado
   // depois da planilha caia DEPOIS do corte e entrava no alvo da reconciliacao.
-  const { deductions, preCaptureReversals, excessReversalEstornos } = computeSaleDeductions(
+  const { deductions, preCaptureReversals, estornosFull, excessReversalEstornos } = computeSaleDeductions(
     {
       id: order.id,
       status: order.status,
       dateCreated: new Date(order.date_created),
       dateClosed: order.date_closed != null ? new Date(order.date_closed) : null,
+      // D-352: `fulfillment` sai com o par `ESTORNO_FULL`; qualquer outro valor,
+      // e a ausencia do sinal, baixam a loja como sempre.
+      logisticType: logistica.logisticType,
       items: deductionItems,
     },
     {
@@ -1186,6 +1407,20 @@ export async function persistOrder(
     });
 
     contaEstornos(writes, logger, order.id, preCaptureReversals.length);
+  }
+
+  if (estornosFull.length > 0) {
+    // D-352 — o par da venda entregue pelo Full. No lote sai no MESMO upsert da
+    // venda (`page-writes.ts`); no webhook, linha a linha, a venda antes: se o
+    // estorno falhar, o job lanca e o retry o grava (a venda ja gravada e
+    // descartada pela chave). Nunca sai junto com o `ESTORNO_PRE_CAPTURA` da
+    // mesma venda — os dois dividem a chave, e o dominio deixa so um passar.
+    await gravaMovimentos(db, context, writes, estornosFull, "ESTORNO_FULL", {
+      type: "ORDER",
+      id: String(order.id),
+    });
+
+    contaEstornosFull(writes, logger, order.id, estornosFull.length);
   }
 
   // Depois do estorno: no webhook, a anulacao que falhar sai de novo no retry, que
@@ -1233,6 +1468,25 @@ function contaEstornos(writes: PageWrites | undefined, logger: Logger, orderId: 
   }
 
   logger.info("sale_deduction_estornada_pre_captura", { order_id: orderId, estornos });
+}
+
+/**
+ * O mesmo para o `ESTORNO_FULL` (D-352), num contador PROPRIO.
+ *
+ * Somar os dois apagaria a unica medida do efeito desta fatia: quantas vendas
+ * pararam de baixar a loja porque saem do Full, separadas das que ja nao
+ * baixavam por serem anteriores a planilha. As duas causas somem juntas na
+ * contagem, e e exatamente elas que precisam ser comparadas.
+ */
+function contaEstornosFull(writes: PageWrites | undefined, logger: Logger, orderId: number, estornos: number): void {
+  if (writes !== undefined) {
+    writes.estornosFull.pedidos += 1;
+    writes.estornosFull.movimentos += estornos;
+
+    return;
+  }
+
+  logger.info("sale_deduction_estornada_full", { order_id: orderId, estornos });
 }
 
 /**

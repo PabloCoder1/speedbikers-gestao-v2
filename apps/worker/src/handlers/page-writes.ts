@@ -40,6 +40,14 @@ export interface PageWrites {
    * transição, cada atualização de pedido antigo gera um par.
    */
   estornosPreCaptura: { pedidos: number; movimentos: number };
+  /**
+   * O mesmo para `ESTORNO_FULL` (D-352), em contador PRÓPRIO: é a medida do
+   * efeito desta fatia — quantas vendas pararam de baixar a loja por saírem do
+   * Full, separadas das que já não baixavam por serem anteriores à planilha.
+   * Somadas, as duas causas ficariam indistinguíveis justamente onde precisam
+   * ser comparadas.
+   */
+  estornosFull: { pedidos: number; movimentos: number };
 }
 
 export function novaPagina(organizationId: string): PageWrites {
@@ -51,6 +59,7 @@ export function novaPagina(organizationId: string): PageWrites {
     movements: [],
     organizationId,
     estornosPreCaptura: { pedidos: 0, movimentos: 0 },
+    estornosFull: { pedidos: 0, movimentos: 0 },
   };
 }
 

@@ -4,7 +4,13 @@ import { describe, expect, it } from "vitest";
 
 import type { ParsedOrder } from "./order-schema.js";
 import { novaPagina } from "./page-writes.js";
-import type { OrderPrefetch, PersistOrderContext, RecordedOrderMovements, ResolvedLink } from "./persist-order.js";
+import type {
+  OrderPrefetch,
+  PersistedLogistic,
+  PersistOrderContext,
+  RecordedOrderMovements,
+  ResolvedLink,
+} from "./persist-order.js";
 import { persistOrder, prefetchOrders } from "./persist-order.js";
 
 const CONTEXT: PersistOrderContext = {
@@ -172,6 +178,16 @@ interface FakeDbOptions {
   cancelledEvents?: { before: unknown; occurred_at: string }[];
   /** Simula falha na leitura de `domain_events`. */
   eventsReadError?: boolean;
+  /**
+   * D-352 — `orders.logistic_type` já gravado. Só chega ao handler junto com
+   * `previousStatus`: sem ele a linha de `orders` não existe.
+   */
+  persistedLogisticType?: string | null;
+  /**
+   * D-352 — `orders.logistic_captured_at` já gravado. Não nulo CONGELA a
+   * decisão: nada é lido, e releitura divergente só vira log (R5).
+   */
+  persistedLogisticCapturedAt?: string | null;
 }
 
 function fakeDb(options: FakeDbOptions = {}): {
@@ -329,7 +345,15 @@ function fakeDb(options: FakeDbOptions = {}): {
             }
 
             return {
-              data: "previousStatus" in options ? { status: options.previousStatus } : null,
+              data:
+                "previousStatus" in options
+                  ? {
+                      status: options.previousStatus,
+                      // D-352: as duas colunas vêm na mesma leitura do status.
+                      logistic_type: options.persistedLogisticType ?? null,
+                      logistic_captured_at: options.persistedLogisticCapturedAt ?? null,
+                    }
+                  : null,
               error: null,
             };
           });
@@ -1598,6 +1622,8 @@ describe("persistOrder com prefetch (D-186)", () => {
   function prefetchDe(parcial: Partial<OrderPrefetch>): OrderPrefetch {
     return {
       previousStatusById: parcial.previousStatusById ?? new Map<string, string>(),
+      // D-352: sem logística gravada é o padrão — o pedido que a V3 nunca viu.
+      logisticByOrderId: parcial.logisticByOrderId ?? new Map<string, PersistedLogistic>(),
       linkByItemKey: parcial.linkByItemKey ?? new Map<string, ResolvedLink>(),
       recordedByOrderId: parcial.recordedByOrderId ?? new Map<string, RecordedOrderMovements>(),
       cutoffBySku: parcial.cutoffBySku ?? new Map<string, ErpCutoff | null>(),
@@ -2836,3 +2862,339 @@ async function paginaDoLote(porTabela: Record<string, unknown[]>, pagina: Parsed
 
   return writes.movements;
 }
+
+/**
+ * D-352 — o sinal da logistica do envio, e o par da venda do Full.
+ *
+ * Dois eixos medidos aqui, e so aqui: QUANDO a V3 gasta um `GET /shipments/{id}`
+ * (o gate) e O QUE ela grava com a resposta. A regra do par em si e do dominio.
+ */
+describe("persistOrder — a logistica do envio (D-352)", () => {
+  const CAPTURADO_EM = new Date("2026-09-17T20:00:00.000Z");
+  const VENDA = `venda:${String(BASE_ORDER.id)}:0`;
+
+  /** Um pedido pago com vinculo: o unico que pode precisar do sinal. */
+  const VINCULADO = { linkForItem: () => ({ id: "link-1", sku_id: "sku-a" }) };
+
+  /**
+   * A captura falsa: registra as chamadas e devolve o que o teste mandar.
+   * `FALHA` e a leitura que NAO voltou (o pedido fica pendente), distinta de
+   * `null`, que e o envio que voltou sem dizer a logistica.
+   */
+  const FALHA = Symbol("leitura do envio falhou");
+
+  function fakeLogistics(resposta: string | null | typeof FALHA): {
+    logistics: NonNullable<Parameters<typeof persistOrder>[6]>;
+    chamadas: { shippingId: number; orderId: number }[];
+  } {
+    const chamadas: { shippingId: number; orderId: number }[] = [];
+
+    return {
+      chamadas,
+      logistics: {
+        now: () => CAPTURADO_EM,
+        read: (shippingId, orderId) => {
+          chamadas.push({ shippingId, orderId });
+
+          return Promise.resolve(
+            resposta === FALHA ? null : { logisticType: resposta, capturedAt: CAPTURADO_EM },
+          );
+        },
+      },
+    };
+  }
+
+  function pedido(overrides: Partial<ParsedOrder> = {}): ParsedOrder {
+    return { ...BASE_ORDER, shipping: { id: 48_041_052_940 }, ...overrides };
+  }
+
+  function rodaComLogistica(
+    db: Parameters<typeof persistOrder>[0],
+    order: ParsedOrder,
+    logistics: NonNullable<Parameters<typeof persistOrder>[6]>,
+    lines: string[] = [],
+  ): Promise<void> {
+    return persistOrder(
+      db,
+      CONTEXT,
+      order,
+      createLogger({}, { sink: (line) => lines.push(line) }),
+      undefined,
+      undefined,
+      logistics,
+    );
+  }
+
+  it("venda do Full: grava VENDA_ML + ESTORNO_FULL espelhado, e carimba as duas colunas do pedido", async () => {
+    const { db, inserted, upserted } = fakeDb(VINCULADO);
+    const { logistics, chamadas } = fakeLogistics("fulfillment");
+
+    await rodaComLogistica(db, pedido(), logistics);
+
+    expect(chamadas).toEqual([{ shippingId: 48_041_052_940, orderId: BASE_ORDER.id }]);
+    expect(movimentos(inserted).map((m) => [m.movement_type, m.qty_delta, m.idempotency_key, m.occurred_at])).toEqual([
+      ["VENDA_ML", -1, VENDA, VENDA_EM],
+      ["ESTORNO_FULL", 1, `estorno:${VENDA}`, VENDA_EM],
+    ]);
+    // O par soma zero, e as duas linhas tem a MESMA data: mesmo lado do corte do alvo.
+    expect(movimentos(inserted).reduce((total, m) => total + m.qty_delta, 0)).toBe(0);
+    expect(upserted.find((entry) => entry.table === "orders")?.row).toMatchObject({
+      logistic_type: "fulfillment",
+      logistic_captured_at: CAPTURADO_EM.toISOString(),
+    });
+  });
+
+  it("todo movimento do par vai com location_kind LOCAL — o Full segue espelho, nao ledger (D-018)", async () => {
+    const { db, inserted } = fakeDb(VINCULADO);
+    const { logistics } = fakeLogistics("fulfillment");
+
+    await rodaComLogistica(db, pedido(), logistics);
+
+    expect(movimentos(inserted).every((m) => (m as unknown as { location_kind: string }).location_kind === "LOCAL")).toBe(true);
+  });
+
+  it("venda normal (cross_docking): so VENDA_ML, e a coluna guarda o valor CRU", async () => {
+    const { db, inserted, upserted } = fakeDb(VINCULADO);
+    const { logistics, chamadas } = fakeLogistics("cross_docking");
+
+    await rodaComLogistica(db, pedido(), logistics);
+
+    expect(chamadas).toHaveLength(1);
+    expect(movimentos(inserted).map((m) => m.movement_type)).toEqual(["VENDA_ML"]);
+    expect(upserted.find((entry) => entry.table === "orders")?.row).toMatchObject({
+      logistic_type: "cross_docking",
+      logistic_captured_at: CAPTURADO_EM.toISOString(),
+    });
+  });
+
+  it("falha ao ler o envio NAO derruba o job: a venda baixa e o pedido fica PENDENTE (as duas colunas nulas)", async () => {
+    const { db, inserted, upserted } = fakeDb(VINCULADO);
+    const { logistics, chamadas } = fakeLogistics(FALHA);
+
+    await rodaComLogistica(db, pedido(), logistics);
+
+    expect(chamadas).toHaveLength(1);
+    expect(movimentos(inserted).map((m) => m.movement_type)).toEqual(["VENDA_ML"]);
+    expect(upserted.find((entry) => entry.table === "orders")?.row).toMatchObject({
+      logistic_type: null,
+      logistic_captured_at: null,
+    });
+  });
+
+  it("envio lido sem logistic_type: NAO e pendencia — a captura fica carimbada e a venda baixa", async () => {
+    const { db, upserted } = fakeDb(VINCULADO);
+    const { logistics } = fakeLogistics(null);
+
+    await rodaComLogistica(db, pedido(), logistics);
+
+    expect(upserted.find((entry) => entry.table === "orders")?.row).toMatchObject({
+      logistic_type: null,
+      logistic_captured_at: CAPTURADO_EM.toISOString(),
+    });
+  });
+
+  it("o pedido que JA traz shipping.logistic_type nao gasta um GET /shipments", async () => {
+    const { db, inserted } = fakeDb(VINCULADO);
+    // A captura responderia `cross_docking`: se o handler a chamasse, o par nao sairia.
+    const { logistics, chamadas } = fakeLogistics("cross_docking");
+
+    await rodaComLogistica(db, pedido({ shipping: { id: 1, logistic_type: "fulfillment" } }), logistics);
+
+    expect(chamadas).toEqual([]);
+    expect(movimentos(inserted).map((m) => m.movement_type)).toEqual(["VENDA_ML", "ESTORNO_FULL"]);
+  });
+
+  describe("o gate: so pedido que vai deduzir DE FATO gasta a chamada", () => {
+    it("pedido cancelado nao le o envio", async () => {
+      const { db } = fakeDb(VINCULADO);
+      const { logistics, chamadas } = fakeLogistics("fulfillment");
+
+      await rodaComLogistica(db, pedido({ status: "cancelled" }), logistics);
+
+      expect(chamadas).toEqual([]);
+    });
+
+    it("item sem vinculo nao le o envio — sem SKU nao ha movimento", async () => {
+      const { db } = fakeDb({ linkForItem: () => null });
+      const { logistics, chamadas } = fakeLogistics("fulfillment");
+
+      await rodaComLogistica(db, pedido(), logistics);
+
+      expect(chamadas).toEqual([]);
+    });
+
+    it("pedido sem shipping_id nao le o envio — nao ha chave", async () => {
+      const { db } = fakeDb(VINCULADO);
+      const { logistics, chamadas } = fakeLogistics("fulfillment");
+
+      await rodaComLogistica(db, pedido({ shipping: null }), logistics);
+
+      expect(chamadas).toEqual([]);
+    });
+
+    it("venda ATE a exportacao da planilha nao le o envio — ela ja sai estornada pela D-351", async () => {
+      const { db, inserted } = fakeDb({ ...VINCULADO, cutoffs: { "sku-a": CORTE } });
+      const { logistics, chamadas } = fakeLogistics("fulfillment");
+
+      await rodaComLogistica(db, pedido(), logistics);
+
+      expect(chamadas).toEqual([]);
+      // O par da D-351 continua saindo, com o tipo dela.
+      expect(movimentos(inserted).map((m) => m.movement_type)).toEqual(["VENDA_ML", "ESTORNO_PRE_CAPTURA"]);
+    });
+
+    it("contraprova: venda DEPOIS da exportacao le o envio", async () => {
+      const { db } = fakeDb({ ...VINCULADO, cutoffs: { "sku-a": "2019-05-22T07:51:06.000Z" } });
+      const { logistics, chamadas } = fakeLogistics("fulfillment");
+
+      await rodaComLogistica(db, pedido(), logistics);
+
+      expect(chamadas).toHaveLength(1);
+    });
+
+    it("sem a captura na mao (chamador sem cliente do ML) nada e lido, e o pedido fica pendente", async () => {
+      const { db, inserted, upserted } = fakeDb(VINCULADO);
+
+      await run(db, pedido());
+
+      expect(movimentos(inserted).map((m) => m.movement_type)).toEqual(["VENDA_ML"]);
+      expect(upserted.find((entry) => entry.table === "orders")?.row).toMatchObject({ logistic_captured_at: null });
+    });
+  });
+
+  describe("retomada idempotente e R5 — a decisao e do campo PERSISTIDO", () => {
+    it("com o sinal ja gravado, nada e lido de novo e o par sai igual", async () => {
+      const { db, inserted, upserted } = fakeDb({
+        ...VINCULADO,
+        previousStatus: "paid",
+        persistedLogisticType: "fulfillment",
+        persistedLogisticCapturedAt: CAPTURADO_EM.toISOString(),
+      });
+      const { logistics, chamadas } = fakeLogistics(FALHA);
+
+      await rodaComLogistica(db, pedido(), logistics);
+
+      expect(chamadas).toEqual([]);
+      expect(movimentos(inserted).map((m) => m.movement_type)).toEqual(["VENDA_ML", "ESTORNO_FULL"]);
+      expect(upserted.find((entry) => entry.table === "orders")?.row).toMatchObject({
+        logistic_type: "fulfillment",
+        logistic_captured_at: CAPTURADO_EM.toISOString(),
+      });
+    });
+
+    it("venda JA gravada com o par: o retry recalcula as MESMAS chaves, e o UNIQUE as absorve", async () => {
+      const { db, inserted } = fakeDb({
+        ...VINCULADO,
+        previousStatus: "paid",
+        persistedLogisticType: "fulfillment",
+        persistedLogisticCapturedAt: CAPTURADO_EM.toISOString(),
+        existingSaleMovements: [
+          { sku_id: "sku-a", qty_delta: -1, idempotency_key: VENDA },
+          { sku_id: "sku-a", qty_delta: 1, idempotency_key: `estorno:${VENDA}`, movement_type: "ESTORNO_FULL" },
+        ],
+      });
+      const { logistics } = fakeLogistics("fulfillment");
+
+      await rodaComLogistica(db, pedido(), logistics);
+
+      // Os dois saem de novo, com as MESMAS chaves — e e isso que faz o retry de
+      // uma execucao que falhou entre a venda e o estorno completar o par. Quem
+      // impede a segunda linha e o `UNIQUE` de `idempotency_key`, nao um `if`
+      // aqui: e a mesma forma da D-351, e ela nao depende do que foi lido.
+      expect(movimentos(inserted).map((m) => [m.movement_type, m.idempotency_key])).toEqual([
+        ["VENDA_ML", VENDA],
+        ["ESTORNO_FULL", `estorno:${VENDA}`],
+      ]);
+    });
+
+    it("captura carimbada com valor NULO tambem congela: o envio nao e lido de novo", async () => {
+      const { db } = fakeDb({
+        ...VINCULADO,
+        previousStatus: "paid",
+        persistedLogisticType: null,
+        persistedLogisticCapturedAt: CAPTURADO_EM.toISOString(),
+      });
+      const { logistics, chamadas } = fakeLogistics("fulfillment");
+
+      await rodaComLogistica(db, pedido(), logistics);
+
+      expect(chamadas).toEqual([]);
+    });
+
+    it("releitura DIVERGENTE vira log, nunca regravacao", async () => {
+      const { db, inserted, upserted } = fakeDb({
+        ...VINCULADO,
+        previousStatus: "paid",
+        persistedLogisticType: "cross_docking",
+        persistedLogisticCapturedAt: CAPTURADO_EM.toISOString(),
+      });
+      const { logistics } = fakeLogistics("fulfillment");
+      const lines: string[] = [];
+
+      await rodaComLogistica(db, pedido({ shipping: { id: 1, logistic_type: "fulfillment" } }), logistics, lines);
+
+      expect(upserted.find((entry) => entry.table === "orders")?.row).toMatchObject({
+        logistic_type: "cross_docking",
+      });
+      // O valor gravado e que decide: nada de ESTORNO_FULL.
+      expect(movimentos(inserted).map((m) => m.movement_type)).toEqual(["VENDA_ML"]);
+      expect(lines.join("\n")).toContain("order_logistic_divergente");
+    });
+  });
+
+  describe("cancelamento de pedido do Full", () => {
+    const CANCELADO: ParsedOrder = { ...BASE_ORDER, status: "cancelled", shipping: { id: 48_041_052_940 } };
+
+    it("venda gravada sem par: grava o ESTORNO_FULL que falta e NENHUM CANCELAMENTO_ML", async () => {
+      const { db, inserted } = fakeDb({
+        ...VINCULADO,
+        previousStatus: "paid",
+        persistedLogisticType: "fulfillment",
+        persistedLogisticCapturedAt: CAPTURADO_EM.toISOString(),
+        existingSaleMovements: [{ sku_id: "sku-a", qty_delta: -1, idempotency_key: VENDA }],
+      });
+      const { logistics } = fakeLogistics("fulfillment");
+
+      await rodaComLogistica(db, CANCELADO, logistics);
+
+      expect(movimentos(inserted).map((m) => [m.movement_type, m.qty_delta, m.idempotency_key])).toEqual([
+        ["ESTORNO_FULL", 1, `estorno:${VENDA}`],
+      ]);
+    });
+
+    it("contraprova FORA do Full: o mesmo pedido grava CANCELAMENTO_ML", async () => {
+      const { db, inserted } = fakeDb({
+        ...VINCULADO,
+        previousStatus: "paid",
+        persistedLogisticType: "cross_docking",
+        persistedLogisticCapturedAt: CAPTURADO_EM.toISOString(),
+        existingSaleMovements: [{ sku_id: "sku-a", qty_delta: -1, idempotency_key: VENDA }],
+      });
+      const { logistics } = fakeLogistics("cross_docking");
+
+      await rodaComLogistica(db, CANCELADO, logistics);
+
+      expect(movimentos(inserted).map((m) => m.movement_type)).toEqual(["CANCELAMENTO_ML"]);
+    });
+
+    it("o log da venda pulada diz a razao CERTA — Full, e nao pre-captura", async () => {
+      const { db } = fakeDb({
+        ...VINCULADO,
+        previousStatus: "paid",
+        persistedLogisticType: "fulfillment",
+        persistedLogisticCapturedAt: CAPTURADO_EM.toISOString(),
+        existingSaleMovements: [
+          { sku_id: "sku-a", qty_delta: -1, idempotency_key: VENDA },
+          { sku_id: "sku-a", qty_delta: 1, idempotency_key: `estorno:${VENDA}`, movement_type: "ESTORNO_FULL" },
+        ],
+      });
+      const { logistics } = fakeLogistics("fulfillment");
+      const lines: string[] = [];
+
+      await rodaComLogistica(db, CANCELADO, logistics, lines);
+
+      expect(lines.join("\n")).toContain("cancellation_reversal_pulada_full");
+      expect(lines.join("\n")).not.toContain("cancellation_reversal_pulada_pre_captura");
+    });
+  });
+});
